@@ -156,6 +156,52 @@ resolve_comfyui_dir_for_models() {
     fi
 }
 
+install_comfyui_custom_nodes() {
+    if [ "${RUNPOD_COMFY_CUSTOM_NODES_ENABLED:-true}" != "true" ]; then
+        log "RunPod ComfyUI custom node install disabled"
+        return
+    fi
+
+    local comfyui_dir="${RUNPOD_COMFY_CUSTOM_NODES_DIR:-}"
+    if [ -z "$comfyui_dir" ]; then
+        if resolved_comfy_dir="$(resolve_comfyui_dir_for_models)"; then
+            comfyui_dir="$resolved_comfy_dir"
+        fi
+    fi
+    if [ -z "$comfyui_dir" ] || [ ! -f "${comfyui_dir}/main.py" ]; then
+        echo "RUNPOD_COMFY_CUSTOM_NODES_ENABLED=true but no ComfyUI directory was found." >&2
+        exit 75
+    fi
+
+    if [ "${RUNPOD_COMFY_KJNODES_ENABLED:-true}" = "true" ]; then
+        local repo_url="${RUNPOD_COMFY_KJNODES_REPO_URL:-https://github.com/kijai/ComfyUI-KJNodes.git}"
+        local repo_ref="${RUNPOD_COMFY_KJNODES_REF:-}"
+        local target_dir="${comfyui_dir%/}/custom_nodes/ComfyUI-KJNodes"
+        mkdir -p "${comfyui_dir%/}/custom_nodes"
+        if [ -d "${target_dir}/.git" ]; then
+            log "updating ComfyUI-KJNodes in ${target_dir}"
+            git -C "$target_dir" fetch --depth 1 origin "${repo_ref:-HEAD}"
+            if [ -n "$repo_ref" ]; then
+                git -C "$target_dir" checkout --force FETCH_HEAD
+            else
+                git -C "$target_dir" reset --hard FETCH_HEAD
+            fi
+        elif [ -d "$target_dir" ]; then
+            log "ComfyUI-KJNodes already exists at ${target_dir}; leaving non-git directory unchanged"
+        else
+            log "installing ComfyUI-KJNodes into ${target_dir}"
+            if [ -n "$repo_ref" ]; then
+                git clone --depth 1 --branch "$repo_ref" "$repo_url" "$target_dir"
+            else
+                git clone --depth 1 "$repo_url" "$target_dir"
+            fi
+        fi
+        if [ -f "${target_dir}/requirements.txt" ]; then
+            python3 -m pip install -r "${target_dir}/requirements.txt"
+        fi
+    fi
+}
+
 if [ "${RUNPOD_MODEL_SYNC_ENABLED:-false}" = "true" ]; then
     COMFYUI_MODEL_SYNC_DIR="${RUNPOD_MODEL_COMFYUI_DIR:-}"
     if [ -z "$COMFYUI_MODEL_SYNC_DIR" ]; then
@@ -174,6 +220,8 @@ if [ "${RUNPOD_MODEL_SYNC_ENABLED:-false}" = "true" ]; then
         --prefix "${RUNPOD_MODEL_PREFIX:-img2img_lora/2026-06-10}" \
         --target-dir "$RUNPOD_MODEL_TARGET_DIR"
 fi
+
+install_comfyui_custom_nodes
 
 if [ -n "${COMFYUI_DIR:-}" ] && [ -f "${COMFYUI_DIR}/main.py" ]; then
     log "starting ComfyUI from COMFYUI_DIR"

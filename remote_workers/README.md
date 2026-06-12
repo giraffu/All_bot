@@ -149,6 +149,45 @@ startup order is fixed:
 ComfyUI ready -> remote relay ready -> comfy agent heartbeat
 ```
 
+`remote_workers/Dockerfile.runpod` is the bundled worker/relay image entry. For
+RunPod ComfyUI runtime profiles, use the profile image builder instead:
+
+```bash
+scripts/build_runpod_profile_image.sh \
+  --image-ref docker.io/<namespace>/allbot-comfy-runpod-img2img-lora:<tag>
+```
+
+The `img2img_lora` profile image bakes ComfyUI system dependencies and
+`ComfyUI-KJNodes` into the ComfyUI base image. It intentionally does not bake
+Qwen checkpoint or LoRA model files; keep `RUNPOD_MODEL_SYNC_ENABLED=true` and
+sync models from the R2 manifest at Pod startup. If GitHub is unavailable during
+build, export or copy a verified `ComfyUI-KJNodes` directory and run:
+
+```bash
+scripts/build_runpod_profile_image.sh \
+  --image-ref docker.io/<namespace>/allbot-comfy-runpod-img2img-lora:<tag> \
+  --kjnodes-source /path/to/ComfyUI-KJNodes
+```
+
+Only push after choosing a registry namespace that RunPod can pull:
+
+```bash
+scripts/build_runpod_profile_image.sh \
+  --image-ref docker.io/<namespace>/allbot-comfy-runpod-img2img-lora:<tag> \
+  --kjnodes-source /path/to/ComfyUI-KJNodes \
+  --push
+```
+
+When using the baked profile image, set RunPod env so startup does not reinstall
+custom nodes:
+
+```env
+RUNPOD_USE_TEMPLATE_IMG2IMG_LORA=false
+RUNPOD_IMAGE_NAME_IMG2IMG_LORA=docker.io/<namespace>/allbot-comfy-runpod-img2img-lora:<tag>
+RUNPOD_COMFY_CUSTOM_NODES_ENABLED=false
+RUNPOD_COMFY_KJNODES_ENABLED=false
+```
+
 For the first cloud-test canary, the expected profile is:
 
 ```env
@@ -204,3 +243,15 @@ on port `8003`.
 Do not reuse `api.aivison.it.com`; that is the public Web API entrypoint.
 Restrict the worker hostname with Cloudflare WAF/rate limits and, if possible,
 source IP allowlists for these two remote worker nodes.
+
+Production status as of 2026-06-12:
+
+- `worker-central.aivison.it.com` is the currently verified production worker
+  Central hostname and returns Central `/health`.
+- The production control host also runs a separate
+  `cloudflared-runpod-prod.service` connector for the RunPod production tunnel,
+  with the token stored in a root-only token file and the origin set to
+  `http://100.107.220.127:8003`.
+- If a new RunPod-specific hostname is desired, bind that public hostname to the
+  RunPod production tunnel in Cloudflare first, then verify `/health` before
+  pointing any RunPod Pod at it.

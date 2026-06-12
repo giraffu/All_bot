@@ -1,7 +1,7 @@
 # AllBot GPU Pool Runtime 容器化接管路线图
 
-更新时间：2026-06-11
-当前口径：Worker Agent 新协议、模型仓库、镜像仓库、Controller Phase 0 dry-run 能力与 Phase 1A 备用端口 canary 渲染能力已经完成；Phase 1B 只读预检已完成，但 live canary 尚未执行。底层 ComfyUI Runtime 仍未全量纳入 Controller 自动接管。`POOL_IMAGE_REF`、profile 镜像、bundle 版本、`runtime-plan` 与 `runtime-render --host-port` 输出均是目标声明或 dry-run / render 计划，不等于当前 ComfyUI Runtime 已经由对应镜像实际运行。
+更新时间：2026-06-12
+当前口径：Worker Agent 新协议、模型仓库、镜像仓库、Controller Phase 0 dry-run 能力、Phase 1A 备用端口 canary 渲染能力、Phase 1B 只读预检均已完成；RunPod Provider v0、云测试 worker Central 入口、RunPod 启动前 R2 模型同步、`allbot-model-cache` 模型缓存桶、Phase 1R RunPod 云测试真实 `img2img/img2img_lora` canary，以及 GHCR 公网 baked profile 镜像 canary 均已完成。尚未执行 `gpu-002` live canary。底层 ComfyUI Runtime 仍未全量纳入 Controller 自动接管。`POOL_IMAGE_REF`、本地 GPU profile 镜像、bundle 版本、`runtime-plan`、`runtime-render --host-port` 与 `runpod render-create` 输出均是目标声明或 dry-run / render 计划，不等于当前 ComfyUI Runtime 已经由对应镜像实际运行。
 
 本文是后续更新的执行指南。任何实现者继续推进时，先按本文确认当前阶段、允许动作和验收条件，再修改代码或执行运维。
 
@@ -45,6 +45,42 @@
   - `gpu-226` host_service render guard 按预期失败
   - `gpu-002` 磁盘充足，生产 `8188/8189` 当前健康，备用 `8190/8191` 未监听
   - 预检时生产 `8188/8189` 队列非空，因此不得进入 live canary
+- RunPod Provider v0 已完成：
+  - CLI 入口：`python scripts/gpu_pool_controller.py runpod ...`
+  - 支持 `validate-key`、`list-pods`、`get-pod`、`pod-readiness`、`render-create`、`reconcile-managed-pods`、`create-pod`、`start-pod`、`stop-pod`、`delete-pod`、`canary`
+  - 默认 dry-run；真实 create/start/stop/delete 必须同时满足 `RUNPOD_DRY_RUN=false`、`RUNPOD_AUTOSCALER_ENABLED=true`、`RUNPOD_MAX_PODS_TOTAL=1`、`RUNPOD_MAX_PODS_PER_TYPE=1` 和命令级 `--execute`
+  - v0 只允许云测试 `img2img/img2img_lora` profile，总 Pod 与单类型 Pod 上限均为 1
+  - `runpod` provider 不进入 LAN SSH inventory，不生成局域网 SSH/Docker 操作
+  - 日志和 CLI JSON 输出会脱敏 API key、agent token、R2 secret、presigned URL signature
+  - `runpod canary` 默认只做 dry-run 预检；真实执行会串起单 Pod 创建、readiness、RunPod worker heartbeat、临时禁用测试 worker、上传测试 PNG、三任务真实闭环、恢复 worker、删除 Pod 和 orphan 核验
+- RunPod 云测试入口已准备：
+  - worker Central hostname：`https://worker-central-test.aivison.it.com`
+  - `task_types=img2img,img2img_lora`
+  - `agent_id=runpod_test_img2img_lora_<pod_id>`
+  - `POOL_PROVIDER=runpod`
+  - `POOL_RUNTIME_PROFILE=img2img_lora`
+  - `PIPELINE_MAX_RUNNING_TASKS=1`
+  - `COMFY_API_URL=http://127.0.0.1:8188`
+  - 结果/输入/模板测试桶仍固定为 R2 `user-data-test`
+- RunPod 模型缓存前置已完成：
+  - 正式可复用模型桶：`allbot-model-cache`
+  - 当前 bundle prefix：`img2img_lora/2026-06-10`
+  - manifest：`img2img_lora/2026-06-10/manifest.json`
+  - 包含 Qwen Rapid AIO 主模型和当前图生图 qwen LoRA 全量清单
+  - 主模型通过临时 RunPod transfer Pod 从 Hugging Face 链接云端转存到 R2，未占用本地主服务器上行带宽
+  - LoRA 使用本地低带宽上传后统一发布 manifest
+  - 临时 transfer Pod 已删除，最近一次 `runpod list-pods` 显示 `count=0`
+- Phase 1R RunPod 云测试真实 canary 已完成：
+  - 创建 1 个 RunPod Pod `if082v0w8eowow`，GPU 为 NVIDIA GeForce RTX 4090，镜像为 `yanwk/comfyui-boot:cu128-slim`，agent id 为 `runpod_test_img2img_lora_if082v0w8eowow`
+  - R2 模型同步下载/校验 manifest 中 6 个文件，ComfyUI `/object_info` 可见主模型和 5 个 qwen LoRA
+  - 云测试 Central 看到 RunPod worker healthy/idle，能力为 `img2img,img2img_lora`
+  - 三个真实 Web 任务均由 RunPod worker pop、执行、上传到 `user-data-test`、Central `/complete` 成功、Web result 可读
+  - canary 后已恢复临时禁用的云测试 worker，删除 RunPod Pod，`runpod list-pods count=0` 且 `reconcile-managed-pods managed_count=0`
+- RunPod GHCR baked profile 镜像 canary 已完成：
+  - 使用 `ghcr.io/giraffu/allbot-comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946` 作为公网可匿名 pull 的 RunPod image，镜像内 baked `ComfyUI-KJNodes`，Qwen checkpoint/LoRA 仍从 R2 manifest 热同步。
+  - 创建 1 个 RunPod RTX 4090 Pod `ln61p9vk99sau7`，云测试 Central 注册 `runpod_test_img2img_lora_ln61p9vk99sau7`。
+  - 关闭启动期 custom node runtime install：`RUNPOD_COMFY_CUSTOM_NODES_ENABLED=false`、`RUNPOD_COMFY_KJNODES_ENABLED=false`；保持 `RUNPOD_MODEL_SYNC_ENABLED=true`。
+  - 三个真实 Web 任务再次闭环成功，完成后删除 Pod，`runpod list-pods count=0` 且 `reconcile-managed-pods managed_count=0`。
 
 ### 1.2 当前 GPU 节点事实
 
@@ -52,14 +88,196 @@
 | :--- | :--- | :--- | :--- | :--- |
 | `gpu-226` / `192.168.1.226` | 1 x RTX 5090 32G | 宿主机进程 `8188` | `host_service`，`managed=false` | `cloud_prod_worker_01` / `face_i2i_t2i` |
 | `gpu-177` / `192.168.1.177` | 2 x RTX 5090 32G | Docker `comfy0/comfy1`，`8188/8189` | `docker_container`，`managed=false` | worker 02=`video_basic`，worker 03=`ltx_video` |
-| `gpu-252` / `192.168.1.252` | 2 x RTX 4090 48G | Docker `comfy0/comfy1`，`8188/8189` | `docker_container`，`managed=false` | worker 04=`img2img_lora`，worker 05=`wan22_video_v2` |
+| `gpu-252` / `192.168.1.252` | 原规划 2 x RTX 4090；当前只识别/可用 1 张 | Docker `comfy0/comfy1`，但 `comfy0`/`8188` 不通，`comfy1`/`8189` 正常 | `docker_container`，`managed=false`；worker 04 当前视为本地容量缺口 | worker 04=`img2img_lora` 不可执行，worker 05=`wan22_video_v2` 仍可用且不得改 |
 | `gpu-002` / `192.168.1.2` | 2 x RTX 4090 48G | Docker `comfy0/comfy1`，`8188/8189` | `docker_container`，`managed=true` Phase 1 试点 | worker 06=`img2img_lora`，worker 07=`video_basic` |
 
 关键边界：
 
 - `gpu-226` 是最后迁移对象，不得对它执行 `docker restart comfy0` 或任何假设 Docker Comfy 存在的命令。
 - `gpu-177/252` 可生成 dry-run 计划，但未标记为可执行接管；Phase 1 通过前不要推进。
+- `gpu-252` 当前现场必须保护：不自动恢复 `comfy0`，不重启 `gpu-252`，不改 `comfy1` 或 `cloud_prod_worker_05`；保留 `worker_05` 临时状态 `POOL_GPU_INDEX=0`、`PIPELINE_MAX_RUNNING_TASKS=1`。
+- Controller 和 RunPod 调度只把 `cloud_prod_worker_04` 视为 `img2img/img2img_lora` 本地容量缺口，不把它当可执行 runtime。
 - `remote_workers` 不纳入本地动态 GPU 资源池。
+
+### 1.3 2026-06-12 RunPod / R2 交接快照
+
+本轮目标是先用 RunPod 云测试 Pod 替补 `cloud_prod_worker_04` 缺失的 `img2img,img2img_lora` 能力；生产自动扩容仍关闭。
+
+已落地代码：
+
+- `ops/gpu_pool_controller/providers/runpod.py`
+  - RunPod Pods Provider v0。
+  - create payload 会注入云测试 worker、R2 测试桶和 R2 模型缓存环境变量。
+  - 模型缓存密钥使用 RunPod secret reference，不把本地 `.env.cloud.test` 里的明文写入 Pod env 渲染输出。
+- `remote_workers/scripts/runpod_bootstrap_from_git.sh`
+  - 启动顺序固定为：必要时启 SSH 诊断 -> 拉取/使用 remote worker bundle -> 安装依赖 -> R2 模型同步 -> 安装 ComfyUI custom nodes -> ComfyUI ready -> remote relay ready -> comfy agent。
+  - 当前会在启动 ComfyUI 前默认安装 `ComfyUI-KJNodes`，用于提供 `img2img_lora` workflow 依赖的 `GetImageSizeAndCount` 等节点；可用 `RUNPOD_COMFY_CUSTOM_NODES_ENABLED=false` 或 `RUNPOD_COMFY_KJNODES_ENABLED=false` 关闭。
+- `remote_workers/scripts/runpod_sync_models_from_r2.py`
+  - 从 R2 manifest 下载模型到 ComfyUI `models` 目录。
+  - 校验 `size_bytes` 和 `sha256`，已有且校验通过的文件会跳过。
+- `scripts/upload_model_bundle_to_r2.py`
+  - 支持 `--include-pattern`、`--exclude-pattern`、`--skip-manifest`、`--max-concurrency`、`--max-bandwidth-mbps`。
+  - 用于低带宽上传 LoRA，并在所有对象到位后发布 manifest。
+- `scripts/transfer_url_to_r2.py`
+  - 在云端把外部模型 URL 流式转存到 R2，不需要先落本地主服务器磁盘。
+- `scripts/create_runpod_model_transfer_pod.py`
+  - 创建一次性 RunPod transfer Pod，把 Hugging Face 主模型转存到 R2。
+  - 使用 RunPod Secrets 引用 R2 模型桶凭据，不输出明文。
+- `tests/ops/test_runpod_provider.py`
+  - 覆盖 auth header、list/reconcile、create payload、dry-run gate、成本门禁、模型缓存 env 注入、脱敏、LAN SSH inventory 隔离。
+- `tests/ops/test_runpod_bootstrap.py`
+  - 覆盖 RunPod bootstrap Bash 语法，以及 `ComfyUI-KJNodes` 安装发生在 ComfyUI 启动前。
+
+R2 模型缓存事实：
+
+| 项 | 值 |
+| :--- | :--- |
+| bucket | `allbot-model-cache` |
+| prefix | `img2img_lora/2026-06-10` |
+| manifest | `img2img_lora/2026-06-10/manifest.json` |
+| manifest size | `1969` bytes |
+| multipart residue | `0` |
+| 主模型对象 | `models/checkpoints/Qwen-Rapid-AIO-NSFW-v23.safetensors` |
+| 主模型大小 | `28431840023` bytes |
+| 主模型 sha256 | `fdb919fc81bea63f13759967fc92c9118142e5c70d4e6795199233a35eefa233` |
+
+manifest 当前包含 6 个文件：
+
+- `models/checkpoints/Qwen-Rapid-AIO-NSFW-v23.safetensors`
+- `models/loras/qwen/YARN_1.0.safetensors`
+- `models/loras/qwen/adjust_pussy_anus.safetensors`
+- `models/loras/qwen/flat_chest_hairless.safetensors`
+- `models/loras/qwen/penis.safetensors`
+- `models/loras/qwen/realistic_texture.safetensors`
+
+最近一次验证：
+
+- `python -m py_compile scripts/create_runpod_model_transfer_pod.py scripts/upload_model_bundle_to_r2.py scripts/transfer_url_to_r2.py` 通过。
+- `python -m pytest tests/ops/test_runpod_provider.py -q` 通过，结果为 `21 passed`。
+- `python -m pytest tests/ops/test_runpod_provider.py tests/ops/test_runpod_bootstrap.py -q` 通过，结果为 `26 passed`。
+- 临时 RunPod model-transfer Pod `btl8ae0ovggupf` 已删除；最近一次 `list-pods` 显示 `count=0`。
+- R2 manifest 与主模型对象 metadata sha256 匹配，未发现 orphan multipart。
+- 传输期间生产队列最高未超过用户给定的 `150` 中断阈值；完成后快照为 `queue_size=29`、`healthy_workers=8`、`error_workers=0`、`quarantined_workers=0`。
+- 期间曾短暂出现 `cloud_prod_worker_02` ComfyUI WebSocket/health 抖动，后续恢复；不归因于 RunPod/R2 模型转存。
+
+RunPod Secrets 当前应存在以下名字，文档和日志只记录名字，不记录值：
+
+- `allbot_cloud_test_agent_secret_token`
+- `allbot_cloud_test_r2_access_key`
+- `allbot_cloud_test_r2_secret_key`
+- `allbot_model_cache_r2_access_key`
+- `allbot_model_cache_r2_secret_key`
+
+下一窗口继续前先确认：
+
+- `.env.cloud.test` 仍包含非明文输出的 RunPod/R2 配置引用。
+- `.env.cloud.test` 默认使用 GHCR baked profile image：`RUNPOD_USE_TEMPLATE_IMG2IMG_LORA=false`、`RUNPOD_IMAGE_NAME_IMG2IMG_LORA=ghcr.io/giraffu/allbot-comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946`、`RUNPOD_COMFY_CUSTOM_NODES_ENABLED=false`、`RUNPOD_COMFY_KJNODES_ENABLED=false`。
+- `RUNPOD_MODEL_BUCKET=allbot-model-cache`
+- `RUNPOD_MODEL_PREFIX=img2img_lora/2026-06-10`
+- `RUNPOD_MODEL_MANIFEST_KEY=img2img_lora/2026-06-10/manifest.json`
+- `RUNPOD_MODEL_SYNC_ENABLED=true`
+- `RUNPOD_MODEL_ACCESS_KEY_REF={{ RUNPOD_SECRET_allbot_model_cache_r2_access_key }}`
+- `RUNPOD_MODEL_SECRET_KEY_REF={{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}`
+
+### 1.4 2026-06-12 Phase 1R 真实 canary 结果
+
+本轮只操作云测试和一次性 RunPod Pod；未改正式生产、未改 `gpu-252`、未执行 `gpu-002` live canary、未修改本地 GPU 节点 Docker/registry 信任。
+
+预检结果：
+
+- `python -m pytest tests/ops/test_runpod_provider.py -q`：`21 passed`
+- `runpod validate-key`：通过
+- `runpod list-pods`：创建前 `count=0`
+- `runpod reconcile-managed-pods`：创建前 `managed_count=0`
+- `runpod render-create --task-type img2img_lora --env cloud-test`：指向 `CENTRAL_API_URL=https://worker-central-test.aivison.it.com`、`MINIO_*_BUCKET=user-data-test`、`RUNPOD_MODEL_BUCKET=allbot-model-cache`、`RUNPOD_MODEL_PREFIX=img2img_lora/2026-06-10`、`RUNPOD_MODEL_MANIFEST_KEY=img2img_lora/2026-06-10/manifest.json`，secret 均为 RunPod secret reference / redacted。
+
+Pod 与启动记录：
+
+- Pod id：`if082v0w8eowow`
+- Pod name：`allbot-runpod-test-img2img-lora`
+- GPU：NVIDIA GeForce RTX 4090
+- 镜像：`yanwk/comfyui-boot:cu128-slim`
+- 创建时间：`2026-06-12 05:03:04 UTC`
+- `pod-readiness`：基础设施 ready，network mapping confirmed
+- 日志顺序：模型同步开始 -> 6 个 manifest 文件下载 -> `ComfyUI ready` -> `remote relay ready` -> `starting comfy agent`
+- Central worker：`runpod_test_img2img_lora_if082v0w8eowow`，types 为 `img2img,img2img_lora`
+
+现场发现与修复：
+
+- 首个真实任务 `63e498eb-d7d1-4eda-9e10-cb3ddfd26394` 已由 RunPod pop，但 ComfyUI `/prompt` 400，错误为缺少 `GetImageSizeAndCount` 节点。
+- 原因：RunPod 使用的是 `yanwk/comfyui-boot:cu128-slim` 基础镜像 + bootstrap + R2 模型同步；它不是本地 GPU 正式 ComfyUI runtime 镜像。R2 manifest 只同步模型文件，不同步 `custom_nodes/`。
+- 现场确认 `GetImageSizeAndCount` 来自本地 GPU ComfyUI 已安装的 `ComfyUI-KJNodes`。
+- 已在临时 Pod 内安装 `ComfyUI-KJNodes` 并重启 ComfyUI，`/object_info` 确认节点类和 6 个模型文件均可见。
+- 已把 `ComfyUI-KJNodes` 安装步骤固化进 `remote_workers/scripts/runpod_bootstrap_from_git.sh`，并新增 `tests/ops/test_runpod_bootstrap.py` 防止回退。
+- 对“生产已验证镜像能否直接用于 RunPod”做了只读/本地验证：`gpu-002` 生产 `comfy0` 实际 image 为 `yanwk/comfyui-boot:cu128-slim`，业务能力来自宿主机挂载的 `/data/comfy/inst0/custom_nodes`、`models`、`workflows` 等目录；本地 registry tag `localhost:5000/allbot/comfyui-boot:cu128-slim-gpu002-5daf3995` 与 `yanwk/comfyui-boot:cu128-slim` 是同一 image id，启动无挂载一次性容器检查得到 `KJNODES_PRESENT=false`。结论：当前没有可直接替代 RunPod 基础镜像的自包含 `img2img_lora` 生产镜像，后续需构建真正的 profile 镜像或继续在 bootstrap 中受控安装 custom nodes。
+
+三任务结果：
+
+| 用例 | registry_task_id | 任务类型 | LoRA | Central 终态 | Web result |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| plain img2img | `744a6d0a-928f-438d-8644-4465fb64ecce` | `img2img` | 无 | `done` | `success`，`https://r2-test.aivison.it.com/history/744a6d0a-928f-438d-8644-4465fb64ecce/original.png` |
+| YARN LoRA | `ae9ae529-b6be-44cb-8feb-999ec19a8448` | `img2img_lora` | `qwen/YARN_1.0.safetensors` | `done` | `success`，`https://r2-test.aivison.it.com/history/ae9ae529-b6be-44cb-8feb-999ec19a8448/original.png` |
+| realistic texture LoRA | `52395689-9485-4f14-a2f5-5775d538842c` | `img2img_lora` | `qwen/realistic_texture.safetensors` | `done` | `success`，`https://r2-test.aivison.it.com/history/52395689-9485-4f14-a2f5-5775d538842c/original.png` |
+
+收口结果：
+
+- canary 期间曾临时将云测试 `cloud_worker_test_01..07` 置为 `disabled`，避免本地测试 worker 抢单；完成后已全部恢复 `enabled`。
+- 删除 Pod 使用四重真实门禁：`RUNPOD_DRY_RUN=false`、`RUNPOD_AUTOSCALER_ENABLED=true`、`RUNPOD_MAX_PODS_TOTAL=1`、`RUNPOD_MAX_PODS_PER_TYPE=1` 与 `--execute`。
+- 删除后 `runpod list-pods` 显示 `count=0`，`reconcile-managed-pods` 显示 `managed_count=0`、无 orphan。
+- 云测试 Central 队列归零；删除后短时间内 `/system/workers` 可能仍显示 RunPod 最后 heartbeat，属于观测 TTL，不代表 Pod 仍存在。
+
+### 1.5 2026-06-12 GHCR baked profile 镜像 canary 结果
+
+本轮验证“公网可拉取 profile 镜像 + R2 模型热同步”的 RunPod 路径；只操作云测试、GHCR 和一次性 RunPod Pod，未改正式生产、未改 `gpu-252`、未执行 `gpu-002` live canary、未修改本地 GPU 节点 Docker/registry 信任。
+
+镜像构建与发布：
+
+- 从 `allbot-gpu-002:/data/comfy/inst0/custom_nodes/ComfyUI-KJNodes` 只读复制 KJNodes 到 `/tmp/allbot-runpod-kjnodes`。
+- KJNodes commit 校验为 `7967a946c296a74901606e6a8d1195aa2b6f9215`。
+- 计划固定 tag `ghcr.io/giraffu/allbot-comfy-runpod-img2img-lora:20260612-kjnodes7967a946` 已 push，digest 为 `sha256:efe194eb2c88e5cc6e5e3231093bb21c49b95153f7405761dc0bb1460ea0e986`；但 GHCR 新 package 默认为 private，匿名 manifest 检查返回未授权。GitHub REST API 未能稳定切换 package visibility，因此未用该 private package 创建付费 Pod。
+- 将同一 digest 作为 public alias 发布到已有 public package：`ghcr.io/giraffu/allbot-comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946`，匿名 manifest 检查通过。
+- 镜像 smoke：存在 `/default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI-KJNodes`，未包含 Qwen checkpoint/LoRA 业务模型文件；KJNodes 相比 base 只增加约 `56.3MB` 层，远端 linux/amd64 压缩 manifest 约 `5.96GiB`。
+
+预检结果：
+
+- `python -m pytest tests/ops/test_runpod_provider.py tests/ops/test_runpod_bootstrap.py -q`：`26 passed`
+- `runpod validate-key`：通过
+- `runpod list-pods`：创建前 `count=0`
+- `runpod reconcile-managed-pods`：创建前 `managed_count=0`
+- `runpod render-create --task-type img2img_lora --env cloud-test`：确认 imageName 为 GHCR public alias，`RUNPOD_COMFY_CUSTOM_NODES_ENABLED=false`、`RUNPOD_COMFY_KJNODES_ENABLED=false`、`RUNPOD_MODEL_SYNC_ENABLED=true`，模型桶、prefix、manifest 和测试桶正确，secret 均为 RunPod secret reference / redacted。
+
+Pod 与启动记录：
+
+- Pod id：`ln61p9vk99sau7`
+- Pod name：`allbot-runpod-test-img2img-lora`
+- GPU：NVIDIA GeForce RTX 4090
+- 数据中心：Secure Cloud `US-IL-1`
+- 小时成本：`0.69/hr`
+- 镜像：`ghcr.io/giraffu/allbot-comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946`
+- 创建时间：`2026-06-12 08:08:40 UTC`
+- `pod-readiness`：基础设施 ready，network mapping confirmed
+- Central worker：`runpod_test_img2img_lora_ln61p9vk99sau7`，types 为 `img2img,img2img_lora`
+
+三任务结果：
+
+| 用例 | registry_task_id | 任务类型 | LoRA | Central 终态 | Web result |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| plain img2img | `ad27719a-7efd-40e1-8f6a-cf1b2b435577` | `img2img` | 无 | `done` | `success`，`/history/ad27719a-7efd-40e1-8f6a-cf1b2b435577/original.png` |
+| YARN LoRA | `ceb16956-069d-44b5-a7e0-b6e8b768e8f1` | `img2img_lora` | `qwen/YARN_1.0.safetensors` | `done` | `success`，`/3/output_images/ceb16956-069d-44b5-a7e0-b6e8b768e8f1.png` |
+| realistic texture LoRA | `dd6d3391-0076-412e-a059-b2998a717335` | `img2img_lora` | `qwen/realistic_texture.safetensors` | `done` | `success`，`/history/dd6d3391-0076-412e-a059-b2998a717335/original.png` |
+
+收口结果：
+
+- canary 期间临时将云测试 `cloud_worker_test_01..07` 置为 `disabled`，避免本地测试 worker 抢单；完成后已全部恢复 `enabled`。
+- 测试输入图为新上传的无敏感 `512x512` PNG：`user-data-test/web_uploads/3/20260612_7255e635.png`。
+- 删除 Pod 使用四重真实门禁：`RUNPOD_DRY_RUN=false`、`RUNPOD_AUTOSCALER_ENABLED=true`、`RUNPOD_MAX_PODS_TOTAL=1`、`RUNPOD_MAX_PODS_PER_TYPE=1` 与 `--execute`。
+- 删除后 `runpod list-pods` 显示 `count=0`，`reconcile-managed-pods` 显示 `managed_count=0`、无 orphan。
+
+现场约束：
+
+- GHCR 新 package 默认 private；若后续必须使用 `ghcr.io/giraffu/allbot-comfy-runpod-img2img-lora:*` 独立 package，需要先在 GitHub Packages UI 将 package 调为 public，再创建付费 Pod。
+- 当前 openSUSE base path 未提供 `apt-get`，bootstrap 的 sshd 自动安装分支不会生效；direct TCP SSH 可能映射但连接拒绝。RunPod worker heartbeat、Central 状态和任务闭环已证明业务 ready，后续若要依赖 SSH 取证，需要在 profile 镜像内补 `sshd` 或适配 zypper 安装。
+- RunPod SSH 远程调试需要人工从 RunPod UI 提供当次 proxy SSH 信息；知识库不保存某次临时 Pod 的 SSH 用户名/IP/端口。SSH 只作为云测试 canary 或失败现场的短时诊断入口，生产路径不需要 SSH，也不应把 SSH 暴露作为生产 readiness 或自动扩容依赖。
 
 ## 2. 安全契约
 
@@ -78,6 +296,40 @@
 - 重建或替换任何生产 worker。
 - 执行真实 profile switch 或 rollback。
 
+RunPod 真实变更额外门禁：
+
+- 只允许云测试；不得把 RunPod v0 指向正式 Central 或正式任务。
+- `validate-key`、`list-pods`、`render-create`、`pod-readiness` 允许执行。
+- `create-pod/start-pod/stop-pod/delete-pod` 默认 dry-run；真实执行必须同时设置：
+  - `RUNPOD_DRY_RUN=false`
+  - `RUNPOD_AUTOSCALER_ENABLED=true`
+  - `RUNPOD_MAX_PODS_TOTAL=1`
+  - `RUNPOD_MAX_PODS_PER_TYPE=1`
+  - 命令行 `--execute`
+- 真实创建前必须先确认 `runpod list-pods` 中无活动 managed Pod；若有旧 Pod，先 stop/delete 或人工确认，不得绕过成本门禁。
+- 创建后只验证 `runpod_test_img2img_lora_*` 云测试 worker，不提交正式生产任务。
+- 推荐使用安全一键 canary 代替手工串命令。默认 dry-run：
+
+```bash
+python scripts/gpu_pool_controller.py runpod canary \
+  --env-file .env.cloud.test \
+  --quiet
+```
+
+真实执行仍必须显式打开四重门禁和 `--execute`：
+
+```bash
+RUNPOD_DRY_RUN=false \
+RUNPOD_AUTOSCALER_ENABLED=true \
+RUNPOD_MAX_PODS_TOTAL=1 \
+RUNPOD_MAX_PODS_PER_TYPE=1 \
+python scripts/gpu_pool_controller.py runpod canary \
+  --env-file .env.cloud.test \
+  --execute
+```
+
+`runpod canary` 会强制校验 cloud-test、managed Pod 数为 0、GHCR public baked image、`user-data-test` 测试桶、`allbot-model-cache/img2img_lora/2026-06-10/manifest.json` 模型同步、custom node runtime install 关闭、secret reference 口径正确；真实阶段自动恢复 `cloud_worker_test_01..07`、删除 Pod、再跑 list/reconcile。摘要不得输出 JWT、agent token、RunPod/R2 key、presigned URL 或完整 create/env payload。
+
 禁止：
 
 - 用 `--remove-orphans` 清理 worker project。
@@ -86,6 +338,7 @@
 - 在未 drain 的情况下用强制重启代替能力切换。
 - 把 `POOL_IMAGE_REF` 当作当前 ComfyUI 实际镜像。
 - 把 `runtime-render` 输出直接用于 `gpu-226` 或任何 `host_service` runtime。
+- 把 RunPod API key、R2 access key、R2 secret key、agent token、presigned URL 写入文档、日志、issue、commit message 或聊天。
 
 ## 3. Controller 命令参考
 
@@ -135,6 +388,81 @@ python scripts/gpu_pool_controller.py rollback-profile --assignment lan-002-8188
 - `host_service` 永远不生成 Docker 操作。
 - `--execute` 前必须检查 `comfy_runtime_managed=true`。
 - 必须先设置 worker `draining`，再等待 Comfy queue 和目标 worker running 归零。
+
+### 3.3 RunPod Provider v0 命令
+
+加载云测试配置：
+
+```bash
+set -a
+source .env.cloud.test
+set +a
+```
+
+只读验证：
+
+```bash
+python scripts/gpu_pool_controller.py runpod validate-key
+python scripts/gpu_pool_controller.py runpod list-pods
+python scripts/gpu_pool_controller.py runpod render-create --task-type img2img_lora --env cloud-test
+```
+
+创建前 readiness / 成本检查：
+
+```bash
+python scripts/gpu_pool_controller.py runpod reconcile-managed-pods
+python scripts/gpu_pool_controller.py runpod list-pods
+```
+
+真实创建 1 个云测试 Pod，只有在确认 `list-pods` 无活动 managed Pod 后执行：
+
+```bash
+RUNPOD_DRY_RUN=false \
+RUNPOD_AUTOSCALER_ENABLED=true \
+RUNPOD_MAX_PODS_TOTAL=1 \
+RUNPOD_MAX_PODS_PER_TYPE=1 \
+python scripts/gpu_pool_controller.py runpod create-pod \
+  --task-type img2img_lora \
+  --env cloud-test \
+  --execute
+```
+
+创建后检查 RunPod 基础设施是否 ready：
+
+```bash
+python scripts/gpu_pool_controller.py runpod get-pod --pod-id <pod_id>
+python scripts/gpu_pool_controller.py runpod pod-readiness --pod-id <pod_id>
+```
+
+停止或删除测试 Pod：
+
+```bash
+RUNPOD_DRY_RUN=false \
+RUNPOD_AUTOSCALER_ENABLED=true \
+RUNPOD_MAX_PODS_TOTAL=1 \
+RUNPOD_MAX_PODS_PER_TYPE=1 \
+python scripts/gpu_pool_controller.py runpod stop-pod \
+  --pod-id <pod_id> \
+  --task-type img2img_lora \
+  --execute
+
+RUNPOD_DRY_RUN=false \
+RUNPOD_AUTOSCALER_ENABLED=true \
+RUNPOD_MAX_PODS_TOTAL=1 \
+RUNPOD_MAX_PODS_PER_TYPE=1 \
+python scripts/gpu_pool_controller.py runpod delete-pod \
+  --pod-id <pod_id> \
+  --task-type img2img_lora \
+  --execute
+```
+
+预期行为：
+
+- `validate-key` 只验证 API 可用，不创建 Pod。
+- `list-pods` 默认只列出 `RUNPOD_MANAGED=true` 或 `allbot-*` 命名 Pod。
+- `render-create` 输出创建请求但不调用 POST；输出中的 secret reference 会显示为 `<redacted>`。
+- `create-pod --execute` 会先 reconcile 现有 managed Pod，再检查总数/单类型/成本门禁。
+- `pod-readiness` 只判断 RunPod 基础设施映射信号；业务 ready 仍以云测试 Central `/system/workers` 中 `runpod_test_img2img_lora_*` heartbeat 为准。
 
 ## 4. 标准 Runtime Schema
 
@@ -369,6 +697,108 @@ python scripts/gpu_pool_controller.py runtime-render --assignment lan-226-8188-w
 - `cloud_worker_test_06/07` 可恢复默认类型。
 - 不影响正式 worker 6/7 的默认生产 `8188/8189`。
 
+### Phase 1R：RunPod 云测试 `img2img_lora` canary
+
+状态：已完成。2026-06-12 已创建 1 个 RunPod RTX 4090 云测试 Pod，完成 R2 模型同步、ComfyUI/relay/agent 启动、`img2img/img2img_lora` 三任务真实闭环，并删除 Pod 确认无 orphan。
+
+目标：在不碰正式任务、不碰 `gpu-252` 现场的前提下，创建 1 个 RunPod GPU Pod，让它作为 `runpod_test_img2img_lora_*` 接入云测试 Central，并完成真实 `img2img/img2img_lora` 任务闭环。
+
+执行结论：
+
+- Pod：`if082v0w8eowow`，NVIDIA GeForce RTX 4090，`yanwk/comfyui-boot:cu128-slim`
+- 发现基础镜像缺少 `ComfyUI-KJNodes`，导致首个任务缺 `GetImageSizeAndCount`；已现场修复并固化到 bootstrap
+- 成功任务：`744a6d0a-928f-438d-8644-4465fb64ecce`、`ae9ae529-b6be-44cb-8feb-999ec19a8448`、`52395689-9485-4f14-a2f5-5775d538842c`
+- 清理：云测试 worker 已恢复 enabled，RunPod `list-pods count=0`，`reconcile-managed-pods managed_count=0`
+
+以下命令保留为后续复跑或回归 playbook。
+
+准入条件：
+
+1. `python -m pytest tests/ops/test_runpod_provider.py -q` 通过。
+2. `python scripts/gpu_pool_controller.py runpod validate-key` 通过。
+3. `python scripts/gpu_pool_controller.py runpod list-pods` 显示无活动 managed Pod。
+4. `python scripts/gpu_pool_controller.py runpod render-create --task-type img2img_lora --env cloud-test` 中：
+   - `RUNPOD_MODEL_SYNC_ENABLED=true`
+   - `RUNPOD_MODEL_BUCKET=allbot-model-cache`
+   - `RUNPOD_MODEL_PREFIX=img2img_lora/2026-06-10`
+   - `RUNPOD_MODEL_MANIFEST_KEY=img2img_lora/2026-06-10/manifest.json`
+   - `RUNPOD_MODEL_ACCESS_KEY=<redacted>`
+   - `RUNPOD_MODEL_SECRET_KEY=<redacted>`
+   - `MINIO_RESULT_BUCKET=user-data-test`
+   - 不包含任何明文 secret。
+5. 成本门禁保持总数 1 Pod、单类型 1 Pod。
+
+执行顺序：
+
+1. 打开真实创建门禁，创建 1 个 Pod：
+
+   ```bash
+   set -a
+   source .env.cloud.test
+   set +a
+
+   RUNPOD_DRY_RUN=false \
+   RUNPOD_AUTOSCALER_ENABLED=true \
+   RUNPOD_MAX_PODS_TOTAL=1 \
+   RUNPOD_MAX_PODS_PER_TYPE=1 \
+   python scripts/gpu_pool_controller.py runpod create-pod \
+     --task-type img2img_lora \
+     --env cloud-test \
+     --execute
+   ```
+
+2. 记录返回的 `pod_id`，轮询基础设施 readiness：
+
+   ```bash
+   python scripts/gpu_pool_controller.py runpod pod-readiness --pod-id <pod_id>
+   ```
+
+3. RunPod 日志预期顺序：
+   - `syncing RunPod model bundle`
+   - 主模型和 5 个 LoRA 下载/跳过校验
+   - `ComfyUI ready`
+   - `remote relay ready`
+   - `starting comfy agent`
+4. 云测试 Central 预期看到 `runpod_test_img2img_lora_<pod_id>` healthy，task types 为 `img2img,img2img_lora`。
+5. 提交 3 个云测试任务：
+   - 至少 1 个无 LoRA `img2img`
+   - 至少 1 个 `qwen/YARN_1.0.safetensors`
+   - 至少 1 个 `qwen/realistic_texture.safetensors` 或其它 manifest 中的 qwen LoRA
+6. 验证：
+   - worker 能 pop 任务
+   - ComfyUI prompt 不再报 LoRA `value_not_in_list`
+   - 结果上传到 R2 `user-data-test`
+   - Central `/complete` 成功
+   - Web result 可读
+7. canary 完成后 drain/stop/delete Pod，确认 RunPod 无 orphan Pod：
+
+   ```bash
+   RUNPOD_DRY_RUN=false \
+   RUNPOD_AUTOSCALER_ENABLED=true \
+   RUNPOD_MAX_PODS_TOTAL=1 \
+   RUNPOD_MAX_PODS_PER_TYPE=1 \
+   python scripts/gpu_pool_controller.py runpod delete-pod \
+     --pod-id <pod_id> \
+     --task-type img2img_lora \
+     --execute
+   ```
+
+失败判定与处理：
+
+- 如果 Pod 长时间没有基础设施 readiness，优先换可用 GPU/区域，不改生产 worker。
+- 如果 ComfyUI ready 前失败，保留 Pod 进入 SSH 诊断；只检查模型同步、ComfyUI 路径、Python 依赖和启动命令。
+- 如果出现 LoRA `value_not_in_list`，先核对 R2 manifest、RunPod Pod 内 `models/loras/qwen/*`、ComfyUI `/object_info`，不要直接改 workflow。
+- 如果结果上传失败，先核对 Pod env 中 R2 测试桶 secret reference、`MINIO_ENDPOINT`、`MINIO_*_BUCKET=user-data-test` 和 relay/sidecar 日志。
+- 如果云测试 Central 未见 heartbeat，先查 `AGENT_SECRET_TOKEN` RunPod secret reference、`CENTRAL_API_URL=https://worker-central-test.aivison.it.com` 和 Cloudflare Tunnel。
+
+验收：
+
+- 只创建过 1 个 RunPod Pod，canary 后已删除或停止。
+- `runpod_test_img2img_lora_*` 在云测试 Central healthy 期间能接任务。
+- 3 个测试任务均完成，结果对象在 `user-data-test` 可读。
+- `allbot-model-cache` 无 multipart 残留。
+- 正式生产队列、`cloud_prod_worker_05`、`gpu-252` 未被改动。
+
 ### Phase 1C：`gpu-002` 受控切换执行器
 
 状态：Phase 1B 通过后再做。
@@ -395,17 +825,19 @@ python scripts/gpu_pool_controller.py runtime-render --assignment lan-226-8188-w
 
 ### Phase 2：`gpu-252` 48G 正式候选
 
-状态：等待 Phase 1 完成。
+状态：暂缓。`gpu-252` 当前只识别/可用 1 张 4090，`cloud_prod_worker_04` / `gpu-252:8188` 不通；`cloud_prod_worker_05` / `gpu-252:8189` 正常且受保护。Phase 2 不再作为当前补 `img2img_lora` 容量的首选路径；短期补容量优先沿用已通过 Phase 1R 的 RunPod v0 云测试回归路径，生产自动扩容仍需另行开关和验收。
 
 目标：
 
-- 将 `gpu-252` 的 `img2img_lora` 与 `wan22_video_v2` 标准化为 Controller managed runtime。
-- 验证 48G profile、共享模型目录去重和回滚速度。
+- 在硬件/驱动/GPU 可见性恢复后，再将 `gpu-252` 的 `img2img_lora` 与 `wan22_video_v2` 标准化为 Controller managed runtime。
+- 验证 profile、共享模型目录去重和回滚速度。
 
 准入条件：
 
 - Phase 1B 至少完成一次备用端口真实 canary。
 - Phase 1C 执行器有 focused tests。
+- `gpu-252` 物理 GPU/驱动问题已人工修复，`comfy0` 恢复方案已单独审批。
+- `cloud_prod_worker_05` 保护状态解除或有明确替代容量。
 - `wan22_video_v2` profile 镜像已在 registry 可 pull。
 
 验收：
@@ -464,6 +896,8 @@ python scripts/gpu_pool_controller.py runtime-render --assignment lan-226-8188-w
 
 ### Phase 6：RunPod Provider 扩展
 
+状态：Provider v0 已实现，Phase 1R 云测试真实任务 canary 已完成；尚未开启生产自动扩容。
+
 RunPod 不进入本地 SSH 节点池，而是接入 provider 抽象：
 
 ```text
@@ -480,6 +914,28 @@ RunPodProvider:
 
 RunPod 侧优先从云端模型仓库、Hugging Face、R2 或 S3 热缓存拉模型，不从本地主服务器跨公网拉大模型。
 
+当前 v0 固定策略：
+
+- 只使用 Pods Provider，不切 Serverless。
+- 只支持云测试 `img2img/img2img_lora`。
+- 总 Pod 上限 1，单类型 Pod 上限 1。
+- 创建请求来自 `runpod render-create/create-pod`，不走 LAN SSH inventory。
+- 模型来自 R2 `allbot-model-cache`，结果写入 R2 `user-data-test`。
+- Pod 不默认开放 ComfyUI 公网端口；只有 SSH 诊断端口可按 RunPod 配置临时使用。
+- RunPod SSH 仅作为人工诊断通道；需要调试时由用户提供 RunPod UI 当次 proxy SSH 信息，direct TCP SSH 只作为备用。生产自动扩容不依赖 SSH，ready 判定依赖 `pod-readiness`、Central heartbeat 和真实任务 canary。
+- v0 不自动修复 `gpu-252`，不改变生产 task routing。
+- `img2img_lora` profile 镜像构建入口已新增：`remote_workers/docker/runpod_profiles/img2img_lora/Dockerfile`、`Dockerfile.local-kjnodes` 与 `scripts/build_runpod_profile_image.sh`。镜像只包含 ComfyUI 基础环境、系统依赖和 custom nodes，不包含 Qwen checkpoint/LoRA 模型；模型仍从 R2 manifest 热同步。
+- 2026-06-12 本机已构建并 smoke test 本地 tag `allbot/comfy-runpod-img2img-lora:local-20260612`，镜像内 `ComfyUI-KJNodes` commit 为 `7967a946c296a74901606e6a8d1195aa2b6f9215`，未包含业务模型文件。
+- 2026-06-12 GHCR public alias `ghcr.io/giraffu/allbot-comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946` 已完成匿名 manifest 检查和 RunPod 三任务 canary；固定独立 package tag `ghcr.io/giraffu/allbot-comfy-runpod-img2img-lora:20260612-kjnodes7967a946` 已 push 但 package 当前 private，付费 Pod 不使用该 private tag。
+
+后续扩展到生产前必须新增：
+
+- 真实 drain 策略：RunPod worker 先 `draining`，等待 running 归零，再 stop/delete。
+- orphan Pod watchdog：定期 list managed Pod 并对非预期 Pod 报警。
+- 成本预算策略：从固定 1 Pod 扩展到按类型/单价/余额/队列压力计算。
+- 多模型 profile：`img2img_lora` 之外的模型包必须有独立 prefix/manifest 和 canary。
+- 生产开关：生产自动扩容必须另设显式开关，不能复用云测试 `RUNPOD_AUTOSCALER_ENABLED`。
+
 ## 6. Profile 镜像矩阵
 
 目标镜像命名：
@@ -493,6 +949,54 @@ RunPod 侧优先从云端模型仓库、Hugging Face、R2 或 S3 热缓存拉模
 192.168.1.115:5000/allbot/worker-agent:<git_sha>
 ```
 
+RunPod v0 镜像/template 口径：
+
+```text
+RUNPOD_TEMPLATE_ID_IMG2IMG_LORA=<RunPod template id>
+RUNPOD_IMAGE_NAME_IMG2IMG_LORA=<public registry image, when not using template>
+RUNPOD_DOCKER_START_SCRIPT_FILE_IMG2IMG_LORA=remote_workers/scripts/runpod_bootstrap_from_git.sh
+RUNPOD_CONTAINER_DISK_GB=80
+RUNPOD_VOLUME_GB=0
+RUNPOD_MODEL_BUCKET=allbot-model-cache
+RUNPOD_MODEL_PREFIX=img2img_lora/2026-06-10
+```
+
+`img2img_lora` RunPod profile 镜像构建：
+
+```bash
+scripts/build_runpod_profile_image.sh \
+  --image-ref ghcr.io/giraffu/allbot-comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946
+```
+
+如果 GitHub 在构建时不可用，可使用已验证的本地/导出 KJNodes 目录：
+
+```bash
+scripts/build_runpod_profile_image.sh \
+  --image-ref ghcr.io/giraffu/allbot-comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946 \
+  --kjnodes-source /path/to/ComfyUI-KJNodes
+```
+
+发布到公网 registry 需要先确认 namespace 和 `docker login`，然后显式传 `--push`：
+
+```bash
+scripts/build_runpod_profile_image.sh \
+  --image-ref ghcr.io/giraffu/allbot-comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946 \
+  --kjnodes-source /path/to/ComfyUI-KJNodes \
+  --push
+```
+
+使用 baked profile 镜像复跑 RunPod canary 时，应关闭启动期 custom node 安装，但保持 R2 模型同步：
+
+```bash
+RUNPOD_USE_TEMPLATE_IMG2IMG_LORA=false \
+RUNPOD_IMAGE_NAME_IMG2IMG_LORA=ghcr.io/giraffu/allbot-comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946 \
+RUNPOD_COMFY_CUSTOM_NODES_ENABLED=false \
+RUNPOD_COMFY_KJNODES_ENABLED=false \
+python scripts/gpu_pool_controller.py runpod render-create \
+  --task-type img2img_lora \
+  --env cloud-test
+```
+
 镜像原则：
 
 - 镜像包含 ComfyUI、Python 环境、custom nodes、系统依赖和启动脚本。
@@ -500,6 +1004,8 @@ RunPod 侧优先从云端模型仓库、Hugging Face、R2 或 S3 热缓存拉模
 - 按 profile 拆分，不做一个无限膨胀的大一统镜像。
 - 保留 debug/base 镜像用于人工排障。
 - 任何 profile 镜像进入 live canary 前，必须能被 `runtime-render` 引用并从目标 GPU 节点 pull。
+- RunPod 镜像/template 不依赖本地 `192.168.1.115:5000` registry；必须使用 RunPod 可拉取的公网 registry/template，或使用官方/基础镜像 + bootstrap 脚本。
+- RunPod 模型不从本地主服务器或局域网 registry 跨公网拉取，统一从 R2/Hugging Face/云端热缓存获取。
 
 ## 7. 回滚策略
 
@@ -564,6 +1070,15 @@ previous:
 - 确认 R2 测试桶或生产桶目标。
 - 确认没有使用 `--remove-orphans`。
 
+RunPod 执行前：
+
+- 确认 `runpod list-pods` 无活动 managed Pod。
+- 确认 `.env.cloud.test` 中 RunPod 真实执行开关仍默认关闭。
+- 确认 `render-create` 里的 `RUNPOD_MODEL_*` 指向 `allbot-model-cache/img2img_lora/2026-06-10`。
+- 确认 RunPod Secrets 只以 `{{ RUNPOD_SECRET_* }}` reference 形式进入 Pod。
+- 确认 `MINIO_*_BUCKET=user-data-test`，避免测试 Pod 写入正式结果桶。
+- 确认本轮最高成本仍是 1 个 Pod，canary 后必须 stop/delete。
+
 交付前：
 
 - focused tests 通过。
@@ -576,28 +1091,96 @@ previous:
 - Phase 1B 只读预检已完成，尚未执行 `gpu-002` 备用端口 live canary。
 - `allbot/comfy-cu130-video-basic:baseline` 与 `allbot/comfy-cu128-img2img:baseline` 尚未发布到本地 registry。
 - `gpu-002` 生产 `8188/8189` 队列预检时非空，live canary 前必须等待维护条件满足。
+- `gpu-252` 当前不适合作为 `img2img_lora` 恢复入口：`worker_04` / `8188` 不通，`worker_05` / `8189` 仍可用且不得碰。
 - `runtime-apply/switch-profile/rollback-profile --execute` 尚未实现真实执行器。
 - profile 专用镜像矩阵尚未全部构建和验证。
 - `runtime-plan` 尚未做远端磁盘/swap/registry 信任状态采集。
-- 模型 bundle sync 仍是计划能力，尚未接入安全执行器。
-- Comfy real task canary 尚未自动化；当前 `canary` 只做 HTTP/object_info 级验证。
+- 本地 GPU 模型 bundle sync 仍未接入安全执行器。
+- RunPod v0 已完成真实业务 Pod 的 ComfyUI `/object_info` 与三任务验证；后续扩展到其它 profile 前仍需为每个 profile 单独准备 manifest/custom nodes/canary。
+- Comfy real task canary 尚未自动化；当前本地 `canary` 只做 HTTP/object_info 级验证。
 - Central Redis 偶发写连接 reset 是独立 P1 生产观察项，应另起修复，不要混入 runtime 接管。
 
-## 10. 下一步推荐
+## 10. 下一窗口推荐
 
-下一轮最小闭环：
+下一窗口最小闭环：RunPod Phase 1R 与 GHCR baked profile canary 已通过，回到本地 GPU 容器化路线；先补齐 Phase 1B profile 镜像，再等待 `gpu-002` 维护条件执行备用端口 live canary。
 
-1. 先补齐或重新定义 Phase 1B 使用的目标镜像：
-   - 推荐补齐并 push `allbot/comfy-cu130-video-basic:baseline`
-   - 推荐补齐并 push `allbot/comfy-cu128-img2img:baseline`
-   - 若短期只想验证 runtime 挂载/端口，也可以另行决定先使用现有 `allbot/comfyui-boot:*gpu002*` 镜像，但必须同步修改 plan 口径，避免把它当 profile 专用镜像验收
-2. 重新运行只读预检：
-   - `python -m pytest tests/ops/test_gpu_pool_controller.py -q`
-   - `runtime-plan/render` 覆盖 worker 06 的 `8190` 与 worker 07 的 `8191`
-   - registry target tags 可读
-   - `gpu-002` `8188/8189` queue 为空或达到维护条件
-3. 用户确认维护窗口后，执行 `gpu-002` 备用端口 live canary。
-4. live canary 通过后，记录测试 R2 结果、`/system/workers` 状态和备用 runtime 清理结果。
-5. 再实现 `runtime-apply --execute` 的最小安全执行器。
+如需复跑 RunPod 云测试 canary，使用以下回归 playbook。
 
-这条路线的原则：先把已经是 Docker 的 `gpu-002` 用备用端口纳入 Controller 验证，再考虑替换生产端口；最后才迁移最特殊的 `gpu-226`。
+1. 先确认没有遗留上传或 transfer Pod：
+
+   ```bash
+   set -a
+   source .env.cloud.test
+   set +a
+
+   python scripts/gpu_pool_controller.py runpod list-pods
+   ```
+
+   预期：无活动 managed Pod；若有旧 `allbot-*` Pod，先确认用途再 stop/delete。
+
+2. 运行本地 focused tests 和 dry-run：
+
+   ```bash
+   python -m pytest tests/ops/test_runpod_provider.py -q
+   python scripts/gpu_pool_controller.py runpod validate-key
+   python scripts/gpu_pool_controller.py runpod render-create --task-type img2img_lora --env cloud-test
+   ```
+
+   重点检查：`RUNPOD_MODEL_SYNC_ENABLED=true`、`allbot-model-cache`、`img2img_lora/2026-06-10`、`user-data-test`、无明文 secret。
+
+3. 创建 1 个 RunPod 云测试 Pod：
+
+   ```bash
+   RUNPOD_DRY_RUN=false \
+   RUNPOD_AUTOSCALER_ENABLED=true \
+   RUNPOD_MAX_PODS_TOTAL=1 \
+   RUNPOD_MAX_PODS_PER_TYPE=1 \
+   python scripts/gpu_pool_controller.py runpod create-pod \
+     --task-type img2img_lora \
+     --env cloud-test \
+     --execute
+   ```
+
+   `.env.cloud.test` 已默认固定 GHCR baked image、关闭启动期 custom node install，并保持 R2 模型同步；临时覆盖这些变量前必须先跑 `render-create` 核对。
+
+4. 拿返回的 `pod_id` 做 readiness 与日志观察：
+
+   ```bash
+   python scripts/gpu_pool_controller.py runpod pod-readiness --pod-id <pod_id>
+   ```
+
+   观察 RunPod 日志直到出现 `ComfyUI ready`、`remote relay ready`、`starting comfy agent`。
+
+5. 在云测试 Central 验证 `runpod_test_img2img_lora_<pod_id>` healthy，再提交 3 个云测试任务：
+   - `img2img` 无 LoRA。
+   - `img2img_lora` 使用 `qwen/YARN_1.0.safetensors`。
+   - `img2img_lora` 使用 `qwen/adjust_pussy_anus.safetensors`、`qwen/flat_chest_hairless.safetensors`、`qwen/penis.safetensors` 或 `qwen/realistic_texture.safetensors` 中至少一个，确保不是只测两类常用 LoRA。
+
+6. 验证闭环：
+   - worker pop 成功。
+   - ComfyUI 执行成功。
+   - R2 `user-data-test` 上传成功。
+   - Central `/complete` 成功。
+   - Web result 可读。
+
+7. canary 完成后删除 Pod：
+
+   ```bash
+   RUNPOD_DRY_RUN=false \
+   RUNPOD_AUTOSCALER_ENABLED=true \
+   RUNPOD_MAX_PODS_TOTAL=1 \
+   RUNPOD_MAX_PODS_PER_TYPE=1 \
+   python scripts/gpu_pool_controller.py runpod delete-pod \
+     --pod-id <pod_id> \
+     --task-type img2img_lora \
+     --execute
+   ```
+
+8. 记录交付结果：
+   - Pod ID、GPU 类型、镜像/template。
+   - 模型同步耗时与是否命中 skip existing。
+   - 3 个任务 ID 和结果 URL 可读结论。
+   - RunPod 删除后 `list-pods count=0`。
+   - 正式生产队列与 `cloud_prod_worker_05` 未受影响。
+
+RunPod canary 通过后，再回到本地路线：补齐 Phase 1B profile 镜像、等待 `gpu-002` 维护条件、执行备用端口 live canary，最后才做 `runtime-apply --execute` 的安全执行器。

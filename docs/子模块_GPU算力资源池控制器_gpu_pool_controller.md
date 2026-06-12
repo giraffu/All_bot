@@ -75,6 +75,9 @@ python scripts/gpu_pool_controller.py runpod create-pod \
 python scripts/gpu_pool_controller.py runpod validate-key
 python scripts/gpu_pool_controller.py runpod list-pods
 python scripts/gpu_pool_controller.py runpod reconcile-managed-pods
+python scripts/gpu_pool_controller.py runpod canary \
+  --env-file .env.cloud.test \
+  --quiet
 ```
 
 `render-create` 不需要 `RUNPOD_API_KEY`，只渲染 `POST /pods` 请求；`create-pod` 默认仍是 dry-run。真实 `create/start/stop/delete` 必须同时显式满足：
@@ -88,6 +91,22 @@ RUNPOD_MAX_PODS_PER_TYPE=1
 
 并建议设置 `RUNPOD_PROJECTED_COST_PER_HR_IMG2IMG_LORA` 与 `RUNPOD_MAX_HOURLY_COST_USD` 形成小时成本门禁。所有 CLI 输出会脱敏 API key、agent token、R2 secret 和 presigned URL signature。
 
+`runpod canary` 是当前推荐的一键云测试 canary 编排命令。默认不创建 Pod，只执行 `validate-key`、`list-pods`、`reconcile-managed-pods` 和 `render-create` 预检，并校验 render 结果必须是 public GHCR baked image、`CENTRAL_API_URL=https://worker-central-test.aivison.it.com`、测试桶 `user-data-test`、模型桶 `allbot-model-cache`、`img2img_lora/2026-06-10/manifest.json`、custom node runtime install 关闭、secret 均为 RunPod secret reference。真实执行示例：
+
+```bash
+RUNPOD_DRY_RUN=false \
+RUNPOD_AUTOSCALER_ENABLED=true \
+RUNPOD_MAX_PODS_TOTAL=1 \
+RUNPOD_MAX_PODS_PER_TYPE=1 \
+python scripts/gpu_pool_controller.py runpod canary \
+  --env-file .env.cloud.test \
+  --prompt "图片中出现一个黑人女性" \
+  --download-results-dir /tmp/allbot_runpod_canary/results \
+  --execute
+```
+
+真实 `runpod canary` 会按顺序完成：预检 RunPod managed Pod 为 0 -> Web/Central 测试入口健康检查 -> 创建 1 个 cloud-test Pod -> 等 Pod readiness 与 `runpod_test_img2img_lora_<pod_id>` heartbeat -> 临时禁用 `cloud_worker_test_01..07` -> 生成并上传一张无敏感 512x512 PNG，或用 `--input-object-key user-data-test/...` 复用测试桶已有图片 -> 串行提交 `img2img`、`img2img_lora + qwen/YARN_1.0.safetensors`、`img2img_lora + qwen/realistic_texture.safetensors` -> 等 Central `done` 与 Web result `success` -> 可选下载结果到 `--download-results-dir` -> 恢复测试 worker -> 删除 Pod -> 再跑 list/reconcile 确认无 orphan。命令只服务云测试；结果摘要只记录 object key、task id、Central/Web 终态、下载后的本地路径和去掉 query string 的 result path，不输出 JWT、agent token、presigned URL 或完整 create/env payload。
+
 RunPod v0 创建 Pod 时默认不把本地 `.env.cloud.test` 中的 `AGENT_SECRET_TOKEN`、`MINIO_ACCESS_KEY`、`MINIO_SECRET_KEY` 明文写入 create JSON，而是引用 RunPod Secrets：
 
 ```dotenv
@@ -100,7 +119,35 @@ MINIO_SECRET_KEY={{ RUNPOD_SECRET_allbot_cloud_test_r2_secret_key }}
 
 RunPod REST `Pod` schema 没有 `uptimeSeconds` 字段，不要把字段缺失当作 `uptime=0` 作为 readiness 结论。排查 Pod 初始化时以 RunPod UI Telemetry、REST `publicIp`、REST `portMappings` 和 `runpodctl ssh info` 为主；官方文档说明 `portMappings` 为空表示 Pod 仍在初始化，绿色 Running 点只表示 Pod 处于期望运行状态，不代表容器和服务已经 ready。AllBot worker 的业务 ready 仍以云测试 Central `/system/workers` 出现 `runpod_test_img2img_lora_*` healthy heartbeat 为准。
 
+RunPod SSH 远程调试口径：
+- RunPod SSH 只用于云测试 canary 或失败现场的短时人工诊断，不是生产自动扩容、生产任务执行或 readiness 判定的依赖。
+- 如需 Codex/运维侧进入 Pod 排查，需要由人工从 RunPod UI 的 Connect 面板提供当次有效的 SSH 信息，优先提供 RunPod proxy SSH 命令；direct TCP `root@<public_ip> -p <port>` 只作为备用，因为它依赖镜像内 `sshd` 实际存在并启动。
+- RunPod Pod id、proxy 用户名、公网 IP、端口映射都可能随 Pod 重建变化，知识库不保存某次临时 SSH 地址或端口；只记录操作口径。
+- SSH 排障只允许查看模型同步、ComfyUI 路径、Python/custom node 依赖、bootstrap 日志和 relay/agent 启动状态；不得把 RunPod API key、R2 key、agent token、presigned URL、完整 env 或完整 create payload 贴入文档/聊天。
+- 若需要保留失败现场，可在云测试 canary 中临时设置 `RUNPOD_KEEPALIVE_ON_BOOTSTRAP_FAILURE=true`，诊断完成后仍必须 stop/delete Pod 并跑 `list-pods` / `reconcile-managed-pods` 确认无 orphan。
+- 生产路径不需要 SSH：生产自动扩容若未来开启，应依赖镜像、R2 manifest、`pod-readiness`、Central heartbeat、任务 canary、drain/delete 和 orphan watchdog；不得要求生产 Pod 暴露永久 SSH 入口。
+
+RunPod 正式 worker Central 入口口径：
+- 正式 RunPod Pod 不应访问 `api.aivison.it.com`，也不能访问仅 Tailscale 可达的 `100.107.220.127:8003`；应使用 worker 专用 Cloudflare Tunnel hostname。
+- 当前已验证的正式 worker hostname 是 `https://worker-central.aivison.it.com`，回源正式 Central `http://100.107.220.127:8003`，`/health` 返回 Central OK。
+- 2026-06-12 已在正式云机新增 `cloudflared-runpod-prod.service`，使用 root-only token file，回源同一个正式 Central，供 RunPod-Prod 独立 tunnel 使用。若要使用新的 RunPod 专用域名，需先在 Cloudflare Public Hostname 绑定该 tunnel 并验证 `/health`，再把它写入 RunPod profile 的 `CENTRAL_API_URL`。
+- 正式 Pod 的 `AGENT_ID` 应使用稳定、可 drain 的前缀，例如 `runpod_prod_img2img_manual_01`；首次手动接入建议只开放 `SUPPORTED_TASK_TYPES=img2img`，确认端到端结果后再扩到 `img2img,img2img_lora`。
+
 2026-06-11 已完成一次云测试真实 RunPod Pod 前置闭环验证：使用 `yanwk/comfyui-boot:cu128-slim` 作为基础镜像、`dockerStartCmd` 注入 `remote_workers/scripts/runpod_bootstrap_from_git.sh`，不使用 RunPod Network Volume，创建 1 个 RTX 4090 Pod 后自动完成 `ComfyUI /system_stats ready -> remote relay /health ready -> comfy_agent heartbeat`。Central `/system/workers` 可看到 `runpod_test_img2img_lora_*`，状态为 `idle`，能力为 `img2img,img2img_lora`；验证后已 stop/delete Pod，`runpod list-pods` 确认无 orphan managed Pod。
+
+2026-06-12 已完成 Phase 1R 真实业务 canary：创建 1 个 RunPod RTX 4090 Pod `if082v0w8eowow`，R2 manifest 6 个模型文件同步到 ComfyUI `models`，Central 注册 `runpod_test_img2img_lora_if082v0w8eowow`，并完成 3 个真实 Web 任务闭环：
+- `img2img` 无 LoRA：`744a6d0a-928f-438d-8644-4465fb64ecce`
+- `img2img_lora` + `qwen/YARN_1.0.safetensors`：`ae9ae529-b6be-44cb-8feb-999ec19a8448`
+- `img2img_lora` + `qwen/realistic_texture.safetensors`：`52395689-9485-4f14-a2f5-5775d538842c`
+
+三任务均由 RunPod worker pop，Central 终态 `done`，Web result `success`，结果对象落到 `user-data-test` 的 `history/<task_id>/original.png`。完成后已恢复临时禁用的云测试 worker，删除 Pod，`runpod list-pods count=0`，`reconcile-managed-pods managed_count=0`。
+
+2026-06-12 已完成 GHCR baked profile 镜像真实 canary：使用公网可匿名 pull 的 `ghcr.io/giraffu/allbot-comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946` 创建 1 个 RunPod RTX 4090 Pod `ln61p9vk99sau7`，镜像内 baked `ComfyUI-KJNodes`，启动期关闭 custom node runtime install，模型仍从 `allbot-model-cache/img2img_lora/2026-06-10/manifest.json` 热同步。Central 注册 `runpod_test_img2img_lora_ln61p9vk99sau7`，完成 3 个真实 Web 任务闭环：
+- `img2img` 无 LoRA：`ad27719a-7efd-40e1-8f6a-cf1b2b435577`
+- `img2img_lora` + `qwen/YARN_1.0.safetensors`：`ceb16956-069d-44b5-a7e0-b6e8b768e8f1`
+- `img2img_lora` + `qwen/realistic_texture.safetensors`：`dd6d3391-0076-412e-a059-b2998a717335`
+
+三任务均 Central `done`、Web result `success`，完成后已恢复 `cloud_worker_test_01..07` 为 `enabled`，删除 Pod，`runpod list-pods count=0`，`reconcile-managed-pods managed_count=0`。同 digest 的独立 package tag `ghcr.io/giraffu/allbot-comfy-runpod-img2img-lora:20260612-kjnodes7967a946` 已 push 但 GHCR package 仍为 private；后续付费 Pod 应继续使用上面的 public alias，或先在 GitHub Packages UI 将独立 package 调为 public。
 
 本轮排查得到的 RunPod v0 启动约束：
 - `runpod_bootstrap_from_git.sh` 必须把 `remote_workers/` 根目录加入 `PYTHONPATH`，否则 `comfy_agent/workflow_patcher.py` 无法 import `src.workflow_mapping_validation`。
@@ -108,8 +155,12 @@ RunPod REST `Pod` schema 没有 `uptimeSeconds` 字段，不要把字段缺失�
 - `remote_relay` 当前以 `/health` 作为可靠 ready probe；本地代码已兼容 `/ready`，bootstrap 默认等 `/health`。
 - RunPod REST / runpodctl 当前不提供稳定容器日志读取接口；UI Logs 或 SSH proxy 是主要现场取证入口。`ports=22/tcp` 的 direct TCP 可能映射出来但仍连接拒绝，不能把 direct SSH 当成自动化依赖。
 - 诊断 canary 可开启 `RUNPOD_KEEPALIVE_ON_BOOTSTRAP_FAILURE=true` 保留失败现场；真实生产扩容应在镜像稳定后关闭或缩短保留策略。
+- `yanwk/comfyui-boot:cu128-slim` 不是本地 GPU 正式 ComfyUI runtime 镜像。R2 manifest 只同步模型文件，不同步 `custom_nodes/`；首个真实任务曾因缺少 `GetImageSizeAndCount` 失败，该节点来自 `ComfyUI-KJNodes`。bootstrap 现在会在启动 ComfyUI 前默认安装 `ComfyUI-KJNodes`，并安装其 `requirements.txt`；如未来改用自建 profile 镜像，也必须确保镜像或 bootstrap 提供同等 custom node 集。
+- 2026-06-12 对“生产已验证镜像能否直接用于 RunPod”做了只读验证：`gpu-002` 生产 `comfy0` 实际 image 为 `yanwk/comfyui-boot:cu128-slim`，custom nodes/models/workflows 均来自宿主机 volume 挂载；本地 registry tag `localhost:5000/allbot/comfyui-boot:cu128-slim-gpu002-5daf3995` 与该基础镜像是同一 image id，启动无挂载一次性容器检查 `ComfyUI-KJNodes` 不存在。因此当前 `img2img_lora` 没有可直接给 RunPod 使用的自包含生产镜像；`POOL_IMAGE_REF` 仍是目标声明，必须先构建/发布公网可拉取的 profile 镜像，或继续由 bootstrap 安装 custom nodes。
+- `img2img_lora` profile 镜像构建入口已落地：`remote_workers/docker/runpod_profiles/img2img_lora/Dockerfile` 默认从 pinned Git ref 安装 `ComfyUI-KJNodes`；`Dockerfile.local-kjnodes` 支持从已验证的本地 KJNodes 目录构建，规避 GitHub 网络抖动；`scripts/build_runpod_profile_image.sh` 默认 build + smoke test，只有显式 `--push` 才推 registry。2026-06-12 本机已构建 `allbot/comfy-runpod-img2img-lora:local-20260612`，KJNodes commit 为 `7967a946c296a74901606e6a8d1195aa2b6f9215`，镜像未包含 Qwen checkpoint/LoRA 业务模型；公网 RunPod 已验证 image 为 `ghcr.io/giraffu/allbot-comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946`。
+- 使用 baked profile 镜像时，RunPod env 应设置 `RUNPOD_USE_TEMPLATE_IMG2IMG_LORA=false`、`RUNPOD_IMAGE_NAME_IMG2IMG_LORA=<public image ref>`、`RUNPOD_COMFY_CUSTOM_NODES_ENABLED=false`、`RUNPOD_COMFY_KJNODES_ENABLED=false`；`RUNPOD_MODEL_SYNC_ENABLED=true`、`RUNPOD_MODEL_BUCKET=allbot-model-cache` 和 `MINIO_*_BUCKET=user-data-test` 继续保持。当前 `.env.cloud.test` 已默认固定为 public GHCR baked image，不再需要在 create 命令里手写这些覆盖。
 
-当前 real task canary 尚未完成。原因是 `yanwk/comfyui-boot:cu128-slim` 基础镜像只提供可启动 ComfyUI，未包含 AllBot `img2img_lora` workflow 所需的真实模型文件；现场只发现 workflow JSON，没有 `Qwen-Rapid-AIO-NSFW-v23.safetensors`、`qwen/YARN_1.0.safetensors` 等模型。下一步真实 3 任务 canary 前，必须把必要 checkpoint/LoRA/custom nodes 固化到 RunPod 镜像，或从 Hugging Face/R2 做可控热缓存；不得从本地主服务器或局域网 registry 跨公网拉大模型。
+RunPod v0 当前已通过 `img2img/img2img_lora` 真实任务 canary。后续扩展到其它任务 profile 前，必须为每个 profile 单独准备模型 manifest、custom nodes、系统依赖和真实任务 canary；不得把本轮 Qwen `img2img_lora` 通过等同于其它 workflow 已 ready。
 
 Comfy canary 会检查 `/system_stats`、`/queue`、`/object_info` 和最低显存，默认不提交真实任务：
 

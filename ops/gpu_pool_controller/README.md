@@ -30,6 +30,9 @@ python scripts/gpu_pool_controller.py switch-profile \
 python scripts/gpu_pool_controller.py workflow-model-check
 python scripts/gpu_pool_controller.py model-import-plan
 python scripts/gpu_pool_controller.py model-import-execute
+python scripts/gpu_pool_controller.py runpod canary \
+  --env-file .env.cloud.test \
+  --quiet
 ```
 
 Runtime commands are dry-run first:
@@ -45,6 +48,26 @@ Runtime commands are dry-run first:
   maintenance window.
 - `host_service` runtimes such as `gpu-226` are observation-only and never render
   Docker runtime operations.
+
+RunPod canary is also dry-run first. The one-command dry-run validates the
+RunPod key, managed Pod count, reconcile state, and cloud-test create payload.
+Real execution still requires the explicit cost gates and `--execute`:
+
+```bash
+RUNPOD_DRY_RUN=false \
+RUNPOD_AUTOSCALER_ENABLED=true \
+RUNPOD_MAX_PODS_TOTAL=1 \
+RUNPOD_MAX_PODS_PER_TYPE=1 \
+python scripts/gpu_pool_controller.py runpod canary \
+  --env-file .env.cloud.test \
+  --prompt "图片中出现一个黑人女性" \
+  --download-results-dir /tmp/allbot_runpod_canary/results \
+  --execute
+```
+
+It only targets cloud-test: one Pod, one generated PNG upload, three
+`img2img/img2img_lora` tasks, test-worker restore, Pod delete, and post-cleanup
+orphan checks.
 
 Model registry layout:
 

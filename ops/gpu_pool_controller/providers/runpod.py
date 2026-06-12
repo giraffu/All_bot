@@ -208,6 +208,8 @@ class RunPodSettings:
     model_secure: bool = True
     model_access_key_ref: str = RUNPOD_R2_ACCESS_KEY_REF
     model_secret_key_ref: str = RUNPOD_R2_SECRET_KEY_REF
+    comfy_custom_nodes_enabled: bool = True
+    comfy_kjnodes_enabled: bool = True
     extra_env: dict[str, str] = field(default_factory=dict)
 
     @classmethod
@@ -308,6 +310,14 @@ class RunPodSettings:
             model_secret_key_ref=os.getenv(
                 "RUNPOD_MODEL_SECRET_KEY_REF",
                 os.getenv("RUNPOD_R2_SECRET_KEY_REF", RUNPOD_R2_SECRET_KEY_REF),
+            ),
+            comfy_custom_nodes_enabled=_bool_env(
+                os.getenv("RUNPOD_COMFY_CUSTOM_NODES_ENABLED"),
+                default=True,
+            ),
+            comfy_kjnodes_enabled=_bool_env(
+                os.getenv("RUNPOD_COMFY_KJNODES_ENABLED"),
+                default=True,
             ),
         )
 
@@ -781,6 +791,12 @@ class RunPodProvider:
             "RUNPOD_MODEL_ACCESS_KEY": self.settings.model_access_key_ref,
             "RUNPOD_MODEL_SECRET_KEY": self.settings.model_secret_key_ref,
             "RUNPOD_MODEL_SECURE": "true" if self.settings.model_secure else "false",
+            "RUNPOD_COMFY_CUSTOM_NODES_ENABLED": (
+                "true" if self.settings.comfy_custom_nodes_enabled else "false"
+            ),
+            "RUNPOD_COMFY_KJNODES_ENABLED": (
+                "true" if self.settings.comfy_kjnodes_enabled else "false"
+            ),
             "PIPELINE_ENABLED": "true",
             "PIPELINE_MAX_RUNNING_TASKS": "1",
             "CANCEL_LOCK_ON_POP": "true",

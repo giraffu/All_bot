@@ -298,6 +298,33 @@ def test_render_create_can_use_bootstrap_image_without_template():
     assert env["RUNPOD_KEEPALIVE_ON_BOOTSTRAP_FAILURE"] == "true"
 
 
+def test_render_create_can_use_baked_runpod_profile_image_without_runtime_custom_node_install():
+    provider = RunPodProvider(
+        _settings(
+            use_template_img2img_lora=False,
+            image_name_img2img_lora="docker.io/allbot/comfy-runpod-img2img-lora:20260612",
+            docker_start_cmd_img2img_lora=("bash", "-lc", "echo bootstrap"),
+            comfy_custom_nodes_enabled=False,
+            comfy_kjnodes_enabled=False,
+        )
+    )
+
+    payload = provider.render_create_pod_request(
+        task_type="img2img_lora",
+        environment="cloud-test",
+    )
+    body = payload["json"]
+    env = body["env"]
+
+    assert "templateId" not in body
+    assert body["imageName"] == "docker.io/allbot/comfy-runpod-img2img-lora:20260612"
+    assert body["dockerStartCmd"] == ["bash", "-lc", "echo bootstrap"]
+    assert env["RUNPOD_COMFY_CUSTOM_NODES_ENABLED"] == "false"
+    assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
+    assert env["RUNPOD_MODEL_SYNC_ENABLED"] == "false"
+    assert env["MINIO_RESULT_BUCKET"] == "user-data-test"
+
+
 def test_render_create_injects_r2_model_cache_env_without_inline_secrets():
     provider = RunPodProvider(
         _settings(

@@ -13,6 +13,11 @@ from .model_repo import ModelRegistry
 from .planner import GpuPoolPlanner
 from .providers.lan_ssh import LanSshProvider
 from .providers.runpod import RunPodProvider, RunPodSettings
+from .runpod_canary import (
+    RunPodCanaryRunner,
+    load_env_file,
+    options_from_args_env,
+)
 from .runtime import RuntimePlanner, RuntimeRenderOverrides, runtime_plan_to_jsonable
 
 
@@ -300,6 +305,16 @@ def _cmd_runpod_delete(args) -> int:
     return 0 if payload.get("ok") else 2
 
 
+def _cmd_runpod_canary(args) -> int:
+    env_file_info = load_env_file(args.env_file)
+    provider = _runpod_provider_from_args(args)
+    options = options_from_args_env(args)
+    payload = RunPodCanaryRunner(provider, options).run()
+    payload["env_file"] = env_file_info
+    _print_json(payload)
+    return 0 if payload.get("ok") else 2
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="AllBot GPU pool controller v1")
     parser.add_argument("--config-root", type=Path, default=None)
@@ -442,6 +457,40 @@ def build_parser() -> argparse.ArgumentParser:
     runpod_delete.add_argument("--task-type", default="img2img_lora")
     runpod_delete.add_argument("--execute", action="store_true")
     runpod_delete.set_defaults(func=_cmd_runpod_delete)
+
+    runpod_canary = runpod_subparsers.add_parser(
+        "canary",
+        help="safe cloud-test RunPod canary: create pod, run three tasks, cleanup",
+    )
+    runpod_canary.add_argument("--task-type", default="img2img_lora")
+    runpod_canary.add_argument("--env", default="cloud-test")
+    runpod_canary.add_argument("--env-file", type=Path, default=Path(".env.cloud.test"))
+    runpod_canary.add_argument("--no-env-file", action="store_const", const=None, dest="env_file")
+    runpod_canary.add_argument("--execute", action="store_true")
+    runpod_canary.add_argument("--cleanup", action=argparse.BooleanOptionalAction, default=True)
+    runpod_canary.add_argument(
+        "--disable-workers",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    runpod_canary.add_argument("--worker-id", action="append", default=None)
+    runpod_canary.add_argument("--web-api-url", default=None)
+    runpod_canary.add_argument("--central-url", default=None)
+    runpod_canary.add_argument("--web-user-id", type=int, default=None)
+    runpod_canary.add_argument("--web-pwd-ver", type=int, default=None)
+    runpod_canary.add_argument("--prompt", default=None)
+    runpod_canary.add_argument("--negative-prompt", default=None)
+    runpod_canary.add_argument("--input-object-key", default=None)
+    runpod_canary.add_argument("--output-dir", type=Path, default=None)
+    runpod_canary.add_argument("--download-results-dir", type=Path, default=None)
+    runpod_canary.add_argument("--readiness-timeout", type=float, default=900.0)
+    runpod_canary.add_argument("--worker-timeout", type=float, default=600.0)
+    runpod_canary.add_argument("--task-timeout", type=float, default=1800.0)
+    runpod_canary.add_argument("--poll-interval", type=float, default=10.0)
+    runpod_canary.add_argument("--task-poll-interval", type=float, default=5.0)
+    runpod_canary.add_argument("--control-ttl", type=int, default=3600)
+    runpod_canary.add_argument("--quiet", action="store_true")
+    runpod_canary.set_defaults(func=_cmd_runpod_canary)
 
     return parser
 
