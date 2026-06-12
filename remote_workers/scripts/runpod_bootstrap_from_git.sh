@@ -130,6 +130,237 @@ if relay_path.exists():
         "async def update_status(request: Request):",
     )
     relay_path.write_text(text, encoding="utf-8")
+
+agent_path = Path("comfy_agent/agent_main.py")
+if agent_path.exists():
+    text = agent_path.read_text(encoding="utf-8")
+    text = text.replace(
+        "params: dict[str, str] = {}",
+        "params: dict[str, str] = {\"agent_id\": AGENT_ID}",
+    )
+    agent_path.write_text(text, encoding="utf-8")
+
+sync_path = Path("scripts/runpod_sync_models_from_r2.py")
+if sync_path.exists():
+    text = sync_path.read_text(encoding="utf-8")
+    if "_download_object_with_resume" not in text:
+        text = text.replace(
+            "import sys\nfrom pathlib import Path",
+            "import sys\nimport time\nfrom pathlib import Path",
+        )
+        text = text.replace(
+            """def _bool_env(value: str | None, *, default: bool) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _sha256_file(path: Path, *, chunk_size: int = 1024 * 1024) -> str:
+""",
+            """def _bool_env(value: str | None, *, default: bool) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _int_env(name: str, *, default: int, minimum: int = 1) -> int:
+    raw_value = os.getenv(name)
+    if raw_value is None or not raw_value.strip():
+        return default
+    try:
+        value = int(raw_value)
+    except ValueError:
+        return default
+    return max(minimum, value)
+
+
+def _sha256_file(path: Path, *, chunk_size: int = 1024 * 1024) -> str:
+""",
+        )
+        text = text.replace(
+            """def _sha256_file(path: Path, *, chunk_size: int = 1024 * 1024) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file_obj:
+        for chunk in iter(lambda: file_obj.read(chunk_size), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _normalise_endpoint(raw_endpoint: str, secure: bool) -> tuple[str, bool]:
+""",
+            """def _sha256_file(path: Path, *, chunk_size: int = 1024 * 1024) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file_obj:
+        for chunk in iter(lambda: file_obj.read(chunk_size), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _format_mib(byte_count: int) -> str:
+    return f"{byte_count / 1024 / 1024:.1f} MiB"
+
+
+def _normalise_endpoint(raw_endpoint: str, secure: bool) -> tuple[str, bool]:
+""",
+        )
+        helper_marker = (
+            "\ndef sync_models(*, bucket: str, prefix: str, target_dir: Path, "
+            "verify_existing: bool) -> dict[str, object]:\n"
+        )
+        helper_code = r'''
+
+def _stream_object_to_file(
+    client: Minio,
+    *,
+    bucket: str,
+    key: str,
+    target: Path,
+    offset: int,
+    chunk_size: int,
+    expected_size: int,
+    relative_path: str,
+) -> None:
+    progress_bytes = _int_env(
+        "RUNPOD_MODEL_DOWNLOAD_PROGRESS_BYTES",
+        default=512 * 1024 * 1024,
+        minimum=1024 * 1024,
+    )
+    progress_seconds = _int_env("RUNPOD_MODEL_DOWNLOAD_PROGRESS_SECONDS", default=30)
+    response = client.get_object(bucket, key, offset=offset)
+    try:
+        started_at = time.monotonic()
+        last_logged_at = started_at
+        last_logged_size = offset
+        with target.open("ab") as file_obj:
+            for chunk in response.stream(amt=chunk_size):
+                if chunk:
+                    file_obj.write(chunk)
+                    current_size = file_obj.tell()
+                    now = time.monotonic()
+                    should_log = (
+                        current_size >= expected_size
+                        or current_size - last_logged_size >= progress_bytes
+                        or now - last_logged_at >= progress_seconds
+                    )
+                    if should_log:
+                        elapsed = max(now - started_at, 0.001)
+                        downloaded = max(current_size - offset, 0)
+                        rate = downloaded / elapsed
+                        percent = current_size / expected_size * 100 if expected_size else 0.0
+                        print(
+                            "[runpod-model-sync] progress "
+                            f"{relative_path}: {_format_mib(current_size)}/"
+                            f"{_format_mib(expected_size)} ({percent:.1f}%, "
+                            f"{_format_mib(int(rate))}/s)",
+                            flush=True,
+                        )
+                        last_logged_at = now
+                        last_logged_size = current_size
+    finally:
+        response.close()
+        response.release_conn()
+
+
+def _download_object_with_resume(
+    client: Minio,
+    *,
+    bucket: str,
+    key: str,
+    temp_target: Path,
+    expected_size: int,
+    relative_path: str,
+) -> None:
+    max_attempts = _int_env("RUNPOD_MODEL_DOWNLOAD_MAX_ATTEMPTS", default=8)
+    retry_seconds = _int_env("RUNPOD_MODEL_DOWNLOAD_RETRY_SECONDS", default=5, minimum=0)
+    chunk_size = _int_env(
+        "RUNPOD_MODEL_DOWNLOAD_CHUNK_SIZE",
+        default=1024 * 1024,
+        minimum=64 * 1024,
+    )
+
+    for attempt in range(1, max_attempts + 1):
+        current_size = temp_target.stat().st_size if temp_target.exists() else 0
+        if current_size == expected_size:
+            return
+        if current_size > expected_size:
+            print(
+                f"[runpod-model-sync] discarding oversized partial {relative_path} "
+                f"({current_size} > {expected_size})"
+            )
+            temp_target.unlink(missing_ok=True)
+            current_size = 0
+
+        action = "resuming" if current_size else "downloading"
+        print(
+            f"[runpod-model-sync] {action} {relative_path} "
+            f"at byte {current_size}/{expected_size} "
+            f"(attempt {attempt}/{max_attempts})",
+            flush=True,
+        )
+        try:
+            _stream_object_to_file(
+                client,
+                bucket=bucket,
+                key=key,
+                target=temp_target,
+                offset=current_size,
+                chunk_size=chunk_size,
+                expected_size=expected_size,
+                relative_path=relative_path,
+            )
+        except Exception as exc:
+            partial_size = temp_target.stat().st_size if temp_target.exists() else 0
+            print(
+                f"[runpod-model-sync] interrupted {relative_path} after "
+                f"{partial_size}/{expected_size} bytes: {type(exc).__name__}",
+                flush=True,
+            )
+            if attempt >= max_attempts:
+                raise RuntimeError(
+                    f"download failed for {relative_path} after {max_attempts} attempts"
+                ) from exc
+            if retry_seconds:
+                time.sleep(retry_seconds)
+            continue
+
+        current_size = temp_target.stat().st_size if temp_target.exists() else 0
+        if current_size == expected_size:
+            return
+        if current_size > expected_size:
+            temp_target.unlink(missing_ok=True)
+            raise RuntimeError(
+                f"size mismatch for {relative_path}: expected {expected_size}, got {current_size}"
+            )
+        if attempt >= max_attempts:
+            raise RuntimeError(
+                f"incomplete download for {relative_path}: expected {expected_size}, got {current_size}"
+            )
+        if retry_seconds:
+            time.sleep(retry_seconds)
+'''
+        if helper_marker not in text:
+            raise SystemExit("runpod model sync patch marker not found")
+        text = text.replace(helper_marker, helper_code + helper_marker)
+        old_download = """        temp_target = target.with_name(f"{target.name}.partial")
+        if temp_target.exists():
+            temp_target.unlink()
+        print(f"[runpod-model-sync] downloading {relative_path} ({expected_size} bytes)")
+        client.fget_object(bucket, key, str(temp_target))
+"""
+        new_download = """        temp_target = target.with_name(f"{target.name}.partial")
+        _download_object_with_resume(
+            client,
+            bucket=bucket,
+            key=key,
+            temp_target=temp_target,
+            expected_size=expected_size,
+            relative_path=relative_path,
+        )
+"""
+        if old_download not in text:
+            raise SystemExit("runpod model sync download block not found")
+        text = text.replace(old_download, new_download)
+        sync_path.write_text(text, encoding="utf-8")
 PY
 python3 -m pip install -r requirements.txt
 mkdir -p "$COMFY_INPUT_DIR" "$COMFY_OUTPUT_DIR" "$RESULT_SPOOL_DIR" "$PREFETCH_CACHE_DIR" logs

@@ -16,6 +16,23 @@ RUNPOD_ACTIVE_STATUSES = {"RUNNING"}
 RUNPOD_AGENT_SECRET_TOKEN_REF = "{{ RUNPOD_SECRET_allbot_cloud_test_agent_secret_token }}"
 RUNPOD_R2_ACCESS_KEY_REF = "{{ RUNPOD_SECRET_allbot_cloud_test_r2_access_key }}"
 RUNPOD_R2_SECRET_KEY_REF = "{{ RUNPOD_SECRET_allbot_cloud_test_r2_secret_key }}"
+RUNPOD_PROD_AGENT_SECRET_TOKEN_REF = (
+    "{{ RUNPOD_SECRET_allbot_cloud_prod_agent_secret_token }}"
+)
+RUNPOD_PROD_R2_ACCESS_KEY_REF = "{{ RUNPOD_SECRET_allbot_cloud_prod_r2_access_key }}"
+RUNPOD_PROD_R2_SECRET_KEY_REF = "{{ RUNPOD_SECRET_allbot_cloud_prod_r2_secret_key }}"
+RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF = "{{ RUNPOD_SECRET_allbot_model_cache_r2_access_key }}"
+RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF = "{{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}"
+RUNPOD_PROD_WORKER_CENTRAL_URL = "https://worker-central.aivison.it.com"
+RUNPOD_PROD_AGENT_ID = "runpod_prod_img2img_manual_01"
+RUNPOD_PROD_NODE_ID = "runpod-cloud-prod"
+RUNPOD_PROD_BUCKET = "user-data-prod"
+RUNPOD_PROD_SUPPORTED_TASK_TYPES = ("img2img", "img2img_lora")
+RUNPOD_PROD_GPU_TYPE_IDS = ("NVIDIA GeForce RTX 4090",)
+RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE = (
+    "ghcr.io/giraffu/allbot-comfy-runpod-img2img:"
+    "20260612-img2img-lora-kjnodes7967a946"
+)
 SENSITIVE_KEY_MARKERS = (
     "TOKEN",
     "SECRET",
@@ -190,6 +207,15 @@ class RunPodSettings:
     template_id_img2img_lora: str = ""
     image_name_img2img_lora: str = ""
     worker_central_url_cloud_test: str = "https://worker-central-test.example.com"
+    worker_central_url_cloud_prod: str = RUNPOD_PROD_WORKER_CENTRAL_URL
+    prod_agent_id: str = RUNPOD_PROD_AGENT_ID
+    prod_supported_task_types: tuple[str, ...] = RUNPOD_PROD_SUPPORTED_TASK_TYPES
+    prod_gpu_type_ids: tuple[str, ...] = RUNPOD_PROD_GPU_TYPE_IDS
+    prod_node_id: str = RUNPOD_PROD_NODE_ID
+    prod_bucket: str = RUNPOD_PROD_BUCKET
+    prod_agent_secret_token_ref: str = RUNPOD_PROD_AGENT_SECRET_TOKEN_REF
+    prod_minio_access_key_ref: str = RUNPOD_PROD_R2_ACCESS_KEY_REF
+    prod_minio_secret_key_ref: str = RUNPOD_PROD_R2_SECRET_KEY_REF
     bootstrap_git_url: str = "https://github.com/giraffu/All_bot.git"
     bootstrap_git_branch: str = "deploy"
     keepalive_on_bootstrap_failure: bool = False
@@ -206,8 +232,8 @@ class RunPodSettings:
     model_manifest_key: str = ""
     model_endpoint: str = ""
     model_secure: bool = True
-    model_access_key_ref: str = RUNPOD_R2_ACCESS_KEY_REF
-    model_secret_key_ref: str = RUNPOD_R2_SECRET_KEY_REF
+    model_access_key_ref: str = RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF
+    model_secret_key_ref: str = RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF
     comfy_custom_nodes_enabled: bool = True
     comfy_kjnodes_enabled: bool = True
     extra_env: dict[str, str] = field(default_factory=dict)
@@ -269,6 +295,37 @@ class RunPodSettings:
                     "https://worker-central-test.example.com",
                 ),
             ).rstrip("/"),
+            worker_central_url_cloud_prod=os.getenv(
+                "RUNPOD_CLOUD_PROD_CENTRAL_API_URL",
+                os.getenv(
+                    "RUNPOD_WORKER_CENTRAL_URL_PROD",
+                    RUNPOD_PROD_WORKER_CENTRAL_URL,
+                ),
+            ).rstrip("/"),
+            prod_agent_id=os.getenv("RUNPOD_PROD_AGENT_ID", RUNPOD_PROD_AGENT_ID),
+            prod_supported_task_types=_csv(
+                os.getenv("RUNPOD_PROD_SUPPORTED_TASK_TYPES"),
+                default=cls.prod_supported_task_types,
+            ),
+            prod_gpu_type_ids=_csv(
+                os.getenv("RUNPOD_PROD_GPU_TYPE_IDS"),
+                default=cls.prod_gpu_type_ids,
+            )
+            or RUNPOD_PROD_GPU_TYPE_IDS,
+            prod_node_id=os.getenv("RUNPOD_PROD_NODE_ID", RUNPOD_PROD_NODE_ID),
+            prod_bucket=os.getenv("RUNPOD_PROD_BUCKET", RUNPOD_PROD_BUCKET),
+            prod_agent_secret_token_ref=os.getenv(
+                "RUNPOD_PROD_AGENT_SECRET_TOKEN_REF",
+                RUNPOD_PROD_AGENT_SECRET_TOKEN_REF,
+            ),
+            prod_minio_access_key_ref=os.getenv(
+                "RUNPOD_PROD_R2_ACCESS_KEY_REF",
+                RUNPOD_PROD_R2_ACCESS_KEY_REF,
+            ),
+            prod_minio_secret_key_ref=os.getenv(
+                "RUNPOD_PROD_R2_SECRET_KEY_REF",
+                RUNPOD_PROD_R2_SECRET_KEY_REF,
+            ),
             bootstrap_git_url=os.getenv(
                 "RUNPOD_BOOTSTRAP_GIT_URL",
                 "https://github.com/giraffu/All_bot.git",
@@ -305,11 +362,17 @@ class RunPodSettings:
             model_secure=_bool_env(os.getenv("RUNPOD_MODEL_SECURE"), default=True),
             model_access_key_ref=os.getenv(
                 "RUNPOD_MODEL_ACCESS_KEY_REF",
-                os.getenv("RUNPOD_R2_ACCESS_KEY_REF", RUNPOD_R2_ACCESS_KEY_REF),
+                os.getenv(
+                    "RUNPOD_R2_MODEL_ACCESS_KEY_REF",
+                    RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF,
+                ),
             ),
             model_secret_key_ref=os.getenv(
                 "RUNPOD_MODEL_SECRET_KEY_REF",
-                os.getenv("RUNPOD_R2_SECRET_KEY_REF", RUNPOD_R2_SECRET_KEY_REF),
+                os.getenv(
+                    "RUNPOD_R2_MODEL_SECRET_KEY_REF",
+                    RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF,
+                ),
             ),
             comfy_custom_nodes_enabled=_bool_env(
                 os.getenv("RUNPOD_COMFY_CUSTOM_NODES_ENABLED"),
@@ -693,16 +756,22 @@ class RunPodProvider:
         )
 
     def _create_pod_body(self, *, task_type: str, environment: str) -> dict[str, Any]:
-        if environment != "cloud-test":
-            raise ValueError("RunPodProvider v0 only supports environment=cloud-test")
+        if environment not in {"cloud-test", "cloud-prod"}:
+            raise ValueError("RunPodProvider v0 only supports environment=cloud-test/cloud-prod")
         profile = self._profile_for_task_type(task_type)
-        gpu_type_ids = self._gpu_type_ids_for(profile)
-        template_id = self._template_id_for(profile)
+        gpu_type_ids = (
+            self.settings.prod_gpu_type_ids
+            if environment == "cloud-prod"
+            else self._gpu_type_ids_for(profile)
+        )
+        template_id = "" if environment == "cloud-prod" else self._template_id_for(profile)
         image_name = self._image_name_for(profile)
+        if environment == "cloud-prod" and not image_name:
+            image_name = RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE
         if not template_id and not image_name:
             image_name = "allbot/comfy-runpod-img2img:pending"
         body: dict[str, Any] = {
-            "name": f"allbot-runpod-test-{profile.runtime_profile.replace('_', '-')}",
+            "name": self._pod_name(profile=profile, environment=environment),
             "cloudType": self.settings.cloud_type,
             "computeType": "GPU",
             "gpuCount": 1,
@@ -737,8 +806,9 @@ class RunPodProvider:
         profile: RunPodTaskProfile,
         environment: str,
     ) -> dict[str, str]:
+        env_config = self._environment_config(profile=profile, environment=environment)
         env = {
-            "ENVIRONMENT": "test",
+            "ENVIRONMENT": env_config["app_environment"],
             "RUNPOD_MANAGED": "true",
             "ALLBOT_RUNPOD_MANAGED": "true",
             "RUNPOD_ENVIRONMENT": environment,
@@ -756,18 +826,18 @@ class RunPodProvider:
             "RUNPOD_KEEPALIVE_ON_BOOTSTRAP_FAILURE": (
                 "true" if self.settings.keepalive_on_bootstrap_failure else "false"
             ),
-            "RUNPOD_START_SSHD": "true",
-            "RUNPOD_INSTALL_SSHD_IF_MISSING": "true",
-            "AGENT_SECRET_TOKEN": self.settings.agent_secret_token_ref,
-            "CENTRAL_API_URL": self.settings.worker_central_url_cloud_test,
+            "RUNPOD_START_SSHD": env_config["start_sshd"],
+            "RUNPOD_INSTALL_SSHD_IF_MISSING": env_config["install_sshd_if_missing"],
+            "AGENT_SECRET_TOKEN": env_config["agent_secret_token_ref"],
+            "CENTRAL_API_URL": env_config["central_api_url"],
             "MASTER_API_URL": "http://127.0.0.1:8013",
             "UPLOAD_SIDECAR_URL": "http://127.0.0.1:8013",
             "LOCAL_RELAY_HOST": "127.0.0.1",
             "LOCAL_RELAY_PORT": "8013",
-            "SUPPORTED_TASK_TYPES": ",".join(profile.supported_task_types),
+            "SUPPORTED_TASK_TYPES": ",".join(env_config["supported_task_types"]),
             "POOL_MANAGED": "true",
             "POOL_PROVIDER": "runpod",
-            "POOL_NODE_ID": "runpod-cloud-test",
+            "POOL_NODE_ID": env_config["node_id"],
             "POOL_GPU_INDEX": "0",
             "POOL_RUNTIME_PROFILE": profile.runtime_profile,
             "COMFY_API_URL": "http://127.0.0.1:8188",
@@ -775,35 +845,100 @@ class RunPodProvider:
             "COMFY_INPUT_DIR": "./input",
             "COMFY_OUTPUT_DIR": "./output",
             "MINIO_ENDPOINT": self.settings.minio_endpoint or "<RUNPOD_SECRET:MINIO_ENDPOINT>",
-            "MINIO_ACCESS_KEY": self.settings.minio_access_key_ref,
-            "MINIO_SECRET_KEY": self.settings.minio_secret_key_ref,
-            "MINIO_INPUT_BUCKET": "user-data-test",
-            "MINIO_RESULT_BUCKET": "user-data-test",
-            "MINIO_TEMPLATE_BUCKET": "user-data-test",
+            "MINIO_ACCESS_KEY": env_config["minio_access_key_ref"],
+            "MINIO_SECRET_KEY": env_config["minio_secret_key_ref"],
+            "MINIO_BUCKET": env_config["bucket"],
+            "MINIO_INPUT_BUCKET": env_config["bucket"],
+            "MINIO_RESULT_BUCKET": env_config["bucket"],
+            "MINIO_TEMPLATE_BUCKET": env_config["bucket"],
             "MINIO_SECURE": "true",
             "RUNPOD_MODEL_SYNC_ENABLED": (
-                "true" if self.settings.model_sync_enabled else "false"
+                "true" if env_config["model_sync_enabled"] else "false"
             ),
-            "RUNPOD_MODEL_BUCKET": self.settings.model_bucket,
-            "RUNPOD_MODEL_PREFIX": self.settings.model_prefix,
-            "RUNPOD_MODEL_MANIFEST_KEY": self.settings.model_manifest_key,
+            "RUNPOD_MODEL_BUCKET": env_config["model_bucket"],
+            "RUNPOD_MODEL_PREFIX": env_config["model_prefix"],
+            "RUNPOD_MODEL_MANIFEST_KEY": env_config["model_manifest_key"],
             "RUNPOD_MODEL_ENDPOINT": self.settings.model_endpoint or self.settings.minio_endpoint,
-            "RUNPOD_MODEL_ACCESS_KEY": self.settings.model_access_key_ref,
-            "RUNPOD_MODEL_SECRET_KEY": self.settings.model_secret_key_ref,
+            "RUNPOD_MODEL_ACCESS_KEY": env_config["model_access_key_ref"],
+            "RUNPOD_MODEL_SECRET_KEY": env_config["model_secret_key_ref"],
             "RUNPOD_MODEL_SECURE": "true" if self.settings.model_secure else "false",
             "RUNPOD_COMFY_CUSTOM_NODES_ENABLED": (
-                "true" if self.settings.comfy_custom_nodes_enabled else "false"
+                "true" if env_config["comfy_custom_nodes_enabled"] else "false"
             ),
             "RUNPOD_COMFY_KJNODES_ENABLED": (
-                "true" if self.settings.comfy_kjnodes_enabled else "false"
+                "true" if env_config["comfy_kjnodes_enabled"] else "false"
             ),
             "PIPELINE_ENABLED": "true",
             "PIPELINE_MAX_RUNNING_TASKS": "1",
             "CANCEL_LOCK_ON_POP": "true",
             "PREFETCH_ENABLED": "false",
         }
+        if environment == "cloud-prod":
+            env["AGENT_ID"] = env_config["agent_id"]
+            env["AGENT_ID_PREFIX"] = env_config["agent_id"]
+            env["POOL_IMAGE_REF"] = self._image_name_for(profile) or RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE
         env.update(self.settings.extra_env)
         return env
+
+    def _pod_name(self, *, profile: RunPodTaskProfile, environment: str) -> str:
+        if environment == "cloud-prod":
+            return "allbot-runpod-prod-img2img-manual-01"
+        return f"allbot-runpod-test-{profile.runtime_profile.replace('_', '-')}"
+
+    def _environment_config(
+        self,
+        *,
+        profile: RunPodTaskProfile,
+        environment: str,
+    ) -> dict[str, Any]:
+        if environment == "cloud-test":
+            return {
+                "app_environment": "test",
+                "agent_id": f"{profile.agent_id_prefix}_${{RUNPOD_POD_ID:-pending}}",
+                "central_api_url": self.settings.worker_central_url_cloud_test,
+                "supported_task_types": profile.supported_task_types,
+                "bucket": "user-data-test",
+                "node_id": "runpod-cloud-test",
+                "agent_secret_token_ref": self.settings.agent_secret_token_ref,
+                "minio_access_key_ref": self.settings.minio_access_key_ref,
+                "minio_secret_key_ref": self.settings.minio_secret_key_ref,
+                "start_sshd": "true",
+                "install_sshd_if_missing": "true",
+                "model_sync_enabled": self.settings.model_sync_enabled,
+                "model_bucket": self.settings.model_bucket,
+                "model_prefix": self.settings.model_prefix,
+                "model_manifest_key": self.settings.model_manifest_key,
+                "model_access_key_ref": self.settings.model_access_key_ref,
+                "model_secret_key_ref": self.settings.model_secret_key_ref,
+                "comfy_custom_nodes_enabled": self.settings.comfy_custom_nodes_enabled,
+                "comfy_kjnodes_enabled": self.settings.comfy_kjnodes_enabled,
+            }
+        if environment == "cloud-prod":
+            model_prefix = self.settings.model_prefix or "img2img_lora/2026-06-10"
+            return {
+                "app_environment": "prod",
+                "agent_id": self.settings.prod_agent_id,
+                "central_api_url": self.settings.worker_central_url_cloud_prod,
+                "supported_task_types": self.settings.prod_supported_task_types,
+                "bucket": self.settings.prod_bucket,
+                "node_id": self.settings.prod_node_id,
+                "agent_secret_token_ref": self.settings.prod_agent_secret_token_ref,
+                "minio_access_key_ref": self.settings.prod_minio_access_key_ref,
+                "minio_secret_key_ref": self.settings.prod_minio_secret_key_ref,
+                "start_sshd": "false",
+                "install_sshd_if_missing": "false",
+                "model_sync_enabled": True,
+                "model_bucket": self.settings.model_bucket or "allbot-model-cache",
+                "model_prefix": model_prefix,
+                "model_manifest_key": (
+                    self.settings.model_manifest_key or f"{model_prefix}/manifest.json"
+                ),
+                "model_access_key_ref": self.settings.model_access_key_ref,
+                "model_secret_key_ref": self.settings.model_secret_key_ref,
+                "comfy_custom_nodes_enabled": False,
+                "comfy_kjnodes_enabled": False,
+            }
+        raise ValueError("RunPodProvider v0 only supports environment=cloud-test/cloud-prod")
 
     def _mutation_guard(
         self,
@@ -889,7 +1024,7 @@ class RunPodProvider:
             return RUNPOD_TASK_PROFILES[task_type]
         except KeyError as exc:
             raise ValueError(
-                "RunPodProvider v0 only supports img2img_lora/img2img cloud-test canary"
+                "RunPodProvider v0 only supports img2img_lora/img2img profiles"
             ) from exc
 
     def _gpu_type_ids_for(self, profile: RunPodTaskProfile) -> tuple[str, ...]:

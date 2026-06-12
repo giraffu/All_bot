@@ -16,7 +16,12 @@ from .providers.runpod import RunPodProvider, RunPodSettings
 from .runpod_canary import (
     RunPodCanaryRunner,
     load_env_file,
-    options_from_args_env,
+    options_from_args_env as canary_options_from_args_env,
+)
+from .runpod_prod_worker import (
+    RunPodProdWorkerRunner,
+    load_env_file_for_prod_worker,
+    options_from_args_env as prod_worker_options_from_args_env,
 )
 from .runtime import RuntimePlanner, RuntimeRenderOverrides, runtime_plan_to_jsonable
 
@@ -308,9 +313,27 @@ def _cmd_runpod_delete(args) -> int:
 def _cmd_runpod_canary(args) -> int:
     env_file_info = load_env_file(args.env_file)
     provider = _runpod_provider_from_args(args)
-    options = options_from_args_env(args)
+    options = canary_options_from_args_env(args)
     payload = RunPodCanaryRunner(provider, options).run()
     payload["env_file"] = env_file_info
+    _print_json(payload)
+    return 0 if payload.get("ok") else 2
+
+
+def _cmd_runpod_prod_worker(args) -> int:
+    env_files = []
+    env_files.append(load_env_file(getattr(args, "runpod_env_file", None)))
+    env_files.append(
+        load_env_file_for_prod_worker(
+            getattr(args, "prod_env_file", None),
+            override=True,
+            protect_existing_prefixes=("RUNPOD_",),
+        )
+    )
+    provider = _runpod_provider_from_args(args)
+    options = prod_worker_options_from_args_env(args)
+    payload = RunPodProdWorkerRunner(provider, options).run()
+    payload["env_files"] = env_files
     _print_json(payload)
     return 0 if payload.get("ok") else 2
 
@@ -491,6 +514,72 @@ def build_parser() -> argparse.ArgumentParser:
     runpod_canary.add_argument("--control-ttl", type=int, default=3600)
     runpod_canary.add_argument("--quiet", action="store_true")
     runpod_canary.set_defaults(func=_cmd_runpod_canary)
+
+    runpod_prod_worker = runpod_subparsers.add_parser(
+        "prod-worker",
+        help="manual cloud-prod RunPod img2img worker control",
+    )
+    prod_worker_subparsers = runpod_prod_worker.add_subparsers(
+        dest="prod_worker_command",
+        required=True,
+    )
+    prod_worker_common = argparse.ArgumentParser(add_help=False)
+    prod_worker_common.add_argument(
+        "--runpod-env-file",
+        type=Path,
+        default=Path(".env.cloud.test"),
+        help="env file used for RunPod API/profile defaults",
+    )
+    prod_worker_common.add_argument(
+        "--no-runpod-env-file",
+        action="store_const",
+        const=None,
+        dest="runpod_env_file",
+    )
+    prod_worker_common.add_argument(
+        "--prod-env-file",
+        type=Path,
+        default=Path(".env.cloud.prod"),
+        help="env file used for prod Central/Web/R2/JWT values",
+    )
+    prod_worker_common.add_argument(
+        "--no-prod-env-file",
+        action="store_const",
+        const=None,
+        dest="prod_env_file",
+    )
+    prod_worker_common.add_argument("--agent-id", default=None)
+    prod_worker_common.add_argument("--central-url", default=None)
+    prod_worker_common.add_argument("--web-api-url", default=None)
+    prod_worker_common.add_argument("--web-user-id", type=int, default=None)
+    prod_worker_common.add_argument("--web-pwd-ver", type=int, default=None)
+    prod_worker_common.add_argument("--input-object-key", default=None)
+    prod_worker_common.add_argument("--output-dir", type=Path, default=None)
+    prod_worker_common.add_argument("--download-results-dir", type=Path, default=None)
+    prod_worker_common.add_argument("--prompt", default=None)
+    prod_worker_common.add_argument("--negative-prompt", default=None)
+    prod_worker_common.add_argument("--readiness-timeout", type=float, default=900.0)
+    prod_worker_common.add_argument("--worker-timeout", type=float, default=600.0)
+    prod_worker_common.add_argument("--drain-timeout", type=float, default=300.0)
+    prod_worker_common.add_argument("--task-timeout", type=float, default=1800.0)
+    prod_worker_common.add_argument("--poll-interval", type=float, default=10.0)
+    prod_worker_common.add_argument("--task-poll-interval", type=float, default=5.0)
+    prod_worker_common.add_argument("--quiet", action="store_true")
+
+    for command_name in ("render", "status"):
+        prod_worker_command = prod_worker_subparsers.add_parser(
+            command_name,
+            parents=[prod_worker_common],
+        )
+        prod_worker_command.set_defaults(func=_cmd_runpod_prod_worker)
+
+    for command_name in ("up", "enable", "disable", "down", "canary"):
+        prod_worker_command = prod_worker_subparsers.add_parser(
+            command_name,
+            parents=[prod_worker_common],
+        )
+        prod_worker_command.add_argument("--execute", action="store_true")
+        prod_worker_command.set_defaults(func=_cmd_runpod_prod_worker)
 
     return parser
 

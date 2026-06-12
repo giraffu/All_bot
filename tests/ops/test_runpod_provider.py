@@ -2,6 +2,18 @@ import json
 
 from ops.gpu_pool_controller.providers.lan_ssh import LanSshProvider
 from ops.gpu_pool_controller.providers.runpod import (
+    RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF,
+    RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF,
+    RUNPOD_PROD_AGENT_ID,
+    RUNPOD_PROD_AGENT_SECRET_TOKEN_REF,
+    RUNPOD_PROD_BUCKET,
+    RUNPOD_PROD_GPU_TYPE_IDS,
+    RUNPOD_PROD_NODE_ID,
+    RUNPOD_PROD_R2_ACCESS_KEY_REF,
+    RUNPOD_PROD_R2_SECRET_KEY_REF,
+    RUNPOD_PROD_SUPPORTED_TASK_TYPES,
+    RUNPOD_PROD_WORKER_CENTRAL_URL,
+    RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
     RunPodProvider,
     RunPodProviderError,
     RunPodSettings,
@@ -253,9 +265,9 @@ def test_render_create_pod_request_cloud_test_profile_is_redacted():
     assert env["PIPELINE_MAX_RUNNING_TASKS"] == "1"
     assert env["COMFY_API_URL"] == "http://127.0.0.1:8188"
     assert env["MINIO_RESULT_BUCKET"] == "user-data-test"
-    assert "agent_secret_token" not in rendered
-    assert "r2_access_key" not in rendered
-    assert "r2_secret_key" not in rendered
+    assert '"AGENT_SECRET_TOKEN": "agent_secret_token"' not in rendered
+    assert '"MINIO_ACCESS_KEY": "r2_access_key"' not in rendered
+    assert '"MINIO_SECRET_KEY": "r2_secret_key"' not in rendered
 
 
 def test_render_create_can_expose_explicit_debug_ports_without_defaulting_comfy_port():
@@ -356,6 +368,62 @@ def test_render_create_injects_r2_model_cache_env_without_inline_secrets():
     assert env["RUNPOD_MODEL_SECRET_KEY"] == "<redacted>"
     assert "inline_r2_access_value" not in rendered
     assert "inline_r2_secret_value" not in rendered
+
+
+def test_render_create_cloud_prod_manual_worker_uses_prod_refs_and_bucket():
+    provider = RunPodProvider(
+        _settings(
+            use_template_img2img_lora=True,
+            image_name_img2img_lora="",
+            model_bucket="",
+            model_prefix="",
+            model_manifest_key="",
+            comfy_custom_nodes_enabled=True,
+            comfy_kjnodes_enabled=True,
+        )
+    )
+
+    payload = provider.render_create_pod_request(
+        task_type="img2img",
+        environment="cloud-prod",
+        redact=False,
+    )
+    body = payload["json"]
+    env = body["env"]
+    rendered = json.dumps(payload, ensure_ascii=False)
+
+    assert "templateId" not in body
+    assert body["name"] == "allbot-runpod-prod-img2img-manual-01"
+    assert body["imageName"] == RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE
+    assert body["gpuTypeIds"] == list(RUNPOD_PROD_GPU_TYPE_IDS)
+    assert env["ENVIRONMENT"] == "prod"
+    assert env["RUNPOD_ENVIRONMENT"] == "cloud-prod"
+    assert env["AGENT_ID"] == RUNPOD_PROD_AGENT_ID
+    assert env["AGENT_ID_PREFIX"] == RUNPOD_PROD_AGENT_ID
+    assert env["SUPPORTED_TASK_TYPES"] == ",".join(RUNPOD_PROD_SUPPORTED_TASK_TYPES)
+    assert env["CENTRAL_API_URL"] == RUNPOD_PROD_WORKER_CENTRAL_URL
+    assert env["POOL_PROVIDER"] == "runpod"
+    assert env["POOL_NODE_ID"] == RUNPOD_PROD_NODE_ID
+    assert env["POOL_RUNTIME_PROFILE"] == "img2img_lora"
+    assert env["MINIO_RESULT_BUCKET"] == RUNPOD_PROD_BUCKET
+    assert env["MINIO_INPUT_BUCKET"] == RUNPOD_PROD_BUCKET
+    assert env["RUNPOD_MODEL_SYNC_ENABLED"] == "true"
+    assert env["RUNPOD_MODEL_BUCKET"] == "allbot-model-cache"
+    assert env["RUNPOD_MODEL_PREFIX"] == "img2img_lora/2026-06-10"
+    assert env["RUNPOD_MODEL_MANIFEST_KEY"] == (
+        "img2img_lora/2026-06-10/manifest.json"
+    )
+    assert env["RUNPOD_COMFY_CUSTOM_NODES_ENABLED"] == "false"
+    assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
+    assert env["RUNPOD_START_SSHD"] == "false"
+    assert env["AGENT_SECRET_TOKEN"] == RUNPOD_PROD_AGENT_SECRET_TOKEN_REF
+    assert env["MINIO_ACCESS_KEY"] == RUNPOD_PROD_R2_ACCESS_KEY_REF
+    assert env["MINIO_SECRET_KEY"] == RUNPOD_PROD_R2_SECRET_KEY_REF
+    assert env["RUNPOD_MODEL_ACCESS_KEY"] == RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF
+    assert env["RUNPOD_MODEL_SECRET_KEY"] == RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF
+    assert '"AGENT_SECRET_TOKEN": "agent_secret_token"' not in rendered
+    assert '"MINIO_ACCESS_KEY": "r2_access_key"' not in rendered
+    assert '"MINIO_SECRET_KEY": "r2_secret_key"' not in rendered
 
 
 def test_render_create_uses_network_volume_without_ephemeral_volume():

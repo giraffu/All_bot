@@ -1039,7 +1039,7 @@ class ComfyAgent:
         return ",".join(sorted(supported_types & self._pipeline_task_types))
 
     def _build_pop_params(self, *, pipeline: bool = False) -> dict[str, str]:
-        params: dict[str, str] = {}
+        params: dict[str, str] = {"agent_id": AGENT_ID}
         types = self._pipeline_pop_types() if pipeline else SUPPORTED_TASK_TYPES
         if types:
             params["types"] = types

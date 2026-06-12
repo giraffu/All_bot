@@ -28,6 +28,23 @@ def test_runpod_bootstrap_installs_kjnodes_before_starting_comfyui():
     assert install_call_index < comfy_start_index
 
 
+def test_runpod_bootstrap_patches_remote_worker_pop_agent_id():
+    script = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
+
+    assert "comfy_agent/agent_main.py" in script
+    assert '"params: dict[str, str] = {\\"agent_id\\": AGENT_ID}"' in script
+
+
+def test_runpod_bootstrap_patches_model_sync_for_resume_downloads():
+    script = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
+
+    assert "scripts/runpod_sync_models_from_r2.py" in script
+    assert "_download_object_with_resume" in script
+    assert "RUNPOD_MODEL_DOWNLOAD_MAX_ATTEMPTS" in script
+    assert "RUNPOD_MODEL_DOWNLOAD_PROGRESS_BYTES" in script
+    assert "offset=current_size" in script
+
+
 def test_runpod_profile_build_script_has_valid_bash_syntax():
     subprocess.run(
         ["bash", "-n", str(PROFILE_BUILD_SCRIPT)],
