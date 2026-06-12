@@ -14,6 +14,7 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_PROD_SUPPORTED_TASK_TYPES,
     RUNPOD_PROD_WORKER_CENTRAL_URL,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
+    RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS,
     RunPodProvider,
     RunPodProviderError,
     RunPodSettings,
@@ -370,6 +371,70 @@ def test_render_create_injects_r2_model_cache_env_without_inline_secrets():
     assert "inline_r2_secret_value" not in rendered
 
 
+def test_render_create_wan22_aio_video_cloud_test_profile_uses_5090_and_test_refs():
+    provider = RunPodProvider(
+        _settings(
+            image_name_wan22_aio_video=(
+                "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:"
+                "20260612-wan22aio-test"
+            ),
+            model_sync_enabled=True,
+            model_bucket="allbot-model-cache",
+            model_prefix="wan22_aio_video/2026-06-12-test",
+            model_manifest_key="wan22_aio_video/2026-06-12-test/manifest.json",
+            comfy_custom_nodes_enabled=False,
+            comfy_kjnodes_enabled=False,
+            agent_secret_token="inline_agent_value",
+            minio_access_key="inline_r2_access_value",
+            minio_secret_key="inline_r2_secret_value",
+        )
+    )
+
+    payload = provider.render_create_pod_request(
+        task_type="wan22_aio_video",
+        environment="cloud-test",
+        redact=False,
+    )
+    body = payload["json"]
+    env = body["env"]
+    rendered = json.dumps(payload, ensure_ascii=False)
+
+    assert "templateId" not in body
+    assert body["name"] == "allbot-runpod-test-wan22-aio-video"
+    assert body["imageName"].startswith(
+        "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:"
+    )
+    assert body["gpuTypeIds"] == list(RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS)
+    assert env["ENVIRONMENT"] == "test"
+    assert env["RUNPOD_ENVIRONMENT"] == "cloud-test"
+    assert env["RUNPOD_TASK_TYPE"] == "wan22_aio_video"
+    assert env["AGENT_ID_PREFIX"] == "runpod_test_wan22_aio_video"
+    assert env["AGENT_ID"] == "runpod_test_wan22_aio_video_${RUNPOD_POD_ID:-pending}"
+    assert env["SUPPORTED_TASK_TYPES"] == "image_to_video,wan22_video_v2"
+    assert env["CENTRAL_API_URL"] == "https://worker-central-test.aivison.it.com"
+    assert env["POOL_PROVIDER"] == "runpod"
+    assert env["POOL_NODE_ID"] == "runpod-cloud-test"
+    assert env["POOL_RUNTIME_PROFILE"] == "wan22_aio_video"
+    assert env["MINIO_INPUT_BUCKET"] == "user-data-test"
+    assert env["MINIO_RESULT_BUCKET"] == "user-data-test"
+    assert env["RUNPOD_MODEL_SYNC_ENABLED"] == "true"
+    assert env["RUNPOD_MODEL_BUCKET"] == "allbot-model-cache"
+    assert env["RUNPOD_MODEL_PREFIX"] == "wan22_aio_video/2026-06-12-test"
+    assert env["RUNPOD_MODEL_MANIFEST_KEY"] == (
+        "wan22_aio_video/2026-06-12-test/manifest.json"
+    )
+    assert env["RUNPOD_COMFY_CUSTOM_NODES_ENABLED"] == "false"
+    assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
+    assert env["AGENT_SECRET_TOKEN"] == "{{ RUNPOD_SECRET_allbot_cloud_test_agent_secret_token }}"
+    assert env["MINIO_ACCESS_KEY"] == "{{ RUNPOD_SECRET_allbot_cloud_test_r2_access_key }}"
+    assert env["MINIO_SECRET_KEY"] == "{{ RUNPOD_SECRET_allbot_cloud_test_r2_secret_key }}"
+    assert env["RUNPOD_MODEL_ACCESS_KEY"] == RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF
+    assert env["RUNPOD_MODEL_SECRET_KEY"] == RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF
+    assert "inline_agent_value" not in rendered
+    assert "inline_r2_access_value" not in rendered
+    assert "inline_r2_secret_value" not in rendered
+
+
 def test_render_create_cloud_prod_manual_worker_uses_prod_refs_and_bucket():
     provider = RunPodProvider(
         _settings(
@@ -522,6 +587,44 @@ def test_mutation_gate_blocks_hourly_cost_limit():
     )
 
     assert payload["ok"] is False
+    assert "RUNPOD_MAX_HOURLY_COST_USD would be exceeded" in payload["guard"]["reasons"]
+    assert fake.calls == []
+
+
+def test_wan22_mutation_gate_blocks_same_type_and_hourly_cost_limit():
+    fake = FakeRunPodApi({"id": "pod-created"})
+    provider = RunPodProvider(
+        _settings(
+            dry_run=False,
+            autoscaler_enabled=True,
+            max_hourly_cost_usd=0.25,
+            projected_cost_per_hr_wan22_aio_video=0.5,
+            image_name_wan22_aio_video=(
+                "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:"
+                "20260612-wan22aio-test"
+            ),
+        ),
+        request_func=fake,
+    )
+    existing = [
+        {
+            "id": "pod-existing",
+            "desiredStatus": "RUNNING",
+            "adjustedCostPerHr": 0.1,
+            "env": {"RUNPOD_TASK_TYPE": "wan22_aio_video"},
+        }
+    ]
+
+    payload = provider.create_pod(
+        task_type="wan22_aio_video",
+        environment="cloud-test",
+        existing_pods=existing,
+        execute=True,
+    )
+
+    assert payload["ok"] is False
+    assert "runpod active pod total limit reached" in payload["guard"]["reasons"]
+    assert "runpod active pod limit reached for wan22_aio_video" in payload["guard"]["reasons"]
     assert "RUNPOD_MAX_HOURLY_COST_USD would be exceeded" in payload["guard"]["reasons"]
     assert fake.calls == []
 

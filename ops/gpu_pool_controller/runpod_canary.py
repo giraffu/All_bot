@@ -26,17 +26,61 @@ EXPECTED_RUNPOD_CLOUD_TEST_CENTRAL_URL = "https://worker-central-test.aivison.it
 EXPECTED_MODEL_BUCKET = "allbot-model-cache"
 EXPECTED_MODEL_PREFIX = "img2img_lora/2026-06-10"
 EXPECTED_MODEL_MANIFEST_KEY = "img2img_lora/2026-06-10/manifest.json"
+EXPECTED_WAN22_AIO_VIDEO_MODEL_PREFIX = "wan22_aio_video/2026-06-12-test"
+EXPECTED_WAN22_AIO_VIDEO_MODEL_MANIFEST_KEY = (
+    "wan22_aio_video/2026-06-12-test/manifest.json"
+)
 EXPECTED_TEST_BUCKET = "user-data-test"
 EXPECTED_IMAGE_REF_PREFIX = "ghcr.io/giraffu/allbot-comfy-runpod-img2img:"
+EXPECTED_WAN22_AIO_VIDEO_IMAGE_REF_PREFIX = (
+    "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:"
+)
 DEFAULT_CONTROL_HOST = "100.82.124.91"
 DEFAULT_WORKER_IDS = tuple(f"cloud_worker_test_{index:02d}" for index in range(1, 8))
 EXPECTED_TASK_TYPES = ("img2img", "img2img_lora")
+EXPECTED_WAN22_AIO_VIDEO_TASK_TYPES = ("image_to_video", "wan22_video_v2")
+EXPECTED_WAN22_AIO_VIDEO_GPU_TYPE_IDS = ("NVIDIA GeForce RTX 5090",)
 TERMINAL_TASK_STATUSES = {"done", "error", "cancelled"}
 HEALTHY_WORKER_STATUSES = {"idle", "running"}
 
 
 class RunPodCanaryError(ValueError):
     pass
+
+
+@dataclass(frozen=True)
+class RunPodCanaryProfileSpec:
+    task_type: str
+    image_ref_prefix: str
+    supported_task_types: tuple[str, ...]
+    model_prefix: str
+    model_manifest_key: str
+    expected_gpu_type_ids: tuple[str, ...] = ()
+    task_summary: str = ""
+    worker_disable_summary: str = ""
+
+
+RUNPOD_CANARY_PROFILE_SPECS: dict[str, RunPodCanaryProfileSpec] = {
+    "img2img_lora": RunPodCanaryProfileSpec(
+        task_type="img2img_lora",
+        image_ref_prefix=EXPECTED_IMAGE_REF_PREFIX,
+        supported_task_types=EXPECTED_TASK_TYPES,
+        model_prefix=EXPECTED_MODEL_PREFIX,
+        model_manifest_key=EXPECTED_MODEL_MANIFEST_KEY,
+        task_summary="submit img2img and two img2img_lora Web tasks serially",
+        worker_disable_summary="temporarily disable cloud_worker_test_01..07",
+    ),
+    "wan22_aio_video": RunPodCanaryProfileSpec(
+        task_type="wan22_aio_video",
+        image_ref_prefix=EXPECTED_WAN22_AIO_VIDEO_IMAGE_REF_PREFIX,
+        supported_task_types=EXPECTED_WAN22_AIO_VIDEO_TASK_TYPES,
+        model_prefix=EXPECTED_WAN22_AIO_VIDEO_MODEL_PREFIX,
+        model_manifest_key=EXPECTED_WAN22_AIO_VIDEO_MODEL_MANIFEST_KEY,
+        expected_gpu_type_ids=EXPECTED_WAN22_AIO_VIDEO_GPU_TYPE_IDS,
+        task_summary="submit image_to_video and wan22_video_v2 preview/5s Web tasks serially",
+        worker_disable_summary="temporarily disable cloud-test workers supporting image_to_video or wan22_video_v2",
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -47,6 +91,7 @@ class RunPodCanaryOptions:
     cleanup: bool = True
     disable_workers: bool = True
     worker_ids: tuple[str, ...] = DEFAULT_WORKER_IDS
+    worker_ids_explicit: bool = False
     web_api_url: str = ""
     central_url: str = ""
     web_user_id: int = 3
@@ -88,7 +133,12 @@ def options_from_args_env(args: Any) -> RunPodCanaryOptions:
         or os.getenv("CLOUD_TEST_TAILSCALE_IP")
         or DEFAULT_CONTROL_HOST
     )
-    worker_ids = tuple(getattr(args, "worker_id", None) or _worker_ids_from_env())
+    arg_worker_ids = getattr(args, "worker_id", None)
+    env_worker_ids = _worker_ids_from_env()
+    worker_ids = tuple(arg_worker_ids or env_worker_ids)
+    worker_ids_explicit = bool(arg_worker_ids) or bool(
+        os.getenv("RUNPOD_CANARY_WORKER_IDS", "").strip()
+    )
     return RunPodCanaryOptions(
         task_type=getattr(args, "task_type", "img2img_lora"),
         environment=getattr(args, "env", "cloud-test"),
@@ -96,6 +146,7 @@ def options_from_args_env(args: Any) -> RunPodCanaryOptions:
         cleanup=bool(getattr(args, "cleanup", True)),
         disable_workers=bool(getattr(args, "disable_workers", True)),
         worker_ids=worker_ids or DEFAULT_WORKER_IDS,
+        worker_ids_explicit=worker_ids_explicit,
         web_api_url=(
             getattr(args, "web_api_url", None)
             or os.getenv("RUNPOD_CANARY_WEB_API_URL")
@@ -221,13 +272,14 @@ class RunPodCanaryRunner:
             self._validate_static_options()
             self._run_runpod_preflight(summary)
             if not self.options.execute:
+                spec = _canary_profile_spec(self.options.task_type)
                 summary["ok"] = True
                 summary["would_execute"] = [
                     "create one RunPod cloud-test pod",
                     "wait for infrastructure readiness and Central worker heartbeat",
-                    "temporarily disable cloud_worker_test_01..07",
+                    spec.worker_disable_summary,
                     "upload or reuse one test PNG object in user-data-test",
-                    "submit img2img and two img2img_lora Web tasks serially",
+                    spec.task_summary,
                     "optionally download generated results to a local directory",
                     "restore test workers and delete the RunPod pod",
                 ]
@@ -266,7 +318,8 @@ class RunPodCanaryRunner:
         if self.options.environment != "cloud-test":
             raise RunPodCanaryError("runpod canary only supports --env cloud-test")
         if self.options.task_type not in RUNPOD_TASK_PROFILES:
-            raise RunPodCanaryError("runpod canary only supports img2img/img2img_lora")
+            supported = ", ".join(sorted(RUNPOD_TASK_PROFILES))
+            raise RunPodCanaryError(f"runpod canary only supports: {supported}")
         if self.options.execute:
             settings = self.provider.settings
             missing_gates: list[str] = []
@@ -384,15 +437,23 @@ class RunPodCanaryRunner:
         )
 
     def _wait_runpod_worker(self, pod_id: str, summary: dict[str, Any]) -> dict[str, Any]:
-        expected_agent_id = f"{RUNPOD_TASK_PROFILES[self.options.task_type].agent_id_prefix}_{pod_id}"
+        profile = RUNPOD_TASK_PROFILES[self.options.task_type]
+        expected_agent_id = f"{profile.agent_id_prefix}_{pod_id}"
         self._phase(summary, "central_runpod_worker", "running", {"agent_id": expected_agent_id})
         deadline = time.monotonic() + self.options.worker_timeout_seconds
         last_workers: list[dict[str, Any]] = []
         while time.monotonic() <= deadline:
             workers = self._fetch_workers()
             last_workers = workers
-            worker = _find_runpod_worker(workers, expected_agent_id)
-            if worker and _worker_supports_expected_types(worker):
+            worker = _find_runpod_worker(
+                workers,
+                expected_agent_id=expected_agent_id,
+                agent_id_prefix=profile.agent_id_prefix,
+            )
+            if worker and _worker_supports_expected_types(
+                worker,
+                expected_types=_expected_task_types(self.options.task_type),
+            ):
                 status = str(worker.get("status") or "")
                 if status in HEALTHY_WORKER_STATUSES:
                     summary["runpod_worker"] = _worker_summary(worker)
@@ -407,7 +468,9 @@ class RunPodCanaryRunner:
                     "runpod_workers": [
                         _worker_summary(worker)
                         for worker in last_workers
-                        if str(worker.get("agent_id") or "").startswith("runpod_test_img2img_lora_")
+                        if str(worker.get("agent_id") or "").startswith(
+                            f"{profile.agent_id_prefix}_"
+                        )
                     ],
                 },
                 ensure_ascii=False,
@@ -417,7 +480,8 @@ class RunPodCanaryRunner:
     def _disable_test_workers(self, summary: dict[str, Any]) -> list[dict[str, Any]]:
         self._phase(summary, "disable_test_workers", "running")
         controls: list[dict[str, Any]] = []
-        for agent_id in self.options.worker_ids:
+        agent_ids = self._worker_ids_to_disable()
+        for agent_id in agent_ids:
             current = self._get_agent_control(agent_id)
             controls.append(
                 {
@@ -439,6 +503,18 @@ class RunPodCanaryRunner:
             {"disabled": [item["agent_id"] for item in controls]},
         )
         return controls
+
+    def _worker_ids_to_disable(self) -> tuple[str, ...]:
+        profile = RUNPOD_TASK_PROFILES[self.options.task_type]
+        if profile.task_type == "img2img_lora" or self.options.worker_ids_explicit:
+            return self.options.worker_ids
+        expected_types = _expected_task_types(self.options.task_type)
+        return tuple(
+            str(worker.get("agent_id") or "")
+            for worker in self._fetch_workers()
+            if _is_cloud_test_non_runpod_worker(worker)
+            and _worker_supports_any_expected_type(worker, expected_types=expected_types)
+        )
 
     def _upload_canary_image(self, summary: dict[str, Any]) -> str:
         self._phase(summary, "upload_test_image", "running")
@@ -700,6 +776,12 @@ class RunPodCanaryRunner:
             summary["error"] = (summary.get("error") or "cleanup failed")
 
     def _task_cases(self, image_object_key: str) -> list[dict[str, Any]]:
+        profile = RUNPOD_TASK_PROFILES[self.options.task_type]
+        if profile.task_type == "wan22_aio_video":
+            return self._wan22_aio_video_task_cases(image_object_key)
+        return self._img2img_task_cases(image_object_key)
+
+    def _img2img_task_cases(self, image_object_key: str) -> list[dict[str, Any]]:
         base_inputs = {
             "images": [image_object_key],
             "image": image_object_key,
@@ -750,24 +832,69 @@ class RunPodCanaryRunner:
             },
         ]
 
+    def _wan22_aio_video_task_cases(self, image_object_key: str) -> list[dict[str, Any]]:
+        base_inputs = {
+            "images": [image_object_key],
+            "image": image_object_key,
+            "resolution_preset": "preview",
+            "duration_seconds": 5,
+            "extract_last_frame": True,
+            "seed": 20260612,
+        }
+        return [
+            {
+                "label": "image_to_video_preview_5s",
+                "payload": {
+                    "task_type": "image_to_video",
+                    "inputs": {
+                        **base_inputs,
+                        "wan22_model_profile": "legacy_image_to_video",
+                    },
+                    "prompt": self.options.prompt,
+                    "negative_prompt": self.options.negative_prompt,
+                    "priority": 0,
+                },
+            },
+            {
+                "label": "wan22_video_v2_preview_5s",
+                "payload": {
+                    "task_type": "wan22_video_v2",
+                    "inputs": {
+                        **base_inputs,
+                        "wan22_model_profile": "wan22_video_v2",
+                    },
+                    "prompt": self.options.prompt,
+                    "negative_prompt": self.options.negative_prompt,
+                    "priority": 0,
+                },
+            },
+        ]
+
     def _validate_render(self, render: dict[str, Any]) -> None:
+        spec = _canary_profile_spec(self.options.task_type)
         body = render.get("json") or {}
         env = body.get("env") or {}
         failures: list[str] = []
         if body.get("templateId"):
             failures.append("templateId must be empty for baked GHCR canary")
         image_name = str(body.get("imageName") or "")
-        if not image_name.startswith(EXPECTED_IMAGE_REF_PREFIX):
-            failures.append("imageName must use the public GHCR baked img2img alias")
+        if not image_name.startswith(spec.image_ref_prefix):
+            failures.append(f"imageName must use public GHCR prefix {spec.image_ref_prefix}")
+        if spec.expected_gpu_type_ids and tuple(body.get("gpuTypeIds") or ()) != spec.expected_gpu_type_ids:
+            failures.append(
+                "gpuTypeIds must be "
+                + ",".join(spec.expected_gpu_type_ids)
+            )
         expected_env = {
             "CENTRAL_API_URL": EXPECTED_RUNPOD_CLOUD_TEST_CENTRAL_URL,
+            "SUPPORTED_TASK_TYPES": ",".join(spec.supported_task_types),
             "MINIO_INPUT_BUCKET": EXPECTED_TEST_BUCKET,
             "MINIO_RESULT_BUCKET": EXPECTED_TEST_BUCKET,
             "MINIO_TEMPLATE_BUCKET": EXPECTED_TEST_BUCKET,
             "RUNPOD_MODEL_SYNC_ENABLED": "true",
             "RUNPOD_MODEL_BUCKET": EXPECTED_MODEL_BUCKET,
-            "RUNPOD_MODEL_PREFIX": EXPECTED_MODEL_PREFIX,
-            "RUNPOD_MODEL_MANIFEST_KEY": EXPECTED_MODEL_MANIFEST_KEY,
+            "RUNPOD_MODEL_PREFIX": spec.model_prefix,
+            "RUNPOD_MODEL_MANIFEST_KEY": spec.model_manifest_key,
             "RUNPOD_COMFY_CUSTOM_NODES_ENABLED": "false",
             "RUNPOD_COMFY_KJNODES_ENABLED": "false",
         }
@@ -793,6 +920,7 @@ class RunPodCanaryRunner:
         return {
             "imageName": body.get("imageName"),
             "templateId": bool(body.get("templateId")),
+            "gpu_type_ids": body.get("gpuTypeIds") or [],
             "central_api_url": env.get("CENTRAL_API_URL"),
             "supported_task_types": env.get("SUPPORTED_TASK_TYPES"),
             "model_bucket": env.get("RUNPOD_MODEL_BUCKET"),
@@ -1069,13 +1197,43 @@ def _pod_summary(payload: dict[str, Any], image_ref: str) -> dict[str, Any]:
     }
 
 
-def _find_runpod_worker(workers: list[dict[str, Any]], expected_agent_id: str) -> dict[str, Any] | None:
+def _canary_profile_spec(task_type: str) -> RunPodCanaryProfileSpec:
+    profile = RUNPOD_TASK_PROFILES[task_type]
+    try:
+        return RUNPOD_CANARY_PROFILE_SPECS[profile.task_type]
+    except KeyError as exc:
+        raise RunPodCanaryError(f"missing runpod canary profile spec: {profile.task_type}") from exc
+
+
+def _expected_task_types(task_type: str) -> tuple[str, ...]:
+    return _canary_profile_spec(task_type).supported_task_types
+
+
+def _worker_types(worker: dict[str, Any]) -> set[str]:
+    raw_types = worker.get("types") or worker.get("supported_task_types") or ""
+    if isinstance(raw_types, (list, tuple, set)):
+        return {str(item).strip() for item in raw_types if str(item).strip()}
+    return {item.strip() for item in str(raw_types).split(",") if item.strip()}
+
+
+def _is_cloud_test_non_runpod_worker(worker: dict[str, Any]) -> bool:
+    agent_id = str(worker.get("agent_id") or "")
+    provider = str(worker.get("provider") or "").strip().lower()
+    return agent_id.startswith("cloud_worker_test_") and provider != "runpod"
+
+
+def _find_runpod_worker(
+    workers: list[dict[str, Any]],
+    *,
+    expected_agent_id: str,
+    agent_id_prefix: str,
+) -> dict[str, Any] | None:
     fallback: dict[str, Any] | None = None
     for worker in workers:
         agent_id = str(worker.get("agent_id") or "")
         if agent_id == expected_agent_id:
             return worker
-        if agent_id.startswith("runpod_test_img2img_lora_"):
+        if agent_id.startswith(f"{agent_id_prefix}_"):
             fallback = worker
     return fallback
 
@@ -1093,13 +1251,20 @@ def _find_worker_current_task(
     return None
 
 
-def _worker_supports_expected_types(worker: dict[str, Any]) -> bool:
-    worker_types = {
-        item.strip()
-        for item in str(worker.get("types") or "").split(",")
-        if item.strip()
-    }
-    return set(EXPECTED_TASK_TYPES).issubset(worker_types)
+def _worker_supports_expected_types(
+    worker: dict[str, Any],
+    *,
+    expected_types: tuple[str, ...],
+) -> bool:
+    return set(expected_types).issubset(_worker_types(worker))
+
+
+def _worker_supports_any_expected_type(
+    worker: dict[str, Any],
+    *,
+    expected_types: tuple[str, ...],
+) -> bool:
+    return bool(set(expected_types).intersection(_worker_types(worker)))
 
 
 def _worker_summary(worker: dict[str, Any]) -> dict[str, Any]:

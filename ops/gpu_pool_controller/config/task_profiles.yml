@@ -77,3 +77,20 @@ profiles:
     workflow: workers/comfy_agent/workflows/Wan22AioV82.json
     min_vram_gb: 48
     image_ref: 192.168.1.115:5000/allbot/comfy-cu128-wan22:baseline
+
+  wan22_aio_video:
+    runtime_profile: wan22_aio_video
+    task_types:
+      - image_to_video
+      - wan22_video_v2
+    model_bundles:
+      - video_basic_baseline
+      - wan22_video_v2_baseline
+    required_nodes:
+      - FL_RIFE
+      - UNETLoader
+      - VHS_VideoCombine
+      - Power Lora Loader (rgthree)
+    workflow: workers/comfy_agent/workflows/Wan22AioV82.json
+    min_vram_gb: 48
+    image_ref: ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:pending

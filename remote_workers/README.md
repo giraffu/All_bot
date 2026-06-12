@@ -154,7 +154,7 @@ RunPod ComfyUI runtime profiles, use the profile image builder instead:
 
 ```bash
 scripts/build_runpod_profile_image.sh \
-  --image-ref docker.io/<namespace>/allbot-comfy-runpod-img2img-lora:<tag>
+  --image-ref ghcr.io/giraffu/allbot-comfy-runpod-img2img-lora:<tag>
 ```
 
 The `img2img_lora` profile image bakes ComfyUI system dependencies and
@@ -165,25 +165,35 @@ build, export or copy a verified `ComfyUI-KJNodes` directory and run:
 
 ```bash
 scripts/build_runpod_profile_image.sh \
-  --image-ref docker.io/<namespace>/allbot-comfy-runpod-img2img-lora:<tag> \
+  --image-ref ghcr.io/giraffu/allbot-comfy-runpod-img2img-lora:<tag> \
   --kjnodes-source /path/to/ComfyUI-KJNodes
 ```
 
 Only push after choosing a registry namespace that RunPod can pull:
 
 ```bash
+printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u <github_user> --password-stdin
 scripts/build_runpod_profile_image.sh \
-  --image-ref docker.io/<namespace>/allbot-comfy-runpod-img2img-lora:<tag> \
+  --image-ref ghcr.io/giraffu/allbot-comfy-runpod-img2img-lora:<tag> \
   --kjnodes-source /path/to/ComfyUI-KJNodes \
   --push
+DOCKER_CONFIG="$(mktemp -d)" docker manifest inspect \
+  ghcr.io/giraffu/allbot-comfy-runpod-img2img-lora:<tag> >/dev/null
 ```
+
+The GitHub/GHCR token is only for Docker registry authentication. It is not a
+RunPod API key, not an R2 key, and must not be passed into RunPod Pod env. If the
+token is stored in `.env.cloud.*` under a non-shell key such as
+`all-github-token`, map it to `GHCR_TOKEN` or `GITHUB_TOKEN` in the current shell
+before running `docker login`. RunPod canary images should be public; verify with
+an empty `DOCKER_CONFIG` before using the image in a paid Pod.
 
 When using the baked profile image, set RunPod env so startup does not reinstall
 custom nodes:
 
 ```env
 RUNPOD_USE_TEMPLATE_IMG2IMG_LORA=false
-RUNPOD_IMAGE_NAME_IMG2IMG_LORA=docker.io/<namespace>/allbot-comfy-runpod-img2img-lora:<tag>
+RUNPOD_IMAGE_NAME_IMG2IMG_LORA=ghcr.io/giraffu/allbot-comfy-runpod-img2img-lora:<tag>
 RUNPOD_COMFY_CUSTOM_NODES_ENABLED=false
 RUNPOD_COMFY_KJNODES_ENABLED=false
 ```

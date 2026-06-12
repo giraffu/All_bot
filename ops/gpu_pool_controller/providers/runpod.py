@@ -33,6 +33,7 @@ RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE = (
     "ghcr.io/giraffu/allbot-comfy-runpod-img2img:"
     "20260612-img2img-lora-kjnodes7967a946"
 )
+RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS = ("NVIDIA GeForce RTX 5090",)
 SENSITIVE_KEY_MARKERS = (
     "TOKEN",
     "SECRET",
@@ -91,6 +92,15 @@ RUNPOD_TASK_PROFILES: dict[str, RunPodTaskProfile] = {
         template_env_key="RUNPOD_TEMPLATE_ID_IMG2IMG_LORA",
         gpu_type_env_key="RUNPOD_GPU_TYPE_IDS_IMG2IMG_LORA",
         image_env_key="RUNPOD_IMAGE_NAME_IMG2IMG_LORA",
+    ),
+    "wan22_aio_video": RunPodTaskProfile(
+        task_type="wan22_aio_video",
+        supported_task_types=("image_to_video", "wan22_video_v2"),
+        runtime_profile="wan22_aio_video",
+        agent_id_prefix="runpod_test_wan22_aio_video",
+        template_env_key="RUNPOD_TEMPLATE_ID_WAN22_AIO_VIDEO",
+        gpu_type_env_key="RUNPOD_GPU_TYPE_IDS_WAN22_AIO_VIDEO",
+        image_env_key="RUNPOD_IMAGE_NAME_WAN22_AIO_VIDEO",
     ),
 }
 
@@ -189,6 +199,7 @@ class RunPodSettings:
     max_pods_per_type: int = 1
     max_hourly_cost_usd: float = 5.0
     projected_cost_per_hr_img2img_lora: float = 0.0
+    projected_cost_per_hr_wan22_aio_video: float = 0.0
     cloud_type: str = "SECURE"
     interruptible: bool = False
     gpu_type_ids_img2img_lora: tuple[str, ...] = (
@@ -196,6 +207,7 @@ class RunPodSettings:
         "NVIDIA GeForce RTX 5090",
         "NVIDIA L40S",
     )
+    gpu_type_ids_wan22_aio_video: tuple[str, ...] = RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS
     data_center_ids: tuple[str, ...] = ()
     container_disk_gb: int = 80
     volume_gb: int = 0
@@ -203,9 +215,12 @@ class RunPodSettings:
     network_volume_id: str = ""
     pod_ports: tuple[str, ...] = ()
     use_template_img2img_lora: bool = True
+    use_template_wan22_aio_video: bool = False
     docker_start_cmd_img2img_lora: tuple[str, ...] = ()
     template_id_img2img_lora: str = ""
+    template_id_wan22_aio_video: str = ""
     image_name_img2img_lora: str = ""
+    image_name_wan22_aio_video: str = ""
     worker_central_url_cloud_test: str = "https://worker-central-test.example.com"
     worker_central_url_cloud_prod: str = RUNPOD_PROD_WORKER_CENTRAL_URL
     prod_agent_id: str = RUNPOD_PROD_AGENT_ID
@@ -262,12 +277,21 @@ class RunPodSettings:
                 os.getenv("RUNPOD_PROJECTED_COST_PER_HR_IMG2IMG_LORA"),
                 default=0.0,
             ),
+            projected_cost_per_hr_wan22_aio_video=_float_env(
+                os.getenv("RUNPOD_PROJECTED_COST_PER_HR_WAN22_AIO_VIDEO"),
+                default=0.0,
+            ),
             cloud_type=os.getenv("RUNPOD_CLOUD_TYPE", "SECURE"),
             interruptible=_bool_env(os.getenv("RUNPOD_INTERRUPTIBLE"), default=False),
             gpu_type_ids_img2img_lora=_csv(
                 os.getenv("RUNPOD_GPU_TYPE_IDS_IMG2IMG_LORA"),
                 default=cls.gpu_type_ids_img2img_lora,
             ),
+            gpu_type_ids_wan22_aio_video=_csv(
+                os.getenv("RUNPOD_GPU_TYPE_IDS_WAN22_AIO_VIDEO"),
+                default=cls.gpu_type_ids_wan22_aio_video,
+            )
+            or RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS,
             data_center_ids=_csv(os.getenv("RUNPOD_ALLOWED_DATACENTERS")),
             container_disk_gb=_int_env(
                 os.getenv("RUNPOD_CONTAINER_DISK_GB"),
@@ -281,13 +305,25 @@ class RunPodSettings:
                 os.getenv("RUNPOD_USE_TEMPLATE_IMG2IMG_LORA"),
                 default=True,
             ),
+            use_template_wan22_aio_video=_bool_env(
+                os.getenv("RUNPOD_USE_TEMPLATE_WAN22_AIO_VIDEO"),
+                default=False,
+            ),
             docker_start_cmd_img2img_lora=_docker_start_cmd_env(
                 os.getenv("RUNPOD_DOCKER_START_CMD_JSON_IMG2IMG_LORA"),
                 os.getenv("RUNPOD_DOCKER_START_SCRIPT_IMG2IMG_LORA"),
                 os.getenv("RUNPOD_DOCKER_START_SCRIPT_FILE_IMG2IMG_LORA"),
             ),
             template_id_img2img_lora=os.getenv("RUNPOD_TEMPLATE_ID_IMG2IMG_LORA", ""),
+            template_id_wan22_aio_video=os.getenv(
+                "RUNPOD_TEMPLATE_ID_WAN22_AIO_VIDEO",
+                "",
+            ),
             image_name_img2img_lora=os.getenv("RUNPOD_IMAGE_NAME_IMG2IMG_LORA", ""),
+            image_name_wan22_aio_video=os.getenv(
+                "RUNPOD_IMAGE_NAME_WAN22_AIO_VIDEO",
+                "",
+            ),
             worker_central_url_cloud_test=os.getenv(
                 "RUNPOD_CLOUD_TEST_CENTRAL_API_URL",
                 os.getenv(
@@ -759,6 +795,8 @@ class RunPodProvider:
         if environment not in {"cloud-test", "cloud-prod"}:
             raise ValueError("RunPodProvider v0 only supports environment=cloud-test/cloud-prod")
         profile = self._profile_for_task_type(task_type)
+        if environment == "cloud-prod" and profile.task_type != "img2img_lora":
+            raise ValueError("RunPodProvider v0 cloud-prod only supports img2img/img2img_lora profiles")
         gpu_type_ids = (
             self.settings.prod_gpu_type_ids
             if environment == "cloud-prod"
@@ -769,7 +807,7 @@ class RunPodProvider:
         if environment == "cloud-prod" and not image_name:
             image_name = RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE
         if not template_id and not image_name:
-            image_name = "allbot/comfy-runpod-img2img:pending"
+            image_name = self._pending_image_name_for(profile)
         body: dict[str, Any] = {
             "name": self._pod_name(profile=profile, environment=environment),
             "cloudType": self.settings.cloud_type,
@@ -1000,6 +1038,8 @@ class RunPodProvider:
     def _configured_projected_cost(self, profile: RunPodTaskProfile) -> float:
         if profile.task_type == "img2img_lora":
             return self.settings.projected_cost_per_hr_img2img_lora
+        if profile.task_type == "wan22_aio_video":
+            return self.settings.projected_cost_per_hr_wan22_aio_video
         return 0.0
 
     @staticmethod
@@ -1024,12 +1064,14 @@ class RunPodProvider:
             return RUNPOD_TASK_PROFILES[task_type]
         except KeyError as exc:
             raise ValueError(
-                "RunPodProvider v0 only supports img2img_lora/img2img profiles"
+                "RunPodProvider v0 only supports img2img_lora/img2img/wan22_aio_video profiles"
             ) from exc
 
     def _gpu_type_ids_for(self, profile: RunPodTaskProfile) -> tuple[str, ...]:
         if profile.gpu_type_env_key == "RUNPOD_GPU_TYPE_IDS_IMG2IMG_LORA":
             return self.settings.gpu_type_ids_img2img_lora
+        if profile.gpu_type_env_key == "RUNPOD_GPU_TYPE_IDS_WAN22_AIO_VIDEO":
+            return self.settings.gpu_type_ids_wan22_aio_video
         raise ValueError(f"unsupported RunPod task profile: {profile.task_type}")
 
     def _template_id_for(self, profile: RunPodTaskProfile) -> str:
@@ -1037,12 +1079,24 @@ class RunPodProvider:
             if not self.settings.use_template_img2img_lora:
                 return ""
             return self.settings.template_id_img2img_lora
+        if profile.template_env_key == "RUNPOD_TEMPLATE_ID_WAN22_AIO_VIDEO":
+            if not self.settings.use_template_wan22_aio_video:
+                return ""
+            return self.settings.template_id_wan22_aio_video
         raise ValueError(f"unsupported RunPod task profile: {profile.task_type}")
 
     def _image_name_for(self, profile: RunPodTaskProfile) -> str:
         if profile.image_env_key == "RUNPOD_IMAGE_NAME_IMG2IMG_LORA":
             return self.settings.image_name_img2img_lora
+        if profile.image_env_key == "RUNPOD_IMAGE_NAME_WAN22_AIO_VIDEO":
+            return self.settings.image_name_wan22_aio_video
         raise ValueError(f"unsupported RunPod task profile: {profile.task_type}")
+
+    @staticmethod
+    def _pending_image_name_for(profile: RunPodTaskProfile) -> str:
+        if profile.task_type == "wan22_aio_video":
+            return "allbot/comfy-runpod-wan22-aio-video:pending"
+        return "allbot/comfy-runpod-img2img:pending"
 
     def _docker_start_cmd_for(self, profile: RunPodTaskProfile) -> tuple[str, ...]:
         if profile.task_type == "img2img_lora":

@@ -26,6 +26,61 @@ MODEL_R2_ACCESS_KEY_REF = "{{ RUNPOD_SECRET_allbot_model_cache_r2_access_key }}"
 MODEL_R2_SECRET_KEY_REF = "{{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}"
 
 
+def _normalise_transfer_item(raw_item: dict[str, Any]) -> dict[str, Any]:
+    source_url = str(raw_item.get("source_url") or raw_item.get("sourceUrl") or "").strip()
+    key = str(raw_item.get("key") or raw_item.get("object_key") or raw_item.get("objectKey") or "").strip()
+    relative_path = str(
+        raw_item.get("relative_path")
+        or raw_item.get("relativePath")
+        or ""
+    ).strip()
+    sha256 = str(raw_item.get("sha256") or raw_item.get("expected_sha256") or "").strip()
+    size_value = raw_item.get("size_bytes") or raw_item.get("sizeBytes") or raw_item.get("expected_size")
+    missing = [
+        name
+        for name, value in {
+            "source_url": source_url,
+            "key": key,
+            "relative_path": relative_path,
+            "sha256": sha256,
+            "size_bytes": size_value,
+        }.items()
+        if value in {"", None}
+    ]
+    if missing:
+        raise ValueError(f"model transfer item missing required field(s): {','.join(missing)}")
+    return {
+        "source_url": source_url,
+        "key": key.strip("/"),
+        "relative_path": relative_path.lstrip("/"),
+        "sha256": sha256,
+        "size_bytes": int(size_value),
+    }
+
+
+def _load_transfer_items(args: argparse.Namespace) -> list[dict[str, Any]]:
+    if getattr(args, "batch_file", None):
+        raw_payload = json.loads(Path(args.batch_file).read_text(encoding="utf-8"))
+        if isinstance(raw_payload, dict):
+            raw_items = raw_payload.get("transfers") or raw_payload.get("files") or []
+        else:
+            raw_items = raw_payload
+        if not isinstance(raw_items, list) or not raw_items:
+            raise ValueError("batch transfer file must contain a non-empty list")
+        return [_normalise_transfer_item(item) for item in raw_items]
+    return [
+        _normalise_transfer_item(
+            {
+                "source_url": args.source_url,
+                "key": args.key,
+                "relative_path": args.relative_path,
+                "sha256": args.sha256,
+                "size_bytes": args.size_bytes,
+            }
+        )
+    ]
+
+
 def _load_env_file(path: Path | None) -> None:
     if path is None or not path.exists():
         return
@@ -108,6 +163,7 @@ echo "[model-transfer] boot $(date -Is)"
 python3 -m pip install --no-cache-dir boto3
 python3 - <<'PY'
 import hashlib
+import json
 import os
 import sys
 import urllib.request
@@ -115,15 +171,24 @@ import urllib.request
 import boto3
 from botocore.config import Config
 
-source_url = os.environ["MODEL_SOURCE_URL"]
 bucket = os.environ["RUNPOD_MODEL_BUCKET"]
-key = os.environ["RUNPOD_MODEL_KEY"]
-expected_sha = os.environ["RUNPOD_MODEL_EXPECTED_SHA256"]
-expected_size = int(os.environ["RUNPOD_MODEL_EXPECTED_SIZE"])
-relative_path = os.environ.get("RUNPOD_MODEL_RELATIVE_PATH", "")
 endpoint = os.environ["RUNPOD_MODEL_ENDPOINT"]
 if "://" not in endpoint:
     endpoint = "https://" + endpoint
+
+raw_transfers = os.environ.get("RUNPOD_MODEL_TRANSFERS_JSON", "").strip()
+if raw_transfers:
+    transfers = json.loads(raw_transfers)
+else:
+    transfers = [
+        {
+            "source_url": os.environ["MODEL_SOURCE_URL"],
+            "key": os.environ["RUNPOD_MODEL_KEY"],
+            "relative_path": os.environ.get("RUNPOD_MODEL_RELATIVE_PATH", ""),
+            "sha256": os.environ["RUNPOD_MODEL_EXPECTED_SHA256"],
+            "size_bytes": int(os.environ["RUNPOD_MODEL_EXPECTED_SIZE"]),
+        }
+    ]
 
 client = boto3.client(
     "s3",
@@ -134,72 +199,83 @@ client = boto3.client(
     config=Config(signature_version="s3v4"),
 )
 
-try:
-    existing = client.head_object(Bucket=bucket, Key=key)
-    metadata = existing.get("Metadata") or {}
-    if int(existing.get("ContentLength") or 0) == expected_size and metadata.get("sha256") == expected_sha:
-        print("[model-transfer] object already exists and matches", flush=True)
-        sys.exit(0)
-except Exception:
-    pass
+def transfer_one(item, index, total):
+    source_url = item["source_url"]
+    key = item["key"]
+    expected_sha = item["sha256"]
+    expected_size = int(item["size_bytes"])
+    relative_path = item.get("relative_path", "")
+    print(f"[model-transfer] item {index}/{total} {relative_path or key}", flush=True)
+    try:
+        existing = client.head_object(Bucket=bucket, Key=key)
+        metadata = existing.get("Metadata") or {}
+        if int(existing.get("ContentLength") or 0) == expected_size and metadata.get("sha256") == expected_sha:
+            print("[model-transfer] object already exists and matches", flush=True)
+            return
+    except Exception:
+        pass
 
-upload_id = ""
-parts = []
-digest = hashlib.sha256()
-transferred = 0
-part_size = 64 * 1024 * 1024
-try:
-    created = client.create_multipart_upload(
-        Bucket=bucket,
-        Key=key,
-        ContentType="application/octet-stream",
-        Metadata={
-            "sha256": expected_sha,
-            "relative-path": relative_path,
-            "source": "hf-url",
-        },
-    )
-    upload_id = created["UploadId"]
-    request = urllib.request.Request(source_url, headers={"User-Agent": "AllBotModelTransfer/1.0"})
-    with urllib.request.urlopen(request, timeout=120) as response:
-        part_number = 1
-        while True:
-            chunk = response.read(part_size)
-            if not chunk:
-                break
-            digest.update(chunk)
-            transferred += len(chunk)
-            uploaded = client.upload_part(
-                Bucket=bucket,
-                Key=key,
-                UploadId=upload_id,
-                PartNumber=part_number,
-                Body=chunk,
-            )
-            parts.append({"PartNumber": part_number, "ETag": uploaded["ETag"]})
-            if transferred == expected_size or transferred % (1024 * 1024 * 1024) < part_size:
-                print(f"[model-transfer] {transferred}/{expected_size} bytes", flush=True)
-            part_number += 1
+    upload_id = ""
+    parts = []
+    digest = hashlib.sha256()
+    transferred = 0
+    part_size = 64 * 1024 * 1024
+    try:
+        created = client.create_multipart_upload(
+            Bucket=bucket,
+            Key=key,
+            ContentType="application/octet-stream",
+            Metadata={
+                "sha256": expected_sha,
+                "relative-path": relative_path,
+                "source": "external-url",
+            },
+        )
+        upload_id = created["UploadId"]
+        request = urllib.request.Request(source_url, headers={"User-Agent": "AllBotModelTransfer/1.0"})
+        with urllib.request.urlopen(request, timeout=120) as response:
+            part_number = 1
+            while True:
+                chunk = response.read(part_size)
+                if not chunk:
+                    break
+                digest.update(chunk)
+                transferred += len(chunk)
+                uploaded = client.upload_part(
+                    Bucket=bucket,
+                    Key=key,
+                    UploadId=upload_id,
+                    PartNumber=part_number,
+                    Body=chunk,
+                )
+                parts.append({"PartNumber": part_number, "ETag": uploaded["ETag"]})
+                if transferred == expected_size or transferred % (1024 * 1024 * 1024) < part_size:
+                    print(f"[model-transfer] {transferred}/{expected_size} bytes", flush=True)
+                part_number += 1
 
-    actual_sha = digest.hexdigest()
-    if transferred != expected_size:
-        raise RuntimeError(f"size mismatch: {transferred} != {expected_size}")
-    if actual_sha != expected_sha:
-        raise RuntimeError(f"sha256 mismatch: {actual_sha} != {expected_sha}")
-    client.complete_multipart_upload(
-        Bucket=bucket,
-        Key=key,
-        UploadId=upload_id,
-        MultipartUpload={"Parts": parts},
-    )
-    print("[model-transfer] complete", flush=True)
-except BaseException:
-    if upload_id:
-        try:
-            client.abort_multipart_upload(Bucket=bucket, Key=key, UploadId=upload_id)
-        except Exception:
-            pass
-    raise
+        actual_sha = digest.hexdigest()
+        if transferred != expected_size:
+            raise RuntimeError(f"size mismatch: {transferred} != {expected_size}")
+        if actual_sha != expected_sha:
+            raise RuntimeError(f"sha256 mismatch: {actual_sha} != {expected_sha}")
+        client.complete_multipart_upload(
+            Bucket=bucket,
+            Key=key,
+            UploadId=upload_id,
+            MultipartUpload={"Parts": parts},
+        )
+        print("[model-transfer] complete", flush=True)
+    except BaseException:
+        if upload_id:
+            try:
+                client.abort_multipart_upload(Bucket=bucket, Key=key, UploadId=upload_id)
+            except Exception:
+                pass
+        raise
+
+
+for index, item in enumerate(transfers, start=1):
+    transfer_one(item, index, len(transfers))
 PY
 touch /tmp/allbot-model-transfer.done
 echo "[model-transfer] done $(date -Is)"
@@ -207,8 +283,9 @@ tail -f /dev/null
 """
 
 
-def _create_body(args: argparse.Namespace) -> dict[str, Any]:
+def _create_body(args: argparse.Namespace, items: list[dict[str, Any]]) -> dict[str, Any]:
     endpoint = os.getenv("RUNPOD_MODEL_ENDPOINT") or os.getenv("MINIO_ENDPOINT") or ""
+    first_item = items[0]
     return {
         "name": args.name,
         "cloudType": args.cloud_type,
@@ -230,11 +307,13 @@ def _create_body(args: argparse.Namespace) -> dict[str, Any]:
             "RUNPOD_MODEL_ENDPOINT": endpoint,
             "RUNPOD_MODEL_ACCESS_KEY": MODEL_R2_ACCESS_KEY_REF,
             "RUNPOD_MODEL_SECRET_KEY": MODEL_R2_SECRET_KEY_REF,
-            "RUNPOD_MODEL_KEY": args.key,
-            "RUNPOD_MODEL_RELATIVE_PATH": args.relative_path,
-            "RUNPOD_MODEL_EXPECTED_SHA256": args.sha256,
-            "RUNPOD_MODEL_EXPECTED_SIZE": str(args.size_bytes),
-            "MODEL_SOURCE_URL": args.source_url,
+            "RUNPOD_MODEL_TRANSFER_COUNT": str(len(items)),
+            "RUNPOD_MODEL_TRANSFERS_JSON": json.dumps(items, ensure_ascii=False, separators=(",", ":")),
+            "RUNPOD_MODEL_KEY": first_item["key"],
+            "RUNPOD_MODEL_RELATIVE_PATH": first_item["relative_path"],
+            "RUNPOD_MODEL_EXPECTED_SHA256": first_item["sha256"],
+            "RUNPOD_MODEL_EXPECTED_SIZE": str(first_item["size_bytes"]),
+            "MODEL_SOURCE_URL": first_item["source_url"],
         },
         "dockerStartCmd": ["sh", "-lc", _transfer_start_script()],
     }
@@ -248,13 +327,32 @@ def _redacted_body(body: dict[str, Any]) -> dict[str, Any]:
     if "RUNPOD_MODEL_SECRET_KEY" in env:
         env["RUNPOD_MODEL_SECRET_KEY"] = "<redacted>"
     if "MODEL_SOURCE_URL" in env:
-        env["MODEL_SOURCE_URL"] = "<hf-resolve-url>"
+        env["MODEL_SOURCE_URL"] = "<source-url>"
+    if "RUNPOD_MODEL_TRANSFERS_JSON" in env:
+        try:
+            items = json.loads(env["RUNPOD_MODEL_TRANSFERS_JSON"])
+            for item in items:
+                if "source_url" in item:
+                    item["source_url"] = "<source-url>"
+            env["RUNPOD_MODEL_TRANSFERS_JSON"] = json.dumps(
+                items,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+        except Exception:
+            env["RUNPOD_MODEL_TRANSFERS_JSON"] = "<redacted>"
     return redacted
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Create a temporary RunPod Pod to transfer a model URL into R2")
     parser.add_argument("--env-file", type=Path, default=Path(".env.cloud.test"))
+    parser.add_argument(
+        "--batch-file",
+        type=Path,
+        default=None,
+        help="JSON file containing transfers/files with source_url, key, relative_path, sha256, size_bytes.",
+    )
     parser.add_argument("--source-url", default=DEFAULT_SOURCE_URL)
     parser.add_argument("--bucket", default="allbot-model-cache")
     parser.add_argument("--key", default=DEFAULT_KEY)
@@ -278,9 +376,14 @@ def main() -> int:
     _load_env_file(args.env_file)
     if not args.gpu_type_ids:
         args.gpu_type_ids = ["NVIDIA GeForce RTX 4090", "NVIDIA L40S", "NVIDIA GeForce RTX 5090"]
+    try:
+        transfer_items = _load_transfer_items(args)
+    except Exception as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False, indent=2))
+        return 2
 
     api_key = os.getenv("RUNPOD_API_KEY", "")
-    if not api_key:
+    if not api_key and args.execute:
         print(json.dumps({"ok": False, "error": "missing_RUNPOD_API_KEY"}, indent=2))
         return 2
 
@@ -289,15 +392,20 @@ def main() -> int:
     autoscaler_enabled = _bool_env(os.getenv("RUNPOD_AUTOSCALER_ENABLED"), default=False)
     max_pods_total = _int_env(os.getenv("RUNPOD_MAX_PODS_TOTAL"), default=1)
 
-    pods = _request(
-        method="GET",
-        path="/pods",
-        api_key=api_key,
-        base_url=base_url,
-        params={"computeType": "GPU"},
-    )
+    pods = {"pods": []}
+    pod_lookup_skipped = False
+    if api_key:
+        pods = _request(
+            method="GET",
+            path="/pods",
+            api_key=api_key,
+            base_url=base_url,
+            params={"computeType": "GPU"},
+        )
+    else:
+        pod_lookup_skipped = True
     existing = _managed_transfer_pods(pods)
-    body = _create_body(args)
+    body = _create_body(args, transfer_items)
     guard_reasons = []
     if dry_run:
         guard_reasons.append("RUNPOD_DRY_RUN=true")
@@ -316,6 +424,8 @@ def main() -> int:
                     "dry_run": True,
                     "guard": {"allowed": not guard_reasons, "reasons": guard_reasons},
                     "existing_transfer_pod_count": len(existing),
+                    "pod_lookup_skipped": pod_lookup_skipped,
+                    "transfer_count": len(transfer_items),
                     "request": _redacted_body(body),
                 },
                 ensure_ascii=False,

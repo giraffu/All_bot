@@ -30,6 +30,38 @@
 
 云端不长期自托管正式 PostgreSQL、Valkey 或 MinIO；正式库与运行态 Redis/Valkey 使用托管服务或外部服务。
 
+正式核心 R2 / RunPod 变量口径：
+
+```bash
+MINIO_ENDPOINT=c7220eb751acc6f7ab8255b4a0394ef3.r2.cloudflarestorage.com
+MINIO_BUCKET=user-data-prod
+MINIO_INPUT_BUCKET=user-data-prod
+MINIO_RESULT_BUCKET=user-data-prod
+MINIO_TEMPLATE_BUCKET=user-data-prod
+MINIO_SECURE=true
+MINIO_PUBLIC_URL=
+R2_BUCKET=user-data-prod
+R2_PUBLIC_DOMAIN=https://r2.aivison.it.com
+RUNPOD_PROD_GPU_TYPE_IDS=NVIDIA GeForce RTX 4090
+RUNPOD_MODEL_BUCKET=allbot-model-cache
+RUNPOD_MODEL_PREFIX=img2img_lora/2026-06-10
+RUNPOD_MODEL_MANIFEST_KEY=img2img_lora/2026-06-10/manifest.json
+```
+
+正式变量分层：
+
+| 变量 | 当前值或来源 | 作用 |
+| :--- | :--- | :--- |
+| `MINIO_*` / `R2_*` | `user-data-prod` + `https://r2.aivison.it.com` | 正式新生成对象、Web 媒体、历史/Gallery 读取与 worker 结果上传事实源 |
+| `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | `.env.cloud.prod` 真实值；RunPod Pod 内使用 `allbot_cloud_prod_r2_access_key` / `allbot_cloud_prod_r2_secret_key` secret | 只读写 `user-data-prod`，不得用于模型缓存 |
+| `RUNPOD_PROD_AGENT_SECRET_TOKEN_REF` | `{{ RUNPOD_SECRET_allbot_cloud_prod_agent_secret_token }}` | 正式 RunPod Pod 访问 Central agent API 的 token 引用 |
+| `RUNPOD_PROD_R2_ACCESS_KEY_REF` / `RUNPOD_PROD_R2_SECRET_KEY_REF` | `{{ RUNPOD_SECRET_allbot_cloud_prod_r2_access_key }}` / `{{ RUNPOD_SECRET_allbot_cloud_prod_r2_secret_key }}` | 正式 RunPod Pod 读写 `user-data-prod` 的 secret 引用 |
+| `RUNPOD_MODEL_BUCKET` / `RUNPOD_MODEL_PREFIX` / `RUNPOD_MODEL_MANIFEST_KEY` | `allbot-model-cache` + `img2img_lora/2026-06-10/manifest.json` | 当前手动正式 RunPod `img2img_lora` worker 的模型 manifest；Wan22 未接正式 |
+| `RUNPOD_MODEL_ACCESS_KEY_REF` / `RUNPOD_MODEL_SECRET_KEY_REF` | `{{ RUNPOD_SECRET_allbot_model_cache_r2_access_key }}` / `{{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}` | RunPod Pod 同步 `allbot-model-cache` 的 secret 引用，可与云测试共用模型缓存 secret |
+| `GITHUB_TOKEN` / `GHCR_TOKEN` / `all-github-token` | `.env.cloud.prod` 可保存真实值作为人工密钥来源 | 只用于本机 `docker login ghcr.io`、GHCR push 或 GitHub package 管理；不属于云正式服务容器运行时变量，不进入 RunPod Pod env |
+
+`.env.cloud.prod` 不应保存 Cloudflare `cfat_...` API token，也不应把真实 R2 key、GitHub/GHCR token 写入知识库、日志或 `docker compose config` 输出。当前环境文件中出现的 `all-github-token` 带中划线，不能被 `source .env.cloud.prod` 导出为 shell 变量；需要推 GHCR 时应临时映射到 `GHCR_TOKEN` 或 `GITHUB_TOKEN` 后执行 `docker login ghcr.io`，并在 push 后用空 `DOCKER_CONFIG` 匿名验证 package public。正式 RunPod 目前只允许手动 `prod-worker` 图生图备用路径；视频/Wan22 的正式变量和 secret 只能在 cloud-test canary 完整通过后另开计划。
+
 ### 2.2 本地执行面
 本地主服务器运行云正式 GPU worker 和一个本地 worker relay/上传 sidecar：
 

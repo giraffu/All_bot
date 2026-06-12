@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROFILE="img2img_lora"
-IMAGE_REF="${RUNPOD_PROFILE_IMAGE_REF:-allbot/comfy-runpod-img2img-lora:local}"
+IMAGE_REF="${RUNPOD_PROFILE_IMAGE_REF:-}"
 BASE_IMAGE="${RUNPOD_PROFILE_BASE_IMAGE:-yanwk/comfyui-boot:cu128-slim}"
 KJNODES_REF="${RUNPOD_PROFILE_KJNODES_REF:-7967a946c296a74901606e6a8d1195aa2b6f9215}"
 KJNODES_SOURCE="${RUNPOD_PROFILE_KJNODES_SOURCE:-}"
@@ -15,8 +15,8 @@ Usage:
   scripts/build_runpod_profile_image.sh [options]
 
 Options:
-  --profile <name>       Profile to build. Currently only img2img_lora.
-  --image-ref <ref>      Target image ref. Defaults to allbot/comfy-runpod-img2img-lora:local.
+  --profile <name>       Profile to build: img2img_lora or wan22_aio_video.
+  --image-ref <ref>      Target image ref. Defaults to a local allbot/comfy-runpod-* tag.
   --base-image <ref>     Base ComfyUI image. Defaults to yanwk/comfyui-boot:cu128-slim.
   --kjnodes-ref <sha>    ComfyUI-KJNodes git ref pinned into the image.
   --kjnodes-source <dir> Build from an existing local ComfyUI-KJNodes directory instead of GitHub.
@@ -71,10 +71,18 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-if [ "$PROFILE" != "img2img_lora" ]; then
-    echo "Unsupported RunPod profile: ${PROFILE}" >&2
-    exit 2
-fi
+case "$PROFILE" in
+    img2img_lora)
+        IMAGE_REF="${IMAGE_REF:-allbot/comfy-runpod-img2img-lora:local}"
+        ;;
+    wan22_aio_video)
+        IMAGE_REF="${IMAGE_REF:-allbot/comfy-runpod-wan22-aio-video:local}"
+        ;;
+    *)
+        echo "Unsupported RunPod profile: ${PROFILE}" >&2
+        exit 2
+        ;;
+esac
 
 dockerfile="remote_workers/docker/runpod_profiles/${PROFILE}/Dockerfile"
 if [ ! -f "$dockerfile" ]; then
@@ -115,7 +123,8 @@ docker build \
 
 if [ "$SMOKE" = "true" ]; then
     echo "Smoke testing ${IMAGE_REF}"
-    docker run --rm --entrypoint bash "$IMAGE_REF" -lc '
+    if [ "$PROFILE" = "img2img_lora" ]; then
+        docker run --rm --entrypoint bash "$IMAGE_REF" -lc '
 set -euo pipefail
 if [ -f /opt/allbot-comfyui-dir ]; then
   comfyui_dir="$(cat /opt/allbot-comfyui-dir)"
@@ -139,6 +148,46 @@ fi
 echo "COMFYUI_DIR=${comfyui_dir}"
 echo "KJNODES_PRESENT=true"
 '
+    else
+        docker run --rm --entrypoint bash "$IMAGE_REF" -lc '
+set -euo pipefail
+if [ -f /opt/allbot-comfyui-dir ]; then
+  comfyui_dir="$(cat /opt/allbot-comfyui-dir)"
+elif [ -f /default-comfyui-bundle/ComfyUI/main.py ]; then
+  comfyui_dir=/default-comfyui-bundle/ComfyUI
+elif [ -f /workspace/ComfyUI/main.py ]; then
+  comfyui_dir=/workspace/ComfyUI
+elif [ -f /root/ComfyUI/main.py ]; then
+  comfyui_dir=/root/ComfyUI
+else
+  echo "ComfyUI main.py not found" >&2
+  exit 75
+fi
+test -f "${comfyui_dir}/main.py"
+test -d "${comfyui_dir}/custom_nodes/ComfyUI-KJNodes"
+test -d "${comfyui_dir}/custom_nodes/ComfyUI-VideoHelperSuite"
+test -d "${comfyui_dir}/custom_nodes/rgthree-comfy"
+test -d "${comfyui_dir}/custom_nodes/ComfyUI-Frame-Interpolation"
+test -d "${comfyui_dir}/custom_nodes/ComfyUI-GGUF"
+test -d "${comfyui_dir}/custom_nodes/ComfyUI-DaSiWa-Nodes"
+test -d "${comfyui_dir}/custom_nodes/comfyui-WhiteRabbit"
+command -v ffmpeg >/dev/null
+command -v ffprobe >/dev/null
+if find "${comfyui_dir}/models" -type f \( \
+  -name "wan22EnhancedNSFWSVICamera_nsfwFASTMOVEV2FP8H.safetensors" -o \
+  -name "wan22EnhancedNSFWSVICamera_nsfwFASTMOVEV2FP8L.safetensors" -o \
+  -name "DasiwaWAN22I2V14BLightspeed_snatchkissHighV11.safetensors" -o \
+  -name "DasiwaWAN22I2V14BLightspeed_snatchkissLowV11.safetensors" -o \
+  -path "*/loras/*_high_noise.safetensors" -o \
+  -path "*/loras/*_low_noise.safetensors" \
+  \) -print -quit | grep -q .; then
+  echo "Business model files must stay out of the profile image" >&2
+  exit 1
+fi
+echo "COMFYUI_DIR=${comfyui_dir}"
+echo "WAN22_CUSTOM_NODES_PRESENT=true"
+'
+    fi
 fi
 
 if [ "$PUSH" = "true" ]; then

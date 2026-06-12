@@ -23,7 +23,7 @@
 CLOUD_TEST_BIND_IP=100.82.124.91
 CLOUD_TEST_CONTROL_HOST=100.82.124.91
 CLOUD_TEST_TAILSCALE_IP=100.82.124.91
-MINIO_ENDPOINT=<R2 S3 endpoint host>
+MINIO_ENDPOINT=c7220eb751acc6f7ab8255b4a0394ef3.r2.cloudflarestorage.com
 MINIO_BUCKET=user-data-test
 MINIO_INPUT_BUCKET=user-data-test
 MINIO_RESULT_BUCKET=user-data-test
@@ -32,12 +32,28 @@ MINIO_SECURE=true
 MINIO_PUBLIC_URL=
 R2_BUCKET=user-data-test
 R2_PUBLIC_DOMAIN=https://r2-test.aivison.it.com
+RUNPOD_MODEL_BUCKET=allbot-model-cache
+RUNPOD_MODEL_PREFIX=img2img_lora/2026-06-10
+RUNPOD_MODEL_ENDPOINT=https://c7220eb751acc6f7ab8255b4a0394ef3.r2.cloudflarestorage.com
+RUNPOD_MODEL_SECURE=true
 CLOUD_TEST_DATABASE_URL=postgresql+asyncpg://postgres:<password>@postgres-test:5432/bot_db_test
 CLOUD_TEST_REDIS_URL=redis://:<password>@redis-test:6379/3
 CLOUD_TEST_WORKER_REDIS_URL=redis://:<password>@redis-test:6379/4
 ```
 
 `CLOUD_TEST_BIND_IP` 用于云端服务端口绑定；当前绑定云测试 Tailscale IP `100.82.124.91`，不直接开放公网。`CLOUD_TEST_CONTROL_HOST` 用于本地 GPU worker 访问云端 Central API，也应填 `100.82.124.91`。当前云测试对象存储直接使用 Cloudflare R2 S3 兼容接口，`MINIO_*` 是项目内兼容变量名但值指向 R2；`MINIO_PUBLIC_URL` 继续留空，`R2_PUBLIC_DOMAIN` 使用已验证的新对象公网域名。Web owner 视频结果接口只在 R2 公网 URL 可解析时返回成功，若临时清空 `R2_PUBLIC_DOMAIN`，视频任务可能在 99% / `pending_result` 等待结果 URL。
+
+云测试 R2 变量分层：
+
+| 变量 | 当前值或来源 | 作用 |
+| :--- | :--- | :--- |
+| `MINIO_*` / `R2_*` | `user-data-test` + `https://r2-test.aivison.it.com` | 用户上传、任务输入/结果、模板、历史/Gallery 媒体；不要把模型权重放入该桶 |
+| `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | `.env.cloud.test` 真实值；RunPod Pod 内使用 `allbot_cloud_test_r2_access_key` / `allbot_cloud_test_r2_secret_key` secret | 只读写 `user-data-test` |
+| `RUNPOD_MODEL_*` | `allbot-model-cache` + `RUNPOD_MODEL_PREFIX`/`RUNPOD_MODEL_MANIFEST_KEY` | RunPod 模型 manifest 与模型权重缓存；`img2img_lora` 默认 `img2img_lora/2026-06-10`，Wan22 cloud-test 使用 `wan22_aio_video/2026-06-12-test` |
+| `RUNPOD_MODEL_ACCESS_KEY` / `RUNPOD_MODEL_SECRET_KEY` | `.env.cloud.test` 可保存真实值，供本地 dry-run HEAD/上传脚本使用 | 只读写 `allbot-model-cache`，不能复用 `user-data-test` 的 R2 key |
+| `RUNPOD_MODEL_ACCESS_KEY_REF` / `RUNPOD_MODEL_SECRET_KEY_REF` | `allbot_model_cache_r2_access_key` / `allbot_model_cache_r2_secret_key` | RunPod create JSON 中的模型桶 secret 引用字符串，不是密钥本体 |
+
+Cloudflare R2 页面里显示的 `cfat_...` API token 只用于 Cloudflare API，不是 S3 access key；云测试 `.env.cloud.test` 和知识库都不保存该 token。实际 S3 客户端只使用 access key id / secret access key / endpoint / bucket。
 
 RunPod 云测试远程 worker 使用独立 worker Central 域名 `worker-central-test.aivison.it.com`，回源云测试 Central `http://100.82.124.91:8004`。2026-06-11 已在 `allbot-do-sgp1-test-control` 安装 `cloudflared` 2026.6.0，并以 Cloudflare Tunnel `RunPod-test` token 安装 systemd 服务 `cloudflared.service`；服务已能连接 Cloudflare。该 tunnel 已配置 Published application / Public hostname：
 

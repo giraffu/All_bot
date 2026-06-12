@@ -102,6 +102,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
   - 无 LoRA 的 `custom_video` 与 `wan22_video_v2` 必须清空 `26` / `18` 的 LoRA slot，避免 workflow 模板残留旧模型。
   - V82 通过 `265` 对 `2603` 最终帧序列插帧；默认节点类为 `FL_RIFE`（`multiplier=4`）。`_patch_wan22_aio_workflow(...)` 会在检测到 `265` 后让 `28` 视频输出、`2575` 帧数统计和 `2607` 尾帧提取都读取 `["265", 0]`，避免插帧被绕过或时长变慢。三档时长会写入 `2578.inputs.value`，保持 `5s/8s/10s` 对应 `81/129/161` 源帧。若某个 ComfyUI 未暴露 `FL_RIFE`，应修复该 ComfyUI 自定义节点/依赖环境，不应在 worker 侧切换节点类。
   - 扩展生成、分段重生成和整链拼接依赖 `extra_outputs.last_frame`。Worker 会优先读取 Comfy `2503` 尾帧输出；若个别 Comfy 实例只返回主 MP4，`agent_result_materialization.py` 会用 worker 镜像内的 `ffmpeg/ffprobe` 从主视频补抽最后一帧，因此 `workers/Dockerfile` 必须保留 ffmpeg 依赖。
+  - RunPod `wan22_aio_video` profile 镜像入口为 `remote_workers/docker/runpod_profiles/wan22_aio_video/Dockerfile`，只 baked `Wan22AioV82.json` 所需 custom nodes、`ffmpeg/ffprobe` 和运行依赖；Wan22 high/low UNet、VAE、text encoder 与旧视频 LoRA 仍必须通过 `allbot-model-cache/wan22_aio_video/2026-06-12-test/manifest.json` 同步，不能 baked 入镜像。
   - > ⚠️ **节点硬编码警告**：如果后续重导 `Wan22AioV82.json`，必须复核 `2616`、`2617`、`26`、`18`、`2612`、`23`、`24`、`2368`、`2371`、`2578`、`2603`、`265`、`2575`、`2607` 是否仍满足当前补丁与 mappings 逻辑，否则主模型、LoRA、分辨率、首尾帧输入、时长、RIFE 插帧或尾帧输出会失效。
 
 ### 5. 验证与发布 (Testing & Restart)

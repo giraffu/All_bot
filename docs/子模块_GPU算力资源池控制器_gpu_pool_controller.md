@@ -89,7 +89,7 @@ RUNPOD_MAX_PODS_TOTAL=1
 RUNPOD_MAX_PODS_PER_TYPE=1
 ```
 
-并建议设置 `RUNPOD_PROJECTED_COST_PER_HR_IMG2IMG_LORA` 与 `RUNPOD_MAX_HOURLY_COST_USD` 形成小时成本门禁。所有 CLI 输出会脱敏 API key、agent token、R2 secret 和 presigned URL signature。
+并建议设置 `RUNPOD_PROJECTED_COST_PER_HR_IMG2IMG_LORA` / `RUNPOD_PROJECTED_COST_PER_HR_WAN22_AIO_VIDEO` 与 `RUNPOD_MAX_HOURLY_COST_USD` 形成小时成本门禁。所有 CLI 输出会脱敏 API key、agent token、R2 secret 和 presigned URL signature。
 
 `runpod canary` 是当前推荐的一键云测试 canary 编排命令。默认不创建 Pod，只执行 `validate-key`、`list-pods`、`reconcile-managed-pods` 和 `render-create` 预检，并校验 render 结果必须是 public GHCR baked image、`CENTRAL_API_URL=https://worker-central-test.aivison.it.com`、测试桶 `user-data-test`、模型桶 `allbot-model-cache`、`img2img_lora/2026-06-10/manifest.json`、custom node runtime install 关闭、secret 均为 RunPod secret reference。真实执行示例：
 
@@ -107,6 +107,33 @@ python scripts/gpu_pool_controller.py runpod canary \
 
 真实 `runpod canary` 会按顺序完成：预检 RunPod managed Pod 为 0 -> Web/Central 测试入口健康检查 -> 创建 1 个 cloud-test Pod -> 等 Pod readiness 与 `runpod_test_img2img_lora_<pod_id>` heartbeat -> 临时禁用 `cloud_worker_test_01..07` -> 生成并上传一张无敏感 512x512 PNG，或用 `--input-object-key user-data-test/...` 复用测试桶已有图片 -> 串行提交 `img2img`、`img2img_lora + qwen/YARN_1.0.safetensors`、`img2img_lora + qwen/realistic_texture.safetensors` -> 等 Central `done` 与 Web result `success` -> 可选下载结果到 `--download-results-dir` -> 恢复测试 worker -> 删除 Pod -> 再跑 list/reconcile 确认无 orphan。命令只服务云测试；结果摘要只记录 object key、task id、Central/Web 终态、下载后的本地路径和去掉 query string 的 result path，不输出 JWT、agent token、presigned URL 或完整 create/env payload。
 
+2026-06-12 已新增 `wan22_aio_video` RunPod cloud-test dry-run profile。该 profile 只服务 `render-create` 和 `runpod canary` 预检，不创建正式 Pod，不接 `prod-worker`。固定渲染口径为 `SUPPORTED_TASK_TYPES=image_to_video,wan22_video_v2`、`POOL_RUNTIME_PROFILE=wan22_aio_video`、`AGENT_ID_PREFIX=runpod_test_wan22_aio_video`、`gpuTypeIds=NVIDIA GeForce RTX 5090`、`MINIO_*_BUCKET=user-data-test`、`RUNPOD_MODEL_BUCKET=allbot-model-cache`、`RUNPOD_MODEL_PREFIX=wan22_aio_video/2026-06-12-test`、`RUNPOD_MODEL_MANIFEST_KEY=wan22_aio_video/2026-06-12-test/manifest.json`、`RUNPOD_COMFY_CUSTOM_NODES_ENABLED=false` 和 `RUNPOD_COMFY_KJNODES_ENABLED=false`。dry-run 示例：
+
+```bash
+RUNPOD_IMAGE_NAME_WAN22_AIO_VIDEO=ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:20260612-wan22aio-test \
+RUNPOD_MODEL_BUCKET=allbot-model-cache \
+RUNPOD_MODEL_PREFIX=wan22_aio_video/2026-06-12-test \
+RUNPOD_MODEL_MANIFEST_KEY=wan22_aio_video/2026-06-12-test/manifest.json \
+python scripts/gpu_pool_controller.py runpod render-create \
+  --task-type wan22_aio_video \
+  --env cloud-test
+```
+
+`wan22_aio_video` canary dry-run 会校验 public GHCR Wan22 baked image 前缀、5090-only GPU、测试 Central、测试 bucket、模型 manifest 和 RunPod secret reference。未来真实 `--execute` 时，若未显式传 `--worker-id`，只会临时禁用云测试中支持 `image_to_video` 或 `wan22_video_v2` 的非 RunPod worker；任务 case 固定为 `image_to_video` preview/5s 单起始帧和 `wan22_video_v2` preview/5s 单起始帧，均要求 `extract_last_frame=true`。首尾帧、扩展生成、旧视频 LoRA、transfer/build Pod 和正式视频 worker 仍是后续阶段，不能从本 dry-run profile 推导为已验证。
+
+2026-06-12 已补齐 `wan22_aio_video` 下一阶段工具入口，但默认仍只做 dry-run / 本地校验：
+
+- `scripts/upload_model_bundle_to_r2.py` 支持重复传 `--bundle` 生成去重 union manifest，例如 `--bundle video_basic_baseline --bundle wan22_video_v2_baseline --prefix wan22_aio_video/2026-06-12-test --bucket allbot-model-cache`。脚本会对 R2 做 `HEAD`，输出已存在对象、待上传对象和本地 registry 缺失 blob；相同 `relative_path` 但 sha256/size 不一致会直接失败，避免 manifest 覆盖错模型。真实上传仍需 `--execute`，若缺本地 blob 只能先用 transfer Pod 补齐，不能上传包含缺失对象的 manifest。
+- `scripts/create_runpod_model_transfer_pod.py` 支持 `--batch-file`，batch JSON 可为 `files` / `transfers` 列表，字段为 `source_url`、`key`、`relative_path`、`sha256`、`size_bytes`。默认 dry-run 会渲染单个 model-transfer Pod 请求并脱敏 URL；真实创建必须有 `RUNPOD_API_KEY` 且满足 `RUNPOD_DRY_RUN=false`、`RUNPOD_AUTOSCALER_ENABLED=true`、`RUNPOD_MAX_PODS_TOTAL=1`，完成后必须删除 Pod 并核验无 orphan。
+- `scripts/build_runpod_profile_image.sh --profile wan22_aio_video` 会构建 `remote_workers/docker/runpod_profiles/wan22_aio_video/Dockerfile`，镜像只 baked Wan22 workflow 所需 custom nodes、`ffmpeg/ffprobe` 和运行依赖，不 baked Wan22 high/low UNet、VAE、text encoder 或旧视频 LoRA；只有显式 `--push` 才推 GHCR，push 后需用空 `DOCKER_CONFIG` 匿名 pull/inspect 验证 package public。
+
+GHCR / GitHub token 口径：
+
+- `scripts/build_runpod_profile_image.sh` 不读取 GitHub token 变量；它只负责 `docker build`、smoke test 和可选 `docker push`。执行 `--push` 前必须先用 GitHub/GHCR token 对 Docker CLI 登录 `ghcr.io`，例如把密钥临时导出为 `GITHUB_TOKEN` 或 `GHCR_TOKEN` 后执行 `printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u <github_user> --password-stdin`。
+- `.env.cloud.test` / `.env.cloud.prod` 中可保存 GitHub token 作为本机密钥来源，但真实 token 不得写入 docs、日志、compose config 或命令历史。当前环境文件里使用的 `all-github-token` 是人工记录用 key；因为包含中划线，不能被 `source .env.cloud.prod` 变成合法 shell 变量。需要推 GHCR 时，手工把它的值映射到当前 shell 的 `GHCR_TOKEN` / `GITHUB_TOKEN`，或后续另行补一个合法别名变量。
+- GHCR token 只用于向 GitHub Container Registry push / package 管理，不是 `RUNPOD_API_KEY`、不是 R2 S3 key、也不是 RunPod Pod env。RunPod 拉镜像时应优先使用 public GHCR image；push 后必须用空 `DOCKER_CONFIG` 匿名 `docker manifest inspect` 或 `docker pull` 验证 package 已公开，否则 RunPod 付费 Pod 可能因无 registry 凭据拉取失败。
+- `img2img_lora` 已验证 public image 为 `ghcr.io/giraffu/allbot-comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946`；Wan22 cloud-test 目标前缀为 `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:`，尚需 build、push、public 验证和真实 canary。
+
 RunPod v0 创建 Pod 时默认不把本地 `.env.cloud.test` 中的 `AGENT_SECRET_TOKEN`、`MINIO_ACCESS_KEY`、`MINIO_SECRET_KEY` 明文写入 create JSON，而是引用 RunPod Secrets：
 
 ```dotenv
@@ -116,6 +143,28 @@ MINIO_SECRET_KEY={{ RUNPOD_SECRET_allbot_cloud_test_r2_secret_key }}
 ```
 
 如未来 Secret 名称调整，可用 `RUNPOD_AGENT_SECRET_TOKEN_REF`、`RUNPOD_R2_ACCESS_KEY_REF`、`RUNPOD_R2_SECRET_KEY_REF` 覆盖引用字符串；`MINIO_ENDPOINT` 仍来自 `.env.cloud.test`，因为它不是密钥。2026-06-11 已同步 RunPod template `x750yt0uln` 的 `MINIO_ENDPOINT`，不再保留 UI 创建时的中文占位值。
+
+RunPod / R2 环境变量字典：
+
+| 变量族 | 含义 | cloud-test 固定口径 | cloud-prod 固定口径 |
+| :--- | :--- | :--- | :--- |
+| `MINIO_ENDPOINT` | 项目内 S3 兼容客户端 endpoint；名字保留 MinIO 兼容层，但当前云测试/云正式都指向 Cloudflare R2。 | `c7220eb751acc6f7ab8255b4a0394ef3.r2.cloudflarestorage.com` | `c7220eb751acc6f7ab8255b4a0394ef3.r2.cloudflarestorage.com` |
+| `MINIO_BUCKET` / `MINIO_INPUT_BUCKET` / `MINIO_RESULT_BUCKET` / `MINIO_TEMPLATE_BUCKET` | 用户任务输入、结果、模板与 Web 媒体对象桶；worker 上传结果、Web 直传、历史/Gallery 读取都使用这一组。 | `user-data-test` | `user-data-prod` |
+| `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | 上面用户数据桶的 S3 key；本地/cloud-worker env 可持有真实值，RunPod Pod env 必须使用 Secret reference。 | RunPod 引用 `allbot_cloud_test_r2_access_key` / `allbot_cloud_test_r2_secret_key` | RunPod 引用 `allbot_cloud_prod_r2_access_key` / `allbot_cloud_prod_r2_secret_key` |
+| `R2_BUCKET` | Web/API 层对当前用户数据桶的显式别名；不要用于模型缓存。 | `user-data-test` | `user-data-prod` |
+| `R2_PUBLIC_DOMAIN` | 浏览器读取用户媒体的公网域名；为空会导致 owner 视频结果停在 `pending_result` 或历史预览 fallback 变慢。 | `https://r2-test.aivison.it.com` | `https://r2.aivison.it.com` |
+| `RUNPOD_MODEL_BUCKET` | RunPod 模型缓存桶，只存模型 manifest 和模型文件，不存用户上传/生成媒体。 | `allbot-model-cache` | `allbot-model-cache` |
+| `RUNPOD_MODEL_PREFIX` / `RUNPOD_MODEL_MANIFEST_KEY` | 目标 profile 的模型 bundle 前缀与 manifest key；不同 profile 必须独立。 | `img2img_lora/2026-06-10` 或 `wan22_aio_video/2026-06-12-test` | 当前手动正式 RunPod worker 固定 `img2img_lora/2026-06-10`；Wan22 未接正式 |
+| `RUNPOD_MODEL_ENDPOINT` | 模型缓存桶的 S3 endpoint；本地模型上传/HEAD 脚本和 Pod 内模型同步都读取它，和用户数据桶 endpoint 可以相同但语义不同。 | `https://c7220eb751acc6f7ab8255b4a0394ef3.r2.cloudflarestorage.com` | 同 cloud-test，除非未来模型缓存迁到独立账号 |
+| `RUNPOD_MODEL_ACCESS_KEY` / `RUNPOD_MODEL_SECRET_KEY` | `allbot-model-cache` 的真实 S3 key；本地 `upload_model_bundle_to_r2.py` dry-run/HEAD/upload 需要真实值，RunPod Pod 内由 Secret reference 展开后也叫这个名字。 | `.env.cloud.test` 可保存真实值，文件不得提交 | 正式 Pod 使用 RunPod secret 展开；不在文档记录真实值 |
+| `RUNPOD_MODEL_ACCESS_KEY_REF` / `RUNPOD_MODEL_SECRET_KEY_REF` | 只是 create Pod env 中要渲染的 RunPod Secret reference 字符串，不是 S3 key 本身。 | `{{ RUNPOD_SECRET_allbot_model_cache_r2_access_key }}` / `{{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}` | 同 cloud-test |
+| `RUNPOD_AGENT_SECRET_TOKEN_REF` / `RUNPOD_R2_ACCESS_KEY_REF` / `RUNPOD_R2_SECRET_KEY_REF` | 云测试 Pod 的 Central 鉴权与用户数据桶 secret 引用。 | `allbot_cloud_test_agent_secret_token` / `allbot_cloud_test_r2_access_key` / `allbot_cloud_test_r2_secret_key` | 不用于正式 |
+| `RUNPOD_PROD_AGENT_SECRET_TOKEN_REF` / `RUNPOD_PROD_R2_ACCESS_KEY_REF` / `RUNPOD_PROD_R2_SECRET_KEY_REF` | 正式 Pod 的 Central 鉴权与用户数据桶 secret 引用。 | 不用于云测试 canary | `allbot_cloud_prod_agent_secret_token` / `allbot_cloud_prod_r2_access_key` / `allbot_cloud_prod_r2_secret_key` |
+| `RUNPOD_DRY_RUN` / `RUNPOD_AUTOSCALER_ENABLED` / `RUNPOD_MAX_PODS_TOTAL` / `RUNPOD_MAX_PODS_PER_TYPE` | mutation guard；任何真实 create/start/stop/delete 都必须同时显式打开，默认 dry-run。 | 默认 `RUNPOD_DRY_RUN=true`、`RUNPOD_AUTOSCALER_ENABLED=false`、Pod 上限 1 | 真实手动正式 worker 同样要求四重门禁和 `--execute` |
+| `RUNPOD_IMAGE_NAME_*` / `RUNPOD_USE_TEMPLATE_*` / `RUNPOD_GPU_TYPE_IDS_*` | 每个 task profile 的镜像、template 开关和 GPU 限定；不要把 img2img 与 Wan22 混用。 | `img2img_lora` 使用已验证 public GHCR 4090/5090/L40S 口径；`wan22_aio_video` 固定 5090-only、GHCR Wan22 image 前缀 | 当前手动正式 worker 固定 public `img2img_lora` GHCR image 和 `NVIDIA GeForce RTX 4090` |
+| `GITHUB_TOKEN` / `GHCR_TOKEN` / `all-github-token` | GitHub/GHCR package push 凭据；只给 Docker CLI login 或 GitHub API 使用，不进入 RunPod Pod env。 | 可存在 `.env.cloud.test`，但 `all-github-token` 需手工映射为合法 shell 变量后使用 | 可存在 `.env.cloud.prod`，不得随 compose config 输出或写入知识库真实值 |
+
+`RUNPOD_API_KEY` 是 RunPod REST API token，只用于 `validate-key`、`list-pods` 和真实 Pod mutation，不是 Cloudflare/R2/GitHub 凭据。Cloudflare 控制台创建 R2 token 时显示的 `cfat_...` API token 不参与 S3 客户端、RunPod Pod env 或模型同步；GitHub/GHCR token 也只参与镜像 push/package 管理，不参与 R2 或 RunPod REST。知识库、日志和 `.env.cloud.*` 都不应保存 Cloudflare API token；所有 `*_ACCESS_KEY` / `*_SECRET_KEY` / GitHub token 的真实值只允许放在忽略文件、RunPod Secrets UI 或人工密钥管理系统中，文档只记录变量名、secret 名称和非敏感桶/前缀/域名。
 
 RunPod REST `Pod` schema 没有 `uptimeSeconds` 字段，不要把字段缺失当作 `uptime=0` 作为 readiness 结论。排查 Pod 初始化时以 RunPod UI Telemetry、REST `publicIp`、REST `portMappings` 和 `runpodctl ssh info` 为主；官方文档说明 `portMappings` 为空表示 Pod 仍在初始化，绿色 Running 点只表示 Pod 处于期望运行状态，不代表容器和服务已经 ready。AllBot worker 的业务 ready 仍以云测试 Central `/system/workers` 出现 `runpod_test_img2img_lora_*` healthy heartbeat 为准。
 

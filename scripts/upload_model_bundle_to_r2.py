@@ -179,6 +179,64 @@ def _build_r2_manifest(
     }
 
 
+def _build_r2_manifest_from_manifests(
+    *,
+    manifests: list[dict[str, Any]],
+    prefix: str,
+    include_patterns: list[str] | None = None,
+    exclude_patterns: list[str] | None = None,
+) -> dict[str, Any]:
+    files_by_path: dict[str, dict[str, Any]] = {}
+    bundle_refs = []
+    sources = []
+    for manifest in manifests:
+        bundle_refs.append(
+            {
+                "bundle": manifest.get("bundle"),
+                "version": manifest.get("version"),
+                "profiles": manifest.get("profiles") or [],
+            }
+        )
+        if manifest.get("source"):
+            sources.append(manifest["source"])
+        for item in manifest.get("files", []):
+            relative_path = str(item["relative_path"]).lstrip("/")
+            if not _path_included(
+                relative_path,
+                include_patterns=include_patterns,
+                exclude_patterns=exclude_patterns,
+            ):
+                continue
+            size_bytes = int(item["size_bytes"])
+            sha256 = str(item["sha256"])
+            existing = files_by_path.get(relative_path)
+            if existing:
+                if existing["sha256"] != sha256 or int(existing["size_bytes"]) != size_bytes:
+                    raise RuntimeError(
+                        "conflicting model bundle entries for "
+                        f"{relative_path}: {existing['sha256']} vs {sha256}"
+                    )
+                continue
+            files_by_path[relative_path] = {
+                "relative_path": relative_path,
+                "sha256": sha256,
+                "size_bytes": size_bytes,
+                "key": f"{prefix.rstrip('/')}/models/{relative_path}",
+            }
+    files = sorted(files_by_path.values(), key=lambda item: item["relative_path"])
+    return {
+        "bundle": "union",
+        "version": ",".join(
+            sorted({str(item.get("version") or "") for item in bundle_refs if item.get("version")})
+        ),
+        "bundles": bundle_refs,
+        "source": {"sources": sources},
+        "total_size_bytes": sum(int(item["size_bytes"]) for item in files),
+        "file_count": len(files),
+        "files": files,
+    }
+
+
 def _split_patterns(patterns: list[str] | None) -> list[str]:
     result: list[str] = []
     for raw in patterns or []:
@@ -202,7 +260,8 @@ def _path_included(
 def upload_bundle(
     *,
     repo_root: Path,
-    bundle: str,
+    bundle: str | None = None,
+    bundles: list[str] | None = None,
     version: str,
     bucket: str,
     prefix: str,
@@ -213,17 +272,25 @@ def upload_bundle(
     skip_manifest: bool = False,
     max_concurrency: int = 4,
     max_bandwidth_mbps: float | None = None,
+    allow_missing_local: bool = False,
+    client=None,
 ) -> dict[str, Any]:
     registry = ModelRegistry(repo_root)
-    manifest = registry.load_manifest(bundle, version)
-    r2_manifest = _build_r2_manifest(
-        manifest=manifest,
+    selected_bundles = list(bundles or ([bundle] if bundle else []))
+    if not selected_bundles:
+        raise RuntimeError("at least one model bundle is required")
+    manifests = [
+        registry.load_manifest(selected_bundle, version)
+        for selected_bundle in selected_bundles
+    ]
+    r2_manifest = _build_r2_manifest_from_manifests(
+        manifests=manifests,
         prefix=prefix,
         include_patterns=include_patterns,
         exclude_patterns=exclude_patterns,
     )
     manifest_key = f"{prefix.rstrip('/')}/manifest.json"
-    client = _r2_client()
+    client = client or _r2_client()
 
     bucket_exists = _head_bucket(client, bucket)
     created_bucket = False
@@ -236,6 +303,7 @@ def upload_bundle(
 
     uploads: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
+    missing_local_blobs: list[dict[str, Any]] = []
     transfer_config = TransferConfig(
         max_concurrency=max_concurrency,
         max_bandwidth=(
@@ -249,8 +317,6 @@ def upload_bundle(
         size_bytes = int(item["size_bytes"])
         sha256 = str(item["sha256"])
         source = registry.blob_path(sha256)
-        if not source.exists():
-            raise RuntimeError(f"missing local registry blob for {item['relative_path']}: {source}")
         existing = _head_object(client, bucket=bucket, key=key) if bucket_exists or created_bucket else None
         existing_sha = ""
         if existing:
@@ -258,20 +324,49 @@ def upload_bundle(
         if existing and int(existing.get("ContentLength") or 0) == size_bytes and existing_sha == sha256:
             skipped.append({"key": key, "relative_path": item["relative_path"], "size_bytes": size_bytes})
             continue
-        uploads.append({"key": key, "relative_path": item["relative_path"], "size_bytes": size_bytes})
-        if execute:
+        if not source.exists():
+            missing_local_blobs.append(
+                {
+                    "key": key,
+                    "relative_path": item["relative_path"],
+                    "sha256": sha256,
+                    "size_bytes": size_bytes,
+                    "local_blob": str(source),
+                }
+            )
+            continue
+        uploads.append(
+            {
+                "key": key,
+                "relative_path": item["relative_path"],
+                "sha256": sha256,
+                "size_bytes": size_bytes,
+                "source": str(source),
+            }
+        )
+
+    if missing_local_blobs and execute and not allow_missing_local:
+        raise RuntimeError(
+            "missing local registry blobs for "
+            f"{len(missing_local_blobs)} model object(s); use transfer pods first"
+        )
+    if missing_local_blobs and execute and allow_missing_local and not skip_manifest:
+        raise RuntimeError("missing local blobs require --skip-manifest before partial execute")
+
+    if execute:
+        for item in uploads:
             client.upload_file(
-                str(source),
+                item["source"],
                 bucket,
-                key,
+                item["key"],
                 ExtraArgs={
                     "ContentType": "application/octet-stream",
                     "Metadata": {
-                        "sha256": sha256,
+                        "sha256": item["sha256"],
                         "relative-path": str(item["relative_path"]),
                     },
                 },
-                Callback=UploadProgress(str(item["relative_path"]), size_bytes),
+                Callback=UploadProgress(str(item["relative_path"]), int(item["size_bytes"])),
                 Config=transfer_config,
             )
 
@@ -288,7 +383,7 @@ def upload_bundle(
                 Key=manifest_key,
                 Body=manifest_bytes,
                 ContentType="application/json",
-                Metadata={"bundle": bundle, "version": version},
+                Metadata={"bundle": ",".join(selected_bundles), "version": version},
             )
 
     return {
@@ -299,16 +394,20 @@ def upload_bundle(
         "bucket_created": created_bucket,
         "prefix": prefix,
         "manifest_key": manifest_key,
+        "bundles": selected_bundles,
+        "bundle_count": len(selected_bundles),
         "file_count": r2_manifest["file_count"],
         "total_size_bytes": r2_manifest["total_size_bytes"],
         "upload_count": len(uploads),
         "skipped_existing_count": len(skipped),
+        "missing_local_blob_count": len(missing_local_blobs),
         "skip_manifest": skip_manifest,
         "manifest_upload": manifest_needs_upload,
         "max_concurrency": max_concurrency,
         "max_bandwidth_mbps": max_bandwidth_mbps,
         "uploads": uploads,
         "skipped_existing": skipped,
+        "missing_local_blobs": missing_local_blobs,
     }
 
 
@@ -316,7 +415,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Upload an AllBot model bundle manifest/blobs to R2")
     parser.add_argument("--env-file", type=Path, default=Path(".env.cloud.test"))
     parser.add_argument("--repo-root", type=Path, default=ModelRegistry().root)
-    parser.add_argument("--bundle", default="img2img_lora_baseline")
+    parser.add_argument(
+        "--bundle",
+        action="append",
+        default=None,
+        help="Model bundle to include. Repeat for a union manifest.",
+    )
     parser.add_argument("--version", default="2026-06-10")
     parser.add_argument("--bucket", default=None)
     parser.add_argument("--prefix", default=None)
@@ -339,17 +443,23 @@ def main() -> int:
     )
     parser.add_argument("--max-concurrency", type=int, default=4)
     parser.add_argument("--max-bandwidth-mbps", type=float, default=None)
+    parser.add_argument(
+        "--allow-missing-local",
+        action="store_true",
+        help="Allow execute to upload available local blobs only; requires --skip-manifest.",
+    )
     parser.add_argument("--create-bucket", action="store_true")
     parser.add_argument("--execute", action="store_true")
     args = parser.parse_args()
 
     _load_env_file(args.env_file)
+    bundles = args.bundle or ["img2img_lora_baseline"]
     bucket = args.bucket or os.getenv("RUNPOD_MODEL_BUCKET") or "allbot-model-cache-test"
     prefix = args.prefix or os.getenv("RUNPOD_MODEL_PREFIX") or "img2img_lora/2026-06-10"
     try:
         payload = upload_bundle(
             repo_root=args.repo_root,
-            bundle=args.bundle,
+            bundles=bundles,
             version=args.version,
             bucket=bucket,
             prefix=prefix,
@@ -360,6 +470,7 @@ def main() -> int:
             skip_manifest=args.skip_manifest,
             max_concurrency=args.max_concurrency,
             max_bandwidth_mbps=args.max_bandwidth_mbps,
+            allow_missing_local=args.allow_missing_local,
         )
     except Exception as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False, indent=2), file=sys.stderr)
