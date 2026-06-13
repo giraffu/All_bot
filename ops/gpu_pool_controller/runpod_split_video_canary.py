@@ -556,6 +556,14 @@ class RunPodSplitVideoCanaryRunner(RunPodCanaryRunner):
         task_id = str(submit_payload.get("task_id") or "")
         if not task_id:
             raise RunPodCanaryError(f"{label}: missing task_id in Web response")
+        summary.setdefault("task_attempts", []).append(
+            {
+                "label": label,
+                "registry_task_id": task_id,
+                "task_type": expected_task_type,
+                "expected_worker_id": expected_worker_id,
+            }
+        )
         final_status, pop_evidence = self._wait_task_done(
             task_id=task_id,
             expected_worker_id=expected_worker_id,
