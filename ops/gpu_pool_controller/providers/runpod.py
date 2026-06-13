@@ -747,7 +747,10 @@ class RunPodProvider:
         if not fetched.get("ok"):
             return fetched
         pod = dict(fetched.get("pod") or {})
-        readiness = self._pod_readiness_from_payload(pod)
+        readiness = self._pod_readiness_from_payload(
+            pod,
+            require_port_mappings=bool(self.settings.pod_ports),
+        )
         return {
             "ok": True,
             "pod_id": pod.get("id") or pod_id,
@@ -937,7 +940,12 @@ class RunPodProvider:
         )
 
     @classmethod
-    def _pod_readiness_from_payload(cls, pod: dict[str, Any]) -> dict[str, Any]:
+    def _pod_readiness_from_payload(
+        cls,
+        pod: dict[str, Any],
+        *,
+        require_port_mappings: bool = False,
+    ) -> dict[str, Any]:
         desired_status = str(pod.get("desiredStatus") or pod.get("status") or "")
         ports = cls._normalized_ports(pod.get("ports"))
         port_mappings = pod.get("portMappings") or {}
@@ -956,24 +964,25 @@ class RunPodProvider:
 
         if desired_status != "RUNNING":
             reasons.append("desired_status_not_running")
-        # AllBot RunPod workers only need outbound access to Central. Some
-        # RunPod template-backed pods do not expose a public IP in the REST
-        # schema even after the container is polling Central, so only require
-        # public IP when ports are explicitly exposed.
-        if exposed_ports and public_ip_expected and not public_ip_present:
+        # AllBot RunPod workers only need outbound access to Central. RunPod may
+        # reflect Dockerfile EXPOSE ports even when we did not ask for public
+        # port mappings, so only require public IP/mappings for explicit ports.
+        if require_port_mappings and public_ip_expected and not public_ip_present:
             reasons.append("public_ip_missing")
-        if exposed_ports and not port_mappings_present:
+        if require_port_mappings and not port_mappings_present:
             reasons.append("port_mappings_empty_for_exposed_ports")
-        if tcp_ports and not public_ip_present:
+        if require_port_mappings and tcp_ports and not public_ip_present:
             reasons.append("public_ip_missing_for_tcp_ports")
 
         confidence = "status_only_no_exposed_ports"
-        if exposed_ports:
+        if require_port_mappings:
             confidence = (
                 "network_mapping_confirmed"
                 if not reasons
                 else "initializing_or_unmapped"
             )
+        elif exposed_ports:
+            confidence = "status_only_with_image_exposed_ports"
 
         network = {
             "public_ip_expected": public_ip_expected,

@@ -65,7 +65,10 @@ def _settings(**overrides) -> RunPodSettings:
 
 def test_validate_key_uses_bearer_auth_header_without_mutation():
     fake = FakeRunPodApi({"pods": []})
-    provider = RunPodProvider(_settings(), request_func=fake)
+    provider = RunPodProvider(
+        _settings(pod_ports=("8888/http", "22/tcp")),
+        request_func=fake,
+    )
 
     payload = provider.validate_key()
 
@@ -117,7 +120,10 @@ def test_list_pods_filters_managed_pods_and_redacts_secrets():
             ]
         }
     )
-    provider = RunPodProvider(_settings(), request_func=fake)
+    provider = RunPodProvider(
+        _settings(pod_ports=("8888/http", "22/tcp")),
+        request_func=fake,
+    )
 
     payload = provider.list_pods()
     rendered = json.dumps(payload, ensure_ascii=False)
@@ -142,7 +148,10 @@ def test_get_pod_uses_rest_pod_id_and_redacts_env_secrets():
             "env": {"AGENT_SECRET_TOKEN": "agent_secret_token"},
         }
     )
-    provider = RunPodProvider(_settings(), request_func=fake)
+    provider = RunPodProvider(
+        _settings(pod_ports=("8888/http", "22/tcp")),
+        request_func=fake,
+    )
 
     payload = provider.get_pod(pod_id="pod-1")
     rendered = json.dumps(payload, ensure_ascii=False)
@@ -180,7 +189,10 @@ def test_pod_readiness_reports_initializing_when_port_mappings_are_empty():
             "portMappings": {},
         }
     )
-    provider = RunPodProvider(_settings(), request_func=fake)
+    provider = RunPodProvider(
+        _settings(pod_ports=("8888/http", "22/tcp")),
+        request_func=fake,
+    )
 
     payload = provider.pod_readiness(pod_id="pod-1")
     readiness = payload["readiness"]
@@ -208,7 +220,10 @@ def test_pod_readiness_reports_network_mapping_confirmed_for_running_mapped_pod(
             "portMappings": {"22": 10341},
         }
     )
-    provider = RunPodProvider(_settings(), request_func=fake)
+    provider = RunPodProvider(
+        _settings(pod_ports=("8888/http", "22/tcp")),
+        request_func=fake,
+    )
 
     payload = provider.pod_readiness(pod_id="pod-1")
     readiness = payload["readiness"]
@@ -243,6 +258,30 @@ def test_pod_readiness_treats_running_worker_without_exposed_ports_as_ready():
     assert readiness["confidence"] == "status_only_no_exposed_ports"
     assert readiness["reasons"] == []
     assert readiness["signals"]["public_ip_expected"] is True
+
+
+def test_pod_readiness_treats_image_exposed_ports_as_outbound_worker_ready():
+    fake = FakeRunPodApi(
+        {
+            "id": "pod-1",
+            "name": "allbot-runpod-test-wan22-video-v2",
+            "desiredStatus": "RUNNING",
+            "cloudType": "SECURE",
+            "ports": ["8888/http", "22/tcp"],
+            "publicIp": "",
+            "portMappings": {},
+        }
+    )
+    provider = RunPodProvider(_settings(pod_ports=()), request_func=fake)
+
+    payload = provider.pod_readiness(pod_id="pod-1")
+    readiness = payload["readiness"]
+
+    assert readiness["infrastructure_ready"] is True
+    assert readiness["confidence"] == "status_only_with_image_exposed_ports"
+    assert readiness["reasons"] == []
+    assert readiness["network"]["exposed_ports"] == ["8888/http", "22/tcp"]
+    assert readiness["network"]["port_mappings_present"] is False
 
 
 def test_render_create_pod_request_cloud_test_profile_is_redacted():
