@@ -155,6 +155,25 @@ def _managed_transfer_pods(pods: Any) -> list[dict[str, Any]]:
     return result
 
 
+def _transfer_guard_reasons(
+    *,
+    dry_run: bool,
+    autoscaler_enabled: bool,
+    max_pods_total: int,
+    existing_count: int,
+) -> list[str]:
+    reasons = []
+    if dry_run:
+        reasons.append("RUNPOD_DRY_RUN=true")
+    if not autoscaler_enabled:
+        reasons.append("RUNPOD_AUTOSCALER_ENABLED=false")
+    if not 1 <= max_pods_total <= 2:
+        reasons.append("RUNPOD_MAX_PODS_TOTAL must be 1 or 2")
+    if existing_count >= max_pods_total:
+        reasons.append("model transfer pod limit reached")
+    return reasons
+
+
 def _transfer_start_script() -> str:
     return r"""set -eu
 LOG_FILE="${RUNPOD_TRANSFER_LOG_FILE:-/tmp/allbot-model-transfer.log}"
@@ -406,15 +425,12 @@ def main() -> int:
         pod_lookup_skipped = True
     existing = _managed_transfer_pods(pods)
     body = _create_body(args, transfer_items)
-    guard_reasons = []
-    if dry_run:
-        guard_reasons.append("RUNPOD_DRY_RUN=true")
-    if not autoscaler_enabled:
-        guard_reasons.append("RUNPOD_AUTOSCALER_ENABLED=false")
-    if max_pods_total != 1:
-        guard_reasons.append("RUNPOD_MAX_PODS_TOTAL must be 1")
-    if existing:
-        guard_reasons.append("model transfer pod already exists")
+    guard_reasons = _transfer_guard_reasons(
+        dry_run=dry_run,
+        autoscaler_enabled=autoscaler_enabled,
+        max_pods_total=max_pods_total,
+        existing_count=len(existing),
+    )
 
     if not args.execute or guard_reasons:
         print(

@@ -98,6 +98,32 @@ def test_single_transfer_mode_stays_compatible():
     ]
 
 
+def test_transfer_guard_allows_second_pod_when_explicitly_capped_at_two():
+    module = _load_module()
+
+    reasons = module._transfer_guard_reasons(
+        dry_run=False,
+        autoscaler_enabled=True,
+        max_pods_total=2,
+        existing_count=1,
+    )
+
+    assert reasons == []
+
+
+def test_transfer_guard_blocks_when_transfer_pod_limit_reached():
+    module = _load_module()
+
+    reasons = module._transfer_guard_reasons(
+        dry_run=False,
+        autoscaler_enabled=True,
+        max_pods_total=1,
+        existing_count=1,
+    )
+
+    assert "model transfer pod limit reached" in reasons
+
+
 def test_transfer_dry_run_renders_without_runpod_api_key(tmp_path, monkeypatch):
     batch = tmp_path / "transfers.json"
     batch.write_text(

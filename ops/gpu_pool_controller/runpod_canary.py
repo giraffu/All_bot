@@ -302,6 +302,9 @@ class RunPodCanaryRunner:
                     summary["tasks"].append(task_result)
 
                 summary["ok"] = True
+        except KeyboardInterrupt:
+            summary["ok"] = False
+            summary["error"] = "interrupted"
         except Exception as exc:
             summary["ok"] = False
             summary["error"] = redact_text(str(exc))
@@ -596,8 +599,32 @@ class RunPodCanaryRunner:
         )
         if downloaded:
             task_result.update(downloaded)
+        last_frame_result = self._validate_wan22_last_frame_if_required(
+            label=label,
+            task_id=task_id,
+            result_payload=result_payload,
+        )
+        if last_frame_result:
+            task_result.update(last_frame_result)
         self._phase(summary, f"task_{label}", "ok", task_result)
         return task_result
+
+    def _fetch_result_bytes(self, result_url: str) -> tuple[bytes, str]:
+        method = "public_url"
+        try:
+            response = self._http_request(
+                "GET",
+                result_url,
+                headers={"User-Agent": "AllBot-RunPod-Canary/1.0"},
+                expected_statuses=(200,),
+            )
+            raw = response["raw"]
+        except Exception:
+            method = "r2_s3"
+            raw = self._download_result_bytes_from_s3(result_url)
+        if not raw:
+            raise RunPodCanaryError(f"downloaded result is empty: {_safe_url(result_url)}")
+        return raw, method
 
     def _download_result_if_requested(
         self,
@@ -613,20 +640,41 @@ class RunPodCanaryRunner:
         parsed = urllib.parse.urlsplit(result_url)
         suffix = Path(parsed.path).suffix or ".bin"
         target = download_dir / f"{label}_{task_id}{suffix}"
-        method = "public_url"
-        try:
-            response = self._http_request(
-                "GET",
-                result_url,
-                headers={"User-Agent": "AllBot-RunPod-Canary/1.0"},
-                expected_statuses=(200,),
-            )
-            raw = response["raw"]
-        except Exception:
-            method = "r2_s3"
-            raw = self._download_result_bytes_from_s3(result_url)
+        raw, method = self._fetch_result_bytes(result_url)
         target.write_bytes(raw)
         return {"downloaded_file": str(target), "download_method": method}
+
+    def _validate_wan22_last_frame_if_required(
+        self,
+        *,
+        label: str,
+        task_id: str,
+        result_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        if self.options.task_type != "wan22_aio_video":
+            return {}
+        extra_outputs = result_payload.get("extra_outputs")
+        last_frame = extra_outputs.get("last_frame") if isinstance(extra_outputs, dict) else None
+        if not isinstance(last_frame, dict):
+            raise RunPodCanaryError(f"{label}: missing extra_outputs.last_frame")
+        last_frame_url = str(last_frame.get("url") or last_frame.get("path") or "")
+        if not last_frame_url:
+            raise RunPodCanaryError(f"{label}: last_frame is missing url/path")
+        raw, method = self._fetch_result_bytes(last_frame_url)
+        result: dict[str, Any] = {
+            "last_frame_path": result_url_path(last_frame_url),
+            "last_frame_bytes": len(raw),
+            "last_frame_download_method": method,
+        }
+        if self.options.download_results_dir is not None:
+            download_dir = self.options.download_results_dir
+            download_dir.mkdir(parents=True, exist_ok=True)
+            parsed = urllib.parse.urlsplit(last_frame_url)
+            suffix = Path(parsed.path).suffix or ".png"
+            target = download_dir / f"{label}_{task_id}_last_frame{suffix}"
+            target.write_bytes(raw)
+            result["last_frame_downloaded_file"] = str(target)
+        return result
 
     def _download_result_bytes_from_s3(self, result_url: str) -> bytes:
         object_key = result_url_path(result_url).lstrip("/")

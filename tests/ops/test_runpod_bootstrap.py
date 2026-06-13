@@ -4,17 +4,26 @@ import subprocess
 
 
 BOOTSTRAP_SCRIPT = Path("remote_workers/scripts/runpod_bootstrap_from_git.sh")
+ENTRYPOINT_SCRIPT = Path("remote_workers/scripts/runpod_entrypoint.sh")
 PROFILE_DOCKERFILE = Path("remote_workers/docker/runpod_profiles/img2img_lora/Dockerfile")
 PROFILE_LOCAL_DOCKERFILE = Path(
     "remote_workers/docker/runpod_profiles/img2img_lora/Dockerfile.local-kjnodes"
 )
 WAN22_PROFILE_DOCKERFILE = Path("remote_workers/docker/runpod_profiles/wan22_aio_video/Dockerfile")
 PROFILE_BUILD_SCRIPT = Path("scripts/build_runpod_profile_image.sh")
+RUNPOD_PYTORCH_CU128_BASE = "runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404"
 
 
 def test_runpod_bootstrap_script_has_valid_bash_syntax():
     subprocess.run(
         ["bash", "-n", str(BOOTSTRAP_SCRIPT)],
+        check=True,
+    )
+
+
+def test_runpod_entrypoint_script_has_valid_bash_syntax():
+    subprocess.run(
+        ["bash", "-n", str(ENTRYPOINT_SCRIPT)],
         check=True,
     )
 
@@ -47,6 +56,18 @@ def test_runpod_bootstrap_patches_model_sync_for_resume_downloads():
     assert "offset=current_size" in script
 
 
+def test_runpod_bootstrap_and_entrypoint_recognize_baked_comfyui_dir_marker():
+    bootstrap = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
+    entrypoint = ENTRYPOINT_SCRIPT.read_text(encoding="utf-8")
+
+    assert "/opt/allbot-comfyui-dir" in bootstrap
+    assert "resolve_baked_comfyui_dir" in bootstrap
+    assert 'log "starting ComfyUI from ${baked_comfyui_dir}"' in bootstrap
+    assert "/opt/allbot-comfyui-dir" in entrypoint
+    assert "resolve_baked_comfyui_dir" in entrypoint
+    assert "cd \"$baked_comfyui_dir\"" in entrypoint
+
+
 def test_runpod_profile_build_script_has_valid_bash_syntax():
     subprocess.run(
         ["bash", "-n", str(PROFILE_BUILD_SCRIPT)],
@@ -75,6 +96,13 @@ def test_wan22_profile_image_bakes_video_custom_nodes_not_business_models():
     dockerfile = WAN22_PROFILE_DOCKERFILE.read_text(encoding="utf-8")
     build_script = PROFILE_BUILD_SCRIPT.read_text(encoding="utf-8")
 
+    assert f"ARG BASE_IMAGE={RUNPOD_PYTORCH_CU128_BASE}" in dockerfile
+    assert "COMFYUI_REPO=https://github.com/comfyanonymous/ComfyUI.git" in dockerfile
+    assert "COMFYUI_REF=master" in dockerfile
+    assert "COMFYUI_INSTALL_DIR=/opt/ComfyUI" in dockerfile
+    assert "git clone --filter=blob:none" in dockerfile
+    assert 'rm -rf "${target}/.git"' in dockerfile
+    assert "python3 -m pip cache purge" in dockerfile
     assert "ComfyUI-KJNodes" in dockerfile
     assert "ComfyUI-VideoHelperSuite" in dockerfile
     assert "rgthree-comfy" in dockerfile
@@ -88,7 +116,20 @@ def test_wan22_profile_image_bakes_video_custom_nodes_not_business_models():
     assert "DasiwaWAN22I2V14BLightspeed_snatchkissHighV11.safetensors" in dockerfile
     assert "Business model file unexpectedly present" in dockerfile
     assert "wan22_aio_video" in build_script
+    assert RUNPOD_PYTORCH_CU128_BASE in build_script
+    assert "--comfyui-ref" in build_script
     assert "WAN22_CUSTOM_NODES_PRESENT=true" in build_script
+
+
+def test_wan22_github_workflow_defaults_to_runpod_base_and_comfyui_ref():
+    workflow = Path(".github/workflows/runpod_wan22_profile_image.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert f'default: "{RUNPOD_PYTORCH_CU128_BASE}"' in workflow
+    assert "comfyui_ref:" in workflow
+    assert "--comfyui-ref" in workflow
+    assert "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24" in workflow
 
 
 def test_profile_build_script_accepts_wan22_profile_without_running_real_docker(tmp_path):
@@ -126,6 +167,8 @@ def test_profile_build_script_accepts_wan22_profile_without_running_real_docker(
 
     rendered = calls.read_text(encoding="utf-8")
     assert "remote_workers/docker/runpod_profiles/wan22_aio_video/Dockerfile" in rendered
+    assert f"BASE_IMAGE={RUNPOD_PYTORCH_CU128_BASE}" in rendered
+    assert "COMFYUI_REF=master" in rendered
     assert "allbot.runpod.profile=wan22_aio_video" in rendered
     assert "allbot/comfy-runpod-wan22-aio-video:test" in rendered
 

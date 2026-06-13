@@ -119,20 +119,24 @@ python scripts/gpu_pool_controller.py runpod render-create \
   --env cloud-test
 ```
 
-`wan22_aio_video` canary dry-run 会校验 public GHCR Wan22 baked image 前缀、5090-only GPU、测试 Central、测试 bucket、模型 manifest 和 RunPod secret reference。未来真实 `--execute` 时，若未显式传 `--worker-id`，只会临时禁用云测试中支持 `image_to_video` 或 `wan22_video_v2` 的非 RunPod worker；任务 case 固定为 `image_to_video` preview/5s 单起始帧和 `wan22_video_v2` preview/5s 单起始帧，均要求 `extract_last_frame=true`。首尾帧、扩展生成、旧视频 LoRA、transfer/build Pod 和正式视频 worker 仍是后续阶段，不能从本 dry-run profile 推导为已验证。
+`wan22_aio_video` canary dry-run 会校验 public GHCR Wan22 baked image 前缀、5090-only GPU、测试 Central、测试 bucket、模型 manifest 和 RunPod secret reference。未来真实 `--execute` 时，若未显式传 `--worker-id`，只会临时禁用云测试中支持 `image_to_video` 或 `wan22_video_v2` 的非 RunPod worker；任务 case 固定为 `image_to_video` preview/5s 单起始帧和 `wan22_video_v2` preview/5s 单起始帧，均要求 `extract_last_frame=true`。真实 canary 会校验主 MP4 `result_url` 可下载，并强制校验 Web result 的 `extra_outputs.last_frame` 存在且可读；中断 canary 时会返回结构化 cleanup summary，并删除已创建 Pod。首尾帧、扩展生成、旧视频 LoRA、transfer/build Pod 和正式视频 worker 仍是后续阶段，不能从本 dry-run profile 推导为已验证。
 
 2026-06-12 已补齐 `wan22_aio_video` 下一阶段工具入口，但默认仍只做 dry-run / 本地校验：
 
 - `scripts/upload_model_bundle_to_r2.py` 支持重复传 `--bundle` 生成去重 union manifest，例如 `--bundle video_basic_baseline --bundle wan22_video_v2_baseline --prefix wan22_aio_video/2026-06-12-test --bucket allbot-model-cache`。脚本会对 R2 做 `HEAD`，输出已存在对象、待上传对象和本地 registry 缺失 blob；相同 `relative_path` 但 sha256/size 不一致会直接失败，避免 manifest 覆盖错模型。真实上传仍需 `--execute`，若缺本地 blob 只能先用 transfer Pod 补齐，不能上传包含缺失对象的 manifest。
-- `scripts/create_runpod_model_transfer_pod.py` 支持 `--batch-file`，batch JSON 可为 `files` / `transfers` 列表，字段为 `source_url`、`key`、`relative_path`、`sha256`、`size_bytes`。默认 dry-run 会渲染单个 model-transfer Pod 请求并脱敏 URL；真实创建必须有 `RUNPOD_API_KEY` 且满足 `RUNPOD_DRY_RUN=false`、`RUNPOD_AUTOSCALER_ENABLED=true`、`RUNPOD_MAX_PODS_TOTAL=1`，完成后必须删除 Pod 并核验无 orphan。
-- Wan22 profile 镜像优先通过 GitHub Actions `.github/workflows/runpod_wan22_profile_image.yml` 构建和发布到 GHCR。该 workflow 仅手动 `workflow_dispatch` 触发，默认构建 `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:<tag>`，使用仓库 `GITHUB_TOKEN` 登录 GHCR，运行同一套本地 smoke test，并在 push 后用空 `DOCKER_CONFIG` 做匿名 manifest 检查。`scripts/build_runpod_profile_image.sh --profile wan22_aio_video` 仍保留为本机调试/兜底入口，会构建 `remote_workers/docker/runpod_profiles/wan22_aio_video/Dockerfile`，镜像只 baked Wan22 workflow 所需 custom nodes、`ffmpeg/ffprobe` 和运行依赖，不 baked Wan22 high/low UNet、VAE、text encoder 或旧视频 LoRA。
+- `scripts/create_runpod_model_transfer_pod.py` 支持 `--batch-file`，batch JSON 可为 `files` / `transfers` 列表，字段为 `source_url`、`key`、`relative_path`、`sha256`、`size_bytes`。默认 dry-run 会渲染单个 model-transfer Pod 请求并脱敏 URL；真实创建必须有 `RUNPOD_API_KEY` 且满足 `RUNPOD_DRY_RUN=false`、`RUNPOD_AUTOSCALER_ENABLED=true`、显式 `RUNPOD_MAX_PODS_TOTAL=1` 或 `2`。默认仍按 1 个 transfer Pod 控制；只有用户明确要求并发转存不同批次大对象时，才可临时设为 `2`，且完成后必须逐个删除 Pod、核验无 orphan，并确认 R2 active multipart 为 0。
+- Wan22 profile 镜像优先通过 GitHub Actions `.github/workflows/runpod_wan22_profile_image.yml` 构建和发布到 GHCR。该 workflow 仅手动 `workflow_dispatch` 触发，默认构建 `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:<tag>`，使用仓库 `GITHUB_TOKEN` 登录 GHCR，运行同一套本地 smoke test，并在 push 后用空 `DOCKER_CONFIG` 做匿名 manifest 检查。2026-06-13 后 Wan22 默认 base 切到 RunPod 官方 PyTorch/CUDA 镜像 `runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404`，以尽量复用 RunPod 宿主机常见基础层；Dockerfile 会在 base 不含 ComfyUI 时安装到 `/opt/ComfyUI` 并写入 `/opt/allbot-comfyui-dir`，bootstrap/entrypoint 会按该 marker 启动。构建层会删除 custom node `.git`、pip cache 和临时文件，减少自定义大层；如需回退可显式传 `--base-image yanwk/comfyui-boot:cu128-slim`。`scripts/build_runpod_profile_image.sh --profile wan22_aio_video` 仍保留为本机调试/兜底入口，镜像只 baked Wan22 workflow 所需 custom nodes、`ffmpeg/ffprobe` 和运行依赖，不 baked Wan22 high/low UNet、VAE、text encoder 或旧视频 LoRA。
+
+2026-06-13 Wan22 cloud-test 模型缓存已补齐到 `allbot-model-cache/wan22_aio_video/2026-06-12-test`：`video_basic_baseline + wan22_video_v2_baseline` union manifest 共 23 个对象，包含 Dasiwa high/low、FastMove high/low、`umt5_xxl_fp8_e4m3fn_scaled.safetensors` 的 `clip/` 与 `text_encoders/` 两个 key，以及小型 LoRA/VAE 对象。大对象通过临时 RunPod model-transfer Pod 或本机单次上传 + R2 multipart copy 落地，最终 dry-run 为 `file_count=23`、`skipped_existing=23`、`upload_count=0`、`manifest_upload=false`，RunPod managed transfer Pod 残留和 R2 active multipart 均为 0。该状态仅表示模型缓存和 manifest 已可供 cloud-test worker 同步，不等于真实视频 canary 已通过。
+
+2026-06-13 首轮 Wan22 真实 canary 尝试创建 2 次 cloud-test RTX 5090 Pod，均在 RunPod UI 的 `Downloading your container...` 阶段因 GHCR 镜像冷拉过慢手动中止；两次都未进入模型同步、Central worker heartbeat 或视频任务执行阶段，最终 managed Pod 残留为 0。旧 Wan22 GHCR 镜像 manifest 显示 28 层、压缩总大小约 6.59 GiB；镜像内不包含 Wan22 UNet/VAE/text encoder/LoRA 大模型，慢点来自 CUDA/ComfyUI/custom node runtime 镜像层从 GHCR 到 RunPod 宿主机的冷拉。已落地第一轮镜像启动优化：Wan22 默认改用 RunPod 官方 PyTorch/CUDA base，安装 ComfyUI/custom nodes 后清理 `.git` 与缓存，并让启动脚本识别 `/opt/allbot-comfyui-dir`。下一轮应先通过 GitHub Actions 构建新 tag、匿名 manifest 检查，再跑 cloud-test 真实视频 canary；如仍冷拉过慢，再评估 `disabled` warm standby Pod 或进一步拆分 profile。
 
 GHCR / GitHub token 口径：
 
 - GitHub Actions build 路径优先使用 workflow 自动注入的 `secrets.GITHUB_TOKEN`，不需要把 `.env.cloud.*` 里的 GitHub token 传给 GitHub runner。`scripts/build_runpod_profile_image.sh` 不读取 GitHub token 变量；它只负责 `docker build`、smoke test 和可选 `docker push`。若本机执行 `--push`，必须先用 GitHub/GHCR token 对 Docker CLI 登录 `ghcr.io`，例如把密钥临时导出为 `GITHUB_TOKEN` 或 `GHCR_TOKEN` 后执行 `printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u <github_user> --password-stdin`。
 - `.env.cloud.test` / `.env.cloud.prod` 中可保存 GitHub token 作为本机密钥来源，但真实 token 不得写入 docs、日志、compose config 或命令历史。当前环境文件里使用的 `all-github-token` 是人工记录用 key；因为包含中划线，不能被 `source .env.cloud.prod` 变成合法 shell 变量。需要推 GHCR 时，手工把它的值映射到当前 shell 的 `GHCR_TOKEN` / `GITHUB_TOKEN`，或后续另行补一个合法别名变量。
 - GHCR token 只用于向 GitHub Container Registry push / package 管理，不是 `RUNPOD_API_KEY`、不是 R2 S3 key、也不是 RunPod Pod env。RunPod 拉镜像时应优先使用 public GHCR image；push 后必须用空 `DOCKER_CONFIG` 匿名 `docker manifest inspect` 或 `docker pull` 验证 package 已公开，否则 RunPod 付费 Pod 可能因无 registry 凭据拉取失败。
-- `img2img_lora` 已验证 public image 为 `ghcr.io/giraffu/allbot-comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946`；Wan22 cloud-test 目标前缀为 `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:`，尚需 build、push、public 验证和真实 canary。
+- `img2img_lora` 已验证 public image 为 `ghcr.io/giraffu/allbot-comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946`；Wan22 cloud-test image 已通过 GitHub Actions 构建为 `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:20260613-wan22aio-test`，仍需跑 cloud-test 真实视频 canary 后才可进入正式视频 worker 计划。
 
 Wan22 GHCR workflow 触发示例：
 
@@ -140,6 +144,7 @@ Wan22 GHCR workflow 触发示例：
 gh workflow run runpod_wan22_profile_image.yml \
   --ref deploy \
   -f image_tag=20260613-wan22aio-test \
+  -f comfyui_ref=master \
   -f push_image=true \
   -f verify_public_pull=true
 ```

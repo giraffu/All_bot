@@ -1,6 +1,9 @@
-ARG BASE_IMAGE=yanwk/comfyui-boot:cu128-slim
+ARG BASE_IMAGE=runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404
 FROM ${BASE_IMAGE}
 
+ARG COMFYUI_REPO=https://github.com/comfyanonymous/ComfyUI.git
+ARG COMFYUI_REF=master
+ARG COMFYUI_INSTALL_DIR=/opt/ComfyUI
 ARG KJNODES_REPO=https://github.com/kijai/ComfyUI-KJNodes.git
 ARG KJNODES_REF=7967a946c296a74901606e6a8d1195aa2b6f9215
 ARG VIDEOHELPERSUITE_REPO=https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git
@@ -23,28 +26,44 @@ LABEL allbot.runpod.models="external-r2-manifest"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-RUN if command -v apt-get >/dev/null 2>&1; then \
-      apt-get update && \
-      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl \
-        ffmpeg \
-        git \
-        openssh-server \
-        python3-pip && \
+ENV PIP_NO_CACHE_DIR=1
+
+RUN set -euo pipefail; \
+    if command -v apt-get >/dev/null 2>&1; then \
+      packages="ca-certificates curl ffmpeg git openssh-server"; \
+      if ! python3 -m pip --version >/dev/null 2>&1; then \
+        packages="${packages} python3-pip"; \
+      fi; \
+      apt-get update; \
+      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ${packages}; \
       rm -rf /var/lib/apt/lists/*; \
     fi
 
 RUN set -euo pipefail; \
-    if [ -f /default-comfyui-bundle/ComfyUI/main.py ]; then \
-      comfyui_dir=/default-comfyui-bundle/ComfyUI; \
-    elif [ -f /workspace/ComfyUI/main.py ]; then \
-      comfyui_dir=/workspace/ComfyUI; \
-    elif [ -f /root/ComfyUI/main.py ]; then \
-      comfyui_dir=/root/ComfyUI; \
+    find_comfyui_dir() { \
+      for candidate in \
+        /default-comfyui-bundle/ComfyUI \
+        /workspace/ComfyUI \
+        /root/ComfyUI \
+        "${COMFYUI_INSTALL_DIR}"; do \
+        if [ -f "${candidate}/main.py" ]; then \
+          printf '%s\n' "${candidate}"; \
+          return 0; \
+        fi; \
+      done; \
+      return 1; \
+    }; \
+    if comfyui_dir="$(find_comfyui_dir)"; then \
+      echo "Using existing ComfyUI at ${comfyui_dir}"; \
     else \
-      echo "No ComfyUI main.py found in known image paths" >&2; \
-      exit 75; \
+      comfyui_dir="${COMFYUI_INSTALL_DIR}"; \
+      rm -rf "${comfyui_dir}"; \
+      git clone --filter=blob:none "${COMFYUI_REPO}" "${comfyui_dir}"; \
+      git -C "${comfyui_dir}" checkout --force "${COMFYUI_REF}"; \
+      if [ -f "${comfyui_dir}/requirements.txt" ]; then \
+        python3 -m pip install --no-cache-dir -r "${comfyui_dir}/requirements.txt"; \
+      fi; \
+      rm -rf "${comfyui_dir}/.git"; \
     fi; \
     mkdir -p "${comfyui_dir}/custom_nodes"; \
     git config --global http.version HTTP/1.1; \
@@ -52,6 +71,7 @@ RUN set -euo pipefail; \
       local repo="$1"; \
       local ref="$2"; \
       local target="$3"; \
+      rm -rf "${target}"; \
       for attempt in 1 2 3 4 5; do \
         git clone --filter=blob:none "${repo}" "${target}" && break; \
         rm -rf "${target}"; \
@@ -65,6 +85,7 @@ RUN set -euo pipefail; \
       if [ -f "${target}/requirements.txt" ]; then \
         python3 -m pip install --no-cache-dir -r "${target}/requirements.txt"; \
       fi; \
+      rm -rf "${target}/.git"; \
     }; \
     clone_node "${KJNODES_REPO}" "${KJNODES_REF}" "${comfyui_dir}/custom_nodes/ComfyUI-KJNodes"; \
     clone_node "${VIDEOHELPERSUITE_REPO}" "${VIDEOHELPERSUITE_REF}" "${comfyui_dir}/custom_nodes/ComfyUI-VideoHelperSuite"; \
@@ -74,13 +95,18 @@ RUN set -euo pipefail; \
     clone_node "${DASIWA_REPO}" "${DASIWA_REF}" "${comfyui_dir}/custom_nodes/ComfyUI-DaSiWa-Nodes"; \
     clone_node "${WHITERABBIT_REPO}" "${WHITERABBIT_REF}" "${comfyui_dir}/custom_nodes/comfyui-WhiteRabbit"; \
     python3 -m pip install --no-cache-dir packaging torchlanc; \
-    find "${comfyui_dir}/models" -type f \( \
-      -name 'wan22EnhancedNSFWSVICamera_nsfwFASTMOVEV2FP8H.safetensors' -o \
-      -name 'wan22EnhancedNSFWSVICamera_nsfwFASTMOVEV2FP8L.safetensors' -o \
-      -name 'DasiwaWAN22I2V14BLightspeed_snatchkissHighV11.safetensors' -o \
-      -name 'DasiwaWAN22I2V14BLightspeed_snatchkissLowV11.safetensors' -o \
-      -path '*/loras/*_high_noise.safetensors' -o \
-      -path '*/loras/*_low_noise.safetensors' \
-      \) -print -quit | \
-      awk 'NF { print "Business model file unexpectedly present in image: " $0; exit 1 }'; \
+    if [ -d "${comfyui_dir}/models" ]; then \
+      find "${comfyui_dir}/models" -type f \( \
+        -name 'wan22EnhancedNSFWSVICamera_nsfwFASTMOVEV2FP8H.safetensors' -o \
+        -name 'wan22EnhancedNSFWSVICamera_nsfwFASTMOVEV2FP8L.safetensors' -o \
+        -name 'DasiwaWAN22I2V14BLightspeed_snatchkissHighV11.safetensors' -o \
+        -name 'DasiwaWAN22I2V14BLightspeed_snatchkissLowV11.safetensors' -o \
+        -path '*/loras/*_high_noise.safetensors' -o \
+        -path '*/loras/*_low_noise.safetensors' \
+        \) -print -quit | \
+        awk 'NF { print "Business model file unexpectedly present in image: " $0; exit 1 }'; \
+    fi; \
+    find "${comfyui_dir}" -type d -name __pycache__ -prune -exec rm -rf {} +; \
+    python3 -m pip cache purge >/dev/null 2>&1 || true; \
+    rm -rf /root/.cache/pip /tmp/* /var/tmp/*; \
     echo "${comfyui_dir}" > /opt/allbot-comfyui-dir

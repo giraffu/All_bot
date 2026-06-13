@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from ops.gpu_pool_controller.cli import build_parser
 from ops.gpu_pool_controller.providers.runpod import RunPodSettings
 from ops.gpu_pool_controller.runpod_canary import (
@@ -15,6 +17,7 @@ from ops.gpu_pool_controller.runpod_canary import (
     EXPECTED_WAN22_AIO_VIDEO_MODEL_MANIFEST_KEY,
     EXPECTED_WAN22_AIO_VIDEO_MODEL_PREFIX,
     RunPodCanaryOptions,
+    RunPodCanaryError,
     RunPodCanaryRunner,
     result_url_path,
     write_canary_png,
@@ -93,6 +96,9 @@ class FakeRunPodProvider:
         self.delete_calls += 1
         return {"ok": True}
 
+    def pod_readiness(self, *, pod_id):
+        return {"ok": True, "readiness": {"infrastructure_ready": False}}
+
 
 def test_runpod_canary_dry_run_preflights_without_mutations():
     provider = FakeRunPodProvider()
@@ -141,7 +147,7 @@ def test_runpod_canary_wan22_dry_run_preflights_with_profile_specific_render():
 
 def test_runpod_canary_execute_requires_explicit_runpod_gates():
     provider = FakeRunPodProvider(settings=RunPodSettings(dry_run=True))
-    options = RunPodCanaryOptions(execute=True, quiet=True)
+    options = RunPodCanaryOptions(execute=True, quiet=True, disable_workers=False)
 
     payload = RunPodCanaryRunner(
         provider,
@@ -152,6 +158,35 @@ def test_runpod_canary_execute_requires_explicit_runpod_gates():
     assert payload["ok"] is False
     assert "RUNPOD_DRY_RUN=false" in payload["error"]
     assert provider.create_calls == 0
+
+
+def test_runpod_canary_keyboard_interrupt_returns_cleanup_summary():
+    provider = FakeRunPodProvider(
+        settings=RunPodSettings(
+            dry_run=False,
+            autoscaler_enabled=True,
+            max_pods_total=1,
+            max_pods_per_type=1,
+        )
+    )
+    options = RunPodCanaryOptions(execute=True, quiet=True, disable_workers=False)
+
+    def raise_keyboard_interrupt(_seconds: float) -> None:
+        raise KeyboardInterrupt
+
+    runner = RunPodCanaryRunner(
+        provider,
+        options,
+        sleep_func=raise_keyboard_interrupt,
+    )
+    runner._run_web_preflight = lambda summary: None  # type: ignore[method-assign]
+
+    payload = runner.run()
+
+    assert payload["ok"] is False
+    assert payload["error"] == "interrupted"
+    assert payload["cleanup"]["pod_delete"] == {"pod_id": "pod-1", "ok": True}
+    assert provider.delete_calls == 1
 
 
 def test_canary_png_and_result_url_helpers(tmp_path: Path):
@@ -192,6 +227,46 @@ def test_wan22_canary_task_cases_are_preview_5s_single_frame():
         assert "lora_name" not in inputs
     assert cases[0]["payload"]["inputs"]["wan22_model_profile"] == "legacy_image_to_video"
     assert cases[1]["payload"]["inputs"]["wan22_model_profile"] == "wan22_video_v2"
+
+
+def test_wan22_canary_validates_last_frame_extra_output():
+    runner = RunPodCanaryRunner(
+        FakeRunPodProvider(),
+        RunPodCanaryOptions(task_type="wan22_aio_video", quiet=True),
+    )
+    runner._http_request = lambda *args, **kwargs: {"raw": b"png-bytes"}  # type: ignore[method-assign]
+
+    result = runner._validate_wan22_last_frame_if_required(
+        label="wan22_video_v2_preview_5s",
+        task_id="task-1",
+        result_payload={
+            "extra_outputs": {
+                "last_frame": {
+                    "path": "123/output_images/task-1_last_frame.png",
+                    "url": "https://cdn.example/task-1_last_frame.png",
+                    "media_type": "image",
+                }
+            }
+        },
+    )
+
+    assert result["last_frame_bytes"] == len(b"png-bytes")
+    assert result["last_frame_path"] == "/task-1_last_frame.png"
+    assert result["last_frame_download_method"] == "public_url"
+
+
+def test_wan22_canary_requires_last_frame_extra_output():
+    runner = RunPodCanaryRunner(
+        FakeRunPodProvider(),
+        RunPodCanaryOptions(task_type="wan22_aio_video", quiet=True),
+    )
+
+    with pytest.raises(RunPodCanaryError, match="missing extra_outputs.last_frame"):
+        runner._validate_wan22_last_frame_if_required(
+            label="wan22_video_v2_preview_5s",
+            task_id="task-1",
+            result_payload={"extra_outputs": {}},
+        )
 
 
 def test_wan22_canary_waits_for_profile_specific_runpod_worker():

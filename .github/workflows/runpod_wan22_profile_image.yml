@@ -8,9 +8,13 @@ on:
         required: false
         default: ""
       base_image:
-        description: "Base ComfyUI image."
+        description: "Base image. Default reuses RunPod PyTorch/CUDA layers."
         required: false
-        default: "yanwk/comfyui-boot:cu128-slim"
+        default: "runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404"
+      comfyui_ref:
+        description: "ComfyUI git ref used when the base image does not include ComfyUI."
+        required: false
+        default: "master"
       kjnodes_ref:
         description: "ComfyUI-KJNodes git ref baked into the image."
         required: false
@@ -79,6 +83,7 @@ jobs:
             --profile wan22_aio_video
             --image-ref "${{ steps.meta.outputs.image_ref }}"
             --base-image "${{ inputs.base_image }}"
+            --comfyui-ref "${{ inputs.comfyui_ref }}"
             --kjnodes-ref "${{ inputs.kjnodes_ref }}"
           )
           if [[ "${{ inputs.push_image }}" == "true" ]]; then
@@ -114,6 +119,7 @@ jobs:
             echo ""
             echo "- Image: \`${{ steps.meta.outputs.image_ref }}\`"
             echo "- Base image: \`${{ inputs.base_image }}\`"
+            echo "- ComfyUI ref: \`${{ inputs.comfyui_ref }}\`"
             echo "- KJNodes ref: \`${{ inputs.kjnodes_ref }}\`"
             echo "- Pushed: \`${{ inputs.push_image }}\`"
             echo "- Anonymous manifest verified: \`${{ inputs.verify_public_pull }}\`"

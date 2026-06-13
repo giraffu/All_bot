@@ -3,11 +3,23 @@ set -euo pipefail
 
 PROFILE="img2img_lora"
 IMAGE_REF="${RUNPOD_PROFILE_IMAGE_REF:-}"
-BASE_IMAGE="${RUNPOD_PROFILE_BASE_IMAGE:-yanwk/comfyui-boot:cu128-slim}"
+BASE_IMAGE="${RUNPOD_PROFILE_BASE_IMAGE:-}"
+COMFYUI_REF="${RUNPOD_PROFILE_COMFYUI_REF:-master}"
 KJNODES_REF="${RUNPOD_PROFILE_KJNODES_REF:-7967a946c296a74901606e6a8d1195aa2b6f9215}"
 KJNODES_SOURCE="${RUNPOD_PROFILE_KJNODES_SOURCE:-}"
 PUSH="false"
 SMOKE="true"
+
+default_base_image_for_profile() {
+    case "$1" in
+        wan22_aio_video)
+            printf '%s\n' "runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404"
+            ;;
+        *)
+            printf '%s\n' "yanwk/comfyui-boot:cu128-slim"
+            ;;
+    esac
+}
 
 usage() {
     cat <<'USAGE'
@@ -17,7 +29,8 @@ Usage:
 Options:
   --profile <name>       Profile to build: img2img_lora or wan22_aio_video.
   --image-ref <ref>      Target image ref. Defaults to a local allbot/comfy-runpod-* tag.
-  --base-image <ref>     Base ComfyUI image. Defaults to yanwk/comfyui-boot:cu128-slim.
+  --base-image <ref>     Base image. Defaults by profile; Wan22 uses RunPod PyTorch/CUDA.
+  --comfyui-ref <ref>    ComfyUI git ref used when the base image does not include ComfyUI.
   --kjnodes-ref <sha>    ComfyUI-KJNodes git ref pinned into the image.
   --kjnodes-source <dir> Build from an existing local ComfyUI-KJNodes directory instead of GitHub.
   --no-smoke             Skip local smoke test after build.
@@ -41,6 +54,10 @@ while [ "$#" -gt 0 ]; do
             ;;
         --base-image)
             BASE_IMAGE="${2:?missing value for --base-image}"
+            shift 2
+            ;;
+        --comfyui-ref)
+            COMFYUI_REF="${2:?missing value for --comfyui-ref}"
             shift 2
             ;;
         --kjnodes-ref)
@@ -84,6 +101,10 @@ case "$PROFILE" in
         ;;
 esac
 
+if [ -z "$BASE_IMAGE" ]; then
+    BASE_IMAGE="$(default_base_image_for_profile "$PROFILE")"
+fi
+
 dockerfile="remote_workers/docker/runpod_profiles/${PROFILE}/Dockerfile"
 if [ ! -f "$dockerfile" ]; then
     echo "Dockerfile not found: ${dockerfile}" >&2
@@ -115,6 +136,7 @@ echo "Building ${IMAGE_REF}"
 docker build \
     -f "$dockerfile_for_build" \
     --build-arg "BASE_IMAGE=${BASE_IMAGE}" \
+    --build-arg "COMFYUI_REF=${COMFYUI_REF}" \
     --build-arg "KJNODES_REF=${KJNODES_REF}" \
     --label "allbot.runpod.profile=${PROFILE}" \
     --label "allbot.runpod.model_sync=external-r2-manifest" \

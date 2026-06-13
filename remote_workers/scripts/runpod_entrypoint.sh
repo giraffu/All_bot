@@ -38,6 +38,18 @@ export PREFETCH_CACHE_DIR="${PREFETCH_CACHE_DIR:-./prefetch-cache/${AGENT_ID:-ru
 cd "$ROOT_DIR"
 mkdir -p "$COMFY_INPUT_DIR" "$COMFY_OUTPUT_DIR" "$RESULT_SPOOL_DIR" "$PREFETCH_CACHE_DIR" logs
 
+resolve_baked_comfyui_dir() {
+    if [ -f /opt/allbot-comfyui-dir ]; then
+        local baked_dir
+        baked_dir="$(cat /opt/allbot-comfyui-dir)"
+        if [ -n "$baked_dir" ] && [ -f "${baked_dir}/main.py" ]; then
+            printf '%s\n' "$baked_dir"
+            return 0
+        fi
+    fi
+    return 1
+}
+
 if [ -n "${COMFYUI_DIR:-}" ] && [ -f "${COMFYUI_DIR}/main.py" ]; then
     (
         cd "$COMFYUI_DIR"
@@ -46,6 +58,12 @@ if [ -n "${COMFYUI_DIR:-}" ] && [ -f "${COMFYUI_DIR}/main.py" ]; then
     COMFY_PID="$!"
 elif [ -n "${COMFY_START_CMD:-}" ]; then
     bash -lc "$COMFY_START_CMD" &
+    COMFY_PID="$!"
+elif baked_comfyui_dir="$(resolve_baked_comfyui_dir)"; then
+    (
+        cd "$baked_comfyui_dir"
+        python3 main.py --listen 0.0.0.0 --port 8188 ${COMFY_EXTRA_ARGS:-}
+    ) &
     COMFY_PID="$!"
 elif [ -f /workspace/ComfyUI/main.py ]; then
     (

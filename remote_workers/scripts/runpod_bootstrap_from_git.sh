@@ -365,12 +365,31 @@ PY
 python3 -m pip install -r requirements.txt
 mkdir -p "$COMFY_INPUT_DIR" "$COMFY_OUTPUT_DIR" "$RESULT_SPOOL_DIR" "$PREFETCH_CACHE_DIR" logs
 
+resolve_baked_comfyui_dir() {
+    if [ -f /opt/allbot-comfyui-dir ]; then
+        local baked_dir
+        baked_dir="$(cat /opt/allbot-comfyui-dir)"
+        if [ -n "$baked_dir" ] && [ -f "${baked_dir}/main.py" ]; then
+            printf '%s\n' "$baked_dir"
+            return 0
+        fi
+    fi
+    return 1
+}
+
 if [ "${RUNPOD_PREPARE_COMFYUI_ON_VOLUME:-false}" = "true" ] \
-    && [ ! -f "${VOLUME_COMFYUI_DIR}/main.py" ] \
-    && [ -f /default-comfyui-bundle/ComfyUI/main.py ]; then
-    log "seeding ComfyUI bundle into ${VOLUME_COMFYUI_DIR}"
-    mkdir -p "$VOLUME_COMFYUI_DIR"
-    cp -a /default-comfyui-bundle/ComfyUI/. "$VOLUME_COMFYUI_DIR/"
+    && [ ! -f "${VOLUME_COMFYUI_DIR}/main.py" ]; then
+    seed_comfyui_dir=""
+    if [ -f /default-comfyui-bundle/ComfyUI/main.py ]; then
+        seed_comfyui_dir="/default-comfyui-bundle/ComfyUI"
+    elif seed_comfyui_dir="$(resolve_baked_comfyui_dir)"; then
+        true
+    fi
+    if [ -n "$seed_comfyui_dir" ]; then
+        log "seeding ComfyUI bundle into ${VOLUME_COMFYUI_DIR}"
+        mkdir -p "$VOLUME_COMFYUI_DIR"
+        cp -a "${seed_comfyui_dir}/." "$VOLUME_COMFYUI_DIR/"
+    fi
 fi
 
 resolve_comfyui_dir_for_models() {
@@ -378,6 +397,8 @@ resolve_comfyui_dir_for_models() {
         printf '%s\n' "$COMFYUI_DIR"
     elif [ -f "${VOLUME_COMFYUI_DIR}/main.py" ]; then
         printf '%s\n' "$VOLUME_COMFYUI_DIR"
+    elif baked_comfyui_dir="$(resolve_baked_comfyui_dir)"; then
+        printf '%s\n' "$baked_comfyui_dir"
     elif [ -f /workspace/ComfyUI/main.py ]; then
         printf '%s\n' "/workspace/ComfyUI"
     elif [ -f /default-comfyui-bundle/ComfyUI/main.py ]; then
@@ -469,6 +490,13 @@ elif [ -f "${VOLUME_COMFYUI_DIR}/main.py" ]; then
     log "starting ComfyUI from ${VOLUME_COMFYUI_DIR}"
     (
         cd "$VOLUME_COMFYUI_DIR"
+        python3 main.py --listen 0.0.0.0 --port 8188 ${COMFY_EXTRA_ARGS:-}
+    ) &
+    COMFY_PID="$!"
+elif baked_comfyui_dir="$(resolve_baked_comfyui_dir)"; then
+    log "starting ComfyUI from ${baked_comfyui_dir}"
+    (
+        cd "$baked_comfyui_dir"
         python3 main.py --listen 0.0.0.0 --port 8188 ${COMFY_EXTRA_ARGS:-}
     ) &
     COMFY_PID="$!"
