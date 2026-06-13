@@ -222,7 +222,7 @@ def test_pod_readiness_reports_network_mapping_confirmed_for_running_mapped_pod(
     assert readiness["network"]["port_mappings_present"] is True
 
 
-def test_pod_readiness_does_not_treat_secure_pod_without_public_ip_as_ready():
+def test_pod_readiness_treats_running_worker_without_exposed_ports_as_ready():
     fake = FakeRunPodApi(
         {
             "id": "pod-1",
@@ -239,9 +239,9 @@ def test_pod_readiness_does_not_treat_secure_pod_without_public_ip_as_ready():
     payload = provider.pod_readiness(pod_id="pod-1")
     readiness = payload["readiness"]
 
-    assert readiness["infrastructure_ready"] is False
+    assert readiness["infrastructure_ready"] is True
     assert readiness["confidence"] == "status_only_no_exposed_ports"
-    assert "public_ip_missing" in readiness["reasons"]
+    assert readiness["reasons"] == []
     assert readiness["signals"]["public_ip_expected"] is True
 
 

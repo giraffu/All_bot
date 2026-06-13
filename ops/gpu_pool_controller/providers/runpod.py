@@ -956,7 +956,11 @@ class RunPodProvider:
 
         if desired_status != "RUNNING":
             reasons.append("desired_status_not_running")
-        if public_ip_expected and not public_ip_present:
+        # AllBot RunPod workers only need outbound access to Central. Some
+        # RunPod template-backed pods do not expose a public IP in the REST
+        # schema even after the container is polling Central, so only require
+        # public IP when ports are explicitly exposed.
+        if exposed_ports and public_ip_expected and not public_ip_present:
             reasons.append("public_ip_missing")
         if exposed_ports and not port_mappings_present:
             reasons.append("port_mappings_empty_for_exposed_ports")
@@ -991,7 +995,7 @@ class RunPodProvider:
             },
             "notes": [
                 "RunPod REST Pod schema does not expose uptimeSeconds; do not infer readiness from a missing uptime field.",
-                "For AllBot business readiness, verify runpod_test_img2img_lora_* heartbeat in cloud-test Central /system/workers.",
+                "For AllBot business readiness, verify the expected runpod_test_* heartbeat in cloud-test Central /system/workers.",
             ],
         }
 
