@@ -644,6 +644,15 @@ def build_parser() -> argparse.ArgumentParser:
     runpod_split_video_canary.add_argument("--web-user-id", type=int, default=None)
     runpod_split_video_canary.add_argument("--web-pwd-ver", type=int, default=None)
     runpod_split_video_canary.add_argument(
+        "--reuse-pod-id",
+        action="append",
+        default=None,
+        help=(
+            "Reuse an existing split-video pod as PROFILE=POD_ID. "
+            "Pair with --no-cleanup when preserving a debugging pod."
+        ),
+    )
+    runpod_split_video_canary.add_argument(
         "--prompt", default=DEFAULT_SPLIT_VIDEO_PROMPT
     )
     runpod_split_video_canary.add_argument("--negative-prompt", default=None)

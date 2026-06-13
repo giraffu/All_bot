@@ -140,6 +140,66 @@ if agent_path.exists():
     )
     agent_path.write_text(text, encoding="utf-8")
 
+patcher_path = Path("comfy_agent/workflow_task_patchers.py")
+if patcher_path.exists():
+    text = patcher_path.read_text(encoding="utf-8")
+    if "WAN22_VIDEO_V2_LAST_FRAME_FALLBACK_INDEX" not in text:
+        text = text.replace(
+            'WAN22_VIDEO_V2_LAST_FRAME_NODE_ID = "2607"\n',
+            'WAN22_VIDEO_V2_LAST_FRAME_NODE_ID = "2607"\n'
+            "WAN22_VIDEO_V2_LAST_FRAME_FALLBACK_INDEX = 4095\n",
+        )
+    if 'input_name="resolution_preset"' not in text:
+        old_resolution_patch = '''    set_node_input(
+        workflow,
+        node_id=WAN22_VIDEO_V2_RESOLUTION_NODE_ID,
+        input_name="precision_presets",
+        value=_normalize_wan22_video_v2_precision_preset(
+            params.get("resolution_preset")
+        ),
+    )
+'''
+        new_resolution_patch = old_resolution_patch + '''    set_node_input(
+        workflow,
+        node_id=WAN22_VIDEO_V2_RESOLUTION_NODE_ID,
+        input_name="resolution_preset",
+        value=_normalize_wan22_video_v2_precision_preset(
+            params.get("resolution_preset")
+        ),
+    )
+    set_node_input(
+        workflow,
+        node_id=WAN22_VIDEO_V2_RESOLUTION_NODE_ID,
+        input_name="swap_aspect_when_not_image",
+        value=False,
+    )
+    set_node_input(
+        workflow,
+        node_id=WAN22_VIDEO_V2_RESOLUTION_NODE_ID,
+        input_name="aspect_preset_when_not_image",
+        value="9:16 - Social",
+    )
+    set_node_input(
+        workflow,
+        node_id=WAN22_VIDEO_V2_RESOLUTION_NODE_ID,
+        input_name="custom_aspect_width",
+        value=16,
+    )
+    set_node_input(
+        workflow,
+        node_id=WAN22_VIDEO_V2_RESOLUTION_NODE_ID,
+        input_name="custom_aspect_height",
+        value=9,
+    )
+'''
+        text = text.replace(old_resolution_patch, new_resolution_patch)
+    text = text.replace(
+        'input_name="batch_index",\n        value=16384,',
+        'input_name="batch_index",\n'
+        "        value=WAN22_VIDEO_V2_LAST_FRAME_FALLBACK_INDEX,",
+    )
+    patcher_path.write_text(text, encoding="utf-8")
+
 sync_path = Path("scripts/runpod_sync_models_from_r2.py")
 if sync_path.exists():
     text = sync_path.read_text(encoding="utf-8")

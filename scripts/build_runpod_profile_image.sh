@@ -7,6 +7,7 @@ BASE_IMAGE="${RUNPOD_PROFILE_BASE_IMAGE:-}"
 COMFYUI_REF="${RUNPOD_PROFILE_COMFYUI_REF:-master}"
 KJNODES_REF="${RUNPOD_PROFILE_KJNODES_REF:-7967a946c296a74901606e6a8d1195aa2b6f9215}"
 KJNODES_SOURCE="${RUNPOD_PROFILE_KJNODES_SOURCE:-}"
+REUSE_BASE_CUSTOM_NODES="${RUNPOD_PROFILE_REUSE_BASE_CUSTOM_NODES:-false}"
 PUSH="false"
 SMOKE="true"
 
@@ -30,6 +31,8 @@ Options:
   --comfyui-ref <ref>    ComfyUI git ref used when the base image does not include ComfyUI.
   --kjnodes-ref <sha>    ComfyUI-KJNodes git ref pinned into the image.
   --kjnodes-source <dir> Build from an existing local ComfyUI-KJNodes directory instead of GitHub.
+  --reuse-base-custom-nodes
+                         Reuse custom nodes already baked into the base image and only apply final Wan22 fix layers.
   --no-smoke             Skip local smoke test after build.
   --push                 Push image after a successful build and smoke test.
   -h, --help             Show this help.
@@ -64,6 +67,10 @@ while [ "$#" -gt 0 ]; do
         --kjnodes-source)
             KJNODES_SOURCE="${2:?missing value for --kjnodes-source}"
             shift 2
+            ;;
+        --reuse-base-custom-nodes)
+            REUSE_BASE_CUSTOM_NODES="true"
+            shift
             ;;
         --no-smoke)
             SMOKE="false"
@@ -135,6 +142,7 @@ docker build \
     --build-arg "BASE_IMAGE=${BASE_IMAGE}" \
     --build-arg "COMFYUI_REF=${COMFYUI_REF}" \
     --build-arg "KJNODES_REF=${KJNODES_REF}" \
+    --build-arg "REUSE_BASE_CUSTOM_NODES=${REUSE_BASE_CUSTOM_NODES}" \
     --label "allbot.runpod.profile=${PROFILE}" \
     --label "allbot.runpod.model_sync=external-r2-manifest" \
     -t "$IMAGE_REF" \

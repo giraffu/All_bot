@@ -265,10 +265,16 @@ def test_workflow_patcher_patches_wan22_video_v2_boolean_gates_and_prefixes(tmp_
     assert patched["2558"]["inputs"]["value"] is True
     assert patched["2578"]["inputs"]["value"] == 8
     assert patched["2612"]["inputs"]["precision_presets"] == "0.65 MP - Balanced"
+    assert patched["2612"]["inputs"]["resolution_preset"] == "0.65 MP - Balanced"
+    assert patched["2612"]["inputs"]["swap_aspect_when_not_image"] is False
+    assert patched["2612"]["inputs"]["aspect_preset_when_not_image"] == "9:16 - Social"
+    assert patched["2612"]["inputs"]["custom_aspect_width"] == 16
+    assert patched["2612"]["inputs"]["custom_aspect_height"] == 9
     assert patched["2623"]["inputs"]["expression"] == "max(1, round(( a - 1 ) / b))"
     assert patched["265"]["inputs"]["images"] == ["2603", 0]
     assert patched["2575"]["inputs"]["images"] == ["265", 0]
     assert patched["28"]["inputs"]["images"] == ["265", 0]
+    assert patched["2607"]["inputs"]["batch_index"] == 4095
     assert patched["2607"]["inputs"]["image"] == ["265", 0]
     assert patched["28"]["inputs"]["filename_prefix"] == "wan22_video_v2_42_video"
     assert patched["2503"]["inputs"]["filename_prefix"] == "wan22_video_v2_42_last_frame"

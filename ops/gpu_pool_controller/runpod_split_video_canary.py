@@ -69,6 +69,7 @@ class RunPodSplitVideoCanaryRunner(RunPodCanaryRunner):
             "profiles": list(self.active_profiles),
             "started_at": _utc_now_iso(),
             "phases": [],
+            "reuse_pod_ids": dict(self.options.reuse_pod_ids),
             "cleanup": {
                 "requested": self.options.cleanup,
                 "worker_restore": [],
@@ -183,6 +184,17 @@ class RunPodSplitVideoCanaryRunner(RunPodCanaryRunner):
                 raise RunPodCanaryError(
                     "AGENT_SECRET_TOKEN is required to disable/restore test workers"
                 )
+            if self.options.reuse_pod_ids:
+                invalid_reuse_profiles = sorted(
+                    set(self.options.reuse_pod_ids) - set(self.active_profiles)
+                )
+                missing_reuse_profiles = sorted(
+                    set(self.active_profiles) - set(self.options.reuse_pod_ids)
+                )
+                if invalid_reuse_profiles or missing_reuse_profiles:
+                    raise RunPodCanaryError(
+                        "--reuse-pod-id must exactly match active profiles"
+                    )
 
     def _prepare_split_manifests(self, summary: dict[str, Any]) -> None:
         self._phase(summary, "split_video_manifests", "running")
@@ -225,7 +237,11 @@ class RunPodSplitVideoCanaryRunner(RunPodCanaryRunner):
         self._phase(summary, "runpod_list_pods", "running")
         listed = self.provider.list_pods(managed_only=True)
         self._require_ok(listed, "runpod list-pods failed")
-        if self.options.execute and int(listed.get("count") or 0) != 0:
+        if (
+            self.options.execute
+            and not self.options.reuse_pod_ids
+            and int(listed.get("count") or 0) != 0
+        ):
             raise RunPodCanaryError(
                 "refusing split video canary: managed RunPod pod count is not 0"
             )
@@ -236,7 +252,11 @@ class RunPodSplitVideoCanaryRunner(RunPodCanaryRunner):
         self._phase(summary, "runpod_reconcile", "running")
         reconcile = self.provider.reconcile_managed_pods()
         self._require_ok(reconcile, "runpod reconcile-managed-pods failed")
-        if self.options.execute and int(reconcile.get("managed_count") or 0) != 0:
+        if (
+            self.options.execute
+            and not self.options.reuse_pod_ids
+            and int(reconcile.get("managed_count") or 0) != 0
+        ):
             raise RunPodCanaryError(
                 "refusing split video canary: managed RunPod reconcile count is not 0"
             )
@@ -284,12 +304,14 @@ class RunPodSplitVideoCanaryRunner(RunPodCanaryRunner):
             failures.append(
                 f"imageName must use public GHCR prefix {spec.image_ref_prefix}"
             )
-        if (
-            spec.expected_gpu_type_ids
-            and tuple(body.get("gpuTypeIds") or ()) != spec.expected_gpu_type_ids
+        gpu_type_ids = tuple(str(item) for item in (body.get("gpuTypeIds") or ()))
+        if spec.expected_gpu_type_ids and (
+            not gpu_type_ids
+            or any(item not in spec.expected_gpu_type_ids for item in gpu_type_ids)
         ):
             failures.append(
-                "gpuTypeIds must be " + ",".join(spec.expected_gpu_type_ids)
+                "gpuTypeIds must be a non-empty subset of "
+                + ",".join(spec.expected_gpu_type_ids)
             )
         expected_env = {
             "CENTRAL_API_URL": EXPECTED_RUNPOD_CLOUD_TEST_CENTRAL_URL,
@@ -325,6 +347,27 @@ class RunPodSplitVideoCanaryRunner(RunPodCanaryRunner):
 
     def _create_pods(self, summary: dict[str, Any]) -> dict[str, str]:
         pod_ids: dict[str, str] = {}
+        if self.options.reuse_pod_ids:
+            for profile in self.active_profiles:
+                pod_id = self.options.reuse_pod_ids[profile]
+                self._phase(
+                    summary,
+                    f"runpod_reuse_pod_{profile}",
+                    "ok",
+                    {"pod_id": pod_id},
+                )
+                pod_ids[profile] = pod_id
+                summary.setdefault("pods", {})[profile] = {
+                    "id": pod_id,
+                    "reused": True,
+                    "imageName": str(
+                        (summary.get("render") or {})
+                        .get(profile, {})
+                        .get("imageName")
+                        or ""
+                    ),
+                }
+            return pod_ids
         try:
             for profile in self.active_profiles:
                 self._phase(summary, f"runpod_create_pod_{profile}", "running")

@@ -49,7 +49,7 @@ CLOUD_TEST_WORKER_REDIS_URL=redis://:<password>@redis-test:6379/4
 | :--- | :--- | :--- |
 | `MINIO_*` / `R2_*` | `user-data-test` + `https://r2-test.aivison.it.com` | 用户上传、任务输入/结果、模板、历史/Gallery 媒体；不要把模型权重放入该桶 |
 | `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | `.env.cloud.test` 真实值；RunPod Pod 内使用 `allbot_cloud_test_r2_access_key` / `allbot_cloud_test_r2_secret_key` secret | 只读写 `user-data-test` |
-| `RUNPOD_MODEL_*` | `allbot-model-cache` + `RUNPOD_MODEL_PREFIX`/`RUNPOD_MODEL_MANIFEST_KEY` | RunPod 模型 manifest 与模型权重缓存；`img2img_lora` 默认 `img2img_lora/2026-06-10`，Wan22 cloud-test 使用 `wan22_aio_video/2026-06-12-test` |
+| `RUNPOD_MODEL_*` | `allbot-model-cache` + `RUNPOD_MODEL_PREFIX`/`RUNPOD_MODEL_MANIFEST_KEY` | RunPod 模型 manifest 与模型权重缓存；`img2img_lora` 默认 `img2img_lora/2026-06-10`，Wan22 cloud-test 视频主路径使用 split 前缀 `image_to_video/2026-06-13-test` 与 `wan22_video_v2/2026-06-13-test`；`wan22_aio_video/2026-06-12-test` 只作为历史全集/回滚 manifest |
 | `RUNPOD_MODEL_ACCESS_KEY` / `RUNPOD_MODEL_SECRET_KEY` | `.env.cloud.test` 可保存真实值，供本地 dry-run HEAD/上传脚本使用 | 只读写 `allbot-model-cache`，不能复用 `user-data-test` 的 R2 key |
 | `RUNPOD_MODEL_ACCESS_KEY_REF` / `RUNPOD_MODEL_SECRET_KEY_REF` | `allbot_model_cache_r2_access_key` / `allbot_model_cache_r2_secret_key` | RunPod create JSON 中的模型桶 secret 引用字符串，不是密钥本体 |
 
@@ -218,6 +218,11 @@ df -h /
 - 同机 Postgres/Redis 均为 healthy，Postgres/Redis 端口未发布到公网。
 - 启动 `bot-test` 前已确认本地测试 Bot 停止，避免测试 token 双实例 polling。
 - Droplet 根分区约 48GB，首次构建后已用约 9.2GB。
+
+2026-06-13 RunPod `wan22_video_v2` 云测试 Web 端验收结果：
+- 使用测试 Web API `http://100.82.124.91:8001/api/tasks/generate` 提交 `wan22_video_v2` preview/5s 图生视频任务 `0f170dec-a48f-4f3c-9393-e1dcd053937f`，不是绕过 Web 的 worker 直测。
+- 任务由 RunPod 4090 worker `runpod_test_wan22_video_v2_tyejnfyigvwc68` 接取，Central `task_type=wan22_video_v2`、终态 `done`，Web result `success`。
+- 生成文件已下载到项目根目录 `wan22_video_v2.mp4`，尾帧下载到 `wan22_video_v2_last_frame.png`；测试期间临时禁用的 `cloud_worker_test_05` 已恢复 enabled，验收后 RunPod Pod 已删除且 managed count 为 0。
 
 2026-06-06 R2 切换验证结果：
 - 本地测试 MinIO 历史对象已镜像到 R2 `user-data-test` 桶根路径：`bot-data-test` 约 1.10GiB，`comfyui-temp-test` 约 749.91MiB，`bot-template-test` 为空。

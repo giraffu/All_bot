@@ -1,0 +1,53 @@
+{
+  "ok": false,
+  "execute": true,
+  "manual_reuse_existing_pods": true,
+  "environment": "cloud-test",
+  "task_type": "split_video_profiles",
+  "profiles": [
+    "image_to_video",
+    "wan22_video_v2"
+  ],
+  "started_at": "2026-06-13T08:04:03Z",
+  "phases": [
+    {
+      "name": "web_and_central_preflight",
+      "status": "running",
+      "at": "2026-06-13T08:04:03Z"
+    }
+  ],
+  "pods": {
+    "image_to_video": {
+      "pod_id": "tw39m6gb2xm0fb"
+    },
+    "wan22_video_v2": {
+      "pod_id": "a4wgvqmcmcje9y"
+    }
+  },
+  "cleanup": {
+    "requested": true,
+    "worker_restore": [],
+    "pod_delete": [
+      {
+        "profile": "image_to_video",
+        "pod_id": "tw39m6gb2xm0fb",
+        "ok": true
+      },
+      {
+        "profile": "wan22_video_v2",
+        "pod_id": "a4wgvqmcmcje9y",
+        "ok": true
+      }
+    ],
+    "post_list_pods": {
+      "ok": true,
+      "count": 0
+    },
+    "post_reconcile": {
+      "ok": true,
+      "managed_count": 0
+    }
+  },
+  "error": "unknown url type: '/health'",
+  "ended_at": "2026-06-13T08:04:08Z"
+}

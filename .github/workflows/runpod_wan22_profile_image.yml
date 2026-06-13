@@ -19,6 +19,11 @@ on:
         description: "ComfyUI-KJNodes git ref baked into the image."
         required: false
         default: "7967a946c296a74901606e6a8d1195aa2b6f9215"
+      reuse_base_custom_nodes:
+        description: "Reuse custom nodes already baked into the base image and only apply final Wan22 fix layers."
+        required: true
+        type: boolean
+        default: false
       push_image:
         description: "Push the image to GHCR after build and smoke test."
         required: true
@@ -86,6 +91,9 @@ jobs:
             --comfyui-ref "${{ inputs.comfyui_ref }}"
             --kjnodes-ref "${{ inputs.kjnodes_ref }}"
           )
+          if [[ "${{ inputs.reuse_base_custom_nodes }}" == "true" ]]; then
+            args+=(--reuse-base-custom-nodes)
+          fi
           if [[ "${{ inputs.push_image }}" == "true" ]]; then
             args+=(--push)
           fi
@@ -119,6 +127,7 @@ jobs:
             echo ""
             echo "- Image: \`${{ steps.meta.outputs.image_ref }}\`"
             echo "- Base image: \`${{ inputs.base_image }}\`"
+            echo "- Reuse base custom nodes: \`${{ inputs.reuse_base_custom_nodes }}\`"
             echo "- ComfyUI ref: \`${{ inputs.comfyui_ref }}\`"
             echo "- KJNodes ref: \`${{ inputs.kjnodes_ref }}\`"
             echo "- Pushed: \`${{ inputs.push_image }}\`"

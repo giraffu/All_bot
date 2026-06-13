@@ -46,6 +46,18 @@ def test_runpod_bootstrap_patches_remote_worker_pop_agent_id():
     assert '"params: dict[str, str] = {\\"agent_id\\": AGENT_ID}"' in script
 
 
+def test_runpod_bootstrap_patches_wan22_runtime_node_inputs():
+    script = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
+
+    assert "comfy_agent/workflow_task_patchers.py" in script
+    assert "WAN22_VIDEO_V2_LAST_FRAME_FALLBACK_INDEX = 4095" in script
+    assert 'input_name="resolution_preset"' in script
+    assert 'input_name="swap_aspect_when_not_image"' in script
+    assert 'input_name="aspect_preset_when_not_image"' in script
+    assert 'input_name="custom_aspect_width"' in script
+    assert 'input_name="custom_aspect_height"' in script
+
+
 def test_runpod_bootstrap_patches_model_sync_for_resume_downloads():
     script = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
 
@@ -100,6 +112,9 @@ def test_wan22_profile_image_bakes_video_custom_nodes_not_business_models():
     assert "COMFYUI_REPO=https://github.com/comfyanonymous/ComfyUI.git" in dockerfile
     assert "COMFYUI_REF=master" in dockerfile
     assert "COMFYUI_INSTALL_DIR=/opt/ComfyUI" in dockerfile
+    assert "ARG REUSE_BASE_CUSTOM_NODES=false" in dockerfile
+    assert "Reusing baked custom nodes from base image" in dockerfile
+    assert "require_existing_node" in dockerfile
     assert "git clone --filter=blob:none" in dockerfile
     assert 'rm -rf "${target}/.git"' in dockerfile
     assert "python3 -m pip cache purge" in dockerfile
@@ -133,6 +148,8 @@ def test_wan22_profile_image_bakes_video_custom_nodes_not_business_models():
     assert "wan22_aio_video" in build_script
     assert WAN22_PROVEN_COMFY_CU128_BASE in build_script
     assert "--comfyui-ref" in build_script
+    assert "--reuse-base-custom-nodes" in build_script
+    assert "REUSE_BASE_CUSTOM_NODES" in build_script
     assert "ComfyUI_Fill-Nodes" in build_script
     assert "ComfyUI-LTXVideo" in build_script
     assert "LTXVSpatioTemporalTiledVAEDecode" in build_script
@@ -147,7 +164,9 @@ def test_wan22_github_workflow_defaults_to_lan_proven_base_and_comfyui_ref():
 
     assert f'default: "{WAN22_PROVEN_COMFY_CU128_BASE}"' in workflow
     assert "comfyui_ref:" in workflow
+    assert "reuse_base_custom_nodes:" in workflow
     assert "--comfyui-ref" in workflow
+    assert "--reuse-base-custom-nodes" in workflow
     assert "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24" in workflow
 
 
@@ -188,8 +207,53 @@ def test_profile_build_script_accepts_wan22_profile_without_running_real_docker(
     assert "remote_workers/docker/runpod_profiles/wan22_aio_video/Dockerfile" in rendered
     assert f"BASE_IMAGE={WAN22_PROVEN_COMFY_CU128_BASE}" in rendered
     assert "COMFYUI_REF=master" in rendered
+    assert "REUSE_BASE_CUSTOM_NODES=false" in rendered
     assert "allbot.runpod.profile=wan22_aio_video" in rendered
     assert "allbot/comfy-runpod-wan22-aio-video:test" in rendered
+
+
+def test_profile_build_script_can_reuse_base_custom_nodes(tmp_path):
+    calls = tmp_path / "docker-calls.txt"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_docker = fake_bin / "docker"
+    fake_docker.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' \"$*\" >> \"$DOCKER_CALLS\"\n",
+        encoding="utf-8",
+    )
+    fake_docker.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "DOCKER_CALLS": str(calls),
+    }
+
+    subprocess.run(
+        [
+            "bash",
+            str(PROFILE_BUILD_SCRIPT),
+            "--profile",
+            "wan22_aio_video",
+            "--image-ref",
+            "allbot/comfy-runpod-wan22-aio-video:test",
+            "--base-image",
+            "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:fast-base",
+            "--reuse-base-custom-nodes",
+            "--no-smoke",
+        ],
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    rendered = calls.read_text(encoding="utf-8")
+    assert (
+        "BASE_IMAGE=ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:fast-base"
+        in rendered
+    )
+    assert "REUSE_BASE_CUSTOM_NODES=true" in rendered
 
 
 def test_profile_build_script_rejects_unknown_profile_before_docker(tmp_path):

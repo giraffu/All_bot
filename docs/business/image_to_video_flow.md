@@ -127,14 +127,14 @@ graph TD
 
 ## 四、 计费与资源约束
 - 视频任务计费是动态的，通常由分辨率与时长组合决定。
-- Wan22 AIO 视频的分辨率档位统一维护在 `src.domain_config.wan22_aio_video`，Bot / Web / dispatcher / worker patcher 共享同一语义；分辨率基数为 `preview` = 极速 / 约 512p / `0.26 MP - Preview` / 6 灵石（默认且最低价），`small` = 清晰 / 约 600p / `0.36 MP - Small` / 12 灵石，`standard` = 标准 / 约 720p / `0.52 MP - SD` / 20 灵石，`hd` = 高清 / 约 810p / `0.65 MP - Balanced` / 30 灵石。旧 `fast` 仅作为兼容别名归一到 `preview`。Worker 会把档位写入 `Wan22AioV82.json` 的 `DaSiWa_ResolutionScaleCalculator` 节点 `2612.inputs.precision_presets`。
+- Wan22 AIO 视频的分辨率档位统一维护在 `src.domain_config.wan22_aio_video`，Bot / Web / dispatcher / worker patcher 共享同一语义；分辨率基数为 `preview` = 极速 / 约 512p / `0.26 MP - Preview` / 6 灵石（默认且最低价），`small` = 清晰 / 约 600p / `0.36 MP - Small` / 12 灵石，`standard` = 标准 / 约 720p / `0.52 MP - SD` / 20 灵石，`hd` = 高清 / 约 810p / `0.65 MP - Balanced` / 30 灵石。旧 `fast` 仅作为兼容别名归一到 `preview`。Worker 会把档位同时写入 `Wan22AioV82.json` 的 `DaSiWa_ResolutionScaleCalculator` 节点 `2612.inputs.precision_presets` 与 `2612.inputs.resolution_preset`，并补齐该节点当前版本要求的非图片宽高兜底输入。
 - Wan22 AIO 视频的时长统一为 `5s/8s/10s`，对应 `81/129/161` 帧，计费倍率为 `1x/2x/3x`；worker patcher 会把秒数写入 `Wan22AioV82.json` 的 `2578.inputs.value`。`custom_video` / `video_lora` 现在完全对齐上述 v2 计费口径；投稿一键应用恢复旧 `1024p` 时应自动选择 `hd`，并按历史 canonical duration 计算灵石。
 - 过高画质与过长时长组合仍可能触发 guardrail，避免显存溢出或节点拥塞。
 - 任何取消/失败路径都必须与并发锁释放和必要退款一并考虑。
 
 ## 五、 结果发送与清理
 - Bot 完成后会发送 MP4、caption、reply markup 与后续交互入口。
-- `wan22_video_v2` 与执行面 `image_to_video` 都会额外保存 `extra_outputs.last_frame` 对应的尾帧图片，用于扩展生成、分段重生成和整链拼接。V82 下 `2607` 会从 RIFE 后的 `265` 帧序列抽取尾帧，Worker 优先读取 Comfy `2503` 尾帧输出；如果某个 Comfy 实例只返回主 MP4，`agent_result_materialization.py` 会用 `ffmpeg/ffprobe` 从主视频补抽最后一帧，因此 worker 镜像必须保留 ffmpeg 依赖。
+- `wan22_video_v2` 与执行面 `image_to_video` 都会额外保存 `extra_outputs.last_frame` 对应的尾帧图片，用于扩展生成、分段重生成和整链拼接。V82 下 `2607` 会从 RIFE 后的 `265` 帧序列抽取尾帧，`ImageFromBatch.batch_index` 需保持 `4095` 以满足当前节点上限；Worker 优先读取 Comfy `2503` 尾帧输出。如果某个 Comfy 实例只返回主 MP4，`agent_result_materialization.py` 会用 `ffmpeg/ffprobe` 从主视频补抽最后一帧，因此 worker 镜像必须保留 ffmpeg 依赖。
 - 运行结束后需清理：
   - status message
   - 本地临时文件

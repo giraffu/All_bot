@@ -25,6 +25,7 @@ WAN22_VIDEO_V2_BASE_FRAMES_REF = ["2603", 0]
 WAN22_VIDEO_V2_RIFE_NODE_ID = "265"
 WAN22_VIDEO_V2_FRAME_COUNT_NODE_ID = "2575"
 WAN22_VIDEO_V2_LAST_FRAME_NODE_ID = "2607"
+WAN22_VIDEO_V2_LAST_FRAME_FALLBACK_INDEX = 4095
 WAN22_HIGH_UNET_NODE_ID = "2616"
 WAN22_LOW_UNET_NODE_ID = "2617"
 WAN22_HIGH_LORA_NODE_ID = "26"
@@ -286,6 +287,38 @@ def _patch_wan22_aio_workflow(
             params.get("resolution_preset")
         ),
     )
+    set_node_input(
+        workflow,
+        node_id=WAN22_VIDEO_V2_RESOLUTION_NODE_ID,
+        input_name="resolution_preset",
+        value=_normalize_wan22_video_v2_precision_preset(
+            params.get("resolution_preset")
+        ),
+    )
+    set_node_input(
+        workflow,
+        node_id=WAN22_VIDEO_V2_RESOLUTION_NODE_ID,
+        input_name="swap_aspect_when_not_image",
+        value=False,
+    )
+    set_node_input(
+        workflow,
+        node_id=WAN22_VIDEO_V2_RESOLUTION_NODE_ID,
+        input_name="aspect_preset_when_not_image",
+        value="9:16 - Social",
+    )
+    set_node_input(
+        workflow,
+        node_id=WAN22_VIDEO_V2_RESOLUTION_NODE_ID,
+        input_name="custom_aspect_width",
+        value=16,
+    )
+    set_node_input(
+        workflow,
+        node_id=WAN22_VIDEO_V2_RESOLUTION_NODE_ID,
+        input_name="custom_aspect_height",
+        value=9,
+    )
 
     start_image = params.get("image")
     if not use_end_frame and start_image:
@@ -304,7 +337,7 @@ def _patch_wan22_aio_workflow(
         workflow,
         node_id=WAN22_VIDEO_V2_LAST_FRAME_NODE_ID,
         input_name="batch_index",
-        value=16384,
+        value=WAN22_VIDEO_V2_LAST_FRAME_FALLBACK_INDEX,
     )
     set_node_input(
         workflow,

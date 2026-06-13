@@ -20,6 +20,7 @@ ARG DASIWA_REPO=https://github.com/darksidewalker/ComfyUI-DaSiWa-Nodes.git
 ARG DASIWA_REF=main
 ARG WHITERABBIT_REPO=https://github.com/Artificial-Sweetener/comfyui-WhiteRabbit.git
 ARG WHITERABBIT_REF=master
+ARG REUSE_BASE_CUSTOM_NODES=false
 
 LABEL org.opencontainers.image.title="AllBot RunPod wan22_aio_video ComfyUI profile"
 LABEL org.opencontainers.image.description="ComfyUI runtime profile with Wan22 AIO custom nodes baked in; model files are synced from R2 at Pod startup."
@@ -89,14 +90,33 @@ RUN set -euo pipefail; \
       fi; \
       rm -rf "${target}/.git"; \
     }; \
-    clone_node "${KJNODES_REPO}" "${KJNODES_REF}" "${comfyui_dir}/custom_nodes/ComfyUI-KJNodes"; \
-    clone_node "${VIDEOHELPERSUITE_REPO}" "${VIDEOHELPERSUITE_REF}" "${comfyui_dir}/custom_nodes/ComfyUI-VideoHelperSuite"; \
-    clone_node "${RGTHREE_REPO}" "${RGTHREE_REF}" "${comfyui_dir}/custom_nodes/rgthree-comfy"; \
-    clone_node "${FRAME_INTERPOLATION_REPO}" "${FRAME_INTERPOLATION_REF}" "${comfyui_dir}/custom_nodes/ComfyUI-Frame-Interpolation"; \
-    clone_node "${GGUF_REPO}" "${GGUF_REF}" "${comfyui_dir}/custom_nodes/ComfyUI-GGUF"; \
-    clone_node "${DASIWA_REPO}" "${DASIWA_REF}" "${comfyui_dir}/custom_nodes/ComfyUI-DaSiWa-Nodes"; \
-    clone_node "${WHITERABBIT_REPO}" "${WHITERABBIT_REF}" "${comfyui_dir}/custom_nodes/comfyui-WhiteRabbit"; \
-    python3 -m pip install --no-cache-dir packaging torchlanc; \
+    require_existing_node() { \
+      local node_name="$1"; \
+      if [ ! -d "${comfyui_dir}/custom_nodes/${node_name}" ]; then \
+        echo "REUSE_BASE_CUSTOM_NODES=true but ${node_name} is missing from ${comfyui_dir}/custom_nodes" >&2; \
+        exit 75; \
+      fi; \
+    }; \
+    if [ "${REUSE_BASE_CUSTOM_NODES}" = "true" ]; then \
+      echo "Reusing baked custom nodes from base image"; \
+      require_existing_node "ComfyUI-KJNodes"; \
+      require_existing_node "ComfyUI-VideoHelperSuite"; \
+      require_existing_node "rgthree-comfy"; \
+      require_existing_node "ComfyUI-Frame-Interpolation"; \
+      require_existing_node "ComfyUI-GGUF"; \
+      require_existing_node "ComfyUI-DaSiWa-Nodes"; \
+      require_existing_node "comfyui-WhiteRabbit"; \
+      python3 -c 'import importlib.util; missing = [name for name in ("packaging", "torchlanc") if importlib.util.find_spec(name) is None]; raise SystemExit("REUSE_BASE_CUSTOM_NODES=true but missing Python package(s): " + ",".join(missing)) if missing else None'; \
+    else \
+      clone_node "${KJNODES_REPO}" "${KJNODES_REF}" "${comfyui_dir}/custom_nodes/ComfyUI-KJNodes"; \
+      clone_node "${VIDEOHELPERSUITE_REPO}" "${VIDEOHELPERSUITE_REF}" "${comfyui_dir}/custom_nodes/ComfyUI-VideoHelperSuite"; \
+      clone_node "${RGTHREE_REPO}" "${RGTHREE_REF}" "${comfyui_dir}/custom_nodes/rgthree-comfy"; \
+      clone_node "${FRAME_INTERPOLATION_REPO}" "${FRAME_INTERPOLATION_REF}" "${comfyui_dir}/custom_nodes/ComfyUI-Frame-Interpolation"; \
+      clone_node "${GGUF_REPO}" "${GGUF_REF}" "${comfyui_dir}/custom_nodes/ComfyUI-GGUF"; \
+      clone_node "${DASIWA_REPO}" "${DASIWA_REF}" "${comfyui_dir}/custom_nodes/ComfyUI-DaSiWa-Nodes"; \
+      clone_node "${WHITERABBIT_REPO}" "${WHITERABBIT_REF}" "${comfyui_dir}/custom_nodes/comfyui-WhiteRabbit"; \
+      python3 -m pip install --no-cache-dir packaging torchlanc; \
+    fi; \
     if [ -d "${comfyui_dir}/models" ]; then \
       find "${comfyui_dir}/models" -type f \( \
         -name 'wan22EnhancedNSFWSVICamera_nsfwFASTMOVEV2FP8H.safetensors' -o \

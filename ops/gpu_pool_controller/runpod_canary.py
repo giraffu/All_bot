@@ -9,7 +9,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -140,6 +140,7 @@ class RunPodCanaryOptions:
     poll_interval_seconds: float = 10.0
     task_poll_interval_seconds: float = 5.0
     control_ttl_seconds: int = 3600
+    reuse_pod_ids: dict[str, str] = field(default_factory=dict)
     prompt: str = "clean canary image transform, natural lighting, high quality"
     negative_prompt: str = "low quality, artifacts, text, watermark"
     quiet: bool = False
@@ -223,6 +224,7 @@ def options_from_args_env(args: Any) -> RunPodCanaryOptions:
         poll_interval_seconds=float(getattr(args, "poll_interval", 10.0)),
         task_poll_interval_seconds=float(getattr(args, "task_poll_interval", 5.0)),
         control_ttl_seconds=int(getattr(args, "control_ttl", 3600)),
+        reuse_pod_ids=_reuse_pod_ids_from_args_env(args),
         prompt=(
             getattr(args, "prompt", None)
             or os.getenv("RUNPOD_CANARY_PROMPT")
@@ -264,6 +266,27 @@ def _worker_ids_from_env() -> tuple[str, ...]:
     if not raw.strip():
         return DEFAULT_WORKER_IDS
     return tuple(item.strip() for item in raw.split(",") if item.strip())
+
+
+def _reuse_pod_ids_from_args_env(args: Any) -> dict[str, str]:
+    raw_values = list(getattr(args, "reuse_pod_id", None) or [])
+    raw_env = os.getenv("RUNPOD_CANARY_REUSE_POD_IDS", "")
+    if raw_env.strip():
+        raw_values.extend(item.strip() for item in raw_env.split(",") if item.strip())
+    reuse_pod_ids: dict[str, str] = {}
+    for raw_value in raw_values:
+        if "=" not in raw_value:
+            raise RunPodCanaryError(
+                "--reuse-pod-id must use PROFILE=POD_ID, for example "
+                "wan22_video_v2=abc123"
+            )
+        profile, pod_id = (part.strip() for part in raw_value.split("=", 1))
+        if not profile or not pod_id:
+            raise RunPodCanaryError(
+                "--reuse-pod-id must include both profile and pod id"
+            )
+        reuse_pod_ids[profile] = pod_id
+    return reuse_pod_ids
 
 
 def _optional_path(value: Any) -> Path | None:

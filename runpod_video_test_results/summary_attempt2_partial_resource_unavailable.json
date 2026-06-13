@@ -1,0 +1,344 @@
+{
+  "ok": false,
+  "execute": true,
+  "environment": "cloud-test",
+  "task_type": "split_video_profiles",
+  "profiles": [
+    "image_to_video",
+    "wan22_video_v2"
+  ],
+  "started_at": "2026-06-13T07:41:12Z",
+  "phases": [
+    {
+      "name": "split_video_manifests",
+      "status": "running",
+      "at": "2026-06-13T07:41:12Z"
+    },
+    {
+      "name": "split_video_manifests",
+      "status": "ok",
+      "at": "2026-06-13T07:41:17Z",
+      "details": {
+        "ok": true,
+        "dry_run": false,
+        "source_key": "wan22_aio_video/2026-06-12-test/manifest.json",
+        "missing_count": 0,
+        "uploads": [
+          {
+            "profile": "image_to_video",
+            "key": "image_to_video/2026-06-13-test/manifest.json",
+            "bytes": 6458
+          },
+          {
+            "profile": "wan22_video_v2",
+            "key": "wan22_video_v2/2026-06-13-test/manifest.json",
+            "bytes": 1887
+          }
+        ],
+        "manifests": {
+          "image_to_video": {
+            "key": "image_to_video/2026-06-13-test/manifest.json",
+            "file_count": 21,
+            "total_size_bytes": 46915831080,
+            "relative_paths": [
+              "clip/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+              "diffusion_models/wan22EnhancedNSFWSVICamera_nsfwFASTMOVEV2FP8H.safetensors",
+              "diffusion_models/wan22EnhancedNSFWSVICamera_nsfwFASTMOVEV2FP8L.safetensors",
+              "loras/BreastGrow_high_noise.safetensors",
+              "loras/BreastGrow_low_noise.safetensors",
+              "loras/BreastInsertion_high_noise.safetensors",
+              "loras/BreastInsertion_low_noise.safetensors",
+              "loras/Cum_high_noise.safetensors",
+              "loras/Cum_low_noise.safetensors",
+              "loras/Cunilingus_high_noise.safetensors",
+              "loras/Cunilingus_low_noise.safetensors",
+              "loras/Flatchested_high_noise.safetensors",
+              "loras/Flatchested_low_noise.safetensors",
+              "loras/Footjob_high_noise.safetensors",
+              "loras/Footjob_low_noise.safetensors",
+              "loras/Insertion_high_noise.safetensors",
+              "loras/Insertion_low_noise.safetensors",
+              "loras/PenInsert_high_noise.safetensors",
+              "loras/PenInsert_low_noise.safetensors",
+              "text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+              "vae/wan_2.1_vae.safetensors"
+            ]
+          },
+          "wan22_video_v2": {
+            "key": "wan22_video_v2/2026-06-13-test/manifest.json",
+            "file_count": 5,
+            "total_size_bytes": 52175085996,
+            "relative_paths": [
+              "clip/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+              "diffusion_models/DasiwaWAN22I2V14BLightspeed_snatchkissHighV11.safetensors",
+              "diffusion_models/DasiwaWAN22I2V14BLightspeed_snatchkissLowV11.safetensors",
+              "text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+              "vae/wan_2.1_vae.safetensors"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "runpod_validate_key",
+      "status": "running",
+      "at": "2026-06-13T07:41:17Z"
+    },
+    {
+      "name": "runpod_validate_key",
+      "status": "ok",
+      "at": "2026-06-13T07:41:18Z"
+    },
+    {
+      "name": "runpod_list_pods",
+      "status": "running",
+      "at": "2026-06-13T07:41:18Z"
+    },
+    {
+      "name": "runpod_list_pods",
+      "status": "ok",
+      "at": "2026-06-13T07:41:19Z",
+      "details": {
+        "count": 0
+      }
+    },
+    {
+      "name": "runpod_reconcile",
+      "status": "running",
+      "at": "2026-06-13T07:41:19Z"
+    },
+    {
+      "name": "runpod_reconcile",
+      "status": "ok",
+      "at": "2026-06-13T07:41:20Z",
+      "details": {
+        "managed_count": 0,
+        "orphans": []
+      }
+    },
+    {
+      "name": "runpod_render_create_image_to_video",
+      "status": "running",
+      "at": "2026-06-13T07:41:20Z"
+    },
+    {
+      "name": "runpod_render_create_image_to_video",
+      "status": "ok",
+      "at": "2026-06-13T07:41:20Z",
+      "details": {
+        "imageName": null,
+        "templateId": "77gi0wqo8x",
+        "uses_template": true,
+        "gpu_type_ids": [
+          "NVIDIA GeForce RTX 5090"
+        ],
+        "central_api_url": "https://worker-central-test.aivison.it.com",
+        "supported_task_types": "image_to_video",
+        "model_bucket": "allbot-model-cache",
+        "model_prefix": "image_to_video/2026-06-13-test",
+        "model_manifest_key": "image_to_video/2026-06-13-test/manifest.json",
+        "custom_nodes_enabled": "false",
+        "kjnodes_enabled": "false",
+        "buckets": {
+          "input": "user-data-test",
+          "result": "user-data-test",
+          "template": "user-data-test"
+        }
+      }
+    },
+    {
+      "name": "runpod_render_create_wan22_video_v2",
+      "status": "running",
+      "at": "2026-06-13T07:41:20Z"
+    },
+    {
+      "name": "runpod_render_create_wan22_video_v2",
+      "status": "ok",
+      "at": "2026-06-13T07:41:20Z",
+      "details": {
+        "imageName": null,
+        "templateId": "77gi0wqo8x",
+        "uses_template": true,
+        "gpu_type_ids": [
+          "NVIDIA GeForce RTX 5090"
+        ],
+        "central_api_url": "https://worker-central-test.aivison.it.com",
+        "supported_task_types": "wan22_video_v2",
+        "model_bucket": "allbot-model-cache",
+        "model_prefix": "wan22_video_v2/2026-06-13-test",
+        "model_manifest_key": "wan22_video_v2/2026-06-13-test/manifest.json",
+        "custom_nodes_enabled": "false",
+        "kjnodes_enabled": "false",
+        "buckets": {
+          "input": "user-data-test",
+          "result": "user-data-test",
+          "template": "user-data-test"
+        }
+      }
+    },
+    {
+      "name": "web_and_central_preflight",
+      "status": "running",
+      "at": "2026-06-13T07:41:20Z"
+    },
+    {
+      "name": "web_and_central_preflight",
+      "status": "ok",
+      "at": "2026-06-13T07:41:24Z",
+      "details": {
+        "web_api_url": "http://100.82.124.91:8001/api",
+        "central_url": "http://100.82.124.91:8004",
+        "web_user_id": 3
+      }
+    },
+    {
+      "name": "runpod_create_pod_image_to_video",
+      "status": "running",
+      "at": "2026-06-13T07:41:24Z"
+    },
+    {
+      "name": "runpod_create_pod_image_to_video",
+      "status": "ok",
+      "at": "2026-06-13T07:41:27Z",
+      "details": {
+        "pod_id": "ree949n1e04lc5"
+      }
+    },
+    {
+      "name": "runpod_create_pod_wan22_video_v2",
+      "status": "running",
+      "at": "2026-06-13T07:41:27Z"
+    }
+  ],
+  "cleanup": {
+    "requested": true,
+    "worker_restore": [],
+    "pod_delete": [],
+    "post_list_pods": {
+      "ok": true,
+      "count": 1
+    },
+    "post_reconcile": {
+      "ok": true,
+      "managed_count": 1
+    }
+  },
+  "split_manifests": {
+    "ok": true,
+    "dry_run": false,
+    "source_key": "wan22_aio_video/2026-06-12-test/manifest.json",
+    "missing_count": 0,
+    "uploads": [
+      {
+        "profile": "image_to_video",
+        "key": "image_to_video/2026-06-13-test/manifest.json",
+        "bytes": 6458
+      },
+      {
+        "profile": "wan22_video_v2",
+        "key": "wan22_video_v2/2026-06-13-test/manifest.json",
+        "bytes": 1887
+      }
+    ],
+    "manifests": {
+      "image_to_video": {
+        "key": "image_to_video/2026-06-13-test/manifest.json",
+        "file_count": 21,
+        "total_size_bytes": 46915831080,
+        "relative_paths": [
+          "clip/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+          "diffusion_models/wan22EnhancedNSFWSVICamera_nsfwFASTMOVEV2FP8H.safetensors",
+          "diffusion_models/wan22EnhancedNSFWSVICamera_nsfwFASTMOVEV2FP8L.safetensors",
+          "loras/BreastGrow_high_noise.safetensors",
+          "loras/BreastGrow_low_noise.safetensors",
+          "loras/BreastInsertion_high_noise.safetensors",
+          "loras/BreastInsertion_low_noise.safetensors",
+          "loras/Cum_high_noise.safetensors",
+          "loras/Cum_low_noise.safetensors",
+          "loras/Cunilingus_high_noise.safetensors",
+          "loras/Cunilingus_low_noise.safetensors",
+          "loras/Flatchested_high_noise.safetensors",
+          "loras/Flatchested_low_noise.safetensors",
+          "loras/Footjob_high_noise.safetensors",
+          "loras/Footjob_low_noise.safetensors",
+          "loras/Insertion_high_noise.safetensors",
+          "loras/Insertion_low_noise.safetensors",
+          "loras/PenInsert_high_noise.safetensors",
+          "loras/PenInsert_low_noise.safetensors",
+          "text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+          "vae/wan_2.1_vae.safetensors"
+        ]
+      },
+      "wan22_video_v2": {
+        "key": "wan22_video_v2/2026-06-13-test/manifest.json",
+        "file_count": 5,
+        "total_size_bytes": 52175085996,
+        "relative_paths": [
+          "clip/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+          "diffusion_models/DasiwaWAN22I2V14BLightspeed_snatchkissHighV11.safetensors",
+          "diffusion_models/DasiwaWAN22I2V14BLightspeed_snatchkissLowV11.safetensors",
+          "text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+          "vae/wan_2.1_vae.safetensors"
+        ]
+      }
+    }
+  },
+  "render": {
+    "image_to_video": {
+      "imageName": null,
+      "templateId": "77gi0wqo8x",
+      "uses_template": true,
+      "gpu_type_ids": [
+        "NVIDIA GeForce RTX 5090"
+      ],
+      "central_api_url": "https://worker-central-test.aivison.it.com",
+      "supported_task_types": "image_to_video",
+      "model_bucket": "allbot-model-cache",
+      "model_prefix": "image_to_video/2026-06-13-test",
+      "model_manifest_key": "image_to_video/2026-06-13-test/manifest.json",
+      "custom_nodes_enabled": "false",
+      "kjnodes_enabled": "false",
+      "buckets": {
+        "input": "user-data-test",
+        "result": "user-data-test",
+        "template": "user-data-test"
+      }
+    },
+    "wan22_video_v2": {
+      "imageName": null,
+      "templateId": "77gi0wqo8x",
+      "uses_template": true,
+      "gpu_type_ids": [
+        "NVIDIA GeForce RTX 5090"
+      ],
+      "central_api_url": "https://worker-central-test.aivison.it.com",
+      "supported_task_types": "wan22_video_v2",
+      "model_bucket": "allbot-model-cache",
+      "model_prefix": "wan22_video_v2/2026-06-13-test",
+      "model_manifest_key": "wan22_video_v2/2026-06-13-test/manifest.json",
+      "custom_nodes_enabled": "false",
+      "kjnodes_enabled": "false",
+      "buckets": {
+        "input": "user-data-test",
+        "result": "user-data-test",
+        "template": "user-data-test"
+      }
+    }
+  },
+  "pods": {
+    "image_to_video": {
+      "pod_id": "ree949n1e04lc5",
+      "name": "allbot-runpod-test-image-to-video",
+      "gpu": null,
+      "image": "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:20260613-wan22aio-yanwkclean-108c7ea",
+      "created_at": "2026-06-13 07:41:26.726 +0000 UTC",
+      "cost_per_hr": 0.99
+    }
+  },
+  "error": "runpod create-pod failed for wan22_video_v2: runpod_http_500: {\"error\":\"create pod: This machine does not have the resources to deploy your pod. Please try a different machine\",\"status\":500}\n",
+  "ended_at": "2026-06-13T07:41:33Z",
+  "env_file": {
+    "loaded": true,
+    "path": ".env.cloud.test"
+  }
+}
