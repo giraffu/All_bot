@@ -53,8 +53,11 @@ class ComfyClient:
         payload = {"prompt": prompt, "client_id": client_id}
         response = await self.client.post("/prompt", json=payload)
         if response.status_code != 200:
-            logger.error(f"ComfyUI prompt error: {response.text}")
-        response.raise_for_status()
+            detail = _truncate_response_text(response.text)
+            logger.error(f"ComfyUI prompt error: {detail}")
+            raise RuntimeError(
+                f"ComfyUI /prompt returned {response.status_code}: {detail}"
+            )
         data = response.json()
         return data.get("prompt_id")
 
@@ -99,3 +102,10 @@ class ComfyClient:
 
     async def close(self):
         await self.client.aclose()
+
+
+def _truncate_response_text(text: str, *, limit: int = 4000) -> str:
+    normalized = (text or "").strip()
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[:limit] + "...<truncated>"

@@ -1,24 +1,30 @@
-import sys
+import importlib.util
 from pathlib import Path
 
 import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
-MODULE_DIR = str(ROOT / "workers" / "comfy_agent")
+COMFY_CLIENT_PATHS = [
+    ROOT / "workers" / "comfy_agent" / "comfy_client.py",
+    ROOT / "remote_workers" / "comfy_agent" / "comfy_client.py",
+]
 
 
-def load_comfy_client_module():
-    if MODULE_DIR not in sys.path:
-        sys.path.insert(0, MODULE_DIR)
-    import comfy_client
-
-    return comfy_client
+def load_comfy_client_module(path: Path):
+    spec = importlib.util.spec_from_file_location(f"comfy_client_{path.parent.name}", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 @pytest.mark.asyncio
-async def test_queue_prompt_error_includes_comfy_response_body(monkeypatch):
-    module = load_comfy_client_module()
+@pytest.mark.parametrize("module_path", COMFY_CLIENT_PATHS)
+async def test_queue_prompt_error_includes_comfy_response_body(
+    monkeypatch, module_path: Path
+):
+    module = load_comfy_client_module(module_path)
 
     class FakeResponse:
         status_code = 400
