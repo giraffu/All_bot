@@ -12,6 +12,8 @@ ARG RGTHREE_REPO=https://github.com/rgthree/rgthree-comfy.git
 ARG RGTHREE_REF=main
 ARG FRAME_INTERPOLATION_REPO=https://github.com/Fannovel16/ComfyUI-Frame-Interpolation.git
 ARG FRAME_INTERPOLATION_REF=main
+ARG FILL_NODES_REPO=https://github.com/filliptm/ComfyUI_Fill-Nodes.git
+ARG FILL_NODES_REF=main
 ARG GGUF_REPO=https://github.com/city96/ComfyUI-GGUF.git
 ARG GGUF_REF=main
 ARG DASIWA_REPO=https://github.com/darksidewalker/ComfyUI-DaSiWa-Nodes.git
@@ -91,6 +93,7 @@ RUN set -euo pipefail; \
     clone_node "${VIDEOHELPERSUITE_REPO}" "${VIDEOHELPERSUITE_REF}" "${comfyui_dir}/custom_nodes/ComfyUI-VideoHelperSuite"; \
     clone_node "${RGTHREE_REPO}" "${RGTHREE_REF}" "${comfyui_dir}/custom_nodes/rgthree-comfy"; \
     clone_node "${FRAME_INTERPOLATION_REPO}" "${FRAME_INTERPOLATION_REF}" "${comfyui_dir}/custom_nodes/ComfyUI-Frame-Interpolation"; \
+    clone_node "${FILL_NODES_REPO}" "${FILL_NODES_REF}" "${comfyui_dir}/custom_nodes/ComfyUI_Fill-Nodes"; \
     clone_node "${GGUF_REPO}" "${GGUF_REF}" "${comfyui_dir}/custom_nodes/ComfyUI-GGUF"; \
     clone_node "${DASIWA_REPO}" "${DASIWA_REF}" "${comfyui_dir}/custom_nodes/ComfyUI-DaSiWa-Nodes"; \
     clone_node "${WHITERABBIT_REPO}" "${WHITERABBIT_REF}" "${comfyui_dir}/custom_nodes/comfyui-WhiteRabbit"; \

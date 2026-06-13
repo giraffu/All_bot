@@ -107,6 +107,7 @@ def test_wan22_profile_image_bakes_video_custom_nodes_not_business_models():
     assert "ComfyUI-VideoHelperSuite" in dockerfile
     assert "rgthree-comfy" in dockerfile
     assert "ComfyUI-Frame-Interpolation" in dockerfile
+    assert "ComfyUI_Fill-Nodes" in dockerfile
     assert "ComfyUI-GGUF" in dockerfile
     assert "ComfyUI-DaSiWa-Nodes" in dockerfile
     assert "comfyui-WhiteRabbit" in dockerfile
@@ -118,6 +119,7 @@ def test_wan22_profile_image_bakes_video_custom_nodes_not_business_models():
     assert "wan22_aio_video" in build_script
     assert RUNPOD_PYTORCH_CU128_BASE in build_script
     assert "--comfyui-ref" in build_script
+    assert "ComfyUI_Fill-Nodes" in build_script
     assert "WAN22_CUSTOM_NODES_PRESENT=true" in build_script
 
 
