@@ -11,7 +11,7 @@ PROFILE_LOCAL_DOCKERFILE = Path(
 )
 WAN22_PROFILE_DOCKERFILE = Path("remote_workers/docker/runpod_profiles/wan22_aio_video/Dockerfile")
 PROFILE_BUILD_SCRIPT = Path("scripts/build_runpod_profile_image.sh")
-RUNPOD_PYTORCH_CU128_BASE = "runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404"
+WAN22_PROVEN_COMFY_CU128_BASE = "yanwk/comfyui-boot:cu128-slim"
 
 
 def test_runpod_bootstrap_script_has_valid_bash_syntax():
@@ -96,7 +96,7 @@ def test_wan22_profile_image_bakes_video_custom_nodes_not_business_models():
     dockerfile = WAN22_PROFILE_DOCKERFILE.read_text(encoding="utf-8")
     build_script = PROFILE_BUILD_SCRIPT.read_text(encoding="utf-8")
 
-    assert f"ARG BASE_IMAGE={RUNPOD_PYTORCH_CU128_BASE}" in dockerfile
+    assert f"ARG BASE_IMAGE={WAN22_PROVEN_COMFY_CU128_BASE}" in dockerfile
     assert "COMFYUI_REPO=https://github.com/comfyanonymous/ComfyUI.git" in dockerfile
     assert "COMFYUI_REF=master" in dockerfile
     assert "COMFYUI_INSTALL_DIR=/opt/ComfyUI" in dockerfile
@@ -105,10 +105,15 @@ def test_wan22_profile_image_bakes_video_custom_nodes_not_business_models():
     assert "python3 -m pip cache purge" in dockerfile
     assert "ComfyUI-KJNodes" in dockerfile
     assert "ComfyUI-VideoHelperSuite" in dockerfile
+    assert "2984ec4c4b93292421888f38db74a5e8802a8ff8" in dockerfile
     assert "rgthree-comfy" in dockerfile
+    assert "683836c46e898668936c433502504cc0627482c5" in dockerfile
     assert "ComfyUI-Frame-Interpolation" in dockerfile
+    assert "26545cc2dd95bc3d27f056016300673bdeee78f5" in dockerfile
     assert "ComfyUI_Fill-Nodes" in dockerfile
+    assert "2c94c3b675e7832ae18986e7062365c7d025b802" in dockerfile
     assert "ComfyUI-LTXVideo" in dockerfile
+    assert "229437c6b65796d6a7a63ae34be2bd5ba31fa543" in dockerfile
     assert "LTXVSpatioTemporalTiledVAEDecode" in dockerfile
     assert "NODE_CLASS_MAPPINGS = dict(RUNTIME_NODE_CLASS_MAPPINGS)" in dockerfile
     assert (
@@ -126,7 +131,7 @@ def test_wan22_profile_image_bakes_video_custom_nodes_not_business_models():
     assert "DasiwaWAN22I2V14BLightspeed_snatchkissHighV11.safetensors" in dockerfile
     assert "Business model file unexpectedly present" in dockerfile
     assert "wan22_aio_video" in build_script
-    assert RUNPOD_PYTORCH_CU128_BASE in build_script
+    assert WAN22_PROVEN_COMFY_CU128_BASE in build_script
     assert "--comfyui-ref" in build_script
     assert "ComfyUI_Fill-Nodes" in build_script
     assert "ComfyUI-LTXVideo" in build_script
@@ -135,12 +140,12 @@ def test_wan22_profile_image_bakes_video_custom_nodes_not_business_models():
     assert "WAN22_CUSTOM_NODES_PRESENT=true" in build_script
 
 
-def test_wan22_github_workflow_defaults_to_runpod_base_and_comfyui_ref():
+def test_wan22_github_workflow_defaults_to_lan_proven_base_and_comfyui_ref():
     workflow = Path(".github/workflows/runpod_wan22_profile_image.yml").read_text(
         encoding="utf-8"
     )
 
-    assert f'default: "{RUNPOD_PYTORCH_CU128_BASE}"' in workflow
+    assert f'default: "{WAN22_PROVEN_COMFY_CU128_BASE}"' in workflow
     assert "comfyui_ref:" in workflow
     assert "--comfyui-ref" in workflow
     assert "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24" in workflow
@@ -181,7 +186,7 @@ def test_profile_build_script_accepts_wan22_profile_without_running_real_docker(
 
     rendered = calls.read_text(encoding="utf-8")
     assert "remote_workers/docker/runpod_profiles/wan22_aio_video/Dockerfile" in rendered
-    assert f"BASE_IMAGE={RUNPOD_PYTORCH_CU128_BASE}" in rendered
+    assert f"BASE_IMAGE={WAN22_PROVEN_COMFY_CU128_BASE}" in rendered
     assert "COMFYUI_REF=master" in rendered
     assert "allbot.runpod.profile=wan22_aio_video" in rendered
     assert "allbot/comfy-runpod-wan22-aio-video:test" in rendered

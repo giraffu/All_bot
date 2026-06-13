@@ -8,9 +8,9 @@ on:
         required: false
         default: ""
       base_image:
-        description: "Base image. Default reuses RunPod PyTorch/CUDA layers."
+        description: "Base image. Default matches the proven LAN ComfyUI cu128 runtime."
         required: false
-        default: "runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404"
+        default: "yanwk/comfyui-boot:cu128-slim"
       comfyui_ref:
         description: "ComfyUI git ref used when the base image does not include ComfyUI."
         required: false

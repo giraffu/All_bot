@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404
+ARG BASE_IMAGE=yanwk/comfyui-boot:cu128-slim
 FROM ${BASE_IMAGE}
 
 ARG COMFYUI_REPO=https://github.com/comfyanonymous/ComfyUI.git
@@ -7,13 +7,13 @@ ARG COMFYUI_INSTALL_DIR=/opt/ComfyUI
 ARG KJNODES_REPO=https://github.com/kijai/ComfyUI-KJNodes.git
 ARG KJNODES_REF=7967a946c296a74901606e6a8d1195aa2b6f9215
 ARG VIDEOHELPERSUITE_REPO=https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git
-ARG VIDEOHELPERSUITE_REF=main
+ARG VIDEOHELPERSUITE_REF=2984ec4c4b93292421888f38db74a5e8802a8ff8
 ARG RGTHREE_REPO=https://github.com/rgthree/rgthree-comfy.git
-ARG RGTHREE_REF=main
+ARG RGTHREE_REF=683836c46e898668936c433502504cc0627482c5
 ARG FRAME_INTERPOLATION_REPO=https://github.com/Fannovel16/ComfyUI-Frame-Interpolation.git
-ARG FRAME_INTERPOLATION_REF=main
+ARG FRAME_INTERPOLATION_REF=26545cc2dd95bc3d27f056016300673bdeee78f5
 ARG FILL_NODES_REPO=https://github.com/filliptm/ComfyUI_Fill-Nodes.git
-ARG FILL_NODES_REF=main
+ARG FILL_NODES_REF=2c94c3b675e7832ae18986e7062365c7d025b802
 ARG GGUF_REPO=https://github.com/city96/ComfyUI-GGUF.git
 ARG GGUF_REF=main
 ARG DASIWA_REPO=https://github.com/darksidewalker/ComfyUI-DaSiWa-Nodes.git
@@ -151,7 +151,7 @@ RUN set -euo pipefail; \
     rm -rf /root/.cache/pip /tmp/* /var/tmp/*
 
 ARG LTXVIDEO_REPO=https://github.com/Lightricks/ComfyUI-LTXVideo.git
-ARG LTXVIDEO_REF=master
+ARG LTXVIDEO_REF=229437c6b65796d6a7a63ae34be2bd5ba31fa543
 
 # Wan22AioV82 uses LTXVSpatioTemporalTiledVAEDecode for video VAE decode.
 RUN set -euo pipefail; \

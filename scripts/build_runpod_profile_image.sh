@@ -12,9 +12,6 @@ SMOKE="true"
 
 default_base_image_for_profile() {
     case "$1" in
-        wan22_aio_video)
-            printf '%s\n' "runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404"
-            ;;
         *)
             printf '%s\n' "yanwk/comfyui-boot:cu128-slim"
             ;;
@@ -29,7 +26,7 @@ Usage:
 Options:
   --profile <name>       Profile to build: img2img_lora or wan22_aio_video.
   --image-ref <ref>      Target image ref. Defaults to a local allbot/comfy-runpod-* tag.
-  --base-image <ref>     Base image. Defaults by profile; Wan22 uses RunPod PyTorch/CUDA.
+  --base-image <ref>     Base image. Defaults to yanwk/comfyui-boot:cu128-slim.
   --comfyui-ref <ref>    ComfyUI git ref used when the base image does not include ComfyUI.
   --kjnodes-ref <sha>    ComfyUI-KJNodes git ref pinned into the image.
   --kjnodes-source <dir> Build from an existing local ComfyUI-KJNodes directory instead of GitHub.

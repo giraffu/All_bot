@@ -180,13 +180,16 @@ Run the workflow manually with an optional `image_tag`. It builds
 test, pushes with the repository `GITHUB_TOKEN`, and verifies anonymous GHCR
 manifest access before the image is used by RunPod.
 
-The Wan22 workflow defaults to the RunPod PyTorch/CUDA base
-`runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404` so cold starts have a better
-chance of reusing layers already present on RunPod hosts. If that base lacks
-ComfyUI, the Dockerfile installs ComfyUI into `/opt/ComfyUI`, writes
-`/opt/allbot-comfyui-dir`, and strips custom node `.git` directories plus pip
-caches from the final image layer. Pass `base_image` in the workflow or
-`--base-image` locally only when intentionally testing a different base.
+The Wan22 workflow defaults to `yanwk/comfyui-boot:cu128-slim`, matching the
+LAN-proven `192.168.1.2:8189` ComfyUI runtime shape (`cu128`, ComfyUI
+`0.22.0`, PyTorch `2.11.0+cu128`). If the base lacks ComfyUI, the Dockerfile
+installs ComfyUI into `/opt/ComfyUI`, writes `/opt/allbot-comfyui-dir`, and
+strips custom node `.git` directories plus pip caches from the final image
+layer. Do not use `docker commit` on the LAN container as a release artifact:
+its ComfyUI root and `custom_nodes/models/workflows` are mounted volumes/binds,
+so commit would miss the important runtime content. Pass `base_image` in the
+workflow or `--base-image` locally only when intentionally testing a different
+base.
 
 Use the local script as a fallback or for profile debugging. Only push locally
 after choosing a registry namespace that RunPod can pull:
