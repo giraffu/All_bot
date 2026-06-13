@@ -16,15 +16,18 @@ from .providers.runpod import (
     RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF,
     RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF,
     RUNPOD_PROD_AGENT_ID,
-    RUNPOD_PROD_AGENT_ID_PREFIX,
     RUNPOD_PROD_BUCKET,
-    RUNPOD_PROD_POD_NAME_PREFIX,
-    RUNPOD_PROD_SUPPORTED_TASK_TYPES,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
+    RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX,
+    RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY,
+    RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX,
     RunPodProvider,
+    normalize_prod_worker_profile,
     prod_agent_id_from_slot,
     prod_pod_name_from_agent_id,
     prod_slot_from_agent_id,
+    prod_worker_profile_for_task_type,
+    prod_worker_profile_from_agent_id,
     redact_payload,
     redact_text,
 )
@@ -39,6 +42,8 @@ PROD_WEB_API_PORT = 8000
 PROD_MODEL_BUCKET = "allbot-model-cache"
 PROD_MODEL_PREFIX = "img2img_lora/2026-06-10"
 PROD_MODEL_MANIFEST_KEY = "img2img_lora/2026-06-10/manifest.json"
+PROD_DEFAULT_PROFILE = "img2img"
+PROD_WAN22_VIDEO_V2_TASK_TYPE = "wan22_video_v2"
 HEALTHY_WORKER_STATUSES = {"idle", "running"}
 TERMINAL_TASK_STATUSES = {"done", "error", "cancelled"}
 
@@ -51,6 +56,7 @@ class RunPodProdWorkerError(ValueError):
 class RunPodProdWorkerOptions:
     action: str = "status"
     execute: bool = False
+    profile: str = PROD_DEFAULT_PROFILE
     task_type: str = PROD_TASK_TYPE
     environment: str = PROD_ENVIRONMENT
     agent_id: str = RUNPOD_PROD_AGENT_ID
@@ -107,37 +113,79 @@ def load_env_file_for_prod_worker(
 
 
 def apply_prod_worker_selection_to_env(args: Any) -> dict[str, str]:
-    agent_id = prod_worker_agent_id_from_args_env(args)
+    profile = prod_worker_profile_from_args_env(args)
+    agent_id = prod_worker_agent_id_from_args_env(args, profile=profile)
     os.environ["RUNPOD_PROD_AGENT_ID"] = agent_id
     return {
+        "profile": profile,
         "agent_id": agent_id,
-        "slot": prod_slot_from_agent_id(agent_id),
-        "pod_name": prod_pod_name_from_agent_id(agent_id),
+        "slot": prod_slot_from_agent_id(agent_id, profile=profile),
+        "pod_name": prod_pod_name_from_agent_id(agent_id, profile=profile),
     }
 
 
-def prod_worker_agent_id_from_args_env(args: Any) -> str:
+def prod_worker_profile_from_args_env(args: Any) -> str:
+    explicit_profile = (
+        getattr(args, "profile", None)
+        or os.getenv("RUNPOD_PROD_WORKER_PROFILE")
+        or ""
+    ).strip()
+    if explicit_profile:
+        return normalize_prod_worker_profile(explicit_profile)
     explicit_agent_id = (
         getattr(args, "agent_id", None)
+        or os.getenv("RUNPOD_PROD_WORKER_AGENT_ID")
+        or os.getenv("RUNPOD_PROD_AGENT_ID")
+        or ""
+    ).strip()
+    if explicit_agent_id:
+        return prod_worker_profile_from_agent_id(explicit_agent_id)
+    return PROD_DEFAULT_PROFILE
+
+
+def prod_worker_agent_id_from_args_env(
+    args: Any,
+    *,
+    profile: str | None = None,
+) -> str:
+    prod_profile = normalize_prod_worker_profile(profile or prod_worker_profile_from_args_env(args))
+    env_suffix = prod_profile.upper()
+    explicit_agent_id = (
+        getattr(args, "agent_id", None)
+        or os.getenv(f"RUNPOD_PROD_WORKER_AGENT_ID_{env_suffix}")
         or os.getenv("RUNPOD_PROD_WORKER_AGENT_ID")
         or ""
     ).strip()
     explicit_slot = (
-        str(getattr(args, "slot", "") or os.getenv("RUNPOD_PROD_WORKER_SLOT") or "")
+        str(
+            getattr(args, "slot", "")
+            or os.getenv(f"RUNPOD_PROD_WORKER_SLOT_{env_suffix}")
+            or os.getenv("RUNPOD_PROD_WORKER_SLOT")
+            or ""
+        )
     ).strip()
     if explicit_agent_id:
-        prod_slot_from_agent_id(explicit_agent_id)
+        prod_slot_from_agent_id(explicit_agent_id, profile=prod_profile)
         if explicit_slot:
-            slot_agent_id = prod_agent_id_from_slot(explicit_slot)
+            slot_agent_id = prod_agent_id_from_slot(
+                explicit_slot,
+                profile=prod_profile,
+            )
             if slot_agent_id != explicit_agent_id:
                 raise RunPodProdWorkerError(
                     "--slot and --agent-id refer to different prod RunPod workers"
                 )
         return explicit_agent_id
     if explicit_slot:
-        return prod_agent_id_from_slot(explicit_slot)
-    agent_id = os.getenv("RUNPOD_PROD_AGENT_ID", RUNPOD_PROD_AGENT_ID)
-    prod_slot_from_agent_id(agent_id)
+        return prod_agent_id_from_slot(explicit_slot, profile=prod_profile)
+    if prod_profile == "img2img":
+        agent_id = os.getenv("RUNPOD_PROD_AGENT_ID", RUNPOD_PROD_AGENT_ID)
+    else:
+        agent_id = os.getenv(
+            f"RUNPOD_PROD_AGENT_ID_{env_suffix}",
+            prod_agent_id_from_slot("01", profile=prod_profile),
+        )
+    prod_slot_from_agent_id(agent_id, profile=prod_profile)
     return agent_id
 
 
@@ -147,7 +195,9 @@ def options_from_args_env(args: Any) -> RunPodProdWorkerOptions:
         or os.getenv("CLOUD_PROD_TAILSCALE_IP")
         or PROD_CONTROL_HOST
     )
-    agent_id = prod_worker_agent_id_from_args_env(args)
+    profile = prod_worker_profile_from_args_env(args)
+    agent_id = prod_worker_agent_id_from_args_env(args, profile=profile)
+    task_type = _prod_task_type_for_profile(profile)
     default_download_dir = (
         Path("runpod_canary_results")
         / "prod"
@@ -160,6 +210,8 @@ def options_from_args_env(args: Any) -> RunPodProdWorkerOptions:
             or "status"
         ),
         execute=bool(getattr(args, "execute", False)),
+        profile=profile,
+        task_type=task_type,
         agent_id=agent_id,
         desired_count=getattr(args, "desired", None),
         central_url=(
@@ -242,6 +294,8 @@ class RunPodProdWorkerRunner:
             "ok": False,
             "action": self.options.action,
             "execute": self.options.execute,
+            "profile": self.options.profile,
+            "task_type": self.options.task_type,
             "environment": self.options.environment,
             "agent_id": self.options.agent_id,
             "started_at": _utc_now_iso(),
@@ -277,11 +331,15 @@ class RunPodProdWorkerRunner:
     def _validate_static_options(self) -> None:
         if self.options.environment != PROD_ENVIRONMENT:
             raise RunPodProdWorkerError("prod-worker only supports environment=cloud-prod")
-        if self.options.task_type != PROD_TASK_TYPE:
-            raise RunPodProdWorkerError("prod-worker only supports task_type=img2img")
+        profile = normalize_prod_worker_profile(self.options.profile)
+        if prod_worker_profile_for_task_type(self.options.task_type) != profile:
+            raise RunPodProdWorkerError(
+                "prod-worker profile and task_type do not match"
+            )
         prod_slot_from_agent_id(
             self.options.agent_id,
             max_manual_slots=self.provider.settings.prod_max_manual_slots,
+            profile=profile,
         )
         if self.options.agent_id != self.provider.settings.prod_agent_id:
             raise RunPodProdWorkerError(
@@ -406,8 +464,8 @@ class RunPodProdWorkerRunner:
             summary["would_execute"] = [
                 f"verify {self.options.agent_id} heartbeat in prod Central",
                 f"temporarily set {self.options.agent_id} control to enabled",
-                "upload or reuse one non-sensitive 512x512 PNG in user-data-prod",
-                "submit one prod Web img2img task as internal user_id=3",
+                "upload or reuse one non-sensitive PNG in user-data-prod",
+                f"submit one prod Web {self.options.task_type} task as internal user_id=3",
                 "download the result to runpod_canary_results/prod/<date>/",
                 f"restore {self.options.agent_id} control to disabled",
             ]
@@ -420,7 +478,10 @@ class RunPodProdWorkerRunner:
         self._set_agent_control("enabled", reason="runpod_prod_worker_canary")
         try:
             image_object_key = self._resolve_canary_image(summary)
-            task_result = self._run_img2img_task(image_object_key, summary)
+            if self.options.profile == "wan22_video_v2":
+                task_result = self._run_wan22_video_v2_task(image_object_key, summary)
+            else:
+                task_result = self._run_img2img_task(image_object_key, summary)
             summary["tasks"].append(task_result)
             summary["runpod_task_verified"] = (
                 (task_result.get("pop_evidence") or {}).get("agent_id") == self.options.agent_id
@@ -458,6 +519,7 @@ class RunPodProdWorkerRunner:
         slot_pods = _prod_manual_slot_pods(
             managed_pods,
             max_manual_slots=max_slots,
+            profile=self.options.profile,
         )
         self._phase(
             summary,
@@ -571,6 +633,7 @@ class RunPodProdWorkerRunner:
             agent_id = prod_agent_id_from_slot(
                 slot,
                 max_manual_slots=self.provider.settings.prod_max_manual_slots,
+                profile=self.options.profile,
             )
             worker = _find_worker(workers, agent_id)
             slots[slot] = {
@@ -603,6 +666,7 @@ class RunPodProdWorkerRunner:
             agent_id = prod_agent_id_from_slot(
                 slot,
                 max_manual_slots=self.provider.settings.prod_max_manual_slots,
+                profile=self.options.profile,
             )
             if not self.options.agent_token:
                 snapshot[slot] = {
@@ -629,6 +693,7 @@ class RunPodProdWorkerRunner:
             agent_id = prod_agent_id_from_slot(
                 slot,
                 max_manual_slots=self.provider.settings.prod_max_manual_slots,
+                profile=self.options.profile,
             )
             actions.extend(
                 [
@@ -642,12 +707,14 @@ class RunPodProdWorkerRunner:
             agent_id = prod_agent_id_from_slot(
                 slot,
                 max_manual_slots=self.provider.settings.prod_max_manual_slots,
+                profile=self.options.profile,
             )
             actions.append(f"verify slot {slot} heartbeat and set {agent_id} to enabled")
         for slot in plan["delete_slots"]:
             agent_id = prod_agent_id_from_slot(
                 slot,
                 max_manual_slots=self.provider.settings.prod_max_manual_slots,
+                profile=self.options.profile,
             )
             actions.extend(
                 [
@@ -668,6 +735,7 @@ class RunPodProdWorkerRunner:
         agent_id = prod_agent_id_from_slot(
             slot,
             max_manual_slots=self.provider.settings.prod_max_manual_slots,
+            profile=self.options.profile,
         )
         provider = self._provider_for_agent(agent_id)
         operation: dict[str, Any] = {
@@ -713,6 +781,7 @@ class RunPodProdWorkerRunner:
         agent_id = prod_agent_id_from_slot(
             slot,
             max_manual_slots=self.provider.settings.prod_max_manual_slots,
+            profile=self.options.profile,
         )
         worker = self._wait_prod_worker_for_agent(
             agent_id,
@@ -741,6 +810,7 @@ class RunPodProdWorkerRunner:
         agent_id = prod_agent_id_from_slot(
             slot,
             max_manual_slots=self.provider.settings.prod_max_manual_slots,
+            profile=self.options.profile,
         )
         provider = self._provider_for_agent(agent_id)
         operation: dict[str, Any] = {
@@ -876,29 +946,35 @@ class RunPodProdWorkerRunner:
         env = body.get("env") or {}
         target_agent_id = agent_id or self.options.agent_id
         target_settings = settings or self.provider.settings
+        spec = _prod_render_spec(self.options.profile, target_settings)
         failures: list[str] = []
         if body.get("templateId"):
             failures.append("templateId must be empty for prod GHCR baked image")
-        if str(body.get("imageName") or "") != RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE:
-            failures.append("imageName must be the verified GHCR baked image")
+        image_name = str(body.get("imageName") or "")
+        if spec["image_exact"]:
+            if image_name != spec["image_exact"]:
+                failures.append("imageName must be the verified GHCR baked image")
+        elif not image_name.startswith(str(spec["image_prefix"])):
+            failures.append(f"imageName must start with {spec['image_prefix']}")
         expected_env = {
             "ENVIRONMENT": "prod",
             "RUNPOD_ENVIRONMENT": PROD_ENVIRONMENT,
+            "RUNPOD_TASK_TYPE": spec["runpod_task_type"],
             "AGENT_ID": target_agent_id,
             "AGENT_ID_PREFIX": target_agent_id,
             "CENTRAL_API_URL": target_settings.worker_central_url_cloud_prod,
-            "SUPPORTED_TASK_TYPES": ",".join(target_settings.prod_supported_task_types),
+            "SUPPORTED_TASK_TYPES": ",".join(spec["supported_task_types"]),
             "POOL_PROVIDER": "runpod",
             "POOL_NODE_ID": target_settings.prod_node_id,
-            "POOL_RUNTIME_PROFILE": "img2img_lora",
+            "POOL_RUNTIME_PROFILE": spec["runtime_profile"],
             "MINIO_BUCKET": target_settings.prod_bucket,
             "MINIO_INPUT_BUCKET": target_settings.prod_bucket,
             "MINIO_RESULT_BUCKET": target_settings.prod_bucket,
             "MINIO_TEMPLATE_BUCKET": target_settings.prod_bucket,
             "RUNPOD_MODEL_SYNC_ENABLED": "true",
             "RUNPOD_MODEL_BUCKET": PROD_MODEL_BUCKET,
-            "RUNPOD_MODEL_PREFIX": PROD_MODEL_PREFIX,
-            "RUNPOD_MODEL_MANIFEST_KEY": PROD_MODEL_MANIFEST_KEY,
+            "RUNPOD_MODEL_PREFIX": spec["model_prefix"],
+            "RUNPOD_MODEL_MANIFEST_KEY": spec["model_manifest_key"],
             "RUNPOD_COMFY_CUSTOM_NODES_ENABLED": "false",
             "RUNPOD_COMFY_KJNODES_ENABLED": "false",
             "RUNPOD_START_SSHD": "false",
@@ -1012,6 +1088,7 @@ class RunPodProdWorkerRunner:
                 pod,
                 self.options.agent_id,
                 max_manual_slots=self.provider.settings.prod_max_manual_slots,
+                profile=self.options.profile,
             )
         ]
 
@@ -1084,7 +1161,10 @@ class RunPodProdWorkerRunner:
             control = self._get_agent_control_for_agent(agent_id)
             last_worker = worker
             last_control = control
-            if worker and _worker_supports_img2img(worker):
+            if worker and _worker_supports_types(
+                worker,
+                self._expected_supported_task_types(),
+            ):
                 status = str(worker.get("status") or "")
                 control_state = str(control.get("state") or "enabled")
                 control_ok = (not require_disabled) or control_state == "disabled"
@@ -1107,6 +1187,10 @@ class RunPodProdWorkerRunner:
                 ensure_ascii=False,
             )
         )
+
+    def _expected_supported_task_types(self) -> tuple[str, ...]:
+        spec = _prod_render_spec(self.options.profile, self.provider.settings)
+        return tuple(spec["supported_task_types"])
 
     def _wait_worker_drained(self, summary: dict[str, Any]) -> dict[str, Any] | None:
         return self._wait_worker_drained_for_agent(self.options.agent_id, summary)
@@ -1220,6 +1304,72 @@ class RunPodProdWorkerRunner:
         self._phase(summary, "task_prod_img2img_canary", "ok", task_result)
         return task_result
 
+    def _run_wan22_video_v2_task(
+        self,
+        image_object_key: str,
+        summary: dict[str, Any],
+    ) -> dict[str, Any]:
+        self._phase(summary, "task_prod_wan22_video_v2_canary", "running")
+        payload = {
+            "task_type": PROD_WAN22_VIDEO_V2_TASK_TYPE,
+            "inputs": {
+                "images": [image_object_key],
+                "image": image_object_key,
+                "resolution": "preview",
+                "resolution_preset": "preview",
+                "duration": 5,
+                "duration_seconds": 5,
+                "extract_last_frame": True,
+                "seed": 20260613,
+                "negative_prompt": self.options.negative_prompt,
+                "wan22_model_profile": "wan22_video_v2",
+            },
+            "prompt": self.options.prompt,
+            "negative_prompt": self.options.negative_prompt,
+            "priority": 0,
+        }
+        submit_payload = self._http_json(
+            "POST",
+            _join_url(self.options.web_api_url, "tasks", "generate"),
+            json_body=payload,
+            headers=self._web_auth_headers(),
+        )
+        task_id = str(submit_payload.get("task_id") or "")
+        if not task_id:
+            raise RunPodProdWorkerError("missing task_id in Web response")
+        final_status, pop_evidence = self._wait_task_done(task_id)
+        task_result: dict[str, Any] = {
+            "label": "prod_wan22_video_v2_canary",
+            "registry_task_id": task_id,
+            "task_type": PROD_WAN22_VIDEO_V2_TASK_TYPE,
+            "central_status": final_status.get("status"),
+            "central_task_type": final_status.get("task_type"),
+            "pop_evidence": pop_evidence,
+        }
+        if str(final_status.get("task_type") or "") != PROD_WAN22_VIDEO_V2_TASK_TYPE:
+            raise RunPodProdWorkerError(
+                "prod canary Central task_type is "
+                f"{final_status.get('task_type')}, expected {PROD_WAN22_VIDEO_V2_TASK_TYPE}"
+            )
+        if final_status.get("status") != "done":
+            raise RunPodProdWorkerError(
+                f"prod canary Central terminal status is {final_status.get('status')}"
+            )
+        result_payload = self._wait_web_result(task_id)
+        result_url = str(result_payload.get("result_url") or "")
+        task_result["web_result_status"] = result_payload.get("status")
+        task_result["result_path"] = result_url_path(result_url)
+        if result_payload.get("status") != "success" or not result_url:
+            raise RunPodProdWorkerError("prod canary Web result did not become success")
+        task_result.update(
+            self._download_video_result(task_id=task_id, result_url=result_url)
+        )
+        task_result.update(
+            self._download_last_frame(task_id=task_id, result_payload=result_payload)
+        )
+        self._phase(summary, "task_prod_wan22_video_v2_canary", "ok", task_result)
+        return task_result
+
     def _wait_task_done(self, task_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
         deadline = time.monotonic() + self.options.task_timeout_seconds
         last_status: dict[str, Any] = {}
@@ -1282,6 +1432,59 @@ class RunPodProdWorkerRunner:
         parsed = urllib.parse.urlsplit(result_url)
         suffix = Path(parsed.path).suffix or ".bin"
         target = download_dir / f"prod_img2img_canary_{task_id}{suffix}"
+        raw, method = self._fetch_result_bytes(result_url)
+        target.write_bytes(raw)
+        return {"downloaded_file": str(target), "download_method": method}
+
+    def _download_video_result(
+        self,
+        *,
+        task_id: str,
+        result_url: str,
+    ) -> dict[str, Any]:
+        raw, method = self._fetch_result_bytes(result_url)
+        if len(raw) < 12 or b"ftyp" not in raw[:64]:
+            raise RunPodProdWorkerError("prod wan22 canary result does not look like an MP4")
+        download_dir = self.options.download_results_dir
+        download_dir.mkdir(parents=True, exist_ok=True)
+        target = download_dir / f"prod_wan22_video_v2_canary_{task_id}.mp4"
+        target.write_bytes(raw)
+        return {
+            "downloaded_file": str(target),
+            "download_method": method,
+            "downloaded_bytes": len(raw),
+        }
+
+    def _download_last_frame(
+        self,
+        *,
+        task_id: str,
+        result_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        extra_outputs = result_payload.get("extra_outputs")
+        last_frame = (
+            extra_outputs.get("last_frame") if isinstance(extra_outputs, dict) else None
+        )
+        if not isinstance(last_frame, dict):
+            raise RunPodProdWorkerError("prod wan22 canary missing extra_outputs.last_frame")
+        last_frame_url = str(last_frame.get("url") or last_frame.get("path") or "")
+        if not last_frame_url:
+            raise RunPodProdWorkerError("prod wan22 canary last_frame is missing url/path")
+        raw, method = self._fetch_result_bytes(last_frame_url)
+        if not raw.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise RunPodProdWorkerError("prod wan22 canary last_frame does not look like a PNG")
+        download_dir = self.options.download_results_dir
+        download_dir.mkdir(parents=True, exist_ok=True)
+        target = download_dir / f"prod_wan22_video_v2_canary_{task_id}_last_frame.png"
+        target.write_bytes(raw)
+        return {
+            "last_frame_path": result_url_path(last_frame_url),
+            "last_frame_downloaded_file": str(target),
+            "last_frame_download_method": method,
+            "last_frame_bytes": len(raw),
+        }
+
+    def _fetch_result_bytes(self, result_url: str) -> tuple[bytes, str]:
         method = "public_url"
         try:
             response = self._http_request(
@@ -1294,8 +1497,11 @@ class RunPodProdWorkerRunner:
         except Exception:
             method = "r2_s3"
             raw = self._download_result_bytes_from_s3(result_url)
-        target.write_bytes(raw)
-        return {"downloaded_file": str(target), "download_method": method}
+        if not raw:
+            raise RunPodProdWorkerError(
+                f"downloaded result is empty: {_safe_url(result_url)}"
+            )
+        return raw, method
 
     def _download_result_bytes_from_s3(self, result_url: str) -> bytes:
         object_key = result_url_path(result_url).lstrip("/")
@@ -1475,6 +1681,7 @@ class RunPodProdWorkerRunner:
                 prod_slot_from_agent_id(
                     self.options.agent_id,
                     max_manual_slots=max_manual_slots,
+                    profile=self.options.profile,
                 )
             )
         missing_gates: list[str] = []
@@ -1576,6 +1783,41 @@ def _join_url(base: str, *parts: str) -> str:
     return "/".join([base.rstrip("/"), *(part.strip("/") for part in parts if part)])
 
 
+def _prod_task_type_for_profile(profile: str) -> str:
+    if normalize_prod_worker_profile(profile) == "wan22_video_v2":
+        return PROD_WAN22_VIDEO_V2_TASK_TYPE
+    return PROD_TASK_TYPE
+
+
+def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
+    profile_key = normalize_prod_worker_profile(profile)
+    if profile_key == "wan22_video_v2":
+        return {
+            "runpod_task_type": PROD_WAN22_VIDEO_V2_TASK_TYPE,
+            "runtime_profile": "wan22_video_v2",
+            "supported_task_types": (PROD_WAN22_VIDEO_V2_TASK_TYPE,),
+            "model_prefix": (
+                settings.model_prefix_wan22_video_v2
+                or RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX
+            ),
+            "model_manifest_key": (
+                settings.model_manifest_key_wan22_video_v2
+                or RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY
+            ),
+            "image_exact": "",
+            "image_prefix": RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX,
+        }
+    return {
+        "runpod_task_type": "img2img_lora",
+        "runtime_profile": "img2img_lora",
+        "supported_task_types": tuple(settings.prod_supported_task_types),
+        "model_prefix": PROD_MODEL_PREFIX,
+        "model_manifest_key": PROD_MODEL_MANIFEST_KEY,
+        "image_exact": RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
+        "image_prefix": "",
+    }
+
+
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
@@ -1647,6 +1889,7 @@ def _is_prod_pod(
     agent_id: str,
     *,
     max_manual_slots: int | None = None,
+    profile: str | None = None,
 ) -> bool:
     env = pod.get("env") if isinstance(pod.get("env"), dict) else {}
     name = str(pod.get("name") or "")
@@ -1654,6 +1897,7 @@ def _is_prod_pod(
         name == prod_pod_name_from_agent_id(
             agent_id,
             max_manual_slots=max_manual_slots,
+            profile=profile,
         )
         or str(env.get("AGENT_ID") or "") == agent_id
         or str(env.get("AGENT_ID_PREFIX") or "") == agent_id
@@ -1664,10 +1908,11 @@ def _prod_manual_slot_pods(
     pods: list[dict[str, Any]],
     *,
     max_manual_slots: int,
+    profile: str | None = None,
 ) -> dict[str, dict[str, Any]]:
     slot_pods: dict[str, dict[str, Any]] = {}
     for pod in pods:
-        slot = _prod_manual_slot_from_pod(pod)
+        slot = _prod_manual_slot_from_pod(pod, profile=profile)
         if not slot:
             continue
         if int(slot) > max_manual_slots:
@@ -1683,37 +1928,68 @@ def _prod_manual_slot_pods(
     return slot_pods
 
 
-def _prod_manual_slot_from_pod(pod: dict[str, Any]) -> str:
+def _prod_manual_slot_from_pod(
+    pod: dict[str, Any],
+    *,
+    profile: str | None = None,
+) -> str:
     env = pod.get("env") if isinstance(pod.get("env"), dict) else {}
     for key in ("AGENT_ID", "AGENT_ID_PREFIX"):
-        slot = _prod_manual_slot_from_agent_id(str(env.get(key) or ""))
+        slot = _prod_manual_slot_from_agent_id(
+            str(env.get(key) or ""),
+            profile=profile,
+        )
         if slot:
             return slot
-    return _prod_manual_slot_from_pod_name(str(pod.get("name") or ""))
+    return _prod_manual_slot_from_pod_name(
+        str(pod.get("name") or ""),
+        profile=profile,
+    )
 
 
-def _prod_manual_slot_from_agent_id(agent_id: str) -> str:
-    if not agent_id.startswith(RUNPOD_PROD_AGENT_ID_PREFIX):
+def _prod_manual_slot_from_agent_id(
+    agent_id: str,
+    *,
+    profile: str | None = None,
+) -> str:
+    try:
+        prod_profile = (
+            normalize_prod_worker_profile(profile)
+            if profile is not None
+            else prod_worker_profile_from_agent_id(agent_id)
+        )
+        slot = prod_slot_from_agent_id(agent_id, profile=prod_profile)
+    except ValueError:
         return ""
-    raw = agent_id.removeprefix(RUNPOD_PROD_AGENT_ID_PREFIX).strip()
-    if not raw.isdigit():
-        return ""
-    value = int(raw, 10)
-    if value < 1:
-        return ""
-    return f"{value:02d}"
+    return slot
 
 
-def _prod_manual_slot_from_pod_name(name: str) -> str:
-    if not name.startswith(RUNPOD_PROD_POD_NAME_PREFIX):
-        return ""
-    raw = name.removeprefix(RUNPOD_PROD_POD_NAME_PREFIX).strip()
-    if not raw.isdigit():
-        return ""
-    value = int(raw, 10)
-    if value < 1:
-        return ""
-    return f"{value:02d}"
+def _prod_manual_slot_from_pod_name(
+    name: str,
+    *,
+    profile: str | None = None,
+) -> str:
+    for profile_key in _candidate_prod_profiles(profile):
+        prefix = prod_pod_name_from_agent_id(
+            prod_agent_id_from_slot("01", profile=profile_key),
+            profile=profile_key,
+        )[:-2]
+        if not name.startswith(prefix):
+            continue
+        raw = name.removeprefix(prefix).strip()
+        if not raw.isdigit():
+            return ""
+        value = int(raw, 10)
+        if value < 1:
+            return ""
+        return f"{value:02d}"
+    return ""
+
+
+def _candidate_prod_profiles(profile: str | None) -> tuple[str, ...]:
+    if profile is None:
+        return ("img2img", "wan22_video_v2")
+    return (normalize_prod_worker_profile(profile),)
 
 
 def _prod_slot_sequence(count: int) -> list[str]:
@@ -1738,13 +2014,16 @@ def _find_current_task_worker(workers: list[dict[str, Any]], task_id: str) -> di
     return None
 
 
-def _worker_supports_img2img(worker: dict[str, Any]) -> bool:
+def _worker_supports_types(
+    worker: dict[str, Any],
+    expected_types: tuple[str, ...],
+) -> bool:
     worker_types = {
         item.strip()
         for item in str(worker.get("types") or "").split(",")
         if item.strip()
     }
-    return set(RUNPOD_PROD_SUPPORTED_TASK_TYPES).issubset(worker_types)
+    return set(expected_types).issubset(worker_types)
 
 
 def _worker_summary(worker: dict[str, Any] | None) -> dict[str, Any]:

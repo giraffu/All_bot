@@ -735,7 +735,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     runpod_prod_worker = runpod_subparsers.add_parser(
         "prod-worker",
-        help="manual cloud-prod RunPod img2img worker control",
+        help="manual cloud-prod RunPod worker control",
     )
     prod_worker_subparsers = runpod_prod_worker.add_subparsers(
         dest="prod_worker_command",
@@ -767,6 +767,12 @@ def build_parser() -> argparse.ArgumentParser:
         dest="prod_env_file",
     )
     prod_worker_common.add_argument("--agent-id", default=None)
+    prod_worker_common.add_argument(
+        "--profile",
+        choices=("img2img", "wan22_video_v2"),
+        default=None,
+        help="prod RunPod worker profile; default img2img",
+    )
     prod_worker_common.add_argument(
         "--slot",
         default=None,
