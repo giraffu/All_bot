@@ -292,27 +292,53 @@ class RunPodSplitVideoCanaryRunner(RunPodCanaryRunner):
 
     def _create_pods(self, summary: dict[str, Any]) -> dict[str, str]:
         pod_ids: dict[str, str] = {}
-        for profile in SPLIT_VIDEO_PROFILES:
-            self._phase(summary, f"runpod_create_pod_{profile}", "running")
-            payload = self.provider.create_pod(
+        try:
+            for profile in SPLIT_VIDEO_PROFILES:
+                self._phase(summary, f"runpod_create_pod_{profile}", "running")
+                payload = self.provider.create_pod(
+                    task_type=profile,
+                    environment=self.options.environment,
+                    execute=True,
+                )
+                self._require_ok(payload, f"runpod create-pod failed for {profile}")
+                pod_id = _extract_pod_id(payload)
+                pod_ids[profile] = pod_id
+                summary.setdefault("pods", {})[profile] = _pod_summary(
+                    payload,
+                    str(
+                        (summary.get("render") or {}).get(profile, {}).get("imageName")
+                        or ""
+                    ),
+                )
+                self._phase(
+                    summary, f"runpod_create_pod_{profile}", "ok", {"pod_id": pod_id}
+                )
+        except Exception:
+            if self.options.cleanup:
+                self._delete_partial_pods(summary, pod_ids)
+            raise
+        return pod_ids
+
+    def _delete_partial_pods(
+        self,
+        summary: dict[str, Any],
+        pod_ids: dict[str, str],
+    ) -> None:
+        for profile, pod_id in pod_ids.items():
+            delete_payload = self.provider.delete_pod(
+                pod_id=pod_id,
                 task_type=profile,
-                environment=self.options.environment,
                 execute=True,
             )
-            self._require_ok(payload, f"runpod create-pod failed for {profile}")
-            pod_id = _extract_pod_id(payload)
-            pod_ids[profile] = pod_id
-            summary.setdefault("pods", {})[profile] = _pod_summary(
-                payload,
-                str(
-                    (summary.get("render") or {}).get(profile, {}).get("imageName")
-                    or ""
-                ),
+            summary.setdefault("cleanup", {}).setdefault("pod_delete", []).append(
+                {
+                    "profile": profile,
+                    "pod_id": pod_id,
+                    "ok": bool(delete_payload.get("ok")),
+                    "response": redact_payload(delete_payload),
+                    "partial_create_cleanup": True,
+                }
             )
-            self._phase(
-                summary, f"runpod_create_pod_{profile}", "ok", {"pod_id": pod_id}
-            )
-        return pod_ids
 
     def _wait_pod_readiness_for_profile(
         self,

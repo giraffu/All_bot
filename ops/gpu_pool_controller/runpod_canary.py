@@ -18,6 +18,7 @@ from .providers.runpod import (
     RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
     RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX,
     RUNPOD_TASK_PROFILES,
+    RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS,
     RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY,
     RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX,
     RunPodProvider,
@@ -47,7 +48,7 @@ DEFAULT_CONTROL_HOST = "100.82.124.91"
 DEFAULT_WORKER_IDS = tuple(f"cloud_worker_test_{index:02d}" for index in range(1, 8))
 EXPECTED_TASK_TYPES = ("img2img", "img2img_lora")
 EXPECTED_WAN22_AIO_VIDEO_TASK_TYPES = ("image_to_video", "wan22_video_v2")
-EXPECTED_WAN22_AIO_VIDEO_GPU_TYPE_IDS = ("NVIDIA GeForce RTX 5090",)
+EXPECTED_WAN22_AIO_VIDEO_GPU_TYPE_IDS = RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS
 TERMINAL_TASK_STATUSES = {"done", "error", "cancelled"}
 HEALTHY_WORKER_STATUSES = {"idle", "running"}
 
@@ -200,7 +201,8 @@ def options_from_args_env(args: Any) -> RunPodCanaryOptions:
             or "1"
         ),
         web_bearer_token=os.getenv("RUNPOD_CANARY_WEB_BEARER_TOKEN", ""),
-        agent_token=os.getenv("RUNPOD_CANARY_AGENT_TOKEN") or os.getenv("AGENT_SECRET_TOKEN", ""),
+        agent_token=os.getenv("RUNPOD_CANARY_AGENT_TOKEN")
+        or os.getenv("AGENT_SECRET_TOKEN", ""),
         input_object_key=(
             getattr(args, "input_object_key", None)
             or os.getenv("RUNPOD_CANARY_INPUT_OBJECT_KEY")
@@ -319,7 +321,9 @@ class RunPodCanaryRunner:
                 self._run_web_preflight(summary)
                 create_payload = self._create_pod(summary)
                 pod_id = _extract_pod_id(create_payload)
-                summary["pod"] = _pod_summary(create_payload, self._render_image_ref(summary))
+                summary["pod"] = _pod_summary(
+                    create_payload, self._render_image_ref(summary)
+                )
                 self._wait_pod_readiness(pod_id, summary)
                 runpod_worker = self._wait_runpod_worker(pod_id, summary)
 
@@ -371,7 +375,9 @@ class RunPodCanaryRunner:
                     "execute requires RunPod canary gates: " + ", ".join(missing_gates)
                 )
             if self.options.disable_workers and not self.options.agent_token:
-                raise RunPodCanaryError("AGENT_SECRET_TOKEN is required to disable/restore test workers")
+                raise RunPodCanaryError(
+                    "AGENT_SECRET_TOKEN is required to disable/restore test workers"
+                )
 
     def _run_runpod_preflight(self, summary: dict[str, Any]) -> None:
         self._phase(summary, "runpod_validate_key", "running")
@@ -383,7 +389,9 @@ class RunPodCanaryRunner:
         listed = self.provider.list_pods(managed_only=True)
         self._require_ok(listed, "runpod list-pods failed")
         if self.options.execute and int(listed.get("count") or 0) != 0:
-            raise RunPodCanaryError("refusing canary: managed RunPod pod count is not 0")
+            raise RunPodCanaryError(
+                "refusing canary: managed RunPod pod count is not 0"
+            )
         self._phase(
             summary,
             "runpod_list_pods",
@@ -395,7 +403,9 @@ class RunPodCanaryRunner:
         reconcile = self.provider.reconcile_managed_pods()
         self._require_ok(reconcile, "runpod reconcile-managed-pods failed")
         if self.options.execute and int(reconcile.get("managed_count") or 0) != 0:
-            raise RunPodCanaryError("refusing canary: managed RunPod reconcile count is not 0")
+            raise RunPodCanaryError(
+                "refusing canary: managed RunPod reconcile count is not 0"
+            )
         self._phase(
             summary,
             "runpod_reconcile",
@@ -468,13 +478,18 @@ class RunPodCanaryRunner:
                 return
             self._sleep(self.options.poll_interval_seconds)
         raise RunPodCanaryError(
-            "pod readiness timeout: " + json.dumps(redact_payload(last_payload), ensure_ascii=False)
+            "pod readiness timeout: "
+            + json.dumps(redact_payload(last_payload), ensure_ascii=False)
         )
 
-    def _wait_runpod_worker(self, pod_id: str, summary: dict[str, Any]) -> dict[str, Any]:
+    def _wait_runpod_worker(
+        self, pod_id: str, summary: dict[str, Any]
+    ) -> dict[str, Any]:
         profile = RUNPOD_TASK_PROFILES[self.options.task_type]
         expected_agent_id = f"{profile.agent_id_prefix}_{pod_id}"
-        self._phase(summary, "central_runpod_worker", "running", {"agent_id": expected_agent_id})
+        self._phase(
+            summary, "central_runpod_worker", "running", {"agent_id": expected_agent_id}
+        )
         deadline = time.monotonic() + self.options.worker_timeout_seconds
         last_workers: list[dict[str, Any]] = []
         while time.monotonic() <= deadline:
@@ -492,7 +507,9 @@ class RunPodCanaryRunner:
                 status = str(worker.get("status") or "")
                 if status in HEALTHY_WORKER_STATUSES:
                     summary["runpod_worker"] = _worker_summary(worker)
-                    self._phase(summary, "central_runpod_worker", "ok", summary["runpod_worker"])
+                    self._phase(
+                        summary, "central_runpod_worker", "ok", summary["runpod_worker"]
+                    )
                     return worker
             self._sleep(self.options.poll_interval_seconds)
         raise RunPodCanaryError(
@@ -548,7 +565,9 @@ class RunPodCanaryRunner:
             str(worker.get("agent_id") or "")
             for worker in self._fetch_workers()
             if _is_cloud_test_non_runpod_worker(worker)
-            and _worker_supports_any_expected_type(worker, expected_types=expected_types)
+            and _worker_supports_any_expected_type(
+                worker, expected_types=expected_types
+            )
         )
 
     def _upload_canary_image(self, summary: dict[str, Any]) -> str:
@@ -568,7 +587,9 @@ class RunPodCanaryRunner:
         object_key = str(presign.get("object_key") or "")
         upload_url = str(presign.get("upload_url") or "")
         if not object_key or not upload_url:
-            raise RunPodCanaryError("presigned upload response missing object_key/upload_url")
+            raise RunPodCanaryError(
+                "presigned upload response missing object_key/upload_url"
+            )
         self._http_bytes(
             "PUT",
             upload_url,
@@ -617,7 +638,9 @@ class RunPodCanaryRunner:
             "pop_evidence": pop_evidence,
         }
         if final_status.get("status") != "done":
-            raise RunPodCanaryError(f"{label}: Central terminal status is {final_status.get('status')}")
+            raise RunPodCanaryError(
+                f"{label}: Central terminal status is {final_status.get('status')}"
+            )
         result_payload = self._wait_web_result(task_id)
         result_url = str(result_payload.get("result_url") or "")
         task_result["web_result_status"] = result_payload.get("status")
@@ -655,7 +678,9 @@ class RunPodCanaryRunner:
             method = "r2_s3"
             raw = self._download_result_bytes_from_s3(result_url)
         if not raw:
-            raise RunPodCanaryError(f"downloaded result is empty: {_safe_url(result_url)}")
+            raise RunPodCanaryError(
+                f"downloaded result is empty: {_safe_url(result_url)}"
+            )
         return raw, method
 
     def _download_result_if_requested(
@@ -686,7 +711,9 @@ class RunPodCanaryRunner:
         if self.options.task_type != "wan22_aio_video":
             return {}
         extra_outputs = result_payload.get("extra_outputs")
-        last_frame = extra_outputs.get("last_frame") if isinstance(extra_outputs, dict) else None
+        last_frame = (
+            extra_outputs.get("last_frame") if isinstance(extra_outputs, dict) else None
+        )
         if not isinstance(last_frame, dict):
             raise RunPodCanaryError(f"{label}: missing extra_outputs.last_frame")
         last_frame_url = str(last_frame.get("url") or last_frame.get("path") or "")
@@ -716,16 +743,25 @@ class RunPodCanaryRunner:
         access_key = os.getenv("MINIO_ACCESS_KEY", "").strip()
         secret_key = os.getenv("MINIO_SECRET_KEY", "").strip()
         bucket = os.getenv("MINIO_RESULT_BUCKET", EXPECTED_TEST_BUCKET).strip()
-        secure = os.getenv("MINIO_SECURE", "true").strip().lower() in {"1", "true", "yes", "on"}
+        secure = os.getenv("MINIO_SECURE", "true").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
         if not endpoint or not access_key or not secret_key or not bucket:
-            raise RunPodCanaryError("R2 S3 fallback is missing MINIO endpoint/credentials/bucket")
+            raise RunPodCanaryError(
+                "R2 S3 fallback is missing MINIO endpoint/credentials/bucket"
+            )
         endpoint_url = endpoint
         if "://" not in endpoint_url:
             endpoint_url = f"{'https' if secure else 'http'}://{endpoint_url}"
         try:
             import boto3
         except Exception as exc:
-            raise RunPodCanaryError(f"boto3 is required for R2 S3 result download: {exc}") from exc
+            raise RunPodCanaryError(
+                f"boto3 is required for R2 S3 result download: {exc}"
+            ) from exc
         client = boto3.client(
             "s3",
             endpoint_url=endpoint_url,
@@ -737,7 +773,9 @@ class RunPodCanaryRunner:
             response = client.get_object(Bucket=bucket, Key=object_key)
             body = response["Body"].read()
         except Exception as exc:
-            raise RunPodCanaryError(f"R2 S3 result download failed for {object_key}: {exc}") from exc
+            raise RunPodCanaryError(
+                f"R2 S3 result download failed for {object_key}: {exc}"
+            ) from exc
         return body
 
     def _wait_task_done(
@@ -762,7 +800,9 @@ class RunPodCanaryRunner:
             if status_payload.get("_status") != 404:
                 last_status = status_payload
             workers = self._fetch_workers()
-            current_worker = _find_worker_current_task(workers, expected_worker_id, task_id)
+            current_worker = _find_worker_current_task(
+                workers, expected_worker_id, task_id
+            )
             if current_worker:
                 pop_evidence = {
                     "observed": True,
@@ -821,7 +861,9 @@ class RunPodCanaryRunner:
                         {"agent_id": agent_id, "state": state, "ok": True}
                     )
                 except Exception as exc:
-                    cleanup_errors.append(f"restore {agent_id}: {redact_text(str(exc))}")
+                    cleanup_errors.append(
+                        f"restore {agent_id}: {redact_text(str(exc))}"
+                    )
                     cleanup.setdefault("worker_restore", []).append(
                         {"agent_id": agent_id, "state": state, "ok": False}
                     )
@@ -833,7 +875,9 @@ class RunPodCanaryRunner:
                     execute=True,
                 )
                 if not delete_payload.get("ok"):
-                    raise RunPodCanaryError(str(delete_payload.get("error") or "delete failed"))
+                    raise RunPodCanaryError(
+                        str(delete_payload.get("error") or "delete failed")
+                    )
                 cleanup["pod_delete"] = {"pod_id": pod_id, "ok": True}
             except Exception as exc:
                 cleanup_errors.append(f"delete pod {pod_id}: {redact_text(str(exc))}")
@@ -843,7 +887,10 @@ class RunPodCanaryRunner:
         try:
             listed = self.provider.list_pods(managed_only=True)
             reconcile = self.provider.reconcile_managed_pods()
-            cleanup["post_list_pods"] = {"ok": listed.get("ok"), "count": listed.get("count")}
+            cleanup["post_list_pods"] = {
+                "ok": listed.get("ok"),
+                "count": listed.get("count"),
+            }
             cleanup["post_reconcile"] = {
                 "ok": reconcile.get("ok"),
                 "managed_count": reconcile.get("managed_count"),
@@ -853,7 +900,7 @@ class RunPodCanaryRunner:
         if cleanup_errors:
             cleanup["errors"] = cleanup_errors
             summary["ok"] = False
-            summary["error"] = (summary.get("error") or "cleanup failed")
+            summary["error"] = summary.get("error") or "cleanup failed"
 
     def _task_cases(self, image_object_key: str) -> list[dict[str, Any]]:
         profile = RUNPOD_TASK_PROFILES[self.options.task_type]
@@ -912,7 +959,9 @@ class RunPodCanaryRunner:
             },
         ]
 
-    def _wan22_aio_video_task_cases(self, image_object_key: str) -> list[dict[str, Any]]:
+    def _wan22_aio_video_task_cases(
+        self, image_object_key: str
+    ) -> list[dict[str, Any]]:
         base_inputs = {
             "images": [image_object_key],
             "image": image_object_key,
@@ -960,13 +1009,19 @@ class RunPodCanaryRunner:
         if template_id and not spec.allow_template_id:
             failures.append("templateId must be empty for baked GHCR canary")
         if image_name and not image_name.startswith(spec.image_ref_prefix):
-            failures.append(f"imageName must use public GHCR prefix {spec.image_ref_prefix}")
-        if not template_id and not image_name.startswith(spec.image_ref_prefix):
-            failures.append(f"imageName must use public GHCR prefix {spec.image_ref_prefix}")
-        if spec.expected_gpu_type_ids and tuple(body.get("gpuTypeIds") or ()) != spec.expected_gpu_type_ids:
             failures.append(
-                "gpuTypeIds must be "
-                + ",".join(spec.expected_gpu_type_ids)
+                f"imageName must use public GHCR prefix {spec.image_ref_prefix}"
+            )
+        if not template_id and not image_name.startswith(spec.image_ref_prefix):
+            failures.append(
+                f"imageName must use public GHCR prefix {spec.image_ref_prefix}"
+            )
+        if (
+            spec.expected_gpu_type_ids
+            and tuple(body.get("gpuTypeIds") or ()) != spec.expected_gpu_type_ids
+        ):
+            failures.append(
+                "gpuTypeIds must be " + ",".join(spec.expected_gpu_type_ids)
             )
         expected_env = {
             "CENTRAL_API_URL": EXPECTED_RUNPOD_CLOUD_TEST_CENTRAL_URL,
@@ -995,7 +1050,9 @@ class RunPodCanaryRunner:
             if not value.startswith("{{ RUNPOD_SECRET_"):
                 failures.append(f"{key} must use a RunPod secret reference")
         if failures:
-            raise RunPodCanaryError("render-create sanity check failed: " + "; ".join(failures))
+            raise RunPodCanaryError(
+                "render-create sanity check failed: " + "; ".join(failures)
+            )
 
     def _render_summary(self, render: dict[str, Any]) -> dict[str, Any]:
         body = render.get("json") or {}
@@ -1026,7 +1083,9 @@ class RunPodCanaryRunner:
     def _get_agent_control(self, agent_id: str) -> dict[str, Any]:
         return self._http_json(
             "GET",
-            _join_url(self.options.central_url, "api", "agent", "task", "control", agent_id),
+            _join_url(
+                self.options.central_url, "api", "agent", "task", "control", agent_id
+            ),
             headers=self._agent_headers(),
         )
 
@@ -1043,13 +1102,17 @@ class RunPodCanaryRunner:
             body["ttl_seconds"] = ttl_seconds
         return self._http_json(
             "POST",
-            _join_url(self.options.central_url, "api", "agent", "task", "control", agent_id),
+            _join_url(
+                self.options.central_url, "api", "agent", "task", "control", agent_id
+            ),
             json_body=body,
             headers=self._agent_headers(),
         )
 
     def _fetch_workers(self) -> list[dict[str, Any]]:
-        payload = self._http_json("GET", _join_url(self.options.central_url, "system", "workers"))
+        payload = self._http_json(
+            "GET", _join_url(self.options.central_url, "system", "workers")
+        )
         workers = payload.get("workers") or []
         if not isinstance(workers, list):
             raise RunPodCanaryError("Central /system/workers returned non-list workers")
@@ -1103,7 +1166,9 @@ class RunPodCanaryRunner:
         try:
             payload = json.loads(response["text"])
         except json.JSONDecodeError as exc:
-            raise RunPodCanaryError(f"invalid JSON response from {method} {_safe_url(url)}") from exc
+            raise RunPodCanaryError(
+                f"invalid JSON response from {method} {_safe_url(url)}"
+            ) from exc
         if isinstance(payload, dict):
             payload.setdefault("_status", response["status"])
             return payload
@@ -1212,7 +1277,9 @@ def write_canary_png(path: Path, *, width: int = 512, height: int = 512) -> None
                 )
             )
     png = bytearray(b"\x89PNG\r\n\x1a\n")
-    png.extend(_png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)))
+    png.extend(
+        _png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+    )
     png.extend(_png_chunk(b"IDAT", zlib.compress(bytes(rows), level=6)))
     png.extend(_png_chunk(b"IEND", b""))
     path.write_bytes(bytes(png))
@@ -1237,7 +1304,9 @@ def _join_url(base: str, *parts: str) -> str:
 
 
 def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return (
+        datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    )
 
 
 def _safe_url(url: str) -> str:
@@ -1286,7 +1355,9 @@ def _canary_profile_spec(task_type: str) -> RunPodCanaryProfileSpec:
     try:
         return RUNPOD_CANARY_PROFILE_SPECS[profile.task_type]
     except KeyError as exc:
-        raise RunPodCanaryError(f"missing runpod canary profile spec: {profile.task_type}") from exc
+        raise RunPodCanaryError(
+            f"missing runpod canary profile spec: {profile.task_type}"
+        ) from exc
 
 
 def _expected_task_types(task_type: str) -> tuple[str, ...]:

@@ -16,7 +16,7 @@
 
 - 先执行 `runpod split-video-manifests --execute` 上传两个小 manifest。
 - 临时设置 `RUNPOD_DRY_RUN=false`、`RUNPOD_AUTOSCALER_ENABLED=true`、`RUNPOD_MAX_PODS_TOTAL=2`、`RUNPOD_MAX_PODS_PER_TYPE=1`，执行 `runpod split-video-canary --execute`。
-- canary 会同时启动 2 个 5090 Pod，模拟 Web 用户提交 3 条任务，并把结果下载到 `runpod_video_test_results/`，结束后删除两个 Pod。
+- canary 会同时启动 2 个视频 Pod，GPU 调度按 `RTX 5090` 优先、`RTX 4090` 回退，模拟 Web 用户提交 3 条任务，并把结果下载到 `runpod_video_test_results/`，结束后删除两个 Pod。
 
 ## Summary
 
@@ -140,7 +140,7 @@ allbot-model-cache/wan22_video_v2/2026-06-13-test/manifest.json
 
 ```bash
 # image_to_video
-RUNPOD_GPU_TYPE_IDS_IMAGE_TO_VIDEO='["NVIDIA GeForce RTX 5090"]'
+RUNPOD_GPU_TYPE_IDS_IMAGE_TO_VIDEO=NVIDIA GeForce RTX 5090,NVIDIA GeForce RTX 4090
 RUNPOD_IMAGE_NAME_IMAGE_TO_VIDEO=ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:<tag>
 RUNPOD_USE_TEMPLATE_IMAGE_TO_VIDEO=true
 RUNPOD_TEMPLATE_ID_IMAGE_TO_VIDEO=<template_id>
@@ -150,7 +150,7 @@ RUNPOD_PROJECTED_COST_PER_HR_IMAGE_TO_VIDEO=<cost>
 RUNPOD_MAX_PODS_IMAGE_TO_VIDEO=<n>
 
 # wan22_video_v2
-RUNPOD_GPU_TYPE_IDS_WAN22_VIDEO_V2='["NVIDIA GeForce RTX 5090"]'
+RUNPOD_GPU_TYPE_IDS_WAN22_VIDEO_V2=NVIDIA GeForce RTX 5090,NVIDIA GeForce RTX 4090
 RUNPOD_IMAGE_NAME_WAN22_VIDEO_V2=ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:<tag>
 RUNPOD_USE_TEMPLATE_WAN22_VIDEO_V2=true
 RUNPOD_TEMPLATE_ID_WAN22_VIDEO_V2=<template_id>

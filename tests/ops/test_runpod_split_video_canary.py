@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from ops.gpu_pool_controller.cli import build_parser
 from ops.gpu_pool_controller.providers.runpod import RunPodProvider, RunPodSettings
 from ops.gpu_pool_controller.runpod_canary import RunPodCanaryOptions
@@ -64,6 +66,14 @@ class FakeSplitRunPodProvider:
         return {"ok": True, "readiness": {"infrastructure_ready": False}}
 
 
+class FailingSecondCreateProvider(FakeSplitRunPodProvider):
+    def create_pod(self, *, task_type, environment, execute):
+        self.create_calls += 1
+        if self.create_calls == 2:
+            return {"ok": False, "error": "runpod_http_500: resources unavailable"}
+        return {"ok": True, "pod": {"id": f"pod-{task_type}"}}
+
+
 def test_split_video_canary_dry_run_renders_both_profiles_without_mutation():
     provider = FakeSplitRunPodProvider()
     options = RunPodCanaryOptions(execute=False, quiet=True)
@@ -85,6 +95,32 @@ def test_split_video_canary_dry_run_renders_both_profiles_without_mutation():
     )
     assert provider.create_calls == 0
     assert provider.delete_calls == 0
+
+
+def test_split_video_canary_cleans_partial_pod_when_second_create_fails():
+    provider = FailingSecondCreateProvider()
+    runner = RunPodSplitVideoCanaryRunner(
+        provider,
+        RunPodCanaryOptions(execute=True, cleanup=True, disable_workers=False),
+        sleep_func=lambda _seconds: None,
+    )
+    summary: dict[str, object] = {
+        "render": {
+            "image_to_video": {"imageName": WAN22_IMAGE},
+            "wan22_video_v2": {"imageName": WAN22_IMAGE},
+        },
+        "cleanup": {"pod_delete": []},
+    }
+
+    with pytest.raises(ValueError, match="runpod create-pod failed"):
+        runner._create_pods(summary)
+
+    assert provider.create_calls == 2
+    assert provider.delete_calls == 1
+    pod_delete = summary["cleanup"]["pod_delete"]  # type: ignore[index]
+    assert pod_delete[0]["profile"] == "image_to_video"
+    assert pod_delete[0]["pod_id"] == "pod-image_to_video"
+    assert pod_delete[0]["partial_create_cleanup"] is True
 
 
 def test_split_video_canary_task_cases_match_web_generate_plan():

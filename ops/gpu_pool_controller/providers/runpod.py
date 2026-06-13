@@ -42,7 +42,10 @@ RUNPOD_PROD_GPU_TYPE_IDS = ("NVIDIA GeForce RTX 4090",)
 RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE = (
     "ghcr.io/giraffu/allbot-comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946"
 )
-RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS = ("NVIDIA GeForce RTX 5090",)
+RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS = (
+    "NVIDIA GeForce RTX 5090",
+    "NVIDIA GeForce RTX 4090",
+)
 RUNPOD_WAN22_AIO_VIDEO_MODEL_PREFIX = "wan22_aio_video/2026-06-12-test"
 RUNPOD_WAN22_AIO_VIDEO_MODEL_MANIFEST_KEY = (
     "wan22_aio_video/2026-06-12-test/manifest.json"
