@@ -341,7 +341,11 @@ def _cmd_runpod_split_video_canary(args) -> int:
             options.download_results_dir or DEFAULT_SPLIT_VIDEO_RESULTS_DIR
         ),
     )
-    payload = RunPodSplitVideoCanaryRunner(provider, options).run()
+    payload = RunPodSplitVideoCanaryRunner(
+        provider,
+        options,
+        profiles=tuple(args.profile or ()),
+    ).run()
     payload["env_file"] = env_file_info
     _print_json(payload)
     return 0 if payload.get("ok") else 2
@@ -614,6 +618,16 @@ def build_parser() -> argparse.ArgumentParser:
         dest="env_file",
     )
     runpod_split_video_canary.add_argument("--execute", action="store_true")
+    runpod_split_video_canary.add_argument(
+        "--profile",
+        action="append",
+        choices=("image_to_video", "wan22_video_v2"),
+        default=None,
+        help=(
+            "Split video profile to test. Repeat to test multiple profiles. "
+            "Defaults to both image_to_video and wan22_video_v2."
+        ),
+    )
     runpod_split_video_canary.add_argument(
         "--cleanup",
         action=argparse.BooleanOptionalAction,

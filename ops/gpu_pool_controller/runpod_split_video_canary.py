@@ -54,9 +54,11 @@ class RunPodSplitVideoCanaryRunner(RunPodCanaryRunner):
         self,
         provider: RunPodProvider,
         options: RunPodCanaryOptions,
+        profiles: tuple[str, ...] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(provider, options, **kwargs)
+        self.active_profiles = self._normalize_profiles(profiles)
 
     def run(self) -> dict[str, Any]:
         summary: dict[str, Any] = {
@@ -64,7 +66,7 @@ class RunPodSplitVideoCanaryRunner(RunPodCanaryRunner):
             "execute": self.options.execute,
             "environment": self.options.environment,
             "task_type": "split_video_profiles",
-            "profiles": list(SPLIT_VIDEO_PROFILES),
+            "profiles": list(self.active_profiles),
             "started_at": _utc_now_iso(),
             "phases": [],
             "cleanup": {
@@ -83,13 +85,14 @@ class RunPodSplitVideoCanaryRunner(RunPodCanaryRunner):
                 summary["ok"] = True
                 summary["would_execute"] = [
                     "upload split image_to_video and wan22_video_v2 model manifests",
-                    "create two RunPod cloud-test pods, one per split video profile",
-                    "wait for infrastructure readiness and two Central worker heartbeats",
-                    "temporarily disable non-RunPod cloud-test workers supporting image_to_video or wan22_video_v2",
+                    f"create {len(self.active_profiles)} RunPod cloud-test pod(s): "
+                    + ", ".join(self.active_profiles),
+                    "wait for infrastructure readiness and Central worker heartbeat(s)",
+                    "temporarily disable non-RunPod cloud-test workers supporting active split video task types",
                     "upload or reuse one neutral 512x512 PNG object in user-data-test",
-                    "submit three Web /api/tasks/generate video tasks",
+                    "submit Web /api/tasks/generate video task(s) for active profiles",
                     "download MP4 and last_frame PNG files to runpod_video_test_results/",
-                    "restore test workers and delete the two RunPod pods",
+                    "restore test workers and delete created RunPod pod(s)",
                 ]
             else:
                 self._run_web_preflight(summary)
@@ -127,18 +130,48 @@ class RunPodSplitVideoCanaryRunner(RunPodCanaryRunner):
                 )
         return self._finish(summary)
 
+    @staticmethod
+    def _normalize_profiles(profiles: tuple[str, ...] | None) -> tuple[str, ...]:
+        if not profiles:
+            return SPLIT_VIDEO_PROFILES
+        normalized: list[str] = []
+        invalid: list[str] = []
+        for profile in profiles:
+            if profile not in SPLIT_VIDEO_PROFILES:
+                invalid.append(profile)
+                continue
+            if profile not in normalized:
+                normalized.append(profile)
+        if invalid:
+            raise RunPodCanaryError(
+                "unsupported split video profile(s): " + ", ".join(invalid)
+            )
+        if not normalized:
+            raise RunPodCanaryError("at least one split video profile is required")
+        return tuple(normalized)
+
+    @property
+    def active_task_types(self) -> tuple[str, ...]:
+        task_types: list[str] = []
+        for profile_name in self.active_profiles:
+            for task_type in RUNPOD_TASK_PROFILES[profile_name].supported_task_types:
+                if task_type not in task_types:
+                    task_types.append(task_type)
+        return tuple(task_types)
+
     def _validate_static_options(self) -> None:
         if self.options.environment != "cloud-test":
             raise RunPodCanaryError("split video canary only supports --env cloud-test")
         if self.options.execute:
             settings = self.provider.settings
             missing_gates: list[str] = []
+            expected_total = len(self.active_profiles)
             if settings.dry_run:
                 missing_gates.append("RUNPOD_DRY_RUN=false")
             if not settings.autoscaler_enabled:
                 missing_gates.append("RUNPOD_AUTOSCALER_ENABLED=true")
-            if settings.max_pods_total != 2:
-                missing_gates.append("RUNPOD_MAX_PODS_TOTAL=2")
+            if settings.max_pods_total != expected_total:
+                missing_gates.append(f"RUNPOD_MAX_PODS_TOTAL={expected_total}")
             if settings.max_pods_per_type != 1:
                 missing_gates.append("RUNPOD_MAX_PODS_PER_TYPE=1")
             if missing_gates:
@@ -218,7 +251,7 @@ class RunPodSplitVideoCanaryRunner(RunPodCanaryRunner):
         )
 
         renders: dict[str, Any] = {}
-        for profile in SPLIT_VIDEO_PROFILES:
+        for profile in self.active_profiles:
             self._phase(summary, f"runpod_render_create_{profile}", "running")
             render = self.provider.render_create_pod_request(
                 task_type=profile,
@@ -293,7 +326,7 @@ class RunPodSplitVideoCanaryRunner(RunPodCanaryRunner):
     def _create_pods(self, summary: dict[str, Any]) -> dict[str, str]:
         pod_ids: dict[str, str] = {}
         try:
-            for profile in SPLIT_VIDEO_PROFILES:
+            for profile in self.active_profiles:
                 self._phase(summary, f"runpod_create_pod_{profile}", "running")
                 payload = self.provider.create_pod(
                     task_type=profile,
@@ -439,7 +472,7 @@ class RunPodSplitVideoCanaryRunner(RunPodCanaryRunner):
             for worker in self._fetch_workers()
             if _is_cloud_test_non_runpod_worker(worker)
             and _worker_supports_any_expected_type(
-                worker, expected_types=SPLIT_VIDEO_TASK_TYPES
+                worker, expected_types=self.active_task_types
             )
         )
 
@@ -488,7 +521,7 @@ class RunPodSplitVideoCanaryRunner(RunPodCanaryRunner):
             "seed": 20260613,
             "negative_prompt": self.options.negative_prompt,
         }
-        return [
+        cases = [
             {
                 "label": "image_to_video_no_lora",
                 "worker_profile": "image_to_video",
@@ -534,6 +567,11 @@ class RunPodSplitVideoCanaryRunner(RunPodCanaryRunner):
                     "priority": 0,
                 },
             },
+        ]
+        return [
+            case
+            for case in cases
+            if str(case.get("worker_profile") or "") in self.active_profiles
         ]
 
     def _run_split_task_case(

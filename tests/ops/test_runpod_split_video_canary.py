@@ -97,6 +97,25 @@ def test_split_video_canary_dry_run_renders_both_profiles_without_mutation():
     assert provider.delete_calls == 0
 
 
+def test_split_video_canary_dry_run_can_target_wan22_video_v2_only():
+    provider = FakeSplitRunPodProvider()
+    options = RunPodCanaryOptions(execute=False, quiet=True)
+
+    payload = RunPodSplitVideoCanaryRunner(
+        provider,
+        options,
+        profiles=("wan22_video_v2",),
+        sleep_func=lambda _seconds: None,
+    ).run()
+
+    assert payload["ok"] is True
+    assert payload["profiles"] == ["wan22_video_v2"]
+    assert list(payload["render"]) == ["wan22_video_v2"]
+    assert "image_to_video" not in payload["render"]
+    assert provider.create_calls == 0
+    assert provider.delete_calls == 0
+
+
 def test_split_video_canary_cleans_partial_pod_when_second_create_fails():
     provider = FailingSecondCreateProvider()
     runner = RunPodSplitVideoCanaryRunner(
@@ -154,6 +173,20 @@ def test_split_video_canary_task_cases_match_web_generate_plan():
         assert inputs["extract_last_frame"] is True
 
 
+def test_split_video_canary_task_cases_can_target_wan22_video_v2_only():
+    runner = RunPodSplitVideoCanaryRunner(
+        FakeSplitRunPodProvider(),
+        RunPodCanaryOptions(prompt=DEFAULT_SPLIT_VIDEO_PROMPT, quiet=True),
+        profiles=("wan22_video_v2",),
+    )
+
+    cases = runner._task_cases("user-data-test/web_uploads/3/example.png")
+
+    assert [case["label"] for case in cases] == ["wan22_video_v2"]
+    assert cases[0]["worker_profile"] == "wan22_video_v2"
+    assert cases[0]["payload"]["task_type"] == "wan22_video_v2"
+
+
 def test_split_video_canary_downloads_fixed_result_names(tmp_path: Path):
     runner = RunPodSplitVideoCanaryRunner(
         FakeSplitRunPodProvider(),
@@ -201,6 +234,8 @@ def test_cli_parses_split_video_canary_command():
             "--env-file",
             ".env.cloud.test",
             "--execute",
+            "--profile",
+            "wan22_video_v2",
             "--quiet",
         ]
     )
@@ -208,5 +243,6 @@ def test_cli_parses_split_video_canary_command():
     assert args.runpod_command == "split-video-canary"
     assert args.env_file == Path(".env.cloud.test")
     assert args.execute is True
+    assert args.profile == ["wan22_video_v2"]
     assert args.prompt == DEFAULT_SPLIT_VIDEO_PROMPT
     assert args.download_results_dir == Path("runpod_video_test_results")

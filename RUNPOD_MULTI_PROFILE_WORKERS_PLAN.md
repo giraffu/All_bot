@@ -15,8 +15,9 @@
 待执行真机阶段：
 
 - 先执行 `runpod split-video-manifests --execute` 上传两个小 manifest。
-- 临时设置 `RUNPOD_DRY_RUN=false`、`RUNPOD_AUTOSCALER_ENABLED=true`、`RUNPOD_MAX_PODS_TOTAL=2`、`RUNPOD_MAX_PODS_PER_TYPE=1`，执行 `runpod split-video-canary --execute`。
-- canary 会同时启动 2 个视频 Pod，GPU 调度按 `RTX 5090` 优先、`RTX 4090` 回退，模拟 Web 用户提交 3 条任务，并把结果下载到 `runpod_video_test_results/`，结束后删除两个 Pod。
+- 先临时设置 `RUNPOD_DRY_RUN=false`、`RUNPOD_AUTOSCALER_ENABLED=true`、`RUNPOD_MAX_PODS_TOTAL=1`、`RUNPOD_MAX_PODS_PER_TYPE=1`，执行 `runpod split-video-canary --profile wan22_video_v2 --execute`，只启动 1 个 v2 Pod，模拟 Web 用户提交 1 条 `wan22_video_v2` 任务，并把结果下载到 `runpod_video_test_results/`，结束后删除 Pod。
+- `wan22_video_v2` 成功后，再用同样 1 Pod 门禁执行 `runpod split-video-canary --profile image_to_video --execute`，模拟 Web 用户提交无 LoRA 与 `Insertion` 两条旧图生视频任务。
+- 两个单 profile canary 都通过后，才恢复 `RUNPOD_MAX_PODS_TOTAL=2` 执行不带 `--profile` 的双 profile 并发 canary，确认两个视频 profile 同时在线时不会互相抢任务。
 
 ## Summary
 
@@ -322,8 +323,8 @@ python scripts/gpu_pool_controller.py runpod canary \
 
 ### Phase 6：单 profile canary
 
-- 启动 1 个 `image_to_video` worker，跑 preview/5s 单起始帧 canary。
-- 清理后启动 1 个 `wan22_video_v2` worker，跑 preview/5s 单起始帧 canary。
+- 先启动 1 个 `wan22_video_v2` worker，跑 preview/5s 单起始帧 canary；成功后清理 Pod。
+- 再启动 1 个 `image_to_video` worker，跑 preview/5s 单起始帧无 LoRA 与 `Insertion` canary；成功后清理 Pod。
 - 两条都通过后，再做并发 canary：两个 profile 同时各 1 个 Pod，提交两种任务，验证 Central 分发到正确 agent 前缀。
 
 ### Phase 7：N 副本扩缩容
