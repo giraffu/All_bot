@@ -108,6 +108,12 @@ def test_wan22_profile_image_bakes_video_custom_nodes_not_business_models():
     assert "rgthree-comfy" in dockerfile
     assert "ComfyUI-Frame-Interpolation" in dockerfile
     assert "ComfyUI_Fill-Nodes" in dockerfile
+    assert (
+        "# Keep the FL_RIFE provider in a final small layer" in dockerfile
+    )
+    assert dockerfile.index('echo "${comfyui_dir}" > /opt/allbot-comfyui-dir') < dockerfile.index(
+        "# Keep the FL_RIFE provider in a final small layer"
+    )
     assert "ComfyUI-GGUF" in dockerfile
     assert "ComfyUI-DaSiWa-Nodes" in dockerfile
     assert "comfyui-WhiteRabbit" in dockerfile
