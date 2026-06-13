@@ -143,6 +143,32 @@ async def test_clean_zombie_tasks_payload_uses_finalize_terminated_task():
     )
 
 
+def test_count_tasks_by_type_uses_worker_execution_task_types():
+    tasks = {
+        "task-1": {"task_type": "edit"},
+        "task-2": {"task_type": "img2img_lora"},
+        "task-3": {"task_type": "custom_video"},
+        "task-4": {"task_type": "video_lora"},
+        "task-5": {"task_type": "image_to_video"},
+        "task-6": {"task_type": "ltx_video"},
+        "task-7": {"task_type": "txt2img"},
+        "task-8": {"task_type": "doggy_style"},
+        "task-9": {"task_type": "face_video_step1"},
+        "task-10": {"task_type": None},
+    }
+
+    assert system_service.count_tasks_by_type(tasks) == {
+        "img2img": 1,
+        "img2img_lora": 1,
+        "image_to_video": 3,
+        "ltx_video": 1,
+        "t2i-pornmaster-turbo": 1,
+        "video_insert": 1,
+        "face_video": 1,
+        "unknown": 1,
+    }
+
+
 @pytest.mark.asyncio
 async def test_get_system_status_proxy_payload_uses_active_task_registry_counts():
     middleware_payload = {

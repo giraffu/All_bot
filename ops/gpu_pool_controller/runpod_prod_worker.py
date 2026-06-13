@@ -15,6 +15,8 @@ from typing import Any, Callable
 from .providers.runpod import (
     RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF,
     RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF,
+    RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
+    RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX,
     RUNPOD_PROD_AGENT_ID,
     RUNPOD_PROD_BUCKET,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
@@ -43,6 +45,7 @@ PROD_MODEL_BUCKET = "allbot-model-cache"
 PROD_MODEL_PREFIX = "img2img_lora/2026-06-10"
 PROD_MODEL_MANIFEST_KEY = "img2img_lora/2026-06-10/manifest.json"
 PROD_DEFAULT_PROFILE = "img2img"
+PROD_IMAGE_TO_VIDEO_TASK_TYPE = "image_to_video"
 PROD_WAN22_VIDEO_V2_TASK_TYPE = "wan22_video_v2"
 HEALTHY_WORKER_STATUSES = {"idle", "running"}
 TERMINAL_TASK_STATUSES = {"done", "error", "cancelled"}
@@ -478,7 +481,9 @@ class RunPodProdWorkerRunner:
         self._set_agent_control("enabled", reason="runpod_prod_worker_canary")
         try:
             image_object_key = self._resolve_canary_image(summary)
-            if self.options.profile == "wan22_video_v2":
+            if self.options.profile == "image_to_video":
+                task_result = self._run_image_to_video_task(image_object_key, summary)
+            elif self.options.profile == "wan22_video_v2":
                 task_result = self._run_wan22_video_v2_task(image_object_key, summary)
             else:
                 task_result = self._run_img2img_task(image_object_key, summary)
@@ -1304,6 +1309,80 @@ class RunPodProdWorkerRunner:
         self._phase(summary, "task_prod_img2img_canary", "ok", task_result)
         return task_result
 
+    def _run_image_to_video_task(
+        self,
+        image_object_key: str,
+        summary: dict[str, Any],
+    ) -> dict[str, Any]:
+        self._phase(summary, "task_prod_image_to_video_canary", "running")
+        payload = {
+            "task_type": PROD_IMAGE_TO_VIDEO_TASK_TYPE,
+            "inputs": {
+                "images": [image_object_key],
+                "image": image_object_key,
+                "resolution": "preview",
+                "resolution_preset": "preview",
+                "duration": 5,
+                "duration_seconds": 5,
+                "extract_last_frame": True,
+                "seed": 20260613,
+                "negative_prompt": self.options.negative_prompt,
+                "wan22_model_profile": "legacy_image_to_video",
+            },
+            "prompt": self.options.prompt,
+            "negative_prompt": self.options.negative_prompt,
+            "priority": 0,
+        }
+        submit_payload = self._http_json(
+            "POST",
+            _join_url(self.options.web_api_url, "tasks", "generate"),
+            json_body=payload,
+            headers=self._web_auth_headers(),
+        )
+        task_id = str(submit_payload.get("task_id") or "")
+        if not task_id:
+            raise RunPodProdWorkerError("missing task_id in Web response")
+        final_status, pop_evidence = self._wait_task_done(task_id)
+        task_result: dict[str, Any] = {
+            "label": "prod_image_to_video_canary",
+            "registry_task_id": task_id,
+            "task_type": PROD_IMAGE_TO_VIDEO_TASK_TYPE,
+            "central_status": final_status.get("status"),
+            "central_task_type": final_status.get("task_type"),
+            "pop_evidence": pop_evidence,
+        }
+        if str(final_status.get("task_type") or "") != PROD_IMAGE_TO_VIDEO_TASK_TYPE:
+            raise RunPodProdWorkerError(
+                "prod canary Central task_type is "
+                f"{final_status.get('task_type')}, expected {PROD_IMAGE_TO_VIDEO_TASK_TYPE}"
+            )
+        if final_status.get("status") != "done":
+            raise RunPodProdWorkerError(
+                f"prod canary Central terminal status is {final_status.get('status')}"
+            )
+        result_payload = self._wait_web_result(task_id)
+        result_url = str(result_payload.get("result_url") or "")
+        task_result["web_result_status"] = result_payload.get("status")
+        task_result["result_path"] = result_url_path(result_url)
+        if result_payload.get("status") != "success" or not result_url:
+            raise RunPodProdWorkerError("prod canary Web result did not become success")
+        task_result.update(
+            self._download_video_result(
+                task_id=task_id,
+                result_url=result_url,
+                artifact_prefix="prod_image_to_video_canary",
+            )
+        )
+        task_result.update(
+            self._download_last_frame(
+                task_id=task_id,
+                result_payload=result_payload,
+                artifact_prefix="prod_image_to_video_canary",
+            )
+        )
+        self._phase(summary, "task_prod_image_to_video_canary", "ok", task_result)
+        return task_result
+
     def _run_wan22_video_v2_task(
         self,
         image_object_key: str,
@@ -1362,10 +1441,18 @@ class RunPodProdWorkerRunner:
         if result_payload.get("status") != "success" or not result_url:
             raise RunPodProdWorkerError("prod canary Web result did not become success")
         task_result.update(
-            self._download_video_result(task_id=task_id, result_url=result_url)
+            self._download_video_result(
+                task_id=task_id,
+                result_url=result_url,
+                artifact_prefix="prod_wan22_video_v2_canary",
+            )
         )
         task_result.update(
-            self._download_last_frame(task_id=task_id, result_payload=result_payload)
+            self._download_last_frame(
+                task_id=task_id,
+                result_payload=result_payload,
+                artifact_prefix="prod_wan22_video_v2_canary",
+            )
         )
         self._phase(summary, "task_prod_wan22_video_v2_canary", "ok", task_result)
         return task_result
@@ -1441,13 +1528,14 @@ class RunPodProdWorkerRunner:
         *,
         task_id: str,
         result_url: str,
+        artifact_prefix: str,
     ) -> dict[str, Any]:
         raw, method = self._fetch_result_bytes(result_url)
         if len(raw) < 12 or b"ftyp" not in raw[:64]:
-            raise RunPodProdWorkerError("prod wan22 canary result does not look like an MP4")
+            raise RunPodProdWorkerError("prod video canary result does not look like an MP4")
         download_dir = self.options.download_results_dir
         download_dir.mkdir(parents=True, exist_ok=True)
-        target = download_dir / f"prod_wan22_video_v2_canary_{task_id}.mp4"
+        target = download_dir / f"{artifact_prefix}_{task_id}.mp4"
         target.write_bytes(raw)
         return {
             "downloaded_file": str(target),
@@ -1460,22 +1548,23 @@ class RunPodProdWorkerRunner:
         *,
         task_id: str,
         result_payload: dict[str, Any],
+        artifact_prefix: str,
     ) -> dict[str, Any]:
         extra_outputs = result_payload.get("extra_outputs")
         last_frame = (
             extra_outputs.get("last_frame") if isinstance(extra_outputs, dict) else None
         )
         if not isinstance(last_frame, dict):
-            raise RunPodProdWorkerError("prod wan22 canary missing extra_outputs.last_frame")
+            raise RunPodProdWorkerError("prod video canary missing extra_outputs.last_frame")
         last_frame_url = str(last_frame.get("url") or last_frame.get("path") or "")
         if not last_frame_url:
-            raise RunPodProdWorkerError("prod wan22 canary last_frame is missing url/path")
+            raise RunPodProdWorkerError("prod video canary last_frame is missing url/path")
         raw, method = self._fetch_result_bytes(last_frame_url)
         if not raw.startswith(b"\x89PNG\r\n\x1a\n"):
-            raise RunPodProdWorkerError("prod wan22 canary last_frame does not look like a PNG")
+            raise RunPodProdWorkerError("prod video canary last_frame does not look like a PNG")
         download_dir = self.options.download_results_dir
         download_dir.mkdir(parents=True, exist_ok=True)
-        target = download_dir / f"prod_wan22_video_v2_canary_{task_id}_last_frame.png"
+        target = download_dir / f"{artifact_prefix}_{task_id}_last_frame.png"
         target.write_bytes(raw)
         return {
             "last_frame_path": result_url_path(last_frame_url),
@@ -1784,13 +1873,32 @@ def _join_url(base: str, *parts: str) -> str:
 
 
 def _prod_task_type_for_profile(profile: str) -> str:
-    if normalize_prod_worker_profile(profile) == "wan22_video_v2":
+    profile_key = normalize_prod_worker_profile(profile)
+    if profile_key == "image_to_video":
+        return PROD_IMAGE_TO_VIDEO_TASK_TYPE
+    if profile_key == "wan22_video_v2":
         return PROD_WAN22_VIDEO_V2_TASK_TYPE
     return PROD_TASK_TYPE
 
 
 def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
     profile_key = normalize_prod_worker_profile(profile)
+    if profile_key == "image_to_video":
+        return {
+            "runpod_task_type": PROD_IMAGE_TO_VIDEO_TASK_TYPE,
+            "runtime_profile": "image_to_video",
+            "supported_task_types": (PROD_IMAGE_TO_VIDEO_TASK_TYPE,),
+            "model_prefix": (
+                settings.model_prefix_image_to_video
+                or RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX
+            ),
+            "model_manifest_key": (
+                settings.model_manifest_key_image_to_video
+                or RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY
+            ),
+            "image_exact": "",
+            "image_prefix": RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX,
+        }
     if profile_key == "wan22_video_v2":
         return {
             "runpod_task_type": PROD_WAN22_VIDEO_V2_TASK_TYPE,
@@ -1988,7 +2096,7 @@ def _prod_manual_slot_from_pod_name(
 
 def _candidate_prod_profiles(profile: str | None) -> tuple[str, ...]:
     if profile is None:
-        return ("img2img", "wan22_video_v2")
+        return ("img2img", "image_to_video", "wan22_video_v2")
     return (normalize_prod_worker_profile(profile),)
 
 

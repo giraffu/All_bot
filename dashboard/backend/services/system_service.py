@@ -12,6 +12,7 @@ from config import API_BASE, STATUS_ENDPOINT
 from src.core.task_core import get_system_task_stats
 from src.core.task_core_finalization import finalize_terminated_task
 from src.core.task_core import sync_user_concurrency as core_sync_user_concurrency
+from src.core.task_execution_types import resolve_worker_execution_task_type
 from src.database.models import User
 from src.services.image_service import image_service
 
@@ -67,7 +68,7 @@ def _prune_backend_task_status_cache(now: float) -> None:
 def count_tasks_by_type(tasks: dict) -> dict[str, int]:
     counts: dict[str, int] = {}
     for task in tasks.values():
-        task_type = task.get("task_type") or "unknown"
+        task_type = resolve_worker_execution_task_type(task.get("task_type"))
         counts[task_type] = counts.get(task_type, 0) + 1
     return counts
 

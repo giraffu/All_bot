@@ -5,6 +5,8 @@ from pathlib import Path
 
 from ops.gpu_pool_controller.cli import build_parser
 from ops.gpu_pool_controller.providers.runpod import (
+    RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
+    RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX,
     RUNPOD_PROD_AGENT_ID,
     RUNPOD_PROD_GPU_TYPE_IDS,
     RUNPOD_PROD_SUPPORTED_TASK_TYPES,
@@ -78,7 +80,10 @@ class FakeRunPodProvider:
 
     def create_pod(self, *, task_type, environment, execute):
         slot = self.settings.prod_agent_id.rsplit("_", 1)[-1]
-        runpod_task_type = "wan22_video_v2" if task_type == "wan22_video_v2" else "img2img_lora"
+        runpod_task_type = {
+            "image_to_video": "image_to_video",
+            "wan22_video_v2": "wan22_video_v2",
+        }.get(task_type, "img2img_lora")
         pod = {
             "id": f"pod-prod-{slot}",
             "name": prod_pod_name_from_agent_id(
@@ -171,7 +176,10 @@ def _prod_pod(
         max_manual_slots=max_manual_slots,
         profile=profile,
     )
-    runpod_task_type = "wan22_video_v2" if profile == "wan22_video_v2" else "img2img_lora"
+    runpod_task_type = {
+        "image_to_video": "image_to_video",
+        "wan22_video_v2": "wan22_video_v2",
+    }.get(profile, "img2img_lora")
     return {
         "id": f"pod-prod-{slot}",
         "name": prod_pod_name_from_agent_id(
@@ -201,8 +209,14 @@ def _worker(
         max_manual_slots=max_manual_slots,
         profile=profile,
     )
-    types = "wan22_video_v2" if profile == "wan22_video_v2" else "img2img,img2img_lora"
-    current_task_type = "wan22_video_v2" if profile == "wan22_video_v2" else "img2img_lora"
+    types = {
+        "image_to_video": "image_to_video",
+        "wan22_video_v2": "wan22_video_v2",
+    }.get(profile, "img2img,img2img_lora")
+    current_task_type = {
+        "image_to_video": "image_to_video",
+        "wan22_video_v2": "wan22_video_v2",
+    }.get(profile, "img2img_lora")
     return {
         "agent_id": agent_id,
         "types": types,
@@ -278,6 +292,48 @@ def test_prod_worker_render_wan22_video_v2_uses_prod_profile_defaults():
     assert payload["render"]["pool_runtime_profile"] == "wan22_video_v2"
     assert payload["render"]["model_prefix"] == RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX
     assert payload["render"]["model_manifest_key"] == RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY
+    assert payload["render"]["buckets"]["result"] == "user-data-prod"
+    assert payload["render"]["custom_nodes_enabled"] == "false"
+    assert payload["render"]["sshd_enabled"] == "false"
+    assert provider.create_calls == 0
+    assert provider.delete_calls == 0
+
+
+def test_prod_worker_render_image_to_video_uses_prod_profile_defaults():
+    image_ref = (
+        RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX
+        + "20260613-wan22aio-lanbase-ab9b7ea"
+    )
+    agent_id = prod_agent_id_from_slot("01", profile="image_to_video")
+    provider = FakeRunPodProvider(
+        _settings(
+            prod_agent_id=agent_id,
+            image_name_image_to_video=image_ref,
+            model_bucket="allbot-model-cache",
+            model_prefix_image_to_video=RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX,
+            model_manifest_key_image_to_video=RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
+        )
+    )
+    options = RunPodProdWorkerOptions(
+        action="render",
+        profile="image_to_video",
+        task_type="image_to_video",
+        agent_id=agent_id,
+        quiet=True,
+    )
+
+    payload = RunPodProdWorkerRunner(provider, options).run()
+
+    assert payload["ok"] is True
+    assert payload["profile"] == "image_to_video"
+    assert payload["render"]["pod_name"] == "allbot-runpod-prod-image-to-video-manual-01"
+    assert payload["render"]["imageName"] == image_ref
+    assert payload["render"]["agent_id"] == "runpod_prod_image_to_video_manual_01"
+    assert payload["render"]["gpu_type_ids"] == list(RUNPOD_PROD_GPU_TYPE_IDS)
+    assert payload["render"]["supported_task_types"] == "image_to_video"
+    assert payload["render"]["pool_runtime_profile"] == "image_to_video"
+    assert payload["render"]["model_prefix"] == RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX
+    assert payload["render"]["model_manifest_key"] == RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY
     assert payload["render"]["buckets"]["result"] == "user-data-prod"
     assert payload["render"]["custom_nodes_enabled"] == "false"
     assert payload["render"]["sshd_enabled"] == "false"
@@ -598,6 +654,29 @@ def test_prod_worker_selection_wan22_profile_uses_dedicated_agent_env(monkeypatc
     assert __import__("os").environ["RUNPOD_PROD_AGENT_ID"] == selection["agent_id"]
 
 
+def test_prod_worker_selection_image_to_video_profile_uses_dedicated_agent_env(monkeypatch):
+    monkeypatch.setenv("RUNPOD_PROD_AGENT_ID", RUNPOD_PROD_AGENT_ID)
+    args = build_parser().parse_args(
+        [
+            "runpod",
+            "prod-worker",
+            "status",
+            "--profile",
+            "image_to_video",
+            "--slot",
+            "02",
+        ]
+    )
+
+    selection = apply_prod_worker_selection_to_env(args)
+
+    assert selection["profile"] == "image_to_video"
+    assert selection["slot"] == "02"
+    assert selection["agent_id"] == "runpod_prod_image_to_video_manual_02"
+    assert selection["pod_name"] == "allbot-runpod-prod-image-to-video-manual-02"
+    assert __import__("os").environ["RUNPOD_PROD_AGENT_ID"] == selection["agent_id"]
+
+
 def test_prod_worker_selection_can_infer_profile_from_prod_agent_env(monkeypatch):
     monkeypatch.setenv(
         "RUNPOD_PROD_AGENT_ID",
@@ -616,6 +695,26 @@ def test_prod_worker_selection_can_infer_profile_from_prod_agent_env(monkeypatch
     assert selection["profile"] == "wan22_video_v2"
     assert selection["agent_id"] == "runpod_prod_wan22_video_v2_manual_01"
     assert selection["pod_name"] == "allbot-runpod-prod-wan22-video-v2-manual-01"
+
+
+def test_prod_worker_selection_can_infer_image_to_video_profile_from_prod_agent_env(monkeypatch):
+    monkeypatch.setenv(
+        "RUNPOD_PROD_AGENT_ID",
+        prod_agent_id_from_slot("01", profile="image_to_video"),
+    )
+    args = build_parser().parse_args(
+        [
+            "runpod",
+            "prod-worker",
+            "status",
+        ]
+    )
+
+    selection = apply_prod_worker_selection_to_env(args)
+
+    assert selection["profile"] == "image_to_video"
+    assert selection["agent_id"] == "runpod_prod_image_to_video_manual_01"
+    assert selection["pod_name"] == "allbot-runpod-prod-image-to-video-manual-01"
 
 
 def test_cli_parses_runpod_prod_worker_up_command():
@@ -661,6 +760,27 @@ def test_cli_parses_runpod_prod_worker_wan22_profile_command():
     assert args.runpod_command == "prod-worker"
     assert args.prod_worker_command == "render"
     assert args.profile == "wan22_video_v2"
+    assert args.slot == "01"
+    assert args.quiet is True
+
+
+def test_cli_parses_runpod_prod_worker_image_to_video_profile_command():
+    args = build_parser().parse_args(
+        [
+            "runpod",
+            "prod-worker",
+            "render",
+            "--profile",
+            "image_to_video",
+            "--slot",
+            "01",
+            "--quiet",
+        ]
+    )
+
+    assert args.runpod_command == "prod-worker"
+    assert args.prod_worker_command == "render"
+    assert args.profile == "image_to_video"
     assert args.slot == "01"
     assert args.quiet is True
 

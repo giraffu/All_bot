@@ -56,11 +56,11 @@ RUNPOD_MODEL_MANIFEST_KEY=img2img_lora/2026-06-10/manifest.json
 | `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | `.env.cloud.prod` 真实值；RunPod Pod 内使用 `allbot_cloud_prod_r2_access_key` / `allbot_cloud_prod_r2_secret_key` secret | 只读写 `user-data-prod`，不得用于模型缓存 |
 | `RUNPOD_PROD_AGENT_SECRET_TOKEN_REF` | `{{ RUNPOD_SECRET_allbot_cloud_prod_agent_secret_token }}` | 正式 RunPod Pod 访问 Central agent API 的 token 引用 |
 | `RUNPOD_PROD_R2_ACCESS_KEY_REF` / `RUNPOD_PROD_R2_SECRET_KEY_REF` | `{{ RUNPOD_SECRET_allbot_cloud_prod_r2_access_key }}` / `{{ RUNPOD_SECRET_allbot_cloud_prod_r2_secret_key }}` | 正式 RunPod Pod 读写 `user-data-prod` 的 secret 引用 |
-| `RUNPOD_MODEL_BUCKET` / `RUNPOD_MODEL_PREFIX` / `RUNPOD_MODEL_MANIFEST_KEY` | `allbot-model-cache` + profile-specific manifest | 手动正式 RunPod `img2img` 使用 `img2img_lora/2026-06-10/manifest.json`；`wan22_video_v2` 使用 `wan22_video_v2/2026-06-13-test/manifest.json` |
+| `RUNPOD_MODEL_BUCKET` / `RUNPOD_MODEL_PREFIX` / `RUNPOD_MODEL_MANIFEST_KEY` | `allbot-model-cache` + profile-specific manifest | 手动正式 RunPod `img2img` 使用 `img2img_lora/2026-06-10/manifest.json`；`image_to_video` 使用 `image_to_video/2026-06-13-test/manifest.json`；`wan22_video_v2` 使用 `wan22_video_v2/2026-06-13-test/manifest.json` |
 | `RUNPOD_MODEL_ACCESS_KEY_REF` / `RUNPOD_MODEL_SECRET_KEY_REF` | `{{ RUNPOD_SECRET_allbot_model_cache_r2_access_key }}` / `{{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}` | RunPod Pod 同步 `allbot-model-cache` 的 secret 引用，可与云测试共用模型缓存 secret |
 | `GITHUB_TOKEN` / `GHCR_TOKEN` / `all-github-token` | `.env.cloud.prod` 可保存真实值作为人工密钥来源 | 只用于本机 `docker login ghcr.io`、GHCR push 或 GitHub package 管理；不属于云正式服务容器运行时变量，不进入 RunPod Pod env |
 
-`.env.cloud.prod` 不应保存 Cloudflare `cfat_...` API token，也不应把真实 R2 key、GitHub/GHCR token 写入知识库、日志或 `docker compose config` 输出。当前环境文件中出现的 `all-github-token` 带中划线，不能被 `source .env.cloud.prod` 导出为 shell 变量；需要推 GHCR 时应临时映射到 `GHCR_TOKEN` 或 `GITHUB_TOKEN` 后执行 `docker login ghcr.io`，并在 push 后用空 `DOCKER_CONFIG` 匿名验证 package public。正式 RunPod `prod-worker` 代码入口已支持 `--profile img2img` 与 `--profile wan22_video_v2` 两条手动备用路径；真实创建、启用或 canary 生产任务仍必须由用户明确确认并满足 RunPod 门禁。
+`.env.cloud.prod` 不应保存 Cloudflare `cfat_...` API token，也不应把真实 R2 key、GitHub/GHCR token 写入知识库、日志或 `docker compose config` 输出。当前环境文件中出现的 `all-github-token` 带中划线，不能被 `source .env.cloud.prod` 导出为 shell 变量；需要推 GHCR 时应临时映射到 `GHCR_TOKEN` 或 `GITHUB_TOKEN` 后执行 `docker login ghcr.io`，并在 push 后用空 `DOCKER_CONFIG` 匿名验证 package public。正式 RunPod `prod-worker` 代码入口已支持 `--profile img2img`、`--profile image_to_video` 与 `--profile wan22_video_v2` 三条手动备用路径；真实创建、启用或 canary 生产任务仍必须由用户明确确认并满足 RunPod 门禁。
 
 ### 2.2 本地执行面
 本地主服务器运行云正式 GPU worker 和一个本地 worker relay/上传 sidecar：

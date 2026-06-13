@@ -794,6 +794,58 @@ def test_render_create_cloud_prod_wan22_video_v2_uses_prod_refs_and_split_manife
     assert env["RUNPOD_MODEL_SECRET_KEY"] == RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF
 
 
+def test_render_create_cloud_prod_image_to_video_uses_prod_refs_and_split_manifest():
+    image_ref = (
+        RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX
+        + "20260613-wan22aio-lanbase-ab9b7ea"
+    )
+    agent_id = prod_agent_id_from_slot("01", profile="image_to_video")
+    provider = RunPodProvider(
+        _settings(
+            image_name_image_to_video=image_ref,
+            prod_agent_id=agent_id,
+            model_bucket="allbot-model-cache",
+            model_prefix="img2img_lora/2026-06-10",
+            model_manifest_key="img2img_lora/2026-06-10/manifest.json",
+            keepalive_on_bootstrap_failure=True,
+        )
+    )
+
+    payload = provider.render_create_pod_request(
+        task_type="image_to_video",
+        environment="cloud-prod",
+        redact=False,
+    )
+    body = payload["json"]
+    env = body["env"]
+
+    assert "templateId" not in body
+    assert body["name"] == "allbot-runpod-prod-image-to-video-manual-01"
+    assert body["imageName"] == image_ref
+    assert body["gpuTypeIds"] == list(RUNPOD_PROD_GPU_TYPE_IDS)
+    assert env["ENVIRONMENT"] == "prod"
+    assert env["RUNPOD_ENVIRONMENT"] == "cloud-prod"
+    assert env["RUNPOD_TASK_TYPE"] == "image_to_video"
+    assert env["AGENT_ID"] == "runpod_prod_image_to_video_manual_01"
+    assert env["AGENT_ID_PREFIX"] == "runpod_prod_image_to_video_manual_01"
+    assert env["SUPPORTED_TASK_TYPES"] == "image_to_video"
+    assert env["CENTRAL_API_URL"] == RUNPOD_PROD_WORKER_CENTRAL_URL
+    assert env["POOL_RUNTIME_PROFILE"] == "image_to_video"
+    assert env["MINIO_RESULT_BUCKET"] == RUNPOD_PROD_BUCKET
+    assert env["RUNPOD_MODEL_BUCKET"] == "allbot-model-cache"
+    assert env["RUNPOD_MODEL_PREFIX"] == RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX
+    assert env["RUNPOD_MODEL_MANIFEST_KEY"] == RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY
+    assert env["RUNPOD_COMFY_CUSTOM_NODES_ENABLED"] == "false"
+    assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
+    assert env["RUNPOD_START_SSHD"] == "false"
+    assert env["RUNPOD_KEEPALIVE_ON_BOOTSTRAP_FAILURE"] == "false"
+    assert env["AGENT_SECRET_TOKEN"] == RUNPOD_PROD_AGENT_SECRET_TOKEN_REF
+    assert env["MINIO_ACCESS_KEY"] == RUNPOD_PROD_R2_ACCESS_KEY_REF
+    assert env["MINIO_SECRET_KEY"] == RUNPOD_PROD_R2_SECRET_KEY_REF
+    assert env["RUNPOD_MODEL_ACCESS_KEY"] == RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF
+    assert env["RUNPOD_MODEL_SECRET_KEY"] == RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF
+
+
 def test_prod_slot_default_max_rejects_third_slot(monkeypatch):
     monkeypatch.delenv("RUNPOD_PROD_MAX_MANUAL_SLOTS", raising=False)
 

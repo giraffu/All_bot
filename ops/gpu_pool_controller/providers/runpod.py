@@ -38,6 +38,12 @@ RUNPOD_PROD_WAN22_VIDEO_V2_AGENT_ID_PREFIX = (
 RUNPOD_PROD_WAN22_VIDEO_V2_POD_NAME_PREFIX = (
     "allbot-runpod-prod-wan22-video-v2-manual-"
 )
+RUNPOD_PROD_IMAGE_TO_VIDEO_AGENT_ID_PREFIX = (
+    "runpod_prod_image_to_video_manual_"
+)
+RUNPOD_PROD_IMAGE_TO_VIDEO_POD_NAME_PREFIX = (
+    "allbot-runpod-prod-image-to-video-manual-"
+)
 RUNPOD_PROD_DEFAULT_MAX_MANUAL_SLOTS = 2
 RUNPOD_PROD_MAX_MANUAL_SLOTS = RUNPOD_PROD_DEFAULT_MAX_MANUAL_SLOTS
 RUNPOD_PROD_AGENT_ID = "runpod_prod_img2img_manual_01"
@@ -232,18 +238,26 @@ def normalize_prod_worker_profile(profile: str | None) -> str:
     value = (profile or "img2img").strip().lower()
     if value in {"img2img", "img2img_lora"}:
         return "img2img"
+    if value == "image_to_video":
+        return "image_to_video"
     if value == "wan22_video_v2":
         return "wan22_video_v2"
-    raise ValueError("prod RunPod profile must be img2img or wan22_video_v2")
+    raise ValueError(
+        "prod RunPod profile must be img2img, image_to_video, or wan22_video_v2"
+    )
 
 
 def prod_worker_profile_for_task_type(task_type: str) -> str:
     value = str(task_type or "").strip()
     if value in {"img2img", "img2img_lora"}:
         return "img2img"
+    if value == "image_to_video":
+        return "image_to_video"
     if value == "wan22_video_v2":
         return "wan22_video_v2"
-    raise ValueError("prod RunPod worker only supports img2img or wan22_video_v2")
+    raise ValueError(
+        "prod RunPod worker only supports img2img, image_to_video, or wan22_video_v2"
+    )
 
 
 def prod_worker_profile_from_agent_id(agent_id: str) -> str:
@@ -254,17 +268,22 @@ def _prod_profile_from_agent_id(agent_id: str) -> str:
     raw = str(agent_id or "")
     if raw.startswith(RUNPOD_PROD_AGENT_ID_PREFIX):
         return "img2img"
+    if raw.startswith(RUNPOD_PROD_IMAGE_TO_VIDEO_AGENT_ID_PREFIX):
+        return "image_to_video"
     if raw.startswith(RUNPOD_PROD_WAN22_VIDEO_V2_AGENT_ID_PREFIX):
         return "wan22_video_v2"
     raise ValueError(
         "prod RunPod agent_id must start with one of "
         f"{RUNPOD_PROD_AGENT_ID_PREFIX}, "
+        f"{RUNPOD_PROD_IMAGE_TO_VIDEO_AGENT_ID_PREFIX}, "
         f"{RUNPOD_PROD_WAN22_VIDEO_V2_AGENT_ID_PREFIX}"
     )
 
 
 def _prod_agent_id_prefix_for(profile: str | None) -> str:
     profile_key = normalize_prod_worker_profile(profile)
+    if profile_key == "image_to_video":
+        return RUNPOD_PROD_IMAGE_TO_VIDEO_AGENT_ID_PREFIX
     if profile_key == "wan22_video_v2":
         return RUNPOD_PROD_WAN22_VIDEO_V2_AGENT_ID_PREFIX
     return RUNPOD_PROD_AGENT_ID_PREFIX
@@ -272,6 +291,8 @@ def _prod_agent_id_prefix_for(profile: str | None) -> str:
 
 def _prod_pod_name_prefix_for(profile: str | None) -> str:
     profile_key = normalize_prod_worker_profile(profile)
+    if profile_key == "image_to_video":
+        return RUNPOD_PROD_IMAGE_TO_VIDEO_POD_NAME_PREFIX
     if profile_key == "wan22_video_v2":
         return RUNPOD_PROD_WAN22_VIDEO_V2_POD_NAME_PREFIX
     return RUNPOD_PROD_POD_NAME_PREFIX
@@ -1183,11 +1204,12 @@ class RunPodProvider:
             )
         if environment == "cloud-prod" and profile.task_type not in {
             "img2img_lora",
+            "image_to_video",
             "wan22_video_v2",
         }:
             raise ValueError(
                 "RunPodProvider v0 cloud-prod only supports "
-                "img2img/img2img_lora and wan22_video_v2 profiles"
+                "img2img/img2img_lora, image_to_video, and wan22_video_v2 profiles"
             )
         gpu_type_ids = (
             self.settings.prod_gpu_type_ids
@@ -1200,8 +1222,13 @@ class RunPodProvider:
         image_name = self._image_name_for(profile)
         if environment == "cloud-prod" and profile.task_type == "img2img_lora" and not image_name:
             image_name = RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE
-        if environment == "cloud-prod" and profile.task_type == "wan22_video_v2" and not image_name:
-            raise ValueError("RUNPOD_IMAGE_NAME_WAN22_VIDEO_V2 is required for cloud-prod")
+        if environment == "cloud-prod" and profile.task_type in {
+            "image_to_video",
+            "wan22_video_v2",
+        } and not image_name:
+            raise ValueError(
+                f"{profile.image_env_key} is required for cloud-prod"
+            )
         if not template_id and not image_name:
             image_name = self._pending_image_name_for(profile)
         body: dict[str, Any] = {
@@ -1258,7 +1285,10 @@ class RunPodProvider:
                 "true" if self.settings.network_volume_id else "false"
             ),
             "RUNPOD_KEEPALIVE_ON_BOOTSTRAP_FAILURE": (
-                "true" if self.settings.keepalive_on_bootstrap_failure else "false"
+                "true"
+                if environment != "cloud-prod"
+                and self.settings.keepalive_on_bootstrap_failure
+                else "false"
             ),
             "RUNPOD_START_SSHD": env_config["start_sshd"],
             "RUNPOD_INSTALL_SSHD_IF_MISSING": env_config["install_sshd_if_missing"],
@@ -1581,6 +1611,8 @@ class RunPodProvider:
     ) -> tuple[str, ...]:
         if profile.task_type == "img2img_lora":
             return self.settings.prod_supported_task_types
+        if profile.task_type == "image_to_video":
+            return profile.supported_task_types
         if profile.task_type == "wan22_video_v2":
             return profile.supported_task_types
         raise ValueError(f"unsupported cloud-prod RunPod task profile: {profile.task_type}")
