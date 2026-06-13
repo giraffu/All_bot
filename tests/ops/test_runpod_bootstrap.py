@@ -108,6 +108,8 @@ def test_wan22_profile_image_bakes_video_custom_nodes_not_business_models():
     assert "rgthree-comfy" in dockerfile
     assert "ComfyUI-Frame-Interpolation" in dockerfile
     assert "ComfyUI_Fill-Nodes" in dockerfile
+    assert "ComfyUI-LTXVideo" in dockerfile
+    assert "LTXVSpatioTemporalTiledVAEDecode" in dockerfile
     assert (
         "# Keep the FL_RIFE provider in a final small layer" in dockerfile
     )
@@ -126,6 +128,8 @@ def test_wan22_profile_image_bakes_video_custom_nodes_not_business_models():
     assert RUNPOD_PYTORCH_CU128_BASE in build_script
     assert "--comfyui-ref" in build_script
     assert "ComfyUI_Fill-Nodes" in build_script
+    assert "ComfyUI-LTXVideo" in build_script
+    assert "LTXVSpatioTemporalTiledVAEDecode" in build_script
     assert "WAN22_CUSTOM_NODES_PRESENT=true" in build_script
 
 

@@ -149,3 +149,43 @@ RUN set -euo pipefail; \
     find "${target}" -type d -name __pycache__ -prune -exec rm -rf {} +; \
     python3 -m pip cache purge >/dev/null 2>&1 || true; \
     rm -rf /root/.cache/pip /tmp/* /var/tmp/*
+
+ARG LTXVIDEO_REPO=https://github.com/Lightricks/ComfyUI-LTXVideo.git
+ARG LTXVIDEO_REF=master
+
+# Wan22AioV82 uses LTXVSpatioTemporalTiledVAEDecode for video VAE decode.
+RUN set -euo pipefail; \
+    if [ -s /opt/allbot-comfyui-dir ]; then \
+      comfyui_dir="$(cat /opt/allbot-comfyui-dir)"; \
+    elif [ -f /default-comfyui-bundle/ComfyUI/main.py ]; then \
+      comfyui_dir=/default-comfyui-bundle/ComfyUI; \
+    elif [ -f /workspace/ComfyUI/main.py ]; then \
+      comfyui_dir=/workspace/ComfyUI; \
+    elif [ -f /root/ComfyUI/main.py ]; then \
+      comfyui_dir=/root/ComfyUI; \
+    else \
+      comfyui_dir="${COMFYUI_INSTALL_DIR}"; \
+    fi; \
+    test -f "${comfyui_dir}/main.py"; \
+    mkdir -p "${comfyui_dir}/custom_nodes"; \
+    target="${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo"; \
+    rm -rf "${target}"; \
+    git config --global http.version HTTP/1.1; \
+    for attempt in 1 2 3 4 5; do \
+      git clone --filter=blob:none "${LTXVIDEO_REPO}" "${target}" && break; \
+      rm -rf "${target}"; \
+      if [ "$attempt" = "5" ]; then \
+        echo "Failed to clone ${LTXVIDEO_REPO} after ${attempt} attempts" >&2; \
+        exit 128; \
+      fi; \
+      sleep $((attempt * 3)); \
+    done; \
+    git -C "${target}" checkout --force "${LTXVIDEO_REF}"; \
+    if [ -f "${target}/requirements.txt" ]; then \
+      python3 -m pip install --no-cache-dir -r "${target}/requirements.txt"; \
+    fi; \
+    grep -R "LTXVSpatioTemporalTiledVAEDecode" "${target}" >/dev/null; \
+    rm -rf "${target}/.git"; \
+    find "${target}" -type d -name __pycache__ -prune -exec rm -rf {} +; \
+    python3 -m pip cache purge >/dev/null 2>&1 || true; \
+    rm -rf /root/.cache/pip /tmp/* /var/tmp/*

@@ -191,6 +191,8 @@ test -d "${comfyui_dir}/custom_nodes/ComfyUI-VideoHelperSuite"
 test -d "${comfyui_dir}/custom_nodes/rgthree-comfy"
 test -d "${comfyui_dir}/custom_nodes/ComfyUI-Frame-Interpolation"
 test -d "${comfyui_dir}/custom_nodes/ComfyUI_Fill-Nodes"
+test -d "${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo"
+grep -R "LTXVSpatioTemporalTiledVAEDecode" "${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo" >/dev/null
 test -d "${comfyui_dir}/custom_nodes/ComfyUI-GGUF"
 test -d "${comfyui_dir}/custom_nodes/ComfyUI-DaSiWa-Nodes"
 test -d "${comfyui_dir}/custom_nodes/comfyui-WhiteRabbit"
