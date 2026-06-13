@@ -192,7 +192,7 @@ test -d "${comfyui_dir}/custom_nodes/rgthree-comfy"
 test -d "${comfyui_dir}/custom_nodes/ComfyUI-Frame-Interpolation"
 test -d "${comfyui_dir}/custom_nodes/ComfyUI_Fill-Nodes"
 test -d "${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo"
-grep -R "LTXVSpatioTemporalTiledVAEDecode" "${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo" >/dev/null
+LTXVIDEO_NODE_DIR="${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo" PYTHONPATH="${comfyui_dir}:${PYTHONPATH:-}" python3 -c '"'"'import importlib.util, os, sys; from pathlib import Path; node_dir = Path(os.environ["LTXVIDEO_NODE_DIR"]); spec = importlib.util.spec_from_file_location("allbot_ltxvideo_smoke", node_dir / "__init__.py", submodule_search_locations=[str(node_dir)]); module = importlib.util.module_from_spec(spec); assert spec.loader is not None; sys.modules[spec.name] = module; spec.loader.exec_module(module); assert "LTXVSpatioTemporalTiledVAEDecode" in module.NODE_CLASS_MAPPINGS'"'"'
 test -d "${comfyui_dir}/custom_nodes/ComfyUI-GGUF"
 test -d "${comfyui_dir}/custom_nodes/ComfyUI-DaSiWa-Nodes"
 test -d "${comfyui_dir}/custom_nodes/comfyui-WhiteRabbit"

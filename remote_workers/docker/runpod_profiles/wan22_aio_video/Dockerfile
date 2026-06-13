@@ -181,10 +181,19 @@ RUN set -euo pipefail; \
       sleep $((attempt * 3)); \
     done; \
     git -C "${target}" checkout --force "${LTXVIDEO_REF}"; \
-    if [ -f "${target}/requirements.txt" ]; then \
-      python3 -m pip install --no-cache-dir -r "${target}/requirements.txt"; \
-    fi; \
+    printf '%s\n' \
+      'from .tiled_vae_decode import LTXVTiledVAEDecode, LTXVSpatioTemporalTiledVAEDecode  # noqa: F401' \
+      'from .nodes_registry import NODE_CLASS_MAPPINGS as RUNTIME_NODE_CLASS_MAPPINGS' \
+      'from .nodes_registry import NODE_DISPLAY_NAME_MAPPINGS as RUNTIME_NODE_DISPLAY_NAME_MAPPINGS' \
+      '' \
+      'NODE_CLASS_MAPPINGS = dict(RUNTIME_NODE_CLASS_MAPPINGS)' \
+      'NODE_DISPLAY_NAME_MAPPINGS = dict(RUNTIME_NODE_DISPLAY_NAME_MAPPINGS)' \
+      'WEB_DIRECTORY = "./web"' \
+      '' \
+      '__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]' \
+      > "${target}/__init__.py"; \
     grep -R "LTXVSpatioTemporalTiledVAEDecode" "${target}" >/dev/null; \
+    LTXVIDEO_NODE_DIR="${target}" PYTHONPATH="${comfyui_dir}:${PYTHONPATH:-}" python3 -c 'import importlib.util, os, sys; from pathlib import Path; node_dir = Path(os.environ["LTXVIDEO_NODE_DIR"]); spec = importlib.util.spec_from_file_location("allbot_ltxvideo_smoke", node_dir / "__init__.py", submodule_search_locations=[str(node_dir)]); module = importlib.util.module_from_spec(spec); assert spec.loader is not None; sys.modules[spec.name] = module; spec.loader.exec_module(module); assert "LTXVSpatioTemporalTiledVAEDecode" in module.NODE_CLASS_MAPPINGS'; \
     rm -rf "${target}/.git"; \
     find "${target}" -type d -name __pycache__ -prune -exec rm -rf {} +; \
     python3 -m pip cache purge >/dev/null 2>&1 || true; \
