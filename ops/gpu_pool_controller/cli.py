@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from .canary import ComfyCanary
@@ -24,6 +25,16 @@ from .runpod_prod_worker import (
     load_env_file_for_prod_worker,
     options_from_args_env as prod_worker_options_from_args_env,
 )
+from .runpod_split_video_canary import (
+    DEFAULT_SPLIT_VIDEO_PROMPT,
+    DEFAULT_SPLIT_VIDEO_RESULTS_DIR,
+    RunPodSplitVideoCanaryRunner,
+)
+from .runpod_video_manifests import (
+    create_model_r2_client_from_env,
+    prepare_split_video_manifests,
+)
+from .runpod_workers import RunPodWorkersScaler, RunPodWorkersScaleOptions
 from .runtime import RuntimePlanner, RuntimeRenderOverrides, runtime_plan_to_jsonable
 
 
@@ -60,10 +71,7 @@ def _cmd_runtime_plan(args) -> int:
             )
         )
     else:
-        payload = [
-            runtime_plan_to_jsonable(item)
-            for item in planner.build_all_plans()
-        ]
+        payload = [runtime_plan_to_jsonable(item) for item in planner.build_all_plans()]
     _print_json(payload)
     return 0
 
@@ -321,6 +329,61 @@ def _cmd_runpod_canary(args) -> int:
     return 0 if payload.get("ok") else 2
 
 
+def _cmd_runpod_split_video_canary(args) -> int:
+    env_file_info = load_env_file(args.env_file)
+    provider = _runpod_provider_from_args(args)
+    options = canary_options_from_args_env(args)
+    options = replace(
+        options,
+        task_type="split_video_profiles",
+        prompt=args.prompt or DEFAULT_SPLIT_VIDEO_PROMPT,
+        download_results_dir=(
+            options.download_results_dir or DEFAULT_SPLIT_VIDEO_RESULTS_DIR
+        ),
+    )
+    payload = RunPodSplitVideoCanaryRunner(provider, options).run()
+    payload["env_file"] = env_file_info
+    _print_json(payload)
+    return 0 if payload.get("ok") else 2
+
+
+def _cmd_runpod_workers(args) -> int:
+    env_file_info = load_env_file(getattr(args, "env_file", None))
+    provider = _runpod_provider_from_args(args)
+    options = RunPodWorkersScaleOptions(
+        profile=args.profile,
+        desired=args.desired,
+        environment=args.env,
+        execute=bool(getattr(args, "execute", False)),
+    )
+    scaler = RunPodWorkersScaler(provider, options)
+    if args.workers_command == "render-scale":
+        payload = scaler.render_scale()
+    elif args.workers_command == "scale":
+        payload = scaler.scale()
+    else:  # pragma: no cover
+        raise ValueError(f"unsupported runpod workers command: {args.workers_command}")
+    payload["env_file"] = env_file_info
+    _print_json(payload)
+    return 0 if payload.get("ok") else 2
+
+
+def _cmd_runpod_split_video_manifests(args) -> int:
+    env_file_info = load_env_file(getattr(args, "env_file", None))
+    bucket = args.bucket or RunPodSettings.from_env().model_bucket
+    if not bucket:
+        raise ValueError("RUNPOD_MODEL_BUCKET or --bucket is required")
+    payload = prepare_split_video_manifests(
+        client=create_model_r2_client_from_env(),
+        bucket=bucket,
+        source_key=args.source_key,
+        execute=args.execute,
+    )
+    payload["env_file"] = env_file_info
+    _print_json(payload)
+    return 0 if payload.get("ok") else 2
+
+
 def _cmd_runpod_prod_worker(args) -> int:
     env_files = []
     env_files.append(load_env_file(getattr(args, "runpod_env_file", None)))
@@ -399,20 +462,32 @@ def build_parser() -> argparse.ArgumentParser:
     model_import.set_defaults(func=_cmd_model_import)
 
     workflow_model_check = subparsers.add_parser("workflow-model-check")
-    workflow_model_check.add_argument("--repo-root", type=Path, default=ModelRegistry().root)
-    workflow_model_check.add_argument("--workflow-dir", type=Path, default=Path("workers/comfy_agent/workflows"))
+    workflow_model_check.add_argument(
+        "--repo-root", type=Path, default=ModelRegistry().root
+    )
+    workflow_model_check.add_argument(
+        "--workflow-dir", type=Path, default=Path("workers/comfy_agent/workflows")
+    )
     workflow_model_check.set_defaults(func=_cmd_workflow_model_check)
 
     model_import_plan = subparsers.add_parser("model-import-plan")
-    model_import_plan.add_argument("--repo-root", type=Path, default=ModelRegistry().root)
-    model_import_plan.add_argument("--workflow-dir", type=Path, default=Path("workers/comfy_agent/workflows"))
+    model_import_plan.add_argument(
+        "--repo-root", type=Path, default=ModelRegistry().root
+    )
+    model_import_plan.add_argument(
+        "--workflow-dir", type=Path, default=Path("workers/comfy_agent/workflows")
+    )
     model_import_plan.add_argument("--bundle", action="append", default=None)
     model_import_plan.add_argument("--no-sha256", action="store_true")
     model_import_plan.set_defaults(func=_cmd_model_import_plan)
 
     model_import_execute = subparsers.add_parser("model-import-execute")
-    model_import_execute.add_argument("--repo-root", type=Path, default=ModelRegistry().root)
-    model_import_execute.add_argument("--workflow-dir", type=Path, default=Path("workers/comfy_agent/workflows"))
+    model_import_execute.add_argument(
+        "--repo-root", type=Path, default=ModelRegistry().root
+    )
+    model_import_execute.add_argument(
+        "--workflow-dir", type=Path, default=Path("workers/comfy_agent/workflows")
+    )
     model_import_execute.add_argument("--bundle", action="append", default=None)
     model_import_execute.set_defaults(func=_cmd_model_import_execute)
 
@@ -439,7 +514,9 @@ def build_parser() -> argparse.ArgumentParser:
     runpod_validate.set_defaults(func=_cmd_runpod_validate_key)
 
     runpod_list = runpod_subparsers.add_parser("list-pods")
-    runpod_list.add_argument("--all", action="store_true", help="include unmanaged pods")
+    runpod_list.add_argument(
+        "--all", action="store_true", help="include unmanaged pods"
+    )
     runpod_list.add_argument("--desired-status", default=None)
     runpod_list.set_defaults(func=_cmd_runpod_list_pods)
 
@@ -491,9 +568,13 @@ def build_parser() -> argparse.ArgumentParser:
     runpod_canary.add_argument("--task-type", default="img2img_lora")
     runpod_canary.add_argument("--env", default="cloud-test")
     runpod_canary.add_argument("--env-file", type=Path, default=Path(".env.cloud.test"))
-    runpod_canary.add_argument("--no-env-file", action="store_const", const=None, dest="env_file")
+    runpod_canary.add_argument(
+        "--no-env-file", action="store_const", const=None, dest="env_file"
+    )
     runpod_canary.add_argument("--execute", action="store_true")
-    runpod_canary.add_argument("--cleanup", action=argparse.BooleanOptionalAction, default=True)
+    runpod_canary.add_argument(
+        "--cleanup", action=argparse.BooleanOptionalAction, default=True
+    )
     runpod_canary.add_argument(
         "--disable-workers",
         action=argparse.BooleanOptionalAction,
@@ -517,6 +598,117 @@ def build_parser() -> argparse.ArgumentParser:
     runpod_canary.add_argument("--control-ttl", type=int, default=3600)
     runpod_canary.add_argument("--quiet", action="store_true")
     runpod_canary.set_defaults(func=_cmd_runpod_canary)
+
+    runpod_split_video_canary = runpod_subparsers.add_parser(
+        "split-video-canary",
+        help="cloud-test canary for split image_to_video and wan22_video_v2 RunPod profiles",
+    )
+    runpod_split_video_canary.add_argument("--env", default="cloud-test")
+    runpod_split_video_canary.add_argument(
+        "--env-file", type=Path, default=Path(".env.cloud.test")
+    )
+    runpod_split_video_canary.add_argument(
+        "--no-env-file",
+        action="store_const",
+        const=None,
+        dest="env_file",
+    )
+    runpod_split_video_canary.add_argument("--execute", action="store_true")
+    runpod_split_video_canary.add_argument(
+        "--cleanup",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    runpod_split_video_canary.add_argument(
+        "--disable-workers",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    runpod_split_video_canary.add_argument("--worker-id", action="append", default=None)
+    runpod_split_video_canary.add_argument("--web-api-url", default=None)
+    runpod_split_video_canary.add_argument("--central-url", default=None)
+    runpod_split_video_canary.add_argument("--web-user-id", type=int, default=None)
+    runpod_split_video_canary.add_argument("--web-pwd-ver", type=int, default=None)
+    runpod_split_video_canary.add_argument(
+        "--prompt", default=DEFAULT_SPLIT_VIDEO_PROMPT
+    )
+    runpod_split_video_canary.add_argument("--negative-prompt", default=None)
+    runpod_split_video_canary.add_argument("--input-object-key", default=None)
+    runpod_split_video_canary.add_argument("--output-dir", type=Path, default=None)
+    runpod_split_video_canary.add_argument(
+        "--download-results-dir",
+        type=Path,
+        default=DEFAULT_SPLIT_VIDEO_RESULTS_DIR,
+    )
+    runpod_split_video_canary.add_argument(
+        "--readiness-timeout", type=float, default=900.0
+    )
+    runpod_split_video_canary.add_argument(
+        "--worker-timeout", type=float, default=600.0
+    )
+    runpod_split_video_canary.add_argument("--task-timeout", type=float, default=1800.0)
+    runpod_split_video_canary.add_argument("--poll-interval", type=float, default=10.0)
+    runpod_split_video_canary.add_argument(
+        "--task-poll-interval", type=float, default=5.0
+    )
+    runpod_split_video_canary.add_argument("--control-ttl", type=int, default=3600)
+    runpod_split_video_canary.add_argument("--quiet", action="store_true")
+    runpod_split_video_canary.set_defaults(func=_cmd_runpod_split_video_canary)
+
+    runpod_workers = runpod_subparsers.add_parser(
+        "workers",
+        help="scale cloud-test RunPod worker profiles",
+    )
+    workers_subparsers = runpod_workers.add_subparsers(
+        dest="workers_command",
+        required=True,
+    )
+    workers_common = argparse.ArgumentParser(add_help=False)
+    workers_common.add_argument("--profile", required=True)
+    workers_common.add_argument("--desired", type=int, required=True)
+    workers_common.add_argument("--env", default="cloud-test")
+    workers_common.add_argument(
+        "--env-file", type=Path, default=Path(".env.cloud.test")
+    )
+    workers_common.add_argument(
+        "--no-env-file", action="store_const", const=None, dest="env_file"
+    )
+
+    workers_render_scale = workers_subparsers.add_parser(
+        "render-scale",
+        parents=[workers_common],
+    )
+    workers_render_scale.set_defaults(func=_cmd_runpod_workers)
+
+    workers_scale = workers_subparsers.add_parser(
+        "scale",
+        parents=[workers_common],
+    )
+    workers_scale.add_argument("--execute", action="store_true")
+    workers_scale.set_defaults(func=_cmd_runpod_workers)
+
+    runpod_split_video_manifests = runpod_subparsers.add_parser(
+        "split-video-manifests",
+        help="split Wan22 AIO model manifest into image_to_video and wan22_video_v2 manifests",
+    )
+    runpod_split_video_manifests.add_argument(
+        "--env-file",
+        type=Path,
+        default=Path(".env.cloud.test"),
+    )
+    runpod_split_video_manifests.add_argument(
+        "--no-env-file",
+        action="store_const",
+        const=None,
+        dest="env_file",
+    )
+    runpod_split_video_manifests.add_argument("--bucket", default=None)
+    runpod_split_video_manifests.add_argument(
+        "--source-key",
+        default="wan22_aio_video/2026-06-12-test/manifest.json",
+    )
+    runpod_split_video_manifests.add_argument("--execute", action="store_true")
+    runpod_split_video_manifests.set_defaults(func=_cmd_runpod_split_video_manifests)
 
     runpod_prod_worker = runpod_subparsers.add_parser(
         "prod-worker",

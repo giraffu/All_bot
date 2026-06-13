@@ -25,12 +25,10 @@ from ops.gpu_pool_controller.runpod_canary import (
 
 
 PUBLIC_GHCR_IMAGE = (
-    "ghcr.io/giraffu/allbot-comfy-runpod-img2img:"
-    "20260612-img2img-lora-kjnodes7967a946"
+    "ghcr.io/giraffu/allbot-comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946"
 )
 PUBLIC_WAN22_GHCR_IMAGE = (
-    "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:"
-    "20260612-wan22aio-test"
+    "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:20260612-wan22aio-test"
 )
 
 
@@ -56,36 +54,46 @@ class FakeRunPodProvider:
             model_prefix = EXPECTED_WAN22_AIO_VIDEO_MODEL_PREFIX
             model_manifest_key = EXPECTED_WAN22_AIO_VIDEO_MODEL_MANIFEST_KEY
             gpu_type_ids = list(EXPECTED_WAN22_AIO_VIDEO_GPU_TYPE_IDS)
+            template_id = (
+                self.settings.template_id_wan22_aio_video
+                if self.settings.use_template_wan22_aio_video
+                else ""
+            )
         else:
             image_name = PUBLIC_GHCR_IMAGE
             supported_task_types = "img2img,img2img_lora"
             model_prefix = EXPECTED_MODEL_PREFIX
             model_manifest_key = EXPECTED_MODEL_MANIFEST_KEY
             gpu_type_ids = ["NVIDIA GeForce RTX 4090"]
+            template_id = ""
+        body = {
+            "gpuTypeIds": gpu_type_ids,
+            "env": {
+                "CENTRAL_API_URL": EXPECTED_RUNPOD_CLOUD_TEST_CENTRAL_URL,
+                "SUPPORTED_TASK_TYPES": supported_task_types,
+                "MINIO_INPUT_BUCKET": EXPECTED_TEST_BUCKET,
+                "MINIO_RESULT_BUCKET": EXPECTED_TEST_BUCKET,
+                "MINIO_TEMPLATE_BUCKET": EXPECTED_TEST_BUCKET,
+                "AGENT_SECRET_TOKEN": "{{ RUNPOD_SECRET_agent }}",
+                "MINIO_ACCESS_KEY": "{{ RUNPOD_SECRET_r2_access }}",
+                "MINIO_SECRET_KEY": "{{ RUNPOD_SECRET_r2_secret }}",
+                "RUNPOD_MODEL_SYNC_ENABLED": "true",
+                "RUNPOD_MODEL_BUCKET": EXPECTED_MODEL_BUCKET,
+                "RUNPOD_MODEL_PREFIX": model_prefix,
+                "RUNPOD_MODEL_MANIFEST_KEY": model_manifest_key,
+                "RUNPOD_MODEL_ACCESS_KEY": "{{ RUNPOD_SECRET_model_access }}",
+                "RUNPOD_MODEL_SECRET_KEY": "{{ RUNPOD_SECRET_model_secret }}",
+                "RUNPOD_COMFY_CUSTOM_NODES_ENABLED": "false",
+                "RUNPOD_COMFY_KJNODES_ENABLED": "false",
+            },
+        }
+        if template_id:
+            body["templateId"] = template_id
+        else:
+            body["imageName"] = image_name
         return {
             "ok": True,
-            "json": {
-                "imageName": image_name,
-                "gpuTypeIds": gpu_type_ids,
-                "env": {
-                    "CENTRAL_API_URL": EXPECTED_RUNPOD_CLOUD_TEST_CENTRAL_URL,
-                    "SUPPORTED_TASK_TYPES": supported_task_types,
-                    "MINIO_INPUT_BUCKET": EXPECTED_TEST_BUCKET,
-                    "MINIO_RESULT_BUCKET": EXPECTED_TEST_BUCKET,
-                    "MINIO_TEMPLATE_BUCKET": EXPECTED_TEST_BUCKET,
-                    "AGENT_SECRET_TOKEN": "{{ RUNPOD_SECRET_agent }}",
-                    "MINIO_ACCESS_KEY": "{{ RUNPOD_SECRET_r2_access }}",
-                    "MINIO_SECRET_KEY": "{{ RUNPOD_SECRET_r2_secret }}",
-                    "RUNPOD_MODEL_SYNC_ENABLED": "true",
-                    "RUNPOD_MODEL_BUCKET": EXPECTED_MODEL_BUCKET,
-                    "RUNPOD_MODEL_PREFIX": model_prefix,
-                    "RUNPOD_MODEL_MANIFEST_KEY": model_manifest_key,
-                    "RUNPOD_MODEL_ACCESS_KEY": "{{ RUNPOD_SECRET_model_access }}",
-                    "RUNPOD_MODEL_SECRET_KEY": "{{ RUNPOD_SECRET_model_secret }}",
-                    "RUNPOD_COMFY_CUSTOM_NODES_ENABLED": "false",
-                    "RUNPOD_COMFY_KJNODES_ENABLED": "false",
-                },
-            },
+            "json": body,
         }
 
     def create_pod(self, *, task_type, environment, execute):
@@ -133,14 +141,53 @@ def test_runpod_canary_wan22_dry_run_preflights_with_profile_specific_render():
     ).run()
 
     assert payload["ok"] is True
-    assert payload["render"]["imageName"].startswith(EXPECTED_WAN22_AIO_VIDEO_IMAGE_REF_PREFIX)
-    assert payload["render"]["gpu_type_ids"] == list(EXPECTED_WAN22_AIO_VIDEO_GPU_TYPE_IDS)
+    assert payload["render"]["imageName"].startswith(
+        EXPECTED_WAN22_AIO_VIDEO_IMAGE_REF_PREFIX
+    )
+    assert payload["render"]["gpu_type_ids"] == list(
+        EXPECTED_WAN22_AIO_VIDEO_GPU_TYPE_IDS
+    )
     assert payload["render"]["supported_task_types"] == "image_to_video,wan22_video_v2"
     assert payload["render"]["model_prefix"] == EXPECTED_WAN22_AIO_VIDEO_MODEL_PREFIX
-    assert payload["render"]["model_manifest_key"] == EXPECTED_WAN22_AIO_VIDEO_MODEL_MANIFEST_KEY
-    assert "submit image_to_video and wan22_video_v2 preview/5s Web tasks serially" in (
-        payload["would_execute"]
+    assert (
+        payload["render"]["model_manifest_key"]
+        == EXPECTED_WAN22_AIO_VIDEO_MODEL_MANIFEST_KEY
     )
+    assert (
+        "submit image_to_video and wan22_video_v2 preview/5s Web tasks serially"
+        in (payload["would_execute"])
+    )
+    assert provider.create_calls == 0
+    assert provider.delete_calls == 0
+
+
+def test_runpod_canary_wan22_dry_run_accepts_template_render():
+    provider = FakeRunPodProvider(
+        RunPodSettings(
+            use_template_wan22_aio_video=True,
+            template_id_wan22_aio_video="77gi0wqo8x",
+        )
+    )
+    options = RunPodCanaryOptions(
+        task_type="wan22_aio_video",
+        execute=False,
+        quiet=True,
+    )
+
+    payload = RunPodCanaryRunner(
+        provider,
+        options,
+        sleep_func=lambda _seconds: None,
+    ).run()
+
+    assert payload["ok"] is True
+    assert payload["render"]["imageName"] is None
+    assert payload["render"]["templateId"] == "77gi0wqo8x"
+    assert payload["render"]["uses_template"] is True
+    assert payload["render"]["gpu_type_ids"] == list(
+        EXPECTED_WAN22_AIO_VIDEO_GPU_TYPE_IDS
+    )
+    assert payload["render"]["model_prefix"] == EXPECTED_WAN22_AIO_VIDEO_MODEL_PREFIX
     assert provider.create_calls == 0
     assert provider.delete_calls == 0
 
@@ -195,10 +242,13 @@ def test_canary_png_and_result_url_helpers(tmp_path: Path):
     write_canary_png(image_path)
 
     assert image_path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
-    assert result_url_path("https://r2-test.aivison.it.com/history/a/original.png?sig=secret") == (
-        "/history/a/original.png"
+    assert result_url_path(
+        "https://r2-test.aivison.it.com/history/a/original.png?sig=secret"
+    ) == ("/history/a/original.png")
+    assert (
+        result_url_path("/history/a/original.png?sig=secret")
+        == "/history/a/original.png"
     )
-    assert result_url_path("/history/a/original.png?sig=secret") == "/history/a/original.png"
 
 
 def test_wan22_canary_task_cases_are_preview_5s_single_frame():
@@ -225,7 +275,9 @@ def test_wan22_canary_task_cases_are_preview_5s_single_frame():
         assert inputs["extract_last_frame"] is True
         assert "end_image" not in inputs
         assert "lora_name" not in inputs
-    assert cases[0]["payload"]["inputs"]["wan22_model_profile"] == "legacy_image_to_video"
+    assert (
+        cases[0]["payload"]["inputs"]["wan22_model_profile"] == "legacy_image_to_video"
+    )
     assert cases[1]["payload"]["inputs"]["wan22_model_profile"] == "wan22_video_v2"
 
 
@@ -391,3 +443,57 @@ def test_cli_parses_wan22_render_and_canary_commands():
     assert canary_args.runpod_command == "canary"
     assert canary_args.task_type == "wan22_aio_video"
     assert canary_args.quiet is True
+
+
+def test_cli_parses_split_video_workers_render_scale_commands():
+    image_to_video_args = build_parser().parse_args(
+        [
+            "runpod",
+            "workers",
+            "render-scale",
+            "--profile",
+            "image_to_video",
+            "--desired",
+            "1",
+            "--env",
+            "cloud-test",
+        ]
+    )
+    wan22_v2_args = build_parser().parse_args(
+        [
+            "runpod",
+            "workers",
+            "render-scale",
+            "--profile",
+            "wan22_video_v2",
+            "--desired",
+            "1",
+            "--env",
+            "cloud-test",
+        ]
+    )
+
+    assert image_to_video_args.runpod_command == "workers"
+    assert image_to_video_args.workers_command == "render-scale"
+    assert image_to_video_args.profile == "image_to_video"
+    assert image_to_video_args.desired == 1
+    assert wan22_v2_args.profile == "wan22_video_v2"
+
+
+def test_cli_parses_split_video_manifests_command():
+    args = build_parser().parse_args(
+        [
+            "runpod",
+            "split-video-manifests",
+            "--env-file",
+            ".env.cloud.test",
+            "--bucket",
+            "allbot-model-cache",
+            "--execute",
+        ]
+    )
+
+    assert args.runpod_command == "split-video-manifests"
+    assert args.env_file == Path(".env.cloud.test")
+    assert args.bucket == "allbot-model-cache"
+    assert args.execute is True

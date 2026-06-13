@@ -15,7 +15,11 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .providers.runpod import (
+    RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
+    RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX,
     RUNPOD_TASK_PROFILES,
+    RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY,
+    RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX,
     RunPodProvider,
     redact_payload,
     redact_text,
@@ -30,6 +34,10 @@ EXPECTED_WAN22_AIO_VIDEO_MODEL_PREFIX = "wan22_aio_video/2026-06-12-test"
 EXPECTED_WAN22_AIO_VIDEO_MODEL_MANIFEST_KEY = (
     "wan22_aio_video/2026-06-12-test/manifest.json"
 )
+EXPECTED_IMAGE_TO_VIDEO_MODEL_PREFIX = RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX
+EXPECTED_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY = RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY
+EXPECTED_WAN22_VIDEO_V2_MODEL_PREFIX = RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX
+EXPECTED_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY = RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY
 EXPECTED_TEST_BUCKET = "user-data-test"
 EXPECTED_IMAGE_REF_PREFIX = "ghcr.io/giraffu/allbot-comfy-runpod-img2img:"
 EXPECTED_WAN22_AIO_VIDEO_IMAGE_REF_PREFIX = (
@@ -55,6 +63,7 @@ class RunPodCanaryProfileSpec:
     supported_task_types: tuple[str, ...]
     model_prefix: str
     model_manifest_key: str
+    allow_template_id: bool = False
     expected_gpu_type_ids: tuple[str, ...] = ()
     task_summary: str = ""
     worker_disable_summary: str = ""
@@ -76,9 +85,32 @@ RUNPOD_CANARY_PROFILE_SPECS: dict[str, RunPodCanaryProfileSpec] = {
         supported_task_types=EXPECTED_WAN22_AIO_VIDEO_TASK_TYPES,
         model_prefix=EXPECTED_WAN22_AIO_VIDEO_MODEL_PREFIX,
         model_manifest_key=EXPECTED_WAN22_AIO_VIDEO_MODEL_MANIFEST_KEY,
+        allow_template_id=True,
         expected_gpu_type_ids=EXPECTED_WAN22_AIO_VIDEO_GPU_TYPE_IDS,
         task_summary="submit image_to_video and wan22_video_v2 preview/5s Web tasks serially",
         worker_disable_summary="temporarily disable cloud-test workers supporting image_to_video or wan22_video_v2",
+    ),
+    "image_to_video": RunPodCanaryProfileSpec(
+        task_type="image_to_video",
+        image_ref_prefix=EXPECTED_WAN22_AIO_VIDEO_IMAGE_REF_PREFIX,
+        supported_task_types=("image_to_video",),
+        model_prefix=EXPECTED_IMAGE_TO_VIDEO_MODEL_PREFIX,
+        model_manifest_key=EXPECTED_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
+        allow_template_id=True,
+        expected_gpu_type_ids=EXPECTED_WAN22_AIO_VIDEO_GPU_TYPE_IDS,
+        task_summary="submit image_to_video preview/5s Web task",
+        worker_disable_summary="temporarily disable cloud-test workers supporting image_to_video",
+    ),
+    "wan22_video_v2": RunPodCanaryProfileSpec(
+        task_type="wan22_video_v2",
+        image_ref_prefix=EXPECTED_WAN22_AIO_VIDEO_IMAGE_REF_PREFIX,
+        supported_task_types=("wan22_video_v2",),
+        model_prefix=EXPECTED_WAN22_VIDEO_V2_MODEL_PREFIX,
+        model_manifest_key=EXPECTED_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY,
+        allow_template_id=True,
+        expected_gpu_type_ids=EXPECTED_WAN22_AIO_VIDEO_GPU_TYPE_IDS,
+        task_summary="submit wan22_video_v2 preview/5s Web task",
+        worker_disable_summary="temporarily disable cloud-test workers supporting wan22_video_v2",
     ),
 }
 
@@ -923,10 +955,13 @@ class RunPodCanaryRunner:
         body = render.get("json") or {}
         env = body.get("env") or {}
         failures: list[str] = []
-        if body.get("templateId"):
-            failures.append("templateId must be empty for baked GHCR canary")
         image_name = str(body.get("imageName") or "")
-        if not image_name.startswith(spec.image_ref_prefix):
+        template_id = str(body.get("templateId") or "")
+        if template_id and not spec.allow_template_id:
+            failures.append("templateId must be empty for baked GHCR canary")
+        if image_name and not image_name.startswith(spec.image_ref_prefix):
+            failures.append(f"imageName must use public GHCR prefix {spec.image_ref_prefix}")
+        if not template_id and not image_name.startswith(spec.image_ref_prefix):
             failures.append(f"imageName must use public GHCR prefix {spec.image_ref_prefix}")
         if spec.expected_gpu_type_ids and tuple(body.get("gpuTypeIds") or ()) != spec.expected_gpu_type_ids:
             failures.append(
@@ -967,7 +1002,8 @@ class RunPodCanaryRunner:
         env = body.get("env") or {}
         return {
             "imageName": body.get("imageName"),
-            "templateId": bool(body.get("templateId")),
+            "templateId": body.get("templateId"),
+            "uses_template": bool(body.get("templateId")),
             "gpu_type_ids": body.get("gpuTypeIds") or [],
             "central_api_url": env.get("CENTRAL_API_URL"),
             "supported_task_types": env.get("SUPPORTED_TASK_TYPES"),

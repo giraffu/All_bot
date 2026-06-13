@@ -30,6 +30,7 @@ MODE_VIDEO_LORA = "video_lora"
 # Neutral semantic alias for the unified image-to-video capability.
 # Keep the underlying value on the legacy video_lora string during the compat phase.
 MODE_IMAGE_TO_VIDEO = MODE_VIDEO_LORA
+MODE_IMAGE_TO_VIDEO_LITERAL = "image_to_video"
 MODE_LTX_VIDEO = "ltx_video"
 MODE_WAN22_VIDEO_V2 = "wan22_video_v2"
 MODE_TXT2IMG = "txt2img"
@@ -64,6 +65,7 @@ MODE_NAME_MAP = {
     MODE_WAN22_VIDEO_V2: "task.mode_wan22_video_v2",
     MODE_TXT2IMG: "task.mode_txt2img",
     MODE_IMAGE_TO_VIDEO: "task.mode_video_lora",
+    MODE_IMAGE_TO_VIDEO_LITERAL: "task.mode_video_lora",
     MODE_TEMPLATE_CONTRIBUTE: "task.mode_template_contribute",
     MODE_NONE: "task.mode_none",
 }
@@ -86,6 +88,7 @@ TASK_COSTS = {
     MODE_WAN22_VIDEO_V2: 6,
     MODE_TXT2IMG: 2,
     MODE_IMAGE_TO_VIDEO: 6,
+    MODE_IMAGE_TO_VIDEO_LITERAL: 6,
     MODE_I2I_PRO: 6,
     MODE_I2I_DRAW: 3,
     MODE_IMG2IMG_LORA: 6,
@@ -349,6 +352,7 @@ VIDEO_TASK_TYPES = [
     "face_video_step1",
     "face_video_step2",
     MODE_IMAGE_TO_VIDEO,
+    MODE_IMAGE_TO_VIDEO_LITERAL,
     "ltx_video",
     MODE_WAN22_VIDEO_V2,
     "video_edit",

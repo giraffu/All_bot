@@ -1,7 +1,12 @@
 import re
 from typing import Any
 
-from src.constants import MODE_IMAGE_TO_VIDEO, MODE_WAN22_VIDEO_V2, VIDEO_TASK_TYPES
+from src.constants import (
+    MODE_IMAGE_TO_VIDEO,
+    MODE_IMAGE_TO_VIDEO_LITERAL,
+    MODE_WAN22_VIDEO_V2,
+    VIDEO_TASK_TYPES,
+)
 from src.domain_config.wan22_aio_video import (
     normalize_wan22_video_v2_duration_seconds,
     normalize_wan22_video_v2_resolution_preset,
@@ -13,7 +18,9 @@ LTX_ALLOWED_DURATIONS = (5, 10, 15, 20)
 MAX_LEGACY_LTX_DURATION_DRIFT = 2
 TIER_VIDEO_ALLOWED_DURATIONS = (5, 8, 10)
 MAX_LEGACY_TIER_VIDEO_DURATION_DRIFT = 2
-LEGACY_TIER_VIDEO_TASK_TYPES = frozenset({"custom_video", MODE_IMAGE_TO_VIDEO})
+LEGACY_TIER_VIDEO_TASK_TYPES = frozenset(
+    {"custom_video", MODE_IMAGE_TO_VIDEO, MODE_IMAGE_TO_VIDEO_LITERAL}
+)
 WAN22_TIER_VIDEO_TASK_TYPES = LEGACY_TIER_VIDEO_TASK_TYPES | frozenset(
     {MODE_WAN22_VIDEO_V2}
 )

@@ -15,6 +15,10 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_PROD_WORKER_CENTRAL_URL,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
     RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS,
+    RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
+    RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX,
+    RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY,
+    RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX,
     RunPodProvider,
     RunPodProviderError,
     RunPodSettings,
@@ -426,14 +430,202 @@ def test_render_create_wan22_aio_video_cloud_test_profile_uses_5090_and_test_ref
     )
     assert env["RUNPOD_COMFY_CUSTOM_NODES_ENABLED"] == "false"
     assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
-    assert env["AGENT_SECRET_TOKEN"] == "{{ RUNPOD_SECRET_allbot_cloud_test_agent_secret_token }}"
-    assert env["MINIO_ACCESS_KEY"] == "{{ RUNPOD_SECRET_allbot_cloud_test_r2_access_key }}"
-    assert env["MINIO_SECRET_KEY"] == "{{ RUNPOD_SECRET_allbot_cloud_test_r2_secret_key }}"
+    assert (
+        env["AGENT_SECRET_TOKEN"]
+        == "{{ RUNPOD_SECRET_allbot_cloud_test_agent_secret_token }}"
+    )
+    assert (
+        env["MINIO_ACCESS_KEY"] == "{{ RUNPOD_SECRET_allbot_cloud_test_r2_access_key }}"
+    )
+    assert (
+        env["MINIO_SECRET_KEY"] == "{{ RUNPOD_SECRET_allbot_cloud_test_r2_secret_key }}"
+    )
     assert env["RUNPOD_MODEL_ACCESS_KEY"] == RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF
     assert env["RUNPOD_MODEL_SECRET_KEY"] == RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF
     assert "inline_agent_value" not in rendered
     assert "inline_r2_access_value" not in rendered
     assert "inline_r2_secret_value" not in rendered
+
+
+def test_render_create_wan22_aio_video_can_use_template_with_bootstrap():
+    provider = RunPodProvider(
+        _settings(
+            use_template_wan22_aio_video=True,
+            template_id_wan22_aio_video="77gi0wqo8x",
+            image_name_wan22_aio_video=(
+                "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:"
+                "20260613-wan22aio-yanwkclean-108c7ea"
+            ),
+            docker_start_cmd_wan22_aio_video=("bash", "-lc", "echo wan22 bootstrap"),
+            model_sync_enabled=True,
+            model_bucket="allbot-model-cache",
+            model_prefix="wan22_aio_video/2026-06-12-test",
+            model_manifest_key="wan22_aio_video/2026-06-12-test/manifest.json",
+            comfy_custom_nodes_enabled=False,
+            comfy_kjnodes_enabled=False,
+        )
+    )
+
+    payload = provider.render_create_pod_request(
+        task_type="wan22_aio_video",
+        environment="cloud-test",
+        redact=False,
+    )
+    body = payload["json"]
+    env = body["env"]
+
+    assert body["templateId"] == "77gi0wqo8x"
+    assert "imageName" not in body
+    assert body["dockerStartCmd"] == ["bash", "-lc", "echo wan22 bootstrap"]
+    assert body["gpuTypeIds"] == list(RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS)
+    assert env["RUNPOD_TASK_TYPE"] == "wan22_aio_video"
+    assert env["SUPPORTED_TASK_TYPES"] == "image_to_video,wan22_video_v2"
+    assert env["RUNPOD_MODEL_PREFIX"] == "wan22_aio_video/2026-06-12-test"
+    assert env["RUNPOD_COMFY_CUSTOM_NODES_ENABLED"] == "false"
+    assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
+
+
+def test_render_create_split_video_profiles_share_template_with_distinct_runtime_env():
+    image_ref = (
+        "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:"
+        "20260613-wan22aio-yanwkclean-108c7ea"
+    )
+    provider = RunPodProvider(
+        _settings(
+            use_template_image_to_video=True,
+            use_template_wan22_video_v2=True,
+            template_id_image_to_video="77gi0wqo8x",
+            template_id_wan22_video_v2="77gi0wqo8x",
+            image_name_image_to_video=image_ref,
+            image_name_wan22_video_v2=image_ref,
+            docker_start_cmd_image_to_video=("bash", "-lc", "echo image-to-video"),
+            docker_start_cmd_wan22_video_v2=("bash", "-lc", "echo wan22-v2"),
+            model_sync_enabled=True,
+            model_bucket="allbot-model-cache",
+            model_prefix_image_to_video=RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX,
+            model_manifest_key_image_to_video=RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
+            model_prefix_wan22_video_v2=RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX,
+            model_manifest_key_wan22_video_v2=RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY,
+            comfy_custom_nodes_enabled=False,
+            comfy_kjnodes_enabled=False,
+        )
+    )
+
+    image_to_video = provider.render_create_pod_request(
+        task_type="image_to_video",
+        environment="cloud-test",
+        redact=False,
+    )["json"]
+    wan22_v2 = provider.render_create_pod_request(
+        task_type="wan22_video_v2",
+        environment="cloud-test",
+        redact=False,
+    )["json"]
+    image_to_video_env = image_to_video["env"]
+    wan22_v2_env = wan22_v2["env"]
+
+    assert image_to_video["templateId"] == "77gi0wqo8x"
+    assert wan22_v2["templateId"] == "77gi0wqo8x"
+    assert "imageName" not in image_to_video
+    assert "imageName" not in wan22_v2
+    assert image_to_video["gpuTypeIds"] == list(RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS)
+    assert wan22_v2["gpuTypeIds"] == list(RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS)
+    assert image_to_video["dockerStartCmd"] == ["bash", "-lc", "echo image-to-video"]
+    assert wan22_v2["dockerStartCmd"] == ["bash", "-lc", "echo wan22-v2"]
+
+    assert image_to_video_env["RUNPOD_TASK_TYPE"] == "image_to_video"
+    assert image_to_video_env["SUPPORTED_TASK_TYPES"] == "image_to_video"
+    assert image_to_video_env["POOL_RUNTIME_PROFILE"] == "image_to_video"
+    assert image_to_video_env["AGENT_ID_PREFIX"] == "runpod_test_image_to_video"
+    assert (
+        image_to_video_env["RUNPOD_MODEL_PREFIX"] == RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX
+    )
+    assert (
+        image_to_video_env["RUNPOD_MODEL_MANIFEST_KEY"]
+        == RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY
+    )
+
+    assert wan22_v2_env["RUNPOD_TASK_TYPE"] == "wan22_video_v2"
+    assert wan22_v2_env["SUPPORTED_TASK_TYPES"] == "wan22_video_v2"
+    assert wan22_v2_env["POOL_RUNTIME_PROFILE"] == "wan22_video_v2"
+    assert wan22_v2_env["AGENT_ID_PREFIX"] == "runpod_test_wan22_video_v2"
+    assert wan22_v2_env["RUNPOD_MODEL_PREFIX"] == RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX
+    assert (
+        wan22_v2_env["RUNPOD_MODEL_MANIFEST_KEY"]
+        == RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY
+    )
+
+
+def test_runpod_settings_from_env_split_video_profiles_fallback_to_wan22_image_template(
+    tmp_path,
+    monkeypatch,
+):
+    script = tmp_path / "wan22-bootstrap.sh"
+    script.write_text("echo shared wan22 bootstrap\n", encoding="utf-8")
+    monkeypatch.setenv("RUNPOD_USE_TEMPLATE_WAN22_AIO_VIDEO", "true")
+    monkeypatch.setenv("RUNPOD_TEMPLATE_ID_WAN22_AIO_VIDEO", "77gi0wqo8x")
+    monkeypatch.setenv(
+        "RUNPOD_IMAGE_NAME_WAN22_AIO_VIDEO",
+        "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:shared",
+    )
+    monkeypatch.setenv(
+        "RUNPOD_DOCKER_START_SCRIPT_FILE_WAN22_AIO_VIDEO",
+        str(script),
+    )
+    monkeypatch.setenv("RUNPOD_MODEL_BUCKET", "allbot-model-cache")
+    monkeypatch.delenv("RUNPOD_TEMPLATE_ID_IMAGE_TO_VIDEO", raising=False)
+    monkeypatch.delenv("RUNPOD_TEMPLATE_ID_WAN22_VIDEO_V2", raising=False)
+    monkeypatch.delenv("RUNPOD_IMAGE_NAME_IMAGE_TO_VIDEO", raising=False)
+    monkeypatch.delenv("RUNPOD_IMAGE_NAME_WAN22_VIDEO_V2", raising=False)
+
+    settings = RunPodSettings.from_env()
+
+    assert settings.use_template_image_to_video is True
+    assert settings.use_template_wan22_video_v2 is True
+    assert settings.template_id_image_to_video == "77gi0wqo8x"
+    assert settings.template_id_wan22_video_v2 == "77gi0wqo8x"
+    assert settings.image_name_image_to_video.endswith(":shared")
+    assert settings.image_name_wan22_video_v2.endswith(":shared")
+    assert settings.docker_start_cmd_image_to_video == (
+        "bash",
+        "-lc",
+        "echo shared wan22 bootstrap\n",
+    )
+    assert (
+        settings.docker_start_cmd_wan22_video_v2
+        == settings.docker_start_cmd_image_to_video
+    )
+    assert settings.model_prefix_image_to_video == RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX
+    assert (
+        settings.model_manifest_key_wan22_video_v2
+        == RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY
+    )
+
+
+def test_runpod_settings_from_env_supports_wan22_docker_start_script_file(
+    tmp_path,
+    monkeypatch,
+):
+    script = tmp_path / "wan22-bootstrap.sh"
+    script.write_text("echo wan22 bootstrap\n", encoding="utf-8")
+    monkeypatch.setenv("RUNPOD_USE_TEMPLATE_WAN22_AIO_VIDEO", "true")
+    monkeypatch.setenv("RUNPOD_TEMPLATE_ID_WAN22_AIO_VIDEO", "77gi0wqo8x")
+    monkeypatch.setenv(
+        "RUNPOD_DOCKER_START_SCRIPT_FILE_WAN22_AIO_VIDEO",
+        str(script),
+    )
+    monkeypatch.delenv("RUNPOD_DOCKER_START_CMD_JSON_WAN22_AIO_VIDEO", raising=False)
+    monkeypatch.delenv("RUNPOD_DOCKER_START_SCRIPT_WAN22_AIO_VIDEO", raising=False)
+
+    settings = RunPodSettings.from_env()
+
+    assert settings.use_template_wan22_aio_video is True
+    assert settings.template_id_wan22_aio_video == "77gi0wqo8x"
+    assert settings.docker_start_cmd_wan22_aio_video == (
+        "bash",
+        "-lc",
+        "echo wan22 bootstrap\n",
+    )
 
 
 def test_render_create_cloud_prod_manual_worker_uses_prod_refs_and_bucket():
@@ -476,9 +668,7 @@ def test_render_create_cloud_prod_manual_worker_uses_prod_refs_and_bucket():
     assert env["RUNPOD_MODEL_SYNC_ENABLED"] == "true"
     assert env["RUNPOD_MODEL_BUCKET"] == "allbot-model-cache"
     assert env["RUNPOD_MODEL_PREFIX"] == "img2img_lora/2026-06-10"
-    assert env["RUNPOD_MODEL_MANIFEST_KEY"] == (
-        "img2img_lora/2026-06-10/manifest.json"
-    )
+    assert env["RUNPOD_MODEL_MANIFEST_KEY"] == ("img2img_lora/2026-06-10/manifest.json")
     assert env["RUNPOD_COMFY_CUSTOM_NODES_ENABLED"] == "false"
     assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
     assert env["RUNPOD_START_SSHD"] == "false"
@@ -619,7 +809,10 @@ def test_mutation_gate_blocks_more_than_one_total_pod_or_type():
 
     assert payload["ok"] is False
     assert "runpod active pod total limit reached" in payload["guard"]["reasons"]
-    assert "runpod active pod limit reached for img2img_lora" in payload["guard"]["reasons"]
+    assert (
+        "runpod active pod limit reached for img2img_lora"
+        in payload["guard"]["reasons"]
+    )
     assert fake.calls == []
 
 
@@ -680,7 +873,10 @@ def test_wan22_mutation_gate_blocks_same_type_and_hourly_cost_limit():
 
     assert payload["ok"] is False
     assert "runpod active pod total limit reached" in payload["guard"]["reasons"]
-    assert "runpod active pod limit reached for wan22_aio_video" in payload["guard"]["reasons"]
+    assert (
+        "runpod active pod limit reached for wan22_aio_video"
+        in payload["guard"]["reasons"]
+    )
     assert "RUNPOD_MAX_HOURLY_COST_USD would be exceeded" in payload["guard"]["reasons"]
     assert fake.calls == []
 
@@ -756,13 +952,9 @@ def test_execute_create_allows_second_prod_manual_worker_when_limit_is_two():
     )
 
     assert payload["ok"] is True
+    assert fake.calls[0]["json_body"]["name"] == "allbot-runpod-prod-img2img-manual-02"
     assert (
-        fake.calls[0]["json_body"]["name"]
-        == "allbot-runpod-prod-img2img-manual-02"
-    )
-    assert (
-        fake.calls[0]["json_body"]["env"]["AGENT_ID"]
-        == "runpod_prod_img2img_manual_02"
+        fake.calls[0]["json_body"]["env"]["AGENT_ID"] == "runpod_prod_img2img_manual_02"
     )
 
 
@@ -811,13 +1003,9 @@ def test_execute_create_allows_third_prod_manual_worker_when_configured_limit_is
     )
 
     assert payload["ok"] is True
+    assert fake.calls[0]["json_body"]["name"] == "allbot-runpod-prod-img2img-manual-03"
     assert (
-        fake.calls[0]["json_body"]["name"]
-        == "allbot-runpod-prod-img2img-manual-03"
-    )
-    assert (
-        fake.calls[0]["json_body"]["env"]["AGENT_ID"]
-        == "runpod_prod_img2img_manual_03"
+        fake.calls[0]["json_body"]["env"]["AGENT_ID"] == "runpod_prod_img2img_manual_03"
     )
 
 

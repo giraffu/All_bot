@@ -10,6 +10,7 @@ from src.constants import (
     MODE_EDIT,
     MODE_FACESWAP_STEP1,
     MODE_IMAGE_TO_VIDEO,
+    MODE_IMAGE_TO_VIDEO_LITERAL,
     MODE_IMG2IMG_LORA,
     MODE_I2I_PRO,
     MODE_I2I_DRAW,
@@ -463,7 +464,11 @@ class Wan22AioVideoStrategy(BaseTaskStrategy):
 
 
 class BaseVideoStrategy(BaseTaskStrategy):
-    WAN22_IMAGE_TO_VIDEO_TASK_TYPES = {MODE_CUSTOM_VIDEO, MODE_IMAGE_TO_VIDEO}
+    WAN22_IMAGE_TO_VIDEO_TASK_TYPES = {
+        MODE_CUSTOM_VIDEO,
+        MODE_IMAGE_TO_VIDEO,
+        MODE_IMAGE_TO_VIDEO_LITERAL,
+    }
 
     def __init__(self, mode: str):
         self.mode = mode
@@ -601,7 +606,11 @@ def _build_default_image_strategy(task_type: str) -> BaseTaskStrategy:
 
 
 def _build_video_strategy(task_type: str) -> BaseTaskStrategy:
-    if task_type in {MODE_CUSTOM_VIDEO, MODE_IMAGE_TO_VIDEO}:
+    if task_type in {
+        MODE_CUSTOM_VIDEO,
+        MODE_IMAGE_TO_VIDEO,
+        MODE_IMAGE_TO_VIDEO_LITERAL,
+    }:
         return Wan22AioVideoStrategy(task_type)
     return BaseVideoStrategy(task_type)
 

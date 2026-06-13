@@ -62,7 +62,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 
 ## 二、 旧图生视频附加模型（LoRA）实施方案
 
-旧图生视频的用户侧类型仍保留 `custom_video` / `video_lora`，但执行面已经改为 `image_to_video`，并与 `wan22_video_v2` 共用 `workers/comfy_agent/workflows/Wan22AioV82.json`。两者通过 `src.domain_config.wan22_aio_video` 的 profile 注入不同主模型：旧入口使用 `legacy_image_to_video` profile，v2 使用 `wan22_video_v2` profile。旧 `src.services.wan22_video_v2_config` 与 `src.services.wan22_video_v2_context` 兼容 re-export 已删除，新增逻辑直接引用 domain_config 入口。
+旧图生视频的用户侧类型仍保留 `custom_video` / `video_lora`，Web 侧也允许字面量 `image_to_video`，执行面统一为 `image_to_video`，并与 `wan22_video_v2` 共用 `workers/comfy_agent/workflows/Wan22AioV82.json`。两者通过 `src.domain_config.wan22_aio_video` 的 profile 注入不同主模型：旧入口使用 `legacy_image_to_video` profile，v2 使用 `wan22_video_v2` profile。旧 `src.services.wan22_video_v2_config` 与 `src.services.wan22_video_v2_context` 兼容 re-export 已删除，新增逻辑直接引用 domain_config 入口。
 
 目前系统主要支持 LTX-2.3 和 Wan2.2/Wan2.1 视频生成工作流。关于 LTX-2.3 工作流的具体 LoRA 使用与提示词规范，请参考项目根目录的 `LTX_LoRA_Guide.md`。
 
@@ -73,7 +73,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
   - *(例如：如果你的模型代号叫 `Dance`，则需要提供 `Dance_high_noise.safetensors` 和 `Dance_low_noise.safetensors`)*
 - 将上述两个文件放置到 ComfyUI 宿主机映射的对应 LoRA 模型目录中（如 `models/loras/`）。
 - 旧图生视频支持 `5s/8s/10s`，对应 `81/129/161` 帧，分辨率与计费基数和 v2 对齐为 `preview=6`、`small=12`、`standard=20`、`hd=30`，时长倍率为 `1x/2x/3x`；旧投稿 `512p/720p/1024p` 分别映射为 `preview/standard/hd`，`0.36 MP - Small` 映射为 `small`。
-- Wan22 AIO 底层映射必须保持：旧图生视频 `custom_video` / `video_lora` -> execution `image_to_video` -> `legacy_image_to_video` profile；图生视频 v2 `wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。两者共享 worker workflow，但不是同一个用户功能，历史/Gallery task type 不能互相改名。
+- Wan22 AIO 底层映射必须保持：旧图生视频 `custom_video` / `video_lora` / Web 字面量 `image_to_video` -> execution `image_to_video` -> `legacy_image_to_video` profile；图生视频 v2 `wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。两者共享 worker workflow，但不是同一个用户功能，历史/Gallery task type 不能互相改名；Web `/api/tasks/generate` 提交 `image_to_video` 后 Central `task_type` 也必须保持 `image_to_video`。
 
 ### 2. Bot 层：更新用户交互菜单 (UI & FSM)
 - **文件定位**：`src/handlers/fsm/image_to_video_fsm.py`
@@ -102,7 +102,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
   - 无 LoRA 的 `custom_video` 与 `wan22_video_v2` 必须清空 `26` / `18` 的 LoRA slot，避免 workflow 模板残留旧模型。
   - V82 通过 `265` 对 `2603` 最终帧序列插帧；默认节点类为 `FL_RIFE`（`multiplier=4`）。`_patch_wan22_aio_workflow(...)` 会在检测到 `265` 后让 `28` 视频输出、`2575` 帧数统计和 `2607` 尾帧提取都读取 `["265", 0]`，避免插帧被绕过或时长变慢。三档时长会写入 `2578.inputs.value`，保持 `5s/8s/10s` 对应 `81/129/161` 源帧。若某个 ComfyUI 未暴露 `FL_RIFE`，应修复该 ComfyUI 自定义节点/依赖环境，不应在 worker 侧切换节点类。
   - 扩展生成、分段重生成和整链拼接依赖 `extra_outputs.last_frame`。Worker 会优先读取 Comfy `2503` 尾帧输出；若个别 Comfy 实例只返回主 MP4，`agent_result_materialization.py` 会用 worker 镜像内的 `ffmpeg/ffprobe` 从主视频补抽最后一帧，因此 `workers/Dockerfile` 必须保留 ffmpeg 依赖。
-  - RunPod `wan22_aio_video` profile 镜像入口为 `remote_workers/docker/runpod_profiles/wan22_aio_video/Dockerfile`，默认基于 RunPod 官方 PyTorch/CUDA base 以复用常见基础层，并只 baked `Wan22AioV82.json` 所需 custom nodes、`ffmpeg/ffprobe` 和运行依赖；Wan22 high/low UNet、VAE、text encoder 与旧视频 LoRA 仍必须通过 `allbot-model-cache/wan22_aio_video/2026-06-12-test/manifest.json` 同步，不能 baked 入镜像。
+  - RunPod `wan22_aio_video` profile 镜像入口为 `remote_workers/docker/runpod_profiles/wan22_aio_video/Dockerfile`，只 baked `Wan22AioV82.json` 所需 custom nodes、`ffmpeg/ffprobe` 和运行依赖；Wan22 high/low UNet、VAE、text encoder 与旧视频 LoRA 不能 baked 入镜像。cloud-test 新主路径拆为 `image_to_video` 与 `wan22_video_v2` 两个 RunPod profile，当前复用同一 Wan22 template/image，但分别同步 `allbot-model-cache/image_to_video/2026-06-13-test/manifest.json` 与 `allbot-model-cache/wan22_video_v2/2026-06-13-test/manifest.json`；`wan22_aio_video/2026-06-12-test/manifest.json` 仅作为兼容/回滚全集 manifest。
   - > ⚠️ **节点硬编码警告**：如果后续重导 `Wan22AioV82.json`，必须复核 `2616`、`2617`、`26`、`18`、`2612`、`23`、`24`、`2368`、`2371`、`2578`、`2603`、`265`、`2575`、`2607` 是否仍满足当前补丁与 mappings 逻辑，否则主模型、LoRA、分辨率、首尾帧输入、时长、RIFE 插帧或尾帧输出会失效。
 
 ### 5. 验证与发布 (Testing & Restart)

@@ -13,7 +13,9 @@ from typing import Any, Callable
 
 RUNPOD_API_BASE_URL = "https://rest.runpod.io/v1"
 RUNPOD_ACTIVE_STATUSES = {"RUNNING"}
-RUNPOD_AGENT_SECRET_TOKEN_REF = "{{ RUNPOD_SECRET_allbot_cloud_test_agent_secret_token }}"
+RUNPOD_AGENT_SECRET_TOKEN_REF = (
+    "{{ RUNPOD_SECRET_allbot_cloud_test_agent_secret_token }}"
+)
 RUNPOD_R2_ACCESS_KEY_REF = "{{ RUNPOD_SECRET_allbot_cloud_test_r2_access_key }}"
 RUNPOD_R2_SECRET_KEY_REF = "{{ RUNPOD_SECRET_allbot_cloud_test_r2_secret_key }}"
 RUNPOD_PROD_AGENT_SECRET_TOKEN_REF = (
@@ -21,8 +23,12 @@ RUNPOD_PROD_AGENT_SECRET_TOKEN_REF = (
 )
 RUNPOD_PROD_R2_ACCESS_KEY_REF = "{{ RUNPOD_SECRET_allbot_cloud_prod_r2_access_key }}"
 RUNPOD_PROD_R2_SECRET_KEY_REF = "{{ RUNPOD_SECRET_allbot_cloud_prod_r2_secret_key }}"
-RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF = "{{ RUNPOD_SECRET_allbot_model_cache_r2_access_key }}"
-RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF = "{{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}"
+RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF = (
+    "{{ RUNPOD_SECRET_allbot_model_cache_r2_access_key }}"
+)
+RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF = (
+    "{{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}"
+)
 RUNPOD_PROD_WORKER_CENTRAL_URL = "https://worker-central.aivison.it.com"
 RUNPOD_PROD_AGENT_ID_PREFIX = "runpod_prod_img2img_manual_"
 RUNPOD_PROD_POD_NAME_PREFIX = "allbot-runpod-prod-img2img-manual-"
@@ -34,10 +40,21 @@ RUNPOD_PROD_BUCKET = "user-data-prod"
 RUNPOD_PROD_SUPPORTED_TASK_TYPES = ("img2img", "img2img_lora")
 RUNPOD_PROD_GPU_TYPE_IDS = ("NVIDIA GeForce RTX 4090",)
 RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE = (
-    "ghcr.io/giraffu/allbot-comfy-runpod-img2img:"
-    "20260612-img2img-lora-kjnodes7967a946"
+    "ghcr.io/giraffu/allbot-comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946"
 )
 RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS = ("NVIDIA GeForce RTX 5090",)
+RUNPOD_WAN22_AIO_VIDEO_MODEL_PREFIX = "wan22_aio_video/2026-06-12-test"
+RUNPOD_WAN22_AIO_VIDEO_MODEL_MANIFEST_KEY = (
+    "wan22_aio_video/2026-06-12-test/manifest.json"
+)
+RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX = "image_to_video/2026-06-13-test"
+RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY = (
+    "image_to_video/2026-06-13-test/manifest.json"
+)
+RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX = "wan22_video_v2/2026-06-13-test"
+RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY = (
+    "wan22_video_v2/2026-06-13-test/manifest.json"
+)
 SENSITIVE_KEY_MARKERS = (
     "TOKEN",
     "SECRET",
@@ -105,6 +122,24 @@ RUNPOD_TASK_PROFILES: dict[str, RunPodTaskProfile] = {
         template_env_key="RUNPOD_TEMPLATE_ID_WAN22_AIO_VIDEO",
         gpu_type_env_key="RUNPOD_GPU_TYPE_IDS_WAN22_AIO_VIDEO",
         image_env_key="RUNPOD_IMAGE_NAME_WAN22_AIO_VIDEO",
+    ),
+    "image_to_video": RunPodTaskProfile(
+        task_type="image_to_video",
+        supported_task_types=("image_to_video",),
+        runtime_profile="image_to_video",
+        agent_id_prefix="runpod_test_image_to_video",
+        template_env_key="RUNPOD_TEMPLATE_ID_IMAGE_TO_VIDEO",
+        gpu_type_env_key="RUNPOD_GPU_TYPE_IDS_IMAGE_TO_VIDEO",
+        image_env_key="RUNPOD_IMAGE_NAME_IMAGE_TO_VIDEO",
+    ),
+    "wan22_video_v2": RunPodTaskProfile(
+        task_type="wan22_video_v2",
+        supported_task_types=("wan22_video_v2",),
+        runtime_profile="wan22_video_v2",
+        agent_id_prefix="runpod_test_wan22_video_v2",
+        template_env_key="RUNPOD_TEMPLATE_ID_WAN22_VIDEO_V2",
+        gpu_type_env_key="RUNPOD_GPU_TYPE_IDS_WAN22_VIDEO_V2",
+        image_env_key="RUNPOD_IMAGE_NAME_WAN22_VIDEO_V2",
     ),
 }
 
@@ -183,10 +218,7 @@ def _normalize_prod_worker_slot(
         else _prod_max_manual_slots_from_env()
     )
     if value < 1 or value > max_slots:
-        raise ValueError(
-            "prod RunPod slot must be between "
-            f"01 and {max_slots:02d}"
-        )
+        raise ValueError(f"prod RunPod slot must be between 01 and {max_slots:02d}")
     return f"{value:02d}"
 
 
@@ -207,15 +239,15 @@ def _docker_start_cmd_env(
     json_value: str | None,
     script_value: str | None,
     script_file: str | None,
+    *,
+    json_env_name: str,
 ) -> tuple[str, ...]:
     if json_value and json_value.strip():
         parsed = json.loads(json_value)
         if not isinstance(parsed, list) or not all(
             isinstance(item, str) for item in parsed
         ):
-            raise ValueError(
-                "RUNPOD_DOCKER_START_CMD_JSON_IMG2IMG_LORA must be a JSON string array"
-            )
+            raise ValueError(f"{json_env_name} must be a JSON string array")
         return tuple(parsed)
     if script_file and script_file.strip():
         script = Path(script_file).expanduser().read_text(encoding="utf-8")
@@ -251,7 +283,9 @@ def redact_payload(value: Any) -> Any:
 def redact_text(value: str) -> str:
     redacted = value
     for pattern in SENSITIVE_TEXT_PATTERNS:
-        redacted = pattern.sub(lambda match: _redact_text_match(match.group(0)), redacted)
+        redacted = pattern.sub(
+            lambda match: _redact_text_match(match.group(0)), redacted
+        )
     return redacted
 
 
@@ -274,6 +308,8 @@ class RunPodSettings:
     max_hourly_cost_usd: float = 5.0
     projected_cost_per_hr_img2img_lora: float = 0.0
     projected_cost_per_hr_wan22_aio_video: float = 0.0
+    projected_cost_per_hr_image_to_video: float = 0.0
+    projected_cost_per_hr_wan22_video_v2: float = 0.0
     cloud_type: str = "SECURE"
     interruptible: bool = False
     gpu_type_ids_img2img_lora: tuple[str, ...] = (
@@ -282,6 +318,8 @@ class RunPodSettings:
         "NVIDIA L40S",
     )
     gpu_type_ids_wan22_aio_video: tuple[str, ...] = RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS
+    gpu_type_ids_image_to_video: tuple[str, ...] = RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS
+    gpu_type_ids_wan22_video_v2: tuple[str, ...] = RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS
     data_center_ids: tuple[str, ...] = ()
     container_disk_gb: int = 80
     volume_gb: int = 0
@@ -290,11 +328,20 @@ class RunPodSettings:
     pod_ports: tuple[str, ...] = ()
     use_template_img2img_lora: bool = True
     use_template_wan22_aio_video: bool = False
+    use_template_image_to_video: bool = False
+    use_template_wan22_video_v2: bool = False
     docker_start_cmd_img2img_lora: tuple[str, ...] = ()
+    docker_start_cmd_wan22_aio_video: tuple[str, ...] = ()
+    docker_start_cmd_image_to_video: tuple[str, ...] = ()
+    docker_start_cmd_wan22_video_v2: tuple[str, ...] = ()
     template_id_img2img_lora: str = ""
     template_id_wan22_aio_video: str = ""
+    template_id_image_to_video: str = ""
+    template_id_wan22_video_v2: str = ""
     image_name_img2img_lora: str = ""
     image_name_wan22_aio_video: str = ""
+    image_name_image_to_video: str = ""
+    image_name_wan22_video_v2: str = ""
     worker_central_url_cloud_test: str = "https://worker-central-test.example.com"
     worker_central_url_cloud_prod: str = RUNPOD_PROD_WORKER_CENTRAL_URL
     prod_agent_id: str = RUNPOD_PROD_AGENT_ID
@@ -320,6 +367,12 @@ class RunPodSettings:
     model_bucket: str = ""
     model_prefix: str = "img2img_lora/2026-06-10"
     model_manifest_key: str = ""
+    model_prefix_wan22_aio_video: str = RUNPOD_WAN22_AIO_VIDEO_MODEL_PREFIX
+    model_manifest_key_wan22_aio_video: str = RUNPOD_WAN22_AIO_VIDEO_MODEL_MANIFEST_KEY
+    model_prefix_image_to_video: str = RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX
+    model_manifest_key_image_to_video: str = RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY
+    model_prefix_wan22_video_v2: str = RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX
+    model_manifest_key_wan22_video_v2: str = RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY
     model_endpoint: str = ""
     model_secure: bool = True
     model_access_key_ref: str = RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF
@@ -331,6 +384,60 @@ class RunPodSettings:
     @classmethod
     def from_env(cls) -> "RunPodSettings":
         model_bucket = os.getenv("RUNPOD_MODEL_BUCKET", "")
+        global_model_prefix = os.getenv(
+            "RUNPOD_MODEL_PREFIX", "img2img_lora/2026-06-10"
+        )
+        global_model_manifest_key = os.getenv("RUNPOD_MODEL_MANIFEST_KEY", "")
+        wan22_aio_use_template_raw = os.getenv("RUNPOD_USE_TEMPLATE_WAN22_AIO_VIDEO")
+        wan22_aio_image = os.getenv("RUNPOD_IMAGE_NAME_WAN22_AIO_VIDEO", "")
+        wan22_aio_template = os.getenv("RUNPOD_TEMPLATE_ID_WAN22_AIO_VIDEO", "")
+        wan22_aio_gpu_type_ids = (
+            _csv(
+                os.getenv("RUNPOD_GPU_TYPE_IDS_WAN22_AIO_VIDEO"),
+                default=cls.gpu_type_ids_wan22_aio_video,
+            )
+            or RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS
+        )
+        wan22_aio_cost = _float_env(
+            os.getenv("RUNPOD_PROJECTED_COST_PER_HR_WAN22_AIO_VIDEO"),
+            default=0.0,
+        )
+        image_to_video_use_template_raw = os.getenv(
+            "RUNPOD_USE_TEMPLATE_IMAGE_TO_VIDEO",
+            wan22_aio_use_template_raw,
+        )
+        wan22_video_v2_use_template_raw = os.getenv(
+            "RUNPOD_USE_TEMPLATE_WAN22_VIDEO_V2",
+            wan22_aio_use_template_raw,
+        )
+        image_to_video_image = os.getenv(
+            "RUNPOD_IMAGE_NAME_IMAGE_TO_VIDEO",
+            wan22_aio_image,
+        )
+        wan22_video_v2_image = os.getenv(
+            "RUNPOD_IMAGE_NAME_WAN22_VIDEO_V2",
+            wan22_aio_image,
+        )
+        image_to_video_template = os.getenv(
+            "RUNPOD_TEMPLATE_ID_IMAGE_TO_VIDEO",
+            wan22_aio_template,
+        )
+        wan22_video_v2_template = os.getenv(
+            "RUNPOD_TEMPLATE_ID_WAN22_VIDEO_V2",
+            wan22_aio_template,
+        )
+        wan22_aio_model_prefix = os.getenv(
+            "RUNPOD_MODEL_PREFIX_WAN22_AIO_VIDEO",
+            global_model_prefix
+            if global_model_prefix.startswith("wan22_aio_video/")
+            else RUNPOD_WAN22_AIO_VIDEO_MODEL_PREFIX,
+        )
+        wan22_aio_model_manifest_key = os.getenv(
+            "RUNPOD_MODEL_MANIFEST_KEY_WAN22_AIO_VIDEO",
+            global_model_manifest_key
+            if global_model_manifest_key.startswith("wan22_aio_video/")
+            else RUNPOD_WAN22_AIO_VIDEO_MODEL_MANIFEST_KEY,
+        )
         return cls(
             api_key=os.getenv("RUNPOD_API_KEY", ""),
             base_url=os.getenv("RUNPOD_API_BASE_URL", RUNPOD_API_BASE_URL).rstrip("/"),
@@ -354,7 +461,15 @@ class RunPodSettings:
             ),
             projected_cost_per_hr_wan22_aio_video=_float_env(
                 os.getenv("RUNPOD_PROJECTED_COST_PER_HR_WAN22_AIO_VIDEO"),
-                default=0.0,
+                default=wan22_aio_cost,
+            ),
+            projected_cost_per_hr_image_to_video=_float_env(
+                os.getenv("RUNPOD_PROJECTED_COST_PER_HR_IMAGE_TO_VIDEO"),
+                default=wan22_aio_cost,
+            ),
+            projected_cost_per_hr_wan22_video_v2=_float_env(
+                os.getenv("RUNPOD_PROJECTED_COST_PER_HR_WAN22_VIDEO_V2"),
+                default=wan22_aio_cost,
             ),
             cloud_type=os.getenv("RUNPOD_CLOUD_TYPE", "SECURE"),
             interruptible=_bool_env(os.getenv("RUNPOD_INTERRUPTIBLE"), default=False),
@@ -365,6 +480,16 @@ class RunPodSettings:
             gpu_type_ids_wan22_aio_video=_csv(
                 os.getenv("RUNPOD_GPU_TYPE_IDS_WAN22_AIO_VIDEO"),
                 default=cls.gpu_type_ids_wan22_aio_video,
+            )
+            or RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS,
+            gpu_type_ids_image_to_video=_csv(
+                os.getenv("RUNPOD_GPU_TYPE_IDS_IMAGE_TO_VIDEO"),
+                default=wan22_aio_gpu_type_ids,
+            )
+            or RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS,
+            gpu_type_ids_wan22_video_v2=_csv(
+                os.getenv("RUNPOD_GPU_TYPE_IDS_WAN22_VIDEO_V2"),
+                default=wan22_aio_gpu_type_ids,
             )
             or RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS,
             data_center_ids=_csv(os.getenv("RUNPOD_ALLOWED_DATACENTERS")),
@@ -384,21 +509,55 @@ class RunPodSettings:
                 os.getenv("RUNPOD_USE_TEMPLATE_WAN22_AIO_VIDEO"),
                 default=False,
             ),
+            use_template_image_to_video=_bool_env(
+                image_to_video_use_template_raw,
+                default=False,
+            ),
+            use_template_wan22_video_v2=_bool_env(
+                wan22_video_v2_use_template_raw,
+                default=False,
+            ),
             docker_start_cmd_img2img_lora=_docker_start_cmd_env(
                 os.getenv("RUNPOD_DOCKER_START_CMD_JSON_IMG2IMG_LORA"),
                 os.getenv("RUNPOD_DOCKER_START_SCRIPT_IMG2IMG_LORA"),
                 os.getenv("RUNPOD_DOCKER_START_SCRIPT_FILE_IMG2IMG_LORA"),
+                json_env_name="RUNPOD_DOCKER_START_CMD_JSON_IMG2IMG_LORA",
+            ),
+            docker_start_cmd_wan22_aio_video=_docker_start_cmd_env(
+                os.getenv("RUNPOD_DOCKER_START_CMD_JSON_WAN22_AIO_VIDEO"),
+                os.getenv("RUNPOD_DOCKER_START_SCRIPT_WAN22_AIO_VIDEO"),
+                os.getenv("RUNPOD_DOCKER_START_SCRIPT_FILE_WAN22_AIO_VIDEO"),
+                json_env_name="RUNPOD_DOCKER_START_CMD_JSON_WAN22_AIO_VIDEO",
+            ),
+            docker_start_cmd_image_to_video=_docker_start_cmd_env(
+                os.getenv("RUNPOD_DOCKER_START_CMD_JSON_IMAGE_TO_VIDEO")
+                or os.getenv("RUNPOD_DOCKER_START_CMD_JSON_WAN22_AIO_VIDEO"),
+                os.getenv("RUNPOD_DOCKER_START_SCRIPT_IMAGE_TO_VIDEO")
+                or os.getenv("RUNPOD_DOCKER_START_SCRIPT_WAN22_AIO_VIDEO"),
+                os.getenv("RUNPOD_DOCKER_START_SCRIPT_FILE_IMAGE_TO_VIDEO")
+                or os.getenv("RUNPOD_DOCKER_START_SCRIPT_FILE_WAN22_AIO_VIDEO"),
+                json_env_name="RUNPOD_DOCKER_START_CMD_JSON_IMAGE_TO_VIDEO",
+            ),
+            docker_start_cmd_wan22_video_v2=_docker_start_cmd_env(
+                os.getenv("RUNPOD_DOCKER_START_CMD_JSON_WAN22_VIDEO_V2")
+                or os.getenv("RUNPOD_DOCKER_START_CMD_JSON_WAN22_AIO_VIDEO"),
+                os.getenv("RUNPOD_DOCKER_START_SCRIPT_WAN22_VIDEO_V2")
+                or os.getenv("RUNPOD_DOCKER_START_SCRIPT_WAN22_AIO_VIDEO"),
+                os.getenv("RUNPOD_DOCKER_START_SCRIPT_FILE_WAN22_VIDEO_V2")
+                or os.getenv("RUNPOD_DOCKER_START_SCRIPT_FILE_WAN22_AIO_VIDEO"),
+                json_env_name="RUNPOD_DOCKER_START_CMD_JSON_WAN22_VIDEO_V2",
             ),
             template_id_img2img_lora=os.getenv("RUNPOD_TEMPLATE_ID_IMG2IMG_LORA", ""),
             template_id_wan22_aio_video=os.getenv(
                 "RUNPOD_TEMPLATE_ID_WAN22_AIO_VIDEO",
                 "",
             ),
+            template_id_image_to_video=image_to_video_template,
+            template_id_wan22_video_v2=wan22_video_v2_template,
             image_name_img2img_lora=os.getenv("RUNPOD_IMAGE_NAME_IMG2IMG_LORA", ""),
-            image_name_wan22_aio_video=os.getenv(
-                "RUNPOD_IMAGE_NAME_WAN22_AIO_VIDEO",
-                "",
-            ),
+            image_name_wan22_aio_video=wan22_aio_image,
+            image_name_image_to_video=image_to_video_image,
+            image_name_wan22_video_v2=wan22_video_v2_image,
             worker_central_url_cloud_test=os.getenv(
                 "RUNPOD_CLOUD_TEST_CENTRAL_API_URL",
                 os.getenv(
@@ -468,8 +627,26 @@ class RunPodSettings:
                 default=bool(model_bucket.strip()),
             ),
             model_bucket=model_bucket,
-            model_prefix=os.getenv("RUNPOD_MODEL_PREFIX", "img2img_lora/2026-06-10"),
-            model_manifest_key=os.getenv("RUNPOD_MODEL_MANIFEST_KEY", ""),
+            model_prefix=global_model_prefix,
+            model_manifest_key=global_model_manifest_key,
+            model_prefix_wan22_aio_video=wan22_aio_model_prefix,
+            model_manifest_key_wan22_aio_video=wan22_aio_model_manifest_key,
+            model_prefix_image_to_video=os.getenv(
+                "RUNPOD_MODEL_PREFIX_IMAGE_TO_VIDEO",
+                RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX,
+            ),
+            model_manifest_key_image_to_video=os.getenv(
+                "RUNPOD_MODEL_MANIFEST_KEY_IMAGE_TO_VIDEO",
+                RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
+            ),
+            model_prefix_wan22_video_v2=os.getenv(
+                "RUNPOD_MODEL_PREFIX_WAN22_VIDEO_V2",
+                RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX,
+            ),
+            model_manifest_key_wan22_video_v2=os.getenv(
+                "RUNPOD_MODEL_MANIFEST_KEY_WAN22_VIDEO_V2",
+                RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY,
+            ),
             model_endpoint=os.getenv("RUNPOD_MODEL_ENDPOINT", ""),
             model_secure=_bool_env(os.getenv("RUNPOD_MODEL_SECURE"), default=True),
             model_access_key_ref=os.getenv(
@@ -637,7 +814,10 @@ class RunPodProvider:
             environment=environment,
             redact=False,
         )
-        if self._should_reconcile_existing_pods(execute=execute) and existing_pods is None:
+        if (
+            self._should_reconcile_existing_pods(execute=execute)
+            and existing_pods is None
+        ):
             listed = self.list_pods(managed_only=True)
             if not listed.get("ok"):
                 return {
@@ -647,7 +827,9 @@ class RunPodProvider:
                     "execute": execute,
                     "guard": {
                         "allowed": False,
-                        "reasons": [str(listed.get("error") or "runpod list-pods failed")],
+                        "reasons": [
+                            str(listed.get("error") or "runpod list-pods failed")
+                        ],
                     },
                     "request": redact_payload(request),
                 }
@@ -780,7 +962,11 @@ class RunPodProvider:
 
         confidence = "status_only_no_exposed_ports"
         if exposed_ports:
-            confidence = "network_mapping_confirmed" if not reasons else "initializing_or_unmapped"
+            confidence = (
+                "network_mapping_confirmed"
+                if not reasons
+                else "initializing_or_unmapped"
+            )
 
         network = {
             "public_ip_expected": public_ip_expected,
@@ -826,7 +1012,11 @@ class RunPodProvider:
         existing_pods: list[dict[str, Any]],
         execute: bool,
     ) -> dict[str, Any]:
-        if action == "start" and self._should_reconcile_existing_pods(execute=execute) and not existing_pods:
+        if (
+            action == "start"
+            and self._should_reconcile_existing_pods(execute=execute)
+            and not existing_pods
+        ):
             listed = self.list_pods(managed_only=True)
             if not listed.get("ok"):
                 return {
@@ -836,9 +1026,14 @@ class RunPodProvider:
                     "execute": execute,
                     "guard": {
                         "allowed": False,
-                        "reasons": [str(listed.get("error") or "runpod list-pods failed")],
+                        "reasons": [
+                            str(listed.get("error") or "runpod list-pods failed")
+                        ],
                     },
-                    "request": {"method": method, "url": f"{self.settings.base_url}{path}"},
+                    "request": {
+                        "method": method,
+                        "url": f"{self.settings.base_url}{path}",
+                    },
                 }
             existing_pods = list(listed.get("pods") or [])
         guard = self._mutation_guard(
@@ -866,7 +1061,12 @@ class RunPodProvider:
                 "action": action,
                 "error": self._safe_error(exc),
             }
-        return {"ok": True, "dry_run": False, "action": action, "response": redact_payload(response)}
+        return {
+            "ok": True,
+            "dry_run": False,
+            "action": action,
+            "response": redact_payload(response),
+        }
 
     def _should_reconcile_existing_pods(self, *, execute: bool) -> bool:
         return (
@@ -874,21 +1074,29 @@ class RunPodProvider:
             and not self.settings.dry_run
             and self.settings.autoscaler_enabled
             and 1 <= self.settings.max_pods_total <= self.settings.prod_max_manual_slots
-            and 1 <= self.settings.max_pods_per_type <= self.settings.prod_max_manual_slots
+            and 1
+            <= self.settings.max_pods_per_type
+            <= self.settings.prod_max_manual_slots
         )
 
     def _create_pod_body(self, *, task_type: str, environment: str) -> dict[str, Any]:
         if environment not in {"cloud-test", "cloud-prod"}:
-            raise ValueError("RunPodProvider v0 only supports environment=cloud-test/cloud-prod")
+            raise ValueError(
+                "RunPodProvider v0 only supports environment=cloud-test/cloud-prod"
+            )
         profile = self._profile_for_task_type(task_type)
         if environment == "cloud-prod" and profile.task_type != "img2img_lora":
-            raise ValueError("RunPodProvider v0 cloud-prod only supports img2img/img2img_lora profiles")
+            raise ValueError(
+                "RunPodProvider v0 cloud-prod only supports img2img/img2img_lora profiles"
+            )
         gpu_type_ids = (
             self.settings.prod_gpu_type_ids
             if environment == "cloud-prod"
             else self._gpu_type_ids_for(profile)
         )
-        template_id = "" if environment == "cloud-prod" else self._template_id_for(profile)
+        template_id = (
+            "" if environment == "cloud-prod" else self._template_id_for(profile)
+        )
         image_name = self._image_name_for(profile)
         if environment == "cloud-prod" and not image_name:
             image_name = RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE
@@ -968,7 +1176,8 @@ class RunPodProvider:
             "COMFY_WS_URL": "ws://127.0.0.1:8188/ws",
             "COMFY_INPUT_DIR": "./input",
             "COMFY_OUTPUT_DIR": "./output",
-            "MINIO_ENDPOINT": self.settings.minio_endpoint or "<RUNPOD_SECRET:MINIO_ENDPOINT>",
+            "MINIO_ENDPOINT": self.settings.minio_endpoint
+            or "<RUNPOD_SECRET:MINIO_ENDPOINT>",
             "MINIO_ACCESS_KEY": env_config["minio_access_key_ref"],
             "MINIO_SECRET_KEY": env_config["minio_secret_key_ref"],
             "MINIO_BUCKET": env_config["bucket"],
@@ -982,7 +1191,8 @@ class RunPodProvider:
             "RUNPOD_MODEL_BUCKET": env_config["model_bucket"],
             "RUNPOD_MODEL_PREFIX": env_config["model_prefix"],
             "RUNPOD_MODEL_MANIFEST_KEY": env_config["model_manifest_key"],
-            "RUNPOD_MODEL_ENDPOINT": self.settings.model_endpoint or self.settings.minio_endpoint,
+            "RUNPOD_MODEL_ENDPOINT": self.settings.model_endpoint
+            or self.settings.minio_endpoint,
             "RUNPOD_MODEL_ACCESS_KEY": env_config["model_access_key_ref"],
             "RUNPOD_MODEL_SECRET_KEY": env_config["model_secret_key_ref"],
             "RUNPOD_MODEL_SECURE": "true" if self.settings.model_secure else "false",
@@ -1035,8 +1245,8 @@ class RunPodProvider:
                 "install_sshd_if_missing": "true",
                 "model_sync_enabled": self.settings.model_sync_enabled,
                 "model_bucket": self.settings.model_bucket,
-                "model_prefix": self.settings.model_prefix,
-                "model_manifest_key": self.settings.model_manifest_key,
+                "model_prefix": self._model_prefix_for(profile),
+                "model_manifest_key": self._model_manifest_key_for(profile),
                 "model_access_key_ref": self.settings.model_access_key_ref,
                 "model_secret_key_ref": self.settings.model_secret_key_ref,
                 "comfy_custom_nodes_enabled": self.settings.comfy_custom_nodes_enabled,
@@ -1067,7 +1277,9 @@ class RunPodProvider:
                 "comfy_custom_nodes_enabled": False,
                 "comfy_kjnodes_enabled": False,
             }
-        raise ValueError("RunPodProvider v0 only supports environment=cloud-test/cloud-prod")
+        raise ValueError(
+            "RunPodProvider v0 only supports environment=cloud-test/cloud-prod"
+        )
 
     def _mutation_guard(
         self,
@@ -1085,8 +1297,7 @@ class RunPodProvider:
         max_manual_slots = self.settings.prod_max_manual_slots
         if not 1 <= self.settings.max_pods_total <= max_manual_slots:
             reasons.append(
-                "RUNPOD_MAX_PODS_TOTAL must be between "
-                f"1 and {max_manual_slots} for v0"
+                f"RUNPOD_MAX_PODS_TOTAL must be between 1 and {max_manual_slots} for v0"
             )
         if not 1 <= self.settings.max_pods_per_type <= max_manual_slots:
             reasons.append(
@@ -1094,21 +1305,27 @@ class RunPodProvider:
                 f"1 and {max_manual_slots} for v0"
             )
         if self.settings.max_pods_per_type > self.settings.max_pods_total:
-            reasons.append("RUNPOD_MAX_PODS_PER_TYPE must not exceed RUNPOD_MAX_PODS_TOTAL")
+            reasons.append(
+                "RUNPOD_MAX_PODS_PER_TYPE must not exceed RUNPOD_MAX_PODS_TOTAL"
+            )
 
         if action in {"create", "start"}:
             active = [pod for pod in existing_pods if self._is_active(pod)]
             active_same_type = [
                 pod
                 for pod in active
-                if str((pod.get("env") or {}).get("RUNPOD_TASK_TYPE") or "") == task_type
+                if str((pod.get("env") or {}).get("RUNPOD_TASK_TYPE") or "")
+                == task_type
             ]
             if len(active) >= self.settings.max_pods_total:
                 reasons.append("runpod active pod total limit reached")
             if len(active_same_type) >= self.settings.max_pods_per_type:
                 reasons.append(f"runpod active pod limit reached for {task_type}")
             current_cost = sum(self._pod_cost(pod) for pod in active)
-            if current_cost + projected_new_cost_per_hr > self.settings.max_hourly_cost_usd:
+            if (
+                current_cost + projected_new_cost_per_hr
+                > self.settings.max_hourly_cost_usd
+            ):
                 reasons.append("RUNPOD_MAX_HOURLY_COST_USD would be exceeded")
 
         return {
@@ -1140,11 +1357,18 @@ class RunPodProvider:
             return self.settings.projected_cost_per_hr_img2img_lora
         if profile.task_type == "wan22_aio_video":
             return self.settings.projected_cost_per_hr_wan22_aio_video
+        if profile.task_type == "image_to_video":
+            return self.settings.projected_cost_per_hr_image_to_video
+        if profile.task_type == "wan22_video_v2":
+            return self.settings.projected_cost_per_hr_wan22_video_v2
         return 0.0
 
     @staticmethod
     def _is_active(pod: dict[str, Any]) -> bool:
-        return str(pod.get("desiredStatus") or pod.get("status") or "") in RUNPOD_ACTIVE_STATUSES
+        return (
+            str(pod.get("desiredStatus") or pod.get("status") or "")
+            in RUNPOD_ACTIVE_STATUSES
+        )
 
     @staticmethod
     def _pod_cost(pod: dict[str, Any]) -> float:
@@ -1164,7 +1388,9 @@ class RunPodProvider:
             return RUNPOD_TASK_PROFILES[task_type]
         except KeyError as exc:
             raise ValueError(
-                "RunPodProvider v0 only supports img2img_lora/img2img/wan22_aio_video profiles"
+                "RunPodProvider v0 only supports "
+                "img2img_lora/img2img/wan22_aio_video/image_to_video/"
+                "wan22_video_v2 profiles"
             ) from exc
 
     def _gpu_type_ids_for(self, profile: RunPodTaskProfile) -> tuple[str, ...]:
@@ -1172,6 +1398,10 @@ class RunPodProvider:
             return self.settings.gpu_type_ids_img2img_lora
         if profile.gpu_type_env_key == "RUNPOD_GPU_TYPE_IDS_WAN22_AIO_VIDEO":
             return self.settings.gpu_type_ids_wan22_aio_video
+        if profile.gpu_type_env_key == "RUNPOD_GPU_TYPE_IDS_IMAGE_TO_VIDEO":
+            return self.settings.gpu_type_ids_image_to_video
+        if profile.gpu_type_env_key == "RUNPOD_GPU_TYPE_IDS_WAN22_VIDEO_V2":
+            return self.settings.gpu_type_ids_wan22_video_v2
         raise ValueError(f"unsupported RunPod task profile: {profile.task_type}")
 
     def _template_id_for(self, profile: RunPodTaskProfile) -> str:
@@ -1183,6 +1413,14 @@ class RunPodProvider:
             if not self.settings.use_template_wan22_aio_video:
                 return ""
             return self.settings.template_id_wan22_aio_video
+        if profile.template_env_key == "RUNPOD_TEMPLATE_ID_IMAGE_TO_VIDEO":
+            if not self.settings.use_template_image_to_video:
+                return ""
+            return self.settings.template_id_image_to_video
+        if profile.template_env_key == "RUNPOD_TEMPLATE_ID_WAN22_VIDEO_V2":
+            if not self.settings.use_template_wan22_video_v2:
+                return ""
+            return self.settings.template_id_wan22_video_v2
         raise ValueError(f"unsupported RunPod task profile: {profile.task_type}")
 
     def _image_name_for(self, profile: RunPodTaskProfile) -> str:
@@ -1190,18 +1428,46 @@ class RunPodProvider:
             return self.settings.image_name_img2img_lora
         if profile.image_env_key == "RUNPOD_IMAGE_NAME_WAN22_AIO_VIDEO":
             return self.settings.image_name_wan22_aio_video
+        if profile.image_env_key == "RUNPOD_IMAGE_NAME_IMAGE_TO_VIDEO":
+            return self.settings.image_name_image_to_video
+        if profile.image_env_key == "RUNPOD_IMAGE_NAME_WAN22_VIDEO_V2":
+            return self.settings.image_name_wan22_video_v2
         raise ValueError(f"unsupported RunPod task profile: {profile.task_type}")
 
     @staticmethod
     def _pending_image_name_for(profile: RunPodTaskProfile) -> str:
-        if profile.task_type == "wan22_aio_video":
+        if profile.task_type in {"wan22_aio_video", "image_to_video", "wan22_video_v2"}:
             return "allbot/comfy-runpod-wan22-aio-video:pending"
         return "allbot/comfy-runpod-img2img:pending"
 
     def _docker_start_cmd_for(self, profile: RunPodTaskProfile) -> tuple[str, ...]:
         if profile.task_type == "img2img_lora":
             return self.settings.docker_start_cmd_img2img_lora
+        if profile.task_type == "wan22_aio_video":
+            return self.settings.docker_start_cmd_wan22_aio_video
+        if profile.task_type == "image_to_video":
+            return self.settings.docker_start_cmd_image_to_video
+        if profile.task_type == "wan22_video_v2":
+            return self.settings.docker_start_cmd_wan22_video_v2
         return ()
+
+    def _model_prefix_for(self, profile: RunPodTaskProfile) -> str:
+        if profile.task_type == "wan22_aio_video":
+            return self.settings.model_prefix_wan22_aio_video
+        if profile.task_type == "image_to_video":
+            return self.settings.model_prefix_image_to_video
+        if profile.task_type == "wan22_video_v2":
+            return self.settings.model_prefix_wan22_video_v2
+        return self.settings.model_prefix
+
+    def _model_manifest_key_for(self, profile: RunPodTaskProfile) -> str:
+        if profile.task_type == "wan22_aio_video":
+            return self.settings.model_manifest_key_wan22_aio_video
+        if profile.task_type == "image_to_video":
+            return self.settings.model_manifest_key_image_to_video
+        if profile.task_type == "wan22_video_v2":
+            return self.settings.model_manifest_key_wan22_video_v2
+        return self.settings.model_manifest_key
 
     def _request(
         self,

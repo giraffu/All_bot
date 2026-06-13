@@ -87,7 +87,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - Web 主入口是 `POST /api/tasks/generate`，不是旧 generation params 口径
 - `task_core` 是业务编排门面，Central API 只是执行面
 - Worker 是通过 `pop` 主动拉取任务，不是上游直推 workflow
-- Wan22 AIO 视频配置事实源是 `src.domain_config.wan22_aio_video`：`custom_video` / `video_lora` -> execution `image_to_video` -> `legacy_image_to_video` profile；`wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。前端入口与历史 task type 不因底层合并而改名。
+- Wan22 AIO 视频配置事实源是 `src.domain_config.wan22_aio_video`：`custom_video` / `video_lora` / 字面量 `image_to_video` -> execution `image_to_video` -> `legacy_image_to_video` profile；`wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。Web `/api/tasks/generate` 提交 `task_type=image_to_video` 时，Central 记录的 `task_type` 必须保持 `image_to_video`，不能回退成 `img2img`。前端入口与历史 task type 不因底层合并而改名。
 
 ## 7. 新任务类型添加 Checklist
 新增任务类型时，默认按以下顺序检查，不要只改单点：

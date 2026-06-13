@@ -8,12 +8,14 @@ from src.core.task_dispatcher import (
     FaceSwapStrategy,
     LtxVideoStrategy,
     StrategyFactory,
+    Wan22AioVideoStrategy,
     Wan22VideoV2Strategy,
 )
 from src.constants import (
     MODE_CUSTOM_VIDEO,
     MODE_I2I_PRO,
     MODE_IMAGE_TO_VIDEO,
+    MODE_IMAGE_TO_VIDEO_LITERAL,
     MODE_IMG2IMG_LORA,
     MODE_TXT2IMG,
     MODE_WAN22_VIDEO_V2,
@@ -41,6 +43,10 @@ def test_strategy_factory_returns_correct_strategy():
     strategy = StrategyFactory.get_strategy(MODE_WAN22_VIDEO_V2)
     assert isinstance(strategy, Wan22VideoV2Strategy)
 
+    strategy = StrategyFactory.get_strategy(MODE_IMAGE_TO_VIDEO_LITERAL)
+    assert isinstance(strategy, Wan22AioVideoStrategy)
+    assert strategy.task_type == MODE_IMAGE_TO_VIDEO_LITERAL
+
     # Standard Video
     strategy = StrategyFactory.get_strategy("doggy_style")
     assert isinstance(strategy, BaseVideoStrategy)
@@ -58,9 +64,9 @@ def test_strategy_factory_returns_correct_strategy():
 
 
 def test_base_video_strategy_keeps_explicit_image_to_video_mode():
-    strategy = BaseVideoStrategy(MODE_IMAGE_TO_VIDEO)
+    strategy = BaseVideoStrategy(MODE_IMAGE_TO_VIDEO_LITERAL)
 
-    assert strategy.mode == MODE_IMAGE_TO_VIDEO
+    assert strategy.mode == MODE_IMAGE_TO_VIDEO_LITERAL
 
 
 @pytest.mark.parametrize(
@@ -223,6 +229,51 @@ async def test_wan22_strategy_forwards_resolution_preset(monkeypatch):
         wan22_model_profile="wan22_video_v2",
         length=8,
         priority=6,
+    )
+
+
+@pytest.mark.asyncio
+async def test_literal_image_to_video_strategy_forwards_to_wan22_legacy_submit(
+    monkeypatch,
+):
+    strategy = StrategyFactory.get_strategy(MODE_IMAGE_TO_VIDEO_LITERAL)
+    submit_mock = AsyncMock(return_value="backend-task-id")
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_image_to_video_task=submit_mock,
+    )
+
+    result = await strategy.submit_task(
+        "task-1",
+        {
+            "prompt": "镜头中出现一个女人",
+            "saved_input_images": ["demo/start.png"],
+            "negative_prompt": "blur",
+            "resolution_preset": "preview",
+            "duration": 5,
+            "lora_name": "Insertion",
+            "lora_strength": 1.0,
+            "extract_last_frame": True,
+        },
+        priority=3,
+    )
+
+    assert result == "backend-task-id"
+    submit_mock.assert_awaited_once_with(
+        "task-1",
+        prompt="镜头中出现一个女人",
+        image_path="demo/start.png",
+        lora_name="Insertion",
+        end_image_path=None,
+        negative_prompt="blur",
+        use_end_frame=False,
+        resolution_preset="preview",
+        wan22_model_profile="legacy_image_to_video",
+        priority=3,
+        width=512,
+        height=512,
+        length=5,
+        extract_last_frame=True,
     )
 
 
@@ -698,7 +749,9 @@ async def test_wan22_video_v2_submit_task_normalizes_optional_end_frame(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_wan22_video_v2_submit_task_falls_back_to_i2v_without_end_frame(monkeypatch):
+async def test_wan22_video_v2_submit_task_falls_back_to_i2v_without_end_frame(
+    monkeypatch,
+):
     strategy = StrategyFactory.get_strategy(MODE_WAN22_VIDEO_V2)
     submit_mock = AsyncMock(return_value="backend-task-id")
     _patch_dispatch_image_service(

@@ -90,7 +90,12 @@ def _patch_web_generate_dependencies(monkeypatch, *, expected_balance=888):
         get_strategy_func=lambda _task_type: task_core.StrategyFactory.get_strategy(
             _task_type
         ),
-        video_task_types={"custom_video", "video_lora"},
+        video_task_types={
+            "custom_video",
+            "video_lora",
+            "image_to_video",
+            "wan22_video_v2",
+        },
         build_video_task_request_func=task_core.build_video_task_request,
         check_concurrency_lock_func=check_lock,
         prepare_task_submission_payload_func=prepare_payload,
@@ -241,4 +246,40 @@ async def test_web_apply_submit_cost_for_video_lora(monkeypatch):
     submission_context = monitor_calls[0]["submission_context"]
     assert submission_context.billing_resolution == "hd"
     assert submission_context.requested_duration == 5
-    assert submission_context.log_prompt == "[模型: BreastGrow] [强度: 0.80] glowing neon city"
+    assert (
+        submission_context.log_prompt
+        == "[模型: BreastGrow] [强度: 0.80] glowing neon city"
+    )
+
+
+@pytest.mark.asyncio
+async def test_web_generate_accepts_literal_image_to_video_task_type(monkeypatch):
+    monitor_calls, deduct_credits = _patch_web_generate_dependencies(monkeypatch)
+
+    request = TaskGenerateRequest(
+        task_type="image_to_video",
+        inputs={
+            "images": ["123/input_images/base.png"],
+            "resolution_preset": "preview",
+            "duration": 5,
+            "prompt": "镜头中出现一个女人",
+            "lora_name": "Insertion",
+            "lora_strength": 1.0,
+            "extract_last_frame": True,
+        },
+    )
+
+    response = await tasks_router.create_generation_task(
+        request,
+        current_user=_build_current_user(),
+    )
+
+    assert response.cost == 6
+    assert response.balance_remaining == 888
+    deduct_credits.assert_awaited_once()
+    assert len(monitor_calls) == 1
+    submission_context = monitor_calls[0]["submission_context"]
+    assert submission_context.task_type == "image_to_video"
+    assert submission_context.is_video_task is True
+    assert submission_context.billing_resolution == "preview"
+    assert submission_context.requested_duration == 5
