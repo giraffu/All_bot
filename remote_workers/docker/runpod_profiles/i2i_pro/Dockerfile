@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=yanwk/comfyui-boot:cu124-slim
+ARG BASE_IMAGE=yanwk/comfyui-boot:cu128-slim
 FROM ${BASE_IMAGE}
 
 ARG COMFYUI_REPO=https://github.com/comfyanonymous/ComfyUI.git
