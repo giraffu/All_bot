@@ -346,6 +346,7 @@ Worker 拉到任务后会先处理输入：
 关键点：
 - `TASK_TYPE_WORKFLOW_FILENAMES` 决定任务类型默认绑定哪个 workflow JSON
 - `TASK_TYPE_WORKFLOW_OVERRIDES` 可在单个 Worker 环境变量中覆盖某个 task type 的 workflow JSON，用于云测试/canary；未设置时仍走默认绑定，override 文件名必须留在 workflow 目录内
+- RunPod 使用 `remote_workers/` bundle；当 `i2i_pro` profile 需要同时接 `i2i_pro/t2i-pornmaster-turbo/face_swap` 时，`remote_workers/src/workflow_mapping_validation.py` 必须支持 `TASK_TYPE_WORKFLOW_OVERRIDES`，且 `remote_workers/comfy_agent/workflows/` 必须包含 `txt2img_from_i2i_pro.json` 与 `face_swap_v2.json`。只更新本地主 `workers/` 会让新建 RunPod Pod 继续读取旧默认 workflow。
 - 当前 `face_swap` 在测试 worker1、正式 worker1 和 RunPod `i2i_pro` profile 中通过 override 指向 `face_swap_v2.json`。v2 使用 `i2i_pro` 的 Flux2/edit 节点与模型，去掉旧换脸专用 LoRA / DifferentialDiffusion；`mappings.json` 继续只写入 `face_image -> 2`、`body_image -> 3`，未设置 override 的其它 worker 仍走旧 `face_swap.json`。
 - `mappings.json` 决定输入参数如何映射到 workflow 节点
 - `workflow_patcher.py` 负责把运行时参数打进具体 workflow

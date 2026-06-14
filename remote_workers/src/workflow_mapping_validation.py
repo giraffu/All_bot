@@ -1,6 +1,10 @@
 import json
+import os
 from pathlib import Path
 from typing import Any
+
+
+WORKFLOW_FILENAME_OVERRIDES_ENV = "TASK_TYPE_WORKFLOW_OVERRIDES"
 
 
 TASK_TYPE_WORKFLOW_FILENAMES = {
@@ -25,7 +29,47 @@ class WorkflowMappingValidationError(ValueError):
     pass
 
 
+def _load_workflow_filename_overrides() -> dict[str, str]:
+    raw_overrides = os.getenv(WORKFLOW_FILENAME_OVERRIDES_ENV, "").strip()
+    if not raw_overrides:
+        return {}
+
+    try:
+        parsed = json.loads(raw_overrides)
+    except json.JSONDecodeError as exc:
+        raise WorkflowMappingValidationError(
+            f"{WORKFLOW_FILENAME_OVERRIDES_ENV} must be a JSON object"
+        ) from exc
+
+    if not isinstance(parsed, dict):
+        raise WorkflowMappingValidationError(
+            f"{WORKFLOW_FILENAME_OVERRIDES_ENV} must be a JSON object"
+        )
+
+    overrides: dict[str, str] = {}
+    for task_type, filename in parsed.items():
+        if not isinstance(task_type, str) or not task_type.strip():
+            raise WorkflowMappingValidationError(
+                f"{WORKFLOW_FILENAME_OVERRIDES_ENV} keys must be non-empty strings"
+            )
+        if not isinstance(filename, str) or not filename.strip():
+            raise WorkflowMappingValidationError(
+                f"{WORKFLOW_FILENAME_OVERRIDES_ENV}.{task_type} must be a non-empty string"
+            )
+        workflow_path = Path(filename.strip())
+        if workflow_path.is_absolute() or ".." in workflow_path.parts:
+            raise WorkflowMappingValidationError(
+                f"{WORKFLOW_FILENAME_OVERRIDES_ENV}.{task_type} must stay under the workflow directory"
+            )
+        overrides[task_type.strip()] = filename.strip()
+
+    return overrides
+
+
 def resolve_workflow_filename(task_type: str) -> str:
+    overrides = _load_workflow_filename_overrides()
+    if task_type in overrides:
+        return overrides[task_type]
     return TASK_TYPE_WORKFLOW_FILENAMES.get(task_type, f"{task_type}.json")
 
 

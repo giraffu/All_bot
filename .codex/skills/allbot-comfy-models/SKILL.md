@@ -15,6 +15,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 
 - `workers/comfy_agent/workflows` 是唯一 workflow 资产事实源；`backend/workflows` 已退出，Central API 不再挂载、COPY 或启动校验 workflow 目录。
 - 新增或修改 workflow JSON、`mappings.json`、`workflow_patcher.py`、`workflow_task_patchers.py` 时，只更新 Worker 目录，并确认目标 Worker 的 `SUPPORTED_TASK_TYPES` 覆盖该 task type。
+- RunPod 镜像运行的是 `remote_workers/` bundle；新增 workflow override 或远端可接任务时，必须同步 `remote_workers/src/workflow_mapping_validation.py` 与 `remote_workers/comfy_agent/workflows/`，不能只改本地主服务器的 `workers/` / `src/` 副本。
 - Worker 启动时会基于 `workers/comfy_agent/workflows/mappings.json` 校验映射节点与输入名；Central API 只负责参数网关和队列入队，不再用 workflow 文件做启动门禁。
 - 重导 workflow 后必须复核硬编码节点 ID、`mappings.json` 节点输入名、`TASK_TYPE_WORKFLOW_FILENAMES` 绑定和 Worker `SUPPORTED_TASK_TYPES`，避免 Worker 校验通过但执行面读到旧文件。
 - `face_swap_v2.json` 是从 `i2i_pro` Flux2/edit 链路拆出的图片换脸替代模板；业务 task type 仍保持 `face_swap`，通过 Worker `TASK_TYPE_WORKFLOW_OVERRIDES` 指向 v2，不新增 Backend/Bot 任务类型，也不需要 Python 专属 patcher。`mappings.json` 必须保持 `face_image -> 2`、`body_image -> 3`；未设置 override 时默认绑定仍回到旧 `face_swap.json`。
