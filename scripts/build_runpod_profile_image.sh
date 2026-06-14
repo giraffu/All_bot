@@ -258,7 +258,7 @@ test -f "${comfyui_dir}/main.py"
 command -v ffmpeg >/dev/null
 command -v curl >/dev/null
 command -v git >/dev/null
-python3 -c '"'"'from pathlib import Path; root=Path("'"${comfyui_dir}"'"); checks={root/"nodes.py":("UNETLoader","CLIPLoader","VAELoader"),root/"comfy_extras"/"nodes_custom_sampler.py":("SamplerCustomAdvanced",),root/"comfy_extras"/"nodes_edit_model.py":("ReferenceLatent",),root/"comfy_extras"/"nodes_flux.py":("EmptyFlux2LatentImage","Flux2Scheduler")}; missing=[]; [missing.append(f"{path}:{name}") for path,names in checks.items() for name in names if name not in path.read_text(encoding="utf-8")]; raise SystemExit("missing ComfyUI i2i_pro node sources: "+",".join(missing)) if missing else None'"'"'
+python3 -c '"'"'from pathlib import Path; import sys; root=Path("'"${comfyui_dir}"'"); checks={root/"nodes.py":("UNETLoader","CLIPLoader","VAELoader"),root/"comfy_extras"/"nodes_custom_sampler.py":("SamplerCustomAdvanced",),root/"comfy_extras"/"nodes_edit_model.py":("ReferenceLatent",),root/"comfy_extras"/"nodes_flux.py":("EmptyFlux2LatentImage","Flux2Scheduler")}; missing=[]; [missing.append(f"{path}:{name}") for path,names in checks.items() for name in names if name not in path.read_text(encoding="utf-8")]; sys.exit("missing ComfyUI i2i_pro node sources: "+",".join(missing)) if missing else None'"'"'
 if find "${comfyui_dir}/models" -type f \( \
   -name "qwen_3_8b_fp8mixed.safetensors" -o \
   -name "flux2-vae.safetensors" -o \
