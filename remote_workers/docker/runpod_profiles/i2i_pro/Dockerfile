@@ -16,7 +16,7 @@ ENV PIP_NO_CACHE_DIR=1
 
 RUN set -euo pipefail; \
     if command -v apt-get >/dev/null 2>&1; then \
-      packages="ca-certificates curl ffmpeg git openssh-server"; \
+      packages="ca-certificates curl ffmpeg findutils git openssh-server"; \
       if ! python3 -m pip --version >/dev/null 2>&1; then \
         packages="${packages} python3-pip"; \
       fi; \
