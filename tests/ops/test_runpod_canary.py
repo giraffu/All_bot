@@ -11,6 +11,8 @@ from ops.gpu_pool_controller.runpod_canary import (
     EXPECTED_I2I_PRO_IMAGE_REF_PREFIX,
     EXPECTED_I2I_PRO_MODEL_MANIFEST_KEY,
     EXPECTED_I2I_PRO_MODEL_PREFIX,
+    RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES,
+    RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
     EXPECTED_MODEL_BUCKET,
     EXPECTED_MODEL_MANIFEST_KEY,
     EXPECTED_MODEL_PREFIX,
@@ -47,6 +49,18 @@ def _prod_manual_pod(pod_id: str = "prod-1") -> dict:
         "env": {
             "RUNPOD_TASK_TYPE": "img2img_lora",
             "AGENT_ID": "runpod_prod_img2img_manual_01",
+        },
+        "desiredStatus": "RUNNING",
+    }
+
+
+def _prod_i2i_pro_manual_pod(pod_id: str = "prod-i2i-1") -> dict:
+    return {
+        "id": pod_id,
+        "name": "allbot-runpod-prod-i2i-pro-manual-01",
+        "env": {
+            "RUNPOD_TASK_TYPE": "i2i_pro",
+            "AGENT_ID": "runpod_prod_i2i_pro_manual_01",
         },
         "desiredStatus": "RUNNING",
     }
@@ -107,7 +121,7 @@ class FakeRunPodProvider:
             )
         elif task_type == "i2i_pro":
             image_name = PUBLIC_I2I_PRO_GHCR_IMAGE
-            supported_task_types = "i2i_pro"
+            supported_task_types = ",".join(RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES)
             model_prefix = EXPECTED_I2I_PRO_MODEL_PREFIX
             model_manifest_key = EXPECTED_I2I_PRO_MODEL_MANIFEST_KEY
             gpu_type_ids = list(EXPECTED_I2I_PRO_GPU_TYPE_IDS)
@@ -144,6 +158,10 @@ class FakeRunPodProvider:
                 "RUNPOD_COMFY_KJNODES_ENABLED": "false",
             },
         }
+        if task_type == "i2i_pro":
+            body["env"]["TASK_TYPE_WORKFLOW_OVERRIDES"] = (
+                RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES
+            )
         if template_id:
             body["templateId"] = template_id
         else:
@@ -277,10 +295,13 @@ def test_runpod_canary_i2i_pro_dry_run_preflights_with_profile_specific_render()
     assert payload["ok"] is True
     assert payload["render"]["imageName"].startswith(EXPECTED_I2I_PRO_IMAGE_REF_PREFIX)
     assert payload["render"]["gpu_type_ids"] == list(EXPECTED_I2I_PRO_GPU_TYPE_IDS)
-    assert payload["render"]["supported_task_types"] == "i2i_pro"
+    assert payload["render"]["supported_task_types"] == ",".join(
+        RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES
+    )
+    assert payload["render"]["workflow_overrides"] == RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES
     assert payload["render"]["model_prefix"] == EXPECTED_I2I_PRO_MODEL_PREFIX
     assert payload["render"]["model_manifest_key"] == EXPECTED_I2I_PRO_MODEL_MANIFEST_KEY
-    assert "submit one i2i_pro Web task" in payload["would_execute"]
+    assert "submit i2i_pro, txt2img, and face_swap Web tasks serially" in payload["would_execute"]
     assert provider.create_calls == 0
     assert provider.delete_calls == 0
 
@@ -368,6 +389,29 @@ def test_runpod_canary_allows_existing_prod_manual_pods_for_guard_only():
     assert payload["cleanup"]["post_list_pods"]["effective_count"] == 0
     assert payload["cleanup"]["post_list_pods"]["ignored_prod_manual_count"] == 1
     assert payload["cleanup"]["post_reconcile"]["managed_count"] == 0
+
+
+def test_runpod_canary_allows_existing_prod_i2i_pro_manual_pod_for_guard_only():
+    provider = FakeRunPodProvider(pods=[_prod_i2i_pro_manual_pod()])
+    options = RunPodCanaryOptions(
+        task_type="i2i_pro",
+        execute=False,
+        quiet=True,
+        disable_workers=False,
+        allow_existing_prod_managed_pods=True,
+    )
+
+    payload = RunPodCanaryRunner(
+        provider,
+        options,
+        sleep_func=lambda _seconds: None,
+    ).run()
+
+    assert payload["ok"] is True
+    assert _phase_details(payload, "runpod_list_pods")["effective_count"] == 0
+    assert _phase_details(payload, "runpod_list_pods")[
+        "ignored_prod_manual_count"
+    ] == 1
 
 
 def test_runpod_canary_allow_existing_prod_pods_still_rejects_test_leftovers():
@@ -551,14 +595,29 @@ def test_i2i_pro_canary_task_case_submits_existing_task_type():
 
     cases = runner._task_cases("user-data-test/web_uploads/3/example.png")
 
-    assert [case["label"] for case in cases] == ["i2i_pro_single_image"]
+    assert [case["label"] for case in cases] == [
+        "i2i_pro_single_image",
+        "txt2img_from_i2i_pro",
+        "face_swap_v2_from_i2i_pro",
+    ]
     payload = cases[0]["payload"]
     assert payload["task_type"] == "i2i_pro"
+    assert cases[0]["expected_central_task_type"] == "i2i_pro"
     assert payload["inputs"]["image"] == "user-data-test/web_uploads/3/example.png"
     assert payload["inputs"]["images"] == ["user-data-test/web_uploads/3/example.png"]
     assert payload["inputs"]["seed"] == 20260614
     assert "lora_name" not in payload["inputs"]
     assert "wan22_model_profile" not in payload["inputs"]
+    txt2img_payload = cases[1]["payload"]
+    assert txt2img_payload["task_type"] == "txt2img"
+    assert cases[1]["expected_central_task_type"] == "t2i-pornmaster-turbo"
+    face_swap_payload = cases[2]["payload"]
+    assert face_swap_payload["task_type"] == "face_swap"
+    assert face_swap_payload["inputs"]["images"] == [
+        "user-data-test/web_uploads/3/example.png",
+        "user-data-test/web_uploads/3/example.png",
+    ]
+    assert cases[2]["expected_central_task_type"] == "face_swap"
 
 
 def test_wan22_canary_validates_last_frame_extra_output():
@@ -681,8 +740,12 @@ def test_i2i_pro_canary_disables_only_matching_cloud_test_non_runpod_workers():
         {"agent_id": "cloud_worker_test_01", "types": "img2img,img2img_lora"},
         {"agent_id": "cloud_worker_test_03", "types": "face_swap,i2i_pro"},
         {
+            "agent_id": "cloud_worker_test_04",
+            "types": "t2i-pornmaster-turbo",
+        },
+        {
             "agent_id": "runpod_test_i2i_pro_pod-1",
-            "types": "i2i_pro",
+            "types": ",".join(RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES),
             "provider": "runpod",
         },
         {"agent_id": "cloud_prod_worker_01", "types": "i2i_pro"},
@@ -695,8 +758,14 @@ def test_i2i_pro_canary_disables_only_matching_cloud_test_non_runpod_workers():
 
     controls = runner._disable_test_workers({})
 
-    assert [item["agent_id"] for item in controls] == ["cloud_worker_test_03"]
-    assert disabled == [("cloud_worker_test_03", "disabled")]
+    assert [item["agent_id"] for item in controls] == [
+        "cloud_worker_test_03",
+        "cloud_worker_test_04",
+    ]
+    assert disabled == [
+        ("cloud_worker_test_03", "disabled"),
+        ("cloud_worker_test_04", "disabled"),
+    ]
 
 
 def test_cli_parses_runpod_canary_command():

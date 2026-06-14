@@ -18,8 +18,11 @@ from .providers.runpod import (
     RUNPOD_I2I_PRO_GPU_TYPE_IDS,
     RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY,
     RUNPOD_I2I_PRO_MODEL_PREFIX,
+    RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES,
+    RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
     RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
     RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX,
+    RUNPOD_PROD_I2I_PRO_POD_NAME_PREFIX,
     RUNPOD_PROD_IMAGE_TO_VIDEO_POD_NAME_PREFIX,
     RUNPOD_PROD_POD_NAME_PREFIX,
     RUNPOD_PROD_WAN22_VIDEO_V2_POD_NAME_PREFIX,
@@ -67,6 +70,7 @@ PROD_MANUAL_POD_NAME_PREFIXES = (
     RUNPOD_PROD_POD_NAME_PREFIX,
     RUNPOD_PROD_IMAGE_TO_VIDEO_POD_NAME_PREFIX,
     RUNPOD_PROD_WAN22_VIDEO_V2_POD_NAME_PREFIX,
+    RUNPOD_PROD_I2I_PRO_POD_NAME_PREFIX,
 )
 
 
@@ -83,6 +87,7 @@ class RunPodCanaryProfileSpec:
     model_manifest_key: str
     allow_template_id: bool = False
     expected_gpu_type_ids: tuple[str, ...] = ()
+    workflow_overrides: str = ""
     task_summary: str = ""
     worker_disable_summary: str = ""
 
@@ -133,13 +138,17 @@ RUNPOD_CANARY_PROFILE_SPECS: dict[str, RunPodCanaryProfileSpec] = {
     "i2i_pro": RunPodCanaryProfileSpec(
         task_type="i2i_pro",
         image_ref_prefix=EXPECTED_I2I_PRO_IMAGE_REF_PREFIX,
-        supported_task_types=("i2i_pro",),
+        supported_task_types=RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES,
         model_prefix=EXPECTED_I2I_PRO_MODEL_PREFIX,
         model_manifest_key=EXPECTED_I2I_PRO_MODEL_MANIFEST_KEY,
         allow_template_id=True,
         expected_gpu_type_ids=EXPECTED_I2I_PRO_GPU_TYPE_IDS,
-        task_summary="submit one i2i_pro Web task",
-        worker_disable_summary="temporarily disable cloud-test workers supporting i2i_pro",
+        workflow_overrides=RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
+        task_summary="submit i2i_pro, txt2img, and face_swap Web tasks serially",
+        worker_disable_summary=(
+            "temporarily disable cloud-test workers supporting i2i_pro, "
+            "t2i-pornmaster-turbo, or face_swap"
+        ),
     ),
 }
 
@@ -737,11 +746,22 @@ class RunPodCanaryRunner:
             "label": label,
             "registry_task_id": task_id,
             "task_type": task_case["payload"]["task_type"],
+            "expected_central_task_type": task_case.get(
+                "expected_central_task_type",
+                task_case["payload"]["task_type"],
+            ),
             "lora_name": task_case.get("lora_name") or "",
             "central_status": final_status.get("status"),
             "central_task_type": final_status.get("task_type"),
             "pop_evidence": pop_evidence,
         }
+        if str(final_status.get("task_type") or "") != str(
+            task_result["expected_central_task_type"]
+        ):
+            raise RunPodCanaryError(
+                f"{label}: Central task_type is {final_status.get('task_type')}, "
+                f"expected {task_result['expected_central_task_type']}"
+            )
         if final_status.get("status") != "done":
             raise RunPodCanaryError(
                 f"{label}: Central terminal status is {final_status.get('status')}"
@@ -1153,12 +1173,39 @@ class RunPodCanaryRunner:
         return [
             {
                 "label": "i2i_pro_single_image",
+                "expected_central_task_type": "i2i_pro",
                 "payload": {
                     "task_type": "i2i_pro",
                     "inputs": {
                         "images": [image_object_key],
                         "image": image_object_key,
                         "seed": 20260614,
+                    },
+                    "prompt": self.options.prompt,
+                    "negative_prompt": self.options.negative_prompt,
+                    "priority": 0,
+                },
+            },
+            {
+                "label": "txt2img_from_i2i_pro",
+                "expected_central_task_type": "t2i-pornmaster-turbo",
+                "payload": {
+                    "task_type": "txt2img",
+                    "inputs": {"seed": 20260614},
+                    "prompt": self.options.prompt,
+                    "negative_prompt": self.options.negative_prompt,
+                    "priority": 0,
+                },
+            },
+            {
+                "label": "face_swap_v2_from_i2i_pro",
+                "expected_central_task_type": "face_swap",
+                "payload": {
+                    "task_type": "face_swap",
+                    "inputs": {
+                        "images": [image_object_key, image_object_key],
+                        "target_image": image_object_key,
+                        "face_image": image_object_key,
                     },
                     "prompt": self.options.prompt,
                     "negative_prompt": self.options.negative_prompt,
@@ -1207,6 +1254,10 @@ class RunPodCanaryRunner:
         for key, expected in expected_env.items():
             if str(env.get(key) or "") != expected:
                 failures.append(f"{key} must be {expected}")
+        if spec.workflow_overrides and str(env.get("TASK_TYPE_WORKFLOW_OVERRIDES") or "") != spec.workflow_overrides:
+            failures.append(
+                "TASK_TYPE_WORKFLOW_OVERRIDES must match the i2i_pro multitask override"
+            )
         for key in (
             "AGENT_SECRET_TOKEN",
             "MINIO_ACCESS_KEY",
@@ -1235,6 +1286,7 @@ class RunPodCanaryRunner:
             "model_bucket": env.get("RUNPOD_MODEL_BUCKET"),
             "model_prefix": env.get("RUNPOD_MODEL_PREFIX"),
             "model_manifest_key": env.get("RUNPOD_MODEL_MANIFEST_KEY"),
+            "workflow_overrides": env.get("TASK_TYPE_WORKFLOW_OVERRIDES"),
             "custom_nodes_enabled": env.get("RUNPOD_COMFY_CUSTOM_NODES_ENABLED"),
             "kjnodes_enabled": env.get("RUNPOD_COMFY_KJNODES_ENABLED"),
             "buckets": {

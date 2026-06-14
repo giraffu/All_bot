@@ -17,6 +17,10 @@ from .providers.runpod import (
     RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF,
     RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
     RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX,
+    RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY,
+    RUNPOD_I2I_PRO_MODEL_PREFIX,
+    RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES,
+    RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
     RUNPOD_PROD_AGENT_ID,
     RUNPOD_PROD_BUCKET,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
@@ -47,6 +51,10 @@ PROD_MODEL_MANIFEST_KEY = "img2img_lora/2026-06-10/manifest.json"
 PROD_DEFAULT_PROFILE = "img2img"
 PROD_IMAGE_TO_VIDEO_TASK_TYPE = "image_to_video"
 PROD_WAN22_VIDEO_V2_TASK_TYPE = "wan22_video_v2"
+PROD_I2I_PRO_TASK_TYPE = "i2i_pro"
+PROD_TXT2IMG_PUBLIC_TASK_TYPE = "txt2img"
+PROD_TXT2IMG_EXECUTION_TASK_TYPE = "t2i-pornmaster-turbo"
+PROD_FACE_SWAP_TASK_TYPE = "face_swap"
 HEALTHY_WORKER_STATUSES = {"idle", "running"}
 TERMINAL_TASK_STATUSES = {"done", "error", "cancelled"}
 
@@ -463,12 +471,17 @@ class RunPodProdWorkerRunner:
 
     def _run_canary(self, summary: dict[str, Any]) -> None:
         if not self.options.execute:
+            task_summary = (
+                "submit prod Web i2i_pro, txt2img, and face_swap tasks serially"
+                if self.options.profile == "i2i_pro"
+                else f"submit one prod Web {self.options.task_type} task as internal user_id=3"
+            )
             summary["ok"] = True
             summary["would_execute"] = [
                 f"verify {self.options.agent_id} heartbeat in prod Central",
                 f"temporarily set {self.options.agent_id} control to enabled",
                 "upload or reuse one non-sensitive PNG in user-data-prod",
-                f"submit one prod Web {self.options.task_type} task as internal user_id=3",
+                task_summary,
                 "download the result to runpod_canary_results/prod/<date>/",
                 f"restore {self.options.agent_id} control to disabled",
             ]
@@ -482,14 +495,21 @@ class RunPodProdWorkerRunner:
         try:
             image_object_key = self._resolve_canary_image(summary)
             if self.options.profile == "image_to_video":
-                task_result = self._run_image_to_video_task(image_object_key, summary)
+                task_results = [self._run_image_to_video_task(image_object_key, summary)]
             elif self.options.profile == "wan22_video_v2":
-                task_result = self._run_wan22_video_v2_task(image_object_key, summary)
+                task_results = [self._run_wan22_video_v2_task(image_object_key, summary)]
+            elif self.options.profile == "i2i_pro":
+                task_results = [
+                    self._run_i2i_pro_task_case(task_case, summary)
+                    for task_case in self._i2i_pro_task_cases(image_object_key)
+                ]
             else:
-                task_result = self._run_img2img_task(image_object_key, summary)
-            summary["tasks"].append(task_result)
-            summary["runpod_task_verified"] = (
-                (task_result.get("pop_evidence") or {}).get("agent_id") == self.options.agent_id
+                task_results = [self._run_img2img_task(image_object_key, summary)]
+            summary["tasks"].extend(task_results)
+            summary["runpod_task_verified"] = all(
+                (task_result.get("pop_evidence") or {}).get("agent_id")
+                == self.options.agent_id
+                for task_result in task_results
             )
             summary["ok"] = True
         finally:
@@ -988,6 +1008,11 @@ class RunPodProdWorkerRunner:
         for key, expected in expected_env.items():
             if str(env.get(key) or "") != expected:
                 failures.append(f"{key} must be {expected}")
+        workflow_overrides = str(spec.get("workflow_overrides") or "")
+        if workflow_overrides and str(env.get("TASK_TYPE_WORKFLOW_OVERRIDES") or "") != workflow_overrides:
+            failures.append(
+                "TASK_TYPE_WORKFLOW_OVERRIDES must match the verified profile override"
+            )
         if list(body.get("gpuTypeIds") or []) != list(target_settings.prod_gpu_type_ids):
             failures.append(
                 "gpuTypeIds must be "
@@ -1028,6 +1053,7 @@ class RunPodProdWorkerRunner:
             "model_bucket": env.get("RUNPOD_MODEL_BUCKET"),
             "model_prefix": env.get("RUNPOD_MODEL_PREFIX"),
             "model_manifest_key": env.get("RUNPOD_MODEL_MANIFEST_KEY"),
+            "workflow_overrides": env.get("TASK_TYPE_WORKFLOW_OVERRIDES"),
             "custom_nodes_enabled": env.get("RUNPOD_COMFY_CUSTOM_NODES_ENABLED"),
             "kjnodes_enabled": env.get("RUNPOD_COMFY_KJNODES_ENABLED"),
             "sshd_enabled": env.get("RUNPOD_START_SSHD"),
@@ -1257,6 +1283,103 @@ class RunPodProdWorkerRunner:
         )
         self._phase(summary, "upload_prod_test_image", "ok", {"object_key": object_key})
         return object_key
+
+    def _i2i_pro_task_cases(self, image_object_key: str) -> list[dict[str, Any]]:
+        return [
+            {
+                "label": "prod_i2i_pro_canary",
+                "expected_central_task_type": PROD_I2I_PRO_TASK_TYPE,
+                "payload": {
+                    "task_type": PROD_I2I_PRO_TASK_TYPE,
+                    "inputs": {
+                        "images": [image_object_key],
+                        "image": image_object_key,
+                        "seed": 20260614,
+                    },
+                    "prompt": self.options.prompt,
+                    "negative_prompt": self.options.negative_prompt,
+                    "priority": 0,
+                },
+            },
+            {
+                "label": "prod_txt2img_canary",
+                "expected_central_task_type": PROD_TXT2IMG_EXECUTION_TASK_TYPE,
+                "payload": {
+                    "task_type": PROD_TXT2IMG_PUBLIC_TASK_TYPE,
+                    "inputs": {"seed": 20260614},
+                    "prompt": self.options.prompt,
+                    "negative_prompt": self.options.negative_prompt,
+                    "priority": 0,
+                },
+            },
+            {
+                "label": "prod_face_swap_canary",
+                "expected_central_task_type": PROD_FACE_SWAP_TASK_TYPE,
+                "payload": {
+                    "task_type": PROD_FACE_SWAP_TASK_TYPE,
+                    "inputs": {
+                        "images": [image_object_key, image_object_key],
+                        "target_image": image_object_key,
+                        "face_image": image_object_key,
+                    },
+                    "prompt": self.options.prompt,
+                    "negative_prompt": self.options.negative_prompt,
+                    "priority": 0,
+                },
+            },
+        ]
+
+    def _run_i2i_pro_task_case(
+        self,
+        task_case: dict[str, Any],
+        summary: dict[str, Any],
+    ) -> dict[str, Any]:
+        label = str(task_case["label"])
+        expected_task_type = str(task_case["expected_central_task_type"])
+        self._phase(summary, f"task_{label}", "running")
+        submit_payload = self._http_json(
+            "POST",
+            _join_url(self.options.web_api_url, "tasks", "generate"),
+            json_body=task_case["payload"],
+            headers=self._web_auth_headers(),
+        )
+        task_id = str(submit_payload.get("task_id") or "")
+        if not task_id:
+            raise RunPodProdWorkerError(f"{label}: missing task_id in Web response")
+        final_status, pop_evidence = self._wait_task_done(task_id)
+        task_result: dict[str, Any] = {
+            "label": label,
+            "registry_task_id": task_id,
+            "task_type": task_case["payload"]["task_type"],
+            "expected_central_task_type": expected_task_type,
+            "central_status": final_status.get("status"),
+            "central_task_type": final_status.get("task_type"),
+            "pop_evidence": pop_evidence,
+        }
+        if str(final_status.get("task_type") or "") != expected_task_type:
+            raise RunPodProdWorkerError(
+                f"{label}: Central task_type is {final_status.get('task_type')}, "
+                f"expected {expected_task_type}"
+            )
+        if final_status.get("status") != "done":
+            raise RunPodProdWorkerError(
+                f"{label}: Central terminal status is {final_status.get('status')}"
+            )
+        result_payload = self._wait_web_result(task_id)
+        result_url = str(result_payload.get("result_url") or "")
+        task_result["web_result_status"] = result_payload.get("status")
+        task_result["result_path"] = result_url_path(result_url)
+        if result_payload.get("status") != "success" or not result_url:
+            raise RunPodProdWorkerError(f"{label}: Web result did not become success")
+        task_result.update(
+            self._download_result(
+                task_id=task_id,
+                result_url=result_url,
+                artifact_prefix=label,
+            )
+        )
+        self._phase(summary, f"task_{label}", "ok", task_result)
+        return task_result
 
     def _run_img2img_task(
         self,
@@ -1513,12 +1636,18 @@ class RunPodProdWorkerRunner:
             + json.dumps(redact_payload(last_result), ensure_ascii=False)
         )
 
-    def _download_result(self, *, task_id: str, result_url: str) -> dict[str, str]:
+    def _download_result(
+        self,
+        *,
+        task_id: str,
+        result_url: str,
+        artifact_prefix: str = "prod_img2img_canary",
+    ) -> dict[str, str]:
         download_dir = self.options.download_results_dir
         download_dir.mkdir(parents=True, exist_ok=True)
         parsed = urllib.parse.urlsplit(result_url)
         suffix = Path(parsed.path).suffix or ".bin"
-        target = download_dir / f"prod_img2img_canary_{task_id}{suffix}"
+        target = download_dir / f"{artifact_prefix}_{task_id}{suffix}"
         raw, method = self._fetch_result_bytes(result_url)
         target.write_bytes(raw)
         return {"downloaded_file": str(target), "download_method": method}
@@ -1878,6 +2007,8 @@ def _prod_task_type_for_profile(profile: str) -> str:
         return PROD_IMAGE_TO_VIDEO_TASK_TYPE
     if profile_key == "wan22_video_v2":
         return PROD_WAN22_VIDEO_V2_TASK_TYPE
+    if profile_key == "i2i_pro":
+        return PROD_I2I_PRO_TASK_TYPE
     return PROD_TASK_TYPE
 
 
@@ -1898,6 +2029,7 @@ def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
             ),
             "image_exact": "",
             "image_prefix": RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX,
+            "workflow_overrides": "",
         }
     if profile_key == "wan22_video_v2":
         return {
@@ -1914,6 +2046,24 @@ def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
             ),
             "image_exact": "",
             "image_prefix": RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX,
+            "workflow_overrides": "",
+        }
+    if profile_key == "i2i_pro":
+        return {
+            "runpod_task_type": PROD_I2I_PRO_TASK_TYPE,
+            "runtime_profile": "i2i_pro",
+            "supported_task_types": RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES,
+            "model_prefix": (
+                settings.model_prefix_i2i_pro
+                or RUNPOD_I2I_PRO_MODEL_PREFIX
+            ),
+            "model_manifest_key": (
+                settings.model_manifest_key_i2i_pro
+                or RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY
+            ),
+            "image_exact": "",
+            "image_prefix": "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:",
+            "workflow_overrides": RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
         }
     return {
         "runpod_task_type": "img2img_lora",
@@ -1923,6 +2073,7 @@ def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
         "model_manifest_key": PROD_MODEL_MANIFEST_KEY,
         "image_exact": RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
         "image_prefix": "",
+        "workflow_overrides": "",
     }
 
 
@@ -2096,7 +2247,7 @@ def _prod_manual_slot_from_pod_name(
 
 def _candidate_prod_profiles(profile: str | None) -> tuple[str, ...]:
     if profile is None:
-        return ("img2img", "image_to_video", "wan22_video_v2")
+        return ("img2img", "image_to_video", "wan22_video_v2", "i2i_pro")
     return (normalize_prod_worker_profile(profile),)
 
 

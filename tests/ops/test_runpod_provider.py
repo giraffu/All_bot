@@ -6,6 +6,8 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_I2I_PRO_GPU_TYPE_IDS,
     RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY,
     RUNPOD_I2I_PRO_MODEL_PREFIX,
+    RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES,
+    RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
     RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF,
     RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF,
     RUNPOD_PROD_AGENT_ID,
@@ -633,7 +635,8 @@ def test_render_create_i2i_pro_cloud_test_profile_uses_dedicated_manifest_and_di
     assert env["RUNPOD_ENVIRONMENT"] == "cloud-test"
     assert env["RUNPOD_TASK_TYPE"] == "i2i_pro"
     assert env["AGENT_ID_PREFIX"] == "runpod_test_i2i_pro"
-    assert env["SUPPORTED_TASK_TYPES"] == "i2i_pro"
+    assert env["SUPPORTED_TASK_TYPES"] == ",".join(RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES)
+    assert env["TASK_TYPE_WORKFLOW_OVERRIDES"] == RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES
     assert env["POOL_RUNTIME_PROFILE"] == "i2i_pro"
     assert env["RUNPOD_MODEL_BUCKET"] == "allbot-model-cache"
     assert env["RUNPOD_MODEL_PREFIX"] == RUNPOD_I2I_PRO_MODEL_PREFIX
@@ -708,6 +711,10 @@ def test_runpod_settings_from_env_supports_i2i_pro_profile_keys(
         "RUNPOD_MODEL_MANIFEST_KEY_I2I_PRO",
         RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY,
     )
+    monkeypatch.setenv(
+        "RUNPOD_TASK_TYPE_WORKFLOW_OVERRIDES_I2I_PRO",
+        RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
+    )
 
     settings = RunPodSettings.from_env()
 
@@ -723,6 +730,10 @@ def test_runpod_settings_from_env_supports_i2i_pro_profile_keys(
     assert settings.projected_cost_per_hr_i2i_pro == 0.77
     assert settings.model_prefix_i2i_pro == RUNPOD_I2I_PRO_MODEL_PREFIX
     assert settings.model_manifest_key_i2i_pro == RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY
+    assert (
+        settings.task_type_workflow_overrides_i2i_pro
+        == RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES
+    )
 
 
 def test_runpod_settings_from_env_injects_public_key_file(
@@ -947,6 +958,59 @@ def test_render_create_cloud_prod_image_to_video_uses_prod_refs_and_split_manife
     assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
     assert env["RUNPOD_START_SSHD"] == "false"
     assert env["RUNPOD_KEEPALIVE_ON_BOOTSTRAP_FAILURE"] == "false"
+    assert env["AGENT_SECRET_TOKEN"] == RUNPOD_PROD_AGENT_SECRET_TOKEN_REF
+    assert env["MINIO_ACCESS_KEY"] == RUNPOD_PROD_R2_ACCESS_KEY_REF
+    assert env["MINIO_SECRET_KEY"] == RUNPOD_PROD_R2_SECRET_KEY_REF
+    assert env["RUNPOD_MODEL_ACCESS_KEY"] == RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF
+    assert env["RUNPOD_MODEL_SECRET_KEY"] == RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF
+
+
+def test_render_create_cloud_prod_i2i_pro_uses_prod_refs_and_multitask_manifest():
+    image_ref = (
+        "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:"
+        "20260614-i2ipro-b75c6a9-cu128-min5-ssh"
+    )
+    agent_id = prod_agent_id_from_slot("01", profile="i2i_pro")
+    provider = RunPodProvider(
+        _settings(
+            image_name_i2i_pro=image_ref,
+            prod_agent_id=agent_id,
+            model_bucket="allbot-model-cache",
+            model_prefix_i2i_pro=RUNPOD_I2I_PRO_MODEL_PREFIX,
+            model_manifest_key_i2i_pro=RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY,
+            container_disk_gb=80,
+        )
+    )
+
+    payload = provider.render_create_pod_request(
+        task_type="i2i_pro",
+        environment="cloud-prod",
+        redact=False,
+    )
+    body = payload["json"]
+    env = body["env"]
+
+    assert "templateId" not in body
+    assert body["name"] == "allbot-runpod-prod-i2i-pro-manual-01"
+    assert body["imageName"] == image_ref
+    assert body["gpuTypeIds"] == list(RUNPOD_PROD_GPU_TYPE_IDS)
+    assert body["containerDiskInGb"] == RUNPOD_I2I_PRO_CONTAINER_DISK_GB
+    assert env["ENVIRONMENT"] == "prod"
+    assert env["RUNPOD_ENVIRONMENT"] == "cloud-prod"
+    assert env["RUNPOD_TASK_TYPE"] == "i2i_pro"
+    assert env["AGENT_ID"] == "runpod_prod_i2i_pro_manual_01"
+    assert env["AGENT_ID_PREFIX"] == "runpod_prod_i2i_pro_manual_01"
+    assert env["SUPPORTED_TASK_TYPES"] == ",".join(RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES)
+    assert env["TASK_TYPE_WORKFLOW_OVERRIDES"] == RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES
+    assert env["CENTRAL_API_URL"] == RUNPOD_PROD_WORKER_CENTRAL_URL
+    assert env["POOL_RUNTIME_PROFILE"] == "i2i_pro"
+    assert env["MINIO_RESULT_BUCKET"] == RUNPOD_PROD_BUCKET
+    assert env["RUNPOD_MODEL_BUCKET"] == "allbot-model-cache"
+    assert env["RUNPOD_MODEL_PREFIX"] == RUNPOD_I2I_PRO_MODEL_PREFIX
+    assert env["RUNPOD_MODEL_MANIFEST_KEY"] == RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY
+    assert env["RUNPOD_COMFY_CUSTOM_NODES_ENABLED"] == "false"
+    assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
+    assert env["RUNPOD_START_SSHD"] == "false"
     assert env["AGENT_SECRET_TOKEN"] == RUNPOD_PROD_AGENT_SECRET_TOKEN_REF
     assert env["MINIO_ACCESS_KEY"] == RUNPOD_PROD_R2_ACCESS_KEY_REF
     assert env["MINIO_SECRET_KEY"] == RUNPOD_PROD_R2_SECRET_KEY_REF

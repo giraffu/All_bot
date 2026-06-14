@@ -287,6 +287,35 @@ def test_model_importer_i2i_pro_baseline_resolves_six_workflow_models():
     assert sum(item.entry.size_bytes for item in plan.files) == 38769838190
 
 
+def test_i2i_pro_multitask_workflows_stay_within_baseline_models():
+    workflow_dir = Path("workers/comfy_agent/workflows")
+    refs = []
+    refs.extend(extract_workflow_references(workflow_dir / "i2i_pro.json", "i2i_pro"))
+    refs.extend(
+        extract_workflow_references(
+            workflow_dir / "txt2img_from_i2i_pro.json",
+            "t2i-pornmaster-turbo",
+        )
+    )
+    refs.extend(
+        extract_workflow_references(
+            workflow_dir / "face_swap_v2.json",
+            "face_swap",
+        )
+    )
+    values = {ref.value for ref in refs}
+
+    assert values <= {
+        "qwen_3_8b_fp8mixed.safetensors",
+        "flux2-vae.safetensors",
+        "DarkBeast-Klein9b-V2-BFS-FP8-ComfyUI.safetensors",
+        "z_image/qwen_3_4b.safetensors",
+        "z_image/ae.safetensors",
+        "DarkBeastZ6-BlitZ-BF16-ComfyUI.safetensors",
+    }
+    assert "pornmasterZImage_turboV2.safetensors" not in values
+
+
 def test_t2i_workflow_uses_existing_z_image_unet_name():
     path = Path(
         "workers/comfy_agent/workflows/"

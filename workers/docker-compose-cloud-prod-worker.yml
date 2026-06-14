@@ -72,7 +72,7 @@ services:
       POOL_IMAGE_REF: 192.168.1.115:5000/allbot/comfy-cu130-face-i2i:baseline
       POOL_MODEL_BUNDLE_VERSIONS: '{"face_i2i_t2i_baseline":"2026-06-10","video_basic_baseline":"2026-06-10"}'
       SUPPORTED_TASK_TYPES: face_swap,i2i_pro,i2i_draw,face_video,video_edit,image_to_video,t2i-pornmaster-turbo
-      TASK_TYPE_WORKFLOW_OVERRIDES: '{"t2i-pornmaster-turbo":"txt2img_from_i2i_pro.json"}'
+      TASK_TYPE_WORKFLOW_OVERRIDES: '{"face_swap":"face_swap_v2.json","t2i-pornmaster-turbo":"txt2img_from_i2i_pro.json"}'
       COMFY_API_URL: http://192.168.1.226:8188
       COMFY_WS_URL: ws://192.168.1.226:8188/ws
       COMFY_INPUT_DIR: /tmp/input

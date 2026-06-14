@@ -7,6 +7,10 @@ from ops.gpu_pool_controller.cli import build_parser
 from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
     RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX,
+    RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY,
+    RUNPOD_I2I_PRO_MODEL_PREFIX,
+    RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES,
+    RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
     RUNPOD_PROD_AGENT_ID,
     RUNPOD_PROD_GPU_TYPE_IDS,
     RUNPOD_PROD_SUPPORTED_TASK_TYPES,
@@ -18,6 +22,11 @@ from ops.gpu_pool_controller.providers.runpod import (
     RunPodSettings,
     prod_agent_id_from_slot,
     prod_pod_name_from_agent_id,
+)
+
+PUBLIC_I2I_PRO_GHCR_IMAGE = (
+    "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:"
+    "20260614-i2ipro-b75c6a9-cu128-min5-ssh"
 )
 from ops.gpu_pool_controller.runpod_prod_worker import (
     RunPodProdWorkerOptions,
@@ -70,6 +79,9 @@ class FakeRunPodProvider:
         settings = replace(
             self.settings,
             image_name_img2img_lora=RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
+            image_name_i2i_pro=(
+                self.settings.image_name_i2i_pro or PUBLIC_I2I_PRO_GHCR_IMAGE
+            ),
             minio_endpoint="https://r2.example.test",
         )
         return RunPodProvider(settings).render_create_pod_request(
@@ -83,6 +95,7 @@ class FakeRunPodProvider:
         runpod_task_type = {
             "image_to_video": "image_to_video",
             "wan22_video_v2": "wan22_video_v2",
+            "i2i_pro": "i2i_pro",
         }.get(task_type, "img2img_lora")
         pod = {
             "id": f"pod-prod-{slot}",
@@ -159,6 +172,7 @@ def _settings(**overrides) -> RunPodSettings:
         "max_pods_total": 1,
         "max_pods_per_type": 1,
         "image_name_img2img_lora": RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
+        "image_name_i2i_pro": PUBLIC_I2I_PRO_GHCR_IMAGE,
         "minio_endpoint": "https://r2.example.test",
     }
     values.update(overrides)
@@ -179,6 +193,7 @@ def _prod_pod(
     runpod_task_type = {
         "image_to_video": "image_to_video",
         "wan22_video_v2": "wan22_video_v2",
+        "i2i_pro": "i2i_pro",
     }.get(profile, "img2img_lora")
     return {
         "id": f"pod-prod-{slot}",
@@ -212,10 +227,12 @@ def _worker(
     types = {
         "image_to_video": "image_to_video",
         "wan22_video_v2": "wan22_video_v2",
+        "i2i_pro": ",".join(RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES),
     }.get(profile, "img2img,img2img_lora")
     current_task_type = {
         "image_to_video": "image_to_video",
         "wan22_video_v2": "wan22_video_v2",
+        "i2i_pro": "i2i_pro",
     }.get(profile, "img2img_lora")
     return {
         "agent_id": agent_id,
@@ -334,6 +351,47 @@ def test_prod_worker_render_image_to_video_uses_prod_profile_defaults():
     assert payload["render"]["pool_runtime_profile"] == "image_to_video"
     assert payload["render"]["model_prefix"] == RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX
     assert payload["render"]["model_manifest_key"] == RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY
+    assert payload["render"]["buckets"]["result"] == "user-data-prod"
+    assert payload["render"]["custom_nodes_enabled"] == "false"
+    assert payload["render"]["sshd_enabled"] == "false"
+    assert provider.create_calls == 0
+    assert provider.delete_calls == 0
+
+
+def test_prod_worker_render_i2i_pro_uses_prod_profile_defaults():
+    agent_id = prod_agent_id_from_slot("01", profile="i2i_pro")
+    provider = FakeRunPodProvider(
+        _settings(
+            prod_agent_id=agent_id,
+            image_name_i2i_pro=PUBLIC_I2I_PRO_GHCR_IMAGE,
+            model_bucket="allbot-model-cache",
+            model_prefix_i2i_pro=RUNPOD_I2I_PRO_MODEL_PREFIX,
+            model_manifest_key_i2i_pro=RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY,
+        )
+    )
+    options = RunPodProdWorkerOptions(
+        action="render",
+        profile="i2i_pro",
+        task_type="i2i_pro",
+        agent_id=agent_id,
+        quiet=True,
+    )
+
+    payload = RunPodProdWorkerRunner(provider, options).run()
+
+    assert payload["ok"] is True
+    assert payload["profile"] == "i2i_pro"
+    assert payload["render"]["pod_name"] == "allbot-runpod-prod-i2i-pro-manual-01"
+    assert payload["render"]["imageName"] == PUBLIC_I2I_PRO_GHCR_IMAGE
+    assert payload["render"]["agent_id"] == "runpod_prod_i2i_pro_manual_01"
+    assert payload["render"]["gpu_type_ids"] == list(RUNPOD_PROD_GPU_TYPE_IDS)
+    assert payload["render"]["supported_task_types"] == ",".join(
+        RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES
+    )
+    assert payload["render"]["pool_runtime_profile"] == "i2i_pro"
+    assert payload["render"]["model_prefix"] == RUNPOD_I2I_PRO_MODEL_PREFIX
+    assert payload["render"]["model_manifest_key"] == RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY
+    assert payload["render"]["workflow_overrides"] == RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES
     assert payload["render"]["buckets"]["result"] == "user-data-prod"
     assert payload["render"]["custom_nodes_enabled"] == "false"
     assert payload["render"]["sshd_enabled"] == "false"
@@ -781,6 +839,27 @@ def test_cli_parses_runpod_prod_worker_image_to_video_profile_command():
     assert args.runpod_command == "prod-worker"
     assert args.prod_worker_command == "render"
     assert args.profile == "image_to_video"
+    assert args.slot == "01"
+    assert args.quiet is True
+
+
+def test_cli_parses_runpod_prod_worker_i2i_pro_profile_command():
+    args = build_parser().parse_args(
+        [
+            "runpod",
+            "prod-worker",
+            "render",
+            "--profile",
+            "i2i_pro",
+            "--slot",
+            "01",
+            "--quiet",
+        ]
+    )
+
+    assert args.runpod_command == "prod-worker"
+    assert args.prod_worker_command == "render"
+    assert args.profile == "i2i_pro"
     assert args.slot == "01"
     assert args.quiet is True
 

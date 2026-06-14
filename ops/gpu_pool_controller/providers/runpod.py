@@ -44,6 +44,8 @@ RUNPOD_PROD_IMAGE_TO_VIDEO_AGENT_ID_PREFIX = (
 RUNPOD_PROD_IMAGE_TO_VIDEO_POD_NAME_PREFIX = (
     "allbot-runpod-prod-image-to-video-manual-"
 )
+RUNPOD_PROD_I2I_PRO_AGENT_ID_PREFIX = "runpod_prod_i2i_pro_manual_"
+RUNPOD_PROD_I2I_PRO_POD_NAME_PREFIX = "allbot-runpod-prod-i2i-pro-manual-"
 RUNPOD_PROD_DEFAULT_MAX_MANUAL_SLOTS = 2
 RUNPOD_PROD_MAX_MANUAL_SLOTS = RUNPOD_PROD_DEFAULT_MAX_MANUAL_SLOTS
 RUNPOD_PROD_AGENT_ID = "runpod_prod_img2img_manual_01"
@@ -81,6 +83,18 @@ RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY = (
     "i2i_pro/2026-06-14-test/manifest.json"
 )
 RUNPOD_I2I_PRO_CONTAINER_DISK_GB = 120
+RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES = (
+    "i2i_pro",
+    "t2i-pornmaster-turbo",
+    "face_swap",
+)
+RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES = json.dumps(
+    {
+        "t2i-pornmaster-turbo": "txt2img_from_i2i_pro.json",
+        "face_swap": "face_swap_v2.json",
+    },
+    separators=(",", ":"),
+)
 SENSITIVE_KEY_MARKERS = (
     "TOKEN",
     "SECRET",
@@ -169,7 +183,7 @@ RUNPOD_TASK_PROFILES: dict[str, RunPodTaskProfile] = {
     ),
     "i2i_pro": RunPodTaskProfile(
         task_type="i2i_pro",
-        supported_task_types=("i2i_pro",),
+        supported_task_types=RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES,
         runtime_profile="i2i_pro",
         agent_id_prefix="runpod_test_i2i_pro",
         template_env_key="RUNPOD_TEMPLATE_ID_I2I_PRO",
@@ -259,8 +273,11 @@ def normalize_prod_worker_profile(profile: str | None) -> str:
         return "image_to_video"
     if value == "wan22_video_v2":
         return "wan22_video_v2"
+    if value == "i2i_pro":
+        return "i2i_pro"
     raise ValueError(
-        "prod RunPod profile must be img2img, image_to_video, or wan22_video_v2"
+        "prod RunPod profile must be img2img, image_to_video, "
+        "wan22_video_v2, or i2i_pro"
     )
 
 
@@ -272,8 +289,11 @@ def prod_worker_profile_for_task_type(task_type: str) -> str:
         return "image_to_video"
     if value == "wan22_video_v2":
         return "wan22_video_v2"
+    if value in RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES:
+        return "i2i_pro"
     raise ValueError(
-        "prod RunPod worker only supports img2img, image_to_video, or wan22_video_v2"
+        "prod RunPod worker only supports img2img, image_to_video, "
+        "wan22_video_v2, or i2i_pro"
     )
 
 
@@ -289,11 +309,14 @@ def _prod_profile_from_agent_id(agent_id: str) -> str:
         return "image_to_video"
     if raw.startswith(RUNPOD_PROD_WAN22_VIDEO_V2_AGENT_ID_PREFIX):
         return "wan22_video_v2"
+    if raw.startswith(RUNPOD_PROD_I2I_PRO_AGENT_ID_PREFIX):
+        return "i2i_pro"
     raise ValueError(
         "prod RunPod agent_id must start with one of "
         f"{RUNPOD_PROD_AGENT_ID_PREFIX}, "
         f"{RUNPOD_PROD_IMAGE_TO_VIDEO_AGENT_ID_PREFIX}, "
-        f"{RUNPOD_PROD_WAN22_VIDEO_V2_AGENT_ID_PREFIX}"
+        f"{RUNPOD_PROD_WAN22_VIDEO_V2_AGENT_ID_PREFIX}, "
+        f"{RUNPOD_PROD_I2I_PRO_AGENT_ID_PREFIX}"
     )
 
 
@@ -303,6 +326,8 @@ def _prod_agent_id_prefix_for(profile: str | None) -> str:
         return RUNPOD_PROD_IMAGE_TO_VIDEO_AGENT_ID_PREFIX
     if profile_key == "wan22_video_v2":
         return RUNPOD_PROD_WAN22_VIDEO_V2_AGENT_ID_PREFIX
+    if profile_key == "i2i_pro":
+        return RUNPOD_PROD_I2I_PRO_AGENT_ID_PREFIX
     return RUNPOD_PROD_AGENT_ID_PREFIX
 
 
@@ -312,6 +337,8 @@ def _prod_pod_name_prefix_for(profile: str | None) -> str:
         return RUNPOD_PROD_IMAGE_TO_VIDEO_POD_NAME_PREFIX
     if profile_key == "wan22_video_v2":
         return RUNPOD_PROD_WAN22_VIDEO_V2_POD_NAME_PREFIX
+    if profile_key == "i2i_pro":
+        return RUNPOD_PROD_I2I_PRO_POD_NAME_PREFIX
     return RUNPOD_PROD_POD_NAME_PREFIX
 
 
@@ -519,6 +546,7 @@ class RunPodSettings:
     model_manifest_key_wan22_video_v2: str = RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY
     model_prefix_i2i_pro: str = RUNPOD_I2I_PRO_MODEL_PREFIX
     model_manifest_key_i2i_pro: str = RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY
+    task_type_workflow_overrides_i2i_pro: str = RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES
     model_endpoint: str = ""
     model_secure: bool = True
     model_access_key_ref: str = RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF
@@ -821,6 +849,10 @@ class RunPodSettings:
             model_manifest_key_i2i_pro=os.getenv(
                 "RUNPOD_MODEL_MANIFEST_KEY_I2I_PRO",
                 RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY,
+            ),
+            task_type_workflow_overrides_i2i_pro=os.getenv(
+                "RUNPOD_TASK_TYPE_WORKFLOW_OVERRIDES_I2I_PRO",
+                RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
             ),
             model_endpoint=os.getenv("RUNPOD_MODEL_ENDPOINT", ""),
             model_secure=_bool_env(os.getenv("RUNPOD_MODEL_SECURE"), default=True),
@@ -1285,10 +1317,12 @@ class RunPodProvider:
             "img2img_lora",
             "image_to_video",
             "wan22_video_v2",
+            "i2i_pro",
         }:
             raise ValueError(
                 "RunPodProvider v0 cloud-prod only supports "
-                "img2img/img2img_lora, image_to_video, and wan22_video_v2 profiles"
+                "img2img/img2img_lora, image_to_video, wan22_video_v2, "
+                "and i2i_pro profiles"
             )
         gpu_type_ids = (
             self.settings.prod_gpu_type_ids
@@ -1304,6 +1338,7 @@ class RunPodProvider:
         if environment == "cloud-prod" and profile.task_type in {
             "image_to_video",
             "wan22_video_v2",
+            "i2i_pro",
         } and not image_name:
             raise ValueError(
                 f"{profile.image_env_key} is required for cloud-prod"
@@ -1349,7 +1384,7 @@ class RunPodProvider:
         profile: RunPodTaskProfile,
         environment: str,
     ) -> int:
-        if profile.task_type == "i2i_pro" and environment == "cloud-test":
+        if profile.task_type == "i2i_pro":
             return max(self.settings.container_disk_gb, RUNPOD_I2I_PRO_CONTAINER_DISK_GB)
         return self.settings.container_disk_gb
 
@@ -1435,6 +1470,9 @@ class RunPodProvider:
             env["AGENT_ID"] = env_config["agent_id"]
             env["AGENT_ID_PREFIX"] = env_config["agent_id"]
             env["POOL_IMAGE_REF"] = self._prod_image_name_for(profile)
+        workflow_overrides = self._workflow_overrides_for(profile)
+        if workflow_overrides:
+            env["TASK_TYPE_WORKFLOW_OVERRIDES"] = workflow_overrides
         env.update(self.settings.extra_env)
         return env
 
@@ -1693,6 +1731,22 @@ class RunPodProvider:
             return self.settings.docker_start_cmd_i2i_pro
         return ()
 
+    def _workflow_overrides_for(self, profile: RunPodTaskProfile) -> str:
+        if profile.task_type == "i2i_pro":
+            raw = self.settings.task_type_workflow_overrides_i2i_pro.strip()
+            if raw:
+                parsed = json.loads(raw)
+                if not isinstance(parsed, dict) or not all(
+                    isinstance(key, str) and isinstance(value, str)
+                    for key, value in parsed.items()
+                ):
+                    raise ValueError(
+                        "RUNPOD_TASK_TYPE_WORKFLOW_OVERRIDES_I2I_PRO "
+                        "must be a JSON object of task_type to workflow filename"
+                    )
+                return json.dumps(parsed, separators=(",", ":"))
+        return ""
+
     def _model_prefix_for(self, profile: RunPodTaskProfile) -> str:
         if profile.task_type == "wan22_aio_video":
             return self.settings.model_prefix_wan22_aio_video
@@ -1724,6 +1778,8 @@ class RunPodProvider:
         if profile.task_type == "image_to_video":
             return profile.supported_task_types
         if profile.task_type == "wan22_video_v2":
+            return profile.supported_task_types
+        if profile.task_type == "i2i_pro":
             return profile.supported_task_types
         raise ValueError(f"unsupported cloud-prod RunPod task profile: {profile.task_type}")
 
