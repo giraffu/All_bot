@@ -7,6 +7,10 @@ import pytest
 from ops.gpu_pool_controller.cli import build_parser
 from ops.gpu_pool_controller.providers.runpod import RunPodSettings
 from ops.gpu_pool_controller.runpod_canary import (
+    EXPECTED_I2I_PRO_GPU_TYPE_IDS,
+    EXPECTED_I2I_PRO_IMAGE_REF_PREFIX,
+    EXPECTED_I2I_PRO_MODEL_MANIFEST_KEY,
+    EXPECTED_I2I_PRO_MODEL_PREFIX,
     EXPECTED_MODEL_BUCKET,
     EXPECTED_MODEL_MANIFEST_KEY,
     EXPECTED_MODEL_PREFIX,
@@ -29,6 +33,9 @@ PUBLIC_GHCR_IMAGE = (
 )
 PUBLIC_WAN22_GHCR_IMAGE = (
     "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:20260612-wan22aio-test"
+)
+PUBLIC_I2I_PRO_GHCR_IMAGE = (
+    "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:20260614-i2ipro-test"
 )
 
 
@@ -57,6 +64,17 @@ class FakeRunPodProvider:
             template_id = (
                 self.settings.template_id_wan22_aio_video
                 if self.settings.use_template_wan22_aio_video
+                else ""
+            )
+        elif task_type == "i2i_pro":
+            image_name = PUBLIC_I2I_PRO_GHCR_IMAGE
+            supported_task_types = "i2i_pro"
+            model_prefix = EXPECTED_I2I_PRO_MODEL_PREFIX
+            model_manifest_key = EXPECTED_I2I_PRO_MODEL_MANIFEST_KEY
+            gpu_type_ids = list(EXPECTED_I2I_PRO_GPU_TYPE_IDS)
+            template_id = (
+                self.settings.template_id_i2i_pro
+                if self.settings.use_template_i2i_pro
                 else ""
             )
         else:
@@ -192,6 +210,31 @@ def test_runpod_canary_wan22_dry_run_accepts_template_render():
     assert provider.delete_calls == 0
 
 
+def test_runpod_canary_i2i_pro_dry_run_preflights_with_profile_specific_render():
+    provider = FakeRunPodProvider()
+    options = RunPodCanaryOptions(
+        task_type="i2i_pro",
+        execute=False,
+        quiet=True,
+    )
+
+    payload = RunPodCanaryRunner(
+        provider,
+        options,
+        sleep_func=lambda _seconds: None,
+    ).run()
+
+    assert payload["ok"] is True
+    assert payload["render"]["imageName"].startswith(EXPECTED_I2I_PRO_IMAGE_REF_PREFIX)
+    assert payload["render"]["gpu_type_ids"] == list(EXPECTED_I2I_PRO_GPU_TYPE_IDS)
+    assert payload["render"]["supported_task_types"] == "i2i_pro"
+    assert payload["render"]["model_prefix"] == EXPECTED_I2I_PRO_MODEL_PREFIX
+    assert payload["render"]["model_manifest_key"] == EXPECTED_I2I_PRO_MODEL_MANIFEST_KEY
+    assert "submit one i2i_pro Web task" in payload["would_execute"]
+    assert provider.create_calls == 0
+    assert provider.delete_calls == 0
+
+
 def test_runpod_canary_execute_requires_explicit_runpod_gates():
     provider = FakeRunPodProvider(settings=RunPodSettings(dry_run=True))
     options = RunPodCanaryOptions(execute=True, quiet=True, disable_workers=False)
@@ -279,6 +322,24 @@ def test_wan22_canary_task_cases_are_preview_5s_single_frame():
         cases[0]["payload"]["inputs"]["wan22_model_profile"] == "legacy_image_to_video"
     )
     assert cases[1]["payload"]["inputs"]["wan22_model_profile"] == "wan22_video_v2"
+
+
+def test_i2i_pro_canary_task_case_submits_existing_task_type():
+    runner = RunPodCanaryRunner(
+        FakeRunPodProvider(),
+        RunPodCanaryOptions(task_type="i2i_pro", quiet=True),
+    )
+
+    cases = runner._task_cases("user-data-test/web_uploads/3/example.png")
+
+    assert [case["label"] for case in cases] == ["i2i_pro_single_image"]
+    payload = cases[0]["payload"]
+    assert payload["task_type"] == "i2i_pro"
+    assert payload["inputs"]["image"] == "user-data-test/web_uploads/3/example.png"
+    assert payload["inputs"]["images"] == ["user-data-test/web_uploads/3/example.png"]
+    assert payload["inputs"]["seed"] == 20260614
+    assert "lora_name" not in payload["inputs"]
+    assert "wan22_model_profile" not in payload["inputs"]
 
 
 def test_wan22_canary_validates_last_frame_extra_output():
@@ -387,6 +448,38 @@ def test_wan22_canary_disables_only_matching_cloud_test_non_runpod_workers():
     ]
 
 
+def test_i2i_pro_canary_disables_only_matching_cloud_test_non_runpod_workers():
+    runner = RunPodCanaryRunner(
+        FakeRunPodProvider(),
+        RunPodCanaryOptions(
+            task_type="i2i_pro",
+            quiet=True,
+            worker_ids=("cloud_worker_test_01", "cloud_worker_test_02"),
+            worker_ids_explicit=False,
+        ),
+    )
+    runner._fetch_workers = lambda: [  # type: ignore[method-assign]
+        {"agent_id": "cloud_worker_test_01", "types": "img2img,img2img_lora"},
+        {"agent_id": "cloud_worker_test_03", "types": "face_swap,i2i_pro"},
+        {
+            "agent_id": "runpod_test_i2i_pro_pod-1",
+            "types": "i2i_pro",
+            "provider": "runpod",
+        },
+        {"agent_id": "cloud_prod_worker_01", "types": "i2i_pro"},
+    ]
+    runner._get_agent_control = lambda agent_id: {"state": "enabled", "reason": ""}  # type: ignore[method-assign]
+    disabled = []
+    runner._set_agent_control = (  # type: ignore[method-assign]
+        lambda agent_id, state, **_kwargs: disabled.append((agent_id, state))
+    )
+
+    controls = runner._disable_test_workers({})
+
+    assert [item["agent_id"] for item in controls] == ["cloud_worker_test_03"]
+    assert disabled == [("cloud_worker_test_03", "disabled")]
+
+
 def test_cli_parses_runpod_canary_command():
     args = build_parser().parse_args(
         [
@@ -445,6 +538,37 @@ def test_cli_parses_wan22_render_and_canary_commands():
     assert canary_args.quiet is True
 
 
+def test_cli_parses_i2i_pro_render_and_canary_commands():
+    render_args = build_parser().parse_args(
+        [
+            "runpod",
+            "render-create",
+            "--task-type",
+            "i2i_pro",
+            "--env",
+            "cloud-test",
+        ]
+    )
+    canary_args = build_parser().parse_args(
+        [
+            "runpod",
+            "canary",
+            "--task-type",
+            "i2i_pro",
+            "--env",
+            "cloud-test",
+            "--quiet",
+        ]
+    )
+
+    assert render_args.runpod_command == "render-create"
+    assert render_args.task_type == "i2i_pro"
+    assert render_args.env == "cloud-test"
+    assert canary_args.runpod_command == "canary"
+    assert canary_args.task_type == "i2i_pro"
+    assert canary_args.quiet is True
+
+
 def test_cli_parses_split_video_workers_render_scale_commands():
     image_to_video_args = build_parser().parse_args(
         [
@@ -472,12 +596,26 @@ def test_cli_parses_split_video_workers_render_scale_commands():
             "cloud-test",
         ]
     )
+    i2i_pro_args = build_parser().parse_args(
+        [
+            "runpod",
+            "workers",
+            "render-scale",
+            "--profile",
+            "i2i_pro",
+            "--desired",
+            "1",
+            "--env",
+            "cloud-test",
+        ]
+    )
 
     assert image_to_video_args.runpod_command == "workers"
     assert image_to_video_args.workers_command == "render-scale"
     assert image_to_video_args.profile == "image_to_video"
     assert image_to_video_args.desired == 1
     assert wan22_v2_args.profile == "wan22_video_v2"
+    assert i2i_pro_args.profile == "i2i_pro"
 
 
 def test_cli_parses_split_video_manifests_command():

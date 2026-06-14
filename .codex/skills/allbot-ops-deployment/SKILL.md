@@ -27,7 +27,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 - **workflow 事实源**：`workers/comfy_agent/workflows` 是唯一 workflow 运行时事实源。Central API 不挂载、不 COPY、不启动校验 workflow；改 workflow/mappings/patcher 后必须重建或重启目标 Worker。
 - **R2 / legacy 媒体策略**：新数据写入 R2 `user-data-prod`；legacy MinIO 只作为历史媒体只读 fallback。Worker 写路径不得配置 legacy MinIO。
 - **GPU Worker 层级**：`cloud-prod-comfy-agent-*` 是本地主服务器上的 Worker Agent；GPU 节点上的 `comfy0/comfy1` 或宿主机 ComfyUI 是另一层。替换 worker 不会自动重启 ComfyUI，重启 ComfyUI 也不会替换 worker 代码。
-- **RunPod Provider v0**：RunPod 只通过 `ops/gpu_pool_controller/providers/runpod.py` 接入，不属于本地 SSH GPU 池。云测试支持 `img2img/img2img_lora` 与 split video canary；手动云正式备用 worker 支持 `--profile img2img|image_to_video|wan22_video_v2`，默认先 `disabled`，不自动按生产队列扩容。
+- **RunPod Provider v0**：RunPod 只通过 `ops/gpu_pool_controller/providers/runpod.py` 接入，不属于本地 SSH GPU 池。云测试支持 `img2img/img2img_lora`、split video canary 与 `i2i_pro` canary；手动云正式备用 worker 仅支持 `--profile img2img|image_to_video|wan22_video_v2`，默认先 `disabled`，不自动按生产队列扩容。`i2i_pro` 正式 RunPod 仍未开放。
 - **RunPod split video**：当前视频主路径是 `image_to_video` 与 `wan22_video_v2` 两个 profile；`wan22_aio_video` 只保留为兼容/回滚 profile。`split-video-canary` 只允许云测试，完成或失败后必须恢复 worker control、删除 Pod 并核验 managed count 为 0。
 - **RunPod 门禁**：真实 create/start/stop/delete/scale 必须同时显式设置 `RUNPOD_DRY_RUN=false`、`RUNPOD_AUTOSCALER_ENABLED=true`、目标 Pod 上限和 `--execute`。生产 RunPod 操作还必须用户明确确认。
 - **密钥输出红线**：`.env.cloud.prod`、`.env.cloud.test`、`docker compose config`、RunPod create payload、presigned URL、R2 key、GitHub/GHCR token、Bot token、JWT secret 都不得贴进聊天、日志报告或文档。

@@ -49,7 +49,7 @@ CLOUD_TEST_WORKER_REDIS_URL=redis://:<password>@redis-test:6379/4
 | :--- | :--- | :--- |
 | `MINIO_*` / `R2_*` | `user-data-test` + `https://r2-test.aivison.it.com` | 用户上传、任务输入/结果、模板、历史/Gallery 媒体；不要把模型权重放入该桶 |
 | `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | `.env.cloud.test` 真实值；RunPod Pod 内使用 `allbot_cloud_test_r2_access_key` / `allbot_cloud_test_r2_secret_key` secret | 只读写 `user-data-test` |
-| `RUNPOD_MODEL_*` | `allbot-model-cache` + `RUNPOD_MODEL_PREFIX`/`RUNPOD_MODEL_MANIFEST_KEY` | RunPod 模型 manifest 与模型权重缓存；`img2img_lora` 默认 `img2img_lora/2026-06-10`，Wan22 cloud-test 视频主路径使用 split 前缀 `image_to_video/2026-06-13-test` 与 `wan22_video_v2/2026-06-13-test`；`wan22_aio_video/2026-06-12-test` 只作为历史全集/回滚 manifest |
+| `RUNPOD_MODEL_*` | `allbot-model-cache` + `RUNPOD_MODEL_PREFIX`/`RUNPOD_MODEL_MANIFEST_KEY` | RunPod 模型 manifest 与模型权重缓存；`img2img_lora` 默认 `img2img_lora/2026-06-10`，Wan22 cloud-test 视频主路径使用 split 前缀 `image_to_video/2026-06-13-test` 与 `wan22_video_v2/2026-06-13-test`；`i2i_pro` 使用 `i2i_pro/2026-06-14-test`；`wan22_aio_video/2026-06-12-test` 只作为历史全集/回滚 manifest |
 | `RUNPOD_MODEL_ACCESS_KEY` / `RUNPOD_MODEL_SECRET_KEY` | `.env.cloud.test` 可保存真实值，供本地 dry-run HEAD/上传脚本使用 | 只读写 `allbot-model-cache`，不能复用 `user-data-test` 的 R2 key |
 | `RUNPOD_MODEL_ACCESS_KEY_REF` / `RUNPOD_MODEL_SECRET_KEY_REF` | `allbot_model_cache_r2_access_key` / `allbot_model_cache_r2_secret_key` | RunPod create JSON 中的模型桶 secret 引用字符串，不是密钥本体 |
 
@@ -223,6 +223,14 @@ df -h /
 - 验收必须通过测试 Web API `http://100.82.124.91:8001/api/tasks/generate` 提交 `wan22_video_v2` preview/5s 任务，不能只做 worker 直测。
 - 合格结果应同时满足：RunPod worker 接单、Central `task_type=wan22_video_v2`、终态 `done`、Web result `success`、MP4 与 `extra_outputs.last_frame` 均可下载。
 - 验收结束后必须恢复临时禁用的云测试 worker，删除 RunPod Pod，并确认 `list-pods` / `reconcile-managed-pods` 的 managed count 为 0。
+
+2026-06-14 RunPod `i2i_pro` 云测试 Web 端验收口径：
+- `i2i_pro` 不是新增业务任务类型，只新增 cloud-test RunPod runtime profile；正式 `prod-worker --profile i2i_pro` 仍未开放。
+- 验收必须通过测试 Web API `http://100.82.124.91:8001/api/tasks/generate` 提交 `task_type=i2i_pro` 的单图任务，不能只做 worker 直测。
+- RunPod env 需渲染为 `RUNPOD_TASK_TYPE=i2i_pro`、`SUPPORTED_TASK_TYPES=i2i_pro`、`POOL_RUNTIME_PROFILE=i2i_pro`、`AGENT_ID` 前缀 `runpod_test_i2i_pro`。
+- 模型 manifest 使用 `allbot-model-cache/i2i_pro/2026-06-14-test/manifest.json`，六个模型文件总计约 `36.11 GiB`；首次 canary 使用 `RUNPOD_CONTAINER_DISK_GB=120`。
+- 合格结果应同时满足：RunPod worker heartbeat 出现为 `runpod_test_i2i_pro_*`、Central `task_type=i2i_pro`、`pop_evidence.agent_id` 匹配 RunPod worker、终态 `done`、Web result `success`、图片可下载。
+- 验收结束后必须恢复临时禁用的非 RunPod cloud-test `i2i_pro` worker，删除 RunPod Pod，并确认 `list-pods` / `reconcile-managed-pods` 的 managed count 为 0。
 
 2026-06-06 R2 切换验证结果：
 - 本地测试 MinIO 历史对象已镜像到 R2 `user-data-test` 桶根路径：`bot-data-test` 约 1.10GiB，`comfyui-temp-test` 约 749.91MiB，`bot-template-test` 为空。

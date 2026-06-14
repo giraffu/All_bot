@@ -15,6 +15,9 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .providers.runpod import (
+    RUNPOD_I2I_PRO_GPU_TYPE_IDS,
+    RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY,
+    RUNPOD_I2I_PRO_MODEL_PREFIX,
     RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
     RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX,
     RUNPOD_TASK_PROFILES,
@@ -39,16 +42,22 @@ EXPECTED_IMAGE_TO_VIDEO_MODEL_PREFIX = RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX
 EXPECTED_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY = RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY
 EXPECTED_WAN22_VIDEO_V2_MODEL_PREFIX = RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX
 EXPECTED_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY = RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY
+EXPECTED_I2I_PRO_MODEL_PREFIX = RUNPOD_I2I_PRO_MODEL_PREFIX
+EXPECTED_I2I_PRO_MODEL_MANIFEST_KEY = RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY
 EXPECTED_TEST_BUCKET = "user-data-test"
 EXPECTED_IMAGE_REF_PREFIX = "ghcr.io/giraffu/allbot-comfy-runpod-img2img:"
 EXPECTED_WAN22_AIO_VIDEO_IMAGE_REF_PREFIX = (
     "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:"
+)
+EXPECTED_I2I_PRO_IMAGE_REF_PREFIX = (
+    "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:"
 )
 DEFAULT_CONTROL_HOST = "100.82.124.91"
 DEFAULT_WORKER_IDS = tuple(f"cloud_worker_test_{index:02d}" for index in range(1, 8))
 EXPECTED_TASK_TYPES = ("img2img", "img2img_lora")
 EXPECTED_WAN22_AIO_VIDEO_TASK_TYPES = ("image_to_video", "wan22_video_v2")
 EXPECTED_WAN22_AIO_VIDEO_GPU_TYPE_IDS = RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS
+EXPECTED_I2I_PRO_GPU_TYPE_IDS = RUNPOD_I2I_PRO_GPU_TYPE_IDS
 TERMINAL_TASK_STATUSES = {"done", "error", "cancelled"}
 HEALTHY_WORKER_STATUSES = {"idle", "running"}
 
@@ -112,6 +121,17 @@ RUNPOD_CANARY_PROFILE_SPECS: dict[str, RunPodCanaryProfileSpec] = {
         expected_gpu_type_ids=EXPECTED_WAN22_AIO_VIDEO_GPU_TYPE_IDS,
         task_summary="submit wan22_video_v2 preview/5s Web task",
         worker_disable_summary="temporarily disable cloud-test workers supporting wan22_video_v2",
+    ),
+    "i2i_pro": RunPodCanaryProfileSpec(
+        task_type="i2i_pro",
+        image_ref_prefix=EXPECTED_I2I_PRO_IMAGE_REF_PREFIX,
+        supported_task_types=("i2i_pro",),
+        model_prefix=EXPECTED_I2I_PRO_MODEL_PREFIX,
+        model_manifest_key=EXPECTED_I2I_PRO_MODEL_MANIFEST_KEY,
+        allow_template_id=True,
+        expected_gpu_type_ids=EXPECTED_I2I_PRO_GPU_TYPE_IDS,
+        task_summary="submit one i2i_pro Web task",
+        worker_disable_summary="temporarily disable cloud-test workers supporting i2i_pro",
     ),
 }
 
@@ -929,6 +949,8 @@ class RunPodCanaryRunner:
         profile = RUNPOD_TASK_PROFILES[self.options.task_type]
         if profile.task_type == "wan22_aio_video":
             return self._wan22_aio_video_task_cases(image_object_key)
+        if profile.task_type == "i2i_pro":
+            return self._i2i_pro_task_cases(image_object_key)
         return self._img2img_task_cases(image_object_key)
 
     def _img2img_task_cases(self, image_object_key: str) -> list[dict[str, Any]]:
@@ -1014,6 +1036,24 @@ class RunPodCanaryRunner:
                     "inputs": {
                         **base_inputs,
                         "wan22_model_profile": "wan22_video_v2",
+                    },
+                    "prompt": self.options.prompt,
+                    "negative_prompt": self.options.negative_prompt,
+                    "priority": 0,
+                },
+            },
+        ]
+
+    def _i2i_pro_task_cases(self, image_object_key: str) -> list[dict[str, Any]]:
+        return [
+            {
+                "label": "i2i_pro_single_image",
+                "payload": {
+                    "task_type": "i2i_pro",
+                    "inputs": {
+                        "images": [image_object_key],
+                        "image": image_object_key,
+                        "seed": 20260614,
                     },
                     "prompt": self.options.prompt,
                     "negative_prompt": self.options.negative_prompt,

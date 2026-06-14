@@ -73,6 +73,15 @@ RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX = "wan22_video_v2/2026-06-13-test"
 RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY = (
     "wan22_video_v2/2026-06-13-test/manifest.json"
 )
+RUNPOD_I2I_PRO_GPU_TYPE_IDS = (
+    "NVIDIA GeForce RTX 5090",
+    "NVIDIA L40S",
+)
+RUNPOD_I2I_PRO_MODEL_PREFIX = "i2i_pro/2026-06-14-test"
+RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY = (
+    "i2i_pro/2026-06-14-test/manifest.json"
+)
+RUNPOD_I2I_PRO_CONTAINER_DISK_GB = 120
 SENSITIVE_KEY_MARKERS = (
     "TOKEN",
     "SECRET",
@@ -158,6 +167,15 @@ RUNPOD_TASK_PROFILES: dict[str, RunPodTaskProfile] = {
         template_env_key="RUNPOD_TEMPLATE_ID_WAN22_VIDEO_V2",
         gpu_type_env_key="RUNPOD_GPU_TYPE_IDS_WAN22_VIDEO_V2",
         image_env_key="RUNPOD_IMAGE_NAME_WAN22_VIDEO_V2",
+    ),
+    "i2i_pro": RunPodTaskProfile(
+        task_type="i2i_pro",
+        supported_task_types=("i2i_pro",),
+        runtime_profile="i2i_pro",
+        agent_id_prefix="runpod_test_i2i_pro",
+        template_env_key="RUNPOD_TEMPLATE_ID_I2I_PRO",
+        gpu_type_env_key="RUNPOD_GPU_TYPE_IDS_I2I_PRO",
+        image_env_key="RUNPOD_IMAGE_NAME_I2I_PRO",
     ),
 }
 
@@ -407,6 +425,7 @@ class RunPodSettings:
     projected_cost_per_hr_wan22_aio_video: float = 0.0
     projected_cost_per_hr_image_to_video: float = 0.0
     projected_cost_per_hr_wan22_video_v2: float = 0.0
+    projected_cost_per_hr_i2i_pro: float = 0.0
     cloud_type: str = "SECURE"
     interruptible: bool = False
     gpu_type_ids_img2img_lora: tuple[str, ...] = (
@@ -417,6 +436,7 @@ class RunPodSettings:
     gpu_type_ids_wan22_aio_video: tuple[str, ...] = RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS
     gpu_type_ids_image_to_video: tuple[str, ...] = RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS
     gpu_type_ids_wan22_video_v2: tuple[str, ...] = RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS
+    gpu_type_ids_i2i_pro: tuple[str, ...] = RUNPOD_I2I_PRO_GPU_TYPE_IDS
     data_center_ids: tuple[str, ...] = ()
     container_disk_gb: int = 80
     volume_gb: int = 0
@@ -427,18 +447,22 @@ class RunPodSettings:
     use_template_wan22_aio_video: bool = False
     use_template_image_to_video: bool = False
     use_template_wan22_video_v2: bool = False
+    use_template_i2i_pro: bool = False
     docker_start_cmd_img2img_lora: tuple[str, ...] = ()
     docker_start_cmd_wan22_aio_video: tuple[str, ...] = ()
     docker_start_cmd_image_to_video: tuple[str, ...] = ()
     docker_start_cmd_wan22_video_v2: tuple[str, ...] = ()
+    docker_start_cmd_i2i_pro: tuple[str, ...] = ()
     template_id_img2img_lora: str = ""
     template_id_wan22_aio_video: str = ""
     template_id_image_to_video: str = ""
     template_id_wan22_video_v2: str = ""
+    template_id_i2i_pro: str = ""
     image_name_img2img_lora: str = ""
     image_name_wan22_aio_video: str = ""
     image_name_image_to_video: str = ""
     image_name_wan22_video_v2: str = ""
+    image_name_i2i_pro: str = ""
     worker_central_url_cloud_test: str = "https://worker-central-test.example.com"
     worker_central_url_cloud_prod: str = RUNPOD_PROD_WORKER_CENTRAL_URL
     prod_agent_id: str = RUNPOD_PROD_AGENT_ID
@@ -470,6 +494,8 @@ class RunPodSettings:
     model_manifest_key_image_to_video: str = RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY
     model_prefix_wan22_video_v2: str = RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX
     model_manifest_key_wan22_video_v2: str = RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY
+    model_prefix_i2i_pro: str = RUNPOD_I2I_PRO_MODEL_PREFIX
+    model_manifest_key_i2i_pro: str = RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY
     model_endpoint: str = ""
     model_secure: bool = True
     model_access_key_ref: str = RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF
@@ -568,6 +594,10 @@ class RunPodSettings:
                 os.getenv("RUNPOD_PROJECTED_COST_PER_HR_WAN22_VIDEO_V2"),
                 default=wan22_aio_cost,
             ),
+            projected_cost_per_hr_i2i_pro=_float_env(
+                os.getenv("RUNPOD_PROJECTED_COST_PER_HR_I2I_PRO"),
+                default=0.0,
+            ),
             cloud_type=os.getenv("RUNPOD_CLOUD_TYPE", "SECURE"),
             interruptible=_bool_env(os.getenv("RUNPOD_INTERRUPTIBLE"), default=False),
             gpu_type_ids_img2img_lora=_csv(
@@ -589,6 +619,11 @@ class RunPodSettings:
                 default=wan22_aio_gpu_type_ids,
             )
             or RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS,
+            gpu_type_ids_i2i_pro=_csv(
+                os.getenv("RUNPOD_GPU_TYPE_IDS_I2I_PRO"),
+                default=cls.gpu_type_ids_i2i_pro,
+            )
+            or RUNPOD_I2I_PRO_GPU_TYPE_IDS,
             data_center_ids=_csv(os.getenv("RUNPOD_ALLOWED_DATACENTERS")),
             container_disk_gb=_int_env(
                 os.getenv("RUNPOD_CONTAINER_DISK_GB"),
@@ -612,6 +647,10 @@ class RunPodSettings:
             ),
             use_template_wan22_video_v2=_bool_env(
                 wan22_video_v2_use_template_raw,
+                default=False,
+            ),
+            use_template_i2i_pro=_bool_env(
+                os.getenv("RUNPOD_USE_TEMPLATE_I2I_PRO"),
                 default=False,
             ),
             docker_start_cmd_img2img_lora=_docker_start_cmd_env(
@@ -644,6 +683,12 @@ class RunPodSettings:
                 or os.getenv("RUNPOD_DOCKER_START_SCRIPT_FILE_WAN22_AIO_VIDEO"),
                 json_env_name="RUNPOD_DOCKER_START_CMD_JSON_WAN22_VIDEO_V2",
             ),
+            docker_start_cmd_i2i_pro=_docker_start_cmd_env(
+                os.getenv("RUNPOD_DOCKER_START_CMD_JSON_I2I_PRO"),
+                os.getenv("RUNPOD_DOCKER_START_SCRIPT_I2I_PRO"),
+                os.getenv("RUNPOD_DOCKER_START_SCRIPT_FILE_I2I_PRO"),
+                json_env_name="RUNPOD_DOCKER_START_CMD_JSON_I2I_PRO",
+            ),
             template_id_img2img_lora=os.getenv("RUNPOD_TEMPLATE_ID_IMG2IMG_LORA", ""),
             template_id_wan22_aio_video=os.getenv(
                 "RUNPOD_TEMPLATE_ID_WAN22_AIO_VIDEO",
@@ -651,10 +696,12 @@ class RunPodSettings:
             ),
             template_id_image_to_video=image_to_video_template,
             template_id_wan22_video_v2=wan22_video_v2_template,
+            template_id_i2i_pro=os.getenv("RUNPOD_TEMPLATE_ID_I2I_PRO", ""),
             image_name_img2img_lora=os.getenv("RUNPOD_IMAGE_NAME_IMG2IMG_LORA", ""),
             image_name_wan22_aio_video=wan22_aio_image,
             image_name_image_to_video=image_to_video_image,
             image_name_wan22_video_v2=wan22_video_v2_image,
+            image_name_i2i_pro=os.getenv("RUNPOD_IMAGE_NAME_I2I_PRO", ""),
             worker_central_url_cloud_test=os.getenv(
                 "RUNPOD_CLOUD_TEST_CENTRAL_API_URL",
                 os.getenv(
@@ -743,6 +790,14 @@ class RunPodSettings:
             model_manifest_key_wan22_video_v2=os.getenv(
                 "RUNPOD_MODEL_MANIFEST_KEY_WAN22_VIDEO_V2",
                 RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY,
+            ),
+            model_prefix_i2i_pro=os.getenv(
+                "RUNPOD_MODEL_PREFIX_I2I_PRO",
+                RUNPOD_I2I_PRO_MODEL_PREFIX,
+            ),
+            model_manifest_key_i2i_pro=os.getenv(
+                "RUNPOD_MODEL_MANIFEST_KEY_I2I_PRO",
+                RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY,
             ),
             model_endpoint=os.getenv("RUNPOD_MODEL_ENDPOINT", ""),
             model_secure=_bool_env(os.getenv("RUNPOD_MODEL_SECURE"), default=True),
@@ -1238,7 +1293,10 @@ class RunPodProvider:
             "gpuCount": 1,
             "gpuTypeIds": list(gpu_type_ids),
             "gpuTypePriority": "availability",
-            "containerDiskInGb": self.settings.container_disk_gb,
+            "containerDiskInGb": self._container_disk_gb_for(
+                profile=profile,
+                environment=environment,
+            ),
             "volumeMountPath": self.settings.volume_mount_path,
             "interruptible": self.settings.interruptible,
             "env": self._pod_env(profile=profile, environment=environment),
@@ -1260,6 +1318,16 @@ class RunPodProvider:
         if docker_start_cmd:
             body["dockerStartCmd"] = list(docker_start_cmd)
         return body
+
+    def _container_disk_gb_for(
+        self,
+        *,
+        profile: RunPodTaskProfile,
+        environment: str,
+    ) -> int:
+        if profile.task_type == "i2i_pro" and environment == "cloud-test":
+            return max(self.settings.container_disk_gb, RUNPOD_I2I_PRO_CONTAINER_DISK_GB)
+        return self.settings.container_disk_gb
 
     def _pod_env(
         self,
@@ -1491,6 +1559,8 @@ class RunPodProvider:
             return self.settings.projected_cost_per_hr_image_to_video
         if profile.task_type == "wan22_video_v2":
             return self.settings.projected_cost_per_hr_wan22_video_v2
+        if profile.task_type == "i2i_pro":
+            return self.settings.projected_cost_per_hr_i2i_pro
         return 0.0
 
     @staticmethod
@@ -1520,7 +1590,7 @@ class RunPodProvider:
             raise ValueError(
                 "RunPodProvider v0 only supports "
                 "img2img_lora/img2img/wan22_aio_video/image_to_video/"
-                "wan22_video_v2 profiles"
+                "wan22_video_v2/i2i_pro profiles"
             ) from exc
 
     def _gpu_type_ids_for(self, profile: RunPodTaskProfile) -> tuple[str, ...]:
@@ -1532,6 +1602,8 @@ class RunPodProvider:
             return self.settings.gpu_type_ids_image_to_video
         if profile.gpu_type_env_key == "RUNPOD_GPU_TYPE_IDS_WAN22_VIDEO_V2":
             return self.settings.gpu_type_ids_wan22_video_v2
+        if profile.gpu_type_env_key == "RUNPOD_GPU_TYPE_IDS_I2I_PRO":
+            return self.settings.gpu_type_ids_i2i_pro
         raise ValueError(f"unsupported RunPod task profile: {profile.task_type}")
 
     def _template_id_for(self, profile: RunPodTaskProfile) -> str:
@@ -1551,6 +1623,10 @@ class RunPodProvider:
             if not self.settings.use_template_wan22_video_v2:
                 return ""
             return self.settings.template_id_wan22_video_v2
+        if profile.template_env_key == "RUNPOD_TEMPLATE_ID_I2I_PRO":
+            if not self.settings.use_template_i2i_pro:
+                return ""
+            return self.settings.template_id_i2i_pro
         raise ValueError(f"unsupported RunPod task profile: {profile.task_type}")
 
     def _image_name_for(self, profile: RunPodTaskProfile) -> str:
@@ -1562,6 +1638,8 @@ class RunPodProvider:
             return self.settings.image_name_image_to_video
         if profile.image_env_key == "RUNPOD_IMAGE_NAME_WAN22_VIDEO_V2":
             return self.settings.image_name_wan22_video_v2
+        if profile.image_env_key == "RUNPOD_IMAGE_NAME_I2I_PRO":
+            return self.settings.image_name_i2i_pro
         raise ValueError(f"unsupported RunPod task profile: {profile.task_type}")
 
     def _prod_image_name_for(self, profile: RunPodTaskProfile) -> str:
@@ -1574,6 +1652,8 @@ class RunPodProvider:
     def _pending_image_name_for(profile: RunPodTaskProfile) -> str:
         if profile.task_type in {"wan22_aio_video", "image_to_video", "wan22_video_v2"}:
             return "allbot/comfy-runpod-wan22-aio-video:pending"
+        if profile.task_type == "i2i_pro":
+            return "allbot/comfy-runpod-i2i-pro:pending"
         return "allbot/comfy-runpod-img2img:pending"
 
     def _docker_start_cmd_for(self, profile: RunPodTaskProfile) -> tuple[str, ...]:
@@ -1585,6 +1665,8 @@ class RunPodProvider:
             return self.settings.docker_start_cmd_image_to_video
         if profile.task_type == "wan22_video_v2":
             return self.settings.docker_start_cmd_wan22_video_v2
+        if profile.task_type == "i2i_pro":
+            return self.settings.docker_start_cmd_i2i_pro
         return ()
 
     def _model_prefix_for(self, profile: RunPodTaskProfile) -> str:
@@ -1594,6 +1676,8 @@ class RunPodProvider:
             return self.settings.model_prefix_image_to_video
         if profile.task_type == "wan22_video_v2":
             return self.settings.model_prefix_wan22_video_v2
+        if profile.task_type == "i2i_pro":
+            return self.settings.model_prefix_i2i_pro
         return self.settings.model_prefix
 
     def _model_manifest_key_for(self, profile: RunPodTaskProfile) -> str:
@@ -1603,6 +1687,8 @@ class RunPodProvider:
             return self.settings.model_manifest_key_image_to_video
         if profile.task_type == "wan22_video_v2":
             return self.settings.model_manifest_key_wan22_video_v2
+        if profile.task_type == "i2i_pro":
+            return self.settings.model_manifest_key_i2i_pro
         return self.settings.model_manifest_key
 
     def _prod_supported_task_types_for(

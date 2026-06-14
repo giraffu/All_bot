@@ -38,6 +38,10 @@ def _provider(response=None) -> RunPodProvider:
         image_name_wan22_video_v2=(
             "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:test"
         ),
+        image_name_i2i_pro=(
+            "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:test"
+        ),
+        model_bucket="allbot-model-cache",
     )
     return RunPodProvider(
         settings,
@@ -61,6 +65,22 @@ def test_workers_render_scale_renders_target_profile_requests_without_mutation()
     assert request["templateId"] == "77gi0wqo8x"
     assert request["env"]["RUNPOD_TASK_TYPE"] == "image_to_video"
     assert request["env"]["SUPPORTED_TASK_TYPES"] == "image_to_video"
+
+
+def test_workers_render_scale_renders_i2i_pro_profile_request():
+    scaler = RunPodWorkersScaler(
+        _provider(),
+        RunPodWorkersScaleOptions(profile="i2i_pro", desired=1),
+    )
+
+    payload = scaler.render_scale()
+    request = payload["create_requests"][0]["json"]
+
+    assert payload["ok"] is True
+    assert payload["profile"] == "i2i_pro"
+    assert request["imageName"] == "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:test"
+    assert request["env"]["RUNPOD_TASK_TYPE"] == "i2i_pro"
+    assert request["env"]["SUPPORTED_TASK_TYPES"] == "i2i_pro"
 
 
 def test_workers_scale_only_targets_requested_profile():
@@ -96,3 +116,38 @@ def test_workers_scale_only_targets_requested_profile():
     assert payload["delta"] == -1
     assert len(payload["deletes"]) == 1
     assert payload["deletes"][0]["request"]["url"].endswith("/pods/pod-image")
+
+
+def test_workers_scale_only_targets_i2i_pro_profile():
+    pods = [
+        {
+            "id": "pod-i2i",
+            "name": "allbot-runpod-test-i2i-pro",
+            "desiredStatus": "RUNNING",
+            "env": {
+                "RUNPOD_ENVIRONMENT": "cloud-test",
+                "RUNPOD_TASK_TYPE": "i2i_pro",
+            },
+        },
+        {
+            "id": "pod-image",
+            "name": "allbot-runpod-test-image-to-video",
+            "desiredStatus": "RUNNING",
+            "env": {
+                "RUNPOD_ENVIRONMENT": "cloud-test",
+                "RUNPOD_TASK_TYPE": "image_to_video",
+            },
+        },
+    ]
+    scaler = RunPodWorkersScaler(
+        _provider({"pods": pods}),
+        RunPodWorkersScaleOptions(profile="i2i_pro", desired=0),
+    )
+
+    payload = scaler.scale()
+
+    assert payload["ok"] is True
+    assert payload["current"] == 1
+    assert payload["delta"] == -1
+    assert len(payload["deletes"]) == 1
+    assert payload["deletes"][0]["request"]["url"].endswith("/pods/pod-i2i")

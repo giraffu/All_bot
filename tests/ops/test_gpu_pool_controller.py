@@ -4,6 +4,8 @@ from ops.gpu_pool_controller.canary import ComfyCanary
 from ops.gpu_pool_controller.config_loader import load_controller_config
 from ops.gpu_pool_controller.image_repo import LocalRegistry
 from ops.gpu_pool_controller.model_importer import (
+    InventoryEntry,
+    ModelImportPlanner,
     extract_dynamic_references,
     extract_workflow_references,
 )
@@ -245,6 +247,44 @@ def test_model_importer_extracts_dynamic_lora_refs_without_blank_video_lora():
     assert "BreastGrow_high_noise.safetensors" in values
     assert "qwen/YARN_1.0.safetensors" in values
     assert "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors" in values
+
+
+def test_model_importer_i2i_pro_baseline_resolves_six_workflow_models():
+    config = load_controller_config()
+    planner = ModelImportPlanner(config)
+    model_paths = [
+        ("text_encoders/qwen_3_8b_fp8mixed.safetensors", 8664848742),
+        ("vae/flux2-vae.safetensors", 336213556),
+        ("unet/DarkBeast-Klein9b-V2-BFS-FP8-ComfyUI.safetensors", 9078610848),
+        ("text_encoders/z_image/qwen_3_4b.safetensors", 8044982048),
+        ("vae/z_image/ae.safetensors", 335304388),
+        ("unet/DarkBeastZ6-BlitZ-BF16-ComfyUI.safetensors", 12309878608),
+    ]
+    inventory = [
+        InventoryEntry(
+            node_id="gpu-226",
+            host="allbot-gpu-226",
+            model_dir="/home/ubantu/comfyui/models",
+            relative_path=relative_path,
+            size_bytes=size_bytes,
+        )
+        for relative_path, size_bytes in model_paths
+    ]
+    planner.remote_inventory = lambda _node: inventory  # type: ignore[method-assign]
+
+    plan = planner.build_import_plans(
+        bundle_ids=["i2i_pro_baseline"],
+        include_sha256=False,
+    )[0]
+
+    assert plan.bundle == "i2i_pro_baseline"
+    assert plan.version == "2026-06-14-test"
+    assert plan.profiles == ("i2i_pro",)
+    assert plan.missing == ()
+    assert {item.entry.relative_path for item in plan.files} == {
+        relative_path for relative_path, _size_bytes in model_paths
+    }
+    assert sum(item.entry.size_bytes for item in plan.files) == 38769838190
 
 
 def test_t2i_workflow_uses_existing_z_image_unet_name():

@@ -191,6 +191,21 @@ so commit would miss the important runtime content. Pass `base_image` in the
 workflow or `--base-image` locally only when intentionally testing a different
 base.
 
+Prefer GitHub Actions for the `i2i_pro` RunPod profile image as well:
+
+```text
+.github/workflows/runpod_i2i_pro_profile_image.yml
+```
+
+It builds `ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:<tag>` from
+`remote_workers/docker/runpod_profiles/i2i_pro/`, defaults to
+`yanwk/comfyui-boot:cu130-slim`, pins ComfyUI to
+`16cd8d8a8f5f16ce7e5f929fdba9f783990254ea`, and verifies anonymous GHCR
+manifest access after push. The smoke test asserts ComfyUI/core nodes needed by
+`workers/comfy_agent/workflows/i2i_pro.json`, `ffmpeg`, `curl`, `git`, and the
+RunPod bootstrap Python path. No business model weights are baked into this
+image.
+
 Use the local script as a fallback or for profile debugging. Only push locally
 after choosing a registry namespace that RunPod can pull:
 
@@ -220,6 +235,30 @@ RUNPOD_IMAGE_NAME_IMG2IMG_LORA=ghcr.io/giraffu/allbot-comfy-runpod-img2img-lora:
 RUNPOD_COMFY_CUSTOM_NODES_ENABLED=false
 RUNPOD_COMFY_KJNODES_ENABLED=false
 ```
+
+For the `i2i_pro` cloud-test profile image, use profile-specific env:
+
+```env
+RUNPOD_USE_TEMPLATE_I2I_PRO=false
+RUNPOD_IMAGE_NAME_I2I_PRO=ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:<tag>
+RUNPOD_MODEL_PREFIX_I2I_PRO=i2i_pro/2026-06-14-test
+RUNPOD_MODEL_MANIFEST_KEY_I2I_PRO=i2i_pro/2026-06-14-test/manifest.json
+RUNPOD_CONTAINER_DISK_GB=120
+RUNPOD_COMFY_CUSTOM_NODES_ENABLED=false
+RUNPOD_COMFY_KJNODES_ENABLED=false
+```
+
+The `i2i_pro_baseline` model manifest lives in
+`allbot-model-cache/i2i_pro/2026-06-14-test/manifest.json` and is sourced from
+known-good `gpu-226` / `192.168.1.226:8188`. It contains only these model files:
+`text_encoders/qwen_3_8b_fp8mixed.safetensors`,
+`vae/flux2-vae.safetensors`,
+`unet/DarkBeast-Klein9b-V2-BFS-FP8-ComfyUI.safetensors`,
+`text_encoders/z_image/qwen_3_4b.safetensors`,
+`vae/z_image/ae.safetensors`, and
+`unet/DarkBeastZ6-BlitZ-BF16-ComfyUI.safetensors`. Runtime model sync must write
+only under ComfyUI `models/`; it must not write into
+`input/output/temp/custom_nodes/workflows`.
 
 For the first cloud-test canary, the expected profile is:
 

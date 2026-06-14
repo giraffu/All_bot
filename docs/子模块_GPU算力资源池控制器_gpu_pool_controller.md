@@ -70,12 +70,13 @@ Runtime dry-run 说明：
 - `gpu-226` 是 `host_service`，不得生成 Docker pull/up/restart 操作。
 
 ## 4. RunPod Provider v0
-RunPod provider 当前覆盖三类路径：
+RunPod provider 当前覆盖四类路径：
 
 | 路径 | 用途 | 当前状态 |
 | :--- | :--- | :--- |
 | 云测试图生图 canary | `img2img` / `img2img_lora` 真实 Web 闭环 | 已通过真实 canary；作为 RunPod 基础链路回归入口 |
 | 云测试 split video canary | `image_to_video` 与 `wan22_video_v2` 分 profile 验证 | `wan22_video_v2` 已完成 Web 端真实闭环；后续以 `split-video-canary` 复验 |
+| 云测试图生图 Pro canary | 现有业务类型 `i2i_pro` 的专用 RunPod runtime profile | 已有 render/create/workers/canary 入口；仅 cloud-test，等待真实 Web canary |
 | 手动云正式备用 worker | `img2img`、`image_to_video`、`wan22_video_v2` | 代码已支持；默认创建后先 `disabled`，不开启生产自动扩容 |
 
 RunPod 只读 / dry-run 命令：
@@ -85,8 +86,10 @@ python scripts/gpu_pool_controller.py runpod validate-key
 python scripts/gpu_pool_controller.py runpod list-pods
 python scripts/gpu_pool_controller.py runpod reconcile-managed-pods
 python scripts/gpu_pool_controller.py runpod render-create --task-type img2img_lora --env cloud-test
+python scripts/gpu_pool_controller.py runpod render-create --task-type i2i_pro --env cloud-test
 python scripts/gpu_pool_controller.py runpod create-pod --task-type img2img_lora --env cloud-test
 python scripts/gpu_pool_controller.py runpod canary --env-file .env.cloud.test --quiet
+python scripts/gpu_pool_controller.py runpod canary --task-type i2i_pro --env-file .env.cloud.test --quiet
 ```
 
 `render-create` 不需要 `RUNPOD_API_KEY`；`create-pod` 默认 dry-run。
@@ -99,9 +102,11 @@ python scripts/gpu_pool_controller.py runpod canary --env-file .env.cloud.test -
 | `img2img_lora` / `img2img` | `img2img,img2img_lora` | `img2img_lora` | `runpod_test_img2img_lora` | `img2img_lora/2026-06-10/manifest.json` |
 | `image_to_video` | `image_to_video` | `image_to_video` | `runpod_test_image_to_video` | `image_to_video/2026-06-13-test/manifest.json` |
 | `wan22_video_v2` | `wan22_video_v2` | `wan22_video_v2` | `runpod_test_wan22_video_v2` | `wan22_video_v2/2026-06-13-test/manifest.json` |
+| `i2i_pro` | `i2i_pro` | `i2i_pro` | `runpod_test_i2i_pro` | `i2i_pro/2026-06-14-test/manifest.json` |
 | `wan22_aio_video` | `image_to_video,wan22_video_v2` | `wan22_aio_video` | `runpod_test_wan22_aio_video` | `wan22_aio_video/2026-06-12-test/manifest.json` |
 
 `wan22_aio_video` 只保留为兼容/回滚 profile；新测试、新扩容和正式接入都应优先使用 split profile。
+`i2i_pro` 是现有业务任务类型的 cloud-test RunPod profile，不新增业务 task type；正式 `prod-worker --profile i2i_pro` 仍未开放。
 
 手动正式 profile：
 
@@ -171,9 +176,19 @@ python scripts/gpu_pool_controller.py runpod workers render-scale \
   --profile wan22_video_v2 \
   --desired 1 \
   --env cloud-test
+python scripts/gpu_pool_controller.py runpod workers render-scale \
+  --profile i2i_pro \
+  --desired 1 \
+  --env cloud-test
 ```
 
 canary 摘要只允许记录脱敏后的 object key、task id、Central/Web 终态、下载后的本地路径和去掉 query string 的 result path；不要输出 JWT、agent token、presigned URL、完整 env 或完整 create payload。
+
+`i2i_pro` cloud-test canary 必须通过 Web API 创建真实任务，而不是只做 worker 直测。验收口径：
+- RunPod worker heartbeat 出现为 `runpod_test_i2i_pro_*`。
+- Central 任务类型保持 `i2i_pro`，`pop_evidence.agent_id` 匹配该 RunPod worker。
+- Web result 为 `success`，最终状态为 `done`，图片结果可下载。
+- 验收结束后恢复临时禁用的非 RunPod cloud-test `i2i_pro` worker，删除 Pod，并确认 managed RunPod count 回到 0。
 
 ## 8. 手动云正式备用 worker
 正式 RunPod worker 只作为手动备用，不自动按生产队列扩容。
@@ -220,6 +235,7 @@ python scripts/gpu_pool_controller.py runpod prod-worker up \
 | `RUNPOD_MODEL_PREFIX` / `RUNPOD_MODEL_MANIFEST_KEY` | 默认模型 manifest，主要给 `img2img_lora` | `img2img_lora/2026-06-10` | `img2img_lora/2026-06-10` |
 | `RUNPOD_MODEL_PREFIX_IMAGE_TO_VIDEO` / `RUNPOD_MODEL_MANIFEST_KEY_IMAGE_TO_VIDEO` | split `image_to_video` 模型 manifest | `image_to_video/2026-06-13-test/manifest.json` | 同 cloud-test manifest |
 | `RUNPOD_MODEL_PREFIX_WAN22_VIDEO_V2` / `RUNPOD_MODEL_MANIFEST_KEY_WAN22_VIDEO_V2` | split `wan22_video_v2` 模型 manifest | `wan22_video_v2/2026-06-13-test/manifest.json` | 同 cloud-test manifest |
+| `RUNPOD_MODEL_PREFIX_I2I_PRO` / `RUNPOD_MODEL_MANIFEST_KEY_I2I_PRO` | `i2i_pro` cloud-test 专用模型 manifest | `i2i_pro/2026-06-14-test/manifest.json` | 未开放正式主路径 |
 | `RUNPOD_MODEL_PREFIX_WAN22_AIO_VIDEO` / `RUNPOD_MODEL_MANIFEST_KEY_WAN22_AIO_VIDEO` | 兼容/回滚全集 manifest | `wan22_aio_video/2026-06-12-test/manifest.json` | 不作为正式主路径 |
 
 RunPod secret reference 固定口径：
@@ -247,6 +263,20 @@ RUNPOD_MODEL_SECRET_KEY={{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}
 - Wan22 共享 RunPod 镜像构建入口仍在 `remote_workers/docker/runpod_profiles/wan22_aio_video/`，这是镜像目录名，不表示运行时继续使用 AIO profile。
 - 当前 split video profile 复用 Wan22 GHCR image/template，但 profile-specific env、agent prefix、`SUPPORTED_TASK_TYPES`、runtime profile 和模型 manifest 必须分开渲染。
 - Wan22 镜像只 baked workflow 所需 custom nodes、`ffmpeg/ffprobe` 和运行依赖；Wan22 high/low UNet、VAE、text encoder 与旧视频 LoRA 不 baked 进镜像，启动时从 `allbot-model-cache` 同步。
+- `i2i_pro` RunPod 镜像构建入口是 `remote_workers/docker/runpod_profiles/i2i_pro/`，默认 base 为 `yanwk/comfyui-boot:cu130-slim`，ComfyUI pin 到 `16cd8d8a8f5f16ce7e5f929fdba9f783990254ea`。当前 workflow 只要求 ComfyUI/core `nodes` 与 `comfy_extras` 中的 `UNETLoader`、`CLIPLoader`、`VAELoader`、`ReferenceLatent`、`EmptyFlux2LatentImage`、`Flux2Scheduler`、`SamplerCustomAdvanced`，不 baked 自定义节点或业务模型。
+- `i2i_pro_baseline` 模型包从 `gpu-226` / `192.168.1.226:8188` 同步到 R2 `allbot-model-cache/i2i_pro/2026-06-14-test/manifest.json`，包含 6 个文件，总计 `38,769,838,190` bytes（约 `36.11 GiB`）。首次 cloud-test canary 使用 `RUNPOD_CONTAINER_DISK_GB=120`，模型同步只写 ComfyUI `models/`，不得写 `input/output/temp/custom_nodes/workflows`。
+
+`i2i_pro_baseline` 模型清单：
+
+| Relative path | Size bytes |
+| :--- | ---: |
+| `text_encoders/qwen_3_8b_fp8mixed.safetensors` | `8,664,848,742` |
+| `vae/flux2-vae.safetensors` | `336,213,556` |
+| `unet/DarkBeast-Klein9b-V2-BFS-FP8-ComfyUI.safetensors` | `9,078,610,848` |
+| `text_encoders/z_image/qwen_3_4b.safetensors` | `8,044,982,048` |
+| `vae/z_image/ae.safetensors` | `335,304,388` |
+| `unet/DarkBeastZ6-BlitZ-BF16-ComfyUI.safetensors` | `12,309,878,608` |
+
 - `remote_workers/scripts/runpod_sync_models_from_r2.py` 支持 `.partial` 断点续传、有限重试和进度日志；已经创建的 Pod 不会热更新 `dockerStartCmd`，需删除重建。
 - 不要直接 `docker commit` 局域网成功的 ComfyUI 容器作为发布镜像；成功内容主要来自 volume/bind mount，commit 会漏 custom nodes/models/workflows，且可能混入运行残留。
 - `img2img_lora` public GHCR 镜像已经通过真实任务 canary；新 profile 不能继承这个结论，必须单独准备模型 manifest、custom nodes、系统依赖和真实 Web canary。

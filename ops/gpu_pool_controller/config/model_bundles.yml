@@ -51,6 +51,19 @@ bundles:
       notes: Known-good img2img/img2img_lora set. gpu-002 has a smaller compatible mirror.
     files: []
 
+  i2i_pro_baseline:
+    version: 2026-06-14-test
+    profiles:
+      - i2i_pro
+    source:
+      node_id: gpu-226
+      comfy_id: comfy-8188
+      model_dir: /home/ubantu/comfyui/models
+      discovered_size_gb: 36.11
+      import_status: planned
+      notes: Dedicated i2i_pro Flux2/Z-Image model set from 192.168.1.226:8188.
+    files: []
+
   wan22_video_v2_baseline:
     version: 2026-06-10
     profiles:

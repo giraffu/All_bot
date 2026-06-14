@@ -125,6 +125,13 @@ FIRST_WAVE_BUNDLES: dict[str, BundleImportSpec] = {
         task_types=("img2img", "img2img_lora"),
         dynamic_groups=("image_lora",),
     ),
+    "i2i_pro_baseline": BundleImportSpec(
+        bundle="i2i_pro_baseline",
+        version="2026-06-14-test",
+        profiles=("i2i_pro",),
+        source_node_id="gpu-226",
+        task_types=("i2i_pro",),
+    ),
     "wan22_video_v2_baseline": BundleImportSpec(
         bundle="wan22_video_v2_baseline",
         version="2026-06-10",

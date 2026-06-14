@@ -61,6 +61,24 @@ profiles:
     min_vram_gb: 32
     image_ref: 192.168.1.115:5000/allbot/comfy-cu128-img2img:baseline
 
+  i2i_pro:
+    runtime_profile: i2i_pro
+    task_types:
+      - i2i_pro
+    model_bundles:
+      - i2i_pro_baseline
+    required_nodes:
+      - UNETLoader
+      - CLIPLoader
+      - VAELoader
+      - ReferenceLatent
+      - EmptyFlux2LatentImage
+      - Flux2Scheduler
+      - SamplerCustomAdvanced
+    workflow: workers/comfy_agent/workflows/i2i_pro.json
+    min_vram_gb: 32
+    image_ref: ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:pending
+
   wan22_video_v2:
     runtime_profile: wan22_video_v2
     task_types:

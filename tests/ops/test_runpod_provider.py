@@ -2,6 +2,10 @@ import json
 
 from ops.gpu_pool_controller.providers.lan_ssh import LanSshProvider
 from ops.gpu_pool_controller.providers.runpod import (
+    RUNPOD_I2I_PRO_CONTAINER_DISK_GB,
+    RUNPOD_I2I_PRO_GPU_TYPE_IDS,
+    RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY,
+    RUNPOD_I2I_PRO_MODEL_PREFIX,
     RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF,
     RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF,
     RUNPOD_PROD_AGENT_ID,
@@ -596,6 +600,48 @@ def test_render_create_split_video_profiles_share_template_with_distinct_runtime
     )
 
 
+def test_render_create_i2i_pro_cloud_test_profile_uses_dedicated_manifest_and_disk():
+    image_ref = "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:20260614-i2ipro-test"
+    provider = RunPodProvider(
+        _settings(
+            image_name_i2i_pro=image_ref,
+            docker_start_cmd_i2i_pro=("bash", "-lc", "echo i2i bootstrap"),
+            model_sync_enabled=True,
+            model_bucket="allbot-model-cache",
+            model_prefix_i2i_pro=RUNPOD_I2I_PRO_MODEL_PREFIX,
+            model_manifest_key_i2i_pro=RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY,
+            comfy_custom_nodes_enabled=False,
+            comfy_kjnodes_enabled=False,
+            container_disk_gb=80,
+        )
+    )
+
+    payload = provider.render_create_pod_request(
+        task_type="i2i_pro",
+        environment="cloud-test",
+        redact=False,
+    )
+    body = payload["json"]
+    env = body["env"]
+
+    assert "templateId" not in body
+    assert body["name"] == "allbot-runpod-test-i2i-pro"
+    assert body["imageName"] == image_ref
+    assert body["gpuTypeIds"] == list(RUNPOD_I2I_PRO_GPU_TYPE_IDS)
+    assert body["containerDiskInGb"] == RUNPOD_I2I_PRO_CONTAINER_DISK_GB
+    assert body["dockerStartCmd"] == ["bash", "-lc", "echo i2i bootstrap"]
+    assert env["RUNPOD_ENVIRONMENT"] == "cloud-test"
+    assert env["RUNPOD_TASK_TYPE"] == "i2i_pro"
+    assert env["AGENT_ID_PREFIX"] == "runpod_test_i2i_pro"
+    assert env["SUPPORTED_TASK_TYPES"] == "i2i_pro"
+    assert env["POOL_RUNTIME_PROFILE"] == "i2i_pro"
+    assert env["RUNPOD_MODEL_BUCKET"] == "allbot-model-cache"
+    assert env["RUNPOD_MODEL_PREFIX"] == RUNPOD_I2I_PRO_MODEL_PREFIX
+    assert env["RUNPOD_MODEL_MANIFEST_KEY"] == RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY
+    assert env["RUNPOD_COMFY_CUSTOM_NODES_ENABLED"] == "false"
+    assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
+
+
 def test_runpod_settings_from_env_split_video_profiles_fallback_to_wan22_image_template(
     tmp_path,
     monkeypatch,
@@ -640,6 +686,43 @@ def test_runpod_settings_from_env_split_video_profiles_fallback_to_wan22_image_t
         settings.model_manifest_key_wan22_video_v2
         == RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY
     )
+
+
+def test_runpod_settings_from_env_supports_i2i_pro_profile_keys(
+    tmp_path,
+    monkeypatch,
+):
+    script = tmp_path / "i2i-bootstrap.sh"
+    script.write_text("echo i2i bootstrap\n", encoding="utf-8")
+    monkeypatch.setenv("RUNPOD_USE_TEMPLATE_I2I_PRO", "true")
+    monkeypatch.setenv("RUNPOD_TEMPLATE_ID_I2I_PRO", "i2i-template")
+    monkeypatch.setenv(
+        "RUNPOD_IMAGE_NAME_I2I_PRO",
+        "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:shared",
+    )
+    monkeypatch.setenv("RUNPOD_DOCKER_START_SCRIPT_FILE_I2I_PRO", str(script))
+    monkeypatch.setenv("RUNPOD_GPU_TYPE_IDS_I2I_PRO", "NVIDIA L40S")
+    monkeypatch.setenv("RUNPOD_PROJECTED_COST_PER_HR_I2I_PRO", "0.77")
+    monkeypatch.setenv("RUNPOD_MODEL_PREFIX_I2I_PRO", RUNPOD_I2I_PRO_MODEL_PREFIX)
+    monkeypatch.setenv(
+        "RUNPOD_MODEL_MANIFEST_KEY_I2I_PRO",
+        RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY,
+    )
+
+    settings = RunPodSettings.from_env()
+
+    assert settings.use_template_i2i_pro is True
+    assert settings.template_id_i2i_pro == "i2i-template"
+    assert settings.image_name_i2i_pro.endswith(":shared")
+    assert settings.docker_start_cmd_i2i_pro == (
+        "bash",
+        "-lc",
+        "echo i2i bootstrap\n",
+    )
+    assert settings.gpu_type_ids_i2i_pro == ("NVIDIA L40S",)
+    assert settings.projected_cost_per_hr_i2i_pro == 0.77
+    assert settings.model_prefix_i2i_pro == RUNPOD_I2I_PRO_MODEL_PREFIX
+    assert settings.model_manifest_key_i2i_pro == RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY
 
 
 def test_runpod_settings_from_env_supports_wan22_docker_start_script_file(
