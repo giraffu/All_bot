@@ -50,7 +50,7 @@ RUN set -euo pipefail; \
 RUN set -euo pipefail; \
     comfyui_dir="$(cat /opt/allbot-comfyui-dir)"; \
     test -f "${comfyui_dir}/main.py"; \
-    PYTHONPATH="${comfyui_dir}:${PYTHONPATH:-}" python3 -c 'import sys; sys.argv=["main.py","--cpu"]; import nodes; from comfy_extras.nodes_edit_model import ReferenceLatent; from comfy_extras.nodes_flux import EmptyFlux2LatentImage, Flux2Scheduler; required=("UNETLoader","CLIPLoader","VAELoader","SamplerCustomAdvanced"); missing=[name for name in required if name not in nodes.NODE_CLASS_MAPPINGS]; raise SystemExit("missing ComfyUI core nodes: "+",".join(missing)) if missing else None; assert ReferenceLatent and EmptyFlux2LatentImage and Flux2Scheduler'
+    python3 -c 'from pathlib import Path; root=Path("/opt/allbot-comfyui-dir").read_text().strip(); root=Path(root); checks={root/"nodes.py":("UNETLoader","CLIPLoader","VAELoader","SamplerCustomAdvanced"),root/"comfy_extras"/"nodes_edit_model.py":("ReferenceLatent",),root/"comfy_extras"/"nodes_flux.py":("EmptyFlux2LatentImage","Flux2Scheduler")}; missing=[]; [missing.append(f"{path}:{name}") for path,names in checks.items() for name in names if name not in path.read_text(encoding="utf-8")]; raise SystemExit("missing ComfyUI i2i_pro node sources: "+",".join(missing)) if missing else None'
 
 RUN set -euo pipefail; \
     comfyui_dir="$(cat /opt/allbot-comfyui-dir)"; \
