@@ -15,7 +15,7 @@
 出现以下任一场景时，至少执行一次“最小必跑集”：
 
 - 修改 `task_service_flow`、Bot entrypoint
-- 修改 `task_core.py`、`task_core_service_providers.py`、`task_core_default_dependencies.py`、`src/services/task_core_process_defaults.py`、`task_core_submission.py`、`src/services/task_web_side_effects.py`、`src/services/task_web_lifecycle_monitor.py`、`src/services/task_web_terminal_finalization.py`、`task_core_runtime.py`
+- 修改 `task_core.py`、`task_core_service_providers.py`、`task_core_default_dependencies.py`、`src/task_core_process_defaults.py`、`task_core_submission.py`、`src/services/task_web_side_effects.py`、`src/services/task_web_lifecycle_monitor.py`、`src/services/task_web_terminal_finalization.py`、`task_core_runtime.py`
 - 修改 `backend/app/main.py`、`backend/app/main_t2i_wiring.py`、`queue_manager.py`
 - 修改 `src/web_api/routers/tasks.py`、`task_submission_service.py`、`task_runtime_api_service.py`、`task_result_service.py`、`task_stream_api_service.py`
 - 修改任务状态字段、not-found fallback、取消语义、排队语义、双 ID 语义
@@ -48,7 +48,7 @@
 - `src/core/task_core.py`
 - `src/core/task_core_service_providers.py`
 - `src/core/task_core_default_dependencies.py`
-- `src/services/task_core_process_defaults.py`
+- `src/task_core_process_defaults.py`
 - `src/core/task_core_submission.py`
 - `src/services/task_web_side_effects.py`
 - `src/services/task_web_lifecycle_monitor.py`

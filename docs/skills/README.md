@@ -37,6 +37,7 @@
 
 ## 4. 维护原则
 - `docs/skills/README.md` 只维护技能目录与高层边界，不重复拷贝各 `SKILL.md` 的全部细节。
+- `SKILL.md` 只沉淀触发边界、当前真实入口、不可越过的红线和最小验证要求；不要记录一次性 Pod ID、任务 ID、失败尝试流水账或长篇现场日志。这类材料应进入 `/docs/archive/` 或 `logs/`。
 - 若新增技能，必须同时同步：
   - `.codex/skills/<skill>/SKILL.md`
   - `AGENTS.md` 路由表

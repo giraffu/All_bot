@@ -248,7 +248,11 @@ sequenceDiagram
 - 若修改云正式 compose、worker compose、边缘 upstream、R2/legacy fallback、Central 状态观测缓存或 Dashboard 高频监控策略，必须同步更新云正式部署文档与相关 skills。
 - 若技能文档与代码入口冲突，应先更新 skill / docs，再继续开发。
 
-### 5.1 2026-06-03 维护基线
+### 5.1 维护基线与知识库口径
+- 2026-06-14 知识库维护口径：`AGENTS.md` 只保留全局路由，细节以 `.codex/skills/*/SKILL.md` 和 `/docs` 为准；技能正文应记录稳定边界和入口，不沉淀一次性 Pod ID、任务 ID、失败尝试流水账或真实密钥值。
+- `src/task_core_process_defaults.py` 是 task core process 默认装配的真实入口。
+- RunPod Provider v0 的稳定边界是云测试 `img2img/img2img_lora` canary、云测试 split video profile (`image_to_video` / `wan22_video_v2`) canary，以及手动云正式备用 worker；生产自动按队列扩容仍未开启。
+- `wan22_aio_video` 只保留为兼容/回滚 profile；新视频测试、扩容和正式备用 worker 都应使用 split profile。
 - 最新全局质量评估未发现 Critical 级架构阻断，`src/core` 未发现直接依赖 Telegram `Update` 或 FastAPI `Request/APIRouter` 等平台对象。
 - 当前主要风险集中在长期维护成本：Worker `agent_main.py::process_task`、Wan22 链式拼接、Gallery 响应组装、Bot 进度监控、练功房主 composable 与前端生成页重复逻辑。
 - workflow 资产已收口到 `workers/comfy_agent/workflows`；Central API 不再维护 backend 副本，也不再执行 workflow 启动校验。

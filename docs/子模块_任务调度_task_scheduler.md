@@ -8,7 +8,7 @@
 - `src/core/task_lifecycle_contract.py`：共享任务生命周期 contract，统一 side-effect plan 归一化与 backend 终态判断
 - `src/core/task_core_service_providers.py`：provider/capability 边界，屏蔽 `image_service`、`TaskRegistry`、submission outbox 等基础设施实现
 - `src/core/task_core_default_dependencies.py`：纯 builder 层，负责把 capability/provider 组合成 `TaskCore*Dependencies`
-- `src/services/task_core_process_defaults.py`：runtime-specific process 默认装配，负责把 billing / strategy / Web side effects 接到 process dependencies
+- `src/task_core_process_defaults.py`：runtime-specific process 默认装配，负责把 billing / strategy / Web side effects 接到 process dependencies
 - `src/task_core_persistence_defaults.py`：runtime-specific persistence 默认装配，负责把 `src.logger.UserLogger` 等基础设施注入到 core persistence dependencies
 - `src/core/user_logger_protocol.py`：core 侧只依赖 UserLogger protocol，不直接 import `src.logger`
 - `src/core/task_core_submission.py`：提交 Saga、注册表写入、派发与补偿

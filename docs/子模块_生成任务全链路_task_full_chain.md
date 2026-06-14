@@ -163,7 +163,7 @@ Web 统一入口在：
 - `src/core/task_core.py`
 - `src/core/task_lifecycle_contract.py`
 - `src/core/task_core_default_dependencies.py`
-- `src/services/task_core_process_defaults.py`
+- `src/task_core_process_defaults.py`
 - `src/core/task_core_service_providers.py`
 - `src/core/task_core_submission.py`
 - `src/core/task_core_process_flow.py`
@@ -175,7 +175,7 @@ Web 统一入口在：
 
 关键规则：
 - `core` 内不应重新直连基础设施实现
-- `task_core_default_dependencies.py` 只保留纯 builder；runtime-specific billing / strategy / Web side effect 装配已下沉到 `src/services/task_core_process_defaults.py`
+- `task_core_default_dependencies.py` 只保留纯 builder；runtime-specific billing / strategy / Web side effect 装配已下沉到 `src/task_core_process_defaults.py`
 - Bot / Web / stream 对 backend `done/error/cancelled` 终态判断应共享 `task_lifecycle_contract.py`
 - Web 侧已按 `side effects -> lifecycle monitor -> terminal finalization` 三段拆开，入口分别位于 `task_web_side_effects.py`、`task_web_lifecycle_monitor.py`、`task_web_terminal_finalization.py`
 - Bot `task_service_flow.py` 与 Web lifecycle monitor 现共享 `task_lifecycle_runner.py` 的 monitor->route 骨架；Web runtime monitor 与 `task_web_finalizer.py` 共享 terminal router

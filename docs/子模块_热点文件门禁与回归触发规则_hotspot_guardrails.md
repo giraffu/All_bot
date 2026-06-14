@@ -50,7 +50,7 @@
 - `backend/app/queue_manager.py`
 - `src/core/task_core.py`
 - `src/core/task_core_submission.py`
-- `src/services/task_core_process_defaults.py`
+- `src/task_core_process_defaults.py`
 - `src/web_api/__init__.py`
 - `src/web_api/main.py`
 - `src/web_api/dependencies.py`

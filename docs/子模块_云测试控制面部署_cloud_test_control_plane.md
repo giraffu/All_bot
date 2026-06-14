@@ -219,10 +219,10 @@ df -h /
 - 启动 `bot-test` 前已确认本地测试 Bot 停止，避免测试 token 双实例 polling。
 - Droplet 根分区约 48GB，首次构建后已用约 9.2GB。
 
-2026-06-13 RunPod `wan22_video_v2` 云测试 Web 端验收结果：
-- 使用测试 Web API `http://100.82.124.91:8001/api/tasks/generate` 提交 `wan22_video_v2` preview/5s 图生视频任务 `0f170dec-a48f-4f3c-9393-e1dcd053937f`，不是绕过 Web 的 worker 直测。
-- 任务由 RunPod 4090 worker `runpod_test_wan22_video_v2_tyejnfyigvwc68` 接取，Central `task_type=wan22_video_v2`、终态 `done`，Web result `success`。
-- 生成文件已下载到项目根目录 `wan22_video_v2.mp4`，尾帧下载到 `wan22_video_v2_last_frame.png`；测试期间临时禁用的 `cloud_worker_test_05` 已恢复 enabled，验收后 RunPod Pod 已删除且 managed count 为 0。
+2026-06-13 RunPod `wan22_video_v2` 云测试 Web 端验收口径：
+- 验收必须通过测试 Web API `http://100.82.124.91:8001/api/tasks/generate` 提交 `wan22_video_v2` preview/5s 任务，不能只做 worker 直测。
+- 合格结果应同时满足：RunPod worker 接单、Central `task_type=wan22_video_v2`、终态 `done`、Web result `success`、MP4 与 `extra_outputs.last_frame` 均可下载。
+- 验收结束后必须恢复临时禁用的云测试 worker，删除 RunPod Pod，并确认 `list-pods` / `reconcile-managed-pods` 的 managed count 为 0。
 
 2026-06-06 R2 切换验证结果：
 - 本地测试 MinIO 历史对象已镜像到 R2 `user-data-test` 桶根路径：`bot-data-test` 约 1.10GiB，`comfyui-temp-test` 约 749.91MiB，`bot-template-test` 为空。
