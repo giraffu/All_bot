@@ -8,9 +8,9 @@ on:
         required: false
         default: ""
       base_image:
-        description: "Base image. Default matches the proven LAN i2i_pro ComfyUI cu130 runtime."
+        description: "Base image. Default targets RunPod RTX 4090 hosts with CUDA 12.4 drivers."
         required: false
-        default: "yanwk/comfyui-boot:cu130-slim"
+        default: "yanwk/comfyui-boot:cu124-slim"
       comfyui_ref:
         description: "ComfyUI git ref with Flux2 edit nodes used by i2i_pro."
         required: false

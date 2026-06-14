@@ -229,6 +229,7 @@ df -h /
 - 验收必须通过测试 Web API `http://100.82.124.91:8001/api/tasks/generate` 提交 `task_type=i2i_pro` 的单图任务，不能只做 worker 直测。
 - RunPod env 需渲染为 `RUNPOD_TASK_TYPE=i2i_pro`、`SUPPORTED_TASK_TYPES=i2i_pro`、`POOL_RUNTIME_PROFILE=i2i_pro`、`AGENT_ID` 前缀 `runpod_test_i2i_pro`。
 - 模型 manifest 使用 `allbot-model-cache/i2i_pro/2026-06-14-test/manifest.json`，六个模型文件总计约 `36.11 GiB`；首次 canary 使用 `RUNPOD_CONTAINER_DISK_GB=120`，GPU 只请求 `NVIDIA GeForce RTX 4090`。
+- 镜像基线必须使用 CUDA 12.4 兼容版本，例如 `yanwk/comfyui-boot:cu124-slim`；RunPod 4090 宿主机当前不兼容 `cu130` 镜像内的 PyTorch CUDA 运行时。
 - 合格结果应同时满足：RunPod worker heartbeat 出现为 `runpod_test_i2i_pro_*`、Central `task_type=i2i_pro`、`pop_evidence.agent_id` 匹配 RunPod worker、终态 `done`、Web result `success`、图片可下载。
 - 若当前保留了云正式手动备用 RunPod Pod，执行 `i2i_pro` cloud-test canary 时必须显式开启 `--allow-existing-prod-managed-pods` 或 `RUNPOD_CANARY_ALLOW_EXISTING_PROD_MANAGED_PODS=true`；该开关只忽略 prod 手动备用名称前缀，任何 cloud-test 残留 managed Pod 仍会阻止执行。
 - 失败排障时可用 `--no-cleanup` 保留本次新建的 `i2i_pro` Pod；复跑 Web 任务使用 `--reuse-pod-id i2i_pro=<pod_id>`，不得重复创建诊断 Pod。

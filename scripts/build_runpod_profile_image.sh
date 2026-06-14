@@ -14,7 +14,7 @@ SMOKE="true"
 default_base_image_for_profile() {
     case "$1" in
         i2i_pro)
-            printf '%s\n' "yanwk/comfyui-boot:cu130-slim"
+            printf '%s\n' "yanwk/comfyui-boot:cu124-slim"
             ;;
         *)
             printf '%s\n' "yanwk/comfyui-boot:cu128-slim"
@@ -41,7 +41,7 @@ Usage:
 Options:
   --profile <name>       Profile to build: img2img_lora, wan22_aio_video, or i2i_pro.
   --image-ref <ref>      Target image ref. Defaults to a local allbot/comfy-runpod-* tag.
-  --base-image <ref>     Base image. Defaults per profile; i2i_pro uses yanwk/comfyui-boot:cu130-slim.
+  --base-image <ref>     Base image. Defaults per profile; i2i_pro uses yanwk/comfyui-boot:cu124-slim.
   --comfyui-ref <ref>    ComfyUI git ref used when the base image does not include ComfyUI.
   --kjnodes-ref <sha>    ComfyUI-KJNodes git ref pinned into the image.
   --kjnodes-source <dir> Build from an existing local ComfyUI-KJNodes directory instead of GitHub.
