@@ -258,7 +258,7 @@ test -f "${comfyui_dir}/main.py"
 command -v ffmpeg >/dev/null
 command -v curl >/dev/null
 command -v git >/dev/null
-PYTHONPATH="${comfyui_dir}:${PYTHONPATH:-}" python3 -c '"'"'import nodes; from comfy_extras.nodes_edit_model import ReferenceLatent; from comfy_extras.nodes_flux import EmptyFlux2LatentImage, Flux2Scheduler; required=("UNETLoader","CLIPLoader","VAELoader","SamplerCustomAdvanced"); missing=[name for name in required if name not in nodes.NODE_CLASS_MAPPINGS]; raise SystemExit("missing ComfyUI core nodes: "+",".join(missing)) if missing else None; assert ReferenceLatent and EmptyFlux2LatentImage and Flux2Scheduler'"'"'
+PYTHONPATH="${comfyui_dir}:${PYTHONPATH:-}" python3 -c '"'"'import sys; sys.argv=["main.py","--cpu"]; import nodes; from comfy_extras.nodes_edit_model import ReferenceLatent; from comfy_extras.nodes_flux import EmptyFlux2LatentImage, Flux2Scheduler; required=("UNETLoader","CLIPLoader","VAELoader","SamplerCustomAdvanced"); missing=[name for name in required if name not in nodes.NODE_CLASS_MAPPINGS]; raise SystemExit("missing ComfyUI core nodes: "+",".join(missing)) if missing else None; assert ReferenceLatent and EmptyFlux2LatentImage and Flux2Scheduler'"'"'
 if find "${comfyui_dir}/models" -type f \( \
   -name "qwen_3_8b_fp8mixed.safetensors" -o \
   -name "flux2-vae.safetensors" -o \

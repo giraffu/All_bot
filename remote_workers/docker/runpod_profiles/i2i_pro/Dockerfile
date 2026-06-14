@@ -50,7 +50,7 @@ RUN set -euo pipefail; \
 RUN set -euo pipefail; \
     comfyui_dir="$(cat /opt/allbot-comfyui-dir)"; \
     test -f "${comfyui_dir}/main.py"; \
-    PYTHONPATH="${comfyui_dir}:${PYTHONPATH:-}" python3 -c 'import nodes; from comfy_extras.nodes_edit_model import ReferenceLatent; from comfy_extras.nodes_flux import EmptyFlux2LatentImage, Flux2Scheduler; required=("UNETLoader","CLIPLoader","VAELoader","SamplerCustomAdvanced"); missing=[name for name in required if name not in nodes.NODE_CLASS_MAPPINGS]; raise SystemExit("missing ComfyUI core nodes: "+",".join(missing)) if missing else None; assert ReferenceLatent and EmptyFlux2LatentImage and Flux2Scheduler'
+    PYTHONPATH="${comfyui_dir}:${PYTHONPATH:-}" python3 -c 'import sys; sys.argv=["main.py","--cpu"]; import nodes; from comfy_extras.nodes_edit_model import ReferenceLatent; from comfy_extras.nodes_flux import EmptyFlux2LatentImage, Flux2Scheduler; required=("UNETLoader","CLIPLoader","VAELoader","SamplerCustomAdvanced"); missing=[name for name in required if name not in nodes.NODE_CLASS_MAPPINGS]; raise SystemExit("missing ComfyUI core nodes: "+",".join(missing)) if missing else None; assert ReferenceLatent and EmptyFlux2LatentImage and Flux2Scheduler'
 
 RUN set -euo pipefail; \
     comfyui_dir="$(cat /opt/allbot-comfyui-dir)"; \
