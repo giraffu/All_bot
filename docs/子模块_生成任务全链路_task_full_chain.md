@@ -277,7 +277,7 @@ Central API 是执行面，不是业务主入口。
 - `ltx_video`
 - `wan22_video_v2`
 
-其中 `txt2img` 当前通过 `/txt2img` simple route 进入执行面，Central API 内部仍映射到 legacy `TaskType.T2I_PORNMASTER_TURBO`。旧图生视频的 `/image_to_video` 与 `/perfect_video_lora` 会入队到执行面 `TaskType.IMAGE_TO_VIDEO`，但上游历史类型仍保留 `custom_video` / `video_lora`；`video_edit` 继续绑定 `perfect_video_edit.json`，不要把快捷视频误切到 Wan22。Wan22 AIO 当前明确分两档 profile：旧图生视频 `custom_video` / `video_lora` -> execution `image_to_video` -> `legacy_image_to_video` profile；图生视频 v2 `wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。`i2i_pro` RunPod 支持当前只是 cloud-test runtime profile，执行面 task type 仍是现有 `i2i_pro`，不是新增业务类型。新增任务类型时，不要默认假设只改 `SIMPLE_TASK_TYPE_MAP` 就够，还要确认 request model、dispatcher 和 worker workflow 映射是否齐全。
+其中 `txt2img` 当前通过 `/txt2img` simple route 进入执行面，Central API 内部仍映射到 legacy `TaskType.T2I_PORNMASTER_TURBO`。旧图生视频的 `/image_to_video` 与 `/perfect_video_lora` 会入队到执行面 `TaskType.IMAGE_TO_VIDEO`，但上游历史类型仍保留 `custom_video` / `video_lora`；`video_edit` 继续绑定 `perfect_video_edit.json`，不要把快捷视频误切到 Wan22。Wan22 AIO 当前明确分两档 profile：旧图生视频 `custom_video` / `video_lora` -> execution `image_to_video` -> `legacy_image_to_video` profile；图生视频 v2 `wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。`i2i_pro` RunPod 支持当前只是 cloud-test runtime profile，执行面 task type 仍是现有 `i2i_pro`，不是新增业务类型。`face_swap_v2.json` 也是 workflow 替换，不是新业务类型；上游仍提交 `face_swap`，目标 Worker 通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 读取 v2。新增任务类型时，不要默认假设只改 `SIMPLE_TASK_TYPE_MAP` 就够，还要确认 request model、dispatcher 和 worker workflow 映射是否齐全。
 
 ### 8.3 QueueManager 的职责
 QueueManager 负责执行面排队与 Worker 选择，关键职责包括：
@@ -346,6 +346,7 @@ Worker 拉到任务后会先处理输入：
 关键点：
 - `TASK_TYPE_WORKFLOW_FILENAMES` 决定任务类型默认绑定哪个 workflow JSON
 - `TASK_TYPE_WORKFLOW_OVERRIDES` 可在单个 Worker 环境变量中覆盖某个 task type 的 workflow JSON，用于云测试/canary；未设置时仍走默认绑定，override 文件名必须留在 workflow 目录内
+- 当前 `face_swap` 仅在测试 worker1 compose 中通过 override 指向 `face_swap_v2.json`。v2 使用 `i2i_pro` 的 Flux2/edit 节点与模型，去掉旧换脸专用 LoRA / DifferentialDiffusion；`mappings.json` 继续只写入 `face_image -> 2`、`body_image -> 3`，正式 worker 未设置 override 时仍走旧 `face_swap.json`。
 - `mappings.json` 决定输入参数如何映射到 workflow 节点
 - `workflow_patcher.py` 负责把运行时参数打进具体 workflow
 - `image_to_video` 与 `wan22_video_v2` 当前共用 `Wan22AioV82.json`，由 `_patch_wan22_aio_workflow(...)` 统一 patch。两者通过 `wan22_model_profile` 注入不同主模型；旧 `video_lora` 会把 `{lora_name}_high_noise.safetensors` / `{lora_name}_low_noise.safetensors` 写入工作流 LoRA 槽，v2 始终清空额外 LoRA 槽。

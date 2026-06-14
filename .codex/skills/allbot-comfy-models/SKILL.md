@@ -17,6 +17,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 - 新增或修改 workflow JSON、`mappings.json`、`workflow_patcher.py`、`workflow_task_patchers.py` 时，只更新 Worker 目录，并确认目标 Worker 的 `SUPPORTED_TASK_TYPES` 覆盖该 task type。
 - Worker 启动时会基于 `workers/comfy_agent/workflows/mappings.json` 校验映射节点与输入名；Central API 只负责参数网关和队列入队，不再用 workflow 文件做启动门禁。
 - 重导 workflow 后必须复核硬编码节点 ID、`mappings.json` 节点输入名、`TASK_TYPE_WORKFLOW_FILENAMES` 绑定和 Worker `SUPPORTED_TASK_TYPES`，避免 Worker 校验通过但执行面读到旧文件。
+- `face_swap_v2.json` 是从 `i2i_pro` Flux2/edit 链路拆出的图片换脸替代模板；业务 task type 仍保持 `face_swap`，通过 Worker `TASK_TYPE_WORKFLOW_OVERRIDES` 指向 v2，不新增 Backend/Bot 任务类型，也不需要 Python 专属 patcher。`mappings.json` 必须保持 `face_image -> 2`、`body_image -> 3`；未设置 override 时默认绑定仍回到旧 `face_swap.json`。
 - 局域网 GPU 节点的模型目录、`comfy0/comfy1` 容器挂载和 `inst0/inst1` 隔离关系见 `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md`。新增或移动模型前必须确认目标 ComfyUI 的共享模型目录，避免误改另一张卡正在使用的模型集。
 - Worker Agent 与 ComfyUI Runtime 是两层：`cloud-prod-comfy-agent-*` 更新 workflow/patcher/上传逻辑，目标 GPU 节点上的 ComfyUI 负责实际模型加载。`gpu-226:8188` 是宿主机 ComfyUI，不是 Docker `comfy0`；`POOL_IMAGE_REF` 只是期望 profile/镜像声明，不能当作模型已随镜像部署的证据。
 - GPU Pool Controller 首阶段模型同步只写目标共享 `models` 目录；不要碰 `input/output/temp/custom_nodes/workflows`，也不要为了修路径创建大模型重复别名文件。模型路径应按 Comfy `/object_info` 和 workflow 实际引用修正。

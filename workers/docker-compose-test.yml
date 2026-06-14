@@ -23,6 +23,7 @@ services:
       - TZ=Asia/Shanghai
       - AGENT_ID=worker_test_01
       - SUPPORTED_TASK_TYPES=face_swap,i2i_pro,i2i_draw,face_video,image_to_video,t2i-pornmaster-turbo
+      - TASK_TYPE_WORKFLOW_OVERRIDES={"face_swap":"face_swap_v2.json"}
       - MASTER_API_URL=http://127.0.0.1:8004
       - COMFY_API_URL=http://192.168.1.226:8188
       - COMFY_WS_URL=ws://192.168.1.226:8188/ws
