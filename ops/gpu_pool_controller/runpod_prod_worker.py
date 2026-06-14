@@ -55,6 +55,7 @@ PROD_I2I_PRO_TASK_TYPE = "i2i_pro"
 PROD_TXT2IMG_PUBLIC_TASK_TYPE = "txt2img"
 PROD_TXT2IMG_EXECUTION_TASK_TYPE = "t2i-pornmaster-turbo"
 PROD_FACE_SWAP_TASK_TYPE = "face_swap"
+PROD_WORKER_DEFAULT_HEARTBEAT_TIMEOUT_SECONDS = 3600.0
 HEALTHY_WORKER_STATUSES = {"idle", "running"}
 TERMINAL_TASK_STATUSES = {"done", "error", "cancelled"}
 
@@ -82,7 +83,7 @@ class RunPodProdWorkerOptions:
     output_dir: Path = Path("/tmp/allbot_runpod_prod_worker")
     download_results_dir: Path = Path("runpod_canary_results/prod")
     readiness_timeout_seconds: float = 900.0
-    worker_timeout_seconds: float = 600.0
+    worker_timeout_seconds: float = PROD_WORKER_DEFAULT_HEARTBEAT_TIMEOUT_SECONDS
     drain_timeout_seconds: float = 300.0
     task_timeout_seconds: float = 1800.0
     poll_interval_seconds: float = 10.0
@@ -267,7 +268,13 @@ def options_from_args_env(args: Any) -> RunPodProdWorkerOptions:
             or default_download_dir
         ),
         readiness_timeout_seconds=float(getattr(args, "readiness_timeout", 900.0)),
-        worker_timeout_seconds=float(getattr(args, "worker_timeout", 600.0)),
+        worker_timeout_seconds=float(
+            getattr(
+                args,
+                "worker_timeout",
+                PROD_WORKER_DEFAULT_HEARTBEAT_TIMEOUT_SECONDS,
+            )
+        ),
         drain_timeout_seconds=float(getattr(args, "drain_timeout", 300.0)),
         task_timeout_seconds=float(getattr(args, "task_timeout", 1800.0)),
         poll_interval_seconds=float(getattr(args, "poll_interval", 10.0)),

@@ -20,6 +20,7 @@ from .runpod_canary import (
     options_from_args_env as canary_options_from_args_env,
 )
 from .runpod_prod_worker import (
+    PROD_WORKER_DEFAULT_HEARTBEAT_TIMEOUT_SECONDS,
     RunPodProdWorkerRunner,
     apply_prod_worker_selection_to_env,
     load_env_file_for_prod_worker,
@@ -805,7 +806,11 @@ def build_parser() -> argparse.ArgumentParser:
     prod_worker_common.add_argument("--prompt", default=None)
     prod_worker_common.add_argument("--negative-prompt", default=None)
     prod_worker_common.add_argument("--readiness-timeout", type=float, default=900.0)
-    prod_worker_common.add_argument("--worker-timeout", type=float, default=600.0)
+    prod_worker_common.add_argument(
+        "--worker-timeout",
+        type=float,
+        default=PROD_WORKER_DEFAULT_HEARTBEAT_TIMEOUT_SECONDS,
+    )
     prod_worker_common.add_argument("--drain-timeout", type=float, default=300.0)
     prod_worker_common.add_argument("--task-timeout", type=float, default=1800.0)
     prod_worker_common.add_argument("--poll-interval", type=float, default=10.0)

@@ -243,7 +243,7 @@ python scripts/gpu_pool_controller.py runpod prod-worker up \
 ```
 
 正式流程红线：
-- `up --execute` 固定为预检 -> 写目标 agent control `disabled` -> 创建 Pod -> 等 readiness -> 等 Central heartbeat；ready 后默认不抢正式订单。
+- `up --execute` 固定为预检 -> 写目标 agent control `disabled` -> 创建 Pod -> 等 readiness -> 等 Central heartbeat；ready 后默认不抢正式订单。`prod-worker` 的 worker heartbeat 等待默认 `3600s`，用于覆盖 `i2i_pro` 首次同步约 36GiB 模型的启动窗口。
 - `enable --execute` 才允许目标 worker 接单。
 - `down --execute` 必须确认无 `current_task_id`，忙碌 worker 不提供隐式 force。
 - `canary --execute` 不禁用现有正式 worker；完成后恢复目标 RunPod worker 为 `disabled`。
