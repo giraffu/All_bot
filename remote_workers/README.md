@@ -201,10 +201,12 @@ It builds `ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:<tag>` from
 `remote_workers/docker/runpod_profiles/i2i_pro/`, defaults to
 `yanwk/comfyui-boot:cu130-slim`, pins ComfyUI to
 `16cd8d8a8f5f16ce7e5f929fdba9f783990254ea`, and verifies anonymous GHCR
-manifest access after push. The smoke test asserts ComfyUI/core nodes needed by
-`workers/comfy_agent/workflows/i2i_pro.json`, `ffmpeg`, `curl`, `git`, and the
-RunPod bootstrap Python path. No business model weights are baked into this
-image.
+manifest access after push. The smoke test asserts ComfyUI/core node source
+files needed by `workers/comfy_agent/workflows/i2i_pro.json`, `ffmpeg`, `curl`,
+`git`, and the RunPod bootstrap Python path. It intentionally avoids importing
+GPU-touching ComfyUI modules on the CPU GitHub runner; GPU import and execution
+are verified by the cloud-test canary. No business model weights are baked into
+this image.
 
 Use the local script as a fallback or for profile debugging. Only push locally
 after choosing a registry namespace that RunPod can pull:
