@@ -270,6 +270,11 @@ test -f "${comfyui_dir}/main.py"
 command -v ffmpeg >/dev/null
 command -v curl >/dev/null
 command -v git >/dev/null
+command -v ssh-keygen >/dev/null
+if ! command -v sshd >/dev/null && [ ! -x /usr/sbin/sshd ]; then
+  echo "sshd must be available for RunPod direct TCP diagnostics" >&2
+  exit 1
+fi
 COMFYUI_DIR="${comfyui_dir}" python3 -c '"'"'from pathlib import Path; import os, sys; root=Path(os.environ["COMFYUI_DIR"]); checks={root/"nodes.py":("UNETLoader","CLIPLoader","VAELoader"),root/"comfy_extras"/"nodes_custom_sampler.py":("SamplerCustomAdvanced",),root/"comfy_extras"/"nodes_edit_model.py":("ReferenceLatent",),root/"comfy_extras"/"nodes_flux.py":("EmptyFlux2LatentImage","Flux2Scheduler")}; missing=[]; [missing.append(f"{path}:{name}") for path,names in checks.items() for name in names if name not in path.read_text(encoding="utf-8")]; sys.exit("missing ComfyUI i2i_pro node sources: "+",".join(missing)) if missing else None'"'"'
 if find "${comfyui_dir}/models" -type f \( \
   -name "qwen_3_8b_fp8mixed.safetensors" -o \

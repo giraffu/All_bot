@@ -23,6 +23,13 @@ RUN set -euo pipefail; \
       apt-get update; \
       DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ${packages}; \
       rm -rf /var/lib/apt/lists/*; \
+    elif command -v zypper >/dev/null 2>&1; then \
+      packages="ca-certificates curl ffmpeg findutils git openssh"; \
+      if ! python3 -m pip --version >/dev/null 2>&1; then \
+        packages="${packages} python3-pip"; \
+      fi; \
+      zypper --non-interactive --gpg-auto-import-keys install --no-recommends ${packages}; \
+      zypper clean --all; \
     fi
 
 RUN set -euo pipefail; \

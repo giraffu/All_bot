@@ -37,6 +37,10 @@ start_sshd_for_diagnostics() {
             apt-get update
             DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends openssh-server
             rm -rf /var/lib/apt/lists/*
+        elif [ "${RUNPOD_INSTALL_SSHD_IF_MISSING:-true}" = "true" ] && command -v zypper >/dev/null 2>&1; then
+            log "sshd not found; installing openssh for direct TCP diagnostics"
+            zypper --non-interactive --gpg-auto-import-keys install --no-recommends openssh
+            zypper clean --all
         fi
         sshd_bin="$(command -v sshd 2>/dev/null || true)"
         if [ -z "$sshd_bin" ] && [ -x /usr/sbin/sshd ]; then
