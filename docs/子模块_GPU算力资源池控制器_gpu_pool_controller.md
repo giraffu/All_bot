@@ -190,6 +190,22 @@ canary 摘要只允许记录脱敏后的 object key、task id、Central/Web 终�
 - Web result 为 `success`，最终状态为 `done`，图片结果可下载。
 - 验收结束后恢复临时禁用的非 RunPod cloud-test `i2i_pro` worker，删除 Pod，并确认 managed RunPod count 回到 0。
 
+当测试服 canary 需要与现有云正式手动备用 Pod 共存时，必须显式传
+`--allow-existing-prod-managed-pods` 或设置
+`RUNPOD_CANARY_ALLOW_EXISTING_PROD_MANAGED_PODS=true`。该开关只忽略名称前缀为
+`allbot-runpod-prod-img2img-manual-`、`allbot-runpod-prod-image-to-video-manual-`、
+`allbot-runpod-prod-wan22-video-v2-manual-` 的既有 managed Pod；任何 cloud-test
+残留 Pod 仍会阻止 `canary --execute`。开启后 `RUNPOD_MAX_PODS_TOTAL=1`
+表示“本次 cloud-test canary 只允许创建 1 个非忽略 Pod”，cleanup 验收也按
+非忽略 managed Pod 数量回到 0 计算。失败现场用 `--no-cleanup` 保留的新
+`i2i_pro` Pod 可通过 `--reuse-pod-id i2i_pro=<pod_id>` 复跑 Web 任务，避免重复创建 Pod。
+
+cloud-test 诊断 Pod 如需 SSH，`.env.cloud.test` 可设置
+`RUNPOD_PUBLIC_KEY_FILE=~/.ssh/allbot_runpod_debug_20260613_ed25519.pub` 或
+`RUNPOD_PUBLIC_KEY=<ssh public key>`。provider 会把它渲染为 Pod env `PUBLIC_KEY`，
+bootstrap 启动 sshd 时写入 `/root/.ssh/authorized_keys`；不要写入私钥，也不要把该
+能力扩展为生产 Pod 的长期 SSH 入口。
+
 ## 8. 手动云正式备用 worker
 正式 RunPod worker 只作为手动备用，不自动按生产队列扩容。
 
@@ -264,7 +280,7 @@ RUNPOD_MODEL_SECRET_KEY={{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}
 - 当前 split video profile 复用 Wan22 GHCR image/template，但 profile-specific env、agent prefix、`SUPPORTED_TASK_TYPES`、runtime profile 和模型 manifest 必须分开渲染。
 - Wan22 镜像只 baked workflow 所需 custom nodes、`ffmpeg/ffprobe` 和运行依赖；Wan22 high/low UNet、VAE、text encoder 与旧视频 LoRA 不 baked 进镜像，启动时从 `allbot-model-cache` 同步。
 - `i2i_pro` RunPod 镜像构建入口是 `remote_workers/docker/runpod_profiles/i2i_pro/`，默认 base 为 `yanwk/comfyui-boot:cu130-slim`，ComfyUI pin 到 `16cd8d8a8f5f16ce7e5f929fdba9f783990254ea`。当前 workflow 只要求 ComfyUI/core `nodes` 与 `comfy_extras` 中的 `UNETLoader`、`CLIPLoader`、`VAELoader`、`ReferenceLatent`、`EmptyFlux2LatentImage`、`Flux2Scheduler`、`SamplerCustomAdvanced`，不 baked 自定义节点或业务模型。GitHub Actions smoke 在 CPU runner 上用静态源码检查确认这些节点存在，避免导入 ComfyUI 时触发 CUDA 初始化；GPU import 与真实执行以 cloud-test canary 为准。
-- `i2i_pro_baseline` 模型包从 `gpu-226` / `192.168.1.226:8188` 同步到 R2 `allbot-model-cache/i2i_pro/2026-06-14-test/manifest.json`，包含 6 个文件，总计 `38,769,838,190` bytes（约 `36.11 GiB`）。首次 cloud-test canary 使用 `RUNPOD_CONTAINER_DISK_GB=120`，模型同步只写 ComfyUI `models/`，不得写 `input/output/temp/custom_nodes/workflows`。
+- `i2i_pro_baseline` 模型包从 `gpu-226` / `192.168.1.226:8188` 同步到 R2 `allbot-model-cache/i2i_pro/2026-06-14-test/manifest.json`，包含 6 个文件，总计 `38,769,838,190` bytes（约 `36.11 GiB`）。首次 cloud-test canary 使用 `RUNPOD_CONTAINER_DISK_GB=120`，GPU 只请求 `NVIDIA GeForce RTX 4090`，模型同步只写 ComfyUI `models/`，不得写 `input/output/temp/custom_nodes/workflows`。
 
 `i2i_pro_baseline` 模型清单：
 

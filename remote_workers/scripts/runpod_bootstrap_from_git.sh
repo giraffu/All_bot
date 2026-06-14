@@ -26,14 +26,23 @@ start_sshd_for_diagnostics() {
     if [ "${RUNPOD_START_SSHD:-true}" != "true" ]; then
         return
     fi
-    if ! command -v sshd >/dev/null 2>&1; then
+    local sshd_bin
+    sshd_bin="$(command -v sshd 2>/dev/null || true)"
+    if [ -z "$sshd_bin" ] && [ -x /usr/sbin/sshd ]; then
+        sshd_bin=/usr/sbin/sshd
+    fi
+    if [ -z "$sshd_bin" ]; then
         if [ "${RUNPOD_INSTALL_SSHD_IF_MISSING:-true}" = "true" ] && command -v apt-get >/dev/null 2>&1; then
             log "sshd not found; installing openssh-server for direct TCP diagnostics"
             apt-get update
             DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends openssh-server
             rm -rf /var/lib/apt/lists/*
         fi
-        if ! command -v sshd >/dev/null 2>&1; then
+        sshd_bin="$(command -v sshd 2>/dev/null || true)"
+        if [ -z "$sshd_bin" ] && [ -x /usr/sbin/sshd ]; then
+            sshd_bin=/usr/sbin/sshd
+        fi
+        if [ -z "$sshd_bin" ]; then
             log "sshd still unavailable; direct TCP SSH will be unavailable"
             return
         fi
@@ -51,7 +60,7 @@ start_sshd_for_diagnostics() {
     if pgrep -x sshd >/dev/null 2>&1; then
         log "sshd already running"
     else
-        /usr/sbin/sshd
+        "$sshd_bin"
         log "sshd started for direct TCP diagnostics"
     fi
 }

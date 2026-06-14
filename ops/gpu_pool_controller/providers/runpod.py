@@ -74,8 +74,7 @@ RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY = (
     "wan22_video_v2/2026-06-13-test/manifest.json"
 )
 RUNPOD_I2I_PRO_GPU_TYPE_IDS = (
-    "NVIDIA GeForce RTX 5090",
-    "NVIDIA L40S",
+    "NVIDIA GeForce RTX 4090",
 )
 RUNPOD_I2I_PRO_MODEL_PREFIX = "i2i_pro/2026-06-14-test"
 RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY = (
@@ -370,6 +369,30 @@ def _docker_start_cmd_env(
     if script_value and script_value.strip():
         return ("bash", "-lc", script_value)
     return ()
+
+
+def _runpod_extra_env_from_env() -> dict[str, str]:
+    extra_env: dict[str, str] = {}
+    public_key = _public_key_from_env(
+        os.getenv("RUNPOD_PUBLIC_KEY"),
+        os.getenv("RUNPOD_PUBLIC_KEY_FILE"),
+    )
+    if public_key:
+        extra_env["PUBLIC_KEY"] = public_key
+    return extra_env
+
+
+def _public_key_from_env(value: str | None, file_value: str | None) -> str:
+    raw = (value or "").strip()
+    if not raw and file_value and file_value.strip():
+        raw = Path(file_value).expanduser().read_text(encoding="utf-8").strip()
+    if not raw:
+        return ""
+    for line in raw.splitlines():
+        candidate = line.strip()
+        if candidate.startswith("ssh-"):
+            return candidate
+    raise ValueError("RUNPOD_PUBLIC_KEY must contain an ssh public key")
 
 
 def _is_sensitive_key(key: str) -> bool:
@@ -823,6 +846,7 @@ class RunPodSettings:
                 os.getenv("RUNPOD_COMFY_KJNODES_ENABLED"),
                 default=True,
             ),
+            extra_env=_runpod_extra_env_from_env(),
         )
 
 

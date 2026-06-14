@@ -20,6 +20,9 @@ from .providers.runpod import (
     RUNPOD_I2I_PRO_MODEL_PREFIX,
     RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
     RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX,
+    RUNPOD_PROD_IMAGE_TO_VIDEO_POD_NAME_PREFIX,
+    RUNPOD_PROD_POD_NAME_PREFIX,
+    RUNPOD_PROD_WAN22_VIDEO_V2_POD_NAME_PREFIX,
     RUNPOD_TASK_PROFILES,
     RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS,
     RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY,
@@ -60,6 +63,11 @@ EXPECTED_WAN22_AIO_VIDEO_GPU_TYPE_IDS = RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS
 EXPECTED_I2I_PRO_GPU_TYPE_IDS = RUNPOD_I2I_PRO_GPU_TYPE_IDS
 TERMINAL_TASK_STATUSES = {"done", "error", "cancelled"}
 HEALTHY_WORKER_STATUSES = {"idle", "running"}
+PROD_MANUAL_POD_NAME_PREFIXES = (
+    RUNPOD_PROD_POD_NAME_PREFIX,
+    RUNPOD_PROD_IMAGE_TO_VIDEO_POD_NAME_PREFIX,
+    RUNPOD_PROD_WAN22_VIDEO_V2_POD_NAME_PREFIX,
+)
 
 
 class RunPodCanaryError(ValueError):
@@ -161,6 +169,7 @@ class RunPodCanaryOptions:
     task_poll_interval_seconds: float = 5.0
     control_ttl_seconds: int = 3600
     reuse_pod_ids: dict[str, str] = field(default_factory=dict)
+    allow_existing_prod_managed_pods: bool = False
     prompt: str = "clean canary image transform, natural lighting, high quality"
     negative_prompt: str = "low quality, artifacts, text, watermark"
     quiet: bool = False
@@ -245,6 +254,13 @@ def options_from_args_env(args: Any) -> RunPodCanaryOptions:
         task_poll_interval_seconds=float(getattr(args, "task_poll_interval", 5.0)),
         control_ttl_seconds=int(getattr(args, "control_ttl", 3600)),
         reuse_pod_ids=_reuse_pod_ids_from_args_env(args),
+        allow_existing_prod_managed_pods=bool(
+            getattr(args, "allow_existing_prod_managed_pods", False)
+        )
+        or _bool_env(
+            os.getenv("RUNPOD_CANARY_ALLOW_EXISTING_PROD_MANAGED_PODS"),
+            default=False,
+        ),
         prompt=(
             getattr(args, "prompt", None)
             or os.getenv("RUNPOD_CANARY_PROMPT")
@@ -288,6 +304,12 @@ def _worker_ids_from_env() -> tuple[str, ...]:
     return tuple(item.strip() for item in raw.split(",") if item.strip())
 
 
+def _bool_env(value: str | None, *, default: bool) -> bool:
+    if value is None or not value.strip():
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _reuse_pod_ids_from_args_env(args: Any) -> dict[str, str]:
     raw_values = list(getattr(args, "reuse_pod_id", None) or [])
     raw_env = os.getenv("RUNPOD_CANARY_REUSE_POD_IDS", "")
@@ -329,6 +351,7 @@ class RunPodCanaryRunner:
         self.options = options
         self._sleep = sleep_func
         self._emit_func = emit_func or (lambda message: print(message, file=sys.stderr))
+        self._preflight_create_guard_pods: list[dict[str, Any]] = []
 
     def run(self) -> dict[str, Any]:
         summary: dict[str, Any] = {
@@ -345,6 +368,7 @@ class RunPodCanaryRunner:
         }
         pod_id: str | None = None
         worker_controls: list[dict[str, Any]] = []
+        pod_reused = False
         try:
             self._validate_static_options()
             self._run_runpod_preflight(summary)
@@ -362,11 +386,19 @@ class RunPodCanaryRunner:
                 ]
             else:
                 self._run_web_preflight(summary)
-                create_payload = self._create_pod(summary)
+                if self.options.reuse_pod_ids:
+                    create_payload = self._reuse_pod(summary)
+                    pod_reused = True
+                else:
+                    create_payload = self._create_pod(summary)
                 pod_id = _extract_pod_id(create_payload)
-                summary["pod"] = _pod_summary(
-                    create_payload, self._render_image_ref(summary)
+                pod_summary = _pod_summary(
+                    create_payload,
+                    self._render_image_ref(summary),
                 )
+                if pod_reused:
+                    pod_summary["reused"] = True
+                summary["pod"] = pod_summary
                 self._wait_pod_readiness(pod_id, summary)
                 runpod_worker = self._wait_runpod_worker(pod_id, summary)
 
@@ -392,6 +424,7 @@ class RunPodCanaryRunner:
                 self._cleanup(
                     summary=summary,
                     pod_id=pod_id,
+                    pod_reused=pod_reused,
                     worker_controls=worker_controls,
                 )
         return self._finish(summary)
@@ -402,6 +435,14 @@ class RunPodCanaryRunner:
         if self.options.task_type not in RUNPOD_TASK_PROFILES:
             supported = ", ".join(sorted(RUNPOD_TASK_PROFILES))
             raise RunPodCanaryError(f"runpod canary only supports: {supported}")
+        if self.options.reuse_pod_ids:
+            profile = RUNPOD_TASK_PROFILES[self.options.task_type].task_type
+            reuse_profiles = set(self.options.reuse_pod_ids)
+            if reuse_profiles != {profile}:
+                raise RunPodCanaryError(
+                    "--reuse-pod-id must provide exactly "
+                    f"{profile}=POD_ID for this canary"
+                )
         if self.options.execute:
             settings = self.provider.settings
             missing_gates: list[str] = []
@@ -431,7 +472,10 @@ class RunPodCanaryRunner:
         self._phase(summary, "runpod_list_pods", "running")
         listed = self.provider.list_pods(managed_only=True)
         self._require_ok(listed, "runpod list-pods failed")
-        if self.options.execute and int(listed.get("count") or 0) != 0:
+        listed_pods = list(listed.get("pods") or [])
+        guard_pods, ignored_pods = self._pods_relevant_to_canary(listed_pods)
+        self._preflight_create_guard_pods = list(guard_pods)
+        if self.options.execute and guard_pods:
             raise RunPodCanaryError(
                 "refusing canary: managed RunPod pod count is not 0"
             )
@@ -439,11 +483,16 @@ class RunPodCanaryRunner:
             summary,
             "runpod_list_pods",
             "ok",
-            {"count": listed.get("count", 0)},
+            {
+                "count": listed.get("count", 0),
+                "effective_count": len(guard_pods),
+                "ignored_prod_manual_count": len(ignored_pods),
+                "reused_count": self._reused_pod_count(listed_pods),
+            },
         )
 
         self._phase(summary, "runpod_reconcile", "running")
-        reconcile = self.provider.reconcile_managed_pods()
+        reconcile = self.provider.reconcile_managed_pods(pods=guard_pods)
         self._require_ok(reconcile, "runpod reconcile-managed-pods failed")
         if self.options.execute and int(reconcile.get("managed_count") or 0) != 0:
             raise RunPodCanaryError(
@@ -456,6 +505,7 @@ class RunPodCanaryRunner:
             {
                 "managed_count": reconcile.get("managed_count", 0),
                 "orphans": reconcile.get("orphans", []),
+                "ignored_prod_manual_count": len(ignored_pods),
             },
         )
 
@@ -495,12 +545,24 @@ class RunPodCanaryRunner:
         payload = self.provider.create_pod(
             task_type=self.options.task_type,
             environment=self.options.environment,
+            existing_pods=self._preflight_create_guard_pods,
             execute=True,
         )
         self._require_ok(payload, "runpod create-pod failed")
         pod_id = _extract_pod_id(payload)
         self._phase(summary, "runpod_create_pod", "ok", {"pod_id": pod_id})
         return payload
+
+    def _reuse_pod(self, summary: dict[str, Any]) -> dict[str, Any]:
+        profile = RUNPOD_TASK_PROFILES[self.options.task_type].task_type
+        pod_id = self.options.reuse_pod_ids[profile]
+        self._phase(
+            summary,
+            "runpod_reuse_pod",
+            "ok",
+            {"profile": profile, "pod_id": pod_id},
+        )
+        return {"ok": True, "pod": {"id": pod_id}}
 
     def _wait_pod_readiness(self, pod_id: str, summary: dict[str, Any]) -> None:
         self._phase(summary, "pod_readiness", "running", {"pod_id": pod_id})
@@ -889,6 +951,7 @@ class RunPodCanaryRunner:
         *,
         summary: dict[str, Any],
         pod_id: str | None,
+        pod_reused: bool,
         worker_controls: list[dict[str, Any]],
     ) -> None:
         cleanup = summary.setdefault("cleanup", {})
@@ -910,7 +973,7 @@ class RunPodCanaryRunner:
                     cleanup.setdefault("worker_restore", []).append(
                         {"agent_id": agent_id, "state": state, "ok": False}
                     )
-        if pod_id and self.options.cleanup:
+        if pod_id and self.options.cleanup and not pod_reused:
             try:
                 delete_payload = self.provider.delete_pod(
                     pod_id=pod_id,
@@ -925,25 +988,67 @@ class RunPodCanaryRunner:
             except Exception as exc:
                 cleanup_errors.append(f"delete pod {pod_id}: {redact_text(str(exc))}")
                 cleanup["pod_delete"] = {"pod_id": pod_id, "ok": False}
+        elif pod_id and pod_reused:
+            cleanup["pod_delete"] = {
+                "pod_id": pod_id,
+                "ok": False,
+                "skipped": True,
+                "reused": True,
+            }
         elif pod_id:
             cleanup["pod_delete"] = {"pod_id": pod_id, "ok": False, "skipped": True}
         try:
             listed = self.provider.list_pods(managed_only=True)
-            reconcile = self.provider.reconcile_managed_pods()
+            listed_pods = list(listed.get("pods") or [])
+            guard_pods, ignored_pods = self._pods_relevant_to_canary(listed_pods)
+            reconcile = self.provider.reconcile_managed_pods(pods=guard_pods)
             cleanup["post_list_pods"] = {
                 "ok": listed.get("ok"),
                 "count": listed.get("count"),
+                "effective_count": len(guard_pods),
+                "ignored_prod_manual_count": len(ignored_pods),
+                "reused_count": self._reused_pod_count(listed_pods),
             }
             cleanup["post_reconcile"] = {
                 "ok": reconcile.get("ok"),
                 "managed_count": reconcile.get("managed_count"),
             }
+            if self.options.cleanup and int(reconcile.get("managed_count") or 0) != 0:
+                cleanup_errors.append(
+                    "post cleanup managed RunPod pod count is not 0"
+                )
         except Exception as exc:
             cleanup_errors.append(f"post cleanup reconcile: {redact_text(str(exc))}")
         if cleanup_errors:
             cleanup["errors"] = cleanup_errors
             summary["ok"] = False
             summary["error"] = summary.get("error") or "cleanup failed"
+
+    def _pods_relevant_to_canary(
+        self, pods: list[dict[str, Any]]
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        reused_pod_ids = set(self.options.reuse_pod_ids.values())
+        relevant: list[dict[str, Any]] = []
+        ignored: list[dict[str, Any]] = []
+        for pod in pods:
+            pod_id = _pod_identifier(pod)
+            if pod_id in reused_pod_ids:
+                ignored.append(pod)
+                continue
+            if (
+                self.options.allow_existing_prod_managed_pods
+                and _is_prod_manual_pod(pod)
+            ):
+                ignored.append(pod)
+                continue
+            relevant.append(pod)
+        return relevant, ignored
+
+    def _reused_pod_count(self, pods: list[dict[str, Any]]) -> int:
+        reused_pod_ids = set(self.options.reuse_pod_ids.values())
+        if not reused_pod_ids:
+            return 0
+        return sum(1 for pod in pods if _pod_identifier(pod) in reused_pod_ids)
 
     def _task_cases(self, image_object_key: str) -> list[dict[str, Any]]:
         profile = RUNPOD_TASK_PROFILES[self.options.task_type]
@@ -1391,6 +1496,19 @@ def _extract_pod_id(payload: dict[str, Any]) -> str:
                 if value:
                     return str(value)
     raise RunPodCanaryError("RunPod create response did not include pod id")
+
+
+def _pod_identifier(pod: dict[str, Any]) -> str:
+    for key in ("id", "podId", "pod_id"):
+        value = pod.get(key)
+        if value:
+            return str(value)
+    return str(pod.get("name") or "")
+
+
+def _is_prod_manual_pod(pod: dict[str, Any]) -> bool:
+    name = str(pod.get("name") or "")
+    return any(name.startswith(prefix) for prefix in PROD_MANUAL_POD_NAME_PREFIXES)
 
 
 def _pod_summary(payload: dict[str, Any], image_ref: str) -> dict[str, Any]:

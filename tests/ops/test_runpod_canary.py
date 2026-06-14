@@ -23,6 +23,7 @@ from ops.gpu_pool_controller.runpod_canary import (
     RunPodCanaryOptions,
     RunPodCanaryError,
     RunPodCanaryRunner,
+    options_from_args_env,
     result_url_path,
     write_canary_png,
 )
@@ -39,20 +40,58 @@ PUBLIC_I2I_PRO_GHCR_IMAGE = (
 )
 
 
+def _prod_manual_pod(pod_id: str = "prod-1") -> dict:
+    return {
+        "id": pod_id,
+        "name": "allbot-runpod-prod-img2img-manual-01",
+        "env": {
+            "RUNPOD_TASK_TYPE": "img2img_lora",
+            "AGENT_ID": "runpod_prod_img2img_manual_01",
+        },
+        "desiredStatus": "RUNNING",
+    }
+
+
+def _cloud_test_pod(pod_id: str = "test-1", task_type: str = "i2i_pro") -> dict:
+    return {
+        "id": pod_id,
+        "name": f"allbot-runpod-test-{task_type}-01",
+        "env": {
+            "RUNPOD_TASK_TYPE": task_type,
+            "AGENT_ID": f"runpod_test_{task_type}_{pod_id}",
+        },
+        "desiredStatus": "RUNNING",
+    }
+
+
+def _phase_details(payload: dict, name: str) -> dict:
+    for phase in payload.get("phases", []):
+        if phase.get("name") == name and phase.get("status") == "ok":
+            return phase.get("details") or {}
+    raise AssertionError(f"phase not found: {name}")
+
+
 class FakeRunPodProvider:
-    def __init__(self, settings: RunPodSettings | None = None) -> None:
+    def __init__(
+        self,
+        settings: RunPodSettings | None = None,
+        pods: list[dict] | None = None,
+    ) -> None:
         self.settings = settings or RunPodSettings()
+        self.pods = list(pods or [])
         self.create_calls = 0
         self.delete_calls = 0
+        self.last_create_existing_pods: list[dict] | None = None
 
     def validate_key(self):
         return {"ok": True}
 
     def list_pods(self, *, managed_only=True, desired_status=None):
-        return {"ok": True, "count": 0, "pods": []}
+        return {"ok": True, "count": len(self.pods), "pods": list(self.pods)}
 
     def reconcile_managed_pods(self, pods=None):
-        return {"ok": True, "managed_count": 0, "orphans": []}
+        pod_list = list(self.pods if pods is None else pods)
+        return {"ok": True, "managed_count": len(pod_list), "orphans": []}
 
     def render_create_pod_request(self, *, task_type, environment, redact=True):
         if task_type == "wan22_aio_video":
@@ -114,12 +153,23 @@ class FakeRunPodProvider:
             "json": body,
         }
 
-    def create_pod(self, *, task_type, environment, execute):
+    def create_pod(self, *, task_type, environment, execute, existing_pods=None):
         self.create_calls += 1
-        return {"ok": True, "pod": {"id": "pod-1"}}
+        self.last_create_existing_pods = list(existing_pods or [])
+        pod = {
+            "id": "pod-1",
+            "name": f"allbot-runpod-test-{task_type}-01",
+            "env": {
+                "RUNPOD_TASK_TYPE": task_type,
+                "AGENT_ID": f"runpod_test_{task_type}_pod-1",
+            },
+        }
+        self.pods.append(pod)
+        return {"ok": True, "pod": pod}
 
     def delete_pod(self, *, pod_id, task_type, execute):
         self.delete_calls += 1
+        self.pods = [pod for pod in self.pods if pod.get("id") != pod_id]
         return {"ok": True}
 
     def pod_readiness(self, *, pod_id):
@@ -248,6 +298,175 @@ def test_runpod_canary_execute_requires_explicit_runpod_gates():
     assert payload["ok"] is False
     assert "RUNPOD_DRY_RUN=false" in payload["error"]
     assert provider.create_calls == 0
+
+
+def test_runpod_canary_execute_refuses_existing_managed_pods_by_default():
+    provider = FakeRunPodProvider(
+        settings=RunPodSettings(
+            dry_run=False,
+            autoscaler_enabled=True,
+            max_pods_total=1,
+            max_pods_per_type=1,
+        ),
+        pods=[_prod_manual_pod()],
+    )
+    options = RunPodCanaryOptions(execute=True, quiet=True, disable_workers=False)
+
+    payload = RunPodCanaryRunner(
+        provider,
+        options,
+        sleep_func=lambda _seconds: None,
+    ).run()
+
+    assert payload["ok"] is False
+    assert payload["error"] == "refusing canary: managed RunPod pod count is not 0"
+    assert provider.create_calls == 0
+
+
+def test_runpod_canary_allows_existing_prod_manual_pods_for_guard_only():
+    provider = FakeRunPodProvider(
+        settings=RunPodSettings(
+            dry_run=False,
+            autoscaler_enabled=True,
+            max_pods_total=1,
+            max_pods_per_type=1,
+        ),
+        pods=[_prod_manual_pod()],
+    )
+    options = RunPodCanaryOptions(
+        task_type="i2i_pro",
+        execute=True,
+        cleanup=True,
+        quiet=True,
+        disable_workers=False,
+        allow_existing_prod_managed_pods=True,
+    )
+    runner = RunPodCanaryRunner(
+        provider,
+        options,
+        sleep_func=lambda _seconds: None,
+    )
+    runner._run_web_preflight = lambda summary: None  # type: ignore[method-assign]
+    runner._wait_pod_readiness = lambda pod_id, summary: None  # type: ignore[method-assign]
+    runner._wait_runpod_worker = (  # type: ignore[method-assign]
+        lambda pod_id, summary: {"agent_id": f"runpod_test_i2i_pro_{pod_id}"}
+    )
+    runner._resolve_canary_image = lambda summary: "user-data-test/input.png"  # type: ignore[method-assign]
+    runner._task_cases = lambda image_object_key: []  # type: ignore[method-assign]
+
+    payload = runner.run()
+
+    assert payload["ok"] is True
+    assert provider.create_calls == 1
+    assert provider.delete_calls == 1
+    assert provider.last_create_existing_pods == []
+    assert _phase_details(payload, "runpod_list_pods")["count"] == 1
+    assert _phase_details(payload, "runpod_list_pods")["effective_count"] == 0
+    assert _phase_details(payload, "runpod_list_pods")[
+        "ignored_prod_manual_count"
+    ] == 1
+    assert payload["cleanup"]["post_list_pods"]["effective_count"] == 0
+    assert payload["cleanup"]["post_list_pods"]["ignored_prod_manual_count"] == 1
+    assert payload["cleanup"]["post_reconcile"]["managed_count"] == 0
+
+
+def test_runpod_canary_allow_existing_prod_pods_still_rejects_test_leftovers():
+    provider = FakeRunPodProvider(
+        settings=RunPodSettings(
+            dry_run=False,
+            autoscaler_enabled=True,
+            max_pods_total=1,
+            max_pods_per_type=1,
+        ),
+        pods=[_prod_manual_pod(), _cloud_test_pod()],
+    )
+    options = RunPodCanaryOptions(
+        task_type="i2i_pro",
+        execute=True,
+        quiet=True,
+        disable_workers=False,
+        allow_existing_prod_managed_pods=True,
+    )
+
+    payload = RunPodCanaryRunner(
+        provider,
+        options,
+        sleep_func=lambda _seconds: None,
+    ).run()
+
+    assert payload["ok"] is False
+    assert payload["error"] == "refusing canary: managed RunPod pod count is not 0"
+    assert provider.create_calls == 0
+
+
+def test_runpod_canary_reuse_pod_id_skips_create_and_is_not_deleted():
+    reused_pod_id = "pod-reuse-1"
+    provider = FakeRunPodProvider(
+        settings=RunPodSettings(
+            dry_run=False,
+            autoscaler_enabled=True,
+            max_pods_total=1,
+            max_pods_per_type=1,
+        ),
+        pods=[_prod_manual_pod(), _cloud_test_pod(reused_pod_id)],
+    )
+    options = RunPodCanaryOptions(
+        task_type="i2i_pro",
+        execute=True,
+        cleanup=True,
+        quiet=True,
+        disable_workers=False,
+        reuse_pod_ids={"i2i_pro": reused_pod_id},
+        allow_existing_prod_managed_pods=True,
+    )
+    runner = RunPodCanaryRunner(
+        provider,
+        options,
+        sleep_func=lambda _seconds: None,
+    )
+    runner._run_web_preflight = lambda summary: None  # type: ignore[method-assign]
+    runner._wait_pod_readiness = lambda pod_id, summary: None  # type: ignore[method-assign]
+    runner._wait_runpod_worker = (  # type: ignore[method-assign]
+        lambda pod_id, summary: {"agent_id": f"runpod_test_i2i_pro_{pod_id}"}
+    )
+    runner._resolve_canary_image = lambda summary: "user-data-test/input.png"  # type: ignore[method-assign]
+    runner._task_cases = lambda image_object_key: []  # type: ignore[method-assign]
+
+    payload = runner.run()
+
+    assert payload["ok"] is True
+    assert provider.create_calls == 0
+    assert provider.delete_calls == 0
+    assert payload["pod"]["pod_id"] == reused_pod_id
+    assert payload["pod"]["reused"] is True
+    assert payload["cleanup"]["pod_delete"] == {
+        "pod_id": reused_pod_id,
+        "ok": False,
+        "skipped": True,
+        "reused": True,
+    }
+    assert _phase_details(payload, "runpod_list_pods")["effective_count"] == 0
+    assert _phase_details(payload, "runpod_list_pods")["reused_count"] == 1
+
+
+def test_runpod_canary_cli_parses_prod_pod_allowance_and_reuse_pod_id():
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "runpod",
+            "canary",
+            "--task-type",
+            "i2i_pro",
+            "--reuse-pod-id",
+            "i2i_pro=pod-1",
+            "--allow-existing-prod-managed-pods",
+        ]
+    )
+
+    options = options_from_args_env(args)
+
+    assert options.reuse_pod_ids == {"i2i_pro": "pod-1"}
+    assert options.allow_existing_prod_managed_pods is True
 
 
 def test_runpod_canary_keyboard_interrupt_returns_cleanup_summary():

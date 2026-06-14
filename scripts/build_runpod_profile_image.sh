@@ -154,6 +154,18 @@ if [ -n "$KJNODES_SOURCE" ]; then
     cp -a "$KJNODES_SOURCE" "${cleanup_dir}/ComfyUI-KJNodes"
     dockerfile_for_build="${cleanup_dir}/Dockerfile"
     context_for_build="$cleanup_dir"
+elif [ "$PROFILE" = "i2i_pro" ]; then
+    cleanup_dir="$(mktemp -d)"
+    trap 'rm -rf "$cleanup_dir"' EXIT
+    mkdir -p \
+        "${cleanup_dir}/remote_workers/docker/runpod_profiles/i2i_pro" \
+        "${cleanup_dir}/remote_workers/scripts"
+    cp "$dockerfile" \
+        "${cleanup_dir}/remote_workers/docker/runpod_profiles/i2i_pro/Dockerfile"
+    cp "remote_workers/scripts/runpod_bootstrap_from_git.sh" \
+        "${cleanup_dir}/remote_workers/scripts/runpod_bootstrap_from_git.sh"
+    dockerfile_for_build="${cleanup_dir}/remote_workers/docker/runpod_profiles/i2i_pro/Dockerfile"
+    context_for_build="$cleanup_dir"
 fi
 
 echo "Building ${IMAGE_REF}"

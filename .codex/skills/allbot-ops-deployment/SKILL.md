@@ -29,6 +29,8 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 - **GPU Worker 层级**：`cloud-prod-comfy-agent-*` 是本地主服务器上的 Worker Agent；GPU 节点上的 `comfy0/comfy1` 或宿主机 ComfyUI 是另一层。替换 worker 不会自动重启 ComfyUI，重启 ComfyUI 也不会替换 worker 代码。
 - **RunPod Provider v0**：RunPod 只通过 `ops/gpu_pool_controller/providers/runpod.py` 接入，不属于本地 SSH GPU 池。云测试支持 `img2img/img2img_lora`、split video canary 与 `i2i_pro` canary；手动云正式备用 worker 仅支持 `--profile img2img|image_to_video|wan22_video_v2`，默认先 `disabled`，不自动按生产队列扩容。`i2i_pro` 正式 RunPod 仍未开放。
 - **RunPod split video**：当前视频主路径是 `image_to_video` 与 `wan22_video_v2` 两个 profile；`wan22_aio_video` 只保留为兼容/回滚 profile。`split-video-canary` 只允许云测试，完成或失败后必须恢复 worker control、删除 Pod 并核验 managed count 为 0。
+- **RunPod canary 与 prod 手动 Pod 共存**：普通 `runpod canary` 默认仍要求 managed count 为 0。只有 cloud-test canary 需要保留既有 prod 手动备用 Pod 时，才允许显式使用 `--allow-existing-prod-managed-pods` / `RUNPOD_CANARY_ALLOW_EXISTING_PROD_MANAGED_PODS=true`；该开关只忽略 `allbot-runpod-prod-*-manual-` 已知前缀，任何 cloud-test 残留 Pod 仍必须阻断执行。失败保留的新测试 Pod 复跑任务应使用 `--reuse-pod-id PROFILE=POD_ID`，不要误删或重启现有 prod 手动 Pod。
+- **RunPod cloud-test SSH 诊断**：后续新建 cloud-test RunPod Pod 应通过 `.env.cloud.test` 设置 `RUNPOD_PUBLIC_KEY_FILE=~/.ssh/allbot_runpod_debug_20260613_ed25519.pub` 或 `RUNPOD_PUBLIC_KEY=<ssh public key>`，由 provider 渲染为 Pod env `PUBLIC_KEY`，bootstrap 写入 `/root/.ssh/authorized_keys`。只注入公钥，绝不注入私钥；生产 Pod 不开放长期 SSH。
 - **RunPod 门禁**：真实 create/start/stop/delete/scale 必须同时显式设置 `RUNPOD_DRY_RUN=false`、`RUNPOD_AUTOSCALER_ENABLED=true`、目标 Pod 上限和 `--execute`。生产 RunPod 操作还必须用户明确确认。
 - **密钥输出红线**：`.env.cloud.prod`、`.env.cloud.test`、`docker compose config`、RunPod create payload、presigned URL、R2 key、GitHub/GHCR token、Bot token、JWT secret 都不得贴进聊天、日志报告或文档。
 

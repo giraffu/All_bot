@@ -65,3 +65,10 @@ RUN set -euo pipefail; \
         \) -print -quit | \
         awk 'NF { print "Business model file unexpectedly present in image: " $0; exit 1 }'; \
     fi
+
+COPY remote_workers/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
+
+RUN set -euo pipefail; \
+    chmod +x /opt/allbot/runpod_bootstrap_from_git.sh
+
+CMD ["bash", "/opt/allbot/runpod_bootstrap_from_git.sh"]

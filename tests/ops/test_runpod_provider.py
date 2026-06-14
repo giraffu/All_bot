@@ -725,6 +725,31 @@ def test_runpod_settings_from_env_supports_i2i_pro_profile_keys(
     assert settings.model_manifest_key_i2i_pro == RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY
 
 
+def test_runpod_settings_from_env_injects_public_key_file(
+    tmp_path,
+    monkeypatch,
+):
+    public_key_file = tmp_path / "runpod_debug.pub"
+    public_key_file.write_text(
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest allbot-runpod-debug\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("RUNPOD_PUBLIC_KEY_FILE", str(public_key_file))
+
+    settings = RunPodSettings.from_env()
+    provider = RunPodProvider(settings)
+    payload = provider.render_create_pod_request(
+        task_type="i2i_pro",
+        environment="cloud-test",
+        redact=False,
+    )
+
+    assert settings.extra_env == {
+        "PUBLIC_KEY": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest allbot-runpod-debug"
+    }
+    assert payload["json"]["env"]["PUBLIC_KEY"] == settings.extra_env["PUBLIC_KEY"]
+
+
 def test_runpod_settings_from_env_supports_wan22_docker_start_script_file(
     tmp_path,
     monkeypatch,

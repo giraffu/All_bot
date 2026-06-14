@@ -594,6 +594,23 @@ def build_parser() -> argparse.ArgumentParser:
     runpod_canary.add_argument("--input-object-key", default=None)
     runpod_canary.add_argument("--output-dir", type=Path, default=None)
     runpod_canary.add_argument("--download-results-dir", type=Path, default=None)
+    runpod_canary.add_argument(
+        "--reuse-pod-id",
+        action="append",
+        default=None,
+        help=(
+            "Reuse an existing canary pod as PROFILE=POD_ID. "
+            "Pair with --no-cleanup when preserving a debugging pod."
+        ),
+    )
+    runpod_canary.add_argument(
+        "--allow-existing-prod-managed-pods",
+        action="store_true",
+        help=(
+            "Allow cloud-test canary to ignore existing managed prod manual "
+            "RunPod pods while still rejecting cloud-test leftovers."
+        ),
+    )
     runpod_canary.add_argument("--readiness-timeout", type=float, default=900.0)
     runpod_canary.add_argument("--worker-timeout", type=float, default=600.0)
     runpod_canary.add_argument("--task-timeout", type=float, default=1800.0)
