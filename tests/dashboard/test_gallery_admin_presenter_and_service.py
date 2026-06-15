@@ -150,8 +150,10 @@ class _DeleteGalleryPostDB:
         self._results = iter(results)
         self.delete = AsyncMock()
         self.commit = AsyncMock()
+        self.executed_stmts = []
 
     async def execute(self, stmt):
+        self.executed_stmts.append(str(stmt))
         return next(self._results)
 
 
@@ -193,6 +195,9 @@ async def test_delete_gallery_post_payload_cleans_r2_objects_from_history():
         [
             _ScalarResult(post),
             _ScalarResult(history),
+            _ScalarResult(),
+            _ScalarResult(),
+            _ScalarResult(),
         ]
     )
     cleanup_mock = AsyncMock(return_value=4)
@@ -205,6 +210,9 @@ async def test_delete_gallery_post_payload_cleans_r2_objects_from_history():
 
     assert response == {"success": True, "message": "Post deleted successfully"}
     assert history.is_public is False
+    assert any("DELETE FROM user_interactions" in stmt for stmt in db.executed_stmts)
+    assert any("DELETE FROM gallery_prompt_unlocks" in stmt for stmt in db.executed_stmts)
+    assert any("DELETE FROM gallery_comments" in stmt for stmt in db.executed_stmts)
     db.delete.assert_awaited_once_with(post)
     db.commit.assert_awaited_once()
     cleanup_mock.assert_awaited_once()

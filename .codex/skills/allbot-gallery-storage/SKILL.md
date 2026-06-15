@@ -63,7 +63,7 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 - `apply-context` 必须服务端拒绝 Wan22 stitched 记录，不能只依赖前端按钮禁用。
 - 存储/R2 异常只能降级，不能阻断广场主流程。
 - Gallery 列表热路径不得恢复为“持有 DB 只读事务 + 每条媒体公网 HEAD 探测”的模式。
-- 投稿删除/下架必须兼容同一 `task_id + user_id` 下多条 `History`；不得用 `scalar_one_or_none()` 假设唯一。上架时只允许主 history 公开，删除/下架时所有匹配 history 都要 `is_public=False`。
+- 投稿删除/下架必须兼容同一 `task_id + user_id` 下多条 `History`；不得用 `scalar_one_or_none()` 假设唯一。上架时只允许主 history 公开，删除/下架时所有匹配 history 都要 `is_public=False`。硬删除 `GalleryPost` 前必须同步清理 `user_interactions`、`gallery_prompt_unlocks` 与 `gallery_comments`，避免提示词解锁记录外键阻断删除。
 - 用户级批量下架不得只改 `GalleryPost.is_active`；必须同步把该用户投稿关联的 `History.is_public` 置为 `False`，避免旧公开资源入口继续可见。
 
 ## 4. 边界条件处理
@@ -80,3 +80,4 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 - 覆盖 apply-context 返回的 `requested_duration`、`billing_resolution`、`negative_prompt`、`input_file_url` 正确性；旧图生视频需额外覆盖 `5s/8s/10s` 恢复、`512/720/1024 -> preview/standard/hd`、`0.36 MP - Small -> small` 和 LoRA prompt 解析，v2 单段需覆盖 `_wan22_context` 负面词/档位/时长回填，Wan22 stitched 需覆盖 apply-context 400 与列表禁用字段。
 - 覆盖后台封禁投稿并批量下架时的用户状态、帖子状态与多条 `History` 同步。
 - 覆盖 R2 hit、R2 miss + legacy fallback、缩略图 fallback、对象存储慢响应时释放 DB 只读事务后的响应路径。
+- 覆盖已下架投稿硬删除时仍会清理提示词解锁记录、互动记录与评论记录，尤其是已被他人解锁提示词的投稿。

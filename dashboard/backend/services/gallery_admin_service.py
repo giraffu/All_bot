@@ -2,14 +2,21 @@ import logging
 from datetime import datetime
 
 from fastapi import HTTPException
-from sqlalchemy import desc, func, select, update
+from sqlalchemy import delete, desc, func, select, update
 from sqlalchemy.orm import joinedload
 
 from dashboard.backend.presenters.gallery_admin_presenter import (
     build_dashboard_comment_item,
     build_gallery_post_item,
 )
-from src.database.models import GalleryComment, GalleryPost, History, User
+from src.database.models import (
+    GalleryComment,
+    GalleryPost,
+    GalleryPromptUnlock,
+    History,
+    User,
+    UserInteraction,
+)
 from src.services.submission_ban_service import build_submission_ban_message
 from src.services.storage import storage
 from src.services.storage_r2_cleanup import build_history_r2_cleanup_keys
@@ -147,6 +154,13 @@ async def delete_gallery_post_payload(
                     .values(is_public=False)
                 )
 
+        await db.execute(
+            delete(UserInteraction).where(UserInteraction.post_id == post_id)
+        )
+        await db.execute(
+            delete(GalleryPromptUnlock).where(GalleryPromptUnlock.post_id == post_id)
+        )
+        await db.execute(delete(GalleryComment).where(GalleryComment.post_id == post_id))
         await db.delete(post)
         await db.commit()
 

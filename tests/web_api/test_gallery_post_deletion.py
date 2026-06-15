@@ -68,6 +68,7 @@ async def test_delete_post_hard_deletes_record_and_cleans_r2_cache():
             _FakeScalarResult(),
             _FakeScalarResult(),
             _FakeScalarResult(),
+            _FakeScalarResult(),
         ]
     )
     cleanup_mock = AsyncMock(return_value=4)
@@ -84,6 +85,7 @@ async def test_delete_post_hard_deletes_record_and_cleans_r2_cache():
     assert user.total_contributions == 2
     session.commit.assert_awaited_once()
     assert any("DELETE FROM user_interactions" in stmt for stmt in session.executed_statements)
+    assert any("DELETE FROM gallery_prompt_unlocks" in stmt for stmt in session.executed_statements)
     assert any("DELETE FROM gallery_comments" in stmt for stmt in session.executed_statements)
     assert any("DELETE FROM gallery_posts" in stmt for stmt in session.executed_statements)
     cleanup_mock.assert_awaited_once()
@@ -107,6 +109,7 @@ async def test_delete_post_without_history_cache_still_returns_success():
     session = _DeletePostSession(
         [
             _FakeScalarResult(post),
+            _FakeScalarResult(),
             _FakeScalarResult(),
             _FakeScalarResult(),
             _FakeScalarResult(),
@@ -162,6 +165,7 @@ async def test_delete_post_handles_duplicate_histories_and_uses_primary_for_cach
             _FakeScalarResult(),
             _FakeScalarResult(),
             _FakeScalarResult(),
+            _FakeScalarResult(),
         ]
     )
     cleanup_mock = AsyncMock(return_value=4)
@@ -178,6 +182,7 @@ async def test_delete_post_handles_duplicate_histories_and_uses_primary_for_cach
     assert hidden_history.is_public is False
     assert user.total_contributions == 2
     session.commit.assert_awaited_once()
+    assert any("DELETE FROM gallery_prompt_unlocks" in stmt for stmt in session.executed_statements)
     cleanup_mock.assert_awaited_once()
     assert set(cleanup_mock.await_args.args[0]) == {
         "history/task-dup/original.png",
@@ -185,3 +190,46 @@ async def test_delete_post_handles_duplicate_histories_and_uses_primary_for_cach
         "task-dup.png",
         "task-dup_thumb.webp",
     }
+
+
+@pytest.mark.asyncio
+async def test_delete_inactive_post_cleans_prompt_unlocks_before_post_delete():
+    post = GalleryPost(
+        id=10,
+        task_id="task-unlocked",
+        user_id=123,
+        media_type="image",
+        is_active=False,
+    )
+    history = History(
+        id=31,
+        user_id=123,
+        task_id="task-unlocked",
+        type="image",
+        output_file="123/output_images/task-unlocked.png",
+        is_public=False,
+    )
+    session = _DeletePostSession(
+        [
+            _FakeScalarResult(post),
+            _FakeScalarsResult([history]),
+            _FakeScalarResult(),
+            _FakeScalarResult(),
+            _FakeScalarResult(),
+            _FakeScalarResult(),
+        ]
+    )
+    cleanup_mock = AsyncMock(return_value=4)
+
+    response = await delete_gallery_post(
+        post_id=10,
+        current_user=type("User", (), {"id": 123})(),
+        db=session,
+        storage_service=type("Storage", (), {"async_delete_r2_objects": cleanup_mock})(),
+    )
+
+    assert response == {"status": "success", "message": "删除成功"}
+    assert history.is_public is False
+    assert any("DELETE FROM gallery_prompt_unlocks" in stmt for stmt in session.executed_statements)
+    assert any("DELETE FROM gallery_posts" in stmt for stmt in session.executed_statements)
+    session.commit.assert_awaited_once()

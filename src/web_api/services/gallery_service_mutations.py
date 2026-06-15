@@ -4,7 +4,14 @@ from fastapi import HTTPException
 from sqlalchemy import delete, select, update
 
 from src.database.core import AsyncSessionLocal
-from src.database.models import GalleryComment, GalleryPost, History, User, UserInteraction
+from src.database.models import (
+    GalleryComment,
+    GalleryPost,
+    GalleryPromptUnlock,
+    History,
+    User,
+    UserInteraction,
+)
 from src.services.submission_ban_service import (
     SubmissionBannedError,
     ensure_submission_allowed_for_user,
@@ -190,6 +197,9 @@ async def delete_gallery_post(
 
     await db.execute(
         delete(UserInteraction).where(UserInteraction.post_id == post_id)
+    )
+    await db.execute(
+        delete(GalleryPromptUnlock).where(GalleryPromptUnlock.post_id == post_id)
     )
     await db.execute(
         delete(GalleryComment).where(GalleryComment.post_id == post_id)
