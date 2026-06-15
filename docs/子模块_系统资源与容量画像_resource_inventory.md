@@ -110,7 +110,7 @@
 
 队列与媒体压力：
 - Central 当时约 pending 23-24、running 12，最老 pending 约 2873 秒；`healthy_workers=7`、`error_workers=0`、`quarantined_workers=0`。
-- 队列主要集中在 `video_edit`、`image_to_video`、`wan22_video_v2`、`face_swap`、`i2i_pro` 等长耗时或高峰任务。
+- 队列主要集中在 `image_to_video`（含 legacy `video_insert` / `video_edit` alias）、`wan22_video_v2`、`face_swap`、`i2i_pro` 等长耗时或高峰任务。
 - Web API 30 分钟内曾观测到约 172 次 R2 result URL 解析超时；边缘 30 分钟内约 202 次 499，`assets.aivison.it.com` legacy 回源约 37 次 upstream 异常。
 
 ## 3. 服务与容器分布
@@ -148,6 +148,8 @@
 | `192.168.1.177` | 2 x RTX 5090 32G | `8188`、`8189` | `cloud_prod_worker_02`、`cloud_prod_worker_03` | `video_insert`、`video_edit`、`image_to_video`、`ltx_video` |
 | `192.168.1.252` | 2 x RTX 4090 48G | `8188`、`8189` | `cloud_prod_worker_04`、`cloud_prod_worker_05` | `img2img`、`img2img_lora`、`wan22_video_v2`、`video_edit`、`image_to_video` |
 | `192.168.1.2` | 2 x RTX 4090 48G | `8188`、`8189` | `cloud_prod_worker_06`、`cloud_prod_worker_07` | `img2img`、`img2img_lora`、`video_insert`、`video_edit`、`image_to_video` |
+
+表中 `video_insert` / `video_edit` 仅表示生产 worker 仍声明的兼容 alias；canonical 执行面类型是 `image_to_video`，不再代表独立模型或独立 workflow。
 
 同一批 ComfyUI 节点也可能被测试 agent 使用。正式 agent 连接云 Central API `100.107.220.127:8003`；测试 agent 连接测试 Central。测试与生产共享物理 GPU 时，要避免把测试任务当成免费容量；大模型/视频任务压测会直接影响生产排队。
 

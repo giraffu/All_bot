@@ -13,7 +13,7 @@
 
 **前置依赖**：用户必须具备足够灵石，且同一时刻受并发锁约束。
 
-**当前视频口径**：旧 `custom_video` / `video_lora` 与 `wan22_video_v2` 共用 Wan22 AIO 底层内核和 worker workflow，但仍是两个用户功能入口。旧入口支持 `5s/8s/10s`，分辨率与计费对齐 v2 四档，`video_lora` 额外保留旧 LoRA 选择。历史与投稿类型仍保留旧值，执行面才使用 `image_to_video`。
+**当前视频口径**：旧 `custom_video` / `video_lora` 与 `wan22_video_v2` 共用 Wan22 AIO 底层内核和 worker workflow，但仍是两个用户功能入口。旧入口支持 `5s/8s/10s`，分辨率与计费对齐 v2 四档，`video_lora` 额外保留旧 LoRA 选择。历史与投稿类型仍保留旧值，执行面才使用 `image_to_video`。`video_insert` / `video_edit` 只保留为 legacy Central/Worker alias；懒人动图的差异在 FSM/entrypoint 内置 prompt，不再表示独立 workflow 或模型。
 
 ## 3. 当前业务主链
 

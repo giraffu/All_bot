@@ -56,6 +56,8 @@
 | `cloud-prod-comfy-agent-6` | Worker 06 | `192.168.1.2:8188` | `img2img,img2img_lora` |
 | `cloud-prod-comfy-agent-7` | Worker 07 | `192.168.1.2:8189` | `video_insert,video_edit,image_to_video` |
 
+`video_insert` / `video_edit` 在 worker 能力列表中只表示 legacy alias，canonical 执行面类型是 `image_to_video`。排障或扩容时不要为它们新建独立 workflow、模型 profile 或 RunPod manifest。
+
 所有 worker 挂载：
 - `/home/hfy/APP/All_bot/workers/comfy_agent/workflows -> /app/worker/workflows`
 - `/home/hfy/APP/All_bot/src -> /app/src`
@@ -182,7 +184,7 @@ ComfyUI 实例：
 
 运维边界：
 - 只处理 `img2img/img2img_lora` 相关问题时，优先定位 `comfy0` 与 worker 04。
-- 只处理 `wan22_video_v2/video_edit/image_to_video` 相关问题时，优先定位 `comfy1` 与 worker 05。
+- 只处理 `wan22_video_v2/image_to_video` 相关问题时，优先定位 `comfy1` 与 worker 05；`video_edit` 只按 `image_to_video` legacy alias 看待。
 - 修改共享模型目录会同时影响两个 worker；修改 `inst0/inst1` 下 custom_nodes/workflows/input/output/temp 只影响对应容器。
 
 ### 5.4 `allbot-gpu-002` / `192.168.1.2`
@@ -212,7 +214,7 @@ ComfyUI 实例：
 
 运维边界：
 - `comfy0` 对应 worker 06，主要处理 `img2img/img2img_lora`。
-- `comfy1` 对应 worker 07，主要处理 `video_insert/video_edit/image_to_video`。
+- `comfy1` 对应 worker 07，主要处理 `image_to_video`，并保留 `video_insert/video_edit` legacy alias。
 - 可只重启目标 Comfy 容器；不要因为一个容器异常而重启整台 GPU 节点。
 
 LAN RunPod 化一体容器试点：

@@ -12,6 +12,7 @@
 - 新增或修改 workflow JSON、`mappings.json`、`workflow_patcher.py`、`workflow_task_patchers.py` 时，只更新 Worker 目录，并确认目标 Worker 的 `SUPPORTED_TASK_TYPES` 覆盖该 task type。
 - Worker 启动时会基于 `workers/comfy_agent/workflows/mappings.json` 校验映射节点与输入名；Central API 只负责参数网关和队列入队，不再用 workflow 文件做启动门禁。
 - 重导 workflow 后必须复核硬编码节点 ID、`mappings.json` 节点输入名、`TASK_TYPE_WORKFLOW_FILENAMES` 绑定和 Worker `SUPPORTED_TASK_TYPES`，避免 Worker 校验通过但执行面读到旧文件。
+- 共享 workflow 的 alias 必须同轮维护：`image_to_video`、`video_insert`、`video_edit` 都绑定 `Wan22AioV82.json`，并必须同时存在于 `mappings.json` 与 `TASK_SPECIFIC_PATCHERS`，且复用 `patch_image_to_video_workflow`。生产 worker 的 workflow/mapping 目录可能是 bind mount，而 patcher 可能随镜像烘焙；只更新挂载目录不重建对应 agent，会造成半更新并触发 ComfyUI 400。
 
 ---
 
@@ -59,7 +60,7 @@
 目前系统主要支持 LTX-2.3 和 Wan2.2/Wan2.1 视频生成工作流。关于 LTX-2.3 工作流的具体 LoRA 使用与提示词规范，请参考项目根目录的 `LTX_LoRA_Guide.md`。
 
 ### 0. 当前支持概览
-- **普通图生视频 / 自定义图生视频 / 懒人动图**：上游类型仍可保留 `custom_video` / `video_lora` / 懒人动图 mode，执行面统一入队 `TaskType.IMAGE_TO_VIDEO`，底层 workflow 为 `Wan22AioV82.json`。
+- **普通图生视频 / 自定义图生视频 / 懒人动图**：上游类型仍可保留 `custom_video` / `video_lora` / Web 字面量 `image_to_video` / 懒人动图 mode，执行面统一入队 `TaskType.IMAGE_TO_VIDEO`，底层 workflow 为 `Wan22AioV82.json`。
 - **Wan22 AIO profile 口径**：旧图生视频 `custom_video` / `video_lora` / 懒人动图 mode / legacy `video_insert`、`video_edit` -> execution `image_to_video` -> `legacy_image_to_video` profile；图生视频 v2 `wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。两者共享 worker workflow，但不是同一个用户功能。
 - **旧 LoRA 图生视频 (`video_lora`)**：继续接收 `lora_name` 前缀，由 `workflow_task_patchers.py` 按高噪/低噪双节点动态补入。`custom_video` 不带 LoRA 时会清空 LoRA 槽；`wan22_video_v2` 始终清空额外 LoRA 槽。
 - **规格口径**：旧图生视频支持 `5s/8s/10s`，对应 `81/129/161` 帧，分辨率和计费基数与 v2 对齐为 `preview=6`、`small=12`、`standard=20`、`hd=30`，时长倍率为 `1x/2x/3x`；旧投稿 `512p/720p/1024p` 分别映射为 `preview/standard/hd`，`0.36 MP - Small` 映射为 `small`。
@@ -91,7 +92,7 @@
 ### 4. Worker 层：工作流动态注入 (Workflow Patcher)
 - **文件定位**：`workers/comfy_agent/workflow_task_patchers.py` 和 `workers/comfy_agent/workflows/Wan22AioV82.json`。
 - **实施状态**：**通常无需修改**，但需注意**硬编码防爆红线**。
-  - `image_to_video`、legacy `video_insert` / `video_edit` 都必须复用 `patch_image_to_video_workflow`，不要再绑定 `perfect_video_insert.json` 或 `perfect_video_edit.json`。
+  - `image_to_video`、legacy `video_insert` / `video_edit` 都必须复用 `patch_image_to_video_workflow`，不要再绑定 `perfect_video_insert.json`、`perfect_video_edit.json` 或任务专属模型。
   - 主模型节点固定为 `2616`（high）和 `2617`（low）。patcher 会根据 `wan22_model_profile` 写入对应 high/low UNet 文件。
   - 旧 LoRA 注入节点固定为 `26`（high noise）和 `18`（low noise）：
     - `26.inputs.lora_1.lora = {lora_name}_high_noise.safetensors`

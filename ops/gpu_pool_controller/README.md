@@ -124,3 +124,12 @@ GPU nodes still need their Docker daemon configured to trust
 `192.168.1.115:5000` before they can pull from the local registry.
 On the main server, push and verify through `localhost:5000`/`127.0.0.1:5000`
 so the host Docker daemon does not need the LAN IP registered as insecure.
+
+LAN all-in-one profile images are mirrors of verified GHCR RunPod images, not
+one-off local builds:
+
+| Profile | LAN image |
+| :--- | :--- |
+| `img2img_lora` | `192.168.1.115:5000/allbot/comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946` |
+| `i2i_pro` | `192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh` |
+| `image_to_video` / `video_basic` / `wan22_video_v2` / `wan22_aio_video` | `192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260613-wan22aio-lanbase-ab9b7ea` |

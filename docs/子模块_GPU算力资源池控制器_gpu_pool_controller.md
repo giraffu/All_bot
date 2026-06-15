@@ -99,12 +99,17 @@ Runtime dry-run 说明：
 
 ```bash
 scripts/manage_lan_model_cache.sh --dry-run
-scripts/upload_img2img_lora_models_to_lan_cache.sh --dry-run
-scripts/build_runpod_profile_image.sh \
-  --profile img2img_lora \
-  --image-ref 192.168.1.115:5000/allbot/comfy-runpod-img2img-lora:lan-canary \
-  --push
+python scripts/upload_all_task_models_to_lan_cache.py --env-file .env.lan.model-cache
 ```
+
+LAN registry 只缓存已验证 GHCR RunPod 镜像；不要把一次性本地构建 tag 当作长期事实源。当前 LAN AIO 镜像镜像关系：
+- `ghcr.io/giraffu/allbot-comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946` -> `192.168.1.115:5000/allbot/comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946`
+- `ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh` -> `192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh`
+- `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:20260613-wan22aio-lanbase-ab9b7ea` -> `192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260613-wan22aio-lanbase-ab9b7ea`
+
+GPU 节点 Docker daemon 必须信任 HTTP registry `192.168.1.115:5000` 后才能直接 `docker pull 192.168.1.115:5000/...`；未配置 insecure registry 时会被 Docker 强制按 HTTPS 访问并报 `HTTP response to HTTPS client`。修改 `/etc/docker/daemon.json` 并 restart Docker 会影响节点容器运行态，只能放在明确的节点维护窗口执行。
+
+`wan22_aio_video`、`image_to_video`、`wan22_video_v2` 三个 LAN AIO profile 共用同一个 Wan22 AIO 镜像；差异只在 runtime profile、`SUPPORTED_TASK_TYPES` 与模型 manifest。
 
 all-in-one compose 渲染：
 

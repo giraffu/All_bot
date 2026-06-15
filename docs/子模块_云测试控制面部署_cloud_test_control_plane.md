@@ -309,6 +309,7 @@ curl -fsS -X POST -H "$AUTH_HEADER" -H 'Content-Type: application/json' \
 docker ps -aq --filter name=cloud-comfy-agent-test-6 --filter name=cloud-comfy-agent-test-7 \
   | xargs -r docker rm -f
 
+# 该片段是历史 video_basic canary 兼容入口；新视频验证优先使用 canonical image_to_video / wan22_video_v2 split profile。
 CLOUD_TEST_WORKER_06_TASK_TYPES='video_insert,image_to_video' \
 CLOUD_TEST_WORKER_06_RUNTIME_PROFILE='video_basic_canary' \
 CLOUD_TEST_WORKER_06_COMFY_API_URL='http://192.168.1.2:8190' \

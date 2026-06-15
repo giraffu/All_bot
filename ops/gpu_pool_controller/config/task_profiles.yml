@@ -35,6 +35,7 @@ profiles:
     workflow: workers/comfy_agent/workflows/Wan22AioV82.json
     min_vram_gb: 32
     image_ref: 192.168.1.115:5000/allbot/comfy-cu130-video-basic:baseline
+    all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260613-wan22aio-lanbase-ab9b7ea
     model_prefix: image_to_video/2026-06-13-test
     model_manifest_key: image_to_video/2026-06-13-test/manifest.json
 
@@ -53,6 +54,7 @@ profiles:
     workflow: workers/comfy_agent/workflows/Wan22AioV82.json
     min_vram_gb: 32
     image_ref: 192.168.1.115:5000/allbot/comfy-cu130-video-basic:baseline
+    all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260613-wan22aio-lanbase-ab9b7ea
     model_prefix: image_to_video/2026-06-13-test
     model_manifest_key: image_to_video/2026-06-13-test/manifest.json
 
@@ -84,7 +86,7 @@ profiles:
     workflow: workers/comfy_agent/workflows/Qwen-Rapid-AIO.json
     min_vram_gb: 32
     image_ref: 192.168.1.115:5000/allbot/comfy-cu128-img2img:baseline
-    all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-img2img-lora:lan-canary
+    all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946
     model_prefix: img2img_lora/2026-06-10
     model_manifest_key: img2img_lora/2026-06-10/manifest.json
 
@@ -107,6 +109,7 @@ profiles:
     workflow: workers/comfy_agent/workflows/i2i_pro.json
     min_vram_gb: 32
     image_ref: ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:pending
+    all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh
     model_prefix: i2i_pro/2026-06-14-test
     model_manifest_key: i2i_pro/2026-06-14-test/manifest.json
 
@@ -126,6 +129,7 @@ profiles:
     workflow: workers/comfy_agent/workflows/Wan22AioV82.json
     min_vram_gb: 48
     image_ref: 192.168.1.115:5000/allbot/comfy-cu128-wan22:baseline
+    all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260613-wan22aio-lanbase-ab9b7ea
     model_prefix: wan22_video_v2/2026-06-13-test
     model_manifest_key: wan22_video_v2/2026-06-13-test/manifest.json
 
@@ -145,5 +149,6 @@ profiles:
     workflow: workers/comfy_agent/workflows/Wan22AioV82.json
     min_vram_gb: 48
     image_ref: ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:pending
+    all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260613-wan22aio-lanbase-ab9b7ea
     model_prefix: wan22_aio_video/2026-06-12-test
     model_manifest_key: wan22_aio_video/2026-06-12-test/manifest.json

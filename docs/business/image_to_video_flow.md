@@ -40,6 +40,18 @@ sequenceDiagram
 - `image_to_video` 和 `wan22_video_v2` 通过 `wan22_model_profile` 区分主模型：旧入口使用 legacy high/low 主模型，v2 使用 snatchkiss high/low 主模型。`video_lora` 仍保留旧 LoRA 前缀选择，`custom_video` 兼容入口保持无 LoRA，v2 会清空额外 LoRA 槽。
 - Web `wan22_video_v2`、`custom_video`、`video_lora` 已支持与 Bot 对齐的多段链：历史与 `/api/tasks/{task_id}/result` 会返回 `last_frame` 与 `result_meta`，并新增 `/api/users/history/{task_id}/wan22-chain`、`/api/users/history/{task_id}/wan22-chain/stitch` 供练功房继续扩展、分段重生成和整链拼接；其中整链拼接现在会把拼接后 MP4 上传存储，并新增一条 `History` 记录返回给前端，而不是只回下载流。
 
+### Legacy 视频任务类型收口表
+
+| 类型 / mode | 当前定位 | 执行面 task type | Worker / workflow 口径 |
+| :--- | :--- | :--- | :--- |
+| `image_to_video` | 旧图生视频的新中性执行名；Web 可直接提交该字面量 | `image_to_video` | `Wan22AioV82.json` + `legacy_image_to_video` profile |
+| `custom_video` / `video_lora` | 用户功能与历史/Gallery 类型；`video_lora` 额外允许旧 LoRA | `image_to_video` | 同上；历史类型不改名 |
+| `perfect_video_insert`、`doggy_style`、`blowjob`、`undress_tongue`、`closeup_blowjob`、`perfect_video_edit`、`txt2video` | Telegram 懒人动图 / 旧快捷入口 mode；差异只在 FSM/entrypoint 注入内置 prompt | `image_to_video` | 不代表独立 worker workflow |
+| `video_insert` / `video_edit` | legacy Central/Worker alias，用于旧队列残留、旧 endpoint 或旧容器兼容 | `image_to_video` | 必须复用 `patch_image_to_video_workflow`，不得再绑定独立 JSON 或模型 |
+| `wan22_video_v2` | 图生视频 v2 用户功能与历史类型 | `wan22_video_v2` | `Wan22AioV82.json` + `wan22_video_v2` profile |
+
+新增入口、测试、RunPod profile 和生产 worker 能力配置时，优先使用 canonical `image_to_video` / `wan22_video_v2`。只有为了兼容存量队列或旧部署，才继续让 worker 声明 `video_insert` / `video_edit` alias。
+
 ## 二、 数据流向
 
 ```mermaid
