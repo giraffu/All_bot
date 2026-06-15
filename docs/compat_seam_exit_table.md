@@ -24,7 +24,6 @@
 | `src/web_api/services/history_response_builder.py` 的 `resolve_history_media_urls_func` 注入参数 | 仅供测试替换媒体 URL resolver | `tests/web_api/test_history_response_builder.py`、`tests/web_api/test_users_apply_context.py` | 相邻测试直接 patch 模块级 `resolve_history_media_urls(...)` | 已删除，builder 不再暴露 test-only 注入参数 |
 | `src/web_api/common/__init__.py` | 纯 re-export 包壳 | 无业务引用 | 仓库内调用方均直接引用 `src.web_api.common.utils` | 已删除，`common` 包不再保留空壳入口 |
 | `src/core/task_core_service_providers.py` 中未调用的 getter wrapper | 历史 provider 细粒度透传符号 | 无业务引用 | 全仓确认无静态调用方 | 已删除，保留真实 capability builder 与运行时入口 |
-| `cs_bot/skill_manager.py:skill_manager` | 未使用的模块级单例 | 无业务引用 | `langgraph_client.py` 已自行实例化 `SkillManager` | 已删除，技能管理只保留真实构造路径 |
 | `src/context.py:trace_id_ctx` | 旧 trace context 变量 | 无业务引用；实际 trace 语义使用 `asgi_correlation_id.correlation_id` | `rg "trace_id_ctx"` 确认无动态引用 | 已删除，保留正在使用的 `user_id_ctx` |
 
 ## 已在本轮下沉的默认装配

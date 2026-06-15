@@ -49,7 +49,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 - 普通研发不得默认执行 `safe_deploy.sh`、生产 compose 或正式服务重建。
 - 不要把“修 Bug/联调/改配置”理解为“允许上线”；进入正式发布前必须有明确用户确认。
 - 单服务生产重建禁止 `--remove-orphans`、无 service 名 compose 命令、全组 `docker rm` 过滤器；只清目标 service 容器和同 service label 残留。
-- 不要把 `docker restart` 当代码发布方式，尤其是 Web API、Dashboard、CS Bot 等 COPY 型服务。
+- 不要把 `docker restart` 当代码发布方式，尤其是 Web API、Dashboard 等 COPY 型服务。
 - 云测试退役脚本 `scripts/cleanup_cloud_test_for_prod.sh` 默认 dry-run；不得删除 R2 `user-data-test` 或误改正式入口。
 
 ## 3. 生产单服务重建

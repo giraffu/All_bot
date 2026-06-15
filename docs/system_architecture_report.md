@@ -11,7 +11,7 @@
 
 ## 1. 系统架构总览
 
-AllBot 当前采用“多入口接入 + 核心领域下沉 + 异步任务调度 + 分级存储 + 独立运维/客服侧车”的整体架构。系统已经从早期的 Telegram Bot 驱动单体，演进为覆盖 Telegram、Web、Dashboard、支付与客服的复合平台。
+AllBot 当前采用“多入口接入 + 核心领域下沉 + 异步任务调度 + 分级存储 + 独立运维边界”的整体架构。系统已经从早期的 Telegram Bot 驱动单体，演进为覆盖 Telegram、Web、Dashboard 与支付的复合平台。
 
 ### 1.1 当前架构图
 
@@ -22,7 +22,6 @@ graph TD
         WEB[Web 工作台]
         DASH[Dashboard]
         PAY[RMB 网关 / Telegram Stars / TON]
-        GROUP[官方群聊用户]
     end
 
     subgraph Edge[边缘与网络层]
@@ -39,7 +38,6 @@ graph TD
         PAYAPI[cloud-payment-api-prod]
         DFRONT[cloud-dashboard-frontend-prod]
         DBACK[cloud-dashboard-backend-prod]
-        CS[cs_bot]
     end
 
     subgraph Core[核心领域与调度]
@@ -51,7 +49,6 @@ graph TD
         GAL[Gallery / Apply Context]
         CENTRAL[Central API]
         WORKERS[ComfyUI Workers]
-        LLM[LM Studio + LangGraph]
     end
 
     subgraph Infra[基础设施]
@@ -66,7 +63,6 @@ graph TD
     WEB --> CFTUNNEL --> API
     DASH --> VLAN --> DFRONT --> DBACK
     PAY --> CFTUNNEL --> PAYAPI
-    GROUP --> CS
 
     BOT --> AUTH
     BOT --> TASK
@@ -77,7 +73,6 @@ graph TD
     API --> AFF
     PAYAPI --> BILL
     DBACK --> PG
-    CS --> LLM
 
     TASKSUB --> REDIS
     TASKSUB --> CENTRAL --> VLAN --> WORKERS
@@ -96,7 +91,7 @@ graph TD
 - **客户端与外部系统**
   - Telegram 仍是核心入口之一。
   - Web 工作台已成为生成、历史管理、广场浏览与模板应用的主路径。
-  - Dashboard、支付 API、CS Bot 都是独立边界，不再是 Bot 的附属模块。
+  - Dashboard 与支付 API 都是独立边界，不再是 Bot 的附属模块。
 - **接入与应用层**
   - `tg-bot` 负责 Telegram 交互、FSM、结果消息与支付通知。
   - `web-api` 承担认证、任务提交、任务运行态、历史、广场、用户中心、返佣兑换与站点通知读取等主能力。
@@ -190,10 +185,6 @@ sequenceDiagram
 - Dashboard 当前可维护全站站点通知，支持标题、正文、启用状态、置顶、目标修为与目标身份。
 - Web 侧通过 `/api/app/site-notice` 与 `/api/app/site-notices` 读取通知。
 - 通知可见性按用户当前 `group` / `identity` 做“任一命中即显示”过滤；两项都为空表示所有 Web 用户可见。
-
-### 2.6 CS Bot 闭环
-- `cs_bot` 当前通过 `LangGraph + SkillManager + ChatOpenAI(LM Studio 兼容接口)` 运行。
-- 当前记忆是进程内 `MemorySaver()`，不是 Redis 持久化记忆树。
 
 ---
 

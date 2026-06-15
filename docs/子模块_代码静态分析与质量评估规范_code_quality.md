@@ -42,7 +42,7 @@
 
 ## 4. 2026-06-03 质量基线快照
 
-最新一次全局评估报告位于 `logs/code_analysis_report_20260603_2332.md`，评估范围覆盖 `src/`、`backend/app/`、`workers/comfy_agent/`、`cs_bot/`、`frontend/src/`、`tests/` 与核心部署脚本，并按当次要求降权或排除了 Dashboard、支付/订单/会员/affiliate 业务模块。
+最新一次全局评估报告位于 `logs/code_analysis_report_20260603_2332.md`，评估范围覆盖 `src/`、`backend/app/`、`workers/comfy_agent/`、`frontend/src/`、`tests/` 与核心部署脚本，并按当次要求降权或排除了 Dashboard、支付/订单/会员/affiliate 业务模块。
 
 ### 4.1 当前总体结论
 - 系统整体已经稳定演进为“Bot/Web 双入口 + task core facade + Central API + Worker + Web side-effect monitor”的分层形态。

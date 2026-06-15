@@ -75,8 +75,6 @@ async def custom_download_to_drive(
 File.download_to_drive = custom_download_to_drive
 ```
 
-独立 `cs_bot` 另有自己的 Telegram 文件下载补丁，落点在 [`cs_bot/bot.py`](../cs_bot/bot.py)。修改 Telegram Local API、文件下载或群聊图片处理时，需要同时确认主 Bot 与 CS Bot 的补丁语义是否都需要调整。
-
 ## 4. 接口定义 (网络契约)
 本模块对外表现为 PTB 框架内的 `ApplicationBuilder` 参数配置：
 ```python
@@ -95,8 +93,7 @@ application = (
 - **核心用例**：
   1. `test_local_api_connection`：在 Bot 启动前，测试 `http://<VPS_IP>:8081/bot<TOKEN>/getMe` 是否返回正常的 Bot 信息，而非 502。
   2. `test_large_file_download`：用户上传一个 45MB 的视频文件，断言主 Bot `custom_download_to_drive` 能在 `read_timeout` 内无阻碍地落盘，且 HTTP 状态码为 200。
-  3. `test_cs_bot_large_file_download`：若改动涉及 CS Bot，额外断言 `cs_bot/bot.py` 的 `custom_download_as_bytearray` 能正确读取 8082 文件流。
-  4. `test_directory_permissions`：验证 `telegram-bot-api` 写入宿主机的文件能被 8082 端口读取，不报 403 Forbidden 错误。
+  3. `test_directory_permissions`：验证 `telegram-bot-api` 写入宿主机的文件能被 8082 端口读取，不报 403 Forbidden 错误。
 
 ## 6. 部署与回滚步骤
 - **VPS 端部署**：

@@ -1,4 +1,0 @@
-langchain-core
-langchain-openai
-langgraph
-# 如果后续要接数据库记忆，再加 langgraph-checkpoint-postgres

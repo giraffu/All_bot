@@ -82,7 +82,7 @@
 - “部署完新容器后再手动进容器跑 upgrade head 才是标准流程”
 
 ## 4. 服务重建注意事项
-- `web-api`、`payment-api`、Dashboard、CS Bot 等通过镜像 `COPY` 代码的服务，修改代码后都要重建镜像，单纯 `restart` 不会拿到新代码。
+- `web-api`、`payment-api`、Dashboard 等通过镜像 `COPY` 代码的服务，修改代码后都要重建镜像，单纯 `restart` 不会拿到新代码。
 - `workers` 更新环境变量时，应使用 `docker-compose up -d` 触发重新创建，而不是只做 `restart`。
 - 当前受支持的测试环境是云测试控制面；旧本地测试脚本仍可能留在仓库内作为历史迁移/取证材料，但不应被当成回滚目标。
 - 若人工取证确需短时启动旧本地隔离测试栈，应使用独立的 `.env.test`、`backend/docker-compose-test.yml` 与 `workers/docker-compose-test.yml`，并让测试入口服务指向独立的 Central API 端口与独立 Redis 队列；否则可能与正式或云测试环境共用任务调度面。
@@ -115,9 +115,6 @@
 - Nginx 404 / 502
   - `404` 常见于 `proxy_pass` 带错误路径
   - `502` 常见于后端服务或 Tailscale 链路不可达
-- CS Bot 改代码不生效
-  - 根因通常是只做了 `docker restart`
-  - 处理必须是 `docker-compose up -d --build`
 - 旧本地测试 worker 短时取证后出现 401 / 读错桶
   - 常见根因：把 `env_file` 当成 compose `${...}` 插值来源，或测试 worker 容器内实际 `AGENT_SECRET_TOKEN`、`MINIO_INPUT_BUCKET`、`MINIO_RESULT_BUCKET` 与 `.env.test` 口径不一致
   - 处理：核对 `workers/docker-compose-test.yml` 默认值是否仍为测试桶，重建后用 `docker exec <worker> env` 验证 `MINIO_INPUT_BUCKET=bot-data-test`、`MINIO_RESULT_BUCKET=comfyui-temp-test`，并确认 token 与旧本地测试 Central API 一致；取证结束后停止该栈

@@ -9,7 +9,6 @@
 - **TG Bot**: Python-Telegram-Bot 处理 Telegram Update
 - **Payment API**: 独立回调服务保障资产一致性
 - **Worker Node**: ComfyUI 阵列与 Redis Pub/Sub 队列通信
-- **CS Bot**: LangGraph 驱动，接入宿主机 LM Studio
 
 ## 业务板块与产品规范
 
@@ -44,7 +43,6 @@
 - [子模块: 容灾与持久化 (Database & Recovery)](./docs/子模块_容灾与持久化_database_recovery.md)
 - [子模块: 局域网 GPU 节点 SSH 管理](./docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md)
 - [子模块: 局域网 GPU 节点资源与运维](./docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md)
-- [子模块: 智能客服 (CS Bot Agent)](./docs/子模块_智能客服_cs_bot_agent.md)
 - [热点文件门禁与回归触发规则](./docs/子模块_热点文件门禁与回归触发规则_hotspot_guardrails.md)
 - [子模块: 生成任务全链路](./docs/子模块_生成任务全链路_task_full_chain.md)
 - [子模块: 用户认证与权限管理 (User Auth & Permission)](./docs/子模块_用户认证与权限_user_auth_permission.md)
