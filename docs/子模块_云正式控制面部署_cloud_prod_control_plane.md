@@ -64,6 +64,14 @@ RUNPOD_MODEL_MANIFEST_KEY=img2img_lora/2026-06-10/manifest.json
 
 `prod-worker --profile i2i_pro` 使用 `runpod_prod_i2i_pro_manual_NN` agent 和 `allbot-runpod-prod-i2i-pro-manual-NN` Pod 名称，固定请求 `NVIDIA GeForce RTX 4090`，生产 Pod 不开启 SSH。该 profile 的 `SUPPORTED_TASK_TYPES` 为 `i2i_pro,t2i-pornmaster-turbo,face_swap`，并通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 将 `t2i-pornmaster-turbo` 指向 `txt2img_from_i2i_pro.json`、`face_swap` 指向 `face_swap_v2.json`。`prod-worker` heartbeat 等待默认 `3600s`，覆盖 i2i_pro 首次同步约 36GiB 模型的启动窗口；生产 canary 会串行提交 `i2i_pro`、Web `txt2img` 与 `face_swap` 三单，全部由 `runpod_prod_i2i_pro_manual_NN` 接单并出图后才可启用接正式队列。
 
+RunPod 正式手动 worker 的“启动”和“接单”是两层：`prod-worker up --execute`
+只创建/启动 Pod 并等待 disabled heartbeat；`prod-worker enable --execute` 才把
+Central agent control 切到 `enabled` 并允许接正式队列。`disable --execute`
+只停接新单不关 Pod，适合保留现场；`down --execute` 会删除 Pod，必须确认目标
+worker 没有 `current_task_id`。旧 Pod 原地重启可能复用
+`/workspace/allbot/repo` 中已有的 `remote_workers` bundle；修复 workflow/override 后，
+新建 Pod 会拉最新 `deploy`，已有旧 Pod 则先 disable 再更新远端 repo 或重建。
+
 ### 2.2 本地执行面
 本地主服务器运行云正式 GPU worker 和一个本地 worker relay/上传 sidecar：
 

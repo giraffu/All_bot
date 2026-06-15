@@ -70,6 +70,18 @@ class ComfyClient:
             return response.json()
         return {}
 
+    async def interrupt(self) -> bool:
+        """
+        Ask ComfyUI to interrupt the currently executing prompt.
+        """
+        try:
+            response = await self.client.post("/interrupt", json={})
+            response.raise_for_status()
+            return True
+        except Exception as e:
+            logger.warning(f"ComfyUI interrupt failed: {e}")
+            return False
+
     async def get_view(
         self, filename: str, subfolder: str = "", type: str = "output"
     ) -> bytes:

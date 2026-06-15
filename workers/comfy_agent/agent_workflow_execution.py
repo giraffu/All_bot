@@ -5,6 +5,10 @@ from typing import Any
 from agent_result_assets import resolve_history_result_asset, result_asset_priority
 
 
+class TaskExecutionTimeoutError(TimeoutError):
+    """Raised when ComfyUI does not produce history output before the hard deadline."""
+
+
 async def submit_task_workflow(
     *,
     task_id: str,
@@ -115,7 +119,17 @@ async def wait_for_task_completion(
                 task_id,
                 timeout_seconds,
             )
-            break
+            if await _probe_history_result(
+                comfy_client=comfy_client,
+                execution=execution,
+                task_type=task_type,
+                logger=logger,
+            ):
+                break
+            raise TaskExecutionTimeoutError(
+                "Task execution timed out for "
+                f"{task_id} after {timeout_seconds:.0f}s without ComfyUI history result"
+            )
 
         try:
             await asyncio.wait_for(

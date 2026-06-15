@@ -24,6 +24,7 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS,
     RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
     RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX,
+    RUNPOD_WAN22_VIDEO_V2_COMFY_EXTRA_ARGS,
     RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY,
     RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX,
     RunPodProvider,
@@ -600,6 +601,9 @@ def test_render_create_split_video_profiles_share_template_with_distinct_runtime
         wan22_v2_env["RUNPOD_MODEL_MANIFEST_KEY"]
         == RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY
     )
+    assert wan22_v2_env["WAN22_VIDEO_V2_COMPLETION_TIMEOUT_SECONDS"] == "600"
+    assert wan22_v2_env["WAN22_VIDEO_V2_EXIT_ON_TIMEOUT"] == "true"
+    assert wan22_v2_env["COMFY_EXTRA_ARGS"] == RUNPOD_WAN22_VIDEO_V2_COMFY_EXTRA_ARGS
 
 
 def test_render_create_i2i_pro_cloud_test_profile_uses_dedicated_manifest_and_disk():
@@ -661,6 +665,10 @@ def test_runpod_settings_from_env_split_video_profiles_fallback_to_wan22_image_t
         "RUNPOD_DOCKER_START_SCRIPT_FILE_WAN22_AIO_VIDEO",
         str(script),
     )
+    monkeypatch.setenv(
+        "RUNPOD_WAN22_VIDEO_V2_COMFY_EXTRA_ARGS",
+        "--disable-dynamic-vram --disable-async-offload",
+    )
     monkeypatch.setenv("RUNPOD_MODEL_BUCKET", "allbot-model-cache")
     monkeypatch.delenv("RUNPOD_TEMPLATE_ID_IMAGE_TO_VIDEO", raising=False)
     monkeypatch.delenv("RUNPOD_TEMPLATE_ID_WAN22_VIDEO_V2", raising=False)
@@ -688,6 +696,10 @@ def test_runpod_settings_from_env_split_video_profiles_fallback_to_wan22_image_t
     assert (
         settings.model_manifest_key_wan22_video_v2
         == RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY
+    )
+    assert (
+        settings.wan22_video_v2_comfy_extra_args
+        == "--disable-dynamic-vram --disable-async-offload"
     )
 
 
@@ -865,8 +877,7 @@ def test_render_create_cloud_prod_manual_worker_can_use_second_slot():
 
 def test_render_create_cloud_prod_wan22_video_v2_uses_prod_refs_and_split_manifest():
     image_ref = (
-        RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX
-        + "20260613-wan22aio-lanbase-ab9b7ea"
+        RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX + "20260613-wan22aio-lanbase-ab9b7ea"
     )
     agent_id = prod_agent_id_from_slot("01", profile="wan22_video_v2")
     provider = RunPodProvider(
@@ -903,6 +914,9 @@ def test_render_create_cloud_prod_wan22_video_v2_uses_prod_refs_and_split_manife
     assert env["RUNPOD_MODEL_BUCKET"] == "allbot-model-cache"
     assert env["RUNPOD_MODEL_PREFIX"] == RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX
     assert env["RUNPOD_MODEL_MANIFEST_KEY"] == RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY
+    assert env["WAN22_VIDEO_V2_COMPLETION_TIMEOUT_SECONDS"] == "600"
+    assert env["WAN22_VIDEO_V2_EXIT_ON_TIMEOUT"] == "true"
+    assert env["COMFY_EXTRA_ARGS"] == RUNPOD_WAN22_VIDEO_V2_COMFY_EXTRA_ARGS
     assert env["RUNPOD_COMFY_CUSTOM_NODES_ENABLED"] == "false"
     assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
     assert env["RUNPOD_START_SSHD"] == "false"
@@ -915,8 +929,7 @@ def test_render_create_cloud_prod_wan22_video_v2_uses_prod_refs_and_split_manife
 
 def test_render_create_cloud_prod_image_to_video_uses_prod_refs_and_split_manifest():
     image_ref = (
-        RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX
-        + "20260613-wan22aio-lanbase-ab9b7ea"
+        RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX + "20260613-wan22aio-lanbase-ab9b7ea"
     )
     agent_id = prod_agent_id_from_slot("01", profile="image_to_video")
     provider = RunPodProvider(
@@ -1323,36 +1336,58 @@ def test_execute_create_allows_third_prod_manual_worker_when_configured_limit_is
     )
 
 
-def test_mutation_gate_caps_v0_managed_pods_at_two():
+def test_mutation_gate_allows_global_total_above_manual_slots():
+    fake = FakeRunPodApi({"id": "pod-created"})
     provider = RunPodProvider(
         _settings(
             dry_run=False,
             autoscaler_enabled=True,
-            max_pods_total=3,
+            max_pods_total=5,
+            max_pods_per_type=1,
+            max_hourly_cost_usd=10.0,
+            image_name_wan22_video_v2=(
+                "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:"
+                "20260613-wan22aio-lanbase-ab9b7ea"
+            ),
+            prod_agent_id=prod_agent_id_from_slot(
+                "01",
+                profile="wan22_video_v2",
+            ),
         ),
-        request_func=FakeRunPodApi({"id": "pod-created"}),
+        request_func=fake,
     )
+    existing = [
+        {
+            "id": f"pod-existing-{index}",
+            "desiredStatus": "RUNNING",
+            "adjustedCostPerHr": 0.5,
+            "env": {"RUNPOD_TASK_TYPE": task_type},
+        }
+        for index, task_type in enumerate(
+            ["i2i_pro", "img2img_lora", "img2img_lora", "image_to_video"],
+            start=1,
+        )
+    ]
 
     payload = provider.create_pod(
-        task_type="img2img_lora",
-        environment="cloud-test",
-        existing_pods=[],
+        task_type="wan22_video_v2",
+        environment="cloud-prod",
+        existing_pods=existing,
         execute=True,
     )
 
-    assert payload["ok"] is False
-    assert (
-        "RUNPOD_MAX_PODS_TOTAL must be between 1 and 2 for v0"
-        in payload["guard"]["reasons"]
-    )
+    assert payload["ok"] is True
+    assert fake.calls[0]["method"] == "POST"
+    assert fake.calls[0]["json_body"]["env"]["RUNPOD_TASK_TYPE"] == "wan22_video_v2"
 
 
-def test_mutation_gate_caps_v0_managed_pods_at_configured_max():
+def test_mutation_gate_caps_v0_per_type_at_configured_max():
     provider = RunPodProvider(
         _settings(
             dry_run=False,
             autoscaler_enabled=True,
             max_pods_total=9,
+            max_pods_per_type=9,
             prod_max_manual_slots=8,
         ),
         request_func=FakeRunPodApi({"id": "pod-created"}),
@@ -1367,7 +1402,7 @@ def test_mutation_gate_caps_v0_managed_pods_at_configured_max():
 
     assert payload["ok"] is False
     assert (
-        "RUNPOD_MAX_PODS_TOTAL must be between 1 and 8 for v0"
+        "RUNPOD_MAX_PODS_PER_TYPE must be between 1 and 8 for v0"
         in payload["guard"]["reasons"]
     )
 

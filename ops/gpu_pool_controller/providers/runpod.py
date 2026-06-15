@@ -32,18 +32,10 @@ RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF = (
 RUNPOD_PROD_WORKER_CENTRAL_URL = "https://worker-central.aivison.it.com"
 RUNPOD_PROD_AGENT_ID_PREFIX = "runpod_prod_img2img_manual_"
 RUNPOD_PROD_POD_NAME_PREFIX = "allbot-runpod-prod-img2img-manual-"
-RUNPOD_PROD_WAN22_VIDEO_V2_AGENT_ID_PREFIX = (
-    "runpod_prod_wan22_video_v2_manual_"
-)
-RUNPOD_PROD_WAN22_VIDEO_V2_POD_NAME_PREFIX = (
-    "allbot-runpod-prod-wan22-video-v2-manual-"
-)
-RUNPOD_PROD_IMAGE_TO_VIDEO_AGENT_ID_PREFIX = (
-    "runpod_prod_image_to_video_manual_"
-)
-RUNPOD_PROD_IMAGE_TO_VIDEO_POD_NAME_PREFIX = (
-    "allbot-runpod-prod-image-to-video-manual-"
-)
+RUNPOD_PROD_WAN22_VIDEO_V2_AGENT_ID_PREFIX = "runpod_prod_wan22_video_v2_manual_"
+RUNPOD_PROD_WAN22_VIDEO_V2_POD_NAME_PREFIX = "allbot-runpod-prod-wan22-video-v2-manual-"
+RUNPOD_PROD_IMAGE_TO_VIDEO_AGENT_ID_PREFIX = "runpod_prod_image_to_video_manual_"
+RUNPOD_PROD_IMAGE_TO_VIDEO_POD_NAME_PREFIX = "allbot-runpod-prod-image-to-video-manual-"
 RUNPOD_PROD_I2I_PRO_AGENT_ID_PREFIX = "runpod_prod_i2i_pro_manual_"
 RUNPOD_PROD_I2I_PRO_POD_NAME_PREFIX = "allbot-runpod-prod-i2i-pro-manual-"
 RUNPOD_PROD_DEFAULT_MAX_MANUAL_SLOTS = 2
@@ -75,13 +67,11 @@ RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX = "wan22_video_v2/2026-06-13-test"
 RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY = (
     "wan22_video_v2/2026-06-13-test/manifest.json"
 )
-RUNPOD_I2I_PRO_GPU_TYPE_IDS = (
-    "NVIDIA GeForce RTX 4090",
-)
+RUNPOD_WAN22_VIDEO_V2_COMPLETION_TIMEOUT_SECONDS = 600.0
+RUNPOD_WAN22_VIDEO_V2_COMFY_EXTRA_ARGS = "--disable-dynamic-vram"
+RUNPOD_I2I_PRO_GPU_TYPE_IDS = ("NVIDIA GeForce RTX 4090",)
 RUNPOD_I2I_PRO_MODEL_PREFIX = "i2i_pro/2026-06-14-test"
-RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY = (
-    "i2i_pro/2026-06-14-test/manifest.json"
-)
+RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY = "i2i_pro/2026-06-14-test/manifest.json"
 RUNPOD_I2I_PRO_CONTAINER_DISK_GB = 120
 RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES = (
     "i2i_pro",
@@ -237,9 +227,7 @@ def prod_slot_from_agent_id(
     )
     prefix = _prod_agent_id_prefix_for(profile_key)
     if not agent_id.startswith(prefix):
-        raise ValueError(
-            f"prod RunPod {profile_key} agent_id must start with {prefix}"
-        )
+        raise ValueError(f"prod RunPod {profile_key} agent_id must start with {prefix}")
     return _normalize_prod_worker_slot(
         agent_id.removeprefix(prefix),
         max_manual_slots=max_manual_slots,
@@ -374,6 +362,10 @@ def _float_env(value: str | None, *, default: float) -> float:
     if value is None or not value.strip():
         return default
     return float(value)
+
+
+def _format_seconds_env(value: float) -> str:
+    return f"{value:g}"
 
 
 def _docker_start_cmd_env(
@@ -544,6 +536,11 @@ class RunPodSettings:
     model_manifest_key_image_to_video: str = RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY
     model_prefix_wan22_video_v2: str = RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX
     model_manifest_key_wan22_video_v2: str = RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY
+    wan22_video_v2_completion_timeout_seconds: float = (
+        RUNPOD_WAN22_VIDEO_V2_COMPLETION_TIMEOUT_SECONDS
+    )
+    wan22_video_v2_exit_on_timeout: bool = True
+    wan22_video_v2_comfy_extra_args: str = RUNPOD_WAN22_VIDEO_V2_COMFY_EXTRA_ARGS
     model_prefix_i2i_pro: str = RUNPOD_I2I_PRO_MODEL_PREFIX
     model_manifest_key_i2i_pro: str = RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY
     task_type_workflow_overrides_i2i_pro: str = RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES
@@ -842,6 +839,18 @@ class RunPodSettings:
                 "RUNPOD_MODEL_MANIFEST_KEY_WAN22_VIDEO_V2",
                 RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY,
             ),
+            wan22_video_v2_completion_timeout_seconds=_float_env(
+                os.getenv("RUNPOD_WAN22_VIDEO_V2_COMPLETION_TIMEOUT_SECONDS"),
+                default=RUNPOD_WAN22_VIDEO_V2_COMPLETION_TIMEOUT_SECONDS,
+            ),
+            wan22_video_v2_exit_on_timeout=_bool_env(
+                os.getenv("RUNPOD_WAN22_VIDEO_V2_EXIT_ON_TIMEOUT"),
+                default=True,
+            ),
+            wan22_video_v2_comfy_extra_args=os.getenv(
+                "RUNPOD_WAN22_VIDEO_V2_COMFY_EXTRA_ARGS",
+                RUNPOD_WAN22_VIDEO_V2_COMFY_EXTRA_ARGS,
+            ).strip(),
             model_prefix_i2i_pro=os.getenv(
                 "RUNPOD_MODEL_PREFIX_I2I_PRO",
                 RUNPOD_I2I_PRO_MODEL_PREFIX,
@@ -1294,7 +1303,7 @@ class RunPodProvider:
             execute
             and not self.settings.dry_run
             and self.settings.autoscaler_enabled
-            and 1 <= self.settings.max_pods_total <= self.settings.prod_max_manual_slots
+            and self.settings.max_pods_total >= 1
             and 1
             <= self.settings.max_pods_per_type
             <= self.settings.prod_max_manual_slots
@@ -1333,16 +1342,23 @@ class RunPodProvider:
             "" if environment == "cloud-prod" else self._template_id_for(profile)
         )
         image_name = self._image_name_for(profile)
-        if environment == "cloud-prod" and profile.task_type == "img2img_lora" and not image_name:
+        if (
+            environment == "cloud-prod"
+            and profile.task_type == "img2img_lora"
+            and not image_name
+        ):
             image_name = RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE
-        if environment == "cloud-prod" and profile.task_type in {
-            "image_to_video",
-            "wan22_video_v2",
-            "i2i_pro",
-        } and not image_name:
-            raise ValueError(
-                f"{profile.image_env_key} is required for cloud-prod"
-            )
+        if (
+            environment == "cloud-prod"
+            and profile.task_type
+            in {
+                "image_to_video",
+                "wan22_video_v2",
+                "i2i_pro",
+            }
+            and not image_name
+        ):
+            raise ValueError(f"{profile.image_env_key} is required for cloud-prod")
         if not template_id and not image_name:
             image_name = self._pending_image_name_for(profile)
         body: dict[str, Any] = {
@@ -1385,7 +1401,9 @@ class RunPodProvider:
         environment: str,
     ) -> int:
         if profile.task_type == "i2i_pro":
-            return max(self.settings.container_disk_gb, RUNPOD_I2I_PRO_CONTAINER_DISK_GB)
+            return max(
+                self.settings.container_disk_gb, RUNPOD_I2I_PRO_CONTAINER_DISK_GB
+            )
         return self.settings.container_disk_gb
 
     def _pod_env(
@@ -1470,6 +1488,15 @@ class RunPodProvider:
             env["AGENT_ID"] = env_config["agent_id"]
             env["AGENT_ID_PREFIX"] = env_config["agent_id"]
             env["POOL_IMAGE_REF"] = self._prod_image_name_for(profile)
+        if profile.task_type == "wan22_video_v2":
+            env["WAN22_VIDEO_V2_COMPLETION_TIMEOUT_SECONDS"] = _format_seconds_env(
+                self.settings.wan22_video_v2_completion_timeout_seconds
+            )
+            env["WAN22_VIDEO_V2_EXIT_ON_TIMEOUT"] = (
+                "true" if self.settings.wan22_video_v2_exit_on_timeout else "false"
+            )
+            if self.settings.wan22_video_v2_comfy_extra_args:
+                env["COMFY_EXTRA_ARGS"] = self.settings.wan22_video_v2_comfy_extra_args
         workflow_overrides = self._workflow_overrides_for(profile)
         if workflow_overrides:
             env["TASK_TYPE_WORKFLOW_OVERRIDES"] = workflow_overrides
@@ -1515,7 +1542,9 @@ class RunPodProvider:
             }
         if environment == "cloud-prod":
             model_prefix = self._prod_model_prefix_for(profile)
-            model_manifest_key = self._prod_model_manifest_key_for(profile, model_prefix)
+            model_manifest_key = self._prod_model_manifest_key_for(
+                profile, model_prefix
+            )
             return {
                 "app_environment": "prod",
                 "agent_id": self.settings.prod_agent_id,
@@ -1555,10 +1584,8 @@ class RunPodProvider:
         if not self.settings.autoscaler_enabled:
             reasons.append("RUNPOD_AUTOSCALER_ENABLED=false")
         max_manual_slots = self.settings.prod_max_manual_slots
-        if not 1 <= self.settings.max_pods_total <= max_manual_slots:
-            reasons.append(
-                f"RUNPOD_MAX_PODS_TOTAL must be between 1 and {max_manual_slots} for v0"
-            )
+        if self.settings.max_pods_total < 1:
+            reasons.append("RUNPOD_MAX_PODS_TOTAL must be >= 1 for v0")
         if not 1 <= self.settings.max_pods_per_type <= max_manual_slots:
             reasons.append(
                 "RUNPOD_MAX_PODS_PER_TYPE must be between "
@@ -1781,7 +1808,9 @@ class RunPodProvider:
             return profile.supported_task_types
         if profile.task_type == "i2i_pro":
             return profile.supported_task_types
-        raise ValueError(f"unsupported cloud-prod RunPod task profile: {profile.task_type}")
+        raise ValueError(
+            f"unsupported cloud-prod RunPod task profile: {profile.task_type}"
+        )
 
     def _prod_model_prefix_for(self, profile: RunPodTaskProfile) -> str:
         if profile.task_type == "img2img_lora":

@@ -90,6 +90,9 @@ class DummyComfyClient:
     async def close(self):
         self.closed = True
 
+    async def interrupt(self):
+        return True
+
 
 class DummyWorkflowPatcher:
     def __init__(self, *args, **kwargs):
@@ -115,7 +118,9 @@ class DummyFileHandler(logging.Handler):
         return None
 
 
-def _png_bytes(color: tuple[int, int, int], *, size: tuple[int, int] = (32, 32)) -> bytes:
+def _png_bytes(
+    color: tuple[int, int, int], *, size: tuple[int, int] = (32, 32)
+) -> bytes:
     buffer = io.BytesIO()
     Image.new("RGB", size, color).save(buffer, format="PNG")
     return buffer.getvalue()
@@ -138,7 +143,7 @@ def test_agent_main_removes_debug_side_paths():
 
     assert ".dbg/wan22-video-output.env" not in content
     assert "http://127.0.0.1:7777/event" not in content
-    assert 'exec(' not in content
+    assert "exec(" not in content
 
 
 def test_wan22_result_pick_prefers_video_over_images(monkeypatch):
@@ -248,7 +253,9 @@ async def test_process_task_uses_prefetched_inputs_without_repreparing(monkeypat
         return {}
 
     async def fake_materialize_task_outputs(**kwargs):
-        return SimpleNamespace(primary=SimpleNamespace(object_name="result.png"), extra_outputs={})
+        return SimpleNamespace(
+            primary=SimpleNamespace(object_name="result.png"), extra_outputs={}
+        )
 
     async def fake_upload_materialized_outputs(**kwargs):
         return {}
@@ -265,15 +272,23 @@ async def test_process_task_uses_prefetched_inputs_without_repreparing(monkeypat
         "downloaded_input_paths": ["/tmp/not-real-prefetch.png"],
     }
     monkeypatch.setattr(module, "submit_task_workflow", fake_submit_task_workflow)
-    monkeypatch.setattr(module, "wait_for_task_completion", fake_wait_for_task_completion)
+    monkeypatch.setattr(
+        module, "wait_for_task_completion", fake_wait_for_task_completion
+    )
     monkeypatch.setattr(
         module,
         "resolve_execution_result_from_history",
         fake_resolve_execution_result_from_history,
     )
-    monkeypatch.setattr(module, "materialize_task_outputs", fake_materialize_task_outputs)
-    monkeypatch.setattr(module, "upload_materialized_outputs", fake_upload_materialized_outputs)
-    monkeypatch.setattr(module, "report_materialized_outputs", fake_report_materialized_outputs)
+    monkeypatch.setattr(
+        module, "materialize_task_outputs", fake_materialize_task_outputs
+    )
+    monkeypatch.setattr(
+        module, "upload_materialized_outputs", fake_upload_materialized_outputs
+    )
+    monkeypatch.setattr(
+        module, "report_materialized_outputs", fake_report_materialized_outputs
+    )
 
     await agent.process_task(
         {
@@ -289,7 +304,9 @@ async def test_process_task_uses_prefetched_inputs_without_repreparing(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_process_task_sidecar_upload_failure_reports_failed_without_complete(monkeypatch):
+async def test_process_task_sidecar_upload_failure_reports_failed_without_complete(
+    monkeypatch,
+):
     module = build_agent_module(monkeypatch)
     agent = module.ComfyAgent()
     reported = []
@@ -312,7 +329,9 @@ async def test_process_task_sidecar_upload_failure_reports_failed_without_comple
         return {}
 
     async def fake_materialize_task_outputs(**kwargs):
-        return SimpleNamespace(primary=SimpleNamespace(object_name="result.png"), extra_outputs={})
+        return SimpleNamespace(
+            primary=SimpleNamespace(object_name="result.png"), extra_outputs={}
+        )
 
     async def fake_spool_materialized_outputs(**kwargs):
         return "spooled"
@@ -331,20 +350,28 @@ async def test_process_task_sidecar_upload_failure_reports_failed_without_comple
     agent.report_status = fake_report_status
     monkeypatch.setattr(module, "UPLOAD_SIDECAR_URL", "http://127.0.0.1:8013")
     monkeypatch.setattr(module, "submit_task_workflow", fake_submit_task_workflow)
-    monkeypatch.setattr(module, "wait_for_task_completion", fake_wait_for_task_completion)
+    monkeypatch.setattr(
+        module, "wait_for_task_completion", fake_wait_for_task_completion
+    )
     monkeypatch.setattr(
         module,
         "resolve_execution_result_from_history",
         fake_resolve_execution_result_from_history,
     )
-    monkeypatch.setattr(module, "materialize_task_outputs", fake_materialize_task_outputs)
-    monkeypatch.setattr(module, "spool_materialized_outputs", fake_spool_materialized_outputs)
+    monkeypatch.setattr(
+        module, "materialize_task_outputs", fake_materialize_task_outputs
+    )
+    monkeypatch.setattr(
+        module, "spool_materialized_outputs", fake_spool_materialized_outputs
+    )
     monkeypatch.setattr(
         module,
         "upload_spooled_outputs_via_sidecar",
         fake_upload_spooled_outputs_via_sidecar,
     )
-    monkeypatch.setattr(module, "report_materialized_outputs", fake_report_materialized_outputs)
+    monkeypatch.setattr(
+        module, "report_materialized_outputs", fake_report_materialized_outputs
+    )
 
     await agent.process_task(
         {
@@ -358,6 +385,63 @@ async def test_process_task_sidecar_upload_failure_reports_failed_without_comple
     assert reported[-1][0] == "task-1"
     assert reported[-1][1] == "failed"
     assert "Result processing failed" in reported[-1][2]
+
+
+@pytest.mark.asyncio
+async def test_wan22_timeout_interrupts_comfy_and_exits_after_failed_report(
+    monkeypatch,
+):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    reported = []
+    interrupted = []
+    exit_codes = []
+
+    async def fake_prepare_task_inputs(*args, **kwargs):
+        return None
+
+    async def fake_submit_task_workflow(**kwargs):
+        kwargs["execution"].prompt_id = "prompt-timeout"
+
+    async def fake_wait_for_task_completion(**kwargs):
+        raise module.TaskExecutionTimeoutError("wan22 timeout")
+
+    async def fake_interrupt():
+        interrupted.append(agent._active_execution.prompt_id)
+        return True
+
+    async def fake_report_status(task_id, status, progress=0.0, error="", **kwargs):
+        reported.append((task_id, status, error))
+
+    def fake_exit(code):
+        exit_codes.append(code)
+        raise SystemExit(code)
+
+    agent._prepare_task_inputs = fake_prepare_task_inputs
+    agent.comfy_client.interrupt = fake_interrupt
+    agent.report_status = fake_report_status
+    monkeypatch.setattr(module, "WAN22_VIDEO_V2_EXIT_ON_TIMEOUT", True)
+    monkeypatch.setattr(module, "WAN22_VIDEO_V2_TIMEOUT_EXIT_CODE", 75)
+    monkeypatch.setattr(module.os, "_exit", fake_exit)
+    monkeypatch.setattr(module, "submit_task_workflow", fake_submit_task_workflow)
+    monkeypatch.setattr(
+        module, "wait_for_task_completion", fake_wait_for_task_completion
+    )
+
+    with pytest.raises(SystemExit):
+        await agent.process_task(
+            {
+                "task_id": "task-timeout",
+                "type": "wan22_video_v2",
+                "params": "{}",
+            }
+        )
+
+    assert interrupted == ["prompt-timeout"]
+    assert reported[-1] == ("task-timeout", "failed", "wan22 timeout")
+    assert exit_codes == [75]
+    assert agent._active_execution is None
+    assert agent._executions == {}
 
 
 @pytest.mark.asyncio
@@ -418,15 +502,23 @@ async def test_i2i_pro_quality_issue_requeues_once_before_complete(monkeypatch):
     agent._prepare_task_inputs = fake_prepare_task_inputs
     monkeypatch.setattr(module, "I2I_PRO_QUALITY_RETRY_ATTEMPTS", 1)
     monkeypatch.setattr(module, "submit_task_workflow", fake_submit_task_workflow)
-    monkeypatch.setattr(module, "wait_for_task_completion", fake_wait_for_task_completion)
+    monkeypatch.setattr(
+        module, "wait_for_task_completion", fake_wait_for_task_completion
+    )
     monkeypatch.setattr(
         module,
         "resolve_execution_result_from_history",
         fake_resolve_execution_result_from_history,
     )
-    monkeypatch.setattr(module, "materialize_task_outputs", fake_materialize_task_outputs)
-    monkeypatch.setattr(module, "upload_materialized_outputs", fake_upload_materialized_outputs)
-    monkeypatch.setattr(module, "report_materialized_outputs", fake_report_materialized_outputs)
+    monkeypatch.setattr(
+        module, "materialize_task_outputs", fake_materialize_task_outputs
+    )
+    monkeypatch.setattr(
+        module, "upload_materialized_outputs", fake_upload_materialized_outputs
+    )
+    monkeypatch.setattr(
+        module, "report_materialized_outputs", fake_report_materialized_outputs
+    )
 
     await agent.process_task(
         {
@@ -467,7 +559,9 @@ async def test_pipeline_launch_schedules_background_finalizer(monkeypatch):
         return {}
 
     async def fake_materialize_task_outputs(**kwargs):
-        return SimpleNamespace(primary=SimpleNamespace(object_name="result.png"), extra_outputs={})
+        return SimpleNamespace(
+            primary=SimpleNamespace(object_name="result.png"), extra_outputs={}
+        )
 
     async def fake_upload_materialized_outputs(**kwargs):
         return {}
@@ -477,15 +571,23 @@ async def test_pipeline_launch_schedules_background_finalizer(monkeypatch):
 
     agent._prepare_task_inputs = fake_prepare_task_inputs
     monkeypatch.setattr(module, "submit_task_workflow", fake_submit_task_workflow)
-    monkeypatch.setattr(module, "wait_for_task_completion", fake_wait_for_task_completion)
+    monkeypatch.setattr(
+        module, "wait_for_task_completion", fake_wait_for_task_completion
+    )
     monkeypatch.setattr(
         module,
         "resolve_execution_result_from_history",
         fake_resolve_execution_result_from_history,
     )
-    monkeypatch.setattr(module, "materialize_task_outputs", fake_materialize_task_outputs)
-    monkeypatch.setattr(module, "upload_materialized_outputs", fake_upload_materialized_outputs)
-    monkeypatch.setattr(module, "report_materialized_outputs", fake_report_materialized_outputs)
+    monkeypatch.setattr(
+        module, "materialize_task_outputs", fake_materialize_task_outputs
+    )
+    monkeypatch.setattr(
+        module, "upload_materialized_outputs", fake_upload_materialized_outputs
+    )
+    monkeypatch.setattr(
+        module, "report_materialized_outputs", fake_report_materialized_outputs
+    )
 
     await agent._launch_pipeline_task(
         {
@@ -646,7 +748,9 @@ async def test_report_heartbeat_includes_pool_metadata(monkeypatch):
     monkeypatch.setenv("POOL_PROVIDER", "lan_ssh")
     monkeypatch.setenv("POOL_GPU_INDEX", "1")
     monkeypatch.setenv("POOL_RUNTIME_PROFILE", "wan22_video_v2")
-    monkeypatch.setenv("POOL_IMAGE_REF", "192.168.1.115:5000/allbot/comfy-cu128-wan22:baseline")
+    monkeypatch.setenv(
+        "POOL_IMAGE_REF", "192.168.1.115:5000/allbot/comfy-cu128-wan22:baseline"
+    )
     monkeypatch.setenv(
         "POOL_MODEL_BUNDLE_VERSIONS",
         '{"wan22_video_v2_baseline":"2026-06-10"}',
@@ -1027,4 +1131,42 @@ async def test_wait_for_task_completion_cancel_stops_before_history_probe(monkey
     )
 
     assert completed is False
+    assert execution.completed_event.is_set() is False
+
+
+@pytest.mark.asyncio
+async def test_wait_for_task_completion_timeout_raises_after_final_history_probe(
+    monkeypatch,
+):
+    module = build_agent_module(monkeypatch)
+    execution = module.TaskExecutionContext(
+        task_id="task-1",
+        task_type="wan22_video_v2",
+        prompt_id="prompt-1",
+    )
+    history_calls = []
+
+    class EmptyHistoryComfyClient:
+        async def get_history(self, prompt_id):
+            history_calls.append(prompt_id)
+            return {}
+
+    async def fake_check_task_cancelled(task_id):
+        return False
+
+    with pytest.raises(module.TaskExecutionTimeoutError) as exc:
+        await module.wait_for_task_completion(
+            task_id="task-1",
+            execution=execution,
+            check_task_cancelled_func=fake_check_task_cancelled,
+            logger=logging.getLogger("test"),
+            comfy_client=EmptyHistoryComfyClient(),
+            task_type="wan22_video_v2",
+            history_probe_start_seconds=999,
+            history_probe_interval_seconds=0.01,
+            timeout_seconds=0.01,
+        )
+
+    assert "without ComfyUI history result" in str(exc.value)
+    assert history_calls == ["prompt-1"]
     assert execution.completed_event.is_set() is False

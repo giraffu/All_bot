@@ -16,6 +16,7 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_PROD_SUPPORTED_TASK_TYPES,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
     RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX,
+    RUNPOD_WAN22_VIDEO_V2_COMFY_EXTRA_ARGS,
     RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY,
     RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX,
     RunPodProvider,
@@ -25,8 +26,7 @@ from ops.gpu_pool_controller.providers.runpod import (
 )
 
 PUBLIC_I2I_PRO_GHCR_IMAGE = (
-    "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:"
-    "20260614-i2ipro-b75c6a9-cu128-min5-ssh"
+    "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh"
 )
 from ops.gpu_pool_controller.runpod_prod_worker import (
     RunPodProdWorkerOptions,
@@ -119,7 +119,9 @@ class FakeRunPodProvider:
         }
 
     def delete_pod(self, *, pod_id, task_type, execute):
-        self.delete_log.append({"pod_id": pod_id, "agent_id": self.settings.prod_agent_id})
+        self.delete_log.append(
+            {"pod_id": pod_id, "agent_id": self.settings.prod_agent_id}
+        )
         self.pods[:] = [
             pod
             for pod in self.pods
@@ -262,7 +264,9 @@ def test_prod_worker_render_dry_run_uses_verified_image_and_prod_defaults():
 
     assert payload["ok"] is True
     assert payload["render"]["imageName"] == RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE
-    assert payload["render"]["central_api_url"] == "https://worker-central.aivison.it.com"
+    assert (
+        payload["render"]["central_api_url"] == "https://worker-central.aivison.it.com"
+    )
     assert payload["render"]["agent_id"] == RUNPOD_PROD_AGENT_ID
     assert payload["render"]["gpu_type_ids"] == list(RUNPOD_PROD_GPU_TYPE_IDS)
     assert payload["render"]["supported_task_types"] == ",".join(
@@ -276,8 +280,7 @@ def test_prod_worker_render_dry_run_uses_verified_image_and_prod_defaults():
 
 def test_prod_worker_render_wan22_video_v2_uses_prod_profile_defaults():
     image_ref = (
-        RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX
-        + "20260613-wan22aio-lanbase-ab9b7ea"
+        RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX + "20260613-wan22aio-lanbase-ab9b7ea"
     )
     agent_id = prod_agent_id_from_slot("01", profile="wan22_video_v2")
     provider = FakeRunPodProvider(
@@ -301,14 +304,24 @@ def test_prod_worker_render_wan22_video_v2_uses_prod_profile_defaults():
 
     assert payload["ok"] is True
     assert payload["profile"] == "wan22_video_v2"
-    assert payload["render"]["pod_name"] == "allbot-runpod-prod-wan22-video-v2-manual-01"
+    assert (
+        payload["render"]["pod_name"] == "allbot-runpod-prod-wan22-video-v2-manual-01"
+    )
     assert payload["render"]["imageName"] == image_ref
     assert payload["render"]["agent_id"] == "runpod_prod_wan22_video_v2_manual_01"
     assert payload["render"]["gpu_type_ids"] == list(RUNPOD_PROD_GPU_TYPE_IDS)
     assert payload["render"]["supported_task_types"] == "wan22_video_v2"
     assert payload["render"]["pool_runtime_profile"] == "wan22_video_v2"
     assert payload["render"]["model_prefix"] == RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX
-    assert payload["render"]["model_manifest_key"] == RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY
+    assert (
+        payload["render"]["model_manifest_key"]
+        == RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY
+    )
+    assert payload["render"]["wan22_timeout_seconds"] == "600"
+    assert payload["render"]["wan22_exit_on_timeout"] == "true"
+    assert (
+        payload["render"]["comfy_extra_args"] == RUNPOD_WAN22_VIDEO_V2_COMFY_EXTRA_ARGS
+    )
     assert payload["render"]["buckets"]["result"] == "user-data-prod"
     assert payload["render"]["custom_nodes_enabled"] == "false"
     assert payload["render"]["sshd_enabled"] == "false"
@@ -318,8 +331,7 @@ def test_prod_worker_render_wan22_video_v2_uses_prod_profile_defaults():
 
 def test_prod_worker_render_image_to_video_uses_prod_profile_defaults():
     image_ref = (
-        RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX
-        + "20260613-wan22aio-lanbase-ab9b7ea"
+        RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX + "20260613-wan22aio-lanbase-ab9b7ea"
     )
     agent_id = prod_agent_id_from_slot("01", profile="image_to_video")
     provider = FakeRunPodProvider(
@@ -343,14 +355,19 @@ def test_prod_worker_render_image_to_video_uses_prod_profile_defaults():
 
     assert payload["ok"] is True
     assert payload["profile"] == "image_to_video"
-    assert payload["render"]["pod_name"] == "allbot-runpod-prod-image-to-video-manual-01"
+    assert (
+        payload["render"]["pod_name"] == "allbot-runpod-prod-image-to-video-manual-01"
+    )
     assert payload["render"]["imageName"] == image_ref
     assert payload["render"]["agent_id"] == "runpod_prod_image_to_video_manual_01"
     assert payload["render"]["gpu_type_ids"] == list(RUNPOD_PROD_GPU_TYPE_IDS)
     assert payload["render"]["supported_task_types"] == "image_to_video"
     assert payload["render"]["pool_runtime_profile"] == "image_to_video"
     assert payload["render"]["model_prefix"] == RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX
-    assert payload["render"]["model_manifest_key"] == RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY
+    assert (
+        payload["render"]["model_manifest_key"]
+        == RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY
+    )
     assert payload["render"]["buckets"]["result"] == "user-data-prod"
     assert payload["render"]["custom_nodes_enabled"] == "false"
     assert payload["render"]["sshd_enabled"] == "false"
@@ -440,7 +457,9 @@ def test_prod_worker_env_max_slot_allows_rendering_eighth_slot(monkeypatch):
 def test_prod_worker_up_dry_run_preflights_without_mutation():
     provider = FakeRunPodProvider(_settings())
     options = RunPodProdWorkerOptions(action="up", execute=False, quiet=True)
-    runner = FakeHttpProdWorkerRunner(provider, options, sleep_func=lambda _seconds: None)
+    runner = FakeHttpProdWorkerRunner(
+        provider, options, sleep_func=lambda _seconds: None
+    )
 
     payload = runner.run()
 
@@ -606,7 +625,9 @@ def test_prod_worker_up_execute_requires_gates_before_control_or_create():
         agent_token="agent_token",
         quiet=True,
     )
-    runner = FakeHttpProdWorkerRunner(provider, options, sleep_func=lambda _seconds: None)
+    runner = FakeHttpProdWorkerRunner(
+        provider, options, sleep_func=lambda _seconds: None
+    )
 
     payload = runner.run()
 
@@ -617,13 +638,13 @@ def test_prod_worker_up_execute_requires_gates_before_control_or_create():
     assert runner.control_calls == []
 
 
-def test_prod_worker_up_second_slot_execute_requires_two_pod_gates():
+def test_prod_worker_up_second_slot_execute_requires_two_per_type_pod_gate():
     agent_id = prod_agent_id_from_slot("02")
     provider = FakeRunPodProvider(
         _settings(
             dry_run=False,
             autoscaler_enabled=True,
-            max_pods_total=1,
+            max_pods_total=5,
             max_pods_per_type=1,
             prod_agent_id=agent_id,
         )
@@ -635,22 +656,25 @@ def test_prod_worker_up_second_slot_execute_requires_two_pod_gates():
         agent_token="agent_token",
         quiet=True,
     )
-    runner = FakeHttpProdWorkerRunner(provider, options, sleep_func=lambda _seconds: None)
+    runner = FakeHttpProdWorkerRunner(
+        provider, options, sleep_func=lambda _seconds: None
+    )
 
     payload = runner.run()
 
     assert payload["ok"] is False
-    assert "RUNPOD_MAX_PODS_TOTAL>=2" in payload["error"]
+    assert "RUNPOD_MAX_PODS_TOTAL>=2" not in payload["error"]
     assert "RUNPOD_MAX_PODS_PER_TYPE>=2" in payload["error"]
     assert provider.create_calls == 0
     assert runner.control_calls == []
 
 
-def test_prod_worker_env_loader_protects_explicit_runpod_gates(tmp_path: Path, monkeypatch):
+def test_prod_worker_env_loader_protects_explicit_runpod_gates(
+    tmp_path: Path, monkeypatch
+):
     env_file = tmp_path / ".env.cloud.prod"
     env_file.write_text(
-        "RUNPOD_DRY_RUN=true\n"
-        "AGENT_SECRET_TOKEN=prod_agent_token\n",
+        "RUNPOD_DRY_RUN=true\nAGENT_SECRET_TOKEN=prod_agent_token\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("RUNPOD_DRY_RUN", "false")
@@ -712,7 +736,9 @@ def test_prod_worker_selection_wan22_profile_uses_dedicated_agent_env(monkeypatc
     assert __import__("os").environ["RUNPOD_PROD_AGENT_ID"] == selection["agent_id"]
 
 
-def test_prod_worker_selection_image_to_video_profile_uses_dedicated_agent_env(monkeypatch):
+def test_prod_worker_selection_image_to_video_profile_uses_dedicated_agent_env(
+    monkeypatch,
+):
     monkeypatch.setenv("RUNPOD_PROD_AGENT_ID", RUNPOD_PROD_AGENT_ID)
     args = build_parser().parse_args(
         [
@@ -755,7 +781,9 @@ def test_prod_worker_selection_can_infer_profile_from_prod_agent_env(monkeypatch
     assert selection["pod_name"] == "allbot-runpod-prod-wan22-video-v2-manual-01"
 
 
-def test_prod_worker_selection_can_infer_image_to_video_profile_from_prod_agent_env(monkeypatch):
+def test_prod_worker_selection_can_infer_image_to_video_profile_from_prod_agent_env(
+    monkeypatch,
+):
     monkeypatch.setenv(
         "RUNPOD_PROD_AGENT_ID",
         prod_agent_id_from_slot("01", profile="image_to_video"),

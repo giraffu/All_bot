@@ -199,7 +199,7 @@ Prefer GitHub Actions for the `i2i_pro` RunPod profile image as well:
 
 It builds `ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:<tag>` from
 `remote_workers/docker/runpod_profiles/i2i_pro/`, defaults to
-`yanwk/comfyui-boot:cu130-slim`, pins ComfyUI to
+`yanwk/comfyui-boot:cu128-slim`, pins ComfyUI to
 `16cd8d8a8f5f16ce7e5f929fdba9f783990254ea`, and verifies anonymous GHCR
 manifest access after push. The smoke test asserts ComfyUI/core node source
 files needed by `workers/comfy_agent/workflows/i2i_pro.json`, `ffmpeg`, `curl`,
@@ -245,10 +245,19 @@ RUNPOD_USE_TEMPLATE_I2I_PRO=false
 RUNPOD_IMAGE_NAME_I2I_PRO=ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:<tag>
 RUNPOD_MODEL_PREFIX_I2I_PRO=i2i_pro/2026-06-14-test
 RUNPOD_MODEL_MANIFEST_KEY_I2I_PRO=i2i_pro/2026-06-14-test/manifest.json
+RUNPOD_TASK_TYPE_WORKFLOW_OVERRIDES_I2I_PRO={"t2i-pornmaster-turbo":"txt2img_from_i2i_pro.json","face_swap":"face_swap_v2.json"}
 RUNPOD_CONTAINER_DISK_GB=120
 RUNPOD_COMFY_CUSTOM_NODES_ENABLED=false
 RUNPOD_COMFY_KJNODES_ENABLED=false
 ```
+
+The `i2i_pro` RunPod runtime can support three execution types from one Pod:
+`i2i_pro`, `t2i-pornmaster-turbo` (Web `txt2img`), and `face_swap`. The profile
+must render `SUPPORTED_TASK_TYPES=i2i_pro,t2i-pornmaster-turbo,face_swap` and
+`TASK_TYPE_WORKFLOW_OVERRIDES` so text-to-image uses
+`txt2img_from_i2i_pro.json` and face swap uses `face_swap_v2.json`. These files
+must exist under `remote_workers/comfy_agent/workflows/`; updating only the
+main `workers/` tree is not enough for RunPod.
 
 The `i2i_pro_baseline` model manifest lives in
 `allbot-model-cache/i2i_pro/2026-06-14-test/manifest.json` and is sourced from
@@ -261,6 +270,13 @@ known-good `gpu-226` / `192.168.1.226:8188`. It contains only these model files:
 `unet/DarkBeastZ6-BlitZ-BF16-ComfyUI.safetensors`. Runtime model sync must write
 only under ComfyUI `models/`; it must not write into
 `input/output/temp/custom_nodes/workflows`.
+
+`runpod_bootstrap_from_git.sh` clones the AllBot `deploy` branch into
+`/workspace/allbot/repo` only when no remote worker bundle already exists. A
+new or rebuilt Pod therefore picks up the latest `deploy` fixes, but an old Pod
+restarted in place may reuse an existing bundle. Before relying on an old Pod
+after workflow/override changes, disable its Central agent control and either
+update `/workspace/allbot/repo` in the Pod or recreate the Pod.
 
 For the first cloud-test canary, the expected profile is:
 

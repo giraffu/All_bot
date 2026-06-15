@@ -12,7 +12,9 @@ COMFY_CLIENT_PATHS = [
 
 
 def load_comfy_client_module(path: Path):
-    spec = importlib.util.spec_from_file_location(f"comfy_client_{path.parent.name}", path)
+    spec = importlib.util.spec_from_file_location(
+        f"comfy_client_{path.parent.name}", path
+    )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -47,3 +49,29 @@ async def test_queue_prompt_error_includes_comfy_response_body(
     assert "ComfyUI /prompt returned 400" in message
     assert "node validation failed" in message
     assert "node_id" in message
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("module_path", COMFY_CLIENT_PATHS)
+async def test_interrupt_posts_to_comfy_interrupt(monkeypatch, module_path: Path):
+    module = load_comfy_client_module(module_path)
+    calls = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def post(self, path, **kwargs):
+            calls.append((path, kwargs))
+            return FakeResponse()
+
+    monkeypatch.setattr(module.httpx, "AsyncClient", FakeAsyncClient)
+
+    client = module.ComfyClient("http://comfy.local")
+
+    assert await client.interrupt() is True
+    assert calls == [("/interrupt", {"json": {}})]

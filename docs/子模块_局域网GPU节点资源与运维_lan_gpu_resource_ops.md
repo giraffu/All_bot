@@ -8,6 +8,7 @@
 
 最近一次采集：2026-06-08，Asia/Shanghai。
 最近一次 ComfyUI 素材清理：2026-06-08，Asia/Shanghai。
+最近一次 gpu-226 LTX 运行时补齐：2026-06-15，Asia/Shanghai。
 
 ## 2. 总体拓扑
 
@@ -27,7 +28,7 @@
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | 主服务器 `hfy-FAEX9` | 本机 | Ryzen AI MAX+ 395，16C/32T | 62GiB | 无独立推理 GPU | `/` 3.6T，已用 1.3T，可用 2.2T | worker/relay、spool、legacy 数据、开发运维 |
 | 云控制面 `allbot-do-sgp1-control-01` | `allbot-do-sgp1-control` | DO-Regular，4 vCPU | 7.8GiB | 无 | `/` 154G，已用 58G，可用 97G | 正式控制面 |
-| `192.168.1.226` | `allbot-gpu-226` | Ryzen 9 9950X，16C/32T | 60GiB | 1 x RTX 5090 32G | `/` 1.8T，已用 573G，可用 1.2T | 单 ComfyUI，worker 01 |
+| `192.168.1.226` | `allbot-gpu-226` | Ryzen 9 9950X，16C/32T | 60GiB | 1 x RTX 5090 32G | `/` 1.8T，已用 573G，可用 1.2T | 单 ComfyUI，worker 01，face/i2i/t2i 与 LTX 补充容量 |
 | `192.168.1.177` | `allbot-gpu-177` | Ryzen 7 9700X，8C/16T | 60GiB | 2 x RTX 5090 32G | `/` 915G，已用 508G，可用 361G；外置盘 `/media/ubantui/T71` 可用 228G | 双 ComfyUI，worker 02/03 |
 | `192.168.1.252` | `allbot-gpu-252` | Ryzen 7 9700X，8C/16T | 60GiB | 2 x RTX 4090 48G | `/` 937G，已用 178G，可用 712G；外置盘 `/mnt/t7` 可用 269G | 双 ComfyUI，worker 04/05 |
 | `192.168.1.2` | `allbot-gpu-002` | Ryzen 7 9700X，8C/16T | 60GiB | 2 x RTX 4090 48G | `/` 936G，已用 171G，可用 726G | 双 ComfyUI，worker 06/07 |
@@ -46,7 +47,7 @@
 | 容器 | 角色 | 目标 ComfyUI | 支持任务 |
 | :--- | :--- | :--- | :--- |
 | `cloud-prod-worker-relay` | 本地 worker relay 与上传 sidecar，端口 `127.0.0.1:8013` | 云 Central `100.107.220.127:8003` | agent API 转发、R2 上传 sidecar |
-| `cloud-prod-comfy-agent-1` | Worker 01 | `192.168.1.226:8188` | `face_swap,i2i_pro,i2i_draw,face_video,video_edit,image_to_video,t2i-pornmaster-turbo` |
+| `cloud-prod-comfy-agent-1` | Worker 01 | `192.168.1.226:8188` | `face_swap,i2i_pro,i2i_draw,face_video,video_edit,image_to_video,t2i-pornmaster-turbo,ltx_video` |
 | `cloud-prod-comfy-agent-2` | Worker 02 | `192.168.1.177:8188` | `video_insert,video_edit,image_to_video` |
 | `cloud-prod-comfy-agent-3` | Worker 03 | `192.168.1.177:8189` | `ltx_video,image_to_video` |
 | `cloud-prod-comfy-agent-4` | Worker 04 | `192.168.1.252:8188` | `img2img,img2img_lora` |
@@ -95,9 +96,16 @@ ComfyUI：
 - 宿主机进程，不是 Docker Comfy 容器
 - 端口：`8188`
 - 进程 cwd：`/home/ubantu/comfyui`
-- 启动命令：`/home/ubantu/miniforge3/envs/comfyui/bin/python main.py --listen 0.0.0.0 --enable-manager`
+- 当前服务：系统级 `/etc/systemd/system/comfyui.service`
+- 当前启动命令：`/home/ubantu/miniforge3/envs/comfyui/bin/python main.py --listen 0.0.0.0`
 - 模型目录：`/home/ubantu/comfyui/models`，约 `325G`
 - 对应 worker：`cloud-prod-comfy-agent-1`
+
+2026-06-15 LTX 补齐：
+- 已安装 `ComfyLiterals`，使 `LTX 2.3 I2V 6.1.json` 所需的 `Float` 节点可用。
+- 已补齐 `models/diffusion_models/LTX 2.3/ltx2310eros_v1.safetensors`，与当前 LTX workflow 主模型节点匹配。
+- `cloud-prod-comfy-agent-1` 在原有任务类型基础上追加 `ltx_video`，用于补充 LTX 产能；不要改成只支持 `ltx_video`，否则会移走 worker 01 原有 face/i2i/t2i 能力。
+- `ubantu` 用户级 `comfyui.service` 也存在但已停止，避免与系统级 service 抢占 `8188`；如需统一为 `--enable-manager` 口径，需要具备系统级 service 的 sudo 操作窗口。
 
 运维边界：
 - 不要对 `comfy0/comfy1` 执行 Docker 操作；本机没有这类 Comfy 容器。

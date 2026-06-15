@@ -31,6 +31,7 @@ from agent_result_reporting import (
 )
 from agent_runtime_types import TaskExecutionContext
 from agent_workflow_execution import (
+    TaskExecutionTimeoutError,
     submit_task_workflow,
     wait_for_task_completion,
 )
@@ -55,6 +56,13 @@ for proxy_var in [
     os.environ.pop(proxy_var, None)
 os.environ["NO_PROXY"] = "*"
 os.environ["no_proxy"] = "*"
+
+TRUE_ENV_VALUES = {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 
 class CorrelationIdFilter(logging.Filter):
@@ -151,6 +159,29 @@ CANCEL_LOCK_ON_POP = os.getenv("CANCEL_LOCK_ON_POP", "true").strip().lower() in 
     "yes",
     "on",
 }
+TASK_COMPLETION_TIMEOUT_SECONDS = float(
+    os.getenv("TASK_COMPLETION_TIMEOUT_SECONDS", "1800")
+)
+WAN22_VIDEO_V2_COMPLETION_TIMEOUT_SECONDS = float(
+    os.getenv("WAN22_VIDEO_V2_COMPLETION_TIMEOUT_SECONDS", "600")
+)
+RUNPOD_RUNTIME = (
+    os.getenv("RUNPOD_MANAGED", "").strip().lower() in TRUE_ENV_VALUES
+    or os.getenv("ALLBOT_RUNPOD_MANAGED", "").strip().lower() in TRUE_ENV_VALUES
+    or bool(os.getenv("RUNPOD_POD_ID") or os.getenv("RUNPOD_TASK_TYPE"))
+)
+WAN22_VIDEO_V2_EXIT_ON_TIMEOUT = (
+    os.getenv(
+        "WAN22_VIDEO_V2_EXIT_ON_TIMEOUT",
+        "true" if RUNPOD_RUNTIME else "false",
+    )
+    .strip()
+    .lower()
+    in TRUE_ENV_VALUES
+)
+WAN22_VIDEO_V2_TIMEOUT_EXIT_CODE = int(
+    os.getenv("WAN22_VIDEO_V2_TIMEOUT_EXIT_CODE", "75")
+)
 
 USER_INPUT_ERROR_MARKERS = (
     "downloaded file is not a valid image",
@@ -337,7 +368,9 @@ class ComfyAgent:
         self.last_error_at = None
 
     def _is_quarantined(self) -> bool:
-        return self.quarantined_until is not None and self.quarantined_until > self._now()
+        return (
+            self.quarantined_until is not None and self.quarantined_until > self._now()
+        )
 
     def _clear_expired_quarantine(self) -> bool:
         if self.quarantined_until is None:
@@ -382,6 +415,41 @@ class ComfyAgent:
 
     def _record_task_success_for_health(self) -> None:
         self.task_infra_failures = 0
+
+    @staticmethod
+    def _completion_timeout_seconds_for_task(task_type: str) -> float:
+        if task_type == "wan22_video_v2":
+            return WAN22_VIDEO_V2_COMPLETION_TIMEOUT_SECONDS
+        return TASK_COMPLETION_TIMEOUT_SECONDS
+
+    @staticmethod
+    def _should_self_restart_after_timeout(
+        execution: TaskExecutionContext,
+        error: Exception,
+    ) -> bool:
+        return (
+            execution.task_type == "wan22_video_v2"
+            and isinstance(error, TaskExecutionTimeoutError)
+            and WAN22_VIDEO_V2_EXIT_ON_TIMEOUT
+        )
+
+    async def _interrupt_comfy_for_wan22_timeout(
+        self,
+        execution: TaskExecutionContext,
+    ) -> None:
+        if execution.task_type != "wan22_video_v2":
+            return
+        logger.warning(
+            "Interrupting ComfyUI after wan22_video_v2 timeout: task=%s prompt=%s",
+            execution.task_id,
+            execution.prompt_id,
+        )
+        interrupted = await self.comfy_client.interrupt()
+        if interrupted:
+            logger.info(
+                "ComfyUI interrupt accepted for wan22_video_v2 task %s",
+                execution.task_id,
+            )
 
     def _worker_status(self) -> str:
         if self._is_quarantined():
@@ -477,7 +545,9 @@ class ComfyAgent:
                     )
                 normalized.save(normalized_path, format="PNG")
         except (UnidentifiedImageError, OSError, ValueError) as exc:
-            raise RuntimeError(f"Downloaded file is not a valid image: {local_path}") from exc
+            raise RuntimeError(
+                f"Downloaded file is not a valid image: {local_path}"
+            ) from exc
         return normalized_path
 
     async def _upload_prepared_input(
@@ -512,7 +582,9 @@ class ComfyAgent:
                     COMFY_READY_RETRY_DELAY_SECONDS,
                 )
                 await asyncio.sleep(COMFY_READY_RETRY_DELAY_SECONDS)
-        raise RuntimeError(f"Failed to upload prepared input '{source_name}' to ComfyUI") from last_error
+        raise RuntimeError(
+            f"Failed to upload prepared input '{source_name}' to ComfyUI"
+        ) from last_error
 
     async def _process_single_input_asset(
         self,
@@ -644,7 +716,9 @@ class ComfyAgent:
             params["types"] = prefetch_types
 
         try:
-            response = await self.master_client.get("/api/agent/task/peek", params=params)
+            response = await self.master_client.get(
+                "/api/agent/task/peek", params=params
+            )
             if response.status_code != 200:
                 logger.debug("Prefetch peek returned HTTP %s", response.status_code)
                 return
@@ -671,7 +745,9 @@ class ComfyAgent:
                 "params": prefetch_params,
                 "downloaded_input_paths": downloaded_input_paths,
             }
-            logger.info("Prefetched inputs for pending task %s (%s)", task_id, task_type)
+            logger.info(
+                "Prefetched inputs for pending task %s (%s)", task_id, task_type
+            )
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -1133,6 +1209,7 @@ class ComfyAgent:
     async def _finalize_execution(self, execution: TaskExecutionContext) -> None:
         task_id = execution.task_id
         task_type = execution.task_type
+        exit_after_timeout = False
         try:
             task_completed = await wait_for_task_completion(
                 task_id=task_id,
@@ -1141,6 +1218,7 @@ class ComfyAgent:
                 logger=logger,
                 comfy_client=self.comfy_client,
                 task_type=task_type,
+                timeout_seconds=self._completion_timeout_seconds_for_task(task_type),
             )
             if not task_completed:
                 await self.report_cancelled(task_id)
@@ -1214,11 +1292,25 @@ class ComfyAgent:
 
         except Exception as e:
             logger.error(f"Task {task_id} failed: {e}")
+            if (
+                isinstance(e, TaskExecutionTimeoutError)
+                and task_type == "wan22_video_v2"
+            ):
+                await self._interrupt_comfy_for_wan22_timeout(execution)
+                exit_after_timeout = self._should_self_restart_after_timeout(
+                    execution,
+                    e,
+                )
             self._record_task_failure_for_health(e)
             await self.report_status(task_id, "failed", error=str(e))
         finally:
             self._clear_task_execution(execution)
             self._cleanup_input_paths(execution.downloaded_input_paths)
+        if exit_after_timeout:
+            logger.error(
+                "Exiting agent after wan22_video_v2 timeout so the supervisor can restart a clean ComfyUI runtime"
+            )
+            os._exit(WAN22_VIDEO_V2_TIMEOUT_EXIT_CODE)
 
     def _track_execution_task(self, task: asyncio.Task) -> None:
         self._execution_tasks.add(task)

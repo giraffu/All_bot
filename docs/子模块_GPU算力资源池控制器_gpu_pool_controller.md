@@ -107,6 +107,7 @@ python scripts/gpu_pool_controller.py runpod canary --task-type i2i_pro --env-fi
 
 `wan22_aio_video` 只保留为兼容/回滚 profile；新测试、新扩容和正式接入都应优先使用 split profile。
 `i2i_pro` 是现有 ComfyUI runtime profile，不新增业务 task type；其中 Web 文生图仍提交 `txt2img`，Central 执行面记录为 `t2i-pornmaster-turbo`，worker 通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 读取 `txt2img_from_i2i_pro.json`。图片换脸仍提交 `face_swap`，worker 通过 override 读取 `face_swap_v2.json`。
+`wan22_video_v2` RunPod split profile 默认渲染 `COMFY_EXTRA_ARGS=--disable-dynamic-vram`，用于规避 cu128 ComfyUI 0.21.x 的 DynamicVRAM/comfy-aimdo 在 `WanTEModel` 动态加载阶段卡住；如需临时实验其它 Comfy 启动参数，可用 `RUNPOD_WAN22_VIDEO_V2_COMFY_EXTRA_ARGS` 覆盖，并必须重新创建目标 Pod 才会生效。
 
 手动正式 profile：
 
@@ -130,6 +131,13 @@ RUNPOD_MAX_PODS_PER_TYPE=<目标单类型数>
 ```
 
 并带对应 CLI 的 `--execute`。
+
+`RUNPOD_MAX_PODS_TOTAL` 是全 managed RunPod 池的显式总上限；`RUNPOD_MAX_PODS_PER_TYPE`
+是当前 task/profile 的单类型上限，仍受 `RUNPOD_PROD_MAX_MANUAL_SLOTS` 约束。云正式多
+profile 共存时，例如保留前四台并只补一台 `wan22_video_v2`，应使用
+`RUNPOD_MAX_PODS_TOTAL=5`、`RUNPOD_MAX_PODS_PER_TYPE=1`，并把
+`RUNPOD_MAX_HOURLY_COST_USD` 显式设置到能覆盖现有 Pod 加新 Pod 的成本；不要为了创建第五台
+放宽单类型上限。
 
 云测试 split video canary：
 - 默认同时测 `image_to_video` 与 `wan22_video_v2`，要求 `RUNPOD_MAX_PODS_TOTAL=2`、`RUNPOD_MAX_PODS_PER_TYPE=1`。
@@ -230,6 +238,22 @@ python scripts/gpu_pool_controller.py runpod prod-worker canary --profile i2i_pr
 
 `prod-worker` 默认先加载 `.env.cloud.test` 中的 RunPod API/profile 默认值，再加载 `.env.cloud.prod` 覆盖正式 Central/Web/R2/JWT 变量；已在 shell 显式设置的 `RUNPOD_*` 门禁不会被 prod env 文件覆盖。
 
+操作语义速查：
+
+| 命令 | 是否触碰 Pod 生命周期 | 是否放开接单 | 主要用途 |
+| :--- | :--- | :--- | :--- |
+| `render` / `status` | 否 | 否 | 渲染/观测，适合 AI 运维先读状态 |
+| `up --execute` | 创建并启动目标 Pod | 否，默认写 `disabled` | 新增手动正式备用 worker，等待模型同步和 heartbeat |
+| `enable --execute` | 否 | 是，仅改 Central control | 放开已有 Pod 接正式队列 |
+| `disable --execute` | 否 | 否，仅改 Central control | 保留 Pod 现场、停止接新单，用于排障或维护 |
+| `canary --execute` | 不创建已存在的 prod Pod | 临时 enable，结束恢复 `disabled` | 提交真实 Web 任务验证目标 worker |
+| `down --execute` | 删除目标 prod Pod | 否 | 下线手动备用 Pod，必须确认无 `current_task_id` |
+| `scale --desired N --execute` | 按 slot 创建/删除/enable/disable | 取决于计划 | 多手动 slot 运维，仍受总上限和单类型上限约束 |
+
+判断“RunPod 已启动并可接单”不能只看 Pod `RUNNING`：还必须看到 Central worker heartbeat，
+且 agent control 为 `enabled`。`up --execute` 后处于 ready 但 `disabled` 是预期行为；需要
+`enable --execute` 才会接正式任务。
+
 真实创建示例：
 
 ```bash
@@ -288,7 +312,7 @@ RUNPOD_MODEL_SECRET_KEY={{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}
 - Wan22 镜像只 baked workflow 所需 custom nodes、`ffmpeg/ffprobe` 和运行依赖；Wan22 high/low UNet、VAE、text encoder 与旧视频 LoRA 不 baked 进镜像，启动时从 `allbot-model-cache` 同步。
 - `face_swap_v2.json` 使用 `i2i_pro` Flux2/edit 节点与模型替代旧图片换脸工作流，运行面 task type 仍是 `face_swap`。测试 worker1、正式 worker1 与 RunPod `i2i_pro` profile 都通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 将 `face_swap` 指向 v2；这属于 Worker workflow 配置替换，不代表新增业务 task type。
 - `i2i_pro` RunPod 镜像构建入口是 `remote_workers/docker/runpod_profiles/i2i_pro/`，默认 base 为 `yanwk/comfyui-boot:cu128-slim`，与现有图生图和 Wan22 RunPod 镜像基线保持一致；ComfyUI pin 到 `16cd8d8a8f5f16ce7e5f929fdba9f783990254ea`。不得使用 `cu130` 基线，否则在当前 RunPod 4090 宿主机上可能因 PyTorch CUDA 版本高于宿主机驱动能力而失败；`20260614-i2ipro-6b167aa-cu128-min4` 已在 `NVIDIA GeForce RTX 4090` cloud-test Web canary 中完成模型同步、ComfyUI CUDA 初始化、worker heartbeat 和 `i2i_pro` 真实任务出图；当前 `.env.cloud.test` 候选镜像为 `20260614-i2ipro-b75c6a9-cu128-min5-ssh`，在 min4 的可用基线上补齐 `openssh` 与 direct TCP SSH smoke。当前 workflow 只要求 ComfyUI/core `nodes` 与 `comfy_extras` 中的 `UNETLoader`、`CLIPLoader`、`VAELoader`、`ReferenceLatent`、`EmptyFlux2LatentImage`、`Flux2Scheduler`、`SamplerCustomAdvanced`，不 baked 自定义节点或业务模型。GitHub Actions smoke 在 CPU runner 上用静态源码检查确认这些节点存在，避免导入 ComfyUI 时触发 CUDA 初始化；GPU import 与真实执行以 cloud-test canary 为准。镜像 smoke 还必须检查 `ffmpeg`、`curl`、`git`、`ssh-keygen` 与 `sshd`，确保 direct TCP SSH 诊断可用。
-- RunPod `i2i_pro` 三任务能力依赖 `remote_workers/src/workflow_mapping_validation.py` 支持 `TASK_TYPE_WORKFLOW_OVERRIDES`，并且 `remote_workers/comfy_agent/workflows/` 内存在 `txt2img_from_i2i_pro.json` 与 `face_swap_v2.json`。若已运行的旧生产 Pod 因远端 bundle 缺 override 支持而读取旧默认 workflow，可先通过 Central agent control 将目标 worker 置为 `disabled`，再在 Pod 内覆盖默认 `face_swap.json` 与默认 Pornmaster workflow 为对应 v2/i2i_pro 派生模板；`WorkflowPatcher.load_workflow()` 每单重新读 JSON，文件级热修无需删除或重启 Pod，但长期修复仍必须进入 git 与新镜像/新 Pod。
+- RunPod `i2i_pro` 三任务能力依赖 `remote_workers/src/workflow_mapping_validation.py` 支持 `TASK_TYPE_WORKFLOW_OVERRIDES`，并且 `remote_workers/comfy_agent/workflows/` 内存在 `txt2img_from_i2i_pro.json` 与 `face_swap_v2.json`。`runpod_bootstrap_from_git.sh` 只在 `/workspace/allbot/repo/remote_workers` 不存在时 clone `deploy`，若旧 Pod 原地重启且已有旧 bundle，可能继续复用旧文件；新建/重建 Pod 会拉最新 `deploy`。若已运行的旧生产 Pod 因远端 bundle 缺 override 支持而读取旧默认 workflow，可先通过 Central agent control 将目标 worker 置为 `disabled`，再在 Pod 内覆盖默认 `face_swap.json` 与默认 Pornmaster workflow 为对应 v2/i2i_pro 派生模板；`WorkflowPatcher.load_workflow()` 每单重新读 JSON，文件级热修无需删除或重启 Pod，但长期修复仍必须进入 git 与新镜像/新 Pod。
 - `i2i_pro_baseline` 模型包从 `gpu-226` / `192.168.1.226:8188` 同步到 R2 `allbot-model-cache/i2i_pro/2026-06-14-test/manifest.json`，包含 6 个文件，总计 `38,769,838,190` bytes（约 `36.11 GiB`）。首次 cloud-test canary 使用 `RUNPOD_CONTAINER_DISK_GB=120`，GPU 只请求 `NVIDIA GeForce RTX 4090`，模型同步只写 ComfyUI `models/`，不得写 `input/output/temp/custom_nodes/workflows`。
 
 `i2i_pro_baseline` 模型清单：

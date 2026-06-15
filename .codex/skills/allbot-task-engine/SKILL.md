@@ -142,7 +142,9 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - 查 `task_heartbeat` 是否继续更新
 - 查 workflow / mappings 是否正确
 - 查是否取消请求未被 worker 轮询到；若任务已有 `cancel_locked=1`，用户取消应表现为不可取消而不是 `cancel_requested`
-- Worker 等待 ComfyUI 完成时不应只依赖 WebSocket：`wait_for_task_completion(...)` 当前以 WS 终态为快路径，并在提交后约 45 秒开始每约 12 秒主动探测 `/history/{prompt_id}`；history 已有结果时立即收口，硬超时约 30 分钟后才做最终 fallback / 失败处理。
+- Worker 等待 ComfyUI 完成时不应只依赖 WebSocket：`wait_for_task_completion(...)` 当前以 WS 终态为快路径，并在提交后约 45 秒开始每约 12 秒主动探测 `/history/{prompt_id}`；history 已有结果时立即收口。普通任务硬超时约 30 分钟，超时后最终 history 仍无结果会抛 `TaskExecutionTimeoutError` 并失败上报，不能返回成功态继续找结果文件。
+- RunPod `wan22_video_v2` 使用专属完成超时，默认约 10 分钟；timeout 时 worker 会 best-effort 调用 ComfyUI `/interrupt`、失败上报，并在 RunPod 环境退出 agent/container 触发外层重启，避免卡住的 Comfy prompt 留在队列里却继续接下一单。
+- RunPod `wan22_video_v2` 的 ComfyUI 默认通过 `COMFY_EXTRA_ARGS=--disable-dynamic-vram` 关闭 cu128 ComfyUI 0.21.x 的 DynamicVRAM/comfy-aimdo；若日志反复停在 `WanTEModel prepared for dynamic VRAM loading` 后无采样进展，优先核验该 env 是否生效，再排查 workflow/模型/显存。
 - 日志中 `Task result not set via WS, checking history` 通常说明 worker 正在用 `/history/{prompt_id}` 补偿 WebSocket 终态缺失；这类本地 GPU/ComfyUI 短暂停顿不是 Central `/system/status` 延迟的同一根因。
 
 ### 8.4 SSE 或取消异常
