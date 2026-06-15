@@ -72,6 +72,19 @@ worker 没有 `current_task_id`。旧 Pod 原地重启可能复用
 `/workspace/allbot/repo` 中已有的 `remote_workers` bundle；修复 workflow/override 后，
 新建 Pod 会拉最新 `deploy`，已有旧 Pod 则先 disable 再更新远端 repo 或重建。
 
+正式手动 RunPod 池的容量和 profile 组合按当次运维目标决定，不记录为固定长期事实；
+某次实操的 Pod 数量、创建日期和 profile 组合只应进入运维日志或工单。
+启动、恢复和缩容统一使用 `prod-worker scale --profile <profile> --desired <N>` 管理 slot；
+命令环境必须显式设置 `RUNPOD_DRY_RUN=false`、`RUNPOD_AUTOSCALER_ENABLED=true`、
+`RUNPOD_MAX_PODS_TOTAL=<目标全局managed上限>`、`RUNPOD_MAX_PODS_PER_TYPE=<当前profile上限>`
+和合适的 `RUNPOD_MAX_HOURLY_COST_USD`。若目标 slot 超过默认手动 slot 上限，只在本次命令
+环境中临时设置 `RUNPOD_PROD_MAX_MANUAL_SLOTS=<slot上限>`。如果 RunPod 返回
+`There are no instances currently available`，可按 60-120 秒间隔重跑同一条 `scale`
+命令轮询 4090 库存；不要同时启动多条相同 profile/desired 的创建循环。最终验收以
+`reconcile.managed_count` 等于当次目标 managed Pod 总数、`orphans=[]`、每个目标
+worker heartbeat 存在且 `control.state=enabled` 为准。详细启动、停接、删除和缩容命令见
+`docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` 的“手动云正式备用 worker”。
+
 ### 2.2 本地执行面
 本地主服务器运行云正式 GPU worker 和一个本地 worker relay/上传 sidecar：
 
