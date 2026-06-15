@@ -144,7 +144,9 @@ scripts/lan_runpod_aio_canary.sh --action restore --dry-run
 - compose 模板只允许出现 `${LAN_AIO_*:?}` / `${LAN_MODEL_CACHE_*:?}` 占位符。
 - 不要直接 `source .env.cloud.test`；RunPod dry-run 继续只使用 controller 的 `--env-file` loader。
 - LAN 模型缓存 bucket 固定为 `allbot-model-cache`；截至 2026-06-15，`192.168.1.115:9010` 已缓存 `img2img_lora/2026-06-10/manifest.json` 与 `i2i_pro/2026-06-14-test/manifest.json`。
-- 通用上传入口为 `scripts/upload_model_bundle_to_r2.py`，通过 `.env.lan.model-cache` 映射 `LAN_MODEL_CACHE_*` 到 `RUNPOD_MODEL_*` 后写入 LAN cache；脚本按对象 size 与 sha256 metadata 跳过已有对象，metadata key 需大小写不敏感处理以兼容 MinIO。
+- 全任务 LAN cache 入口为 `scripts/upload_all_task_models_to_lan_cache.py --env-file .env.lan.model-cache`，默认 dry-run；真实上传必须另行显式加 `--execute`。helper 复用共享对象池 `models/by-sha256/<sha[:2]>/<sha>`，并会复用已存在且 size/sha256 metadata 匹配的旧对象 key。
+- canonical manifest 目标为 `img2img_lora/2026-06-10/manifest.json`、`i2i_pro/2026-06-14-test/manifest.json`、`image_to_video/2026-06-13-test/manifest.json`、`wan22_video_v2/2026-06-13-test/manifest.json`、`wan22_aio_video/2026-06-12-test/manifest.json`、`ltx_video/2026-06-10/manifest.json`、`face_i2i_t2i/2026-06-10/manifest.json`。`video_basic/2026-06-10` 不作为主 manifest；legacy `video_insert` / `video_edit` 只作为兼容任务类型归入 `image_to_video`。
+- 单 bundle 通用入口仍为 `scripts/upload_model_bundle_to_r2.py`，通过 `.env.lan.model-cache` 映射 `LAN_MODEL_CACHE_*` 到 `RUNPOD_MODEL_*` 后写入 LAN cache；脚本按对象 size 与 sha256 metadata 跳过已有对象，metadata key 需大小写不敏感处理以兼容 MinIO。
 
 ## 4. RunPod Provider v0
 RunPod provider 当前覆盖四类路径：
@@ -183,6 +185,7 @@ python scripts/gpu_pool_controller.py runpod canary --task-type i2i_pro --env-fi
 | `wan22_aio_video` | `image_to_video,wan22_video_v2` | `wan22_aio_video` | `runpod_test_wan22_aio_video` | `wan22_aio_video/2026-06-12-test/manifest.json` |
 
 `wan22_aio_video` 只保留为兼容/回滚 profile；新测试、新扩容和正式接入都应优先使用 split profile。
+`video_basic` 不再作为独立对外任务或主 manifest 口径；GPU Pool Controller 中新增 canonical `image_to_video` profile，`video_basic` profile 仅保留 legacy 兼容命名，实际 workflow 与模型 manifest 均对齐 `image_to_video`。
 `i2i_pro` 是现有 ComfyUI runtime profile，不新增业务 task type；其中 Web 文生图仍提交 `txt2img`，Central 执行面记录为 `t2i-pornmaster-turbo`，worker 通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 读取 `txt2img_from_i2i_pro.json`。图片换脸仍提交 `face_swap`，worker 通过 override 读取 `face_swap_v2.json`。
 `wan22_video_v2` RunPod split profile 默认渲染 `COMFY_EXTRA_ARGS=--disable-dynamic-vram`，用于规避 cu128 ComfyUI 0.21.x 的 DynamicVRAM/comfy-aimdo 在 `WanTEModel` 动态加载阶段卡住；如需临时实验其它 Comfy 启动参数，可用 `RUNPOD_WAN22_VIDEO_V2_COMFY_EXTRA_ARGS` 覆盖，并必须重新创建目标 Pod 才会生效。
 

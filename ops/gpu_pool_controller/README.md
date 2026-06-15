@@ -18,15 +18,15 @@ python scripts/gpu_pool_controller.py runtime-plan --assignment lan-002-8188-wor
 python scripts/gpu_pool_controller.py runtime-render --assignment lan-002-8188-worker-06
 python scripts/gpu_pool_controller.py runtime-plan \
   --assignment lan-002-8188-worker-06 \
-  --profile video_basic \
+  --profile image_to_video \
   --host-port 8190
 python scripts/gpu_pool_controller.py runtime-render \
   --assignment lan-002-8188-worker-06 \
-  --profile video_basic \
+  --profile image_to_video \
   --host-port 8190
 python scripts/gpu_pool_controller.py switch-profile \
   --assignment lan-002-8188-worker-06 \
-  --profile video_basic
+  --profile image_to_video
 python scripts/gpu_pool_controller.py workflow-model-check
 python scripts/gpu_pool_controller.py model-import-plan
 python scripts/gpu_pool_controller.py model-import-execute
@@ -88,22 +88,23 @@ same six Flux2/Z-Image model files.
 
 LAN model cache uses the dedicated MinIO service at `192.168.1.115:9010` with
 bucket `allbot-model-cache`; do not reuse legacy MinIO or `user-data-*` buckets.
-Use a redacted loader for `.env.lan.model-cache` and the generic upload helper
-for profile bundles, for example:
+Use a redacted loader for `.env.lan.model-cache`. The all-task helper builds
+canonical manifests on top of a shared object pool:
 
 ```bash
-python scripts/upload_model_bundle_to_r2.py \
-  --env-file /dev/null \
-  --bundle i2i_pro_baseline \
-  --version 2026-06-14-test \
-  --bucket allbot-model-cache \
-  --prefix i2i_pro/2026-06-14-test \
-  --create-bucket
+python scripts/upload_all_task_models_to_lan_cache.py \
+  --env-file .env.lan.model-cache
 ```
 
 The current LAN cache has manifests for `img2img_lora/2026-06-10` and
-`i2i_pro/2026-06-14-test`. The upload helper skips existing objects by size and
-sha256 metadata, treating metadata keys case-insensitively for MinIO.
+`i2i_pro/2026-06-14-test`. The all-task target set additionally prepares
+`image_to_video/2026-06-13-test`, `wan22_video_v2/2026-06-13-test`,
+`wan22_aio_video/2026-06-12-test`, `ltx_video/2026-06-10`, and
+`face_i2i_t2i/2026-06-10`. `video_basic/2026-06-10` is not a primary manifest;
+legacy `video_insert` and `video_edit` are compatibility task types that run as
+`image_to_video`. Model blobs are keyed as `models/by-sha256/<sha[:2]>/<sha>`,
+while manifests may reuse older object keys that already validate by size and
+sha256 metadata.
 
 Local Docker registry layout:
 

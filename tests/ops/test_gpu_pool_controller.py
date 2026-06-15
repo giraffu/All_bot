@@ -122,6 +122,21 @@ def test_runtime_plan_canary_overrides_worker_env_for_gpu_002():
     assert not any("docker up" in command or "restart" in command for command in payload.commands)
 
 
+def test_runtime_plan_supports_canonical_image_to_video_profile():
+    config = load_controller_config()
+    payload = RuntimePlanner(config).build_plan(
+        "lan-002-8188-worker-06",
+        target_profile_id="image_to_video",
+        overrides=RuntimeRenderOverrides(host_port=8190),
+    )
+
+    assert payload.target_profile_id == "image_to_video"
+    assert payload.worker_env["POOL_RUNTIME_PROFILE"] == "image_to_video"
+    assert payload.worker_env["SUPPORTED_TASK_TYPES"] == "video_insert,video_edit,image_to_video"
+    assert payload.model_bundle_versions == {"video_basic_baseline": "2026-06-10"}
+    assert payload.runtime["production_port_unchanged"] is True
+
+
 def test_runtime_canary_explicit_overrides_take_precedence():
     config = load_controller_config()
     overrides = RuntimeRenderOverrides(

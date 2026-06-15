@@ -17,6 +17,26 @@ profiles:
       - VHS_VideoCombine
     min_vram_gb: 32
     image_ref: 192.168.1.115:5000/allbot/comfy-cu130-face-i2i:baseline
+    model_prefix: face_i2i_t2i/2026-06-10
+    model_manifest_key: face_i2i_t2i/2026-06-10/manifest.json
+
+  image_to_video:
+    runtime_profile: image_to_video
+    task_types:
+      - video_insert
+      - video_edit
+      - image_to_video
+    model_bundles:
+      - video_basic_baseline
+    required_nodes:
+      - FL_RIFE
+      - UNETLoader
+      - VHS_VideoCombine
+    workflow: workers/comfy_agent/workflows/Wan22AioV82.json
+    min_vram_gb: 32
+    image_ref: 192.168.1.115:5000/allbot/comfy-cu130-video-basic:baseline
+    model_prefix: image_to_video/2026-06-13-test
+    model_manifest_key: image_to_video/2026-06-13-test/manifest.json
 
   video_basic:
     runtime_profile: video_basic
@@ -30,9 +50,11 @@ profiles:
       - FL_RIFE
       - UNETLoader
       - VHS_VideoCombine
-    workflow: workers/comfy_agent/workflows/perfect_video_insert.json
+    workflow: workers/comfy_agent/workflows/Wan22AioV82.json
     min_vram_gb: 32
     image_ref: 192.168.1.115:5000/allbot/comfy-cu130-video-basic:baseline
+    model_prefix: image_to_video/2026-06-13-test
+    model_manifest_key: image_to_video/2026-06-13-test/manifest.json
 
   ltx_video:
     runtime_profile: ltx_video
@@ -47,6 +69,8 @@ profiles:
     workflow: workers/comfy_agent/workflows/LTX 2.3 I2V 6.1.json
     min_vram_gb: 32
     image_ref: 192.168.1.115:5000/allbot/comfy-cu130-ltx:baseline
+    model_prefix: ltx_video/2026-06-10
+    model_manifest_key: ltx_video/2026-06-10/manifest.json
 
   img2img_lora:
     runtime_profile: img2img_lora
@@ -83,6 +107,8 @@ profiles:
     workflow: workers/comfy_agent/workflows/i2i_pro.json
     min_vram_gb: 32
     image_ref: ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:pending
+    model_prefix: i2i_pro/2026-06-14-test
+    model_manifest_key: i2i_pro/2026-06-14-test/manifest.json
 
   wan22_video_v2:
     runtime_profile: wan22_video_v2
@@ -100,6 +126,8 @@ profiles:
     workflow: workers/comfy_agent/workflows/Wan22AioV82.json
     min_vram_gb: 48
     image_ref: 192.168.1.115:5000/allbot/comfy-cu128-wan22:baseline
+    model_prefix: wan22_video_v2/2026-06-13-test
+    model_manifest_key: wan22_video_v2/2026-06-13-test/manifest.json
 
   wan22_aio_video:
     runtime_profile: wan22_aio_video
@@ -117,3 +145,5 @@ profiles:
     workflow: workers/comfy_agent/workflows/Wan22AioV82.json
     min_vram_gb: 48
     image_ref: ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:pending
+    model_prefix: wan22_aio_video/2026-06-12-test
+    model_manifest_key: wan22_aio_video/2026-06-12-test/manifest.json
