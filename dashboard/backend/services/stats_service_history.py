@@ -6,6 +6,9 @@ from logging import Logger
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from dashboard.backend.services.stats_service_consumption import (
+    load_daily_consumed_credit_map,
+)
 from dashboard.backend.services.stats_service_utils import date_key, trailing_start_date
 from src.database.models import CheckinHistory, History, MembershipPlan, Order, User
 from src.exchange_rates import get_exchange_rates
@@ -20,7 +23,7 @@ async def load_dashboard_stats_history_impl(
     *, db: AsyncSession, days: int, logger: Logger, video_types: list[str]
 ) -> list[dict]:
     _ = logger
-    video_cost_case = case((History.type.in_(video_types), 6), else_=2)
+    _ = video_types
     start_date = trailing_start_date(days)
 
     user_history = await _load_date_count_map(
@@ -168,15 +171,9 @@ async def load_dashboard_stats_history_impl(
         .group_by(func.date(CheckinHistory.checkin_date))
         .order_by(func.date(CheckinHistory.checkin_date)),
     )
-    consumed_history = await _load_date_count_map(
+    consumed_history = await load_daily_consumed_credit_map(
         db,
-        select(
-            func.date(History.created_at).label("date"),
-            func.sum(video_cost_case).label("count"),
-        )
-        .where(History.created_at >= start_date)
-        .group_by(func.date(History.created_at))
-        .order_by(func.date(History.created_at)),
+        start_date=start_date,
     )
 
     order_paid_expr = func.coalesce(Order.paid_at, Order.created_at)

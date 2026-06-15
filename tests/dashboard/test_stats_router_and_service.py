@@ -3,12 +3,20 @@ from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import func, select
 from sqlalchemy.dialects import postgresql
 
 from dashboard.backend.routers import stats as stats_router
 from dashboard.backend.services import stats_service
 from dashboard.backend.services import stats_service_activity
+from dashboard.backend.services.stats_service_consumption import (
+    GENERATION_CONSUMPTION_OPERATION_TYPES,
+    build_generation_consumption_log_filter,
+    build_generation_consumption_value,
+    normalize_consumed_credit_total,
+)
 from dashboard.backend.services.stats_service_utils import day_bounds
+from src.database.models import UserLog
 
 
 class _FakeStatsDB:
@@ -60,6 +68,34 @@ def test_build_hourly_distribution_maps_none_hour_to_zero_slot():
     assert result["00"] == 2
     assert result["03"] == 5
     assert len(result) == 24
+
+
+def test_consumed_credit_total_clamps_negative_net_refunds():
+    assert normalize_consumed_credit_total(-18) == 0
+    assert normalize_consumed_credit_total(None) == 0
+    assert normalize_consumed_credit_total(42) == 42
+
+
+def test_consumption_expression_uses_user_log_ledger():
+    stmt = (
+        select(func.sum(build_generation_consumption_value()))
+        .select_from(UserLog)
+        .where(build_generation_consumption_log_filter())
+    )
+
+    sql = _compile_postgresql(stmt).lower()
+
+    assert "from user_logs" in sql
+    assert "credit_change < 0" in sql
+    assert "operation_type in" in sql
+    assert "operation_type like 'refund%%'" in sql
+    assert "from history" not in sql
+
+
+def test_consumption_operation_types_include_dashboard_generation_aliases():
+    assert "img2img_lora" in GENERATION_CONSUMPTION_OPERATION_TYPES
+    assert "image_to_video" in GENERATION_CONSUMPTION_OPERATION_TYPES
+    assert "face_video" in GENERATION_CONSUMPTION_OPERATION_TYPES
 
 
 @pytest.mark.asyncio

@@ -69,17 +69,20 @@ graph TD
 | **GET** | `/api/bot/queue` | 队列状态 | 调用 `image_service` 获取 ComfyUI 实时排队数 |
 | **POST** | `/api/templates/.../approve` | 批准模板 | 移动文件至正式目录，并自动发放积分奖励 |
 
-### 3.2 积分消耗计算逻辑 (后端硬编码)
+### 3.2 积分消耗计算逻辑 (账本口径)
 
-后端在统计积分消耗时，使用 SQL `CASE` 语句动态计算（非查表），这与 Bot 端的扣费逻辑需保持一致：
+后端在统计积分消耗时，以 `user_logs` 账本为准：生成任务负向 `credit_change` 计入消耗，`refund%` 退款流水抵扣消耗。`history` 只用于成功生成量、类型分布与分时生成量，不再用任务类型硬编码反推灵石。
 
 ```python
-# main.py L138-151
-video_types = ['video', 'video_undress', 'custom_video', ...] # 视频类任务
-cost_case = case(
-    (History.type.in_(video_types), 6), # 视频消耗 6 积分
-    else_=2                             # 图片消耗 2 积分
+charge_filter = and_(
+    UserLog.credit_change < 0,
+    UserLog.operation_type.in_(GENERATION_TASK_TYPES),
 )
+refund_filter = and_(
+    UserLog.credit_change > 0,
+    UserLog.operation_type.like("refund%"),
+)
+consumed = sum(-credit_change for charge/refund ledger rows)
 ```
 
 ## 4. 关键代码实现细节
@@ -129,7 +132,7 @@ app.mount("/images", StaticFiles(directory=str(user_data_path)), name="images")
 
 *   **用户生成量分布**: 使用 `CASE` 语句将 `User.generation_count` 划分为不同区间 (0, 1, 2... 1000+)。
 *   **日均生成量**: 利用 `julianday` 计算用户加入天数，动态计算 `generation_count / days` 并进行区间分组。
-*   **积分消耗分布**: 通过子查询聚合 `History` 表计算每位用户的总消耗，再结合 `CASE` 语句进行区间统计。
+*   **积分消耗分布**: 通过子查询聚合 `user_logs` 账本中的生成扣费与退款抵扣，计算每位用户的净消耗，再结合 `CASE` 语句进行区间统计。
 *   **日均积分消耗**: 结合用户加入天数和总积分消耗，计算日均值并分组。
 *   **用户持有积分分布**: 直接查询 `User.credits`，使用 `CASE` 语句将用户按持有积分划分为 (0, 1-10... 5000+) 等区间。
 
@@ -140,7 +143,7 @@ days_valid = case((days_diff < 1, 1), else_=days_diff) # 防止除零
 avg_daily = func.cast(func.coalesce(User.generation_count, 0), Float) / days_valid
 
 # 积分消耗分布统计 (简略)
-consumption_stmt = select(History.user_id, func.sum(cost_case).label('consumed')).group_by(History.user_id)
+consumption_stmt = select(UserLog.user_id, func.sum(consumption_value).label('consumed')).group_by(UserLog.user_id)
 # ...利用子查询和 CASE 语句进行分组统计...
 ```
 
@@ -197,11 +200,11 @@ Dashboard 复用了 Bot 的 `config.py`，主要依赖：
 | **Dashboard 无法加载用户列表** | 数据库路径错误 / 后端未启动 | 检查 `main.py` 中的 `os.chdir(PROJECT_ROOT)` 是否正确指向数据库文件所在目录。 |
 | **图片预览 404** | `user_data` 目录不存在 | 确认 Bot 根目录下是否有 `user_data` 文件夹，且权限正确。 |
 | **跨域错误 (CORS)** | 前端端口未在白名单 | 检查 `main.py` 中 `CORSMiddleware` 配置，当前配置为 `["*"]` (允许所有)，生产环境建议收缩。 |
-| **积分消耗统计不准** | 硬编码逻辑过时 | 检查 `main.py` 中的 `video_types` 列表是否包含了新增的生成类型。 |
+| **积分消耗统计不准** | 账本流水缺失或退款口径异常 | 检查 `user_logs` 是否写入生成任务扣费与 `refund%` 退款流水，并确认 Dashboard 后端统计缓存是否已刷新。 |
 
 ## 8. 可扩展性建议
 
-1.  **动态配置**: 目前积分消耗规则硬编码在 SQL 查询中，建议提取到 `src/constants.py` 或数据库配置表中，供前后端共享。
+1.  **消费审计**: 灵石消耗统计已改为账本口径；后续若要展示“成功任务估算成本”，应在任务成功历史中持久化当次实际 cost，而不是重新从类型推断。
 2.  **鉴权机制**: Dashboard 目前没有登录鉴权（前端仅有模拟的管理员UI），生产环境 **必须** 增加 API Key 校验或 OAuth 登录（如 Telegram Widget Login）。
 3.  **前端优化**: `App.vue` 体积较大，建议将 Sidebar、Header 拆分为独立组件，将 API 调用逻辑进一步封装到 Store (Pinia) 中。
 4.  **WebSocket**: 引入 WebSocket 替换轮询，实现队列状态和任务进度的实时推送。

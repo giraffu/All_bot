@@ -6,6 +6,10 @@ from logging import Logger
 from sqlalchemy import Float, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from dashboard.backend.services.stats_service_consumption import (
+    build_consumed_credits_subquery,
+    load_consumed_credit_total,
+)
 from dashboard.backend.services.stats_service_utils import (
     build_hourly_distribution,
     build_zeroed_distribution,
@@ -14,10 +18,6 @@ from dashboard.backend.services.stats_service_utils import (
     get_hour_expr,
 )
 from src.database.models import History, Order, Referral, TemplateContribution, User
-
-
-def _build_video_cost_case(video_types: list[str]):
-    return case((History.type.in_(video_types), 6), else_=2)
 
 
 async def _load_user_summary(db: AsyncSession) -> dict:
@@ -83,14 +83,12 @@ async def _load_user_group_distribution(
     return user_group_distribution
 
 
-async def _load_global_activity_totals(db: AsyncSession, video_cost_case) -> dict:
+async def _load_global_activity_totals(db: AsyncSession) -> dict:
     total_generations = (await db.execute(select(func.count()).select_from(History))).scalar()
     total_referrals = (
         await db.execute(select(func.count()).select_from(Referral))
     ).scalar() or 0
-    total_consumed_credits = (
-        await db.execute(select(func.sum(video_cost_case)))
-    ).scalar() or 0
+    total_consumed_credits = await load_consumed_credit_total(db)
     return {
         "total_generations": total_generations,
         "total_referrals": total_referrals,
@@ -176,7 +174,6 @@ async def _load_history_today_summary(
     *,
     db: AsyncSession,
     today: date,
-    video_cost_case,
 ) -> dict:
     start_date, end_date = day_bounds(today)
     history_stats_stmt = select(
@@ -185,9 +182,13 @@ async def _load_history_today_summary(
         func.count(
             func.distinct(case((History.source == "web", History.user_id), else_=None))
         ).label("today_web_users"),
-        func.coalesce(func.sum(video_cost_case), 0).label("today_consumed_credits"),
     ).where(History.created_at >= start_date, History.created_at < end_date)
     history_stats_row = (await db.execute(history_stats_stmt)).first()
+    today_consumed_credits = await load_consumed_credit_total(
+        db,
+        start_date=start_date,
+        end_date=end_date,
+    )
 
     total_web_users = (
         await db.execute(
@@ -223,7 +224,7 @@ async def _load_history_today_summary(
         "today_generations": history_stats_row.today_generations or 0,
         "today_active_users": history_stats_row.today_active_users or 0,
         "today_web_users": history_stats_row.today_web_users or 0,
-        "today_consumed_credits": history_stats_row.today_consumed_credits or 0,
+        "today_consumed_credits": today_consumed_credits,
         "total_web_users": total_web_users,
         "today_type_distribution": today_type_distribution,
         "total_type_distribution": total_type_distribution,
@@ -301,15 +302,6 @@ async def _load_avg_daily_distribution(db: AsyncSession, dialect: str) -> dict:
     return avg_distribution
 
 
-def _build_consumed_subquery(video_cost_case):
-    consumed_sub = (
-        select(History.user_id, func.sum(video_cost_case).label("consumed"))
-        .group_by(History.user_id)
-        .subquery()
-    )
-    return consumed_sub
-
-
 async def _load_credit_distribution(
     *,
     db: AsyncSession,
@@ -347,7 +339,8 @@ async def _load_credit_distribution(
     for row in credit_dist_result:
         if row.range in credit_distribution:
             credit_distribution[row.range] = row.count
-            users_with_consumption += row.count
+            if row.range != "0":
+                users_with_consumption += row.count
     credit_distribution["0"] = max(0, total_db_users - users_with_consumption)
     return credit_distribution
 
@@ -385,7 +378,8 @@ async def _load_avg_daily_credit_distribution(
     for row in avg_credit_dist_result:
         if row.range in avg_credit_distribution:
             avg_credit_distribution[row.range] = row.count
-            users_with_avg_credit += row.count
+            if row.range != "0":
+                users_with_avg_credit += row.count
     avg_credit_distribution["0"] = max(0, total_db_users - users_with_avg_credit)
     return avg_credit_distribution
 
@@ -472,7 +466,7 @@ async def load_dashboard_stats_impl(
     video_types: list[str],
     user_group_keys: list[str],
 ) -> dict:
-    video_cost_case = _build_video_cost_case(video_types)
+    _ = video_types
     today = date.today()
     dialect = db.bind.dialect.name
 
@@ -480,19 +474,18 @@ async def load_dashboard_stats_impl(
     total_db_users = user_summary["total_db_users"]
     identity_counts = await _load_identity_counts(db)
     user_group_distribution = await _load_user_group_distribution(db, user_group_keys)
-    global_activity_totals = await _load_global_activity_totals(db, video_cost_case)
+    global_activity_totals = await _load_global_activity_totals(db)
     template_totals = await _load_template_contribution_totals(db)
     invitation_totals = await _load_invitation_revenue_totals(db)
     today_user_summary = await _load_today_user_summary(db, today)
     today_history_summary = await _load_history_today_summary(
         db=db,
         today=today,
-        video_cost_case=video_cost_case,
     )
 
     gen_distribution = await _load_generation_distribution(db)
     avg_distribution = await _load_avg_daily_distribution(db, dialect)
-    consumed_sub = _build_consumed_subquery(video_cost_case)
+    consumed_sub = build_consumed_credits_subquery()
     credit_distribution = await _load_credit_distribution(
         db=db,
         total_db_users=total_db_users,
