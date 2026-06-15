@@ -141,6 +141,15 @@ def _head_object(client, *, bucket: str, key: str) -> dict[str, Any] | None:
         raise RuntimeError(f"head_object failed for {key}: {_safe_client_error(exc)}") from exc
 
 
+def _metadata_value(metadata: dict[str, Any] | None, key: str) -> str:
+    if not metadata:
+        return ""
+    for metadata_key, value in metadata.items():
+        if str(metadata_key).lower() == key.lower():
+            return str(value)
+    return ""
+
+
 def _build_r2_manifest(
     *,
     manifest: dict[str, Any],
@@ -320,7 +329,7 @@ def upload_bundle(
         existing = _head_object(client, bucket=bucket, key=key) if bucket_exists or created_bucket else None
         existing_sha = ""
         if existing:
-            existing_sha = str((existing.get("Metadata") or {}).get("sha256") or "")
+            existing_sha = _metadata_value(existing.get("Metadata"), "sha256")
         if existing and int(existing.get("ContentLength") or 0) == size_bytes and existing_sha == sha256:
             skipped.append({"key": key, "relative_path": item["relative_path"], "size_bytes": size_bytes})
             continue

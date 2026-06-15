@@ -74,6 +74,7 @@ class BundleImportSpec:
     task_types: tuple[str, ...]
     dynamic_groups: tuple[str, ...] = ()
     exclude_values: tuple[str, ...] = ()
+    workflow_overrides: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -99,6 +100,10 @@ FIRST_WAVE_BUNDLES: dict[str, BundleImportSpec] = {
             "face_video",
             "t2i-pornmaster-turbo",
         ),
+        workflow_overrides={
+            "face_swap": "face_swap_v2.json",
+            "t2i-pornmaster-turbo": "txt2img_from_i2i_pro.json",
+        },
     ),
     "video_basic_baseline": BundleImportSpec(
         bundle="video_basic_baseline",
@@ -130,7 +135,11 @@ FIRST_WAVE_BUNDLES: dict[str, BundleImportSpec] = {
         version="2026-06-14-test",
         profiles=("i2i_pro",),
         source_node_id="gpu-226",
-        task_types=("i2i_pro",),
+        task_types=("i2i_pro", "t2i-pornmaster-turbo", "face_swap"),
+        workflow_overrides={
+            "face_swap": "face_swap_v2.json",
+            "t2i-pornmaster-turbo": "txt2img_from_i2i_pro.json",
+        },
     ),
     "wan22_video_v2_baseline": BundleImportSpec(
         bundle="wan22_video_v2_baseline",
@@ -346,6 +355,7 @@ class ModelImportPlanner:
             for ref in extract_references_for_task_types(
                 self.workflow_dir,
                 spec.task_types,
+                workflow_overrides=spec.workflow_overrides,
             )
             if ref.value.replace("\\", "/") not in spec.exclude_values
         ]
@@ -497,10 +507,13 @@ class ModelImportPlanner:
 def extract_references_for_task_types(
     workflow_dir: Path,
     task_types: Iterable[str],
+    *,
+    workflow_overrides: dict[str, str] | None = None,
 ) -> list[ModelReference]:
     refs = []
+    overrides = workflow_overrides or {}
     for task_type in task_types:
-        workflow = TASK_TYPE_WORKFLOW_FILENAMES[task_type]
+        workflow = overrides.get(task_type, TASK_TYPE_WORKFLOW_FILENAMES[task_type])
         refs.extend(extract_workflow_references(workflow_dir / workflow, task_type))
     return refs
 

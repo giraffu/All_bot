@@ -6,11 +6,8 @@ from src.constants import (
     DURATION_MULTIPLIER,
     LTX_DURATION_MULTIPLIER,
     LTX_RESOLUTION_COST,
-    MODE_CUSTOM_VIDEO,
     MODE_EDIT,
     MODE_FACESWAP_STEP1,
-    MODE_IMAGE_TO_VIDEO,
-    MODE_IMAGE_TO_VIDEO_LITERAL,
     MODE_IMG2IMG_LORA,
     MODE_I2I_PRO,
     MODE_I2I_DRAW,
@@ -23,6 +20,7 @@ from src.core.task_core_service_providers import get_task_core_image_service
 from src.domain_config.wan22_aio_video import (
     build_wan22_aio_video_result_meta,
     get_wan22_video_v2_cost,
+    is_legacy_wan22_image_to_video_task_type,
     normalize_wan22_video_v2_duration_seconds,
     normalize_wan22_video_v2_negative_prompt,
     normalize_wan22_video_v2_resolution_preset,
@@ -464,17 +462,11 @@ class Wan22AioVideoStrategy(BaseTaskStrategy):
 
 
 class BaseVideoStrategy(BaseTaskStrategy):
-    WAN22_IMAGE_TO_VIDEO_TASK_TYPES = {
-        MODE_CUSTOM_VIDEO,
-        MODE_IMAGE_TO_VIDEO,
-        MODE_IMAGE_TO_VIDEO_LITERAL,
-    }
-
     def __init__(self, mode: str):
         self.mode = mode
 
     def _is_wan22_image_to_video_task(self) -> bool:
-        return self.mode in self.WAN22_IMAGE_TO_VIDEO_TASK_TYPES
+        return is_legacy_wan22_image_to_video_task_type(self.mode)
 
     def _wan22_delegate(self) -> Wan22AioVideoStrategy:
         return Wan22AioVideoStrategy(self.mode)
@@ -523,21 +515,12 @@ class BaseVideoStrategy(BaseTaskStrategy):
         self, task_id: str, inputs: Dict[str, Any], priority: int
     ) -> str:
         image_service = _get_dispatch_image_service()
-        submission = _build_video_submission_context(inputs)
 
-        if self.mode == "doggy_style":
-            return await image_service.submit_perfect_video_insert_task(
-                task_id,
-                prompt=submission.prompt,
-                image_path=submission.image_path,
-                width=submission.width,
-                height=submission.height,
-                length=submission.frame_length,
-                priority=priority,
-            )
-        elif self._is_wan22_image_to_video_task():
+        if self._is_wan22_image_to_video_task():
             return await self._wan22_delegate().submit_task(task_id, inputs, priority)
-        elif self.mode in FACE_VIDEO_TASK_TYPES:
+
+        submission = _build_video_submission_context(inputs)
+        if self.mode in FACE_VIDEO_TASK_TYPES:
             face_img, video_path = _resolve_face_video_saved_inputs(
                 submission.saved_images
             )
@@ -606,11 +589,7 @@ def _build_default_image_strategy(task_type: str) -> BaseTaskStrategy:
 
 
 def _build_video_strategy(task_type: str) -> BaseTaskStrategy:
-    if task_type in {
-        MODE_CUSTOM_VIDEO,
-        MODE_IMAGE_TO_VIDEO,
-        MODE_IMAGE_TO_VIDEO_LITERAL,
-    }:
+    if is_legacy_wan22_image_to_video_task_type(task_type):
         return Wan22AioVideoStrategy(task_type)
     return BaseVideoStrategy(task_type)
 

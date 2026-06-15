@@ -232,7 +232,7 @@ dispatcher 下游通常会继续经过：
 - 当前 simple route 仍可能映射到 legacy `TaskType`，但 `txt2img` 已和其他任务一样通过标准 simple route 提交，并显式携带上游 `task_id`
 - `image_service.py` / `api_client.py` 只负责把统一语义下沉到 Central API，不再由 `txt2img` 单独生成 backend task id
 - Wan22 AIO 视频的稳定配置入口是 `src.domain_config.wan22_aio_video`。旧 `src.services.wan22_video_v2_config` / `src.services.wan22_video_v2_context` 兼容 re-export 已删除，不应作为新增逻辑的事实源。
-- `custom_video` / `video_lora` 与 `wan22_video_v2` 是两个用户功能入口，但底层由 `Wan22AioVideoStrategy` 与共享 submit helper 收口：公开类型继续写历史和展示，执行面类型用于 Central API / Worker 路由。
+- `custom_video` / `video_lora`、Telegram 懒人动图 mode 与 `wan22_video_v2` 是不同用户功能入口，但底层由 `Wan22AioVideoStrategy` 与共享 submit helper 收口：公开类型继续写历史和展示，执行面类型用于 Central API / Worker 路由。
 
 ## 8. Central API / QueueManager 执行面
 ### 8.1 角色定位
@@ -268,6 +268,7 @@ Central API 是执行面，不是业务主入口。
 - `img2img`
 - `img2img_lora`
 - `face_swap`
+- `video_insert`
 - `video_edit`
 - `image_to_video`
 - `face_video`
@@ -277,7 +278,7 @@ Central API 是执行面，不是业务主入口。
 - `ltx_video`
 - `wan22_video_v2`
 
-其中 `txt2img` 当前通过 `/txt2img` simple route 进入执行面，Central API 内部仍映射到 legacy `TaskType.T2I_PORNMASTER_TURBO`。旧图生视频的 `/image_to_video` 与 `/perfect_video_lora` 会入队到执行面 `TaskType.IMAGE_TO_VIDEO`，但上游历史类型仍保留 `custom_video` / `video_lora`；`video_edit` 继续绑定 `perfect_video_edit.json`，不要把快捷视频误切到 Wan22。Wan22 AIO 当前明确分两档 profile：旧图生视频 `custom_video` / `video_lora` -> execution `image_to_video` -> `legacy_image_to_video` profile；图生视频 v2 `wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。`i2i_pro` RunPod 是现有 ComfyUI runtime profile，不新增业务类型；它可同时声明 `SUPPORTED_TASK_TYPES=i2i_pro,t2i-pornmaster-turbo,face_swap`，其中 Web `txt2img` 通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 读取 `txt2img_from_i2i_pro.json`，`face_swap` 读取 `face_swap_v2.json`。`face_swap_v2.json` 也是 workflow 替换，不是新业务类型；上游仍提交 `face_swap`。新增任务类型时，不要默认假设只改 `SIMPLE_TASK_TYPE_MAP` 就够，还要确认 request model、dispatcher 和 worker workflow 映射是否齐全。
+其中 `txt2img` 当前通过 `/txt2img` simple route 进入执行面，Central API 内部仍映射到 legacy `TaskType.T2I_PORNMASTER_TURBO`。旧图生视频的 `/image_to_video` 与 `/perfect_video_lora` 会入队到执行面 `TaskType.IMAGE_TO_VIDEO`，但上游历史类型仍保留 `custom_video` / `video_lora`；旧 `/perfect_video_insert` 与 `/perfect_video_edit` 只作为兼容 endpoint 保留，会把旧 width/height/frame length 归一为 Wan22 `resolution_preset` 与秒数后入队 `TaskType.IMAGE_TO_VIDEO`。Telegram 懒人动图的差异应停留在 FSM 内置 prompt 与历史 mode，不再对应独立 worker workflow。Wan22 AIO 当前明确分两档 profile：旧图生视频 `custom_video` / `video_lora` / 懒人动图 mode / legacy `video_insert`、`video_edit` -> execution `image_to_video` -> `legacy_image_to_video` profile；图生视频 v2 `wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。`i2i_pro` RunPod 是现有 ComfyUI runtime profile，不新增业务类型；它可同时声明 `SUPPORTED_TASK_TYPES=i2i_pro,t2i-pornmaster-turbo,face_swap`，其中 Web `txt2img` 通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 读取 `txt2img_from_i2i_pro.json`，`face_swap` 读取 `face_swap_v2.json`。`face_swap_v2.json` 也是 workflow 替换，不是新业务类型；上游仍提交 `face_swap`。新增任务类型时，不要默认假设只改 `SIMPLE_TASK_TYPE_MAP` 就够，还要确认 request model、dispatcher 和 worker workflow 映射是否齐全。
 
 ### 8.3 QueueManager 的职责
 QueueManager 负责执行面排队与 Worker 选择，关键职责包括：
@@ -325,7 +326,7 @@ QueueManager 负责执行面排队与 Worker 选择，关键职责包括：
 - 某任务长时间 pending 时，要先看是否有 Worker 声明支持该任务类型
 - Worker 存活但 `SUPPORTED_TASK_TYPES` 不匹配，任务依然不会被接单
 - RunPod `i2i_pro` worker 必须声明 `SUPPORTED_TASK_TYPES=i2i_pro,t2i-pornmaster-turbo,face_swap` 与 `POOL_RUNTIME_PROFILE=i2i_pro`，并设置 `TASK_TYPE_WORKFLOW_OVERRIDES={"t2i-pornmaster-turbo":"txt2img_from_i2i_pro.json","face_swap":"face_swap_v2.json"}`；cloud-test canary 会临时禁用同环境中支持这些执行类型的非 RunPod worker，结束后必须恢复。
-- `image_to_video` 是旧图生视频 `custom_video` / `video_lora` 的执行面类型；生产 worker 接入该类型时可以与 `video_edit` 共存，不应为补 `image_to_video` 误删 `video_edit` 支持。
+- `image_to_video` 是旧图生视频 `custom_video` / `video_lora` 与 Telegram 懒人动图的执行面类型；生产 worker 接入新链路时必须支持 `image_to_video`。worker 继续声明 `video_insert` / `video_edit` 只用于兼容旧队列残留，不应被当作新任务能力扩展方向。
 
 ### 9.2 输入准备
 Worker 拉到任务后会先处理输入：
@@ -350,10 +351,10 @@ Worker 拉到任务后会先处理输入：
 - 当前 `face_swap` 在测试 worker1、正式 worker1 和 RunPod `i2i_pro` profile 中通过 override 指向 `face_swap_v2.json`。v2 使用 `i2i_pro` 的 Flux2/edit 节点与模型，去掉旧换脸专用 LoRA / DifferentialDiffusion；`mappings.json` 继续只写入 `face_image -> 2`、`body_image -> 3`，未设置 override 的其它 worker 仍走旧 `face_swap.json`。
 - `mappings.json` 决定输入参数如何映射到 workflow 节点
 - `workflow_patcher.py` 负责把运行时参数打进具体 workflow
-- `image_to_video` 与 `wan22_video_v2` 当前共用 `Wan22AioV82.json`，由 `_patch_wan22_aio_workflow(...)` 统一 patch。两者通过 `wan22_model_profile` 注入不同主模型；旧 `video_lora` 会把 `{lora_name}_high_noise.safetensors` / `{lora_name}_low_noise.safetensors` 写入工作流 LoRA 槽，v2 始终清空额外 LoRA 槽。
+- `image_to_video`、legacy `video_insert` / `video_edit` 与 `wan22_video_v2` 当前共用 `Wan22AioV82.json`，由 `_patch_wan22_aio_workflow(...)` 统一 patch。旧入口与懒人动图通过 `legacy_image_to_video` profile 注入主模型；旧 `video_lora` 会把 `{lora_name}_high_noise.safetensors` / `{lora_name}_low_noise.safetensors` 写入工作流 LoRA 槽，v2 始终清空额外 LoRA 槽。
 - V82 在 `2603` 最终帧序列后接 `265` 插帧；默认使用 `FL_RIFE` (`multiplier=4`)。patcher 检测到 `265` 后会把 `28` 视频输出、`2575` 帧数统计和 `2607` 尾帧提取都指向 `["265", 0]`，避免运行时覆盖导致插帧失效。生产 worker3 对应的 `192.168.1.177:8189` 已在 ComfyUI 侧修复 `FL_RIFE` 环境，不再使用 worker env 切换节点类。
 - Wan22 AIO 的 `5s/8s/10s` 时长最终由 worker patcher 写入 `2578.inputs.value`，再经 workflow 内部帧数公式得到 `81/129/161` 源帧；计费和 result meta 使用同一份 `src.domain_config.wan22_aio_video` duration 归一化。
-- 旧图生视频 Web/Bot 历史类型仍是 `custom_video` / `video_lora`，执行面 task type 才是 `image_to_video`。排障时需要同时确认上游历史类型、registry task type 和 backend task type。
+- 旧图生视频 Web/Bot 历史类型仍是 `custom_video` / `video_lora`，懒人动图历史类型仍是其具体 mode；执行面 task type 才是 `image_to_video`。排障时需要同时确认上游历史类型、registry task type 和 backend task type。
 
 如果出现以下错误，优先看这三层：
 - Worker 报 `Workflow for xxx not found`

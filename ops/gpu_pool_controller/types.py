@@ -34,6 +34,11 @@ class ComfyInstance:
     container_name: str | None = None
     container_port: int | None = None
     compose_template: str | None = None
+    runtime_shape: str = "standard_comfy_runtime"
+    slot_id: str | None = None
+    runtime_root: str | None = None
+    model_cache_endpoint: str | None = None
+    image_registry: str | None = None
     rollback_state: dict[str, Any] = field(default_factory=dict)
     health: dict[str, str] = field(default_factory=dict)
     supported_task_types: tuple[str, ...] = ()
@@ -63,6 +68,9 @@ class TaskProfile:
     workflow: str | None = None
     min_vram_gb: float | None = None
     image_ref: str | None = None
+    all_in_one_image_ref: str | None = None
+    model_prefix: str | None = None
+    model_manifest_key: str | None = None
 
 
 @dataclass(frozen=True)

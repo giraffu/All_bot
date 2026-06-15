@@ -8,6 +8,8 @@
 - CLI：`scripts/gpu_pool_controller.py`
 - 默认配置：`ops/gpu_pool_controller/config/`
 - 本地镜像仓库：`deploy/docker-compose-local-registry.yml`、`scripts/manage_local_registry.sh`
+- LAN 模型缓存：`deploy/docker-compose-model-cache-lan.yml`、`scripts/manage_lan_model_cache.sh`
+- LAN RunPod 化一体容器 canary：`scripts/lan_runpod_aio_canary.sh`
 - RunPod provider：`ops/gpu_pool_controller/providers/runpod.py`
 - RunPod 云测试 canary：`ops/gpu_pool_controller/runpod_canary.py`、`ops/gpu_pool_controller/runpod_split_video_canary.py`
 - RunPod 云测试 worker scale：`ops/gpu_pool_controller/runpod_workers.py`
@@ -62,12 +64,87 @@ python scripts/gpu_pool_controller.py runtime-plan --assignment lan-002-8188-wor
 python scripts/gpu_pool_controller.py runtime-render --assignment lan-002-8188-worker-06
 ```
 
+模型导入器以 `workers/comfy_agent/workflows` 为事实源生成
+`/srv/allbot/model-registry/bundles/<bundle>/<version>/manifest.yml`。若目标
+worker 通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 替换实际执行 workflow，
+`BundleImportSpec.workflow_overrides` 必须同步写入同一映射；否则
+`model-import-plan` 会按 legacy 默认 workflow 拉取已经不接单的旧模型。
+当前 `face_swap` 使用 `face_swap_v2.json`，`t2i-pornmaster-turbo` 使用
+`txt2img_from_i2i_pro.json`，二者与 `i2i_pro.json` 共享
+`i2i_pro_baseline` 的六个 Flux2/Z-Image 模型。
+
 Runtime dry-run 说明：
 - `runtime-plan` 输出 runtime/image/model/worker-env diff，不连接远端、不修改 worker。
 - `runtime-render` 渲染标准 ComfyUI runtime compose；只适用于 `docker_container`。
 - `runtime-plan` / `runtime-render` 支持 `--host-port`、`--container-name`、`--api-url`、`--ws-url` 做备用端口 canary 覆盖。
+- `runtime-plan` / `runtime-render` 支持显式 `--runtime-shape runpod_all_in_one`，用于渲染 LAN RunPod 化一体容器；默认仍是 `standard_comfy_runtime`，不会改既有 ComfyUI compose。
 - `runtime-apply`、`switch-profile`、`rollback-profile --execute` 当前会明确拒绝真实执行。
 - `gpu-226` 是 `host_service`，不得生成 Docker pull/up/restart 操作。
+
+### 3.1 LAN RunPod 化一体容器 canary
+
+第一轮只允许 `gpu-002` slot0 / `img2img_lora`，临时 agent 固定为 `lan_aio_test_gpu002_gpu0_img2img_lora_01`，canary host port 固定为 `8190`。该路径服务于云测试闭环，不接管旧生产 agent，不修改用户侧 task type，不创建 RunPod Pod。
+
+运行态形态：
+- `runtime_shape=runpod_all_in_one`
+- runtime root：`/srv/allbot/runpod-runtime`
+- workspace mount：`/workspace`
+- 容器内 relay：`http://127.0.0.1:8013`
+- 容器内 ComfyUI：`http://127.0.0.1:8188`
+- Central：`https://worker-central-test.aivison.it.com`
+- LAN 模型缓存：`http://192.168.1.115:9010`，bucket 固定 `allbot-model-cache`
+- LAN registry：`192.168.1.115:5000`
+
+模型缓存和镜像入口：
+
+```bash
+scripts/manage_lan_model_cache.sh --dry-run
+scripts/upload_img2img_lora_models_to_lan_cache.sh --dry-run
+scripts/build_runpod_profile_image.sh \
+  --profile img2img_lora \
+  --image-ref 192.168.1.115:5000/allbot/comfy-runpod-img2img-lora:lan-canary \
+  --push
+```
+
+all-in-one compose 渲染：
+
+```bash
+python scripts/gpu_pool_controller.py runtime-render \
+  --assignment lan-002-8188-worker-06 \
+  --profile img2img_lora \
+  --host-port 8190 \
+  --runtime-shape runpod_all_in_one \
+  --agent-id lan_aio_test_gpu002_gpu0_img2img_lora_01
+```
+
+验收时必须看到：
+- `x-allbot-runtime.production_port_unchanged=true`
+- `host_port=8190`、`container_port=8188`
+- `runtime_shape=runpod_all_in_one`
+- `model_target_dir=/workspace/ComfyUI/models`
+- `model_write_scope` 只包含 `/workspace/ComfyUI/models`
+- `CENTRAL_API_URL=https://worker-central-test.aivison.it.com`
+- `MASTER_API_URL=http://127.0.0.1:8013`
+- `PIPELINE_MAX_RUNNING_TASKS=1`
+- `NO_PROXY=*`
+
+受控 canary helper：
+
+```bash
+scripts/lan_runpod_aio_canary.sh --action preflight --dry-run
+scripts/lan_runpod_aio_canary.sh --action start-heartbeat --dry-run
+scripts/lan_runpod_aio_canary.sh --action enable-canary --dry-run
+scripts/lan_runpod_aio_canary.sh --action restore --dry-run
+```
+
+`start-heartbeat --execute` 会先把临时 agent control 设为 `disabled`，再把 compose/env 推到 `allbot-gpu-002` 并启动 canary 容器；不会放开接单。`enable-canary --execute` 只允许在真实 Web canary 窗口内临时 disable `cloud_worker_test_06` 并 enable 临时 agent；结束后必须执行 `restore --execute`，恢复旧 worker 并停止 canary 容器。失败现场需要保留容器和日志时，`restore --execute --keep-container` 只恢复 control，不停止容器。
+
+密钥边界：
+- 真实密钥只放在 ignored env 文件，例如 `.env.lan.model-cache` 和 `.env.lan-aio-test`。
+- compose 模板只允许出现 `${LAN_AIO_*:?}` / `${LAN_MODEL_CACHE_*:?}` 占位符。
+- 不要直接 `source .env.cloud.test`；RunPod dry-run 继续只使用 controller 的 `--env-file` loader。
+- LAN 模型缓存 bucket 固定为 `allbot-model-cache`；截至 2026-06-15，`192.168.1.115:9010` 已缓存 `img2img_lora/2026-06-10/manifest.json` 与 `i2i_pro/2026-06-14-test/manifest.json`。
+- 通用上传入口为 `scripts/upload_model_bundle_to_r2.py`，通过 `.env.lan.model-cache` 映射 `LAN_MODEL_CACHE_*` 到 `RUNPOD_MODEL_*` 后写入 LAN cache；脚本按对象 size 与 sha256 metadata 跳过已有对象，metadata key 需大小写不敏感处理以兼容 MinIO。
 
 ## 4. RunPod Provider v0
 RunPod provider 当前覆盖四类路径：
@@ -313,7 +390,7 @@ RUNPOD_MODEL_SECRET_KEY={{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}
 - `face_swap_v2.json` 使用 `i2i_pro` Flux2/edit 节点与模型替代旧图片换脸工作流，运行面 task type 仍是 `face_swap`。测试 worker1、正式 worker1 与 RunPod `i2i_pro` profile 都通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 将 `face_swap` 指向 v2；这属于 Worker workflow 配置替换，不代表新增业务 task type。
 - `i2i_pro` RunPod 镜像构建入口是 `remote_workers/docker/runpod_profiles/i2i_pro/`，默认 base 为 `yanwk/comfyui-boot:cu128-slim`，与现有图生图和 Wan22 RunPod 镜像基线保持一致；ComfyUI pin 到 `16cd8d8a8f5f16ce7e5f929fdba9f783990254ea`。不得使用 `cu130` 基线，否则在当前 RunPod 4090 宿主机上可能因 PyTorch CUDA 版本高于宿主机驱动能力而失败；`20260614-i2ipro-6b167aa-cu128-min4` 已在 `NVIDIA GeForce RTX 4090` cloud-test Web canary 中完成模型同步、ComfyUI CUDA 初始化、worker heartbeat 和 `i2i_pro` 真实任务出图；当前 `.env.cloud.test` 候选镜像为 `20260614-i2ipro-b75c6a9-cu128-min5-ssh`，在 min4 的可用基线上补齐 `openssh` 与 direct TCP SSH smoke。当前 workflow 只要求 ComfyUI/core `nodes` 与 `comfy_extras` 中的 `UNETLoader`、`CLIPLoader`、`VAELoader`、`ReferenceLatent`、`EmptyFlux2LatentImage`、`Flux2Scheduler`、`SamplerCustomAdvanced`，不 baked 自定义节点或业务模型。GitHub Actions smoke 在 CPU runner 上用静态源码检查确认这些节点存在，避免导入 ComfyUI 时触发 CUDA 初始化；GPU import 与真实执行以 cloud-test canary 为准。镜像 smoke 还必须检查 `ffmpeg`、`curl`、`git`、`ssh-keygen` 与 `sshd`，确保 direct TCP SSH 诊断可用。
 - RunPod `i2i_pro` 三任务能力依赖 `remote_workers/src/workflow_mapping_validation.py` 支持 `TASK_TYPE_WORKFLOW_OVERRIDES`，并且 `remote_workers/comfy_agent/workflows/` 内存在 `txt2img_from_i2i_pro.json` 与 `face_swap_v2.json`。`runpod_bootstrap_from_git.sh` 只在 `/workspace/allbot/repo/remote_workers` 不存在时 clone `deploy`，若旧 Pod 原地重启且已有旧 bundle，可能继续复用旧文件；新建/重建 Pod 会拉最新 `deploy`。若已运行的旧生产 Pod 因远端 bundle 缺 override 支持而读取旧默认 workflow，可先通过 Central agent control 将目标 worker 置为 `disabled`，再在 Pod 内覆盖默认 `face_swap.json` 与默认 Pornmaster workflow 为对应 v2/i2i_pro 派生模板；`WorkflowPatcher.load_workflow()` 每单重新读 JSON，文件级热修无需删除或重启 Pod，但长期修复仍必须进入 git 与新镜像/新 Pod。
-- `i2i_pro_baseline` 模型包从 `gpu-226` / `192.168.1.226:8188` 同步到 R2 `allbot-model-cache/i2i_pro/2026-06-14-test/manifest.json`，包含 6 个文件，总计 `38,769,838,190` bytes（约 `36.11 GiB`）。首次 cloud-test canary 使用 `RUNPOD_CONTAINER_DISK_GB=120`，GPU 只请求 `NVIDIA GeForce RTX 4090`，模型同步只写 ComfyUI `models/`，不得写 `input/output/temp/custom_nodes/workflows`。
+- `i2i_pro_baseline` 模型包从 `gpu-226` / `192.168.1.226:8188` 同步到 R2 `allbot-model-cache/i2i_pro/2026-06-14-test/manifest.json`，包含 6 个文件，总计 `38,769,838,190` bytes（约 `36.11 GiB`）。这 6 个文件同时覆盖 `i2i_pro.json`、`txt2img_from_i2i_pro.json` 与 `face_swap_v2.json`；本地主模型 registry 的 import spec 已按这两个 runtime overrides 生成 manifest，不再把 legacy Pornmaster/t2i 或旧 `face_swap.json` 专属模型纳入 `i2i_pro_baseline`。首次 cloud-test canary 使用 `RUNPOD_CONTAINER_DISK_GB=120`，GPU 只请求 `NVIDIA GeForce RTX 4090`，模型同步只写 ComfyUI `models/`，不得写 `input/output/temp/custom_nodes/workflows`。
 
 `i2i_pro_baseline` 模型清单：
 

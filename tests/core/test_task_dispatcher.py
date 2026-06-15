@@ -47,10 +47,9 @@ def test_strategy_factory_returns_correct_strategy():
     assert isinstance(strategy, Wan22AioVideoStrategy)
     assert strategy.task_type == MODE_IMAGE_TO_VIDEO_LITERAL
 
-    # Standard Video
     strategy = StrategyFactory.get_strategy("doggy_style")
-    assert isinstance(strategy, BaseVideoStrategy)
-    assert strategy.mode == "doggy_style"
+    assert isinstance(strategy, Wan22AioVideoStrategy)
+    assert strategy.task_type == "doggy_style"
 
     # I2I Pro (Default Image Strategy)
     strategy = StrategyFactory.get_strategy(MODE_I2I_PRO)
@@ -106,7 +105,7 @@ def test_strategy_factory_treats_unknown_legacy_style_task_type_as_default_image
 
 
 def test_video_strategy_cost_calculation():
-    strategy = StrategyFactory.get_strategy("doggy_style")
+    strategy = BaseVideoStrategy("legacy_video")
     # Base doggy style cost is 6, 512p multiplier is 1.0, 5s multiplier is 1.0
     cost = strategy.get_cost({"resolution": "512p", "duration": "5s"})
     assert cost == 6
@@ -580,7 +579,7 @@ async def test_base_video_strategy_face_video_coerces_duration_string(monkeypatc
 async def test_base_video_strategy_edit_branch_uses_default_submission_context(
     monkeypatch,
 ):
-    strategy = StrategyFactory.get_strategy("video_edit")
+    strategy = BaseVideoStrategy("legacy_non_wan22_video")
     submit_mock = AsyncMock(return_value="backend-edit")
     _patch_dispatch_image_service(
         monkeypatch,
@@ -615,8 +614,9 @@ async def test_base_video_strategy_edit_branch_uses_default_submission_context(
         (MODE_IMAGE_TO_VIDEO, "BreastGrow", "backend-lora", True),
         (MODE_IMAGE_TO_VIDEO, "", "backend-lora", True),
         (MODE_CUSTOM_VIDEO, "", "backend-lora", True),
-        ("video_edit", "BreastGrow", "backend-edit", False),
-        ("perfect_video_edit", "BreastGrow", "backend-edit", False),
+        ("video_edit", "BreastGrow", "backend-lora", True),
+        ("perfect_video_edit", "BreastGrow", "backend-lora", True),
+        ("doggy_style", "BreastGrow", "backend-lora", True),
     ],
 )
 async def test_base_video_strategy_routes_image_to_video_modes_by_lora_name(
@@ -676,15 +676,13 @@ async def test_base_video_strategy_routes_image_to_video_modes_by_lora_name(
 
 
 @pytest.mark.asyncio
-async def test_base_video_strategy_keeps_special_video_modes_ahead_of_lora_branch(
+async def test_quick_video_modes_route_to_legacy_wan22_image_to_video(
     monkeypatch,
 ):
     strategy = StrategyFactory.get_strategy("doggy_style")
-    submit_insert_mock = AsyncMock(return_value="backend-insert")
     submit_lora_mock = AsyncMock(return_value="backend-lora")
     _patch_dispatch_image_service(
         monkeypatch,
-        submit_perfect_video_insert_task=submit_insert_mock,
         submit_image_to_video_task=submit_lora_mock,
     )
 
@@ -700,17 +698,23 @@ async def test_base_video_strategy_keeps_special_video_modes_ahead_of_lora_branc
         priority=3,
     )
 
-    assert result == "backend-insert"
-    submit_insert_mock.assert_awaited_once_with(
+    assert result == "backend-lora"
+    submit_lora_mock.assert_awaited_once_with(
         "task-1",
         prompt="cinematic motion",
         image_path="demo/input.png",
-        width=720,
-        height=720,
-        length=129,
+        lora_name="BreastGrow",
+        end_image_path=None,
+        negative_prompt=ANY,
+        use_end_frame=False,
+        resolution_preset="standard",
+        wan22_model_profile="legacy_image_to_video",
         priority=3,
+        width=512,
+        height=512,
+        length=8,
+        extract_last_frame=True,
     )
-    submit_lora_mock.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -204,7 +204,7 @@ SSE 侧当前已把运行态 not-found 收口为明确终止 / fallback 语义�
 
 - 测试环境：默认云测试控制面 `scripts/safe_deploy_cloud_test.sh`；旧本地测试栈不再作为受支持测试或回滚路径，仅作为历史取证材料保留。
 - 正式环境：仅在明确确认后执行云正式 `scripts/safe_deploy_cloud_prod.sh` 或 cloud-prod compose 单服务重建；`safe_deploy.sh` 只用于云正式整体故障时的本地正式灾备。
-- 正式部署前应确认生产 worker 的 `SUPPORTED_TASK_TYPES` 覆盖本次上线的执行面类型；旧图生视频入口实际依赖 `image_to_video`，同时不要误删仍在使用的 `video_edit`。
+- 正式部署前应确认生产 worker 的 `SUPPORTED_TASK_TYPES` 覆盖本次上线的执行面类型；旧图生视频与 Telegram 懒人动图新提交实际依赖 `image_to_video`。worker 继续声明 `video_insert` / `video_edit` 只用于兼容旧队列残留，不应再作为新增 workflow 能力方向。
 - workflow canary 优先只在目标云测试 worker 设置 `TASK_TYPE_WORKFLOW_OVERRIDES`，确认无误后再考虑调整默认 `TASK_TYPE_WORKFLOW_FILENAMES` 或正式 compose。
 - 云正式 worker compose 现在包含本地 relay/sidecar 服务；更新 worker 主链或 `workers/local_relay` 时，应把 relay 与目标 worker 一起纳入测试 canary，先确认 relay `/health`、`/ready`、Central `/system/workers`、R2 上传和 `/complete` 成功链路。
 - GPU worker 自动恢复使用 `scripts/watch_cloud_worker_recovery.sh`。云测试可用 `--env cloud-test --mode execute` 做故障注入；云正式默认只运行 `--env cloud-prod --mode dry-run`。该脚本只精确恢复本地主服务器上的 relay 或单个 worker 容器，不操作 GPU 节点或 ComfyUI 容器。relay `/ready` 返回 404 表示运行版本尚未包含深度健康接口，watchdog 只记录 `relay_ready_endpoint_missing`，不通过重启来替代版本部署。

@@ -208,6 +208,11 @@ nodes:
         container_name: allbot-comfy-gpu0
         container_port: 8188
         compose_template: standard_comfy_runtime_v1
+        runtime_shape: standard_comfy_runtime
+        slot_id: gpu-002-gpu0
+        runtime_root: /srv/allbot/runpod-runtime
+        model_cache_endpoint: http://192.168.1.115:9010
+        image_registry: 192.168.1.115:5000
         rollback_state:
           image_ref: yanwk/comfyui-boot:cu128-slim
           task_types: img2img,img2img_lora
@@ -236,6 +241,11 @@ nodes:
         container_name: allbot-comfy-gpu1
         container_port: 8188
         compose_template: standard_comfy_runtime_v1
+        runtime_shape: standard_comfy_runtime
+        slot_id: gpu-002-gpu1
+        runtime_root: /srv/allbot/runpod-runtime
+        model_cache_endpoint: http://192.168.1.115:9010
+        image_registry: 192.168.1.115:5000
         rollback_state:
           image_ref: yanwk/comfyui-boot:cu128-slim
           task_types: video_insert,video_edit,image_to_video

@@ -54,13 +54,13 @@
 
 ## 二、 旧图生视频附加模型（LoRA）实施方案
 
-旧图生视频的用户侧能力仍保留 `custom_video` / `video_lora` 两种历史类型，但执行面已经改为 `image_to_video`，并与 `wan22_video_v2` 共用 `workers/comfy_agent/workflows/Wan22AioV82.json`。两者通过 `src.domain_config.wan22_aio_video` 中的 profile 注入不同主模型：旧入口使用 `legacy_image_to_video`，v2 使用 `wan22_video_v2`。旧 `src.services.wan22_video_v2_config` 与 `src.services.wan22_video_v2_context` 兼容 re-export 已删除，新增逻辑必须直接引用 domain_config 入口。
+旧图生视频的用户侧能力仍保留 `custom_video` / `video_lora` 两种历史类型；Telegram 懒人动图保留 `perfect_video_insert` / `doggy_style` / `blowjob` / `undress_tongue` / `closeup_blowjob` 等历史 mode 与内置提示词。但这些旧入口的执行面已经统一为 `image_to_video`，并与 `wan22_video_v2` 共用 `workers/comfy_agent/workflows/Wan22AioV82.json`。两者通过 `src.domain_config.wan22_aio_video` 中的 profile 注入不同主模型：旧入口使用 `legacy_image_to_video`，v2 使用 `wan22_video_v2`。旧 `src.services.wan22_video_v2_config` 与 `src.services.wan22_video_v2_context` 兼容 re-export 已删除，新增逻辑必须直接引用 domain_config 入口。
 
 目前系统主要支持 LTX-2.3 和 Wan2.2/Wan2.1 视频生成工作流。关于 LTX-2.3 工作流的具体 LoRA 使用与提示词规范，请参考项目根目录的 `LTX_LoRA_Guide.md`。
 
 ### 0. 当前支持概览
-- **普通图生视频 / 自定义图生视频**：上游类型仍是 `custom_video` / `video_lora`，执行面统一入队 `TaskType.IMAGE_TO_VIDEO`，底层 workflow 为 `Wan22AioV82.json`。
-- **Wan22 AIO profile 口径**：旧图生视频 `custom_video` / `video_lora` -> execution `image_to_video` -> `legacy_image_to_video` profile；图生视频 v2 `wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。两者共享 worker workflow，但不是同一个用户功能。
+- **普通图生视频 / 自定义图生视频 / 懒人动图**：上游类型仍可保留 `custom_video` / `video_lora` / 懒人动图 mode，执行面统一入队 `TaskType.IMAGE_TO_VIDEO`，底层 workflow 为 `Wan22AioV82.json`。
+- **Wan22 AIO profile 口径**：旧图生视频 `custom_video` / `video_lora` / 懒人动图 mode / legacy `video_insert`、`video_edit` -> execution `image_to_video` -> `legacy_image_to_video` profile；图生视频 v2 `wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。两者共享 worker workflow，但不是同一个用户功能。
 - **旧 LoRA 图生视频 (`video_lora`)**：继续接收 `lora_name` 前缀，由 `workflow_task_patchers.py` 按高噪/低噪双节点动态补入。`custom_video` 不带 LoRA 时会清空 LoRA 槽；`wan22_video_v2` 始终清空额外 LoRA 槽。
 - **规格口径**：旧图生视频支持 `5s/8s/10s`，对应 `81/129/161` 帧，分辨率和计费基数与 v2 对齐为 `preview=6`、`small=12`、`standard=20`、`hd=30`，时长倍率为 `1x/2x/3x`；旧投稿 `512p/720p/1024p` 分别映射为 `preview/standard/hd`，`0.36 MP - Small` 映射为 `small`。
 - **高级图生视频 (`ltx_video`)**：现已升级为 `lora_items` 多选协议。Bot FSM、Web 单图视频页、模板应用面板都会提交最多 3 个 LoRA 项，每项独立携带 `name + strength`；旧 `lora_name / lora_strength` 仍保留兼容入口，但不再是主文档口径。
@@ -86,16 +86,17 @@
 - **实施状态**：**无需修改**。
   - 后端网关已经定义了 `VideoLoraRequest`。
   - 当前主 simple route 是 `/image_to_video`；兼容入口 `/perfect_video_lora` 仍会接收该请求，并统一**转化为 `TaskType.IMAGE_TO_VIDEO`** 推入 Redis 队列，同时将 `lora_name`、`resolution_preset`、`end_image`、`extract_last_frame=True` 等参数携带给下游 Worker。
-  - `video_edit` 仍继续走 `perfect_video_edit.json`，用于其它快捷视频，不应混入旧图生视频 LoRA 逻辑。
+  - `/perfect_video_insert` 与 `/perfect_video_edit` 只作为旧 endpoint 兼容入口保留，会把旧 width/height/frame length 归一为 Wan22 的 `resolution_preset` 与秒数，并入队 `TaskType.IMAGE_TO_VIDEO`。懒人动图差异只体现在 FSM 内置 prompt 和历史 mode，不再对应独立 workflow。
 
 ### 4. Worker 层：工作流动态注入 (Workflow Patcher)
 - **文件定位**：`workers/comfy_agent/workflow_task_patchers.py` 和 `workers/comfy_agent/workflows/Wan22AioV82.json`。
 - **实施状态**：**通常无需修改**，但需注意**硬编码防爆红线**。
+  - `image_to_video`、legacy `video_insert` / `video_edit` 都必须复用 `patch_image_to_video_workflow`，不要再绑定 `perfect_video_insert.json` 或 `perfect_video_edit.json`。
   - 主模型节点固定为 `2616`（high）和 `2617`（low）。patcher 会根据 `wan22_model_profile` 写入对应 high/low UNet 文件。
   - 旧 LoRA 注入节点固定为 `26`（high noise）和 `18`（low noise）：
     - `26.inputs.lora_1.lora = {lora_name}_high_noise.safetensors`
     - `18.inputs.lora_1.lora = {lora_name}_low_noise.safetensors`
-  - 无 LoRA 的 `custom_video` 与 `wan22_video_v2` 必须清空 `26` / `18` 的 LoRA slot，避免 workflow 模板残留旧模型。
+  - 无 LoRA 的 `custom_video`、懒人动图 mode 与 `wan22_video_v2` 必须清空 `26` / `18` 的 LoRA slot，避免 workflow 模板残留旧模型。
   - V82 通过 `265`（`FL_RIFE`，`multiplier=4`）对 `2603` 最终帧序列插帧；`_patch_wan22_aio_workflow(...)` 会在检测到 `265` 后让 `28` 视频输出、`2575` 帧数统计和 `2607` 尾帧提取都读取 `["265", 0]`，避免插帧被绕过或时长变慢。三档时长会写入 `2578.inputs.value`，保持 `5s/8s/10s` 对应 `81/129/161` 源帧。
   - 节点 `2612` 当前 DaSiWa 版本要求同时写入旧口径 `precision_presets` 和新口径 `resolution_preset`，并补齐 `swap_aspect_when_not_image=false`、`aspect_preset_when_not_image="9:16 - Social"`、`custom_aspect_width=16`、`custom_aspect_height=9`；否则 RunPod ComfyUI `/prompt` 会因缺必填输入拒绝工作流。节点 `2607` 的 `ImageFromBatch.batch_index` 必须保持 `4095`，不要改回旧模板里的 `16384`。
   - 扩展生成、分段重生成和整链拼接依赖 `extra_outputs.last_frame`。Worker 会优先读取 Comfy `2503` 尾帧输出；若个别 Comfy 实例只返回主 MP4，`agent_result_materialization.py` 会用 worker 镜像内的 `ffmpeg/ffprobe` 从主视频补抽最后一帧，因此 `workers/Dockerfile` 必须保留 ffmpeg 依赖。

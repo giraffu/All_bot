@@ -326,6 +326,14 @@ async def test_create_t2i_pornmaster_turbo_task_reraises_prompt_http_error(monke
 
 def test_simple_task_type_map_keeps_image_to_video_and_video_lora_compatibility():
     assert (
+        main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["video_insert"]
+        == TaskType.IMAGE_TO_VIDEO
+    )
+    assert (
+        main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["video_edit"]
+        == TaskType.IMAGE_TO_VIDEO
+    )
+    assert (
         main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["image_to_video"]
         == TaskType.IMAGE_TO_VIDEO
     )
@@ -348,6 +356,14 @@ def test_simple_task_route_specs_cover_expected_paths_and_handlers():
     }
 
     assert specs_by_path["/comfy_img2img"][1:] == ("img2img", "create_img2img_task")
+    assert specs_by_path["/perfect_video_insert"][1:] == (
+        "video_insert",
+        "create_video_insert_task",
+    )
+    assert specs_by_path["/perfect_video_edit"][1:] == (
+        "video_edit",
+        "create_video_edit_task",
+    )
     assert specs_by_path["/image_to_video"][1:] == (
         "image_to_video",
         "create_image_to_video_task",
@@ -378,6 +394,8 @@ def test_simple_task_routes_are_registered_with_stable_endpoint_names():
     }
 
     assert routes_by_path["/comfy_img2img"] == "create_img2img_task"
+    assert routes_by_path["/perfect_video_insert"] == "create_video_insert_task"
+    assert routes_by_path["/perfect_video_edit"] == "create_video_edit_task"
     assert routes_by_path["/image_to_video"] == "create_image_to_video_task"
     assert routes_by_path["/perfect_video_lora"] == "create_video_lora_task"
     assert routes_by_path["/txt2img"] == "create_txt2img_task"
@@ -446,6 +464,33 @@ async def test_enqueue_configured_task_uses_registered_task_type(monkeypatch):
         "task_type": TaskType.FACE_SWAP,
         "queue_manager": "qm",
     }
+
+
+def test_normalize_legacy_video_simple_request_uses_wan22_contract():
+    request = main_simple_task_routes.VideoEditRequest(
+        task_id="task-video",
+        image="inputs/start.png",
+        prompt="built in prompt",
+        width=720,
+        height=720,
+        length=129,
+        priority=4,
+    )
+
+    normalized = main_simple_task_routes.normalize_simple_task_request_model(
+        "video_edit", request
+    ).dict()
+
+    assert normalized["task_id"] == "task-video"
+    assert normalized["priority"] == 4
+    assert normalized["image"] == "inputs/start.png"
+    assert normalized["prompt"] == "built in prompt"
+    assert normalized["resolution_preset"] == "standard"
+    assert normalized["length"] == 8
+    assert "width" not in normalized
+    assert "height" not in normalized
+    assert normalized["wan22_model_profile"] == "legacy_image_to_video"
+    assert normalized["extract_last_frame"] is True
 
 
 @pytest.mark.asyncio

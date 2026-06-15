@@ -52,3 +52,9 @@ RUN set -euo pipefail; \
     find "${comfyui_dir}/models" -type f \( -name 'Qwen-Rapid-AIO-NSFW-v23.safetensors' -o -path '*/loras/qwen/*.safetensors' \) -print -quit | \
       awk 'NF { print "Business model file unexpectedly present in image: " $0; exit 1 }'; \
     echo "${comfyui_dir}" > /opt/allbot-comfyui-dir
+
+COPY remote_workers/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
+
+RUN chmod +x /opt/allbot/runpod_bootstrap_from_git.sh
+
+CMD ["bash", "/opt/allbot/runpod_bootstrap_from_git.sh"]

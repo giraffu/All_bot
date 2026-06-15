@@ -96,6 +96,9 @@ def _runtime_overrides_from_args(args) -> RuntimeRenderOverrides:
         container_name=getattr(args, "container_name", None),
         api_url=getattr(args, "api_url", None),
         ws_url=getattr(args, "ws_url", None),
+        runtime_shape=getattr(args, "runtime_shape", None),
+        agent_id=getattr(args, "agent_id", None),
+        central_url=getattr(args, "central_url", None),
     )
 
 
@@ -424,6 +427,13 @@ def build_parser() -> argparse.ArgumentParser:
     runtime_plan.add_argument("--container-name", default=None)
     runtime_plan.add_argument("--api-url", default=None)
     runtime_plan.add_argument("--ws-url", default=None)
+    runtime_plan.add_argument(
+        "--runtime-shape",
+        choices=("standard_comfy_runtime", "runpod_all_in_one"),
+        default=None,
+    )
+    runtime_plan.add_argument("--agent-id", default=None)
+    runtime_plan.add_argument("--central-url", default=None)
     runtime_plan.set_defaults(func=_cmd_runtime_plan)
 
     runtime_render = subparsers.add_parser("runtime-render")
@@ -433,6 +443,13 @@ def build_parser() -> argparse.ArgumentParser:
     runtime_render.add_argument("--container-name", default=None)
     runtime_render.add_argument("--api-url", default=None)
     runtime_render.add_argument("--ws-url", default=None)
+    runtime_render.add_argument(
+        "--runtime-shape",
+        choices=("standard_comfy_runtime", "runpod_all_in_one"),
+        default=None,
+    )
+    runtime_render.add_argument("--agent-id", default=None)
+    runtime_render.add_argument("--central-url", default=None)
     runtime_render.set_defaults(func=_cmd_runtime_render)
 
     runtime_apply = subparsers.add_parser("runtime-apply")

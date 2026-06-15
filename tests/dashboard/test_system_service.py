@@ -160,10 +160,9 @@ def test_count_tasks_by_type_uses_worker_execution_task_types():
     assert system_service.count_tasks_by_type(tasks) == {
         "img2img": 1,
         "img2img_lora": 1,
-        "image_to_video": 3,
+        "image_to_video": 4,
         "ltx_video": 1,
         "t2i-pornmaster-turbo": 1,
-        "video_insert": 1,
         "face_video": 1,
         "unknown": 1,
     }

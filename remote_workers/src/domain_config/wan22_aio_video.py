@@ -115,7 +115,13 @@ class Wan22AioVideoProfile:
 WAN22_AIO_VIDEO_PROFILES = {
     WAN22_LEGACY_IMAGE_TO_VIDEO_MODEL_PROFILE: Wan22AioVideoProfile(
         name=WAN22_LEGACY_IMAGE_TO_VIDEO_MODEL_PROFILE,
-        public_task_types=(MODE_CUSTOM_VIDEO, MODE_IMAGE_TO_VIDEO),
+        public_task_types=(
+            MODE_CUSTOM_VIDEO,
+            MODE_IMAGE_TO_VIDEO,
+            "image_to_video",
+            "video_insert",
+            "video_edit",
+        ),
         execution_task_type=WAN22_AIO_EXECUTION_IMAGE_TO_VIDEO,
         model_profile=WAN22_LEGACY_IMAGE_TO_VIDEO_MODEL_PROFILE,
         allow_lora=True,

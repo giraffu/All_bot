@@ -1,0 +1,13 @@
+ARG BASE_IMAGE=ghcr.io/giraffu/allbot-comfy-runpod-img2img-lora:20260612-kjnodes7967a946
+FROM ${BASE_IMAGE}
+
+LABEL org.opencontainers.image.title="AllBot RunPod img2img_lora LAN bootstrap layer"
+LABEL org.opencontainers.image.description="Adds the AllBot RunPod bootstrap entrypoint to a prebuilt img2img_lora ComfyUI profile image."
+LABEL allbot.runpod.profile="img2img_lora"
+LABEL allbot.runpod.models="external-r2-manifest"
+
+COPY remote_workers/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
+
+RUN chmod +x /opt/allbot/runpod_bootstrap_from_git.sh
+
+CMD ["bash", "/opt/allbot/runpod_bootstrap_from_git.sh"]

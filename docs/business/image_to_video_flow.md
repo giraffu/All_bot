@@ -32,9 +32,9 @@ sequenceDiagram
 - `quick_video_fsm.py` 已不再通过构造假的 `Update/Message` 适配旧接口。
 - `ltx_video` 当前主协议是 `lora_items` 多选链路，最多 3 个 LoRA，旧 `lora_name / lora_strength` 只保留兼容。
 - `wan22_video_v2` 已进入统一视频主链；除主视频外，还可能通过 `extra_outputs.last_frame` 回传尾帧图片。
-- 旧图生视频 `custom_video` / `video_lora` 在执行面新增为 `image_to_video`，与 `wan22_video_v2` 共用 `Wan22AioV82.json`；历史、投稿和展示类型仍保留 `custom_video` / `video_lora`，不改写成 v2。
+- 旧图生视频 `custom_video` / `video_lora` 与 Telegram 懒人动图在执行面统一为 `image_to_video`，与 `wan22_video_v2` 共用 `Wan22AioV82.json`；历史、投稿和展示类型仍保留 `custom_video` / `video_lora` 或具体懒人动图 mode，不改写成 v2。
 - `Wan22AioV82.json` 在 `2603` 最终帧序列后接入 `265` (`FL_RIFE`, `multiplier=4`) 插帧；worker patcher 会把主视频输出、帧数统计和尾帧提取都切到 `["265", 0]`，避免插帧后视频时长变慢。
-- Wan22 AIO 视频配置事实源是 `src.domain_config.wan22_aio_video`：旧图生视频 `custom_video` / `video_lora` -> execution `image_to_video` -> `legacy_image_to_video` profile；图生视频 v2 `wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。两者共享 worker workflow，但不是同一个用户功能。
+- Wan22 AIO 视频配置事实源是 `src.domain_config.wan22_aio_video`：旧图生视频 `custom_video` / `video_lora` / 懒人动图 mode / legacy `video_insert`、`video_edit` -> execution `image_to_video` -> `legacy_image_to_video` profile；图生视频 v2 `wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。两者共享 worker workflow，但不是同一个用户功能。
 - 旧图生视频支持 `5s/8s/10s`，对应 `81/129/161` 帧；分辨率与计费基数对齐 v2 四档：`preview` / `small` / `standard` / `hd`。历史投稿中的 `512p` / `720p` / `1024p` 会分别映射到 `preview/standard/hd`，`0.36 MP - Small` 会映射到 `small`，canonical duration 会恢复为 `5s/8s/10s`，缺失或非 canonical 时回退 5 秒。
 - Telegram `image_to_video_fsm.py` 的旧图生视频主入口会先展示同屏设置面板：附加模型、单图/首尾帧、`preview/small/standard/hd` 分辨率与确认按钮。确认后单图模式收 1 张起始图，首尾帧模式依次收起始图与终止图，然后要求发送提示词提交。
 - `image_to_video` 和 `wan22_video_v2` 通过 `wan22_model_profile` 区分主模型：旧入口使用 legacy high/low 主模型，v2 使用 snatchkiss high/low 主模型。`video_lora` 仍保留旧 LoRA 前缀选择，`custom_video` 兼容入口保持无 LoRA，v2 会清空额外 LoRA 槽。
@@ -112,7 +112,7 @@ graph TD
 - `task_core.py` 负责统一提交语义。
 - `task_dispatcher.py` 基于 strategy 生成 workflow / payload。
 - Web 任务完成后由 `src/services/task_web_side_effects.py`、`task_web_lifecycle_monitor.py`、`task_web_terminal_finalization.py` 协同承接 side effect 与终态收口；Bot 则由 `run_bot_task_application(...)` 负责前台监控与展示。
-- Wan22 图生视频链式上下文（`wan22_prev_task_id`、`wan22_chain_task_ids`、分辨率、负面提示词、是否使用终止帧、主模型 profile、旧 LoRA 信息）现由 dispatcher metadata 写入提交，再由 Web terminal finalization 合并进历史 `extra_outputs._wan22_context`，供 Bot/Web 共用历史链恢复。适用类型包括 `wan22_video_v2`、`custom_video`、`video_lora`。
+- Wan22 图生视频链式上下文（`wan22_prev_task_id`、`wan22_chain_task_ids`、分辨率、负面提示词、是否使用终止帧、主模型 profile、旧 LoRA 信息）现由 dispatcher metadata 写入提交，再由 Web terminal finalization 合并进历史 `extra_outputs._wan22_context`，供 Bot/Web 共用历史链恢复。适用类型包括 `wan22_video_v2`、`custom_video`、`video_lora` 与懒人动图 mode。
 
 ### 3.4 Web 练功房与历史链
 - `wan22_video_v2` 主入口已并入练功房 `frontend/src/views/CustomFeatures.vue`；独立 `frontend/src/views/Wan22VideoV2.vue` 仅作为兼容入口保留。旧 `custom_video` / `video_lora` 也复用同一套 Wan22 多段编辑能力。
@@ -146,7 +146,7 @@ graph TD
 - 覆盖视频 entrypoint 到 `run_bot_task_application(...)` 的上下文装配。
 - 覆盖取消、失败、成功三条主分支。
 - 若修改 `wan22_video_v2`，需覆盖“单起始帧 / 双帧模式 / 尾帧开关”三类布尔门控与结果发送语义。
-- 若修改 Wan22 Web 链式编辑，需额外覆盖 `wan22_video_v2`、`custom_video`、`video_lora` 三类历史的 `result_meta`、历史链查询、结果区按钮、练功房路由恢复、整链拼接、首段重生成清空、以及“后续段重生成只继承前序链路”的提交上下文截断语义。
+- 若修改 Wan22 Web 链式编辑，需额外覆盖 `wan22_video_v2`、`custom_video`、`video_lora` 与懒人动图 mode 历史的 `result_meta`、历史链查询、结果区按钮、练功房路由恢复、整链拼接、首段重生成清空、以及“后续段重生成只继承前序链路”的提交上下文截断语义。
 - 若修改 Wan22 尾帧物化逻辑，需覆盖 Comfy 返回 `2503` 和只返回主 MP4 的兜底抽帧两类路径，确保旧图生视频生成后仍可扩展和拼接。
 - 若修改旧图生视频投稿一键应用，需覆盖 prompt、`[模型: xxx]` LoRA 解析、旧分辨率到 `preview/small/standard/hd` 映射、`5s/8s/10s` 恢复和 v2 灵石消耗。
 - 若修改 Wan22 Gallery 一键应用，需覆盖 v2 单段 `negative_prompt` / `wan22_resolution_preset` 回填，以及旧/v2 stitched 拼接记录列表禁用与 apply-context 400 拒绝。

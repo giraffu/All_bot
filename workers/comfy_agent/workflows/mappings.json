@@ -15,26 +15,24 @@
         "body_image": "3"
     },
     "video_insert": {
-        "image": "294",
-        "prompt": "195",
-        "prompt_input": "text",
-        "width": "263",
-        "width_input": "desired_width",
-        "height": "263",
-        "height_input": "desired_height",
-        "length": "285",
-        "length_input": "length"
+        "image": "23",
+        "image_input": "image",
+        "end_image": "24",
+        "end_image_input": "image",
+        "prompt": "2368",
+        "prompt_input": "value",
+        "negative_prompt": "2371",
+        "negative_prompt_input": "value"
     },
     "video_edit": {
-        "image": "294",
-        "prompt": "195",
-        "prompt_input": "text",
-        "width": "263",
-        "width_input": "desired_width",
-        "height": "263",
-        "height_input": "desired_height",
-        "length": "285",
-        "length_input": "length"
+        "image": "23",
+        "image_input": "image",
+        "end_image": "24",
+        "end_image_input": "image",
+        "prompt": "2368",
+        "prompt_input": "value",
+        "negative_prompt": "2371",
+        "negative_prompt_input": "value"
     },
     "image_to_video": {
         "image": "23",

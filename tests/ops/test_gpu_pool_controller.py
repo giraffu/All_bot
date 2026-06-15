@@ -4,9 +4,11 @@ from ops.gpu_pool_controller.canary import ComfyCanary
 from ops.gpu_pool_controller.config_loader import load_controller_config
 from ops.gpu_pool_controller.image_repo import LocalRegistry
 from ops.gpu_pool_controller.model_importer import (
+    FIRST_WAVE_BUNDLES,
     InventoryEntry,
     ModelImportPlanner,
     extract_dynamic_references,
+    extract_references_for_task_types,
     extract_workflow_references,
 )
 from ops.gpu_pool_controller.model_repo import ModelRegistry
@@ -285,6 +287,47 @@ def test_model_importer_i2i_pro_baseline_resolves_six_workflow_models():
         relative_path for relative_path, _size_bytes in model_paths
     }
     assert sum(item.entry.size_bytes for item in plan.files) == 38769838190
+
+
+def test_model_importer_i2i_pro_spec_uses_multitask_overrides():
+    workflow_dir = Path("workers/comfy_agent/workflows")
+    spec = FIRST_WAVE_BUNDLES["i2i_pro_baseline"]
+    refs = extract_references_for_task_types(
+        workflow_dir,
+        spec.task_types,
+        workflow_overrides=spec.workflow_overrides,
+    )
+    values = {ref.value for ref in refs}
+
+    assert values == {
+        "qwen_3_8b_fp8mixed.safetensors",
+        "flux2-vae.safetensors",
+        "DarkBeast-Klein9b-V2-BFS-FP8-ComfyUI.safetensors",
+        "z_image/qwen_3_4b.safetensors",
+        "z_image/ae.safetensors",
+        "DarkBeastZ6-BlitZ-BF16-ComfyUI.safetensors",
+    }
+    assert "pornmasterZImage_turboV2.safetensors" not in values
+    assert "bfs_head_v1_flux-klein_9b_step3750_rank64.safetensors" not in values
+
+
+def test_model_importer_face_i2i_t2i_spec_uses_runtime_overrides_for_face_and_t2i():
+    workflow_dir = Path("workers/comfy_agent/workflows")
+    spec = FIRST_WAVE_BUNDLES["face_i2i_t2i_baseline"]
+    refs = extract_references_for_task_types(
+        workflow_dir,
+        spec.task_types,
+        workflow_overrides=spec.workflow_overrides,
+    )
+    values = {ref.value for ref in refs}
+
+    assert "face_swap_v2.json" in {ref.workflow for ref in refs}
+    assert "txt2img_from_i2i_pro.json" in {ref.workflow for ref in refs}
+    assert "pornmasterZImage_turboV2.safetensors" not in values
+    assert "z-image-turbo-fp8-e4m3fn.safetensors" not in values
+    assert "bfs_head_v1_flux-klein_9b_step3750_rank64.safetensors" not in values
+    assert "DarkBeast-Klein9b-V2-BFS-FP8-ComfyUI.safetensors" in values
+    assert "DarkBeastZ6-BlitZ-BF16-ComfyUI.safetensors" in values
 
 
 def test_i2i_pro_multitask_workflows_stay_within_baseline_models():

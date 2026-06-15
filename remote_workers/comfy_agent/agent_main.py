@@ -77,6 +77,13 @@ AGENT_ID = os.getenv("AGENT_ID", "worker_local_01")
 SUPPORTED_TASK_TYPES = os.getenv("SUPPORTED_TASK_TYPES", "img2img,face_swap")
 MASTER_API_URL = os.getenv("MASTER_API_URL", "http://127.0.0.1:8000")
 AGENT_SECRET_TOKEN = os.getenv("AGENT_SECRET_TOKEN", "")
+POOL_NODE_ID = os.getenv("POOL_NODE_ID", "")
+POOL_PROVIDER = os.getenv("POOL_PROVIDER", "")
+POOL_GPU_INDEX = os.getenv("POOL_GPU_INDEX", "")
+POOL_RUNTIME_PROFILE = os.getenv("POOL_RUNTIME_PROFILE", "")
+POOL_IMAGE_REF = os.getenv("POOL_IMAGE_REF", "")
+POOL_MODEL_BUNDLE_VERSIONS = os.getenv("POOL_MODEL_BUNDLE_VERSIONS", "")
+POOL_MANAGED = os.getenv("POOL_MANAGED", "")
 
 COMFY_API_URL = os.getenv("COMFY_API_URL", "http://127.0.0.1:8188")
 COMFY_WS_URL = os.getenv("COMFY_WS_URL", "ws://127.0.0.1:8188/ws")
@@ -478,6 +485,19 @@ class ComfyAgent:
             "quarantined_until": self.quarantined_until,
         }
 
+    @staticmethod
+    def _heartbeat_pool_payload() -> dict[str, Any]:
+        payload = {
+            "node_id": POOL_NODE_ID,
+            "provider": POOL_PROVIDER,
+            "gpu_index": POOL_GPU_INDEX,
+            "runtime_profile": POOL_RUNTIME_PROFILE,
+            "image_ref": POOL_IMAGE_REF,
+            "model_bundle_versions": POOL_MODEL_BUNDLE_VERSIONS,
+            "pool_managed": POOL_MANAGED,
+        }
+        return {key: value for key, value in payload.items() if value not in (None, "")}
+
     async def _handle_ws_connection_error(self, error: Exception | str) -> None:
         executions = [
             execution
@@ -774,12 +794,13 @@ class ComfyAgent:
                     "types": SUPPORTED_TASK_TYPES,
                     "status": status,
                     **self._heartbeat_health_payload(),
+                    **self._heartbeat_pool_payload(),
                 },
             )
             for execution in self._heartbeat_executions():
                 await self.master_client.post(
                     "/api/agent/task/task_heartbeat",
-                    json={"task_id": execution.task_id},
+                    json={"task_id": execution.task_id, "agent_id": AGENT_ID},
                 )
         except Exception as e:
             logger.debug(f"Failed to report heartbeat: {e}")

@@ -98,7 +98,7 @@ sequenceDiagram
 - 若分发逻辑异常导致任务堆积，应先检查：
   - worker 是否仍有 heartbeat，以及 `healthy_workers` 是否大于 0
   - worker 是否处于 `error` 或 `quarantined`，并查看 `last_error` / `health_reason`
-  - worker `SUPPORTED_TASK_TYPES` 是否覆盖任务的执行面类型，例如旧图生视频入口最终会排队为 `image_to_video`；RunPod `i2i_pro` profile 必须声明 `SUPPORTED_TASK_TYPES=i2i_pro,t2i-pornmaster-turbo,face_swap`
+  - worker `SUPPORTED_TASK_TYPES` 是否覆盖任务的执行面类型，例如旧图生视频与 Telegram 懒人动图新提交最终会排队为 `image_to_video`；legacy `video_insert` / `video_edit` 只应作为旧队列兼容 alias；RunPod `i2i_pro` profile 必须声明 `SUPPORTED_TASK_TYPES=i2i_pro,t2i-pornmaster-turbo,face_swap`
   - 目标 worker 是否设置了 `TASK_TYPE_WORKFLOW_OVERRIDES`，导致同一 task type 在测试/canary worker 上读取不同 workflow JSON
   - queue 是否持续堆积
   - 上游 task core submission 是否仍在正常写入任务

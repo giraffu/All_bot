@@ -9,6 +9,7 @@
 最近一次采集：2026-06-08，Asia/Shanghai。
 最近一次 ComfyUI 素材清理：2026-06-08，Asia/Shanghai。
 最近一次 gpu-226 LTX 运行时补齐：2026-06-15，Asia/Shanghai。
+最近一次 gpu-002 LAN RunPod 化一体容器测试入口补齐：2026-06-15，Asia/Shanghai。
 
 ## 2. 总体拓扑
 
@@ -213,6 +214,15 @@ ComfyUI 实例：
 - `comfy0` 对应 worker 06，主要处理 `img2img/img2img_lora`。
 - `comfy1` 对应 worker 07，主要处理 `video_insert/video_edit/image_to_video`。
 - 可只重启目标 Comfy 容器；不要因为一个容器异常而重启整台 GPU 节点。
+
+LAN RunPod 化一体容器试点：
+- 第一轮只允许 slot0 / `img2img_lora`，临时 agent 为 `lan_aio_test_gpu002_gpu0_img2img_lora_01`。
+- canary 宿主机端口固定 `8190:8188`，不得占用或替换原 `8188` 的 `comfy0`。
+- runtime root 固定 `/srv/allbot/runpod-runtime`；slot0 workspace 为 `/srv/allbot/runpod-runtime/slots/gpu-002-gpu0/profiles/img2img_lora/workspace`。
+- 容器内 ComfyUI 走 `127.0.0.1:8188`，remote relay 走 `127.0.0.1:8013`，Central 必须使用 `https://worker-central-test.aivison.it.com`。
+- 模型同步只写 `/workspace/ComfyUI/models`，模型源为本地主服务器 LAN cache `http://192.168.1.115:9010/allbot-model-cache`。
+- 受控入口为 `scripts/lan_runpod_aio_canary.sh`；默认 dry-run，`--execute` 才会复制 compose/env 到 `allbot-gpu-002` 或修改 agent control。
+- heartbeat-only 阶段必须保持临时 agent control 为 `disabled`。真实 canary 窗口才临时 disable `cloud_worker_test_06` 并 enable 临时 agent；结束后恢复 `cloud_worker_test_06`、disable 临时 agent、停止 canary 容器。
 
 ## 6. 双卡节点安全操作红线
 

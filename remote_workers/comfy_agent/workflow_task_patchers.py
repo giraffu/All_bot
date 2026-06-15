@@ -410,6 +410,8 @@ TASK_SPECIFIC_PATCHERS = {
     "img2img_lora": patch_img2img_workflow,
     "i2i_draw": patch_i2i_draw_workflow,
     "ltx_video": patch_ltx_video_workflow,
+    "video_insert": patch_image_to_video_workflow,
+    "video_edit": patch_image_to_video_workflow,
     "image_to_video": patch_image_to_video_workflow,
     "wan22_video_v2": patch_wan22_video_v2_workflow,
 }

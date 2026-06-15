@@ -2,9 +2,14 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from src.constants import (
+    MODE_BLOWJOB,
+    MODE_CLOSEUP_BLOWJOB,
     MODE_CUSTOM_VIDEO,
+    MODE_DOGGY_STYLE,
     MODE_IMAGE_TO_VIDEO,
     MODE_IMAGE_TO_VIDEO_LITERAL,
+    MODE_PERFECT_VIDEO_INSERT,
+    MODE_UNDRESS_TONGUE,
     MODE_WAN22_VIDEO_V2,
 )
 
@@ -120,6 +125,15 @@ WAN22_AIO_VIDEO_PROFILES = {
             MODE_CUSTOM_VIDEO,
             MODE_IMAGE_TO_VIDEO,
             MODE_IMAGE_TO_VIDEO_LITERAL,
+            MODE_PERFECT_VIDEO_INSERT,
+            MODE_DOGGY_STYLE,
+            MODE_BLOWJOB,
+            MODE_UNDRESS_TONGUE,
+            MODE_CLOSEUP_BLOWJOB,
+            "perfect_video_edit",
+            "txt2video",
+            "video_insert",
+            "video_edit",
         ),
         execution_task_type=WAN22_AIO_EXECUTION_IMAGE_TO_VIDEO,
         model_profile=WAN22_LEGACY_IMAGE_TO_VIDEO_MODEL_PROFILE,
@@ -145,6 +159,12 @@ WAN22_CHAIN_HISTORY_TASK_TYPES = frozenset(
 
 def is_wan22_chain_history_task_type(task_type: str | None) -> bool:
     return bool(task_type and task_type in WAN22_CHAIN_HISTORY_TASK_TYPES)
+
+
+def is_legacy_wan22_image_to_video_task_type(task_type: str | None) -> bool:
+    return WAN22_AIO_VIDEO_PROFILES[
+        WAN22_LEGACY_IMAGE_TO_VIDEO_MODEL_PROFILE
+    ].owns_public_task_type(task_type)
 
 
 def normalize_wan22_video_v2_resolution_preset(

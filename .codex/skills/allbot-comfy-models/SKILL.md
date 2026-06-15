@@ -20,6 +20,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 - Worker 启动时会基于 `workers/comfy_agent/workflows/mappings.json` 校验映射节点与输入名；Central API 只负责参数网关和队列入队，不再用 workflow 文件做启动门禁。
 - 重导 workflow 后必须复核硬编码节点 ID、`mappings.json` 节点输入名、`TASK_TYPE_WORKFLOW_FILENAMES` 绑定和 Worker `SUPPORTED_TASK_TYPES`，避免 Worker 校验通过但执行面读到旧文件。
 - `face_swap_v2.json` 是从 `i2i_pro` Flux2/edit 链路拆出的图片换脸替代模板；业务 task type 仍保持 `face_swap`，通过 Worker `TASK_TYPE_WORKFLOW_OVERRIDES` 指向 v2，不新增 Backend/Bot 任务类型，也不需要 Python 专属 patcher。`mappings.json` 必须保持 `face_image -> 2`、`body_image -> 3`；未设置 override 时默认绑定仍回到旧 `face_swap.json`。
+- 本地主模型 registry 的 `model-import-plan` / `model-import-execute` 也必须按实际 runtime override 抽取模型：当前 `face_swap -> face_swap_v2.json`、`t2i-pornmaster-turbo -> txt2img_from_i2i_pro.json`，并与 `i2i_pro.json` 共享 `i2i_pro_baseline` 六个 Flux2/Z-Image 模型。不要再把 legacy Pornmaster/t2i 或旧 `face_swap.json` 专属模型纳入 `i2i_pro_baseline`。
 - 局域网 GPU 节点的模型目录、`comfy0/comfy1` 容器挂载和 `inst0/inst1` 隔离关系见 `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md`。新增或移动模型前必须确认目标 ComfyUI 的共享模型目录，避免误改另一张卡正在使用的模型集。
 - Worker Agent 与 ComfyUI Runtime 是两层：`cloud-prod-comfy-agent-*` 更新 workflow/patcher/上传逻辑，目标 GPU 节点上的 ComfyUI 负责实际模型加载。`gpu-226:8188` 是宿主机 ComfyUI，不是 Docker `comfy0`；`POOL_IMAGE_REF` 只是期望 profile/镜像声明，不能当作模型已随镜像部署的证据。
 - GPU Pool Controller 首阶段模型同步只写目标共享 `models` 目录；不要碰 `input/output/temp/custom_nodes/workflows`，也不要为了修路径创建大模型重复别名文件。模型路径应按 Comfy `/object_info` 和 workflow 实际引用修正。
@@ -65,7 +66,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 
 ## 二、 旧图生视频附加模型（LoRA）实施方案
 
-旧图生视频的用户侧类型仍保留 `custom_video` / `video_lora`，Web 侧也允许字面量 `image_to_video`，执行面统一为 `image_to_video`，并与 `wan22_video_v2` 共用 `workers/comfy_agent/workflows/Wan22AioV82.json`。两者通过 `src.domain_config.wan22_aio_video` 的 profile 注入不同主模型：旧入口使用 `legacy_image_to_video` profile，v2 使用 `wan22_video_v2` profile。旧 `src.services.wan22_video_v2_config` 与 `src.services.wan22_video_v2_context` 兼容 re-export 已删除，新增逻辑直接引用 domain_config 入口。
+旧图生视频的用户侧类型仍保留 `custom_video` / `video_lora`，Web 侧也允许字面量 `image_to_video`；Telegram 懒人动图保留 `perfect_video_insert` / `doggy_style` / `blowjob` / `undress_tongue` / `closeup_blowjob` 等历史 mode 与内置提示词。上述旧入口执行面统一为 `image_to_video`，并与 `wan22_video_v2` 共用 `workers/comfy_agent/workflows/Wan22AioV82.json`。两者通过 `src.domain_config.wan22_aio_video` 的 profile 注入不同主模型：旧入口使用 `legacy_image_to_video` profile，v2 使用 `wan22_video_v2` profile。旧 `src.services.wan22_video_v2_config` 与 `src.services.wan22_video_v2_context` 兼容 re-export 已删除，新增逻辑直接引用 domain_config 入口。
 
 目前系统主要支持 LTX-2.3 和 Wan2.2/Wan2.1 视频生成工作流。关于 LTX-2.3 工作流的具体 LoRA 使用与提示词规范，请参考项目根目录的 `LTX_LoRA_Guide.md`。
 
@@ -76,7 +77,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
   - *(例如：如果你的模型代号叫 `Dance`，则需要提供 `Dance_high_noise.safetensors` 和 `Dance_low_noise.safetensors`)*
 - 将上述两个文件放置到 ComfyUI 宿主机映射的对应 LoRA 模型目录中（如 `models/loras/`）。
 - 旧图生视频支持 `5s/8s/10s`，对应 `81/129/161` 帧，分辨率与计费基数和 v2 对齐为 `preview=6`、`small=12`、`standard=20`、`hd=30`，时长倍率为 `1x/2x/3x`；旧投稿 `512p/720p/1024p` 分别映射为 `preview/standard/hd`，`0.36 MP - Small` 映射为 `small`。
-- Wan22 AIO 底层映射必须保持：旧图生视频 `custom_video` / `video_lora` / Web 字面量 `image_to_video` -> execution `image_to_video` -> `legacy_image_to_video` profile；图生视频 v2 `wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。两者共享 worker workflow，但不是同一个用户功能，历史/Gallery task type 不能互相改名；Web `/api/tasks/generate` 提交 `image_to_video` 后 Central `task_type` 也必须保持 `image_to_video`。
+- Wan22 AIO 底层映射必须保持：旧图生视频 `custom_video` / `video_lora` / Web 字面量 `image_to_video` / 懒人动图 mode / legacy Central alias `video_insert`、`video_edit` -> execution `image_to_video` -> `legacy_image_to_video` profile；图生视频 v2 `wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。两者共享 worker workflow，但不是同一个用户功能，历史/Gallery task type 不能互相改名；Web `/api/tasks/generate` 提交 `image_to_video` 后 Central `task_type` 必须保持 `image_to_video`，懒人动图历史 type 也必须保留原 mode。
 
 ### 2. Bot 层：更新用户交互菜单 (UI & FSM)
 - **文件定位**：`src/handlers/fsm/image_to_video_fsm.py`
@@ -92,17 +93,17 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 - **实施状态**：**无需修改**。
   - 后端网关已经定义了 `VideoLoraRequest`。
   - `/image_to_video` 和兼容入口 `/perfect_video_lora` 会入队到执行面 `TaskType.IMAGE_TO_VIDEO`，同时将 `lora_name`、`resolution_preset`、`end_image`、`extract_last_frame=True` 等参数携带给下游 Worker。
-  - `video_edit` 仍继续走 `perfect_video_edit.json`，用于其它快捷视频，不应混入旧图生视频 LoRA 逻辑。
+  - `/perfect_video_insert` 与 `/perfect_video_edit` 只作为旧 endpoint 兼容入口保留，会把旧 width/height/frame length 归一为 Wan22 的 `resolution_preset` 与秒数，并入队 `TaskType.IMAGE_TO_VIDEO`。懒人动图的差异应停留在 FSM 内置 prompt 和历史 mode，不再新增或复活独立 worker workflow。
 
 ### 4. Worker 层：工作流动态注入 (Workflow Patcher)
 - **文件定位**：`workers/comfy_agent/workflow_task_patchers.py` 和 `workers/comfy_agent/workflows/Wan22AioV82.json`。
 - **实施状态**：**通常无需修改**，但需注意**硬编码防爆红线**。
-  - `patch_image_to_video_workflow` 与 `patch_wan22_video_v2_workflow` 只应作为薄入口，真实实现统一落在 `_patch_wan22_aio_workflow(...)`。
+  - `patch_image_to_video_workflow` 与 `patch_wan22_video_v2_workflow` 只应作为薄入口，真实实现统一落在 `_patch_wan22_aio_workflow(...)`；legacy `video_insert` / `video_edit` worker alias 也必须复用 `patch_image_to_video_workflow`。
   - 主模型节点固定为 `2616`（high）和 `2617`（low）。patcher 会根据 `wan22_model_profile` 写入对应 high/low UNet 文件。
   - 旧 LoRA 注入节点固定为 `26`（high noise）和 `18`（low noise）：
     - `26.inputs.lora_1.lora = {lora_name}_high_noise.safetensors`
     - `18.inputs.lora_1.lora = {lora_name}_low_noise.safetensors`
-  - 无 LoRA 的 `custom_video` 与 `wan22_video_v2` 必须清空 `26` / `18` 的 LoRA slot，避免 workflow 模板残留旧模型。
+  - 无 LoRA 的 `custom_video`、懒人动图 mode 与 `wan22_video_v2` 必须清空 `26` / `18` 的 LoRA slot，避免 workflow 模板残留旧模型。
   - V82 通过 `265` 对 `2603` 最终帧序列插帧；默认节点类为 `FL_RIFE`（`multiplier=4`）。`_patch_wan22_aio_workflow(...)` 会在检测到 `265` 后让 `28` 视频输出、`2575` 帧数统计和 `2607` 尾帧提取都读取 `["265", 0]`，避免插帧被绕过或时长变慢。三档时长会写入 `2578.inputs.value`，保持 `5s/8s/10s` 对应 `81/129/161` 源帧。V82 还通过节点 `2599` 使用 `LTXVSpatioTemporalTiledVAEDecode` 进行视频 VAE decode。若某个 ComfyUI 未暴露 `FL_RIFE` 或 `LTXVSpatioTemporalTiledVAEDecode`，应修复该 ComfyUI 自定义节点/依赖环境，不应在 worker 侧切换节点类。
   - 节点 `2612` 当前 DaSiWa 版本要求同时写入旧口径 `precision_presets` 和新口径 `resolution_preset`，并补齐 `swap_aspect_when_not_image=false`、`aspect_preset_when_not_image="9:16 - Social"`、`custom_aspect_width=16`、`custom_aspect_height=9`；否则 RunPod ComfyUI `/prompt` 会因 `required input is missing` 拒绝工作流。节点 `2607` 的 `ImageFromBatch.batch_index` 必须保持 `4095`，不要改回旧模板里的 `16384`，新节点最大值为 `4095`。
   - 扩展生成、分段重生成和整链拼接依赖 `extra_outputs.last_frame`。Worker 会优先读取 Comfy `2503` 尾帧输出；若个别 Comfy 实例只返回主 MP4，`agent_result_materialization.py` 会用 worker 镜像内的 `ffmpeg/ffprobe` 从主视频补抽最后一帧，因此 `workers/Dockerfile` 必须保留 ffmpeg 依赖。

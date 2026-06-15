@@ -154,17 +154,17 @@ if [ -n "$KJNODES_SOURCE" ]; then
     cp -a "$KJNODES_SOURCE" "${cleanup_dir}/ComfyUI-KJNodes"
     dockerfile_for_build="${cleanup_dir}/Dockerfile"
     context_for_build="$cleanup_dir"
-elif [ "$PROFILE" = "i2i_pro" ]; then
+elif [ "$PROFILE" = "i2i_pro" ] || [ "$PROFILE" = "img2img_lora" ]; then
     cleanup_dir="$(mktemp -d)"
     trap 'rm -rf "$cleanup_dir"' EXIT
     mkdir -p \
-        "${cleanup_dir}/remote_workers/docker/runpod_profiles/i2i_pro" \
+        "${cleanup_dir}/remote_workers/docker/runpod_profiles/${PROFILE}" \
         "${cleanup_dir}/remote_workers/scripts"
     cp "$dockerfile" \
-        "${cleanup_dir}/remote_workers/docker/runpod_profiles/i2i_pro/Dockerfile"
+        "${cleanup_dir}/remote_workers/docker/runpod_profiles/${PROFILE}/Dockerfile"
     cp "remote_workers/scripts/runpod_bootstrap_from_git.sh" \
         "${cleanup_dir}/remote_workers/scripts/runpod_bootstrap_from_git.sh"
-    dockerfile_for_build="${cleanup_dir}/remote_workers/docker/runpod_profiles/i2i_pro/Dockerfile"
+    dockerfile_for_build="${cleanup_dir}/remote_workers/docker/runpod_profiles/${PROFILE}/Dockerfile"
     context_for_build="$cleanup_dir"
 fi
 
@@ -200,6 +200,7 @@ fi
 test -f "${comfyui_dir}/main.py"
 test -d "${comfyui_dir}/custom_nodes/ComfyUI-KJNodes"
 test -f "${comfyui_dir}/custom_nodes/ComfyUI-KJNodes/requirements.txt"
+test -x /opt/allbot/runpod_bootstrap_from_git.sh
 if find "${comfyui_dir}/models" -type f \( -name "Qwen-Rapid-AIO-NSFW-v23.safetensors" -o -path "*/loras/qwen/*.safetensors" \) -print -quit | grep -q .; then
   echo "Business model files must stay out of the profile image" >&2
   exit 1

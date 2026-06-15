@@ -77,6 +77,34 @@ Model registry layout:
   bundles/<bundle>/<version>/manifest.yml
 ```
 
+`model-import-plan` / `model-import-execute` derive bundle manifests from the
+runtime workflow files. For bundles whose workers use
+`TASK_TYPE_WORKFLOW_OVERRIDES`, the import spec must carry the same override
+mapping; otherwise the plan would pull models from the legacy default workflow
+instead of the workflow that actually receives tasks. The current
+`i2i_pro_baseline` covers `i2i_pro`, `t2i-pornmaster-turbo` via
+`txt2img_from_i2i_pro.json`, and `face_swap` via `face_swap_v2.json` with the
+same six Flux2/Z-Image model files.
+
+LAN model cache uses the dedicated MinIO service at `192.168.1.115:9010` with
+bucket `allbot-model-cache`; do not reuse legacy MinIO or `user-data-*` buckets.
+Use a redacted loader for `.env.lan.model-cache` and the generic upload helper
+for profile bundles, for example:
+
+```bash
+python scripts/upload_model_bundle_to_r2.py \
+  --env-file /dev/null \
+  --bundle i2i_pro_baseline \
+  --version 2026-06-14-test \
+  --bucket allbot-model-cache \
+  --prefix i2i_pro/2026-06-14-test \
+  --create-bucket
+```
+
+The current LAN cache has manifests for `img2img_lora/2026-06-10` and
+`i2i_pro/2026-06-14-test`. The upload helper skips existing objects by size and
+sha256 metadata, treating metadata keys case-insensitively for MinIO.
+
 Local Docker registry layout:
 
 ```text

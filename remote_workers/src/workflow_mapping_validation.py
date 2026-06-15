@@ -10,8 +10,8 @@ WORKFLOW_FILENAME_OVERRIDES_ENV = "TASK_TYPE_WORKFLOW_OVERRIDES"
 TASK_TYPE_WORKFLOW_FILENAMES = {
     "img2img": "Qwen-Rapid-AIO.json",
     "face_swap": "face_swap.json",
-    "video_insert": "perfect_video_insert.json",
-    "video_edit": "perfect_video_edit.json",
+    "video_insert": "Wan22AioV82.json",
+    "video_edit": "Wan22AioV82.json",
     "image_to_video": "Wan22AioV82.json",
     "face_video": "face_video.json",
     "t2i-pornmaster-turbo": (

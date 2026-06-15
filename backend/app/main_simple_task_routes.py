@@ -19,8 +19,8 @@ SIMPLE_TASK_TYPE_MAP = {
     "img2img": TaskType.IMG2IMG,
     "img2img_lora": TaskType.IMG2IMG_LORA,
     "face_swap": TaskType.FACE_SWAP,
-    "video_insert": TaskType.VIDEO_INSERT,
-    "video_edit": TaskType.VIDEO_EDIT,
+    "video_insert": TaskType.IMAGE_TO_VIDEO,
+    "video_edit": TaskType.IMAGE_TO_VIDEO,
     "image_to_video": TaskType.IMAGE_TO_VIDEO,
     "video_lora": TaskType.IMAGE_TO_VIDEO,
     "face_video": TaskType.FACE_VIDEO,
@@ -30,6 +30,78 @@ SIMPLE_TASK_TYPE_MAP = {
     "ltx_video": TaskType.LTX_VIDEO,
     "wan22_video_v2": TaskType.WAN22_VIDEO_V2,
 }
+
+LEGACY_WAN22_SIMPLE_TASK_KEYS = {"video_insert", "video_edit"}
+LEGACY_WAN22_MODEL_PROFILE = "legacy_image_to_video"
+
+
+class _NormalizedSimpleTaskRequest:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def dict(self):
+        return dict(self._payload)
+
+
+def _request_model_to_dict(request_model):
+    if hasattr(request_model, "model_dump"):
+        return request_model.model_dump()
+    if hasattr(request_model, "dict"):
+        return request_model.dict()
+    return dict(request_model)
+
+
+def _legacy_video_length_to_duration_seconds(length) -> int:
+    try:
+        value = int(length)
+    except (TypeError, ValueError):
+        return 5
+    if value >= 161:
+        return 10
+    if value >= 129:
+        return 8
+    if value >= 80:
+        return 5
+    if value >= 10:
+        return 10
+    if value >= 8:
+        return 8
+    return 5
+
+
+def _legacy_video_resolution_preset(width, height) -> str:
+    try:
+        max_dimension = max(int(width or 0), int(height or 0))
+    except (TypeError, ValueError):
+        max_dimension = 0
+    if max_dimension >= 1024:
+        return "hd"
+    if max_dimension >= 720:
+        return "standard"
+    if max_dimension >= 600:
+        return "small"
+    return "preview"
+
+
+def normalize_simple_task_request_model(task_key: str, request_model):
+    if task_key not in LEGACY_WAN22_SIMPLE_TASK_KEYS:
+        return request_model
+
+    payload = _request_model_to_dict(request_model)
+    payload["length"] = _legacy_video_length_to_duration_seconds(
+        payload.get("length")
+    )
+    payload["resolution_preset"] = payload.get(
+        "resolution_preset"
+    ) or _legacy_video_resolution_preset(payload.get("width"), payload.get("height"))
+    payload.pop("width", None)
+    payload.pop("height", None)
+    payload.setdefault("negative_prompt", " ")
+    payload.setdefault("lora_name", "")
+    payload.setdefault("use_end_frame", False)
+    payload.setdefault("wan22_model_profile", LEGACY_WAN22_MODEL_PROFILE)
+    payload.setdefault("extract_last_frame", True)
+    return _NormalizedSimpleTaskRequest(payload)
 
 SIMPLE_TASK_ROUTE_SPECS = (
     ("/comfy_img2img", Img2ImgRequest, "img2img", "create_img2img_task"),
@@ -107,7 +179,7 @@ async def enqueue_configured_task(
         enqueue_task_from_request_func or enqueue_task_from_request
     )
     return await enqueue_task_from_request_func(
-        request_model=request_model,
+        request_model=normalize_simple_task_request_model(task_key, request_model),
         task_type=SIMPLE_TASK_TYPE_MAP[task_key],
         queue_manager=queue_manager,
     )

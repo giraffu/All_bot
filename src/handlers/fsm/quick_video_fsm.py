@@ -14,15 +14,14 @@ from telegram.ext import (
 from src.constants import (
     DEFAULT_DURATION,
     DEFAULT_RESOLUTION,
-    DURATION_MULTIPLIER,
     MODE_BLOWJOB,
     MODE_CLOSEUP_BLOWJOB,
     MODE_DOGGY_STYLE,
     MODE_PERFECT_VIDEO_INSERT,
     MODE_UNDRESS_TONGUE,
-    RESOLUTION_COST,
     get_video_settings_keyboard,
 )
+from src.domain_config.wan22_aio_video import get_wan22_video_v2_cost
 from src.handlers.fsm.fsm_shared import (
     handle_standard_fsm_cancel,
     handle_standard_fsm_timeout,
@@ -73,9 +72,7 @@ def _resolve_quick_video_file_id(message) -> str | None:
 
 
 def _calculate_quick_video_cost(resolution: str, duration: str) -> int:
-    base_cost = RESOLUTION_COST.get(resolution, 6)
-    multiplier = DURATION_MULTIPLIER.get(duration, 1.0)
-    return int(base_cost * multiplier)
+    return get_wan22_video_v2_cost(resolution, duration)
 
 
 def _normalize_quick_video_selection(

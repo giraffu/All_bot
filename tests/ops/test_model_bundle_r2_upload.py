@@ -122,6 +122,40 @@ def test_union_bundle_upload_dry_run_dedupes_and_reports_missing_local_blobs(tmp
     assert payload["missing_local_blobs"][0]["relative_path"] == "unet/missing.safetensors"
 
 
+def test_union_bundle_upload_skip_accepts_case_insensitive_metadata(tmp_path):
+    module = _load_module()
+    registry = ModelRegistry(tmp_path / "registry")
+    sha256 = "a" * 64
+    _write_bundle_manifest(
+        registry,
+        "video_basic_baseline",
+        [{"relative_path": "vae/common.safetensors", "sha256": sha256, "size_bytes": 10}],
+    )
+    client = _FakeR2Client(
+        {
+            "wan22_aio_video/2026-06-12-test/models/vae/common.safetensors": {
+                "ContentLength": 10,
+                "Metadata": {"Sha256": sha256},
+            }
+        }
+    )
+
+    payload = module.upload_bundle(
+        repo_root=registry.root,
+        bundles=["video_basic_baseline"],
+        version="2026-06-10",
+        bucket="allbot-model-cache",
+        prefix="wan22_aio_video/2026-06-12-test",
+        execute=False,
+        create_bucket=False,
+        client=client,
+    )
+
+    assert payload["skipped_existing_count"] == 1
+    assert payload["upload_count"] == 0
+    assert payload["missing_local_blob_count"] == 0
+
+
 def test_union_bundle_manifest_rejects_same_relative_path_with_different_sha():
     module = _load_module()
 

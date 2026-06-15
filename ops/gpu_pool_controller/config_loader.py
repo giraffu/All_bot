@@ -136,6 +136,13 @@ def _parse_nodes(raw_nodes: dict[str, Any]) -> dict[str, GpuNode]:
                         else 8188
                     ),
                     compose_template=item.get("compose_template"),
+                    runtime_shape=str(
+                        item.get("runtime_shape") or "standard_comfy_runtime"
+                    ),
+                    slot_id=item.get("slot_id"),
+                    runtime_root=item.get("runtime_root"),
+                    model_cache_endpoint=item.get("model_cache_endpoint"),
+                    image_registry=item.get("image_registry"),
                     rollback_state=dict(item.get("rollback_state") or {}),
                     health=_default_health(item),
                     supported_task_types=_as_tuple(item.get("supported_task_types")),
@@ -171,6 +178,9 @@ def _parse_profiles(raw_profiles: dict[str, Any]) -> dict[str, TaskProfile]:
                 float(data["min_vram_gb"]) if data.get("min_vram_gb") is not None else None
             ),
             image_ref=data.get("image_ref"),
+            all_in_one_image_ref=data.get("all_in_one_image_ref"),
+            model_prefix=data.get("model_prefix"),
+            model_manifest_key=data.get("model_manifest_key"),
         )
     return profiles
 

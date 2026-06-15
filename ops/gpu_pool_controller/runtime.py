@@ -11,6 +11,10 @@ from .types import Assignment, ComfyInstance, GpuNode, RuntimePlanItem, TaskProf
 
 DOCKER_RUNTIME_KIND = "docker_container"
 HOST_RUNTIME_KIND = "host_service"
+STANDARD_RUNTIME_SHAPE = "standard_comfy_runtime"
+RUNPOD_AIO_RUNTIME_SHAPE = "runpod_all_in_one"
+DEFAULT_LAN_AIO_CENTRAL_URL = "https://worker-central-test.aivison.it.com"
+DEFAULT_LAN_MODEL_CACHE_BUCKET = "allbot-model-cache"
 
 
 @dataclass(frozen=True)
@@ -19,10 +23,20 @@ class RuntimeRenderOverrides:
     container_name: str | None = None
     api_url: str | None = None
     ws_url: str | None = None
+    runtime_shape: str | None = None
+    agent_id: str | None = None
+    central_url: str | None = None
 
     def __post_init__(self) -> None:
         if self.host_port is not None and not 1 <= self.host_port <= 65535:
             raise ValueError("--host-port must be between 1 and 65535")
+        if self.runtime_shape is not None and self.runtime_shape not in {
+            STANDARD_RUNTIME_SHAPE,
+            RUNPOD_AIO_RUNTIME_SHAPE,
+        }:
+            raise ValueError(
+                "--runtime-shape must be standard_comfy_runtime or runpod_all_in_one"
+            )
 
     @property
     def has_any(self) -> bool:
@@ -33,6 +47,9 @@ class RuntimeRenderOverrides:
                 self.container_name,
                 self.api_url,
                 self.ws_url,
+                self.runtime_shape,
+                self.agent_id,
+                self.central_url,
             )
         )
 
@@ -143,6 +160,14 @@ class RuntimePlanner:
                 f"{assignment.id} uses {comfy.comfy_runtime_kind}; "
                 "runtime-render only supports docker_container"
             )
+        if self._effective_runtime_shape(comfy, overrides) == RUNPOD_AIO_RUNTIME_SHAPE:
+            return self._render_runpod_all_in_one_compose(
+                assignment=assignment,
+                node=node,
+                comfy=comfy,
+                profile=profile,
+                overrides=overrides,
+            )
         service_name = self._effective_container_name(comfy, overrides)
         image_ref = profile.image_ref or comfy.image
         if not image_ref:
@@ -233,6 +258,212 @@ class RuntimePlanner:
                 "container_name": service_name,
                 "comfy_api_url": api_url,
                 "comfy_ws_url": ws_url,
+            },
+        }
+        try:
+            import yaml  # type: ignore
+        except Exception as exc:  # pragma: no cover - config loading already requires yaml
+            raise RuntimeError("runtime-render requires PyYAML") from exc
+        return yaml.safe_dump(compose, allow_unicode=True, sort_keys=False)
+
+    def _render_runpod_all_in_one_compose(
+        self,
+        *,
+        assignment: Assignment,
+        node: GpuNode,
+        comfy: ComfyInstance,
+        profile: TaskProfile,
+        overrides: RuntimeRenderOverrides,
+    ) -> str:
+        image_ref = profile.all_in_one_image_ref or profile.image_ref or comfy.image
+        if not image_ref:
+            raise ValueError(
+                f"{profile.id} has no all_in_one_image_ref/image_ref and {comfy.id} has no image"
+            )
+
+        bundle_versions = self._bundle_versions(profile)
+        host_port = self._effective_host_port(comfy, overrides)
+        render_mode = self._render_mode(comfy, overrides)
+        production_port_unchanged = self._production_port_unchanged(comfy, overrides)
+        container_name = (
+            overrides.container_name
+            or self._default_runpod_aio_container_name(
+                node=node,
+                comfy=comfy,
+                profile=profile,
+                render_mode=render_mode,
+            )
+        )
+        runtime_root = comfy.runtime_root or "/srv/allbot/runpod-runtime"
+        slot_id = comfy.slot_id or f"{node.id}-gpu{comfy.gpu_index or 0}"
+        workspace_host_dir = (
+            f"{runtime_root.rstrip('/')}/slots/{slot_id}/profiles/"
+            f"{profile.runtime_profile}/workspace"
+        )
+        model_cache_endpoint = (
+            comfy.model_cache_endpoint or "http://192.168.1.115:9010"
+        )
+        central_url = (overrides.central_url or DEFAULT_LAN_AIO_CENTRAL_URL).rstrip("/")
+        agent_id = overrides.agent_id or assignment.worker_id
+        supported_task_types = ",".join(profile.task_types)
+        model_prefix = profile.model_prefix or f"{profile.id}/unversioned"
+        model_manifest_key = (
+            profile.model_manifest_key or f"{model_prefix.rstrip('/')}/manifest.json"
+        )
+        model_target_dir = "/workspace/ComfyUI/models"
+        state_root = "/workspace/allbot-state"
+        compose = {
+            "name": self._compose_project_name(
+                node=node,
+                comfy=comfy,
+                overrides=overrides,
+            ),
+            "services": {
+                container_name: {
+                    "image": image_ref,
+                    "container_name": container_name,
+                    "restart": "unless-stopped",
+                    "command": ["bash", "/opt/allbot/runpod_bootstrap_from_git.sh"],
+                    "ports": [f"{host_port}:8188"],
+                    "environment": {
+                        "TZ": "Asia/Shanghai",
+                        "NVIDIA_VISIBLE_DEVICES": str(comfy.gpu_index or 0),
+                        "ALLBOT_RUNPOD_MANAGED": "true",
+                        "RUNPOD_ENVIRONMENT": "cloud-test",
+                        "RUNPOD_TASK_TYPE": profile.runtime_profile,
+                        "RUNPOD_POD_ID": f"lan-{slot_id}",
+                        "RUNPOD_POD_ID_SAFE": f"lan-{slot_id}",
+                        "AGENT_ID": agent_id,
+                        "AGENT_SECRET_TOKEN": "${LAN_AIO_AGENT_SECRET_TOKEN:?}",
+                        "CENTRAL_API_URL": central_url,
+                        "MASTER_API_URL": "http://127.0.0.1:8013",
+                        "UPLOAD_SIDECAR_URL": "http://127.0.0.1:8013",
+                        "LOCAL_RELAY_HOST": "127.0.0.1",
+                        "LOCAL_RELAY_PORT": "8013",
+                        "RUNPOD_RELAY_READY_PATH": "/ready",
+                        "SUPPORTED_TASK_TYPES": supported_task_types,
+                        "POOL_NODE_ID": node.id,
+                        "POOL_PROVIDER": assignment.provider,
+                        "POOL_GPU_INDEX": "" if comfy.gpu_index is None else str(comfy.gpu_index),
+                        "POOL_RUNTIME_PROFILE": profile.runtime_profile,
+                        "POOL_IMAGE_REF": image_ref,
+                        "POOL_MODEL_BUNDLE_VERSIONS": json.dumps(
+                            bundle_versions,
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                        ),
+                        "POOL_MANAGED": "true",
+                        "COMFY_API_URL": "http://127.0.0.1:8188",
+                        "COMFY_WS_URL": "ws://127.0.0.1:8188/ws",
+                        "COMFY_INPUT_DIR": f"{state_root}/comfy-input",
+                        "COMFY_OUTPUT_DIR": f"{state_root}/comfy-output",
+                        "COMFY_EXTRA_ARGS": (
+                            f"--input-directory {state_root}/comfy-input "
+                            f"--output-directory {state_root}/comfy-output "
+                            f"--temp-directory {state_root}/comfy-temp"
+                        ),
+                        "RESULT_SPOOL_DIR": f"{state_root}/spool/{agent_id}",
+                        "AGENT_LOG_DIR": f"{state_root}/logs",
+                        "PREFETCH_CACHE_DIR": f"{state_root}/prefetch-cache/{agent_id}",
+                        "PIPELINE_ENABLED": "true",
+                        "PIPELINE_MAX_RUNNING_TASKS": "1",
+                        "PIPELINE_TASK_TYPES": "all",
+                        "PREFETCH_ENABLED": "false",
+                        "CANCEL_LOCK_ON_POP": "true",
+                        "NO_PROXY": "*",
+                        "no_proxy": "*",
+                        "MINIO_ENDPOINT": "${LAN_AIO_MINIO_ENDPOINT:?}",
+                        "MINIO_ACCESS_KEY": "${LAN_AIO_MINIO_ACCESS_KEY:?}",
+                        "MINIO_SECRET_KEY": "${LAN_AIO_MINIO_SECRET_KEY:?}",
+                        "MINIO_INPUT_BUCKET": "user-data-test",
+                        "MINIO_RESULT_BUCKET": "user-data-test",
+                        "MINIO_TEMPLATE_BUCKET": "user-data-test",
+                        "MINIO_SECURE": "true",
+                        "RUNPOD_WORKSPACE_DIR": "/workspace",
+                        "RUNPOD_VOLUME_COMFYUI_DIR": "/workspace/ComfyUI",
+                        "RUNPOD_PREPARE_COMFYUI_ON_VOLUME": "true",
+                        "RUNPOD_COMFY_CUSTOM_NODES_ENABLED": "false",
+                        "RUNPOD_MODEL_SYNC_ENABLED": "true",
+                        "RUNPOD_MODEL_ENDPOINT": model_cache_endpoint,
+                        "RUNPOD_MODEL_ACCESS_KEY": "${LAN_MODEL_CACHE_ACCESS_KEY:?}",
+                        "RUNPOD_MODEL_SECRET_KEY": "${LAN_MODEL_CACHE_SECRET_KEY:?}",
+                        "RUNPOD_MODEL_BUCKET": DEFAULT_LAN_MODEL_CACHE_BUCKET,
+                        "RUNPOD_MODEL_PREFIX": model_prefix,
+                        "RUNPOD_MODEL_MANIFEST_KEY": model_manifest_key,
+                        "RUNPOD_MODEL_TARGET_DIR": model_target_dir,
+                        "RUNPOD_MODEL_SECURE": "false",
+                        "RUNPOD_START_SSHD": "false",
+                        "RUNPOD_INSTALL_SSHD_IF_MISSING": "false",
+                        "RUNPOD_KEEPALIVE_ON_BOOTSTRAP_FAILURE": "true",
+                    },
+                    "volumes": [f"{workspace_host_dir}:/workspace"],
+                    "labels": {
+                        "allbot.gpu_pool.managed": "true",
+                        "allbot.gpu_pool.runtime_shape": RUNPOD_AIO_RUNTIME_SHAPE,
+                        "allbot.gpu_pool.node_id": node.id,
+                        "allbot.gpu_pool.comfy_id": comfy.id,
+                        "allbot.gpu_pool.worker_id": agent_id,
+                        "allbot.gpu_pool.original_worker_id": assignment.worker_id,
+                        "allbot.gpu_pool.runtime_profile": profile.runtime_profile,
+                        "allbot.gpu_pool.render_mode": render_mode,
+                        "allbot.gpu_pool.production_port_unchanged": str(
+                            production_port_unchanged
+                        ).lower(),
+                    },
+                    "healthcheck": {
+                        "test": [
+                            "CMD-SHELL",
+                            (
+                                "curl -fsS http://127.0.0.1:8188/system_stats "
+                                ">/dev/null && curl -fsS "
+                                "http://127.0.0.1:8013/ready >/dev/null"
+                            ),
+                        ],
+                        "interval": "30s",
+                        "timeout": "8s",
+                        "retries": 5,
+                        "start_period": "120s",
+                    },
+                    "gpus": [
+                        {
+                            "driver": "nvidia",
+                            "device_ids": [str(comfy.gpu_index or 0)],
+                            "capabilities": ["gpu"],
+                        }
+                    ],
+                }
+            },
+            "x-allbot-runtime": {
+                "assignment_id": assignment.id,
+                "worker_id": agent_id,
+                "original_worker_id": assignment.worker_id,
+                "runtime_shape": RUNPOD_AIO_RUNTIME_SHAPE,
+                "slot_id": slot_id,
+                "runtime_root": runtime_root,
+                "runtime_profile": profile.runtime_profile,
+                "image_ref": image_ref,
+                "model_cache_endpoint": model_cache_endpoint,
+                "model_cache_bucket": DEFAULT_LAN_MODEL_CACHE_BUCKET,
+                "model_prefix": model_prefix,
+                "model_manifest_key": model_manifest_key,
+                "model_target_dir": model_target_dir,
+                "model_write_scope": [model_target_dir],
+                "central_url": central_url,
+                "local_relay_url": "http://127.0.0.1:8013",
+                "comfy_api_url": "http://127.0.0.1:8188",
+                "model_bundle_versions": bundle_versions,
+                "rendered_for": (
+                    "canary_dry_run_review"
+                    if render_mode == "canary"
+                    else "dry_run_review"
+                ),
+                "render_mode": render_mode,
+                "production_port_unchanged": production_port_unchanged,
+                "host_port": host_port,
+                "container_port": 8188,
+                "container_name": container_name,
+                "workspace_host_dir": workspace_host_dir,
+                "secret_policy": "runtime_env_placeholders_only",
             },
         }
         try:
@@ -353,13 +584,18 @@ class RuntimePlanner:
         overrides: RuntimeRenderOverrides,
     ) -> dict[str, str]:
         return {
-            "AGENT_ID": assignment.worker_id,
+            "AGENT_ID": overrides.agent_id or assignment.worker_id,
             "POOL_MANAGED": "true",
             "POOL_PROVIDER": assignment.provider,
             "POOL_NODE_ID": node.id,
             "POOL_GPU_INDEX": "" if comfy.gpu_index is None else str(comfy.gpu_index),
             "POOL_RUNTIME_PROFILE": profile.runtime_profile,
-            "POOL_IMAGE_REF": profile.image_ref or "",
+            "POOL_IMAGE_REF": self._target_image_ref(
+                comfy=comfy,
+                profile=profile,
+                overrides=overrides,
+            )
+            or "",
             "POOL_MODEL_BUNDLE_VERSIONS": json.dumps(
                 bundle_versions,
                 ensure_ascii=False,
@@ -393,6 +629,11 @@ class RuntimePlanner:
             "ssh_alias": node.ssh_alias,
             "kind": comfy.comfy_runtime_kind,
             "managed": comfy.comfy_runtime_managed,
+            "shape": self._effective_runtime_shape(comfy, overrides),
+            "slot_id": comfy.slot_id,
+            "runtime_root": comfy.runtime_root,
+            "model_cache_endpoint": comfy.model_cache_endpoint,
+            "image_registry": comfy.image_registry,
             "container_name": self._effective_container_name(comfy, overrides),
             "configured_container_name": comfy.container_name,
             "host_port": host_port,
@@ -438,11 +679,34 @@ class RuntimePlanner:
     ) -> dict[str, Any]:
         current_tasks = tuple(comfy.supported_task_types)
         host_port = self._effective_host_port(comfy, overrides)
+        target_image = self._target_image_ref(
+            comfy=comfy,
+            profile=profile,
+            overrides=overrides,
+        )
+        if self._effective_runtime_shape(comfy, overrides) == RUNPOD_AIO_RUNTIME_SHAPE:
+            target_container_name = (
+                overrides.container_name
+                or self._default_runpod_aio_container_name(
+                    node=node,
+                    comfy=comfy,
+                    profile=profile,
+                    render_mode=self._render_mode(comfy, overrides),
+                )
+            )
+        else:
+            target_container_name = self._effective_container_name(comfy, overrides)
         return {
             "runtime_image": {
                 "current": comfy.image,
-                "target": profile.image_ref,
-                "changed": bool(profile.image_ref and comfy.image != profile.image_ref),
+                "target": target_image,
+                "changed": bool(target_image and comfy.image != target_image),
+            },
+            "runtime_shape": {
+                "configured": comfy.runtime_shape,
+                "target": self._effective_runtime_shape(comfy, overrides),
+                "changed": self._effective_runtime_shape(comfy, overrides)
+                != comfy.runtime_shape,
             },
             "task_types": {
                 "current": list(current_tasks),
@@ -456,7 +720,7 @@ class RuntimePlanner:
                 "target": bundle_versions,
             },
             "container": {
-                "target_name": self._effective_container_name(comfy, overrides),
+                "target_name": target_container_name,
                 "current_name": comfy.container_name,
                 "host_port": host_port,
                 "configured_host_port": comfy.port,
@@ -502,6 +766,20 @@ class RuntimePlanner:
             warnings.append(
                 "docker runtime is not marked managed; runtime-apply must remain disabled"
             )
+        runtime_shape = self._effective_runtime_shape(comfy, overrides)
+        if runtime_shape == RUNPOD_AIO_RUNTIME_SHAPE:
+            if not overrides.agent_id:
+                warnings.append(
+                    "runpod_all_in_one render should pass --agent-id for the temporary canary agent"
+                )
+            if not comfy.runtime_root:
+                warnings.append("runpod_all_in_one runtime_root is not configured")
+            if not comfy.model_cache_endpoint:
+                warnings.append("runpod_all_in_one model_cache_endpoint is not configured")
+            if not profile.all_in_one_image_ref:
+                warnings.append(f"profile {profile.id} has no all_in_one_image_ref")
+            if not profile.model_manifest_key:
+                warnings.append(f"profile {profile.id} has no model_manifest_key")
         if self._render_mode(comfy, overrides) == "canary":
             warnings.append(
                 "canary render only; production port remains unchanged and no runtime mutation is executed"
@@ -515,7 +793,10 @@ class RuntimePlanner:
         for bundle_id in profile.model_bundles:
             if bundle_id not in self.config.bundles:
                 warnings.append(f"model bundle {bundle_id} is not defined")
-        if comfy.comfy_runtime_kind == DOCKER_RUNTIME_KIND:
+        if (
+            comfy.comfy_runtime_kind == DOCKER_RUNTIME_KIND
+            and runtime_shape == STANDARD_RUNTIME_SHAPE
+        ):
             for field_name in ("container_name", "model_dir", "input_dir", "output_dir", "temp_dir"):
                 if not getattr(comfy, field_name):
                     warnings.append(f"docker runtime missing {field_name}")
@@ -540,6 +821,40 @@ class RuntimePlanner:
         render_mode = self._render_mode(comfy, overrides)
         api_url = self._effective_api_url(node=node, comfy=comfy, overrides=overrides)
         ws_url = self._effective_ws_url(node=node, comfy=comfy, overrides=overrides)
+        if self._effective_runtime_shape(comfy, overrides) == RUNPOD_AIO_RUNTIME_SHAPE:
+            agent_id = overrides.agent_id or assignment.worker_id
+            image_ref = self._target_image_ref(
+                comfy=comfy,
+                profile=profile,
+                overrides=overrides,
+            )
+            model_prefix = profile.model_prefix or f"{profile.id}/unversioned"
+            model_manifest_key = (
+                profile.model_manifest_key or f"{model_prefix.rstrip('/')}/manifest.json"
+            )
+            commands = [
+                (
+                    f"# all-in-one canary render: production port {comfy.port} remains unchanged; "
+                    f"review host port {self._effective_host_port(comfy, overrides)}"
+                ),
+                f"# pre-set temp agent disabled: {agent_id}",
+                (
+                    "# verify LAN model cache manifest "
+                    f"{DEFAULT_LAN_MODEL_CACHE_BUCKET}/{model_manifest_key} "
+                    f"via {comfy.model_cache_endpoint or 'model_cache_endpoint'}"
+                ),
+                f"# pull canary image on {node.ssh_alias}: {image_ref or '-'}",
+                (
+                    "# heartbeat-only: start the rendered compose while temp agent "
+                    "control remains disabled"
+                ),
+                (
+                    "# real canary window: disable cloud_worker_test_06, enable "
+                    f"{agent_id}, submit one img2img_lora Web task, then restore"
+                ),
+                f"# dry-run render: {self._render_command(assignment, profile, overrides)}",
+            ]
+            return commands
         if render_mode == "canary":
             commands = [
                 (
@@ -628,7 +943,10 @@ class RuntimePlanner:
         comfy: ComfyInstance,
         overrides: RuntimeRenderOverrides,
     ) -> str:
-        raw = f"allbot-comfy-{node.id}-{comfy.id}"
+        if self._effective_runtime_shape(comfy, overrides) == RUNPOD_AIO_RUNTIME_SHAPE:
+            raw = f"allbot-lan-aio-{node.id}-{comfy.id}"
+        else:
+            raw = f"allbot-comfy-{node.id}-{comfy.id}"
         if self._render_mode(comfy, overrides) == "canary":
             raw = f"{raw}-canary-{self._effective_host_port(comfy, overrides)}"
         return re.sub(r"[^a-zA-Z0-9_-]+", "-", raw).lower()
@@ -652,7 +970,47 @@ class RuntimePlanner:
             args.append(f"--api-url {overrides.api_url}")
         if overrides.ws_url:
             args.append(f"--ws-url {overrides.ws_url}")
+        if overrides.runtime_shape:
+            args.append(f"--runtime-shape {overrides.runtime_shape}")
+        if overrides.agent_id:
+            args.append(f"--agent-id {overrides.agent_id}")
+        if overrides.central_url:
+            args.append(f"--central-url {overrides.central_url}")
         return " ".join(args)
+
+    def _effective_runtime_shape(
+        self,
+        comfy: ComfyInstance,
+        overrides: RuntimeRenderOverrides,
+    ) -> str:
+        return overrides.runtime_shape or comfy.runtime_shape or STANDARD_RUNTIME_SHAPE
+
+    def _target_image_ref(
+        self,
+        *,
+        comfy: ComfyInstance,
+        profile: TaskProfile,
+        overrides: RuntimeRenderOverrides,
+    ) -> str | None:
+        if self._effective_runtime_shape(comfy, overrides) == RUNPOD_AIO_RUNTIME_SHAPE:
+            return profile.all_in_one_image_ref or profile.image_ref or comfy.image
+        return profile.image_ref or comfy.image
+
+    def _default_runpod_aio_container_name(
+        self,
+        *,
+        node: GpuNode,
+        comfy: ComfyInstance,
+        profile: TaskProfile,
+        render_mode: str,
+    ) -> str:
+        raw = (
+            f"allbot-lan-aio-{node.id}-gpu{comfy.gpu_index or 0}-"
+            f"{profile.runtime_profile}"
+        )
+        if render_mode == "canary":
+            raw = f"{raw}-canary"
+        return re.sub(r"[^a-zA-Z0-9_.-]+", "-", raw).lower()
 
     def _render_mode(
         self,

@@ -62,6 +62,13 @@ def test_remote_worker_resolves_i2i_pro_task_type_workflow_overrides(monkeypatch
     assert {"face_swap", "t2i-pornmaster-turbo", "i2i_pro"}.issubset(mappings)
 
 
+@pytest.mark.parametrize("task_type", ["video_insert", "video_edit"])
+def test_remote_legacy_video_task_types_resolve_to_wan22_aio_workflow(task_type):
+    validation = _load_remote_validation_module()
+
+    assert validation.resolve_workflow_filename(task_type) == "Wan22AioV82.json"
+
+
 @pytest.mark.parametrize(
     "filename",
     ["face_swap_v2.json", "txt2img_from_i2i_pro.json", "i2i_pro.json"],

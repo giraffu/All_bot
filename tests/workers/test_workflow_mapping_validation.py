@@ -28,6 +28,11 @@ def test_resolve_workflow_filename_uses_env_override(monkeypatch):
     assert resolve_workflow_filename("i2i_pro") == "i2i_pro.json"
 
 
+@pytest.mark.parametrize("task_type", ["video_insert", "video_edit"])
+def test_legacy_video_task_types_resolve_to_wan22_aio_workflow(task_type):
+    assert resolve_workflow_filename(task_type) == "Wan22AioV82.json"
+
+
 def test_validate_workflow_directory_accepts_task_type_workflow_override(
     monkeypatch, tmp_path
 ):
