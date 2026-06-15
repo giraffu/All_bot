@@ -70,6 +70,7 @@ sequenceDiagram
 ### 4.3 用户转移
 - 用户列表入口的查询条件应先归一化为 `UserListQuery`，再进入查询与 presenter，保持路由参数和响应字段兼容。
 - 用户转移先计算 `UserTransferPlan`，再执行真实迁移；`dry_run=true` 时只返回 before/after、预计 moved_counts 与合并决策，不写库、不写审计日志。
+- 真实转移会把历史、模板共建、签到、账本日志、订单、affiliate 流水、广场投稿/评论/互动、提示词解锁、关注关系与邀请关系并入目标用户；`gallery_prompt_unlocks.user_id + post_id`、`user_follows.follower_id + followee_id` 等唯一锚点在迁移前必须先去重，避免删除源用户时触发非空外键或唯一约束错误。
 - 真实转移的 `extra_info` 必须包含 before/after 快照、moved_counts，以及 membership / ban / stats 的合并决策，便于后续追溯。
 
 ## 5. 测试要求
@@ -83,7 +84,7 @@ sequenceDiagram
   - runtime cleanup / 锁释放
 - 覆盖 worker / queue 视图补齐与异常场景
 - 覆盖 stats 缓存命中、single-flight 并发合并、Central proxy 超时兜底与前端不击穿 stats 缓存
-- 覆盖用户列表筛选/排序、用户转移 dry-run 无副作用，以及真实转移审计快照
+- 覆盖用户列表筛选/排序、用户转移 dry-run 无副作用、真实转移审计快照，以及提示词解锁/关注关系迁移去重
 
 ## 6. 部署与运维
 - Dashboard 随部署脚本更新，但不应被文档描述为“僵尸任务自动自愈中心”。

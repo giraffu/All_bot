@@ -58,7 +58,7 @@ const emit = defineEmits([
   >
     <div class="py-4">
       <div class="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-        此操作会把源用户的全量业务数据并入目标用户，并删除源用户。当前实现会转移灵石、订单、返佣、历史、收藏/投稿/评论/互动、签到与邀请关系，不会改动目标用户现有的 Telegram / Web 登录绑定。
+        此操作会把源用户的全量业务数据并入目标用户，并删除源用户。当前实现会转移灵石、订单、返佣、历史、收藏/投稿/评论/互动、提示词解锁、关注关系、签到与邀请关系，不会改动目标用户现有的 Telegram / Web 登录绑定。
       </div>
 
       <a-form layout="vertical">

@@ -171,12 +171,26 @@ async def test_transfer_user_data_payload_moves_business_data_and_deletes_source
             GalleryPost(id=100, task_id="task-1", user_id=1, media_type="image", likes_count=2),
             GalleryPost(id=101, task_id="task-2", user_id=2, media_type="image", applied_count=2),
             GalleryPost(id=102, task_id="task-3", user_id=2, media_type="image", dislikes_count=1),
+            GalleryPost(id=103, task_id="task-4", user_id=9, media_type="image"),
+            GalleryPost(id=104, task_id="task-5", user_id=9, media_type="image"),
             GalleryComment(post_id=100, user_id=1, content="hello comment", is_active=True),
+            GalleryPromptUnlock(user_id=1, post_id=103, author_id=9),
+            GalleryPromptUnlock(user_id=2, post_id=103, author_id=9),
+            GalleryPromptUnlock(user_id=1, post_id=104, author_id=9),
+            GalleryPromptUnlock(user_id=2, post_id=100, author_id=1),
             UserInteraction(user_id=2, post_id=100, action_type="like"),
             UserInteraction(user_id=1, post_id=100, action_type="like"),
             UserInteraction(user_id=2, post_id=101, action_type="apply"),
             UserInteraction(user_id=1, post_id=101, action_type="apply"),
             UserInteraction(user_id=1, post_id=102, action_type="dislike"),
+            UserFollow(follower_id=1, followee_id=9),
+            UserFollow(follower_id=2, followee_id=9),
+            UserFollow(follower_id=1, followee_id=10),
+            UserFollow(follower_id=1, followee_id=2),
+            UserFollow(follower_id=10, followee_id=1),
+            UserFollow(follower_id=10, followee_id=2),
+            UserFollow(follower_id=9, followee_id=1),
+            UserFollow(follower_id=2, followee_id=1),
         ]
     )
     await session.commit()
@@ -196,6 +210,13 @@ async def test_transfer_user_data_payload_moves_business_data_and_deletes_source
     assert result["moved_counts"]["history_rows"] == 1
     assert result["moved_counts"]["duplicate_reactions_deleted"] == 1
     assert result["moved_counts"]["duplicate_applies_deleted"] == 1
+    assert result["moved_counts"]["gallery_prompt_unlocks"] == 1
+    assert result["moved_counts"]["gallery_prompt_unlock_sales"] == 1
+    assert result["moved_counts"]["duplicate_prompt_unlocks_deleted"] == 1
+    assert result["moved_counts"]["user_following_links"] == 1
+    assert result["moved_counts"]["user_follower_links"] == 1
+    assert result["moved_counts"]["duplicate_or_self_following_links_deleted"] == 2
+    assert result["moved_counts"]["duplicate_or_self_follower_links_deleted"] == 2
     assert result["moved_counts"]["source_user_deleted"] == 1
     log_action.assert_awaited_once()
 
@@ -275,6 +296,35 @@ async def test_transfer_user_data_payload_moves_business_data_and_deletes_source
         )
     ).scalar_one()
     assert target_interactions == 3
+
+    prompt_unlock_rows = (
+        await session.execute(
+            select(
+                GalleryPromptUnlock.user_id,
+                GalleryPromptUnlock.post_id,
+                GalleryPromptUnlock.author_id,
+            ).order_by(GalleryPromptUnlock.post_id)
+        )
+    ).all()
+    assert all(user_id != 1 and author_id != 1 for user_id, _, author_id in prompt_unlock_rows)
+    assert (2, 100, 2) in prompt_unlock_rows
+    assert (2, 104, 9) in prompt_unlock_rows
+    assert sum(1 for row in prompt_unlock_rows if row == (2, 103, 9)) == 1
+
+    follow_rows = (
+        await session.execute(
+            select(UserFollow.follower_id, UserFollow.followee_id).order_by(
+                UserFollow.follower_id,
+                UserFollow.followee_id,
+            )
+        )
+    ).all()
+    assert all(follower_id != 1 and followee_id != 1 for follower_id, followee_id in follow_rows)
+    assert (2, 9) in follow_rows
+    assert (2, 10) in follow_rows
+    assert (9, 2) in follow_rows
+    assert (10, 2) in follow_rows
+    assert (2, 2) not in follow_rows
 
     await session.close()
     await engine.dispose()

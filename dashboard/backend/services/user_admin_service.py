@@ -23,12 +23,14 @@ from src.database.models import (
     CheckinHistory,
     GalleryComment,
     GalleryPost,
+    GalleryPromptUnlock,
     History,
     MembershipPlan,
     Order,
     Referral,
     TemplateContribution,
     User,
+    UserFollow,
     UserInteraction,
     UserLog,
 )
@@ -446,6 +448,85 @@ async def _merge_user_interactions(*, db, source_user_id: int, target_user_id: i
     }
 
 
+async def _merge_user_follows(
+    *, db, source_user_id: int, target_user_id: int
+) -> dict[str, int]:
+    target_followees_subquery = select(UserFollow.followee_id).where(
+        UserFollow.follower_id == target_user_id
+    )
+    duplicate_following_delete = await db.execute(
+        delete(UserFollow).where(
+            UserFollow.follower_id == source_user_id,
+            or_(
+                UserFollow.followee_id == target_user_id,
+                UserFollow.followee_id.in_(target_followees_subquery),
+            ),
+        )
+    )
+    following_move_result = await db.execute(
+        update(UserFollow)
+        .where(UserFollow.follower_id == source_user_id)
+        .values(follower_id=target_user_id)
+    )
+
+    target_followers_subquery = select(UserFollow.follower_id).where(
+        UserFollow.followee_id == target_user_id
+    )
+    duplicate_follower_delete = await db.execute(
+        delete(UserFollow).where(
+            UserFollow.followee_id == source_user_id,
+            or_(
+                UserFollow.follower_id == target_user_id,
+                UserFollow.follower_id.in_(target_followers_subquery),
+            ),
+        )
+    )
+    follower_move_result = await db.execute(
+        update(UserFollow)
+        .where(UserFollow.followee_id == source_user_id)
+        .values(followee_id=target_user_id)
+    )
+    return {
+        "user_following_links": _safe_rowcount(following_move_result),
+        "user_follower_links": _safe_rowcount(follower_move_result),
+        "duplicate_or_self_following_links_deleted": _safe_rowcount(
+            duplicate_following_delete
+        ),
+        "duplicate_or_self_follower_links_deleted": _safe_rowcount(
+            duplicate_follower_delete
+        ),
+    }
+
+
+async def _merge_gallery_prompt_unlocks(
+    *, db, source_user_id: int, target_user_id: int
+) -> dict[str, int]:
+    target_unlocked_posts_subquery = select(GalleryPromptUnlock.post_id).where(
+        GalleryPromptUnlock.user_id == target_user_id
+    )
+    duplicate_delete_result = await db.execute(
+        delete(GalleryPromptUnlock).where(
+            GalleryPromptUnlock.user_id == source_user_id,
+            GalleryPromptUnlock.post_id.in_(target_unlocked_posts_subquery),
+        )
+    )
+    unlocks_moved_result = await db.execute(
+        update(GalleryPromptUnlock)
+        .where(GalleryPromptUnlock.user_id == source_user_id)
+        .values(user_id=target_user_id)
+    )
+    sales_moved_result = await db.execute(
+        update(GalleryPromptUnlock)
+        .where(GalleryPromptUnlock.author_id == source_user_id)
+        .values(author_id=target_user_id)
+    )
+    return {
+        "gallery_prompt_unlocks": _safe_rowcount(unlocks_moved_result),
+        "gallery_prompt_unlock_sales": _safe_rowcount(sales_moved_result),
+        "duplicate_prompt_unlocks_deleted": _safe_rowcount(duplicate_delete_result),
+    }
+
+
 async def _merge_referral_graph(*, db, source_user: User, target_user: User) -> dict:
     source_referral_result = await db.execute(
         select(Referral).where(Referral.invitee_id == source_user.id)
@@ -580,6 +661,20 @@ async def _move_user_owned_rows(*, db, source_user_id: int, target_user_id: int)
 
     moved_counts.update(
         await _merge_user_interactions(
+            db=db,
+            source_user_id=source_user_id,
+            target_user_id=target_user_id,
+        )
+    )
+    moved_counts.update(
+        await _merge_user_follows(
+            db=db,
+            source_user_id=source_user_id,
+            target_user_id=target_user_id,
+        )
+    )
+    moved_counts.update(
+        await _merge_gallery_prompt_unlocks(
             db=db,
             source_user_id=source_user_id,
             target_user_id=target_user_id,
@@ -763,6 +858,7 @@ async def _estimate_transfer_counts(
     *,
     db,
     source_user_id: int,
+    target_user_id: int,
 ) -> dict[str, int]:
     count_specs = [
         ("history_rows", History, History.user_id),
@@ -774,6 +870,14 @@ async def _estimate_transfer_counts(
         ("affiliate_redeems", AffiliateRedeem, AffiliateRedeem.user_id),
         ("gallery_posts", GalleryPost, GalleryPost.user_id),
         ("gallery_comments", GalleryComment, GalleryComment.user_id),
+        ("gallery_prompt_unlocks", GalleryPromptUnlock, GalleryPromptUnlock.user_id),
+        (
+            "gallery_prompt_unlock_sales",
+            GalleryPromptUnlock,
+            GalleryPromptUnlock.author_id,
+        ),
+        ("user_following_links", UserFollow, UserFollow.follower_id),
+        ("user_follower_links", UserFollow, UserFollow.followee_id),
         ("user_interactions", UserInteraction, UserInteraction.user_id),
     ]
     counts = {}
@@ -782,6 +886,46 @@ async def _estimate_transfer_counts(
             select(func.count(model.id)).where(owner_column == source_user_id)
         )
         counts[count_key] = int(result.scalar() or 0)
+    target_unlocked_posts_subquery = select(GalleryPromptUnlock.post_id).where(
+        GalleryPromptUnlock.user_id == target_user_id
+    )
+    duplicate_result = await db.execute(
+        select(func.count(GalleryPromptUnlock.id)).where(
+            GalleryPromptUnlock.user_id == source_user_id,
+            GalleryPromptUnlock.post_id.in_(target_unlocked_posts_subquery),
+        )
+    )
+    counts["duplicate_prompt_unlocks_deleted"] = int(duplicate_result.scalar() or 0)
+    target_followees_subquery = select(UserFollow.followee_id).where(
+        UserFollow.follower_id == target_user_id
+    )
+    duplicate_following_result = await db.execute(
+        select(func.count(UserFollow.id)).where(
+            UserFollow.follower_id == source_user_id,
+            or_(
+                UserFollow.followee_id == target_user_id,
+                UserFollow.followee_id.in_(target_followees_subquery),
+            ),
+        )
+    )
+    counts["duplicate_or_self_following_links_deleted"] = int(
+        duplicate_following_result.scalar() or 0
+    )
+    target_followers_subquery = select(UserFollow.follower_id).where(
+        UserFollow.followee_id == target_user_id
+    )
+    duplicate_follower_result = await db.execute(
+        select(func.count(UserFollow.id)).where(
+            UserFollow.followee_id == source_user_id,
+            or_(
+                UserFollow.follower_id == target_user_id,
+                UserFollow.follower_id.in_(target_followers_subquery),
+            ),
+        )
+    )
+    counts["duplicate_or_self_follower_links_deleted"] = int(
+        duplicate_follower_result.scalar() or 0
+    )
     counts["source_user_deleted"] = 1
     return counts
 
@@ -1123,6 +1267,7 @@ async def transfer_user_data_payload(
             moved_counts = await _estimate_transfer_counts(
                 db=db,
                 source_user_id=user_id,
+                target_user_id=target_user_id,
             )
             response = _build_transfer_user_response(
                 source_user_id=user_id,
