@@ -37,8 +37,17 @@ presigned URLs and env values are intentionally omitted from this record.
 - gpu-002 original `comfy1` on `8189` remained the production baseline.
 
 ## Follow-Up
-- Convert gpu-002 slot0 and slot1 from one-off canary use to controlled
-  persistent disabled-heartbeat AIO containers.
+- 2026-06-16 later update: gpu-002 slot0 and slot1 were converted from
+  one-off canary use to production AIO intake.
 - First steady-state production scope:
   - slot0: `img2img,img2img_lora`
   - slot1: `image_to_video,video_insert,video_edit`
+- Legacy `cloud_prod_worker_06/07` were drained before switch, then disabled.
+  AIO agents were enabled after the legacy workers and original `8188/8189`
+  queues were idle.
+- Original gpu-002 `comfy0/comfy1` containers were intentionally left running
+  during the switch as a hot rollback baseline. After AIO success was observed
+  on both slots, the old containers were stopped, not deleted.
+- Legacy `cloud-prod-comfy-agent-6/7` containers were also stopped, not
+  deleted, after AIO success to prevent them from repeatedly reporting errors
+  against the intentionally stopped old ComfyUI ports.

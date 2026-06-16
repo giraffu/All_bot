@@ -9,7 +9,7 @@
 最近一次采集：2026-06-08，Asia/Shanghai。
 最近一次 ComfyUI 素材清理：2026-06-08，Asia/Shanghai。
 最近一次 gpu-226 LTX 运行时补齐：2026-06-15，Asia/Shanghai。
-最近一次 gpu-002 LAN RunPod 化一体容器生产 slot1 灰度验证：2026-06-16，Asia/Shanghai。
+最近一次 gpu-002 LAN RunPod 化一体容器生产接管：2026-06-16，Asia/Shanghai。
 
 ## 2. 总体拓扑
 
@@ -229,6 +229,8 @@ LAN RunPod 化一体容器试点：
 生产灰度入口为 `scripts/lan_runpod_aio_prod_canary.sh`，只允许 gpu-002 固定映射：slot0 `cloud_prod_worker_06 -> lan_aio_prod_gpu002_gpu0_img2img_lora_01`，端口 `8190`；slot1 `cloud_prod_worker_07 -> lan_aio_prod_gpu002_gpu1_image_to_video_01`，端口 `8191`。生产灰度必须使用 `--environment cloud-prod` 渲染出的 compose，写入 `user-data-prod`，并在启动前确认 compose 不含 `cloud-test` / `user-data-test`。首次拉取 LAN mirror 前需要维护窗口配置 Docker insecure registry `192.168.1.115:5000`，该操作会重启 Docker，必须先将 `cloud_prod_worker_06/07` 置为 `draining` 并等 `8188/8189` 队列清空。heartbeat-only 成功标准不是容器健康，而是 Central 能看到临时 agent 在 `disabled` control 下无 `current_task_type` 且 status 非 `running`，并携带 `node_id=gpu-002`、`provider=lan_ssh`、`runtime_profile`、`pool_managed=true`；Central 若残留旧 `current_task_id` 但 worker 已 `idle` 且无 `current_task_type`，不视为正在运行。缺任一项都应视为镜像或 remote_workers bundle 不可控，不能进入 `enable-canary`。helper 会同步并挂载当前 `remote_workers/`，AIO 启动时先安装 `remote_workers/requirements.txt`，再同步 LAN cache manifest 到 `/workspace/ComfyUI/models`，并把 baked ComfyUI 的 `models` 链接到该目录；达到目标接单数后先 `drain-temp --execute`，再等任务终态并 `restore --execute`。
 
 2026-06-16 已完成 slot1 生产灰度：`image_to_video`、`video_insert`、`video_edit` 均由临时 agent `lan_aio_prod_gpu002_gpu1_image_to_video_01` 接单并以 canonical `image_to_video` 执行成功。灰度结束后必须恢复 `cloud_prod_worker_07`，停止 AIO 容器，保留原 `comfy1` / `8189` 作为生产基线。
+
+2026-06-16 已将 gpu-002 slot0/slot1 切到生产 AIO 接新单：`cloud_prod_worker_06/07` 先 drain 并等待自然空闲，再 disable legacy worker、enable `lan_aio_prod_gpu002_gpu0_img2img_lora_01` 与 `lan_aio_prod_gpu002_gpu1_image_to_video_01`。切换时原 `comfy0/comfy1` 容器继续运行在 `8188/8189`，本地主服务器 `cloud-prod-comfy-agent-6/7` 也继续保留，作为热回滚基线；AIO 观察到 slot0 多单成功、slot1 视频单成功后，已执行 `docker stop comfy0 comfy1` 与 `docker stop cloud-prod-comfy-agent-6 cloud-prod-comfy-agent-7` 释放资源，容器未删除。回滚顺序是先 `docker start comfy0 comfy1`，确认 `8188/8189` `/system_stats` 与 `/queue` 正常，再启动 `cloud-prod-comfy-agent-6/7`，最后用 helper `restore --slot slot0|slot1 --execute` 恢复 `cloud_prod_worker_06/07`。
 
 ## 6. 双卡节点安全操作红线
 

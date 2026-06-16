@@ -166,6 +166,8 @@ scripts/lan_runpod_aio_prod_canary.sh --action restore --slot slot0 --dry-run
 
 Central 可能在 worker 已回到 `idle` 后保留上一单的 `current_task_id`。生产 helper 的等待空闲逻辑以 `status == running` 或存在 `current_task_type` 作为忙碌信号；单独的陈旧 `current_task_id` 不应阻断 drain/restore 后续步骤。
 
+gpu-002 进入 AIO 接管时仍使用同一 helper：先 `drain --slot both --execute`，再 `wait-idle --slot both --execute`，确认 legacy worker 与原 `8188/8189` 队列自然清空后，分别对 slot0/slot1 执行 `enable-canary --execute`。这会把 `cloud_prod_worker_06/07` 置为 disabled，并 enable `lan_aio_prod_gpu002_gpu0_img2img_lora_01` / `lan_aio_prod_gpu002_gpu1_image_to_video_01` 接新单。原 gpu-002 `comfy0/comfy1` 和本地主服务器 `cloud-prod-comfy-agent-6/7` 默认继续运行作为热回滚基线，不删除、不重建；AIO 稳定并完成验收后，如需释放资源只执行 `docker stop comfy0 comfy1` 与 `docker stop cloud-prod-comfy-agent-6 cloud-prod-comfy-agent-7`。回滚时先 `docker start comfy0 comfy1`，再启动 `cloud-prod-comfy-agent-6/7`，最后执行 `restore --slot slot0|slot1 --execute` 恢复 legacy worker。
+
 gpu-002 首次生产灰度前还必须在维护窗口配置 Docker daemon `insecure-registries=["192.168.1.115:5000"]`；这会短暂重启 Docker 并影响 `comfy0/comfy1`，因此必须先 drain `cloud_prod_worker_06/07` 并确认 `8188/8189` 队列为空。配置完成后只拉取 LAN mirror 镜像，不创建 RunPod Pod，不修改生产 Web task type。
 如当前 SSH 用户无免密 sudo，可只在当次命令环境传入 `LAN_AIO_GPU_SUDO_PASSWORD`；该变量不得写入 `.env`、compose、日志或文档。
 
