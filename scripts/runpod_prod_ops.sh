@@ -9,6 +9,7 @@ MODE="dry-run"
 PROFILE=""
 SLOT=""
 DESIRED=""
+COUNT=""
 ROLLBACK_MODE="keep-pod"
 RUNPOD_ENV_FILE=".env.cloud.test"
 PROD_ENV_FILE=".env.cloud.prod"
@@ -26,6 +27,7 @@ Usage:
 Actions:
   status    Read cloud-prod manual RunPod worker status.
   up        Create/start a prod manual Pod and wait for disabled heartbeat.
+  add       Add N prod manual Pods without deleting or enabling existing slots.
   enable    Enable the selected prod manual worker.
   disable   Disable the selected prod manual worker.
   down      Disable, wait for no current_task_id, then delete the selected Pod.
@@ -37,12 +39,13 @@ Options:
   --profile <name>            Required for mutations. One of img2img,
                               image_to_video, wan22_video_v2, i2i_pro.
   --slot <NN>                 Optional manual worker slot, for example 01.
+  --count <N>                 Required for add.
   --desired <N>               Required for scale.
   --keep-pod                  With rollback, disable only. Default.
   --delete-pod                With rollback, delete capacity after drain.
   --runpod-env-file <path>    RunPod env/profile defaults. Default .env.cloud.test.
   --prod-env-file <path>      Prod Central/Web/R2 values. Default .env.cloud.prod.
-  --retry-unavailable         Retry up/scale when RunPod reports no GPU inventory.
+  --retry-unavailable         Retry up/add/scale when RunPod reports no GPU inventory.
   --max-attempts <N>          Max attempts with --retry-unavailable. Default 20.
   --retry-interval <sec>      Sleep seconds between retry attempts. Default 90.
   --dry-run                   Print guarded mutation plan only. Default.
@@ -157,6 +160,23 @@ require_desired_for_scale() {
   esac
 }
 
+require_count_for_add() {
+  if [ -z "$COUNT" ]; then
+    echo "--count is required for add" >&2
+    exit 2
+  fi
+  case "$COUNT" in
+    ''|*[!0-9]*)
+      echo "--count must be a positive integer" >&2
+      exit 2
+      ;;
+  esac
+  if [ "$COUNT" -lt 1 ]; then
+    echo "--count must be a positive integer" >&2
+    exit 2
+  fi
+}
+
 validate_retry_options() {
   for value_name in MAX_ATTEMPTS RETRY_INTERVAL_SECONDS; do
     local value="${!value_name}"
@@ -200,6 +220,14 @@ dry_run_plan() {
         echo "[dry-run] Would retry RunPod no-inventory responses up to ${MAX_ATTEMPTS} attempts every ${RETRY_INTERVAL_SECONDS}s."
       fi
       print_shell_command up --execute
+      ;;
+    add)
+      echo "[dry-run] Would add ${COUNT} cloud-prod manual RunPod worker(s), choosing only free slots."
+      echo "[dry-run] Would not enable, disable, drain, delete, or recreate any existing RunPod slot."
+      if [ "$RETRY_UNAVAILABLE" = "true" ]; then
+        echo "[dry-run] Would retry RunPod no-inventory responses up to ${MAX_ATTEMPTS} attempts every ${RETRY_INTERVAL_SECONDS}s."
+      fi
+      print_shell_command add --count "$COUNT" --execute
       ;;
     enable)
       echo "[dry-run] Would enable the selected cloud-prod manual RunPod worker."
@@ -251,6 +279,9 @@ run_mutation() {
   if [ "$ACTION" = "scale" ]; then
     require_desired_for_scale
   fi
+  if [ "$ACTION" = "add" ]; then
+    require_count_for_add
+  fi
   if [ "$MODE" != "execute" ]; then
     dry_run_plan
     return
@@ -259,6 +290,9 @@ run_mutation() {
   case "$ACTION" in
     up)
       run_controller_with_unavailable_retry up --execute
+      ;;
+    add)
+      run_controller_with_unavailable_retry add --count "$COUNT" --execute
       ;;
     enable|disable|down|canary)
       run_controller "$ACTION" --execute
@@ -287,7 +321,7 @@ run_mutation() {
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    status|up|enable|disable|down|scale|canary|rollback)
+    status|up|add|enable|disable|down|scale|canary|rollback)
       ACTION="$1"
       shift
       ;;
@@ -305,6 +339,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --desired)
       DESIRED="${2:?missing value for --desired}"
+      shift 2
+      ;;
+    --count)
+      COUNT="${2:?missing value for --count}"
       shift 2
       ;;
     --keep-pod)
@@ -359,7 +397,7 @@ case "$ACTION" in
   status)
     status
     ;;
-  up|enable|disable|down|scale|canary|rollback)
+  up|add|enable|disable|down|scale|canary|rollback)
     run_mutation
     ;;
   *)

@@ -428,15 +428,17 @@ def test_prod_worker_render_can_target_second_manual_slot():
     assert payload["render"]["agent_id"] == "runpod_prod_img2img_manual_02"
 
 
-def test_prod_worker_default_max_slot_rejects_third_slot(monkeypatch):
+def test_prod_worker_default_max_slot_namespace_allows_hundred_slots(monkeypatch):
     monkeypatch.delenv("RUNPOD_PROD_MAX_MANUAL_SLOTS", raising=False)
 
+    assert prod_agent_id_from_slot("03") == "runpod_prod_img2img_manual_03"
+    assert prod_agent_id_from_slot("100") == "runpod_prod_img2img_manual_100"
     try:
-        prod_agent_id_from_slot("03")
+        prod_agent_id_from_slot("101")
     except ValueError as exc:
-        assert "between 01 and 02" in str(exc)
+        assert "between 01 and 100" in str(exc)
     else:
-        raise AssertionError("slot 03 should require explicit max slot configuration")
+        raise AssertionError("slot 101 should require explicit max slot configuration")
 
 
 def test_prod_worker_env_max_slot_allows_rendering_eighth_slot(monkeypatch):
@@ -494,6 +496,109 @@ def test_prod_worker_scale_dry_run_plans_missing_third_slot_without_mutation():
     assert provider.create_calls == 0
     assert runner.control_calls == []
     assert "create cloud-prod RunPod pod for slot 03" in payload["would_execute"]
+
+
+def test_prod_worker_add_dry_run_uses_lowest_free_slots_without_deletes():
+    provider = FakeRunPodProvider(
+        _settings(prod_max_manual_slots=8),
+        pods=[_prod_pod("01"), _prod_pod("03")],
+    )
+    options = RunPodProdWorkerOptions(
+        action="add",
+        add_count=2,
+        quiet=True,
+    )
+    runner = FakeHttpProdWorkerRunner(
+        provider,
+        options,
+        workers=[_worker("01"), _worker("03")],
+        sleep_func=lambda _seconds: None,
+    )
+
+    payload = runner.run()
+
+    assert payload["ok"] is True
+    assert payload["add_plan"]["create_slots"] == ["02", "04"]
+    assert payload["add_plan"]["existing_slots"] == ["01", "03"]
+    assert payload["add_plan"]["enable_slots"] == []
+    assert payload["add_plan"]["delete_slots"] == []
+    assert provider.create_calls == 0
+    assert runner.control_calls == []
+    assert "create cloud-prod RunPod pod for new slot 02" in payload["would_execute"]
+    assert any("leave all existing" in item for item in payload["would_execute"])
+
+
+def test_prod_worker_add_execute_creates_only_new_free_slots():
+    provider = FakeRunPodProvider(
+        _settings(
+            dry_run=False,
+            autoscaler_enabled=True,
+            prod_max_manual_slots=8,
+        ),
+        pods=[_prod_pod("01"), _prod_pod("03")],
+    )
+    options = RunPodProdWorkerOptions(
+        action="add",
+        execute=True,
+        add_count=2,
+        agent_token="agent_token",
+        quiet=True,
+    )
+    runner = FakeHttpProdWorkerRunner(
+        provider,
+        options,
+        workers=[_worker("01"), _worker("02"), _worker("03"), _worker("04")],
+        sleep_func=lambda _seconds: None,
+    )
+
+    payload = runner.run()
+
+    assert payload["ok"] is True
+    assert payload["add_plan"]["create_slots"] == ["02", "04"]
+    assert payload["add_plan"]["delete_slots"] == []
+    assert [item["agent_id"] for item in provider.create_log] == [
+        "runpod_prod_img2img_manual_02",
+        "runpod_prod_img2img_manual_04",
+    ]
+    assert provider.delete_calls == 0
+    assert _control_posts(runner) == [
+        ("runpod_prod_img2img_manual_02", "disabled"),
+        ("runpod_prod_img2img_manual_02", "enabled"),
+        ("runpod_prod_img2img_manual_04", "disabled"),
+        ("runpod_prod_img2img_manual_04", "enabled"),
+    ]
+
+
+def test_prod_worker_add_fails_before_mutation_when_free_slots_insufficient():
+    provider = FakeRunPodProvider(
+        _settings(
+            dry_run=False,
+            autoscaler_enabled=True,
+            prod_max_manual_slots=2,
+        ),
+        pods=[_prod_pod("01", max_manual_slots=2), _prod_pod("02", max_manual_slots=2)],
+    )
+    options = RunPodProdWorkerOptions(
+        action="add",
+        execute=True,
+        add_count=1,
+        agent_token="agent_token",
+        quiet=True,
+    )
+    runner = FakeHttpProdWorkerRunner(
+        provider,
+        options,
+        workers=[_worker("01", max_manual_slots=2), _worker("02", max_manual_slots=2)],
+        sleep_func=lambda _seconds: None,
+    )
+
+    payload = runner.run()
+
+    assert payload["ok"] is False
+    assert "requires 1 free slot" in payload["error"]
+    assert provider.create_calls == 0
+    assert provider.delete_calls == 0
+    assert runner.control_calls == []
 
 
 def test_prod_worker_scale_execute_creates_and_enables_missing_slot():
@@ -638,7 +743,7 @@ def test_prod_worker_up_execute_requires_gates_before_control_or_create():
     assert runner.control_calls == []
 
 
-def test_prod_worker_up_second_slot_execute_requires_two_per_type_pod_gate():
+def test_prod_worker_up_second_slot_execute_ignores_removed_per_type_gate():
     agent_id = prod_agent_id_from_slot("02")
     provider = FakeRunPodProvider(
         _settings(
@@ -657,16 +762,20 @@ def test_prod_worker_up_second_slot_execute_requires_two_per_type_pod_gate():
         quiet=True,
     )
     runner = FakeHttpProdWorkerRunner(
-        provider, options, sleep_func=lambda _seconds: None
+        provider,
+        options,
+        workers=[_worker("02")],
+        sleep_func=lambda _seconds: None,
     )
 
     payload = runner.run()
 
-    assert payload["ok"] is False
-    assert "RUNPOD_MAX_PODS_TOTAL>=2" not in payload["error"]
-    assert "RUNPOD_MAX_PODS_PER_TYPE>=2" in payload["error"]
-    assert provider.create_calls == 0
-    assert runner.control_calls == []
+    assert payload["ok"] is True
+    assert provider.create_calls == 1
+    assert provider.create_log[0]["agent_id"] == "runpod_prod_img2img_manual_02"
+    assert _control_posts(runner) == [
+        ("runpod_prod_img2img_manual_02", "disabled"),
+    ]
 
 
 def test_prod_worker_env_loader_protects_explicit_runpod_gates(
@@ -825,6 +934,29 @@ def test_cli_parses_runpod_prod_worker_up_command():
     assert args.slot == "02"
     assert args.runpod_env_file == Path(".env.cloud.test")
     assert args.prod_env_file == Path(".env.cloud.prod")
+    assert args.execute is True
+    assert args.quiet is True
+
+
+def test_cli_parses_runpod_prod_worker_add_command():
+    args = build_parser().parse_args(
+        [
+            "runpod",
+            "prod-worker",
+            "add",
+            "--profile",
+            "img2img",
+            "--count",
+            "2",
+            "--execute",
+            "--quiet",
+        ]
+    )
+
+    assert args.runpod_command == "prod-worker"
+    assert args.prod_worker_command == "add"
+    assert args.profile == "img2img"
+    assert args.count == 2
     assert args.execute is True
     assert args.quiet is True
 

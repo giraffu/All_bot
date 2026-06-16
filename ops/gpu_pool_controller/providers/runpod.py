@@ -38,7 +38,7 @@ RUNPOD_PROD_IMAGE_TO_VIDEO_AGENT_ID_PREFIX = "runpod_prod_image_to_video_manual_
 RUNPOD_PROD_IMAGE_TO_VIDEO_POD_NAME_PREFIX = "allbot-runpod-prod-image-to-video-manual-"
 RUNPOD_PROD_I2I_PRO_AGENT_ID_PREFIX = "runpod_prod_i2i_pro_manual_"
 RUNPOD_PROD_I2I_PRO_POD_NAME_PREFIX = "allbot-runpod-prod-i2i-pro-manual-"
-RUNPOD_PROD_DEFAULT_MAX_MANUAL_SLOTS = 2
+RUNPOD_PROD_DEFAULT_MAX_MANUAL_SLOTS = 100
 RUNPOD_PROD_MAX_MANUAL_SLOTS = RUNPOD_PROD_DEFAULT_MAX_MANUAL_SLOTS
 RUNPOD_PROD_AGENT_ID = "runpod_prod_img2img_manual_01"
 RUNPOD_PROD_NODE_ID = "runpod-cloud-prod"
@@ -1303,10 +1303,6 @@ class RunPodProvider:
             execute
             and not self.settings.dry_run
             and self.settings.autoscaler_enabled
-            and self.settings.max_pods_total >= 1
-            and 1
-            <= self.settings.max_pods_per_type
-            <= self.settings.prod_max_manual_slots
         )
 
     def _create_pod_body(self, *, task_type: str, environment: str) -> dict[str, Any]:
@@ -1583,37 +1579,6 @@ class RunPodProvider:
             reasons.append("RUNPOD_DRY_RUN=true")
         if not self.settings.autoscaler_enabled:
             reasons.append("RUNPOD_AUTOSCALER_ENABLED=false")
-        max_manual_slots = self.settings.prod_max_manual_slots
-        if self.settings.max_pods_total < 1:
-            reasons.append("RUNPOD_MAX_PODS_TOTAL must be >= 1 for v0")
-        if not 1 <= self.settings.max_pods_per_type <= max_manual_slots:
-            reasons.append(
-                "RUNPOD_MAX_PODS_PER_TYPE must be between "
-                f"1 and {max_manual_slots} for v0"
-            )
-        if self.settings.max_pods_per_type > self.settings.max_pods_total:
-            reasons.append(
-                "RUNPOD_MAX_PODS_PER_TYPE must not exceed RUNPOD_MAX_PODS_TOTAL"
-            )
-
-        if action in {"create", "start"}:
-            active = [pod for pod in existing_pods if self._is_active(pod)]
-            active_same_type = [
-                pod
-                for pod in active
-                if str((pod.get("env") or {}).get("RUNPOD_TASK_TYPE") or "")
-                == task_type
-            ]
-            if len(active) >= self.settings.max_pods_total:
-                reasons.append("runpod active pod total limit reached")
-            if len(active_same_type) >= self.settings.max_pods_per_type:
-                reasons.append(f"runpod active pod limit reached for {task_type}")
-            current_cost = sum(self._pod_cost(pod) for pod in active)
-            if (
-                current_cost + projected_new_cost_per_hr
-                > self.settings.max_hourly_cost_usd
-            ):
-                reasons.append("RUNPOD_MAX_HOURLY_COST_USD would be exceeded")
 
         return {
             "allowed": not reasons,
@@ -1621,9 +1586,6 @@ class RunPodProvider:
             "settings": {
                 "dry_run": self.settings.dry_run,
                 "autoscaler_enabled": self.settings.autoscaler_enabled,
-                "max_pods_total": self.settings.max_pods_total,
-                "max_pods_per_type": self.settings.max_pods_per_type,
-                "max_hourly_cost_usd": self.settings.max_hourly_cost_usd,
                 "projected_new_cost_per_hr": projected_new_cost_per_hr,
             },
         }

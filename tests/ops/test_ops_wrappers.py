@@ -71,6 +71,20 @@ def test_runpod_scale_requires_desired():
     assert "--desired is required for scale" in result.stderr
 
 
+def test_runpod_add_requires_count():
+    result = run_script(
+        "bash",
+        "scripts/runpod_prod_ops.sh",
+        "add",
+        "--profile",
+        "img2img",
+        "--dry-run",
+    )
+
+    assert result.returncode == 2
+    assert "--count is required for add" in result.stderr
+
+
 def test_runpod_enable_dry_run_delegates_to_prod_worker_without_execute_mode():
     result = run_script(
         "bash",
@@ -148,6 +162,32 @@ def test_runpod_scale_retry_unavailable_dry_run_is_bounded():
     assert "retry RunPod no-inventory responses up to 3 attempts every 1s" in output
     assert "runpod prod-worker scale" in output
     assert "--desired 2" in output
+
+
+def test_runpod_add_retry_unavailable_dry_run_is_additive():
+    result = run_script(
+        "bash",
+        "scripts/runpod_prod_ops.sh",
+        "add",
+        "--profile",
+        "img2img",
+        "--count",
+        "2",
+        "--retry-unavailable",
+        "--max-attempts",
+        "3",
+        "--retry-interval",
+        "1",
+        "--dry-run",
+    )
+
+    assert result.returncode == 0, result.stderr
+    output = result.stdout
+    assert "Would add 2 cloud-prod manual RunPod worker" in output
+    assert "Would not enable, disable, drain, delete, or recreate any existing RunPod slot" in output
+    assert "retry RunPod no-inventory responses up to 3 attempts every 1s" in output
+    assert "runpod prod-worker add" in output
+    assert "--count 2" in output
 
 
 def test_runpod_scale_retry_unavailable_retries_transient_no_inventory(tmp_path):

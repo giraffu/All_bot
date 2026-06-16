@@ -20,14 +20,14 @@ type RunPodProfile = {
 
 type ScaleRow = {
   profile: string
-  desired_count: number
+  count: number
 }
 
 type RunPodOperation = {
   id: string
   action: string
   profile: string
-  desired_count?: number
+  requested_count?: number
   status: string
   created_at?: string
   started_at?: string
@@ -68,12 +68,9 @@ const submitting = ref(false)
 const profiles = ref<RunPodProfile[]>(fallbackProfiles)
 const operations = ref<RunPodOperation[]>([])
 const rows = ref<ScaleRow[]>([
-  { profile: 'img2img', desired_count: 1 },
+  { profile: 'img2img', count: 1 },
 ])
-const gates = reactive({
-  max_pods_total: 8,
-  max_pods_per_type: 4,
-  max_hourly_cost_usd: 20,
+const retryOptions = reactive({
   max_attempts: 100,
   retry_interval_seconds: 30,
 })
@@ -132,7 +129,7 @@ const addRow = () => {
     'img2img'
   rows.value = [
     ...rows.value,
-    { profile: nextProfile, desired_count: 1 },
+    { profile: nextProfile, count: 1 },
   ]
 }
 
@@ -144,13 +141,13 @@ const removeRow = (index: number) => {
 const submit = async () => {
   const normalizedRows = rows.value.map(row => ({
     profile: row.profile,
-    desired_count: Number(row.desired_count || 0),
+    count: Number(row.count || 0),
   }))
   const duplicateProfiles = normalizedRows.filter(
     (row, index) => normalizedRows.findIndex(item => item.profile === row.profile) !== index
   )
   if (duplicateProfiles.length > 0) {
-    message.warning('同一类型只保留一行目标数量')
+    message.warning('同一类型只保留一行新增数量')
     return
   }
 
@@ -158,12 +155,9 @@ const submit = async () => {
   try {
     const payload = await scaleRunPodCapacity({
       items: normalizedRows,
-      max_pods_total: gates.max_pods_total,
-      max_pods_per_type: gates.max_pods_per_type,
-      max_hourly_cost_usd: gates.max_hourly_cost_usd,
       retry_unavailable: true,
-      max_attempts: gates.max_attempts,
-      retry_interval_seconds: gates.retry_interval_seconds,
+      max_attempts: retryOptions.max_attempts,
+      retry_interval_seconds: retryOptions.retry_interval_seconds,
     })
     message.success(`已提交 ${payload?.operations?.length || normalizedRows.length} 个 RunPod 操作`)
     open.value = false
@@ -202,7 +196,7 @@ onUnmounted(() => {
     v-model:open="open"
     title="RunPod 管理"
     :confirm-loading="submitting"
-    ok-text="开始执行"
+    ok-text="开始新增"
     cancel-text="取消"
     width="760px"
     @ok="submit"
@@ -219,12 +213,14 @@ onUnmounted(() => {
             :options="profileOptions"
             size="middle"
           />
-          <a-input-number
-            v-model:value="row.desired_count"
-            :min="0"
-            :max="20"
-            class="w-full"
-          />
+          <label class="runpod-row-count">
+            <span>新增数量</span>
+            <a-input-number
+              v-model:value="row.count"
+              :min="1"
+              class="w-full"
+            />
+          </label>
           <a-button
             type="text"
             danger
@@ -240,24 +236,12 @@ onUnmounted(() => {
         </a-button>
       </div>
 
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <label class="runpod-field">
-          <span>全局上限</span>
-          <a-input-number v-model:value="gates.max_pods_total" :min="1" :max="50" class="w-full" />
-        </label>
-        <label class="runpod-field">
-          <span>单类型上限</span>
-          <a-input-number v-model:value="gates.max_pods_per_type" :min="1" :max="20" class="w-full" />
-        </label>
-        <label class="runpod-field">
-          <span>小时成本上限</span>
-          <a-input-number v-model:value="gates.max_hourly_cost_usd" :min="1" :max="500" class="w-full" />
-        </label>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
         <label class="runpod-field">
           <span>库存轮询</span>
           <div class="flex gap-1">
-            <a-input-number v-model:value="gates.max_attempts" :min="1" :max="500" class="w-full" />
-            <a-input-number v-model:value="gates.retry_interval_seconds" :min="5" :max="3600" class="w-full" />
+            <a-input-number v-model:value="retryOptions.max_attempts" :min="1" :max="500" class="w-full" />
+            <a-input-number v-model:value="retryOptions.retry_interval_seconds" :min="5" :max="3600" class="w-full" />
           </div>
         </label>
       </div>
@@ -272,8 +256,8 @@ onUnmounted(() => {
           >
             <span class="truncate">
               {{ operation.action }} · {{ profileLabel(operation.profile) }}
-              <span v-if="operation.desired_count !== null && operation.desired_count !== undefined">
-                · 目标 {{ operation.desired_count }}
+              <span v-if="operation.requested_count !== null && operation.requested_count !== undefined">
+                · 新增 {{ operation.requested_count }}
               </span>
             </span>
             <a-tag :color="statusColor(operation.status)" class="m-0 shrink-0">
@@ -292,6 +276,14 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 4px;
   font-size: 12px;
+  color: #6b7280;
+}
+
+.runpod-row-count {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
   color: #6b7280;
 }
 </style>

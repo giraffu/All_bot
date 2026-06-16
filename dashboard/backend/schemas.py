@@ -198,25 +198,22 @@ class SyncLockRequest(BaseModel):
 
 class RunPodScaleItem(BaseModel):
     profile: str
-    desired_count: int = Field(..., ge=0, le=20)
+    count: Optional[int] = Field(default=None, ge=1)
+    # Backward compatibility for old Dashboard bundles. This is now interpreted
+    # as an additive count, not a destructive target desired count.
+    desired_count: Optional[int] = Field(default=None, ge=1)
 
 
 class RunPodScaleRequest(BaseModel):
     items: List[RunPodScaleItem] = Field(..., min_length=1, max_length=8)
-    max_pods_total: int = Field(default=8, ge=1, le=50)
-    max_pods_per_type: int = Field(default=4, ge=1, le=20)
-    max_hourly_cost_usd: float = Field(default=20.0, gt=0, le=500)
-    prod_max_manual_slots: Optional[int] = Field(default=None, ge=1, le=20)
+    prod_max_manual_slots: Optional[int] = Field(default=None, ge=1, le=1000)
     retry_unavailable: bool = True
     max_attempts: int = Field(default=100, ge=1, le=500)
     retry_interval_seconds: int = Field(default=30, ge=5, le=3600)
 
 
 class RunPodWorkerActionRequest(BaseModel):
-    max_pods_total: int = Field(default=8, ge=1, le=50)
-    max_pods_per_type: int = Field(default=4, ge=1, le=20)
-    max_hourly_cost_usd: float = Field(default=20.0, gt=0, le=500)
-    prod_max_manual_slots: Optional[int] = Field(default=None, ge=1, le=20)
+    prod_max_manual_slots: Optional[int] = Field(default=None, ge=1, le=1000)
 
 
 class GalleryPostUpdate(BaseModel):

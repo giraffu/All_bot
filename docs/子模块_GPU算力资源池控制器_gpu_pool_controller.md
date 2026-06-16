@@ -250,26 +250,24 @@ python scripts/gpu_pool_controller.py runpod canary --task-type i2i_pro --env-fi
 ```dotenv
 RUNPOD_DRY_RUN=false
 RUNPOD_AUTOSCALER_ENABLED=true
-RUNPOD_MAX_PODS_TOTAL=<目标总数>
-RUNPOD_MAX_PODS_PER_TYPE=<目标单类型数>
 ```
 
 并带对应 CLI 的 `--execute`。
 
-`RUNPOD_MAX_PODS_TOTAL` 是全 managed RunPod 池的显式总上限；`RUNPOD_MAX_PODS_PER_TYPE`
-是当前 task/profile 的单类型上限，仍受 `RUNPOD_PROD_MAX_MANUAL_SLOTS` 约束。云正式多
-profile 共存时，总上限应按“已有 managed Pod + 本轮目标新增/保留 Pod”动态计算，
-单类型上限只覆盖当前 profile 的 desired，不要为了新增其它 profile 而放宽当前 profile
-上限。`RUNPOD_MAX_HOURLY_COST_USD` 必须显式设置到能覆盖目标 managed Pod 总成本。
+`RUNPOD_MAX_PODS_TOTAL`、`RUNPOD_MAX_PODS_PER_TYPE`、`RUNPOD_MAX_HOURLY_COST_USD`
+不再作为 provider/Dashboard 的容量或成本门禁；不要依赖它们阻断创建。云正式手动池的
+slot 命名空间由 `RUNPOD_PROD_MAX_MANUAL_SLOTS` 控制，默认 `100`，只用于生成
+`manual_01..manual_100` agent/pod 名称。
 
 云测试 split video canary：
-- 默认同时测 `image_to_video` 与 `wan22_video_v2`，要求 `RUNPOD_MAX_PODS_TOTAL=2`、`RUNPOD_MAX_PODS_PER_TYPE=1`。
-- 传 `--profile image_to_video` 或 `--profile wan22_video_v2` 时只创建 1 个 Pod，门禁必须收窄为 `RUNPOD_MAX_PODS_TOTAL=1`。
+- 默认同时测 `image_to_video` 与 `wan22_video_v2`，完成后必须恢复 worker control 并删除 Pod。
+- 传 `--profile image_to_video` 或 `--profile wan22_video_v2` 时只创建 1 个 Pod。
 - 若只允许 4090，可临时覆盖 `RUNPOD_GPU_TYPE_IDS_WAN22_VIDEO_V2='NVIDIA GeForce RTX 4090'`。
 - 失败或中断后必须恢复 worker control、删除 Pod，并用 `list-pods` / `reconcile-managed-pods` 确认 managed count 为 0。
 
 ## 7. 云测试 canary
-图生图默认 canary：
+云测试 canary runner 仍有自己的单次测试安全门禁；这不适用于 Dashboard / cloud-prod
+`prod-worker add`。图生图默认 canary：
 
 ```bash
 RUNPOD_DRY_RUN=false \
@@ -353,19 +351,20 @@ direct TCP `root@<public-ip> -p <mapped-port>` 会因容器内无 `sshd` 而拒�
 | 放开接单 | `scripts/runpod_prod_ops.sh enable --profile img2img --slot 01 --execute` | 仅修改 Central control 为 enabled |
 | 停止接单 | `scripts/runpod_prod_ops.sh disable --profile img2img --slot 01 --execute` | 保留 Pod，设置 Central control 为 disabled |
 | 删除 Pod | `scripts/runpod_prod_ops.sh down --profile img2img --slot 01 --execute` | disable 后等待 `current_task_id` 为空，再删除目标 Pod |
-| 扩缩容 | `scripts/runpod_prod_ops.sh scale --profile img2img --desired 1 --execute` | 受 RunPod 门禁保护的 profile 级 scale |
+| 新增容量 | `scripts/runpod_prod_ops.sh add --profile img2img --count 1 --execute` | 只创建空闲 slot，不触碰已有 RunPod |
+| 高级精确目标 | `scripts/runpod_prod_ops.sh scale --profile img2img --desired 1 --execute` | 会删除超出 desired 的 slot，Dashboard 禁止使用 |
 | 业务 canary | `scripts/runpod_prod_ops.sh canary --profile img2img --slot 01 --execute` | 真实 Web canary，结束后保持目标 worker disabled |
 | 回滚 | `scripts/runpod_prod_ops.sh rollback --profile img2img --keep-pod --execute` 或 `--delete-pod` | `--keep-pod` 等价 disable；`--delete-pod` 在指定 slot 时走 down，未指定 slot 时走 `scale --desired 0` |
 
-RunPod 4090 库存不足时，`up/scale` 可显式使用有界重试，不要开多条并发创建循环：
+RunPod 4090 库存不足时，`up/add/scale` 可显式使用有界重试，不要开多条并发创建循环。日常新增模板：
 
 ```bash
-scripts/runpod_prod_ops.sh scale \
+scripts/runpod_prod_ops.sh add \
   --profile img2img \
-  --desired 2 \
+  --count 2 \
   --retry-unavailable \
-  --max-attempts 20 \
-  --retry-interval 90 \
+  --max-attempts 100 \
+  --retry-interval 30 \
   --execute
 ```
 
@@ -373,12 +372,12 @@ Dashboard 系统监控页也提供正式手动 RunPod 池的日常 Web 入口：
 
 | Dashboard 动作 | 后端 API | 底层命令语义 |
 | :--- | :--- | :--- |
-| `RunPod 管理` 提交多 profile 目标数量 | `POST /api/runpod/scale` | 拆成 profile 级 `scripts/runpod_prod_ops.sh scale --desired N --retry-unavailable --execute` operation |
+| `RunPod 管理` 提交多 profile 新增数量 | `POST /api/runpod/scale` | 拆成 profile 级 `scripts/runpod_prod_ops.sh add --count N --retry-unavailable --execute` operation |
 | Worker 卡片 `暂停` | `POST /api/runpod/workers/{agent_id}/pause` | `disable --slot NN --execute`，只停接新单，保留 Pod |
 | Worker 卡片 `删除` | `DELETE /api/runpod/workers/{agent_id}` | `down --slot NN --execute`，先停接并等待当前任务结束，再删除 Pod |
 | 最近操作 | `GET /api/runpod/operations` | 只读 Dashboard 后端内存 operation 状态和脱敏日志尾部 |
 
-Dashboard 入口不重写 RunPod provider 逻辑，只异步调用 `scripts/runpod_prod_ops.sh`。数量字段是 profile 的目标 `desired`，不是额外新增数量；同一请求里同一 profile 只能出现一次。后台 operation 默认使用 30 秒间隔、100 次无库存重试，仍必须通过 `RUNPOD_DRY_RUN=false`、`RUNPOD_AUTOSCALER_ENABLED=true`、`RUNPOD_MAX_PODS_TOTAL`、`RUNPOD_MAX_PODS_PER_TYPE`、`RUNPOD_MAX_HOURLY_COST_USD` 门禁。云正式 Dashboard 容器如没有 `.env.cloud.prod` 文件名，可通过 `DASHBOARD_RUNPOD_ENV_FILE` / `DASHBOARD_RUNPOD_PROD_ENV_FILE` 指向 `/app/.env`；不得在 API 响应、operation 日志或文档中输出任何 env 内容或密钥。
+Dashboard 入口不重写 RunPod provider 逻辑，只异步调用 `scripts/runpod_prod_ops.sh`。数量字段是新增数量；旧前端若仍发送 `desired_count`，后端也按新增数量解释，不会触发 `scale --desired` 或删除既有 slot。同一请求里同一 profile 只能出现一次。后台 operation 默认使用 30 秒间隔、100 次无库存重试，真实执行只打开 `RUNPOD_DRY_RUN=false` 与 `RUNPOD_AUTOSCALER_ENABLED=true`，并把 `RUNPOD_PROD_MAX_MANUAL_SLOTS` 设为 `100` 或请求指定值。云正式 Dashboard 后端默认优先把容器内 `/app/.env` 同时作为 `--runpod-env-file` 与 `--prod-env-file`；该文件由云正式 `.env.cloud.prod` 挂载，必须包含完整、shell-compatible 的 `RUNPOD_*` 手动池配置和可用 `RUNPOD_API_KEY`。不要把本机测试专用 `RUNPOD_PUBLIC_KEY_FILE` 路径带入云正式容器；生产路径默认不依赖 RunPod SSH。必要时仍可通过 `DASHBOARD_RUNPOD_ENV_FILE` / `DASHBOARD_RUNPOD_PROD_ENV_FILE` 覆盖 env 路径；不得在 API 响应、operation 日志或文档中输出任何 env 内容或密钥。
 
 底层高级命令：
 
@@ -389,13 +388,14 @@ python scripts/gpu_pool_controller.py runpod prod-worker up --profile img2img
 python scripts/gpu_pool_controller.py runpod prod-worker enable --profile img2img
 python scripts/gpu_pool_controller.py runpod prod-worker disable --profile img2img
 python scripts/gpu_pool_controller.py runpod prod-worker down --profile img2img
+python scripts/gpu_pool_controller.py runpod prod-worker add --profile img2img --count 1
 python scripts/gpu_pool_controller.py runpod prod-worker canary --profile img2img
 python scripts/gpu_pool_controller.py runpod prod-worker scale --profile img2img --desired 1
 python scripts/gpu_pool_controller.py runpod prod-worker render --profile i2i_pro --slot 01
 python scripts/gpu_pool_controller.py runpod prod-worker canary --profile i2i_pro --slot 01
 ```
 
-`prod-worker` 默认先加载 `.env.cloud.test` 中的 RunPod API/profile 默认值，再加载 `.env.cloud.prod` 覆盖正式 Central/Web/R2/JWT 变量；已在 shell 显式设置的 `RUNPOD_*` 门禁不会被 prod env 文件覆盖。
+`prod-worker` 默认先加载 `.env.cloud.test` 中的 RunPod API/profile 默认值，再加载 `.env.cloud.prod` 覆盖正式 Central/Web/R2/JWT 变量；已在 shell 显式设置的 `RUNPOD_*` 执行开关和 slot 命名空间不会被 prod env 文件覆盖。
 优先用 `prod-worker status` 查看正式手动 worker，因为它会按上述规则加载 env；裸
 `runpod list-pods` / `pod-readiness` 只读取当前 shell env，未显式加载 `RUNPOD_API_KEY`
 时会返回 `missing_RUNPOD_API_KEY`。
@@ -406,86 +406,76 @@ python scripts/gpu_pool_controller.py runpod prod-worker canary --profile i2i_pr
 | :--- | :--- | :--- | :--- |
 | `render` / `status` | 否 | 否 | 渲染/观测，适合 AI 运维先读状态 |
 | `up --execute` | 创建并启动目标 Pod | 否，默认写 `disabled` | 新增手动正式备用 worker，等待模型同步和 heartbeat |
+| `add --count N --execute` | 只创建空闲 slot | 新 slot ready 后自动 enable | 日常新增容量，不触碰已有 slot |
 | `enable --execute` | 否 | 是，仅改 Central control | 放开已有 Pod 接正式队列 |
 | `disable --execute` | 否 | 否，仅改 Central control | 保留 Pod 现场、停止接新单，用于排障或维护 |
 | `canary --execute` | 不创建已存在的 prod Pod | 临时 enable，结束恢复 `disabled` | 提交真实 Web 任务验证目标 worker |
 | `down --execute` | 删除目标 prod Pod | 否 | 下线手动备用 Pod，必须确认无 `current_task_id` |
-| `scale --desired N --execute` | 按 slot 创建/删除/enable/disable | 取决于计划 | 多手动 slot 运维，仍受总上限和单类型上限约束 |
+| `scale --desired N --execute` | 按 slot 创建/删除/enable/disable | 取决于计划 | 高级精确目标数入口，会删除超出 slot |
 
 判断“RunPod 已启动并可接单”不能只看 Pod `RUNNING`：还必须看到 Central worker heartbeat，
 且 agent control 为 `enabled`。`up --execute` 后处于 ready 但 `disabled` 是预期行为；需要
 `enable --execute` 才会接正式任务。
 
-### 8.1 云正式手动 RunPod 按需扩缩容
+### 8.1 云正式手动 RunPod 按需新增容量
 
 正式手动 RunPod 池的容量和 profile 组合不是固定事实，应按当次运维目标决定。某次实操的
 Pod 数量、创建日期和 profile 组合只应进入运维日志或工单，不作为长期 SOP。当前
 `prod-worker` 支持 `--profile img2img|image_to_video|wan22_video_v2|i2i_pro`；若后续代码
-新增 profile，以 CLI 支持列表和渲染结果为准。每次扩容前先确定三件事：
+新增 profile，以 CLI 支持列表和渲染结果为准。日常扩容只使用“新增容量”语义：
+`scripts/runpod_prod_ops.sh add --count N` 只选择该 profile 的最低空闲 manual slot 创建新
+Pod，不 enable、disable、drain、delete 或 recreate 任何已存在 slot。
 
 | 参数 | 含义 | 设置口径 |
 | :--- | :--- | :--- |
 | `PROFILE` | 本轮要操作的 profile | 例如 `img2img`、`image_to_video`、`wan22_video_v2` |
-| `DESIRED` | 该 profile 目标手动 Pod 数 | 按当次运维需求决定，不写成长期固定值 |
-| `TOTAL_LIMIT` | 全 managed RunPod 池上限 | 至少覆盖已有 managed Pod 和本轮 desired 后的总数 |
-| `PER_TYPE_LIMIT` | 当前 profile 单类型上限 | 至少等于当前 profile 的 `DESIRED`，不要因为其它 profile 扩容而放宽 |
+| `COUNT` | 本轮新增 Pod 数 | 必须是正整数；不是目标总数 |
+| `MANUAL_SLOT_LIMIT` | manual slot 命名空间 | 默认 `100`，只用于生成 `manual_01..manual_100` agent/pod 名称，不是容量或成本上限 |
 
-若目标 slot 超过默认手动 slot 上限，只在本次命令环境中显式设置
-`RUNPOD_PROD_MAX_MANUAL_SLOTS=<slot上限>`，不要为了临时扩容直接改 env 文件。启动或恢复示例：
+新增示例：
 
 ```bash
 : "${PROFILE:?set target RunPod profile}"
-: "${DESIRED:?set desired pod count for this profile}"
-: "${TOTAL_LIMIT:?set total managed RunPod limit}"
-: "${PER_TYPE_LIMIT:?set per-profile RunPod limit}"
-: "${MAX_HOURLY_COST_USD:?set max hourly cost gate}"
-: "${MANUAL_SLOT_LIMIT:?set manual slot limit if needed}"
+: "${COUNT:?set number of new RunPod Pods to add}"
+: "${MANUAL_SLOT_LIMIT:=100}"
 
 RUNPOD_DRY_RUN=false \
 RUNPOD_AUTOSCALER_ENABLED=true \
-RUNPOD_MAX_PODS_TOTAL="$TOTAL_LIMIT" \
-RUNPOD_MAX_PODS_PER_TYPE="$PER_TYPE_LIMIT" \
-RUNPOD_MAX_HOURLY_COST_USD="$MAX_HOURLY_COST_USD" \
 RUNPOD_PROD_MAX_MANUAL_SLOTS="$MANUAL_SLOT_LIMIT" \
-scripts/runpod_prod_ops.sh scale \
+scripts/runpod_prod_ops.sh add \
   --profile "$PROFILE" \
-  --desired "$DESIRED" \
+  --count "$COUNT" \
   --execute
 ```
 
-多 profile 共存时，对每个目标 profile 分别执行一次 `scale`，每次都按当前全局 managed
-Pod 数重新计算 `TOTAL_LIMIT`，按该 profile 自己的 `DESIRED` 设置 `PER_TYPE_LIMIT`。
+多 profile 共存时，对每个目标 profile 分别执行一次 `add`。Dashboard 的
+`POST /api/runpod/scale` 也按新增语义执行，即旧字段 `desired_count` 仍会被解释为
+新增数量，不会 scale down 既有 Pod。
 
-`scale --desired N --execute` 的创建路径会先把新 slot 的 Central control 写为
+`add --count N --execute` 的创建路径会先把新 slot 的 Central control 写为
 `disabled`，创建 Pod，等待 RunPod readiness、模型同步、ComfyUI ready 和 Central
 heartbeat；看到 disabled heartbeat 后才 enable 目标 slot。启动过程中如果 Pod 已
 `RUNNING` 但 `worker_seen=false`、control 仍是 `disabled`，通常表示 bootstrap 或模型同步
 还没完成，不要手动 enable。
 
 4090 库存不足时，RunPod 常返回 `There are no instances currently available`。优先用
-`scripts/runpod_prod_ops.sh scale --retry-unavailable` 对同一个 profile/desired 做有界重试；
-不要同时开多条相同 profile/desired 的创建循环，避免重复抢同一 slot 的 control。推荐模板：
+`scripts/runpod_prod_ops.sh add --retry-unavailable` 对同一个 profile/count 做有界重试；
+不要同时开多条相同 profile/count 的创建循环，避免重复抢同一批空闲 slot。推荐模板：
 
 ```bash
 : "${PROFILE:?set target RunPod profile}"
-: "${DESIRED:?set desired pod count for this profile}"
-: "${TOTAL_LIMIT:?set total managed RunPod limit}"
-: "${PER_TYPE_LIMIT:?set per-profile RunPod limit}"
-: "${MAX_HOURLY_COST_USD:?set max hourly cost gate}"
-: "${MANUAL_SLOT_LIMIT:?set manual slot limit if needed}"
+: "${COUNT:?set number of new RunPod Pods to add}"
+: "${MANUAL_SLOT_LIMIT:=100}"
 
 RUNPOD_DRY_RUN=false \
 RUNPOD_AUTOSCALER_ENABLED=true \
-RUNPOD_MAX_PODS_TOTAL="$TOTAL_LIMIT" \
-RUNPOD_MAX_PODS_PER_TYPE="$PER_TYPE_LIMIT" \
-RUNPOD_MAX_HOURLY_COST_USD="$MAX_HOURLY_COST_USD" \
 RUNPOD_PROD_MAX_MANUAL_SLOTS="$MANUAL_SLOT_LIMIT" \
-scripts/runpod_prod_ops.sh scale \
+scripts/runpod_prod_ops.sh add \
   --profile "$PROFILE" \
-  --desired "$DESIRED" \
+  --count "$COUNT" \
   --retry-unavailable \
-  --max-attempts 20 \
-  --retry-interval 90 \
+  --max-attempts 100 \
+  --retry-interval 30 \
   --execute
 ```
 
@@ -502,8 +492,8 @@ python scripts/gpu_pool_controller.py runpod prod-worker status \
   --slot "$SLOT"
 ```
 
-验收口径：`list_pods.count` / `reconcile.managed_count` 等于当次目标 managed Pod 总数、
-`orphans=[]`、每个目标 worker 有 heartbeat，且 `control.state=enabled`。`worker.status=running`
+验收口径：`list_pods.count` / `reconcile.managed_count` 比新增前增加 `COUNT`、
+`orphans=[]`、每个新增 worker 有 heartbeat，且 `control.state=enabled`。`worker.status=running`
 可能表示正在接单，不等于异常；重点看 `types`、`runtime_profile`、`image_ref` 与目标
 profile 是否一致。
 
@@ -527,14 +517,10 @@ python scripts/gpu_pool_controller.py runpod prod-worker disable \
 ```bash
 : "${PROFILE:?set target RunPod profile}"
 : "${SLOT:?set target manual slot, for example 01}"
-: "${TOTAL_LIMIT:?set total managed RunPod limit}"
-: "${PER_TYPE_LIMIT:?set per-profile RunPod limit}"
-: "${MANUAL_SLOT_LIMIT:?set manual slot limit if needed}"
+: "${MANUAL_SLOT_LIMIT:=100}"
 
 RUNPOD_DRY_RUN=false \
 RUNPOD_AUTOSCALER_ENABLED=true \
-RUNPOD_MAX_PODS_TOTAL="$TOTAL_LIMIT" \
-RUNPOD_MAX_PODS_PER_TYPE="$PER_TYPE_LIMIT" \
 RUNPOD_PROD_MAX_MANUAL_SLOTS="$MANUAL_SLOT_LIMIT" \
 python scripts/gpu_pool_controller.py runpod prod-worker down \
   --profile "$PROFILE" \
@@ -542,20 +528,17 @@ python scripts/gpu_pool_controller.py runpod prod-worker down \
   --execute
 ```
 
-按 profile 缩容优先用 `scale --desired N --execute`，它会按 slot 计算计划、disable
-待删 worker、等待 drain，并删除超出 desired 的 Pod。例如把某个 profile 缩到目标数量：
+按 profile 精确调整目标数属于高级运维入口。`scale --desired N --execute` 会按 slot
+计算计划、enable 保留 slot、disable 待删 worker、等待 drain，并删除超出 desired 的 Pod；
+Dashboard 禁止使用该语义。把某个 profile 缩到目标数量示例：
 
 ```bash
 : "${PROFILE:?set target RunPod profile}"
 : "${DESIRED:?set desired pod count for this profile}"
-: "${TOTAL_LIMIT:?set total managed RunPod limit}"
-: "${PER_TYPE_LIMIT:?set per-profile RunPod limit}"
-: "${MANUAL_SLOT_LIMIT:?set manual slot limit if needed}"
+: "${MANUAL_SLOT_LIMIT:=100}"
 
 RUNPOD_DRY_RUN=false \
 RUNPOD_AUTOSCALER_ENABLED=true \
-RUNPOD_MAX_PODS_TOTAL="$TOTAL_LIMIT" \
-RUNPOD_MAX_PODS_PER_TYPE="$PER_TYPE_LIMIT" \
 RUNPOD_PROD_MAX_MANUAL_SLOTS="$MANUAL_SLOT_LIMIT" \
 python scripts/gpu_pool_controller.py runpod prod-worker scale \
   --profile "$PROFILE" \
@@ -572,13 +555,9 @@ RunPod 资源。
 
 ```bash
 : "${PROFILE:?set target RunPod profile}"
-: "${TOTAL_LIMIT:?set total managed RunPod limit}"
-: "${PER_TYPE_LIMIT:?set per-profile RunPod limit}"
 
 RUNPOD_DRY_RUN=false \
 RUNPOD_AUTOSCALER_ENABLED=true \
-RUNPOD_MAX_PODS_TOTAL="$TOTAL_LIMIT" \
-RUNPOD_MAX_PODS_PER_TYPE="$PER_TYPE_LIMIT" \
 python scripts/gpu_pool_controller.py runpod prod-worker up \
   --profile "$PROFILE" \
   --execute

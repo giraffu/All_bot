@@ -59,7 +59,7 @@ class RunPodAdminOperation:
     profile: str
     command: list[str]
     created_at: float = field(default_factory=time.time)
-    desired_count: int | None = None
+    requested_count: int | None = None
     agent_id: str | None = None
     slot: str | None = None
     status: str = "pending"
@@ -86,7 +86,7 @@ def _operation_payload(operation: RunPodAdminOperation) -> dict[str, Any]:
         "id": operation.id,
         "action": operation.action,
         "profile": operation.profile,
-        "desired_count": operation.desired_count,
+        "requested_count": operation.requested_count,
         "agent_id": operation.agent_id,
         "slot": operation.slot,
         "status": operation.status,
@@ -140,13 +140,18 @@ def _default_env_file(env_name: str, candidates: tuple[Path, ...]) -> str:
     return str(candidates[0])
 
 
+def _container_env_file() -> Path:
+    configured = os.getenv("DASHBOARD_RUNPOD_CONTAINER_ENV_FILE", "/app/.env").strip()
+    return Path(configured)
+
+
 def _runpod_env_file() -> str:
     return _default_env_file(
         "DASHBOARD_RUNPOD_ENV_FILE",
         (
+            _container_env_file(),
             PROJECT_ROOT / ".env.cloud.test",
             PROJECT_ROOT / ".env",
-            Path("/app/.env"),
         ),
     )
 
@@ -155,9 +160,9 @@ def _prod_env_file() -> str:
     return _default_env_file(
         "DASHBOARD_RUNPOD_PROD_ENV_FILE",
         (
+            _container_env_file(),
             PROJECT_ROOT / ".env.cloud.prod",
             PROJECT_ROOT / ".env",
-            Path("/app/.env"),
         ),
     )
 
@@ -186,42 +191,44 @@ def _base_command(action: str, *, profile: str, slot: str | None = None) -> list
     return command
 
 
-def _operation_env(
-    *,
-    max_pods_total: int,
-    max_pods_per_type: int,
-    max_hourly_cost_usd: float,
-    prod_max_manual_slots: int | None,
-) -> dict[str, str]:
+def _default_prod_max_manual_slots() -> int:
+    raw = os.getenv("RUNPOD_PROD_MAX_MANUAL_SLOTS", "").strip()
+    if not raw:
+        return 100
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="RUNPOD_PROD_MAX_MANUAL_SLOTS must be an integer",
+        ) from exc
+    return max(1, value)
+
+
+def _operation_env(*, prod_max_manual_slots: int | None = None) -> dict[str, str]:
     env = dict(os.environ)
     env["RUNPOD_DRY_RUN"] = "false"
     env["RUNPOD_AUTOSCALER_ENABLED"] = "true"
-    env["RUNPOD_MAX_PODS_TOTAL"] = str(max_pods_total)
-    env["RUNPOD_MAX_PODS_PER_TYPE"] = str(max_pods_per_type)
-    env["RUNPOD_MAX_HOURLY_COST_USD"] = f"{max_hourly_cost_usd:g}"
     env["RUNPOD_PROD_MAX_MANUAL_SLOTS"] = str(
-        prod_max_manual_slots or max(2, max_pods_per_type)
+        prod_max_manual_slots or _default_prod_max_manual_slots()
     )
     return env
 
 
-def _validate_gate_values(
-    *,
-    desired_counts: list[int],
-    max_pods_total: int,
-    max_pods_per_type: int,
-) -> None:
-    max_desired = max(desired_counts or [0])
-    if max_pods_per_type > max_pods_total:
+def _requested_count_or_422(item: Any) -> int:
+    raw = item.count if item.count is not None else item.desired_count
+    if raw is None:
         raise HTTPException(
             status_code=422,
-            detail="max_pods_per_type must be <= max_pods_total",
+            detail="items[].count is required",
         )
-    if max_desired > max_pods_per_type:
+    requested = int(raw)
+    if requested < 1:
         raise HTTPException(
             status_code=422,
-            detail="desired_count must be <= max_pods_per_type",
+            detail="items[].count must be >= 1",
         )
+    return requested
 
 
 def _normalize_profile_or_422(profile: str) -> str:
@@ -279,24 +286,14 @@ async def start_runpod_scale_payload(
                 detail=f"duplicate profile in scale request: {profile}",
             )
         seen_profiles.add(profile)
-        normalized_items.append((profile, int(item.desired_count)))
+        normalized_items.append((profile, _requested_count_or_422(item)))
 
-    _validate_gate_values(
-        desired_counts=[desired for _profile, desired in normalized_items],
-        max_pods_total=request.max_pods_total,
-        max_pods_per_type=request.max_pods_per_type,
-    )
-    env = _operation_env(
-        max_pods_total=request.max_pods_total,
-        max_pods_per_type=request.max_pods_per_type,
-        max_hourly_cost_usd=request.max_hourly_cost_usd,
-        prod_max_manual_slots=request.prod_max_manual_slots,
-    )
+    env = _operation_env(prod_max_manual_slots=request.prod_max_manual_slots)
 
     operations: list[RunPodAdminOperation] = []
-    for profile, desired_count in normalized_items:
-        command = _base_command("scale", profile=profile)
-        command.extend(["--desired", str(desired_count)])
+    for profile, requested_count in normalized_items:
+        command = _base_command("add", profile=profile)
+        command.extend(["--count", str(requested_count)])
         if request.retry_unavailable:
             command.append("--retry-unavailable")
         command.extend(
@@ -310,11 +307,11 @@ async def start_runpod_scale_payload(
         )
         operations.append(
             _register_operation(
-                action="scale",
+                action="add",
                 profile=profile,
                 command=command,
                 env=env,
-                desired_count=desired_count,
+                requested_count=requested_count,
                 spawn_task_func=spawn_task_func,
             )
         )
@@ -331,7 +328,7 @@ async def pause_runpod_worker_payload(
     *,
     spawn_task_func=None,
 ) -> dict[str, Any]:
-    max_manual_slots = request.prod_max_manual_slots or max(2, request.max_pods_per_type)
+    max_manual_slots = request.prod_max_manual_slots or _default_prod_max_manual_slots()
     profile, slot = _agent_selection_or_422(
         agent_id,
         max_manual_slots=max_manual_slots,
@@ -342,12 +339,7 @@ async def pause_runpod_worker_payload(
         action="pause",
         profile=profile,
         command=command,
-        env=_operation_env(
-            max_pods_total=request.max_pods_total,
-            max_pods_per_type=request.max_pods_per_type,
-            max_hourly_cost_usd=request.max_hourly_cost_usd,
-            prod_max_manual_slots=max_manual_slots,
-        ),
+        env=_operation_env(prod_max_manual_slots=max_manual_slots),
         agent_id=agent_id,
         slot=slot,
         spawn_task_func=spawn_task_func,
@@ -361,7 +353,7 @@ async def delete_runpod_worker_payload(
     *,
     spawn_task_func=None,
 ) -> dict[str, Any]:
-    max_manual_slots = request.prod_max_manual_slots or max(2, request.max_pods_per_type)
+    max_manual_slots = request.prod_max_manual_slots or _default_prod_max_manual_slots()
     profile, slot = _agent_selection_or_422(
         agent_id,
         max_manual_slots=max_manual_slots,
@@ -372,12 +364,7 @@ async def delete_runpod_worker_payload(
         action="delete",
         profile=profile,
         command=command,
-        env=_operation_env(
-            max_pods_total=request.max_pods_total,
-            max_pods_per_type=request.max_pods_per_type,
-            max_hourly_cost_usd=request.max_hourly_cost_usd,
-            prod_max_manual_slots=max_manual_slots,
-        ),
+        env=_operation_env(prod_max_manual_slots=max_manual_slots),
         agent_id=agent_id,
         slot=slot,
         spawn_task_func=spawn_task_func,
@@ -391,7 +378,7 @@ def _register_operation(
     profile: str,
     command: list[str],
     env: dict[str, str],
-    desired_count: int | None = None,
+    requested_count: int | None = None,
     agent_id: str | None = None,
     slot: str | None = None,
     spawn_task_func=None,
@@ -401,7 +388,7 @@ def _register_operation(
         action=action,
         profile=profile,
         command=command,
-        desired_count=desired_count,
+        requested_count=requested_count,
         agent_id=agent_id,
         slot=slot,
     )

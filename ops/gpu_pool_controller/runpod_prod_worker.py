@@ -75,6 +75,7 @@ class RunPodProdWorkerOptions:
     environment: str = PROD_ENVIRONMENT
     agent_id: str = RUNPOD_PROD_AGENT_ID
     desired_count: int | None = None
+    add_count: int | None = None
     central_url: str = ""
     web_api_url: str = ""
     web_user_id: int = 3
@@ -230,6 +231,7 @@ def options_from_args_env(args: Any) -> RunPodProdWorkerOptions:
         task_type=task_type,
         agent_id=agent_id,
         desired_count=getattr(args, "desired", None),
+        add_count=getattr(args, "count", None),
         central_url=(
             getattr(args, "central_url", None)
             or os.getenv("RUNPOD_PROD_WORKER_CENTRAL_URL")
@@ -340,6 +342,8 @@ class RunPodProdWorkerRunner:
                 self._run_down(summary)
             elif action == "canary":
                 self._run_canary(summary)
+            elif action == "add":
+                self._run_add(summary)
             elif action == "scale":
                 self._run_scale(summary)
             else:
@@ -543,6 +547,94 @@ class RunPodProdWorkerRunner:
                 summary["ok"] = False
                 summary["restore_control_error"] = redact_text(str(exc))
 
+    def _run_add(self, summary: dict[str, Any]) -> None:
+        count = self._add_count()
+        max_slots = self.provider.settings.prod_max_manual_slots
+        summary["requested_count"] = count
+        summary["max_manual_slots"] = max_slots
+
+        self._phase(summary, "runpod_validate_key", "running")
+        validate = self.provider.validate_key()
+        self._require_ok(validate, "runpod validate-key failed")
+        self._phase(summary, "runpod_validate_key", "ok")
+
+        self._phase(summary, "runpod_list_pods", "running")
+        listed = self.provider.list_pods(managed_only=True)
+        self._require_ok(listed, "runpod list-pods failed")
+        managed_pods = list(listed.get("pods") or [])
+        slot_pods = _prod_manual_slot_pods(
+            managed_pods,
+            max_manual_slots=max_slots,
+            profile=self.options.profile,
+        )
+        self._phase(
+            summary,
+            "runpod_list_pods",
+            "ok",
+            {
+                "managed_count": listed.get("count", 0),
+                "prod_slot_count": len(slot_pods),
+            },
+        )
+
+        self._phase(summary, "runpod_reconcile", "running")
+        reconcile = self.provider.reconcile_managed_pods()
+        self._require_ok(reconcile, "runpod reconcile-managed-pods failed")
+        summary["reconcile"] = {
+            "managed_count": reconcile.get("managed_count"),
+            "orphans": reconcile.get("orphans", []),
+            "by_task_type": reconcile.get("by_task_type", {}),
+        }
+        self._phase(summary, "runpod_reconcile", "ok", summary["reconcile"])
+
+        self._phase(summary, "central_health", "running")
+        health = self._http_json("GET", _join_url(self.options.central_url, "health"))
+        summary["central_health"] = redact_payload(health)
+        self._phase(
+            summary, "central_health", "ok", {"central_url": self.options.central_url}
+        )
+
+        workers = self._fetch_workers()
+        plan = self._build_add_plan(
+            count=count,
+            slot_pods=slot_pods,
+            workers=workers,
+        )
+        summary["add_plan"] = plan
+        if not self.options.execute:
+            summary["ok"] = True
+            summary["would_execute"] = self._add_would_execute(plan)
+            return
+
+        self._require_agent_token()
+        self._require_runpod_mutation_gates()
+        operations: list[dict[str, Any]] = []
+        for slot in plan["create_slots"]:
+            operations.append(
+                self._scale_create_slot(
+                    slot,
+                    summary,
+                    create_reason="runpod_prod_worker_add",
+                    enable_reason="runpod_prod_worker_add_enable",
+                )
+            )
+        summary["operations"] = operations
+
+        listed_after = self.provider.list_pods(managed_only=True)
+        reconcile_after = self.provider.reconcile_managed_pods()
+        summary["post_reconcile"] = {
+            "list_pods": {
+                "ok": listed_after.get("ok"),
+                "count": listed_after.get("count"),
+            },
+            "reconcile": {
+                "ok": reconcile_after.get("ok"),
+                "managed_count": reconcile_after.get("managed_count"),
+                "orphans": reconcile_after.get("orphans", []),
+            },
+        }
+        summary["ok"] = bool(listed_after.get("ok") and reconcile_after.get("ok"))
+
     def _run_scale(self, summary: dict[str, Any]) -> None:
         desired = self._desired_count()
         max_slots = self.provider.settings.prod_max_manual_slots
@@ -652,6 +744,62 @@ class RunPodProdWorkerRunner:
         if desired < 0:
             raise RunPodProdWorkerError("--desired must be >= 0")
         return desired
+
+    def _add_count(self) -> int:
+        if self.options.add_count is None:
+            raise RunPodProdWorkerError("prod-worker add requires --count")
+        try:
+            count = int(self.options.add_count)
+        except (TypeError, ValueError) as exc:
+            raise RunPodProdWorkerError("--count must be an integer") from exc
+        if count < 1:
+            raise RunPodProdWorkerError("--count must be >= 1")
+        return count
+
+    def _build_add_plan(
+        self,
+        *,
+        count: int,
+        slot_pods: dict[str, dict[str, Any]],
+        workers: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        max_slots = self.provider.settings.prod_max_manual_slots
+        existing_slots = set(slot_pods)
+        all_slots = _prod_slot_sequence(max_slots)
+        free_slots = [
+            slot
+            for slot in all_slots
+            if slot not in existing_slots
+        ]
+        if len(free_slots) < count:
+            raise RunPodProdWorkerError(
+                f"prod-worker add requires {count} free slot(s); only "
+                f"{len(free_slots)} available within "
+                f"RUNPOD_PROD_MAX_MANUAL_SLOTS={max_slots}"
+            )
+        create_slots = free_slots[:count]
+        slots: dict[str, Any] = {}
+        for slot in sorted(existing_slots | set(create_slots), key=_slot_sort_key):
+            agent_id = prod_agent_id_from_slot(
+                slot,
+                max_manual_slots=max_slots,
+                profile=self.options.profile,
+            )
+            worker = _find_worker(workers, agent_id)
+            slots[slot] = {
+                "agent_id": agent_id,
+                "pod": _pod_minimal(slot_pods[slot]) if slot in slot_pods else None,
+                "worker": _worker_summary(worker) if worker else None,
+            }
+        return {
+            "requested_count": count,
+            "existing_slots": sorted(existing_slots, key=_slot_sort_key),
+            "free_slots": free_slots,
+            "create_slots": create_slots,
+            "enable_slots": [],
+            "delete_slots": [],
+            "slots": slots,
+        }
 
     def _build_scale_plan(
         self,
@@ -779,10 +927,34 @@ class RunPodProdWorkerRunner:
             )
         return actions
 
+    def _add_would_execute(self, plan: dict[str, Any]) -> list[str]:
+        actions: list[str] = []
+        for slot in plan["create_slots"]:
+            agent_id = prod_agent_id_from_slot(
+                slot,
+                max_manual_slots=self.provider.settings.prod_max_manual_slots,
+                profile=self.options.profile,
+            )
+            actions.extend(
+                [
+                    f"set Central control for new {agent_id} to disabled",
+                    f"create cloud-prod RunPod pod for new slot {slot}",
+                    f"wait for new slot {slot} Pod readiness and disabled heartbeat",
+                    f"set Central control for new {agent_id} to enabled",
+                ]
+            )
+        actions.append(
+            "leave all existing RunPod slots unchanged; no existing enable/disable/delete"
+        )
+        return actions
+
     def _scale_create_slot(
         self,
         slot: str,
         summary: dict[str, Any],
+        *,
+        create_reason: str = "runpod_prod_worker_scale_up",
+        enable_reason: str = "runpod_prod_worker_scale_enable",
     ) -> dict[str, Any]:
         agent_id = prod_agent_id_from_slot(
             slot,
@@ -800,7 +972,7 @@ class RunPodProdWorkerRunner:
         operation["disable_control"] = self._set_agent_control_for_agent(
             agent_id,
             "disabled",
-            reason="runpod_prod_worker_scale_up",
+            reason=create_reason,
         )
         create_payload = provider.create_pod(
             task_type=self.options.task_type,
@@ -823,7 +995,7 @@ class RunPodProdWorkerRunner:
         operation["enable_control"] = self._set_agent_control_for_agent(
             agent_id,
             "enabled",
-            reason="runpod_prod_worker_scale_enable",
+            reason=enable_reason,
         )
         return operation
 
@@ -2003,28 +2175,11 @@ class RunPodProdWorkerRunner:
         required_pod_limit: int | None = None,
     ) -> None:
         settings = self.provider.settings
-        max_manual_slots = settings.prod_max_manual_slots
-        if required_pod_limit is None:
-            required_pod_limit = int(
-                prod_slot_from_agent_id(
-                    self.options.agent_id,
-                    max_manual_slots=max_manual_slots,
-                    profile=self.options.profile,
-                )
-            )
         missing_gates: list[str] = []
         if settings.dry_run:
             missing_gates.append("RUNPOD_DRY_RUN=false")
         if not settings.autoscaler_enabled:
             missing_gates.append("RUNPOD_AUTOSCALER_ENABLED=true")
-        if settings.max_pods_total < required_pod_limit:
-            missing_gates.append(f"RUNPOD_MAX_PODS_TOTAL>={required_pod_limit}")
-        if settings.max_pods_per_type < required_pod_limit:
-            missing_gates.append(f"RUNPOD_MAX_PODS_PER_TYPE>={required_pod_limit}")
-        if settings.max_pods_per_type > max_manual_slots:
-            missing_gates.append(f"RUNPOD_MAX_PODS_PER_TYPE<={max_manual_slots}")
-        if settings.max_pods_per_type > settings.max_pods_total:
-            missing_gates.append("RUNPOD_MAX_PODS_PER_TYPE<=RUNPOD_MAX_PODS_TOTAL")
         if missing_gates:
             raise RunPodProdWorkerError(
                 "execute requires RunPod prod-worker gates: " + ", ".join(missing_gates)

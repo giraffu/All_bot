@@ -108,6 +108,7 @@ HOTSET_WAVE_CAPS = {
     "second": 12000,
 }
 HOTSET_MAX_BATCH_SIZE = 500
+HOTSET_EXISTS_TIMEOUT_SECONDS = float(os.getenv("HOTSET_EXISTS_TIMEOUT_SECONDS", "45"))
 HOTSET_COPY_TIMEOUT_SECONDS = int(os.getenv("HOTSET_COPY_TIMEOUT_SECONDS", "180"))
 
 MediaStatus = Literal[
@@ -917,11 +918,50 @@ async def process_history_r2_candidate(
                 await asyncio.sleep(min(2 * attempt, 5))
         return False
 
-    media_source_exists = await async_object_exists_func(
+    async def object_exists_with_timeout(
+        bucket_name: str,
+        object_name: str,
+        *,
+        label: str,
+    ) -> bool:
+        try:
+            return await asyncio.wait_for(
+                async_object_exists_func(bucket_name, object_name),
+                timeout=HOTSET_EXISTS_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Timed out probing %s source object after %ss",
+                label,
+                HOTSET_EXISTS_TIMEOUT_SECONDS,
+            )
+            return False
+        except Exception:
+            logger.exception("Unexpected %s source object probe failure", label)
+            return False
+
+    async def r2_object_exists_with_timeout(r2_key: str) -> bool:
+        try:
+            return await asyncio.wait_for(
+                async_r2_object_exists_func(r2_key),
+                timeout=HOTSET_EXISTS_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Timed out probing R2 object after %ss",
+                HOTSET_EXISTS_TIMEOUT_SECONDS,
+            )
+            return False
+        except Exception:
+            logger.exception("Unexpected R2 object probe failure")
+            return False
+
+    media_source_exists = await object_exists_with_timeout(
         candidate.source_bucket,
         candidate.source_object,
+        label="media",
     )
-    media_r2_exists = await async_r2_object_exists_func(candidate.media_r2_key)
+    media_r2_exists = await r2_object_exists_with_timeout(candidate.media_r2_key)
 
     if media_r2_exists:
         media_status: MediaStatus = "exists"
@@ -940,13 +980,16 @@ async def process_history_r2_candidate(
     if media_only:
         thumbnail_status: ThumbnailStatus = "skipped"
     else:
-        thumbnail_r2_exists = await async_r2_object_exists_func(candidate.thumbnail_r2_key)
+        thumbnail_r2_exists = await r2_object_exists_with_timeout(
+            candidate.thumbnail_r2_key
+        )
         if thumbnail_r2_exists:
             thumbnail_status = "exists"
         else:
-            thumbnail_source_exists = await async_object_exists_func(
+            thumbnail_source_exists = await object_exists_with_timeout(
                 candidate.thumbnail_source_bucket,
                 candidate.thumbnail_source_object,
+                label="thumbnail",
             )
             if thumbnail_source_exists:
                 if not apply_changes:
@@ -1009,11 +1052,12 @@ async def process_history_r2_candidate(
                 or not input_file.r2_key
             ):
                 input_status = "skipped"
-            elif await async_r2_object_exists_func(input_file.r2_key):
+            elif await r2_object_exists_with_timeout(input_file.r2_key):
                 input_status = "exists"
-            elif not await async_object_exists_func(
+            elif not await object_exists_with_timeout(
                 input_file.source_bucket,
                 input_file.source_object,
+                label="input",
             ):
                 input_status = "source_missing"
             elif not apply_changes:
@@ -1433,6 +1477,14 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="热集模式不读取/更新游标；仅建议一次性验证时使用。",
     )
     parser.add_argument(
+        "--mark-failed-hotset-processed",
+        action="store_true",
+        help=(
+            "热集 apply 时也把传输失败项写入 cursor，避免坏对象反复阻塞批跑；"
+            "失败项仍会出现在报告中，需用其它源或人工补漏。"
+        ),
+    )
+    parser.add_argument(
         "--report-dir",
         type=Path,
         default=Path("logs"),
@@ -1630,11 +1682,14 @@ async def run_backfill(args) -> BackfillSummary:
     summary = summarize_results(results, apply_changes=args.apply)
     logger.info("Backfill summary: %s", json.dumps(summary.to_dict(), ensure_ascii=False))
     if args.apply and cursor_file and hotset_selection:
-        processed_history_ids.update(
-            result.candidate.history_id
-            for result in results
-            if should_mark_hotset_processed(result)
-        )
+        if args.mark_failed_hotset_processed:
+            processed_history_ids.update(result.candidate.history_id for result in results)
+        else:
+            processed_history_ids.update(
+                result.candidate.history_id
+                for result in results
+                if should_mark_hotset_processed(result)
+            )
         write_hotset_cursor(
             cursor_file,
             profile=hotset_selection.profile,

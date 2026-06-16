@@ -1,7 +1,9 @@
+import asyncio
 from types import SimpleNamespace
 
 import pytest
 
+import scripts.backfill_history_r2_objects as backfill_module
 from scripts.backfill_history_r2_objects import (
     build_history_r2_candidate,
     build_input_file_candidates,
@@ -214,6 +216,46 @@ async def test_process_history_r2_candidate_plans_upload_and_thumbnail_generatio
 
     assert result.media_status == "would_upload"
     assert result.thumbnail_status == "would_generate"
+
+
+@pytest.mark.asyncio
+async def test_process_history_r2_candidate_times_out_source_probe(monkeypatch):
+    monkeypatch.setattr(backfill_module, "HOTSET_EXISTS_TIMEOUT_SECONDS", 0.01)
+    candidate = build_history_r2_candidate(
+        history_id=3,
+        user_id=33,
+        username="A A",
+        task_id="task-3",
+        history_type="doggy_style",
+        output_file="123/output_images/task-3.png",
+    )
+
+    async def slow_async_object_exists(_bucket_name, _object_name):
+        await asyncio.sleep(0.05)
+        return True
+
+    async def fake_async_r2_object_exists(_object_name):
+        return False
+
+    async def fake_async_copy_to_r2(_bucket_name, _object_name, _r2_key):
+        raise AssertionError("timed out source probe should not copy")
+
+    result = await backfill_module.process_history_r2_candidate(
+        candidate,
+        apply_changes=True,
+        media_only=False,
+        generate_missing_thumbnails=False,
+        async_object_exists_func=slow_async_object_exists,
+        async_r2_object_exists_func=fake_async_r2_object_exists,
+        async_copy_to_r2_func=fake_async_copy_to_r2,
+        generate_and_upload_thumbnail_func=fail_generate_thumbnail_from_r2_media,
+        generate_and_upload_thumbnail_from_r2_media_func=(
+            fail_generate_thumbnail_from_r2_media
+        ),
+    )
+
+    assert result.media_status == "source_missing"
+    assert result.thumbnail_status == "source_missing"
 
 
 @pytest.mark.asyncio

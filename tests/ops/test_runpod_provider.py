@@ -1031,15 +1031,17 @@ def test_render_create_cloud_prod_i2i_pro_uses_prod_refs_and_multitask_manifest(
     assert env["RUNPOD_MODEL_SECRET_KEY"] == RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF
 
 
-def test_prod_slot_default_max_rejects_third_slot(monkeypatch):
+def test_prod_slot_default_max_allows_hundred_slot_namespace(monkeypatch):
     monkeypatch.delenv("RUNPOD_PROD_MAX_MANUAL_SLOTS", raising=False)
 
+    assert prod_agent_id_from_slot("03") == "runpod_prod_img2img_manual_03"
+    assert prod_agent_id_from_slot("100") == "runpod_prod_img2img_manual_100"
     try:
-        prod_agent_id_from_slot("03")
+        prod_agent_id_from_slot("101")
     except ValueError as exc:
-        assert "between 01 and 02" in str(exc)
+        assert "between 01 and 100" in str(exc)
     else:
-        raise AssertionError("slot 03 should require explicit max slot configuration")
+        raise AssertionError("slot 101 should require explicit max slot configuration")
 
 
 def test_render_create_cloud_prod_manual_worker_can_use_configured_eighth_slot():
@@ -1106,7 +1108,7 @@ def test_mutations_are_dry_run_by_default_and_do_not_call_api():
     assert fake.calls == []
 
 
-def test_mutation_gate_blocks_more_than_one_total_pod_or_type():
+def test_mutation_gate_allows_existing_pods_after_capacity_limits_removed():
     fake = FakeRunPodApi({"id": "pod-created"})
     provider = RunPodProvider(
         _settings(
@@ -1134,16 +1136,11 @@ def test_mutation_gate_blocks_more_than_one_total_pod_or_type():
         execute=True,
     )
 
-    assert payload["ok"] is False
-    assert "runpod active pod total limit reached" in payload["guard"]["reasons"]
-    assert (
-        "runpod active pod limit reached for img2img_lora"
-        in payload["guard"]["reasons"]
-    )
-    assert fake.calls == []
+    assert payload["ok"] is True
+    assert fake.calls[0]["method"] == "POST"
 
 
-def test_mutation_gate_blocks_hourly_cost_limit():
+def test_mutation_gate_allows_create_after_hourly_cost_limit_removed():
     fake = FakeRunPodApi({"id": "pod-created"})
     provider = RunPodProvider(
         _settings(
@@ -1162,12 +1159,11 @@ def test_mutation_gate_blocks_hourly_cost_limit():
         execute=True,
     )
 
-    assert payload["ok"] is False
-    assert "RUNPOD_MAX_HOURLY_COST_USD would be exceeded" in payload["guard"]["reasons"]
-    assert fake.calls == []
+    assert payload["ok"] is True
+    assert fake.calls[0]["method"] == "POST"
 
 
-def test_wan22_mutation_gate_blocks_same_type_and_hourly_cost_limit():
+def test_wan22_mutation_gate_allows_existing_same_type_and_cost_after_limits_removed():
     fake = FakeRunPodApi({"id": "pod-created"})
     provider = RunPodProvider(
         _settings(
@@ -1198,14 +1194,8 @@ def test_wan22_mutation_gate_blocks_same_type_and_hourly_cost_limit():
         execute=True,
     )
 
-    assert payload["ok"] is False
-    assert "runpod active pod total limit reached" in payload["guard"]["reasons"]
-    assert (
-        "runpod active pod limit reached for wan22_aio_video"
-        in payload["guard"]["reasons"]
-    )
-    assert "RUNPOD_MAX_HOURLY_COST_USD would be exceeded" in payload["guard"]["reasons"]
-    assert fake.calls == []
+    assert payload["ok"] is True
+    assert fake.calls[0]["method"] == "POST"
 
 
 def test_execute_create_posts_runpod_secret_references_not_inline_local_secrets():
@@ -1381,7 +1371,7 @@ def test_mutation_gate_allows_global_total_above_manual_slots():
     assert fake.calls[0]["json_body"]["env"]["RUNPOD_TASK_TYPE"] == "wan22_video_v2"
 
 
-def test_mutation_gate_caps_v0_per_type_at_configured_max():
+def test_mutation_gate_ignores_removed_per_type_capacity_limit():
     provider = RunPodProvider(
         _settings(
             dry_run=False,
@@ -1400,11 +1390,7 @@ def test_mutation_gate_caps_v0_per_type_at_configured_max():
         execute=True,
     )
 
-    assert payload["ok"] is False
-    assert (
-        "RUNPOD_MAX_PODS_PER_TYPE must be between 1 and 8 for v0"
-        in payload["guard"]["reasons"]
-    )
+    assert payload["ok"] is True
 
 
 def test_start_stop_delete_are_guarded_by_default():
@@ -1495,9 +1481,8 @@ def test_execute_create_reconciles_existing_pods_before_posting():
         execute=True,
     )
 
-    assert payload["ok"] is False
-    assert "runpod active pod total limit reached" in payload["guard"]["reasons"]
-    assert [call["method"] for call in fake.calls] == ["GET"]
+    assert payload["ok"] is True
+    assert [call["method"] for call in fake.calls] == ["GET", "POST"]
 
 
 def test_runpod_provider_does_not_enter_lan_ssh_inventory():

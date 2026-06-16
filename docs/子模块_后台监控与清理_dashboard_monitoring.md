@@ -77,11 +77,11 @@ sequenceDiagram
 ### 4.4 RunPod 管理
 - 系统监控页顶部的 `RunPod 管理` 是云正式手动 RunPod 池的 Web 日常入口；后端 API 位于 `dashboard/backend/routers/runpod.py`，执行层收口到 `dashboard/backend/services/runpod_admin_service.py`。
 - Dashboard 不直接实现 RunPod 创建/删除逻辑，只异步调用 `scripts/runpod_prod_ops.sh`，继承 CLI 的门禁、无库存重试、disabled heartbeat、自动 enable、drain/delete 语义。
-- `POST /api/runpod/scale` 接收多 profile 目标数量，后台拆成 profile 级 operation。这里的数量是 `scale --desired N` 目标数，不是额外新增数；同一请求中同一 profile 不允许重复。
+- `POST /api/runpod/scale` 接收多 profile 新增数量，后台拆成 profile 级 `add --count N` operation。旧字段 `desired_count` 只作兼容输入并按新增数量解释，不再代表目标总数；同一请求中同一 profile 不允许重复。
 - `POST /api/runpod/workers/{agent_id}/pause` 只提交 `disable` operation，停止目标 RunPod worker 接新单但保留 Pod。
 - `DELETE /api/runpod/workers/{agent_id}` 提交 `down` operation，先 disable 并等待 `current_task_id` 清空，再删除 Pod 释放 RunPod 计费资源。
 - operation 只保存在 Dashboard Backend 进程内存，适合当前云正式单 worker 后端部署；若后续 Dashboard Backend 扩到多进程/多副本或需要跨重启追踪，应迁移到 Redis/DB。
-- Dashboard RunPod mutation 必须带显式门禁：`RUNPOD_DRY_RUN=false`、`RUNPOD_AUTOSCALER_ENABLED=true`、`RUNPOD_MAX_PODS_TOTAL`、`RUNPOD_MAX_PODS_PER_TYPE`、`RUNPOD_MAX_HOURLY_COST_USD`。前端默认展示这些值，后端仍由底层 wrapper/controller 二次校验。
+- Dashboard RunPod mutation 只打开显式执行门禁：`RUNPOD_DRY_RUN=false`、`RUNPOD_AUTOSCALER_ENABLED=true`。全局 Pod 数、单类型 Pod 数、小时成本上限不再由 Dashboard/API/provider 校验；`RUNPOD_PROD_MAX_MANUAL_SLOTS` 默认按 `100` 作为 manual slot 命名空间。
 - Dashboard 容器默认可通过 `DASHBOARD_RUNPOD_ENV_FILE`、`DASHBOARD_RUNPOD_PROD_ENV_FILE`、`DASHBOARD_RUNPOD_OPS_SCRIPT` 覆盖脚本和 env 路径；云正式容器中未存在 `.env.cloud.prod` 文件名时，默认可使用挂载的 `/app/.env`。
 - API 响应和 operation log 只保留脱敏命令、状态、pid、退出码与日志尾部，不输出 `.env.*` 内容、RunPod API key、agent token、JWT、R2 key 或 presigned URL。
 
@@ -90,7 +90,7 @@ sequenceDiagram
 - 覆盖系统统计接口的基础返回
 - 覆盖 `healthy_workers`、`error_workers`、`quarantined_workers` 与 `workers_by_status` 聚合
 - 覆盖 Dashboard 对 `error/quarantined` Worker 的红色/隔离态展示
-- 覆盖 Dashboard RunPod 管理入口的 profile 校验、目标数量 scale 命令、worker pause/delete slot 解析，以及前端 typecheck / 系统监控页渲染。
+- 覆盖 Dashboard RunPod 管理入口的 profile 校验、新增数量 add 命令、旧 `desired_count` 兼容、worker pause/delete slot 解析，以及前端 typecheck / 系统监控页渲染。
 - 覆盖管理员强制终止时的：
   - `registry_task_id` 清理
   - `backend_task_id` best-effort cancel

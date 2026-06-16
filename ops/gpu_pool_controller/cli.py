@@ -860,6 +860,14 @@ def build_parser() -> argparse.ArgumentParser:
         prod_worker_command.add_argument("--execute", action="store_true")
         prod_worker_command.set_defaults(func=_cmd_runpod_prod_worker)
 
+    prod_worker_add = prod_worker_subparsers.add_parser(
+        "add",
+        parents=[prod_worker_common],
+    )
+    prod_worker_add.add_argument("--count", type=int, required=True)
+    prod_worker_add.add_argument("--execute", action="store_true")
+    prod_worker_add.set_defaults(func=_cmd_runpod_prod_worker)
+
     prod_worker_scale = prod_worker_subparsers.add_parser(
         "scale",
         parents=[prod_worker_common],

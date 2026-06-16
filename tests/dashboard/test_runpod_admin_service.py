@@ -1,7 +1,11 @@
 import pytest
 from fastapi import HTTPException
 
-from dashboard.backend.schemas import RunPodScaleItem, RunPodScaleRequest, RunPodWorkerActionRequest
+from dashboard.backend.schemas import (
+    RunPodScaleItem,
+    RunPodScaleRequest,
+    RunPodWorkerActionRequest,
+)
 from dashboard.backend.services import runpod_admin_service
 
 
@@ -38,12 +42,9 @@ async def test_start_runpod_scale_payload_creates_retrying_operations():
     payload = await runpod_admin_service.start_runpod_scale_payload(
         RunPodScaleRequest(
             items=[
-                RunPodScaleItem(profile="img2img_lora", desired_count=2),
-                RunPodScaleItem(profile="wan22_video_v2", desired_count=1),
+                RunPodScaleItem(profile="img2img_lora", count=2),
+                RunPodScaleItem(profile="wan22_video_v2", count=1),
             ],
-            max_pods_total=6,
-            max_pods_per_type=3,
-            max_hourly_cost_usd=12,
             max_attempts=100,
             retry_interval_seconds=30,
         ),
@@ -56,13 +57,35 @@ async def test_start_runpod_scale_payload_creates_retrying_operations():
         "wan22_video_v2",
     ]
     command = payload["operations"][0]["command"]
-    assert "scale" in command
+    assert "add" in command
     assert command[command.index("--profile") + 1] == "img2img"
-    assert command[command.index("--desired") + 1] == "2"
+    assert command[command.index("--count") + 1] == "2"
+    assert "--desired" not in command
     assert "--retry-unavailable" in command
     assert command[command.index("--max-attempts") + 1] == "100"
     assert command[command.index("--retry-interval") + 1] == "30"
     assert "--execute" in command
+    assert payload["operations"][0]["action"] == "add"
+    assert payload["operations"][0]["requested_count"] == 2
+    assert "desired_count" not in payload["operations"][0]
+
+
+@pytest.mark.asyncio
+async def test_start_runpod_scale_payload_treats_legacy_desired_as_add_count():
+    payload = await runpod_admin_service.start_runpod_scale_payload(
+        RunPodScaleRequest(
+            items=[
+                RunPodScaleItem(profile="img2img_lora", desired_count=1),
+            ],
+        ),
+        spawn_task_func=_discard_operation_coroutine,
+    )
+
+    command = payload["operations"][0]["command"]
+    assert "add" in command
+    assert "--desired" not in command
+    assert command[command.index("--count") + 1] == "1"
+    assert payload["operations"][0]["requested_count"] == 1
 
 
 @pytest.mark.asyncio
@@ -84,7 +107,7 @@ async def test_start_runpod_scale_payload_rejects_duplicate_profiles():
 
 @pytest.mark.asyncio
 async def test_pause_and_delete_runpod_worker_build_slot_scoped_operations():
-    action_request = RunPodWorkerActionRequest(max_pods_per_type=4)
+    action_request = RunPodWorkerActionRequest(prod_max_manual_slots=4)
 
     pause_payload = await runpod_admin_service.pause_runpod_worker_payload(
         agent_id="runpod_prod_wan22_video_v2_manual_03",
@@ -108,17 +131,33 @@ async def test_pause_and_delete_runpod_worker_build_slot_scoped_operations():
     assert delete_payload["operation"]["status"] == "pending"
 
 
-def test_runpod_operation_env_opens_required_mutation_gates():
-    env = runpod_admin_service._operation_env(
-        max_pods_total=6,
-        max_pods_per_type=3,
-        max_hourly_cost_usd=12,
-        prod_max_manual_slots=None,
-    )
+def test_runpod_operation_env_opens_required_mutation_gates(monkeypatch):
+    monkeypatch.delenv("RUNPOD_PROD_MAX_MANUAL_SLOTS", raising=False)
+    monkeypatch.delenv("RUNPOD_MAX_PODS_TOTAL", raising=False)
+    monkeypatch.delenv("RUNPOD_MAX_PODS_PER_TYPE", raising=False)
+    monkeypatch.delenv("RUNPOD_MAX_HOURLY_COST_USD", raising=False)
+    env = runpod_admin_service._operation_env(prod_max_manual_slots=None)
 
     assert env["RUNPOD_DRY_RUN"] == "false"
     assert env["RUNPOD_AUTOSCALER_ENABLED"] == "true"
-    assert env["RUNPOD_MAX_PODS_TOTAL"] == "6"
-    assert env["RUNPOD_MAX_PODS_PER_TYPE"] == "3"
-    assert env["RUNPOD_MAX_HOURLY_COST_USD"] == "12"
-    assert env["RUNPOD_PROD_MAX_MANUAL_SLOTS"] == "3"
+    assert "RUNPOD_MAX_PODS_TOTAL" not in env
+    assert "RUNPOD_MAX_PODS_PER_TYPE" not in env
+    assert "RUNPOD_MAX_HOURLY_COST_USD" not in env
+    assert env["RUNPOD_PROD_MAX_MANUAL_SLOTS"] == "100"
+
+
+def test_runpod_env_defaults_prefer_container_env(monkeypatch, tmp_path):
+    container_env = tmp_path / "container.env"
+    cloud_test_env = tmp_path / ".env.cloud.test"
+    cloud_prod_env = tmp_path / ".env.cloud.prod"
+    container_env.write_text("APP_ENV=prod\n", encoding="utf-8")
+    cloud_test_env.write_text("APP_ENV=test\n", encoding="utf-8")
+    cloud_prod_env.write_text("APP_ENV=prod_file\n", encoding="utf-8")
+
+    monkeypatch.delenv("DASHBOARD_RUNPOD_ENV_FILE", raising=False)
+    monkeypatch.delenv("DASHBOARD_RUNPOD_PROD_ENV_FILE", raising=False)
+    monkeypatch.setenv("DASHBOARD_RUNPOD_CONTAINER_ENV_FILE", str(container_env))
+    monkeypatch.setattr(runpod_admin_service, "PROJECT_ROOT", tmp_path)
+
+    assert runpod_admin_service._runpod_env_file() == str(container_env)
+    assert runpod_admin_service._prod_env_file() == str(container_env)
