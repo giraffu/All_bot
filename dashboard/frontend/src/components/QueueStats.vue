@@ -14,6 +14,8 @@ import {
 } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
 import { useQueueStatsMonitor } from '../composables/useQueueStatsMonitor'
+import RunPodCapacityManager from './RunPodCapacityManager.vue'
+import RunPodWorkerActions from './RunPodWorkerActions.vue'
 
 const {
   status,
@@ -24,6 +26,7 @@ const {
   queueByTypeDisplay,
   cleanZombies,
   syncLock,
+  updateQueue,
 } = useQueueStatsMonitor()
 
 const handleCleanZombies = () => {
@@ -162,6 +165,7 @@ const handleSyncLock = async (userId) => {
       </a-tag>
       
       <div class="ml-auto flex items-center gap-3">
+        <run-pod-capacity-manager @changed="updateQueue" />
         <a-button type="primary" danger ghost @click="handleCleanZombies" :loading="cleaning">
           <template #icon><clear-outlined /></template>
           一键清理卡死任务
@@ -266,9 +270,12 @@ const handleSyncLock = async (userId) => {
       <a-col :xs="24" :sm="12" :md="8" :lg="6" v-for="worker in workers" :key="worker.agent_id">
         <a-card size="small" hoverable class="worker-card h-full flex flex-col" :class="getWorkerStatusMeta(worker).cardClass">
           <template #title>
-            <div class="flex justify-between items-center w-full">
+            <div class="flex justify-between items-center w-full gap-2">
               <span class="font-mono text-sm font-bold truncate pr-2" :title="worker.agent_id">{{ worker.agent_id }}</span>
-              <a-badge :status="getWorkerStatusMeta(worker).badgeStatus" :text="getWorkerStatusMeta(worker).text" />
+              <div class="flex items-center gap-2 shrink-0">
+                <run-pod-worker-actions :worker="worker" @changed="updateQueue" />
+                <a-badge :status="getWorkerStatusMeta(worker).badgeStatus" :text="getWorkerStatusMeta(worker).text" />
+              </div>
             </div>
           </template>
           

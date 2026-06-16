@@ -157,6 +157,18 @@ export const fetchSystemWorkers = async () => get('/api/system/workers')
 
 export const fetchConcurrencyStats = async () => get('/api/system/concurrency_stats')
 
+export const fetchRunPodProfiles = async () => get('/api/runpod/profiles')
+
+export const fetchRunPodOperations = async () => get('/api/runpod/operations')
+
+export const scaleRunPodCapacity = async (payload) => post('/api/runpod/scale', payload)
+
+export const pauseRunPodWorker = async (agentId, payload = {}) =>
+  post(`/api/runpod/workers/${agentId}/pause`, payload)
+
+export const deleteRunPodWorker = async (agentId, payload = {}) =>
+  del(`/api/runpod/workers/${agentId}`, { data: payload })
+
 export const fetchActiveBotTasks = async () => get('/api/system/active_bot_tasks')
 
 export const refundBotTask = async (taskId) =>

@@ -22,6 +22,7 @@ from dashboard.backend.routers import (
     logs,
     plans,
     referrals,
+    runpod,
     site_notice,
     stats,
     system,
@@ -147,6 +148,7 @@ app.include_router(templates.router)
 app.include_router(system.router)
 app.include_router(logs.router)
 app.include_router(workers.router)
+app.include_router(runpod.router)
 app.include_router(gallery.router)
 app.include_router(referrals.router)
 app.include_router(site_notice.router)

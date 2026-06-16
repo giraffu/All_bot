@@ -26,6 +26,7 @@ vi.mock('../composables/useQueueStatsMonitor', async () => {
       queueByTypeDisplay: computed(() => []),
       cleanZombies: vi.fn(),
       syncLock: vi.fn(),
+      updateQueue: vi.fn(),
     }),
   }
 })
@@ -68,6 +69,8 @@ const mountQueueStats = async () => {
         'a-statistic': StatisticStub,
         'a-progress': slotStub('AProgressStub'),
         'a-empty': slotStub('AEmptyStub'),
+        RunPodCapacityManager: slotStub('RunPodCapacityManagerStub'),
+        RunPodWorkerActions: slotStub('RunPodWorkerActionsStub'),
       },
     },
   })

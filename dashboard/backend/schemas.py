@@ -196,6 +196,29 @@ class SyncLockRequest(BaseModel):
     user_id: int
 
 
+class RunPodScaleItem(BaseModel):
+    profile: str
+    desired_count: int = Field(..., ge=0, le=20)
+
+
+class RunPodScaleRequest(BaseModel):
+    items: List[RunPodScaleItem] = Field(..., min_length=1, max_length=8)
+    max_pods_total: int = Field(default=8, ge=1, le=50)
+    max_pods_per_type: int = Field(default=4, ge=1, le=20)
+    max_hourly_cost_usd: float = Field(default=20.0, gt=0, le=500)
+    prod_max_manual_slots: Optional[int] = Field(default=None, ge=1, le=20)
+    retry_unavailable: bool = True
+    max_attempts: int = Field(default=100, ge=1, le=500)
+    retry_interval_seconds: int = Field(default=30, ge=5, le=3600)
+
+
+class RunPodWorkerActionRequest(BaseModel):
+    max_pods_total: int = Field(default=8, ge=1, le=50)
+    max_pods_per_type: int = Field(default=4, ge=1, le=20)
+    max_hourly_cost_usd: float = Field(default=20.0, gt=0, le=500)
+    prod_max_manual_slots: Optional[int] = Field(default=None, ge=1, le=20)
+
+
 class GalleryPostUpdate(BaseModel):
     is_active: Optional[bool] = None
     likes_count: Optional[int] = Field(default=None, ge=0)

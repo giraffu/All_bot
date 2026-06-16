@@ -1,3 +1,4 @@
+import os
 import subprocess
 from pathlib import Path
 
@@ -123,3 +124,80 @@ def test_runpod_rollback_delete_slot_dry_run_uses_down():
     output = result.stdout
     assert "deleting selected slot 01" in output
     assert "runpod prod-worker down" in output
+
+
+def test_runpod_scale_retry_unavailable_dry_run_is_bounded():
+    result = run_script(
+        "bash",
+        "scripts/runpod_prod_ops.sh",
+        "scale",
+        "--profile",
+        "img2img",
+        "--desired",
+        "2",
+        "--retry-unavailable",
+        "--max-attempts",
+        "3",
+        "--retry-interval",
+        "1",
+        "--dry-run",
+    )
+
+    assert result.returncode == 0, result.stderr
+    output = result.stdout
+    assert "retry RunPod no-inventory responses up to 3 attempts every 1s" in output
+    assert "runpod prod-worker scale" in output
+    assert "--desired 2" in output
+
+
+def test_runpod_scale_retry_unavailable_retries_transient_no_inventory(tmp_path):
+    fake_controller = tmp_path / "fake_controller.py"
+    counter_file = tmp_path / "attempts.txt"
+    fake_controller.write_text(
+        """
+import os
+import pathlib
+import sys
+
+counter = pathlib.Path(os.environ["RUNPOD_FAKE_COUNTER"])
+attempt = int(counter.read_text() or "0") if counter.exists() else 0
+attempt += 1
+counter.write_text(str(attempt))
+if attempt == 1:
+    print("There are no instances currently available")
+    raise SystemExit(2)
+print("ok")
+raise SystemExit(0)
+""".lstrip()
+    )
+
+    env = os.environ.copy()
+    env["RUNPOD_PROD_OPS_CONTROLLER"] = str(fake_controller)
+    env["RUNPOD_FAKE_COUNTER"] = str(counter_file)
+    result = subprocess.run(
+        [
+            "bash",
+            "scripts/runpod_prod_ops.sh",
+            "scale",
+            "--profile",
+            "img2img",
+            "--desired",
+            "2",
+            "--retry-unavailable",
+            "--max-attempts",
+            "2",
+            "--retry-interval",
+            "0",
+            "--execute",
+        ],
+        cwd=ROOT,
+        env=env,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert counter_file.read_text() == "2"
+    assert "There are no instances currently available" in result.stdout
+    assert "RunPod inventory unavailable; retry 1/2" in result.stderr

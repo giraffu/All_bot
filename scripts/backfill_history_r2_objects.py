@@ -628,6 +628,7 @@ async def collect_web_visible_retire_legacy_history_ids(
     session,
     *,
     recent_limit: int = 8,
+    include_per_user_recent: bool = True,
     total_limit: int | None = None,
 ) -> tuple[list[int], dict[str, dict[str, int]]]:
     cap = total_limit if total_limit and total_limit > 0 else sys.maxsize
@@ -648,22 +649,25 @@ async def collect_web_visible_retire_legacy_history_ids(
         added = _append_unique_history_ids(selected, seen, rows, cap=cap)
         source_counts[label] = {"raw": len(rows), "added": added}
 
-    recent_ranked = (
-        select(
-            History.id.label("history_id"),
-            func.row_number()
-            .over(partition_by=History.user_id, order_by=desc(History.id))
-            .label("row_number"),
+    if include_per_user_recent:
+        recent_ranked = (
+            select(
+                History.id.label("history_id"),
+                func.row_number()
+                .over(partition_by=History.user_id, order_by=desc(History.id))
+                .label("row_number"),
+            )
+            .where(*common_history_filters)
+            .subquery()
         )
-        .where(*common_history_filters)
-        .subquery()
-    )
-    await collect_source(
-        "per_user_recent_visible_history",
-        select(recent_ranked.c.history_id)
-        .where(recent_ranked.c.row_number <= recent_limit)
-        .order_by(recent_ranked.c.history_id.desc()),
-    )
+        await collect_source(
+            "per_user_recent_visible_history",
+            select(recent_ranked.c.history_id)
+            .where(recent_ranked.c.row_number <= recent_limit)
+            .order_by(recent_ranked.c.history_id.desc()),
+        )
+    else:
+        source_counts["per_user_recent_visible_history"] = {"raw": 0, "added": 0}
 
     await collect_source(
         "all_gallery_posts",
@@ -1384,6 +1388,14 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="visible-scope=user-visible 时每个用户纳入的最近原始历史条数。",
     )
     parser.add_argument(
+        "--skip-per-user-recent-history",
+        action="store_true",
+        help=(
+            "web-visible-retire-legacy 热集不采集每用户最近 N 条历史，"
+            "仅保留 Gallery/收藏/互动/提示词解锁相关历史。"
+        ),
+    )
+    parser.add_argument(
         "--source-storage",
         choices=["current", "legacy"],
         default=None,
@@ -1542,6 +1554,9 @@ async def run_backfill(args) -> BackfillSummary:
                     await collect_web_visible_retire_legacy_history_ids(
                         session,
                         recent_limit=args.recent_limit,
+                        include_per_user_recent=(
+                            not args.skip_per_user_recent_history
+                        ),
                         total_limit=args.limit,
                     )
                 )

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CONTROLLER="${ROOT_DIR}/scripts/gpu_pool_controller.py"
+CONTROLLER="${RUNPOD_PROD_OPS_CONTROLLER:-${ROOT_DIR}/scripts/gpu_pool_controller.py}"
 
 ACTION="status"
 MODE="dry-run"
@@ -12,6 +12,9 @@ DESIRED=""
 ROLLBACK_MODE="keep-pod"
 RUNPOD_ENV_FILE=".env.cloud.test"
 PROD_ENV_FILE=".env.cloud.prod"
+RETRY_UNAVAILABLE="false"
+MAX_ATTEMPTS="20"
+RETRY_INTERVAL_SECONDS="90"
 
 STATUS_PROFILES=(img2img image_to_video wan22_video_v2 i2i_pro)
 
@@ -39,6 +42,9 @@ Options:
   --delete-pod                With rollback, delete capacity after drain.
   --runpod-env-file <path>    RunPod env/profile defaults. Default .env.cloud.test.
   --prod-env-file <path>      Prod Central/Web/R2 values. Default .env.cloud.prod.
+  --retry-unavailable         Retry up/scale when RunPod reports no GPU inventory.
+  --max-attempts <N>          Max attempts with --retry-unavailable. Default 20.
+  --retry-interval <sec>      Sleep seconds between retry attempts. Default 90.
   --dry-run                   Print guarded mutation plan only. Default.
   --execute                   Execute the selected mutation.
   -h, --help                  Show this help.
@@ -86,6 +92,47 @@ run_controller() {
   "${cmd[@]}"
 }
 
+is_retryable_unavailable_output() {
+  local path="$1"
+  grep -Eiq \
+    'There are no instances currently available|no instances currently available|no[[:space:]_-]*instances.*available|instances.*currently.*available' \
+    "$path"
+}
+
+run_controller_with_unavailable_retry() {
+  local command_name="$1"
+  shift
+  local attempt=1
+  local max_attempts=1
+  if [ "$RETRY_UNAVAILABLE" = "true" ]; then
+    max_attempts="$MAX_ATTEMPTS"
+  fi
+
+  while true; do
+    local output_file
+    output_file="$(mktemp)"
+    set +e
+    run_controller "$command_name" "$@" >"$output_file" 2>&1
+    local status=$?
+    set -e
+    cat "$output_file"
+    if [ "$status" -eq 0 ]; then
+      rm -f "$output_file"
+      return 0
+    fi
+    if [ "$RETRY_UNAVAILABLE" != "true" ] \
+      || [ "$attempt" -ge "$max_attempts" ] \
+      || ! is_retryable_unavailable_output "$output_file"; then
+      rm -f "$output_file"
+      return "$status"
+    fi
+    rm -f "$output_file"
+    echo "[runpod-prod-ops] RunPod inventory unavailable; retry ${attempt}/${max_attempts}, sleeping ${RETRY_INTERVAL_SECONDS}s before next attempt." >&2
+    sleep "$RETRY_INTERVAL_SECONDS"
+    attempt=$((attempt + 1))
+  done
+}
+
 require_profile_for_mutation() {
   if [ -z "$PROFILE" ]; then
     echo "--profile is required for ${ACTION}" >&2
@@ -108,6 +155,22 @@ require_desired_for_scale() {
       exit 2
       ;;
   esac
+}
+
+validate_retry_options() {
+  for value_name in MAX_ATTEMPTS RETRY_INTERVAL_SECONDS; do
+    local value="${!value_name}"
+    case "$value" in
+      ''|*[!0-9]*)
+        echo "--${value_name,,} must be a non-negative integer" >&2
+        exit 2
+        ;;
+    esac
+  done
+  if [ "$RETRY_UNAVAILABLE" = "true" ] && [ "$MAX_ATTEMPTS" -lt 1 ]; then
+    echo "--max-attempts must be at least 1" >&2
+    exit 2
+  fi
 }
 
 status() {
@@ -133,6 +196,9 @@ dry_run_plan() {
   case "$ACTION" in
     up)
       echo "[dry-run] Would create/start a cloud-prod manual RunPod Pod and wait for disabled heartbeat."
+      if [ "$RETRY_UNAVAILABLE" = "true" ]; then
+        echo "[dry-run] Would retry RunPod no-inventory responses up to ${MAX_ATTEMPTS} attempts every ${RETRY_INTERVAL_SECONDS}s."
+      fi
       print_shell_command up --execute
       ;;
     enable)
@@ -149,6 +215,9 @@ dry_run_plan() {
       ;;
     scale)
       echo "[dry-run] Would scale the selected cloud-prod manual RunPod profile to desired=${DESIRED}."
+      if [ "$RETRY_UNAVAILABLE" = "true" ]; then
+        echo "[dry-run] Would retry RunPod no-inventory responses up to ${MAX_ATTEMPTS} attempts every ${RETRY_INTERVAL_SECONDS}s."
+      fi
       print_shell_command scale --desired "$DESIRED" --execute
       ;;
     canary)
@@ -178,6 +247,7 @@ dry_run_plan() {
 
 run_mutation() {
   require_profile_for_mutation
+  validate_retry_options
   if [ "$ACTION" = "scale" ]; then
     require_desired_for_scale
   fi
@@ -187,11 +257,14 @@ run_mutation() {
   fi
 
   case "$ACTION" in
-    up|enable|disable|down|canary)
+    up)
+      run_controller_with_unavailable_retry up --execute
+      ;;
+    enable|disable|down|canary)
       run_controller "$ACTION" --execute
       ;;
     scale)
-      run_controller scale --desired "$DESIRED" --execute
+      run_controller_with_unavailable_retry scale --desired "$DESIRED" --execute
       ;;
     rollback)
       if [ "$ROLLBACK_MODE" = "delete-pod" ]; then
@@ -248,6 +321,18 @@ while [ "$#" -gt 0 ]; do
       ;;
     --prod-env-file)
       PROD_ENV_FILE="${2:?missing value for --prod-env-file}"
+      shift 2
+      ;;
+    --retry-unavailable)
+      RETRY_UNAVAILABLE="true"
+      shift
+      ;;
+    --max-attempts)
+      MAX_ATTEMPTS="${2:?missing value for --max-attempts}"
+      shift 2
+      ;;
+    --retry-interval)
+      RETRY_INTERVAL_SECONDS="${2:?missing value for --retry-interval}"
       shift 2
       ;;
     --execute)

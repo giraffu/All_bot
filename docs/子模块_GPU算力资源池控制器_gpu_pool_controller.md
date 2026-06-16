@@ -357,6 +357,29 @@ direct TCP `root@<public-ip> -p <mapped-port>` 会因容器内无 `sshd` 而拒�
 | 业务 canary | `scripts/runpod_prod_ops.sh canary --profile img2img --slot 01 --execute` | 真实 Web canary，结束后保持目标 worker disabled |
 | 回滚 | `scripts/runpod_prod_ops.sh rollback --profile img2img --keep-pod --execute` 或 `--delete-pod` | `--keep-pod` 等价 disable；`--delete-pod` 在指定 slot 时走 down，未指定 slot 时走 `scale --desired 0` |
 
+RunPod 4090 库存不足时，`up/scale` 可显式使用有界重试，不要开多条并发创建循环：
+
+```bash
+scripts/runpod_prod_ops.sh scale \
+  --profile img2img \
+  --desired 2 \
+  --retry-unavailable \
+  --max-attempts 20 \
+  --retry-interval 90 \
+  --execute
+```
+
+Dashboard 系统监控页也提供正式手动 RunPod 池的日常 Web 入口：
+
+| Dashboard 动作 | 后端 API | 底层命令语义 |
+| :--- | :--- | :--- |
+| `RunPod 管理` 提交多 profile 目标数量 | `POST /api/runpod/scale` | 拆成 profile 级 `scripts/runpod_prod_ops.sh scale --desired N --retry-unavailable --execute` operation |
+| Worker 卡片 `暂停` | `POST /api/runpod/workers/{agent_id}/pause` | `disable --slot NN --execute`，只停接新单，保留 Pod |
+| Worker 卡片 `删除` | `DELETE /api/runpod/workers/{agent_id}` | `down --slot NN --execute`，先停接并等待当前任务结束，再删除 Pod |
+| 最近操作 | `GET /api/runpod/operations` | 只读 Dashboard 后端内存 operation 状态和脱敏日志尾部 |
+
+Dashboard 入口不重写 RunPod provider 逻辑，只异步调用 `scripts/runpod_prod_ops.sh`。数量字段是 profile 的目标 `desired`，不是额外新增数量；同一请求里同一 profile 只能出现一次。后台 operation 默认使用 30 秒间隔、100 次无库存重试，仍必须通过 `RUNPOD_DRY_RUN=false`、`RUNPOD_AUTOSCALER_ENABLED=true`、`RUNPOD_MAX_PODS_TOTAL`、`RUNPOD_MAX_PODS_PER_TYPE`、`RUNPOD_MAX_HOURLY_COST_USD` 门禁。云正式 Dashboard 容器如没有 `.env.cloud.prod` 文件名，可通过 `DASHBOARD_RUNPOD_ENV_FILE` / `DASHBOARD_RUNPOD_PROD_ENV_FILE` 指向 `/app/.env`；不得在 API 响应、operation 日志或文档中输出任何 env 内容或密钥。
+
 底层高级命令：
 
 ```bash
@@ -424,7 +447,7 @@ RUNPOD_MAX_PODS_TOTAL="$TOTAL_LIMIT" \
 RUNPOD_MAX_PODS_PER_TYPE="$PER_TYPE_LIMIT" \
 RUNPOD_MAX_HOURLY_COST_USD="$MAX_HOURLY_COST_USD" \
 RUNPOD_PROD_MAX_MANUAL_SLOTS="$MANUAL_SLOT_LIMIT" \
-python scripts/gpu_pool_controller.py runpod prod-worker scale \
+scripts/runpod_prod_ops.sh scale \
   --profile "$PROFILE" \
   --desired "$DESIRED" \
   --execute
@@ -439,9 +462,9 @@ heartbeat；看到 disabled heartbeat 后才 enable 目标 slot。启动过程�
 `RUNNING` 但 `worker_seen=false`、control 仍是 `disabled`，通常表示 bootstrap 或模型同步
 还没完成，不要手动 enable。
 
-4090 库存不足时，RunPod 常返回 `There are no instances currently available`。允许按 60-120 秒
-间隔轮询同一个 `scale` 命令；不要同时开多条相同 profile/desired 的创建循环，避免重复抢同一
-slot 的 control。推荐模板：
+4090 库存不足时，RunPod 常返回 `There are no instances currently available`。优先用
+`scripts/runpod_prod_ops.sh scale --retry-unavailable` 对同一个 profile/desired 做有界重试；
+不要同时开多条相同 profile/desired 的创建循环，避免重复抢同一 slot 的 control。推荐模板：
 
 ```bash
 : "${PROFILE:?set target RunPod profile}"
@@ -451,19 +474,19 @@ slot 的 control。推荐模板：
 : "${MAX_HOURLY_COST_USD:?set max hourly cost gate}"
 : "${MANUAL_SLOT_LIMIT:?set manual slot limit if needed}"
 
-while true; do
-  RUNPOD_DRY_RUN=false \
-  RUNPOD_AUTOSCALER_ENABLED=true \
-  RUNPOD_MAX_PODS_TOTAL="$TOTAL_LIMIT" \
-  RUNPOD_MAX_PODS_PER_TYPE="$PER_TYPE_LIMIT" \
-  RUNPOD_MAX_HOURLY_COST_USD="$MAX_HOURLY_COST_USD" \
-  RUNPOD_PROD_MAX_MANUAL_SLOTS="$MANUAL_SLOT_LIMIT" \
-  python scripts/gpu_pool_controller.py runpod prod-worker scale \
-    --profile "$PROFILE" \
-    --desired "$DESIRED" \
-    --execute && break
-  sleep 90
-done
+RUNPOD_DRY_RUN=false \
+RUNPOD_AUTOSCALER_ENABLED=true \
+RUNPOD_MAX_PODS_TOTAL="$TOTAL_LIMIT" \
+RUNPOD_MAX_PODS_PER_TYPE="$PER_TYPE_LIMIT" \
+RUNPOD_MAX_HOURLY_COST_USD="$MAX_HOURLY_COST_USD" \
+RUNPOD_PROD_MAX_MANUAL_SLOTS="$MANUAL_SLOT_LIMIT" \
+scripts/runpod_prod_ops.sh scale \
+  --profile "$PROFILE" \
+  --desired "$DESIRED" \
+  --retry-unavailable \
+  --max-attempts 20 \
+  --retry-interval 90 \
+  --execute
 ```
 
 最终验收每个目标 slot：

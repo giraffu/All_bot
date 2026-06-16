@@ -135,6 +135,31 @@ async def test_collect_web_visible_retire_legacy_history_ids_dedupes_visible_sou
     assert source_counts["gallery_like_apply_interactions"] == {"raw": 0, "added": 0}
 
 
+@pytest.mark.asyncio
+async def test_collect_web_visible_retire_legacy_history_ids_can_skip_recent_history():
+    session = _SequentialSession(
+        [
+            [9, 7],
+            [6, 5],
+            [10, 4],
+            [3],
+        ]
+    )
+
+    history_ids, source_counts = await collect_web_visible_retire_legacy_history_ids(
+        session,
+        recent_limit=8,
+        include_per_user_recent=False,
+        total_limit=5,
+    )
+
+    assert history_ids == [9, 7, 6, 5, 10]
+    assert source_counts["per_user_recent_visible_history"] == {"raw": 0, "added": 0}
+    assert source_counts["all_gallery_posts"] == {"raw": 2, "added": 2}
+    assert source_counts["history_favorites"] == {"raw": 2, "added": 2}
+    assert source_counts["gallery_like_apply_interactions"] == {"raw": 2, "added": 1}
+
+
 def test_select_hotset_batch_skips_processed_history_ids():
     batch, skipped = select_hotset_batch(
         [10, 9, 8, 7, 6],
