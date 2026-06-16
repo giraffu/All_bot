@@ -232,6 +232,18 @@ LAN RunPod 化一体容器试点：
 
 2026-06-16 已将 gpu-002 slot0/slot1 切到生产 AIO 接新单：`cloud_prod_worker_06/07` 先 drain 并等待自然空闲，再 disable legacy worker、enable `lan_aio_prod_gpu002_gpu0_img2img_lora_01` 与 `lan_aio_prod_gpu002_gpu1_image_to_video_01`。切换时原 `comfy0/comfy1` 容器继续运行在 `8188/8189`，本地主服务器 `cloud-prod-comfy-agent-6/7` 也继续保留，作为热回滚基线；AIO 观察到 slot0 多单成功、slot1 视频单成功后，已执行 `docker stop comfy0 comfy1` 与 `docker stop cloud-prod-comfy-agent-6 cloud-prod-comfy-agent-7` 释放资源，容器未删除。回滚顺序是先 `docker start comfy0 comfy1`，确认 `8188/8189` `/system_stats` 与 `/queue` 正常，再启动 `cloud-prod-comfy-agent-6/7`，最后用 helper `restore --slot slot0|slot1 --execute` 恢复 `cloud_prod_worker_06/07`。
 
+gpu-002 AIO 正式日常入口为 `scripts/lan_aio_prod_ops.sh`，底层 `scripts/lan_runpod_aio_prod_canary.sh` 仅作为高级灰度/排障入口。日常命令默认 dry-run，真实执行必须加 `--execute`：
+
+| 动作 | 命令 | 注意事项 |
+| :--- | :--- | :--- |
+| 查状态 | `scripts/lan_aio_prod_ops.sh status` | 只读汇总 AIO、legacy worker、旧 ComfyUI 与旧 agent 状态 |
+| AIO 接新单 | `scripts/lan_aio_prod_ops.sh enable-aio --execute` | 会先 drain/wait idle 旧 worker，再 enable 两个 AIO agent |
+| AIO 停接 | `scripts/lan_aio_prod_ops.sh disable-aio --execute` | 等当前 AIO 任务完成后保持 AIO disabled，不自动恢复 legacy |
+| 回滚旧链路 | `scripts/lan_aio_prod_ops.sh rollback --execute` | 启动旧 `comfy0/comfy1` 与旧 agent，再 restore `cloud_prod_worker_06/07` |
+| 停旧容器 | `scripts/lan_aio_prod_ops.sh stop-old --execute` | 仅在 AIO healthy 且 legacy disabled 时停止旧容器；不删除 |
+
+禁止用手工组合命令跳过 wrapper 的安全检查来停旧容器或回滚；若需要单独渲染、配置 registry、拉镜像或启动 heartbeat-only，再切到底层 helper。
+
 ## 6. 双卡节点安全操作红线
 
 双卡 GPU 服务器的两个 ComfyUI 服务是独立容器，但不是完全隔离：

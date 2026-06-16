@@ -80,8 +80,8 @@ services:
       R2_BUCKET: ${R2_BUCKET:-user-data-prod}
       R2_PUBLIC_DOMAIN: ${R2_PUBLIC_DOMAIN:?R2_PUBLIC_DOMAIN is required}
       IMGPROXY_URL: http://imgproxy-prod:8084
-      DB_POOL_SIZE: 4
-      DB_MAX_OVERFLOW: 4
+      DB_POOL_SIZE: 6
+      DB_MAX_OVERFLOW: 6
     volumes:
       - ../logs/cloud-prod:/app/logs
     ports:
@@ -130,8 +130,8 @@ services:
       DATABASE_URL: ${CLOUD_PROD_DATABASE_URL:?CLOUD_PROD_DATABASE_URL is required}
       REDIS_URL: ${CLOUD_PROD_REDIS_URL:?CLOUD_PROD_REDIS_URL is required}
       PAYMENT_API_PORT: ${PAYMENT_API_PORT:-8021}
-      DB_POOL_SIZE: 2
-      DB_MAX_OVERFLOW: 1
+      DB_POOL_SIZE: 4
+      DB_MAX_OVERFLOW: 3
     volumes:
       - ../logs/cloud-prod:/app/logs
     ports:
@@ -187,8 +187,8 @@ services:
       DASHBOARD_ADMIN_USERNAME: ${DASHBOARD_ADMIN_USERNAME:?DASHBOARD_ADMIN_USERNAME is required}
       DASHBOARD_ADMIN_PASSWORD_HASH: ${DASHBOARD_ADMIN_PASSWORD_HASH:?DASHBOARD_ADMIN_PASSWORD_HASH is required}
       DASHBOARD_SECRET_KEY: ${DASHBOARD_SECRET_KEY:?DASHBOARD_SECRET_KEY is required}
-      DB_POOL_SIZE: 4
-      DB_MAX_OVERFLOW: 2
+      DB_POOL_SIZE: 6
+      DB_MAX_OVERFLOW: 4
     volumes:
       - ../.env.cloud.prod:/app/.env:ro
       - ../logs/cloud-prod:/app/logs
@@ -290,6 +290,8 @@ services:
       DATABASE_URL: ${CLOUD_PROD_DATABASE_URL:?CLOUD_PROD_DATABASE_URL is required}
       REDIS_URL: ${CLOUD_PROD_REDIS_URL:?CLOUD_PROD_REDIS_URL is required}
       WORKER_REDIS_URL: ${CLOUD_PROD_WORKER_REDIS_URL:?CLOUD_PROD_WORKER_REDIS_URL is required}
+      DB_POOL_SIZE: 4
+      DB_MAX_OVERFLOW: 4
       MINIO_ENDPOINT: ${MINIO_ENDPOINT:?MINIO_ENDPOINT is required}
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY is required}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY is required}

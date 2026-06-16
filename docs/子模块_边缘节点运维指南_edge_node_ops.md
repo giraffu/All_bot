@@ -6,13 +6,13 @@
 
 本文档不是实时监控面板。CPU、内存、磁盘、公网状态和服务端口都是采集时快照；做切流、清理、扩容或证书变更前必须重新采集。
 
-最近一次采集：2026-06-09，Asia/Shanghai。
+最近一次采集：2026-06-16，Asia/Shanghai。
 
 ## 2. 边缘节点总览
 
 | 节点 | 入口 | 主要职责 | 当前状态 |
 | :--- | :--- | :--- | :--- |
-| Web/Nginx 边缘 VPS | Tailscale `100.88.57.122`，公网 `154.17.30.113`，SSH `root@100.88.57.122` 使用 `frontend/ssh_key/id_rsa.pem` | `assets.aivison.it.com` legacy MinIO 代理、`web-test.aivison.it.com` 测试静态站、正式 Web 回滚用 `/root/dist` | SSH 可用，Nginx/Tailscale active，根盘 96% 高风险；不再承接正式 `web.aivison.it.com` 主流量 |
+| Web/Nginx 边缘 VPS | Tailscale `100.88.57.122`，公网 `154.17.30.113`，SSH `root@100.88.57.122` 使用 `frontend/ssh_key/id_rsa.pem` | `assets.aivison.it.com` legacy MinIO 代理、`web-test.aivison.it.com` 测试静态站、正式 Web 回滚用 `/root/dist` | SSH 可用，Nginx/Tailscale active；2026-06-16 受控轮转日志后根盘约 84%；不再承接正式 `web.aivison.it.com` 主流量 |
 | Telegram Local API VPS | 公网 `69.63.220.115` | Telegram Local Bot API `8081`，文件 HTTP 服务 `8082`，支撑大文件下载/上传绕过官方 Bot API 限制 | 8081/8082/22 公网端口可达；当前主服务器未配置可用 SSH key，资源需补采 |
 
 ## 3. Web/Nginx 边缘 VPS
@@ -31,23 +31,30 @@
 | CPU | 2 vCPU，AMD EPYC 9655 |
 | 内存 | 1.9GiB，总可用约 1.5GiB |
 | Swap | 1.0GiB，当前未使用 |
-| 系统盘 | `/dev/vda1` ext4，40G，总用量 36G，可用 1.7G，96% |
+| 系统盘 | `/dev/vda1` ext4，40G，总用量约 32G，可用约 6.3G，84% |
 | 运行服务 | Nginx active，Tailscale active，Docker 未安装/未运行，cloudflared inactive |
 | Nginx | `nginx/1.24.0 (Ubuntu)`，`nginx -t` 通过 |
 | 监听端口 | 80/443/22，Tailscale 内部监听端口 |
 | 静态目录 | `/root/dist` 为正式 Web 回滚副本，`/root/dist-test` 为测试 Web 静态站，各约 2.6M |
 
 容量风险：
-- 根盘只剩约 `1.7G`，这是当前 Web 边缘节点第一风险。
-- `/var/cache/nginx` 约 `26G`，主要是 `minio_cache`。
-- `/var/log/nginx` 约 `4.4G`，其中 `access.log` 约 `4.4G`，`error.log` 约 `54M`。
-- 存在 `/etc/logrotate.d/nginx` 配置，但本次未看到 `/var/lib/logrotate/status` 或 `/etc/cron.daily/logrotate`，需要单独确认 logrotate 是否实际运行。
+- 2026-06-16 清理前根盘一度达到 `97%`，主要来自未轮转 Nginx 日志与较大的 `minio_cache`。
+- `/var/cache/nginx` 约 `26G`，主要是 `minio_cache`；当前 `proxy_cache_path max_size=25g` 对 40G 根盘仍偏高。
+- `/var/log/nginx` 在 2026-06-16 受控轮转并压缩后约 `359M`；当时 `access.log` 从约 `4.8G` 压缩为 `access.log.1.gz` 约 `371M`。
+- `logrotate 3.21.0` 已安装，`logrotate.timer` 已 enabled/active；`/etc/logrotate.d/nginx` 已去掉 `delaycompress`，让轮转后的 Nginx 日志当天压缩释放空间。
+- 若根盘再次低于 10% 可用，优先检查 `logrotate.timer`、`/var/log/nginx` 增长和 `minio_cache` 命中/占用，再考虑缩小 cache 或扩盘。
 
 2026-06-08 17:10 Web 卡顿巡检补充：
 - Web 边缘到云 Web API `100.107.220.127:8000` 约 `0.51-0.55s`，该基线主要用于回滚、`web-test` 与 `assets` 排障；当前正式 API 公网入口是 `api.aivison.it.com`。
 - 最近 30 分钟窗口曾观测到约 `202` 次 499，集中在 `/api/tasks/{id}/result`、`/api/gallery/posts`、`/api/gallery/my-favorites`、`/api/users/history` 等等待型接口。
 - `assets.aivison.it.com` legacy 回源曾在 30 分钟内出现约 `37` 次 upstream 异常；其中大量为 `upstream prematurely closed connection`，少量为 `upstream timed out`。
 - `/minio/health/live` 返回 200 只能证明本地 MinIO 基础健康，不代表具体历史图片/视频对象读取链路稳定；验收必须测真实对象 URL 或至少统计 `assets` error.log。
+
+2026-06-16 容量治理补充：
+- 已安装并启用 `logrotate.timer`，备份原 `/etc/logrotate.d/nginx` 后移除 `delaycompress`，执行 `logrotate -f /etc/logrotate.d/nginx` 轮转并压缩现有 Nginx 日志。
+- 同步执行 `journalctl --vacuum-size=100M` 和 `apt-get clean`；根盘从约 `37G used / 1.5G free / 97%` 降至约 `32G used / 6.3G free / 84%`。
+- `web-test.aivison.it.com` 验证返回 200；`assets.aivison.it.com` 根路径返回 403 属预期，不代表具体 legacy 对象不可读。
+- 本轮未缩小 `minio_cache`。若需要继续释放空间，可将 `proxy_cache_path max_size` 从 `25g` 缩到约 `15g-16g`，预计释放约 `8G-10G`，代价是 legacy assets 回源流量和冷缓存延迟上升。
 
 ### 3.2 域名与路由
 
@@ -139,7 +146,7 @@ nginx -s reload
 当前不建议在不了解访问高峰和 legacy 命中率的情况下直接清空缓存。推荐顺序：
 
 1. 先备份 Nginx 配置与确认公网 health。
-2. 核对 logrotate 是否安装并实际运行；若未运行，优先修复 logrotate。
+2. 核对 logrotate 是否安装并实际运行；当前应看到 `logrotate.timer` 为 enabled/active，若未运行，优先修复 logrotate。
 3. 对超大 `access.log` 先执行受控轮转，而不是删除正在被 Nginx 打开的文件。
 4. 对 `minio_cache` 先评估 legacy 访问量，再缩小 `proxy_cache_path max_size` 或按 cache 规则清理。
 5. 根盘低于 10% 可用时，不要发布新静态资源、不要申请大量证书、不要扩大 cache。

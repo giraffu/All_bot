@@ -11,10 +11,12 @@
 - LAN 模型缓存：`deploy/docker-compose-model-cache-lan.yml`、`scripts/manage_lan_model_cache.sh`
 - LAN RunPod 化一体容器云测试 canary：`scripts/lan_runpod_aio_canary.sh`
 - LAN RunPod 化一体容器生产灰度：`scripts/lan_runpod_aio_prod_canary.sh`
+- gpu-002 LAN AIO 正式日常入口：`scripts/lan_aio_prod_ops.sh`
 - RunPod provider：`ops/gpu_pool_controller/providers/runpod.py`
 - RunPod 云测试 canary：`ops/gpu_pool_controller/runpod_canary.py`、`ops/gpu_pool_controller/runpod_split_video_canary.py`
 - RunPod 云测试 worker scale：`ops/gpu_pool_controller/runpod_workers.py`
 - RunPod 手动正式备用 worker：`ops/gpu_pool_controller/runpod_prod_worker.py`
+- RunPod 手动正式备用池日常入口：`scripts/runpod_prod_ops.sh`
 - RunPod split video manifest：`ops/gpu_pool_controller/runpod_video_manifests.py`
 - RunPod bootstrap/model sync：`remote_workers/scripts/runpod_bootstrap_from_git.sh`、`remote_workers/scripts/runpod_sync_models_from_r2.py`
 
@@ -145,6 +147,16 @@ scripts/lan_runpod_aio_canary.sh --action restore --dry-run
 ```
 
 `start-heartbeat --execute` 会先把临时 agent control 设为 `disabled`，再把 compose/env 推到 `allbot-gpu-002` 并启动 canary 容器；不会放开接单。`enable-canary --execute` 只允许在真实 Web canary 窗口内临时 disable `cloud_worker_test_06` 并 enable 临时 agent；结束后必须执行 `restore --execute`，恢复旧 worker 并停止 canary 容器。失败现场需要保留容器和日志时，`restore --execute --keep-container` 只恢复 control，不停止容器。
+
+gpu-002 AIO 正式日常入口是 `scripts/lan_aio_prod_ops.sh`。它只管理固定生产接管范围：slot0 `img2img/img2img_lora` 与 slot1 `image_to_video/video_insert/video_edit`，默认 dry-run，真实动作必须显式加 `--execute`。底层 `scripts/lan_runpod_aio_prod_canary.sh` 仍保留给渲染、registry 配置、heartbeat-only 和专项排障。
+
+| 日常动作 | 命令 | 语义 |
+| :--- | :--- | :--- |
+| 状态汇总 | `scripts/lan_aio_prod_ops.sh status` | 汇总 AIO agent control/status、8190/8191 health、旧 worker 06/07、旧 `comfy0/comfy1` 与旧 agent 6/7 状态 |
+| AIO 接新单 | `scripts/lan_aio_prod_ops.sh enable-aio --execute` | 校验 AIO healthy，drain/wait idle 旧 worker，再 disable legacy 并 enable 两个 AIO agent |
+| AIO 停接 | `scripts/lan_aio_prod_ops.sh disable-aio --execute` | drain 两个 AIO agent，等待当前 AIO 任务完成，再保持 AIO disabled |
+| 回滚旧链路 | `scripts/lan_aio_prod_ops.sh rollback --execute` | 启动旧 `comfy0/comfy1`，验证 8188/8189，启动旧 agent 6/7，restore legacy worker 并 disable AIO |
+| 停旧容器 | `scripts/lan_aio_prod_ops.sh stop-old --execute` | 仅在 AIO healthy 且 legacy worker disabled 时停止旧 ComfyUI/agent 容器；不删除 |
 
 生产灰度 helper：
 
@@ -332,7 +344,20 @@ direct TCP `root@<public-ip> -p <mapped-port>` 会因容器内无 `sshd` 而拒�
 ## 8. 手动云正式备用 worker
 正式 RunPod worker 只作为手动备用，不自动按生产队列扩容。
 
-常用命令：
+日常入口优先使用 `scripts/runpod_prod_ops.sh`。它不改变底层 `prod-worker` 语义，只把正式手动备用池的常见动作收窄成固定 SOP；所有 mutation 默认 dry-run，真实执行必须显式 `--execute`，且必须指定 `--profile`。
+
+| 日常动作 | 命令 | 语义 |
+| :--- | :--- | :--- |
+| 状态汇总 | `scripts/runpod_prod_ops.sh status` | 按 profile 汇总 managed Pod、Central heartbeat 与 control state |
+| 启动备用 Pod | `scripts/runpod_prod_ops.sh up --profile img2img --execute` | 创建/启动 Pod 并等待 disabled heartbeat，不自动接单 |
+| 放开接单 | `scripts/runpod_prod_ops.sh enable --profile img2img --slot 01 --execute` | 仅修改 Central control 为 enabled |
+| 停止接单 | `scripts/runpod_prod_ops.sh disable --profile img2img --slot 01 --execute` | 保留 Pod，设置 Central control 为 disabled |
+| 删除 Pod | `scripts/runpod_prod_ops.sh down --profile img2img --slot 01 --execute` | disable 后等待 `current_task_id` 为空，再删除目标 Pod |
+| 扩缩容 | `scripts/runpod_prod_ops.sh scale --profile img2img --desired 1 --execute` | 受 RunPod 门禁保护的 profile 级 scale |
+| 业务 canary | `scripts/runpod_prod_ops.sh canary --profile img2img --slot 01 --execute` | 真实 Web canary，结束后保持目标 worker disabled |
+| 回滚 | `scripts/runpod_prod_ops.sh rollback --profile img2img --keep-pod --execute` 或 `--delete-pod` | `--keep-pod` 等价 disable；`--delete-pod` 在指定 slot 时走 down，未指定 slot 时走 `scale --desired 0` |
+
+底层高级命令：
 
 ```bash
 python scripts/gpu_pool_controller.py runpod prod-worker render

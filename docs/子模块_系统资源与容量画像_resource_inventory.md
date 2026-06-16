@@ -5,9 +5,9 @@
 
 本文档不是实时监控面板。除明确标注为固定事实的硬件配置外，数据库行数、队列积压、桶容量、活跃用户等都应视为快照数据；做迁移、采购或扩容决策前，必须重新采集。
 
-最近一次结构性更新时间：2026-06-09，Asia/Shanghai。表内容量数字若未单独标注，仍是历史快照，扩容或迁移决策前必须重新采集。
+最近一次结构性更新时间：2026-06-16，Asia/Shanghai。表内容量数字若未单独标注，仍是历史快照，扩容或迁移决策前必须重新采集。
 最近一次局域网 GPU ComfyUI 素材清理：2026-06-08，Asia/Shanghai。
-最近一次云正式负载巡检：2026-06-08 17:10，Asia/Shanghai。
+最近一次云正式负载巡检：2026-06-16 18:03，Asia/Shanghai。
 最近一次云测试控制面核对：2026-06-09，Asia/Shanghai。
 
 ## 2. 主服务器
@@ -51,18 +51,19 @@
 | 公网 IPv4 | `159.223.39.217` |
 | VPC/私网 IPv4 | `10.104.0.2` |
 | 操作系统 | Ubuntu 24.04.3 LTS |
-| 规格 | Basic Regular `$48/mo`，4 vCPU / 8GB RAM / 160GB SSD / 5TB transfer |
-| 实测 CPU | 4 vCPU |
-| 实测内存 | 约 7.8GiB |
-| 实测系统盘 | 约 154G，总量；当前约 58G 已用、97G 可用 |
+| 规格 | Basic Regular `$96/mo`，8 vCPU / 16GB RAM / 320GB SSD / 6TB transfer |
+| 实测 CPU | 8 vCPU |
+| 实测内存 | 约 15GiB |
+| 实测系统盘 | 约 309G 总量；当前约 91G 已用、219G 可用 |
 | SSH 日常入口 | `ssh allbot-do-sgp1-control`，默认 `deploy` 用户 |
 | SSH root 入口 | `ssh allbot-do-sgp1-control-root`，仅初始化/救援使用 |
 
 使用边界：
-- `$48/mo` Droplet 当前作为正式过渡控制面；生产 Postgres、Valkey 与对象存储不在该 Droplet 上长期自托管。
+- `$96/mo` Droplet 当前作为正式生产控制面；生产 Postgres、Valkey 与对象存储不在该 Droplet 上长期自托管。
+- 2026-06-16 原地扩容后，系统盘事实容量已从约 160GB 扩到约 320GB；后续缩容不能再按“保留 160GB 磁盘”的旧口径假设。
 - 公开媒体与新生成对象走 Cloudflare R2 `user-data-prod`；本地 MinIO 保留为 legacy 历史媒体只读 fallback 与本地热数据保留。
 - 本地 7 张 GPU 和 ComfyUI 不迁移；`cloud-prod-comfy-agent-*` 通过 Tailscale 访问云 Central API。
-- 长期稳妥生产规格仍建议升级到 8 vCPU / 16GB RAM 档，或把 Dashboard/后台任务拆到第二台节点。
+- 后续如继续增长，优先单独评估 Dashboard/后台任务拆分、PostgreSQL 规格或连接池预算；不要同时放大 Web worker 数和 DB 连接池。
 
 ### 2.2 云测试控制面 Droplet
 云测试控制面 Droplet 于 2026-06-09 创建，用于替代旧本地常驻测试入口，降低正式与测试环境交叉风险。
@@ -101,6 +102,26 @@
 | `cloud-central-api-prod` | CPU 约 8%，内存约 101MiB | Central 非 CPU 瓶颈 |
 | 托管 PostgreSQL | 连接约 75ms；2 active、24 idle、1 idle in transaction、0 waiting locks | 暂未见连接池/锁打满 |
 | 托管 Valkey/Redis | used_memory 约 40MB，connected_clients 81，blocked_clients 0 | 暂未见 Redis 打满 |
+
+2026-06-16 18:03 Asia/Shanghai 扩容后复核显示：
+
+| 指标 | 快照 | 判断 |
+| :--- | :--- | :--- |
+| 云 Droplet CPU/内存 | `nproc=8`，内存约 15GiB，available 约 13GiB | 控制面 CPU/RAM 已升至 8C16G 档 |
+| 云 Droplet 磁盘 | 309G 总量，约 91G 已用，219G 可用 | 本次扩容实际包含磁盘扩展 |
+| 云控制面容器 | Central/Web/Payment/Dashboard/imgproxy 均 `Up`；Bot polling 单实例保持运行 | 控制面服务恢复正常 |
+| 托管 PostgreSQL 连接池预算 | 可用连接按 `100 - 3 reserved = 97` 估算；本轮配置目标峰值约 `73` | 保留约 24 条给迁移、排障、后台任务和抖动 |
+| 托管 Valkey/Redis | 近期观测 used_memory 约 73MB/2GB、connected_clients 约 53、blocked/rejected/evicted 均为 0 | 本轮不提升 Valkey 配置 |
+
+本轮云正式 DB 连接池预算：
+
+| 服务 | 进程/worker 口径 | 池配置 | 峰值预算 |
+| :--- | :--- | :--- | ---: |
+| `cloud-web-api-prod` | `uvicorn --workers 4` | `DB_POOL_SIZE=6`、`DB_MAX_OVERFLOW=6` | 48 |
+| `cloud-dashboard-backend-prod` | `gunicorn -w 1` | `DB_POOL_SIZE=6`、`DB_MAX_OVERFLOW=4` | 10 |
+| `cloud-payment-api-prod` | 单进程 | `DB_POOL_SIZE=4`、`DB_MAX_OVERFLOW=3` | 7 |
+| `cloud-tg-bot-prod` | 单进程 | `DB_POOL_SIZE=4`、`DB_MAX_OVERFLOW=4` | 8 |
+| 合计 | - | - | 73 |
 
 延迟拆分基线：
 - 云机内部访问 `100.107.220.127:8000/8003/8043` 通常为 5-40ms。
@@ -205,7 +226,7 @@ ComfyUI 版本快照：
 
 | 节点 | 入口 | 资源快照 | 当前职责 | 风险 |
 | :--- | :--- | :--- | :--- | :--- |
-| Web/Nginx 边缘 VPS `web` | Tailscale `100.88.57.122`，公网 `154.17.30.113`，SSH `root@100.88.57.122` 使用 `frontend/ssh_key/id_rsa.pem` | Ubuntu 24.04，2 vCPU，1.9GiB RAM，40G 根盘，已用 36G，可用 1.7G | `web-test.aivison.it.com` 测试静态站与 `/api/` 反代，`assets.aivison.it.com` legacy MinIO 代理，`/root/dist` 正式 Web 回滚副本 | 根盘 96%，主要来自 `/var/cache/nginx` 约 26G 和 `/var/log/nginx` 约 4.4G；不再承接正式 `web.aivison.it.com` 主流量 |
+| Web/Nginx 边缘 VPS `web` | Tailscale `100.88.57.122`，公网 `154.17.30.113`，SSH `root@100.88.57.122` 使用 `frontend/ssh_key/id_rsa.pem` | Ubuntu 24.04，2 vCPU，1.9GiB RAM，40G 根盘；2026-06-16 受控轮转日志后已用约 32G，可用约 6.3G | `web-test.aivison.it.com` 测试静态站与 `/api/` 反代，`assets.aivison.it.com` legacy MinIO 代理，`/root/dist` 正式 Web 回滚副本 | 根盘从 97% 降至约 84%，`/var/cache/nginx` 仍约 26G；`logrotate.timer` 已启用且 Nginx 日志已当天压缩；不再承接正式 `web.aivison.it.com` 主流量 |
 | Telegram Local API VPS | 公网 `69.63.220.115` | 本轮 SSH key 未打通，CPU/内存/磁盘待补采；公网 22/8081/8082 可达 | Telegram Local Bot API `8081` 与文件服务 `8082`，支撑大文件下载/上传 | 当前主服务器未纳入 SSH 免密管理，资源与容器状态不可远程只读确认 |
 
 边缘容量判断：
