@@ -9,7 +9,8 @@
 - 默认配置：`ops/gpu_pool_controller/config/`
 - 本地镜像仓库：`deploy/docker-compose-local-registry.yml`、`scripts/manage_local_registry.sh`
 - LAN 模型缓存：`deploy/docker-compose-model-cache-lan.yml`、`scripts/manage_lan_model_cache.sh`
-- LAN RunPod 化一体容器 canary：`scripts/lan_runpod_aio_canary.sh`
+- LAN RunPod 化一体容器云测试 canary：`scripts/lan_runpod_aio_canary.sh`
+- LAN RunPod 化一体容器生产灰度：`scripts/lan_runpod_aio_prod_canary.sh`
 - RunPod provider：`ops/gpu_pool_controller/providers/runpod.py`
 - RunPod 云测试 canary：`ops/gpu_pool_controller/runpod_canary.py`、`ops/gpu_pool_controller/runpod_split_video_canary.py`
 - RunPod 云测试 worker scale：`ops/gpu_pool_controller/runpod_workers.py`
@@ -78,6 +79,7 @@ Runtime dry-run 说明：
 - `runtime-render` 渲染标准 ComfyUI runtime compose；只适用于 `docker_container`。
 - `runtime-plan` / `runtime-render` 支持 `--host-port`、`--container-name`、`--api-url`、`--ws-url` 做备用端口 canary 覆盖。
 - `runtime-plan` / `runtime-render` 支持显式 `--runtime-shape runpod_all_in_one`，用于渲染 LAN RunPod 化一体容器；默认仍是 `standard_comfy_runtime`，不会改既有 ComfyUI compose。
+- all-in-one 模式支持 `--environment cloud-test|cloud-prod`；默认 `cloud-test`，生产灰度必须显式使用 `cloud-prod`，并验收 `RUNPOD_ENVIRONMENT=cloud-prod`、`CENTRAL_API_URL=https://worker-central.aivison.it.com`、`MINIO_*_BUCKET=user-data-prod`。
 - `runtime-apply`、`switch-profile`、`rollback-profile --execute` 当前会明确拒绝真实执行。
 - `gpu-226` 是 `host_service`，不得生成 Docker pull/up/restart 操作。
 
@@ -144,8 +146,31 @@ scripts/lan_runpod_aio_canary.sh --action restore --dry-run
 
 `start-heartbeat --execute` 会先把临时 agent control 设为 `disabled`，再把 compose/env 推到 `allbot-gpu-002` 并启动 canary 容器；不会放开接单。`enable-canary --execute` 只允许在真实 Web canary 窗口内临时 disable `cloud_worker_test_06` 并 enable 临时 agent；结束后必须执行 `restore --execute`，恢复旧 worker 并停止 canary 容器。失败现场需要保留容器和日志时，`restore --execute --keep-container` 只恢复 control，不停止容器。
 
+生产灰度 helper：
+
+```bash
+scripts/lan_runpod_aio_prod_canary.sh --action preflight --slot both --dry-run
+scripts/lan_runpod_aio_prod_canary.sh --action drain --slot both --dry-run
+scripts/lan_runpod_aio_prod_canary.sh --action configure-registry --dry-run
+scripts/lan_runpod_aio_prod_canary.sh --action start-heartbeat --slot slot0 --dry-run
+scripts/lan_runpod_aio_prod_canary.sh --action enable-canary --slot slot0 --dry-run
+scripts/lan_runpod_aio_prod_canary.sh --action drain-temp --slot slot0 --dry-run
+scripts/lan_runpod_aio_prod_canary.sh --action restore --slot slot0 --dry-run
+```
+
+生产灰度只允许 `gpu-002` 两个固定映射：slot0 `cloud_prod_worker_06 -> lan_aio_prod_gpu002_gpu0_img2img_lora_01`，端口 `8190`，profile `img2img_lora`；slot1 `cloud_prod_worker_07 -> lan_aio_prod_gpu002_gpu1_image_to_video_01`，端口 `8191`，profile `image_to_video`。生产执行必须先将目标 legacy worker 置为 `draining` 并等待当前任务自然完成；不要用强制重启代替 drain。生产 helper 会拒绝 test Central URL，并在启动前校验 compose 不含 `cloud-test` / `user-data-test`。
+
+`start-heartbeat --execute` 必须在 Central 看到临时 agent 的 disabled heartbeat 后才算成功：临时 agent 不得是 `running`，不得有 `current_task_type`，heartbeat 必须携带 `node_id=gpu-002`、`provider=lan_ssh`、对应 `runtime_profile` 与 `pool_managed=true`。如果镜像内 remote_workers bundle 过旧，`/pop` 未携带 `agent_id` 或 heartbeat 缺少这些 GPU pool 元数据，Central agent control 无法可靠阻止临时 agent 接单；此时必须停止灰度，重建或挂载新版 remote_workers 后再试。
+
+生产 helper 会把当前 repo 的 `remote_workers/` 同步到 gpu-002 并挂载为 `/workspace/allbot/remote_workers`，同时设置 `PYTHONPATH` 与 `PYTHONDONTWRITEBYTECODE=1`，避免继续使用镜像内旧 bundle。all-in-one 入口必须先安装 `remote_workers/requirements.txt`，再执行 `runpod_sync_models_from_r2.py` 把 LAN cache manifest 同步到 `/workspace/ComfyUI/models`，最后把 baked ComfyUI 的 `models` 链接到该目录，确保 ComfyUI `/object_info` 能枚举到 manifest 模型。小窗口灰度达到目标接单数后，先执行 `drain-temp --execute` 阻止临时 agent 继续 pop，等已接任务终态后再 `restore --execute`。
+
+Central 可能在 worker 已回到 `idle` 后保留上一单的 `current_task_id`。生产 helper 的等待空闲逻辑以 `status == running` 或存在 `current_task_type` 作为忙碌信号；单独的陈旧 `current_task_id` 不应阻断 drain/restore 后续步骤。
+
+gpu-002 首次生产灰度前还必须在维护窗口配置 Docker daemon `insecure-registries=["192.168.1.115:5000"]`；这会短暂重启 Docker 并影响 `comfy0/comfy1`，因此必须先 drain `cloud_prod_worker_06/07` 并确认 `8188/8189` 队列为空。配置完成后只拉取 LAN mirror 镜像，不创建 RunPod Pod，不修改生产 Web task type。
+如当前 SSH 用户无免密 sudo，可只在当次命令环境传入 `LAN_AIO_GPU_SUDO_PASSWORD`；该变量不得写入 `.env`、compose、日志或文档。
+
 密钥边界：
-- 真实密钥只放在 ignored env 文件，例如 `.env.lan.model-cache` 和 `.env.lan-aio-test`。
+- 真实密钥只放在 ignored env 文件，例如 `.env.lan.model-cache`、`.env.lan-aio-test` 和 `.env.lan-aio-prod`；生产 helper 也可用 allowlist 从 `.env.cloud.prod` 与 `.env.lan.model-cache` 读取必要变量，不直接 `source`。
 - compose 模板只允许出现 `${LAN_AIO_*:?}` / `${LAN_MODEL_CACHE_*:?}` 占位符。
 - 不要直接 `source .env.cloud.test`；RunPod dry-run 继续只使用 controller 的 `--env-file` loader。
 - LAN 模型缓存 bucket 固定为 `allbot-model-cache`；截至 2026-06-15，`192.168.1.115:9010` 已缓存 `img2img_lora/2026-06-10/manifest.json` 与 `i2i_pro/2026-06-14-test/manifest.json`。

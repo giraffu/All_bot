@@ -163,6 +163,79 @@ def test_runpod_all_in_one_profiles_use_lan_mirrors_of_ghcr_images():
     assert f"image: {i2i_pro}" in rendered
     assert f"POOL_IMAGE_REF: {i2i_pro}" in rendered
     assert "RUNPOD_MODEL_MANIFEST_KEY: i2i_pro/2026-06-14-test/manifest.json" in rendered
+    assert "RUNPOD_REMOTE_WORKER_ROOT: /opt/allbot/remote_workers" in rendered
+    assert "runpod_sync_models_from_r2.py" in rendered
+    assert "ln -s" in rendered
+    assert "scripts/runpod_entrypoint.sh" in rendered
+    assert "/health#g" in rendered
+
+
+def test_runpod_all_in_one_render_defaults_to_cloud_test_storage():
+    config = load_controller_config()
+    rendered = RuntimePlanner(config).render_compose(
+        "lan-002-8188-worker-06",
+        overrides=RuntimeRenderOverrides(
+            host_port=8190,
+            runtime_shape="runpod_all_in_one",
+            agent_id="lan_aio_test_gpu002_gpu0_img2img_lora_01",
+        ),
+    )
+
+    assert "RUNPOD_ENVIRONMENT: cloud-test" in rendered
+    assert "CENTRAL_API_URL: https://worker-central-test.aivison.it.com" in rendered
+    assert "MINIO_RESULT_BUCKET: user-data-test" in rendered
+
+
+def test_runpod_all_in_one_render_supports_cloud_prod_storage():
+    config = load_controller_config()
+    planner = RuntimePlanner(config)
+
+    img2img = planner.render_compose(
+        "lan-002-8188-worker-06",
+        overrides=RuntimeRenderOverrides(
+            host_port=8190,
+            runtime_shape="runpod_all_in_one",
+            agent_id="lan_aio_prod_gpu002_gpu0_img2img_lora_01",
+            environment="cloud-prod",
+        ),
+    )
+    image_to_video = planner.render_compose(
+        "lan-002-8189-worker-07",
+        target_profile_id="image_to_video",
+        overrides=RuntimeRenderOverrides(
+            host_port=8191,
+            runtime_shape="runpod_all_in_one",
+            agent_id="lan_aio_prod_gpu002_gpu1_image_to_video_01",
+            environment="cloud-prod",
+        ),
+    )
+
+    for rendered in (img2img, image_to_video):
+        assert "RUNPOD_ENVIRONMENT: cloud-prod" in rendered
+        assert "CENTRAL_API_URL: https://worker-central.aivison.it.com" in rendered
+        assert "MINIO_INPUT_BUCKET: user-data-prod" in rendered
+        assert "MINIO_RESULT_BUCKET: user-data-prod" in rendered
+        assert "MINIO_TEMPLATE_BUCKET: user-data-prod" in rendered
+        assert "PIPELINE_MAX_RUNNING_TASKS: '1'" in rendered
+        assert "python3 -m pip install --no-cache-dir -r" in rendered
+        assert "production_port_unchanged: true" in rendered
+        assert "/workspace/ComfyUI/models" in rendered
+        assert "cloud-test" not in rendered
+        assert "user-data-test" not in rendered
+
+    assert "host_port: 8190" in img2img
+    assert "img2img_lora/2026-06-10/manifest.json" in img2img
+    assert "host_port: 8191" in image_to_video
+    assert "image_to_video/2026-06-13-test/manifest.json" in image_to_video
+
+
+def test_runtime_overrides_reject_invalid_environment():
+    try:
+        RuntimeRenderOverrides(environment="prod")
+    except ValueError as exc:
+        assert "--environment" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("invalid environment should fail")
 
 
 def test_runtime_canary_explicit_overrides_take_precedence():

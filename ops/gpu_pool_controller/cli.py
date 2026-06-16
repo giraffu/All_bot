@@ -99,6 +99,7 @@ def _runtime_overrides_from_args(args) -> RuntimeRenderOverrides:
         runtime_shape=getattr(args, "runtime_shape", None),
         agent_id=getattr(args, "agent_id", None),
         central_url=getattr(args, "central_url", None),
+        environment=getattr(args, "environment", None),
     )
 
 
@@ -434,6 +435,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     runtime_plan.add_argument("--agent-id", default=None)
     runtime_plan.add_argument("--central-url", default=None)
+    runtime_plan.add_argument(
+        "--environment",
+        choices=("cloud-test", "cloud-prod"),
+        default=None,
+    )
     runtime_plan.set_defaults(func=_cmd_runtime_plan)
 
     runtime_render = subparsers.add_parser("runtime-render")
@@ -450,6 +456,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     runtime_render.add_argument("--agent-id", default=None)
     runtime_render.add_argument("--central-url", default=None)
+    runtime_render.add_argument(
+        "--environment",
+        choices=("cloud-test", "cloud-prod"),
+        default=None,
+    )
     runtime_render.set_defaults(func=_cmd_runtime_render)
 
     runtime_apply = subparsers.add_parser("runtime-apply")

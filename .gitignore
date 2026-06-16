@@ -125,6 +125,7 @@ workers/comfy_agent*/input/
 !.env.cloud.prod.example
 !.env.lan.model-cache.example
 !.env.lan-aio-test.example
+!.env.lan-aio-prod.example
 !remote_workers/env/*.env.example
 
 # Project specific (重要：忽略用户数据和临时生成内容)

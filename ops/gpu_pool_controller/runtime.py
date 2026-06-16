@@ -13,7 +13,17 @@ DOCKER_RUNTIME_KIND = "docker_container"
 HOST_RUNTIME_KIND = "host_service"
 STANDARD_RUNTIME_SHAPE = "standard_comfy_runtime"
 RUNPOD_AIO_RUNTIME_SHAPE = "runpod_all_in_one"
-DEFAULT_LAN_AIO_CENTRAL_URL = "https://worker-central-test.aivison.it.com"
+DEFAULT_LAN_AIO_ENVIRONMENT = "cloud-test"
+LAN_AIO_ENVIRONMENTS = {
+    "cloud-test": {
+        "central_url": "https://worker-central-test.aivison.it.com",
+        "user_data_bucket": "user-data-test",
+    },
+    "cloud-prod": {
+        "central_url": "https://worker-central.aivison.it.com",
+        "user_data_bucket": "user-data-prod",
+    },
+}
 DEFAULT_LAN_MODEL_CACHE_BUCKET = "allbot-model-cache"
 
 
@@ -26,6 +36,7 @@ class RuntimeRenderOverrides:
     runtime_shape: str | None = None
     agent_id: str | None = None
     central_url: str | None = None
+    environment: str | None = None
 
     def __post_init__(self) -> None:
         if self.host_port is not None and not 1 <= self.host_port <= 65535:
@@ -37,6 +48,9 @@ class RuntimeRenderOverrides:
             raise ValueError(
                 "--runtime-shape must be standard_comfy_runtime or runpod_all_in_one"
             )
+        if self.environment is not None and self.environment not in LAN_AIO_ENVIRONMENTS:
+            allowed = ", ".join(sorted(LAN_AIO_ENVIRONMENTS))
+            raise ValueError(f"--environment must be one of: {allowed}")
 
     @property
     def has_any(self) -> bool:
@@ -50,6 +64,7 @@ class RuntimeRenderOverrides:
                 self.runtime_shape,
                 self.agent_id,
                 self.central_url,
+                self.environment,
             )
         )
 
@@ -303,7 +318,12 @@ class RuntimePlanner:
         model_cache_endpoint = (
             comfy.model_cache_endpoint or "http://192.168.1.115:9010"
         )
-        central_url = (overrides.central_url or DEFAULT_LAN_AIO_CENTRAL_URL).rstrip("/")
+        environment = self._effective_lan_aio_environment(overrides)
+        environment_settings = LAN_AIO_ENVIRONMENTS[environment]
+        central_url = (
+            overrides.central_url or environment_settings["central_url"]
+        ).rstrip("/")
+        user_data_bucket = environment_settings["user_data_bucket"]
         agent_id = overrides.agent_id or assignment.worker_id
         supported_task_types = ",".join(profile.task_types)
         model_prefix = profile.model_prefix or f"{profile.id}/unversioned"
@@ -323,13 +343,51 @@ class RuntimePlanner:
                     "image": image_ref,
                     "container_name": container_name,
                     "restart": "unless-stopped",
-                    "command": ["bash", "/opt/allbot/runpod_bootstrap_from_git.sh"],
+                    "command": [
+                        "bash",
+                        "-lc",
+                        (
+                            "remote_root=\"$${RUNPOD_REMOTE_WORKER_ROOT:-/opt/allbot/remote_workers}\"; "
+                            "if [ \"$${remote_root}\" = \"/opt/allbot/remote_workers\" ] "
+                            "&& [ -x /opt/allbot/runpod_bootstrap_from_git.sh ]; then "
+                            "exec bash /opt/allbot/runpod_bootstrap_from_git.sh; "
+                            "fi; "
+                            "model_target=\"$${RUNPOD_MODEL_TARGET_DIR:-/workspace/ComfyUI/models}\"; "
+                            "mkdir -p \"$${model_target}\"; "
+                            "if [ -d /default-comfyui-bundle/ComfyUI ]; then "
+                            "rm -rf /default-comfyui-bundle/ComfyUI/models; "
+                            "ln -s \"$${model_target}\" /default-comfyui-bundle/ComfyUI/models; "
+                            "fi; "
+                            "if [ -f \"$${remote_root}/requirements.txt\" ]; then "
+                            "python3 - <<'PY' || python3 -m pip install --no-cache-dir -r \"$${remote_root}/requirements.txt\"\n"
+                            "import fastapi\n"
+                            "import minio\n"
+                            "import uvicorn\n"
+                            "import websockets\n"
+                            "PY\n"
+                            "fi; "
+                            "if [ \"$${RUNPOD_MODEL_SYNC_ENABLED:-false}\" = \"true\" ]; then "
+                            "python3 \"$${remote_root}/scripts/runpod_sync_models_from_r2.py\" "
+                            "--bucket \"$${RUNPOD_MODEL_BUCKET:-}\" "
+                            "--prefix \"$${RUNPOD_MODEL_PREFIX:-img2img_lora/2026-06-10}\" "
+                            "--target-dir \"$${model_target}\"; "
+                            "fi; "
+                            "entrypoint=\"$${remote_root}/scripts/runpod_entrypoint.sh\"; "
+                            "if [ \"$${remote_root}\" = \"/opt/allbot/remote_workers\" ] "
+                            "&& [ -f \"$${entrypoint}\" ]; then "
+                            "sed -i "
+                            "'s#http://$${LOCAL_RELAY_HOST}:$${LOCAL_RELAY_PORT}/ready#http://$${LOCAL_RELAY_HOST}:$${LOCAL_RELAY_PORT}/health#g' "
+                            "\"$${entrypoint}\" || true; "
+                            "fi; "
+                            "exec bash \"$${entrypoint}\""
+                        ),
+                    ],
                     "ports": [f"{host_port}:8188"],
                     "environment": {
                         "TZ": "Asia/Shanghai",
                         "NVIDIA_VISIBLE_DEVICES": str(comfy.gpu_index or 0),
                         "ALLBOT_RUNPOD_MANAGED": "true",
-                        "RUNPOD_ENVIRONMENT": "cloud-test",
+                        "RUNPOD_ENVIRONMENT": environment,
                         "RUNPOD_TASK_TYPE": profile.runtime_profile,
                         "RUNPOD_POD_ID": f"lan-{slot_id}",
                         "RUNPOD_POD_ID_SAFE": f"lan-{slot_id}",
@@ -375,12 +433,13 @@ class RuntimePlanner:
                         "MINIO_ENDPOINT": "${LAN_AIO_MINIO_ENDPOINT:?}",
                         "MINIO_ACCESS_KEY": "${LAN_AIO_MINIO_ACCESS_KEY:?}",
                         "MINIO_SECRET_KEY": "${LAN_AIO_MINIO_SECRET_KEY:?}",
-                        "MINIO_INPUT_BUCKET": "user-data-test",
-                        "MINIO_RESULT_BUCKET": "user-data-test",
-                        "MINIO_TEMPLATE_BUCKET": "user-data-test",
+                        "MINIO_INPUT_BUCKET": user_data_bucket,
+                        "MINIO_RESULT_BUCKET": user_data_bucket,
+                        "MINIO_TEMPLATE_BUCKET": user_data_bucket,
                         "MINIO_SECURE": "true",
                         "RUNPOD_WORKSPACE_DIR": "/workspace",
                         "RUNPOD_VOLUME_COMFYUI_DIR": "/workspace/ComfyUI",
+                        "RUNPOD_REMOTE_WORKER_ROOT": "/opt/allbot/remote_workers",
                         "RUNPOD_PREPARE_COMFYUI_ON_VOLUME": "true",
                         "RUNPOD_COMFY_CUSTOM_NODES_ENABLED": "false",
                         "RUNPOD_MODEL_SYNC_ENABLED": "true",
@@ -415,8 +474,9 @@ class RuntimePlanner:
                             "CMD-SHELL",
                             (
                                 "curl -fsS http://127.0.0.1:8188/system_stats "
-                                ">/dev/null && curl -fsS "
-                                "http://127.0.0.1:8013/ready >/dev/null"
+                                ">/dev/null && (curl -fsS "
+                                "http://127.0.0.1:8013/ready >/dev/null || "
+                                "curl -fsS http://127.0.0.1:8013/health >/dev/null)"
                             ),
                         ],
                         "interval": "30s",
@@ -441,6 +501,7 @@ class RuntimePlanner:
                 "slot_id": slot_id,
                 "runtime_root": runtime_root,
                 "runtime_profile": profile.runtime_profile,
+                "environment": environment,
                 "image_ref": image_ref,
                 "model_cache_endpoint": model_cache_endpoint,
                 "model_cache_bucket": DEFAULT_LAN_MODEL_CACHE_BUCKET,
@@ -449,6 +510,7 @@ class RuntimePlanner:
                 "model_target_dir": model_target_dir,
                 "model_write_scope": [model_target_dir],
                 "central_url": central_url,
+                "user_data_bucket": user_data_bucket,
                 "local_relay_url": "http://127.0.0.1:8013",
                 "comfy_api_url": "http://127.0.0.1:8188",
                 "model_bundle_versions": bundle_versions,
@@ -780,6 +842,10 @@ class RuntimePlanner:
                 warnings.append(f"profile {profile.id} has no all_in_one_image_ref")
             if not profile.model_manifest_key:
                 warnings.append(f"profile {profile.id} has no model_manifest_key")
+            if overrides.environment == "cloud-prod" and (
+                overrides.central_url or LAN_AIO_ENVIRONMENTS["cloud-prod"]["central_url"]
+            ).find("test") >= 0:
+                warnings.append("cloud-prod render should not use a test Central URL")
         if self._render_mode(comfy, overrides) == "canary":
             warnings.append(
                 "canary render only; production port remains unchanged and no runtime mutation is executed"
@@ -849,7 +915,7 @@ class RuntimePlanner:
                     "control remains disabled"
                 ),
                 (
-                    "# real canary window: disable cloud_worker_test_06, enable "
+                    f"# real canary window: disable {assignment.worker_id}, enable "
                     f"{agent_id}, submit one img2img_lora Web task, then restore"
                 ),
                 f"# dry-run render: {self._render_command(assignment, profile, overrides)}",
@@ -976,7 +1042,15 @@ class RuntimePlanner:
             args.append(f"--agent-id {overrides.agent_id}")
         if overrides.central_url:
             args.append(f"--central-url {overrides.central_url}")
+        if overrides.environment:
+            args.append(f"--environment {overrides.environment}")
         return " ".join(args)
+
+    def _effective_lan_aio_environment(
+        self,
+        overrides: RuntimeRenderOverrides,
+    ) -> str:
+        return overrides.environment or DEFAULT_LAN_AIO_ENVIRONMENT
 
     def _effective_runtime_shape(
         self,
