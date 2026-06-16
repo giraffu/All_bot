@@ -2,7 +2,7 @@
 
 ## 1. 目标与范围
 
-本文档记录 AllBot 当前两台海外 VPS 边缘节点的职责范围、资源配置、服务入口、运维红线和排障流程。边缘节点不是业务事实源；它们负责 legacy 媒体回源、测试静态站、历史回滚入口和 Telegram 大文件本地 API。2026-06-08 晚间起，正式 `web.aivison.it.com` 已切到 Cloudflare Pages，正式 Web API 独立走 `api.aivison.it.com` Cloudflare Tunnel；排障时不要到 VPS Nginx 查正式 Web 静态站、正式 `/api/`、`web-cf-test.aivison.it.com` 或 `api-cf-test.aivison.it.com`。
+本文档记录 AllBot 当前两台海外 VPS 边缘节点的职责范围、资源配置、服务入口、运维红线和排障流程。边缘节点不是业务事实源；它们负责 legacy 媒体人工回滚/旧外链/迁移排障、测试静态站、历史回滚入口和 Telegram 大文件本地 API。2026-06-08 晚间起，正式 `web.aivison.it.com` 已切到 Cloudflare Pages，正式 Web API 独立走 `api.aivison.it.com` Cloudflare Tunnel；正式应用不再生成 `assets.aivison.it.com` legacy URL，排障时不要到 VPS Nginx 查正式 Web 静态站、正式 `/api/`、`web-cf-test.aivison.it.com` 或 `api-cf-test.aivison.it.com`。
 
 本文档不是实时监控面板。CPU、内存、磁盘、公网状态和服务端口都是采集时快照；做切流、清理、扩容或证书变更前必须重新采集。
 
@@ -12,7 +12,7 @@
 
 | 节点 | 入口 | 主要职责 | 当前状态 |
 | :--- | :--- | :--- | :--- |
-| Web/Nginx 边缘 VPS | Tailscale `100.88.57.122`，公网 `154.17.30.113`，SSH `root@100.88.57.122` 使用 `frontend/ssh_key/id_rsa.pem` | `assets.aivison.it.com` legacy MinIO 代理、`web-test.aivison.it.com` 测试静态站、正式 Web 回滚用 `/root/dist` | SSH 可用，Nginx/Tailscale active；2026-06-16 受控轮转日志后根盘约 84%；不再承接正式 `web.aivison.it.com` 主流量 |
+| Web/Nginx 边缘 VPS | Tailscale `100.88.57.122`，公网 `154.17.30.113`，SSH `root@100.88.57.122` 使用 `frontend/ssh_key/id_rsa.pem` | `assets.aivison.it.com` legacy MinIO 代理（人工回滚/旧外链/迁移排障）、`web-test.aivison.it.com` 测试静态站、正式 Web 回滚用 `/root/dist` | SSH 可用，Nginx/Tailscale active；2026-06-16 受控轮转日志后根盘约 84%；不再承接正式 `web.aivison.it.com` 主流量 |
 | Telegram Local API VPS | 公网 `69.63.220.115` | Telegram Local Bot API `8081`，文件 HTTP 服务 `8082`，支撑大文件下载/上传绕过官方 Bot API 限制 | 8081/8082/22 公网端口可达；当前主服务器未配置可用 SSH key，资源需补采 |
 
 ## 3. Web/Nginx 边缘 VPS
@@ -48,12 +48,12 @@
 - Web 边缘到云 Web API `100.107.220.127:8000` 约 `0.51-0.55s`，该基线主要用于回滚、`web-test` 与 `assets` 排障；当前正式 API 公网入口是 `api.aivison.it.com`。
 - 最近 30 分钟窗口曾观测到约 `202` 次 499，集中在 `/api/tasks/{id}/result`、`/api/gallery/posts`、`/api/gallery/my-favorites`、`/api/users/history` 等等待型接口。
 - `assets.aivison.it.com` legacy 回源曾在 30 分钟内出现约 `37` 次 upstream 异常；其中大量为 `upstream prematurely closed connection`，少量为 `upstream timed out`。
-- `/minio/health/live` 返回 200 只能证明本地 MinIO 基础健康，不代表具体历史图片/视频对象读取链路稳定；验收必须测真实对象 URL 或至少统计 `assets` error.log。
+- `/minio/health/live` 返回 200 只能证明本地 MinIO 基础健康，不代表具体旧外链/人工回滚对象读取链路稳定；验收该链路必须测真实对象 URL 或至少统计 `assets` error.log。
 
 2026-06-16 容量治理补充：
 - 已安装并启用 `logrotate.timer`，备份原 `/etc/logrotate.d/nginx` 后移除 `delaycompress`，执行 `logrotate -f /etc/logrotate.d/nginx` 轮转并压缩现有 Nginx 日志。
 - 同步执行 `journalctl --vacuum-size=100M` 和 `apt-get clean`；根盘从约 `37G used / 1.5G free / 97%` 降至约 `32G used / 6.3G free / 84%`。
-- `web-test.aivison.it.com` 验证返回 200；`assets.aivison.it.com` 根路径返回 403 属预期，不代表具体 legacy 对象不可读。
+- `web-test.aivison.it.com` 验证返回 200；`assets.aivison.it.com` 根路径返回 403 属预期，不代表具体旧外链/人工回滚对象不可读。
 - 本轮未缩小 `minio_cache`。若需要继续释放空间，可将 `proxy_cache_path max_size` 从 `25g` 缩到约 `15g-16g`，预计释放约 `8G-10G`，代价是 legacy assets 回源流量和冷缓存延迟上升。
 
 ### 3.2 域名与路由
@@ -62,7 +62,7 @@
 | :--- | :--- | :--- |
 | `web.aivison.it.com` | 已由 Cloudflare Pages `allbot-web-prod` 承接；VPS 只保留回滚副本 | 不经过 VPS；前端调用 `https://api.aivison.it.com/api` |
 | `web-test.aivison.it.com` | 测试 Web 静态站；`/api/` 反代云测试 Web API | `http://100.82.124.91:8001` |
-| `assets.aivison.it.com` | legacy MinIO 只读/兼容回源，用于历史媒体 fallback | `http://100.99.254.53:9000` |
+| `assets.aivison.it.com` | legacy MinIO 只读/兼容回源，仅用于人工回滚、旧外链和迁移排障；正式应用不再生成该域名 URL | `http://100.99.254.53:9000` |
 
 不在 Web VPS 上的历史 Cloudflare canary 入口：
 
@@ -82,7 +82,7 @@
 | `https://web.aivison.it.com/api/health` | 返回 Pages SPA HTML；不再作为 API 健康检查 |
 | `https://web-test.aivison.it.com` | 200 |
 | `https://web-test.aivison.it.com/api/health` | 应返回测试 Web BFF health；502 时先查 `web-test` upstream 与云测试白名单 |
-| `https://assets.aivison.it.com` | 根路径 403；这不等同于具体对象不可读，验收 legacy 对象时必须测真实 object URL |
+| `https://assets.aivison.it.com` | 根路径 403；这不等同于具体对象不可读，验收旧外链/人工回滚对象时必须测真实 object URL |
 
 ### 3.3 Nginx 配置红线
 
@@ -136,7 +136,7 @@ nginx -s reload
 ```
 
 操作边界：
-- 改 `all_bot` 会影响 `assets.aivison.it.com` legacy fallback 和正式 Web 回滚副本；当前正式 `web.aivison.it.com` 主流量不经过该 Nginx server。
+- 改 `all_bot` 会影响 `assets.aivison.it.com` legacy 人工回滚/旧外链入口和正式 Web 回滚副本；当前正式 `web.aivison.it.com` 主流量不经过该 Nginx server。
 - 改 `web-test.aivison.it.com` 只影响测试静态站和测试 `/api/`。
 - 不要用 `systemctl restart nginx` 作为常规动作；优先 `nginx -t && nginx -s reload`。
 - 不要删除 `/etc/letsencrypt`、`/root/dist`、`/root/dist-test`、`/etc/nginx/sites-available/*` 或备份目录。
@@ -238,12 +238,12 @@ curl -sS -o /dev/null -w "%{http_code} %{time_total}\n" --max-time 10 http://69.
 | :--- | :--- |
 | `web.aivison.it.com` 白屏或静态资源 404 | Cloudflare Pages 项目 `allbot-web-prod`、Pages 部署、custom domain、前端构建产物；不要优先查 VPS `/root/dist` |
 | `api.aivison.it.com/api/health` 502/504 | 云机 Cloudflare Tunnel connector、public hostname、云 Web API `100.107.220.127:8000` |
-| Web API 普遍慢但云内 health 毫秒级 | 比较 Cloudflare Tunnel 公网、云内 API、R2/legacy 回源和前端串行请求；统计 499 高频端点 |
+| Web API 普遍慢但云内 health 毫秒级 | 比较 Cloudflare Tunnel 公网、云内 API、R2 公开域名/短签和前端串行请求；统计 499 高频端点 |
 | `api-cf-test.aivison.it.com/api/health` 502 | 先查 Cloudflare Tunnel connector 是否在云机 active、public hostname 是否回源 `100.107.220.127:8000`；不要查 Web VPS Nginx |
 | `web-cf-test.aivison.it.com` 白屏或 404 | 先查 Cloudflare Pages 部署、custom domain、构建产物和 `VITE_API_BASE_URL`；不要查 `/root/dist` |
 | `web-test.aivison.it.com/api/health` 502 | 测试 Web API `100.82.124.91:8001` 是否运行、边缘 VPS Tailscale 是否在线；不要误改正式站 |
-| legacy 历史媒体打不开或加载慢 | `assets.aivison.it.com` Nginx MinIO proxy、Tailscale 到 `100.99.254.53:9000`、真实 object URL；不要只看 `/minio/health/live` |
-| `/api/tasks/{id}/result`、Gallery、History 大量 499 | 用户端等待过久断开；联动查 Web API R2 result timeout、legacy object_exists failure、边缘公网延迟 |
+| legacy 旧外链或人工回滚媒体打不开/加载慢 | `assets.aivison.it.com` Nginx MinIO proxy、Tailscale 到 `100.99.254.53:9000`、真实 object URL；不要只看 `/minio/health/live` |
+| `/api/tasks/{id}/result`、Gallery、History 大量 499 | 用户端等待过久断开；联动查 Web API R2 result timeout、R2 公开域名/短签、边缘公网延迟；若响应出现 `assets` URL，按 legacy 退出回归缺陷处理 |
 | 上传中文/空格文件 403 | 检查 `assets` proxy_pass 是否带 URI 或尾斜杠 |
 | 上传大文件卡住 | 检查 `proxy_request_buffering off`、边缘根盘空间、Tailscale 链路 |
 | Telegram 大文件下载 404/403 | Telegram Local API 节点 `8082`、文件服务挂载目录和 monkey patch 路径拼接 |

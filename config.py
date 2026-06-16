@@ -86,9 +86,9 @@ MINIO_SECURE = os.getenv("MINIO_SECURE", "false").lower() == "true"
 MINIO_PUBLIC_URL = os.getenv("MINIO_PUBLIC_URL", f"http://{MINIO_ENDPOINT}")
 IMGPROXY_URL = os.getenv("IMGPROXY_URL", "http://localhost:8080")
 
-# --- Legacy object storage fallback ---
-# Cloud production can point MINIO_* to R2 for new writes while keeping old local
-# MinIO as a read-only fallback for historical media that was not pre-mirrored.
+# --- Legacy object storage migration/rollback access ---
+# Runtime Web/Dashboard reads keep this disabled by default. One-off migration
+# scripts can enable it to copy historical objects from local MinIO into R2.
 LEGACY_MINIO_ENDPOINT = os.getenv("LEGACY_MINIO_ENDPOINT")
 LEGACY_MINIO_ACCESS_KEY = os.getenv("LEGACY_MINIO_ACCESS_KEY")
 LEGACY_MINIO_SECRET_KEY = os.getenv("LEGACY_MINIO_SECRET_KEY")
@@ -98,6 +98,9 @@ LEGACY_MINIO_RESULT_BUCKET = os.getenv(
 )
 LEGACY_MINIO_SECURE = os.getenv("LEGACY_MINIO_SECURE", "false").lower() == "true"
 LEGACY_MINIO_PUBLIC_URL = os.getenv("LEGACY_MINIO_PUBLIC_URL", "")
+LEGACY_MINIO_READ_FALLBACK_ENABLED = (
+    os.getenv("LEGACY_MINIO_READ_FALLBACK_ENABLED", "false").lower() == "true"
+)
 
 # --- Cloudflare R2 Configuration ---
 R2_ENDPOINT = os.getenv("R2_ENDPOINT")

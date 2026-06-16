@@ -12,6 +12,7 @@ from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Callable, Literal
+from urllib.parse import urlparse
 
 from PIL import Image, ImageOps
 from sqlalchemy import desc, func, select, union
@@ -21,10 +22,52 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+
+def _find_argv_value(argv: list[str], name: str) -> str | None:
+    prefix = f"{name}="
+    for index, arg in enumerate(argv):
+        if arg == name and index + 1 < len(argv):
+            return argv[index + 1]
+        if arg.startswith(prefix):
+            return arg[len(prefix) :]
+    return None
+
+
+def _load_env_file_from_argv(argv: list[str]) -> None:
+    env_file = _find_argv_value(argv, "--env-file")
+    if not env_file:
+        return
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(env_file, override=True)
+    except Exception:
+        for raw_line in Path(env_file).read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            if not key.replace("_", "").isalnum() or key[0].isdigit():
+                continue
+            os.environ[key] = value.strip().strip("'\"")
+
+
+def _enable_legacy_storage_for_migration(argv: list[str]) -> None:
+    source_storage = _find_argv_value(argv, "--source-storage")
+    hotset_profile = _find_argv_value(argv, "--hotset-profile")
+    if source_storage == "legacy" or (hotset_profile and source_storage != "current"):
+        os.environ["LEGACY_MINIO_READ_FALLBACK_ENABLED"] = "true"
+
+
+_load_env_file_from_argv(sys.argv)
+_enable_legacy_storage_for_migration(sys.argv)
+
 from src.core.media_paths import (  # noqa: E402
     build_history_r2_media_key,
     build_history_r2_thumbnail_key,
     build_legacy_r2_key,
+    build_storage_r2_object_key,
     get_media_type_from_history,
     resolve_legacy_storage_object,
     resolve_storage_object,
@@ -46,6 +89,11 @@ logger = logging.getLogger(__name__)
 ResolveSourceObjectFunc = Callable[[str], tuple[str, str]]
 
 HOTSET_PROFILE_CLOUD_PROD_LAG_FIX = "cloud-prod-lag-fix"
+HOTSET_PROFILE_WEB_VISIBLE_RETIRE_LEGACY = "web-visible-retire-legacy"
+HOTSET_PROFILES = [
+    HOTSET_PROFILE_CLOUD_PROD_LAG_FIX,
+    HOTSET_PROFILE_WEB_VISIBLE_RETIRE_LEGACY,
+]
 HOTSET_SOURCE_LIMITS = {
     "gallery_latest": 300,
     "gallery_likes_top": 1000,
@@ -80,6 +128,15 @@ ThumbnailStatus = Literal[
     "copy_failed",
     "generate_failed",
 ]
+InputStatus = Literal[
+    "exists",
+    "skipped",
+    "skipped_external",
+    "would_upload",
+    "uploaded",
+    "source_missing",
+    "upload_failed",
+]
 
 
 @dataclass
@@ -98,6 +155,22 @@ class HistoryR2Candidate:
     thumbnail_source_bucket: str
     thumbnail_source_object: str
     thumbnail_r2_key: str
+    input_files: list["InputFileCandidate"]
+
+
+@dataclass
+class InputFileCandidate:
+    file_path: str
+    source_bucket: str | None
+    source_object: str | None
+    r2_key: str | None
+    skip_reason: str | None = None
+
+
+@dataclass
+class InputFileResult:
+    candidate: InputFileCandidate
+    status: InputStatus
 
 
 @dataclass
@@ -105,6 +178,7 @@ class CandidateResult:
     candidate: HistoryR2Candidate
     media_status: MediaStatus
     thumbnail_status: ThumbnailStatus
+    input_results: list[InputFileResult]
 
 
 @dataclass
@@ -124,6 +198,13 @@ class BackfillSummary:
     thumbnail_would_generate: int
     thumbnail_generated: int
     thumbnail_failed: int
+    input_exists: int
+    input_skipped: int
+    input_skipped_external: int
+    input_missing_on_source: int
+    input_would_upload: int
+    input_uploaded: int
+    input_failed: int
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -151,6 +232,7 @@ def build_history_r2_candidate(
     task_id: str | None,
     history_type: str | None,
     output_file: str,
+    input_file: str | None = None,
     resolve_source_object_func: ResolveSourceObjectFunc = resolve_storage_object,
 ) -> HistoryR2Candidate:
     media_type = get_media_type_from_history(history_type)
@@ -186,7 +268,54 @@ def build_history_r2_candidate(
         thumbnail_source_bucket=thumbnail_source_bucket,
         thumbnail_source_object=thumbnail_source_object,
         thumbnail_r2_key=thumbnail_r2_key,
+        input_files=build_input_file_candidates(
+            input_file,
+            resolve_source_object_func=resolve_source_object_func,
+        ),
     )
+
+
+def _is_external_input_file(file_path: str) -> bool:
+    parsed = urlparse(file_path)
+    return parsed.scheme in {"http", "https", "data"}
+
+
+def build_input_file_candidates(
+    input_file: str | None,
+    *,
+    resolve_source_object_func: ResolveSourceObjectFunc = resolve_storage_object,
+) -> list[InputFileCandidate]:
+    if not input_file:
+        return []
+
+    candidates: list[InputFileCandidate] = []
+    seen: set[str] = set()
+    for raw_item in str(input_file).split("|"):
+        file_path = raw_item.strip()
+        if not file_path or file_path in seen:
+            continue
+        seen.add(file_path)
+        if _is_external_input_file(file_path):
+            candidates.append(
+                InputFileCandidate(
+                    file_path=file_path,
+                    source_bucket=None,
+                    source_object=None,
+                    r2_key=None,
+                    skip_reason="external",
+                )
+            )
+            continue
+        source_bucket, source_object = resolve_source_object_func(file_path)
+        candidates.append(
+            InputFileCandidate(
+                file_path=file_path,
+                source_bucket=source_bucket,
+                source_object=source_object,
+                r2_key=build_storage_r2_object_key(file_path),
+            )
+        )
+    return candidates
 
 
 def build_user_visible_history_ids_stmt(*, recent_limit: int):
@@ -495,6 +624,87 @@ async def collect_cloud_prod_lag_fix_history_ids(
     return selected, source_counts
 
 
+async def collect_web_visible_retire_legacy_history_ids(
+    session,
+    *,
+    recent_limit: int = 8,
+    total_limit: int | None = None,
+) -> tuple[list[int], dict[str, dict[str, int]]]:
+    cap = total_limit if total_limit and total_limit > 0 else sys.maxsize
+    common_history_filters = (
+        History.output_file.is_not(None),
+        History.output_file != "",
+        History.is_visible.is_not(False),
+    )
+    selected: list[int] = []
+    seen: set[int] = set()
+    source_counts: dict[str, dict[str, int]] = {}
+
+    async def collect_source(label: str, stmt) -> None:
+        if len(selected) >= cap:
+            source_counts[label] = {"raw": 0, "added": 0}
+            return
+        rows = await _fetch_history_ids(session, stmt)
+        added = _append_unique_history_ids(selected, seen, rows, cap=cap)
+        source_counts[label] = {"raw": len(rows), "added": added}
+
+    recent_ranked = (
+        select(
+            History.id.label("history_id"),
+            func.row_number()
+            .over(partition_by=History.user_id, order_by=desc(History.id))
+            .label("row_number"),
+        )
+        .where(*common_history_filters)
+        .subquery()
+    )
+    await collect_source(
+        "per_user_recent_visible_history",
+        select(recent_ranked.c.history_id)
+        .where(recent_ranked.c.row_number <= recent_limit)
+        .order_by(recent_ranked.c.history_id.desc()),
+    )
+
+    await collect_source(
+        "all_gallery_posts",
+        select(History.id)
+        .join(GalleryPost, GalleryPost.task_id == History.task_id)
+        .where(*common_history_filters)
+        .order_by(GalleryPost.id.desc(), History.id.desc()),
+    )
+
+    await collect_source(
+        "history_favorites",
+        select(History.id)
+        .where(*common_history_filters, History.is_favorited.is_(True))
+        .order_by(History.id.desc()),
+    )
+
+    await collect_source(
+        "gallery_like_apply_interactions",
+        select(History.id)
+        .join(GalleryPost, GalleryPost.task_id == History.task_id)
+        .join(UserInteraction, UserInteraction.post_id == GalleryPost.id)
+        .where(
+            *common_history_filters,
+            GalleryPost.is_active.is_(True),
+            UserInteraction.action_type.in_(["like", "apply"]),
+        )
+        .order_by(UserInteraction.id.desc(), History.id.desc()),
+    )
+
+    await collect_source(
+        "gallery_prompt_unlocks",
+        select(History.id)
+        .join(GalleryPost, GalleryPost.task_id == History.task_id)
+        .join(GalleryPromptUnlock, GalleryPromptUnlock.post_id == GalleryPost.id)
+        .where(*common_history_filters, GalleryPost.is_active.is_(True))
+        .order_by(GalleryPromptUnlock.id.desc(), History.id.desc()),
+    )
+
+    return selected, source_counts
+
+
 def select_hotset_batch(
     history_ids: list[int],
     *,
@@ -565,6 +775,7 @@ async def collect_history_r2_candidates(
             History.task_id,
             History.type,
             History.output_file,
+            History.input_file,
         )
         .select_from(History)
         .outerjoin(User, User.id == History.user_id)
@@ -620,6 +831,7 @@ async def collect_history_r2_candidates(
             task_id=row_task_id,
             history_type=row_history_type,
             output_file=row_output_file,
+            input_file=row_input_file,
             resolve_source_object_func=resolve_source_object_func,
         )
         for (
@@ -629,6 +841,7 @@ async def collect_history_r2_candidates(
             row_task_id,
             row_history_type,
             row_output_file,
+            row_input_file,
         ) in rows
     ]
 
@@ -659,6 +872,7 @@ async def process_history_r2_candidate(
     async_copy_to_r2_func,
     generate_and_upload_thumbnail_func,
     generate_and_upload_thumbnail_from_r2_media_func,
+    include_input_files: bool = False,
 ) -> CandidateResult:
     async def copy_to_r2_with_retries(
         source_bucket: str,
@@ -780,10 +994,42 @@ async def process_history_r2_candidate(
                     )
                     thumbnail_status = "generate_failed"
 
+    input_results: list[InputFileResult] = []
+    if include_input_files:
+        for input_file in candidate.input_files:
+            if input_file.skip_reason == "external":
+                input_status: InputStatus = "skipped_external"
+            elif (
+                not input_file.source_bucket
+                or not input_file.source_object
+                or not input_file.r2_key
+            ):
+                input_status = "skipped"
+            elif await async_r2_object_exists_func(input_file.r2_key):
+                input_status = "exists"
+            elif not await async_object_exists_func(
+                input_file.source_bucket,
+                input_file.source_object,
+            ):
+                input_status = "source_missing"
+            elif not apply_changes:
+                input_status = "would_upload"
+            else:
+                uploaded = await copy_to_r2_with_retries(
+                    input_file.source_bucket,
+                    input_file.source_object,
+                    input_file.r2_key,
+                )
+                input_status = "uploaded" if uploaded else "upload_failed"
+            input_results.append(
+                InputFileResult(candidate=input_file, status=input_status)
+            )
+
     return CandidateResult(
         candidate=candidate,
         media_status=media_status,
         thumbnail_status=thumbnail_status,
+        input_results=input_results,
     )
 
 
@@ -879,6 +1125,14 @@ def summarize_results(
     def _count_thumb(status: ThumbnailStatus) -> int:
         return sum(1 for result in results if result.thumbnail_status == status)
 
+    def _count_input(status: InputStatus) -> int:
+        return sum(
+            1
+            for result in results
+            for input_result in getattr(result, "input_results", [])
+            if input_result.status == status
+        )
+
     return BackfillSummary(
         mode="apply" if apply_changes else "dry-run",
         scanned=len(results),
@@ -896,6 +1150,13 @@ def summarize_results(
         thumbnail_generated=_count_thumb("generated"),
         thumbnail_failed=_count_thumb("copy_failed")
         + _count_thumb("generate_failed"),
+        input_exists=_count_input("exists"),
+        input_skipped=_count_input("skipped"),
+        input_skipped_external=_count_input("skipped_external"),
+        input_missing_on_source=_count_input("source_missing"),
+        input_would_upload=_count_input("would_upload"),
+        input_uploaded=_count_input("uploaded"),
+        input_failed=_count_input("upload_failed"),
     )
 
 
@@ -904,6 +1165,11 @@ def should_mark_hotset_processed(result: CandidateResult) -> bool:
     if result.media_status == "upload_failed":
         return False
     if result.thumbnail_status in {"copy_failed", "generate_failed"}:
+        return False
+    if any(
+        input_result.status == "upload_failed"
+        for input_result in result.input_results
+    ):
         return False
     return True
 
@@ -915,6 +1181,7 @@ def write_backfill_report(
     results: list[CandidateResult],
     source_storage: Literal["current", "legacy"],
     media_only: bool,
+    include_input_files: bool,
     generate_missing_thumbnails: bool,
     concurrency: int,
     hotset_selection: HotsetSelection | None = None,
@@ -936,6 +1203,15 @@ def write_backfill_report(
             "thumbnail_status": result.thumbnail_status,
             "media_r2_key": result.candidate.media_r2_key,
             "thumbnail_r2_key": result.candidate.thumbnail_r2_key,
+            "input_files": [
+                {
+                    "file_path": input_result.candidate.file_path,
+                    "status": input_result.status,
+                    "r2_key": input_result.candidate.r2_key,
+                    "skip_reason": input_result.candidate.skip_reason,
+                }
+                for input_result in result.input_results
+            ],
         }
         for result in results
     ]
@@ -943,6 +1219,7 @@ def write_backfill_report(
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "source_storage": source_storage,
         "media_only": media_only,
+        "include_input_files": include_input_files,
         "generate_missing_thumbnails": generate_missing_thumbnails,
         "concurrency": concurrency,
         "hotset": hotset_selection.to_dict() if hotset_selection else None,
@@ -962,6 +1239,7 @@ def write_backfill_report(
         f"- source_storage: `{source_storage}`",
         f"- scanned: `{summary.scanned}`",
         f"- media_only: `{media_only}`",
+        f"- include_input_files: `{include_input_files}`",
         f"- generate_missing_thumbnails: `{generate_missing_thumbnails}`",
         f"- concurrency: `{concurrency}`",
         "",
@@ -987,7 +1265,9 @@ def write_backfill_report(
         lines.append(
             "- history_id `{history_id}` task `{task_id}` media `{media_type}` "
             "media_status `{media_status}` thumb_status `{thumbnail_status}` "
-            "media_key `{media_r2_key}` thumb_key `{thumbnail_r2_key}`".format(
+            "media_key `{media_r2_key}` thumb_key `{thumbnail_r2_key}` "
+            "input_files `{input_count}`".format(
+                input_count=len(row["input_files"]),
                 **row
             )
         )
@@ -1001,6 +1281,7 @@ async def process_history_r2_candidates(
     concurrency: int,
     apply_changes: bool,
     media_only: bool,
+    include_input_files: bool,
     generate_missing_thumbnails: bool,
     async_object_exists_func,
     async_r2_object_exists_func,
@@ -1041,6 +1322,7 @@ async def process_history_r2_candidates(
                     generate_and_upload_thumbnail_from_r2_media_func=(
                         generate_and_upload_thumbnail_from_r2_media_func
                     ),
+                    include_input_files=include_input_files,
                 )
                 async with results_lock:
                     results.append(result)
@@ -1070,6 +1352,11 @@ async def process_history_r2_candidates(
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="扫描 History 表并把缺失的历史原文件/缩略图回填到 R2。默认 dry-run。"
+    )
+    parser.add_argument(
+        "--env-file",
+        type=Path,
+        help="在导入项目配置前加载指定 env 文件；不会打印其中的敏感值。",
     )
     parser.add_argument(
         "--apply",
@@ -1106,8 +1393,11 @@ def build_argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--hotset-profile",
-        choices=[HOTSET_PROFILE_CLOUD_PROD_LAG_FIX],
-        help="启用固定热集候选采集模式；cloud-prod-lag-fix 用于云正式非全量预热。",
+        choices=HOTSET_PROFILES,
+        help=(
+            "启用固定热集候选采集模式；cloud-prod-lag-fix 用于云正式非全量预热，"
+            "web-visible-retire-legacy 用于 legacy 退出前的 Web 可见热集。"
+        ),
     )
     parser.add_argument(
         "--hotset-wave",
@@ -1172,6 +1462,11 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="仅处理原文件 media R2 回填，不处理缩略图。",
     )
     parser.add_argument(
+        "--include-input-files",
+        action="store_true",
+        help="同时复制 History.input_file 中的本地存储对象，外部 URL 会跳过。",
+    )
+    parser.add_argument(
         "--generate-missing-thumbnails",
         action="store_true",
         help="当源缩略图不存在但原文件存在时生成缩略图；legacy 批量预热默认不启用。",
@@ -1228,12 +1523,32 @@ async def run_backfill(args) -> BackfillSummary:
     processed_history_ids: set[int] = set()
     async with AsyncSessionLocal() as session:
         history_ids = None
-        if args.hotset_profile == HOTSET_PROFILE_CLOUD_PROD_LAG_FIX:
-            selected_ids, source_counts = await collect_cloud_prod_lag_fix_history_ids(
-                session,
-                wave=args.hotset_wave,
-                total_limit=args.limit,
-            )
+        if args.hotset_profile:
+            if args.hotset_profile == HOTSET_PROFILE_CLOUD_PROD_LAG_FIX:
+                selected_ids, source_counts = await collect_cloud_prod_lag_fix_history_ids(
+                    session,
+                    wave=args.hotset_wave,
+                    total_limit=args.limit,
+                )
+                candidate_cap = min(
+                    HOTSET_WAVE_CAPS[args.hotset_wave],
+                    args.limit or HOTSET_WAVE_CAPS[args.hotset_wave],
+                )
+                default_cursor_name = (
+                    f"media_hotset_{args.hotset_profile}_{args.hotset_wave}_cursor.json"
+                )
+            elif args.hotset_profile == HOTSET_PROFILE_WEB_VISIBLE_RETIRE_LEGACY:
+                selected_ids, source_counts = (
+                    await collect_web_visible_retire_legacy_history_ids(
+                        session,
+                        recent_limit=args.recent_limit,
+                        total_limit=args.limit,
+                    )
+                )
+                candidate_cap = args.limit or len(selected_ids)
+                default_cursor_name = f"media_hotset_{args.hotset_profile}_cursor.json"
+            else:
+                raise RuntimeError(f"Unsupported hotset profile: {args.hotset_profile}")
             batch_size = min(
                 max(1, args.batch_size or HOTSET_MAX_BATCH_SIZE),
                 HOTSET_MAX_BATCH_SIZE,
@@ -1241,7 +1556,7 @@ async def run_backfill(args) -> BackfillSummary:
             if not args.no_cursor:
                 cursor_file = args.cursor_file or Path(
                     "logs",
-                    f"media_hotset_{args.hotset_profile}_{args.hotset_wave}_cursor.json",
+                    default_cursor_name,
                 )
                 processed_history_ids = read_hotset_cursor(cursor_file)
             history_ids, skipped_by_cursor = select_hotset_batch(
@@ -1252,10 +1567,7 @@ async def run_backfill(args) -> BackfillSummary:
             hotset_selection = HotsetSelection(
                 profile=args.hotset_profile,
                 wave=args.hotset_wave,
-                candidate_cap=min(
-                    HOTSET_WAVE_CAPS[args.hotset_wave],
-                    args.limit or HOTSET_WAVE_CAPS[args.hotset_wave],
-                ),
+                candidate_cap=candidate_cap,
                 selected_count=len(selected_ids),
                 batch_count=len(history_ids),
                 skipped_by_cursor=skipped_by_cursor,
@@ -1289,6 +1601,7 @@ async def run_backfill(args) -> BackfillSummary:
         concurrency=effective_concurrency,
         apply_changes=args.apply,
         media_only=args.media_only,
+        include_input_files=args.include_input_files,
         generate_missing_thumbnails=args.generate_missing_thumbnails,
         async_object_exists_func=async_object_exists_func,
         async_r2_object_exists_func=storage._async_r2_object_exists_uncached,
@@ -1321,6 +1634,7 @@ async def run_backfill(args) -> BackfillSummary:
             results=results,
             source_storage=source_storage,
             media_only=args.media_only,
+            include_input_files=args.include_input_files,
             generate_missing_thumbnails=args.generate_missing_thumbnails,
             concurrency=effective_concurrency,
             hotset_selection=hotset_selection,

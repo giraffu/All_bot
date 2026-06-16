@@ -112,7 +112,7 @@ def test_build_storage_input_file_url_uses_shared_storage_builder(monkeypatch):
     assert presigned_calls == [("history/task-1/input.png", "bot-data")]
 
 
-def test_build_storage_input_file_url_prefers_legacy_storage_when_object_exists(
+def test_build_storage_input_file_url_ignores_legacy_storage_when_object_exists(
     monkeypatch,
 ):
     current_presigned = []
@@ -147,9 +147,9 @@ def test_build_storage_input_file_url_prefers_legacy_storage_when_object_exists(
 
     url = build_storage_input_file_url("bot-data/history/task-1/input.png")
 
-    assert url == "https://legacy.example/bot-data/history/task-1/input.png"
-    assert legacy_presigned == [("history/task-1/input.png", "bot-data")]
-    assert current_presigned == []
+    assert url == "https://storage.example/bot-data/history/task-1/input.png"
+    assert current_presigned == [("history/task-1/input.png", "bot-data")]
+    assert legacy_presigned == []
 
 
 @pytest.mark.asyncio

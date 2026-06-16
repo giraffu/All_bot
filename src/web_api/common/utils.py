@@ -4,7 +4,6 @@ from typing import TypeVar
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.media_paths import resolve_legacy_storage_object
 from src.core.media_urls import build_storage_presigned_url
 from src.services.storage import storage
 from src.web_api.services.apply_context_service import (
@@ -33,16 +32,6 @@ __all__ = [
 def build_storage_input_file_url(file_path: str | None) -> str | None:
     if not file_path:
         return None
-
-    has_legacy_storage = getattr(storage, "has_legacy_storage_configured", None)
-    if callable(has_legacy_storage) and has_legacy_storage():
-        legacy_bucket, legacy_object = resolve_legacy_storage_object(file_path)
-        legacy_exists = getattr(storage, "legacy_object_exists", None)
-        if callable(legacy_exists) and legacy_exists(legacy_bucket, legacy_object):
-            return storage.get_legacy_presigned_url(
-                legacy_object,
-                bucket=legacy_bucket,
-            )
 
     return build_storage_presigned_url(
         file_path,

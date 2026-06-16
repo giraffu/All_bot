@@ -5,7 +5,6 @@ import httpx
 
 from src.core.media_paths import (
     get_media_type_from_history,
-    resolve_legacy_storage_object,
     resolve_storage_object,
 )
 from src.core.media_urls import build_r2_media_key_candidates, build_r2_thumbnail_info
@@ -143,41 +142,11 @@ def build_storage_media_url(
     if not output_file:
         return ""
 
-    legacy_url = build_legacy_storage_media_url(
-        output_file,
-        expires_hours=expires_hours,
-    )
-    if legacy_url:
-        return legacy_url
-
     bucket_name, object_name = resolve_storage_object(output_file)
     kwargs = {"bucket": bucket_name}
     if expires_hours is not None:
         kwargs["expires_hours"] = expires_hours
     return storage.get_presigned_url(object_name, **kwargs) or ""
-
-
-def build_legacy_storage_media_url(
-    output_file: str | None,
-    *,
-    expires_hours: int | None = None,
-) -> str:
-    if not output_file:
-        return ""
-
-    has_legacy_storage = getattr(storage, "has_legacy_storage_configured", None)
-    if not callable(has_legacy_storage) or not has_legacy_storage():
-        return ""
-
-    legacy_bucket, legacy_object = resolve_legacy_storage_object(output_file)
-    legacy_exists = getattr(storage, "legacy_object_exists", None)
-    if callable(legacy_exists) and not legacy_exists(legacy_bucket, legacy_object):
-        return ""
-
-    kwargs = {"bucket": legacy_bucket}
-    if expires_hours is not None:
-        kwargs["expires_hours"] = expires_hours
-    return storage.get_legacy_presigned_url(legacy_object, **kwargs) or ""
 
 
 async def resolve_media_url(
@@ -239,22 +208,6 @@ async def resolve_thumbnail_url(
         )
         if r2_url:
             return r2_url
-
-    has_legacy_storage = getattr(storage, "has_legacy_storage_configured", None)
-    if callable(has_legacy_storage) and has_legacy_storage():
-        legacy_bucket, legacy_object = resolve_legacy_storage_object(thumb_file)
-        legacy_exists = getattr(storage, "async_legacy_object_exists", None)
-        if callable(legacy_exists) and await legacy_exists(
-            legacy_bucket,
-            legacy_object,
-        ):
-            return (
-                storage.get_legacy_presigned_url(
-                    legacy_object,
-                    bucket=legacy_bucket,
-                )
-                or ""
-            )
 
     bucket_name, object_name = resolve_storage_object(thumb_file)
     if await storage.async_object_exists(bucket_name, object_name):

@@ -17,7 +17,7 @@
 | :--- | :--- | :--- |
 | Bot/Web/Payment/Central/Dashboard | 云 Droplet `allbot-do-sgp1-control` | 本地主服务器旧正式 compose |
 | 数据库/缓存 | 云正式 PostgreSQL/Valkey | 本地 `.env` 指向的 PostgreSQL/Redis；必要时先从云备份恢复 |
-| 新对象存储 | R2 `user-data-prod` | 仍优先保持 R2；本地 MinIO 只做 legacy fallback |
+| 新对象存储 | R2 `user-data-prod` | 仍优先保持 R2；本地 MinIO 只做旧外链、人工回滚和迁移补漏 |
 | GPU worker | 本地 `cloud-prod-comfy-agent-*` 接云 Central | 本地旧 `comfy-agent-*` 接本地 Central |
 | Web 静态站 | Cloudflare Pages `web.aivison.it.com` | 优先保留 Pages；把 API base/origin 切到本地 Web API，或临时回滚到边缘 VPS `/root/dist` |
 | Web API 入口 | `api.aivison.it.com` Tunnel -> 云 Web API | Tunnel/边缘回源 -> 本地 `127.0.0.1:8000` 或本地主机 Tailscale IP |
@@ -140,7 +140,7 @@ curl -fsS https://rmb.aivison.it.com/pay/result
 ```
 
 ### 5.3 assets 与历史媒体
-`assets.aivison.it.com` 继续走 Web/Nginx VPS 到本地 MinIO 的 legacy fallback。不要在灾备切换时清理 MinIO、Nginx cache 或 R2 对象。历史媒体验收必须测试真实 object URL，不能只看 `assets` 根路径 403/200。
+`assets.aivison.it.com` 继续走 Web/Nginx VPS 到本地 MinIO，但只作为旧外链、人工回滚和迁移补漏入口。不要在灾备切换时清理 MinIO、Nginx cache 或 R2 对象。历史媒体验收应优先确认正式应用响应走 R2/当前短签；若验收 `assets` 链路，必须测试真实 object URL，不能只看根路径 403/200。
 
 ## 6. 验证 Checklist
 

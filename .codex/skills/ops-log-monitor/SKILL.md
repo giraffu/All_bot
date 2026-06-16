@@ -25,10 +25,10 @@ When invoked to perform log monitoring or bug troubleshooting, strictly follow t
 当用户反馈正式 Web 卡顿、生成排队、Dashboard 卡顿或“云端负载高”时，按下面顺序拆解，不要只看单一容器 CPU：
 
 1. **云控制面基础资源**：`ssh allbot-do-sgp1-control 'uptime; free -h; df -hT -x tmpfs -x devtmpfs /; docker ps; docker stats --no-stream ...'`。若云内 `100.107.220.127:8000/8003/8043` 毫秒级返回，而公网域名秒级返回，优先归因到边缘/公网链路而非应用 CPU。
-2. **延迟分段**：正式 Web 已切 Cloudflare Pages；至少测三段：云机内部 `http://100.107.220.127:8000/api/health`、公网 API `https://api.aivison.it.com/api/health`、Pages 静态站 `https://web.aivison.it.com`。`https://web.aivison.it.com/api/health` 会返回 Pages SPA HTML，不再是 API 健康检查。历史 Web 边缘到云约 0.5s 的基线只适用于回滚、`web-test` 或 `assets` 排障；超过该量级时继续查 Cloudflare Tunnel、运营商链路、R2/legacy 回源和前端串行请求。
+2. **延迟分段**：正式 Web 已切 Cloudflare Pages；至少测三段：云机内部 `http://100.107.220.127:8000/api/health`、公网 API `https://api.aivison.it.com/api/health`、Pages 静态站 `https://web.aivison.it.com`。`https://web.aivison.it.com/api/health` 会返回 Pages SPA HTML，不再是 API 健康检查。历史 Web 边缘到云约 0.5s 的基线只适用于回滚、`web-test` 或 `assets` 排障；超过该量级时继续查 Cloudflare Tunnel、运营商链路、R2 公开域名/短签和前端串行请求。
 3. **Central 队列事实**：用 `/system/status` 与 `/system/workers` 看 `queue_size`、`queue_by_type`、`healthy_workers`、`error_workers`、`quarantined_workers`、`workers_by_status`。同时从 Central Redis 聚合 `comfy:queue:pending`、`comfy:queue:running` 与 `comfy:task_heartbeat:*` TTL；pending 最老等待时间比单看 `queue_size` 更能解释用户体感。
 4. **GPU 实际利用率**：逐台执行 `nvidia-smi --query-gpu=index,name,memory.total,memory.used,utilization.gpu,utilization.memory,power.draw,temperature.gpu --format=csv,noheader,nounits`，并查 7 个 ComfyUI `/queue`。显存高但 GPU 利用率低可能是模型常驻、加载、等待、后处理或 IO，不等同于“卡死”。
-5. **Web 结果和媒体链路**：统计 `cloud-web-api-prod` 中 `Timed out resolving web result R2 URL`、`Unexpected object_exists failure`，并统计边缘 `assets.aivison.it.com` 的 `upstream prematurely closed` / `upstream timed out`。这些会直接影响历史、结果页和 Gallery。
+5. **Web 结果和媒体链路**：统计 `cloud-web-api-prod` 中 `Timed out resolving web result R2 URL`、`Unexpected object_exists failure`，并抽样确认历史、Gallery、apply-context 响应不包含 `assets.aivison.it.com`。边缘 `assets` 的 `upstream prematurely closed` / `upstream timed out` 只应影响人工回滚、旧外链或迁移排障链路。
 6. **Dashboard 卡顿**：统计 `cloud-dashboard-backend-prod` 的 `Circuit Breaker is OPEN`、外部余额接口失败和 stats 慢查询。Dashboard 卡顿不应直接等同于 Central 调度故障。
 7. **边缘 499/5xx**：对 `/var/log/nginx/access.log` 做 tail/seek 采样，统计 499、500、502、504 以及高频端点。不要在线全量扫 4GB 级 access.log；大日志本身就是运维风险。
 8. **数据库和 Redis**：PostgreSQL 看 `pg_stat_activity` 的 state、`idle in transaction`、`active > 30s`、未授予锁；Redis 看 `used_memory_human`、`connected_clients`、`blocked_clients`、`instantaneous_ops_per_sec` 与 keyspace。托管库/Valkey 不要输出真实连接串。
@@ -38,7 +38,7 @@ When invoked to perform log monitoring or bug troubleshooting, strictly follow t
 - `running_scard` 大于 7 不一定异常：pipeline 允许 worker 同时处于 ComfyUI running/queued/finalizing；需要结合 heartbeat TTL 判断是否僵尸。
 - `Task result not set via WS, checking history` 通常是 worker 的 ComfyUI history 补偿路径，不应按 ERROR 处理。
 - Web API 大量 R2 result timeout + 边缘 499：用户结果页可能等不及断开，优先优化结果探测超时、缓存和 `pending_result` 快速返回。
-- `assets.aivison.it.com` 回源异常集中出现：优先排查边缘 Nginx cache/log 磁盘、Tailscale 到本地 MinIO、真实 object URL，而不是只测 `/minio/health/live`。
+- `assets.aivison.it.com` 回源异常集中出现：优先确认正式 Web/Dashboard 响应是否误返回 `assets` URL；若只是旧外链/人工回滚链路，再排查边缘 Nginx cache/log 磁盘、Tailscale 到本地 MinIO、真实 object URL，而不是只测 `/minio/health/live`。
 - 边缘根盘低于 10% 可用时是 P1 运维风险；不要发布新静态资源、扩大 cache 或开启大日志调试。
 
 ### 2. 日志综合分析
@@ -49,7 +49,7 @@ When invoked to perform log monitoring or bug troubleshooting, strictly follow t
 4. **根因归类**：将发现的问题按“配置错误、依赖服务故障、代码逻辑缺陷、资源瓶颈、网络抖动、权限/鉴权失败”六大类进行归档。
 5. **影响评估**：评估并定级每类问题对线上用户、测试流程、系统稳定性的影响级别（P0/P1/P2）。
 6. **解决方案**：针对每类根因提供可执行的修复或缓解措施（包括：参数调优、降级策略、重试机制、告警阈值调整、代码后续改动建议）。**注：此处仅做文字描述，禁止直接实施代码修改。**
-7. **延迟拆段**：Web 卡顿报告必须区分云内处理耗时、边缘到云耗时、用户公网域名耗时、R2/legacy 媒体耗时和 GPU 队列等待，不要把所有慢都归为“服务器负载高”。
+7. **延迟拆段**：Web 卡顿报告必须区分云内处理耗时、边缘到云耗时、用户公网域名耗时、R2 媒体/短签耗时、是否误返回 legacy `assets` URL 和 GPU 队列等待，不要把所有慢都归为“服务器负载高”。
 
 ### 3. 报告生成与无痕清理（核心要求）
 - **生成报告**：输出一份 Markdown 格式的分析报告，必须包含以下模块：

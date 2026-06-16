@@ -194,6 +194,41 @@ async def test_resolve_history_media_urls_falls_back_to_minio_thumbnail(monkeypa
 
 
 @pytest.mark.asyncio
+async def test_resolve_history_media_urls_does_not_use_legacy_storage(monkeypatch):
+    get_presigned_url = MagicMock(return_value="current-storage-url")
+
+    monkeypatch.setattr(media_presenter.storage, "get_presigned_url", get_presigned_url)
+    monkeypatch.setattr(
+        media_presenter,
+        "get_first_r2_url_if_exists",
+        AsyncMock(side_effect=["", ""]),
+    )
+    monkeypatch.setattr(
+        media_presenter.storage,
+        "async_object_exists",
+        AsyncMock(return_value=False),
+    )
+    monkeypatch.setattr(
+        media_presenter.storage,
+        "get_legacy_presigned_url",
+        MagicMock(side_effect=AssertionError("legacy storage must not be used")),
+    )
+
+    output_url, thumbnail_url = await media_presenter.resolve_history_media_urls(
+        task_id="task-1",
+        output_file="123/output_images/task-1.png",
+        history_type="image",
+    )
+
+    assert output_url == "current-storage-url"
+    assert thumbnail_url == ""
+    get_presigned_url.assert_called_once_with(
+        "123/output_images/task-1.png",
+        bucket="bot-data",
+    )
+
+
+@pytest.mark.asyncio
 async def test_favorite_history_schedules_media_and_thumbnail_background_tasks():
     history = History(
         id=11,

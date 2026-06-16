@@ -11,7 +11,7 @@
 | `api.aivison.it.com` | Cloudflare Tunnel on `allbot-do-sgp1-control` | 回源云 Web API `http://100.107.220.127:8000` |
 | `rmb.aivison.it.com` | Cloudflare Tunnel | 当前回源云 Payment API `http://100.107.220.127:8021`；可用脚本切回本地 Payment API |
 | 管理后台云端前端 | Tailscale/受控入口 | `http://100.107.220.127:8086`，如需公网域名必须走 Cloudflare Tunnel + Access |
-| `assets.aivison.it.com` | Web/Nginx VPS `100.88.57.122` | 回源本地 legacy MinIO `http://100.99.254.53:9000` |
+| `assets.aivison.it.com` | Web/Nginx VPS `100.88.57.122` | 回源本地 legacy MinIO `http://100.99.254.53:9000`；仅用于人工回滚、旧外链和迁移排障，正式应用不再生成该域名 URL |
 | `web-test.aivison.it.com` | Web/Nginx VPS `100.88.57.122` | `/root/dist-test` 静态站，`/api/` 回源云测试 Web API `http://100.82.124.91:8001` |
 | Telegram Local API | VPS `69.63.220.115` | `8081` Bot API，`8082` 文件服务 |
 
@@ -36,7 +36,7 @@ sequenceDiagram
     Cloud-->>Tunnel: JSON/SSE
     Tunnel-->>User: 响应
 
-    User->>VPS: 历史媒体 assets.aivison.it.com/*
+    User->>VPS: 旧外链/人工回滚 assets.aivison.it.com/*
     VPS->>Local: Tailscale -> MinIO 100.99.254.53:9000
     Local-->>VPS: legacy object
     VPS-->>User: 媒体响应
@@ -72,7 +72,7 @@ sequenceDiagram
 | `100.82.124.91:8004` | 云测试 Central API | 本地云测试 worker 使用 |
 | `100.82.124.91:8044` | 云测试 Dashboard Backend | 测试管理入口 |
 | `100.82.124.91:8087` | 云测试 Dashboard Frontend | 测试管理前端，仅 Tailscale/受控来源访问 |
-| `100.99.254.53:9000` | 本地 legacy MinIO | 只做 `assets.aivison.it.com` fallback |
+| `100.99.254.53:9000` | 本地 legacy MinIO | 只做 `assets.aivison.it.com` 人工回滚、旧外链和迁移排障入口 |
 | `69.63.220.115:8081/8082` | Telegram Local API / 文件服务 | Bot 大文件能力依赖 |
 
 云测试端口绑定云测试 Tailscale IP `100.82.124.91`，公网 eth0 上的 `8001/8004/8044/8084/8087` 由 `allbot-cloud-test-firewall.service` drop。不要把云测试 DB/Redis 暴露到公网。

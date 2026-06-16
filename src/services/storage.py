@@ -11,6 +11,7 @@ from config import (
     LEGACY_MINIO_BUCKET,
     LEGACY_MINIO_ENDPOINT,
     LEGACY_MINIO_PUBLIC_URL,
+    LEGACY_MINIO_READ_FALLBACK_ENABLED,
     LEGACY_MINIO_RESULT_BUCKET,
     LEGACY_MINIO_SECRET_KEY,
     LEGACY_MINIO_SECURE,
@@ -246,6 +247,8 @@ class StorageService:
             self.r2_head_client = None
 
     def _init_legacy_minio_client(self):
+        if not LEGACY_MINIO_READ_FALLBACK_ENABLED:
+            return
         if not (
             LEGACY_MINIO_ENDPOINT
             and LEGACY_MINIO_ACCESS_KEY

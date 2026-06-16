@@ -9,9 +9,9 @@
 - 云端 compose：`deploy/docker-compose-cloud-prod.yml`。
 - 本地 GPU worker compose：`workers/docker-compose-cloud-prod-worker.yml`。
 - 正式对象存储事实源：Cloudflare R2 `user-data-prod`。
-- 本地 MinIO：只作为 legacy 历史媒体只读 fallback 和本地热数据保留，不再是新生成结果的公开事实源。
+- 本地 MinIO：只作为 legacy 迁移补齐、人工回滚、旧外链排障和本地热数据保留，不再是新生成结果或正式 Web/Dashboard 运行时读路径的公开事实源。
 - 本地 GPU/ComfyUI：仍在武汉内网运行，worker 默认通过本机 `cloud-prod-worker-relay` 访问云 Central API；relay 再经 Tailscale 访问云端。
-- 公共 Web API 与 RMB 支付入口已经由云端控制面承接；`assets.aivison.it.com` 继续保留 legacy MinIO 只读回源。
+- 公共 Web API 与 RMB 支付入口已经由云端控制面承接；`assets.aivison.it.com` 继续保留到 legacy MinIO 的只读代理，但正式应用不再生成该域名 URL。
 - Cloudflare Pages/API Tunnel 已成为正式入口：`web.aivison.it.com` 由 Pages 项目 `allbot-web-prod` 承接，`api.aivison.it.com` 通过云机上的 Cloudflare Tunnel 回源云 Web API `100.107.220.127:8000`。历史 `web-cf-test`/`api-cf-test` 仅作为 canary/归档语义，不再是迁移待办。
 
 ## 2. 服务分布
@@ -127,7 +127,7 @@ GPU 节点上的 ComfyUI 服务不在本 compose 内。`cloud-prod-comfy-agent-*
 - `api.aivison.it.com`：Cloudflare Tunnel 连接器运行在 `allbot-do-sgp1-control`，回源 `http://100.107.220.127:8000`。
 - `worker-central.aivison.it.com`：远程 worker / RunPod worker 专用 Central 入口，回源 `http://100.107.220.127:8003`；不得用于 Web API，也不得启用会拦截 worker 请求的 Cloudflare Access 登录页。RunPod-Prod 独立 tunnel 若使用新 hostname，需在 Cloudflare Public Hostname 中绑定到 `cloudflared-runpod-prod.service` 对应 tunnel。
 - `rmb.aivison.it.com`：Cloudflare Tunnel 回源到云 Payment API `http://100.107.220.127:8021`；紧急切回本地 Payment API 使用 `scripts/rollback_rmb_tunnel_to_local_prod.sh --execute`。
-- `assets.aivison.it.com`：保留到本地 legacy MinIO 的只读代理，用于历史媒体 fallback。
+- `assets.aivison.it.com`：保留到本地 legacy MinIO 的只读代理，仅用于人工回滚、旧外链和迁移补齐排障；正式 Web/Dashboard 运行时不应生成该域名 URL。
 - 管理后台云端前端：默认仅通过 Tailscale/受控来源访问 `http://100.107.220.127:8086/`。若需要公网域名，必须通过 Cloudflare Tunnel 回源该地址，并启用 Cloudflare Access 身份校验、管理员 allowlist/MFA；禁止把 `8086` 或 `8043` 直接暴露到公网。
 - `web-test.aivison.it.com`：独立云测试环境的公网 Web 入口，由 Web/Nginx VPS 提供静态站并反代云测试 Web API `100.82.124.91:8001`。
 - `web-cf-test.aivison.it.com` / `api-cf-test.aivison.it.com`：历史 canary 入口；若保留，仍不得复用本地主服务器 RMB tunnel。
@@ -173,12 +173,12 @@ GPU 节点上的 ComfyUI 服务不在本 compose 内。`cloud-prod-comfy-agent-*
 4. 结果/媒体依赖：统计 `cloud-web-api-prod` 的 `Timed out resolving web result R2 URL` 与 `Unexpected object_exists failure`
 5. 生成队列：统计 Central Redis pending/running、pending 最老等待时间、`queue_by_type` 与 heartbeat TTL
 
-参考基线：云内通常 5-40ms，Cloudflare Tunnel API 公网约 0.3-0.7s；管理后台云端前端可省掉本地主服务器静态资源和本地网关到云端的额外链路。若云内正常但公网慢，优先查 Cloudflare Tunnel/Access、运营商链路、前端串行请求和 R2/legacy 回源，而不是先重建 Web API。历史边缘 VPS 到云约 0.5s 的基线只适用于回滚或 `web-test`/`assets` 排障。
+参考基线：云内通常 5-40ms，Cloudflare Tunnel API 公网约 0.3-0.7s；管理后台云端前端可省掉本地主服务器静态资源和本地网关到云端的额外链路。若云内正常但公网慢，优先查 Cloudflare Tunnel/Access、运营商链路、前端串行请求和 R2 公开域名/短签，而不是先重建 Web API。历史边缘 VPS 到云约 0.5s 的基线只适用于回滚或 `web-test`/`assets` 排障。
 
 常见日志信号：
 - `cloud-web-api-prod` 高频 `Timed out resolving web result R2 URL`：结果页或历史详情可能卡在 R2 URL 探测，应优先做短超时、缓存或 `pending_result` 快速返回。
 - Web 边缘 499 高频集中在 `/api/tasks/{id}/result`、`/api/gallery/posts`、`/api/gallery/my-favorites`、`/api/users/history`：通常是用户端等待过久主动断开。
-- `assets.aivison.it.com` 出现 `upstream prematurely closed connection` / `upstream timed out`：legacy MinIO 回源链路不稳，优先查边缘 cache/log 磁盘、Tailscale 到本地 MinIO、真实 object URL。
+- `assets.aivison.it.com` 出现 `upstream prematurely closed connection` / `upstream timed out`：只影响人工回滚、旧外链或迁移排障链路；优先查边缘 cache/log 磁盘、Tailscale 到本地 MinIO、真实 object URL，同时确认正式 Web/Dashboard 响应没有返回 `assets` URL。
 - `cloud-dashboard-backend-prod` 高频 `Circuit Breaker is OPEN`：管理后台观测或外部余额接口降级，不代表 Central 任务调度一定失败。
 
 ## 4. 部署 SOP
@@ -329,7 +329,7 @@ docker-compose -f docker-compose-cloud-prod-worker.yml up -d --no-deps $services
 bash scripts/check_cloudflare_canary.sh
 ```
 
-2026-06-08 晚间已将正式 `api.aivison.it.com` 切到云机 Cloudflare Tunnel，并将 `web.aivison.it.com` 绑定到 Cloudflare Pages 项目 `allbot-web-prod`。`assets.aivison.it.com` 继续留在 Web/Nginx VPS，作为 legacy MinIO fallback。
+2026-06-08 晚间已将正式 `api.aivison.it.com` 切到云机 Cloudflare Tunnel，并将 `web.aivison.it.com` 绑定到 Cloudflare Pages 项目 `allbot-web-prod`。`assets.aivison.it.com` 继续留在 Web/Nginx VPS，作为人工回滚、旧外链和 legacy 迁移排障入口。
 
 ### 4.5 本地云正式 worker 更新
 worker 镜像 COPY 代码，修改 `workers/comfy_agent` 后必须重建镜像并重建容器。
@@ -381,7 +381,7 @@ Web、Payment、Dashboard 验证：
 - `http://100.107.220.127:8086/api/health` 仅在云正式 Dashboard Frontend 已启动后验证；如果配置了公网管理域名，还必须确认该域名受 Cloudflare Access 或等价身份层保护。
 - Dashboard 登录后系统状态、worker 卡片与大盘统计能刷新。
 - Dashboard Backend 启动入口必须调用 `ensure_billing_core_providers_registered()`；退款、强制终止和资产类管理接口会进入 billing core，若只注册 task core provider，会出现 `Billing core providers 未注册`。
-- Web 卡顿专项需额外记录云内、边缘到云、公网三段延迟，并统计边缘 499、Web R2 result timeout、Dashboard circuit breaker 和 `assets` 回源异常。
+- Web 卡顿专项需额外记录云内、边缘到云、公网三段延迟，并统计边缘 499、Web R2 result timeout、Dashboard circuit breaker；若响应仍出现 `assets.aivison.it.com`，按 legacy 退出回归缺陷处理。
 
 ### 5.2 Worker
 ```bash
@@ -402,7 +402,7 @@ docker logs --since 2m --tail 100 cloud-prod-comfy-agent-1
 - Alembic 当前 head 应与仓库 migration head 一致。
 - Gallery/History 热路径索引必须存在，尤其是 `ix_gallery_posts_active_created_at_id`、`ix_history_task_id`、`ix_history_user_id_id_desc`、`ix_user_interactions_user_action_post`。
 - 新生成对象写入 R2 `user-data-prod`。
-- 旧历史媒体可通过 R2 或 `assets.aivison.it.com` legacy fallback 读取。
+- 旧历史媒体的正式应用读路径应通过 R2 或当前 R2/S3 短签读取；`assets.aivison.it.com` 只作为人工回滚、旧外链和迁移补漏排障入口。
 
 ## 6. 回滚与事故处理
 - 只重建 Central/Web/Dashboard 代码后，若服务异常，优先回滚目标容器代码或恢复热修前备份文件，再只重建目标服务。
@@ -410,4 +410,4 @@ docker logs --since 2m --tail 100 cloud-prod-comfy-agent-1
 - 已经启动云 Bot 并产生新写入后，不做简单整站回滚；走数据核对与定向修复。
 - 云正式整体不可用且短时无法恢复时，才执行本地正式灾备切换。具体步骤见 `docs/子模块_本地正式灾备切换_local_prod_fallback.md`；切换前必须保证生产 Bot 单实例，并接受本地数据库非实时同步带来的对账成本。
 - `/system/status` 慢或 Dashboard 卡顿时，先检查 Central 状态观测缓存、托管 Valkey 连接、Dashboard stats 缓存和前端轮询频率，不要把 GPU 生成停顿直接当成控制面故障。
-- Web 公网慢但云内健康时，不要优先重启 Web API；先检查 Web 边缘磁盘、Nginx 499/5xx、Cloudflare/Tailscale 链路、R2 result timeout 与 legacy assets 回源。
+- Web 公网慢但云内健康时，不要优先重启 Web API；先检查 Cloudflare/Tailscale 链路、R2 result timeout、R2 公开域名/短签和前端串行请求。若正式响应出现 legacy `assets` URL，再按回归缺陷排查。

@@ -61,7 +61,7 @@
 使用边界：
 - `$96/mo` Droplet 当前作为正式生产控制面；生产 Postgres、Valkey 与对象存储不在该 Droplet 上长期自托管。
 - 2026-06-16 原地扩容后，系统盘事实容量已从约 160GB 扩到约 320GB；后续缩容不能再按“保留 160GB 磁盘”的旧口径假设。
-- 公开媒体与新生成对象走 Cloudflare R2 `user-data-prod`；本地 MinIO 保留为 legacy 历史媒体只读 fallback 与本地热数据保留。
+- 公开媒体与新生成对象走 Cloudflare R2 `user-data-prod`；本地 MinIO 保留为 legacy 迁移补齐、人工回滚、旧外链排障与本地热数据保留，不再是正式 Web/Dashboard 运行时 fallback。
 - 本地 7 张 GPU 和 ComfyUI 不迁移；`cloud-prod-comfy-agent-*` 通过 Tailscale 访问云 Central API。
 - 后续如继续增长，优先单独评估 Dashboard/后台任务拆分、PostgreSQL 规格或连接池预算；不要同时放大 Web worker 数和 DB 连接池。
 
@@ -217,7 +217,7 @@ ComfyUI 版本快照：
 - 前端静态资源、部分公开分发能力与域名解析依赖 Cloudflare。
 - 正式 Web 静态站由 Cloudflare Pages 承接；正式 Web API 与 RMB 支付入口由 Cloudflare Tunnel 回源云控制面。
 - R2 `user-data-prod` 是正式新对象写入与公开媒体分发事实源。
-- MinIO 不再承接正式新写入公开事实源；`assets.aivison.it.com` 仅作为 legacy 历史媒体只读回源。
+- MinIO 不再承接正式新写入公开事实源；`assets.aivison.it.com` 仅作为 legacy 旧外链、人工回滚和迁移排障入口，正式应用不再生成该域名 URL。
 - Web/API 的海外访问路径详见 [网络暴露与代理穿透](./子模块_网络暴露与代理穿透_network_proxy.md) 与 [边缘节点运维指南](./子模块_边缘节点运维指南_edge_node_ops.md)。
 
 ### 边缘 VPS
@@ -231,7 +231,7 @@ ComfyUI 版本快照：
 
 边缘容量判断：
 - Web 边缘根盘低于 10% 可用时，不建议发布新静态资源、扩大 Nginx cache 或新增大日志调试。
-- `assets.aivison.it.com` 根路径返回 403 不代表具体历史对象不可读；验收 legacy fallback 必须测试真实 object URL。
+- `assets.aivison.it.com` 根路径返回 403 不代表具体旧外链/人工回滚对象不可读；验收该链路必须测试真实 object URL。正式 Web/Dashboard 响应不应再返回该域名。
 - Telegram Local API 节点如果 SSH 不可用，发生 8081/8082 故障时只能做公网端口判断，无法快速查看容器日志和挂载目录，应优先补齐 SSH key 管理。
 
 ## 6. 数据存储快照
@@ -292,13 +292,13 @@ MinIO 本地数据目录：`/home/hfy/APP/minio-deploy/data`，迁移前快照�
 | `bot-data-test` | 266MB | 测试输入桶 |
 | `comfyui-input` | 17MB | 旧/兼容输入目录 |
 
-MinIO 是主服务器历史数据与内存占用大户之一。规划清理时应先确认 R2 命中率和 legacy fallback 访问量，再逐步缩短本地热数据生命周期。
+MinIO 是主服务器历史数据与内存占用大户之一。规划清理时应先确认 R2 命中率、可见热集补齐状态和 legacy 旧外链/人工回滚访问量，再逐步缩短本地热数据生命周期。
 
 ## 7. 当前容量判断
 当前系统瓶颈顺序大致为：
 1. GPU 任务吞吐与视频任务长尾耗时。
 2. 公网/Cloudflare/Web 边缘到云控制面的链路延迟，以及前端多接口串行等待。
-3. R2 result URL 探测、legacy MinIO 回源与 `assets.aivison.it.com` 边缘缓存/磁盘压力。
+3. R2 result URL 探测、R2 公开域名/短签耗时，以及 legacy `assets.aivison.it.com` 旧外链/人工回滚链路的边缘缓存/磁盘压力。
 4. 云控制面到本地 GPU/ComfyUI 的 Tailscale/内网链路稳定性，以及本地 GPU 节点短暂停顿。
 5. Dashboard stats/外部接口熔断与托管 Valkey/PostgreSQL 连接池压力。
 6. ComfyUI 本地 `input/output/temp` 会继续随视频任务快速增长，若缺少定期巡检，远端 GPU 节点仍可能再次磁盘吃紧。

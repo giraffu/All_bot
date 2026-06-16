@@ -25,7 +25,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 - **Cloudflare 正式入口**：`web.aivison.it.com` 是 Cloudflare Pages 静态站；正式 API 健康检查是 `https://api.aivison.it.com/api/health`，不是 `web.aivison.it.com/api/health`；RMB 入口为 `https://rmb.aivison.it.com/pay/result`。
 - **Dashboard**：云端 Dashboard Frontend 默认绑定 Tailscale；本地管理员入口为 `http://192.168.1.115:8086/`，由本地主服务器 Nginx 网关反代云正式 Dashboard Backend。公网管理域名必须有 Cloudflare Access 或等价身份层保护。
 - **workflow 事实源**：`workers/comfy_agent/workflows` 是唯一 workflow 运行时事实源。Central API 不挂载、不 COPY、不启动校验 workflow；改 workflow/mappings/patcher 后必须重建或重启目标 Worker。
-- **R2 / legacy 媒体策略**：新数据写入 R2 `user-data-prod`；legacy MinIO 只作为历史媒体只读 fallback。Worker 写路径不得配置 legacy MinIO。
+- **R2 / legacy 媒体策略**：新数据写入 R2 `user-data-prod`；正式 Web/Dashboard 运行时不再生成 legacy MinIO URL，R2 miss 后只允许当前 R2/S3 短签、空值或 `pending_result`。`LEGACY_MINIO_READ_FALLBACK_ENABLED` 默认 `false`，云正式 Web/Dashboard compose 应清空 legacy endpoint/key/public URL；legacy MinIO 只保留给 `scripts/backfill_history_r2_objects.py --source-storage legacy`、人工回滚和旧外链排障。Worker 写路径不得配置 legacy MinIO。
 - **GPU Worker 层级**：`cloud-prod-comfy-agent-*` 是本地主服务器上的 Worker Agent；GPU 节点上的 `comfy0/comfy1` 或宿主机 ComfyUI 是另一层。替换 worker 不会自动重启 ComfyUI，重启 ComfyUI 也不会替换 worker 代码。
 - **RunPod Provider v0**：RunPod 只通过 `ops/gpu_pool_controller/providers/runpod.py` 接入，不属于本地 SSH GPU 池。云测试支持 `img2img/img2img_lora`、split video canary 与 `i2i_pro` 三任务 canary；手动云正式备用 worker 支持 `--profile img2img|image_to_video|wan22_video_v2|i2i_pro`，默认先 `disabled`，不自动按生产队列扩容。`i2i_pro` RunPod profile 同时声明 `i2i_pro,t2i-pornmaster-turbo,face_swap`，通过 workflow override 绑定 `txt2img_from_i2i_pro.json` 与 `face_swap_v2.json`，不新增业务 task type；远端镜像使用 `remote_workers/` bundle，override 解析和 workflow 文件必须同步到该目录；prod-worker heartbeat 默认等待 `3600s`，覆盖首次同步大模型的启动窗口。
 - **RunPod 日常入口**：云正式手动备用池日常操作优先用 `scripts/runpod_prod_ops.sh status|up|enable|disable|down|scale|canary|rollback`；该 wrapper 默认 dry-run，真实 mutation 必须 `--execute`，且 mutation 必须显式 `--profile`。底层 `python scripts/gpu_pool_controller.py runpod prod-worker ...` 保留为高级诊断/专项入口。
@@ -113,9 +113,9 @@ docker-compose -f docker-compose-cloud-prod-worker.yml up -d --no-deps $services
 - 生产单服务重建后必须验证目标容器 `Up`、`RestartCount=0`、最近日志无高频 `ERROR/Traceback/Exception`，关键非敏感 env 符合目标环境。
 - worker 更新后还要确认 Central heartbeat、ComfyUI WebSocket、R2 上传成功后才 `/complete`，并观察 `relay_forward_failed`、`sidecar_upload_failed`、`error/quarantined`。
 - GPU 节点单容器操作后必须验证目标 ComfyUI `/system_stats`、`/queue`、对应 worker Central heartbeat，以及另一 ComfyUI 端口未受影响。
-- Web/Dashboard 卡顿排查不要只看 `docker stats`；必须同时比较云内 API、公网 API、Pages 静态站、R2/legacy 媒体、Central Redis 队列事实、GPU 利用率和前端串行请求。
+- Web/Dashboard 卡顿排查不要只看 `docker stats`；必须同时比较云内 API、公网 API、Pages 静态站、R2 公开域名/短签、是否误返回 legacy `assets` URL、Central Redis 队列事实、GPU 利用率和前端串行请求。
 
 ## 6. 交付要求
 - 研发阶段默认报告云测试验证结果，不声称已发布正式。
 - 正式发布总结必须说明：测试环境已验证、用户已确认进入正式发布、实际更新的服务、迁移状态、验证命令结果和回滚入口。
-- 若修改部署入口、compose、worker workflow、RunPod profile、R2/legacy fallback、agent control 或运维脚本，必须同步更新相关 docs / skills，并调用 `allbot-kb-auto-updater`。
+- 若修改部署入口、compose、worker workflow、RunPod profile、R2/legacy 媒体策略、agent control 或运维脚本，必须同步更新相关 docs / skills，并调用 `allbot-kb-auto-updater`。

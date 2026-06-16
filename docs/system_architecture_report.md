@@ -77,7 +77,7 @@ graph TD
     TASKSUB --> REDIS
     TASKSUB --> CENTRAL --> VLAN --> WORKERS
     WORKERS --> R2
-    GAL --> WEBVPS --> MINIO
+    WEBVPS -.旧外链/人工回滚.-> MINIO
     GAL --> R2
     AUTH --> PG
     BILL --> PG
@@ -103,14 +103,14 @@ graph TD
   - 任务执行仍由 `Central API + ComfyUI Workers` 完成；正式 Central 已运行在云控制面，本地 7 个 GPU worker 通过 Tailscale 接入。
 - **基础设施层**
   - 正式 PostgreSQL 与 Valkey/Redis 已迁到云侧托管/外部服务，保存主数据、业务账本、队列、并发锁、登录限流、任务运行态与 worker heartbeat。
-  - 新生成对象写入 R2 `user-data-prod`；本地 MinIO 保留为 legacy 历史媒体只读 fallback 与本地热数据备份。
-  - Web/Nginx VPS 不再承接正式 `web.aivison.it.com` 主流量；它保留 `assets.aivison.it.com` legacy 回源、`web-test.aivison.it.com` 测试静态站和正式 Web 回滚副本。
+  - 新生成对象写入 R2 `user-data-prod`；本地 MinIO 保留为 legacy 迁移补齐、人工回滚、旧外链排障与本地热数据备份，不再是正式 Web/Dashboard 运行时 fallback。
+  - Web/Nginx VPS 不再承接正式 `web.aivison.it.com` 主流量；它保留 `assets.aivison.it.com` legacy 人工回滚/旧外链入口、`web-test.aivison.it.com` 测试静态站和正式 Web 回滚副本。
 
 ### 1.3 云正式生产口径
 2026-06-07 晚间正式生产已经切到“云控制面 + 托管 PostgreSQL/Valkey + R2 + 本地 GPU worker”：
 - 云端 Droplet `allbot-do-sgp1-control` 承载 `cloud-central-api-prod`、`cloud-web-api-prod`、`cloud-payment-api-prod`、`cloud-dashboard-backend-prod`、`cloud-dashboard-frontend-prod`、`cloud-imgproxy-prod` 与 `cloud-tg-bot-prod`。
 - 本地 `cloud-prod-comfy-agent-1..7` 继续连接武汉内网 ComfyUI，作为正式算力池。
-- `web.aivison.it.com` 已由 Cloudflare Pages 承接静态前端；正式 Web API 独立走 `api.aivison.it.com` Cloudflare Tunnel 回源云 Web API；`rmb.aivison.it.com` 回源云 Payment API；`assets.aivison.it.com` 保留本地 legacy MinIO 只读回源。
+- `web.aivison.it.com` 已由 Cloudflare Pages 承接静态前端；正式 Web API 独立走 `api.aivison.it.com` Cloudflare Tunnel 回源云 Web API；`rmb.aivison.it.com` 回源云 Payment API；`assets.aivison.it.com` 保留本地 legacy MinIO 只读代理，但正式应用不再生成该域名 URL。
 - 长期运维细节见 `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`。
 
 ### 1.4 云测试与本地灾备口径
@@ -134,7 +134,7 @@ sequenceDiagram
     participant Deps as provider / dependencies
     participant Central as 云 Central API
     participant Worker as ComfyUI Worker
-    participant Store as R2 / legacy MinIO fallback
+    participant Store as R2 / S3 presign
     participant PG as 托管 PostgreSQL
 
     U->>Entry: 提交生成请求
@@ -204,7 +204,7 @@ sequenceDiagram
 - **任务调度与节点通信**
   - task core facade、provider/capability、Web monitor、runtime cleanup、QueueManager、Central API、Workers。
 - **对象存储与媒体交付**
-  - R2 正式写入、legacy MinIO 只读 fallback、结果 URL 生命周期。
+  - R2 正式写入、legacy MinIO 迁移补齐/人工回滚、结果 URL 生命周期。
 - **交互状态机与回调路由**
   - Telegram FSM、全局菜单黑盒退出、callback prefix 路由、临时文件服务。
 
@@ -236,7 +236,7 @@ sequenceDiagram
 - 文档中的入口函数、异常类型、超时值、双 ID 语义必须与代码保持一致。
 - `src/bot_main.py` 是 Telegram Bot shared entrypoint；`src/bot_test.py` 仅保留历史兼容 shim。
 - 若修改 task core facade、provider/dependencies、submission、web-monitor、runtime、Bot 五段式上下文或 stream fallback，必须同步更新知识库。
-- 若修改云正式 compose、worker compose、边缘 upstream、R2/legacy fallback、Central 状态观测缓存或 Dashboard 高频监控策略，必须同步更新云正式部署文档与相关 skills。
+- 若修改云正式 compose、worker compose、边缘 upstream、R2/legacy 媒体策略、Central 状态观测缓存或 Dashboard 高频监控策略，必须同步更新云正式部署文档与相关 skills。
 - 若技能文档与代码入口冲突，应先更新 skill / docs，再继续开发。
 
 ### 5.1 维护基线与知识库口径

@@ -4,8 +4,11 @@ import pytest
 
 from scripts.backfill_history_r2_objects import (
     build_history_r2_candidate,
+    build_input_file_candidates,
     collect_cloud_prod_lag_fix_history_ids,
+    collect_web_visible_retire_legacy_history_ids,
     process_history_r2_candidate,
+    process_history_r2_candidates,
     select_hotset_batch,
     summarize_results,
 )
@@ -67,6 +70,19 @@ def test_build_history_r2_candidate_falls_back_to_legacy_keys_without_task_id():
     assert candidate.thumbnail_r2_key == "legacy_thumb.webp"
 
 
+def test_build_input_file_candidates_skips_external_urls_and_dedupes():
+    candidates = build_input_file_candidates(
+        "bot-data/uploads/input.png|https://example.com/image.png|bot-data/uploads/input.png"
+    )
+
+    assert len(candidates) == 2
+    assert candidates[0].file_path == "bot-data/uploads/input.png"
+    assert candidates[0].source_bucket == "bot-data"
+    assert candidates[0].source_object == "uploads/input.png"
+    assert candidates[0].r2_key == "uploads/input.png"
+    assert candidates[1].skip_reason == "external"
+
+
 @pytest.mark.asyncio
 async def test_collect_cloud_prod_lag_fix_history_ids_dedupes_in_priority_order():
     session = _SequentialSession(
@@ -92,6 +108,31 @@ async def test_collect_cloud_prod_lag_fix_history_ids_dedupes_in_priority_order(
     assert source_counts["gallery_likes_top"] == {"raw": 2, "added": 1}
     assert source_counts["gallery_applied_top"] == {"raw": 2, "added": 1}
     assert source_counts["recent_history"] == {"raw": 0, "added": 0}
+
+
+@pytest.mark.asyncio
+async def test_collect_web_visible_retire_legacy_history_ids_dedupes_visible_sources():
+    session = _SequentialSession(
+        [
+            [10, 9, 8],
+            [9, 7],
+            [6, 5],
+            [10, 4],
+            [3],
+        ]
+    )
+
+    history_ids, source_counts = await collect_web_visible_retire_legacy_history_ids(
+        session,
+        recent_limit=8,
+        total_limit=5,
+    )
+
+    assert history_ids == [10, 9, 8, 7, 6]
+    assert source_counts["per_user_recent_visible_history"] == {"raw": 3, "added": 3}
+    assert source_counts["all_gallery_posts"] == {"raw": 2, "added": 1}
+    assert source_counts["history_favorites"] == {"raw": 2, "added": 1}
+    assert source_counts["gallery_like_apply_interactions"] == {"raw": 0, "added": 0}
 
 
 def test_select_hotset_batch_skips_processed_history_ids():
@@ -239,6 +280,115 @@ async def test_process_history_r2_candidate_does_not_overwrite_existing_r2_objec
 
     assert result.media_status == "exists"
     assert result.thumbnail_status == "exists"
+
+
+@pytest.mark.asyncio
+async def test_process_history_r2_candidate_includes_input_file_copy_plan():
+    candidate = build_history_r2_candidate(
+        history_id=41,
+        user_id=441,
+        username="input-user",
+        task_id="task-input",
+        history_type="txt2img",
+        output_file="123/output_images/task-input.png",
+        input_file="bot-data/web_uploads/441/input.png|https://example.com/ref.png",
+    )
+
+    async def fake_async_object_exists(_bucket_name, object_name):
+        return object_name in {
+            "123/output_images/task-input.png",
+            "123/output_images/task-input_thumb.webp",
+            "web_uploads/441/input.png",
+        }
+
+    async def fake_async_r2_object_exists(object_name):
+        return object_name in {
+            "history/task-input/original.png",
+            "history/task-input/thumb.webp",
+        }
+
+    async def fake_async_copy_to_r2(_bucket_name, _object_name, _r2_key):
+        raise AssertionError("dry-run should not upload inputs")
+
+    async def fake_generate_and_upload_thumbnail(_output_file, _media_type, _r2_key):
+        raise AssertionError("existing thumbnail should not be generated")
+
+    result = await process_history_r2_candidate(
+        candidate,
+        apply_changes=False,
+        media_only=False,
+        include_input_files=True,
+        generate_missing_thumbnails=True,
+        async_object_exists_func=fake_async_object_exists,
+        async_r2_object_exists_func=fake_async_r2_object_exists,
+        async_copy_to_r2_func=fake_async_copy_to_r2,
+        generate_and_upload_thumbnail_func=fake_generate_and_upload_thumbnail,
+        generate_and_upload_thumbnail_from_r2_media_func=(
+            fail_generate_thumbnail_from_r2_media
+        ),
+    )
+
+    assert result.media_status == "exists"
+    assert result.thumbnail_status == "exists"
+    assert [input_result.status for input_result in result.input_results] == [
+        "would_upload",
+        "skipped_external",
+    ]
+    summary = summarize_results([result], apply_changes=False)
+    assert summary.input_would_upload == 1
+    assert summary.input_skipped_external == 1
+
+
+@pytest.mark.asyncio
+async def test_process_history_r2_candidates_passes_include_input_files():
+    candidate = build_history_r2_candidate(
+        history_id=42,
+        user_id=442,
+        username="batch-input-user",
+        task_id="task-batch-input",
+        history_type="txt2img",
+        output_file="123/output_images/task-batch-input.png",
+        input_file="bot-data/web_uploads/442/input.png",
+    )
+
+    async def fake_async_object_exists(_bucket_name, object_name):
+        return object_name in {
+            "123/output_images/task-batch-input.png",
+            "123/output_images/task-batch-input_thumb.webp",
+            "web_uploads/442/input.png",
+        }
+
+    async def fake_async_r2_object_exists(object_name):
+        return object_name in {
+            "history/task-batch-input/original.png",
+            "history/task-batch-input/thumb.webp",
+        }
+
+    async def fake_async_copy_to_r2(_bucket_name, _object_name, _r2_key):
+        raise AssertionError("dry-run should not upload inputs")
+
+    async def fake_generate_and_upload_thumbnail(_output_file, _media_type, _r2_key):
+        raise AssertionError("existing thumbnail should not be generated")
+
+    results = await process_history_r2_candidates(
+        [candidate],
+        concurrency=1,
+        apply_changes=False,
+        media_only=False,
+        include_input_files=True,
+        generate_missing_thumbnails=True,
+        async_object_exists_func=fake_async_object_exists,
+        async_r2_object_exists_func=fake_async_r2_object_exists,
+        async_copy_to_r2_func=fake_async_copy_to_r2,
+        generate_and_upload_thumbnail_func=fake_generate_and_upload_thumbnail,
+        generate_and_upload_thumbnail_from_r2_media_func=(
+            fail_generate_thumbnail_from_r2_media
+        ),
+    )
+
+    assert [input_result.status for input_result in results[0].input_results] == [
+        "would_upload"
+    ]
 
 
 def test_summarize_results_counts_dry_run_statuses():
