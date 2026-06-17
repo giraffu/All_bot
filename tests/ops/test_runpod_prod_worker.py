@@ -15,7 +15,11 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_PROD_GPU_TYPE_IDS,
     RUNPOD_PROD_SUPPORTED_TASK_TYPES,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
+    RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
     RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX,
+    RUNPOD_SCAIL2_MODEL_MANIFEST_KEY,
+    RUNPOD_SCAIL2_MODEL_PREFIX,
+    RUNPOD_SCAIL2_SUPPORTED_TASK_TYPES,
     RUNPOD_WAN22_VIDEO_V2_COMFY_EXTRA_ARGS,
     RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY,
     RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX,
@@ -27,6 +31,9 @@ from ops.gpu_pool_controller.providers.runpod import (
 
 PUBLIC_I2I_PRO_GHCR_IMAGE = (
     "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh"
+)
+PUBLIC_SCAIL2_GHCR_IMAGE = (
+    RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX + "20260617-scail2-prod"
 )
 from ops.gpu_pool_controller.runpod_prod_worker import (
     RunPodProdWorkerOptions,
@@ -82,6 +89,9 @@ class FakeRunPodProvider:
             image_name_i2i_pro=(
                 self.settings.image_name_i2i_pro or PUBLIC_I2I_PRO_GHCR_IMAGE
             ),
+            image_name_scail2=(
+                self.settings.image_name_scail2 or PUBLIC_SCAIL2_GHCR_IMAGE
+            ),
             minio_endpoint="https://r2.example.test",
         )
         return RunPodProvider(settings).render_create_pod_request(
@@ -96,6 +106,7 @@ class FakeRunPodProvider:
             "image_to_video": "image_to_video",
             "wan22_video_v2": "wan22_video_v2",
             "i2i_pro": "i2i_pro",
+            "scail2": "scail2",
         }.get(task_type, "img2img_lora")
         pod = {
             "id": f"pod-prod-{slot}",
@@ -175,6 +186,7 @@ def _settings(**overrides) -> RunPodSettings:
         "max_pods_per_type": 1,
         "image_name_img2img_lora": RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
         "image_name_i2i_pro": PUBLIC_I2I_PRO_GHCR_IMAGE,
+        "image_name_scail2": PUBLIC_SCAIL2_GHCR_IMAGE,
         "minio_endpoint": "https://r2.example.test",
     }
     values.update(overrides)
@@ -196,6 +208,7 @@ def _prod_pod(
         "image_to_video": "image_to_video",
         "wan22_video_v2": "wan22_video_v2",
         "i2i_pro": "i2i_pro",
+        "scail2": "scail2",
     }.get(profile, "img2img_lora")
     return {
         "id": f"pod-prod-{slot}",
@@ -230,11 +243,13 @@ def _worker(
         "image_to_video": "image_to_video",
         "wan22_video_v2": "wan22_video_v2",
         "i2i_pro": ",".join(RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES),
+        "scail2": ",".join(RUNPOD_SCAIL2_SUPPORTED_TASK_TYPES),
     }.get(profile, "img2img,img2img_lora")
     current_task_type = {
         "image_to_video": "image_to_video",
         "wan22_video_v2": "wan22_video_v2",
         "i2i_pro": "i2i_pro",
+        "scail2": "scail2_action_transfer",
     }.get(profile, "img2img_lora")
     return {
         "agent_id": agent_id,
@@ -414,6 +429,108 @@ def test_prod_worker_render_i2i_pro_uses_prod_profile_defaults():
     assert payload["render"]["sshd_enabled"] == "false"
     assert provider.create_calls == 0
     assert provider.delete_calls == 0
+
+
+def test_prod_worker_render_scail2_uses_prod_profile_defaults():
+    agent_id = prod_agent_id_from_slot("01", profile="scail2")
+    provider = FakeRunPodProvider(
+        _settings(
+            prod_agent_id=agent_id,
+            image_name_scail2=PUBLIC_SCAIL2_GHCR_IMAGE,
+            model_bucket="allbot-model-cache",
+            model_prefix_scail2=RUNPOD_SCAIL2_MODEL_PREFIX,
+            model_manifest_key_scail2=RUNPOD_SCAIL2_MODEL_MANIFEST_KEY,
+        )
+    )
+    options = RunPodProdWorkerOptions(
+        action="render",
+        profile="scail2",
+        task_type="scail2",
+        agent_id=agent_id,
+        quiet=True,
+    )
+
+    payload = RunPodProdWorkerRunner(provider, options).run()
+
+    assert payload["ok"] is True
+    assert payload["profile"] == "scail2"
+    assert payload["render"]["pod_name"] == "allbot-runpod-prod-scail2-manual-01"
+    assert payload["render"]["imageName"] == PUBLIC_SCAIL2_GHCR_IMAGE
+    assert payload["render"]["agent_id"] == "runpod_prod_scail2_manual_01"
+    assert payload["render"]["gpu_type_ids"] == list(RUNPOD_PROD_GPU_TYPE_IDS)
+    assert payload["render"]["supported_task_types"] == ",".join(
+        RUNPOD_SCAIL2_SUPPORTED_TASK_TYPES
+    )
+    assert payload["render"]["pool_runtime_profile"] == "scail2"
+    assert payload["render"]["model_prefix"] == RUNPOD_SCAIL2_MODEL_PREFIX
+    assert payload["render"]["model_manifest_key"] == RUNPOD_SCAIL2_MODEL_MANIFEST_KEY
+    assert payload["render"]["buckets"]["result"] == "user-data-prod"
+    assert payload["render"]["custom_nodes_enabled"] == "false"
+    assert payload["render"]["sshd_enabled"] == "false"
+    assert provider.create_calls == 0
+    assert provider.delete_calls == 0
+
+
+def test_prod_worker_scail2_canary_cases_use_reference_then_motion_video():
+    agent_id = prod_agent_id_from_slot("01", profile="scail2")
+    provider = FakeRunPodProvider(_settings(prod_agent_id=agent_id))
+    options = RunPodProdWorkerOptions(
+        action="canary",
+        profile="scail2",
+        task_type="scail2",
+        agent_id=agent_id,
+        prompt="prod scail2 prompt",
+        negative_prompt="prod scail2 negative",
+        quiet=True,
+    )
+    runner = RunPodProdWorkerRunner(provider, options)
+
+    cases = runner._scail2_task_cases(
+        {
+            "reference_image_key": "user-data-prod/web_uploads/3/reference.jpg",
+            "motion_video_key": "user-data-prod/web_uploads/3/motion.mp4",
+        }
+    )
+
+    assert [case["expected_central_task_type"] for case in cases] == [
+        "scail2_action_transfer",
+        "scail2_video_replacement",
+    ]
+    for case in cases:
+        payload = case["payload"]
+        inputs = payload["inputs"]
+        assert inputs["images"] == [
+            "user-data-prod/web_uploads/3/reference.jpg",
+            "user-data-prod/web_uploads/3/motion.mp4",
+        ]
+        assert inputs["image"] == "user-data-prod/web_uploads/3/reference.jpg"
+        assert inputs["video"] == "user-data-prod/web_uploads/3/motion.mp4"
+        assert inputs["duration"] == 5
+        assert inputs["resolution"] == "512x896"
+        assert payload["prompt"] == "prod scail2 prompt"
+        assert payload["negative_prompt"] == "prod scail2 negative"
+
+
+def test_prod_worker_scail2_canary_input_keys_are_stringified():
+    agent_id = prod_agent_id_from_slot("01", profile="scail2")
+    provider = FakeRunPodProvider(_settings(prod_agent_id=agent_id))
+    options = RunPodProdWorkerOptions(
+        action="canary",
+        profile="scail2",
+        task_type="scail2",
+        agent_id=agent_id,
+        scail2_reference_object_key=123,  # type: ignore[arg-type]
+        scail2_motion_video_object_key=456,  # type: ignore[arg-type]
+        quiet=True,
+    )
+    runner = RunPodProdWorkerRunner(provider, options)
+
+    resolved = runner._resolve_scail2_inputs({})
+
+    assert resolved == {
+        "reference_image_key": "123",
+        "motion_video_key": "456",
+    }
 
 
 def test_prod_worker_render_can_target_second_manual_slot():
@@ -912,6 +1029,51 @@ def test_prod_worker_selection_can_infer_image_to_video_profile_from_prod_agent_
     assert selection["pod_name"] == "allbot-runpod-prod-image-to-video-manual-01"
 
 
+def test_prod_worker_selection_scail2_profile_uses_dedicated_agent_env(monkeypatch):
+    monkeypatch.setenv("RUNPOD_PROD_AGENT_ID", RUNPOD_PROD_AGENT_ID)
+    args = build_parser().parse_args(
+        [
+            "runpod",
+            "prod-worker",
+            "status",
+            "--profile",
+            "scail2",
+            "--slot",
+            "02",
+        ]
+    )
+
+    selection = apply_prod_worker_selection_to_env(args)
+
+    assert selection["profile"] == "scail2"
+    assert selection["slot"] == "02"
+    assert selection["agent_id"] == "runpod_prod_scail2_manual_02"
+    assert selection["pod_name"] == "allbot-runpod-prod-scail2-manual-02"
+    assert __import__("os").environ["RUNPOD_PROD_AGENT_ID"] == selection["agent_id"]
+
+
+def test_prod_worker_selection_can_infer_scail2_profile_from_prod_agent_env(
+    monkeypatch,
+):
+    monkeypatch.setenv(
+        "RUNPOD_PROD_AGENT_ID",
+        prod_agent_id_from_slot("01", profile="scail2"),
+    )
+    args = build_parser().parse_args(
+        [
+            "runpod",
+            "prod-worker",
+            "status",
+        ]
+    )
+
+    selection = apply_prod_worker_selection_to_env(args)
+
+    assert selection["profile"] == "scail2"
+    assert selection["agent_id"] == "runpod_prod_scail2_manual_01"
+    assert selection["pod_name"] == "allbot-runpod-prod-scail2-manual-01"
+
+
 def test_cli_parses_runpod_prod_worker_up_command():
     args = build_parser().parse_args(
         [
@@ -1021,6 +1183,33 @@ def test_cli_parses_runpod_prod_worker_i2i_pro_profile_command():
     assert args.prod_worker_command == "render"
     assert args.profile == "i2i_pro"
     assert args.slot == "01"
+    assert args.quiet is True
+
+
+def test_cli_parses_runpod_prod_worker_scail2_profile_command():
+    args = build_parser().parse_args(
+        [
+            "runpod",
+            "prod-worker",
+            "canary",
+            "--profile",
+            "scail2",
+            "--slot",
+            "01",
+            "--scail2-reference-object-key",
+            "user-data-prod/web_uploads/3/reference.jpg",
+            "--scail2-motion-video-object-key",
+            "user-data-prod/web_uploads/3/motion.mp4",
+            "--quiet",
+        ]
+    )
+
+    assert args.runpod_command == "prod-worker"
+    assert args.prod_worker_command == "canary"
+    assert args.profile == "scail2"
+    assert args.slot == "01"
+    assert args.scail2_reference_object_key == "user-data-prod/web_uploads/3/reference.jpg"
+    assert args.scail2_motion_video_object_key == "user-data-prod/web_uploads/3/motion.mp4"
     assert args.quiet is True
 
 

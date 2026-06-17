@@ -54,6 +54,7 @@ async def test_runpod_profiles_payload_lists_supported_prod_profiles():
         "image_to_video",
         "wan22_video_v2",
         "i2i_pro",
+        "scail2",
     ]
     assert payload["profiles"][0]["supported_task_types"] == [
         "img2img",

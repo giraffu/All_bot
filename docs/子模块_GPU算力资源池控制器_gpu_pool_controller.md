@@ -185,7 +185,7 @@ gpu-002 进入 AIO 接管时仍使用同一 helper：先 `drain --slot both --ex
 gpu-002 首次生产灰度前还必须在维护窗口配置 Docker daemon `insecure-registries=["192.168.1.115:5000"]`；这会短暂重启 Docker 并影响 `comfy0/comfy1`，因此必须先 drain `cloud_prod_worker_06/07` 并确认 `8188/8189` 队列为空。配置完成后只拉取 LAN mirror 镜像，不创建 RunPod Pod，不修改生产 Web task type。
 如当前 SSH 用户无免密 sudo，可只在当次命令环境传入 `LAN_AIO_GPU_SUDO_PASSWORD`；该变量不得写入 `.env`、compose、日志或文档。
 
-SCAIL-2 LAN AIO runtime 已用于 Web/Bot 的两个视频生视频能力：`scail2_action_transfer`（动作迁移）和 `scail2_video_replacement`（视频换人）。它有测试 runtime、云测试 RunPod profile 与云正式 slot0 runtime 三条边界，不能混用测试/正式桶或 worker。
+SCAIL-2 LAN AIO runtime 已用于 Web/Bot 的两个视频生视频能力：`scail2_action_transfer`（动作迁移）和 `scail2_video_replacement`（视频换人）。它有测试 runtime、云测试 RunPod profile、云正式 slot0 runtime 与云正式手动 RunPod profile 四条边界，不能混用测试/正式桶或 worker。
 
 测试 LAN runtime 是独立于 Central 接单层的 ComfyUI runtime，不使用 `runtime-render`，入口为 `scripts/lan_scail2_aio_test.sh`。它在 gpu-002 GPU0 上临时替换原 slot0 AIO 的 `8190:8188`，容器名固定为 `allbot-lan-aio-gpu-002-gpu0-scail2-test`，workspace 为 `/srv/allbot/runpod-runtime/slots/gpu-002-gpu0/profiles/scail2/workspace`。`start --execute` 会先把 `lan_aio_prod_gpu002_gpu0_img2img_lora_01` 置为 `draining`，等待当前 `img2img_lora` 任务和 8190 queue 自然空闲，再设为 `disabled` 并停止旧 `allbot-lan-aio-gpu-002-gpu0-img2img_lora-canary`；`cloud_prod_worker_06` 保持 `disabled`，slot1 `image_to_video` AIO 不动。测试容器不设置 `AGENT_ID`、`CENTRAL_API_URL` 或 `SUPPORTED_TASK_TYPES`，只启动 ComfyUI UI、LAN model sync、四个 Nomadoor UI workflow、两个业务 API workflow 和样例素材。
 
@@ -193,11 +193,11 @@ SCAIL-2 LAN AIO runtime 已用于 Web/Bot 的两个视频生视频能力：`scai
 
 SCAIL-2 镜像入口是 `remote_workers/docker/runpod_profiles/scail2/Dockerfile`，正式 AIO 当前固定 LAN tag 为 `192.168.1.115:5000/allbot/comfy-runpod-scail2:20260617-scail2-cu128-a492b2b-proddeps1`。该镜像基于 `yanwk/comfyui-boot:cu128-slim`，使用包含 ComfyUI PR `Comfy-Org/ComfyUI#14373` 后的版本，并 baked `remote_workers/requirements.txt` 中的 FastAPI/MinIO/uvicorn/websockets 等 worker 运行依赖。它必须在 `/object_info` 暴露 `WanSCAILToVideo`、`SCAIL2ColoredMask`、`SAM3_VideoTrack`、`WanContextWindowsManual`、`VHS_LoadVideo`、`VHS_VideoCombine`。模型从 `allbot-model-cache/scail2/2026-06-17-test/manifest.json` 同步到 `/workspace/ComfyUI/models`；runtime-render 会把 baked ComfyUI 的 `models` 目录链接到该同步目录，验收还要确认主模型、SAM、CLIP Vision、Wan VAE、UMT5 和 LightX2V LoRA 都在 `/object_info` 枚举中。LoRA 路径必须是 `loras/Wan2.1/Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors`，否则 Nomadoor workflow 的 LoRA dropdown 无法解析。
 
-Web/Bot 测试业务接入不把测试 ComfyUI 容器本身注册成 worker：测试容器仍不设置 `AGENT_ID` / `CENTRAL_API_URL` / `SUPPORTED_TASK_TYPES`。接单层在本地主 `workers/docker-compose-cloud-worker-test.yml` 中新增 `cloud-comfy-agent-test-8` / `cloud_worker_test_08`，指向 `http://192.168.1.2:8190`，声明 `SUPPORTED_TASK_TYPES=scail2_action_transfer,scail2_video_replacement` 与 GPU pool 元数据 `node_id=gpu-002`、`gpu_index=0`、`runtime_profile=scail2`。云正式业务接单层则是 `lan_aio_prod_gpu002_gpu0_scail2_01`，写正式 Central 与 `user-data-prod`，不得复用 `cloud_worker_test_08` 或 `user-data-test`。
+Web/Bot 测试业务接入不把测试 ComfyUI 容器本身注册成 worker：测试容器仍不设置 `AGENT_ID` / `CENTRAL_API_URL` / `SUPPORTED_TASK_TYPES`。接单层在本地主 `workers/docker-compose-cloud-worker-test.yml` 中新增 `cloud-comfy-agent-test-8` / `cloud_worker_test_08`，指向 `http://192.168.1.2:8190`，声明 `SUPPORTED_TASK_TYPES=scail2_action_transfer,scail2_video_replacement` 与 GPU pool 元数据 `node_id=gpu-002`、`gpu_index=0`、`runtime_profile=scail2`。云正式业务接单层可以是 `lan_aio_prod_gpu002_gpu0_scail2_01`，也可以是手动正式 RunPod `runpod_prod_scail2_manual_NN`，二者都写正式 Central 与 `user-data-prod`，不得复用 `cloud_worker_test_08` 或 `user-data-test`。
 
-SCAIL-2 也支持独立 cloud-test RunPod profile，不复用 `gpu-002/8190`。`RUNPOD_TASK_PROFILES["scail2"]` 渲染为 `SUPPORTED_TASK_TYPES=scail2_action_transfer,scail2_video_replacement`、`POOL_RUNTIME_PROFILE=scail2`、agent prefix `runpod_test_scail2`、`containerDiskInGb=120`、GPU 优先 `NVIDIA GeForce RTX 5090,NVIDIA GeForce RTX 4090`。模型桶固定 `allbot-model-cache`，用户输入/结果桶仍是 `user-data-test`。镜像由 `.github/workflows/runpod_scail2_profile_image.yml` 构建 `ghcr.io/giraffu/allbot-comfy-runpod-scail2:<tag>`，Dockerfile 保留 LAN entrypoint 作为默认 CMD，但 RunPod create JSON 通过 `dockerStartCmd=["bash","-lc","exec bash /opt/allbot/runpod_bootstrap_from_git.sh"]` 启动 bootstrap。模型转存入口是 `scripts/prepare_scail2_model_r2_bundle.py --env-file .env.cloud.test --execute`，默认 dry-run，只写 `allbot-model-cache/scail2/2026-06-17-test/models/...` 与 manifest，不写 `user-data-test`。
+SCAIL-2 也支持独立 RunPod profile，不复用 `gpu-002/8190`。`RUNPOD_TASK_PROFILES["scail2"]` 渲染为 `SUPPORTED_TASK_TYPES=scail2_action_transfer,scail2_video_replacement`、`POOL_RUNTIME_PROFILE=scail2`、`containerDiskInGb=120`，模型桶固定 `allbot-model-cache`。cloud-test agent prefix 是 `runpod_test_scail2`，用户输入/结果桶是 `user-data-test`；cloud-prod 手动池 agent 是 `runpod_prod_scail2_manual_NN`，Pod 名称是 `allbot-runpod-prod-scail2-manual-NN`，用户输入/结果桶必须是 `user-data-prod`。镜像由 `.github/workflows/runpod_scail2_profile_image.yml` 构建 `ghcr.io/giraffu/allbot-comfy-runpod-scail2:<tag>`，Dockerfile 保留 LAN entrypoint 作为默认 CMD，但 RunPod create JSON 通过 `dockerStartCmd=["bash","-lc","exec bash /opt/allbot/runpod_bootstrap_from_git.sh"]` 启动 bootstrap。模型转存入口是 `scripts/prepare_scail2_model_r2_bundle.py --env-file .env.cloud.test --execute`，默认 dry-run，只写 `allbot-model-cache/scail2/2026-06-17-test/models/...` 与 manifest，不写 `user-data-test` 或 `user-data-prod`。
 
-`runpod canary --task-type scail2` 是 SCAIL-2 cloud-test RunPod 验收入口。dry-run 会校验 GHCR image prefix、`allbot-model-cache`、`scail2/2026-06-17-test/manifest.json`、custom node env 关闭、bootstrap command 与 GPU 类型；真实执行会上传/复用 Nomadoor 样例参考图和 motion video，临时 disable 支持 SCAIL-2 的非 RunPod cloud-test worker（通常是 `cloud_worker_test_08`），串行提交 `scail2_action_transfer 5s` 与 `scail2_video_replacement 5s` 两个 Web 任务，要求 Central 接单 worker 为 `runpod_test_scail2_*`，结束后恢复 worker control 并删除本次 Pod。SCAIL-2 云正式本轮不使用 RunPod profile，cloud-prod 的正式能力来自 LAN slot0 runtime。
+`runpod canary --task-type scail2` 是 SCAIL-2 cloud-test RunPod 验收入口。dry-run 会校验 GHCR image prefix、`allbot-model-cache`、`scail2/2026-06-17-test/manifest.json`、custom node env 关闭、bootstrap command 与 GPU 类型；真实执行会上传/复用 Nomadoor 样例参考图和 motion video，临时 disable 支持 SCAIL-2 的非 RunPod cloud-test worker（通常是 `cloud_worker_test_08`），串行提交 `scail2_action_transfer 5s` 与 `scail2_video_replacement 5s` 两个 Web 任务，要求 Central 接单 worker 为 `runpod_test_scail2_*`，结束后恢复 worker control 并删除本次 Pod。正式 RunPod 验收使用 `prod-worker canary --profile scail2` 或 `scripts/runpod_prod_ops.sh canary --profile scail2`，串行提交同样两类 5s 正式内部任务，要求 `pop_evidence.agent_id=runpod_prod_scail2_manual_NN`，结果写 `user-data-prod`，canary 结束后目标 RunPod 默认恢复 `disabled`；通过后可与 LAN slot0 `lan_aio_prod_gpu002_gpu0_scail2_01` 并行 enabled 接单。
 
 常用命令：
 
@@ -228,15 +228,15 @@ scripts/lan_scail2_aio_prod.sh rollback --execute
 - 单 bundle 通用入口仍为 `scripts/upload_model_bundle_to_r2.py`，通过 `.env.lan.model-cache` 映射 `LAN_MODEL_CACHE_*` 到 `RUNPOD_MODEL_*` 后写入 LAN cache；脚本按对象 size 与 sha256 metadata 跳过已有对象，metadata key 需大小写不敏感处理以兼容 MinIO。
 
 ## 4. RunPod Provider v0
-RunPod provider 当前覆盖四类路径：
+RunPod provider 当前覆盖五类路径：
 
 | 路径 | 用途 | 当前状态 |
 | :--- | :--- | :--- |
 | 云测试图生图 canary | `img2img` / `img2img_lora` 真实 Web 闭环 | 已通过真实 canary；作为 RunPod 基础链路回归入口 |
 | 云测试 split video canary | `image_to_video` 与 `wan22_video_v2` 分 profile 验证 | `wan22_video_v2` 已完成 Web 端真实闭环；后续以 `split-video-canary` 复验 |
 | 云测试图生图 Pro canary | `i2i_pro` RunPod runtime profile，串行验证 `i2i_pro`、Web `txt2img`、`face_swap` | 已通过单任务 cloud-test Web canary；三任务 canary 由 `runpod canary --task-type i2i_pro` 承担 |
-| 云测试 SCAIL-2 canary | `scail2` RunPod runtime profile，串行验证动作迁移和视频换人 | 只用于 cloud-test；云正式 SCAIL-2 本轮使用 gpu-002 LAN slot0 runtime |
-| 手动云正式备用 worker | `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro` | 代码已支持；默认创建后先 `disabled`，不开启生产自动扩容 |
+| 云测试 SCAIL-2 canary | `scail2` RunPod runtime profile，串行验证动作迁移和视频换人 | 用于 cloud-test；会临时 disable 同环境非 RunPod SCAIL-2 worker |
+| 手动云正式备用 worker | `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、`scail2` | 代码已支持；默认创建后先 `disabled`，不开启生产自动扩容 |
 
 RunPod 只读 / dry-run 命令：
 
@@ -251,6 +251,8 @@ python scripts/gpu_pool_controller.py runpod create-pod --task-type img2img_lora
 python scripts/gpu_pool_controller.py runpod canary --env-file .env.cloud.test --quiet
 python scripts/gpu_pool_controller.py runpod canary --task-type i2i_pro --env-file .env.cloud.test --quiet
 python scripts/gpu_pool_controller.py runpod canary --task-type scail2 --env-file .env.cloud.test --quiet
+python scripts/gpu_pool_controller.py runpod prod-worker render --profile scail2 --slot 01
+python scripts/gpu_pool_controller.py runpod prod-worker canary --profile scail2 --slot 01
 ```
 
 `render-create` 不需要 `RUNPOD_API_KEY`；`create-pod` 默认 dry-run。
@@ -280,8 +282,9 @@ python scripts/gpu_pool_controller.py runpod canary --task-type scail2 --env-fil
 | `image_to_video` | `runpod_prod_image_to_video_manual_NN` | `image_to_video` | `image_to_video/2026-06-13-test/manifest.json` | `NVIDIA GeForce RTX 4090` |
 | `wan22_video_v2` | `runpod_prod_wan22_video_v2_manual_NN` | `wan22_video_v2` | `wan22_video_v2/2026-06-13-test/manifest.json` | `NVIDIA GeForce RTX 4090` |
 | `i2i_pro` | `runpod_prod_i2i_pro_manual_NN` | `i2i_pro,t2i-pornmaster-turbo,face_swap` | `i2i_pro/2026-06-14-test/manifest.json` | `NVIDIA GeForce RTX 4090` |
+| `scail2` | `runpod_prod_scail2_manual_NN` | `scail2_action_transfer,scail2_video_replacement` | `scail2/2026-06-17-test/manifest.json` | `NVIDIA GeForce RTX 4090` |
 
-正式 video profile 镜像必须以 `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:` 开头；`i2i_pro` 镜像必须以 `ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:` 开头；`img2img` 使用已验证 public GHCR 图生图镜像。
+正式 video profile 镜像必须以 `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:` 开头；`i2i_pro` 镜像必须以 `ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:` 开头；`scail2` 镜像必须以 `ghcr.io/giraffu/allbot-comfy-runpod-scail2:` 开头；`img2img` 使用已验证 public GHCR 图生图镜像。
 
 ## 6. 真实执行门禁
 任意真实 RunPod mutation 都必须显式满足：
@@ -433,6 +436,8 @@ python scripts/gpu_pool_controller.py runpod prod-worker canary --profile img2im
 python scripts/gpu_pool_controller.py runpod prod-worker scale --profile img2img --desired 1
 python scripts/gpu_pool_controller.py runpod prod-worker render --profile i2i_pro --slot 01
 python scripts/gpu_pool_controller.py runpod prod-worker canary --profile i2i_pro --slot 01
+python scripts/gpu_pool_controller.py runpod prod-worker render --profile scail2 --slot 01
+python scripts/gpu_pool_controller.py runpod prod-worker canary --profile scail2 --slot 01
 ```
 
 `prod-worker` 默认先加载 `.env.cloud.test` 中的 RunPod API/profile 默认值，再加载 `.env.cloud.prod` 覆盖正式 Central/Web/R2/JWT 变量；已在 shell 显式设置的 `RUNPOD_*` 执行开关和 slot 命名空间不会被 prod env 文件覆盖。
@@ -461,14 +466,13 @@ python scripts/gpu_pool_controller.py runpod prod-worker canary --profile i2i_pr
 
 正式手动 RunPod 池的容量和 profile 组合不是固定事实，应按当次运维目标决定。某次实操的
 Pod 数量、创建日期和 profile 组合只应进入运维日志或工单，不作为长期 SOP。当前
-`prod-worker` 支持 `--profile img2img|image_to_video|wan22_video_v2|i2i_pro`；若后续代码
-新增 profile，以 CLI 支持列表和渲染结果为准。日常扩容只使用“新增容量”语义：
+`prod-worker` 支持 `--profile img2img|image_to_video|wan22_video_v2|i2i_pro|scail2`；日常扩容只使用“新增容量”语义：
 `scripts/runpod_prod_ops.sh add --count N` 只选择该 profile 的最低空闲 manual slot 创建新
 Pod，不 enable、disable、drain、delete 或 recreate 任何已存在 slot。
 
 | 参数 | 含义 | 设置口径 |
 | :--- | :--- | :--- |
-| `PROFILE` | 本轮要操作的 profile | 例如 `img2img`、`image_to_video`、`wan22_video_v2` |
+| `PROFILE` | 本轮要操作的 profile | 例如 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、`scail2` |
 | `COUNT` | 本轮新增 Pod 数 | 必须是正整数；不是目标总数 |
 | `MANUAL_SLOT_LIMIT` | manual slot 命名空间 | 默认 `100`，只用于生成 `manual_01..manual_100` agent/pod 名称，不是容量或成本上限 |
 
@@ -604,11 +608,12 @@ python scripts/gpu_pool_controller.py runpod prod-worker up \
 ```
 
 正式流程红线：
-- `up --execute` 固定为预检 -> 写目标 agent control `disabled` -> 创建 Pod -> 等 readiness -> 等 Central heartbeat；ready 后默认不抢正式订单。`prod-worker` 的 worker heartbeat 等待默认 `3600s`，用于覆盖 `i2i_pro` 首次同步约 36GiB 模型的启动窗口。
+- `up --execute` 固定为预检 -> 写目标 agent control `disabled` -> 创建 Pod -> 等 readiness -> 等 Central heartbeat；ready 后默认不抢正式订单。`prod-worker` 的 worker heartbeat 等待默认 `3600s`，用于覆盖 `i2i_pro` / `scail2` 首次同步大模型的启动窗口。
 - `enable --execute` 才允许目标 worker 接单。
 - `down --execute` 必须确认无 `current_task_id`，忙碌 worker 不提供隐式 force。
 - `canary --execute` 不禁用现有正式 worker；完成后恢复目标 RunPod worker 为 `disabled`。
 - `prod-worker canary --profile i2i_pro --execute` 会串行提交 `i2i_pro`、Web `txt2img`、`face_swap` 三单，要求三单均由 `runpod_prod_i2i_pro_manual_NN` 接单并产出可下载图片。
+- `prod-worker canary --profile scail2 --execute` 会串行提交 `scail2_action_transfer` 与 `scail2_video_replacement` 两个 5s 正式内部任务，要求两单均由 `runpod_prod_scail2_manual_NN` 接单、结果 MP4 写入 `user-data-prod` 且可下载；若需要强制命中 RunPod，应先让 SCAIL-2 pending 清空并临时 disable LAN SCAIL-2 agent。
 - 生产真实创建、启用、删除或 canary 任务必须由用户明确确认。
 
 ## 9. R2 / RunPod 变量分层
@@ -620,6 +625,7 @@ python scripts/gpu_pool_controller.py runpod prod-worker up \
 | `RUNPOD_MODEL_PREFIX_IMAGE_TO_VIDEO` / `RUNPOD_MODEL_MANIFEST_KEY_IMAGE_TO_VIDEO` | split `image_to_video` 模型 manifest | `image_to_video/2026-06-13-test/manifest.json` | 同 cloud-test manifest |
 | `RUNPOD_MODEL_PREFIX_WAN22_VIDEO_V2` / `RUNPOD_MODEL_MANIFEST_KEY_WAN22_VIDEO_V2` | split `wan22_video_v2` 模型 manifest | `wan22_video_v2/2026-06-13-test/manifest.json` | 同 cloud-test manifest |
 | `RUNPOD_MODEL_PREFIX_I2I_PRO` / `RUNPOD_MODEL_MANIFEST_KEY_I2I_PRO` | `i2i_pro` 三任务模型 manifest | `i2i_pro/2026-06-14-test/manifest.json` | 同 cloud-test manifest |
+| `RUNPOD_MODEL_PREFIX_SCAIL2` / `RUNPOD_MODEL_MANIFEST_KEY_SCAIL2` | `scail2` 视频生视频模型 manifest | `scail2/2026-06-17-test/manifest.json` | 同 cloud-test manifest |
 | `RUNPOD_MODEL_PREFIX_WAN22_AIO_VIDEO` / `RUNPOD_MODEL_MANIFEST_KEY_WAN22_AIO_VIDEO` | 兼容/回滚全集 manifest | `wan22_aio_video/2026-06-12-test/manifest.json` | 不作为正式主路径 |
 
 RunPod secret reference 固定口径：
@@ -650,6 +656,7 @@ RUNPOD_MODEL_SECRET_KEY={{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}
 - `face_swap_v2.json` 使用 `i2i_pro` Flux2/edit 节点与模型替代旧图片换脸工作流，运行面 task type 仍是 `face_swap`。测试 worker1、正式 worker1 与 RunPod `i2i_pro` profile 都通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 将 `face_swap` 指向 v2；这属于 Worker workflow 配置替换，不代表新增业务 task type。
 - `i2i_pro` RunPod 镜像构建入口是 `remote_workers/docker/runpod_profiles/i2i_pro/`，默认 base 为 `yanwk/comfyui-boot:cu128-slim`，与现有图生图和 Wan22 RunPod 镜像基线保持一致；ComfyUI pin 到 `16cd8d8a8f5f16ce7e5f929fdba9f783990254ea`。不得使用 `cu130` 基线，否则在当前 RunPod 4090 宿主机上可能因 PyTorch CUDA 版本高于宿主机驱动能力而失败；`20260614-i2ipro-6b167aa-cu128-min4` 已在 `NVIDIA GeForce RTX 4090` cloud-test Web canary 中完成模型同步、ComfyUI CUDA 初始化、worker heartbeat 和 `i2i_pro` 真实任务出图；当前 `.env.cloud.test` 候选镜像为 `20260614-i2ipro-b75c6a9-cu128-min5-ssh`，在 min4 的可用基线上补齐 `openssh` 与 direct TCP SSH smoke。当前 workflow 只要求 ComfyUI/core `nodes` 与 `comfy_extras` 中的 `UNETLoader`、`CLIPLoader`、`VAELoader`、`ReferenceLatent`、`EmptyFlux2LatentImage`、`Flux2Scheduler`、`SamplerCustomAdvanced`，不 baked 自定义节点或业务模型。GitHub Actions smoke 在 CPU runner 上用静态源码检查确认这些节点存在，避免导入 ComfyUI 时触发 CUDA 初始化；GPU import 与真实执行以 cloud-test canary 为准。镜像 smoke 还必须检查 `ffmpeg`、`curl`、`git`、`ssh-keygen` 与 `sshd`，确保 direct TCP SSH 诊断可用。
 - RunPod `i2i_pro` 三任务能力依赖 `remote_workers/src/workflow_mapping_validation.py` 支持 `TASK_TYPE_WORKFLOW_OVERRIDES`，并且 `remote_workers/comfy_agent/workflows/` 内存在 `txt2img_from_i2i_pro.json` 与 `face_swap_v2.json`。`runpod_bootstrap_from_git.sh` 只在 `/workspace/allbot/repo/remote_workers` 不存在时 clone `deploy`，若旧 Pod 原地重启且已有旧 bundle，可能继续复用旧文件；新建/重建 Pod 会拉最新 `deploy`。若已运行的旧生产 Pod 因远端 bundle 缺 override 支持而读取旧默认 workflow，可先通过 Central agent control 将目标 worker 置为 `disabled`，再在 Pod 内覆盖默认 `face_swap.json` 与默认 Pornmaster workflow 为对应 v2/i2i_pro 派生模板；`WorkflowPatcher.load_workflow()` 每单重新读 JSON，文件级热修无需删除或重启 Pod，但长期修复仍必须进入 git 与新镜像/新 Pod。
+- `scail2` RunPod 镜像构建入口是 `remote_workers/docker/runpod_profiles/scail2/`，GHCR ref 必须为 `ghcr.io/giraffu/allbot-comfy-runpod-scail2:<tag>`。镜像必须包含 ComfyUI SCAIL-2 core 节点、VideoHelperSuite、KJNodes、rgthree、Frame-Interpolation、Fill-Nodes、ffmpeg、bootstrap/sshd 诊断依赖和 `remote_workers/requirements.txt`，不得 baked 任何 `.safetensors` 模型权重。模型 manifest 固定为 `allbot-model-cache/scail2/2026-06-17-test/manifest.json`，LoRA 相对路径必须保持 `loras/Wan2.1/Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors`。正式 RunPod `scail2` profile 只接 `scail2_action_transfer,scail2_video_replacement`，结果写 `user-data-prod`；cloud-test RunPod profile 结果写 `user-data-test`。
 - `i2i_pro_baseline` 模型包从 `gpu-226` / `192.168.1.226:8188` 同步到 R2 `allbot-model-cache/i2i_pro/2026-06-14-test/manifest.json`，包含 6 个文件，总计 `38,769,838,190` bytes（约 `36.11 GiB`）。这 6 个文件同时覆盖 `i2i_pro.json`、`txt2img_from_i2i_pro.json` 与 `face_swap_v2.json`；本地主模型 registry 的 import spec 已按这两个 runtime overrides 生成 manifest，不再把 legacy Pornmaster/t2i 或旧 `face_swap.json` 专属模型纳入 `i2i_pro_baseline`。首次 cloud-test canary 使用 `RUNPOD_CONTAINER_DISK_GB=120`，GPU 只请求 `NVIDIA GeForce RTX 4090`，模型同步只写 ComfyUI `models/`，不得写 `input/output/temp/custom_nodes/workflows`。
 
 `i2i_pro_baseline` 模型清单：

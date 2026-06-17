@@ -38,6 +38,8 @@ RUNPOD_PROD_IMAGE_TO_VIDEO_AGENT_ID_PREFIX = "runpod_prod_image_to_video_manual_
 RUNPOD_PROD_IMAGE_TO_VIDEO_POD_NAME_PREFIX = "allbot-runpod-prod-image-to-video-manual-"
 RUNPOD_PROD_I2I_PRO_AGENT_ID_PREFIX = "runpod_prod_i2i_pro_manual_"
 RUNPOD_PROD_I2I_PRO_POD_NAME_PREFIX = "allbot-runpod-prod-i2i-pro-manual-"
+RUNPOD_PROD_SCAIL2_AGENT_ID_PREFIX = "runpod_prod_scail2_manual_"
+RUNPOD_PROD_SCAIL2_POD_NAME_PREFIX = "allbot-runpod-prod-scail2-manual-"
 RUNPOD_PROD_DEFAULT_MAX_MANUAL_SLOTS = 100
 RUNPOD_PROD_MAX_MANUAL_SLOTS = RUNPOD_PROD_DEFAULT_MAX_MANUAL_SLOTS
 RUNPOD_PROD_AGENT_ID = "runpod_prod_img2img_manual_01"
@@ -291,9 +293,11 @@ def normalize_prod_worker_profile(profile: str | None) -> str:
         return "wan22_video_v2"
     if value == "i2i_pro":
         return "i2i_pro"
+    if value == "scail2":
+        return "scail2"
     raise ValueError(
         "prod RunPod profile must be img2img, image_to_video, "
-        "wan22_video_v2, or i2i_pro"
+        "wan22_video_v2, i2i_pro, or scail2"
     )
 
 
@@ -307,9 +311,11 @@ def prod_worker_profile_for_task_type(task_type: str) -> str:
         return "wan22_video_v2"
     if value in RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES:
         return "i2i_pro"
+    if value == "scail2" or value in RUNPOD_SCAIL2_SUPPORTED_TASK_TYPES:
+        return "scail2"
     raise ValueError(
         "prod RunPod worker only supports img2img, image_to_video, "
-        "wan22_video_v2, or i2i_pro"
+        "wan22_video_v2, i2i_pro, or scail2"
     )
 
 
@@ -327,12 +333,15 @@ def _prod_profile_from_agent_id(agent_id: str) -> str:
         return "wan22_video_v2"
     if raw.startswith(RUNPOD_PROD_I2I_PRO_AGENT_ID_PREFIX):
         return "i2i_pro"
+    if raw.startswith(RUNPOD_PROD_SCAIL2_AGENT_ID_PREFIX):
+        return "scail2"
     raise ValueError(
         "prod RunPod agent_id must start with one of "
         f"{RUNPOD_PROD_AGENT_ID_PREFIX}, "
         f"{RUNPOD_PROD_IMAGE_TO_VIDEO_AGENT_ID_PREFIX}, "
         f"{RUNPOD_PROD_WAN22_VIDEO_V2_AGENT_ID_PREFIX}, "
-        f"{RUNPOD_PROD_I2I_PRO_AGENT_ID_PREFIX}"
+        f"{RUNPOD_PROD_I2I_PRO_AGENT_ID_PREFIX}, "
+        f"{RUNPOD_PROD_SCAIL2_AGENT_ID_PREFIX}"
     )
 
 
@@ -344,6 +353,8 @@ def _prod_agent_id_prefix_for(profile: str | None) -> str:
         return RUNPOD_PROD_WAN22_VIDEO_V2_AGENT_ID_PREFIX
     if profile_key == "i2i_pro":
         return RUNPOD_PROD_I2I_PRO_AGENT_ID_PREFIX
+    if profile_key == "scail2":
+        return RUNPOD_PROD_SCAIL2_AGENT_ID_PREFIX
     return RUNPOD_PROD_AGENT_ID_PREFIX
 
 
@@ -355,6 +366,8 @@ def _prod_pod_name_prefix_for(profile: str | None) -> str:
         return RUNPOD_PROD_WAN22_VIDEO_V2_POD_NAME_PREFIX
     if profile_key == "i2i_pro":
         return RUNPOD_PROD_I2I_PRO_POD_NAME_PREFIX
+    if profile_key == "scail2":
+        return RUNPOD_PROD_SCAIL2_POD_NAME_PREFIX
     return RUNPOD_PROD_POD_NAME_PREFIX
 
 
@@ -1393,11 +1406,12 @@ class RunPodProvider:
             "image_to_video",
             "wan22_video_v2",
             "i2i_pro",
+            "scail2",
         }:
             raise ValueError(
                 "RunPodProvider v0 cloud-prod only supports "
                 "img2img/img2img_lora, image_to_video, wan22_video_v2, "
-                "and i2i_pro profiles"
+                "i2i_pro, and scail2 profiles"
             )
         gpu_type_ids = (
             self.settings.prod_gpu_type_ids
@@ -1421,6 +1435,7 @@ class RunPodProvider:
                 "image_to_video",
                 "wan22_video_v2",
                 "i2i_pro",
+                "scail2",
             }
             and not image_name
         ):
@@ -1570,7 +1585,10 @@ class RunPodProvider:
         workflow_overrides = self._workflow_overrides_for(profile)
         if workflow_overrides:
             env["TASK_TYPE_WORKFLOW_OVERRIDES"] = workflow_overrides
-        env.update(self.settings.extra_env)
+        extra_env = dict(self.settings.extra_env)
+        if environment == "cloud-prod" and env_config["start_sshd"] != "true":
+            extra_env.pop("PUBLIC_KEY", None)
+        env.update(extra_env)
         return env
 
     def _pod_name(self, *, profile: RunPodTaskProfile, environment: str) -> str:
@@ -1861,6 +1879,8 @@ class RunPodProvider:
         if profile.task_type == "wan22_video_v2":
             return profile.supported_task_types
         if profile.task_type == "i2i_pro":
+            return profile.supported_task_types
+        if profile.task_type == "scail2":
             return profile.supported_task_types
         raise ValueError(
             f"unsupported cloud-prod RunPod task profile: {profile.task_type}"

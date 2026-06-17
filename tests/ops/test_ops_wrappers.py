@@ -103,6 +103,23 @@ def test_runpod_enable_dry_run_delegates_to_prod_worker_without_execute_mode():
     assert "--execute" in output
 
 
+def test_runpod_scail2_canary_dry_run_delegates_to_prod_worker():
+    result = run_script(
+        "bash",
+        "scripts/runpod_prod_ops.sh",
+        "canary",
+        "--profile",
+        "scail2",
+        "--dry-run",
+    )
+
+    assert result.returncode == 0, result.stderr
+    output = result.stdout
+    assert "runpod prod-worker canary" in output
+    assert "--profile scail2" in output
+    assert "--execute" in output
+
+
 def test_runpod_rollback_delete_profile_dry_run_scales_to_zero():
     result = run_script(
         "bash",

@@ -78,7 +78,19 @@ python scripts/gpu_pool_controller.py runpod canary --task-type scail2 --env-fil
 
 `prepare_scail2_model_r2_bundle.py --execute` writes only to
 `allbot-model-cache/scail2/2026-06-17-test`; RunPod SCAIL-2 user inputs and
-results still use `user-data-test`.
+results use `user-data-test` for cloud-test and `user-data-prod` for
+cloud-prod.
+
+Formal SCAIL-2 RunPod workers use the same model cache bundle but a prod
+manual worker profile:
+
+```bash
+RUNPOD_IMAGE_NAME_SCAIL2=ghcr.io/giraffu/allbot-comfy-runpod-scail2:<prod-tag> \
+python scripts/gpu_pool_controller.py runpod prod-worker render --profile scail2 --slot 01
+scripts/runpod_prod_ops.sh add --profile scail2 --count 1 --execute
+scripts/runpod_prod_ops.sh canary --profile scail2 --slot 01 --execute
+scripts/runpod_prod_ops.sh enable --profile scail2 --slot 01 --execute
+```
 
 Model registry layout:
 

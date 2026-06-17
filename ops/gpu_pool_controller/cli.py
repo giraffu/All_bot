@@ -817,7 +817,7 @@ def build_parser() -> argparse.ArgumentParser:
     prod_worker_common.add_argument("--agent-id", default=None)
     prod_worker_common.add_argument(
         "--profile",
-        choices=("img2img", "image_to_video", "wan22_video_v2", "i2i_pro"),
+        choices=("img2img", "image_to_video", "wan22_video_v2", "i2i_pro", "scail2"),
         default=None,
         help="prod RunPod worker profile; default img2img",
     )
@@ -831,6 +831,8 @@ def build_parser() -> argparse.ArgumentParser:
     prod_worker_common.add_argument("--web-user-id", type=int, default=None)
     prod_worker_common.add_argument("--web-pwd-ver", type=int, default=None)
     prod_worker_common.add_argument("--input-object-key", default=None)
+    prod_worker_common.add_argument("--scail2-reference-object-key", default=None)
+    prod_worker_common.add_argument("--scail2-motion-video-object-key", default=None)
     prod_worker_common.add_argument("--output-dir", type=Path, default=None)
     prod_worker_common.add_argument("--download-results-dir", type=Path, default=None)
     prod_worker_common.add_argument("--prompt", default=None)

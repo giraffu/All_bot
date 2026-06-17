@@ -17,7 +17,7 @@ RETRY_UNAVAILABLE="false"
 MAX_ATTEMPTS="20"
 RETRY_INTERVAL_SECONDS="90"
 
-STATUS_PROFILES=(img2img image_to_video wan22_video_v2 i2i_pro)
+STATUS_PROFILES=(img2img image_to_video wan22_video_v2 i2i_pro scail2)
 
 usage() {
   cat <<'USAGE'
@@ -37,7 +37,7 @@ Actions:
 
 Options:
   --profile <name>            Required for mutations. One of img2img,
-                              image_to_video, wan22_video_v2, i2i_pro.
+                              image_to_video, wan22_video_v2, i2i_pro, scail2.
   --slot <NN>                 Optional manual worker slot, for example 01.
   --count <N>                 Required for add.
   --desired <N>               Required for scale.
@@ -56,7 +56,7 @@ USAGE
 
 is_valid_profile() {
   case "$1" in
-    img2img|image_to_video|wan22_video_v2|i2i_pro) return 0 ;;
+    img2img|image_to_video|wan22_video_v2|i2i_pro|scail2) return 0 ;;
     *) return 1 ;;
   esac
 }

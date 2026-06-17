@@ -863,11 +863,17 @@ def test_runpod_settings_from_env_injects_public_key_file(
         environment="cloud-test",
         redact=False,
     )
+    prod_payload = provider.render_create_pod_request(
+        task_type="img2img_lora",
+        environment="cloud-prod",
+        redact=False,
+    )
 
     assert settings.extra_env == {
         "PUBLIC_KEY": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest allbot-runpod-debug"
     }
     assert payload["json"]["env"]["PUBLIC_KEY"] == settings.extra_env["PUBLIC_KEY"]
+    assert "PUBLIC_KEY" not in prod_payload["json"]["env"]
 
 
 def test_runpod_settings_from_env_supports_wan22_docker_start_script_file(
@@ -1118,6 +1124,55 @@ def test_render_create_cloud_prod_i2i_pro_uses_prod_refs_and_multitask_manifest(
     assert env["RUNPOD_MODEL_BUCKET"] == "allbot-model-cache"
     assert env["RUNPOD_MODEL_PREFIX"] == RUNPOD_I2I_PRO_MODEL_PREFIX
     assert env["RUNPOD_MODEL_MANIFEST_KEY"] == RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY
+    assert env["RUNPOD_COMFY_CUSTOM_NODES_ENABLED"] == "false"
+    assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
+    assert env["RUNPOD_START_SSHD"] == "false"
+    assert env["AGENT_SECRET_TOKEN"] == RUNPOD_PROD_AGENT_SECRET_TOKEN_REF
+    assert env["MINIO_ACCESS_KEY"] == RUNPOD_PROD_R2_ACCESS_KEY_REF
+    assert env["MINIO_SECRET_KEY"] == RUNPOD_PROD_R2_SECRET_KEY_REF
+    assert env["RUNPOD_MODEL_ACCESS_KEY"] == RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF
+    assert env["RUNPOD_MODEL_SECRET_KEY"] == RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF
+
+
+def test_render_create_cloud_prod_scail2_uses_prod_refs_and_manifest():
+    image_ref = RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX + "20260617-scail2-prod"
+    agent_id = prod_agent_id_from_slot("01", profile="scail2")
+    provider = RunPodProvider(
+        _settings(
+            image_name_scail2=image_ref,
+            prod_agent_id=agent_id,
+            model_bucket="allbot-model-cache",
+            model_prefix_scail2=RUNPOD_SCAIL2_MODEL_PREFIX,
+            model_manifest_key_scail2=RUNPOD_SCAIL2_MODEL_MANIFEST_KEY,
+            container_disk_gb=80,
+        )
+    )
+
+    payload = provider.render_create_pod_request(
+        task_type="scail2",
+        environment="cloud-prod",
+        redact=False,
+    )
+    body = payload["json"]
+    env = body["env"]
+
+    assert "templateId" not in body
+    assert body["name"] == "allbot-runpod-prod-scail2-manual-01"
+    assert body["imageName"] == image_ref
+    assert body["gpuTypeIds"] == list(RUNPOD_PROD_GPU_TYPE_IDS)
+    assert body["containerDiskInGb"] == RUNPOD_SCAIL2_CONTAINER_DISK_GB
+    assert env["ENVIRONMENT"] == "prod"
+    assert env["RUNPOD_ENVIRONMENT"] == "cloud-prod"
+    assert env["RUNPOD_TASK_TYPE"] == "scail2"
+    assert env["AGENT_ID"] == "runpod_prod_scail2_manual_01"
+    assert env["AGENT_ID_PREFIX"] == "runpod_prod_scail2_manual_01"
+    assert env["SUPPORTED_TASK_TYPES"] == ",".join(RUNPOD_SCAIL2_SUPPORTED_TASK_TYPES)
+    assert env["CENTRAL_API_URL"] == RUNPOD_PROD_WORKER_CENTRAL_URL
+    assert env["POOL_RUNTIME_PROFILE"] == "scail2"
+    assert env["MINIO_RESULT_BUCKET"] == RUNPOD_PROD_BUCKET
+    assert env["RUNPOD_MODEL_BUCKET"] == "allbot-model-cache"
+    assert env["RUNPOD_MODEL_PREFIX"] == RUNPOD_SCAIL2_MODEL_PREFIX
+    assert env["RUNPOD_MODEL_MANIFEST_KEY"] == RUNPOD_SCAIL2_MODEL_MANIFEST_KEY
     assert env["RUNPOD_COMFY_CUSTOM_NODES_ENABLED"] == "false"
     assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
     assert env["RUNPOD_START_SSHD"] == "false"

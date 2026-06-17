@@ -24,7 +24,11 @@ from .providers.runpod import (
     RUNPOD_PROD_AGENT_ID,
     RUNPOD_PROD_BUCKET,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
+    RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
     RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX,
+    RUNPOD_SCAIL2_MODEL_MANIFEST_KEY,
+    RUNPOD_SCAIL2_MODEL_PREFIX,
+    RUNPOD_SCAIL2_SUPPORTED_TASK_TYPES,
     RUNPOD_WAN22_VIDEO_V2_COMPLETION_TIMEOUT_SECONDS,
     RUNPOD_WAN22_VIDEO_V2_COMFY_EXTRA_ARGS,
     RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY,
@@ -39,7 +43,13 @@ from .providers.runpod import (
     redact_payload,
     redact_text,
 )
-from .runpod_canary import result_url_path, write_canary_png
+from .runpod_canary import (
+    SCAIL2_CANARY_NEGATIVE_PROMPT,
+    SCAIL2_SAMPLE_MOTION_VIDEO_URL,
+    SCAIL2_SAMPLE_REFERENCE_URL,
+    result_url_path,
+    write_canary_png,
+)
 
 
 PROD_ENVIRONMENT = "cloud-prod"
@@ -54,6 +64,9 @@ PROD_DEFAULT_PROFILE = "img2img"
 PROD_IMAGE_TO_VIDEO_TASK_TYPE = "image_to_video"
 PROD_WAN22_VIDEO_V2_TASK_TYPE = "wan22_video_v2"
 PROD_I2I_PRO_TASK_TYPE = "i2i_pro"
+PROD_SCAIL2_TASK_TYPE = "scail2"
+PROD_SCAIL2_ACTION_TRANSFER_TASK_TYPE = "scail2_action_transfer"
+PROD_SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE = "scail2_video_replacement"
 PROD_TXT2IMG_PUBLIC_TASK_TYPE = "txt2img"
 PROD_TXT2IMG_EXECUTION_TASK_TYPE = "t2i-pornmaster-turbo"
 PROD_FACE_SWAP_TASK_TYPE = "face_swap"
@@ -83,6 +96,8 @@ class RunPodProdWorkerOptions:
     web_bearer_token: str = ""
     agent_token: str = ""
     input_object_key: str = ""
+    scail2_reference_object_key: str = ""
+    scail2_motion_video_object_key: str = ""
     output_dir: Path = Path("/tmp/allbot_runpod_prod_worker")
     download_results_dir: Path = Path("runpod_canary_results/prod")
     readiness_timeout_seconds: float = 900.0
@@ -261,6 +276,16 @@ def options_from_args_env(args: Any) -> RunPodProdWorkerOptions:
         input_object_key=(
             getattr(args, "input_object_key", None)
             or os.getenv("RUNPOD_PROD_WORKER_INPUT_OBJECT_KEY")
+            or ""
+        ),
+        scail2_reference_object_key=(
+            getattr(args, "scail2_reference_object_key", None)
+            or os.getenv("RUNPOD_PROD_WORKER_SCAIL2_REFERENCE_OBJECT_KEY")
+            or ""
+        ),
+        scail2_motion_video_object_key=(
+            getattr(args, "scail2_motion_video_object_key", None)
+            or os.getenv("RUNPOD_PROD_WORKER_SCAIL2_MOTION_VIDEO_OBJECT_KEY")
             or ""
         ),
         output_dir=Path(
@@ -494,16 +519,28 @@ class RunPodProdWorkerRunner:
 
     def _run_canary(self, summary: dict[str, Any]) -> None:
         if not self.options.execute:
-            task_summary = (
-                "submit prod Web i2i_pro, txt2img, and face_swap tasks serially"
-                if self.options.profile == "i2i_pro"
-                else f"submit one prod Web {self.options.task_type} task as internal user_id=3"
-            )
+            if self.options.profile == "i2i_pro":
+                task_summary = "submit prod Web i2i_pro, txt2img, and face_swap tasks serially"
+            elif self.options.profile == "scail2":
+                task_summary = (
+                    "submit prod Web scail2_action_transfer and "
+                    "scail2_video_replacement 5s tasks serially"
+                )
+            else:
+                task_summary = (
+                    f"submit one prod Web {self.options.task_type} task "
+                    "as internal user_id=3"
+                )
             summary["ok"] = True
             summary["would_execute"] = [
                 f"verify {self.options.agent_id} heartbeat in prod Central",
                 f"temporarily set {self.options.agent_id} control to enabled",
-                "upload or reuse one non-sensitive PNG in user-data-prod",
+                (
+                    "upload or reuse one reference image and one motion video in "
+                    "user-data-prod"
+                    if self.options.profile == "scail2"
+                    else "upload or reuse one non-sensitive PNG in user-data-prod"
+                ),
                 task_summary,
                 "download the result to runpod_canary_results/prod/<date>/",
                 f"restore {self.options.agent_id} control to disabled",
@@ -516,21 +553,30 @@ class RunPodProdWorkerRunner:
         summary["tasks"] = []
         self._set_agent_control("enabled", reason="runpod_prod_worker_canary")
         try:
-            image_object_key = self._resolve_canary_image(summary)
             if self.options.profile == "image_to_video":
+                image_object_key = self._resolve_canary_image(summary)
                 task_results = [
                     self._run_image_to_video_task(image_object_key, summary)
                 ]
             elif self.options.profile == "wan22_video_v2":
+                image_object_key = self._resolve_canary_image(summary)
                 task_results = [
                     self._run_wan22_video_v2_task(image_object_key, summary)
                 ]
             elif self.options.profile == "i2i_pro":
+                image_object_key = self._resolve_canary_image(summary)
                 task_results = [
                     self._run_i2i_pro_task_case(task_case, summary)
                     for task_case in self._i2i_pro_task_cases(image_object_key)
                 ]
+            elif self.options.profile == "scail2":
+                scail2_inputs = self._resolve_scail2_inputs(summary)
+                task_results = [
+                    self._run_scail2_task_case(task_case, summary)
+                    for task_case in self._scail2_task_cases(scail2_inputs)
+                ]
             else:
+                image_object_key = self._resolve_canary_image(summary)
                 task_results = [self._run_img2img_task(image_object_key, summary)]
             summary["tasks"].extend(task_results)
             summary["runpod_task_verified"] = all(
@@ -1512,10 +1558,25 @@ class RunPodProdWorkerRunner:
             self.options.output_dir / f"runpod_prod_canary_{int(time.time())}.png"
         )
         write_canary_png(image_path)
+        object_key = self._upload_bytes_to_user_data(
+            filename=image_path.name,
+            content_type="image/png",
+            body=image_path.read_bytes(),
+        )
+        self._phase(summary, "upload_prod_test_image", "ok", {"object_key": object_key})
+        return object_key
+
+    def _upload_bytes_to_user_data(
+        self,
+        *,
+        filename: str,
+        content_type: str,
+        body: bytes,
+    ) -> str:
         presign = self._http_json(
             "GET",
             _join_url(self.options.web_api_url, "storage", "presigned-url"),
-            params={"filename": image_path.name, "content_type": "image/png"},
+            params={"filename": filename, "content_type": content_type},
             headers=self._web_auth_headers(),
         )
         object_key = str(presign.get("object_key") or "")
@@ -1527,12 +1588,121 @@ class RunPodProdWorkerRunner:
         self._http_request(
             "PUT",
             upload_url,
-            body=image_path.read_bytes(),
-            headers={"Content-Type": "image/png"},
+            body=body,
+            headers={"Content-Type": content_type},
             expected_statuses=(200, 201, 204),
         )
-        self._phase(summary, "upload_prod_test_image", "ok", {"object_key": object_key})
         return object_key
+
+    def _resolve_scail2_inputs(self, summary: dict[str, Any]) -> dict[str, str]:
+        reference_key = (
+            str(self.options.scail2_reference_object_key or "").strip()
+            or str(self.options.input_object_key or "").strip()
+        )
+        motion_key = str(self.options.scail2_motion_video_object_key or "").strip()
+        reused: dict[str, str] = {}
+        if reference_key:
+            reused["reference_image_key"] = reference_key
+        if motion_key:
+            reused["motion_video_key"] = motion_key
+        if reused:
+            self._phase(summary, "reuse_prod_scail2_inputs", "ok", reused)
+        if not reference_key:
+            self._phase(summary, "upload_prod_scail2_reference_image", "running")
+            reference_bytes = self._download_scail2_sample(
+                SCAIL2_SAMPLE_REFERENCE_URL,
+                label="reference image",
+            )
+            reference_key = self._upload_bytes_to_user_data(
+                filename=f"prod_scail2_reference_{int(time.time())}.jpg",
+                content_type="image/jpeg",
+                body=reference_bytes,
+            )
+            self._phase(
+                summary,
+                "upload_prod_scail2_reference_image",
+                "ok",
+                {"object_key": reference_key, "bytes": len(reference_bytes)},
+            )
+        if not motion_key:
+            self._phase(summary, "upload_prod_scail2_motion_video", "running")
+            motion_bytes = self._download_scail2_sample(
+                SCAIL2_SAMPLE_MOTION_VIDEO_URL,
+                label="motion video",
+            )
+            motion_key = self._upload_bytes_to_user_data(
+                filename=f"prod_scail2_motion_{int(time.time())}.mp4",
+                content_type="video/mp4",
+                body=motion_bytes,
+            )
+            self._phase(
+                summary,
+                "upload_prod_scail2_motion_video",
+                "ok",
+                {"object_key": motion_key, "bytes": len(motion_bytes)},
+            )
+        return {
+            "reference_image_key": reference_key,
+            "motion_video_key": motion_key,
+        }
+
+    def _download_scail2_sample(self, url: str, *, label: str) -> bytes:
+        response = self._http_request(
+            "GET",
+            url,
+            headers={"User-Agent": "AllBot-RunPod-Prod-SCAIL2-Canary/1.0"},
+            expected_statuses=(200,),
+        )
+        raw = response["raw"]
+        if not raw:
+            raise RunPodProdWorkerError(
+                f"SCAIL-2 prod canary sample {label} download returned empty"
+            )
+        return raw
+
+    def _scail2_task_cases(self, test_input: dict[str, str]) -> list[dict[str, Any]]:
+        reference_key = str(test_input.get("reference_image_key") or "")
+        motion_key = str(test_input.get("motion_video_key") or "")
+        if not reference_key or not motion_key:
+            raise RunPodProdWorkerError(
+                "SCAIL-2 prod canary requires reference_image_key and motion_video_key"
+            )
+        base_inputs = {
+            "images": [reference_key, motion_key],
+            "image": reference_key,
+            "video": motion_key,
+            "resolution": "512x896",
+            "duration": 5,
+            "seed": 20260617,
+        }
+        prompt = self.options.prompt or (
+            "cinematic action transfer, consistent character identity, natural motion"
+        )
+        negative_prompt = self.options.negative_prompt or SCAIL2_CANARY_NEGATIVE_PROMPT
+        return [
+            {
+                "label": "prod_scail2_action_transfer_5s",
+                "expected_central_task_type": PROD_SCAIL2_ACTION_TRANSFER_TASK_TYPE,
+                "payload": {
+                    "task_type": PROD_SCAIL2_ACTION_TRANSFER_TASK_TYPE,
+                    "inputs": dict(base_inputs),
+                    "prompt": prompt,
+                    "negative_prompt": negative_prompt,
+                    "priority": 0,
+                },
+            },
+            {
+                "label": "prod_scail2_video_replacement_5s",
+                "expected_central_task_type": PROD_SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
+                "payload": {
+                    "task_type": PROD_SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
+                    "inputs": dict(base_inputs),
+                    "prompt": prompt,
+                    "negative_prompt": negative_prompt,
+                    "priority": 0,
+                },
+            },
+        ]
 
     def _i2i_pro_task_cases(self, image_object_key: str) -> list[dict[str, Any]]:
         return [
@@ -1623,6 +1793,58 @@ class RunPodProdWorkerRunner:
             raise RunPodProdWorkerError(f"{label}: Web result did not become success")
         task_result.update(
             self._download_result(
+                task_id=task_id,
+                result_url=result_url,
+                artifact_prefix=label,
+            )
+        )
+        self._phase(summary, f"task_{label}", "ok", task_result)
+        return task_result
+
+    def _run_scail2_task_case(
+        self,
+        task_case: dict[str, Any],
+        summary: dict[str, Any],
+    ) -> dict[str, Any]:
+        label = str(task_case["label"])
+        expected_task_type = str(task_case["expected_central_task_type"])
+        self._phase(summary, f"task_{label}", "running")
+        submit_payload = self._http_json(
+            "POST",
+            _join_url(self.options.web_api_url, "tasks", "generate"),
+            json_body=task_case["payload"],
+            headers=self._web_auth_headers(),
+        )
+        task_id = str(submit_payload.get("task_id") or "")
+        if not task_id:
+            raise RunPodProdWorkerError(f"{label}: missing task_id in Web response")
+        final_status, pop_evidence = self._wait_task_done(task_id)
+        task_result: dict[str, Any] = {
+            "label": label,
+            "registry_task_id": task_id,
+            "task_type": task_case["payload"]["task_type"],
+            "expected_central_task_type": expected_task_type,
+            "central_status": final_status.get("status"),
+            "central_task_type": final_status.get("task_type"),
+            "pop_evidence": pop_evidence,
+        }
+        if str(final_status.get("task_type") or "") != expected_task_type:
+            raise RunPodProdWorkerError(
+                f"{label}: Central task_type is {final_status.get('task_type')}, "
+                f"expected {expected_task_type}"
+            )
+        if final_status.get("status") != "done":
+            raise RunPodProdWorkerError(
+                f"{label}: Central terminal status is {final_status.get('status')}"
+            )
+        result_payload = self._wait_web_result(task_id)
+        result_url = str(result_payload.get("result_url") or "")
+        task_result["web_result_status"] = result_payload.get("status")
+        task_result["result_path"] = result_url_path(result_url)
+        if result_payload.get("status") != "success" or not result_url:
+            raise RunPodProdWorkerError(f"{label}: Web result did not become success")
+        task_result.update(
+            self._download_video_result(
                 task_id=task_id,
                 result_url=result_url,
                 artifact_prefix=label,
@@ -2275,6 +2497,8 @@ def _prod_task_type_for_profile(profile: str) -> str:
         return PROD_WAN22_VIDEO_V2_TASK_TYPE
     if profile_key == "i2i_pro":
         return PROD_I2I_PRO_TASK_TYPE
+    if profile_key == "scail2":
+        return PROD_SCAIL2_TASK_TYPE
     return PROD_TASK_TYPE
 
 
@@ -2328,6 +2552,20 @@ def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
             "image_exact": "",
             "image_prefix": "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:",
             "workflow_overrides": RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
+        }
+    if profile_key == "scail2":
+        return {
+            "runpod_task_type": PROD_SCAIL2_TASK_TYPE,
+            "runtime_profile": "scail2",
+            "supported_task_types": RUNPOD_SCAIL2_SUPPORTED_TASK_TYPES,
+            "model_prefix": settings.model_prefix_scail2 or RUNPOD_SCAIL2_MODEL_PREFIX,
+            "model_manifest_key": (
+                settings.model_manifest_key_scail2
+                or RUNPOD_SCAIL2_MODEL_MANIFEST_KEY
+            ),
+            "image_exact": "",
+            "image_prefix": RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
+            "workflow_overrides": "",
         }
     return {
         "runpod_task_type": "img2img_lora",
@@ -2514,7 +2752,7 @@ def _prod_manual_slot_from_pod_name(
 
 def _candidate_prod_profiles(profile: str | None) -> tuple[str, ...]:
     if profile is None:
-        return ("img2img", "image_to_video", "wan22_video_v2", "i2i_pro")
+        return ("img2img", "image_to_video", "wan22_video_v2", "i2i_pro", "scail2")
     return (normalize_prod_worker_profile(profile),)
 
 
