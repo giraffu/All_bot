@@ -20,6 +20,7 @@ from botocore.config import Config as BotoConfig
 from botocore.exceptions import BotoCoreError, ClientError
 from minio import Minio
 from minio.error import InvalidResponseError, S3Error
+from urllib3.exceptions import HTTPError as Urllib3HTTPError
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -462,7 +463,7 @@ class R2Client:
                     self._sleep_before_retry(attempt)
                     continue
                 raise
-            except (BotoCoreError, OSError):
+            except (BotoCoreError, OSError, Urllib3HTTPError):
                 if attempt >= self.operation_attempts:
                     raise
                 self._sleep_before_retry(attempt)
@@ -576,7 +577,7 @@ class MinioSource:
 
 def build_minio_sources(args: argparse.Namespace) -> list[MinioSource]:
     sources: list[MinioSource] = []
-    legacy_endpoint = os.getenv("LEGACY_MINIO_ENDPOINT")
+    legacy_endpoint = args.legacy_minio_endpoint or os.getenv("LEGACY_MINIO_ENDPOINT")
     legacy_access = os.getenv("LEGACY_MINIO_ACCESS_KEY")
     legacy_secret = os.getenv("LEGACY_MINIO_SECRET_KEY")
     if legacy_endpoint and legacy_access and legacy_secret:
@@ -690,7 +691,7 @@ def process_objects(
                 history_count=history_count(item),
                 source_labels=sorted(item.source_labels),
             )
-        except (ClientError, BotoCoreError, S3Error, OSError) as exc:
+        except (ClientError, BotoCoreError, S3Error, OSError, Urllib3HTTPError) as exc:
             logger.warning(
                 "Failed to process target=%s kind=%s: %s",
                 item.target_key,
@@ -779,7 +780,14 @@ def process_source_results(
                 history_count=source_result.history_count,
                 source_labels=source_result.source_labels,
             )
-        except (ClientError, BotoCoreError, S3Error, OSError, ValueError) as exc:
+        except (
+            ClientError,
+            BotoCoreError,
+            S3Error,
+            OSError,
+            Urllib3HTTPError,
+            ValueError,
+        ) as exc:
             logger.warning(
                 "Failed to process target=%s kind=%s: %s",
                 source_result.target_key,
@@ -953,6 +961,10 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "--minio-buckets",
         default="bot-data,comfyui-temp",
         help="逗号分隔的 MinIO 源桶候选。",
+    )
+    parser.add_argument(
+        "--legacy-minio-endpoint",
+        help="覆盖热 legacy MinIO endpoint；本地主机补数时可用 127.0.0.1:9000 避免绕 Tailscale。",
     )
     parser.add_argument(
         "--cold-minio-endpoint",

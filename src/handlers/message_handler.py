@@ -40,6 +40,7 @@ from src.handlers.message_handler_menu import (
     build_photo_edit_payload,
     build_recharge_payload,
     build_video_edit_payload,
+    build_video_to_video_payload,
     reply_with_async_payload,
     reply_with_built_payload,
 )
@@ -184,6 +185,13 @@ handle_video_edit_menu = _build_built_menu_handler(
     build_payload_ref=lambda: build_video_edit_payload,
     include_context=True,
     decorators=(prompt_route("menu.video_edit"),),
+)
+
+handle_video_to_video_menu = _build_built_menu_handler(
+    handler_name="handle_video_to_video_menu",
+    build_payload_ref=lambda: build_video_to_video_payload,
+    include_context=True,
+    decorators=(prompt_route("menu.video_to_video"),),
 )
 
 handle_gallery_menu = _build_built_menu_handler(

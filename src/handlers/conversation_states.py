@@ -9,6 +9,15 @@ class FaceVideoState(IntEnum):
     SELECT_RESOLUTION = auto()
 
 
+class Scail2VideoState(IntEnum):
+    """SCAIL-2 视频生视频流程的状态枚举"""
+
+    WAIT_REFERENCE_IMAGE = auto()
+    WAIT_MOTION_VIDEO = auto()
+    WAIT_PROMPT = auto()
+    WAIT_DURATION = auto()
+
+
 class EditImageState(IntEnum):
     """自由P图/幻想换脸流程的状态枚举"""
 

@@ -25,7 +25,7 @@ def get_main_menu_keyboard(lang: str) -> ReplyKeyboardMarkup:
         [
             get_text("menu.photo_edit", lang),
             get_text("menu.video_edit", lang),
-            get_text("menu.face_video", lang),
+            get_text("menu.video_to_video", lang),
         ],
         [
             get_text("menu.txt2img", lang),
@@ -67,6 +67,19 @@ def get_video_edit_keyboard(lang: str) -> ReplyKeyboardMarkup:
             get_text("menu.video_edit_undress_tongue", lang),
             get_text("menu.video_edit_closeup_blowjob", lang),
         ],
+        [get_text("menu.back_main", lang)],
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+
+@lru_cache(maxsize=10)
+def get_video_to_video_keyboard(lang: str) -> ReplyKeyboardMarkup:
+    keyboard = [
+        [
+            get_text("menu.video_to_video_replacement", lang),
+            get_text("menu.video_to_video_action_transfer", lang),
+        ],
+        [get_text("menu.face_video", lang)],
         [get_text("menu.back_main", lang)],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)

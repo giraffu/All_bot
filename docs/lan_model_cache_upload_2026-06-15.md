@@ -89,7 +89,7 @@ Additional verification:
 ## SCAIL-2 LAN AIO Runtime Addendum - 2026-06-17
 
 SCAIL-2 ComfyUI workflow assets and model weights are staged for the gpu-002
-LAN AIO SCAIL-2 runtime. This runtime backs the Web test station features
+LAN AIO SCAIL-2 runtime. This runtime backs the Web test station and test Bot features
 `scail2_action_transfer` (动作迁移) and `scail2_video_replacement` (视频换人),
 but it is not a cloud-prod capability and does not register itself as a
 Central worker. The runtime container provides ComfyUI; the test worker

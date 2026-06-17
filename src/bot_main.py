@@ -306,6 +306,7 @@ def main():
     from src.handlers.fsm.ltx_video_fsm import get_ltx_video_fsm_handler
     from src.handlers.fsm.quick_image_fsm import get_quick_image_fsm_handler
     from src.handlers.fsm.quick_video_fsm import get_quick_video_fsm_handler
+    from src.handlers.fsm.scail2_video_fsm import get_scail2_video_fsm_handler
     from src.handlers.fsm.image_to_video_fsm import get_image_to_video_fsm_handler
     from src.handlers.fsm.wan22_video_v2_fsm import get_wan22_video_v2_fsm_handler
     from src.handlers.fsm.txt2img_fsm import get_txt2img_fsm_handler
@@ -319,6 +320,7 @@ def main():
     app.add_handler(TypeHandler(Update, global_middleware), group=-1)
     app.add_handler(get_affiliate_redeem_fsm_handler())
     app.add_handler(get_face_video_fsm_handler())
+    app.add_handler(get_scail2_video_fsm_handler())
     app.add_handler(get_faceswap_fsm_handler())
     app.add_handler(get_txt2img_fsm_handler())
     app.add_handler(get_edit_image_fsm_handler())

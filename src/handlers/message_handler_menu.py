@@ -18,6 +18,12 @@ def build_video_edit_payload(context) -> tuple[str, object]:
     return context.t("system.video_edit_hint"), get_video_edit_keyboard(context.lang)
 
 
+def build_video_to_video_payload(context) -> tuple[str, object]:
+    from src.i18n.keyboards import get_video_to_video_keyboard
+
+    return context.t("system.video_to_video_hint"), get_video_to_video_keyboard(context.lang)
+
+
 def build_gallery_payload(context) -> tuple[str, None]:
     return (context.t("system.gallery_web_hint"), None)
 

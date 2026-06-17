@@ -58,7 +58,7 @@
 
 `video_insert` / `video_edit` 在 worker 能力列表中只表示 legacy alias，canonical 执行面类型是 `image_to_video`。排障或扩容时不要为它们新建独立 workflow、模型 profile 或 RunPod manifest。
 
-SCAIL-2 动作迁移 / 视频换人目前只属于云测试 Web 链路：`cloud_worker_test_08` 指向 gpu-002 的 LAN AIO SCAIL-2 runtime `http://192.168.1.2:8190`，声明 `scail2_action_transfer,scail2_video_replacement`。runtime 容器 `allbot-lan-aio-gpu-002-gpu0-scail2-test` 本身只跑 ComfyUI、模型同步与 workflow 资产，不注册 Central worker；不要把它误判为云正式 `cloud-prod-comfy-agent-6` 能力。
+SCAIL-2 动作迁移 / 视频换人目前只属于云测试 Web 与测试 Bot 链路：`cloud_worker_test_08` 指向 gpu-002 的 LAN AIO SCAIL-2 runtime `http://192.168.1.2:8190`，声明 `scail2_action_transfer,scail2_video_replacement`。runtime 容器 `allbot-lan-aio-gpu-002-gpu0-scail2-test` 本身只跑 ComfyUI、模型同步与 workflow 资产，不注册 Central worker；不要把它误判为云正式 `cloud-prod-comfy-agent-6` 能力。
 
 所有 worker 挂载：
 - `/home/hfy/APP/All_bot/workers/comfy_agent/workflows -> /app/worker/workflows`
