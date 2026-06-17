@@ -86,6 +86,43 @@ Additional verification:
 - Disk after upload: `/srv/allbot/model-cache-lan` about `246G`, filesystem about
   `45%` used
 
+## SCAIL-2 Staging Addendum - 2026-06-17
+
+SCAIL-2 ComfyUI workflow assets and model weights were staged for LAN AIO
+experimentation only. This does not add a production task type or enable worker
+routing by itself.
+
+- Workflow source: `https://comfyui.nomadoor.net/en/basic-workflows/scail-2/`
+- Workflow files staged under both `workers/comfy_agent/workflows/` and
+  `remote_workers/comfy_agent/workflows/`:
+  - `SCAIL-2_Animation.json`
+  - `SCAIL-2_Replacement.json`
+  - `SCAIL-2_Animation_multi-char.json`
+  - `SCAIL-2_Animation_WAN-Context-Windows.json`
+- Workflow status: original Nomadoor ComfyUI UI workflow JSON. Before wiring
+  SCAIL-2 into a worker task type, export the selected graph in ComfyUI API
+  format and add the matching task mapping/patcher/profile entries.
+- LAN cache manifest: `scail2/2026-06-17-test/manifest.json`
+- Files: `6`
+- Total size: about `26.48 GiB`
+- Included model paths:
+  - `checkpoints/sam3.1_multiplex_fp16.safetensors`
+  - `clip_vision/clip_vision_h.safetensors`
+  - `diffusion_models/wan2.1_14B_SCAIL_2_fp8_scaled.safetensors`
+  - `loras/Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors`
+  - `text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors`
+  - `vae/wan_2.1_vae.safetensors`
+
+Verification performed:
+
+- Fetched `scail2/2026-06-17-test/manifest.json` from LAN MinIO.
+- Checked every manifest object with S3 HEAD and matched `ContentLength` to
+  `size_bytes`.
+- Reused existing LAN cache objects for `umt5_xxl_fp8_e4m3fn_scaled.safetensors`
+  and `wan_2.1_vae.safetensors`.
+- Validated current worker workflow mappings for both local and remote worker
+  workflow directories; existing mapping count remained `12`.
+
 ## Regression
 
 ```bash
