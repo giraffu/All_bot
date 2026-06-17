@@ -311,7 +311,9 @@ class RunPodProdWorkerRunner:
         self.provider = provider
         self.options = options
         self._sleep = sleep_func
-        self._emit_func = emit_func or (lambda message: print(message, file=sys.stderr))
+        self._emit_func = emit_func or (
+            lambda message: print(message, file=sys.stderr, flush=True)
+        )
 
     def run(self) -> dict[str, Any]:
         summary: dict[str, Any] = {
@@ -974,6 +976,7 @@ class RunPodProdWorkerRunner:
             "disabled",
             reason=create_reason,
         )
+        self._phase(summary, f"runpod_create_pod_{slot}", "running")
         create_payload = provider.create_pod(
             task_type=self.options.task_type,
             environment=self.options.environment,

@@ -4,12 +4,14 @@ import {
   CloudServerOutlined,
   DeleteOutlined,
   PlusOutlined,
+  StopOutlined,
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import {
   fetchRunPodOperations,
   fetchRunPodProfiles,
   scaleRunPodCapacity,
+  terminateRunPodOperation,
 } from '../api/api'
 
 type RunPodProfile = {
@@ -34,6 +36,9 @@ type RunPodOperation = {
   ended_at?: string
   exit_code?: number
   error?: string
+  can_terminate?: boolean
+  terminate_requested?: boolean
+  cleanup_status?: string
 }
 
 const emit = defineEmits<{
@@ -65,6 +70,7 @@ const fallbackProfiles: RunPodProfile[] = [
 
 const open = ref(false)
 const submitting = ref(false)
+const terminatingOperationIds = ref<Set<string>>(new Set())
 const profiles = ref<RunPodProfile[]>(fallbackProfiles)
 const operations = ref<RunPodOperation[]>([])
 const rows = ref<ScaleRow[]>([
@@ -93,7 +99,27 @@ const statusColor = (status: string) => {
   if (status === 'succeeded') return 'green'
   if (status === 'failed') return 'red'
   if (status === 'running') return 'blue'
+  if (status === 'terminating') return 'orange'
+  if (status === 'terminated') return 'orange'
+  if (status === 'terminate_failed') return 'red'
   return 'default'
+}
+
+const canTerminateOperation = (operation: RunPodOperation) =>
+  operation.can_terminate === true ||
+  (operation.action === 'add' && operation.status === 'running' && !operation.terminate_requested)
+
+const isTerminatingOperation = (operationId: string) =>
+  terminatingOperationIds.value.has(operationId)
+
+const setTerminatingOperation = (operationId: string, loading: boolean) => {
+  const next = new Set(terminatingOperationIds.value)
+  if (loading) {
+    next.add(operationId)
+  } else {
+    next.delete(operationId)
+  }
+  terminatingOperationIds.value = next
 }
 
 const loadProfiles = async () => {
@@ -168,6 +194,21 @@ const submit = async () => {
     message.error('RunPod 操作提交失败')
   } finally {
     submitting.value = false
+  }
+}
+
+const terminateOperation = async (operation: RunPodOperation) => {
+  setTerminatingOperation(operation.id, true)
+  try {
+    await terminateRunPodOperation(operation.id)
+    message.success('已提交终止操作，正在释放对应 RunPod')
+    await loadOperations()
+    emit('changed')
+  } catch (err) {
+    console.error(err)
+    message.error('RunPod 终止提交失败')
+  } finally {
+    setTerminatingOperation(operation.id, false)
   }
 }
 
@@ -254,15 +295,33 @@ onUnmounted(() => {
             :key="operation.id"
             class="flex items-center justify-between gap-3 text-xs border border-gray-100 rounded px-2 py-1"
           >
-            <span class="truncate">
+            <span class="min-w-0 flex-1 truncate">
               {{ operation.action }} · {{ profileLabel(operation.profile) }}
               <span v-if="operation.requested_count !== null && operation.requested_count !== undefined">
                 · 新增 {{ operation.requested_count }}
               </span>
             </span>
-            <a-tag :color="statusColor(operation.status)" class="m-0 shrink-0">
-              {{ operation.status }}
-            </a-tag>
+            <div class="flex items-center gap-2 shrink-0">
+              <a-tag :color="statusColor(operation.status)" class="m-0 shrink-0">
+                {{ operation.status }}
+              </a-tag>
+              <a-popconfirm
+                v-if="canTerminateOperation(operation)"
+                title="终止该次 RunPod 新增操作并释放对应 Pod？"
+                ok-text="终止"
+                cancel-text="取消"
+                @confirm="terminateOperation(operation)"
+              >
+                <a-button
+                  size="small"
+                  danger
+                  :loading="isTerminatingOperation(operation.id)"
+                >
+                  <template #icon><stop-outlined /></template>
+                  终止
+                </a-button>
+              </a-popconfirm>
+            </div>
           </div>
         </div>
       </div>

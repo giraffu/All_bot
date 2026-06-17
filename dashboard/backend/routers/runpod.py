@@ -7,6 +7,7 @@ from dashboard.backend.services.runpod_admin_service import (
     get_runpod_profiles_payload,
     pause_runpod_worker_payload,
     start_runpod_scale_payload,
+    terminate_runpod_operation_payload,
 )
 
 router = APIRouter(prefix="/api/runpod", tags=["runpod"])
@@ -20,6 +21,11 @@ async def get_runpod_profiles():
 @router.get("/operations")
 async def get_runpod_operations():
     return await get_runpod_operations_payload()
+
+
+@router.post("/operations/{operation_id}/terminate")
+async def terminate_runpod_operation(operation_id: str):
+    return await terminate_runpod_operation_payload(operation_id)
 
 
 @router.post("/scale")

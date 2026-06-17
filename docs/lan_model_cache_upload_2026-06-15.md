@@ -109,7 +109,7 @@ routing by itself.
   - `checkpoints/sam3.1_multiplex_fp16.safetensors`
   - `clip_vision/clip_vision_h.safetensors`
   - `diffusion_models/wan2.1_14B_SCAIL_2_fp8_scaled.safetensors`
-  - `loras/Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors`
+  - `loras/Wan2.1/Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors`
   - `text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors`
   - `vae/wan_2.1_vae.safetensors`
 
@@ -120,8 +120,14 @@ Verification performed:
   `size_bytes`.
 - Reused existing LAN cache objects for `umt5_xxl_fp8_e4m3fn_scaled.safetensors`
   and `wan_2.1_vae.safetensors`.
+- Updated the LoRA `relative_path` to the workflow dropdown path
+  `loras/Wan2.1/Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors`
+  while reusing the existing sha256 object.
 - Validated current worker workflow mappings for both local and remote worker
   workflow directories; existing mapping count remained `12`.
+- Test-only runtime helper: `scripts/lan_scail2_aio_test.sh`; container
+  `allbot-lan-aio-gpu-002-gpu0-scail2-test` uses the same LAN manifest and does
+  not register an AllBot task type.
 
 ## Regression
 

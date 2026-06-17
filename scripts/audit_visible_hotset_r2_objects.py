@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -517,6 +518,7 @@ async def audit_candidates(
     auditor: R2HeadAuditor,
     include_input_files: bool,
     concurrency: int,
+    progress_interval: int,
 ) -> list[HistoryAuditResult]:
     queue: asyncio.Queue[dict] = asyncio.Queue()
     for candidate in candidates:
@@ -524,8 +526,11 @@ async def audit_candidates(
 
     results: list[HistoryAuditResult] = []
     results_lock = asyncio.Lock()
+    completed = 0
+    total = len(candidates)
 
     async def worker() -> None:
+        nonlocal completed
         while True:
             try:
                 candidate = queue.get_nowait()
@@ -539,6 +544,15 @@ async def audit_candidates(
                 )
                 async with results_lock:
                     results.append(result)
+                    completed += 1
+                    if progress_interval > 0 and (
+                        completed == total or completed % progress_interval == 0
+                    ):
+                        logger.info(
+                            "Audited %s/%s visible hotset histories",
+                            completed,
+                            total,
+                        )
             finally:
                 queue.task_done()
 
@@ -857,7 +871,13 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "--concurrency",
         type=int,
         default=48,
-        help="R2 HEAD 并发数，默认 48。",
+        help="R2 HEAD 并发数与线程池 worker 数，默认 48。",
+    )
+    parser.add_argument(
+        "--progress-interval",
+        type=int,
+        default=1000,
+        help="每审计多少条 History 输出一次进度日志；0 表示关闭，默认 1000。",
     )
     parser.add_argument(
         "--db-batch-size",
@@ -903,12 +923,21 @@ async def async_main(args: argparse.Namespace) -> tuple[Path, Path, Path]:
     if not auditor.configured:
         raise RuntimeError("R2 HEAD client 未初始化，无法审计 R2 对象。")
 
-    results = await audit_candidates(
-        candidates,
-        auditor=auditor,
-        include_input_files=not args.skip_input_files,
-        concurrency=args.concurrency,
+    executor = ThreadPoolExecutor(
+        max_workers=max(1, args.concurrency),
+        thread_name_prefix="r2-head-audit",
     )
+    try:
+        asyncio.get_running_loop().set_default_executor(executor)
+        results = await audit_candidates(
+            candidates,
+            auditor=auditor,
+            include_input_files=not args.skip_input_files,
+            concurrency=args.concurrency,
+            progress_interval=args.progress_interval,
+        )
+    finally:
+        executor.shutdown(wait=True, cancel_futures=True)
     summary = summarize_audit_results(
         results,
         selected_count=len(history_ids),

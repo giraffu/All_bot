@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
+import signal
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -26,6 +28,16 @@ DEFAULT_OPERATION_LOG_LINES = int(
 )
 DEFAULT_MAX_OPERATION_RECORDS = int(
     os.getenv("DASHBOARD_RUNPOD_MAX_OPERATION_RECORDS", "100")
+)
+FINISHED_OPERATION_STATUSES = {
+    "succeeded",
+    "failed",
+    "terminated",
+    "terminate_failed",
+}
+TERMINABLE_OPERATION_STATUSES = {"pending", "running", "terminating"}
+RUNPOD_CREATE_SLOT_LOG_RE = re.compile(
+    r"\brunpod_create_pod_(?P<slot>\d+):\s*(?:running|ok)\b"
 )
 
 RUNPOD_PROFILE_OPTIONS: tuple[dict[str, Any], ...] = (
@@ -68,7 +80,14 @@ class RunPodAdminOperation:
     pid: int | None = None
     exit_code: int | None = None
     error: str | None = None
+    terminate_requested: bool = False
+    cleanup_slots: list[str] = field(default_factory=list)
+    cleanup_status: str | None = None
+    cleanup_error: str | None = None
+    cleanup_commands: list[list[str]] = field(default_factory=list)
+    cleanup_exit_codes: list[int] = field(default_factory=list)
     log_lines: list[str] = field(default_factory=list)
+    process: Any | None = field(default=None, repr=False)
 
 
 _operations: dict[str, RunPodAdminOperation] = {}
@@ -96,6 +115,15 @@ def _operation_payload(operation: RunPodAdminOperation) -> dict[str, Any]:
         "pid": operation.pid,
         "exit_code": operation.exit_code,
         "error": operation.error,
+        "terminate_requested": operation.terminate_requested,
+        "can_terminate": _can_terminate_operation(operation),
+        "cleanup_slots": list(operation.cleanup_slots),
+        "cleanup_status": operation.cleanup_status,
+        "cleanup_error": operation.cleanup_error,
+        "cleanup_commands": [
+            _redacted_command(command) for command in operation.cleanup_commands
+        ],
+        "cleanup_exit_codes": list(operation.cleanup_exit_codes),
         "log_tail": list(operation.log_lines[-DEFAULT_OPERATION_LOG_LINES:]),
         "command": _redacted_command(operation.command),
     }
@@ -109,9 +137,30 @@ def _append_log(operation: RunPodAdminOperation, line: str) -> None:
     clean = redact_text(line.rstrip())
     if not clean:
         return
+    _record_cleanup_slots_from_log(operation, clean)
     operation.log_lines.append(clean)
     if len(operation.log_lines) > DEFAULT_OPERATION_LOG_LINES:
         operation.log_lines = operation.log_lines[-DEFAULT_OPERATION_LOG_LINES:]
+
+
+def _record_cleanup_slots_from_log(
+    operation: RunPodAdminOperation,
+    line: str,
+) -> None:
+    if operation.action != "add":
+        return
+    for match in RUNPOD_CREATE_SLOT_LOG_RE.finditer(line):
+        slot = f"{int(match.group('slot')):02d}"
+        if slot not in operation.cleanup_slots:
+            operation.cleanup_slots.append(slot)
+
+
+def _can_terminate_operation(operation: RunPodAdminOperation) -> bool:
+    return (
+        operation.action == "add"
+        and operation.status in TERMINABLE_OPERATION_STATUSES
+        and not operation.terminate_requested
+    )
 
 
 def _prune_operations() -> None:
@@ -122,7 +171,7 @@ def _prune_operations() -> None:
     finished = [
         operation
         for operation in _operations.values()
-        if operation.status in {"succeeded", "failed"}
+        if operation.status in FINISHED_OPERATION_STATUSES
     ]
     finished.sort(key=lambda item: item.ended_at or item.created_at)
     overflow = len(_operations) - DEFAULT_MAX_OPERATION_RECORDS
@@ -271,6 +320,45 @@ async def get_runpod_operations_payload() -> dict[str, Any]:
     }
 
 
+async def terminate_runpod_operation_payload(operation_id: str) -> dict[str, Any]:
+    operation = _operations.get(operation_id)
+    if operation is None:
+        raise HTTPException(status_code=404, detail="RunPod operation not found")
+    if operation.action != "add":
+        raise HTTPException(
+            status_code=409,
+            detail="only RunPod add operations can be terminated",
+        )
+    if operation.status not in TERMINABLE_OPERATION_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"RunPod operation is already {operation.status}",
+        )
+
+    if operation.terminate_requested:
+        return {"status": "accepted", "operation": _operation_payload(operation)}
+
+    operation.terminate_requested = True
+    _append_log(operation, "[dashboard-runpod] terminate requested")
+
+    if operation.process is not None:
+        operation.status = "terminating"
+        operation.cleanup_status = operation.cleanup_status or "pending"
+        _terminate_process_group(operation)
+    elif operation.status == "pending":
+        operation.status = "terminated"
+        operation.cleanup_status = "skipped"
+        operation.ended_at = time.time()
+        _append_log(
+            operation,
+            "[dashboard-runpod] operation terminated before process start",
+        )
+    else:
+        operation.status = "terminating"
+
+    return {"status": "accepted", "operation": _operation_payload(operation)}
+
+
 async def start_runpod_scale_payload(
     request: RunPodScaleRequest,
     *,
@@ -414,6 +502,11 @@ async def _run_operation(
     operation = _operations.get(operation_id)
     if operation is None:
         return
+    if operation.terminate_requested:
+        operation.status = "terminated"
+        operation.cleanup_status = "skipped"
+        operation.ended_at = time.time()
+        return
     operation.status = "running"
     operation.started_at = time.time()
     try:
@@ -423,8 +516,13 @@ async def _run_operation(
             env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
+            start_new_session=True,
         )
+        operation.process = process
         operation.pid = process.pid
+        if operation.terminate_requested:
+            operation.status = "terminating"
+            _terminate_process_group(operation)
         assert process.stdout is not None
         while True:
             raw = await process.stdout.readline()
@@ -432,12 +530,109 @@ async def _run_operation(
                 break
             _append_log(operation, raw.decode("utf-8", errors="replace"))
         operation.exit_code = await process.wait()
-        operation.status = "succeeded" if operation.exit_code == 0 else "failed"
-        if operation.exit_code != 0:
-            operation.error = f"runpod operation exited with code {operation.exit_code}"
+        if operation.terminate_requested:
+            cleanup_ok = await _run_termination_cleanup(operation, env=env)
+            operation.status = "terminated" if cleanup_ok else "terminate_failed"
+            if not cleanup_ok:
+                operation.error = operation.cleanup_error
+        else:
+            operation.status = "succeeded" if operation.exit_code == 0 else "failed"
+            if operation.exit_code != 0:
+                operation.error = (
+                    f"runpod operation exited with code {operation.exit_code}"
+                )
     except Exception as exc:
-        operation.status = "failed"
-        operation.error = redact_text(str(exc))
-        logger.exception("RunPod dashboard operation failed")
+        if operation.terminate_requested:
+            operation.status = "terminate_failed"
+            operation.error = redact_text(str(exc))
+            operation.cleanup_error = operation.error
+        else:
+            operation.status = "failed"
+            operation.error = redact_text(str(exc))
+            logger.exception("RunPod dashboard operation failed")
     finally:
+        operation.process = None
         operation.ended_at = time.time()
+
+
+def _terminate_process_group(operation: RunPodAdminOperation) -> None:
+    process = operation.process
+    pid = int(operation.pid or getattr(process, "pid", 0) or 0)
+    if process is None or pid <= 0:
+        _append_log(operation, "[dashboard-runpod] no process was available to kill")
+        return
+    try:
+        os.killpg(pid, signal.SIGTERM)
+        _append_log(operation, f"[dashboard-runpod] sent SIGTERM to process group {pid}")
+    except ProcessLookupError:
+        _append_log(operation, "[dashboard-runpod] process group already exited")
+    except Exception as exc:
+        _append_log(
+            operation,
+            f"[dashboard-runpod] failed to kill process group: {redact_text(str(exc))}",
+        )
+        try:
+            process.terminate()
+        except ProcessLookupError:
+            pass
+
+
+async def _run_termination_cleanup(
+    operation: RunPodAdminOperation,
+    *,
+    env: dict[str, str],
+) -> bool:
+    if operation.action != "add":
+        operation.cleanup_status = "skipped"
+        return True
+
+    cleanup_slots = list(dict.fromkeys(operation.cleanup_slots))
+    if not cleanup_slots:
+        operation.cleanup_status = "skipped"
+        _append_log(
+            operation,
+            "[dashboard-runpod] no created RunPod slot was recorded; cleanup skipped",
+        )
+        return True
+
+    operation.cleanup_status = "running"
+    cleanup_ok = True
+    for slot in cleanup_slots:
+        command = _base_command("down", profile=operation.profile, slot=slot)
+        command.append("--execute")
+        operation.cleanup_commands.append(command)
+        _append_log(operation, f"[dashboard-runpod] cleanup down slot {slot} started")
+        exit_code = await _run_cleanup_command(operation, command=command, env=env)
+        operation.cleanup_exit_codes.append(exit_code)
+        if exit_code != 0:
+            cleanup_ok = False
+            operation.cleanup_error = (
+                f"runpod cleanup down slot {slot} exited with code {exit_code}"
+            )
+            _append_log(operation, f"[dashboard-runpod] cleanup down slot {slot} failed")
+
+    operation.cleanup_status = "succeeded" if cleanup_ok else "failed"
+    return cleanup_ok
+
+
+async def _run_cleanup_command(
+    operation: RunPodAdminOperation,
+    *,
+    command: list[str],
+    env: dict[str, str],
+) -> int:
+    process = await asyncio.create_subprocess_exec(
+        *command,
+        cwd=str(PROJECT_ROOT),
+        env=env,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+        start_new_session=True,
+    )
+    assert process.stdout is not None
+    while True:
+        raw = await process.stdout.readline()
+        if not raw:
+            break
+        _append_log(operation, raw.decode("utf-8", errors="replace"))
+    return await process.wait()

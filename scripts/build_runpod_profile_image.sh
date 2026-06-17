@@ -27,6 +27,9 @@ default_comfyui_ref_for_profile() {
         i2i_pro)
             printf '%s\n' "16cd8d8a8f5f16ce7e5f929fdba9f783990254ea"
             ;;
+        scail2)
+            printf '%s\n' "f026b01ba576d98442839861a0eb0046bc2250d3"
+            ;;
         *)
             printf '%s\n' "master"
             ;;
@@ -39,7 +42,7 @@ Usage:
   scripts/build_runpod_profile_image.sh [options]
 
 Options:
-  --profile <name>       Profile to build: img2img_lora, wan22_aio_video, or i2i_pro.
+  --profile <name>       Profile to build: img2img_lora, wan22_aio_video, i2i_pro, or scail2.
   --image-ref <ref>      Target image ref. Defaults to a local allbot/comfy-runpod-* tag.
   --base-image <ref>     Base image. Defaults per profile; i2i_pro uses yanwk/comfyui-boot:cu128-slim.
   --comfyui-ref <ref>    ComfyUI git ref used when the base image does not include ComfyUI.
@@ -116,6 +119,9 @@ case "$PROFILE" in
     i2i_pro)
         IMAGE_REF="${IMAGE_REF:-allbot/comfy-runpod-i2i-pro:local}"
         ;;
+    scail2)
+        IMAGE_REF="${IMAGE_REF:-allbot/comfy-runpod-scail2:local}"
+        ;;
     *)
         echo "Unsupported RunPod profile: ${PROFILE}" >&2
         exit 2
@@ -154,6 +160,8 @@ if [ -n "$KJNODES_SOURCE" ]; then
     cp -a "$KJNODES_SOURCE" "${cleanup_dir}/ComfyUI-KJNodes"
     dockerfile_for_build="${cleanup_dir}/Dockerfile"
     context_for_build="$cleanup_dir"
+elif [ "$PROFILE" = "scail2" ]; then
+    context_for_build="."
 elif [ "$PROFILE" = "i2i_pro" ] || [ "$PROFILE" = "img2img_lora" ]; then
     cleanup_dir="$(mktemp -d)"
     trap 'rm -rf "$cleanup_dir"' EXIT
@@ -249,6 +257,28 @@ if find "${comfyui_dir}/models" -type f \( \
 fi
 echo "COMFYUI_DIR=${comfyui_dir}"
 echo "WAN22_CUSTOM_NODES_PRESENT=true"
+'
+    elif [ "$PROFILE" = "scail2" ]; then
+        docker run --rm --entrypoint bash "$IMAGE_REF" -lc '
+set -euo pipefail
+comfyui_dir="$(cat /opt/allbot-comfyui-dir)"
+test -f "${comfyui_dir}/main.py"
+test -f "${comfyui_dir}/comfy_extras/nodes_scail.py"
+grep -R "WanSCAILToVideo" "${comfyui_dir}/comfy_extras/nodes_scail.py" >/dev/null
+grep -R "SCAIL2ColoredMask" "${comfyui_dir}/comfy_extras/nodes_scail.py" >/dev/null
+test -d "${comfyui_dir}/custom_nodes/ComfyUI-KJNodes"
+test -d "${comfyui_dir}/custom_nodes/ComfyUI-VideoHelperSuite"
+test -d "${comfyui_dir}/custom_nodes/rgthree-comfy"
+test -d "${comfyui_dir}/custom_nodes/ComfyUI-Frame-Interpolation"
+test -d "${comfyui_dir}/custom_nodes/ComfyUI_Fill-Nodes"
+test -x /opt/allbot/lan_scail2_comfyui_entrypoint.sh
+test -f /opt/allbot/scail2-workflows/SCAIL-2_Animation.json
+command -v ffmpeg >/dev/null
+if find "${comfyui_dir}/models" -type f -name "*.safetensors" -print -quit | grep -q .; then
+  echo "SCAIL-2 model files must stay out of the profile image" >&2
+  exit 1
+fi
+echo "SCAIL2_CORE_AND_CUSTOM_NODES_PRESENT=true"
 '
     else
         docker run --rm --entrypoint bash "$IMAGE_REF" -lc '

@@ -115,10 +115,9 @@ run_controller_with_unavailable_retry() {
     local output_file
     output_file="$(mktemp)"
     set +e
-    run_controller "$command_name" "$@" >"$output_file" 2>&1
+    run_controller "$command_name" "$@" > >(tee "$output_file") 2>&1
     local status=$?
     set -e
-    cat "$output_file"
     if [ "$status" -eq 0 ]; then
       rm -f "$output_file"
       return 0

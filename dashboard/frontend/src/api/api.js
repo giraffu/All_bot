@@ -163,6 +163,9 @@ export const fetchRunPodOperations = async () => get('/api/runpod/operations')
 
 export const scaleRunPodCapacity = async (payload) => post('/api/runpod/scale', payload)
 
+export const terminateRunPodOperation = async (operationId) =>
+  post(`/api/runpod/operations/${operationId}/terminate`)
+
 export const pauseRunPodWorker = async (agentId, payload = {}) =>
   post(`/api/runpod/workers/${agentId}/pause`, payload)
 
