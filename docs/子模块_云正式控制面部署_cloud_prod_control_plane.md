@@ -1,7 +1,7 @@
 # 子模块: 云正式控制面部署 (Cloud Prod Control Plane)
 
 ## 1. 当前生产架构事实
-截至 2026-06-16，正式生产已经切到“云控制面 + 托管 PostgreSQL/Valkey + R2 + 本地 GPU worker”的运行口径。
+截至 2026-06-18，正式生产已经切到“云控制面 + 托管 PostgreSQL/Valkey + R2 + 本地 GPU worker / 手动 RunPod 备用池”的运行口径。
 
 当前长期事实：
 - 云控制面 Droplet：`allbot-do-sgp1-control`，运行目录 `/home/deploy/APP/All_bot`。
@@ -65,7 +65,7 @@ RUNPOD_MODEL_MANIFEST_KEY=img2img_lora/2026-06-10/manifest.json
 
 `prod-worker --profile i2i_pro` 使用 `runpod_prod_i2i_pro_manual_NN` agent 和 `allbot-runpod-prod-i2i-pro-manual-NN` Pod 名称，固定请求 `NVIDIA GeForce RTX 4090`，生产 Pod 不开启 SSH。该 profile 的 `SUPPORTED_TASK_TYPES` 为 `i2i_pro,t2i-pornmaster-turbo,face_swap`，并通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 将 `t2i-pornmaster-turbo` 指向 `txt2img_from_i2i_pro.json`、`face_swap` 指向 `face_swap_v2.json`。`prod-worker` heartbeat 等待默认 `3600s`，覆盖 i2i_pro 首次同步约 36GiB 模型的启动窗口；生产 canary 会串行提交 `i2i_pro`、Web `txt2img` 与 `face_swap` 三单，全部由 `runpod_prod_i2i_pro_manual_NN` 接单并出图后才可启用接正式队列。
 
-`prod-worker --profile scail2` 使用 `runpod_prod_scail2_manual_NN` agent 和 `allbot-runpod-prod-scail2-manual-NN` Pod 名称，固定请求 `NVIDIA GeForce RTX 4090`，生产 Pod 不开启长期 SSH。该 profile 的 `SUPPORTED_TASK_TYPES` 为 `scail2_action_transfer,scail2_video_replacement`，模型从 `allbot-model-cache/scail2/2026-06-17-test/manifest.json` 同步，用户输入和结果只写 `user-data-prod`。生产 canary 会串行提交 `scail2_action_transfer 5s` 与 `scail2_video_replacement 5s` 两单，全部由 `runpod_prod_scail2_manual_NN` 接单并返回可播放 MP4 后，才可与 LAN SCAIL-2 并行 enable。
+`prod-worker --profile scail2` 使用 `runpod_prod_scail2_manual_NN` agent 和 `allbot-runpod-prod-scail2-manual-NN` Pod 名称，固定请求 `NVIDIA GeForce RTX 4090`，生产 Pod 不开启长期 SSH。该 profile 的 `SUPPORTED_TASK_TYPES` 为 `scail2_action_transfer,scail2_video_replacement`，模型从 `allbot-model-cache/scail2/2026-06-17-test/manifest.json` 同步，用户输入和结果只写 `user-data-prod`。生产 canary 会串行提交 `scail2_action_transfer 5s` 与 `scail2_video_replacement 5s` 两单，全部由 `runpod_prod_scail2_manual_NN` 接单并返回可播放 MP4 后，才可与 LAN SCAIL-2 并行 enable。当前长期口径是：`scail2` RunPod 已具备代码、镜像、模型 manifest 与 Dashboard 管理入口，但不是必须常驻的正式容量；没有 heartbeat 或已删除的 `manual_NN` 不能当作可用 worker。SCAIL-2 正式主路径仍以 gpu-002 slot0 LAN runtime 为准，RunPod 只作为手动备用/临时扩容。
 
 RunPod 正式手动 worker 的“启动”和“接单”是两层：`prod-worker up --execute`
 只创建/启动 Pod 并等待 disabled heartbeat；`prod-worker enable --execute` 才把
@@ -77,16 +77,21 @@ worker 没有 `current_task_id`。旧 Pod 原地重启可能复用
 
 正式手动 RunPod 池的容量和 profile 组合按当次运维目标决定，不记录为固定长期事实；
 某次实操的 Pod 数量、创建日期和 profile 组合只应进入运维日志或工单。
-启动、恢复和缩容统一使用 `prod-worker scale --profile <profile> --desired <N>` 管理 slot；
-命令环境必须显式设置 `RUNPOD_DRY_RUN=false`、`RUNPOD_AUTOSCALER_ENABLED=true`、
-`RUNPOD_MAX_PODS_TOTAL=<目标全局managed上限>`、`RUNPOD_MAX_PODS_PER_TYPE=<当前profile上限>`
-和合适的 `RUNPOD_MAX_HOURLY_COST_USD`。若目标 slot 超过默认手动 slot 上限，只在本次命令
-环境中临时设置 `RUNPOD_PROD_MAX_MANUAL_SLOTS=<slot上限>`。如果 RunPod 返回
-`There are no instances currently available`，可按 60-120 秒间隔重跑同一条 `scale`
-命令轮询 4090 库存；不要同时启动多条相同 profile/desired 的创建循环。最终验收以
-`reconcile.managed_count` 等于当次目标 managed Pod 总数、`orphans=[]`、每个目标
-worker heartbeat 存在且 `control.state=enabled` 为准。详细启动、停接、删除和缩容命令见
-`docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` 的“手动云正式备用 worker”。
+日常新增容量统一使用 `scripts/runpod_prod_ops.sh add --profile <profile> --count <N> --execute`；
+它只创建空闲 `manual_NN` slot，不删除、缩容或重建已有 slot。`scale --desired N` 是高级精确目标数入口，
+会删除超出 desired 的 slot，Dashboard 禁止使用。真实 mutation 必须显式设置
+`RUNPOD_DRY_RUN=false` 与 `RUNPOD_AUTOSCALER_ENABLED=true`；`RUNPOD_MAX_PODS_TOTAL`、
+`RUNPOD_MAX_PODS_PER_TYPE`、`RUNPOD_MAX_HOURLY_COST_USD` 不再作为 provider/Dashboard 的容量门禁。
+若目标 slot 超过默认手动 slot 上限，只在本次命令环境中临时设置
+`RUNPOD_PROD_MAX_MANUAL_SLOTS=<slot上限>`。如果 RunPod 返回
+`There are no instances currently available`，优先对同一个 profile/count 使用
+`scripts/runpod_prod_ops.sh add --retry-unavailable --max-attempts N --retry-interval SEC --execute`
+做有界重试；不要并发启动多条相同 profile/count 的创建循环。底层 prod-worker 会按 profile
+持有文件锁，并在每个 slot create 前重新读取 RunPod 列表；发现目标 `manual_NN` 已被占用会在写
+Central control 和创建 Pod 前中止。最终验收以 `reconcile.managed_count` 按目标变化、
+`orphans=[]`、每个目标 worker heartbeat 存在且 control state 符合预期为准。详细启动、
+停接、删除和缩容命令见 `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` 的
+“手动云正式备用 worker”。
 
 ### 2.2 本地执行面
 本地主服务器运行云正式 GPU worker 和一个本地 worker relay/上传 sidecar：
@@ -212,6 +217,28 @@ docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.ym
 ```
 
 目标 service 可替换为 `web-api-prod`、`dashboard-backend-prod`、`dashboard-frontend-prod`、`payment-api-prod` 或 `bot-prod`。生产热修前建议先备份被覆盖文件；当前云端运行目录不应假设一定是完整 Git 工作区。
+
+管理后台单独更新时，只同步 Dashboard 后端/前端相关文件，只重建目标 Dashboard service，不重启 Central/Web/Bot/Payment/imgproxy/worker/RunPod。云正式 Dashboard 健康检查使用 Tailscale 入口：
+
+```bash
+ssh allbot-do-sgp1-control
+cd /home/deploy/APP/All_bot
+
+docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.yml build \
+  dashboard-backend-prod dashboard-frontend-prod
+docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.yml up -d --no-deps \
+  dashboard-backend-prod dashboard-frontend-prod
+
+curl -fsS http://100.107.220.127:8043/api/health
+curl -fsS http://100.107.220.127:8086/api/health
+```
+
+若只改 Dashboard 前端，例如 RunPod 管理页面 profile 列表、按钮识别或展示逻辑，只重建
+`dashboard-frontend-prod` 即可。验证时确认 `cloud-dashboard-frontend-prod` 与
+`cloud-dashboard-backend-prod` healthy，且 `cloud-central-api-prod`、`cloud-web-api-prod`、
+`cloud-tg-bot-prod`、`cloud-payment-api-prod`、`cloud-imgproxy-prod` 的启动时间没有变化。
+Dashboard RunPod 管理入口当前支持 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`
+与 `scail2 / 视频生视频`；它只提交正式手动 RunPod 池新增/暂停/删除操作，不直接启停其它正式服务。
 
 ### 4.2.1 SCAIL-2 低影响正式发布与 RunPod 扩容
 

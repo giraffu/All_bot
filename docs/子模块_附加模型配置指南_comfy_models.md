@@ -148,3 +148,68 @@
 - Telegram：进入【高级图生视频】后应先看到附加模型选择，再要求上传起始图。
 - Web：`ltx_video` 页面和模板应用面板都应能提交 `inputs.lora_items`，并正确回显每个模型的当前强度。
 - Worker：分别验证“多选 LoRA / 单个兼容字段 / 不选 LoRA”三种场景，确认多项注入成功、旧字段仍兼容、无 LoRA 时节点被裁剪后仍能正常出图出视频。
+
+---
+
+## 四、 SCAIL-2 视频生视频工作流
+
+SCAIL-2 当前是正式可用的视频生视频能力，业务上拆成两个真实 task type：
+
+| task type | 用户能力 | API workflow | 关键模式 |
+| :--- | :--- | :--- | :--- |
+| `scail2_action_transfer` | 动作迁移 | `SCAIL-2_Animation_multi-char.api.json` | `replacement_mode=false` |
+| `scail2_video_replacement` | 视频换人 | `SCAIL-2_Replacement.api.json` | `replacement_mode=true` |
+
+Nomadoor 的四个 UI workflow 仍保存在 `workers/comfy_agent/workflows/` 与
+`remote_workers/comfy_agent/workflows/`，用于人工打开 ComfyUI 编辑、对照和 smoke。业务执行必须使用
+派生的 API-format workflow，不得直接把 UI JSON 提交给 worker。
+
+### 1. 用户参数与计费
+- Web payload 使用 `inputs.images=[reference_image_key, motion_video_key]`，第一个 input 是参考图，第二个 input 是驱动视频。
+- Bot 入口位于“视频生视频”二级菜单，顺序为“视频换人 / 动作迁移 / 视频换脸 / 返回主菜单”。
+- Bot 的 SCAIL-2 流程只收参考图片、驱动视频、正向提示词和 `5s/8s` 时长；负面词固定使用 `SCAIL2_DEFAULT_NEGATIVE_PROMPT`。
+- 驱动视频上传上限为 40MB；Web 侧也应按短视频能力限制上传体积，不开放长视频。
+- 固定输出规格为 `512x896`，第一版只开放 `5s=40` 灵石和 `8s=80` 灵石，不承诺 context-window 长视频。
+
+### 2. Worker patcher 约定
+SCAIL-2 workflow 的硬编码节点必须与 `workflow_task_patchers.py` 和测试保持一致：
+
+| 参数 | 节点/输入 |
+| :--- | :--- |
+| 参考图 | `LoadImage 58` |
+| 驱动视频 | `VHS_LoadVideo 113` |
+| 正向提示词 | `CLIPTextEncode 6` |
+| 负向提示词 | `CLIPTextEncode 7` |
+| 生成帧数 | `WanSCAILToVideo 101.length` |
+| 读取帧数 | `VHS_LoadVideo.frame_load_cap` |
+| 输出前缀 | `VHS_VideoCombine 49.filename_prefix` |
+
+时长映射固定为 `5s -> 81`、`8s -> 129`，`VHS_LoadVideo.force_rate=16`，
+`skip_first_frames=0`。`scail2_video_replacement` 必须强制 replacement mode 为 true，
+`scail2_action_transfer` 必须强制 false。重导 workflow 后要同时更新：
+`SCAIL-2_*.api.json`、`mappings.json`、`workflow_task_patchers.py`、
+`src/workflow_mapping_validation.py`、`remote_workers/src/workflow_mapping_validation.py` 与
+`remote_workers/comfy_agent/workflows/`。
+
+### 3. 模型与镜像
+- 模型 manifest 固定为 `allbot-model-cache/scail2/2026-06-17-test/manifest.json`。
+- LoRA 相对路径必须保持 `loras/Wan2.1/Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors`，因为 workflow 的 LoRA 枚举引用带 `Wan2.1/` 子目录。
+- 镜像入口是 `remote_workers/docker/runpod_profiles/scail2/Dockerfile`。
+- 镜像必须包含 ComfyUI SCAIL-2 core 节点、VideoHelperSuite、KJNodes、rgthree、Frame-Interpolation、Fill-Nodes、ffmpeg、bootstrap/sshd 诊断依赖和 `remote_workers/requirements.txt`。
+- 镜像不得 baked 任何 `.safetensors` 模型权重；LAN AIO 与 RunPod 都应启动时从 `allbot-model-cache` 同步模型。
+
+### 4. 运行环境边界
+SCAIL-2 当前有四类运行环境，桶和 worker 不得混用：
+
+| 环境 | runtime/agent | 用户数据桶 | 用途 |
+| :--- | :--- | :--- | :--- |
+| 云测试 LAN | `http://192.168.1.2:8190` + `cloud_worker_test_08` | `user-data-test` | Web/Bot 测试 |
+| 云测试 RunPod | `runpod_test_scail2_*` | `user-data-test` | cloud-test canary / 临时验证 |
+| 云正式 LAN | `lan_aio_prod_gpu002_gpu0_scail2_01` | `user-data-prod` | 当前正式主接单路径 |
+| 云正式 RunPod | `runpod_prod_scail2_manual_NN` | `user-data-prod` | 手动备用/临时扩容，不是默认常驻容量 |
+
+正式 RunPod `scail2` profile 可以通过 Dashboard 或 `scripts/runpod_prod_ops.sh` 创建、暂停、
+删除和 canary，但没有 heartbeat 或已删除的 `manual_NN` 不能算作可用容量。若出现 unhealthy/OOM，
+先 disable，确认无当前任务后 down 删除 Pod；恢复时重新 add、等待 disabled heartbeat、跑两个 5s
+canary MP4，再决定是否 enable。正式用户输入和结果只允许写 `user-data-prod`，模型只允许从
+`allbot-model-cache` 同步。

@@ -83,6 +83,7 @@
 
 ## 4. 服务重建注意事项
 - `web-api`、`payment-api`、Dashboard 等通过镜像 `COPY` 代码的服务，修改代码后都要重建镜像，单纯 `restart` 不会拿到新代码。
+- 只更新管理后台时，操作范围应收窄到 `dashboard-backend-prod` / `dashboard-frontend-prod`：同步相关文件后只 build/up 这两个 service 或其中一个，不重启 Central/Web/Bot/Payment/imgproxy/worker/RunPod。云正式 Dashboard 健康检查优先用 `http://100.107.220.127:8043/api/health` 与 `http://100.107.220.127:8086/api/health`；确认其它正式服务容器启动时间未变化。
 - `workers` 更新环境变量时，应使用 `docker-compose up -d` 触发重新创建，而不是只做 `restart`。
 - 当前受支持的测试环境是云测试控制面；旧本地测试脚本仍可能留在仓库内作为历史迁移/取证材料，但不应被当成回滚目标。
 - 若人工取证确需短时启动旧本地隔离测试栈，应使用独立的 `.env.test`、`backend/docker-compose-test.yml` 与 `workers/docker-compose-test.yml`，并让测试入口服务指向独立的 Central API 端口与独立 Redis 队列；否则可能与正式或云测试环境共用任务调度面。
@@ -130,6 +131,9 @@
 - 双卡 GPU 节点只坏一个 ComfyUI
   - 现象：同一台 GPU 服务器上一个端口异常，另一个端口仍正常。
   - 处理：按 worker 到 Comfy 的映射只重启目标 `comfy0` 或 `comfy1`，并验证未操作端口 `/system_stats` 仍可用。不要整机重启，也不要执行无 service 名 compose 操作。
+- SCAIL-2 正式 RunPod 停摆或 OOM
+  - 现象：`runpod_prod_scail2_manual_NN` heartbeat 进入 `error` / unhealthy，或 RunPod 日志提示内存限制。
+  - 处理：先通过 Central control `disable` 停止接新单，确认 `current_task_id` 为空后用 `scripts/runpod_prod_ops.sh down --profile scail2 --slot NN --execute` 删除 Pod 释放计费资源。不要让 Dashboard 或 CLI 并发创建多条相同 `scail2` add operation；需要恢复时重新 `add --profile scail2 --count 1`，等待 disabled heartbeat、canary 两单 MP4 成功后再决定是否 enable。SCAIL-2 正式主路径仍以 gpu-002 slot0 LAN runtime 为准。
 
 ## 6. 文档维护口径
 - 涉及本地正式灾备 compose 的文档必须和 `safe_deploy.sh` 的真实顺序保持一致；云正式和云测试文档必须分别以对应 cloud compose / cloud deploy 脚本为准。
