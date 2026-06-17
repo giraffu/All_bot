@@ -40,9 +40,9 @@
 - **清理中间产物**：**强制要求**在报告成功写入磁盘后，必须立即通过 Shell 命令彻底删除分析过程中产生的所有临时分析缓存、切片或暂存数据。
 - **最终输出**：排查结束时，仅在终端或对话中输出“报告已生成完毕”及文件的绝对路径，并简要总结全局量化指标与 Critical 级核心风险。**严禁输出大段代码或中间检测细节。**
 
-## 4. 2026-06-03 质量基线快照
+## 4. 历史质量基线
 
-最新一次全局评估报告位于 `logs/code_analysis_report_20260603_2332.md`，评估范围覆盖 `src/`、`backend/app/`、`workers/comfy_agent/`、`frontend/src/`、`tests/` 与核心部署脚本，并按当次要求降权或排除了 Dashboard、支付/订单/会员/affiliate 业务模块。
+2026-06-03 历史全局评估报告位于 `logs/code_analysis_report_20260603_2332.md`，评估范围覆盖 `src/`、`backend/app/`、`workers/comfy_agent/`、`frontend/src/`、`tests/` 与核心部署脚本，并按当次要求降权或排除了 Dashboard、支付/订单/会员/affiliate 业务模块。
 
 ### 4.1 当前总体结论
 - 系统整体已经稳定演进为“Bot/Web 双入口 + task core facade + Central API + Worker + Web side-effect monitor”的分层形态。
@@ -70,3 +70,15 @@
 - 代码质量报告写入 `logs/`，不作为长期入口文档；重要结论应同步到本文件、热点门禁、compat 退出表以及相关 Skill。
 - 若报告发现的事实与 Skill 主张冲突，应先修 Skill，再继续开发。例如 Worker 虽已拆出多个 helper，但 `agent_main.py::process_task` 仍是当前执行链路热点，不能只写成“已完全薄壳化”。
 - 若后续清理 compat 壳或迁移测试 seam，必须同步 `docs/compat_seam_exit_table.md` 与 `scripts/check_compat_registry.sh` 覆盖口径。
+
+## 5. 2026-06-18 复核快照
+
+最新复核报告位于 `logs/code_analysis_report_20260618_0306.md`。本轮覆盖 `src/`、`backend/app/`、`dashboard/backend/`、`workers/comfy_agent/`、`remote_workers/`、`ops/`、`scripts/` 与 `tests/`，并同步抽查知识库、部署 compose、云正式/云测试控制面和运行态资源。
+
+当前结论：
+- 未发现 Critical / High 级架构阻断。
+- `src/core` 未发现 Telegram `Update`、FastAPI `Request/APIRouter` 等平台对象 import，Core Isolation 成立。
+- Alembic 当前为单 head `7f3a9c1d2e4b`。
+- `pytest --collect-only -q` 可收集 1362 个测试；未执行完整测试套件。
+- `ruff check` 剩余 11 个低风险问题，主要为未使用 import 与脚本级 `E402`。
+- 中等维护风险集中在 `workers/comfy_agent/agent_main.py`、`dashboard/backend/services/runpod_admin_service.py` 与 `src/web_api/services/task_submission_service.py`，后续改动应优先加 focused regression。

@@ -28,6 +28,7 @@
 - 阶段 4：本轮完成收口，历史 `bot_task_service.py` compat 壳已下线，`backend/app/main.py`、`backend/app/queue_manager.py` 已通过完整阶段 4 回归
 - 阶段 7：第二批主体完成，已补齐共享详情弹层/工作台壳层 focused 回归、`MyFavorites` 组合流回归，以及 dashboard App 热点基线与独立门禁分组；但 router guard 仍未完全并入共享关闭协议，workflow 对部分新热点文件的 path 触发也仍有缺口
 - 2026-06-03 质量基线：未发现 Critical 级架构阻断，但 Worker 执行编排、Wan22 链式拼接、Gallery 响应组装、Bot 进度监控、练功房 composable 和 workflow 资产双源已进入下一批重点治理队列
+- 2026-06-18 复核：未发现 Critical/High 级架构阻断，Core Isolation 成立；最新报告为 `logs/code_analysis_report_20260618_0306.md`。当前热点关注 `workers/comfy_agent/agent_main.py`、`dashboard/backend/services/runpod_admin_service.py`、`src/web_api/services/task_submission_service.py` 与仍未完全收口的前端生成/练功房重复逻辑。
 
 ## 3. 热点文件
 

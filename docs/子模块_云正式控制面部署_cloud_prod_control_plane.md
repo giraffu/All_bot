@@ -13,6 +13,7 @@
 - 本地 GPU/ComfyUI：仍在武汉内网运行，worker 默认通过本机 `cloud-prod-worker-relay` 访问云 Central API；relay 再经 Tailscale 访问云端。
 - 公共 Web API 与 RMB 支付入口已经由云端控制面承接；`assets.aivison.it.com` 继续保留到 legacy MinIO 的只读代理，但正式应用不再生成该域名 URL。
 - Cloudflare Pages/API Tunnel 已成为正式入口：`web.aivison.it.com` 由 Pages 项目 `allbot-web-prod` 承接，`api.aivison.it.com` 通过云机上的 Cloudflare Tunnel 回源云 Web API `100.107.220.127:8000`。历史 `web-cf-test`/`api-cf-test` 仅作为 canary/归档语义，不再是迁移待办。
+- 当前容量判断口径：本地 compose 声明 `cloud-prod-comfy-agent-1..7`，但实际线上 worker 还可能包含 LAN AIO、`remote_workers` 与手动 RunPod。2026-06-18 03:06 快照为 `active_workers=13`、`healthy_workers=13`、`error_workers=0`、`quarantined_workers=0`；该数字只代表当时运行态，不写成固定长期容量。
 
 ## 2. 服务分布
 
@@ -94,7 +95,7 @@ Central control 和创建 Pod 前中止。最终验收以 `reconcile.managed_cou
 “手动云正式备用 worker”。
 
 ### 2.2 本地执行面
-本地主服务器运行云正式 GPU worker 和一个本地 worker relay/上传 sidecar：
+本地主服务器保留云正式本地 worker compose 和一个本地 worker relay/上传 sidecar。compose 声明 `cloud-prod-comfy-agent-1..7`，但线上实际启停可以按任务容量、LAN AIO 接管、`remote_workers` 和手动 RunPod 状态调整；容量验收应以 `/system/workers` 的目标 worker 集合为准。
 
 | 容器 | 说明 |
 | :--- | :--- |
@@ -110,6 +111,8 @@ Central control 和创建 Pod 前中止。最终验收以 `reconcile.managed_cou
 | `cloud-prod-comfy-agent-6` | `cloud_prod_worker_06` | `192.168.1.2:8188` |
 | `cloud-prod-comfy-agent-7` | `cloud_prod_worker_07` | `192.168.1.2:8189` |
 
+2026-06-18 03:06 本地主服务器 Docker 快照中，`cloud-prod-worker-relay` 以及 `cloud-prod-comfy-agent-1/2/3/5` 处于运行状态，`cloud-prod-comfy-agent-4/6/7` 已退出或由其它接入形态承担容量。不要仅凭本地 compose 表判断线上可用 worker 数；先查 Central `/system/workers`。
+
 运行态分层口径：
 
 | AGENT_ID | Worker Agent 管理 | ComfyUI Runtime | Runtime 纳管口径 |
@@ -117,7 +120,7 @@ Central control 和创建 Pod 前中止。最终验收以 `reconcile.managed_cou
 | `cloud_prod_worker_01` | 本地主服务器 `cloud-prod-comfy-agent-1` 容器 | `gpu-226:8188` 宿主机进程，cwd `/home/ubantu/comfyui` | `comfy_runtime_kind=host_service`，不要执行 `docker restart comfy0` |
 | `cloud_prod_worker_02/03` | 本地主服务器 agent 容器 | `gpu-177` 的 `comfy0/comfy1` Docker 容器 | 只在维护窗口按目标容器操作 |
 | `cloud_prod_worker_04/05` | 本地主服务器 agent 容器 | `gpu-252` 的 `comfy0/comfy1` Docker 容器 | 只在维护窗口按目标容器操作 |
-| `cloud_prod_worker_06/07` | 本地主服务器 agent 容器 | `gpu-002` 的 `comfy0/comfy1` Docker 容器 | 只在维护窗口按目标容器操作 |
+| `cloud_prod_worker_06/07` | 本地主服务器 agent 容器 | `gpu-002` 的 `comfy0/comfy1` Docker 容器 | 保留为 compose/热回滚口径；gpu-002 slot0/slot1 也可能被 LAN AIO 或 SCAIL-2 runtime 接管，操作前先查当前 Central agent 与本机容器状态 |
 
 `POOL_IMAGE_REF`、`runtime_profile`、`node_id` 等 heartbeat/compose 字段是 GPU pool 观测与期望配置声明，不等于底层 ComfyUI runtime 已经被替换成该镜像。确认某个 ComfyUI 的真实运行方式时，以 `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md`、SSH 盘点和 Comfy `/system_stats` 为准。
 
@@ -422,8 +425,8 @@ docker-compose -f docker-compose-cloud-prod-worker.yml up -d --no-deps $services
 
 最终验收：
 - `curl http://100.107.220.127:8003/health` 正常。
-- `/system/workers` 看到 7 个 `cloud_prod_worker_*` heartbeat。
-- 7 个 worker control 状态均为 `enabled`。
+- `/system/workers` 看到当次目标 worker 集合的 heartbeat。若本轮只更新本地 compose worker，至少验证目标 `cloud_prod_worker_*`；若本轮包含 LAN AIO、`remote_workers` 或 RunPod，还要验证对应 agent id、任务类型和 control state。
+- 目标 worker control 状态符合发布计划；需要接正式队列的 worker 为 `enabled`，备用/未验收 worker 保持 `disabled`。
 - 抽选一个低风险 worker 短 TTL 设置 `disabled`，实际 `/pop` 不再接单；随后恢复 `enabled`。
 - 本地 relay `127.0.0.1:8013/ready` 正常，worker 日志无 `relay_forward_failed`、`sidecar_upload_failed`。
 
@@ -506,8 +509,7 @@ docker logs --since 2m --tail 100 cloud-prod-comfy-agent-1
 ```
 
 云 Central 应看到：
-- `active_workers=7`
-- `healthy_workers=7`
+- `active_workers` / `healthy_workers` 与当次预期容量一致；2026-06-18 03:06 快照为 13 个 active/healthy workers，但 LAN AIO、`remote_workers` 与手动 RunPod 数量都是运行态，不是固定长期容量
 - `error_workers=0`
 - `quarantined_workers=0`
 - Central Redis 中 `comfy:queue:pending`、`comfy:queue:running`、`comfy:task_heartbeat:*` TTL 与 `/system/status` 口径一致

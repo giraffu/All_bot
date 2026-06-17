@@ -3,7 +3,7 @@
 ## 1. 目标与边界
 本模块记录 DigitalOcean SGP1 独立测试 Droplet `allbot-do-sgp1-test-control` 上的云端测试控制面部署方式。当前云端测试栈用于验证 Web API、Central API、Dashboard Backend、Dashboard Frontend、同机测试 PostgreSQL、同机测试 Redis、R2 对象存储、imgproxy 与测试 Bot。
 
-当前推荐形态是云端运行测试控制面、测试数据库、测试缓存与测试 Bot，本地主服务器运行 7 个 cloud-worker 测试容器并继续使用武汉局域网内的 ComfyUI/GPU 节点。云端与本地主服务器之间使用 Tailscale 私有网络互联；SSH 端口转发只作为应急方案。
+当前推荐形态是云端运行测试控制面、测试数据库、测试缓存与测试 Bot，本地主服务器运行 8 个 cloud-worker 测试容器并继续使用武汉局域网内的 ComfyUI/GPU 节点。云端与本地主服务器之间使用 Tailscale 私有网络互联；SSH 端口转发只作为应急方案。
 
 ## 2. 真实入口
 - 远程主机别名：`allbot-do-sgp1-test-control`
@@ -281,7 +281,9 @@ docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.ym
 
 云测试 `bot-test` 默认设置 `TON_PAYMENT_POLLING_ENABLED=false`，避免空云测试库启动后回扫真实 TON 商户地址的历史交易并污染测试订单/用户数据。只有需要专门联调 TON 支付履约时，才在 `.env.cloud.test` 中显式设置 `CLOUD_TEST_TON_PAYMENT_POLLING_ENABLED=true`，并先确认测试库 checkpoint 与通知目标可控。
 
-GPU worker 不在云服务器运行；本地 `workers/docker-compose-cloud-worker-test.yml` 会启动 7 个 `cloud-comfy-agent-test-*` 容器，经 `CLOUD_TEST_CONTROL_HOST` 连接云端 Central API，并通过 R2 S3 endpoint 直接读写 `user-data-test`。
+GPU worker 不在云服务器运行；本地 `workers/docker-compose-cloud-worker-test.yml` 会启动 8 个 `cloud-comfy-agent-test-*` 容器，经 `CLOUD_TEST_CONTROL_HOST` 连接云端 Central API，并通过 R2 S3 endpoint 直接读写 `user-data-test`。`cloud-comfy-agent-test-8` / `cloud_worker_test_08` 指向 gpu-002 SCAIL-2 LAN AIO runtime `http://192.168.1.2:8190`，声明 `scail2_action_transfer,scail2_video_replacement`。
+
+2026-06-18 03:06 只读快照：云测试 Central `queue_size=0`，`active_workers=8`，`healthy_workers=5`，`error_workers=3`，`quarantined_workers=0`。该状态是瞬时运行态；执行测试验收前必须重新查 `/system/workers` 并按目标任务类型确认 worker 健康。
 
 ### 8.1 Worker 6/7 GPU pool 控制测试
 `cloud-comfy-agent-test-6` 与 `cloud-comfy-agent-test-7` 用于 GPU pool 小范围验证时，可以临时覆盖任务类型、runtime profile 和 Comfy URL，不需要修改 `.env.cloud.test`：

@@ -35,7 +35,7 @@
 - 云测试控制面默认部署同机 Postgres、同机 Redis、Central API、Web API、Dashboard Backend、Dashboard Frontend 与 imgproxy；`bot-test` 只通过 `bot` profile 手动启动，本地主服务器另行启动 GPU worker。当前对象存储事实源是 Cloudflare R2，云测试 compose 当前不包含 MinIO、Payment API 或 Web 前端 dev 容器。
 - 云测试 `.env.cloud.test` 已被 `.gitignore` 忽略，不能提交到仓库。
 - 云端服务端口绑定到云测试 Tailscale IP `100.82.124.91`，不直接开放公网。若临时使用 `CLOUD_TEST_BIND_IP=0.0.0.0`，必须配合源 IP 白名单，只允许边缘 VPS 与本地主服务器访问测试 API 端口，恢复后必须收回公网白名单。
-- 云测试全链路 worker 使用 `workers/docker-compose-cloud-worker-test.yml`，容器名为 `cloud-comfy-agent-test-*`，从本地主服务器经 `CLOUD_TEST_CONTROL_HOST=100.82.124.91` 访问云端 `8004` Central API，并直接访问 R2 S3 endpoint 读写 `user-data-test`。
+- 云测试全链路 worker 使用 `workers/docker-compose-cloud-worker-test.yml`，容器名为 `cloud-comfy-agent-test-*`，从本地主服务器经 `CLOUD_TEST_CONTROL_HOST=100.82.124.91` 访问云端 `8004` Central API，并直接访问 R2 S3 endpoint 读写 `user-data-test`。当前 compose 声明 `cloud-comfy-agent-test-1..8`，其中 `cloud_worker_test_08` 是 SCAIL-2 测试 worker。
 - 若历史本地测试栈仍在运行，切云测试前用 `scripts/stop_local_test_preserve.sh` 停止并保留数据；云测试 GPU 执行面使用 `scripts/start_cloud_worker_test.sh` 启动本地 cloud-worker 测试栈。
 - 云测试 `bot-test` 默认通过 `TON_PAYMENT_POLLING_ENABLED=false` 禁用 TON 链上轮询，避免空云测试库回扫真实商户地址历史交易；仅在专门支付联调时显式开启 `CLOUD_TEST_TON_PAYMENT_POLLING_ENABLED=true`。
 - 云测试库若为空，脚本使用当前 ORM schema 初始化并 `alembic stamp head`；若已有 schema，脚本执行 `alembic upgrade head`。这是云测试控制面的特殊兼容策略，不改变生产脚本的迁移口径。
@@ -49,14 +49,14 @@
 - 云正式 Web API 需要 `JWT_SECRET_KEY`，且不能使用默认占位值；该 key 已纳入 `.env.cloud.prod.example` 和 `scripts/safe_deploy_cloud_prod.sh` preflight 必填检查。
 - 云测试环境退役入口为 `scripts/cleanup_cloud_test_for_prod.sh`。脚本默认 dry-run，真实清理必须传 `--execute`；它不得删除 R2 `user-data-test`，不得误改正式服务或 `web.aivison.it.com`。
 - 云正式控制面包含 Central API、Web API、Payment API、Dashboard Backend、Dashboard Frontend、imgproxy 和正式 Bot；`cloud-tg-bot-prod` 使用 `bot` profile，重建前必须确认全网只有一个生产 polling 实例。
-- 云正式 worker 只派生当前本地正式 7 个 worker，容器名为 `cloud-prod-comfy-agent-*`；启动或重建后必须在云 Central `/system/workers` 验证 7 个 `cloud_prod_worker_*` heartbeat，状态不能是 `error` 或 `quarantined`。
+- 云正式本地 worker compose 声明 `cloud-prod-worker-relay` 与 `cloud-prod-comfy-agent-1..7`；线上实际容量还可能包含 LAN AIO agent、`remote_workers` 与手动 RunPod worker。启动或重建后必须在云 Central `/system/workers` 验证当次目标 worker 集合的 heartbeat、control state 与任务类型，状态不能是 `error` 或 `quarantined`；不要把固定 7 个 heartbeat 当成所有场景的唯一验收标准。
 - 云正式 R2 在线口径为 `user-data-prod` 单桶，`MINIO_*` 兼容变量和 `R2_*` 都指向正式 R2；`MINIO_PUBLIC_URL` 保持空，结果公开读取依赖 `R2_PUBLIC_DOMAIN=https://r2.aivison.it.com`。
 - 正式 Web API / Dashboard 运行时不再通过 `LEGACY_MINIO_*` 回源本地 MinIO；云正式 compose 对 Web/Dashboard 应设置 `LEGACY_MINIO_READ_FALLBACK_ENABLED=false` 并清空 legacy endpoint/key/public URL。R2 miss 后只允许当前 R2/S3 短签、空值或 `pending_result`，worker 仍只写 R2，不得把 legacy MinIO 配进 worker 写路径。
 - legacy 退出前的用户可见热集补齐使用 `scripts/backfill_history_r2_objects.py --env-file .env.cloud.prod --hotset-profile web-visible-retire-legacy --source-storage legacy --include-input-files --batch-size 500`，默认 dry-run，真实复制必须显式 `--apply`。默认补齐范围包括每用户最近 8 条可见历史、Gallery 投稿/收藏/应用/解锁、History 收藏；若本轮只迁移社区强可见集合，追加 `--skip-per-user-recent-history`，范围收窄为所有 Gallery 投稿、History 收藏、Gallery like/apply 互动关联 active posts 与 prompt unlock 关联 active posts，并使用独立 cursor。先从 legacy 或 current 源复制原文件/已有缩略图/输入文件，再用 `--source-storage current --generate-missing-thumbnails` 从已补齐到 R2 的原文件生成缺失缩略图。
 - 云正式历史详情、Gallery/Wan22 预览等读路径需要验收“返回 URL 可读”，不能只验 R2 S3 `HEAD`。若 `R2_PUBLIC_DOMAIN` 对部分 key 返回 404，但 R2 S3 `HEAD` 命中，Gallery 列表应直接返回 R2 S3 短签 URL，历史详情读路径可返回 R2 S3 短签 URL 兜底；Web owner `/result` 视频仍应按真实结果接口单独验收，不要用历史详情 fallback 代替。
 - 云正式 Web 已由 Cloudflare Pages 项目 `allbot-web-prod` 承接，正式 Web API 独立使用 `api.aivison.it.com` Cloudflare Tunnel 回源云 Web API；`web.aivison.it.com/api/health` 会返回 Pages SPA HTML，不再作为健康检查。Web/Nginx VPS 继续保留 `assets.aivison.it.com` 到本地 MinIO 的 legacy 代理和 `/root/dist` 回滚副本，但正式应用不应再生成 `assets` URL。RMB 支付入口继续使用 Cloudflare Tunnel 回源云 Payment API。如需紧急回滚 RMB 回源，用 `scripts/rollback_rmb_tunnel_to_local_prod.sh --execute` 切回本地 Payment API。切换/回滚脚本默认 dry-run，真实执行必须显式 `--execute`。
 - 云正式 Dashboard Frontend 由 `cloud-dashboard-frontend-prod` 提供，默认绑定 `100.107.220.127:8086`，`/api/` 在 Docker 内网反代 `dashboard-backend-prod:8043`。该入口用于减少本地主服务器前端与本地网关链路；若需要公网管理域名，必须通过 Cloudflare Tunnel + Access 或等价身份层保护，禁止裸开 `8086`/`8043`。
-- 边缘 VPS 当前至少包含 Web/Nginx 节点 `100.88.57.122`/`154.17.30.113` 与 Telegram Local API 节点 `69.63.220.115`。Web 节点根盘仅约 1.7G 可用，发布静态资源、调整 Nginx cache 或开启详细日志前必须先查 `df -h`；Telegram 节点当前主服务器未配置可用 SSH key，只能做 8081/8082 公网端口探测，完整容器/磁盘排障需先补 SSH。详情见 `docs/子模块_边缘节点运维指南_edge_node_ops.md`。
+- 边缘 VPS 当前至少包含 Web/Nginx 节点 `100.88.57.122`/`154.17.30.113` 与 Telegram Local API 节点 `69.63.220.115`。2026-06-18 快照显示 Web 节点根盘约 6.2G 可用、使用率约 84%，`nginx`/`tailscaled` active 且未安装 `docker`；发布静态资源、调整 Nginx cache 或开启详细日志前仍必须先查 `df -h`。Telegram 节点当前主服务器未配置可用 SSH key，只能做 8081/8082 公网端口探测，完整容器/磁盘排障需先补 SSH。详情见 `docs/子模块_边缘节点运维指南_edge_node_ops.md`。
 - 真实 `docker compose config` 会展开密钥，输出只能本地查看，不得贴到日志、文档或聊天中。
 - 云正式 Central 高频观测接口已加入短缓存和 stale-while-revalidate；Dashboard stats 也有短缓存与 single-flight。不要通过前端 `_t` 或脚本高频击穿缓存。
 - 云正式最新长期 SOP 见 `/docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`；本地正式灾备 SOP 见 `/docs/子模块_本地正式灾备切换_local_prod_fallback.md`；历史迁云证据已归档到 `/docs/archive/2026-06-cloud-migration/`。

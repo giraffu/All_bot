@@ -8,7 +8,7 @@
 
 本文档不记录私钥内容、云服务密码、token、R2 key、数据库密码或任何可直接登录生产环境的敏感凭据。
 
-最近一次更新：2026-06-09，Asia/Shanghai。
+最近一次更新：2026-06-18 03:06，Asia/Shanghai。
 
 ## 2. 当前 SSH 密钥
 
@@ -21,7 +21,7 @@
 | 公网 IPv4 | `159.223.39.217` |
 | VPC/私网 IPv4 | `10.104.0.2` |
 | 系统 | Ubuntu 24.04.3 LTS |
-| 规格 | Basic Regular `$48/mo`，4 vCPU / 8GB RAM / 160GB SSD / 5TB transfer |
+| 规格 | Basic Regular `$96/mo`，8 vCPU / 16GB RAM / 320GB SSD / 6TB transfer |
 | 默认研发登录用户 | `deploy` |
 | root 初始化入口 | `allbot-do-sgp1-control-root` |
 
@@ -148,23 +148,23 @@ ssh allbot-do-sgp1-control-root
 8. 安装 Tailscale，让云控制面和武汉本地 GPU/主服务器走出站组网。
 9. Central API、Postgres、Valkey、Dashboard 管理接口不得公网裸露。
 
-## 6. `$48/mo` Droplet 的使用边界
+## 6. `$96/mo` Droplet 的使用边界
 
-DigitalOcean Basic Regular `$48/mo` Droplet 的页面规格为 `4 vCPU / 8GB RAM / 160GB SSD / 5TB transfer`。它当前承接正式过渡生产控制面，但必须满足下面条件：
+DigitalOcean Basic Regular `$96/mo` Droplet 的页面规格为 `8 vCPU / 16GB RAM / 320GB SSD / 6TB transfer`。2026-06-16 原地扩容后，它当前承接正式生产控制面；PostgreSQL、Valkey 与对象存储仍不在该 Droplet 上长期自托管。
 
 - Postgres 使用托管数据库或外部数据库，不在这台 Droplet 上长期自托管生产库。
 - Redis/Valkey 使用托管服务或外部 Redis，不在这台 Droplet 上承载完整生产 Redis。
 - MinIO 不迁到这台 Droplet；公开媒体走 Cloudflare R2，本地 MinIO 只作为武汉热缓存。
-- 本地 GPU 和 ComfyUI 不迁移；`cloud-prod-comfy-agent-1..7` 通过 Tailscale 访问云 Central API。
-- `web-api`、Dashboard backend、imgproxy 的 worker/concurrency 需要按 4 vCPU 控制，不照搬主服务器的宽松配置。
+- 本地 GPU 和 ComfyUI 不迁移；本地 `cloud-prod-comfy-agent-*` compose、LAN AIO、`remote_workers` 与手动 RunPod 都通过 Central worker 协议接入。当前容量必须以 `/system/workers` 为准，不写死为 7 个本地 worker。
+- `web-api`、Dashboard backend、imgproxy 的 worker/concurrency 需要按 8 vCPU 与 PostgreSQL 连接池预算控制，不照搬主服务器的宽松配置。
 - 云端运行目录为 `/home/deploy/APP/All_bot`；日常热修应先备份被覆盖文件，不能假设远端目录一定是完整 Git 工作区。
 
 建议初始运行参数：
 
-| 服务 | `$48/mo` 初始建议 |
+| 服务 | `$96/mo` 当前建议 |
 | :--- | :--- |
-| `web-api` | 2-3 个 Uvicorn worker 起步，压测后再调 |
-| `dashboard-backend` | 1-2 个 worker 起步 |
+| `web-api` | 当前按 `uvicorn --workers 4` 与 `DB_POOL_SIZE=6`、`DB_MAX_OVERFLOW=6` 控制，后续扩进程数前先复核 DB 连接池 |
+| `dashboard-backend` | 当前保持 `gunicorn -w 1`，优先靠短缓存/single-flight 降低 stats 压力 |
 | `imgproxy` | 并发 4-6 起步，优先处理 R2 URL |
 | `tg-bot` | 单实例，确保全网只有一个生产 bot |
 | `payment-api` | 单实例，重点验证回调幂等 |

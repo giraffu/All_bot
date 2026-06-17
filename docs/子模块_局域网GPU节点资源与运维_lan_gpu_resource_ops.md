@@ -6,7 +6,7 @@
 
 本文档不是实时监控面板。GPU 利用率、显存占用、队列长度和磁盘剩余空间都是采集时快照；做停机、扩容、清理或升级前必须重新采集。
 
-最近一次采集：2026-06-08，Asia/Shanghai。
+最近一次资源快照更新：2026-06-18 03:06，Asia/Shanghai。
 最近一次 ComfyUI 素材清理：2026-06-08，Asia/Shanghai。
 最近一次 gpu-226 LTX 运行时补齐：2026-06-15，Asia/Shanghai。
 最近一次 gpu-002 LAN RunPod 化一体容器生产接管：2026-06-16，Asia/Shanghai。
@@ -18,7 +18,7 @@
 | 层级 | 承担功能 | 入口 |
 | :--- | :--- | :--- |
 | 云控制面 | `cloud-central-api-prod`、Web API、Payment、Dashboard、Bot、imgproxy | `ssh allbot-do-sgp1-control` |
-| 本地主服务器 | `cloud-prod-worker-relay`、`cloud-prod-comfy-agent-1..7`、结果 spool、legacy MinIO/Postgres/Redis 保留 | 本机 `/home/hfy/APP/All_bot` |
+| 本地主服务器 | `cloud-prod-worker-relay`、本地 `cloud-prod-comfy-agent-1..7` compose、结果 spool、legacy MinIO/Postgres/Redis 保留；线上实际 worker 还可能包含 LAN AIO、`remote_workers` 与手动 RunPod | 本机 `/home/hfy/APP/All_bot` |
 | GPU 节点 | ComfyUI 推理、模型文件、输入输出缓存、DCGM/node exporter | `allbot-gpu-226/177/252/002` |
 
 生产 worker 容器不在 GPU 节点上；它们在本地主服务器运行，通过局域网 HTTP/WS 调用各 GPU 节点的 ComfyUI。
@@ -27,18 +27,18 @@
 
 | 服务器 | SSH Host | CPU | 内存 | GPU | 磁盘快照 | 主要功能 |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 主服务器 `hfy-FAEX9` | 本机 | Ryzen AI MAX+ 395，16C/32T | 62GiB | 无独立推理 GPU | `/` 3.6T，已用 1.3T，可用 2.2T | worker/relay、spool、legacy 数据、开发运维 |
-| 云控制面 `allbot-do-sgp1-control-01` | `allbot-do-sgp1-control` | DO-Regular，4 vCPU | 7.8GiB | 无 | `/` 154G，已用 58G，可用 97G | 正式控制面 |
-| `192.168.1.226` | `allbot-gpu-226` | Ryzen 9 9950X，16C/32T | 60GiB | 1 x RTX 5090 32G | `/` 1.8T，已用 573G，可用 1.2T | 单 ComfyUI，worker 01，face/i2i/t2i 与 LTX 补充容量 |
-| `192.168.1.177` | `allbot-gpu-177` | Ryzen 7 9700X，8C/16T | 60GiB | 2 x RTX 5090 32G | `/` 915G，已用 508G，可用 361G；外置盘 `/media/ubantui/T71` 可用 228G | 双 ComfyUI，worker 02/03 |
-| `192.168.1.252` | `allbot-gpu-252` | Ryzen 7 9700X，8C/16T | 60GiB | 2 x RTX 4090 48G | `/` 937G，已用 178G，可用 712G；外置盘 `/mnt/t7` 可用 269G | 双 ComfyUI，worker 04/05 |
-| `192.168.1.2` | `allbot-gpu-002` | Ryzen 7 9700X，8C/16T | 60GiB | 2 x RTX 4090 48G | `/` 936G，已用 171G，可用 726G | 双 ComfyUI，worker 06/07 |
+| 主服务器 `hfy-FAEX9` | 本机 | Ryzen AI MAX+ 395，16C/32T | 62GiB | 无独立推理 GPU | `/` 3.6T，已用 1.6T，可用 1.9T | worker/relay、spool、legacy 数据、开发运维 |
+| 云控制面 `allbot-do-sgp1-control-01` | `allbot-do-sgp1-control` | DO-Regular，8 vCPU | 约 15GiB | 无 | `/` 309G，已用 125G，可用 185G | 正式控制面 |
+| `192.168.1.226` | `allbot-gpu-226` | Ryzen 9 9950X，16C/32T | 60GiB | 1 x RTX 5090 32G | `/` 1.8T，已用 738G，可用 1001G | 单 ComfyUI，worker 01，face/i2i/t2i 与 LTX 补充容量 |
+| `192.168.1.177` | `allbot-gpu-177` | Ryzen 7 9700X，8C/16T | 60GiB | 2 x RTX 5090 32G | `/` 915G，已用 626G，可用 243G | 双 ComfyUI，worker 02/03 |
+| `192.168.1.252` | `allbot-gpu-252` | Ryzen 7 9700X，8C/16T | 60GiB | 2 x RTX 4090 48G | `/` 937G，已用 243G，可用 647G | 双 ComfyUI，worker 04/05 |
+| `192.168.1.2` | `allbot-gpu-002` | Ryzen 7 9700X，8C/16T | 60GiB | 2 x RTX 4090 48G | `/` 936G，已用 455G，可用 442G | 双 ComfyUI，worker 06/07，LAN AIO/SCAIL-2 试点 |
 
 容量警戒：
-- 2026-06-08 已清理各 GPU 节点 ComfyUI 旧素材，`192.168.1.177` 从高风险的约 `14G` 可用恢复到约 `361G` 可用。
+- 2026-06-08 已清理各 GPU 节点 ComfyUI 旧素材，`192.168.1.177` 从高风险的约 `14G` 可用恢复；2026-06-18 快照可用约 `243G`，已回升到约 73% 使用率，模型下载和大视频压测前应重点复查。
 - ComfyUI `input/output/temp` 仍会随视频任务快速增长；每次模型下载、Docker pull/build 或大视频压测前都要重新检查 `df -h`。
 - `192.168.1.226` 与 `192.168.1.252` 曾观察到 swap 使用较高，排查慢响应时要同时看内存压力、ComfyUI 任务和 Docker stats。
-- 2026-06-08 17:10 巡检时，Central pending 约 `23-24`、running `12`，最老 pending 约 `2873s`；`healthy_workers=7`、`error_workers=0`、`quarantined_workers=0`。这类状态说明队列在消化但用户会感到等待，不等于 worker 离线。
+- 2026-06-18 03:06 云正式 Central 快照为 `queue_size=49`、`active_workers=13`、`healthy_workers=13`、`error_workers=0`、`quarantined_workers=0`。13 个 worker 是当时本地 agent、LAN AIO、`remote_workers` 与手动 RunPod 的混合运行态，不代表固定长期容量。
 - GPU 利用率要和显存、ComfyUI `/queue`、worker heartbeat 一起看。显存高但 GPU 利用率低可能是模型常驻、加载、等待、后处理或 IO；单看 `memory.used` 不能判断“算力拉满”。
 
 ## 4. 本地主服务器 Worker 容器
@@ -125,7 +125,7 @@ ComfyUI：
 - 内存 60GiB
 - 2 x RTX 5090 32G，driver `580.159.03`
 - Docker 29.1.3，Compose 2.37.1
-- 根分区 `/` 可用约 `361G`，外置盘 `/media/ubantui/T71` 可用约 `228G`
+- 2026-06-18 根分区 `/` 可用约 `243G`，使用率约 73%；外置盘需操作前重新采集
 
 容器：
 - `comfy0`：`yanwk/comfyui-boot:cu130-slim`
@@ -163,7 +163,7 @@ ComfyUI 实例：
 - 内存 60GiB
 - 2 x RTX 4090 48G，driver `580.159.03`
 - Docker 29.4.0，Compose v5.1.2
-- 根分区 `/` 可用约 `712G`，外置盘 `/mnt/t7` 可用约 `269G`
+- 2026-06-18 根分区 `/` 可用约 `647G`；外置盘需操作前重新采集
 
 容器：
 - `comfy0`：`yanwk/comfyui-boot:cu128-slim`
@@ -197,7 +197,7 @@ ComfyUI 实例：
 - 内存 60GiB
 - 2 x RTX 4090 48G，driver `580.159.03`
 - Docker 29.1.3，Compose 2.40.3
-- 根分区 `/` 可用约 `726G`
+- 2026-06-18 根分区 `/` 可用约 `442G`
 
 容器：
 - `comfy0`：`yanwk/comfyui-boot:cu128-slim`

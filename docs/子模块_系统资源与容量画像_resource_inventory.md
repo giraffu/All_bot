@@ -5,10 +5,10 @@
 
 本文档不是实时监控面板。除明确标注为固定事实的硬件配置外，数据库行数、队列积压、桶容量、活跃用户等都应视为快照数据；做迁移、采购或扩容决策前，必须重新采集。
 
-最近一次结构性更新时间：2026-06-16，Asia/Shanghai。表内容量数字若未单独标注，仍是历史快照，扩容或迁移决策前必须重新采集。
+最近一次结构性更新时间：2026-06-18 03:06，Asia/Shanghai。表内容量数字若未单独标注，仍是历史快照，扩容或迁移决策前必须重新采集。
 最近一次局域网 GPU ComfyUI 素材清理：2026-06-08，Asia/Shanghai。
-最近一次云正式负载巡检：2026-06-16 18:03，Asia/Shanghai。
-最近一次云测试控制面核对：2026-06-09，Asia/Shanghai。
+最近一次云正式只读负载/数据巡检：2026-06-18 03:06，Asia/Shanghai。
+最近一次云测试控制面核对：2026-06-18 03:06，Asia/Shanghai。
 
 ## 2. 主服务器
 当前主服务器不再是正式公开控制面的主承载点。正式 Bot/Web/Payment/Central/Dashboard 已迁到云控制面；本机主要保留本地 GPU worker、ComfyUI 访问、legacy MinIO 数据、本地旧正式数据保留、测试/开发辅助容器和运维工具。
@@ -32,13 +32,11 @@
 
 | 挂载点 | 容量 | 已用 | 可用 | 备注 |
 | :--- | ---: | ---: | ---: | :--- |
-| `/` | 3.6T | 1.3T | 2.2T | 主系统盘与 Docker 数据共盘 |
-| `/mnt/remote_data/192.168.1.226/ubantu` | 1.8T | 573G | 1.2T | 远端 GPU 节点 SSHFS，2026-06-08 清理后 |
-| `/mnt/remote_data/192.168.1.177/data` | 915G | 508G | 361G | 远端 GPU 节点 SSHFS，2026-06-08 清理后 |
-| `/mnt/remote_data/192.168.1.177/ubantui` | 915G | 508G | 361G | 同一远端根分区的用户目录挂载，2026-06-08 清理后 |
-| `/mnt/remote_data/192.168.1.252/user` | 937G | 178G | 712G | 远端 GPU 节点 SSHFS，2026-06-08 清理后 |
-| `/mnt/remote_data/192.168.1.2/data` | 936G | 171G | 726G | 远端 GPU 节点 SSHFS，2026-06-08 清理后 |
-| `/mnt/remote_data/192.168.1.2/chuzeyu` | 936G | 171G | 726G | 同一远端根分区的用户目录挂载，2026-06-08 清理后 |
+| `/` | 3.6T | 1.6T | 1.9T | 主系统盘与 Docker 数据共盘 |
+| `/mnt/remote_data/192.168.1.226/ubantu` | 1.8T | 738G | 1001G | 远端 GPU 节点 SSHFS |
+| `/mnt/remote_data/192.168.1.177/data` | 915G | 626G | 243G | 远端 GPU 节点 SSHFS，当前使用率约 73%，模型下载/视频压测前重点复查 |
+| `/mnt/remote_data/192.168.1.252/user` | 937G | 243G | 647G | 远端 GPU 节点 SSHFS |
+| `/mnt/remote_data/192.168.1.2/data` | 936G | 455G | 442G | 远端 GPU 节点 SSHFS |
 
 ## 2.1 云控制面 Droplet
 云控制面 Droplet 已于 2026-06-06 创建，并于 2026-06-07 晚间承接正式生产控制面。
@@ -54,7 +52,7 @@
 | 规格 | Basic Regular `$96/mo`，8 vCPU / 16GB RAM / 320GB SSD / 6TB transfer |
 | 实测 CPU | 8 vCPU |
 | 实测内存 | 约 15GiB |
-| 实测系统盘 | 约 309G 总量；当前约 91G 已用、219G 可用 |
+| 实测系统盘 | 约 309G 总量；当前约 125G 已用、185G 可用，使用率约 41% |
 | SSH 日常入口 | `ssh allbot-do-sgp1-control`，默认 `deploy` 用户 |
 | SSH root 入口 | `ssh allbot-do-sgp1-control-root`，仅初始化/救援使用 |
 
@@ -62,7 +60,7 @@
 - `$96/mo` Droplet 当前作为正式生产控制面；生产 Postgres、Valkey 与对象存储不在该 Droplet 上长期自托管。
 - 2026-06-16 原地扩容后，系统盘事实容量已从约 160GB 扩到约 320GB；后续缩容不能再按“保留 160GB 磁盘”的旧口径假设。
 - 公开媒体与新生成对象走 Cloudflare R2 `user-data-prod`；本地 MinIO 保留为 legacy 迁移补齐、人工回滚、旧外链排障与本地热数据保留，不再是正式 Web/Dashboard 运行时 fallback。
-- 本地 7 张 GPU 和 ComfyUI 不迁移；`cloud-prod-comfy-agent-*` 通过 Tailscale 访问云 Central API。
+- 本地 7 张 GPU 和 ComfyUI 不迁移；本地 `cloud-prod-comfy-agent-*` compose、LAN AIO、`remote_workers` 与手动 RunPod 都通过 Central worker 协议接入。当前可用容量必须以 `/system/workers` 为准。
 - 后续如继续增长，优先单独评估 Dashboard/后台任务拆分、PostgreSQL 规格或连接池预算；不要同时放大 Web worker 数和 DB 连接池。
 
 ### 2.2 云测试控制面 Droplet
@@ -78,6 +76,8 @@
 | Tailscale IPv4 | `100.82.124.91` |
 | 操作系统 | Ubuntu 24.04 LTS x64 |
 | 规格 | Basic Regular `$12/mo`，1 vCPU / 2GB RAM / 50GB SSD / 2TB transfer |
+| 实测 CPU / 内存 | 1 vCPU；约 1.9GiB RAM，当前 available 约 751MiB |
+| 实测系统盘 | 约 48G 总量；当前约 16G 已用、33G 可用，使用率约 32% |
 | SSH 日常入口 | `ssh allbot-do-sgp1-test-control`，默认 `deploy` 用户 |
 | 运行服务 | `cloud-postgres-test`、`cloud-redis-test`、`cloud-central-api-test`、`cloud-web-api-test`、`cloud-dashboard-backend-test`、`cloud-dashboard-frontend-test`、`cloud-imgproxy-test`、`cloud-tg-bot-test` |
 | 公网保护 | 服务端口绑定 `100.82.124.91`；`allbot-cloud-test-firewall.service` drop 公网 eth0 的 `8001/8004/8044/8084/8087` |
@@ -85,33 +85,22 @@
 使用边界：
 - 测试 PostgreSQL 与 Redis 均为同机容器，只服务云测试栈，不连接正式托管 PostgreSQL/Valkey。
 - 测试对象存储事实源为 R2 `user-data-test`，公网读取域名 `https://r2-test.aivison.it.com`。
-- 本地主服务器运行 `cloud-comfy-agent-test-1..7`，通过 `CLOUD_TEST_CONTROL_HOST=100.82.124.91` 访问云测试 Central `8004`。
+- 本地主服务器运行 `cloud-comfy-agent-test-1..8`，通过 `CLOUD_TEST_CONTROL_HOST=100.82.124.91` 访问云测试 Central `8004`；`cloud_worker_test_08` 指向 gpu-002 SCAIL-2 LAN AIO runtime。
 - 公网测试 Web 入口是 `web-test.aivison.it.com`，由 Web/Nginx VPS 静态站 `/root/dist-test` 反代到云测试 Web API `100.82.124.91:8001`。
 
 ### 2.3 云正式负载巡检快照
 
-2026-06-08 17:10 Asia/Shanghai 的只读巡检显示，云控制面 CPU、内存和磁盘未打满，Web 卡顿更主要来自公网/边缘链路、结果媒体依赖和 GPU 队列等待。
+2026-06-18 03:06 Asia/Shanghai 的只读巡检显示，云正式控制面 CPU、内存、磁盘、Redis/Valkey 与 PostgreSQL 体量都不是第一瓶颈；用户等待更主要来自 GPU 任务吞吐、任务类型分布、R2/媒体链路和公网路径。
 
 | 指标 | 快照 | 判断 |
 | :--- | :--- | :--- |
-| 云 Droplet load average | 约 `1.90 / 2.08 / 2.18` | 4 vCPU 未打满 |
-| 云 Droplet 内存 | 7.8GiB，总 available 约 3.2GiB | 未内存耗尽 |
-| 云 Droplet 磁盘 | 154G 总量，约 58G 已用，97G 可用 | 使用率约 38% |
-| `cloud-web-api-prod` | CPU 约 24%，内存约 2.0GiB | 有负载但不是满载 |
-| `cloud-tg-bot-prod` | CPU 约 40%，内存约 1.15GiB | Bot 有明显活跃负载 |
-| `cloud-central-api-prod` | CPU 约 8%，内存约 101MiB | Central 非 CPU 瓶颈 |
-| 托管 PostgreSQL | 连接约 75ms；2 active、24 idle、1 idle in transaction、0 waiting locks | 暂未见连接池/锁打满 |
-| 托管 Valkey/Redis | used_memory 约 40MB，connected_clients 81，blocked_clients 0 | 暂未见 Redis 打满 |
-
-2026-06-16 18:03 Asia/Shanghai 扩容后复核显示：
-
-| 指标 | 快照 | 判断 |
-| :--- | :--- | :--- |
-| 云 Droplet CPU/内存 | `nproc=8`，内存约 15GiB，available 约 13GiB | 控制面 CPU/RAM 已升至 8C16G 档 |
-| 云 Droplet 磁盘 | 309G 总量，约 91G 已用，219G 可用 | 本次扩容实际包含磁盘扩展 |
-| 云控制面容器 | Central/Web/Payment/Dashboard/imgproxy 均 `Up`；Bot polling 单实例保持运行 | 控制面服务恢复正常 |
+| 云 Droplet CPU/内存 | `nproc=8`，内存约 15GiB，available 约 10GiB | 控制面 CPU/RAM 未打满 |
+| 云 Droplet 磁盘 | 309G 总量，约 125G 已用，185G 可用 | 使用率约 41%，仍有余量 |
+| 云控制面容器 | Central/Web/Payment/Dashboard/imgproxy/Bot 均 `Up` 且关键服务健康；`visible-hotset-input-backfill-cloud` 为一次性补齐任务容器 | 控制面主服务正常，临时任务不写成长期常驻服务 |
+| Central 队列 | `queue_size=49`，`active_workers=13`，`healthy_workers=13`，`error_workers=0`，`quarantined_workers=0` | 容量由本地 worker、LAN AIO、remote workers 与手动 RunPod 混合构成，不按固定 7 个判断 |
+| 队列类型分布 | `img2img=19`、`img2img_lora=15`、`face_swap=8`、`scail2_video_replacement=2`、`t2i-pornmaster-turbo=2`、`face_video=1`、`i2i_pro=1`、`wan22_video_v2=1` | 排队主要受任务类型和对应 worker 数影响 |
 | 托管 PostgreSQL 连接池预算 | 可用连接按 `100 - 3 reserved = 97` 估算；本轮配置目标峰值约 `73` | 保留约 24 条给迁移、排障、后台任务和抖动 |
-| 托管 Valkey/Redis | 近期观测 used_memory 约 73MB/2GB、connected_clients 约 53、blocked/rejected/evicted 均为 0 | 本轮不提升 Valkey 配置 |
+| 托管 Valkey/Redis | used_memory 约 61.95MB，connected_clients 约 91，blocked/rejected/evicted 均为 0 | 暂未见 Redis 打满 |
 
 本轮云正式 DB 连接池预算：
 
@@ -129,10 +118,10 @@
 - 本地主服务器经公网访问 `api.aivison.it.com` API 约 0.3-0.7s；旧 `web.aivison.it.com/api` 不再作为 API 健康检查入口。
 - 本地主服务器到云 Central Tailscale 约 0.7-2.1s。
 
-队列与媒体压力：
-- Central 当时约 pending 23-24、running 12，最老 pending 约 2873 秒；`healthy_workers=7`、`error_workers=0`、`quarantined_workers=0`。
-- 队列主要集中在 `image_to_video`（含 legacy `video_insert` / `video_edit` alias）、`wan22_video_v2`、`face_swap`、`i2i_pro` 等长耗时或高峰任务。
-- Web API 30 分钟内曾观测到约 172 次 R2 result URL 解析超时；边缘 30 分钟内约 202 次 499，`assets.aivison.it.com` legacy 回源约 37 次 upstream 异常。
+云测试控制面 2026-06-18 03:06 快照：
+- 云测试 Droplet 为 1 vCPU / 约 1.9GiB RAM / 48G 根盘，当前约 16G 已用、33G 可用。
+- 测试控制面容器均 `Up`：`cloud-postgres-test`、`cloud-redis-test`、`cloud-central-api-test`、`cloud-web-api-test`、`cloud-dashboard-backend-test`、`cloud-dashboard-frontend-test`、`cloud-imgproxy-test`、`cloud-tg-bot-test`。
+- Central 测试队列 `queue_size=0`，`active_workers=8`，`healthy_workers=5`，`error_workers=3`，`quarantined_workers=0`。`error` worker 是运行态快照，做测试验收前必须重新查 `/system/workers`，不要把它写成永久故障。
 
 ## 3. 服务与容器分布
 正式控制面当前在云端，本地主服务器保留本地 GPU worker 与旧数据。测试/开发服务仍可能在本地或云测试控制面运行，必须按 compose、端口、环境变量、数据库与 Valkey/Redis DB 隔离。
@@ -141,14 +130,15 @@
 - 云端正式入口：`cloud-tg-bot-prod`、`cloud-web-api-prod`、`cloud-payment-api-prod`
 - 云端正式执行面：`cloud-central-api-prod`，Tailscale `100.107.220.127:8003`
 - 云端正式管理面：`cloud-dashboard-backend-prod`、`cloud-dashboard-frontend-prod`、`cloud-imgproxy-prod`
-- 本地正式 worker agent：`cloud-prod-comfy-agent-1` 至 `cloud-prod-comfy-agent-7`
+- 本地正式 worker compose：`cloud-prod-worker-relay` 与 `cloud-prod-comfy-agent-1` 至 `cloud-prod-comfy-agent-7`；这是本地 compose 声明，不等于每个容器都必须长期运行
+- 正式弹性/灰度算力：LAN AIO agent、`remote_workers` 与手动 RunPod worker 可按运维目标接入 Central；2026-06-18 快照中 Central 看到 13 个 healthy active workers
 - 本地 legacy 数据：原 PostgreSQL/Redis/MinIO 只作为保留或 fallback，不应继续作为正式写入事实源
 
 测试/辅助服务类型：
 - 云测试入口：`cloud-tg-bot-test`、`cloud-web-api-test`、`cloud-dashboard-backend-test`、`cloud-dashboard-frontend-test`、`cloud-imgproxy-test`
 - 云测试执行面：`cloud-central-api-test`，Tailscale `100.82.124.91:8004`
 - 云测试数据面：`cloud-postgres-test`、`cloud-redis-test`，仅 Docker 内网可达
-- 本地云测试 worker：`cloud-comfy-agent-test-1` 至 `cloud-comfy-agent-test-7`
+- 本地云测试 worker：`cloud-comfy-agent-test-1` 至 `cloud-comfy-agent-test-8`，其中 `test-8` 是 SCAIL-2 测试接单层
 - 本地旧测试栈：不再作为受支持测试或回滚环境；仅作为历史取证材料，默认应停止并保留数据
 - 本地运维与历史数据：`postgres-server`、`redis-server`、`minio-server`、`pgadmin-server`、`filebrowser`、`portainer_agent`
 
@@ -181,9 +171,9 @@ GPU 节点运行方式与模型挂载快照：
 | GPU 服务器 | ComfyUI 运行方式 | 模型目录 | 实例隔离 | 运维注意 |
 | :--- | :--- | :--- | :--- | :--- |
 | `192.168.1.226` | 宿主机进程，cwd `/home/ubantu/comfyui`，端口 `8188` | `/home/ubantu/comfyui/models`，约 325G | 单实例 | 不是 Comfy Docker 容器；重启前先确认进程管理方式 |
-| `192.168.1.177` | Docker `comfy0`/`comfy1`，分别绑定 GPU 0/1，端口 `8188`/`8189` | `/data/comfy/models`，约 444G，共享 | `inst0`/`inst1` 的 input/output/temp/custom_nodes/workflows 分离 | 2026-06-08 清理后根分区可用约 361G；`8189` 已修复 `FL_RIFE` |
-| `192.168.1.252` | Docker `comfy0`/`comfy1`，分别绑定 GPU 0/1，端口 `8188`/`8189` | `/home/user/APP/data/models`，约 121G，共享 | `inst0`/`inst1` 的 input/output/temp/custom_nodes/workflows 分离 | `comfy0` 主打 img2img，`comfy1` 主打视频/Wan22 |
-| `192.168.1.2` | Docker `comfy0`/`comfy1`，分别绑定 GPU 0/1，端口 `8188`/`8189` | `/data/comfy/models`，约 85G，共享 | `inst0`/`inst1` 的 input/output/temp/custom_nodes/workflows 分离 | 可只重启目标 Comfy 容器，不要整机重启 |
+| `192.168.1.177` | Docker `comfy0`/`comfy1`，分别绑定 GPU 0/1，端口 `8188`/`8189` | `/data/comfy/models`，约 444G，共享 | `inst0`/`inst1` 的 input/output/temp/custom_nodes/workflows 分离 | 2026-06-18 根分区可用约 243G，使用率约 73%；`8189` 已修复 `FL_RIFE` |
+| `192.168.1.252` | Docker `comfy0`/`comfy1`，分别绑定 GPU 0/1，端口 `8188`/`8189` | `/home/user/APP/data/models`，约 121G，共享 | `inst0`/`inst1` 的 input/output/temp/custom_nodes/workflows 分离 | 2026-06-18 根分区可用约 647G；`comfy0` 主打 img2img，`comfy1` 主打视频/Wan22 |
+| `192.168.1.2` | Docker `comfy0`/`comfy1`，分别绑定 GPU 0/1，端口 `8188`/`8189` | `/data/comfy/models`，约 85G，共享 | `inst0`/`inst1` 的 input/output/temp/custom_nodes/workflows 分离 | 2026-06-18 根分区可用约 442G；可只重启目标 Comfy 容器，不要整机重启 |
 
 双卡节点的重要边界：`comfy0` 与 `comfy1` 是独立容器、独立 GPU、独立输入输出目录，但共享模型目录和宿主机资源。处理某个 worker 或某个 ComfyUI 的问题时，只操作对应 worker 容器或对应 GPU 节点上的 `comfy0`/`comfy1`；不要使用整机 reboot、无 service 名 `docker compose down/up` 或批量 `docker rm`。
 
@@ -226,8 +216,8 @@ ComfyUI 版本快照：
 
 | 节点 | 入口 | 资源快照 | 当前职责 | 风险 |
 | :--- | :--- | :--- | :--- | :--- |
-| Web/Nginx 边缘 VPS `web` | Tailscale `100.88.57.122`，公网 `154.17.30.113`，SSH `root@100.88.57.122` 使用 `frontend/ssh_key/id_rsa.pem` | Ubuntu 24.04，2 vCPU，1.9GiB RAM，40G 根盘；2026-06-16 受控轮转日志后已用约 32G，可用约 6.3G | `web-test.aivison.it.com` 测试静态站与 `/api/` 反代，`assets.aivison.it.com` legacy MinIO 代理，`/root/dist` 正式 Web 回滚副本 | 根盘从 97% 降至约 84%，`/var/cache/nginx` 仍约 26G；`logrotate.timer` 已启用且 Nginx 日志已当天压缩；不再承接正式 `web.aivison.it.com` 主流量 |
-| Telegram Local API VPS | 公网 `69.63.220.115` | 本轮 SSH key 未打通，CPU/内存/磁盘待补采；公网 22/8081/8082 可达 | Telegram Local Bot API `8081` 与文件服务 `8082`，支撑大文件下载/上传 | 当前主服务器未纳入 SSH 免密管理，资源与容器状态不可远程只读确认 |
+| Web/Nginx 边缘 VPS `web` | Tailscale `100.88.57.122`，公网 `154.17.30.113`，SSH `root@100.88.57.122` 使用 `frontend/ssh_key/id_rsa.pem` | Ubuntu 24.04，2 vCPU，1.9GiB RAM，40G 根盘；2026-06-18 快照约 32G 已用、6.2G 可用，使用率约 84% | `web-test.aivison.it.com` 测试静态站与 `/api/` 反代，`assets.aivison.it.com` legacy MinIO 代理，`/root/dist` 正式 Web 回滚副本；`nginx` 与 `tailscaled` active | 根盘仍低于 20% 可用；`docker` 命令未安装，不要声称已检查容器状态；不再承接正式 `web.aivison.it.com` 主流量 |
+| Telegram Local API VPS | 公网 `69.63.220.115` | 本轮 SSH key 未打通，CPU/内存/磁盘待补采；公网 `8081/8082` 可达 | Telegram Local Bot API `8081` 与文件服务 `8082`，支撑大文件下载/上传 | 当前主服务器未纳入 SSH 免密管理，资源与容器状态不可远程只读确认 |
 
 边缘容量判断：
 - Web 边缘根盘低于 10% 可用时，不建议发布新静态资源、扩大 Nginx cache 或新增大日志调试。
@@ -236,49 +226,42 @@ ComfyUI 版本快照：
 
 ## 6. 数据存储快照
 ### PostgreSQL
-生产数据库 `bot_db` 当前约 2.6GB，测试库 `bot_db_test` 当前约 98MB。生产库主要体积来自历史与日志表。
+2026-06-18 03:06 生产数据库 `bot_db` 约 3444MB。生产库主要体积来自历史与日志表；迁移、归档或索引决策前必须重新采集。
 
 | 表 | 近似行数 | 总体积 |
 | :--- | ---: | ---: |
-| `history` | 1,683,320 | 1580MB |
-| `user_logs` | 2,419,762 | 465MB |
-| `worker_logs` | 1,458,181 | 347MB |
-| `users` | 123,508 | 78MB |
-| `checkin_history` | 440,026 | 47MB |
-| `user_interactions` | 168,287 | 41MB |
-| `referrals` | 112,389 | 16MB |
-| `gallery_posts` | 17,187 | 6.4MB |
-| `orders` | 8,026 | 5.3MB |
+| `history` | 1,979,345 | 2284MB |
+| `user_logs` | 2,861,963 | 475MB |
+| `worker_logs` | 1,758,668 | 447MB |
+| `users` | 138,584 | 101MB |
+| `checkin_history` | 525,608 | 51MB |
+| `user_interactions` | 205,857 | 43MB |
+| `referrals` | 124,166 | 15MB |
+| `gallery_posts` | 20,894 | 8664kB |
+| `orders` | 9,278 | 4776kB |
 
 用户与生成量快照：
 
 | 指标 | 数量 |
 | :--- | ---: |
-| 注册用户 | 124,439 |
-| 近 1 天活跃用户 | 7,594 |
-| 近 7 天活跃用户 | 16,872 |
-| 近 30 天活跃用户 | 40,689 |
-| 历史记录总数 | 1,679,245 |
-| 近 1 天历史记录 | 23,070 |
-| 近 7 天历史记录 | 178,279 |
-| 近 30 天历史记录 | 755,736 |
+| 注册用户 | 138,584 |
+| 近 1 天活跃用户 | 9,729 |
+| 近 7 天活跃用户 | 22,055 |
+| 近 30 天活跃用户 | 44,195 |
+| 历史记录总数 | 约 1,979,345 |
+| 近 1 天历史记录 | 31,926 |
+| 近 7 天历史记录 | 179,627 |
+| 近 30 天历史记录 | 760,273 |
+| active Gallery 投稿 | 19,076 |
+| 成功订单 | 5,474 |
 
 ### Redis
-正式运行态当前由云侧 Valkey/Redis 承载，用于 Bot/Web 运行态、Central API 队列、worker 心跳、并发锁、pending finalizer、限流等短生命周期数据。下表为迁移前/迁移期本地快照，不代表当前云正式实时值。
+正式运行态当前由云侧 Valkey/Redis 承载，用于 Bot/Web 运行态、Central API 队列、worker 心跳、并发锁、pending finalizer、限流等短生命周期数据。下表为 2026-06-18 03:06 云正式聚合快照；不同 URL 可能指向同一托管 Valkey 实例的不同逻辑用途。
 
-| 指标 | 当前值 |
-| :--- | ---: |
-| `used_memory_human` | 58.69MB |
-| `db1` key 数 | 111,937 |
-| `db2` key 数 | 24,609 |
-| `db3` key 数 | 192 |
-| `db4` key 数 | 1,103 |
-| 生产 `active_tasks` | 142 |
-| 生产 `pending_web_finalizers` | 45 |
-| Central pending queue | 130 |
-| Central running set | 10 |
-| Central agent heartbeats | 9 |
-| Central task hashes | 23,361 |
+| 入口 | used_memory | clients | blocked | rejected | evicted | dbsize |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `REDIS_URL` | 61.95MB | 91 | 0 | 0 | 0 | 42,979 |
+| `WORKER_REDIS_URL` | 61.95MB | 91 | 0 | 0 | 0 | 23,096 |
 
 ### MinIO
 MinIO 本地数据目录：`/home/hfy/APP/minio-deploy/data`，迁移前快照总量约 453GB。当前正式新数据写入 R2；本地 MinIO 保留 legacy 历史媒体、旧输入和本地热数据，不应作为新生成结果公开事实源。
@@ -303,13 +286,13 @@ MinIO 是主服务器历史数据与内存占用大户之一。规划清理时�
 5. Dashboard stats/外部接口熔断与托管 Valkey/PostgreSQL 连接池压力。
 6. ComfyUI 本地 `input/output/temp` 会继续随视频任务快速增长，若缺少定期巡检，远端 GPU 节点仍可能再次磁盘吃紧。
 
-当前 CPU、Redis、Postgres 数据体积都不是第一瓶颈。若做云化，优先迁移控制面、公开对象分发与数据库备份，不应优先把本地 7 张 GPU 全量替换为云 GPU。
+当前 CPU、Redis、Postgres 数据体积都不是第一瓶颈。若做云化，优先迁移控制面、公开对象分发与数据库备份；GPU 侧优先按任务类型增减 LAN AIO / RunPod / remote worker，而不是默认全量替换本地 7 张物理 GPU。
 
 推荐容量策略：
 - 控制面云化：Bot/Web/Payment/Central/Dashboard 已迁到云 VM，后续重点是规格升级、拆分 Dashboard 或引入第二控制面节点。
 - 数据面分层：Postgres/Valkey 已采用云侧口径；R2 承接公开媒体分发和新对象写入。
-- 本地 GPU 保留：4 台 GPU 服务器继续作为主算力池，worker 通过 Tailscale 连接云 Central API。
-- 云 GPU 弹性：只在队列积压或单类任务爆发时临时拉起，不建议 24/7 常驻替代本地 GPU。
+- 本地 GPU 保留：4 台 GPU 服务器继续作为主算力池，本地 worker/relay、LAN AIO 与远程 worker 通过 Central worker 协议接入。
+- 云 GPU 弹性：手动 RunPod 只在队列积压或单类任务爆发时临时拉起，不建议 24/7 常驻替代本地 GPU；具体 profile/slot 数只进入运维日志，不写成长期容量事实。
 - MinIO 生命周期：生产热结果保留有限天数，长期公开访问走 R2，定期清理测试桶和临时桶。
 - Web 体验优化：优先减少首屏/结果页串行 API 等待，R2 result 探测失败时快速返回 `pending_result` 或缓存快照，降低用户端 499。
 

@@ -100,21 +100,21 @@ graph TD
 - **核心领域与调度**
   - `task_core.py` 当前是稳定 facade，不再承担所有细节逻辑。
   - 真实默认装配已下沉到 provider/dependencies、submission、web-monitor、runtime 等子模块。
-  - 任务执行仍由 `Central API + ComfyUI Workers` 完成；正式 Central 已运行在云控制面，本地 7 个 GPU worker 通过 Tailscale 接入。
+  - 任务执行仍由 `Central API + ComfyUI Workers` 完成；正式 Central 已运行在云控制面，生产算力由本地 worker compose、LAN AIO agent、`remote_workers` 与手动 RunPod 备用池按当次运维目标共同接入。判断当前容量必须以 Central `/system/workers` 的实时快照为准，不再写死为“本地 7 个 worker”。
 - **基础设施层**
   - 正式 PostgreSQL 与 Valkey/Redis 已迁到云侧托管/外部服务，保存主数据、业务账本、队列、并发锁、登录限流、任务运行态与 worker heartbeat。
   - 新生成对象写入 R2 `user-data-prod`；本地 MinIO 保留为 legacy 迁移补齐、人工回滚、旧外链排障与本地热数据备份，不再是正式 Web/Dashboard 运行时 fallback。
   - Web/Nginx VPS 不再承接正式 `web.aivison.it.com` 主流量；它保留 `assets.aivison.it.com` legacy 人工回滚/旧外链入口、`web-test.aivison.it.com` 测试静态站和正式 Web 回滚副本。
 
 ### 1.3 云正式生产口径
-2026-06-07 晚间正式生产已经切到“云控制面 + 托管 PostgreSQL/Valkey + R2 + 本地 GPU worker”：
+2026-06-07 晚间正式生产已经切到“云控制面 + 托管 PostgreSQL/Valkey + R2 + 本地 GPU worker / LAN AIO / remote_workers / 手动 RunPod 备用池”：
 - 云端 Droplet `allbot-do-sgp1-control` 承载 `cloud-central-api-prod`、`cloud-web-api-prod`、`cloud-payment-api-prod`、`cloud-dashboard-backend-prod`、`cloud-dashboard-frontend-prod`、`cloud-imgproxy-prod` 与 `cloud-tg-bot-prod`。
-- 本地 `cloud-prod-comfy-agent-1..7` 继续连接武汉内网 ComfyUI，作为正式算力池。
+- `workers/docker-compose-cloud-prod-worker.yml` 仍声明本地 `cloud-prod-comfy-agent-1..7` 与 `cloud-prod-worker-relay`；线上实际可用 worker 还可能包含 LAN AIO、`remote_workers` 与手动 RunPod。2026-06-18 03:06 快照为 13 个 healthy active workers，属于运行态快照，不作为固定容量承诺。
 - `web.aivison.it.com` 已由 Cloudflare Pages 承接静态前端；正式 Web API 独立走 `api.aivison.it.com` Cloudflare Tunnel 回源云 Web API；`rmb.aivison.it.com` 回源云 Payment API；`assets.aivison.it.com` 保留本地 legacy MinIO 只读代理，但正式应用不再生成该域名 URL。
 - 长期运维细节见 `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`。
 
 ### 1.4 云测试与本地灾备口径
-- 云测试控制面运行在独立 DigitalOcean Droplet `allbot-do-sgp1-test-control`，Tailscale IP `100.82.124.91`。同机容器承载测试 PostgreSQL、Redis、Central API、Web API、Dashboard Backend、Dashboard Frontend、imgproxy 与测试 Bot；本地主服务器运行 7 个 cloud-worker 测试容器并连接云测试 Central。
+- 云测试控制面运行在独立 DigitalOcean Droplet `allbot-do-sgp1-test-control`，Tailscale IP `100.82.124.91`。同机容器承载测试 PostgreSQL、Redis、Central API、Web API、Dashboard Backend、Dashboard Frontend、imgproxy 与测试 Bot；本地主服务器运行 8 个 cloud-worker 测试容器并连接云测试 Central，其中 `cloud_worker_test_08` 指向 gpu-002 SCAIL-2 LAN AIO runtime。
 - 云测试 Web 公网入口是 `web-test.aivison.it.com`，由 Web/Nginx VPS 提供 `/root/dist-test` 静态站，`/api/` 回源云测试 Web API `100.82.124.91:8001`。云测试端口绑定 Tailscale IP，公网 eth0 端口由测试机防火墙 drop。
 - 本地主服务器不再保留一套日常正式入口；只保留云正式整体故障时的临时本地正式灾备方案。操作手册见 `docs/子模块_本地正式灾备切换_local_prod_fallback.md`。
 
@@ -240,12 +240,12 @@ sequenceDiagram
 - 若技能文档与代码入口冲突，应先更新 skill / docs，再继续开发。
 
 ### 5.1 维护基线与知识库口径
-- 2026-06-14 知识库维护口径：`AGENTS.md` 只保留全局路由，细节以 `.codex/skills/*/SKILL.md` 和 `/docs` 为准；技能正文应记录稳定边界和入口，不沉淀一次性 Pod ID、任务 ID、失败尝试流水账或真实密钥值。
+- 2026-06-18 知识库维护口径：`AGENTS.md` 只保留全局路由，细节以 `.codex/skills/*/SKILL.md` 和 `/docs` 为准；技能正文应记录稳定边界和入口，不沉淀一次性 Pod ID、任务 ID、失败尝试流水账或真实密钥值。一次性 canary、迁移证据和模型上传流水应进入 `docs/archive/` 或 `logs/`。
 - `src/task_core_process_defaults.py` 是 task core process 默认装配的真实入口。
 - RunPod Provider v0 的稳定边界是云测试 `img2img/img2img_lora` canary、云测试 split video profile (`image_to_video` / `wan22_video_v2`) canary、云测试 `i2i_pro` 三任务 canary、云测试 `scail2` 两任务 canary，以及手动云正式备用 worker；生产自动按队列扩容仍未开启。`prod-worker --profile i2i_pro` 支持 `i2i_pro`、Web 文生图执行类型 `t2i-pornmaster-turbo` 与 `face_swap`；`prod-worker --profile scail2` 支持 `scail2_action_transfer` 与 `scail2_video_replacement`。Dashboard 已提供正式手动 RunPod 新增/暂停/删除入口并支持 `scail2 / 视频生视频`，但 `scail2` RunPod 是手动备用/临时扩容能力，不代表线上固定常驻容量。
 - `wan22_aio_video` 只保留为兼容/回滚 profile；新视频测试、扩容和正式备用 worker 都应使用 split profile。
-- 最新全局质量评估未发现 Critical 级架构阻断，`src/core` 未发现直接依赖 Telegram `Update` 或 FastAPI `Request/APIRouter` 等平台对象。
-- 当前主要风险集中在长期维护成本：Worker `agent_main.py::process_task`、Wan22 链式拼接、Gallery 响应组装、Bot 进度监控、练功房主 composable 与前端生成页重复逻辑。
+- 2026-06-18 全局质量评估未发现 Critical/High 级架构阻断，`src/core` 未发现直接依赖 Telegram `Update` 或 FastAPI `Request/APIRouter` 等平台对象；Alembic 为单 head `7f3a9c1d2e4b`；`pytest --collect-only` 可收集 1362 个测试。
+- 当前主要风险集中在长期维护成本：Worker `agent_main.py::process_task`、Dashboard RunPod 管理服务、任务提交 provider/dependencies 装配、Bot 进度监控、练功房主 composable 与前端生成页重复逻辑。`ruff check` 仍有 11 个低风险 lint 项，主要是未使用 import 与脚本级 `E402`。
 - workflow 资产已收口到 `workers/comfy_agent/workflows`；Central API 不再维护 backend 副本，也不再执行 workflow 启动校验。
 - `TaskCoreServiceProviders` 与主要 capability 已补强 `Protocol` / 精确 `Callable` 契约；新增 provider/capability 时继续沿用显式类型与 dependencies seam。
-- 详细质量基线见 `docs/子模块_代码静态分析与质量评估规范_code_quality.md` 与 `logs/code_analysis_report_20260603_2332.md`。
+- 详细质量基线见 `docs/子模块_代码静态分析与质量评估规范_code_quality.md` 与 `logs/code_analysis_report_20260618_0306.md`。
