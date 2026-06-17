@@ -65,9 +65,20 @@ python scripts/gpu_pool_controller.py runpod canary \
   --execute
 ```
 
-It only targets cloud-test: one Pod, one generated PNG upload, three
-`img2img/img2img_lora` tasks, test-worker restore, Pod delete, and post-cleanup
-orphan checks.
+It only targets cloud-test. For `img2img_lora` it creates one Pod, uploads one
+generated PNG, runs three `img2img/img2img_lora` tasks, restores test workers,
+deletes the Pod, and checks for post-cleanup orphans. For profile-specific
+canaries use `--task-type`; SCAIL-2 uses two inputs and two 5s Web tasks:
+
+```bash
+python scripts/prepare_scail2_model_r2_bundle.py --env-file .env.cloud.test
+python scripts/gpu_pool_controller.py runpod render-create --task-type scail2 --env cloud-test
+python scripts/gpu_pool_controller.py runpod canary --task-type scail2 --env-file .env.cloud.test --quiet
+```
+
+`prepare_scail2_model_r2_bundle.py --execute` writes only to
+`allbot-model-cache/scail2/2026-06-17-test`; RunPod SCAIL-2 user inputs and
+results still use `user-data-test`.
 
 Model registry layout:
 
@@ -96,8 +107,8 @@ python scripts/upload_all_task_models_to_lan_cache.py \
   --env-file .env.lan.model-cache
 ```
 
-The current LAN cache has manifests for `img2img_lora/2026-06-10` and
-`i2i_pro/2026-06-14-test`. The all-task target set additionally prepares
+The current LAN cache has manifests for `img2img_lora/2026-06-10`,
+`i2i_pro/2026-06-14-test`, and `scail2/2026-06-17-test`. The all-task target set additionally prepares
 `image_to_video/2026-06-13-test`, `wan22_video_v2/2026-06-13-test`,
 `wan22_aio_video/2026-06-12-test`, `ltx_video/2026-06-10`, and
 `face_i2i_t2i/2026-06-10`. `video_basic/2026-06-10` is not a primary manifest;
@@ -133,3 +144,4 @@ one-off local builds:
 | `img2img_lora` | `192.168.1.115:5000/allbot/comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946` |
 | `i2i_pro` | `192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh` |
 | `image_to_video` / `video_basic` / `wan22_video_v2` / `wan22_aio_video` | `192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260613-wan22aio-lanbase-ab9b7ea` |
+| `scail2` | `192.168.1.115:5000/allbot/comfy-runpod-scail2:20260617-scail2-cu128-<shortsha>` |

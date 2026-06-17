@@ -19,10 +19,10 @@ ARG HTTPS_PROXY
 ARG ALL_PROXY
 ARG NO_PROXY
 
-LABEL org.opencontainers.image.title="AllBot LAN SCAIL-2 ComfyUI test profile"
-LABEL org.opencontainers.image.description="Test-only ComfyUI runtime for Nomadoor SCAIL-2 workflows; model files are synced from the LAN model cache at startup."
+LABEL org.opencontainers.image.title="AllBot SCAIL-2 ComfyUI test profile"
+LABEL org.opencontainers.image.description="Test-only ComfyUI runtime for Nomadoor SCAIL-2 workflows; model files are synced from the R2/LAN manifest at startup."
 LABEL allbot.runpod.profile="scail2"
-LABEL allbot.runpod.models="external-lan-manifest"
+LABEL allbot.runpod.models="external-r2-manifest"
 LABEL allbot.runpod.business_agent="false"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -37,6 +37,8 @@ RUN set -euo pipefail; \
         curl \
         ffmpeg \
         git \
+        openssh-client \
+        openssh-server \
         python3-pip; \
       rm -rf /var/lib/apt/lists/*; \
     elif command -v zypper >/dev/null 2>&1; then \
@@ -45,6 +47,7 @@ RUN set -euo pipefail; \
         curl \
         ffmpeg \
         git \
+        openssh \
         python3-pip; \
       zypper clean --all; \
     fi
@@ -99,11 +102,18 @@ RUN set -euo pipefail; \
     echo "${COMFYUI_INSTALL_DIR}" > /opt/allbot-comfyui-dir
 
 COPY remote_workers/scripts/runpod_sync_models_from_r2.py /opt/allbot/remote_workers/scripts/runpod_sync_models_from_r2.py
+COPY remote_workers/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
 COPY remote_workers/scripts/lan_scail2_comfyui_entrypoint.sh /opt/allbot/lan_scail2_comfyui_entrypoint.sh
 COPY remote_workers/comfy_agent/workflows/SCAIL-2_*.json /opt/allbot/scail2-workflows/
 
 RUN set -euo pipefail; \
+    chmod +x /opt/allbot/runpod_bootstrap_from_git.sh; \
     chmod +x /opt/allbot/lan_scail2_comfyui_entrypoint.sh; \
+    command -v ssh-keygen >/dev/null; \
+    if ! command -v sshd >/dev/null && [ ! -x /usr/sbin/sshd ]; then \
+      echo "sshd must be available for RunPod direct TCP diagnostics" >&2; \
+      exit 1; \
+    fi; \
     test -f /opt/allbot/scail2-workflows/SCAIL-2_Animation.json; \
     if find "$(cat /opt/allbot-comfyui-dir)/models" -type f \( \
       -name "wan2.1_14B_SCAIL_2_fp8_scaled.safetensors" -o \

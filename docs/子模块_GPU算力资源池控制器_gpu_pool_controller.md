@@ -190,6 +190,10 @@ SCAIL-2 镜像入口是 `remote_workers/docker/runpod_profiles/scail2/Dockerfile
 
 Web 测试业务接入不把上述 ComfyUI 容器本身注册成 worker：容器仍不设置 `AGENT_ID` / `CENTRAL_API_URL` / `SUPPORTED_TASK_TYPES`。接单层在本地主 `workers/docker-compose-cloud-worker-test.yml` 中新增 `cloud-comfy-agent-test-8` / `cloud_worker_test_08`，指向 `http://192.168.1.2:8190`，声明 `SUPPORTED_TASK_TYPES=scail2_action_transfer,scail2_video_replacement` 与 GPU pool 元数据 `node_id=gpu-002`、`gpu_index=0`、`runtime_profile=scail2`。`scripts/start_cloud_worker_test.sh` 会在启动后把该 agent control 置为 `disabled`；只有完成 `/object_info`、mapping、Web 5s smoke 验证后才可手动 enable。该能力只属于云测试，不同步云正式 worker compose。
 
+SCAIL-2 也支持独立 cloud-test RunPod profile，不复用 `gpu-002/8190`。`RUNPOD_TASK_PROFILES["scail2"]` 渲染为 `SUPPORTED_TASK_TYPES=scail2_action_transfer,scail2_video_replacement`、`POOL_RUNTIME_PROFILE=scail2`、agent prefix `runpod_test_scail2`、`containerDiskInGb=120`、GPU 优先 `NVIDIA GeForce RTX 5090,NVIDIA GeForce RTX 4090`。模型桶固定 `allbot-model-cache`，用户输入/结果桶仍是 `user-data-test`。镜像由 `.github/workflows/runpod_scail2_profile_image.yml` 构建 `ghcr.io/giraffu/allbot-comfy-runpod-scail2:<tag>`，Dockerfile 保留 LAN entrypoint 作为默认 CMD，但 RunPod create JSON 通过 `dockerStartCmd=["bash","-lc","exec bash /opt/allbot/runpod_bootstrap_from_git.sh"]` 启动 bootstrap。模型转存入口是 `scripts/prepare_scail2_model_r2_bundle.py --env-file .env.cloud.test --execute`，默认 dry-run，只写 `allbot-model-cache/scail2/2026-06-17-test/models/...` 与 manifest，不写 `user-data-test`。
+
+`runpod canary --task-type scail2` 是 SCAIL-2 RunPod 验收入口。dry-run 会校验 GHCR image prefix、`allbot-model-cache`、`scail2/2026-06-17-test/manifest.json`、custom node env 关闭、bootstrap command 与 GPU 类型；真实执行会上传/复用 Nomadoor 样例参考图和 motion video，临时 disable 支持 SCAIL-2 的非 RunPod cloud-test worker（通常是 `cloud_worker_test_08`），串行提交 `scail2_action_transfer 5s` 与 `scail2_video_replacement 5s` 两个 Web 任务，要求 Central 接单 worker 为 `runpod_test_scail2_*`，结束后恢复 worker control 并删除本次 Pod。SCAIL-2 仍不是云正式 RunPod profile，cloud-prod 白名单不包含它。
+
 常用命令：
 
 ```bash
@@ -208,9 +212,9 @@ scripts/lan_scail2_aio_test.sh restore --execute
 - 真实密钥只放在 ignored env 文件，例如 `.env.lan.model-cache`、`.env.lan-aio-test` 和 `.env.lan-aio-prod`；生产 helper 也可用 allowlist 从 `.env.cloud.prod` 与 `.env.lan.model-cache` 读取必要变量，不直接 `source`。
 - compose 模板只允许出现 `${LAN_AIO_*:?}` / `${LAN_MODEL_CACHE_*:?}` 占位符。
 - 不要直接 `source .env.cloud.test`；RunPod dry-run 继续只使用 controller 的 `--env-file` loader。
-- LAN 模型缓存 bucket 固定为 `allbot-model-cache`；截至 2026-06-15，`192.168.1.115:9010` 已缓存 `img2img_lora/2026-06-10/manifest.json` 与 `i2i_pro/2026-06-14-test/manifest.json`。
+- LAN 模型缓存 bucket 固定为 `allbot-model-cache`；截至 2026-06-17，`192.168.1.115:9010` 已缓存 `img2img_lora/2026-06-10/manifest.json`、`i2i_pro/2026-06-14-test/manifest.json` 与 `scail2/2026-06-17-test/manifest.json`。
 - 全任务 LAN cache 入口为 `scripts/upload_all_task_models_to_lan_cache.py --env-file .env.lan.model-cache`，默认 dry-run；真实上传必须另行显式加 `--execute`。helper 复用共享对象池 `models/by-sha256/<sha[:2]>/<sha>`，并会复用已存在且 size/sha256 metadata 匹配的旧对象 key。
-- canonical manifest 目标为 `img2img_lora/2026-06-10/manifest.json`、`i2i_pro/2026-06-14-test/manifest.json`、`image_to_video/2026-06-13-test/manifest.json`、`wan22_video_v2/2026-06-13-test/manifest.json`、`wan22_aio_video/2026-06-12-test/manifest.json`、`ltx_video/2026-06-10/manifest.json`、`face_i2i_t2i/2026-06-10/manifest.json`。`video_basic/2026-06-10` 不作为主 manifest；legacy `video_insert` / `video_edit` 只作为兼容任务类型归入 `image_to_video`。
+- canonical manifest 目标为 `img2img_lora/2026-06-10/manifest.json`、`i2i_pro/2026-06-14-test/manifest.json`、`image_to_video/2026-06-13-test/manifest.json`、`wan22_video_v2/2026-06-13-test/manifest.json`、`wan22_aio_video/2026-06-12-test/manifest.json`、`ltx_video/2026-06-10/manifest.json`、`face_i2i_t2i/2026-06-10/manifest.json`、`scail2/2026-06-17-test/manifest.json`。`video_basic/2026-06-10` 不作为主 manifest；legacy `video_insert` / `video_edit` 只作为兼容任务类型归入 `image_to_video`。
 - 单 bundle 通用入口仍为 `scripts/upload_model_bundle_to_r2.py`，通过 `.env.lan.model-cache` 映射 `LAN_MODEL_CACHE_*` 到 `RUNPOD_MODEL_*` 后写入 LAN cache；脚本按对象 size 与 sha256 metadata 跳过已有对象，metadata key 需大小写不敏感处理以兼容 MinIO。
 
 ## 4. RunPod Provider v0
@@ -231,9 +235,11 @@ python scripts/gpu_pool_controller.py runpod list-pods
 python scripts/gpu_pool_controller.py runpod reconcile-managed-pods
 python scripts/gpu_pool_controller.py runpod render-create --task-type img2img_lora --env cloud-test
 python scripts/gpu_pool_controller.py runpod render-create --task-type i2i_pro --env cloud-test
+python scripts/gpu_pool_controller.py runpod render-create --task-type scail2 --env cloud-test
 python scripts/gpu_pool_controller.py runpod create-pod --task-type img2img_lora --env cloud-test
 python scripts/gpu_pool_controller.py runpod canary --env-file .env.cloud.test --quiet
 python scripts/gpu_pool_controller.py runpod canary --task-type i2i_pro --env-file .env.cloud.test --quiet
+python scripts/gpu_pool_controller.py runpod canary --task-type scail2 --env-file .env.cloud.test --quiet
 ```
 
 `render-create` 不需要 `RUNPOD_API_KEY`；`create-pod` 默认 dry-run。
@@ -247,6 +253,7 @@ python scripts/gpu_pool_controller.py runpod canary --task-type i2i_pro --env-fi
 | `image_to_video` | `image_to_video` | `image_to_video` | `runpod_test_image_to_video` | `image_to_video/2026-06-13-test/manifest.json` |
 | `wan22_video_v2` | `wan22_video_v2` | `wan22_video_v2` | `runpod_test_wan22_video_v2` | `wan22_video_v2/2026-06-13-test/manifest.json` |
 | `i2i_pro` | `i2i_pro,t2i-pornmaster-turbo,face_swap` | `i2i_pro` | `runpod_test_i2i_pro` | `i2i_pro/2026-06-14-test/manifest.json` |
+| `scail2` | `scail2_action_transfer,scail2_video_replacement` | `scail2` | `runpod_test_scail2` | `scail2/2026-06-17-test/manifest.json` |
 | `wan22_aio_video` | `image_to_video,wan22_video_v2` | `wan22_aio_video` | `runpod_test_wan22_aio_video` | `wan22_aio_video/2026-06-12-test/manifest.json` |
 
 `wan22_aio_video` 只保留为兼容/回滚 profile；新测试、新扩容和正式接入都应优先使用 split profile。

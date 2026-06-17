@@ -271,9 +271,15 @@ test -d "${comfyui_dir}/custom_nodes/ComfyUI-VideoHelperSuite"
 test -d "${comfyui_dir}/custom_nodes/rgthree-comfy"
 test -d "${comfyui_dir}/custom_nodes/ComfyUI-Frame-Interpolation"
 test -d "${comfyui_dir}/custom_nodes/ComfyUI_Fill-Nodes"
+test -x /opt/allbot/runpod_bootstrap_from_git.sh
 test -x /opt/allbot/lan_scail2_comfyui_entrypoint.sh
 test -f /opt/allbot/scail2-workflows/SCAIL-2_Animation.json
 command -v ffmpeg >/dev/null
+command -v ssh-keygen >/dev/null
+if ! command -v sshd >/dev/null && [ ! -x /usr/sbin/sshd ]; then
+  echo "sshd must be available for RunPod direct TCP diagnostics" >&2
+  exit 1
+fi
 if find "${comfyui_dir}/models" -type f -name "*.safetensors" -print -quit | grep -q .; then
   echo "SCAIL-2 model files must stay out of the profile image" >&2
   exit 1

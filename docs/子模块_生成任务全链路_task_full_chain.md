@@ -326,6 +326,7 @@ QueueManager 负责执行面排队与 Worker 选择，关键职责包括：
 - 某任务长时间 pending 时，要先看是否有 Worker 声明支持该任务类型
 - Worker 存活但 `SUPPORTED_TASK_TYPES` 不匹配，任务依然不会被接单
 - RunPod `i2i_pro` worker 必须声明 `SUPPORTED_TASK_TYPES=i2i_pro,t2i-pornmaster-turbo,face_swap` 与 `POOL_RUNTIME_PROFILE=i2i_pro`，并设置 `TASK_TYPE_WORKFLOW_OVERRIDES={"t2i-pornmaster-turbo":"txt2img_from_i2i_pro.json","face_swap":"face_swap_v2.json"}`；cloud-test canary 会临时禁用同环境中支持这些执行类型的非 RunPod worker，结束后必须恢复。
+- RunPod `scail2` worker 必须声明 `SUPPORTED_TASK_TYPES=scail2_action_transfer,scail2_video_replacement` 与 `POOL_RUNTIME_PROFILE=scail2`；cloud-test canary 会临时禁用同环境中支持这两个执行类型的非 RunPod worker（通常是 `cloud_worker_test_08`），结束后必须恢复。
 - `image_to_video` 是旧图生视频 `custom_video` / `video_lora` 与 Telegram 懒人动图的执行面类型；生产 worker 接入新链路时必须支持 `image_to_video`。worker 继续声明 `video_insert` / `video_edit` 只用于兼容旧队列残留，不应被当作新任务能力扩展方向。
 
 ### 9.2 输入准备
@@ -348,7 +349,7 @@ Worker 拉到任务后会先处理输入：
 关键点：
 - `TASK_TYPE_WORKFLOW_FILENAMES` 决定任务类型默认绑定哪个 workflow JSON
 - `TASK_TYPE_WORKFLOW_OVERRIDES` 可在单个 Worker 环境变量中覆盖某个 task type 的 workflow JSON，用于云测试/canary；未设置时仍走默认绑定，override 文件名必须留在 workflow 目录内
-- RunPod 使用 `remote_workers/` bundle；当 `i2i_pro` profile 需要同时接 `i2i_pro/t2i-pornmaster-turbo/face_swap` 时，`remote_workers/src/workflow_mapping_validation.py` 必须支持 `TASK_TYPE_WORKFLOW_OVERRIDES`，且 `remote_workers/comfy_agent/workflows/` 必须包含 `txt2img_from_i2i_pro.json` 与 `face_swap_v2.json`。只更新本地主 `workers/` 会让新建 RunPod Pod 继续读取旧默认 workflow。
+- RunPod 使用 `remote_workers/` bundle；当 `i2i_pro` profile 需要同时接 `i2i_pro/t2i-pornmaster-turbo/face_swap` 时，`remote_workers/src/workflow_mapping_validation.py` 必须支持 `TASK_TYPE_WORKFLOW_OVERRIDES`，且 `remote_workers/comfy_agent/workflows/` 必须包含 `txt2img_from_i2i_pro.json` 与 `face_swap_v2.json`。SCAIL-2 RunPod 也读取 `remote_workers/comfy_agent/workflows/SCAIL-2_Replacement.api.json` 与 `SCAIL-2_Animation_multi-char.api.json`；只更新本地主 `workers/` 会让新建 RunPod Pod 继续读取旧默认 workflow。
 - 当前 `face_swap` 在测试 worker1、正式 worker1 和 RunPod `i2i_pro` profile 中通过 override 指向 `face_swap_v2.json`。v2 使用 `i2i_pro` 的 Flux2/edit 节点与模型，去掉旧换脸专用 LoRA / DifferentialDiffusion；`mappings.json` 继续只写入 `face_image -> 2`、`body_image -> 3`，未设置 override 的其它 worker 仍走旧 `face_swap.json`。
 - `mappings.json` 决定输入参数如何映射到 workflow 节点
 - `workflow_patcher.py` 负责把运行时参数打进具体 workflow
@@ -357,7 +358,7 @@ Worker 拉到任务后会先处理输入：
 - V82 在 `2603` 最终帧序列后接 `265` 插帧；默认使用 `FL_RIFE` (`multiplier=4`)。patcher 检测到 `265` 后会把 `28` 视频输出、`2575` 帧数统计和 `2607` 尾帧提取都指向 `["265", 0]`，避免运行时覆盖导致插帧失效。生产 worker3 对应的 `192.168.1.177:8189` 已在 ComfyUI 侧修复 `FL_RIFE` 环境，不再使用 worker env 切换节点类。
 - Wan22 AIO 的 `5s/8s/10s` 时长最终由 worker patcher 写入 `2578.inputs.value`，再经 workflow 内部帧数公式得到 `81/129/161` 源帧；计费和 result meta 使用同一份 `src.domain_config.wan22_aio_video` duration 归一化。
 - 旧图生视频 Web/Bot 历史类型仍是 `custom_video` / `video_lora`，懒人动图历史类型仍是其具体 mode；执行面 task type 才是 `image_to_video`。排障时需要同时确认上游历史类型、registry task type 和 backend task type。
-- SCAIL-2 当前只接云测试 Web 与测试 Bot，真实 task type 为 `scail2_action_transfer`（动作迁移）与 `scail2_video_replacement`（视频换人），不进云正式。Web payload 使用 `inputs.images=[参考图, 驱动视频]`、`prompt`、`negative_prompt`、`duration`；测试 Bot 入口在“视频生视频”二级菜单下，按“视频换人 / 动作迁移”收集参考图、驱动视频和正向提示词，负面词使用默认值，驱动视频上限 40MB。dispatcher 会转换为 Central simple route 的 `image`、`video`、`prompt`、`negative_prompt`、`length`。业务 workflow 必须是 API format：`scail2_action_transfer -> SCAIL-2_Animation_multi-char.api.json`，`scail2_video_replacement -> SCAIL-2_Replacement.api.json`；Nomadoor UI JSON 仅供人工编辑/加载。worker patcher 固定 512x896、`force_rate=16`、`skip_first_frames=0`，5s/8s 分别写 `frame_load_cap` 与 `WanSCAILToVideo.length` 为 `81/129`，并分别强制 `replacement_mode=false/true`。执行 runtime 是 gpu-002 LAN AIO SCAIL-2 容器 `http://192.168.1.2:8190`，Central 接单层仍是本地主 `cloud_worker_test_08`，容器本身不注册 worker。
+- SCAIL-2 当前只接云测试 Web 与测试 Bot，真实 task type 为 `scail2_action_transfer`（动作迁移）与 `scail2_video_replacement`（视频换人），不进云正式。Web payload 使用 `inputs.images=[参考图, 驱动视频]`、`prompt`、`negative_prompt`、`duration`；测试 Bot 入口在“视频生视频”二级菜单下，按“视频换人 / 动作迁移”收集参考图、驱动视频和正向提示词，负面词使用默认值，驱动视频上限 40MB。dispatcher 会转换为 Central simple route 的 `image`、`video`、`prompt`、`negative_prompt`、`length`。业务 workflow 必须是 API format：`scail2_action_transfer -> SCAIL-2_Animation_multi-char.api.json`，`scail2_video_replacement -> SCAIL-2_Replacement.api.json`；Nomadoor UI JSON 仅供人工编辑/加载。worker patcher 固定 512x896、`force_rate=16`、`skip_first_frames=0`，5s/8s 分别写 `frame_load_cap` 与 `WanSCAILToVideo.length` 为 `81/129`，并分别强制 `replacement_mode=false/true`。执行 runtime 可以是 gpu-002 LAN AIO SCAIL-2 容器 `http://192.168.1.2:8190` + 本地主 `cloud_worker_test_08`，也可以是 cloud-test RunPod `scail2` profile；RunPod canary 使用 `user-data-test` 保存输入/结果，模型从 `allbot-model-cache/scail2/2026-06-17-test/manifest.json` 同步。
 
 如果出现以下错误，优先看这三层：
 - Worker 报 `Workflow for xxx not found`

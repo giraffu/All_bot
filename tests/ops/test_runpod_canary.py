@@ -11,6 +11,10 @@ from ops.gpu_pool_controller.runpod_canary import (
     EXPECTED_I2I_PRO_IMAGE_REF_PREFIX,
     EXPECTED_I2I_PRO_MODEL_MANIFEST_KEY,
     EXPECTED_I2I_PRO_MODEL_PREFIX,
+    EXPECTED_SCAIL2_GPU_TYPE_IDS,
+    EXPECTED_SCAIL2_IMAGE_REF_PREFIX,
+    EXPECTED_SCAIL2_MODEL_MANIFEST_KEY,
+    EXPECTED_SCAIL2_MODEL_PREFIX,
     RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES,
     RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
     EXPECTED_MODEL_BUCKET,
@@ -29,6 +33,10 @@ from ops.gpu_pool_controller.runpod_canary import (
     result_url_path,
     write_canary_png,
 )
+from ops.gpu_pool_controller.providers.runpod import (
+    RUNPOD_SCAIL2_DOCKER_START_CMD,
+    RUNPOD_SCAIL2_SUPPORTED_TASK_TYPES,
+)
 
 
 PUBLIC_GHCR_IMAGE = (
@@ -39,6 +47,9 @@ PUBLIC_WAN22_GHCR_IMAGE = (
 )
 PUBLIC_I2I_PRO_GHCR_IMAGE = (
     "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:20260614-i2ipro-test"
+)
+PUBLIC_SCAIL2_GHCR_IMAGE = (
+    "ghcr.io/giraffu/allbot-comfy-runpod-scail2:20260617-scail2-test"
 )
 
 
@@ -130,6 +141,17 @@ class FakeRunPodProvider:
                 if self.settings.use_template_i2i_pro
                 else ""
             )
+        elif task_type == "scail2":
+            image_name = PUBLIC_SCAIL2_GHCR_IMAGE
+            supported_task_types = ",".join(RUNPOD_SCAIL2_SUPPORTED_TASK_TYPES)
+            model_prefix = EXPECTED_SCAIL2_MODEL_PREFIX
+            model_manifest_key = EXPECTED_SCAIL2_MODEL_MANIFEST_KEY
+            gpu_type_ids = list(EXPECTED_SCAIL2_GPU_TYPE_IDS)
+            template_id = (
+                self.settings.template_id_scail2
+                if self.settings.use_template_scail2
+                else ""
+            )
         else:
             image_name = PUBLIC_GHCR_IMAGE
             supported_task_types = "img2img,img2img_lora"
@@ -162,6 +184,8 @@ class FakeRunPodProvider:
             body["env"]["TASK_TYPE_WORKFLOW_OVERRIDES"] = (
                 RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES
             )
+        if task_type == "scail2":
+            body["dockerStartCmd"] = list(RUNPOD_SCAIL2_DOCKER_START_CMD)
         if template_id:
             body["templateId"] = template_id
         else:
@@ -302,6 +326,38 @@ def test_runpod_canary_i2i_pro_dry_run_preflights_with_profile_specific_render()
     assert payload["render"]["model_prefix"] == EXPECTED_I2I_PRO_MODEL_PREFIX
     assert payload["render"]["model_manifest_key"] == EXPECTED_I2I_PRO_MODEL_MANIFEST_KEY
     assert "submit i2i_pro, txt2img, and face_swap Web tasks serially" in payload["would_execute"]
+    assert provider.create_calls == 0
+    assert provider.delete_calls == 0
+
+
+def test_runpod_canary_scail2_dry_run_preflights_with_profile_specific_render():
+    provider = FakeRunPodProvider()
+    options = RunPodCanaryOptions(
+        task_type="scail2",
+        execute=False,
+        quiet=True,
+    )
+
+    payload = RunPodCanaryRunner(
+        provider,
+        options,
+        sleep_func=lambda _seconds: None,
+    ).run()
+
+    assert payload["ok"] is True
+    assert payload["render"]["imageName"].startswith(EXPECTED_SCAIL2_IMAGE_REF_PREFIX)
+    assert payload["render"]["gpu_type_ids"] == list(EXPECTED_SCAIL2_GPU_TYPE_IDS)
+    assert payload["render"]["supported_task_types"] == ",".join(
+        RUNPOD_SCAIL2_SUPPORTED_TASK_TYPES
+    )
+    assert payload["render"]["model_prefix"] == EXPECTED_SCAIL2_MODEL_PREFIX
+    assert payload["render"]["model_manifest_key"] == EXPECTED_SCAIL2_MODEL_MANIFEST_KEY
+    assert payload["render"]["docker_start_cmd"] == list(RUNPOD_SCAIL2_DOCKER_START_CMD)
+    assert any(
+        "scail2_action_transfer and scail2_video_replacement 5s Web tasks serially"
+        in step
+        for step in payload["would_execute"]
+    )
     assert provider.create_calls == 0
     assert provider.delete_calls == 0
 
@@ -620,6 +676,41 @@ def test_i2i_pro_canary_task_case_submits_existing_task_type():
     assert cases[2]["expected_central_task_type"] == "face_swap"
 
 
+def test_scail2_canary_task_cases_submit_two_5s_video_to_video_tasks():
+    runner = RunPodCanaryRunner(
+        FakeRunPodProvider(),
+        RunPodCanaryOptions(task_type="scail2", quiet=True),
+    )
+
+    cases = runner._task_cases(
+        {
+            "reference_image_key": "user-data-test/web_uploads/3/reference.jpg",
+            "motion_video_key": "user-data-test/web_uploads/3/motion.mp4",
+        }
+    )
+
+    assert [case["label"] for case in cases] == [
+        "scail2_action_transfer_5s",
+        "scail2_video_replacement_5s",
+    ]
+    assert [case["payload"]["task_type"] for case in cases] == [
+        "scail2_action_transfer",
+        "scail2_video_replacement",
+    ]
+    for case in cases:
+        assert case["expected_central_task_type"] == case["payload"]["task_type"]
+        inputs = case["payload"]["inputs"]
+        assert inputs["images"] == [
+            "user-data-test/web_uploads/3/reference.jpg",
+            "user-data-test/web_uploads/3/motion.mp4",
+        ]
+        assert inputs["image"] == "user-data-test/web_uploads/3/reference.jpg"
+        assert inputs["video"] == "user-data-test/web_uploads/3/motion.mp4"
+        assert inputs["resolution"] == "512x896"
+        assert inputs["duration"] == 5
+        assert "negative_prompt" in case["payload"]
+
+
 def test_wan22_canary_validates_last_frame_extra_output():
     runner = RunPodCanaryRunner(
         FakeRunPodProvider(),
@@ -768,6 +859,48 @@ def test_i2i_pro_canary_disables_only_matching_cloud_test_non_runpod_workers():
     ]
 
 
+def test_scail2_canary_disables_only_matching_cloud_test_non_runpod_workers():
+    runner = RunPodCanaryRunner(
+        FakeRunPodProvider(),
+        RunPodCanaryOptions(
+            task_type="scail2",
+            quiet=True,
+            worker_ids=("cloud_worker_test_01", "cloud_worker_test_02"),
+            worker_ids_explicit=False,
+        ),
+    )
+    runner._fetch_workers = lambda: [  # type: ignore[method-assign]
+        {"agent_id": "cloud_worker_test_01", "types": "img2img,img2img_lora"},
+        {
+            "agent_id": "cloud_worker_test_08",
+            "types": "scail2_action_transfer,scail2_video_replacement",
+        },
+        {"agent_id": "cloud_worker_test_09", "types": "scail2_action_transfer"},
+        {
+            "agent_id": "runpod_test_scail2_pod-1",
+            "types": ",".join(RUNPOD_SCAIL2_SUPPORTED_TASK_TYPES),
+            "provider": "runpod",
+        },
+        {"agent_id": "cloud_prod_worker_06", "types": "scail2_video_replacement"},
+    ]
+    runner._get_agent_control = lambda agent_id: {"state": "enabled", "reason": ""}  # type: ignore[method-assign]
+    disabled = []
+    runner._set_agent_control = (  # type: ignore[method-assign]
+        lambda agent_id, state, **_kwargs: disabled.append((agent_id, state))
+    )
+
+    controls = runner._disable_test_workers({})
+
+    assert [item["agent_id"] for item in controls] == [
+        "cloud_worker_test_08",
+        "cloud_worker_test_09",
+    ]
+    assert disabled == [
+        ("cloud_worker_test_08", "disabled"),
+        ("cloud_worker_test_09", "disabled"),
+    ]
+
+
 def test_cli_parses_runpod_canary_command():
     args = build_parser().parse_args(
         [
@@ -780,6 +913,10 @@ def test_cli_parses_runpod_canary_command():
             "图片中出现一个黑人女性",
             "--input-object-key",
             "user-data-test/web_uploads/3/example.png",
+            "--scail2-reference-object-key",
+            "user-data-test/web_uploads/3/reference.jpg",
+            "--scail2-motion-video-object-key",
+            "user-data-test/web_uploads/3/motion.mp4",
             "--download-results-dir",
             "/tmp/allbot_runpod_canary/results",
             "--quiet",
@@ -792,6 +929,8 @@ def test_cli_parses_runpod_canary_command():
     assert args.disable_workers is False
     assert args.prompt == "图片中出现一个黑人女性"
     assert args.input_object_key == "user-data-test/web_uploads/3/example.png"
+    assert args.scail2_reference_object_key == "user-data-test/web_uploads/3/reference.jpg"
+    assert args.scail2_motion_video_object_key == "user-data-test/web_uploads/3/motion.mp4"
     assert args.download_results_dir == Path("/tmp/allbot_runpod_canary/results")
 
 

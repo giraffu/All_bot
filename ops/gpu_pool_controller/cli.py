@@ -621,6 +621,8 @@ def build_parser() -> argparse.ArgumentParser:
     runpod_canary.add_argument("--prompt", default=None)
     runpod_canary.add_argument("--negative-prompt", default=None)
     runpod_canary.add_argument("--input-object-key", default=None)
+    runpod_canary.add_argument("--scail2-reference-object-key", default=None)
+    runpod_canary.add_argument("--scail2-motion-video-object-key", default=None)
     runpod_canary.add_argument("--output-dir", type=Path, default=None)
     runpod_canary.add_argument("--download-results-dir", type=Path, default=None)
     runpod_canary.add_argument(

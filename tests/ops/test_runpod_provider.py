@@ -20,7 +20,14 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_PROD_SUPPORTED_TASK_TYPES,
     RUNPOD_PROD_WORKER_CENTRAL_URL,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
+    RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
     RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX,
+    RUNPOD_SCAIL2_CONTAINER_DISK_GB,
+    RUNPOD_SCAIL2_DOCKER_START_CMD,
+    RUNPOD_SCAIL2_GPU_TYPE_IDS,
+    RUNPOD_SCAIL2_MODEL_MANIFEST_KEY,
+    RUNPOD_SCAIL2_MODEL_PREFIX,
+    RUNPOD_SCAIL2_SUPPORTED_TASK_TYPES,
     RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS,
     RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
     RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX,
@@ -649,6 +656,49 @@ def test_render_create_i2i_pro_cloud_test_profile_uses_dedicated_manifest_and_di
     assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
 
 
+def test_render_create_scail2_cloud_test_profile_uses_r2_manifest_and_bootstrap():
+    image_ref = RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX + "20260617-scail2-test"
+    provider = RunPodProvider(
+        _settings(
+            image_name_scail2=image_ref,
+            model_sync_enabled=True,
+            model_bucket="allbot-model-cache",
+            model_prefix_scail2=RUNPOD_SCAIL2_MODEL_PREFIX,
+            model_manifest_key_scail2=RUNPOD_SCAIL2_MODEL_MANIFEST_KEY,
+            comfy_custom_nodes_enabled=False,
+            comfy_kjnodes_enabled=False,
+            container_disk_gb=80,
+        )
+    )
+
+    payload = provider.render_create_pod_request(
+        task_type="scail2",
+        environment="cloud-test",
+        redact=False,
+    )
+    body = payload["json"]
+    env = body["env"]
+
+    assert "templateId" not in body
+    assert body["name"] == "allbot-runpod-test-scail2"
+    assert body["imageName"] == image_ref
+    assert body["gpuTypeIds"] == list(RUNPOD_SCAIL2_GPU_TYPE_IDS)
+    assert body["containerDiskInGb"] == RUNPOD_SCAIL2_CONTAINER_DISK_GB
+    assert body["dockerStartCmd"] == list(RUNPOD_SCAIL2_DOCKER_START_CMD)
+    assert env["RUNPOD_ENVIRONMENT"] == "cloud-test"
+    assert env["RUNPOD_TASK_TYPE"] == "scail2"
+    assert env["AGENT_ID_PREFIX"] == "runpod_test_scail2"
+    assert env["SUPPORTED_TASK_TYPES"] == ",".join(RUNPOD_SCAIL2_SUPPORTED_TASK_TYPES)
+    assert env["POOL_RUNTIME_PROFILE"] == "scail2"
+    assert env["MINIO_RESULT_BUCKET"] == "user-data-test"
+    assert env["RUNPOD_MODEL_BUCKET"] == "allbot-model-cache"
+    assert env["RUNPOD_MODEL_PREFIX"] == RUNPOD_SCAIL2_MODEL_PREFIX
+    assert env["RUNPOD_MODEL_MANIFEST_KEY"] == RUNPOD_SCAIL2_MODEL_MANIFEST_KEY
+    assert env["RUNPOD_COMFY_CUSTOM_NODES_ENABLED"] == "false"
+    assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
+    assert "TASK_TYPE_WORKFLOW_OVERRIDES" not in env
+
+
 def test_runpod_settings_from_env_split_video_profiles_fallback_to_wan22_image_template(
     tmp_path,
     monkeypatch,
@@ -746,6 +796,53 @@ def test_runpod_settings_from_env_supports_i2i_pro_profile_keys(
         settings.task_type_workflow_overrides_i2i_pro
         == RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES
     )
+
+
+def test_runpod_settings_from_env_supports_scail2_profile_keys(tmp_path, monkeypatch):
+    script = tmp_path / "scail2-bootstrap.sh"
+    script.write_text("echo scail2 bootstrap\n", encoding="utf-8")
+    monkeypatch.setenv("RUNPOD_USE_TEMPLATE_SCAIL2", "true")
+    monkeypatch.setenv("RUNPOD_TEMPLATE_ID_SCAIL2", "scail2-template")
+    monkeypatch.setenv(
+        "RUNPOD_IMAGE_NAME_SCAIL2",
+        RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX + "20260617-scail2-test",
+    )
+    monkeypatch.setenv("RUNPOD_DOCKER_START_SCRIPT_FILE_SCAIL2", str(script))
+    monkeypatch.setenv(
+        "RUNPOD_GPU_TYPE_IDS_SCAIL2",
+        "NVIDIA GeForce RTX 5090,NVIDIA GeForce RTX 4090",
+    )
+    monkeypatch.setenv("RUNPOD_PROJECTED_COST_PER_HR_SCAIL2", "1.23")
+    monkeypatch.setenv("RUNPOD_MODEL_PREFIX_SCAIL2", RUNPOD_SCAIL2_MODEL_PREFIX)
+    monkeypatch.setenv(
+        "RUNPOD_MODEL_MANIFEST_KEY_SCAIL2",
+        RUNPOD_SCAIL2_MODEL_MANIFEST_KEY,
+    )
+
+    settings = RunPodSettings.from_env()
+
+    assert settings.use_template_scail2 is True
+    assert settings.template_id_scail2 == "scail2-template"
+    assert settings.image_name_scail2.endswith(":20260617-scail2-test")
+    assert settings.docker_start_cmd_scail2 == (
+        "bash",
+        "-lc",
+        "echo scail2 bootstrap\n",
+    )
+    assert settings.gpu_type_ids_scail2 == RUNPOD_SCAIL2_GPU_TYPE_IDS
+    assert settings.projected_cost_per_hr_scail2 == 1.23
+    assert settings.model_prefix_scail2 == RUNPOD_SCAIL2_MODEL_PREFIX
+    assert settings.model_manifest_key_scail2 == RUNPOD_SCAIL2_MODEL_MANIFEST_KEY
+
+
+def test_runpod_settings_from_env_scail2_uses_git_bootstrap_by_default(monkeypatch):
+    monkeypatch.delenv("RUNPOD_DOCKER_START_CMD_JSON_SCAIL2", raising=False)
+    monkeypatch.delenv("RUNPOD_DOCKER_START_SCRIPT_SCAIL2", raising=False)
+    monkeypatch.delenv("RUNPOD_DOCKER_START_SCRIPT_FILE_SCAIL2", raising=False)
+
+    settings = RunPodSettings.from_env()
+
+    assert settings.docker_start_cmd_scail2 == RUNPOD_SCAIL2_DOCKER_START_CMD
 
 
 def test_runpod_settings_from_env_injects_public_key_file(

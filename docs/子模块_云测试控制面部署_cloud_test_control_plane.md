@@ -49,7 +49,7 @@ CLOUD_TEST_WORKER_REDIS_URL=redis://:<password>@redis-test:6379/4
 | :--- | :--- | :--- |
 | `MINIO_*` / `R2_*` | `user-data-test` + `https://r2-test.aivison.it.com` | 用户上传、任务输入/结果、模板、历史/Gallery 媒体；不要把模型权重放入该桶 |
 | `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | `.env.cloud.test` 真实值；RunPod Pod 内使用 `allbot_cloud_test_r2_access_key` / `allbot_cloud_test_r2_secret_key` secret | 只读写 `user-data-test` |
-| `RUNPOD_MODEL_*` | `allbot-model-cache` + `RUNPOD_MODEL_PREFIX`/`RUNPOD_MODEL_MANIFEST_KEY` | RunPod/LAN AIO 模型 manifest 与模型权重缓存；`img2img_lora` 默认 `img2img_lora/2026-06-10`，Wan22 cloud-test 视频主路径使用 split 前缀 `image_to_video/2026-06-13-test` 与 `wan22_video_v2/2026-06-13-test`；`i2i_pro` 使用 `i2i_pro/2026-06-14-test`；SCAIL-2 LAN AIO runtime 使用 `scail2/2026-06-17-test`；`wan22_aio_video/2026-06-12-test` 只作为历史全集/回滚 manifest |
+| `RUNPOD_MODEL_*` | `allbot-model-cache` + `RUNPOD_MODEL_PREFIX`/`RUNPOD_MODEL_MANIFEST_KEY` | RunPod/LAN AIO 模型 manifest 与模型权重缓存；`img2img_lora` 默认 `img2img_lora/2026-06-10`，Wan22 cloud-test 视频主路径使用 split 前缀 `image_to_video/2026-06-13-test` 与 `wan22_video_v2/2026-06-13-test`；`i2i_pro` 使用 `i2i_pro/2026-06-14-test`；SCAIL-2 LAN AIO runtime 与 RunPod cloud-test profile 共用 `scail2/2026-06-17-test`；`wan22_aio_video/2026-06-12-test` 只作为历史全集/回滚 manifest |
 | `RUNPOD_MODEL_ACCESS_KEY` / `RUNPOD_MODEL_SECRET_KEY` | `.env.cloud.test` 可保存真实值，供本地 dry-run HEAD/上传脚本使用 | 只读写 `allbot-model-cache`，不能复用 `user-data-test` 的 R2 key |
 | `RUNPOD_MODEL_ACCESS_KEY_REF` / `RUNPOD_MODEL_SECRET_KEY_REF` | `allbot_model_cache_r2_access_key` / `allbot_model_cache_r2_secret_key` | RunPod create JSON 中的模型桶 secret 引用字符串，不是密钥本体 |
 
@@ -234,6 +234,14 @@ df -h /
 - 若当前保留了云正式手动备用 RunPod Pod，执行 `i2i_pro` cloud-test canary 时必须显式开启 `--allow-existing-prod-managed-pods` 或 `RUNPOD_CANARY_ALLOW_EXISTING_PROD_MANAGED_PODS=true`；该开关只忽略 `allbot-runpod-prod-*-manual-` 已知正式手动备用名称前缀，任何 cloud-test 残留 managed Pod 仍会阻止执行。
 - 失败排障时可用 `--no-cleanup` 保留本次新建的 `i2i_pro` Pod；复跑 Web 任务使用 `--reuse-pod-id i2i_pro=<pod_id>`，不得重复创建诊断 Pod。
 - 验收结束后必须恢复临时禁用的非 RunPod cloud-test `i2i_pro/t2i-pornmaster-turbo/face_swap` worker，删除本次新建的 RunPod Pod，并确认 `list-pods` / `reconcile-managed-pods` 的非忽略 managed count 为 0；既有 prod 手动备用 Pod 必须保持运行。
+
+2026-06-17 RunPod `scail2` 云测试 Web 端验收口径：
+- 本能力只做 cloud-test RunPod，不接云正式，不复用 `gpu-002/8190`。LAN AIO SCAIL-2 runtime 可继续给测试环境手工/worker 使用；RunPod canary 执行时会短暂 disable 支持 SCAIL-2 的非 RunPod cloud-test worker，通常是 `cloud_worker_test_08`，结束必须恢复。
+- 模型权重转存到模型缓存桶 `allbot-model-cache/scail2/2026-06-17-test`，不能放进 `user-data-test`。入口为 `scripts/prepare_scail2_model_r2_bundle.py --env-file .env.cloud.test` dry-run，确认 6 个 HuggingFace direct URL、LoRA 路径 `loras/Wan2.1/Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors` 和 manifest key 后，才加 `--execute` 写入 R2。
+- 镜像由 `.github/workflows/runpod_scail2_profile_image.yml` 构建并推送 `ghcr.io/giraffu/allbot-comfy-runpod-scail2:<tag>`。镜像必须包含 ComfyUI SCAIL-2 core 节点、VideoHelperSuite、KJNodes、rgthree、Frame-Interpolation、Fill-Nodes、ffmpeg、sshd/bootstrap，不得 baked 任何 `.safetensors` 权重。RunPod env 使用 `RUNPOD_IMAGE_NAME_SCAIL2=<GHCR ref>`、`RUNPOD_USE_TEMPLATE_SCAIL2=false`、`RUNPOD_MODEL_PREFIX_SCAIL2=scail2/2026-06-17-test`、`RUNPOD_MODEL_MANIFEST_KEY_SCAIL2=scail2/2026-06-17-test/manifest.json`。
+- RunPod env 需渲染为 `RUNPOD_TASK_TYPE=scail2`、`SUPPORTED_TASK_TYPES=scail2_action_transfer,scail2_video_replacement`、`POOL_RUNTIME_PROFILE=scail2`、`AGENT_ID` 前缀 `runpod_test_scail2`，`MINIO_RESULT_BUCKET=user-data-test`，`RUNPOD_MODEL_BUCKET=allbot-model-cache`，`containerDiskInGb=120`，GPU 优先 `NVIDIA GeForce RTX 5090,NVIDIA GeForce RTX 4090`，并带 `dockerStartCmd=["bash","-lc","exec bash /opt/allbot/runpod_bootstrap_from_git.sh"]`。
+- `runpod canary --task-type scail2` 会上传/复用 Nomadoor 样例参考图与 motion video，串行提交 `scail2_action_transfer 5s` 与 `scail2_video_replacement 5s` 两个 Web 任务。合格结果应同时满足：RunPod worker heartbeat 出现为 `runpod_test_scail2_*`、两个 Central `task_type` 分别正确、每单 `pop_evidence.agent_id` 均匹配 RunPod worker、终态 `done`、Web result `success`、MP4 可下载/播放。
+- 失败排障可用 `--no-cleanup` 保留本次 SCAIL-2 Pod；复跑使用 `--reuse-pod-id scail2=<pod_id>`，不得重复创建诊断 Pod。验收结束后必须恢复 `cloud_worker_test_08` 原 control 状态，删除本次 RunPod Pod，并确认 managed cloud-test Pod 清理正常。
 
 2026-06-06 R2 切换验证结果：
 - 本地测试 MinIO 历史对象已镜像到 R2 `user-data-test` 桶根路径：`bot-data-test` 约 1.10GiB，`comfyui-temp-test` 约 749.91MiB，`bot-template-test` 为空。

@@ -26,6 +26,12 @@ from .providers.runpod import (
     RUNPOD_PROD_IMAGE_TO_VIDEO_POD_NAME_PREFIX,
     RUNPOD_PROD_POD_NAME_PREFIX,
     RUNPOD_PROD_WAN22_VIDEO_V2_POD_NAME_PREFIX,
+    RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
+    RUNPOD_SCAIL2_DOCKER_START_CMD,
+    RUNPOD_SCAIL2_GPU_TYPE_IDS,
+    RUNPOD_SCAIL2_MODEL_MANIFEST_KEY,
+    RUNPOD_SCAIL2_MODEL_PREFIX,
+    RUNPOD_SCAIL2_SUPPORTED_TASK_TYPES,
     RUNPOD_TASK_PROFILES,
     RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS,
     RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY,
@@ -50,6 +56,8 @@ EXPECTED_WAN22_VIDEO_V2_MODEL_PREFIX = RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX
 EXPECTED_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY = RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY
 EXPECTED_I2I_PRO_MODEL_PREFIX = RUNPOD_I2I_PRO_MODEL_PREFIX
 EXPECTED_I2I_PRO_MODEL_MANIFEST_KEY = RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY
+EXPECTED_SCAIL2_MODEL_PREFIX = RUNPOD_SCAIL2_MODEL_PREFIX
+EXPECTED_SCAIL2_MODEL_MANIFEST_KEY = RUNPOD_SCAIL2_MODEL_MANIFEST_KEY
 EXPECTED_TEST_BUCKET = "user-data-test"
 EXPECTED_IMAGE_REF_PREFIX = "ghcr.io/giraffu/allbot-comfy-runpod-img2img:"
 EXPECTED_WAN22_AIO_VIDEO_IMAGE_REF_PREFIX = (
@@ -58,12 +66,14 @@ EXPECTED_WAN22_AIO_VIDEO_IMAGE_REF_PREFIX = (
 EXPECTED_I2I_PRO_IMAGE_REF_PREFIX = (
     "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:"
 )
+EXPECTED_SCAIL2_IMAGE_REF_PREFIX = RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX
 DEFAULT_CONTROL_HOST = "100.82.124.91"
 DEFAULT_WORKER_IDS = tuple(f"cloud_worker_test_{index:02d}" for index in range(1, 8))
 EXPECTED_TASK_TYPES = ("img2img", "img2img_lora")
 EXPECTED_WAN22_AIO_VIDEO_TASK_TYPES = ("image_to_video", "wan22_video_v2")
 EXPECTED_WAN22_AIO_VIDEO_GPU_TYPE_IDS = RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS
 EXPECTED_I2I_PRO_GPU_TYPE_IDS = RUNPOD_I2I_PRO_GPU_TYPE_IDS
+EXPECTED_SCAIL2_GPU_TYPE_IDS = RUNPOD_SCAIL2_GPU_TYPE_IDS
 TERMINAL_TASK_STATUSES = {"done", "error", "cancelled"}
 HEALTHY_WORKER_STATUSES = {"idle", "running"}
 PROD_MANUAL_POD_NAME_PREFIXES = (
@@ -71,6 +81,15 @@ PROD_MANUAL_POD_NAME_PREFIXES = (
     RUNPOD_PROD_IMAGE_TO_VIDEO_POD_NAME_PREFIX,
     RUNPOD_PROD_WAN22_VIDEO_V2_POD_NAME_PREFIX,
     RUNPOD_PROD_I2I_PRO_POD_NAME_PREFIX,
+)
+SCAIL2_SAMPLE_REFERENCE_URL = (
+    "https://i.gyazo.com/567acaf722ca9e839ec7cb834c1ed344/max_size/1200.jpg"
+)
+SCAIL2_SAMPLE_MOTION_VIDEO_URL = (
+    "https://i.gyazo.com/53461ca17746349fbd11e69798460ea6.mp4"
+)
+SCAIL2_CANARY_NEGATIVE_PROMPT = (
+    "low quality, artifacts, text, watermark, distorted face, bad hands"
 )
 
 
@@ -150,6 +169,22 @@ RUNPOD_CANARY_PROFILE_SPECS: dict[str, RunPodCanaryProfileSpec] = {
             "t2i-pornmaster-turbo, or face_swap"
         ),
     ),
+    "scail2": RunPodCanaryProfileSpec(
+        task_type="scail2",
+        image_ref_prefix=EXPECTED_SCAIL2_IMAGE_REF_PREFIX,
+        supported_task_types=RUNPOD_SCAIL2_SUPPORTED_TASK_TYPES,
+        model_prefix=EXPECTED_SCAIL2_MODEL_PREFIX,
+        model_manifest_key=EXPECTED_SCAIL2_MODEL_MANIFEST_KEY,
+        expected_gpu_type_ids=EXPECTED_SCAIL2_GPU_TYPE_IDS,
+        task_summary=(
+            "upload Nomadoor sample reference image and motion video, then submit "
+            "scail2_action_transfer and scail2_video_replacement 5s Web tasks serially"
+        ),
+        worker_disable_summary=(
+            "temporarily disable cloud-test workers supporting scail2_action_transfer "
+            "or scail2_video_replacement"
+        ),
+    ),
 }
 
 
@@ -169,6 +204,8 @@ class RunPodCanaryOptions:
     web_bearer_token: str = ""
     agent_token: str = ""
     input_object_key: str = ""
+    scail2_reference_object_key: str = ""
+    scail2_motion_video_object_key: str = ""
     output_dir: Path = Path("/tmp/allbot_runpod_canary")
     download_results_dir: Path | None = None
     readiness_timeout_seconds: float = 900.0
@@ -245,6 +282,16 @@ def options_from_args_env(args: Any) -> RunPodCanaryOptions:
         input_object_key=(
             getattr(args, "input_object_key", None)
             or os.getenv("RUNPOD_CANARY_INPUT_OBJECT_KEY")
+            or ""
+        ),
+        scail2_reference_object_key=(
+            getattr(args, "scail2_reference_object_key", None)
+            or os.getenv("RUNPOD_CANARY_SCAIL2_REFERENCE_OBJECT_KEY")
+            or ""
+        ),
+        scail2_motion_video_object_key=(
+            getattr(args, "scail2_motion_video_object_key", None)
+            or os.getenv("RUNPOD_CANARY_SCAIL2_MOTION_VIDEO_OBJECT_KEY")
             or ""
         ),
         output_dir=Path(
@@ -388,7 +435,7 @@ class RunPodCanaryRunner:
                     "create one RunPod cloud-test pod",
                     "wait for infrastructure readiness and Central worker heartbeat",
                     spec.worker_disable_summary,
-                    "upload or reuse one test PNG object in user-data-test",
+                    "upload or reuse test input object(s) in user-data-test",
                     spec.task_summary,
                     "optionally download generated results to a local directory",
                     "restore test workers and delete the RunPod pod",
@@ -414,10 +461,10 @@ class RunPodCanaryRunner:
                 if self.options.disable_workers:
                     worker_controls = self._disable_test_workers(summary)
 
-                image_object_key = self._resolve_canary_image(summary)
-                summary["test_input"] = {"object_key": image_object_key}
+                test_input = self._resolve_canary_inputs(summary)
+                summary["test_input"] = test_input
                 summary["tasks"] = []
-                for task_case in self._task_cases(image_object_key):
+                for task_case in self._task_cases(test_input):
                     task_result = self._run_task_case(task_case, runpod_worker, summary)
                     summary["tasks"].append(task_result)
 
@@ -689,12 +736,27 @@ class RunPodCanaryRunner:
         self.options.output_dir.mkdir(parents=True, exist_ok=True)
         image_path = self.options.output_dir / f"runpod_canary_{int(time.time())}.png"
         write_canary_png(image_path)
+        object_key = self._upload_bytes_to_user_data(
+            filename=image_path.name,
+            content_type="image/png",
+            body=image_path.read_bytes(),
+        )
+        self._phase(summary, "upload_test_image", "ok", {"object_key": object_key})
+        return object_key
+
+    def _upload_bytes_to_user_data(
+        self,
+        *,
+        filename: str,
+        content_type: str,
+        body: bytes,
+    ) -> str:
         presign = self._http_json(
             "GET",
             _join_url(self.options.web_api_url, "storage", "presigned-url"),
             params={
-                "filename": image_path.name,
-                "content_type": "image/png",
+                "filename": filename,
+                "content_type": content_type,
             },
             headers=self._web_auth_headers(),
         )
@@ -707,11 +769,10 @@ class RunPodCanaryRunner:
         self._http_bytes(
             "PUT",
             upload_url,
-            body=image_path.read_bytes(),
-            headers={"Content-Type": "image/png"},
+            body=body,
+            headers={"Content-Type": content_type},
             expected_statuses=(200, 201, 204),
         )
-        self._phase(summary, "upload_test_image", "ok", {"object_key": object_key})
         return object_key
 
     def _resolve_canary_image(self, summary: dict[str, Any]) -> str:
@@ -720,6 +781,77 @@ class RunPodCanaryRunner:
             self._phase(summary, "reuse_test_image", "ok", {"object_key": object_key})
             return object_key
         return self._upload_canary_image(summary)
+
+    def _resolve_canary_inputs(self, summary: dict[str, Any]) -> dict[str, str]:
+        profile = RUNPOD_TASK_PROFILES[self.options.task_type]
+        if profile.task_type == "scail2":
+            return self._resolve_scail2_inputs(summary)
+        image_object_key = self._resolve_canary_image(summary)
+        return {"object_key": image_object_key}
+
+    def _resolve_scail2_inputs(self, summary: dict[str, Any]) -> dict[str, str]:
+        reference_key = (
+            self.options.scail2_reference_object_key.strip()
+            or self.options.input_object_key.strip()
+        )
+        motion_key = self.options.scail2_motion_video_object_key.strip()
+        reused: dict[str, str] = {}
+        if reference_key:
+            reused["reference_image_key"] = reference_key
+        if motion_key:
+            reused["motion_video_key"] = motion_key
+        if reused:
+            self._phase(summary, "reuse_scail2_inputs", "ok", reused)
+        if not reference_key:
+            self._phase(summary, "upload_scail2_reference_image", "running")
+            reference_bytes = self._download_scail2_sample(
+                SCAIL2_SAMPLE_REFERENCE_URL,
+                label="reference image",
+            )
+            reference_key = self._upload_bytes_to_user_data(
+                filename=f"scail2_reference_{int(time.time())}.jpg",
+                content_type="image/jpeg",
+                body=reference_bytes,
+            )
+            self._phase(
+                summary,
+                "upload_scail2_reference_image",
+                "ok",
+                {"object_key": reference_key, "bytes": len(reference_bytes)},
+            )
+        if not motion_key:
+            self._phase(summary, "upload_scail2_motion_video", "running")
+            motion_bytes = self._download_scail2_sample(
+                SCAIL2_SAMPLE_MOTION_VIDEO_URL,
+                label="motion video",
+            )
+            motion_key = self._upload_bytes_to_user_data(
+                filename=f"scail2_motion_{int(time.time())}.mp4",
+                content_type="video/mp4",
+                body=motion_bytes,
+            )
+            self._phase(
+                summary,
+                "upload_scail2_motion_video",
+                "ok",
+                {"object_key": motion_key, "bytes": len(motion_bytes)},
+            )
+        return {
+            "reference_image_key": reference_key,
+            "motion_video_key": motion_key,
+        }
+
+    def _download_scail2_sample(self, url: str, *, label: str) -> bytes:
+        response = self._http_request(
+            "GET",
+            url,
+            headers={"User-Agent": "AllBot-RunPod-SCAIL2-Canary/1.0"},
+            expected_statuses=(200,),
+        )
+        raw = response["raw"]
+        if not raw:
+            raise RunPodCanaryError(f"SCAIL-2 sample {label} download returned empty")
+        return raw
 
     def _run_task_case(
         self,
@@ -1070,8 +1202,19 @@ class RunPodCanaryRunner:
             return 0
         return sum(1 for pod in pods if _pod_identifier(pod) in reused_pod_ids)
 
-    def _task_cases(self, image_object_key: str) -> list[dict[str, Any]]:
+    def _task_cases(self, test_input: str | dict[str, str]) -> list[dict[str, Any]]:
         profile = RUNPOD_TASK_PROFILES[self.options.task_type]
+        if profile.task_type == "scail2":
+            if not isinstance(test_input, dict):
+                raise RunPodCanaryError("SCAIL-2 canary requires reference/video inputs")
+            return self._scail2_task_cases(test_input)
+        image_object_key = (
+            test_input
+            if isinstance(test_input, str)
+            else str(test_input.get("object_key") or "")
+        )
+        if not image_object_key:
+            raise RunPodCanaryError("canary image object key is required")
         if profile.task_type == "wan22_aio_video":
             return self._wan22_aio_video_task_cases(image_object_key)
         if profile.task_type == "i2i_pro":
@@ -1214,6 +1357,50 @@ class RunPodCanaryRunner:
             },
         ]
 
+    def _scail2_task_cases(self, test_input: dict[str, str]) -> list[dict[str, Any]]:
+        reference_key = str(test_input.get("reference_image_key") or "")
+        motion_key = str(test_input.get("motion_video_key") or "")
+        if not reference_key or not motion_key:
+            raise RunPodCanaryError(
+                "SCAIL-2 canary requires reference_image_key and motion_video_key"
+            )
+        base_inputs = {
+            "images": [reference_key, motion_key],
+            "image": reference_key,
+            "video": motion_key,
+            "resolution": "512x896",
+            "duration": 5,
+            "seed": 20260617,
+        }
+        prompt = self.options.prompt or (
+            "cinematic action transfer, consistent character identity, natural motion"
+        )
+        negative_prompt = self.options.negative_prompt or SCAIL2_CANARY_NEGATIVE_PROMPT
+        return [
+            {
+                "label": "scail2_action_transfer_5s",
+                "expected_central_task_type": "scail2_action_transfer",
+                "payload": {
+                    "task_type": "scail2_action_transfer",
+                    "inputs": dict(base_inputs),
+                    "prompt": prompt,
+                    "negative_prompt": negative_prompt,
+                    "priority": 0,
+                },
+            },
+            {
+                "label": "scail2_video_replacement_5s",
+                "expected_central_task_type": "scail2_video_replacement",
+                "payload": {
+                    "task_type": "scail2_video_replacement",
+                    "inputs": dict(base_inputs),
+                    "prompt": prompt,
+                    "negative_prompt": negative_prompt,
+                    "priority": 0,
+                },
+            },
+        ]
+
     def _validate_render(self, render: dict[str, Any]) -> None:
         spec = _canary_profile_spec(self.options.task_type)
         body = render.get("json") or {}
@@ -1258,6 +1445,10 @@ class RunPodCanaryRunner:
             failures.append(
                 "TASK_TYPE_WORKFLOW_OVERRIDES must match the i2i_pro multitask override"
             )
+        if spec.task_type == "scail2" and tuple(body.get("dockerStartCmd") or ()) != (
+            RUNPOD_SCAIL2_DOCKER_START_CMD
+        ):
+            failures.append("dockerStartCmd must start the RunPod git bootstrap for scail2")
         for key in (
             "AGENT_SECRET_TOKEN",
             "MINIO_ACCESS_KEY",
@@ -1287,6 +1478,7 @@ class RunPodCanaryRunner:
             "model_prefix": env.get("RUNPOD_MODEL_PREFIX"),
             "model_manifest_key": env.get("RUNPOD_MODEL_MANIFEST_KEY"),
             "workflow_overrides": env.get("TASK_TYPE_WORKFLOW_OVERRIDES"),
+            "docker_start_cmd": body.get("dockerStartCmd") or [],
             "custom_nodes_enabled": env.get("RUNPOD_COMFY_CUSTOM_NODES_ENABLED"),
             "kjnodes_enabled": env.get("RUNPOD_COMFY_KJNODES_ENABLED"),
             "buckets": {
