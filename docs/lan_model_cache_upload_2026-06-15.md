@@ -86,11 +86,15 @@ Additional verification:
 - Disk after upload: `/srv/allbot/model-cache-lan` about `246G`, filesystem about
   `45%` used
 
-## SCAIL-2 Staging Addendum - 2026-06-17
+## SCAIL-2 LAN AIO Runtime Addendum - 2026-06-17
 
-SCAIL-2 ComfyUI workflow assets and model weights were staged for LAN AIO
-experimentation only. This does not add a production task type or enable worker
-routing by itself.
+SCAIL-2 ComfyUI workflow assets and model weights are staged for the gpu-002
+LAN AIO SCAIL-2 runtime. This runtime backs the Web test station features
+`scail2_action_transfer` (动作迁移) and `scail2_video_replacement` (视频换人),
+but it is not a cloud-prod capability and does not register itself as a
+Central worker. The runtime container provides ComfyUI; the test worker
+`cloud_worker_test_08` performs Central queue polling and points to
+`http://192.168.1.2:8190`.
 
 - Workflow source: `https://comfyui.nomadoor.net/en/basic-workflows/scail-2/`
 - Workflow files staged under both `workers/comfy_agent/workflows/` and
@@ -99,9 +103,13 @@ routing by itself.
   - `SCAIL-2_Replacement.json`
   - `SCAIL-2_Animation_multi-char.json`
   - `SCAIL-2_Animation_WAN-Context-Windows.json`
-- Workflow status: original Nomadoor ComfyUI UI workflow JSON. Before wiring
-  SCAIL-2 into a worker task type, export the selected graph in ComfyUI API
-  format and add the matching task mapping/patcher/profile entries.
+  - `SCAIL-2_Animation_multi-char.api.json`
+  - `SCAIL-2_Replacement.api.json`
+- Workflow status: the four Nomadoor UI workflow JSON files are kept for
+  manual ComfyUI editing/loading. Business execution uses API-format derived
+  workflows only: `SCAIL-2_Animation_multi-char.api.json` for
+  `scail2_action_transfer`, and `SCAIL-2_Replacement.api.json` for
+  `scail2_video_replacement`.
 - LAN cache manifest: `scail2/2026-06-17-test/manifest.json`
 - Files: `6`
 - Total size: about `26.48 GiB`
@@ -123,11 +131,12 @@ Verification performed:
 - Updated the LoRA `relative_path` to the workflow dropdown path
   `loras/Wan2.1/Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors`
   while reusing the existing sha256 object.
-- Validated current worker workflow mappings for both local and remote worker
-  workflow directories; existing mapping count remained `12`.
-- Test-only runtime helper: `scripts/lan_scail2_aio_test.sh`; container
-  `allbot-lan-aio-gpu-002-gpu0-scail2-test` uses the same LAN manifest and does
-  not register an AllBot task type.
+- Validated worker workflow mappings for both local and remote worker workflow
+  directories, including the two SCAIL-2 API workflows.
+- LAN AIO runtime helper: `scripts/lan_scail2_aio_test.sh`; container
+  `allbot-lan-aio-gpu-002-gpu0-scail2-test` uses the same LAN manifest, exposes
+  ComfyUI on `http://192.168.1.2:8190`, and intentionally does not set
+  `AGENT_ID`, `CENTRAL_API_URL`, or `SUPPORTED_TASK_TYPES`.
 
 ## Regression
 

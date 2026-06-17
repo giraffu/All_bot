@@ -106,10 +106,11 @@ scripts/manage_lan_model_cache.sh --dry-run
 python scripts/upload_all_task_models_to_lan_cache.py --env-file .env.lan.model-cache
 ```
 
-LAN registry 只缓存已验证 GHCR RunPod 镜像；不要把一次性本地构建 tag 当作长期事实源。当前 LAN AIO 镜像镜像关系：
+LAN registry 缓存已验证 GHCR RunPod 镜像，也保存 SCAIL-2 这类本地构建的测试 profile 镜像；不要把未验证的一次性本地构建 tag 当作长期事实源。当前 LAN AIO 镜像关系：
 - `ghcr.io/giraffu/allbot-comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946` -> `192.168.1.115:5000/allbot/comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946`
 - `ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh` -> `192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh`
 - `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:20260613-wan22aio-lanbase-ab9b7ea` -> `192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260613-wan22aio-lanbase-ab9b7ea`
+- `remote_workers/docker/runpod_profiles/scail2/Dockerfile` -> `192.168.1.115:5000/allbot/comfy-runpod-scail2:20260617-scail2-cu128-<shortsha>`
 
 GPU 节点 Docker daemon 必须信任 HTTP registry `192.168.1.115:5000` 后才能直接 `docker pull 192.168.1.115:5000/...`；未配置 insecure registry 时会被 Docker 强制按 HTTPS 访问并报 `HTTP response to HTTPS client`。修改 `/etc/docker/daemon.json` 并 restart Docker 会影响节点容器运行态，只能放在明确的节点维护窗口执行。
 
@@ -183,11 +184,11 @@ gpu-002 进入 AIO 接管时仍使用同一 helper：先 `drain --slot both --ex
 gpu-002 首次生产灰度前还必须在维护窗口配置 Docker daemon `insecure-registries=["192.168.1.115:5000"]`；这会短暂重启 Docker 并影响 `comfy0/comfy1`，因此必须先 drain `cloud_prod_worker_06/07` 并确认 `8188/8189` 队列为空。配置完成后只拉取 LAN mirror 镜像，不创建 RunPod Pod，不修改生产 Web task type。
 如当前 SSH 用户无免密 sudo，可只在当次命令环境传入 `LAN_AIO_GPU_SUDO_PASSWORD`；该变量不得写入 `.env`、compose、日志或文档。
 
-SCAIL-2 手工测试容器是独立于业务队列的临时 runtime，不使用 `runtime-render`，入口为 `scripts/lan_scail2_aio_test.sh`。它在 gpu-002 GPU0 上临时替换原 slot0 AIO 的 `8190:8188`，容器名固定为 `allbot-lan-aio-gpu-002-gpu0-scail2-test`，workspace 为 `/srv/allbot/runpod-runtime/slots/gpu-002-gpu0/profiles/scail2/workspace`。`start --execute` 会先把 `lan_aio_prod_gpu002_gpu0_img2img_lora_01` 置为 `draining`，等待当前 `img2img_lora` 任务和 8190 queue 自然空闲，再设为 `disabled` 并停止旧 `allbot-lan-aio-gpu-002-gpu0-img2img_lora-canary`；`cloud_prod_worker_06` 保持 `disabled`，slot1 `image_to_video` AIO 不动。SCAIL-2 容器的 compose 不设置 `AGENT_ID`、`CENTRAL_API_URL` 或 `SUPPORTED_TASK_TYPES`，只启动 ComfyUI UI、LAN model sync 和工作流/样例素材。
+SCAIL-2 LAN AIO runtime 已用于 Web 测试站的两个视频生视频能力：`scail2_action_transfer`（动作迁移）和 `scail2_video_replacement`（视频换人）。它仍是独立于 Central 接单层的 ComfyUI runtime，不使用 `runtime-render`，入口为 `scripts/lan_scail2_aio_test.sh`。它在 gpu-002 GPU0 上临时替换原 slot0 AIO 的 `8190:8188`，容器名固定为 `allbot-lan-aio-gpu-002-gpu0-scail2-test`，workspace 为 `/srv/allbot/runpod-runtime/slots/gpu-002-gpu0/profiles/scail2/workspace`。`start --execute` 会先把 `lan_aio_prod_gpu002_gpu0_img2img_lora_01` 置为 `draining`，等待当前 `img2img_lora` 任务和 8190 queue 自然空闲，再设为 `disabled` 并停止旧 `allbot-lan-aio-gpu-002-gpu0-img2img_lora-canary`；`cloud_prod_worker_06` 保持 `disabled`，slot1 `image_to_video` AIO 不动。SCAIL-2 容器的 compose 不设置 `AGENT_ID`、`CENTRAL_API_URL` 或 `SUPPORTED_TASK_TYPES`，只启动 ComfyUI UI、LAN model sync、四个 Nomadoor UI workflow、两个业务 API workflow 和样例素材。
 
 SCAIL-2 镜像入口是 `remote_workers/docker/runpod_profiles/scail2/Dockerfile`，默认 tag 形如 `192.168.1.115:5000/allbot/comfy-runpod-scail2:20260617-scail2-cu128-<shortsha>`。该镜像基于 `yanwk/comfyui-boot:cu128-slim`，使用包含 ComfyUI PR `Comfy-Org/ComfyUI#14373` 后的版本，必须在 `/object_info` 暴露 `WanSCAILToVideo`、`SCAIL2ColoredMask`、`SAM3_VideoTrack`、`WanContextWindowsManual`、`VHS_LoadVideo`、`VHS_VideoCombine`。模型从 `allbot-model-cache/scail2/2026-06-17-test/manifest.json` 同步到 `/workspace/ComfyUI/models`；LoRA 路径必须是 `loras/Wan2.1/Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors`，否则 Nomadoor workflow 的 LoRA dropdown 无法解析。
 
-Web 测试业务接入不改变上述 ComfyUI 容器：容器仍不设置 `AGENT_ID` / `CENTRAL_API_URL` / `SUPPORTED_TASK_TYPES`。接单层在本地主 `workers/docker-compose-cloud-worker-test.yml` 中新增 `cloud-comfy-agent-test-8` / `cloud_worker_test_08`，指向 `http://192.168.1.2:8190`，声明 `SUPPORTED_TASK_TYPES=scail2_action_transfer,scail2_video_replacement` 与 GPU pool 元数据 `node_id=gpu-002`、`gpu_index=0`、`runtime_profile=scail2`。`scripts/start_cloud_worker_test.sh` 会在启动后把该 agent control 置为 `disabled`；只有完成 `/object_info`、mapping、Web 5s smoke 验证后才可手动 enable。该能力只属于云测试，不同步云正式 worker compose。
+Web 测试业务接入不把上述 ComfyUI 容器本身注册成 worker：容器仍不设置 `AGENT_ID` / `CENTRAL_API_URL` / `SUPPORTED_TASK_TYPES`。接单层在本地主 `workers/docker-compose-cloud-worker-test.yml` 中新增 `cloud-comfy-agent-test-8` / `cloud_worker_test_08`，指向 `http://192.168.1.2:8190`，声明 `SUPPORTED_TASK_TYPES=scail2_action_transfer,scail2_video_replacement` 与 GPU pool 元数据 `node_id=gpu-002`、`gpu_index=0`、`runtime_profile=scail2`。`scripts/start_cloud_worker_test.sh` 会在启动后把该 agent control 置为 `disabled`；只有完成 `/object_info`、mapping、Web 5s smoke 验证后才可手动 enable。该能力只属于云测试，不同步云正式 worker compose。
 
 常用命令：
 
