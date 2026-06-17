@@ -143,6 +143,7 @@ def test_runpod_all_in_one_profiles_use_lan_mirrors_of_ghcr_images():
     img2img = "192.168.1.115:5000/allbot/comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946"
     i2i_pro = "192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh"
     wan22 = "192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260613-wan22aio-lanbase-ab9b7ea"
+    scail2 = "192.168.1.115:5000/allbot/comfy-runpod-scail2:20260617-scail2-cu128-a492b2b-proddeps1"
 
     assert config.profiles["img2img_lora"].all_in_one_image_ref == img2img
     assert config.profiles["i2i_pro"].all_in_one_image_ref == i2i_pro
@@ -150,6 +151,7 @@ def test_runpod_all_in_one_profiles_use_lan_mirrors_of_ghcr_images():
     assert config.profiles["video_basic"].all_in_one_image_ref == wan22
     assert config.profiles["wan22_video_v2"].all_in_one_image_ref == wan22
     assert config.profiles["wan22_aio_video"].all_in_one_image_ref == wan22
+    assert config.profiles["scail2"].all_in_one_image_ref == scail2
 
     rendered = RuntimePlanner(config).render_compose(
         "lan-002-8188-worker-06",
@@ -168,6 +170,33 @@ def test_runpod_all_in_one_profiles_use_lan_mirrors_of_ghcr_images():
     assert "ln -s" in rendered
     assert "scripts/runpod_entrypoint.sh" in rendered
     assert "/health#g" in rendered
+
+
+def test_runpod_all_in_one_render_supports_cloud_prod_scail2_slot0():
+    config = load_controller_config()
+    rendered = RuntimePlanner(config).render_compose(
+        "lan-002-8188-worker-06",
+        target_profile_id="scail2",
+        overrides=RuntimeRenderOverrides(
+            host_port=8190,
+            container_name="allbot-lan-aio-gpu-002-gpu0-scail2-prod",
+            runtime_shape="runpod_all_in_one",
+            agent_id="lan_aio_prod_gpu002_gpu0_scail2_01",
+            environment="cloud-prod",
+        ),
+    )
+
+    assert "RUNPOD_ENVIRONMENT: cloud-prod" in rendered
+    assert "CENTRAL_API_URL: https://worker-central.aivison.it.com" in rendered
+    assert "MINIO_RESULT_BUCKET: user-data-prod" in rendered
+    assert "SUPPORTED_TASK_TYPES: scail2_action_transfer,scail2_video_replacement" in rendered
+    assert "POOL_RUNTIME_PROFILE: scail2" in rendered
+    assert "RUNPOD_MODEL_PREFIX: scail2/2026-06-17-test" in rendered
+    assert "RUNPOD_MODEL_MANIFEST_KEY: scail2/2026-06-17-test/manifest.json" in rendered
+    assert "container_name: allbot-lan-aio-gpu-002-gpu0-scail2-prod" in rendered
+    assert "host_port: 8190" in rendered
+    assert "cloud-test" not in rendered
+    assert "user-data-test" not in rendered
 
 
 def test_runpod_all_in_one_render_defaults_to_cloud_test_storage():
@@ -217,7 +246,9 @@ def test_runpod_all_in_one_render_supports_cloud_prod_storage():
         assert "MINIO_RESULT_BUCKET: user-data-prod" in rendered
         assert "MINIO_TEMPLATE_BUCKET: user-data-prod" in rendered
         assert "PIPELINE_MAX_RUNNING_TASKS: '1'" in rendered
-        assert "python3 -m pip install --no-cache-dir -r" in rendered
+        assert "pip install --no-cache-dir -r" in rendered
+        assert "baked_comfy" in rendered
+        assert "$${baked_comfy}/models" in rendered
         assert "production_port_unchanged: true" in rendered
         assert "/workspace/ComfyUI/models" in rendered
         assert "cloud-test" not in rendered

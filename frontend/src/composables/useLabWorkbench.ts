@@ -103,7 +103,7 @@ type HydratedTemplateState = {
 }
 
 const DEFAULT_EDIT_LORA_STRENGTH = 1
-const SCAIL2_VIDEO_UPLOAD_MAX_SIZE_BYTES = 80 * 1024 * 1024
+const SCAIL2_VIDEO_UPLOAD_MAX_SIZE_BYTES = 40 * 1024 * 1024
 const isScail2ModeId = (modeId: UnifiedLabModeId) => (
   modeId === 'scail2_action_transfer' || modeId === 'scail2_video_replacement'
 )
@@ -623,7 +623,7 @@ export function useLabWorkbench() {
         isScail2ModeId(currentMode.value.id) && slot.previewKind === 'video'
           ? {
               maxSizeBytes: SCAIL2_VIDEO_UPLOAD_MAX_SIZE_BYTES,
-              maxSizeLabel: '80MB',
+              maxSizeLabel: '40MB',
             }
           : undefined,
       )

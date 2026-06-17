@@ -76,12 +76,25 @@ def test_is_maintenance_mode():
     import src.utils as utils_module
 
     original_maintenance_file = utils_module.MAINTENANCE_FILE
+    original_generation_maintenance_file = utils_module.GENERATION_MAINTENANCE_FILE
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_maintenance_file = os.path.join(temp_dir, "MAINTENANCE")
+        temp_generation_maintenance_file = os.path.join(
+            temp_dir, "GENERATION_MAINTENANCE"
+        )
         utils_module.MAINTENANCE_FILE = temp_maintenance_file
+        utils_module.GENERATION_MAINTENANCE_FILE = temp_generation_maintenance_file
 
         try:
+            assert not is_maintenance_mode()
+
+            with open(temp_generation_maintenance_file, "w") as f:
+                f.write("generation")
+
+            assert is_maintenance_mode()
+
+            os.remove(temp_generation_maintenance_file)
             assert not is_maintenance_mode()
 
             with open(temp_maintenance_file, "w") as f:
@@ -90,6 +103,9 @@ def test_is_maintenance_mode():
             assert is_maintenance_mode()
         finally:
             utils_module.MAINTENANCE_FILE = original_maintenance_file
+            utils_module.GENERATION_MAINTENANCE_FILE = (
+                original_generation_maintenance_file
+            )
 
 
 def test_load_prompts_fallback():

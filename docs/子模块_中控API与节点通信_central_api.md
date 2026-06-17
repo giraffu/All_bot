@@ -99,7 +99,7 @@ sequenceDiagram
   - worker 是否仍有 heartbeat，以及 `healthy_workers` 是否大于 0
   - worker 是否处于 `error` 或 `quarantined`，并查看 `last_error` / `health_reason`
   - worker `SUPPORTED_TASK_TYPES` 是否覆盖任务的执行面类型，例如旧图生视频与 Telegram 懒人动图新提交最终会排队为 `image_to_video`；legacy `video_insert` / `video_edit` 只应作为旧队列兼容 alias，必须和 `image_to_video` 使用同一 workflow/mapping/patcher；RunPod `i2i_pro` profile 必须声明 `SUPPORTED_TASK_TYPES=i2i_pro,t2i-pornmaster-turbo,face_swap`
-  - SCAIL-2 云测试可以由 `cloud_worker_test_08` 声明 `SUPPORTED_TASK_TYPES=scail2_action_transfer,scail2_video_replacement` 并指向 gpu-002 LAN AIO runtime `http://192.168.1.2:8190`，也可以由 RunPod `scail2` profile 的 `runpod_test_scail2_*` worker 接单；RunPod canary 会临时 disable 同环境支持 SCAIL-2 的非 RunPod worker，结束后必须恢复。该能力用于 Web 测试站和测试 Bot 的动作迁移/视频换人测试，不是云正式 worker 能力
+  - SCAIL-2 测试环境可以由 `cloud_worker_test_08` 声明 `SUPPORTED_TASK_TYPES=scail2_action_transfer,scail2_video_replacement` 并指向 gpu-002 LAN AIO runtime `http://192.168.1.2:8190`，也可以由 RunPod `scail2` profile 的 `runpod_test_scail2_*` worker 接单；RunPod canary 会临时 disable 同环境支持 SCAIL-2 的非 RunPod worker，结束后必须恢复。云正式 SCAIL-2 不是正式 RunPod worker，也不重建 `cloud-prod-comfy-agent-1..7`，而是由 gpu-002 slot0 agent `lan_aio_prod_gpu002_gpu0_scail2_01` 接 `scail2_action_transfer,scail2_video_replacement`，并写正式桶 `user-data-prod`
   - 目标 worker 是否设置了 `TASK_TYPE_WORKFLOW_OVERRIDES`，导致同一 task type 在测试/canary worker 上读取不同 workflow JSON
   - queue 是否持续堆积
   - 上游 task core submission 是否仍在正常写入任务

@@ -283,3 +283,26 @@ async def test_web_generate_accepts_literal_image_to_video_task_type(monkeypatch
     assert submission_context.is_video_task is True
     assert submission_context.billing_resolution == "preview"
     assert submission_context.requested_duration == 5
+
+
+@pytest.mark.asyncio
+async def test_web_generate_rejects_during_maintenance(monkeypatch):
+    monkeypatch.setattr(task_submission_service, "is_maintenance_mode", lambda: True)
+
+    request = TaskGenerateRequest(
+        task_type="image_to_video",
+        inputs={
+            "images": ["123/input_images/base.png"],
+            "duration": 5,
+            "prompt": "maintenance gate",
+        },
+    )
+
+    with pytest.raises(tasks_router.HTTPException) as exc_info:
+        await tasks_router.create_generation_task(
+            request,
+            current_user=_build_current_user(),
+        )
+
+    assert exc_info.value.status_code == 400
+    assert "系统维护中" in str(exc_info.value.detail)

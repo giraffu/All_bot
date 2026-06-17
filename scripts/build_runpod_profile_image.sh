@@ -274,6 +274,7 @@ test -d "${comfyui_dir}/custom_nodes/ComfyUI_Fill-Nodes"
 test -x /opt/allbot/runpod_bootstrap_from_git.sh
 test -x /opt/allbot/lan_scail2_comfyui_entrypoint.sh
 test -f /opt/allbot/scail2-workflows/SCAIL-2_Animation.json
+python3 -c '"'"'import fastapi, minio, uvicorn, websockets'"'"'
 command -v ffmpeg >/dev/null
 command -v ssh-keygen >/dev/null
 if ! command -v sshd >/dev/null && [ ! -x /usr/sbin/sshd ]; then

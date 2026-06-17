@@ -4,7 +4,9 @@ from collections.abc import Awaitable, Callable
 from asgi_correlation_id import correlation_id
 
 from src.core.task_core import process_and_submit_task
+from src.core.task_core_types import CoreDomainError
 from src.core.task_core_types import TaskSubmissionSideEffectPlan
+from src.utils import is_maintenance_mode
 from src.web_api.schemas.task_schema import TaskGenerateRequest, TaskGenerateResponse
 
 
@@ -16,6 +18,9 @@ async def submit_generation_task(
     logger=None,
 ) -> TaskGenerateResponse:
     try:
+        if is_maintenance_mode():
+            raise CoreDomainError("系统维护中，生成任务暂时不可提交，请稍后再试。")
+
         is_template = getattr(req, "is_template", False)
 
         if req.prompt:

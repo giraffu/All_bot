@@ -67,11 +67,14 @@ async def notify_inviter_reward(
 # Constants for project root and maintenance file
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MAINTENANCE_FILE = os.path.join(PROJECT_ROOT, "MAINTENANCE")
+GENERATION_MAINTENANCE_FILE = os.path.join(PROJECT_ROOT, "GENERATION_MAINTENANCE")
 
 
 def is_maintenance_mode() -> bool:
-    """Check if the system is in maintenance mode by looking for the MAINTENANCE file."""
-    return os.path.exists(MAINTENANCE_FILE)
+    """Check whether generation entrypoints should reject new tasks."""
+    return os.path.exists(MAINTENANCE_FILE) or os.path.exists(
+        GENERATION_MAINTENANCE_FILE
+    )
 
 
 def async_retry(max_retries: int = 3, delay: float = 1.0, backoff: float = 2.0):

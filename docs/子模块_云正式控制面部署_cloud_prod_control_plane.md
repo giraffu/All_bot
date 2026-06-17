@@ -211,6 +211,68 @@ docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.ym
 
 目标 service 可替换为 `web-api-prod`、`dashboard-backend-prod`、`dashboard-frontend-prod`、`payment-api-prod` 或 `bot-prod`。生产热修前建议先备份被覆盖文件；当前云端运行目录不应假设一定是完整 Git 工作区。
 
+### 4.2.1 SCAIL-2 低影响正式发布
+
+SCAIL-2 的正式上线边界是“只更新云正式主控制面 + 正式 Web/Bot 入口 + gpu-002 slot0 SCAIL-2 AIO runtime/agent”。本轮不重建 `cloud-prod-comfy-agent-1..7`，不执行 `scripts/start_cloud_prod_worker.sh --start`，不创建/删除/启停 RunPod Pod，也不修改 gpu-002 slot1/`8191` 或其它 GPU 节点。
+
+正式 task type：
+- `scail2_action_transfer`：动作迁移，5s/8s，40/80 灵石
+- `scail2_video_replacement`：视频换人，5s/8s，40/80 灵石
+
+发布闸门：
+
+```bash
+cd /home/hfy/APP/All_bot
+scripts/cloud_prod_generation_release_gate.py enable-maintenance --execute
+scripts/cloud_prod_generation_release_gate.py wait-pending --threshold 10 --timeout-seconds 3600
+scripts/cloud_prod_generation_release_gate.py refund-pending --threshold 10 --execute
+```
+
+`enable-maintenance --execute` 在 `cloud-web-api-prod` 与 `cloud-tg-bot-prod` 内写 `/app/GENERATION_MAINTENANCE`，只阻止新生成进入。不要为这类低影响发布写 `/app/MAINTENANCE`，它会触发 Web API 全局 503 并影响结果轮询、历史等非提交接口。`wait-pending` 与 `refund-pending` 必须在能访问正式 Redis 的 `allbot-do-sgp1-control` 上运行；本地主服务器直连正式 Redis 超时不代表队列闸门不可用。`refund-pending --execute` 只处理仍在 Central pending zset 中的任务，按维护发布退款类型 `refund_prod_maintenance_release` 走统一 finalization，释放并发锁并退款；running 任务不强杀。
+
+slot0 runtime 接管：
+
+```bash
+cd /home/hfy/APP/All_bot
+scripts/lan_scail2_aio_prod.sh preflight --execute
+scripts/lan_scail2_aio_prod.sh start-disabled --execute
+scripts/lan_scail2_aio_prod.sh verify --execute
+scripts/lan_scail2_aio_prod.sh enable --execute
+```
+
+`scripts/lan_scail2_aio_prod.sh` 只操作 gpu-002 slot0/`8190`：
+- 新 agent：`lan_aio_prod_gpu002_gpu0_scail2_01`
+- 新容器：`allbot-lan-aio-gpu-002-gpu0-scail2-prod`
+- 旧 slot0 AIO agent：`lan_aio_prod_gpu002_gpu0_img2img_lora_01`
+- 旧 slot0 容器：`allbot-lan-aio-gpu-002-gpu0-img2img_lora-canary`
+
+渲染出的 compose 必须为 `RUNPOD_ENVIRONMENT=cloud-prod`、`CENTRAL_API_URL=https://worker-central.aivison.it.com`、`MINIO_*_BUCKET=user-data-prod`，并且不得出现 `cloud-test` / `user-data-test`。`start-disabled --execute` 会先 drain 旧 slot0 AIO 并等待其自然空闲，停止旧 slot0 容器后启动 SCAIL-2 disabled heartbeat；只有 `/system_stats`、`/object_info` 必需节点、模型枚举和 disabled heartbeat 全部通过后，才允许 `enable --execute`。
+
+控制面服务发布仍按单服务最小范围处理：
+
+```bash
+ssh allbot-do-sgp1-control
+cd /home/deploy/APP/All_bot
+docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.yml build central-api-prod web-api-prod bot-prod
+docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.yml up -d --no-deps central-api-prod web-api-prod bot-prod
+```
+
+正式 Web Pages 只发布正式前端项目；不要把测试 Pages 或测试 API 域名带入正式构建。验收通过后执行：
+
+```bash
+scripts/cloud_prod_generation_release_gate.py disable-maintenance --execute
+```
+
+回滚顺序：
+
+```bash
+scripts/cloud_prod_generation_release_gate.py enable-maintenance --execute
+scripts/lan_scail2_aio_prod.sh drain-scail2 --execute
+scripts/lan_scail2_aio_prod.sh rollback --execute
+```
+
+回滚只停 SCAIL-2 slot0 prod container 并恢复旧 slot0 img2img_lora AIO agent/container。不得删除 SCAIL-2 workspace、模型缓存、旧 img2img workspace 或其它 worker/RunPod。
+
 ### 4.3 Agent control 正式灰度更新指南
 
 2026-06-10 已在云测试环境验证 `draining/disabled` worker 控制链路：`cloud-central-api-test` 暴露 `GET/POST /api/agent/task/control/{agent_id}`，测试 worker 重建后真实 `/pop` 会携带 `agent_id=cloud_worker_test_*`，`disabled` worker 的 `/pop` 返回空任务且不移除 pending。

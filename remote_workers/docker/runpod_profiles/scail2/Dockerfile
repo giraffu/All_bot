@@ -105,10 +105,13 @@ COPY remote_workers/scripts/runpod_sync_models_from_r2.py /opt/allbot/remote_wor
 COPY remote_workers/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
 COPY remote_workers/scripts/lan_scail2_comfyui_entrypoint.sh /opt/allbot/lan_scail2_comfyui_entrypoint.sh
 COPY remote_workers/comfy_agent/workflows/SCAIL-2_*.json /opt/allbot/scail2-workflows/
+COPY remote_workers/requirements.txt /opt/allbot/remote_workers/requirements.txt
 
 RUN set -euo pipefail; \
     chmod +x /opt/allbot/runpod_bootstrap_from_git.sh; \
     chmod +x /opt/allbot/lan_scail2_comfyui_entrypoint.sh; \
+    python3 -m pip install --no-cache-dir -r /opt/allbot/remote_workers/requirements.txt; \
+    python3 -c 'import fastapi, minio, uvicorn, websockets'; \
     command -v ssh-keygen >/dev/null; \
     if ! command -v sshd >/dev/null && [ ! -x /usr/sbin/sshd ]; then \
       echo "sshd must be available for RunPod direct TCP diagnostics" >&2; \

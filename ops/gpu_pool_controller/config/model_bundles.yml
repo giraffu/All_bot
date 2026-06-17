@@ -64,6 +64,19 @@ bundles:
       notes: Dedicated Flux2/Z-Image model set shared by i2i_pro, t2i-pornmaster-turbo via txt2img_from_i2i_pro.json, and face_swap via face_swap_v2.json.
     files: []
 
+  scail2_baseline:
+    version: 2026-06-17-test
+    profiles:
+      - scail2
+    source:
+      node_id: gpu-002
+      comfy_id: comfy0
+      model_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu0/profiles/scail2/workspace/ComfyUI/models
+      discovered_size_gb: 36
+      import_status: cached
+      notes: SCAIL-2 model set cached in LAN model cache under scail2/2026-06-17-test for action transfer and video replacement.
+    files: []
+
   wan22_video_v2_baseline:
     version: 2026-06-10
     profiles:

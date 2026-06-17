@@ -12,6 +12,7 @@
 - LAN RunPod 化一体容器云测试 canary：`scripts/lan_runpod_aio_canary.sh`
 - LAN RunPod 化一体容器生产灰度：`scripts/lan_runpod_aio_prod_canary.sh`
 - gpu-002 LAN AIO 正式日常入口：`scripts/lan_aio_prod_ops.sh`
+- gpu-002 SCAIL-2 LAN AIO 正式 slot0 入口：`scripts/lan_scail2_aio_prod.sh`
 - RunPod provider：`ops/gpu_pool_controller/providers/runpod.py`
 - RunPod 云测试 canary：`ops/gpu_pool_controller/runpod_canary.py`、`ops/gpu_pool_controller/runpod_split_video_canary.py`
 - RunPod 云测试 worker scale：`ops/gpu_pool_controller/runpod_workers.py`
@@ -184,15 +185,19 @@ gpu-002 进入 AIO 接管时仍使用同一 helper：先 `drain --slot both --ex
 gpu-002 首次生产灰度前还必须在维护窗口配置 Docker daemon `insecure-registries=["192.168.1.115:5000"]`；这会短暂重启 Docker 并影响 `comfy0/comfy1`，因此必须先 drain `cloud_prod_worker_06/07` 并确认 `8188/8189` 队列为空。配置完成后只拉取 LAN mirror 镜像，不创建 RunPod Pod，不修改生产 Web task type。
 如当前 SSH 用户无免密 sudo，可只在当次命令环境传入 `LAN_AIO_GPU_SUDO_PASSWORD`；该变量不得写入 `.env`、compose、日志或文档。
 
-SCAIL-2 LAN AIO runtime 已用于云测试 Web 和测试 Bot 的两个视频生视频能力：`scail2_action_transfer`（动作迁移）和 `scail2_video_replacement`（视频换人）。它仍是独立于 Central 接单层的 ComfyUI runtime，不使用 `runtime-render`，入口为 `scripts/lan_scail2_aio_test.sh`。它在 gpu-002 GPU0 上临时替换原 slot0 AIO 的 `8190:8188`，容器名固定为 `allbot-lan-aio-gpu-002-gpu0-scail2-test`，workspace 为 `/srv/allbot/runpod-runtime/slots/gpu-002-gpu0/profiles/scail2/workspace`。`start --execute` 会先把 `lan_aio_prod_gpu002_gpu0_img2img_lora_01` 置为 `draining`，等待当前 `img2img_lora` 任务和 8190 queue 自然空闲，再设为 `disabled` 并停止旧 `allbot-lan-aio-gpu-002-gpu0-img2img_lora-canary`；`cloud_prod_worker_06` 保持 `disabled`，slot1 `image_to_video` AIO 不动。SCAIL-2 容器的 compose 不设置 `AGENT_ID`、`CENTRAL_API_URL` 或 `SUPPORTED_TASK_TYPES`，只启动 ComfyUI UI、LAN model sync、四个 Nomadoor UI workflow、两个业务 API workflow 和样例素材。
+SCAIL-2 LAN AIO runtime 已用于 Web/Bot 的两个视频生视频能力：`scail2_action_transfer`（动作迁移）和 `scail2_video_replacement`（视频换人）。它有测试 runtime、云测试 RunPod profile 与云正式 slot0 runtime 三条边界，不能混用测试/正式桶或 worker。
+
+测试 LAN runtime 是独立于 Central 接单层的 ComfyUI runtime，不使用 `runtime-render`，入口为 `scripts/lan_scail2_aio_test.sh`。它在 gpu-002 GPU0 上临时替换原 slot0 AIO 的 `8190:8188`，容器名固定为 `allbot-lan-aio-gpu-002-gpu0-scail2-test`，workspace 为 `/srv/allbot/runpod-runtime/slots/gpu-002-gpu0/profiles/scail2/workspace`。`start --execute` 会先把 `lan_aio_prod_gpu002_gpu0_img2img_lora_01` 置为 `draining`，等待当前 `img2img_lora` 任务和 8190 queue 自然空闲，再设为 `disabled` 并停止旧 `allbot-lan-aio-gpu-002-gpu0-img2img_lora-canary`；`cloud_prod_worker_06` 保持 `disabled`，slot1 `image_to_video` AIO 不动。测试容器不设置 `AGENT_ID`、`CENTRAL_API_URL` 或 `SUPPORTED_TASK_TYPES`，只启动 ComfyUI UI、LAN model sync、四个 Nomadoor UI workflow、两个业务 API workflow 和样例素材。
+
+云正式 slot0 runtime 使用 `scripts/lan_scail2_aio_prod.sh`，同样占用 gpu-002 GPU0/`8190:8188`，但会注册正式 agent `lan_aio_prod_gpu002_gpu0_scail2_01`，容器名为 `allbot-lan-aio-gpu-002-gpu0-scail2-prod`，并由 runtime-render 的 `scail2` profile 生成 cloud-prod all-in-one compose。该 helper 只触达旧 slot0 AIO agent `lan_aio_prod_gpu002_gpu0_img2img_lora_01` 与旧 slot0 容器 `allbot-lan-aio-gpu-002-gpu0-img2img_lora-canary`，不会重建 `cloud-prod-comfy-agent-1..7`，不会创建/启停 RunPod，不会操作 slot1/`8191`。`start-disabled --execute` 会 drain 旧 slot0 AIO 并等待自然空闲，停止旧 slot0 容器后启动 SCAIL-2 disabled heartbeat；验收 `/system_stats`、`/object_info` 必需节点、模型枚举、`RUNPOD_ENVIRONMENT=cloud-prod`、正式 Central 和 `user-data-prod` 后，才执行 `enable --execute`。
 
 SCAIL-2 镜像入口是 `remote_workers/docker/runpod_profiles/scail2/Dockerfile`，默认 tag 形如 `192.168.1.115:5000/allbot/comfy-runpod-scail2:20260617-scail2-cu128-<shortsha>`。该镜像基于 `yanwk/comfyui-boot:cu128-slim`，使用包含 ComfyUI PR `Comfy-Org/ComfyUI#14373` 后的版本，必须在 `/object_info` 暴露 `WanSCAILToVideo`、`SCAIL2ColoredMask`、`SAM3_VideoTrack`、`WanContextWindowsManual`、`VHS_LoadVideo`、`VHS_VideoCombine`。模型从 `allbot-model-cache/scail2/2026-06-17-test/manifest.json` 同步到 `/workspace/ComfyUI/models`；LoRA 路径必须是 `loras/Wan2.1/Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors`，否则 Nomadoor workflow 的 LoRA dropdown 无法解析。
 
-Web 测试业务接入不把上述 ComfyUI 容器本身注册成 worker：容器仍不设置 `AGENT_ID` / `CENTRAL_API_URL` / `SUPPORTED_TASK_TYPES`。接单层在本地主 `workers/docker-compose-cloud-worker-test.yml` 中新增 `cloud-comfy-agent-test-8` / `cloud_worker_test_08`，指向 `http://192.168.1.2:8190`，声明 `SUPPORTED_TASK_TYPES=scail2_action_transfer,scail2_video_replacement` 与 GPU pool 元数据 `node_id=gpu-002`、`gpu_index=0`、`runtime_profile=scail2`。`scripts/start_cloud_worker_test.sh` 会在启动后把该 agent control 置为 `disabled`；只有完成 `/object_info`、mapping、Web 5s smoke 验证后才可手动 enable。该能力只属于云测试，不同步云正式 worker compose。
+Web/Bot 测试业务接入不把测试 ComfyUI 容器本身注册成 worker：测试容器仍不设置 `AGENT_ID` / `CENTRAL_API_URL` / `SUPPORTED_TASK_TYPES`。接单层在本地主 `workers/docker-compose-cloud-worker-test.yml` 中新增 `cloud-comfy-agent-test-8` / `cloud_worker_test_08`，指向 `http://192.168.1.2:8190`，声明 `SUPPORTED_TASK_TYPES=scail2_action_transfer,scail2_video_replacement` 与 GPU pool 元数据 `node_id=gpu-002`、`gpu_index=0`、`runtime_profile=scail2`。云正式业务接单层则是 `lan_aio_prod_gpu002_gpu0_scail2_01`，写正式 Central 与 `user-data-prod`，不得复用 `cloud_worker_test_08` 或 `user-data-test`。
 
 SCAIL-2 也支持独立 cloud-test RunPod profile，不复用 `gpu-002/8190`。`RUNPOD_TASK_PROFILES["scail2"]` 渲染为 `SUPPORTED_TASK_TYPES=scail2_action_transfer,scail2_video_replacement`、`POOL_RUNTIME_PROFILE=scail2`、agent prefix `runpod_test_scail2`、`containerDiskInGb=120`、GPU 优先 `NVIDIA GeForce RTX 5090,NVIDIA GeForce RTX 4090`。模型桶固定 `allbot-model-cache`，用户输入/结果桶仍是 `user-data-test`。镜像由 `.github/workflows/runpod_scail2_profile_image.yml` 构建 `ghcr.io/giraffu/allbot-comfy-runpod-scail2:<tag>`，Dockerfile 保留 LAN entrypoint 作为默认 CMD，但 RunPod create JSON 通过 `dockerStartCmd=["bash","-lc","exec bash /opt/allbot/runpod_bootstrap_from_git.sh"]` 启动 bootstrap。模型转存入口是 `scripts/prepare_scail2_model_r2_bundle.py --env-file .env.cloud.test --execute`，默认 dry-run，只写 `allbot-model-cache/scail2/2026-06-17-test/models/...` 与 manifest，不写 `user-data-test`。
 
-`runpod canary --task-type scail2` 是 SCAIL-2 RunPod 验收入口。dry-run 会校验 GHCR image prefix、`allbot-model-cache`、`scail2/2026-06-17-test/manifest.json`、custom node env 关闭、bootstrap command 与 GPU 类型；真实执行会上传/复用 Nomadoor 样例参考图和 motion video，临时 disable 支持 SCAIL-2 的非 RunPod cloud-test worker（通常是 `cloud_worker_test_08`），串行提交 `scail2_action_transfer 5s` 与 `scail2_video_replacement 5s` 两个 Web 任务，要求 Central 接单 worker 为 `runpod_test_scail2_*`，结束后恢复 worker control 并删除本次 Pod。SCAIL-2 仍不是云正式 RunPod profile，cloud-prod 白名单不包含它。
+`runpod canary --task-type scail2` 是 SCAIL-2 cloud-test RunPod 验收入口。dry-run 会校验 GHCR image prefix、`allbot-model-cache`、`scail2/2026-06-17-test/manifest.json`、custom node env 关闭、bootstrap command 与 GPU 类型；真实执行会上传/复用 Nomadoor 样例参考图和 motion video，临时 disable 支持 SCAIL-2 的非 RunPod cloud-test worker（通常是 `cloud_worker_test_08`），串行提交 `scail2_action_transfer 5s` 与 `scail2_video_replacement 5s` 两个 Web 任务，要求 Central 接单 worker 为 `runpod_test_scail2_*`，结束后恢复 worker control 并删除本次 Pod。SCAIL-2 云正式本轮不使用 RunPod profile，cloud-prod 的正式能力来自 LAN slot0 runtime。
 
 常用命令：
 
@@ -204,6 +209,11 @@ scripts/lan_scail2_aio_test.sh start --execute
 scripts/lan_scail2_aio_test.sh verify
 scripts/lan_scail2_aio_test.sh run-sample
 scripts/lan_scail2_aio_test.sh restore --execute
+scripts/lan_scail2_aio_prod.sh preflight --execute
+scripts/lan_scail2_aio_prod.sh start-disabled --execute
+scripts/lan_scail2_aio_prod.sh verify --execute
+scripts/lan_scail2_aio_prod.sh enable --execute
+scripts/lan_scail2_aio_prod.sh rollback --execute
 ```
 
 `run-sample` 只自动提交 `SCAIL-2_Animation.json`，使用 Nomadoor reference image 和 motion video；另外三个 workflow 只做 `/object_info` 节点、模型枚举与 API prompt 转换 dry-run。生成后的最新 `SCAIL-2*.mp4` 复制到 `gpu-002:/root/scail2-test-results/<timestamp>/`。测试容器默认保留运行，方便继续在 `http://192.168.1.2:8190/` 手工切换 workflow；恢复图生图 slot0 时执行 `restore --execute`，它会停测试容器、启动原 slot0 AIO 并将 `lan_aio_prod_gpu002_gpu0_img2img_lora_01` 恢复为 `enabled`。
@@ -225,6 +235,7 @@ RunPod provider 当前覆盖四类路径：
 | 云测试图生图 canary | `img2img` / `img2img_lora` 真实 Web 闭环 | 已通过真实 canary；作为 RunPod 基础链路回归入口 |
 | 云测试 split video canary | `image_to_video` 与 `wan22_video_v2` 分 profile 验证 | `wan22_video_v2` 已完成 Web 端真实闭环；后续以 `split-video-canary` 复验 |
 | 云测试图生图 Pro canary | `i2i_pro` RunPod runtime profile，串行验证 `i2i_pro`、Web `txt2img`、`face_swap` | 已通过单任务 cloud-test Web canary；三任务 canary 由 `runpod canary --task-type i2i_pro` 承担 |
+| 云测试 SCAIL-2 canary | `scail2` RunPod runtime profile，串行验证动作迁移和视频换人 | 只用于 cloud-test；云正式 SCAIL-2 本轮使用 gpu-002 LAN slot0 runtime |
 | 手动云正式备用 worker | `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro` | 代码已支持；默认创建后先 `disabled`，不开启生产自动扩容 |
 
 RunPod 只读 / dry-run 命令：
