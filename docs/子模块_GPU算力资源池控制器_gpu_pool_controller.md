@@ -420,7 +420,7 @@ Dashboard 系统监控页也提供正式手动 RunPod 池的日常 Web 入口：
 | 最近操作 | `GET /api/runpod/operations` | 只读 Dashboard 后端内存 operation 状态和脱敏日志尾部 |
 | 最近操作 `终止` | `POST /api/runpod/operations/{operation_id}/terminate` | 仅用于运行中的 `add` operation；终止 Dashboard 子进程后，按该次新增日志记录到的 slot 逐个执行 `down --slot NN --execute` 释放 Pod |
 
-Dashboard 入口不重写 RunPod provider 逻辑，只异步调用 `scripts/runpod_prod_ops.sh`。数量字段是新增数量；旧前端若仍发送 `desired_count`，后端也按新增数量解释，不会触发 `scale --desired` 或删除既有 slot。同一请求里同一 profile 只能出现一次。后台 operation 默认使用 30 秒间隔、100 次无库存重试，真实执行只打开 `RUNPOD_DRY_RUN=false` 与 `RUNPOD_AUTOSCALER_ENABLED=true`，并把 `RUNPOD_PROD_MAX_MANUAL_SLOTS` 设为 `100` 或请求指定值。运行中的新增 operation 可从最近操作点 `终止`，后端会先向该 operation 的进程组发送 SIGTERM；如果该次 operation 已记录 `runpod_create_pod_NN`，会继续提交对应 slot 的 `down` 清理。未记录到创建 slot 的终止只停止等待/重试进程，不推测删除其它 Pod。云正式 Dashboard 后端默认优先把容器内 `/app/.env` 同时作为 `--runpod-env-file` 与 `--prod-env-file`；该文件由云正式 `.env.cloud.prod` 挂载，必须包含完整、shell-compatible 的 `RUNPOD_*` 手动池配置和可用 `RUNPOD_API_KEY`。不要把本机测试专用 `RUNPOD_PUBLIC_KEY_FILE` 路径带入云正式容器；生产路径默认不依赖 RunPod SSH。必要时仍可通过 `DASHBOARD_RUNPOD_ENV_FILE` / `DASHBOARD_RUNPOD_PROD_ENV_FILE` 覆盖 env 路径；不得在 API 响应、operation 日志或文档中输出任何 env 内容或密钥。
+Dashboard 入口不重写 RunPod provider 逻辑，只异步调用 `scripts/runpod_prod_ops.sh`。数量字段是新增数量；旧前端若仍发送 `desired_count`，后端也按新增数量解释，不会触发 `scale --desired` 或删除既有 slot。同一请求里同一 profile 只能出现一次；若同 profile 已有未结束的 `add` operation，Dashboard 后端会返回 409，禁止再次提交，避免并发新增抢到同一个 `manual_NN` slot。后台 operation 默认使用 30 秒间隔、100 次无库存重试，真实执行只打开 `RUNPOD_DRY_RUN=false` 与 `RUNPOD_AUTOSCALER_ENABLED=true`，并把 `RUNPOD_PROD_MAX_MANUAL_SLOTS` 设为 `100` 或请求指定值。运行中的新增 operation 可从最近操作点 `终止`，后端会先向该 operation 的进程组发送 SIGTERM；如果该次 operation 已记录 `runpod_create_pod_NN`，会继续提交对应 slot 的 `down` 清理。未记录到创建 slot 的终止只停止等待/重试进程，不推测删除其它 Pod。云正式 Dashboard 后端默认优先把容器内 `/app/.env` 同时作为 `--runpod-env-file` 与 `--prod-env-file`；该文件由云正式 `.env.cloud.prod` 挂载，必须包含完整、shell-compatible 的 `RUNPOD_*` 手动池配置和可用 `RUNPOD_API_KEY`。不要把本机测试专用 `RUNPOD_PUBLIC_KEY_FILE` 路径带入云正式容器；生产路径默认不依赖 RunPod SSH。必要时仍可通过 `DASHBOARD_RUNPOD_ENV_FILE` / `DASHBOARD_RUNPOD_PROD_ENV_FILE` 覆盖 env 路径；不得在 API 响应、operation 日志或文档中输出任何 env 内容或密钥。
 
 底层高级命令：
 
@@ -496,8 +496,12 @@ scripts/runpod_prod_ops.sh add \
 `POST /api/runpod/scale` 也按新增语义执行，即旧字段 `desired_count` 仍会被解释为
 新增数量，不会 scale down 既有 Pod。
 
-`add --count N --execute` 的创建路径会先把新 slot 的 Central control 写为
-`disabled`，创建 Pod，等待 RunPod readiness、模型同步、ComfyUI ready 和 Central
+`add --count N --execute` / `scale --desired N --execute` / `up --execute` / `down --execute`
+会在 prod-worker 内按 profile 持有文件锁，默认锁目录为 `/tmp/allbot_runpod_locks`
+（可用 `RUNPOD_PROD_OPERATION_LOCK_DIR` 覆盖），防止多个进程同时为同一 profile 规划或
+删除 slot。创建路径还会在每个 slot create 前重新读取 RunPod managed Pod 列表；如果
+目标 slot 已被其它操作占用，会在写 Central control 和创建 Pod 前中止。`add --count N --execute`
+会先把新 slot 的 Central control 写为 `disabled`，创建 Pod，等待 RunPod readiness、模型同步、ComfyUI ready 和 Central
 heartbeat；看到 disabled heartbeat 后才 enable 目标 slot。启动过程中如果 Pod 已
 `RUNNING` 但 `worker_seen=false`、control 仍是 `disabled`，通常表示 bootstrap 或模型同步
 还没完成，不要手动 enable。

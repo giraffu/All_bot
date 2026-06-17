@@ -171,6 +171,17 @@ def _can_terminate_operation(operation: RunPodAdminOperation) -> bool:
     )
 
 
+def _active_add_operation_for_profile(profile: str) -> RunPodAdminOperation | None:
+    for operation in _operations.values():
+        if (
+            operation.action == "add"
+            and operation.profile == profile
+            and operation.status not in FINISHED_OPERATION_STATUSES
+        ):
+            return operation
+    return None
+
+
 def _prune_operations() -> None:
     if DEFAULT_MAX_OPERATION_RECORDS <= 0:
         return
@@ -383,6 +394,17 @@ async def start_runpod_scale_payload(
             )
         seen_profiles.add(profile)
         normalized_items.append((profile, _requested_count_or_422(item)))
+
+    for profile, _requested_count in normalized_items:
+        active_operation = _active_add_operation_for_profile(profile)
+        if active_operation is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "RunPod add operation is already active for profile "
+                    f"{profile}: {active_operation.id}"
+                ),
+            )
 
     env = _operation_env(prod_max_manual_slots=request.prod_max_manual_slots)
 

@@ -7,6 +7,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -358,7 +359,7 @@ class RunPodProdWorkerRunner:
             if action == "render":
                 self._run_render(summary)
             elif action == "up":
-                self._run_up(summary)
+                self._run_profile_locked_mutation(summary, self._run_up)
             elif action == "status":
                 self._run_status(summary)
             elif action == "enable":
@@ -366,13 +367,13 @@ class RunPodProdWorkerRunner:
             elif action == "disable":
                 self._run_control(summary, state="disabled")
             elif action == "down":
-                self._run_down(summary)
+                self._run_profile_locked_mutation(summary, self._run_down)
             elif action == "canary":
                 self._run_canary(summary)
             elif action == "add":
-                self._run_add(summary)
+                self._run_profile_locked_mutation(summary, self._run_add)
             elif action == "scale":
-                self._run_scale(summary)
+                self._run_profile_locked_mutation(summary, self._run_scale)
             else:
                 raise RunPodProdWorkerError(
                     f"unsupported prod-worker action: {self.options.action}"
@@ -382,6 +383,28 @@ class RunPodProdWorkerRunner:
             summary["ok"] = False
             summary["error"] = redact_text(str(exc))
         return self._finish(summary)
+
+    def _run_profile_locked_mutation(
+        self,
+        summary: dict[str, Any],
+        run_func: Callable[[dict[str, Any]], None],
+    ) -> None:
+        if not self.options.execute:
+            run_func(summary)
+            return
+        profile = normalize_prod_worker_profile(self.options.profile)
+        self._phase(summary, "operation_lock", "running", {"profile": profile})
+        with _prod_profile_operation_lock(profile) as lock_path:
+            self._phase(
+                summary,
+                "operation_lock",
+                "ok",
+                {
+                    "profile": profile,
+                    "path": lock_path,
+                },
+            )
+            run_func(summary)
 
     def _validate_static_options(self) -> None:
         if self.options.environment != PROD_ENVIRONMENT:
@@ -1017,6 +1040,7 @@ class RunPodProdWorkerRunner:
         }
         render = self._render(redact=False, agent_id=agent_id, provider=provider)
         operation["render"] = self._render_summary(render)
+        self._assert_slot_still_free(slot, summary)
         operation["disable_control"] = self._set_agent_control_for_agent(
             agent_id,
             "disabled",
@@ -1047,6 +1071,26 @@ class RunPodProdWorkerRunner:
             reason=enable_reason,
         )
         return operation
+
+    def _assert_slot_still_free(
+        self,
+        slot: str,
+        summary: dict[str, Any],
+    ) -> None:
+        phase_name = f"runpod_recheck_slot_{slot}"
+        self._phase(summary, phase_name, "running")
+        listed = self.provider.list_pods(managed_only=True)
+        self._require_ok(listed, "runpod list-pods failed")
+        slot_pods = _prod_manual_slot_pods(
+            list(listed.get("pods") or []),
+            max_manual_slots=self.provider.settings.prod_max_manual_slots,
+            profile=self.options.profile,
+        )
+        if slot in slot_pods:
+            raise RunPodProdWorkerError(
+                f"refusing create: prod RunPod slot {slot} is no longer free"
+            )
+        self._phase(summary, phase_name, "ok", {"slot": slot})
 
     def _scale_enable_slot(
         self,
@@ -2613,6 +2657,28 @@ def _extract_pod_id(payload: dict[str, Any]) -> str:
                 if value:
                     return str(value)
     raise RunPodProdWorkerError("RunPod create response did not include pod id")
+
+
+@contextmanager
+def _prod_profile_operation_lock(profile: str):
+    lock_dir = Path(
+        os.getenv("RUNPOD_PROD_OPERATION_LOCK_DIR", "/tmp/allbot_runpod_locks")
+    )
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = lock_dir / f"prod-worker-{normalize_prod_worker_profile(profile)}.lock"
+    handle = lock_path.open("a", encoding="utf-8")
+    try:
+        import fcntl
+
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        yield str(lock_path)
+    finally:
+        try:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            handle.close()
 
 
 def _pod_summary(payload: dict[str, Any], image_ref: str) -> dict[str, Any]:

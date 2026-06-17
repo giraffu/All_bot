@@ -131,6 +131,32 @@ async def test_start_runpod_scale_payload_rejects_duplicate_profiles():
 
 
 @pytest.mark.asyncio
+async def test_start_runpod_scale_payload_rejects_active_profile_add():
+    first_payload = await runpod_admin_service.start_runpod_scale_payload(
+        RunPodScaleRequest(
+            items=[
+                RunPodScaleItem(profile="img2img", count=1),
+            ],
+        ),
+        spawn_task_func=_discard_operation_coroutine,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await runpod_admin_service.start_runpod_scale_payload(
+            RunPodScaleRequest(
+                items=[
+                    RunPodScaleItem(profile="img2img_lora", count=1),
+                ],
+            ),
+            spawn_task_func=_discard_operation_coroutine,
+        )
+
+    assert first_payload["operations"][0]["status"] == "pending"
+    assert exc_info.value.status_code == 409
+    assert "already active for profile img2img" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
 async def test_pause_and_delete_runpod_worker_build_slot_scoped_operations():
     action_request = RunPodWorkerActionRequest(prod_max_manual_slots=4)
 

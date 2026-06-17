@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from telegram import Update
 from telegram.ext import ConversationHandler
 
 from src.constants import (
@@ -38,6 +39,23 @@ def _build_query(data: str):
         from_user=SimpleNamespace(id=123, username="tester", full_name="Tester"),
         message=SimpleNamespace(chat_id=456, message_id=789),
         answer=AsyncMock(),
+    )
+
+
+def _build_cancel_update():
+    return Update.de_json(
+        {
+            "update_id": 1,
+            "message": {
+                "message_id": 10,
+                "date": 0,
+                "chat": {"id": 456, "type": "private"},
+                "from": {"id": 123, "is_bot": False, "first_name": "Aaron"},
+                "text": "/cancel",
+                "entities": [{"type": "bot_command", "offset": 0, "length": 7}],
+            },
+        },
+        bot=SimpleNamespace(username="allbot"),
     )
 
 
@@ -97,6 +115,25 @@ def test_scail2_video_fsm_exposes_two_menu_entrypoints():
 
     assert handler.name == "scail2_video_fsm"
     assert len(handler.entry_points) == 2
+
+
+def test_scail2_video_cancel_is_routed_to_fallback_not_state_catchalls():
+    handler = scail2_video_fsm.get_scail2_video_fsm_handler()
+    update = _build_cancel_update()
+
+    for state in (
+        scail2_video_fsm.Scail2VideoState.WAIT_REFERENCE_IMAGE,
+        scail2_video_fsm.Scail2VideoState.WAIT_MOTION_VIDEO,
+        scail2_video_fsm.Scail2VideoState.WAIT_PROMPT,
+        ConversationHandler.TIMEOUT,
+    ):
+        assert not any(
+            state_handler.check_update(update)
+            for state_handler in handler.states[state]
+        )
+
+    assert handler.fallbacks[0].callback is scail2_video_fsm.cancel_conversation
+    assert handler.fallbacks[0].check_update(update)
 
 
 @pytest.mark.asyncio

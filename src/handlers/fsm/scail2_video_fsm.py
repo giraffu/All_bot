@@ -51,6 +51,11 @@ SCAIL2_MAX_MOTION_VIDEO_MB = 40
 SCAIL2_MAX_MOTION_VIDEO_BYTES = SCAIL2_MAX_MOTION_VIDEO_MB * 1024 * 1024
 _IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 _VIDEO_SUFFIXES = {".mp4", ".mov", ".webm", ".avi", ".mkv"}
+_CANCEL_COMMAND_FILTER = filters.Regex(r"^/cancel(?:@\w+)?(?:\s|$)")
+_NON_CANCEL_INPUT_FILTER = filters.ALL & ~_CANCEL_COMMAND_FILTER
+_NON_CANCEL_TEXT_OR_COMMAND_FILTER = (
+    (filters.TEXT | filters.COMMAND) & ~_CANCEL_COMMAND_FILTER
+)
 
 
 def _cleanup_context(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -538,10 +543,10 @@ def get_scail2_video_fsm_handler() -> ConversationHandler:
                     receive_reference_image,
                 ),
                 MessageHandler(
-                    (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
+                    _NON_CANCEL_TEXT_OR_COMMAND_FILTER,
                     unexpected_input,
                 ),
-                MessageHandler(filters.ALL, receive_reference_image),
+                MessageHandler(_NON_CANCEL_INPUT_FILTER, receive_reference_image),
             ],
             Scail2VideoState.WAIT_MOTION_VIDEO: [
                 MessageHandler(
@@ -549,21 +554,21 @@ def get_scail2_video_fsm_handler() -> ConversationHandler:
                     receive_motion_video,
                 ),
                 MessageHandler(
-                    (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
+                    _NON_CANCEL_TEXT_OR_COMMAND_FILTER,
                     unexpected_motion_input,
                 ),
-                MessageHandler(filters.ALL, receive_motion_video),
+                MessageHandler(_NON_CANCEL_INPUT_FILTER, receive_motion_video),
             ],
             Scail2VideoState.WAIT_PROMPT: [
                 MessageHandler(
-                    (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
+                    _NON_CANCEL_TEXT_OR_COMMAND_FILTER,
                     receive_prompt,
                 ),
                 MessageHandler(
                     filters.PHOTO | filters.VIDEO | filters.Document.ALL,
                     receive_non_text_prompt,
                 ),
-                MessageHandler(filters.ALL, receive_non_text_prompt),
+                MessageHandler(_NON_CANCEL_INPUT_FILTER, receive_non_text_prompt),
             ],
             Scail2VideoState.WAIT_DURATION: [
                 CallbackQueryHandler(
@@ -576,7 +581,7 @@ def get_scail2_video_fsm_handler() -> ConversationHandler:
                 ),
             ],
             ConversationHandler.TIMEOUT: [
-                MessageHandler(filters.ALL, timeout_conversation)
+                MessageHandler(_NON_CANCEL_INPUT_FILTER, timeout_conversation)
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel_conversation)],

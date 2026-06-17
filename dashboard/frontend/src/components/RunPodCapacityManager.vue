@@ -66,6 +66,11 @@ const fallbackProfiles: RunPodProfile[] = [
     label: 'i2i_pro / txt2img / face_swap',
     supported_task_types: ['i2i_pro', 't2i-pornmaster-turbo', 'face_swap'],
   },
+  {
+    profile: 'scail2',
+    label: 'scail2 / 视频生视频',
+    supported_task_types: ['scail2_action_transfer', 'scail2_video_replacement'],
+  },
 ]
 
 const open = ref(false)
