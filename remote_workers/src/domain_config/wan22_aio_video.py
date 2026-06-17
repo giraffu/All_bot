@@ -149,9 +149,9 @@ def is_wan22_chain_history_task_type(task_type: str | None) -> bool:
 
 
 def normalize_wan22_video_v2_resolution_preset(
-    resolution_preset: str | None,
+    resolution_preset: Any,
 ) -> str:
-    normalized = (resolution_preset or "").strip()
+    normalized = str(resolution_preset or "").strip()
     normalized_lower = normalized.lower()
     if normalized in WAN22_VIDEO_V2_RESOLUTION_PRESETS:
         return normalized

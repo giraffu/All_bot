@@ -178,6 +178,13 @@ def test_wan22_strategy_cost_follows_duration_multiplier():
     assert strategy.get_cost({"resolution_preset": "hd", "duration": 10}) == 90
 
 
+def test_wan22_strategy_cost_accepts_numeric_legacy_resolution():
+    strategy = Wan22AioVideoStrategy(MODE_IMAGE_TO_VIDEO_LITERAL)
+
+    assert strategy.get_cost({"resolution": 512, "duration": 5}) == 6
+    assert strategy.get_cost({"resolution": 600, "duration": 5}) == 12
+
+
 def test_scail2_strategy_cost_follows_strict_duration():
     strategy = StrategyFactory.get_strategy(MODE_SCAIL2_ACTION_TRANSFER)
 

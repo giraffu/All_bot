@@ -50,6 +50,8 @@ def test_normalize_wan22_video_v2_resolution_preset_accepts_precision_value():
 
 def test_normalize_wan22_video_v2_resolution_preset_maps_legacy_fast_to_preview():
     assert normalize_wan22_video_v2_resolution_preset("fast") == "preview"
+    assert normalize_wan22_video_v2_resolution_preset(512) == "preview"
+    assert normalize_wan22_video_v2_resolution_preset(600) == "small"
     assert normalize_wan22_video_v2_resolution_preset("600p") == "small"
 
 
@@ -88,6 +90,7 @@ def test_get_wan22_video_v2_resolution_display_includes_approx_resolution():
 def test_get_wan22_video_v2_cost_uses_resolution_preset():
     assert get_wan22_video_v2_cost("preview") == 6
     assert get_wan22_video_v2_cost("fast") == 6
+    assert get_wan22_video_v2_cost(512) == 6
     assert get_wan22_video_v2_cost("small") == 12
     assert get_wan22_video_v2_cost("standard") == 20
     assert get_wan22_video_v2_cost("hd") == 30
