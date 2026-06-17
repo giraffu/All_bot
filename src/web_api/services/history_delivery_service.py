@@ -7,7 +7,7 @@ import httpx
 from fastapi import HTTPException
 
 from config import BOT_TOKEN, BOT_TOKEN_TEST, TELEGRAM_API_BASE_URL
-from src.core.media_paths import resolve_storage_object
+from src.core.media_paths import get_media_type_from_history, resolve_storage_object
 from src.database.models import History
 from src.services.redis_client import redis_client
 from src.services.storage import storage
@@ -86,7 +86,7 @@ def _build_telegram_upload_request(
     object_name: str,
     file_bytes: bytes,
 ) -> tuple[str, dict[str, str], dict[str, tuple[str, bytes, str]]]:
-    is_video = history_type and "video" in history_type.lower()
+    is_video = get_media_type_from_history(history_type) == "video"
     method = "sendVideo" if is_video else "sendPhoto"
     bot_token = _resolve_delivery_bot_token()
     url = f"{TELEGRAM_API_BASE_URL}/bot{bot_token}/{method}"

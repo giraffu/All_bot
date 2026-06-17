@@ -420,6 +420,8 @@ Web 任务提交成功后，真正负责“收尾”的是：
 - Web 成功历史持久化必须以 `user_id + task_id + source` 幂等；重复终态收口时更新/跳过已有 `History`，并跳过重复 R2 warmup，避免同一任务写出多条历史。
 - Web 成功 finalizer 不能吞掉历史落库异常；`persist_successful_web_history` 失败必须抛出，让 Redis `pending_web_finalizers` 保持可重试，runtime cleanup 只能在历史持久化成功后执行。排查“ComfyUI 已生成但 Web 没结果”时，要同时查 pending finalizer、history 落库错误和 R2 对象。
 - `History.type` 当前为 `String(64)`，用于保存真实业务 task type；新增长 task type（例如 SCAIL-2 的 `scail2_action_transfer` / `scail2_video_replacement`）时不得沿用旧的 20 字符假设，否则会出现结果对象已保存但历史插入失败。
+- SCAIL-2 若出现“backend 已 done 且有 `result_path`，但 Web result/闪回瓶缺记录”，先确认 Alembic 已把正式库 `history.type` 迁到 64，再使用 `scripts/recover_scail2_history_delivery.py` 分步恢复：`snapshot --dry-run` 快照 `pending_web_finalizers`，`recover --execute --snapshot-file ...` 只对快照内 `scail2_action_transfer` / `scail2_video_replacement` 的 `done + result_path` 调用现有 `process_pending_web_finalizer`，`send --execute --snapshot-file ...` 复用历史发送管线主动发给已绑定 Telegram 的用户。backend `error/cancelled`、无 `result_path`、无 History output 或无 Telegram 绑定只记审计/跳过，不退款、不手工插入 History、不重启 GPU/RunPod。
+- 历史主动发送必须用统一媒体类型判断（`get_media_type_from_history` / `VIDEO_TASK_TYPES`），不能只靠 `"video" in history.type`；`scail2_action_transfer` 虽然名称不含 `video`，也必须按 `sendVideo` 发送。
 
 它负责把 backend 终态转为 Web 可消费的最终语义：
 - `task_web_lifecycle_monitor.py` 负责构造 terminal snapshot

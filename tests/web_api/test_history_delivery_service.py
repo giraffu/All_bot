@@ -144,6 +144,36 @@ def test_build_telegram_upload_request_uses_test_token_in_test_mode(monkeypatch)
     assert files["video"][0] == "output.mp4"
 
 
+@pytest.mark.parametrize(
+    "history_type",
+    ["scail2_action_transfer", "scail2_video_replacement"],
+)
+def test_build_telegram_upload_request_sends_scail2_results_as_video(
+    monkeypatch,
+    history_type,
+):
+    monkeypatch.setenv("BOT_TYPE", "PROD")
+    monkeypatch.setattr(history_delivery_service, "BOT_TOKEN", "prod-token")
+    monkeypatch.setattr(
+        history_delivery_service,
+        "TELEGRAM_API_BASE_URL",
+        "https://telegram.example.com",
+    )
+
+    url, _payload, files = history_delivery_service._build_telegram_upload_request(
+        telegram_id=10001,
+        history_type=history_type,
+        history_prompt=None,
+        object_name=f"task-1/{history_type}.mp4",
+        file_bytes=b"video-bytes",
+    )
+
+    assert url == "https://telegram.example.com/botprod-token/sendVideo"
+    assert "video" in files
+    assert "photo" not in files
+    assert files["video"][2] == "video/mp4"
+
+
 @pytest.mark.asyncio
 async def test_post_telegram_upload_returns_clear_error_for_invalid_token():
     request = httpx.Request(
