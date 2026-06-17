@@ -145,6 +145,8 @@ I2I_DRAW_ENDPOINT = f"{API_BASE}/i2i_draw"
 TXT2IMG_ENDPOINT = f"{API_BASE}/txt2img"
 LTX_VIDEO_ENDPOINT = f"{API_BASE}/api/v1/ltx_video"
 WAN22_VIDEO_V2_ENDPOINT = f"{API_BASE}/api/v1/wan22_video_v2"
+SCAIL2_ACTION_TRANSFER_ENDPOINT = f"{API_BASE}/api/v1/scail2_action_transfer"
+SCAIL2_VIDEO_REPLACEMENT_ENDPOINT = f"{API_BASE}/api/v1/scail2_video_replacement"
 
 # --- LLM Configuration ---
 LLM_API_URL = os.getenv("LLM_API_URL", "http://8.148.72.50:1234/v1/chat/completions")

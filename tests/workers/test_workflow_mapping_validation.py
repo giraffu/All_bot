@@ -33,6 +33,17 @@ def test_legacy_video_task_types_resolve_to_wan22_aio_workflow(task_type):
     assert resolve_workflow_filename(task_type) == "Wan22AioV82.json"
 
 
+@pytest.mark.parametrize(
+    ("task_type", "filename"),
+    [
+        ("scail2_action_transfer", "SCAIL-2_Animation_multi-char.api.json"),
+        ("scail2_video_replacement", "SCAIL-2_Replacement.api.json"),
+    ],
+)
+def test_scail2_task_types_resolve_to_api_workflows(task_type, filename):
+    assert resolve_workflow_filename(task_type) == filename
+
+
 def test_validate_workflow_directory_accepts_task_type_workflow_override(
     monkeypatch, tmp_path
 ):

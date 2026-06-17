@@ -1,7 +1,14 @@
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+from src.domain_config.scail2_video import (
+    SCAIL2_ACTION_TRANSFER_TASK_TYPE,
+    SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
+    Scail2DurationError,
+    normalize_scail2_duration_seconds,
+)
 
 
 class TaskStatus(str, Enum):
@@ -25,6 +32,8 @@ class TaskType(str, Enum):
     I2I_DRAW = "i2i_draw"
     LTX_VIDEO = "ltx_video"
     WAN22_VIDEO_V2 = "wan22_video_v2"
+    SCAIL2_ACTION_TRANSFER = SCAIL2_ACTION_TRANSFER_TASK_TYPE
+    SCAIL2_VIDEO_REPLACEMENT = SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE
 
 
 class TaskResponse(BaseModel):
@@ -225,3 +234,21 @@ class Wan22VideoV2Request(BaseModel):
     extract_last_frame: bool = True
     length: int = 5
     priority: int = 0
+
+
+class Scail2VideoRequest(BaseModel):
+    task_id: str
+    image: str
+    video: str
+    prompt: str
+    negative_prompt: Optional[str] = " "
+    length: int = 5
+    priority: int = 0
+
+    @field_validator("length")
+    @classmethod
+    def validate_length(cls, value: int) -> int:
+        try:
+            return normalize_scail2_duration_seconds(value, strict=True)
+        except Scail2DurationError as exc:
+            raise ValueError("SCAIL-2 only supports 5s or 8s duration.") from exc

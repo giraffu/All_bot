@@ -5,15 +5,23 @@ import {
   uploadFileToPresignedUrl
 } from '@/utils/presignedUpload'
 
+export type UploadFileOptions = {
+  maxSizeBytes?: number
+  maxSizeLabel?: string
+}
+
+const DEFAULT_MAX_SIZE_BYTES = 20 * 1024 * 1024
+const DEFAULT_MAX_SIZE_LABEL = '20MB'
+
 export function useUpload() {
   const uploading = ref(false)
   const progress = ref(0)
 
-  const uploadFile = async (file: File): Promise<string | null> => {
-    // 限制上传文件大小为 20MB
-    const MAX_SIZE = 20 * 1024 * 1024;
-    if (file.size > MAX_SIZE) {
-      message.error('文件大小不能超过 20MB，请压缩后再试');
+  const uploadFile = async (file: File, options: UploadFileOptions = {}): Promise<string | null> => {
+    const maxSizeBytes = options.maxSizeBytes ?? DEFAULT_MAX_SIZE_BYTES
+    const maxSizeLabel = options.maxSizeLabel ?? DEFAULT_MAX_SIZE_LABEL
+    if (file.size > maxSizeBytes) {
+      message.error(`文件大小不能超过 ${maxSizeLabel}，请压缩后再试`)
       return null;
     }
 

@@ -7,15 +7,61 @@ from src.workflow_mapping_validation import WorkflowMappingValidationError
 from workers.comfy_agent.workflow_patcher import WorkflowPatcher
 
 
+WORKER_WORKFLOW_DIR = "/home/hfy/APP/All_bot/workers/comfy_agent/workflows"
+
+
 def _write_json(path: Path, payload) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
 def test_workflow_patcher_validates_real_worker_workflows_on_init():
-    patcher = WorkflowPatcher("/home/hfy/APP/All_bot/workers/comfy_agent/workflows")
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
 
     assert "img2img" in patcher.mappings
     assert patcher.load_workflow("img2img") is not None
+
+
+@pytest.mark.parametrize(
+    ("task_type", "replacement_mode", "frame_count"),
+    [
+        ("scail2_action_transfer", False, 129),
+        ("scail2_video_replacement", True, 129),
+    ],
+)
+def test_workflow_patcher_overrides_scail2_runtime_parameters(
+    task_type,
+    replacement_mode,
+    frame_count,
+):
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
+    workflow = patcher.load_workflow(task_type)
+
+    patched = patcher.patch_workflow(
+        task_type,
+        workflow,
+        {
+            "image": "reference.png",
+            "video": "motion.mp4",
+            "prompt": "dance naturally",
+            "negative_prompt": "blur",
+            "length": 8,
+        },
+    )
+
+    assert patched["58"]["inputs"]["image"] == "reference.png"
+    assert patched["113"]["inputs"]["video"] == "motion.mp4"
+    assert patched["113"]["inputs"]["force_rate"] == 16
+    assert patched["113"]["inputs"]["frame_load_cap"] == frame_count
+    assert patched["113"]["inputs"]["skip_first_frames"] == 0
+    assert patched["6"]["inputs"]["text"] == "dance naturally"
+    assert patched["7"]["inputs"]["text"] == "blur"
+    assert patched["101"]["inputs"]["width"] == 512
+    assert patched["101"]["inputs"]["height"] == 896
+    assert patched["101"]["inputs"]["length"] == frame_count
+    assert patched["101"]["inputs"]["replacement_mode"] is replacement_mode
+    assert patched["107"]["inputs"]["replacement_mode"] is replacement_mode
+    assert patched["49"]["inputs"]["frame_rate"] == 16
+    assert patched["49"]["inputs"]["filename_prefix"].startswith(f"{task_type}_")
 
 
 def test_workflow_patcher_rejects_missing_mapped_input(tmp_path):

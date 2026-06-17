@@ -142,8 +142,8 @@ class History(Base):
     user_id = Column(BigInteger, ForeignKey("users.id"))
     task_id = Column(String(64), nullable=True)
     type = Column(
-        String(20), nullable=True
-    )  # 'image', 'video', 'video_pro', 'face_swap', etc.
+        String(64), nullable=True
+    )  # generation task type, e.g. image/video/scail2_action_transfer
     prompt = Column(Text, nullable=True)
     input_file = Column(Text, nullable=True)
     output_file = Column(Text, nullable=True)

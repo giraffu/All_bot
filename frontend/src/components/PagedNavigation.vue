@@ -9,11 +9,13 @@ const props = withDefaults(
     disabled?: boolean
     compact?: boolean
     showJump?: boolean
+    minimal?: boolean
   }>(),
   {
     disabled: false,
     compact: false,
     showJump: false,
+    minimal: false,
   },
 )
 
@@ -111,95 +113,134 @@ watch(
   <div
     v-if="totalPages > 1"
     class="paged-navigation flex flex-wrap items-center justify-center gap-2"
+    :class="{ 'paged-navigation-minimal': minimal }"
   >
-    <button
-      class="pagination-button"
-      :class="{ 'pagination-button-compact': compact, 'pagination-button-disabled': disabled || currentPage <= 1 }"
-      :disabled="disabled || currentPage <= 1"
-      aria-label="上一页"
-      @click="handlePageChange(currentPage - 1)"
-    >
-      <ChevronLeft :size="compact ? 15 : 16" aria-hidden="true" />
-    </button>
-
-    <template v-for="token in pageTokens" :key="String(token)">
-      <span
-        v-if="typeof token === 'string'"
-        class="px-1 text-slate-500 select-none"
-      >
-        ...
-      </span>
+    <template v-if="minimal">
       <button
-        v-else
         class="pagination-button"
-        :class="{
-          'pagination-button-compact': compact,
-          'pagination-button-active': token === currentPage
-        }"
-        :disabled="disabled"
-        :aria-current="token === currentPage ? 'page' : undefined"
-        @click="handlePageChange(token)"
+        :class="{ 'pagination-button-compact': compact, 'pagination-button-disabled': disabled || currentPage <= 1 }"
+        :disabled="disabled || currentPage <= 1"
+        aria-label="上一页"
+        @click="handlePageChange(currentPage - 1)"
       >
-        {{ token }}
+        <ChevronLeft :size="compact ? 14 : 16" aria-hidden="true" />
+      </button>
+
+      <span
+        class="pagination-page-indicator"
+        :class="{ 'pagination-page-indicator-compact': compact }"
+        aria-live="polite"
+      >
+        {{ currentPage }} / {{ totalPages }}
+      </span>
+
+      <button
+        class="pagination-button"
+        :class="{ 'pagination-button-compact': compact, 'pagination-button-disabled': disabled || currentPage >= totalPages }"
+        :disabled="disabled || currentPage >= totalPages"
+        aria-label="下一页"
+        @click="handlePageChange(currentPage + 1)"
+      >
+        <ChevronRight :size="compact ? 14 : 16" aria-hidden="true" />
       </button>
     </template>
 
-    <button
-      class="pagination-button"
-      :class="{ 'pagination-button-compact': compact, 'pagination-button-disabled': disabled || currentPage >= totalPages }"
-      :disabled="disabled || currentPage >= totalPages"
-      aria-label="下一页"
-      @click="handlePageChange(currentPage + 1)"
-    >
-      <ChevronRight :size="compact ? 15 : 16" aria-hidden="true" />
-    </button>
-
-    <form
-      v-if="showJump"
-      class="pagination-jump"
-      :class="{ 'pagination-jump-compact': compact }"
-      @submit.prevent="handleJumpSubmit"
-    >
-      <input
-        class="pagination-jump-input"
-        :class="{ 'pagination-jump-input-compact': compact }"
-        :value="jumpValue"
-        :style="jumpInputStyle"
-        :disabled="disabled"
-        inputmode="numeric"
-        pattern="[0-9]*"
-        autocomplete="off"
-        :placeholder="String(currentPage)"
-        :aria-label="`跳转页码，1 到 ${totalPages}`"
-        @input="handleJumpInput"
-      >
+    <template v-else>
       <button
-        type="submit"
-        class="pagination-jump-submit"
-        :class="{
-          'pagination-jump-submit-compact': compact,
-          'pagination-jump-submit-disabled': !canSubmitJump
-        }"
-        :disabled="!canSubmitJump"
-        aria-label="跳转到输入页码"
-        title="跳转到输入页码"
+        class="pagination-button"
+        :class="{ 'pagination-button-compact': compact, 'pagination-button-disabled': disabled || currentPage <= 1 }"
+        :disabled="disabled || currentPage <= 1"
+        aria-label="上一页"
+        @click="handlePageChange(currentPage - 1)"
       >
-        <ArrowRightToLine :size="compact ? 14 : 15" aria-hidden="true" />
+        <ChevronLeft :size="compact ? 15 : 16" aria-hidden="true" />
       </button>
-    </form>
 
-    <span
-      v-if="!compact"
-      class="ml-1 text-xs text-slate-400"
-    >
-      {{ currentPage }} / {{ totalPages }}
-    </span>
+      <template v-for="token in pageTokens" :key="String(token)">
+        <span
+          v-if="typeof token === 'string'"
+          class="px-1 text-slate-500 select-none"
+        >
+          ...
+        </span>
+        <button
+          v-else
+          class="pagination-button"
+          :class="{
+            'pagination-button-compact': compact,
+            'pagination-button-active': token === currentPage
+          }"
+          :disabled="disabled"
+          :aria-current="token === currentPage ? 'page' : undefined"
+          @click="handlePageChange(token)"
+        >
+          {{ token }}
+        </button>
+      </template>
+
+      <button
+        class="pagination-button"
+        :class="{ 'pagination-button-compact': compact, 'pagination-button-disabled': disabled || currentPage >= totalPages }"
+        :disabled="disabled || currentPage >= totalPages"
+        aria-label="下一页"
+        @click="handlePageChange(currentPage + 1)"
+      >
+        <ChevronRight :size="compact ? 15 : 16" aria-hidden="true" />
+      </button>
+
+      <form
+        v-if="showJump"
+        class="pagination-jump"
+        :class="{ 'pagination-jump-compact': compact }"
+        @submit.prevent="handleJumpSubmit"
+      >
+        <input
+          class="pagination-jump-input"
+          :class="{ 'pagination-jump-input-compact': compact }"
+          :value="jumpValue"
+          :style="jumpInputStyle"
+          :disabled="disabled"
+          inputmode="numeric"
+          pattern="[0-9]*"
+          autocomplete="off"
+          :placeholder="String(currentPage)"
+          :aria-label="`跳转页码，1 到 ${totalPages}`"
+          @input="handleJumpInput"
+        >
+        <button
+          type="submit"
+          class="pagination-jump-submit"
+          :class="{
+            'pagination-jump-submit-compact': compact,
+            'pagination-jump-submit-disabled': !canSubmitJump
+          }"
+          :disabled="!canSubmitJump"
+          aria-label="跳转到输入页码"
+          title="跳转到输入页码"
+        >
+          <ArrowRightToLine :size="compact ? 14 : 15" aria-hidden="true" />
+        </button>
+      </form>
+
+      <span
+        v-if="!compact"
+        class="ml-1 text-xs text-slate-400"
+      >
+        {{ currentPage }} / {{ totalPages }}
+      </span>
+    </template>
   </div>
 </template>
 
 <style scoped>
 .paged-navigation {
   row-gap: 0.5rem;
+}
+
+.paged-navigation-minimal {
+  flex-wrap: nowrap;
+  gap: 0.375rem;
+  row-gap: 0;
 }
 
 .pagination-button {
@@ -240,6 +281,38 @@ watch(
   padding: 0 0.55rem;
   border-radius: 0.625rem;
   font-size: 0.75rem;
+}
+
+.paged-navigation-minimal .pagination-button-compact {
+  min-width: 1.85rem;
+  height: 1.85rem;
+  padding: 0 0.35rem;
+  border-radius: 0.55rem;
+}
+
+.pagination-page-indicator {
+  height: 2.25rem;
+  min-width: 4.75rem;
+  padding: 0 0.65rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgb(34 211 238 / 0.36);
+  background: rgb(8 145 178 / 0.16);
+  color: rgb(103 232 249);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.pagination-page-indicator-compact {
+  height: 1.85rem;
+  min-width: 4.25rem;
+  padding: 0 0.5rem;
+  border-radius: 0.55rem;
+  font-size: 0.72rem;
 }
 
 .pagination-jump {

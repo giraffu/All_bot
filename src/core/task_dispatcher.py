@@ -11,10 +11,23 @@ from src.constants import (
     MODE_IMG2IMG_LORA,
     MODE_I2I_PRO,
     MODE_I2I_DRAW,
+    MODE_SCAIL2_ACTION_TRANSFER,
+    MODE_SCAIL2_VIDEO_REPLACEMENT,
     MODE_WAN22_VIDEO_V2,
     RESOLUTION_COST,
     TASK_COSTS,
     MODE_TXT2IMG,
+)
+from src.core.task_core_types import CoreDomainError
+from src.domain_config.scail2_video import (
+    SCAIL2_FIXED_HEIGHT,
+    SCAIL2_FIXED_WIDTH,
+    SCAIL2_TASK_TYPES,
+    Scail2DurationError,
+    get_scail2_cost,
+    get_scail2_frame_count,
+    normalize_scail2_duration_seconds,
+    normalize_scail2_negative_prompt,
 )
 from src.core.task_core_service_providers import get_task_core_image_service
 from src.domain_config.wan22_aio_video import (
@@ -104,6 +117,16 @@ class _Wan22SubmissionContext:
 
 
 @dataclass(frozen=True)
+class _Scail2SubmissionContext:
+    prompt: str
+    reference_image_path: str
+    motion_video_path: str
+    negative_prompt: str
+    duration_seconds: int
+    frame_count: int
+
+
+@dataclass(frozen=True)
 class _DefaultImageSubmissionContext:
     prompt: Any
     image_path: str
@@ -174,6 +197,29 @@ def _build_wan22_submission_context(inputs: Dict[str, Any]) -> _Wan22SubmissionC
         or inputs.get("resolution")
         or "preview",
         model_profile=str(inputs.get("wan22_model_profile") or "").strip(),
+    )
+
+
+def _resolve_scail2_duration_seconds(inputs: Dict[str, Any]) -> int:
+    try:
+        return normalize_scail2_duration_seconds(
+            inputs.get("duration") or inputs.get("length"),
+            strict=True,
+        )
+    except Scail2DurationError as exc:
+        raise CoreDomainError("SCAIL-2 目前只支持 5 秒或 8 秒。") from exc
+
+
+def _build_scail2_submission_context(inputs: Dict[str, Any]) -> _Scail2SubmissionContext:
+    saved_images = _get_saved_input_images(inputs)
+    duration_seconds = _resolve_scail2_duration_seconds(inputs)
+    return _Scail2SubmissionContext(
+        prompt=_get_input_prompt(inputs, "scail2 video"),
+        reference_image_path=saved_images[0] if len(saved_images) > 0 else "",
+        motion_video_path=saved_images[1] if len(saved_images) > 1 else "",
+        negative_prompt=normalize_scail2_negative_prompt(inputs.get("negative_prompt")),
+        duration_seconds=duration_seconds,
+        frame_count=get_scail2_frame_count(duration_seconds, strict=True),
     )
 
 
@@ -584,6 +630,61 @@ class Wan22VideoV2Strategy(Wan22AioVideoStrategy):
         super().__init__(MODE_WAN22_VIDEO_V2)
 
 
+class Scail2VideoStrategy(BaseTaskStrategy):
+    def __init__(self, task_type: str):
+        self.task_type = task_type
+
+    def _replacement_mode(self) -> bool:
+        return self.task_type == MODE_SCAIL2_VIDEO_REPLACEMENT
+
+    def _resolve_duration_seconds(self, inputs: Dict[str, Any]) -> int:
+        return _resolve_scail2_duration_seconds(inputs)
+
+    def get_cost(self, inputs: Dict[str, Any]) -> int:
+        return get_scail2_cost(self._resolve_duration_seconds(inputs), strict=True)
+
+    def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
+        if "images" in inputs and isinstance(inputs.get("images"), list):
+            return inputs["images"][:2]
+        return [inputs.get("image"), inputs.get("video")]
+
+    def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        saved_images = _get_saved_input_images(inputs)
+        duration_seconds = self._resolve_duration_seconds(inputs)
+        return {
+            "saved_inputs": saved_images,
+            "requested_duration": duration_seconds,
+            "scail2_duration_seconds": duration_seconds,
+            "scail2_frame_count": get_scail2_frame_count(
+                duration_seconds,
+                strict=True,
+            ),
+            "scail2_width": SCAIL2_FIXED_WIDTH,
+            "scail2_height": SCAIL2_FIXED_HEIGHT,
+            "scail2_replacement_mode": self._replacement_mode(),
+        }
+
+    async def submit_task(
+        self, task_id: str, inputs: Dict[str, Any], priority: int
+    ) -> str:
+        image_service = _get_dispatch_image_service()
+        submission = _build_scail2_submission_context(inputs)
+
+        if not submission.reference_image_path or not submission.motion_video_path:
+            raise CoreDomainError("SCAIL-2 任务需要同时上传参考图片和驱动视频。")
+
+        return await image_service.submit_scail2_video_task(
+            task_id,
+            task_type=self.task_type,
+            reference_image_path=submission.reference_image_path,
+            motion_video_path=submission.motion_video_path,
+            prompt=submission.prompt,
+            negative_prompt=submission.negative_prompt,
+            length=submission.duration_seconds,
+            priority=priority,
+        )
+
+
 def _build_default_image_strategy(task_type: str) -> BaseTaskStrategy:
     return DefaultImageStrategy(task_type)
 
@@ -598,6 +699,10 @@ STRATEGY_BUILDERS: dict[str, callable] = {
     "face_swap": lambda _task_type: FaceSwapStrategy(),
     "ltx_video": lambda _task_type: LtxVideoStrategy(),
     MODE_WAN22_VIDEO_V2: lambda _task_type: Wan22VideoV2Strategy(),
+    **dict.fromkeys(
+        SCAIL2_TASK_TYPES,
+        lambda task_type: Scail2VideoStrategy(task_type),
+    ),
     MODE_I2I_PRO: _build_default_image_strategy,
     MODE_I2I_DRAW: _build_default_image_strategy,
 }

@@ -82,6 +82,29 @@ class ImageService:
             priority=priority,
         )
 
+    async def submit_scail2_video_task(
+        self,
+        task_id: str,
+        *,
+        task_type: str,
+        reference_image_path: str,
+        motion_video_path: str,
+        prompt: str,
+        negative_prompt: str = " ",
+        length: int = 5,
+        priority: int = 0,
+    ) -> str:
+        return await api_client.submit_scail2_video_task(
+            task_id,
+            task_type=task_type,
+            reference_image_path=reference_image_path,
+            motion_video_path=motion_video_path,
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            length=length,
+            priority=priority,
+        )
+
     async def submit_task(
         self,
         task_id: str,

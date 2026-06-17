@@ -6,6 +6,7 @@ from app.models import (
     Img2ImgLoraRequest,
     Img2ImgRequest,
     LtxVideoRequest,
+    Scail2VideoRequest,
     TaskResponse,
     TaskType,
     Txt2ImgRequest,
@@ -29,6 +30,8 @@ SIMPLE_TASK_TYPE_MAP = {
     "txt2img": TaskType.T2I_PORNMASTER_TURBO,
     "ltx_video": TaskType.LTX_VIDEO,
     "wan22_video_v2": TaskType.WAN22_VIDEO_V2,
+    "scail2_action_transfer": TaskType.SCAIL2_ACTION_TRANSFER,
+    "scail2_video_replacement": TaskType.SCAIL2_VIDEO_REPLACEMENT,
 }
 
 LEGACY_WAN22_SIMPLE_TASK_KEYS = {"video_insert", "video_edit"}
@@ -146,6 +149,18 @@ SIMPLE_TASK_ROUTE_SPECS = (
         Wan22VideoV2Request,
         "wan22_video_v2",
         "create_wan22_video_v2_task",
+    ),
+    (
+        "/api/v1/scail2_action_transfer",
+        Scail2VideoRequest,
+        "scail2_action_transfer",
+        "create_scail2_action_transfer_task",
+    ),
+    (
+        "/api/v1/scail2_video_replacement",
+        Scail2VideoRequest,
+        "scail2_video_replacement",
+        "create_scail2_video_replacement_task",
     ),
 )
 

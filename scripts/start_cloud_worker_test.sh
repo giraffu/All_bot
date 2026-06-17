@@ -90,4 +90,16 @@ if [ "${COMPOSE_CMD[0]}" = "docker-compose" ]; then
     docker ps -aq --filter "name=cloud-comfy-agent-test" | xargs -r docker rm -f >/dev/null 2>&1 || true
 fi
 "${COMPOSE_CMD[@]}" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build
+AGENT_SECRET_TOKEN_VALUE="${AGENT_SECRET_TOKEN:-$(read_env_value AGENT_SECRET_TOKEN)}"
+if [ -z "$AGENT_SECRET_TOKEN_VALUE" ]; then
+    echo "❌ 未配置 AGENT_SECRET_TOKEN，无法设置 SCAIL-2 测试 worker 初始 disabled。"
+    exit 1
+fi
+echo "🔒 设置 SCAIL-2 测试 worker 初始 disabled: cloud_worker_test_08"
+curl --noproxy '*' -fsS \
+    -X POST "http://${CLOUD_TEST_CONTROL_HOST_VALUE}:8004/api/agent/task/control/cloud_worker_test_08" \
+    -H "Authorization: Bearer ${AGENT_SECRET_TOKEN_VALUE}" \
+    -H "Content-Type: application/json" \
+    --data '{"state":"disabled","reason":"scail2_test_initial_disabled","ttl_seconds":null}' \
+    >/dev/null
 echo "✅ cloud-worker 测试栈已启动。"

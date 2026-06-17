@@ -46,6 +46,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - Web 任务完成后的历史持久化、R2 warmup、runtime cleanup 不应由 router 或页面逻辑承担，应收口到 monitor / persistence 链。
 - Web finalizer 在多 worker 下可能并发扫描 pending 队列；拿到 Redis lock 后必须重新读取单条 pending record，不能使用 `hgetall` 的旧快照继续收口。
 - Web 成功历史落库必须对 `user_id + task_id + source` 幂等；重复收口时不能重复插入 `History`，也不能重复触发 Web history R2 warmup。
+- Web 成功 finalizer 不能吞掉历史落库异常；persistence 失败必须抛出，让 `pending_web_finalizers` 保持可重试，runtime cleanup 只能在历史持久化成功后执行。
 - 默认依赖构造必须保持惰性，只在缺失且确实需要时才解析 provider，避免测试被误伤。
 - `build_default_task_core_process_dependencies(...)` 已按 input、billing、submission、side-effect builder 拆分；后续扩展优先加在对应 builder，避免继续膨胀总装配函数。
 - `TaskCoreServiceProviders` 与主要 capability 已补强 `Protocol` / 精确 `Callable` 类型；新增 provider/capability 时继续保持显式契约，不要扩大弱类型字段。
@@ -88,6 +89,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - `task_core` 是业务编排门面，Central API 只是执行面
 - Worker 是通过 `pop` 主动拉取任务，不是上游直推 workflow
 - Wan22 AIO 视频配置事实源是 `src.domain_config.wan22_aio_video`：`custom_video` / `video_lora` / 字面量 `image_to_video` / Telegram 懒人动图 mode / legacy `video_insert`、`video_edit` -> execution `image_to_video` -> `legacy_image_to_video` profile；`wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。Web `/api/tasks/generate` 提交 `task_type=image_to_video` 时，Central 记录的 `task_type` 必须保持 `image_to_video`，不能回退成 `img2img`；懒人动图历史 task type 必须保持原 mode，内置提示词由 FSM/entrypoint 注入，不再表示独立 worker workflow。`video_insert` / `video_edit` 只作为兼容 alias 排障，不应再按新任务类型新增 strategy、workflow 或模型 profile。
+- SCAIL-2 Web 测试站新增 `scail2_action_transfer` 与 `scail2_video_replacement` 两个真实业务 task type，只走 Web `/api/tasks/generate`，不接 Telegram、不进云正式。payload 使用 `inputs.images=[reference_image_key, motion_video_key]`、`prompt`、`negative_prompt`、`duration`；`Scail2VideoStrategy` 严格只允许 5s/8s，缺省 5s，计费 40/80 灵石，提交 Central simple route 时转换为 `image`、`video`、`prompt`、`negative_prompt`、`length`。非法时长必须在 Web 侧返回 400，不允许静默拉长成长视频。
 - RunPod `i2i_pro` profile 不新增业务 task type：Web 文生图仍提交 `txt2img` 并映射到执行面 `t2i-pornmaster-turbo`，换脸仍提交 `face_swap`，图生图 Pro 仍提交 `i2i_pro`。目标 worker 必须声明 `SUPPORTED_TASK_TYPES=i2i_pro,t2i-pornmaster-turbo,face_swap`、`POOL_RUNTIME_PROFILE=i2i_pro`，并用 `TASK_TYPE_WORKFLOW_OVERRIDES` 指向 `txt2img_from_i2i_pro.json` 与 `face_swap_v2.json`。cloud-test canary 会临时禁用同环境中支持这三类执行类型的非 RunPod worker，结束后必须恢复；如测试服 canary 与既有 prod 手动备用 RunPod Pod 共存，只能显式开启 `--allow-existing-prod-managed-pods`，且仍必须拒绝任何 cloud-test 残留 Pod。
 
 ## 7. 新任务类型添加 Checklist
@@ -121,6 +123,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 ### 7.5 结果与回归
 - `task_result_service.py` 是否能返回结果：Web owner result 优先 R2，延迟敏感路径必须用 R2 公网 HEAD 快探测且不持有 DB 只读事务等待对象存储；R2 未 warmup 时图片可短签 MinIO fallback，视频必须返回 `pending_result` 等 R2；前端 `pollTaskResult` 等待窗口需覆盖分钟级 R2 warmup，避免 99% 阶段网络失败或过早停止轮询
 - Web monitor / persistence 是否能落历史并完成 cleanup
+- 新 task type 名称必须能写入 `History.type`；当前 schema 为 `String(64)`，新增长名称时不要回退到旧的 20 字符假设。
 - focused tests、SSE/result/history 回归、热点门禁是否已补齐
 
 ## 8. 运维排障 Checklist
@@ -136,6 +139,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - 看 worker heartbeat、`healthy_workers`、节点 `error/quarantined` 状态与 `SUPPORTED_TASK_TYPES`
 - 看本地 relay `/ready` 与 watchdog dry-run；生产只观测，不要让自动恢复直接 execute，除非用户明确确认。`/ready` 返回 404 通常表示运行中的 relay 还是旧版本，watchdog 应记录 `relay_ready_endpoint_missing` 而不是反复重启。
 - 看 `/system/status` 是否只是观测缓存滞后；真实判断还要结合 worker 日志、Central `pop`/status/complete 日志和队列指标
+- 若 queue 为 0、worker 已是 `running` 且 `execution_phase=preparing`，但 ComfyUI `/queue` 为空，这类问题应按输入准备卡住排查，不按 pending 排队处理。重点看 worker 下载用户输入视频/图片是否卡在对象存储读取、`/tmp/input/*.part.minio` 是否持续停滞，以及 `MINIO_CONNECT_TIMEOUT_SECONDS`、`MINIO_READ_TIMEOUT_SECONDS`、`MINIO_HTTP_RETRY_TOTAL`、`MINIO_DOWNLOAD_TIMEOUT_SECONDS`、`MINIO_DOWNLOAD_RETRY_ATTEMPTS` 是否生效；新版 worker 下载超时会清理 `.part.minio` 并走失败退款路径，避免无限 `preparing`。
 
 ### 8.3 running 卡死
 - 查 worker 日志与 ComfyUI WebSocket

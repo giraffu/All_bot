@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from app import main as backend_main
 from app import main_response_helpers
@@ -11,7 +12,7 @@ from app import main_simple_task_routes
 from app import main_status_result_routes
 from app import main_t2i_helpers as t2i_helpers
 from app.main_t2i_wiring import T2IWiring
-from app.models import TaskType
+from app.models import Scail2VideoRequest, TaskType
 
 
 @pytest.fixture(autouse=True)
@@ -342,6 +343,14 @@ def test_simple_task_type_map_keeps_image_to_video_and_video_lora_compatibility(
         main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["wan22_video_v2"]
         == TaskType.WAN22_VIDEO_V2
     )
+    assert (
+        main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["scail2_action_transfer"]
+        == TaskType.SCAIL2_ACTION_TRANSFER
+    )
+    assert (
+        main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["scail2_video_replacement"]
+        == TaskType.SCAIL2_VIDEO_REPLACEMENT
+    )
     assert main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["img2img"] == TaskType.IMG2IMG
     assert (
         main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["txt2img"]
@@ -384,6 +393,14 @@ def test_simple_task_route_specs_cover_expected_paths_and_handlers():
         "wan22_video_v2",
         "create_wan22_video_v2_task",
     )
+    assert specs_by_path["/api/v1/scail2_action_transfer"][1:] == (
+        "scail2_action_transfer",
+        "create_scail2_action_transfer_task",
+    )
+    assert specs_by_path["/api/v1/scail2_video_replacement"][1:] == (
+        "scail2_video_replacement",
+        "create_scail2_video_replacement_task",
+    )
 
 
 def test_simple_task_routes_are_registered_with_stable_endpoint_names():
@@ -401,6 +418,35 @@ def test_simple_task_routes_are_registered_with_stable_endpoint_names():
     assert routes_by_path["/txt2img"] == "create_txt2img_task"
     assert routes_by_path["/api/v1/ltx_video"] == "create_ltx_video_task"
     assert routes_by_path["/api/v1/wan22_video_v2"] == "create_wan22_video_v2_task"
+    assert (
+        routes_by_path["/api/v1/scail2_action_transfer"]
+        == "create_scail2_action_transfer_task"
+    )
+    assert (
+        routes_by_path["/api/v1/scail2_video_replacement"]
+        == "create_scail2_video_replacement_task"
+    )
+
+
+def test_scail2_video_request_accepts_only_supported_lengths():
+    request = Scail2VideoRequest(
+        task_id="task-1",
+        image="ref.png",
+        video="motion.mp4",
+        prompt="dance",
+        length=8,
+    )
+
+    assert request.length == 8
+
+    with pytest.raises(ValidationError):
+        Scail2VideoRequest(
+            task_id="task-1",
+            image="ref.png",
+            video="motion.mp4",
+            prompt="dance",
+            length=10,
+        )
 
 
 def test_task_status_and_result_route_specs_cover_expected_handlers():

@@ -2,6 +2,8 @@ from typing import Any
 
 RESULT_ASSET_KEYS = ("images", "gifs", "videos")
 WAN22_AIO_VIDEO_TASK_TYPES = {"wan22_video_v2", "image_to_video"}
+SCAIL2_VIDEO_TASK_TYPES = {"scail2_action_transfer", "scail2_video_replacement"}
+VIDEO_PRIMARY_TASK_TYPES = WAN22_AIO_VIDEO_TASK_TYPES | SCAIL2_VIDEO_TASK_TYPES
 
 
 def coerce_first_mapping(value: Any) -> dict[str, Any]:
@@ -19,7 +21,7 @@ def extract_ws_data_content(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def result_asset_keys_for_task(task_type: str | None) -> tuple[str, ...]:
-    if task_type in WAN22_AIO_VIDEO_TASK_TYPES:
+    if task_type in VIDEO_PRIMARY_TASK_TYPES:
         return ("videos", "gifs")
     return RESULT_ASSET_KEYS
 
@@ -49,7 +51,7 @@ def result_asset_priority(asset: dict[str, Any] | None, *, task_type: str | None
     if not isinstance(asset, dict):
         return -1
     asset_key = str(asset.get("_asset_key") or "").strip().lower()
-    if task_type in WAN22_AIO_VIDEO_TASK_TYPES:
+    if task_type in VIDEO_PRIMARY_TASK_TYPES:
         return {"videos": 3, "gifs": 2}.get(asset_key, 0)
     return 0
 

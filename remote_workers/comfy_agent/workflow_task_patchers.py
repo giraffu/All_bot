@@ -1,5 +1,14 @@
 from typing import Any, Callable
 
+from src.domain_config.scail2_video import (
+    SCAIL2_FIXED_HEIGHT,
+    SCAIL2_FIXED_WIDTH,
+    SCAIL2_FORCE_RATE,
+    SCAIL2_SKIP_FIRST_FRAMES,
+    get_scail2_frame_count,
+    normalize_scail2_duration_seconds,
+    normalize_scail2_negative_prompt,
+)
 from src.domain_config.wan22_aio_video import (
     WAN22_LEGACY_IMAGE_TO_VIDEO_MODEL_PROFILE,
     WAN22_VIDEO_V2_MODEL_PROFILE,
@@ -35,6 +44,13 @@ WAN22_VIDEO_V2_PRECISION_PRESET_BY_KEY = {
     key: str(preset["precision_preset"])
     for key, preset in WAN22_VIDEO_V2_RESOLUTION_PRESETS.items()
 }
+SCAIL2_LOAD_IMAGE_NODE_ID = "58"
+SCAIL2_LOAD_VIDEO_NODE_ID = "113"
+SCAIL2_POSITIVE_PROMPT_NODE_ID = "6"
+SCAIL2_NEGATIVE_PROMPT_NODE_ID = "7"
+SCAIL2_TO_VIDEO_NODE_ID = "101"
+SCAIL2_COLORED_MASK_NODE_ID = "107"
+SCAIL2_VIDEO_COMBINE_NODE_ID = "49"
 
 
 def _normalize_wan22_video_v2_precision_preset(value: Any) -> str:
@@ -405,6 +421,140 @@ def patch_image_to_video_workflow(
     )
 
 
+def _resolve_scail2_duration_seconds(params: dict[str, Any]) -> int:
+    for key in ("length", "duration", "requested_duration"):
+        value = params.get(key)
+        if value is not None:
+            return normalize_scail2_duration_seconds(value, strict=True)
+    return normalize_scail2_duration_seconds(None)
+
+
+def _patch_scail2_workflow(
+    workflow: dict[str, Any],
+    *,
+    params: dict[str, Any],
+    set_node_input: Callable[..., None],
+    unique_id: Any,
+    replacement_mode: bool,
+    output_task_prefix: str,
+    **_: Any,
+) -> None:
+    duration_seconds = _resolve_scail2_duration_seconds(params)
+    frame_count = get_scail2_frame_count(duration_seconds, strict=True)
+
+    if params.get("image"):
+        set_node_input(
+            workflow,
+            node_id=SCAIL2_LOAD_IMAGE_NODE_ID,
+            input_name="image",
+            value=params["image"],
+        )
+    if params.get("video"):
+        set_node_input(
+            workflow,
+            node_id=SCAIL2_LOAD_VIDEO_NODE_ID,
+            input_name="video",
+            value=params["video"],
+        )
+
+    if params.get("prompt"):
+        set_node_input(
+            workflow,
+            node_id=SCAIL2_POSITIVE_PROMPT_NODE_ID,
+            input_name="text",
+            value=params["prompt"],
+        )
+    set_node_input(
+        workflow,
+        node_id=SCAIL2_NEGATIVE_PROMPT_NODE_ID,
+        input_name="text",
+        value=normalize_scail2_negative_prompt(params.get("negative_prompt")),
+    )
+
+    set_node_input(
+        workflow,
+        node_id=SCAIL2_LOAD_VIDEO_NODE_ID,
+        input_name="force_rate",
+        value=SCAIL2_FORCE_RATE,
+    )
+    set_node_input(
+        workflow,
+        node_id=SCAIL2_LOAD_VIDEO_NODE_ID,
+        input_name="frame_load_cap",
+        value=frame_count,
+    )
+    set_node_input(
+        workflow,
+        node_id=SCAIL2_LOAD_VIDEO_NODE_ID,
+        input_name="skip_first_frames",
+        value=SCAIL2_SKIP_FIRST_FRAMES,
+    )
+
+    for input_name, value in (
+        ("width", SCAIL2_FIXED_WIDTH),
+        ("height", SCAIL2_FIXED_HEIGHT),
+        ("length", frame_count),
+        ("replacement_mode", replacement_mode),
+    ):
+        set_node_input(
+            workflow,
+            node_id=SCAIL2_TO_VIDEO_NODE_ID,
+            input_name=input_name,
+            value=value,
+        )
+
+    set_node_input(
+        workflow,
+        node_id=SCAIL2_COLORED_MASK_NODE_ID,
+        input_name="replacement_mode",
+        value=replacement_mode,
+    )
+
+    safe_unique_id = unique_id or "scail2"
+    set_node_input(
+        workflow,
+        node_id=SCAIL2_VIDEO_COMBINE_NODE_ID,
+        input_name="filename_prefix",
+        value=f"{output_task_prefix}_{safe_unique_id}_video",
+    )
+    set_node_input(
+        workflow,
+        node_id=SCAIL2_VIDEO_COMBINE_NODE_ID,
+        input_name="frame_rate",
+        value=SCAIL2_FORCE_RATE,
+    )
+    set_node_input(
+        workflow,
+        node_id=SCAIL2_VIDEO_COMBINE_NODE_ID,
+        input_name="save_output",
+        value=True,
+    )
+
+
+def patch_scail2_action_transfer_workflow(
+    workflow: dict[str, Any],
+    **kwargs: Any,
+) -> None:
+    _patch_scail2_workflow(
+        workflow,
+        replacement_mode=False,
+        output_task_prefix="scail2_action_transfer",
+        **kwargs,
+    )
+
+
+def patch_scail2_video_replacement_workflow(
+    workflow: dict[str, Any],
+    **kwargs: Any,
+) -> None:
+    _patch_scail2_workflow(
+        workflow,
+        replacement_mode=True,
+        output_task_prefix="scail2_video_replacement",
+        **kwargs,
+    )
+
+
 TASK_SPECIFIC_PATCHERS = {
     "img2img": patch_img2img_workflow,
     "img2img_lora": patch_img2img_workflow,
@@ -414,4 +564,6 @@ TASK_SPECIFIC_PATCHERS = {
     "video_edit": patch_image_to_video_workflow,
     "image_to_video": patch_image_to_video_workflow,
     "wan22_video_v2": patch_wan22_video_v2_workflow,
+    "scail2_action_transfer": patch_scail2_action_transfer_workflow,
+    "scail2_video_replacement": patch_scail2_video_replacement_workflow,
 }

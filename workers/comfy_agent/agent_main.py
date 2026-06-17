@@ -8,6 +8,7 @@ import time
 from typing import Any, Dict, Optional
 
 import httpx
+import urllib3
 import websockets  # type: ignore
 from asgi_correlation_id import correlation_id
 from agent_input_preparation import (
@@ -107,6 +108,16 @@ MINIO_INPUT_BUCKET = os.getenv("MINIO_INPUT_BUCKET", "comfyui-input")
 MINIO_RESULT_BUCKET = os.getenv("MINIO_RESULT_BUCKET", "comfyui-output")
 MINIO_TEMPLATE_BUCKET = os.getenv("MINIO_TEMPLATE_BUCKET", "bot-template")
 MINIO_SECURE = os.getenv("MINIO_SECURE", "false").strip().lower() in TRUE_ENV_VALUES
+MINIO_CONNECT_TIMEOUT_SECONDS = float(os.getenv("MINIO_CONNECT_TIMEOUT_SECONDS", "10"))
+MINIO_READ_TIMEOUT_SECONDS = float(os.getenv("MINIO_READ_TIMEOUT_SECONDS", "45"))
+MINIO_HTTP_RETRY_TOTAL = int(os.getenv("MINIO_HTTP_RETRY_TOTAL", "2"))
+MINIO_DOWNLOAD_TIMEOUT_SECONDS = float(
+    os.getenv("MINIO_DOWNLOAD_TIMEOUT_SECONDS", "300")
+)
+MINIO_DOWNLOAD_RETRY_ATTEMPTS = int(os.getenv("MINIO_DOWNLOAD_RETRY_ATTEMPTS", "2"))
+MINIO_DOWNLOAD_RETRY_DELAY_SECONDS = float(
+    os.getenv("MINIO_DOWNLOAD_RETRY_DELAY_SECONDS", "2")
+)
 COMFY_READY_RETRY_ATTEMPTS = int(os.getenv("COMFY_READY_RETRY_ATTEMPTS", "5"))
 COMFY_READY_RETRY_DELAY_SECONDS = float(
     os.getenv("COMFY_READY_RETRY_DELAY_SECONDS", "2")
@@ -274,6 +285,17 @@ class ComfyAgent:
                 access_key=MINIO_ACCESS_KEY,
                 secret_key=MINIO_SECRET_KEY,
                 secure=MINIO_SECURE,
+                http_client=urllib3.PoolManager(
+                    timeout=urllib3.Timeout(
+                        connect=MINIO_CONNECT_TIMEOUT_SECONDS,
+                        read=MINIO_READ_TIMEOUT_SECONDS,
+                    ),
+                    retries=urllib3.Retry(
+                        total=MINIO_HTTP_RETRY_TOTAL,
+                        backoff_factor=0.5,
+                        status_forcelist=[500, 502, 503, 504],
+                    ),
+                ),
             )
             logger.info("MinIO client initialized")
         except Exception as e:
@@ -713,6 +735,9 @@ class ComfyAgent:
             normalize_input_image_func=self._normalize_input_image_for_comfy,
             upload_prepared_input_func=self._upload_prepared_input,
             logger=logger,
+            download_timeout_seconds=MINIO_DOWNLOAD_TIMEOUT_SECONDS,
+            download_retry_attempts=MINIO_DOWNLOAD_RETRY_ATTEMPTS,
+            download_retry_delay_seconds=MINIO_DOWNLOAD_RETRY_DELAY_SECONDS,
         )
 
     async def _prepare_task_inputs(

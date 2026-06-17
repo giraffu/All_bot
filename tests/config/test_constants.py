@@ -1,4 +1,11 @@
-from src.constants import MODE_IMAGE_TO_VIDEO, VIDEO_TASK_TYPES, DYNAMIC_PRIORITY_RULES
+from src.constants import (
+    DYNAMIC_PRIORITY_RULES,
+    MODE_IMAGE_TO_VIDEO,
+    MODE_SCAIL2_ACTION_TRANSFER,
+    MODE_SCAIL2_VIDEO_REPLACEMENT,
+    VIDEO_TASK_TYPES,
+)
+from src.database.models import History
 
 
 def test_video_task_types_constant():
@@ -14,9 +21,17 @@ def test_video_task_types_constant():
         "face_video_step2",
         "video_lora",
         "ltx_video",
+        MODE_SCAIL2_ACTION_TRANSFER,
+        MODE_SCAIL2_VIDEO_REPLACEMENT,
     ]
     for mode in expected_modes:
         assert mode in VIDEO_TASK_TYPES
+
+
+def test_history_type_column_can_store_all_video_task_types():
+    max_task_type_length = max(len(task_type) for task_type in VIDEO_TASK_TYPES)
+
+    assert History.__table__.c.type.type.length >= max_task_type_length
 
 
 def test_mode_image_to_video_alias_keeps_legacy_value():

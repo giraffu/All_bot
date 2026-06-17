@@ -99,6 +99,7 @@ sequenceDiagram
   - worker 是否仍有 heartbeat，以及 `healthy_workers` 是否大于 0
   - worker 是否处于 `error` 或 `quarantined`，并查看 `last_error` / `health_reason`
   - worker `SUPPORTED_TASK_TYPES` 是否覆盖任务的执行面类型，例如旧图生视频与 Telegram 懒人动图新提交最终会排队为 `image_to_video`；legacy `video_insert` / `video_edit` 只应作为旧队列兼容 alias，必须和 `image_to_video` 使用同一 workflow/mapping/patcher；RunPod `i2i_pro` profile 必须声明 `SUPPORTED_TASK_TYPES=i2i_pro,t2i-pornmaster-turbo,face_swap`
+  - SCAIL-2 Web 测试只应由 `cloud_worker_test_08` 声明 `SUPPORTED_TASK_TYPES=scail2_action_transfer,scail2_video_replacement`，并通过 agent control 在验证前保持 `disabled`；ComfyUI runtime 是 `http://192.168.1.2:8190`，不是云正式 worker 能力
   - 目标 worker 是否设置了 `TASK_TYPE_WORKFLOW_OVERRIDES`，导致同一 task type 在测试/canary worker 上读取不同 workflow JSON
   - queue 是否持续堆积
   - 上游 task core submission 是否仍在正常写入任务

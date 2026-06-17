@@ -187,6 +187,8 @@ SCAIL-2 手工测试容器是独立于业务队列的临时 runtime，不使用 
 
 SCAIL-2 镜像入口是 `remote_workers/docker/runpod_profiles/scail2/Dockerfile`，默认 tag 形如 `192.168.1.115:5000/allbot/comfy-runpod-scail2:20260617-scail2-cu128-<shortsha>`。该镜像基于 `yanwk/comfyui-boot:cu128-slim`，使用包含 ComfyUI PR `Comfy-Org/ComfyUI#14373` 后的版本，必须在 `/object_info` 暴露 `WanSCAILToVideo`、`SCAIL2ColoredMask`、`SAM3_VideoTrack`、`WanContextWindowsManual`、`VHS_LoadVideo`、`VHS_VideoCombine`。模型从 `allbot-model-cache/scail2/2026-06-17-test/manifest.json` 同步到 `/workspace/ComfyUI/models`；LoRA 路径必须是 `loras/Wan2.1/Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors`，否则 Nomadoor workflow 的 LoRA dropdown 无法解析。
 
+Web 测试业务接入不改变上述 ComfyUI 容器：容器仍不设置 `AGENT_ID` / `CENTRAL_API_URL` / `SUPPORTED_TASK_TYPES`。接单层在本地主 `workers/docker-compose-cloud-worker-test.yml` 中新增 `cloud-comfy-agent-test-8` / `cloud_worker_test_08`，指向 `http://192.168.1.2:8190`，声明 `SUPPORTED_TASK_TYPES=scail2_action_transfer,scail2_video_replacement` 与 GPU pool 元数据 `node_id=gpu-002`、`gpu_index=0`、`runtime_profile=scail2`。`scripts/start_cloud_worker_test.sh` 会在启动后把该 agent control 置为 `disabled`；只有完成 `/object_info`、mapping、Web 5s smoke 验证后才可手动 enable。该能力只属于云测试，不同步云正式 worker compose。
+
 常用命令：
 
 ```bash

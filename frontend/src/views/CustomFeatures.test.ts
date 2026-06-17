@@ -82,6 +82,8 @@ const createWorkbench = (options?: { canStitch?: boolean }) => ({
   hasAdvancedOptions: ref(true),
   assetUploadSlots: ref([]),
   canUploadReference: ref(true),
+  promptPlaceholder: ref('描述你想生成的视频效果'),
+  showStructuredPromptInput: ref(false),
   referenceTitle: ref('起始帧 / 终止帧'),
   uploadButtonLabel: ref('添加起始帧'),
   editLoraOptions: [],

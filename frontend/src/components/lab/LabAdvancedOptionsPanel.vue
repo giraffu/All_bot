@@ -59,7 +59,11 @@ const hasOptions = computed(() => props.mode.supportsAdvancedOptions)
 const showVideoLoraOptions = computed(() => props.mode.supportsVideoOptions && props.mode.supportsVideoLora !== false)
 const showLtxLoraItems = computed(() => props.mode.supportsLtxLoraItems)
 const showDurationOptions = computed(() => props.mode.supportsVideoOptions && props.mode.supportsDurationOptions !== false)
-const showStandardResolutionOptions = computed(() => props.mode.supportsVideoOptions && !props.mode.supportsWan22ResolutionPreset)
+const showStandardResolutionOptions = computed(() => (
+  props.mode.supportsVideoOptions
+  && props.mode.supportsResolutionOptions !== false
+  && !props.mode.supportsWan22ResolutionPreset
+))
 </script>
 
 <template>

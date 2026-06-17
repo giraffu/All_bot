@@ -15,11 +15,18 @@ export type UnifiedLabModeId =
   | 'face_video'
   | 'ltx_video'
   | 'wan22_video_v2'
+  | 'scail2_action_transfer'
+  | 'scail2_video_replacement'
 
 export type LegacyLabModeId = never
 
 export type LabModeId = UnifiedLabModeId | LegacyLabModeId
-export type LabUploadSlotId = 'face_image' | 'target_image' | 'target_video'
+export type LabUploadSlotId =
+  | 'face_image'
+  | 'target_image'
+  | 'target_video'
+  | 'reference_image'
+  | 'motion_video'
 export type LabUploadPreviewKind = 'image' | 'video'
 
 export interface LabUploadSlotConfig {
@@ -51,6 +58,7 @@ export interface LabModeConfig {
   supportsLtxLoraItems?: boolean
   supportsDurationOptions?: boolean
   supportsNegativePrompt?: boolean
+  supportsResolutionOptions?: boolean
   supportsWan22ResolutionPreset?: boolean
   supportsAdvancedOptions: boolean
   promptRequired: boolean
@@ -99,6 +107,15 @@ export const LTX_VIDEO_DURATION_OPTIONS = [
   { value: '20', label: '20 秒' },
 ] as const
 
+export const SCAIL2_VIDEO_DURATION_OPTIONS = [
+  { value: '5', label: '5 秒' },
+  { value: '8', label: '8 秒' },
+] as const
+
+export const getScail2VideoCost = (duration: string | number) => (
+  String(duration).replace(/s$/i, '') === '8' ? 80 : 40
+)
+
 export const DEFAULT_VIDEO_RESOLUTION = '512'
 export const DEFAULT_FACE_VIDEO_RESOLUTION = '720'
 export const DEFAULT_LTX_VIDEO_RESOLUTION = '1280x704'
@@ -144,7 +161,7 @@ export const LAB_MODE_CONFIGS: LabModeConfig[] = [
     supportsEditLora: false,
     supportsVideoOptions: false,
     supportsAdvancedOptions: false,
-    promptRequired: false,
+    promptRequired: true,
     unified: true,
   },
   {
@@ -163,7 +180,7 @@ export const LAB_MODE_CONFIGS: LabModeConfig[] = [
     supportsEditLora: false,
     supportsVideoOptions: false,
     supportsAdvancedOptions: false,
-    promptRequired: true,
+    promptRequired: false,
     unified: true,
   },
   {
@@ -182,7 +199,7 @@ export const LAB_MODE_CONFIGS: LabModeConfig[] = [
     supportsEditLora: false,
     supportsVideoOptions: false,
     supportsAdvancedOptions: false,
-    promptRequired: true,
+    promptRequired: false,
     unified: true,
   },
   {
@@ -204,7 +221,7 @@ export const LAB_MODE_CONFIGS: LabModeConfig[] = [
     supportsNegativePrompt: true,
     supportsWan22ResolutionPreset: true,
     supportsAdvancedOptions: true,
-    promptRequired: true,
+    promptRequired: false,
     unified: true,
   },
   {
@@ -279,6 +296,90 @@ export const LAB_MODE_CONFIGS: LabModeConfig[] = [
         labelKey: 'lab.workbench.upload_slots.target_video',
         hintKey: 'lab.workbench.upload_slot_hints.target_video',
         buttonKey: 'lab.workbench.upload_slot_buttons.target_video',
+        accept: 'video/mp4,video/quicktime,video/webm',
+        previewKind: 'video',
+        required: true,
+      },
+    ],
+  },
+  {
+    id: 'scail2_action_transfer',
+    taskType: 'scail2_action_transfer',
+    titleKey: 'lab.cards.scail2_action_transfer_title',
+    descriptionKey: 'lab.cards.scail2_action_transfer_desc',
+    kindKey: 'lab.workbench.mode_kinds.video',
+    baseCost: 40,
+    promptPlaceholderKey: 'lab.workbench.prompt_placeholders.scail2_action_transfer',
+    promptTarget: 'inputs',
+    submitLabelKey: 'lab.workbench.submit_video',
+    maxImages: 0,
+    supportsUpload: false,
+    supportsEditLora: false,
+    supportsVideoOptions: true,
+    supportsVideoLora: false,
+    supportsDurationOptions: true,
+    supportsNegativePrompt: true,
+    supportsResolutionOptions: false,
+    supportsAdvancedOptions: true,
+    promptRequired: false,
+    unified: true,
+    uploadSlots: [
+      {
+        id: 'reference_image',
+        labelKey: 'lab.workbench.upload_slots.reference_image',
+        hintKey: 'lab.workbench.upload_slot_hints.reference_image',
+        buttonKey: 'lab.workbench.upload_slot_buttons.reference_image',
+        accept: 'image/png,image/jpeg,image/webp',
+        previewKind: 'image',
+        required: true,
+      },
+      {
+        id: 'motion_video',
+        labelKey: 'lab.workbench.upload_slots.motion_video',
+        hintKey: 'lab.workbench.upload_slot_hints.motion_video',
+        buttonKey: 'lab.workbench.upload_slot_buttons.motion_video',
+        accept: 'video/mp4,video/quicktime,video/webm',
+        previewKind: 'video',
+        required: true,
+      },
+    ],
+  },
+  {
+    id: 'scail2_video_replacement',
+    taskType: 'scail2_video_replacement',
+    titleKey: 'lab.cards.scail2_video_replacement_title',
+    descriptionKey: 'lab.cards.scail2_video_replacement_desc',
+    kindKey: 'lab.workbench.mode_kinds.video',
+    baseCost: 40,
+    promptPlaceholderKey: 'lab.workbench.prompt_placeholders.scail2_video_replacement',
+    promptTarget: 'inputs',
+    submitLabelKey: 'lab.workbench.submit_video',
+    maxImages: 0,
+    supportsUpload: false,
+    supportsEditLora: false,
+    supportsVideoOptions: true,
+    supportsVideoLora: false,
+    supportsDurationOptions: true,
+    supportsNegativePrompt: true,
+    supportsResolutionOptions: false,
+    supportsAdvancedOptions: true,
+    promptRequired: false,
+    unified: true,
+    uploadSlots: [
+      {
+        id: 'reference_image',
+        labelKey: 'lab.workbench.upload_slots.reference_image',
+        hintKey: 'lab.workbench.upload_slot_hints.reference_image',
+        buttonKey: 'lab.workbench.upload_slot_buttons.reference_image',
+        accept: 'image/png,image/jpeg,image/webp',
+        previewKind: 'image',
+        required: true,
+      },
+      {
+        id: 'motion_video',
+        labelKey: 'lab.workbench.upload_slots.motion_video',
+        hintKey: 'lab.workbench.upload_slot_hints.motion_video',
+        buttonKey: 'lab.workbench.upload_slot_buttons.motion_video',
         accept: 'video/mp4,video/quicktime,video/webm',
         previewKind: 'video',
         required: true,
@@ -361,6 +462,10 @@ export const resolveLabModeIdFromTaskType = (taskType: string | null | undefined
       return 'ltx_video'
     case 'wan22_video_v2':
       return 'wan22_video_v2'
+    case 'scail2_action_transfer':
+      return 'scail2_action_transfer'
+    case 'scail2_video_replacement':
+      return 'scail2_video_replacement'
     case 'img2img_lora':
     case 'edit':
     default:

@@ -106,6 +106,24 @@ wait_for_container_ready() {
     return 1
 }
 
+remove_test_control_containers() {
+    local filters=(
+        cloud-central-api-test
+        cloud-web-api-test
+        cloud-dashboard-backend-test
+        cloud-dashboard-frontend-test
+        cloud-imgproxy-test
+        web-api-test
+        dashboard-backend-test
+        dashboard-frontend-test
+    )
+    local name_filter
+
+    for name_filter in "${filters[@]}"; do
+        docker ps -aq --filter "name=${name_filter}" | xargs -r docker rm -f >/dev/null 2>&1 || true
+    done
+}
+
 cloud_db_has_users_table() {
     compose run --rm --no-deps web-api-test python - <<'PY' | tail -n 1 | tr -d '[:space:]'
 import asyncio
@@ -180,7 +198,7 @@ echo "1️⃣ 校验云测试基础设施配置..."
 echo "   ℹ️ 测试数据库: ${CLOUD_TEST_POSTGRES_DB_VALUE:-bot_db_test}"
 
 echo "2️⃣ 启动云测试 Postgres/Redis..."
-compose up -d postgres-test redis-test
+compose up -d --no-recreate postgres-test redis-test
 wait_for_container_ready \
     "云测试 Postgres" \
     "docker exec cloud-postgres-test pg_isready -U '${CLOUD_TEST_POSTGRES_USER_VALUE:-postgres}' -d '${CLOUD_TEST_POSTGRES_DB_VALUE:-bot_db_test}'" \
@@ -214,7 +232,9 @@ else
 fi
 
 echo "6️⃣ 启动云测试控制面服务..."
-compose up -d --force-recreate central-api-test web-api-test dashboard-backend-test dashboard-frontend-test imgproxy-test
+remove_test_control_containers
+compose up -d --no-deps central-api-test imgproxy-test
+compose up -d --no-deps web-api-test dashboard-backend-test dashboard-frontend-test
 
 echo "7️⃣ 等待健康检查..."
 wait_for_http_ready "云测试 Central API" "http://${CLOUD_TEST_HEALTH_HOST}:8004/health" 40 5

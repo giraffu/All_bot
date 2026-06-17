@@ -160,6 +160,41 @@ def test_wan22_result_pick_prefers_video_over_images(monkeypatch):
     assert module.result_asset_priority(asset, task_type="wan22_video_v2") == 3
 
 
+@pytest.mark.parametrize(
+    "task_type",
+    ["scail2_action_transfer", "scail2_video_replacement"],
+)
+def test_scail2_result_pick_prefers_video_over_temp_images(monkeypatch, task_type):
+    module = build_agent_module(monkeypatch)
+    outputs = {
+        "preview_node": {
+            "images": [
+                {
+                    "filename": "ComfyUI_temp_czhcu_00003_.png",
+                    "subfolder": "",
+                    "type": "temp",
+                }
+            ]
+        },
+        "video_node": {
+            "gifs": [
+                {
+                    "filename": "scail2_action_transfer_42_video_00001.mp4",
+                    "subfolder": "",
+                    "type": "output",
+                }
+            ]
+        },
+    }
+
+    asset = module.pick_first_output_asset(outputs, task_type=task_type)
+
+    assert asset is not None
+    assert asset["filename"] == "scail2_action_transfer_42_video_00001.mp4"
+    assert asset["_asset_key"] == "gifs"
+    assert module.result_asset_priority(asset, task_type=task_type) == 2
+
+
 @pytest.mark.asyncio
 async def test_shutdown_before_start_reports_and_closes_clients(monkeypatch):
     module = build_agent_module(monkeypatch)

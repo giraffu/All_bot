@@ -57,6 +57,7 @@ async def finalize_monitored_web_task_success(
             registry_task_id,
             log_err,
         )
+        raise
     await cleanup_task_runtime_state_func(
         internal_user_id=internal_user_id,
         registry_task_id=registry_task_id,

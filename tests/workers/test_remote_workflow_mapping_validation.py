@@ -70,6 +70,19 @@ def test_remote_legacy_video_task_types_resolve_to_wan22_aio_workflow(task_type)
 
 
 @pytest.mark.parametrize(
+    ("task_type", "filename"),
+    [
+        ("scail2_action_transfer", "SCAIL-2_Animation_multi-char.api.json"),
+        ("scail2_video_replacement", "SCAIL-2_Replacement.api.json"),
+    ],
+)
+def test_remote_scail2_task_types_resolve_to_api_workflows(task_type, filename):
+    validation = _load_remote_validation_module()
+
+    assert validation.resolve_workflow_filename(task_type) == filename
+
+
+@pytest.mark.parametrize(
     "filename",
     ["face_swap_v2.json", "txt2img_from_i2i_pro.json", "i2i_pro.json"],
 )

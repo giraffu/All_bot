@@ -401,7 +401,11 @@
       "high_res_video_title": "高级图生视频",
       "high_res_video_desc": "上传图像与提示词，使用最先进的模型生成高分辨率、更长时长的视频。",
       "wan22_video_v2_title": "图生视频 v2",
-      "wan22_video_v2_desc": "支持正负提示词、首尾帧、色彩匹配、无缝循环与连续扩展。"
+      "wan22_video_v2_desc": "支持正负提示词、首尾帧、色彩匹配、无缝循环与连续扩展。",
+      "scail2_action_transfer_title": "动作迁移",
+      "scail2_action_transfer_desc": "上传参考图和驱动视频，让参考角色跟随视频动作生成短片。",
+      "scail2_video_replacement_title": "视频换人",
+      "scail2_video_replacement_desc": "上传参考人物和驱动视频，保留镜头关系并替换视频中的人物。"
     },
     "workbench": {
       "eyebrow": "统一创作工作台",
@@ -431,17 +435,23 @@
       "upload_slots": {
         "face_image": "脸部图片",
         "target_image": "身体图片",
-        "target_video": "身体视频"
+        "target_video": "身体视频",
+        "reference_image": "参考图片",
+        "motion_video": "驱动视频"
       },
       "upload_slot_hints": {
         "face_image": "上传五官清晰的脸部图",
         "target_image": "上传要替换到的身体图",
-        "target_video": "上传要替换到的身体视频"
+        "target_video": "上传要替换到的身体视频",
+        "reference_image": "上传要迁移或替换成的角色图片",
+        "motion_video": "上传提供动作、镜头和构图的短视频"
       },
       "upload_slot_buttons": {
         "face_image": "添加脸部图",
         "target_image": "添加身体图",
-        "target_video": "添加身体视频"
+        "target_video": "添加身体视频",
+        "reference_image": "添加参考图",
+        "motion_video": "添加驱动视频"
       },
       "submit_image": "生成图片",
       "submit_video": "生成视频",
@@ -480,7 +490,8 @@
         "custom_video": "图生视频支持 5/8/10 秒，按分辨率和时长计费。",
         "face_video": "视频换脸按分辨率计费，720p 为 18 灵石，1024p 为 36 灵石。",
         "ltx_video": "高级图生视频固定 1280x704，时长越长消耗越高。",
-        "wan22_video_v2": "图生视频 v2 支持 5/8/10 秒，按分辨率和时长计费。"
+        "wan22_video_v2": "图生视频 v2 支持 5/8/10 秒，按分辨率和时长计费。",
+        "scail2_video": "SCAIL-2 测试版固定 512x896，5 秒 40 灵石，8 秒 80 灵石。"
       },
       "template_notices": {
         "face_swap": "已加载一键换脸模板，身体图已锁定，请上传脸部图即可开始换脸。",
@@ -493,12 +504,14 @@
       "prompt_placeholders": {
         "edit": "描述你希望 AI 如何修改这张图，例如：把背景换成海边，让人物戴上墨镜，整体更像电影剧照。",
         "txt2img": "描述你想直接生成的画面，例如：cinematic portrait, moonlight, detailed face, soft rim light, realistic skin。",
-        "video": "描述视频里的动作和镜头，例如：人物微笑转头，风吹动发丝，镜头缓慢推近。"
+        "video": "描述视频里的动作和镜头，例如：人物微笑转头，风吹动发丝，镜头缓慢推近。",
+        "scail2_action_transfer": "简单描述参考角色与动作效果，例如：角色跟随视频跳舞，动作自然，镜头稳定。",
+        "scail2_video_replacement": "简单描述替换后的画面，例如：参考人物出现在原视频场景中，动作自然，背景保持。"
       },
       "validation": {
         "upload_first": "请先添加参考图",
         "prompt_required": "请输入提示词",
-        "upload_slots_required": "请先添加脸部素材和目标素材",
+        "upload_slots_required": "请先添加所有必需素材",
         "ltx_lora_limit": "最多只能选择 3 个附加模型"
       },
       "mode_kinds": {
@@ -616,6 +629,8 @@
     "mode_custom_video": "图生视频",
     "mode_ltx_video": "高级图生视频",
     "mode_wan22_video_v2": "图生视频 v2",
+    "mode_scail2_action_transfer": "动作迁移",
+    "mode_scail2_video_replacement": "视频换人",
     "mode_video_lora": "图生视频",
     "mode_template_contribute": "模板共建",
     "mode_none": "无模式",

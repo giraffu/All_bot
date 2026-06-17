@@ -43,6 +43,7 @@ const props = defineProps<{
   prompt: string
   promptLocked: boolean
   promptLockedHint?: string
+  showStructuredPromptInput: boolean
   references: UploadedReferenceItem[]
   assetUploadSlots: LabAssetUploadSlot[]
   referenceTitle: string
@@ -123,81 +124,94 @@ const compactUploadLabel = (label: string) => label
         @remove="emit('removeReference', $event)"
       />
 
-      <div v-if="hasAssetUploadSlots" class="lab-composer__asset-grid">
-        <div
-          v-for="slot in assetUploadSlots"
-          :key="slot.id"
-          class="lab-composer__asset-card flex min-h-0 flex-col rounded-[20px] border p-2 sm:p-3"
-        >
+      <div v-if="hasAssetUploadSlots">
+        <div class="lab-composer__asset-grid">
           <div
-            class="lab-composer__asset-preview relative rounded-2xl"
-            :class="{ 'lab-composer__asset-preview--uploading': slot.item?.uploading }"
+            v-for="slot in assetUploadSlots"
+            :key="slot.id"
+            class="lab-composer__asset-card flex min-h-0 flex-col rounded-[20px] border p-2 sm:p-3"
           >
-            <img
-              v-if="slot.item && slot.previewKind === 'image'"
-              :src="slot.item.preview"
-              :alt="slot.item.name"
+            <div
+              class="lab-composer__asset-preview relative rounded-2xl"
+              :class="{ 'lab-composer__asset-preview--uploading': slot.item?.uploading }"
             >
-            <video
-              v-else-if="slot.item && slot.previewKind === 'video'"
-              :src="slot.item.preview"
-              muted
-              playsinline
-              preload="metadata"
-            />
-            <component
-              :is="slot.previewKind === 'video' ? VideoCameraOutlined : PictureOutlined"
-              v-else
-              class="text-3xl opacity-70"
-            />
-
-            <div v-if="slot.item?.uploading" class="lab-composer__asset-uploading absolute inset-0 flex items-center justify-center">
-              <a-progress
-                type="circle"
-                :percent="slot.item.progress ?? 0"
-                :width="38"
-                :show-info="false"
-                stroke-color="#3b82f6"
+              <img
+                v-if="slot.item && slot.previewKind === 'image'"
+                :src="slot.item.preview"
+                :alt="slot.item.name"
+              >
+              <video
+                v-else-if="slot.item && slot.previewKind === 'video'"
+                :src="slot.item.preview"
+                muted
+                playsinline
+                preload="metadata"
               />
-            </div>
-          </div>
+              <component
+                :is="slot.previewKind === 'video' ? VideoCameraOutlined : PictureOutlined"
+                v-else
+                class="text-3xl opacity-70"
+              />
 
-          <div class="lab-composer__asset-meta mt-2 flex items-start justify-between gap-2">
-            <div class="min-w-0 flex-1">
-              <div class="truncate text-sm font-semibold">{{ slot.label }}</div>
-              <div class="lab-composer__asset-hint mt-1 text-xs leading-4 opacity-70">
-                {{ slot.item?.name || slot.hint }}
+              <div v-if="slot.item?.uploading" class="lab-composer__asset-uploading absolute inset-0 flex items-center justify-center">
+                <a-progress
+                  type="circle"
+                  :percent="slot.item.progress ?? 0"
+                  :width="38"
+                  :show-info="false"
+                  stroke-color="#3b82f6"
+                />
               </div>
             </div>
 
-            <a-button
-              v-if="slot.item && !slot.item.uploading"
-              class="lab-composer__icon-btn"
-              shape="circle"
-              size="small"
-              :aria-label="t('lab.workbench.remove_asset')"
-              @click="emit('removeUploadSlot', slot.id)"
-            >
-              <template #icon>
-                <CloseOutlined />
-              </template>
-            </a-button>
-          </div>
+            <div class="lab-composer__asset-meta mt-2 flex items-start justify-between gap-2">
+              <div class="min-w-0 flex-1">
+                <div class="truncate text-sm font-semibold">{{ slot.label }}</div>
+                <div class="lab-composer__asset-hint mt-1 text-xs leading-4 opacity-70">
+                  {{ slot.item?.name || slot.hint }}
+                </div>
+              </div>
 
-          <a-upload
-            :accept="slot.accept"
-            :show-upload-list="false"
-            :before-upload="handleBeforeUploadSlot(slot.id)"
-            :disabled="slot.item?.uploading"
-          >
-            <a-button class="lab-composer__asset-upload-btn lab-composer__ghost-btn mt-2 w-full rounded-full" :disabled="slot.item?.uploading">
-              <template #icon>
-                <PlusOutlined />
-              </template>
-              {{ slot.item && !slot.item.uploading ? t('lab.workbench.replace_asset') : compactUploadLabel(slot.buttonLabel) }}
-            </a-button>
-          </a-upload>
+              <a-button
+                v-if="slot.item && !slot.item.uploading"
+                class="lab-composer__icon-btn"
+                shape="circle"
+                size="small"
+                :aria-label="t('lab.workbench.remove_asset')"
+                @click="emit('removeUploadSlot', slot.id)"
+              >
+                <template #icon>
+                  <CloseOutlined />
+                </template>
+              </a-button>
+            </div>
+
+            <a-upload
+              :accept="slot.accept"
+              :show-upload-list="false"
+              :before-upload="handleBeforeUploadSlot(slot.id)"
+              :disabled="slot.item?.uploading"
+            >
+              <a-button class="lab-composer__asset-upload-btn lab-composer__ghost-btn mt-2 w-full rounded-full" :disabled="slot.item?.uploading">
+                <template #icon>
+                  <PlusOutlined />
+                </template>
+                {{ slot.item && !slot.item.uploading ? t('lab.workbench.replace_asset') : compactUploadLabel(slot.buttonLabel) }}
+              </a-button>
+            </a-upload>
+          </div>
         </div>
+
+        <a-textarea
+          v-if="showStructuredPromptInput && !promptLocked"
+          :value="prompt"
+          :auto-size="{ minRows: 2, maxRows: 5 }"
+          :maxlength="2000"
+          show-count
+          class="lab-composer__textarea lab-composer__structured-prompt mt-3 rounded-2xl border px-3 py-2"
+          :placeholder="promptPlaceholder"
+          @update:value="emit('update:prompt', String($event))"
+        />
       </div>
 
       <div v-else-if="promptLocked" class="lab-composer__locked flex min-h-[160px] flex-col items-center justify-center rounded-[18px] border px-6 py-8 text-center">
@@ -419,6 +433,12 @@ const compactUploadLabel = (label: string) => label
 
 .lab-composer__asset-uploading {
   background: rgba(15, 23, 42, 0.44);
+}
+
+.lab-composer__structured-prompt {
+  display: block;
+  background: var(--theme-panel-bg);
+  border-color: var(--theme-border) !important;
 }
 
 :deep(.lab-composer__asset-uploading .ant-progress-inner) {

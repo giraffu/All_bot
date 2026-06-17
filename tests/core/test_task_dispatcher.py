@@ -7,16 +7,20 @@ from src.core.task_dispatcher import (
     DefaultImageStrategy,
     FaceSwapStrategy,
     LtxVideoStrategy,
+    Scail2VideoStrategy,
     StrategyFactory,
     Wan22AioVideoStrategy,
     Wan22VideoV2Strategy,
 )
+from src.core.task_core_types import CoreDomainError
 from src.constants import (
     MODE_CUSTOM_VIDEO,
     MODE_I2I_PRO,
     MODE_IMAGE_TO_VIDEO,
     MODE_IMAGE_TO_VIDEO_LITERAL,
     MODE_IMG2IMG_LORA,
+    MODE_SCAIL2_ACTION_TRANSFER,
+    MODE_SCAIL2_VIDEO_REPLACEMENT,
     MODE_TXT2IMG,
     MODE_WAN22_VIDEO_V2,
 )
@@ -42,6 +46,14 @@ def test_strategy_factory_returns_correct_strategy():
 
     strategy = StrategyFactory.get_strategy(MODE_WAN22_VIDEO_V2)
     assert isinstance(strategy, Wan22VideoV2Strategy)
+
+    strategy = StrategyFactory.get_strategy(MODE_SCAIL2_ACTION_TRANSFER)
+    assert isinstance(strategy, Scail2VideoStrategy)
+    assert strategy.task_type == MODE_SCAIL2_ACTION_TRANSFER
+
+    strategy = StrategyFactory.get_strategy(MODE_SCAIL2_VIDEO_REPLACEMENT)
+    assert isinstance(strategy, Scail2VideoStrategy)
+    assert strategy.task_type == MODE_SCAIL2_VIDEO_REPLACEMENT
 
     strategy = StrategyFactory.get_strategy(MODE_IMAGE_TO_VIDEO_LITERAL)
     assert isinstance(strategy, Wan22AioVideoStrategy)
@@ -166,6 +178,46 @@ def test_wan22_strategy_cost_follows_duration_multiplier():
     assert strategy.get_cost({"resolution_preset": "hd", "duration": 10}) == 90
 
 
+def test_scail2_strategy_cost_follows_strict_duration():
+    strategy = StrategyFactory.get_strategy(MODE_SCAIL2_ACTION_TRANSFER)
+
+    assert strategy.get_cost({}) == 40
+    assert strategy.get_cost({"duration": 5}) == 40
+    assert strategy.get_cost({"duration": "8s"}) == 80
+
+    with pytest.raises(CoreDomainError):
+        strategy.get_cost({"duration": 10})
+
+
+def test_scail2_strategy_metadata_keeps_frame_count_and_mode():
+    strategy = StrategyFactory.get_strategy(MODE_SCAIL2_VIDEO_REPLACEMENT)
+
+    metadata = strategy.get_metadata(
+        {
+            "saved_input_images": ["demo/ref.png", "demo/motion.mp4"],
+            "duration": "8s",
+        }
+    )
+
+    assert metadata == {
+        "saved_inputs": ["demo/ref.png", "demo/motion.mp4"],
+        "requested_duration": 8,
+        "scail2_duration_seconds": 8,
+        "scail2_frame_count": 129,
+        "scail2_width": 512,
+        "scail2_height": 896,
+        "scail2_replacement_mode": True,
+    }
+
+
+def test_scail2_strategy_upload_paths_preserve_reference_then_motion_order():
+    strategy = StrategyFactory.get_strategy(MODE_SCAIL2_ACTION_TRANSFER)
+
+    assert strategy.get_file_paths_to_upload(
+        {"images": ["ref.png", "motion.mp4", "ignored.png"]}
+    ) == ["ref.png", "motion.mp4"]
+
+
 def test_wan22_strategy_metadata_keeps_chain_context():
     strategy = Wan22VideoV2Strategy()
 
@@ -229,6 +281,57 @@ async def test_wan22_strategy_forwards_resolution_preset(monkeypatch):
         length=8,
         priority=6,
     )
+
+
+@pytest.mark.asyncio
+async def test_scail2_strategy_forwards_reference_video_prompt_and_duration(
+    monkeypatch,
+):
+    strategy = StrategyFactory.get_strategy(MODE_SCAIL2_ACTION_TRANSFER)
+    submit_mock = AsyncMock(return_value="backend-task-id")
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_scail2_video_task=submit_mock,
+    )
+
+    result = await strategy.submit_task(
+        "task-1",
+        {
+            "prompt": "dance naturally",
+            "negative_prompt": "blur",
+            "saved_input_images": ["demo/ref.png", "demo/motion.mp4"],
+            "duration": 8,
+        },
+        priority=7,
+    )
+
+    assert result == "backend-task-id"
+    submit_mock.assert_awaited_once_with(
+        "task-1",
+        task_type=MODE_SCAIL2_ACTION_TRANSFER,
+        reference_image_path="demo/ref.png",
+        motion_video_path="demo/motion.mp4",
+        prompt="dance naturally",
+        negative_prompt="blur",
+        length=8,
+        priority=7,
+    )
+
+
+@pytest.mark.asyncio
+async def test_scail2_strategy_requires_reference_and_motion_video(monkeypatch):
+    strategy = StrategyFactory.get_strategy(MODE_SCAIL2_VIDEO_REPLACEMENT)
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_scail2_video_task=AsyncMock(return_value="backend-task-id"),
+    )
+
+    with pytest.raises(CoreDomainError):
+        await strategy.submit_task(
+            "task-1",
+            {"saved_input_images": ["demo/ref.png"]},
+            priority=0,
+        )
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,11 @@
 import os
 
+from src.domain_config.scail2_video import (
+    SCAIL2_ACTION_TRANSFER_TASK_TYPE,
+    SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
+    SCAIL2_TASK_TYPES,
+)
+
 # Directories
 TMP_DIR = os.path.abspath("./tg_tmp")
 TEMPLATE_DIR_PENETRATION = os.path.abspath("./templates/penetration")
@@ -33,6 +39,8 @@ MODE_IMAGE_TO_VIDEO = MODE_VIDEO_LORA
 MODE_IMAGE_TO_VIDEO_LITERAL = "image_to_video"
 MODE_LTX_VIDEO = "ltx_video"
 MODE_WAN22_VIDEO_V2 = "wan22_video_v2"
+MODE_SCAIL2_ACTION_TRANSFER = SCAIL2_ACTION_TRANSFER_TASK_TYPE
+MODE_SCAIL2_VIDEO_REPLACEMENT = SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE
 MODE_TXT2IMG = "txt2img"
 MODE_I2I_PRO = "i2i_pro"
 MODE_I2I_DRAW = "i2i_draw"
@@ -63,6 +71,8 @@ MODE_NAME_MAP = {
     MODE_CUSTOM_VIDEO: "task.mode_custom_video",
     MODE_LTX_VIDEO: "task.mode_ltx_video",
     MODE_WAN22_VIDEO_V2: "task.mode_wan22_video_v2",
+    MODE_SCAIL2_ACTION_TRANSFER: "task.mode_scail2_action_transfer",
+    MODE_SCAIL2_VIDEO_REPLACEMENT: "task.mode_scail2_video_replacement",
     MODE_TXT2IMG: "task.mode_txt2img",
     MODE_IMAGE_TO_VIDEO: "task.mode_video_lora",
     MODE_IMAGE_TO_VIDEO_LITERAL: "task.mode_video_lora",
@@ -86,6 +96,8 @@ TASK_COSTS = {
     MODE_CUSTOM_VIDEO: 6,
     MODE_LTX_VIDEO: 10,
     MODE_WAN22_VIDEO_V2: 6,
+    MODE_SCAIL2_ACTION_TRANSFER: 40,
+    MODE_SCAIL2_VIDEO_REPLACEMENT: 40,
     MODE_TXT2IMG: 2,
     MODE_IMAGE_TO_VIDEO: 6,
     MODE_IMAGE_TO_VIDEO_LITERAL: 6,
@@ -323,6 +335,7 @@ GENERATION_TASK_TYPES = [
     MODE_CUSTOM_VIDEO,
     MODE_LTX_VIDEO,
     MODE_WAN22_VIDEO_V2,
+    *SCAIL2_TASK_TYPES,
     MODE_IMAGE_TO_VIDEO,
     MODE_PERFECT_VIDEO_INSERT,
     MODE_DOGGY_STYLE,
@@ -355,6 +368,7 @@ VIDEO_TASK_TYPES = [
     MODE_IMAGE_TO_VIDEO_LITERAL,
     "ltx_video",
     MODE_WAN22_VIDEO_V2,
+    *SCAIL2_TASK_TYPES,
     "video_edit",
     "perfect_video_edit",
     "txt2video",

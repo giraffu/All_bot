@@ -333,6 +333,7 @@ Worker 拉到任务后会先处理输入：
 - 从 MinIO 下载输入图片或视频
 - 把输入通过 ComfyUI API 上传到 ComfyUI input 区
 - 补全 `image` / `image2` / `image3` / `face_image` / `body_image` / `video` 等参数
+- 输入下载有两层超时保护：MinIO/S3 HTTP 连接与读超时由 `MINIO_CONNECT_TIMEOUT_SECONDS`、`MINIO_READ_TIMEOUT_SECONDS`、`MINIO_HTTP_RETRY_TOTAL` 控制；整次输入文件下载由 `MINIO_DOWNLOAD_TIMEOUT_SECONDS`、`MINIO_DOWNLOAD_RETRY_ATTEMPTS`、`MINIO_DOWNLOAD_RETRY_DELAY_SECONDS` 控制。下载失败或超时会清理本地目标文件和 `.part.minio` 临时文件，并让任务进入失败补偿路径，避免 worker 长时间停在 `preparing` 而 ComfyUI 队列始终为空。
 - 开启 `PREFETCH_ENABLED` 时，worker 会在当前 ComfyUI 执行期间通过 relay/Central `/api/agent/task/peek` 只读查看同类型下一单，并提前下载、规范化和上传输入。真实 `/pop` 后只有 `task_id` 命中预取缓存才复用；miss 或类型不匹配会丢弃缓存并回退原输入准备流程。预取阶段不做取消检查，不改变 Central 队列状态。
 - 开启 `PIPELINE_ENABLED` 时，worker 不只依赖 peek：在本地 running slot 未满时会真实 `/pop?cancel_lock=true` 下一单，并在上一单 GPU 执行期间完成输入准备与 ComfyUI `queue_prompt`。默认每个 worker 最多持有 2 个 Central running 任务，pending 仍可取消，进入输入准备后不可取消。
 
@@ -356,6 +357,7 @@ Worker 拉到任务后会先处理输入：
 - V82 在 `2603` 最终帧序列后接 `265` 插帧；默认使用 `FL_RIFE` (`multiplier=4`)。patcher 检测到 `265` 后会把 `28` 视频输出、`2575` 帧数统计和 `2607` 尾帧提取都指向 `["265", 0]`，避免运行时覆盖导致插帧失效。生产 worker3 对应的 `192.168.1.177:8189` 已在 ComfyUI 侧修复 `FL_RIFE` 环境，不再使用 worker env 切换节点类。
 - Wan22 AIO 的 `5s/8s/10s` 时长最终由 worker patcher 写入 `2578.inputs.value`，再经 workflow 内部帧数公式得到 `81/129/161` 源帧；计费和 result meta 使用同一份 `src.domain_config.wan22_aio_video` duration 归一化。
 - 旧图生视频 Web/Bot 历史类型仍是 `custom_video` / `video_lora`，懒人动图历史类型仍是其具体 mode；执行面 task type 才是 `image_to_video`。排障时需要同时确认上游历史类型、registry task type 和 backend task type。
+- SCAIL-2 第一版只接 Web 测试站，新增真实 task type `scail2_action_transfer`（动作迁移）与 `scail2_video_replacement`（视频换人），不接 Telegram、不进云正式。Web payload 使用 `inputs.images=[参考图, 驱动视频]`、`prompt`、`negative_prompt`、`duration`；dispatcher 会转换为 Central simple route 的 `image`、`video`、`prompt`、`negative_prompt`、`length`。业务 workflow 必须是 API format：`scail2_action_transfer -> SCAIL-2_Animation_multi-char.api.json`，`scail2_video_replacement -> SCAIL-2_Replacement.api.json`；Nomadoor UI JSON 仅供人工编辑/加载。worker patcher 固定 512x896、`force_rate=16`、`skip_first_frames=0`，5s/8s 分别写 `frame_load_cap` 与 `WanSCAILToVideo.length` 为 `81/129`，并分别强制 `replacement_mode=false/true`。
 
 如果出现以下错误，优先看这三层：
 - Worker 报 `Workflow for xxx not found`
@@ -415,6 +417,8 @@ Web 任务提交成功后，真正负责“收尾”的是：
 - 即使 Web 进程重启，只要任务已成功提交，后续仍可恢复成功持久化 / 退款 / cleanup
 - 多 worker Web API 会同时运行 finalizer loop；处理单条 pending record 时必须先拿 Redis lock，并在锁后重新读取该 record。`hgetall` 的批量快照只能用于枚举候选 key，不能作为最终收口数据源。
 - Web 成功历史持久化必须以 `user_id + task_id + source` 幂等；重复终态收口时更新/跳过已有 `History`，并跳过重复 R2 warmup，避免同一任务写出多条历史。
+- Web 成功 finalizer 不能吞掉历史落库异常；`persist_successful_web_history` 失败必须抛出，让 Redis `pending_web_finalizers` 保持可重试，runtime cleanup 只能在历史持久化成功后执行。排查“ComfyUI 已生成但 Web 没结果”时，要同时查 pending finalizer、history 落库错误和 R2 对象。
+- `History.type` 当前为 `String(64)`，用于保存真实业务 task type；新增长 task type（例如 SCAIL-2 的 `scail2_action_transfer` / `scail2_video_replacement`）时不得沿用旧的 20 字符假设，否则会出现结果对象已保存但历史插入失败。
 
 它负责把 backend 终态转为 Web 可消费的最终语义：
 - `task_web_lifecycle_monitor.py` 负责构造 terminal snapshot
@@ -510,6 +514,7 @@ Web 端当前运行态与结果查询链路分成两层：
 - 是否存在支持该 `task_type` 的 Worker
 - Worker `SUPPORTED_TASK_TYPES` 是否匹配
 - Worker heartbeat 是否正常
+- 若 Queue 已归零、目标 worker 显示 `running` 且 `execution_phase=preparing`，但 ComfyUI `/queue` 为空，这不是“没有接单”，而是卡在输入准备阶段。优先查 worker 对象存储下载日志、`/tmp/input/*.part.minio` 临时文件增长情况、R2/MinIO 读延迟和 `MINIO_DOWNLOAD_*` 超时配置。
 
 ### 13.3 running 后卡死或长时间 1%
 优先检查：

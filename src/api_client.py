@@ -23,12 +23,18 @@ from config import (
     PERFECT_VIDEO_EDIT_ENDPOINT,
     PERFECT_VIDEO_INSERT_ENDPOINT,
     POLL_INTERVAL,
+    SCAIL2_ACTION_TRANSFER_ENDPOINT,
+    SCAIL2_VIDEO_REPLACEMENT_ENDPOINT,
     STATUS_ENDPOINT,
     TXT2IMG_ENDPOINT,
     VIDEO_ENDPOINT,
     WAN22_VIDEO_V2_ENDPOINT,
 )
 from src.circuit_breaker import CircuitBreaker, CircuitBreakerOpenException
+from src.domain_config.scail2_video import (
+    SCAIL2_ACTION_TRANSFER_TASK_TYPE,
+    SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
+)
 from src.utils import async_retry
 
 logger = logging.getLogger(__name__)
@@ -455,6 +461,46 @@ class APIClient:
             length=length,
             priority=priority,
         )
+
+    @async_retry(max_retries=3)
+    async def submit_scail2_video_task(
+        self,
+        task_id: str,
+        *,
+        task_type: str,
+        reference_image_path: str,
+        motion_video_path: str,
+        prompt: str,
+        negative_prompt: str = " ",
+        length: int = 5,
+        priority: int = 0,
+    ) -> str:
+        endpoint_by_type = {
+            SCAIL2_ACTION_TRANSFER_TASK_TYPE: SCAIL2_ACTION_TRANSFER_ENDPOINT,
+            SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE: SCAIL2_VIDEO_REPLACEMENT_ENDPOINT,
+        }
+        endpoint = endpoint_by_type.get(task_type)
+        if endpoint is None:
+            raise ValueError(f"Unsupported SCAIL-2 task type: {task_type}")
+
+        data = {
+            "task_id": task_id,
+            "image": reference_image_path,
+            "video": motion_video_path,
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "length": length,
+            "priority": priority,
+        }
+        logger.info(
+            "Submitting %s task. Prompt: %s, Duration: %ss, Priority: %s",
+            task_type,
+            prompt,
+            length,
+            priority,
+        )
+        response = await self._request("POST", endpoint, json=data)
+        return response.json()["task_id"]
 
     async def _submit_wan22_aio_video_task(
         self,

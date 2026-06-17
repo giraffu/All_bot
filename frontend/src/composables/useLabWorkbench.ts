@@ -24,6 +24,7 @@ import {
   LEGACY_LAB_MODES,
   LTX_VIDEO_DURATION_OPTIONS,
   LTX_VIDEO_RESOLUTION_OPTIONS,
+  SCAIL2_VIDEO_DURATION_OPTIONS,
   type LabUploadPreviewKind,
   type LabUploadSlotId,
   type LabModeConfig,
@@ -32,6 +33,7 @@ import {
   VIDEO_DURATION_OPTIONS,
   VIDEO_RESOLUTION_OPTIONS,
   getDefaultVideoLoraSelection,
+  getScail2VideoCost,
   getLabModeConfig,
   getVideoLoraOptions,
   resolveLabModeIdFromTaskType,
@@ -101,6 +103,10 @@ type HydratedTemplateState = {
 }
 
 const DEFAULT_EDIT_LORA_STRENGTH = 1
+const SCAIL2_VIDEO_UPLOAD_MAX_SIZE_BYTES = 80 * 1024 * 1024
+const isScail2ModeId = (modeId: UnifiedLabModeId) => (
+  modeId === 'scail2_action_transfer' || modeId === 'scail2_video_replacement'
+)
 const WAN22_CHAIN_ERROR_KEYS: Record<Wan22ChainPrefillErrorReason, string> = {
   history_empty: 'lab.workbench.wan22_chain_errors.history_empty',
   record_not_found: 'lab.workbench.wan22_chain_errors.record_not_found',
@@ -168,7 +174,11 @@ export function useLabWorkbench() {
         : VIDEO_RESOLUTION_OPTIONS
   ))
   const videoDurationOptions = computed(() => (
-    currentMode.value.id === 'ltx_video' ? LTX_VIDEO_DURATION_OPTIONS : VIDEO_DURATION_OPTIONS
+    currentMode.value.id === 'ltx_video'
+      ? LTX_VIDEO_DURATION_OPTIONS
+      : isScail2ModeId(currentMode.value.id)
+        ? SCAIL2_VIDEO_DURATION_OPTIONS
+        : VIDEO_DURATION_OPTIONS
   ))
   const ltxLoraOptions = LTX_VIDEO_LORA_OPTIONS
   const wan22ResolutionOptions = WAN22_VIDEO_V2_RESOLUTION_OPTIONS
@@ -213,6 +223,8 @@ export function useLabWorkbench() {
   const referenceTitle = computed(() =>
     currentMode.value.referenceTitleKey ? t(currentMode.value.referenceTitleKey) : '',
   )
+  const promptPlaceholder = computed(() => t(currentMode.value.promptPlaceholderKey))
+  const showStructuredPromptInput = computed(() => isScail2ModeId(currentMode.value.id))
   const composerNotice = computed(() => wan22ChainBanner.value || templateNotice.value)
   const composerWarning = computed(() => templateWarning.value)
   const currentTaskIsWan22VideoV2 = computed(() => (
@@ -268,6 +280,10 @@ export function useLabWorkbench() {
       return 10 * multiplier
     }
 
+    if (isScail2ModeId(currentMode.value.id)) {
+      return getScail2VideoCost(duration.value)
+    }
+
     if (currentMode.value.id === 'wan22_video_v2') {
       return getWan22VideoV2Cost(wan22ResolutionPreset.value, duration.value)
     }
@@ -294,6 +310,10 @@ export function useLabWorkbench() {
 
     if (currentMode.value.id === 'wan22_video_v2') {
       return t('lab.workbench.cost_hints.wan22_video_v2')
+    }
+
+    if (isScail2ModeId(currentMode.value.id)) {
+      return t('lab.workbench.cost_hints.scail2_video')
     }
 
     return ''
@@ -598,7 +618,15 @@ export function useLabWorkbench() {
     }
 
     try {
-      objectKey = await uploadFile(file)
+      objectKey = await uploadFile(
+        file,
+        isScail2ModeId(currentMode.value.id) && slot.previewKind === 'video'
+          ? {
+              maxSizeBytes: SCAIL2_VIDEO_UPLOAD_MAX_SIZE_BYTES,
+              maxSizeLabel: '80MB',
+            }
+          : undefined,
+      )
       if (!objectKey) {
         return false
       }
@@ -875,6 +903,32 @@ export function useLabWorkbench() {
       return
     }
 
+    if (isScail2ModeId(currentMode.value.id)) {
+      const referenceImage = uploadedSlotAssets.value.reference_image?.key
+      const motionVideo = uploadedSlotAssets.value.motion_video?.key
+
+      if (!referenceImage || !motionVideo) {
+        message.warning(t('lab.workbench.validation.upload_slots_required'))
+        return
+      }
+
+      const payload = buildGenerationTaskPayload({
+        taskType: currentMode.value.taskType,
+        images: [referenceImage, motionVideo],
+        duration: Number(duration.value),
+        prompt: prompt.value,
+        negativePrompt: negativePrompt.value,
+        promptTarget: 'inputs',
+        isTemplate: false,
+      })
+
+      const taskId = await submitTask(payload, t(currentMode.value.titleKey))
+      if (taskId) {
+        setSubmittedTaskId(taskId)
+      }
+      return
+    }
+
     if (currentMode.value.id === 'face_swap' || currentMode.value.id === 'face_video') {
       const faceImage = uploadedSlotAssets.value.face_image?.key
       const targetSlot = currentMode.value.id === 'face_video' ? 'target_video' : 'target_image'
@@ -983,6 +1037,8 @@ export function useLabWorkbench() {
     displayedReferences,
     assetUploadSlots,
     canUploadReference,
+    promptPlaceholder,
+    showStructuredPromptInput,
     isSubmitting,
     currentTask,
     isImageUrl,

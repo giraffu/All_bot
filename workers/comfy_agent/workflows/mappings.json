@@ -92,6 +92,26 @@
         "negative_prompt": "2371",
         "negative_prompt_input": "value"
     },
+    "scail2_action_transfer": {
+        "image": "58",
+        "image_input": "image",
+        "video": "113",
+        "video_input": "video",
+        "prompt": "6",
+        "prompt_input": "text",
+        "negative_prompt": "7",
+        "negative_prompt_input": "text"
+    },
+    "scail2_video_replacement": {
+        "image": "58",
+        "image_input": "image",
+        "video": "113",
+        "video_input": "video",
+        "prompt": "6",
+        "prompt_input": "text",
+        "negative_prompt": "7",
+        "negative_prompt_input": "text"
+    },
     "img2img_lora": {
         "image": "8",
         "image2": "20",

@@ -1,7 +1,71 @@
 import asyncio
+import glob
 import os
 from collections.abc import Awaitable, Callable
 from typing import Any
+
+
+def _cleanup_partial_downloads(local_path: str) -> None:
+    for path in [local_path, *glob.glob(f"{local_path}.*.part.minio")]:
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            continue
+
+
+async def _download_with_retries(
+    *,
+    download_input_func: Callable[[str, str], Any],
+    img_filename: str,
+    local_img_path: str,
+    param_key: str,
+    timeout_seconds: float | None,
+    retry_attempts: int,
+    retry_delay_seconds: float,
+    logger,
+) -> None:
+    attempts = max(1, retry_attempts)
+    last_error: BaseException | None = None
+
+    for attempt in range(1, attempts + 1):
+        try:
+            if timeout_seconds and timeout_seconds > 0:
+                await asyncio.wait_for(
+                    asyncio.to_thread(download_input_func, img_filename, local_img_path),
+                    timeout=timeout_seconds,
+                )
+            else:
+                await asyncio.to_thread(download_input_func, img_filename, local_img_path)
+            return
+        except asyncio.TimeoutError as exc:
+            last_error = exc
+            _cleanup_partial_downloads(local_img_path)
+            logger.warning(
+                "Timed out downloading %s %s after %.1fs (attempt %s/%s)",
+                param_key,
+                img_filename,
+                timeout_seconds,
+                attempt,
+                attempts,
+            )
+        except Exception as exc:
+            last_error = exc
+            _cleanup_partial_downloads(local_img_path)
+            logger.warning(
+                "Failed downloading %s %s on attempt %s/%s: %s",
+                param_key,
+                img_filename,
+                attempt,
+                attempts,
+                exc,
+            )
+
+        if attempt < attempts and retry_delay_seconds > 0:
+            await asyncio.sleep(retry_delay_seconds)
+
+    raise RuntimeError(
+        f"Failed to download {param_key} input '{img_filename}' after {attempts} attempts"
+    ) from last_error
 
 
 async def process_single_input_asset(
@@ -16,11 +80,23 @@ async def process_single_input_asset(
     normalize_input_image_func: Callable[[str], str],
     upload_prepared_input_func: Callable[..., Awaitable[None]],
     logger,
+    download_timeout_seconds: float | None = None,
+    download_retry_attempts: int = 1,
+    download_retry_delay_seconds: float = 1.0,
 ) -> None:
     local_safe_filename = img_filename.replace("/", "_").replace("template:", "")
     local_img_path = os.path.join(comfy_input_dir, local_safe_filename)
     try:
-        await asyncio.to_thread(download_input_func, img_filename, local_img_path)
+        await _download_with_retries(
+            download_input_func=download_input_func,
+            img_filename=img_filename,
+            local_img_path=local_img_path,
+            param_key=param_key,
+            timeout_seconds=download_timeout_seconds,
+            retry_attempts=download_retry_attempts,
+            retry_delay_seconds=download_retry_delay_seconds,
+            logger=logger,
+        )
         logger.info("Downloaded %s to %s", param_key, local_img_path)
         if local_img_path not in downloaded_input_paths:
             downloaded_input_paths.append(local_img_path)

@@ -71,6 +71,29 @@ describe('buildGenerationTaskPayload', () => {
     })
   })
 
+  it('builds scail2 payload with reference image and motion video order', () => {
+    expect(
+      buildGenerationTaskPayload({
+        taskType: 'scail2_action_transfer',
+        images: ['reference-key', 'motion-video-key'],
+        duration: 5,
+        prompt: 'natural motion',
+        negativePrompt: 'blur',
+        promptTarget: 'inputs',
+      }),
+    ).toEqual({
+      task_type: 'scail2_action_transfer',
+      inputs: {
+        images: ['reference-key', 'motion-video-key'],
+        duration: 5,
+        prompt: 'natural motion',
+        negative_prompt: 'blur',
+      },
+      priority: 0,
+      is_template: false,
+    })
+  })
+
   it('builds ltx video payload with optional lora inside inputs', () => {
     expect(
       buildGenerationTaskPayload({

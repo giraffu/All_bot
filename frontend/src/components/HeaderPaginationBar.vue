@@ -8,6 +8,7 @@ const props = withDefaults(
     disabled?: boolean
     compact?: boolean
     showJump?: boolean
+    minimal?: boolean
     wrapperClass?: string
     innerClass?: string
   }>(),
@@ -15,6 +16,7 @@ const props = withDefaults(
     disabled: false,
     compact: false,
     showJump: false,
+    minimal: false,
     wrapperClass: 'flex justify-center',
     innerClass: 'pagination-shell rounded-2xl px-3 py-2',
   },
@@ -34,6 +36,7 @@ const emit = defineEmits<{
         :disabled="disabled"
         :compact="compact"
         :show-jump="showJump"
+        :minimal="minimal"
         @change="emit('change', $event)"
       />
     </div>

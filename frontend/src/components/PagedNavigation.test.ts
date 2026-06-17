@@ -40,4 +40,24 @@ describe('PagedNavigation', () => {
 
     expect(wrapper.emitted('change')).toEqual([[9]])
   })
+
+  it('renders minimal page controls without jump input', async () => {
+    const wrapper = mount(PagedNavigation, {
+      props: {
+        currentPage: 3,
+        totalPages: 9,
+        showJump: true,
+        compact: true,
+        minimal: true,
+      },
+    })
+
+    expect(wrapper.text()).toContain('3 / 9')
+    expect(wrapper.find('form.pagination-jump').exists()).toBe(false)
+
+    await wrapper.get('button[aria-label="上一页"]').trigger('click')
+    await wrapper.get('button[aria-label="下一页"]').trigger('click')
+
+    expect(wrapper.emitted('change')).toEqual([[2], [4]])
+  })
 })
