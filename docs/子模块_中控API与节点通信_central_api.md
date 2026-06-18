@@ -66,7 +66,7 @@ sequenceDiagram
 - heartbeat 可携带 `health_reason`、`last_error`、`last_error_at`、`consecutive_failures`、`quarantined_until`，用于 Dashboard 节点卡片展示和排障
 - `/system/status` 中 `active_workers` 只表示有 heartbeat 的节点数；`healthy_workers` 才表示当前可接单节点数，`comfy_online` 按 `healthy_workers > 0` 计算
 - `/system/status` 与 `/system/workers` 是高频观测接口，不是强一致调度入口。Central API 会对同一 Redis 连接参数与队列 key 组合的队列/worker 快照做约 10 秒短 TTL 缓存，并在刷新中返回短时 stale 快照，避免 Bot、Web 与 Dashboard 并发轮询时重复扫描 Redis 导致状态接口超时或触发 Bot 熔断。实际任务分发、Worker `pop`、状态上报与完成回流仍走实时 Redis/HTTP 路径，不依赖该观测缓存。
-- `/status/{backend_task_id}` 是单任务观测接口，也会对同一 Redis/队列 key 与 task id 做短 TTL 缓存、最大条目数限制和单飞刷新，默认约 2 秒 TTL、4 秒 stale 窗口，用于吸收 Web SSE、Dashboard active task 与 Bot fallback 的重复轮询。Web SSE 侧还有补偿轮询退避：同一任务状态/队列位置/进度连续不变时，从 pending 约 5 秒、running 约 10 秒逐步退到默认最多约 20 秒，状态变化后恢复初始间隔。它不改变 pending/running/done 的事实源，终态收口仍以 Worker `/complete`、Redis 事件和上游 monitor/history 为准。
+- `/status/{backend_task_id}` 是单任务观测接口，也会对同一 Redis/队列 key 与 task id 做短 TTL 缓存、最大条目数限制和单飞刷新，默认约 2 秒 TTL、4 秒 stale 窗口，用于吸收 Web SSE、Dashboard active task 与 Bot fallback 的重复轮询。Redis Pub/Sub 只作为进度快路径；Web SSE 订阅或读取 Pub/Sub 失败时，同一连接会继续用 `/status` 补偿轮询到终态，Bot 也会降级 HTTP polling。Web SSE 侧补偿轮询退避：同一任务状态/队列位置/进度连续不变时，从 pending 约 5 秒、running 约 10 秒逐步退到默认最多约 20 秒，状态变化后恢复初始间隔。它不改变 pending/running/done 的事实源，终态收口仍以 Worker `/complete`、Redis 事件和上游 monitor/history 为准。
 - Central FastAPI 生命周期内复用共享 Redis 客户端；依赖注入优先使用 `request.app.state.redis`，只有离线/测试场景缺失 app state 时才回退到临时 Redis 连接。不要把 `get_redis()` 再改回每请求新建连接的模式。
 - `/api/agent/task/complete` 是结果成功回流的唯一确认点。Worker 端必须对完成回报进行有限重试，并在全部失败后显式失败，避免 Central 因未收到 `complete` 而把已生成任务误判为 heartbeat lost。
 - `/api/agent/task/status` 是运行态观测回报，Worker 端对瞬时断连或 5xx 做轻量重试；重试耗尽只记录错误，不应直接让正在生成的任务失败。status 可携带 `execution_phase`、`cancel_locked` 与 `set_current=false`，用于双槽流水线下更新阶段而不覆盖 agent 当前任务指针。
@@ -105,7 +105,7 @@ sequenceDiagram
   - 上游 task core submission 是否仍在正常写入任务
 - 队列中的待执行任务通常具有可恢复性，重启执行面服务不应被表述为必然丢任务。
 - 云正式 Central 单服务热修可只重建 `central-api-prod`；短时间内 worker heartbeat/status 上报可能抖动，但 pending 队列与 worker 内正在执行的 ComfyUI 任务不因 Central 容器重建本身立即丢失。
-- 2026-06-10 巡检发现 Redis 写连接偶发 reset 会让 `/status/{task_id}` 或 worker heartbeat/status 短暂 500。修复方向是在 Central Redis 关键读写路径增加有限 retry/reconnect，并补 `/status/{task_id}`、`task_heartbeat`、`status` focused tests；排障时不要把一次连接重置直接解读成队列丢失。
+- Central Redis 连接偶发 reset 时，QueueManager 对安全读写和幂等更新已做有限 transient retry，覆盖 `/status/{task_id}`、agent `/task/check`、`task_heartbeat`、运行态 `status`、worker heartbeat 和 agent control 等路径；真实出队 `zpopmin` 与会改变候选任务的队列移除不做盲 retry，避免重复弹单。排障时不要把一次连接重置直接解读成队列丢失，应结合 worker 重试、task heartbeat 和队列事实判断。
 
 ## 8. 维护原则
 - 中控文档要以“执行面”而不是“业务主入口”来描述 Central API。

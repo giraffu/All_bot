@@ -4,6 +4,8 @@ import os
 import time
 from typing import Any, Awaitable, Callable
 
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 from sse_starlette.sse import EventSourceResponse
 from src.core.task_status_mapper import is_backend_terminal_status
 
@@ -42,6 +44,14 @@ _TASK_STREAM_POLL_SIGNATURE_FIELDS = (
     "error_msg",
 )
 _TASK_STREAM_STATUS_FETCH_ERROR_SIGNATURE = ("fetch_error",)
+_TASK_STREAM_PUBSUB_TRANSIENT_ERRORS = (
+    RedisConnectionError,
+    RedisTimeoutError,
+    ConnectionError,
+    ConnectionResetError,
+    TimeoutError,
+    OSError,
+)
 
 _task_stream_status_cache: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
 _task_stream_status_locks: dict[tuple[str, str], asyncio.Lock] = {}
@@ -265,6 +275,70 @@ def _extract_message_payload(message_data: Any) -> str:
     return message_data
 
 
+async def _subscribe_task_pubsub(*, redis, channel: str, task_id: str, logger):
+    try:
+        pubsub = redis.pubsub()
+        await pubsub.subscribe(channel)
+        return pubsub
+    except Exception as exc:
+        logger.warning(
+            "Task stream Pub/Sub subscribe failed for task %s; using status polling: %s",
+            task_id,
+            exc,
+        )
+        pubsub = locals().get("pubsub")
+        if pubsub is not None:
+            await _close_task_pubsub(
+                pubsub=pubsub,
+                channel=channel,
+                task_id=task_id,
+                logger=logger,
+            )
+        return None
+
+
+async def _close_task_pubsub(*, pubsub, channel: str, task_id: str, logger) -> None:
+    try:
+        await pubsub.unsubscribe(channel)
+    except Exception as exc:
+        logger.debug(
+            "Task stream Pub/Sub unsubscribe failed for task %s: %s",
+            task_id,
+            exc,
+        )
+    try:
+        await pubsub.close()
+    except Exception as exc:
+        logger.debug(
+            "Task stream Pub/Sub close failed for task %s: %s",
+            task_id,
+            exc,
+        )
+
+
+async def _get_task_pubsub_message(
+    *,
+    pubsub,
+    task_id: str,
+    logger,
+) -> tuple[Any, bool]:
+    try:
+        return (
+            await pubsub.get_message(
+                ignore_subscribe_messages=True,
+                timeout=1.0,
+            ),
+            True,
+        )
+    except _TASK_STREAM_PUBSUB_TRANSIENT_ERRORS as exc:
+        logger.warning(
+            "Task stream Pub/Sub disconnected for task %s; using status polling: %s",
+            task_id,
+            exc,
+        )
+        return None, False
+
+
 async def _build_initial_stream_transition(
     *,
     runtime_task_id_val: str,
@@ -412,10 +486,14 @@ def build_task_status_stream_response(
     history_terminal: bool = False,
 ) -> EventSourceResponse:
     async def event_generator():
-        pubsub = redis.pubsub()
         runtime_task_id_val = runtime_task_id or task_id
         channel = f"comfy:task_events:{runtime_task_id_val}"
-        await pubsub.subscribe(channel)
+        pubsub = await _subscribe_task_pubsub(
+            redis=redis,
+            channel=channel,
+            task_id=runtime_task_id_val,
+            logger=logger,
+        )
 
         try:
             yield _build_connected_event(task_id)
@@ -447,10 +525,21 @@ def build_task_status_stream_response(
             )
 
             while True:
-                message = await pubsub.get_message(
-                    ignore_subscribe_messages=True,
-                    timeout=1.0,
-                )
+                message = None
+                if pubsub is not None:
+                    message, pubsub_active = await _get_task_pubsub_message(
+                        pubsub=pubsub,
+                        task_id=runtime_task_id_val,
+                        logger=logger,
+                    )
+                    if not pubsub_active:
+                        await _close_task_pubsub(
+                            pubsub=pubsub,
+                            channel=channel,
+                            task_id=runtime_task_id_val,
+                            logger=logger,
+                        )
+                        pubsub = None
                 pubsub_event, became_running, should_stop = (
                     await _build_pubsub_stream_transition(
                         message=message,
@@ -515,7 +604,12 @@ def build_task_status_stream_response(
         except asyncio.CancelledError:
             logger.info("SSE client disconnected for task %s", task_id)
         finally:
-            await pubsub.unsubscribe(channel)
-            await pubsub.close()
+            if pubsub is not None:
+                await _close_task_pubsub(
+                    pubsub=pubsub,
+                    channel=channel,
+                    task_id=runtime_task_id_val,
+                    logger=logger,
+                )
 
     return EventSourceResponse(event_generator())

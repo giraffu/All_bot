@@ -3,6 +3,8 @@ import json
 import pytest
 from asgi_correlation_id import correlation_id
 
+from app import queue_manager as queue_manager_module
+from app.agent_router_helpers import check_task_payload, update_status_payload
 from app.models import TaskStatus, TaskType
 from app.queue_manager import QueueManager
 
@@ -137,6 +139,60 @@ class _FakeRedis:
         return _FakePipeline(self)
 
 
+class _FlakyRedis(_FakeRedis):
+    def __init__(self, failures):
+        super().__init__()
+        self.failures = dict(failures)
+        self.calls = {}
+
+    def _record_call(self, name):
+        self.calls[name] = self.calls.get(name, 0) + 1
+        if self.failures.get(name, 0) > 0:
+            self.failures[name] -= 1
+            raise ConnectionResetError(f"{name} connection lost")
+
+    async def hset(self, *args, **kwargs):
+        self._record_call("hset")
+        return await super().hset(*args, **kwargs)
+
+    async def hget(self, *args, **kwargs):
+        self._record_call("hget")
+        return await super().hget(*args, **kwargs)
+
+    async def hgetall(self, *args, **kwargs):
+        self._record_call("hgetall")
+        return await super().hgetall(*args, **kwargs)
+
+    async def hdel(self, *args, **kwargs):
+        self._record_call("hdel")
+        return await super().hdel(*args, **kwargs)
+
+    async def exists(self, *args, **kwargs):
+        self._record_call("exists")
+        return await super().exists(*args, **kwargs)
+
+    async def setex(self, *args, **kwargs):
+        self._record_call("setex")
+        return await super().setex(*args, **kwargs)
+
+    async def publish(self, *args, **kwargs):
+        self._record_call("publish")
+        return await super().publish(*args, **kwargs)
+
+    async def zpopmin(self, *args, **kwargs):
+        self._record_call("zpopmin")
+        return await super().zpopmin(*args, **kwargs)
+
+
+@pytest.fixture(autouse=True)
+def _disable_retry_sleep(monkeypatch):
+    monkeypatch.setattr(
+        queue_manager_module,
+        "REDIS_TRANSIENT_RETRY_BASE_DELAY_SECONDS",
+        0,
+    )
+
+
 @pytest.mark.asyncio
 async def test_enqueue_task_persists_trace_id_and_priority_adjusted_score():
     redis = _FakeRedis()
@@ -162,6 +218,106 @@ async def test_enqueue_task_persists_trace_id_and_priority_adjusted_score():
     assert redis.sorted_sets[manager.pending_key]["task-priority"] == pytest.approx(
         float(stored["created_at"]) - 120.0
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure_name", ["exists", "hgetall"])
+async def test_check_task_payload_retries_transient_task_status_read(failure_name):
+    redis = _FlakyRedis({failure_name: 1})
+    manager = QueueManager(redis)
+    redis.hashes[manager._task_key("task-check")] = {
+        "status": TaskStatus.RUNNING,
+        "cancel_requested": 0,
+        "cancel_locked": 1,
+        "execution_phase": "preparing",
+    }
+
+    payload = await check_task_payload(task_id="task-check", queue_manager=manager)
+
+    assert payload == {
+        "status": TaskStatus.RUNNING,
+        "cancel_requested": False,
+        "cancel_locked": True,
+        "execution_phase": "preparing",
+    }
+    assert redis.calls[failure_name] == 2
+
+
+@pytest.mark.asyncio
+async def test_update_task_heartbeat_retries_transient_setex_failure():
+    redis = _FlakyRedis({"setex": 1})
+    manager = QueueManager(redis)
+
+    await manager.update_task_heartbeat("task-heartbeat")
+
+    assert redis.values[manager._task_heartbeat_key("task-heartbeat")] == "1"
+    assert redis.calls["setex"] == 2
+
+
+@pytest.mark.asyncio
+async def test_update_status_payload_retries_transient_persist_read_and_publish():
+    redis = _FlakyRedis({"hgetall": 1, "publish": 1})
+    manager = QueueManager(redis)
+    task_key = manager._task_key("task-running")
+    redis.hashes[task_key] = {
+        "task_id": "task-running",
+        "type": TaskType.IMG2IMG,
+        "status": TaskStatus.RUNNING,
+    }
+
+    payload = await update_status_payload(
+        task_id="task-running",
+        agent_id="agent-1",
+        status="running",
+        progress=0.75,
+        error="",
+        queue_manager=manager,
+        set_current=False,
+    )
+
+    assert payload == {"status": "ok"}
+    assert redis.hashes[task_key]["worker_id"] == "agent-1"
+    assert redis.hashes[task_key]["progress"] == 0.75
+    assert json.loads(redis.published[-1][1]) == {
+        "status": "running",
+        "progress": 0.75,
+    }
+    assert redis.calls["hgetall"] == 2
+    assert redis.calls["publish"] == 2
+
+
+@pytest.mark.asyncio
+async def test_persist_task_update_retries_transient_hset_failure():
+    redis = _FlakyRedis({"hset": 1})
+    manager = QueueManager(redis)
+    task_key = manager._task_key("task-progress")
+    redis.hashes[task_key] = {
+        "task_id": "task-progress",
+        "type": TaskType.IMG2IMG,
+        "status": TaskStatus.RUNNING,
+    }
+
+    await manager.update_progress("task-progress", 0.5)
+
+    assert redis.hashes[task_key]["progress"] == 0.5
+    assert json.loads(redis.published[-1][1]) == {
+        "status": "running",
+        "progress": 0.5,
+    }
+    assert redis.calls["hset"] == 2
+
+
+@pytest.mark.asyncio
+async def test_dequeue_task_does_not_retry_zpopmin_transient_failure():
+    redis = _FlakyRedis({"zpopmin": 1})
+    manager = QueueManager(redis)
+    redis.sorted_sets[manager.pending_key] = {"task-a": 1.0}
+
+    with pytest.raises(ConnectionResetError):
+        await manager.dequeue_task()
+
+    assert redis.calls["zpopmin"] == 1
+    assert redis.sorted_sets[manager.pending_key] == {"task-a": 1.0}
 
 
 @pytest.mark.asyncio

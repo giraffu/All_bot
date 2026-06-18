@@ -57,13 +57,25 @@ class _FakeAuthSession:
 
 
 class _FakePubSub:
-    def __init__(self, messages=None):
+    def __init__(
+        self,
+        messages=None,
+        *,
+        subscribe_exc=None,
+        unsubscribe_exc=None,
+        close_exc=None,
+    ):
         self._messages = list(messages or [])
+        self._subscribe_exc = subscribe_exc
+        self._unsubscribe_exc = unsubscribe_exc
+        self._close_exc = close_exc
         self.subscribed = []
         self.unsubscribed = []
         self.closed = False
 
     async def subscribe(self, channel):
+        if self._subscribe_exc:
+            raise self._subscribe_exc
         self.subscribed.append(channel)
 
     async def get_message(self, **_kwargs):
@@ -75,9 +87,13 @@ class _FakePubSub:
         return None
 
     async def unsubscribe(self, channel):
+        if self._unsubscribe_exc:
+            raise self._unsubscribe_exc
         self.unsubscribed.append(channel)
 
     async def close(self):
+        if self._close_exc:
+            raise self._close_exc
         self.closed = True
 
 
@@ -732,6 +748,127 @@ async def test_task_status_stream_polls_terminal_status_after_running_without_pu
     ]
     assert pubsub.unsubscribed == ["comfy:task_events:task-1"]
     assert pubsub.closed is True
+
+
+@pytest.mark.asyncio
+async def test_task_status_stream_falls_back_to_status_poll_when_pubsub_disconnects():
+    status_calls = []
+    status_responses = [
+        _FakeStatusResponse(200, {"status": "pending"}),
+        _FakeStatusResponse(200, {"status": "done", "task_type": "txt2img"}),
+    ]
+    pubsub = _FakePubSub(messages=[ConnectionResetError("connection lost")])
+
+    response = task_stream_api_service.build_task_status_stream_response(
+        task_id="task-1",
+        runtime_task_id="backend-1",
+        user_id=123,
+        session_factory=_session_factory(None),
+        redis=_FakeRedis(pubsub),
+        api_base="http://127.0.0.1:8003",
+        httpx_async_client_factory=lambda: _FakeAsyncClient(status_responses, status_calls),
+        logger=tasks_router.logger,
+        build_not_found_progress_payload=(
+            task_stream_api_service.build_not_found_progress_payload
+        ),
+        build_terminal_progress_payload=(
+            task_stream_api_service.build_terminal_progress_payload
+        ),
+    )
+    events = await _collect_stream_events(response)
+
+    assert [event["event"] for event in events] == ["connected", "progress"]
+    assert json.loads(events[1]["data"]) == {
+        "status": "success",
+        "task_id": "task-1",
+        "task_type": "txt2img",
+    }
+    assert status_calls == [
+        ("http://127.0.0.1:8003/status/backend-1", 2.0),
+        ("http://127.0.0.1:8003/status/backend-1", 2.0),
+    ]
+    assert pubsub.subscribed == ["comfy:task_events:backend-1"]
+    assert pubsub.unsubscribed == ["comfy:task_events:backend-1"]
+    assert pubsub.closed is True
+
+
+@pytest.mark.asyncio
+async def test_task_status_stream_uses_status_poll_when_pubsub_subscribe_fails():
+    status_calls = []
+    status_responses = [
+        _FakeStatusResponse(200, {"status": "pending"}),
+        _FakeStatusResponse(200, {"status": "done", "task_type": "txt2img"}),
+    ]
+    pubsub = _FakePubSub(subscribe_exc=ConnectionResetError("subscribe lost"))
+
+    response = task_stream_api_service.build_task_status_stream_response(
+        task_id="task-1",
+        runtime_task_id="backend-1",
+        user_id=123,
+        session_factory=_session_factory(None),
+        redis=_FakeRedis(pubsub),
+        api_base="http://127.0.0.1:8003",
+        httpx_async_client_factory=lambda: _FakeAsyncClient(status_responses, status_calls),
+        logger=tasks_router.logger,
+        build_not_found_progress_payload=(
+            task_stream_api_service.build_not_found_progress_payload
+        ),
+        build_terminal_progress_payload=(
+            task_stream_api_service.build_terminal_progress_payload
+        ),
+    )
+    events = await _collect_stream_events(response)
+
+    assert [event["event"] for event in events] == ["connected", "progress"]
+    assert json.loads(events[1]["data"]) == {
+        "status": "success",
+        "task_id": "task-1",
+        "task_type": "txt2img",
+    }
+    assert status_calls == [
+        ("http://127.0.0.1:8003/status/backend-1", 2.0),
+        ("http://127.0.0.1:8003/status/backend-1", 2.0),
+    ]
+    assert pubsub.subscribed == []
+
+
+@pytest.mark.asyncio
+async def test_task_status_stream_ignores_pubsub_cleanup_failures():
+    status_calls = []
+    status_responses = [_FakeStatusResponse(200, {"status": "pending"})]
+    pubsub = _FakePubSub(
+        messages=[
+            {"data": json.dumps({"status": "success", "task_type": "txt2img"})},
+        ],
+        unsubscribe_exc=ConnectionResetError("unsubscribe lost"),
+        close_exc=ConnectionResetError("close lost"),
+    )
+
+    response = task_stream_api_service.build_task_status_stream_response(
+        task_id="task-1",
+        runtime_task_id="backend-1",
+        user_id=123,
+        session_factory=_session_factory(None),
+        redis=_FakeRedis(pubsub),
+        api_base="http://127.0.0.1:8003",
+        httpx_async_client_factory=lambda: _FakeAsyncClient(status_responses, status_calls),
+        logger=tasks_router.logger,
+        build_not_found_progress_payload=(
+            task_stream_api_service.build_not_found_progress_payload
+        ),
+        build_terminal_progress_payload=(
+            task_stream_api_service.build_terminal_progress_payload
+        ),
+    )
+    events = await _collect_stream_events(response)
+
+    assert len(events) == 2
+    assert json.loads(events[1]["data"]) == {
+        "status": "success",
+        "task_id": "task-1",
+        "task_type": "txt2img",
+    }
+    assert pubsub.closed is False
 
 
 @pytest.mark.asyncio

@@ -662,10 +662,31 @@ class APIClient:
                         break
         finally:
             if pubsub:
-                await pubsub.unsubscribe(channel)
-                await pubsub.close()
+                try:
+                    await pubsub.unsubscribe(channel)
+                except Exception as exc:
+                    logger.debug(
+                        "Pub/Sub unsubscribe failed for %s during cleanup: %s",
+                        task_id,
+                        exc,
+                    )
+                try:
+                    await pubsub.close()
+                except Exception as exc:
+                    logger.debug(
+                        "Pub/Sub close failed for %s during cleanup: %s",
+                        task_id,
+                        exc,
+                    )
             if redis_client:
-                await redis_client.aclose()
+                try:
+                    await redis_client.aclose()
+                except Exception as exc:
+                    logger.debug(
+                        "Redis client close failed for %s during Pub/Sub cleanup: %s",
+                        task_id,
+                        exc,
+                    )
 
     async def _iter_poll_progress(self, *, task_id: str, status_url: str):
         poll_delay = max(POLL_INTERVAL, BOT_STATUS_POLL_INITIAL_INTERVAL)
@@ -729,7 +750,7 @@ class APIClient:
             ):
                 yield event
         except Exception as e:
-            logger.error(
+            logger.warning(
                 f"Pub/Sub error for {task_id}: {e}. Falling back to HTTP polling."
             )
             while True:

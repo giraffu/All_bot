@@ -1,4 +1,6 @@
+import asyncio
 import json
+import logging
 import time
 from typing import Any, Dict, Optional, Tuple
 
@@ -27,6 +29,22 @@ from app.queue_manager_flow_helpers import (
     update_agent_heartbeat_flow,
 )
 from redis.asyncio import Redis
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
+
+
+logger = logging.getLogger(__name__)
+
+REDIS_TRANSIENT_RETRY_ATTEMPTS = 3
+REDIS_TRANSIENT_RETRY_BASE_DELAY_SECONDS = 0.05
+_REDIS_TRANSIENT_ERRORS = (
+    RedisConnectionError,
+    RedisTimeoutError,
+    ConnectionError,
+    ConnectionResetError,
+    TimeoutError,
+    OSError,
+)
 
 
 class QueueManager:
@@ -90,8 +108,29 @@ class QueueManager:
     def _agent_control_key(self, agent_id: str) -> str:
         return f"{self.agent_control_prefix}{agent_id}"
 
+    async def _retry_redis_call(self, operation_name: str, redis_call, *args, **kwargs):
+        for attempt in range(1, REDIS_TRANSIENT_RETRY_ATTEMPTS + 1):
+            try:
+                return await redis_call(*args, **kwargs)
+            except _REDIS_TRANSIENT_ERRORS as exc:
+                if attempt >= REDIS_TRANSIENT_RETRY_ATTEMPTS:
+                    raise
+                logger.warning(
+                    "Transient Redis error during %s (attempt %s/%s): %s",
+                    operation_name,
+                    attempt,
+                    REDIS_TRANSIENT_RETRY_ATTEMPTS,
+                    exc,
+                )
+                await asyncio.sleep(REDIS_TRANSIENT_RETRY_BASE_DELAY_SECONDS * attempt)
+
     async def _publish_task_event(self, task_id: str, payload: Dict[str, Any]) -> None:
-        await self.redis.publish(self._task_event_channel(task_id), json.dumps(payload))
+        await self._retry_redis_call(
+            "publish_task_event",
+            self.redis.publish,
+            self._task_event_channel(task_id),
+            json.dumps(payload),
+        )
 
     async def _persist_task_update(
         self,
@@ -102,7 +141,11 @@ class QueueManager:
         remove_from_running: bool = False,
     ) -> None:
         existing_task_data = self._decode_redis_dict(
-            await self.redis.hgetall(self._task_key(task_id))
+            await self._retry_redis_call(
+                "persist_task_update_hgetall",
+                self.redis.hgetall,
+                self._task_key(task_id),
+            )
         )
         merged_task_data = {**existing_task_data, **task_mapping}
         enriched_event_payload = dict(event_payload)
@@ -122,13 +165,28 @@ class QueueManager:
                 except (TypeError, ValueError):
                     enriched_event_payload["created_at"] = created_at
 
-        await self.redis.hset(self._task_key(task_id), mapping=task_mapping)
+        await self._retry_redis_call(
+            "persist_task_update_hset",
+            self.redis.hset,
+            self._task_key(task_id),
+            mapping=task_mapping,
+        )
         if remove_from_running:
-            await self.redis.srem(self.running_key, task_id)
+            await self._retry_redis_call(
+                "persist_task_update_srem",
+                self.redis.srem,
+                self.running_key,
+                task_id,
+            )
         await self._publish_task_event(task_id, enriched_event_payload)
 
     async def _get_task_type(self, task_id: str) -> Optional[str]:
-        task_type_bytes = await self.redis.hget(self._task_key(task_id), "type")
+        task_type_bytes = await self._retry_redis_call(
+            "get_task_type",
+            self.redis.hget,
+            self._task_key(task_id),
+            "type",
+        )
         if not task_type_bytes:
             return None
         return self._decode_redis_value(task_type_bytes)
@@ -228,11 +286,17 @@ class QueueManager:
         return {t.value: 0 for t in TaskType}
 
     async def _fetch_pending_task_types(self, task_ids: list[Any]) -> list[Any]:
-        pipeline = self.redis.pipeline()
-        for task_id in task_ids:
-            task_id_str = self._decode_redis_value(task_id)
-            pipeline.hget(self._task_key(task_id_str), "type")
-        return await pipeline.execute()
+        async def execute_pipeline():
+            pipeline = self.redis.pipeline()
+            for task_id in task_ids:
+                task_id_str = self._decode_redis_value(task_id)
+                pipeline.hget(self._task_key(task_id_str), "type")
+            return await pipeline.execute()
+
+        return await self._retry_redis_call(
+            "fetch_pending_task_types",
+            execute_pipeline,
+        )
 
     def _accumulate_type_counts(
         self, counts: Dict[str, int], task_types: list[Any]
@@ -249,7 +313,12 @@ class QueueManager:
 
     async def _scan_agent_heartbeat_keys(self) -> list[Any]:
         return await scan_agent_heartbeat_keys_flow(
-            scan_func=self.redis.scan,
+            scan_func=lambda *args, **kwargs: self._retry_redis_call(
+                "scan_agent_heartbeat_keys",
+                self.redis.scan,
+                *args,
+                **kwargs,
+            ),
             agent_heartbeat_pattern_func=self._agent_heartbeat_pattern,
         )
 
@@ -306,10 +375,18 @@ class QueueManager:
 
     async def get_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:
         task_key = self._task_key(task_id)
-        if not await self.redis.exists(task_key):
+        if not await self._retry_redis_call(
+            "get_task_status_exists",
+            self.redis.exists,
+            task_key,
+        ):
             return None
 
-        data = await self.redis.hgetall(task_key)
+        data = await self._retry_redis_call(
+            "get_task_status_hgetall",
+            self.redis.hgetall,
+            task_key,
+        )
         return self._decode_redis_dict(data)
 
     async def peek_pending_tasks(
@@ -327,7 +404,9 @@ class QueueManager:
         allowed_type_set = set(allowed_types or [])
 
         while len(matched_tasks) < limit:
-            tasks_with_scores = await self.redis.zrange(
+            tasks_with_scores = await self._retry_redis_call(
+                "peek_pending_tasks_zrange",
+                self.redis.zrange,
                 self.pending_key,
                 offset,
                 offset + batch_size - 1,
@@ -371,7 +450,12 @@ class QueueManager:
 
     async def _mark_task_running(self, task_id: str, *, cancel_lock: bool = False):
         # Move to running set
-        await self.redis.sadd(self.running_key, task_id)
+        await self._retry_redis_call(
+            "mark_task_running_sadd",
+            self.redis.sadd,
+            self.running_key,
+            task_id,
+        )
         task_key = self._task_key(task_id)
         task_mapping: dict[str, Any] = {"status": TaskStatus.RUNNING}
         if cancel_lock:
@@ -384,7 +468,12 @@ class QueueManager:
                     "cancel_requested_at": "",
                 }
             )
-        await self.redis.hset(task_key, mapping=task_mapping)
+        await self._retry_redis_call(
+            "mark_task_running_hset",
+            self.redis.hset,
+            task_key,
+            mapping=task_mapping,
+        )
         # Initialize heartbeat to prevent immediate zombie detection
         await self.update_task_heartbeat(task_id)
 
@@ -466,10 +555,19 @@ class QueueManager:
         return await self._cancel_running_task(task_id)
 
     async def get_queue_position(self, task_id: str) -> Optional[int]:
-        return await self.redis.zrank(self.pending_key, task_id)
+        return await self._retry_redis_call(
+            "get_queue_position",
+            self.redis.zrank,
+            self.pending_key,
+            task_id,
+        )
 
     async def get_queue_size(self) -> int:
-        return await self.redis.zcard(self.pending_key)
+        return await self._retry_redis_call(
+            "get_queue_size",
+            self.redis.zcard,
+            self.pending_key,
+        )
 
     async def get_active_workers_count(self) -> int:
         return await get_active_workers_count_flow(
@@ -481,12 +579,23 @@ class QueueManager:
             scan_agent_heartbeat_keys_func=self._scan_agent_heartbeat_keys,
             decode_redis_value_func=self._decode_redis_value,
             agent_heartbeat_prefix=self.agent_heartbeat_prefix,
-            hgetall_func=self.redis.hgetall,
+            hgetall_func=lambda *args, **kwargs: self._retry_redis_call(
+                "get_all_workers_hgetall",
+                self.redis.hgetall,
+                *args,
+                **kwargs,
+            ),
             build_worker_info_func=self._build_worker_info,
         )
 
     async def update_task_heartbeat(self, task_id: str):
-        await self.redis.setex(self._task_heartbeat_key(task_id), 300, "1")  # Expire after 5 mins
+        await self._retry_redis_call(
+            "update_task_heartbeat",
+            self.redis.setex,
+            self._task_heartbeat_key(task_id),
+            300,
+            "1",
+        )  # Expire after 5 mins
 
     async def check_zombie_tasks(self):
         """Finds running tasks that haven't sent a heartbeat recently and marks them as failed."""
@@ -519,13 +628,27 @@ class QueueManager:
             quarantined_until=quarantined_until,
             metadata=metadata,
             agent_heartbeat_key_func=self._agent_heartbeat_key,
-            hset_func=self.redis.hset,
-            expire_func=self.redis.expire,
+            hset_func=lambda *args, **kwargs: self._retry_redis_call(
+                "update_agent_heartbeat_hset",
+                self.redis.hset,
+                *args,
+                **kwargs,
+            ),
+            expire_func=lambda *args, **kwargs: self._retry_redis_call(
+                "update_agent_heartbeat_expire",
+                self.redis.expire,
+                *args,
+                **kwargs,
+            ),
         )
 
     async def get_agent_control_state(self, agent_id: str) -> dict[str, Any]:
         data = self._decode_redis_dict(
-            await self.redis.hgetall(self._agent_control_key(agent_id))
+            await self._retry_redis_call(
+                "get_agent_control_state",
+                self.redis.hgetall,
+                self._agent_control_key(agent_id),
+            )
         )
         state = str(data.get("state") or "enabled").strip().lower()
         if state not in {"enabled", "draining", "disabled"}:
@@ -546,16 +669,33 @@ class QueueManager:
             raise ValueError("agent control state must be enabled, draining, or disabled")
         key = self._agent_control_key(agent_id)
         if normalized_state == "enabled":
-            await self.redis.hdel(key, "state", "reason", "updated_at")
+            await self._retry_redis_call(
+                "set_agent_control_enabled",
+                self.redis.hdel,
+                key,
+                "state",
+                "reason",
+                "updated_at",
+            )
             return {"agent_id": agent_id, "state": "enabled", "reason": ""}
         payload = {
             "state": normalized_state,
             "reason": reason,
             "updated_at": time.time(),
         }
-        await self.redis.hset(key, mapping=payload)
+        await self._retry_redis_call(
+            "set_agent_control_hset",
+            self.redis.hset,
+            key,
+            mapping=payload,
+        )
         if ttl_seconds:
-            await self.redis.expire(key, ttl_seconds)
+            await self._retry_redis_call(
+                "set_agent_control_expire",
+                self.redis.expire,
+                key,
+                ttl_seconds,
+            )
         return {"agent_id": agent_id, **payload}
 
     async def is_agent_pop_enabled(self, agent_id: str) -> tuple[bool, str]:
@@ -567,14 +707,22 @@ class QueueManager:
 
     async def bind_agent_task(self, task_id: str, agent_id: str):
         await self.record_task_worker(task_id, agent_id)
-        await self.redis.hset(
+        await self._retry_redis_call(
+            "bind_agent_task",
+            self.redis.hset,
             self._agent_heartbeat_key(agent_id),
             "current_task_id",
             task_id,
         )
 
     async def record_task_worker(self, task_id: str, agent_id: str):
-        await self.redis.hset(self._task_key(task_id), "worker_id", agent_id)
+        await self._retry_redis_call(
+            "record_task_worker",
+            self.redis.hset,
+            self._task_key(task_id),
+            "worker_id",
+            agent_id,
+        )
 
     async def clear_agent_current_task(
         self,
@@ -585,18 +733,30 @@ class QueueManager:
         key = self._agent_heartbeat_key(agent_id)
         if task_id is not None:
             current_task_id = self._decode_redis_value(
-                await self.redis.hget(key, "current_task_id")
+                await self._retry_redis_call(
+                    "clear_agent_current_task_hget",
+                    self.redis.hget,
+                    key,
+                    "current_task_id",
+                )
             )
             if current_task_id != task_id:
                 return
-        await self.redis.hdel(
+        await self._retry_redis_call(
+            "clear_agent_current_task_hdel",
+            self.redis.hdel,
             key,
             "current_task_id",
         )
 
     async def get_queue_metrics_by_type(self) -> Dict[str, int]:
         return await get_queue_metrics_by_type_flow(
-            zrange_func=self.redis.zrange,
+            zrange_func=lambda *args, **kwargs: self._retry_redis_call(
+                "get_queue_metrics_by_type_zrange",
+                self.redis.zrange,
+                *args,
+                **kwargs,
+            ),
             pending_key=self.pending_key,
             initialize_type_counts_func=self._initialize_type_counts,
             fetch_pending_task_types_func=self._fetch_pending_task_types,
