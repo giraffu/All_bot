@@ -58,6 +58,7 @@ services:
       DATABASE_URL: ${CLOUD_PROD_DATABASE_URL:?CLOUD_PROD_DATABASE_URL is required}
       REDIS_URL: ${CLOUD_PROD_REDIS_URL:?CLOUD_PROD_REDIS_URL is required}
       WORKER_REDIS_URL: ${CLOUD_PROD_WORKER_REDIS_URL:?CLOUD_PROD_WORKER_REDIS_URL is required}
+      GENERATION_MAINTENANCE_FILE: /app/runtime-flags/GENERATION_MAINTENANCE
       MINIO_ENDPOINT: ${MINIO_ENDPOINT:?MINIO_ENDPOINT is required}
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY is required}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY is required}
@@ -85,6 +86,7 @@ services:
       DB_MAX_OVERFLOW: 6
     volumes:
       - ../logs/cloud-prod:/app/logs
+      - ../runtime/cloud-prod:/app/runtime-flags
     ports:
       - "${CLOUD_PROD_BIND_IP:-127.0.0.1}:8000:8000"
     depends_on:
@@ -292,6 +294,7 @@ services:
       DATABASE_URL: ${CLOUD_PROD_DATABASE_URL:?CLOUD_PROD_DATABASE_URL is required}
       REDIS_URL: ${CLOUD_PROD_REDIS_URL:?CLOUD_PROD_REDIS_URL is required}
       WORKER_REDIS_URL: ${CLOUD_PROD_WORKER_REDIS_URL:?CLOUD_PROD_WORKER_REDIS_URL is required}
+      GENERATION_MAINTENANCE_FILE: /app/runtime-flags/GENERATION_MAINTENANCE
       DB_POOL_SIZE: 4
       DB_MAX_OVERFLOW: 4
       MINIO_ENDPOINT: ${MINIO_ENDPOINT:?MINIO_ENDPOINT is required}
@@ -312,6 +315,7 @@ services:
       TZ: Asia/Shanghai
     volumes:
       - ../logs/cloud-prod:/app/logs
+      - ../runtime/cloud-prod:/app/runtime-flags
     depends_on:
       central-api-prod:
         condition: service_healthy

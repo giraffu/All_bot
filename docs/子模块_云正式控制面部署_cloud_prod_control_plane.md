@@ -194,7 +194,33 @@ GPU 节点上的 ComfyUI 服务不在本 compose 内。`cloud-prod-comfy-agent-*
 ## 4. 部署 SOP
 
 ### 4.1 云控制面安全部署
-首选脚本：
+首选从本地主服务器执行更保守的维护式更新脚本，默认 dry-run，真实 mutation 必须同时传 `--execute --confirm-prod`：
+
+```bash
+cd /home/hfy/APP/All_bot
+scripts/update_cloud_prod_with_maintenance.sh
+scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod --with-db-upgrade
+```
+
+该脚本默认流程：
+1. 在远端写 `runtime/cloud-prod/GENERATION_MAINTENANCE`，并在正在运行的 `cloud-web-api-prod` / `cloud-tg-bot-prod` 内写 `/app/GENERATION_MAINTENANCE`，只阻止新生成任务提交。
+2. 等待 Central `comfy:queue:pending` 与 `comfy:queue:running` 同时清空；不取消任务、不退款、不清 Redis。
+3. `rsync` 同步本地代码到 `allbot-do-sgp1-control:/home/deploy/APP/All_bot`，默认不使用 `--delete`，并排除 `.env*`、`logs/`、`runtime/`、`backups/`、`node_modules/`、临时素材等本地数据目录。
+4. 默认不更新 `.env.cloud.prod`；只有显式传 `--sync-env --env-file FILE` 时才会先备份远端 env、同步并做 checksum 校验。
+5. 远端先执行 `scripts/safe_deploy_cloud_prod.sh --preflight-only`，再按 scope 执行控制面发布或单服务热修。
+6. 默认不启动/重建正式 Bot；如需 Bot，必须显式传 `--bot-mode auto|start|stop`，且执行前确认全网没有第二个生产 Telegram polling 实例。
+7. 默认不发布 Cloudflare Pages、不中断本地 worker、不操作 RunPod、不改 DNS/Tunnel；这些能力仍按独立 SOP 处理。
+8. 验证云内健康检查、公网正式入口、本地 worker relay、Central queue/status/workers、目标容器 restart count 与最近错误日志，成功后解除生成维护；失败时维护保持开启。
+
+常用参数：
+- `--scope control-plane`：默认，使用 `scripts/safe_deploy_cloud_prod.sh --start-control-plane` 更新 Central/Web/Payment/Dashboard/imgproxy。
+- `--scope services --services "web-api-prod dashboard-backend-prod"`：只重建指定云端服务；禁止把 `bot-prod` 放入 `--services`。
+- `--with-db-upgrade`：随 `--scope control-plane` 显式执行 Alembic upgrade head；有迁移时必须走控制面发布并传该参数。
+- `--sync-env --env-file FILE`：显式同步正式 env；默认不动远端 `.env.cloud.prod`。
+- `--keep-maintenance`：成功后仍保留生成维护，便于人工验收后再解除。
+- `--delete`：给 rsync 增加 `--delete`，默认关闭，避免生产远端误删未纳入同步的人工文件。
+
+远端控制面子步骤仍可手工执行：
 
 ```bash
 ssh allbot-do-sgp1-control
@@ -208,6 +234,7 @@ scripts/safe_deploy_cloud_prod.sh --start-control-plane --with-db-upgrade
 - `docker compose config` 输出会展开密钥，只能本机查看。
 - 有 Alembic 变更时必须确认单 head，并显式执行 `alembic upgrade head`；不要写“容器启动自动迁移”。
 - 正式 Bot 重建前必须确认全网只有一个生产 Telegram polling 实例。
+- `cloud-web-api-prod` 与 `cloud-tg-bot-prod` 挂载 `../runtime/cloud-prod:/app/runtime-flags`，并通过 `GENERATION_MAINTENANCE_FILE=/app/runtime-flags/GENERATION_MAINTENANCE` 读取持久生成维护标记；这保证控制面重建后新容器仍保持维护，直到脚本最后解除。
 
 ### 4.2 云端单服务热修
 只改云端某个 COPY 型服务代码时，可以只重建目标服务：
