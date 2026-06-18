@@ -6,6 +6,10 @@ from src.core.video_billing import (
     normalize_requested_duration_seconds,
 )
 
+LEGACY_FACE_VIDEO_FRAME_DURATION_TASK_TYPES = frozenset(
+    {"face_video", "face_video_step1", "face_video_step2"}
+)
+
 
 def infer_requested_output_metadata(
     inputs: dict,
@@ -71,6 +75,13 @@ def parse_duration_seconds(duration: object) -> int:
         return 5
 
 
+def should_enforce_high_resource_combo_limit(task_type: str) -> bool:
+    return (
+        task_type != "ltx_video"
+        and task_type not in LEGACY_FACE_VIDEO_FRAME_DURATION_TASK_TYPES
+    )
+
+
 def build_video_task_request(task_type: str, inputs: dict) -> VideoTaskRequest:
     if not task_type:
         return VideoTaskRequest()
@@ -81,7 +92,11 @@ def build_video_task_request(task_type: str, inputs: dict) -> VideoTaskRequest:
     resolution_edge = parse_resolution_edge(inputs.get("resolution", "512p"))
     duration_seconds = parse_duration_seconds(inputs.get("duration", "5s"))
 
-    if task_type != "ltx_video" and resolution_edge >= 1024 and duration_seconds >= 10:
+    if (
+        should_enforce_high_resource_combo_limit(task_type)
+        and resolution_edge >= 1024
+        and duration_seconds >= 10
+    ):
         raise CoreDomainError(
             "Cannot select 1024p resolution and 10s duration simultaneously due to high resource usage."
         )

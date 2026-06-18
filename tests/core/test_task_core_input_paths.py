@@ -8,6 +8,7 @@ from src.core.task_core_input_preparation import (
     process_input_path,
 )
 from src.core.task_core_video_request import (
+    build_video_task_request,
     infer_requested_billing_resolution,
     infer_requested_output_metadata,
 )
@@ -90,6 +91,32 @@ def test_infer_requested_billing_resolution_keeps_ltx_resolution_pair():
         )
         == "1280x704"
     )
+
+
+@pytest.mark.parametrize(
+    "task_type",
+    ["face_video", "face_video_step1", "face_video_step2"],
+)
+def test_build_video_task_request_allows_face_video_legacy_frame_duration_at_1024p(
+    task_type,
+):
+    request = build_video_task_request(
+        task_type,
+        {"resolution": 1024, "duration": 121},
+    )
+
+    assert request.output_width == 1024
+    assert request.output_duration == 121
+    assert request.requested_duration == 121
+    assert request.billing_resolution == "1024"
+
+
+def test_build_video_task_request_still_rejects_standard_1024p_10s_combo():
+    with pytest.raises(CoreDomainError, match="Cannot select 1024p resolution"):
+        build_video_task_request(
+            "image_to_video",
+            {"resolution": 1024, "duration": 10},
+        )
 
 
 @pytest.mark.asyncio
