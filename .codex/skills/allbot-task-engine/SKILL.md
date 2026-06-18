@@ -68,10 +68,10 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 ## 6. 当前生成任务全链路口径
 当前更准确的生成任务主链是：
 
-`Frontend -> /api/tasks/generate -> task_submission_service -> task_core.process_and_submit_task(...) -> task_core_submission / task_dispatcher / image_service / api_client -> Central API / QueueManager -> comfy_agent（可经 local relay/sidecar）-> ComfyUI -> status/complete 回流 -> Web monitor / history / result / SSE`
+`Frontend -> /api/tasks/generate -> task_submission_service -> task_core.process_and_submit_task(...) -> task_core_submission / task_dispatcher / image_service / api_client -> Central API / QueueManager -> comfy_agent（可经 local relay/sidecar）-> ComfyUI -> status/complete 回流 -> Web monitor / history / coarse status / result`
 
 实践中应始终按下面分层定位：
-- **前端层**：页面表单、payload 构造、`useTaskStream` 提交、`tasksStore` 的 SSE 与结果轮询
+- **前端层**：页面表单、payload 构造、`useTaskStream` 提交、`tasksStore` 的低频粗状态 polling 与结果轮询；用户侧 pending 保留队列位置，running 不展示生成百分比，内部 Central/Worker progress 仍保留用于 monitor 与排障
 - **Web API 层**：`src/web_api/routers/tasks.py` 与 `task_submission_service.py`
 - **业务编排层**：`task_core.py` facade、submission、runtime、web monitor、persistence
 - **派发层**：`task_dispatcher.py`、`image_service.py`、`api_client.py`
@@ -121,10 +121,10 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - 是否确认 workflow 已落在唯一事实源 `workers/comfy_agent/workflows`，并且目标 Worker 会加载该 task type
 
 ### 7.5 结果与回归
-- `task_result_service.py` 是否能返回结果：Web owner result 优先 R2，延迟敏感路径必须用 R2 公网 HEAD 快探测且不持有 DB 只读事务等待对象存储；R2 未 warmup 时图片可短签 MinIO fallback，视频必须返回 `pending_result` 等 R2；前端 `pollTaskResult` 等待窗口需覆盖分钟级 R2 warmup，避免 99% 阶段网络失败或过早停止轮询
+- `task_result_service.py` 是否能返回结果：Web owner result 优先 R2，延迟敏感路径必须用 R2 公网 HEAD 快探测且不持有 DB 只读事务等待对象存储；R2 未 warmup 时图片可短签 MinIO fallback，视频必须返回 `pending_result` 等 R2；前端 `pollTaskResult` 等待窗口需覆盖分钟级 R2 warmup，避免 `awaitingResult` / “保存结果中” 阶段网络失败或过早停止轮询
 - Web monitor / persistence 是否能落历史并完成 cleanup
 - 新 task type 名称必须能写入 `History.type`；当前 schema 为 `String(64)`，新增长名称时不要回退到旧的 20 字符假设。
-- focused tests、SSE/result/history 回归、热点门禁是否已补齐
+- focused tests、coarse status/result/history/SSE 兼容路径回归、热点门禁是否已补齐
 
 ## 8. 运维排障 Checklist
 ### 8.1 提交即失败
@@ -160,7 +160,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 ### 8.5 结果不可见
 - 看 worker 是否已成功 `/complete`
 - 看 history 是否已落库
-- 看 R2 公网结果地址是否可解析；若 R2 未 ready，确认图片 owner result 是否返回 MinIO 短签 fallback、视频 owner result 是否继续 `pending_result`，并检查 R2 公网 HEAD 快探测短超时和前端 99% 结果轮询窗口是否生效
+- 看 R2 公网结果地址是否可解析；若 R2 未 ready，确认图片 owner result 是否返回 MinIO 短签 fallback、视频 owner result 是否继续 `pending_result`，并检查 R2 公网 HEAD 快探测短超时和前端 `awaitingResult` 结果轮询窗口是否生效
 - 看 `/result` 返回的是成功态还是 `pending_result`
 - 若 worker 已上传对象但 Central 未收到 `complete`，优先查完成回报重试日志；不要只凭 worker 本地“uploaded”日志判定任务已成功收口。
 

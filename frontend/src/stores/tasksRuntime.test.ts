@@ -3,7 +3,9 @@ import { test } from 'vitest'
 
 import {
   POLL_TASK_RESULT_MAX_RETRIES,
+  POLL_TASK_STATUS_INTERVAL_MS,
   probeDetachedTaskResult,
+  pollTaskStatus,
   pollTaskResult,
   restoreTasksFromStorage,
   serializeTasksForStorage,
@@ -20,7 +22,7 @@ function createTask(overrides: Partial<RuntimeTaskLike> = {}): RuntimeTaskLike {
   }
 }
 
-test('restoreTasksFromStorage reloads awaiting-result tasks and resumes result polling instead of SSE', () => {
+test('restoreTasksFromStorage reloads awaiting-result tasks and resumes result polling instead of status polling', () => {
   const storage = {
     getItem(key: string) {
       assert.equal(key, 'active_tasks')
@@ -36,15 +38,15 @@ test('restoreTasksFromStorage reloads awaiting-result tasks and resumes result p
 
   const activeTasks: RuntimeTaskLike[] = []
   let pollCalls = 0
-  let sseCalls = 0
+  let statusPollCalls = 0
 
   restoreTasksFromStorage(storage, activeTasks, {
     pollForResult: (task) => {
       pollCalls += 1
       assert.equal(task.id, 'task-1')
     },
-    startListening: () => {
-      sseCalls += 1
+    startStatusPolling: () => {
+      statusPollCalls += 1
     }
   })
 
@@ -59,10 +61,10 @@ test('restoreTasksFromStorage reloads awaiting-result tasks and resumes result p
     updatedAt: undefined
   })
   assert.equal(pollCalls, 1)
-  assert.equal(sseCalls, 0)
+  assert.equal(statusPollCalls, 0)
 })
 
-test('restoreTasksFromStorage drops stale pending tasks before attempting SSE resume', () => {
+test('restoreTasksFromStorage drops stale pending tasks before attempting status polling', () => {
   const now = 1_700_000_000_000
   const storage = {
     getItem(key: string) {
@@ -79,20 +81,20 @@ test('restoreTasksFromStorage drops stale pending tasks before attempting SSE re
 
   const activeTasks: RuntimeTaskLike[] = []
   let pollCalls = 0
-  let sseCalls = 0
+  let statusPollCalls = 0
 
   restoreTasksFromStorage(storage, activeTasks, {
     pollForResult: () => {
       pollCalls += 1
     },
-    startListening: () => {
-      sseCalls += 1
+    startStatusPolling: () => {
+      statusPollCalls += 1
     }
   }, now)
 
   assert.equal(activeTasks.length, 0)
   assert.equal(pollCalls, 0)
-  assert.equal(sseCalls, 0)
+  assert.equal(statusPollCalls, 0)
 })
 
 test('restoreTasksFromStorage migrates legacy pending tasks without updatedAt into the new ttl tracking', () => {
@@ -111,21 +113,21 @@ test('restoreTasksFromStorage migrates legacy pending tasks without updatedAt in
   }
 
   const activeTasks: RuntimeTaskLike[] = []
-  let sseCalls = 0
+  let statusPollCalls = 0
 
   restoreTasksFromStorage(storage, activeTasks, {
     pollForResult: () => {
       throw new Error('legacy pending task should not enter result polling')
     },
-    startListening: (task) => {
-      sseCalls += 1
+    startStatusPolling: (task) => {
+      statusPollCalls += 1
       assert.equal(task.updatedAt, now)
     }
   }, now)
 
   assert.equal(activeTasks.length, 1)
   assert.equal(activeTasks[0].updatedAt, now)
-  assert.equal(sseCalls, 1)
+  assert.equal(statusPollCalls, 1)
 })
 
 test('restoreTasksFromStorage preserves existing updatedAt when rerouting a restored task to result polling', () => {
@@ -154,8 +156,8 @@ test('restoreTasksFromStorage preserves existing updatedAt when rerouting a rest
       assert.equal(task.updatedAt, previousUpdatedAt)
       assert.equal(task.awaitingResult, true)
     },
-    startListening: () => {
-      throw new Error('success without result url should not resume SSE')
+    startStatusPolling: () => {
+      throw new Error('success without result url should not resume status polling')
     }
   }, now)
 
@@ -164,6 +166,83 @@ test('restoreTasksFromStorage preserves existing updatedAt when rerouting a rest
   assert.equal(activeTasks[0].status, 'running')
   assert.equal(activeTasks[0].awaitingResult, true)
   assert.equal(pollCalls, 1)
+})
+
+test('pollTaskStatus preserves pending queue position and schedules low-frequency retry', async () => {
+  const activeTasks: RuntimeTaskLike[] = [createTask()]
+  let scheduledDelay: number | null = null
+
+  await pollTaskStatus(activeTasks[0], activeTasks, {
+    apiGet: async (url) => {
+      assert.equal(url, '/tasks/task-1/status')
+      return { data: { status: 'pending', queue_pos: 2, progress: 42 } }
+    },
+    schedule: (_callback, delayMs) => {
+      scheduledDelay = delayMs
+    },
+    pollForResult: () => {
+      throw new Error('pending task should not poll result')
+    },
+    finalizeCancelledTask: () => {
+      throw new Error('pending task should not finalize cancellation')
+    },
+    notifyTaskFailure: () => {
+      throw new Error('pending task should not fail')
+    }
+  })
+
+  assert.equal(activeTasks[0].status, 'pending')
+  assert.equal(activeTasks[0].queuePos, 2)
+  assert.equal(scheduledDelay, POLL_TASK_STATUS_INTERVAL_MS)
+})
+
+test('pollTaskStatus clears queue position for running and ignores progress percent', async () => {
+  const activeTasks: RuntimeTaskLike[] = [createTask({ queuePos: 1, progress: 0 })]
+
+  await pollTaskStatus(activeTasks[0], activeTasks, {
+    apiGet: async () => ({ data: { status: 'running', queue_pos: 1, progress: 87 } }),
+    schedule: () => {},
+    pollForResult: () => {
+      throw new Error('running task should not poll result')
+    },
+    finalizeCancelledTask: () => {
+      throw new Error('running task should not finalize cancellation')
+    },
+    notifyTaskFailure: () => {
+      throw new Error('running task should not fail')
+    }
+  })
+
+  assert.equal(activeTasks[0].status, 'running')
+  assert.equal(activeTasks[0].queuePos, undefined)
+  assert.equal(activeTasks[0].progress, 0)
+})
+
+test('pollTaskStatus routes success to result polling without opening SSE', async () => {
+  const activeTasks: RuntimeTaskLike[] = [createTask({ status: 'running' })]
+  let resultPollCalls = 0
+
+  await pollTaskStatus(activeTasks[0], activeTasks, {
+    apiGet: async () => ({ data: { status: 'success', progress: 100 } }),
+    schedule: () => {
+      throw new Error('success should not schedule status retry')
+    },
+    pollForResult: (task) => {
+      resultPollCalls += 1
+      assert.equal(task.awaitingResult, true)
+    },
+    finalizeCancelledTask: () => {
+      throw new Error('success task should not finalize cancellation')
+    },
+    notifyTaskFailure: () => {
+      throw new Error('success task should not fail')
+    }
+  })
+
+  assert.equal(resultPollCalls, 1)
+  assert.equal(activeTasks[0].status, 'running')
+  assert.equal(activeTasks[0].awaitingResult, true)
+  assert.equal(activeTasks[0].progress, 0)
 })
 
 test('serializeTasksForStorage preserves per-task updatedAt instead of overwriting every task', () => {

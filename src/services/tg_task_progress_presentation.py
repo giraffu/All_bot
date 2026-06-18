@@ -38,7 +38,7 @@ def build_running_status_text(
 ) -> str:
     if is_video:
         return _translate(lang, "task.status_generating_video")
-    return _translate(lang, "task.status_generating_progress", progress=progress)
+    return _translate(lang, "task.status_wait_generating")
 
 
 def build_done_progress_text(*, lang: str = "zh") -> str:

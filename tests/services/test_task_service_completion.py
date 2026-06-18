@@ -569,8 +569,33 @@ async def test_monitor_bot_task_progress_shows_cancel_button_only_while_pending(
         first_call.kwargs["reply_markup"].inline_keyboard[0][0].callback_data
         == "cancel_task_task-pending"
     )
-    assert second_call.args == ("status-msg", "⏳ 生成中... 42%")
+    assert second_call.args == ("status-msg", "⏳ 正在生成，请耐心等待...")
     assert second_call.kwargs["reply_markup"] is None
+
+
+@pytest.mark.asyncio
+async def test_monitor_bot_task_progress_does_not_repeat_running_percent_updates():
+    edit_status_text = AsyncMock()
+
+    async def monitor_func(*_args, **_kwargs):
+        yield {"status": "running", "progress": 10}
+        yield {"status": "running", "progress": 42}
+        yield {"status": "done", "progress": 100}
+
+    result = await tg_runtime_helpers.monitor_task_progress(
+        task_id="task-running",
+        status_msg="status-msg",
+        is_video=False,
+        monitor_func=monitor_func,
+        edit_status_text_func=edit_status_text,
+    )
+
+    assert result == {"status": "done", "progress": 100}
+    edit_status_text.assert_awaited_once()
+    assert edit_status_text.await_args.args == (
+        "status-msg",
+        "⏳ 正在生成，请耐心等待...",
+    )
 
 
 @pytest.mark.asyncio

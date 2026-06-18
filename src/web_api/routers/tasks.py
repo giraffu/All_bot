@@ -11,13 +11,19 @@ from src.database.models import User
 from src.quota import QuotaManager
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.web_api.dependencies import get_current_user, get_current_user_once, get_db
-from src.web_api.schemas.task_schema import TaskGenerateRequest, TaskGenerateResponse, TaskResultResponse
+from src.web_api.schemas.task_schema import (
+    TaskGenerateRequest,
+    TaskGenerateResponse,
+    TaskResultResponse,
+    TaskStatusResponse,
+)
 from src.web_api.services.task_result_service import get_task_result_payload
 from src.web_api.services.task_submission_service import submit_generation_task
 from src.web_api.services.user_task_api_service import cancel_pending_task_payload
 from src.web_api.services.task_runtime_api_service import (
     build_task_status_stream_response_for_user,
     get_queue_status_payload,
+    get_task_status_payload_for_user,
 )
 
 router = APIRouter()
@@ -66,6 +72,24 @@ async def get_task_result(
         task_id=task_id,
         current_user=current_user,
         db=db,
+    )
+
+
+@router.get(
+    "/{task_id}/status",
+    response_model=TaskStatusResponse,
+    response_model_exclude_none=True,
+)
+async def get_task_status(
+    task_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get coarse task status for low-frequency user-facing polling.
+    """
+    return await get_task_status_payload_for_user(
+        task_id=task_id,
+        user_id=current_user.id,
     )
 
 

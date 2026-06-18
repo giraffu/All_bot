@@ -1,14 +1,11 @@
-import logging
-
 import httpx
 import pytest
-import redis.asyncio as redis_asyncio
 
 from src import api_client as api_client_module
 
 
 @pytest.mark.asyncio
-async def test_iter_poll_progress_backs_off_and_resets_on_state_change(monkeypatch):
+async def test_iter_poll_progress_uses_fixed_low_frequency_interval(monkeypatch):
     client = api_client_module.APIClient.__new__(api_client_module.APIClient)
     payloads = iter(
         [
@@ -32,9 +29,7 @@ async def test_iter_poll_progress_backs_off_and_resets_on_state_change(monkeypat
         "_is_terminal_progress_payload",
         lambda payload: payload.get("status") == "done",
     )
-    monkeypatch.setattr(api_client_module, "POLL_INTERVAL", 2)
-    monkeypatch.setattr(api_client_module, "BOT_STATUS_POLL_INITIAL_INTERVAL", 5)
-    monkeypatch.setattr(api_client_module, "BOT_STATUS_POLL_MAX_INTERVAL", 20)
+    monkeypatch.setattr(api_client_module, "BOT_STATUS_POLL_INTERVAL", 15)
     monkeypatch.setattr(api_client_module.asyncio, "sleep", fake_sleep)
 
     events = [
@@ -51,7 +46,7 @@ async def test_iter_poll_progress_backs_off_and_resets_on_state_change(monkeypat
         "running",
         "done",
     ]
-    assert sleeps == [5, 7.5, 5]
+    assert sleeps == [15, 15, 15]
 
 
 class _FakePubSub:
@@ -85,9 +80,8 @@ class _FakeRedisClient:
 
 
 @pytest.mark.asyncio
-async def test_listen_for_progress_falls_back_to_polling_after_pubsub_disconnect(
+async def test_listen_for_progress_uses_polling_without_pubsub(
     monkeypatch,
-    caplog,
 ):
     client = api_client_module.APIClient.__new__(api_client_module.APIClient)
     payloads = iter(
@@ -96,11 +90,11 @@ async def test_listen_for_progress_falls_back_to_polling_after_pubsub_disconnect
             {"status": "done", "progress": 1.0, "queue_pos": None},
         ]
     )
-    pubsub = _FakePubSub()
-    redis_client = _FakeRedisClient(pubsub)
-
     async def fake_fetch_progress_status(_status_url):
         return next(payloads)
+
+    async def fail_pubsub(*_args, **_kwargs):
+        raise AssertionError("Pub/Sub should not be used by listen_for_progress")
 
     monkeypatch.setattr(client, "_fetch_progress_status", fake_fetch_progress_status)
     monkeypatch.setattr(
@@ -108,22 +102,11 @@ async def test_listen_for_progress_falls_back_to_polling_after_pubsub_disconnect
         "_is_terminal_progress_payload",
         lambda payload: payload.get("status") == "done",
     )
-    monkeypatch.setattr(redis_asyncio, "from_url", lambda *_args, **_kwargs: redis_client)
+    monkeypatch.setattr(client, "_iter_pubsub_progress", fail_pubsub)
 
-    with caplog.at_level(logging.WARNING):
-        events = [event async for event in client.listen_for_progress("task-1")]
+    events = [event async for event in client.listen_for_progress("task-1")]
 
     assert [event["status"] for event in events] == ["pending", "done"]
-    assert pubsub.unsubscribed == ["comfy:task_events:task-1"]
-    assert pubsub.closed is True
-    assert redis_client.closed is True
-    assert "Falling back to HTTP polling" in caplog.text
-    assert not [
-        record
-        for record in caplog.records
-        if record.levelno >= logging.ERROR
-        and "Pub/Sub error" in record.getMessage()
-    ]
 
 
 @pytest.mark.asyncio
@@ -142,7 +125,7 @@ async def test_listen_for_progress_keeps_404_cancelled_semantics(monkeypatch):
     monkeypatch.setattr(client, "_fetch_progress_status", fake_fetch_progress_status)
 
     events = []
-    with pytest.raises(RuntimeError, match="not found"):
+    with pytest.raises(RuntimeError, match="cancelled"):
         async for event in client.listen_for_progress("task-missing"):
             events.append(event)
 

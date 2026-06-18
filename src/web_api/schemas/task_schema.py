@@ -49,3 +49,13 @@ class TaskResultResponse(BaseModel):
     result_url: Optional[str] = None
     extra_outputs: Dict[str, Any] = Field(default_factory=dict)
     result_meta: Dict[str, Any] = Field(default_factory=dict)
+
+
+class TaskStatusResponse(BaseModel):
+    status: str
+    task_id: str
+    task_type: Optional[str] = None
+    media_type: Optional[str] = None
+    queue_pos: Optional[Any] = None
+    error: Optional[str] = None
+    message: Optional[str] = None

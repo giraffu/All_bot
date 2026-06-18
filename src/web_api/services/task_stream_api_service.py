@@ -5,10 +5,12 @@ from typing import Any
 from fastapi import HTTPException
 from sqlalchemy import select
 
+from src.constants import VIDEO_TASK_TYPES
 from src.core.task_status_mapper import (
     STREAM_STATUS_FAILED,
     STREAM_STATUS_SUCCESS,
     build_stream_terminal_payload,
+    map_backend_status_to_stream_status,
 )
 from src.database.models import History
 from src.services.redis_client import redis_client
@@ -29,6 +31,74 @@ def build_terminal_progress_payload(
     task_id: str,
 ) -> dict[str, Any] | None:
     return build_stream_terminal_payload(status_data, task_id)
+
+
+def _media_type_for_task_type(task_type: str | None) -> str | None:
+    if not task_type:
+        return None
+    return "video" if task_type in VIDEO_TASK_TYPES else "image"
+
+
+def _compact_optional_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in payload.items() if value is not None}
+
+
+def build_history_task_status_payload(history: History, task_id: str) -> dict[str, Any]:
+    task_type = history.type or "edit"
+    return _compact_optional_payload(
+        {
+            "status": STREAM_STATUS_SUCCESS,
+            "task_id": task_id,
+            "task_type": task_type,
+            "media_type": _media_type_for_task_type(task_type),
+        }
+    )
+
+
+def build_not_found_task_status_payload(task_id: str) -> dict[str, Any]:
+    return {
+        "status": STREAM_STATUS_FAILED,
+        "task_id": task_id,
+        "error": "任务不存在或无权限",
+    }
+
+
+def build_coarse_task_status_payload(
+    status_data: dict[str, Any],
+    task_id: str,
+) -> dict[str, Any]:
+    status = map_backend_status_to_stream_status(status_data.get("status"))
+    task_type = status_data.get("task_type")
+    base_payload: dict[str, Any] = {
+        "status": status or "running",
+        "task_id": task_id,
+        "task_type": task_type,
+        "media_type": status_data.get("media_type") or _media_type_for_task_type(task_type),
+    }
+
+    if status == "pending":
+        queue_pos = status_data.get("queue_pos")
+        if queue_pos is not None:
+            base_payload["queue_pos"] = queue_pos
+        return _compact_optional_payload(base_payload)
+
+    if status == STREAM_STATUS_FAILED:
+        base_payload["error"] = status_data.get("error") or status_data.get("error_msg")
+        return _compact_optional_payload(base_payload)
+
+    if status == "cancelled":
+        base_payload["message"] = (
+            status_data.get("message")
+            or status_data.get("error_msg")
+            or "任务已取消"
+        )
+        return _compact_optional_payload(base_payload)
+
+    if status == STREAM_STATUS_SUCCESS:
+        return _compact_optional_payload(base_payload)
+
+    base_payload["status"] = "running" if status == "running" else base_payload["status"]
+    return _compact_optional_payload(base_payload)
 
 
 async def get_user_history_record(

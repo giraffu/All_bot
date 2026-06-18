@@ -2,7 +2,7 @@
 import { useTasksStore } from '@/stores/tasks'
 import { CloseOutlined, CheckOutlined, LoadingOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 
 const tasksStore = useTasksStore()
 const expandedTaskId = ref<string | null>(null)
@@ -17,7 +17,7 @@ const getTaskLabel = (task: any) => {
   }
 
   if (task.status === 'running') {
-    return '生成中'
+    return task.awaitingResult ? '保存结果中' : '生成中'
   }
 
   if (task.status === 'success') {
@@ -29,19 +29,6 @@ const getTaskLabel = (task: any) => {
   }
 
   return '失败'
-}
-
-const getProgressStrokeColor = computed(() => 'var(--task-fab-progress)')
-const getProgressTrailColor = computed(() => 'var(--task-fab-progress-trail)')
-
-const isTaskInProgress = (task: any) =>
-  task.status === 'pending' || task.status === 'running'
-
-const getProgressStatus = (task: any) => {
-  if (task.cancelRequested || task.status === 'cancelled') {
-    return 'normal'
-  }
-  return 'active'
 }
 
 const handleClose = (task: any) => {
@@ -92,23 +79,6 @@ const doCancelTask = async (taskId: string) => {
           :aria-label="getTaskLabel(task)"
           :title="getTaskLabel(task)"
         >
-          <!-- 环形进度条 -->
-          <div
-            v-if="isTaskInProgress(task)"
-            class="absolute inset-0 flex items-center justify-center"
-          >
-            <a-progress 
-              type="circle" 
-              :percent="task.progress" 
-              :size="42"
-              :show-info="false" 
-              :status="getProgressStatus(task)" 
-              :strokeColor="getProgressStrokeColor"
-              :trailColor="getProgressTrailColor"
-              :strokeWidth="5" 
-            />
-          </div>
-          
           <!-- 中心状态指示 -->
           <div class="task-fab-core">
             <div class="flex flex-col items-center justify-center leading-none">
@@ -137,8 +107,8 @@ const doCancelTask = async (taskId: string) => {
               <span class="task-fab-label">取消中</span>
             </template>
             <template v-else-if="task.status === 'running'">
-              <span class="task-fab-running-value">{{ task.progress }}%</span>
-              <span class="task-fab-label">生成中</span>
+              <loading-outlined class="task-fab-icon task-fab-icon-running" />
+              <span class="task-fab-label">{{ task.awaitingResult ? '保存中' : '生成中' }}</span>
             </template>
             <template v-else-if="task.status === 'cancelled'">
               <close-outlined class="task-fab-icon task-fab-icon-warn" />
@@ -258,6 +228,10 @@ const doCancelTask = async (taskId: string) => {
 
 .task-fab-icon-warn {
   color: var(--task-fab-warn);
+}
+
+.task-fab-icon-running {
+  color: var(--task-fab-accent);
 }
 
 .task-fab-icon-danger {

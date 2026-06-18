@@ -193,6 +193,7 @@ echo "ℹ️ 云测试服务绑定地址: ${CLOUD_TEST_HEALTH_HOST}"
 echo "ℹ️ 云测试数据库和缓存使用本测试机内的 cloud-postgres-test/cloud-redis-test。"
 
 mkdir -p "$ROOT_DIR/logs/cloud-test"
+mkdir -p "$ROOT_DIR/runtime/cloud-test"
 
 echo "1️⃣ 校验云测试基础设施配置..."
 echo "   ℹ️ 测试数据库: ${CLOUD_TEST_POSTGRES_DB_VALUE:-bot_db_test}"

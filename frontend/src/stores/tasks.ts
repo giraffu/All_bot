@@ -7,10 +7,11 @@ import i18n from '@/i18n'
 import router from '@/router'
 import { useAuthStore } from '@/stores/auth'
 import {
-  shouldResumeTaskListening
+  shouldResumeTaskStatusPolling
 } from '@/stores/taskResultState'
 import {
   probeDetachedTaskResult,
+  pollTaskStatus,
   pollTaskResult,
   restoreTasksFromStorage,
   serializeTasksForStorage,
@@ -24,8 +25,6 @@ import {
 } from './taskSessionState'
 import {
   closeTaskStream,
-  handleTaskProgressPayload as handleTaskProgressPayloadEvent,
-  startTaskStreamListening,
 } from './taskStreamTransport'
 import type { Task } from './taskStoreTypes'
 import type { TaskRecord } from '@/types/gallery'
@@ -43,6 +42,7 @@ export const useTasksStore = defineStore('tasks', () => {
   const currentDetailRecord = ref<TaskRecord | null>(null)
   const authStore = useAuthStore()
   const detachedResultProbeTaskIds = new Set<string>()
+  const statusPollingTaskIds = new Set<string>()
 
   const dismissActiveTaskForDetailRecord = (record: TaskRecord) => {
     const taskId = record.task_id
@@ -54,6 +54,7 @@ export const useTasksStore = defineStore('tasks', () => {
     closeTaskStream(task)
     removeTaskSession(activeTasks.value, taskId, closeTaskStream)
     detachedResultProbeTaskIds.delete(taskId)
+    statusPollingTaskIds.delete(taskId)
   }
 
   const showDetailRecord = (record: TaskRecord) => {
@@ -130,7 +131,7 @@ export const useTasksStore = defineStore('tasks', () => {
     }
   }
 
-  // Forward declaration of startListening
+  // Result polling starts after the coarse status endpoint reports success.
   const pollForResult = async (task: Task, retryCount = 0) => {
     await pollTaskResult(task, activeTasks.value, {
       apiGet: (url) => api.get(url),
@@ -217,6 +218,7 @@ export const useTasksStore = defineStore('tasks', () => {
 
   const finalizeCancelledTask = async (task: Task, cancelMessage?: string) => {
     closeTaskStream(task)
+    statusPollingTaskIds.delete(task.id)
     task.status = 'cancelled'
     task.awaitingResult = false
     task.cancelRequested = false
@@ -251,44 +253,40 @@ export const useTasksStore = defineStore('tasks', () => {
     touchTaskActivity(currentTask)
   }
 
-  const startListening = (task: Task) => {
-    startTaskStreamListening(task, {
-      apiBaseURL: String(api.defaults.baseURL || '/api'),
-      getToken: () => authStore.token || localStorage.getItem('token'),
-      handleTaskProgressPayload: (currentTask, payload) => {
-        handleTaskProgressPayloadEvent(currentTask, payload, {
-          pollForResult: (pollTask) => {
-            void pollForResult(pollTask)
-          },
-          finalizeCancelledTask: (cancelledTask, cancelMessage) => {
-            void finalizeCancelledTask(cancelledTask, cancelMessage)
-          },
-          closeTaskStream,
-          notifyTaskFailure: (failedTask) => {
-            message.error(`任务 [${failedTask.title}] 生成失败: ${failedTask.error}`)
-          },
-        })
+  const startStatusPolling = (task: Task) => {
+    closeTaskStream(task)
+    if (statusPollingTaskIds.has(task.id)) {
+      return
+    }
+    statusPollingTaskIds.add(task.id)
+
+    void pollTaskStatus(task, activeTasks.value, {
+      apiGet: (url) => api.get(url),
+      schedule: (callback, delayMs) => {
+        setTimeout(callback, delayMs)
       },
-      closeTaskStream,
-      touchTask: touchTaskActivity,
+      pollForResult: (pollTask) => {
+        statusPollingTaskIds.delete(pollTask.id)
+        void pollForResult(pollTask)
+      },
+      finalizeCancelledTask: (cancelledTask, cancelMessage) => {
+        statusPollingTaskIds.delete(cancelledTask.id)
+        void finalizeCancelledTask(cancelledTask, cancelMessage)
+      },
+      notifyTaskFailure: (failedTask) => {
+        statusPollingTaskIds.delete(failedTask.id)
+        message.error(`任务 [${failedTask.title}] 生成失败: ${failedTask.error}`)
+      },
       handleUnauthorized: () => {
+        statusPollingTaskIds.delete(task.id)
         authStore.logout()
         if (router.currentRoute.value.path !== '/login') {
           void router.push('/login')
         }
         message.error('登录状态已失效，请重新登录')
       },
-      scheduleRetry: (taskId, retryCount) => {
-        setTimeout(() => {
-          const currentTask = activeTasks.value.find(item => item.id === taskId)
-          if (currentTask && (currentTask.status === 'pending' || currentTask.status === 'running')) {
-            startListening(currentTask)
-          }
-        }, 5000 * retryCount)
-      },
-      handleRetryExhausted: (exhaustedTask) => {
-        message.warning(`网络不稳定，任务 [${exhaustedTask.title}] 实时监听已断开，正在后台检查结果`)
-        void startDetachedResultProbe(exhaustedTask)
+      onRequestError: (err) => {
+        console.error('Failed to poll task status:', err)
       },
     })
   }
@@ -298,9 +296,9 @@ export const useTasksStore = defineStore('tasks', () => {
     pollForResult: (task) => {
       void pollForResult(task)
     },
-    startListening: (task) => {
-      if (shouldResumeTaskListening(task)) {
-        startListening(task)
+    startStatusPolling: (task) => {
+      if (shouldResumeTaskStatusPolling(task)) {
+        startStatusPolling(task)
       }
     },
     onParseError: (e) => {
@@ -320,7 +318,7 @@ export const useTasksStore = defineStore('tasks', () => {
       resetExistingTaskSession(existingTask, type, title)
       touchTaskActivity(existingTask)
       if (!existingTask.awaitingResult && (existingTask.status === 'pending' || existingTask.status === 'running')) {
-        startListening(existingTask)
+        startStatusPolling(existingTask)
       }
       return true
     }
@@ -333,11 +331,13 @@ export const useTasksStore = defineStore('tasks', () => {
     const newTask = createPendingTask(taskId, type, title)
     const newLength = activeTasks.value.push(newTask)
     const addedTask = activeTasks.value[newLength - 1]
-    startListening(addedTask)
+    startStatusPolling(addedTask)
     return true
   }
 
   const removeTask = (taskId: string) => {
+    statusPollingTaskIds.delete(taskId)
+    detachedResultProbeTaskIds.delete(taskId)
     removeTaskSession(activeTasks.value, taskId, closeTaskStream)
   }
 

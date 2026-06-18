@@ -28,7 +28,7 @@ export interface RecoverableTaskLike extends ResumableTaskLike {
 }
 
 export interface TaskRestoreDecision<T extends RecoverableTaskLike> {
-  type: 'poll_result' | 'resume_sse' | 'idle'
+  type: 'poll_result' | 'resume_status_poll' | 'idle'
   task: T
 }
 
@@ -75,7 +75,7 @@ export function decideTaskResultFromError(
   return { type: 'timeout' }
 }
 
-export function shouldResumeTaskListening(task: ResumableTaskLike): boolean {
+export function shouldResumeTaskStatusPolling(task: ResumableTaskLike): boolean {
   return task.status === 'pending' || task.status === 'running'
 }
 
@@ -94,9 +94,9 @@ export function restorePersistedTask<T extends RecoverableTaskLike>(
     }
   }
 
-  if (shouldResumeTaskListening(task)) {
+  if (shouldResumeTaskStatusPolling(task)) {
     return {
-      type: 'resume_sse',
+      type: 'resume_status_poll',
       task
     }
   }

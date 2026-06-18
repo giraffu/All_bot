@@ -17,7 +17,7 @@
 ## 2. 一句话主链
 当前系统中更准确的生成任务主链是：
 
-`Frontend Page/Form -> /api/tasks/generate -> task_submission_service -> task_core.process_and_submit_task(...) -> task_core_submission / task_dispatcher / image_service / api_client -> Central API / QueueManager -> comfy_agent（可经本地 relay/sidecar）-> ComfyUI -> status/complete 回流 -> Web monitor / history / result / SSE`
+`Frontend Page/Form -> /api/tasks/generate -> task_submission_service -> task_core.process_and_submit_task(...) -> task_core_submission / task_dispatcher / image_service / api_client -> Central API / QueueManager -> comfy_agent（可经本地 relay/sidecar）-> ComfyUI -> status/complete 回流 -> Web monitor / history / coarse status / result`
 
 要点：
 - Web 主入口是 `POST /api/tasks/generate`，不是旧的 generation params 风格接口
@@ -56,7 +56,7 @@ sequenceDiagram
     Agent-->>CAPI: 9. /status /complete 回报
     Core->>Monitor: 10. Web side-effect monitor 持续收口
     Monitor-->>API: 11. history / result / stream 可查询
-    API-->>FE: 12. SSE 与 result 轮询回显结果
+    API-->>FE: 12. 低频粗状态与 result 轮询回显结果
 ```
 
 ## 4. 前端入口链路
@@ -93,14 +93,14 @@ sequenceDiagram
 提交后会发生：
 1. `useTaskStream.submitTask(...)` 调用 `POST /tasks/generate`
 2. 后端返回 `task_id` 后，前端把该任务写入 `tasksStore`
-3. `tasksStore.startListening(...)` 建立 `/tasks/{task_id}/stream`
-4. 收到终态 `success` 后，前端转入 `/tasks/{task_id}/result` 轮询；结果 URL 未就绪时保持 99% 与 `awaitingResult=true`，当前轮询窗口约 120 次 * 1.5 秒，需覆盖视频 R2 warmup 可能超过 60 秒的情况
+3. `tasksStore.startStatusPolling(...)` 默认每 15 秒查询 `/tasks/{task_id}/status` 粗状态；pending 可显示队列位置，running 不显示生成百分比
+4. 收到粗状态 `success` 后，前端转入 `/tasks/{task_id}/result` 轮询；结果 URL 未就绪时保持 `awaitingResult=true` 并展示“保存结果中”，当前轮询窗口约 120 次 * 1.5 秒，需覆盖视频 R2 warmup 可能超过 60 秒的情况
 5. 若历史已落库，也可能通过最近历史或详情弹层展示结果
 
 前端当前的状态语义重点：
 - `pending`: 已提交但还在排队
-- `running`: Worker 已开始执行，允许展示进度
-- `success`: SSE 终态成功，前端随后去拿结果 URL
+- `running`: Worker 已开始执行，用户侧只展示“生成中”，不展示百分比
+- `success`: 粗状态终态成功，前端随后去拿结果 URL
 - `failed`: 执行失败或回流失败
 - `cancelled`: 用户取消或执行面确认取消
 
@@ -436,25 +436,32 @@ Web 任务提交成功后，真正负责“收尾”的是：
 - 前端不应该自己做终态补偿
 - 结果是否最终可见，不只取决于 Worker 是否执行成功，还取决于 finalizer/persistence 是否收口完成
 
-### 10.3 SSE 与结果查询
-Web 端当前运行态与结果查询链路分成两层：
+### 10.3 粗状态、SSE 与结果查询
+Web 端当前用户侧运行态与结果查询链路分成三层：
 
-- 运行态：
+- 用户侧粗状态：
+  - `GET /api/tasks/{task_id}/status`
+  - service 入口：`src/web_api/services/task_runtime_api_service.py`
+  - 默认由前端每 15 秒低频轮询；pending 可返回 `queue_pos` 展示队列位置，running 不返回/不展示生成百分比，success 后转入 result 轮询
+
+- 兼容实时流：
   - `GET /api/tasks/{task_id}/stream`
   - service 入口：`src/web_api/services/task_stream_api_service.py`
+  - 后端 SSE 与 Redis Pub/Sub 能力保留，但不再作为 Web 前端默认用户侧进度展示路径
 
 - 结果态：
   - `GET /api/tasks/{task_id}/result`
   - service 入口：`src/web_api/services/task_result_service.py`
 
 重要语义：
-- `stream` 对外接收的是 `registry_task_id`
+- `status` / `stream` / `result` 对外接收的都是 `registry_task_id`
 - service 内部会尽量解析出真正的 `runtime_task_id` / `backend_task_id`
+- 用户侧不展示生成百分比；Central 和 Worker 内部仍可写入完整 progress/status/heartbeat，供 monitor、排障和终态收口使用
 - 若运行态已消失但历史已存在，SSE 应返回可终止的 fallback 语义，而不是无限轮询
 - SSE 不能只依赖 Redis Pub/Sub 事件。Pub/Sub 是进度快路径；Web API 订阅、读取或关闭 Pub/Sub 失败时不得让 SSE 冒 ASGI Exception，同一连接应继续通过 Central `/status/{backend_task_id}` 补偿轮询到终态。任务进入 `running` 后仍需周期性查询 Central `/status/{backend_task_id}`，用于补偿终态事件丢失、Web 连接断开重连或 worker 回报路径异常时的前端收口。Web API 会对同一 `api_base + backend_task_id` 的 status 拉取做约 2 秒共享缓存，避免多个浏览器连接重复打 Central；同一任务状态/队列位置/进度连续不变时，Web SSE 补偿轮询会从 pending 约 5 秒、running 约 10 秒逐步退避到默认最多约 20 秒，状态变化后恢复初始间隔。
 - Central `/status/{backend_task_id}` 是单任务观测接口，默认约 2 秒 TTL、4 秒 stale 窗口，并有最大条目数上限；过期刷新期间可短暂返回旧快照，真实任务分发、Worker 上报、完成回流和 cancel 仍走实时路径。排查时若看到前端状态晚几秒进入终态，应结合 Redis 事件、Central `complete` 日志和 Web monitor 落库判断。可用 `TASK_STATUS_CACHE_TTL_SECONDS`、`TASK_STATUS_CACHE_STALE_SECONDS`、`TASK_STATUS_CACHE_MAX_ENTRIES` 调整。
-- Central `/system/status` 与 `/system/workers` 是 Dashboard/Bot 的观测接口，使用短 TTL/stale 快照缓存；它们不参与真实任务分发和终态收口。Dashboard 对 active task 的 backend status 聚合默认再做约 5 秒缓存，Bot 在 Pub/Sub 失效后的 HTTP fallback 轮询会从约 5 秒逐步退避到约 20 秒，且预期断线降级不应刷 ERROR 日志。相关旋钮是 `TASK_STREAM_STATUS_CACHE_TTL_SECONDS`、`TASK_STREAM_PENDING_STATUS_POLL_INITIAL_SECONDS`、`TASK_STREAM_PENDING_STATUS_POLL_MAX_SECONDS`、`TASK_STREAM_RUNNING_STATUS_POLL_INITIAL_SECONDS`、`TASK_STREAM_RUNNING_STATUS_POLL_MAX_SECONDS`、`TASK_STREAM_STATUS_POLL_BACKOFF_MULTIPLIER`、`DASHBOARD_BACKEND_TASK_STATUS_CACHE_TTL_SECONDS`、`BOT_STATUS_POLL_INITIAL_INTERVAL`、`BOT_STATUS_POLL_MAX_INTERVAL`。
-- `result` 对 Web 历史优先取 R2 公网结果地址；延迟敏感路径必须用 R2 公网 HEAD 快探测并在查对象存储前释放 DB 只读事务，不能用慢 S3 API HEAD 阻塞请求。R2 warmup 未就绪时，图片可对任务本人返回短有效期 MinIO presigned fallback；视频不走 MinIO 代理 fallback，应返回 `pending_result` 等下一轮轮询拿 R2。前端结果轮询窗口必须覆盖分钟级 R2 warmup，避免 99% 阶段被视频拉流、R2 HEAD 阻塞或短轮询窗口拖成网络失败/不返回结果。
+- Central `/system/status` 与 `/system/workers` 是 Dashboard/Bot 的观测接口，使用短 TTL/stale 快照缓存；它们不参与真实任务分发和终态收口。Dashboard 对 active task 的 backend status 聚合默认再做约 5 秒缓存；Bot 用户侧任务进度默认不再订阅 Pub/Sub，而是每 15 秒 HTTP polling 粗状态，pending 队列位置变化可编辑消息，running 不按 progress 百分比反复编辑。
+- `result` 对 Web 历史优先取 R2 公网结果地址；延迟敏感路径必须用 R2 公网 HEAD 快探测并在查对象存储前释放 DB 只读事务，不能用慢 S3 API HEAD 阻塞请求。R2 warmup 未就绪时，图片可对任务本人返回短有效期 MinIO presigned fallback；视频不走 MinIO 代理 fallback，应返回 `pending_result` 等下一轮轮询拿 R2。前端结果轮询窗口必须覆盖分钟级 R2 warmup，避免 `awaitingResult` / “保存结果中” 阶段被视频拉流、R2 HEAD 阻塞或短轮询窗口拖成网络失败/不返回结果。
 
 ## 11. 历史、收藏、投稿与结果可见性
 对于 Web 一等任务类型，只打通底层执行链路通常还不够，还要看是否要进入这些链：

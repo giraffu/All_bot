@@ -218,6 +218,151 @@ async def test_build_not_found_progress_payload_returns_success_when_history_exi
 
 
 @pytest.mark.asyncio
+async def test_get_task_status_payload_returns_pending_queue_without_progress():
+    captured_task_ids = []
+
+    async def fake_get_task_status(task_id):
+        captured_task_ids.append(task_id)
+        return {
+            "status": "pending",
+            "queue_pos": 2,
+            "progress": 0.4,
+            "task_type": "txt2img",
+        }
+
+    payload = await task_runtime_api_service.get_task_status_payload_for_user(
+        task_id="registry-1",
+        user_id=123,
+        session_factory=_session_factory(None),
+        get_owned_active_task_func=AsyncMock(
+            return_value={
+                "user_id": 123,
+                "backend_task_id": "backend-1",
+            }
+        ),
+        get_task_status_func=fake_get_task_status,
+    )
+
+    assert captured_task_ids == ["backend-1"]
+    assert payload == {
+        "status": "pending",
+        "task_id": "registry-1",
+        "task_type": "txt2img",
+        "media_type": "image",
+        "queue_pos": 2,
+    }
+    assert "progress" not in payload
+
+
+@pytest.mark.asyncio
+async def test_get_task_status_payload_running_drops_queue_and_progress():
+    payload = await task_runtime_api_service.get_task_status_payload_for_user(
+        task_id="registry-1",
+        user_id=123,
+        session_factory=_session_factory(None),
+        get_owned_active_task_func=AsyncMock(
+            return_value={
+                "user_id": 123,
+                "backend_task_id": "backend-1",
+            }
+        ),
+        get_task_status_func=AsyncMock(
+            return_value={
+                "status": "running",
+                "queue_pos": 1,
+                "progress": 0.65,
+                "task_type": "custom_video",
+            }
+        ),
+    )
+
+    assert payload == {
+        "status": "running",
+        "task_id": "registry-1",
+        "task_type": "custom_video",
+        "media_type": "video",
+    }
+    assert "progress" not in payload
+    assert "queue_pos" not in payload
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("backend_status", "expected"),
+    [
+        ("done", {"status": "success", "task_id": "registry-1"}),
+        (
+            "error",
+            {
+                "status": "failed",
+                "task_id": "registry-1",
+                "error": "worker failed",
+            },
+        ),
+        (
+            "cancelled",
+            {
+                "status": "cancelled",
+                "task_id": "registry-1",
+                "message": "用户已取消",
+            },
+        ),
+    ],
+)
+async def test_get_task_status_payload_maps_terminal_states(
+    backend_status,
+    expected,
+):
+    payload = await task_runtime_api_service.get_task_status_payload_for_user(
+        task_id="registry-1",
+        user_id=123,
+        session_factory=_session_factory(None),
+        get_owned_active_task_func=AsyncMock(
+            return_value={
+                "user_id": 123,
+                "backend_task_id": "backend-1",
+            }
+        ),
+        get_task_status_func=AsyncMock(
+            return_value={
+                "status": backend_status,
+                "error_msg": "worker failed",
+                "message": "用户已取消",
+            }
+        ),
+    )
+
+    assert payload == expected
+    assert "progress" not in payload
+
+
+@pytest.mark.asyncio
+async def test_get_task_status_payload_returns_success_when_only_history_exists():
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="registry-1",
+        type="custom_video",
+        output_file="bot-data/history/registry-1/output.mp4",
+    )
+
+    payload = await task_runtime_api_service.get_task_status_payload_for_user(
+        task_id="registry-1",
+        user_id=123,
+        session_factory=_session_factory(history),
+        get_owned_active_task_func=AsyncMock(return_value=None),
+        get_task_status_func=AsyncMock(side_effect=AssertionError("should not fetch")),
+    )
+
+    assert payload == {
+        "status": "success",
+        "task_id": "registry-1",
+        "task_type": "custom_video",
+        "media_type": "video",
+    }
+
+
+@pytest.mark.asyncio
 async def test_build_not_found_progress_payload_returns_failed_when_history_missing():
     payload = await task_stream_api_service.build_not_found_progress_payload(
         "task-1",

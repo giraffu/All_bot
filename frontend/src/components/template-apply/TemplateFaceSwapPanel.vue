@@ -285,13 +285,24 @@ onBeforeUnmount(() => {
           <div class="rounded-xl border border-slate-700 bg-slate-800/70 p-4">
             <div class="flex items-center justify-between text-sm text-slate-300">
               <span>{{ currentTask.title }}</span>
-              <span>{{ currentTask.status }}</span>
+              <span>
+                {{
+                  currentTask.awaitingResult
+                    ? '保存结果中'
+                    : currentTask.status === 'pending'
+                      ? '排队中'
+                      : currentTask.status === 'running'
+                        ? '生成中'
+                        : currentTask.status
+                }}
+              </span>
             </div>
-            <a-progress
-              class="mt-3"
-              :percent="currentTask.progress"
-              :status="currentTask.status === 'failed' ? 'exception' : 'active'"
-            />
+            <div
+              v-if="currentTask.status === 'pending' && currentTask.queuePos != null"
+              class="mt-3 text-sm text-slate-400"
+            >
+              当前排在第 {{ currentTask.queuePos + 1 }} 位
+            </div>
             <div v-if="currentTask.error" class="mt-3 text-sm text-rose-300">
               {{ currentTask.error }}
             </div>

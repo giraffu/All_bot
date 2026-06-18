@@ -1,7 +1,6 @@
 # api_client.py
 import asyncio
 import logging
-import os
 import uuid
 from typing import Any, Optional
 
@@ -22,7 +21,6 @@ from config import (
     LTX_VIDEO_ENDPOINT,
     PERFECT_VIDEO_EDIT_ENDPOINT,
     PERFECT_VIDEO_INSERT_ENDPOINT,
-    POLL_INTERVAL,
     SCAIL2_ACTION_TRANSFER_ENDPOINT,
     SCAIL2_VIDEO_REPLACEMENT_ENDPOINT,
     STATUS_ENDPOINT,
@@ -41,10 +39,7 @@ logger = logging.getLogger(__name__)
 
 # Circuit Breaker Instance
 circuit_breaker = CircuitBreaker(failure_threshold=15, reset_timeout=30)
-BOT_STATUS_POLL_INITIAL_INTERVAL = float(
-    os.getenv("BOT_STATUS_POLL_INITIAL_INTERVAL", str(max(POLL_INTERVAL, 5)))
-)
-BOT_STATUS_POLL_MAX_INTERVAL = float(os.getenv("BOT_STATUS_POLL_MAX_INTERVAL", "20"))
+BOT_STATUS_POLL_INTERVAL = 15.0
 
 
 class APIClient:
@@ -689,10 +684,6 @@ class APIClient:
                     )
 
     async def _iter_poll_progress(self, *, task_id: str, status_url: str):
-        poll_delay = max(POLL_INTERVAL, BOT_STATUS_POLL_INITIAL_INTERVAL)
-        max_poll_delay = max(poll_delay, BOT_STATUS_POLL_MAX_INTERVAL)
-        last_observed_state: tuple[Any, Any, Any] | None = None
-
         while True:
             try:
                 info = await self._fetch_progress_status(status_url)
@@ -700,17 +691,7 @@ class APIClient:
                 if self._is_terminal_progress_payload(info):
                     break
 
-                observed_state = (
-                    info.get("status"),
-                    info.get("progress"),
-                    info.get("queue_pos"),
-                )
-                if observed_state != last_observed_state:
-                    poll_delay = max(POLL_INTERVAL, BOT_STATUS_POLL_INITIAL_INTERVAL)
-                    last_observed_state = observed_state
-                else:
-                    poll_delay = min(max_poll_delay, poll_delay * 1.5)
-                await asyncio.sleep(poll_delay)
+                await asyncio.sleep(BOT_STATUS_POLL_INTERVAL)
             except Exception as inner_e:
                 if (
                     isinstance(inner_e, httpx.HTTPStatusError)
@@ -722,44 +703,19 @@ class APIClient:
                     yield {"status": "cancelled", "error": "Task cancelled (404)"}
                     raise RuntimeError("cancelled")
                 logger.warning(f"Poll status failed for {task_id}: {inner_e}")
-                await asyncio.sleep(poll_delay)
-                poll_delay = min(max_poll_delay, poll_delay * 1.5)
+                await asyncio.sleep(BOT_STATUS_POLL_INTERVAL)
 
     async def listen_for_progress(self, task_id: str, is_video: bool = False):
         """
-        Async generator for task progress using Redis Pub/Sub.
+        Async generator for task progress using low-frequency HTTP polling.
         """
         status_url = f"{STATUS_ENDPOINT}/{task_id}"
 
-        try:
-            info = await self._fetch_progress_status(status_url)
-            logger.debug(f"Task {task_id} initial status: {info}")
+        async for info in self._iter_poll_progress(
+            task_id=task_id,
+            status_url=status_url,
+        ):
             yield info
-            if self._is_terminal_progress_payload(info):
-                return
-        except Exception as e:
-            if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 404:
-                yield {"status": "cancelled", "error": "Task cancelled (404)"}
-                raise RuntimeError(f"Task {task_id} not found on server (404).")
-            logger.warning(f"Initial status fetch failed for {task_id}: {e}")
-
-        try:
-            async for event in self._iter_pubsub_progress(
-                task_id=task_id,
-                status_url=status_url,
-            ):
-                yield event
-        except Exception as e:
-            logger.warning(
-                f"Pub/Sub error for {task_id}: {e}. Falling back to HTTP polling."
-            )
-            while True:
-                async for info in self._iter_poll_progress(
-                    task_id=task_id,
-                    status_url=status_url,
-                ):
-                    yield info
-                break
 
     @async_retry(max_retries=3)
     async def get_task_status(self, task_id: str) -> dict[str, Any] | None:

@@ -6,7 +6,7 @@ import {
   decideTaskResultFromError,
   decideTaskResultFromResponse,
   restorePersistedTask,
-  shouldResumeTaskListening
+  shouldResumeTaskStatusPolling
 } from './taskResultState.ts'
 
 test('decideTaskResultFromResponse retries while result is still pending', () => {
@@ -40,9 +40,9 @@ test('decideTaskResultFromError keeps retrying transient not-ready responses', (
   assert.deepEqual(decision, { type: 'retry' })
 })
 
-test('shouldResumeTaskListening only resumes pending or running tasks', () => {
+test('shouldResumeTaskStatusPolling only resumes pending or running tasks', () => {
   assert.equal(
-    shouldResumeTaskListening({
+    shouldResumeTaskStatusPolling({
       status: 'pending',
       resultUrl: undefined
     }),
@@ -50,7 +50,7 @@ test('shouldResumeTaskListening only resumes pending or running tasks', () => {
   )
 
   assert.equal(
-    shouldResumeTaskListening({
+    shouldResumeTaskStatusPolling({
       status: 'running',
       resultUrl: undefined
     }),
@@ -58,7 +58,7 @@ test('shouldResumeTaskListening only resumes pending or running tasks', () => {
   )
 
   assert.equal(
-    shouldResumeTaskListening({
+    shouldResumeTaskStatusPolling({
       status: 'success',
       resultUrl: undefined
     }),
@@ -66,7 +66,7 @@ test('shouldResumeTaskListening only resumes pending or running tasks', () => {
   )
 })
 
-test('restorePersistedTask routes success without result url to result polling before SSE restore checks', () => {
+test('restorePersistedTask routes success without result url to result polling before status polling checks', () => {
   const restoration = restorePersistedTask({
     status: 'success',
     progress: 100,

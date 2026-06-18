@@ -6,6 +6,8 @@ interface TaskPreviewState {
   title: string
   status: string
   progress: number
+  awaitingResult?: boolean
+  queuePos?: number
   cancelRequested?: boolean
   cancelMessage?: string | null
   refundMessage?: string | null
@@ -42,19 +44,22 @@ const emit = defineEmits<{
                   ? '已取消'
                   : currentTask.cancelRequested
                     ? '撤销确认中'
-                    : currentTask.status
+                    : currentTask.awaitingResult
+                      ? '保存结果中'
+                      : currentTask.status === 'pending'
+                        ? '排队中'
+                        : currentTask.status === 'running'
+                          ? '生成中'
+                          : currentTask.status
               }}
             </span>
           </div>
-          <a-progress
-            class="mt-3"
-            :percent="currentTask.status === 'cancelled' ? 100 : currentTask.progress"
-            :status="currentTask.cancelRequested || currentTask.status === 'cancelled'
-              ? 'normal'
-              : currentTask.status === 'failed'
-                ? 'exception'
-                : 'active'"
-          />
+          <div
+            v-if="currentTask.status === 'pending' && currentTask.queuePos != null"
+            class="mt-3 text-sm text-slate-400"
+          >
+            当前排在第 {{ currentTask.queuePos + 1 }} 位
+          </div>
           <div v-if="currentTask.cancelRequested" class="mt-3 text-sm text-amber-300">
             {{ currentTask.cancelMessage || '已提交撤销请求，等待执行端确认。' }}
           </div>

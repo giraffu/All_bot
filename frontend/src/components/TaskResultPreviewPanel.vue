@@ -88,14 +88,8 @@ const emit = defineEmits<{
         <slot name="pending" :task="currentTask">
           <a-spin size="large" />
           <p class="mt-4 text-slate-400 font-medium">
-            {{ pendingLabel }} {{ currentTask.progress }}%
+            {{ currentTask.awaitingResult ? '保存结果中...' : pendingLabel }}
           </p>
-          <a-progress
-            :percent="currentTask.progress"
-            status="active"
-            strokeColor="#3b82f6"
-            class="w-full max-w-md mt-4"
-          />
         </slot>
       </div>
 

@@ -221,15 +221,16 @@ const { resetSwapState } = useSwapResetController({
             <div class="relative w-32 h-32 flex items-center justify-center mb-6">
               <div class="absolute inset-0 border-4 border-slate-400 rounded-full"></div>
               <div class="absolute inset-0 border-4 border-blue-500 rounded-full border-t-transparent animate-spin"></div>
-              <div class="text-blue-400 font-bold text-xl">{{ task.progress }}%</div>
+              <div class="text-blue-400 font-bold text-base">
+                {{ task.awaitingResult ? '保存中' : task.status === 'pending' ? '排队中' : '生成中' }}
+              </div>
             </div>
-            <p class="text-slate-300 font-medium text-lg animate-pulse">AI 正在为您生成大片...</p>
-            <p v-if="task.queuePos" class="text-sm text-slate-500 mt-2 bg-slate-500 px-3 py-1 rounded-full">
-              队列位置: <span class="text-blue-400 font-bold">{{ task.queuePos }}</span>
+            <p class="text-slate-300 font-medium text-lg animate-pulse">
+              {{ task.awaitingResult ? '正在保存结果...' : 'AI 正在为您生成大片...' }}
             </p>
-            <div class="w-64 mt-6">
-              <a-progress :percent="task.progress" status="active" strokeColor="#3b82f6" :showInfo="false" size="small" />
-            </div>
+            <p v-if="task.status === 'pending' && task.queuePos != null" class="text-sm text-slate-500 mt-2 bg-slate-500 px-3 py-1 rounded-full">
+              队列位置: <span class="text-blue-400 font-bold">{{ task.queuePos + 1 }}</span>
+            </p>
           </div>
         </template>
         <template #success-media="{ task }">

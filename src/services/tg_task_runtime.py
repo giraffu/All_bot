@@ -8,7 +8,6 @@ from src.core.task_lifecycle_contract import (
 )
 from src.i18n.translator import get_text
 from src.services.tg_task_progress_presentation import (
-    build_done_progress_text,
     build_pending_status_text,
     build_running_status_text,
     normalize_pending_queue_position,
@@ -226,7 +225,7 @@ def render_progress_transition(
             "last_progress": last_progress,
         }
 
-    if progress == last_progress and last_status != "pending":
+    if last_status == status and last_status != "pending":
         return None
     return {
         "text": build_running_status_text(
@@ -279,8 +278,6 @@ async def monitor_task_progress(
 
         if is_backend_success_status(status):
             final_info = info
-            if not is_video and last_progress != 100:
-                await update_status_message(build_done_progress_text(lang=lang))
             break
 
         if is_backend_cancelled_status(status):
