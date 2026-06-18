@@ -149,6 +149,11 @@ startup order is fixed:
 ComfyUI ready -> remote relay ready -> comfy agent heartbeat
 ```
 
+The entrypoint supervises ComfyUI, the relay, and the agent together. If any
+managed process exits, including ComfyUI being killed by the host OOM killer,
+the container exits so the runtime restart policy can create a clean process
+tree instead of leaving an agent heartbeat with a dead local ComfyUI.
+
 `remote_workers/Dockerfile.runpod` is the bundled worker/relay image entry. For
 RunPod ComfyUI runtime profiles, use the profile image builder instead:
 

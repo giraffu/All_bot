@@ -107,7 +107,7 @@ Central control 和创建 Pod 前中止。最终验收以 `reconcile.managed_cou
 | `cloud-prod-comfy-agent-2` | `cloud_prod_worker_02` | `192.168.1.177:8188` |
 | `cloud-prod-comfy-agent-3` | `cloud_prod_worker_03` | `192.168.1.177:8189` |
 | `cloud-prod-comfy-agent-4` | `cloud_prod_worker_04` | `192.168.1.252:8188` |
-| `cloud-prod-comfy-agent-5` | `cloud_prod_worker_05` | `192.168.1.252:8189` |
+| `cloud-prod-comfy-agent-5` | `cloud_prod_worker_05` | 原 `192.168.1.252:8189`，现为 stopped rollback baseline；正式 `wan22_video_v2` 由 `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` 接管 |
 | `cloud-prod-comfy-agent-6` | `cloud_prod_worker_06` | `192.168.1.2:8188` |
 | `cloud-prod-comfy-agent-7` | `cloud_prod_worker_07` | `192.168.1.2:8189` |
 
@@ -119,7 +119,8 @@ Central control 和创建 Pod 前中止。最终验收以 `reconcile.managed_cou
 | :--- | :--- | :--- | :--- |
 | `cloud_prod_worker_01` | 本地主服务器 `cloud-prod-comfy-agent-1` 容器 | `gpu-226:8188` 宿主机进程，cwd `/home/ubantu/comfyui` | `comfy_runtime_kind=host_service`，不要执行 `docker restart comfy0` |
 | `cloud_prod_worker_02/03` | 本地主服务器 agent 容器 | `gpu-177` 的 `comfy0/comfy1` Docker 容器 | 只在维护窗口按目标容器操作 |
-| `cloud_prod_worker_04/05` | 本地主服务器 agent 容器 | `gpu-252` 的 `comfy0/comfy1` Docker 容器 | 只在维护窗口按目标容器操作 |
+| `cloud_prod_worker_04` | 本地主服务器 agent 容器 | `gpu-252` 的 `comfy0` Docker 容器 | 只在维护窗口按目标容器操作 |
+| `cloud_prod_worker_05` | 本地主服务器 agent 容器，当前 stopped rollback | `gpu-252` 的旧 `comfy1` Docker 容器，当前 stopped rollback | 正式 `wan22_video_v2` 已由 `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` / AIO `8191` 接管；回滚前不要重新 enabled |
 | `cloud_prod_worker_06/07` | 本地主服务器 agent 容器 | `gpu-002` 的 `comfy0/comfy1` Docker 容器 | 保留为 compose/热回滚口径；gpu-002 slot0/slot1 也可能被 LAN AIO 或 SCAIL-2 runtime 接管，操作前先查当前 Central agent 与本机容器状态 |
 
 `POOL_IMAGE_REF`、`runtime_profile`、`node_id` 等 heartbeat/compose 字段是 GPU pool 观测与期望配置声明，不等于底层 ComfyUI runtime 已经被替换成该镜像。确认某个 ComfyUI 的真实运行方式时，以 `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md`、SSH 盘点和 Comfy `/system_stats` 为准。

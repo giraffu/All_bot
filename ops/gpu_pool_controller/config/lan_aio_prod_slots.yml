@@ -34,17 +34,26 @@ slots:
 
   - id: gpu-252-gpu1-wan22_video_v2
     enabled: true
-    phase: canary_ready
+    phase: prod_enabled
     assignment_id: lan-252-8189-worker-05
     target_profile_id: wan22_video_v2
+    target_task_types:
+      - wan22_video_v2
+    gpu_index: 0
     host_port: 8191
     agent_id: lan_aio_prod_gpu252_gpu1_wan22_video_v2_01
     container_name: allbot-lan-aio-gpu-252-gpu1-wan22_video_v2-prod
     old_runtime_container: comfy1
     old_local_agent_container: cloud-prod-comfy-agent-5
     remote_dir: /home/user/allbot-runpod-aio-prod/gpu252-gpu1-wan22-video-v2
+    legacy_hot_cache_copies:
+      - source_container: __host__
+        source_path: /home/user/APP/data/inst1/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth
+        target_paths:
+          - /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth
+          - /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth
     rollout_order: 30
-    notes: Mirrors worker 05 Wan22 v2 capacity after gpu-252 slot0 proves stable.
+    notes: Replaces worker 05 with a LAN AIO worker that only accepts wan22_video_v2; gpu-252 currently exposes worker05's old Docker device as GPU 0, while image_to_video remains on dedicated image_to_video capacity.
 
   - id: gpu-177-gpu1-ltx_video
     enabled: true

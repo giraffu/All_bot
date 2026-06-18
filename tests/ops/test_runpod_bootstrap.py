@@ -28,6 +28,16 @@ def test_runpod_entrypoint_script_has_valid_bash_syntax():
     )
 
 
+def test_runpod_bootstrap_and_entrypoint_supervise_managed_processes():
+    bootstrap = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
+    entrypoint = ENTRYPOINT_SCRIPT.read_text(encoding="utf-8")
+
+    for script in (bootstrap, entrypoint):
+        assert "shutdown_children" in script
+        assert "wait -n" in script
+        assert "stopping container for restart policy" in script
+
+
 def test_runpod_bootstrap_installs_kjnodes_before_starting_comfyui():
     script = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
 

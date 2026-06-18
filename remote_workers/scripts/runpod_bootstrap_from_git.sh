@@ -96,6 +96,24 @@ cleanup() {
 }
 trap cleanup INT TERM
 
+shutdown_children() {
+    local status="${1:-0}"
+    trap - INT TERM
+    cleanup
+    for pid in "${AGENT_PID:-}" "${RELAY_PID:-}" "${COMFY_PID:-}"; do
+        if [ -n "$pid" ]; then
+            wait "$pid" >/dev/null 2>&1 || true
+        fi
+    done
+    exit "$status"
+}
+
+handle_signal() {
+    shutdown_children 143
+}
+
+trap handle_signal INT TERM
+
 if [ -z "${AGENT_ID:-}" ] || [[ "${AGENT_ID}" == *'${RUNPOD_POD_ID'* ]] || [[ "${AGENT_ID}" == *'${POD_ID'* ]]; then
     export AGENT_ID="${AGENT_ID_PREFIX:-runpod_test_img2img_lora}_${RUNPOD_POD_ID_SAFE}"
 fi
@@ -615,12 +633,14 @@ until curl -fsS "http://${LOCAL_RELAY_HOST}:${LOCAL_RELAY_PORT}${RELAY_READY_PAT
 done
 
 log "remote relay ready; starting comfy agent"
-python3 "$REMOTE_WORKERS_DIR/comfy_agent/agent_main.py"
-agent_status="$?"
-if [ "${RUNPOD_KEEPALIVE_ON_BOOTSTRAP_FAILURE:-false}" = "true" ]; then
-    log "comfy agent exited with status ${agent_status}; keeping container alive for SSH diagnostics"
-    while true; do
-        sleep 3600
-    done
-fi
-exit "$agent_status"
+python3 "$REMOTE_WORKERS_DIR/comfy_agent/agent_main.py" &
+AGENT_PID="$!"
+
+log "process supervisor watching agent=${AGENT_PID} relay=${RELAY_PID} comfy=${COMFY_PID}"
+set +e
+wait -n "$AGENT_PID" "$RELAY_PID" "$COMFY_PID"
+supervised_status="$?"
+set -e
+
+log "managed process exited with status ${supervised_status}; stopping container for restart policy"
+shutdown_children "$supervised_status"

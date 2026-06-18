@@ -9,6 +9,7 @@
 最近一次局域网 GPU ComfyUI 素材清理：2026-06-08，Asia/Shanghai。
 最近一次云正式只读负载/数据巡检：2026-06-18 03:06，Asia/Shanghai。
 最近一次云测试控制面核对：2026-06-18 03:06，Asia/Shanghai。
+最近一次 gpu-252/worker05 LAN AIO 接管更新：2026-06-18，Asia/Shanghai。
 
 ## 2. 主服务器
 当前主服务器不再是正式公开控制面的主承载点。正式 Bot/Web/Payment/Central/Dashboard 已迁到云控制面；本机主要保留本地 GPU worker、ComfyUI 访问、legacy MinIO 数据、本地旧正式数据保留、测试/开发辅助容器和运维工具。
@@ -157,7 +158,7 @@
 | :--- | :--- | :--- | :--- | :--- |
 | `192.168.1.226` | 1 x RTX 5090 32G | `8188` | `cloud_prod_worker_01` | `face_swap`、`i2i_pro`、`i2i_draw`、`face_video`、`video_edit`、`image_to_video`、`t2i-pornmaster-turbo` |
 | `192.168.1.177` | 2 x RTX 5090 32G | AIO `8190`、`8191`；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu177_gpu0_image_to_video_01`、`lan_aio_prod_gpu177_gpu1_ltx_video_01` | `image_to_video`（兼容 `video_insert` / `video_edit` alias）、`ltx_video` |
-| `192.168.1.252` | 2 x RTX 4090 48G | `8188`、`8189` | `cloud_prod_worker_04`、`cloud_prod_worker_05` | `img2img`、`img2img_lora`、`wan22_video_v2`、`video_edit`、`image_to_video` |
+| `192.168.1.252` | 2 x RTX 4090 48G | `8188`；AIO `8191`，旧 `8189` stopped rollback | `cloud_prod_worker_04`、`lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` | `img2img`、`img2img_lora`、`wan22_video_v2` |
 | `192.168.1.2` | 2 x RTX 4090 48G | AIO `8190`、`8191`；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu002_gpu0_scail2_01`、`lan_aio_prod_gpu002_gpu1_image_to_video_01` | `scail2_action_transfer`、`scail2_video_replacement`、`image_to_video`（兼容 alias） |
 
 表中 `video_insert` / `video_edit` 仅表示生产 worker 仍声明的兼容 alias；canonical 执行面类型是 `image_to_video`，不再代表独立模型或独立 workflow。
@@ -172,10 +173,10 @@ GPU 节点运行方式与模型挂载快照：
 | :--- | :--- | :--- | :--- | :--- |
 | `192.168.1.226` | 宿主机进程，cwd `/home/ubantu/comfyui`，端口 `8188` | `/home/ubantu/comfyui/models`，约 325G | 单实例 | 不是 Comfy Docker 容器；重启前先确认进程管理方式 |
 | `192.168.1.177` | 正式 AIO `allbot-lan-aio-gpu-177-gpu0-image_to_video-prod`/`allbot-lan-aio-gpu-177-gpu1-ltx_video-prod`，host `8190`/`8191` | AIO workspace `/workspace/ComfyUI/models`；旧共享目录 `/data/comfy/models` 保留回滚 | AIO 使用 `/workspace/allbot-state` 隔离 input/output/temp；旧 `inst0/inst1` 保留 | 2026-06-18 根分区可用约 243G，使用率约 73%；旧 `comfy0/comfy1` 和旧 agent 2/3 stopped，不得与 AIO 同卡并跑 |
-| `192.168.1.252` | Docker `comfy0`/`comfy1`，分别绑定 GPU 0/1，端口 `8188`/`8189` | `/home/user/APP/data/models`，约 121G，共享 | `inst0`/`inst1` 的 input/output/temp/custom_nodes/workflows 分离 | 2026-06-18 根分区可用约 647G；`comfy0` 主打 img2img，`comfy1` 主打视频/Wan22 |
+| `192.168.1.252` | Docker `comfy0` 端口 `8188`；正式 AIO `allbot-lan-aio-gpu-252-gpu1-wan22_video_v2-prod` 端口 `8191`；旧 `comfy1`/`8189` stopped rollback | `/home/user/APP/data/models` 约 121G 供旧 runtime；AIO workspace `/workspace/ComfyUI/models` 由 manifest 同步 | `comfy0` 使用 `inst0`；AIO 使用 `/workspace/allbot-state` 隔离 input/output/temp | 2026-06-18 根分区可用约 647G；AIO 只声明 `wan22_video_v2`，不接普通 `image_to_video`；当前 Docker device 映射为 `NVIDIA_VISIBLE_DEVICES=0` |
 | `192.168.1.2` | 正式 AIO `allbot-lan-aio-gpu-002-gpu0-scail2-prod`/`allbot-lan-aio-gpu-002-gpu1-image_to_video-canary`，host `8190`/`8191` | AIO workspace `/workspace/ComfyUI/models`；旧共享目录 `/data/comfy/models` 保留回滚 | AIO 使用 `/workspace/allbot-state` 隔离 input/output/temp；旧 `inst0/inst1` 保留 | 2026-06-18 根分区可用约 442G；旧 `comfy0/comfy1` 和旧 agent 6/7 stopped，不得与 AIO 同卡并跑 |
 
-双卡节点的重要边界：`gpu-177` 与 `gpu-002` 日常按 AIO 容器和 `8190/8191` 端口操作，旧 `comfy0/comfy1` 只作为 stopped rollback baseline；`gpu-252` 仍是传统 `comfy0/comfy1` 双容器。处理某个 worker 或某个 ComfyUI 的问题时，只操作对应 worker 容器、AIO 容器或对应 GPU 节点上的单个 `comfy0/comfy1`；不要使用整机 reboot、无 service 名 `docker compose down/up` 或批量 `docker rm`。
+双卡节点的重要边界：`gpu-177` 与 `gpu-002` 日常按 AIO 容器和 `8190/8191` 端口操作，旧 `comfy0/comfy1` 只作为 stopped rollback baseline；`gpu-252` 现在是混合状态，slot0 仍是传统 `comfy0`，slot1/worker05 已由 AIO `8191` 接管，旧 `comfy1` 只作 stopped rollback。处理某个 worker 或某个 ComfyUI 的问题时，只操作对应 worker 容器、AIO 容器或对应 GPU 节点上的单个 `comfy0/comfy1`；不要使用整机 reboot、无 service 名 `docker compose down/up` 或批量 `docker rm`。
 
 ComfyUI 素材清理口径：
 - 2026-06-08 检查确认 GPU 节点没有项目级 ComfyUI 素材自动清理机制，只有系统默认 tmp/log 清理。
@@ -191,7 +192,8 @@ ComfyUI 版本快照：
 | `http://192.168.1.177:8190` | 0.21.1 | 2.11.0+cu128 | RTX 5090，约 31.36GiB，`--disable-dynamic-vram` |
 | `http://192.168.1.177:8191` | 0.19.5 | 2.11.0+cu128 | RTX 5090，约 31.36GiB，LTX AIO |
 | `http://192.168.1.252:8188` | 0.18.5 | 2.11.0+cu128 | RTX 4090，约 47.37GiB |
-| `http://192.168.1.252:8189` | 0.22.0 | 2.11.0+cu128 | RTX 4090，约 47.37GiB |
+| `http://192.168.1.252:8191` | 0.21.1 | 2.11.0+cu128 | RTX 4090，约 47.37GiB，Wan22 v2 AIO，`--disable-dynamic-vram` |
+| `http://192.168.1.252:8189` | 0.22.0 | 2.11.0+cu128 | 旧 `comfy1` stopped rollback，非当前接单入口 |
 | `http://192.168.1.2:8190` | 0.25.0 | 2.11.0+cu128 | RTX 4090，约 47.62GiB，SCAIL-2 AIO |
 | `http://192.168.1.2:8191` | 0.21.1 | 2.11.0+cu128 | RTX 4090，约 47.62GiB，image_to_video AIO |
 

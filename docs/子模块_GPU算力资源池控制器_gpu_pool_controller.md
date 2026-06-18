@@ -36,7 +36,7 @@
 | :--- | :--- | :--- | :--- |
 | `gpu-226` | `allbot-gpu-226` / `192.168.1.226` | 1 x RTX 5090 | 宿主机 ComfyUI `8188` |
 | `gpu-177` | `allbot-gpu-177` / `192.168.1.177` | 2 x RTX 5090 | 正式 LAN AIO `8190/8191`；旧 `comfy0/comfy1` stopped rollback |
-| `gpu-252` | `allbot-gpu-252` / `192.168.1.252` | 2 x RTX 4090 48G | Docker `comfy0/comfy1` -> `8188/8189` |
+| `gpu-252` | `allbot-gpu-252` / `192.168.1.252` | 2 x RTX 4090 48G | Docker `comfy0` -> `8188`；正式 LAN AIO `8191` 承载 `wan22_video_v2`，旧 `comfy1` stopped rollback |
 | `gpu-002` | `allbot-gpu-002` / `192.168.1.2` | 2 x RTX 4090 48G | 正式 LAN AIO slot0 SCAIL-2 `8190` + slot1 image_to_video `8191`；旧 `comfy0/comfy1` stopped rollback |
 
 必须分清两层运行态：
@@ -115,7 +115,7 @@ LAN registry 缓存已验证 GHCR RunPod 镜像，也保存 SCAIL-2 这类本地
 - `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:20260613-wan22aio-lanbase-ab9b7ea` -> `192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260613-wan22aio-lanbase-ab9b7ea`
 - `remote_workers/docker/runpod_profiles/scail2/Dockerfile` -> `192.168.1.115:5000/allbot/comfy-runpod-scail2:20260617-scail2-cu128-a492b2b-proddeps1`
 
-GPU 节点 Docker daemon 必须信任 HTTP registry `192.168.1.115:5000` 后才能直接 `docker pull 192.168.1.115:5000/...`；未配置 insecure registry 时会被 Docker 强制按 HTTPS 访问并报 `HTTP response to HTTPS client`。修改 `/etc/docker/daemon.json` 并 restart Docker 会影响节点容器运行态，只能放在明确的节点维护窗口执行。
+GPU 节点 Docker daemon 必须信任 HTTP registry `192.168.1.115:5000` 后才能直接 `docker pull 192.168.1.115:5000/...`；未配置 insecure registry 时会被 Docker 强制按 HTTPS 访问并报 `HTTP response to HTTPS client`。修改 `/etc/docker/daemon.json` 并 restart Docker 会影响节点容器运行态，只能放在明确的节点维护窗口执行。若目标 SSH 用户没有免密 sudo，短期可在本地主服务器执行 `docker save <lan-registry-image> | ssh <gpu-host> docker load` 预置镜像；fleet `preflight` 会接受“registry 已配置”或“目标镜像已存在”任一条件。
 
 `wan22_aio_video`、`image_to_video`、`wan22_video_v2` 三个 LAN AIO profile 共用同一个 Wan22 AIO 镜像；差异只在 runtime profile、`SUPPORTED_TASK_TYPES` 与模型 manifest。LAN AIO 的 `image_to_video` / `wan22_video_v2` split profile 由 runtime-render 自动在 `COMFY_EXTRA_ARGS` 追加 `--disable-dynamic-vram`，用于规避 cu128 ComfyUI DynamicVRAM 在 32G 5090 上的概率性 OOM。
 
@@ -203,7 +203,7 @@ gpu-002 专用 helper 已证明 all-in-one runtime 可以在正式 Central 下�
 | `gpu-177-gpu0-image_to_video` | `cloud_prod_worker_02` | `lan_aio_prod_gpu177_gpu0_image_to_video_01` | `image_to_video` | 8190 | `prod_enabled` |
 | `gpu-177-gpu1-ltx_video` | `cloud_prod_worker_03` | `lan_aio_prod_gpu177_gpu1_ltx_video_01` | `ltx_video` | 8191 | `prod_enabled` |
 | `gpu-252-gpu0-img2img_lora` | `cloud_prod_worker_04` | `lan_aio_prod_gpu252_gpu0_img2img_lora_01` | `img2img_lora` | 8190 | canary-ready |
-| `gpu-252-gpu1-wan22_video_v2` | `cloud_prod_worker_05` | `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` | `wan22_video_v2` | 8191 | canary-ready |
+| `gpu-252-gpu1-wan22_video_v2` | `cloud_prod_worker_05` | `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` | `wan22_video_v2` | 8191 | `prod_enabled` |
 
 暂缓 slot：
 - `gpu-226-gpu0-face_i2i_t2i`：当前是宿主机 ComfyUI，不是 Docker `comfy0`；需要单独的 host-service 到容器化迁移方案。
@@ -212,8 +212,8 @@ gpu-002 专用 helper 已证明 all-in-one runtime 可以在正式 Central 下�
 
 | 层级 | 已覆盖/候选能力 | 当前口径 |
 | :--- | :--- | :--- |
-| LAN AIO 正式接单 | `image_to_video`（兼容 `video_insert` / `video_edit` alias）、`ltx_video`、`scail2_action_transfer`、`scail2_video_replacement` | `gpu-177` 双卡已整机 AIO；SCAIL-2 由 `gpu-002` slot0 正式 AIO 承载 |
-| LAN AIO canary-ready | `img2img` / `img2img_lora`、`wan22_video_v2` | 先纳入 `gpu-252`，必须逐 slot 验收，不跨节点批量 enable |
+| LAN AIO 正式接单 | `image_to_video`（兼容 `video_insert` / `video_edit` alias）、`ltx_video`、`wan22_video_v2`、`scail2_action_transfer`、`scail2_video_replacement` | `gpu-177` 双卡已整机 AIO；`gpu-252` slot1 只接 `wan22_video_v2`；SCAIL-2 由 `gpu-002` slot0 正式 AIO 承载 |
+| LAN AIO canary-ready | `img2img` / `img2img_lora` | 继续纳入 `gpu-252` slot0，必须逐 slot 验收，不跨节点批量 enable |
 | 有镜像但未作为 LAN AIO 正式容量 | `i2i_pro`、`t2i-pornmaster-turbo`、`face_swap` | 当前主要是 RunPod profile / legacy worker 口径，LAN AIO 接管需单独 slot 规划 |
 | 暂缓 | `face_i2i_t2i` / `gpu-226` 综合能力 | 仍是 host-service runtime，需先迁成容器化 ComfyUI |
 
@@ -231,21 +231,25 @@ scripts/lan_aio_fleet_prod_ops.py start-disabled --slot gpu-252-gpu0-img2img_lor
 
 真实接管顺序必须逐 slot 执行，不得一次替换整台或多台 GPU：
 
-1. `preflight --execute` 只读确认正式 Central/Web、LAN registry、LAN model cache、目标旧 ComfyUI `/system_stats`/`/queue`、磁盘和 Docker insecure registry。
-2. 在维护窗口内执行 `configure-registry --slot ... --execute`；该动作会重启目标 GPU 节点 Docker daemon，必须先确保目标 legacy worker drain 且队列为空。
+1. `preflight --execute` 只读确认正式 Central/Web、LAN registry、LAN model cache、目标旧 ComfyUI `/system_stats`/`/queue`、磁盘，以及目标节点已配置 Docker insecure registry 或已预置目标镜像。
+2. 在维护窗口内执行 `configure-registry --slot ... --execute`；该动作会重启目标 GPU 节点 Docker daemon，必须先确保目标 legacy worker drain 且队列为空。若目标用户无免密 sudo，可改用 `docker save ... | ssh ... docker load` 预置镜像，跳过 daemon restart。
 3. `pull-image --slot ... --execute` 预拉 LAN mirror 镜像。
 4. `start-disabled --slot ... --execute` 启动 AIO 容器，只等待 disabled heartbeat，不允许接单。
 5. 验收 compose 不含 `cloud-test` / `user-data-test`，Central heartbeat 必须带 `node_id`、`provider=lan_ssh`、`runtime_profile`、`pool_managed=true`；`image_to_video` / `wan22_video_v2` slot 的 `COMFY_EXTRA_ARGS` 必须包含 `--disable-dynamic-vram`。
 6. `enable-aio --slot ... --execute` 会先把 legacy worker 置为 disabled，并拒绝在 legacy 仍 running、AIO disabled heartbeat 不可见或旧 runtime 容器仍占 GPU 显存时放开 AIO，避免同卡双 ComfyUI 抢单。
 7. 灰度期可保留旧 runtime 作为热回滚；全量接管时允许在 AIO enable 前后用 `stop-old --slot ... --execute` 停旧 ComfyUI 和本地主旧 agent，但不删除容器。回滚用 `rollback --slot ... --execute`。
 
-`start-disabled` 支持在 slot 配置中声明 `legacy_hot_cache_copies`，用于把旧 ComfyUI 容器内由 custom node 运行期下载的热缓存文件预置进 AIO 容器。`gpu-177-gpu0-image_to_video` 已声明从旧 `comfy0` 复制 `rife49.pth` 到 AIO 内 `ComfyUI_Fill-Nodes` 与 `ComfyUI-Frame-Interpolation` 两处缓存路径；这是 `FL_RIFE` 后处理的运行依赖，不能依赖 AIO 容器运行时访问 HuggingFace。
+LAN AIO compose 固定带 `restart: unless-stopped`。AIO bootstrap/entrypoint 会同时监管 ComfyUI、relay 与 agent；任一关键进程退出都会退出容器，由 Docker restart policy 重建干净 runtime，避免 ComfyUI 子进程 OOM 后只剩 agent 心跳继续存活。
+
+`start-disabled` 支持在 slot 配置中声明 `legacy_hot_cache_copies`，用于把旧 ComfyUI 容器或 GPU 节点宿主机上由 custom node 运行期下载的热缓存文件预置进 AIO 容器。`gpu-177-gpu0-image_to_video` 已声明从旧 `comfy0` 复制 `rife49.pth` 到 AIO 内 `ComfyUI_Fill-Nodes` 与 `ComfyUI-Frame-Interpolation` 两处缓存路径；`gpu-252-gpu1-wan22_video_v2` 已声明从宿主机旧 `inst1` 路径复制同一文件。它们都是 `FL_RIFE` 后处理的运行依赖，不能依赖 AIO 容器运行时访问 HuggingFace。
 
 2026-06-18 `gpu-177` 进入整机 LAN AIO 接管：GPU0 由 `lan_aio_prod_gpu177_gpu0_image_to_video_01` 提供 `image_to_video`，GPU1 由 `lan_aio_prod_gpu177_gpu1_ltx_video_01` 提供 `ltx_video`。旧 `cloud_prod_worker_02/03` 和旧 `comfy0/comfy1` 只作为 stopped rollback baseline 保留，不应与 AIO 同时 enabled 或同卡占用显存；若回滚，先执行对应 slot 的 `rollback --execute` 恢复旧 worker。
 
+2026-06-18 `gpu-252-gpu1-wan22_video_v2` 已替换 `cloud_prod_worker_05`：AIO agent `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` 连接正式 Central，host `8191`，只声明 `SUPPORTED_TASK_TYPES=wan22_video_v2`，不承接普通 `image_to_video` 或 `video_edit`。旧 `comfy1` 与 `cloud-prod-comfy-agent-5` 已停止保留为回滚基线。该节点当前 Docker/NVIDIA runtime 对 worker05 原设备暴露为 device `0`，因此 slot 配置保留 `gpu_index: 0` 覆盖；不要按 slot 名中的 `gpu1` 推断 compose 的 `NVIDIA_VISIBLE_DEVICES=1`。
+
 后续优化方向：
 - 配置阶段应区分 `prod_enabled`、`canary_ready`、`blocked_host_service_runtime`，避免已正式接管的 slot 仍被误读为 canary。
-- `wan22_video_v2` profile 目前可声明 `wan22_video_v2`、`video_edit`、`image_to_video`；接入 `gpu-252` 前需确认是否允许它承接普通 `image_to_video`，否则应收窄 task type 或加 slot/profile affinity。
+- `wan22_video_v2` 在 `gpu-252` 已通过 slot-level `target_task_types` 收窄为只接 `wan22_video_v2`；后续新增共享镜像 slot 时也应优先显式声明目标 task type，避免 profile 默认 alias 误接单。
 - `preflight` / `start-disabled` 需要继续强化 workflow 文件、remote_workers 挂载、模型 manifest、对象桶和 image digest 检查，减少“容器健康但工作流资产缺失”的误启用。
 - LAN registry 仍依赖 GPU 节点 Docker insecure registry；配置会重启整机 Docker daemon，后续优先评估 TLS registry 或免 daemon 重启的镜像分发路径。
 - Dashboard 需要把 AIO agent 的 `node_id`、`gpu_index`、`runtime_profile`、image tag/digest、旧 runtime 状态和最近失败原因展示出来，作为正式排障入口。

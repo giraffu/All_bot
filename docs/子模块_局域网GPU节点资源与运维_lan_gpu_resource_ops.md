@@ -12,6 +12,7 @@
 最近一次 gpu-002 LAN RunPod 化一体容器生产接管：2026-06-16，Asia/Shanghai。
 最近一次 LAN AIO fleet 泛化脚手架更新：2026-06-18，Asia/Shanghai。
 最近一次 gpu-177/gpu0 LAN AIO 生产 canary 复启：2026-06-18，Asia/Shanghai。
+最近一次 gpu-252/worker05 LAN AIO 生产接管：2026-06-18，Asia/Shanghai。
 
 ## 2. 总体拓扑
 
@@ -33,7 +34,7 @@
 | 云控制面 `allbot-do-sgp1-control-01` | `allbot-do-sgp1-control` | DO-Regular，8 vCPU | 约 15GiB | 无 | `/` 309G，已用 125G，可用 185G | 正式控制面 |
 | `192.168.1.226` | `allbot-gpu-226` | Ryzen 9 9950X，16C/32T | 60GiB | 1 x RTX 5090 32G | `/` 1.8T，已用 738G，可用 1001G | 单 ComfyUI，worker 01，face/i2i/t2i 与 LTX 补充容量 |
 | `192.168.1.177` | `allbot-gpu-177` | Ryzen 7 9700X，8C/16T | 60GiB | 2 x RTX 5090 32G | `/` 915G，已用 626G，可用 243G | 双 ComfyUI，worker 02/03 |
-| `192.168.1.252` | `allbot-gpu-252` | Ryzen 7 9700X，8C/16T | 60GiB | 2 x RTX 4090 48G | `/` 937G，已用 243G，可用 647G | 双 ComfyUI，worker 04/05 |
+| `192.168.1.252` | `allbot-gpu-252` | Ryzen 7 9700X，8C/16T | 60GiB | 2 x RTX 4090 48G | `/` 937G，已用 243G，可用 647G | `comfy0` 承载 worker 04；slot1 已由 LAN AIO 承载 `wan22_video_v2` |
 | `192.168.1.2` | `allbot-gpu-002` | Ryzen 7 9700X，8C/16T | 60GiB | 2 x RTX 4090 48G | `/` 936G，已用 455G，可用 442G | 双 ComfyUI，worker 06/07，LAN AIO/SCAIL-2 试点 |
 
 容量警戒：
@@ -54,7 +55,7 @@
 | `cloud-prod-comfy-agent-2` | Worker 02 | `192.168.1.177:8188` | `video_insert,video_edit,image_to_video` |
 | `cloud-prod-comfy-agent-3` | Worker 03 | `192.168.1.177:8189` | `ltx_video,image_to_video` |
 | `cloud-prod-comfy-agent-4` | Worker 04 | `192.168.1.252:8188` | `img2img,img2img_lora` |
-| `cloud-prod-comfy-agent-5` | Worker 05 | `192.168.1.252:8189` | `wan22_video_v2,video_edit,image_to_video` |
+| `cloud-prod-comfy-agent-5` | 旧 Worker 05，stopped rollback | 原 `192.168.1.252:8189` | 已由 `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` 替换，只保留回滚 |
 | `cloud-prod-comfy-agent-6` | Worker 06 | `192.168.1.2:8188` | `img2img,img2img_lora` |
 | `cloud-prod-comfy-agent-7` | Worker 07 | `192.168.1.2:8189` | `video_insert,video_edit,image_to_video` |
 
@@ -81,7 +82,7 @@ GPU pool 相关环境变量只描述 Worker Agent 的观测和期望能力，不
 
 2026-06-10 正式更新已验证的是 Worker Agent 新协议：7 个 `cloud-prod-comfy-agent-*` 均能携带 `agent_id`、GPU pool heartbeat 元数据并通过 relay `/ready`。这不表示 7 个底层 ComfyUI 都是容器；`cloud-prod-comfy-agent-1` 调用的 `gpu-226:8188` 仍是宿主机 ComfyUI。
 
-Controller 已补 `runtime-plan` / `runtime-render` dry-run 入口与 runtime schema。`gpu-002` 已完成第一阶段生产 AIO 接管；`gpu-177` 已通过 `scripts/lan_aio_fleet_prod_ops.py` 整机进入 `prod_enabled`；`gpu-252` 后续仍按 `ops/gpu_pool_controller/config/lan_aio_prod_slots.yml` 逐 slot 灰度，不再复制 gpu-002 专用 helper。`gpu-226` 仍是 `host_service`，只允许观测和手工 canary，不能直接套用 Docker AIO 接管。
+Controller 已补 `runtime-plan` / `runtime-render` dry-run 入口与 runtime schema。`gpu-002` 已完成第一阶段生产 AIO 接管；`gpu-177` 已通过 `scripts/lan_aio_fleet_prod_ops.py` 整机进入 `prod_enabled`；`gpu-252` slot1/worker05 已进入 `prod_enabled`，slot0 仍按 `ops/gpu_pool_controller/config/lan_aio_prod_slots.yml` 逐 slot 灰度，不再复制 gpu-002 专用 helper。`gpu-226` 仍是 `host_service`，只允许观测和手工 canary，不能直接套用 Docker AIO 接管。
 
 LAN AIO fleet 首批候选：
 
@@ -90,11 +91,13 @@ LAN AIO fleet 首批候选：
 | `gpu-177-gpu0-image_to_video` | `cloud_prod_worker_02` | `lan_aio_prod_gpu177_gpu0_image_to_video_01` | `image_to_video` | 8190 | `prod_enabled` |
 | `gpu-177-gpu1-ltx_video` | `cloud_prod_worker_03` | `lan_aio_prod_gpu177_gpu1_ltx_video_01` | `ltx_video` | 8191 | `prod_enabled` |
 | `gpu-252-gpu0-img2img_lora` | `cloud_prod_worker_04` | `lan_aio_prod_gpu252_gpu0_img2img_lora_01` | `img2img_lora` | 8190 | canary-ready |
-| `gpu-252-gpu1-wan22_video_v2` | `cloud_prod_worker_05` | `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` | `wan22_video_v2` | 8191 | canary-ready |
+| `gpu-252-gpu1-wan22_video_v2` | `cloud_prod_worker_05` | `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` | `wan22_video_v2` | 8191 | `prod_enabled` |
 
 每个 slot 必须先 `preflight`、维护窗口配置 Docker insecure registry、预拉镜像、`start-disabled` 验收 disabled heartbeat，最后才小窗口 `enable-aio`。禁止一次性接管整台节点或跨节点批量启用。
 
-2026-06-18 `gpu-177` 进入整机 LAN AIO 接管：GPU0 由 `lan_aio_prod_gpu177_gpu0_image_to_video_01` 接正式 `image_to_video`，GPU1 由 `lan_aio_prod_gpu177_gpu1_ltx_video_01` 接正式 `ltx_video`。旧 `cloud_prod_worker_02/03` 与旧 `comfy0/comfy1` 只作为 stopped rollback baseline 保留，不应与 AIO 同时 enabled 或同卡占用显存。`gpu-177-gpu0-image_to_video` 的 AIO 容器需预置旧 `comfy0` 内的 `rife49.pth` 到 `ComfyUI_Fill-Nodes` 和 `ComfyUI-Frame-Interpolation` 缓存路径，避免容器运行时访问 HuggingFace 失败。当前阶段 LAN AIO 正式能力包括 `image_to_video`、`ltx_video`、`scail2_action_transfer`、`scail2_video_replacement`；`img2img_lora` 与 `wan22_video_v2` 已有 fleet slot 但仍按 canary-ready 管理。
+2026-06-18 `gpu-177` 进入整机 LAN AIO 接管：GPU0 由 `lan_aio_prod_gpu177_gpu0_image_to_video_01` 接正式 `image_to_video`，GPU1 由 `lan_aio_prod_gpu177_gpu1_ltx_video_01` 接正式 `ltx_video`。旧 `cloud_prod_worker_02/03` 与旧 `comfy0/comfy1` 只作为 stopped rollback baseline 保留，不应与 AIO 同时 enabled 或同卡占用显存。`gpu-177-gpu0-image_to_video` 的 AIO 容器需预置旧 `comfy0` 内的 `rife49.pth` 到 `ComfyUI_Fill-Nodes` 和 `ComfyUI-Frame-Interpolation` 缓存路径，避免容器运行时访问 HuggingFace 失败。当前阶段 LAN AIO 正式能力包括 `image_to_video`、`ltx_video`、`wan22_video_v2`、`scail2_action_transfer`、`scail2_video_replacement`；`img2img_lora` 仍按 canary-ready 管理。
+
+2026-06-18 `gpu-252-gpu1-wan22_video_v2` 已替换 `cloud_prod_worker_05`：新 AIO agent 为 `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01`，容器 `allbot-lan-aio-gpu-252-gpu1-wan22_video_v2-prod` 监听 host `8191`，只接 `wan22_video_v2`。旧 `comfy1` 和本地主 `cloud-prod-comfy-agent-5` 已停止保留为回滚基线，不应再与 AIO 同时运行或 enabled。该节点当前 Docker/NVIDIA runtime 对旧 worker05 设备暴露为 device `0`，所以 slot 配置显式 `gpu_index: 0`；排障时以容器 env `NVIDIA_VISIBLE_DEVICES=0` / `POOL_GPU_INDEX=0` 为准。
 
 ## 5. GPU 节点明细
 
@@ -172,6 +175,7 @@ ComfyUI 实例：
 
 运维边界：
 - 日常只操作 `allbot-lan-aio-gpu-177-gpu0-image_to_video-prod` 或 `allbot-lan-aio-gpu-177-gpu1-ltx_video-prod`；旧 `comfy0/comfy1` 和 `cloud-prod-comfy-agent-2/3` 只用于回滚，不得与 AIO 同时 enabled。
+- LAN AIO compose 渲染 `restart: unless-stopped`，并由 entrypoint 监管 ComfyUI、relay 与 agent；任一关键进程退出时容器会退出，让 Docker restart policy 拉起干净进程树，避免“agent 心跳仍在但本地 ComfyUI 已死”的半活状态。
 - 若回滚旧链路，必须通过 `scripts/lan_aio_fleet_prod_ops.py rollback --slot ... --execute`，让 Central control、旧 ComfyUI 与旧 agent 一起恢复。
 - 修改 `/data/comfy/models` 会影响两个 ComfyUI。
 - 修改 `/data/comfy/inst0/custom_nodes` 或 `workflows` 只影响 `comfy0`。
@@ -190,7 +194,8 @@ ComfyUI 实例：
 
 容器：
 - `comfy0`：`yanwk/comfyui-boot:cu128-slim`
-- `comfy1`：`yanwk/comfyui-boot:cu128-slim`
+- `allbot-lan-aio-gpu-252-gpu1-wan22_video_v2-prod`：正式 AIO，host `8191`，只接 `wan22_video_v2`
+- `comfy1`：旧回滚基线，停止保留，原端口 `8189`
 - `dcgm_exporter`
 - `node_exporter`
 
@@ -199,17 +204,21 @@ ComfyUI 实例：
 | 容器 | GPU | Host 端口 | 容器端口 | 模型目录 | 独立目录 | 对应 worker |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | `comfy0` | GPU `0` | `8188` | `8188` | `/home/user/APP/data/models` | `/home/user/APP/data/inst0/{input,output,temp,custom_nodes,workflows}` | `cloud-prod-comfy-agent-4` |
-| `comfy1` | GPU `1` | `8189` | `8189` | `/home/user/APP/data/models` | `/home/user/APP/data/inst1/{input,output,temp,custom_nodes,workflows}` | `cloud-prod-comfy-agent-5` |
+| `allbot-lan-aio-gpu-252-gpu1-wan22_video_v2-prod` | Docker device `0`（旧 worker05 设备映射） | `8191` | `8188` | AIO workspace `/workspace/ComfyUI/models`（由 Wan22 v2 manifest 同步） | `/workspace/allbot-state/{comfy-input,comfy-output,comfy-temp}` | `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` |
+| `comfy1` | GPU `1`（历史口径） | `8189` | `8189` | `/home/user/APP/data/models` | `/home/user/APP/data/inst1/{input,output,temp,custom_nodes,workflows}` | 旧 `cloud-prod-comfy-agent-5`，stopped rollback |
 
 共享模型目录：`/home/user/APP/data/models`，约 `121G`。
 
 运行备注：
 - `comfy0` CLI 包含 `--fp8_e4m3fn-text-enc`。
-- `comfy0`/`comfy1` 的模型目录共享，实例目录分离。
+- `comfy0`/旧 `comfy1` 的模型目录共享，实例目录分离。
+- `gpu-252-gpu1-wan22_video_v2` AIO 使用 LAN registry 镜像 `192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260613-wan22aio-lanbase-ab9b7ea`，启动参数包含 `--disable-dynamic-vram`，模型从 `allbot-model-cache/wan22_video_v2/2026-06-13-test/manifest.json` 同步。
+- `gpu-252-gpu1-wan22_video_v2` 同样依赖 `FL_RIFE` 后处理；slot 配置会从宿主机旧 `inst1` 路径 `/home/user/APP/data/inst1/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth` 预置到 AIO 内两处 RIFE 缓存路径，避免运行时访问 HuggingFace。
+- 目标用户无免密 sudo 时，镜像可由本地主服务器 `docker save ... | ssh allbot-gpu-252 docker load` 预置，避免为了配置 insecure registry 重启整台 Docker daemon。
 
 运维边界：
 - 只处理 `img2img/img2img_lora` 相关问题时，优先定位 `comfy0` 与 worker 04。
-- 只处理 `wan22_video_v2/image_to_video` 相关问题时，优先定位 `comfy1` 与 worker 05；`video_edit` 只按 `image_to_video` legacy alias 看待。
+- 只处理 `wan22_video_v2` 相关问题时，优先定位 `allbot-lan-aio-gpu-252-gpu1-wan22_video_v2-prod` 与 `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01`；旧 `comfy1` / `cloud-prod-comfy-agent-5` 只用于回滚。普通 `image_to_video` 和 `video_edit` 不应路由到该 AIO。
 - 修改共享模型目录会同时影响两个 worker；修改 `inst0/inst1` 下 custom_nodes/workflows/input/output/temp 只影响对应容器。
 
 ### 5.4 `allbot-gpu-002` / `192.168.1.2`
@@ -374,9 +383,9 @@ curl -fsS http://100.107.220.127:8003/system/status
 4. 目标 ComfyUI：`curl -fsS http://<gpu-ip>:<port>/system_stats`
 5. 目标 ComfyUI 队列：`curl -fsS http://<gpu-ip>:<port>/queue`
 6. 目标 GPU 节点：`ssh allbot-gpu-xxx 'nvidia-smi; docker ps'`
-7. 目标 Comfy 容器：`docker logs --since 5m comfy0` 或 `comfy1`
+7. 目标 Comfy/AIO 容器：`docker logs --since 5m comfy0`、`comfy1` 或目标 `allbot-lan-aio-*` 容器
 
-不要跳过 worker 到 Comfy 的对应关系。比如 `cloud-prod-comfy-agent-5` 只对应 `192.168.1.252:8189` / `comfy1`，不应该重启 `192.168.1.252` 上的 `comfy0`。
+不要跳过 worker 到 Comfy 的对应关系。比如当前 `wan22_video_v2` 正式路径是 `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` -> `192.168.1.252:8191` / `allbot-lan-aio-gpu-252-gpu1-wan22_video_v2-prod`；旧 `cloud-prod-comfy-agent-5` -> `192.168.1.252:8189` / `comfy1` 只是 stopped rollback，不应该为 Wan22 v2 排障去重启 `comfy0`。
 
 ## 9. Worker 自动恢复边界
 

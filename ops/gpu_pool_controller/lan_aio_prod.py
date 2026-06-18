@@ -70,6 +70,7 @@ class LanAioProdSlot:
     old_local_agent_container: str
     remote_dir: str
     rollout_order: int
+    target_task_types: tuple[str, ...] = ()
     legacy_hot_cache_copies: tuple[LegacyHotCacheCopy, ...] = ()
     notes: str = ""
 
@@ -148,40 +149,46 @@ def load_lan_aio_prod_slots(
         comfy = next(unit for unit in node.comfy if unit.id == assignment.comfy_id)
         target_profile_id = str(item.get("target_profile_id") or assignment.profile_id)
         profile_label = _sanitize(target_profile_id)
-        gpu_index = comfy.gpu_index if comfy.gpu_index is not None else 0
+        configured_gpu_index = comfy.gpu_index if comfy.gpu_index is not None else 0
+        runtime_gpu_index = (
+            int(item["gpu_index"]) if item.get("gpu_index") is not None else comfy.gpu_index
+        )
         slot = LanAioProdSlot(
             id=str(item["id"]),
             enabled=bool(item.get("enabled", True)),
             phase=str(item.get("phase") or "canary_ready"),
             assignment_id=assignment_id,
             target_profile_id=target_profile_id,
-            host_port=int(item.get("host_port") or (8190 + int(gpu_index))),
+            host_port=int(item.get("host_port") or (8190 + int(configured_gpu_index))),
             agent_id=str(
                 item.get("agent_id")
-                or f"lan_aio_prod_{_sanitize(node.id)}_gpu{gpu_index}_{profile_label}_01"
+                or f"lan_aio_prod_{_sanitize(node.id)}_gpu{configured_gpu_index}_{profile_label}_01"
             ),
             container_name=str(
                 item.get("container_name")
-                or f"allbot-lan-aio-{node.id}-gpu{gpu_index}-{target_profile_id}-prod"
+                or f"allbot-lan-aio-{node.id}-gpu{configured_gpu_index}-{target_profile_id}-prod"
             ),
             ssh_host=str(item.get("ssh_host") or node.ssh_alias),
             node_id=node.id,
             comfy_id=comfy.id,
-            gpu_index=comfy.gpu_index,
+            gpu_index=runtime_gpu_index,
             legacy_worker_id=str(item.get("legacy_worker_id") or assignment.worker_id),
             old_runtime_container=str(
-                item.get("old_runtime_container") or f"comfy{gpu_index}"
+                item.get("old_runtime_container") or f"comfy{configured_gpu_index}"
             ),
             old_local_agent_container=str(item.get("old_local_agent_container") or ""),
             remote_dir=str(
                 item.get("remote_dir")
-                or f"/srv/allbot/runpod-runtime/aio-prod/{node.id}-gpu{gpu_index}-{profile_label}"
+                or f"/srv/allbot/runpod-runtime/aio-prod/{node.id}-gpu{configured_gpu_index}-{profile_label}"
             ),
             rollout_order=int(item.get("rollout_order") or 1000),
+            target_task_types=tuple(
+                str(task_type) for task_type in item.get("target_task_types") or []
+            ),
             legacy_hot_cache_copies=_parse_legacy_hot_cache_copies(
                 item.get("legacy_hot_cache_copies") or [],
                 default_source_container=str(
-                    item.get("old_runtime_container") or f"comfy{gpu_index}"
+                    item.get("old_runtime_container") or f"comfy{configured_gpu_index}"
                 ),
             ),
             notes=str(item.get("notes") or ""),
@@ -213,6 +220,7 @@ def slot_to_jsonable(
         "old_runtime_container": slot.old_runtime_container,
         "old_local_agent_container": slot.old_local_agent_container,
         "remote_dir": slot.remote_dir,
+        "target_task_types": list(slot.target_task_types),
         "legacy_hot_cache_copies": [
             {
                 "source_container": copy.source_container,
@@ -342,6 +350,8 @@ class LanAioProdOps:
                 runtime_shape="runpod_all_in_one",
                 agent_id=slot.agent_id,
                 environment="cloud-prod",
+                target_task_types=slot.target_task_types or None,
+                gpu_index=slot.gpu_index,
             ),
         )
         rendered = patch_remote_workers_mount(rendered, slot)
@@ -408,6 +418,13 @@ class LanAioProdOps:
         for slot in slots:
             self.render_compose(slot)
             port = _legacy_port_for_slot(self.config, slot)
+            image_ref = self.config.profiles[slot.target_profile_id].all_in_one_image_ref
+            registry_or_image_check = "docker info 2>/dev/null | grep -q '192.168.1.115:5000'"
+            if image_ref:
+                registry_or_image_check = (
+                    f"( {registry_or_image_check} || "
+                    f"docker image inspect '{image_ref}' >/dev/null 2>&1 )"
+                )
             slot_checks = [
                 self._remote_check(
                     slot,
@@ -421,8 +438,8 @@ class LanAioProdOps:
                 ),
                 self._remote_check(
                     slot,
-                    "docker_insecure_registry",
-                    "docker info 2>/dev/null | grep -q '192.168.1.115:5000'",
+                    "docker_registry_or_image_present",
+                    registry_or_image_check,
                 ),
                 self._remote_check(slot, "disk_root", "df -h / | tail -1"),
             ]
@@ -577,8 +594,17 @@ class LanAioProdOps:
             image_ref = self.config.profiles[slot.target_profile_id].all_in_one_image_ref
             if not image_ref:
                 raise RuntimeError(f"profile {slot.target_profile_id} has no all_in_one_image_ref")
+            if self._remote_image_present(slot, image_ref):
+                pulled.append(
+                    {
+                        "slot": slot.id,
+                        "image_ref": image_ref,
+                        "status": "already_present",
+                    }
+                )
+                continue
             self._ssh(slot.ssh_host, f"docker pull '{image_ref}'")
-            pulled.append({"slot": slot.id, "image_ref": image_ref})
+            pulled.append({"slot": slot.id, "image_ref": image_ref, "status": "pulled"})
         return {"ok": True, "action": "pull-image", "pulled": pulled}
 
     def wait_idle(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
@@ -780,6 +806,16 @@ class LanAioProdOps:
         except Exception as exc:
             return [f"status_unavailable: {exc}"]
         return [line for line in output.splitlines() if line.strip()]
+
+    def _remote_image_present(self, slot: LanAioProdSlot, image_ref: str) -> bool:
+        try:
+            self._ssh(
+                slot.ssh_host,
+                f"docker image inspect '{image_ref}' >/dev/null 2>&1",
+            )
+        except Exception:
+            return False
+        return True
 
     def _assert_enable_aio_gate(self, slot: LanAioProdSlot) -> dict[str, Any]:
         legacy_control = self._control_state(slot.legacy_worker_id)
@@ -986,14 +1022,22 @@ docker exec "{slot.container_name}" bash -lc "curl -fsS http://127.0.0.1:8013/re
         copied: list[dict[str, Any]] = []
         for index, copy in enumerate(slot.legacy_hot_cache_copies, start=1):
             tmp_pattern = f"/tmp/allbot-hot-cache-{_sanitize(slot.id)}-{index}.XXXXXX"
-            source = f"{copy.source_container}:{copy.source_path}"
+            source_is_host_path = copy.source_container in {"__host__", "host"}
+            source = (
+                copy.source_path
+                if source_is_host_path
+                else f"{copy.source_container}:{copy.source_path}"
+            )
             lines = [
                 "set -euo pipefail",
                 f"tmp=$(mktemp {shlex.quote(tmp_pattern)})",
                 "cleanup() { rm -f \"$tmp\"; }",
                 "trap cleanup EXIT",
-                f"if ! docker cp {shlex.quote(source)} \"$tmp\"; then",
             ]
+            if source_is_host_path:
+                lines.append(f"if ! cp {shlex.quote(copy.source_path)} \"$tmp\"; then")
+            else:
+                lines.append(f"if ! docker cp {shlex.quote(source)} \"$tmp\"; then")
             if copy.required:
                 lines.extend(
                     [

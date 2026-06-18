@@ -38,6 +38,28 @@ export PREFETCH_CACHE_DIR="${PREFETCH_CACHE_DIR:-./prefetch-cache/${AGENT_ID:-ru
 cd "$ROOT_DIR"
 mkdir -p "$COMFY_INPUT_DIR" "$COMFY_OUTPUT_DIR" "$RESULT_SPOOL_DIR" "$PREFETCH_CACHE_DIR" logs
 
+shutdown_children() {
+    local status="${1:-0}"
+    trap - INT TERM
+    for pid in "${AGENT_PID:-}" "${RELAY_PID:-}" "${COMFY_PID:-}"; do
+        if [ -n "$pid" ] && kill -0 "$pid" >/dev/null 2>&1; then
+            kill "$pid" >/dev/null 2>&1 || true
+        fi
+    done
+    for pid in "${AGENT_PID:-}" "${RELAY_PID:-}" "${COMFY_PID:-}"; do
+        if [ -n "$pid" ]; then
+            wait "$pid" >/dev/null 2>&1 || true
+        fi
+    done
+    exit "$status"
+}
+
+handle_signal() {
+    shutdown_children 143
+}
+
+trap handle_signal INT TERM
+
 resolve_baked_comfyui_dir() {
     if [ -f /opt/allbot-comfyui-dir ]; then
         local baked_dir
@@ -110,4 +132,18 @@ until curl -fsS "http://${LOCAL_RELAY_HOST}:${LOCAL_RELAY_PORT}/ready" >/dev/nul
     sleep 2
 done
 
-python3 "$ROOT_DIR/comfy_agent/agent_main.py"
+python3 "$ROOT_DIR/comfy_agent/agent_main.py" &
+AGENT_PID="$!"
+
+echo "Process supervisor watching agent=${AGENT_PID} relay=${RELAY_PID} comfy=${COMFY_PID:-external}"
+set +e
+if [ -n "${COMFY_PID:-}" ]; then
+    wait -n "$AGENT_PID" "$RELAY_PID" "$COMFY_PID"
+else
+    wait -n "$AGENT_PID" "$RELAY_PID"
+fi
+supervised_status="$?"
+set -e
+
+echo "A managed process exited with status ${supervised_status}; stopping container for restart policy"
+shutdown_children "$supervised_status"

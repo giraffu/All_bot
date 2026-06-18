@@ -8,7 +8,7 @@ GPU 节点硬件、容器、ComfyUI 实例、模型挂载和单容器运维边�
 
 本文档不记录 SSH 密码、私钥内容、R2 key、数据库密码、`.env.cloud.prod` 或任何可直接登录生产环境的敏感凭据。
 
-最近一次更新：2026-06-08，Asia/Shanghai。
+最近一次更新：2026-06-18，Asia/Shanghai。
 
 ## 2. 当前 SSH Key
 
@@ -84,7 +84,7 @@ ssh gpu-252
 | :--- | :--- | :--- | :--- | :--- |
 | `allbot-gpu-226` | `192.168.1.226` | `ubantu` | `8188` | `cloud_prod_worker_01` |
 | `allbot-gpu-177` | `192.168.1.177` | `ubantui` | AIO `8190`、`8191`；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu177_gpu0_image_to_video_01`、`lan_aio_prod_gpu177_gpu1_ltx_video_01` |
-| `allbot-gpu-252` | `192.168.1.252` | `user` | `8188`、`8189` | `cloud_prod_worker_04`、`cloud_prod_worker_05` |
+| `allbot-gpu-252` | `192.168.1.252` | `user` | `8188`；AIO `8191`，旧 `8189` stopped rollback | `cloud_prod_worker_04`、`lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` |
 | `allbot-gpu-002` | `192.168.1.2` | `chuzeyu` | AIO `8190`、`8191`；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu002_gpu0_scail2_01`、`lan_aio_prod_gpu002_gpu1_image_to_video_01` |
 
 当前 4 台节点均可用 key-based SSH 登录；`sudo -n true` 均不通过，表示不是免密 sudo。需要 root 级操作时，必须由人工确认远端 sudo 密码或在维护窗口内操作。
@@ -111,12 +111,12 @@ ComfyUI 健康：
 
 ```bash
 curl -fsS http://192.168.1.226:8188/system_stats
-curl -fsS http://192.168.1.177:8188/system_stats
-curl -fsS http://192.168.1.177:8189/system_stats
+curl -fsS http://192.168.1.177:8190/system_stats
+curl -fsS http://192.168.1.177:8191/system_stats
 curl -fsS http://192.168.1.252:8188/system_stats
-curl -fsS http://192.168.1.252:8189/system_stats
-curl -fsS http://192.168.1.2:8188/system_stats
-curl -fsS http://192.168.1.2:8189/system_stats
+curl -fsS http://192.168.1.252:8191/system_stats
+curl -fsS http://192.168.1.2:8190/system_stats
+curl -fsS http://192.168.1.2:8191/system_stats
 ```
 
 关键 ComfyUI 节点：
@@ -124,12 +124,12 @@ curl -fsS http://192.168.1.2:8189/system_stats
 ```bash
 for base in \
   http://192.168.1.226:8188 \
-  http://192.168.1.177:8188 \
-  http://192.168.1.177:8189 \
+  http://192.168.1.177:8190 \
+  http://192.168.1.177:8191 \
   http://192.168.1.252:8188 \
-  http://192.168.1.252:8189 \
-  http://192.168.1.2:8188 \
-  http://192.168.1.2:8189
+  http://192.168.1.252:8191 \
+  http://192.168.1.2:8190 \
+  http://192.168.1.2:8191
 do
   echo "== $base =="
   curl -fsS "$base/object_info/FL_RIFE" | head -c 120; echo
@@ -144,14 +144,14 @@ done
 | ComfyUI URL | ComfyUI | PyTorch | RIFE 节点备注 |
 | :--- | :--- | :--- | :--- |
 | `http://192.168.1.226:8188` | `0.17.0` | `2.10.0+cu130` | `FL_RIFE` 存在，`RIFE VFI` 为空 |
-| `http://192.168.1.177:8188` | `0.18.2` | `2.11.0+cu130` | `FL_RIFE` 与 `RIFE VFI` 均存在 |
-| `http://192.168.1.177:8189` | `0.18.2` | `2.11.0+cu130` | `FL_RIFE` 与 `RIFE VFI` 均存在 |
+| `http://192.168.1.177:8190` | `0.21.1` | `2.11.0+cu128` | AIO `image_to_video`，`--disable-dynamic-vram` |
+| `http://192.168.1.177:8191` | `0.19.5` | `2.11.0+cu128` | AIO `ltx_video` |
 | `http://192.168.1.252:8188` | `0.18.5` | `2.11.0+cu128` | `FL_RIFE` 与 `RIFE VFI` 均存在 |
-| `http://192.168.1.252:8189` | `0.22.0` | `2.11.0+cu128` | `FL_RIFE` 与 `RIFE VFI` 均存在 |
-| `http://192.168.1.2:8188` | `0.19.5` | `2.11.0+cu128` | `FL_RIFE` 与 `RIFE VFI` 均存在 |
-| `http://192.168.1.2:8189` | `0.22.0` | `2.11.0+cu128` | `FL_RIFE` 与 `RIFE VFI` 均存在 |
+| `http://192.168.1.252:8191` | `0.21.1` | `2.11.0+cu128` | AIO `wan22_video_v2`，`--disable-dynamic-vram` |
+| `http://192.168.1.2:8190` | `0.25.0` | `2.11.0+cu128` | AIO SCAIL-2 |
+| `http://192.168.1.2:8191` | `0.21.1` | `2.11.0+cu128` | AIO `image_to_video` |
 
-`192.168.1.177:8189` 是 `cloud_prod_worker_03` 使用的 ComfyUI 端口。2026-06-08 已在 `comfy1` 容器内补齐 `socksio` 并重启，使 `comfyui_fill-nodes` 正常加载 `FL_RIFE`；worker compose 不再需要 `WAN22_RIFE_NODE_CLASS`。
+旧 `192.168.1.177:8188/8189`、`192.168.1.252:8189` 和 `192.168.1.2:8188/8189` 只作为 stopped rollback baseline 或旧 runtime 口径保留；日常健康检查优先使用上表 AIO 端口。`gpu-252` 的 `wan22_video_v2` AIO slot 名为 `gpu1/8191`，但当前 Docker/NVIDIA runtime 中实际 device 覆盖为 `0`。
 
 ## 7. 权限与安全边界
 

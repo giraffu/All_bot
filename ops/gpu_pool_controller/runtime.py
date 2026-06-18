@@ -43,10 +43,14 @@ class RuntimeRenderOverrides:
     agent_id: str | None = None
     central_url: str | None = None
     environment: str | None = None
+    target_task_types: tuple[str, ...] | None = None
+    gpu_index: int | None = None
 
     def __post_init__(self) -> None:
         if self.host_port is not None and not 1 <= self.host_port <= 65535:
             raise ValueError("--host-port must be between 1 and 65535")
+        if self.gpu_index is not None and self.gpu_index < 0:
+            raise ValueError("--gpu-index must be non-negative")
         if self.runtime_shape is not None and self.runtime_shape not in {
             STANDARD_RUNTIME_SHAPE,
             RUNPOD_AIO_RUNTIME_SHAPE,
@@ -57,6 +61,10 @@ class RuntimeRenderOverrides:
         if self.environment is not None and self.environment not in LAN_AIO_ENVIRONMENTS:
             allowed = ", ".join(sorted(LAN_AIO_ENVIRONMENTS))
             raise ValueError(f"--environment must be one of: {allowed}")
+        if self.target_task_types is not None and not all(
+            task_type.strip() for task_type in self.target_task_types
+        ):
+            raise ValueError("--target-task-types must not contain empty values")
 
     @property
     def has_any(self) -> bool:
@@ -71,6 +79,8 @@ class RuntimeRenderOverrides:
                 self.agent_id,
                 self.central_url,
                 self.environment,
+                self.target_task_types,
+                self.gpu_index,
             )
         )
 
@@ -104,8 +114,11 @@ class RuntimePlanner:
             overrides=overrides,
             for_render=False,
         )
-        target_task_types = (
-            profile.task_types if target_profile_id else assignment.task_types
+        target_task_types = self._target_task_types(
+            assignment=assignment,
+            profile=profile,
+            target_profile_id=target_profile_id,
+            overrides=overrides,
         )
         bundle_versions = self._bundle_versions(profile)
         worker_env = self._worker_env(
@@ -170,6 +183,12 @@ class RuntimePlanner:
         node = self._node_for(assignment)
         comfy = self._comfy_for(node, assignment)
         profile = self._profile_for(target_profile_id or assignment.profile_id)
+        target_task_types = self._target_task_types(
+            assignment=assignment,
+            profile=profile,
+            target_profile_id=target_profile_id,
+            overrides=overrides,
+        )
         self._validate_overrides(
             assignment=assignment,
             comfy=comfy,
@@ -187,6 +206,7 @@ class RuntimePlanner:
                 node=node,
                 comfy=comfy,
                 profile=profile,
+                target_task_types=target_task_types,
                 overrides=overrides,
             )
         service_name = self._effective_container_name(comfy, overrides)
@@ -215,7 +235,9 @@ class RuntimePlanner:
                     "ports": [f"{host_port}:{container_port}"],
                     "environment": {
                         "TZ": "Asia/Shanghai",
-                        "NVIDIA_VISIBLE_DEVICES": str(comfy.gpu_index or 0),
+                        "NVIDIA_VISIBLE_DEVICES": str(
+                            self._effective_gpu_index(comfy, overrides)
+                        ),
                         "COMFY_HOST": "0.0.0.0",
                         "COMFY_PORT": str(container_port),
                         "COMFY_MODEL_DIR": "/data/comfy/models",
@@ -255,7 +277,9 @@ class RuntimePlanner:
                     "gpus": [
                         {
                             "driver": "nvidia",
-                            "device_ids": [str(comfy.gpu_index or 0)],
+                            "device_ids": [
+                                str(self._effective_gpu_index(comfy, overrides))
+                            ],
                             "capabilities": ["gpu"],
                         }
                     ],
@@ -294,6 +318,7 @@ class RuntimePlanner:
         node: GpuNode,
         comfy: ComfyInstance,
         profile: TaskProfile,
+        target_task_types: tuple[str, ...],
         overrides: RuntimeRenderOverrides,
     ) -> str:
         image_ref = profile.all_in_one_image_ref or profile.image_ref or comfy.image
@@ -331,7 +356,7 @@ class RuntimePlanner:
         ).rstrip("/")
         user_data_bucket = environment_settings["user_data_bucket"]
         agent_id = overrides.agent_id or assignment.worker_id
-        supported_task_types = ",".join(profile.task_types)
+        supported_task_types = ",".join(target_task_types)
         model_prefix = profile.model_prefix or f"{profile.id}/unversioned"
         model_manifest_key = (
             profile.model_manifest_key or f"{model_prefix.rstrip('/')}/manifest.json"
@@ -398,7 +423,9 @@ class RuntimePlanner:
                     "ports": [f"{host_port}:8188"],
                     "environment": {
                         "TZ": "Asia/Shanghai",
-                        "NVIDIA_VISIBLE_DEVICES": str(comfy.gpu_index or 0),
+                        "NVIDIA_VISIBLE_DEVICES": str(
+                            self._effective_gpu_index(comfy, overrides)
+                        ),
                         "ALLBOT_RUNPOD_MANAGED": "true",
                         "RUNPOD_ENVIRONMENT": environment,
                         "RUNPOD_TASK_TYPE": profile.runtime_profile,
@@ -415,7 +442,9 @@ class RuntimePlanner:
                         "SUPPORTED_TASK_TYPES": supported_task_types,
                         "POOL_NODE_ID": node.id,
                         "POOL_PROVIDER": assignment.provider,
-                        "POOL_GPU_INDEX": "" if comfy.gpu_index is None else str(comfy.gpu_index),
+                        "POOL_GPU_INDEX": str(
+                            self._effective_gpu_index(comfy, overrides)
+                        ),
                         "POOL_RUNTIME_PROFILE": profile.runtime_profile,
                         "POOL_IMAGE_REF": image_ref,
                         "POOL_MODEL_BUNDLE_VERSIONS": json.dumps(
@@ -465,7 +494,7 @@ class RuntimePlanner:
                         "RUNPOD_MODEL_SECURE": "false",
                         "RUNPOD_START_SSHD": "false",
                         "RUNPOD_INSTALL_SSHD_IF_MISSING": "false",
-                        "RUNPOD_KEEPALIVE_ON_BOOTSTRAP_FAILURE": "true",
+                        "RUNPOD_KEEPALIVE_ON_BOOTSTRAP_FAILURE": "false",
                     },
                     "volumes": [f"{workspace_host_dir}:/workspace"],
                     "labels": {
@@ -499,7 +528,9 @@ class RuntimePlanner:
                     "gpus": [
                         {
                             "driver": "nvidia",
-                            "device_ids": [str(comfy.gpu_index or 0)],
+                            "device_ids": [
+                                str(self._effective_gpu_index(comfy, overrides))
+                            ],
                             "capabilities": ["gpu"],
                         }
                     ],
@@ -526,6 +557,7 @@ class RuntimePlanner:
                 "local_relay_url": "http://127.0.0.1:8013",
                 "comfy_api_url": "http://127.0.0.1:8188",
                 "model_bundle_versions": bundle_versions,
+                "supported_task_types": list(target_task_types),
                 "rendered_for": (
                     "canary_dry_run_review"
                     if render_mode == "canary"
@@ -536,6 +568,8 @@ class RuntimePlanner:
                 "host_port": host_port,
                 "container_port": 8188,
                 "container_name": container_name,
+                "restart_policy": "unless-stopped",
+                "process_supervision": "exit_container_when_agent_relay_or_comfy_exits",
                 "workspace_host_dir": workspace_host_dir,
                 "secret_policy": "runtime_env_placeholders_only",
             },
@@ -650,6 +684,18 @@ class RuntimePlanner:
             versions[bundle_id] = bundle.version if bundle else "undefined"
         return versions
 
+    def _target_task_types(
+        self,
+        *,
+        assignment: Assignment,
+        profile: TaskProfile,
+        target_profile_id: str | None,
+        overrides: RuntimeRenderOverrides,
+    ) -> tuple[str, ...]:
+        if overrides.target_task_types:
+            return overrides.target_task_types
+        return profile.task_types if target_profile_id else assignment.task_types
+
     def _validate_overrides(
         self,
         *,
@@ -680,7 +726,7 @@ class RuntimePlanner:
             "POOL_MANAGED": "true",
             "POOL_PROVIDER": assignment.provider,
             "POOL_NODE_ID": node.id,
-            "POOL_GPU_INDEX": "" if comfy.gpu_index is None else str(comfy.gpu_index),
+            "POOL_GPU_INDEX": str(self._effective_gpu_index(comfy, overrides)),
             "POOL_RUNTIME_PROFILE": profile.runtime_profile,
             "POOL_IMAGE_REF": self._target_image_ref(
                 comfy=comfy,
@@ -732,6 +778,7 @@ class RuntimePlanner:
             "configured_host_port": comfy.port,
             "container_port": comfy.container_port,
             "gpu_index": comfy.gpu_index,
+            "effective_gpu_index": self._effective_gpu_index(comfy, overrides),
             "current_image": comfy.image,
             "model_dir": comfy.model_dir,
             "instance_dir": comfy.instance_dir,
@@ -817,6 +864,7 @@ class RuntimePlanner:
                 "host_port": host_port,
                 "configured_host_port": comfy.port,
                 "container_port": comfy.container_port,
+                "effective_gpu_index": self._effective_gpu_index(comfy, overrides),
             },
             "render": {
                 "mode": self._render_mode(comfy, overrides),
@@ -1150,6 +1198,15 @@ class RuntimePlanner:
         if self._render_mode(comfy, overrides) == "canary":
             return f"{base}-canary"
         return base
+
+    def _effective_gpu_index(
+        self,
+        comfy: ComfyInstance,
+        overrides: RuntimeRenderOverrides,
+    ) -> int:
+        if overrides.gpu_index is not None:
+            return overrides.gpu_index
+        return comfy.gpu_index if comfy.gpu_index is not None else 0
 
     def _effective_api_url(
         self,

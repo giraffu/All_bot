@@ -56,6 +56,22 @@ def test_lan_aio_prod_slot_declares_gpu177_rife_hot_cache_copy():
     )
 
 
+def test_lan_aio_prod_slot_declares_gpu252_host_rife_hot_cache_copy():
+    slot = load_lan_aio_prod_slots()["gpu-252-gpu1-wan22_video_v2"]
+
+    assert len(slot.legacy_hot_cache_copies) == 1
+    hot_cache = slot.legacy_hot_cache_copies[0]
+    assert hot_cache.source_container == "__host__"
+    assert hot_cache.source_path == (
+        "/home/user/APP/data/inst1/custom_nodes/ComfyUI_Fill-Nodes/"
+        "nodes/cache/rife_models/rife49.pth"
+    )
+    assert hot_cache.target_paths == (
+        "/default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth",
+        "/default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth",
+    )
+
+
 def test_lan_aio_fleet_render_patches_remote_workers_mount_for_gpu_252():
     ops = LanAioProdOps(
         config_root=None,
@@ -74,6 +90,9 @@ def test_lan_aio_fleet_render_patches_remote_workers_mount_for_gpu_252():
     assert "user-data-test" not in rendered
     assert f"AGENT_ID: {slot.agent_id}" in rendered
     assert f"container_name: {slot.container_name}" in rendered
+    assert "restart: unless-stopped" in rendered
+    assert "RUNPOD_KEEPALIVE_ON_BOOTSTRAP_FAILURE: 'false'" in rendered
+    assert "process_supervision: exit_container_when_agent_relay_or_comfy_exits" in rendered
     assert f"{slot.remote_workers_dir}:/workspace/allbot/remote_workers" in rendered
     assert "PYTHONPATH: /workspace/allbot/remote_workers" in rendered
     assert "remote_workers_bundle:" in rendered
@@ -139,9 +158,16 @@ def test_lan_aio_fleet_render_disables_dynamic_vram_for_wan22_v2():
         aio_env_file=Path(".env.lan-aio-prod.missing"),
         model_env_file=Path(".env.lan.model-cache.missing"),
     )
-    rendered = ops.render_compose(ops.slots["gpu-252-gpu1-wan22_video_v2"])
+    slot = ops.slots["gpu-252-gpu1-wan22_video_v2"]
+    rendered = ops.render_compose(slot)
 
+    assert slot.phase == "prod_enabled"
+    assert slot.target_task_types == ("wan22_video_v2",)
     assert "POOL_RUNTIME_PROFILE: wan22_video_v2" in rendered
+    assert "POOL_GPU_INDEX: '0'" in rendered
+    assert "NVIDIA_VISIBLE_DEVICES: '0'" in rendered
+    assert "SUPPORTED_TASK_TYPES: wan22_video_v2" in rendered
+    assert "SUPPORTED_TASK_TYPES: wan22_video_v2,video_edit,image_to_video" not in rendered
     assert "--disable-dynamic-vram" in rendered
 
 
@@ -203,6 +229,36 @@ def test_lan_aio_prod_preseeds_legacy_hot_cache_paths():
     assert host == "allbot-gpu-177"
     assert "docker cp comfy0:/root/ComfyUI/custom_nodes/comfyui_fill-nodes" in command
     assert "ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth" in command
+    assert "ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth" in command
+
+
+def test_lan_aio_prod_preseeds_host_hot_cache_paths():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.ssh_calls: list[tuple[str, str]] = []
+
+        def _ssh(self, host: str, command: str, *, capture: bool = False) -> str:
+            self.ssh_calls.append((host, command))
+            return ""
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-252-gpu1-wan22_video_v2"]
+
+    copied = ops._preseed_legacy_hot_caches(slot)
+
+    assert copied[0]["source_container"] == "__host__"
+    assert copied[0]["source_path"].startswith("/home/user/APP/data/inst1/")
+    assert len(ops.ssh_calls) == 1
+    host, command = ops.ssh_calls[0]
+    assert host == "allbot-gpu-252"
+    assert "cp /home/user/APP/data/inst1/custom_nodes/ComfyUI_Fill-Nodes" in command
+    assert "docker cp __host__:" not in command
     assert "ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth" in command
 
 
