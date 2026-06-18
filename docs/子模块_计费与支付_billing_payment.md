@@ -105,6 +105,12 @@ sequenceDiagram
 - Billing core 不在模块 import 时自动装配 provider；应用入口负责调用 `ensure_billing_core_providers_registered()`。
 - 当前必须注册 billing provider 的入口包括 `src/web_api/main.py`、`src/bot_main.py`、`src/payment_api_server.py` 和 `dashboard/backend/main.py`。
 - Dashboard Backend 的退款、强制终止、资产调整和订单处理会进入 billing core；若只注册 task core provider，会触发 `Billing core providers 未注册`。
+- `paid_group_guard_bot` 只读查询 `users` / `orders` 判断付费群入群资格，不做支付履约、返佣、灵石、会员结算或 user_logs 写入，因此不属于 billing provider 注册入口。
+
+### 4.6 付费群审核资格
+- 付费群审核 Bot 的默认资格口径为：`users.telegram_id` 命中申请人，且存在 `orders.status = 'SUCCESS'` 的历史订单。
+- 真实支付订单要求 `paid_at IS NOT NULL`；后台赠送免费套餐订单通过 `tx_hash` 的 `manual_` 前缀或 `order_id` 的 `GIFT:` 前缀识别。
+- 单纯手动修改身份但未生成订单的用户不会被自动放行；如需纳入，应通过后台赠送套餐补齐订单记录或另建白名单能力。
 
 ## 5. 对外接口口径
 - RMB 支付回调：`POST /api/payment/notify`

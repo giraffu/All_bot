@@ -13,6 +13,7 @@ description: "处理 Telegram FSM、全局菜单黑盒退出、callback 路由�
 - **Callback 注册路由**：回调处理依赖 `register_callback` 前缀注册、长度降序匹配与统一 `safe_answer_query` 兜底，修改 callback 拆分时必须维护这套契约。
 - **临时文件生命周期**：常规 FSM 文件流已优先收口到 `fsm_temp_file_service.py`，负责目录创建、下载与清理；大文件 Monkey Patch 不是唯一主路径。
 - **语言切换同步**：语言切换不只是菜单文案变化，还涉及 DB + Redis 双缓存同步。
+- **独立付费群审核 Bot**：`paid_group_guard_bot/` 使用独立 token，只订阅 `chat_join_request`，按订单资格审核付费群入群申请；不要把它接入主业务 FSM 或复用主业务 `BOT_TOKEN`。
 
 ## 2. 输入输出规范
 ### FSM 状态流转
@@ -55,6 +56,7 @@ def build_handler() -> ConversationHandler:
 
 ## 4. 核心红线
 - Web API 严禁直接消费 Telegram 表示层逻辑；Bot 任务提交通常走 `bot_task_service` / 各 FSM entrypoint / `run_bot_task_application(...)`。
+- 付费群审核 Bot 必须和主业务 Bot token 隔离；同一个 token 不得同时被两个 polling 进程使用。
 - FSM 内不得依赖硬编码菜单词做全局退出判断，必须走统一菜单路由。
 - 临时文件、下载目录和清理逻辑应优先下沉到服务层，避免各 FSM 重复拼装。
 - callback 路由拆分时必须确保主入口导入子模块触发注册，不能因加载顺序拿到空路由表。
@@ -70,4 +72,5 @@ def build_handler() -> ConversationHandler:
 - 覆盖 FSM 意外菜单拦截与超时退出。
 - 覆盖 callback 路由注册与未命中前缀的统一兜底。
 - 覆盖临时文件下载/清理服务的行为契约。
+- 覆盖 `paid_group_guard_bot` 的资格命中、未命中保留待审/拒绝、目标群过滤与 dry-run 行为。
 - 当 FSM 使用 PTB 已知 warning 配置时，测试应显式说明该 warning 是否属于预期行为。

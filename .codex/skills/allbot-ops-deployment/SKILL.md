@@ -21,7 +21,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 - **标准部署入口**：云测试完整更新使用 `scripts/update_cloud_test_with_maintenance.sh`，云测试远端控制面重建子步骤使用 `scripts/safe_deploy_cloud_test.sh`；云正式使用 `scripts/safe_deploy_cloud_prod.sh` 或 cloud-prod compose 单服务重建；本地 `safe_deploy.sh` 只用于云正式整体故障时的本地正式灾备。
 - **云测试控制面**：`allbot-do-sgp1-test-control` 使用 `deploy/docker-compose-cloud-test.yml`，同机运行测试 Postgres、Redis、Central API、Web API、Dashboard Backend/Frontend、imgproxy 与测试 Bot；本地主服务器运行 8 个 cloud-test worker，经 Tailscale 访问云测试 Central；对象存储为 R2 `user-data-test`。
 - **云正式控制面**：正式生产运行在 `allbot-do-sgp1-control`，使用 `.env.cloud.prod`、`deploy/docker-compose-cloud-prod.yml`、`workers/docker-compose-cloud-prod-worker.yml`、`scripts/safe_deploy_cloud_prod.sh` 与 `scripts/start_cloud_prod_worker.sh`。云端运行 Central/Web/Payment/Dashboard/imgproxy/TG Bot；本地主服务器 compose 声明 `cloud-prod-worker-relay` 与 `cloud-prod-comfy-agent-1..7`，但线上实际容量还可能包含 LAN AIO agent、`remote_workers` 与手动 RunPod。容量判断必须以 Central `/system/workers` 的当次快照和运维目标为准，不能写死为 7 个本地 worker。
-- **生产 Bot 安全**：重建或启动 `cloud-tg-bot-prod` 前，必须确认全网没有第二个同 token Telegram polling 实例。
+- **生产 Bot 安全**：重建或启动 `cloud-tg-bot-prod` 前，必须确认全网没有第二个同 token Telegram polling 实例。独立付费群审核 Bot 必须使用 `PAID_GROUP_BOT_TOKEN`，只订阅 `chat_join_request`，不得复用主业务 `BOT_TOKEN`。
 - **Cloudflare 正式入口**：`web.aivison.it.com` 是 Cloudflare Pages 静态站；正式 API 健康检查是 `https://api.aivison.it.com/api/health`，不是 `web.aivison.it.com/api/health`；RMB 入口为 `https://rmb.aivison.it.com/pay/result`。
 - **Dashboard**：云端 Dashboard Frontend 默认绑定 Tailscale；本地管理员入口为 `http://192.168.1.115:8086/`，由本地主服务器 Nginx 网关反代云正式 Dashboard Backend。公网管理域名必须有 Cloudflare Access 或等价身份层保护。
 - **workflow 事实源**：`workers/comfy_agent/workflows` 是唯一 workflow 运行时事实源。Central API 不挂载、不 COPY、不启动校验 workflow；改 workflow/mappings/patcher 后必须重建或重启目标 Worker。
@@ -55,6 +55,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 - 部署前必须检查 Alembic multiple heads；发现多 head 立即中止。
 - Alembic 迁移通过后在宿主机显式执行 `alembic upgrade head`；不要写“容器下次启动会自动应用迁移”。
 - 生产脚本必须显式导出 `BOT_TYPE=PROD`，测试脚本显式使用测试口径；不要依赖 `config.py` 默认值。
+- 付费群审核 Bot 如写入 compose，应作为独立 service，复用项目镜像并以 `python -m paid_group_guard_bot` 启动；需要显式传入 `PAID_GROUP_BOT_TOKEN`、`PAID_GROUP_CHAT_ID` 与目标环境 `DATABASE_URL`。
 - `env_file` 只传给容器，不参与 compose 文件 `${...}` 插值；涉及 compose 默认值时必须渲染并核对容器内实际 env。
 - 普通研发不得默认执行 `safe_deploy.sh`、生产 compose 或正式服务重建。
 - 不要把“修 Bug/联调/改配置”理解为“允许上线”；进入正式发布前必须有明确用户确认。

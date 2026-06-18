@@ -13,6 +13,7 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 - **多支付通道履约**：RMB、TON、Telegram Stars 均收口到 `payment_fulfillment_service.fulfill_payment_command(...)` 的共享履约内核；RMB `fulfill_order(...)` 仅作为兼容包装保留，TON / Stars 适配层只负责通道解析、金额校验输入与通知适配。
 - **Affiliate 账本闭环**：支付成功后可计算首单返佣并落 `affiliate_transactions`；affiliate 余额既可兑换灵石，也可兑换会员/权益，并保留完整审计流水。
 - **站内灵石转账**：用户之间的灵石转移使用 `QuotaManager.transfer_credits(...)`，在同一事务内锁定双方用户、扣减买家、增加收款方并写入双方 `user_logs`；Gallery 提示词解锁固定走此入口。
+- **付费群审核资格**：`paid_group_guard_bot` 只读查询 `users.telegram_id` 与 `orders`，默认允许历史成功支付订单和后台赠送套餐订单对应的 Telegram 用户入群；该路径不做资产副作用。
 - **Provider 化 billing core**：billing core 相关默认能力已收口到 provider/dependencies 模式，新增逻辑应优先走 provider 注册与依赖注入边界。
 - **入口负责 provider 注册**：Bot、Web API、Payment API 和 Dashboard Backend 只要会调用 billing core，都必须在启动入口调用 `ensure_billing_core_providers_registered()`。Dashboard 的退款、强制终止和资产类管理接口也会进入 billing core；只注册 task core provider 会触发 `Billing core providers 未注册`。
 
@@ -45,6 +46,13 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 - **语义**：同事务完成转出方扣减、转入方增加与双方 `user_logs`；调用方可复用外部 `AsyncSession` 并负责最终提交。
 - **典型场景**：Gallery 提示词解锁，买家消耗 1 灵石，作者获得 1 灵石。
 
+### 付费群审核资格
+- **入口**：`paid_group_guard_bot.eligibility.check_paid_group_eligibility(...)`
+- **输入**：Telegram user id
+- **输出**：`PaidGroupEligibilityDecision(eligible, reason, internal_user_id, matched_order_id)`
+- **语义**：命中 `users.telegram_id` 且存在 `orders.status = 'SUCCESS'`，其中真实支付订单要求 `paid_at IS NOT NULL`，后台赠送套餐通过 `manual_` tx_hash 或 `GIFT:` order_id 识别。
+- **红线**：该入口只读，不更新会员身份、灵石、订单、返佣或 user_logs。
+
 ## 3. 核心红线
 - 严禁手写 `UPDATE users SET credits = ...` 绕过账本与既有结算逻辑。
 - 任何资产副作用前，必须先有唯一业务单、外部流水或幂等键作为锚点。
@@ -53,6 +61,7 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 - Affiliate 缓存失效必须放在最终提交成功后执行，不能在提交前删除缓存。
 - 汇率缺失、金额不匹配或结算参数冲突时必须 fail fast，不能静默降级。
 - 新增 billing/auth 改动优先走 provider/dependency 注入模式，不回退到 core 直连基础设施实现。
+- 付费群审核资格不得绕过订单事实源去直接相信 `current_identity`，否则手动改身份、过期身份和赠送订单会混成同一语义。
 - TON 轮询游标必须持久化到 `runtime_checkpoints`，key 形如 `ton:<merchant_address>:last_lt`；抓链失败或履约失败时不得前移游标。
 - `TON_PAYMENT_POLLING_ENABLED=false` 可禁用 Bot 启动时的 TON 链上轮询；云测试 `bot-test` 默认关闭该轮询，避免空测试库回扫真实商户地址历史交易。生产默认仍为开启。
 
@@ -69,3 +78,4 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 - 密码登录需覆盖 Redis 限流、错误口令、改密后旧 token 失效与安全通知。
 - Affiliate 兑换需覆盖 PostgreSQL 并发、同幂等稳定返回、同幂等参数冲突。
 - 若修改会员结算或 affiliate 会员兑换，必须补对应 focused tests 与审计断言。
+- 若修改付费群审核资格口径，必须补 `tests/paid_group_guard_bot` 中的 SQL/handler focused tests，并同步 `docs/子模块_付费群审核Bot_paid_group_guard_bot.md`。
