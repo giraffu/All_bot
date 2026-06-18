@@ -99,6 +99,7 @@ yarn-error.log*
 *.backup
 *.orig
 logs/
+runtime/
 tmp/
 temp/
 .dbg/

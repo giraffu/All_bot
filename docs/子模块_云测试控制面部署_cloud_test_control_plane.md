@@ -9,7 +9,8 @@
 - 远程主机别名：`allbot-do-sgp1-test-control`
 - 远程代码目录：`/home/deploy/APP/All_bot`
 - Compose 文件：`deploy/docker-compose-cloud-test.yml`
-- 部署脚本：`scripts/safe_deploy_cloud_test.sh`
+- 推荐维护式更新脚本：`scripts/update_cloud_test_with_maintenance.sh`
+- 远端控制面重建脚本：`scripts/safe_deploy_cloud_test.sh`
 - 环境文件：`.env.cloud.test`
 - 本地 cloud-worker Compose 文件：`workers/docker-compose-cloud-worker-test.yml`
 - 本地停止测试栈脚本：`scripts/stop_local_test_preserve.sh`
@@ -82,7 +83,33 @@ Web 前端上传参考图/视频时会先调用云端 Web API 获取预签名地
 ```
 
 ## 3. 部署命令
-从本地主服务器同步代码后，在云端执行：
+常规测试环境更新优先在本地主服务器仓库根目录执行维护式脚本：
+
+```bash
+scripts/update_cloud_test_with_maintenance.sh --execute
+```
+
+该脚本默认流程：
+1. 在云测试 `cloud-web-api-test` / `cloud-tg-bot-test` 写入生成维护标记，阻止新的生成任务提交。
+2. 等待 Central Redis `comfy:queue:pending` 与 `comfy:queue:running` 同时清空。
+3. 用 `rsync` 同步当前工作区代码到 `allbot-do-sgp1-test-control:/home/deploy/APP/All_bot`，保留远端 `logs/`、`runtime/`，清理并排除 `node_modules/`、`backups/`、临时模板素材等运行时或本地数据目录，并继续排除通配 `.env.*`，避免误同步正式或本地密钥文件。
+4. 单独同步本地 `.env.cloud.test` 到远端 `.env.cloud.test`；同步前远端会创建 `.env.cloud.test.bak.<timestamp>` 备份，目标文件权限设为 `600`，并用校验和确认远端文件与本地一致。若需要保留远端 env，可显式加 `--skip-env-sync`。
+5. 在远端执行 `scripts/safe_deploy_cloud_test.sh` 重建 Central API、Web API、Dashboard Backend、Dashboard Frontend 与 imgproxy。
+6. 若测试 Bot 原本在运行，按 `bot` profile 重建并拉起 `bot-test`；若原本未运行，默认保持停止，避免抢占测试 token。
+7. 默认执行 `frontend npm run deploy:edge-test` 发布 `web-test.aivison.it.com` 静态前端。
+8. 验证 cloud-test compose、健康检查、Central `/system/workers` 与队列快照；队列快照按 `CLOUD_TEST_WORKER_REDIS_URL` 的 DB 读取。成功后解除生成维护；失败时维护标记保持开启，避免半更新状态继续进新任务。
+
+常用参数：
+- `--bot-mode start|skip|stop|auto`：默认 `auto`，只在 Bot 原本运行时重建并启动。
+- `--env-file FILE`：指定要同步到远端 `.env.cloud.test` 的本地测试环境文件，默认读取仓库根目录 `.env.cloud.test`。
+- `--skip-env-sync`：不更新远端 `.env.cloud.test`，仅使用远端现有环境文件。
+- `--skip-edge-web`：只更新控制面，不发布边缘测试 Web 静态站。
+- `--keep-maintenance`：部署成功后仍保持 Web/Bot 生成维护，便于人工验收后再手动解除。
+- `--skip-drain`：跳过排空等待，仅用于明确接受测试环境中断的紧急更新。
+
+测试 Web/Bot compose 挂载 `../runtime/cloud-test:/app/runtime-flags`，并通过 `GENERATION_MAINTENANCE_FILE=/app/runtime-flags/GENERATION_MAINTENANCE` 读取生成维护标记。维护式脚本会先写远端 `runtime/cloud-test/GENERATION_MAINTENANCE`，因此重建后的新容器仍会保持维护状态，直到脚本最后解除。
+
+专项情况下，也可以从本地主服务器同步代码后，在云端只执行控制面重建子步骤：
 
 ```bash
 ssh allbot-do-sgp1-test-control
@@ -90,7 +117,7 @@ cd /home/deploy/APP/All_bot
 ./scripts/safe_deploy_cloud_test.sh
 ```
 
-脚本执行顺序：
+`safe_deploy_cloud_test.sh` 执行顺序：
 1. 校验 `CLOUD_TEST_DATABASE_URL`、`CLOUD_TEST_REDIS_URL`、`CLOUD_TEST_WORKER_REDIS_URL` 与同机 Postgres/Redis 密码。
 2. 启动并等待 `postgres-test`、`redis-test` 健康。
 3. 构建 Central API、Web API、Dashboard Backend、Dashboard Frontend 镜像。

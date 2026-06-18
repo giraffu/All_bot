@@ -6,7 +6,7 @@
 - `web-api` 等服务若未挂载源码卷，代码变更后必须 `--build` 重建镜像才会生效。
 
 ## 2. 当前推荐部署路径
-- 功能研发、联调、修复、配置调整：首选云测试控制面 `scripts/safe_deploy_cloud_test.sh`；旧本地隔离测试栈脚本/compose 仅作历史保留和必要人工取证材料，不再作为受支持的测试或回滚环境
+- 功能研发、联调、修复、配置调整：首选云测试维护式更新脚本 `scripts/update_cloud_test_with_maintenance.sh --execute`；远端控制面重建子步骤仍由 `scripts/safe_deploy_cloud_test.sh` 执行。旧本地隔离测试栈脚本/compose 仅作历史保留和必要人工取证材料，不再作为受支持的测试或回滚环境
 - 当前云正式生产热修：按云正式文档使用 `scripts/safe_deploy_cloud_prod.sh` 或目标 cloud-prod compose 单服务重建
 - 本地正式灾备：仅在云正式整体不可用时按 `docs/子模块_本地正式灾备切换_local_prod_fallback.md` 切回本地主服务器
 - 本地正式灾备整栈启动/重建：仅在云正式整体故障、需要本地主服务器临时接管时才执行 `bash safe_deploy.sh`
@@ -31,8 +31,10 @@
 - 在用户完成测试验收前，不得把测试环境变更直接同步到正式 Bot、正式 Web、正式 Payment、正式 Central API 或正式 Dashboard。
 
 ## 2.2 云端测试控制面
-- DigitalOcean SGP1 Droplet 上的云测试控制面入口为 `scripts/safe_deploy_cloud_test.sh`，compose 文件为 `deploy/docker-compose-cloud-test.yml`。
+- DigitalOcean SGP1 Droplet 上的云测试维护式更新入口为 `scripts/update_cloud_test_with_maintenance.sh --execute`，compose 文件为 `deploy/docker-compose-cloud-test.yml`；`scripts/safe_deploy_cloud_test.sh` 是远端控制面重建子步骤。
 - 云测试控制面默认部署同机 Postgres、同机 Redis、Central API、Web API、Dashboard Backend、Dashboard Frontend 与 imgproxy；`bot-test` 只通过 `bot` profile 手动启动，本地主服务器另行启动 GPU worker。当前对象存储事实源是 Cloudflare R2，云测试 compose 当前不包含 MinIO、Payment API 或 Web 前端 dev 容器。
+- 维护式更新脚本会先让 Web/Bot 生成入口进入维护状态，等待 Central pending/running 队列清空，再同步代码、远端重建控制面、按需重建测试 Bot，并默认发布 `web-test.aivison.it.com` 边缘静态前端；失败时维护状态保持开启。
+- 测试 Web/Bot 使用 `runtime/cloud-test/GENERATION_MAINTENANCE` 作为跨重建生成维护标记，容器内路径为 `/app/runtime-flags/GENERATION_MAINTENANCE`，由 `GENERATION_MAINTENANCE_FILE` 注入。该目录属于运行时状态，不提交仓库。
 - 云测试 `.env.cloud.test` 已被 `.gitignore` 忽略，不能提交到仓库。
 - 云端服务端口绑定到云测试 Tailscale IP `100.82.124.91`，不直接开放公网。若临时使用 `CLOUD_TEST_BIND_IP=0.0.0.0`，必须配合源 IP 白名单，只允许边缘 VPS 与本地主服务器访问测试 API 端口，恢复后必须收回公网白名单。
 - 云测试全链路 worker 使用 `workers/docker-compose-cloud-worker-test.yml`，容器名为 `cloud-comfy-agent-test-*`，从本地主服务器经 `CLOUD_TEST_CONTROL_HOST=100.82.124.91` 访问云端 `8004` Central API，并直接访问 R2 S3 endpoint 读写 `user-data-test`。当前 compose 声明 `cloud-comfy-agent-test-1..8`，其中 `cloud_worker_test_08` 是 SCAIL-2 测试 worker。

@@ -108,6 +108,40 @@ def test_is_maintenance_mode():
             )
 
 
+def test_is_maintenance_mode_honors_generation_maintenance_env(monkeypatch):
+    import importlib
+    import src.utils as utils_module
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_maintenance_file = os.path.join(temp_dir, "MAINTENANCE")
+        temp_generation_maintenance_file = os.path.join(
+            temp_dir, "GENERATION_MAINTENANCE"
+        )
+        monkeypatch.setenv("MAINTENANCE_FILE", temp_maintenance_file)
+        monkeypatch.setenv(
+            "GENERATION_MAINTENANCE_FILE",
+            temp_generation_maintenance_file,
+        )
+        importlib.reload(utils_module)
+
+        try:
+            assert utils_module.MAINTENANCE_FILE == temp_maintenance_file
+            assert (
+                utils_module.GENERATION_MAINTENANCE_FILE
+                == temp_generation_maintenance_file
+            )
+            assert not utils_module.is_maintenance_mode()
+
+            with open(temp_generation_maintenance_file, "w") as f:
+                f.write("generation")
+
+            assert utils_module.is_maintenance_mode()
+        finally:
+            monkeypatch.delenv("MAINTENANCE_FILE", raising=False)
+            monkeypatch.delenv("GENERATION_MAINTENANCE_FILE", raising=False)
+            importlib.reload(utils_module)
+
+
 def test_load_prompts_fallback():
     from src.utils import load_prompts
 

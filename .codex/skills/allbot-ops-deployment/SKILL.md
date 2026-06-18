@@ -17,8 +17,8 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 - 边缘节点：`docs/子模块_边缘节点运维指南_edge_node_ops.md`
 
 ## 1. 当前运维口径
-- **测试优先部署**：功能研发、联调、修复与配置调整默认先更新云测试控制面，优先使用 `scripts/safe_deploy_cloud_test.sh`。只有用户明确要求正式发布、上线或交付验证时，才允许进入云正式部署。
-- **标准部署入口**：云测试使用 `scripts/safe_deploy_cloud_test.sh`；云正式使用 `scripts/safe_deploy_cloud_prod.sh` 或 cloud-prod compose 单服务重建；本地 `safe_deploy.sh` 只用于云正式整体故障时的本地正式灾备。
+- **测试优先部署**：功能研发、联调、修复与配置调整默认先更新云测试控制面，优先使用 `scripts/update_cloud_test_with_maintenance.sh --execute`；它会让测试 Web/Bot 进入生成维护、按 `CLOUD_TEST_WORKER_REDIS_URL` 指向的 Central Redis DB 等待 pending/running 队列清空、同步代码、单独备份并同步 `.env.cloud.test`、远端执行 `scripts/safe_deploy_cloud_test.sh`、按需重建测试 Bot，并默认发布边缘测试 Web。只有用户明确要求正式发布、上线或交付验证时，才允许进入云正式部署。
+- **标准部署入口**：云测试完整更新使用 `scripts/update_cloud_test_with_maintenance.sh`，云测试远端控制面重建子步骤使用 `scripts/safe_deploy_cloud_test.sh`；云正式使用 `scripts/safe_deploy_cloud_prod.sh` 或 cloud-prod compose 单服务重建；本地 `safe_deploy.sh` 只用于云正式整体故障时的本地正式灾备。
 - **云测试控制面**：`allbot-do-sgp1-test-control` 使用 `deploy/docker-compose-cloud-test.yml`，同机运行测试 Postgres、Redis、Central API、Web API、Dashboard Backend/Frontend、imgproxy 与测试 Bot；本地主服务器运行 8 个 cloud-test worker，经 Tailscale 访问云测试 Central；对象存储为 R2 `user-data-test`。
 - **云正式控制面**：正式生产运行在 `allbot-do-sgp1-control`，使用 `.env.cloud.prod`、`deploy/docker-compose-cloud-prod.yml`、`workers/docker-compose-cloud-prod-worker.yml`、`scripts/safe_deploy_cloud_prod.sh` 与 `scripts/start_cloud_prod_worker.sh`。云端运行 Central/Web/Payment/Dashboard/imgproxy/TG Bot；本地主服务器 compose 声明 `cloud-prod-worker-relay` 与 `cloud-prod-comfy-agent-1..7`，但线上实际容量还可能包含 LAN AIO agent、`remote_workers` 与手动 RunPod。容量判断必须以 Central `/system/workers` 的当次快照和运维目标为准，不能写死为 7 个本地 worker。
 - **生产 Bot 安全**：重建或启动 `cloud-tg-bot-prod` 前，必须确认全网没有第二个同 token Telegram polling 实例。
