@@ -334,7 +334,8 @@ Worker 拉到任务后会先处理输入：
 - 从 MinIO 下载输入图片或视频
 - 把输入通过 ComfyUI API 上传到 ComfyUI input 区
 - 补全 `image` / `image2` / `image3` / `face_image` / `body_image` / `video` 等参数
-- 输入下载有两层超时保护：MinIO/S3 HTTP 连接与读超时由 `MINIO_CONNECT_TIMEOUT_SECONDS`、`MINIO_READ_TIMEOUT_SECONDS`、`MINIO_HTTP_RETRY_TOTAL` 控制；整次输入文件下载由 `MINIO_DOWNLOAD_TIMEOUT_SECONDS`、`MINIO_DOWNLOAD_RETRY_ATTEMPTS`、`MINIO_DOWNLOAD_RETRY_DELAY_SECONDS` 控制。下载失败或超时会清理本地目标文件和 `.part.minio` 临时文件，并让任务进入失败补偿路径，避免 worker 长时间停在 `preparing` 而 ComfyUI 队列始终为空。
+- 输入下载优先使用 boto3 S3 client 读取当前 R2/MinIO 兼容对象存储，`MINIO_BOTO3_DOWNLOAD_ENABLED=false` 时可回退旧 MinIO SDK 路径；`MINIO_REGION` 未显式配置时，R2 endpoint 默认 `auto`，其它 MinIO endpoint 默认 `us-east-1`。
+- 输入下载有两层超时保护：S3/MinIO HTTP 连接与读超时由 `MINIO_CONNECT_TIMEOUT_SECONDS`、`MINIO_READ_TIMEOUT_SECONDS`、`MINIO_HTTP_RETRY_TOTAL` 控制，连接池由 `MINIO_HTTP_POOL_MAXSIZE` 控制；整次输入文件下载由 `MINIO_DOWNLOAD_TIMEOUT_SECONDS`、`MINIO_DOWNLOAD_RETRY_ATTEMPTS`、`MINIO_DOWNLOAD_RETRY_DELAY_SECONDS` 控制。下载失败或超时会清理本地目标文件和 `.part.minio` 临时文件，并让任务进入失败补偿路径，避免 worker 长时间停在 `preparing` 而 ComfyUI 队列始终为空。
 - 开启 `PREFETCH_ENABLED` 时，worker 会在当前 ComfyUI 执行期间通过 relay/Central `/api/agent/task/peek` 只读查看同类型下一单，并提前下载、规范化和上传输入。真实 `/pop` 后只有 `task_id` 命中预取缓存才复用；miss 或类型不匹配会丢弃缓存并回退原输入准备流程。预取阶段不做取消检查，不改变 Central 队列状态。
 - 开启 `PIPELINE_ENABLED` 时，worker 不只依赖 peek：在本地 running slot 未满时会真实 `/pop?cancel_lock=true` 下一单，并在上一单 GPU 执行期间完成输入准备与 ComfyUI `queue_prompt`。默认每个 worker 最多持有 2 个 Central running 任务，pending 仍可取消，进入输入准备后不可取消。
 

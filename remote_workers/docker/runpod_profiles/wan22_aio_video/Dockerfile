@@ -14,6 +14,8 @@ ARG FRAME_INTERPOLATION_REPO=https://github.com/Fannovel16/ComfyUI-Frame-Interpo
 ARG FRAME_INTERPOLATION_REF=26545cc2dd95bc3d27f056016300673bdeee78f5
 ARG FILL_NODES_REPO=https://github.com/filliptm/ComfyUI_Fill-Nodes.git
 ARG FILL_NODES_REF=2c94c3b675e7832ae18986e7062365c7d025b802
+ARG RIFE49_URL=https://huggingface.co/lividtm/RIFE/resolve/main/rife49.pth
+ARG RIFE49_SHA256=e55fd00f3cc184e3c65961f4bb827a9da022e78eed36b055242c0ac30000d533
 ARG GGUF_REPO=https://github.com/city96/ComfyUI-GGUF.git
 ARG GGUF_REF=main
 ARG DASIWA_REPO=https://github.com/darksidewalker/ComfyUI-DaSiWa-Nodes.git
@@ -169,6 +171,31 @@ RUN set -euo pipefail; \
     find "${target}" -type d -name __pycache__ -prune -exec rm -rf {} +; \
     python3 -m pip cache purge >/dev/null 2>&1 || true; \
     rm -rf /root/.cache/pip /tmp/* /var/tmp/*
+
+RUN set -euo pipefail; \
+    if [ -s /opt/allbot-comfyui-dir ]; then \
+      comfyui_dir="$(cat /opt/allbot-comfyui-dir)"; \
+    elif [ -f /default-comfyui-bundle/ComfyUI/main.py ]; then \
+      comfyui_dir=/default-comfyui-bundle/ComfyUI; \
+    elif [ -f /workspace/ComfyUI/main.py ]; then \
+      comfyui_dir=/workspace/ComfyUI; \
+    elif [ -f /root/ComfyUI/main.py ]; then \
+      comfyui_dir=/root/ComfyUI; \
+    else \
+      comfyui_dir="${COMFYUI_INSTALL_DIR}"; \
+    fi; \
+    test -f "${comfyui_dir}/main.py"; \
+    tmp="/tmp/allbot-rife49.pth"; \
+    curl -fsSL --retry 5 --retry-delay 3 "${RIFE49_URL}" -o "${tmp}"; \
+    printf '%s  %s\n' "${RIFE49_SHA256}" "${tmp}" | sha256sum -c -; \
+    for dst in \
+      "${comfyui_dir}/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth" \
+      "${comfyui_dir}/custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth"; do \
+      mkdir -p "$(dirname "${dst}")"; \
+      cp "${tmp}" "${dst}"; \
+      chmod 0644 "${dst}"; \
+    done; \
+    rm -f "${tmp}"
 
 ARG LTXVIDEO_REPO=https://github.com/Lightricks/ComfyUI-LTXVideo.git
 ARG LTXVIDEO_REF=229437c6b65796d6a7a63ae34be2bd5ba31fa543

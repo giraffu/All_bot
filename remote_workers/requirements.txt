@@ -1,6 +1,7 @@
 fastapi
 httpx
 minio
+boto3
 pydantic
 python-dotenv
 uvicorn

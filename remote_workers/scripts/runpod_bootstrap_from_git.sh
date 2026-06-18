@@ -545,6 +545,22 @@ install_comfyui_custom_nodes() {
     fi
 }
 
+ensure_wan22_rife_cache() {
+    local comfyui_dir="${RUNPOD_RIFE_COMFYUI_DIR:-}"
+    if [ -z "$comfyui_dir" ]; then
+        if resolved_comfy_dir="$(resolve_comfyui_dir_for_models)"; then
+            comfyui_dir="$resolved_comfy_dir"
+        fi
+    fi
+    if [ -z "$comfyui_dir" ]; then
+        python3 "$REMOTE_WORKERS_DIR/scripts/ensure_wan22_rife_cache.py"
+        return
+    fi
+    python3 "$REMOTE_WORKERS_DIR/scripts/ensure_wan22_rife_cache.py" \
+        --comfyui-dir "$comfyui_dir" \
+        --model-target-dir "${RUNPOD_MODEL_TARGET_DIR:-${comfyui_dir%/}/models}"
+}
+
 if [ "${RUNPOD_MODEL_SYNC_ENABLED:-false}" = "true" ]; then
     COMFYUI_MODEL_SYNC_DIR="${RUNPOD_MODEL_COMFYUI_DIR:-}"
     if [ -z "$COMFYUI_MODEL_SYNC_DIR" ]; then
@@ -564,6 +580,7 @@ if [ "${RUNPOD_MODEL_SYNC_ENABLED:-false}" = "true" ]; then
         --target-dir "$RUNPOD_MODEL_TARGET_DIR"
 fi
 
+ensure_wan22_rife_cache
 install_comfyui_custom_nodes
 
 if [ -n "${COMFYUI_DIR:-}" ] && [ -f "${COMFYUI_DIR}/main.py" ]; then

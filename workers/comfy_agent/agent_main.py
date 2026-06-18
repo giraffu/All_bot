@@ -11,6 +11,14 @@ import httpx
 import urllib3
 import websockets  # type: ignore
 from asgi_correlation_id import correlation_id
+try:
+    import boto3  # type: ignore
+    from boto3.s3.transfer import TransferConfig  # type: ignore
+    from botocore.config import Config as BotoConfig  # type: ignore
+except Exception:  # pragma: no cover - optional dependency fallback
+    boto3 = None
+    TransferConfig = None
+    BotoConfig = None
 from agent_input_preparation import (
     prepare_task_inputs as prepare_agent_task_inputs,
     process_single_input_asset as process_agent_single_input_asset,
@@ -111,6 +119,14 @@ MINIO_SECURE = os.getenv("MINIO_SECURE", "false").strip().lower() in TRUE_ENV_VA
 MINIO_CONNECT_TIMEOUT_SECONDS = float(os.getenv("MINIO_CONNECT_TIMEOUT_SECONDS", "10"))
 MINIO_READ_TIMEOUT_SECONDS = float(os.getenv("MINIO_READ_TIMEOUT_SECONDS", "45"))
 MINIO_HTTP_RETRY_TOTAL = int(os.getenv("MINIO_HTTP_RETRY_TOTAL", "2"))
+MINIO_HTTP_POOL_MAXSIZE = int(os.getenv("MINIO_HTTP_POOL_MAXSIZE", "8"))
+MINIO_REGION = os.getenv("MINIO_REGION") or (
+    "auto" if "r2.cloudflarestorage.com" in MINIO_ENDPOINT else "us-east-1"
+)
+MINIO_BOTO3_DOWNLOAD_ENABLED = (
+    os.getenv("MINIO_BOTO3_DOWNLOAD_ENABLED", "true").strip().lower()
+    in TRUE_ENV_VALUES
+)
 MINIO_DOWNLOAD_TIMEOUT_SECONDS = float(
     os.getenv("MINIO_DOWNLOAD_TIMEOUT_SECONDS", "300")
 )
@@ -295,12 +311,51 @@ class ComfyAgent:
                         backoff_factor=0.5,
                         status_forcelist=[500, 502, 503, 504],
                     ),
+                    maxsize=MINIO_HTTP_POOL_MAXSIZE,
                 ),
             )
             logger.info("MinIO client initialized")
         except Exception as e:
             logger.error(f"Failed to init MinIO: {e}")
             self.minio_client = None
+
+        self.s3_download_client = None
+        self.s3_transfer_config = None
+        if MINIO_BOTO3_DOWNLOAD_ENABLED and boto3 is not None and BotoConfig is not None:
+            try:
+                endpoint_url = (
+                    f"{'https' if MINIO_SECURE else 'http'}://{MINIO_ENDPOINT}"
+                )
+                self.s3_download_client = boto3.client(
+                    "s3",
+                    endpoint_url=endpoint_url,
+                    aws_access_key_id=MINIO_ACCESS_KEY,
+                    aws_secret_access_key=MINIO_SECRET_KEY,
+                    region_name=MINIO_REGION,
+                    config=BotoConfig(
+                        signature_version="s3v4",
+                        connect_timeout=MINIO_CONNECT_TIMEOUT_SECONDS,
+                        read_timeout=MINIO_READ_TIMEOUT_SECONDS,
+                        max_pool_connections=MINIO_HTTP_POOL_MAXSIZE,
+                        retries={
+                            "max_attempts": max(1, MINIO_HTTP_RETRY_TOTAL + 1),
+                            "mode": "standard",
+                        },
+                    ),
+                )
+                if TransferConfig is not None:
+                    self.s3_transfer_config = TransferConfig(
+                        max_concurrency=max(2, min(MINIO_HTTP_POOL_MAXSIZE, 8)),
+                        multipart_threshold=8 * 1024 * 1024,
+                        multipart_chunksize=8 * 1024 * 1024,
+                    )
+                logger.info("S3 download client initialized")
+            except Exception as e:
+                logger.warning("Failed to init S3 download client: %s", e)
+                self.s3_download_client = None
+                self.s3_transfer_config = None
+        elif MINIO_BOTO3_DOWNLOAD_ENABLED:
+            logger.warning("boto3 unavailable; falling back to MinIO input downloads")
 
         self.tasks = []
         self._idle_completed_event = asyncio.Event()
@@ -1171,9 +1226,37 @@ class ComfyAgent:
                 await self._handle_ws_connection_error(e)
                 await asyncio.sleep(5)
 
+    def _download_input_from_s3(
+        self,
+        *,
+        bucket_name: str,
+        object_name: str,
+        local_path: str,
+    ) -> None:
+        if not self.s3_download_client:
+            raise RuntimeError("S3 download client not initialized")
+
+        extra_args = None
+        if self.s3_transfer_config is not None:
+            self.s3_download_client.download_file(
+                bucket_name,
+                object_name,
+                local_path,
+                Config=self.s3_transfer_config,
+                ExtraArgs=extra_args,
+            )
+            return
+
+        self.s3_download_client.download_file(
+            bucket_name,
+            object_name,
+            local_path,
+            ExtraArgs=extra_args,
+        )
+
     def download_input_from_minio(self, object_name: str, local_path: str):
-        if not self.minio_client:
-            raise Exception("MinIO client not initialized")
+        if not self.minio_client and not self.s3_download_client:
+            raise Exception("Object storage client not initialized")
 
         bucket_name = MINIO_INPUT_BUCKET
         real_object_name = object_name
@@ -1194,6 +1277,14 @@ class ComfyAgent:
         logger.info(
             f"Downloading {real_object_name} from MinIO bucket {bucket_name} to {local_path}"
         )
+        if self.s3_download_client is not None:
+            self._download_input_from_s3(
+                bucket_name=bucket_name,
+                object_name=real_object_name,
+                local_path=local_path,
+            )
+            return
+
         self.minio_client.fget_object(bucket_name, real_object_name, local_path)
 
     def upload_result_to_minio(self, local_path: str, object_name: str):

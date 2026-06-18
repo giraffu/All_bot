@@ -72,6 +72,35 @@ resolve_baked_comfyui_dir() {
     return 1
 }
 
+ensure_wan22_rife_cache() {
+    if [ ! -f "$ROOT_DIR/scripts/ensure_wan22_rife_cache.py" ]; then
+        return
+    fi
+    local comfyui_dir="${RUNPOD_RIFE_COMFYUI_DIR:-}"
+    if [ -z "$comfyui_dir" ]; then
+        if [ -n "${COMFYUI_DIR:-}" ] && [ -f "${COMFYUI_DIR}/main.py" ]; then
+            comfyui_dir="$COMFYUI_DIR"
+        elif baked_comfyui_dir="$(resolve_baked_comfyui_dir)"; then
+            comfyui_dir="$baked_comfyui_dir"
+        elif [ -f /workspace/ComfyUI/main.py ]; then
+            comfyui_dir=/workspace/ComfyUI
+        elif [ -f /default-comfyui-bundle/ComfyUI/main.py ]; then
+            comfyui_dir=/default-comfyui-bundle/ComfyUI
+        elif [ -f /root/ComfyUI/main.py ]; then
+            comfyui_dir=/root/ComfyUI
+        fi
+    fi
+    if [ -n "$comfyui_dir" ]; then
+        python3 "$ROOT_DIR/scripts/ensure_wan22_rife_cache.py" \
+            --comfyui-dir "$comfyui_dir" \
+            --model-target-dir "${RUNPOD_MODEL_TARGET_DIR:-${comfyui_dir%/}/models}"
+    else
+        python3 "$ROOT_DIR/scripts/ensure_wan22_rife_cache.py"
+    fi
+}
+
+ensure_wan22_rife_cache
+
 if [ -n "${COMFYUI_DIR:-}" ] && [ -f "${COMFYUI_DIR}/main.py" ]; then
     (
         cd "$COMFYUI_DIR"

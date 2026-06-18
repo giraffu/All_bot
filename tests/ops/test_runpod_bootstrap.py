@@ -78,6 +78,21 @@ def test_runpod_bootstrap_patches_model_sync_for_resume_downloads():
     assert "offset=current_size" in script
 
 
+def test_runpod_bootstrap_checks_wan22_rife_cache_before_starting_comfyui():
+    script = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
+    entrypoint = ENTRYPOINT_SCRIPT.read_text(encoding="utf-8")
+
+    assert "ensure_wan22_rife_cache.py" in script
+    assert script.index("ensure_wan22_rife_cache\n") < script.index(
+        'log "starting ComfyUI'
+    )
+    assert "ensure_wan22_rife_cache.py" in entrypoint
+    assert (
+        "\nensure_wan22_rife_cache\n\nif [ -n \"${COMFYUI_DIR:-}\" ]"
+        in entrypoint
+    )
+
+
 def test_runpod_bootstrap_and_entrypoint_recognize_baked_comfyui_dir_marker():
     bootstrap = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
     entrypoint = ENTRYPOINT_SCRIPT.read_text(encoding="utf-8")
@@ -137,6 +152,10 @@ def test_wan22_profile_image_bakes_video_custom_nodes_not_business_models():
     assert "26545cc2dd95bc3d27f056016300673bdeee78f5" in dockerfile
     assert "ComfyUI_Fill-Nodes" in dockerfile
     assert "2c94c3b675e7832ae18986e7062365c7d025b802" in dockerfile
+    assert "RIFE49_URL=https://huggingface.co/lividtm/RIFE/resolve/main/rife49.pth" in dockerfile
+    assert "RIFE49_SHA256=e55fd00f3cc184e3c65961f4bb827a9da022e78eed36b055242c0ac30000d533" in dockerfile
+    assert "ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth" in dockerfile
+    assert "ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth" in dockerfile
     assert "ComfyUI-LTXVideo" in dockerfile
     assert "229437c6b65796d6a7a63ae34be2bd5ba31fa543" in dockerfile
     assert "LTXVSpatioTemporalTiledVAEDecode" in dockerfile
@@ -161,6 +180,8 @@ def test_wan22_profile_image_bakes_video_custom_nodes_not_business_models():
     assert "--reuse-base-custom-nodes" in build_script
     assert "REUSE_BASE_CUSTOM_NODES" in build_script
     assert "ComfyUI_Fill-Nodes" in build_script
+    assert "ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth" in build_script
+    assert "ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth" in build_script
     assert "ComfyUI-LTXVideo" in build_script
     assert "LTXVSpatioTemporalTiledVAEDecode" in build_script
     assert "module.NODE_CLASS_MAPPINGS" in build_script

@@ -314,6 +314,43 @@ remote_compose() {
     "cd '${REMOTE_DIR}' && if docker compose version >/dev/null 2>&1; then docker compose --env-file '${REMOTE_ENV_FILE}' -f '${REMOTE_COMPOSE_FILE}' ${op}; else docker-compose --env-file '${REMOTE_ENV_FILE}' -f '${REMOTE_COMPOSE_FILE}' ${op}; fi"
 }
 
+preseed_slot_hot_caches() {
+  if [ "$SLOT" != "slot1" ]; then
+    return 0
+  fi
+  if [ "$MODE" != "execute" ]; then
+    echo "[dry-run] Would preseed gpu-002 slot1 RIFE cache into ${CONTAINER_NAME}"
+    return 0
+  fi
+  ssh "$SSH_HOST" "bash -s" <<REMOTE
+set -euo pipefail
+container='${CONTAINER_NAME}'
+src='/data/comfy/inst1/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth'
+fallback='/data/comfy/models/upscale_models/rife49.pth'
+tmp="/tmp/allbot-\${container}-rife49.pth"
+if [ ! -s "\$src" ] && [ -s "\$fallback" ]; then
+  src="\$fallback"
+fi
+if [ ! -s "\$src" ]; then
+  echo "Missing gpu-002 slot1 RIFE hot cache: \$src" >&2
+  exit 1
+fi
+cp "\$src" "\$tmp"
+for dst in \
+  /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth \
+  /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth
+do
+  dst_dir="\$(dirname "\$dst")"
+  docker exec "\$container" bash -lc "mkdir -p \"\$dst_dir\""
+  docker cp "\$tmp" "\$container:\$dst"
+  docker exec "\$container" chmod 0644 "\$dst"
+  docker exec "\$container" test -s "\$dst"
+done
+rm -f "\$tmp"
+docker exec "\$container" sh -lc 'ls -lh /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth'
+REMOTE
+}
+
 sync_remote_workers_bundle() {
   if [ ! -d "$REMOTE_WORKERS_SOURCE_DIR/comfy_agent" ] || [ ! -d "$REMOTE_WORKERS_SOURCE_DIR/remote_relay" ]; then
     echo "remote_workers bundle source is invalid: ${REMOTE_WORKERS_SOURCE_DIR}" >&2
@@ -720,6 +757,7 @@ run_start_heartbeat() {
     echo "[dry-run] Would generate a redacted runtime env file from ${PROD_ENV_FILE}, ${MODEL_ENV_FILE}, ${AIO_ENV_FILE}"
     control_agent "$TEMP_AGENT_ID" "disabled" "lan_aio_prod_heartbeat_only" "$CONTROL_TTL"
     echo "[dry-run] Would run docker compose up -d for ${CONTAINER_NAME}"
+    preseed_slot_hot_caches
     return 0
   fi
   local tmp_compose tmp_env
@@ -750,6 +788,7 @@ docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.
 curl -fsS http://127.0.0.1:${HOST_PORT}/system_stats >/dev/null
 docker exec '${CONTAINER_NAME}' bash -lc 'curl -fsS http://127.0.0.1:8013/ready >/dev/null || curl -fsS http://127.0.0.1:8013/health >/dev/null'
 REMOTE
+  preseed_slot_hot_caches
   verify_disabled_heartbeat
   echo "Prod LAN AIO heartbeat-only container is healthy with temp agent disabled."
 }

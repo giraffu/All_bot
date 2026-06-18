@@ -249,6 +249,7 @@ def test_runpod_all_in_one_render_supports_cloud_prod_storage():
         assert "pip install --no-cache-dir -r" in rendered
         assert "baked_comfy" in rendered
         assert "$${baked_comfy}/models" in rendered
+        assert "ensure_wan22_rife_cache.py" in rendered
         assert "production_port_unchanged: true" in rendered
         assert "/workspace/ComfyUI/models" in rendered
         assert "cloud-test" not in rendered

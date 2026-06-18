@@ -146,6 +146,73 @@ def test_agent_main_removes_debug_side_paths():
     assert "exec(" not in content
 
 
+def test_download_input_prefers_s3_client(monkeypatch, tmp_path):
+    module = build_agent_module(monkeypatch)
+    downloads = []
+
+    class FakeS3Client:
+        def download_file(self, bucket_name, object_name, local_path, **kwargs):
+            downloads.append((bucket_name, object_name, local_path, kwargs))
+            Path(local_path).write_bytes(b"video")
+
+    class FakeBoto3:
+        @staticmethod
+        def client(*_args, **_kwargs):
+            return FakeS3Client()
+
+    class FakeBotoConfig:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    class FakeTransferConfig:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    monkeypatch.setattr(module, "boto3", FakeBoto3)
+    monkeypatch.setattr(module, "BotoConfig", FakeBotoConfig)
+    monkeypatch.setattr(module, "TransferConfig", FakeTransferConfig)
+    monkeypatch.setattr(module, "MINIO_INPUT_BUCKET", "user-data-prod")
+
+    agent = module.ComfyAgent()
+    agent.minio_client = SimpleNamespace(
+        fget_object=mock.Mock(side_effect=AssertionError("unexpected MinIO download"))
+    )
+
+    target = tmp_path / "input.mp4"
+    agent.download_input_from_minio("user-data-prod/web_uploads/input.mp4", str(target))
+
+    assert target.read_bytes() == b"video"
+    assert downloads
+    bucket_name, object_name, local_path, kwargs = downloads[0]
+    assert bucket_name == "user-data-prod"
+    assert object_name == "web_uploads/input.mp4"
+    assert local_path == str(target)
+    assert "Config" in kwargs
+
+
+def test_download_input_falls_back_to_minio_without_s3(monkeypatch, tmp_path):
+    module = build_agent_module(monkeypatch)
+    calls = []
+
+    monkeypatch.setattr(module, "boto3", None)
+    monkeypatch.setattr(module, "BotoConfig", None)
+    monkeypatch.setattr(module, "TransferConfig", None)
+    monkeypatch.setattr(module, "MINIO_TEMPLATE_BUCKET", "templates")
+
+    agent = module.ComfyAgent()
+    agent.s3_download_client = None
+    agent.minio_client = SimpleNamespace(
+        fget_object=lambda bucket_name, object_name, local_path: calls.append(
+            (bucket_name, object_name, local_path)
+        )
+    )
+
+    target = tmp_path / "input.png"
+    agent.download_input_from_minio("template:quick_face/input.png", str(target))
+
+    assert calls == [("templates", "quick_face/input.png", str(target))]
+
+
 def test_wan22_result_pick_prefers_video_over_images(monkeypatch):
     module = build_agent_module(monkeypatch)
     outputs = {

@@ -139,7 +139,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - 看 worker heartbeat、`healthy_workers`、节点 `error/quarantined` 状态与 `SUPPORTED_TASK_TYPES`
 - 看本地 relay `/ready` 与 watchdog dry-run；生产只观测，不要让自动恢复直接 execute，除非用户明确确认。`/ready` 返回 404 通常表示运行中的 relay 还是旧版本，watchdog 应记录 `relay_ready_endpoint_missing` 而不是反复重启。
 - 看 `/system/status` 是否只是观测缓存滞后；真实判断还要结合 worker 日志、Central `pop`/status/complete 日志和队列指标
-- 若 queue 为 0、worker 已是 `running` 且 `execution_phase=preparing`，但 ComfyUI `/queue` 为空，这类问题应按输入准备卡住排查，不按 pending 排队处理。重点看 worker 下载用户输入视频/图片是否卡在对象存储读取、`/tmp/input/*.part.minio` 是否持续停滞，以及 `MINIO_CONNECT_TIMEOUT_SECONDS`、`MINIO_READ_TIMEOUT_SECONDS`、`MINIO_HTTP_RETRY_TOTAL`、`MINIO_DOWNLOAD_TIMEOUT_SECONDS`、`MINIO_DOWNLOAD_RETRY_ATTEMPTS` 是否生效；新版 worker 下载超时会清理 `.part.minio` 并走失败退款路径，避免无限 `preparing`。
+- 若 queue 为 0、worker 已是 `running` 且 `execution_phase=preparing`，但 ComfyUI `/queue` 为空，这类问题应按输入准备卡住排查，不按 pending 排队处理。重点看 worker 下载用户输入视频/图片是否卡在对象存储读取、`/tmp/input/*.part.minio` 是否持续停滞，以及 `MINIO_BOTO3_DOWNLOAD_ENABLED`、`MINIO_REGION`、`MINIO_CONNECT_TIMEOUT_SECONDS`、`MINIO_READ_TIMEOUT_SECONDS`、`MINIO_HTTP_RETRY_TOTAL`、`MINIO_HTTP_POOL_MAXSIZE`、`MINIO_DOWNLOAD_TIMEOUT_SECONDS`、`MINIO_DOWNLOAD_RETRY_ATTEMPTS` 是否生效；新版 worker 优先使用 boto3 S3 client 下载 R2/MinIO 兼容对象，下载超时会清理 `.part.minio` 并走失败退款路径，避免无限 `preparing`。
 
 ### 8.3 running 卡死
 - 查 worker 日志与 ComfyUI WebSocket
