@@ -14,6 +14,12 @@ HOST_RUNTIME_KIND = "host_service"
 STANDARD_RUNTIME_SHAPE = "standard_comfy_runtime"
 RUNPOD_AIO_RUNTIME_SHAPE = "runpod_all_in_one"
 DEFAULT_LAN_AIO_ENVIRONMENT = "cloud-test"
+LAN_AIO_DISABLE_DYNAMIC_VRAM_PROFILES = frozenset(
+    {
+        "image_to_video",
+        "wan22_video_v2",
+    }
+)
 LAN_AIO_ENVIRONMENTS = {
     "cloud-test": {
         "central_url": "https://worker-central-test.aivison.it.com",
@@ -422,10 +428,9 @@ class RuntimePlanner:
                         "COMFY_WS_URL": "ws://127.0.0.1:8188/ws",
                         "COMFY_INPUT_DIR": f"{state_root}/comfy-input",
                         "COMFY_OUTPUT_DIR": f"{state_root}/comfy-output",
-                        "COMFY_EXTRA_ARGS": (
-                            f"--input-directory {state_root}/comfy-input "
-                            f"--output-directory {state_root}/comfy-output "
-                            f"--temp-directory {state_root}/comfy-temp"
+                        "COMFY_EXTRA_ARGS": self._runpod_aio_comfy_extra_args(
+                            profile=profile,
+                            state_root=state_root,
                         ),
                         "RESULT_SPOOL_DIR": f"{state_root}/spool/{agent_id}",
                         "AGENT_LOG_DIR": f"{state_root}/logs",
@@ -540,6 +545,24 @@ class RuntimePlanner:
         except Exception as exc:  # pragma: no cover - config loading already requires yaml
             raise RuntimeError("runtime-render requires PyYAML") from exc
         return yaml.safe_dump(compose, allow_unicode=True, sort_keys=False)
+
+    def _runpod_aio_comfy_extra_args(
+        self,
+        *,
+        profile: TaskProfile,
+        state_root: str,
+    ) -> str:
+        args = [
+            "--input-directory",
+            f"{state_root}/comfy-input",
+            "--output-directory",
+            f"{state_root}/comfy-output",
+            "--temp-directory",
+            f"{state_root}/comfy-temp",
+        ]
+        if profile.runtime_profile in LAN_AIO_DISABLE_DYNAMIC_VRAM_PROFILES:
+            args.append("--disable-dynamic-vram")
+        return " ".join(args)
 
     def build_dry_run_action(
         self,

@@ -8,6 +8,7 @@ COMFYUI_REF="${RUNPOD_PROFILE_COMFYUI_REF:-}"
 KJNODES_REF="${RUNPOD_PROFILE_KJNODES_REF:-7967a946c296a74901606e6a8d1195aa2b6f9215}"
 KJNODES_SOURCE="${RUNPOD_PROFILE_KJNODES_SOURCE:-}"
 REUSE_BASE_CUSTOM_NODES="${RUNPOD_PROFILE_REUSE_BASE_CUSTOM_NODES:-false}"
+DOCKER_BUILD_NETWORK="${RUNPOD_PROFILE_DOCKER_BUILD_NETWORK:-}"
 PUSH="false"
 SMOKE="true"
 
@@ -30,6 +31,9 @@ default_comfyui_ref_for_profile() {
         scail2)
             printf '%s\n' "f026b01ba576d98442839861a0eb0046bc2250d3"
             ;;
+        ltx_video)
+            printf '%s\n' "f026b01ba576d98442839861a0eb0046bc2250d3"
+            ;;
         *)
             printf '%s\n' "master"
             ;;
@@ -42,7 +46,7 @@ Usage:
   scripts/build_runpod_profile_image.sh [options]
 
 Options:
-  --profile <name>       Profile to build: img2img_lora, wan22_aio_video, i2i_pro, or scail2.
+  --profile <name>       Profile to build: img2img_lora, wan22_aio_video, i2i_pro, scail2, or ltx_video.
   --image-ref <ref>      Target image ref. Defaults to a local allbot/comfy-runpod-* tag.
   --base-image <ref>     Base image. Defaults per profile; i2i_pro uses yanwk/comfyui-boot:cu128-slim.
   --comfyui-ref <ref>    ComfyUI git ref used when the base image does not include ComfyUI.
@@ -50,6 +54,7 @@ Options:
   --kjnodes-source <dir> Build from an existing local ComfyUI-KJNodes directory instead of GitHub.
   --reuse-base-custom-nodes
                          Reuse custom nodes already baked into the base image and only apply final Wan22 fix layers.
+  --build-network <mode> Docker build network mode, for example host when using a local proxy.
   --no-smoke             Skip local smoke test after build.
   --push                 Push image after a successful build and smoke test.
   -h, --help             Show this help.
@@ -89,6 +94,10 @@ while [ "$#" -gt 0 ]; do
             REUSE_BASE_CUSTOM_NODES="true"
             shift
             ;;
+        --build-network)
+            DOCKER_BUILD_NETWORK="${2:?missing value for --build-network}"
+            shift 2
+            ;;
         --no-smoke)
             SMOKE="false"
             shift
@@ -121,6 +130,9 @@ case "$PROFILE" in
         ;;
     scail2)
         IMAGE_REF="${IMAGE_REF:-allbot/comfy-runpod-scail2:local}"
+        ;;
+    ltx_video)
+        IMAGE_REF="${IMAGE_REF:-allbot/comfy-runpod-ltx-video:local}"
         ;;
     *)
         echo "Unsupported RunPod profile: ${PROFILE}" >&2
@@ -160,7 +172,7 @@ if [ -n "$KJNODES_SOURCE" ]; then
     cp -a "$KJNODES_SOURCE" "${cleanup_dir}/ComfyUI-KJNodes"
     dockerfile_for_build="${cleanup_dir}/Dockerfile"
     context_for_build="$cleanup_dir"
-elif [ "$PROFILE" = "scail2" ]; then
+elif [ "$PROFILE" = "scail2" ] || [ "$PROFILE" = "ltx_video" ]; then
     context_for_build="."
 elif [ "$PROFILE" = "i2i_pro" ] || [ "$PROFILE" = "img2img_lora" ]; then
     cleanup_dir="$(mktemp -d)"
@@ -177,7 +189,19 @@ elif [ "$PROFILE" = "i2i_pro" ] || [ "$PROFILE" = "img2img_lora" ]; then
 fi
 
 echo "Building ${IMAGE_REF}"
+docker_build_args=()
+if [ -n "$DOCKER_BUILD_NETWORK" ]; then
+    docker_build_args+=(--network "$DOCKER_BUILD_NETWORK")
+fi
+for proxy_env in \
+    HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY \
+    http_proxy https_proxy all_proxy no_proxy; do
+    if [ -n "${!proxy_env:-}" ]; then
+        docker_build_args+=(--build-arg "${proxy_env}=${!proxy_env}")
+    fi
+done
 docker build \
+    "${docker_build_args[@]}" \
     -f "$dockerfile_for_build" \
     --build-arg "BASE_IMAGE=${BASE_IMAGE}" \
     --build-arg "COMFYUI_REF=${COMFYUI_REF}" \
@@ -257,6 +281,30 @@ if find "${comfyui_dir}/models" -type f \( \
 fi
 echo "COMFYUI_DIR=${comfyui_dir}"
 echo "WAN22_CUSTOM_NODES_PRESENT=true"
+'
+    elif [ "$PROFILE" = "ltx_video" ]; then
+        docker run --rm --entrypoint bash "$IMAGE_REF" -lc '
+set -euo pipefail
+comfyui_dir="$(cat /opt/allbot-comfyui-dir)"
+test -f "${comfyui_dir}/main.py"
+test -d "${comfyui_dir}/custom_nodes/ComfyUI-KJNodes"
+test -d "${comfyui_dir}/custom_nodes/ComfyUI-VideoHelperSuite"
+test -d "${comfyui_dir}/custom_nodes/rgthree-comfy"
+test -d "${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo"
+test -d "${comfyui_dir}/custom_nodes/allbot_ltx_min_nodes"
+test -x /opt/allbot/runpod_bootstrap_from_git.sh
+python3 -c '"'"'import fastapi, minio, uvicorn, websockets'"'"'
+python3 -c '"'"'from sageattention import sageattn; assert callable(sageattn)'"'"'
+COMFYUI_DIR="${comfyui_dir}" LTXVIDEO_NODE_DIR="${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo" PYTHONPATH="${comfyui_dir}:${PYTHONPATH:-}" python3 -c '"'"'import importlib.util, os, sys; from pathlib import Path; root = Path(os.environ["COMFYUI_DIR"]); node_dir = Path(os.environ["LTXVIDEO_NODE_DIR"]); spec = importlib.util.spec_from_file_location("allbot_ltxvideo_smoke", node_dir / "__init__.py", submodule_search_locations=[str(node_dir)]); module = importlib.util.module_from_spec(spec); assert spec.loader is not None; sys.modules[spec.name] = module; spec.loader.exec_module(module); assert "LTXVSpatioTemporalTiledVAEDecode" in module.NODE_CLASS_MAPPINGS; core_text = (root / "comfy_extras" / "nodes_lt.py").read_text(encoding="utf-8"); assert "LTXVScheduler" in core_text and "LTXVConditioning" in core_text; kj_text = (root / "custom_nodes" / "ComfyUI-KJNodes" / "__init__.py").read_text(encoding="utf-8"); assert "LTXVImgToVideoInplaceKJ" in kj_text'"'"'
+LTX_MIN_NODE_DIR="${comfyui_dir}/custom_nodes/allbot_ltx_min_nodes" python3 -c '"'"'import importlib.util, os; from pathlib import Path; spec = importlib.util.spec_from_file_location("allbot_ltx_min_nodes_smoke", Path(os.environ["LTX_MIN_NODE_DIR"]) / "__init__.py"); module = importlib.util.module_from_spec(spec); assert spec.loader is not None; spec.loader.exec_module(module); expected = {"ImpactDummyInput", "TwoWaySwitch", "easy int", "mxSlider", "RAMCleanup", "VRAMCleanup", "Float", "IntToFloat", "Sigmas Sigmoid", "MathExpression|pysssss"}; assert expected <= set(module.NODE_CLASS_MAPPINGS)'"'"'
+command -v ffmpeg >/dev/null
+command -v ffprobe >/dev/null
+if find "${comfyui_dir}/models" -type f -name "*.safetensors" -print -quit | grep -q .; then
+  echo "LTX model files must stay out of the profile image" >&2
+  exit 1
+fi
+echo "COMFYUI_DIR=${comfyui_dir}"
+echo "LTX_MINIMAL_CUSTOM_NODES_PRESENT=true"
 '
     elif [ "$PROFILE" = "scail2" ]; then
         docker run --rm --entrypoint bash "$IMAGE_REF" -lc '

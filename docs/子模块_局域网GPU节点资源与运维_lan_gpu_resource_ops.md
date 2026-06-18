@@ -10,6 +10,8 @@
 最近一次 ComfyUI 素材清理：2026-06-08，Asia/Shanghai。
 最近一次 gpu-226 LTX 运行时补齐：2026-06-15，Asia/Shanghai。
 最近一次 gpu-002 LAN RunPod 化一体容器生产接管：2026-06-16，Asia/Shanghai。
+最近一次 LAN AIO fleet 泛化脚手架更新：2026-06-18，Asia/Shanghai。
+最近一次 gpu-177/gpu0 LAN AIO 生产 canary 复启：2026-06-18，Asia/Shanghai。
 
 ## 2. 总体拓扑
 
@@ -79,7 +81,20 @@ GPU pool 相关环境变量只描述 Worker Agent 的观测和期望能力，不
 
 2026-06-10 正式更新已验证的是 Worker Agent 新协议：7 个 `cloud-prod-comfy-agent-*` 均能携带 `agent_id`、GPU pool heartbeat 元数据并通过 relay `/ready`。这不表示 7 个底层 ComfyUI 都是容器；`cloud-prod-comfy-agent-1` 调用的 `gpu-226:8188` 仍是宿主机 ComfyUI。
 
-Controller 已补 `runtime-plan` / `runtime-render` dry-run 入口与 runtime schema。当前只有 `gpu-002` 标记为 Phase 1 试点 managed runtime；`gpu-177`/`gpu-252` 仍可规划但不执行，`gpu-226` 作为 `host_service` 只允许观测和手工 canary。
+Controller 已补 `runtime-plan` / `runtime-render` dry-run 入口与 runtime schema。`gpu-002` 已完成第一阶段生产 AIO 接管；`gpu-177`/`gpu-252` 后续通过 `scripts/lan_aio_fleet_prod_ops.py` 按 `ops/gpu_pool_controller/config/lan_aio_prod_slots.yml` 逐 slot 灰度，不再复制 gpu-002 专用 helper。`gpu-226` 仍是 `host_service`，只允许观测和手工 canary，不能直接套用 Docker AIO 接管。
+
+LAN AIO fleet 首批候选：
+
+| Slot | Legacy worker | AIO agent | Profile | 端口 | 状态 |
+| :--- | :--- | :--- | :--- | ---: | :--- |
+| `gpu-177-gpu0-image_to_video` | `cloud_prod_worker_02` | `lan_aio_prod_gpu177_gpu0_image_to_video_01` | `image_to_video` | 8190 | 正式 AIO 接管 |
+| `gpu-177-gpu1-ltx_video` | `cloud_prod_worker_03` | `lan_aio_prod_gpu177_gpu1_ltx_video_01` | `ltx_video` | 8191 | 正式 AIO 接管 |
+| `gpu-252-gpu0-img2img_lora` | `cloud_prod_worker_04` | `lan_aio_prod_gpu252_gpu0_img2img_lora_01` | `img2img_lora` | 8190 | canary-ready |
+| `gpu-252-gpu1-wan22_video_v2` | `cloud_prod_worker_05` | `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` | `wan22_video_v2` | 8191 | canary-ready |
+
+每个 slot 必须先 `preflight`、维护窗口配置 Docker insecure registry、预拉镜像、`start-disabled` 验收 disabled heartbeat，最后才小窗口 `enable-aio`。禁止一次性接管整台节点或跨节点批量启用。
+
+2026-06-18 `gpu-177` 进入整机 LAN AIO 接管：GPU0 由 `lan_aio_prod_gpu177_gpu0_image_to_video_01` 接正式 `image_to_video`，GPU1 由 `lan_aio_prod_gpu177_gpu1_ltx_video_01` 接正式 `ltx_video`。旧 `cloud_prod_worker_02/03` 与旧 `comfy0/comfy1` 只作为 stopped rollback baseline 保留，不应与 AIO 同时 enabled 或同卡占用显存。`gpu-177-gpu0-image_to_video` 的 AIO 容器需预置旧 `comfy0` 内的 `rife49.pth` 到 `ComfyUI_Fill-Nodes` 和 `ComfyUI-Frame-Interpolation` 缓存路径，避免容器运行时访问 HuggingFace 失败。
 
 ## 5. GPU 节点明细
 
@@ -111,6 +126,10 @@ ComfyUI：
 - 已补齐 `models/diffusion_models/LTX 2.3/ltx2310eros_v1.safetensors`，与当前 LTX workflow 主模型节点匹配。
 - `cloud-prod-comfy-agent-1` 在原有任务类型基础上追加 `ltx_video`，用于补充 LTX 产能；不要改成只支持 `ltx_video`，否则会移走 worker 01 原有 face/i2i/t2i 能力。
 - `ubantu` 用户级 `comfyui.service` 也存在但已停止，避免与系统级 service 抢占 `8188`；如需统一为 `--enable-manager` 口径，需要具备系统级 service 的 sudo 操作窗口。
+
+2026-06-18 LTX LAN AIO 镜像：
+- 已构建并推送 LTX 专用最小 AIO 镜像 `192.168.1.115:5000/allbot/comfy-runpod-ltx-video:20260618-ltx-min-cu128-sageattn1`；镜像只面向 `LTX 2.3 I2V 6.1.json`，baked `sageattention==1.0.6`，不 baked 模型权重，模型仍同步 `allbot-model-cache/ltx_video/2026-06-10/manifest.json`。
+- `gpu-177-gpu1-ltx_video` 使用 LTX 最小 AIO 镜像 `192.168.1.115:5000/allbot/comfy-runpod-ltx-video:20260618-ltx-min-cu128-sageattn1`；它只面向 `LTX 2.3 I2V 6.1.json`，保持 workflow `sage_attention=auto`，不 baked 模型权重，模型仍同步 `allbot-model-cache/ltx_video/2026-06-10/manifest.json`。
 
 运维边界：
 - 不要对 `comfy0/comfy1` 执行 Docker 操作；本机没有这类 Comfy 容器。

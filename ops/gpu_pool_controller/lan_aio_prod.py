@@ -1,0 +1,1270 @@
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import posixpath
+import re
+import shlex
+import subprocess
+import sys
+import tarfile
+import tempfile
+import time
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from .config_loader import CONFIG_DIR, ControllerConfig, load_controller_config
+from .runtime import RuntimePlanner, RuntimeRenderOverrides
+
+
+LAN_AIO_SLOTS_FILE = "lan_aio_prod_slots.yml"
+DEFAULT_CENTRAL_URL = "https://worker-central.aivison.it.com"
+DEFAULT_WEB_HEALTH_URL = "https://api.aivison.it.com/api/health"
+DEFAULT_REGISTRY_HEALTH_URL = "http://192.168.1.115:5000/v2/"
+DEFAULT_MODEL_CACHE_HEALTH_URL = "http://192.168.1.115:9010/minio/health/ready"
+REMOTE_WORKERS_TARGET_DIR = "/workspace/allbot/remote_workers"
+CONTROL_TTL_SECONDS = 3600
+
+ENV_ALLOWLIST = {
+    "AGENT_SECRET_TOKEN",
+    "MINIO_ENDPOINT",
+    "MINIO_ACCESS_KEY",
+    "MINIO_SECRET_KEY",
+    "LAN_AIO_AGENT_SECRET_TOKEN",
+    "LAN_AIO_MINIO_ENDPOINT",
+    "LAN_AIO_MINIO_ACCESS_KEY",
+    "LAN_AIO_MINIO_SECRET_KEY",
+    "LAN_MODEL_CACHE_ACCESS_KEY",
+    "LAN_MODEL_CACHE_SECRET_KEY",
+}
+
+
+@dataclass(frozen=True)
+class LegacyHotCacheCopy:
+    source_container: str
+    source_path: str
+    target_paths: tuple[str, ...]
+    required: bool = True
+
+
+@dataclass(frozen=True)
+class LanAioProdSlot:
+    id: str
+    enabled: bool
+    phase: str
+    assignment_id: str
+    target_profile_id: str
+    host_port: int
+    agent_id: str
+    container_name: str
+    ssh_host: str
+    node_id: str
+    comfy_id: str
+    gpu_index: int | None
+    legacy_worker_id: str
+    old_runtime_container: str
+    old_local_agent_container: str
+    remote_dir: str
+    rollout_order: int
+    legacy_hot_cache_copies: tuple[LegacyHotCacheCopy, ...] = ()
+    notes: str = ""
+
+    @property
+    def remote_compose_file(self) -> str:
+        return f"{self.remote_dir}/docker-compose.yml"
+
+    @property
+    def remote_env_file(self) -> str:
+        return f"{self.remote_dir}/.env.lan-aio-prod"
+
+    @property
+    def remote_workers_dir(self) -> str:
+        return f"{self.remote_dir}/remote_workers"
+
+
+def _load_yaml(path: Path) -> Any:
+    try:
+        import yaml  # type: ignore
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError("LAN AIO slot config requires PyYAML") from exc
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+
+def _dump_yaml(payload: Any) -> str:
+    try:
+        import yaml  # type: ignore
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError("LAN AIO compose patching requires PyYAML") from exc
+    return yaml.safe_dump(payload, allow_unicode=True, sort_keys=False)
+
+
+def _sanitize(value: str) -> str:
+    return "".join(ch if ch.isalnum() else "_" for ch in value).strip("_")
+
+
+def _parse_legacy_hot_cache_copies(
+    raw: list[dict[str, Any]],
+    *,
+    default_source_container: str,
+) -> tuple[LegacyHotCacheCopy, ...]:
+    copies: list[LegacyHotCacheCopy] = []
+    for item in raw:
+        target_paths = tuple(str(path) for path in item.get("target_paths") or [])
+        if not target_paths:
+            raise RuntimeError("legacy_hot_cache_copies item requires target_paths")
+        source_path = str(item.get("source_path") or "")
+        if not source_path:
+            raise RuntimeError("legacy_hot_cache_copies item requires source_path")
+        copies.append(
+            LegacyHotCacheCopy(
+                source_container=str(
+                    item.get("source_container") or default_source_container
+                ),
+                source_path=source_path,
+                target_paths=target_paths,
+                required=bool(item.get("required", True)),
+            )
+        )
+    return tuple(copies)
+
+
+def load_lan_aio_prod_slots(
+    *,
+    config_root: Path | str | None = None,
+    include_disabled: bool = False,
+) -> dict[str, LanAioProdSlot]:
+    root = Path(config_root) if config_root else CONFIG_DIR
+    config = load_controller_config(root)
+    raw = _load_yaml(root / LAN_AIO_SLOTS_FILE)
+    slots: dict[str, LanAioProdSlot] = {}
+    for item in raw.get("slots", []):
+        assignment_id = str(item["assignment_id"])
+        assignment = config.assignments[assignment_id]
+        node = config.nodes[assignment.node_id]
+        comfy = next(unit for unit in node.comfy if unit.id == assignment.comfy_id)
+        target_profile_id = str(item.get("target_profile_id") or assignment.profile_id)
+        profile_label = _sanitize(target_profile_id)
+        gpu_index = comfy.gpu_index if comfy.gpu_index is not None else 0
+        slot = LanAioProdSlot(
+            id=str(item["id"]),
+            enabled=bool(item.get("enabled", True)),
+            phase=str(item.get("phase") or "canary_ready"),
+            assignment_id=assignment_id,
+            target_profile_id=target_profile_id,
+            host_port=int(item.get("host_port") or (8190 + int(gpu_index))),
+            agent_id=str(
+                item.get("agent_id")
+                or f"lan_aio_prod_{_sanitize(node.id)}_gpu{gpu_index}_{profile_label}_01"
+            ),
+            container_name=str(
+                item.get("container_name")
+                or f"allbot-lan-aio-{node.id}-gpu{gpu_index}-{target_profile_id}-prod"
+            ),
+            ssh_host=str(item.get("ssh_host") or node.ssh_alias),
+            node_id=node.id,
+            comfy_id=comfy.id,
+            gpu_index=comfy.gpu_index,
+            legacy_worker_id=str(item.get("legacy_worker_id") or assignment.worker_id),
+            old_runtime_container=str(
+                item.get("old_runtime_container") or f"comfy{gpu_index}"
+            ),
+            old_local_agent_container=str(item.get("old_local_agent_container") or ""),
+            remote_dir=str(
+                item.get("remote_dir")
+                or f"/srv/allbot/runpod-runtime/aio-prod/{node.id}-gpu{gpu_index}-{profile_label}"
+            ),
+            rollout_order=int(item.get("rollout_order") or 1000),
+            legacy_hot_cache_copies=_parse_legacy_hot_cache_copies(
+                item.get("legacy_hot_cache_copies") or [],
+                default_source_container=str(
+                    item.get("old_runtime_container") or f"comfy{gpu_index}"
+                ),
+            ),
+            notes=str(item.get("notes") or ""),
+        )
+        if slot.enabled or include_disabled:
+            slots[slot.id] = slot
+    return dict(sorted(slots.items(), key=lambda entry: entry[1].rollout_order))
+
+
+def slot_to_jsonable(
+    slot: LanAioProdSlot,
+    config: ControllerConfig,
+) -> dict[str, Any]:
+    profile = config.profiles.get(slot.target_profile_id)
+    return {
+        "id": slot.id,
+        "enabled": slot.enabled,
+        "phase": slot.phase,
+        "assignment_id": slot.assignment_id,
+        "target_profile_id": slot.target_profile_id,
+        "host_port": slot.host_port,
+        "agent_id": slot.agent_id,
+        "container_name": slot.container_name,
+        "ssh_host": slot.ssh_host,
+        "node_id": slot.node_id,
+        "comfy_id": slot.comfy_id,
+        "gpu_index": slot.gpu_index,
+        "legacy_worker_id": slot.legacy_worker_id,
+        "old_runtime_container": slot.old_runtime_container,
+        "old_local_agent_container": slot.old_local_agent_container,
+        "remote_dir": slot.remote_dir,
+        "legacy_hot_cache_copies": [
+            {
+                "source_container": copy.source_container,
+                "source_path": copy.source_path,
+                "target_paths": list(copy.target_paths),
+                "required": copy.required,
+            }
+            for copy in slot.legacy_hot_cache_copies
+        ],
+        "has_all_in_one_image": bool(profile and profile.all_in_one_image_ref),
+        "all_in_one_image_ref": profile.all_in_one_image_ref if profile else None,
+        "notes": slot.notes,
+    }
+
+
+def load_env_allowlist(paths: list[Path]) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for path in paths:
+        if not path.exists():
+            continue
+        for raw in path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.removeprefix("export ").strip()
+            if key not in ENV_ALLOWLIST:
+                continue
+            values[key] = value.strip().strip('"').strip("'")
+    values.setdefault(
+        "LAN_AIO_AGENT_SECRET_TOKEN",
+        values.get("AGENT_SECRET_TOKEN", ""),
+    )
+    values.setdefault("LAN_AIO_MINIO_ENDPOINT", values.get("MINIO_ENDPOINT", ""))
+    values.setdefault("LAN_AIO_MINIO_ACCESS_KEY", values.get("MINIO_ACCESS_KEY", ""))
+    values.setdefault("LAN_AIO_MINIO_SECRET_KEY", values.get("MINIO_SECRET_KEY", ""))
+    for key, value in os.environ.items():
+        if key in ENV_ALLOWLIST and value:
+            values[key] = value
+    return values
+
+
+def runtime_env_content(values: dict[str, str]) -> str:
+    required = [
+        "LAN_AIO_AGENT_SECRET_TOKEN",
+        "LAN_AIO_MINIO_ENDPOINT",
+        "LAN_AIO_MINIO_ACCESS_KEY",
+        "LAN_AIO_MINIO_SECRET_KEY",
+        "LAN_MODEL_CACHE_ACCESS_KEY",
+        "LAN_MODEL_CACHE_SECRET_KEY",
+    ]
+    missing = [key for key in required if not values.get(key)]
+    if missing:
+        raise RuntimeError("missing runtime env values: " + ", ".join(missing))
+    lines = []
+    for key in required:
+        value = values[key]
+        if "\n" in value or "\r" in value:
+            raise RuntimeError(f"refusing newline in runtime env value {key}")
+        lines.append(f"{key}={value}")
+    return "\n".join(lines) + "\n"
+
+
+class LanAioProdOps:
+    def __init__(
+        self,
+        *,
+        config_root: Path | None,
+        prod_env_file: Path,
+        aio_env_file: Path,
+        model_env_file: Path,
+        central_url: str = DEFAULT_CENTRAL_URL,
+        web_health_url: str = DEFAULT_WEB_HEALTH_URL,
+        remote_workers_source_dir: Path = Path("remote_workers"),
+    ) -> None:
+        self.config_root = config_root
+        self.config = load_controller_config(config_root)
+        self.slots = load_lan_aio_prod_slots(
+            config_root=config_root,
+            include_disabled=True,
+        )
+        self.prod_env_file = prod_env_file
+        self.aio_env_file = aio_env_file
+        self.model_env_file = model_env_file
+        self.central_url = central_url.rstrip("/")
+        self.web_health_url = web_health_url
+        self.remote_workers_source_dir = remote_workers_source_dir
+        self.env_values = load_env_allowlist(
+            [self.prod_env_file, self.model_env_file, self.aio_env_file]
+        )
+
+    def select_slots(
+        self,
+        slot_id: str | None,
+        *,
+        include_disabled: bool = False,
+    ) -> list[LanAioProdSlot]:
+        if slot_id:
+            if slot_id not in self.slots:
+                raise KeyError(f"unknown LAN AIO prod slot: {slot_id}")
+            slot = self.slots[slot_id]
+            if not slot.enabled and not include_disabled:
+                raise RuntimeError(
+                    f"slot {slot.id} is disabled ({slot.phase}); pass --include-disabled to inspect it"
+                )
+            return [slot]
+        return [
+            slot
+            for slot in self.slots.values()
+            if include_disabled or slot.enabled
+        ]
+
+    def list_payload(self, *, include_disabled: bool = False) -> dict[str, Any]:
+        slots = self.select_slots(None, include_disabled=include_disabled)
+        return {
+            "ok": True,
+            "slots": [slot_to_jsonable(slot, self.config) for slot in slots],
+        }
+
+    def render_compose(self, slot: LanAioProdSlot) -> str:
+        rendered = RuntimePlanner(self.config).render_compose(
+            slot.assignment_id,
+            target_profile_id=slot.target_profile_id,
+            overrides=RuntimeRenderOverrides(
+                host_port=slot.host_port,
+                container_name=slot.container_name,
+                runtime_shape="runpod_all_in_one",
+                agent_id=slot.agent_id,
+                environment="cloud-prod",
+            ),
+        )
+        rendered = patch_remote_workers_mount(rendered, slot)
+        assert_prod_compose(rendered, slot)
+        return rendered
+
+    def status_payload(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
+        workers = self._system_workers()
+        payload = {
+            "ok": True,
+            "central_url": self.central_url,
+            "slots": [],
+        }
+        for slot in slots:
+            worker_targets = {slot.legacy_worker_id, slot.agent_id}
+            worker_rows = [
+                _worker_summary(worker)
+                for worker in workers
+                if worker.get("agent_id") in worker_targets
+            ]
+            payload["slots"].append(
+                {
+                    "slot": slot_to_jsonable(slot, self.config),
+                    "workers": worker_rows,
+                    "control": {
+                        "legacy": self._control_state(slot.legacy_worker_id),
+                        "aio": self._control_state(slot.agent_id),
+                    },
+                    "remote_containers": self._remote_container_status(slot),
+                }
+            )
+        return payload
+
+    def preflight_payload(
+        self,
+        slots: list[LanAioProdSlot],
+        *,
+        execute: bool,
+    ) -> dict[str, Any]:
+        if not execute:
+            return {
+                "ok": True,
+                "dry_run": True,
+                "checks": [
+                    "prod Central health",
+                    "prod Web health",
+                    "LAN registry health",
+                    "LAN model cache health",
+                    "per-slot legacy ComfyUI /system_stats and /queue",
+                    "per-slot Docker daemon sees 192.168.1.115:5000 insecure registry",
+                    "runtime-render cloud-prod compose for each enabled slot",
+                ],
+                "slots": [slot.id for slot in slots],
+            }
+        checks: list[dict[str, Any]] = []
+        for name, url in (
+            ("prod_central_health", f"{self.central_url}/health"),
+            ("prod_web_health", self.web_health_url),
+            ("lan_registry_health", DEFAULT_REGISTRY_HEALTH_URL),
+            ("lan_model_cache_health", DEFAULT_MODEL_CACHE_HEALTH_URL),
+        ):
+            checks.append(self._http_check(name, url))
+        results = []
+        for slot in slots:
+            self.render_compose(slot)
+            port = _legacy_port_for_slot(self.config, slot)
+            slot_checks = [
+                self._remote_check(
+                    slot,
+                    "legacy_system_stats",
+                    f"curl -fsS --max-time 8 http://127.0.0.1:{port}/system_stats >/dev/null",
+                ),
+                self._remote_check(
+                    slot,
+                    "legacy_queue",
+                    f"curl -fsS --max-time 8 http://127.0.0.1:{port}/queue >/dev/null",
+                ),
+                self._remote_check(
+                    slot,
+                    "docker_insecure_registry",
+                    "docker info 2>/dev/null | grep -q '192.168.1.115:5000'",
+                ),
+                self._remote_check(slot, "disk_root", "df -h / | tail -1"),
+            ]
+            results.append(
+                {
+                    "slot": slot.id,
+                    "ssh_host": slot.ssh_host,
+                    "legacy_port": port,
+                    "checks": slot_checks,
+                }
+            )
+        ok = all(item["ok"] for item in checks) and all(
+            check["ok"] for slot_result in results for check in slot_result["checks"]
+        )
+        return {"ok": ok, "dry_run": False, "checks": checks, "slots": results}
+
+    def dry_run_action(self, action: str, slots: list[LanAioProdSlot]) -> dict[str, Any]:
+        operations: list[str] = []
+        for slot in slots:
+            if action == "configure-registry":
+                operations.extend(
+                    [
+                        f"backup {slot.ssh_host}:/etc/docker/daemon.json",
+                        f"add 192.168.1.115:5000 to {slot.ssh_host} Docker insecure registries",
+                        f"restart Docker on {slot.ssh_host}",
+                        f"verify old runtime container {slot.old_runtime_container} recovers",
+                    ]
+                )
+            elif action == "pull-image":
+                image_ref = self.config.profiles[slot.target_profile_id].all_in_one_image_ref
+                operations.append(f"ssh {slot.ssh_host} docker pull {image_ref}")
+            elif action == "start-disabled":
+                operations.extend(
+                    [
+                        f"render compose for {slot.id}",
+                        f"sync remote_workers to {slot.ssh_host}:{slot.remote_workers_dir}",
+                        f"copy env/compose to {slot.ssh_host}:{slot.remote_dir}",
+                        f"set {slot.agent_id}=disabled",
+                        f"docker compose up -d {slot.container_name}",
+                        f"preseed {len(slot.legacy_hot_cache_copies)} legacy hot cache file(s)",
+                        f"verify disabled heartbeat for {slot.agent_id}",
+                    ]
+                )
+            elif action == "drain-legacy":
+                operations.append(f"set {slot.legacy_worker_id}=draining")
+            elif action == "enable-aio":
+                operations.extend(
+                    [
+                        f"set {slot.legacy_worker_id}=disabled",
+                        f"verify {slot.legacy_worker_id} is idle and disabled",
+                        f"verify old runtime {slot.old_runtime_container} is not using GPU memory",
+                        f"set {slot.agent_id}=enabled",
+                    ]
+                )
+            elif action == "drain-aio":
+                operations.append(f"set {slot.agent_id}=draining")
+            elif action == "disable-aio":
+                operations.append(f"set {slot.agent_id}=disabled")
+            elif action == "rollback":
+                operations.extend(
+                    [
+                        f"set {slot.agent_id}=disabled",
+                        f"ssh {slot.ssh_host} docker start {slot.old_runtime_container}",
+                        f"local docker start {slot.old_local_agent_container}",
+                        f"set {slot.legacy_worker_id}=enabled",
+                    ]
+                )
+            elif action == "stop-old":
+                operations.extend(
+                    [
+                        f"verify {slot.agent_id} enabled and healthy",
+                        f"ssh {slot.ssh_host} docker stop {slot.old_runtime_container}",
+                        f"local docker stop {slot.old_local_agent_container}",
+                    ]
+                )
+        return {"ok": True, "dry_run": True, "action": action, "operations": operations}
+
+    def drain_legacy(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
+        for slot in slots:
+            self._set_control(
+                slot.legacy_worker_id,
+                "draining",
+                "lan_aio_fleet_drain_legacy",
+                ttl_seconds=CONTROL_TTL_SECONDS,
+            )
+        return {"ok": True, "action": "drain-legacy", "slots": [slot.id for slot in slots]}
+
+    def enable_aio(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
+        gated = []
+        for slot in slots:
+            self._set_control(
+                slot.legacy_worker_id,
+                "disabled",
+                "lan_aio_fleet_disable_legacy",
+                ttl_seconds=CONTROL_TTL_SECONDS,
+            )
+            gate = self._assert_enable_aio_gate(slot)
+            self._set_control(slot.agent_id, "enabled", "lan_aio_fleet_enable_aio")
+            gated.append(gate)
+        return {
+            "ok": True,
+            "action": "enable-aio",
+            "slots": [slot.id for slot in slots],
+            "gates": gated,
+        }
+
+    def drain_aio(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
+        for slot in slots:
+            self._set_control(
+                slot.agent_id,
+                "draining",
+                "lan_aio_fleet_drain_aio",
+                ttl_seconds=CONTROL_TTL_SECONDS,
+            )
+        return {"ok": True, "action": "drain-aio", "slots": [slot.id for slot in slots]}
+
+    def disable_aio(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
+        for slot in slots:
+            self._set_control(
+                slot.agent_id,
+                "disabled",
+                "lan_aio_fleet_disable_aio",
+                ttl_seconds=CONTROL_TTL_SECONDS,
+            )
+        return {"ok": True, "action": "disable-aio", "slots": [slot.id for slot in slots]}
+
+    def configure_registry(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
+        touched_hosts: dict[str, list[LanAioProdSlot]] = {}
+        for slot in slots:
+            touched_hosts.setdefault(slot.ssh_host, []).append(slot)
+        for host, host_slots in touched_hosts.items():
+            self._configure_registry_on_host(host)
+            for slot in host_slots:
+                port = _legacy_port_for_slot(self.config, slot)
+                self._ssh(
+                    host,
+                    (
+                        f"docker inspect -f '{{{{.State.Status}}}}' "
+                        f"'{slot.old_runtime_container}' >/dev/null && "
+                        f"curl -fsS --max-time 8 http://127.0.0.1:{port}/queue >/dev/null"
+                    ),
+                )
+        return {
+            "ok": True,
+            "action": "configure-registry",
+            "hosts": sorted(touched_hosts),
+        }
+
+    def pull_image(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
+        pulled = []
+        for slot in slots:
+            image_ref = self.config.profiles[slot.target_profile_id].all_in_one_image_ref
+            if not image_ref:
+                raise RuntimeError(f"profile {slot.target_profile_id} has no all_in_one_image_ref")
+            self._ssh(slot.ssh_host, f"docker pull '{image_ref}'")
+            pulled.append({"slot": slot.id, "image_ref": image_ref})
+        return {"ok": True, "action": "pull-image", "pulled": pulled}
+
+    def wait_idle(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
+        targets = {slot.legacy_worker_id for slot in slots}
+        deadline = time.time() + 7200
+        while time.time() < deadline:
+            workers = {item.get("agent_id"): item for item in self._system_workers()}
+            busy = {}
+            for agent_id in targets:
+                worker = workers.get(agent_id, {})
+                if str(worker.get("status") or "").lower() == "running" or worker.get(
+                    "current_task_type"
+                ):
+                    busy[agent_id] = worker.get("current_task_id") or worker.get(
+                        "current_task_type"
+                    )
+            if not busy:
+                return {"ok": True, "action": "wait-idle", "targets": sorted(targets)}
+            print("Waiting for legacy workers:", ", ".join(sorted(busy)), file=sys.stderr)
+            time.sleep(15)
+        raise TimeoutError("timed out waiting for legacy workers to become idle")
+
+    def start_disabled(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
+        if len(slots) != 1:
+            raise RuntimeError("start-disabled requires exactly one --slot")
+        slot = slots[0]
+        compose = self.render_compose(slot)
+        env_content = runtime_env_content(self.env_values)
+        self._set_control(
+            slot.agent_id,
+            "disabled",
+            "lan_aio_fleet_start_disabled",
+            ttl_seconds=CONTROL_TTL_SECONDS,
+        )
+        self._sync_remote_workers(slot)
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_dir = Path(tmp)
+            compose_file = tmp_dir / "docker-compose.yml"
+            env_file = tmp_dir / ".env.lan-aio-prod"
+            compose_file.write_text(compose, encoding="utf-8")
+            env_file.write_text(env_content, encoding="utf-8")
+            self._ssh(slot.ssh_host, f"mkdir -p '{slot.remote_dir}' && chmod 700 '{slot.remote_dir}'")
+            self._scp(compose_file, slot.ssh_host, slot.remote_compose_file)
+            self._scp(env_file, slot.ssh_host, slot.remote_env_file)
+            self._ssh(slot.ssh_host, f"chmod 600 '{slot.remote_env_file}'")
+        self._remote_compose(slot, "up -d --force-recreate")
+        self._wait_container_health(slot)
+        hot_cache_copies = self._preseed_legacy_hot_caches(slot)
+        self._verify_disabled_heartbeat(slot)
+        return {
+            "ok": True,
+            "action": "start-disabled",
+            "slot": slot.id,
+            "legacy_hot_cache_copies": hot_cache_copies,
+        }
+
+    def rollback(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
+        for slot in slots:
+            self._set_control(
+                slot.agent_id,
+                "disabled",
+                "lan_aio_fleet_rollback_disable_aio",
+                ttl_seconds=CONTROL_TTL_SECONDS,
+            )
+            self._ssh(slot.ssh_host, f"docker start '{slot.old_runtime_container}' >/dev/null")
+            if slot.old_local_agent_container:
+                self._local(["docker", "start", slot.old_local_agent_container], capture=True)
+            self._set_control(
+                slot.legacy_worker_id,
+                "enabled",
+                "lan_aio_fleet_rollback_enable_legacy",
+            )
+        return {"ok": True, "action": "rollback", "slots": [slot.id for slot in slots]}
+
+    def stop_old(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
+        for slot in slots:
+            self._ssh(slot.ssh_host, f"docker stop '{slot.old_runtime_container}' >/dev/null || true")
+            if slot.old_local_agent_container:
+                self._local(["docker", "stop", slot.old_local_agent_container], capture=True)
+        return {"ok": True, "action": "stop-old", "slots": [slot.id for slot in slots]}
+
+    def _system_workers(self) -> list[dict[str, Any]]:
+        payload = self._json_get(f"{self.central_url}/system/workers")
+        return [item for item in payload.get("workers", []) if isinstance(item, dict)]
+
+    def _control_state(self, agent_id: str) -> str:
+        token = self.env_values.get("LAN_AIO_AGENT_SECRET_TOKEN") or self.env_values.get(
+            "AGENT_SECRET_TOKEN"
+        )
+        if not token:
+            return "unknown_missing_token"
+        try:
+            payload = self._json_get(
+                f"{self.central_url}/api/agent/task/control/{agent_id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        except Exception:
+            return "unknown"
+        for candidate in (
+            payload,
+            payload.get("control") if isinstance(payload.get("control"), dict) else {},
+            payload.get("data") if isinstance(payload.get("data"), dict) else {},
+        ):
+            if isinstance(candidate, dict) and candidate.get("state"):
+                return str(candidate["state"])
+        return "unknown"
+
+    def _set_control(
+        self,
+        agent_id: str,
+        state: str,
+        reason: str,
+        *,
+        ttl_seconds: int | None = None,
+    ) -> None:
+        token = self.env_values.get("LAN_AIO_AGENT_SECRET_TOKEN") or self.env_values.get(
+            "AGENT_SECRET_TOKEN"
+        )
+        if not token:
+            raise RuntimeError("missing LAN_AIO_AGENT_SECRET_TOKEN/AGENT_SECRET_TOKEN")
+        body: dict[str, Any] = {"state": state, "reason": reason}
+        if ttl_seconds and state != "enabled":
+            body["ttl_seconds"] = ttl_seconds
+        request = urllib.request.Request(
+            f"{self.central_url}/api/agent/task/control/{agent_id}",
+            data=json.dumps(body).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "User-Agent": "allbot-lan-aio-fleet-prod/1.0",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=15) as response:
+            response.read()
+
+    def _json_get(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        timeout: int = 15,
+    ) -> dict[str, Any]:
+        request_headers = {
+            "User-Agent": "allbot-lan-aio-fleet-prod/1.0",
+            **(headers or {}),
+        }
+        request = urllib.request.Request(url, headers=request_headers)
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    def _http_ok(self, url: str) -> None:
+        request = urllib.request.Request(
+            url,
+            headers={"User-Agent": "allbot-lan-aio-fleet-prod/1.0"},
+        )
+        with urllib.request.urlopen(request, timeout=15) as response:
+            if response.status >= 400:
+                raise RuntimeError(f"{url} returned HTTP {response.status}")
+
+    def _http_check(self, name: str, url: str) -> dict[str, Any]:
+        try:
+            self._http_ok(url)
+        except Exception as exc:
+            return {"name": name, "ok": False, "error": str(exc)}
+        return {"name": name, "ok": True}
+
+    def _remote_check(
+        self,
+        slot: LanAioProdSlot,
+        name: str,
+        command: str,
+    ) -> dict[str, Any]:
+        try:
+            output = self._ssh(slot.ssh_host, command, capture=True)
+        except subprocess.CalledProcessError as exc:
+            error = (exc.stderr or exc.stdout or "").strip()
+            if not error:
+                error = f"remote check failed with exit code {exc.returncode}"
+            return {"name": name, "ok": False, "error": error}
+        except Exception as exc:
+            return {"name": name, "ok": False, "error": str(exc)}
+        result: dict[str, Any] = {"name": name, "ok": True}
+        if output.strip():
+            result["output"] = output.strip()
+        return result
+
+    def _remote_container_status(self, slot: LanAioProdSlot) -> list[str]:
+        pattern = (
+            f"^({re.escape(slot.container_name)}|{re.escape(slot.old_runtime_container)})( |$)|"
+            "node_exporter|dcgm_exporter"
+        )
+        command = (
+            "docker ps -a --format '{{.Names}} {{.Status}} {{.Ports}}' "
+            f"| grep -E '{pattern}' || true"
+        )
+        try:
+            output = self._ssh(slot.ssh_host, command, capture=True)
+        except Exception as exc:
+            return [f"status_unavailable: {exc}"]
+        return [line for line in output.splitlines() if line.strip()]
+
+    def _assert_enable_aio_gate(self, slot: LanAioProdSlot) -> dict[str, Any]:
+        legacy_control = self._control_state(slot.legacy_worker_id)
+        if legacy_control != "disabled":
+            raise RuntimeError(
+                f"refusing to enable {slot.agent_id}: "
+                f"{slot.legacy_worker_id} control is {legacy_control!r}, expected 'disabled'"
+            )
+        workers = {item.get("agent_id"): item for item in self._system_workers()}
+        legacy_worker = workers.get(slot.legacy_worker_id, {})
+        if str(legacy_worker.get("status") or "").lower() == "running" or legacy_worker.get(
+            "current_task_type"
+        ):
+            raise RuntimeError(
+                f"refusing to enable {slot.agent_id}: "
+                f"{slot.legacy_worker_id} is still running "
+                f"{legacy_worker.get('current_task_id') or legacy_worker.get('current_task_type')}"
+            )
+        aio_worker = workers.get(slot.agent_id)
+        if not aio_worker:
+            raise RuntimeError(
+                f"refusing to enable {slot.agent_id}: disabled heartbeat is not visible"
+            )
+        if str(aio_worker.get("status") or "").lower() == "running" or aio_worker.get(
+            "current_task_type"
+        ):
+            raise RuntimeError(
+                f"refusing to enable {slot.agent_id}: AIO worker is not idle"
+            )
+        gpu_processes = self._old_runtime_gpu_memory_processes(slot)
+        if gpu_processes:
+            raise RuntimeError(
+                f"refusing to enable {slot.agent_id}: old runtime container "
+                f"{slot.old_runtime_container} still has GPU memory processes: {gpu_processes}"
+            )
+        return {
+            "slot": slot.id,
+            "legacy_control": legacy_control,
+            "legacy_worker_status": legacy_worker.get("status"),
+            "aio_worker_status": aio_worker.get("status"),
+            "old_runtime_gpu_processes": gpu_processes,
+        }
+
+    def _old_runtime_gpu_memory_processes(
+        self,
+        slot: LanAioProdSlot,
+    ) -> list[dict[str, Any]]:
+        command = f"""bash -lc 'set -euo pipefail
+container={shlex.quote(slot.old_runtime_container)}
+if ! docker inspect "$container" >/dev/null 2>&1; then
+  true
+else
+  status="$(docker inspect -f "{{{{.State.Status}}}}" "$container" 2>/dev/null || true)"
+  if [ "$status" != running ]; then
+    true
+  else
+    tmp="$(mktemp)"
+    cleanup() {{ rm -f "$tmp"; }}
+    trap cleanup EXIT
+    docker top "$container" -eo pid 2>/dev/null | awk "NR>1 {{print \\$1}}" > "$tmp" || true
+    if [ -s "$tmp" ]; then
+      nvidia-smi --query-compute-apps=pid,used_gpu_memory --format=csv,noheader,nounits 2>/dev/null |
+      while IFS=, read -r pid memory_mib; do
+        pid="$(printf "%s" "$pid" | tr -d "[:space:]")"
+        memory_mib="$(printf "%s" "$memory_mib" | tr -d "[:space:]")"
+        if [ -n "$pid" ] && grep -qx "$pid" "$tmp"; then
+          printf "%s,%s\\n" "$pid" "$memory_mib"
+        fi
+      done || true
+    fi
+  fi
+fi
+'"""
+        output = self._ssh(slot.ssh_host, command, capture=True)
+        processes = []
+        for line in output.splitlines():
+            if not line.strip():
+                continue
+            pid, _, memory_mib = line.partition(",")
+            processes.append(
+                {
+                    "pid": pid.strip(),
+                    "used_gpu_memory_mib": memory_mib.strip(),
+                }
+            )
+        return processes
+
+    def _remote_compose(self, slot: LanAioProdSlot, op: str) -> None:
+        command = (
+            f"cd '{slot.remote_dir}' && "
+            "if docker compose version >/dev/null 2>&1; then "
+            f"docker compose --env-file '{slot.remote_env_file}' -f '{slot.remote_compose_file}' {op}; "
+            "else "
+            f"docker-compose --env-file '{slot.remote_env_file}' -f '{slot.remote_compose_file}' {op}; "
+            "fi"
+        )
+        self._ssh(slot.ssh_host, command)
+
+    def _sync_remote_workers(self, slot: LanAioProdSlot) -> None:
+        source = self.remote_workers_source_dir
+        if not (source / "comfy_agent").is_dir() or not (source / "scripts").is_dir():
+            raise RuntimeError(f"invalid remote_workers source: {source}")
+        self._ssh(
+            slot.ssh_host,
+            (
+                f"mkdir -p '{slot.remote_dir}/remote_workers.tmp' && "
+                f"rm -rf '{slot.remote_dir}/remote_workers.tmp' '{slot.remote_workers_dir}' && "
+                f"mkdir -p '{slot.remote_dir}/remote_workers.tmp'"
+            ),
+        )
+        with tempfile.NamedTemporaryFile(suffix=".tar.gz") as archive:
+            with tarfile.open(fileobj=archive, mode="w:gz") as tar:
+                for item in source.rglob("*"):
+                    if any(part in {"__pycache__", ".pytest_cache", ".mypy_cache"} for part in item.parts):
+                        continue
+                    if item.suffix == ".pyc":
+                        continue
+                    tar.add(item, arcname=item.relative_to(source))
+            archive.flush()
+            self._scp(
+                Path(archive.name),
+                slot.ssh_host,
+                f"{slot.remote_dir}/remote_workers.tar.gz",
+            )
+        self._ssh(
+            slot.ssh_host,
+            (
+                f"tar -xzf '{slot.remote_dir}/remote_workers.tar.gz' "
+                f"-C '{slot.remote_dir}/remote_workers.tmp' && "
+                f"mv '{slot.remote_dir}/remote_workers.tmp' '{slot.remote_workers_dir}' && "
+                f"rm -f '{slot.remote_dir}/remote_workers.tar.gz' && "
+                f"chmod -R u+rwX,go-rwx '{slot.remote_workers_dir}'"
+            ),
+        )
+
+    def _configure_registry_on_host(self, host: str) -> None:
+        sudo_password = os.environ.get("LAN_AIO_GPU_SUDO_PASSWORD", "")
+        script = r"""
+set -euo pipefail
+sudo_cmd() {
+  if sudo -n true >/dev/null 2>&1; then
+    sudo "$@"
+    return
+  fi
+  if [ -z "${LAN_AIO_GPU_SUDO_PASSWORD:-}" ]; then
+    echo "sudo password is required to update Docker daemon" >&2
+    return 1
+  fi
+  printf '%s\n' "$LAN_AIO_GPU_SUDO_PASSWORD" | sudo -S -p '' "$@"
+}
+backup="/etc/docker/daemon.json.allbot-lan-aio-fleet-$(date +%Y%m%d%H%M%S).bak"
+if [ -f /etc/docker/daemon.json ]; then
+  sudo_cmd cp -a /etc/docker/daemon.json "$backup"
+fi
+python3 - <<'PY' >/tmp/allbot-daemon.json
+import json
+from pathlib import Path
+
+path = Path("/etc/docker/daemon.json")
+data = json.loads(path.read_text() or "{}") if path.exists() else {}
+registries = list(data.get("insecure-registries") or [])
+if "192.168.1.115:5000" not in registries:
+    registries.append("192.168.1.115:5000")
+data["insecure-registries"] = sorted(registries)
+print(json.dumps(data, indent=2, sort_keys=True))
+PY
+sudo_cmd install -m 0644 /tmp/allbot-daemon.json /etc/docker/daemon.json
+sudo_cmd systemctl restart docker
+deadline=$((SECONDS + 240))
+while [ "$SECONDS" -lt "$deadline" ]; do
+  if docker info 2>/dev/null | grep -q "192.168.1.115:5000"; then
+    exit 0
+  fi
+  sleep 3
+done
+docker info 2>/dev/null | grep -q "192.168.1.115:5000"
+"""
+        self._local(
+            [
+                "ssh",
+                host,
+                "IFS= read -r LAN_AIO_GPU_SUDO_PASSWORD; "
+                "export LAN_AIO_GPU_SUDO_PASSWORD; bash -s",
+            ],
+            input_text=f"{sudo_password}\n{script}\n",
+        )
+
+    def _wait_container_health(self, slot: LanAioProdSlot) -> None:
+        command = f"""bash -lc 'set -euo pipefail
+deadline=$((SECONDS + 1800))
+while [ "$SECONDS" -lt "$deadline" ]; do
+  health="$(docker inspect -f "{{{{if .State.Health}}}}{{{{.State.Health.Status}}}}{{{{else}}}}{{{{.State.Status}}}}{{{{end}}}}" "{slot.container_name}" 2>/dev/null || true)"
+  [ "$health" = healthy ] && break
+  echo "Waiting for {slot.container_name} health: ${{health:-missing}}"
+  sleep 15
+done
+docker inspect -f "{{{{if .State.Health}}}}{{{{.State.Health.Status}}}}{{{{else}}}}{{{{.State.Status}}}}{{{{end}}}}" "{slot.container_name}" | grep -q healthy
+curl -fsS http://127.0.0.1:{slot.host_port}/system_stats >/dev/null
+docker exec "{slot.container_name}" bash -lc "curl -fsS http://127.0.0.1:8013/ready >/dev/null || curl -fsS http://127.0.0.1:8013/health >/dev/null"
+'"""
+        self._ssh(slot.ssh_host, command)
+
+    def _preseed_legacy_hot_caches(self, slot: LanAioProdSlot) -> list[dict[str, Any]]:
+        copied: list[dict[str, Any]] = []
+        for index, copy in enumerate(slot.legacy_hot_cache_copies, start=1):
+            tmp_pattern = f"/tmp/allbot-hot-cache-{_sanitize(slot.id)}-{index}.XXXXXX"
+            source = f"{copy.source_container}:{copy.source_path}"
+            lines = [
+                "set -euo pipefail",
+                f"tmp=$(mktemp {shlex.quote(tmp_pattern)})",
+                "cleanup() { rm -f \"$tmp\"; }",
+                "trap cleanup EXIT",
+                f"if ! docker cp {shlex.quote(source)} \"$tmp\"; then",
+            ]
+            if copy.required:
+                lines.extend(
+                    [
+                        f"  echo 'required legacy hot cache source missing: {source}' >&2",
+                        "  exit 1",
+                    ]
+                )
+            else:
+                lines.extend(
+                    [
+                        f"  echo 'optional legacy hot cache source missing: {source}' >&2",
+                        "  exit 0",
+                    ]
+                )
+            lines.append("fi")
+            lines.append("test -s \"$tmp\"")
+            for target_path in copy.target_paths:
+                target_dir = posixpath.dirname(target_path)
+                target = f"{slot.container_name}:{target_path}"
+                lines.append(
+                    f"docker exec {shlex.quote(slot.container_name)} "
+                    f"bash -lc {shlex.quote('mkdir -p ' + shlex.quote(target_dir))}"
+                )
+                lines.append(f"docker cp \"$tmp\" {shlex.quote(target)}")
+                lines.append(
+                    f"docker exec {shlex.quote(slot.container_name)} "
+                    f"bash -lc {shlex.quote('test -s ' + shlex.quote(target_path))}"
+                )
+            self._ssh(slot.ssh_host, "bash -lc " + shlex.quote("\n".join(lines)))
+            copied.append(
+                {
+                    "source_container": copy.source_container,
+                    "source_path": copy.source_path,
+                    "target_paths": list(copy.target_paths),
+                }
+            )
+        return copied
+
+    def _verify_disabled_heartbeat(self, slot: LanAioProdSlot) -> None:
+        deadline = time.time() + 180
+        while time.time() < deadline:
+            if self._control_state(slot.agent_id) != "disabled":
+                raise RuntimeError(f"{slot.agent_id} control state is not disabled")
+            worker = next(
+                (
+                    item
+                    for item in self._system_workers()
+                    if item.get("agent_id") == slot.agent_id
+                ),
+                None,
+            )
+            if not worker:
+                time.sleep(5)
+                continue
+            if str(worker.get("status") or "").lower() == "running" or worker.get(
+                "current_task_type"
+            ):
+                raise RuntimeError(f"{slot.agent_id} picked work while disabled")
+            expected = {
+                "node_id": slot.node_id,
+                "provider": "lan_ssh",
+                "runtime_profile": slot.target_profile_id,
+            }
+            errors = [
+                f"{key}={worker.get(key)!r}"
+                for key, value in expected.items()
+                if worker.get(key) != value
+            ]
+            if worker.get("pool_managed") not in (True, "true", "True", "1", 1):
+                errors.append(f"pool_managed={worker.get('pool_managed')!r}")
+            if errors:
+                raise RuntimeError(
+                    f"{slot.agent_id} heartbeat missing metadata: " + ", ".join(errors)
+                )
+            return
+        raise TimeoutError(f"timed out waiting for disabled heartbeat from {slot.agent_id}")
+
+    def _ssh(self, host: str, command: str, *, capture: bool = False) -> str:
+        return self._local(["ssh", host, command], capture=capture)
+
+    def _scp(self, source: Path, host: str, remote_path: str) -> None:
+        self._local(["scp", str(source), f"{host}:{remote_path}"], capture=True)
+
+    def _local(
+        self,
+        cmd: list[str],
+        *,
+        capture: bool = False,
+        input_text: str | None = None,
+        extra_env: dict[str, str] | None = None,
+    ) -> str:
+        kwargs: dict[str, Any] = {
+            "check": True,
+            "text": True,
+        }
+        if input_text is not None:
+            kwargs["input"] = input_text
+        if extra_env:
+            kwargs["env"] = {**os.environ, **extra_env}
+        if capture:
+            kwargs["stdout"] = subprocess.PIPE
+            kwargs["stderr"] = subprocess.PIPE
+        completed = subprocess.run(cmd, **kwargs)
+        return str(completed.stdout or "")
+
+
+def patch_remote_workers_mount(rendered: str, slot: LanAioProdSlot) -> str:
+    try:
+        import yaml  # type: ignore
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError("LAN AIO compose patching requires PyYAML") from exc
+    compose = yaml.safe_load(rendered) or {}
+    service = compose.get("services", {}).get(slot.container_name)
+    if not isinstance(service, dict):
+        raise RuntimeError(f"compose service not found: {slot.container_name}")
+    environment = service.setdefault("environment", {})
+    environment["RUNPOD_REMOTE_WORKER_ROOT"] = REMOTE_WORKERS_TARGET_DIR
+    environment["PYTHONPATH"] = REMOTE_WORKERS_TARGET_DIR
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    mount = f"{slot.remote_workers_dir}:{REMOTE_WORKERS_TARGET_DIR}"
+    volumes = service.setdefault("volumes", [])
+    if mount not in volumes:
+        volumes.append(mount)
+    runtime = compose.setdefault("x-allbot-runtime", {})
+    runtime["remote_workers_bundle"] = {
+        "source": slot.remote_workers_dir,
+        "target": REMOTE_WORKERS_TARGET_DIR,
+        "mode": "host_mount_current_bundle",
+    }
+    return _dump_yaml(compose)
+
+
+def assert_prod_compose(rendered: str, slot: LanAioProdSlot) -> None:
+    forbidden = ["cloud-test", "user-data-test"]
+    present = [item for item in forbidden if item in rendered]
+    if present:
+        raise RuntimeError("rendered compose contains forbidden prod value: " + ", ".join(present))
+    required = [
+        "RUNPOD_ENVIRONMENT: cloud-prod",
+        "CENTRAL_API_URL: https://worker-central.aivison.it.com",
+        "MINIO_RESULT_BUCKET: user-data-prod",
+        f"AGENT_ID: {slot.agent_id}",
+        f"container_name: {slot.container_name}",
+    ]
+    missing = [item for item in required if item not in rendered]
+    if missing:
+        raise RuntimeError("rendered compose missing: " + ", ".join(missing))
+
+
+def _worker_summary(worker: dict[str, Any]) -> dict[str, Any]:
+    keys = [
+        "agent_id",
+        "status",
+        "current_task_id",
+        "current_task_type",
+        "node_id",
+        "provider",
+        "runtime_profile",
+        "pool_managed",
+        "image_ref",
+    ]
+    return {key: worker.get(key) for key in keys}
+
+
+def _legacy_port_for_slot(config: ControllerConfig, slot: LanAioProdSlot) -> int:
+    assignment = config.assignments[slot.assignment_id]
+    node = config.nodes[assignment.node_id]
+    comfy = next(unit for unit in node.comfy if unit.id == assignment.comfy_id)
+    return comfy.port
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="AllBot LAN AIO production fleet ops")
+    parser.add_argument(
+        "action",
+        choices=(
+            "list",
+            "status",
+            "render",
+            "preflight",
+            "configure-registry",
+            "pull-image",
+            "drain-legacy",
+            "wait-idle",
+            "start-disabled",
+            "enable-aio",
+            "drain-aio",
+            "disable-aio",
+            "rollback",
+            "stop-old",
+        ),
+    )
+    parser.add_argument("--slot", default=None)
+    parser.add_argument("--include-disabled", action="store_true")
+    parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--config-root", type=Path, default=None)
+    parser.add_argument("--compose-out", type=Path, default=None)
+    parser.add_argument("--prod-env-file", type=Path, default=Path(".env.cloud.prod"))
+    parser.add_argument("--aio-env-file", type=Path, default=Path(".env.lan-aio-prod"))
+    parser.add_argument("--model-env-file", type=Path, default=Path(".env.lan.model-cache"))
+    parser.add_argument(
+        "--remote-workers-source-dir",
+        type=Path,
+        default=Path("remote_workers"),
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    ops = LanAioProdOps(
+        config_root=args.config_root,
+        prod_env_file=args.prod_env_file,
+        aio_env_file=args.aio_env_file,
+        model_env_file=args.model_env_file,
+        remote_workers_source_dir=args.remote_workers_source_dir,
+    )
+    if args.action == "list":
+        print(json.dumps(ops.list_payload(include_disabled=args.include_disabled), ensure_ascii=False, indent=2))
+        return 0
+    slots = ops.select_slots(args.slot, include_disabled=args.include_disabled)
+    if args.action == "status":
+        print(json.dumps(ops.status_payload(slots), ensure_ascii=False, indent=2))
+        return 0
+    if args.action == "render":
+        if len(slots) != 1:
+            raise SystemExit("render requires exactly one --slot")
+        rendered = ops.render_compose(slots[0])
+        if args.compose_out:
+            args.compose_out.write_text(rendered, encoding="utf-8")
+            print(json.dumps({"ok": True, "compose_out": str(args.compose_out)}, indent=2))
+        else:
+            print(rendered)
+        return 0
+    if args.action == "preflight":
+        print(
+            json.dumps(
+                ops.preflight_payload(slots, execute=args.execute),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+    if not args.execute:
+        print(json.dumps(ops.dry_run_action(args.action, slots), ensure_ascii=False, indent=2))
+        return 0
+    if args.action == "configure-registry":
+        payload = ops.configure_registry(slots)
+    elif args.action == "pull-image":
+        payload = ops.pull_image(slots)
+    elif args.action == "drain-legacy":
+        payload = ops.drain_legacy(slots)
+    elif args.action == "wait-idle":
+        payload = ops.wait_idle(slots)
+    elif args.action == "start-disabled":
+        payload = ops.start_disabled(slots)
+    elif args.action == "enable-aio":
+        payload = ops.enable_aio(slots)
+    elif args.action == "drain-aio":
+        payload = ops.drain_aio(slots)
+    elif args.action == "disable-aio":
+        payload = ops.disable_aio(slots)
+    elif args.action == "rollback":
+        payload = ops.rollback(slots)
+    elif args.action == "stop-old":
+        payload = ops.stop_old(slots)
+    else:  # pragma: no cover - argparse choices keep this unreachable
+        raise SystemExit(f"unsupported action: {args.action}")
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

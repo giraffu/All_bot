@@ -13,6 +13,8 @@
 - LAN RunPod 化一体容器生产灰度：`scripts/lan_runpod_aio_prod_canary.sh`
 - gpu-002 LAN AIO 正式日常入口：`scripts/lan_aio_prod_ops.sh`
 - gpu-002 SCAIL-2 LAN AIO 正式 slot0 入口：`scripts/lan_scail2_aio_prod.sh`
+- LAN AIO fleet 泛化配置：`ops/gpu_pool_controller/config/lan_aio_prod_slots.yml`
+- LAN AIO fleet 泛化入口：`scripts/lan_aio_fleet_prod_ops.py`
 - RunPod provider：`ops/gpu_pool_controller/providers/runpod.py`
 - RunPod 云测试 canary：`ops/gpu_pool_controller/runpod_canary.py`、`ops/gpu_pool_controller/runpod_split_video_canary.py`
 - RunPod 云测试 worker scale：`ops/gpu_pool_controller/runpod_workers.py`
@@ -115,7 +117,7 @@ LAN registry 缓存已验证 GHCR RunPod 镜像，也保存 SCAIL-2 这类本地
 
 GPU 节点 Docker daemon 必须信任 HTTP registry `192.168.1.115:5000` 后才能直接 `docker pull 192.168.1.115:5000/...`；未配置 insecure registry 时会被 Docker 强制按 HTTPS 访问并报 `HTTP response to HTTPS client`。修改 `/etc/docker/daemon.json` 并 restart Docker 会影响节点容器运行态，只能放在明确的节点维护窗口执行。
 
-`wan22_aio_video`、`image_to_video`、`wan22_video_v2` 三个 LAN AIO profile 共用同一个 Wan22 AIO 镜像；差异只在 runtime profile、`SUPPORTED_TASK_TYPES` 与模型 manifest。
+`wan22_aio_video`、`image_to_video`、`wan22_video_v2` 三个 LAN AIO profile 共用同一个 Wan22 AIO 镜像；差异只在 runtime profile、`SUPPORTED_TASK_TYPES` 与模型 manifest。LAN AIO 的 `image_to_video` / `wan22_video_v2` split profile 由 runtime-render 自动在 `COMFY_EXTRA_ARGS` 追加 `--disable-dynamic-vram`，用于规避 cu128 ComfyUI DynamicVRAM 在 32G 5090 上的概率性 OOM。
 
 all-in-one compose 渲染：
 
@@ -150,7 +152,7 @@ scripts/lan_runpod_aio_canary.sh --action restore --dry-run
 
 `start-heartbeat --execute` 会先把临时 agent control 设为 `disabled`，再把 compose/env 推到 `allbot-gpu-002` 并启动 canary 容器；不会放开接单。`enable-canary --execute` 只允许在真实 Web canary 窗口内临时 disable `cloud_worker_test_06` 并 enable 临时 agent；结束后必须执行 `restore --execute`，恢复旧 worker 并停止 canary 容器。失败现场需要保留容器和日志时，`restore --execute --keep-container` 只恢复 control，不停止容器。
 
-gpu-002 AIO 正式日常入口是 `scripts/lan_aio_prod_ops.sh`。它只管理固定生产接管范围：slot0 `img2img/img2img_lora` 与 slot1 `image_to_video/video_insert/video_edit`，默认 dry-run，真实动作必须显式加 `--execute`。底层 `scripts/lan_runpod_aio_prod_canary.sh` 仍保留给渲染、registry 配置、heartbeat-only 和专项排障。
+gpu-002 早期 AIO 正式日常入口是 `scripts/lan_aio_prod_ops.sh`。它只管理原固定生产接管范围：slot0 `img2img/img2img_lora` 与 slot1 `image_to_video/video_insert/video_edit`，默认 dry-run，真实动作必须显式加 `--execute`。2026-06-18 后 slot0/`8190` 已由 `scripts/lan_scail2_aio_prod.sh` 接管为正式 SCAIL-2 AIO，旧 `lan_aio_prod_ops.sh` 不再能代表 gpu-002 全局现状；slot0 当前状态以 SCAIL-2 helper 为准，slot1 `image_to_video` 仍可用旧 helper 观测。底层 `scripts/lan_runpod_aio_prod_canary.sh` 仍保留给旧 img2img_lora slot 的渲染、registry 配置、heartbeat-only、回滚和专项排障。
 
 | 日常动作 | 命令 | 语义 |
 | :--- | :--- | :--- |
@@ -184,6 +186,53 @@ gpu-002 进入 AIO 接管时仍使用同一 helper：先 `drain --slot both --ex
 
 gpu-002 首次生产灰度前还必须在维护窗口配置 Docker daemon `insecure-registries=["192.168.1.115:5000"]`；这会短暂重启 Docker 并影响 `comfy0/comfy1`，因此必须先 drain `cloud_prod_worker_06/07` 并确认 `8188/8189` 队列为空。配置完成后只拉取 LAN mirror 镜像，不创建 RunPod Pod，不修改生产 Web task type。
 如当前 SSH 用户无免密 sudo，可只在当次命令环境传入 `LAN_AIO_GPU_SUDO_PASSWORD`；该变量不得写入 `.env`、compose、日志或文档。
+
+### 3.2 LAN AIO fleet 泛化接管
+
+gpu-002 专用 helper 已证明 all-in-one runtime 可以在正式 Central 下以 `disabled heartbeat -> 小窗口 enable -> drain/restore` 的方式安全接管。后续把 `gpu-177` / `gpu-252` 纳入 AIO 时，不再复制 gpu-002 专用脚本，而使用 fleet 配置和统一入口：
+
+- 配置事实源：`ops/gpu_pool_controller/config/lan_aio_prod_slots.yml`
+- 编排入口：`scripts/lan_aio_fleet_prod_ops.py`
+- 渲染事实源仍是 `python scripts/gpu_pool_controller.py runtime-render --runtime-shape runpod_all_in_one --environment cloud-prod`
+- 真实密钥仍只从 `.env.cloud.prod`、`.env.lan.model-cache`、`.env.lan-aio-prod` 的 allowlist 读取；不得打印 env、compose config 展开值或 presigned URL
+
+首批可灰度 slot：
+
+| Slot | Legacy worker | AIO agent | Profile | Host port | 阶段 |
+| :--- | :--- | :--- | :--- | ---: | :--- |
+| `gpu-177-gpu0-image_to_video` | `cloud_prod_worker_02` | `lan_aio_prod_gpu177_gpu0_image_to_video_01` | `image_to_video` | 8190 | 正式 AIO 接管 |
+| `gpu-177-gpu1-ltx_video` | `cloud_prod_worker_03` | `lan_aio_prod_gpu177_gpu1_ltx_video_01` | `ltx_video` | 8191 | 正式 AIO 接管 |
+| `gpu-252-gpu0-img2img_lora` | `cloud_prod_worker_04` | `lan_aio_prod_gpu252_gpu0_img2img_lora_01` | `img2img_lora` | 8190 | canary-ready |
+| `gpu-252-gpu1-wan22_video_v2` | `cloud_prod_worker_05` | `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` | `wan22_video_v2` | 8191 | canary-ready |
+
+暂缓 slot：
+- `gpu-226-gpu0-face_i2i_t2i`：当前是宿主机 ComfyUI，不是 Docker `comfy0`；需要单独的 host-service 到容器化迁移方案。
+
+常用 dry-run / 只读命令：
+
+```bash
+scripts/lan_aio_fleet_prod_ops.py list
+scripts/lan_aio_fleet_prod_ops.py status --slot gpu-252-gpu0-img2img_lora
+scripts/lan_aio_fleet_prod_ops.py render --slot gpu-252-gpu0-img2img_lora
+scripts/lan_aio_fleet_prod_ops.py preflight
+scripts/lan_aio_fleet_prod_ops.py configure-registry --slot gpu-252-gpu0-img2img_lora
+scripts/lan_aio_fleet_prod_ops.py pull-image --slot gpu-252-gpu0-img2img_lora
+scripts/lan_aio_fleet_prod_ops.py start-disabled --slot gpu-252-gpu0-img2img_lora
+```
+
+真实接管顺序必须逐 slot 执行，不得一次替换整台或多台 GPU：
+
+1. `preflight --execute` 只读确认正式 Central/Web、LAN registry、LAN model cache、目标旧 ComfyUI `/system_stats`/`/queue`、磁盘和 Docker insecure registry。
+2. 在维护窗口内执行 `configure-registry --slot ... --execute`；该动作会重启目标 GPU 节点 Docker daemon，必须先确保目标 legacy worker drain 且队列为空。
+3. `pull-image --slot ... --execute` 预拉 LAN mirror 镜像。
+4. `start-disabled --slot ... --execute` 启动 AIO 容器，只等待 disabled heartbeat，不允许接单。
+5. 验收 compose 不含 `cloud-test` / `user-data-test`，Central heartbeat 必须带 `node_id`、`provider=lan_ssh`、`runtime_profile`、`pool_managed=true`；`image_to_video` / `wan22_video_v2` slot 的 `COMFY_EXTRA_ARGS` 必须包含 `--disable-dynamic-vram`。
+6. `enable-aio --slot ... --execute` 会先把 legacy worker 置为 disabled，并拒绝在 legacy 仍 running、AIO disabled heartbeat 不可见或旧 runtime 容器仍占 GPU 显存时放开 AIO，避免同卡双 ComfyUI 抢单。
+7. 灰度期可保留旧 runtime 作为热回滚；全量接管时允许在 AIO enable 前后用 `stop-old --slot ... --execute` 停旧 ComfyUI 和本地主旧 agent，但不删除容器。回滚用 `rollback --slot ... --execute`。
+
+`start-disabled` 支持在 slot 配置中声明 `legacy_hot_cache_copies`，用于把旧 ComfyUI 容器内由 custom node 运行期下载的热缓存文件预置进 AIO 容器。`gpu-177-gpu0-image_to_video` 已声明从旧 `comfy0` 复制 `rife49.pth` 到 AIO 内 `ComfyUI_Fill-Nodes` 与 `ComfyUI-Frame-Interpolation` 两处缓存路径；这是 `FL_RIFE` 后处理的运行依赖，不能依赖 AIO 容器运行时访问 HuggingFace。
+
+2026-06-18 `gpu-177` 进入整机 LAN AIO 接管：GPU0 由 `lan_aio_prod_gpu177_gpu0_image_to_video_01` 提供 `image_to_video`，GPU1 由 `lan_aio_prod_gpu177_gpu1_ltx_video_01` 提供 `ltx_video`。旧 `cloud_prod_worker_02/03` 和旧 `comfy0/comfy1` 只作为 stopped rollback baseline 保留，不应与 AIO 同时 enabled 或同卡占用显存；若回滚，先执行对应 slot 的 `rollback --execute` 恢复旧 worker。
 
 SCAIL-2 LAN AIO runtime 已用于 Web/Bot 的两个视频生视频能力：`scail2_action_transfer`（动作迁移）和 `scail2_video_replacement`（视频换人）。它有测试 runtime、云测试 RunPod profile、云正式 slot0 runtime 与云正式手动 RunPod profile 四条边界，不能混用测试/正式桶或 worker。
 
