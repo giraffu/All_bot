@@ -83,9 +83,9 @@ ssh gpu-252
 | SSH Host | IP | 用户 | ComfyUI 端口 | 生产 Worker |
 | :--- | :--- | :--- | :--- | :--- |
 | `allbot-gpu-226` | `192.168.1.226` | `ubantu` | `8188` | `cloud_prod_worker_01` |
-| `allbot-gpu-177` | `192.168.1.177` | `ubantui` | `8188`、`8189` | `cloud_prod_worker_02`、`cloud_prod_worker_03` |
+| `allbot-gpu-177` | `192.168.1.177` | `ubantui` | AIO `8190`、`8191`；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu177_gpu0_image_to_video_01`、`lan_aio_prod_gpu177_gpu1_ltx_video_01` |
 | `allbot-gpu-252` | `192.168.1.252` | `user` | `8188`、`8189` | `cloud_prod_worker_04`、`cloud_prod_worker_05` |
-| `allbot-gpu-002` | `192.168.1.2` | `chuzeyu` | `8188`、`8189` | `cloud_prod_worker_06`、`cloud_prod_worker_07` |
+| `allbot-gpu-002` | `192.168.1.2` | `chuzeyu` | AIO `8190`、`8191`；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu002_gpu0_scail2_01`、`lan_aio_prod_gpu002_gpu1_image_to_video_01` |
 
 当前 4 台节点均可用 key-based SSH 登录；`sudo -n true` 均不通过，表示不是免密 sudo。需要 root 级操作时，必须由人工确认远端 sudo 密码或在维护窗口内操作。
 

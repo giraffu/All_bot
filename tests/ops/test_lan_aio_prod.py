@@ -34,7 +34,7 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
     slots = load_lan_aio_prod_slots(include_disabled=True)
 
     assert slots["gpu-177-gpu1-ltx_video"].enabled is True
-    assert slots["gpu-177-gpu1-ltx_video"].phase == "canary_ready"
+    assert slots["gpu-177-gpu1-ltx_video"].phase == "prod_enabled"
     config = load_controller_config()
     assert (
         config.profiles["ltx_video"].all_in_one_image_ref

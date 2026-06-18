@@ -156,9 +156,9 @@
 | GPU 服务器 | 物理 GPU | ComfyUI 端口 | 生产 Agent | 主要支持任务 |
 | :--- | :--- | :--- | :--- | :--- |
 | `192.168.1.226` | 1 x RTX 5090 32G | `8188` | `cloud_prod_worker_01` | `face_swap`、`i2i_pro`、`i2i_draw`、`face_video`、`video_edit`、`image_to_video`、`t2i-pornmaster-turbo` |
-| `192.168.1.177` | 2 x RTX 5090 32G | `8188`、`8189` | `cloud_prod_worker_02`、`cloud_prod_worker_03` | `video_insert`、`video_edit`、`image_to_video`、`ltx_video` |
+| `192.168.1.177` | 2 x RTX 5090 32G | AIO `8190`、`8191`；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu177_gpu0_image_to_video_01`、`lan_aio_prod_gpu177_gpu1_ltx_video_01` | `image_to_video`（兼容 `video_insert` / `video_edit` alias）、`ltx_video` |
 | `192.168.1.252` | 2 x RTX 4090 48G | `8188`、`8189` | `cloud_prod_worker_04`、`cloud_prod_worker_05` | `img2img`、`img2img_lora`、`wan22_video_v2`、`video_edit`、`image_to_video` |
-| `192.168.1.2` | 2 x RTX 4090 48G | `8188`、`8189` | `cloud_prod_worker_06`、`cloud_prod_worker_07` | `img2img`、`img2img_lora`、`video_insert`、`video_edit`、`image_to_video` |
+| `192.168.1.2` | 2 x RTX 4090 48G | AIO `8190`、`8191`；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu002_gpu0_scail2_01`、`lan_aio_prod_gpu002_gpu1_image_to_video_01` | `scail2_action_transfer`、`scail2_video_replacement`、`image_to_video`（兼容 alias） |
 
 表中 `video_insert` / `video_edit` 仅表示生产 worker 仍声明的兼容 alias；canonical 执行面类型是 `image_to_video`，不再代表独立模型或独立 workflow。
 
@@ -171,11 +171,11 @@ GPU 节点运行方式与模型挂载快照：
 | GPU 服务器 | ComfyUI 运行方式 | 模型目录 | 实例隔离 | 运维注意 |
 | :--- | :--- | :--- | :--- | :--- |
 | `192.168.1.226` | 宿主机进程，cwd `/home/ubantu/comfyui`，端口 `8188` | `/home/ubantu/comfyui/models`，约 325G | 单实例 | 不是 Comfy Docker 容器；重启前先确认进程管理方式 |
-| `192.168.1.177` | Docker `comfy0`/`comfy1`，分别绑定 GPU 0/1，端口 `8188`/`8189` | `/data/comfy/models`，约 444G，共享 | `inst0`/`inst1` 的 input/output/temp/custom_nodes/workflows 分离 | 2026-06-18 根分区可用约 243G，使用率约 73%；`8189` 已修复 `FL_RIFE` |
+| `192.168.1.177` | 正式 AIO `allbot-lan-aio-gpu-177-gpu0-image_to_video-prod`/`allbot-lan-aio-gpu-177-gpu1-ltx_video-prod`，host `8190`/`8191` | AIO workspace `/workspace/ComfyUI/models`；旧共享目录 `/data/comfy/models` 保留回滚 | AIO 使用 `/workspace/allbot-state` 隔离 input/output/temp；旧 `inst0/inst1` 保留 | 2026-06-18 根分区可用约 243G，使用率约 73%；旧 `comfy0/comfy1` 和旧 agent 2/3 stopped，不得与 AIO 同卡并跑 |
 | `192.168.1.252` | Docker `comfy0`/`comfy1`，分别绑定 GPU 0/1，端口 `8188`/`8189` | `/home/user/APP/data/models`，约 121G，共享 | `inst0`/`inst1` 的 input/output/temp/custom_nodes/workflows 分离 | 2026-06-18 根分区可用约 647G；`comfy0` 主打 img2img，`comfy1` 主打视频/Wan22 |
-| `192.168.1.2` | Docker `comfy0`/`comfy1`，分别绑定 GPU 0/1，端口 `8188`/`8189` | `/data/comfy/models`，约 85G，共享 | `inst0`/`inst1` 的 input/output/temp/custom_nodes/workflows 分离 | 2026-06-18 根分区可用约 442G；可只重启目标 Comfy 容器，不要整机重启 |
+| `192.168.1.2` | 正式 AIO `allbot-lan-aio-gpu-002-gpu0-scail2-prod`/`allbot-lan-aio-gpu-002-gpu1-image_to_video-canary`，host `8190`/`8191` | AIO workspace `/workspace/ComfyUI/models`；旧共享目录 `/data/comfy/models` 保留回滚 | AIO 使用 `/workspace/allbot-state` 隔离 input/output/temp；旧 `inst0/inst1` 保留 | 2026-06-18 根分区可用约 442G；旧 `comfy0/comfy1` 和旧 agent 6/7 stopped，不得与 AIO 同卡并跑 |
 
-双卡节点的重要边界：`comfy0` 与 `comfy1` 是独立容器、独立 GPU、独立输入输出目录，但共享模型目录和宿主机资源。处理某个 worker 或某个 ComfyUI 的问题时，只操作对应 worker 容器或对应 GPU 节点上的 `comfy0`/`comfy1`；不要使用整机 reboot、无 service 名 `docker compose down/up` 或批量 `docker rm`。
+双卡节点的重要边界：`gpu-177` 与 `gpu-002` 日常按 AIO 容器和 `8190/8191` 端口操作，旧 `comfy0/comfy1` 只作为 stopped rollback baseline；`gpu-252` 仍是传统 `comfy0/comfy1` 双容器。处理某个 worker 或某个 ComfyUI 的问题时，只操作对应 worker 容器、AIO 容器或对应 GPU 节点上的单个 `comfy0/comfy1`；不要使用整机 reboot、无 service 名 `docker compose down/up` 或批量 `docker rm`。
 
 ComfyUI 素材清理口径：
 - 2026-06-08 检查确认 GPU 节点没有项目级 ComfyUI 素材自动清理机制，只有系统默认 tmp/log 清理。
@@ -188,12 +188,12 @@ ComfyUI 版本快照：
 | ComfyUI URL | ComfyUI | PyTorch | 运行时识别显存 |
 | :--- | :--- | :--- | :--- |
 | `http://192.168.1.226:8188` | 0.17.0 | 2.10.0+cu130 | RTX 5090，约 31.36GiB |
-| `http://192.168.1.177:8188` | 0.18.2 | 2.11.0+cu130 | RTX 5090，约 31.36GiB |
-| `http://192.168.1.177:8189` | 0.18.2 | 2.11.0+cu130 | RTX 5090，约 31.36GiB |
+| `http://192.168.1.177:8190` | 0.21.1 | 2.11.0+cu128 | RTX 5090，约 31.36GiB，`--disable-dynamic-vram` |
+| `http://192.168.1.177:8191` | 0.19.5 | 2.11.0+cu128 | RTX 5090，约 31.36GiB，LTX AIO |
 | `http://192.168.1.252:8188` | 0.18.5 | 2.11.0+cu128 | RTX 4090，约 47.37GiB |
 | `http://192.168.1.252:8189` | 0.22.0 | 2.11.0+cu128 | RTX 4090，约 47.37GiB |
-| `http://192.168.1.2:8188` | 0.19.5 | 2.11.0+cu128 | RTX 4090，约 47.62GiB |
-| `http://192.168.1.2:8189` | 0.22.0 | 2.11.0+cu128 | RTX 4090，约 47.62GiB |
+| `http://192.168.1.2:8190` | 0.25.0 | 2.11.0+cu128 | RTX 4090，约 47.62GiB，SCAIL-2 AIO |
+| `http://192.168.1.2:8191` | 0.21.1 | 2.11.0+cu128 | RTX 4090，约 47.62GiB，image_to_video AIO |
 
 ## 5. 网络与外部依赖
 现实网络条件：
