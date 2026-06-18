@@ -188,47 +188,48 @@ watch(
         <ChevronRight :size="compact ? 15 : 16" aria-hidden="true" />
       </button>
 
-      <form
-        v-if="showJump"
-        class="pagination-jump"
-        :class="{ 'pagination-jump-compact': compact }"
-        @submit.prevent="handleJumpSubmit"
-      >
-        <input
-          class="pagination-jump-input"
-          :class="{ 'pagination-jump-input-compact': compact }"
-          :value="jumpValue"
-          :style="jumpInputStyle"
-          :disabled="disabled"
-          inputmode="numeric"
-          pattern="[0-9]*"
-          autocomplete="off"
-          :placeholder="String(currentPage)"
-          :aria-label="`跳转页码，1 到 ${totalPages}`"
-          @input="handleJumpInput"
-        >
-        <button
-          type="submit"
-          class="pagination-jump-submit"
-          :class="{
-            'pagination-jump-submit-compact': compact,
-            'pagination-jump-submit-disabled': !canSubmitJump
-          }"
-          :disabled="!canSubmitJump"
-          aria-label="跳转到输入页码"
-          title="跳转到输入页码"
-        >
-          <ArrowRightToLine :size="compact ? 14 : 15" aria-hidden="true" />
-        </button>
-      </form>
-
-      <span
-        v-if="!compact"
-        class="ml-1 text-xs text-slate-400"
-      >
-        {{ currentPage }} / {{ totalPages }}
-      </span>
     </template>
+
+    <form
+      v-if="showJump"
+      class="pagination-jump"
+      :class="{ 'pagination-jump-compact': compact }"
+      @submit.prevent="handleJumpSubmit"
+    >
+      <input
+        class="pagination-jump-input"
+        :class="{ 'pagination-jump-input-compact': compact }"
+        :value="jumpValue"
+        :style="jumpInputStyle"
+        :disabled="disabled"
+        inputmode="numeric"
+        pattern="[0-9]*"
+        autocomplete="off"
+        :placeholder="String(currentPage)"
+        :aria-label="`跳转页码，1 到 ${totalPages}`"
+        @input="handleJumpInput"
+      >
+      <button
+        type="submit"
+        class="pagination-jump-submit"
+        :class="{
+          'pagination-jump-submit-compact': compact,
+          'pagination-jump-submit-disabled': !canSubmitJump
+        }"
+        :disabled="!canSubmitJump"
+        aria-label="跳转到输入页码"
+        title="跳转到输入页码"
+      >
+        <ArrowRightToLine :size="compact ? 14 : 15" aria-hidden="true" />
+      </button>
+    </form>
+
+    <span
+      v-if="!minimal && !compact"
+      class="ml-1 text-xs text-slate-400"
+    >
+      {{ currentPage }} / {{ totalPages }}
+    </span>
   </div>
 </template>
 

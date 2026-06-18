@@ -134,6 +134,7 @@ const sortOptions = [
           :total-pages="totalPages"
           :disabled="loading"
           :compact="true"
+          :show-jump="true"
           :minimal="true"
           @change="emit('pageChange', $event)"
         />
