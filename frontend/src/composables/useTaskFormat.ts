@@ -30,11 +30,19 @@ export function useTaskFormat() {
       'closeup_blowjob': '特写口交',
       'custom_video': '图生视频',
       'video_lora': '图生视频',
+      'image_to_video': '图生视频',
+      'video_insert': '图生视频',
+      'video_edit': '图生视频',
+      'perfect_video_edit': '图生视频',
+      'txt2video': '图生视频',
       'img2img_lora': '图生图(附加模型)',
       'ltx_video': '高级图生视频',
       'wan22_video_v2': '图生视频 v2',
+      'scail2_video_replacement': '视频换人',
+      'scail2_action_transfer': '动作迁移',
       'template_contribute': '模板共建',
-      'txt2img': '文生图'
+      'txt2img': '文生图',
+      't2i-pornmaster-turbo': '文生图'
     }
     return map[type] || type
   }

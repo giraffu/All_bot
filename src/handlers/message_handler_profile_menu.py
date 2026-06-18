@@ -7,11 +7,12 @@ TASK_TYPE_DISPLAY_NAMES = {
     "i2i_pro": "task.i2i_pro",
     "i2i_draw": "task.mode_i2i_draw",
     "face_swap": "task.face_swap",
-    "video_insert": "task.video_insert",
     "img2video_group": "task.mode_video_lora",
+    "wan22_video_v2": "task.mode_wan22_video_v2",
+    "scail2_video_replacement": "task.mode_scail2_video_replacement",
+    "scail2_action_transfer": "task.mode_scail2_action_transfer",
     "face_video": "task.face_video",
     "ltx_video": "task.ltx_video",
-    "wan22_video_v2": "task.mode_wan22_video_v2",
     "t2i-pornmaster-turbo": "task.t2i_pornmaster_turbo",
 }
 

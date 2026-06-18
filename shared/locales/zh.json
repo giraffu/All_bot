@@ -147,12 +147,17 @@
     "i2i_pro": "幻想换脸",
     "i2i_draw": "局部重绘",
     "face_swap": "快速换脸",
-    "video_insert": "视频生成",
+    "video_insert": "图生视频",
+    "video_edit": "图生视频",
     "video_lora": "图生视频",
+    "image_to_video": "图生视频",
     "wan22_video_v2": "图生视频v2",
     "wan22_start_frame": "首图生成",
     "wan22_start_end_frame": "首尾帧生成",
-    "face_video": "视频换脸"
+    "face_video": "视频换脸",
+    "scail2_video_replacement": "视频换人",
+    "scail2_action_transfer": "动作迁移",
+    "t2i_pornmaster_turbo": "文生图"
   },
   "api": {
     "session_expired": "会话已过期，请重新登录",

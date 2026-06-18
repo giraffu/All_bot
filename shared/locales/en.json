@@ -147,12 +147,17 @@
     "i2i_pro": "Fantasy FaceSwap",
     "i2i_draw": "Inpaint",
     "face_swap": "FaceSwap",
-    "video_insert": "Video Gen",
+    "video_insert": "Img2Video",
+    "video_edit": "Img2Video",
     "video_lora": "Img2Video",
+    "image_to_video": "Img2Video",
     "wan22_video_v2": "Img2Video V2",
     "wan22_start_frame": "Start Frame",
     "wan22_start_end_frame": "Start + End Frame",
-    "face_video": "Video FaceSwap"
+    "face_video": "Video FaceSwap",
+    "scail2_video_replacement": "Video Replacement",
+    "scail2_action_transfer": "Action Transfer",
+    "t2i_pornmaster_turbo": "Text2Img"
   },
   "api": {
     "session_expired": "Session expired, please login again",

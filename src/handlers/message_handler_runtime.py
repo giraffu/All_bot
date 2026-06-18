@@ -1,4 +1,9 @@
-from src.constants import MODE_IMAGE_TO_VIDEO
+from src.constants import (
+    MODE_FACE_VIDEO_STEP1,
+    MODE_FACE_VIDEO_STEP2,
+    MODE_TXT2IMG,
+)
+from src.domain_config.wan22_aio_video import is_legacy_wan22_image_to_video_task_type
 from src.handlers.message_handler_menu import (
     build_switch_lang_message,
     build_queue_status_message,
@@ -26,9 +31,14 @@ normalize_supported_language_code = _normalize_supported_language_code
 
 
 def _normalize_queue_task_type_for_display(task_type: str | None) -> str:
-    if task_type in {"video_edit", "custom_video", MODE_IMAGE_TO_VIDEO, "image_to_video"}:
+    raw_task_type = str(task_type or "").strip()
+    if is_legacy_wan22_image_to_video_task_type(raw_task_type):
         return "img2video_group"
-    return str(task_type or "")
+    if raw_task_type in {"face_video", MODE_FACE_VIDEO_STEP1, MODE_FACE_VIDEO_STEP2}:
+        return "face_video"
+    if raw_task_type == MODE_TXT2IMG:
+        return "t2i-pornmaster-turbo"
+    return raw_task_type
 
 
 def _normalize_queue_type_counts_for_display(queue_by_type: dict | None) -> dict[str, int]:

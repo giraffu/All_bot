@@ -90,13 +90,16 @@ async def test_get_queue_status_reply_handles_success_and_unavailable(monkeypatc
         AsyncMock(
             side_effect=[
                 {
-                    "queue_size": 7,
+                    "queue_size": 11,
                     "queue_by_type": {
                         "img2img": 1,
                         "video_edit": 2,
+                        "video_insert": 2,
                         "custom_video": 1,
                         "video_lora": 1,
                         "wan22_video_v2": 1,
+                        "scail2_video_replacement": 1,
+                        "scail2_action_transfer": 1,
                         "custom_x": 1,
                     },
                 },
@@ -121,6 +124,8 @@ async def test_get_queue_status_reply_handles_success_and_unavailable(monkeypatc
             "img2img": "task.img2img",
             "img2video_group": "task.mode_video_lora",
             "wan22_video_v2": "task.mode_wan22_video_v2",
+            "scail2_video_replacement": "task.mode_scail2_video_replacement",
+            "scail2_action_transfer": "task.mode_scail2_action_transfer",
         },
         user=user,
     )
@@ -130,10 +135,13 @@ async def test_get_queue_status_reply_handles_success_and_unavailable(monkeypatc
         user=user,
     )
 
-    assert "T:profile.total_queue：`7` T:profile.tasks_unit" in text
+    assert "T:profile.total_queue：`11` T:profile.tasks_unit" in text
     assert "T:task.img2img：`1` T:profile.tasks_unit" in text
-    assert "T:task.mode_video_lora：`4` T:profile.tasks_unit" in text
+    assert "T:task.mode_video_lora：`6` T:profile.tasks_unit" in text
     assert "T:task.mode_wan22_video_v2：`1` T:profile.tasks_unit" in text
+    assert "T:task.mode_scail2_video_replacement：`1` T:profile.tasks_unit" in text
+    assert "T:task.mode_scail2_action_transfer：`1` T:profile.tasks_unit" in text
+    assert "video_insert" not in text
     assert "❓ T:profile.other_types (custom\\_x)：`1` T:profile.tasks_unit" in text
     assert "**T:profile.my_tasks_title**" in text
     assert "1. T:task.img2img：全局排队第 2 位" in text
@@ -144,15 +152,21 @@ def test_normalize_queue_type_counts_for_display_merges_legacy_img2video_aliases
     normalized = message_handler_runtime._normalize_queue_type_counts_for_display(
         {
             "video_edit": 2,
+            "video_insert": 2,
+            "perfect_video_insert": 6,
             "custom_video": 1,
             "video_lora": 3,
             "image_to_video": 4,
+            "txt2img": 7,
+            "face_video_step1": 8,
             "wan22_video_v2": 5,
         }
     )
 
     assert normalized == {
-        "img2video_group": 10,
+        "img2video_group": 18,
+        "t2i-pornmaster-turbo": 7,
+        "face_video": 8,
         "wan22_video_v2": 5,
     }
 
