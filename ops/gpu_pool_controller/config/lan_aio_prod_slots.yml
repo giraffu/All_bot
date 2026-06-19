@@ -20,7 +20,7 @@ slots:
 
   - id: gpu-252-gpu0-img2img_lora
     enabled: true
-    phase: canary_ready
+    phase: prod_enabled
     assignment_id: lan-252-8188-worker-04
     target_profile_id: img2img_lora
     host_port: 8190
@@ -34,12 +34,12 @@ slots:
 
   - id: gpu-252-gpu1-wan22_video_v2
     enabled: true
-    phase: prod_enabled
+    phase: maintenance_disabled
     assignment_id: lan-252-8189-worker-05
     target_profile_id: wan22_video_v2
     target_task_types:
       - wan22_video_v2
-    gpu_index: 0
+    gpu_index: 1
     host_port: 8191
     agent_id: lan_aio_prod_gpu252_gpu1_wan22_video_v2_01
     container_name: allbot-lan-aio-gpu-252-gpu1-wan22_video_v2-prod
@@ -53,7 +53,7 @@ slots:
           - /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth
           - /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth
     rollout_order: 30
-    notes: Replaces worker 05 with a LAN AIO worker that only accepts wan22_video_v2; gpu-252 currently exposes worker05's old Docker device as GPU 0, while image_to_video remains on dedicated image_to_video capacity.
+    notes: Replaces worker 05 with a LAN AIO worker that only accepts wan22_video_v2; after the 2026-06-19 gpu-252 reboot both cards are visible again, so this slot binds Docker/NVIDIA device 1. Live task testing still drove GPU1/ComfyUI into an unhealthy unkillable state, so production control must stay disabled until hardware/driver recovery; RunPod remains the wan22_video_v2 fallback.
 
   - id: gpu-177-gpu1-ltx_video
     enabled: true
