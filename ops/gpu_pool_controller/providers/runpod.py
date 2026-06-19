@@ -53,6 +53,10 @@ RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE = (
 RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX = (
     "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:"
 )
+RUNPOD_WAN22_AIO_VIDEO_RIFE_TAG = "20260619-wan22aio-rife-bcf3ebd"
+RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE = (
+    RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX + RUNPOD_WAN22_AIO_VIDEO_RIFE_TAG
+)
 RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX = (
     "ghcr.io/giraffu/allbot-comfy-runpod-scail2:"
 )
@@ -548,8 +552,8 @@ class RunPodSettings:
     template_id_scail2: str = ""
     image_name_img2img_lora: str = ""
     image_name_wan22_aio_video: str = ""
-    image_name_image_to_video: str = ""
-    image_name_wan22_video_v2: str = ""
+    image_name_image_to_video: str = RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE
+    image_name_wan22_video_v2: str = RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE
     image_name_i2i_pro: str = ""
     image_name_scail2: str = ""
     worker_central_url_cloud_test: str = "https://worker-central-test.example.com"
@@ -608,9 +612,7 @@ class RunPodSettings:
             "RUNPOD_MODEL_PREFIX", "img2img_lora/2026-06-10"
         )
         global_model_manifest_key = os.getenv("RUNPOD_MODEL_MANIFEST_KEY", "")
-        wan22_aio_use_template_raw = os.getenv("RUNPOD_USE_TEMPLATE_WAN22_AIO_VIDEO")
         wan22_aio_image = os.getenv("RUNPOD_IMAGE_NAME_WAN22_AIO_VIDEO", "")
-        wan22_aio_template = os.getenv("RUNPOD_TEMPLATE_ID_WAN22_AIO_VIDEO", "")
         wan22_aio_gpu_type_ids = (
             _csv(
                 os.getenv("RUNPOD_GPU_TYPE_IDS_WAN22_AIO_VIDEO"),
@@ -623,29 +625,19 @@ class RunPodSettings:
             default=0.0,
         )
         image_to_video_use_template_raw = os.getenv(
-            "RUNPOD_USE_TEMPLATE_IMAGE_TO_VIDEO",
-            wan22_aio_use_template_raw,
+            "RUNPOD_USE_TEMPLATE_IMAGE_TO_VIDEO"
         )
         wan22_video_v2_use_template_raw = os.getenv(
-            "RUNPOD_USE_TEMPLATE_WAN22_VIDEO_V2",
-            wan22_aio_use_template_raw,
+            "RUNPOD_USE_TEMPLATE_WAN22_VIDEO_V2"
         )
         image_to_video_image = os.getenv(
-            "RUNPOD_IMAGE_NAME_IMAGE_TO_VIDEO",
-            wan22_aio_image,
-        )
+            "RUNPOD_IMAGE_NAME_IMAGE_TO_VIDEO"
+        ) or RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE
         wan22_video_v2_image = os.getenv(
-            "RUNPOD_IMAGE_NAME_WAN22_VIDEO_V2",
-            wan22_aio_image,
-        )
-        image_to_video_template = os.getenv(
-            "RUNPOD_TEMPLATE_ID_IMAGE_TO_VIDEO",
-            wan22_aio_template,
-        )
-        wan22_video_v2_template = os.getenv(
-            "RUNPOD_TEMPLATE_ID_WAN22_VIDEO_V2",
-            wan22_aio_template,
-        )
+            "RUNPOD_IMAGE_NAME_WAN22_VIDEO_V2"
+        ) or RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE
+        image_to_video_template = os.getenv("RUNPOD_TEMPLATE_ID_IMAGE_TO_VIDEO", "")
+        wan22_video_v2_template = os.getenv("RUNPOD_TEMPLATE_ID_WAN22_VIDEO_V2", "")
         wan22_aio_model_prefix = os.getenv(
             "RUNPOD_MODEL_PREFIX_WAN22_AIO_VIDEO",
             global_model_prefix
@@ -1457,6 +1449,23 @@ class RunPodProvider:
             and not image_name
         ):
             raise ValueError(f"{profile.image_env_key} is required for cloud-prod")
+        if (
+            environment == "cloud-prod"
+            and profile.task_type in {"image_to_video", "wan22_video_v2"}
+            and template_id
+        ):
+            raise ValueError(
+                f"{profile.template_env_key} must be false for cloud-prod split video"
+            )
+        if (
+            environment == "cloud-prod"
+            and profile.task_type in {"image_to_video", "wan22_video_v2"}
+            and image_name != RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE
+        ):
+            raise ValueError(
+                f"{profile.image_env_key} must be "
+                f"{RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE} for cloud-prod"
+            )
         if not template_id and not image_name:
             image_name = self._pending_image_name_for(profile)
         body: dict[str, Any] = {

@@ -22,7 +22,7 @@ MODEL_CACHE_READY_URL="http://192.168.1.115:9010/minio/health/ready"
 
 IMG2IMG_IMAGE="${REGISTRY_HOST}/allbot/comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946"
 I2I_PRO_IMAGE="${REGISTRY_HOST}/allbot/comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh"
-WAN22_IMAGE="${REGISTRY_HOST}/allbot/comfy-runpod-wan22-aio-video:20260613-wan22aio-lanbase-ab9b7ea"
+WAN22_IMAGE="${REGISTRY_HOST}/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd"
 
 ASSIGNMENT=""
 PROFILE=""

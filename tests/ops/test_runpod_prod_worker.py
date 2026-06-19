@@ -16,7 +16,7 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_PROD_SUPPORTED_TASK_TYPES,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
     RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
-    RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX,
+    RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE,
     RUNPOD_SCAIL2_MODEL_MANIFEST_KEY,
     RUNPOD_SCAIL2_MODEL_PREFIX,
     RUNPOD_SCAIL2_SUPPORTED_TASK_TYPES,
@@ -386,9 +386,7 @@ def test_prod_worker_render_dry_run_uses_verified_image_and_prod_defaults():
 
 
 def test_prod_worker_render_wan22_video_v2_uses_prod_profile_defaults():
-    image_ref = (
-        RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX + "20260619-wan22aio-rife-bcf3ebd"
-    )
+    image_ref = RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE
     agent_id = prod_agent_id_from_slot("01", profile="wan22_video_v2")
     provider = FakeRunPodProvider(
         _settings(
@@ -437,9 +435,7 @@ def test_prod_worker_render_wan22_video_v2_uses_prod_profile_defaults():
 
 
 def test_prod_worker_render_image_to_video_uses_prod_profile_defaults():
-    image_ref = (
-        RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX + "20260619-wan22aio-rife-bcf3ebd"
-    )
+    image_ref = RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE
     agent_id = prod_agent_id_from_slot("01", profile="image_to_video")
     provider = FakeRunPodProvider(
         _settings(
@@ -1029,10 +1025,7 @@ def test_prod_worker_restart_execute_uses_native_restart_and_enables():
             autoscaler_enabled=True,
             prod_agent_id=agent_id,
             prod_max_manual_slots=8,
-            image_name_wan22_video_v2=(
-                RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX
-                + "20260619-wan22aio-rife-bcf3ebd"
-            ),
+            image_name_wan22_video_v2=RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE,
         ),
         pods=[_prod_pod("03", profile="wan22_video_v2")],
     )

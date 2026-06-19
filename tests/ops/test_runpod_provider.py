@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from ops.gpu_pool_controller.providers.lan_ssh import LanSshProvider
 from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_I2I_PRO_CONTAINER_DISK_GB,
@@ -21,6 +23,7 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_PROD_WORKER_CENTRAL_URL,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
     RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
+    RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE,
     RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX,
     RUNPOD_SCAIL2_CONTAINER_DISK_GB,
     RUNPOD_SCAIL2_DOCKER_START_CMD,
@@ -699,7 +702,7 @@ def test_render_create_scail2_cloud_test_profile_uses_r2_manifest_and_bootstrap(
     assert "TASK_TYPE_WORKFLOW_OVERRIDES" not in env
 
 
-def test_runpod_settings_from_env_split_video_profiles_fallback_to_wan22_image_template(
+def test_runpod_settings_from_env_split_video_profiles_ignore_legacy_wan22_image_template(
     tmp_path,
     monkeypatch,
 ):
@@ -727,12 +730,18 @@ def test_runpod_settings_from_env_split_video_profiles_fallback_to_wan22_image_t
 
     settings = RunPodSettings.from_env()
 
-    assert settings.use_template_image_to_video is True
-    assert settings.use_template_wan22_video_v2 is True
-    assert settings.template_id_image_to_video == "77gi0wqo8x"
-    assert settings.template_id_wan22_video_v2 == "77gi0wqo8x"
-    assert settings.image_name_image_to_video.endswith(":shared")
-    assert settings.image_name_wan22_video_v2.endswith(":shared")
+    assert settings.use_template_image_to_video is False
+    assert settings.use_template_wan22_video_v2 is False
+    assert settings.template_id_image_to_video == ""
+    assert settings.template_id_wan22_video_v2 == ""
+    assert (
+        settings.image_name_image_to_video
+        == RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE
+    )
+    assert (
+        settings.image_name_wan22_video_v2
+        == RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE
+    )
     assert settings.docker_start_cmd_image_to_video == (
         "bash",
         "-lc",
@@ -979,9 +988,7 @@ def test_render_create_cloud_prod_manual_worker_can_use_second_slot():
 
 
 def test_render_create_cloud_prod_wan22_video_v2_uses_prod_refs_and_split_manifest():
-    image_ref = (
-        RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX + "20260619-wan22aio-rife-bcf3ebd"
-    )
+    image_ref = RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE
     agent_id = prod_agent_id_from_slot("01", profile="wan22_video_v2")
     provider = RunPodProvider(
         _settings(
@@ -1031,9 +1038,7 @@ def test_render_create_cloud_prod_wan22_video_v2_uses_prod_refs_and_split_manife
 
 
 def test_render_create_cloud_prod_image_to_video_uses_prod_refs_and_split_manifest():
-    image_ref = (
-        RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX + "20260619-wan22aio-rife-bcf3ebd"
-    )
+    image_ref = RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE
     agent_id = prod_agent_id_from_slot("01", profile="image_to_video")
     provider = RunPodProvider(
         _settings(
@@ -1079,6 +1084,66 @@ def test_render_create_cloud_prod_image_to_video_uses_prod_refs_and_split_manife
     assert env["MINIO_SECRET_KEY"] == RUNPOD_PROD_R2_SECRET_KEY_REF
     assert env["RUNPOD_MODEL_ACCESS_KEY"] == RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF
     assert env["RUNPOD_MODEL_SECRET_KEY"] == RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF
+
+
+def test_render_create_cloud_prod_split_video_defaults_to_rife_image():
+    agent_id = prod_agent_id_from_slot("02", profile="image_to_video")
+    provider = RunPodProvider(
+        _settings(
+            prod_agent_id=agent_id,
+            model_bucket="allbot-model-cache",
+        )
+    )
+
+    payload = provider.render_create_pod_request(
+        task_type="image_to_video",
+        environment="cloud-prod",
+        redact=False,
+    )
+
+    assert payload["json"]["imageName"] == RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE
+
+
+def test_render_create_cloud_prod_split_video_rejects_old_wan22_image():
+    agent_id = prod_agent_id_from_slot("02", profile="wan22_video_v2")
+    provider = RunPodProvider(
+        _settings(
+            prod_agent_id=agent_id,
+            image_name_wan22_video_v2=(
+                RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX
+                + "20260613-wan22aio-lanbase-ab9b7ea"
+            ),
+            model_bucket="allbot-model-cache",
+        )
+    )
+
+    with pytest.raises(ValueError, match="must be .*20260619-wan22aio-rife"):
+        provider.render_create_pod_request(
+            task_type="wan22_video_v2",
+            environment="cloud-prod",
+            redact=False,
+        )
+
+
+def test_render_create_cloud_prod_split_video_ignores_template():
+    agent_id = prod_agent_id_from_slot("02", profile="image_to_video")
+    provider = RunPodProvider(
+        _settings(
+            prod_agent_id=agent_id,
+            use_template_image_to_video=True,
+            template_id_image_to_video="old-wan22-template",
+            model_bucket="allbot-model-cache",
+        )
+    )
+
+    payload = provider.render_create_pod_request(
+        task_type="image_to_video",
+        environment="cloud-prod",
+        redact=False,
+    )
+
+    assert "templateId" not in payload["json"]
+    assert payload["json"]["imageName"] == RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE
 
 
 def test_render_create_cloud_prod_i2i_pro_uses_prod_refs_and_multitask_manifest():
@@ -1487,10 +1552,7 @@ def test_mutation_gate_allows_global_total_above_manual_slots():
             max_pods_total=5,
             max_pods_per_type=1,
             max_hourly_cost_usd=10.0,
-            image_name_wan22_video_v2=(
-                "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:"
-                "20260619-wan22aio-rife-bcf3ebd"
-            ),
+            image_name_wan22_video_v2=RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE,
             prod_agent_id=prod_agent_id_from_slot(
                 "01",
                 profile="wan22_video_v2",

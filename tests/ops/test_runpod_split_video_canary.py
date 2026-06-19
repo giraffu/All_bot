@@ -5,7 +5,11 @@ from pathlib import Path
 import pytest
 
 from ops.gpu_pool_controller.cli import build_parser
-from ops.gpu_pool_controller.providers.runpod import RunPodProvider, RunPodSettings
+from ops.gpu_pool_controller.providers.runpod import (
+    RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE,
+    RunPodProvider,
+    RunPodSettings,
+)
 from ops.gpu_pool_controller.runpod_canary import RunPodCanaryOptions
 from ops.gpu_pool_controller.runpod_split_video_canary import (
     DEFAULT_SPLIT_VIDEO_PROMPT,
@@ -14,10 +18,7 @@ from ops.gpu_pool_controller.runpod_split_video_canary import (
 )
 
 
-WAN22_IMAGE = (
-    "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:"
-    "20260613-wan22aio-yanwkclean-108c7ea"
-)
+WAN22_IMAGE = RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE
 
 
 class FakeSplitRunPodProvider:

@@ -356,7 +356,7 @@ python scripts/gpu_pool_controller.py runpod prod-worker canary --profile scail2
 | `i2i_pro` | `runpod_prod_i2i_pro_manual_NN` | `i2i_pro,t2i-pornmaster-turbo,face_swap` | `i2i_pro/2026-06-14-test/manifest.json` | `NVIDIA GeForce RTX 4090` |
 | `scail2` | `runpod_prod_scail2_manual_NN` | `scail2_action_transfer,scail2_video_replacement` | `scail2/2026-06-17-test/manifest.json` | `NVIDIA GeForce RTX 4090` |
 
-正式 video profile 镜像必须以 `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:` 开头；`i2i_pro` 镜像必须以 `ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:` 开头；`scail2` 镜像必须以 `ghcr.io/giraffu/allbot-comfy-runpod-scail2:` 开头；`img2img` 使用已验证 public GHCR 图生图镜像。
+正式 `image_to_video` / `wan22_video_v2` RunPod 镜像必须精确使用 `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd`；`i2i_pro` 镜像必须以 `ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:` 开头；`scail2` 镜像必须以 `ghcr.io/giraffu/allbot-comfy-runpod-scail2:` 开头；`img2img` 使用已验证 public GHCR 图生图镜像。
 
 ## 6. 真实执行门禁
 任意真实 RunPod mutation 都必须显式满足：
@@ -709,6 +709,8 @@ python scripts/gpu_pool_controller.py runpod prod-worker up \
 | :--- | :--- | :--- | :--- |
 | `MINIO_*` / `R2_*` | 用户数据桶，包含用户上传、生成结果、历史/Gallery 媒体 | `user-data-test`、`https://r2-test.aivison.it.com` | `user-data-prod`、`https://r2.aivison.it.com` |
 | `RUNPOD_MODEL_BUCKET` | RunPod 模型缓存桶 | `allbot-model-cache` | `allbot-model-cache` |
+| `RUNPOD_IMAGE_NAME_IMAGE_TO_VIDEO` / `RUNPOD_USE_TEMPLATE_IMAGE_TO_VIDEO` | split `image_to_video` 镜像与 template 开关 | `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd` / `false` | 同 cloud-test；cloud-prod 渲染会拒绝旧 tag |
+| `RUNPOD_IMAGE_NAME_WAN22_VIDEO_V2` / `RUNPOD_USE_TEMPLATE_WAN22_VIDEO_V2` | split `wan22_video_v2` 镜像与 template 开关 | `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd` / `false` | 同 cloud-test；cloud-prod 渲染会拒绝旧 tag |
 | `RUNPOD_MODEL_PREFIX` / `RUNPOD_MODEL_MANIFEST_KEY` | 默认模型 manifest，主要给 `img2img_lora` | `img2img_lora/2026-06-10` | `img2img_lora/2026-06-10` |
 | `RUNPOD_MODEL_PREFIX_IMAGE_TO_VIDEO` / `RUNPOD_MODEL_MANIFEST_KEY_IMAGE_TO_VIDEO` | split `image_to_video` 模型 manifest | `image_to_video/2026-06-13-test/manifest.json` | 同 cloud-test manifest |
 | `RUNPOD_MODEL_PREFIX_WAN22_VIDEO_V2` / `RUNPOD_MODEL_MANIFEST_KEY_WAN22_VIDEO_V2` | split `wan22_video_v2` 模型 manifest | `wan22_video_v2/2026-06-13-test/manifest.json` | 同 cloud-test manifest |
@@ -739,7 +741,7 @@ RUNPOD_MODEL_SECRET_KEY={{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}
 ## 10. 镜像、模型与 workflow 口径
 - `workers/comfy_agent/workflows` 是 workflow 运行时事实源；Central API 不维护 workflow 副本。
 - Wan22 共享 RunPod 镜像构建入口仍在 `remote_workers/docker/runpod_profiles/wan22_aio_video/`，这是镜像目录名，不表示运行时继续使用 AIO profile。
-- 当前 split video profile 复用 Wan22 GHCR image，但 profile-specific env、agent prefix、`SUPPORTED_TASK_TYPES`、runtime profile 和模型 manifest 必须分开渲染。默认优先直接渲染 `imageName`；只有确认 RunPod template 已同步到当前稳定 tag 时，才允许重新启用 `RUNPOD_USE_TEMPLATE_IMAGE_TO_VIDEO` / `RUNPOD_USE_TEMPLATE_WAN22_VIDEO_V2`。
+- 当前 split video profile 复用 Wan22 GHCR image，但 profile-specific env、agent prefix、`SUPPORTED_TASK_TYPES`、runtime profile 和模型 manifest 必须分开渲染。`image_to_video` / `wan22_video_v2` 不再继承 legacy `RUNPOD_IMAGE_NAME_WAN22_AIO_VIDEO` 或 `RUNPOD_USE_TEMPLATE_WAN22_AIO_VIDEO`；默认直接渲染带 RIFE 的 `imageName`，cloud-prod `prod-worker` 会拒绝旧 tag 或 template。
 - Wan22 新镜像只 baked workflow 所需 custom nodes、`ffmpeg/ffprobe`、`rife49.pth` 后处理小权重、`runpod_bootstrap_from_git.sh` 和运行依赖；Wan22 high/low UNet、VAE、text encoder 与旧视频 LoRA 不 baked 进镜像，启动时从 `allbot-model-cache` 同步。`rife49.pth` 由 `FL_RIFE` 运行期读取，不属于可在线下载的普通缓存；RunPod bootstrap/entrypoint 会在启动 ComfyUI 前运行 `remote_workers/scripts/ensure_wan22_rife_cache.py`，缺失时 exit 75。
 - `face_swap_v2.json` 使用 `i2i_pro` Flux2/edit 节点与模型替代旧图片换脸工作流，运行面 task type 仍是 `face_swap`。测试 worker1、正式 worker1 与 RunPod `i2i_pro` profile 都通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 将 `face_swap` 指向 v2；这属于 Worker workflow 配置替换，不代表新增业务 task type。
 - `i2i_pro` RunPod 镜像构建入口是 `remote_workers/docker/runpod_profiles/i2i_pro/`，默认 base 为 `yanwk/comfyui-boot:cu128-slim`，与现有图生图和 Wan22 RunPod 镜像基线保持一致；ComfyUI pin 到 `16cd8d8a8f5f16ce7e5f929fdba9f783990254ea`。不得使用 `cu130` 基线，否则在当前 RunPod 4090 宿主机上可能因 PyTorch CUDA 版本高于宿主机驱动能力而失败；`20260614-i2ipro-6b167aa-cu128-min4` 已在 `NVIDIA GeForce RTX 4090` cloud-test Web canary 中完成模型同步、ComfyUI CUDA 初始化、worker heartbeat 和 `i2i_pro` 真实任务出图；当前 `.env.cloud.test` 候选镜像为 `20260614-i2ipro-b75c6a9-cu128-min5-ssh`，在 min4 的可用基线上补齐 `openssh` 与 direct TCP SSH smoke。当前 workflow 只要求 ComfyUI/core `nodes` 与 `comfy_extras` 中的 `UNETLoader`、`CLIPLoader`、`VAELoader`、`ReferenceLatent`、`EmptyFlux2LatentImage`、`Flux2Scheduler`、`SamplerCustomAdvanced`，不 baked 自定义节点或业务模型。GitHub Actions smoke 在 CPU runner 上用静态源码检查确认这些节点存在，避免导入 ComfyUI 时触发 CUDA 初始化；GPU import 与真实执行以 cloud-test canary 为准。镜像 smoke 还必须检查 `ffmpeg`、`curl`、`git`、`ssh-keygen` 与 `sshd`，确保 direct TCP SSH 诊断可用。

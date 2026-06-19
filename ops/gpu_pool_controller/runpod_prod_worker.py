@@ -26,6 +26,7 @@ from .providers.runpod import (
     RUNPOD_PROD_BUCKET,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
     RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
+    RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE,
     RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX,
     RUNPOD_SCAIL2_MODEL_MANIFEST_KEY,
     RUNPOD_SCAIL2_MODEL_PREFIX,
@@ -2759,7 +2760,7 @@ def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
                 settings.model_manifest_key_image_to_video
                 or RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY
             ),
-            "image_exact": "",
+            "image_exact": RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE,
             "image_prefix": RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX,
             "workflow_overrides": "",
         }
@@ -2776,7 +2777,7 @@ def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
                 settings.model_manifest_key_wan22_video_v2
                 or RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY
             ),
-            "image_exact": "",
+            "image_exact": RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE,
             "image_prefix": RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX,
             "workflow_overrides": "",
         }
