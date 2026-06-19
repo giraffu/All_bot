@@ -285,6 +285,7 @@
     "unknown_task_type": "This template is not supported yet.",
     "disabled": {
       "wan22_stitched": "Stitched videos cannot be applied as templates. Please choose a single video segment.",
+      "missing_scail2_motion_video": "This SCAIL-2 post is missing a reusable motion video and cannot be applied as a template.",
       "unsupported": "This post cannot be applied as a template."
     },
     "close": {
@@ -383,6 +384,13 @@
       "face_hint": "A clear face without obstruction works best",
       "template_target_hint": "Template mode automatically uses the original target video",
       "upload_required": "Please upload both the face image and the target video"
+    },
+    "scail2_video": {
+      "current_page_desc": "Upload a new reference image and reuse the template motion video to generate a matching action video.",
+      "template_notice": "SCAIL-2 video template loaded. The motion video is locked; upload your own reference image to generate.",
+      "motion_video_locked_hint": "The template reuses the submitted motion video. The current user uploads a new reference image.",
+      "upload_reference_first": "Please upload a reference image first",
+      "motion_video_missing": "The template is missing a reusable motion video"
     }
   },
   "lab": {

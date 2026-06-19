@@ -98,4 +98,31 @@ describe('normalizeTemplateApplyContext', () => {
       inputFile: 'history/demo/original.png'
     })
   })
+
+  it('normalizes reusable input file arrays for scail2 templates', () => {
+    const normalized = normalizeTemplateApplyContext(
+      {
+        post_id: 22,
+        source_post_id: 22,
+        task_type: 'scail2_action_transfer',
+        input_file: null,
+        input_file_url: null,
+        input_files: ['history/demo/motion.mp4'],
+        input_file_urls: ['https://example.com/motion.mp4'],
+        requested_duration: '8'
+      },
+      { source: 'gallery', entryEntityId: 22 }
+    )
+
+    expect(normalized).not.toBeNull()
+    expect(normalized).toMatchObject({
+      taskType: 'scail2_action_transfer',
+      supportMode: 'workbench',
+      inputFile: 'history/demo/motion.mp4',
+      inputFileUrl: 'https://example.com/motion.mp4',
+      inputFiles: ['history/demo/motion.mp4'],
+      inputFileUrls: ['https://example.com/motion.mp4'],
+      requestedDuration: 8
+    })
+  })
 })

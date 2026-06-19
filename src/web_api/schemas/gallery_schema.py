@@ -107,6 +107,8 @@ class ApplyContextResponse(BaseModel):
     lora_items: Optional[list[dict]] = None
     input_file: Optional[str]
     input_file_url: Optional[str]
+    input_files: List[str] = Field(default_factory=list)
+    input_file_urls: List[str] = Field(default_factory=list)
     width: Optional[int]
     height: Optional[int]
     duration: Optional[int]

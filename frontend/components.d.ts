@@ -105,6 +105,7 @@ declare module 'vue' {
     TemplateFaceSwapPanel: typeof import('./src/components/template-apply/TemplateFaceSwapPanel.vue')['default']
     TemplateImagePromptPanel: typeof import('./src/components/template-apply/TemplateImagePromptPanel.vue')['default']
     TemplateImageToVideoPanel: typeof import('./src/components/template-apply/TemplateImageToVideoPanel.vue')['default']
+    TemplateScail2VideoPanel: typeof import('./src/components/template-apply/TemplateScail2VideoPanel.vue')['default']
     TemplateVideoSwapPanel: typeof import('./src/components/template-apply/TemplateVideoSwapPanel.vue')['default']
     UserProfileModal: typeof import('./src/components/UserProfileModal.vue')['default']
   }

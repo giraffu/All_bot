@@ -24,6 +24,7 @@ from src.constants import (
     MODE_TXT2IMG,
     MODE_WAN22_VIDEO_V2,
 )
+from src.domain_config.scail2_video import SCAIL2_DEFAULT_NEGATIVE_PROMPT
 
 
 def _patch_dispatch_image_service(monkeypatch, **methods):
@@ -214,6 +215,7 @@ def test_scail2_strategy_metadata_keeps_frame_count_and_mode():
         "scail2_width": 512,
         "scail2_height": 896,
         "scail2_replacement_mode": True,
+        "scail2_negative_prompt": SCAIL2_DEFAULT_NEGATIVE_PROMPT,
     }
 
 

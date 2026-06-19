@@ -13,6 +13,10 @@ from src.constants import (
     MODE_UNDRESS,
     MODE_WAN22_VIDEO_V2,
 )
+from src.domain_config.scail2_video import (
+    SCAIL2_ACTION_TRANSFER_TASK_TYPE,
+    SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
+)
 from src.domain_config.wan22_aio_video import is_wan22_chain_history_task_type
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -57,6 +61,8 @@ def _supports_gallery_submission(task_type: str, allow_contribute: bool) -> bool
         MODE_LTX_VIDEO,
         MODE_WAN22_VIDEO_V2,
         MODE_IMG2IMG_LORA,
+        SCAIL2_ACTION_TRANSFER_TASK_TYPE,
+        SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
     }
     return allow_contribute and task_type in allowed_gallery_types
 

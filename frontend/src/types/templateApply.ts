@@ -11,6 +11,8 @@ export type TemplateApplyTaskType =
   | 'video_lora'
   | 'wan22_video_v2'
   | 'ltx_video'
+  | 'scail2_action_transfer'
+  | 'scail2_video_replacement'
 
 export type TemplateApplySupportMode = 'workbench' | 'legacy' | 'unknown'
 export type TemplateApplyPreferredMode = 'workbench' | 'legacy'
@@ -20,6 +22,7 @@ export type TemplateApplyPanelKind =
   | 'imageToVideo'
   | 'faceSwap'
   | 'videoSwap'
+  | 'scail2Video'
 
 export interface RawApplyContextResponse {
   post_id: unknown
@@ -35,6 +38,8 @@ export interface RawApplyContextResponse {
   lora_items?: unknown
   input_file?: unknown
   input_file_url?: unknown
+  input_files?: unknown
+  input_file_urls?: unknown
   width?: unknown
   height?: unknown
   duration?: unknown
@@ -62,6 +67,8 @@ export interface TemplateApplyContext {
   loraItems: Array<{ name: string; strength: number }>
   inputFile: string | null
   inputFileUrl: string | null
+  inputFiles?: string[]
+  inputFileUrls?: string[]
   width: number | null
   height: number | null
   duration: number | null

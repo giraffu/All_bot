@@ -106,6 +106,22 @@ export const TEMPLATE_TASK_META_MAP: Record<TemplateApplyTaskType, TemplateTaskM
     legacyRouteName: 'SingleImageToVideo',
     legacyTitleKey: 'lab.cards.high_res_video_title',
     legacyCost: 10
+  }),
+  scail2_action_transfer: createMeta({
+    taskType: 'scail2_action_transfer',
+    supportMode: 'workbench',
+    panelKind: 'scail2Video',
+    legacyRouteName: 'CustomFeatures',
+    legacyTitleKey: 'lab.cards.scail2_action_transfer_title',
+    legacyCost: 40
+  }),
+  scail2_video_replacement: createMeta({
+    taskType: 'scail2_video_replacement',
+    supportMode: 'workbench',
+    panelKind: 'scail2Video',
+    legacyRouteName: 'CustomFeatures',
+    legacyTitleKey: 'lab.cards.scail2_video_replacement_title',
+    legacyCost: 40
   })
 }
 

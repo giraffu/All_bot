@@ -1,6 +1,7 @@
 import type { GalleryPost } from '@/types/gallery'
 
 export const GALLERY_TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED = 'wan22_stitched'
+export const GALLERY_TEMPLATE_APPLY_DISABLED_REASON_MISSING_SCAIL2_MOTION_VIDEO = 'missing_scail2_motion_video'
 
 export const resolveGalleryTemplateApplyDisabledReason = (
   post: GalleryPost | null | undefined
@@ -35,6 +36,9 @@ export const resolveGalleryTemplateApplyDisabledMessage = (
 ): string => {
   if (reason === GALLERY_TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED) {
     return t('template_apply.disabled.wan22_stitched')
+  }
+  if (reason === GALLERY_TEMPLATE_APPLY_DISABLED_REASON_MISSING_SCAIL2_MOTION_VIDEO) {
+    return t('template_apply.disabled.missing_scail2_motion_video')
   }
   return t('template_apply.disabled.unsupported')
 }

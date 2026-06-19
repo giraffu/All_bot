@@ -110,6 +110,20 @@ vi.mock('@/components/template-apply/TemplateVideoSwapPanel.vue', async () => {
   }
 })
 
+vi.mock('@/components/template-apply/TemplateScail2VideoPanel.vue', async () => {
+  const { defineComponent } = await vi.importActual<typeof import('vue')>('vue')
+  const component = defineComponent({
+    name: 'TemplateScail2VideoPanelStub',
+    props: ['sessionId', 'context'],
+    template: '<div class="panel scail2-video">scail2-video</div>'
+  })
+  return {
+    __esModule: true,
+    __isTeleport: false,
+    default: component
+  }
+})
+
 const ModalStub = defineComponent({
   name: 'AModalStub',
   props: ['open', 'title'],
@@ -235,6 +249,19 @@ describe('TemplateApplyWorkbenchHost', () => {
     const [contentRefArg, activeRefArg] = useWorkbenchScrollLockMock.mock.calls[0]
     expect(contentRefArg.value).toBeInstanceOf(HTMLElement)
     expect(activeRefArg.value).toBe(true)
+  })
+
+  it('renders the scail2 template panel when selected', async () => {
+    templateApplyStoreMock.panelKind = 'scail2Video'
+    templateApplyStoreMock.context = {
+      rawTaskType: 'scail2_action_transfer'
+    }
+
+    const wrapper = mountHost()
+
+    await vi.waitFor(() => {
+      expect(wrapper.find('.scail2-video').exists()).toBe(true)
+    })
   })
 
   it('renders the workbench title from i18n in english', () => {

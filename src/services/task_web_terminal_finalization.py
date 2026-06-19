@@ -9,9 +9,37 @@ from src.core.task_core_finalization import (
 from src.core.task_core_persistence import persist_successful_web_history_default
 from src.core.task_core_runtime import cleanup_task_runtime_state
 from src.core.task_core_types import TaskSubmissionContext
+from src.domain_config.scail2_video import is_scail2_task_type
 from src.services.wan22_video_v2_extension_service import (
     merge_wan22_history_context_into_extra_outputs,
 )
+
+
+SCAIL2_HISTORY_CONTEXT_KEY = "scail2_context"
+
+
+def merge_scail2_history_context_into_extra_outputs(
+    *,
+    task_type: str | None,
+    extra_outputs: dict[str, object] | None,
+    metadata: dict[str, object] | None,
+) -> dict[str, object] | None:
+    if not is_scail2_task_type(task_type):
+        return extra_outputs
+    context = {
+        key: value
+        for key, value in {
+            "scail2_negative_prompt": (metadata or {}).get("scail2_negative_prompt"),
+            "scail2_duration_seconds": (metadata or {}).get("scail2_duration_seconds"),
+        }.items()
+        if value is not None
+    }
+    if not context and not extra_outputs:
+        return extra_outputs
+    merged = dict(extra_outputs or {})
+    if context:
+        merged[SCAIL2_HISTORY_CONTEXT_KEY] = context
+    return merged
 
 
 async def finalize_monitored_web_task_success(
@@ -31,6 +59,11 @@ async def finalize_monitored_web_task_success(
         persisted_extra_outputs = merge_wan22_history_context_into_extra_outputs(
             task_type=submission_context.task_type,
             extra_outputs=extra_outputs,
+            metadata=submission_context.metadata,
+        )
+        persisted_extra_outputs = merge_scail2_history_context_into_extra_outputs(
+            task_type=submission_context.task_type,
+            extra_outputs=persisted_extra_outputs,
             metadata=submission_context.metadata,
         )
         await persist_successful_web_history_func(

@@ -7,6 +7,7 @@ import pytest
 from fastapi import HTTPException
 
 from src.database.models import GalleryPost, History
+from src.domain_config.scail2_video import SCAIL2_DEFAULT_NEGATIVE_PROMPT
 from src.core import gallery_core
 from src.core import gallery_submission_effects
 from src.services import storage as storage_module
@@ -489,6 +490,128 @@ async def test_get_apply_context_maps_legacy_video_lora_duration_11_to_fixed_5()
 
     assert response.duration == 5
     assert response.requested_duration == 5
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_apply_context_returns_scail2_motion_video_template_input_only():
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-scail2",
+        type="scail2_action_transfer",
+        prompt="natural dance motion",
+        input_file="uploads/reference.png|uploads/motion.mp4",
+        output_file="bot-data/history/task-scail2/output.mp4",
+        width=512,
+        height=896,
+        duration=5,
+        requested_duration=8,
+        extra_outputs={
+            "scail2_context": {
+                "scail2_negative_prompt": "low quality blur",
+                "scail2_duration_seconds": 8,
+            }
+        },
+    )
+    post = GalleryPost(
+        id=2,
+        task_id="task-scail2",
+        media_type="video",
+        width=512,
+        height=896,
+        duration=5,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=post),
+            _FakeResult(many=[history]),
+        ]
+    )
+
+    response = await get_gallery_apply_context_payload(
+        post_id=2,
+        db=session,
+        build_input_file_url=lambda key: f"https://storage.test/{key}",
+    )
+
+    assert response.task_type == "scail2_action_transfer"
+    assert response.prompt == "natural dance motion"
+    assert response.negative_prompt == "low quality blur"
+    assert response.requested_duration == 8
+    assert response.input_file == "uploads/motion.mp4"
+    assert response.input_files == ["uploads/motion.mp4"]
+    assert response.input_file_url == "https://storage.test/uploads/motion.mp4"
+    assert response.input_file_urls == ["https://storage.test/uploads/motion.mp4"]
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_apply_context_uses_default_scail2_negative_prompt_for_legacy_history():
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-scail2",
+        type="scail2_video_replacement",
+        prompt="replace performer",
+        input_file="uploads/reference.png|uploads/motion.mp4",
+        requested_duration=5,
+    )
+    post = GalleryPost(
+        id=2,
+        task_id="task-scail2",
+        media_type="video",
+        width=512,
+        height=896,
+        duration=5,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=post),
+            _FakeResult(many=[history]),
+        ]
+    )
+
+    response = await get_gallery_apply_context_payload(
+        post_id=2,
+        db=session,
+        build_input_file_url=lambda key: f"https://storage.test/{key}",
+    )
+
+    assert response.negative_prompt == SCAIL2_DEFAULT_NEGATIVE_PROMPT
+    assert response.input_files == ["uploads/motion.mp4"]
+
+
+@pytest.mark.asyncio
+async def test_get_apply_context_rejects_scail2_history_missing_motion_video():
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-scail2",
+        type="scail2_action_transfer",
+        prompt="motion template",
+        input_file="uploads/reference.png",
+    )
+    post = GalleryPost(
+        id=2,
+        task_id="task-scail2",
+        media_type="video",
+        width=512,
+        height=896,
+        duration=5,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=post),
+            _FakeResult(many=[history]),
+        ]
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_gallery_apply_context_payload(post_id=2, db=session)
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "missing_scail2_motion_video"
     session.commit.assert_not_awaited()
 
 

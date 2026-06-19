@@ -286,6 +286,7 @@
     "unknown_task_type": "当前模板暂不支持打开",
     "disabled": {
       "wan22_stitched": "拼接视频暂不支持一键应用，请选择单段视频模板。",
+      "missing_scail2_motion_video": "该 SCAIL-2 投稿缺少可复用驱动视频，暂不支持一键应用。",
       "unsupported": "当前作品暂不支持一键应用。"
     },
     "close": {
@@ -384,6 +385,13 @@
       "face_hint": "建议五官清晰、无遮挡",
       "template_target_hint": "模板模式下会自动使用原作品视频",
       "upload_required": "请先上传人脸图片和目标视频"
+    },
+    "scail2_video": {
+      "current_page_desc": "上传新的参考图，沿用模板驱动视频，在当前页直接生成同款动作视频。",
+      "template_notice": "已加载 SCAIL-2 视频模板，驱动视频已锁定，您只需上传自己的参考图即可生成。",
+      "motion_video_locked_hint": "模板会复用投稿中的驱动视频；参考图由当前用户重新上传。",
+      "upload_reference_first": "请先上传参考图",
+      "motion_video_missing": "模板缺少可复用的驱动视频"
     }
   },
   "lab": {

@@ -650,7 +650,8 @@ class Scail2VideoStrategy(BaseTaskStrategy):
 
     def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         saved_images = _get_saved_input_images(inputs)
-        duration_seconds = self._resolve_duration_seconds(inputs)
+        submission = _build_scail2_submission_context(inputs)
+        duration_seconds = submission.duration_seconds
         return {
             "saved_inputs": saved_images,
             "requested_duration": duration_seconds,
@@ -662,6 +663,7 @@ class Scail2VideoStrategy(BaseTaskStrategy):
             "scail2_width": SCAIL2_FIXED_WIDTH,
             "scail2_height": SCAIL2_FIXED_HEIGHT,
             "scail2_replacement_mode": self._replacement_mode(),
+            "scail2_negative_prompt": submission.negative_prompt,
         }
 
     async def submit_task(

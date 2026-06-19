@@ -37,6 +37,16 @@ const asPositiveInteger = (value: unknown): number | null => {
   return normalized > 0 ? normalized : null
 }
 
+const asStringList = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value
+    .map(item => asNonEmptyString(item))
+    .filter((item): item is string => Boolean(item))
+}
+
 export const normalizeTemplateApplyContext = (
   rawContext: RawApplyContextResponse | null | undefined,
   options: NormalizeContextOptions
@@ -52,6 +62,8 @@ export const normalizeTemplateApplyContext = (
 
   const taskType = getCanonicalTemplateTaskType(rawTaskType)
   const meta = taskType ? getTemplateTaskMeta(taskType) : null
+  const inputFiles = asStringList(rawContext.input_files)
+  const inputFileUrls = asStringList(rawContext.input_file_urls)
 
   const normalizedRaw: RawApplyContextResponse = {
     post_id: rawContext.post_id,
@@ -67,6 +79,8 @@ export const normalizeTemplateApplyContext = (
     lora_items: rawContext.lora_items ?? null,
     input_file: rawContext.input_file ?? null,
     input_file_url: rawContext.input_file_url ?? null,
+    input_files: rawContext.input_files ?? null,
+    input_file_urls: rawContext.input_file_urls ?? null,
     width: rawContext.width ?? null,
     height: rawContext.height ?? null,
     duration: rawContext.duration ?? null,
@@ -89,8 +103,10 @@ export const normalizeTemplateApplyContext = (
     loraItems: normalizeLtxVideoLoraItems(
       Array.isArray(rawContext.lora_items) ? rawContext.lora_items as Array<{ name?: string; strength?: number }> : [],
     ),
-    inputFile: asNonEmptyString(rawContext.input_file),
-    inputFileUrl: asNonEmptyString(rawContext.input_file_url),
+    inputFile: asNonEmptyString(rawContext.input_file) ?? inputFiles[0] ?? null,
+    inputFileUrl: asNonEmptyString(rawContext.input_file_url) ?? inputFileUrls[0] ?? null,
+    inputFiles,
+    inputFileUrls,
     width: asPositiveInteger(rawContext.width),
     height: asPositiveInteger(rawContext.height),
     duration: asPositiveInteger(rawContext.duration),

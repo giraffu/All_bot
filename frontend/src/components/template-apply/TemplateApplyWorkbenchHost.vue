@@ -22,6 +22,9 @@ const TemplateFaceSwapPanel = defineAsyncComponent(
 const TemplateVideoSwapPanel = defineAsyncComponent(
   () => import('@/components/template-apply/TemplateVideoSwapPanel.vue')
 )
+const TemplateScail2VideoPanel = defineAsyncComponent(
+  () => import('@/components/template-apply/TemplateScail2VideoPanel.vue')
+)
 
 const templateApplyStore = useTemplateApplyStore()
 const { t } = useI18n()
@@ -44,6 +47,8 @@ const resolvedPanel = computed(() => {
       return TemplateFaceSwapPanel
     case 'videoSwap':
       return TemplateVideoSwapPanel
+    case 'scail2Video':
+      return TemplateScail2VideoPanel
     default:
       return null
   }

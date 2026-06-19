@@ -10,6 +10,10 @@ from src.core.video_billing import (
     resolve_legacy_requested_duration,
 )
 from src.database.models import GalleryPost, History
+from src.domain_config.scail2_video import (
+    SCAIL2_DEFAULT_NEGATIVE_PROMPT,
+    is_scail2_task_type,
+)
 from src.lora_mapping import extract_prompt_lora_context
 from src.domain_config.wan22_aio_video import is_wan22_chain_history_task_type
 from src.services.wan22_video_v2_extension_service import (
@@ -19,6 +23,10 @@ from src.services.wan22_video_v2_extension_service import (
 from src.web_api.schemas.gallery_schema import ApplyContextResponse
 
 TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED = "wan22_stitched"
+TEMPLATE_APPLY_DISABLED_REASON_MISSING_SCAIL2_MOTION_VIDEO = (
+    "missing_scail2_motion_video"
+)
+SCAIL2_HISTORY_CONTEXT_KEY = "scail2_context"
 
 
 def _pick_first_non_none(*values):
@@ -28,11 +36,34 @@ def _pick_first_non_none(*values):
     return None
 
 
+def split_history_input_files(input_file: str | None) -> list[str]:
+    if not input_file:
+        return []
+    return [
+        item.strip()
+        for item in str(input_file).split("|")
+        if item and item.strip()
+    ]
+
+
+def resolve_reusable_apply_input_files(history: History | None) -> list[str]:
+    if history is None:
+        return []
+
+    input_files = split_history_input_files(getattr(history, "input_file", None))
+    if is_scail2_task_type(getattr(history, "type", None)):
+        return input_files[1:2]
+    return input_files
+
+
 def resolve_history_template_apply_disabled_reason(
     history: History | None,
 ) -> str | None:
     if history and is_wan22_stitched_result(getattr(history, "extra_outputs", None)):
         return TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED
+    if history and is_scail2_task_type(getattr(history, "type", None)):
+        if not resolve_reusable_apply_input_files(history):
+            return TEMPLATE_APPLY_DISABLED_REASON_MISSING_SCAIL2_MOTION_VIDEO
     return None
 
 
@@ -52,8 +83,32 @@ def resolve_wan22_apply_negative_prompt(history: History) -> str | None:
     return negative_prompt or None
 
 
+def resolve_scail2_apply_context_metadata(history: History) -> dict[str, object]:
+    if not is_scail2_task_type(history.type):
+        return {}
+    extra_outputs = getattr(history, "extra_outputs", None)
+    if not isinstance(extra_outputs, dict):
+        return {}
+    context = extra_outputs.get(SCAIL2_HISTORY_CONTEXT_KEY)
+    return context if isinstance(context, dict) else {}
+
+
+def resolve_scail2_apply_negative_prompt(history: History) -> str | None:
+    if not is_scail2_task_type(history.type):
+        return None
+    context = resolve_scail2_apply_context_metadata(history)
+    negative_prompt = str(context.get("scail2_negative_prompt") or "").strip()
+    return negative_prompt or SCAIL2_DEFAULT_NEGATIVE_PROMPT
+
+
 def resolve_wan22_apply_requested_duration(history: History) -> object:
     if not is_wan22_chain_history_task_type(history.type):
+        if is_scail2_task_type(history.type):
+            context = resolve_scail2_apply_context_metadata(history)
+            return _pick_first_non_none(
+                history.requested_duration,
+                context.get("scail2_duration_seconds"),
+            )
         return history.requested_duration
     context = resolve_wan22_apply_context_metadata(history)
     return _pick_first_non_none(
@@ -81,6 +136,8 @@ def build_apply_context_response(
     height: int | None,
     duration: int | None,
     task_type: str,
+    input_files: list[str] | None = None,
+    input_file_urls: list[str] | None = None,
 ) -> ApplyContextResponse:
     return ApplyContextResponse(
         post_id=post_id,
@@ -96,6 +153,8 @@ def build_apply_context_response(
         lora_items=lora_items,
         input_file=input_file,
         input_file_url=input_file_url,
+        input_files=input_files or [],
+        input_file_urls=input_file_urls or [],
         width=width,
         height=height,
         duration=duration,
@@ -184,12 +243,14 @@ async def build_history_apply_context_response(
     | None = None,
     logger: Logger | None = None,
 ) -> ApplyContextResponse:
-    input_file = history.input_file if include_input_file and history.input_file else None
-    input_file_url = (
-        build_input_file_url(input_file)
-        if input_file and build_input_file_url is not None
-        else None
-    )
+    input_files = resolve_reusable_apply_input_files(history) if include_input_file else []
+    input_file = input_files[0] if input_files else None
+    input_file_urls = [
+        build_input_file_url(input_file_item) or input_file_item
+        for input_file_item in input_files
+        if build_input_file_url is not None
+    ]
+    input_file_url = input_file_urls[0] if input_file_urls else None
 
     prompt, requested_duration = resolve_apply_prompt_and_requested_duration(
         history.type,
@@ -197,7 +258,10 @@ async def build_history_apply_context_response(
         resolve_wan22_apply_requested_duration(history),
     )
     prompt, lora_name, lora_strength = extract_prompt_lora_context(prompt)
-    negative_prompt = resolve_wan22_apply_negative_prompt(history)
+    negative_prompt = (
+        resolve_wan22_apply_negative_prompt(history)
+        or resolve_scail2_apply_negative_prompt(history)
+    )
     lora_items = None
     if history.type == "ltx_video" and lora_name:
         lora_items = [{"name": lora_name, "strength": lora_strength or 1.0}]
@@ -260,6 +324,8 @@ async def build_history_apply_context_response(
         lora_items=lora_items,
         input_file=input_file,
         input_file_url=input_file_url,
+        input_files=input_files,
+        input_file_urls=input_file_urls,
         width=width,
         height=height,
         duration=duration,

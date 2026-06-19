@@ -372,6 +372,22 @@ def test_build_result_reply_markup_supports_wan22_video_v2_gallery_button():
     assert first_row[1].callback_data == "wan22v2_extend:task-wan22"
 
 
+@pytest.mark.parametrize(
+    "task_type",
+    ["scail2_action_transfer", "scail2_video_replacement"],
+)
+def test_build_result_reply_markup_supports_scail2_gallery_button(task_type):
+    final_markup = tg_runtime_helpers.build_result_reply_markup(
+        task_type=task_type,
+        task_id="task-scail2",
+        allow_contribute=True,
+        reply_markup=None,
+    )
+
+    first_row = final_markup.inline_keyboard[0]
+    assert first_row[0].callback_data == "submit_gallery_task-scail2"
+
+
 def test_build_result_reply_markup_supports_wan22_video_v2_non_first_segment_buttons():
     final_markup = tg_runtime_helpers.build_result_reply_markup(
         task_type=MODE_WAN22_VIDEO_V2,
