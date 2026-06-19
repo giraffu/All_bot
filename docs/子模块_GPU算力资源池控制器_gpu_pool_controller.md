@@ -36,7 +36,7 @@
 | :--- | :--- | :--- | :--- |
 | `gpu-226` | `allbot-gpu-226` / `192.168.1.226` | 1 x RTX 5090 | 宿主机 ComfyUI `8188` |
 | `gpu-177` | `allbot-gpu-177` / `192.168.1.177` | 2 x RTX 5090 | 正式 LAN AIO `8190/8191`；旧 `comfy0/comfy1` stopped rollback |
-| `gpu-252` | `allbot-gpu-252` / `192.168.1.252` | 2 x RTX 4090 48G | 正式 LAN AIO GPU0 `8190` 承载 `img2img/img2img_lora`；GPU1 `8191` 的 `wan22_video_v2` AIO 当前 maintenance disabled，RunPod 兜底；旧 `comfy0/comfy1` stopped rollback |
+| `gpu-252` | `allbot-gpu-252` / `192.168.1.252` | 1 x RTX 4090 48G active | 正式 LAN AIO GPU0 `8190` 承载 `img2img/img2img_lora`；故障 RTX 4090 已拆除，GPU1 `wan22_video_v2` 本地 AIO 当前 maintenance disabled，RunPod 兜底；旧 `comfy0/comfy1` stopped rollback |
 | `gpu-002` | `allbot-gpu-002` / `192.168.1.2` | 2 x RTX 4090 48G | 正式 LAN AIO slot0 SCAIL-2 `8190` + slot1 image_to_video `8191`；旧 `comfy0/comfy1` stopped rollback |
 
 必须分清两层运行态：

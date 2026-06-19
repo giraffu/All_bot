@@ -308,7 +308,7 @@ docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.ym
 
 云测试 `bot-test` 默认设置 `TON_PAYMENT_POLLING_ENABLED=false`，避免空云测试库启动后回扫真实 TON 商户地址的历史交易并污染测试订单/用户数据。只有需要专门联调 TON 支付履约时，才在 `.env.cloud.test` 中显式设置 `CLOUD_TEST_TON_PAYMENT_POLLING_ENABLED=true`，并先确认测试库 checkpoint 与通知目标可控。
 
-GPU worker 不在云服务器运行；本地 `workers/docker-compose-cloud-worker-test.yml` 会启动 8 个 `cloud-comfy-agent-test-*` 容器，经 `CLOUD_TEST_CONTROL_HOST` 连接云端 Central API，并通过 R2 S3 endpoint 直接读写 `user-data-test`。`cloud-comfy-agent-test-8` / `cloud_worker_test_08` 指向 gpu-002 SCAIL-2 LAN AIO runtime `http://192.168.1.2:8190`，声明 `scail2_action_transfer,scail2_video_replacement`。
+GPU worker 不在云服务器运行；本地 `workers/docker-compose-cloud-worker-test.yml` 会启动 8 个 `cloud-comfy-agent-test-*` 容器，经 `CLOUD_TEST_CONTROL_HOST` 连接云端 Central API，并通过 R2 S3 endpoint 直接读写 `user-data-test`。`cloud-comfy-agent-test-8` / `cloud_worker_test_08` 指向 gpu-002 SCAIL-2 LAN AIO runtime `http://192.168.1.2:8190`，声明 `scail2_action_transfer,scail2_video_replacement`。该 worker 可通过 `.env.cloud.test` 的 `CLOUD_TEST_WORKER_08_TASK_TYPE_WORKFLOW_OVERRIDES` 做测试专用 workflow 覆盖；当前用于把动作迁移/视频换人指向 `_audio.api.json` 候选，视频换脸 v2 只能临时把 `scail2_video_replacement` 覆盖到 `SCAIL-2_FaceSwap_v2_audio.api.json` 做专项 smoke，不能直接覆盖 legacy `face_video`。
 
 2026-06-18 03:06 只读快照：云测试 Central `queue_size=0`，`active_workers=8`，`healthy_workers=5`，`error_workers=3`，`quarantined_workers=0`。该状态是瞬时运行态；执行测试验收前必须重新查 `/system/workers` 并按目标任务类型确认 worker 健康。
 

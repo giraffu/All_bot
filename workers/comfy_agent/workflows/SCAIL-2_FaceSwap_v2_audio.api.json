@@ -1,0 +1,360 @@
+{
+  "57": {
+    "class_type": "CLIPVisionLoader",
+    "inputs": {
+      "clip_name": "clip_vision_h.safetensors"
+    }
+  },
+  "38": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "type": "wan",
+      "device": "default"
+    }
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "3",
+        0
+      ],
+      "vae": [
+        "39",
+        0
+      ]
+    }
+  },
+  "49": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": [
+        "8",
+        0
+      ],
+      "frame_rate": 16,
+      "loop_count": 0,
+      "filename_prefix": "scail2_face_swap_v2",
+      "format": "video/h264-mp4",
+      "pingpong": false,
+      "save_output": true,
+      "audio": [
+        "113",
+        2
+      ],
+      "trim_to_audio": false
+    }
+  },
+  "48": {
+    "class_type": "ModelSamplingSD3",
+    "inputs": {
+      "model": [
+        "96",
+        0
+      ],
+      "shift": 5
+    }
+  },
+  "109": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "110",
+        1
+      ],
+      "text": "face"
+    }
+  },
+  "115": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "110",
+        1
+      ],
+      "text": "face"
+    }
+  },
+  "112": {
+    "class_type": "SAM3_VideoTrack",
+    "inputs": {
+      "images": [
+        "113",
+        0
+      ],
+      "model": [
+        "110",
+        0
+      ],
+      "conditioning": [
+        "109",
+        0
+      ],
+      "detection_threshold": 0.5,
+      "max_objects": 1,
+      "detect_interval": 1
+    }
+  },
+  "110": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "sam3.1_multiplex_fp16.safetensors"
+    }
+  },
+  "37": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "wan2.1_14B_SCAIL_2_fp8_scaled.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "126": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+      "image": [
+        "113",
+        0
+      ],
+      "batch_index": 0,
+      "length": 1
+    }
+  },
+  "113": {
+    "class_type": "VHS_LoadVideo",
+    "inputs": {
+      "video": "motion.mp4",
+      "force_rate": 16,
+      "custom_width": 0,
+      "custom_height": 0,
+      "frame_load_cap": 81,
+      "skip_first_frames": 0,
+      "select_every_nth": 1,
+      "format": "None"
+    }
+  },
+  "123": {
+    "class_type": "ResizeImageMaskNode",
+    "inputs": {
+      "input": [
+        "126",
+        0
+      ],
+      "resize_type": "scale total pixels",
+      "resize_type.megapixels": 0.5,
+      "scale_method": "nearest-exact"
+    }
+  },
+  "39": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "wan_2.1_vae.safetensors"
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "38",
+        0
+      ],
+      "text": "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走 "
+    }
+  },
+  "56": {
+    "class_type": "CLIPVisionEncode",
+    "inputs": {
+      "clip_vision": [
+        "57",
+        0
+      ],
+      "image": [
+        "58",
+        0
+      ],
+      "crop": "none"
+    }
+  },
+  "116": {
+    "class_type": "SAM3_VideoTrack",
+    "inputs": {
+      "images": [
+        "58",
+        0
+      ],
+      "model": [
+        "110",
+        0
+      ],
+      "conditioning": [
+        "115",
+        0
+      ],
+      "detection_threshold": 0.5,
+      "max_objects": 1,
+      "detect_interval": 1
+    }
+  },
+  "96": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "model": [
+        "37",
+        0
+      ],
+      "lora_name": "Wan2.1/Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors",
+      "strength_model": 1
+    }
+  },
+  "58": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "reference.png"
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "38",
+        0
+      ],
+      "text": "Video face swap v2. Preserve the driving video body, clothing, pose, hands, camera framing, lighting, background, and motion. Replace only the visible face identity with the reference image. Keep the original expression direction and head motion from the driving video. Natural skin blending, photorealistic, temporally consistent, high detail."
+    }
+  },
+  "3": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "48",
+        0
+      ],
+      "positive": [
+        "101",
+        0
+      ],
+      "negative": [
+        "101",
+        1
+      ],
+      "latent_image": [
+        "101",
+        2
+      ],
+      "seed": 1234,
+      "steps": 6,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1
+    }
+  },
+  "124": {
+    "class_type": "ResizeImageMaskNode",
+    "inputs": {
+      "input": [
+        "123",
+        0
+      ],
+      "resize_type": "scale to multiple",
+      "resize_type.multiple": 32,
+      "scale_method": "nearest-exact"
+    }
+  },
+  "104": {
+    "class_type": "GetImageSize",
+    "inputs": {
+      "image": [
+        "124",
+        0
+      ]
+    }
+  },
+  "107": {
+    "class_type": "SCAIL2ColoredMask",
+    "inputs": {
+      "driving_track_data": [
+        "112",
+        0
+      ],
+      "ref_track_data": [
+        "116",
+        0
+      ],
+      "object_indices": "",
+      "sort_by": "area",
+      "replacement_mode": true
+    }
+  },
+  "117": {
+    "class_type": "PreviewImage",
+    "inputs": {
+      "images": [
+        "107",
+        1
+      ]
+    }
+  },
+  "101": {
+    "class_type": "WanSCAILToVideo",
+    "inputs": {
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "vae": [
+        "39",
+        0
+      ],
+      "pose_video": [
+        "113",
+        0
+      ],
+      "pose_video_mask": [
+        "107",
+        0
+      ],
+      "reference_image": [
+        "58",
+        0
+      ],
+      "reference_image_mask": [
+        "107",
+        1
+      ],
+      "clip_vision_output": [
+        "56",
+        0
+      ],
+      "width": [
+        "104",
+        0
+      ],
+      "height": [
+        "104",
+        1
+      ],
+      "length": 81,
+      "batch_size": 1,
+      "pose_strength": 1,
+      "pose_start": 0,
+      "pose_end": 1,
+      "video_frame_offset": 0,
+      "previous_frame_count": 5,
+      "replacement_mode": true
+    }
+  },
+  "118": {
+    "class_type": "PreviewImage",
+    "inputs": {
+      "images": [
+        "107",
+        0
+      ]
+    }
+  }
+}

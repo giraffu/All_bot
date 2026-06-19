@@ -84,7 +84,7 @@ ssh gpu-252
 | :--- | :--- | :--- | :--- | :--- |
 | `allbot-gpu-226` | `192.168.1.226` | `ubantu` | `8188` | `cloud_prod_worker_01` |
 | `allbot-gpu-177` | `192.168.1.177` | `ubantui` | AIO `8190`、`8191`；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu177_gpu0_image_to_video_01`、`lan_aio_prod_gpu177_gpu1_ltx_video_01` |
-| `allbot-gpu-252` | `192.168.1.252` | `user` | AIO `8190`；`8191` 当前 maintenance disabled；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu252_gpu0_img2img_lora_01`、RunPod 兜底 `wan22_video_v2` |
+| `allbot-gpu-252` | `192.168.1.252` | `user` | AIO `8190`；`8191` 当前无本地 GPU1/maintenance disabled；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu252_gpu0_img2img_lora_01`、RunPod 兜底 `wan22_video_v2` |
 | `allbot-gpu-002` | `192.168.1.2` | `chuzeyu` | AIO `8190`、`8191`；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu002_gpu0_scail2_01`、`lan_aio_prod_gpu002_gpu1_image_to_video_01` |
 
 当前 4 台节点均可用 key-based SSH 登录；`sudo -n true` 均不通过，表示不是免密 sudo。需要 root 级操作时，必须由人工确认远端 sudo 密码或在维护窗口内操作。
@@ -147,11 +147,11 @@ done
 | `http://192.168.1.177:8190` | `0.21.1` | `2.11.0+cu128` | AIO `image_to_video`，`--disable-dynamic-vram` |
 | `http://192.168.1.177:8191` | `0.19.5` | `2.11.0+cu128` | AIO `ltx_video` |
 | `http://192.168.1.252:8190` | `0.21.1` | `2.11.0+cu128` | AIO `img2img/img2img_lora` |
-| `http://192.168.1.252:8191` | `0.21.1` | `2.11.0+cu128` | AIO `wan22_video_v2`，当前 maintenance disabled / unhealthy |
+| `http://192.168.1.252:8191` | `0.21.1` | `2.11.0+cu128` | AIO `wan22_video_v2`，当前 maintenance disabled；故障 GPU 已拆除，无本地 GPU1 |
 | `http://192.168.1.2:8190` | `0.25.0` | `2.11.0+cu128` | AIO SCAIL-2 |
 | `http://192.168.1.2:8191` | `0.21.1` | `2.11.0+cu128` | AIO `image_to_video` |
 
-旧 `192.168.1.177:8188/8189`、`192.168.1.252:8188/8189` 和 `192.168.1.2:8188/8189` 只作为 stopped rollback baseline 或旧 runtime 口径保留；日常健康检查优先使用上表 AIO 端口。2026-06-19 `gpu-252-gpu1-wan22_video_v2` 已改回 Docker/NVIDIA device `1`，但生产实测后仍进入 GPU/ComfyUI unhealthy 且 Docker 无法 stop/kill 的状态，当前不应作为可用容量。
+旧 `192.168.1.177:8188/8189`、`192.168.1.252:8188/8189` 和 `192.168.1.2:8188/8189` 只作为 stopped rollback baseline 或旧 runtime 口径保留；日常健康检查优先使用上表 AIO 端口。2026-06-20 `gpu-252` 已拆除故障 RTX 4090：健康卡 UUID `GPU-09b7ea85-23df-a9b8-19d9-703534e47666` 枚举为 GPU0 并恢复 `img2img/img2img_lora`，故障卡 UUID `GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e` 因 Xid 119/154 跟随实体卡跨槽位复现而不再作为可用容量。
 
 ## 7. 权限与安全边界
 
