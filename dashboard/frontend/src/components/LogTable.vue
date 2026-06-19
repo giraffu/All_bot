@@ -68,6 +68,7 @@ const operationTypes = [
   { label: '邀请奖励 (Referral)', value: 'referral_reward_initial' },
   { label: '新人奖励 (Welcome)', value: 'welcome_bonus' },
   { label: '入群奖励 (Channel)', value: 'referral_reward_channel' },
+  { label: '生成邀请奖励 (Generation Referral)', value: 'referral_reward_generation' },
   { label: '模板贡献 (Template)', value: 'template_submission' }
 ]
 

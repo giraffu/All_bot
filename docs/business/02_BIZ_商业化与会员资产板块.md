@@ -4,7 +4,7 @@
 本板块负责 AllBot 的收入转化、会员权益、灵石账本与邀请返佣闭环。当前生产实现已经形成三层结构：
 - 支付层：RMB、TON、Telegram Stars 三通道发货
 - 资产层：`credits` 单轨灵石账本 + `user_logs` 审计流水
-- 裂变层：首单返佣 `affiliate_transactions` + 返佣兑换灵石 `affiliate_redeems`
+- 裂变层：标准邀请奖励 + 首单返佣 `affiliate_transactions` + 返佣兑换灵石 `affiliate_redeems`
 
 ## 2. 已落地能力
 
@@ -23,6 +23,11 @@
 - 月卡续费、升级、低级卡折算高级身份时长都已在履约链路中处理。
 
 ### 2.4 邀请返佣闭环
+- 标准邀请奖励直接进入灵石账本：
+  - 仅邀请注册但未进群：邀请人不获得灵石，被邀请新用户仍保留 `welcome_bonus = +6`
+  - 已进群但未生成：邀请人累计获得 5 灵石
+  - 首次成功生成内容：邀请人累计获得 10 灵石
+  - 老规则已发的 `referral_reward_initial` 会计入累计目标，避免重复补发
 - 返佣以 `commission_usdt` 为基准，当前按订单成功履约后入账。
 - 邀请人可兑换余额来自 `affiliate_transactions` 汇总，不依赖单独余额字段。
 - 已落地“返佣余额兑换灵石”：

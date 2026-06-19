@@ -3,6 +3,7 @@
 ## 1. 目标与范围
 本模块负责 AllBot 的资产变动、支付履约、返佣账本与返佣兑换闭环。当前实现已经从“单一支付回调 + 充值发货”扩展为四条并行链路：
 - 灵石同步扣减与退款
+- 标准邀请奖励分层入账
 - RMB 网关异步回调履约
 - Telegram Stars 官方支付回调履约
 - TON 链上轮询入账与发货
@@ -101,13 +102,20 @@ sequenceDiagram
 - 路由层如果传入外部事务，核心服务应复用该事务并由调用方统一 `commit`；核心服务不能擅自提前提交半个闭环。
 - “先持久化唯一业务单/外部流水，再做资产副作用”仍是支付与返佣相关逻辑的统一基线。
 
-### 4.5 Provider 注册入口
+### 4.5 标准邀请奖励
+- 标准邀请奖励与付费 affiliate 返佣是两套账：前者直接写 `users.credits` + `user_logs`，后者写 `affiliate_transactions` 并可兑换灵石。
+- 新用户通过邀请链接注册时，仅记录 `referrals`、`users.invited_by`、邀请人 `referral_count`，不再给邀请人发放注册奖励；被邀请新用户仍按默认新手资产记录 `welcome_bonus = +6`。
+- 被邀请用户首次确认入群时，邀请人奖励目标为累计 5 灵石，审计类型为 `referral_reward_channel`。
+- 被邀请用户首次成功生成内容时，邀请人奖励目标为累计 10 灵石，审计类型为 `referral_reward_generation`。
+- 奖励发放按同一邀请关系的历史 `referral_reward_initial/referral_reward_channel/referral_reward_generation` 流水补差额，`extra_info.invitee_id` 是幂等核对字段；老数据中已发过的注册 +5 会计入目标，不会因新规则重复发放。
+
+### 4.6 Provider 注册入口
 - Billing core 不在模块 import 时自动装配 provider；应用入口负责调用 `ensure_billing_core_providers_registered()`。
 - 当前必须注册 billing provider 的入口包括 `src/web_api/main.py`、`src/bot_main.py`、`src/payment_api_server.py` 和 `dashboard/backend/main.py`。
 - Dashboard Backend 的退款、强制终止、资产调整和订单处理会进入 billing core；若只注册 task core provider，会触发 `Billing core providers 未注册`。
 - `paid_group_guard_bot` 只读查询 `users` / `orders` 判断付费群入群资格，不做支付履约、返佣、灵石、会员结算或 user_logs 写入，因此不属于 billing provider 注册入口。
 
-### 4.6 付费群审核资格
+### 4.7 付费群审核资格
 - 付费群审核 Bot 的默认资格口径为：`users.telegram_id` 命中申请人，且存在 `orders.status = 'SUCCESS'` 的历史订单。
 - 真实支付订单要求 `paid_at IS NOT NULL`；后台赠送免费套餐订单通过 `tx_hash` 的 `manual_` 前缀或 `order_id` 的 `GIFT:` 前缀识别。
 - 单纯手动修改身份但未生成订单的用户不会被自动放行；如需纳入，应通过后台赠送套餐补齐订单记录或另建白名单能力。
@@ -134,6 +142,7 @@ sequenceDiagram
   - 同 `idempotency_key` 不同参数必须冲突失败。
 - 审计闭环
   - `users.credits` 变化必须与 `user_logs` 对平。
+  - 标准邀请奖励必须覆盖注册不发邀请人、入群补到 5、首次生成补到 10、老 `referral_reward_initial` 计入目标的 focused tests。
   - `affiliate_transactions` IN/OUT 汇总必须能回推出当前可兑换余额。
 - Provider 启动回归
   - Dashboard Backend、Web API、Payment API、Bot 启动测试应覆盖 billing provider 已注册。

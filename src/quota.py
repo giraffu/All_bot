@@ -1,8 +1,9 @@
+import json
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal, Optional
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,6 +35,16 @@ class CreditTransferResult:
 
 
 AuditMode = Literal["auto", "skip"]
+
+
+REFERRAL_WELCOME_BONUS_CREDITS = 6
+REFERRAL_CHANNEL_TARGET_CREDITS = 5
+REFERRAL_GENERATION_TARGET_CREDITS = 10
+REFERRAL_REWARD_OPERATION_TYPES = (
+    "referral_reward_initial",
+    "referral_reward_channel",
+    "referral_reward_generation",
+)
 
 
 class QuotaManager:
@@ -458,6 +469,125 @@ class QuotaManager:
             )
             return True
 
+    @staticmethod
+    def _log_matches_invitee(extra_info: str | dict | None, invitee_id: int) -> bool:
+        if not extra_info:
+            return False
+        if isinstance(extra_info, str):
+            try:
+                extra_info = json.loads(extra_info)
+            except json.JSONDecodeError:
+                return False
+        if not isinstance(extra_info, dict):
+            return False
+        try:
+            return int(extra_info.get("invitee_id")) == int(invitee_id)
+        except (TypeError, ValueError):
+            return False
+
+    async def _load_paid_referral_reward_credits(
+        self, session: AsyncSession, inviter_id: int, invitee_id: int
+    ) -> int:
+        invitee_id_text = str(int(invitee_id))
+        stmt = select(UserLog).where(
+            UserLog.user_id == inviter_id,
+            UserLog.operation_type.in_(REFERRAL_REWARD_OPERATION_TYPES),
+            UserLog.credit_change > 0,
+            or_(
+                UserLog.extra_info.like(f'%"invitee_id": {invitee_id_text}%'),
+                UserLog.extra_info.like(f'%"invitee_id":{invitee_id_text}%'),
+                UserLog.extra_info.like(f'%"invitee_id": "{invitee_id_text}"%'),
+                UserLog.extra_info.like(f'%"invitee_id":"{invitee_id_text}"%'),
+            ),
+        )
+        result = await session.execute(stmt)
+        total = 0
+        for log_entry in result.scalars().all():
+            if self._log_matches_invitee(log_entry.extra_info, invitee_id):
+                total += int(log_entry.credit_change or 0)
+        return total
+
+    async def _stage_referral_reward_delta(
+        self,
+        *,
+        session: AsyncSession,
+        referral: Referral,
+        target_credits: int,
+        operation_type: str,
+    ) -> tuple[int, int]:
+        inviter = await self._get_user_for_update(session, referral.inviter_id)
+        if not inviter:
+            return referral.inviter_id, 0
+
+        paid_before = await self._load_paid_referral_reward_credits(
+            session, referral.inviter_id, referral.invitee_id
+        )
+        reward_delta = max(0, target_credits - paid_before)
+        if reward_delta <= 0:
+            return referral.inviter_id, 0
+
+        old_balance = int(inviter.credits or 0)
+        inviter.credits = old_balance + reward_delta
+        inviter.last_activity = datetime.now()
+        await session.flush()
+
+        await LogService.log_action(
+            user_id=referral.inviter_id,
+            username=inviter.username,
+            operation_type=operation_type,
+            credit_change=reward_delta,
+            current_balance=int(inviter.credits or 0),
+            extra_info={
+                "invitee_id": referral.invitee_id,
+                "target_credits": target_credits,
+                "paid_before": paid_before,
+            },
+            session=session,
+        )
+        return referral.inviter_id, reward_delta
+
+    async def _process_generation_referral_reward_in_session(
+        self, session: AsyncSession, user_id: int
+    ) -> int | None:
+        stmt = select(Referral).where(Referral.invitee_id == user_id).with_for_update()
+        result = await session.execute(stmt)
+        referral = result.scalar_one_or_none()
+        if not referral:
+            return None
+
+        inviter_id, reward_delta = await self._stage_referral_reward_delta(
+            session=session,
+            referral=referral,
+            target_credits=REFERRAL_GENERATION_TARGET_CREDITS,
+            operation_type="referral_reward_generation",
+        )
+        if reward_delta > 0:
+            logger.info(
+                f"✅ Generation referral reward success: {inviter_id} for {user_id} (+{reward_delta})"
+            )
+            return inviter_id
+        return None
+
+    async def process_generation_referral_reward(
+        self, user_id: int, session: AsyncSession | None = None
+    ) -> int | None:
+        """Award the inviter up to the first-generation referral target."""
+        if session is not None:
+            return await self._process_generation_referral_reward_in_session(
+                session, user_id
+            )
+
+        async with AsyncSessionLocal() as managed_session:
+            try:
+                inviter_id = await self._process_generation_referral_reward_in_session(
+                    managed_session, user_id
+                )
+                await managed_session.commit()
+                return inviter_id
+            except Exception:
+                await managed_session.rollback()
+                raise
+
     async def get_referral_count(self, user_id: int) -> int:
         """Get number of users invited by user_id"""
         async with AsyncSessionLocal() as session:
@@ -516,9 +646,25 @@ class QuotaManager:
             )
             session.add(referral)
 
-            # 4. Reward Inviter
-            inviter.credits += 5
+            # 4. Count the referral. Inviter rewards are staged later when the
+            # invitee joins the channel or successfully generates content.
             inviter.referral_count = (inviter.referral_count or 0) + 1
+
+            welcome_current_balance = int(
+                new_user.credits
+                if new_user.credits is not None
+                else REFERRAL_WELCOME_BONUS_CREDITS
+            )
+
+            await LogService.log_action(
+                user_id=new_user_id,
+                username=new_username,
+                operation_type="welcome_bonus",
+                credit_change=REFERRAL_WELCOME_BONUS_CREDITS,
+                current_balance=welcome_current_balance,
+                extra_info={"inviter_id": inviter_id},
+                session=session,
+            )
 
             try:
                 await session.commit()
@@ -530,78 +676,54 @@ class QuotaManager:
                 )
                 return False
 
-            # Log for inviter
-            await LogService.log_action(
-                user_id=inviter_id,
-                username=inviter.username,
-                operation_type="referral_reward_initial",
-                credit_change=5,
-                current_balance=inviter.credits,
-                extra_info={"invitee_id": new_user_id},
-            )
-
-            # Log for new user (welcome bonus)
-            await LogService.log_action(
-                user_id=new_user_id,
-                username=new_username,
-                operation_type="welcome_bonus",
-                credit_change=6,
-                current_balance=6,
-                extra_info={"inviter_id": inviter_id},
-            )
             return True
 
     async def process_channel_reward(self, user_id: int) -> int | None:
         """
-        Check and award channel join reward (10 credits) to the inviter.
+        Check and award channel join reward up to 5 credits to the inviter.
         Also marks the user as a channel member.
         Returns inviter_id if reward was given, None otherwise.
         """
         async with AsyncSessionLocal() as session:
-            # Update user's channel membership status
-            stmt = select(User).where(User.id == user_id)
-            result = await session.execute(stmt)
-            user = result.scalar_one_or_none()
-            if user and not user.is_channel_member:
-                user.is_channel_member = True
-                await session.commit()
-                # Re-fetch or continue with the same session? session is still open.
+            try:
+                # Update user's channel membership status in the same transaction
+                # as the reward decision.
+                stmt = select(User).where(User.id == user_id).with_for_update()
+                result = await session.execute(stmt)
+                user = result.scalar_one_or_none()
+                if user and not user.is_channel_member:
+                    user.is_channel_member = True
 
-            # Find referral record
-            stmt = select(Referral).where(Referral.invitee_id == user_id)
-            result = await session.execute(stmt)
-            referral = result.scalar_one_or_none()
+                stmt = (
+                    select(Referral)
+                    .where(Referral.invitee_id == user_id)
+                    .with_for_update()
+                )
+                result = await session.execute(stmt)
+                referral = result.scalar_one_or_none()
 
-            if not referral:
-                return None
+                if not referral or referral.channel_reward_claimed:
+                    await session.commit()
+                    return None
 
-            if referral.channel_reward_claimed:
-                return None
-
-            # Award to inviter
-            inviter_stmt = select(User).where(User.id == referral.inviter_id)
-            inviter_res = await session.execute(inviter_stmt)
-            inviter = inviter_res.scalar_one_or_none()
-
-            if inviter:
-                inviter.credits += 10
+                inviter_id, reward_delta = await self._stage_referral_reward_delta(
+                    session=session,
+                    referral=referral,
+                    target_credits=REFERRAL_CHANNEL_TARGET_CREDITS,
+                    operation_type="referral_reward_channel",
+                )
                 referral.channel_reward_claimed = True
                 await session.commit()
-                logger.info(
-                    f"✅ Channel reward success: {referral.inviter_id} for {user_id}"
-                )
 
-                await LogService.log_action(
-                    user_id=referral.inviter_id,
-                    username=inviter.username,
-                    operation_type="referral_reward_channel",
-                    credit_change=10,
-                    current_balance=inviter.credits,
-                    extra_info={"invitee_id": user_id},
-                )
-                return referral.inviter_id
-
-            return None
+                if reward_delta > 0:
+                    logger.info(
+                        f"✅ Channel reward success: {inviter_id} for {user_id} (+{reward_delta})"
+                    )
+                    return inviter_id
+                return None
+            except Exception:
+                await session.rollback()
+                raise
 
     async def update_channel_membership(self, user_id: int, is_member: bool):
         """Update user's channel membership status in DB"""

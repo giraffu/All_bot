@@ -93,7 +93,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await robust_send_message(
                         context.bot,
                         chat_id=inviter_id,
-                        text=f"🎉 **道缘已至！**\n\n道友 {user.full_name} 响应了您的号召，入驻宗门。\n获得奖励：`5` 灵石。",
+                        text=(
+                            f"🎉 **道缘已至！**\n\n道友 {user.full_name} 响应了您的号召，入驻宗门。\n"
+                            "TA 拜入宗门后您可获得 `5` 灵石；TA 首次成功生成后，邀请奖励累计至 `10` 灵石。"
+                        ),
                         parse_mode="Markdown",
                     )
             elif status == "visitor_limit":

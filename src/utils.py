@@ -32,9 +32,9 @@ async def get_user_channel_status(bot: Bot, tg_id: int) -> Optional[bool]:
 
 
 async def notify_inviter_reward(
-    bot: Bot, inviter_internal_id: int, invitee_name: str, reward: int = 10
+    bot: Bot, inviter_internal_id: int, invitee_name: str, reward: int = 5
 ):
-    """Background task to notify inviter about referral reward."""
+    """Background task to notify inviter about channel referral reward."""
     from src.database.core import AsyncSessionLocal
     from src.database.models import User
     from sqlalchemy import select

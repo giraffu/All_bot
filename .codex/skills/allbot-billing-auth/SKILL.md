@@ -11,6 +11,7 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 - **Web 认证与会话安全**：支持 Telegram Mini App / Login Widget 验签、用户名密码登录、绑定密码、改密后 `password_version` 失效旧 token 与安全通知。
 - **JWT 体系**：JWT 由 Web 安全层签发，当前认证链会把 `pwd_ver` / `channel` 等 claim 纳入令牌语义；旧 token 失效依赖 `password_version` 与 Redis 黑名单协同收口。
 - **多支付通道履约**：RMB、TON、Telegram Stars 均收口到 `payment_fulfillment_service.fulfill_payment_command(...)` 的共享履约内核；RMB `fulfill_order(...)` 仅作为兼容包装保留，TON / Stars 适配层只负责通道解析、金额校验输入与通知适配。
+- **标准邀请奖励**：邀请注册仅记录关系和被邀请人 `welcome_bonus = +6`，邀请人不发注册奖励；入群阶段邀请人累计补到 5 灵石，首次生成阶段累计补到 10 灵石，历史 `referral_reward_initial` 需计入目标防重复发。
 - **Affiliate 账本闭环**：支付成功后可计算首单返佣并落 `affiliate_transactions`；affiliate 余额既可兑换灵石，也可兑换会员/权益，并保留完整审计流水。
 - **站内灵石转账**：用户之间的灵石转移使用 `QuotaManager.transfer_credits(...)`，在同一事务内锁定双方用户、扣减买家、增加收款方并写入双方 `user_logs`；Gallery 提示词解锁固定走此入口。
 - **付费群审核资格**：`paid_group_guard_bot` 只读查询 `users.telegram_id` 与 `orders`，默认允许历史成功支付订单和后台赠送套餐订单对应的 Telegram 用户入群；该路径不做资产副作用。
@@ -41,6 +42,12 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 - **灵石兑换**：`redeem_affiliate_balance_to_credits(...)`
 - **会员兑换**：affiliate 余额可进一步兑换会员权益，需遵守统一结算语义与审计链
 
+### 标准邀请奖励
+- **注册邀请**：`QuotaManager.process_referral(...)` 只写 `referrals/users.invited_by/referral_count` 和被邀请人的 `welcome_bonus` 审计，不给邀请人加灵石。
+- **入群奖励**：`QuotaManager.process_channel_reward(...)` 以 `referral_reward_channel` 将邀请人累计补到 5 灵石。
+- **首次生成奖励**：`QuotaManager.process_generation_referral_reward(...)` 以 `referral_reward_generation` 将邀请人累计补到 10 灵石。
+- **幂等锚点**：按邀请人 `user_logs` 中 `referral_reward_initial/referral_reward_channel/referral_reward_generation` 且 `extra_info.invitee_id` 匹配的正向流水累加，计算差额后发放。
+
 ### 站内灵石转账
 - **接口/入口**：`QuotaManager.transfer_credits(...)`
 - **语义**：同事务完成转出方扣减、转入方增加与双方 `user_logs`；调用方可复用外部 `AsyncSession` 并负责最终提交。
@@ -58,6 +65,7 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 - 任何资产副作用前，必须先有唯一业务单、外部流水或幂等键作为锚点。
 - 用户间灵石转账不得拆成两个独立事务；必须用同一幂等锚点与同一事务保证扣减、入账、审计一致。
 - 复用外部 `AsyncSession` 时，`user_logs`、affiliate 流水与会员结算审计必须保持同事务语义。
+- 标准邀请奖励不得在注册节点给邀请人加灵石；入群和首次生成必须按目标值补差额，不能简单叠加固定奖励。
 - Affiliate 缓存失效必须放在最终提交成功后执行，不能在提交前删除缓存。
 - 汇率缺失、金额不匹配或结算参数冲突时必须 fail fast，不能静默降级。
 - 新增 billing/auth 改动优先走 provider/dependency 注入模式，不回退到 core 直连基础设施实现。
@@ -77,5 +85,6 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 - 同一回调或同一链上流水不能重复发货。
 - 密码登录需覆盖 Redis 限流、错误口令、改密后旧 token 失效与安全通知。
 - Affiliate 兑换需覆盖 PostgreSQL 并发、同幂等稳定返回、同幂等参数冲突。
+- 标准邀请奖励需覆盖注册不发邀请人、入群补到 5、首次生成补到 10、老 `referral_reward_initial` 计入目标的 focused tests。
 - 若修改会员结算或 affiliate 会员兑换，必须补对应 focused tests 与审计断言。
 - 若修改付费群审核资格口径，必须补 `tests/paid_group_guard_bot` 中的 SQL/handler focused tests，并同步 `docs/子模块_付费群审核Bot_paid_group_guard_bot.md`。

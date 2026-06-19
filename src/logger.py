@@ -161,6 +161,7 @@ class UserLogger:
                 user = User(id=self.user_id)
                 session.add(user)
 
+            previous_generation_count = int(user.generation_count or 0)
             existing_history = None
             if task_id:
                 await session.execute(
@@ -221,8 +222,15 @@ class UserLogger:
             session.add(history_entry)
 
             # Update user stats
-            user.generation_count = (user.generation_count or 0) + 1
+            user.generation_count = previous_generation_count + 1
             user.last_activity = datetime.now()
+
+            if previous_generation_count == 0:
+                from src.quota import QuotaManager
+
+                await QuotaManager().process_generation_referral_reward(
+                    self.user_id, session=session
+                )
 
             await session.commit()
             return True
