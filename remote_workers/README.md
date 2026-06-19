@@ -199,7 +199,9 @@ base.
 Wan22 V82 uses `FL_RIFE` post-processing. New Wan22 profile images must bake
 `rife49.pth` into both `ComfyUI_Fill-Nodes` and `ComfyUI-Frame-Interpolation`
 cache paths, while business model weights still come from the R2 manifest at
-startup. The RunPod bootstrap and entrypoint run
+startup. Wan22 profile images also bake `/opt/allbot/runpod_bootstrap_from_git.sh`
+as their default command, while RunPod create requests may still override it via
+`dockerStartCmd`. The RunPod bootstrap and entrypoint run
 `scripts/ensure_wan22_rife_cache.py` before ComfyUI starts; for
 `image_to_video`, `wan22_video_v2`, or `wan22_aio_video`, missing RIFE cache is
 an exit-75 startup failure, not a runtime HuggingFace download attempt.

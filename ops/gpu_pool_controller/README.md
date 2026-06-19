@@ -155,5 +155,5 @@ one-off local builds:
 | :--- | :--- |
 | `img2img_lora` | `192.168.1.115:5000/allbot/comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946` |
 | `i2i_pro` | `192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh` |
-| `image_to_video` / `video_basic` / `wan22_video_v2` / `wan22_aio_video` | `192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260613-wan22aio-lanbase-ab9b7ea` |
+| `image_to_video` / `video_basic` / `wan22_video_v2` / `wan22_aio_video` | `192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd` |
 | `scail2` | `192.168.1.115:5000/allbot/comfy-runpod-scail2:20260617-scail2-cu128-<shortsha>` |

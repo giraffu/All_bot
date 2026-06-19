@@ -105,10 +105,12 @@ RUN set -euo pipefail; \
       require_existing_node "ComfyUI-VideoHelperSuite"; \
       require_existing_node "rgthree-comfy"; \
       require_existing_node "ComfyUI-Frame-Interpolation"; \
+      require_existing_node "ComfyUI_Fill-Nodes"; \
       require_existing_node "ComfyUI-GGUF"; \
       require_existing_node "ComfyUI-DaSiWa-Nodes"; \
       require_existing_node "comfyui-WhiteRabbit"; \
-      python3 -c 'import importlib.util; missing = [name for name in ("packaging", "torchlanc") if importlib.util.find_spec(name) is None]; raise SystemExit("REUSE_BASE_CUSTOM_NODES=true but missing Python package(s): " + ",".join(missing)) if missing else None'; \
+      require_existing_node "ComfyUI-LTXVideo"; \
+      python3 -c 'import importlib.util, sys; missing = [name for name in ("packaging", "torchlanc") if importlib.util.find_spec(name) is None]; sys.exit("REUSE_BASE_CUSTOM_NODES=true but missing Python package(s): " + ",".join(missing) if missing else 0)'; \
     else \
       clone_node "${KJNODES_REPO}" "${KJNODES_REF}" "${comfyui_dir}/custom_nodes/ComfyUI-KJNodes"; \
       clone_node "${VIDEOHELPERSUITE_REPO}" "${VIDEOHELPERSUITE_REF}" "${comfyui_dir}/custom_nodes/ComfyUI-VideoHelperSuite"; \
@@ -152,22 +154,27 @@ RUN set -euo pipefail; \
     test -f "${comfyui_dir}/main.py"; \
     mkdir -p "${comfyui_dir}/custom_nodes"; \
     target="${comfyui_dir}/custom_nodes/ComfyUI_Fill-Nodes"; \
-    rm -rf "${target}"; \
-    git config --global http.version HTTP/1.1; \
-    for attempt in 1 2 3 4 5; do \
-      git clone --filter=blob:none "${FILL_NODES_REPO}" "${target}" && break; \
+    if [ "${REUSE_BASE_CUSTOM_NODES}" = "true" ]; then \
+      test -d "${target}" || { echo "REUSE_BASE_CUSTOM_NODES=true but ComfyUI_Fill-Nodes is missing" >&2; exit 75; }; \
+      echo "Reusing baked ComfyUI_Fill-Nodes from base image"; \
+    else \
       rm -rf "${target}"; \
-      if [ "$attempt" = "5" ]; then \
-        echo "Failed to clone ${FILL_NODES_REPO} after ${attempt} attempts" >&2; \
-        exit 128; \
-      fi; \
-      sleep $((attempt * 3)); \
-    done; \
-    git -C "${target}" checkout --force "${FILL_NODES_REF}"; \
-    if [ -f "${target}/requirements.txt" ]; then \
+      git config --global http.version HTTP/1.1; \
+      for attempt in 1 2 3 4 5; do \
+        git clone --filter=blob:none "${FILL_NODES_REPO}" "${target}" && break; \
+        rm -rf "${target}"; \
+        if [ "$attempt" = "5" ]; then \
+          echo "Failed to clone ${FILL_NODES_REPO} after ${attempt} attempts" >&2; \
+          exit 128; \
+        fi; \
+        sleep $((attempt * 3)); \
+      done; \
+      git -C "${target}" checkout --force "${FILL_NODES_REF}"; \
+    fi; \
+    if [ "${REUSE_BASE_CUSTOM_NODES}" != "true" ] && [ -f "${target}/requirements.txt" ]; then \
       python3 -m pip install --no-cache-dir -r "${target}/requirements.txt"; \
     fi; \
-    rm -rf "${target}/.git"; \
+    if [ "${REUSE_BASE_CUSTOM_NODES}" != "true" ]; then rm -rf "${target}/.git"; fi; \
     find "${target}" -type d -name __pycache__ -prune -exec rm -rf {} +; \
     python3 -m pip cache purge >/dev/null 2>&1 || true; \
     rm -rf /root/.cache/pip /tmp/* /var/tmp/*
@@ -216,18 +223,23 @@ RUN set -euo pipefail; \
     test -f "${comfyui_dir}/main.py"; \
     mkdir -p "${comfyui_dir}/custom_nodes"; \
     target="${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo"; \
-    rm -rf "${target}"; \
-    git config --global http.version HTTP/1.1; \
-    for attempt in 1 2 3 4 5; do \
-      git clone --filter=blob:none "${LTXVIDEO_REPO}" "${target}" && break; \
+    if [ "${REUSE_BASE_CUSTOM_NODES}" = "true" ]; then \
+      test -d "${target}" || { echo "REUSE_BASE_CUSTOM_NODES=true but ComfyUI-LTXVideo is missing" >&2; exit 75; }; \
+      echo "Reusing baked ComfyUI-LTXVideo from base image"; \
+    else \
       rm -rf "${target}"; \
-      if [ "$attempt" = "5" ]; then \
-        echo "Failed to clone ${LTXVIDEO_REPO} after ${attempt} attempts" >&2; \
-        exit 128; \
-      fi; \
-      sleep $((attempt * 3)); \
-    done; \
-    git -C "${target}" checkout --force "${LTXVIDEO_REF}"; \
+      git config --global http.version HTTP/1.1; \
+      for attempt in 1 2 3 4 5; do \
+        git clone --filter=blob:none "${LTXVIDEO_REPO}" "${target}" && break; \
+        rm -rf "${target}"; \
+        if [ "$attempt" = "5" ]; then \
+          echo "Failed to clone ${LTXVIDEO_REPO} after ${attempt} attempts" >&2; \
+          exit 128; \
+        fi; \
+        sleep $((attempt * 3)); \
+      done; \
+      git -C "${target}" checkout --force "${LTXVIDEO_REF}"; \
+    fi; \
     printf '%s\n' \
       'from .tiled_vae_decode import LTXVTiledVAEDecode, LTXVSpatioTemporalTiledVAEDecode  # noqa: F401' \
       'from .nodes_registry import NODE_CLASS_MAPPINGS as RUNTIME_NODE_CLASS_MAPPINGS' \
@@ -241,7 +253,14 @@ RUN set -euo pipefail; \
       > "${target}/__init__.py"; \
     grep -R "LTXVSpatioTemporalTiledVAEDecode" "${target}" >/dev/null; \
     LTXVIDEO_NODE_DIR="${target}" PYTHONPATH="${comfyui_dir}:${PYTHONPATH:-}" python3 -c 'import importlib.util, os, sys; from pathlib import Path; node_dir = Path(os.environ["LTXVIDEO_NODE_DIR"]); spec = importlib.util.spec_from_file_location("allbot_ltxvideo_smoke", node_dir / "__init__.py", submodule_search_locations=[str(node_dir)]); module = importlib.util.module_from_spec(spec); assert spec.loader is not None; sys.modules[spec.name] = module; spec.loader.exec_module(module); assert "LTXVSpatioTemporalTiledVAEDecode" in module.NODE_CLASS_MAPPINGS'; \
-    rm -rf "${target}/.git"; \
+    if [ "${REUSE_BASE_CUSTOM_NODES}" != "true" ]; then rm -rf "${target}/.git"; fi; \
     find "${target}" -type d -name __pycache__ -prune -exec rm -rf {} +; \
     python3 -m pip cache purge >/dev/null 2>&1 || true; \
     rm -rf /root/.cache/pip /tmp/* /var/tmp/*
+
+COPY remote_workers/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
+
+RUN set -euo pipefail; \
+    chmod +x /opt/allbot/runpod_bootstrap_from_git.sh
+
+CMD ["bash", "/opt/allbot/runpod_bootstrap_from_git.sh"]

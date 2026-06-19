@@ -174,7 +174,7 @@ if [ -n "$KJNODES_SOURCE" ]; then
     context_for_build="$cleanup_dir"
 elif [ "$PROFILE" = "scail2" ] || [ "$PROFILE" = "ltx_video" ]; then
     context_for_build="."
-elif [ "$PROFILE" = "i2i_pro" ] || [ "$PROFILE" = "img2img_lora" ]; then
+elif [ "$PROFILE" = "wan22_aio_video" ] || [ "$PROFILE" = "i2i_pro" ] || [ "$PROFILE" = "img2img_lora" ]; then
     cleanup_dir="$(mktemp -d)"
     trap 'rm -rf "$cleanup_dir"' EXIT
     mkdir -p \
@@ -263,6 +263,7 @@ test -d "${comfyui_dir}/custom_nodes/ComfyUI-Frame-Interpolation"
 test -d "${comfyui_dir}/custom_nodes/ComfyUI_Fill-Nodes"
 test -s "${comfyui_dir}/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth"
 test -s "${comfyui_dir}/custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth"
+test -x /opt/allbot/runpod_bootstrap_from_git.sh
 test -d "${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo"
 LTXVIDEO_NODE_DIR="${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo" PYTHONPATH="${comfyui_dir}:${PYTHONPATH:-}" python3 -c '"'"'import importlib.util, os, sys; from pathlib import Path; node_dir = Path(os.environ["LTXVIDEO_NODE_DIR"]); spec = importlib.util.spec_from_file_location("allbot_ltxvideo_smoke", node_dir / "__init__.py", submodule_search_locations=[str(node_dir)]); module = importlib.util.module_from_spec(spec); assert spec.loader is not None; sys.modules[spec.name] = module; spec.loader.exec_module(module); assert "LTXVSpatioTemporalTiledVAEDecode" in module.NODE_CLASS_MAPPINGS'"'"'
 test -d "${comfyui_dir}/custom_nodes/ComfyUI-GGUF"

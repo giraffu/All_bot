@@ -980,7 +980,7 @@ def test_render_create_cloud_prod_manual_worker_can_use_second_slot():
 
 def test_render_create_cloud_prod_wan22_video_v2_uses_prod_refs_and_split_manifest():
     image_ref = (
-        RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX + "20260613-wan22aio-lanbase-ab9b7ea"
+        RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX + "20260619-wan22aio-rife-bcf3ebd"
     )
     agent_id = prod_agent_id_from_slot("01", profile="wan22_video_v2")
     provider = RunPodProvider(
@@ -1032,7 +1032,7 @@ def test_render_create_cloud_prod_wan22_video_v2_uses_prod_refs_and_split_manife
 
 def test_render_create_cloud_prod_image_to_video_uses_prod_refs_and_split_manifest():
     image_ref = (
-        RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX + "20260613-wan22aio-lanbase-ab9b7ea"
+        RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX + "20260619-wan22aio-rife-bcf3ebd"
     )
     agent_id = prod_agent_id_from_slot("01", profile="image_to_video")
     provider = RunPodProvider(
@@ -1489,7 +1489,7 @@ def test_mutation_gate_allows_global_total_above_manual_slots():
             max_hourly_cost_usd=10.0,
             image_name_wan22_video_v2=(
                 "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:"
-                "20260613-wan22aio-lanbase-ab9b7ea"
+                "20260619-wan22aio-rife-bcf3ebd"
             ),
             prod_agent_id=prod_agent_id_from_slot(
                 "01",

@@ -387,7 +387,7 @@ def test_prod_worker_render_dry_run_uses_verified_image_and_prod_defaults():
 
 def test_prod_worker_render_wan22_video_v2_uses_prod_profile_defaults():
     image_ref = (
-        RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX + "20260613-wan22aio-lanbase-ab9b7ea"
+        RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX + "20260619-wan22aio-rife-bcf3ebd"
     )
     agent_id = prod_agent_id_from_slot("01", profile="wan22_video_v2")
     provider = FakeRunPodProvider(
@@ -438,7 +438,7 @@ def test_prod_worker_render_wan22_video_v2_uses_prod_profile_defaults():
 
 def test_prod_worker_render_image_to_video_uses_prod_profile_defaults():
     image_ref = (
-        RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX + "20260613-wan22aio-lanbase-ab9b7ea"
+        RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX + "20260619-wan22aio-rife-bcf3ebd"
     )
     agent_id = prod_agent_id_from_slot("01", profile="image_to_video")
     provider = FakeRunPodProvider(
@@ -734,6 +734,7 @@ def test_prod_worker_add_dry_run_uses_lowest_free_slots_without_deletes():
     assert provider.create_calls == 0
     assert runner.control_calls == []
     assert "create cloud-prod RunPod pod for new slot 02" in payload["would_execute"]
+    assert any("enabled" in item for item in payload["would_execute"])
     assert any("leave all existing" in item for item in payload["would_execute"])
 
 
@@ -1030,7 +1031,7 @@ def test_prod_worker_restart_execute_uses_native_restart_and_enables():
             prod_max_manual_slots=8,
             image_name_wan22_video_v2=(
                 RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX
-                + "20260613-wan22aio-lanbase-ab9b7ea"
+                + "20260619-wan22aio-rife-bcf3ebd"
             ),
         ),
         pods=[_prod_pod("03", profile="wan22_video_v2")],

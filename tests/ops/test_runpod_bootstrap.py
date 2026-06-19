@@ -140,6 +140,10 @@ def test_wan22_profile_image_bakes_video_custom_nodes_not_business_models():
     assert "ARG REUSE_BASE_CUSTOM_NODES=false" in dockerfile
     assert "Reusing baked custom nodes from base image" in dockerfile
     assert "require_existing_node" in dockerfile
+    assert "sys.exit(\"REUSE_BASE_CUSTOM_NODES=true" in dockerfile
+    assert "if missing else 0" in dockerfile
+    assert "Reusing baked ComfyUI_Fill-Nodes from base image" in dockerfile
+    assert "Reusing baked ComfyUI-LTXVideo from base image" in dockerfile
     assert "git clone --filter=blob:none" in dockerfile
     assert 'rm -rf "${target}/.git"' in dockerfile
     assert "python3 -m pip cache purge" in dockerfile
@@ -160,6 +164,11 @@ def test_wan22_profile_image_bakes_video_custom_nodes_not_business_models():
     assert "229437c6b65796d6a7a63ae34be2bd5ba31fa543" in dockerfile
     assert "LTXVSpatioTemporalTiledVAEDecode" in dockerfile
     assert "NODE_CLASS_MAPPINGS = dict(RUNTIME_NODE_CLASS_MAPPINGS)" in dockerfile
+    assert (
+        "COPY remote_workers/scripts/runpod_bootstrap_from_git.sh "
+        "/opt/allbot/runpod_bootstrap_from_git.sh"
+    ) in dockerfile
+    assert 'CMD ["bash", "/opt/allbot/runpod_bootstrap_from_git.sh"]' in dockerfile
     assert (
         "# Keep the FL_RIFE provider in a final small layer" in dockerfile
     )
