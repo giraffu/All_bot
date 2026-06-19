@@ -12,6 +12,7 @@
 - **投稿封禁**：管理员可对用户开启 `is_submission_banned`，统一禁止 Bot/Web 端投稿、公开分享与重新上架。
 - **后台治理**：Dashboard 广场管理展示投稿用户，支持按用户名、提示词片段、提示词字数筛选，并支持一键封禁该用户投稿能力、下架其全部广场投稿。
 - **社区展示与过滤**：支持按类型、时间范围、热度等维度筛选。
+- **原始输入预览**：市集、修仙笔记、我的投稿和用户主页作品卡片会展示输入素材缩略图，详情中可查看完整输入素材列表。
 - **社交互动**：点赞、点踩、收藏与一键应用模板。
 - **提示词解锁**：未解锁提示词在市集详情中只展示半公开遮罩内容；用户可支付 1 灵石解锁完整提示词，消耗转给作者，并在修仙笔记的“提示词模版”中长期查看。
 
@@ -53,7 +54,9 @@ sequenceDiagram
 - 发布入口基于历史记录与 gallery post 关联，不再把社区流程叙述成直接耦合旧单体 core。
 - 一键应用当前主路径是 Web apply-context / workbench，不应再把 Telegram compat 流程写成唯一主入口。
 - Wan22 一键应用只开放单段记录：旧 `custom_video` / `video_lora` 与 `wan22_video_v2` 单段可进入模板应用，所有 stitched 拼接结果必须禁用按钮并由 apply-context 返回 400；v2 单段需回填负面提示词与分辨率档位。
-- SCAIL-2 `scail2_action_transfer` / `scail2_video_replacement` 支持 Web/Bot 投稿；Web 一键应用时模板只复用投稿的 motion/driving video，复用者必须上传自己的 reference image。模板衍生结果保持 `allow_contribute=false`，不能再次投稿。
+- Gallery/修仙笔记展示用响应会从 `History.input_file` 暴露 `input_file/input_file_url/input_files/input_file_urls`，仅用于原始输入缩略图和详情预览；`txt2img` 不展示输入，单输入任务展示一张，多输入任务按顺序展示并在卡片角标显示叠层/`+N`。
+- Wan22 首尾帧投稿展示为“起始帧 / 终止帧”。SCAIL-2 `scail2_action_transfer` / `scail2_video_replacement` 投稿展示为“参考图 / 驱动视频”。
+- SCAIL-2 支持 Web/Bot 投稿；Web 一键应用时模板只复用投稿的 motion/driving video，复用者必须上传自己的 reference image。展示两份原始输入不代表 apply-context 复用两份输入。模板衍生结果保持 `allow_contribute=false`，不能再次投稿。
 - 互动防并发与去重依赖数据库约束与服务层收口，避免高并发下覆盖更新。
 - 提示词解锁入口为 `POST /api/gallery/posts/{post_id}/prompt-unlock`，依赖 `gallery_prompt_unlocks.user_id + post_id` 唯一约束防重复扣费；修仙笔记“提示词模版”入口读取 `GET /api/gallery/my-prompt-unlocks`。
 - Dashboard 广场列表入口为 `GET /api/gallery/all`，后台治理筛选可使用 `username`、`prompt_contains`、`prompt_max_length`，其中提示词条件基于 `History.prompt`。
@@ -62,9 +65,10 @@ sequenceDiagram
 ## 5. 用户操作手册
 ### 5.1 浏览与一键同款
 1. 在 Web 端进入社区广场查看作品。
-2. 点击卡片查看详情、模型标签与生成参数。
-3. 若想查看完整提示词，可点击“解锁提示词（1灵石）”；解锁后可复制提示词，并可在修仙笔记的“提示词模版”中再次查看。
-4. 点击一键同款后进入模板应用链路。
+2. 卡片左上角可查看原始输入缩略图；多输入任务会显示叠层和剩余数量。
+3. 点击卡片查看详情、原始输入列表、模型标签与生成参数。
+4. 若想查看完整提示词，可点击“解锁提示词（1灵石）”；解锁后可复制提示词，并可在修仙笔记的“提示词模版”中再次查看。
+5. 点击一键同款后进入模板应用链路。
 
 ### 5.2 发布作品
 1. 在历史记录或结果详情中选择满意作品。

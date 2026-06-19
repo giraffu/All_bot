@@ -151,6 +151,11 @@ const samplePost = {
   has_disliked: false,
   author_name: 'tester',
   prompt: 'demo prompt',
+  task_type: 'i2i_draw',
+  input_file: 'history/demo/reference.png',
+  input_file_url: 'https://example.com/reference.png',
+  input_files: ['history/demo/reference.png'],
+  input_file_urls: ['https://example.com/reference.png'],
 }
 
 const samplePostTwo = {
@@ -279,6 +284,8 @@ describe('Gallery template apply integration', () => {
     await wrapper.get('.group.cursor-pointer').trigger('click')
     await flushPromises()
 
+    expect(wrapper.find('.original-input-badge').exists()).toBe(true)
+    expect(wrapper.text()).toContain('原始输入')
     expect(wrapper.text()).not.toContain('复制提示词')
     expect(wrapper.text()).toContain('demo ')
     expect(/[•·◦*]/.test(wrapper.text())).toBe(true)
@@ -392,6 +399,8 @@ describe('Gallery template apply integration', () => {
           { id: 'video_lora', name: '图生视频(附加模型)' },
           { id: 'ltx_video', name: '高级图生视频' },
           { id: 'wan22_video_v2', name: '图生视频 v2' },
+          { id: 'scail2_action_transfer', name: '动作迁移' },
+          { id: 'scail2_video_replacement', name: '视频换人' },
         ],
         lora_models: [
           { id: '', name: '无' },
@@ -418,8 +427,14 @@ describe('Gallery template apply integration', () => {
     expect(findButtonsByText('自由P图')).toHaveLength(1)
     expect(findButtonsByText('图生视频')).toHaveLength(1)
     expect(findButtonsByText('图生视频 v2')).toHaveLength(1)
+    expect(findButtonsByText('动作迁移')).toHaveLength(1)
+    expect(findButtonsByText('视频换人')).toHaveLength(1)
     expect(findButtonsByText('文生图')).toHaveLength(0)
     expect(findButtonsByText('gallery.tabs.txt2img')).toHaveLength(0)
+    expect(findButtonsByText('gallery.tabs.scail2_action_transfer')).toHaveLength(0)
+    expect(findButtonsByText('gallery.tabs.scail2_video_replacement')).toHaveLength(0)
+    expect(findButtonsByText('scail2_action_transfer')).toHaveLength(0)
+    expect(findButtonsByText('scail2_video_replacement')).toHaveLength(0)
     expect(findButtonsByText('图生图(附加模型)')).toHaveLength(0)
     expect(findButtonsByText('图生视频(附加模型)')).toHaveLength(0)
 

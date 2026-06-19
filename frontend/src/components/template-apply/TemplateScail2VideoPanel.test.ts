@@ -226,11 +226,23 @@ const mountPanel = (contextOverrides: Partial<TemplateApplyContext> = {}) =>
     }
   })
 
+const loadMotionVideoMetadata = async (wrapper: ReturnType<typeof mountPanel>, seconds: number) => {
+  const video = wrapper.find('video')
+  Object.defineProperty(video.element, 'duration', {
+    configurable: true,
+    value: seconds
+  })
+  await video.trigger('loadedmetadata')
+  await nextTick()
+}
+
 describe('TemplateScail2VideoPanel', () => {
   const createObjectURLMock = vi.fn(() => 'blob:reference-preview')
   const revokeObjectURLMock = vi.fn()
 
   beforeEach(() => {
+    i18n.global.locale.value = 'zh'
+
     uploadFileMock.mockReset()
     uploadFileMock.mockResolvedValue({
       uploadId: 'upload-1',
@@ -267,6 +279,7 @@ describe('TemplateScail2VideoPanel', () => {
   it('submits a template apply payload with reference image first and locked motion video second', async () => {
     const wrapper = mountPanel()
     await nextTick()
+    await loadMotionVideoMetadata(wrapper, 12)
 
     const file = new File(['reference'], 'reference.png', { type: 'image/png' })
     await wrapper.findComponent(UploadDraggerStub).props('beforeUpload')(file)
@@ -293,6 +306,31 @@ describe('TemplateScail2VideoPanel', () => {
     expect(setSubmittedTaskIdMock).toHaveBeenCalledWith('task-456')
   })
 
+  it('only exposes 5s when the template motion video is shorter than 8s', async () => {
+    const wrapper = mountPanel()
+    await nextTick()
+    await loadMotionVideoMetadata(wrapper, 6)
+
+    expect(wrapper.findAllComponents(RadioButtonStub).map(button => button.text())).toEqual(['5 秒'])
+
+    const file = new File(['reference'], 'reference.png', { type: 'image/png' })
+    await wrapper.findComponent(UploadDraggerStub).props('beforeUpload')(file)
+    await flushPromises()
+
+    await wrapper.findAllComponents(ButtonStub).at(-1)!.trigger('click')
+    await flushPromises()
+
+    expect(submitTaskMock.mock.calls[0][0].inputs.duration).toBe(5)
+  })
+
+  it('exposes 5s and 8s when the template motion video reaches 8s', async () => {
+    const wrapper = mountPanel()
+    await nextTick()
+    await loadMotionVideoMetadata(wrapper, 8)
+
+    expect(wrapper.findAllComponents(RadioButtonStub).map(button => button.text())).toEqual(['5 秒', '8 秒'])
+  })
+
   it('disables submission when the template has no reusable motion video', async () => {
     const wrapper = mountPanel({
       inputFile: null,
@@ -308,5 +346,17 @@ describe('TemplateScail2VideoPanel', () => {
 
     expect(wrapper.findAllComponents(ButtonStub).at(-1)!.props('disabled')).toBe(true)
     expect(submitTaskMock).not.toHaveBeenCalled()
+  })
+
+  it('renders product-facing copy and constrained upload cards', async () => {
+    const wrapper = mountPanel()
+    await nextTick()
+
+    expect(wrapper.text()).toContain('已加载视频模板')
+    expect(wrapper.text()).not.toContain('SCAIL')
+    expect(wrapper.findAll('.scail2-template-card')).toHaveLength(2)
+    expect(wrapper.find('.template-upload').classes()).toEqual(
+      expect.arrayContaining(['w-full', 'min-w-0', 'overflow-hidden'])
+    )
   })
 })

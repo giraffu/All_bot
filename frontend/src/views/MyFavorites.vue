@@ -11,6 +11,7 @@ import FavoriteDetailActions from '@/components/FavoriteDetailActions.vue'
 import GalleryDetailModal from '@/components/GalleryDetailModal.vue'
 import GalleryMediaCard from '@/components/GalleryMediaCard.vue'
 import HeaderPaginationBar from '@/components/HeaderPaginationBar.vue'
+import OriginalInputBadge from '@/components/OriginalInputBadge.vue'
 import PostCardMetricsBar from '@/components/PostCardMetricsBar.vue'
 import PostBrowserShell from '@/components/PostBrowserShell.vue'
 import PostTagPreview from '@/components/PostTagPreview.vue'
@@ -359,6 +360,9 @@ onMounted(() => {
           @card-click="openDetail(post)"
           @image-error="handleImageError($event, post)"
         >
+          <template #top-left>
+            <OriginalInputBadge :source="post" />
+          </template>
           <template #overlay>
             <div class="flex flex-col justify-between h-full">
               <PostTagPreview :tags="post.tags" :format-tag="formatTag" />

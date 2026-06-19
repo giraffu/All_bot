@@ -216,6 +216,22 @@ sha256_file() {
     sha256sum "$file" | awk '{print $1}'
 }
 
+read_local_env_value() {
+    local file=$1
+    local key=$2
+    sed -n "s/^${key}=//p" "$file" | tail -n 1
+}
+
+require_local_env_true() {
+    local file=$1
+    local key=$2
+    local value
+    value="$(read_local_env_value "$file" "$key")"
+    if [ "$value" != "true" ]; then
+        die "local env ${file} must set ${key}=true before --sync-env"
+    fi
+}
+
 remote_sh() {
     local script=$1
     if [ "$EXECUTE" = true ]; then
@@ -271,6 +287,10 @@ preflight() {
     fi
     if [ "$SYNC_ENV" = true ] && [ ! -f "$LOCAL_ENV_FILE" ]; then
         die "local cloud-prod env file not found: $LOCAL_ENV_FILE"
+    fi
+    if [ "$SYNC_ENV" = true ]; then
+        require_local_env_true "$LOCAL_ENV_FILE" "MEMBERSHIP_SETTLEMENT_V2_ENABLED"
+        require_local_env_true "$LOCAL_ENV_FILE" "AFFILIATE_MEMBERSHIP_REDEEM_ENABLED"
     fi
 
     if [ "$EXECUTE" = true ]; then

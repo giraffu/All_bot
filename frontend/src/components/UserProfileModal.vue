@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n'
 import { followUser, getPublicUserProfile, unfollowUser } from '@/api/social'
 import GalleryDetailModal from '@/components/GalleryDetailModal.vue'
 import GalleryMediaCard from '@/components/GalleryMediaCard.vue'
+import OriginalInputBadge from '@/components/OriginalInputBadge.vue'
 import { useCurrentDetailMedia } from '@/composables/useCurrentDetailMedia'
 import { useDetailTemplateApply } from '@/composables/useDetailTemplateApply'
 import { useGalleryComments } from '@/composables/useGalleryComments'
@@ -392,6 +393,9 @@ watch(
                   >
                     {{ t('social.no_media') }}
                   </div>
+                </template>
+                <template #top-left>
+                  <OriginalInputBadge :source="post" />
                 </template>
                 <template #overlay>
                   <div class="flex h-full items-end">

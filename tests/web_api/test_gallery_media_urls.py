@@ -6,6 +6,7 @@ import pytest
 from src.core.media_paths import MINIO_BUCKET
 from src.database.models import GalleryPost, History, User
 from src.web_api.presenters import media_presenter
+from src.web_api.services import history_input_presenter
 from src.web_api.services.gallery_response_builder import build_gallery_post_responses
 
 
@@ -227,6 +228,60 @@ async def test_build_gallery_post_responses_appends_wan22_mode_tag_from_history(
         "task.wan22_start_end_frame",
         "task.wan22_segment:1",
     ]
+
+
+@pytest.mark.asyncio
+async def test_build_gallery_post_responses_exposes_original_input_files(monkeypatch):
+    post = GalleryPost(
+        id=18,
+        task_id="task-scail2-inputs",
+        user_id=123,
+        media_type="video",
+        tags='["task.scail2_action_transfer"]',
+        likes_count=0,
+        dislikes_count=0,
+        applied_count=0,
+        comments_count=0,
+        is_active=True,
+        created_at=datetime(2026, 6, 19, 9, 0, 0),
+    )
+    history = History(
+        id=24,
+        user_id=123,
+        task_id="task-scail2-inputs",
+        type="scail2_action_transfer",
+        prompt="test prompt",
+        input_file="uploads/reference.png|uploads/motion.mp4",
+        output_file="123/output_images/task-scail2-inputs.mp4",
+    )
+    author = User(id=123, username="tester", full_name="测试账号")
+    session = _FakeSession(
+        [
+            _FakeScalarResult([history]),
+            _FakeScalarResult([author]),
+        ]
+    )
+    presign_mock = MagicMock(
+        side_effect=lambda object_name, bucket=None: f"https://storage.test/{object_name}"
+    )
+    monkeypatch.setattr(history_input_presenter.storage, "get_presigned_url", presign_mock)
+
+    items = await build_gallery_post_responses(
+        session=session,
+        posts=[post],
+        current_user=None,
+        pick_gallery_media_urls=AsyncMock(return_value=("media-url", "thumb-url")),
+    )
+
+    assert len(items) == 1
+    assert items[0].input_file == "uploads/reference.png"
+    assert items[0].input_file_url == "https://storage.test/uploads/reference.png"
+    assert items[0].input_files == ["uploads/reference.png", "uploads/motion.mp4"]
+    assert items[0].input_file_urls == [
+        "https://storage.test/uploads/reference.png",
+        "https://storage.test/uploads/motion.mp4",
+    ]
+    assert presign_mock.call_count == 2
 
 
 @pytest.mark.asyncio

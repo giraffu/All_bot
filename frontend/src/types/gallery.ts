@@ -47,6 +47,10 @@ export interface GalleryPost {
   prompt_unlock_price?: number
   task_type?: string | null
   result_meta?: Wan22ResultMeta
+  input_file?: string | null
+  input_file_url?: string | null
+  input_files?: string[]
+  input_file_urls?: string[]
   template_apply_supported?: boolean
   template_apply_disabled_reason?: 'wan22_stitched' | string | null
   author_name?: string | null

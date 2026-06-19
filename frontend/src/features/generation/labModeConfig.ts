@@ -112,6 +112,21 @@ export const SCAIL2_VIDEO_DURATION_OPTIONS = [
   { value: '8', label: '8 秒' },
 ] as const
 
+export const SCAIL2_EIGHT_SECOND_MIN_TEMPLATE_DURATION_SECONDS = 8
+
+export const getScail2VideoDurationOptionsForMotionVideo = (
+  motionVideoDurationSeconds: number | null | undefined
+) => {
+  const canUseEightSecondDuration =
+    typeof motionVideoDurationSeconds === 'number'
+    && Number.isFinite(motionVideoDurationSeconds)
+    && motionVideoDurationSeconds >= SCAIL2_EIGHT_SECOND_MIN_TEMPLATE_DURATION_SECONDS
+
+  return canUseEightSecondDuration
+    ? SCAIL2_VIDEO_DURATION_OPTIONS
+    : SCAIL2_VIDEO_DURATION_OPTIONS.filter(option => option.value === '5')
+}
+
 export const getScail2VideoCost = (duration: string | number) => (
   String(duration).replace(/s$/i, '') === '8' ? 80 : 40
 )

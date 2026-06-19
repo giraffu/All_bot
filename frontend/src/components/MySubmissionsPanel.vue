@@ -21,6 +21,7 @@ import { usePagedScrollNavigation } from '@/composables/usePagedScrollNavigation
 import GalleryDetailModal from '@/components/GalleryDetailModal.vue'
 import GalleryMediaCard from '@/components/GalleryMediaCard.vue'
 import HeaderPaginationBar from '@/components/HeaderPaginationBar.vue'
+import OriginalInputBadge from '@/components/OriginalInputBadge.vue'
 import PostCardMetricsBar from '@/components/PostCardMetricsBar.vue'
 import PostBrowserShell from '@/components/PostBrowserShell.vue'
 import PostTagPreview from '@/components/PostTagPreview.vue'
@@ -280,7 +281,8 @@ watch(
             </div>
           </template>
           <template #top-left>
-            <div class="absolute top-2 left-2 flex items-center gap-2">
+            <div class="absolute top-2 left-2 z-10 flex flex-col items-start gap-1.5">
+              <OriginalInputBadge :source="post" position-class="" />
               <div
                 class="bg-black/60 backdrop-blur-sm rounded-full px-2 py-1 shadow-sm border border-white/10 text-xs font-bold"
                 :class="post.is_active ? 'text-green-400' : 'text-orange-400'"

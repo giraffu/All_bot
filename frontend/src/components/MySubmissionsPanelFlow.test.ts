@@ -154,7 +154,12 @@ const samplePost = {
   has_liked: false,
   has_disliked: false,
   is_active: true,
-  prompt: 'demo prompt'
+  prompt: 'demo prompt',
+  task_type: 'i2i_draw',
+  input_file: 'history/demo/reference.png',
+  input_file_url: 'https://example.com/reference.png',
+  input_files: ['history/demo/reference.png'],
+  input_file_urls: ['https://example.com/reference.png']
 }
 
 const faceSwapContext = {
@@ -257,6 +262,8 @@ describe('MySubmissionsPanel workbench flow', () => {
 
     expect(wrapper.text()).toContain('删除')
     expect(wrapper.text()).toContain('下架')
+    expect(wrapper.find('.original-input-badge').exists()).toBe(true)
+    expect(wrapper.text()).toContain('原始输入')
 
     await applyButton.trigger('click')
     await flushPromises()

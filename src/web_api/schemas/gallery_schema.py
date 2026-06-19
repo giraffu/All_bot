@@ -62,6 +62,10 @@ class GalleryPostResponse(BaseModel):
     prompt_unlock_price: int = 1
     task_type: Optional[str] = None
     result_meta: Dict[str, Any] = Field(default_factory=dict)
+    input_file: Optional[str] = None
+    input_file_url: Optional[str] = None
+    input_files: List[str] = Field(default_factory=list)
+    input_file_urls: List[str] = Field(default_factory=list)
     template_apply_supported: bool = True
     template_apply_disabled_reason: Optional[str] = None
 

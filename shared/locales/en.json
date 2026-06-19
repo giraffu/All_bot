@@ -237,7 +237,9 @@
       "img2video_group": "Img2Video",
       "img2video": "Img2Video (Addon)",
       "high_res_video": "High-Res Video",
-      "wan22_video_v2": "Img2Video V2"
+      "wan22_video_v2": "Img2Video V2",
+      "scail2_action_transfer": "Action Transfer",
+      "scail2_video_replacement": "Video Replacement"
     },
     "filters": {
       "all": "All",
@@ -285,7 +287,7 @@
     "unknown_task_type": "This template is not supported yet.",
     "disabled": {
       "wan22_stitched": "Stitched videos cannot be applied as templates. Please choose a single video segment.",
-      "missing_scail2_motion_video": "This SCAIL-2 post is missing a reusable motion video and cannot be applied as a template.",
+      "missing_scail2_motion_video": "This post is missing a reusable motion video and cannot be applied as a template.",
       "unsupported": "This post cannot be applied as a template."
     },
     "close": {
@@ -387,7 +389,7 @@
     },
     "scail2_video": {
       "current_page_desc": "Upload a new reference image and reuse the template motion video to generate a matching action video.",
-      "template_notice": "SCAIL-2 video template loaded. The motion video is locked; upload your own reference image to generate.",
+      "template_notice": "Video template loaded. The motion video is locked; upload your own reference image to generate.",
       "motion_video_locked_hint": "The template reuses the submitted motion video. The current user uploads a new reference image.",
       "upload_reference_first": "Please upload a reference image first",
       "motion_video_missing": "The template is missing a reusable motion video"
@@ -507,7 +509,7 @@
         "face_video": "Video Face Swap is priced by resolution: 720p costs 18 credits, 1024p costs 36 credits.",
         "ltx_video": "High-Res Video uses fixed 1280x704 output; longer duration costs more.",
         "wan22_video_v2": "Img2Video V2 supports 5s/8s/10s clips and is priced by resolution and duration.",
-        "scail2_video": "SCAIL-2 test mode is fixed at 512x896: 5s costs 40 credits, 8s costs 80 credits."
+        "scail2_video": "This mode is fixed at 512x896: 5s costs 40 credits, 8s costs 80 credits."
       },
       "template_notices": {
         "face_swap": "Face swap template loaded. The body image is locked; upload a face image to start.",
@@ -605,6 +607,18 @@
     "unlock": "Unlock Prompt ({cost} credit)",
     "expand": "Expand",
     "collapse": "Collapse"
+  },
+  "original_inputs": {
+    "title": "Original Inputs",
+    "input_n": "Input {count}",
+    "reference_image": "Reference Image",
+    "base_image": "Base Image",
+    "start_frame": "Start Frame",
+    "end_frame": "End Frame",
+    "motion_video": "Motion Video",
+    "target_image": "Target Image",
+    "target_video": "Target Video",
+    "face_image": "Face Image"
   },
   "task": {
     "img2img": "🎨 Custom Edit",
@@ -757,7 +771,7 @@
       "cancel_button": "❌ Cancel",
       "cancelled_short": "🚫 Video-to-video flow cancelled.",
       "expired_alert": "The interaction expired or the task was submitted. Please start again.",
-      "invalid_duration": "⚠️ SCAIL-2 currently only supports 5s or 8s. Please start again.",
+      "invalid_duration": "⚠️ This mode currently only supports 5s or 8s. Please start again.",
       "video_too_large": "⚠️ The motion video must be under {max_mb}MB. Please compress or trim it and send again.",
       "submitting": "🚀 Submitting the {mode_name} task, duration {duration}s. Estimated cost: {cost} credits. Please wait..."
     },

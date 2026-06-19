@@ -56,6 +56,10 @@ const contentTypeFor = (filePath) => {
   return ext === '.mp4' ? 'video/mp4' : 'application/octet-stream'
 }
 
+const isVideoObjectKey = (value) => (
+  typeof value === 'string' && /\.(mp4|mov|webm)(?:$|\?)/i.test(value)
+)
+
 const apiFetch = async (token, endpoint, options = {}) => {
   const headers = {
     Authorization: `Bearer ${token}`,
@@ -167,7 +171,7 @@ const pollTaskResult = async (token, taskId) => {
   let lastPayload = null
   while (Date.now() - startedAt < timeoutMs) {
     lastPayload = await apiFetch(token, `/tasks/${encodeURIComponent(taskId)}/result`)
-    if (lastPayload.status === 'done' && lastPayload.result_url) {
+    if (['done', 'success'].includes(lastPayload.status) && lastPayload.result_url) {
       return lastPayload
     }
     if (['error', 'cancelled', 'failed'].includes(lastPayload.status)) {
@@ -293,8 +297,15 @@ const runTaskTypeSmoke = async ({ taskType, fixtureKeys, authorUser, consumerUse
   await submitToGallery(authorToken, authorTask.task_id)
   const post = await pollMyGalleryPost(authorToken, taskType, authorTask.task_id)
   const applyContext = await getApplyContext(consumerToken, post.id)
-  if (applyContext.input_file !== fixtureKeys.motionVideoKey) {
-    throw new Error(`Expected apply-context input_file to be the motion video for ${taskType}`)
+  const originalInputFiles = Array.isArray(post.input_files) ? post.input_files : []
+  if (originalInputFiles.length < 2) {
+    throw new Error(`Expected gallery post ${post.id} to expose reference and motion inputs for ${taskType}`)
+  }
+  if (applyContext.input_file !== originalInputFiles[1]) {
+    throw new Error(`Expected apply-context input_file to reuse the second gallery input for ${taskType}`)
+  }
+  if (!isVideoObjectKey(applyContext.input_file)) {
+    throw new Error(`Expected apply-context input_file to be a video object for ${taskType}`)
   }
 
   const screenshots = []

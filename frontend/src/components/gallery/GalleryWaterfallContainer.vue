@@ -3,6 +3,7 @@ import { Waterfall } from 'vue-waterfall-plugin-next'
 import 'vue-waterfall-plugin-next/dist/style.css'
 import GalleryMediaCard from '@/components/GalleryMediaCard.vue'
 import LazyVideo from '@/components/LazyVideo.vue'
+import OriginalInputBadge from '@/components/OriginalInputBadge.vue'
 import PostCardMetricsBar from '@/components/PostCardMetricsBar.vue'
 import PostTagPreview from '@/components/PostTagPreview.vue'
 import type { GalleryPost } from '@/types/gallery'
@@ -59,6 +60,9 @@ const emit = defineEmits<{
             :poster="post.cardPoster || post.src"
             className="w-full object-cover absolute inset-0 h-full"
           />
+        </template>
+        <template #top-left>
+          <OriginalInputBadge :source="post" />
         </template>
         <template #overlay>
           <div class="flex flex-col justify-end h-full">

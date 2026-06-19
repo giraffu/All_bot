@@ -11,7 +11,7 @@ import { useTemplateApplyUpload } from '@/composables/useTemplateApplyUpload'
 import { useTaskResult } from '@/composables/useTaskResult'
 import { useTaskStream } from '@/composables/useTaskStream'
 import {
-  SCAIL2_VIDEO_DURATION_OPTIONS,
+  getScail2VideoDurationOptionsForMotionVideo,
   getScail2VideoCost
 } from '@/features/generation/labModeConfig'
 import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
@@ -43,6 +43,9 @@ const referenceAsset = ref<UploadedAsset>({ key: null, preview: null })
 const prompt = ref('')
 const negativePrompt = ref('')
 const duration = ref('5')
+const motionVideoDurationSeconds = ref<number | null>(null)
+const preferredInitialDuration = ref('5')
+const hasUserSelectedDuration = ref(false)
 
 const initialReferenceKey = ref<string | null>(null)
 const initialPrompt = ref('')
@@ -62,6 +65,9 @@ const promptPlaceholder = computed(() => (
 ))
 const motionVideoKey = computed(() => props.context.inputFile ?? props.context.inputFiles?.[0] ?? null)
 const motionVideoUrl = computed(() => props.context.inputFileUrl ?? props.context.inputFileUrls?.[0] ?? null)
+const availableDurationOptions = computed(() => (
+  getScail2VideoDurationOptionsForMotionVideo(motionVideoDurationSeconds.value)
+))
 const taskCost = computed(() => getScail2VideoCost(duration.value))
 
 const revokePreview = (preview: string | null) => {
@@ -104,15 +110,54 @@ const normalizeDuration = (value: number | string | null | undefined) => {
   return normalized === '8' ? '8' : '5'
 }
 
+const coerceDurationToAvailableOption = (value: number | string | null | undefined) => {
+  const normalized = normalizeDuration(value)
+  return availableDurationOptions.value.some(option => option.value === normalized)
+    ? normalized
+    : '5'
+}
+
 const initializeFromContext = () => {
   prompt.value = props.context.prompt ?? ''
   negativePrompt.value = props.context.negativePrompt ?? ''
-  duration.value = normalizeDuration(props.context.requestedDuration ?? props.context.duration)
+  motionVideoDurationSeconds.value = null
+  hasUserSelectedDuration.value = false
+  preferredInitialDuration.value = normalizeDuration(props.context.requestedDuration ?? props.context.duration)
+  duration.value = coerceDurationToAvailableOption(preferredInitialDuration.value)
 
   initialReferenceKey.value = null
   initialPrompt.value = prompt.value.trim()
   initialNegativePrompt.value = negativePrompt.value.trim()
   initialDuration.value = duration.value
+}
+
+watch(
+  availableDurationOptions,
+  () => {
+    const targetDuration = hasUserSelectedDuration.value
+      ? duration.value
+      : preferredInitialDuration.value
+    const nextDuration = coerceDurationToAvailableOption(targetDuration)
+    duration.value = nextDuration
+    if (!hasUserSelectedDuration.value) {
+      initialDuration.value = nextDuration
+    }
+  },
+  { immediate: true }
+)
+
+const normalizeVideoDuration = (value: number) => (
+  Number.isFinite(value) && value > 0 ? value : null
+)
+
+const handleMotionVideoLoadedMetadata = (event: Event) => {
+  const video = event.currentTarget as HTMLVideoElement | null
+  motionVideoDurationSeconds.value = normalizeVideoDuration(video?.duration ?? Number.NaN)
+}
+
+const handleDurationChange = (value: string | number | null | undefined) => {
+  hasUserSelectedDuration.value = true
+  duration.value = coerceDurationToAvailableOption(value)
 }
 
 const beforeUploadReference = async (rawFile: File | { originFileObj?: File }) => {
@@ -194,8 +239,8 @@ onBeforeUnmount(() => {
           {{ t('template_apply.scail2_video.template_notice') }}
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-[0.95fr_1.05fr] gap-4">
-          <div class="rounded-xl border border-slate-700 bg-slate-800/70 p-4">
+        <div class="grid grid-cols-1 lg:grid-cols-[0.95fr_1.05fr] gap-4 min-w-0">
+          <div class="scail2-template-card rounded-xl border border-slate-700 bg-slate-800/70 p-4">
             <div class="text-sm font-semibold text-slate-200 mb-3">{{ t('lab.workbench.upload_slots.reference_image') }}</div>
             <div v-if="referenceAsset.preview" class="relative rounded-xl overflow-hidden border border-slate-700 bg-slate-950/80">
               <img :src="referenceAsset.preview" class="h-56 w-full object-contain bg-slate-950/80" />
@@ -211,7 +256,7 @@ onBeforeUnmount(() => {
               :before-upload="beforeUploadReference"
               :show-upload-list="false"
               accept="image/png,image/jpeg,image/webp"
-              class="template-upload"
+              class="template-upload w-full min-w-0 overflow-hidden"
             >
               <p class="ant-upload-drag-icon">
                 <InboxOutlined class="text-cyan-400" />
@@ -221,7 +266,7 @@ onBeforeUnmount(() => {
             </a-upload-dragger>
           </div>
 
-          <div class="rounded-xl border border-slate-700 bg-slate-800/70 p-4">
+          <div class="scail2-template-card rounded-xl border border-slate-700 bg-slate-800/70 p-4">
             <div class="text-sm font-semibold text-slate-200 mb-3">{{ t('lab.workbench.upload_slots.motion_video') }}</div>
             <div class="rounded-xl overflow-hidden border border-slate-700 bg-slate-950/80">
               <video
@@ -229,6 +274,9 @@ onBeforeUnmount(() => {
                 :src="motionVideoUrl"
                 controls
                 class="h-56 w-full object-contain bg-slate-950/80"
+                preload="metadata"
+                @loadedmetadata="handleMotionVideoLoadedMetadata"
+                @durationchange="handleMotionVideoLoadedMetadata"
               />
               <div
                 v-else
@@ -260,9 +308,14 @@ onBeforeUnmount(() => {
           </div>
           <div>
             <div class="text-sm font-semibold text-slate-200 mb-3">{{ t('template_apply.common.duration') }}</div>
-            <a-radio-group v-model:value="duration" button-style="solid" class="w-full grid grid-cols-2 gap-2 max-w-[240px]">
+            <a-radio-group
+              :value="duration"
+              button-style="solid"
+              class="w-full grid grid-cols-2 gap-2 max-w-[240px]"
+              @update:value="handleDurationChange"
+            >
               <a-radio-button
-                v-for="option in SCAIL2_VIDEO_DURATION_OPTIONS"
+                v-for="option in availableDurationOptions"
                 :key="option.value"
                 :value="option.value"
                 class="w-full text-center"
@@ -322,9 +375,52 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.scail2-template-card {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.template-upload {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.template-upload :deep(.ant-upload) {
+  width: 100%;
+  min-width: 0;
+}
+
 .template-upload :deep(.ant-upload.ant-upload-drag) {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
   background: rgba(15, 23, 42, 0.75);
   border-color: rgba(71, 85, 105, 0.9);
+}
+
+.template-upload :deep(.ant-upload.ant-upload-drag .ant-upload) {
+  box-sizing: border-box;
+  display: flex;
+  padding: 0;
+}
+
+.template-upload :deep(.ant-upload.ant-upload-drag .ant-upload-btn) {
+  width: 100%;
+  min-width: 0;
+}
+
+.template-upload :deep(.ant-upload-drag-container) {
+  box-sizing: border-box;
+  display: flex;
+  min-height: 14rem;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem 1rem;
+  text-align: center;
 }
 
 .template-upload :deep(.ant-upload.ant-upload-drag:hover) {

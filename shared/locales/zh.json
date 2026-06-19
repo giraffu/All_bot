@@ -238,7 +238,9 @@
       "img2video_group": "图生视频",
       "img2video": "图生视频(附加模型)",
       "high_res_video": "高级图生视频",
-      "wan22_video_v2": "图生视频 v2"
+      "wan22_video_v2": "图生视频 v2",
+      "scail2_action_transfer": "动作迁移",
+      "scail2_video_replacement": "视频换人"
     },
     "filters": {
       "all": "所有",
@@ -286,7 +288,7 @@
     "unknown_task_type": "当前模板暂不支持打开",
     "disabled": {
       "wan22_stitched": "拼接视频暂不支持一键应用，请选择单段视频模板。",
-      "missing_scail2_motion_video": "该 SCAIL-2 投稿缺少可复用驱动视频，暂不支持一键应用。",
+      "missing_scail2_motion_video": "该投稿缺少可复用驱动视频，暂不支持一键应用。",
       "unsupported": "当前作品暂不支持一键应用。"
     },
     "close": {
@@ -388,7 +390,7 @@
     },
     "scail2_video": {
       "current_page_desc": "上传新的参考图，沿用模板驱动视频，在当前页直接生成同款动作视频。",
-      "template_notice": "已加载 SCAIL-2 视频模板，驱动视频已锁定，您只需上传自己的参考图即可生成。",
+      "template_notice": "已加载视频模板，驱动视频已锁定，您只需上传自己的参考图即可生成。",
       "motion_video_locked_hint": "模板会复用投稿中的驱动视频；参考图由当前用户重新上传。",
       "upload_reference_first": "请先上传参考图",
       "motion_video_missing": "模板缺少可复用的驱动视频"
@@ -508,7 +510,7 @@
         "face_video": "视频换脸按分辨率计费，720p 为 18 灵石，1024p 为 36 灵石。",
         "ltx_video": "高级图生视频固定 1280x704，时长越长消耗越高。",
         "wan22_video_v2": "图生视频 v2 支持 5/8/10 秒，按分辨率和时长计费。",
-        "scail2_video": "SCAIL-2 测试版固定 512x896，5 秒 40 灵石，8 秒 80 灵石。"
+        "scail2_video": "当前模式固定 512x896，5 秒 40 灵石，8 秒 80 灵石。"
       },
       "template_notices": {
         "face_swap": "已加载一键换脸模板，身体图已锁定，请上传脸部图即可开始换脸。",
@@ -606,6 +608,18 @@
     "unlock": "解锁提示词（{cost}灵石）",
     "expand": "展开全文",
     "collapse": "收起"
+  },
+  "original_inputs": {
+    "title": "原始输入",
+    "input_n": "输入 {count}",
+    "reference_image": "参考图",
+    "base_image": "底图",
+    "start_frame": "起始帧",
+    "end_frame": "终止帧",
+    "motion_video": "驱动视频",
+    "target_image": "目标图",
+    "target_video": "目标视频",
+    "face_image": "人脸图"
   },
   "task": {
     "img2img": "🎨 懒人/自由P图",
@@ -759,7 +773,7 @@
       "cancel_button": "❌ 取消",
       "cancelled_short": "🚫 已取消视频生视频操作。",
       "expired_alert": "交互已失效或任务已提交，请重新开始",
-      "invalid_duration": "⚠️ SCAIL-2 当前只支持 5秒 或 8秒，请重新开始。",
+      "invalid_duration": "⚠️ 当前模式只支持 5秒 或 8秒，请重新开始。",
       "video_too_large": "⚠️ 驱动视频不能超过 {max_mb}MB，请压缩或裁剪后重新发送。",
       "submitting": "🚀 正在提交【{mode_name}】任务，时长 {duration} 秒，预计消耗 {cost} 灵石，请耐心等待..."
     },

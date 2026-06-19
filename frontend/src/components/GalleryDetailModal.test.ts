@@ -160,6 +160,24 @@ const PromptPreviewPanelStub = defineComponent({
   `,
 })
 
+const OriginalInputsPanelStub = defineComponent({
+  name: 'OriginalInputsPanelStub',
+  props: {
+    source: {
+      type: Object,
+      default: null,
+    },
+  },
+  template: `
+    <div
+      v-if="source?.input_file_url || source?.input_file_urls?.length"
+      class="original-inputs-panel-stub"
+    >
+      original_inputs.title
+    </div>
+  `,
+})
+
 const baseProps = {
   open: true,
   currentPost: {
@@ -215,6 +233,7 @@ const mountModal = (props = {}, slots = {}) =>
         DetailDesktopActions: DetailDesktopActionsStub,
         DetailReactionBar: DetailReactionBarStub,
         DetailApplyActions: DetailApplyActionsStub,
+        OriginalInputsPanel: OriginalInputsPanelStub,
         PromptCopyButton: PromptCopyButtonStub,
         PromptPreviewPanel: PromptPreviewPanelStub,
       },
@@ -306,5 +325,21 @@ describe('GalleryDetailModal', () => {
     expect(wrapper.find('.after-extra').exists()).toBe(true)
     expect(wrapper.find('.mobile-left-extra').exists()).toBe(true)
     expect(wrapper.find('.mobile-right-extra').exists()).toBe(true)
+  })
+
+  it('renders original input panel when the post includes input previews', () => {
+    const wrapper = mountModal({
+      currentPost: {
+        ...baseProps.currentPost,
+        task_type: 'i2i_draw',
+        input_file: 'uploads/reference.png',
+        input_file_url: 'https://cdn.test/reference.png',
+        input_files: ['uploads/reference.png'],
+        input_file_urls: ['https://cdn.test/reference.png'],
+      },
+    })
+
+    expect(wrapper.find('.original-inputs-panel-stub').exists()).toBe(true)
+    expect(wrapper.text()).toContain('original_inputs.title')
   })
 })

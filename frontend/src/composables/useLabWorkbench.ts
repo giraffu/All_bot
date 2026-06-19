@@ -24,7 +24,6 @@ import {
   LEGACY_LAB_MODES,
   LTX_VIDEO_DURATION_OPTIONS,
   LTX_VIDEO_RESOLUTION_OPTIONS,
-  SCAIL2_VIDEO_DURATION_OPTIONS,
   type LabUploadPreviewKind,
   type LabUploadSlotId,
   type LabModeConfig,
@@ -33,6 +32,7 @@ import {
   VIDEO_DURATION_OPTIONS,
   VIDEO_RESOLUTION_OPTIONS,
   getDefaultVideoLoraSelection,
+  getScail2VideoDurationOptionsForMotionVideo,
   getScail2VideoCost,
   getLabModeConfig,
   getVideoLoraOptions,
@@ -153,6 +153,7 @@ export function useLabWorkbench() {
   const wan22ChainBanner = ref('')
   const wan22ChainLoading = ref(false)
   const wan22ChainStitching = ref(false)
+  const scail2MotionVideoDurationSeconds = ref<number | null>(null)
 
   const templateNotice = ref('')
   const templateWarning = ref('')
@@ -178,7 +179,7 @@ export function useLabWorkbench() {
     currentMode.value.id === 'ltx_video'
       ? LTX_VIDEO_DURATION_OPTIONS
       : isScail2ModeId(currentMode.value.id)
-        ? SCAIL2_VIDEO_DURATION_OPTIONS
+        ? getScail2VideoDurationOptionsForMotionVideo(scail2MotionVideoDurationSeconds.value)
         : VIDEO_DURATION_OPTIONS
   ))
   const ltxLoraOptions = LTX_VIDEO_LORA_OPTIONS
@@ -358,6 +359,7 @@ export function useLabWorkbench() {
   const clearSlotAssets = () => {
     Object.values(uploadedSlotAssets.value).forEach(item => revokeReferencePreview(item?.preview))
     uploadedSlotAssets.value = {}
+    scail2MotionVideoDurationSeconds.value = null
   }
 
   const resetTemplateState = () => {
@@ -515,6 +517,16 @@ export function useLabWorkbench() {
     const target = uploadedSlotAssets.value[slotId]
     revokeReferencePreview(target?.preview)
     delete uploadedSlotAssets.value[slotId]
+    if (slotId === 'motion_video') {
+      scail2MotionVideoDurationSeconds.value = null
+    }
+  }
+
+  const handleAssetVideoMetadata = (slotId: LabUploadSlotId, durationSeconds: number | null) => {
+    if (!isScail2ModeId(currentMode.value.id) || slotId !== 'motion_video') {
+      return
+    }
+    scail2MotionVideoDurationSeconds.value = durationSeconds
   }
 
   watch(selectedEditLora, (nextValue) => {
@@ -526,6 +538,15 @@ export function useLabWorkbench() {
       ? (EDIT_LORA_DEFAULT_STRENGTHS[nextValue] ?? DEFAULT_EDIT_LORA_STRENGTH)
       : DEFAULT_EDIT_LORA_STRENGTH
   })
+
+  watch(videoDurationOptions, (options) => {
+    if (!isScail2ModeId(currentMode.value.id)) {
+      return
+    }
+    if (!options.some(option => option.value === duration.value)) {
+      duration.value = options[0]?.value ?? DEFAULT_VIDEO_DURATION
+    }
+  }, { immediate: true })
 
   const syncLtxLoraItems = (names: string[]) => {
     const uniqueNames = Array.from(new Set(names.filter(value => value && value !== '__none__'))).slice(0, 3)
@@ -1048,6 +1069,7 @@ export function useLabWorkbench() {
     openLegacyMode,
     beforeUpload,
     beforeUploadSlot,
+    handleAssetVideoMetadata,
     handleRemoveReference,
     handleRemoveUploadSlot,
     handleSubmit,

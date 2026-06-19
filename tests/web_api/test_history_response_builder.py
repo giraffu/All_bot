@@ -47,6 +47,51 @@ async def test_build_favorite_gallery_payload_uses_history_media_type_when_galle
     assert items[0].task_type == "doggy_style"
 
 
+@pytest.mark.asyncio
+async def test_build_favorite_gallery_payload_exposes_original_input_files(monkeypatch):
+    history = SimpleNamespace(
+        task_id="task-scail2",
+        output_file="123/output_images/task-scail2.mp4",
+        type="scail2_action_transfer",
+        input_file="uploads/reference.png|uploads/motion.mp4",
+        billing_resolution=None,
+        width=512,
+        height=896,
+        duration=5,
+        prompt="natural motion",
+        created_at=datetime(2026, 6, 19),
+        extra_outputs={},
+    )
+
+    async def fake_resolve_history_media_urls_func(**_kwargs):
+        return "https://example.com/task-scail2.mp4", "https://example.com/thumb.png"
+
+    monkeypatch.setattr(
+        history_response_builder,
+        "resolve_history_media_urls",
+        fake_resolve_history_media_urls_func,
+    )
+    monkeypatch.setattr(
+        history_response_builder,
+        "build_storage_input_file_url",
+        lambda key: f"https://storage.test/{key}",
+    )
+
+    items = await build_favorite_gallery_payload(
+        histories=[history],
+        gallery_post_map={},
+    )
+
+    assert len(items) == 1
+    assert items[0].input_file == "uploads/reference.png"
+    assert items[0].input_file_url == "https://storage.test/uploads/reference.png"
+    assert items[0].input_files == ["uploads/reference.png", "uploads/motion.mp4"]
+    assert items[0].input_file_urls == [
+        "https://storage.test/uploads/reference.png",
+        "https://storage.test/uploads/motion.mp4",
+    ]
+
+
 def test_extract_history_tags_adds_wan22_mode_tag_for_single_start_frame():
     tags = extract_history_tags(
         "prompt",

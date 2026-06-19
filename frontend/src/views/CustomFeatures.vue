@@ -34,6 +34,7 @@ const {
   openLegacyMode,
   beforeUpload,
   beforeUploadSlot,
+  handleAssetVideoMetadata,
   handleRemoveReference,
   handleRemoveUploadSlot,
   handleSubmit,
@@ -122,6 +123,7 @@ const promptLockedHint = computed(() => (
         :notice="composerNotice || templateNotice"
         :warning="composerWarning || templateWarning"
         @update:prompt="prompt = $event"
+        @asset-video-metadata="handleAssetVideoMetadata"
         @remove-reference="handleRemoveReference"
         @remove-upload-slot="handleRemoveUploadSlot"
         @submit="handleSubmit"

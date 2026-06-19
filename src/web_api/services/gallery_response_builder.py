@@ -30,6 +30,9 @@ from src.web_api.services.apply_context_service import (
     resolve_history_template_apply_disabled_reason,
 )
 from src.web_api.services.gallery_media_resolver import resolve_gallery_post_media_urls
+from src.web_api.services.history_input_presenter import (
+    build_history_input_file_payload,
+)
 
 logger = logging.getLogger(__name__)
 PROMPT_UNLOCK_PRICE_CREDITS = 1
@@ -371,6 +374,9 @@ def _build_single_post_response(
         ),
     )
     author = user_map.get(post.user_id) if post.user_id else None
+    input_payload = build_history_input_file_payload(
+        getattr(history, "input_file", None)
+    )
 
     return gallery_post_response_cls(
         id=post.id,
@@ -396,6 +402,7 @@ def _build_single_post_response(
         prompt_unlock_price=prompt_visibility["prompt_unlock_price"],
         task_type=task_type_from_history,
         result_meta=result_meta,
+        **input_payload,
         template_apply_supported=template_apply_disabled_reason is None,
         template_apply_disabled_reason=template_apply_disabled_reason,
         has_liked=post.id in user_likes,

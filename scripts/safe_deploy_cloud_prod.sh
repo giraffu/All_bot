@@ -125,6 +125,8 @@ check_env_contract() {
     local required_keys=(
         BOT_TYPE
         REDIS_PREFIX
+        MEMBERSHIP_SETTLEMENT_V2_ENABLED
+        AFFILIATE_MEMBERSHIP_REDEEM_ENABLED
         CLOUD_PROD_BIND_IP
         CLOUD_PROD_TAILSCALE_IP
         CLOUD_PROD_DATABASE_URL
@@ -171,6 +173,14 @@ check_env_contract() {
     fi
     if [ "$(read_env_value REDIS_PREFIX)" != "prod_bot_" ]; then
         echo "REDIS_PREFIX must be prod_bot_."
+        exit 1
+    fi
+    if [ "$(read_env_value MEMBERSHIP_SETTLEMENT_V2_ENABLED)" != "true" ]; then
+        echo "MEMBERSHIP_SETTLEMENT_V2_ENABLED must be true for cloud production."
+        exit 1
+    fi
+    if [ "$(read_env_value AFFILIATE_MEMBERSHIP_REDEEM_ENABLED)" != "true" ]; then
+        echo "AFFILIATE_MEMBERSHIP_REDEEM_ENABLED must be true for cloud production."
         exit 1
     fi
     if [ "$(read_env_value CLOUD_PROD_BIND_IP)" = "0.0.0.0" ]; then

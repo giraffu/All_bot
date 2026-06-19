@@ -101,6 +101,7 @@ describe('TaskDetailModal Wan22 editor links', () => {
       type: 'wan22_video_v2',
       prompt: 'segment prompt',
       input_file: 'bot-data/start.png',
+      input_file_urls: ['https://cdn/start.png'],
       output_file: 'bot-data/result.mp4',
       output_file_url: 'https://cdn/result.mp4',
       extra_outputs: {
@@ -121,6 +122,8 @@ describe('TaskDetailModal Wan22 editor links', () => {
 
   it('routes Wan22 extension editing back to the lab workbench', async () => {
     const wrapper = mountModal()
+
+    expect(wrapper.text()).toContain('original_inputs.title')
 
     await wrapper.findAll('button')
       .find(button => button.text().includes('扩展下一段'))

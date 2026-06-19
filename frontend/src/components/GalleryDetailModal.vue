@@ -8,6 +8,7 @@ import DetailModalShell from '@/components/DetailModalShell.vue'
 import DetailCommentsSection from '@/components/DetailCommentsSection.vue'
 import DetailMobileBottomBar from '@/components/DetailMobileBottomBar.vue'
 import DetailDesktopActions from '@/components/DetailDesktopActions.vue'
+import OriginalInputsPanel from '@/components/OriginalInputsPanel.vue'
 import PromptCopyButton from '@/components/PromptCopyButton.vue'
 import PromptPreviewPanel from '@/components/PromptPreviewPanel.vue'
 
@@ -182,6 +183,11 @@ const handleNewCommentInput = (event: Event) => {
             </div>
           </div>
         </div>
+
+        <OriginalInputsPanel
+          :source="currentPost"
+          class="mb-4 lg:mb-6"
+        />
 
         <PromptPreviewPanel
           v-if="currentPost.prompt?.trim()"

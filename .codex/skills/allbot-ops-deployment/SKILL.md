@@ -58,6 +58,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 - 部署前必须检查 Alembic multiple heads；发现多 head 立即中止。
 - Alembic 迁移通过后在宿主机显式执行 `alembic upgrade head`；不要写“容器下次启动会自动应用迁移”。
 - 生产脚本必须显式导出 `BOT_TYPE=PROD`，测试脚本显式使用测试口径；不要依赖 `config.py` 默认值。
+- 云正式 `.env.cloud.prod` 必须显式设置 `MEMBERSHIP_SETTLEMENT_V2_ENABLED=true` 与 `AFFILIATE_MEMBERSHIP_REDEEM_ENABLED=true`；这两个键控制 Web/Bot affiliate 返佣兑身份，缺失会关闭用户兑换身份入口。正式 preflight 应阻断缺失或 false，`update_cloud_prod_with_maintenance.sh --sync-env` 也必须在本地同步前检查这两个 true，避免先覆盖远端正确 env。
 - 付费群审核 Bot 如写入 compose，应作为独立 service，复用项目镜像并以 `python -m paid_group_guard_bot` 启动；需要显式传入 `PAID_GROUP_BOT_TOKEN`、`PAID_GROUP_CHAT_ID` 与目标环境 `DATABASE_URL`。
 - `env_file` 只传给容器，不参与 compose 文件 `${...}` 插值；涉及 compose 默认值时必须渲染并核对容器内实际 env。
 - 普通研发不得默认执行 `safe_deploy.sh`、生产 compose 或正式服务重建。

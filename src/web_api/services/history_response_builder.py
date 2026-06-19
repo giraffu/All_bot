@@ -24,6 +24,9 @@ from src.web_api.schemas.user_schema import HistoryItem
 from src.web_api.services.apply_context_service import (
     resolve_history_template_apply_disabled_reason,
 )
+from src.web_api.services.history_input_presenter import (
+    build_history_input_file_payload,
+)
 
 
 def extract_history_tags(
@@ -53,19 +56,6 @@ def extract_history_tags(
         if segment_index:
             tags.append(f"task.wan22_segment:{segment_index}")
     return tags
-
-
-def _build_input_file_urls(input_file: str | None) -> list[str]:
-    if not input_file:
-        return []
-    urls: list[str] = []
-    for item in str(input_file).split("|"):
-        normalized = item.strip()
-        if not normalized:
-            continue
-        url = build_storage_input_file_url(normalized)
-        urls.append(url or normalized)
-    return urls
 
 
 async def build_user_history_payload(
@@ -104,14 +94,18 @@ async def build_user_history_payload(
             extra_outputs=getattr(history, "extra_outputs", None),
         )
         media_url, thumbnail_url = media_result
+        input_payload = build_history_input_file_payload(
+            getattr(history, "input_file", None),
+            build_input_file_url=build_storage_input_file_url,
+        )
         items.append(
             HistoryItem(
                 task_id=history.task_id,
                 type=history.type,
                 prompt=history.prompt,
                 id=history.id,
-                input_file=history.input_file,
-                input_file_urls=_build_input_file_urls(history.input_file),
+                input_file=getattr(history, "input_file", None),
+                input_file_urls=input_payload["input_file_urls"],
                 output_file=history.output_file,
                 output_file_url=media_url,
                 thumbnail_url=thumbnail_url,
@@ -160,6 +154,10 @@ async def build_favorite_gallery_payload(
             history
         )
         media_url, thumbnail_url = media_result
+        input_payload = build_history_input_file_payload(
+            getattr(history, "input_file", None),
+            build_input_file_url=build_storage_input_file_url,
+        )
         items.append(
             GalleryPostResponse(
                 id=gallery_post.id if gallery_post else 0,
@@ -198,6 +196,7 @@ async def build_favorite_gallery_payload(
                 prompt_unlock_price=1,
                 task_type=history.type,
                 result_meta=result_meta,
+                **input_payload,
                 template_apply_supported=template_apply_disabled_reason is None,
                 template_apply_disabled_reason=template_apply_disabled_reason,
                 has_liked=False,

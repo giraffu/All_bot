@@ -8,6 +8,7 @@ import { useTasksStore } from '@/stores/tasks'
 import { useTaskFormat } from '@/composables/useTaskFormat'
 import { useTaskInteraction } from '@/composables/useTaskInteraction'
 import { usePostPromptCopy } from '@/composables/usePostPromptCopy'
+import OriginalInputsPanel from '@/components/OriginalInputsPanel.vue'
 import PromptPreviewPanel from '@/components/PromptPreviewPanel.vue'
 import { useI18n } from 'vue-i18n'
 import { stitchWan22HistoryChain } from '@/api/gallery'
@@ -184,6 +185,11 @@ const handleWan22ChainStitch = async () => {
                 {{ formatDate(currentRecord.created_at) }}
               </div>
             </div>
+
+            <OriginalInputsPanel
+              :source="currentRecord"
+              compact
+            />
 
             <PromptPreviewPanel
               v-if="currentRecord.prompt?.trim()"

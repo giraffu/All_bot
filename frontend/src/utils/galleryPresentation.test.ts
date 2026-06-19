@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import i18n from '@/i18n'
 import { formatGalleryTag, resolveGalleryTaskTypeLabel } from '@/utils/galleryPresentation'
 
 describe('resolveGalleryTaskTypeLabel', () => {
@@ -23,6 +24,14 @@ describe('resolveGalleryTaskTypeLabel', () => {
     }
 
     expect(resolveGalleryTaskTypeLabel('wan22_video_v2', t)).toBe('图生视频 v2')
+  })
+
+  it('returns translated scail2 labels from the shared locale', () => {
+    i18n.global.locale.value = 'zh'
+    const t = (key: string) => String(i18n.global.t(key))
+
+    expect(resolveGalleryTaskTypeLabel('scail2_action_transfer', t)).toBe('动作迁移')
+    expect(resolveGalleryTaskTypeLabel('scail2_video_replacement', t)).toBe('视频换人')
   })
 })
 

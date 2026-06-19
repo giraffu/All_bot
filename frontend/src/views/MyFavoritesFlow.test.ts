@@ -163,7 +163,12 @@ const samplePost = {
   has_liked: false,
   has_disliked: false,
   is_active: true,
-  prompt: 'demo prompt'
+  prompt: 'demo prompt',
+  task_type: 'i2i_draw',
+  input_file: 'history/demo/reference.png',
+  input_file_url: 'https://example.com/reference.png',
+  input_files: ['history/demo/reference.png'],
+  input_file_urls: ['https://example.com/reference.png']
 }
 
 const legacyFavoritePost = {
@@ -311,6 +316,8 @@ describe('MyFavorites workbench flow', () => {
     await flushPromises()
     await flushPromises()
 
+    expect(wrapper.find('.original-input-badge').exists()).toBe(true)
+    expect(wrapper.text()).toContain('原始输入')
     expect(wrapper.text()).not.toContain('复制提示词')
     expect(wrapper.text()).toContain('demo ')
     expect(/[•·◦*]/.test(wrapper.text())).toBe(true)
@@ -438,6 +445,7 @@ describe('MyFavorites workbench flow', () => {
     }))
     expect(wrapper.text()).not.toContain('您还没有收藏过任何作品')
     expect(wrapper.text()).toContain('已上架')
+    expect(wrapper.find('.original-input-badge').exists()).toBe(true)
     expect(wrapper.findAll('.group.cursor-pointer')).toHaveLength(1)
   })
 

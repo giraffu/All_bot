@@ -4,6 +4,7 @@ import { DEFAULT_WAN22_VIDEO_V2_COST } from './imageToVideo'
 import {
   SCAIL2_VIDEO_DURATION_OPTIONS,
   getLabModeConfig,
+  getScail2VideoDurationOptionsForMotionVideo,
   getScail2VideoCost,
   resolveLabModeIdFromTaskType,
 } from './labModeConfig'
@@ -36,5 +37,12 @@ describe('labModeConfig', () => {
     expect(SCAIL2_VIDEO_DURATION_OPTIONS.map(option => option.value)).toEqual(['5', '8'])
     expect(getScail2VideoCost('5')).toBe(40)
     expect(getScail2VideoCost('8s')).toBe(80)
+  })
+
+  it('filters scail2 duration options by motion video length', () => {
+    expect(getScail2VideoDurationOptionsForMotionVideo(null).map(option => option.value)).toEqual(['5'])
+    expect(getScail2VideoDurationOptionsForMotionVideo(6).map(option => option.value)).toEqual(['5'])
+    expect(getScail2VideoDurationOptionsForMotionVideo(8).map(option => option.value)).toEqual(['5', '8'])
+    expect(getScail2VideoDurationOptionsForMotionVideo(12).map(option => option.value)).toEqual(['5', '8'])
   })
 })

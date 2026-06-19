@@ -71,6 +71,8 @@ declare module 'vue' {
     ListStateBlock: typeof import('./src/components/ListStateBlock.vue')['default']
     MobileTabbar: typeof import('./src/components/MobileTabbar.vue')['default']
     MySubmissionsPanel: typeof import('./src/components/MySubmissionsPanel.vue')['default']
+    OriginalInputBadge: typeof import('./src/components/OriginalInputBadge.vue')['default']
+    OriginalInputsPanel: typeof import('./src/components/OriginalInputsPanel.vue')['default']
     OverflowScrollRail: typeof import('./src/components/OverflowScrollRail.vue')['default']
     PagedNavigation: typeof import('./src/components/PagedNavigation.vue')['default']
     PostBrowserShell: typeof import('./src/components/PostBrowserShell.vue')['default']

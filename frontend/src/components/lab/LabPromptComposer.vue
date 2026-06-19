@@ -67,6 +67,7 @@ const emit = defineEmits<{
   submit: []
   removeReference: [index: number]
   removeUploadSlot: [slotId: LabUploadSlotId]
+  assetVideoMetadata: [slotId: LabUploadSlotId, durationSeconds: number | null]
 }>()
 
 const { t } = useI18n()
@@ -81,6 +82,15 @@ const closeAdvanced = () => {
 }
 
 const handleBeforeUploadSlot = (slotId: LabUploadSlotId) => (file: File) => props.beforeUploadSlot(slotId, file)
+
+const normalizeVideoDuration = (value: number) => (
+  Number.isFinite(value) && value > 0 ? value : null
+)
+
+const handleAssetVideoLoadedMetadata = (slotId: LabUploadSlotId, event: Event) => {
+  const video = event.currentTarget as HTMLVideoElement | null
+  emit('assetVideoMetadata', slotId, normalizeVideoDuration(video?.duration ?? Number.NaN))
+}
 
 const compactUploadLabel = (label: string) => label
   .replace(/^添加\s*/, '')
@@ -146,6 +156,8 @@ const compactUploadLabel = (label: string) => label
                 muted
                 playsinline
                 preload="metadata"
+                @loadedmetadata="handleAssetVideoLoadedMetadata(slot.id, $event)"
+                @durationchange="handleAssetVideoLoadedMetadata(slot.id, $event)"
               />
               <component
                 :is="slot.previewKind === 'video' ? VideoCameraOutlined : PictureOutlined"
