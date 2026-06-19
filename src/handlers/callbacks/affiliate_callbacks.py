@@ -191,8 +191,9 @@ async def _build_affiliate_home_text(update: Update, context: ContextTypes.DEFAU
         f"👥 已邀请人数：`{dto.invitations}` 人\n\n"
         f"{_format_invitation_stats(invitation_recharge, available_balance)}\n\n"
         "💡 **规则**：\n"
-        "每成功邀请一位**新道友**使用机器人，您将自动获得 **5 灵石**奖励！\n"
-        "**新道友**加入宗门，您将自动获得 **10 灵石**奖励！\n\n"
+        "- 只邀请注册：您暂不获得灵石；新道友仍获得 `6` 欢迎灵石。\n"
+        "- 新道友拜入宗门：您的邀请奖励累计至 `5` 灵石。\n"
+        "- 新道友首次成功生成内容：您的邀请奖励累计至 `10` 灵石。\n\n"
         "👇 请选择您要进行的返佣兑换操作："
     )
 
