@@ -74,6 +74,7 @@ sequenceDiagram
 - 新版 worker 会在 `/api/agent/task/pop` query 中携带 `agent_id`。Central 会读取 `comfy:agent:control:{agent_id}` 控制键；若 worker 处于 `draining` 或 `disabled`，则返回空任务并保留 pending 队列不变。旧 worker 不传 `agent_id` 时保持兼容旧行为。
 - `/api/agent/task/peek?types=...&limit=1` 是只读预取 hint，只扫描 pending 队列中最早匹配的任务并返回 `{ "task": task_details | null }`。它不得 `zrem` pending、不得写 running set、不得标记 `running`、不得写 task heartbeat；真实接单和取消语义仍必须以后续 `/api/agent/task/pop` 为准。
 - GPU pool 控制器使用 `POST /api/agent/task/control/{agent_id}` 与 `GET /api/agent/task/control/{agent_id}` 管理 worker `enabled/draining/disabled` 状态；接口沿用 `AGENT_SECRET_TOKEN`，用于模型同步、任务类型切换和单 worker canary 前的安全 drain。
+- Dashboard 的 RunPod / LAN AIO worker `重启` 按钮也复用该 control 协议：重启前先把目标 agent 置为 `disabled`，底层运维脚本原地重启对应 Pod/容器并等待新 heartbeat 后再置为 `enabled`；Central 不负责直接重启 Pod、Docker 或 GPU 节点。
 - worker heartbeat 可选携带 `node_id`、`provider`、`gpu_index`、`runtime_profile`、`image_ref`、`model_bundle_versions`、`pool_managed`、`worker_agent_managed`、`comfy_runtime_kind`、`comfy_runtime_managed`。这些字段只增强观测和资源池管理，不改变 Central 按 `SUPPORTED_TASK_TYPES` 分发任务的基本语义；其中 `image_ref` 不等于底层 ComfyUI 一定由该镜像运行，`gpu-226:8188` 当前就是 `host_service`。
 - `complete/failed/cancelled` 终态回报只记录 task 的 `worker_id`，并用 compare-and-clear 清理 agent `current_task_id`：只有当前指针仍等于该 task 时才清除，避免旧任务后台 complete 抹掉新任务展示。
 - Worker 等待 ComfyUI 结果时，WebSocket 终态不是唯一信号；当 WS 未及时设置结果时，worker 会按策略探测 `/history/{prompt_id}` 收口。日志里的 `Task result not set via WS, checking history` 通常解释为 ComfyUI/worker 本地执行链路的短暂停顿，不等同于 Central 状态接口慢。

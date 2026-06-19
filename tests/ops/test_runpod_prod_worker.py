@@ -28,18 +28,18 @@ from ops.gpu_pool_controller.providers.runpod import (
     prod_agent_id_from_slot,
     prod_pod_name_from_agent_id,
 )
+from ops.gpu_pool_controller.runpod_prod_worker import (
+    RunPodProdWorkerOptions,
+    RunPodProdWorkerRunner,
+    apply_prod_worker_selection_to_env,
+    load_env_file_for_prod_worker,
+)
 
 PUBLIC_I2I_PRO_GHCR_IMAGE = (
     "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh"
 )
 PUBLIC_SCAIL2_GHCR_IMAGE = (
     RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX + "20260617-scail2-prod"
-)
-from ops.gpu_pool_controller.runpod_prod_worker import (
-    RunPodProdWorkerOptions,
-    RunPodProdWorkerRunner,
-    apply_prod_worker_selection_to_env,
-    load_env_file_for_prod_worker,
 )
 
 
@@ -51,11 +51,17 @@ class FakeRunPodProvider:
         pods: list[dict] | None = None,
         create_log: list[dict] | None = None,
         delete_log: list[dict] | None = None,
+        start_log: list[dict] | None = None,
+        stop_log: list[dict] | None = None,
+        restart_log: list[dict] | None = None,
     ) -> None:
         self.settings = settings or RunPodSettings(api_key="rp_test_key")
         self.pods = pods if pods is not None else []
         self.create_log = create_log if create_log is not None else []
         self.delete_log = delete_log if delete_log is not None else []
+        self.start_log = start_log if start_log is not None else []
+        self.stop_log = stop_log if stop_log is not None else []
+        self.restart_log = restart_log if restart_log is not None else []
         self.list_calls = 0
 
     @property
@@ -65,6 +71,18 @@ class FakeRunPodProvider:
     @property
     def delete_calls(self) -> int:
         return len(self.delete_log)
+
+    @property
+    def start_calls(self) -> int:
+        return len(self.start_log)
+
+    @property
+    def stop_calls(self) -> int:
+        return len(self.stop_log)
+
+    @property
+    def restart_calls(self) -> int:
+        return len(self.restart_log)
 
     def validate_key(self):
         return {"ok": True}
@@ -140,6 +158,24 @@ class FakeRunPodProvider:
         ]
         return {"ok": True}
 
+    def start_pod(self, *, pod_id, task_type, execute):
+        self.start_log.append(
+            {"pod_id": pod_id, "agent_id": self.settings.prod_agent_id}
+        )
+        return {"ok": True}
+
+    def stop_pod(self, *, pod_id, task_type, execute):
+        self.stop_log.append(
+            {"pod_id": pod_id, "agent_id": self.settings.prod_agent_id}
+        )
+        return {"ok": True}
+
+    def restart_pod(self, *, pod_id, task_type, execute):
+        self.restart_log.append(
+            {"pod_id": pod_id, "agent_id": self.settings.prod_agent_id}
+        )
+        return {"ok": True}
+
     def pod_readiness(self, *, pod_id):
         return {"ok": True, "readiness": {"infrastructure_ready": True}}
 
@@ -149,7 +185,18 @@ class FakeRunPodProvider:
             pods=self.pods,
             create_log=self.create_log,
             delete_log=self.delete_log,
+            start_log=self.start_log,
+            stop_log=self.stop_log,
+            restart_log=self.restart_log,
         )
+
+
+class FailingRestartRunPodProvider(FakeRunPodProvider):
+    def restart_pod(self, *, pod_id, task_type, execute):
+        self.restart_log.append(
+            {"pod_id": pod_id, "agent_id": self.settings.prod_agent_id}
+        )
+        return {"ok": False, "error": "native restart failed after disable"}
 
 
 class SlotRaceRunPodProvider(FakeRunPodProvider):
@@ -178,6 +225,9 @@ class SlotRaceRunPodProvider(FakeRunPodProvider):
             pods=self.pods,
             create_log=self.create_log,
             delete_log=self.delete_log,
+            start_log=self.start_log,
+            stop_log=self.stop_log,
+            restart_log=self.restart_log,
             stolen_slot=self.stolen_slot,
         )
 
@@ -187,6 +237,7 @@ class FakeHttpProdWorkerRunner(RunPodProdWorkerRunner):
         super().__init__(*args, **kwargs)
         self.http_calls = []
         self.control_calls = []
+        self.agent_control = {}
         self.workers = workers if workers is not None else []
 
     def _http_json(self, method, url, **kwargs):
@@ -195,11 +246,22 @@ class FakeHttpProdWorkerRunner(RunPodProdWorkerRunner):
             self.control_calls.append({"method": method, "url": url, "kwargs": kwargs})
             body = kwargs.get("json_body") or {}
             agent_id = url.rstrip("/").rsplit("/", 1)[-1]
-            return {
-                "agent_id": agent_id,
-                "state": body.get("state", "disabled"),
-                "reason": body.get("reason", ""),
-            }
+            if method == "POST":
+                payload = {
+                    "agent_id": agent_id,
+                    "state": body.get("state", "disabled"),
+                    "reason": body.get("reason", ""),
+                }
+                self.agent_control[agent_id] = payload
+                return payload
+            return self.agent_control.get(
+                agent_id,
+                {
+                    "agent_id": agent_id,
+                    "state": "enabled",
+                    "reason": "",
+                },
+            )
         if url.endswith("/system/workers"):
             return {"workers": list(self.workers)}
         if url.endswith("/health"):
@@ -955,6 +1017,172 @@ def test_prod_worker_up_second_slot_execute_ignores_removed_per_type_gate():
     assert provider.create_log[0]["agent_id"] == "runpod_prod_img2img_manual_02"
     assert _control_posts(runner) == [
         ("runpod_prod_img2img_manual_02", "disabled"),
+    ]
+
+
+def test_prod_worker_restart_execute_uses_native_restart_and_enables():
+    agent_id = prod_agent_id_from_slot("03", profile="wan22_video_v2")
+    provider = FakeRunPodProvider(
+        _settings(
+            dry_run=False,
+            autoscaler_enabled=True,
+            prod_agent_id=agent_id,
+            prod_max_manual_slots=8,
+            image_name_wan22_video_v2=(
+                RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX
+                + "20260613-wan22aio-lanbase-ab9b7ea"
+            ),
+        ),
+        pods=[_prod_pod("03", profile="wan22_video_v2")],
+    )
+    options = RunPodProdWorkerOptions(
+        action="restart",
+        execute=True,
+        profile="wan22_video_v2",
+        task_type="wan22_video_v2",
+        agent_id=agent_id,
+        agent_token="agent_token",
+        quiet=True,
+    )
+    runner = FakeHttpProdWorkerRunner(
+        provider,
+        options,
+        workers=[_worker("03", profile="wan22_video_v2")],
+        sleep_func=lambda _seconds: None,
+    )
+
+    payload = runner.run()
+
+    assert payload["ok"] is True
+    assert provider.create_calls == 0
+    assert provider.delete_calls == 0
+    assert provider.stop_calls == 0
+    assert provider.start_calls == 0
+    assert provider.restart_log == [
+        {"pod_id": "pod-prod-03", "agent_id": "runpod_prod_wan22_video_v2_manual_03"}
+    ]
+    assert payload["pod_restart"]["pod_id"] == "pod-prod-03"
+    assert payload["pod_restart"]["restart"] == {"ok": True}
+    assert _control_posts(runner) == [
+        ("runpod_prod_wan22_video_v2_manual_03", "disabled"),
+        ("runpod_prod_wan22_video_v2_manual_03", "enabled"),
+    ]
+
+
+def test_prod_worker_restart_recovers_enable_when_worker_is_idle_after_failure():
+    agent_id = prod_agent_id_from_slot("04")
+    provider = FailingRestartRunPodProvider(
+        _settings(
+            dry_run=False,
+            autoscaler_enabled=True,
+            prod_agent_id=agent_id,
+            prod_max_manual_slots=8,
+        ),
+        pods=[_prod_pod("04")],
+    )
+    options = RunPodProdWorkerOptions(
+        action="restart",
+        execute=True,
+        agent_id=agent_id,
+        agent_token="agent_token",
+        quiet=True,
+    )
+    runner = FakeHttpProdWorkerRunner(
+        provider,
+        options,
+        workers=[_worker("04")],
+        sleep_func=lambda _seconds: None,
+    )
+
+    payload = runner.run()
+
+    assert payload["ok"] is True
+    assert payload["pod_restart"]["recovered_after_error"] is True
+    assert payload["pod_restart"]["restart"] == {"ok": False}
+    assert payload["restart_recovery"]["recovered"] is True
+    assert "runpod restart-pod failed" in payload["error_before_recovery"]
+    assert provider.stop_calls == 0
+    assert provider.start_calls == 0
+    assert provider.restart_log == [
+        {"pod_id": "pod-prod-04", "agent_id": "runpod_prod_img2img_manual_04"}
+    ]
+    assert _control_posts(runner) == [
+        ("runpod_prod_img2img_manual_04", "disabled"),
+        ("runpod_prod_img2img_manual_04", "enabled"),
+    ]
+
+
+def test_prod_worker_restart_keeps_disabled_when_recovery_worker_is_busy():
+    agent_id = prod_agent_id_from_slot("04")
+    provider = FailingRestartRunPodProvider(
+        _settings(
+            dry_run=False,
+            autoscaler_enabled=True,
+            prod_agent_id=agent_id,
+            prod_max_manual_slots=8,
+        ),
+        pods=[_prod_pod("04")],
+    )
+    options = RunPodProdWorkerOptions(
+        action="restart",
+        execute=True,
+        agent_id=agent_id,
+        agent_token="agent_token",
+        quiet=True,
+    )
+    runner = FakeHttpProdWorkerRunner(
+        provider,
+        options,
+        workers=[_worker("04", current_task_id="busy-task")],
+        sleep_func=lambda _seconds: None,
+    )
+
+    payload = runner.run()
+
+    assert payload["ok"] is False
+    assert "runpod restart-pod failed" in payload["error"]
+    assert payload["restart_recovery"]["recovered"] is False
+    assert "worker_not_idle:running" in payload["restart_recovery"]["blockers"]
+    assert "worker_has_current_task_id" in payload["restart_recovery"]["blockers"]
+    assert _control_posts(runner) == [
+        ("runpod_prod_img2img_manual_04", "disabled"),
+    ]
+
+
+def test_prod_worker_restart_keeps_disabled_when_recovery_pod_not_running():
+    agent_id = prod_agent_id_from_slot("04")
+    pod = _prod_pod("04")
+    pod["desiredStatus"] = "EXITED"
+    provider = FailingRestartRunPodProvider(
+        _settings(
+            dry_run=False,
+            autoscaler_enabled=True,
+            prod_agent_id=agent_id,
+            prod_max_manual_slots=8,
+        ),
+        pods=[pod],
+    )
+    options = RunPodProdWorkerOptions(
+        action="restart",
+        execute=True,
+        agent_id=agent_id,
+        agent_token="agent_token",
+        quiet=True,
+    )
+    runner = FakeHttpProdWorkerRunner(
+        provider,
+        options,
+        workers=[_worker("04")],
+        sleep_func=lambda _seconds: None,
+    )
+
+    payload = runner.run()
+
+    assert payload["ok"] is False
+    assert payload["restart_recovery"]["recovered"] is False
+    assert "pod_not_running:EXITED" in payload["restart_recovery"]["blockers"]
+    assert _control_posts(runner) == [
+        ("runpod_prod_img2img_manual_04", "disabled"),
     ]
 
 

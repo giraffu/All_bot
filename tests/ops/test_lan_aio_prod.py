@@ -407,3 +407,71 @@ def test_lan_aio_start_disabled_force_recreates_container():
 
     assert result["ok"] is True
     assert ops.compose_ops == ["up -d --force-recreate"]
+
+
+def test_lan_aio_restart_disables_restarts_and_reenables_slot():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.controls: list[tuple[str, str, str, int | None]] = []
+            self.compose_ops: list[str] = []
+            self.events: list[str] = []
+
+        def _set_control(
+            self,
+            agent_id: str,
+            state: str,
+            reason: str,
+            *,
+            ttl_seconds: int | None = None,
+        ) -> None:
+            self.controls.append((agent_id, state, reason, ttl_seconds))
+            self.events.append(f"control:{state}")
+
+        def _remote_compose(self, slot, op: str) -> None:
+            self.compose_ops.append(op)
+            self.events.append(f"compose:{op}")
+
+        def _wait_container_health(self, slot) -> None:
+            self.events.append("health")
+
+        def _verify_disabled_heartbeat(self, slot) -> None:
+            self.events.append("heartbeat")
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-177-gpu0-image_to_video"]
+
+    result = ops.restart_aio([slot])
+
+    assert result == {
+        "ok": True,
+        "action": "restart-aio",
+        "slot": "gpu-177-gpu0-image_to_video",
+    }
+    assert ops.compose_ops == ["restart"]
+    assert ops.controls == [
+        (
+            "lan_aio_prod_gpu177_gpu0_image_to_video_01",
+            "disabled",
+            "lan_aio_fleet_restart_disable_aio",
+            3600,
+        ),
+        (
+            "lan_aio_prod_gpu177_gpu0_image_to_video_01",
+            "enabled",
+            "lan_aio_fleet_restart_enable_aio",
+            None,
+        ),
+    ]
+    assert ops.events == [
+        "control:disabled",
+        "compose:restart",
+        "health",
+        "heartbeat",
+        "control:enabled",
+    ]

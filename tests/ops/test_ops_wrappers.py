@@ -103,6 +103,27 @@ def test_runpod_enable_dry_run_delegates_to_prod_worker_without_execute_mode():
     assert "--execute" in output
 
 
+def test_runpod_restart_dry_run_delegates_to_prod_worker():
+    result = run_script(
+        "bash",
+        "scripts/runpod_prod_ops.sh",
+        "restart",
+        "--profile",
+        "wan22_video_v2",
+        "--slot",
+        "03",
+        "--dry-run",
+    )
+
+    assert result.returncode == 0, result.stderr
+    output = result.stdout
+    assert "Would restart the selected cloud-prod manual RunPod Pod in place" in output
+    assert "runpod prod-worker restart" in output
+    assert "--profile wan22_video_v2" in output
+    assert "--slot 03" in output
+    assert "--execute" in output
+
+
 def test_runpod_scail2_canary_dry_run_delegates_to_prod_worker():
     result = run_script(
         "bash",

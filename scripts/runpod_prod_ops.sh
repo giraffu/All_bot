@@ -30,6 +30,7 @@ Actions:
   add       Add N prod manual Pods without deleting or enabling existing slots.
   enable    Enable the selected prod manual worker.
   disable   Disable the selected prod manual worker.
+  restart   Disable, call RunPod native restart for the selected Pod, then enable it.
   down      Disable, wait for no current_task_id, then delete the selected Pod.
   scale     Scale one prod manual profile to --desired N.
   canary    Run a real prod canary and leave the target worker disabled.
@@ -236,6 +237,11 @@ dry_run_plan() {
       echo "[dry-run] Would disable the selected cloud-prod manual RunPod worker and keep the Pod."
       print_shell_command disable --execute
       ;;
+    restart)
+      echo "[dry-run] Would restart the selected cloud-prod manual RunPod Pod in place."
+      echo "[dry-run] Would set control disabled, call RunPod native restart, wait for healthy heartbeat, then enable it."
+      print_shell_command restart --execute
+      ;;
     down)
       echo "[dry-run] Would disable the worker, wait until current_task_id is empty, then delete the selected Pod."
       print_shell_command down --execute
@@ -293,7 +299,7 @@ run_mutation() {
     add)
       run_controller_with_unavailable_retry add --count "$COUNT" --execute
       ;;
-    enable|disable|down|canary)
+    enable|disable|restart|down|canary)
       run_controller "$ACTION" --execute
       ;;
     scale)
@@ -320,7 +326,7 @@ run_mutation() {
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    status|up|add|enable|disable|down|scale|canary|rollback)
+    status|up|add|enable|disable|restart|down|scale|canary|rollback)
       ACTION="$1"
       shift
       ;;
@@ -396,7 +402,7 @@ case "$ACTION" in
   status)
     status
     ;;
-  up|add|enable|disable|down|scale|canary|rollback)
+  up|add|enable|disable|restart|down|scale|canary|rollback)
     run_mutation
     ;;
   *)

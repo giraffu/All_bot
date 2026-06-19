@@ -169,8 +169,14 @@ export const terminateRunPodOperation = async (operationId) =>
 export const pauseRunPodWorker = async (agentId, payload = {}) =>
   post(`/api/runpod/workers/${agentId}/pause`, payload)
 
+export const restartRunPodWorker = async (agentId, payload = {}) =>
+  post(`/api/runpod/workers/${agentId}/restart`, payload)
+
 export const deleteRunPodWorker = async (agentId, payload = {}) =>
   del(`/api/runpod/workers/${agentId}`, { data: payload })
+
+export const restartLanAioWorker = async (agentId, payload = {}) =>
+  post(`/api/runpod/lan-aio/workers/${agentId}/restart`, payload)
 
 export const fetchActiveBotTasks = async () => get('/api/system/active_bot_tasks')
 

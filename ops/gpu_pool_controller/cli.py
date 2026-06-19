@@ -856,7 +856,7 @@ def build_parser() -> argparse.ArgumentParser:
         )
         prod_worker_command.set_defaults(func=_cmd_runpod_prod_worker)
 
-    for command_name in ("up", "enable", "disable", "down", "canary"):
+    for command_name in ("up", "enable", "disable", "restart", "down", "canary"):
         prod_worker_command = prod_worker_subparsers.add_parser(
             command_name,
             parents=[prod_worker_common],

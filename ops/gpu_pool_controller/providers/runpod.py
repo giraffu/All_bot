@@ -1199,6 +1199,23 @@ class RunPodProvider:
             execute=execute,
         )
 
+    def restart_pod(
+        self,
+        *,
+        pod_id: str,
+        task_type: str = "img2img_lora",
+        existing_pods: list[dict[str, Any]] | None = None,
+        execute: bool = False,
+    ) -> dict[str, Any]:
+        return self._pod_mutation(
+            action="restart",
+            method="POST",
+            path=f"/pods/{pod_id}/restart",
+            task_type=task_type,
+            existing_pods=existing_pods or [],
+            execute=execute,
+        )
+
     def delete_pod(
         self,
         *,

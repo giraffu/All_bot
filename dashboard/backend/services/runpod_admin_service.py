@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from dashboard.backend.schemas import RunPodScaleRequest, RunPodWorkerActionRequest
+from ops.gpu_pool_controller.lan_aio_prod import load_lan_aio_prod_slots
 from ops.gpu_pool_controller.providers.runpod import (
     normalize_prod_worker_profile,
     prod_slot_from_agent_id,
@@ -242,6 +243,46 @@ def _runpod_ops_script() -> str:
     )
 
 
+def _lan_aio_ops_script() -> str:
+    return os.getenv(
+        "DASHBOARD_LAN_AIO_OPS_SCRIPT",
+        str(PROJECT_ROOT / "scripts" / "lan_aio_fleet_prod_ops.py"),
+    )
+
+
+def _lan_aio_prod_env_file() -> str:
+    return _default_env_file(
+        "DASHBOARD_LAN_AIO_PROD_ENV_FILE",
+        (
+            _container_env_file(),
+            PROJECT_ROOT / ".env.cloud.prod",
+            PROJECT_ROOT / ".env",
+        ),
+    )
+
+
+def _lan_aio_aio_env_file() -> str:
+    return _default_env_file(
+        "DASHBOARD_LAN_AIO_AIO_ENV_FILE",
+        (
+            _container_env_file(),
+            PROJECT_ROOT / ".env.lan-aio-prod",
+            PROJECT_ROOT / ".env",
+        ),
+    )
+
+
+def _lan_aio_model_env_file() -> str:
+    return _default_env_file(
+        "DASHBOARD_LAN_AIO_MODEL_ENV_FILE",
+        (
+            _container_env_file(),
+            PROJECT_ROOT / ".env.lan.model-cache",
+            PROJECT_ROOT / ".env",
+        ),
+    )
+
+
 def _base_command(action: str, *, profile: str, slot: str | None = None) -> list[str]:
     command = [
         "bash",
@@ -257,6 +298,39 @@ def _base_command(action: str, *, profile: str, slot: str | None = None) -> list
     if slot:
         command.extend(["--slot", slot])
     return command
+
+
+def _lan_aio_slot_selection_or_422(agent_id: str):
+    normalized_agent_id = str(agent_id or "").strip()
+    for slot in load_lan_aio_prod_slots(include_disabled=True).values():
+        if slot.agent_id == normalized_agent_id:
+            if not slot.enabled:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"LAN AIO slot is not enabled for Dashboard restart: {slot.id}",
+                )
+            return slot
+    raise HTTPException(
+        status_code=422,
+        detail=f"unsupported LAN AIO worker agent_id: {agent_id}",
+    )
+
+
+def _lan_aio_restart_command(slot_id: str) -> list[str]:
+    return [
+        "python3",
+        _lan_aio_ops_script(),
+        "restart-aio",
+        "--slot",
+        slot_id,
+        "--prod-env-file",
+        _lan_aio_prod_env_file(),
+        "--aio-env-file",
+        _lan_aio_aio_env_file(),
+        "--model-env-file",
+        _lan_aio_model_env_file(),
+        "--execute",
+    ]
 
 
 def _default_prod_max_manual_slots() -> int:
@@ -465,6 +539,31 @@ async def pause_runpod_worker_payload(
     return {"status": "accepted", "operation": _operation_payload(operation)}
 
 
+async def restart_runpod_worker_payload(
+    agent_id: str,
+    request: RunPodWorkerActionRequest,
+    *,
+    spawn_task_func=None,
+) -> dict[str, Any]:
+    max_manual_slots = request.prod_max_manual_slots or _default_prod_max_manual_slots()
+    profile, slot = _agent_selection_or_422(
+        agent_id,
+        max_manual_slots=max_manual_slots,
+    )
+    command = _base_command("restart", profile=profile, slot=slot)
+    command.append("--execute")
+    operation = _register_operation(
+        action="restart",
+        profile=profile,
+        command=command,
+        env=_operation_env(prod_max_manual_slots=max_manual_slots),
+        agent_id=agent_id,
+        slot=slot,
+        spawn_task_func=spawn_task_func,
+    )
+    return {"status": "accepted", "operation": _operation_payload(operation)}
+
+
 async def delete_runpod_worker_payload(
     agent_id: str,
     request: RunPodWorkerActionRequest,
@@ -485,6 +584,26 @@ async def delete_runpod_worker_payload(
         env=_operation_env(prod_max_manual_slots=max_manual_slots),
         agent_id=agent_id,
         slot=slot,
+        spawn_task_func=spawn_task_func,
+    )
+    return {"status": "accepted", "operation": _operation_payload(operation)}
+
+
+async def restart_lan_aio_worker_payload(
+    agent_id: str,
+    request: RunPodWorkerActionRequest,
+    *,
+    spawn_task_func=None,
+) -> dict[str, Any]:
+    del request
+    slot = _lan_aio_slot_selection_or_422(agent_id)
+    operation = _register_operation(
+        action="restart",
+        profile=slot.target_profile_id,
+        command=_lan_aio_restart_command(slot.id),
+        env=dict(os.environ),
+        agent_id=agent_id,
+        slot=slot.id,
         spawn_task_func=spawn_task_func,
     )
     return {"status": "accepted", "operation": _operation_payload(operation)}

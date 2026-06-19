@@ -366,6 +366,8 @@ class RunPodProdWorkerRunner:
                 self._run_control(summary, state="enabled")
             elif action == "disable":
                 self._run_control(summary, state="disabled")
+            elif action == "restart":
+                self._run_profile_locked_mutation(summary, self._run_restart)
             elif action == "down":
                 self._run_profile_locked_mutation(summary, self._run_down)
             elif action == "canary":
@@ -539,6 +541,202 @@ class RunPodProdWorkerRunner:
             },
         }
         summary["ok"] = bool(listed.get("ok") and reconcile.get("ok"))
+
+    def _run_restart(self, summary: dict[str, Any]) -> None:
+        self._run_preflight(summary, allow_existing_prod_pod=True)
+        if not self.options.execute:
+            summary["ok"] = True
+            summary["would_execute"] = [
+                f"set Central control for {self.options.agent_id} to disabled",
+                "call RunPod native pod restart without stop/start or releasing the GPU",
+                "wait for RunPod infrastructure readiness and prod Central heartbeat",
+                f"set Central control for {self.options.agent_id} to enabled",
+            ]
+            return
+        self._require_runpod_mutation_gates()
+        self._require_agent_token()
+        disable_control: dict[str, Any] | None = None
+        pod_id = ""
+        restart_payload: dict[str, Any] | None = None
+        try:
+            disable_control = self._set_agent_control(
+                "disabled",
+                reason="runpod_prod_worker_restart_disable",
+            )
+            pod = self._single_prod_pod(summary)
+            if pod is None:
+                raise RunPodProdWorkerError("refusing restart: prod RunPod pod not found")
+            pod_id = str(pod.get("id") or pod.get("podId") or "")
+            if not pod_id:
+                raise RunPodProdWorkerError("managed prod pod did not include an id")
+
+            self._phase(summary, "runpod_restart_pod", "running", {"pod_id": pod_id})
+            restart_payload = self.provider.restart_pod(
+                pod_id=pod_id,
+                task_type=self.options.task_type,
+                execute=True,
+            )
+            self._require_ok(restart_payload, "runpod restart-pod failed")
+            self._phase(summary, "runpod_restart_pod", "ok", {"pod_id": pod_id})
+
+            self._wait_pod_readiness(pod_id, summary)
+            worker = self._wait_prod_worker(summary, require_disabled=True)
+            enable_control = self._set_agent_control(
+                "enabled",
+                reason="runpod_prod_worker_restart_enable",
+            )
+        except Exception as exc:
+            if disable_control is not None:
+                recovery = self._attempt_restart_enable_recovery(
+                    summary,
+                    error=exc,
+                    pod_id=pod_id,
+                )
+                if recovery.get("recovered") is True:
+                    summary["pod_restart"] = {
+                        "pod_id": pod_id,
+                        "restart": {
+                            "ok": bool(restart_payload.get("ok"))
+                            if restart_payload is not None
+                            else None,
+                        },
+                        "recovered_after_error": True,
+                    }
+                    summary["control"] = {
+                        "disabled": disable_control,
+                        "enabled": recovery.get("enable_control"),
+                    }
+                    summary["worker"] = recovery.get("worker")
+                    summary["error_before_recovery"] = redact_text(str(exc))
+                    summary["ok"] = True
+                    return
+            raise
+        summary["pod_restart"] = {
+            "pod_id": pod_id,
+            "restart": {"ok": True},
+        }
+        summary["control"] = {
+            "disabled": disable_control,
+            "enabled": enable_control,
+        }
+        summary["worker"] = _worker_summary(worker)
+        summary["ok"] = True
+
+    def _attempt_restart_enable_recovery(
+        self,
+        summary: dict[str, Any],
+        *,
+        error: Exception,
+        pod_id: str,
+    ) -> dict[str, Any]:
+        error_text = redact_text(str(error))
+        recovery: dict[str, Any] = {
+            "attempted": True,
+            "recovered": False,
+            "error": error_text,
+        }
+        summary["restart_recovery"] = recovery
+        self._phase(summary, "restart_recovery", "running", {"error": error_text})
+        try:
+            status = self._status_snapshot()
+        except Exception as recovery_exc:
+            recovery["blockers"] = [
+                "status_snapshot_failed: " + redact_text(str(recovery_exc))
+            ]
+            self._phase(
+                summary,
+                "restart_recovery",
+                "skipped",
+                {"blockers": recovery["blockers"]},
+            )
+            return recovery
+
+        recovery["status"] = {
+            "ok": bool(status.get("ok")),
+            "prod_pod_count": status.get("prod_pod_count"),
+            "prod_pods": status.get("prod_pods", []),
+            "worker": status.get("worker"),
+            "control": status.get("control"),
+        }
+        blockers = self._restart_enable_recovery_blockers(status, pod_id=pod_id)
+        if blockers:
+            recovery["blockers"] = blockers
+            self._phase(
+                summary,
+                "restart_recovery",
+                "skipped",
+                {"blockers": blockers},
+            )
+            return recovery
+
+        enable_control = self._set_agent_control(
+            "enabled",
+            reason="runpod_prod_worker_restart_recovery_enable",
+        )
+        recovery["recovered"] = True
+        recovery["enable_control"] = enable_control
+        recovery["worker"] = status.get("worker")
+        recovery["pod"] = (status.get("prod_pods") or [{}])[0]
+        self._phase(
+            summary,
+            "restart_recovery",
+            "ok",
+            {"control_state": enable_control.get("state")},
+        )
+        return recovery
+
+    def _restart_enable_recovery_blockers(
+        self,
+        status: dict[str, Any],
+        *,
+        pod_id: str,
+    ) -> list[str]:
+        blockers: list[str] = []
+        if not status.get("ok"):
+            blockers.append("status_snapshot_not_ok")
+
+        prod_pods = status.get("prod_pods") or []
+        if len(prod_pods) != 1:
+            blockers.append(f"prod_pod_count_not_one:{len(prod_pods)}")
+        else:
+            pod = prod_pods[0]
+            current_pod_id = str(pod.get("id") or pod.get("podId") or "")
+            desired_status = str(
+                pod.get("desiredStatus") or pod.get("status") or ""
+            ).upper()
+            if pod_id and current_pod_id and current_pod_id != pod_id:
+                blockers.append("pod_id_mismatch")
+            if desired_status != "RUNNING":
+                blockers.append(f"pod_not_running:{desired_status or 'unknown'}")
+
+        worker = status.get("worker")
+        if not isinstance(worker, dict) or not worker:
+            blockers.append("worker_missing")
+        else:
+            worker_status = str(worker.get("status") or "")
+            if worker_status != "idle":
+                blockers.append(f"worker_not_idle:{worker_status or 'unknown'}")
+            if worker.get("current_task_id"):
+                blockers.append("worker_has_current_task_id")
+            if not _worker_supports_types(
+                worker,
+                self._expected_supported_task_types(),
+            ):
+                blockers.append("worker_supported_types_mismatch")
+
+        control = status.get("control")
+        if not isinstance(control, dict) or not control:
+            blockers.append("control_missing")
+        else:
+            control_state = str(control.get("state") or "")
+            control_reason = str(control.get("reason") or "")
+            if control_state != "disabled":
+                blockers.append(
+                    f"control_not_disabled:{control_state or 'unknown'}"
+                )
+            if control_reason != "runpod_prod_worker_restart_disable":
+                blockers.append("control_reason_not_restart_disable")
+        return blockers
 
     def _run_canary(self, summary: dict[str, Any]) -> None:
         if not self.options.execute:

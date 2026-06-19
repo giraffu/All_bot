@@ -1,13 +1,25 @@
 <script setup lang="ts">
 import { computed, reactive } from 'vue'
-import { DeleteOutlined, PauseCircleOutlined } from '@ant-design/icons-vue'
+import {
+  DeleteOutlined,
+  PauseCircleOutlined,
+  ReloadOutlined,
+} from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
-import { deleteRunPodWorker, pauseRunPodWorker } from '../api/api'
+import {
+  deleteRunPodWorker,
+  pauseRunPodWorker,
+  restartLanAioWorker,
+  restartRunPodWorker,
+} from '../api/api'
 
 type WorkerInfo = {
   agent_id: string
   status?: string
   current_task_id?: string
+  provider?: string
+  pool_managed?: boolean | string | number
+  runtime_profile?: string
 }
 
 const props = defineProps<{
@@ -20,6 +32,7 @@ const emit = defineEmits<{
 
 const loading = reactive({
   pause: false,
+  restart: false,
   delete: false,
 })
 
@@ -29,12 +42,34 @@ const isRunPodWorker = computed(() =>
   )
 )
 
-const runAction = async (action: 'pause' | 'delete') => {
+const isTruthyFlag = (value: unknown) =>
+  value === true || value === 1 || value === '1' || value === 'true' || value === 'True'
+
+const isLanAioWorker = computed(() => {
+  const agentId = props.worker.agent_id || ''
+  return (
+    /^lan_aio_prod_gpu\d+_gpu\d+_[a-z0-9_]+_\d+$/.test(agentId) ||
+    (agentId.startsWith('lan_aio_prod_') &&
+      props.worker.provider === 'lan_ssh' &&
+      isTruthyFlag(props.worker.pool_managed))
+  )
+})
+
+const canRestartWorker = computed(() => isRunPodWorker.value || isLanAioWorker.value)
+
+const runAction = async (action: 'pause' | 'restart' | 'delete') => {
   loading[action] = true
   try {
     if (action === 'pause') {
       await pauseRunPodWorker(props.worker.agent_id)
       message.success('已提交暂停操作')
+    } else if (action === 'restart') {
+      if (isRunPodWorker.value) {
+        await restartRunPodWorker(props.worker.agent_id)
+      } else {
+        await restartLanAioWorker(props.worker.agent_id)
+      }
+      message.success('已提交重启操作')
     } else {
       await deleteRunPodWorker(props.worker.agent_id)
       message.success('已提交删除操作')
@@ -42,7 +77,8 @@ const runAction = async (action: 'pause' | 'delete') => {
     emit('changed')
   } catch (err) {
     console.error(err)
-    message.error(action === 'pause' ? '暂停提交失败' : '删除提交失败')
+    const actionName = action === 'pause' ? '暂停' : action === 'restart' ? '重启' : '删除'
+    message.error(`${actionName}提交失败`)
   } finally {
     loading[action] = false
   }
@@ -55,6 +91,21 @@ const confirmPause = () => {
     okText: '暂停',
     cancelText: '取消',
     onOk: () => runAction('pause'),
+  })
+}
+
+const confirmRestart = () => {
+  const targetLabel = isRunPodWorker.value ? 'RunPod Pod' : 'LAN AIO 容器'
+  const keepLabel = isRunPodWorker.value
+    ? '会保留 GPU 配置和数据卷'
+    : '会保留 compose、模型缓存和数据挂载'
+  Modal.confirm({
+    title: '重启 Worker？',
+    content: `${props.worker.agent_id} 将原地重启 ${targetLabel}，${keepLabel}，恢复后自动接单。` +
+      '当前任务可能被中断。',
+    okText: '重启',
+    cancelText: '取消',
+    onOk: () => runAction('restart'),
   })
 }
 
@@ -71,12 +122,16 @@ const confirmDelete = () => {
 </script>
 
 <template>
-  <div v-if="isRunPodWorker" class="flex items-center gap-1 shrink-0">
-    <a-button size="small" type="text" :loading="loading.pause" @click.stop="confirmPause">
+  <div v-if="isRunPodWorker || isLanAioWorker" class="flex items-center gap-1 shrink-0">
+    <a-button v-if="isRunPodWorker" size="small" type="text" :loading="loading.pause" @click.stop="confirmPause">
       <template #icon><pause-circle-outlined /></template>
       暂停
     </a-button>
-    <a-button size="small" type="text" danger :loading="loading.delete" @click.stop="confirmDelete">
+    <a-button v-if="canRestartWorker" size="small" type="text" :loading="loading.restart" @click.stop="confirmRestart">
+      <template #icon><reload-outlined /></template>
+      重启
+    </a-button>
+    <a-button v-if="isRunPodWorker" size="small" type="text" danger :loading="loading.delete" @click.stop="confirmDelete">
       <template #icon><delete-outlined /></template>
       删除
     </a-button>

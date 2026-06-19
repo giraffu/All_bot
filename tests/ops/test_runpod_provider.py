@@ -1545,21 +1545,49 @@ def test_mutation_gate_ignores_removed_per_type_capacity_limit():
     assert payload["ok"] is True
 
 
-def test_start_stop_delete_are_guarded_by_default():
+def test_start_stop_restart_delete_are_guarded_by_default():
     fake = FakeRunPodApi({"ok": True})
     provider = RunPodProvider(_settings(), request_func=fake)
 
     start = provider.start_pod(pod_id="pod-1", execute=True)
     stop = provider.stop_pod(pod_id="pod-1", execute=True)
+    restart = provider.restart_pod(pod_id="pod-1", execute=True)
     delete = provider.delete_pod(pod_id="pod-1", execute=True)
 
     assert start["ok"] is False
     assert stop["ok"] is False
+    assert restart["ok"] is False
     assert delete["ok"] is False
     assert "RUNPOD_DRY_RUN=true" in start["guard"]["reasons"]
     assert "RUNPOD_DRY_RUN=true" in stop["guard"]["reasons"]
+    assert "RUNPOD_DRY_RUN=true" in restart["guard"]["reasons"]
     assert "RUNPOD_DRY_RUN=true" in delete["guard"]["reasons"]
     assert fake.calls == []
+
+
+def test_restart_pod_uses_runpod_native_restart_endpoint():
+    fake = FakeRunPodApi({"id": "pod-1", "desiredStatus": "RUNNING"})
+    provider = RunPodProvider(
+        _settings(dry_run=False, autoscaler_enabled=True),
+        request_func=fake,
+    )
+
+    payload = provider.restart_pod(pod_id="pod-1", execute=True)
+
+    assert payload["ok"] is True
+    assert payload["action"] == "restart"
+    assert fake.calls == [
+        {
+            "method": "POST",
+            "path": "/pods/pod-1/restart",
+            "params": {},
+            "json_body": None,
+            "headers": {
+                "Authorization": "Bearer rp_secret_api_key",
+                "Content-Type": "application/json",
+            },
+        }
+    ]
 
 
 def test_api_errors_are_redacted_before_returning_to_cli():

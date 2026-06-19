@@ -157,10 +157,15 @@ async def test_start_runpod_scale_payload_rejects_active_profile_add():
 
 
 @pytest.mark.asyncio
-async def test_pause_and_delete_runpod_worker_build_slot_scoped_operations():
+async def test_pause_restart_and_delete_runpod_worker_build_slot_scoped_operations():
     action_request = RunPodWorkerActionRequest(prod_max_manual_slots=4)
 
     pause_payload = await runpod_admin_service.pause_runpod_worker_payload(
+        agent_id="runpod_prod_wan22_video_v2_manual_03",
+        request=action_request,
+        spawn_task_func=_discard_operation_coroutine,
+    )
+    restart_payload = await runpod_admin_service.restart_runpod_worker_payload(
         agent_id="runpod_prod_wan22_video_v2_manual_03",
         request=action_request,
         spawn_task_func=_discard_operation_coroutine,
@@ -172,14 +177,55 @@ async def test_pause_and_delete_runpod_worker_build_slot_scoped_operations():
     )
 
     pause_command = pause_payload["operation"]["command"]
+    restart_command = restart_payload["operation"]["command"]
     delete_command = delete_payload["operation"]["command"]
     assert "disable" in pause_command
+    assert "restart" in restart_command
     assert "down" in delete_command
     assert pause_command[pause_command.index("--profile") + 1] == "wan22_video_v2"
     assert pause_command[pause_command.index("--slot") + 1] == "03"
+    assert restart_command[restart_command.index("--profile") + 1] == "wan22_video_v2"
+    assert restart_command[restart_command.index("--slot") + 1] == "03"
     assert delete_command[delete_command.index("--slot") + 1] == "03"
     assert pause_payload["operation"]["status"] == "pending"
+    assert restart_payload["operation"]["action"] == "restart"
     assert delete_payload["operation"]["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_restart_lan_aio_worker_builds_slot_scoped_operation():
+    payload = await runpod_admin_service.restart_lan_aio_worker_payload(
+        agent_id="lan_aio_prod_gpu177_gpu0_image_to_video_01",
+        request=RunPodWorkerActionRequest(),
+        spawn_task_func=_discard_operation_coroutine,
+    )
+
+    operation = payload["operation"]
+    command = operation["command"]
+    assert operation["status"] == "pending"
+    assert operation["action"] == "restart"
+    assert operation["profile"] == "image_to_video"
+    assert operation["slot"] == "gpu-177-gpu0-image_to_video"
+    assert command[:3] == [
+        "python3",
+        str(runpod_admin_service.PROJECT_ROOT / "scripts" / "lan_aio_fleet_prod_ops.py"),
+        "restart-aio",
+    ]
+    assert command[command.index("--slot") + 1] == "gpu-177-gpu0-image_to_video"
+    assert "--execute" in command
+
+
+@pytest.mark.asyncio
+async def test_restart_lan_aio_worker_rejects_unknown_agent():
+    with pytest.raises(HTTPException) as exc_info:
+        await runpod_admin_service.restart_lan_aio_worker_payload(
+            agent_id="lan_aio_prod_unknown_01",
+            request=RunPodWorkerActionRequest(),
+            spawn_task_func=_discard_operation_coroutine,
+        )
+
+    assert exc_info.value.status_code == 422
+    assert "unsupported LAN AIO worker" in exc_info.value.detail
 
 
 def test_runpod_operation_log_records_created_slots_for_cleanup():

@@ -229,6 +229,7 @@ scripts/lan_aio_fleet_prod_ops.py preflight
 scripts/lan_aio_fleet_prod_ops.py configure-registry --slot gpu-252-gpu0-img2img_lora
 scripts/lan_aio_fleet_prod_ops.py pull-image --slot gpu-252-gpu0-img2img_lora
 scripts/lan_aio_fleet_prod_ops.py start-disabled --slot gpu-252-gpu0-img2img_lora
+scripts/lan_aio_fleet_prod_ops.py restart-aio --slot gpu-177-gpu0-image_to_video
 ```
 
 真实接管顺序必须逐 slot 执行，不得一次替换整台或多台 GPU：
@@ -241,7 +242,7 @@ scripts/lan_aio_fleet_prod_ops.py start-disabled --slot gpu-252-gpu0-img2img_lor
 6. `enable-aio --slot ... --execute` 会先把 legacy worker 置为 disabled，并拒绝在 legacy 仍 running、AIO disabled heartbeat 不可见或旧 runtime 容器仍占 GPU 显存时放开 AIO，避免同卡双 ComfyUI 抢单。
 7. 灰度期可保留旧 runtime 作为热回滚；全量接管时允许在 AIO enable 前后用 `stop-old --slot ... --execute` 停旧 ComfyUI 和本地主旧 agent，但不删除容器。回滚用 `rollback --slot ... --execute`。
 
-LAN AIO compose 固定带 `restart: unless-stopped`。AIO bootstrap/entrypoint 会同时监管 ComfyUI、relay 与 agent；任一关键进程退出都会退出容器，由 Docker restart policy 重建干净 runtime，避免 ComfyUI 子进程 OOM 后只剩 agent 心跳继续存活。
+LAN AIO compose 固定带 `restart: unless-stopped`。AIO bootstrap/entrypoint 会同时监管 ComfyUI、relay 与 agent；任一关键进程退出都会退出容器，由 Docker restart policy 重建干净 runtime，避免 ComfyUI 子进程 OOM 后只剩 agent 心跳继续存活。手动恢复某个已接管 AIO worker 时使用 `restart-aio --slot ... --execute` 或 Dashboard worker 卡片 `重启`：它先将目标 AIO agent control 置为 `disabled`，只对该 slot 的 all-in-one compose 执行原地 `restart`，等待容器健康和 disabled heartbeat，再把目标 agent 置回 `enabled`。该动作不重启整机 Docker daemon、不触碰旧 runtime、不跨 slot 操作；若当前 worker 正在执行任务，原地重启会中断该 worker 的当前任务，后续仍需按任务终态/僵尸清理链路收口。
 
 `start-disabled` 支持在 slot 配置中声明 `legacy_hot_cache_copies`，用于把旧 ComfyUI 容器或 GPU 节点宿主机上由 custom node 运行期下载的热缓存文件预置进 AIO 容器。`gpu-177-gpu0-image_to_video` 已声明从旧 `comfy0` 复制 `rife49.pth` 到 AIO 内 `ComfyUI_Fill-Nodes` 与 `ComfyUI-Frame-Interpolation` 两处缓存路径；`gpu-252-gpu1-wan22_video_v2` 已声明从宿主机旧 `inst1` 路径复制同一文件。它们都是 `FL_RIFE` 后处理的运行依赖，不能依赖 AIO 容器运行时访问 HuggingFace；RunPod split video 也遵循同一红线，旧 Pod 需要 helper/模型目录补齐，新 Pod 应使用 baked RIFE 的新镜像 tag。
 
@@ -463,6 +464,7 @@ direct TCP `root@<public-ip> -p <mapped-port>` 会因容器内无 `sshd` 而拒�
 | 启动备用 Pod | `scripts/runpod_prod_ops.sh up --profile img2img --execute` | 创建/启动 Pod 并等待 disabled heartbeat，不自动接单 |
 | 放开接单 | `scripts/runpod_prod_ops.sh enable --profile img2img --slot 01 --execute` | 仅修改 Central control 为 enabled |
 | 停止接单 | `scripts/runpod_prod_ops.sh disable --profile img2img --slot 01 --execute` | 保留 Pod，设置 Central control 为 disabled |
+| 原地重启 | `scripts/runpod_prod_ops.sh restart --profile img2img --slot 01 --execute` | 调用 RunPod 原生 restart，不使用 stop/start，等待 heartbeat 并恢复 enabled；若等待阶段失败但复查确认 Pod RUNNING、worker idle 且 control 仍是本次 restart disable，会安全补一次 enable |
 | 删除 Pod | `scripts/runpod_prod_ops.sh down --profile img2img --slot 01 --execute` | disable 后等待 `current_task_id` 为空，再删除目标 Pod |
 | 新增容量 | `scripts/runpod_prod_ops.sh add --profile img2img --count 1 --execute` | 只创建空闲 slot，不触碰已有 RunPod |
 | 高级精确目标 | `scripts/runpod_prod_ops.sh scale --profile img2img --desired 1 --execute` | 会删除超出 desired 的 slot，Dashboard 禁止使用 |
@@ -487,6 +489,8 @@ Dashboard 系统监控页也提供正式手动 RunPod 池的日常 Web 入口：
 | :--- | :--- | :--- |
 | `RunPod 管理` 提交多 profile 新增数量 | `POST /api/runpod/scale` | 拆成 profile 级 `scripts/runpod_prod_ops.sh add --count N --retry-unavailable --execute` operation |
 | Worker 卡片 `暂停` | `POST /api/runpod/workers/{agent_id}/pause` | `disable --slot NN --execute`，只停接新单，保留 Pod |
+| Worker 卡片 `重启` (RunPod) | `POST /api/runpod/workers/{agent_id}/restart` | `restart --slot NN --execute`，先 disabled，调用 RunPod 原生 restart，等待 heartbeat 后 enable；若底层等待阶段失败但目标已健康 idle，会安全恢复 enabled；禁止用 stop/start 模拟重启 |
+| Worker 卡片 `重启` (LAN AIO) | `POST /api/runpod/lan-aio/workers/{agent_id}/restart` | `lan_aio_fleet_prod_ops.py restart-aio --slot ... --execute`，只重启目标 AIO 容器，等待健康/heartbeat 后 enable |
 | Worker 卡片 `删除` | `DELETE /api/runpod/workers/{agent_id}` | `down --slot NN --execute`，先停接并等待当前任务结束，再删除 Pod |
 | 最近操作 | `GET /api/runpod/operations` | 只读 Dashboard 后端内存 operation 状态和脱敏日志尾部 |
 | 最近操作 `终止` | `POST /api/runpod/operations/{operation_id}/terminate` | 仅用于运行中的 `add` operation；终止 Dashboard 子进程后，按该次新增日志记录到的 slot 逐个执行 `down --slot NN --execute` 释放 Pod |
@@ -501,6 +505,7 @@ python scripts/gpu_pool_controller.py runpod prod-worker status
 python scripts/gpu_pool_controller.py runpod prod-worker up --profile img2img
 python scripts/gpu_pool_controller.py runpod prod-worker enable --profile img2img
 python scripts/gpu_pool_controller.py runpod prod-worker disable --profile img2img
+python scripts/gpu_pool_controller.py runpod prod-worker restart --profile img2img
 python scripts/gpu_pool_controller.py runpod prod-worker down --profile img2img
 python scripts/gpu_pool_controller.py runpod prod-worker add --profile img2img --count 1
 python scripts/gpu_pool_controller.py runpod prod-worker canary --profile img2img
@@ -525,6 +530,7 @@ python scripts/gpu_pool_controller.py runpod prod-worker canary --profile scail2
 | `add --count N --execute` | 只创建空闲 slot | 新 slot ready 后自动 enable | 日常新增容量，不触碰已有 slot |
 | `enable --execute` | 否 | 是，仅改 Central control | 放开已有 Pod 接正式队列 |
 | `disable --execute` | 否 | 否，仅改 Central control | 保留 Pod 现场、停止接新单，用于排障或维护 |
+| `restart --execute` | 同一个 Pod 原生 restart，不 stop/start | 是，恢复后自动 enable；失败兜底只在 Pod RUNNING、worker idle、control 仍是本次 restart disable 时执行 | OOM/error/disabled 后原地恢复手动 RunPod worker，避免 stop 释放 GPU；没有固定网络卷时尤其禁止用 stop/start |
 | `canary --execute` | 不创建已存在的 prod Pod | 临时 enable，结束恢复 `disabled` | 提交真实 Web 任务验证目标 worker |
 | `down --execute` | 删除目标 prod Pod | 否 | 下线手动备用 Pod，必须确认无 `current_task_id` |
 | `scale --desired N --execute` | 按 slot 创建/删除/enable/disable | 取决于计划 | 高级精确目标数入口，会删除超出 slot |

@@ -498,6 +498,15 @@ class LanAioProdOps:
                 operations.append(f"set {slot.agent_id}=draining")
             elif action == "disable-aio":
                 operations.append(f"set {slot.agent_id}=disabled")
+            elif action == "restart-aio":
+                operations.extend(
+                    [
+                        f"set {slot.agent_id}=disabled",
+                        f"restart LAN AIO container {slot.container_name} on {slot.ssh_host}",
+                        f"verify {slot.container_name} health and disabled heartbeat",
+                        f"set {slot.agent_id}=enabled",
+                    ]
+                )
             elif action == "rollback":
                 operations.extend(
                     [
@@ -565,6 +574,26 @@ class LanAioProdOps:
                 ttl_seconds=CONTROL_TTL_SECONDS,
             )
         return {"ok": True, "action": "disable-aio", "slots": [slot.id for slot in slots]}
+
+    def restart_aio(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
+        if len(slots) != 1:
+            raise RuntimeError("restart-aio requires exactly one --slot")
+        slot = slots[0]
+        self._set_control(
+            slot.agent_id,
+            "disabled",
+            "lan_aio_fleet_restart_disable_aio",
+            ttl_seconds=CONTROL_TTL_SECONDS,
+        )
+        self._remote_compose(slot, "restart")
+        self._wait_container_health(slot)
+        self._verify_disabled_heartbeat(slot)
+        self._set_control(
+            slot.agent_id,
+            "enabled",
+            "lan_aio_fleet_restart_enable_aio",
+        )
+        return {"ok": True, "action": "restart-aio", "slot": slot.id}
 
     def configure_registry(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
         touched_hosts: dict[str, list[LanAioProdSlot]] = {}
@@ -1226,6 +1255,7 @@ def build_parser() -> argparse.ArgumentParser:
             "enable-aio",
             "drain-aio",
             "disable-aio",
+            "restart-aio",
             "rollback",
             "stop-old",
         ),
@@ -1300,6 +1330,8 @@ def main(argv: list[str] | None = None) -> int:
         payload = ops.drain_aio(slots)
     elif args.action == "disable-aio":
         payload = ops.disable_aio(slots)
+    elif args.action == "restart-aio":
+        payload = ops.restart_aio(slots)
     elif args.action == "rollback":
         payload = ops.rollback(slots)
     elif args.action == "stop-old":
