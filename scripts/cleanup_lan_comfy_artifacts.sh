@@ -128,6 +128,46 @@ execute="$1"
 output_temp_minutes="$2"
 input_minutes="$3"
 
+cleanup_dir() {
+  d="$1"
+  mins="$2"
+  label="$3"
+
+  if [ ! -d "$d" ]; then
+    echo "MISSING $label $d"
+    return 0
+  fi
+
+  count=$(find "$d" -xdev -type f -mmin +"$mins" ! -name "_output_images_will_be_put_here" | wc -l | tr -d ' ')
+  bytes=$(find "$d" -xdev -type f -mmin +"$mins" ! -name "_output_images_will_be_put_here" -printf "%s\n" | awk '{s+=$1} END {printf "%.2f GiB", s/1024/1024/1024}')
+  echo "SCAN $label path=$d older_than=${mins}min files=$count bytes=$bytes"
+
+  if [ "$execute" = "1" ]; then
+    find "$d" -xdev -type f -mmin +"$mins" ! -name "_output_images_will_be_put_here" -delete
+    find "$d" -xdev -depth -mindepth 1 -type d -empty -delete 2>/dev/null || true
+    du -sh "$d" 2>/dev/null || true
+  fi
+}
+
+mount_source() {
+  container="$1"
+  destination="$2"
+  docker inspect "$container" --format '{{range .Mounts}}{{println .Destination "|" .Source}}{{end}}' \
+    | awk -F ' \\| ' -v dest="$destination" '$1 == dest {print $2; exit}'
+}
+
+cleanup_stopped_container_mounts() {
+  container="$1"
+  output_dir=$(mount_source "$container" /root/ComfyUI/output || true)
+  temp_dir=$(mount_source "$container" /root/ComfyUI/temp || true)
+  input_dir=$(mount_source "$container" /root/ComfyUI/input || true)
+
+  echo "container $container is stopped; scanning host bind mounts from docker inspect"
+  [ -n "$output_dir" ] && cleanup_dir "$output_dir" "$output_temp_minutes" "$container/output"
+  [ -n "$temp_dir" ] && cleanup_dir "$temp_dir" "$output_temp_minutes" "$container/temp"
+  [ -n "$input_dir" ] && cleanup_dir "$input_dir" "$input_minutes" "$container/input"
+}
+
 echo "== before df =="
 df -h /
 
@@ -138,6 +178,12 @@ for container in comfy0 comfy1; do
   fi
 
   echo "== $container =="
+  status=$(docker inspect "$container" --format '{{.State.Status}}')
+  if [ "$status" != "running" ]; then
+    cleanup_stopped_container_mounts "$container"
+    continue
+  fi
+
   docker exec -i "$container" sh -s -- "$execute" "$output_temp_minutes" "$input_minutes" <<'CONTAINER'
 set -eu
 execute="$1"

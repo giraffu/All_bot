@@ -21,8 +21,8 @@ bundles:
       comfy_id: comfy0
       model_dir: /data/comfy/models
       discovered_size_gb: 444
-      import_status: planned
-      notes: Known-good video_insert/video_edit/image_to_video baseline, also present on gpu-002.
+      import_status: source_retired
+      notes: Original gpu-177 /data/comfy source was removed on 2026-06-20 after AIO-only cleanup. Use LAN model cache manifests for image_to_video/video_basic restoration instead of this deleted source.
     files: []
 
   ltx_video_baseline:
@@ -34,8 +34,8 @@ bundles:
       comfy_id: comfy1
       model_dir: /data/comfy/models
       discovered_size_gb: 444
-      import_status: planned
-      notes: Known-good LTX 2.3 environment and LoRA set.
+      import_status: source_retired
+      notes: Original gpu-177 /data/comfy source was removed on 2026-06-20 after AIO-only cleanup. Use the ltx_video LAN model cache manifest for restoration instead of this deleted source.
     files: []
 
   img2img_lora_baseline:

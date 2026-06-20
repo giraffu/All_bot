@@ -83,7 +83,7 @@ ssh gpu-252
 | SSH Host | IP | 用户 | ComfyUI 端口 | 生产 Worker |
 | :--- | :--- | :--- | :--- | :--- |
 | `allbot-gpu-226` | `192.168.1.226` | `ubantu` | `8188` | `cloud_prod_worker_01` |
-| `allbot-gpu-177` | `192.168.1.177` | `ubantui` | AIO `8190`、`8191`；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu177_gpu0_image_to_video_01`、`lan_aio_prod_gpu177_gpu1_ltx_video_01` |
+| `allbot-gpu-177` | `192.168.1.177` | `ubantui` | AIO `8190`、`8191`；旧 `8188`/`8189` 已退役删除 | `lan_aio_prod_gpu177_gpu0_image_to_video_01`、`lan_aio_prod_gpu177_gpu1_ltx_video_01` |
 | `allbot-gpu-252` | `192.168.1.252` | `user` | AIO `8190`；`8191` 当前无本地 GPU1/maintenance disabled；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu252_gpu0_img2img_lora_01`、RunPod 兜底 `wan22_video_v2` |
 | `allbot-gpu-002` | `192.168.1.2` | `chuzeyu` | AIO `8190`、`8191`；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu002_gpu0_scail2_01`、`lan_aio_prod_gpu002_gpu1_image_to_video_01` |
 
@@ -151,7 +151,7 @@ done
 | `http://192.168.1.2:8190` | `0.25.0` | `2.11.0+cu128` | AIO SCAIL-2 |
 | `http://192.168.1.2:8191` | `0.21.1` | `2.11.0+cu128` | AIO `image_to_video` |
 
-旧 `192.168.1.177:8188/8189`、`192.168.1.252:8188/8189` 和 `192.168.1.2:8188/8189` 只作为 stopped rollback baseline 或旧 runtime 口径保留；日常健康检查优先使用上表 AIO 端口。2026-06-20 `gpu-252` 已拆除故障 RTX 4090：健康卡 UUID `GPU-09b7ea85-23df-a9b8-19d9-703534e47666` 枚举为 GPU0 并恢复 `img2img/img2img_lora`，故障卡 UUID `GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e` 因 Xid 119/154 跟随实体卡跨槽位复现而不再作为可用容量。
+旧 `192.168.1.177:8188/8189` 已在 2026-06-20 随 gpu-177 旧本地回滚链路退役删除；`192.168.1.252:8188/8189` 和 `192.168.1.2:8188/8189` 仍只作为 stopped rollback baseline 或旧 runtime 口径保留。日常健康检查优先使用上表 AIO 端口。2026-06-20 `gpu-252` 已拆除故障 RTX 4090：健康卡 UUID `GPU-09b7ea85-23df-a9b8-19d9-703534e47666` 枚举为 GPU0 并恢复 `img2img/img2img_lora`，故障卡 UUID `GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e` 因 Xid 119/154 跟随实体卡跨槽位复现而不再作为可用容量。
 
 ## 7. 权限与安全边界
 

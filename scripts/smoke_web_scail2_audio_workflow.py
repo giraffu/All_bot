@@ -270,6 +270,7 @@ async def ensure_smoke_user(*, user_id: int, username: str, password: str) -> in
             select(User).where(
                 or_(
                     User.id == user_id,
+                    User.telegram_id == user_id,
                     func.lower(User.username) == username.lower(),
                 )
             )
@@ -279,6 +280,7 @@ async def ensure_smoke_user(*, user_id: int, username: str, password: str) -> in
         if user is None:
             user = User(
                 id=user_id,
+                telegram_id=user_id,
                 username=username,
                 full_name="SCAIL2 Audio Smoke",
                 hashed_password=hashed_password,
@@ -290,6 +292,7 @@ async def ensure_smoke_user(*, user_id: int, username: str, password: str) -> in
             )
             session.add(user)
         else:
+            user.telegram_id = user_id
             user.username = username
             user.full_name = "SCAIL2 Audio Smoke"
             user.hashed_password = hashed_password

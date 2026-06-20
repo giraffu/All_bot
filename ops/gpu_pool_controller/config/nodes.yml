@@ -47,7 +47,7 @@ nodes:
     ip: 192.168.1.177
     runtime: docker
     model_dir: /data/comfy/models
-    notes: Dual RTX 5090 node. comfy0/comfy1 share model dir and split inst0/inst1.
+    notes: Dual RTX 5090 node. Production runs only LAN AIO on 8190/8191; legacy comfy0/comfy1, local agents 2/3, and /data/comfy were removed on 2026-06-20. Legacy paths below are historical mapping data, not a local rollback target.
     gpus:
       - index: 0
         name: NVIDIA GeForce RTX 5090
@@ -76,7 +76,10 @@ nodes:
         container_name: allbot-comfy-gpu0
         container_port: 8188
         compose_template: standard_comfy_runtime_v1
-        rollback_state: {}
+        rollback_state:
+          retired: true
+          retired_at: "2026-06-20"
+          reason: gpu-177 AIO-only cleanup removed comfy0, cloud-prod-comfy-agent-2, and /data/comfy.
         supported_task_types:
           - video_insert
           - video_edit
@@ -101,7 +104,10 @@ nodes:
         container_name: allbot-comfy-gpu1
         container_port: 8188
         compose_template: standard_comfy_runtime_v1
-        rollback_state: {}
+        rollback_state:
+          retired: true
+          retired_at: "2026-06-20"
+          reason: gpu-177 AIO-only cleanup removed comfy1, cloud-prod-comfy-agent-3, and /data/comfy.
         supported_task_types:
           - ltx_video
           - image_to_video

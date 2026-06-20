@@ -33,7 +33,7 @@
 | 主服务器 `hfy-FAEX9` | 本机 | Ryzen AI MAX+ 395，16C/32T | 62GiB | 无独立推理 GPU | `/` 3.6T，已用 1.6T，可用 1.9T | worker/relay、spool、legacy 数据、开发运维 |
 | 云控制面 `allbot-do-sgp1-control-01` | `allbot-do-sgp1-control` | DO-Regular，8 vCPU | 约 15GiB | 无 | `/` 309G，已用 125G，可用 185G | 正式控制面 |
 | `192.168.1.226` | `allbot-gpu-226` | Ryzen 9 9950X，16C/32T | 60GiB | 1 x RTX 5090 32G | `/` 1.8T，已用 738G，可用 1001G | 单 ComfyUI，worker 01，face/i2i/t2i 与 LTX 补充容量 |
-| `192.168.1.177` | `allbot-gpu-177` | Ryzen 7 9700X，8C/16T | 60GiB | 2 x RTX 5090 32G | `/` 915G，已用 626G，可用 243G | 双 ComfyUI，worker 02/03 |
+| `192.168.1.177` | `allbot-gpu-177` | Ryzen 7 9700X，8C/16T | 60GiB | 2 x RTX 5090 32G | `/` 915G，已用 190G，可用 680G | LAN AIO `8190/8191` only；legacy 02/03 已退役 |
 | `192.168.1.252` | `allbot-gpu-252` | Ryzen 7 9700X，8C/16T | 60GiB | 1 x RTX 4090 48G active | `/` 937G，已用 352G，可用 538G | 健康卡 UUID `GPU-09b7ea85-23df-a9b8-19d9-703534e47666` 由 LAN AIO 承载 `img2img/img2img_lora`；故障卡已拆，`wan22_video_v2` 由 RunPod 兜底 |
 | `192.168.1.2` | `allbot-gpu-002` | Ryzen 7 9700X，8C/16T | 60GiB | 2 x RTX 4090 48G | `/` 936G，已用 455G，可用 442G | 双 ComfyUI，worker 06/07，LAN AIO/SCAIL-2 试点 |
 
@@ -52,8 +52,8 @@
 | :--- | :--- | :--- | :--- |
 | `cloud-prod-worker-relay` | 本地 worker relay 与上传 sidecar，端口 `127.0.0.1:8013` | 云 Central `100.107.220.127:8003` | agent API 转发、R2 上传 sidecar |
 | `cloud-prod-comfy-agent-1` | Worker 01 | `192.168.1.226:8188` | `face_swap,i2i_pro,i2i_draw,face_video,video_edit,image_to_video,t2i-pornmaster-turbo,ltx_video` |
-| `cloud-prod-comfy-agent-2` | Worker 02 | `192.168.1.177:8188` | `video_insert,video_edit,image_to_video` |
-| `cloud-prod-comfy-agent-3` | Worker 03 | `192.168.1.177:8189` | `ltx_video,image_to_video` |
+| `cloud-prod-comfy-agent-2` | Worker 02，已退役 | 原 `192.168.1.177:8188` | 已由 `lan_aio_prod_gpu177_gpu0_image_to_video_01` 替换；容器已删除，control `disabled` |
+| `cloud-prod-comfy-agent-3` | Worker 03，已退役 | 原 `192.168.1.177:8189` | 已由 `lan_aio_prod_gpu177_gpu1_ltx_video_01` 替换；容器已删除，control `disabled` |
 | `cloud-prod-comfy-agent-4` | Worker 04 | `192.168.1.252:8188` | `img2img,img2img_lora` |
 | `cloud-prod-comfy-agent-5` | 旧 Worker 05，stopped rollback | 原 `192.168.1.252:8189` | 已由 `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` 替换，只保留回滚 |
 | `cloud-prod-comfy-agent-6` | Worker 06 | `192.168.1.2:8188` | `img2img,img2img_lora` |
@@ -95,7 +95,7 @@ LAN AIO fleet 首批候选：
 
 每个 slot 必须先 `preflight`、维护窗口配置 Docker insecure registry、预拉镜像、`start-disabled` 验收 disabled heartbeat，最后才小窗口 `enable-aio`。禁止一次性接管整台节点或跨节点批量启用。
 
-2026-06-18 `gpu-177` 进入整机 LAN AIO 接管：GPU0 由 `lan_aio_prod_gpu177_gpu0_image_to_video_01` 接正式 `image_to_video`，GPU1 由 `lan_aio_prod_gpu177_gpu1_ltx_video_01` 接正式 `ltx_video`。旧 `cloud_prod_worker_02/03` 与旧 `comfy0/comfy1` 只作为 stopped rollback baseline 保留，不应与 AIO 同时 enabled 或同卡占用显存。`gpu-177-gpu0-image_to_video` 的 AIO 容器需预置旧 `comfy0` 内的 `rife49.pth` 到 `ComfyUI_Fill-Nodes` 和 `ComfyUI-Frame-Interpolation` 缓存路径，避免容器运行时访问 HuggingFace 失败。当前稳定 LAN AIO 正式能力包括 `img2img`、`img2img_lora`、`image_to_video`、`ltx_video`、`scail2_action_transfer`、`scail2_video_replacement`。
+2026-06-18 `gpu-177` 进入整机 LAN AIO 接管：GPU0 由 `lan_aio_prod_gpu177_gpu0_image_to_video_01` 接正式 `image_to_video`，GPU1 由 `lan_aio_prod_gpu177_gpu1_ltx_video_01` 接正式 `ltx_video`。2026-06-20 已执行安全素材清理并退役旧本地链路：`cloud_prod_worker_02/03` control 固定 `disabled`，本地主 `cloud-prod-comfy-agent-2/3`、GPU 节点 `comfy0/comfy1`、旧 `/data/comfy` 模型/实例目录和旧镜像已删除；gpu-177 不再有本地旧链路回滚。后续恢复优先使用 `restart-aio`、按 fleet 配置重建 AIO，或临时启用 RunPod/其它 LAN AIO 容量。当前稳定 LAN AIO 正式能力包括 `img2img`、`img2img_lora`、`image_to_video`、`ltx_video`、`scail2_action_transfer`、`scail2_video_replacement`。
 
 2026-06-18 `gpu-252-gpu1-wan22_video_v2` 已替换 `cloud_prod_worker_05`：新 AIO agent 为 `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01`，容器 `allbot-lan-aio-gpu-252-gpu1-wan22_video_v2-prod` 监听 host `8191`，只接 `wan22_video_v2`。旧 `comfy1` 和本地主 `cloud-prod-comfy-agent-5` 已停止保留为回滚基线，不应再与 AIO 同时运行或 enabled。2026-06-20 交叉换槽确认 Xid 119/154 跟随实体卡 `GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e`，该卡已拆除；当前无本地 GPU1，control 保持 `disabled`，RunPod `wan22_video_v2` 兜底。
 
@@ -149,13 +149,12 @@ ComfyUI：
 - 内存 60GiB
 - 2 x RTX 5090 32G，driver `580.159.03`
 - Docker 29.1.3，Compose 2.37.1
-- 2026-06-18 根分区 `/` 可用约 `243G`，使用率约 73%；外置盘需操作前重新采集
+- 2026-06-20 清理后根分区 `/` 可用约 `680G`，使用率约 22%；外置盘需操作前重新采集
 
 容器：
 - `allbot-lan-aio-gpu-177-gpu0-image_to_video-prod`：正式 AIO，GPU0，host `8190`
 - `allbot-lan-aio-gpu-177-gpu1-ltx_video-prod`：正式 AIO，GPU1，host `8191`
-- `comfy0`：旧回滚基线，停止保留，原端口 `8188`
-- `comfy1`：旧回滚基线，停止保留，原端口 `8189`
+- 旧 `comfy0/comfy1`：2026-06-20 已删除，原端口 `8188/8189` 不再提供本地回滚
 - `portainer_agent`
 - `dcgm_exporter`
 - `monitor_node_exporter`
@@ -166,23 +165,19 @@ ComfyUI 实例：
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | `allbot-lan-aio-gpu-177-gpu0-image_to_video-prod` | GPU `0` | `8190` | `8188` | AIO workspace `/workspace/ComfyUI/models`（由 manifest 同步/挂载） | `/workspace/allbot-state/{comfy-input,comfy-output,comfy-temp}` | `lan_aio_prod_gpu177_gpu0_image_to_video_01` |
 | `allbot-lan-aio-gpu-177-gpu1-ltx_video-prod` | GPU `1` | `8191` | `8188` | AIO workspace `/workspace/ComfyUI/models`（由 LTX manifest 同步） | `/workspace/allbot-state/{comfy-input,comfy-output,comfy-temp}` | `lan_aio_prod_gpu177_gpu1_ltx_video_01` |
-| `comfy0` | GPU `0` | `8188` | `8188` | `/data/comfy/models` | `/data/comfy/inst0/{input,output,temp,custom_nodes,workflows}` | 旧 `cloud-prod-comfy-agent-2`，stopped rollback |
-| `comfy1` | GPU `1` | `8189` | `8188` | `/data/comfy/models` | `/data/comfy/inst1/{input,output,temp,custom_nodes,workflows}` | 旧 `cloud-prod-comfy-agent-3`，stopped rollback |
 
-共享模型目录：`/data/comfy/models`，约 `444G`。
+旧 `/data/comfy/models`、`/data/comfy/inst0`、`/data/comfy/inst1` 已在 2026-06-20 删除；配置中的旧路径只保留为历史映射，不是可用运行目录。
 
-旧回滚基线关键节点差异：
-- `8188`：`FL_RIFE` 与 `RIFE VFI` 均存在。
-- `8189`：`FL_RIFE` 与 `RIFE VFI` 均存在。2026-06-08 已在 `comfy1` 容器补齐 `socksio` 并重启，使 `comfyui_fill-nodes` 正常加载；Worker 03 不再需要 worker 侧 RIFE 节点类环境变量。
+旧回滚基线退役记录：
+- `cloud_prod_worker_02/03`：Central control 已置为 `disabled`。
+- `cloud-prod-comfy-agent-2/3`：本地主服务器容器已删除。
+- `comfy0/comfy1`、`yanwk/comfyui-boot:cu130-slim`、旧 LTX 一次性 tag 和 `/data/comfy`：已从 `allbot-gpu-177` 删除。
 
 运维边界：
-- 日常只操作 `allbot-lan-aio-gpu-177-gpu0-image_to_video-prod` 或 `allbot-lan-aio-gpu-177-gpu1-ltx_video-prod`；旧 `comfy0/comfy1` 和 `cloud-prod-comfy-agent-2/3` 只用于回滚，不得与 AIO 同时 enabled。
+- 日常只操作 `allbot-lan-aio-gpu-177-gpu0-image_to_video-prod` 或 `allbot-lan-aio-gpu-177-gpu1-ltx_video-prod`；旧 `comfy0/comfy1` 和 `cloud-prod-comfy-agent-2/3` 不再存在，不得按旧回滚链路操作。
 - LAN AIO compose 渲染 `restart: unless-stopped`，并由 entrypoint 监管 ComfyUI、relay 与 agent；任一关键进程退出时容器会退出，让 Docker restart policy 拉起干净进程树，避免“agent 心跳仍在但本地 ComfyUI 已死”的半活状态。
-- 若回滚旧链路，必须通过 `scripts/lan_aio_fleet_prod_ops.py rollback --slot ... --execute`，让 Central control、旧 ComfyUI 与旧 agent 一起恢复。
-- 修改 `/data/comfy/models` 会影响两个 ComfyUI。
-- 修改 `/data/comfy/inst0/custom_nodes` 或 `workflows` 只影响 `comfy0`。
-- 修改 `/data/comfy/inst1/custom_nodes` 或 `workflows` 只影响 `comfy1`。
-- ComfyUI `input/output/temp` 已做一次旧素材清理；模型下载、Docker pull/build、临时输出前仍要先检查磁盘。
+- 不要对 gpu-177 执行 `rollback --slot ... --execute`；旧 runtime 已删除，恢复只能走 AIO restart/recreate 或外部容量兜底。
+- 模型下载、Docker pull/build、临时输出前仍要先检查磁盘。
 
 ### 5.3 `allbot-gpu-252` / `192.168.1.252`
 
@@ -337,7 +332,7 @@ gpu-002 AIO 正式日常入口为 `scripts/lan_aio_prod_ops.sh`，底层 `script
 ```bash
 cd /home/hfy/APP/All_bot
 scripts/cleanup_lan_comfy_artifacts.sh
-scripts/cleanup_lan_comfy_artifacts.sh --host allbot-gpu-177
+scripts/cleanup_lan_comfy_artifacts.sh --host allbot-gpu-252
 scripts/cleanup_lan_comfy_artifacts.sh --execute
 ```
 
@@ -347,15 +342,15 @@ scripts/cleanup_lan_comfy_artifacts.sh --execute
 - `input` 删除 24 小时以前文件。
 - `input` 保留窗口短于 360 分钟时必须显式加 `--force-short-input`，生产环境一般不要这么做。
 - `allbot-gpu-226` 走宿主机路径 `/home/ubantu/comfyui/{input,output,temp}`。
-- `allbot-gpu-177/252/002` 通过对应 `comfy0/comfy1` 容器内部 `/root/ComfyUI/{input,output,temp}` 清理，避免宿主权限导致 root-owned 文件残留。
+- `allbot-gpu-252/002` 优先通过对应 `comfy0/comfy1` 容器内部 `/root/ComfyUI/{input,output,temp}` 清理，避免宿主权限导致 root-owned 文件残留；若旧 rollback 容器已停止，脚本会从 `docker inspect` 读取 bind mount，并在宿主机挂载路径上执行同一 dry-run/清理策略，不需要为了清理旧素材而启动旧 ComfyUI。`allbot-gpu-177` 的旧 `/data/comfy` 已删除，后续不再作为素材清理目标。
 
 手工清理前后必须验证：
 
 ```bash
 for base in \
   http://192.168.1.226:8188 \
-  http://192.168.1.177:8188 \
-  http://192.168.1.177:8189 \
+  http://192.168.1.177:8190 \
+  http://192.168.1.177:8191 \
   http://192.168.1.252:8188 \
   http://192.168.1.252:8189 \
   http://192.168.1.2:8188 \
@@ -375,6 +370,10 @@ curl -fsS http://100.107.220.127:8003/system/status
 | `allbot-gpu-177` | `/` 915G，已用 508G，可用 361G | `inst0/inst1 output` 旧文件约 266G，`input` 24h 前文件约 80G |
 | `allbot-gpu-252` | `/` 937G，已用 178G，可用 712G | `inst0 temp/input`、`inst1 output/input` 等旧文件约 392G |
 | `allbot-gpu-002` | `/` 936G，已用 171G，可用 726G | `inst0 temp/input`、`inst1 output/input` 等旧文件约 276G |
+
+2026-06-20 gpu-177 追加清理结果：
+- 先执行安全素材清理，删除旧 `inst0/inst1` output 60 分钟前文件约 `85.54GiB`、input 24 小时前文件约 `41.09GiB`，根分区可用从 `89G` 增至 `216G`。
+- 用户确认不再保留本地旧链路回滚后，删除旧 `comfy0/comfy1`、本地主 `cloud-prod-comfy-agent-2/3`、旧 `/data/comfy`、`yanwk/comfyui-boot:cu130-slim`、旧 LTX 一次性 tag 和孤儿卷；根分区最终约 `190G` 已用、`680G` 可用。
 
 长期建议：先用脚本 dry-run 纳入例行巡检，确认 1-2 周无误删后，再考虑为各 GPU 节点安装 systemd timer。启用 timer 前要保留 `input` 的长窗口，或者增加 `/queue` 文件引用排除逻辑。
 
@@ -410,22 +409,29 @@ scripts/watch_cloud_worker_recovery.sh --env cloud-prod --mode dry-run
 
 ## 10. 单容器更新流程
 
-更新某个 GPU 节点上的单个 Comfy 容器时：
+更新某个仍保留传统 Comfy 容器的 GPU 节点时：
 
 ```bash
-ssh allbot-gpu-177
+ssh allbot-gpu-252
 docker ps --format '{{.Names}}\t{{.Status}}\t{{.Ports}}'
-curl -fsS http://127.0.0.1:8189/queue
-docker logs --since 5m comfy1
-docker restart comfy1
-curl -fsS http://127.0.0.1:8189/system_stats
+curl -fsS http://127.0.0.1:8188/queue
+docker logs --since 5m comfy0
+docker restart comfy0
+curl -fsS http://127.0.0.1:8188/system_stats
 ```
 
 注意：
-- 上例只适合 `192.168.1.177:8189` / `comfy1`。
+- 上例只适合仍保留传统容器的节点，例如 `192.168.1.252:8188` / `comfy0`；`gpu-177` 已是 AIO only，不能再按 `comfy0/comfy1` 回滚或重启。
 - 如果该 ComfyUI 正在执行任务，重启会中断当前任务。
 - 如果 Central 中对应 worker 仍健康，优先等任务自然完成；紧急恢复时再中断。
 - 对 `comfy0`/`comfy1` 执行 Docker 操作前，先确认当前所在 SSH Host，避免在错误机器上操作同名容器。
+
+gpu-177 AIO 原地恢复使用 fleet helper，不触碰旧容器：
+
+```bash
+scripts/lan_aio_fleet_prod_ops.py restart-aio --slot gpu-177-gpu0-image_to_video --execute
+scripts/lan_aio_fleet_prod_ops.py restart-aio --slot gpu-177-gpu1-ltx_video --execute
+```
 
 本地主服务器 worker 只更新某个 agent 时：
 
@@ -463,8 +469,8 @@ ComfyUI 节点能力：
 ```bash
 for base in \
   http://192.168.1.226:8188 \
-  http://192.168.1.177:8188 \
-  http://192.168.1.177:8189 \
+  http://192.168.1.177:8190 \
+  http://192.168.1.177:8191 \
   http://192.168.1.252:8188 \
   http://192.168.1.252:8189 \
   http://192.168.1.2:8188 \
@@ -484,7 +490,7 @@ ComfyUI 队列判读：
 模型挂载：
 
 ```bash
-ssh allbot-gpu-177 'docker inspect comfy0 comfy1 --format "{{.Name}} {{range .Mounts}}{{println .Source \"->\" .Destination}}{{end}}"'
+ssh allbot-gpu-177 'docker inspect allbot-lan-aio-gpu-177-gpu0-image_to_video-prod allbot-lan-aio-gpu-177-gpu1-ltx_video-prod --format "{{.Name}} {{range .Mounts}}{{println .Source \"->\" .Destination}}{{end}}"'
 ssh allbot-gpu-252 'docker inspect comfy0 comfy1 --format "{{.Name}} {{range .Mounts}}{{println .Source \"->\" .Destination}}{{end}}"'
 ssh allbot-gpu-002 'docker inspect comfy0 comfy1 --format "{{.Name}} {{range .Mounts}}{{println .Source \"->\" .Destination}}{{end}}"'
 ```

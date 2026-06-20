@@ -17,7 +17,7 @@ assignments:
     max_parallel_tasks: 2
 
   - id: lan-177-8188-worker-02
-    enabled: true
+    enabled: false
     provider: lan_ssh
     node_id: gpu-177
     comfy_id: comfy0
@@ -28,9 +28,10 @@ assignments:
       - video_edit
       - image_to_video
     max_parallel_tasks: 2
+    notes: Retired on 2026-06-20 after gpu-177 AIO-only cleanup; local agent/container and /data/comfy legacy runtime were removed.
 
   - id: lan-177-8189-worker-03
-    enabled: true
+    enabled: false
     provider: lan_ssh
     node_id: gpu-177
     comfy_id: comfy1
@@ -40,6 +41,7 @@ assignments:
       - ltx_video
       - image_to_video
     max_parallel_tasks: 2
+    notes: Retired on 2026-06-20 after gpu-177 AIO-only cleanup; local agent/container and /data/comfy legacy runtime were removed.
 
   - id: lan-252-8188-worker-04
     enabled: true

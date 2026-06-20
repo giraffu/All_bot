@@ -157,7 +157,7 @@
 | GPU 服务器 | 物理 GPU | ComfyUI 端口 | 生产 Agent | 主要支持任务 |
 | :--- | :--- | :--- | :--- | :--- |
 | `192.168.1.226` | 1 x RTX 5090 32G | `8188` | `cloud_prod_worker_01` | `face_swap`、`i2i_pro`、`i2i_draw`、`face_video`、`video_edit`、`image_to_video`、`t2i-pornmaster-turbo` |
-| `192.168.1.177` | 2 x RTX 5090 32G | AIO `8190`、`8191`；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu177_gpu0_image_to_video_01`、`lan_aio_prod_gpu177_gpu1_ltx_video_01` | `image_to_video`（兼容 `video_insert` / `video_edit` alias）、`ltx_video` |
+| `192.168.1.177` | 2 x RTX 5090 32G | AIO `8190`、`8191` only；旧 `8188`/`8189` 已退役删除 | `lan_aio_prod_gpu177_gpu0_image_to_video_01`、`lan_aio_prod_gpu177_gpu1_ltx_video_01` | `image_to_video`（兼容 `video_insert` / `video_edit` alias）、`ltx_video` |
 | `192.168.1.252` | 2 x RTX 4090 48G | `8188`；AIO `8191`，旧 `8189` stopped rollback | `cloud_prod_worker_04`、`lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` | `img2img`、`img2img_lora`、`wan22_video_v2` |
 | `192.168.1.2` | 2 x RTX 4090 48G | AIO `8190`、`8191`；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu002_gpu0_scail2_01`、`lan_aio_prod_gpu002_gpu1_image_to_video_01` | `scail2_action_transfer`、`scail2_video_replacement`、`image_to_video`（兼容 alias） |
 
@@ -172,11 +172,11 @@ GPU 节点运行方式与模型挂载快照：
 | GPU 服务器 | ComfyUI 运行方式 | 模型目录 | 实例隔离 | 运维注意 |
 | :--- | :--- | :--- | :--- | :--- |
 | `192.168.1.226` | 宿主机进程，cwd `/home/ubantu/comfyui`，端口 `8188` | `/home/ubantu/comfyui/models`，约 325G | 单实例 | 不是 Comfy Docker 容器；重启前先确认进程管理方式 |
-| `192.168.1.177` | 正式 AIO `allbot-lan-aio-gpu-177-gpu0-image_to_video-prod`/`allbot-lan-aio-gpu-177-gpu1-ltx_video-prod`，host `8190`/`8191` | AIO workspace `/workspace/ComfyUI/models`；旧共享目录 `/data/comfy/models` 保留回滚 | AIO 使用 `/workspace/allbot-state` 隔离 input/output/temp；旧 `inst0/inst1` 保留 | 2026-06-18 根分区可用约 243G，使用率约 73%；旧 `comfy0/comfy1` 和旧 agent 2/3 stopped，不得与 AIO 同卡并跑 |
+| `192.168.1.177` | 正式 AIO `allbot-lan-aio-gpu-177-gpu0-image_to_video-prod`/`allbot-lan-aio-gpu-177-gpu1-ltx_video-prod`，host `8190`/`8191` | AIO workspace `/workspace/ComfyUI/models`；旧 `/data/comfy` 已删除 | AIO 使用 `/workspace/allbot-state` 隔离 input/output/temp；旧 `inst0/inst1` 已删除 | 2026-06-20 清理后根分区可用约 680G，使用率约 22%；旧 `comfy0/comfy1` 和旧 agent 2/3 已删除，`cloud_prod_worker_02/03` control 为 `disabled` |
 | `192.168.1.252` | Docker `comfy0` 端口 `8188`；正式 AIO `allbot-lan-aio-gpu-252-gpu1-wan22_video_v2-prod` 端口 `8191`；旧 `comfy1`/`8189` stopped rollback | `/home/user/APP/data/models` 约 121G 供旧 runtime；AIO workspace `/workspace/ComfyUI/models` 由 manifest 同步 | `comfy0` 使用 `inst0`；AIO 使用 `/workspace/allbot-state` 隔离 input/output/temp | 2026-06-18 根分区可用约 647G；AIO 只声明 `wan22_video_v2`，不接普通 `image_to_video`；当前 Docker device 映射为 `NVIDIA_VISIBLE_DEVICES=0` |
 | `192.168.1.2` | 正式 AIO `allbot-lan-aio-gpu-002-gpu0-scail2-prod`/`allbot-lan-aio-gpu-002-gpu1-image_to_video-canary`，host `8190`/`8191` | AIO workspace `/workspace/ComfyUI/models`；旧共享目录 `/data/comfy/models` 保留回滚 | AIO 使用 `/workspace/allbot-state` 隔离 input/output/temp；旧 `inst0/inst1` 保留 | 2026-06-18 根分区可用约 442G；旧 `comfy0/comfy1` 和旧 agent 6/7 stopped，不得与 AIO 同卡并跑 |
 
-双卡节点的重要边界：`gpu-177` 与 `gpu-002` 日常按 AIO 容器和 `8190/8191` 端口操作，旧 `comfy0/comfy1` 只作为 stopped rollback baseline；`gpu-252` 现在是混合状态，slot0 仍是传统 `comfy0`，slot1/worker05 已由 AIO `8191` 接管，旧 `comfy1` 只作 stopped rollback。处理某个 worker 或某个 ComfyUI 的问题时，只操作对应 worker 容器、AIO 容器或对应 GPU 节点上的单个 `comfy0/comfy1`；不要使用整机 reboot、无 service 名 `docker compose down/up` 或批量 `docker rm`。
+双卡节点的重要边界：`gpu-177` 日常只按 AIO 容器和 `8190/8191` 端口操作，旧本地回滚链路已删除；`gpu-002` 日常按 AIO 容器和 `8190/8191` 端口操作，旧 `comfy0/comfy1` 仍只作为 stopped rollback baseline；`gpu-252` 现在是混合状态，slot0 仍是传统 `comfy0`，slot1/worker05 已由 AIO `8191` 接管，旧 `comfy1` 只作 stopped rollback。处理某个 worker 或某个 ComfyUI 的问题时，只操作对应 worker 容器、AIO 容器或对应 GPU 节点上的单个 `comfy0/comfy1`；不要使用整机 reboot、无 service 名 `docker compose down/up` 或批量 `docker rm`。
 
 ComfyUI 素材清理口径：
 - 2026-06-08 检查确认 GPU 节点没有项目级 ComfyUI 素材自动清理机制，只有系统默认 tmp/log 清理。

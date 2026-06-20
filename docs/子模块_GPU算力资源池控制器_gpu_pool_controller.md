@@ -35,7 +35,7 @@
 | 节点 | Host alias / IP | GPU | ComfyUI 口径 |
 | :--- | :--- | :--- | :--- |
 | `gpu-226` | `allbot-gpu-226` / `192.168.1.226` | 1 x RTX 5090 | 宿主机 ComfyUI `8188` |
-| `gpu-177` | `allbot-gpu-177` / `192.168.1.177` | 2 x RTX 5090 | 正式 LAN AIO `8190/8191`；旧 `comfy0/comfy1` stopped rollback |
+| `gpu-177` | `allbot-gpu-177` / `192.168.1.177` | 2 x RTX 5090 | 正式 LAN AIO `8190/8191` only；旧 `comfy0/comfy1` 与本地主 agent 2/3 已退役删除 |
 | `gpu-252` | `allbot-gpu-252` / `192.168.1.252` | 1 x RTX 4090 48G active | 正式 LAN AIO GPU0 `8190` 承载 `img2img/img2img_lora`；故障 RTX 4090 已拆除，GPU1 `wan22_video_v2` 本地 AIO 当前 maintenance disabled，RunPod 兜底；旧 `comfy0/comfy1` stopped rollback |
 | `gpu-002` | `allbot-gpu-002` / `192.168.1.2` | 2 x RTX 4090 48G | 正式 LAN AIO slot0 SCAIL-2 `8190` + slot1 image_to_video `8191`；旧 `comfy0/comfy1` stopped rollback |
 
@@ -240,13 +240,13 @@ scripts/lan_aio_fleet_prod_ops.py restart-aio --slot gpu-177-gpu0-image_to_video
 4. `start-disabled --slot ... --execute` 启动 AIO 容器，只等待 disabled heartbeat，不允许接单。
 5. 验收 compose 不含 `cloud-test` / `user-data-test`，Central heartbeat 必须带 `node_id`、`provider=lan_ssh`、`runtime_profile`、`pool_managed=true`；`image_to_video` / `wan22_video_v2` slot 的 `COMFY_EXTRA_ARGS` 必须包含 `--disable-dynamic-vram`。
 6. `enable-aio --slot ... --execute` 会先把 legacy worker 置为 disabled，并拒绝在 legacy 仍 running、AIO disabled heartbeat 不可见或旧 runtime 容器仍占 GPU 显存时放开 AIO，避免同卡双 ComfyUI 抢单。
-7. 灰度期可保留旧 runtime 作为热回滚；全量接管时允许在 AIO enable 前后用 `stop-old --slot ... --execute` 停旧 ComfyUI 和本地主旧 agent，但不删除容器。回滚用 `rollback --slot ... --execute`。
+7. 灰度期可保留旧 runtime 作为热回滚；全量接管时允许在 AIO enable 前后用 `stop-old --slot ... --execute` 停旧 ComfyUI 和本地主旧 agent，但不删除容器。若用户明确放弃本地旧链路，可在确认 AIO 健康后删除旧容器、旧模型目录和旧 agent，并同步把 legacy control 固定为 `disabled`；此后该节点不得再使用 `rollback --slot ... --execute`。
 
 LAN AIO compose 固定带 `restart: unless-stopped`。AIO bootstrap/entrypoint 会同时监管 ComfyUI、relay 与 agent；任一关键进程退出都会退出容器，由 Docker restart policy 重建干净 runtime，避免 ComfyUI 子进程 OOM 后只剩 agent 心跳继续存活。手动恢复某个已接管 AIO worker 时使用 `restart-aio --slot ... --execute` 或 Dashboard worker 卡片 `重启`：它先将目标 AIO agent control 置为 `disabled`，只对该 slot 的 all-in-one compose 执行原地 `restart`，等待容器健康和 disabled heartbeat，再把目标 agent 置回 `enabled`。该动作不重启整机 Docker daemon、不触碰旧 runtime、不跨 slot 操作；若当前 worker 正在执行任务，原地重启会中断该 worker 的当前任务，后续仍需按任务终态/僵尸清理链路收口。
 
-`start-disabled` 支持在 slot 配置中声明 `legacy_hot_cache_copies`，用于把旧 ComfyUI 容器或 GPU 节点宿主机上由 custom node 运行期下载的热缓存文件预置进 AIO 容器。`gpu-177-gpu0-image_to_video` 已声明从旧 `comfy0` 复制 `rife49.pth` 到 AIO 内 `ComfyUI_Fill-Nodes` 与 `ComfyUI-Frame-Interpolation` 两处缓存路径；`gpu-252-gpu1-wan22_video_v2` 已声明从宿主机旧 `inst1` 路径复制同一文件。它们都是 `FL_RIFE` 后处理的运行依赖，不能依赖 AIO 容器运行时访问 HuggingFace；RunPod split video 也遵循同一红线，旧 Pod 需要 helper/模型目录补齐，新 Pod 应使用 baked RIFE 的新镜像 tag。
+`start-disabled` 支持在 slot 配置中声明 `legacy_hot_cache_copies`，用于把旧 ComfyUI 容器或 GPU 节点宿主机上由 custom node 运行期下载的热缓存文件预置进 AIO 容器。`gpu-177` 的旧 `comfy0` 来源已在 2026-06-20 退役删除，后续重建应使用带 RIFE 缓存的 `20260619-wan22aio-rife-bcf3ebd` 或模型缓存补齐，不得再从旧容器复制；`gpu-252-gpu1-wan22_video_v2` 仍声明从宿主机旧 `inst1` 路径复制同一文件。它们都是 `FL_RIFE` 后处理的运行依赖，不能依赖 AIO 容器运行时访问 HuggingFace；RunPod split video 也遵循同一红线，旧 Pod 需要 helper/模型目录补齐，新 Pod 应使用 baked RIFE 的新镜像 tag。
 
-2026-06-18 `gpu-177` 进入整机 LAN AIO 接管：GPU0 由 `lan_aio_prod_gpu177_gpu0_image_to_video_01` 提供 `image_to_video`，GPU1 由 `lan_aio_prod_gpu177_gpu1_ltx_video_01` 提供 `ltx_video`。旧 `cloud_prod_worker_02/03` 和旧 `comfy0/comfy1` 只作为 stopped rollback baseline 保留，不应与 AIO 同时 enabled 或同卡占用显存；若回滚，先执行对应 slot 的 `rollback --execute` 恢复旧 worker。
+2026-06-18 `gpu-177` 进入整机 LAN AIO 接管：GPU0 由 `lan_aio_prod_gpu177_gpu0_image_to_video_01` 提供 `image_to_video`，GPU1 由 `lan_aio_prod_gpu177_gpu1_ltx_video_01` 提供 `ltx_video`。2026-06-20 已按用户确认退役本地旧链路：旧 `cloud_prod_worker_02/03` control 为 `disabled`，本地主 `cloud-prod-comfy-agent-2/3`、GPU 节点 `comfy0/comfy1`、旧 `/data/comfy` 和旧镜像已删除；gpu-177 不再提供本地旧链路回滚，恢复入口改为 AIO restart/recreate 或外部容量兜底。
 
 2026-06-18 `gpu-252-gpu1-wan22_video_v2` 已替换 `cloud_prod_worker_05`：AIO agent `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` 连接正式 Central，host `8191`，只声明 `SUPPORTED_TASK_TYPES=wan22_video_v2`，不承接普通 `image_to_video` 或 `video_edit`。旧 `comfy1` 与 `cloud-prod-comfy-agent-5` 已停止保留为回滚基线。2026-06-19 重启后该 slot 配置改回 `gpu_index: 1`；实测第二个生产 wan22 任务仍让 GPU1/ComfyUI 进入 unhealthy 且 Docker 无法 stop/kill 的状态，当前 control 必须保持 `disabled`，RunPod `wan22_video_v2` 继续作为正式兜底容量。
 
