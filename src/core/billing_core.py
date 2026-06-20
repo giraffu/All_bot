@@ -16,6 +16,7 @@ from src.core.billing_core_membership import normalize_membership_identity
 
 logger = logging.getLogger(__name__)
 _configured_billing_core_providers = None
+LOW_TIER_QUEUE_SIZE_LIMIT = 300
 
 
 __all__ = [
@@ -24,6 +25,7 @@ __all__ = [
     "DEFAULT_IDENTITY",
     "IDENTITY_PRIORITY",
     "IDENTITY_RATIO",
+    "LOW_TIER_QUEUE_SIZE_LIMIT",
     "MembershipSettlementResult",
     "build_default_billing_core_dependencies",
     "build_default_billing_core_providers",
@@ -145,10 +147,19 @@ async def check_concurrency_lock(
         user_group = await dependencies.get_user_group_func(internal_user_id)
         if user_group in ["凡人", "练气期"]:
             sys_status = await dependencies.get_system_status_func()
-            if sys_status and sys_status.get("queue_size", 0) > 200:
+            if (
+                sys_status
+                and sys_status.get("queue_size", 0) > LOW_TIER_QUEUE_SIZE_LIMIT
+            ):
                 return (
                     False,
-                    "⚠️ **服务器繁忙**\n\n当前排队任务已超过 200 个，为了保证服务稳定性，**练气期及以下外门弟子**暂不可提交新任务。\n\n💡 请稍后再试，或努力提升修为至**筑基期**，也可通过「个人中心」升级至内门弟子及以上身份获取特权！",
+                    (
+                        "⚠️ **服务器繁忙**\n\n"
+                        f"当前排队任务已超过 {LOW_TIER_QUEUE_SIZE_LIMIT} 个，"
+                        "为了保证服务稳定性，**练气期及以下外门弟子**暂不可提交新任务。\n\n"
+                        "💡 请稍后再试，或努力提升修为至**筑基期**，"
+                        "也可通过「个人中心」升级至内门弟子及以上身份获取特权！"
+                    ),
                 )
 
     # 2. 原有并发锁检查

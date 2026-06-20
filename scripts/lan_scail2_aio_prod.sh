@@ -29,6 +29,11 @@ REMOTE_COMPOSE_FILE="${REMOTE_DIR}/docker-compose.yml"
 REMOTE_ENV_FILE="${REMOTE_DIR}/.env.lan-scail2-prod"
 REMOTE_WORKERS_SOURCE_DIR="${SCAIL2_PROD_REMOTE_WORKERS_SOURCE_DIR:-remote_workers}"
 REMOTE_WORKERS_TARGET_DIR="/workspace/allbot/remote_workers"
+SCAIL2_PROD_SUPPORTED_TASK_TYPES="${SCAIL2_PROD_SUPPORTED_TASK_TYPES:-scail2_action_transfer,scail2_video_replacement,scail2_face_swap_v2}"
+SCAIL2_PROD_TASK_TYPE_WORKFLOW_OVERRIDES="${SCAIL2_PROD_TASK_TYPE_WORKFLOW_OVERRIDES:-{\"scail2_action_transfer\":\"SCAIL-2_Animation_multi-char_audio.api.json\",\"scail2_video_replacement\":\"SCAIL-2_Replacement_audio.api.json\",\"scail2_face_swap_v2\":\"SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json\"}}"
+SCAIL2_PROD_FACE_SWAP_V10_ENABLED="${SCAIL2_PROD_FACE_SWAP_V10_ENABLED:-true}"
+SCAIL2_PROD_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL="${SCAIL2_PROD_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL:-http://192.168.1.226:8188}"
+SCAIL2_PROD_FACE_SWAP_V10_FACE_SWAP_WORKFLOW="${SCAIL2_PROD_FACE_SWAP_V10_FACE_SWAP_WORKFLOW:-face_swap_v2.json}"
 
 usage() {
   cat <<'USAGE'
@@ -197,6 +202,7 @@ path.write_text(yaml.safe_dump(compose, allow_unicode=True, sort_keys=False))
 PY
   fi
   patch_compose_remote_workers_mount "$out"
+  patch_scail2_prod_overrides "$out"
   assert_prod_compose "$out"
 }
 
@@ -233,11 +239,92 @@ path.write_text(yaml.safe_dump(compose, allow_unicode=True, sort_keys=False))
 PY
 }
 
+patch_scail2_prod_overrides() {
+  local file="$1"
+  python3 - "$file" "$CONTAINER_NAME" \
+    "$SCAIL2_PROD_SUPPORTED_TASK_TYPES" \
+    "$SCAIL2_PROD_TASK_TYPE_WORKFLOW_OVERRIDES" \
+    "$SCAIL2_PROD_FACE_SWAP_V10_ENABLED" \
+    "$SCAIL2_PROD_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL" \
+    "$SCAIL2_PROD_FACE_SWAP_V10_FACE_SWAP_WORKFLOW" <<'PY'
+from pathlib import Path
+import json
+import sys
+import yaml
+
+path = Path(sys.argv[1])
+container_name = sys.argv[2]
+supported_task_types = sys.argv[3]
+workflow_overrides = sys.argv[4]
+face_swap_enabled = sys.argv[5]
+face_swap_api_url = sys.argv[6]
+face_swap_workflow = sys.argv[7]
+
+required_tasks = {
+    "scail2_action_transfer",
+    "scail2_video_replacement",
+    "scail2_face_swap_v2",
+}
+declared_tasks = {item.strip() for item in supported_task_types.split(",") if item.strip()}
+if declared_tasks != required_tasks:
+    raise SystemExit(
+        "SCAIL2_PROD_SUPPORTED_TASK_TYPES must be exactly "
+        + ",".join(sorted(required_tasks))
+    )
+
+overrides = json.loads(workflow_overrides)
+if not isinstance(overrides, dict):
+    raise SystemExit("SCAIL2_PROD_TASK_TYPE_WORKFLOW_OVERRIDES must be a JSON object")
+required_overrides = {
+    "scail2_action_transfer": "SCAIL-2_Animation_multi-char_audio.api.json",
+    "scail2_video_replacement": "SCAIL-2_Replacement_audio.api.json",
+    "scail2_face_swap_v2": "SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json",
+}
+if overrides != required_overrides:
+    raise SystemExit(
+        "SCAIL2_PROD_TASK_TYPE_WORKFLOW_OVERRIDES must match the verified audio/v10 mapping"
+    )
+if face_swap_enabled.strip().lower() != "true":
+    raise SystemExit("SCAIL2_PROD_FACE_SWAP_V10_ENABLED must stay true for prod v10")
+if not face_swap_api_url.strip():
+    raise SystemExit("SCAIL2_PROD_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL is required")
+if face_swap_workflow.strip() != "face_swap_v2.json":
+    raise SystemExit("SCAIL2_PROD_FACE_SWAP_V10_FACE_SWAP_WORKFLOW must be face_swap_v2.json")
+
+compose = yaml.safe_load(path.read_text()) or {}
+service = compose.get("services", {}).get(container_name)
+if not isinstance(service, dict):
+    raise SystemExit(f"compose service not found: {container_name}")
+environment = service.setdefault("environment", {})
+environment["SUPPORTED_TASK_TYPES"] = supported_task_types
+environment["TASK_TYPE_WORKFLOW_OVERRIDES"] = json.dumps(
+    overrides, ensure_ascii=False, separators=(",", ":")
+)
+environment["SCAIL2_FACE_SWAP_V10_ENABLED"] = "true"
+environment["SCAIL2_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL"] = face_swap_api_url
+environment["SCAIL2_FACE_SWAP_V10_FACE_SWAP_WORKFLOW"] = face_swap_workflow
+runtime = compose.setdefault("x-allbot-runtime", {})
+runtime["prod_scail2_supported_task_types"] = sorted(required_tasks)
+runtime["prod_scail2_workflow_overrides"] = overrides
+runtime["prod_scail2_face_swap_v10"] = {
+    "enabled": True,
+    "face_swap_comfy_api_url": face_swap_api_url,
+    "face_swap_workflow": face_swap_workflow,
+}
+path.write_text(yaml.safe_dump(compose, allow_unicode=True, sort_keys=False))
+PY
+}
+
 assert_prod_compose() {
   local file="$1"
   grep -q "RUNPOD_ENVIRONMENT: cloud-prod" "$file"
   grep -q "CENTRAL_API_URL: https://worker-central.aivison.it.com" "$file"
-  grep -q "SUPPORTED_TASK_TYPES: scail2_action_transfer,scail2_video_replacement" "$file"
+  grep -q "SUPPORTED_TASK_TYPES: scail2_action_transfer,scail2_video_replacement,scail2_face_swap_v2" "$file"
+  grep -q "SCAIL-2_Animation_multi-char_audio.api.json" "$file"
+  grep -q "SCAIL-2_Replacement_audio.api.json" "$file"
+  grep -q "SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json" "$file"
+  grep -q "SCAIL2_FACE_SWAP_V10_ENABLED: 'true'" "$file"
+  grep -q "SCAIL2_FACE_SWAP_V10_FACE_SWAP_WORKFLOW: face_swap_v2.json" "$file"
   grep -q "MINIO_RESULT_BUCKET: user-data-prod" "$file"
   grep -q "RUNPOD_MODEL_PREFIX: scail2/2026-06-17-test" "$file"
   grep -q "production_port_unchanged: true" "$file"

@@ -69,7 +69,7 @@ FSM 入口与过程中，当前推荐组合为：
 - 视频换脸
 - 返回主菜单
 
-`视频换人`、`动作迁移` 和云测试 Bot 的 `视频换脸` 由
+`视频换人`、`动作迁移` 和 SCAIL-2 `视频换脸` 由
 `src/handlers/fsm/scail2_video_fsm.py` 处理，状态流为：
 - `WAIT_REFERENCE_IMAGE`：只接收参考图片
 - `WAIT_MOTION_VIDEO`：接收 Telegram video 或 video document，驱动视频上限 40MB
@@ -81,7 +81,7 @@ FSM 入口与过程中，当前推荐组合为：
 `images=[reference_image_local_path, motion_video_local_path]`、`prompt`（可为空，服务层会补默认值）、`negative_prompt`、
 `duration`、`resolution=512x896`。正常结束、取消、超时、非法文件、全局菜单打断或下载后发现超限时，
 都必须清理临时文件和 `user_data["scail2_video_data"]`。旧 `face_video` FSM
-业务逻辑暂不删除，但测试环境的“视频换脸”菜单与 `/video_swap` 不再默认进入旧 720p/1024p 流程。
+业务逻辑暂不删除，但“视频换脸”菜单与 `/video_swap` 不再默认进入旧 720p/1024p 流程。
 
 ## 4. 关键实现约束
 ### 4.1 FSM 超时

@@ -209,7 +209,7 @@ scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod --with-db
 该脚本默认流程：
 1. 在远端写 `runtime/cloud-prod/GENERATION_MAINTENANCE`，并在正在运行的 `cloud-web-api-prod` / `cloud-tg-bot-prod` 内写 `/app/GENERATION_MAINTENANCE`，只阻止新生成任务提交。
 2. 等待 Central `comfy:queue:pending` 与 `comfy:queue:running` 同时清空；不取消任务、不退款、不清 Redis。
-3. `rsync` 同步本地代码到 `allbot-do-sgp1-control:/home/deploy/APP/All_bot`，默认不使用 `--delete`，并排除 `.env*`、`logs/`、`runtime/`、`backups/`、`node_modules/`、临时素材等本地数据目录。
+3. `rsync` 同步本地代码到 `allbot-do-sgp1-control:/home/deploy/APP/All_bot`，默认不使用 `--delete`，并排除 `.env*`、`logs/`、`runtime/`、`backups/`、`node_modules/`、`bin/cloudflared`、临时素材等本地数据目录。
 4. 默认不更新 `.env.cloud.prod`；只有显式传 `--sync-env --env-file FILE` 时才会先备份远端 env、同步并做 checksum 校验。
 5. 远端先执行 `scripts/safe_deploy_cloud_prod.sh --preflight-only`，再按 scope 执行控制面发布或单服务热修。
 6. 默认不启动/重建正式 Bot；如需 Bot，必须显式传 `--bot-mode auto|start|stop`，且执行前确认全网没有第二个生产 Telegram polling 实例。
@@ -282,6 +282,7 @@ SCAIL-2 的正式上线起始边界是“只更新云正式主控制面 + 正式
 正式 task type：
 - `scail2_action_transfer`：动作迁移，5s/8s，40/80 灵石
 - `scail2_video_replacement`：视频换人，5s/8s，40/80 灵石
+- `scail2_face_swap_v2`：视频换脸 v10 two-stage，5s/8s，40/80 灵石；仅由 gpu-002 LAN SCAIL-2 正式 worker 承接，正式 RunPod `scail2` 仍保持动作迁移/视频换人两任务。
 
 发布闸门：
 
@@ -310,7 +311,7 @@ scripts/lan_scail2_aio_prod.sh enable --execute
 - 旧 slot0 AIO agent：`lan_aio_prod_gpu002_gpu0_img2img_lora_01`
 - 旧 slot0 容器：`allbot-lan-aio-gpu-002-gpu0-img2img_lora-canary`
 
-渲染出的 compose 必须为 `RUNPOD_ENVIRONMENT=cloud-prod`、`CENTRAL_API_URL=https://worker-central.aivison.it.com`、`MINIO_*_BUCKET=user-data-prod`，并且不得出现 `cloud-test` / `user-data-test`。`start-disabled --execute` 会先 drain 旧 slot0 AIO 并等待其自然空闲，停止旧 slot0 容器后启动 SCAIL-2 disabled heartbeat；只有 `/system_stats`、`/object_info` 必需节点、模型枚举和 disabled heartbeat 全部通过后，才允许 `enable --execute`。
+渲染出的 compose 必须为 `RUNPOD_ENVIRONMENT=cloud-prod`、`CENTRAL_API_URL=https://worker-central.aivison.it.com`、`MINIO_*_BUCKET=user-data-prod`，声明 `SUPPORTED_TASK_TYPES=scail2_action_transfer,scail2_video_replacement,scail2_face_swap_v2`，并通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 绑定三份 audio/v10 workflow；`scail2_face_swap_v2` 必须开启 `SCAIL2_FACE_SWAP_V10_*` 预处理，先调用 `face_swap_v2.json` 生成换脸首帧。compose 不得出现 `cloud-test` / `user-data-test`。`start-disabled --execute` 会先 drain 旧 slot0 AIO 并等待其自然空闲，停止旧 slot0 容器后启动 SCAIL-2 disabled heartbeat；只有 `/system_stats`、`/object_info` 必需节点、模型枚举和 disabled heartbeat 全部通过后，才允许 `enable --execute`。
 
 控制面服务发布仍按单服务最小范围处理：
 

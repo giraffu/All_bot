@@ -59,8 +59,8 @@
 - 标准快速视频：修为档位和身份档位取并集；例如 `练气期 + 核心弟子` 可显示 `1024p` 和 `10s`。
 - 标准快速视频中 `1024p` 与 `10s` 互斥，选择其中一个时会自动避开另一个。
 - LTX 视频设置当前硬编码 `1280x704`，时长显示 `5s`、`10s`、`15s`、`20s`，未按修为/身份做差异化。
-- 视频换脸入口当前直接提供 `720p` / `1024p` 选择，未复用 `RESOLUTION_PERMISSIONS`。
-- 高负载限制：当系统队列 `queue_size > 200` 时，`外门弟子` 且修为为 `凡人` 或 `练气期` 的用户不能提交新任务；`筑基期` 及以上或 `内门弟子` 及以上不受该限制。
+- SCAIL-2 视频换脸 v10 固定 `512x896`，只开放 `5s=40` 灵石和 `8s=80` 灵石，未复用 `RESOLUTION_PERMISSIONS`。
+- 高负载限制：当系统队列 `queue_size > 300` 时，`外门弟子` 且修为为 `凡人` 或 `练气期` 的用户不能提交新任务；`筑基期` 及以上或 `内门弟子` 及以上不受该限制。
 - 并发限制：所有用户统一最多 `MAX_CONCURRENT_TASKS = 3` 个处理中任务。
 - 收藏上限当前由 `users_history_mutation_service._get_favorite_limit_for_identity()` 按 `current_user.current_identity` 字段计算，未复用 `PermissionIdentityPriorityService.get_user_identity()` 的过期回落逻辑。
 

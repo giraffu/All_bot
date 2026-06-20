@@ -479,6 +479,7 @@ sync_code() {
         --exclude=ton_payment_frontend/node_modules/
         --exclude=ton_payment_frontend/dist/
         --exclude=ton_payment_frontend/.vite/
+        --exclude=bin/cloudflared
         --exclude='*.pem'
     )
     if [ "$RSYNC_DELETE" = true ]; then

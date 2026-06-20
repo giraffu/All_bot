@@ -12,7 +12,9 @@ from src.core.exceptions import InsufficientCreditsError
 async def test_check_concurrency_lock_uses_explicit_dependencies():
     get_identity = AsyncMock(return_value="外门弟子")
     get_group = AsyncMock(return_value="凡人")
-    get_system_status = AsyncMock(return_value={"queue_size": 201})
+    get_system_status = AsyncMock(
+        return_value={"queue_size": billing_core.LOW_TIER_QUEUE_SIZE_LIMIT + 1}
+    )
     increment_concurrency = AsyncMock(return_value=1)
     decrement_concurrency = AsyncMock()
 
@@ -34,10 +36,44 @@ async def test_check_concurrency_lock_uses_explicit_dependencies():
 
     assert allowed is False
     assert "服务器繁忙" in message
+    assert f"超过 {billing_core.LOW_TIER_QUEUE_SIZE_LIMIT} 个" in message
     get_identity.assert_awaited_once_with(123)
     get_group.assert_awaited_once_with(123)
     get_system_status.assert_awaited_once()
     increment_concurrency.assert_not_awaited()
+    decrement_concurrency.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_check_concurrency_lock_allows_low_tier_at_queue_limit():
+    get_identity = AsyncMock(return_value="外门弟子")
+    get_group = AsyncMock(return_value="练气期")
+    get_system_status = AsyncMock(
+        return_value={"queue_size": billing_core.LOW_TIER_QUEUE_SIZE_LIMIT}
+    )
+    increment_concurrency = AsyncMock(return_value=1)
+    decrement_concurrency = AsyncMock()
+
+    dependencies = SimpleNamespace(
+        get_system_status_func=get_system_status,
+        get_user_identity_func=get_identity,
+        get_user_group_func=get_group,
+        calculate_user_priority_func=AsyncMock(),
+        increment_user_concurrency_func=increment_concurrency,
+        decrement_user_concurrency_func=decrement_concurrency,
+        deduct_credits_func=AsyncMock(),
+        add_credits_func=AsyncMock(),
+    )
+
+    allowed, message = await billing_core.check_concurrency_lock(
+        123,
+        dependencies=dependencies,
+    )
+
+    assert allowed is True
+    assert message == ""
+    get_system_status.assert_awaited_once()
+    increment_concurrency.assert_awaited_once_with(123)
     decrement_concurrency.assert_not_awaited()
 
 

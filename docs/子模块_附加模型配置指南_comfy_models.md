@@ -153,9 +153,9 @@
 
 ## 四、 SCAIL-2 视频生视频工作流
 
-SCAIL-2 当前是正式可用的视频生视频能力。正式环境仍保持两个既有 task type；
-云测试环境额外开放 `scail2_face_swap_v2`，用于把测试 Bot 的“视频换脸”切到
-SCAIL-2 FaceSwap v10 first-frame image-swap + replacement audio 候选，验收后再单独规划正式切换：
+SCAIL-2 当前是正式可用的视频生视频能力。正式 LAN slot0 worker 支持三个 task type；
+正式 RunPod `scail2` profile 仍只保持动作迁移/视频换人两任务。`scail2_face_swap_v2`
+使用 SCAIL-2 FaceSwap v10 first-frame image-swap + replacement audio 方案：
 
 | task type | 用户能力 | API workflow | 关键模式 |
 | :--- | :--- | :--- | :--- |
@@ -169,7 +169,7 @@ Nomadoor 的四个 UI workflow 仍保存在 `workers/comfy_agent/workflows/` 与
 
 ### 1. 用户参数与计费
 - Web payload 使用 `inputs.images=[reference_image_key, motion_video_key]`，第一个 input 是参考图，第二个 input 是驱动视频。
-- Bot 入口位于“视频生视频”二级菜单，顺序为“视频换人 / 动作迁移 / 视频换脸 / 返回主菜单”；云测试 Bot 的“视频换脸”入口走 `scail2_face_swap_v2`，旧 `face_video` FSM 仅保留兼容入口。
+- Bot 入口位于“视频生视频”二级菜单，顺序为“视频换人 / 动作迁移 / 视频换脸 / 返回主菜单”；Bot 的“视频换脸”入口走 `scail2_face_swap_v2`，旧 `face_video` FSM 仅保留兼容入口。
 - Bot 的 SCAIL-2 流程收参考图片、驱动视频、可选正向提示词和 `5s/8s` 时长；Bot 可点击跳过正向提示词，Web 可留空，空值由 `normalize_scail2_positive_prompt(...)` 按 task type 补默认提示词；负面词固定使用 `SCAIL2_DEFAULT_NEGATIVE_PROMPT`。
 - 驱动视频上传上限为 40MB；Web 侧也应按短视频能力限制上传体积，不开放长视频。
 - 固定输出规格为 `512x896`，第一版只开放 `5s=40` 灵石和 `8s=80` 灵石，不承诺 context-window 长视频。
@@ -195,7 +195,7 @@ audio 候选 workflow 的 `VHS_VideoCombine 49.inputs.audio` 应接 `VHS_LoadVid
 `SCAIL-2_*.api.json`、`mappings.json`、`workflow_task_patchers.py`、
 `src/workflow_mapping_validation.py`、`remote_workers/src/workflow_mapping_validation.py` 与
 `remote_workers/comfy_agent/workflows/`。
-测试视频换脸 v10 是 worker8 两阶段方案，不把 Flux2 图片换脸模型混装进 SCAIL-2 runtime：
+视频换脸 v10 是两阶段方案，不把 Flux2 图片换脸模型混装进 SCAIL-2 runtime：
 worker 先从驱动视频抽第一帧，调用 `192.168.1.226:8188` 的 `face_swap_v2.json`
 把用户参考脸换到该首帧，再把“换脸后的首帧”作为 `LoadImage 58` 提交给
 `SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json`。v10 workflow
