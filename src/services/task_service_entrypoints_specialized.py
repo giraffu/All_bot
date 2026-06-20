@@ -7,6 +7,7 @@ from src.constants import (
     MODE_FACE_VIDEO_STEP1,
     MODE_NAME_MAP,
     MODE_SCAIL2_ACTION_TRANSFER,
+    MODE_SCAIL2_FACE_SWAP_V2,
     MODE_SCAIL2_VIDEO_REPLACEMENT,
 )
 from src.core.video_billing import normalize_requested_duration_seconds
@@ -16,6 +17,7 @@ from src.domain_config.scail2_video import (
     get_scail2_cost,
     normalize_scail2_duration_seconds,
     normalize_scail2_negative_prompt,
+    normalize_scail2_positive_prompt,
 )
 from src.services.permission_service import permission_service
 from src.services.task_service_entrypoint_support import (
@@ -166,12 +168,14 @@ async def process_scail2_video_task(
     if task_type not in {
         MODE_SCAIL2_ACTION_TRANSFER,
         MODE_SCAIL2_VIDEO_REPLACEMENT,
+        MODE_SCAIL2_FACE_SWAP_V2,
     }:
         raise ValueError(f"Unsupported SCAIL-2 task type: {task_type}")
 
     internal_user_id = await resolve_internal_user_id(user_id, username)
 
     duration_seconds = normalize_scail2_duration_seconds(duration, strict=True)
+    normalized_prompt = normalize_scail2_positive_prompt(task_type, prompt)
     cost = get_scail2_cost(duration_seconds, strict=True)
     resolution = f"{SCAIL2_FIXED_WIDTH}x{SCAIL2_FIXED_HEIGHT}"
     mode_name_key = MODE_NAME_MAP[task_type]
@@ -209,7 +213,7 @@ async def process_scail2_video_task(
         ),
     )
     inputs = build_task_inputs(
-        prompt=prompt,
+        prompt=normalized_prompt,
         images=(
             [reference_image_path, motion_video_path]
             if reference_image_path and motion_video_path
@@ -236,7 +240,7 @@ async def process_scail2_video_task(
             username=username,
             task_type=task_type,
             inputs=inputs,
-            prompt=prompt,
+            prompt=normalized_prompt,
             is_video=True,
             source_post_id=source_post_id,
             message_spec=message_spec,

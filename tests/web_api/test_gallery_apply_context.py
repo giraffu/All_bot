@@ -583,6 +583,43 @@ async def test_get_apply_context_uses_default_scail2_negative_prompt_for_legacy_
 
 
 @pytest.mark.asyncio
+async def test_get_apply_context_supports_scail2_face_swap_v2_motion_template():
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-scail2-face",
+        type="scail2_face_swap_v2",
+        prompt="natural face swap",
+        input_file="uploads/reference.png|uploads/motion.mp4",
+        requested_duration=5,
+    )
+    post = GalleryPost(
+        id=2,
+        task_id="task-scail2-face",
+        media_type="video",
+        width=512,
+        height=896,
+        duration=5,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=post),
+            _FakeResult(many=[history]),
+        ]
+    )
+
+    response = await get_gallery_apply_context_payload(
+        post_id=2,
+        db=session,
+        build_input_file_url=lambda key: f"https://storage.test/{key}",
+    )
+
+    assert response.task_type == "scail2_face_swap_v2"
+    assert response.input_files == ["uploads/motion.mp4"]
+    assert response.negative_prompt == SCAIL2_DEFAULT_NEGATIVE_PROMPT
+
+
+@pytest.mark.asyncio
 async def test_get_apply_context_rejects_scail2_history_missing_motion_video():
     history = History(
         id=11,

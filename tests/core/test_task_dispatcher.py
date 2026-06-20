@@ -20,11 +20,16 @@ from src.constants import (
     MODE_IMAGE_TO_VIDEO_LITERAL,
     MODE_IMG2IMG_LORA,
     MODE_SCAIL2_ACTION_TRANSFER,
+    MODE_SCAIL2_FACE_SWAP_V2,
     MODE_SCAIL2_VIDEO_REPLACEMENT,
     MODE_TXT2IMG,
     MODE_WAN22_VIDEO_V2,
 )
-from src.domain_config.scail2_video import SCAIL2_DEFAULT_NEGATIVE_PROMPT
+from src.domain_config.scail2_video import (
+    SCAIL2_DEFAULT_NEGATIVE_PROMPT,
+    SCAIL2_FACE_SWAP_V2_DEFAULT_POSITIVE_PROMPT,
+    SCAIL2_VIDEO_REPLACEMENT_DEFAULT_POSITIVE_PROMPT,
+)
 
 
 def _patch_dispatch_image_service(monkeypatch, **methods):
@@ -55,6 +60,10 @@ def test_strategy_factory_returns_correct_strategy():
     strategy = StrategyFactory.get_strategy(MODE_SCAIL2_VIDEO_REPLACEMENT)
     assert isinstance(strategy, Scail2VideoStrategy)
     assert strategy.task_type == MODE_SCAIL2_VIDEO_REPLACEMENT
+
+    strategy = StrategyFactory.get_strategy(MODE_SCAIL2_FACE_SWAP_V2)
+    assert isinstance(strategy, Scail2VideoStrategy)
+    assert strategy.task_type == MODE_SCAIL2_FACE_SWAP_V2
 
     strategy = StrategyFactory.get_strategy(MODE_IMAGE_TO_VIDEO_LITERAL)
     assert isinstance(strategy, Wan22AioVideoStrategy)
@@ -219,6 +228,19 @@ def test_scail2_strategy_metadata_keeps_frame_count_and_mode():
     }
 
 
+def test_scail2_face_swap_v2_strategy_uses_replacement_mode():
+    strategy = StrategyFactory.get_strategy(MODE_SCAIL2_FACE_SWAP_V2)
+
+    metadata = strategy.get_metadata(
+        {
+            "saved_input_images": ["demo/ref.png", "demo/motion.mp4"],
+            "duration": 5,
+        }
+    )
+
+    assert metadata["scail2_replacement_mode"] is True
+
+
 def test_scail2_strategy_upload_paths_preserve_reference_then_motion_order():
     strategy = StrategyFactory.get_strategy(MODE_SCAIL2_ACTION_TRANSFER)
 
@@ -325,6 +347,57 @@ async def test_scail2_strategy_forwards_reference_video_prompt_and_duration(
         length=8,
         priority=7,
     )
+
+
+@pytest.mark.asyncio
+async def test_scail2_strategy_uses_default_prompt_when_prompt_is_empty(monkeypatch):
+    strategy = StrategyFactory.get_strategy(MODE_SCAIL2_VIDEO_REPLACEMENT)
+    submit_mock = AsyncMock(return_value="backend-task-id")
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_scail2_video_task=submit_mock,
+    )
+
+    result = await strategy.submit_task(
+        "task-1",
+        {
+            "prompt": "   ",
+            "saved_input_images": ["demo/ref.png", "demo/motion.mp4"],
+            "duration": 5,
+        },
+        priority=7,
+    )
+
+    assert result == "backend-task-id"
+    submit_mock.assert_awaited_once()
+    assert (
+        submit_mock.await_args.kwargs["prompt"]
+        == SCAIL2_VIDEO_REPLACEMENT_DEFAULT_POSITIVE_PROMPT
+    )
+
+
+@pytest.mark.asyncio
+async def test_scail2_face_swap_v2_keeps_default_prompt_constraints(monkeypatch):
+    strategy = StrategyFactory.get_strategy(MODE_SCAIL2_FACE_SWAP_V2)
+    submit_mock = AsyncMock(return_value="backend-task-id")
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_scail2_video_task=submit_mock,
+    )
+
+    await strategy.submit_task(
+        "task-1",
+        {
+            "prompt": "替换",
+            "saved_input_images": ["demo/ref.png", "demo/motion.mp4"],
+            "duration": 5,
+        },
+        priority=7,
+    )
+
+    prompt = submit_mock.await_args.kwargs["prompt"]
+    assert prompt.startswith(SCAIL2_FACE_SWAP_V2_DEFAULT_POSITIVE_PROMPT)
+    assert "Additional user guidance: 替换" in prompt
 
 
 @pytest.mark.asyncio

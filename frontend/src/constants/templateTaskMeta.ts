@@ -122,6 +122,14 @@ export const TEMPLATE_TASK_META_MAP: Record<TemplateApplyTaskType, TemplateTaskM
     legacyRouteName: 'CustomFeatures',
     legacyTitleKey: 'lab.cards.scail2_video_replacement_title',
     legacyCost: 40
+  }),
+  scail2_face_swap_v2: createMeta({
+    taskType: 'scail2_face_swap_v2',
+    supportMode: 'workbench',
+    panelKind: 'scail2Video',
+    legacyRouteName: 'CustomFeatures',
+    legacyTitleKey: 'lab.cards.scail2_face_swap_v2_title',
+    legacyCost: 40
   })
 }
 

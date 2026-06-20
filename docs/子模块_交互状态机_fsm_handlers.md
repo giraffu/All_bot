@@ -69,17 +69,19 @@ FSM 入口与过程中，当前推荐组合为：
 - 视频换脸
 - 返回主菜单
 
-`视频换人` 和 `动作迁移` 由 `src/handlers/fsm/scail2_video_fsm.py` 处理，状态流为：
+`视频换人`、`动作迁移` 和云测试 Bot 的 `视频换脸` 由
+`src/handlers/fsm/scail2_video_fsm.py` 处理，状态流为：
 - `WAIT_REFERENCE_IMAGE`：只接收参考图片
 - `WAIT_MOTION_VIDEO`：接收 Telegram video 或 video document，驱动视频上限 40MB
-- `WAIT_PROMPT`：接收正向提示词，空提示词拒绝
+- `WAIT_PROMPT`：接收正向提示词，或通过 inline button 跳过并使用 task type 默认提示词；空文本会提示用户点击跳过
 - `WAIT_DURATION`：inline keyboard 只允许 `5秒 · 40灵石` 或 `8秒 · 80灵石`
 
 该 FSM 不询问负面提示词，统一使用 `SCAIL2_DEFAULT_NEGATIVE_PROMPT`。提交时通过
 `process_scail2_video_task(...)` 进入 Bot task flow，inputs 与 Web 保持一致：
-`images=[reference_image_local_path, motion_video_local_path]`、`prompt`、`negative_prompt`、
+`images=[reference_image_local_path, motion_video_local_path]`、`prompt`（可为空，服务层会补默认值）、`negative_prompt`、
 `duration`、`resolution=512x896`。正常结束、取消、超时、非法文件、全局菜单打断或下载后发现超限时，
-都必须清理临时文件和 `user_data["scail2_video_data"]`。旧“视频换脸”FSM 业务逻辑保持不变，只移动到该二级菜单内。
+都必须清理临时文件和 `user_data["scail2_video_data"]`。旧 `face_video` FSM
+业务逻辑暂不删除，但测试环境的“视频换脸”菜单与 `/video_swap` 不再默认进入旧 720p/1024p 流程。
 
 ## 4. 关键实现约束
 ### 4.1 FSM 超时
@@ -104,5 +106,5 @@ FSM 入口与过程中，当前推荐组合为：
 - 覆盖 FSM 超时与主菜单打断
 - 覆盖完整参数收集后进入对应 Bot entrypoint 或 `run_bot_task_application(...)`
 - 覆盖 callback prefix 路由与统一兜底
-- 覆盖 SCAIL-2 两个入口 task type 映射、40MB 视频拦截、5s/8s 时长按钮、默认负面词和临时文件清理。
+- 覆盖 SCAIL-2 入口 task type 映射、40MB 视频拦截、5s/8s 时长按钮、默认负面词和临时文件清理；测试环境还需覆盖 `scail2_face_swap_v2`。
 - 若 PTB 某些配置会触发已知 warning，测试需显式说明它是“预期行为”还是“应修复行为”

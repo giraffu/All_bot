@@ -40,6 +40,7 @@ export function useTaskFormat() {
       'wan22_video_v2': '图生视频 v2',
       'scail2_video_replacement': '视频换人',
       'scail2_action_transfer': '动作迁移',
+      'scail2_face_swap_v2': '视频换脸',
       'template_contribute': '模板共建',
       'txt2img': '文生图',
       't2i-pornmaster-turbo': '文生图'

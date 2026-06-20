@@ -100,6 +100,11 @@ def test_filter_scail2_candidates_keeps_only_target_task_types():
             "internal_user_id": 1001,
             "submission_context": {"task_type": "scail2_video_replacement"},
         },
+        "task-4": {
+            "backend_task_id": "backend-4",
+            "internal_user_id": 1001,
+            "submission_context": {"task_type": "scail2_face_swap_v2"},
+        },
     }
 
     candidates = recovery.filter_scail2_candidates(
@@ -110,6 +115,7 @@ def test_filter_scail2_candidates_keeps_only_target_task_types():
     assert [candidate.registry_task_id for candidate in candidates] == [
         "task-1",
         "task-3",
+        "task-4",
     ]
 
 

@@ -157,6 +157,7 @@
     "face_video": "Video FaceSwap",
     "scail2_video_replacement": "Video Replacement",
     "scail2_action_transfer": "Action Transfer",
+    "scail2_face_swap_v2": "Video Face Swap",
     "t2i_pornmaster_turbo": "Text2Img"
   },
   "api": {
@@ -237,9 +238,10 @@
       "img2video_group": "Img2Video",
       "img2video": "Img2Video (Addon)",
       "high_res_video": "High-Res Video",
-      "wan22_video_v2": "Img2Video V2",
-      "scail2_action_transfer": "Action Transfer",
-      "scail2_video_replacement": "Video Replacement"
+    "wan22_video_v2": "Img2Video V2",
+    "scail2_action_transfer": "Action Transfer",
+    "scail2_video_replacement": "Video Replacement",
+    "scail2_face_swap_v2": "Video Face Swap"
     },
     "filters": {
       "all": "All",
@@ -423,7 +425,9 @@
       "scail2_action_transfer_title": "Action Transfer",
       "scail2_action_transfer_desc": "Upload a reference image and motion video to animate the reference character.",
       "scail2_video_replacement_title": "Video Replacement",
-      "scail2_video_replacement_desc": "Upload a reference person and motion video to replace the performer while keeping the shot."
+      "scail2_video_replacement_desc": "Upload a reference person and motion video to replace the performer while keeping the shot.",
+      "scail2_face_swap_v2_title": "Video Face Swap",
+      "scail2_face_swap_v2_desc": "Upload a reference face and motion video to generate with SCAIL-2 FaceSwap v2."
     },
     "workbench": {
       "eyebrow": "Unified Creative Workbench",
@@ -506,7 +510,7 @@
       "cost_hints": {
         "edit": "Custom Edit supports dual-image fusion. Uploading the second image raises the cost to 6 credits.",
         "custom_video": "Img2Video supports 5s/8s/10s clips and is priced by resolution and duration.",
-        "face_video": "Video Face Swap is priced by resolution: 720p costs 18 credits, 1024p costs 36 credits.",
+        "face_video": "Video Face Swap v2 is fixed at 512x896: 5s costs 40 credits, 8s costs 80 credits.",
         "ltx_video": "High-Res Video uses fixed 1280x704 output; longer duration costs more.",
         "wan22_video_v2": "Img2Video V2 supports 5s/8s/10s clips and is priced by resolution and duration.",
         "scail2_video": "This mode is fixed at 512x896: 5s costs 40 credits, 8s costs 80 credits."
@@ -523,8 +527,9 @@
         "edit": "Describe how AI should edit the image, for example: change the background to a beach, add sunglasses, and make it feel like a cinematic still.",
         "txt2img": "Describe the image you want directly, for example: cinematic portrait, moonlight, detailed face, soft rim light, realistic skin.",
         "video": "Describe the motion and camera movement, for example: the subject smiles and turns, hair moves in the wind, camera slowly pushes in.",
-        "scail2_action_transfer": "Briefly describe the reference character and action, for example: natural dancing motion with a stable camera.",
-        "scail2_video_replacement": "Briefly describe the replaced scene, for example: the reference person appears in the original video setting."
+        "scail2_action_transfer": "Leave blank to use the default prompt, or add guidance such as natural motion and stable framing.",
+        "scail2_video_replacement": "Leave blank to use the default prompt, or add guidance such as natural motion and preserved background.",
+        "scail2_face_swap_v2": "Leave blank to use the default prompt, or add guidance such as a natural face blend."
       },
       "validation": {
         "upload_first": "Please add a reference image first",
@@ -628,6 +633,7 @@
     "video_insert": "🎬 Video Insert",
     "video_edit": "🎬 Video Edit",
     "face_video": "🎬 Video Face Swap",
+    "scail2_face_swap_v2": "🎬 Video Face Swap",
     "ltx_video": "🎬 High-Res Video",
     "t2i_pornmaster_turbo": "🎨 Text2Img",
     "custom_video": "🎬 Img2Video",
@@ -660,6 +666,7 @@
     "mode_wan22_video_v2": "Img2Video V2",
     "mode_scail2_action_transfer": "Action Transfer",
     "mode_scail2_video_replacement": "Video Replacement",
+    "mode_scail2_face_swap_v2": "Video Face Swap",
     "mode_video_lora": "Img2Video",
     "mode_template_contribute": "Template Contribute",
     "mode_none": "No Mode",
@@ -763,10 +770,12 @@
     "scail2_video": {
       "start": "🎬 **Entered {mode_name} mode**\n\nV1 is fixed at 512x896 and only supports 5s/8s. 5s costs {cost} credits.\n\n**Step 1:** Send one reference image.\n\nYou can send /cancel anytime to exit.",
       "reference_received": "✅ **Reference image received!**\n\n**Step 2:** Send the motion video (max {max_mb}MB).\n\nA clear 5-8 second subject video is recommended.",
-      "video_received": "✅ **Motion video received!**\n\n**Step 3:** Send the positive prompt describing the target character, style, and visual result.",
-      "prompt_only": "⚠️ Please send the prompt as text.",
-      "empty_prompt": "⚠️ The prompt cannot be empty. Describe the result you want to generate.",
+      "video_received": "✅ **Motion video received!**\n\n**Step 3:** Send a positive prompt, or tap the button below to use the default prompt.",
+      "prompt_only": "⚠️ Please send the prompt as text, or tap the button below to skip it.",
+      "empty_prompt": "⚠️ To use the default prompt, tap “Skip Positive Prompt”.",
       "prompt_received": "✅ **Prompt received!**\n\nChoose the generation duration:",
+      "prompt_skipped": "✅ **Positive prompt skipped!**\n\nThe workflow default prompt will be used.\n\nChoose the generation duration:",
+      "skip_prompt_button": "Skip Positive Prompt",
       "duration_button": "{duration}s · {cost} credits",
       "cancel_button": "❌ Cancel",
       "cancelled_short": "🚫 Video-to-video flow cancelled.",

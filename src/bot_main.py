@@ -8,7 +8,7 @@ import httpx
 from asgi_correlation_id import correlation_id
 
 # ================= PATCH TELEGRAM FILE DOWNLOAD =================
-from telegram import File, Update
+from telegram import File, Poll, Update
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -85,6 +85,24 @@ async def custom_download_to_drive(
 
 File.download_to_drive = custom_download_to_drive
 # ================================================================
+
+# ================= PATCH TELEGRAM POLL COMPAT =================
+original_poll_de_json = Poll.de_json
+
+
+def patch_poll_members_only_default():
+    @classmethod
+    def de_json_with_members_only_default(cls, data, bot=None):
+        if isinstance(data, dict) and "members_only" not in data:
+            data = dict(data)
+            data["members_only"] = False
+        return original_poll_de_json(data, bot)
+
+    Poll.de_json = de_json_with_members_only_default
+
+
+patch_poll_members_only_default()
+# ==============================================================
 
 
 async def clean_zombies_loop(bot=None):

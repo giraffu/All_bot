@@ -6,6 +6,7 @@ from src.constants import MODE_VIDEO_LORA, MODE_WAN22_VIDEO_V2
 from src.database.models import History
 from src.domain_config.scail2_video import (
     SCAIL2_ACTION_TRANSFER_TASK_TYPE,
+    SCAIL2_FACE_SWAP_V2_TASK_TYPE,
     SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
 )
 from src.services.submission_ban_service import (
@@ -50,6 +51,7 @@ DEFAULT_GALLERY_ALLOWED_TYPE_CONFIGS = [
     (MODE_WAN22_VIDEO_V2, "task.mode_wan22_video_v2"),
     (SCAIL2_ACTION_TRANSFER_TASK_TYPE, "task.mode_scail2_action_transfer"),
     (SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE, "task.mode_scail2_video_replacement"),
+    (SCAIL2_FACE_SWAP_V2_TASK_TYPE, "task.mode_scail2_face_swap_v2"),
 ]
 
 APPLY_CONTEXT_ALLOW_INPUT_REUSE_TASK_TYPES = {
@@ -57,6 +59,7 @@ APPLY_CONTEXT_ALLOW_INPUT_REUSE_TASK_TYPES = {
     "face_video",
     SCAIL2_ACTION_TRANSFER_TASK_TYPE,
     SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
+    SCAIL2_FACE_SWAP_V2_TASK_TYPE,
 }
 
 

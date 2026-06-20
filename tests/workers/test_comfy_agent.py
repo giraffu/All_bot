@@ -229,7 +229,7 @@ def test_wan22_result_pick_prefers_video_over_images(monkeypatch):
 
 @pytest.mark.parametrize(
     "task_type",
-    ["scail2_action_transfer", "scail2_video_replacement"],
+    ["scail2_action_transfer", "scail2_video_replacement", "scail2_face_swap_v2"],
 )
 def test_scail2_result_pick_prefers_video_over_temp_images(monkeypatch, task_type):
     module = build_agent_module(monkeypatch)

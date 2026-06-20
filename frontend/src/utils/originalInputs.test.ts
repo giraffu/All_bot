@@ -34,7 +34,7 @@ describe('resolveOriginalInputPreviews', () => {
 
   it('labels SCAIL-2 reference image and motion video', () => {
     const previews = resolveOriginalInputPreviews({
-      task_type: 'scail2_action_transfer',
+      task_type: 'scail2_face_swap_v2',
       input_file: 'uploads/reference.png|uploads/motion.mp4',
       input_file_urls: ['https://cdn.test/reference.png', 'https://cdn.test/motion.mp4'],
     }, t)

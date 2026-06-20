@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from src.constants import MODE_IMAGE_TO_VIDEO
 from src.database.models import GalleryPost, History, User
+from src.domain_config.scail2_video import SCAIL2_FACE_SWAP_V2_TASK_TYPE
 from src.lora_catalog import IMAGE_LORA_MODELS, VIDEO_LORA_MODELS
 
 GALLERY_LORA_MODEL_NONE = "__none__"
@@ -65,7 +66,9 @@ def _apply_task_type_or_category_filter(
     if category == "i2ipro":
         return query.where(History.type == "i2i_pro")
     if category == "faceswap":
-        return query.where(History.type.in_(["face_video"]))
+        return query.where(
+            History.type.in_(["face_video", SCAIL2_FACE_SWAP_V2_TASK_TYPE])
+        )
     if category == "edit":
         return query.where(History.type.in_(["edit", "quick_image"]))
     if category == "imglora":

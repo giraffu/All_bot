@@ -22,7 +22,6 @@ from src.services.fsm_temp_file_service import (
 from src.utils import create_background_task, robust_edit_text, robust_reply_text
 import contextlib
 
-from src.filters.i18n_filter import I18nFilter
 from src.i18n.translator import get_text
 
 logger = logging.getLogger("fsm.face_video")
@@ -355,8 +354,6 @@ def get_face_video_fsm_handler() -> ConversationHandler:
     """Factory to build the Face Video ConversationHandler."""
     return ConversationHandler(
         entry_points=[
-            CommandHandler("video_swap", start_face_video),
-            MessageHandler(I18nFilter("menu.face_video"), start_face_video),
             CallbackQueryHandler(start_face_video, pattern="^fsm_start_face_video$"),
         ],
         states={

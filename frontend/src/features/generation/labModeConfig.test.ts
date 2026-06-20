@@ -18,8 +18,9 @@ describe('labModeConfig', () => {
   it('configures scail2 modes with reference image and motion video slots', () => {
     const actionTransfer = getLabModeConfig('scail2_action_transfer')
     const replacement = getLabModeConfig('scail2_video_replacement')
+    const faceSwapV2 = getLabModeConfig('scail2_face_swap_v2')
 
-    for (const mode of [actionTransfer, replacement]) {
+    for (const mode of [actionTransfer, replacement, faceSwapV2]) {
       expect(mode.supportsUpload).toBe(false)
       expect(mode.supportsVideoOptions).toBe(true)
       expect(mode.supportsResolutionOptions).toBe(false)
@@ -34,6 +35,7 @@ describe('labModeConfig', () => {
   it('resolves scail2 task types and duration pricing', () => {
     expect(resolveLabModeIdFromTaskType('scail2_action_transfer')).toBe('scail2_action_transfer')
     expect(resolveLabModeIdFromTaskType('scail2_video_replacement')).toBe('scail2_video_replacement')
+    expect(resolveLabModeIdFromTaskType('scail2_face_swap_v2')).toBe('scail2_face_swap_v2')
     expect(SCAIL2_VIDEO_DURATION_OPTIONS.map(option => option.value)).toEqual(['5', '8'])
     expect(getScail2VideoCost('5')).toBe(40)
     expect(getScail2VideoCost('8s')).toBe(80)

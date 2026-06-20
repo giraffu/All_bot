@@ -72,6 +72,7 @@ SCAIL2_TASK_TYPES = frozenset(
     {
         "scail2_action_transfer",
         "scail2_video_replacement",
+        "scail2_face_swap_v2",
     }
 )
 DEFAULT_CHECKPOINT_KEY = "scail2_history_delivery_recovery_20260618"

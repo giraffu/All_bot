@@ -17,6 +17,7 @@ export type UnifiedLabModeId =
   | 'wan22_video_v2'
   | 'scail2_action_transfer'
   | 'scail2_video_replacement'
+  | 'scail2_face_swap_v2'
 
 export type LegacyLabModeId = never
 
@@ -402,6 +403,48 @@ export const LAB_MODE_CONFIGS: LabModeConfig[] = [
     ],
   },
   {
+    id: 'scail2_face_swap_v2',
+    taskType: 'scail2_face_swap_v2',
+    titleKey: 'lab.cards.scail2_face_swap_v2_title',
+    descriptionKey: 'lab.cards.scail2_face_swap_v2_desc',
+    kindKey: 'lab.workbench.mode_kinds.video',
+    baseCost: 40,
+    promptPlaceholderKey: 'lab.workbench.prompt_placeholders.scail2_face_swap_v2',
+    promptTarget: 'inputs',
+    submitLabelKey: 'lab.workbench.submit_video',
+    maxImages: 0,
+    supportsUpload: false,
+    supportsEditLora: false,
+    supportsVideoOptions: true,
+    supportsVideoLora: false,
+    supportsDurationOptions: true,
+    supportsNegativePrompt: true,
+    supportsResolutionOptions: false,
+    supportsAdvancedOptions: true,
+    promptRequired: false,
+    unified: true,
+    uploadSlots: [
+      {
+        id: 'reference_image',
+        labelKey: 'lab.workbench.upload_slots.reference_image',
+        hintKey: 'lab.workbench.upload_slot_hints.reference_image',
+        buttonKey: 'lab.workbench.upload_slot_buttons.reference_image',
+        accept: 'image/png,image/jpeg,image/webp',
+        previewKind: 'image',
+        required: true,
+      },
+      {
+        id: 'motion_video',
+        labelKey: 'lab.workbench.upload_slots.motion_video',
+        hintKey: 'lab.workbench.upload_slot_hints.motion_video',
+        buttonKey: 'lab.workbench.upload_slot_buttons.motion_video',
+        accept: 'video/mp4,video/quicktime,video/webm',
+        previewKind: 'video',
+        required: true,
+      },
+    ],
+  },
+  {
     id: 'ltx_video',
     taskType: 'ltx_video',
     titleKey: 'lab.cards.high_res_video_title',
@@ -481,6 +524,8 @@ export const resolveLabModeIdFromTaskType = (taskType: string | null | undefined
       return 'scail2_action_transfer'
     case 'scail2_video_replacement':
       return 'scail2_video_replacement'
+    case 'scail2_face_swap_v2':
+      return 'scail2_face_swap_v2'
     case 'img2img_lora':
     case 'edit':
     default:

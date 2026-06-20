@@ -7,6 +7,7 @@ from telegram.ext import ConversationHandler
 
 from src.constants import (
     MODE_SCAIL2_ACTION_TRANSFER,
+    MODE_SCAIL2_FACE_SWAP_V2,
     MODE_SCAIL2_VIDEO_REPLACEMENT,
 )
 from src.handlers import prompt_router
@@ -110,11 +111,11 @@ def test_global_menu_filter_includes_video_to_video_and_keeps_face_video_compat(
     )
 
 
-def test_scail2_video_fsm_exposes_two_menu_entrypoints():
+def test_scail2_video_fsm_exposes_video_to_video_and_face_swap_entrypoints():
     handler = scail2_video_fsm.get_scail2_video_fsm_handler()
 
     assert handler.name == "scail2_video_fsm"
-    assert len(handler.entry_points) == 2
+    assert len(handler.entry_points) == 4
 
 
 def test_scail2_video_cancel_is_routed_to_fallback_not_state_catchalls():
@@ -152,6 +153,25 @@ async def test_start_action_transfer_initializes_mode(monkeypatch):
     assert (
         context.user_data["scail2_video_data"]["task_type"]
         == MODE_SCAIL2_ACTION_TRANSFER
+    )
+    reply_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_start_face_swap_v2_initializes_new_task_type(monkeypatch):
+    reply_mock = AsyncMock()
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(scail2_video_fsm, "robust_reply_text", reply_mock)
+
+    update = SimpleNamespace(message=_build_message())
+    context = _build_context()
+
+    result = await scail2_video_fsm.start_face_swap_v2(update, context)
+
+    assert result == scail2_video_fsm.Scail2VideoState.WAIT_REFERENCE_IMAGE
+    assert (
+        context.user_data["scail2_video_data"]["task_type"]
+        == MODE_SCAIL2_FACE_SWAP_V2
     )
     reply_mock.assert_awaited_once()
 
@@ -202,6 +222,72 @@ async def test_duration_selection_schedules_video_replacement_task(monkeypatch):
     assert scheduled[2]["duration"] == 8
     assert "in_conversation" not in context.user_data
     assert "scail2_video_data" not in context.user_data
+
+
+@pytest.mark.asyncio
+async def test_skip_prompt_moves_to_duration_with_empty_prompt(monkeypatch):
+    edit_mock = AsyncMock()
+    context = _build_context(
+        in_conversation="SCAIL2_VIDEO",
+        scail2_video_data={
+            "task_type": MODE_SCAIL2_FACE_SWAP_V2,
+            "reference_image_path": "/tmp/ref.png",
+            "motion_video_path": "/tmp/motion.mp4",
+        },
+    )
+    query = _build_query("fsm_scail2_skip_prompt")
+    update = SimpleNamespace(callback_query=query)
+
+    monkeypatch.setattr(scail2_video_fsm, "robust_edit_text", edit_mock)
+
+    result = await scail2_video_fsm.skip_prompt(update, context)
+
+    assert result == scail2_video_fsm.Scail2VideoState.WAIT_DURATION
+    assert context.user_data["scail2_video_data"]["prompt"] == ""
+    query.answer.assert_awaited_once()
+    edit_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_duration_selection_allows_skipped_prompt(monkeypatch):
+    edit_mock = AsyncMock()
+    create_background_task_mock = Mock()
+    context = _build_context(
+        in_conversation="SCAIL2_VIDEO",
+        scail2_video_data={
+            "task_type": MODE_SCAIL2_FACE_SWAP_V2,
+            "reference_image_path": "/tmp/ref.png",
+            "motion_video_path": "/tmp/motion.mp4",
+            "prompt": "",
+        },
+    )
+    query = _build_query("fsm_scail2_duration_5")
+    update = SimpleNamespace(callback_query=query)
+
+    monkeypatch.setattr(scail2_video_fsm, "robust_edit_text", edit_mock)
+    monkeypatch.setattr(
+        scail2_video_fsm.permission_service,
+        "check_quota",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        scail2_video_fsm,
+        "process_scail2_video_task",
+        lambda *args, **kwargs: ("bg-task", args, kwargs),
+    )
+    monkeypatch.setattr(
+        scail2_video_fsm,
+        "create_background_task",
+        create_background_task_mock,
+    )
+
+    result = await scail2_video_fsm.process_duration_selection(update, context)
+
+    assert result == ConversationHandler.END
+    scheduled = create_background_task_mock.call_args.args[1]
+    assert scheduled[2]["task_type"] == MODE_SCAIL2_FACE_SWAP_V2
+    assert scheduled[2]["prompt"] == ""
+    assert scheduled[2]["duration"] == 5
 
 
 @pytest.mark.asyncio

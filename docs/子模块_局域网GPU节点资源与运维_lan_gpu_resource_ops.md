@@ -61,7 +61,7 @@
 
 `video_insert` / `video_edit` 在 worker 能力列表中只表示 legacy alias，canonical 执行面类型是 `image_to_video`。排障或扩容时不要为它们新建独立 workflow、模型 profile 或 RunPod manifest。
 
-SCAIL-2 动作迁移 / 视频换人有测试与正式两条 gpu-002/8190 链路，不能混用桶和 worker。云测试链路由 `cloud_worker_test_08` 指向 LAN AIO SCAIL-2 runtime `http://192.168.1.2:8190`，声明 `scail2_action_transfer,scail2_video_replacement`；测试 runtime 容器 `allbot-lan-aio-gpu-002-gpu0-scail2-test` 本身只跑 ComfyUI、模型同步与 workflow 资产，不注册 Central worker。云正式低影响发布由 `scripts/lan_scail2_aio_prod.sh` 启动 slot0 agent `lan_aio_prod_gpu002_gpu0_scail2_01` 和容器 `allbot-lan-aio-gpu-002-gpu0-scail2-prod`，必须写正式 Central 与 `user-data-prod`，不要把它误判为 `cloud-prod-comfy-agent-6` 或测试 `cloud_worker_test_08` 能力。
+SCAIL-2 动作迁移 / 视频换人 / 测试视频换脸 v2 有测试与正式两条 gpu-002/8190 链路，不能混用桶和 worker。云测试链路由 `cloud_worker_test_08` 指向 LAN AIO SCAIL-2 runtime `http://192.168.1.2:8190`，可声明 `scail2_action_transfer,scail2_video_replacement,scail2_face_swap_v2` 并通过测试 env 覆盖到 audio workflow；当前测试视频换脸覆盖到 `SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json`，并由 worker8 先调用 `192.168.1.226:8188` 的 `face_swap_v2.json` 对驱动视频第一帧做图片换脸。测试 runtime 容器 `allbot-lan-aio-gpu-002-gpu0-scail2-test` 本身只跑 ComfyUI、模型同步与 workflow 资产，不注册 Central worker。云正式低影响发布由 `scripts/lan_scail2_aio_prod.sh` 启动 slot0 agent `lan_aio_prod_gpu002_gpu0_scail2_01` 和容器 `allbot-lan-aio-gpu-002-gpu0-scail2-prod`，当前正式能力仍是动作迁移/视频换人，必须写正式 Central 与 `user-data-prod`，不要把它误判为测试 `cloud_worker_test_08` 能力。
 
 所有 worker 挂载：
 - `/home/hfy/APP/All_bot/workers/comfy_agent/workflows -> /app/worker/workflows`

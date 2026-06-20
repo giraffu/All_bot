@@ -3,6 +3,10 @@ from pathlib import Path
 
 import pytest
 
+from src.domain_config.scail2_video import (
+    SCAIL2_FACE_SWAP_V2_DEFAULT_POSITIVE_PROMPT,
+    SCAIL2_VIDEO_REPLACEMENT_DEFAULT_POSITIVE_PROMPT,
+)
 from src.workflow_mapping_validation import WorkflowMappingValidationError
 from workers.comfy_agent.workflow_patcher import WorkflowPatcher
 
@@ -26,6 +30,7 @@ def test_workflow_patcher_validates_real_worker_workflows_on_init():
     [
         ("scail2_action_transfer", False, 129),
         ("scail2_video_replacement", True, 129),
+        ("scail2_face_swap_v2", True, 129),
     ],
 )
 def test_workflow_patcher_overrides_scail2_runtime_parameters(
@@ -53,7 +58,12 @@ def test_workflow_patcher_overrides_scail2_runtime_parameters(
     assert patched["113"]["inputs"]["force_rate"] == 16
     assert patched["113"]["inputs"]["frame_load_cap"] == frame_count
     assert patched["113"]["inputs"]["skip_first_frames"] == 0
-    assert patched["6"]["inputs"]["text"] == "dance naturally"
+    if task_type == "scail2_face_swap_v2":
+        prompt = patched["6"]["inputs"]["text"]
+        assert prompt.startswith(SCAIL2_FACE_SWAP_V2_DEFAULT_POSITIVE_PROMPT)
+        assert "Additional user guidance: dance naturally" in prompt
+    else:
+        assert patched["6"]["inputs"]["text"] == "dance naturally"
     assert patched["7"]["inputs"]["text"] == "blur"
     assert patched["101"]["inputs"]["width"] == 512
     assert patched["101"]["inputs"]["height"] == 896
@@ -62,6 +72,44 @@ def test_workflow_patcher_overrides_scail2_runtime_parameters(
     assert patched["107"]["inputs"]["replacement_mode"] is replacement_mode
     assert patched["49"]["inputs"]["frame_rate"] == 16
     assert patched["49"]["inputs"]["filename_prefix"].startswith(f"{task_type}_")
+
+
+def test_workflow_patcher_uses_scail2_default_prompt_when_empty():
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
+    workflow = patcher.load_workflow("scail2_video_replacement")
+
+    patched = patcher.patch_workflow(
+        "scail2_video_replacement",
+        workflow,
+        {
+            "image": "reference.png",
+            "video": "motion.mp4",
+            "prompt": "",
+            "length": 5,
+        },
+    )
+
+    assert patched["6"]["inputs"]["text"] == SCAIL2_VIDEO_REPLACEMENT_DEFAULT_POSITIVE_PROMPT
+
+
+def test_workflow_patcher_preserves_faceswap_default_constraints_with_user_prompt():
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
+    workflow = patcher.load_workflow("scail2_face_swap_v2")
+
+    patched = patcher.patch_workflow(
+        "scail2_face_swap_v2",
+        workflow,
+        {
+            "image": "reference.png",
+            "video": "motion.mp4",
+            "prompt": "替换",
+            "length": 5,
+        },
+    )
+
+    prompt = patched["6"]["inputs"]["text"]
+    assert prompt.startswith(SCAIL2_FACE_SWAP_V2_DEFAULT_POSITIVE_PROMPT)
+    assert "Additional user guidance: 替换" in prompt
 
 
 def test_workflow_patcher_rejects_missing_mapped_input(tmp_path):

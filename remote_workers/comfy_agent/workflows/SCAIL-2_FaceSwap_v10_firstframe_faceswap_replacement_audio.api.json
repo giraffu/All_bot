@@ -35,7 +35,7 @@
       ],
       "frame_rate": 16,
       "loop_count": 0,
-      "filename_prefix": "scail2_face_swap_v2",
+      "filename_prefix": "scail2_face_swap_v10_firstframe_faceswap_replacement",
       "format": "video/h264-mp4",
       "pingpong": false,
       "save_output": true,
@@ -63,7 +63,7 @@
         "110",
         1
       ],
-      "text": "face"
+      "text": "human"
     }
   },
   "115": {
@@ -73,7 +73,7 @@
         "110",
         1
       ],
-      "text": "face"
+      "text": "human"
     }
   },
   "112": {
@@ -92,7 +92,7 @@
         0
       ],
       "detection_threshold": 0.5,
-      "max_objects": 1,
+      "max_objects": 0,
       "detect_interval": 1
     }
   },
@@ -191,7 +191,7 @@
         0
       ],
       "detection_threshold": 0.5,
-      "max_objects": 1,
+      "max_objects": 0,
       "detect_interval": 1
     }
   },
@@ -219,7 +219,7 @@
         "38",
         0
       ],
-      "text": "Video face swap v2. Preserve the driving video body, clothing, pose, hands, camera framing, lighting, background, and motion. Replace only the visible face identity with the reference image. Keep the original expression direction and head motion from the driving video. Natural skin blending, photorealistic, temporally consistent, high detail."
+      "text": "Replace the main tracked subject in the driving video with the reference image subject. Preserve the driving video's pose, hands, camera framing, lighting, background, and motion. Natural compositing, photorealistic, temporally consistent, high detail."
     }
   },
   "3": {

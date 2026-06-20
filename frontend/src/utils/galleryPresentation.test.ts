@@ -32,6 +32,7 @@ describe('resolveGalleryTaskTypeLabel', () => {
 
     expect(resolveGalleryTaskTypeLabel('scail2_action_transfer', t)).toBe('动作迁移')
     expect(resolveGalleryTaskTypeLabel('scail2_video_replacement', t)).toBe('视频换人')
+    expect(resolveGalleryTaskTypeLabel('scail2_face_swap_v2', t)).toBe('视频换脸')
   })
 })
 

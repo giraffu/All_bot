@@ -106,7 +106,9 @@ const DEFAULT_EDIT_LORA_STRENGTH = 1
 export const SCAIL2_VIDEO_UPLOAD_MAX_SIZE_BYTES = 40 * 1024 * 1024
 export const SCAIL2_VIDEO_UPLOAD_MAX_SIZE_LABEL = '40MB'
 const isScail2ModeId = (modeId: UnifiedLabModeId) => (
-  modeId === 'scail2_action_transfer' || modeId === 'scail2_video_replacement'
+  modeId === 'scail2_action_transfer'
+  || modeId === 'scail2_video_replacement'
+  || modeId === 'scail2_face_swap_v2'
 )
 const WAN22_CHAIN_ERROR_KEYS: Record<Wan22ChainPrefillErrorReason, string> = {
   history_empty: 'lab.workbench.wan22_chain_errors.history_empty',

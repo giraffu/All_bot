@@ -13,6 +13,7 @@ export type TemplateApplyTaskType =
   | 'ltx_video'
   | 'scail2_action_transfer'
   | 'scail2_video_replacement'
+  | 'scail2_face_swap_v2'
 
 export type TemplateApplySupportMode = 'workbench' | 'legacy' | 'unknown'
 export type TemplateApplyPreferredMode = 'workbench' | 'legacy'

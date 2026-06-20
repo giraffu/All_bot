@@ -5,6 +5,7 @@ from pydantic import BaseModel, field_validator
 
 from src.domain_config.scail2_video import (
     SCAIL2_ACTION_TRANSFER_TASK_TYPE,
+    SCAIL2_FACE_SWAP_V2_TASK_TYPE,
     SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
     Scail2DurationError,
     normalize_scail2_duration_seconds,
@@ -34,6 +35,7 @@ class TaskType(str, Enum):
     WAN22_VIDEO_V2 = "wan22_video_v2"
     SCAIL2_ACTION_TRANSFER = SCAIL2_ACTION_TRANSFER_TASK_TYPE
     SCAIL2_VIDEO_REPLACEMENT = SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE
+    SCAIL2_FACE_SWAP_V2 = SCAIL2_FACE_SWAP_V2_TASK_TYPE
 
 
 class TaskResponse(BaseModel):

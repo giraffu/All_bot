@@ -94,6 +94,49 @@ describe('buildGenerationTaskPayload', () => {
     })
   })
 
+  it('builds scail2 face swap v2 payload with the same SCAIL-2 input contract', () => {
+    expect(
+      buildGenerationTaskPayload({
+        taskType: 'scail2_face_swap_v2',
+        images: ['reference-face-key', 'motion-video-key'],
+        duration: 8,
+        prompt: 'natural face swap',
+        negativePrompt: 'blur',
+        promptTarget: 'inputs',
+      }),
+    ).toEqual({
+      task_type: 'scail2_face_swap_v2',
+      inputs: {
+        images: ['reference-face-key', 'motion-video-key'],
+        duration: 8,
+        prompt: 'natural face swap',
+        negative_prompt: 'blur',
+      },
+      priority: 0,
+      is_template: false,
+    })
+  })
+
+  it('allows scail2 payloads to omit an empty prompt', () => {
+    expect(
+      buildGenerationTaskPayload({
+        taskType: 'scail2_face_swap_v2',
+        images: ['reference-face-key', 'motion-video-key'],
+        duration: 5,
+        prompt: '   ',
+        promptTarget: 'inputs',
+      }),
+    ).toEqual({
+      task_type: 'scail2_face_swap_v2',
+      inputs: {
+        images: ['reference-face-key', 'motion-video-key'],
+        duration: 5,
+      },
+      priority: 0,
+      is_template: false,
+    })
+  })
+
   it('builds ltx video payload with optional lora inside inputs', () => {
     expect(
       buildGenerationTaskPayload({

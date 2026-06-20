@@ -11,6 +11,7 @@ TASK_TYPE_DISPLAY_NAMES = {
     "wan22_video_v2": "task.mode_wan22_video_v2",
     "scail2_video_replacement": "task.mode_scail2_video_replacement",
     "scail2_action_transfer": "task.mode_scail2_action_transfer",
+    "scail2_face_swap_v2": "task.mode_scail2_face_swap_v2",
     "face_video": "task.face_video",
     "ltx_video": "task.ltx_video",
     "t2i-pornmaster-turbo": "task.t2i_pornmaster_turbo",

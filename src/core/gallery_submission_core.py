@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from src.constants import MODE_IMAGE_TO_VIDEO, MODE_NAME_MAP, MODE_WAN22_VIDEO_V2
 from src.domain_config.scail2_video import (
     SCAIL2_ACTION_TRANSFER_TASK_TYPE,
+    SCAIL2_FACE_SWAP_V2_TASK_TYPE,
     SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
 )
 from src.gallery_core_dependencies import (
@@ -32,6 +33,7 @@ ALLOWED_WEB_SUBMIT_TYPES = list(
             MODE_WAN22_VIDEO_V2,
             SCAIL2_ACTION_TRANSFER_TASK_TYPE,
             SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
+            SCAIL2_FACE_SWAP_V2_TASK_TYPE,
             "edit",
             "img2img_lora",
         ]

@@ -3,7 +3,11 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
-const TASK_TYPES = ['scail2_action_transfer', 'scail2_video_replacement']
+const TASK_TYPES = [
+  'scail2_action_transfer',
+  'scail2_video_replacement',
+  'scail2_face_swap_v2',
+]
 const DEFAULT_WEB_BASE_URL = 'https://web-test.aivison.it.com'
 const DEFAULT_TIMEOUT_MS = 18 * 60 * 1000
 const POLL_INTERVAL_MS = 5000

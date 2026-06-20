@@ -12,6 +12,7 @@ from src.constants import (
     MODE_I2I_PRO,
     MODE_I2I_DRAW,
     MODE_SCAIL2_ACTION_TRANSFER,
+    MODE_SCAIL2_FACE_SWAP_V2,
     MODE_SCAIL2_VIDEO_REPLACEMENT,
     MODE_WAN22_VIDEO_V2,
     RESOLUTION_COST,
@@ -28,6 +29,7 @@ from src.domain_config.scail2_video import (
     get_scail2_frame_count,
     normalize_scail2_duration_seconds,
     normalize_scail2_negative_prompt,
+    normalize_scail2_positive_prompt,
 )
 from src.core.task_core_service_providers import get_task_core_image_service
 from src.domain_config.wan22_aio_video import (
@@ -210,11 +212,15 @@ def _resolve_scail2_duration_seconds(inputs: Dict[str, Any]) -> int:
         raise CoreDomainError("SCAIL-2 目前只支持 5 秒或 8 秒。") from exc
 
 
-def _build_scail2_submission_context(inputs: Dict[str, Any]) -> _Scail2SubmissionContext:
+def _build_scail2_submission_context(
+    inputs: Dict[str, Any],
+    *,
+    task_type: str,
+) -> _Scail2SubmissionContext:
     saved_images = _get_saved_input_images(inputs)
     duration_seconds = _resolve_scail2_duration_seconds(inputs)
     return _Scail2SubmissionContext(
-        prompt=_get_input_prompt(inputs, "scail2 video"),
+        prompt=normalize_scail2_positive_prompt(task_type, inputs.get("prompt")),
         reference_image_path=saved_images[0] if len(saved_images) > 0 else "",
         motion_video_path=saved_images[1] if len(saved_images) > 1 else "",
         negative_prompt=normalize_scail2_negative_prompt(inputs.get("negative_prompt")),
@@ -635,7 +641,10 @@ class Scail2VideoStrategy(BaseTaskStrategy):
         self.task_type = task_type
 
     def _replacement_mode(self) -> bool:
-        return self.task_type == MODE_SCAIL2_VIDEO_REPLACEMENT
+        return self.task_type in {
+            MODE_SCAIL2_VIDEO_REPLACEMENT,
+            MODE_SCAIL2_FACE_SWAP_V2,
+        }
 
     def _resolve_duration_seconds(self, inputs: Dict[str, Any]) -> int:
         return _resolve_scail2_duration_seconds(inputs)
@@ -650,7 +659,7 @@ class Scail2VideoStrategy(BaseTaskStrategy):
 
     def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         saved_images = _get_saved_input_images(inputs)
-        submission = _build_scail2_submission_context(inputs)
+        submission = _build_scail2_submission_context(inputs, task_type=self.task_type)
         duration_seconds = submission.duration_seconds
         return {
             "saved_inputs": saved_images,
@@ -670,7 +679,7 @@ class Scail2VideoStrategy(BaseTaskStrategy):
         self, task_id: str, inputs: Dict[str, Any], priority: int
     ) -> str:
         image_service = _get_dispatch_image_service()
-        submission = _build_scail2_submission_context(inputs)
+        submission = _build_scail2_submission_context(inputs, task_type=self.task_type)
 
         if not submission.reference_image_path or not submission.motion_video_path:
             raise CoreDomainError("SCAIL-2 任务需要同时上传参考图片和驱动视频。")

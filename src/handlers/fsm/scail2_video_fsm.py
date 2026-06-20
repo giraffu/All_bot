@@ -16,6 +16,7 @@ from telegram.ext import (
 from src.constants import (
     MODE_NAME_MAP,
     MODE_SCAIL2_ACTION_TRANSFER,
+    MODE_SCAIL2_FACE_SWAP_V2,
     MODE_SCAIL2_VIDEO_REPLACEMENT,
 )
 from src.core.exceptions import InsufficientCreditsError
@@ -110,6 +111,19 @@ def _build_duration_keyboard(context: ContextTypes.DEFAULT_TYPE) -> InlineKeyboa
         ],
     ]
     return InlineKeyboardMarkup(keyboard)
+
+
+def _build_prompt_keyboard(context: ContextTypes.DEFAULT_TYPE) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    _t(context, "fsm.scail2_video.skip_prompt_button"),
+                    callback_data="fsm_scail2_skip_prompt",
+                )
+            ]
+        ]
+    )
 
 
 def _extract_reference_image(update: Update) -> tuple[str | None, str, int | None]:
@@ -224,6 +238,14 @@ async def start_action_transfer(
     )
 
 
+async def start_face_swap_v2(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    return await _start_scail2_video(
+        update,
+        context,
+        task_type=MODE_SCAIL2_FACE_SWAP_V2,
+    )
+
+
 async def receive_reference_image(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
@@ -332,6 +354,7 @@ async def receive_motion_video(
     await robust_reply_text(
         message,
         _t(context, "fsm.scail2_video.video_received"),
+        reply_markup=_build_prompt_keyboard(context),
         parse_mode="Markdown",
     )
     return Scail2VideoState.WAIT_PROMPT
@@ -357,6 +380,28 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await robust_reply_text(
         message,
         _t(context, "fsm.scail2_video.prompt_received"),
+        reply_markup=_build_duration_keyboard(context),
+        parse_mode="Markdown",
+    )
+    return Scail2VideoState.WAIT_DURATION
+
+
+async def skip_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    fsm_data = context.user_data.get(SCAIL2_VIDEO_DATA_KEY)
+    if not fsm_data:
+        with contextlib.suppress(Exception):
+            await query.answer(
+                _t(context, "fsm.scail2_video.expired_alert"),
+                show_alert=True,
+            )
+        return ConversationHandler.END
+
+    fsm_data["prompt"] = ""
+    await query.answer(cache_time=2)
+    await robust_edit_text(
+        query.message,
+        _t(context, "fsm.scail2_video.prompt_skipped"),
         reply_markup=_build_duration_keyboard(context),
         parse_mode="Markdown",
     )
@@ -437,7 +482,7 @@ async def process_duration_selection(
     task_type = fsm_data.get("task_type")
     prompt = fsm_data.get("prompt", "")
 
-    if not reference_path or not motion_path or not task_type or not prompt:
+    if not reference_path or not motion_path or not task_type:
         await robust_edit_text(query.message, _t(context, "fsm.common.already_submitted"))
         _cleanup_context(context)
         return ConversationHandler.END
@@ -535,6 +580,8 @@ def get_scail2_video_fsm_handler() -> ConversationHandler:
                 I18nFilter("menu.video_to_video_action_transfer"),
                 start_action_transfer,
             ),
+            MessageHandler(I18nFilter("menu.face_video"), start_face_swap_v2),
+            CommandHandler("video_swap", start_face_swap_v2),
         ],
         states={
             Scail2VideoState.WAIT_REFERENCE_IMAGE: [
@@ -560,6 +607,7 @@ def get_scail2_video_fsm_handler() -> ConversationHandler:
                 MessageHandler(_NON_CANCEL_INPUT_FILTER, receive_motion_video),
             ],
             Scail2VideoState.WAIT_PROMPT: [
+                CallbackQueryHandler(skip_prompt, pattern="^fsm_scail2_skip_prompt$"),
                 MessageHandler(
                     _NON_CANCEL_TEXT_OR_COMMAND_FILTER,
                     receive_prompt,

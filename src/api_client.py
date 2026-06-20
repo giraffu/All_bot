@@ -22,6 +22,7 @@ from config import (
     PERFECT_VIDEO_EDIT_ENDPOINT,
     PERFECT_VIDEO_INSERT_ENDPOINT,
     SCAIL2_ACTION_TRANSFER_ENDPOINT,
+    SCAIL2_FACE_SWAP_V2_ENDPOINT,
     SCAIL2_VIDEO_REPLACEMENT_ENDPOINT,
     STATUS_ENDPOINT,
     TXT2IMG_ENDPOINT,
@@ -31,6 +32,7 @@ from config import (
 from src.circuit_breaker import CircuitBreaker, CircuitBreakerOpenException
 from src.domain_config.scail2_video import (
     SCAIL2_ACTION_TRANSFER_TASK_TYPE,
+    SCAIL2_FACE_SWAP_V2_TASK_TYPE,
     SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
 )
 from src.utils import async_retry
@@ -473,6 +475,7 @@ class APIClient:
         endpoint_by_type = {
             SCAIL2_ACTION_TRANSFER_TASK_TYPE: SCAIL2_ACTION_TRANSFER_ENDPOINT,
             SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE: SCAIL2_VIDEO_REPLACEMENT_ENDPOINT,
+            SCAIL2_FACE_SWAP_V2_TASK_TYPE: SCAIL2_FACE_SWAP_V2_ENDPOINT,
         }
         endpoint = endpoint_by_type.get(task_type)
         if endpoint is None:

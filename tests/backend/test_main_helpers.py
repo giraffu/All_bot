@@ -351,6 +351,10 @@ def test_simple_task_type_map_keeps_image_to_video_and_video_lora_compatibility(
         main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["scail2_video_replacement"]
         == TaskType.SCAIL2_VIDEO_REPLACEMENT
     )
+    assert (
+        main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["scail2_face_swap_v2"]
+        == TaskType.SCAIL2_FACE_SWAP_V2
+    )
     assert main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["img2img"] == TaskType.IMG2IMG
     assert (
         main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["txt2img"]
@@ -401,6 +405,10 @@ def test_simple_task_route_specs_cover_expected_paths_and_handlers():
         "scail2_video_replacement",
         "create_scail2_video_replacement_task",
     )
+    assert specs_by_path["/api/v1/scail2_face_swap_v2"][1:] == (
+        "scail2_face_swap_v2",
+        "create_scail2_face_swap_v2_task",
+    )
 
 
 def test_simple_task_routes_are_registered_with_stable_endpoint_names():
@@ -425,6 +433,10 @@ def test_simple_task_routes_are_registered_with_stable_endpoint_names():
     assert (
         routes_by_path["/api/v1/scail2_video_replacement"]
         == "create_scail2_video_replacement_task"
+    )
+    assert (
+        routes_by_path["/api/v1/scail2_face_swap_v2"]
+        == "create_scail2_face_swap_v2_task"
     )
 
 

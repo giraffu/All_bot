@@ -359,4 +359,18 @@ describe('TemplateScail2VideoPanel', () => {
       expect.arrayContaining(['w-full', 'min-w-0', 'overflow-hidden'])
     )
   })
+
+  it('renders the face swap v2 task title for SCAIL-2 face swap templates', async () => {
+    const wrapper = mountPanel({
+      rawTaskType: 'scail2_face_swap_v2',
+      taskType: 'scail2_face_swap_v2',
+      raw: {
+        ...buildContext().raw,
+        task_type: 'scail2_face_swap_v2'
+      }
+    })
+    await nextTick()
+
+    expect(wrapper.text()).toContain('视频换脸')
+  })
 })

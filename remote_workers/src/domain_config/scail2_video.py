@@ -5,10 +5,12 @@ from typing import Any
 
 SCAIL2_ACTION_TRANSFER_TASK_TYPE = "scail2_action_transfer"
 SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE = "scail2_video_replacement"
+SCAIL2_FACE_SWAP_V2_TASK_TYPE = "scail2_face_swap_v2"
 SCAIL2_TASK_TYPES = frozenset(
     {
         SCAIL2_ACTION_TRANSFER_TASK_TYPE,
         SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
+        SCAIL2_FACE_SWAP_V2_TASK_TYPE,
     }
 )
 
@@ -34,6 +36,38 @@ SCAIL2_DEFAULT_NEGATIVE_PROMPT = (
     "形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，"
     "背景人很多，倒着走"
 )
+
+SCAIL2_ACTION_TRANSFER_DEFAULT_POSITIVE_PROMPT = (
+    "Transfer the motion from the driving video to the reference subject. "
+    "Preserve the reference subject identity, clothing, appearance, and style "
+    "while following the driving video's pose, motion, camera framing, and timing. "
+    "Natural motion, temporally consistent, high detail."
+)
+SCAIL2_VIDEO_REPLACEMENT_DEFAULT_POSITIVE_PROMPT = (
+    "Replace the main tracked subject in the driving video with the reference "
+    "image subject. Preserve the driving video's pose, hands, camera framing, "
+    "lighting, background, and motion. Natural compositing, photorealistic, "
+    "temporally consistent, high detail."
+)
+SCAIL2_FACE_SWAP_V2_DEFAULT_POSITIVE_PROMPT = (
+    "Video face swap v10 two-stage mode. The reference image has first been "
+    "used to swap the target identity onto the driving video's first frame; "
+    "use that swapped first frame as the replacement reference. Preserve the "
+    "driving video's original body, clothing, hair silhouette, hands, "
+    "background, lighting, camera framing, motion, and scene layout. Transfer "
+    "only the intended face identity naturally through the video. Do not copy "
+    "the original user reference photo clothing, pose, body, background, or "
+    "framing. Do not create a picture-in-picture panel, inset reference image, "
+    "full-screen reference face, mask-like pasted face, or hard face patch. "
+    "Natural skin blending, stable identity, photorealistic detail, and "
+    "temporal consistency."
+)
+
+SCAIL2_DEFAULT_POSITIVE_PROMPT_BY_TASK_TYPE = {
+    SCAIL2_ACTION_TRANSFER_TASK_TYPE: SCAIL2_ACTION_TRANSFER_DEFAULT_POSITIVE_PROMPT,
+    SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE: SCAIL2_VIDEO_REPLACEMENT_DEFAULT_POSITIVE_PROMPT,
+    SCAIL2_FACE_SWAP_V2_TASK_TYPE: SCAIL2_FACE_SWAP_V2_DEFAULT_POSITIVE_PROMPT,
+}
 
 
 class Scail2DurationError(ValueError):
@@ -84,3 +118,19 @@ def get_scail2_cost(duration_seconds: Any, *, strict: bool = False) -> int:
 def normalize_scail2_negative_prompt(value: Any) -> str:
     text = str(value or "").strip()
     return text or SCAIL2_DEFAULT_NEGATIVE_PROMPT
+
+
+def normalize_scail2_positive_prompt(task_type: str | None, value: Any) -> str:
+    task_type_text = str(task_type or "").strip()
+    text = str(value or "").strip()
+    default_prompt = SCAIL2_DEFAULT_POSITIVE_PROMPT_BY_TASK_TYPE.get(
+        task_type_text,
+        SCAIL2_VIDEO_REPLACEMENT_DEFAULT_POSITIVE_PROMPT,
+    )
+    if not text:
+        return default_prompt
+    if task_type_text == SCAIL2_FACE_SWAP_V2_TASK_TYPE:
+        if text == default_prompt or text.startswith(f"{default_prompt}\n"):
+            return text
+        return f"{default_prompt}\n\nAdditional user guidance: {text}"
+    return text

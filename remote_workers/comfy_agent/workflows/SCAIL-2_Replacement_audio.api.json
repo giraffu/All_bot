@@ -219,7 +219,7 @@
         "38",
         0
       ],
-      "text": "A short-haired man wearing a striped shirt is standing in the park, hands on his hips, touching his hair."
+      "text": "Replace the main tracked subject in the driving video with the reference image subject. Preserve the driving video's pose, hands, camera framing, lighting, background, and motion. Natural compositing, photorealistic, temporally consistent, high detail."
     }
   },
   "3": {

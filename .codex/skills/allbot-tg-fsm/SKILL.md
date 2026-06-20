@@ -60,7 +60,7 @@ def build_handler() -> ConversationHandler:
 - FSM 内不得依赖硬编码菜单词做全局退出判断，必须走统一菜单路由。
 - 临时文件、下载目录和清理逻辑应优先下沉到服务层，避免各 FSM 重复拼装。
 - callback 路由拆分时必须确保主入口导入子模块触发注册，不能因加载顺序拿到空路由表。
-- SCAIL-2 Bot 的“视频生视频”二级菜单支持测试 Bot 与正式 Bot，但正式展示必须跟随 SCAIL-2 正式 runtime 发布闸门；`scail2_video_fsm` 收集参考图、驱动视频、正向提示词和 5s/8s 时长，负面提示词使用默认值，驱动视频上限 40MB，原“视频换脸”FSM 只移动到该二级菜单内并保持原业务逻辑。正式发布维护窗口内，Bot 生成 FSM 应尊重 `/app/GENERATION_MAINTENANCE` 或全局 `/app/MAINTENANCE`，提示维护并停止新提交。
+- SCAIL-2 Bot 的“视频生视频”二级菜单支持测试 Bot 与正式 Bot，但正式展示必须跟随 SCAIL-2 正式 runtime 发布闸门；`scail2_video_fsm` 收集参考图、驱动视频、可选正向提示词和 5s/8s 时长，正向提示词可通过 inline button 跳过并由 domain config 默认值补齐，负面提示词使用默认值，驱动视频上限 40MB，原“视频换脸”FSM 只移动到该二级菜单内并保持原业务逻辑。正式发布维护窗口内，Bot 生成 FSM 应尊重 `/app/GENERATION_MAINTENANCE` 或全局 `/app/MAINTENANCE`，提示维护并停止新提交。
 
 ## 5. 边界条件处理
 - **`user_data` 残留**：FSM 正常结束、异常退出、超时三种场景都要清理临时状态。

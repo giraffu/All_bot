@@ -157,6 +157,7 @@
     "face_video": "视频换脸",
     "scail2_video_replacement": "视频换人",
     "scail2_action_transfer": "动作迁移",
+    "scail2_face_swap_v2": "视频换脸",
     "t2i_pornmaster_turbo": "文生图"
   },
   "api": {
@@ -238,9 +239,10 @@
       "img2video_group": "图生视频",
       "img2video": "图生视频(附加模型)",
       "high_res_video": "高级图生视频",
-      "wan22_video_v2": "图生视频 v2",
-      "scail2_action_transfer": "动作迁移",
-      "scail2_video_replacement": "视频换人"
+    "wan22_video_v2": "图生视频 v2",
+    "scail2_action_transfer": "动作迁移",
+    "scail2_video_replacement": "视频换人",
+    "scail2_face_swap_v2": "视频换脸"
     },
     "filters": {
       "all": "所有",
@@ -424,7 +426,9 @@
       "scail2_action_transfer_title": "动作迁移",
       "scail2_action_transfer_desc": "上传参考图和驱动视频，让参考角色跟随视频动作生成短片。",
       "scail2_video_replacement_title": "视频换人",
-      "scail2_video_replacement_desc": "上传参考人物和驱动视频，保留镜头关系并替换视频中的人物。"
+      "scail2_video_replacement_desc": "上传参考人物和驱动视频，保留镜头关系并替换视频中的人物。",
+      "scail2_face_swap_v2_title": "视频换脸",
+      "scail2_face_swap_v2_desc": "上传参考人脸和驱动视频，使用 SCAIL-2 FaceSwap v2 生成短片。"
     },
     "workbench": {
       "eyebrow": "统一创作工作台",
@@ -507,7 +511,7 @@
       "cost_hints": {
         "edit": "自由P图支持双图融合，上传第 2 张图后会自动切到 6 灵石。",
         "custom_video": "图生视频支持 5/8/10 秒，按分辨率和时长计费。",
-        "face_video": "视频换脸按分辨率计费，720p 为 18 灵石，1024p 为 36 灵石。",
+        "face_video": "视频换脸 v2 固定 512x896，5 秒 40 灵石，8 秒 80 灵石。",
         "ltx_video": "高级图生视频固定 1280x704，时长越长消耗越高。",
         "wan22_video_v2": "图生视频 v2 支持 5/8/10 秒，按分辨率和时长计费。",
         "scail2_video": "当前模式固定 512x896，5 秒 40 灵石，8 秒 80 灵石。"
@@ -524,8 +528,9 @@
         "edit": "描述你希望 AI 如何修改这张图，例如：把背景换成海边，让人物戴上墨镜，整体更像电影剧照。",
         "txt2img": "描述你想直接生成的画面，例如：cinematic portrait, moonlight, detailed face, soft rim light, realistic skin。",
         "video": "描述视频里的动作和镜头，例如：人物微笑转头，风吹动发丝，镜头缓慢推近。",
-        "scail2_action_transfer": "简单描述参考角色与动作效果，例如：角色跟随视频跳舞，动作自然，镜头稳定。",
-        "scail2_video_replacement": "简单描述替换后的画面，例如：参考人物出现在原视频场景中，动作自然，背景保持。"
+        "scail2_action_transfer": "可留空使用默认提示词；也可补充参考角色与动作效果，例如：动作自然，镜头稳定。",
+        "scail2_video_replacement": "可留空使用默认提示词；也可补充替换后的画面，例如：动作自然，背景保持。",
+        "scail2_face_swap_v2": "可留空使用默认提示词；也可补充换脸效果，例如：参考人脸自然融入原视频。"
       },
       "validation": {
         "upload_first": "请先添加参考图",
@@ -629,6 +634,7 @@
     "video_insert": "🎬 视频插入",
     "video_edit": "🎬 视频编辑 (通用)",
     "face_video": "🎬 视频换脸",
+    "scail2_face_swap_v2": "🎬 视频换脸",
     "ltx_video": "🎬 高级图生视频",
     "t2i_pornmaster_turbo": "🎨 文本生图",
     "custom_video": "🎬 图生视频",
@@ -662,6 +668,7 @@
     "mode_wan22_video_v2": "图生视频 v2",
     "mode_scail2_action_transfer": "动作迁移",
     "mode_scail2_video_replacement": "视频换人",
+    "mode_scail2_face_swap_v2": "视频换脸",
     "mode_video_lora": "图生视频",
     "mode_template_contribute": "模板共建",
     "mode_none": "无模式",
@@ -765,10 +772,12 @@
     "scail2_video": {
       "start": "🎬 **已进入【{mode_name}】模式**\n\n第一版固定 512x896，仅支持 5秒/8秒。5秒消耗 {cost} 灵石。\n\n【第一步】请发送一张参考图片。\n\n随时可以发送 /cancel 退出流程。",
       "reference_received": "✅ **参考图片已收到！**\n\n【第二步】请发送驱动视频（不超过 {max_mb}MB）。\n\n建议使用 5-8 秒、主体清晰的视频。",
-      "video_received": "✅ **驱动视频已收到！**\n\n【第三步】请发送正向提示词，描述目标人物、风格和画面效果。",
-      "prompt_only": "⚠️ 请直接发送文字提示词。",
-      "empty_prompt": "⚠️ 提示词不能为空，请描述您想生成的画面。",
+      "video_received": "✅ **驱动视频已收到！**\n\n【第三步】请发送正向提示词，或点击下方按钮使用默认提示词。",
+      "prompt_only": "⚠️ 请直接发送文字提示词，或点击下方按钮跳过。",
+      "empty_prompt": "⚠️ 如需使用默认提示词，请点击“跳过正向提示词”。",
       "prompt_received": "✅ **提示词已收到！**\n\n请选择生成时长：",
+      "prompt_skipped": "✅ **已跳过正向提示词！**\n\n将使用当前工作流的默认提示词。\n\n请选择生成时长：",
+      "skip_prompt_button": "跳过正向提示词",
       "duration_button": "{duration}秒 · {cost}灵石",
       "cancel_button": "❌ 取消",
       "cancelled_short": "🚫 已取消视频生视频操作。",

@@ -8,6 +8,7 @@ from src.domain_config.scail2_video import (
     get_scail2_frame_count,
     normalize_scail2_duration_seconds,
     normalize_scail2_negative_prompt,
+    normalize_scail2_positive_prompt,
 )
 from src.domain_config.wan22_aio_video import (
     WAN22_LEGACY_IMAGE_TO_VIDEO_MODEL_PROFILE,
@@ -457,13 +458,15 @@ def _patch_scail2_workflow(
             value=params["video"],
         )
 
-    if params.get("prompt"):
-        set_node_input(
-            workflow,
-            node_id=SCAIL2_POSITIVE_PROMPT_NODE_ID,
-            input_name="text",
-            value=params["prompt"],
-        )
+    set_node_input(
+        workflow,
+        node_id=SCAIL2_POSITIVE_PROMPT_NODE_ID,
+        input_name="text",
+        value=normalize_scail2_positive_prompt(
+            output_task_prefix,
+            params.get("prompt"),
+        ),
+    )
     set_node_input(
         workflow,
         node_id=SCAIL2_NEGATIVE_PROMPT_NODE_ID,
@@ -555,6 +558,18 @@ def patch_scail2_video_replacement_workflow(
     )
 
 
+def patch_scail2_face_swap_v2_workflow(
+    workflow: dict[str, Any],
+    **kwargs: Any,
+) -> None:
+    _patch_scail2_workflow(
+        workflow,
+        replacement_mode=True,
+        output_task_prefix="scail2_face_swap_v2",
+        **kwargs,
+    )
+
+
 TASK_SPECIFIC_PATCHERS = {
     "img2img": patch_img2img_workflow,
     "img2img_lora": patch_img2img_workflow,
@@ -566,4 +581,5 @@ TASK_SPECIFIC_PATCHERS = {
     "wan22_video_v2": patch_wan22_video_v2_workflow,
     "scail2_action_transfer": patch_scail2_action_transfer_workflow,
     "scail2_video_replacement": patch_scail2_video_replacement_workflow,
+    "scail2_face_swap_v2": patch_scail2_face_swap_v2_workflow,
 }

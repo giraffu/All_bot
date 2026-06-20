@@ -55,6 +55,10 @@ def test_default_gallery_allowed_type_configs_include_scail2_modes():
         "scail2_video_replacement",
         "task.mode_scail2_video_replacement",
     ) in DEFAULT_GALLERY_ALLOWED_TYPE_CONFIGS
+    assert (
+        "scail2_face_swap_v2",
+        "task.mode_scail2_face_swap_v2",
+    ) in DEFAULT_GALLERY_ALLOWED_TYPE_CONFIGS
 
 
 @pytest.mark.asyncio

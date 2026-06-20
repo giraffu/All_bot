@@ -53,15 +53,21 @@ const initialNegativePrompt = ref('')
 const initialDuration = ref('5')
 
 const taskType = computed(() => props.context.taskType ?? 'scail2_action_transfer')
-const taskTitle = computed(() => (
-  taskType.value === 'scail2_video_replacement'
-    ? t('lab.cards.scail2_video_replacement_title')
-    : t('lab.cards.scail2_action_transfer_title')
+const scail2TitleKeyByTaskType: Record<string, string> = {
+  scail2_action_transfer: 'lab.cards.scail2_action_transfer_title',
+  scail2_video_replacement: 'lab.cards.scail2_video_replacement_title',
+  scail2_face_swap_v2: 'lab.cards.scail2_face_swap_v2_title',
+}
+const scail2PromptKeyByTaskType: Record<string, string> = {
+  scail2_action_transfer: 'lab.workbench.prompt_placeholders.scail2_action_transfer',
+  scail2_video_replacement: 'lab.workbench.prompt_placeholders.scail2_video_replacement',
+  scail2_face_swap_v2: 'lab.workbench.prompt_placeholders.scail2_face_swap_v2',
+}
+const taskTitle = computed(() => t(
+  scail2TitleKeyByTaskType[taskType.value] ?? scail2TitleKeyByTaskType.scail2_action_transfer
 ))
-const promptPlaceholder = computed(() => (
-  taskType.value === 'scail2_video_replacement'
-    ? t('lab.workbench.prompt_placeholders.scail2_video_replacement')
-    : t('lab.workbench.prompt_placeholders.scail2_action_transfer')
+const promptPlaceholder = computed(() => t(
+  scail2PromptKeyByTaskType[taskType.value] ?? scail2PromptKeyByTaskType.scail2_action_transfer
 ))
 const motionVideoKey = computed(() => props.context.inputFile ?? props.context.inputFiles?.[0] ?? null)
 const motionVideoUrl = computed(() => props.context.inputFileUrl ?? props.context.inputFileUrls?.[0] ?? null)

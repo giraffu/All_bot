@@ -32,6 +32,7 @@ SIMPLE_TASK_TYPE_MAP = {
     "wan22_video_v2": TaskType.WAN22_VIDEO_V2,
     "scail2_action_transfer": TaskType.SCAIL2_ACTION_TRANSFER,
     "scail2_video_replacement": TaskType.SCAIL2_VIDEO_REPLACEMENT,
+    "scail2_face_swap_v2": TaskType.SCAIL2_FACE_SWAP_V2,
 }
 
 LEGACY_WAN22_SIMPLE_TASK_KEYS = {"video_insert", "video_edit"}
@@ -161,6 +162,12 @@ SIMPLE_TASK_ROUTE_SPECS = (
         Scail2VideoRequest,
         "scail2_video_replacement",
         "create_scail2_video_replacement_task",
+    ),
+    (
+        "/api/v1/scail2_face_swap_v2",
+        Scail2VideoRequest,
+        "scail2_face_swap_v2",
+        "create_scail2_face_swap_v2_task",
     ),
 )
 

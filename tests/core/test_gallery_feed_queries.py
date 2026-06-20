@@ -61,6 +61,34 @@ async def test_fetch_gallery_feed_page_applies_vidlora_category_and_sort():
 
 
 @pytest.mark.asyncio
+async def test_fetch_gallery_feed_page_faceswap_category_includes_scail2_face_swap_v2():
+    session = _FakeSession([_ScalarResult(0), _ItemsResult([])])
+
+    await fetch_gallery_feed_page(
+        session=session,
+        page=1,
+        size=20,
+        media_type=None,
+        task_type=None,
+        lora_model=None,
+        sort_by="latest",
+        time_range="all",
+        user_id=None,
+        category="faceswap",
+        is_active=True,
+    )
+
+    compiled = session.executed_statements[1].compile()
+    sql = str(compiled).lower()
+    task_types = next(
+        value for value in compiled.params.values() if isinstance(value, list)
+    )
+
+    assert "history.type" in sql
+    assert task_types == ["face_video", "scail2_face_swap_v2"]
+
+
+@pytest.mark.asyncio
 async def test_fetch_gallery_feed_page_uses_media_type_only_without_category_or_task_type():
     session = _FakeSession([_ScalarResult(0), _ItemsResult([])])
 

@@ -55,7 +55,7 @@ sequenceDiagram
 - 一键应用当前主路径是 Web apply-context / workbench，不应再把 Telegram compat 流程写成唯一主入口。
 - Wan22 一键应用只开放单段记录：旧 `custom_video` / `video_lora` 与 `wan22_video_v2` 单段可进入模板应用，所有 stitched 拼接结果必须禁用按钮并由 apply-context 返回 400；v2 单段需回填负面提示词与分辨率档位。
 - Gallery/修仙笔记展示用响应会从 `History.input_file` 暴露 `input_file/input_file_url/input_files/input_file_urls`，仅用于原始输入缩略图和详情预览；`txt2img` 不展示输入，单输入任务展示一张，多输入任务按顺序展示并在卡片角标显示叠层/`+N`。
-- Wan22 首尾帧投稿展示为“起始帧 / 终止帧”。SCAIL-2 `scail2_action_transfer` / `scail2_video_replacement` 投稿展示为“参考图 / 驱动视频”。
+- Wan22 首尾帧投稿展示为“起始帧 / 终止帧”。SCAIL-2 `scail2_action_transfer` / `scail2_video_replacement` / `scail2_face_swap_v2` 投稿展示为“参考图 / 驱动视频”。
 - SCAIL-2 支持 Web/Bot 投稿；Web 一键应用时模板只复用投稿的 motion/driving video，复用者必须上传自己的 reference image。展示两份原始输入不代表 apply-context 复用两份输入。模板衍生结果保持 `allow_contribute=false`，不能再次投稿。
 - 互动防并发与去重依赖数据库约束与服务层收口，避免高并发下覆盖更新。
 - 提示词解锁入口为 `POST /api/gallery/posts/{post_id}/prompt-unlock`，依赖 `gallery_prompt_unlocks.user_id + post_id` 唯一约束防重复扣费；修仙笔记“提示词模版”入口读取 `GET /api/gallery/my-prompt-unlocks`。

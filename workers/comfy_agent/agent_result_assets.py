@@ -2,7 +2,11 @@ from typing import Any
 
 RESULT_ASSET_KEYS = ("images", "gifs", "videos")
 WAN22_AIO_VIDEO_TASK_TYPES = {"wan22_video_v2", "image_to_video"}
-SCAIL2_VIDEO_TASK_TYPES = {"scail2_action_transfer", "scail2_video_replacement"}
+SCAIL2_VIDEO_TASK_TYPES = {
+    "scail2_action_transfer",
+    "scail2_video_replacement",
+    "scail2_face_swap_v2",
+}
 VIDEO_PRIMARY_TASK_TYPES = WAN22_AIO_VIDEO_TASK_TYPES | SCAIL2_VIDEO_TASK_TYPES
 
 

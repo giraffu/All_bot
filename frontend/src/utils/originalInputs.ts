@@ -22,7 +22,11 @@ export interface OriginalInputPreview {
 
 const SPLIT_INPUT_RE = /\|/
 const WAN22_TASK_TYPES = new Set(['wan22_video_v2', 'custom_video', 'video_lora'])
-const SCAIL2_TASK_TYPES = new Set(['scail2_action_transfer', 'scail2_video_replacement'])
+const SCAIL2_TASK_TYPES = new Set([
+  'scail2_action_transfer',
+  'scail2_video_replacement',
+  'scail2_face_swap_v2',
+])
 
 const normalizeStringList = (value: unknown): string[] => {
   if (!Array.isArray(value)) {
