@@ -23,7 +23,39 @@ vi.mock('../composables/useQueueStatsMonitor', async () => {
       concurrencyStats: queueStatsMocks.concurrencyStatsRef,
       cleaning: ref(false),
       syncing: ref({}),
-      queueByTypeDisplay: computed(() => []),
+      queueByTypeDisplay: computed(() => {
+        const status = queueStatsMocks.statusRef.value || {}
+        const queueByType = status.queue_by_type || {}
+        const details = status.queue_by_type_details || {}
+        const types = Array.from(new Set([...Object.keys(queueByType), ...Object.keys(details)]))
+
+        return types
+          .map(type => {
+            const detail = details[type] || {}
+            const rawWaitSeconds = detail.max_pending_wait_seconds
+            const maxPendingWaitSeconds =
+              rawWaitSeconds === null || rawWaitSeconds === undefined
+                ? null
+                : Number(rawWaitSeconds)
+
+            return {
+              type,
+              count: Number(detail.active_count ?? queueByType[type] ?? 0),
+              activeCount: Number(detail.active_count ?? queueByType[type] ?? 0),
+              pendingCount: Number(detail.pending_count ?? 0),
+              maxPendingWaitSeconds: Number.isFinite(maxPendingWaitSeconds)
+                ? maxPendingWaitSeconds
+                : null,
+            }
+          })
+          .sort((a, b) => {
+            const waitA = a.maxPendingWaitSeconds ?? -1
+            const waitB = b.maxPendingWaitSeconds ?? -1
+            if (waitA !== waitB) return waitB - waitA
+            if (a.activeCount !== b.activeCount) return b.activeCount - a.activeCount
+            return a.type.localeCompare(b.type)
+          })
+      }),
       cleanZombies: vi.fn(),
       syncLock: vi.fn(),
       updateQueue: vi.fn(),
@@ -46,6 +78,13 @@ const StatisticStub = defineComponent({
   name: 'StatisticStub',
   props: ['title', 'value'],
   template: '<div><span>{{ title }}</span><span>{{ value }}</span><slot name="prefix" /><slot name="suffix" /></div>',
+})
+
+const WorkerHistoryModalStub = defineComponent({
+  name: 'WorkerHistoryModal',
+  props: ['open', 'workerId'],
+  emits: ['update:open'],
+  template: '<div class="worker-history-modal-stub" :data-open="String(open)" :data-worker-id="workerId || \'\'" />',
 })
 
 const TableColumnStub = defineComponent({
@@ -71,6 +110,7 @@ const mountQueueStats = async () => {
         'a-empty': slotStub('AEmptyStub'),
         RunPodCapacityManager: slotStub('RunPodCapacityManagerStub'),
         RunPodWorkerActions: slotStub('RunPodWorkerActionsStub'),
+        WorkerHistoryModal: WorkerHistoryModalStub,
       },
     },
   })
@@ -88,6 +128,7 @@ describe('QueueStats worker health display', () => {
       workers_by_status: {},
       comfy_online: false,
       concurrency_locks: 0,
+      queue_by_type_details: {},
     })
     queueStatsMocks.workersRef = ref([])
     queueStatsMocks.concurrencyStatsRef = ref([])
@@ -164,5 +205,121 @@ describe('QueueStats worker health display', () => {
     expect(wrapper.text()).toContain('空闲')
     expect(wrapper.text()).toContain('忙碌')
     expect(wrapper.text()).toContain('故障')
+  })
+
+  it('renders all active task detail rows with pending wait metrics', async () => {
+    queueStatsMocks.statusRef.value = {
+      ...queueStatsMocks.statusRef.value,
+      queue_size: 48,
+      queue_by_type: {
+        image_to_video: 46,
+        i2i_pro: 2,
+      },
+      queue_by_type_details: {
+        image_to_video: {
+          active_count: 46,
+          pending_count: 12,
+          max_pending_wait_seconds: 742,
+          oldest_pending_task_id: 'backend-task-old',
+          oldest_pending_created_at: 1782050000,
+        },
+        i2i_pro: {
+          active_count: 2,
+          pending_count: 0,
+          max_pending_wait_seconds: null,
+          oldest_pending_task_id: null,
+          oldest_pending_created_at: null,
+        },
+      },
+    }
+
+    const wrapper = await mountQueueStats()
+
+    expect(wrapper.text()).toContain('活跃任务详情')
+    expect(wrapper.text()).toContain('image_to_video')
+    expect(wrapper.text()).toContain('i2i_pro')
+    expect(wrapper.text()).toContain('12m 22s')
+    expect(wrapper.findAll('.active-task-detail-table tbody tr')).toHaveLength(2)
+    expect(wrapper.findAll('.active-task-detail-table thead th').map(th => th.text())).toEqual([
+      '任务类型',
+      '活跃数',
+      '排队数',
+      '最长排队等待',
+    ])
+  })
+
+  it('renders long worker names without the truncation class', async () => {
+    const longAgentId = 'lan_aio_prod_gpu177_gpu0_image_to_video_01'
+    queueStatsMocks.workersRef.value = [
+      {
+        agent_id: longAgentId,
+        types: 'image_to_video',
+        status: 'idle',
+        last_seen: Date.now() / 1000,
+      },
+    ]
+
+    const wrapper = await mountQueueStats()
+    const agentName = wrapper.get('.worker-card-agent')
+
+    expect(agentName.text()).toBe(longAgentId)
+    expect(agentName.classes()).not.toContain('truncate')
+  })
+
+  it('opens worker history modal when a worker card is clicked', async () => {
+    const agentId = 'worker_remote_01'
+    queueStatsMocks.workersRef.value = [
+      {
+        agent_id: agentId,
+        types: 'img2img',
+        status: 'idle',
+        last_seen: Date.now() / 1000,
+      },
+    ]
+
+    const wrapper = await mountQueueStats()
+
+    expect(wrapper.get('.worker-history-modal-stub').attributes('data-open')).toBe('false')
+
+    await wrapper.get('.worker-card').trigger('click')
+
+    expect(wrapper.get('.worker-history-modal-stub').attributes('data-open')).toBe('true')
+    expect(wrapper.get('.worker-history-modal-stub').attributes('data-worker-id')).toBe(agentId)
+  })
+
+  it('opens worker history modal from keyboard activation', async () => {
+    const agentId = 'worker_remote_02'
+    queueStatsMocks.workersRef.value = [
+      {
+        agent_id: agentId,
+        types: 'img2img',
+        status: 'idle',
+        last_seen: Date.now() / 1000,
+      },
+    ]
+
+    const wrapper = await mountQueueStats()
+
+    await wrapper.get('.worker-card').trigger('keydown', { key: 'Enter' })
+
+    expect(wrapper.get('.worker-history-modal-stub').attributes('data-open')).toBe('true')
+    expect(wrapper.get('.worker-history-modal-stub').attributes('data-worker-id')).toBe(agentId)
+  })
+
+  it('does not open worker history modal when clicking worker controls', async () => {
+    queueStatsMocks.workersRef.value = [
+      {
+        agent_id: 'worker_remote_03',
+        types: 'img2img',
+        status: 'idle',
+        last_seen: Date.now() / 1000,
+      },
+    ]
+
+    const wrapper = await mountQueueStats()
+
+    await wrapper.get('.worker-card-controls').trigger('click')
+
+    expect(wrapper.get('.worker-history-modal-stub').attributes('data-open')).toBe('false')
   })
 })

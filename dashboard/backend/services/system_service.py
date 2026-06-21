@@ -2,8 +2,10 @@ import asyncio
 import logging
 import os
 import time
+from typing import Any
 
 import httpx
+import redis.asyncio as redis
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
@@ -23,6 +25,8 @@ BACKEND_TASK_STATUS_CACHE_TTL_SECONDS = float(
 BACKEND_TASK_STATUS_CACHE_MAX_ENTRIES = int(
     os.getenv("DASHBOARD_BACKEND_TASK_STATUS_CACHE_MAX_ENTRIES", "2000")
 )
+CENTRAL_PENDING_QUEUE_KEY = "comfy:queue:pending"
+CENTRAL_TASK_KEY_PREFIX = "comfy:task:"
 _backend_task_status_cache: dict[tuple[str, str], tuple[float, dict]] = {}
 _backend_task_status_locks: dict[tuple[str, str], asyncio.Lock] = {}
 
@@ -71,6 +75,121 @@ def count_tasks_by_type(tasks: dict) -> dict[str, int]:
         task_type = resolve_worker_execution_task_type(task.get("task_type"))
         counts[task_type] = counts.get(task_type, 0) + 1
     return counts
+
+
+def _decode_redis_value(value: Any) -> Any:
+    return value.decode() if isinstance(value, bytes) else value
+
+
+def _empty_queue_type_detail(active_count: int = 0) -> dict:
+    return {
+        "active_count": active_count,
+        "pending_count": 0,
+        "max_pending_wait_seconds": None,
+        "oldest_pending_task_id": None,
+        "oldest_pending_created_at": None,
+    }
+
+
+def build_queue_type_details(
+    active_tasks: dict,
+    pending_wait_details: dict[str, dict] | None = None,
+) -> dict[str, dict]:
+    details = {
+        task_type: _empty_queue_type_detail(active_count=count)
+        for task_type, count in count_tasks_by_type(active_tasks).items()
+    }
+
+    for task_type, pending_detail in (pending_wait_details or {}).items():
+        detail = details.setdefault(task_type, _empty_queue_type_detail())
+        detail["pending_count"] = int(pending_detail.get("pending_count") or 0)
+        detail["max_pending_wait_seconds"] = pending_detail.get(
+            "max_pending_wait_seconds"
+        )
+        detail["oldest_pending_task_id"] = pending_detail.get(
+            "oldest_pending_task_id"
+        )
+        detail["oldest_pending_created_at"] = pending_detail.get(
+            "oldest_pending_created_at"
+        )
+
+    return details
+
+
+async def _close_redis_resource(resource) -> None:
+    close = getattr(resource, "aclose", None) or getattr(resource, "close", None)
+    if close is None:
+        return
+    result = close()
+    if asyncio.iscoroutine(result):
+        await result
+
+
+async def get_pending_queue_wait_details(
+    *,
+    redis_url: str | None = None,
+    redis_from_url_func=None,
+    now_func=None,
+    logger_override: logging.Logger | None = None,
+) -> dict[str, dict]:
+    active_logger = logger_override or logger
+    if now_func is None:
+        now_func = time.time
+    if redis_from_url_func is None:
+        redis_from_url_func = redis.from_url
+
+    resolved_redis_url = redis_url or os.getenv("WORKER_REDIS_URL")
+    if not resolved_redis_url:
+        return {}
+
+    redis_client = None
+    try:
+        redis_client = redis_from_url_func(resolved_redis_url, decode_responses=True)
+        pending_task_ids = await redis_client.zrange(CENTRAL_PENDING_QUEUE_KEY, 0, -1)
+        if not pending_task_ids:
+            return {}
+
+        pipeline = redis_client.pipeline(transaction=False)
+        normalized_task_ids: list[str] = []
+        for raw_task_id in pending_task_ids:
+            task_id = str(_decode_redis_value(raw_task_id))
+            normalized_task_ids.append(task_id)
+            task_key = f"{CENTRAL_TASK_KEY_PREFIX}{task_id}"
+            pipeline.hget(task_key, "type")
+            pipeline.hget(task_key, "created_at")
+        values = await pipeline.execute()
+
+        now = float(now_func())
+        details: dict[str, dict] = {}
+        for index, task_id in enumerate(normalized_task_ids):
+            task_type = _decode_redis_value(values[index * 2])
+            created_at = _decode_redis_value(values[index * 2 + 1])
+            if not task_type or created_at in (None, ""):
+                continue
+
+            try:
+                created_at_float = float(created_at)
+            except (TypeError, ValueError):
+                continue
+
+            execution_type = resolve_worker_execution_task_type(task_type)
+            wait_seconds = max(0, int(now - created_at_float))
+            detail = details.setdefault(execution_type, _empty_queue_type_detail())
+            detail["pending_count"] += 1
+
+            current_max = detail.get("max_pending_wait_seconds")
+            if current_max is None or wait_seconds > current_max:
+                detail["max_pending_wait_seconds"] = wait_seconds
+                detail["oldest_pending_task_id"] = task_id
+                detail["oldest_pending_created_at"] = created_at_float
+
+        return details
+    except Exception as exc:
+        active_logger.warning("Could not collect pending queue wait details: %s", exc)
+        return {}
+    finally:
+        if redis_client is not None:
+            await _close_redis_resource(redis_client)
 
 
 async def refund_bot_task_payload(
@@ -511,11 +630,14 @@ async def get_system_status_proxy_payload(
     api_base: str = API_BASE,
     httpx_async_client_factory=httpx.AsyncClient,
     get_system_task_stats_func=None,
+    get_pending_queue_wait_details_func=None,
     logger_override: logging.Logger | None = None,
 ) -> dict:
     active_logger = logger_override or logger
     if get_system_task_stats_func is None:
         get_system_task_stats_func = get_system_task_stats
+    if get_pending_queue_wait_details_func is None:
+        get_pending_queue_wait_details_func = get_pending_queue_wait_details
 
     try:
         status_code, payload = await _request_json(
@@ -528,6 +650,7 @@ async def get_system_status_proxy_payload(
             data = {
                 "queue_size": 0,
                 "queue_by_type": {},
+                "queue_by_type_details": {},
                 "active_workers": 0,
                 "healthy_workers": 0,
                 "error_workers": 0,
@@ -545,6 +668,7 @@ async def get_system_status_proxy_payload(
         data = {
             "queue_size": 0,
             "queue_by_type": {},
+            "queue_by_type_details": {},
             "active_workers": 0,
             "healthy_workers": 0,
             "error_workers": 0,
@@ -556,14 +680,28 @@ async def get_system_status_proxy_payload(
 
     try:
         active_tasks, concurrencies = await get_system_task_stats_func()
+        try:
+            pending_wait_details = await get_pending_queue_wait_details_func()
+        except Exception as exc:
+            active_logger.warning(
+                f"Could not collect pending queue wait details: {exc}"
+            )
+            pending_wait_details = {}
+
+        active_counts = count_tasks_by_type(active_tasks)
         data["middleware_queue_size"] = data.get("queue_size", 0)
         data["middleware_queue_by_type"] = data.get("queue_by_type", {})
         data["queue_size"] = len(active_tasks)
-        data["queue_by_type"] = count_tasks_by_type(active_tasks)
+        data["queue_by_type"] = active_counts
+        data["queue_by_type_details"] = build_queue_type_details(
+            active_tasks,
+            pending_wait_details,
+        )
         data["concurrency_locks"] = sum(concurrencies.values())
         data["concurrency_details"] = concurrencies
     except Exception as exc:
         active_logger.error(f"Error getting concurrency locks: {exc}")
+        data.setdefault("queue_by_type_details", {})
         data["concurrency_locks"] = 0
         data["concurrency_details"] = {}
 

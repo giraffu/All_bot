@@ -17,20 +17,26 @@ description: "前端 UI 任务需要在本服务器启动浏览器预览、截�
 ## 2. 首选方案：Playwright Chromium
 本服务器的系统 `google-chrome-stable --headless` 访问本地 HTTP 页面时可能卡住；不要把它作为默认截图方案。
 
-首次使用若提示缺少浏览器，执行：
+本机已在以下前端包安装 `@playwright/test`，并已下载 Playwright Chromium 到 `/home/hfy/.cache/ms-playwright/`：
+- 主 Web 前端：`/home/hfy/APP/All_bot/frontend`
+- 管理后台前端：`/home/hfy/APP/All_bot/dashboard/frontend`
+
+后续截图优先进入对应前端包执行 `npx playwright ...`。若缓存被清理或提示缺少浏览器，执行：
 
 ```bash
-cd /home/hfy/APP/All_bot/frontend
+cd /home/hfy/APP/All_bot/dashboard/frontend
 npx playwright install chromium
 ```
 
-这会把浏览器下载到用户缓存，如 `/home/hfy/.cache/ms-playwright/`，通常不需要修改 `package.json`。
+不要再用临时 `npm exec --package=playwright` 作为默认方案；项目包内已有稳定 CLI。
 
 ## 3. 标准截图流程
+先选择实际被修改的前端包。管理后台 UI 任务使用 `dashboard/frontend`，主 Web 工作台任务使用 `frontend`。
+
 启动前端开发服务：
 
 ```bash
-cd /home/hfy/APP/All_bot/frontend
+cd /home/hfy/APP/All_bot/dashboard/frontend
 npm run dev -- --host 127.0.0.1
 ```
 
@@ -39,28 +45,28 @@ npm run dev -- --host 127.0.0.1
 移动端截图示例：
 
 ```bash
-cd /home/hfy/APP/All_bot/frontend
+cd /home/hfy/APP/All_bot/dashboard/frontend
 npx playwright screenshot \
   --browser chromium \
   --viewport-size=489,552 \
-  --wait-for-selector='.lab-composer' \
+  --wait-for-selector='#app' \
   --wait-for-timeout=1000 \
   --timeout=20000 \
-  http://127.0.0.1:5175/lab-preview \
-  /tmp/lab-preview-mobile.png
+  http://127.0.0.1:5175 \
+  /tmp/dashboard-mobile.png
 ```
 
 桌面截图示例：
 
 ```bash
-cd /home/hfy/APP/All_bot/frontend
+cd /home/hfy/APP/All_bot/dashboard/frontend
 npx playwright screenshot \
   --browser chromium \
   --viewport-size=1440,900 \
   --wait-for-timeout=1000 \
   --timeout=20000 \
-  http://127.0.0.1:5175/lab-preview \
-  /tmp/lab-preview-desktop.png
+  http://127.0.0.1:5175 \
+  /tmp/dashboard-desktop.png
 ```
 
 截图后使用 `view_image` 查看本地图片；不要只依赖命令成功。

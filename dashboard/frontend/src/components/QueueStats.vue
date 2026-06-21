@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { 
   ThunderboltOutlined, 
   PictureOutlined, 
@@ -16,6 +16,7 @@ import { message, Modal } from 'ant-design-vue'
 import { useQueueStatsMonitor } from '../composables/useQueueStatsMonitor'
 import RunPodCapacityManager from './RunPodCapacityManager.vue'
 import RunPodWorkerActions from './RunPodWorkerActions.vue'
+import WorkerHistoryModal from './WorkerHistoryModal.vue'
 
 const {
   status,
@@ -28,6 +29,9 @@ const {
   syncLock,
   updateQueue,
 } = useQueueStatsMonitor()
+
+const workerHistoryOpen = ref(false)
+const selectedWorkerHistoryId = ref('')
 
 const handleCleanZombies = () => {
   Modal.confirm({
@@ -60,6 +64,19 @@ const formatDuration = (timestamp) => {
   const m = Math.floor(diff / 60)
   const s = diff % 60
   return `${m}m ${s}s`
+}
+
+const formatWaitDuration = (seconds) => {
+  if (seconds === null || seconds === undefined) return '-'
+  const totalSeconds = Math.max(0, Math.floor(Number(seconds)))
+  if (!Number.isFinite(totalSeconds)) return '-'
+  if (totalSeconds < 60) return `${totalSeconds}s`
+  const minutes = Math.floor(totalSeconds / 60)
+  const remainingSeconds = totalSeconds % 60
+  if (minutes < 60) return `${minutes}m ${remainingSeconds}s`
+  const hours = Math.floor(minutes / 60)
+  const remainingMinutes = minutes % 60
+  return `${hours}h ${remainingMinutes}m`
 }
 
 const formatTimeUntil = (timestamp) => {
@@ -139,6 +156,19 @@ const getWorkerStatusMeta = (worker) => {
 
 const isFaultWorker = (worker) => ['error', 'quarantined'].includes(worker.status)
 
+const openWorkerHistory = (agentId) => {
+  if (!agentId) return
+  selectedWorkerHistoryId.value = agentId
+  workerHistoryOpen.value = true
+}
+
+const handleWorkerHistoryOpenChange = (open) => {
+  workerHistoryOpen.value = open
+  if (!open) {
+    selectedWorkerHistoryId.value = ''
+  }
+}
+
 const handleSyncLock = async (userId) => {
   try {
     const res = await syncLock(userId)
@@ -181,7 +211,7 @@ const handleSyncLock = async (userId) => {
     </div>
     
     <a-row :gutter="[16, 16]" class="mb-4">
-      <a-col :xs="24" :sm="6">
+      <a-col :xs="24" :sm="8">
         <a-card hoverable class="queue-card border-l-4 border-l-blue-500 h-full">
           <a-statistic
             title="总活跃任务"
@@ -198,7 +228,7 @@ const handleSyncLock = async (userId) => {
         </a-card>
       </a-col>
       
-      <a-col :xs="24" :sm="6">
+      <a-col :xs="24" :sm="8">
         <a-card hoverable class="queue-card border-l-4 border-l-green-500 h-full">
           <a-statistic
             title="活跃 Worker"
@@ -217,7 +247,7 @@ const handleSyncLock = async (userId) => {
         </a-card>
       </a-col>
 
-      <a-col :xs="24" :sm="6">
+      <a-col :xs="24" :sm="8">
         <a-card hoverable class="queue-card border-l-4 border-l-orange-500 h-full">
           <a-statistic
             title="用户并发锁"
@@ -233,32 +263,49 @@ const handleSyncLock = async (userId) => {
           </a-statistic>
         </a-card>
       </a-col>
-      
-      <a-col :xs="24" :sm="6" v-if="queueByTypeDisplay.length > 0">
-        <a-card hoverable class="queue-card border-l-4 border-l-purple-500 h-full">
-           <div class="text-gray-500 mb-1">活跃任务详情</div>
-           <div class="flex flex-col gap-1 max-h-24 overflow-y-auto pr-2 custom-scrollbar">
-             <div v-for="item in queueByTypeDisplay" :key="item.type" class="flex justify-between items-center text-sm border-b border-gray-100 pb-1 last:border-0">
-               <span class="truncate pr-2" :title="item.type">{{ item.type }}</span>
-               <span class="font-bold text-purple-600 shrink-0">{{ item.count }}</span>
-             </div>
-           </div>
-        </a-card>
-      </a-col>
-      <a-col :xs="24" :sm="6" v-else>
-        <a-card hoverable class="queue-card border-l-4 border-l-gray-300 h-full">
-          <a-statistic
-            title="活跃任务详情"
-            value="暂无排队"
-            :value-style="{ color: '#8c8c8c', fontSize: '16px' }"
-          >
-            <template #prefix>
-              <picture-outlined />
-            </template>
-          </a-statistic>
-        </a-card>
-      </a-col>
     </a-row>
+
+    <a-card hoverable class="queue-card active-task-detail-card border-l-4 border-l-purple-500 mb-4">
+      <div class="flex items-center justify-between gap-3 mb-3">
+        <div class="text-gray-700 font-bold">活跃任务详情</div>
+        <a-tag color="purple" class="m-0">共 {{ queueByTypeDisplay.length }} 类</a-tag>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="active-task-detail-table">
+          <thead>
+            <tr>
+              <th>任务类型</th>
+              <th>活跃数</th>
+              <th>排队数</th>
+              <th>最长排队等待</th>
+            </tr>
+          </thead>
+          <tbody v-if="queueByTypeDisplay.length > 0">
+            <tr v-for="item in queueByTypeDisplay" :key="item.type">
+              <td>
+                <span class="task-type-cell" :title="item.type">{{ item.type }}</span>
+              </td>
+              <td>
+                <span class="metric-value text-purple-600">{{ item.activeCount }}</span>
+              </td>
+              <td>
+                <span class="metric-value text-blue-600">{{ item.pendingCount }}</span>
+              </td>
+              <td>
+                <span class="metric-value text-orange-600">
+                  {{ formatWaitDuration(item.maxPendingWaitSeconds) }}
+                </span>
+              </td>
+            </tr>
+          </tbody>
+          <tbody v-else>
+            <tr>
+              <td colspan="4" class="empty-detail-cell">暂无活跃任务</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </a-card>
 
     <!-- Worker 实时状态卡片组 -->
     <div class="mb-2 mt-6">
@@ -268,11 +315,22 @@ const handleSyncLock = async (userId) => {
     </div>
     <a-row :gutter="[16, 16]">
       <a-col :xs="24" :sm="12" :md="8" :lg="6" v-for="worker in workers" :key="worker.agent_id">
-        <a-card size="small" hoverable class="worker-card h-full flex flex-col" :class="getWorkerStatusMeta(worker).cardClass">
+        <a-card
+          size="small"
+          hoverable
+          class="worker-card h-full flex flex-col"
+          :class="getWorkerStatusMeta(worker).cardClass"
+          role="button"
+          tabindex="0"
+          :aria-label="`查看 ${worker.agent_id} 的历史生成记录`"
+          @click="openWorkerHistory(worker.agent_id)"
+          @keydown.enter.prevent="openWorkerHistory(worker.agent_id)"
+          @keydown.space.prevent="openWorkerHistory(worker.agent_id)"
+        >
           <template #title>
-            <div class="flex justify-between items-center w-full gap-2">
-              <span class="font-mono text-sm font-bold truncate pr-2" :title="worker.agent_id">{{ worker.agent_id }}</span>
-              <div class="flex items-center gap-2 shrink-0">
+            <div class="worker-card-title">
+              <span class="worker-card-agent" :title="worker.agent_id">{{ worker.agent_id }}</span>
+              <div class="worker-card-controls" @click.stop @keydown.stop>
                 <run-pod-worker-actions :worker="worker" @changed="updateQueue" />
                 <a-badge :status="getWorkerStatusMeta(worker).badgeStatus" :text="getWorkerStatusMeta(worker).text" />
               </div>
@@ -402,6 +460,11 @@ const handleSyncLock = async (userId) => {
       </a-table>
     </a-card>
 
+    <worker-history-modal
+      :open="workerHistoryOpen"
+      :worker-id="selectedWorkerHistoryId"
+      @update:open="handleWorkerHistoryOpenChange"
+    />
   </div>
 </template>
 
@@ -417,9 +480,88 @@ const handleSyncLock = async (userId) => {
 .worker-card {
   transition: all 0.3s;
   border-radius: 6px;
+  cursor: pointer;
+  outline: none;
+}
+.worker-card:focus-visible {
+  box-shadow: 0 0 0 3px rgba(24, 144, 255, 0.22);
+}
+.worker-card :deep(.ant-card-head) {
+  min-height: auto;
+}
+.worker-card :deep(.ant-card-head-title) {
+  overflow: visible;
+  white-space: normal;
+  padding: 8px 0;
 }
 .worker-card:hover {
   box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+.worker-card-title {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+.worker-card-agent {
+  display: block;
+  color: #374151;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  word-break: break-word;
+}
+.worker-card-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+.active-task-detail-card {
+  overflow: hidden;
+}
+.active-task-detail-table {
+  width: 100%;
+  min-width: 520px;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.active-task-detail-table th {
+  color: #6b7280;
+  font-weight: 600;
+  text-align: left;
+  background: #f9fafb;
+  border-bottom: 1px solid #eef0f3;
+  padding: 8px 12px;
+}
+.active-task-detail-table td {
+  border-bottom: 1px solid #f0f2f5;
+  padding: 8px 12px;
+  vertical-align: middle;
+}
+.active-task-detail-table tr:last-child td {
+  border-bottom: 0;
+}
+.task-type-cell {
+  display: block;
+  color: #374151;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  overflow-wrap: anywhere;
+}
+.metric-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-weight: 700;
+}
+.empty-detail-cell {
+  color: #9ca3af;
+  text-align: center;
 }
 .custom-scrollbar::-webkit-scrollbar {
   width: 4px;

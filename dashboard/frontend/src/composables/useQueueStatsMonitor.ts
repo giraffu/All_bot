@@ -10,6 +10,7 @@ import {
 const defaultStatus = () => ({
   queue_size: 0,
   queue_by_type: {},
+  queue_by_type_details: {},
   active_workers: 0,
   healthy_workers: 0,
   error_workers: 0,
@@ -32,14 +33,48 @@ export function useQueueStatsMonitor() {
   let tick = 0
 
   const queueByTypeDisplay = computed(() => {
-    if (!status.value.queue_by_type || Object.keys(status.value.queue_by_type).length === 0) {
+    const queueByType = status.value.queue_by_type || {}
+    const queueByTypeDetails = status.value.queue_by_type_details || {}
+    const taskTypes = Array.from(
+      new Set([...Object.keys(queueByType), ...Object.keys(queueByTypeDetails)])
+    )
+
+    if (taskTypes.length === 0) {
       return []
     }
 
-    return Object.entries(status.value.queue_by_type).map(([type, count]) => ({
-      type,
-      count,
-    }))
+    return taskTypes
+      .map((type) => {
+        const detail = queueByTypeDetails[type] || {}
+        const rawWaitSeconds = detail.max_pending_wait_seconds
+        const maxPendingWaitSeconds =
+          rawWaitSeconds === null || rawWaitSeconds === undefined
+            ? null
+            : Number(rawWaitSeconds)
+
+        return {
+          type,
+          count: Number(detail.active_count ?? queueByType[type] ?? 0),
+          activeCount: Number(detail.active_count ?? queueByType[type] ?? 0),
+          pendingCount: Number(detail.pending_count ?? 0),
+          maxPendingWaitSeconds: Number.isFinite(maxPendingWaitSeconds)
+            ? maxPendingWaitSeconds
+            : null,
+          oldestPendingTaskId: detail.oldest_pending_task_id || null,
+          oldestPendingCreatedAt: detail.oldest_pending_created_at || null,
+        }
+      })
+      .sort((a, b) => {
+        const waitA = a.maxPendingWaitSeconds ?? -1
+        const waitB = b.maxPendingWaitSeconds ?? -1
+        if (waitA !== waitB) {
+          return waitB - waitA
+        }
+        if (a.activeCount !== b.activeCount) {
+          return b.activeCount - a.activeCount
+        }
+        return a.type.localeCompare(b.type)
+      })
   })
 
   const loadConcurrencyStats = async () => {

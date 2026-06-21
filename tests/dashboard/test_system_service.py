@@ -48,6 +48,47 @@ class _FakeDbSession:
         return SimpleNamespace(all=lambda: self._rows)
 
 
+class _FakePendingPipeline:
+    def __init__(self, redis_client):
+        self.redis_client = redis_client
+        self.ops = []
+
+    def hget(self, key, field):
+        self.ops.append((key, field))
+        return self
+
+    async def execute(self):
+        return [
+            self.redis_client.hashes.get(key, {}).get(field)
+            for key, field in self.ops
+        ]
+
+
+class _FakePendingRedis:
+    def __init__(self, *, pending_scores=None, hashes=None, fail_zrange=False):
+        self.pending_scores = dict(pending_scores or {})
+        self.hashes = dict(hashes or {})
+        self.fail_zrange = fail_zrange
+        self.closed = False
+
+    async def zrange(self, _key, start, end):
+        if self.fail_zrange:
+            raise RuntimeError("redis unavailable")
+        items = sorted(self.pending_scores.items(), key=lambda item: item[1])
+        if end == -1:
+            sliced = items[start:]
+        else:
+            sliced = items[start : end + 1]
+        return [task_id for task_id, _score in sliced]
+
+    def pipeline(self, transaction=False):
+        _ = transaction
+        return _FakePendingPipeline(self)
+
+    async def aclose(self):
+        self.closed = True
+
+
 @pytest.fixture(autouse=True)
 def _clear_backend_task_status_cache():
     system_service.clear_backend_task_status_cache()
@@ -169,6 +210,38 @@ def test_count_tasks_by_type_uses_worker_execution_task_types():
 
 
 @pytest.mark.asyncio
+async def test_get_pending_queue_wait_details_uses_created_at_not_priority_score():
+    redis_client = _FakePendingRedis(
+        pending_scores={
+            "newer-but-higher-priority": 1.0,
+            "oldest-by-created-at": 9999.0,
+        },
+        hashes={
+            "comfy:task:newer-but-higher-priority": {
+                "type": "custom_video",
+                "created_at": "1900",
+            },
+            "comfy:task:oldest-by-created-at": {
+                "type": "image_to_video",
+                "created_at": "1000",
+            },
+        },
+    )
+
+    details = await system_service.get_pending_queue_wait_details(
+        redis_url="redis://worker",
+        redis_from_url_func=lambda *_args, **_kwargs: redis_client,
+        now_func=lambda: 2000,
+    )
+
+    assert details["image_to_video"]["pending_count"] == 2
+    assert details["image_to_video"]["max_pending_wait_seconds"] == 1000
+    assert details["image_to_video"]["oldest_pending_task_id"] == "oldest-by-created-at"
+    assert details["image_to_video"]["oldest_pending_created_at"] == 1000.0
+    assert redis_client.closed is True
+
+
+@pytest.mark.asyncio
 async def test_get_system_status_proxy_payload_uses_active_task_registry_counts():
     middleware_payload = {
         "queue_size": 71,
@@ -185,16 +258,43 @@ async def test_get_system_status_proxy_payload_uses_active_task_registry_counts(
         "registry-task-2": {"task_type": "ltx_video"},
         "registry-task-3": {"task_type": "ltx_video"},
     }
+    pending_wait_details = {
+        "ltx_video": {
+            "pending_count": 1,
+            "max_pending_wait_seconds": 742,
+            "oldest_pending_task_id": "backend-task-2",
+            "oldest_pending_created_at": 1782050000.0,
+        }
+    }
 
     data = await system_service.get_system_status_proxy_payload(
         httpx_async_client_factory=lambda **_kwargs: _FakeAsyncClient(middleware_payload),
         get_system_task_stats_func=AsyncMock(
             return_value=(active_tasks, {1001: 1, 1002: 2})
         ),
+        get_pending_queue_wait_details_func=AsyncMock(
+            return_value=pending_wait_details
+        ),
     )
 
     assert data["queue_size"] == 3
     assert data["queue_by_type"] == {"i2i_pro": 1, "ltx_video": 2}
+    assert data["queue_by_type_details"] == {
+        "i2i_pro": {
+            "active_count": 1,
+            "pending_count": 0,
+            "max_pending_wait_seconds": None,
+            "oldest_pending_task_id": None,
+            "oldest_pending_created_at": None,
+        },
+        "ltx_video": {
+            "active_count": 2,
+            "pending_count": 1,
+            "max_pending_wait_seconds": 742,
+            "oldest_pending_task_id": "backend-task-2",
+            "oldest_pending_created_at": 1782050000.0,
+        },
+    }
     assert data["middleware_queue_size"] == 71
     assert data["middleware_queue_by_type"] == {"i2i_pro": 23, "ltx_video": 33}
     assert data["concurrency_locks"] == 3
@@ -206,6 +306,39 @@ async def test_get_system_status_proxy_payload_uses_active_task_registry_counts(
         "idle": 4,
         "error": 1,
         "quarantined": 1,
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_system_status_proxy_payload_degrades_when_pending_wait_fails():
+    active_tasks = {
+        "registry-task-1": {"task_type": "i2i_pro"},
+    }
+
+    data = await system_service.get_system_status_proxy_payload(
+        httpx_async_client_factory=lambda **_kwargs: _FakeAsyncClient(
+            {
+                "queue_size": 1,
+                "queue_by_type": {"i2i_pro": 1},
+                "active_workers": 1,
+                "healthy_workers": 1,
+                "comfy_online": True,
+            }
+        ),
+        get_system_task_stats_func=AsyncMock(return_value=(active_tasks, {})),
+        get_pending_queue_wait_details_func=AsyncMock(
+            side_effect=RuntimeError("worker redis down")
+        ),
+    )
+
+    assert data["queue_size"] == 1
+    assert data["queue_by_type"] == {"i2i_pro": 1}
+    assert data["queue_by_type_details"]["i2i_pro"] == {
+        "active_count": 1,
+        "pending_count": 0,
+        "max_pending_wait_seconds": None,
+        "oldest_pending_task_id": None,
+        "oldest_pending_created_at": None,
     }
 
 
