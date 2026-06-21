@@ -10,6 +10,7 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_I2I_PRO_MODEL_PREFIX,
     RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES,
     RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
+    RUNPOD_IMG2IMG_LORA_DOCKER_START_CMD,
     RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF,
     RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF,
     RUNPOD_PROD_AGENT_ID,
@@ -936,6 +937,10 @@ def test_render_create_cloud_prod_manual_worker_uses_prod_refs_and_bucket():
     assert "templateId" not in body
     assert body["name"] == "allbot-runpod-prod-img2img-manual-01"
     assert body["imageName"] == RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE
+    assert body["dockerStartCmd"] == list(RUNPOD_IMG2IMG_LORA_DOCKER_START_CMD)
+    assert body["dockerStartCmd"][2].startswith("set -euo pipefail;")
+    assert "git clone --depth 1 --branch" in body["dockerStartCmd"][2]
+    assert "runpod_bootstrap_from_git.sh" in body["dockerStartCmd"][2]
     assert body["gpuTypeIds"] == list(RUNPOD_PROD_GPU_TYPE_IDS)
     assert env["ENVIRONMENT"] == "prod"
     assert env["RUNPOD_ENVIRONMENT"] == "cloud-prod"

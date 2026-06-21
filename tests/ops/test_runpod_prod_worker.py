@@ -11,6 +11,7 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_I2I_PRO_MODEL_PREFIX,
     RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES,
     RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
+    RUNPOD_IMG2IMG_LORA_DOCKER_START_CMD,
     RUNPOD_PROD_AGENT_ID,
     RUNPOD_PROD_GPU_TYPE_IDS,
     RUNPOD_PROD_SUPPORTED_TASK_TYPES,
@@ -371,6 +372,9 @@ def test_prod_worker_render_dry_run_uses_verified_image_and_prod_defaults():
 
     assert payload["ok"] is True
     assert payload["render"]["imageName"] == RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE
+    assert payload["render"]["docker_start_cmd"] == list(
+        RUNPOD_IMG2IMG_LORA_DOCKER_START_CMD
+    )
     assert (
         payload["render"]["central_api_url"] == "https://worker-central.aivison.it.com"
     )

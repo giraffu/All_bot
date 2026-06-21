@@ -367,7 +367,7 @@ python scripts/gpu_pool_controller.py runpod prod-worker canary --profile scail2
 | `i2i_pro` | `runpod_prod_i2i_pro_manual_NN` | `i2i_pro,t2i-pornmaster-turbo,face_swap` | `i2i_pro/2026-06-14-test/manifest.json` | `NVIDIA GeForce RTX 4090` |
 | `scail2` | `runpod_prod_scail2_manual_NN` | `scail2_action_transfer,scail2_video_replacement` | `scail2/2026-06-17-test/manifest.json` | `NVIDIA GeForce RTX 4090` |
 
-正式 `image_to_video` / `wan22_video_v2` RunPod 镜像必须精确使用 `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd`；`i2i_pro` 镜像必须以 `ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:` 开头；`scail2` 镜像必须以 `ghcr.io/giraffu/allbot-comfy-runpod-scail2:` 开头；`img2img` 使用已验证 public GHCR 图生图镜像。
+正式 `image_to_video` / `wan22_video_v2` RunPod 镜像必须精确使用 `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd`；`i2i_pro` 镜像必须以 `ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:` 开头；`scail2` 镜像必须以 `ghcr.io/giraffu/allbot-comfy-runpod-scail2:` 开头；`img2img` 使用已验证 public GHCR 图生图镜像。所有 cloud-prod 手动 RunPod profile 都必须在 create payload 显式带 `dockerStartCmd=["bash","-lc","exec bash /opt/allbot/runpod_bootstrap_from_git.sh"]`；若 RunPod API 显示目标 Pod 的 `dockerStartCmd=null`，说明它没有走 bootstrap/model sync/最新 remote_workers bundle，不能通过原地 restart 修复，需先 disable 并确认无当前任务后删除重建。
 
 ## 6. 真实执行门禁
 任意真实 RunPod mutation 都必须显式满足：
@@ -780,7 +780,7 @@ RUNPOD_MODEL_SECRET_KEY={{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}
 | `vae/z_image/ae.safetensors` | `335,304,388` |
 | `unet/DarkBeastZ6-BlitZ-BF16-ComfyUI.safetensors` | `12,309,878,608` |
 
-- `remote_workers/scripts/runpod_sync_models_from_r2.py` 支持 `.partial` 断点续传、有限重试和进度日志；已经创建的 Pod 不会热更新 `dockerStartCmd`，需删除重建。
+- `remote_workers/scripts/runpod_sync_models_from_r2.py` 支持 `.partial` 断点续传、有限重试和进度日志；已经创建的 Pod 不会热更新 `dockerStartCmd`，需删除重建。Dashboard/CLI 新增 RunPod 前可先用 `prod-worker render` 核对 `docker_start_cmd`，避免创建出 `dockerStartCmd=null` 的旧入口 Pod。
 - 不要直接 `docker commit` 局域网成功的 ComfyUI 容器作为发布镜像；成功内容主要来自 volume/bind mount，commit 会漏 custom nodes/models/workflows，且可能混入运行残留。
 - `img2img_lora` public GHCR 镜像已经通过真实任务 canary；新 profile 不能继承这个结论，必须单独准备模型 manifest、custom nodes、系统依赖和真实 Web canary。
 

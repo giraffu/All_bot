@@ -2,6 +2,7 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_I2I_PRO_MODEL_MANIFEST_KEY,
     RUNPOD_I2I_PRO_MODEL_PREFIX,
     RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
+    RUNPOD_IMG2IMG_LORA_DOCKER_START_CMD,
     RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
     RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
@@ -90,6 +91,7 @@ def test_pod_request_builder_keeps_profile_specific_prod_env():
     )
 
     assert img2img["imageName"] == RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE
+    assert img2img["dockerStartCmd"] == list(RUNPOD_IMG2IMG_LORA_DOCKER_START_CMD)
     assert wan22["imageName"] == RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE
     assert wan22["env"]["COMFY_EXTRA_ARGS"] == RUNPOD_WAN22_VIDEO_V2_COMFY_EXTRA_ARGS
     assert wan22["env"]["WAN22_VIDEO_V2_COMPLETION_TIMEOUT_SECONDS"] == "600"

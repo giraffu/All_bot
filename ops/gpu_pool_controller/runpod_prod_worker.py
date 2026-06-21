@@ -1504,6 +1504,7 @@ class RunPodProdWorkerRunner:
             "model_bucket": env.get("RUNPOD_MODEL_BUCKET"),
             "model_prefix": env.get("RUNPOD_MODEL_PREFIX"),
             "model_manifest_key": env.get("RUNPOD_MODEL_MANIFEST_KEY"),
+            "docker_start_cmd": body.get("dockerStartCmd"),
             "wan22_timeout_seconds": env.get(
                 "WAN22_VIDEO_V2_COMPLETION_TIMEOUT_SECONDS"
             ),

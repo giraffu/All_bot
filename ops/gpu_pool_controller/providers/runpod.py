@@ -17,6 +17,7 @@ from ..runpod_profile_catalog import (
     RUNPOD_I2I_PRO_MODEL_PREFIX,
     RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES,
     RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
+    RUNPOD_IMG2IMG_LORA_DOCKER_START_CMD,
     RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
     RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX,
     RUNPOD_PROD_AGENT_ID,
@@ -352,7 +353,9 @@ class RunPodSettings:
     use_template_wan22_video_v2: bool = False
     use_template_i2i_pro: bool = False
     use_template_scail2: bool = False
-    docker_start_cmd_img2img_lora: tuple[str, ...] = ()
+    docker_start_cmd_img2img_lora: tuple[
+        str, ...
+    ] = RUNPOD_IMG2IMG_LORA_DOCKER_START_CMD
     docker_start_cmd_wan22_aio_video: tuple[str, ...] = ()
     docker_start_cmd_image_to_video: tuple[str, ...] = ()
     docker_start_cmd_wan22_video_v2: tuple[str, ...] = ()
@@ -574,7 +577,8 @@ class RunPodSettings:
                 os.getenv("RUNPOD_DOCKER_START_SCRIPT_IMG2IMG_LORA"),
                 os.getenv("RUNPOD_DOCKER_START_SCRIPT_FILE_IMG2IMG_LORA"),
                 json_env_name="RUNPOD_DOCKER_START_CMD_JSON_IMG2IMG_LORA",
-            ),
+            )
+            or RUNPOD_IMG2IMG_LORA_DOCKER_START_CMD,
             docker_start_cmd_wan22_aio_video=_docker_start_cmd_env(
                 os.getenv("RUNPOD_DOCKER_START_CMD_JSON_WAN22_AIO_VIDEO"),
                 os.getenv("RUNPOD_DOCKER_START_SCRIPT_WAN22_AIO_VIDEO"),
