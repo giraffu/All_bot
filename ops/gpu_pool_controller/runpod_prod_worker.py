@@ -569,7 +569,11 @@ class RunPodProdWorkerRunner:
         summary["ok"] = True
 
     def _run_down(self, summary: dict[str, Any]) -> None:
-        self._run_preflight(summary, allow_existing_prod_pod=True)
+        self._run_preflight(
+            summary,
+            allow_existing_prod_pod=True,
+            require_create_render=False,
+        )
         if not self.options.execute:
             summary["ok"] = True
             summary["would_execute"] = [
@@ -1297,6 +1301,7 @@ class RunPodProdWorkerRunner:
         summary: dict[str, Any],
         *,
         allow_existing_prod_pod: bool = False,
+        require_create_render: bool = True,
     ) -> None:
         self._phase(summary, "runpod_validate_key", "running")
         validate = self.provider.validate_key()
@@ -1332,10 +1337,11 @@ class RunPodProdWorkerRunner:
         }
         self._phase(summary, "runpod_reconcile", "ok", summary["reconcile"])
 
-        self._phase(summary, "render", "running")
-        render = self._render(redact=False)
-        summary["render"] = self._render_summary(render)
-        self._phase(summary, "render", "ok", summary["render"])
+        if require_create_render:
+            self._phase(summary, "render", "running")
+            render = self._render(redact=False)
+            summary["render"] = self._render_summary(render)
+            self._phase(summary, "render", "ok", summary["render"])
 
         self._phase(summary, "central_health", "running")
         health = self._http_json("GET", _join_url(self.options.central_url, "health"))

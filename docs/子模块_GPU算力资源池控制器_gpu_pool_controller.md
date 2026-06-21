@@ -517,6 +517,8 @@ Dashboard 系统监控页也提供正式手动 RunPod 池的日常 Web 入口：
 
 Dashboard 入口不重写 RunPod provider 逻辑，只异步调用 `scripts/runpod_prod_ops.sh`。数量字段是新增数量；旧前端若仍发送 `desired_count`，后端也按新增数量解释，不会触发 `scale --desired` 或删除既有 slot。当前 Dashboard profile 列表包含 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro` 与 `scail2 / 视频生视频`；`scail2` 对应 `scail2_action_transfer,scail2_video_replacement` 两类正式任务。同一请求里同一 profile 只能出现一次；若同 profile 已有未结束的 `add` operation，Dashboard 后端会返回 409，禁止再次提交，避免并发新增抢到同一个 `manual_NN` slot。后台 operation 默认使用 30 秒间隔、100 次无库存重试，真实执行只打开 `RUNPOD_DRY_RUN=false` 与 `RUNPOD_AUTOSCALER_ENABLED=true`，并把 `RUNPOD_PROD_MAX_MANUAL_SLOTS` 设为 `100` 或请求指定值。运行中的新增 operation 可从最近操作点 `终止`，后端会先向该 operation 的进程组发送 SIGTERM；如果该次 operation 已记录 `runpod_create_pod_NN`，会继续提交对应 slot 的 `down` 清理。未记录到创建 slot 的终止只停止等待/重试进程，不推测删除其它 Pod。云正式 Dashboard 后端默认优先把容器内 `/app/.env` 同时作为 `--runpod-env-file` 与 `--prod-env-file`；该文件由云正式 `.env.cloud.prod` 挂载，必须包含完整、shell-compatible 的 `RUNPOD_*` 手动池配置和可用 `RUNPOD_API_KEY`。不要把本机测试专用 `RUNPOD_PUBLIC_KEY_FILE` 路径带入云正式容器；生产路径默认不依赖 RunPod SSH。必要时仍可通过 `DASHBOARD_RUNPOD_ENV_FILE` / `DASHBOARD_RUNPOD_PROD_ENV_FILE` 覆盖 env 路径；不得在 API 响应、operation 日志或文档中输出任何 env 内容或密钥。
 
+`down` 删除已有 Pod 的 preflight 只做 RunPod key、Pod 列表、reconcile 与 Central health 检查，不渲染 create pod request，因此不会因缺少 `RUNPOD_IMAGE_NAME_I2I_PRO` / `RUNPOD_IMAGE_NAME_SCAIL2` 这类创建镜像配置而阻断删除；`up` / `add` / `render` / `canary` 仍必须具备目标 profile 的正式镜像与模型配置。
+
 底层高级命令：
 
 ```bash
@@ -718,7 +720,7 @@ python scripts/gpu_pool_controller.py runpod prod-worker up \
 正式流程红线：
 - `up --execute` 固定为预检 -> 写目标 agent control `disabled` -> 创建 Pod -> 等 readiness -> 等 Central heartbeat；ready 后默认不抢正式订单。`prod-worker` 的 worker heartbeat 等待默认 `3600s`，用于覆盖 `i2i_pro` / `scail2` 首次同步大模型的启动窗口。
 - `enable --execute` 才允许目标 worker 接单。
-- `down --execute` 必须确认无 `current_task_id`，忙碌 worker 不提供隐式 force。
+- `down --execute` 必须确认无 `current_task_id`，忙碌 worker 不提供隐式 force；删除已有 Pod 不渲染 create pod request，也不应因缺少某个 profile 的 `RUNPOD_IMAGE_NAME_*` 创建配置而失败。
 - `canary --execute` 不禁用现有正式 worker；完成后恢复目标 RunPod worker 为 `disabled`。
 - `prod-worker canary --profile i2i_pro --execute` 会串行提交 `i2i_pro`、Web `txt2img`、`face_swap` 三单，要求三单均由 `runpod_prod_i2i_pro_manual_NN` 接单并产出可下载图片。
 - `prod-worker canary --profile scail2 --execute` 会串行提交 `scail2_action_transfer` 与 `scail2_video_replacement` 两个 5s 正式内部任务，要求两单均由 `runpod_prod_scail2_manual_NN` 接单、结果 MP4 写入 `user-data-prod` 且可下载；若需要强制命中 RunPod，应先让 SCAIL-2 pending 清空并临时 disable LAN SCAIL-2 agent。

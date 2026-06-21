@@ -200,6 +200,22 @@ class FailingRestartRunPodProvider(FakeRunPodProvider):
         return {"ok": False, "error": "native restart failed after disable"}
 
 
+class FailingRenderRunPodProvider(FakeRunPodProvider):
+    def render_create_pod_request(self, *, task_type, environment, redact=True):
+        raise AssertionError("down should not render a create pod request")
+
+    def for_prod_agent_id(self, agent_id: str):
+        return FailingRenderRunPodProvider(
+            replace(self.settings, prod_agent_id=agent_id),
+            pods=self.pods,
+            create_log=self.create_log,
+            delete_log=self.delete_log,
+            start_log=self.start_log,
+            stop_log=self.stop_log,
+            restart_log=self.restart_log,
+        )
+
+
 class SlotRaceRunPodProvider(FakeRunPodProvider):
     def __init__(self, *args, stolen_slot: str, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -953,6 +969,50 @@ def test_prod_worker_scale_desired_zero_drains_and_deletes_all_slots():
         ("runpod_prod_img2img_manual_02", "disabled"),
         ("runpod_prod_img2img_manual_01", "disabled"),
     ]
+
+
+def test_prod_worker_down_deletes_existing_slots_without_create_render_config():
+    cases = [
+        ("img2img", "img2img_lora", {}),
+        ("image_to_video", "image_to_video", {}),
+        ("wan22_video_v2", "wan22_video_v2", {}),
+        ("i2i_pro", "i2i_pro", {"image_name_i2i_pro": ""}),
+        ("scail2", "scail2", {"image_name_scail2": ""}),
+    ]
+    for profile, task_type, setting_overrides in cases:
+        agent_id = prod_agent_id_from_slot("01", profile=profile)
+        provider = FailingRenderRunPodProvider(
+            _settings(
+                dry_run=False,
+                autoscaler_enabled=True,
+                prod_agent_id=agent_id,
+                **setting_overrides,
+            ),
+            pods=[_prod_pod("01", profile=profile)],
+        )
+        options = RunPodProdWorkerOptions(
+            action="down",
+            execute=True,
+            profile=profile,
+            task_type=task_type,
+            agent_id=agent_id,
+            agent_token="agent_token",
+            quiet=True,
+        )
+        runner = FakeHttpProdWorkerRunner(
+            provider,
+            options,
+            workers=[_worker("01", profile=profile)],
+            sleep_func=lambda _seconds: None,
+        )
+
+        payload = runner.run()
+
+        assert payload["ok"] is True, (profile, payload.get("error"))
+        assert provider.create_calls == 0
+        assert provider.delete_calls == 1
+        assert provider.delete_log[0]["pod_id"] == "pod-prod-01"
+        assert _control_posts(runner) == [(agent_id, "disabled")]
 
 
 def test_prod_worker_scale_rejects_desired_above_max_slots():
