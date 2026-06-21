@@ -18,7 +18,10 @@
 - RunPod public provider facade：`ops/gpu_pool_controller/providers/runpod.py`
 - RunPod profile/catalog 事实源：`ops/gpu_pool_controller/runpod_profile_catalog.py`
 - RunPod create pod request 渲染 seam：`ops/gpu_pool_controller/runpod_pod_request.py`
-- RunPod 云测试 canary：`ops/gpu_pool_controller/runpod_canary.py`、`ops/gpu_pool_controller/runpod_split_video_canary.py`
+- RunPod 通用 HTTP seam：`ops/gpu_pool_controller/runpod_http.py`
+- RunPod 通用 auth/control seam：`ops/gpu_pool_controller/runpod_control.py`
+- RunPod 云测试 canary lifecycle coordinator：`ops/gpu_pool_controller/runpod_canary.py`、`ops/gpu_pool_controller/runpod_split_video_canary.py`
+- RunPod 云测试 canary case/executor seam：`ops/gpu_pool_controller/runpod_cloud_test_canary.py`
 - RunPod 云测试 worker scale：`ops/gpu_pool_controller/runpod_workers.py`
 - RunPod 手动正式备用 worker coordinator：`ops/gpu_pool_controller/runpod_prod_worker.py`
 - RunPod 手动正式备用 worker 计划 seam：`ops/gpu_pool_controller/runpod_prod_worker_planner.py`
@@ -435,6 +438,15 @@ python scripts/gpu_pool_controller.py runpod workers render-scale \
 ```
 
 canary 摘要只允许记录脱敏后的 object key、task id、Central/Web 终态、下载后的本地路径和去掉 query string 的 result path；不要输出 JWT、agent token、presigned URL、完整 env 或完整 create payload。
+
+内部代码边界：`runpod_canary.py` 与 `runpod_split_video_canary.py` 继续保留
+CLI lifecycle、RunPod Pod 创建/等待/清理和旧私有方法兼容入口；HTTP JSON/raw、
+URL 脱敏、Web JWT / bearer token、agent control、`/system/workers` 读取、任务
+case payload、Central 终态等待、pop evidence、Web result 等待、R2 fallback 和
+MP4/PNG/last-frame 下载校验已收口到 `runpod_http.py`、`runpod_control.py` 与
+`runpod_cloud_test_canary.py`。新增 cloud-test canary profile 或调整任务 payload 时，
+优先在 `runpod_cloud_test_canary.py` 增加 case/executor focused tests，再通过旧 runner
+做集成回归，避免重新把 HTTP/control/下载逻辑写回 runner。
 
 `i2i_pro` cloud-test canary 必须通过 Web API 创建真实任务，而不是只做 worker 直测。当前 canary 会串行提交 `i2i_pro`、Web `txt2img` 和 `face_swap` 三单。验收口径：
 - RunPod worker heartbeat 出现为 `runpod_test_i2i_pro_*`。

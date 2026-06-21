@@ -13,6 +13,7 @@ from .providers.runpod import (
     redact_payload,
     redact_text,
 )
+from .runpod_cloud_test_canary import RunPodCloudTestCanaryExecutor
 from .runpod_canary import (
     EXPECTED_MODEL_BUCKET,
     EXPECTED_RUNPOD_CLOUD_TEST_CENTRAL_URL,
@@ -21,20 +22,15 @@ from .runpod_canary import (
     RunPodCanaryError,
     RunPodCanaryOptions,
     RunPodCanaryRunner,
-    TERMINAL_TASK_STATUSES,
     _extract_pod_id,
     _canary_profile_spec,
     _find_runpod_worker,
-    _find_worker_current_task,
-    _is_cloud_test_non_runpod_worker,
-    _join_url,
     _pod_summary,
     _utc_now_iso,
     _worker_summary,
-    _worker_supports_any_expected_type,
     _worker_supports_expected_types,
-    result_url_path,
 )
+from .runpod_control import join_url, select_cloud_test_worker_ids_to_disable
 from .runpod_video_manifests import (
     create_model_r2_client_from_env,
     prepare_split_video_manifests,
@@ -157,6 +153,19 @@ class RunPodSplitVideoCanaryRunner(RunPodCanaryRunner):
                 if task_type not in task_types:
                     task_types.append(task_type)
         return tuple(task_types)
+
+    def _split_canary_executor(self) -> RunPodCloudTestCanaryExecutor:
+        return RunPodCloudTestCanaryExecutor(
+            self._canary_config(),
+            http_json_func=self._http_json,
+            http_request_func=self._http_request,
+            web_auth_headers_func=self._web_auth_headers,
+            fetch_workers_func=self._fetch_workers,
+            sleep_func=self._sleep,
+            phase_func=self._phase,
+            fetch_result_bytes_func=self._fetch_result_bytes,
+            error_type=RunPodCanaryError,
+        )
 
     def _validate_static_options(self) -> None:
         if self.options.environment != "cloud-test":
@@ -508,13 +517,9 @@ class RunPodSplitVideoCanaryRunner(RunPodCanaryRunner):
     def _worker_ids_to_disable(self) -> tuple[str, ...]:
         if self.options.worker_ids_explicit:
             return self.options.worker_ids
-        return tuple(
-            str(worker.get("agent_id") or "")
-            for worker in self._fetch_workers()
-            if _is_cloud_test_non_runpod_worker(worker)
-            and _worker_supports_any_expected_type(
-                worker, expected_types=self.active_task_types
-            )
+        return select_cloud_test_worker_ids_to_disable(
+            self._fetch_workers(),
+            expected_types=self.active_task_types,
         )
 
     def _upload_canary_image(self, summary: dict[str, Any]) -> str:
@@ -527,7 +532,7 @@ class RunPodSplitVideoCanaryRunner(RunPodCanaryRunner):
         write_video_canary_png(image_path)
         presign = self._http_json(
             "GET",
-            _join_url(self.options.web_api_url, "storage", "presigned-url"),
+            join_url(self.options.web_api_url, "storage", "presigned-url"),
             params={
                 "filename": image_path.name,
                 "content_type": "image/png",
@@ -551,69 +556,10 @@ class RunPodSplitVideoCanaryRunner(RunPodCanaryRunner):
         return object_key
 
     def _task_cases(self, image_object_key: str) -> list[dict[str, Any]]:
-        base_inputs = {
-            "images": [image_object_key],
-            "image": image_object_key,
-            "resolution": "preview",
-            "resolution_preset": "preview",
-            "duration": 5,
-            "duration_seconds": 5,
-            "extract_last_frame": True,
-            "seed": 20260613,
-            "negative_prompt": self.options.negative_prompt,
-        }
-        cases = [
-            {
-                "label": "image_to_video_no_lora",
-                "worker_profile": "image_to_video",
-                "payload": {
-                    "task_type": "image_to_video",
-                    "inputs": {
-                        **base_inputs,
-                        "wan22_model_profile": "legacy_image_to_video",
-                    },
-                    "prompt": self.options.prompt,
-                    "negative_prompt": self.options.negative_prompt,
-                    "priority": 0,
-                },
-            },
-            {
-                "label": "image_to_video_insertion_lora",
-                "worker_profile": "image_to_video",
-                "lora_name": "Insertion",
-                "payload": {
-                    "task_type": "image_to_video",
-                    "inputs": {
-                        **base_inputs,
-                        "wan22_model_profile": "legacy_image_to_video",
-                        "lora_name": "Insertion",
-                        "lora_strength": 1.0,
-                    },
-                    "prompt": self.options.prompt,
-                    "negative_prompt": self.options.negative_prompt,
-                    "priority": 0,
-                },
-            },
-            {
-                "label": "wan22_video_v2",
-                "worker_profile": "wan22_video_v2",
-                "payload": {
-                    "task_type": "wan22_video_v2",
-                    "inputs": {
-                        **base_inputs,
-                        "wan22_model_profile": "wan22_video_v2",
-                    },
-                    "prompt": self.options.prompt,
-                    "negative_prompt": self.options.negative_prompt,
-                    "priority": 0,
-                },
-            },
-        ]
-        return [
-            case
-            for case in cases
-            if str(case.get("worker_profile") or "") in self.active_profiles
-        ]
+        return self._canary_cases().split_video_task_cases(
+            image_object_key,
+            active_profiles=self.active_profiles,
+        )
 
     def _run_split_task_case(
         self,
@@ -621,63 +567,12 @@ class RunPodSplitVideoCanaryRunner(RunPodCanaryRunner):
         runpod_worker: dict[str, Any],
         summary: dict[str, Any],
     ) -> dict[str, Any]:
-        label = str(task_case["label"])
-        payload = task_case["payload"]
-        expected_task_type = str(payload["task_type"])
-        expected_worker_id = str(runpod_worker.get("agent_id") or "")
-        self._phase(summary, f"task_{label}", "running")
-        submit_payload = self._http_json(
-            "POST",
-            _join_url(self.options.web_api_url, "tasks", "generate"),
-            json_body=payload,
-            headers=self._web_auth_headers(),
+        return self._split_canary_executor().run_split_task_case(
+            task_case,
+            runpod_worker,
+            summary,
+            default_download_dir=DEFAULT_SPLIT_VIDEO_RESULTS_DIR,
         )
-        task_id = str(submit_payload.get("task_id") or "")
-        if not task_id:
-            raise RunPodCanaryError(f"{label}: missing task_id in Web response")
-        summary.setdefault("task_attempts", []).append(
-            {
-                "label": label,
-                "registry_task_id": task_id,
-                "task_type": expected_task_type,
-                "expected_worker_id": expected_worker_id,
-            }
-        )
-        final_status, pop_evidence = self._wait_task_done(
-            task_id=task_id,
-            expected_worker_id=expected_worker_id,
-        )
-        if str(final_status.get("task_type") or "") != expected_task_type:
-            raise RunPodCanaryError(
-                f"{label}: Central task_type is {final_status.get('task_type')}, expected {expected_task_type}"
-            )
-        if final_status.get("status") != "done":
-            raise RunPodCanaryError(
-                f"{label}: Central terminal status is {final_status.get('status')}"
-            )
-        result_payload = self._wait_web_result(task_id)
-        result_url = str(result_payload.get("result_url") or "")
-        if result_payload.get("status") != "success" or not result_url:
-            raise RunPodCanaryError(f"{label}: Web result did not become success")
-        result_info = self._download_named_result(label=label, result_url=result_url)
-        last_frame_info = self._download_last_frame(
-            label=label, result_payload=result_payload
-        )
-        task_result = {
-            "label": label,
-            "registry_task_id": task_id,
-            "task_type": expected_task_type,
-            "central_status": final_status.get("status"),
-            "central_task_type": final_status.get("task_type"),
-            "expected_worker_id": expected_worker_id,
-            "pop_evidence": pop_evidence,
-            "web_result_status": result_payload.get("status"),
-            "result_path": result_url_path(result_url),
-            **result_info,
-            **last_frame_info,
-        }
-        self._phase(summary, f"task_{label}", "ok", task_result)
-        return task_result
 
     def _wait_task_done(
         self,
@@ -685,62 +580,17 @@ class RunPodSplitVideoCanaryRunner(RunPodCanaryRunner):
         task_id: str,
         expected_worker_id: str,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        deadline = time.monotonic() + self.options.task_timeout_seconds
-        last_status: dict[str, Any] = {}
-        pop_evidence: dict[str, Any] = {
-            "observed": False,
-            "expected_agent_id": expected_worker_id,
-            "agent_id": "",
-        }
-        while time.monotonic() <= deadline:
-            status_payload = self._http_json(
-                "GET",
-                _join_url(self.options.central_url, "status", task_id),
-                allow_statuses=(404,),
-            )
-            if status_payload.get("_status") != 404:
-                last_status = status_payload
-            workers = self._fetch_workers()
-            current_worker = _find_worker_current_task(
-                workers, expected_worker_id, task_id
-            )
-            if current_worker:
-                pop_evidence = {
-                    "observed": True,
-                    "agent_id": current_worker.get("agent_id"),
-                    "current_task_id": current_worker.get("current_task_id"),
-                    "current_task_type": current_worker.get("current_task_type"),
-                    "status": current_worker.get("status"),
-                }
-            status = str(last_status.get("status") or "")
-            if status in TERMINAL_TASK_STATUSES:
-                if not pop_evidence["observed"]:
-                    pop_evidence["agent_id"] = expected_worker_id
-                    pop_evidence["note"] = "not_observed_during_poll"
-                return last_status, pop_evidence
-            self._sleep(self.options.task_poll_interval_seconds)
-        raise RunPodCanaryError(
-            f"task timeout: {task_id} last_status="
-            + json.dumps(redact_payload(last_status), ensure_ascii=False)
+        return self._canary_executor().wait_task_done(
+            task_id=task_id,
+            expected_worker_id=expected_worker_id,
         )
 
     def _download_named_result(self, *, label: str, result_url: str) -> dict[str, Any]:
-        download_dir = (
-            self.options.download_results_dir or DEFAULT_SPLIT_VIDEO_RESULTS_DIR
+        return self._split_canary_executor().download_named_result(
+            label=label,
+            result_url=result_url,
+            default_download_dir=DEFAULT_SPLIT_VIDEO_RESULTS_DIR,
         )
-        download_dir.mkdir(parents=True, exist_ok=True)
-        raw, method = self._fetch_result_bytes(result_url)
-        if len(raw) < 12 or b"ftyp" not in raw[:64]:
-            raise RunPodCanaryError(
-                f"{label}: downloaded result does not look like an MP4"
-            )
-        target = download_dir / f"{label}.mp4"
-        target.write_bytes(raw)
-        return {
-            "downloaded_file": str(target),
-            "download_method": method,
-            "downloaded_bytes": len(raw),
-        }
 
     def _download_last_frame(
         self,
@@ -748,30 +598,11 @@ class RunPodSplitVideoCanaryRunner(RunPodCanaryRunner):
         label: str,
         result_payload: dict[str, Any],
     ) -> dict[str, Any]:
-        extra_outputs = result_payload.get("extra_outputs")
-        last_frame = (
-            extra_outputs.get("last_frame") if isinstance(extra_outputs, dict) else None
+        return self._split_canary_executor().download_last_frame(
+            label=label,
+            result_payload=result_payload,
+            default_download_dir=DEFAULT_SPLIT_VIDEO_RESULTS_DIR,
         )
-        if not isinstance(last_frame, dict):
-            raise RunPodCanaryError(f"{label}: missing extra_outputs.last_frame")
-        last_frame_url = str(last_frame.get("url") or last_frame.get("path") or "")
-        if not last_frame_url:
-            raise RunPodCanaryError(f"{label}: last_frame is missing url/path")
-        raw, method = self._fetch_result_bytes(last_frame_url)
-        if not raw.startswith(b"\x89PNG\r\n\x1a\n"):
-            raise RunPodCanaryError(f"{label}: last_frame does not look like a PNG")
-        download_dir = (
-            self.options.download_results_dir or DEFAULT_SPLIT_VIDEO_RESULTS_DIR
-        )
-        download_dir.mkdir(parents=True, exist_ok=True)
-        target = download_dir / f"{label}_last_frame.png"
-        target.write_bytes(raw)
-        return {
-            "last_frame_path": result_url_path(last_frame_url),
-            "last_frame_downloaded_file": str(target),
-            "last_frame_download_method": method,
-            "last_frame_bytes": len(raw),
-        }
 
     def _cleanup_split(
         self,
