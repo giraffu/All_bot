@@ -4,12 +4,8 @@ import json
 import re
 from typing import TYPE_CHECKING, Any, Callable
 
-from src.constants import MODE_IMAGE_TO_VIDEO, MODE_NAME_MAP, MODE_WAN22_VIDEO_V2
-from src.domain_config.scail2_video import (
-    SCAIL2_ACTION_TRANSFER_TASK_TYPE,
-    SCAIL2_FACE_SWAP_V2_TASK_TYPE,
-    SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
-)
+from src.constants import MODE_NAME_MAP
+from src.domain_config.task_type_registry import gallery_supported_task_types
 from src.gallery_core_dependencies import (
     GallerySubmissionDependencies,
     get_default_gallery_submission_dependencies,
@@ -21,24 +17,7 @@ from src.core.gallery_submission_effects import build_gallery_submit_side_effect
 if TYPE_CHECKING:
     from src.database.models import History
 
-ALLOWED_WEB_SUBMIT_TYPES = list(
-    dict.fromkeys(
-        [
-            "txt2img",
-            "i2i_pro",
-            "i2i_draw",
-            "custom_video",
-            MODE_IMAGE_TO_VIDEO,
-            "ltx_video",
-            MODE_WAN22_VIDEO_V2,
-            SCAIL2_ACTION_TRANSFER_TASK_TYPE,
-            SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
-            SCAIL2_FACE_SWAP_V2_TASK_TYPE,
-            "edit",
-            "img2img_lora",
-        ]
-    )
-)
+ALLOWED_WEB_SUBMIT_TYPES = list(gallery_supported_task_types())
 
 
 def _detect_media_type(output_file: str) -> str:

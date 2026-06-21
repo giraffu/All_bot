@@ -72,7 +72,11 @@ async def test_submit_generation_task_returns_submission_result():
 
 @pytest.mark.asyncio
 async def test_submit_generation_task_copies_top_level_prompt_into_txt2img_inputs():
-    request = TaskGenerateRequest(task_type="txt2img", inputs={"images": []}, prompt="sky city")
+    request = TaskGenerateRequest(
+        task_type="txt2img",
+        inputs={"images": []},
+        prompt="sky city",
+    )
     current_user = type("User", (), {"id": 123, "username": "tester"})()
 
     with patch(
@@ -95,6 +99,7 @@ async def test_submit_generation_task_copies_top_level_prompt_into_txt2img_input
         "images": [],
         "prompt": "sky city",
     }
+    assert request.inputs == {"images": []}
 
 
 @pytest.mark.asyncio

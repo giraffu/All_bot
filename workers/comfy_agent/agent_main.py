@@ -2,7 +2,6 @@ import asyncio
 import json
 import logging
 import os
-import random
 import sys
 import time
 from typing import Any, Dict, Optional
@@ -23,7 +22,9 @@ from agent_input_preparation import (
     prepare_task_inputs as prepare_agent_task_inputs,
     process_single_input_asset as process_agent_single_input_asset,
 )
+from agent_finalizer import AgentFinalizer
 from agent_health import AgentHealthManager
+from agent_pipeline_coordinator import AgentPipelineCoordinator
 from agent_prefetch_manager import AgentPrefetchManager
 from agent_reporting_client import AgentReportingClient
 from agent_result_assets import (
@@ -55,6 +56,12 @@ from minio import Minio  # type: ignore
 from PIL import Image, ImageOps, UnidentifiedImageError
 from scail2_face_swap_v10_pipeline import prepare_scail2_face_swap_v10_reference
 from workflow_patcher import WorkflowPatcher
+
+__all__ = [
+    "ComfyAgent",
+    "ControlPlaneRecoveryExit",
+    "TaskExecutionTimeoutError",
+]
 
 # Load environment variables
 load_dotenv()
@@ -413,6 +420,11 @@ class ComfyAgent:
         }
         self._health_manager = AgentHealthManager(agent=self, logger=logger)
         self._prefetch_manager = AgentPrefetchManager(agent=self, logger=logger)
+        self._pipeline_coordinator = AgentPipelineCoordinator(
+            agent=self,
+            logger=logger,
+        )
+        self._finalizer = AgentFinalizer(agent=self, logger=logger)
         self._reporting_client = AgentReportingClient(
             master_client=self.master_client,
             logger=logger,
@@ -1121,44 +1133,36 @@ class ComfyAgent:
         return False
 
     def _pipeline_enabled_for_task_type(self, task_type: str) -> bool:
-        if not PIPELINE_ENABLED or PIPELINE_MAX_RUNNING_TASKS <= 1:
-            return False
-        if "all" in self._pipeline_task_types:
-            return True
-        return task_type in self._pipeline_task_types
+        return self._pipeline_coordinator.pipeline_enabled_for_task_type(
+            task_type,
+            pipeline_enabled=PIPELINE_ENABLED,
+            pipeline_max_running_tasks=PIPELINE_MAX_RUNNING_TASKS,
+            pipeline_task_types=self._pipeline_task_types,
+        )
 
     def _pipeline_pop_types(self) -> str:
-        supported_types = {
-            task_type.strip()
-            for task_type in SUPPORTED_TASK_TYPES.split(",")
-            if task_type.strip()
-        }
-        if not self._pipeline_task_types or "all" in self._pipeline_task_types:
-            return SUPPORTED_TASK_TYPES
-        if not supported_types:
-            return ",".join(sorted(self._pipeline_task_types))
-        return ",".join(sorted(supported_types & self._pipeline_task_types))
+        return self._pipeline_coordinator.pipeline_pop_types(
+            supported_task_types=SUPPORTED_TASK_TYPES,
+            pipeline_task_types=self._pipeline_task_types,
+        )
 
     def _build_pop_params(self, *, pipeline: bool = False) -> dict[str, str]:
-        params: dict[str, str] = {"agent_id": AGENT_ID}
-        types = self._pipeline_pop_types() if pipeline else SUPPORTED_TASK_TYPES
-        if types:
-            params["types"] = types
-        if CANCEL_LOCK_ON_POP:
-            params["cancel_lock"] = "true"
-        return params
+        return self._pipeline_coordinator.build_pop_params(
+            agent_id=AGENT_ID,
+            supported_task_types=SUPPORTED_TASK_TYPES,
+            pipeline_task_types=self._pipeline_task_types,
+            cancel_lock_on_pop=CANCEL_LOCK_ON_POP,
+            pipeline=pipeline,
+        )
 
     async def _pop_next_task(self, *, pipeline: bool = False) -> dict[str, Any] | None:
-        response = await self._master_get(
-            "/api/agent/task/pop",
-            params=self._build_pop_params(pipeline=pipeline),
+        return await self._pipeline_coordinator.pop_next_task(
+            agent_id=AGENT_ID,
+            supported_task_types=SUPPORTED_TASK_TYPES,
+            pipeline_task_types=self._pipeline_task_types,
+            cancel_lock_on_pop=CANCEL_LOCK_ON_POP,
+            pipeline=pipeline,
         )
-        if response.status_code == 200:
-            data = response.json()
-            return data.get("task")
-        if response.status_code != 404:
-            logger.warning(f"Unexpected response from master: {response.status_code}")
-        return None
 
     async def _prepare_and_submit_task(
         self,
@@ -1166,78 +1170,13 @@ class ComfyAgent:
         *,
         allow_cancel_check: bool = True,
     ) -> TaskExecutionContext | None:
-        trace_id = task.get("trace_id", "")
-        if trace_id:
-            correlation_id.set(trace_id)
-
-        task_id = str(task.get("task_id", ""))
-        if not task_id:
-            logger.error("Received task without task_id")
-            return
-
-        task_type = str(task.get("type", ""))
-        params = self._parse_task_params(task)
-
-        logger.info(f"Processing task {task_id} of type {task_type}")
-        execution = self._start_task_execution(task_id=task_id, task_type=task_type)
-        downloaded_input_paths = execution.downloaded_input_paths
-
-        if allow_cancel_check and await self.check_task_cancelled(task_id):
-            logger.info(f"Task {task_id} was cancelled before processing.")
-            self._discard_prefetch_cache(except_task_id=None)
-            await self.report_cancelled(task_id)
-            self._clear_task_execution(execution)
-            return None
-
-        await self.report_status(
-            task_id,
-            "running",
-            execution_phase="preparing",
-            cancel_locked=CANCEL_LOCK_ON_POP,
-        )
-
-        await self._wait_for_prefetch_settle()
-        prefetched_inputs = self._consume_prefetched_inputs(
-            task_id=task_id,
-            task_type=task_type,
-        )
-        if prefetched_inputs:
-            params = dict(prefetched_inputs["params"])
-            downloaded_input_paths.extend(
-                prefetched_inputs.get("downloaded_input_paths", [])
-            )
-        else:
-            await self._cancel_prefetch_task()
-            await self._prepare_task_inputs(
-                params=params,
-                downloaded_input_paths=downloaded_input_paths,
-            )
-
-        await self._maybe_prepare_scail2_face_swap_v10_reference(
-            task_id=task_id,
-            task_type=task_type,
-            params=params,
-            downloaded_input_paths=downloaded_input_paths,
-        )
-
-        await submit_task_workflow(
-            task_id=task_id,
-            task_type=task_type,
-            params=params,
-            execution=execution,
-            patcher=self.patcher,
-            comfy_client=self.comfy_client,
-            wait_for_comfy_ready_func=self._wait_for_comfy_ready,
-            report_status_func=self.report_status,
+        return await self._pipeline_coordinator.prepare_and_submit_task(
+            task,
+            allow_cancel_check=allow_cancel_check,
+            cancel_lock_on_pop=CANCEL_LOCK_ON_POP,
             agent_id=AGENT_ID,
-            logger=logger,
+            submit_task_workflow_func=submit_task_workflow,
         )
-        execution.params = dict(params)
-        self._register_prompt_execution(execution)
-        execution.phase = "queued"
-        await self.report_status(task_id, "running", execution_phase="queued")
-        self._schedule_prefetch(current_task_type=task_type)
-        return execution
 
     def _reset_execution_for_retry(
         self,
@@ -1245,17 +1184,7 @@ class ComfyAgent:
         *,
         seed: int,
     ) -> dict[str, Any]:
-        if execution.prompt_id:
-            self._prompt_executions.pop(execution.prompt_id, None)
-        execution.prompt_id = None
-        execution.task_result = None
-        execution.task_result_priority = -1
-        execution.task_error = None
-        execution.completed_event = asyncio.Event()
-        retry_params = dict(execution.params)
-        retry_params["seed"] = seed
-        execution.params = retry_params
-        return retry_params
+        return self._finalizer.reset_execution_for_retry(execution, seed=seed)
 
     async def _retry_execution_after_quality_issue(
         self,
@@ -1264,41 +1193,14 @@ class ComfyAgent:
         issue_reason: str,
         retry_number: int,
     ) -> bool:
-        task_id = execution.task_id
-        task_type = execution.task_type
-        retry_seed = random.randint(1, 1125899906842624)
-        retry_params = self._reset_execution_for_retry(execution, seed=retry_seed)
-        logger.warning(
-            "Retrying i2i_pro task %s after output quality issue (%s), attempt %s/%s",
-            task_id,
-            issue_reason,
-            retry_number,
-            I2I_PRO_QUALITY_RETRY_ATTEMPTS,
-        )
-        await submit_task_workflow(
-            task_id=task_id,
-            task_type=task_type,
-            params=retry_params,
-            execution=execution,
-            patcher=self.patcher,
-            comfy_client=self.comfy_client,
-            wait_for_comfy_ready_func=self._wait_for_comfy_ready,
-            report_status_func=self.report_status,
+        return await self._finalizer.retry_execution_after_quality_issue(
+            execution,
+            issue_reason=issue_reason,
+            retry_number=retry_number,
+            quality_retry_attempts=I2I_PRO_QUALITY_RETRY_ATTEMPTS,
             agent_id=AGENT_ID,
-            logger=logger,
-        )
-        execution.params = dict(retry_params)
-        self._register_prompt_execution(execution)
-        execution.phase = "queued"
-        await self.report_status(task_id, "running", execution_phase="queued")
-        return await wait_for_task_completion(
-            task_id=task_id,
-            execution=execution,
-            check_task_cancelled_func=self.check_task_cancelled,
-            logger=logger,
-            comfy_client=self.comfy_client,
-            task_type=task_type,
-            timeout_seconds=self._completion_timeout_seconds_for_task(task_type),
+            submit_task_workflow_func=submit_task_workflow,
+            wait_for_task_completion_func=wait_for_task_completion,
         )
 
     async def _materialize_outputs_with_quality_retry(
@@ -1307,173 +1209,56 @@ class ComfyAgent:
         execution: TaskExecutionContext,
         task_type: str,
     ):
-        quality_retry_count = 0
-        while True:
-            await resolve_execution_result_from_history(
-                comfy_client=self.comfy_client,
-                execution=execution,
-                task_type=task_type,
-                logger=logger,
-            )
-
-            if not execution.task_result:
-                raise Exception("Task completed but no result path found")
-
-            materialized_outputs = await materialize_task_outputs(
-                comfy_client=self.comfy_client,
-                execution=execution,
-                task_type=task_type,
-                logger=logger,
-            )
-            issue = await assess_materialized_output_quality(
-                task_type=task_type,
-                params=execution.params,
-                outputs=materialized_outputs,
-                comfy_client=self.comfy_client,
-                logger=logger,
-            )
-            if issue is None:
-                return materialized_outputs
-
-            if quality_retry_count >= I2I_PRO_QUALITY_RETRY_ATTEMPTS:
-                raise RuntimeError(
-                    "i2i_pro output quality check failed after retry: "
-                    f"{issue.reason} metric={issue.metric:.2f} "
-                    f"threshold={issue.threshold:.2f}"
-                )
-
-            quality_retry_count += 1
-            task_completed = await self._retry_execution_after_quality_issue(
-                execution,
-                issue_reason=issue.reason,
-                retry_number=quality_retry_count,
-            )
-            if not task_completed:
-                return None
+        return await self._finalizer.materialize_outputs_with_quality_retry(
+            execution=execution,
+            task_type=task_type,
+            quality_retry_attempts=I2I_PRO_QUALITY_RETRY_ATTEMPTS,
+            agent_id=AGENT_ID,
+            submit_task_workflow_func=submit_task_workflow,
+            wait_for_task_completion_func=wait_for_task_completion,
+            resolve_execution_result_from_history_func=(
+                resolve_execution_result_from_history
+            ),
+            materialize_task_outputs_func=materialize_task_outputs,
+            assess_materialized_output_quality_func=(
+                assess_materialized_output_quality
+            ),
+        )
 
     async def _finalize_execution(self, execution: TaskExecutionContext) -> None:
-        task_id = execution.task_id
-        task_type = execution.task_type
-        exit_after_timeout = False
-        try:
-            task_completed = await wait_for_task_completion(
-                task_id=task_id,
-                execution=execution,
-                check_task_cancelled_func=self.check_task_cancelled,
-                logger=logger,
-                comfy_client=self.comfy_client,
-                task_type=task_type,
-                timeout_seconds=self._completion_timeout_seconds_for_task(task_type),
-            )
-            if not task_completed:
-                await self.report_cancelled(task_id)
-                return
-
-            execution.phase = "finalizing"
-            await self.report_status(
-                task_id,
-                "running",
-                execution_phase="finalizing",
-                set_current=False,
-            )
-
-            if not CANCEL_LOCK_ON_POP and await self.check_task_cancelled(task_id):
-                logger.info(
-                    f"Task {task_id} was cancelled during execution, skipping upload."
-                )
-                await self.report_cancelled(task_id)
-                return
-
-            try:
-                materialized_outputs = (
-                    await self._materialize_outputs_with_quality_retry(
-                        execution=execution,
-                        task_type=task_type,
-                    )
-                )
-                if materialized_outputs is None:
-                    await self.report_cancelled(task_id)
-                    return
-                if UPLOAD_SIDECAR_URL:
-                    spooled_outputs = await spool_materialized_outputs(
-                        outputs=materialized_outputs,
-                        spool_dir=RESULT_SPOOL_DIR,
-                        task_id=task_id,
-                        logger=logger,
-                    )
-                    extra_outputs_payload = await upload_spooled_outputs_via_sidecar(
-                        sidecar_url=UPLOAD_SIDECAR_URL,
-                        result_bucket=MINIO_RESULT_BUCKET,
-                        task_id=task_id,
-                        spooled_outputs=spooled_outputs,
-                        logger=logger,
-                    )
-                else:
-                    extra_outputs_payload = await upload_materialized_outputs(
-                        minio_client=self.minio_client,
-                        result_bucket=MINIO_RESULT_BUCKET,
-                        outputs=materialized_outputs,
-                        logger=logger,
-                    )
-            except Exception as e:
-                logger.error(f"Failed to fetch from ComfyUI or upload result: {e}")
-                raise Exception(f"Result processing failed: {e}")
-
-            await report_materialized_outputs(
-                report_complete_func=self.report_complete,
-                task_id=task_id,
-                result_path=execution.task_result,
-                extra_outputs_payload=extra_outputs_payload,
-            )
-            self._record_task_success_for_health()
-            logger.info(f"Task {task_id} completed successfully")
-
-        except Exception as e:
-            logger.error(f"Task {task_id} failed: {e}")
-            if (
-                isinstance(e, TaskExecutionTimeoutError)
-                and task_type == "wan22_video_v2"
-            ):
-                await self._interrupt_comfy_for_wan22_timeout(execution)
-                exit_after_timeout = self._should_self_restart_after_timeout(
-                    execution,
-                    e,
-                )
-            self._record_task_failure_for_health(e)
-            await self.report_status(task_id, "failed", error=str(e))
-        finally:
-            self._clear_task_execution(execution)
-            self._cleanup_input_paths(execution.downloaded_input_paths)
-        if exit_after_timeout:
-            logger.error(
-                "Exiting agent after wan22_video_v2 timeout so the supervisor can restart a clean ComfyUI runtime"
-            )
-            os._exit(WAN22_VIDEO_V2_TIMEOUT_EXIT_CODE)
+        await self._finalizer.finalize_execution(
+            execution,
+            cancel_lock_on_pop=CANCEL_LOCK_ON_POP,
+            upload_sidecar_url=UPLOAD_SIDECAR_URL,
+            result_spool_dir=RESULT_SPOOL_DIR,
+            result_bucket=MINIO_RESULT_BUCKET,
+            wan22_timeout_exit_code=WAN22_VIDEO_V2_TIMEOUT_EXIT_CODE,
+            quality_retry_attempts=I2I_PRO_QUALITY_RETRY_ATTEMPTS,
+            agent_id=AGENT_ID,
+            submit_task_workflow_func=submit_task_workflow,
+            wait_for_task_completion_func=wait_for_task_completion,
+            resolve_execution_result_from_history_func=(
+                resolve_execution_result_from_history
+            ),
+            materialize_task_outputs_func=materialize_task_outputs,
+            assess_materialized_output_quality_func=(
+                assess_materialized_output_quality
+            ),
+            spool_materialized_outputs_func=spool_materialized_outputs,
+            upload_spooled_outputs_via_sidecar_func=upload_spooled_outputs_via_sidecar,
+            upload_materialized_outputs_func=upload_materialized_outputs,
+            report_materialized_outputs_func=report_materialized_outputs,
+        )
 
     def _track_execution_task(self, task: asyncio.Task) -> None:
         self._execution_tasks.add(task)
         task.add_done_callback(self._execution_tasks.discard)
 
     async def _launch_pipeline_task(self, task: Dict[str, Any]) -> None:
-        task_id = str(task.get("task_id", ""))
-        try:
-            execution = await self._prepare_and_submit_task(
-                task,
-                allow_cancel_check=not CANCEL_LOCK_ON_POP,
-            )
-            if not execution:
-                return
-            finalizer_task = asyncio.create_task(self._finalize_execution(execution))
-            self._track_execution_task(finalizer_task)
-        except Exception as e:
-            logger.error(f"Task {task_id} failed before pipeline submission: {e}")
-            self._record_task_failure_for_health(e)
-            if task_id:
-                await self.report_status(task_id, "failed", error=str(e))
-            execution = self._executions.get(task_id)
-            if execution:
-                self._clear_task_execution(execution)
-                self._cleanup_input_paths(execution.downloaded_input_paths)
+        await self._pipeline_coordinator.launch_pipeline_task(
+            task,
+            cancel_lock_on_pop=CANCEL_LOCK_ON_POP,
+        )
 
     async def process_task(self, task: Dict[str, Any]):
         task_id = str(task.get("task_id", ""))

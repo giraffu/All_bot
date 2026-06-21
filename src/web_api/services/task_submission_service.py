@@ -23,8 +23,9 @@ async def submit_generation_task(
 
         is_template = getattr(req, "is_template", False)
 
+        inputs = dict(req.inputs)
         if req.prompt:
-            req.inputs["prompt"] = req.prompt
+            inputs["prompt"] = req.prompt
 
         task_id = str(uuid.uuid4())
         correlation_id.set(task_id)
@@ -33,7 +34,7 @@ async def submit_generation_task(
             user_id=current_user.id,
             username=current_user.username,
             task_type=req.task_type,
-            inputs=req.inputs,
+            inputs=inputs,
             task_id=task_id,
             base_priority=req.priority,
             is_template=is_template,

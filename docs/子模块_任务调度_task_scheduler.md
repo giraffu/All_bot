@@ -19,7 +19,7 @@
 - `src/services/task_web_finalizer.py`：持久化 Web finalizer 队列与恢复循环，负责在进程重启后继续收口未完成的 Web 终态
 - `src/core/task_core_runtime.py`：双 ID 终止、best-effort cancel、并发锁与 registry 清理
 - `src/core/task_dispatcher.py`：StrategyFactory + payload/workflow 注入
-- `src/domain_config/task_type_registry.py`：任务类型只读事实表，记录 public type、legacy alias、execution type、Central type、workflow filename、RunPod profile、视频/Gallery/apply 与成本；当前只做一致性门禁，不驱动运行时分发
+- `src/domain_config/task_type_registry.py`：任务类型只读事实表与查询 helper，记录 public type、legacy alias、execution type、Central type、workflow filename、RunPod profile、视频/Gallery/apply 与成本；当前驱动 Gallery/apply 等低风险读路径和一致性门禁，不驱动 dispatcher/Central/workflow 分发
 
 所有 Bot / Web 任务都应通过 facade + provider/dependencies 边界进入调度链，不应在上层直接 import 基础设施实现。
 
@@ -187,7 +187,7 @@ SSE 侧当前已把运行态 not-found 收口为明确终止 / fallback 语义�
 - Worker 双槽 pipeline：最多 2 个 running、后台 finalizer 不提前 complete、旧任务终态不清新任务 current pointer
 - Bot `run_bot_task_application(...)` 五段式上下文装配
 - history / stream 的 not-found fallback
-- task type registry 一致性：`src/constants.py`、Central simple map、workflow filename、RunPod profile supported task types、Gallery/apply 白名单
+- task type registry 一致性：`src/constants.py`、Central simple map、workflow filename、RunPod profile supported task types、Gallery/apply helper 输出
 
 ### 7.2 推荐测试文件
 - `tests/core/test_task_core_dependencies.py`

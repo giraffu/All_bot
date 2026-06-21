@@ -9,8 +9,23 @@ from src.constants import (
 from src.core.gallery_submission_core import ALLOWED_WEB_SUBMIT_TYPES
 from src.core.task_execution_types import resolve_worker_execution_task_type
 from src.domain_config.task_type_registry import TASK_TYPE_REGISTRY
+from src.domain_config.task_type_registry import (
+    apply_input_reuse_task_types,
+    gallery_display_type_configs,
+    gallery_supported_task_types,
+    get_central_task_type,
+    get_execution_task_type,
+    get_public_task_type,
+    get_runpod_profile,
+    get_task_cost,
+    get_workflow_filename,
+    is_apply_input_reuse_supported_task_type,
+    is_gallery_supported_task_type,
+    is_video_task_type,
+)
 from src.web_api.services.gallery_service_support import (
     APPLY_CONTEXT_ALLOW_INPUT_REUSE_TASK_TYPES,
+    DEFAULT_GALLERY_ALLOWED_TYPE_CONFIGS,
 )
 from src.workflow_mapping_validation import TASK_TYPE_WORKFLOW_FILENAMES
 
@@ -118,3 +133,172 @@ def test_registry_matches_worker_execution_aliases_for_public_task_types():
         if task_type in ignored_generic_types:
             continue
         assert entry.execution_type == resolve_worker_execution_task_type(task_type)
+
+
+def test_registry_query_helpers_cover_key_task_type_relationships():
+    expected = {
+        "video_lora": {
+            "public": "image_to_video",
+            "execution": "image_to_video",
+            "central": "image_to_video",
+            "workflow": "Wan22AioV82.json",
+            "runpod": "image_to_video",
+            "video": True,
+            "cost": 6,
+            "gallery": True,
+            "apply": False,
+        },
+        "custom_video": {
+            "public": "image_to_video",
+            "execution": "image_to_video",
+            "central": None,
+            "workflow": "Wan22AioV82.json",
+            "runpod": "image_to_video",
+            "video": True,
+            "cost": 6,
+            "gallery": True,
+            "apply": False,
+        },
+        "image_to_video": {
+            "public": "image_to_video",
+            "execution": "image_to_video",
+            "central": "image_to_video",
+            "workflow": "Wan22AioV82.json",
+            "runpod": "image_to_video",
+            "video": True,
+            "cost": 6,
+            "gallery": False,
+            "apply": False,
+        },
+        "wan22_video_v2": {
+            "public": "wan22_video_v2",
+            "execution": "wan22_video_v2",
+            "central": "wan22_video_v2",
+            "workflow": "Wan22AioV82.json",
+            "runpod": "wan22_video_v2",
+            "video": True,
+            "cost": 6,
+            "gallery": True,
+            "apply": False,
+        },
+        "ltx_video": {
+            "public": "ltx_video",
+            "execution": "ltx_video",
+            "central": "ltx_video",
+            "workflow": "LTX 2.3 I2V 6.1.json",
+            "runpod": None,
+            "video": True,
+            "cost": 10,
+            "gallery": True,
+            "apply": False,
+        },
+        "scail2_action_transfer": {
+            "public": "scail2_action_transfer",
+            "execution": "scail2_action_transfer",
+            "central": "scail2_action_transfer",
+            "workflow": "SCAIL-2_Animation_multi-char_audio.api.json",
+            "runpod": "scail2",
+            "video": True,
+            "cost": 40,
+            "gallery": True,
+            "apply": True,
+        },
+        "scail2_video_replacement": {
+            "public": "scail2_video_replacement",
+            "execution": "scail2_video_replacement",
+            "central": "scail2_video_replacement",
+            "workflow": "SCAIL-2_Replacement_audio.api.json",
+            "runpod": "scail2",
+            "video": True,
+            "cost": 40,
+            "gallery": True,
+            "apply": True,
+        },
+        "scail2_face_swap_v2": {
+            "public": "scail2_face_swap_v2",
+            "execution": "scail2_face_swap_v2",
+            "central": "scail2_face_swap_v2",
+            "workflow": "SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json",
+            "runpod": None,
+            "video": True,
+            "cost": 40,
+            "gallery": True,
+            "apply": True,
+        },
+        "txt2img": {
+            "public": "txt2img",
+            "execution": "t2i-pornmaster-turbo",
+            "central": "t2i-pornmaster-turbo",
+            "workflow": "Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json",
+            "runpod": "i2i_pro",
+            "video": False,
+            "cost": 2,
+            "gallery": True,
+            "apply": False,
+        },
+        "face_swap": {
+            "public": "face_swap",
+            "execution": "face_swap",
+            "central": "face_swap",
+            "workflow": "face_swap.json",
+            "runpod": "i2i_pro",
+            "video": False,
+            "cost": None,
+            "gallery": False,
+            "apply": True,
+        },
+    }
+
+    for task_type, facts in expected.items():
+        assert get_public_task_type(task_type) == facts["public"]
+        assert get_execution_task_type(task_type) == facts["execution"]
+        assert get_central_task_type(task_type) == facts["central"]
+        assert get_workflow_filename(task_type) == facts["workflow"]
+        assert get_runpod_profile(task_type) == facts["runpod"]
+        assert is_video_task_type(task_type) is facts["video"]
+        assert get_task_cost(task_type) == facts["cost"]
+        assert is_gallery_supported_task_type(task_type) is facts["gallery"]
+        assert is_apply_input_reuse_supported_task_type(task_type) is facts["apply"]
+
+
+def test_registry_gallery_helpers_preserve_existing_lists_and_order():
+    assert list(gallery_supported_task_types()) == [
+        "txt2img",
+        "i2i_pro",
+        "i2i_draw",
+        "custom_video",
+        "video_lora",
+        "ltx_video",
+        "wan22_video_v2",
+        "scail2_action_transfer",
+        "scail2_video_replacement",
+        "scail2_face_swap_v2",
+        "edit",
+        "img2img_lora",
+    ]
+    assert list(gallery_supported_task_types()) == ALLOWED_WEB_SUBMIT_TYPES
+
+    assert list(gallery_display_type_configs()) == [
+        ("txt2img", "task.mode_txt2img"),
+        ("i2i_pro", "task.mode_i2i_pro"),
+        ("i2i_draw", "task.mode_i2i_draw"),
+        ("edit", "task.mode_edit"),
+        ("img2img_lora", "task.mode_img2img_lora"),
+        ("custom_video", "task.mode_custom_video"),
+        ("video_lora", "task.mode_video_lora"),
+        ("ltx_video", "task.mode_ltx_video"),
+        ("wan22_video_v2", "task.mode_wan22_video_v2"),
+        ("scail2_action_transfer", "task.mode_scail2_action_transfer"),
+        ("scail2_video_replacement", "task.mode_scail2_video_replacement"),
+        ("scail2_face_swap_v2", "task.mode_scail2_face_swap_v2"),
+    ]
+    assert list(gallery_display_type_configs()) == DEFAULT_GALLERY_ALLOWED_TYPE_CONFIGS
+
+    assert apply_input_reuse_task_types() == {
+        "face_swap",
+        "face_video",
+        "scail2_action_transfer",
+        "scail2_video_replacement",
+        "scail2_face_swap_v2",
+    }
+    assert apply_input_reuse_task_types() == APPLY_CONTEXT_ALLOW_INPUT_REUSE_TASK_TYPES

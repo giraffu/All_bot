@@ -2,8 +2,9 @@ import asyncio
 import logging
 import os
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, AsyncIterator
 
 import httpx
 import uvicorn
@@ -49,8 +50,6 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger("local_relay")
-
-app = FastAPI(title="AllBot Local Worker Relay")
 
 
 class RelayState:
@@ -195,7 +194,6 @@ def _cleanup_orphan_spool_files() -> None:
             logger.warning("orphan_spool_cleanup_failed path=%s error=%s", path, exc)
 
 
-@app.on_event("startup")
 async def startup() -> None:
     state.client = httpx.AsyncClient(
         base_url=CENTRAL_API_URL,
@@ -214,7 +212,6 @@ async def startup() -> None:
     logger.info("local_relay_started upstream=%s spool_dir=%s", CENTRAL_API_URL, RESULT_SPOOL_DIR)
 
 
-@app.on_event("shutdown")
 async def shutdown() -> None:
     state.running = False
     if state.flush_task:
@@ -227,6 +224,18 @@ async def shutdown() -> None:
     if state.client:
         await state.client.aclose()
     logger.info("local_relay_stopped")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    await startup()
+    try:
+        yield
+    finally:
+        await shutdown()
+
+
+app = FastAPI(title="AllBot Local Worker Relay", lifespan=lifespan)
 
 
 @app.get("/health")

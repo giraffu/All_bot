@@ -2,12 +2,10 @@ import logging
 
 from fastapi import HTTPException
 
-from src.constants import MODE_VIDEO_LORA, MODE_WAN22_VIDEO_V2
 from src.database.models import History
-from src.domain_config.scail2_video import (
-    SCAIL2_ACTION_TRANSFER_TASK_TYPE,
-    SCAIL2_FACE_SWAP_V2_TASK_TYPE,
-    SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
+from src.domain_config.task_type_registry import (
+    apply_input_reuse_task_types,
+    gallery_display_type_configs,
 )
 from src.services.submission_ban_service import (
     SubmissionBannedError,
@@ -39,28 +37,9 @@ __all__ = [
     "resolve_gallery_post_media_urls",
 ]
 
-DEFAULT_GALLERY_ALLOWED_TYPE_CONFIGS = [
-    ("txt2img", "task.mode_txt2img"),
-    ("i2i_pro", "task.mode_i2i_pro"),
-    ("i2i_draw", "task.mode_i2i_draw"),
-    ("edit", "task.mode_edit"),
-    ("img2img_lora", "task.mode_img2img_lora"),
-    ("custom_video", "task.mode_custom_video"),
-    (MODE_VIDEO_LORA, "task.mode_video_lora"),
-    ("ltx_video", "task.mode_ltx_video"),
-    (MODE_WAN22_VIDEO_V2, "task.mode_wan22_video_v2"),
-    (SCAIL2_ACTION_TRANSFER_TASK_TYPE, "task.mode_scail2_action_transfer"),
-    (SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE, "task.mode_scail2_video_replacement"),
-    (SCAIL2_FACE_SWAP_V2_TASK_TYPE, "task.mode_scail2_face_swap_v2"),
-]
+DEFAULT_GALLERY_ALLOWED_TYPE_CONFIGS = list(gallery_display_type_configs())
 
-APPLY_CONTEXT_ALLOW_INPUT_REUSE_TASK_TYPES = {
-    "face_swap",
-    "face_video",
-    SCAIL2_ACTION_TRANSFER_TASK_TYPE,
-    SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
-    SCAIL2_FACE_SWAP_V2_TASK_TYPE,
-}
+APPLY_CONTEXT_ALLOW_INPUT_REUSE_TASK_TYPES = apply_input_reuse_task_types()
 
 
 def build_gallery_config_payload(

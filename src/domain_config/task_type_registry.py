@@ -30,6 +30,7 @@ from src.constants import (
     MODE_UNDRESS,
     MODE_UNDRESS_TONGUE,
     MODE_WAN22_VIDEO_V2,
+    MODE_NAME_MAP,
 )
 
 
@@ -465,6 +466,37 @@ TASK_TYPE_REGISTRY: dict[str, TaskTypeRegistryEntry] = {
 }
 
 
+_GALLERY_SUBMIT_TASK_TYPE_ORDER = (
+    MODE_TXT2IMG,
+    MODE_I2I_PRO,
+    MODE_I2I_DRAW,
+    MODE_CUSTOM_VIDEO,
+    MODE_IMAGE_TO_VIDEO,
+    MODE_LTX_VIDEO,
+    MODE_WAN22_VIDEO_V2,
+    MODE_SCAIL2_ACTION_TRANSFER,
+    MODE_SCAIL2_VIDEO_REPLACEMENT,
+    MODE_SCAIL2_FACE_SWAP_V2,
+    MODE_EDIT,
+    MODE_IMG2IMG_LORA,
+)
+
+_GALLERY_DISPLAY_TASK_TYPE_ORDER = (
+    MODE_TXT2IMG,
+    MODE_I2I_PRO,
+    MODE_I2I_DRAW,
+    MODE_EDIT,
+    MODE_IMG2IMG_LORA,
+    MODE_CUSTOM_VIDEO,
+    MODE_IMAGE_TO_VIDEO,
+    MODE_LTX_VIDEO,
+    MODE_WAN22_VIDEO_V2,
+    MODE_SCAIL2_ACTION_TRANSFER,
+    MODE_SCAIL2_VIDEO_REPLACEMENT,
+    MODE_SCAIL2_FACE_SWAP_V2,
+)
+
+
 def get_task_type_entry(task_type: str) -> TaskTypeRegistryEntry | None:
     return TASK_TYPE_REGISTRY.get(str(task_type or "").strip())
 
@@ -478,3 +510,72 @@ def require_task_type_entry(task_type: str) -> TaskTypeRegistryEntry:
     if entry is None:
         raise KeyError(f"unknown task type registry entry: {task_type}")
     return entry
+
+
+def get_public_task_type(task_type: str) -> str | None:
+    entry = get_task_type_entry(task_type)
+    return entry.public_type if entry else None
+
+
+def get_execution_task_type(task_type: str) -> str | None:
+    entry = get_task_type_entry(task_type)
+    return entry.execution_type if entry else None
+
+
+def get_central_task_type(task_type: str) -> str | None:
+    entry = get_task_type_entry(task_type)
+    return entry.central_type if entry else None
+
+
+def get_workflow_filename(task_type: str) -> str | None:
+    entry = get_task_type_entry(task_type)
+    return entry.workflow_filename if entry else None
+
+
+def get_runpod_profile(task_type: str) -> str | None:
+    entry = get_task_type_entry(task_type)
+    return entry.runpod_profile if entry else None
+
+
+def get_task_cost(task_type: str) -> int | None:
+    entry = get_task_type_entry(task_type)
+    return entry.cost if entry else None
+
+
+def is_video_task_type(task_type: str) -> bool:
+    entry = get_task_type_entry(task_type)
+    return bool(entry and entry.is_video)
+
+
+def is_gallery_supported_task_type(task_type: str) -> bool:
+    entry = get_task_type_entry(task_type)
+    return bool(entry and entry.gallery_supported)
+
+
+def is_apply_input_reuse_supported_task_type(task_type: str) -> bool:
+    entry = get_task_type_entry(task_type)
+    return bool(entry and entry.apply_input_reuse_supported)
+
+
+def gallery_supported_task_types() -> tuple[str, ...]:
+    return tuple(
+        task_type
+        for task_type in _GALLERY_SUBMIT_TASK_TYPE_ORDER
+        if is_gallery_supported_task_type(task_type)
+    )
+
+
+def gallery_display_type_configs() -> tuple[tuple[str, str], ...]:
+    return tuple(
+        (task_type, MODE_NAME_MAP.get(task_type, task_type))
+        for task_type in _GALLERY_DISPLAY_TASK_TYPE_ORDER
+        if is_gallery_supported_task_type(task_type)
+    )
+
+
+def apply_input_reuse_task_types() -> set[str]:
+    return {
+        entry.task_type
+        for entry in TASK_TYPE_REGISTRY.values()
+        if entry.apply_input_reuse_supported
+    }
