@@ -1,7 +1,7 @@
 import asyncio
 import json
 import subprocess
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 

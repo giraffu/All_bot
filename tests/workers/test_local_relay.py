@@ -1,4 +1,5 @@
 import asyncio
+import importlib.util
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -12,7 +13,7 @@ WORKERS_DIR = ROOT / "workers"
 if str(WORKERS_DIR) not in sys.path:
     sys.path.insert(0, str(WORKERS_DIR))
 
-if "minio" not in sys.modules:
+if "minio" not in sys.modules and importlib.util.find_spec("minio") is None:
     minio_module = ModuleType("minio")
     minio_module.Minio = object
     sys.modules["minio"] = minio_module

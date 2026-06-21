@@ -201,6 +201,8 @@ VPS Nginx 配置文件为 `/etc/nginx/sites-available/web-test.aivison.it.com`�
 
 云测试缓存与队列使用同机容器 `redis-test`，不复用正式 Valkey/Redis：
 
+Dashboard Backend 使用同一云测试 Redis 配置持久化 RunPod operation store；本地单测可注入 in-memory fake，但云测试/正式验证 RunPod 管理时应确认 `REDIS_URL` 或 `DASHBOARD_RUNPOD_OPERATION_REDIS_URL` 可用。
+
 ```text
 Container: cloud-redis-test
 Image: redis:7-alpine

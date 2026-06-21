@@ -23,6 +23,9 @@ from agent_input_preparation import (
     prepare_task_inputs as prepare_agent_task_inputs,
     process_single_input_asset as process_agent_single_input_asset,
 )
+from agent_health import AgentHealthManager
+from agent_prefetch_manager import AgentPrefetchManager
+from agent_reporting_client import AgentReportingClient
 from agent_result_assets import (
     build_safe_result_object_name,
     extract_ws_data_content,
@@ -408,6 +411,14 @@ class ComfyAgent:
             for task_type in PIPELINE_TASK_TYPES.split(",")
             if task_type.strip()
         }
+        self._health_manager = AgentHealthManager(agent=self, logger=logger)
+        self._prefetch_manager = AgentPrefetchManager(agent=self, logger=logger)
+        self._reporting_client = AgentReportingClient(
+            master_client=self.master_client,
+            logger=logger,
+            record_control_plane_success=self._record_control_plane_success,
+            record_control_plane_failure=self._record_control_plane_failure,
+        )
 
     @property
     def task_completed_event(self) -> asyncio.Event:
@@ -457,154 +468,71 @@ class ComfyAgent:
         return time.time()
 
     def _record_control_plane_success(self) -> None:
-        if self.control_plane_failures:
-            logger.info(
-                "Control plane recovered after %s consecutive failed request(s)",
-                self.control_plane_failures,
-            )
-        self.control_plane_failures = 0
-        self.control_plane_failure_started_at = None
-        self.control_plane_last_error = ""
+        self._health_manager.record_control_plane_success()
 
     def _record_control_plane_failure(self, error: Exception | str) -> None:
-        if not AGENT_CONTROL_PLANE_RECOVERY_ENABLED:
-            return
-
-        now = self._now()
-        if self.control_plane_failure_started_at is None:
-            self.control_plane_failure_started_at = now
-        self.control_plane_failures += 1
-        self.control_plane_last_error = str(error)
-
-        failed_seconds = now - self.control_plane_failure_started_at
-        if (
-            self.control_plane_failures < AGENT_CONTROL_PLANE_RECOVERY_MIN_FAILURES
-            or failed_seconds < AGENT_CONTROL_PLANE_RECOVERY_SECONDS
-        ):
-            return
-
-        self.control_plane_recovery_requested = True
-        self.running = False
-        logger.error(
-            "Agent %s control plane recovery threshold reached after %s failure(s) "
-            "over %.1fs; exiting with code %s for Docker restart",
-            AGENT_ID,
-            self.control_plane_failures,
-            failed_seconds,
-            CONTROL_PLANE_RECOVERY_EXIT_CODE,
+        self._health_manager.record_control_plane_failure(
+            error,
+            recovery_enabled=AGENT_CONTROL_PLANE_RECOVERY_ENABLED,
+            min_failures=AGENT_CONTROL_PLANE_RECOVERY_MIN_FAILURES,
+            recovery_seconds=AGENT_CONTROL_PLANE_RECOVERY_SECONDS,
+            agent_id=AGENT_ID,
+            exit_code=CONTROL_PLANE_RECOVERY_EXIT_CODE,
+            recovery_exit_cls=ControlPlaneRecoveryExit,
         )
-        raise ControlPlaneRecoveryExit(self.control_plane_last_error)
 
     async def _master_get(self, path: str, **kwargs):
-        try:
-            response = await self.master_client.get(path, **kwargs)
-        except Exception as exc:
-            self._record_control_plane_failure(exc)
-            raise
-
-        status_code = getattr(response, "status_code", 200)
-        if status_code >= 500:
-            self._record_control_plane_failure(
-                f"GET {path} returned HTTP {status_code}"
-            )
-        else:
-            self._record_control_plane_success()
-        return response
+        return await self._reporting_client.master_get(path, **kwargs)
 
     async def _master_post(self, path: str, **kwargs):
-        try:
-            response = await self.master_client.post(path, **kwargs)
-        except Exception as exc:
-            self._record_control_plane_failure(exc)
-            raise
-
-        status_code = getattr(response, "status_code", 200)
-        if status_code >= 500:
-            self._record_control_plane_failure(
-                f"POST {path} returned HTTP {status_code}"
-            )
-        else:
-            self._record_control_plane_success()
-        return response
+        return await self._reporting_client.master_post(path, **kwargs)
 
     def _record_health_failure(self, *, reason: str, error: str) -> None:
-        self.consecutive_failures += 1
-        self.consecutive_successes = 0
-        self.health_reason = reason
-        self.last_error = error
-        self.last_error_at = self._now()
-        if self.consecutive_failures >= COMFY_HEALTH_FAILURE_THRESHOLD:
-            if not self.is_error_state:
-                logger.error(
-                    "Agent %s reached ComfyUI health failure threshold; marking worker as error",
-                    AGENT_ID,
-                )
-            self.is_error_state = True
-
-    def _record_health_success(self) -> None:
-        self.consecutive_successes += 1
-        if (
-            self.is_error_state
-            and self.consecutive_successes < COMFY_HEALTH_RECOVERY_THRESHOLD
-        ):
-            return
-        self.consecutive_failures = 0
-        self.consecutive_successes = 0
-        if self.is_error_state:
-            logger.info("ComfyUI health recovered; clearing worker error state")
-        self.is_error_state = False
-        self.health_reason = ""
-        self.last_error = ""
-        self.last_error_at = None
-
-    def _is_quarantined(self) -> bool:
-        return (
-            self.quarantined_until is not None and self.quarantined_until > self._now()
+        self._health_manager.record_health_failure(
+            reason=reason,
+            error=error,
+            failure_threshold=COMFY_HEALTH_FAILURE_THRESHOLD,
+            agent_id=AGENT_ID,
         )
 
+    def _record_health_success(self) -> None:
+        self._health_manager.record_health_success(
+            recovery_threshold=COMFY_HEALTH_RECOVERY_THRESHOLD
+        )
+
+    def _is_quarantined(self) -> bool:
+        return self._health_manager.is_quarantined()
+
     def _clear_expired_quarantine(self) -> bool:
-        if self.quarantined_until is None:
-            return False
-        if self.quarantined_until > self._now():
-            return False
-        logger.info("Worker quarantine expired; health checks may resume task polling")
-        self.quarantined_until = None
-        self.task_infra_failures = 0
-        if self.health_reason == "task_infra_failures":
-            self.health_reason = ""
-            self.last_error = ""
-            self.last_error_at = None
-        return True
+        return self._health_manager.clear_expired_quarantine()
 
     def _enter_quarantine(self, *, error: str) -> None:
-        self.quarantined_until = self._now() + COMFY_QUARANTINE_SECONDS
-        self.health_reason = "task_infra_failures"
-        self.last_error = error
-        self.last_error_at = self._now()
-        logger.error(
-            "Agent %s entered quarantine for %.0fs after %s consecutive infrastructure failures",
-            AGENT_ID,
-            COMFY_QUARANTINE_SECONDS,
-            self.task_infra_failures,
+        self._health_manager.enter_quarantine(
+            error=error,
+            quarantine_seconds=COMFY_QUARANTINE_SECONDS,
+            agent_id=AGENT_ID,
         )
 
     @staticmethod
     def _is_infrastructure_failure(error: Exception) -> bool:
-        message = str(error).lower()
-        if any(marker in message for marker in USER_INPUT_ERROR_MARKERS):
-            return False
-        return any(marker in message for marker in INFRA_ERROR_MARKERS)
+        return AgentHealthManager.is_infrastructure_failure(
+            error,
+            user_input_markers=USER_INPUT_ERROR_MARKERS,
+            infra_error_markers=INFRA_ERROR_MARKERS,
+        )
 
     def _record_task_failure_for_health(self, error: Exception) -> None:
-        if not self._is_infrastructure_failure(error):
-            self.task_infra_failures = 0
-            return
-        self.task_infra_failures += 1
-        if self.task_infra_failures >= COMFY_TASK_INFRA_FAILURE_THRESHOLD:
-            self._enter_quarantine(error=str(error))
+        self._health_manager.record_task_failure_for_health(
+            error,
+            user_input_markers=USER_INPUT_ERROR_MARKERS,
+            infra_error_markers=INFRA_ERROR_MARKERS,
+            failure_threshold=COMFY_TASK_INFRA_FAILURE_THRESHOLD,
+            quarantine_seconds=COMFY_QUARANTINE_SECONDS,
+            agent_id=AGENT_ID,
+        )
 
     def _record_task_success_for_health(self) -> None:
-        self.task_infra_failures = 0
+        self._health_manager.record_task_success_for_health()
 
     @staticmethod
     def _completion_timeout_seconds_for_task(task_type: str) -> float:
@@ -642,11 +570,7 @@ class ComfyAgent:
             )
 
     def _worker_status(self) -> str:
-        if self._is_quarantined():
-            return "quarantined"
-        if self.is_error_state:
-            return "error"
-        return "running" if self._executions or self._active_execution else "idle"
+        return self._health_manager.worker_status()
 
     def _heartbeat_executions(self) -> list[TaskExecutionContext]:
         executions = list(self._executions.values())
@@ -655,18 +579,7 @@ class ComfyAgent:
         return executions
 
     def _heartbeat_health_payload(self) -> dict[str, Any]:
-        failure_count = (
-            self.task_infra_failures
-            if self._is_quarantined()
-            else self.consecutive_failures
-        )
-        return {
-            "health_reason": self.health_reason,
-            "last_error": self.last_error,
-            "last_error_at": self.last_error_at,
-            "consecutive_failures": failure_count,
-            "quarantined_until": self.quarantined_until,
-        }
+        return self._health_manager.heartbeat_health_payload()
 
     @staticmethod
     def _heartbeat_pool_payload() -> dict[str, Any]:
@@ -872,57 +785,28 @@ class ComfyAgent:
 
     @staticmethod
     def _parse_task_params(task: dict[str, Any]) -> dict[str, Any]:
-        params_str = task.get("params", "{}")
-        if isinstance(params_str, str):
-            parsed = json.loads(params_str)
-        else:
-            parsed = params_str
-        return dict(parsed or {})
+        return AgentPrefetchManager.parse_task_params(task)
 
     def _should_prefetch_task_type(self, task_type: str) -> bool:
-        if not PREFETCH_ENABLED or PREFETCH_DEPTH <= 0:
-            return False
-        return task_type in self._prefetch_task_types
+        return self._prefetch_manager.should_prefetch_task_type(
+            task_type,
+            prefetch_enabled=PREFETCH_ENABLED,
+            prefetch_depth=PREFETCH_DEPTH,
+        )
 
     def _cleanup_input_paths(self, paths: list[str]) -> None:
-        for path in paths:
-            try:
-                if os.path.exists(path):
-                    os.remove(path)
-                    logger.info(f"Cleaned up input file: {path}")
-            except Exception as e:
-                logger.warning(f"Failed to clean up input file {path}: {e}")
+        self._prefetch_manager.cleanup_input_paths(paths)
 
     def _discard_prefetch_cache(self, *, except_task_id: str | None = None) -> None:
-        task_ids = list(self._prefetch_cache.keys())
-        for cached_task_id in task_ids:
-            if except_task_id and cached_task_id == except_task_id:
-                continue
-            cached = self._prefetch_cache.pop(cached_task_id, None)
-            if cached:
-                self._cleanup_input_paths(cached.get("downloaded_input_paths", []))
+        self._prefetch_manager.discard_prefetch_cache(except_task_id=except_task_id)
 
     async def _wait_for_prefetch_settle(self) -> None:
-        if not self._prefetch_task or self._prefetch_task.done():
-            return
-        try:
-            await asyncio.wait_for(
-                asyncio.shield(self._prefetch_task),
-                timeout=max(0.0, PREFETCH_CONSUME_WAIT_SECONDS),
-            )
-        except asyncio.TimeoutError:
-            return
-        except Exception as exc:
-            logger.debug("Prefetch settle failed: %s", exc)
+        await self._prefetch_manager.wait_for_prefetch_settle(
+            consume_wait_seconds=PREFETCH_CONSUME_WAIT_SECONDS,
+        )
 
     async def _cancel_prefetch_task(self) -> None:
-        if not self._prefetch_task or self._prefetch_task.done():
-            return
-        self._prefetch_task.cancel()
-        try:
-            await self._prefetch_task
-        except asyncio.CancelledError:
-            pass
+        await self._prefetch_manager.cancel_prefetch_task()
 
     def _consume_prefetched_inputs(
         self,
@@ -930,101 +814,40 @@ class ComfyAgent:
         task_id: str,
         task_type: str,
     ) -> dict[str, Any] | None:
-        cached = self._prefetch_cache.pop(task_id, None)
-        self._discard_prefetch_cache()
-        if not cached:
-            return None
-        if cached.get("task_type") != task_type:
-            self._cleanup_input_paths(cached.get("downloaded_input_paths", []))
-            return None
-        logger.info("Using prefetched inputs for task %s", task_id)
-        return cached
+        return self._prefetch_manager.consume_prefetched_inputs(
+            task_id=task_id,
+            task_type=task_type,
+        )
 
     async def _prefetch_next_task_inputs(
         self,
         *,
         task_type_filter: str | None = None,
     ) -> None:
-        if not PREFETCH_ENABLED or PREFETCH_DEPTH <= 0:
-            return
-        if self._prefetch_cache:
-            return
-
-        params = {"limit": PREFETCH_DEPTH}
-        if task_type_filter and task_type_filter in self._prefetch_task_types:
-            prefetch_types = task_type_filter
-        else:
-            prefetch_types = ",".join(sorted(self._prefetch_task_types))
-        if prefetch_types:
-            params["types"] = prefetch_types
-
-        try:
-            response = await self._master_get("/api/agent/task/peek", params=params)
-            if response.status_code != 200:
-                logger.debug("Prefetch peek returned HTTP %s", response.status_code)
-                return
-            task = response.json().get("task")
-            if not task:
-                return
-
-            task_id = str(task.get("task_id", ""))
-            task_type = str(task.get("type", ""))
-            if not task_id or not self._should_prefetch_task_type(task_type):
-                return
-
-            prefetch_params = self._parse_task_params(task)
-            downloaded_input_paths: list[str] = []
-            await self._prepare_task_inputs(
-                params=prefetch_params,
-                downloaded_input_paths=downloaded_input_paths,
-                comfy_input_dir=PREFETCH_CACHE_DIR,
-            )
-            self._discard_prefetch_cache()
-            self._prefetch_cache[task_id] = {
-                "task_id": task_id,
-                "task_type": task_type,
-                "params": prefetch_params,
-                "downloaded_input_paths": downloaded_input_paths,
-            }
-            logger.info(
-                "Prefetched inputs for pending task %s (%s)", task_id, task_type
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            logger.warning("Prefetch failed: %s", exc)
+        await self._prefetch_manager.prefetch_next_task_inputs(
+            task_type_filter=task_type_filter,
+            prefetch_enabled=PREFETCH_ENABLED,
+            prefetch_depth=PREFETCH_DEPTH,
+            cache_dir=PREFETCH_CACHE_DIR,
+        )
 
     def _schedule_prefetch(self, *, current_task_type: str) -> None:
-        if not PREFETCH_ENABLED:
-            return
-        if not self._should_prefetch_task_type(current_task_type):
-            return
-        if self._prefetch_task and not self._prefetch_task.done():
-            return
-        self._prefetch_task = asyncio.create_task(
-            self._prefetch_next_task_inputs(task_type_filter=current_task_type)
+        self._prefetch_manager.schedule_prefetch(
+            current_task_type=current_task_type,
+            prefetch_enabled=PREFETCH_ENABLED,
+            prefetch_depth=PREFETCH_DEPTH,
+            cache_dir=PREFETCH_CACHE_DIR,
         )
 
     async def report_heartbeat(self):
-        try:
-            status = self._worker_status()
-            await self._master_post(
-                "/api/agent/task/heartbeat",
-                json={
-                    "agent_id": AGENT_ID,
-                    "types": SUPPORTED_TASK_TYPES,
-                    "status": status,
-                    **self._heartbeat_health_payload(),
-                    **self._heartbeat_pool_payload(),
-                },
-            )
-            for execution in self._heartbeat_executions():
-                await self._master_post(
-                    "/api/agent/task/task_heartbeat",
-                    json={"task_id": execution.task_id, "agent_id": AGENT_ID},
-                )
-        except Exception as e:
-            logger.debug(f"Failed to report heartbeat: {e}")
+        await self._reporting_client.report_heartbeat(
+            agent_id=AGENT_ID,
+            supported_task_types=SUPPORTED_TASK_TYPES,
+            status=self._worker_status(),
+            health_payload=self._heartbeat_health_payload(),
+            pool_payload=self._heartbeat_pool_payload(),
+            executions=self._heartbeat_executions(),
+        )
 
     async def heartbeat_loop(self):
         logger.info(f"Agent {AGENT_ID} started heartbeat loop...")
@@ -1043,55 +866,20 @@ class ComfyAgent:
         cancel_locked: bool | None = None,
         set_current: bool = True,
     ):
-        payload = {
-            "task_id": task_id,
-            "agent_id": AGENT_ID,
-            "status": status,
-            "progress": progress,
-            "error": error,
-        }
-        if execution_phase is not None:
-            payload["execution_phase"] = execution_phase
-        if cancel_locked is not None:
-            payload["cancel_locked"] = cancel_locked
-        if not set_current:
-            payload["set_current"] = False
-        attempts = max(1, STATUS_REPORT_MAX_ATTEMPTS)
-
-        for attempt in range(1, attempts + 1):
-            try:
-                response = await self._master_post(
-                    "/api/agent/task/status",
-                    json=payload,
-                )
-                status_code = getattr(response, "status_code", 200)
-                if status_code >= 400:
-                    raise RuntimeError(
-                        f"Central API returned HTTP {status_code} for status report"
-                    )
-                return
-            except Exception as e:
-                if attempt >= attempts:
-                    logger.error(
-                        "Failed to report status for task %s after %s attempts: %s",
-                        task_id,
-                        attempts,
-                        e,
-                    )
-                    return
-                delay = min(
-                    STATUS_REPORT_RETRY_BASE_SECONDS * (2 ** (attempt - 1)),
-                    STATUS_REPORT_RETRY_MAX_SECONDS,
-                )
-                logger.debug(
-                    "Failed to report status for task %s on attempt %s/%s; retrying in %.1fs: %s",
-                    task_id,
-                    attempt,
-                    attempts,
-                    delay,
-                    e,
-                )
-                await asyncio.sleep(delay)
+        await self._reporting_client.report_status(
+            task_id=task_id,
+            agent_id=AGENT_ID,
+            status=status,
+            progress=progress,
+            error=error,
+            execution_phase=execution_phase,
+            cancel_locked=cancel_locked,
+            set_current=set_current,
+            attempts=max(1, STATUS_REPORT_MAX_ATTEMPTS),
+            retry_base_seconds=STATUS_REPORT_RETRY_BASE_SECONDS,
+            retry_max_seconds=STATUS_REPORT_RETRY_MAX_SECONDS,
+            sleep_func=asyncio.sleep,
+        )
 
     async def report_complete(
         self,
@@ -1100,57 +888,16 @@ class ComfyAgent:
         *,
         extra_outputs: dict[str, Any] | None = None,
     ):
-        payload = {
-            "task_id": task_id,
-            "agent_id": AGENT_ID,
-            "result": result_path,
-            "extra_outputs": extra_outputs or {},
-        }
-        attempts = max(1, COMPLETE_REPORT_MAX_ATTEMPTS)
-        last_error: Exception | None = None
-
-        for attempt in range(1, attempts + 1):
-            try:
-                response = await self._master_post(
-                    "/api/agent/task/complete",
-                    json=payload,
-                )
-                status_code = getattr(response, "status_code", 200)
-                if status_code >= 400:
-                    raise RuntimeError(
-                        f"Central API returned HTTP {status_code} for completion"
-                    )
-                return
-            except Exception as e:
-                last_error = e
-                if attempt >= attempts:
-                    logger.error(
-                        "Failed to report completion for task %s after %s attempts: %s",
-                        task_id,
-                        attempts,
-                        e,
-                    )
-                    raise RuntimeError(
-                        f"Failed to report completion for task {task_id}"
-                    ) from e
-
-                delay = min(
-                    COMPLETE_REPORT_RETRY_BASE_SECONDS * (2 ** (attempt - 1)),
-                    COMPLETE_REPORT_RETRY_MAX_SECONDS,
-                )
-                logger.warning(
-                    "Failed to report completion for task %s (attempt %s/%s): %s; retrying in %.1fs",
-                    task_id,
-                    attempt,
-                    attempts,
-                    e,
-                    delay,
-                )
-                await asyncio.sleep(delay)
-
-        raise RuntimeError(
-            f"Failed to report completion for task {task_id}"
-        ) from last_error
+        await self._reporting_client.report_complete(
+            task_id=task_id,
+            agent_id=AGENT_ID,
+            result_path=result_path,
+            extra_outputs=extra_outputs,
+            attempts=max(1, COMPLETE_REPORT_MAX_ATTEMPTS),
+            retry_base_seconds=COMPLETE_REPORT_RETRY_BASE_SECONDS,
+            retry_max_seconds=COMPLETE_REPORT_RETRY_MAX_SECONDS,
+            sleep_func=asyncio.sleep,
+        )
 
     async def report_cancelled(self, task_id: str):
         await self.report_status(task_id, "cancelled")

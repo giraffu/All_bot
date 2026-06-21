@@ -6,14 +6,23 @@ from dashboard.backend.schemas import (
     RunPodScaleRequest,
     RunPodWorkerActionRequest,
 )
+from dashboard.backend.services.runpod_operation_store import (
+    InMemoryRunPodOperationStore,
+)
 from dashboard.backend.services import runpod_admin_service
 
 
 @pytest.fixture(autouse=True)
 def _clear_runpod_admin_operations():
+    runpod_admin_service.set_runpod_operation_store_for_tests(
+        InMemoryRunPodOperationStore()
+    )
     runpod_admin_service._operations.clear()
     yield
     runpod_admin_service._operations.clear()
+    runpod_admin_service.set_runpod_operation_store_for_tests(
+        InMemoryRunPodOperationStore()
+    )
 
 
 def _discard_operation_coroutine(coro):
@@ -157,6 +166,105 @@ async def test_start_runpod_scale_payload_rejects_active_profile_add():
 
 
 @pytest.mark.asyncio
+async def test_runpod_operation_store_fake_create_list_update_prune_and_lock():
+    store = InMemoryRunPodOperationStore()
+    await store.save_operation(
+        {"id": "op-1", "status": "pending"},
+        created_at=1.0,
+    )
+    await store.save_operation(
+        {"id": "op-2", "status": "running"},
+        created_at=2.0,
+    )
+
+    assert [item["id"] for item in await store.list_operations(limit=10)] == [
+        "op-2",
+        "op-1",
+    ]
+    await store.save_operation(
+        {"id": "op-1", "status": "succeeded"},
+        created_at=1.0,
+        ttl_seconds=60,
+    )
+    assert (await store.get_operation("op-1"))["status"] == "succeeded"
+
+    assert await store.acquire_active_add("img2img", "op-2") is True
+    assert await store.acquire_active_add("img2img", "op-3") is False
+    assert await store.get_active_add("img2img") == "op-2"
+    await store.release_active_add("img2img", "op-other")
+    assert await store.get_active_add("img2img") == "op-2"
+    await store.release_active_add("img2img", "op-2")
+    assert await store.get_active_add("img2img") is None
+
+    await store.prune_operations(max_records=1)
+    assert [item["id"] for item in await store.list_operations(limit=10)] == ["op-2"]
+
+
+@pytest.mark.asyncio
+async def test_runpod_operations_payload_reads_persisted_store_records():
+    store = InMemoryRunPodOperationStore()
+    runpod_admin_service.set_runpod_operation_store_for_tests(store)
+    await store.save_operation(
+        {
+            "id": "detached-op",
+            "action": "add",
+            "profile": "img2img",
+            "owner_id": "old-host:1:abc",
+            "attached": True,
+            "status": "running",
+            "terminate_requested": False,
+            "can_terminate": True,
+            "log_tail": [],
+            "command": ["bash", "scripts/runpod_prod_ops.sh", "add"],
+        },
+        created_at=1.0,
+    )
+
+    payload = await runpod_admin_service.get_runpod_operations_payload()
+
+    assert payload["count"] == 1
+    operation = payload["operations"][0]
+    assert operation["id"] == "detached-op"
+    assert operation["owner_id"] == "old-host:1:abc"
+    assert operation["attached"] is False
+    assert operation["can_terminate"] is False
+    assert "detached" in operation["can_terminate_reason"]
+
+
+@pytest.mark.asyncio
+async def test_start_runpod_scale_payload_rejects_active_add_from_store():
+    store = InMemoryRunPodOperationStore()
+    runpod_admin_service.set_runpod_operation_store_for_tests(store)
+    await store.save_operation(
+        {
+            "id": "store-op",
+            "action": "add",
+            "profile": "img2img",
+            "owner_id": "old-host:1:abc",
+            "status": "running",
+            "terminate_requested": False,
+            "log_tail": [],
+            "command": [],
+        },
+        created_at=1.0,
+    )
+    await store.acquire_active_add("img2img", "store-op")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await runpod_admin_service.start_runpod_scale_payload(
+            RunPodScaleRequest(
+                items=[
+                    RunPodScaleItem(profile="img2img", count=1),
+                ],
+            ),
+            spawn_task_func=_discard_operation_coroutine,
+        )
+
+    assert exc_info.value.status_code == 409
+    assert "store-op" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
 async def test_pause_restart_and_delete_runpod_worker_build_slot_scoped_operations():
     action_request = RunPodWorkerActionRequest(prod_max_manual_slots=4)
 
@@ -281,6 +389,70 @@ async def test_terminate_runpod_add_operation_marks_terminating_and_kills_group(
     assert operation.terminate_requested is True
     assert killed == [(4321, runpod_admin_service.signal.SIGTERM)]
     assert operation.cleanup_status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_terminate_detached_runpod_operation_returns_409_and_does_not_kill(
+    monkeypatch,
+):
+    store = InMemoryRunPodOperationStore()
+    runpod_admin_service.set_runpod_operation_store_for_tests(store)
+    await store.save_operation(
+        {
+            "id": "detached-op",
+            "action": "add",
+            "profile": "img2img",
+            "owner_id": "old-host:1:abc",
+            "status": "running",
+            "pid": 4321,
+            "terminate_requested": False,
+            "log_tail": [],
+            "command": [],
+        },
+        created_at=1.0,
+    )
+    monkeypatch.setattr(
+        runpod_admin_service.os,
+        "killpg",
+        lambda *_args: pytest.fail("detached operation must not kill by PID"),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await runpod_admin_service.terminate_runpod_operation_payload("detached-op")
+
+    assert exc_info.value.status_code == 409
+    assert "detached" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_runpod_operation_persistence_keeps_log_redaction():
+    store = InMemoryRunPodOperationStore()
+    runpod_admin_service.set_runpod_operation_store_for_tests(store)
+    operation = runpod_admin_service.RunPodAdminOperation(
+        id="op-redact",
+        action="add",
+        profile="img2img",
+        command=[
+            "bash",
+            "scripts/runpod_prod_ops.sh",
+            "add",
+            "--token=super-secret-token",
+        ],
+    )
+    runpod_admin_service._append_log(
+        operation,
+        "Authorization: Bearer abc.def access_key=AKIASECRET x-amz-signature=123",
+    )
+    await runpod_admin_service._persist_operation(operation)
+
+    payload = await store.get_operation("op-redact")
+
+    assert payload is not None
+    redacted_text = " ".join(payload["command"] + payload["log_tail"])
+    assert "super-secret-token" not in redacted_text
+    assert "abc.def" not in redacted_text
+    assert "AKIASECRET" not in redacted_text
+    assert "x-amz-signature=123" not in redacted_text
 
 
 @pytest.mark.asyncio

@@ -205,12 +205,15 @@ Web 统一入口在：
 ### 7.1 按任务类型选择策略
 下发前的任务类型分流主要在：
 - `src/core/task_dispatcher.py`
+- `src/domain_config/task_type_registry.py`（只读事实表与一致性门禁，当前不驱动运行时分发）
 
 这里决定：
 - 用哪种策略计算价格
 - 哪些输入文件需要先上传到存储
 - 如何构造 metadata / payload
 - 调用 `image_service` 的哪个提交方法
+
+`task_type_registry.py` 记录 public type、legacy alias、执行面 task type、Central type、workflow filename、RunPod profile、视频/Gallery/apply 能力与成本。它的第一阶段作用是让 `tests/config/test_task_type_registry.py` 对照 `src/constants.py`、`backend/app/main_simple_task_routes.py`、`src/workflow_mapping_validation.py` 和 RunPod profile 做一致性门禁；新增或调整任务类型时先让 registry 与现有事实一致，再考虑分批迁移调用点。
 
 例如：
 - `txt2img` 走 `submit_txt2img_task(...)`
@@ -280,7 +283,7 @@ Central API 是执行面，不是业务主入口。
 
 `video_insert` / `video_edit` 不再作为新增业务类型或独立 workflow 方向，只作为 legacy route / Central / Worker alias 保留，最终必须归一到 `TaskType.IMAGE_TO_VIDEO` / execution `image_to_video`。
 
-其中 `txt2img` 当前通过 `/txt2img` simple route 进入执行面，Central API 内部仍映射到 legacy `TaskType.T2I_PORNMASTER_TURBO`。旧图生视频的 `/image_to_video` 与 `/perfect_video_lora` 会入队到执行面 `TaskType.IMAGE_TO_VIDEO`，但上游历史类型仍保留 `custom_video` / `video_lora`；旧 `/perfect_video_insert` 与 `/perfect_video_edit` 只作为兼容 endpoint 保留，会把旧 width/height/frame length 归一为 Wan22 `resolution_preset` 与秒数后入队 `TaskType.IMAGE_TO_VIDEO`。Telegram 懒人动图的差异应停留在 FSM 内置 prompt 与历史 mode，不再对应独立 worker workflow。Wan22 AIO 当前明确分两档 profile：旧图生视频 `custom_video` / `video_lora` / Web 字面量 `image_to_video` / 懒人动图 mode / legacy `video_insert`、`video_edit` -> execution `image_to_video` -> `legacy_image_to_video` profile；图生视频 v2 `wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。LTX 高级图生视频用户侧历史与画廊仍归为 `ltx_video`，dispatcher 会按 `inputs.ltx_mode` / `use_end_frame` / `video` 分流到底层执行类型：单首帧继续走 `ltx_video`，首尾帧走 `ltx_video_flf2v`，输入视频+文本配音走 `ltx_video_v2v_audio`；LoRA/附加模型仍沿用 LTX 最多 3 个 `lora_items` 的既有注入规则。Web 练功房中的 `ltx_video_audio` 只是前端内部模式，用于把视频配音从高级图生视频设置中拆成独立入口，提交时仍发送 `task_type=ltx_video` 与 `inputs.ltx_mode="v2v_audio"`；LTX 当前结果若带 `extra_outputs.last_frame`，练功房结果区可直接把尾帧载入下一段起始帧做扩展生成。LTX 扩展提交会携带 `ltx_prev_task_id` / `ltx_chain_task_ids`，Web finalizer 持久化为 `extra_outputs._ltx_context`，结果响应暴露为 `result_meta.ltx_*`；续段结果可通过 `/users/history/{task_id}/ltx-chain/stitch` 拼接整条链，拼接记录用 `extra_outputs.ltx_chain_stitch` 标记。`i2i_pro` RunPod 是现有 ComfyUI runtime profile，不新增业务类型；它可同时声明 `SUPPORTED_TASK_TYPES=i2i_pro,t2i-pornmaster-turbo,face_swap`，其中 Web `txt2img` 通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 读取 `txt2img_from_i2i_pro.json`，`face_swap` 读取 `face_swap_v2.json`。`face_swap_v2.json` 也是 workflow 替换，不是新业务类型；上游仍提交 `face_swap`。新增任务类型时，不要默认假设只改 `SIMPLE_TASK_TYPE_MAP` 就够，还要确认 request model、dispatcher 和 worker workflow 映射是否齐全。
+其中 `txt2img` 当前通过 `/txt2img` simple route 进入执行面，Central API 内部仍映射到 legacy `TaskType.T2I_PORNMASTER_TURBO`。旧图生视频的 `/image_to_video` 与 `/perfect_video_lora` 会入队到执行面 `TaskType.IMAGE_TO_VIDEO`，但上游历史类型仍保留 `custom_video` / `video_lora`；旧 `/perfect_video_insert` 与 `/perfect_video_edit` 只作为兼容 endpoint 保留，会把旧 width/height/frame length 归一为 Wan22 `resolution_preset` 与秒数后入队 `TaskType.IMAGE_TO_VIDEO`。Telegram 懒人动图的差异应停留在 FSM 内置 prompt 与历史 mode，不再对应独立 worker workflow。Wan22 AIO 当前明确分两档 profile：旧图生视频 `custom_video` / `video_lora` / Web 字面量 `image_to_video` / 懒人动图 mode / legacy `video_insert`、`video_edit` -> execution `image_to_video` -> `legacy_image_to_video` profile；图生视频 v2 `wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。LTX 高级图生视频用户侧历史与画廊仍归为 `ltx_video`，dispatcher 会按 `inputs.ltx_mode` / `use_end_frame` / `video` 分流到底层执行类型：单首帧继续走 `ltx_video`，首尾帧走 `ltx_video_flf2v`，输入视频+文本配音走 `ltx_video_v2v_audio`；LoRA/附加模型仍沿用 LTX 最多 3 个 `lora_items` 的既有注入规则。Web 练功房中的 `ltx_video_audio` 只是前端内部模式，用于把视频配音从高级图生视频设置中拆成独立入口，提交时仍发送 `task_type=ltx_video` 与 `inputs.ltx_mode="v2v_audio"`；LTX 当前结果若带 `extra_outputs.last_frame`，练功房结果区可直接把尾帧载入下一段起始帧做扩展生成。LTX 扩展提交会携带 `ltx_prev_task_id` / `ltx_chain_task_ids`，Web finalizer 持久化为 `extra_outputs._ltx_context`，结果响应暴露为 `result_meta.ltx_*`；续段结果可通过 `/users/history/{task_id}/ltx-chain/stitch` 拼接整条链，拼接记录用 `extra_outputs.ltx_chain_stitch` 标记。`i2i_pro` RunPod 是现有 ComfyUI runtime profile，不新增业务类型；它可同时声明 `SUPPORTED_TASK_TYPES=i2i_pro,t2i-pornmaster-turbo,face_swap`，其中 Web `txt2img` 通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 读取 `txt2img_from_i2i_pro.json`，`face_swap` 读取 `face_swap_v2.json`。`face_swap_v2.json` 也是 workflow 替换，不是新业务类型；上游仍提交 `face_swap`。新增任务类型时，不要默认假设只改 `SIMPLE_TASK_TYPE_MAP` 就够，还要确认 request model、dispatcher、worker workflow 映射与只读 task type registry 是否齐全。
 
 ### 8.3 QueueManager 的职责
 QueueManager 负责执行面排队与 Worker 选择，关键职责包括：
@@ -389,7 +392,8 @@ Worker 执行流程：
 - `/api/agent/task/status` 上报 `failed`
 
 维护口径：
-- `workers/comfy_agent/agent_main.py` 已拆出输入准备、workflow 执行、结果物化、结果上报等 helper；旧 `process_task(...)` 仍保留串行兼容路径，双槽主链由 `_launch_pipeline_task(...)`、`_prepare_and_submit_task(...)` 与 `_finalize_execution(...)` 协作完成。
+- `workers/comfy_agent/agent_main.py` 继续作为启动、shutdown、loop orchestration 和依赖组装 shell；健康/隔离与控制面恢复已下沉到 `agent_health.py`，Central 上报和 retry 下沉到 `agent_reporting_client.py`，预取生命周期下沉到 `agent_prefetch_manager.py`。旧 `_record_*`、`report_*`、`_prefetch_*` 方法名保留为薄委托。
+- 输入准备、workflow 执行、结果物化、结果上报等底层 helper 已拆出；旧 `process_task(...)` 仍保留串行兼容路径，双槽主链由 `_launch_pipeline_task(...)`、`_prepare_and_submit_task(...)` 与 `_finalize_execution(...)` 协作完成。
 - `workers/local_relay/relay_main.py` 是本地 worker relay 与上传 sidecar；非终态 status 可本地 ACK 后合并转发，`pop/check/complete/failed/cancelled` 必须同步转发。`/health` 只表示进程存活，`/ready` 检查 Central 与上传 client，供宿主机 watchdog 判定是否精确恢复 relay；`/ready` 404 是旧运行版本信号，watchdog 只记录不重启。sidecar 上传失败时当前任务应走 failed/status 路径，不得提前 complete。
 - 新增输出类型、失败补偿、取消检查、重试策略或上报语义时，优先把阶段逻辑下沉到对应 helper，并补 `tests/workers/test_comfy_agent.py` / `tests/workers/test_agent_result_materialization.py` focused tests。
 - `_route_ws_event(...)` 仍承担多种 ComfyUI WebSocket 事件分发；新增事件类型时优先拆 handler map 或独立 handler，避免继续扩大单函数条件分支。
@@ -507,7 +511,12 @@ Web 端当前用户侧运行态与结果查询链路分成三层：
 - `workflow_patcher.py` 是否需要支持新参数
 - 对应环境中的 Worker `SUPPORTED_TASK_TYPES` 是否包含该类型
 
-### 12.5 收尾与展示层
+### 12.5 Registry 门禁
+- `src/domain_config/task_type_registry.py` 是否补了 public type、alias、execution type、Central type、workflow filename、RunPod profile、Gallery/apply 与成本字段
+- `tests/config/test_task_type_registry.py` 是否覆盖该任务类型与相关 alias
+- registry 与 `src/constants.py`、`SIMPLE_TASK_TYPE_MAP`、`TASK_TYPE_WORKFLOW_FILENAMES`、RunPod profile 支持类型是否一致
+
+### 12.6 收尾与展示层
 - `task_result_service.py` 是否能正确返回公网可访问结果
 - 历史、收藏、投稿、Gallery 筛选是否要纳入该类型
 - 中英文 locale 是否补齐

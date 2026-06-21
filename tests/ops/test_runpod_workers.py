@@ -80,7 +80,9 @@ def test_workers_render_scale_renders_i2i_pro_profile_request():
     assert payload["profile"] == "i2i_pro"
     assert request["imageName"] == "ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:test"
     assert request["env"]["RUNPOD_TASK_TYPE"] == "i2i_pro"
-    assert request["env"]["SUPPORTED_TASK_TYPES"] == "i2i_pro"
+    assert request["env"]["SUPPORTED_TASK_TYPES"] == (
+        "i2i_pro,t2i-pornmaster-turbo,face_swap"
+    )
 
 
 def test_workers_scale_only_targets_requested_profile():

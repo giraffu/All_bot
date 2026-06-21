@@ -20,14 +20,14 @@ for path in (ROOT, SCRIPTS_DIR):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from ops.gpu_pool_controller.model_repo import ModelRegistry
-from ops.gpu_pool_controller.runpod_video_manifests import (
+from ops.gpu_pool_controller.model_repo import ModelRegistry  # noqa: E402
+from ops.gpu_pool_controller.runpod_video_manifests import (  # noqa: E402
     RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
     RUNPOD_WAN22_AIO_VIDEO_MODEL_MANIFEST_KEY,
     RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY,
     split_wan22_aio_manifest,
-)
-from upload_model_bundle_to_r2 import UploadProgress
+)  # noqa: E402
+from upload_model_bundle_to_r2 import UploadProgress  # noqa: E402
 
 
 DEFAULT_ENDPOINT = "http://192.168.1.115:9010"

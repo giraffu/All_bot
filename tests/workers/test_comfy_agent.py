@@ -32,7 +32,7 @@ def load_agent_main_module():
         )
     if "dotenv" not in sys.modules:
         sys.modules["dotenv"] = SimpleNamespace(load_dotenv=lambda: None)
-    if "minio" not in sys.modules:
+    if "minio" not in sys.modules and importlib.util.find_spec("minio") is None:
         minio_module = ModuleType("minio")
         minio_module.Minio = DummyMinio
         sys.modules["minio"] = minio_module

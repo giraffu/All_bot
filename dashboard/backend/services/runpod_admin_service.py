@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import signal
+import socket
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -14,6 +15,11 @@ from typing import Any
 from fastapi import HTTPException
 
 from dashboard.backend.schemas import RunPodScaleRequest, RunPodWorkerActionRequest
+from dashboard.backend.services.runpod_operation_store import (
+    FINISHED_OPERATION_TTL_SECONDS,
+    RunPodOperationStore,
+    build_default_runpod_operation_store,
+)
 from ops.gpu_pool_controller.lan_aio_prod import load_lan_aio_prod_slots
 from ops.gpu_pool_controller.providers.runpod import (
     normalize_prod_worker_profile,
@@ -37,6 +43,7 @@ FINISHED_OPERATION_STATUSES = {
     "terminate_failed",
 }
 TERMINABLE_OPERATION_STATUSES = {"pending", "running", "terminating"}
+RUNPOD_OPERATION_OWNER_ID = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex}"
 RUNPOD_CREATE_SLOT_LOG_RE = re.compile(
     r"\brunpod_create_pod_(?P<slot>\d+):\s*(?:running|ok)\b"
 )
@@ -80,6 +87,7 @@ class RunPodAdminOperation:
     profile: str
     command: list[str]
     created_at: float = field(default_factory=time.time)
+    owner_id: str = field(default_factory=lambda: RUNPOD_OPERATION_OWNER_ID)
     requested_count: int | None = None
     agent_id: str | None = None
     slot: str | None = None
@@ -96,11 +104,18 @@ class RunPodAdminOperation:
     cleanup_commands: list[list[str]] = field(default_factory=list)
     cleanup_exit_codes: list[int] = field(default_factory=list)
     log_lines: list[str] = field(default_factory=list)
+    active_add_profile: str | None = None
     process: Any | None = field(default=None, repr=False)
 
 
 _operations: dict[str, RunPodAdminOperation] = {}
 _operation_tasks: set[asyncio.Task] = set()
+_operation_store: RunPodOperationStore = build_default_runpod_operation_store()
+
+
+def set_runpod_operation_store_for_tests(store: RunPodOperationStore) -> None:
+    global _operation_store
+    _operation_store = store
 
 
 def _now_iso(timestamp: float | None) -> str | None:
@@ -110,10 +125,13 @@ def _now_iso(timestamp: float | None) -> str | None:
 
 
 def _operation_payload(operation: RunPodAdminOperation) -> dict[str, Any]:
+    can_terminate_reason = _can_terminate_operation_reason(operation)
     return {
         "id": operation.id,
         "action": operation.action,
         "profile": operation.profile,
+        "owner_id": operation.owner_id,
+        "attached": _operation_attached(operation),
         "requested_count": operation.requested_count,
         "agent_id": operation.agent_id,
         "slot": operation.slot,
@@ -125,7 +143,8 @@ def _operation_payload(operation: RunPodAdminOperation) -> dict[str, Any]:
         "exit_code": operation.exit_code,
         "error": operation.error,
         "terminate_requested": operation.terminate_requested,
-        "can_terminate": _can_terminate_operation(operation),
+        "can_terminate": can_terminate_reason is None,
+        "can_terminate_reason": can_terminate_reason,
         "cleanup_slots": list(operation.cleanup_slots),
         "cleanup_status": operation.cleanup_status,
         "cleanup_error": operation.cleanup_error,
@@ -165,22 +184,90 @@ def _record_cleanup_slots_from_log(
 
 
 def _can_terminate_operation(operation: RunPodAdminOperation) -> bool:
+    return _can_terminate_operation_reason(operation) is None
+
+
+def _operation_attached(operation: RunPodAdminOperation) -> bool:
     return (
-        operation.action == "add"
-        and operation.status in TERMINABLE_OPERATION_STATUSES
-        and not operation.terminate_requested
+        operation.owner_id == RUNPOD_OPERATION_OWNER_ID
+        and operation.process is not None
     )
 
 
-def _active_add_operation_for_profile(profile: str) -> RunPodAdminOperation | None:
+def _can_terminate_operation_reason(operation: RunPodAdminOperation) -> str | None:
+    if operation.action != "add":
+        return "only RunPod add operations can be terminated"
+    if operation.status not in TERMINABLE_OPERATION_STATUSES:
+        return f"RunPod operation is already {operation.status}"
+    if operation.terminate_requested:
+        return "termination already requested"
+    if operation.status != "pending" and not _operation_attached(operation):
+        return "operation is detached from this Dashboard process"
+    return None
+
+
+def _normalized_stored_operation_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(payload)
+    normalized.setdefault("owner_id", "")
+    normalized["attached"] = False
+    action = normalized.get("action")
+    status = normalized.get("status")
+    terminate_requested = bool(normalized.get("terminate_requested"))
+    if action != "add":
+        reason = "only RunPod add operations can be terminated"
+    elif status not in TERMINABLE_OPERATION_STATUSES:
+        reason = f"RunPod operation is already {status}"
+    elif terminate_requested:
+        reason = "termination already requested"
+    else:
+        reason = "operation is detached from this Dashboard process"
+    normalized["can_terminate"] = False
+    normalized["can_terminate_reason"] = reason
+    return normalized
+
+
+async def _persist_operation(operation: RunPodAdminOperation) -> None:
+    ttl_seconds = (
+        FINISHED_OPERATION_TTL_SECONDS
+        if operation.status in FINISHED_OPERATION_STATUSES
+        else None
+    )
+    await _operation_store.save_operation(
+        _operation_payload(operation),
+        created_at=operation.created_at,
+        ttl_seconds=ttl_seconds,
+    )
+    await _operation_store.prune_operations(max_records=DEFAULT_MAX_OPERATION_RECORDS)
+
+
+async def _release_active_add_if_needed(operation: RunPodAdminOperation) -> None:
+    if operation.active_add_profile:
+        await _operation_store.release_active_add(
+            operation.active_add_profile,
+            operation.id,
+        )
+
+
+async def _active_add_operation_for_profile(profile: str) -> dict[str, Any] | None:
     for operation in _operations.values():
         if (
             operation.action == "add"
             and operation.profile == profile
             and operation.status not in FINISHED_OPERATION_STATUSES
         ):
-            return operation
-    return None
+            return _operation_payload(operation)
+
+    active_operation_id = await _operation_store.get_active_add(profile)
+    if not active_operation_id:
+        return None
+    payload = await _operation_store.get_operation(active_operation_id)
+    if payload is None:
+        await _operation_store.release_active_add(profile, active_operation_id)
+        return None
+    if payload.get("status") in FINISHED_OPERATION_STATUSES:
+        await _operation_store.release_active_add(profile, active_operation_id)
+        return None
+    return _normalized_stored_operation_payload(payload)
 
 
 def _prune_operations() -> None:
@@ -402,13 +489,30 @@ async def get_runpod_profiles_payload() -> dict[str, Any]:
 
 
 async def get_runpod_operations_payload() -> dict[str, Any]:
-    operations = sorted(
-        _operations.values(),
-        key=lambda item: item.created_at,
-        reverse=True,
+    stored_payloads = await _operation_store.list_operations(
+        limit=DEFAULT_MAX_OPERATION_RECORDS
     )
+    operations: list[dict[str, Any]] = []
+    seen_operation_ids: set[str] = set()
+    for payload in stored_payloads:
+        operation_id = str(payload.get("id") or "")
+        local_operation = _operations.get(operation_id)
+        if local_operation is not None:
+            operations.append(_operation_payload(local_operation))
+        else:
+            operations.append(_normalized_stored_operation_payload(payload))
+        seen_operation_ids.add(operation_id)
+
+    local_only_operations = [
+        operation
+        for operation in _operations.values()
+        if operation.id not in seen_operation_ids
+    ]
+    local_only_operations.sort(key=lambda item: item.created_at, reverse=True)
+    operations.extend(_operation_payload(operation) for operation in local_only_operations)
+
     return {
-        "operations": [_operation_payload(operation) for operation in operations],
+        "operations": operations,
         "count": len(operations),
     }
 
@@ -416,20 +520,23 @@ async def get_runpod_operations_payload() -> dict[str, Any]:
 async def terminate_runpod_operation_payload(operation_id: str) -> dict[str, Any]:
     operation = _operations.get(operation_id)
     if operation is None:
+        stored_operation = await _operation_store.get_operation(operation_id)
+        if stored_operation is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "RunPod operation is detached from this Dashboard process; "
+                    "refusing to terminate by PID"
+                ),
+            )
         raise HTTPException(status_code=404, detail="RunPod operation not found")
-    if operation.action != "add":
-        raise HTTPException(
-            status_code=409,
-            detail="only RunPod add operations can be terminated",
-        )
-    if operation.status not in TERMINABLE_OPERATION_STATUSES:
-        raise HTTPException(
-            status_code=409,
-            detail=f"RunPod operation is already {operation.status}",
-        )
 
     if operation.terminate_requested:
         return {"status": "accepted", "operation": _operation_payload(operation)}
+
+    can_terminate_reason = _can_terminate_operation_reason(operation)
+    if can_terminate_reason is not None:
+        raise HTTPException(status_code=409, detail=can_terminate_reason)
 
     operation.terminate_requested = True
     _append_log(operation, "[dashboard-runpod] terminate requested")
@@ -449,6 +556,9 @@ async def terminate_runpod_operation_payload(operation_id: str) -> dict[str, Any
     else:
         operation.status = "terminating"
 
+    await _persist_operation(operation)
+    if operation.status in FINISHED_OPERATION_STATUSES:
+        await _release_active_add_if_needed(operation)
     return {"status": "accepted", "operation": _operation_payload(operation)}
 
 
@@ -470,13 +580,13 @@ async def start_runpod_scale_payload(
         normalized_items.append((profile, _requested_count_or_422(item)))
 
     for profile, _requested_count in normalized_items:
-        active_operation = _active_add_operation_for_profile(profile)
+        active_operation = await _active_add_operation_for_profile(profile)
         if active_operation is not None:
             raise HTTPException(
                 status_code=409,
                 detail=(
                     "RunPod add operation is already active for profile "
-                    f"{profile}: {active_operation.id}"
+                    f"{profile}: {active_operation['id']}"
                 ),
             )
 
@@ -498,12 +608,13 @@ async def start_runpod_scale_payload(
             ]
         )
         operations.append(
-            _register_operation(
+            await _register_operation(
                 action="add",
                 profile=profile,
                 command=command,
                 env=env,
                 requested_count=requested_count,
+                active_add_profile=profile,
                 spawn_task_func=spawn_task_func,
             )
         )
@@ -527,7 +638,7 @@ async def pause_runpod_worker_payload(
     )
     command = _base_command("disable", profile=profile, slot=slot)
     command.append("--execute")
-    operation = _register_operation(
+    operation = await _register_operation(
         action="pause",
         profile=profile,
         command=command,
@@ -552,7 +663,7 @@ async def restart_runpod_worker_payload(
     )
     command = _base_command("restart", profile=profile, slot=slot)
     command.append("--execute")
-    operation = _register_operation(
+    operation = await _register_operation(
         action="restart",
         profile=profile,
         command=command,
@@ -577,7 +688,7 @@ async def delete_runpod_worker_payload(
     )
     command = _base_command("down", profile=profile, slot=slot)
     command.append("--execute")
-    operation = _register_operation(
+    operation = await _register_operation(
         action="delete",
         profile=profile,
         command=command,
@@ -597,7 +708,7 @@ async def restart_lan_aio_worker_payload(
 ) -> dict[str, Any]:
     del request
     slot = _lan_aio_slot_selection_or_422(agent_id)
-    operation = _register_operation(
+    operation = await _register_operation(
         action="restart",
         profile=slot.target_profile_id,
         command=_lan_aio_restart_command(slot.id),
@@ -609,7 +720,7 @@ async def restart_lan_aio_worker_payload(
     return {"status": "accepted", "operation": _operation_payload(operation)}
 
 
-def _register_operation(
+async def _register_operation(
     *,
     action: str,
     profile: str,
@@ -618,6 +729,7 @@ def _register_operation(
     requested_count: int | None = None,
     agent_id: str | None = None,
     slot: str | None = None,
+    active_add_profile: str | None = None,
     spawn_task_func=None,
 ) -> RunPodAdminOperation:
     operation = RunPodAdminOperation(
@@ -628,9 +740,28 @@ def _register_operation(
         requested_count=requested_count,
         agent_id=agent_id,
         slot=slot,
+        active_add_profile=active_add_profile,
     )
+    if active_add_profile is not None:
+        acquired = await _operation_store.acquire_active_add(
+            active_add_profile,
+            operation.id,
+        )
+        if not acquired:
+            active_operation_id = await _operation_store.get_active_add(
+                active_add_profile
+            )
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "RunPod add operation is already active for profile "
+                    f"{active_add_profile}: {active_operation_id}"
+                ),
+            )
+
     _operations[operation.id] = operation
     _prune_operations()
+    await _persist_operation(operation)
     coroutine = _run_operation(operation.id, command=command, env=env)
     task_factory = spawn_task_func or asyncio.create_task
     task = task_factory(coroutine)
@@ -655,9 +786,12 @@ async def _run_operation(
         operation.status = "terminated"
         operation.cleanup_status = "skipped"
         operation.ended_at = time.time()
+        await _persist_operation(operation)
+        await _release_active_add_if_needed(operation)
         return
     operation.status = "running"
     operation.started_at = time.time()
+    await _persist_operation(operation)
     try:
         process = await asyncio.create_subprocess_exec(
             *command,
@@ -669,16 +803,20 @@ async def _run_operation(
         )
         operation.process = process
         operation.pid = process.pid
+        await _persist_operation(operation)
         if operation.terminate_requested:
             operation.status = "terminating"
             _terminate_process_group(operation)
+            await _persist_operation(operation)
         assert process.stdout is not None
         while True:
             raw = await process.stdout.readline()
             if not raw:
                 break
             _append_log(operation, raw.decode("utf-8", errors="replace"))
+            await _persist_operation(operation)
         operation.exit_code = await process.wait()
+        await _persist_operation(operation)
         if operation.terminate_requested:
             cleanup_ok = await _run_termination_cleanup(operation, env=env)
             operation.status = "terminated" if cleanup_ok else "terminate_failed"
@@ -702,6 +840,8 @@ async def _run_operation(
     finally:
         operation.process = None
         operation.ended_at = time.time()
+        await _persist_operation(operation)
+        await _release_active_add_if_needed(operation)
 
 
 def _terminate_process_group(operation: RunPodAdminOperation) -> None:
@@ -733,6 +873,7 @@ async def _run_termination_cleanup(
 ) -> bool:
     if operation.action != "add":
         operation.cleanup_status = "skipped"
+        await _persist_operation(operation)
         return True
 
     cleanup_slots = list(dict.fromkeys(operation.cleanup_slots))
@@ -742,25 +883,31 @@ async def _run_termination_cleanup(
             operation,
             "[dashboard-runpod] no created RunPod slot was recorded; cleanup skipped",
         )
+        await _persist_operation(operation)
         return True
 
     operation.cleanup_status = "running"
+    await _persist_operation(operation)
     cleanup_ok = True
     for slot in cleanup_slots:
         command = _base_command("down", profile=operation.profile, slot=slot)
         command.append("--execute")
         operation.cleanup_commands.append(command)
         _append_log(operation, f"[dashboard-runpod] cleanup down slot {slot} started")
+        await _persist_operation(operation)
         exit_code = await _run_cleanup_command(operation, command=command, env=env)
         operation.cleanup_exit_codes.append(exit_code)
+        await _persist_operation(operation)
         if exit_code != 0:
             cleanup_ok = False
             operation.cleanup_error = (
                 f"runpod cleanup down slot {slot} exited with code {exit_code}"
             )
             _append_log(operation, f"[dashboard-runpod] cleanup down slot {slot} failed")
+            await _persist_operation(operation)
 
     operation.cleanup_status = "succeeded" if cleanup_ok else "failed"
+    await _persist_operation(operation)
     return cleanup_ok
 
 
@@ -784,4 +931,5 @@ async def _run_cleanup_command(
         if not raw:
             break
         _append_log(operation, raw.decode("utf-8", errors="replace"))
+        await _persist_operation(operation)
     return await process.wait()

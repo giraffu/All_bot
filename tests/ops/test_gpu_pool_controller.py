@@ -25,11 +25,9 @@ def test_default_gpu_pool_config_loads_and_plans_all_local_workers():
 
     plan = GpuPoolPlanner(config).to_jsonable()
 
-    assert len(plan) == 7
+    assert len(plan) == 5
     assert {item["worker_id"] for item in plan} == {
         "cloud_prod_worker_01",
-        "cloud_prod_worker_02",
-        "cloud_prod_worker_03",
         "cloud_prod_worker_04",
         "cloud_prod_worker_05",
         "cloud_prod_worker_06",

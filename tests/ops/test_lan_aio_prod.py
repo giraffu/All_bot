@@ -43,17 +43,11 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
     assert slots["gpu-226-gpu0-face_i2i_t2i"].phase == "blocked_host_service_runtime"
 
 
-def test_lan_aio_prod_slot_declares_gpu177_rife_hot_cache_copy():
+def test_lan_aio_prod_slot_omits_gpu177_retired_hot_cache_copy():
     slot = load_lan_aio_prod_slots()["gpu-177-gpu0-image_to_video"]
 
-    assert len(slot.legacy_hot_cache_copies) == 1
-    hot_cache = slot.legacy_hot_cache_copies[0]
-    assert hot_cache.source_container == "comfy0"
-    assert hot_cache.source_path.endswith("/rife_models/rife49.pth")
-    assert hot_cache.target_paths == (
-        "/default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth",
-        "/default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth",
-    )
+    assert slot.legacy_hot_cache_copies == ()
+    assert "legacy worker 02/comfy0 were retired" in slot.notes
 
 
 def test_lan_aio_prod_slot_declares_gpu252_host_rife_hot_cache_copy():
@@ -161,11 +155,11 @@ def test_lan_aio_fleet_render_disables_dynamic_vram_for_wan22_v2():
     slot = ops.slots["gpu-252-gpu1-wan22_video_v2"]
     rendered = ops.render_compose(slot)
 
-    assert slot.phase == "prod_enabled"
+    assert slot.phase == "maintenance_disabled"
     assert slot.target_task_types == ("wan22_video_v2",)
     assert "POOL_RUNTIME_PROFILE: wan22_video_v2" in rendered
-    assert "POOL_GPU_INDEX: '0'" in rendered
-    assert "NVIDIA_VISIBLE_DEVICES: '0'" in rendered
+    assert "POOL_GPU_INDEX: '1'" in rendered
+    assert "NVIDIA_VISIBLE_DEVICES: '1'" in rendered
     assert "SUPPORTED_TASK_TYPES: wan22_video_v2" in rendered
     assert "SUPPORTED_TASK_TYPES: wan22_video_v2,video_edit,image_to_video" not in rendered
     assert "--disable-dynamic-vram" in rendered
@@ -194,7 +188,7 @@ def test_lan_aio_prod_compose_assertion_rejects_test_storage():
         raise AssertionError("cloud-test compose should be rejected for prod helper")
 
 
-def test_lan_aio_prod_preseeds_legacy_hot_cache_paths():
+def test_lan_aio_prod_skips_retired_gpu177_legacy_hot_cache_paths():
     class RecordingOps(LanAioProdOps):
         def __init__(self):
             super().__init__(
@@ -214,22 +208,8 @@ def test_lan_aio_prod_preseeds_legacy_hot_cache_paths():
 
     copied = ops._preseed_legacy_hot_caches(slot)
 
-    assert copied == [
-        {
-            "source_container": "comfy0",
-            "source_path": "/root/ComfyUI/custom_nodes/comfyui_fill-nodes/nodes/cache/rife_models/rife49.pth",
-            "target_paths": [
-                "/default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth",
-                "/default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth",
-            ],
-        }
-    ]
-    assert len(ops.ssh_calls) == 1
-    host, command = ops.ssh_calls[0]
-    assert host == "allbot-gpu-177"
-    assert "docker cp comfy0:/root/ComfyUI/custom_nodes/comfyui_fill-nodes" in command
-    assert "ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth" in command
-    assert "ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth" in command
+    assert copied == []
+    assert ops.ssh_calls == []
 
 
 def test_lan_aio_prod_preseeds_host_hot_cache_paths():

@@ -21,7 +21,7 @@ description: "AllBot 代码库架构设计词汇与 seam 选择指南。设计/�
 - `src/core/` 只能依赖内部协议、domain config、provider/capability 或显式 dependencies；不得导入 Telegram `Update`、Web `Request` 或基础设施实现。
 - Task core facade 应保持小 interface；复杂输入准备、billing、submission、side effect、runtime cleanup 放到实现层或 builder。
 - Billing core、task core、Gallery feed、worker patcher 都应让测试和调用方穿过同一个 seam。
-- Worker 大函数应按输入准备、workflow 执行、结果物化、上传/回报等阶段聚合；不要把每个 helper 做成只转发一行的浅模块。
+- Worker 大函数应按健康/控制面、Central 上报、预取、输入准备、workflow 执行、结果物化、上传/回报等阶段聚合；`ComfyAgent` 应保持 wiring/lifecycle shell，不要把每个 helper 做成只转发一行的浅模块。
 - Web API router 应薄，展示转换放 presenter/service；数据库事务和对象存储探测不要混在长事务里。
 
 ## 3. 设计检查

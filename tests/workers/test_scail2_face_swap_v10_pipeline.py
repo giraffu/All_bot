@@ -10,7 +10,7 @@ WORKER_MODULE_DIR = ROOT / "workers" / "comfy_agent"
 if str(WORKER_MODULE_DIR) not in sys.path:
     sys.path.insert(0, str(WORKER_MODULE_DIR))
 
-from workers.comfy_agent.scail2_face_swap_v10_pipeline import (
+from workers.comfy_agent.scail2_face_swap_v10_pipeline import (  # noqa: E402
     prepare_scail2_face_swap_v10_reference,
 )
 

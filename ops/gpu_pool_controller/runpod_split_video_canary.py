@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import struct
 import time
-import urllib.parse
 import zlib
 from pathlib import Path
 from typing import Any
@@ -30,7 +29,6 @@ from .runpod_canary import (
     _is_cloud_test_non_runpod_worker,
     _join_url,
     _pod_summary,
-    _safe_url,
     _utc_now_iso,
     _worker_summary,
     _worker_supports_any_expected_type,
