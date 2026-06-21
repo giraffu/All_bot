@@ -15,6 +15,9 @@
 | `allbot-comfy-models` | LoRA / ControlNet / ComfyUI 工作流参数透传、动态注入、Worker/remote_workers workflow 映射校验、SCAIL-2 视频生视频模型与 workflow | 修改附加模型、工作流映射、Bot 菜单参数或 RunPod/LAN Comfy profile 时 |
 | `allbot-code-analyzer` | 全局静态分析、死代码检测、架构审查、质量评估 | 进行全盘质量分析或架构体检时 |
 | `allbot-kb-auto-updater` | 评估代码现状对知识库的影响并同步更新 docs/skills/memory | 代码新增功能、重构、接口变更后 |
+| `allbot-diagnosing-bugs` | bug 诊断反馈环、假设排序、精准插桩、修复回归和收尾清理 | 用户报告失败、慢、卡住、线上异常、任务不可见或要求 debug/diagnose/troubleshoot 时 |
+| `allbot-tdd` | 行为测试、public seam、red-green-refactor、vertical slice | 新功能研发、bug 修复回归、test-first 或需要补 focused tests 时 |
+| `allbot-codebase-design` | module/interface/seam/adapter/depth/leverage/locality 架构词汇 | 设计模块接口、移动职责、改善可测试性、审查浅封装或架构重构时 |
 | `ops-log-monitor` | 多环境日志采集、异常归因、报告生成 | 需要排查线上日志或监控异常时 |
 | `backend-code-review` | Python/FastAPI 后端代码审查 | 审查后端文件或后端改动时 |
 | `vue-best-practices` | Vue 3 组合式 API、TypeScript、Pinia、Router 规范 | 修改前端 Vue 代码时 |
@@ -31,12 +34,15 @@
   - `allbot-task-engine`
 - 当需求本质是“同步知识库”，优先加载 `allbot-kb-auto-updater`，再根据触达的业务面补充其他技能。
 - 当前端改动需要视觉确认时，加载 `frontend-browser-preview`；若同时修改 Vue 代码，也加载 `vue-best-practices`。
+- 当日志分析进入代码修复或根因验证时，叠加 `allbot-diagnosing-bugs`；当改动需要行为锁定时，叠加 `allbot-tdd`。
+- 当争论职责边界、模块深浅、依赖注入位置或测试 seam 时，叠加 `allbot-codebase-design`。
 - 当变更涉及核心门面、运行时依赖、状态流、接口 I/O、超时值、异常类型、双 ID 语义时，优先同步对应 `SKILL.md`。
 - 当测试已经迁移到 provider/dependencies seam，后续知识描述也应同步强调“显式依赖注入优先”，避免继续鼓励旧的模块级 patch 方式。
 
 ## 4. 维护原则
 - `docs/skills/README.md` 只维护技能目录与高层边界，不重复拷贝各 `SKILL.md` 的全部细节。
 - `SKILL.md` 只沉淀触发边界、当前真实入口、不可越过的红线和最小验证要求；不要记录一次性 Pod ID、任务 ID、失败尝试流水账或长篇现场日志。这类材料应进入 `/docs/archive/` 或 `logs/`。
+- 项目共享词汇进入 `docs/domain/CONTEXT.md`；架构决策只在难逆、非显然且有真实取舍时进入 `docs/adr/`。
 - 若新增技能，必须同时同步：
   - `.codex/skills/<skill>/SKILL.md`
   - `AGENTS.md` 路由表

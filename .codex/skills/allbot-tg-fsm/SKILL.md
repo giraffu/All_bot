@@ -7,6 +7,8 @@ description: "处理 Telegram FSM、全局菜单黑盒退出、callback 路由�
 
 本技能定义 Telegram Bot 特有的复杂交互逻辑，覆盖多步 FSM、主菜单打断、callback 注册路由、文件下载/清理与语言切换的运行时约束。
 
+涉及 FSM 卡死、callback 转圈、文件下载失败或语言路由异常时，叠加 `allbot-diagnosing-bugs`；新增对话流或修复回归时，叠加 `allbot-tdd` 通过 handler / callback focused tests 锁定行为。
+
 ## 1. 模块功能描述
 - **多语言精准路由**：FSM 入口仍可使用 `I18nFilter`，但全局菜单识别已扩展为 `prompt_router + GLOBAL_REVERSE_MAP + is_global_menu_command(...)` 组合。
 - **FSM 黑盒退出机制**：在任何文字接收入口，优先用 `is_global_menu_command(...)` 判断是否应退出当前流程，而不是散落硬编码菜单判断。

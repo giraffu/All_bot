@@ -11,6 +11,8 @@ description: "评估代码现状对 docs/skills/memory 的影响，并同步更�
 - **现状扫描优先**：优先基于代码现状、关键入口、公开 facade、provider/dependencies 边界判断知识是否失真；必要时再结合 `git diff` 或用户提供的片段。
 - **技能失真识别**：当 `SKILL.md` 主张与代码入口冲突时，先更新技能，再继续开发，避免旧技能误导后续改动。
 - **结构一致性维护**：确保 `AGENTS.md`、`.codex/skills/`、`docs/` 与项目记忆在高层路由、入口文件、异常类型、超时值、双 ID 语义等关键点上一致。
+- **领域词汇维护**：当术语含义被澄清、重命名或出现冲突时，同步更新 `docs/domain/CONTEXT.md`；该文件只写词汇含义，不写实现细节。
+- **ADR 节制记录**：只有决策难逆、非显然且存在真实取舍时，才基于 `docs/adr/0000-template.md` 新增 ADR。
 - **变更日志输出**：在交付时给出清晰的知识库 Changelog，说明改了哪些文件、为什么改、对应哪类代码变化。
 
 ## 2. 输入输出规范
@@ -18,6 +20,7 @@ description: "评估代码现状对 docs/skills/memory 的影响，并同步更�
 - **输入**：
   - 代码现状扫描需求
   - 架构重构、接口变化、主入口迁移、provider/capability 重构
+  - 领域术语、共享语言、ADR 或架构决策记录变化
   - 需要同步 `docs/`、`SKILL.md`、memory 的任务
 - **输出**：
   - 需更新的 docs / `.codex/skills` / memory 清单
@@ -31,6 +34,7 @@ description: "评估代码现状对 docs/skills/memory 的影响，并同步更�
 2. **核心门面 / provider / 状态流重构**：
    - 优先同步 `docs/` 架构文档与回归清单。
    - 同步更新相关技能文档中的主入口、异常类型、超时值、测试要求。
+   - 若产生新的稳定术语，写入 `docs/domain/CONTEXT.md`；若存在难逆取舍，再新增 ADR。
    - 必要时更新项目记忆，记录新的稳定架构事实。
 3. **全新模块/微服务引入**：
    - 创建新的业务文档与技能文档。
@@ -44,6 +48,8 @@ description: "评估代码现状对 docs/skills/memory 的影响，并同步更�
 - 当测试策略已迁移到显式 `dependencies` / `*_func` seam，知识文档也必须同步更新，不能继续鼓励旧的模块级 patch 方式。
 - 若说明依赖运行时 provider 注册，必须在文档中写明“入口负责注册，core 不自动注册”。
 - `SKILL.md` 应优先记录稳定入口、触发边界、红线与最小验证要求；一次性 Pod ID、任务 ID、失败尝试流水账、真实密钥值和长篇现场日志不应沉淀到技能正文。
+- `docs/domain/CONTEXT.md` 只能作为 glossary 使用，不应变成 spec、runbook、事故记录或实现设计草稿。
+- ADR 必须说明 context、decision、alternatives、consequences；缺少真实替代方案时不要新增 ADR。
 - 最终总结必须包含 Changelog，列出修改文件与原因。
 
 ## 5. 使用示例 (最佳实践)

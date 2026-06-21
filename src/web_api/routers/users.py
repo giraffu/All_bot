@@ -13,6 +13,7 @@ from src.web_api.schemas.auth_schema import UserResponse
 from src.web_api.schemas.user_schema import (
     CheckinResponse,
     HistoryItem,
+    LtxHistoryChainResponse,
     PaginatedHistory,
     PreferencesUpdate,
     Wan22HistoryChainResponse,
@@ -33,6 +34,10 @@ from src.web_api.services.users_history_service import (
 from src.web_api.services.wan22_history_chain_service import (
     get_wan22_history_chain_payload,
     stitch_wan22_history_chain_response,
+)
+from src.web_api.services.ltx_history_chain_service import (
+    get_ltx_history_chain_payload,
+    stitch_ltx_history_chain_response,
 )
 from src.web_api.services.user_social_service import (
     follow_user_payload,
@@ -292,6 +297,32 @@ async def stitch_wan22_history_chain(
     db: DbSessionDep,
 ):
     return await stitch_wan22_history_chain_response(
+        task_id=task_id,
+        current_user=current_user,
+        db=db,
+    )
+
+
+@router.get("/history/{task_id}/ltx-chain", response_model=LtxHistoryChainResponse)
+async def get_ltx_history_chain(
+    task_id: str,
+    current_user: CurrentUserDep,
+    db: DbSessionDep,
+):
+    return await get_ltx_history_chain_payload(
+        task_id=task_id,
+        current_user=current_user,
+        db=db,
+    )
+
+
+@router.post("/history/{task_id}/ltx-chain/stitch", response_model=HistoryItem)
+async def stitch_ltx_history_chain(
+    task_id: str,
+    current_user: CurrentUserDep,
+    db: DbSessionDep,
+):
+    return await stitch_ltx_history_chain_response(
         task_id=task_id,
         current_user=current_user,
         db=db,

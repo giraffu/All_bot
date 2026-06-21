@@ -7,7 +7,7 @@ import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 import { useTaskResult } from '@/composables/useTaskResult'
 import { useTaskStream } from '@/composables/useTaskStream'
 import { useUpload } from '@/composables/useUpload'
-import { getWan22HistoryChain, stitchWan22HistoryChain } from '@/api/gallery'
+import { getWan22HistoryChain, stitchLtxHistoryChain, stitchWan22HistoryChain } from '@/api/gallery'
 import type { TaskRecord } from '@/types/gallery'
 import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
 import { buildSwapTaskPayload } from '@/features/generation/buildSwapTaskPayload'
@@ -137,6 +137,34 @@ const resolveReusableOutputKey = (path?: string | null) => {
   return `comfyui-temp/${normalizedPath}`
 }
 
+const normalizeTaskIdList = (value: unknown): string[] => {
+  const rawItems = (() => {
+    if (Array.isArray(value)) return value
+    if (typeof value === 'string') {
+      const trimmed = value.trim()
+      if (!trimmed) return []
+      if (trimmed.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(trimmed)
+          return Array.isArray(parsed) ? parsed : []
+        } catch {
+          return trimmed.split(',')
+        }
+      }
+      return trimmed.split(',')
+    }
+    return []
+  })()
+  const ordered: string[] = []
+  rawItems.forEach((item) => {
+    const normalized = String(item || '').trim()
+    if (normalized && !ordered.includes(normalized)) {
+      ordered.push(normalized)
+    }
+  })
+  return ordered
+}
+
 export function useLabWorkbench() {
   const route = useRoute()
   const router = useRouter()
@@ -170,6 +198,9 @@ export function useLabWorkbench() {
   const wan22ChainLoading = ref(false)
   const wan22ChainStitching = ref(false)
   const ltxExtensionNotice = ref('')
+  const ltxPrevTaskId = ref<string | null>(null)
+  const ltxChainTaskIds = ref<string[]>([])
+  const ltxChainStitching = ref(false)
   const scail2MotionVideoDurationSeconds = ref<number | null>(null)
 
   const templateNotice = ref('')
@@ -265,6 +296,11 @@ export function useLabWorkbench() {
   const ltxCurrentTaskCanExtend = computed(() => (
     currentTaskIsLtxVideo.value
     && Boolean(currentTask.value?.id && currentTask.value?.extraOutputs?.last_frame?.path)
+  ))
+  const ltxCurrentTaskCanStitch = computed(() => (
+    currentTaskIsLtxVideo.value
+    && !currentTask.value?.resultMeta?.ltx_is_stitched
+    && Boolean(currentTask.value?.id && currentTask.value?.resultMeta?.ltx_prev_task_id)
   ))
 
   const uploadButtonLabel = computed(() => (
@@ -407,6 +443,8 @@ export function useLabWorkbench() {
 
   const resetLtxExtensionState = () => {
     ltxExtensionNotice.value = ''
+    ltxPrevTaskId.value = null
+    ltxChainTaskIds.value = []
   }
 
   const resetFormState = (options?: { preserveMode?: boolean }) => {
@@ -544,7 +582,14 @@ export function useLabWorkbench() {
     }
   }
 
-  const applyLtxExtensionPrefill = (path?: string | null, url?: string | null) => {
+  const applyLtxExtensionPrefill = (
+    path?: string | null,
+    url?: string | null,
+    options?: {
+      previousTaskId?: string | null
+      chainTaskIds?: unknown
+    },
+  ) => {
     const key = resolveReusableOutputKey(path)
     if (!key) {
       return false
@@ -564,17 +609,55 @@ export function useLabWorkbench() {
     }]
     prompt.value = ''
     setSubmittedTaskId(null)
+    const previousTaskId = String(options?.previousTaskId || '').trim()
+    const chainTaskIds = normalizeTaskIdList(options?.chainTaskIds)
+    ltxPrevTaskId.value = previousTaskId || null
+    ltxChainTaskIds.value = previousTaskId
+      ? normalizeTaskIdList([...chainTaskIds, previousTaskId])
+      : chainTaskIds
     ltxExtensionNotice.value = t('lab.workbench.ltx_extension_notice')
     return true
   }
 
   const openLtxCurrentTaskEditor = () => {
     const lastFrame = currentTask.value?.extraOutputs?.last_frame
-    if (!applyLtxExtensionPrefill(lastFrame?.path, lastFrame?.url)) {
+    const taskId = currentTask.value?.id
+    const chainTaskIds = currentTask.value?.resultMeta?.ltx_chain_task_ids
+      ?? (currentTask.value?.resultMeta?.ltx_prev_task_id
+        ? [currentTask.value.resultMeta.ltx_prev_task_id]
+        : [])
+    if (!applyLtxExtensionPrefill(lastFrame?.path, lastFrame?.url, {
+      previousTaskId: taskId,
+      chainTaskIds,
+    })) {
       message.warning(t('lab.workbench.ltx_extend_missing_last_frame'))
       return
     }
     message.success(t('lab.workbench.ltx_extension_loaded'))
+  }
+
+  const stitchCurrentLtxChain = async () => {
+    const taskId = currentTask.value?.id
+    if (!taskId) {
+      message.warning(t('lab.workbench.ltx_chain_errors.missing_task_id'))
+      return
+    }
+    ltxChainStitching.value = true
+    const hide = message.loading(t('lab.workbench.ltx_stitching'), 0)
+    try {
+      const stitchedRecord = await stitchLtxHistoryChain(taskId)
+      hide()
+      message.success(t('lab.workbench.ltx_stitch_success'))
+      if (stitchedRecord.task_id && stitchedRecord.type) {
+        tasksStore.showDetailRecord(stitchedRecord as TaskRecord)
+      }
+    } catch (error: any) {
+      console.error(error)
+      hide()
+      message.error(error?.response?.data?.detail || t('lab.workbench.ltx_stitch_failed'))
+    } finally {
+      ltxChainStitching.value = false
+    }
   }
 
   const handleRemoveUploadSlot = (slotId: LabUploadSlotId) => {
@@ -889,7 +972,13 @@ export function useLabWorkbench() {
         const ltxExtensionUrl = typeof route.query.ltx_extend_url === 'string'
           ? route.query.ltx_extend_url
           : ''
-        if (applyLtxExtensionPrefill(ltxExtensionKey, ltxExtensionUrl)) {
+        const ltxExtensionTaskId = typeof route.query.ltx_extend_task_id === 'string'
+          ? route.query.ltx_extend_task_id
+          : ''
+        if (applyLtxExtensionPrefill(ltxExtensionKey, ltxExtensionUrl, {
+          previousTaskId: ltxExtensionTaskId,
+          chainTaskIds: route.query.ltx_chain_task_ids,
+        })) {
           message.success(t('lab.workbench.ltx_extension_loaded'))
         }
         return
@@ -942,6 +1031,8 @@ export function useLabWorkbench() {
       route.query.wan22_task_id,
       route.query.ltx_extend_key,
       route.query.ltx_extend_url,
+      route.query.ltx_extend_task_id,
+      route.query.ltx_chain_task_ids,
     ],
     hydrateFromRoute,
     { immediate: true },
@@ -1157,6 +1248,8 @@ export function useLabWorkbench() {
             ltx_mode: uploadedReferences.value.length >= 2 ? 'flf2v' : 'i2v',
             use_end_frame: uploadedReferences.value.length >= 2,
             extract_last_frame: true,
+            ltx_prev_task_id: ltxPrevTaskId.value || undefined,
+            ltx_chain_task_ids: ltxChainTaskIds.value.length > 0 ? ltxChainTaskIds.value : undefined,
           }
         : undefined,
       normalizeEditLoraTask: currentMode.value.id === 'edit',
@@ -1242,10 +1335,13 @@ export function useLabWorkbench() {
     wan22CurrentTaskCanStitch,
     currentTaskIsLtxVideo,
     ltxCurrentTaskCanExtend,
+    ltxCurrentTaskCanStitch,
     wan22ChainLoading,
     wan22ChainStitching,
+    ltxChainStitching,
     openWan22CurrentTaskEditor,
     openLtxCurrentTaskEditor,
     stitchCurrentWan22Chain,
+    stitchCurrentLtxChain,
   }
 }

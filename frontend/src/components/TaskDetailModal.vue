@@ -11,7 +11,7 @@ import { usePostPromptCopy } from '@/composables/usePostPromptCopy'
 import OriginalInputsPanel from '@/components/OriginalInputsPanel.vue'
 import PromptPreviewPanel from '@/components/PromptPreviewPanel.vue'
 import { useI18n } from 'vue-i18n'
-import { stitchWan22HistoryChain } from '@/api/gallery'
+import { stitchLtxHistoryChain, stitchWan22HistoryChain } from '@/api/gallery'
 import type { HistoryItem, TaskRecord } from '@/types/gallery'
 
 const { isMobile } = useViewport()
@@ -33,7 +33,7 @@ const detailVisible = computed({
 })
 
 const currentRecord = computed(() => tasksStore.currentDetailRecord)
-const wan22ActionLoading = ref<'stitch' | null>(null)
+const wan22ActionLoading = ref<'stitch' | 'ltx-stitch' | null>(null)
 
 const isWan22Record = computed(() => (
   currentRecord.value?.type === 'wan22_video_v2'
@@ -55,6 +55,11 @@ const canShowWan22ChainCard = computed(() => isWan22Record.value && !isWan22Stit
 const isLtxRecord = computed(() => currentRecord.value?.type === 'ltx_video')
 const canExtendLtxRecord = computed(
   () => isLtxRecord.value && Boolean(currentRecord.value?.task_id && currentRecord.value?.extra_outputs?.last_frame?.path)
+)
+const canStitchLtxChain = computed(
+  () => isLtxRecord.value
+    && !currentRecord.value?.result_meta?.ltx_is_stitched
+    && Boolean(currentRecord.value?.result_meta?.ltx_prev_task_id)
 )
 
 const {
@@ -98,15 +103,47 @@ const openLtxEditor = async () => {
     return
   }
   detailVisible.value = false
+  const ltxChainTaskIds = record.result_meta?.ltx_chain_task_ids?.length
+    ? record.result_meta.ltx_chain_task_ids
+    : record.result_meta?.ltx_prev_task_id
+      ? [record.result_meta.ltx_prev_task_id]
+      : []
   await router.push({
     name: 'CustomFeatures',
     query: {
       type: 'ltx_video',
       ltx_extend_task_id: record.task_id,
       ltx_extend_key: lastFrame.path,
+      ...(ltxChainTaskIds.length
+        ? { ltx_chain_task_ids: JSON.stringify(ltxChainTaskIds) }
+        : {}),
       ...(lastFrame.url ? { ltx_extend_url: lastFrame.url } : {}),
     },
   })
+}
+
+const handleLtxChainStitch = async () => {
+  const record = currentRecord.value as HistoryItem | null
+  if (!record?.task_id) {
+    message.warning('当前记录缺少任务 ID，暂时无法拼接')
+    return
+  }
+  wan22ActionLoading.value = 'ltx-stitch'
+  const hide = message.loading('正在拼接整条 LTX 视频链...', 0)
+  try {
+    const stitchedRecord = await stitchLtxHistoryChain(record.task_id)
+    if (stitchedRecord.task_id && stitchedRecord.type) {
+      tasksStore.showDetailRecord(stitchedRecord as TaskRecord)
+    }
+    hide()
+    message.success('拼接完成，已生成新的闪回瓶记录')
+  } catch (error: any) {
+    console.error(error)
+    hide()
+    message.error(error?.response?.data?.detail || '拼接失败，请稍后再试')
+  } finally {
+    wan22ActionLoading.value = null
+  }
 }
 
 const handleWan22ChainStitch = async () => {
@@ -296,6 +333,14 @@ const handleWan22ChainStitch = async () => {
                 @click="openLtxEditor"
               >
                 扩展下一段
+              </a-button>
+              <a-button
+                class="task-detail-secondary-btn rounded-xl w-full"
+                :disabled="!canStitchLtxChain"
+                :loading="wan22ActionLoading === 'ltx-stitch'"
+                @click="handleLtxChainStitch"
+              >
+                完成整链拼接
               </a-button>
               <div class="task-detail-chain-tip text-[11px] lg:text-xs">
                 {{ canExtendLtxRecord ? '已检测到可复用尾帧。' : '当前记录缺少可用尾帧，暂时不能继续扩展。' }}

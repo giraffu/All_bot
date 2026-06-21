@@ -16,6 +16,8 @@
 - `AGENTS.md`：全局路由与高压红线，只保留入口级规则，避免塞入长篇业务细节。
 - `.codex/skills/<skill-name>/SKILL.md`：Codex 项目级技能主入口，按需加载；修改业务边界时优先更新这里。
 - `docs/skills/README.md`：技能目录清单与维护约定。
+- `docs/domain/CONTEXT.md`：项目共享领域词汇表，只记录术语含义，不写实现细节。
+- `docs/adr/`：架构决策记录；仅在决策难逆、非显然且存在真实取舍时新增。
 - `/docs`：系统设计、业务规范、排障手册与历史背景；系统级重构或不确定业务逻辑时主动查阅。
 
 ## 3. AI 技能路由索引 (Skills Router)
@@ -30,6 +32,9 @@
 | **Telegram 交互与文件** | `allbot-tg-fsm` | PTB 状态机、多语言(i18n)精准路由、菜单互斥防死锁、大文件 Monkey Patch |
 | **部署、容器与容灾排障** | `allbot-ops-deployment` | Docker Compose 编排、Alembic 迁移、测试优先发布、云正式/云测试控制面、本地正式灾备切换、MinIO/网络故障恢复 |
 | **文档维护与知识库同步** | `allbot-kb-auto-updater` | 智能监控代码变更影响，自动维护 AGENTS.md、`.codex/skills` 和 /docs/ 的逻辑一致性 |
+| **Bug 诊断闭环** | `allbot-diagnosing-bugs` | 建立可复现反馈环、排序假设、精准插桩、修复回归与收尾清理 |
+| **测试驱动研发** | `allbot-tdd` | 通过 public facade / API / FSM / provider dependencies seam 做行为测试，一次一个 vertical slice |
+| **代码库架构设计** | `allbot-codebase-design` | 使用 module/interface/seam/adapter/depth/leverage/locality 词汇审查模块深度、职责移动与可测试性 |
 | **后端代码审查与规范** | `backend-code-review` | 针对 FastAPI/Python 后端接口及核心层代码的架构规则审查、依赖注入和数据库模式检查 |
 | **附加模型与工作流配置** | `allbot-comfy-models` | 处理图生图/图生视频的附加模型(LoRA/ControlNet)配置、参数透传与工作流注入 |
 | **前端代码审查与规范** | `vue-best-practices` | 针对 Vue3 / SPA 前端（如 Dashboard 或 Web 工作台）的开发规范，推荐 Composition API 与 TypeScript |

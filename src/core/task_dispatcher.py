@@ -685,6 +685,12 @@ class LtxVideoStrategy(BaseTaskStrategy):
             "extract_last_frame": submission.mode != LTX_VIDEO_MODE_I2V
             or bool(inputs.get("extract_last_frame")),
         }
+        prev_task_id = str(inputs.get("ltx_prev_task_id") or "").strip()
+        if prev_task_id:
+            metadata["ltx_prev_task_id"] = prev_task_id
+        chain_task_ids = inputs.get("ltx_chain_task_ids")
+        if isinstance(chain_task_ids, list) and chain_task_ids:
+            metadata["ltx_chain_task_ids"] = chain_task_ids
         return _append_lora_metadata(metadata, inputs)
 
     async def submit_task(

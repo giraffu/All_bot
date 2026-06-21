@@ -37,3 +37,35 @@ async def test_web_success_finalizer_retries_when_history_persistence_fails():
 
     persist_mock.assert_awaited_once()
     cleanup_mock.assert_not_awaited()
+
+
+def test_ltx_history_context_is_merged_into_extra_outputs():
+    merged = task_web_terminal_finalization.merge_ltx_history_context_into_extra_outputs(
+        task_type="ltx_video",
+        extra_outputs={
+            "last_frame": {
+                "path": "history/ltx-task-2/last_frame.png",
+            }
+        },
+        metadata={
+            "ltx_mode": "i2v",
+            "ltx_width": 1280,
+            "ltx_height": 704,
+            "requested_duration": 5,
+            "ltx_prev_task_id": "ltx-task-1",
+            "ltx_chain_task_ids": ["ltx-task-1"],
+            "lora_items": [{"name": "demo.safetensors", "strength": 0.8}],
+        },
+    )
+
+    assert merged["last_frame"]["path"] == "history/ltx-task-2/last_frame.png"
+    assert merged["_ltx_context"] == {
+        "ltx_mode": "i2v",
+        "ltx_use_end_frame": False,
+        "ltx_width": 1280,
+        "ltx_height": 704,
+        "ltx_duration_seconds": 5,
+        "ltx_prev_task_id": "ltx-task-1",
+        "ltx_chain_task_ids": ["ltx-task-1"],
+        "lora_items": [{"name": "demo.safetensors", "strength": 0.8}],
+    }

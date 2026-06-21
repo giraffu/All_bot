@@ -14,6 +14,11 @@ from src.services.wan22_video_v2_extension_service import (
     is_wan22_stitched_result,
     resolve_wan22_segment_index,
 )
+from src.services.ltx_video_extension_service import (
+    extract_ltx_history_context,
+    is_ltx_stitched_result,
+    resolve_ltx_segment_index,
+)
 from src.domain_config.wan22_aio_video import is_wan22_chain_history_task_type
 
 
@@ -368,5 +373,14 @@ def extract_history_result_meta(
             segment_index = resolve_wan22_segment_index(extra_outputs)
             if segment_index:
                 result_meta["wan22_segment_index"] = segment_index
+        return result_meta
+    if task_type == "ltx_video":
+        result_meta = extract_ltx_history_context(extra_outputs)
+        if is_ltx_stitched_result(extra_outputs):
+            result_meta["ltx_is_stitched"] = True
+        else:
+            segment_index = resolve_ltx_segment_index(extra_outputs)
+            if segment_index:
+                result_meta["ltx_segment_index"] = segment_index
         return result_meta
     return {}

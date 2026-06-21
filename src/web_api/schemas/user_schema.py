@@ -42,6 +42,11 @@ class Wan22HistoryChainResponse(BaseModel):
     items: List[HistoryItem]
 
 
+class LtxHistoryChainResponse(BaseModel):
+    current_task_id: str
+    items: List[HistoryItem]
+
+
 class CheckinResponse(BaseModel):
     success: bool
     current_credits: int

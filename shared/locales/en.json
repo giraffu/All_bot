@@ -502,6 +502,13 @@
       "ltx_locked_start_frame": "Locked to the previous tail frame",
       "ltx_extension_notice": "The previous tail frame is locked as the start frame. Optionally add an end frame before generating.",
       "ltx_extend_missing_last_frame": "This result has no usable tail frame yet.",
+      "ltx_stitch_chain": "Stitch",
+      "ltx_stitching": "Stitching the full LTX video chain...",
+      "ltx_stitch_success": "Stitching complete. A new history record was created.",
+      "ltx_stitch_failed": "Stitching failed. Please try again later.",
+      "ltx_chain_errors": {
+        "missing_task_id": "This result is missing a task ID and cannot be stitched yet."
+      },
       "wan22_chain_errors": {
         "history_empty": "No matching chained video record was found.",
         "record_not_found": "The matching segment was not found.",

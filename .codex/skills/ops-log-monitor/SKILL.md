@@ -7,6 +7,8 @@ description: "Monitors system logs across environments, analyzes exceptions, and
 
 This skill is designed to automatically execute system log monitoring, anomaly detection, and deep analysis without cluttering the conversation with raw logs.
 
+若日志分析指向代码缺陷、需要修复或需要验证根因，继续加载 `allbot-diagnosing-bugs`，先建立可复现反馈环再改代码；本技能本身只做观察、聚合、归因和报告。
+
 ## Workflow Instructions
 
 When invoked to perform log monitoring or bug troubleshooting, strictly follow these steps:

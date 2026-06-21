@@ -64,6 +64,7 @@ vi.mock('@/composables/usePostPromptCopy', () => ({
 }))
 
 vi.mock('@/api/gallery', () => ({
+  stitchLtxHistoryChain: vi.fn(),
   stitchWan22HistoryChain: vi.fn(),
 }))
 

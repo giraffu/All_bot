@@ -7,6 +7,8 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 
 本技能覆盖社区广场、对象存储与模板应用上下文，不再局限于“投稿 + 点赞 + R2 转存”。
 
+涉及 Gallery、R2、媒体 URL、apply-context 或提示词解锁异常时，叠加 `allbot-diagnosing-bugs` 建立可复现反馈环；新增社区/存储行为时，叠加 `allbot-tdd` 先锁定服务端行为。
+
 ## 1. 模块功能描述
 - **广场投稿与原创保护**：基于 `History.allow_contribute` 阻断模板套娃再投稿。
 - **互动防刷**：`user_interactions` 记录 `like/dislike/apply`，依赖唯一约束与原子更新防止连点覆盖。

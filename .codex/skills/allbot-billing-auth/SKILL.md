@@ -7,6 +7,8 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 
 本技能覆盖 AllBot 中最敏感的“钱与权”边界，适用于所有会改变 `users.credits`、会员身份、会话有效性、支付状态或 affiliate 账本的开发任务。
 
+涉及支付、扣费、退款、身份或 affiliate bug 时，叠加 `allbot-diagnosing-bugs` 建立可复现反馈环；新增或修复资产副作用时，叠加 `allbot-tdd` 用行为测试锁定幂等、事务和审计。
+
 ## 1. 模块功能描述
 - **Web 认证与会话安全**：支持 Telegram Mini App / Login Widget 验签、用户名密码登录、绑定密码、改密后 `password_version` 失效旧 token 与安全通知。
 - **JWT 体系**：JWT 由 Web 安全层签发，当前认证链会把 `pwd_ver` / `channel` 等 claim 纳入令牌语义；旧 token 失效依赖 `password_version` 与 Redis 黑名单协同收口。

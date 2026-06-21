@@ -79,11 +79,14 @@ const {
   wan22CurrentTaskCanStitch,
   currentTaskIsLtxVideo,
   ltxCurrentTaskCanExtend,
+  ltxCurrentTaskCanStitch,
   wan22ChainLoading,
   wan22ChainStitching,
+  ltxChainStitching,
   openWan22CurrentTaskEditor,
   openLtxCurrentTaskEditor,
   stitchCurrentWan22Chain,
+  stitchCurrentLtxChain,
 } = useLabWorkbench()
 
 const isVideoMode = computed(() => currentMode.value.kindKey === 'lab.workbench.mode_kinds.video')
@@ -251,6 +254,16 @@ const promptLockedHint = computed(() => (
               >
                 <template #icon><BranchesOutlined /></template>
                 {{ $t('lab.workbench.ltx_extend_generation') }}
+              </a-button>
+              <a-button
+                v-if="ltxCurrentTaskCanStitch"
+                size="large"
+                class="min-w-[94px] max-w-[112px] flex-1 rounded-xl !px-2 whitespace-nowrap"
+                :loading="ltxChainStitching"
+                @click="stitchCurrentLtxChain"
+              >
+                <template #icon><LinkOutlined /></template>
+                {{ $t('lab.workbench.ltx_stitch_chain') }}
               </a-button>
               <a-button
                 size="large"

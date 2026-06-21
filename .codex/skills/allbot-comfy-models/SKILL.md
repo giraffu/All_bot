@@ -9,6 +9,10 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 
 整个过程主要是一个**配置驱动**的过程，无需重构核心逻辑。下面分别介绍“图生图”与“图生视频”附加模型的具体配置路径。
 
+新增模型、workflow 或运行时 profile 时，叠加 `allbot-tdd` 做最小映射/patcher/worker focused tests；遇到 ComfyUI 400、模型缺失、RunPod/LAN runtime 不一致或结果物化异常时，叠加 `allbot-diagnosing-bugs` 先建立可复现反馈环。
+
+低频且易过期的 RunPod/LAN/runtime 细节优先沉淀到 [references/runtime-profiles.md](references/runtime-profiles.md)，主技能只保留事实源红线、配置入口和验证要求。
+
 ---
 
 ## 0. workflow 资产事实源红线
@@ -145,7 +149,8 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
   - Telegram FSM 允许多选最多 3 个 LoRA，并支持逐项调整强度；LoRA 后会进入 LTX 模式选择：单首帧、首尾帧、视频配音。
   - Web 单图视频页支持 LTX 三模式切换；练功房把 LTX 视频配音拆为独立内部模式 `ltx_video_audio`，但真实提交仍是用户侧 `ltx_video` + `inputs.ltx_mode="v2v_audio"`；练功房高级图生视频只保留单首帧/首尾帧，并可在当前结果区直接用 `extra_outputs.last_frame` 扩展生成。
   - 前端主路径提交 `inputs.lora_items`，而不是只提交单个 `inputs.lora_name`。
-  - LTX 结果若存在 `extra_outputs.last_frame`，Web 结果区/历史详情和 Bot 结果消息可进入“扩展生成”，把尾帧作为下一段起始帧。
+  - LTX 结果若存在 `extra_outputs.last_frame`，Web 结果区/历史详情和 Bot 结果消息可进入“扩展生成”，把尾帧作为下一段起始帧。Web 续段提交会携带 `inputs.ltx_prev_task_id` 与 `inputs.ltx_chain_task_ids`；Web finalizer 会把它们持久化到 `extra_outputs._ltx_context`，历史/结果响应转成 `result_meta.ltx_prev_task_id`、`result_meta.ltx_chain_task_ids`、`result_meta.ltx_segment_index`。
+  - LTX 续段结果（存在 `result_meta.ltx_prev_task_id`）可在练功房结果区或闪回瓶详情调用 `/users/history/{task_id}/ltx-chain/stitch` 拼接整条链，拼接历史使用 `extra_outputs.ltx_chain_stitch` 标记。首段只有扩展按钮，不显示拼接按钮。
 
 ### 3. Backend 层
 - **文件定位**：`backend/app/models.py`
@@ -153,6 +158,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
   - `LtxVideoRequest` 已同时支持 `lora_items` 与兼容字段 `lora_name / lora_strength`。
   - `LtxVideoFlf2VRequest` 和 `LtxVideoV2VAudioRequest` 分别对应 `/api/v1/ltx_video_flf2v`、`/api/v1/ltx_video_v2v_audio`。
   - 上游 Web/Bot 仍提交用户侧 `ltx_video`；`src/core/task_dispatcher.py` 通过 `inputs.ltx_mode`、`use_end_frame`、`video` 或输入数量分流到上述执行面 simple routes。
+  - Web LTX 扩展链路元数据由 `src/core/task_dispatcher.py` 写入 metadata，并由 `src/services/task_web_terminal_finalization.py` 合并到历史 `extra_outputs._ltx_context`；拼接入口位于 `src/web_api/services/ltx_history_chain_service.py`。
   - 新增 LTX LoRA 时，通常无需新增 task type，重点是保持请求模型与 patcher 协议一致。
 
 ### 4. Worker 层

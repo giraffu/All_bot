@@ -824,12 +824,16 @@ def test_ltx_video_strategy_metadata_marks_last_frame_for_extension():
             "duration": "10s",
             "ltx_mode": "flf2v",
             "saved_input_images": ["demo/start.png", "demo/end.png"],
+            "ltx_prev_task_id": "ltx-task-1",
+            "ltx_chain_task_ids": ["ltx-task-1"],
         }
     )
 
     assert metadata["saved_inputs"] == ["demo/start.png", "demo/end.png"]
     assert metadata["ltx_mode"] == "flf2v"
     assert metadata["extract_last_frame"] is True
+    assert metadata["ltx_prev_task_id"] == "ltx-task-1"
+    assert metadata["ltx_chain_task_ids"] == ["ltx-task-1"]
 
 
 @pytest.mark.asyncio

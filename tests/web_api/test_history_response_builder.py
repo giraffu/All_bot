@@ -175,6 +175,40 @@ def test_extract_history_result_meta_adds_segment_index_for_wan22_segment():
     }
 
 
+def test_extract_history_result_meta_adds_ltx_chain_context():
+    result_meta = extract_history_result_meta(
+        task_type="ltx_video",
+        extra_outputs={
+            "_ltx_context": {
+                "ltx_mode": "i2v",
+                "ltx_prev_task_id": "ltx-task-1",
+                "ltx_chain_task_ids": ["ltx-task-1"],
+            }
+        },
+    )
+
+    assert result_meta == {
+        "ltx_mode": "i2v",
+        "ltx_prev_task_id": "ltx-task-1",
+        "ltx_chain_task_ids": ["ltx-task-1"],
+        "ltx_segment_index": 2,
+    }
+
+
+def test_extract_history_result_meta_marks_stitched_ltx_record():
+    result_meta = extract_history_result_meta(
+        task_type="ltx_video",
+        extra_outputs={
+            "ltx_chain_stitch": {
+                "segment_count": 2,
+                "ltx_chain_task_ids": ["ltx-task-1", "ltx-task-2"],
+            }
+        },
+    )
+
+    assert result_meta == {"ltx_is_stitched": True}
+
+
 def test_build_wan22_chain_prompt_summary_splits_segments_cleanly():
     summary = build_wan22_chain_prompt_summary(
         [

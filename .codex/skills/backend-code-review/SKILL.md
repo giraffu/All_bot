@@ -30,11 +30,12 @@ Follow these steps when using this skill:
 Notes when using this skill:
 - Always include actionable fixes or suggestions (including possible code snippets).
 - Use best-effort `File:Line` references when a file path and line numbers are available; otherwise, use the most specific identifier you can.
+- For architecture findings, use `allbot-codebase-design` vocabulary: module, interface, seam, adapter, depth, leverage, and locality.
 
 ## Checklist
 
 - db schema design: if the review scope includes code/files under `src/database/` or `backend/app/`, follow [references/db-schema-rule.md](references/db-schema-rule.md) to perform the review
-- architecture: if the review scope involves handler/router/service/core-domain/libs/model layering, dependency direction, or moving responsibilities across modules, follow [references/architecture-rule.md](references/architecture-rule.md) to perform the review
+- architecture: if the review scope involves handler/router/service/core-domain/libs/model layering, dependency direction, moving responsibilities across modules, shallow modules, or test seams, follow [references/architecture-rule.md](references/architecture-rule.md) and the `allbot-codebase-design` vocabulary to perform the review
 - repositories abstraction: if the review scope contains table/model operations (e.g., `select(...)`, `session.execute(...)`, joins, CRUD) and is not under `src/database/` or `backend/app/models.py`, follow [references/repositories-rule.md](references/repositories-rule.md) to perform the review
 - sqlalchemy patterns: if the review scope involves SQLAlchemy session/query usage, db transaction/crud usage, or raw SQL usage, follow [references/sqlalchemy-rule.md](references/sqlalchemy-rule.md) to perform the review
 

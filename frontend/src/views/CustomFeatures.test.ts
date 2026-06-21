@@ -18,6 +18,7 @@ const labels: Record<string, string> = {
   'lab.workbench.wan22_regenerate_generation': '重新生成',
   'lab.workbench.wan22_stitch_chain': '拼接',
   'lab.workbench.ltx_extend_generation': '扩展生成',
+  'lab.workbench.ltx_stitch_chain': '拼接',
   'lab.workbench.continue_generation': '继续生成',
 }
 
@@ -117,14 +118,17 @@ const createWorkbench = (options?: { canStitch?: boolean }) => ({
   wan22CurrentTaskCanStitch: ref(Boolean(options?.canStitch)),
   currentTaskIsLtxVideo: ref(false),
   ltxCurrentTaskCanExtend: ref(false),
+  ltxCurrentTaskCanStitch: ref(false),
   wan22ChainLoading: ref(false),
   wan22ChainStitching: ref(false),
+  ltxChainStitching: ref(false),
   openWan22CurrentTaskEditor: vi.fn(),
   openLtxCurrentTaskEditor: vi.fn(),
   stitchCurrentWan22Chain: vi.fn(),
+  stitchCurrentLtxChain: vi.fn(),
 })
 
-const createLtxWorkbench = (options?: { hasLastFrame?: boolean }) => ({
+const createLtxWorkbench = (options?: { hasLastFrame?: boolean; canStitch?: boolean }) => ({
   ...createWorkbench(),
   currentMode: computed(() => ({
     ...baseMode,
@@ -147,15 +151,18 @@ const createLtxWorkbench = (options?: { hasLastFrame?: boolean }) => ({
         url: 'https://cdn/ltx-tail.png',
       },
     },
-    resultMeta: {},
+    resultMeta: options?.canStitch ? { ltx_prev_task_id: 'ltx-task-0' } : {},
   }),
   currentTaskIsWan22VideoV2: ref(false),
   wan22CurrentTaskCanExtend: ref(false),
   wan22CurrentTaskCanStitch: ref(false),
   currentTaskIsLtxVideo: ref(true),
   ltxCurrentTaskCanExtend: ref(options?.hasLastFrame !== false),
+  ltxCurrentTaskCanStitch: ref(Boolean(options?.canStitch)),
+  ltxChainStitching: ref(false),
   openWan22CurrentTaskEditor: vi.fn(),
   openLtxCurrentTaskEditor: vi.fn(),
+  stitchCurrentLtxChain: vi.fn(),
 })
 
 const mountView = () => mount(CustomFeatures, {
@@ -219,6 +226,7 @@ describe('CustomFeatures LTX result actions', () => {
     expect(wrapper.text()).toContain('下载结果')
     expect(wrapper.text()).toContain('扩展生成')
     expect(wrapper.text()).toContain('继续生成')
+    expect(wrapper.text()).not.toContain('拼接')
 
     const buttons = wrapper.findAll('button')
     const extendButton = buttons.find(button => button.text().includes('扩展生成'))
@@ -226,6 +234,19 @@ describe('CustomFeatures LTX result actions', () => {
 
     await extendButton?.trigger('click')
     expect(workbench.openLtxCurrentTaskEditor).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows stitch for LTX extension segments', async () => {
+    workbench = createLtxWorkbench({ canStitch: true })
+    const wrapper = mountView()
+
+    expect(wrapper.text()).toContain('拼接')
+
+    const stitchButton = wrapper.findAll('button')
+      .find(button => button.text().includes('拼接'))
+    await stitchButton?.trigger('click')
+
+    expect(workbench.stitchCurrentLtxChain).toHaveBeenCalledTimes(1)
   })
 
   it('disables LTX extend when the current result has no tail frame', () => {

@@ -503,6 +503,13 @@
       "ltx_locked_start_frame": "已锁定为上一段尾帧",
       "ltx_extension_notice": "已锁定上一段尾帧作为起始帧，可选添加终止帧后继续生成。",
       "ltx_extend_missing_last_frame": "当前结果没有可用尾帧，暂时无法扩展",
+      "ltx_stitch_chain": "拼接",
+      "ltx_stitching": "正在拼接整条 LTX 视频链...",
+      "ltx_stitch_success": "拼接完成，已生成新的闪回瓶记录",
+      "ltx_stitch_failed": "拼接失败，请稍后再试",
+      "ltx_chain_errors": {
+        "missing_task_id": "当前结果缺少任务 ID，暂时无法拼接"
+      },
       "wan22_chain_errors": {
         "history_empty": "未找到对应的链式视频记录",
         "record_not_found": "未找到对应段落记录",

@@ -18,6 +18,16 @@ export interface Wan22ResultMeta {
   wan22_model_profile?: string
   lora_name?: string
   lora_strength?: number
+  ltx_mode?: string
+  ltx_use_end_frame?: boolean
+  ltx_prev_task_id?: string
+  ltx_chain_task_ids?: string[]
+  ltx_segment_index?: number
+  ltx_is_stitched?: boolean
+  ltx_width?: number
+  ltx_height?: number
+  ltx_duration_seconds?: number
+  lora_items?: Array<{ name: string; strength?: number }>
 }
 
 export interface GalleryPost {
@@ -107,6 +117,11 @@ export interface RecentHistoryResponse {
 }
 
 export interface Wan22HistoryChainResponse {
+  current_task_id: string
+  items: HistoryItem[]
+}
+
+export interface LtxHistoryChainResponse {
   current_task_id: string
   items: HistoryItem[]
 }

@@ -15,6 +15,8 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 - 局域网 GPU SSH：`docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md`
 - 局域网 GPU 资源：`docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md`
 - 边缘节点：`docs/子模块_边缘节点运维指南_edge_node_ops.md`
+- 低频 RunPod/LAN AIO 运行时细节：`references/runpod-lan-runtime.md`
+- 若排障需要代码修复或根因验证，叠加 `allbot-diagnosing-bugs`；若改动运维脚本或 preflight，叠加 `allbot-tdd` 做 dry-run/focused tests。
 
 ## 1. 当前运维口径
 - **测试优先部署**：功能研发、联调、修复与配置调整默认先更新云测试控制面，优先使用 `scripts/update_cloud_test_with_maintenance.sh --execute`；它会让测试 Web/Bot 进入生成维护、按 `CLOUD_TEST_WORKER_REDIS_URL` 指向的 Central Redis DB 等待 pending/running 队列清空、同步代码、单独备份并同步 `.env.cloud.test`、远端执行 `scripts/safe_deploy_cloud_test.sh`、按需重建测试 Bot，并默认发布边缘测试 Web。只有用户明确要求正式发布、上线或交付验证时，才允许进入云正式部署。

@@ -1,0 +1,4 @@
+interface:
+  display_name: "AllBot Bug Diagnosis"
+  short_description: "Build tight feedback loops for AllBot bug fixes."
+  default_prompt: "Diagnose this AllBot issue by first building a reproducible feedback loop, then ranking hypotheses, instrumenting narrowly, fixing, and proving the regression is covered."

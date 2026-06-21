@@ -95,6 +95,7 @@ vi.mock('@/stores/tasks', () => ({
 
 vi.mock('@/api/gallery', () => ({
   getWan22HistoryChain: vi.fn(),
+  stitchLtxHistoryChain: vi.fn(),
   stitchWan22HistoryChain: vi.fn(),
 }))
 
@@ -285,6 +286,59 @@ describe('useLabWorkbench LTX payloads', () => {
       priority: 0,
       is_template: false,
     }, 'lab.cards.high_res_video_title')
+  })
+
+  it('submits LTX extension chain metadata when the previous task id is known', async () => {
+    const workbench = createWorkbench('ltx_video', {
+      ltx_extend_task_id: 'ltx-task-1',
+      ltx_extend_key: 'history/ltx-task-1/last_frame.png',
+      ltx_extend_url: 'https://cdn/ltx-tail.png',
+    })
+    workbench.prompt.value = 'continue the next segment'
+
+    await workbench.handleSubmit()
+
+    expect(mocks.submitTask).toHaveBeenCalledWith(expect.objectContaining({
+      task_type: 'ltx_video',
+      inputs: expect.objectContaining({
+        images: ['history/ltx-task-1/last_frame.png'],
+        ltx_mode: 'i2v',
+        ltx_prev_task_id: 'ltx-task-1',
+        ltx_chain_task_ids: ['ltx-task-1'],
+      }),
+    }), 'lab.cards.high_res_video_title')
+  })
+
+  it('extends current LTX result with inherited chain metadata', async () => {
+    mocks.taskResultCurrentTask.value = {
+      id: 'ltx-task-2',
+      type: 'ltx_video',
+      status: 'success',
+      extraOutputs: {
+        last_frame: {
+          path: 'history/ltx-task-2/last_frame.png',
+          url: 'https://cdn/ltx-tail-2.png',
+        },
+      },
+      resultMeta: {
+        ltx_prev_task_id: 'ltx-task-1',
+        ltx_chain_task_ids: ['ltx-task-1'],
+      },
+    }
+    const workbench = createWorkbench('ltx_video')
+    workbench.openLtxCurrentTaskEditor()
+    workbench.prompt.value = 'continue segment three'
+
+    await workbench.handleSubmit()
+
+    expect(mocks.submitTask).toHaveBeenCalledWith(expect.objectContaining({
+      task_type: 'ltx_video',
+      inputs: expect.objectContaining({
+        images: ['history/ltx-task-2/last_frame.png'],
+        ltx_prev_task_id: 'ltx-task-2',
+        ltx_chain_task_ids: ['ltx-task-1', 'ltx-task-2'],
+      }),
+    }), 'lab.cards.high_res_video_title')
   })
 
   it('submits locked LTX extension frames as flf2v when an optional end frame is added', async () => {
