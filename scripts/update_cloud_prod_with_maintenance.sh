@@ -16,6 +16,7 @@ EXECUTE=false
 CONFIRM_PROD=false
 KEEP_MAINTENANCE=false
 SKIP_DRAIN=false
+SKIP_GENERATION_MAINTENANCE=false
 SKIP_SYNC=false
 SYNC_ENV=false
 RSYNC_DELETE=false
@@ -55,6 +56,8 @@ Options:
   --scope MODE                 preflight-only|control-plane|services. Default: control-plane.
   --services "SVC ..."         With --scope services, build/up only these services.
                                Allowed services exclude bot-prod; use --bot-mode for Bot.
+  --skip-generation-maintenance
+                               With --scope services, skip generation maintenance and queue drain.
   --with-db-upgrade            Pass --with-db-upgrade to safe_deploy_cloud_prod.sh.
                                Only supported with --scope control-plane.
   --skip-network-checks        Pass --skip-network-checks to safe_deploy_cloud_prod.sh.
@@ -149,6 +152,10 @@ while [ "$#" -gt 0 ]; do
             ;;
         --skip-drain)
             SKIP_DRAIN=true
+            shift
+            ;;
+        --skip-generation-maintenance)
+            SKIP_GENERATION_MAINTENANCE=true
             shift
             ;;
         --skip-sync)
@@ -260,7 +267,7 @@ validate_services() {
     local service
     for service in $SERVICES; do
         case "$service" in
-            central-api-prod|web-api-prod|payment-api-prod|dashboard-backend-prod|dashboard-frontend-prod|imgproxy-prod) ;;
+            central-api-prod|web-api-prod|payment-api-prod|dashboard-backend-prod|dashboard-frontend-prod|imgproxy-prod|paid-group-guard-bot-prod) ;;
             bot-prod)
                 die "do not put bot-prod in --services; use --bot-mode auto|start|stop explicitly"
                 ;;
@@ -284,6 +291,9 @@ preflight() {
     fi
     if [ "$WITH_DB_UPGRADE" = true ] && [ "$SCOPE" != "control-plane" ]; then
         die "--with-db-upgrade is only supported with --scope control-plane"
+    fi
+    if [ "$SKIP_GENERATION_MAINTENANCE" = true ] && [ "$SCOPE" != "services" ]; then
+        die "--skip-generation-maintenance is only supported with --scope services"
     fi
     if [ "$SYNC_ENV" = true ] && [ ! -f "$LOCAL_ENV_FILE" ]; then
         die "local cloud-prod env file not found: $LOCAL_ENV_FILE"
@@ -672,7 +682,7 @@ client = redis.Redis.from_url(url, decode_responses=True, socket_connect_timeout
 print(f"queue pending={client.zcard('comfy:queue:pending')} running={client.scard('comfy:queue:running')}")
 PY
 
-for c in cloud-central-api-prod cloud-web-api-prod cloud-payment-api-prod cloud-dashboard-backend-prod cloud-dashboard-frontend-prod cloud-imgproxy-prod; do
+for c in cloud-central-api-prod cloud-web-api-prod cloud-payment-api-prod cloud-dashboard-backend-prod cloud-dashboard-frontend-prod cloud-imgproxy-prod cloud-paid-group-guard-bot-prod; do
   if docker ps -a --format '{{.Names}}' | grep -qx "$c"; then
     docker inspect -f "$c restart_count={{.RestartCount}} status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}" "$c"
     errors="$(docker logs --since 5m "$c" 2>&1 | grep -Eic 'ERROR|Traceback|Exception' || true)"
@@ -713,6 +723,8 @@ on_error() {
     if [ "$MAINTENANCE_ACTIVE" = true ]; then
         echo "Generation maintenance is intentionally left enabled. Re-run after fixing the issue," >&2
         echo "or manually remove ${REMOTE_DIR}/${REMOTE_MAINTENANCE_FILE} on ${REMOTE_HOST} after verification." >&2
+    elif [ "$SKIP_GENERATION_MAINTENANCE" = true ]; then
+        echo "Generation maintenance was intentionally skipped for this services-only update." >&2
     else
         echo "Generation maintenance was not marked active by this script; verify remote state before retrying." >&2
     fi
@@ -732,8 +744,12 @@ main() {
     fi
 
     capture_initial_bot_state
-    enable_maintenance
-    wait_for_queue_drain
+    if [ "$SKIP_GENERATION_MAINTENANCE" = true ]; then
+        log "Skip generation maintenance and queue drain"
+    else
+        enable_maintenance
+        wait_for_queue_drain
+    fi
     sync_code
     sync_env_file
     run_prod_preflight
@@ -754,6 +770,8 @@ main() {
 
     if [ "$KEEP_MAINTENANCE" = true ]; then
         log "Keep maintenance enabled by request"
+    elif [ "$SKIP_GENERATION_MAINTENANCE" = true ]; then
+        log "Generation maintenance was skipped"
     else
         disable_maintenance
     fi

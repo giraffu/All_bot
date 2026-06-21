@@ -9,6 +9,7 @@ from telegram.request import HTTPXRequest
 
 from paid_group_guard_bot.config import PaidGroupBotSettings
 from paid_group_guard_bot.handlers import build_chat_join_request_handler
+from paid_group_guard_bot.moderation_handlers import build_message_moderation_handler
 from src.database.core import engine
 from src.logger import setup_logging
 
@@ -52,6 +53,7 @@ def build_application(settings: PaidGroupBotSettings):
 
     application = builder.build()
     application.add_handler(build_chat_join_request_handler(settings))
+    application.add_handler(build_message_moderation_handler(settings))
     return application
 
 
@@ -68,7 +70,7 @@ def main() -> None:
 
     application = build_application(settings)
     application.run_polling(
-        allowed_updates=["chat_join_request"],
+        allowed_updates=["chat_join_request", "message"],
         poll_interval=settings.poll_interval,
         timeout=settings.poll_timeout,
         stop_signals=(signal.SIGINT, signal.SIGTERM, signal.SIGABRT),
@@ -77,4 +79,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

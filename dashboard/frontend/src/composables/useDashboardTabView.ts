@@ -39,6 +39,9 @@ const TAB_COMPONENTS = {
   history: markRaw(defineAsyncComponent(() => import('../components/HistoryTable.vue'))),
   worker_history: markRaw(defineAsyncComponent(() => import('../components/WorkerHistoryTable.vue'))),
   logs: markRaw(defineAsyncComponent(() => import('../components/LogTable.vue'))),
+  paid_group_guard: markRaw(
+    defineAsyncComponent(() => import('../components/PaidGroupGuardSettings.vue'))
+  ),
   recharge: markRaw(defineAsyncComponent(() => import('../components/RechargeSystem.vue'))),
   templates: markRaw(defineAsyncComponent(() => import('../components/TemplateManager.vue'))),
   gallery: markRaw(defineAsyncComponent(() => import('../components/GalleryTable.vue'))),
@@ -111,6 +114,11 @@ export function useDashboardTabView(
     logs: {
       component: TAB_COMPONENTS.logs,
       containerClass: PANEL_CONTAINER_CLASS,
+      bindings: {},
+    },
+    paid_group_guard: {
+      component: TAB_COMPONENTS.paid_group_guard,
+      containerClass: BASE_CONTAINER_CLASS,
       bindings: {},
     },
     recharge: {

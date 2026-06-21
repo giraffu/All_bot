@@ -20,6 +20,7 @@ from dashboard.backend.routers import (
     gallery,
     history,
     logs,
+    paid_group_guard,
     plans,
     referrals,
     runpod,
@@ -147,6 +148,7 @@ app.include_router(plans.router)
 app.include_router(templates.router)
 app.include_router(system.router)
 app.include_router(logs.router)
+app.include_router(paid_group_guard.router)
 app.include_router(workers.router)
 app.include_router(runpod.router)
 app.include_router(gallery.router)

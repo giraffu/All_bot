@@ -10,7 +10,7 @@
 | `allbot-task-engine` | task core facade、provider/capability、双 ID 语义、提交 Saga、Web side-effect monitor、僵尸任务/强制终止 | 修改任务调度、队列、并发控制、任务生命周期、恢复/取消逻辑时 |
 | `allbot-billing-auth` | Web 鉴权、JWT claim、password_version、支付履约、affiliate 账本、affiliate 兑换灵石/会员、membership settlement | 修改充值、登录、身份、流水、返佣、支付回调时 |
 | `allbot-gallery-storage` | MinIO/R2、广场投稿、评论、收藏、apply-context、对象存储生命周期 | 修改社区分享、互动、防刷、模板应用上下文、媒体 URL 策略时 |
-| `allbot-tg-fsm` | Telegram FSM、全局菜单黑盒退出、callback 注册路由、临时文件下载清理、语言切换同步、独立付费群入群审核 Bot 边界 | 修改 Telegram 对话流、菜单跳转、文件交互或付费群审核 Bot 时 |
+| `allbot-tg-fsm` | Telegram FSM、全局菜单黑盒退出、callback 注册路由、临时文件下载清理、语言切换同步、独立付费群审核与轻量群管理 Bot 边界 | 修改 Telegram 对话流、菜单跳转、文件交互或付费群审核 Bot 时 |
 | `allbot-ops-deployment` | Docker Compose、Alembic、云测试控制面、云正式控制面、本地正式灾备、Dashboard 单服务热修、RunPod/LAN AIO 运维、部署排障与恢复 | 调整部署、迁移、容器、环境变量、云正式热修、测试环境、灾备切换、workflow 资产或恢复脚本时 |
 | `allbot-comfy-models` | LoRA / ControlNet / ComfyUI 工作流参数透传、动态注入、Worker/remote_workers workflow 映射校验、SCAIL-2 视频生视频模型与 workflow | 修改附加模型、工作流映射、Bot 菜单参数或 RunPod/LAN Comfy profile 时 |
 | `allbot-code-analyzer` | 全局静态分析、死代码检测、架构审查、质量评估 | 进行全盘质量分析或架构体检时 |

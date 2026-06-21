@@ -193,9 +193,12 @@ services:
       DASHBOARD_SECRET_KEY: ${DASHBOARD_SECRET_KEY:?DASHBOARD_SECRET_KEY is required}
       DB_POOL_SIZE: 6
       DB_MAX_OVERFLOW: 4
+      PAID_GROUP_MODERATION_CONFIG_FILE: /app/runtime/paid-group-guard/config.json
+      PAID_GROUP_MODERATION_LOG_FILE: /app/logs/paid_group_moderation.jsonl
     volumes:
       - ../.env.cloud.prod:/app/.env:ro
       - ../logs/cloud-prod:/app/logs
+      - ../runtime/cloud-prod/paid-group-guard:/app/runtime/paid-group-guard
     ports:
       - "${CLOUD_PROD_BIND_IP:-127.0.0.1}:8043:8043"
     command:
@@ -319,6 +322,37 @@ services:
     depends_on:
       central-api-prod:
         condition: service_healthy
+
+  paid-group-guard-bot-prod:
+    build:
+      context: ../
+      dockerfile: Dockerfile
+    container_name: cloud-paid-group-guard-bot-prod
+    restart: always
+    env_file:
+      - ../.env.cloud.prod
+    environment:
+      BOT_TYPE: PROD
+      TZ: Asia/Shanghai
+      PAID_GROUP_BOT_TOKEN: ${PAID_GROUP_BOT_TOKEN:?PAID_GROUP_BOT_TOKEN is required}
+      PAID_GROUP_CHAT_ID: ${PAID_GROUP_CHAT_ID:?PAID_GROUP_CHAT_ID is required}
+      PAID_GROUP_DECLINE_UNQUALIFIED: ${PAID_GROUP_DECLINE_UNQUALIFIED:-false}
+      PAID_GROUP_DRY_RUN: ${PAID_GROUP_DRY_RUN:-false}
+      PAID_GROUP_MODERATION_ENABLED: ${PAID_GROUP_MODERATION_ENABLED:-true}
+      PAID_GROUP_MODERATION_DRY_RUN: ${PAID_GROUP_MODERATION_DRY_RUN:-false}
+      PAID_GROUP_BLOCK_LINKS: ${PAID_GROUP_BLOCK_LINKS:-true}
+      PAID_GROUP_MODERATION_CONFIG_FILE: /app/runtime/paid-group-guard/config.json
+      PAID_GROUP_MODERATION_LOG_FILE: /app/logs/paid_group_moderation.jsonl
+      PAID_GROUP_BOT_LOG_FILE: /app/logs/paid_group_guard_bot.log
+      DATABASE_URL: ${CLOUD_PROD_DATABASE_URL:?CLOUD_PROD_DATABASE_URL is required}
+      TELEGRAM_API_BASE_URL: ${TELEGRAM_API_BASE_URL:-http://69.63.220.115:8081}
+      TELEGRAM_FILE_BASE_URL: ${TELEGRAM_FILE_BASE_URL:-http://69.63.220.115:8082}
+      DB_POOL_SIZE: 2
+      DB_MAX_OVERFLOW: 2
+    volumes:
+      - ../logs/cloud-prod:/app/logs
+      - ../runtime/cloud-prod/paid-group-guard:/app/runtime/paid-group-guard
+    command: ["python", "-m", "paid_group_guard_bot"]
 
 volumes:
   cloud-dashboard-frontend-prod-cache:

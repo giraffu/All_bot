@@ -23,7 +23,7 @@
 | `backend/app/main_status_result_routes.py` | backend 结果/状态查询口注册 | 是 | `backend/app` | 是 |
 | `backend/app/queue_manager.py` | pending/running 队列、worker 视图、取消、zombie/heartbeat 编排 | 是 | `backend/app` | 是 |
 | `src/web_api/main.py` | Web BFF 主入口，承接生命周期、provider 注册、跨域、中间件与统一异常处理 | 是 | `src/web_api` | 是 |
-| `paid_group_guard_bot/main.py` | 独立付费群审核 Bot 入口，只订阅 `chat_join_request` 并按订单或筑基期及以上修为资格审核入群申请 | 是 | `paid_group_guard_bot` | 是 |
+| `paid_group_guard_bot/main.py` | 独立付费群审核 Bot 入口，处理目标群入群申请与轻量消息审核 | 是 | `paid_group_guard_bot` | 是 |
 | `src/web_api/routers/auth.py` | Telegram/Web 登录、JWT 会话相关 API | 是 | `src/web_api` | 是 |
 | `src/web_api/routers/tasks.py` | Web 用户侧任务提交、取消、stream/result/runtime 入口 | 是 | `src/web_api` | 是 |
 | `src/web_api/routers/users.py` | 用户资料、偏好、历史、历史变更动作 | 是 | `src/web_api` | 是 |
@@ -57,7 +57,7 @@
 - provider 注册由应用入口负责，core 模块不在 import 时自动装配。
 - `src/web_api/main.py`、`src/bot_main.py`、`src/payment_api_server.py` 和 `dashboard/backend/main.py` 只要会调用 billing core，都必须调用 `ensure_billing_core_providers_registered()`。
 - Dashboard Backend 的退款、强制终止、资产调整等管理接口会进入 billing core；不能只注册 task core provider。
-- `paid_group_guard_bot/main.py` 只读查询 `users` / `orders` 做付费群入群资格判断，不调用 billing core 履约或资产变更逻辑，因此不需要 billing provider 注册。
+- `paid_group_guard_bot/main.py` 只读查询 `users` / `orders` 做付费群入群资格判断，并通过共享文件读取群管理配置、写入删除日志；不调用 billing core 履约或资产变更逻辑，因此不需要 billing provider 注册。
 
 ## 5. 冻结规则建议
 在 P0-2 完成前，评审时可先采用以下临时规则：

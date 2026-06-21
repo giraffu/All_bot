@@ -265,3 +265,39 @@ class SiteNoticeResponse(BaseModel):
 
 class SiteNoticeListResponse(BaseModel):
     items: List[SiteNoticeResponse] = Field(default_factory=list)
+
+
+class PaidGroupGuardConfigRequest(BaseModel):
+    enabled: bool = True
+    dry_run: bool = False
+    block_links: bool = True
+    allowed_domains: List[str] = Field(default_factory=list, max_length=1000)
+    forbidden_words: List[str] = Field(default_factory=list, max_length=1000)
+    exempt_user_ids: List[int] = Field(default_factory=list, max_length=1000)
+
+
+class PaidGroupGuardConfigResponse(PaidGroupGuardConfigRequest):
+    config_path: str
+    log_path: str
+
+
+class PaidGroupGuardLogItem(BaseModel):
+    timestamp: str
+    chat_id: int
+    message_id: int
+    user_id: int
+    username: Optional[str] = None
+    full_name: Optional[str] = None
+    reason: str
+    matched_value: Optional[str] = None
+    text_snippet: str = ""
+    action: str
+    error: Optional[str] = None
+
+
+class PaidGroupGuardLogListResponse(BaseModel):
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    items: List[PaidGroupGuardLogItem] = Field(default_factory=list)

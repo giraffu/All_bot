@@ -48,6 +48,8 @@ class PaidGroupBotSettings:
     poll_interval: float = 2.0
     poll_timeout: int = 30
     log_file: str = "logs/paid_group_guard_bot.log"
+    moderation_config_file: str = "/app/runtime/paid-group-guard/config.json"
+    moderation_log_file: str = "/app/logs/paid_group_moderation.jsonl"
 
     @classmethod
     def from_env(cls) -> "PaidGroupBotSettings":
@@ -87,5 +89,12 @@ class PaidGroupBotSettings:
                 "PAID_GROUP_BOT_LOG_FILE",
                 "logs/paid_group_guard_bot.log",
             ),
+            moderation_config_file=os.getenv(
+                "PAID_GROUP_MODERATION_CONFIG_FILE",
+                "/app/runtime/paid-group-guard/config.json",
+            ),
+            moderation_log_file=os.getenv(
+                "PAID_GROUP_MODERATION_LOG_FILE",
+                "/app/logs/paid_group_moderation.jsonl",
+            ),
         )
-

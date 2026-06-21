@@ -29,6 +29,7 @@
 | Dashboard Frontend | `cloud-dashboard-frontend-prod` | `100.107.220.127:8086` | 管理后台云端 Nginx 前端，同源反代 Dashboard Backend |
 | imgproxy | `cloud-imgproxy-prod` | compose 内部端口 | 图片缩略与代理 |
 | Bot | `cloud-tg-bot-prod` | `bot` profile | 正式 Bot polling；必须保证全网单实例 |
+| Paid Group Guard Bot | `cloud-paid-group-guard-bot-prod` | 无对外端口 | 独立付费群审核与轻量群管理 Bot，使用独立 `PAID_GROUP_BOT_TOKEN` |
 
 云端不长期自托管正式 PostgreSQL、Valkey 或 MinIO；正式库与运行态 Redis/Valkey 使用托管服务或外部服务。
 
@@ -219,6 +220,7 @@ scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod --with-db
 常用参数：
 - `--scope control-plane`：默认，使用 `scripts/safe_deploy_cloud_prod.sh --start-control-plane` 更新 Central/Web/Payment/Dashboard/imgproxy。
 - `--scope services --services "web-api-prod dashboard-backend-prod"`：只重建指定云端服务；禁止把 `bot-prod` 放入 `--services`。
+- `--skip-generation-maintenance`：仅支持 `--scope services`，跳过生成维护和队列 drain。用于不影响生成入口的低风险服务更新，例如只更新 `dashboard-backend-prod dashboard-frontend-prod paid-group-guard-bot-prod`。
 - `--with-db-upgrade`：随 `--scope control-plane` 显式执行 Alembic upgrade head；有迁移时必须走控制面发布并传该参数。
 - `--sync-env --env-file FILE`：显式同步正式 env；默认不动远端 `.env.cloud.prod`。
   同步前本地 env 必须包含 `MEMBERSHIP_SETTLEMENT_V2_ENABLED=true` 与 `AFFILIATE_MEMBERSHIP_REDEEM_ENABLED=true`，否则脚本会在本地中止，避免覆盖掉正式 affiliate 返佣兑身份入口。
@@ -274,6 +276,23 @@ curl -fsS http://100.107.220.127:8086/api/health
 `cloud-tg-bot-prod`、`cloud-payment-api-prod`、`cloud-imgproxy-prod` 的启动时间没有变化。
 Dashboard RunPod 管理入口当前支持 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`
 与 `scail2 / 视频生视频`；它只提交正式手动 RunPod 池新增/暂停/删除操作，不直接启停其它正式服务。
+
+付费群审核 Bot 与 Dashboard 管理页单独上线时，只触碰三个服务：
+
+```bash
+cd /home/hfy/APP/All_bot
+scripts/update_cloud_prod_with_maintenance.sh \
+  --scope services \
+  --services "dashboard-backend-prod dashboard-frontend-prod paid-group-guard-bot-prod" \
+  --skip-generation-maintenance
+scripts/update_cloud_prod_with_maintenance.sh \
+  --execute --confirm-prod \
+  --scope services \
+  --services "dashboard-backend-prod dashboard-frontend-prod paid-group-guard-bot-prod" \
+  --skip-generation-maintenance
+```
+
+该路径不写 `GENERATION_MAINTENANCE`、不等待或清理 Central 队列、不重建 Central/Web/Payment/主 Bot/Worker/RunPod。执行前需确认 `.env.cloud.prod` 已包含 `PAID_GROUP_BOT_TOKEN`、`PAID_GROUP_CHAT_ID` 与 `PAID_GROUP_*` 群管理开关；日志与配置共享目录为 `runtime/cloud-prod/paid-group-guard` 和 `logs/cloud-prod`。
 
 ### 4.2.1 SCAIL-2 低影响正式发布与 RunPod 扩容
 
