@@ -55,9 +55,9 @@ sequenceDiagram
 - 不把旧字段名固定成唯一契约
 - Dashboard 大盘 stats 属于高成本查询，后端使用短 TTL 进程内缓存与 single-flight 合并并发请求；前端 stats 请求不得强制附加 `_t` 缓存击穿参数。
 - Dashboard 的灵石消耗统计以 `user_logs` 账本为准：生成任务负向流水计入消耗，`refund%` 退款流水抵扣消耗；`history` 仅用于成功生成量、类型分布与小时分布，不再用“视频 6 / 图片 2”硬编码反推灵石。
-- Worker 视图区分 `active_workers` 与 `healthy_workers`：前者表示有 heartbeat，后者表示 `idle/running` 且可接单
-- `comfy_online` 按 `healthy_workers > 0` 判定；全部节点 `error/quarantined` 时必须显示不可用
-- Worker 卡片应展示 `error` / `quarantined`、最近错误、失败次数、心跳时间与预计恢复时间，不能把故障节点渲染为空闲
+- Worker 视图区分 `active_workers`、`healthy_workers` 与 `accepting_workers`：前者表示有 heartbeat，`healthy_workers` 表示 heartbeat 状态为 `idle/running`，`accepting_workers` 表示同时健康且 agent control 为 `enabled`、可接新单。
+- `comfy_online` 按 `healthy_workers > 0` 判定；全部节点 `error/quarantined` 时必须显示不可用；若 `healthy_workers > 0` 但 `accepting_workers=0`，应展示为“节点健康但接单关闭/维护中”。
+- Worker 卡片应展示 `error` / `quarantined`、`control_state`、`control_reason`、最近错误、失败次数、心跳时间与预计恢复时间，不能把故障节点或 `disabled/draining` 节点渲染为空闲可接单
 - Worker/queue 监控通过云 Central `/system/status` 与 `/system/workers` 获取短缓存观测快照；这两个接口不是强一致调度入口，管理后台不要用高频轮询压垮 Central/Valkey。
 - Dashboard 生产前端已具备云端 Nginx 网关配置：`cloud-dashboard-frontend-prod` 默认绑定云正式 Tailscale IP 的 `8086`，静态资源由云控制面提供，`/api/` 在 Docker 内网直连 `dashboard-backend-prod:8043`。本地局域网 `http://192.168.1.115:8086/` 仍可作为局域网/回退入口，但不再是唯一前端承载方式。
 - 前端队列监控默认约 10 秒轮询一次；并发统计约 60 秒刷新一次；活动任务表约 15 秒刷新一次。除非有明确压测证据，不要降到 2 秒或更高频。
@@ -92,7 +92,7 @@ sequenceDiagram
 ## 5. 测试要求
 - 覆盖 Dashboard 鉴权中间件
 - 覆盖系统统计接口的基础返回
-- 覆盖 `healthy_workers`、`error_workers`、`quarantined_workers` 与 `workers_by_status` 聚合
+- 覆盖 `healthy_workers`、`accepting_workers`、`error_workers`、`quarantined_workers`、`workers_by_status` 与 `workers_by_control_state` 聚合
 - 覆盖 Dashboard 对 `error/quarantined` Worker 的红色/隔离态展示
 - 覆盖 Dashboard RunPod 管理入口的 profile 校验、新增数量 add 命令、旧 `desired_count` 兼容、`scail2 / 视频生视频` 选项、worker pause/delete slot 解析，以及前端 typecheck / 系统监控页渲染。
 - 覆盖管理员强制终止时的：

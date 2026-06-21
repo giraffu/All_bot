@@ -603,6 +603,7 @@ async def test_build_system_status_response_uses_queue_metrics_and_worker_count(
     assert response.queue_size == 3
     assert response.active_workers == 4
     assert response.healthy_workers == 2
+    assert response.accepting_workers == 2
     assert response.error_workers == 1
     assert response.quarantined_workers == 1
     assert response.workers_by_status == {
@@ -611,8 +612,78 @@ async def test_build_system_status_response_uses_queue_metrics_and_worker_count(
         "error": 1,
         "quarantined": 1,
     }
+    assert response.workers_by_control_state == {"enabled": 4}
     assert response.comfy_online is True
     assert response.queue_by_type == {"ltx_video": 2, "i2i_pro": 1}
+
+
+@pytest.mark.asyncio
+async def test_build_system_status_response_counts_accepting_workers_by_control_state():
+    class FakeQueueManager:
+        async def get_queue_size(self):
+            return 3
+
+        async def get_all_workers(self):
+            return [
+                {"agent_id": "agent-1", "status": "running"},
+                {"agent_id": "agent-2", "status": "idle"},
+                {"agent_id": "agent-3", "status": "idle"},
+                {"agent_id": "agent-4", "status": "error"},
+            ]
+
+        async def get_agent_control_state(self, agent_id):
+            return {
+                "agent-1": {"state": "enabled", "reason": ""},
+                "agent-2": {"state": "disabled", "reason": "maintenance"},
+                "agent-3": {"state": "draining", "reason": "canary"},
+                "agent-4": {"state": "enabled", "reason": ""},
+            }[agent_id]
+
+        async def get_queue_metrics_by_type(self):
+            return {"scail2_action_transfer": 1}
+
+    response = await main_response_helpers.build_system_status_response(
+        FakeQueueManager()
+    )
+
+    assert response.healthy_workers == 3
+    assert response.accepting_workers == 1
+    assert response.workers_by_control_state == {
+        "enabled": 2,
+        "disabled": 1,
+        "draining": 1,
+    }
+    assert response.comfy_online is True
+
+
+@pytest.mark.asyncio
+async def test_build_system_workers_response_includes_control_state():
+    class FakeQueueManager:
+        async def get_all_workers(self):
+            return [
+                {
+                    "agent_id": "agent-1",
+                    "types": "scail2_action_transfer",
+                    "status": "idle",
+                    "last_seen": "123.0",
+                }
+            ]
+
+        async def get_agent_control_state(self, agent_id):
+            assert agent_id == "agent-1"
+            return {
+                "state": "disabled",
+                "reason": "scail2_test_initial_disabled",
+                "updated_at": "1782047600.0",
+            }
+
+    response = await main_response_helpers.build_system_workers_response(
+        FakeQueueManager()
+    )
+
+    assert response.workers[0].control_state == "disabled"
+    assert response.workers[0].control_reason == "scail2_test_initial_disabled"
+    assert response.workers[0].control_updated_at == 1782047600.0
 
 
 @pytest.mark.asyncio
@@ -636,6 +707,7 @@ async def test_build_system_status_response_marks_offline_when_all_workers_unhea
 
     assert response.active_workers == 2
     assert response.healthy_workers == 0
+    assert response.accepting_workers == 0
     assert response.error_workers == 1
     assert response.quarantined_workers == 1
     assert response.comfy_online is False

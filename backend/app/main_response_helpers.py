@@ -213,7 +213,23 @@ def _queue_manager_cache_key(queue_manager) -> tuple[Any, ...]:
 
 async def _get_worker_snapshot(queue_manager) -> list[dict[str, Any]]:
     async def collect_workers() -> list[dict[str, Any]]:
-        return _copy_workers(await queue_manager.get_all_workers())
+        workers = _copy_workers(await queue_manager.get_all_workers())
+        if not hasattr(queue_manager, "get_agent_control_state"):
+            return workers
+
+        async def attach_control_state(worker: dict[str, Any]) -> dict[str, Any]:
+            agent_id = str(worker.get("agent_id") or "")
+            if not agent_id:
+                return worker
+            control = await queue_manager.get_agent_control_state(agent_id)
+            worker["control_state"] = control.get("state") or "enabled"
+            worker["control_reason"] = control.get("reason") or ""
+            worker["control_updated_at"] = control.get("updated_at")
+            return worker
+
+        return await asyncio.gather(
+            *(attach_control_state(worker) for worker in workers)
+        )
 
     workers = await _get_cached_snapshot(
         cache=_worker_snapshot_cache,
@@ -232,6 +248,14 @@ def _build_worker_status_counts(workers: list[dict[str, Any]]) -> dict[str, int]
     return workers_by_status
 
 
+def _build_worker_control_counts(workers: list[dict[str, Any]]) -> dict[str, int]:
+    workers_by_control_state: dict[str, int] = {}
+    for worker in workers:
+        state = str(worker.get("control_state") or "enabled")
+        workers_by_control_state[state] = workers_by_control_state.get(state, 0) + 1
+    return workers_by_control_state
+
+
 async def _get_system_status_snapshot(queue_manager) -> dict[str, Any]:
     async def collect_status() -> dict[str, Any]:
         queue_size, workers, queue_by_type = await asyncio.gather(
@@ -240,19 +264,28 @@ async def _get_system_status_snapshot(queue_manager) -> dict[str, Any]:
             queue_manager.get_queue_metrics_by_type(),
         )
         workers_by_status = _build_worker_status_counts(workers)
+        workers_by_control_state = _build_worker_control_counts(workers)
         healthy_workers = sum(
             count
             for status, count in workers_by_status.items()
             if status in {"idle", "running"}
+        )
+        accepting_workers = sum(
+            1
+            for worker in workers
+            if str(worker.get("status") or "") in {"idle", "running"}
+            and str(worker.get("control_state") or "enabled") == "enabled"
         )
         return {
             "queue_size": queue_size,
             "queue_by_type": dict(queue_by_type),
             "active_workers": len(workers),
             "healthy_workers": healthy_workers,
+            "accepting_workers": accepting_workers,
             "error_workers": workers_by_status.get("error", 0),
             "quarantined_workers": workers_by_status.get("quarantined", 0),
             "workers_by_status": workers_by_status,
+            "workers_by_control_state": workers_by_control_state,
             "comfy_online": healthy_workers > 0,
         }
 

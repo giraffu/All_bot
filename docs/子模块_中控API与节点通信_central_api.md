@@ -64,7 +64,8 @@ sequenceDiagram
 - Worker 心跳、可用性与执行中状态是 Central API / Queue 视图的一部分
 - Worker heartbeat 状态约定为 `idle`、`running`、`error`、`quarantined`；其中 `error` 表示 ComfyUI 探活持续失败，`quarantined` 表示连续基础设施类任务失败后的冷却隔离。Agent 到 relay/Central 的控制面请求连续失败默认达到 12 次且持续 300 秒时会以退出码 75 退出，让 Docker `restart: always` 接管；这只处理控制面半断，不替代 Central task heartbeat 的 zombie 清理。
 - heartbeat 可携带 `health_reason`、`last_error`、`last_error_at`、`consecutive_failures`、`quarantined_until`，用于 Dashboard 节点卡片展示和排障
-- `/system/status` 中 `active_workers` 只表示有 heartbeat 的节点数；`healthy_workers` 才表示当前可接单节点数，`comfy_online` 按 `healthy_workers > 0` 计算
+- `/system/status` 中 `active_workers` 只表示有 heartbeat 的节点数；`healthy_workers` 表示 heartbeat 健康态为 `idle/running` 的节点数；`accepting_workers` 才表示同时处于健康态且 agent control 为 `enabled` 的可接新单节点数。`comfy_online` 仍按 `healthy_workers > 0` 计算，用于区分 runtime 健康与接单开关。
+- `/system/workers` 会展示每个 worker 的 `control_state`、`control_reason`、`control_updated_at`；`/system/status` 会聚合 `workers_by_control_state`，用于排查“worker 健康但 pending 不被 pop”的场景。
 - `/system/status` 与 `/system/workers` 是高频观测接口，不是强一致调度入口。Central API 会对同一 Redis 连接参数与队列 key 组合的队列/worker 快照做约 10 秒短 TTL 缓存，并在刷新中返回短时 stale 快照，避免 Bot、Web 与 Dashboard 并发轮询时重复扫描 Redis 导致状态接口超时或触发 Bot 熔断。实际任务分发、Worker `pop`、状态上报与完成回流仍走实时 Redis/HTTP 路径，不依赖该观测缓存。
 - `/status/{backend_task_id}` 是单任务观测接口，也会对同一 Redis/队列 key 与 task id 做短 TTL 缓存、最大条目数限制和单飞刷新，默认约 2 秒 TTL、4 秒 stale 窗口，用于吸收 Web API 粗状态、Web SSE 兼容路径、Dashboard active task 与 Bot polling 的重复轮询。Redis Pub/Sub 只作为进度快路径；Web SSE 订阅或读取 Pub/Sub 失败时，同一连接会继续用 `/status` 补偿轮询到终态。默认用户侧展示已降级为低频粗状态：Web 通过 `/api/tasks/{registry_task_id}/status` 每约 15 秒查询，pending 保留 `queue_pos` 队列位置，running 不展示 progress 百分比；Bot 也默认每约 15 秒 HTTP polling，pending 队列位置变化可编辑消息，running 不按 progress 反复编辑。它不改变 pending/running/done 的事实源，终态收口仍以 Worker `/complete`、Redis 事件和上游 monitor/history 为准。
 - Central FastAPI 生命周期内复用共享 Redis 客户端；依赖注入优先使用 `request.app.state.redis`，只有离线/测试场景缺失 app state 时才回退到临时 Redis 连接。不要把 `get_redis()` 再改回每请求新建连接的模式。
@@ -88,6 +89,7 @@ sequenceDiagram
 - 覆盖无可用 Worker 时的重试或回退语义
 - 覆盖 `DELETE /api/tasks/{task_id}` 的 best-effort cancel
 - 覆盖 worker 心跳、健康字段、`error/quarantined` 节点视图与 `healthy_workers` 聚合统计
+- 覆盖 agent control 字段透出、`workers_by_control_state` 聚合与 `accepting_workers` 排除 `disabled/draining` worker
 - 覆盖 `peek` 只读语义：不修改 pending/running/status/task heartbeat，且不返回已取消任务
 - 覆盖 `pop(cancel_lock=true)` 写入取消锁，locked running cancel 返回不可取消且不写 `cancel_requested`
 - 覆盖 `pop(agent_id=...)` 在 worker `draining/disabled` 时不出队、不写 running
@@ -98,7 +100,7 @@ sequenceDiagram
 ## 7. 部署与回滚
 - Central API 是独立部署的 backend 执行面服务。
 - 若分发逻辑异常导致任务堆积，应先检查：
-  - worker 是否仍有 heartbeat，以及 `healthy_workers` 是否大于 0
+  - worker 是否仍有 heartbeat，`healthy_workers` 是否大于 0，以及 `accepting_workers` 是否大于 0
   - worker 是否处于 `error` 或 `quarantined`，并查看 `last_error` / `health_reason`
   - worker `SUPPORTED_TASK_TYPES` 是否覆盖任务的执行面类型，例如旧图生视频与 Telegram 懒人动图新提交最终会排队为 `image_to_video`；LTX 高级图生视频会按模式排队为 `ltx_video`、`ltx_video_flf2v` 或 `ltx_video_v2v_audio`；legacy `video_insert` / `video_edit` 只应作为旧队列兼容 alias，必须和 `image_to_video` 使用同一 workflow/mapping/patcher；RunPod `i2i_pro` profile 必须声明 `SUPPORTED_TASK_TYPES=i2i_pro,t2i-pornmaster-turbo,face_swap`
   - SCAIL-2 测试环境可以由 `cloud_worker_test_08` 声明 `SUPPORTED_TASK_TYPES=scail2_action_transfer,scail2_video_replacement,scail2_face_swap_v2` 并指向 gpu-002 LAN AIO runtime `http://192.168.1.2:8190`，也可以由 RunPod `scail2` profile 的 `runpod_test_scail2_*` worker 接单；RunPod canary 会临时 disable 同环境支持 SCAIL-2 的非 RunPod worker，结束后必须恢复。云正式 LAN slot0 agent `lan_aio_prod_gpu002_gpu0_scail2_01` 声明 `scail2_action_transfer,scail2_video_replacement,scail2_face_swap_v2` 并写正式桶 `user-data-prod`；手动正式 RunPod `runpod_prod_scail2_manual_NN` 仍只声明 `scail2_action_transfer,scail2_video_replacement`，不得重建无关 `cloud-prod-comfy-agent-1..7`

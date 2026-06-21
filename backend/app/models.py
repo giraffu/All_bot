@@ -92,6 +92,9 @@ class WorkerInfo(BaseModel):
     image_ref: Optional[str] = None
     model_bundle_versions: Optional[Dict[str, Any]] = None
     pool_managed: Optional[bool] = None
+    control_state: Optional[str] = None
+    control_reason: Optional[str] = None
+    control_updated_at: Optional[float] = None
 
 
 class SystemWorkersResponse(BaseModel):
@@ -104,9 +107,11 @@ class SystemStatusResponse(BaseModel):
     queue_by_type: dict[str, int] = {}
     active_workers: int
     healthy_workers: int = 0
+    accepting_workers: int = 0
     error_workers: int = 0
     quarantined_workers: int = 0
     workers_by_status: dict[str, int] = {}
+    workers_by_control_state: dict[str, int] = {}
     comfy_online: bool
 
 
