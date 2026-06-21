@@ -1,3 +1,5 @@
+import signal
+
 import pytest
 from fastapi import HTTPException
 
@@ -18,8 +20,12 @@ def _clear_runpod_admin_operations():
         InMemoryRunPodOperationStore()
     )
     runpod_admin_service._operations.clear()
+    runpod_admin_service._operation_runner.create_subprocess_exec = None
+    runpod_admin_service._operation_runner.kill_process_group = None
     yield
     runpod_admin_service._operations.clear()
+    runpod_admin_service._operation_runner.create_subprocess_exec = None
+    runpod_admin_service._operation_runner.kill_process_group = None
     runpod_admin_service.set_runpod_operation_store_for_tests(
         InMemoryRunPodOperationStore()
     )
@@ -359,9 +365,7 @@ def test_runpod_operation_log_records_created_slots_for_cleanup():
 
 
 @pytest.mark.asyncio
-async def test_terminate_runpod_add_operation_marks_terminating_and_kills_group(
-    monkeypatch,
-):
+async def test_terminate_runpod_add_operation_marks_terminating_and_kills_group():
     killed = []
     operation = runpod_admin_service.RunPodAdminOperation(
         id="op-terminate",
@@ -374,10 +378,8 @@ async def test_terminate_runpod_add_operation_marks_terminating_and_kills_group(
     )
     runpod_admin_service._operations[operation.id] = operation
 
-    monkeypatch.setattr(
-        runpod_admin_service.os,
-        "killpg",
-        lambda pid, sig: killed.append((pid, sig)),
+    runpod_admin_service._operation_runner.kill_process_group = (
+        lambda pid, sig: killed.append((pid, sig))
     )
 
     payload = await runpod_admin_service.terminate_runpod_operation_payload(
@@ -387,13 +389,12 @@ async def test_terminate_runpod_add_operation_marks_terminating_and_kills_group(
     assert payload["status"] == "accepted"
     assert operation.status == "terminating"
     assert operation.terminate_requested is True
-    assert killed == [(4321, runpod_admin_service.signal.SIGTERM)]
+    assert killed == [(4321, signal.SIGTERM)]
     assert operation.cleanup_status == "pending"
 
 
 @pytest.mark.asyncio
 async def test_terminate_detached_runpod_operation_returns_409_and_does_not_kill(
-    monkeypatch,
 ):
     store = InMemoryRunPodOperationStore()
     runpod_admin_service.set_runpod_operation_store_for_tests(store)
@@ -411,10 +412,8 @@ async def test_terminate_detached_runpod_operation_returns_409_and_does_not_kill
         },
         created_at=1.0,
     )
-    monkeypatch.setattr(
-        runpod_admin_service.os,
-        "killpg",
-        lambda *_args: pytest.fail("detached operation must not kill by PID"),
+    runpod_admin_service._operation_runner.kill_process_group = (
+        lambda *_args: pytest.fail("detached operation must not kill by PID")
     )
 
     with pytest.raises(HTTPException) as exc_info:
@@ -456,7 +455,7 @@ async def test_runpod_operation_persistence_keeps_log_redaction():
 
 
 @pytest.mark.asyncio
-async def test_termination_cleanup_runs_down_for_recorded_slots(monkeypatch):
+async def test_termination_cleanup_runs_down_for_recorded_slots():
     commands = []
     operation = runpod_admin_service.RunPodAdminOperation(
         id="op-cleanup",
@@ -470,10 +469,8 @@ async def test_termination_cleanup_runs_down_for_recorded_slots(monkeypatch):
         commands.append(list(command))
         return _FakeProcess(lines=["cleanup ok"])
 
-    monkeypatch.setattr(
-        runpod_admin_service.asyncio,
-        "create_subprocess_exec",
-        fake_create_subprocess_exec,
+    runpod_admin_service._operation_runner.create_subprocess_exec = (
+        fake_create_subprocess_exec
     )
 
     ok = await runpod_admin_service._run_termination_cleanup(
@@ -493,9 +490,9 @@ async def test_termination_cleanup_runs_down_for_recorded_slots(monkeypatch):
 
 def test_runpod_operation_env_opens_required_mutation_gates(monkeypatch):
     monkeypatch.delenv("RUNPOD_PROD_MAX_MANUAL_SLOTS", raising=False)
-    monkeypatch.delenv("RUNPOD_MAX_PODS_TOTAL", raising=False)
-    monkeypatch.delenv("RUNPOD_MAX_PODS_PER_TYPE", raising=False)
-    monkeypatch.delenv("RUNPOD_MAX_HOURLY_COST_USD", raising=False)
+    monkeypatch.setenv("RUNPOD_MAX_PODS_TOTAL", "1")
+    monkeypatch.setenv("RUNPOD_MAX_PODS_PER_TYPE", "1")
+    monkeypatch.setenv("RUNPOD_MAX_HOURLY_COST_USD", "1")
     env = runpod_admin_service._operation_env(prod_max_manual_slots=None)
 
     assert env["RUNPOD_DRY_RUN"] == "false"

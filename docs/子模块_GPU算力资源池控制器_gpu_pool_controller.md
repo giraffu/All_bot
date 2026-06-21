@@ -15,10 +15,13 @@
 - gpu-002 SCAIL-2 LAN AIO 正式 slot0 入口：`scripts/lan_scail2_aio_prod.sh`
 - LAN AIO fleet 泛化配置：`ops/gpu_pool_controller/config/lan_aio_prod_slots.yml`
 - LAN AIO fleet 泛化入口：`scripts/lan_aio_fleet_prod_ops.py`
-- RunPod provider：`ops/gpu_pool_controller/providers/runpod.py`
+- RunPod public provider facade：`ops/gpu_pool_controller/providers/runpod.py`
+- RunPod profile/catalog 事实源：`ops/gpu_pool_controller/runpod_profile_catalog.py`
+- RunPod create pod request 渲染 seam：`ops/gpu_pool_controller/runpod_pod_request.py`
 - RunPod 云测试 canary：`ops/gpu_pool_controller/runpod_canary.py`、`ops/gpu_pool_controller/runpod_split_video_canary.py`
 - RunPod 云测试 worker scale：`ops/gpu_pool_controller/runpod_workers.py`
-- RunPod 手动正式备用 worker：`ops/gpu_pool_controller/runpod_prod_worker.py`
+- RunPod 手动正式备用 worker coordinator：`ops/gpu_pool_controller/runpod_prod_worker.py`
+- RunPod 手动正式备用 worker 计划 seam：`ops/gpu_pool_controller/runpod_prod_worker_planner.py`
 - RunPod 手动正式备用池日常入口：`scripts/runpod_prod_ops.sh`
 - RunPod split video manifest：`ops/gpu_pool_controller/runpod_video_manifests.py`
 - RunPod bootstrap/model sync：`remote_workers/scripts/runpod_bootstrap_from_git.sh`、`remote_workers/scripts/runpod_sync_models_from_r2.py`

@@ -52,6 +52,10 @@ from .runpod_canary import (
     result_url_path,
     write_canary_png,
 )
+from .runpod_prod_worker_planner import (
+    RunPodProdWorkerPlanError,
+    RunPodProdWorkerPlanner,
+)
 
 
 PROD_ENVIRONMENT = "cloud-prod"
@@ -340,6 +344,12 @@ class RunPodProdWorkerRunner:
         self._sleep = sleep_func
         self._emit_func = emit_func or (
             lambda message: print(message, file=sys.stderr, flush=True)
+        )
+
+    def _planner(self) -> RunPodProdWorkerPlanner:
+        return RunPodProdWorkerPlanner(
+            max_manual_slots=self.provider.settings.prod_max_manual_slots,
+            profile=self.options.profile,
         )
 
     def run(self) -> dict[str, Any]:
@@ -1033,43 +1043,14 @@ class RunPodProdWorkerRunner:
         slot_pods: dict[str, dict[str, Any]],
         workers: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        max_slots = self.provider.settings.prod_max_manual_slots
-        existing_slots = set(slot_pods)
-        all_slots = _prod_slot_sequence(max_slots)
-        free_slots = [
-            slot
-            for slot in all_slots
-            if slot not in existing_slots
-        ]
-        if len(free_slots) < count:
-            raise RunPodProdWorkerError(
-                f"prod-worker add requires {count} free slot(s); only "
-                f"{len(free_slots)} available within "
-                f"RUNPOD_PROD_MAX_MANUAL_SLOTS={max_slots}"
+        try:
+            return self._planner().build_add_plan(
+                count=count,
+                slot_pods=slot_pods,
+                workers=workers,
             )
-        create_slots = free_slots[:count]
-        slots: dict[str, Any] = {}
-        for slot in sorted(existing_slots | set(create_slots), key=_slot_sort_key):
-            agent_id = prod_agent_id_from_slot(
-                slot,
-                max_manual_slots=max_slots,
-                profile=self.options.profile,
-            )
-            worker = _find_worker(workers, agent_id)
-            slots[slot] = {
-                "agent_id": agent_id,
-                "pod": _pod_minimal(slot_pods[slot]) if slot in slot_pods else None,
-                "worker": _worker_summary(worker) if worker else None,
-            }
-        return {
-            "requested_count": count,
-            "existing_slots": sorted(existing_slots, key=_slot_sort_key),
-            "free_slots": free_slots,
-            "create_slots": create_slots,
-            "enable_slots": [],
-            "delete_slots": [],
-            "slots": slots,
-        }
+        except RunPodProdWorkerPlanError as exc:
+            raise RunPodProdWorkerError(str(exc)) from exc
 
     def _build_scale_plan(
         self,
@@ -1079,43 +1060,12 @@ class RunPodProdWorkerRunner:
         workers: list[dict[str, Any]],
         controls: dict[str, dict[str, Any]],
     ) -> dict[str, Any]:
-        desired_slots = set(_prod_slot_sequence(desired))
-        existing_slots = set(slot_pods)
-        create_slots = sorted(
-            desired_slots - existing_slots,
-            key=_slot_sort_key,
+        return self._planner().build_scale_plan(
+            desired=desired,
+            slot_pods=slot_pods,
+            workers=workers,
+            controls=controls,
         )
-        enable_slots = sorted(
-            desired_slots & existing_slots,
-            key=_slot_sort_key,
-        )
-        delete_slots = sorted(
-            existing_slots - desired_slots,
-            key=_slot_sort_key,
-            reverse=True,
-        )
-        slots: dict[str, Any] = {}
-        for slot in sorted(existing_slots | desired_slots, key=_slot_sort_key):
-            agent_id = prod_agent_id_from_slot(
-                slot,
-                max_manual_slots=self.provider.settings.prod_max_manual_slots,
-                profile=self.options.profile,
-            )
-            worker = _find_worker(workers, agent_id)
-            slots[slot] = {
-                "agent_id": agent_id,
-                "pod": _pod_minimal(slot_pods[slot]) if slot in slot_pods else None,
-                "worker": _worker_summary(worker) if worker else None,
-                "control": controls.get(slot),
-            }
-        return {
-            "desired_slots": sorted(desired_slots, key=_slot_sort_key),
-            "existing_slots": sorted(existing_slots, key=_slot_sort_key),
-            "create_slots": create_slots,
-            "enable_slots": enable_slots,
-            "delete_slots": delete_slots,
-            "slots": slots,
-        }
 
     def _scale_control_snapshot(
         self,
@@ -1123,9 +1073,9 @@ class RunPodProdWorkerRunner:
         desired: int,
         slot_pods: dict[str, dict[str, Any]],
     ) -> dict[str, dict[str, Any]]:
-        slots = sorted(
-            set(_prod_slot_sequence(desired)) | set(slot_pods),
-            key=_slot_sort_key,
+        slots = self._planner().control_snapshot_slots(
+            desired=desired,
+            slot_pods=slot_pods,
         )
         snapshot: dict[str, dict[str, Any]] = {}
         for slot in slots:
@@ -1154,69 +1104,10 @@ class RunPodProdWorkerRunner:
         return snapshot
 
     def _scale_would_execute(self, plan: dict[str, Any]) -> list[str]:
-        actions: list[str] = []
-        for slot in plan["create_slots"]:
-            agent_id = prod_agent_id_from_slot(
-                slot,
-                max_manual_slots=self.provider.settings.prod_max_manual_slots,
-                profile=self.options.profile,
-            )
-            actions.extend(
-                [
-                    f"set Central control for {agent_id} to disabled",
-                    f"create cloud-prod RunPod pod for slot {slot}",
-                    f"wait for slot {slot} Pod readiness and disabled heartbeat",
-                    f"set Central control for {agent_id} to enabled",
-                ]
-            )
-        for slot in plan["enable_slots"]:
-            agent_id = prod_agent_id_from_slot(
-                slot,
-                max_manual_slots=self.provider.settings.prod_max_manual_slots,
-                profile=self.options.profile,
-            )
-            actions.append(
-                f"verify slot {slot} heartbeat and set {agent_id} to enabled"
-            )
-        for slot in plan["delete_slots"]:
-            agent_id = prod_agent_id_from_slot(
-                slot,
-                max_manual_slots=self.provider.settings.prod_max_manual_slots,
-                profile=self.options.profile,
-            )
-            actions.extend(
-                [
-                    f"set Central control for {agent_id} to disabled",
-                    f"wait until slot {slot} worker has no current_task_id",
-                    f"delete cloud-prod RunPod pod for slot {slot}",
-                ]
-            )
-        if not actions:
-            actions.append(
-                "no changes; desired RunPod prod worker count already matches"
-            )
-        return actions
+        return self._planner().scale_would_execute(plan)
 
     def _add_would_execute(self, plan: dict[str, Any]) -> list[str]:
-        actions: list[str] = []
-        for slot in plan["create_slots"]:
-            agent_id = prod_agent_id_from_slot(
-                slot,
-                max_manual_slots=self.provider.settings.prod_max_manual_slots,
-                profile=self.options.profile,
-            )
-            actions.extend(
-                [
-                    f"set Central control for new {agent_id} to disabled",
-                    f"create cloud-prod RunPod pod for new slot {slot}",
-                    f"wait for new slot {slot} Pod readiness and disabled heartbeat",
-                    f"set Central control for new {agent_id} to enabled",
-                ]
-            )
-        actions.append(
-            "leave all existing RunPod slots unchanged; no existing enable/disable/delete"
-        )
-        return actions
+        return self._planner().add_would_execute(plan)
 
     def _scale_create_slot(
         self,
