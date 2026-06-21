@@ -119,7 +119,7 @@ FIRST_WAVE_BUNDLES: dict[str, BundleImportSpec] = {
         version="2026-06-10",
         profiles=("ltx_video",),
         source_node_id="gpu-177",
-        task_types=("ltx_video",),
+        task_types=("ltx_video", "ltx_video_flf2v", "ltx_video_v2v_audio"),
         dynamic_groups=("ltx_lora",),
     ),
     "img2img_lora_baseline": BundleImportSpec(

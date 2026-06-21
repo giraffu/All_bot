@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_result_assets import (
-    WAN22_AIO_VIDEO_TASK_TYPES,
+    LAST_FRAME_EXTRA_OUTPUT_TASK_TYPES,
     resolve_comfy_view_type,
     resolve_history_extra_output_assets,
     resolve_history_result_asset,
@@ -136,11 +136,11 @@ def _extract_last_frame_from_video_bytes(video_bytes: bytes, logger) -> bytes | 
             output_path = Path(tmpdir) / "last_frame.png"
             input_path.write_bytes(video_bytes)
             if not _run_last_frame_ffmpeg(input_path, output_path):
-                logger.warning("Failed to extract Wan22 fallback last frame with ffmpeg")
+                logger.warning("Failed to extract fallback last frame with ffmpeg")
                 return None
             return output_path.read_bytes()
     except Exception as exc:
-        logger.warning("Failed to extract Wan22 fallback last frame: %s", exc)
+        logger.warning("Failed to extract fallback last frame: %s", exc)
         return None
 
 
@@ -217,7 +217,7 @@ async def materialize_task_outputs(
         )
 
     if (
-        task_type in WAN22_AIO_VIDEO_TASK_TYPES
+        task_type in LAST_FRAME_EXTRA_OUTPUT_TASK_TYPES
         and "last_frame" not in materialized_extra_outputs
         and primary.content_type == "video/mp4"
     ):

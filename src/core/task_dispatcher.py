@@ -46,6 +46,9 @@ from src.lora_catalog import normalize_ltx_video_lora_items
 
 EDIT_LIKE_TASK_TYPES = {MODE_EDIT, MODE_IMG2IMG_LORA}
 FACE_VIDEO_TASK_TYPES = {"face_video", "face_video_step1", "face_video_step2"}
+LTX_VIDEO_MODE_I2V = "i2v"
+LTX_VIDEO_MODE_FLF2V = "flf2v"
+LTX_VIDEO_MODE_V2V_AUDIO = "v2v_audio"
 
 
 def _get_saved_input_images(inputs: Dict[str, Any]) -> list[str]:
@@ -100,7 +103,10 @@ class _VideoSubmissionContext:
 @dataclass(frozen=True)
 class _LtxSubmissionContext:
     prompt: str
+    mode: str
     image_path: str
+    end_image_path: str | None
+    video_path: str | None
     width: int
     height: int
     requested_seconds: int
@@ -170,9 +176,18 @@ def _build_ltx_submission_context(inputs: Dict[str, Any]) -> _LtxSubmissionConte
     except Exception:
         width, height = 1280, 704
 
+    saved_images = _get_saved_input_images(inputs)
+    mode = _resolve_ltx_video_mode(inputs, saved_images=saved_images)
+    image_path = saved_images[0] if saved_images else ""
+    end_image_path = saved_images[1] if len(saved_images) > 1 else None
+    video_path = image_path if mode == LTX_VIDEO_MODE_V2V_AUDIO else None
+
     return _LtxSubmissionContext(
         prompt=_get_input_prompt(inputs, "ltx video"),
-        image_path=_get_primary_saved_input(inputs),
+        mode=mode,
+        image_path=image_path,
+        end_image_path=end_image_path,
+        video_path=video_path,
         width=width,
         height=height,
         requested_seconds=_coerce_duration_seconds(_get_input_duration(inputs)),
@@ -182,6 +197,35 @@ def _build_ltx_submission_context(inputs: Dict[str, Any]) -> _LtxSubmissionConte
         )
         or None,
     )
+
+
+def _resolve_ltx_video_mode(
+    inputs: Dict[str, Any],
+    *,
+    saved_images: list[str] | None = None,
+) -> str:
+    raw_mode = str(
+        inputs.get("ltx_mode")
+        or inputs.get("generation_mode")
+        or inputs.get("mode")
+        or ""
+    ).strip()
+    if raw_mode in {
+        LTX_VIDEO_MODE_I2V,
+        LTX_VIDEO_MODE_FLF2V,
+        LTX_VIDEO_MODE_V2V_AUDIO,
+    }:
+        return raw_mode
+
+    if inputs.get("video") or inputs.get("input_video"):
+        return LTX_VIDEO_MODE_V2V_AUDIO
+
+    images = saved_images if saved_images is not None else inputs.get("images", [])
+    if bool(inputs.get("use_end_frame")) or bool(inputs.get("end_image")):
+        return LTX_VIDEO_MODE_FLF2V
+    if isinstance(images, list) and len(images) >= 2:
+        return LTX_VIDEO_MODE_FLF2V
+    return LTX_VIDEO_MODE_I2V
 
 
 def _build_wan22_submission_context(inputs: Dict[str, Any]) -> _Wan22SubmissionContext:
@@ -612,11 +656,77 @@ class LtxVideoStrategy(BaseTaskStrategy):
         multiplier = LTX_DURATION_MULTIPLIER.get(dur_str, 1.0)
         return int(base_cost * multiplier)
 
+    def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
+        mode = _resolve_ltx_video_mode(inputs)
+        if mode == LTX_VIDEO_MODE_V2V_AUDIO:
+            video_path = inputs.get("video") or inputs.get("input_video")
+            if video_path:
+                return [video_path]
+            images = inputs.get("images", [])
+            return images[:1] if isinstance(images, list) else []
+
+        images = inputs.get("images", [])
+        if isinstance(images, list) and images:
+            return images[:2] if mode == LTX_VIDEO_MODE_FLF2V else images[:1]
+
+        if mode == LTX_VIDEO_MODE_FLF2V:
+            return [inputs.get("image"), inputs.get("end_image")]
+        return [inputs.get("image")] if inputs.get("image") else []
+
+    def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        saved_images = _get_saved_input_images(inputs)
+        submission = _build_ltx_submission_context(inputs)
+        metadata = {
+            "saved_inputs": saved_images,
+            "requested_duration": submission.requested_seconds,
+            "ltx_mode": submission.mode,
+            "ltx_width": submission.width,
+            "ltx_height": submission.height,
+            "extract_last_frame": submission.mode != LTX_VIDEO_MODE_I2V
+            or bool(inputs.get("extract_last_frame")),
+        }
+        return _append_lora_metadata(metadata, inputs)
+
     async def submit_task(
         self, task_id: str, inputs: Dict[str, Any], priority: int
     ) -> str:
         image_service = _get_dispatch_image_service()
         submission = _build_ltx_submission_context(inputs)
+        if submission.mode == LTX_VIDEO_MODE_V2V_AUDIO:
+            if not submission.video_path:
+                raise CoreDomainError("LTX 视频配音需要上传输入视频。")
+            return await image_service.submit_ltx_video_v2v_audio_task(
+                task_id,
+                prompt=submission.prompt,
+                video_path=submission.video_path,
+                lora_name=inputs.get("lora_name"),
+                lora_strength=inputs.get("lora_strength"),
+                lora_items=submission.lora_items,
+                width=submission.width,
+                height=submission.height,
+                length=submission.requested_seconds,
+                priority=priority,
+            )
+
+        if submission.mode == LTX_VIDEO_MODE_FLF2V:
+            if not submission.image_path or not submission.end_image_path:
+                raise CoreDomainError("LTX 首尾帧生成需要同时上传起始帧和终止帧。")
+            return await image_service.submit_ltx_video_flf2v_task(
+                task_id,
+                prompt=submission.prompt,
+                image_path=submission.image_path,
+                end_image_path=submission.end_image_path,
+                lora_name=inputs.get("lora_name"),
+                lora_strength=inputs.get("lora_strength"),
+                lora_items=submission.lora_items,
+                width=submission.width,
+                height=submission.height,
+                length=submission.requested_seconds,
+                priority=priority,
+            )
+
+        if not submission.image_path:
+            raise CoreDomainError("LTX 图生视频需要上传起始图片。")
         return await image_service.submit_ltx_video_task(
             task_id,
             prompt=submission.prompt,

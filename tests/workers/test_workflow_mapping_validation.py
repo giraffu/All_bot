@@ -36,6 +36,8 @@ def test_legacy_video_task_types_resolve_to_wan22_aio_workflow(task_type):
 @pytest.mark.parametrize(
     ("task_type", "filename"),
     [
+        ("ltx_video_flf2v", "LTX 2.3 FLF2V 6.1.json"),
+        ("ltx_video_v2v_audio", "LTX 2.3 V2V Audio 6.1.json"),
         ("scail2_action_transfer", "SCAIL-2_Animation_multi-char_audio.api.json"),
         ("scail2_video_replacement", "SCAIL-2_Replacement_audio.api.json"),
         (

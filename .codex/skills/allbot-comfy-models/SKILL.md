@@ -133,34 +133,49 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
   - `lora_items: [{name, strength}, ...]`
   - 最多 3 个 LoRA
 - 旧字段 `lora_name / lora_strength` 仍保留兼容，但不再是新增功能的首选协议。
+- 用户侧历史/Gallery 仍统一归类为 `ltx_video`；执行面按模式分发为：
+  - `ltx_video`：旧单首帧 I2V，工作流 `LTX 2.3 I2V 6.1.json`
+  - `ltx_video_flf2v`：首帧 + 终止帧，工作流 `LTX 2.3 FLF2V 6.1.json`
+  - `ltx_video_v2v_audio`：输入视频 + 文本生成带音频视频，工作流 `LTX 2.3 V2V Audio 6.1.json`
+- 三条 LTX 执行路径共用同一组主模型与 LoRA/附加模型协议，不新增模型选择体系。
 
 ### 2. Bot / Web 侧入口
 - **文件定位**：`src/lora_catalog.py`、`src/handlers/fsm/ltx_video_fsm.py`、`frontend/src/views/SingleImageToVideo.vue`、`frontend/src/components/template-apply/TemplateImageToVideoPanel.vue`
 - **当前事实**：
-  - Telegram FSM 允许多选最多 3 个 LoRA，并支持逐项调整强度。
-  - Web 单图视频页与模板应用面板复用同一套选项。
+  - Telegram FSM 允许多选最多 3 个 LoRA，并支持逐项调整强度；LoRA 后会进入 LTX 模式选择：单首帧、首尾帧、视频配音。
+  - Web 单图视频页支持 LTX 三模式切换；练功房 LTX 至少支持上传两张参考图自动走首尾帧。
   - 前端主路径提交 `inputs.lora_items`，而不是只提交单个 `inputs.lora_name`。
+  - LTX 结果若存在 `extra_outputs.last_frame`，Web 结果区/历史详情和 Bot 结果消息可进入“扩展生成”，把尾帧作为下一段起始帧。
 
 ### 3. Backend 层
 - **文件定位**：`backend/app/models.py`
 - **当前事实**：
   - `LtxVideoRequest` 已同时支持 `lora_items` 与兼容字段 `lora_name / lora_strength`。
+  - `LtxVideoFlf2VRequest` 和 `LtxVideoV2VAudioRequest` 分别对应 `/api/v1/ltx_video_flf2v`、`/api/v1/ltx_video_v2v_audio`。
+  - 上游 Web/Bot 仍提交用户侧 `ltx_video`；`src/core/task_dispatcher.py` 通过 `inputs.ltx_mode`、`use_end_frame`、`video` 或输入数量分流到上述执行面 simple routes。
   - 新增 LTX LoRA 时，通常无需新增 task type，重点是保持请求模型与 patcher 协议一致。
 
 ### 4. Worker 层
-- **文件定位**：`workers/comfy_agent/workflow_patcher.py`、`workers/comfy_agent/workflows/LTX 2.3 I2V 6.1.json`
+- **文件定位**：`workers/comfy_agent/workflow_task_patchers.py`、`workers/comfy_agent/workflows/LTX 2.3 I2V 6.1.json`、`workers/comfy_agent/workflows/LTX 2.3 FLF2V 6.1.json`、`workers/comfy_agent/workflows/LTX 2.3 V2V Audio 6.1.json`
 - **当前约定**：
   - 注入节点固定为 `256`（`Power Lora Loader (rgthree)`）。
   - patcher 会优先消费 `lora_items`，写入 `lora_1..n`。
   - 若 `lora_items` 为空，则兼容回退读取 `lora_name / lora_strength`。
   - 若最终没有有效 LoRA，则裁掉节点 `256`，并把 `8.inputs.model` 回接到 `191`。
+  - `ltx_video_flf2v` 的终止帧输入节点为 `16`，尾帧保存节点为 `902`，关键 image-to-video 节点为 `26:297` / `26:312`。
+  - `ltx_video_v2v_audio` 的输入视频节点为 `900`，patcher 固定 `force_rate=24`，`frame_load_cap=duration_seconds*24+1`。
+  - 三个 LTX task type 都属于视频主输出任务；结果物化会优先识别 MP4，并把 `last_frame` 写入 `extra_outputs.last_frame`。若 Comfy 未返回 `902` 图片，worker 会用 ffmpeg 从主 MP4 兜底抽取尾帧。
+  - 目标 LTX worker 的 `SUPPORTED_TASK_TYPES` 必须包含 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`，并同步 `remote_workers/`。
 - **LTX AIO 镜像**：
   - LAN/RunPod 化最小镜像入口为 `remote_workers/docker/runpod_profiles/ltx_video/Dockerfile`，当前 LAN registry tag 为 `192.168.1.115:5000/allbot/comfy-runpod-ltx-video:20260618-ltx-min-cu128-sageattn1`。
-  - 镜像只面向 `LTX 2.3 I2V 6.1.json`：保留 KJNodes、VideoHelperSuite、rgthree、LTXVideo、`sageattention==1.0.6`，并用 `allbot_ltx_min_nodes` shim 覆盖 `ImpactDummyInput`、`TwoWaySwitch`、`easy int`、`mxSlider`、`RAMCleanup`、`VRAMCleanup`、`Float`、`IntToFloat`、`Sigmas Sigmoid`、`MathExpression|pysssss`；workflow 保持 `sage_attention=auto`，不要通过禁用 SageAttention 来绕过依赖缺失。不要把 Easy-Use、Impact-Pack、mxToolkit、Memory_Cleanup、RES4LYF、custom-scripts 等大包作为 LTX 最小镜像依赖重新引入。
+  - 镜像面向 LTX 三工作流：保留 KJNodes、VideoHelperSuite、rgthree、LTXVideo、`sageattention==1.0.6`，并用 `allbot_ltx_min_nodes` shim 覆盖 `ImpactDummyInput`、`TwoWaySwitch`、`easy int`、`mxSlider`、`RAMCleanup`、`VRAMCleanup`、`Float`、`IntToFloat`、`Sigmas Sigmoid`、`MathExpression|pysssss`；workflow 保持 `sage_attention=auto`，不要通过禁用 SageAttention 来绕过依赖缺失。不要把 Easy-Use、Impact-Pack、mxToolkit、Memory_Cleanup、RES4LYF、custom-scripts 等大包作为 LTX 最小镜像依赖重新引入。
+  - V2V Audio 使用 VideoHelperSuite 的视频读取节点，并保留现有 LTX workflow 的 audio 输出方向；真实上线前必须用目标 ComfyUI `/object_info` 和一单 smoke 确认 `VHS_LoadVideo`、`VHS_VideoCombine`、`SaveImage 902` 可用且输出 MP4 含音轨。
   - LTX AIO 不 baked 模型权重，模型仍从 `allbot-model-cache/ltx_video/2026-06-10/manifest.json` 同步；新增/重导 workflow 时要用容器 `/object_info` 复核上述 shim 节点和 `LTXV*`/rgthree/VHS 节点。
 - **红线**：
-  - 若重导出 `LTX 2.3 I2V 6.1.json`，必须复核 `256`、`191`、`189`、`8` 这些节点 ID 是否仍满足补丁逻辑。
+  - 若重导出任一 LTX workflow，必须复核 `256`、`191`、`189`、`8`、`15`、`16`、`26:297`、`26:312`、`900`、`902` 这些节点 ID 是否仍满足补丁逻辑。
 
 ### 5. 验证建议
 - 同时验证“多选 LoRA”“旧字段兼容”“无 LoRA”三种场景。
+- 同时验证普通 I2V、首尾帧 FLF2V、V2V Audio 三条路径，至少覆盖无 LoRA 和多 LoRA。
+- 首尾帧与 V2V Audio 的验收必须检查主 MP4、`extra_outputs.last_frame`；V2V Audio 还需用 `ffprobe` 或播放器确认音轨存在。
 - 若只更新前端但不更新 worker patcher，容易出现 UI 可多选但执行面只吃首项或直接失效的知识错配。

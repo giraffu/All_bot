@@ -23,6 +23,12 @@ from src.lora_catalog import normalize_ltx_video_lora_items
 LTX_VIDEO_ADDITIONAL_LORA_NODE_IDS = ("256",)
 LTX_VIDEO_FIRST_PASS_MODEL_NODE_ID = "191"
 LTX_VIDEO_FIRST_PASS_CLIP_NODE_ID = "189"
+LTX_VIDEO_IMAGE_TO_VIDEO_NODE_IDS = ("26:297", "26:312")
+LTX_VIDEO_END_FRAME_RESIZE_NODE_ID = "26:313"
+LTX_VIDEO_LAST_FRAME_INDEX_NODE_ID = "26:315"
+LTX_VIDEO_LAST_FRAME_SAVE_NODE_ID = "902"
+LTX_VIDEO_LOAD_VIDEO_NODE_ID = "900"
+LTX_VIDEO_FPS = 24
 LTX_VIDEO_MAX_LORA_SLOTS = 10
 # `Wan22AioV82.json` keeps the old prune output node, but the worker stores
 # video and last-frame outputs explicitly.
@@ -211,11 +217,74 @@ def _strip_ltx_video_lora_nodes(workflow: dict[str, Any]) -> None:
             inputs["model"] = [LTX_VIDEO_FIRST_PASS_MODEL_NODE_ID, 0]
 
 
-def patch_ltx_video_workflow(
+def _resolve_ltx_duration_seconds(params: dict[str, Any]) -> int:
+    for key in ("length", "duration", "requested_duration"):
+        value = params.get(key)
+        if value is None:
+            continue
+        try:
+            return int(str(value).replace("s", "").strip())
+        except (TypeError, ValueError):
+            continue
+    return 5
+
+
+def _sync_ltx_slider_mirrors(workflow: dict[str, Any]) -> None:
+    for node_id in ("18", "19", "181"):
+        node = workflow.get(node_id)
+        if not isinstance(node, dict):
+            continue
+        inputs = node.get("inputs")
+        if isinstance(inputs, dict) and "Xi" in inputs:
+            inputs["Xf"] = inputs["Xi"]
+
+
+def _set_ltx_output_prefixes(
+    workflow: dict[str, Any],
+    *,
+    unique_id: Any,
+    output_task_prefix: str,
+) -> None:
+    safe_unique_id = unique_id or output_task_prefix
+    for node_id, node in workflow.items():
+        if not isinstance(node, dict) or "inputs" not in node:
+            continue
+        if node.get("class_type") == "VHS_VideoCombine":
+            node["inputs"]["filename_prefix"] = (
+                f"{output_task_prefix}_{safe_unique_id}_{node_id}"
+            )
+        elif (
+            node_id == LTX_VIDEO_LAST_FRAME_SAVE_NODE_ID
+            and node.get("class_type") == "SaveImage"
+        ):
+            node["inputs"]["filename_prefix"] = (
+                f"{output_task_prefix}_{safe_unique_id}_last_frame"
+            )
+
+
+def _resolve_ltx_lora_items(params: dict[str, Any]) -> list[dict[str, Any]]:
+    lora_items = normalize_ltx_video_lora_items(
+        params.get("lora_items"),
+        max_items=3,
+    )
+    if lora_items:
+        return lora_items
+
+    lora_name = str(params.get("lora_name") or "").strip()
+    if not lora_name:
+        return []
+    return normalize_ltx_video_lora_items(
+        [{"name": lora_name, "strength": params.get("lora_strength")}],
+        max_items=3,
+    )
+
+
+def _patch_ltx_video_common(
     workflow: dict[str, Any],
     *,
     params: dict[str, Any],
     unique_id: Any,
+    output_task_prefix: str,
     **_: Any,
 ) -> None:
     workflow.pop("210", None)
@@ -224,31 +293,83 @@ def patch_ltx_video_workflow(
     if "8" in workflow and "inputs" in workflow["8"]:
         workflow["8"]["inputs"]["model"] = ["256", 0]
 
-    safe_unique_id = unique_id or "ltx_video"
-    for node_id, node in workflow.items():
-        if (
-            isinstance(node, dict)
-            and node.get("class_type") == "VHS_VideoCombine"
-            and "inputs" in node
-        ):
-            node["inputs"]["filename_prefix"] = f"ltx_video_{safe_unique_id}_{node_id}"
-
-    lora_items = normalize_ltx_video_lora_items(
-        params.get("lora_items"),
-        max_items=3,
+    _sync_ltx_slider_mirrors(workflow)
+    _set_ltx_output_prefixes(
+        workflow,
+        unique_id=unique_id,
+        output_task_prefix=output_task_prefix,
     )
-    if not lora_items:
-        lora_name = str(params.get("lora_name") or "").strip()
-        if lora_name:
-            lora_items = normalize_ltx_video_lora_items(
-                [{"name": lora_name, "strength": params.get("lora_strength")}],
-                max_items=3,
-            )
+
+    lora_items = _resolve_ltx_lora_items(params)
 
     if lora_items:
         _patch_ltx_video_lora(workflow, lora_items=lora_items)
     else:
         _strip_ltx_video_lora_nodes(workflow)
+
+
+def patch_ltx_video_workflow(
+    workflow: dict[str, Any],
+    **kwargs: Any,
+) -> None:
+    _patch_ltx_video_common(
+        workflow,
+        output_task_prefix="ltx_video",
+        **kwargs,
+    )
+
+
+def patch_ltx_video_flf2v_workflow(
+    workflow: dict[str, Any],
+    *,
+    params: dict[str, Any],
+    **kwargs: Any,
+) -> None:
+    _patch_ltx_video_common(
+        workflow,
+        params=params,
+        output_task_prefix="ltx_video_flf2v",
+        **kwargs,
+    )
+
+    for node_id in LTX_VIDEO_IMAGE_TO_VIDEO_NODE_IDS:
+        node = workflow.get(node_id)
+        if not isinstance(node, dict):
+            continue
+        inputs = node.setdefault("inputs", {})
+        inputs["num_images"] = "2"
+        inputs["num_images.image_2"] = [LTX_VIDEO_END_FRAME_RESIZE_NODE_ID, 0]
+        inputs["num_images.strength_2"] = ["26:311", 0]
+        inputs["num_images.index_2"] = [LTX_VIDEO_LAST_FRAME_INDEX_NODE_ID, 0]
+
+
+def patch_ltx_video_v2v_audio_workflow(
+    workflow: dict[str, Any],
+    *,
+    params: dict[str, Any],
+    set_node_input: Callable[..., None],
+    **kwargs: Any,
+) -> None:
+    _patch_ltx_video_common(
+        workflow,
+        params=params,
+        output_task_prefix="ltx_video_v2v_audio",
+        set_node_input=set_node_input,
+        **kwargs,
+    )
+    frame_load_cap = _resolve_ltx_duration_seconds(params) * LTX_VIDEO_FPS + 1
+    for input_name, value in (
+        ("force_rate", LTX_VIDEO_FPS),
+        ("frame_load_cap", frame_load_cap),
+        ("skip_first_frames", 0),
+        ("select_every_nth", 1),
+    ):
+        set_node_input(
+            workflow,
+            node_id=LTX_VIDEO_LOAD_VIDEO_NODE_ID,
+            input_name=input_name,
+            value=value,
+        )
 
 
 def _patch_wan22_aio_workflow(
@@ -575,6 +696,8 @@ TASK_SPECIFIC_PATCHERS = {
     "img2img_lora": patch_img2img_workflow,
     "i2i_draw": patch_i2i_draw_workflow,
     "ltx_video": patch_ltx_video_workflow,
+    "ltx_video_flf2v": patch_ltx_video_flf2v_workflow,
+    "ltx_video_v2v_audio": patch_ltx_video_v2v_audio_workflow,
     "video_insert": patch_image_to_video_workflow,
     "video_edit": patch_image_to_video_workflow,
     "image_to_video": patch_image_to_video_workflow,

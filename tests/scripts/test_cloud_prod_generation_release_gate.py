@@ -41,14 +41,14 @@ def test_configure_process_env_maps_prod_redis_and_bucket(monkeypatch):
         {
             "CLOUD_PROD_REDIS_URL": "redis://app",
             "CLOUD_PROD_WORKER_REDIS_URL": "redis://worker",
-            "CLOUD_PROD_DATABASE_URL": "postgresql://db",
+            "CLOUD_PROD_DATABASE_URL": "postgresql+asyncpg://db",
             "MINIO_BUCKET": "user-data-prod",
         }
     )
 
     assert gate.os.environ["REDIS_URL"] == "redis://app"
     assert gate.os.environ["WORKER_REDIS_URL"] == "redis://worker"
-    assert gate.os.environ["DATABASE_URL"] == "postgresql://db"
+    assert gate.os.environ["DATABASE_URL"] == "postgresql+asyncpg://db"
     assert gate.os.environ["BOT_TYPE"] == "PROD"
     assert gate.os.environ["MINIO_BUCKET"] == "user-data-prod"
 

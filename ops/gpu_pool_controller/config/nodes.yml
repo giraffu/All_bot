@@ -110,6 +110,8 @@ nodes:
           reason: gpu-177 AIO-only cleanup removed comfy1, cloud-prod-comfy-agent-3, and /data/comfy.
         supported_task_types:
           - ltx_video
+          - ltx_video_flf2v
+          - ltx_video_v2v_audio
           - image_to_video
 
   gpu-252:

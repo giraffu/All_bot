@@ -21,6 +21,8 @@ TASK_TYPE_WORKFLOW_FILENAMES = {
     "i2i_draw": "I2I_draw.json",
     "img2img_lora": "Qwen-Rapid-AIO.json",
     "ltx_video": "LTX 2.3 I2V 6.1.json",
+    "ltx_video_flf2v": "LTX 2.3 FLF2V 6.1.json",
+    "ltx_video_v2v_audio": "LTX 2.3 V2V Audio 6.1.json",
     "wan22_video_v2": "Wan22AioV82.json",
     "scail2_action_transfer": "SCAIL-2_Animation_multi-char_audio.api.json",
     "scail2_video_replacement": "SCAIL-2_Replacement_audio.api.json",

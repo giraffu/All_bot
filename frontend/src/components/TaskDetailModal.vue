@@ -52,6 +52,10 @@ const canStitchWan22Chain = computed(
   () => isWan22Record.value && Boolean(currentRecord.value?.result_meta?.wan22_prev_task_id)
 )
 const canShowWan22ChainCard = computed(() => isWan22Record.value && !isWan22StitchedRecord.value)
+const isLtxRecord = computed(() => currentRecord.value?.type === 'ltx_video')
+const canExtendLtxRecord = computed(
+  () => isLtxRecord.value && Boolean(currentRecord.value?.task_id && currentRecord.value?.extra_outputs?.last_frame?.path)
+)
 
 const {
   submittingTasks,
@@ -82,6 +86,27 @@ const openWan22Editor = async (mode: 'extend' | 'regenerate') => {
       type: record.type,
       wan22_mode: mode,
       wan22_task_id: record.task_id,
+    },
+  })
+}
+
+const openLtxEditor = async () => {
+  const record = currentRecord.value as HistoryItem | null
+  const lastFrame = record?.extra_outputs?.last_frame
+  if (!record?.task_id || !lastFrame?.path) {
+    message.warning('当前记录缺少可用尾帧，暂时无法扩展')
+    return
+  }
+  detailVisible.value = false
+  await router.push({
+    name: 'SingleImageToVideo',
+    query: {
+      type: 'ltx_video',
+      title: '高级图生视频',
+      cost: '10',
+      ltx_extend_task_id: record.task_id,
+      ltx_extend_key: lastFrame.path,
+      ...(lastFrame.url ? { ltx_extend_url: lastFrame.url } : {}),
     },
   })
 }
@@ -246,6 +271,36 @@ const handleWan22ChainStitch = async () => {
               </div>
               <div class="task-detail-chain-tip text-[11px] lg:text-xs">
                 {{ canExtendWan22Chain ? '扩展会自动继承当前段尾帧；重生成只保留当前段之前的链路上下文。' : '当前记录缺少可用尾帧，暂时不能继续扩展。' }}
+              </div>
+            </div>
+
+            <div
+              v-if="isLtxRecord"
+              class="task-detail-chain-card rounded-2xl border p-4 space-y-3"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <div class="task-detail-section-label text-[10px] lg:text-xs uppercase tracking-wider">
+                    LTX 扩展生成
+                  </div>
+                  <div class="task-detail-chain-desc text-xs lg:text-sm mt-1">
+                    使用当前视频尾帧作为下一段起始帧。
+                  </div>
+                </div>
+                <a-tag color="cyan" class="self-start">
+                  LTX
+                </a-tag>
+              </div>
+              <a-button
+                type="primary"
+                class="task-detail-primary-btn border-none rounded-xl w-full"
+                :disabled="!canExtendLtxRecord"
+                @click="openLtxEditor"
+              >
+                扩展下一段
+              </a-button>
+              <div class="task-detail-chain-tip text-[11px] lg:text-xs">
+                {{ canExtendLtxRecord ? '已检测到可复用尾帧。' : '当前记录缺少可用尾帧，暂时不能继续扩展。' }}
               </div>
             </div>
 

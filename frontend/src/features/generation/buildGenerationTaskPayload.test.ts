@@ -207,6 +207,33 @@ describe('buildGenerationTaskPayload', () => {
     })
   })
 
+  it('omits undefined extra inputs from ltx video payloads', () => {
+    expect(
+      buildGenerationTaskPayload({
+        taskType: 'ltx_video',
+        images: ['img-1'],
+        resolution: '1280x704',
+        duration: 5,
+        extraInputs: {
+          ltx_mode: 'i2v',
+          video: undefined,
+          extract_last_frame: true,
+        },
+      }),
+    ).toEqual({
+      task_type: 'ltx_video',
+      inputs: {
+        images: ['img-1'],
+        resolution: '1280x704',
+        duration: 5,
+        ltx_mode: 'i2v',
+        extract_last_frame: true,
+      },
+      priority: 0,
+      is_template: false,
+    })
+  })
+
   it('builds text to image payload without source images', () => {
     expect(
       buildGenerationTaskPayload({

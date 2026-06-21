@@ -11,6 +11,7 @@ import { resolveTemplateVideoApplyState } from '@/utils/templateVideoApplyState'
 import { useSingleFileUploadPreview } from '@/composables/useSingleFileUploadPreview'
 import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
 import { useGenerationRouteConfig } from '@/features/generation/generationRouteConfig'
+import { buildStorageFileUrl } from '@/utils/storageUrl'
 import {
   buildDefaultLtxVideoLoraItem,
   getDefaultImageToVideoLoraSelection,
@@ -54,12 +55,44 @@ const {
   filePreview,
   beforeUpload,
   handleRemove,
+  setRemoteFile,
 } = useSingleFileUploadPreview({
   uploadFile
+})
+const {
+  fileList: endFrameFileList,
+  objectKey: endFrameObjectKey,
+  filePreview: endFramePreview,
+  beforeUpload: beforeUploadEndFrame,
+  handleRemove: handleRemoveEndFrame,
+} = useSingleFileUploadPreview({
+  uploadFile
+})
+const {
+  fileList: videoFileList,
+  objectKey: videoObjectKey,
+  filePreview: videoPreview,
+  beforeUpload: beforeUploadVideo,
+  handleRemove: handleRemoveVideo,
+} = useSingleFileUploadPreview({
+  uploadFile: (file: File) => uploadFile(file, { maxSizeBytes: 40 * 1024 * 1024, maxSizeLabel: '40MB' })
 })
 const resolution = ref('preview')
 const duration = ref('5')
 const templateSourcePostId = ref<number | null>(null)
+type LtxVideoMode = 'i2v' | 'flf2v' | 'v2v_audio'
+const ltxMode = ref<LtxVideoMode>('i2v')
+const isLtxStartEndMode = computed(() => isLtxVideo.value && ltxMode.value === 'flf2v')
+const isLtxVideoAudioMode = computed(() => isLtxVideo.value && ltxMode.value === 'v2v_audio')
+const canSubmit = computed(() => {
+  if (isLtxVideoAudioMode.value) {
+    return Boolean(videoObjectKey.value)
+  }
+  if (isLtxStartEndMode.value) {
+    return Boolean(objectKey.value && endFrameObjectKey.value)
+  }
+  return Boolean(objectKey.value)
+})
 
 const taskCost = computed(() => {
   if (isLtxVideo.value) {
@@ -124,6 +157,64 @@ const isTemplateVideoSettingsLocked = ref(false)
 const isTemplatePromptLocked = ref(false)
 const templateSettingsWarning = ref('')
 
+const reusableOutputPrefixes = ['comfyui-temp/', 'bot-data/', 'bot-data-test/', 'history/', 'template:']
+
+const readRouteQueryString = (value: unknown): string => {
+  const rawValue = Array.isArray(value) ? value[0] : value
+  return String(rawValue ?? '').trim()
+}
+
+const resolveReusableOutputKey = (path?: string | null) => {
+  const normalizedPath = String(path || '').trim()
+  if (!normalizedPath) return ''
+  if (reusableOutputPrefixes.some(prefix => normalizedPath.startsWith(prefix))) {
+    return normalizedPath
+  }
+  return `comfyui-temp/${normalizedPath}`
+}
+
+const canExtendFromCurrentLtxTask = computed(() => (
+  isLtxVideo.value
+  && currentTask.value?.status === 'success'
+  && Boolean(currentTask.value?.extraOutputs?.last_frame?.path)
+))
+
+const handleExtendFromCurrentLtxTask = () => {
+  const lastFrame = currentTask.value?.extraOutputs?.last_frame
+  const key = resolveReusableOutputKey(lastFrame?.path)
+  if (!key) {
+    message.warning('当前结果没有可用尾帧')
+    return
+  }
+  ltxMode.value = 'i2v'
+  setRemoteFile(key, lastFrame?.url || buildStorageFileUrl(key))
+  handleRemoveEndFrame()
+  handleRemoveVideo()
+  prompt.value = ''
+  setSubmittedTaskId(null)
+  message.success('已载入上一段尾帧')
+}
+
+const loadLtxExtensionFromRoute = () => {
+  if (!isLtxVideo.value) {
+    return
+  }
+  const key = resolveReusableOutputKey(readRouteQueryString(route.query.ltx_extend_key))
+  if (!key) {
+    return
+  }
+  ltxMode.value = 'i2v'
+  handleRemoveEndFrame()
+  handleRemoveVideo()
+  setRemoteFile(
+    key,
+    readRouteQueryString(route.query.ltx_extend_url) || buildStorageFileUrl(key),
+  )
+  prompt.value = ''
+  setSubmittedTaskId(null)
+  message.success('已载入历史尾帧')
+}
+
 const templateApplyNotice = computed(() => {
   if (!isTemplateApplied.value) {
     return ''
@@ -186,6 +277,8 @@ onMounted(() => {
       }
     }
   }
+
+  loadLtxExtensionFromRoute()
 })
 
 watch(isLtxVideo, (value) => {
@@ -193,18 +286,34 @@ watch(isLtxVideo, (value) => {
     ltxLoraItems.value = []
     selectedLtxLoraNames.value = []
     expandedLtxLoraEditors.value = []
+    ltxMode.value = 'i2v'
   }
 }, { immediate: true })
 
+watch(ltxMode, (mode) => {
+  if (mode !== 'flf2v') {
+    handleRemoveEndFrame()
+  }
+  if (mode !== 'v2v_audio') {
+    handleRemoveVideo()
+  }
+})
+
 const handleGenerate = async () => {
-  if (!objectKey.value) {
-    message.warning('请先上传图片！')
+  if (!canSubmit.value) {
+    message.warning(isLtxVideoAudioMode.value ? '请先上传视频！' : '请先上传图片！')
     return
   }
+  const images = isLtxVideoAudioMode.value
+    ? [videoObjectKey.value as string]
+    : [
+        objectKey.value as string,
+        ...(isLtxStartEndMode.value && endFrameObjectKey.value ? [endFrameObjectKey.value] : []),
+      ]
 
   const payload = buildGenerationTaskPayload({
     taskType: getImageToVideoRequestTaskType(taskType.value, loraSelection.value),
-    images: [objectKey.value],
+    images,
     resolution: isLtxVideo.value ? resolution.value : undefined,
     duration: isLtxVideo.value
       ? Number(duration.value)
@@ -214,12 +323,17 @@ const handleGenerate = async () => {
     loraName: loraName.value,
     loraStrength: loraStrength.value,
     loraItems: isLtxVideo.value ? ltxLoraItems.value : undefined,
-    extraInputs: !isLtxVideo.value
+    extraInputs: isLtxVideo.value
       ? {
+          ltx_mode: ltxMode.value,
+          use_end_frame: isLtxStartEndMode.value,
+          video: isLtxVideoAudioMode.value ? videoObjectKey.value : undefined,
+          extract_last_frame: true,
+        }
+      : {
           resolution_preset: normalizeWan22VideoV2ResolutionPreset(resolution.value),
           use_end_frame: false,
-        }
-      : undefined,
+        },
     isTemplate: isTemplateApplied.value,
     sourcePostId: templateSourcePostId.value,
   })
@@ -232,7 +346,10 @@ const handleGenerate = async () => {
 
 const resetForm = () => {
   handleRemove()
+  handleRemoveEndFrame()
+  handleRemoveVideo()
   prompt.value = ''
+  ltxMode.value = 'i2v'
   loraSelection.value = getDefaultImageToVideoLoraSelection(taskType.value)
   ltxLoraItems.value = []
   selectedLtxLoraNames.value = []
@@ -257,6 +374,25 @@ const resetForm = () => {
 
     <template #left-content>
       <div class="flex flex-col gap-6 mb-6">
+            <div
+              v-if="isLtxVideo"
+              class="w-full bg-slate-500/60 rounded-xl p-4 border border-slate-400/50 shrink-0"
+            >
+              <h3 class="text-sm font-bold mb-3 text-slate-200 flex items-center">
+                <span class="text-slate-500 mr-2">0.</span> 生成模式
+              </h3>
+              <a-radio-group v-model:value="ltxMode" button-style="solid" class="compact-option-group w-full grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <a-radio-button value="i2v" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">
+                  单首帧
+                </a-radio-button>
+                <a-radio-button value="flf2v" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">
+                  首尾帧
+                </a-radio-button>
+                <a-radio-button value="v2v_audio" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">
+                  视频配音
+                </a-radio-button>
+              </a-radio-group>
+            </div>
             <div
               v-if="isUnifiedImageToVideo || isLtxVideo"
               class="w-full bg-slate-500/60 rounded-xl p-4 border border-slate-400/50 shrink-0"
@@ -343,6 +479,7 @@ const resetForm = () => {
             <div class="flex flex-col md:flex-row gap-4 md:h-64 w-full">
               <!-- Image Upload -->
               <GenerationUploadCard
+                v-if="!isLtxVideoAudioMode"
                 title="基础图片"
                 step="1."
                 :file-list="fileList"
@@ -352,6 +489,41 @@ const resetForm = () => {
                 :before-upload="beforeUpload"
                 @remove="handleRemove"
                 @update:fileList="fileList = $event"
+              >
+                <template #placeholder-icon>
+                  <inbox-outlined />
+                </template>
+              </GenerationUploadCard>
+              <GenerationUploadCard
+                v-else
+                title="输入视频"
+                step="1."
+                :file-list="videoFileList"
+                :preview-url="videoPreview"
+                preview-kind="video"
+                accept="video/mp4,video/quicktime,video/webm"
+                upload-hint="MP4/MOV/WebM，40MB 内"
+                wrapper-class="upload-section flex flex-col w-full md:w-[40%] min-w-[160px] shrink-0 h-48 md:h-full"
+                :before-upload="beforeUploadVideo"
+                @remove="handleRemoveVideo"
+                @update:fileList="videoFileList = $event"
+              >
+                <template #placeholder-icon>
+                  <video-camera-outlined />
+                </template>
+              </GenerationUploadCard>
+
+              <GenerationUploadCard
+                v-if="isLtxStartEndMode"
+                title="终止帧"
+                step="1B."
+                :file-list="endFrameFileList"
+                :preview-url="endFramePreview"
+                accept="image/png, image/jpeg"
+                wrapper-class="upload-section flex flex-col w-full md:w-[28%] min-w-[150px] shrink-0 h-48 md:h-full"
+                :before-upload="beforeUploadEndFrame"
+                @remove="handleRemoveEndFrame"
+                @update:fileList="endFrameFileList = $event"
               >
                 <template #placeholder-icon>
                   <inbox-outlined />
@@ -442,7 +614,7 @@ const resetForm = () => {
       <GenerationActionBar
         :cost="taskCost"
         button-text="生成视频"
-        :disabled="!objectKey"
+        :disabled="!canSubmit"
         :loading="isSubmitting"
         button-class="bg-blue-600 hover:bg-blue-500 w-40 h-12 text-base font-bold tracking-wider rounded-xl shadow-md transition-all hover:shadow-lg border-none flex items-center justify-center text-white"
         @submit="handleGenerate"
@@ -466,6 +638,30 @@ const resetForm = () => {
         </template>
         <template #failed-icon>
           <close-circle-outlined class="text-5xl text-red-500 mb-4" />
+        </template>
+        <template #success-actions="{ task }">
+          <a-button
+            type="primary"
+            size="large"
+            class="bg-blue-600 rounded-xl"
+            @click="downloadResult(task.resultUrl, task.title)"
+          >
+            <template #icon>
+              <download-outlined />
+            </template>
+            下载结果
+          </a-button>
+          <a-button
+            v-if="canExtendFromCurrentLtxTask"
+            size="large"
+            class="rounded-xl"
+            @click="handleExtendFromCurrentLtxTask"
+          >
+            扩展生成
+          </a-button>
+          <a-button size="large" class="rounded-xl" @click="resetForm">
+            继续生成
+          </a-button>
         </template>
       </TaskResultPreviewPanel>
     </template>

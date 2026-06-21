@@ -263,6 +263,60 @@ def test_workflow_patcher_injects_multiple_ltx_video_loras_from_lora_items(tmp_p
     assert "lora_9" not in patched["256"]["inputs"]
 
 
+def test_workflow_patcher_patches_real_ltx_flf2v_workflow():
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
+    workflow = patcher.load_workflow("ltx_video_flf2v")
+
+    patched = patcher.patch_workflow(
+        "ltx_video_flf2v",
+        workflow,
+        {
+            "image": "start.png",
+            "end_image": "end.png",
+            "prompt": "cinematic transition",
+            "length": 10,
+            "width": 1280,
+            "height": 704,
+            "seed": 123,
+        },
+    )
+
+    assert patched["15"]["inputs"]["image"] == "start.png"
+    assert patched["16"]["inputs"]["image"] == "end.png"
+    assert patched["26:297"]["inputs"]["num_images"] == "2"
+    assert patched["26:297"]["inputs"]["num_images.image_2"] == ["26:313", 0]
+    assert patched["26:297"]["inputs"]["num_images.index_2"] == ["26:315", 0]
+    assert patched["26:312"]["inputs"]["num_images"] == "2"
+    assert patched["902"]["inputs"]["filename_prefix"] == "ltx_video_flf2v_123_last_frame"
+    assert patched["61"]["inputs"]["filename_prefix"] == "ltx_video_flf2v_123_61"
+
+
+def test_workflow_patcher_patches_real_ltx_v2v_audio_workflow():
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
+    workflow = patcher.load_workflow("ltx_video_v2v_audio")
+
+    patched = patcher.patch_workflow(
+        "ltx_video_v2v_audio",
+        workflow,
+        {
+            "video": "input.mp4",
+            "prompt": "say the line clearly",
+            "length": 15,
+            "width": 1280,
+            "height": 704,
+            "seed": 456,
+        },
+    )
+
+    assert patched["900"]["inputs"]["video"] == "input.mp4"
+    assert patched["900"]["inputs"]["force_rate"] == 24
+    assert patched["900"]["inputs"]["frame_load_cap"] == 361
+    assert patched["900"]["inputs"]["skip_first_frames"] == 0
+    assert patched["900"]["inputs"]["select_every_nth"] == 1
+    assert patched["902"]["inputs"]["filename_prefix"] == "ltx_video_v2v_audio_456_last_frame"
+    assert patched["61"]["inputs"]["filename_prefix"] == "ltx_video_v2v_audio_456_61"
+
+
 def test_workflow_patcher_patches_wan22_video_v2_boolean_gates_and_prefixes(tmp_path):
     workflow_dir = tmp_path / "workflows"
     workflow_dir.mkdir()

@@ -627,12 +627,12 @@ async def test_start_ltx_video_opens_lora_selection_first(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_ltx_video_lora_selection_sets_name_and_requests_image(monkeypatch):
+async def test_ltx_video_lora_selection_sets_name_and_requests_mode(monkeypatch):
     edit_mock = AsyncMock()
     monkeypatch.setattr(ltx_video_fsm, "robust_edit_text", edit_mock)
 
     query = SimpleNamespace(
-        data="ltx_lora_select_reasoning",
+        data="toggle_ltx_lora_reasoning",
         answer=AsyncMock(),
         message=SimpleNamespace(),
     )
@@ -652,7 +652,7 @@ async def test_ltx_video_lora_selection_sets_name_and_requests_image(monkeypatch
 
     result = await ltx_video_fsm.handle_lora_selection(update, context)
 
-    assert result == ltx_video_fsm.LtxVideoState.WAIT_IMAGE
+    assert result == ltx_video_fsm.LtxVideoState.WAIT_LORA_SELECTION
     assert context.user_data["ltx_video_data"]["lora_items"] == [
         {
             "name": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors",
@@ -660,14 +660,19 @@ async def test_ltx_video_lora_selection_sets_name_and_requests_image(monkeypatch
         }
     ]
     query.answer.assert_awaited_once()
-    edit_mock.assert_awaited_once()
+
+    query.data = "done_ltx_lora_select"
+    result = await ltx_video_fsm.handle_lora_selection(update, context)
+
+    assert result == ltx_video_fsm.LtxVideoState.WAIT_MODE_SELECTION
+    assert edit_mock.await_count == 2
 
 
 @pytest.mark.asyncio
 async def test_ltx_video_confirm_generation_forwards_selected_lora(monkeypatch):
     safe_answer_mock = AsyncMock()
     create_background_task_mock = MagicMock()
-    process_task_mock = AsyncMock(return_value=(None, None))
+    process_task_mock = MagicMock(return_value=object())
     edit_mock = AsyncMock()
     quota_mock = AsyncMock()
 
@@ -718,6 +723,107 @@ async def test_ltx_video_confirm_generation_forwards_selected_lora(monkeypatch):
         == "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors"
     )
     assert process_task_mock.call_args.kwargs["lora_strength"] == 0.8
+
+
+@pytest.mark.asyncio
+async def test_ltx_video_confirm_generation_forwards_start_end_mode(monkeypatch):
+    safe_answer_mock = AsyncMock()
+    create_background_task_mock = MagicMock()
+    process_task_mock = MagicMock(return_value=object())
+    edit_mock = AsyncMock()
+    quota_mock = AsyncMock()
+
+    monkeypatch.setattr("src.utils.safe_answer_query", safe_answer_mock)
+    monkeypatch.setattr(ltx_video_fsm, "create_background_task", create_background_task_mock)
+    monkeypatch.setattr(ltx_video_fsm, "process_ltx_video_task", process_task_mock)
+    monkeypatch.setattr(ltx_video_fsm, "robust_edit_text", edit_mock)
+    monkeypatch.setattr(ltx_video_fsm.permission_service, "check_quota", quota_mock)
+
+    query = SimpleNamespace(
+        from_user=SimpleNamespace(id=12345),
+        message=SimpleNamespace(chat_id=10001),
+        answer=AsyncMock(),
+    )
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=_build_user(),
+        effective_chat=SimpleNamespace(id=10001),
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(),
+        user_data={
+            "in_conversation": "LTX_VIDEO",
+            "ltx_video_data": {
+                "resolution": "1280x704",
+                "duration": "15s",
+                "ltx_mode": "flf2v",
+                "prompt": "bridge the motion",
+                "image_path": "/tmp/start.png",
+                "end_image_path": "/tmp/end.png",
+                "lora_items": [],
+            }
+        },
+        t=lambda key, **kwargs: f"T:{key}",
+    )
+
+    result = await ltx_video_fsm.confirm_generation(update, context)
+
+    assert result == ConversationHandler.END
+    quota_mock.assert_awaited_once()
+    process_task_mock.assert_called_once()
+    assert process_task_mock.call_args.kwargs["ltx_mode"] == "flf2v"
+    assert process_task_mock.call_args.kwargs["image_path"] == "/tmp/start.png"
+    assert process_task_mock.call_args.kwargs["end_image_path"] == "/tmp/end.png"
+
+
+@pytest.mark.asyncio
+async def test_ltx_video_confirm_generation_forwards_video_audio_mode(monkeypatch):
+    safe_answer_mock = AsyncMock()
+    create_background_task_mock = MagicMock()
+    process_task_mock = MagicMock(return_value=object())
+    edit_mock = AsyncMock()
+    quota_mock = AsyncMock()
+
+    monkeypatch.setattr("src.utils.safe_answer_query", safe_answer_mock)
+    monkeypatch.setattr(ltx_video_fsm, "create_background_task", create_background_task_mock)
+    monkeypatch.setattr(ltx_video_fsm, "process_ltx_video_task", process_task_mock)
+    monkeypatch.setattr(ltx_video_fsm, "robust_edit_text", edit_mock)
+    monkeypatch.setattr(ltx_video_fsm.permission_service, "check_quota", quota_mock)
+
+    query = SimpleNamespace(
+        from_user=SimpleNamespace(id=12345),
+        message=SimpleNamespace(chat_id=10001),
+        answer=AsyncMock(),
+    )
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=_build_user(),
+        effective_chat=SimpleNamespace(id=10001),
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(),
+        user_data={
+            "in_conversation": "LTX_VIDEO",
+            "ltx_video_data": {
+                "resolution": "1280x704",
+                "duration": "20s",
+                "ltx_mode": "v2v_audio",
+                "prompt": "say hello clearly",
+                "video_path": "/tmp/input.mp4",
+                "lora_items": [],
+            }
+        },
+        t=lambda key, **kwargs: f"T:{key}",
+    )
+
+    result = await ltx_video_fsm.confirm_generation(update, context)
+
+    assert result == ConversationHandler.END
+    quota_mock.assert_awaited_once()
+    process_task_mock.assert_called_once()
+    assert process_task_mock.call_args.kwargs["ltx_mode"] == "v2v_audio"
+    assert process_task_mock.call_args.kwargs["image_path"] is None
+    assert process_task_mock.call_args.kwargs["video_path"] == "/tmp/input.mp4"
 
 
 @pytest.mark.asyncio

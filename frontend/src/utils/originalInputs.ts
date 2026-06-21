@@ -51,7 +51,12 @@ const normalizeTaskType = (source: OriginalInputSource): string => (
   String(source.task_type || source.type || '').trim()
 )
 
-const resolveInputLabelKey = (taskType: string, index: number, total: number): string => {
+const resolveInputLabelKey = (
+  taskType: string,
+  index: number,
+  total: number,
+  file: string | null,
+): string => {
   if (WAN22_TASK_TYPES.has(taskType)) {
     if (total > 1) {
       return index === 0 ? 'start_frame' : 'end_frame'
@@ -76,7 +81,10 @@ const resolveInputLabelKey = (taskType: string, index: number, total: number): s
   }
 
   if (taskType === 'ltx_video') {
-    return total === 1 ? 'start_frame' : 'input_n'
+    if (total > 1) {
+      return index === 0 ? 'start_frame' : 'end_frame'
+    }
+    return isVideoFile(file || '') ? 'target_video' : 'start_frame'
   }
 
   return 'input_n'
@@ -125,7 +133,7 @@ export const resolveOriginalInputPreviews = (
   return Array.from({ length: total }, (_, index) => {
     const file = files[index] || null
     const url = resolvePreviewUrl(file, urls[index] || null, source, index)
-    const labelKey = resolveInputLabelKey(taskType, index, total)
+    const labelKey = resolveInputLabelKey(taskType, index, total, file || urls[index] || null)
     const label = labelKey === 'input_n'
       ? t('original_inputs.input_n', { count: index + 1 })
       : t(`original_inputs.${labelKey}`)

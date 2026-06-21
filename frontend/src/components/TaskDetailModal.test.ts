@@ -138,4 +138,37 @@ describe('TaskDetailModal Wan22 editor links', () => {
       },
     })
   })
+
+  it('routes LTX extension editing with the last frame prefill key', async () => {
+    currentDetailRecord = {
+      ...currentDetailRecord,
+      task_id: 'ltx-task-1',
+      type: 'ltx_video',
+      extra_outputs: {
+        last_frame: {
+          path: 'history/ltx-task-1/last_frame.png',
+          media_type: 'image',
+          url: 'https://cdn/ltx-tail.png',
+        },
+      },
+      result_meta: {},
+    }
+    const wrapper = mountModal()
+
+    await wrapper.findAll('button')
+      .find(button => button.text().includes('扩展下一段'))
+      ?.trigger('click')
+
+    expect(routerPush).toHaveBeenCalledWith({
+      name: 'SingleImageToVideo',
+      query: {
+        type: 'ltx_video',
+        title: '高级图生视频',
+        cost: '10',
+        ltx_extend_task_id: 'ltx-task-1',
+        ltx_extend_key: 'history/ltx-task-1/last_frame.png',
+        ltx_extend_url: 'https://cdn/ltx-tail.png',
+      },
+    })
+  })
 })

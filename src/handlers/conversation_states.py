@@ -35,7 +35,10 @@ class FaceSwapState(IntEnum):
 
 class LtxVideoState(IntEnum):
     WAIT_LORA_SELECTION = auto()
+    WAIT_MODE_SELECTION = auto()
     WAIT_IMAGE = auto()
+    WAIT_END_IMAGE = auto()
+    WAIT_VIDEO = auto()
     WAIT_SETTINGS_AND_PROMPT = auto()
     WAIT_CONFIRMATION = auto()
 

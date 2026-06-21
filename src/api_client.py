@@ -18,7 +18,9 @@ from config import (
     IMAGE_ENDPOINT,
     IMG2IMG_ENDPOINT,
     IMG2IMG_LORA_ENDPOINT,
+    LTX_VIDEO_FLF2V_ENDPOINT,
     LTX_VIDEO_ENDPOINT,
+    LTX_VIDEO_V2V_AUDIO_ENDPOINT,
     PERFECT_VIDEO_EDIT_ENDPOINT,
     PERFECT_VIDEO_INSERT_ENDPOINT,
     SCAIL2_ACTION_TRANSFER_ENDPOINT,
@@ -427,6 +429,87 @@ class APIClient:
             f"Submitting ltx_video task. Prompt: {prompt}, Priority: {priority}"
         )
         r = await self._request("POST", LTX_VIDEO_ENDPOINT, json=data)
+        return r.json()["task_id"]
+
+    @async_retry(max_retries=3)
+    async def submit_ltx_video_flf2v(
+        self,
+        task_id: str,
+        prompt: str,
+        image_path: str,
+        end_image_path: str,
+        lora_name: str | None = None,
+        lora_strength: float | None = None,
+        lora_items: list[dict[str, Any]] | None = None,
+        width: int = 1280,
+        height: int = 704,
+        length: int = 5,
+        priority: int = 0,
+    ) -> str:
+        data = {
+            "task_id": task_id,
+            "image": image_path,
+            "end_image": end_image_path,
+            "prompt": prompt,
+            "width": width,
+            "height": height,
+            "length": length,
+            "use_end_frame": True,
+            "extract_last_frame": True,
+            "priority": priority,
+        }
+        if lora_name:
+            data["lora_name"] = lora_name
+        if lora_strength is not None:
+            data["lora_strength"] = lora_strength
+        if lora_items:
+            data["lora_items"] = lora_items
+
+        logger.info(
+            "Submitting ltx_video_flf2v task. Prompt: %s, Priority: %s",
+            prompt,
+            priority,
+        )
+        r = await self._request("POST", LTX_VIDEO_FLF2V_ENDPOINT, json=data)
+        return r.json()["task_id"]
+
+    @async_retry(max_retries=3)
+    async def submit_ltx_video_v2v_audio(
+        self,
+        task_id: str,
+        prompt: str,
+        video_path: str,
+        lora_name: str | None = None,
+        lora_strength: float | None = None,
+        lora_items: list[dict[str, Any]] | None = None,
+        width: int = 1280,
+        height: int = 704,
+        length: int = 5,
+        priority: int = 0,
+    ) -> str:
+        data = {
+            "task_id": task_id,
+            "video": video_path,
+            "prompt": prompt,
+            "width": width,
+            "height": height,
+            "length": length,
+            "extract_last_frame": True,
+            "priority": priority,
+        }
+        if lora_name:
+            data["lora_name"] = lora_name
+        if lora_strength is not None:
+            data["lora_strength"] = lora_strength
+        if lora_items:
+            data["lora_items"] = lora_items
+
+        logger.info(
+            "Submitting ltx_video_v2v_audio task. Prompt: %s, Priority: %s",
+            prompt,
+            priority,
+        )
+        r = await self._request("POST", LTX_VIDEO_V2V_AUDIO_ENDPOINT, json=data)
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)

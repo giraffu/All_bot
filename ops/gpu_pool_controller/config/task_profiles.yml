@@ -62,6 +62,8 @@ profiles:
     runtime_profile: ltx_video
     task_types:
       - ltx_video
+      - ltx_video_flf2v
+      - ltx_video_v2v_audio
     model_bundles:
       - ltx_video_baseline
     required_nodes:

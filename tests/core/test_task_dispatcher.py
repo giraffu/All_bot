@@ -731,6 +731,108 @@ async def test_ltx_video_submit_task_forwards_optional_lora_context(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_ltx_video_submit_task_routes_start_end_frames_to_flf2v(monkeypatch):
+    strategy = StrategyFactory.get_strategy("ltx_video")
+    submit_mock = AsyncMock(return_value="backend-task-id")
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_ltx_video_flf2v_task=submit_mock,
+    )
+
+    result = await strategy.submit_task(
+        "task-1",
+        {
+            "prompt": "cinematic transition",
+            "resolution": "1280x704",
+            "duration": 15,
+            "ltx_mode": "flf2v",
+            "saved_input_images": ["demo/start.png", "demo/end.png"],
+            "lora_items": [
+                {
+                    "name": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors",
+                    "strength": 0.8,
+                }
+            ],
+        },
+        priority=4,
+    )
+
+    assert result == "backend-task-id"
+    submit_mock.assert_awaited_once_with(
+        "task-1",
+        prompt="cinematic transition",
+        image_path="demo/start.png",
+        end_image_path="demo/end.png",
+        lora_name=None,
+        lora_strength=None,
+        lora_items=[
+            {
+                "name": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors",
+                "strength": 0.8,
+            }
+        ],
+        width=1280,
+        height=704,
+        length=15,
+        priority=4,
+    )
+
+
+@pytest.mark.asyncio
+async def test_ltx_video_submit_task_routes_input_video_to_v2v_audio(monkeypatch):
+    strategy = StrategyFactory.get_strategy("ltx_video")
+    submit_mock = AsyncMock(return_value="backend-task-id")
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_ltx_video_v2v_audio_task=submit_mock,
+    )
+
+    result = await strategy.submit_task(
+        "task-1",
+        {
+            "prompt": "say the line clearly",
+            "resolution": "1280x704",
+            "duration": "20s",
+            "ltx_mode": "v2v_audio",
+            "saved_input_images": ["demo/input.mp4"],
+            "video": "demo/input.mp4",
+        },
+        priority=9,
+    )
+
+    assert result == "backend-task-id"
+    submit_mock.assert_awaited_once_with(
+        "task-1",
+        prompt="say the line clearly",
+        video_path="demo/input.mp4",
+        lora_name=None,
+        lora_strength=None,
+        lora_items=None,
+        width=1280,
+        height=704,
+        length=20,
+        priority=9,
+    )
+
+
+def test_ltx_video_strategy_metadata_marks_last_frame_for_extension():
+    strategy = StrategyFactory.get_strategy("ltx_video")
+
+    metadata = strategy.get_metadata(
+        {
+            "resolution": "1280x704",
+            "duration": "10s",
+            "ltx_mode": "flf2v",
+            "saved_input_images": ["demo/start.png", "demo/end.png"],
+        }
+    )
+
+    assert metadata["saved_inputs"] == ["demo/start.png", "demo/end.png"]
+    assert metadata["ltx_mode"] == "flf2v"
+    assert metadata["extract_last_frame"] is True
+
+
+@pytest.mark.asyncio
 async def test_base_video_strategy_face_video_coerces_duration_string(monkeypatch):
     strategy = StrategyFactory.get_strategy("face_video_step1")
     submit_mock = AsyncMock(return_value="backend-face-video")

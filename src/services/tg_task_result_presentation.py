@@ -24,6 +24,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 WAN22_EXTEND_CALLBACK_PREFIX = "wan22v2_extend"
 WAN22_REGENERATE_CALLBACK_PREFIX = "wan22v2_regenerate"
 WAN22_STITCH_CALLBACK_PREFIX = "wan22v2_stitch_chain"
+LTX_EXTEND_CALLBACK_PREFIX = "ltx_extend"
 GALLERY_SUBMIT_CALLBACK_PREFIX = "submit_gallery_"
 
 
@@ -92,6 +93,13 @@ def _supports_wan22_stitch(task_type: str, result_meta: dict | None) -> bool:
     return _supports_wan22_regenerate(task_type, result_meta)
 
 
+def _supports_ltx_extension(task_type: str, result_meta: dict | None) -> bool:
+    return task_type == MODE_LTX_VIDEO and (
+        not isinstance(result_meta, dict)
+        or result_meta.get("extract_last_frame") is not False
+    )
+
+
 def _build_wan22_extension_button(
     task_id: str,
     result_meta: dict | None,
@@ -105,6 +113,16 @@ def _build_wan22_extension_button(
         "✨ 扩展生成",
         callback_data=build_task_bound_callback_data(
             WAN22_EXTEND_CALLBACK_PREFIX,
+            task_id,
+        ),
+    )
+
+
+def _build_ltx_extension_button(task_id: str) -> InlineKeyboardButton:
+    return InlineKeyboardButton(
+        "✨ 扩展生成",
+        callback_data=build_task_bound_callback_data(
+            LTX_EXTEND_CALLBACK_PREFIX,
             task_id,
         ),
     )
@@ -150,6 +168,8 @@ def _build_result_action_rows(
         )
         if extension_button is not None:
             primary_row.append(extension_button)
+    if _supports_ltx_extension(task_type, result_meta):
+        primary_row.append(_build_ltx_extension_button(task_id))
     if primary_row:
         rows.append(primary_row)
     if _supports_wan22_stitch(task_type, result_meta):

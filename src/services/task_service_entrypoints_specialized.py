@@ -45,7 +45,10 @@ async def process_ltx_video_task(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     prompt: str,
-    image_path: str,
+    image_path: str | None,
+    end_image_path: str | None = None,
+    video_path: str | None = None,
+    ltx_mode: str = "i2v",
     lora_name: str | None = None,
     lora_strength: float | None = None,
     lora_items: list[dict[str, Any]] | None = None,
@@ -61,6 +64,7 @@ async def process_ltx_video_task(
     mode = MODE_LTX_VIDEO
     resolution = context.user_data.get("ltx_video_resolution", "1280x704")
     duration = context.user_data.get("ltx_video_duration", "5s")
+    ltx_mode = ltx_mode or context.user_data.get("ltx_video_mode") or "i2v"
 
     runtime_state = BotTaskRuntimeState()
     notice = await get_acceleration_notice(
@@ -93,11 +97,36 @@ async def process_ltx_video_task(
             context, "task.status_cancelled_refunded", cost="{cost}"
         ),
     )
+    submit_images: list[str] = []
+    if ltx_mode == "v2v_audio":
+        submit_images = [video_path] if video_path else []
+    elif ltx_mode == "flf2v":
+        submit_images = [
+            path for path in [image_path, end_image_path] if path
+        ]
+    else:
+        submit_images = [image_path] if image_path else []
+
+    result_meta = {
+        "ltx_mode": ltx_mode,
+        "extract_last_frame": True,
+    }
+    if lora_items:
+        result_meta["lora_items"] = lora_items
+    elif lora_name:
+        result_meta["lora_name"] = lora_name
+        if lora_strength is not None:
+            result_meta["lora_strength"] = lora_strength
+
     inputs = build_task_inputs(
         prompt=prompt,
-        images=[image_path] if image_path else [],
+        images=submit_images,
         resolution=resolution,
         duration=duration,
+        ltx_mode=ltx_mode,
+        use_end_frame=ltx_mode == "flf2v",
+        video=video_path if ltx_mode == "v2v_audio" else None,
+        extract_last_frame=True,
         lora_name=lora_name,
         lora_strength=lora_strength,
         lora_items=lora_items,
@@ -132,10 +161,11 @@ async def process_ltx_video_task(
                 duration=duration,
             ),
             allow_contribute=allow_contribute,
+            result_meta=result_meta,
             billing_resolution=billing_args["billing_resolution"],
             requested_duration=billing_args["requested_duration"],
             cleanup=cleanup,
-            cleanup_paths=build_cleanup_paths([image_path]),
+            cleanup_paths=build_cleanup_paths([image_path, end_image_path, video_path]),
             runtime_state=runtime_state,
             task_label="ltx video task",
             failure_policy=BotTaskFailurePolicy(

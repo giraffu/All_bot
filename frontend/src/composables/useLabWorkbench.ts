@@ -246,9 +246,9 @@ export function useLabWorkbench() {
   ))
 
   const uploadButtonLabel = computed(() => (
-    (currentMode.value.id === 'wan22_video_v2' || currentMode.value.id === 'custom_video') && uploadedReferences.value.length === 0
+    (currentMode.value.id === 'wan22_video_v2' || currentMode.value.id === 'custom_video' || currentMode.value.id === 'ltx_video') && uploadedReferences.value.length === 0
       ? t('lab.workbench.add_start_frame')
-      : (currentMode.value.id === 'wan22_video_v2' || currentMode.value.id === 'custom_video') && uploadedReferences.value.length === 1
+      : (currentMode.value.id === 'wan22_video_v2' || currentMode.value.id === 'custom_video' || currentMode.value.id === 'ltx_video') && uploadedReferences.value.length === 1
         ? t('lab.workbench.add_end_frame')
         : currentMode.value.maxImages > 1 && uploadedReferences.value.length === 1
       ? t('lab.workbench.add_second_reference')
@@ -1031,6 +1031,13 @@ export function useLabWorkbench() {
         ? Number(duration.value)
         : undefined,
       loraItems: currentMode.value.id === 'ltx_video' ? ltxLoraItems.value : undefined,
+      extraInputs: currentMode.value.id === 'ltx_video'
+        ? {
+            ltx_mode: uploadedReferences.value.length >= 2 ? 'flf2v' : 'i2v',
+            use_end_frame: uploadedReferences.value.length >= 2,
+            extract_last_frame: true,
+          }
+        : undefined,
       normalizeEditLoraTask: currentMode.value.id === 'edit',
       isTemplate: isTemplateApplied.value,
       sourcePostId: templateSourcePostId.value,

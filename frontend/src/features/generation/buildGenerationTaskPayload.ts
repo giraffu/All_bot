@@ -100,7 +100,11 @@ export function buildGenerationTaskPayload(
   }
 
   if (extraInputs) {
-    Object.assign(payload.inputs, extraInputs)
+    Object.entries(extraInputs).forEach(([key, value]) => {
+      if (value !== undefined) {
+        payload.inputs[key] = value
+      }
+    })
   }
 
   return payload

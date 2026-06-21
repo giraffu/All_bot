@@ -39,6 +39,8 @@ assignments:
     profile_id: ltx_video
     task_types:
       - ltx_video
+      - ltx_video_flf2v
+      - ltx_video_v2v_audio
       - image_to_video
     max_parallel_tasks: 2
     notes: Retired on 2026-06-20 after gpu-177 AIO-only cleanup; local agent/container and /data/comfy legacy runtime were removed.

@@ -2,12 +2,20 @@ from typing import Any
 
 RESULT_ASSET_KEYS = ("images", "gifs", "videos")
 WAN22_AIO_VIDEO_TASK_TYPES = {"wan22_video_v2", "image_to_video"}
+LTX_VIDEO_TASK_TYPES = {
+    "ltx_video",
+    "ltx_video_flf2v",
+    "ltx_video_v2v_audio",
+}
 SCAIL2_VIDEO_TASK_TYPES = {
     "scail2_action_transfer",
     "scail2_video_replacement",
     "scail2_face_swap_v2",
 }
-VIDEO_PRIMARY_TASK_TYPES = WAN22_AIO_VIDEO_TASK_TYPES | SCAIL2_VIDEO_TASK_TYPES
+LAST_FRAME_EXTRA_OUTPUT_TASK_TYPES = WAN22_AIO_VIDEO_TASK_TYPES | LTX_VIDEO_TASK_TYPES
+VIDEO_PRIMARY_TASK_TYPES = (
+    WAN22_AIO_VIDEO_TASK_TYPES | LTX_VIDEO_TASK_TYPES | SCAIL2_VIDEO_TASK_TYPES
+)
 
 
 def coerce_first_mapping(value: Any) -> dict[str, Any]:
@@ -120,7 +128,12 @@ def resolve_history_extra_output_assets(
     task_id: str | None,
     task_type: str | None = None,
 ) -> dict[str, dict[str, Any]]:
-    if task_type not in WAN22_AIO_VIDEO_TASK_TYPES or not history or not prompt_id or not task_id:
+    if (
+        task_type not in LAST_FRAME_EXTRA_OUTPUT_TASK_TYPES
+        or not history
+        or not prompt_id
+        or not task_id
+    ):
         return {}
     prompt_history = history.get(prompt_id)
     if not isinstance(prompt_history, dict):

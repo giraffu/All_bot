@@ -32,6 +32,8 @@ class TaskType(str, Enum):
     I2I_PRO = "i2i_pro"
     I2I_DRAW = "i2i_draw"
     LTX_VIDEO = "ltx_video"
+    LTX_VIDEO_FLF2V = "ltx_video_flf2v"
+    LTX_VIDEO_V2V_AUDIO = "ltx_video_v2v_audio"
     WAN22_VIDEO_V2 = "wan22_video_v2"
     SCAIL2_ACTION_TRANSFER = SCAIL2_ACTION_TRANSFER_TASK_TYPE
     SCAIL2_VIDEO_REPLACEMENT = SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE
@@ -220,6 +222,26 @@ class LtxVideoRequest(BaseModel):
     length: int = 5
     width: int = 704
     height: int = 1280
+    priority: int = 0
+
+
+class LtxVideoFlf2VRequest(LtxVideoRequest):
+    end_image: str
+    use_end_frame: bool = True
+    extract_last_frame: bool = True
+
+
+class LtxVideoV2VAudioRequest(BaseModel):
+    task_id: str
+    video: str
+    prompt: str
+    lora_name: Optional[str] = ""
+    lora_strength: Optional[float] = None
+    lora_items: Optional[list[LoraItem]] = None
+    length: int = 5
+    width: int = 704
+    height: int = 1280
+    extract_last_frame: bool = True
     priority: int = 0
 
 

@@ -35,6 +35,62 @@ class ImageService:
             priority=priority,
         )
 
+    async def submit_ltx_video_flf2v_task(
+        self,
+        task_id: str,
+        prompt: str,
+        image_path: str,
+        end_image_path: str,
+        lora_name: str | None = None,
+        lora_strength: float | None = None,
+        lora_items: list[dict[str, Any]] | None = None,
+        width: int = 1280,
+        height: int = 704,
+        length: int = 5,
+        priority: int = 0,
+    ) -> str:
+        """Submit LTX first/last-frame video task."""
+        return await api_client.submit_ltx_video_flf2v(
+            task_id,
+            prompt,
+            image_path,
+            end_image_path,
+            lora_name=lora_name,
+            lora_strength=lora_strength,
+            lora_items=lora_items,
+            width=width,
+            height=height,
+            length=length,
+            priority=priority,
+        )
+
+    async def submit_ltx_video_v2v_audio_task(
+        self,
+        task_id: str,
+        prompt: str,
+        video_path: str,
+        lora_name: str | None = None,
+        lora_strength: float | None = None,
+        lora_items: list[dict[str, Any]] | None = None,
+        width: int = 1280,
+        height: int = 704,
+        length: int = 5,
+        priority: int = 0,
+    ) -> str:
+        """Submit LTX video+text model-audio task."""
+        return await api_client.submit_ltx_video_v2v_audio(
+            task_id,
+            prompt,
+            video_path,
+            lora_name=lora_name,
+            lora_strength=lora_strength,
+            lora_items=lora_items,
+            width=width,
+            height=height,
+            length=length,
+            priority=priority,
+        )
+
     async def submit_wan22_video_v2_task(
         self,
         task_id: str,
