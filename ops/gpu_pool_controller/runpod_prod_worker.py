@@ -4,9 +4,6 @@ import json
 import os
 import sys
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
@@ -23,7 +20,6 @@ from .providers.runpod import (
     RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES,
     RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
     RUNPOD_PROD_AGENT_ID,
-    RUNPOD_PROD_BUCKET,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
     RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
     RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE,
@@ -45,13 +41,17 @@ from .providers.runpod import (
     redact_payload,
     redact_text,
 )
-from .runpod_canary import (
-    SCAIL2_CANARY_NEGATIVE_PROMPT,
-    SCAIL2_SAMPLE_MOTION_VIDEO_URL,
-    SCAIL2_SAMPLE_REFERENCE_URL,
-    result_url_path,
-    write_canary_png,
+from .runpod_prod_worker_canary import (
+    RunPodProdWorkerCanaryAssets,
+    RunPodProdWorkerCanaryCaseBuilder,
+    RunPodProdWorkerCanaryConfig,
+    RunPodProdWorkerCanaryExecutor,
 )
+from .runpod_prod_worker_control import (
+    RunPodProdWorkerControlClient,
+    RunPodProdWorkerControlConfig,
+)
+from .runpod_prod_worker_http import RunPodProdWorkerHttpClient
 from .runpod_prod_worker_planner import (
     RunPodProdWorkerPlanError,
     RunPodProdWorkerPlanner,
@@ -71,14 +71,8 @@ PROD_IMAGE_TO_VIDEO_TASK_TYPE = "image_to_video"
 PROD_WAN22_VIDEO_V2_TASK_TYPE = "wan22_video_v2"
 PROD_I2I_PRO_TASK_TYPE = "i2i_pro"
 PROD_SCAIL2_TASK_TYPE = "scail2"
-PROD_SCAIL2_ACTION_TRANSFER_TASK_TYPE = "scail2_action_transfer"
-PROD_SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE = "scail2_video_replacement"
-PROD_TXT2IMG_PUBLIC_TASK_TYPE = "txt2img"
-PROD_TXT2IMG_EXECUTION_TASK_TYPE = "t2i-pornmaster-turbo"
-PROD_FACE_SWAP_TASK_TYPE = "face_swap"
 PROD_WORKER_DEFAULT_HEARTBEAT_TIMEOUT_SECONDS = 3600.0
 HEALTHY_WORKER_STATUSES = {"idle", "running"}
-TERMINAL_TASK_STATUSES = {"done", "error", "cancelled"}
 
 
 class RunPodProdWorkerError(ValueError):
@@ -345,11 +339,77 @@ class RunPodProdWorkerRunner:
         self._emit_func = emit_func or (
             lambda message: print(message, file=sys.stderr, flush=True)
         )
+        self._http_client = RunPodProdWorkerHttpClient(
+            error_type=RunPodProdWorkerError
+        )
 
     def _planner(self) -> RunPodProdWorkerPlanner:
         return RunPodProdWorkerPlanner(
             max_manual_slots=self.provider.settings.prod_max_manual_slots,
             profile=self.options.profile,
+        )
+
+    def _control_config(self) -> RunPodProdWorkerControlConfig:
+        return RunPodProdWorkerControlConfig(
+            central_url=self.options.central_url,
+            web_api_url=self.options.web_api_url,
+            web_user_id=self.options.web_user_id,
+            web_pwd_ver=self.options.web_pwd_ver,
+            web_bearer_token=self.options.web_bearer_token,
+            agent_token=self.options.agent_token,
+        )
+
+    def _control_client(self) -> RunPodProdWorkerControlClient:
+        return RunPodProdWorkerControlClient(
+            self._control_config(),
+            http_json_func=self._http_json,
+            error_type=RunPodProdWorkerError,
+        )
+
+    def _canary_config(self) -> RunPodProdWorkerCanaryConfig:
+        return RunPodProdWorkerCanaryConfig(
+            profile=self.options.profile,
+            task_type=self.options.task_type,
+            agent_id=self.options.agent_id,
+            web_api_url=self.options.web_api_url,
+            central_url=self.options.central_url,
+            input_object_key=self.options.input_object_key,
+            scail2_reference_object_key=self.options.scail2_reference_object_key,
+            scail2_motion_video_object_key=self.options.scail2_motion_video_object_key,
+            output_dir=self.options.output_dir,
+            download_results_dir=self.options.download_results_dir,
+            task_timeout_seconds=self.options.task_timeout_seconds,
+            task_poll_interval_seconds=self.options.task_poll_interval_seconds,
+            prompt=self.options.prompt,
+            negative_prompt=self.options.negative_prompt,
+        )
+
+    def _canary_cases(self) -> RunPodProdWorkerCanaryCaseBuilder:
+        return RunPodProdWorkerCanaryCaseBuilder(
+            self._canary_config(),
+            error_type=RunPodProdWorkerError,
+        )
+
+    def _canary_assets(self) -> RunPodProdWorkerCanaryAssets:
+        return RunPodProdWorkerCanaryAssets(
+            self._canary_config(),
+            http_json_func=self._http_json,
+            http_request_func=self._http_request,
+            web_auth_headers_func=self._web_auth_headers,
+            phase_func=self._phase,
+            error_type=RunPodProdWorkerError,
+        )
+
+    def _canary_executor(self) -> RunPodProdWorkerCanaryExecutor:
+        return RunPodProdWorkerCanaryExecutor(
+            self._canary_config(),
+            http_json_func=self._http_json,
+            http_request_func=self._http_request,
+            web_auth_headers_func=self._web_auth_headers,
+            fetch_workers_func=self._fetch_workers,
+            sleep_func=self._sleep,
+            phase_func=self._phase,
+            error_type=RunPodProdWorkerError,
         )
 
     def run(self) -> dict[str, Any]:
@@ -751,32 +811,8 @@ class RunPodProdWorkerRunner:
 
     def _run_canary(self, summary: dict[str, Any]) -> None:
         if not self.options.execute:
-            if self.options.profile == "i2i_pro":
-                task_summary = "submit prod Web i2i_pro, txt2img, and face_swap tasks serially"
-            elif self.options.profile == "scail2":
-                task_summary = (
-                    "submit prod Web scail2_action_transfer and "
-                    "scail2_video_replacement 5s tasks serially"
-                )
-            else:
-                task_summary = (
-                    f"submit one prod Web {self.options.task_type} task "
-                    "as internal user_id=3"
-                )
             summary["ok"] = True
-            summary["would_execute"] = [
-                f"verify {self.options.agent_id} heartbeat in prod Central",
-                f"temporarily set {self.options.agent_id} control to enabled",
-                (
-                    "upload or reuse one reference image and one motion video in "
-                    "user-data-prod"
-                    if self.options.profile == "scail2"
-                    else "upload or reuse one non-sensitive PNG in user-data-prod"
-                ),
-                task_summary,
-                "download the result to runpod_canary_results/prod/<date>/",
-                f"restore {self.options.agent_id} control to disabled",
-            ]
+            summary["would_execute"] = self._canary_cases().dry_run_steps()
             return
         self._require_agent_token()
         self._run_web_preflight(summary)
@@ -1677,28 +1713,10 @@ class RunPodProdWorkerRunner:
         )
 
     def _resolve_canary_image(self, summary: dict[str, Any]) -> str:
-        object_key = self.options.input_object_key.strip()
-        if object_key:
-            self._phase(
-                summary, "reuse_prod_test_image", "ok", {"object_key": object_key}
-            )
-            return object_key
-        return self._upload_canary_image(summary)
+        return self._canary_assets().resolve_canary_image(summary)
 
     def _upload_canary_image(self, summary: dict[str, Any]) -> str:
-        self._phase(summary, "upload_prod_test_image", "running")
-        self.options.output_dir.mkdir(parents=True, exist_ok=True)
-        image_path = (
-            self.options.output_dir / f"runpod_prod_canary_{int(time.time())}.png"
-        )
-        write_canary_png(image_path)
-        object_key = self._upload_bytes_to_user_data(
-            filename=image_path.name,
-            content_type="image/png",
-            body=image_path.read_bytes(),
-        )
-        self._phase(summary, "upload_prod_test_image", "ok", {"object_key": object_key})
-        return object_key
+        return self._canary_assets().upload_canary_image(summary)
 
     def _upload_bytes_to_user_data(
         self,
@@ -1707,542 +1725,73 @@ class RunPodProdWorkerRunner:
         content_type: str,
         body: bytes,
     ) -> str:
-        presign = self._http_json(
-            "GET",
-            _join_url(self.options.web_api_url, "storage", "presigned-url"),
-            params={"filename": filename, "content_type": content_type},
-            headers=self._web_auth_headers(),
-        )
-        object_key = str(presign.get("object_key") or "")
-        upload_url = str(presign.get("upload_url") or "")
-        if not object_key or not upload_url:
-            raise RunPodProdWorkerError(
-                "presigned upload response missing object_key/upload_url"
-            )
-        self._http_request(
-            "PUT",
-            upload_url,
+        return self._canary_assets().upload_bytes_to_user_data(
+            filename=filename,
+            content_type=content_type,
             body=body,
-            headers={"Content-Type": content_type},
-            expected_statuses=(200, 201, 204),
         )
-        return object_key
 
     def _resolve_scail2_inputs(self, summary: dict[str, Any]) -> dict[str, str]:
-        reference_key = (
-            str(self.options.scail2_reference_object_key or "").strip()
-            or str(self.options.input_object_key or "").strip()
-        )
-        motion_key = str(self.options.scail2_motion_video_object_key or "").strip()
-        reused: dict[str, str] = {}
-        if reference_key:
-            reused["reference_image_key"] = reference_key
-        if motion_key:
-            reused["motion_video_key"] = motion_key
-        if reused:
-            self._phase(summary, "reuse_prod_scail2_inputs", "ok", reused)
-        if not reference_key:
-            self._phase(summary, "upload_prod_scail2_reference_image", "running")
-            reference_bytes = self._download_scail2_sample(
-                SCAIL2_SAMPLE_REFERENCE_URL,
-                label="reference image",
-            )
-            reference_key = self._upload_bytes_to_user_data(
-                filename=f"prod_scail2_reference_{int(time.time())}.jpg",
-                content_type="image/jpeg",
-                body=reference_bytes,
-            )
-            self._phase(
-                summary,
-                "upload_prod_scail2_reference_image",
-                "ok",
-                {"object_key": reference_key, "bytes": len(reference_bytes)},
-            )
-        if not motion_key:
-            self._phase(summary, "upload_prod_scail2_motion_video", "running")
-            motion_bytes = self._download_scail2_sample(
-                SCAIL2_SAMPLE_MOTION_VIDEO_URL,
-                label="motion video",
-            )
-            motion_key = self._upload_bytes_to_user_data(
-                filename=f"prod_scail2_motion_{int(time.time())}.mp4",
-                content_type="video/mp4",
-                body=motion_bytes,
-            )
-            self._phase(
-                summary,
-                "upload_prod_scail2_motion_video",
-                "ok",
-                {"object_key": motion_key, "bytes": len(motion_bytes)},
-            )
-        return {
-            "reference_image_key": reference_key,
-            "motion_video_key": motion_key,
-        }
+        return self._canary_assets().resolve_scail2_inputs(summary)
 
     def _download_scail2_sample(self, url: str, *, label: str) -> bytes:
-        response = self._http_request(
-            "GET",
-            url,
-            headers={"User-Agent": "AllBot-RunPod-Prod-SCAIL2-Canary/1.0"},
-            expected_statuses=(200,),
-        )
-        raw = response["raw"]
-        if not raw:
-            raise RunPodProdWorkerError(
-                f"SCAIL-2 prod canary sample {label} download returned empty"
-            )
-        return raw
+        return self._canary_assets().download_scail2_sample(url, label=label)
 
     def _scail2_task_cases(self, test_input: dict[str, str]) -> list[dict[str, Any]]:
-        reference_key = str(test_input.get("reference_image_key") or "")
-        motion_key = str(test_input.get("motion_video_key") or "")
-        if not reference_key or not motion_key:
-            raise RunPodProdWorkerError(
-                "SCAIL-2 prod canary requires reference_image_key and motion_video_key"
-            )
-        base_inputs = {
-            "images": [reference_key, motion_key],
-            "image": reference_key,
-            "video": motion_key,
-            "resolution": "512x896",
-            "duration": 5,
-            "seed": 20260617,
-        }
-        prompt = self.options.prompt or (
-            "cinematic action transfer, consistent character identity, natural motion"
-        )
-        negative_prompt = self.options.negative_prompt or SCAIL2_CANARY_NEGATIVE_PROMPT
-        return [
-            {
-                "label": "prod_scail2_action_transfer_5s",
-                "expected_central_task_type": PROD_SCAIL2_ACTION_TRANSFER_TASK_TYPE,
-                "payload": {
-                    "task_type": PROD_SCAIL2_ACTION_TRANSFER_TASK_TYPE,
-                    "inputs": dict(base_inputs),
-                    "prompt": prompt,
-                    "negative_prompt": negative_prompt,
-                    "priority": 0,
-                },
-            },
-            {
-                "label": "prod_scail2_video_replacement_5s",
-                "expected_central_task_type": PROD_SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
-                "payload": {
-                    "task_type": PROD_SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
-                    "inputs": dict(base_inputs),
-                    "prompt": prompt,
-                    "negative_prompt": negative_prompt,
-                    "priority": 0,
-                },
-            },
-        ]
+        return self._canary_cases().scail2_task_cases(test_input)
 
     def _i2i_pro_task_cases(self, image_object_key: str) -> list[dict[str, Any]]:
-        return [
-            {
-                "label": "prod_i2i_pro_canary",
-                "expected_central_task_type": PROD_I2I_PRO_TASK_TYPE,
-                "payload": {
-                    "task_type": PROD_I2I_PRO_TASK_TYPE,
-                    "inputs": {
-                        "images": [image_object_key],
-                        "image": image_object_key,
-                        "seed": 20260614,
-                    },
-                    "prompt": self.options.prompt,
-                    "negative_prompt": self.options.negative_prompt,
-                    "priority": 0,
-                },
-            },
-            {
-                "label": "prod_txt2img_canary",
-                "expected_central_task_type": PROD_TXT2IMG_EXECUTION_TASK_TYPE,
-                "payload": {
-                    "task_type": PROD_TXT2IMG_PUBLIC_TASK_TYPE,
-                    "inputs": {"seed": 20260614},
-                    "prompt": self.options.prompt,
-                    "negative_prompt": self.options.negative_prompt,
-                    "priority": 0,
-                },
-            },
-            {
-                "label": "prod_face_swap_canary",
-                "expected_central_task_type": PROD_FACE_SWAP_TASK_TYPE,
-                "payload": {
-                    "task_type": PROD_FACE_SWAP_TASK_TYPE,
-                    "inputs": {
-                        "images": [image_object_key, image_object_key],
-                        "target_image": image_object_key,
-                        "face_image": image_object_key,
-                    },
-                    "prompt": self.options.prompt,
-                    "negative_prompt": self.options.negative_prompt,
-                    "priority": 0,
-                },
-            },
-        ]
+        return self._canary_cases().i2i_pro_task_cases(image_object_key)
 
     def _run_i2i_pro_task_case(
         self,
         task_case: dict[str, Any],
         summary: dict[str, Any],
     ) -> dict[str, Any]:
-        label = str(task_case["label"])
-        expected_task_type = str(task_case["expected_central_task_type"])
-        self._phase(summary, f"task_{label}", "running")
-        submit_payload = self._http_json(
-            "POST",
-            _join_url(self.options.web_api_url, "tasks", "generate"),
-            json_body=task_case["payload"],
-            headers=self._web_auth_headers(),
-        )
-        task_id = str(submit_payload.get("task_id") or "")
-        if not task_id:
-            raise RunPodProdWorkerError(f"{label}: missing task_id in Web response")
-        final_status, pop_evidence = self._wait_task_done(task_id)
-        task_result: dict[str, Any] = {
-            "label": label,
-            "registry_task_id": task_id,
-            "task_type": task_case["payload"]["task_type"],
-            "expected_central_task_type": expected_task_type,
-            "central_status": final_status.get("status"),
-            "central_task_type": final_status.get("task_type"),
-            "pop_evidence": pop_evidence,
-        }
-        if str(final_status.get("task_type") or "") != expected_task_type:
-            raise RunPodProdWorkerError(
-                f"{label}: Central task_type is {final_status.get('task_type')}, "
-                f"expected {expected_task_type}"
-            )
-        if final_status.get("status") != "done":
-            raise RunPodProdWorkerError(
-                f"{label}: Central terminal status is {final_status.get('status')}"
-            )
-        result_payload = self._wait_web_result(task_id)
-        result_url = str(result_payload.get("result_url") or "")
-        task_result["web_result_status"] = result_payload.get("status")
-        task_result["result_path"] = result_url_path(result_url)
-        if result_payload.get("status") != "success" or not result_url:
-            raise RunPodProdWorkerError(f"{label}: Web result did not become success")
-        task_result.update(
-            self._download_result(
-                task_id=task_id,
-                result_url=result_url,
-                artifact_prefix=label,
-            )
-        )
-        self._phase(summary, f"task_{label}", "ok", task_result)
-        return task_result
+        return self._canary_executor().run_task_case(task_case, summary)
 
     def _run_scail2_task_case(
         self,
         task_case: dict[str, Any],
         summary: dict[str, Any],
     ) -> dict[str, Any]:
-        label = str(task_case["label"])
-        expected_task_type = str(task_case["expected_central_task_type"])
-        self._phase(summary, f"task_{label}", "running")
-        submit_payload = self._http_json(
-            "POST",
-            _join_url(self.options.web_api_url, "tasks", "generate"),
-            json_body=task_case["payload"],
-            headers=self._web_auth_headers(),
-        )
-        task_id = str(submit_payload.get("task_id") or "")
-        if not task_id:
-            raise RunPodProdWorkerError(f"{label}: missing task_id in Web response")
-        final_status, pop_evidence = self._wait_task_done(task_id)
-        task_result: dict[str, Any] = {
-            "label": label,
-            "registry_task_id": task_id,
-            "task_type": task_case["payload"]["task_type"],
-            "expected_central_task_type": expected_task_type,
-            "central_status": final_status.get("status"),
-            "central_task_type": final_status.get("task_type"),
-            "pop_evidence": pop_evidence,
-        }
-        if str(final_status.get("task_type") or "") != expected_task_type:
-            raise RunPodProdWorkerError(
-                f"{label}: Central task_type is {final_status.get('task_type')}, "
-                f"expected {expected_task_type}"
-            )
-        if final_status.get("status") != "done":
-            raise RunPodProdWorkerError(
-                f"{label}: Central terminal status is {final_status.get('status')}"
-            )
-        result_payload = self._wait_web_result(task_id)
-        result_url = str(result_payload.get("result_url") or "")
-        task_result["web_result_status"] = result_payload.get("status")
-        task_result["result_path"] = result_url_path(result_url)
-        if result_payload.get("status") != "success" or not result_url:
-            raise RunPodProdWorkerError(f"{label}: Web result did not become success")
-        task_result.update(
-            self._download_video_result(
-                task_id=task_id,
-                result_url=result_url,
-                artifact_prefix=label,
-            )
-        )
-        self._phase(summary, f"task_{label}", "ok", task_result)
-        return task_result
+        return self._canary_executor().run_task_case(task_case, summary)
 
     def _run_img2img_task(
         self,
         image_object_key: str,
         summary: dict[str, Any],
     ) -> dict[str, Any]:
-        self._phase(summary, "task_prod_img2img_canary", "running")
-        payload = {
-            "task_type": PROD_TASK_TYPE,
-            "inputs": {
-                "images": [image_object_key],
-                "image": image_object_key,
-                "num_inference_steps": 6,
-                "guidance_scale": 1.0,
-                "seed": 20260612,
-            },
-            "prompt": self.options.prompt,
-            "negative_prompt": self.options.negative_prompt,
-            "priority": 0,
-        }
-        submit_payload = self._http_json(
-            "POST",
-            _join_url(self.options.web_api_url, "tasks", "generate"),
-            json_body=payload,
-            headers=self._web_auth_headers(),
+        return self._canary_executor().run_task_case(
+            self._canary_cases().img2img_task_case(image_object_key),
+            summary,
         )
-        task_id = str(submit_payload.get("task_id") or "")
-        if not task_id:
-            raise RunPodProdWorkerError("missing task_id in Web response")
-        final_status, pop_evidence = self._wait_task_done(task_id)
-        task_result: dict[str, Any] = {
-            "label": "prod_img2img_canary",
-            "registry_task_id": task_id,
-            "task_type": PROD_TASK_TYPE,
-            "central_status": final_status.get("status"),
-            "central_task_type": final_status.get("task_type"),
-            "pop_evidence": pop_evidence,
-        }
-        if final_status.get("status") != "done":
-            raise RunPodProdWorkerError(
-                f"prod canary Central terminal status is {final_status.get('status')}"
-            )
-        result_payload = self._wait_web_result(task_id)
-        result_url = str(result_payload.get("result_url") or "")
-        task_result["web_result_status"] = result_payload.get("status")
-        task_result["result_path"] = result_url_path(result_url)
-        if result_payload.get("status") != "success" or not result_url:
-            raise RunPodProdWorkerError("prod canary Web result did not become success")
-        task_result.update(
-            self._download_result(task_id=task_id, result_url=result_url)
-        )
-        self._phase(summary, "task_prod_img2img_canary", "ok", task_result)
-        return task_result
 
     def _run_image_to_video_task(
         self,
         image_object_key: str,
         summary: dict[str, Any],
     ) -> dict[str, Any]:
-        self._phase(summary, "task_prod_image_to_video_canary", "running")
-        payload = {
-            "task_type": PROD_IMAGE_TO_VIDEO_TASK_TYPE,
-            "inputs": {
-                "images": [image_object_key],
-                "image": image_object_key,
-                "resolution": "preview",
-                "resolution_preset": "preview",
-                "duration": 5,
-                "duration_seconds": 5,
-                "extract_last_frame": True,
-                "seed": 20260613,
-                "negative_prompt": self.options.negative_prompt,
-                "wan22_model_profile": "legacy_image_to_video",
-            },
-            "prompt": self.options.prompt,
-            "negative_prompt": self.options.negative_prompt,
-            "priority": 0,
-        }
-        submit_payload = self._http_json(
-            "POST",
-            _join_url(self.options.web_api_url, "tasks", "generate"),
-            json_body=payload,
-            headers=self._web_auth_headers(),
+        return self._canary_executor().run_task_case(
+            self._canary_cases().image_to_video_task_case(image_object_key),
+            summary,
         )
-        task_id = str(submit_payload.get("task_id") or "")
-        if not task_id:
-            raise RunPodProdWorkerError("missing task_id in Web response")
-        final_status, pop_evidence = self._wait_task_done(task_id)
-        task_result: dict[str, Any] = {
-            "label": "prod_image_to_video_canary",
-            "registry_task_id": task_id,
-            "task_type": PROD_IMAGE_TO_VIDEO_TASK_TYPE,
-            "central_status": final_status.get("status"),
-            "central_task_type": final_status.get("task_type"),
-            "pop_evidence": pop_evidence,
-        }
-        if str(final_status.get("task_type") or "") != PROD_IMAGE_TO_VIDEO_TASK_TYPE:
-            raise RunPodProdWorkerError(
-                "prod canary Central task_type is "
-                f"{final_status.get('task_type')}, expected {PROD_IMAGE_TO_VIDEO_TASK_TYPE}"
-            )
-        if final_status.get("status") != "done":
-            raise RunPodProdWorkerError(
-                f"prod canary Central terminal status is {final_status.get('status')}"
-            )
-        result_payload = self._wait_web_result(task_id)
-        result_url = str(result_payload.get("result_url") or "")
-        task_result["web_result_status"] = result_payload.get("status")
-        task_result["result_path"] = result_url_path(result_url)
-        if result_payload.get("status") != "success" or not result_url:
-            raise RunPodProdWorkerError("prod canary Web result did not become success")
-        task_result.update(
-            self._download_video_result(
-                task_id=task_id,
-                result_url=result_url,
-                artifact_prefix="prod_image_to_video_canary",
-            )
-        )
-        task_result.update(
-            self._download_last_frame(
-                task_id=task_id,
-                result_payload=result_payload,
-                artifact_prefix="prod_image_to_video_canary",
-            )
-        )
-        self._phase(summary, "task_prod_image_to_video_canary", "ok", task_result)
-        return task_result
 
     def _run_wan22_video_v2_task(
         self,
         image_object_key: str,
         summary: dict[str, Any],
     ) -> dict[str, Any]:
-        self._phase(summary, "task_prod_wan22_video_v2_canary", "running")
-        payload = {
-            "task_type": PROD_WAN22_VIDEO_V2_TASK_TYPE,
-            "inputs": {
-                "images": [image_object_key],
-                "image": image_object_key,
-                "resolution": "preview",
-                "resolution_preset": "preview",
-                "duration": 5,
-                "duration_seconds": 5,
-                "extract_last_frame": True,
-                "seed": 20260613,
-                "negative_prompt": self.options.negative_prompt,
-                "wan22_model_profile": "wan22_video_v2",
-            },
-            "prompt": self.options.prompt,
-            "negative_prompt": self.options.negative_prompt,
-            "priority": 0,
-        }
-        submit_payload = self._http_json(
-            "POST",
-            _join_url(self.options.web_api_url, "tasks", "generate"),
-            json_body=payload,
-            headers=self._web_auth_headers(),
+        return self._canary_executor().run_task_case(
+            self._canary_cases().wan22_video_v2_task_case(image_object_key),
+            summary,
         )
-        task_id = str(submit_payload.get("task_id") or "")
-        if not task_id:
-            raise RunPodProdWorkerError("missing task_id in Web response")
-        final_status, pop_evidence = self._wait_task_done(task_id)
-        task_result: dict[str, Any] = {
-            "label": "prod_wan22_video_v2_canary",
-            "registry_task_id": task_id,
-            "task_type": PROD_WAN22_VIDEO_V2_TASK_TYPE,
-            "central_status": final_status.get("status"),
-            "central_task_type": final_status.get("task_type"),
-            "pop_evidence": pop_evidence,
-        }
-        if str(final_status.get("task_type") or "") != PROD_WAN22_VIDEO_V2_TASK_TYPE:
-            raise RunPodProdWorkerError(
-                "prod canary Central task_type is "
-                f"{final_status.get('task_type')}, expected {PROD_WAN22_VIDEO_V2_TASK_TYPE}"
-            )
-        if final_status.get("status") != "done":
-            raise RunPodProdWorkerError(
-                f"prod canary Central terminal status is {final_status.get('status')}"
-            )
-        result_payload = self._wait_web_result(task_id)
-        result_url = str(result_payload.get("result_url") or "")
-        task_result["web_result_status"] = result_payload.get("status")
-        task_result["result_path"] = result_url_path(result_url)
-        if result_payload.get("status") != "success" or not result_url:
-            raise RunPodProdWorkerError("prod canary Web result did not become success")
-        task_result.update(
-            self._download_video_result(
-                task_id=task_id,
-                result_url=result_url,
-                artifact_prefix="prod_wan22_video_v2_canary",
-            )
-        )
-        task_result.update(
-            self._download_last_frame(
-                task_id=task_id,
-                result_payload=result_payload,
-                artifact_prefix="prod_wan22_video_v2_canary",
-            )
-        )
-        self._phase(summary, "task_prod_wan22_video_v2_canary", "ok", task_result)
-        return task_result
 
     def _wait_task_done(self, task_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
-        deadline = time.monotonic() + self.options.task_timeout_seconds
-        last_status: dict[str, Any] = {}
-        pop_evidence: dict[str, Any] = {
-            "observed": False,
-            "expected_agent_id": self.options.agent_id,
-            "agent_id": "",
-        }
-        while time.monotonic() <= deadline:
-            status_payload = self._http_json(
-                "GET",
-                _join_url(self.options.central_url, "status", task_id),
-                allow_statuses=(404,),
-            )
-            if status_payload.get("_status") != 404:
-                last_status = status_payload
-            workers = self._fetch_workers()
-            current_worker = _find_current_task_worker(workers, task_id)
-            if current_worker:
-                pop_evidence = {
-                    "observed": True,
-                    "expected_agent_id": self.options.agent_id,
-                    "agent_id": current_worker.get("agent_id"),
-                    "current_task_id": current_worker.get("current_task_id"),
-                    "current_task_type": current_worker.get("current_task_type"),
-                    "status": current_worker.get("status"),
-                }
-            status = str(last_status.get("status") or "")
-            if status in TERMINAL_TASK_STATUSES:
-                if not pop_evidence["observed"]:
-                    pop_evidence["note"] = "not_observed_during_poll"
-                return last_status, pop_evidence
-            self._sleep(self.options.task_poll_interval_seconds)
-        raise RunPodProdWorkerError(
-            f"prod canary task timeout: {task_id} last_status="
-            + json.dumps(redact_payload(last_status), ensure_ascii=False)
-        )
+        return self._canary_executor().wait_task_done(task_id)
 
     def _wait_web_result(self, task_id: str) -> dict[str, Any]:
-        deadline = time.monotonic() + min(self.options.task_timeout_seconds, 300.0)
-        last_result: dict[str, Any] = {}
-        while time.monotonic() <= deadline:
-            payload = self._http_json(
-                "GET",
-                _join_url(self.options.web_api_url, "tasks", task_id, "result"),
-                headers=self._web_auth_headers(),
-            )
-            last_result = payload
-            if payload.get("status") == "success" and payload.get("result_url"):
-                return payload
-            self._sleep(self.options.task_poll_interval_seconds)
-        raise RunPodProdWorkerError(
-            f"prod canary web result timeout: {task_id} last_result="
-            + json.dumps(redact_payload(last_result), ensure_ascii=False)
-        )
+        return self._canary_executor().wait_web_result(task_id)
 
     def _download_result(
         self,
@@ -2251,14 +1800,11 @@ class RunPodProdWorkerRunner:
         result_url: str,
         artifact_prefix: str = "prod_img2img_canary",
     ) -> dict[str, str]:
-        download_dir = self.options.download_results_dir
-        download_dir.mkdir(parents=True, exist_ok=True)
-        parsed = urllib.parse.urlsplit(result_url)
-        suffix = Path(parsed.path).suffix or ".bin"
-        target = download_dir / f"{artifact_prefix}_{task_id}{suffix}"
-        raw, method = self._fetch_result_bytes(result_url)
-        target.write_bytes(raw)
-        return {"downloaded_file": str(target), "download_method": method}
+        return self._canary_executor().download_result(
+            task_id=task_id,
+            result_url=result_url,
+            artifact_prefix=artifact_prefix,
+        )
 
     def _download_video_result(
         self,
@@ -2267,20 +1813,11 @@ class RunPodProdWorkerRunner:
         result_url: str,
         artifact_prefix: str,
     ) -> dict[str, Any]:
-        raw, method = self._fetch_result_bytes(result_url)
-        if len(raw) < 12 or b"ftyp" not in raw[:64]:
-            raise RunPodProdWorkerError(
-                "prod video canary result does not look like an MP4"
-            )
-        download_dir = self.options.download_results_dir
-        download_dir.mkdir(parents=True, exist_ok=True)
-        target = download_dir / f"{artifact_prefix}_{task_id}.mp4"
-        target.write_bytes(raw)
-        return {
-            "downloaded_file": str(target),
-            "download_method": method,
-            "downloaded_bytes": len(raw),
-        }
+        return self._canary_executor().download_video_result(
+            task_id=task_id,
+            result_url=result_url,
+            artifact_prefix=artifact_prefix,
+        )
 
     def _download_last_frame(
         self,
@@ -2289,109 +1826,23 @@ class RunPodProdWorkerRunner:
         result_payload: dict[str, Any],
         artifact_prefix: str,
     ) -> dict[str, Any]:
-        extra_outputs = result_payload.get("extra_outputs")
-        last_frame = (
-            extra_outputs.get("last_frame") if isinstance(extra_outputs, dict) else None
+        return self._canary_executor().download_last_frame(
+            task_id=task_id,
+            result_payload=result_payload,
+            artifact_prefix=artifact_prefix,
         )
-        if not isinstance(last_frame, dict):
-            raise RunPodProdWorkerError(
-                "prod video canary missing extra_outputs.last_frame"
-            )
-        last_frame_url = str(last_frame.get("url") or last_frame.get("path") or "")
-        if not last_frame_url:
-            raise RunPodProdWorkerError(
-                "prod video canary last_frame is missing url/path"
-            )
-        raw, method = self._fetch_result_bytes(last_frame_url)
-        if not raw.startswith(b"\x89PNG\r\n\x1a\n"):
-            raise RunPodProdWorkerError(
-                "prod video canary last_frame does not look like a PNG"
-            )
-        download_dir = self.options.download_results_dir
-        download_dir.mkdir(parents=True, exist_ok=True)
-        target = download_dir / f"{artifact_prefix}_{task_id}_last_frame.png"
-        target.write_bytes(raw)
-        return {
-            "last_frame_path": result_url_path(last_frame_url),
-            "last_frame_downloaded_file": str(target),
-            "last_frame_download_method": method,
-            "last_frame_bytes": len(raw),
-        }
 
     def _fetch_result_bytes(self, result_url: str) -> tuple[bytes, str]:
-        method = "public_url"
-        try:
-            response = self._http_request(
-                "GET",
-                result_url,
-                headers={"User-Agent": "AllBot-RunPod-Prod-Worker/1.0"},
-                expected_statuses=(200,),
-            )
-            raw = response["raw"]
-        except Exception:
-            method = "r2_s3"
-            raw = self._download_result_bytes_from_s3(result_url)
-        if not raw:
-            raise RunPodProdWorkerError(
-                f"downloaded result is empty: {_safe_url(result_url)}"
-            )
-        return raw, method
+        return self._canary_executor().fetch_result_bytes(result_url)
 
     def _download_result_bytes_from_s3(self, result_url: str) -> bytes:
-        object_key = result_url_path(result_url).lstrip("/")
-        if not object_key:
-            raise RunPodProdWorkerError("result URL did not contain an object key path")
-        endpoint = os.getenv("MINIO_ENDPOINT", "").strip()
-        access_key = os.getenv("MINIO_ACCESS_KEY", "").strip()
-        secret_key = os.getenv("MINIO_SECRET_KEY", "").strip()
-        bucket = os.getenv("MINIO_RESULT_BUCKET", RUNPOD_PROD_BUCKET).strip()
-        secure = os.getenv("MINIO_SECURE", "true").strip().lower() in {
-            "1",
-            "true",
-            "yes",
-            "on",
-        }
-        if not endpoint or not access_key or not secret_key or not bucket:
-            raise RunPodProdWorkerError(
-                "R2 S3 fallback is missing MINIO endpoint/credentials/bucket"
-            )
-        endpoint_url = endpoint
-        if "://" not in endpoint_url:
-            endpoint_url = f"{'https' if secure else 'http'}://{endpoint_url}"
-        try:
-            import boto3
-        except Exception as exc:
-            raise RunPodProdWorkerError(
-                f"boto3 is required for R2 S3 result download: {exc}"
-            ) from exc
-        client = boto3.client(
-            "s3",
-            endpoint_url=endpoint_url,
-            aws_access_key_id=access_key,
-            aws_secret_access_key=secret_key,
-            region_name=os.getenv("AWS_DEFAULT_REGION", "auto"),
-        )
-        try:
-            response = client.get_object(Bucket=bucket, Key=object_key)
-            body = response["Body"].read()
-        except Exception as exc:
-            raise RunPodProdWorkerError(
-                f"R2 S3 result download failed for {object_key}: {exc}"
-            ) from exc
-        return body
+        return self._canary_executor().download_result_bytes_from_s3(result_url)
 
     def _get_agent_control(self) -> dict[str, Any]:
         return self._get_agent_control_for_agent(self.options.agent_id)
 
     def _get_agent_control_for_agent(self, agent_id: str) -> dict[str, Any]:
-        self._require_agent_token()
-        return self._http_json(
-            "GET",
-            _join_url(
-                self.options.central_url, "api", "agent", "task", "control", agent_id
-            ),
-            headers=self._agent_headers(),
-        )
+        return self._control_client().get_agent_control(agent_id)
 
     def _set_agent_control(self, state: str, *, reason: str) -> dict[str, Any]:
         return self._set_agent_control_for_agent(
@@ -2407,50 +1858,25 @@ class RunPodProdWorkerRunner:
         *,
         reason: str,
     ) -> dict[str, Any]:
-        self._require_agent_token()
-        body = {"state": state, "reason": reason}
-        payload = self._http_json(
-            "POST",
-            _join_url(
-                self.options.central_url, "api", "agent", "task", "control", agent_id
-            ),
-            json_body=body,
-            headers=self._agent_headers(),
+        payload = self._control_client().set_agent_control(
+            agent_id,
+            state,
+            reason=reason,
         )
         self._phase("control_" + state, "ok", payload)
         return payload
 
     def _fetch_workers(self) -> list[dict[str, Any]]:
-        payload = self._http_json(
-            "GET", _join_url(self.options.central_url, "system", "workers")
-        )
-        workers = payload.get("workers") or []
-        if not isinstance(workers, list):
-            raise RunPodProdWorkerError(
-                "Central /system/workers returned non-list workers"
-            )
-        return [worker for worker in workers if isinstance(worker, dict)]
+        return self._control_client().fetch_workers()
 
     def _web_token(self) -> str:
-        if self.options.web_bearer_token:
-            return self.options.web_bearer_token
-        try:
-            from src.web_api.core.security import create_access_token
-        except Exception as exc:
-            raise RunPodProdWorkerError(
-                f"failed to load Web JWT signer: {exc}"
-            ) from exc
-        return create_access_token(
-            subject=str(self.options.web_user_id),
-            pwd_ver=self.options.web_pwd_ver,
-            channel="runpod_prod_worker",
-        )
+        return self._control_client().web_token()
 
     def _web_auth_headers(self) -> dict[str, str]:
-        return {"Authorization": f"Bearer {self._web_token()}"}
+        return self._control_client().web_auth_headers()
 
     def _agent_headers(self) -> dict[str, str]:
-        return {"Authorization": f"Bearer {self.options.agent_token}"}
+        return self._control_client().agent_headers()
 
     def _http_json(
         self,
@@ -2463,31 +1889,15 @@ class RunPodProdWorkerRunner:
         expected_statuses: tuple[int, ...] = (200,),
         allow_statuses: tuple[int, ...] = (),
     ) -> dict[str, Any]:
-        body = json.dumps(json_body).encode("utf-8") if json_body is not None else None
-        request_headers = dict(headers or {})
-        if json_body is not None:
-            request_headers["Content-Type"] = "application/json"
-        response = self._http_request(
+        return self._http_client.json(
             method,
             url,
             params=params,
-            body=body,
-            headers=request_headers,
+            json_body=json_body,
+            headers=headers,
             expected_statuses=expected_statuses,
             allow_statuses=allow_statuses,
         )
-        if not response["text"]:
-            return {"_status": response["status"]}
-        try:
-            payload = json.loads(response["text"])
-        except json.JSONDecodeError as exc:
-            raise RunPodProdWorkerError(
-                f"invalid JSON response from {method} {_safe_url(url)}"
-            ) from exc
-        if isinstance(payload, dict):
-            payload.setdefault("_status", response["status"])
-            return payload
-        return {"_status": response["status"], "data": payload}
 
     def _http_request(
         self,
@@ -2500,33 +1910,15 @@ class RunPodProdWorkerRunner:
         expected_statuses: tuple[int, ...] = (200,),
         allow_statuses: tuple[int, ...] = (),
     ) -> dict[str, Any]:
-        if params:
-            url = f"{url}?{urllib.parse.urlencode(params, doseq=True)}"
-        request = urllib.request.Request(
-            url, data=body, method=method, headers=headers or {}
+        return self._http_client.request(
+            method,
+            url,
+            params=params,
+            body=body,
+            headers=headers,
+            expected_statuses=expected_statuses,
+            allow_statuses=allow_statuses,
         )
-        try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                status = int(response.status)
-                raw = response.read()
-                text = raw.decode("utf-8", errors="replace")
-        except urllib.error.HTTPError as exc:
-            status = int(exc.code)
-            raw = exc.read()
-            text = raw.decode("utf-8", errors="replace")
-            if status not in expected_statuses and status not in allow_statuses:
-                raise RunPodProdWorkerError(
-                    f"{method} {_safe_url(url)} returned HTTP {status}: {redact_text(text[:500])}"
-                ) from exc
-        except urllib.error.URLError as exc:
-            raise RunPodProdWorkerError(
-                f"{method} {_safe_url(url)} network error: {redact_text(str(exc.reason))}"
-            ) from exc
-        if status not in expected_statuses and status not in allow_statuses:
-            raise RunPodProdWorkerError(
-                f"{method} {_safe_url(url)} returned HTTP {status}: {redact_text(text[:500])}"
-            )
-        return {"status": status, "text": text, "raw": raw}
 
     def _require_runpod_mutation_gates(
         self,
@@ -2717,11 +2109,6 @@ def _utc_now_iso() -> str:
     return (
         datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
     )
-
-
-def _safe_url(url: str) -> str:
-    parsed = urllib.parse.urlsplit(url)
-    return urllib.parse.urlunsplit(parsed._replace(query="", fragment=""))
 
 
 def _secret_ref_name(value: Any) -> str:
@@ -2923,15 +2310,6 @@ def _slot_sort_key(slot: str) -> int:
 def _find_worker(workers: list[dict[str, Any]], agent_id: str) -> dict[str, Any] | None:
     for worker in workers:
         if str(worker.get("agent_id") or "") == agent_id:
-            return worker
-    return None
-
-
-def _find_current_task_worker(
-    workers: list[dict[str, Any]], task_id: str
-) -> dict[str, Any] | None:
-    for worker in workers:
-        if str(worker.get("current_task_id") or "") == task_id:
             return worker
     return None
 
