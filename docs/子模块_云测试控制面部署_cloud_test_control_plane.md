@@ -315,12 +315,44 @@ docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.ym
 
 云测试 `bot-test` 默认设置 `TON_PAYMENT_POLLING_ENABLED=false`，避免空云测试库启动后回扫真实 TON 商户地址的历史交易并污染测试订单/用户数据。只有需要专门联调 TON 支付履约时，才在 `.env.cloud.test` 中显式设置 `CLOUD_TEST_TON_PAYMENT_POLLING_ENABLED=true`，并先确认测试库 checkpoint 与通知目标可控。
 
-GPU worker 不在云服务器运行；本地 `workers/docker-compose-cloud-worker-test.yml` 会启动 8 个 `cloud-comfy-agent-test-*` 容器，经 `CLOUD_TEST_CONTROL_HOST` 连接云端 Central API，并通过 R2 S3 endpoint 直接读写 `user-data-test`。`cloud-comfy-agent-test-8` / `cloud_worker_test_08` 指向 gpu-002 SCAIL-2 LAN AIO runtime `http://192.168.1.2:8190`，云测试可声明 `scail2_action_transfer,scail2_video_replacement,scail2_face_swap_v2`。该 worker 可通过 `.env.cloud.test` 的 `CLOUD_TEST_WORKER_08_TASK_TYPE_WORKFLOW_OVERRIDES` 做测试专用 workflow 覆盖；当前可把动作迁移/视频换人/视频换脸 v10 two-stage 分别指向 `SCAIL-2_Animation_multi-char_audio.api.json`、`SCAIL-2_Replacement_audio.api.json`、`SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json`。v10 视频换脸还通过 `CLOUD_TEST_WORKER_08_FACE_SWAP_V10_*` 打开 worker8 预处理：先调用 `192.168.1.226:8188` 的 `face_swap_v2.json` 对驱动视频第一帧做图片换脸，再提交 SCAIL-2 视频换人式 workflow。这只是测试 worker 能力，正式 SCAIL-2 worker 仍按正式发布计划单独变更。
+GPU worker 不在云服务器运行；本地 `workers/docker-compose-cloud-worker-test.yml` 经 `CLOUD_TEST_CONTROL_HOST` 连接云端 Central API，并通过 R2 S3 endpoint 直接读写 `user-data-test`。默认常驻只保留 `cloud-comfy-agent-test-1` 与 `cloud-comfy-agent-test-8`：test-1 指向 `gpu-226:8188`，test-8 / `cloud_worker_test_08` 指向 gpu-002 SCAIL-2 LAN AIO runtime `http://192.168.1.2:8190`。`cloud-comfy-agent-test-2..7` 会复用正式 LAN AIO ComfyUI runtime，已加 compose profile 且默认停止；它们只允许在 smoke/canary 窗口按需启动，并默认 `PREFETCH_ENABLED=false`、`PIPELINE_ENABLED=false`、`PIPELINE_MAX_RUNNING_TASKS=1`，避免抢占正式生成容量。test-8 可通过 `.env.cloud.test` 的 `CLOUD_TEST_WORKER_08_TASK_TYPE_WORKFLOW_OVERRIDES` 做测试专用 workflow 覆盖；当前可把动作迁移/视频换人/视频换脸 v10 two-stage 分别指向 `SCAIL-2_Animation_multi-char_audio.api.json`、`SCAIL-2_Replacement_audio.api.json`、`SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json`。v10 视频换脸还通过 `CLOUD_TEST_WORKER_08_FACE_SWAP_V10_*` 打开 worker8 预处理：先调用 `192.168.1.226:8188` 的 `face_swap_v2.json` 对驱动视频第一帧做图片换脸，再提交 SCAIL-2 视频换人式 workflow。这只是测试 worker 能力，正式 SCAIL-2 worker 仍按正式发布计划单独变更。
 
 2026-06-18 03:06 只读快照：云测试 Central `queue_size=0`，`active_workers=8`，`healthy_workers=5`，`error_workers=3`，`quarantined_workers=0`。该状态是瞬时运行态；执行测试验收前必须重新查 `/system/workers` 并按目标任务类型确认 worker 健康。
 
-### 8.1 Worker 6/7 GPU pool 控制测试
-`cloud-comfy-agent-test-6` 与 `cloud-comfy-agent-test-7` 用于 GPU pool 小范围验证时，可以临时覆盖任务类型、runtime profile 和 Comfy URL，不需要修改 `.env.cloud.test`：
+### 8.1 Shared LAN AIO cloud-test worker
+`cloud-comfy-agent-test-2..7` 是共享正式 LAN AIO runtime 的云测试 worker，默认不常驻：
+
+| Worker | Profile | 默认 ComfyUI | 任务类型 | 口径 |
+| :--- | :--- | :--- | :--- | :--- |
+| `cloud_worker_test_02` | `shared-aio-canary` | `192.168.1.177:8190` | `image_to_video,video_insert` | gpu-177 GPU0 AIO |
+| `cloud_worker_test_03` | `shared-aio-canary` | `192.168.1.177:8191` | `ltx_video,*` | gpu-177 GPU1 LTX AIO |
+| `cloud_worker_test_04` | `shared-aio-canary` | `192.168.1.252:8190` | `img2img,img2img_lora` | gpu-252 GPU0 AIO |
+| `cloud_worker_test_05` | `wan22-canary` | 无健康默认入口 | `wan22_video_v2` | 默认指向 `127.0.0.1:9` 占位，必须先换成有效 RunPod/LAN endpoint |
+| `cloud_worker_test_06` | `shared-aio-canary` | `192.168.1.252:8190` | `img2img,img2img_lora` | 备用 img2img shared AIO |
+| `cloud_worker_test_07` | `shared-aio-canary` | `192.168.1.2:8191` | `image_to_video,video_insert` | gpu-002 slot1 image_to_video AIO |
+
+启动共享 AIO canary 前，先确认正式队列压力可接受，且目标端口 `/system_stats` 返回 200。真实启动只针对目标服务，不要 `up` 整个 compose：
+
+```bash
+COMPOSE_PROFILES=shared-aio-canary docker-compose \
+  --env-file .env.cloud.test \
+  -f workers/docker-compose-cloud-worker-test.yml \
+  up -d --no-deps cloud-comfy-agent-test-2 cloud-comfy-agent-test-3
+```
+
+结束窗口后立即停掉，避免云测试任务长期占用正式 AIO：
+
+```bash
+docker stop \
+  cloud-comfy-agent-test-2 cloud-comfy-agent-test-3 \
+  cloud-comfy-agent-test-4 cloud-comfy-agent-test-5 \
+  cloud-comfy-agent-test-6 cloud-comfy-agent-test-7
+```
+
+`cloud-comfy-agent-test-5` 不随 `shared-aio-canary` 启动；`wan22_video_v2` 当前默认应走 RunPod canary 或先显式设置 `CLOUD_TEST_WORKER_05_COMFY_API_URL` / `CLOUD_TEST_WORKER_05_COMFY_WS_URL` 到健康 endpoint。
+
+### 8.2 Worker 6/7 GPU pool 控制测试
+`cloud-comfy-agent-test-6` 与 `cloud-comfy-agent-test-7` 用于 GPU pool 小范围验证时，可以临时覆盖任务类型、runtime profile 和 Comfy URL；默认配置写在 `.env.cloud.test`，临时命令行覆盖仍可用于一次性 canary：
 
 在改动测试 worker 前，先从 Controller 生成备用端口 canary plan / compose 供审阅；该步骤只渲染 dry-run 输出，不启动或重启任何 ComfyUI 容器：
 
@@ -368,23 +400,21 @@ docker-compose --env-file .env.cloud.test -f workers/docker-compose-cloud-worker
 
 验证点：
 - `/system/workers` 能看到 `cloud_worker_test_06/07` 的 `types`、`node_id=gpu-002`、`gpu_index`、`runtime_profile` 与 `pool_managed=true` 随容器环境更新。
-- 备用端口 canary 时，`cloud_worker_test_06/07` 的 `COMFY_API_URL` / `COMFY_WS_URL` 指向 `gpu-002` 新 runtime 端口，不影响正式 worker 默认使用的 `8188/8189`。
+- 备用端口 canary 时，`cloud_worker_test_06/07` 的 `COMFY_API_URL` / `COMFY_WS_URL` 指向当次显式设置的 AIO runtime 端口；如果复用正式 AIO，必须控制任务窗口和并发。
 - `disabled/draining` 状态下，带 `agent_id` 的 `/api/agent/task/pop` 返回空任务，不影响其它 worker。
 - 本地主服务器旧版 `docker-compose 1.29.2` 可能在 `--force-recreate` 时报 `KeyError: 'ContainerConfig'`；只删除目标 6/7 容器再 `up -d --no-deps`，不要 `--remove-orphans`。
 
-恢复默认类型：
+恢复默认状态。当前默认不是重新启动 6/7，而是停止共享 AIO 测试 worker：
 
 ```bash
 docker ps -aq --filter name=cloud-comfy-agent-test-6 --filter name=cloud-comfy-agent-test-7 \
-  | xargs -r docker rm -f
-docker-compose --env-file .env.cloud.test -f workers/docker-compose-cloud-worker-test.yml \
-  up -d --no-deps cloud-comfy-agent-test-6 cloud-comfy-agent-test-7
+  | xargs -r docker stop
 
 curl -fsS -X POST -H "$AUTH_HEADER" -H 'Content-Type: application/json' \
-  -d '{"state":"enabled","reason":"restore after gpu-pool canary"}' \
+  -d '{"state":"disabled","reason":"restore shared-aio cloud-test default stopped"}' \
   "$CENTRAL/api/agent/task/control/cloud_worker_test_06"
 curl -fsS -X POST -H "$AUTH_HEADER" -H 'Content-Type: application/json' \
-  -d '{"state":"enabled","reason":"restore after gpu-pool canary"}' \
+  -d '{"state":"disabled","reason":"restore shared-aio cloud-test default stopped"}' \
   "$CENTRAL/api/agent/task/control/cloud_worker_test_07"
 ```
 

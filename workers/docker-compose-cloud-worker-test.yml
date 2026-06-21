@@ -73,71 +73,124 @@ services:
   cloud-comfy-agent-test-2:
     <<: *worker-base-cloud-test
     container_name: cloud-comfy-agent-test-2
+    profiles:
+      - shared-aio-canary
+    restart: "no"
     environment:
       <<: *worker-cloud-env
       AGENT_ID: cloud_worker_test_02
-      SUPPORTED_TASK_TYPES: video_insert
-      COMFY_API_URL: http://192.168.1.177:8188
-      COMFY_WS_URL: ws://192.168.1.177:8188/ws
+      POOL_MANAGED: "true"
+      POOL_PROVIDER: lan_ssh
+      POOL_NODE_ID: gpu-177
+      POOL_GPU_INDEX: "0"
+      POOL_RUNTIME_PROFILE: ${CLOUD_TEST_WORKER_02_RUNTIME_PROFILE:-image_to_video}
+      PREFETCH_ENABLED: ${CLOUD_TEST_SHARED_AIO_PREFETCH_ENABLED:-false}
+      PIPELINE_ENABLED: ${CLOUD_TEST_SHARED_AIO_PIPELINE_ENABLED:-false}
+      PIPELINE_MAX_RUNNING_TASKS: ${CLOUD_TEST_SHARED_AIO_PIPELINE_MAX_RUNNING_TASKS:-1}
+      SUPPORTED_TASK_TYPES: ${CLOUD_TEST_WORKER_02_TASK_TYPES:-image_to_video,video_insert}
+      COMFY_API_URL: ${CLOUD_TEST_WORKER_02_COMFY_API_URL:-http://192.168.1.177:8190}
+      COMFY_WS_URL: ${CLOUD_TEST_WORKER_02_COMFY_WS_URL:-ws://192.168.1.177:8190/ws}
       COMFY_INPUT_DIR: /tmp/input
       COMFY_OUTPUT_DIR: /tmp/output
 
   cloud-comfy-agent-test-3:
     <<: *worker-base-cloud-test
     container_name: cloud-comfy-agent-test-3
+    profiles:
+      - shared-aio-canary
+    restart: "no"
     environment:
       <<: *worker-cloud-env
       AGENT_ID: cloud_worker_test_03
-      SUPPORTED_TASK_TYPES: ltx_video,ltx_video_flf2v,ltx_video_v2v_audio
-      COMFY_API_URL: http://192.168.1.177:8189
-      COMFY_WS_URL: ws://192.168.1.177:8189/ws
+      POOL_MANAGED: "true"
+      POOL_PROVIDER: lan_ssh
+      POOL_NODE_ID: gpu-177
+      POOL_GPU_INDEX: "1"
+      POOL_RUNTIME_PROFILE: ${CLOUD_TEST_WORKER_03_RUNTIME_PROFILE:-ltx_video}
+      PREFETCH_ENABLED: ${CLOUD_TEST_SHARED_AIO_PREFETCH_ENABLED:-false}
+      PIPELINE_ENABLED: ${CLOUD_TEST_SHARED_AIO_PIPELINE_ENABLED:-false}
+      PIPELINE_MAX_RUNNING_TASKS: ${CLOUD_TEST_SHARED_AIO_PIPELINE_MAX_RUNNING_TASKS:-1}
+      SUPPORTED_TASK_TYPES: ${CLOUD_TEST_WORKER_03_TASK_TYPES:-ltx_video,ltx_video_flf2v,ltx_video_v2v_audio}
+      COMFY_API_URL: ${CLOUD_TEST_WORKER_03_COMFY_API_URL:-http://192.168.1.177:8191}
+      COMFY_WS_URL: ${CLOUD_TEST_WORKER_03_COMFY_WS_URL:-ws://192.168.1.177:8191/ws}
       COMFY_INPUT_DIR: /tmp/input
       COMFY_OUTPUT_DIR: /tmp/output
 
   cloud-comfy-agent-test-4:
     <<: *worker-base-cloud-test
     container_name: cloud-comfy-agent-test-4
+    profiles:
+      - shared-aio-canary
+    restart: "no"
     environment:
       <<: *worker-cloud-env
       AGENT_ID: cloud_worker_test_04
-      SUPPORTED_TASK_TYPES: img2img,img2img_lora
-      COMFY_API_URL: http://192.168.1.252:8188
-      COMFY_WS_URL: ws://192.168.1.252:8188/ws
+      POOL_MANAGED: "true"
+      POOL_PROVIDER: lan_ssh
+      POOL_NODE_ID: gpu-252
+      POOL_GPU_INDEX: "0"
+      POOL_RUNTIME_PROFILE: ${CLOUD_TEST_WORKER_04_RUNTIME_PROFILE:-img2img_lora}
+      PREFETCH_ENABLED: ${CLOUD_TEST_SHARED_AIO_PREFETCH_ENABLED:-false}
+      PIPELINE_ENABLED: ${CLOUD_TEST_SHARED_AIO_PIPELINE_ENABLED:-false}
+      PIPELINE_MAX_RUNNING_TASKS: ${CLOUD_TEST_SHARED_AIO_PIPELINE_MAX_RUNNING_TASKS:-1}
+      SUPPORTED_TASK_TYPES: ${CLOUD_TEST_WORKER_04_TASK_TYPES:-img2img,img2img_lora}
+      COMFY_API_URL: ${CLOUD_TEST_WORKER_04_COMFY_API_URL:-http://192.168.1.252:8190}
+      COMFY_WS_URL: ${CLOUD_TEST_WORKER_04_COMFY_WS_URL:-ws://192.168.1.252:8190/ws}
       COMFY_INPUT_DIR: /tmp/input
       COMFY_OUTPUT_DIR: /tmp/output
 
   cloud-comfy-agent-test-5:
     <<: *worker-base-cloud-test
     container_name: cloud-comfy-agent-test-5
+    profiles:
+      - wan22-canary
+    restart: "no"
     environment:
       <<: *worker-cloud-env
       AGENT_ID: cloud_worker_test_05
-      SUPPORTED_TASK_TYPES: wan22_video_v2
-      COMFY_API_URL: http://192.168.1.252:8189
-      COMFY_WS_URL: ws://192.168.1.252:8189/ws
+      POOL_MANAGED: "true"
+      POOL_PROVIDER: lan_ssh
+      POOL_NODE_ID: gpu-252
+      POOL_GPU_INDEX: "1"
+      POOL_RUNTIME_PROFILE: ${CLOUD_TEST_WORKER_05_RUNTIME_PROFILE:-wan22_video_v2}
+      PREFETCH_ENABLED: ${CLOUD_TEST_SHARED_AIO_PREFETCH_ENABLED:-false}
+      PIPELINE_ENABLED: ${CLOUD_TEST_SHARED_AIO_PIPELINE_ENABLED:-false}
+      PIPELINE_MAX_RUNNING_TASKS: ${CLOUD_TEST_SHARED_AIO_PIPELINE_MAX_RUNNING_TASKS:-1}
+      SUPPORTED_TASK_TYPES: ${CLOUD_TEST_WORKER_05_TASK_TYPES:-wan22_video_v2}
+      COMFY_API_URL: ${CLOUD_TEST_WORKER_05_COMFY_API_URL:-http://127.0.0.1:9}
+      COMFY_WS_URL: ${CLOUD_TEST_WORKER_05_COMFY_WS_URL:-ws://127.0.0.1:9/ws}
       COMFY_INPUT_DIR: /tmp/input
       COMFY_OUTPUT_DIR: /tmp/output
 
   cloud-comfy-agent-test-6:
     <<: *worker-base-cloud-test
     container_name: cloud-comfy-agent-test-6
+    profiles:
+      - shared-aio-canary
+    restart: "no"
     environment:
       <<: *worker-cloud-env
       AGENT_ID: cloud_worker_test_06
       POOL_MANAGED: "true"
       POOL_PROVIDER: lan_ssh
-      POOL_NODE_ID: gpu-002
+      POOL_NODE_ID: ${CLOUD_TEST_WORKER_06_NODE_ID:-gpu-252}
       POOL_GPU_INDEX: "0"
       POOL_RUNTIME_PROFILE: ${CLOUD_TEST_WORKER_06_RUNTIME_PROFILE:-img2img_lora}
+      PREFETCH_ENABLED: ${CLOUD_TEST_SHARED_AIO_PREFETCH_ENABLED:-false}
+      PIPELINE_ENABLED: ${CLOUD_TEST_SHARED_AIO_PIPELINE_ENABLED:-false}
+      PIPELINE_MAX_RUNNING_TASKS: ${CLOUD_TEST_SHARED_AIO_PIPELINE_MAX_RUNNING_TASKS:-1}
       SUPPORTED_TASK_TYPES: ${CLOUD_TEST_WORKER_06_TASK_TYPES:-img2img,img2img_lora}
-      COMFY_API_URL: ${CLOUD_TEST_WORKER_06_COMFY_API_URL:-http://192.168.1.2:8188}
-      COMFY_WS_URL: ${CLOUD_TEST_WORKER_06_COMFY_WS_URL:-ws://192.168.1.2:8188/ws}
+      COMFY_API_URL: ${CLOUD_TEST_WORKER_06_COMFY_API_URL:-http://192.168.1.252:8190}
+      COMFY_WS_URL: ${CLOUD_TEST_WORKER_06_COMFY_WS_URL:-ws://192.168.1.252:8190/ws}
       COMFY_INPUT_DIR: /tmp/input
       COMFY_OUTPUT_DIR: /tmp/output
 
   cloud-comfy-agent-test-7:
     <<: *worker-base-cloud-test
     container_name: cloud-comfy-agent-test-7
+    profiles:
+      - shared-aio-canary
+    restart: "no"
     environment:
       <<: *worker-cloud-env
       AGENT_ID: cloud_worker_test_07
@@ -145,10 +198,13 @@ services:
       POOL_PROVIDER: lan_ssh
       POOL_NODE_ID: gpu-002
       POOL_GPU_INDEX: "1"
-      POOL_RUNTIME_PROFILE: ${CLOUD_TEST_WORKER_07_RUNTIME_PROFILE:-video_basic}
-      SUPPORTED_TASK_TYPES: ${CLOUD_TEST_WORKER_07_TASK_TYPES:-video_insert,image_to_video}
-      COMFY_API_URL: ${CLOUD_TEST_WORKER_07_COMFY_API_URL:-http://192.168.1.2:8189}
-      COMFY_WS_URL: ${CLOUD_TEST_WORKER_07_COMFY_WS_URL:-ws://192.168.1.2:8189/ws}
+      POOL_RUNTIME_PROFILE: ${CLOUD_TEST_WORKER_07_RUNTIME_PROFILE:-image_to_video}
+      PREFETCH_ENABLED: ${CLOUD_TEST_SHARED_AIO_PREFETCH_ENABLED:-false}
+      PIPELINE_ENABLED: ${CLOUD_TEST_SHARED_AIO_PIPELINE_ENABLED:-false}
+      PIPELINE_MAX_RUNNING_TASKS: ${CLOUD_TEST_SHARED_AIO_PIPELINE_MAX_RUNNING_TASKS:-1}
+      SUPPORTED_TASK_TYPES: ${CLOUD_TEST_WORKER_07_TASK_TYPES:-image_to_video,video_insert}
+      COMFY_API_URL: ${CLOUD_TEST_WORKER_07_COMFY_API_URL:-http://192.168.1.2:8191}
+      COMFY_WS_URL: ${CLOUD_TEST_WORKER_07_COMFY_WS_URL:-ws://192.168.1.2:8191/ws}
       COMFY_INPUT_DIR: /tmp/input
       COMFY_OUTPUT_DIR: /tmp/output
 
