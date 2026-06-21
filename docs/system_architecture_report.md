@@ -96,7 +96,7 @@ graph TD
   - Dashboard 与支付 API 都是独立边界，不再是 Bot 的附属模块。
 - **接入与应用层**
   - `tg-bot` 负责 Telegram 交互、FSM、结果消息与支付通知。
-  - `paid_group_guard_bot` 是独立 Telegram 审核 Bot，只订阅付费群 `chat_join_request`，按成功订单/后台赠送订单只读判断入群资格，不承载主业务 Bot 的菜单、生成、支付回调或文件处理。
+  - `paid_group_guard_bot` 是独立 Telegram 审核 Bot，只订阅付费群 `chat_join_request`，按成功订单、后台赠送订单或筑基期及以上修为只读判断入群资格，不承载主业务 Bot 的菜单、生成、支付回调或文件处理。
   - `web-api` 承担认证、任务提交、任务运行态、历史、广场、用户中心、返佣兑换与站点通知读取等主能力。
   - `payment-api` 负责 RMB 回调；Stars 与 TON 各有对应履约入口。
   - `dashboard-frontend` 是管理后台云端 Nginx 网关，默认只通过 Tailscale/受控入口访问；`dashboard-backend` 除系统视图外，当前还承接站点通知的创建、编辑、置顶与删除管理入口。

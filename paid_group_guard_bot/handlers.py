@@ -37,13 +37,14 @@ async def handle_chat_join_request(
     decision = await eligibility_checker(telegram_id)
     logger.info(
         "Paid group join request user_id=%s chat_id=%s eligible=%s reason=%s "
-        "internal_user_id=%s matched_order_id=%s",
+        "internal_user_id=%s matched_order_id=%s user_group=%s",
         telegram_id,
         chat_id,
         decision.eligible,
         decision.reason,
         decision.internal_user_id,
         decision.matched_order_id,
+        decision.user_group,
     )
 
     if settings.dry_run:
@@ -90,4 +91,3 @@ def build_chat_join_request_handler(
         await handle_chat_join_request(update, context, settings=settings)
 
     return ChatJoinRequestHandler(_callback)
-

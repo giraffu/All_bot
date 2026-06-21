@@ -116,9 +116,10 @@ sequenceDiagram
 - `paid_group_guard_bot` 只读查询 `users` / `orders` 判断付费群入群资格，不做支付履约、返佣、灵石、会员结算或 user_logs 写入，因此不属于 billing provider 注册入口。
 
 ### 4.7 付费群审核资格
-- 付费群审核 Bot 的默认资格口径为：`users.telegram_id` 命中申请人，且存在 `orders.status = 'SUCCESS'` 的历史订单。
-- 真实支付订单要求 `paid_at IS NOT NULL`；后台赠送免费套餐订单通过 `tx_hash` 的 `manual_` 前缀或 `order_id` 的 `GIFT:` 前缀识别。
-- 单纯手动修改身份但未生成订单的用户不会被自动放行；如需纳入，应通过后台赠送套餐补齐订单记录或另建白名单能力。
+- 付费群审核 Bot 的默认资格口径为：`users.telegram_id` 命中申请人，且满足“历史成功订单 / 后台赠送套餐订单 / 筑基期及以上修为”之一。
+- 真实支付订单要求 `orders.status = 'SUCCESS' AND paid_at IS NOT NULL`；后台赠送免费套餐订单要求 `orders.status = 'SUCCESS'`，并通过 `tx_hash` 的 `manual_` 前缀或 `order_id` 的 `GIFT:` 前缀识别。
+- 修为口径读取 `users.user_group`，允许 `筑基期`、`金丹期`、`元婴期`、`化神期`、`炼虚期`、`合体期`、`大乘期`、`渡劫期`。
+- 单纯手动修改 `current_identity` 的用户不会被自动放行；如需纳入，应通过后台赠送套餐补齐订单记录，或使其 `user_group` 达到筑基期及以上。
 
 ## 5. 对外接口口径
 - RMB 支付回调：`POST /api/payment/notify`

@@ -120,10 +120,12 @@ workers/comfy_agent*/input/
 .env.test
 .env.test.local
 .env.production.local
+.env.paid-group.local
 .env.lan.*
 .env.lan-*
 !.env.example
 !.env.cloud.prod.example
+!.env.paid-group.local.example
 !.env.lan.model-cache.example
 !.env.lan-aio-test.example
 !.env.lan-aio-prod.example

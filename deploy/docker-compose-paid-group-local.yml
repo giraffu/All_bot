@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  paid-group-guard-bot-local:
+    build:
+      context: ../
+      dockerfile: Dockerfile
+    container_name: paid-group-guard-bot-local
+    restart: unless-stopped
+    env_file:
+      - ../.env.paid-group.local
+    environment:
+      - TZ=Asia/Shanghai
+      - BOT_TYPE=PROD
+      - PAID_GROUP_BOT_LOG_FILE=/app/logs/paid_group_guard_bot.log
+    volumes:
+      - ../logs:/app/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    network_mode: "host"
+    command: ["python", "-m", "paid_group_guard_bot"]

@@ -66,14 +66,43 @@ async def test_handle_chat_join_request_approves_eligible_user():
 
 
 @pytest.mark.asyncio
+async def test_handle_chat_join_request_approves_cultivation_eligible_user():
+    context = _context()
+    checker = AsyncMock(
+        return_value=PaidGroupEligibilityDecision(
+            eligible=True,
+            reason="matched_user_group_at_or_above_zhuji",
+            telegram_id=777,
+            internal_user_id=9001,
+            user_group="筑基期",
+        )
+    )
+
+    await handle_chat_join_request(
+        _update(),
+        context,
+        settings=_settings(),
+        eligibility_checker=checker,
+    )
+
+    checker.assert_awaited_once_with(777)
+    context.bot.approve_chat_join_request.assert_awaited_once_with(
+        chat_id=-100123,
+        user_id=777,
+    )
+    context.bot.decline_chat_join_request.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_handle_chat_join_request_leaves_unqualified_pending_by_default():
     context = _context()
     checker = AsyncMock(
         return_value=PaidGroupEligibilityDecision(
             eligible=False,
-            reason="no_successful_paid_or_gift_order",
+            reason="no_successful_paid_or_gift_order_or_eligible_user_group",
             telegram_id=777,
             internal_user_id=9001,
+            user_group="练气期",
         )
     )
 
@@ -153,4 +182,3 @@ async def test_handle_chat_join_request_dry_run_takes_no_action():
     checker.assert_awaited_once_with(777)
     context.bot.approve_chat_join_request.assert_not_awaited()
     context.bot.decline_chat_join_request.assert_not_awaited()
-

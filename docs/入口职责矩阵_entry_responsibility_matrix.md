@@ -23,7 +23,7 @@
 | `backend/app/main_status_result_routes.py` | backend 结果/状态查询口注册 | 是 | `backend/app` | 是 |
 | `backend/app/queue_manager.py` | pending/running 队列、worker 视图、取消、zombie/heartbeat 编排 | 是 | `backend/app` | 是 |
 | `src/web_api/main.py` | Web BFF 主入口，承接生命周期、provider 注册、跨域、中间件与统一异常处理 | 是 | `src/web_api` | 是 |
-| `paid_group_guard_bot/main.py` | 独立付费群审核 Bot 入口，只订阅 `chat_join_request` 并按订单资格审核入群申请 | 是 | `paid_group_guard_bot` | 是 |
+| `paid_group_guard_bot/main.py` | 独立付费群审核 Bot 入口，只订阅 `chat_join_request` 并按订单或筑基期及以上修为资格审核入群申请 | 是 | `paid_group_guard_bot` | 是 |
 | `src/web_api/routers/auth.py` | Telegram/Web 登录、JWT 会话相关 API | 是 | `src/web_api` | 是 |
 | `src/web_api/routers/tasks.py` | Web 用户侧任务提交、取消、stream/result/runtime 入口 | 是 | `src/web_api` | 是 |
 | `src/web_api/routers/users.py` | 用户资料、偏好、历史、历史变更动作 | 是 | `src/web_api` | 是 |
