@@ -82,13 +82,21 @@ const duration = ref('5')
 const templateSourcePostId = ref<number | null>(null)
 type LtxVideoMode = 'i2v' | 'flf2v' | 'v2v_audio'
 const ltxMode = ref<LtxVideoMode>('i2v')
+const isLtxExtensionMode = ref(false)
 const isLtxStartEndMode = computed(() => isLtxVideo.value && ltxMode.value === 'flf2v')
 const isLtxVideoAudioMode = computed(() => isLtxVideo.value && ltxMode.value === 'v2v_audio')
+const shouldShowLtxEndFrameUpload = computed(() => isLtxStartEndMode.value || isLtxExtensionMode.value)
+const shouldSubmitLtxEndFrame = computed(() => (
+  isLtxVideo.value
+  && !isLtxVideoAudioMode.value
+  && Boolean(endFrameObjectKey.value)
+  && (isLtxStartEndMode.value || isLtxExtensionMode.value)
+))
 const canSubmit = computed(() => {
   if (isLtxVideoAudioMode.value) {
     return Boolean(videoObjectKey.value)
   }
-  if (isLtxStartEndMode.value) {
+  if (isLtxStartEndMode.value && !isLtxExtensionMode.value) {
     return Boolean(objectKey.value && endFrameObjectKey.value)
   }
   return Boolean(objectKey.value)
@@ -186,6 +194,7 @@ const handleExtendFromCurrentLtxTask = () => {
     message.warning('当前结果没有可用尾帧')
     return
   }
+  isLtxExtensionMode.value = true
   ltxMode.value = 'i2v'
   setRemoteFile(key, lastFrame?.url || buildStorageFileUrl(key))
   handleRemoveEndFrame()
@@ -203,6 +212,7 @@ const loadLtxExtensionFromRoute = () => {
   if (!key) {
     return
   }
+  isLtxExtensionMode.value = true
   ltxMode.value = 'i2v'
   handleRemoveEndFrame()
   handleRemoveVideo()
@@ -287,6 +297,7 @@ watch(isLtxVideo, (value) => {
     selectedLtxLoraNames.value = []
     expandedLtxLoraEditors.value = []
     ltxMode.value = 'i2v'
+    isLtxExtensionMode.value = false
   }
 }, { immediate: true })
 
@@ -308,7 +319,7 @@ const handleGenerate = async () => {
     ? [videoObjectKey.value as string]
     : [
         objectKey.value as string,
-        ...(isLtxStartEndMode.value && endFrameObjectKey.value ? [endFrameObjectKey.value] : []),
+        ...(shouldSubmitLtxEndFrame.value ? [endFrameObjectKey.value as string] : []),
       ]
 
   const payload = buildGenerationTaskPayload({
@@ -325,8 +336,10 @@ const handleGenerate = async () => {
     loraItems: isLtxVideo.value ? ltxLoraItems.value : undefined,
     extraInputs: isLtxVideo.value
       ? {
-          ltx_mode: ltxMode.value,
-          use_end_frame: isLtxStartEndMode.value,
+          ltx_mode: isLtxVideoAudioMode.value
+            ? 'v2v_audio'
+            : shouldSubmitLtxEndFrame.value ? 'flf2v' : 'i2v',
+          use_end_frame: shouldSubmitLtxEndFrame.value,
           video: isLtxVideoAudioMode.value ? videoObjectKey.value : undefined,
           extract_last_frame: true,
         }
@@ -349,6 +362,7 @@ const resetForm = () => {
   handleRemoveEndFrame()
   handleRemoveVideo()
   prompt.value = ''
+  isLtxExtensionMode.value = false
   ltxMode.value = 'i2v'
   loraSelection.value = getDefaultImageToVideoLoraSelection(taskType.value)
   ltxLoraItems.value = []
@@ -375,7 +389,7 @@ const resetForm = () => {
     <template #left-content>
       <div class="flex flex-col gap-6 mb-6">
             <div
-              v-if="isLtxVideo"
+              v-if="isLtxVideo && !isLtxExtensionMode"
               class="w-full bg-slate-500/60 rounded-xl p-4 border border-slate-400/50 shrink-0"
             >
               <h3 class="text-sm font-bold mb-3 text-slate-200 flex items-center">
@@ -480,11 +494,13 @@ const resetForm = () => {
               <!-- Image Upload -->
               <GenerationUploadCard
                 v-if="!isLtxVideoAudioMode"
-                title="基础图片"
+                :title="isLtxExtensionMode ? '锁定起始帧' : '基础图片'"
                 step="1."
                 :file-list="fileList"
                 :preview-url="filePreview"
                 accept="image/png, image/jpeg"
+                :locked="isLtxExtensionMode"
+                locked-text="已锁定为上一段尾帧"
                 wrapper-class="upload-section flex flex-col w-full md:w-[40%] min-w-[160px] shrink-0 h-48 md:h-full"
                 :before-upload="beforeUpload"
                 @remove="handleRemove"
@@ -514,12 +530,13 @@ const resetForm = () => {
               </GenerationUploadCard>
 
               <GenerationUploadCard
-                v-if="isLtxStartEndMode"
-                title="终止帧"
+                v-if="shouldShowLtxEndFrameUpload"
+                :title="isLtxExtensionMode ? '可选终止帧' : '终止帧'"
                 step="1B."
                 :file-list="endFrameFileList"
                 :preview-url="endFramePreview"
                 accept="image/png, image/jpeg"
+                :upload-hint="isLtxExtensionMode ? '不添加则直接续写' : 'JPG/PNG'"
                 wrapper-class="upload-section flex flex-col w-full md:w-[28%] min-w-[150px] shrink-0 h-48 md:h-full"
                 :before-upload="beforeUploadEndFrame"
                 @remove="handleRemoveEndFrame"

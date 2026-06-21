@@ -421,6 +421,8 @@
       "img2video_desc": "上传图像，选择动作模型或“无”，即可生成对应的图生视频。",
       "high_res_video_title": "高级图生视频",
       "high_res_video_desc": "上传图像与提示词，使用最先进的模型生成高分辨率、更长时长的视频。",
+      "ltx_video_audio_title": "视频配音",
+      "ltx_video_audio_desc": "上传视频并输入台词，让角色生成带音频且口型贴合文本的视频。",
       "wan22_video_v2_title": "图生视频 v2",
       "wan22_video_v2_desc": "支持正负提示词、首尾帧、色彩匹配、无缝循环与连续扩展。",
       "scail2_action_transfer_title": "动作迁移",
@@ -460,6 +462,7 @@
         "target_image": "身体图片",
         "target_video": "身体视频",
         "reference_image": "参考图片",
+        "input_video": "输入视频",
         "motion_video": "驱动视频"
       },
       "upload_slot_hints": {
@@ -467,6 +470,7 @@
         "target_image": "上传要替换到的身体图",
         "target_video": "上传要替换到的身体视频",
         "reference_image": "上传要迁移或替换成的角色图片",
+        "input_video": "上传要生成配音和口型的视频，建议 40MB 内",
         "motion_video": "上传提供动作、镜头和构图的短视频"
       },
       "upload_slot_buttons": {
@@ -474,6 +478,7 @@
         "target_image": "添加身体图",
         "target_video": "添加身体视频",
         "reference_image": "添加参考图",
+        "input_video": "添加输入视频",
         "motion_video": "添加驱动视频"
       },
       "submit_image": "生成图片",
@@ -492,6 +497,12 @@
       "wan22_stitching": "正在拼接整条视频链...",
       "wan22_stitch_success": "拼接完成，已生成新的闪回瓶记录",
       "wan22_stitch_failed": "拼接失败，请稍后再试",
+      "ltx_extend_generation": "扩展生成",
+      "ltx_extension_loaded": "已载入上一段尾帧",
+      "ltx_extension_start_frame_name": "上一段尾帧",
+      "ltx_locked_start_frame": "已锁定为上一段尾帧",
+      "ltx_extension_notice": "已锁定上一段尾帧作为起始帧，可选添加终止帧后继续生成。",
+      "ltx_extend_missing_last_frame": "当前结果没有可用尾帧，暂时无法扩展",
       "wan22_chain_errors": {
         "history_empty": "未找到对应的链式视频记录",
         "record_not_found": "未找到对应段落记录",
@@ -513,6 +524,7 @@
         "custom_video": "图生视频支持 5/8/10 秒，按分辨率和时长计费。",
         "face_video": "视频换脸 v2 固定 512x896，5 秒 40 灵石，8 秒 80 灵石。",
         "ltx_video": "高级图生视频固定 1280x704，时长越长消耗越高。",
+        "ltx_video_audio": "视频配音沿用高级图生视频计费，固定 1280x704，时长越长消耗越高。",
         "wan22_video_v2": "图生视频 v2 支持 5/8/10 秒，按分辨率和时长计费。",
         "scail2_video": "当前模式固定 512x896，5 秒 40 灵石，8 秒 80 灵石。"
       },
@@ -528,6 +540,7 @@
         "edit": "描述你希望 AI 如何修改这张图，例如：把背景换成海边，让人物戴上墨镜，整体更像电影剧照。",
         "txt2img": "描述你想直接生成的画面，例如：cinematic portrait, moonlight, detailed face, soft rim light, realistic skin。",
         "video": "描述视频里的动作和镜头，例如：人物微笑转头，风吹动发丝，镜头缓慢推近。",
+        "ltx_video_audio": "输入角色要说的话或声音提示，例如：她看向镜头，用温柔语气说欢迎回来。",
         "scail2_action_transfer": "可留空使用默认提示词；也可补充参考角色与动作效果，例如：动作自然，镜头稳定。",
         "scail2_video_replacement": "可留空使用默认提示词；也可补充替换后的画面，例如：动作自然，背景保持。",
         "scail2_face_swap_v2": "可留空使用默认提示词；也可补充换脸效果，例如：参考人脸自然融入原视频。"

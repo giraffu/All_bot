@@ -14,6 +14,7 @@ export type UnifiedLabModeId =
   | 'face_swap'
   | 'face_video'
   | 'ltx_video'
+  | 'ltx_video_audio'
   | 'wan22_video_v2'
   | 'scail2_action_transfer'
   | 'scail2_video_replacement'
@@ -27,6 +28,7 @@ export type LabUploadSlotId =
   | 'target_image'
   | 'target_video'
   | 'reference_image'
+  | 'input_video'
   | 'motion_video'
 export type LabUploadPreviewKind = 'image' | 'video'
 
@@ -466,6 +468,37 @@ export const LAB_MODE_CONFIGS: LabModeConfig[] = [
     unified: true,
   },
   {
+    id: 'ltx_video_audio',
+    taskType: 'ltx_video_audio',
+    titleKey: 'lab.cards.ltx_video_audio_title',
+    descriptionKey: 'lab.cards.ltx_video_audio_desc',
+    kindKey: 'lab.workbench.mode_kinds.video',
+    baseCost: 10,
+    promptPlaceholderKey: 'lab.workbench.prompt_placeholders.ltx_video_audio',
+    promptTarget: 'inputs',
+    submitLabelKey: 'lab.workbench.submit_video',
+    maxImages: 0,
+    supportsUpload: false,
+    supportsEditLora: false,
+    supportsVideoOptions: true,
+    supportsVideoLora: false,
+    supportsLtxLoraItems: true,
+    supportsAdvancedOptions: true,
+    promptRequired: true,
+    unified: true,
+    uploadSlots: [
+      {
+        id: 'input_video',
+        labelKey: 'lab.workbench.upload_slots.input_video',
+        hintKey: 'lab.workbench.upload_slot_hints.input_video',
+        buttonKey: 'lab.workbench.upload_slot_buttons.input_video',
+        accept: 'video/mp4,video/quicktime,video/webm',
+        previewKind: 'video',
+        required: true,
+      },
+    ],
+  },
+  {
     id: 'wan22_video_v2',
     taskType: 'wan22_video_v2',
     titleKey: 'lab.cards.wan22_video_v2_title',
@@ -519,6 +552,8 @@ export const resolveLabModeIdFromTaskType = (taskType: string | null | undefined
       return 'face_video'
     case 'ltx_video':
       return 'ltx_video'
+    case 'ltx_video_audio':
+      return 'ltx_video_audio'
     case 'wan22_video_v2':
       return 'wan22_video_v2'
     case 'scail2_action_transfer':

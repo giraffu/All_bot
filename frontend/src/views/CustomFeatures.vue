@@ -77,9 +77,12 @@ const {
   currentTaskIsWan22VideoV2,
   wan22CurrentTaskCanExtend,
   wan22CurrentTaskCanStitch,
+  currentTaskIsLtxVideo,
+  ltxCurrentTaskCanExtend,
   wan22ChainLoading,
   wan22ChainStitching,
   openWan22CurrentTaskEditor,
+  openLtxCurrentTaskEditor,
   stitchCurrentWan22Chain,
 } = useLabWorkbench()
 
@@ -225,6 +228,36 @@ const promptLockedHint = computed(() => (
               >
                 <template #icon><LinkOutlined /></template>
                 {{ $t('lab.workbench.wan22_stitch_chain') }}
+              </a-button>
+            </div>
+            <div
+              v-else-if="currentTaskIsLtxVideo"
+              class="lab-workbench__result-actions flex w-full flex-wrap items-center justify-center gap-2"
+            >
+              <a-button
+                type="primary"
+                size="large"
+                class="min-w-[94px] max-w-[112px] flex-1 rounded-xl !px-2 whitespace-nowrap"
+                @click="downloadResult(task.resultUrl, task.title)"
+              >
+                <template #icon><DownloadOutlined /></template>
+                {{ $t('template_apply.common.download_result') }}
+              </a-button>
+              <a-button
+                size="large"
+                class="min-w-[94px] max-w-[112px] flex-1 rounded-xl !px-2 whitespace-nowrap"
+                :disabled="!ltxCurrentTaskCanExtend"
+                @click="openLtxCurrentTaskEditor"
+              >
+                <template #icon><BranchesOutlined /></template>
+                {{ $t('lab.workbench.ltx_extend_generation') }}
+              </a-button>
+              <a-button
+                size="large"
+                class="min-w-[94px] max-w-[112px] flex-1 rounded-xl !px-2 whitespace-nowrap"
+                @click="resetAfterResult"
+              >
+                {{ $t('lab.workbench.continue_generation') }}
               </a-button>
             </div>
             <div v-else class="flex gap-4">

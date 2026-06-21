@@ -160,11 +160,9 @@ describe('TaskDetailModal Wan22 editor links', () => {
       ?.trigger('click')
 
     expect(routerPush).toHaveBeenCalledWith({
-      name: 'SingleImageToVideo',
+      name: 'CustomFeatures',
       query: {
         type: 'ltx_video',
-        title: '高级图生视频',
-        cost: '10',
         ltx_extend_task_id: 'ltx-task-1',
         ltx_extend_key: 'history/ltx-task-1/last_frame.png',
         ltx_extend_url: 'https://cdn/ltx-tail.png',

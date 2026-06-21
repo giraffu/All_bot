@@ -143,7 +143,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 - **文件定位**：`src/lora_catalog.py`、`src/handlers/fsm/ltx_video_fsm.py`、`frontend/src/views/SingleImageToVideo.vue`、`frontend/src/components/template-apply/TemplateImageToVideoPanel.vue`
 - **当前事实**：
   - Telegram FSM 允许多选最多 3 个 LoRA，并支持逐项调整强度；LoRA 后会进入 LTX 模式选择：单首帧、首尾帧、视频配音。
-  - Web 单图视频页支持 LTX 三模式切换；练功房 LTX 至少支持上传两张参考图自动走首尾帧。
+  - Web 单图视频页支持 LTX 三模式切换；练功房把 LTX 视频配音拆为独立内部模式 `ltx_video_audio`，但真实提交仍是用户侧 `ltx_video` + `inputs.ltx_mode="v2v_audio"`；练功房高级图生视频只保留单首帧/首尾帧，并可在当前结果区直接用 `extra_outputs.last_frame` 扩展生成。
   - 前端主路径提交 `inputs.lora_items`，而不是只提交单个 `inputs.lora_name`。
   - LTX 结果若存在 `extra_outputs.last_frame`，Web 结果区/历史详情和 Bot 结果消息可进入“扩展生成”，把尾帧作为下一段起始帧。
 

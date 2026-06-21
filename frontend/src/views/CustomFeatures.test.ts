@@ -17,6 +17,7 @@ const labels: Record<string, string> = {
   'lab.workbench.wan22_extend_generation': '扩展生成',
   'lab.workbench.wan22_regenerate_generation': '重新生成',
   'lab.workbench.wan22_stitch_chain': '拼接',
+  'lab.workbench.ltx_extend_generation': '扩展生成',
   'lab.workbench.continue_generation': '继续生成',
 }
 
@@ -114,10 +115,47 @@ const createWorkbench = (options?: { canStitch?: boolean }) => ({
   currentTaskIsWan22VideoV2: ref(true),
   wan22CurrentTaskCanExtend: ref(true),
   wan22CurrentTaskCanStitch: ref(Boolean(options?.canStitch)),
+  currentTaskIsLtxVideo: ref(false),
+  ltxCurrentTaskCanExtend: ref(false),
   wan22ChainLoading: ref(false),
   wan22ChainStitching: ref(false),
   openWan22CurrentTaskEditor: vi.fn(),
+  openLtxCurrentTaskEditor: vi.fn(),
   stitchCurrentWan22Chain: vi.fn(),
+})
+
+const createLtxWorkbench = (options?: { hasLastFrame?: boolean }) => ({
+  ...createWorkbench(),
+  currentMode: computed(() => ({
+    ...baseMode,
+    id: 'ltx_video',
+    taskType: 'ltx_video',
+    titleKey: 'lab.cards.high_res_video_title',
+    descriptionKey: 'lab.cards.high_res_video_desc',
+  })),
+  currentModeId: ref('ltx_video'),
+  currentTask: ref({
+    id: 'ltx-task-1',
+    type: 'ltx_video',
+    title: '高级图生视频',
+    status: 'success',
+    resultUrl: 'https://cdn/ltx-result.mp4',
+    extraOutputs: options?.hasLastFrame === false ? {} : {
+      last_frame: {
+        path: 'history/ltx-task-1/last_frame.png',
+        media_type: 'image',
+        url: 'https://cdn/ltx-tail.png',
+      },
+    },
+    resultMeta: {},
+  }),
+  currentTaskIsWan22VideoV2: ref(false),
+  wan22CurrentTaskCanExtend: ref(false),
+  wan22CurrentTaskCanStitch: ref(false),
+  currentTaskIsLtxVideo: ref(true),
+  ltxCurrentTaskCanExtend: ref(options?.hasLastFrame !== false),
+  openWan22CurrentTaskEditor: vi.fn(),
+  openLtxCurrentTaskEditor: vi.fn(),
 })
 
 const mountView = () => mount(CustomFeatures, {
@@ -167,5 +205,35 @@ describe('CustomFeatures Wan22 result actions', () => {
     const wrapper = mountView()
 
     expect(wrapper.text()).toContain('拼接')
+  })
+})
+
+describe('CustomFeatures LTX result actions', () => {
+  beforeEach(() => {
+    workbench = createLtxWorkbench()
+  })
+
+  it('shows direct extend action for the current LTX result', async () => {
+    const wrapper = mountView()
+
+    expect(wrapper.text()).toContain('下载结果')
+    expect(wrapper.text()).toContain('扩展生成')
+    expect(wrapper.text()).toContain('继续生成')
+
+    const buttons = wrapper.findAll('button')
+    const extendButton = buttons.find(button => button.text().includes('扩展生成'))
+    expect(extendButton?.attributes('disabled')).toBeUndefined()
+
+    await extendButton?.trigger('click')
+    expect(workbench.openLtxCurrentTaskEditor).toHaveBeenCalledTimes(1)
+  })
+
+  it('disables LTX extend when the current result has no tail frame', () => {
+    workbench = createLtxWorkbench({ hasLastFrame: false })
+    const wrapper = mountView()
+
+    const buttons = wrapper.findAll('button')
+    const extendButton = buttons.find(button => button.text().includes('扩展生成'))
+    expect(extendButton?.attributes('disabled')).toBeDefined()
   })
 })

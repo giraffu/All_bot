@@ -99,11 +99,9 @@ const openLtxEditor = async () => {
   }
   detailVisible.value = false
   await router.push({
-    name: 'SingleImageToVideo',
+    name: 'CustomFeatures',
     query: {
       type: 'ltx_video',
-      title: '高级图生视频',
-      cost: '10',
       ltx_extend_task_id: record.task_id,
       ltx_extend_key: lastFrame.path,
       ...(lastFrame.url ? { ltx_extend_url: lastFrame.url } : {}),

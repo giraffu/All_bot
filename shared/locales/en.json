@@ -420,6 +420,8 @@
       "img2video_desc": "Upload an image, choose an action model or None, and generate the matching video.",
       "high_res_video_title": "High-Res Video",
       "high_res_video_desc": "Upload image and prompt, use state-of-the-art models to generate high-res video.",
+      "ltx_video_audio_title": "Video Dubbing",
+      "ltx_video_audio_desc": "Upload a video and enter dialogue to generate audio with lip motion guided by the text.",
       "wan22_video_v2_title": "Img2Video V2",
       "wan22_video_v2_desc": "Supports positive and negative prompts, first/last frames, color match, perfect loop, and continuous extension.",
       "scail2_action_transfer_title": "Action Transfer",
@@ -459,6 +461,7 @@
         "target_image": "Body Image",
         "target_video": "Body Video",
         "reference_image": "Reference Image",
+        "input_video": "Input Video",
         "motion_video": "Motion Video"
       },
       "upload_slot_hints": {
@@ -466,6 +469,7 @@
         "target_image": "Upload the body image to swap into",
         "target_video": "Upload the body video to swap into",
         "reference_image": "Upload the character image to animate or swap in",
+        "input_video": "Upload the video to dub and lip-sync, recommended under 40MB",
         "motion_video": "Upload the video that provides motion, camera, and composition"
       },
       "upload_slot_buttons": {
@@ -473,6 +477,7 @@
         "target_image": "Add Body Image",
         "target_video": "Add Body Video",
         "reference_image": "Add Reference",
+        "input_video": "Add Input Video",
         "motion_video": "Add Motion Video"
       },
       "submit_image": "Generate Image",
@@ -491,6 +496,12 @@
       "wan22_stitching": "Stitching the full video chain...",
       "wan22_stitch_success": "Stitching complete. A new history record was created.",
       "wan22_stitch_failed": "Stitching failed. Please try again later.",
+      "ltx_extend_generation": "Extend",
+      "ltx_extension_loaded": "Loaded the previous tail frame.",
+      "ltx_extension_start_frame_name": "Previous tail frame",
+      "ltx_locked_start_frame": "Locked to the previous tail frame",
+      "ltx_extension_notice": "The previous tail frame is locked as the start frame. Optionally add an end frame before generating.",
+      "ltx_extend_missing_last_frame": "This result has no usable tail frame yet.",
       "wan22_chain_errors": {
         "history_empty": "No matching chained video record was found.",
         "record_not_found": "The matching segment was not found.",
@@ -512,6 +523,7 @@
         "custom_video": "Img2Video supports 5s/8s/10s clips and is priced by resolution and duration.",
         "face_video": "Video Face Swap v2 is fixed at 512x896: 5s costs 40 credits, 8s costs 80 credits.",
         "ltx_video": "High-Res Video uses fixed 1280x704 output; longer duration costs more.",
+        "ltx_video_audio": "Video Dubbing uses the same High-Res Video pricing: fixed 1280x704 output, longer duration costs more.",
         "wan22_video_v2": "Img2Video V2 supports 5s/8s/10s clips and is priced by resolution and duration.",
         "scail2_video": "This mode is fixed at 512x896: 5s costs 40 credits, 8s costs 80 credits."
       },
@@ -527,6 +539,7 @@
         "edit": "Describe how AI should edit the image, for example: change the background to a beach, add sunglasses, and make it feel like a cinematic still.",
         "txt2img": "Describe the image you want directly, for example: cinematic portrait, moonlight, detailed face, soft rim light, realistic skin.",
         "video": "Describe the motion and camera movement, for example: the subject smiles and turns, hair moves in the wind, camera slowly pushes in.",
+        "ltx_video_audio": "Enter what the character should say or an audio cue, for example: she looks at the camera and warmly says welcome back.",
         "scail2_action_transfer": "Leave blank to use the default prompt, or add guidance such as natural motion and stable framing.",
         "scail2_video_replacement": "Leave blank to use the default prompt, or add guidance such as natural motion and preserved background.",
         "scail2_face_swap_v2": "Leave blank to use the default prompt, or add guidance such as a natural face blend."

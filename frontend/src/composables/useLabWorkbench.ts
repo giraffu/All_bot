@@ -63,6 +63,7 @@ import {
   type Wan22ChainPrefillErrorReason,
 } from '@/features/generation/wan22Chain'
 import { resolveTemplateVideoApplyState } from '@/utils/templateVideoApplyState'
+import { buildStorageFileUrl } from '@/utils/storageUrl'
 
 type UploadedReference = {
   key: string
@@ -110,6 +111,10 @@ const isScail2ModeId = (modeId: UnifiedLabModeId) => (
   || modeId === 'scail2_video_replacement'
   || modeId === 'scail2_face_swap_v2'
 )
+const isLtxLabModeId = (modeId: UnifiedLabModeId) => (
+  modeId === 'ltx_video' || modeId === 'ltx_video_audio'
+)
+const reusableOutputPrefixes = ['comfyui-temp/', 'bot-data/', 'bot-data-test/', 'history/', 'template:']
 const WAN22_CHAIN_ERROR_KEYS: Record<Wan22ChainPrefillErrorReason, string> = {
   history_empty: 'lab.workbench.wan22_chain_errors.history_empty',
   record_not_found: 'lab.workbench.wan22_chain_errors.record_not_found',
@@ -121,6 +126,15 @@ const WAN22_CHAIN_ERROR_KEYS: Record<Wan22ChainPrefillErrorReason, string> = {
 const toPositiveNumber = (value: unknown): number | null => {
   const numeric = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(numeric) && numeric > 0 ? numeric : null
+}
+
+const resolveReusableOutputKey = (path?: string | null) => {
+  const normalizedPath = String(path || '').trim()
+  if (!normalizedPath) return ''
+  if (reusableOutputPrefixes.some(prefix => normalizedPath.startsWith(prefix))) {
+    return normalizedPath
+  }
+  return `comfyui-temp/${normalizedPath}`
 }
 
 export function useLabWorkbench() {
@@ -155,6 +169,7 @@ export function useLabWorkbench() {
   const wan22ChainBanner = ref('')
   const wan22ChainLoading = ref(false)
   const wan22ChainStitching = ref(false)
+  const ltxExtensionNotice = ref('')
   const scail2MotionVideoDurationSeconds = ref<number | null>(null)
 
   const templateNotice = ref('')
@@ -173,12 +188,12 @@ export function useLabWorkbench() {
   const videoResolutionOptions = computed(() => (
     currentMode.value.id === 'face_video'
       ? FACE_VIDEO_RESOLUTION_OPTIONS
-      : currentMode.value.id === 'ltx_video'
+      : isLtxLabModeId(currentMode.value.id)
         ? LTX_VIDEO_RESOLUTION_OPTIONS
         : VIDEO_RESOLUTION_OPTIONS
   ))
   const videoDurationOptions = computed(() => (
-    currentMode.value.id === 'ltx_video'
+    isLtxLabModeId(currentMode.value.id)
       ? LTX_VIDEO_DURATION_OPTIONS
       : isScail2ModeId(currentMode.value.id)
         ? getScail2VideoDurationOptionsForMotionVideo(scail2MotionVideoDurationSeconds.value)
@@ -228,8 +243,10 @@ export function useLabWorkbench() {
     currentMode.value.referenceTitleKey ? t(currentMode.value.referenceTitleKey) : '',
   )
   const promptPlaceholder = computed(() => t(currentMode.value.promptPlaceholderKey))
-  const showStructuredPromptInput = computed(() => isScail2ModeId(currentMode.value.id))
-  const composerNotice = computed(() => wan22ChainBanner.value || templateNotice.value)
+  const showStructuredPromptInput = computed(() => (
+    isScail2ModeId(currentMode.value.id) || currentMode.value.id === 'ltx_video_audio'
+  ))
+  const composerNotice = computed(() => wan22ChainBanner.value || ltxExtensionNotice.value || templateNotice.value)
   const composerWarning = computed(() => templateWarning.value)
   const currentTaskIsWan22VideoV2 = computed(() => (
     currentTask.value?.type === 'wan22_video_v2'
@@ -243,6 +260,11 @@ export function useLabWorkbench() {
   const wan22CurrentTaskCanStitch = computed(() => (
     currentTaskIsWan22VideoV2.value
     && Boolean(currentTask.value?.id && currentTask.value?.resultMeta?.wan22_prev_task_id)
+  ))
+  const currentTaskIsLtxVideo = computed(() => currentTask.value?.type === 'ltx_video')
+  const ltxCurrentTaskCanExtend = computed(() => (
+    currentTaskIsLtxVideo.value
+    && Boolean(currentTask.value?.id && currentTask.value?.extraOutputs?.last_frame?.path)
   ))
 
   const uploadButtonLabel = computed(() => (
@@ -258,7 +280,7 @@ export function useLabWorkbench() {
   const getDefaultResolutionForMode = (modeId: UnifiedLabModeId) => (
     modeId === 'face_video'
       ? DEFAULT_FACE_VIDEO_RESOLUTION
-      : modeId === 'ltx_video'
+      : isLtxLabModeId(modeId)
         ? DEFAULT_LTX_VIDEO_RESOLUTION
         : DEFAULT_VIDEO_RESOLUTION
   )
@@ -276,7 +298,7 @@ export function useLabWorkbench() {
       return resolution.value === '1024' ? 36 : 18
     }
 
-    if (currentMode.value.id === 'ltx_video') {
+    if (isLtxLabModeId(currentMode.value.id)) {
       let multiplier = 1
       if (duration.value === '10') multiplier = 2
       else if (duration.value === '15') multiplier = 3
@@ -308,8 +330,10 @@ export function useLabWorkbench() {
       return t('lab.workbench.cost_hints.face_video')
     }
 
-    if (currentMode.value.id === 'ltx_video') {
-      return t('lab.workbench.cost_hints.ltx_video')
+    if (isLtxLabModeId(currentMode.value.id)) {
+      return currentMode.value.id === 'ltx_video_audio'
+        ? t('lab.workbench.cost_hints.ltx_video_audio')
+        : t('lab.workbench.cost_hints.ltx_video')
     }
 
     if (currentMode.value.id === 'wan22_video_v2') {
@@ -381,6 +405,10 @@ export function useLabWorkbench() {
     wan22ChainBanner.value = ''
   }
 
+  const resetLtxExtensionState = () => {
+    ltxExtensionNotice.value = ''
+  }
+
   const resetFormState = (options?: { preserveMode?: boolean }) => {
     clearReferences()
     clearSlotAssets()
@@ -396,6 +424,7 @@ export function useLabWorkbench() {
     duration.value = DEFAULT_VIDEO_DURATION
     resetTemplateState()
     resetWan22ChainState()
+    resetLtxExtensionState()
 
     if (!options?.preserveMode) {
       currentModeId.value = DEFAULT_LAB_MODE_ID
@@ -515,6 +544,39 @@ export function useLabWorkbench() {
     }
   }
 
+  const applyLtxExtensionPrefill = (path?: string | null, url?: string | null) => {
+    const key = resolveReusableOutputKey(path)
+    if (!key) {
+      return false
+    }
+
+    clearReferences()
+    clearSlotAssets()
+    resetTemplateState()
+    resetWan22ChainState()
+    currentModeId.value = 'ltx_video'
+    uploadedReferences.value = [{
+      key,
+      preview: url || buildStorageFileUrl(key),
+      name: t('lab.workbench.ltx_extension_start_frame_name'),
+      locked: true,
+      lockedLabel: t('lab.workbench.ltx_locked_start_frame'),
+    }]
+    prompt.value = ''
+    setSubmittedTaskId(null)
+    ltxExtensionNotice.value = t('lab.workbench.ltx_extension_notice')
+    return true
+  }
+
+  const openLtxCurrentTaskEditor = () => {
+    const lastFrame = currentTask.value?.extraOutputs?.last_frame
+    if (!applyLtxExtensionPrefill(lastFrame?.path, lastFrame?.url)) {
+      message.warning(t('lab.workbench.ltx_extend_missing_last_frame'))
+      return
+    }
+    message.success(t('lab.workbench.ltx_extension_loaded'))
+  }
+
   const handleRemoveUploadSlot = (slotId: LabUploadSlotId) => {
     const target = uploadedSlotAssets.value[slotId]
     revokeReferencePreview(target?.preview)
@@ -530,6 +592,11 @@ export function useLabWorkbench() {
     }
     scail2MotionVideoDurationSeconds.value = durationSeconds
   }
+
+  const shouldLimitStructuredVideoUpload = (slotId: LabUploadSlotId) => (
+    (isScail2ModeId(currentMode.value.id) && slotId === 'motion_video')
+    || (currentMode.value.id === 'ltx_video_audio' && slotId === 'input_video')
+  )
 
   watch(selectedEditLora, (nextValue) => {
     if (isTemplateEditSettingsLocked.value) {
@@ -644,7 +711,7 @@ export function useLabWorkbench() {
     try {
       objectKey = await uploadFile(
         file,
-        isScail2ModeId(currentMode.value.id) && slot.previewKind === 'video'
+        slot.previewKind === 'video' && shouldLimitStructuredVideoUpload(slotId)
           ? {
               maxSizeBytes: SCAIL2_VIDEO_UPLOAD_MAX_SIZE_BYTES,
               maxSizeLabel: SCAIL2_VIDEO_UPLOAD_MAX_SIZE_LABEL,
@@ -814,6 +881,21 @@ export function useLabWorkbench() {
       return
     }
 
+    if (nextModeId === 'ltx_video') {
+      const ltxExtensionKey = typeof route.query.ltx_extend_key === 'string'
+        ? route.query.ltx_extend_key
+        : ''
+      if (ltxExtensionKey) {
+        const ltxExtensionUrl = typeof route.query.ltx_extend_url === 'string'
+          ? route.query.ltx_extend_url
+          : ''
+        if (applyLtxExtensionPrefill(ltxExtensionKey, ltxExtensionUrl)) {
+          message.success(t('lab.workbench.ltx_extension_loaded'))
+        }
+        return
+      }
+    }
+
     if ((nextModeId === 'face_swap' || nextModeId === 'face_video') && templateContext) {
       const rawTaskType = String(templateContext.task_type ?? '')
       const targetSlotId = nextModeId === 'face_video' ? 'target_video' : 'target_image'
@@ -853,7 +935,14 @@ export function useLabWorkbench() {
   }
 
   watch(
-    () => [route.query.type, route.query.apply, route.query.wan22_mode, route.query.wan22_task_id],
+    () => [
+      route.query.type,
+      route.query.apply,
+      route.query.wan22_mode,
+      route.query.wan22_task_id,
+      route.query.ltx_extend_key,
+      route.query.ltx_extend_url,
+    ],
     hydrateFromRoute,
     { immediate: true },
   )
@@ -944,6 +1033,38 @@ export function useLabWorkbench() {
         negativePrompt: negativePrompt.value,
         promptTarget: 'inputs',
         isTemplate: false,
+      })
+
+      const taskId = await submitTask(payload, t(currentMode.value.titleKey))
+      if (taskId) {
+        setSubmittedTaskId(taskId)
+      }
+      return
+    }
+
+    if (currentMode.value.id === 'ltx_video_audio') {
+      const inputVideo = uploadedSlotAssets.value.input_video?.key
+
+      if (!inputVideo) {
+        message.warning(t('lab.workbench.validation.upload_slots_required'))
+        return
+      }
+
+      const payload = buildGenerationTaskPayload({
+        taskType: 'ltx_video',
+        images: [inputVideo],
+        prompt: prompt.value,
+        promptTarget: 'inputs',
+        resolution: resolution.value,
+        duration: Number(duration.value),
+        loraItems: ltxLoraItems.value,
+        extraInputs: {
+          ltx_mode: 'v2v_audio',
+          video: inputVideo,
+          extract_last_frame: true,
+        },
+        isTemplate: isTemplateApplied.value,
+        sourcePostId: templateSourcePostId.value,
       })
 
       const taskId = await submitTask(payload, t(currentMode.value.titleKey))
@@ -1119,9 +1240,12 @@ export function useLabWorkbench() {
     currentTaskIsWan22VideoV2,
     wan22CurrentTaskCanExtend,
     wan22CurrentTaskCanStitch,
+    currentTaskIsLtxVideo,
+    ltxCurrentTaskCanExtend,
     wan22ChainLoading,
     wan22ChainStitching,
     openWan22CurrentTaskEditor,
+    openLtxCurrentTaskEditor,
     stitchCurrentWan22Chain,
   }
 }
