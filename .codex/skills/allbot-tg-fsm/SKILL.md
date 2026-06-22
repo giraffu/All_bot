@@ -63,7 +63,7 @@ def build_handler() -> ConversationHandler:
 - 临时文件、下载目录和清理逻辑应优先下沉到服务层，避免各 FSM 重复拼装。
 - callback 路由拆分时必须确保主入口导入子模块触发注册，不能因加载顺序拿到空路由表。
 - SCAIL-2 Bot 的“视频生视频”二级菜单支持测试 Bot 与正式 Bot，但正式展示必须跟随 SCAIL-2 正式 runtime 发布闸门；`scail2_video_fsm` 收集参考图、驱动视频、可选正向提示词和 5s/8s 时长，正向提示词可通过 inline button 跳过并由 domain config 默认值补齐，负面提示词使用默认值，驱动视频上限 40MB，原“视频换脸”FSM 只移动到该二级菜单内并保持原业务逻辑。正式发布维护窗口内，Bot 生成 FSM 应尊重 `/app/GENERATION_MAINTENANCE` 或全局 `/app/MAINTENANCE`，提示维护并停止新提交。
-- LTX 高级图生视频 FSM 支持三种模式：单首帧、首尾帧、视频配音。普通入口先选最多 3 个 LoRA，然后在同屏设置面板选择 `ltx_mode`、清晰度和时长，确认后再按模式收素材：单首帧收 1 张起始图，首尾帧收 `image_path` 与 `end_image_path` 并提交 `ltx_mode=flf2v`，视频配音收 `video_path` 与文本提示并提交 `ltx_mode=v2v_audio`，视频上限 40MB；素材收完后直接要求发送提示词，不再二次展示清晰度/时长按钮。结果消息存在 `extra_outputs.last_frame` 预期时展示“扩展生成”按钮，callback 前缀为 `ltx_extend`；点击后必须校验历史归属、下载尾帧到 FSM 临时目录，并作为下一段 LTX 起始帧进入设置确认，续段默认 `ltx_mode=i2v` 但必须携带 `ltx_prev_task_id` / `ltx_chain_task_ids`，由 Bot 完成落库写入 `extra_outputs._ltx_context`。退出、超时或提交结束必须清理 start/end/video 临时文件。
+- LTX 高级图生视频 FSM 当前用户侧只开放两种模式：单首帧、首尾帧。普通入口先选最多 3 个 LoRA，然后在同屏设置面板选择 `ltx_mode`、清晰度和时长，确认后再按模式收素材：单首帧收 1 张起始图，首尾帧收 `image_path` 与 `end_image_path` 并提交 `ltx_mode=flf2v`；素材收完后直接要求发送提示词，不再二次展示清晰度/时长按钮。历史/底层兼容仍可识别 `ltx_mode=v2v_audio`，但 Bot 不再展示视频配音入口，旧回调必须被拦截并提示暂未开放。结果消息存在 `extra_outputs.last_frame` 预期时展示“扩展生成”按钮，callback 前缀为 `ltx_extend`；点击后必须校验历史归属、下载尾帧到 FSM 临时目录，并作为下一段 LTX 起始帧进入设置确认，续段默认 `ltx_mode=i2v` 但必须携带 `ltx_prev_task_id` / `ltx_chain_task_ids`，由 Bot 完成落库写入 `extra_outputs._ltx_context`。退出、超时或提交结束必须清理 start/end/video 临时文件。
 
 ## 5. 边界条件处理
 - **`user_data` 残留**：FSM 正常结束、异常退出、超时三种场景都要清理临时状态。

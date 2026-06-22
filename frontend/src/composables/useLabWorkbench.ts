@@ -185,7 +185,7 @@ export function useLabWorkbench() {
   )
   const promptPlaceholder = computed(() => t(currentMode.value.promptPlaceholderKey))
   const showStructuredPromptInput = computed(() => (
-    isScail2ModeId(currentMode.value.id) || currentMode.value.id === 'ltx_video_audio'
+    isScail2ModeId(currentMode.value.id)
   ))
   const composerNotice = computed(() => (
     wan22.wan22ChainBanner.value || ltx.ltxExtensionNotice.value || template.templateNotice.value

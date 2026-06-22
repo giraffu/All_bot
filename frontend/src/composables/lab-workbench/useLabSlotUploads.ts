@@ -75,7 +75,6 @@ export function useLabSlotUploads({
 
   const shouldLimitStructuredVideoUpload = (slotId: LabUploadSlotId) => (
     (isScail2ModeId(currentMode.value.id) && slotId === 'motion_video')
-    || (currentMode.value.id === 'ltx_video_audio' && slotId === 'input_video')
   )
 
   const beforeUploadSlot = async (slotId: LabUploadSlotId, file: File) => {

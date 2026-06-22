@@ -658,11 +658,7 @@ class LtxVideoStrategy(BaseTaskStrategy):
     def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
         mode = _resolve_ltx_video_mode(inputs)
         if mode == LTX_VIDEO_MODE_V2V_AUDIO:
-            video_path = inputs.get("video") or inputs.get("input_video")
-            if video_path:
-                return [video_path]
-            images = inputs.get("images", [])
-            return images[:1] if isinstance(images, list) else []
+            raise CoreDomainError("LTX 视频配音暂未开放。")
 
         images = inputs.get("images", [])
         if isinstance(images, list) and images:
@@ -695,24 +691,11 @@ class LtxVideoStrategy(BaseTaskStrategy):
     async def submit_task(
         self, task_id: str, inputs: Dict[str, Any], priority: int
     ) -> str:
-        image_service = _get_dispatch_image_service()
         submission = _build_ltx_submission_context(inputs)
         if submission.mode == LTX_VIDEO_MODE_V2V_AUDIO:
-            if not submission.video_path:
-                raise CoreDomainError("LTX 视频配音需要上传输入视频。")
-            return await image_service.submit_ltx_video_v2v_audio_task(
-                task_id,
-                prompt=submission.prompt,
-                video_path=submission.video_path,
-                lora_name=inputs.get("lora_name"),
-                lora_strength=inputs.get("lora_strength"),
-                lora_items=submission.lora_items,
-                width=submission.width,
-                height=submission.height,
-                length=submission.requested_seconds,
-                priority=priority,
-            )
+            raise CoreDomainError("LTX 视频配音暂未开放。")
 
+        image_service = _get_dispatch_image_service()
         if submission.mode == LTX_VIDEO_MODE_FLF2V:
             if not submission.image_path or not submission.end_image_path:
                 raise CoreDomainError("LTX 首尾帧生成需要同时上传起始帧和终止帧。")

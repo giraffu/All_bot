@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { DEFAULT_WAN22_VIDEO_V2_COST } from './imageToVideo'
 import {
+  DEFAULT_LAB_MODE_ID,
   SCAIL2_VIDEO_DURATION_OPTIONS,
   UNIFIED_LAB_MODES,
   getLabModeConfig,
@@ -42,18 +43,10 @@ describe('labModeConfig', () => {
     expect(getScail2VideoCost('8s')).toBe(80)
   })
 
-  it('exposes LTX video dubbing as a separate lab mode without changing ltx history routing', () => {
-    const audioMode = getLabModeConfig('ltx_video_audio')
-
-    expect(UNIFIED_LAB_MODES.map(mode => mode.id)).toContain('ltx_video_audio')
-    expect(audioMode.taskType).toBe('ltx_video_audio')
-    expect(audioMode.supportsUpload).toBe(false)
-    expect(audioMode.supportsLtxLoraItems).toBe(true)
-    expect(audioMode.promptRequired).toBe(true)
-    expect(audioMode.uploadSlots?.map(slot => slot.id)).toEqual(['input_video'])
-    expect(audioMode.uploadSlots?.[0]?.previewKind).toBe('video')
+  it('keeps LTX video dubbing out of the user-facing lab modes', () => {
+    expect(UNIFIED_LAB_MODES.map(mode => mode.id)).not.toContain('ltx_video_audio')
     expect(resolveLabModeIdFromTaskType('ltx_video')).toBe('ltx_video')
-    expect(resolveLabModeIdFromTaskType('ltx_video_audio')).toBe('ltx_video_audio')
+    expect(resolveLabModeIdFromTaskType('ltx_video_audio')).toBe(DEFAULT_LAB_MODE_ID)
   })
 
   it('filters scail2 duration options by motion video length', () => {

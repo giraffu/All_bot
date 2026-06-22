@@ -16,7 +16,6 @@ describe('lab workbench mode helpers', () => {
     expect(isScail2ModeId('scail2_face_swap_v2')).toBe(true)
     expect(isScail2ModeId('ltx_video')).toBe(false)
     expect(isLtxLabModeId('ltx_video')).toBe(true)
-    expect(isLtxLabModeId('ltx_video_audio')).toBe(true)
     expect(isLtxLabModeId('wan22_video_v2')).toBe(false)
   })
 
@@ -49,8 +48,8 @@ describe('lab workbench mode helpers', () => {
       wan22ResolutionPreset: 'small',
     })).toBe(24)
     expect(getLabModeCost({
-      mode: getLabModeConfig('ltx_video_audio'),
-      uploadedReferenceCount: 0,
+      mode: getLabModeConfig('ltx_video'),
+      uploadedReferenceCount: 1,
       resolution: '1280x704',
       duration: '20',
       wan22ResolutionPreset: 'preview',
@@ -67,7 +66,7 @@ describe('lab workbench mode helpers', () => {
   it('keeps cost hint keys stable', () => {
     expect(getLabCostHintKey('edit')).toBe('lab.workbench.cost_hints.edit')
     expect(getLabCostHintKey('custom_video')).toBe('lab.workbench.cost_hints.custom_video')
-    expect(getLabCostHintKey('ltx_video_audio')).toBe('lab.workbench.cost_hints.ltx_video_audio')
+    expect(getLabCostHintKey('ltx_video')).toBe('lab.workbench.cost_hints.ltx_video')
     expect(getLabCostHintKey('scail2_face_swap_v2')).toBe('lab.workbench.cost_hints.scail2_video')
     expect(getLabCostHintKey('txt2img')).toBe('')
   })

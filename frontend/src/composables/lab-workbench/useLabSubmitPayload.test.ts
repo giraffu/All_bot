@@ -282,35 +282,6 @@ describe('useLabSubmitPayload', () => {
     }, 'lab.cards.scail2_face_swap_v2_title')
   })
 
-  it('builds LTX audio payloads from the input video slot', async () => {
-    const harness = createHarness('ltx_video_audio')
-    harness.uploadedSlotAssets.value = {
-      input_video: slotAsset('talking.mp4', 'video'),
-    }
-    harness.prompt.value = 'speak to camera'
-    harness.resolution.value = '1280x704'
-    harness.duration.value = '15'
-    harness.ltxLoraItems.value = [{ name: 'ltx2.3/SynthPussy_01_rank32.safetensors', strength: 0.8 }]
-
-    await harness.handleSubmit()
-
-    expect(harness.submitTask).toHaveBeenCalledWith({
-      task_type: 'ltx_video',
-      inputs: {
-        images: ['talking.mp4'],
-        prompt: 'speak to camera',
-        resolution: '1280x704',
-        duration: 15,
-        lora_items: [{ name: 'ltx2.3/SynthPussy_01_rank32.safetensors', strength: 0.8 }],
-        ltx_mode: 'v2v_audio',
-        video: 'talking.mp4',
-        extract_last_frame: true,
-      },
-      priority: 0,
-      is_template: false,
-    }, 'lab.cards.ltx_video_audio_title')
-  })
-
   it('builds face video payloads from structured slots', async () => {
     const harness = createHarness('face_video')
     harness.uploadedSlotAssets.value = {

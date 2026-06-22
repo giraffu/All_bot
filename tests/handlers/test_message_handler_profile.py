@@ -53,7 +53,7 @@ def test_build_personal_center_payload_builds_unlocked_markup():
     assert reply_markup.inline_keyboard[0][1].text == "🌐 浏览器 Web 登录"
 
 
-def test_build_checkin_messages_keep_disclaimer_and_stats():
+def test_build_checkin_messages_keep_stats_without_disclaimer():
     success_text = message_handler_profile.build_checkin_success_message(
         user_group="筑基期",
         user_identity="核心弟子",
@@ -69,9 +69,9 @@ def test_build_checkin_messages_keep_disclaimer_and_stats():
 
     assert "签到成功" in success_text
     assert "`5` 灵石" in success_text
-    assert "累计签到统计始于3月5日" in success_text
+    assert "累计签到统计始于3月5日" not in success_text
     assert "今日已领取灵石" in repeat_text
-    assert "累计签到统计始于3月5日" in repeat_text
+    assert "累计签到统计始于3月5日" not in repeat_text
 
 
 def test_build_checkin_messages_translate_group_and_identity_in_english():

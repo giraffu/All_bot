@@ -655,7 +655,7 @@ async def test_ltx_video_lora_selection_sets_name_and_opens_setup_panel(monkeypa
     ]
     assert "ltx_mode_i2v" in callback_data
     assert "ltx_mode_flf2v" in callback_data
-    assert "ltx_mode_v2v_audio" in callback_data
+    assert "ltx_mode_v2v_audio" not in callback_data
     assert "set_ltxdur_10s" in callback_data
     assert "ltx_setup_confirm" in callback_data
 
@@ -976,7 +976,7 @@ async def test_ltx_video_confirm_generation_forwards_extension_chain_context(
 
 
 @pytest.mark.asyncio
-async def test_ltx_video_confirm_generation_forwards_video_audio_mode(monkeypatch):
+async def test_ltx_video_confirm_generation_blocks_disabled_video_audio_mode(monkeypatch):
     safe_answer_mock = AsyncMock()
     create_background_task_mock = MagicMock()
     process_task_mock = MagicMock(return_value=object())
@@ -1018,11 +1018,11 @@ async def test_ltx_video_confirm_generation_forwards_video_audio_mode(monkeypatc
     result = await ltx_video_fsm.confirm_generation(update, context)
 
     assert result == ConversationHandler.END
-    quota_mock.assert_awaited_once()
-    process_task_mock.assert_called_once()
-    assert process_task_mock.call_args.kwargs["ltx_mode"] == "v2v_audio"
-    assert process_task_mock.call_args.kwargs["image_path"] is None
-    assert process_task_mock.call_args.kwargs["video_path"] == "/tmp/input.mp4"
+    quota_mock.assert_not_awaited()
+    process_task_mock.assert_not_called()
+    create_background_task_mock.assert_not_called()
+    edit_mock.assert_awaited_once()
+    assert "ltx_video_data" not in context.user_data
 
 
 @pytest.mark.asyncio

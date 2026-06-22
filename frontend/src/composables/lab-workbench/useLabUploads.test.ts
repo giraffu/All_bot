@@ -101,24 +101,6 @@ describe('useLabSlotUploads', () => {
     expect(uploads.uploadedSlotAssets.value.motion_video?.key).toBe('uploads/motion.mp4')
   })
 
-  it('limits LTX audio video uploads to 40MB', async () => {
-    const video = new File(['video'], 'input.mp4', { type: 'video/mp4' })
-    const uploadFile = vi.fn(async (file: File) => `uploads/${file.name}`)
-    const uploads = useLabSlotUploads({
-      currentMode: currentModeRef('ltx_video_audio'),
-      uploadProgress: ref(0),
-      uploadFile,
-      t,
-    })
-
-    await uploads.beforeUploadSlot('input_video', video)
-
-    expect(uploadFile).toHaveBeenCalledWith(video, {
-      maxSizeBytes: SCAIL2_VIDEO_UPLOAD_MAX_SIZE_BYTES,
-      maxSizeLabel: SCAIL2_VIDEO_UPLOAD_MAX_SIZE_LABEL,
-    })
-  })
-
   it('does not pass video size limits to image-only structured slots', async () => {
     const file = new File(['image'], 'face.png', { type: 'image/png' })
     const uploadFile = vi.fn(async (uploaded: File) => `uploads/${uploaded.name}`)

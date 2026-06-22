@@ -65,7 +65,7 @@
 - **旧 LoRA 图生视频 (`video_lora`)**：继续接收 `lora_name` 前缀，由 `workflow_task_patchers.py` 按高噪/低噪双节点动态补入。`custom_video` 不带 LoRA 时会清空 LoRA 槽；`wan22_video_v2` 始终清空额外 LoRA 槽。
 - **规格口径**：旧图生视频支持 `5s/8s/10s`，对应 `81/129/161` 帧，分辨率和计费基数与 v2 对齐为 `preview=6`、`small=12`、`standard=20`、`hd=30`，时长倍率为 `1x/2x/3x`；旧投稿 `512p/720p/1024p` 分别映射为 `preview/standard/hd`，`0.36 MP - Small` 映射为 `small`。
 - **高级图生视频 (`ltx_video`)**：现已升级为 `lora_items` 多选协议。Bot FSM、Web 单图视频页、模板应用面板都会提交最多 3 个 LoRA 项，每项独立携带 `name + strength`；旧 `lora_name / lora_strength` 仍保留兼容入口，但不再是主文档口径。
-- **LTX 执行面分支**：用户侧历史/Gallery 仍归类为 `ltx_video`，底层按模式分发到 `ltx_video`（旧单首帧 I2V）、`ltx_video_flf2v`（首帧 + 终止帧）或 `ltx_video_v2v_audio`（输入视频 + 文本生成带音频视频）。三者共用现有 LTX 主模型、LoRA 选单和计费倍率，不新增模型选择体系。
+- **LTX 执行面分支**：用户侧历史/Gallery 仍归类为 `ltx_video`，当前 Bot/Web 入口只开放 `ltx_video`（旧单首帧 I2V）与 `ltx_video_flf2v`（首帧 + 终止帧）。底层 `ltx_video_v2v_audio`（输入视频 + 文本生成带音频视频）仍保留为历史/队列兼容执行面；三者共用现有 LTX 主模型、LoRA 选单和计费倍率，不新增模型选择体系。
 - **LTX 扩展上下文**：Web/Bot “扩展生成”都会把 `extra_outputs.last_frame` 作为下一段起始帧，续段提交携带 `ltx_prev_task_id` / `ltx_chain_task_ids`，并持久化为历史 `extra_outputs._ltx_context` 供结果详情和拼接 API 识别。
 
 ### 1. 模型文件部署 (Deployment)
@@ -126,8 +126,8 @@
     - `path`：ComfyUI 可识别的相对路径
     - `label_zh` / `label_en`：前后端展示名称
     - `default_strength`：未显式传权重时的默认值
-  - Telegram 高级图生视频 FSM 会先进入附加模型选择，再进入同屏设置面板合并选择模式、清晰度和时长；当前允许多选，最多 3 个，并支持逐项调强度。确认后再按单首帧、首尾帧或视频配音上传 1 张图片、2 张图片或 1 段视频。
-  - Web `SingleImageToVideo` 支持 LTX 三模式切换；练功房 LTX 至少支持上传两张参考图并自动按首尾帧提交。模板应用面板复用同一批 LTX LoRA 选项；提交时主路径统一写入 `inputs.lora_items`，而不是单个 `inputs.lora_name`。
+  - Telegram 高级图生视频 FSM 会先进入附加模型选择，再进入同屏设置面板合并选择模式、清晰度和时长；当前允许多选，最多 3 个，并支持逐项调强度。确认后再按单首帧或首尾帧上传 1 张或 2 张图片；旧视频配音回调只提示暂未开放。
+  - Web `SingleImageToVideo` 只支持 LTX 单首帧/首尾帧切换；练功房 LTX 至少支持上传两张参考图并自动按首尾帧提交，不再展示独立 `ltx_video_audio` 模式。模板应用面板复用同一批 LTX LoRA 选项；提交时主路径统一写入 `inputs.lora_items`，而不是单个 `inputs.lora_name`。
   - LTX 结果返回 `extra_outputs.last_frame` 后，Web 结果区/历史详情和 Bot 结果消息可执行“扩展生成”，把上一段尾帧作为下一段起始帧。
 
 ### 3. Backend 层：参数网关透传
@@ -135,7 +135,7 @@
 - **实施状态**：当前 `LtxVideoRequest` 已同时支持：
   - `lora_items: list[{name, strength}]`
   - 兼容字段 `lora_name` 与 `lora_strength`
-- **说明**：`LtxVideoFlf2VRequest` / `LtxVideoV2VAudioRequest` 对应执行面 `/api/v1/ltx_video_flf2v` 与 `/api/v1/ltx_video_v2v_audio`；上游 Web/Bot 仍提交用户侧 `ltx_video`，由 dispatcher 根据 `inputs.ltx_mode`、`use_end_frame`、`video` 或输入数量分流。新增 LTX LoRA 时通常无需新增 task type；重点是保持请求模型、前端提交协议与 worker patcher 的节点约定一致。
+- **说明**：`LtxVideoFlf2VRequest` / `LtxVideoV2VAudioRequest` 对应执行面 `/api/v1/ltx_video_flf2v` 与 `/api/v1/ltx_video_v2v_audio`；当前上游 Web/Bot 用户入口只提交开放的单首帧/首尾帧，public dispatcher 对 `inputs.ltx_mode=v2v_audio` 直接拒绝，底层 simple route/worker 仍保留兼容能力。新增 LTX LoRA 时通常无需新增 task type；重点是保持请求模型、前端提交协议与 worker patcher 的节点约定一致。
 
 ### 4. Worker 层：工作流动态注入
 - **文件定位**：`workers/comfy_agent/workflow_task_patchers.py`、`workers/comfy_agent/workflows/LTX 2.3 I2V 6.1.json`、`workers/comfy_agent/workflows/LTX 2.3 FLF2V 6.1.json`、`workers/comfy_agent/workflows/LTX 2.3 V2V Audio 6.1.json`
@@ -155,7 +155,7 @@
 - Telegram：进入【高级图生视频】后应先看到附加模型选择，完成后看到同屏设置面板；确认单首帧后要求上传 1 张起始图，确认首尾帧后依次要求上传 2 张图。
 - Web：`ltx_video` 页面和模板应用面板都应能提交 `inputs.lora_items`，并正确回显每个模型的当前强度。
 - Worker：分别验证“多选 LoRA / 单个兼容字段 / 不选 LoRA”三种场景，确认多项注入成功、旧字段仍兼容、无 LoRA 时节点被裁剪后仍能正常出图出视频。
-- LTX 三模式：验证单首帧仍走旧工作流，首尾帧输出 MP4 + `last_frame`，视频配音输出 MP4 + `last_frame`，并用 `ffprobe` 或播放器确认视频配音结果含音轨。
+- LTX 用户入口：验证单首帧仍走旧工作流，首尾帧输出 MP4 + `last_frame`；如需回归历史兼容执行面，再用直测或受控入口验证 `ltx_video_v2v_audio` 输出 MP4 + `last_frame` 与音轨。
 
 ---
 

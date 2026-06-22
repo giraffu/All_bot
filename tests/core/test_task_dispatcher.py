@@ -779,40 +779,29 @@ async def test_ltx_video_submit_task_routes_start_end_frames_to_flf2v(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_ltx_video_submit_task_routes_input_video_to_v2v_audio(monkeypatch):
+async def test_ltx_video_submit_task_rejects_disabled_v2v_audio(monkeypatch):
     strategy = StrategyFactory.get_strategy("ltx_video")
     submit_mock = AsyncMock(return_value="backend-task-id")
     _patch_dispatch_image_service(
         monkeypatch,
         submit_ltx_video_v2v_audio_task=submit_mock,
     )
+    inputs = {
+        "prompt": "say the line clearly",
+        "resolution": "1280x704",
+        "duration": "20s",
+        "ltx_mode": "v2v_audio",
+        "saved_input_images": ["demo/input.mp4"],
+        "video": "demo/input.mp4",
+    }
 
-    result = await strategy.submit_task(
-        "task-1",
-        {
-            "prompt": "say the line clearly",
-            "resolution": "1280x704",
-            "duration": "20s",
-            "ltx_mode": "v2v_audio",
-            "saved_input_images": ["demo/input.mp4"],
-            "video": "demo/input.mp4",
-        },
-        priority=9,
-    )
+    with pytest.raises(CoreDomainError, match="视频配音暂未开放"):
+        strategy.get_file_paths_to_upload(inputs)
 
-    assert result == "backend-task-id"
-    submit_mock.assert_awaited_once_with(
-        "task-1",
-        prompt="say the line clearly",
-        video_path="demo/input.mp4",
-        lora_name=None,
-        lora_strength=None,
-        lora_items=None,
-        width=1280,
-        height=704,
-        length=20,
-        priority=9,
-    )
+    with pytest.raises(CoreDomainError, match="视频配音暂未开放"):
+        await strategy.submit_task("task-1", inputs, priority=9)
+
+    submit_mock.assert_not_awaited()
 
 
 def test_ltx_video_strategy_metadata_marks_last_frame_for_extension():

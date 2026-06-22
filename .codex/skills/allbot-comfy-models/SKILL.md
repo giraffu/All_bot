@@ -141,13 +141,13 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
   - `ltx_video`：旧单首帧 I2V，工作流 `LTX 2.3 I2V 6.1.json`
   - `ltx_video_flf2v`：首帧 + 终止帧，工作流 `LTX 2.3 FLF2V 6.1.json`
   - `ltx_video_v2v_audio`：输入视频 + 文本生成带音频视频，工作流 `LTX 2.3 V2V Audio 6.1.json`
-- 三条 LTX 执行路径共用同一组主模型与 LoRA/附加模型协议，不新增模型选择体系。
+- 三条 LTX 执行路径共用同一组主模型与 LoRA/附加模型协议，不新增模型选择体系；当前 Bot/Web 用户入口只开放单首帧和首尾帧，`ltx_video_v2v_audio` 作为底层兼容执行面保留。
 
 ### 2. Bot / Web 侧入口
 - **文件定位**：`src/lora_catalog.py`、`src/handlers/fsm/ltx_video_fsm.py`、`frontend/src/views/SingleImageToVideo.vue`、`frontend/src/components/template-apply/TemplateImageToVideoPanel.vue`
 - **当前事实**：
-  - Telegram FSM 允许多选最多 3 个 LoRA，并支持逐项调整强度；LoRA 后会进入同屏设置面板，合并选择 LTX 模式（单首帧、首尾帧、视频配音）、清晰度和时长，确认后再按模式上传 1 张图片、2 张图片或 1 段视频。
-  - Web 单图视频页支持 LTX 三模式切换；练功房把 LTX 视频配音拆为独立内部模式 `ltx_video_audio`，但真实提交仍是用户侧 `ltx_video` + `inputs.ltx_mode="v2v_audio"`；练功房高级图生视频只保留单首帧/首尾帧，并可在当前结果区直接用 `extra_outputs.last_frame` 扩展生成。
+  - Telegram FSM 允许多选最多 3 个 LoRA，并支持逐项调整强度；LoRA 后会进入同屏设置面板，合并选择 LTX 模式（单首帧、首尾帧）、清晰度和时长，确认后再按模式上传 1 张图片或 2 张图片。旧 `ltx_mode_v2v_audio` 回调必须提示暂未开放，不能继续提交 Bot 任务。
+  - Web 单图视频页只支持 LTX 单首帧/首尾帧切换；练功房不再展示独立 `ltx_video_audio` 模式。练功房高级图生视频仍可在当前结果区直接用 `extra_outputs.last_frame` 扩展生成。
   - 前端主路径提交 `inputs.lora_items`，而不是只提交单个 `inputs.lora_name`。
   - LTX 结果若存在 `extra_outputs.last_frame`，Web 结果区/历史详情和 Bot 结果消息可进入“扩展生成”，把尾帧作为下一段起始帧。Web/Bot 续段提交会携带 `inputs.ltx_prev_task_id` 与 `inputs.ltx_chain_task_ids`；Web finalizer 和 Bot completion 会把它们持久化到 `extra_outputs._ltx_context`，历史/结果响应转成 `result_meta.ltx_prev_task_id`、`result_meta.ltx_chain_task_ids`、`result_meta.ltx_segment_index`。
   - LTX 续段结果（存在 `result_meta.ltx_prev_task_id`）可在练功房结果区或闪回瓶详情调用 `/users/history/{task_id}/ltx-chain/stitch` 拼接整条链，拼接历史使用 `extra_outputs.ltx_chain_stitch` 标记。首段只有扩展按钮，不显示拼接按钮。
@@ -157,7 +157,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 - **当前事实**：
   - `LtxVideoRequest` 已同时支持 `lora_items` 与兼容字段 `lora_name / lora_strength`。
   - `LtxVideoFlf2VRequest` 和 `LtxVideoV2VAudioRequest` 分别对应 `/api/v1/ltx_video_flf2v`、`/api/v1/ltx_video_v2v_audio`。
-  - 上游 Web/Bot 仍提交用户侧 `ltx_video`；`src/core/task_dispatcher.py` 通过 `inputs.ltx_mode`、`use_end_frame`、`video` 或输入数量分流到上述执行面 simple routes。
+  - 上游 Web/Bot 仍提交用户侧 `ltx_video`；`src/core/task_dispatcher.py` 当前只允许单首帧与首尾帧用户提交，遇到 `inputs.ltx_mode="v2v_audio"` 会拒绝。底层 `/api/v1/ltx_video_v2v_audio` simple route 与 worker 映射仍保留兼容能力。
   - Web LTX 扩展链路元数据由 `src/core/task_dispatcher.py` 写入 metadata，并由 `src/services/task_web_terminal_finalization.py` 合并到历史 `extra_outputs._ltx_context`；Bot LTX 扩展链路元数据由 `src/handlers/fsm/ltx_video_fsm.py` / `process_ltx_video_task(...)` 传入 result metadata，并由 `src/services/task_service_completion.py` 合并到同一 `_ltx_context`。拼接入口位于 `src/web_api/services/ltx_history_chain_service.py`。
   - 新增 LTX LoRA 时，通常无需新增 task type，重点是保持请求模型与 patcher 协议一致。
 

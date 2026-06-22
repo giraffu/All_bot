@@ -68,34 +68,20 @@ const {
 } = useSingleFileUploadPreview({
   uploadFile
 })
-const {
-  fileList: videoFileList,
-  objectKey: videoObjectKey,
-  filePreview: videoPreview,
-  beforeUpload: beforeUploadVideo,
-  handleRemove: handleRemoveVideo,
-} = useSingleFileUploadPreview({
-  uploadFile: (file: File) => uploadFile(file, { maxSizeBytes: 40 * 1024 * 1024, maxSizeLabel: '40MB' })
-})
 const resolution = ref('preview')
 const duration = ref('5')
 const templateSourcePostId = ref<number | null>(null)
-type LtxVideoMode = 'i2v' | 'flf2v' | 'v2v_audio'
+type LtxVideoMode = 'i2v' | 'flf2v'
 const ltxMode = ref<LtxVideoMode>('i2v')
 const isLtxExtensionMode = ref(false)
 const isLtxStartEndMode = computed(() => isLtxVideo.value && ltxMode.value === 'flf2v')
-const isLtxVideoAudioMode = computed(() => isLtxVideo.value && ltxMode.value === 'v2v_audio')
 const shouldShowLtxEndFrameUpload = computed(() => isLtxStartEndMode.value || isLtxExtensionMode.value)
 const shouldSubmitLtxEndFrame = computed(() => (
   isLtxVideo.value
-  && !isLtxVideoAudioMode.value
   && Boolean(endFrameObjectKey.value)
   && (isLtxStartEndMode.value || isLtxExtensionMode.value)
 ))
 const canSubmit = computed(() => {
-  if (isLtxVideoAudioMode.value) {
-    return Boolean(videoObjectKey.value)
-  }
   if (isLtxStartEndMode.value && !isLtxExtensionMode.value) {
     return Boolean(objectKey.value && endFrameObjectKey.value)
   }
@@ -198,7 +184,6 @@ const handleExtendFromCurrentLtxTask = () => {
   ltxMode.value = 'i2v'
   setRemoteFile(key, lastFrame?.url || buildStorageFileUrl(key))
   handleRemoveEndFrame()
-  handleRemoveVideo()
   prompt.value = ''
   setSubmittedTaskId(null)
   message.success('已载入上一段尾帧')
@@ -215,7 +200,6 @@ const loadLtxExtensionFromRoute = () => {
   isLtxExtensionMode.value = true
   ltxMode.value = 'i2v'
   handleRemoveEndFrame()
-  handleRemoveVideo()
   setRemoteFile(
     key,
     readRouteQueryString(route.query.ltx_extend_url) || buildStorageFileUrl(key),
@@ -305,22 +289,17 @@ watch(ltxMode, (mode) => {
   if (mode !== 'flf2v') {
     handleRemoveEndFrame()
   }
-  if (mode !== 'v2v_audio') {
-    handleRemoveVideo()
-  }
 })
 
 const handleGenerate = async () => {
   if (!canSubmit.value) {
-    message.warning(isLtxVideoAudioMode.value ? '请先上传视频！' : '请先上传图片！')
+    message.warning('请先上传图片！')
     return
   }
-  const images = isLtxVideoAudioMode.value
-    ? [videoObjectKey.value as string]
-    : [
-        objectKey.value as string,
-        ...(shouldSubmitLtxEndFrame.value ? [endFrameObjectKey.value as string] : []),
-      ]
+  const images = [
+    objectKey.value as string,
+    ...(shouldSubmitLtxEndFrame.value ? [endFrameObjectKey.value as string] : []),
+  ]
 
   const payload = buildGenerationTaskPayload({
     taskType: getImageToVideoRequestTaskType(taskType.value, loraSelection.value),
@@ -336,11 +315,8 @@ const handleGenerate = async () => {
     loraItems: isLtxVideo.value ? ltxLoraItems.value : undefined,
     extraInputs: isLtxVideo.value
       ? {
-          ltx_mode: isLtxVideoAudioMode.value
-            ? 'v2v_audio'
-            : shouldSubmitLtxEndFrame.value ? 'flf2v' : 'i2v',
+          ltx_mode: shouldSubmitLtxEndFrame.value ? 'flf2v' : 'i2v',
           use_end_frame: shouldSubmitLtxEndFrame.value,
-          video: isLtxVideoAudioMode.value ? videoObjectKey.value : undefined,
           extract_last_frame: true,
         }
       : {
@@ -360,7 +336,6 @@ const handleGenerate = async () => {
 const resetForm = () => {
   handleRemove()
   handleRemoveEndFrame()
-  handleRemoveVideo()
   prompt.value = ''
   isLtxExtensionMode.value = false
   ltxMode.value = 'i2v'
@@ -395,15 +370,12 @@ const resetForm = () => {
               <h3 class="text-sm font-bold mb-3 text-slate-200 flex items-center">
                 <span class="text-slate-500 mr-2">0.</span> 生成模式
               </h3>
-              <a-radio-group v-model:value="ltxMode" button-style="solid" class="compact-option-group w-full grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <a-radio-group v-model:value="ltxMode" button-style="solid" class="compact-option-group w-full grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <a-radio-button value="i2v" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">
                   单首帧
                 </a-radio-button>
                 <a-radio-button value="flf2v" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">
                   首尾帧
-                </a-radio-button>
-                <a-radio-button value="v2v_audio" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">
-                  视频配音
                 </a-radio-button>
               </a-radio-group>
             </div>
@@ -493,7 +465,6 @@ const resetForm = () => {
             <div class="flex flex-col md:flex-row gap-4 md:h-64 w-full">
               <!-- Image Upload -->
               <GenerationUploadCard
-                v-if="!isLtxVideoAudioMode"
                 :title="isLtxExtensionMode ? '锁定起始帧' : '基础图片'"
                 step="1."
                 :file-list="fileList"
@@ -508,24 +479,6 @@ const resetForm = () => {
               >
                 <template #placeholder-icon>
                   <inbox-outlined />
-                </template>
-              </GenerationUploadCard>
-              <GenerationUploadCard
-                v-else
-                title="输入视频"
-                step="1."
-                :file-list="videoFileList"
-                :preview-url="videoPreview"
-                preview-kind="video"
-                accept="video/mp4,video/quicktime,video/webm"
-                upload-hint="MP4/MOV/WebM，40MB 内"
-                wrapper-class="upload-section flex flex-col w-full md:w-[40%] min-w-[160px] shrink-0 h-48 md:h-full"
-                :before-upload="beforeUploadVideo"
-                @remove="handleRemoveVideo"
-                @update:fileList="videoFileList = $event"
-              >
-                <template #placeholder-icon>
-                  <video-camera-outlined />
                 </template>
               </GenerationUploadCard>
 

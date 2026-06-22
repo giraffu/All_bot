@@ -273,10 +273,10 @@ df -h /
 - 失败排障可用 `--no-cleanup` 保留本次 SCAIL-2 Pod；复跑使用 `--reuse-pod-id scail2=<pod_id>`，不得重复创建诊断 Pod。验收结束后必须恢复 `cloud_worker_test_08` 原 control 状态，删除本次 RunPod Pod，并确认 managed cloud-test Pod 清理正常。
 
 2026-06-21 LTX 高级图生视频扩展云测试验收口径：
-- LTX 用户侧仍通过 Web/Bot 的高级图生视频入口提交并写历史为 `ltx_video`；执行面按模式分流为 `ltx_video`、`ltx_video_flf2v`、`ltx_video_v2v_audio`。目标 LTX worker 必须声明 `SUPPORTED_TASK_TYPES=ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`，并加载 `LTX 2.3 I2V 6.1.json`、`LTX 2.3 FLF2V 6.1.json`、`LTX 2.3 V2V Audio 6.1.json`。
-- 验收应通过测试 Web 或测试 Bot 分别提交单首帧、首尾帧、输入视频+文本三单，不能只做 worker 直测。合格结果应同时满足：Central 中三单执行类型分别正确、目标 LTX worker 接单、终态 `done`、Web result/history 成功、输出 MP4 可下载。
-- 首尾帧与视频配音模式必须检查 `extra_outputs.last_frame` 可下载，并从结果页或历史详情触发“扩展生成”后能把该尾帧预填为下一段 LTX 起始帧。
-- 视频配音模式除 MP4 可播放外，还必须用实际播放器或 `ffprobe` 检查输出存在音频流；口型/语音与文本方向是否符合预期以目标 ComfyUI runtime 的真实生成结果为准。
+- LTX 用户侧仍通过 Web/Bot 的高级图生视频入口提交并写历史为 `ltx_video`；当前用户入口只开放单首帧与首尾帧，执行面分别分流为 `ltx_video`、`ltx_video_flf2v`。目标 LTX worker 仍建议声明 `SUPPORTED_TASK_TYPES=ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`，并加载三份 LTX workflow，以兼容历史/队列中的 V2V Audio 任务。
+- 常规验收应通过测试 Web 或测试 Bot 分别提交单首帧、首尾帧两单，不能只做 worker 直测。合格结果应同时满足：Central 中两单执行类型分别正确、目标 LTX worker 接单、终态 `done`、Web result/history 成功、输出 MP4 可下载。
+- 首尾帧模式必须检查 `extra_outputs.last_frame` 可下载，并从结果页或历史详情触发“扩展生成”后能把该尾帧预填为下一段 LTX 起始帧。
+- 如需回归 `ltx_video_v2v_audio` 兼容执行面，应使用受控直测或临时入口单独验证；除 MP4 可播放外，还必须用实际播放器或 `ffprobe` 检查输出存在音频流。
 - 现有 `ltx_video` 单首帧路径应保持旧 workflow 与结果表现不变；若只改了新工作流，仍要至少提交一单旧 I2V 做回归。
 
 2026-06-06 R2 切换验证结果：

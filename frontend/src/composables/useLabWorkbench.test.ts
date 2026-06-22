@@ -189,36 +189,6 @@ describe('useLabWorkbench LTX payloads', () => {
     }), 'lab.cards.high_res_video_title')
   })
 
-  it('submits LTX video dubbing as v2v_audio using a video upload slot', async () => {
-    const workbench = createWorkbench('ltx_video_audio')
-    const video = new File(['video-bytes'], 'talking.mp4', { type: 'video/mp4' })
-
-    await workbench.beforeUploadSlot('input_video', video)
-    workbench.prompt.value = '她看向镜头说欢迎回来'
-    workbench.duration.value = '15'
-
-    await workbench.handleSubmit()
-
-    expect(mocks.uploadFile).toHaveBeenCalledWith(video, {
-      maxSizeBytes: SCAIL2_VIDEO_UPLOAD_MAX_SIZE_BYTES,
-      maxSizeLabel: SCAIL2_VIDEO_UPLOAD_MAX_SIZE_LABEL,
-    })
-    expect(mocks.submitTask).toHaveBeenCalledWith({
-      task_type: 'ltx_video',
-      inputs: {
-        images: ['uploads/talking.mp4'],
-        prompt: '她看向镜头说欢迎回来',
-        resolution: '1280x704',
-        duration: 15,
-        ltx_mode: 'v2v_audio',
-        video: 'uploads/talking.mp4',
-        extract_last_frame: true,
-      },
-      priority: 0,
-      is_template: false,
-    }, 'lab.cards.ltx_video_audio_title')
-  })
-
   it('loads LTX extension route tail frames as locked start frames', () => {
     const workbench = createWorkbench('ltx_video', {
       ltx_extend_task_id: 'ltx-task-1',

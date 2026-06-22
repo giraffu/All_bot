@@ -21,7 +21,7 @@ export const isScail2ModeId = (modeId: UnifiedLabModeId) => (
 )
 
 export const isLtxLabModeId = (modeId: UnifiedLabModeId) => (
-  modeId === 'ltx_video' || modeId === 'ltx_video_audio'
+  modeId === 'ltx_video'
 )
 
 export const getDefaultResolutionForMode = (modeId: UnifiedLabModeId) => (
@@ -88,9 +88,7 @@ export const getLabCostHintKey = (modeId: UnifiedLabModeId) => {
   }
 
   if (isLtxLabModeId(modeId)) {
-    return modeId === 'ltx_video_audio'
-      ? 'lab.workbench.cost_hints.ltx_video_audio'
-      : 'lab.workbench.cost_hints.ltx_video'
+    return 'lab.workbench.cost_hints.ltx_video'
   }
 
   if (modeId === 'wan22_video_v2') {

@@ -31,15 +31,15 @@ sequenceDiagram
 - Bot 视频主链的取消态当前通过 `BotTaskCancelled` 收口，而不是字符串 sentinel。
 - `quick_video_fsm.py` 已不再通过构造假的 `Update/Message` 适配旧接口。
 - `ltx_video` 当前主协议是 `lora_items` 多选链路，最多 3 个 LoRA，旧 `lora_name / lora_strength` 只保留兼容。
-- `ltx_video` 用户侧历史/Gallery 类型不拆分；执行面按 `ltx_mode` 分流到 `ltx_video`（单首帧 I2V）、`ltx_video_flf2v`（首尾帧）或 `ltx_video_v2v_audio`（输入视频 + 文本生成带音频视频）。三者共用现有 LTX 主模型、LoRA 选项和计费倍率。
-- LTX 首尾帧和视频配音路径都会保存 `extra_outputs.last_frame`；普通 LTX I2V 若请求带 `extract_last_frame=true` 也会保存尾帧，用于扩展生成。
+- `ltx_video` 用户侧历史/Gallery 类型不拆分；当前 Bot/Web 用户入口只开放 `ltx_video`（单首帧 I2V）和 `ltx_video_flf2v`（首尾帧）。底层仍保留 `ltx_video_v2v_audio`（输入视频 + 文本生成带音频视频）执行面作为历史/队列兼容，但不再展示视频配音入口。
+- LTX 首尾帧路径会保存 `extra_outputs.last_frame`；普通 LTX I2V 若请求带 `extract_last_frame=true` 也会保存尾帧，用于扩展生成。历史兼容的 V2V Audio 结果若存在尾帧，仍按同一字段展示。
 - `wan22_video_v2` 已进入统一视频主链；除主视频外，还可能通过 `extra_outputs.last_frame` 回传尾帧图片。
 - 旧图生视频 `custom_video` / `video_lora` 与 Telegram 懒人动图在执行面统一为 `image_to_video`，与 `wan22_video_v2` 共用 `Wan22AioV82.json`；历史、投稿和展示类型仍保留 `custom_video` / `video_lora` 或具体懒人动图 mode，不改写成 v2。
 - `Wan22AioV82.json` 在 `2603` 最终帧序列后接入 `265` (`FL_RIFE`, `multiplier=4`) 插帧；worker patcher 会把主视频输出、帧数统计和尾帧提取都切到 `["265", 0]`，避免插帧后视频时长变慢。
 - Wan22 AIO 视频配置事实源是 `src.domain_config.wan22_aio_video`：旧图生视频 `custom_video` / `video_lora` / 懒人动图 mode / legacy `video_insert`、`video_edit` -> execution `image_to_video` -> `legacy_image_to_video` profile；图生视频 v2 `wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。两者共享 worker workflow，但不是同一个用户功能。
 - 旧图生视频支持 `5s/8s/10s`，对应 `81/129/161` 帧；分辨率与计费基数对齐 v2 四档：`preview` / `small` / `standard` / `hd`。历史投稿中的 `512p` / `720p` / `1024p` 会分别映射到 `preview/standard/hd`，`0.36 MP - Small` 会映射到 `small`，canonical duration 会恢复为 `5s/8s/10s`，缺失或非 canonical 时回退 5 秒。
 - Telegram `image_to_video_fsm.py` 的旧图生视频主入口会先展示同屏设置面板：附加模型、单图/首尾帧、`preview/small/standard/hd` 分辨率与确认按钮。确认后单图模式收 1 张起始图，首尾帧模式依次收起始图与终止图，然后要求发送提示词提交。
-- Telegram `ltx_video_fsm.py` 的高级图生视频入口会先选择最多 3 个 LTX LoRA，再在同屏设置面板合并选择“单首帧 / 首尾帧 / 视频配音”、清晰度和时长。用户确认后才按模式上传素材：单首帧收 1 张起始图，首尾帧依次收起始图和终止帧，视频配音收输入视频；素材收完后直接发送提示词提交。
+- Telegram `ltx_video_fsm.py` 的高级图生视频入口会先选择最多 3 个 LTX LoRA，再在同屏设置面板合并选择“单首帧 / 首尾帧”、清晰度和时长。用户确认后才按模式上传素材：单首帧收 1 张起始图，首尾帧依次收起始图和终止帧；素材收完后直接发送提示词提交。旧 `ltx_mode_v2v_audio` 回调只提示暂未开放，不再提交任务。
 - `image_to_video` 和 `wan22_video_v2` 通过 `wan22_model_profile` 区分主模型：旧入口使用 legacy high/low 主模型，v2 使用 snatchkiss high/low 主模型。`video_lora` 仍保留旧 LoRA 前缀选择，`custom_video` 兼容入口保持无 LoRA，v2 会清空额外 LoRA 槽。
 - Web `wan22_video_v2`、`custom_video`、`video_lora` 已支持与 Bot 对齐的多段链：历史与 `/api/tasks/{task_id}/result` 会返回 `last_frame` 与 `result_meta`，并新增 `/api/users/history/{task_id}/wan22-chain`、`/api/users/history/{task_id}/wan22-chain/stitch` 供练功房继续扩展、分段重生成和整链拼接；其中整链拼接现在会把拼接后 MP4 上传存储，并新增一条 `History` 记录返回给前端，而不是只回下载流。
 
@@ -150,7 +150,7 @@ graph TD
 ## 五、 结果发送与清理
 - Bot 完成后会发送 MP4、caption、reply markup 与后续交互入口。
 - `wan22_video_v2` 与执行面 `image_to_video` 都会额外保存 `extra_outputs.last_frame` 对应的尾帧图片，用于扩展生成、分段重生成和整链拼接。V82 下 `2607` 会从 RIFE 后的 `265` 帧序列抽取尾帧，`ImageFromBatch.batch_index` 需保持 `4095` 以满足当前节点上限；Worker 优先读取 Comfy `2503` 尾帧输出。如果某个 Comfy 实例只返回主 MP4，`agent_result_materialization.py` 会用 `ffmpeg/ffprobe` 从主视频补抽最后一帧，因此 worker 镜像必须保留 ffmpeg 依赖。
-- `ltx_video` / `ltx_video_flf2v` / `ltx_video_v2v_audio` 也属于尾帧扩展任务。FLF2V 与 V2V Audio workflow 的 `SaveImage 902` 保存尾帧；若只返回主 MP4，同一套 ffmpeg 兜底会补抽 `last_frame`。Bot/Web 的“扩展生成”会把该尾帧作为下一段 LTX 起始帧，续段提交携带 `ltx_prev_task_id` / `ltx_chain_task_ids` 并落库到 `extra_outputs._ltx_context`，供历史详情和拼接 API 识别链路。
+- `ltx_video` / `ltx_video_flf2v` / 历史兼容的 `ltx_video_v2v_audio` 也属于尾帧扩展任务。FLF2V 与 V2V Audio workflow 的 `SaveImage 902` 保存尾帧；若只返回主 MP4，同一套 ffmpeg 兜底会补抽 `last_frame`。Bot/Web 的“扩展生成”会把该尾帧作为下一段 LTX 起始帧，续段提交携带 `ltx_prev_task_id` / `ltx_chain_task_ids` 并落库到 `extra_outputs._ltx_context`，供历史详情和拼接 API 识别链路。
 - 运行结束后需清理：
   - status message
   - 本地临时文件
@@ -166,5 +166,5 @@ graph TD
 - 若修改 Wan22 尾帧物化逻辑，需覆盖 Comfy 返回 `2503` 和只返回主 MP4 的兜底抽帧两类路径，确保旧图生视频生成后仍可扩展和拼接。
 - 若修改旧图生视频投稿一键应用，需覆盖 prompt、`[模型: xxx]` LoRA 解析、旧分辨率到 `preview/small/standard/hd` 映射、`5s/8s/10s` 恢复和 v2 灵石消耗。
 - 若修改 Wan22 Gallery 一键应用，需覆盖 v2 单段 `negative_prompt` / `wan22_resolution_preset` 回填，以及旧/v2 stitched 拼接记录列表禁用与 apply-context 400 拒绝。
-- 若修改 `ltx_video`，需覆盖 `lora_items` 多选、单项兼容字段、无 LoRA 回退、单首帧/首尾帧/视频配音三条模式分发，以及 `extra_outputs.last_frame` 扩展生成。
+- 若修改 `ltx_video` 用户入口，需覆盖 `lora_items` 多选、单项兼容字段、无 LoRA 回退、单首帧/首尾帧两条开放模式、旧视频配音回调拦截，以及 `extra_outputs.last_frame` 扩展生成。
 - 若修改视频成本计算、requested_duration 或结果发送语义，需同步回归 focused tests 与黄金路径集。

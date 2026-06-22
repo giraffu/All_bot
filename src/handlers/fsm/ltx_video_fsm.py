@@ -70,6 +70,7 @@ LTX_MODE_I2V = "i2v"
 LTX_MODE_FLF2V = "flf2v"
 LTX_MODE_V2V_AUDIO = "v2v_audio"
 LTX_SETUP_CONFIRM_CALLBACK = "ltx_setup_confirm"
+LTX_V2V_AUDIO_DISABLED_MESSAGE = "视频配音暂未开放，请选择单首帧或首尾帧。"
 LTX_MAX_INPUT_VIDEO_MB = 40
 LTX_MAX_INPUT_VIDEO_BYTES = LTX_MAX_INPUT_VIDEO_MB * 1024 * 1024
 _IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
@@ -199,12 +200,6 @@ def _build_initial_setup_keyboard(
             callback_data="ltx_mode_flf2v",
         ),
     ]
-    mode_audio_row = [
-        InlineKeyboardButton(
-            f"{'✅ ' if current_mode == LTX_MODE_V2V_AUDIO else ''}{_ltx_mode_label(LTX_MODE_V2V_AUDIO, lang)}",
-            callback_data="ltx_mode_v2v_audio",
-        )
-    ]
     settings_markup = get_ltx_video_settings_keyboard(
         "default",
         "外门弟子",
@@ -213,7 +208,7 @@ def _build_initial_setup_keyboard(
         lang,
     )
     confirm_text = "Confirm, upload media" if lang == "en" else "确定，上传素材"
-    keyboard = [mode_row, mode_audio_row]
+    keyboard = [mode_row]
     keyboard.extend([list(row) for row in settings_markup.inline_keyboard])
     keyboard.append(
         [InlineKeyboardButton(confirm_text, callback_data=LTX_SETUP_CONFIRM_CALLBACK)]
@@ -634,7 +629,9 @@ async def process_initial_setup(
 
     data = query.data or ""
     if data == "ltx_mode_v2v_audio":
-        fsm_data["ltx_mode"] = LTX_MODE_V2V_AUDIO
+        fsm_data["ltx_mode"] = LTX_MODE_I2V
+        with contextlib.suppress(Exception):
+            await query.answer(LTX_V2V_AUDIO_DISABLED_MESSAGE, show_alert=True)
     elif data == "ltx_mode_flf2v":
         fsm_data["ltx_mode"] = LTX_MODE_FLF2V
     elif data == "ltx_mode_i2v":
@@ -669,12 +666,16 @@ async def _confirm_initial_setup(
 
     ltx_mode = str(fsm_data.get("ltx_mode") or LTX_MODE_I2V)
     if ltx_mode == LTX_MODE_V2V_AUDIO:
+        fsm_data["ltx_mode"] = LTX_MODE_I2V
+        with contextlib.suppress(Exception):
+            await query.answer(LTX_V2V_AUDIO_DISABLED_MESSAGE, show_alert=True)
         await robust_edit_text(
             query.message,
-            "设置已确认。请上传一段视频（MP4/MOV/WebM，40MB 内）。",
+            _build_initial_setup_message(context, fsm_data),
+            reply_markup=_build_initial_setup_keyboard(context, fsm_data),
             parse_mode="Markdown",
         )
-        return LtxVideoState.WAIT_VIDEO
+        return LtxVideoState.WAIT_MODE_SELECTION
 
     if ltx_mode == LTX_MODE_FLF2V:
         await robust_edit_text(
@@ -900,6 +901,15 @@ async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE)
     res = fsm_data["resolution"]
     dur = fsm_data["duration"]
     ltx_mode = str(fsm_data.get("ltx_mode") or LTX_MODE_I2V)
+    if ltx_mode == LTX_MODE_V2V_AUDIO:
+        logger.info("user=%s tried disabled LTX video audio mode from bot", user_id)
+        with contextlib.suppress(Exception):
+            await query.answer(LTX_V2V_AUDIO_DISABLED_MESSAGE, show_alert=True)
+        with contextlib.suppress(Exception):
+            await robust_edit_text(query.message, LTX_V2V_AUDIO_DISABLED_MESSAGE)
+        _cleanup_context(context)
+        return ConversationHandler.END
+
     prompt = fsm_data.get("prompt", "")
     lora_items = _get_ltx_video_items(fsm_data)
     if not lora_items:

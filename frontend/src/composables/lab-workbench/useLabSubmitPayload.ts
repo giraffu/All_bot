@@ -118,33 +118,6 @@ export function useLabSubmitPayload({
       return
     }
 
-    if (currentMode.value.id === 'ltx_video_audio') {
-      const inputVideo = uploadedSlotAssets.value.input_video?.key
-
-      if (!inputVideo) {
-        message.warning(t('lab.workbench.validation.upload_slots_required'))
-        return
-      }
-
-      await submitAndTrack(buildGenerationTaskPayload({
-        taskType: 'ltx_video',
-        images: [inputVideo],
-        prompt: prompt.value,
-        promptTarget: 'inputs',
-        resolution: resolution.value,
-        duration: Number(duration.value),
-        loraItems: ltxLoraItems.value,
-        extraInputs: {
-          ltx_mode: 'v2v_audio',
-          video: inputVideo,
-          extract_last_frame: true,
-        },
-        isTemplate: isTemplateApplied.value,
-        sourcePostId: templateSourcePostId.value,
-      }))
-      return
-    }
-
     if (currentMode.value.id === 'face_swap' || currentMode.value.id === 'face_video') {
       const faceImage = uploadedSlotAssets.value.face_image?.key
       const targetSlot = currentMode.value.id === 'face_video' ? 'target_video' : 'target_image'
