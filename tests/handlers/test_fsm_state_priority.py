@@ -498,37 +498,15 @@ async def test_ltx_video_state_expired_before_quota_check(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_ltx_video_receive_image_returns_settings_keyboard(monkeypatch):
+async def test_ltx_video_receive_image_after_setup_requests_prompt(monkeypatch):
     reply_mock = AsyncMock()
     download_mock = AsyncMock(return_value="/tmp/ltx_video.png")
-    get_or_create_user_mock = AsyncMock(return_value=(SimpleNamespace(id=999), False))
-    get_user_group_mock = AsyncMock(return_value="pro")
-    get_user_identity_mock = AsyncMock(return_value="vip")
 
     monkeypatch.setattr(ltx_video_fsm, "robust_reply_text", reply_mock)
     monkeypatch.setattr(
         ltx_video_fsm,
         "download_telegram_file_to_fsm_temp",
         download_mock,
-    )
-    monkeypatch.setattr(
-        "src.core.user_core.get_or_create_user_by_telegram",
-        get_or_create_user_mock,
-    )
-    monkeypatch.setattr(
-        ltx_video_fsm.permission_service,
-        "get_user_group",
-        get_user_group_mock,
-    )
-    monkeypatch.setattr(
-        ltx_video_fsm.permission_service,
-        "get_user_identity",
-        get_user_identity_mock,
-    )
-    monkeypatch.setattr(
-        ltx_video_fsm,
-        "get_ltx_video_settings_keyboard",
-        lambda *args, **kwargs: "ltx-keyboard",
     )
 
     message = SimpleNamespace(
@@ -541,17 +519,26 @@ async def test_ltx_video_receive_image_returns_settings_keyboard(monkeypatch):
         effective_chat=SimpleNamespace(id=10001),
         message=message,
     )
+    def translate(key, **kwargs):
+        if key == "fsm.ltx_video.prompt_request_text":
+            return (
+                f"素材已收到。{kwargs['mode']} {kwargs['resolution']} "
+                f"{kwargs['duration']} {kwargs['cost']}。请发送提示词。"
+            )
+        return f"T:{key}"
+
     context = SimpleNamespace(
         bot=SimpleNamespace(get_file=AsyncMock(return_value=SimpleNamespace())),
         user_data={
             "ltx_video_data": {
                 "resolution": "1280x704",
                 "duration": "5s",
+                "ltx_mode": "i2v",
                 "image_path": None,
             }
         },
         lang="zh",
-        t=lambda key, **kwargs: f"T:{key}",
+        t=translate,
     )
 
     result = await ltx_video_fsm.receive_image(update, context)
@@ -559,18 +546,13 @@ async def test_ltx_video_receive_image_returns_settings_keyboard(monkeypatch):
     assert result == ltx_video_fsm.LtxVideoState.WAIT_SETTINGS_AND_PROMPT
     context.bot.get_file.assert_awaited_once_with("photo-file-id")
     download_mock.assert_awaited_once()
-    get_or_create_user_mock.assert_awaited_once_with(update.effective_user.id)
-    get_user_group_mock.assert_awaited_once_with(999)
-    get_user_identity_mock.assert_awaited_once_with(999)
     assert context.user_data["ltx_video_data"]["image_path"] == "/tmp/ltx_video.png"
     reply_mock.assert_awaited_once()
     assert reply_mock.await_args.args[0] is message
-    assert "T:fsm.ltx_video.settings_text" in reply_mock.await_args.args[1]
+    assert "提示词" in reply_mock.await_args.args[1]
+    assert "请在下方选择" not in reply_mock.await_args.args[1]
     assert "T:fsm.image_to_video.current_lora" in reply_mock.await_args.args[1]
-    assert reply_mock.await_args.kwargs == {
-        "reply_markup": "ltx-keyboard",
-        "parse_mode": "Markdown",
-    }
+    assert reply_mock.await_args.kwargs == {"parse_mode": "Markdown"}
 
 
 @pytest.mark.asyncio
@@ -627,7 +609,7 @@ async def test_start_ltx_video_opens_lora_selection_first(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_ltx_video_lora_selection_sets_name_and_requests_mode(monkeypatch):
+async def test_ltx_video_lora_selection_sets_name_and_opens_setup_panel(monkeypatch):
     edit_mock = AsyncMock()
     monkeypatch.setattr(ltx_video_fsm, "robust_edit_text", edit_mock)
 
@@ -666,6 +648,94 @@ async def test_ltx_video_lora_selection_sets_name_and_requests_mode(monkeypatch)
 
     assert result == ltx_video_fsm.LtxVideoState.WAIT_MODE_SELECTION
     assert edit_mock.await_count == 2
+    callback_data = [
+        button.callback_data
+        for row in edit_mock.await_args.kwargs["reply_markup"].inline_keyboard
+        for button in row
+    ]
+    assert "ltx_mode_i2v" in callback_data
+    assert "ltx_mode_flf2v" in callback_data
+    assert "ltx_mode_v2v_audio" in callback_data
+    assert "set_ltxdur_10s" in callback_data
+    assert "ltx_setup_confirm" in callback_data
+
+
+@pytest.mark.asyncio
+async def test_ltx_video_setup_panel_updates_mode_and_duration(monkeypatch):
+    edit_mock = AsyncMock()
+    monkeypatch.setattr(ltx_video_fsm, "robust_edit_text", edit_mock)
+
+    query = SimpleNamespace(
+        data="ltx_mode_flf2v",
+        answer=AsyncMock(),
+        message=SimpleNamespace(),
+    )
+    update = SimpleNamespace(callback_query=query)
+    context = SimpleNamespace(
+        user_data={
+            "ltx_video_data": {
+                "resolution": "1280x704",
+                "duration": "5s",
+                "ltx_mode": "i2v",
+                "image_path": None,
+                "lora_items": [],
+            }
+        },
+        lang="zh",
+        t=lambda key, **kwargs: f"T:{key}",
+    )
+
+    result = await ltx_video_fsm.process_initial_setup(update, context)
+
+    assert result == ltx_video_fsm.LtxVideoState.WAIT_MODE_SELECTION
+    assert context.user_data["ltx_video_data"]["ltx_mode"] == "flf2v"
+    callback_data = [
+        button.callback_data
+        for row in edit_mock.await_args.kwargs["reply_markup"].inline_keyboard
+        for button in row
+    ]
+    assert "ltx_setup_confirm" in callback_data
+
+    query.data = "set_ltxdur_15s"
+    result = await ltx_video_fsm.process_initial_setup(update, context)
+
+    assert result == ltx_video_fsm.LtxVideoState.WAIT_MODE_SELECTION
+    assert context.user_data["ltx_video_data"]["duration"] == "15s"
+
+
+@pytest.mark.asyncio
+async def test_ltx_video_setup_confirm_routes_start_end_mode_to_image_upload(
+    monkeypatch,
+):
+    edit_mock = AsyncMock()
+    monkeypatch.setattr(ltx_video_fsm, "robust_edit_text", edit_mock)
+
+    query = SimpleNamespace(
+        data="ltx_setup_confirm",
+        answer=AsyncMock(),
+        message=SimpleNamespace(),
+    )
+    update = SimpleNamespace(callback_query=query)
+    context = SimpleNamespace(
+        user_data={
+            "ltx_video_data": {
+                "resolution": "1280x704",
+                "duration": "10s",
+                "ltx_mode": "flf2v",
+                "image_path": None,
+                "end_image_path": None,
+                "lora_items": [],
+            }
+        },
+        lang="zh",
+        t=lambda key, **kwargs: f"T:{key}",
+    )
+
+    result = await ltx_video_fsm.process_initial_setup(update, context)
+
+    assert result == ltx_video_fsm.LtxVideoState.WAIT_IMAGE
+    edit_mock.assert_awaited_once()
+    assert "起始帧" in edit_mock.await_args.args[1]
 
 
 @pytest.mark.asyncio
@@ -774,6 +844,135 @@ async def test_ltx_video_confirm_generation_forwards_start_end_mode(monkeypatch)
     assert process_task_mock.call_args.kwargs["ltx_mode"] == "flf2v"
     assert process_task_mock.call_args.kwargs["image_path"] == "/tmp/start.png"
     assert process_task_mock.call_args.kwargs["end_image_path"] == "/tmp/end.png"
+
+
+@pytest.mark.asyncio
+async def test_ltx_video_extension_initializes_single_start_frame_with_chain_context(
+    monkeypatch,
+):
+    reply_mock = AsyncMock()
+    settings_mock = AsyncMock(
+        return_value=ltx_video_fsm.LtxVideoState.WAIT_SETTINGS_AND_PROMPT
+    )
+    load_history_mock = AsyncMock(
+        return_value=SimpleNamespace(
+            billing_resolution="1280x704",
+            requested_duration=10,
+            extra_outputs={
+                "_ltx_context": {
+                    "ltx_chain_task_ids": ["ltx-task-1"],
+                    "lora_items": [
+                        {
+                            "name": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors",
+                            "strength": 0.8,
+                        }
+                    ],
+                },
+            },
+        )
+    )
+    download_mock = AsyncMock(return_value="/tmp/ltx-tail.png")
+
+    monkeypatch.setattr(ltx_video_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(ltx_video_fsm, "_send_settings_message", settings_mock)
+    monkeypatch.setattr(ltx_video_fsm, "load_owned_ltx_history", load_history_mock)
+    monkeypatch.setattr(
+        ltx_video_fsm,
+        "download_ltx_last_frame_to_fsm_temp",
+        download_mock,
+    )
+
+    query = SimpleNamespace(
+        data="ltx_extend:ltx-task-2",
+        answer=AsyncMock(),
+        message=SimpleNamespace(message_id=77),
+    )
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=_build_user(),
+        effective_message=query.message,
+    )
+    context = SimpleNamespace(
+        user_data={},
+        bot_data={},
+        lang="zh",
+        t=lambda key, **kwargs: f"T:{key}",
+    )
+
+    result = await ltx_video_fsm.start_ltx_video_extension(update, context)
+
+    assert result == ltx_video_fsm.LtxVideoState.WAIT_SETTINGS_AND_PROMPT
+    data = context.user_data["ltx_video_data"]
+    assert data["ltx_mode"] == "i2v"
+    assert data["image_path"] == "/tmp/ltx-tail.png"
+    assert data["extension_prev_task_id"] == "ltx-task-2"
+    assert data["chain_task_ids"] == ["ltx-task-1", "ltx-task-2"]
+    assert data["lora_items"] == [
+        {
+            "name": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors",
+            "strength": 0.8,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_ltx_video_confirm_generation_forwards_extension_chain_context(
+    monkeypatch,
+):
+    safe_answer_mock = AsyncMock()
+    create_background_task_mock = MagicMock()
+    process_task_mock = MagicMock(return_value=object())
+    edit_mock = AsyncMock()
+    quota_mock = AsyncMock()
+
+    monkeypatch.setattr("src.utils.safe_answer_query", safe_answer_mock)
+    monkeypatch.setattr(
+        ltx_video_fsm,
+        "create_background_task",
+        create_background_task_mock,
+    )
+    monkeypatch.setattr(ltx_video_fsm, "process_ltx_video_task", process_task_mock)
+    monkeypatch.setattr(ltx_video_fsm, "robust_edit_text", edit_mock)
+    monkeypatch.setattr(ltx_video_fsm.permission_service, "check_quota", quota_mock)
+
+    query = SimpleNamespace(
+        from_user=SimpleNamespace(id=12345),
+        message=SimpleNamespace(chat_id=10001),
+        answer=AsyncMock(),
+    )
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=_build_user(),
+        effective_chat=SimpleNamespace(id=10001),
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(),
+        user_data={
+            "in_conversation": "LTX_VIDEO",
+            "ltx_video_data": {
+                "resolution": "1280x704",
+                "duration": "5s",
+                "ltx_mode": "i2v",
+                "prompt": "continue the motion",
+                "image_path": "/tmp/ltx-tail.png",
+                "extension_prev_task_id": "ltx-task-2",
+                "chain_task_ids": ["ltx-task-1", "ltx-task-2"],
+                "lora_items": [],
+            }
+        },
+        t=lambda key, **kwargs: f"T:{key}",
+    )
+
+    result = await ltx_video_fsm.confirm_generation(update, context)
+
+    assert result == ConversationHandler.END
+    process_task_mock.assert_called_once()
+    assert process_task_mock.call_args.kwargs["ltx_mode"] == "i2v"
+    assert process_task_mock.call_args.kwargs["ltx_prev_task_id"] == "ltx-task-2"
+    assert process_task_mock.call_args.kwargs["ltx_chain_task_ids"] == [
+        "ltx-task-1",
+        "ltx-task-2",
+    ]
 
 
 @pytest.mark.asyncio

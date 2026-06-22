@@ -1166,6 +1166,121 @@ async def test_process_ltx_video_task_includes_lora_context_in_inputs(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_process_ltx_video_task_includes_extension_chain_context(monkeypatch):
+    captured_flow = {}
+
+    async def fake_run_bot_task_application(*, flow):
+        captured_flow["flow"] = flow
+        return (b"video-bytes", "task-ltx")
+
+    monkeypatch.setattr(
+        "src.core.user_core.get_or_create_user_by_telegram",
+        AsyncMock(return_value=(SimpleNamespace(id=456), False)),
+    )
+    monkeypatch.setattr(
+        "src.services.task_service_entrypoints_specialized.get_acceleration_notice",
+        AsyncMock(return_value=""),
+    )
+    monkeypatch.setattr(
+        "src.services.task_service_entrypoints_specialized.run_bot_task_application",
+        fake_run_bot_task_application,
+    )
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=123),
+        effective_user=SimpleNamespace(id=789, username="tester"),
+        effective_message=SimpleNamespace(),
+    )
+    context = SimpleNamespace(
+        user_data={
+            "ltx_video_resolution": "1280x704",
+            "ltx_video_duration": "5s",
+        },
+        bot=MagicMock(),
+        t=lambda value, **_kwargs: value,
+    )
+
+    result = await process_ltx_video_task(
+        update=update,
+        context=context,
+        prompt="continue",
+        image_path="tail.png",
+        ltx_prev_task_id="ltx-task-2",
+        ltx_chain_task_ids=["ltx-task-1", "ltx-task-2"],
+        cleanup=False,
+    )
+
+    assert result == (b"video-bytes", "task-ltx")
+    flow = captured_flow["flow"]
+    assert flow.request.inputs["ltx_prev_task_id"] == "ltx-task-2"
+    assert flow.request.inputs["ltx_chain_task_ids"] == ["ltx-task-1", "ltx-task-2"]
+    assert flow.presentation.result_meta["ltx_prev_task_id"] == "ltx-task-2"
+    assert flow.presentation.result_meta["ltx_chain_task_ids"] == [
+        "ltx-task-1",
+        "ltx-task-2",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_bot_ltx_completion_merges_history_context_into_extra_outputs(monkeypatch):
+    captured_extra_outputs = {}
+
+    async def fake_download_and_log_task_output(**kwargs):
+        captured_extra_outputs["value"] = kwargs["extra_outputs"]
+        return SimpleNamespace(media_bytes=b"video-bytes", output_file="out.mp4")
+
+    async def fake_present_completed_task_result(**_kwargs):
+        return b"video-bytes", "out.mp4"
+
+    monkeypatch.setattr(
+        "src.services.task_service_completion.download_and_log_task_output",
+        fake_download_and_log_task_output,
+    )
+    monkeypatch.setattr(
+        "src.services.task_service_completion.present_completed_task_result",
+        fake_present_completed_task_result,
+    )
+
+    result = await completion_helpers.handle_task_completion(
+        context=SimpleNamespace(),
+        chat_id=123,
+        internal_user_id=456,
+        prompt="continue",
+        task_type="ltx_video",
+        registry_task_id="ltx-task-3",
+        backend_task_id="backend-ltx-task-3",
+        saved_input_images=["tail.png"],
+        user_logger=SimpleNamespace(username="tester"),
+        is_video=True,
+        send_result=True,
+        reply_markup=None,
+        status_msg=SimpleNamespace(),
+        delete_status=True,
+        caption="done",
+        allow_contribute=True,
+        result_meta={
+            "ltx_mode": "i2v",
+            "ltx_prev_task_id": "ltx-task-2",
+            "ltx_chain_task_ids": ["ltx-task-1", "ltx-task-2"],
+        },
+        extra_outputs={"last_frame": {"path": "history/ltx-task-3/last.png"}},
+        billing_resolution="1280x704",
+        requested_duration=5,
+    )
+
+    assert result == (b"video-bytes", "out.mp4")
+    assert captured_extra_outputs["value"]["last_frame"]["path"] == (
+        "history/ltx-task-3/last.png"
+    )
+    assert captured_extra_outputs["value"]["_ltx_context"] == {
+        "ltx_mode": "i2v",
+        "ltx_use_end_frame": False,
+        "ltx_prev_task_id": "ltx-task-2",
+        "ltx_chain_task_ids": ["ltx-task-1", "ltx-task-2"],
+    }
+
+
+@pytest.mark.asyncio
 async def test_process_video_task_template_entrypoint_uses_internal_user_id_for_notice_and_queue_text(
     monkeypatch,
 ):

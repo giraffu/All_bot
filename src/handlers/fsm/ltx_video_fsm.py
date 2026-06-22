@@ -36,8 +36,11 @@ from src.lora_catalog import (
 from src.services.task_service_entrypoints_specialized import process_ltx_video_task
 from src.services.ltx_video_extension_service import (
     LtxVideoExtensionError,
+    build_ltx_full_chain_task_ids,
     download_ltx_last_frame_to_fsm_temp,
+    extract_ltx_history_context,
     load_owned_ltx_history,
+    normalize_ltx_video_chain_task_ids,
 )
 from src.services.permission_service import permission_service
 from src.services.fsm_temp_file_service import (
@@ -66,6 +69,7 @@ LTX_VIDEO_CONVERSATION_TAG = "LTX_VIDEO"
 LTX_MODE_I2V = "i2v"
 LTX_MODE_FLF2V = "flf2v"
 LTX_MODE_V2V_AUDIO = "v2v_audio"
+LTX_SETUP_CONFIRM_CALLBACK = "ltx_setup_confirm"
 LTX_MAX_INPUT_VIDEO_MB = 40
 LTX_MAX_INPUT_VIDEO_BYTES = LTX_MAX_INPUT_VIDEO_MB * 1024 * 1024
 _IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
@@ -102,6 +106,7 @@ def _build_settings_message(
         empty_key="fsm.image_to_video.current_lora",
     )
     return f"{message}\n\n{lora_text}"
+
 
 def _get_ltx_video_items(fsm_data: dict[str, Any]) -> list[dict[str, Any]]:
     return normalize_ltx_video_lora_items(
@@ -166,40 +171,86 @@ def _build_ltx_lora_selection_keyboard(
     return InlineKeyboardMarkup(keyboard)
 
 
-def _build_mode_selection_keyboard(context: ContextTypes.DEFAULT_TYPE) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton("单首帧", callback_data="ltx_mode_i2v"),
-                InlineKeyboardButton("首尾帧", callback_data="ltx_mode_flf2v"),
-            ],
-            [
-                InlineKeyboardButton("视频配音", callback_data="ltx_mode_v2v_audio"),
-            ],
-        ]
-    )
+def _ltx_mode_label(mode: str, lang: str = "zh") -> str:
+    if lang == "en":
+        return {
+            LTX_MODE_FLF2V: "Start/end frames",
+            LTX_MODE_V2V_AUDIO: "Video audio",
+        }.get(mode, "Single start frame")
+    return {
+        LTX_MODE_FLF2V: "首尾帧",
+        LTX_MODE_V2V_AUDIO: "视频配音",
+    }.get(mode, "单首帧")
 
 
-def _build_mode_selection_message(
+def _build_initial_setup_keyboard(
     context: ContextTypes.DEFAULT_TYPE,
-    lora_items: list[dict[str, Any]],
+    fsm_data: dict[str, Any],
+) -> InlineKeyboardMarkup:
+    lang = getattr(context, "lang", "zh")
+    current_mode = str(fsm_data.get("ltx_mode") or LTX_MODE_I2V)
+    mode_row = [
+        InlineKeyboardButton(
+            f"{'✅ ' if current_mode == LTX_MODE_I2V else ''}{_ltx_mode_label(LTX_MODE_I2V, lang)}",
+            callback_data="ltx_mode_i2v",
+        ),
+        InlineKeyboardButton(
+            f"{'✅ ' if current_mode == LTX_MODE_FLF2V else ''}{_ltx_mode_label(LTX_MODE_FLF2V, lang)}",
+            callback_data="ltx_mode_flf2v",
+        ),
+    ]
+    mode_audio_row = [
+        InlineKeyboardButton(
+            f"{'✅ ' if current_mode == LTX_MODE_V2V_AUDIO else ''}{_ltx_mode_label(LTX_MODE_V2V_AUDIO, lang)}",
+            callback_data="ltx_mode_v2v_audio",
+        )
+    ]
+    settings_markup = get_ltx_video_settings_keyboard(
+        "default",
+        "外门弟子",
+        str(fsm_data.get("resolution") or "1280x704"),
+        str(fsm_data.get("duration") or "5s"),
+        lang,
+    )
+    confirm_text = "Confirm, upload media" if lang == "en" else "确定，上传素材"
+    keyboard = [mode_row, mode_audio_row]
+    keyboard.extend([list(row) for row in settings_markup.inline_keyboard])
+    keyboard.append(
+        [InlineKeyboardButton(confirm_text, callback_data=LTX_SETUP_CONFIRM_CALLBACK)]
+    )
+    return InlineKeyboardMarkup(keyboard)
+
+
+def _build_initial_setup_message(
+    context: ContextTypes.DEFAULT_TYPE,
+    fsm_data: dict[str, Any],
 ) -> str:
     lang = getattr(context, "lang", "zh")
+    res = str(fsm_data.get("resolution") or "1280x704")
+    dur = str(fsm_data.get("duration") or "5s")
+    multiplier = LTX_DURATION_MULTIPLIER.get(dur, 1.0)
+    cost = int(LTX_RESOLUTION_COST.get(res, 10) * multiplier)
+    mode_label = _ltx_mode_label(str(fsm_data.get("ltx_mode") or LTX_MODE_I2V), lang)
+    lora_text = _build_lora_summary_text(
+        context,
+        _get_ltx_video_items(fsm_data),
+        empty_key="fsm.image_to_video.current_lora",
+    )
     if lang == "en":
-        mode_text = (
-            "Choose an LTX generation mode:\n"
-            "Single start frame: image + prompt.\n"
-            "Start/end frames: start image + end image + prompt.\n"
-            "Video audio: input video + text; LTX will generate an audio video."
+        setup_text = (
+            "Choose mode, quality and duration first.\n"
+            f"Mode: {mode_label}\n"
+            f"Quality: {res} | Duration: {dur} | Cost: {cost}\n\n"
+            "Tap Confirm, then upload the required media."
         )
     else:
-        mode_text = (
-            "请选择 LTX 生成模式：\n"
-            "单首帧：上传一张起始图生成视频。\n"
-            "首尾帧：上传起始图和终止帧生成视频。\n"
-            "视频配音：上传视频并输入台词/描述，生成带音频的视频。"
+        setup_text = (
+            "请先选择生成模式、清晰度和时长。\n"
+            f"模式：{mode_label}\n"
+            f"清晰度：{res} | 时长：{dur} | 消耗灵石：{cost}\n\n"
+            "点“确定”后再上传素材。"
         )
-    return f"{_build_lora_summary_text(context, lora_items, empty_key='fsm.image_to_video.current_lora')}\n\n{mode_text}"
+    return f"{lora_text}\n\n{setup_text}"
 
 
 def _build_image_request_text(
@@ -211,6 +262,33 @@ def _build_image_request_text(
         f"{_build_lora_summary_text(context, lora_items, empty_key='fsm.image_to_video.current_lora')}\n\n"
         f"{_t(context, 'fsm.ltx_video.start')}"
     )
+
+
+def _build_prompt_request_text(
+    context: ContextTypes.DEFAULT_TYPE,
+    fsm_data: dict[str, Any],
+) -> str:
+    res = str(fsm_data.get("resolution") or "1280x704")
+    dur = str(fsm_data.get("duration") or "5s")
+    base_cost = LTX_RESOLUTION_COST.get(res, 10)
+    multiplier = LTX_DURATION_MULTIPLIER.get(dur, 1.0)
+    cost = int(base_cost * multiplier)
+    lang = getattr(context, "lang", "zh")
+    key = "fsm.ltx_video.prompt_request_text"
+    prompt_request_text = _t(
+        context,
+        key,
+        resolution=res,
+        duration=dur,
+        cost=cost,
+        mode=_ltx_mode_label(str(fsm_data.get("ltx_mode") or LTX_MODE_I2V), lang),
+    )
+    lora_text = _build_lora_summary_text(
+        context,
+        _get_ltx_video_items(fsm_data),
+        empty_key="fsm.image_to_video.current_lora",
+    )
+    return f"{prompt_request_text}\n\n{lora_text}"
 
 
 def _build_lora_selection_message(
@@ -352,6 +430,13 @@ def _resolve_lora_items_from_meta(meta: dict[str, Any]) -> list[dict[str, Any]]:
     return [fallback_item] if fallback_item else []
 
 
+def _merge_history_context_into_meta(history, meta: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **extract_ltx_history_context(getattr(history, "extra_outputs", None)),
+        **meta,
+    }
+
+
 async def _send_settings_message(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -391,6 +476,21 @@ async def _send_settings_message(
 
     await robust_reply_text(
         message, msg_text, reply_markup=reply_markup, parse_mode="Markdown"
+    )
+    return LtxVideoState.WAIT_SETTINGS_AND_PROMPT
+
+
+async def _send_prompt_request_message(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    message,
+) -> int:
+    fsm_data = context.user_data[LTX_VIDEO_DATA_KEY]
+    await robust_reply_text(
+        message,
+        _build_prompt_request_text(context, fsm_data),
+        parse_mode="Markdown",
     )
     return LtxVideoState.WAIT_SETTINGS_AND_PROMPT
 
@@ -462,11 +562,8 @@ async def handle_lora_selection(
             fsm_data["lora_items"] = [item] if item else []
         await robust_edit_text(
             query.message,
-            _build_mode_selection_message(
-                context,
-                _get_ltx_video_items(fsm_data),
-            ),
-            reply_markup=_build_mode_selection_keyboard(context),
+            _build_initial_setup_message(context, fsm_data),
+            reply_markup=_build_initial_setup_keyboard(context, fsm_data),
             parse_mode="Markdown",
         )
         return LtxVideoState.WAIT_MODE_SELECTION
@@ -476,11 +573,8 @@ async def handle_lora_selection(
             fsm_data["lora_items"] = []
         await robust_edit_text(
             query.message,
-            _build_mode_selection_message(
-                context,
-                _get_ltx_video_items(fsm_data),
-            ),
-            reply_markup=_build_mode_selection_keyboard(context),
+            _build_initial_setup_message(context, fsm_data),
+            reply_markup=_build_initial_setup_keyboard(context, fsm_data),
             parse_mode="Markdown",
         )
         return LtxVideoState.WAIT_MODE_SELECTION
@@ -527,7 +621,7 @@ async def handle_lora_selection(
     return LtxVideoState.WAIT_LORA_SELECTION
 
 
-async def handle_mode_selection(
+async def process_initial_setup(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     query = update.callback_query
@@ -541,32 +635,67 @@ async def handle_mode_selection(
     data = query.data or ""
     if data == "ltx_mode_v2v_audio":
         fsm_data["ltx_mode"] = LTX_MODE_V2V_AUDIO
+    elif data == "ltx_mode_flf2v":
+        fsm_data["ltx_mode"] = LTX_MODE_FLF2V
+    elif data == "ltx_mode_i2v":
+        fsm_data["ltx_mode"] = LTX_MODE_I2V
+    elif data.startswith("set_ltxres_"):
+        fsm_data["resolution"] = data.split("_")[2]
+    elif data.startswith("set_ltxdur_"):
+        fsm_data["duration"] = data.split("_")[2]
+    elif data == LTX_SETUP_CONFIRM_CALLBACK:
+        return await _confirm_initial_setup(update, context)
+    else:
+        return LtxVideoState.WAIT_MODE_SELECTION
+
+    await robust_edit_text(
+        query.message,
+        _build_initial_setup_message(context, fsm_data),
+        reply_markup=_build_initial_setup_keyboard(context, fsm_data),
+        parse_mode="Markdown",
+    )
+    return LtxVideoState.WAIT_MODE_SELECTION
+
+
+async def _confirm_initial_setup(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    query = update.callback_query
+    fsm_data = context.user_data.get(LTX_VIDEO_DATA_KEY)
+    if not fsm_data:
+        with contextlib.suppress(Exception):
+            await query.answer(_t(context, "fsm.ltx_video.expired_alert"), show_alert=True)
+        return ConversationHandler.END
+
+    ltx_mode = str(fsm_data.get("ltx_mode") or LTX_MODE_I2V)
+    if ltx_mode == LTX_MODE_V2V_AUDIO:
         await robust_edit_text(
             query.message,
-            "请上传一段视频（MP4/MOV/WebM，40MB 内），随后输入要生成的台词或音频描述。",
+            "设置已确认。请上传一段视频（MP4/MOV/WebM，40MB 内）。",
             parse_mode="Markdown",
         )
         return LtxVideoState.WAIT_VIDEO
 
-    if data == "ltx_mode_flf2v":
-        fsm_data["ltx_mode"] = LTX_MODE_FLF2V
+    if ltx_mode == LTX_MODE_FLF2V:
         await robust_edit_text(
             query.message,
-            f"{_build_lora_summary_text(context, _get_ltx_video_items(fsm_data), empty_key='fsm.image_to_video.current_lora')}\n\n请先上传起始帧图片。",
+            f"{_build_lora_summary_text(context, _get_ltx_video_items(fsm_data), empty_key='fsm.image_to_video.current_lora')}\n\n设置已确认。请先上传起始帧图片。",
             parse_mode="Markdown",
         )
         return LtxVideoState.WAIT_IMAGE
 
-    fsm_data["ltx_mode"] = LTX_MODE_I2V
     await robust_edit_text(
         query.message,
-        _build_image_request_text(
-            context,
-            lora_items=_get_ltx_video_items(fsm_data),
-        ),
+        f"{_build_image_request_text(context, lora_items=_get_ltx_video_items(fsm_data))}\n\n设置已确认。",
         parse_mode="Markdown",
     )
     return LtxVideoState.WAIT_IMAGE
+
+
+async def handle_mode_selection(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    return await process_initial_setup(update, context)
 
 
 async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -602,7 +731,7 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         )
         return LtxVideoState.WAIT_END_IMAGE
 
-    return await _send_settings_message(update, context, message=message)
+    return await _send_prompt_request_message(update, context, message=message)
 
 
 async def receive_end_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -630,7 +759,7 @@ async def receive_end_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await robust_reply_text(message, _t(context, "fsm.common.download_image_failed"))
         return LtxVideoState.WAIT_END_IMAGE
 
-    return await _send_settings_message(update, context, message=message)
+    return await _send_prompt_request_message(update, context, message=message)
 
 
 async def receive_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -673,7 +802,7 @@ async def receive_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         await robust_reply_text(message, _t(context, "fsm.common.download_video_failed"))
         return LtxVideoState.WAIT_VIDEO
 
-    return await _send_settings_message(update, context, message=message)
+    return await _send_prompt_request_message(update, context, message=message)
 
 
 async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -792,6 +921,15 @@ async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE)
     image_path = fsm_data.get("image_path")
     end_image_path = fsm_data.get("end_image_path")
     video_path = fsm_data.get("video_path")
+    ltx_prev_task_id = str(fsm_data.get("extension_prev_task_id") or "").strip()
+    ltx_chain_task_ids = normalize_ltx_video_chain_task_ids(
+        fsm_data.get("chain_task_ids")
+    )
+    if ltx_prev_task_id and not ltx_chain_task_ids:
+        ltx_chain_task_ids = build_ltx_full_chain_task_ids(
+            chain_task_ids=[],
+            current_task_id=ltx_prev_task_id,
+        )
     missing_input = (
         (ltx_mode == LTX_MODE_V2V_AUDIO and not video_path)
         or (ltx_mode == LTX_MODE_FLF2V and (not image_path or not end_image_path))
@@ -868,6 +1006,8 @@ async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE)
             end_image_path=end_image_path,
             video_path=video_path,
             ltx_mode=ltx_mode,
+            ltx_prev_task_id=ltx_prev_task_id or None,
+            ltx_chain_task_ids=ltx_chain_task_ids or None,
             lora_name=lora_name,
             lora_strength=lora_strength,
             lora_items=lora_items or None,
@@ -917,6 +1057,7 @@ async def start_ltx_video_extension(
             telegram_user_id=update.effective_user.id,
             username=update.effective_user.username,
         )
+        meta = _merge_history_context_into_meta(history, meta)
         start_image_path = await download_ltx_last_frame_to_fsm_temp(history=history)
     except LtxVideoExtensionError as exc:
         target_message = query.message if query else update.effective_message
@@ -943,6 +1084,12 @@ async def start_ltx_video_extension(
         "video_path": None,
         "lora_items": _resolve_lora_items_from_meta(meta),
         "extension_prev_task_id": base_task_id,
+        "chain_task_ids": build_ltx_full_chain_task_ids(
+            chain_task_ids=normalize_ltx_video_chain_task_ids(
+                meta.get("ltx_chain_task_ids")
+            ),
+            current_task_id=base_task_id,
+        ),
     }
     target_message = query.message if query else update.effective_message
     if target_message:
@@ -1014,8 +1161,12 @@ def get_ltx_video_fsm_handler() -> ConversationHandler:
             ],
             LtxVideoState.WAIT_MODE_SELECTION: [
                 CallbackQueryHandler(
-                    handle_mode_selection,
-                    pattern="^ltx_mode_(i2v|flf2v|v2v_audio)$",
+                    process_initial_setup,
+                    pattern=(
+                        r"^(ltx_mode_(i2v|flf2v|v2v_audio)"
+                        r"|set_ltx(res|dur)_"
+                        rf"|{LTX_SETUP_CONFIRM_CALLBACK}$)"
+                    ),
                 ),
                 MessageHandler(
                     (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),

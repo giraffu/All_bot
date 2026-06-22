@@ -38,6 +38,7 @@ from src.services.task_service_flow import run_bot_task_application
 from src.services.task_service_generation_common import resolve_internal_user_id
 from src.services.task_service_support import get_acceleration_notice
 from src.services.task_service_types import BotTaskFailurePolicy, BotTaskRuntimeState
+from src.services.ltx_video_extension_service import normalize_ltx_video_chain_task_ids
 
 
 async def process_ltx_video_task(
@@ -49,6 +50,8 @@ async def process_ltx_video_task(
     end_image_path: str | None = None,
     video_path: str | None = None,
     ltx_mode: str = "i2v",
+    ltx_prev_task_id: str | None = None,
+    ltx_chain_task_ids: list[str] | None = None,
     lora_name: str | None = None,
     lora_strength: float | None = None,
     lora_items: list[dict[str, Any]] | None = None,
@@ -111,6 +114,16 @@ async def process_ltx_video_task(
         "ltx_mode": ltx_mode,
         "extract_last_frame": True,
     }
+    normalized_ltx_prev_task_id = str(ltx_prev_task_id or "").strip()
+    normalized_ltx_chain_task_ids = normalize_ltx_video_chain_task_ids(
+        ltx_chain_task_ids
+    )
+    if normalized_ltx_prev_task_id and not normalized_ltx_chain_task_ids:
+        normalized_ltx_chain_task_ids = [normalized_ltx_prev_task_id]
+    if normalized_ltx_prev_task_id:
+        result_meta["ltx_prev_task_id"] = normalized_ltx_prev_task_id
+    if normalized_ltx_chain_task_ids:
+        result_meta["ltx_chain_task_ids"] = normalized_ltx_chain_task_ids
     if lora_items:
         result_meta["lora_items"] = lora_items
     elif lora_name:
@@ -131,6 +144,10 @@ async def process_ltx_video_task(
         lora_strength=lora_strength,
         lora_items=lora_items,
     )
+    if normalized_ltx_prev_task_id:
+        inputs["ltx_prev_task_id"] = normalized_ltx_prev_task_id
+    if normalized_ltx_chain_task_ids:
+        inputs["ltx_chain_task_ids"] = normalized_ltx_chain_task_ids
     billing_args = resolve_video_billing_args(
         is_video=True,
         resolution=resolution,

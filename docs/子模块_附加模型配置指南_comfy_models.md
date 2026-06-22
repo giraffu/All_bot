@@ -66,6 +66,7 @@
 - **规格口径**：旧图生视频支持 `5s/8s/10s`，对应 `81/129/161` 帧，分辨率和计费基数与 v2 对齐为 `preview=6`、`small=12`、`standard=20`、`hd=30`，时长倍率为 `1x/2x/3x`；旧投稿 `512p/720p/1024p` 分别映射为 `preview/standard/hd`，`0.36 MP - Small` 映射为 `small`。
 - **高级图生视频 (`ltx_video`)**：现已升级为 `lora_items` 多选协议。Bot FSM、Web 单图视频页、模板应用面板都会提交最多 3 个 LoRA 项，每项独立携带 `name + strength`；旧 `lora_name / lora_strength` 仍保留兼容入口，但不再是主文档口径。
 - **LTX 执行面分支**：用户侧历史/Gallery 仍归类为 `ltx_video`，底层按模式分发到 `ltx_video`（旧单首帧 I2V）、`ltx_video_flf2v`（首帧 + 终止帧）或 `ltx_video_v2v_audio`（输入视频 + 文本生成带音频视频）。三者共用现有 LTX 主模型、LoRA 选单和计费倍率，不新增模型选择体系。
+- **LTX 扩展上下文**：Web/Bot “扩展生成”都会把 `extra_outputs.last_frame` 作为下一段起始帧，续段提交携带 `ltx_prev_task_id` / `ltx_chain_task_ids`，并持久化为历史 `extra_outputs._ltx_context` 供结果详情和拼接 API 识别。
 
 ### 1. 模型文件部署 (Deployment)
 - **文件命名规范**：根据现有的探针逻辑，图生视频的 LoRA 模型在生成阶段分为高噪和低噪两个环节。新模型**必须**包含两个文件，并严格按照以下格式命名：
@@ -125,7 +126,7 @@
     - `path`：ComfyUI 可识别的相对路径
     - `label_zh` / `label_en`：前后端展示名称
     - `default_strength`：未显式传权重时的默认值
-  - Telegram 高级图生视频 FSM 会先进入附加模型选择，再进入模式选择：单首帧、首尾帧、视频配音；当前允许多选，最多 3 个，并支持逐项调强度。
+  - Telegram 高级图生视频 FSM 会先进入附加模型选择，再进入同屏设置面板合并选择模式、清晰度和时长；当前允许多选，最多 3 个，并支持逐项调强度。确认后再按单首帧、首尾帧或视频配音上传 1 张图片、2 张图片或 1 段视频。
   - Web `SingleImageToVideo` 支持 LTX 三模式切换；练功房 LTX 至少支持上传两张参考图并自动按首尾帧提交。模板应用面板复用同一批 LTX LoRA 选项；提交时主路径统一写入 `inputs.lora_items`，而不是单个 `inputs.lora_name`。
   - LTX 结果返回 `extra_outputs.last_frame` 后，Web 结果区/历史详情和 Bot 结果消息可执行“扩展生成”，把上一段尾帧作为下一段起始帧。
 
@@ -151,7 +152,7 @@
 - > ⚠️ **节点硬编码警告**：若你重导出了任一 LTX workflow，必须同步检查 `256`、`191`、`189`、`8`、`15`、`16`、`26:297`、`26:312`、`900`、`902` 这些节点 ID 是否仍满足当前补丁逻辑；否则需要同步修改 `workflow_task_patchers.py`。
 
 ### 5. 验证建议
-- Telegram：进入【高级图生视频】后应先看到附加模型选择，再要求上传起始图。
+- Telegram：进入【高级图生视频】后应先看到附加模型选择，完成后看到同屏设置面板；确认单首帧后要求上传 1 张起始图，确认首尾帧后依次要求上传 2 张图。
 - Web：`ltx_video` 页面和模板应用面板都应能提交 `inputs.lora_items`，并正确回显每个模型的当前强度。
 - Worker：分别验证“多选 LoRA / 单个兼容字段 / 不选 LoRA”三种场景，确认多项注入成功、旧字段仍兼容、无 LoRA 时节点被裁剪后仍能正常出图出视频。
 - LTX 三模式：验证单首帧仍走旧工作流，首尾帧输出 MP4 + `last_frame`，视频配音输出 MP4 + `last_frame`，并用 `ffprobe` 或播放器确认视频配音结果含音轨。

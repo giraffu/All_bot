@@ -39,7 +39,7 @@ sequenceDiagram
 - Wan22 AIO 视频配置事实源是 `src.domain_config.wan22_aio_video`：旧图生视频 `custom_video` / `video_lora` / 懒人动图 mode / legacy `video_insert`、`video_edit` -> execution `image_to_video` -> `legacy_image_to_video` profile；图生视频 v2 `wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。两者共享 worker workflow，但不是同一个用户功能。
 - 旧图生视频支持 `5s/8s/10s`，对应 `81/129/161` 帧；分辨率与计费基数对齐 v2 四档：`preview` / `small` / `standard` / `hd`。历史投稿中的 `512p` / `720p` / `1024p` 会分别映射到 `preview/standard/hd`，`0.36 MP - Small` 会映射到 `small`，canonical duration 会恢复为 `5s/8s/10s`，缺失或非 canonical 时回退 5 秒。
 - Telegram `image_to_video_fsm.py` 的旧图生视频主入口会先展示同屏设置面板：附加模型、单图/首尾帧、`preview/small/standard/hd` 分辨率与确认按钮。确认后单图模式收 1 张起始图，首尾帧模式依次收起始图与终止图，然后要求发送提示词提交。
-- Telegram `ltx_video_fsm.py` 的高级图生视频入口会先选择最多 3 个 LTX LoRA，再选择“单首帧 / 首尾帧 / 视频配音”。首尾帧模式依次收起始图和终止帧；视频配音模式收输入视频，再把文本作为音频/口型同步方向提交。
+- Telegram `ltx_video_fsm.py` 的高级图生视频入口会先选择最多 3 个 LTX LoRA，再在同屏设置面板合并选择“单首帧 / 首尾帧 / 视频配音”、清晰度和时长。用户确认后才按模式上传素材：单首帧收 1 张起始图，首尾帧依次收起始图和终止帧，视频配音收输入视频；素材收完后直接发送提示词提交。
 - `image_to_video` 和 `wan22_video_v2` 通过 `wan22_model_profile` 区分主模型：旧入口使用 legacy high/low 主模型，v2 使用 snatchkiss high/low 主模型。`video_lora` 仍保留旧 LoRA 前缀选择，`custom_video` 兼容入口保持无 LoRA，v2 会清空额外 LoRA 槽。
 - Web `wan22_video_v2`、`custom_video`、`video_lora` 已支持与 Bot 对齐的多段链：历史与 `/api/tasks/{task_id}/result` 会返回 `last_frame` 与 `result_meta`，并新增 `/api/users/history/{task_id}/wan22-chain`、`/api/users/history/{task_id}/wan22-chain/stitch` 供练功房继续扩展、分段重生成和整链拼接；其中整链拼接现在会把拼接后 MP4 上传存储，并新增一条 `History` 记录返回给前端，而不是只回下载流。
 
@@ -104,7 +104,7 @@ graph TD
 
 ## 三、 分层说明
 ### 3.1 交互层
-- `ltx_video_fsm.py`、`wan22_video_v2_fsm.py`、`image_to_video_fsm.py`、`quick_video_fsm.py` 等负责收集图片、提示词与参数；其中旧图生视频会在上传图片前用同屏设置面板收集附加模型、帧模式、分辨率和时长，`wan22_video_v2` 主入口会先同屏选择单图/首尾帧、分辨率和时长，再按所选模式收 1 张或 2 张图片。
+- `ltx_video_fsm.py`、`wan22_video_v2_fsm.py`、`image_to_video_fsm.py`、`quick_video_fsm.py` 等负责收集图片、提示词与参数；其中高级图生视频会在 LoRA 后用同屏设置面板收集 LTX 模式、清晰度和时长，旧图生视频会在上传图片前用同屏设置面板收集附加模型、帧模式、分辨率和时长，`wan22_video_v2` 主入口会先同屏选择单图/首尾帧、分辨率和时长，再按所选模式收 1 张或 2 张图片。
 - 全局菜单打断通过 `is_global_menu_command(...)` 统一识别。
 - 当前主 FSM 普遍使用 `conversation_timeout=300`。
 - `wan22_video_v2_fsm.py` 现已收口为“启动设置面板 + 起始帧 + 可选终止帧 + prompt/negative prompt”输入；主入口先选择单图或首尾帧、分辨率档位和时长，确认后再根据帧模式决定收 1 张或 2 张图片。填写或跳过负面提示词后直接提交任务，不再展示后置设置确认页；`WAIT_SETTINGS` 仅保留用于兼容已发出的旧确认消息。续写入口仍会预载上一段尾帧，再沿用兼容的单图/首尾帧选择。尾帧提取固定开启且仅作存储，不再开放 `color_match`、`perfect_loop`、`upscale`、`extract_last_frame` 给用户。
@@ -150,7 +150,7 @@ graph TD
 ## 五、 结果发送与清理
 - Bot 完成后会发送 MP4、caption、reply markup 与后续交互入口。
 - `wan22_video_v2` 与执行面 `image_to_video` 都会额外保存 `extra_outputs.last_frame` 对应的尾帧图片，用于扩展生成、分段重生成和整链拼接。V82 下 `2607` 会从 RIFE 后的 `265` 帧序列抽取尾帧，`ImageFromBatch.batch_index` 需保持 `4095` 以满足当前节点上限；Worker 优先读取 Comfy `2503` 尾帧输出。如果某个 Comfy 实例只返回主 MP4，`agent_result_materialization.py` 会用 `ffmpeg/ffprobe` 从主视频补抽最后一帧，因此 worker 镜像必须保留 ffmpeg 依赖。
-- `ltx_video` / `ltx_video_flf2v` / `ltx_video_v2v_audio` 也属于尾帧扩展任务。FLF2V 与 V2V Audio workflow 的 `SaveImage 902` 保存尾帧；若只返回主 MP4，同一套 ffmpeg 兜底会补抽 `last_frame`。Bot/Web 的“扩展生成”会把该尾帧作为下一段 LTX 起始帧，不拼接整链。
+- `ltx_video` / `ltx_video_flf2v` / `ltx_video_v2v_audio` 也属于尾帧扩展任务。FLF2V 与 V2V Audio workflow 的 `SaveImage 902` 保存尾帧；若只返回主 MP4，同一套 ffmpeg 兜底会补抽 `last_frame`。Bot/Web 的“扩展生成”会把该尾帧作为下一段 LTX 起始帧，续段提交携带 `ltx_prev_task_id` / `ltx_chain_task_ids` 并落库到 `extra_outputs._ltx_context`，供历史详情和拼接 API 识别链路。
 - 运行结束后需清理：
   - status message
   - 本地临时文件
