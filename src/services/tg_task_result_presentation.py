@@ -25,6 +25,7 @@ WAN22_EXTEND_CALLBACK_PREFIX = "wan22v2_extend"
 WAN22_REGENERATE_CALLBACK_PREFIX = "wan22v2_regenerate"
 WAN22_STITCH_CALLBACK_PREFIX = "wan22v2_stitch_chain"
 LTX_EXTEND_CALLBACK_PREFIX = "ltx_extend"
+LTX_STITCH_CALLBACK_PREFIX = "ltx_stitch_chain"
 GALLERY_SUBMIT_CALLBACK_PREFIX = "submit_gallery_"
 
 
@@ -94,9 +95,20 @@ def _supports_wan22_stitch(task_type: str, result_meta: dict | None) -> bool:
 
 
 def _supports_ltx_extension(task_type: str, result_meta: dict | None) -> bool:
+    if isinstance(result_meta, dict) and (
+        isinstance(result_meta.get("ltx_chain_stitch"), dict)
+        or bool(result_meta.get("ltx_is_stitched"))
+    ):
+        return False
     return task_type == MODE_LTX_VIDEO and (
         not isinstance(result_meta, dict)
         or result_meta.get("extract_last_frame") is not False
+    )
+
+
+def _supports_ltx_stitch(task_type: str, result_meta: dict | None) -> bool:
+    return task_type == MODE_LTX_VIDEO and bool(
+        isinstance(result_meta, dict) and result_meta.get("ltx_prev_task_id")
     )
 
 
@@ -123,6 +135,16 @@ def _build_ltx_extension_button(task_id: str) -> InlineKeyboardButton:
         "✨ 扩展生成",
         callback_data=build_task_bound_callback_data(
             LTX_EXTEND_CALLBACK_PREFIX,
+            task_id,
+        ),
+    )
+
+
+def _build_ltx_stitch_button(task_id: str) -> InlineKeyboardButton:
+    return InlineKeyboardButton(
+        "🔗 完成拼接",
+        callback_data=build_task_bound_callback_data(
+            LTX_STITCH_CALLBACK_PREFIX,
             task_id,
         ),
     )
@@ -174,6 +196,8 @@ def _build_result_action_rows(
         rows.append(primary_row)
     if _supports_wan22_stitch(task_type, result_meta):
         rows.append([_build_wan22_stitch_button(task_id)])
+    if _supports_ltx_stitch(task_type, result_meta):
+        rows.append([_build_ltx_stitch_button(task_id)])
     return rows
 
 

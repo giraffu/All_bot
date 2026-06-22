@@ -18,6 +18,7 @@ from src.services.task_service_types import (
 from src.constants import (
     MODE_FACESWAP_STEP1,
     MODE_IMAGE_TO_VIDEO,
+    MODE_LTX_VIDEO,
     MODE_NAME_MAP,
     MODE_WAN22_VIDEO_V2,
 )
@@ -409,6 +410,27 @@ def test_build_result_reply_markup_supports_wan22_video_v2_non_first_segment_but
         "wan22v2_extend:task-wan22-2",
     ]
     assert second_row[0].callback_data == "wan22v2_stitch_chain:task-wan22-2"
+
+
+def test_build_result_reply_markup_supports_ltx_video_non_first_segment_buttons():
+    final_markup = tg_runtime_helpers.build_result_reply_markup(
+        task_type=MODE_LTX_VIDEO,
+        task_id="ltx-task-2",
+        allow_contribute=True,
+        reply_markup=None,
+        result_meta={
+            "ltx_prev_task_id": "ltx-task-1",
+            "ltx_chain_task_ids": ["ltx-task-1"],
+        },
+    )
+
+    first_row = final_markup.inline_keyboard[0]
+    second_row = final_markup.inline_keyboard[1]
+    assert [btn.callback_data for btn in first_row] == [
+        "submit_gallery_ltx-task-2",
+        "ltx_extend:ltx-task-2",
+    ]
+    assert second_row[0].callback_data == "ltx_stitch_chain:ltx-task-2"
 
 
 def test_record_result_message_meta_uses_special_mode_mapping_for_face_swap():

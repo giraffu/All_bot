@@ -136,6 +136,10 @@ ComfyUI：
 - 已构建并推送 LTX 专用最小 AIO 镜像 `192.168.1.115:5000/allbot/comfy-runpod-ltx-video:20260618-ltx-min-cu128-sageattn1`；镜像只面向 `LTX 2.3 I2V 6.1.json`，baked `sageattention==1.0.6`，不 baked 模型权重，模型仍同步 `allbot-model-cache/ltx_video/2026-06-10/manifest.json`。
 - `gpu-177-gpu1-ltx_video` 使用 LTX 最小 AIO 镜像 `192.168.1.115:5000/allbot/comfy-runpod-ltx-video:20260618-ltx-min-cu128-sageattn1`；它只面向 `LTX 2.3 I2V 6.1.json`，保持 workflow `sage_attention=auto`，不 baked 模型权重，模型仍同步 `allbot-model-cache/ltx_video/2026-06-10/manifest.json`。
 
+2026-06-22 LTX 10Eros v1.2 canary 模型：
+- `gpu-177-gpu1-ltx_video` 的 AIO `/workspace` 挂载来自宿主机 `/srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/ltx_video/workspace`，模型应落在容器内 `/workspace/ComfyUI/models/diffusion_models/LTX 2.3/`。
+- 10Eros v1.2 canary workflow 期望模型文件 `10Eros_v1.2_fp8mixed_learned.safetensors`。该模型仍不应 baked 到镜像；若要让 AIO 重建后自动恢复，需要补进 `allbot-model-cache` 对应 manifest，而不是只依赖运行中容器的临时文件。
+
 运维边界：
 - 不要对 `comfy0/comfy1` 执行 Docker 操作；本机没有这类 Comfy 容器。
 - 重启 ComfyUI 需要先确认它是由 systemd、tmux、screen、桌面会话还是手工进程管理，再按实际启动方式处理。

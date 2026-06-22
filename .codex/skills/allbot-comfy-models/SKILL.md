@@ -177,6 +177,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
   - 镜像面向 LTX 三工作流：保留 KJNodes、VideoHelperSuite、rgthree、LTXVideo、`sageattention==1.0.6`，并用 `allbot_ltx_min_nodes` shim 覆盖 `ImpactDummyInput`、`TwoWaySwitch`、`easy int`、`mxSlider`、`RAMCleanup`、`VRAMCleanup`、`Float`、`IntToFloat`、`Sigmas Sigmoid`、`MathExpression|pysssss`；workflow 保持 `sage_attention=auto`，不要通过禁用 SageAttention 来绕过依赖缺失。不要把 Easy-Use、Impact-Pack、mxToolkit、Memory_Cleanup、RES4LYF、custom-scripts 等大包作为 LTX 最小镜像依赖重新引入。
   - V2V Audio 使用 VideoHelperSuite 的视频读取节点，并保留现有 LTX workflow 的 audio 输出方向；真实上线前必须用目标 ComfyUI `/object_info` 和一单 smoke 确认 `VHS_LoadVideo`、`VHS_VideoCombine`、`SaveImage 902` 可用且输出 MP4 含音轨。
   - LTX AIO 不 baked 模型权重，模型仍从 `allbot-model-cache/ltx_video/2026-06-10/manifest.json` 同步；新增/重导 workflow 时要用容器 `/object_info` 复核上述 shim 节点和 `LTXV*`/rgthree/VHS 节点。
+  - 10Eros v1.2 canary 必须复制为新 workflow 文件（`LTX 2.3 10Eros v1.2 I2V 6.1.json`、`LTX 2.3 10Eros v1.2 FLF2V 6.1.json`、`LTX 2.3 10Eros v1.2 V2V Audio 6.1.json`），并通过目标测试 worker 的 `TASK_TYPE_WORKFLOW_OVERRIDES` 覆盖；不要覆盖默认 `LTX 2.3 *.json`。主模型文件名为 `LTX 2.3/10Eros_v1.2_fp8mixed_learned.safetensors`，长期重建要进入 model-cache/manifest。
 - **红线**：
   - 若重导出任一 LTX workflow，必须复核 `256`、`191`、`189`、`8`、`15`、`16`、`26:297`、`26:312`、`900`、`902` 这些节点 ID 是否仍满足补丁逻辑。
 
