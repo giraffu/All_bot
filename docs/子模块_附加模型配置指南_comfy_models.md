@@ -66,7 +66,7 @@
 - **规格口径**：旧图生视频支持 `5s/8s/10s`，对应 `81/129/161` 帧，分辨率和计费基数与 v2 对齐为 `preview=6`、`small=12`、`standard=20`、`hd=30`，时长倍率为 `1x/2x/3x`；旧投稿 `512p/720p/1024p` 分别映射为 `preview/standard/hd`，`0.36 MP - Small` 映射为 `small`。
 - **高级图生视频 (`ltx_video`)**：现已升级为 `lora_items` 多选协议。Bot FSM、Web 单图视频页、模板应用面板都会提交最多 3 个 LoRA 项，每项独立携带 `name + strength`；旧 `lora_name / lora_strength` 仍保留兼容入口，但不再是主文档口径。
 - **LTX 执行面分支**：用户侧历史/Gallery 仍归类为 `ltx_video`，当前 Bot/Web 入口只开放 `ltx_video`（旧单首帧 I2V）与 `ltx_video_flf2v`（首帧 + 终止帧）。底层 `ltx_video_v2v_audio`（输入视频 + 文本生成带音频视频）仍保留为历史/队列兼容执行面；三者共用现有 LTX 主模型、LoRA 选单和计费倍率，不新增模型选择体系。
-- **LTX 扩展上下文**：Web/Bot “扩展生成”都会把 `extra_outputs.last_frame` 作为下一段起始帧，续段提交携带 `ltx_prev_task_id` / `ltx_chain_task_ids`，并持久化为历史 `extra_outputs._ltx_context` 供结果详情和拼接 API 识别。Bot 扩展入口会先让用户选择直接续写或添加终止帧；添加终止帧时只收新的 `end_image_path`，起始帧仍使用上一段尾帧。
+- **LTX 扩展上下文**：Web/Bot “扩展生成”都会把 `extra_outputs.last_frame` 作为下一段起始帧，续段提交携带 `ltx_prev_task_id` / `ltx_chain_task_ids`，并持久化为历史 `extra_outputs._ltx_context` 供结果详情和拼接 API 识别。Bot 扩展入口会先展示直接续写/添加终止帧设置面板，但不展示确认按钮；用户直接发送提示词代表直接续写，直接发送图片代表添加终止帧并写入新的 `end_image_path`，起始帧仍使用上一段尾帧。
 
 ### 1. 模型文件部署 (Deployment)
 - **文件命名规范**：根据现有的探针逻辑，图生视频的 LoRA 模型在生成阶段分为高噪和低噪两个环节。新模型**必须**包含两个文件，并严格按照以下格式命名：
@@ -128,7 +128,7 @@
     - `default_strength`：未显式传权重时的默认值
   - Telegram 高级图生视频 FSM 会先进入附加模型选择，再进入同屏设置面板合并选择模式、清晰度和时长；当前允许多选，最多 3 个，并支持逐项调强度。普通入口直接发送起始帧图片即确认当前设置，单首帧上传 1 张图片，首尾帧再继续上传终止帧；旧视频配音回调只提示暂未开放。
   - Web `SingleImageToVideo` 只支持 LTX 单首帧/首尾帧切换；练功房 LTX 至少支持上传两张参考图并自动按首尾帧提交，不再展示独立 `ltx_video_audio` 模式。模板应用面板复用同一批 LTX LoRA 选项；提交时主路径统一写入 `inputs.lora_items`，而不是单个 `inputs.lora_name`。
-  - LTX 结果返回 `extra_outputs.last_frame` 后，Web 结果区/历史详情和 Bot 结果消息可执行“扩展生成”，把上一段尾帧作为下一段起始帧；Bot 扩展入口可选直接续写或添加终止帧。
+  - LTX 结果返回 `extra_outputs.last_frame` 后，Web 结果区/历史详情和 Bot 结果消息可执行“扩展生成”，把上一段尾帧作为下一段起始帧；Bot 扩展入口可选直接续写或添加终止帧，面板不再展示确认按钮，发送提示词即直接续写，发送图片即作为终止帧。
 
 ### 3. Backend 层：参数网关透传
 - **文件定位**：`backend/app/models.py`、`backend/app/main_simple_task_routes.py`、`src/core/task_dispatcher.py`
@@ -149,7 +149,7 @@
   - `ltx_video_v2v_audio` 通过 `VHS_LoadVideo 900` 接收输入视频，patcher 固定 `force_rate=24`、`frame_load_cap=duration_seconds*24+1`。
   - 三个 LTX task type 都需要 worker 声明 `SUPPORTED_TASK_TYPES=ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`，并同步 `remote_workers/`。
   - 2026-06-22 新增的 10Eros v1.2 canary workflow 为 `LTX 2.3 10Eros v1.2 I2V 6.1.json`、`LTX 2.3 10Eros v1.2 FLF2V 6.1.json`、`LTX 2.3 10Eros v1.2 V2V Audio 6.1.json`，只通过单 worker 的 `TASK_TYPE_WORKFLOW_OVERRIDES` 测试覆盖；默认三份 `LTX 2.3 *.json` 仍保持旧主模型绑定。
-  - 10Eros v1.2 主模型节点应指向 `LTX 2.3/10Eros_v1.2_fp8mixed_learned.safetensors`；新增或切换主模型时，不要直接覆盖旧 workflow 文件名，先复制新 workflow 并用 override canary。
+  - 10Eros v1.2 主模型节点应指向 `LTX 2.3/10Eros_v1.2_fp8mixed_learned.safetensors`；该文件已纳入 `allbot-model-cache/ltx_video/2026-06-10/manifest.json` 长期保留。新增或切换主模型时，不要直接覆盖旧 workflow 文件名，先复制新 workflow 并用 override canary。
   - Worker 结果物化会优先识别主 MP4，并保存 `extra_outputs.last_frame`；若 Comfy 未返回 `902` 图片，会用 ffmpeg 从主视频兜底抽最后一帧。
 - > ⚠️ **节点硬编码警告**：若你重导出了任一 LTX workflow，必须同步检查 `256`、`191`、`189`、`8`、`15`、`16`、`26:297`、`26:312`、`900`、`902` 这些节点 ID 是否仍满足当前补丁逻辑；否则需要同步修改 `workflow_task_patchers.py`。
 

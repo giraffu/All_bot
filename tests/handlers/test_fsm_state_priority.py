@@ -975,7 +975,108 @@ async def test_ltx_video_extension_initializes_single_start_frame_with_chain_con
     assert "ltx_mode_flf2v" in callback_data
     assert "ltx_mode_v2v_audio" not in callback_data
     assert "set_ltxdur_10s" in callback_data
-    assert "ltx_setup_confirm" in callback_data
+    assert "ltx_setup_confirm" not in callback_data
+    assert "直接发送提示词" in reply_mock.await_args.args[1]
+    assert "发送终止帧图片" in reply_mock.await_args.args[1]
+    assert "确定" not in reply_mock.await_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_ltx_video_extension_accepts_end_frame_image_without_confirm(
+    monkeypatch,
+):
+    reply_mock = AsyncMock()
+    download_mock = AsyncMock(return_value="/tmp/ltx-extension-end.png")
+
+    monkeypatch.setattr(ltx_video_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(
+        ltx_video_fsm,
+        "download_telegram_file_to_fsm_temp",
+        download_mock,
+    )
+
+    message = SimpleNamespace(
+        document=None,
+        photo=[SimpleNamespace(file_id="end-frame-file-id")],
+        chat_id=10001,
+    )
+    update = SimpleNamespace(
+        effective_user=_build_user(),
+        effective_chat=SimpleNamespace(id=10001),
+        message=message,
+    )
+
+    def translate(key, **kwargs):
+        if key == "fsm.ltx_video.prompt_request_text":
+            return f"素材已收到。{kwargs['mode']}。请发送提示词。"
+        return f"T:{key}"
+
+    context = SimpleNamespace(
+        bot=SimpleNamespace(get_file=AsyncMock(return_value=SimpleNamespace())),
+        user_data={
+            "ltx_video_data": {
+                "resolution": "1280x704",
+                "duration": "10s",
+                "ltx_mode": "i2v",
+                "image_path": "/tmp/ltx-tail.png",
+                "end_image_path": None,
+                "lora_items": [],
+                "is_extension": True,
+            }
+        },
+        lang="zh",
+        t=translate,
+    )
+
+    result = await ltx_video_fsm.receive_initial_setup_image(update, context)
+
+    assert result == ltx_video_fsm.LtxVideoState.WAIT_SETTINGS_AND_PROMPT
+    context.bot.get_file.assert_awaited_once_with("end-frame-file-id")
+    data = context.user_data["ltx_video_data"]
+    assert data["ltx_mode"] == "flf2v"
+    assert data["image_path"] == "/tmp/ltx-tail.png"
+    assert data["end_image_path"] == "/tmp/ltx-extension-end.png"
+    assert "提示词" in reply_mock.await_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_ltx_video_extension_accepts_prompt_without_setup_confirm(
+    monkeypatch,
+):
+    reply_mock = AsyncMock()
+    monkeypatch.setattr(ltx_video_fsm, "robust_reply_text", reply_mock)
+
+    message = SimpleNamespace(
+        text="continue the motion",
+        chat_id=10001,
+    )
+    update = SimpleNamespace(
+        effective_user=_build_user(),
+        effective_chat=SimpleNamespace(id=10001),
+        message=message,
+    )
+    context = SimpleNamespace(
+        user_data={
+            "ltx_video_data": {
+                "resolution": "1280x704",
+                "duration": "10s",
+                "ltx_mode": "i2v",
+                "image_path": "/tmp/ltx-tail.png",
+                "end_image_path": None,
+                "lora_items": [],
+                "is_extension": True,
+            }
+        },
+        lang="zh",
+        t=lambda key, **kwargs: f"T:{key}",
+    )
+
+    result = await ltx_video_fsm.receive_initial_setup_text(update, context)
+
+    assert result == ltx_video_fsm.LtxVideoState.WAIT_CONFIRMATION
+    assert context.user_data["ltx_video_data"]["prompt"] == "continue the motion"
+    reply_markup = reply_mock.await_args.kwargs["reply_markup"]
+    assert reply_markup.inline_keyboard[0][0].callback_data == "confirm_ltx_video"
 
 
 @pytest.mark.asyncio

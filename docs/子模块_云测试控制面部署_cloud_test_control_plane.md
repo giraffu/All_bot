@@ -282,7 +282,7 @@ df -h /
 2026-06-22 LTX 10Eros v1.2 云测试 canary：
 - `cloud-comfy-agent-test-3` / `cloud_worker_test_03` 是当前测试 LTX AIO worker，指向 `http://192.168.1.177:8191`。本次只通过 `.env.cloud.test` 的 `CLOUD_TEST_WORKER_03_TASK_TYPE_WORKFLOW_OVERRIDES` 覆盖测试 worker3，默认 `TASK_TYPE_WORKFLOW_FILENAMES` 不变。
 - 三个 canary workflow 为 `LTX 2.3 10Eros v1.2 I2V 6.1.json`、`LTX 2.3 10Eros v1.2 FLF2V 6.1.json`、`LTX 2.3 10Eros v1.2 V2V Audio 6.1.json`，分别覆盖 `ltx_video`、`ltx_video_flf2v`、`ltx_video_v2v_audio`；旧 `LTX 2.3 *.json` 仍指向 v1 主模型，不得覆盖。
-- 10Eros v1.2 主模型文件名为 `models/diffusion_models/LTX 2.3/10Eros_v1.2_fp8mixed_learned.safetensors`。LAN AIO LTX 镜像不 baked 权重，测试前必须确认该文件在 AIO `/workspace/ComfyUI/models` 持久化挂载下可见；长期重建应补进 model-cache/manifest，而不是依赖手工容器层文件。
+- 10Eros v1.2 主模型文件名为 `models/diffusion_models/LTX 2.3/10Eros_v1.2_fp8mixed_learned.safetensors`。LAN AIO LTX 镜像不 baked 权重，测试前必须确认该文件在 AIO `/workspace/ComfyUI/models` 持久化挂载下可见；长期保留走 `allbot-model-cache/ltx_video/2026-06-10/manifest.json`，不要依赖手工容器层文件。
 
 2026-06-06 R2 切换验证结果：
 - 本地测试 MinIO 历史对象已镜像到 R2 `user-data-test` 桶根路径：`bot-data-test` 约 1.10GiB，`comfyui-temp-test` 约 749.91MiB，`bot-template-test` 为空。

@@ -149,7 +149,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
   - Telegram FSM 允许多选最多 3 个 LoRA，并支持逐项调整强度；LoRA 后会进入同屏设置面板，合并选择 LTX 模式（单首帧、首尾帧）、清晰度和时长，普通入口不再需要确认按钮，用户直接发送起始帧图片即确认当前设置并进入下一步。旧 `ltx_mode_v2v_audio` 回调必须提示暂未开放，不能继续提交 Bot 任务。
   - Web 单图视频页只支持 LTX 单首帧/首尾帧切换；练功房不再展示独立 `ltx_video_audio` 模式。练功房高级图生视频仍可在当前结果区直接用 `extra_outputs.last_frame` 扩展生成。
   - 前端主路径提交 `inputs.lora_items`，而不是只提交单个 `inputs.lora_name`。
-  - LTX 结果若存在 `extra_outputs.last_frame`，Web 结果区/历史详情和 Bot 结果消息可进入“扩展生成”，把尾帧作为下一段起始帧。Bot 扩展入口会先展示扩展设置面板，可选择直接续写或追加终止帧；追加终止帧时只上传 `end_image_path`，并以 `ltx_mode=flf2v` 续写。Web/Bot 续段提交会携带 `inputs.ltx_prev_task_id` 与 `inputs.ltx_chain_task_ids`；Web finalizer 和 Bot completion 会把它们持久化到 `extra_outputs._ltx_context`，历史/结果响应转成 `result_meta.ltx_prev_task_id`、`result_meta.ltx_chain_task_ids`、`result_meta.ltx_segment_index`。
+  - LTX 结果若存在 `extra_outputs.last_frame`，Web 结果区/历史详情和 Bot 结果消息可进入“扩展生成”，把尾帧作为下一段起始帧。Bot 扩展入口会先展示扩展设置面板，可选择直接续写或追加终止帧；该面板不展示确认按钮，用户直接发送提示词代表直接续写，直接发送图片代表追加终止帧并写入 `end_image_path`，随后以 `ltx_mode=flf2v` 续写。Web/Bot 续段提交会携带 `inputs.ltx_prev_task_id` 与 `inputs.ltx_chain_task_ids`；Web finalizer 和 Bot completion 会把它们持久化到 `extra_outputs._ltx_context`，历史/结果响应转成 `result_meta.ltx_prev_task_id`、`result_meta.ltx_chain_task_ids`、`result_meta.ltx_segment_index`。
   - LTX 续段结果（存在 `result_meta.ltx_prev_task_id`）可在练功房结果区或闪回瓶详情调用 `/users/history/{task_id}/ltx-chain/stitch` 拼接整条链，拼接历史使用 `extra_outputs.ltx_chain_stitch` 标记。首段只有扩展按钮，不显示拼接按钮。
 
 ### 3. Backend 层
@@ -177,7 +177,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
   - 镜像面向 LTX 三工作流：保留 KJNodes、VideoHelperSuite、rgthree、LTXVideo、`sageattention==1.0.6`，并用 `allbot_ltx_min_nodes` shim 覆盖 `ImpactDummyInput`、`TwoWaySwitch`、`easy int`、`mxSlider`、`RAMCleanup`、`VRAMCleanup`、`Float`、`IntToFloat`、`Sigmas Sigmoid`、`MathExpression|pysssss`；workflow 保持 `sage_attention=auto`，不要通过禁用 SageAttention 来绕过依赖缺失。不要把 Easy-Use、Impact-Pack、mxToolkit、Memory_Cleanup、RES4LYF、custom-scripts 等大包作为 LTX 最小镜像依赖重新引入。
   - V2V Audio 使用 VideoHelperSuite 的视频读取节点，并保留现有 LTX workflow 的 audio 输出方向；真实上线前必须用目标 ComfyUI `/object_info` 和一单 smoke 确认 `VHS_LoadVideo`、`VHS_VideoCombine`、`SaveImage 902` 可用且输出 MP4 含音轨。
   - LTX AIO 不 baked 模型权重，模型仍从 `allbot-model-cache/ltx_video/2026-06-10/manifest.json` 同步；新增/重导 workflow 时要用容器 `/object_info` 复核上述 shim 节点和 `LTXV*`/rgthree/VHS 节点。
-  - 10Eros v1.2 canary 必须复制为新 workflow 文件（`LTX 2.3 10Eros v1.2 I2V 6.1.json`、`LTX 2.3 10Eros v1.2 FLF2V 6.1.json`、`LTX 2.3 10Eros v1.2 V2V Audio 6.1.json`），并通过目标测试 worker 的 `TASK_TYPE_WORKFLOW_OVERRIDES` 覆盖；不要覆盖默认 `LTX 2.3 *.json`。主模型文件名为 `LTX 2.3/10Eros_v1.2_fp8mixed_learned.safetensors`，长期重建要进入 model-cache/manifest。
+  - 10Eros v1.2 canary 必须复制为新 workflow 文件（`LTX 2.3 10Eros v1.2 I2V 6.1.json`、`LTX 2.3 10Eros v1.2 FLF2V 6.1.json`、`LTX 2.3 10Eros v1.2 V2V Audio 6.1.json`），并通过目标测试 worker 的 `TASK_TYPE_WORKFLOW_OVERRIDES` 覆盖；不要覆盖默认 `LTX 2.3 *.json`。主模型文件名为 `LTX 2.3/10Eros_v1.2_fp8mixed_learned.safetensors`，已长期保留在 `allbot-model-cache/ltx_video/2026-06-10/manifest.json`，同时保留旧 v1 主模型。
 - **红线**：
   - 若重导出任一 LTX workflow，必须复核 `256`、`191`、`189`、`8`、`15`、`16`、`26:297`、`26:312`、`900`、`902` 这些节点 ID 是否仍满足补丁逻辑。
 

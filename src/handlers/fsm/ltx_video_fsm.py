@@ -239,16 +239,8 @@ def _build_initial_setup_keyboard(
         str(fsm_data.get("duration") or "5s"),
         lang,
     )
-    if is_extension:
-        confirm_text = "Confirm, continue" if lang == "en" else "确定，继续"
-    else:
-        confirm_text = ""
     keyboard = [mode_row]
     keyboard.extend([list(row) for row in settings_markup.inline_keyboard])
-    if confirm_text:
-        keyboard.append(
-            [InlineKeyboardButton(confirm_text, callback_data=LTX_SETUP_CONFIRM_CALLBACK)]
-        )
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -276,18 +268,19 @@ def _build_initial_setup_message(
     if is_extension and lang == "en":
         setup_text = (
             "Loaded the previous segment's last frame as the new start frame.\n"
-            "Choose whether to add an end frame, then adjust quality and duration.\n"
+            "Adjust quality and duration if needed.\n"
             f"Mode: {mode_label}\n"
             f"Quality: {res} | Duration: {dur} | Cost: {cost}\n\n"
-            "Tap Confirm to continue."
+            "Send a text prompt to continue directly, or send an image to use it "
+            "as this segment's end frame."
         )
     elif is_extension:
         setup_text = (
             "已载入上一段尾帧作为新的起始帧。\n"
-            "请选择是否添加终止帧，并可调整清晰度和时长。\n"
+            "可按需调整清晰度和时长。\n"
             f"方式：{mode_label}\n"
             f"清晰度：{res} | 时长：{dur} | 消耗灵石：{cost}\n\n"
-            "点“确定”后继续。"
+            "直接发送提示词即可续写；如需添加终止帧，直接发送终止帧图片即可。"
         )
     elif lang == "en":
         setup_text = (
@@ -779,7 +772,10 @@ async def receive_initial_setup_image(
 ) -> int:
     fsm_data = context.user_data.get(LTX_VIDEO_DATA_KEY)
     if not fsm_data:
-        await robust_reply_text(update.message, _t(context, "fsm.ltx_video.expired_alert"))
+        await robust_reply_text(
+            update.message,
+            _t(context, "fsm.ltx_video.expired_alert"),
+        )
         return ConversationHandler.END
 
     ltx_mode = str(fsm_data.get("ltx_mode") or LTX_MODE_I2V)
@@ -789,15 +785,36 @@ async def receive_initial_setup_image(
         return LtxVideoState.WAIT_MODE_SELECTION
 
     if _is_extension_flow(fsm_data) and fsm_data.get("image_path"):
-        if ltx_mode == LTX_MODE_FLF2V:
-            return await receive_end_image(update, context)
-        await robust_reply_text(
-            update.message,
-            "已载入上一段尾帧。直接续写请点击“确定，继续”；如需添加终止帧，请先选择“添加终止帧”后发送图片。",
-        )
-        return LtxVideoState.WAIT_MODE_SELECTION
+        fsm_data["ltx_mode"] = LTX_MODE_FLF2V
+        return await receive_end_image(update, context)
 
     return await receive_image(update, context)
+
+
+async def receive_initial_setup_text(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int | None:
+    text = (update.message.text or "").strip() if update.message else ""
+    if is_global_menu_command(text):
+        return await unexpected_input(update, context)
+
+    fsm_data = context.user_data.get(LTX_VIDEO_DATA_KEY)
+    if not fsm_data:
+        await robust_reply_text(
+            update.message,
+            _t(context, "fsm.ltx_video.expired_alert"),
+        )
+        return ConversationHandler.END
+
+    ltx_mode = str(fsm_data.get("ltx_mode") or LTX_MODE_I2V)
+    if (
+        _is_extension_flow(fsm_data)
+        and fsm_data.get("image_path")
+        and ltx_mode == LTX_MODE_I2V
+    ):
+        return await receive_prompt(update, context)
+
+    return await unexpected_input(update, context)
 
 
 async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1288,7 +1305,7 @@ def get_ltx_video_fsm_handler() -> ConversationHandler:
                 ),
                 MessageHandler(
                     (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
-                    unexpected_input,
+                    receive_initial_setup_text,
                 ),
             ],
             LtxVideoState.WAIT_IMAGE: [

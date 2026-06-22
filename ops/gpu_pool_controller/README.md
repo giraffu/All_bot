@@ -120,7 +120,9 @@ python scripts/upload_all_task_models_to_lan_cache.py \
 ```
 
 The current LAN cache has manifests for `img2img_lora/2026-06-10`,
-`i2i_pro/2026-06-14-test`, and `scail2/2026-06-17-test`. The all-task target set additionally prepares
+`i2i_pro/2026-06-14-test`, `scail2/2026-06-17-test`, and
+`ltx_video/2026-06-10` (including both the old v1 LTX main model and
+10Eros v1.2). The all-task target set additionally prepares
 `image_to_video/2026-06-13-test`, `wan22_video_v2/2026-06-13-test`,
 `wan22_aio_video/2026-06-12-test`, `ltx_video/2026-06-10`, and
 `face_i2i_t2i/2026-06-10`. `video_basic/2026-06-10` is not a primary manifest;

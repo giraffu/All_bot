@@ -150,7 +150,7 @@ graph TD
 ## 五、 结果发送与清理
 - Bot 完成后会发送 MP4、caption、reply markup 与后续交互入口。
 - `wan22_video_v2` 与执行面 `image_to_video` 都会额外保存 `extra_outputs.last_frame` 对应的尾帧图片，用于扩展生成、分段重生成和整链拼接。V82 下 `2607` 会从 RIFE 后的 `265` 帧序列抽取尾帧，`ImageFromBatch.batch_index` 需保持 `4095` 以满足当前节点上限；Worker 优先读取 Comfy `2503` 尾帧输出。如果某个 Comfy 实例只返回主 MP4，`agent_result_materialization.py` 会用 `ffmpeg/ffprobe` 从主视频补抽最后一帧，因此 worker 镜像必须保留 ffmpeg 依赖。
-- `ltx_video` / `ltx_video_flf2v` / 历史兼容的 `ltx_video_v2v_audio` 也属于尾帧扩展任务。FLF2V 与 V2V Audio workflow 的 `SaveImage 902` 保存尾帧；若只返回主 MP4，同一套 ffmpeg 兜底会补抽 `last_frame`。Bot/Web 的“扩展生成”会把该尾帧作为下一段 LTX 起始帧，续段提交携带 `ltx_prev_task_id` / `ltx_chain_task_ids` 并落库到 `extra_outputs._ltx_context`，供历史详情和拼接 API 识别链路。Bot 扩展入口会先显示“直接续写 / 添加终止帧”设置面板；添加终止帧时无需重新上传起始帧，只收终止帧后按 `ltx_mode=flf2v` 提交。
+- `ltx_video` / `ltx_video_flf2v` / 历史兼容的 `ltx_video_v2v_audio` 也属于尾帧扩展任务。FLF2V 与 V2V Audio workflow 的 `SaveImage 902` 保存尾帧；若只返回主 MP4，同一套 ffmpeg 兜底会补抽 `last_frame`。Bot/Web 的“扩展生成”会把该尾帧作为下一段 LTX 起始帧，续段提交携带 `ltx_prev_task_id` / `ltx_chain_task_ids` 并落库到 `extra_outputs._ltx_context`，供历史详情和拼接 API 识别链路。Bot 扩展入口会先显示“直接续写 / 添加终止帧”设置面板且不再展示确认按钮；用户发送提示词即直接续写，发送图片即作为终止帧，无需重新上传起始帧，终止帧路径按 `ltx_mode=flf2v` 提交。
 - 运行结束后需清理：
   - status message
   - 本地临时文件
