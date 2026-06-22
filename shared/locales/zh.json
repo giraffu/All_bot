@@ -96,9 +96,9 @@
     "days_unit": "天",
     "people_unit": "人",
     "promotion_details": "邀请与推广明细",
-    "invited_recharge_ton": "受邀者充值(TON)",
-    "invited_recharge_cny": "受邀者充值(人民币)",
-    "invited_recharge_stars": "受邀者充值(Stars)",
+    "invited_recharge_ton": "受邀者首笔充值(TON)",
+    "invited_recharge_cny": "受邀者首笔充值(人民币)",
+    "invited_recharge_stars": "受邀者首笔充值(Stars)",
     "estimated_revenue": "预估邀请分成",
     "title": "道友信息",
     "group": "境界",
@@ -950,6 +950,6 @@
     "share_panel": "🤝 **分享赚灵石**\n\n👤 **当前等级**：`{group}`\n🔗 **您的专属链接**：\n`{invite_link}`\n\n📈 **邀请统计**：\n👥 已邀请人数：`{invitations}` 人\n\n{invitation_stats}\n\n💡 **规则**：\n- 只邀请注册：您暂不获得灵石；新道友仍获得 `6` 欢迎灵石。\n- 新道友拜入宗门：您的邀请奖励累计至 `5` 灵石。\n- 新道友首次成功生成内容：您的邀请奖励累计至 `10` 灵石。\n",
     "redeem_credits_btn": "返佣兑灵石",
     "redeem_membership_btn": "返佣兑身份",
-    "invitation_stats_block": "🤝 **邀请数据**：\n- 邀请充值：已有 `{recharged_invitees_count}` 位道友完成 `{total_recharge_count}` 次充值\n- 累积充值：`{total_ton}` TON\n- 累积充值：`¥ {total_rmb}`\n- 累积贡献：`{total_stars}` Stars\n- 历史累计返佣：`USDT {total_commission}`\n- 已兑换返佣：`USDT {spent_commission}`\n- 当前可兑换余额：`USDT {available_balance}`\n- 返佣说明：历史累计返佣用于展示成绩；当前可兑换余额才会随兑换减少"
+    "invitation_stats_block": "🤝 **邀请数据**：\n- 首笔邀请充值：已有 `{recharged_invitees_count}` 位道友完成 `{total_recharge_count}` 笔首充\n- 首笔充值累计：`{total_ton}` TON\n- 首笔充值累计：`¥ {total_rmb}`\n- 首笔贡献累计：`{total_stars}` Stars\n- 历史累计返佣：`USDT {total_commission}`\n- 已兑换返佣：`USDT {spent_commission}`\n- 当前可兑换余额：`USDT {available_balance}`\n- 返佣说明：历史累计返佣用于展示成绩；当前可兑换余额才会随兑换减少"
   }
 }

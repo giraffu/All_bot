@@ -35,6 +35,7 @@ async def query_invitation_recharge_stats(
                 Referral.inviter_id == inviter_id,
                 Order.status == "SUCCESS",
                 Order.final_price > 0,
+                Order.commission_usdt > 0,
                 Order.payment_channel.in_(VALID_PAYMENT_CHANNELS),
             )
         )
@@ -104,11 +105,16 @@ async def query_invitation_recharge_stats(
     ).all()[0]
 
     recharged_invitees = set()
+    total_recharge_count = 0
     total_ton = ZERO_DECIMAL
     total_rmb = ZERO_DECIMAL
     total_stars = 0
-    for invitee_id, final_price, payment_channel, _commission_usdt in rows:
+    for invitee_id, final_price, payment_channel, commission_usdt in rows:
+        if Decimal(str(commission_usdt or 0)) <= 0:
+            continue
+
         recharged_invitees.add(invitee_id)
+        total_recharge_count += 1
 
         if payment_channel == "TON":
             total_ton += Decimal(str(final_price))
@@ -120,7 +126,7 @@ async def query_invitation_recharge_stats(
     total_commission = _round_money(Decimal(str(total_commission_ledger_usdt or 0)))
     return {
         "recharged_invitees_count": len(recharged_invitees),
-        "total_recharge_count": len(rows),
+        "total_recharge_count": total_recharge_count,
         "total_ton": float(total_ton),
         "total_rmb": float(total_rmb),
         "total_stars": total_stars,

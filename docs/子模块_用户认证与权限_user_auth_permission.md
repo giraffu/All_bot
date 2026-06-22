@@ -90,7 +90,7 @@ sequenceDiagram
   - `current_identity`
   - `priority`
   - `identity_expire_at`
-  - `invitation_recharge`
+  - `invitation_recharge`：用户中心展示用的受邀者首笔充值统计，只累计产生首单返佣的订单
   - 签到/生成/邀请等统计
 - 这意味着认证接口已经是“登录 + 用户首页基础态聚合接口”，不是单纯 token 交换。
 

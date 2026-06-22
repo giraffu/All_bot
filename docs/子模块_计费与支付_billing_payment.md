@@ -88,6 +88,7 @@ sequenceDiagram
 
 ### 4.3 Affiliate 返佣闭环
 - 首单返佣金额写入 `orders.commission_usdt`，缺汇率时必须失败并回滚，不能静默写 0。
+- 用户中心与 Bot 分享面板的 `invitation_recharge` 统计只聚合 `orders.commission_usdt > 0` 的受邀充值订单，用来展示“受邀者首笔充值”口径；受邀者后续复购不再增加该展示金额或次数。
 - 邀请人余额不是冗余字段，而是通过 `affiliate_transactions` 汇总得到。
 - 返佣兑换灵石当前已正式落地：
   - 汇率固定为 `1.0000 USDT = 90 credits`

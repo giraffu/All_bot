@@ -99,8 +99,11 @@ async def test_query_invitation_recharge_stats_reads_history_and_balance_from_le
         results=[
             [
                 (2002, Decimal("10.00"), "RMB", Decimal("0.0149")),
+                (2002, Decimal("99.00"), "RMB", Decimal("0.0000")),
                 (3003, Decimal("2.50"), "TON", Decimal("0.0149")),
-                (4004, 100, "XTR", Decimal("0.0000")),
+                (3003, Decimal("3.00"), "TON", Decimal("0.0000")),
+                (4004, 100, "XTR", Decimal("0.1300")),
+                (4004, 500, "XTR", Decimal("0.0000")),
             ],
             [
                 (Decimal("1.2345"), Decimal("0.1111"), Decimal("1.1234")),

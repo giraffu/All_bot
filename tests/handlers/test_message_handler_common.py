@@ -123,6 +123,8 @@ def test_format_invitation_stats_uses_balance_semantics():
         }
     )
 
+    assert "首笔邀请充值" in text
+    assert "完成 `4` 笔首充" in text
     assert "历史累计返佣：`USDT 9.99`" in text
     assert "已兑换返佣：`USDT 1.11`" in text
     assert "当前可兑换余额：`USDT 8.88`" in text
@@ -144,6 +146,8 @@ def test_format_invitation_stats_supports_english_locale():
     )
 
     assert "Invitation stats" in text
+    assert "First recharge invitees" in text
+    assert "completed `4` first top-ups" in text
     assert "Historical commission: `USDT 9.99`" in text
     assert "Available balance: `USDT 8.88`" in text
 

@@ -118,10 +118,10 @@ def _format_invitation_stats(invitation_recharge: dict, available_balance: Decim
     )
     return (
         "🤝 **邀请数据**：\n"
-        f"  - 邀请充值：已有 `{invitation_recharge['recharged_invitees_count']}` 位道友完成 `{invitation_recharge['total_recharge_count']}` 次充值\n"
-        f"  - 累积充值：`{invitation_recharge['total_ton']:.2f}` TON\n"
-        f"  - 累积充值：`¥ {invitation_recharge['total_rmb']:.2f}`\n"
-        f"  - 累积贡献：`{invitation_recharge['total_stars']}` Stars\n"
+        f"  - 首笔邀请充值：已有 `{invitation_recharge['recharged_invitees_count']}` 位道友完成 `{invitation_recharge['total_recharge_count']}` 笔首充\n"
+        f"  - 首笔充值累计：`{invitation_recharge['total_ton']:.2f}` TON\n"
+        f"  - 首笔充值累计：`¥ {invitation_recharge['total_rmb']:.2f}`\n"
+        f"  - 首笔贡献累计：`{invitation_recharge['total_stars']}` Stars\n"
         f"  - 历史累计返佣：`{float(total_commission):.2f} USDT`\n"
         f"  - 已兑换返佣：`{float(invitation_recharge.get('spent_commission_usdt', 0.0)):.2f} USDT`\n"
         f"  - 当前可兑换余额：`{available_balance:.4f} USDT`\n"

@@ -96,9 +96,9 @@
     "days_unit": "days",
     "people_unit": "people",
     "promotion_details": "Promotion Details",
-    "invited_recharge_ton": "Recharge (TON)",
-    "invited_recharge_cny": "Recharge (CNY)",
-    "invited_recharge_stars": "Recharge (Stars)",
+    "invited_recharge_ton": "First Recharge (TON)",
+    "invited_recharge_cny": "First Recharge (CNY)",
+    "invited_recharge_stars": "First Recharge (Stars)",
     "estimated_revenue": "Estimated Revenue",
     "title": "User Profile",
     "group": "Level",
@@ -948,6 +948,6 @@
     "share_panel": "🤝 **Share for Credits**\n\n👤 **Current level**: `{group}`\n🔗 **Your referral link**:\n`{invite_link}`\n\n📈 **Invitation stats**:\n👥 Invited users: `{invitations}`\n\n{invitation_stats}\n\n💡 **Rules**:\n- Invite-only registration: you receive no credits yet; the new user still receives `6` welcome credits.\n- When the new user joins the sect: your referral reward is topped up to `5` credits.\n- When the new user completes their first generation: your referral reward is topped up to `10` credits.\n",
     "redeem_credits_btn": "Redeem Credits",
     "redeem_membership_btn": "Redeem Membership",
-    "invitation_stats_block": "🤝 **Invitation stats**:\n- Recharge invitees: `{recharged_invitees_count}` users completed `{total_recharge_count}` top-ups\n- Total top-up: `{total_ton}` TON\n- Total top-up: `¥ {total_rmb}`\n- Total contribution: `{total_stars}` Stars\n- Historical commission: `USDT {total_commission}`\n- Redeemed commission: `USDT {spent_commission}`\n- Available balance: `USDT {available_balance}`\n- Commission note: historical commission is for overall performance display; only the currently available balance decreases after redemption"
+    "invitation_stats_block": "🤝 **Invitation stats**:\n- First recharge invitees: `{recharged_invitees_count}` users completed `{total_recharge_count}` first top-ups\n- First top-up total: `{total_ton}` TON\n- First top-up total: `¥ {total_rmb}`\n- First contribution total: `{total_stars}` Stars\n- Historical commission: `USDT {total_commission}`\n- Redeemed commission: `USDT {spent_commission}`\n- Available balance: `USDT {available_balance}`\n- Commission note: historical commission is for overall performance display; only the currently available balance decreases after redemption"
   }
 }

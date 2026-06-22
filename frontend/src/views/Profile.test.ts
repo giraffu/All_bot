@@ -162,6 +162,9 @@ describe('Profile affiliate commission display', () => {
 
     const text = wrapper.text()
     expect(authStoreMock.fetchUser).toHaveBeenCalled()
+    expect(text).toContain('受邀者首笔充值(TON)')
+    expect(text).toContain('受邀者首笔充值(人民币)')
+    expect(text).toContain('受邀者首笔充值(Stars)')
     expect(text).toContain('历史累计返佣')
     expect(text).toContain('$ 300.00 USDT')
     expect(text).toContain('已兑换返佣')
