@@ -117,7 +117,12 @@ async def test_start_wan22_video_v2_initializes_defaults(monkeypatch):
     monkeypatch.setattr(wan22_video_v2_fsm, "robust_reply_text", reply_mock)
 
     update = _build_update_with_message(text="🎬 图生视频v2")
-    context = SimpleNamespace(user_data={}, lang="zh", t=lambda key, **kwargs: f"T:{key}")
+    def translate(key, **kwargs):
+        if key == "fsm.wan22_video_v2.setup_text":
+            return "设置面板：请直接发送起始帧图片。"
+        return f"T:{key}"
+
+    context = SimpleNamespace(user_data={}, lang="zh", t=translate)
 
     result = await wan22_video_v2_fsm.start_wan22_video_v2(update, context)
 
@@ -129,7 +134,7 @@ async def test_start_wan22_video_v2_initializes_defaults(monkeypatch):
         == wan22_video_v2_fsm.WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET
     )
     reply_mock.assert_awaited_once()
-    assert "T:fsm.wan22_video_v2.setup_text" in reply_mock.await_args.args[1]
+    assert "请直接发送起始帧图片" in reply_mock.await_args.args[1]
     keyboard = reply_mock.await_args.kwargs["reply_markup"]
     assert keyboard.inline_keyboard[0][0].callback_data == "wan22v2_setup_mode_single"
     assert keyboard.inline_keyboard[0][0].text.startswith("✅ ")
@@ -148,7 +153,13 @@ async def test_start_wan22_video_v2_initializes_defaults(monkeypatch):
         "8 秒 (*2)",
         "10 秒 (*3)",
     ]
-    assert keyboard.inline_keyboard[3][0].callback_data == "wan22v2_setup_confirm"
+    callback_data = [
+        button.callback_data
+        for row in keyboard.inline_keyboard
+        for button in row
+    ]
+    assert "wan22v2_setup_confirm" not in callback_data
+    assert "发送起始帧图片" in reply_mock.await_args.args[1]
 
 
 @pytest.mark.asyncio
@@ -232,6 +243,54 @@ async def test_handle_initial_setup_confirm_requests_start_image(monkeypatch):
         "T:fsm.wan22_video_v2.send_start_after_setup",
         parse_mode="Markdown",
     )
+
+
+@pytest.mark.asyncio
+async def test_setup_panel_accepts_start_image_without_confirm(monkeypatch):
+    reply_mock = AsyncMock()
+    download_mock = AsyncMock(return_value="/tmp/start.png")
+    monkeypatch.setattr(wan22_video_v2_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(
+        wan22_video_v2_fsm,
+        "_download_image_to_temp",
+        download_mock,
+    )
+
+    message = SimpleNamespace(
+        document=None,
+        photo=[SimpleNamespace(file_id="photo-file-id")],
+        chat_id=10001,
+    )
+    update = SimpleNamespace(
+        effective_user=_build_user(),
+        message=message,
+        callback_query=None,
+    )
+    context = SimpleNamespace(
+        user_data={
+            "wan22_video_v2_data": {
+                "start_image_path": None,
+                "end_image_path": None,
+                "use_end_frame": False,
+                "resolution_preset": "standard",
+            }
+        },
+        lang="zh",
+        t=lambda key, **kwargs: f"T:{key}",
+    )
+
+    result = await wan22_video_v2_fsm.receive_initial_setup_start_image(
+        update,
+        context,
+    )
+
+    assert result == wan22_video_v2_fsm.Wan22VideoV2State.WAIT_PROMPT
+    assert context.user_data["wan22_video_v2_data"]["start_image_path"] == "/tmp/start.png"
+    assert download_mock.await_args.kwargs["file_id"] == "photo-file-id"
+    assert reply_mock.await_args_list[0].args[1] == (
+        "T:fsm.wan22_video_v2.start_image_received"
+    )
+    assert reply_mock.await_args_list[1].args[1] == "T:fsm.wan22_video_v2.send_prompt"
 
 
 @pytest.mark.asyncio

@@ -89,8 +89,8 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 - **实施步骤**：
   - 找到存储模型映射的常量字典 `VIDEO_LORA_MODELS`（定义在 `src/lora_catalog.py`，由 `image_to_video_fsm.py` 渲染）。
   - 在字典中追加新模型配置：将**模型前缀名**（即上述的 `{lora_name}`，如 `"Dance"`）作为键，映射到用户可见的**中文按钮标签**（如 `"跳舞"`）。
-  - 保存后，Telegram 机器人中的【图生视频】入口会在启动时展示同屏设置面板：第一组为附加模型按钮，第二组为“单图生成/添加终止帧”，第三组为 `preview/small/standard/hd` 分辨率档位，第四组为 `5s/8s/10s` 时长，第五组为确认。
-  - 用户确认后再上传图片：单图模式收 1 张起始图，首尾帧模式依次收起始图和终止图，然后发送提示词提交。
+  - 保存后，Telegram 机器人中的【图生视频】入口会在启动时展示同屏设置面板：第一组为附加模型按钮，第二组为“单图生成/添加终止帧”，第三组为 `preview/small/standard/hd` 分辨率档位，第四组为 `5s/8s/10s` 时长；普通入口不再展示确认按钮。
+  - 用户直接上传起始图即确认当前设置：单图模式收 1 张起始图，首尾帧模式依次收起始图和终止图，然后发送提示词提交。
   - 旧入口提供 `5s/8s/10s` 三档时长；菜单与 Web 投稿应用都应展示 v2 四档分辨率和三档时长。`/custom_video` 兼容入口应保持无 LoRA，避免把带 LoRA 的任务写成 `custom_video` 历史类型。
 
 ### 3. Backend 层：参数网关透传 (API Routing)
@@ -124,7 +124,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 
 ### 5. 验证与发布 (Testing & Restart)
 - 上传好 `.safetensors` 模型文件后，重启 Bot 进程（以重载 `VIDEO_LORA_MODELS` 字典）。
-- 在 Telegram 中唤起【图生视频】菜单，确认新添加的动作按钮出现在首个设置区；选择模型、帧模式和分辨率后点击“确定”。
+- 在 Telegram 中唤起【图生视频】菜单，确认新添加的动作按钮出现在首个设置区；选择模型、帧模式和分辨率后直接发送起始图。
 - 观察 Worker (Agent) 的控制台日志，确认 `workflow_task_patchers.py` 成功将 `{lora_name}_high_noise.safetensors` 和 `{lora_name}_low_noise.safetensors` 注入到了 `26` 和 `18` 节点中，且 ComfyUI 能够正常加载文件并启动推理。
 - 同时验证旧投稿一键应用：prompt 恢复、`[模型: xxx]` 能解析为 `lora_name`、`1024p` 映射 `hd`、`5s/8s/10s` 恢复和对应灵石消耗。
 
@@ -146,7 +146,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 ### 2. Bot / Web 侧入口
 - **文件定位**：`src/lora_catalog.py`、`src/handlers/fsm/ltx_video_fsm.py`、`frontend/src/views/SingleImageToVideo.vue`、`frontend/src/components/template-apply/TemplateImageToVideoPanel.vue`
 - **当前事实**：
-  - Telegram FSM 允许多选最多 3 个 LoRA，并支持逐项调整强度；LoRA 后会进入同屏设置面板，合并选择 LTX 模式（单首帧、首尾帧）、清晰度和时长，确认后再按模式上传 1 张图片或 2 张图片。旧 `ltx_mode_v2v_audio` 回调必须提示暂未开放，不能继续提交 Bot 任务。
+  - Telegram FSM 允许多选最多 3 个 LoRA，并支持逐项调整强度；LoRA 后会进入同屏设置面板，合并选择 LTX 模式（单首帧、首尾帧）、清晰度和时长，普通入口不再需要确认按钮，用户直接发送起始帧图片即确认当前设置并进入下一步。旧 `ltx_mode_v2v_audio` 回调必须提示暂未开放，不能继续提交 Bot 任务。
   - Web 单图视频页只支持 LTX 单首帧/首尾帧切换；练功房不再展示独立 `ltx_video_audio` 模式。练功房高级图生视频仍可在当前结果区直接用 `extra_outputs.last_frame` 扩展生成。
   - 前端主路径提交 `inputs.lora_items`，而不是只提交单个 `inputs.lora_name`。
   - LTX 结果若存在 `extra_outputs.last_frame`，Web 结果区/历史详情和 Bot 结果消息可进入“扩展生成”，把尾帧作为下一段起始帧。Bot 扩展入口会先展示扩展设置面板，可选择直接续写或追加终止帧；追加终止帧时只上传 `end_image_path`，并以 `ltx_mode=flf2v` 续写。Web/Bot 续段提交会携带 `inputs.ltx_prev_task_id` 与 `inputs.ltx_chain_task_ids`；Web finalizer 和 Bot completion 会把它们持久化到 `extra_outputs._ltx_context`，历史/结果响应转成 `result_meta.ltx_prev_task_id`、`result_meta.ltx_chain_task_ids`、`result_meta.ltx_segment_index`。

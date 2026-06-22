@@ -381,12 +381,6 @@ def _build_initial_setup_keyboard(
             ],
             resolution_row,
             duration_row,
-            [
-                InlineKeyboardButton(
-                    _t(context, "fsm.wan22_video_v2.setup_confirm"),
-                    callback_data=WAN22_VIDEO_V2_SETUP_CONFIRM,
-                )
-            ],
         ]
     )
 
@@ -973,6 +967,16 @@ async def receive_start_image(
     return await _ask_for_prompt(update, context)
 
 
+async def receive_initial_setup_start_image(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    data = _get_data(context)
+    if not data:
+        await robust_reply_text(update.message, _t(context, "fsm.common.expired_cleaned"))
+        return ConversationHandler.END
+    return await receive_start_image(update, context)
+
+
 async def choose_end_frame_mode(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
@@ -1293,10 +1297,13 @@ def get_wan22_video_v2_fsm_handler() -> ConversationHandler:
                     pattern=WAN22_VIDEO_V2_SETUP_ACTION_PATTERN,
                 ),
                 MessageHandler(
+                    filters.PHOTO | filters.Document.IMAGE,
+                    receive_initial_setup_start_image,
+                ),
+                MessageHandler(
                     (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
                     unexpected_input,
                 ),
-                MessageHandler(filters.PHOTO | filters.Document.IMAGE, unexpected_input),
             ],
             Wan22VideoV2State.WAIT_START_IMAGE: [
                 MessageHandler(

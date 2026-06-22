@@ -242,12 +242,13 @@ def _build_initial_setup_keyboard(
     if is_extension:
         confirm_text = "Confirm, continue" if lang == "en" else "确定，继续"
     else:
-        confirm_text = "Confirm, upload media" if lang == "en" else "确定，上传素材"
+        confirm_text = ""
     keyboard = [mode_row]
     keyboard.extend([list(row) for row in settings_markup.inline_keyboard])
-    keyboard.append(
-        [InlineKeyboardButton(confirm_text, callback_data=LTX_SETUP_CONFIRM_CALLBACK)]
-    )
+    if confirm_text:
+        keyboard.append(
+            [InlineKeyboardButton(confirm_text, callback_data=LTX_SETUP_CONFIRM_CALLBACK)]
+        )
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -293,14 +294,16 @@ def _build_initial_setup_message(
             "Choose mode, quality and duration first.\n"
             f"Mode: {mode_label}\n"
             f"Quality: {res} | Duration: {dur} | Cost: {cost}\n\n"
-            "Tap Confirm, then upload the required media."
+            "Send the start-frame image to confirm these settings and continue.\n"
+            "In start/end mode, send the end-frame image after the start frame."
         )
     else:
         setup_text = (
             "请先选择生成模式、清晰度和时长。\n"
             f"模式：{mode_label}\n"
             f"清晰度：{res} | 时长：{dur} | 消耗灵石：{cost}\n\n"
-            "点“确定”后再上传素材。"
+            "请直接发送起始帧图片，发送后即确认当前设置并进入下一步。\n"
+            "首尾帧模式下，收到起始帧后还会继续要求发送终止帧。"
         )
     return f"{lora_text}\n\n{setup_text}"
 
@@ -769,6 +772,32 @@ async def handle_mode_selection(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     return await process_initial_setup(update, context)
+
+
+async def receive_initial_setup_image(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    fsm_data = context.user_data.get(LTX_VIDEO_DATA_KEY)
+    if not fsm_data:
+        await robust_reply_text(update.message, _t(context, "fsm.ltx_video.expired_alert"))
+        return ConversationHandler.END
+
+    ltx_mode = str(fsm_data.get("ltx_mode") or LTX_MODE_I2V)
+    if ltx_mode == LTX_MODE_V2V_AUDIO:
+        fsm_data["ltx_mode"] = LTX_MODE_I2V
+        await robust_reply_text(update.message, LTX_V2V_AUDIO_DISABLED_MESSAGE)
+        return LtxVideoState.WAIT_MODE_SELECTION
+
+    if _is_extension_flow(fsm_data) and fsm_data.get("image_path"):
+        if ltx_mode == LTX_MODE_FLF2V:
+            return await receive_end_image(update, context)
+        await robust_reply_text(
+            update.message,
+            "已载入上一段尾帧。直接续写请点击“确定，继续”；如需添加终止帧，请先选择“添加终止帧”后发送图片。",
+        )
+        return LtxVideoState.WAIT_MODE_SELECTION
+
+    return await receive_image(update, context)
 
 
 async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1252,6 +1281,10 @@ def get_ltx_video_fsm_handler() -> ConversationHandler:
                         r"|set_ltx(res|dur)_"
                         rf"|{LTX_SETUP_CONFIRM_CALLBACK}$)"
                     ),
+                ),
+                MessageHandler(
+                    filters.PHOTO | filters.Document.IMAGE,
+                    receive_initial_setup_image,
                 ),
                 MessageHandler(
                     (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),

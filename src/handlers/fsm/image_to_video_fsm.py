@@ -219,12 +219,6 @@ def _build_initial_setup_keyboard(
             mode_row,
             resolution_row,
             duration_row,
-            [
-                InlineKeyboardButton(
-                    _t(context, "fsm.image_to_video.setup_confirm"),
-                    callback_data=I2V_SETUP_CONFIRM,
-                )
-            ],
         ]
     )
 
@@ -712,6 +706,16 @@ async def handle_lora_selection(
     return ImageToVideoState.WAIT_LORA_SELECTION
 
 
+async def receive_initial_setup_image(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    fsm_data = _get_image_to_video_data(context)
+    if not fsm_data:
+        await robust_reply_text(update.message, _t(context, "fsm.common.expired_cleaned"))
+        return ConversationHandler.END
+    return await receive_image(update, context)
+
+
 async def _download_image_message(
     *,
     message,
@@ -1037,6 +1041,10 @@ def _build_image_to_video_fsm_handler(
                     pattern=I2V_SETUP_ACTION_PATTERN,
                 ),
                 CallbackQueryHandler(handle_lora_selection, pattern="^lora_select_"),
+                MessageHandler(
+                    filters.PHOTO | filters.Document.IMAGE,
+                    receive_initial_setup_image,
+                ),
                 MessageHandler(
                     (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
                     unexpected_input,
