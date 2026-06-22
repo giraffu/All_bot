@@ -184,19 +184,51 @@ def _ltx_mode_label(mode: str, lang: str = "zh") -> str:
     }.get(mode, "单首帧")
 
 
+def _is_extension_flow(fsm_data: dict[str, Any]) -> bool:
+    return bool(fsm_data.get("is_extension"))
+
+
+def _ltx_setup_mode_label(
+    mode: str,
+    lang: str = "zh",
+    *,
+    is_extension: bool = False,
+) -> str:
+    if not is_extension:
+        return _ltx_mode_label(mode, lang)
+    if lang == "en":
+        return {
+            LTX_MODE_FLF2V: "Add end frame",
+        }.get(mode, "Direct continuation")
+    return {
+        LTX_MODE_FLF2V: "添加终止帧",
+    }.get(mode, "直接续写")
+
+
 def _build_initial_setup_keyboard(
     context: ContextTypes.DEFAULT_TYPE,
     fsm_data: dict[str, Any],
 ) -> InlineKeyboardMarkup:
     lang = getattr(context, "lang", "zh")
     current_mode = str(fsm_data.get("ltx_mode") or LTX_MODE_I2V)
+    is_extension = _is_extension_flow(fsm_data)
+    i2v_label = _ltx_setup_mode_label(
+        LTX_MODE_I2V,
+        lang,
+        is_extension=is_extension,
+    )
+    flf2v_label = _ltx_setup_mode_label(
+        LTX_MODE_FLF2V,
+        lang,
+        is_extension=is_extension,
+    )
     mode_row = [
         InlineKeyboardButton(
-            f"{'✅ ' if current_mode == LTX_MODE_I2V else ''}{_ltx_mode_label(LTX_MODE_I2V, lang)}",
+            f"{'✅ ' if current_mode == LTX_MODE_I2V else ''}{i2v_label}",
             callback_data="ltx_mode_i2v",
         ),
         InlineKeyboardButton(
-            f"{'✅ ' if current_mode == LTX_MODE_FLF2V else ''}{_ltx_mode_label(LTX_MODE_FLF2V, lang)}",
+            f"{'✅ ' if current_mode == LTX_MODE_FLF2V else ''}{flf2v_label}",
             callback_data="ltx_mode_flf2v",
         ),
     ]
@@ -207,7 +239,10 @@ def _build_initial_setup_keyboard(
         str(fsm_data.get("duration") or "5s"),
         lang,
     )
-    confirm_text = "Confirm, upload media" if lang == "en" else "确定，上传素材"
+    if is_extension:
+        confirm_text = "Confirm, continue" if lang == "en" else "确定，继续"
+    else:
+        confirm_text = "Confirm, upload media" if lang == "en" else "确定，上传素材"
     keyboard = [mode_row]
     keyboard.extend([list(row) for row in settings_markup.inline_keyboard])
     keyboard.append(
@@ -225,13 +260,35 @@ def _build_initial_setup_message(
     dur = str(fsm_data.get("duration") or "5s")
     multiplier = LTX_DURATION_MULTIPLIER.get(dur, 1.0)
     cost = int(LTX_RESOLUTION_COST.get(res, 10) * multiplier)
-    mode_label = _ltx_mode_label(str(fsm_data.get("ltx_mode") or LTX_MODE_I2V), lang)
+    mode = str(fsm_data.get("ltx_mode") or LTX_MODE_I2V)
+    mode_label = _ltx_setup_mode_label(
+        mode,
+        lang,
+        is_extension=_is_extension_flow(fsm_data),
+    )
+    is_extension = _is_extension_flow(fsm_data)
     lora_text = _build_lora_summary_text(
         context,
         _get_ltx_video_items(fsm_data),
         empty_key="fsm.image_to_video.current_lora",
     )
-    if lang == "en":
+    if is_extension and lang == "en":
+        setup_text = (
+            "Loaded the previous segment's last frame as the new start frame.\n"
+            "Choose whether to add an end frame, then adjust quality and duration.\n"
+            f"Mode: {mode_label}\n"
+            f"Quality: {res} | Duration: {dur} | Cost: {cost}\n\n"
+            "Tap Confirm to continue."
+        )
+    elif is_extension:
+        setup_text = (
+            "已载入上一段尾帧作为新的起始帧。\n"
+            "请选择是否添加终止帧，并可调整清晰度和时长。\n"
+            f"方式：{mode_label}\n"
+            f"清晰度：{res} | 时长：{dur} | 消耗灵石：{cost}\n\n"
+            "点“确定”后继续。"
+        )
+    elif lang == "en":
         setup_text = (
             "Choose mode, quality and duration first.\n"
             f"Mode: {mode_label}\n"
@@ -678,12 +735,27 @@ async def _confirm_initial_setup(
         return LtxVideoState.WAIT_MODE_SELECTION
 
     if ltx_mode == LTX_MODE_FLF2V:
+        if _is_extension_flow(fsm_data) and fsm_data.get("image_path"):
+            await robust_edit_text(
+                query.message,
+                f"{_build_lora_summary_text(context, _get_ltx_video_items(fsm_data), empty_key='fsm.image_to_video.current_lora')}\n\n设置已确认。请上传本段终止帧图片。",
+                parse_mode="Markdown",
+            )
+            return LtxVideoState.WAIT_END_IMAGE
         await robust_edit_text(
             query.message,
             f"{_build_lora_summary_text(context, _get_ltx_video_items(fsm_data), empty_key='fsm.image_to_video.current_lora')}\n\n设置已确认。请先上传起始帧图片。",
             parse_mode="Markdown",
         )
         return LtxVideoState.WAIT_IMAGE
+
+    if _is_extension_flow(fsm_data) and fsm_data.get("image_path"):
+        await robust_edit_text(
+            query.message,
+            _build_prompt_request_text(context, fsm_data),
+            parse_mode="Markdown",
+        )
+        return LtxVideoState.WAIT_SETTINGS_AND_PROMPT
 
     await robust_edit_text(
         query.message,
@@ -1093,6 +1165,7 @@ async def start_ltx_video_extension(
         "end_image_path": None,
         "video_path": None,
         "lora_items": _resolve_lora_items_from_meta(meta),
+        "is_extension": True,
         "extension_prev_task_id": base_task_id,
         "chain_task_ids": build_ltx_full_chain_task_ids(
             chain_task_ids=normalize_ltx_video_chain_task_ids(
@@ -1103,12 +1176,14 @@ async def start_ltx_video_extension(
     }
     target_message = query.message if query else update.effective_message
     if target_message:
+        fsm_data = context.user_data[LTX_VIDEO_DATA_KEY]
         await robust_reply_text(
             target_message,
-            "已载入上一段尾帧作为新的起始帧。你可以调整时长后输入下一段提示词。",
+            _build_initial_setup_message(context, fsm_data),
+            reply_markup=_build_initial_setup_keyboard(context, fsm_data),
             parse_mode="Markdown",
         )
-        return await _send_settings_message(update, context, message=target_message)
+        return LtxVideoState.WAIT_MODE_SELECTION
     _cleanup_context(context)
     return ConversationHandler.END
 

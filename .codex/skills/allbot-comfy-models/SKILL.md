@@ -149,7 +149,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
   - Telegram FSM 允许多选最多 3 个 LoRA，并支持逐项调整强度；LoRA 后会进入同屏设置面板，合并选择 LTX 模式（单首帧、首尾帧）、清晰度和时长，确认后再按模式上传 1 张图片或 2 张图片。旧 `ltx_mode_v2v_audio` 回调必须提示暂未开放，不能继续提交 Bot 任务。
   - Web 单图视频页只支持 LTX 单首帧/首尾帧切换；练功房不再展示独立 `ltx_video_audio` 模式。练功房高级图生视频仍可在当前结果区直接用 `extra_outputs.last_frame` 扩展生成。
   - 前端主路径提交 `inputs.lora_items`，而不是只提交单个 `inputs.lora_name`。
-  - LTX 结果若存在 `extra_outputs.last_frame`，Web 结果区/历史详情和 Bot 结果消息可进入“扩展生成”，把尾帧作为下一段起始帧。Web/Bot 续段提交会携带 `inputs.ltx_prev_task_id` 与 `inputs.ltx_chain_task_ids`；Web finalizer 和 Bot completion 会把它们持久化到 `extra_outputs._ltx_context`，历史/结果响应转成 `result_meta.ltx_prev_task_id`、`result_meta.ltx_chain_task_ids`、`result_meta.ltx_segment_index`。
+  - LTX 结果若存在 `extra_outputs.last_frame`，Web 结果区/历史详情和 Bot 结果消息可进入“扩展生成”，把尾帧作为下一段起始帧。Bot 扩展入口会先展示扩展设置面板，可选择直接续写或追加终止帧；追加终止帧时只上传 `end_image_path`，并以 `ltx_mode=flf2v` 续写。Web/Bot 续段提交会携带 `inputs.ltx_prev_task_id` 与 `inputs.ltx_chain_task_ids`；Web finalizer 和 Bot completion 会把它们持久化到 `extra_outputs._ltx_context`，历史/结果响应转成 `result_meta.ltx_prev_task_id`、`result_meta.ltx_chain_task_ids`、`result_meta.ltx_segment_index`。
   - LTX 续段结果（存在 `result_meta.ltx_prev_task_id`）可在练功房结果区或闪回瓶详情调用 `/users/history/{task_id}/ltx-chain/stitch` 拼接整条链，拼接历史使用 `extra_outputs.ltx_chain_stitch` 标记。首段只有扩展按钮，不显示拼接按钮。
 
 ### 3. Backend 层

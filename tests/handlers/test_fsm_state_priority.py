@@ -851,9 +851,6 @@ async def test_ltx_video_extension_initializes_single_start_frame_with_chain_con
     monkeypatch,
 ):
     reply_mock = AsyncMock()
-    settings_mock = AsyncMock(
-        return_value=ltx_video_fsm.LtxVideoState.WAIT_SETTINGS_AND_PROMPT
-    )
     load_history_mock = AsyncMock(
         return_value=SimpleNamespace(
             billing_resolution="1280x704",
@@ -874,7 +871,6 @@ async def test_ltx_video_extension_initializes_single_start_frame_with_chain_con
     download_mock = AsyncMock(return_value="/tmp/ltx-tail.png")
 
     monkeypatch.setattr(ltx_video_fsm, "robust_reply_text", reply_mock)
-    monkeypatch.setattr(ltx_video_fsm, "_send_settings_message", settings_mock)
     monkeypatch.setattr(ltx_video_fsm, "load_owned_ltx_history", load_history_mock)
     monkeypatch.setattr(
         ltx_video_fsm,
@@ -901,10 +897,11 @@ async def test_ltx_video_extension_initializes_single_start_frame_with_chain_con
 
     result = await ltx_video_fsm.start_ltx_video_extension(update, context)
 
-    assert result == ltx_video_fsm.LtxVideoState.WAIT_SETTINGS_AND_PROMPT
+    assert result == ltx_video_fsm.LtxVideoState.WAIT_MODE_SELECTION
     data = context.user_data["ltx_video_data"]
     assert data["ltx_mode"] == "i2v"
     assert data["image_path"] == "/tmp/ltx-tail.png"
+    assert data["is_extension"] is True
     assert data["extension_prev_task_id"] == "ltx-task-2"
     assert data["chain_task_ids"] == ["ltx-task-1", "ltx-task-2"]
     assert data["lora_items"] == [
@@ -913,6 +910,97 @@ async def test_ltx_video_extension_initializes_single_start_frame_with_chain_con
             "strength": 0.8,
         }
     ]
+    reply_mock.assert_awaited_once()
+    assert "上一段尾帧" in reply_mock.await_args.args[1]
+    callback_data = [
+        button.callback_data
+        for row in reply_mock.await_args.kwargs["reply_markup"].inline_keyboard
+        for button in row
+    ]
+    assert "ltx_mode_i2v" in callback_data
+    assert "ltx_mode_flf2v" in callback_data
+    assert "ltx_mode_v2v_audio" not in callback_data
+    assert "set_ltxdur_10s" in callback_data
+    assert "ltx_setup_confirm" in callback_data
+
+
+@pytest.mark.asyncio
+async def test_ltx_video_extension_confirm_add_end_frame_requests_end_image(
+    monkeypatch,
+):
+    edit_mock = AsyncMock()
+    monkeypatch.setattr(ltx_video_fsm, "robust_edit_text", edit_mock)
+
+    query = SimpleNamespace(
+        data="ltx_setup_confirm",
+        answer=AsyncMock(),
+        message=SimpleNamespace(),
+    )
+    update = SimpleNamespace(callback_query=query)
+    context = SimpleNamespace(
+        user_data={
+            "ltx_video_data": {
+                "resolution": "1280x704",
+                "duration": "10s",
+                "ltx_mode": "flf2v",
+                "image_path": "/tmp/ltx-tail.png",
+                "end_image_path": None,
+                "lora_items": [],
+                "is_extension": True,
+            }
+        },
+        lang="zh",
+        t=lambda key, **kwargs: f"T:{key}",
+    )
+
+    result = await ltx_video_fsm.process_initial_setup(update, context)
+
+    assert result == ltx_video_fsm.LtxVideoState.WAIT_END_IMAGE
+    assert context.user_data["ltx_video_data"]["image_path"] == "/tmp/ltx-tail.png"
+    edit_mock.assert_awaited_once()
+    assert "终止帧" in edit_mock.await_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_ltx_video_extension_confirm_direct_continuation_requests_prompt(
+    monkeypatch,
+):
+    edit_mock = AsyncMock()
+    monkeypatch.setattr(ltx_video_fsm, "robust_edit_text", edit_mock)
+
+    def translate(key, **kwargs):
+        if key == "fsm.ltx_video.prompt_request_text":
+            return f"素材已收到。{kwargs['mode']} {kwargs['duration']}。请发送提示词。"
+        return f"T:{key}"
+
+    query = SimpleNamespace(
+        data="ltx_setup_confirm",
+        answer=AsyncMock(),
+        message=SimpleNamespace(),
+    )
+    update = SimpleNamespace(callback_query=query)
+    context = SimpleNamespace(
+        user_data={
+            "ltx_video_data": {
+                "resolution": "1280x704",
+                "duration": "10s",
+                "ltx_mode": "i2v",
+                "image_path": "/tmp/ltx-tail.png",
+                "end_image_path": None,
+                "lora_items": [],
+                "is_extension": True,
+            }
+        },
+        lang="zh",
+        t=translate,
+    )
+
+    result = await ltx_video_fsm.process_initial_setup(update, context)
+
+    assert result == ltx_video_fsm.LtxVideoState.WAIT_SETTINGS_AND_PROMPT
+    edit_mock.assert_awaited_once()
+    assert "提示词" in edit_mock.await_args.args[1]
+    assert "请在下方选择" not in edit_mock.await_args.args[1]
 
 
 @pytest.mark.asyncio
