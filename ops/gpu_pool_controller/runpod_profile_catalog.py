@@ -19,6 +19,8 @@ RUNPOD_PROD_I2I_PRO_AGENT_ID_PREFIX = "runpod_prod_i2i_pro_manual_"
 RUNPOD_PROD_I2I_PRO_POD_NAME_PREFIX = "allbot-runpod-prod-i2i-pro-manual-"
 RUNPOD_PROD_SCAIL2_AGENT_ID_PREFIX = "runpod_prod_scail2_manual_"
 RUNPOD_PROD_SCAIL2_POD_NAME_PREFIX = "allbot-runpod-prod-scail2-manual-"
+RUNPOD_PROD_LTX_VIDEO_AGENT_ID_PREFIX = "runpod_prod_ltx_video_manual_"
+RUNPOD_PROD_LTX_VIDEO_POD_NAME_PREFIX = "allbot-runpod-prod-ltx-video-manual-"
 RUNPOD_PROD_DEFAULT_MAX_MANUAL_SLOTS = 100
 RUNPOD_PROD_MAX_MANUAL_SLOTS = RUNPOD_PROD_DEFAULT_MAX_MANUAL_SLOTS
 RUNPOD_PROD_AGENT_ID = "runpod_prod_img2img_manual_01"
@@ -38,6 +40,9 @@ RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE = (
 )
 RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX = (
     "ghcr.io/giraffu/allbot-comfy-runpod-scail2:"
+)
+RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX = (
+    "ghcr.io/giraffu/allbot-comfy-runpod-ltx-video:"
 )
 RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS = (
     "NVIDIA GeForce RTX 5090",
@@ -109,6 +114,27 @@ RUNPOD_IMG2IMG_LORA_DOCKER_START_CMD = (
     RUNPOD_IMG2IMG_LORA_BOOTSTRAP_LOADER_SCRIPT,
 )
 RUNPOD_SCAIL2_DOCKER_START_CMD = RUNPOD_BOOTSTRAP_DOCKER_START_CMD
+RUNPOD_LTX_VIDEO_GPU_TYPE_IDS = (
+    "NVIDIA GeForce RTX 5090",
+    "NVIDIA GeForce RTX 4090",
+)
+RUNPOD_LTX_VIDEO_MODEL_PREFIX = "ltx_video/2026-06-10"
+RUNPOD_LTX_VIDEO_MODEL_MANIFEST_KEY = "ltx_video/2026-06-10/manifest.json"
+RUNPOD_LTX_VIDEO_CONTAINER_DISK_GB = 180
+RUNPOD_LTX_VIDEO_SUPPORTED_TASK_TYPES = (
+    "ltx_video",
+    "ltx_video_flf2v",
+    "ltx_video_v2v_audio",
+)
+RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES = json.dumps(
+    {
+        "ltx_video": "LTX 2.3 10Eros v1.2 I2V 6.1.json",
+        "ltx_video_flf2v": "LTX 2.3 10Eros v1.2 FLF2V 6.1.json",
+        "ltx_video_v2v_audio": "LTX 2.3 10Eros v1.2 V2V Audio 6.1.json",
+    },
+    separators=(",", ":"),
+)
+RUNPOD_LTX_VIDEO_DOCKER_START_CMD = RUNPOD_BOOTSTRAP_DOCKER_START_CMD
 
 
 @dataclass(frozen=True)
@@ -186,6 +212,15 @@ RUNPOD_TASK_PROFILES: dict[str, RunPodTaskProfile] = {
         gpu_type_env_key="RUNPOD_GPU_TYPE_IDS_SCAIL2",
         image_env_key="RUNPOD_IMAGE_NAME_SCAIL2",
     ),
+    "ltx_video": RunPodTaskProfile(
+        task_type="ltx_video",
+        supported_task_types=RUNPOD_LTX_VIDEO_SUPPORTED_TASK_TYPES,
+        runtime_profile="ltx_video",
+        agent_id_prefix="runpod_test_ltx_video",
+        template_env_key="RUNPOD_TEMPLATE_ID_LTX_VIDEO",
+        gpu_type_env_key="RUNPOD_GPU_TYPE_IDS_LTX_VIDEO",
+        image_env_key="RUNPOD_IMAGE_NAME_LTX_VIDEO",
+    ),
 }
 
 RUNPOD_ADMIN_PROFILE_OPTIONS: tuple[dict[str, object], ...] = (
@@ -215,6 +250,15 @@ RUNPOD_ADMIN_PROFILE_OPTIONS: tuple[dict[str, object], ...] = (
         "supported_task_types": [
             "scail2_action_transfer",
             "scail2_video_replacement",
+        ],
+    },
+    {
+        "profile": "ltx_video",
+        "label": "ltx_video / 高级图生视频",
+        "supported_task_types": [
+            "ltx_video",
+            "ltx_video_flf2v",
+            "ltx_video_v2v_audio",
         ],
     },
 )
@@ -290,9 +334,11 @@ def normalize_prod_worker_profile(profile: str | None) -> str:
         return "i2i_pro"
     if value == "scail2":
         return "scail2"
+    if value == "ltx_video":
+        return "ltx_video"
     raise ValueError(
         "prod RunPod profile must be img2img, image_to_video, "
-        "wan22_video_v2, i2i_pro, or scail2"
+        "wan22_video_v2, i2i_pro, scail2, or ltx_video"
     )
 
 
@@ -308,9 +354,11 @@ def prod_worker_profile_for_task_type(task_type: str) -> str:
         return "i2i_pro"
     if value == "scail2" or value in RUNPOD_SCAIL2_SUPPORTED_TASK_TYPES:
         return "scail2"
+    if value == "ltx_video" or value in RUNPOD_LTX_VIDEO_SUPPORTED_TASK_TYPES:
+        return "ltx_video"
     raise ValueError(
         "prod RunPod worker only supports img2img, image_to_video, "
-        "wan22_video_v2, i2i_pro, or scail2"
+        "wan22_video_v2, i2i_pro, scail2, or ltx_video"
     )
 
 
@@ -330,13 +378,16 @@ def prod_profile_from_agent_id(agent_id: str) -> str:
         return "i2i_pro"
     if raw.startswith(RUNPOD_PROD_SCAIL2_AGENT_ID_PREFIX):
         return "scail2"
+    if raw.startswith(RUNPOD_PROD_LTX_VIDEO_AGENT_ID_PREFIX):
+        return "ltx_video"
     raise ValueError(
         "prod RunPod agent_id must start with one of "
         f"{RUNPOD_PROD_AGENT_ID_PREFIX}, "
         f"{RUNPOD_PROD_IMAGE_TO_VIDEO_AGENT_ID_PREFIX}, "
         f"{RUNPOD_PROD_WAN22_VIDEO_V2_AGENT_ID_PREFIX}, "
         f"{RUNPOD_PROD_I2I_PRO_AGENT_ID_PREFIX}, "
-        f"{RUNPOD_PROD_SCAIL2_AGENT_ID_PREFIX}"
+        f"{RUNPOD_PROD_SCAIL2_AGENT_ID_PREFIX}, "
+        f"{RUNPOD_PROD_LTX_VIDEO_AGENT_ID_PREFIX}"
     )
 
 
@@ -350,6 +401,8 @@ def prod_agent_id_prefix_for(profile: str | None) -> str:
         return RUNPOD_PROD_I2I_PRO_AGENT_ID_PREFIX
     if profile_key == "scail2":
         return RUNPOD_PROD_SCAIL2_AGENT_ID_PREFIX
+    if profile_key == "ltx_video":
+        return RUNPOD_PROD_LTX_VIDEO_AGENT_ID_PREFIX
     return RUNPOD_PROD_AGENT_ID_PREFIX
 
 
@@ -363,6 +416,8 @@ def prod_pod_name_prefix_for(profile: str | None) -> str:
         return RUNPOD_PROD_I2I_PRO_POD_NAME_PREFIX
     if profile_key == "scail2":
         return RUNPOD_PROD_SCAIL2_POD_NAME_PREFIX
+    if profile_key == "ltx_video":
+        return RUNPOD_PROD_LTX_VIDEO_POD_NAME_PREFIX
     return RUNPOD_PROD_POD_NAME_PREFIX
 
 

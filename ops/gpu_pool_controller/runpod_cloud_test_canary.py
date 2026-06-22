@@ -76,6 +76,8 @@ class RunPodCloudTestCanaryCaseBuilder:
             return self.wan22_aio_video_task_cases(image_object_key)
         if profile.task_type == "i2i_pro":
             return self.i2i_pro_task_cases(image_object_key)
+        if profile.task_type == "ltx_video":
+            return self.ltx_video_task_cases(image_object_key)
         return self.img2img_task_cases(image_object_key)
 
     def img2img_task_cases(self, image_object_key: str) -> list[dict[str, Any]]:
@@ -168,6 +170,30 @@ class RunPodCloudTestCanaryCaseBuilder:
                     "priority": 0,
                 },
             },
+        ]
+
+    def ltx_video_task_cases(self, image_object_key: str) -> list[dict[str, Any]]:
+        return [
+            {
+                "label": "ltx_video_i2v_5s",
+                "expected_central_task_type": "ltx_video",
+                "payload": {
+                    "task_type": "ltx_video",
+                    "inputs": {
+                        "images": [image_object_key],
+                        "image": image_object_key,
+                        "resolution": "1280x704",
+                        "duration": 5,
+                        "duration_seconds": 5,
+                        "extract_last_frame": True,
+                        "ltx_mode": "i2v",
+                        "seed": 20260622,
+                    },
+                    "prompt": self.config.prompt,
+                    "negative_prompt": self.config.negative_prompt,
+                    "priority": 0,
+                },
+            }
         ]
 
     def i2i_pro_task_cases(self, image_object_key: str) -> list[dict[str, Any]]:
@@ -751,7 +777,7 @@ class RunPodCloudTestCanaryExecutor:
         task_id: str,
         result_payload: dict[str, Any],
     ) -> dict[str, Any]:
-        if self.config.task_type != "wan22_aio_video":
+        if self.config.task_type not in {"wan22_aio_video", "ltx_video"}:
             return {}
         extra_outputs = result_payload.get("extra_outputs")
         last_frame = (

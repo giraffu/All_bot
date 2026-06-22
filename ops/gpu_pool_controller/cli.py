@@ -817,7 +817,14 @@ def build_parser() -> argparse.ArgumentParser:
     prod_worker_common.add_argument("--agent-id", default=None)
     prod_worker_common.add_argument(
         "--profile",
-        choices=("img2img", "image_to_video", "wan22_video_v2", "i2i_pro", "scail2"),
+        choices=(
+            "img2img",
+            "image_to_video",
+            "wan22_video_v2",
+            "i2i_pro",
+            "scail2",
+            "ltx_video",
+        ),
         default=None,
         help="prod RunPod worker profile; default img2img",
     )

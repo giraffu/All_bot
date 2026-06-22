@@ -12,10 +12,16 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES,
     RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
     RUNPOD_IMG2IMG_LORA_DOCKER_START_CMD,
+    RUNPOD_LTX_VIDEO_CONTAINER_DISK_GB,
+    RUNPOD_LTX_VIDEO_MODEL_MANIFEST_KEY,
+    RUNPOD_LTX_VIDEO_MODEL_PREFIX,
+    RUNPOD_LTX_VIDEO_SUPPORTED_TASK_TYPES,
+    RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
     RUNPOD_PROD_AGENT_ID,
     RUNPOD_PROD_GPU_TYPE_IDS,
     RUNPOD_PROD_SUPPORTED_TASK_TYPES,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
+    RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX,
     RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
     RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE,
     RUNPOD_SCAIL2_MODEL_MANIFEST_KEY,
@@ -41,6 +47,9 @@ PUBLIC_I2I_PRO_GHCR_IMAGE = (
 )
 PUBLIC_SCAIL2_GHCR_IMAGE = (
     RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX + "20260617-scail2-prod"
+)
+PUBLIC_LTX_VIDEO_GHCR_IMAGE = (
+    RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX + "20260622-ltx-prod"
 )
 
 
@@ -111,6 +120,9 @@ class FakeRunPodProvider:
             image_name_scail2=(
                 self.settings.image_name_scail2 or PUBLIC_SCAIL2_GHCR_IMAGE
             ),
+            image_name_ltx_video=(
+                self.settings.image_name_ltx_video or PUBLIC_LTX_VIDEO_GHCR_IMAGE
+            ),
             minio_endpoint="https://r2.example.test",
         )
         return RunPodProvider(settings).render_create_pod_request(
@@ -126,6 +138,7 @@ class FakeRunPodProvider:
             "wan22_video_v2": "wan22_video_v2",
             "i2i_pro": "i2i_pro",
             "scail2": "scail2",
+            "ltx_video": "ltx_video",
         }.get(task_type, "img2img_lora")
         pod = {
             "id": f"pod-prod-{slot}",
@@ -296,6 +309,7 @@ def _settings(**overrides) -> RunPodSettings:
         "image_name_img2img_lora": RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
         "image_name_i2i_pro": PUBLIC_I2I_PRO_GHCR_IMAGE,
         "image_name_scail2": PUBLIC_SCAIL2_GHCR_IMAGE,
+        "image_name_ltx_video": PUBLIC_LTX_VIDEO_GHCR_IMAGE,
         "minio_endpoint": "https://r2.example.test",
     }
     values.update(overrides)
@@ -572,6 +586,47 @@ def test_prod_worker_render_scail2_uses_prod_profile_defaults():
     assert payload["render"]["pool_runtime_profile"] == "scail2"
     assert payload["render"]["model_prefix"] == RUNPOD_SCAIL2_MODEL_PREFIX
     assert payload["render"]["model_manifest_key"] == RUNPOD_SCAIL2_MODEL_MANIFEST_KEY
+    assert payload["render"]["buckets"]["result"] == "user-data-prod"
+    assert payload["render"]["custom_nodes_enabled"] == "false"
+    assert payload["render"]["sshd_enabled"] == "false"
+    assert provider.create_calls == 0
+    assert provider.delete_calls == 0
+
+
+def test_prod_worker_render_ltx_video_uses_v12_profile_defaults():
+    agent_id = prod_agent_id_from_slot("01", profile="ltx_video")
+    provider = FakeRunPodProvider(
+        _settings(
+            prod_agent_id=agent_id,
+            image_name_ltx_video=PUBLIC_LTX_VIDEO_GHCR_IMAGE,
+            model_bucket="allbot-model-cache",
+            model_prefix_ltx_video=RUNPOD_LTX_VIDEO_MODEL_PREFIX,
+            model_manifest_key_ltx_video=RUNPOD_LTX_VIDEO_MODEL_MANIFEST_KEY,
+        )
+    )
+    options = RunPodProdWorkerOptions(
+        action="render",
+        profile="ltx_video",
+        task_type="ltx_video",
+        agent_id=agent_id,
+        quiet=True,
+    )
+
+    payload = RunPodProdWorkerRunner(provider, options).run()
+
+    assert payload["ok"] is True
+    assert payload["profile"] == "ltx_video"
+    assert payload["render"]["pod_name"] == "allbot-runpod-prod-ltx-video-manual-01"
+    assert payload["render"]["imageName"] == PUBLIC_LTX_VIDEO_GHCR_IMAGE
+    assert payload["render"]["agent_id"] == "runpod_prod_ltx_video_manual_01"
+    assert payload["render"]["supported_task_types"] == ",".join(
+        RUNPOD_LTX_VIDEO_SUPPORTED_TASK_TYPES
+    )
+    assert payload["render"]["pool_runtime_profile"] == "ltx_video"
+    assert payload["render"]["model_prefix"] == RUNPOD_LTX_VIDEO_MODEL_PREFIX
+    assert payload["render"]["model_manifest_key"] == RUNPOD_LTX_VIDEO_MODEL_MANIFEST_KEY
+    assert payload["render"]["workflow_overrides"] == RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES
+    assert payload["render"]["container_disk_gb"] == RUNPOD_LTX_VIDEO_CONTAINER_DISK_GB
     assert payload["render"]["buckets"]["result"] == "user-data-prod"
     assert payload["render"]["custom_nodes_enabled"] == "false"
     assert payload["render"]["sshd_enabled"] == "false"
@@ -1423,6 +1478,31 @@ def test_prod_worker_selection_can_infer_scail2_profile_from_prod_agent_env(
     assert selection["pod_name"] == "allbot-runpod-prod-scail2-manual-01"
 
 
+def test_prod_worker_selection_ltx_video_profile_uses_dedicated_agent_env(
+    monkeypatch,
+):
+    monkeypatch.setenv("RUNPOD_PROD_AGENT_ID", RUNPOD_PROD_AGENT_ID)
+    args = build_parser().parse_args(
+        [
+            "runpod",
+            "prod-worker",
+            "status",
+            "--profile",
+            "ltx_video",
+            "--slot",
+            "02",
+        ]
+    )
+
+    selection = apply_prod_worker_selection_to_env(args)
+
+    assert selection["profile"] == "ltx_video"
+    assert selection["slot"] == "02"
+    assert selection["agent_id"] == "runpod_prod_ltx_video_manual_02"
+    assert selection["pod_name"] == "allbot-runpod-prod-ltx-video-manual-02"
+    assert __import__("os").environ["RUNPOD_PROD_AGENT_ID"] == selection["agent_id"]
+
+
 def test_cli_parses_runpod_prod_worker_up_command():
     args = build_parser().parse_args(
         [
@@ -1559,6 +1639,27 @@ def test_cli_parses_runpod_prod_worker_scail2_profile_command():
     assert args.slot == "01"
     assert args.scail2_reference_object_key == "user-data-prod/web_uploads/3/reference.jpg"
     assert args.scail2_motion_video_object_key == "user-data-prod/web_uploads/3/motion.mp4"
+    assert args.quiet is True
+
+
+def test_cli_parses_runpod_prod_worker_ltx_video_profile_command():
+    args = build_parser().parse_args(
+        [
+            "runpod",
+            "prod-worker",
+            "render",
+            "--profile",
+            "ltx_video",
+            "--slot",
+            "01",
+            "--quiet",
+        ]
+    )
+
+    assert args.runpod_command == "prod-worker"
+    assert args.prod_worker_command == "render"
+    assert args.profile == "ltx_video"
+    assert args.slot == "01"
     assert args.quiet is True
 
 

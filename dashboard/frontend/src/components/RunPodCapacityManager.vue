@@ -71,6 +71,11 @@ const fallbackProfiles: RunPodProfile[] = [
     label: 'scail2 / 视频生视频',
     supported_task_types: ['scail2_action_transfer', 'scail2_video_replacement'],
   },
+  {
+    profile: 'ltx_video',
+    label: 'ltx_video / 高级图生视频',
+    supported_task_types: ['ltx_video', 'ltx_video_flf2v', 'ltx_video_v2v_audio'],
+  },
 ]
 
 const open = ref(false)

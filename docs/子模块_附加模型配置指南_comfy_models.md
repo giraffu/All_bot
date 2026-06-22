@@ -235,3 +235,9 @@ SCAIL-2 当前有四类运行环境，桶和 worker 不得混用：
 先 disable，确认无当前任务后 down 删除 Pod；恢复时重新 add、等待 disabled heartbeat、跑两个 5s
 canary MP4，再决定是否 enable。正式用户输入和结果只允许写 `user-data-prod`，模型只允许从
 `allbot-model-cache` 同步。
+
+正式 RunPod `ltx_video` profile 同样只作为手动备用/临时扩容能力。它使用
+`runpod_prod_ltx_video_manual_NN`、`user-data-prod`、`allbot-model-cache/ltx_video/2026-06-10/manifest.json`
+和三份 10Eros v1.2 workflow override；不修改 LAN LTX AIO，也不覆盖默认 `LTX 2.3 *.json`
+workflow。canary 只提交一单 5s I2V MP4，结束后目标 worker 保持 `disabled`，确认产物后再
+手动 enable。

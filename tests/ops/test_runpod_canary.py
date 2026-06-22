@@ -11,6 +11,10 @@ from ops.gpu_pool_controller.runpod_canary import (
     EXPECTED_I2I_PRO_IMAGE_REF_PREFIX,
     EXPECTED_I2I_PRO_MODEL_MANIFEST_KEY,
     EXPECTED_I2I_PRO_MODEL_PREFIX,
+    EXPECTED_LTX_VIDEO_GPU_TYPE_IDS,
+    EXPECTED_LTX_VIDEO_IMAGE_REF_PREFIX,
+    EXPECTED_LTX_VIDEO_MODEL_MANIFEST_KEY,
+    EXPECTED_LTX_VIDEO_MODEL_PREFIX,
     EXPECTED_SCAIL2_GPU_TYPE_IDS,
     EXPECTED_SCAIL2_IMAGE_REF_PREFIX,
     EXPECTED_SCAIL2_MODEL_MANIFEST_KEY,
@@ -34,6 +38,8 @@ from ops.gpu_pool_controller.runpod_canary import (
     write_canary_png,
 )
 from ops.gpu_pool_controller.providers.runpod import (
+    RUNPOD_LTX_VIDEO_SUPPORTED_TASK_TYPES,
+    RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
     RUNPOD_SCAIL2_DOCKER_START_CMD,
     RUNPOD_SCAIL2_SUPPORTED_TASK_TYPES,
 )
@@ -50,6 +56,9 @@ PUBLIC_I2I_PRO_GHCR_IMAGE = (
 )
 PUBLIC_SCAIL2_GHCR_IMAGE = (
     "ghcr.io/giraffu/allbot-comfy-runpod-scail2:20260617-scail2-test"
+)
+PUBLIC_LTX_VIDEO_GHCR_IMAGE = (
+    "ghcr.io/giraffu/allbot-comfy-runpod-ltx-video:20260622-ltx-test"
 )
 
 
@@ -152,6 +161,17 @@ class FakeRunPodProvider:
                 if self.settings.use_template_scail2
                 else ""
             )
+        elif task_type == "ltx_video":
+            image_name = PUBLIC_LTX_VIDEO_GHCR_IMAGE
+            supported_task_types = ",".join(RUNPOD_LTX_VIDEO_SUPPORTED_TASK_TYPES)
+            model_prefix = EXPECTED_LTX_VIDEO_MODEL_PREFIX
+            model_manifest_key = EXPECTED_LTX_VIDEO_MODEL_MANIFEST_KEY
+            gpu_type_ids = list(EXPECTED_LTX_VIDEO_GPU_TYPE_IDS)
+            template_id = (
+                self.settings.template_id_ltx_video
+                if self.settings.use_template_ltx_video
+                else ""
+            )
         else:
             image_name = PUBLIC_GHCR_IMAGE
             supported_task_types = "img2img,img2img_lora"
@@ -183,6 +203,10 @@ class FakeRunPodProvider:
         if task_type == "i2i_pro":
             body["env"]["TASK_TYPE_WORKFLOW_OVERRIDES"] = (
                 RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES
+            )
+        if task_type == "ltx_video":
+            body["env"]["TASK_TYPE_WORKFLOW_OVERRIDES"] = (
+                RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES
             )
         if task_type == "scail2":
             body["dockerStartCmd"] = list(RUNPOD_SCAIL2_DOCKER_START_CMD)
@@ -356,6 +380,40 @@ def test_runpod_canary_scail2_dry_run_preflights_with_profile_specific_render():
     assert any(
         "scail2_action_transfer and scail2_video_replacement 5s Web tasks serially"
         in step
+        for step in payload["would_execute"]
+    )
+    assert provider.create_calls == 0
+    assert provider.delete_calls == 0
+
+
+def test_runpod_canary_ltx_video_dry_run_preflights_with_profile_specific_render():
+    provider = FakeRunPodProvider()
+    options = RunPodCanaryOptions(
+        task_type="ltx_video",
+        execute=False,
+        quiet=True,
+    )
+
+    payload = RunPodCanaryRunner(
+        provider,
+        options,
+        sleep_func=lambda _seconds: None,
+    ).run()
+
+    assert payload["ok"] is True
+    assert payload["render"]["imageName"].startswith(EXPECTED_LTX_VIDEO_IMAGE_REF_PREFIX)
+    assert payload["render"]["gpu_type_ids"] == list(EXPECTED_LTX_VIDEO_GPU_TYPE_IDS)
+    assert payload["render"]["supported_task_types"] == ",".join(
+        RUNPOD_LTX_VIDEO_SUPPORTED_TASK_TYPES
+    )
+    assert payload["render"]["workflow_overrides"] == RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES
+    assert payload["render"]["model_prefix"] == EXPECTED_LTX_VIDEO_MODEL_PREFIX
+    assert (
+        payload["render"]["model_manifest_key"]
+        == EXPECTED_LTX_VIDEO_MODEL_MANIFEST_KEY
+    )
+    assert any(
+        "submit ltx_video I2V preview/5s Web task" in step
         for step in payload["would_execute"]
     )
     assert provider.create_calls == 0
@@ -641,6 +699,30 @@ def test_wan22_canary_task_cases_are_preview_5s_single_frame():
         cases[0]["payload"]["inputs"]["wan22_model_profile"] == "legacy_image_to_video"
     )
     assert cases[1]["payload"]["inputs"]["wan22_model_profile"] == "wan22_video_v2"
+
+
+def test_ltx_video_canary_task_case_submits_i2v_5s_video_task():
+    runner = RunPodCanaryRunner(
+        FakeRunPodProvider(),
+        RunPodCanaryOptions(task_type="ltx_video", quiet=True),
+    )
+
+    cases = runner._task_cases("user-data-test/web_uploads/3/example.png")
+
+    assert [case["label"] for case in cases] == ["ltx_video_i2v_5s"]
+    payload = cases[0]["payload"]
+    assert payload["task_type"] == "ltx_video"
+    assert cases[0]["expected_central_task_type"] == "ltx_video"
+    assert payload["inputs"] == {
+        "images": ["user-data-test/web_uploads/3/example.png"],
+        "image": "user-data-test/web_uploads/3/example.png",
+        "resolution": "1280x704",
+        "duration": 5,
+        "duration_seconds": 5,
+        "extract_last_frame": True,
+        "ltx_mode": "i2v",
+        "seed": 20260622,
+    }
 
 
 def test_i2i_pro_canary_task_case_submits_existing_task_type():

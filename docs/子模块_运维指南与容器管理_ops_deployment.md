@@ -136,6 +136,9 @@
 - SCAIL-2 正式 RunPod 停摆或 OOM
   - 现象：`runpod_prod_scail2_manual_NN` heartbeat 进入 `error` / unhealthy，或 RunPod 日志提示内存限制。
   - 处理：先通过 Central control `disable` 停止接新单，确认 `current_task_id` 为空后用 `scripts/runpod_prod_ops.sh down --profile scail2 --slot NN --execute` 删除 Pod 释放计费资源。不要让 Dashboard 或 CLI 并发创建多条相同 `scail2` add operation；需要恢复时重新 `add --profile scail2 --count 1`，等待 disabled heartbeat、canary 两单 MP4 成功后再决定是否 enable。SCAIL-2 正式主路径仍以 gpu-002 slot0 LAN runtime 为准。
+- LTX 正式 RunPod 停摆或输出异常
+  - 现象：`runpod_prod_ltx_video_manual_NN` heartbeat 进入 `error` / unhealthy，或 canary/正式任务未产出有效 MP4。
+  - 处理：先 `disable` 停接，确认无当前任务后优先 `down --profile ltx_video --slot NN --execute` 删除重建；恢复时重新 `up/add`、等待 disabled heartbeat、跑一单 `canary --profile ltx_video` 5s I2V MP4，确认产物后再 enable。不要把模型临时打入正在运行的 LAN LTX AIO 容器来修 RunPod；RunPod 只认 GHCR 镜像 + `allbot-model-cache/ltx_video/2026-06-10/manifest.json` + v1.2 workflow override。
 
 ## 6. 文档维护口径
 - 涉及本地正式灾备 compose 的文档必须和 `safe_deploy.sh` 的真实顺序保持一致；云正式和云测试文档必须分别以对应 cloud compose / cloud deploy 脚本为准。

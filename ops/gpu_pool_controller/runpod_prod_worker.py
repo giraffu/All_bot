@@ -19,7 +19,12 @@ from .providers.runpod import (
     RUNPOD_I2I_PRO_MODEL_PREFIX,
     RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES,
     RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
+    RUNPOD_LTX_VIDEO_MODEL_MANIFEST_KEY,
+    RUNPOD_LTX_VIDEO_MODEL_PREFIX,
+    RUNPOD_LTX_VIDEO_SUPPORTED_TASK_TYPES,
+    RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
     RUNPOD_PROD_AGENT_ID,
+    RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
     RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
     RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE,
@@ -71,6 +76,7 @@ PROD_IMAGE_TO_VIDEO_TASK_TYPE = "image_to_video"
 PROD_WAN22_VIDEO_V2_TASK_TYPE = "wan22_video_v2"
 PROD_I2I_PRO_TASK_TYPE = "i2i_pro"
 PROD_SCAIL2_TASK_TYPE = "scail2"
+PROD_LTX_VIDEO_TASK_TYPE = "ltx_video"
 PROD_WORKER_DEFAULT_HEARTBEAT_TIMEOUT_SECONDS = 3600.0
 HEALTHY_WORKER_STATUSES = {"idle", "running"}
 
@@ -847,6 +853,9 @@ class RunPodProdWorkerRunner:
                     self._run_scail2_task_case(task_case, summary)
                     for task_case in self._scail2_task_cases(scail2_inputs)
                 ]
+            elif self.options.profile == "ltx_video":
+                image_object_key = self._resolve_canary_image(summary)
+                task_results = [self._run_ltx_video_task(image_object_key, summary)]
             else:
                 image_object_key = self._resolve_canary_image(summary)
                 task_results = [self._run_img2img_task(image_object_key, summary)]
@@ -1468,14 +1477,27 @@ class RunPodProdWorkerRunner:
             failures.append(
                 "TASK_TYPE_WORKFLOW_OVERRIDES must match the verified profile override"
             )
-        if list(body.get("gpuTypeIds") or []) != list(
-            target_settings.prod_gpu_type_ids
-        ):
+        expected_gpu_type_ids = (
+            target_settings.gpu_type_ids_ltx_video
+            if spec["runpod_task_type"] == PROD_LTX_VIDEO_TASK_TYPE
+            else target_settings.prod_gpu_type_ids
+        )
+        if list(body.get("gpuTypeIds") or []) != list(expected_gpu_type_ids):
             failures.append(
                 "gpuTypeIds must be "
-                + ",".join(target_settings.prod_gpu_type_ids)
+                + ",".join(expected_gpu_type_ids)
                 + " for prod-worker"
             )
+        if spec["runpod_task_type"] == PROD_LTX_VIDEO_TASK_TYPE:
+            min_disk = int(getattr(target_settings, "container_disk_gb_ltx_video", 0))
+            try:
+                rendered_disk = int(body.get("containerDiskInGb") or 0)
+            except (TypeError, ValueError):
+                rendered_disk = 0
+            if rendered_disk < min_disk:
+                failures.append(
+                    f"containerDiskInGb must be at least {min_disk} for ltx_video"
+                )
         expected_refs = {
             "AGENT_SECRET_TOKEN": target_settings.prod_agent_secret_token_ref,
             "MINIO_ACCESS_KEY": target_settings.prod_minio_access_key_ref,
@@ -1502,6 +1524,7 @@ class RunPodProdWorkerRunner:
             "imageName": body.get("imageName"),
             "templateId": bool(body.get("templateId")),
             "gpu_type_ids": body.get("gpuTypeIds"),
+            "container_disk_gb": body.get("containerDiskInGb"),
             "central_api_url": env.get("CENTRAL_API_URL"),
             "agent_id": env.get("AGENT_ID"),
             "supported_task_types": env.get("SUPPORTED_TASK_TYPES"),
@@ -1794,6 +1817,16 @@ class RunPodProdWorkerRunner:
             summary,
         )
 
+    def _run_ltx_video_task(
+        self,
+        image_object_key: str,
+        summary: dict[str, Any],
+    ) -> dict[str, Any]:
+        return self._canary_executor().run_task_case(
+            self._canary_cases().ltx_video_task_case(image_object_key),
+            summary,
+        )
+
     def _wait_task_done(self, task_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
         return self._canary_executor().wait_task_done(task_id)
 
@@ -2032,6 +2065,8 @@ def _prod_task_type_for_profile(profile: str) -> str:
         return PROD_I2I_PRO_TASK_TYPE
     if profile_key == "scail2":
         return PROD_SCAIL2_TASK_TYPE
+    if profile_key == "ltx_video":
+        return PROD_LTX_VIDEO_TASK_TYPE
     return PROD_TASK_TYPE
 
 
@@ -2099,6 +2134,25 @@ def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
             "image_exact": "",
             "image_prefix": RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
             "workflow_overrides": "",
+        }
+    if profile_key == "ltx_video":
+        return {
+            "runpod_task_type": PROD_LTX_VIDEO_TASK_TYPE,
+            "runtime_profile": "ltx_video",
+            "supported_task_types": RUNPOD_LTX_VIDEO_SUPPORTED_TASK_TYPES,
+            "model_prefix": (
+                settings.model_prefix_ltx_video or RUNPOD_LTX_VIDEO_MODEL_PREFIX
+            ),
+            "model_manifest_key": (
+                settings.model_manifest_key_ltx_video
+                or RUNPOD_LTX_VIDEO_MODEL_MANIFEST_KEY
+            ),
+            "image_exact": "",
+            "image_prefix": RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX,
+            "workflow_overrides": (
+                settings.task_type_workflow_overrides_ltx_video
+                or RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES
+            ),
         }
     return {
         "runpod_task_type": "img2img_lora",

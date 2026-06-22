@@ -5,6 +5,10 @@ from typing import Any
 
 from .runpod_profile_catalog import (
     RUNPOD_I2I_PRO_CONTAINER_DISK_GB,
+    RUNPOD_LTX_VIDEO_CONTAINER_DISK_GB,
+    RUNPOD_LTX_VIDEO_DOCKER_START_CMD,
+    RUNPOD_LTX_VIDEO_MODEL_MANIFEST_KEY,
+    RUNPOD_LTX_VIDEO_MODEL_PREFIX,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
     RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE,
     RUNPOD_SCAIL2_CONTAINER_DISK_GB,
@@ -141,17 +145,16 @@ class RunPodPodRequestBuilder:
             "wan22_video_v2",
             "i2i_pro",
             "scail2",
+            "ltx_video",
         }:
             raise ValueError(
                 "RunPodProvider v0 cloud-prod only supports "
                 "img2img/img2img_lora, image_to_video, wan22_video_v2, "
-                "i2i_pro, and scail2 profiles"
+                "i2i_pro, scail2, and ltx_video profiles"
             )
-        gpu_type_ids = (
-            self.settings.prod_gpu_type_ids
-            if environment == "cloud-prod"
-            else self.gpu_type_ids_for(profile)
-        )
+        gpu_type_ids = self.gpu_type_ids_for(profile)
+        if environment == "cloud-prod":
+            gpu_type_ids = self.prod_gpu_type_ids_for(profile)
         template_id = (
             "" if environment == "cloud-prod" else self.template_id_for(profile)
         )
@@ -170,6 +173,7 @@ class RunPodPodRequestBuilder:
                 "wan22_video_v2",
                 "i2i_pro",
                 "scail2",
+                "ltx_video",
             }
             and not image_name
         ):
@@ -240,6 +244,12 @@ class RunPodPodRequestBuilder:
         if profile.task_type == "scail2":
             return max(
                 self.settings.container_disk_gb, RUNPOD_SCAIL2_CONTAINER_DISK_GB
+            )
+        if profile.task_type == "ltx_video":
+            return max(
+                self.settings.container_disk_gb,
+                self.settings.container_disk_gb_ltx_video,
+                RUNPOD_LTX_VIDEO_CONTAINER_DISK_GB,
             )
         return self.settings.container_disk_gb
 
@@ -459,6 +469,8 @@ class RunPodPodRequestBuilder:
             return self.settings.projected_cost_per_hr_i2i_pro
         if profile.task_type == "scail2":
             return self.settings.projected_cost_per_hr_scail2
+        if profile.task_type == "ltx_video":
+            return self.settings.projected_cost_per_hr_ltx_video
         return 0.0
 
     @staticmethod
@@ -469,7 +481,7 @@ class RunPodPodRequestBuilder:
             raise ValueError(
                 "RunPodProvider v0 only supports "
                 "img2img_lora/img2img/wan22_aio_video/image_to_video/"
-                "wan22_video_v2/i2i_pro/scail2 profiles"
+                "wan22_video_v2/i2i_pro/scail2/ltx_video profiles"
             ) from exc
 
     def gpu_type_ids_for(self, profile: RunPodTaskProfile) -> tuple[str, ...]:
@@ -485,7 +497,14 @@ class RunPodPodRequestBuilder:
             return self.settings.gpu_type_ids_i2i_pro
         if profile.gpu_type_env_key == "RUNPOD_GPU_TYPE_IDS_SCAIL2":
             return self.settings.gpu_type_ids_scail2
+        if profile.gpu_type_env_key == "RUNPOD_GPU_TYPE_IDS_LTX_VIDEO":
+            return self.settings.gpu_type_ids_ltx_video
         raise ValueError(f"unsupported RunPod task profile: {profile.task_type}")
+
+    def prod_gpu_type_ids_for(self, profile: RunPodTaskProfile) -> tuple[str, ...]:
+        if profile.task_type == "ltx_video":
+            return self.settings.gpu_type_ids_ltx_video
+        return self.settings.prod_gpu_type_ids
 
     def template_id_for(self, profile: RunPodTaskProfile) -> str:
         if profile.template_env_key == "RUNPOD_TEMPLATE_ID_IMG2IMG_LORA":
@@ -512,6 +531,10 @@ class RunPodPodRequestBuilder:
             if not self.settings.use_template_scail2:
                 return ""
             return self.settings.template_id_scail2
+        if profile.template_env_key == "RUNPOD_TEMPLATE_ID_LTX_VIDEO":
+            if not self.settings.use_template_ltx_video:
+                return ""
+            return self.settings.template_id_ltx_video
         raise ValueError(f"unsupported RunPod task profile: {profile.task_type}")
 
     def image_name_for(self, profile: RunPodTaskProfile) -> str:
@@ -527,6 +550,8 @@ class RunPodPodRequestBuilder:
             return self.settings.image_name_i2i_pro
         if profile.image_env_key == "RUNPOD_IMAGE_NAME_SCAIL2":
             return self.settings.image_name_scail2
+        if profile.image_env_key == "RUNPOD_IMAGE_NAME_LTX_VIDEO":
+            return self.settings.image_name_ltx_video
         raise ValueError(f"unsupported RunPod task profile: {profile.task_type}")
 
     def prod_image_name_for(self, profile: RunPodTaskProfile) -> str:
@@ -543,6 +568,8 @@ class RunPodPodRequestBuilder:
             return "allbot/comfy-runpod-i2i-pro:pending"
         if profile.task_type == "scail2":
             return "allbot/comfy-runpod-scail2:pending"
+        if profile.task_type == "ltx_video":
+            return "allbot/comfy-runpod-ltx-video:pending"
         return "allbot/comfy-runpod-img2img:pending"
 
     def docker_start_cmd_for(self, profile: RunPodTaskProfile) -> tuple[str, ...]:
@@ -558,23 +585,40 @@ class RunPodPodRequestBuilder:
             return self.settings.docker_start_cmd_i2i_pro
         if profile.task_type == "scail2":
             return self.settings.docker_start_cmd_scail2 or RUNPOD_SCAIL2_DOCKER_START_CMD
+        if profile.task_type == "ltx_video":
+            return (
+                self.settings.docker_start_cmd_ltx_video
+                or RUNPOD_LTX_VIDEO_DOCKER_START_CMD
+            )
         return ()
 
     def workflow_overrides_for(self, profile: RunPodTaskProfile) -> str:
         if profile.task_type == "i2i_pro":
-            raw = self.settings.task_type_workflow_overrides_i2i_pro.strip()
-            if raw:
-                parsed = json.loads(raw)
-                if not isinstance(parsed, dict) or not all(
-                    isinstance(key, str) and isinstance(value, str)
-                    for key, value in parsed.items()
-                ):
-                    raise ValueError(
-                        "RUNPOD_TASK_TYPE_WORKFLOW_OVERRIDES_I2I_PRO "
-                        "must be a JSON object of task_type to workflow filename"
-                    )
-                return json.dumps(parsed, separators=(",", ":"))
+            return self._workflow_overrides_json(
+                self.settings.task_type_workflow_overrides_i2i_pro,
+                env_name="RUNPOD_TASK_TYPE_WORKFLOW_OVERRIDES_I2I_PRO",
+            )
+        if profile.task_type == "ltx_video":
+            return self._workflow_overrides_json(
+                self.settings.task_type_workflow_overrides_ltx_video,
+                env_name="RUNPOD_TASK_TYPE_WORKFLOW_OVERRIDES_LTX_VIDEO",
+            )
         return ""
+
+    @staticmethod
+    def _workflow_overrides_json(raw: str, *, env_name: str) -> str:
+        raw = raw.strip()
+        if not raw:
+            return ""
+        parsed = json.loads(raw)
+        if not isinstance(parsed, dict) or not all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in parsed.items()
+        ):
+            raise ValueError(
+                f"{env_name} must be a JSON object of task_type to workflow filename"
+            )
+        return json.dumps(parsed, separators=(",", ":"))
 
     def model_prefix_for(self, profile: RunPodTaskProfile) -> str:
         if profile.task_type == "wan22_aio_video":
@@ -587,6 +631,8 @@ class RunPodPodRequestBuilder:
             return self.settings.model_prefix_i2i_pro
         if profile.task_type == "scail2":
             return self.settings.model_prefix_scail2
+        if profile.task_type == "ltx_video":
+            return self.settings.model_prefix_ltx_video
         return self.settings.model_prefix
 
     def model_manifest_key_for(self, profile: RunPodTaskProfile) -> str:
@@ -600,6 +646,8 @@ class RunPodPodRequestBuilder:
             return self.settings.model_manifest_key_i2i_pro
         if profile.task_type == "scail2":
             return self.settings.model_manifest_key_scail2
+        if profile.task_type == "ltx_video":
+            return self.settings.model_manifest_key_ltx_video
         return self.settings.model_manifest_key
 
     def prod_supported_task_types_for(
@@ -615,6 +663,8 @@ class RunPodPodRequestBuilder:
         if profile.task_type == "i2i_pro":
             return profile.supported_task_types
         if profile.task_type == "scail2":
+            return profile.supported_task_types
+        if profile.task_type == "ltx_video":
             return profile.supported_task_types
         raise ValueError(
             f"unsupported cloud-prod RunPod task profile: {profile.task_type}"

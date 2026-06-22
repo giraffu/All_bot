@@ -75,6 +75,19 @@ def test_case_builder_preserves_profile_payloads(tmp_path):
         ]
         == "wan22_video_v2"
     )
+    ltx_case = builder.ltx_video_task_case("ref.png")
+    assert ltx_case["expected_central_task_type"] == "ltx_video"
+    assert ltx_case["result_kind"] == "video_last_frame"
+    assert ltx_case["payload"]["inputs"] == {
+        "images": ["ref.png"],
+        "image": "ref.png",
+        "resolution": "1280x704",
+        "duration": 5,
+        "duration_seconds": 5,
+        "extract_last_frame": True,
+        "ltx_mode": "i2v",
+        "seed": 20260622,
+    }
 
     i2i_cases = builder.i2i_pro_task_cases("ref.png")
     assert [case["payload"]["task_type"] for case in i2i_cases] == [

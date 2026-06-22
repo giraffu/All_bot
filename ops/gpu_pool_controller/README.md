@@ -92,6 +92,19 @@ scripts/runpod_prod_ops.sh canary --profile scail2 --slot 01 --execute
 scripts/runpod_prod_ops.sh enable --profile scail2 --slot 01 --execute
 ```
 
+Formal LTX RunPod workers use the `ltx_video` profile, the public GHCR
+profile image, and the `ltx_video/2026-06-10` model manifest. They default to
+the 10Eros v1.2 workflow override and stay disabled after canary until
+explicitly enabled:
+
+```bash
+RUNPOD_IMAGE_NAME_LTX_VIDEO=ghcr.io/giraffu/allbot-comfy-runpod-ltx-video:<prod-tag> \
+python scripts/gpu_pool_controller.py runpod prod-worker render --profile ltx_video --slot 01
+scripts/runpod_prod_ops.sh up --profile ltx_video --slot 01 --retry-unavailable --execute
+scripts/runpod_prod_ops.sh canary --profile ltx_video --slot 01 --execute
+scripts/runpod_prod_ops.sh enable --profile ltx_video --slot 01 --execute
+```
+
 Model registry layout:
 
 ```text

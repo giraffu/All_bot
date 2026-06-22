@@ -33,6 +33,9 @@ def test_provider_reexports_profile_catalog_symbols_for_old_imports():
         ("scail2", "scail2"),
         ("scail2_action_transfer", "scail2"),
         ("scail2_video_replacement", "scail2"),
+        ("ltx_video", "ltx_video"),
+        ("ltx_video_flf2v", "ltx_video"),
+        ("ltx_video_v2v_audio", "ltx_video"),
     ],
 )
 def test_prod_worker_profile_for_task_type_matches_catalog(task_type, profile):
@@ -67,6 +70,11 @@ def test_prod_worker_profile_for_task_type_matches_catalog(task_type, profile):
             "runpod_prod_scail2_manual_01",
             "allbot-runpod-prod-scail2-manual-01",
         ),
+        (
+            "ltx_video",
+            "runpod_prod_ltx_video_manual_01",
+            "allbot-runpod-prod-ltx-video-manual-01",
+        ),
     ],
 )
 def test_prod_agent_and_pod_names_are_profile_specific(profile, agent_id, pod_name):
@@ -92,4 +100,9 @@ def test_dashboard_profile_options_are_sourced_from_catalog():
     assert options["scail2"] == [
         "scail2_action_transfer",
         "scail2_video_replacement",
+    ]
+    assert options["ltx_video"] == [
+        "ltx_video",
+        "ltx_video_flf2v",
+        "ltx_video_v2v_audio",
     ]

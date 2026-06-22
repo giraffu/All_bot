@@ -50,7 +50,7 @@ CLOUD_TEST_WORKER_REDIS_URL=redis://:<password>@redis-test:6379/4
 | :--- | :--- | :--- |
 | `MINIO_*` / `R2_*` | `user-data-test` + `https://r2-test.aivison.it.com` | 用户上传、任务输入/结果、模板、历史/Gallery 媒体；不要把模型权重放入该桶 |
 | `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | `.env.cloud.test` 真实值；RunPod Pod 内使用 `allbot_cloud_test_r2_access_key` / `allbot_cloud_test_r2_secret_key` secret | 只读写 `user-data-test` |
-| `RUNPOD_MODEL_*` | `allbot-model-cache` + `RUNPOD_MODEL_PREFIX`/`RUNPOD_MODEL_MANIFEST_KEY` | RunPod/LAN AIO 模型 manifest 与模型权重缓存；`img2img_lora` 默认 `img2img_lora/2026-06-10`，Wan22 cloud-test 视频主路径使用 split 前缀 `image_to_video/2026-06-13-test` 与 `wan22_video_v2/2026-06-13-test`；`i2i_pro` 使用 `i2i_pro/2026-06-14-test`；SCAIL-2 LAN AIO runtime 与 RunPod cloud-test profile 共用 `scail2/2026-06-17-test`；`wan22_aio_video/2026-06-12-test` 只作为历史全集/回滚 manifest |
+| `RUNPOD_MODEL_*` | `allbot-model-cache` + `RUNPOD_MODEL_PREFIX`/`RUNPOD_MODEL_MANIFEST_KEY` | RunPod/LAN AIO 模型 manifest 与模型权重缓存；`img2img_lora` 默认 `img2img_lora/2026-06-10`，Wan22 cloud-test 视频主路径使用 split 前缀 `image_to_video/2026-06-13-test` 与 `wan22_video_v2/2026-06-13-test`；`i2i_pro` 使用 `i2i_pro/2026-06-14-test`；SCAIL-2 LAN AIO runtime 与 RunPod cloud-test profile 共用 `scail2/2026-06-17-test`；LTX 使用 `ltx_video/2026-06-10`，manifest 内长期保留 10Eros v1.2 与旧 v1 主模型；`wan22_aio_video/2026-06-12-test` 只作为历史全集/回滚 manifest |
 | `RUNPOD_MODEL_ACCESS_KEY` / `RUNPOD_MODEL_SECRET_KEY` | `.env.cloud.test` 可保存真实值，供本地 dry-run HEAD/上传脚本使用 | 只读写 `allbot-model-cache`，不能复用 `user-data-test` 的 R2 key |
 | `RUNPOD_MODEL_ACCESS_KEY_REF` / `RUNPOD_MODEL_SECRET_KEY_REF` | `allbot_model_cache_r2_access_key` / `allbot_model_cache_r2_secret_key` | RunPod create JSON 中的模型桶 secret 引用字符串，不是密钥本体 |
 
@@ -283,6 +283,7 @@ df -h /
 - `cloud-comfy-agent-test-3` / `cloud_worker_test_03` 是当前测试 LTX AIO worker，指向 `http://192.168.1.177:8191`。本次只通过 `.env.cloud.test` 的 `CLOUD_TEST_WORKER_03_TASK_TYPE_WORKFLOW_OVERRIDES` 覆盖测试 worker3，默认 `TASK_TYPE_WORKFLOW_FILENAMES` 不变。
 - 三个 canary workflow 为 `LTX 2.3 10Eros v1.2 I2V 6.1.json`、`LTX 2.3 10Eros v1.2 FLF2V 6.1.json`、`LTX 2.3 10Eros v1.2 V2V Audio 6.1.json`，分别覆盖 `ltx_video`、`ltx_video_flf2v`、`ltx_video_v2v_audio`；旧 `LTX 2.3 *.json` 仍指向 v1 主模型，不得覆盖。
 - 10Eros v1.2 主模型文件名为 `models/diffusion_models/LTX 2.3/10Eros_v1.2_fp8mixed_learned.safetensors`。LAN AIO LTX 镜像不 baked 权重，测试前必须确认该文件在 AIO `/workspace/ComfyUI/models` 持久化挂载下可见；长期保留走 `allbot-model-cache/ltx_video/2026-06-10/manifest.json`，不要依赖手工容器层文件。
+- RunPod `ltx_video` profile 的镜像由 `.github/workflows/runpod_ltx_video_profile_image.yml` 发布到 `ghcr.io/giraffu/allbot-comfy-runpod-ltx-video:<tag>`，Dockerfile 默认从公网 GHCR Wan22 镜像复制节点，不依赖 LAN registry。RunPod env 需渲染为 `RUNPOD_TASK_TYPE=ltx_video`、`SUPPORTED_TASK_TYPES=ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`、`POOL_RUNTIME_PROFILE=ltx_video`、`RUNPOD_MODEL_MANIFEST_KEY_LTX_VIDEO=ltx_video/2026-06-10/manifest.json`、`containerDiskInGb>=180`、GPU 优先 `NVIDIA GeForce RTX 5090,NVIDIA GeForce RTX 4090`，并带三份 v1.2 `TASK_TYPE_WORKFLOW_OVERRIDES` 和标准 `dockerStartCmd`。
 
 2026-06-06 R2 切换验证结果：
 - 本地测试 MinIO 历史对象已镜像到 R2 `user-data-test` 桶根路径：`bot-data-test` 约 1.10GiB，`comfyui-temp-test` 约 749.91MiB，`bot-template-test` 为空。

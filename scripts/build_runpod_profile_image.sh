@@ -7,6 +7,7 @@ BASE_IMAGE="${RUNPOD_PROFILE_BASE_IMAGE:-}"
 COMFYUI_REF="${RUNPOD_PROFILE_COMFYUI_REF:-}"
 KJNODES_REF="${RUNPOD_PROFILE_KJNODES_REF:-7967a946c296a74901606e6a8d1195aa2b6f9215}"
 KJNODES_SOURCE="${RUNPOD_PROFILE_KJNODES_SOURCE:-}"
+NODE_SOURCE_IMAGE="${RUNPOD_PROFILE_NODE_SOURCE_IMAGE:-}"
 REUSE_BASE_CUSTOM_NODES="${RUNPOD_PROFILE_REUSE_BASE_CUSTOM_NODES:-false}"
 DOCKER_BUILD_NETWORK="${RUNPOD_PROFILE_DOCKER_BUILD_NETWORK:-}"
 PUSH="false"
@@ -52,6 +53,8 @@ Options:
   --comfyui-ref <ref>    ComfyUI git ref used when the base image does not include ComfyUI.
   --kjnodes-ref <sha>    ComfyUI-KJNodes git ref pinned into the image.
   --kjnodes-source <dir> Build from an existing local ComfyUI-KJNodes directory instead of GitHub.
+  --node-source-image <ref>
+                         Source image for profile Dockerfiles that copy baked custom nodes.
   --reuse-base-custom-nodes
                          Reuse custom nodes already baked into the base image and only apply final Wan22 fix layers.
   --build-network <mode> Docker build network mode, for example host when using a local proxy.
@@ -88,6 +91,10 @@ while [ "$#" -gt 0 ]; do
             ;;
         --kjnodes-source)
             KJNODES_SOURCE="${2:?missing value for --kjnodes-source}"
+            shift 2
+            ;;
+        --node-source-image)
+            NODE_SOURCE_IMAGE="${2:?missing value for --node-source-image}"
             shift 2
             ;;
         --reuse-base-custom-nodes)
@@ -192,6 +199,9 @@ echo "Building ${IMAGE_REF}"
 docker_build_args=()
 if [ -n "$DOCKER_BUILD_NETWORK" ]; then
     docker_build_args+=(--network "$DOCKER_BUILD_NETWORK")
+fi
+if [ -n "$NODE_SOURCE_IMAGE" ]; then
+    docker_build_args+=(--build-arg "NODE_SOURCE_IMAGE=${NODE_SOURCE_IMAGE}")
 fi
 for proxy_env in \
     HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY \

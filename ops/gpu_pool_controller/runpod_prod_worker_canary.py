@@ -23,6 +23,7 @@ from .runpod_prod_worker_http import safe_url
 PROD_TASK_TYPE = "img2img"
 PROD_IMAGE_TO_VIDEO_TASK_TYPE = "image_to_video"
 PROD_WAN22_VIDEO_V2_TASK_TYPE = "wan22_video_v2"
+PROD_LTX_VIDEO_TASK_TYPE = "ltx_video"
 PROD_I2I_PRO_TASK_TYPE = "i2i_pro"
 PROD_SCAIL2_ACTION_TRANSFER_TASK_TYPE = "scail2_action_transfer"
 PROD_SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE = "scail2_video_replacement"
@@ -249,6 +250,30 @@ class RunPodProdWorkerCanaryCaseBuilder:
                     "seed": 20260613,
                     "negative_prompt": self.config.negative_prompt,
                     "wan22_model_profile": "wan22_video_v2",
+                },
+                "prompt": self.config.prompt,
+                "negative_prompt": self.config.negative_prompt,
+                "priority": 0,
+            },
+            "result_kind": "video_last_frame",
+        }
+
+    def ltx_video_task_case(self, image_object_key: str) -> dict[str, Any]:
+        return {
+            "label": "prod_ltx_video_canary",
+            "phase_name": "task_prod_ltx_video_canary",
+            "expected_central_task_type": PROD_LTX_VIDEO_TASK_TYPE,
+            "payload": {
+                "task_type": PROD_LTX_VIDEO_TASK_TYPE,
+                "inputs": {
+                    "images": [image_object_key],
+                    "image": image_object_key,
+                    "resolution": "1280x704",
+                    "duration": 5,
+                    "duration_seconds": 5,
+                    "extract_last_frame": True,
+                    "ltx_mode": "i2v",
+                    "seed": 20260622,
                 },
                 "prompt": self.config.prompt,
                 "negative_prompt": self.config.negative_prompt,

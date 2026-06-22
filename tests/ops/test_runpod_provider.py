@@ -11,6 +11,13 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_I2I_PRO_SUPPORTED_TASK_TYPES,
     RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
     RUNPOD_IMG2IMG_LORA_DOCKER_START_CMD,
+    RUNPOD_LTX_VIDEO_CONTAINER_DISK_GB,
+    RUNPOD_LTX_VIDEO_DOCKER_START_CMD,
+    RUNPOD_LTX_VIDEO_GPU_TYPE_IDS,
+    RUNPOD_LTX_VIDEO_MODEL_MANIFEST_KEY,
+    RUNPOD_LTX_VIDEO_MODEL_PREFIX,
+    RUNPOD_LTX_VIDEO_SUPPORTED_TASK_TYPES,
+    RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
     RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF,
     RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF,
     RUNPOD_PROD_AGENT_ID,
@@ -23,6 +30,7 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_PROD_SUPPORTED_TASK_TYPES,
     RUNPOD_PROD_WORKER_CENTRAL_URL,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
+    RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX,
     RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
     RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE,
     RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX,
@@ -855,6 +863,64 @@ def test_runpod_settings_from_env_scail2_uses_git_bootstrap_by_default(monkeypat
     assert settings.docker_start_cmd_scail2 == RUNPOD_SCAIL2_DOCKER_START_CMD
 
 
+def test_runpod_settings_from_env_supports_ltx_video_profile_keys(
+    tmp_path,
+    monkeypatch,
+):
+    script = tmp_path / "ltx-bootstrap.sh"
+    script.write_text("echo ltx bootstrap\n", encoding="utf-8")
+    image_ref = RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX + "20260622-ltx-prod"
+    monkeypatch.setenv("RUNPOD_USE_TEMPLATE_LTX_VIDEO", "true")
+    monkeypatch.setenv("RUNPOD_TEMPLATE_ID_LTX_VIDEO", "ltx-template")
+    monkeypatch.setenv("RUNPOD_IMAGE_NAME_LTX_VIDEO", image_ref)
+    monkeypatch.setenv("RUNPOD_DOCKER_START_SCRIPT_FILE_LTX_VIDEO", str(script))
+    monkeypatch.setenv(
+        "RUNPOD_GPU_TYPE_IDS_LTX_VIDEO",
+        "NVIDIA GeForce RTX 5090,NVIDIA GeForce RTX 4090",
+    )
+    monkeypatch.setenv("RUNPOD_CONTAINER_DISK_GB_LTX_VIDEO", "200")
+    monkeypatch.setenv("RUNPOD_PROJECTED_COST_PER_HR_LTX_VIDEO", "1.89")
+    monkeypatch.setenv("RUNPOD_MODEL_PREFIX_LTX_VIDEO", RUNPOD_LTX_VIDEO_MODEL_PREFIX)
+    monkeypatch.setenv(
+        "RUNPOD_MODEL_MANIFEST_KEY_LTX_VIDEO",
+        RUNPOD_LTX_VIDEO_MODEL_MANIFEST_KEY,
+    )
+    monkeypatch.setenv(
+        "RUNPOD_TASK_TYPE_WORKFLOW_OVERRIDES_LTX_VIDEO",
+        RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
+    )
+
+    settings = RunPodSettings.from_env()
+
+    assert settings.use_template_ltx_video is True
+    assert settings.template_id_ltx_video == "ltx-template"
+    assert settings.image_name_ltx_video == image_ref
+    assert settings.docker_start_cmd_ltx_video == (
+        "bash",
+        "-lc",
+        "echo ltx bootstrap\n",
+    )
+    assert settings.gpu_type_ids_ltx_video == RUNPOD_LTX_VIDEO_GPU_TYPE_IDS
+    assert settings.container_disk_gb_ltx_video == 200
+    assert settings.projected_cost_per_hr_ltx_video == 1.89
+    assert settings.model_prefix_ltx_video == RUNPOD_LTX_VIDEO_MODEL_PREFIX
+    assert settings.model_manifest_key_ltx_video == RUNPOD_LTX_VIDEO_MODEL_MANIFEST_KEY
+    assert (
+        settings.task_type_workflow_overrides_ltx_video
+        == RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES
+    )
+
+
+def test_runpod_settings_from_env_ltx_video_uses_git_bootstrap_by_default(monkeypatch):
+    monkeypatch.delenv("RUNPOD_DOCKER_START_CMD_JSON_LTX_VIDEO", raising=False)
+    monkeypatch.delenv("RUNPOD_DOCKER_START_SCRIPT_LTX_VIDEO", raising=False)
+    monkeypatch.delenv("RUNPOD_DOCKER_START_SCRIPT_FILE_LTX_VIDEO", raising=False)
+
+    settings = RunPodSettings.from_env()
+
+    assert settings.docker_start_cmd_ltx_video == RUNPOD_LTX_VIDEO_DOCKER_START_CMD
+
+
 def test_runpod_settings_from_env_injects_public_key_file(
     tmp_path,
     monkeypatch,
@@ -1243,6 +1309,60 @@ def test_render_create_cloud_prod_scail2_uses_prod_refs_and_manifest():
     assert env["RUNPOD_MODEL_BUCKET"] == "allbot-model-cache"
     assert env["RUNPOD_MODEL_PREFIX"] == RUNPOD_SCAIL2_MODEL_PREFIX
     assert env["RUNPOD_MODEL_MANIFEST_KEY"] == RUNPOD_SCAIL2_MODEL_MANIFEST_KEY
+    assert env["RUNPOD_COMFY_CUSTOM_NODES_ENABLED"] == "false"
+    assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
+    assert env["RUNPOD_START_SSHD"] == "false"
+    assert env["AGENT_SECRET_TOKEN"] == RUNPOD_PROD_AGENT_SECRET_TOKEN_REF
+    assert env["MINIO_ACCESS_KEY"] == RUNPOD_PROD_R2_ACCESS_KEY_REF
+    assert env["MINIO_SECRET_KEY"] == RUNPOD_PROD_R2_SECRET_KEY_REF
+    assert env["RUNPOD_MODEL_ACCESS_KEY"] == RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF
+    assert env["RUNPOD_MODEL_SECRET_KEY"] == RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF
+
+
+def test_render_create_cloud_prod_ltx_video_uses_v12_override_and_manifest():
+    image_ref = RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX + "20260622-ltx-prod"
+    agent_id = prod_agent_id_from_slot("01", profile="ltx_video")
+    provider = RunPodProvider(
+        _settings(
+            image_name_ltx_video=image_ref,
+            prod_agent_id=agent_id,
+            model_bucket="allbot-model-cache",
+            model_prefix_ltx_video=RUNPOD_LTX_VIDEO_MODEL_PREFIX,
+            model_manifest_key_ltx_video=RUNPOD_LTX_VIDEO_MODEL_MANIFEST_KEY,
+            container_disk_gb=80,
+            prod_gpu_type_ids=("NVIDIA GeForce RTX 4090",),
+        )
+    )
+
+    payload = provider.render_create_pod_request(
+        task_type="ltx_video",
+        environment="cloud-prod",
+        redact=False,
+    )
+    body = payload["json"]
+    env = body["env"]
+
+    assert "templateId" not in body
+    assert body["name"] == "allbot-runpod-prod-ltx-video-manual-01"
+    assert body["imageName"] == image_ref
+    assert body["gpuTypeIds"] == list(RUNPOD_LTX_VIDEO_GPU_TYPE_IDS)
+    assert body["containerDiskInGb"] == RUNPOD_LTX_VIDEO_CONTAINER_DISK_GB
+    assert body["dockerStartCmd"] == list(RUNPOD_LTX_VIDEO_DOCKER_START_CMD)
+    assert env["ENVIRONMENT"] == "prod"
+    assert env["RUNPOD_ENVIRONMENT"] == "cloud-prod"
+    assert env["RUNPOD_TASK_TYPE"] == "ltx_video"
+    assert env["AGENT_ID"] == "runpod_prod_ltx_video_manual_01"
+    assert env["AGENT_ID_PREFIX"] == "runpod_prod_ltx_video_manual_01"
+    assert env["SUPPORTED_TASK_TYPES"] == ",".join(
+        RUNPOD_LTX_VIDEO_SUPPORTED_TASK_TYPES
+    )
+    assert env["TASK_TYPE_WORKFLOW_OVERRIDES"] == RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES
+    assert env["CENTRAL_API_URL"] == RUNPOD_PROD_WORKER_CENTRAL_URL
+    assert env["POOL_RUNTIME_PROFILE"] == "ltx_video"
+    assert env["MINIO_RESULT_BUCKET"] == RUNPOD_PROD_BUCKET
+    assert env["RUNPOD_MODEL_BUCKET"] == "allbot-model-cache"
+    assert env["RUNPOD_MODEL_PREFIX"] == RUNPOD_LTX_VIDEO_MODEL_PREFIX
+    assert env["RUNPOD_MODEL_MANIFEST_KEY"] == RUNPOD_LTX_VIDEO_MODEL_MANIFEST_KEY
     assert env["RUNPOD_COMFY_CUSTOM_NODES_ENABLED"] == "false"
     assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
     assert env["RUNPOD_START_SSHD"] == "false"

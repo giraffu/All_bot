@@ -68,12 +68,13 @@ const mountRunPodCapacityManager = () =>
   })
 
 describe('RunPodCapacityManager', () => {
-  it('keeps scail2 available in the fallback profile list', async () => {
+  it('keeps video profiles available in the fallback profile list', async () => {
     const wrapper = mountRunPodCapacityManager()
 
     await wrapper.get('button').trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).toContain('scail2 / 视频生视频')
+    expect(wrapper.text()).toContain('ltx_video / 高级图生视频')
   })
 })
