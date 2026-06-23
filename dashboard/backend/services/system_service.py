@@ -498,7 +498,10 @@ async def _fetch_backend_task_statuses(
 
         async def request_backend_status_func(backend_id: str):
             return await api_client._request(
-                "GET", f"{api_base}/status/{backend_id}", timeout=2
+                "GET",
+                f"{api_base}/status/{backend_id}",
+                timeout=2,
+                use_circuit_breaker=False,
             )
 
     task_ids = [

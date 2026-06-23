@@ -1,4 +1,5 @@
-from types import SimpleNamespace
+import sys
+from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -520,6 +521,35 @@ async def test_fetch_backend_task_statuses_uses_short_cache(monkeypatch):
     assert first == {"backend-1": {"status": "pending", "queue_pos": 5}}
     assert second == {"backend-1": {"status": "pending", "queue_pos": 5}}
     request_backend_status_func.assert_awaited_once_with("backend-1")
+
+
+@pytest.mark.asyncio
+async def test_fetch_backend_task_statuses_skips_global_circuit_breaker(monkeypatch):
+    calls = []
+
+    class FakeApiClient:
+        async def _request(self, method, url, **kwargs):
+            calls.append((method, url, kwargs))
+            return _FakeResponse({"status": "pending", "queue_pos": 3})
+
+    fake_api_client_module = ModuleType("src.api_client")
+    fake_api_client_module.api_client = FakeApiClient()
+    monkeypatch.setitem(sys.modules, "src.api_client", fake_api_client_module)
+    system_service._backend_task_status_cache.clear()
+
+    result = await system_service._fetch_backend_task_statuses(
+        tasks={"task-1": {"backend_task_id": "backend-1"}},
+        api_base="http://central-api-prod:8003",
+    )
+
+    assert result == {"backend-1": {"status": "pending", "queue_pos": 3}}
+    assert calls == [
+        (
+            "GET",
+            "http://central-api-prod:8003/status/backend-1",
+            {"timeout": 2, "use_circuit_breaker": False},
+        )
+    ]
 
 
 @pytest.mark.asyncio
