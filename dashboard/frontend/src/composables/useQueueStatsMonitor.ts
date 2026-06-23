@@ -17,6 +17,7 @@ const defaultStatus = () => ({
   quarantined_workers: 0,
   workers_by_status: {},
   comfy_online: false,
+  runpod_profile_queue_details: [],
 })
 
 const queueRefreshIntervalMs = 10000
@@ -75,6 +76,33 @@ export function useQueueStatsMonitor() {
         }
         return a.type.localeCompare(b.type)
       })
+  })
+
+  const runpodProfileQueueDisplay = computed(() => {
+    const rawDetails = (status.value as any).runpod_profile_queue_details || []
+
+    return rawDetails.map((item: any) => {
+      const rawWaitSeconds = item.max_pending_wait_seconds
+      const maxPendingWaitSeconds =
+        rawWaitSeconds === null || rawWaitSeconds === undefined
+          ? null
+          : Number(rawWaitSeconds)
+
+      return {
+        profile: item.profile,
+        label: item.label,
+        supportedTaskTypes: Array.isArray(item.supported_task_types)
+          ? item.supported_task_types
+          : [],
+        activeCount: Number(item.active_count || 0),
+        pendingCount: Number(item.pending_count || 0),
+        maxPendingWaitSeconds: Number.isFinite(maxPendingWaitSeconds)
+          ? maxPendingWaitSeconds
+          : null,
+        oldestPendingTaskId: item.oldest_pending_task_id || null,
+        oldestPendingCreatedAt: item.oldest_pending_created_at || null,
+      }
+    })
   })
 
   const loadConcurrencyStats = async () => {
@@ -162,6 +190,7 @@ export function useQueueStatsMonitor() {
     cleaning,
     syncing,
     queueByTypeDisplay,
+    runpodProfileQueueDisplay,
     cleanZombies,
     syncLock,
     updateQueue,

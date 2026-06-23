@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
 from config import API_BASE, STATUS_ENDPOINT
+from ops.gpu_pool_controller.runpod_profile_catalog import RUNPOD_ADMIN_PROFILE_OPTIONS
 from src.core.task_core import get_system_task_stats
 from src.core.task_core_finalization import finalize_terminated_task
 from src.core.task_core import sync_user_concurrency as core_sync_user_concurrency
@@ -114,6 +115,83 @@ def build_queue_type_details(
         )
 
     return details
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _safe_wait_seconds(value: Any) -> float | int | None:
+    if value is None:
+        return None
+    try:
+        wait_seconds = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not wait_seconds == wait_seconds or wait_seconds < 0:
+        return None
+    if wait_seconds.is_integer():
+        return int(wait_seconds)
+    return wait_seconds
+
+
+def _normalized_supported_task_types(raw_task_types: Any) -> list[str]:
+    normalized: list[str] = []
+    for raw_task_type in raw_task_types or []:
+        task_type = resolve_worker_execution_task_type(str(raw_task_type))
+        if task_type not in normalized:
+            normalized.append(task_type)
+    return normalized
+
+
+def build_runpod_profile_queue_details(queue_type_details: dict) -> list[dict]:
+    profile_details: list[dict] = []
+
+    for option in RUNPOD_ADMIN_PROFILE_OPTIONS:
+        supported_task_types = _normalized_supported_task_types(
+            option.get("supported_task_types")
+        )
+        active_count = 0
+        pending_count = 0
+        max_pending_wait_seconds = None
+        oldest_pending_task_id = None
+        oldest_pending_created_at = None
+
+        for task_type in supported_task_types:
+            detail = queue_type_details.get(task_type) or {}
+            active_count += _safe_int(detail.get("active_count"))
+            pending_count += _safe_int(detail.get("pending_count"))
+
+            wait_seconds = _safe_wait_seconds(
+                detail.get("max_pending_wait_seconds")
+            )
+            if wait_seconds is None:
+                continue
+            if (
+                max_pending_wait_seconds is None
+                or wait_seconds > max_pending_wait_seconds
+            ):
+                max_pending_wait_seconds = wait_seconds
+                oldest_pending_task_id = detail.get("oldest_pending_task_id")
+                oldest_pending_created_at = detail.get("oldest_pending_created_at")
+
+        profile_details.append(
+            {
+                "profile": option.get("profile"),
+                "label": option.get("label"),
+                "supported_task_types": supported_task_types,
+                "active_count": active_count,
+                "pending_count": pending_count,
+                "max_pending_wait_seconds": max_pending_wait_seconds,
+                "oldest_pending_task_id": oldest_pending_task_id,
+                "oldest_pending_created_at": oldest_pending_created_at,
+            }
+        )
+
+    return profile_details
 
 
 async def _close_redis_resource(resource) -> None:
@@ -705,6 +783,9 @@ async def get_system_status_proxy_payload(
         data["concurrency_locks"] = 0
         data["concurrency_details"] = {}
 
+    data["runpod_profile_queue_details"] = build_runpod_profile_queue_details(
+        data.get("queue_by_type_details") or {}
+    )
     return data
 
 

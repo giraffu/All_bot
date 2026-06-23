@@ -23,6 +23,29 @@ vi.mock('../composables/useQueueStatsMonitor', async () => {
       concurrencyStats: queueStatsMocks.concurrencyStatsRef,
       cleaning: ref(false),
       syncing: ref({}),
+      runpodProfileQueueDisplay: computed(() => {
+        const status = queueStatsMocks.statusRef.value || {}
+        return (status.runpod_profile_queue_details || []).map(item => {
+          const rawWaitSeconds = item.max_pending_wait_seconds
+          const maxPendingWaitSeconds =
+            rawWaitSeconds === null || rawWaitSeconds === undefined
+              ? null
+              : Number(rawWaitSeconds)
+
+          return {
+            profile: item.profile,
+            label: item.label,
+            supportedTaskTypes: item.supported_task_types || [],
+            activeCount: Number(item.active_count || 0),
+            pendingCount: Number(item.pending_count || 0),
+            maxPendingWaitSeconds: Number.isFinite(maxPendingWaitSeconds)
+              ? maxPendingWaitSeconds
+              : null,
+            oldestPendingTaskId: item.oldest_pending_task_id || null,
+            oldestPendingCreatedAt: item.oldest_pending_created_at || null,
+          }
+        })
+      }),
       queueByTypeDisplay: computed(() => {
         const status = queueStatsMocks.statusRef.value || {}
         const queueByType = status.queue_by_type || {}
@@ -129,6 +152,7 @@ describe('QueueStats worker health display', () => {
       comfy_online: false,
       concurrency_locks: 0,
       queue_by_type_details: {},
+      runpod_profile_queue_details: [],
     })
     queueStatsMocks.workersRef = ref([])
     queueStatsMocks.concurrencyStatsRef = ref([])
@@ -207,6 +231,32 @@ describe('QueueStats worker health display', () => {
     expect(wrapper.text()).toContain('故障')
   })
 
+  it('splits the total task card into active and pending totals', async () => {
+    queueStatsMocks.statusRef.value = {
+      ...queueStatsMocks.statusRef.value,
+      queue_size: 48,
+      queue_by_type_details: {
+        image_to_video: {
+          active_count: 46,
+          pending_count: 12,
+          max_pending_wait_seconds: 742,
+        },
+        i2i_pro: {
+          active_count: 2,
+          pending_count: 0,
+          max_pending_wait_seconds: null,
+        },
+      },
+    }
+
+    const wrapper = await mountQueueStats()
+
+    expect(wrapper.text()).toContain('活跃数')
+    expect(wrapper.text()).toContain('排队数')
+    expect(wrapper.get('.task-total-active .task-total-value').text()).toContain('48')
+    expect(wrapper.get('.task-total-pending .task-total-value').text()).toContain('12')
+  })
+
   it('renders all active task detail rows with pending wait metrics', async () => {
     queueStatsMocks.statusRef.value = {
       ...queueStatsMocks.statusRef.value,
@@ -245,6 +295,76 @@ describe('QueueStats worker health display', () => {
       '活跃数',
       '排队数',
       '最长排队等待',
+    ])
+  })
+
+  it('renders runpod profile detail rows with aggregated queue metrics', async () => {
+    queueStatsMocks.statusRef.value = {
+      ...queueStatsMocks.statusRef.value,
+      runpod_profile_queue_details: [
+        {
+          profile: 'img2img',
+          label: 'img2img / img2img_lora',
+          supported_task_types: ['img2img', 'img2img_lora'],
+          active_count: 0,
+          pending_count: 0,
+          max_pending_wait_seconds: null,
+        },
+        {
+          profile: 'image_to_video',
+          label: 'image_to_video',
+          supported_task_types: ['image_to_video'],
+          active_count: 0,
+          pending_count: 0,
+          max_pending_wait_seconds: null,
+        },
+        {
+          profile: 'wan22_video_v2',
+          label: 'wan22_video_v2',
+          supported_task_types: ['wan22_video_v2'],
+          active_count: 0,
+          pending_count: 0,
+          max_pending_wait_seconds: null,
+        },
+        {
+          profile: 'i2i_pro',
+          label: 'i2i_pro / txt2img / face_swap',
+          supported_task_types: ['i2i_pro', 't2i-pornmaster-turbo', 'face_swap'],
+          active_count: 15,
+          pending_count: 8,
+          max_pending_wait_seconds: 901,
+        },
+        {
+          profile: 'scail2',
+          label: 'scail2 / 视频生视频',
+          supported_task_types: ['scail2_action_transfer', 'scail2_video_replacement'],
+          active_count: 2,
+          pending_count: 1,
+          max_pending_wait_seconds: 620,
+        },
+        {
+          profile: 'ltx_video',
+          label: 'ltx_video / 高级图生视频',
+          supported_task_types: ['ltx_video', 'ltx_video_flf2v', 'ltx_video_v2v_audio'],
+          active_count: 0,
+          pending_count: 0,
+          max_pending_wait_seconds: null,
+        },
+      ],
+    }
+
+    const wrapper = await mountQueueStats()
+
+    expect(wrapper.text()).toContain('活跃 RunPod 详情')
+    expect(wrapper.text()).toContain('i2i_pro / txt2img / face_swap')
+    expect(wrapper.text()).toContain('t2i-pornmaster-turbo')
+    expect(wrapper.text()).toContain('15m 1s')
+    expect(wrapper.findAll('.runpod-profile-detail-table tbody tr')).toHaveLength(6)
+    expect(wrapper.findAll('.runpod-profile-detail-table thead th').map(th => th.text())).toEqual([
+      'RunPod 类型',
+      '活跃数',
+      '排队数',
+      '最长等待',
     ])
   })
 

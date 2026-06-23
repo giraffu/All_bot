@@ -25,6 +25,7 @@ const {
   cleaning,
   syncing,
   queueByTypeDisplay,
+  runpodProfileQueueDisplay,
   cleanZombies,
   syncLock,
   updateQueue,
@@ -32,6 +33,23 @@ const {
 
 const workerHistoryOpen = ref(false)
 const selectedWorkerHistoryId = ref('')
+
+const taskTotals = computed(() => {
+  const totals = queueByTypeDisplay.value.reduce(
+    (acc, item) => {
+      acc.activeCount += Number(item.activeCount || 0)
+      acc.pendingCount += Number(item.pendingCount || 0)
+      return acc
+    },
+    { activeCount: 0, pendingCount: 0 }
+  )
+
+  if (queueByTypeDisplay.value.length === 0) {
+    totals.activeCount = Number(status.value.queue_size || 0)
+  }
+
+  return totals
+})
 
 const handleCleanZombies = () => {
   Modal.confirm({
@@ -201,15 +219,15 @@ const handleSyncLock = async (userId) => {
 
 <template>
   <div class="mb-6">
-    <div class="flex items-center gap-2 mb-4">
+    <div class="dashboard-monitor-toolbar flex items-center gap-2 mb-4">
       <dashboard-outlined class="text-blue-500 text-lg" />
-      <h3 class="text-lg font-bold text-gray-800 m-0">系统实时监控</h3>
+      <h3 class="dashboard-monitor-title text-lg font-bold text-gray-800 m-0">系统实时监控</h3>
       <a-tag color="blue" class="ml-2 flex items-center gap-1">
         <template #icon><sync-outlined spin /></template>
         每秒自动刷新
       </a-tag>
       
-      <div class="ml-auto flex items-center gap-3">
+      <div class="dashboard-monitor-actions ml-auto flex items-center gap-3">
         <run-pod-capacity-manager @changed="updateQueue" />
         <a-button type="primary" danger ghost @click="handleCleanZombies" :loading="cleaning">
           <template #icon><clear-outlined /></template>
@@ -228,18 +246,25 @@ const handleSyncLock = async (userId) => {
     <a-row :gutter="[16, 16]" class="mb-4">
       <a-col :xs="24" :sm="8">
         <a-card hoverable class="queue-card border-l-4 border-l-blue-500 h-full">
-          <a-statistic
-            title="总活跃任务"
-            :value="status.queue_size"
-            :value-style="{ color: '#1890ff', fontWeight: 'bold' }"
-          >
-            <template #prefix>
-              <thunderbolt-outlined />
-            </template>
-            <template #suffix>
-              <span class="text-xs text-gray-400 font-normal ml-1">排队或执行中</span>
-            </template>
-          </a-statistic>
+          <div class="task-total-card" aria-label="任务总览">
+            <div class="task-total-metric task-total-active">
+              <div class="task-total-label">活跃数</div>
+              <div class="task-total-value text-blue-500">
+                <thunderbolt-outlined />
+                <span>{{ taskTotals.activeCount }}</span>
+              </div>
+              <div class="task-total-caption">执行中或已占用</div>
+            </div>
+            <div class="task-total-divider" aria-hidden="true"></div>
+            <div class="task-total-metric task-total-pending">
+              <div class="task-total-label">排队数</div>
+              <div class="task-total-value text-orange-500">
+                <sync-outlined />
+                <span>{{ taskTotals.pendingCount }}</span>
+              </div>
+              <div class="task-total-caption">等待 Worker 接单</div>
+            </div>
+          </div>
         </a-card>
       </a-col>
       
@@ -280,47 +305,118 @@ const handleSyncLock = async (userId) => {
       </a-col>
     </a-row>
 
-    <a-card hoverable class="queue-card active-task-detail-card border-l-4 border-l-purple-500 mb-4">
-      <div class="flex items-center justify-between gap-3 mb-3">
-        <div class="text-gray-700 font-bold">活跃任务详情</div>
-        <a-tag color="purple" class="m-0">共 {{ queueByTypeDisplay.length }} 类</a-tag>
-      </div>
-      <div class="overflow-x-auto">
-        <table class="active-task-detail-table">
-          <thead>
-            <tr>
-              <th>任务类型</th>
-              <th>活跃数</th>
-              <th>排队数</th>
-              <th>最长排队等待</th>
-            </tr>
-          </thead>
-          <tbody v-if="queueByTypeDisplay.length > 0">
-            <tr v-for="item in queueByTypeDisplay" :key="item.type">
-              <td>
-                <span class="task-type-cell" :title="item.type">{{ item.type }}</span>
-              </td>
-              <td>
-                <span class="metric-value text-purple-600">{{ item.activeCount }}</span>
-              </td>
-              <td>
-                <span class="metric-value text-blue-600">{{ item.pendingCount }}</span>
-              </td>
-              <td>
-                <span class="metric-value text-orange-600">
-                  {{ formatWaitDuration(item.maxPendingWaitSeconds) }}
-                </span>
-              </td>
-            </tr>
-          </tbody>
-          <tbody v-else>
-            <tr>
-              <td colspan="4" class="empty-detail-cell">暂无活跃任务</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </a-card>
+    <div class="queue-detail-grid mb-4">
+      <a-card hoverable class="queue-card active-task-detail-card border-l-4 border-l-purple-500">
+        <div class="flex items-center justify-between gap-3 mb-3">
+          <div class="text-gray-700 font-bold">活跃任务详情</div>
+          <a-tag color="purple" class="m-0">共 {{ queueByTypeDisplay.length }} 类</a-tag>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="active-task-detail-table">
+            <colgroup>
+              <col class="task-type-col" />
+              <col class="task-metric-col" />
+              <col class="task-metric-col" />
+              <col class="task-wait-col" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th>任务类型</th>
+                <th>活跃数</th>
+                <th>排队数</th>
+                <th>最长排队等待</th>
+              </tr>
+            </thead>
+            <tbody v-if="queueByTypeDisplay.length > 0">
+              <tr v-for="item in queueByTypeDisplay" :key="item.type">
+                <td>
+                  <span class="task-type-cell" :title="item.type">{{ item.type }}</span>
+                </td>
+                <td>
+                  <span class="metric-value text-purple-600">{{ item.activeCount }}</span>
+                </td>
+                <td>
+                  <span class="metric-value text-blue-600">{{ item.pendingCount }}</span>
+                </td>
+                <td>
+                  <span class="metric-value text-orange-600">
+                    {{ formatWaitDuration(item.maxPendingWaitSeconds) }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+            <tbody v-else>
+              <tr>
+                <td colspan="4" class="empty-detail-cell">暂无活跃任务</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </a-card>
+
+      <a-card hoverable class="queue-card runpod-profile-detail-card border-l-4 border-l-cyan-500">
+        <div class="flex items-center justify-between gap-3 mb-3">
+          <div class="text-gray-700 font-bold">活跃 RunPod 详情</div>
+          <a-tag color="cyan" class="m-0">共 {{ runpodProfileQueueDisplay.length }} 类</a-tag>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="runpod-profile-detail-table">
+            <colgroup>
+              <col class="runpod-profile-col" />
+              <col class="runpod-metric-col" />
+              <col class="runpod-metric-col" />
+              <col class="runpod-wait-col" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th>RunPod 类型</th>
+                <th>活跃数</th>
+                <th>排队数</th>
+                <th>最长等待</th>
+              </tr>
+            </thead>
+            <tbody v-if="runpodProfileQueueDisplay.length > 0">
+              <tr v-for="item in runpodProfileQueueDisplay" :key="item.profile">
+                <td>
+                  <div class="runpod-profile-cell">
+                    <span class="runpod-profile-name" :title="item.profile">{{ item.profile }}</span>
+                    <span
+                      v-if="item.label && item.label !== item.profile"
+                      class="runpod-profile-label"
+                      :title="item.label"
+                    >
+                      {{ item.label }}
+                    </span>
+                    <span
+                      class="runpod-task-types"
+                      :title="item.supportedTaskTypes.join(', ')"
+                    >
+                      {{ item.supportedTaskTypes.join(' + ') }}
+                    </span>
+                  </div>
+                </td>
+                <td>
+                  <span class="metric-value text-purple-600">{{ item.activeCount }}</span>
+                </td>
+                <td>
+                  <span class="metric-value text-blue-600">{{ item.pendingCount }}</span>
+                </td>
+                <td>
+                  <span class="metric-value text-orange-600">
+                    {{ formatWaitDuration(item.maxPendingWaitSeconds) }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+            <tbody v-else>
+              <tr>
+                <td colspan="4" class="empty-detail-cell">暂无 RunPod 统计</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </a-card>
+    </div>
 
     <!-- Worker 实时状态卡片组 -->
     <div class="mb-2 mt-6">
@@ -492,6 +588,45 @@ const handleSyncLock = async (userId) => {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0,0,0,0.1);
 }
+.task-total-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  min-height: 82px;
+}
+.task-total-metric {
+  min-width: 0;
+  text-align: center;
+}
+.task-total-label {
+  color: #8c8c8c;
+  font-size: 14px;
+  line-height: 1.3;
+  margin-bottom: 6px;
+}
+.task-total-value {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.task-total-caption {
+  color: #9ca3af;
+  font-size: 12px;
+  line-height: 1.3;
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+}
+.task-total-divider {
+  align-self: stretch;
+  width: 1px;
+  background: #eef0f3;
+}
 .worker-card {
   transition: all 0.3s;
   border-radius: 6px;
@@ -538,17 +673,55 @@ const handleSyncLock = async (userId) => {
   flex-wrap: wrap;
   width: 100%;
 }
-.active-task-detail-card {
-  overflow: hidden;
+.dashboard-monitor-toolbar {
+  flex-wrap: wrap;
 }
-.active-task-detail-table {
+.dashboard-monitor-title {
+  white-space: nowrap;
+}
+.dashboard-monitor-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.queue-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.active-task-detail-card,
+.runpod-profile-detail-card {
+  overflow: hidden;
+  min-width: 0;
+}
+.active-task-detail-table,
+.runpod-profile-detail-table {
   width: 100%;
-  min-width: 520px;
+  min-width: 100%;
   table-layout: fixed;
   border-collapse: collapse;
   font-size: 13px;
 }
-.active-task-detail-table th {
+.task-type-col {
+  width: 34%;
+}
+.task-metric-col {
+  width: 20%;
+}
+.task-wait-col {
+  width: 26%;
+}
+.runpod-profile-col {
+  width: 42%;
+}
+.runpod-metric-col {
+  width: 18%;
+}
+.runpod-wait-col {
+  width: 22%;
+}
+.active-task-detail-table th,
+.runpod-profile-detail-table th {
   color: #6b7280;
   font-weight: 600;
   text-align: left;
@@ -556,18 +729,47 @@ const handleSyncLock = async (userId) => {
   border-bottom: 1px solid #eef0f3;
   padding: 8px 12px;
 }
-.active-task-detail-table td {
+.active-task-detail-table td,
+.runpod-profile-detail-table td {
   border-bottom: 1px solid #f0f2f5;
   padding: 8px 12px;
   vertical-align: middle;
 }
-.active-task-detail-table tr:last-child td {
+.active-task-detail-table tr:last-child td,
+.runpod-profile-detail-table tr:last-child td {
   border-bottom: 0;
 }
 .task-type-cell {
   display: block;
   color: #374151;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  overflow-wrap: anywhere;
+}
+.runpod-profile-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.runpod-profile-name,
+.runpod-task-types {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+.runpod-profile-name {
+  color: #374151;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.runpod-profile-label {
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.runpod-task-types {
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.3;
   overflow-wrap: anywhere;
 }
 .metric-value {
@@ -590,5 +792,15 @@ const handleSyncLock = async (userId) => {
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #d1d5db;
+}
+@media (max-width: 1024px) {
+  .dashboard-monitor-actions {
+    justify-content: flex-start;
+    margin-left: 0;
+    width: 100%;
+  }
+  .queue-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>

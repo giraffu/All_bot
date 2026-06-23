@@ -310,6 +310,93 @@ async def test_get_system_status_proxy_payload_uses_active_task_registry_counts(
 
 
 @pytest.mark.asyncio
+async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_details():
+    active_tasks = {
+        "txt2img-task": {"task_type": "txt2img"},
+        "i2i-task": {"task_type": "i2i_pro"},
+        "face-swap-task": {"task_type": "face_swap"},
+        "scail2-action-task": {"task_type": "scail2_action_transfer"},
+        "scail2-face-swap-task": {"task_type": "scail2_face_swap_v2"},
+    }
+    pending_wait_details = {
+        "t2i-pornmaster-turbo": {
+            "pending_count": 2,
+            "max_pending_wait_seconds": 300,
+            "oldest_pending_task_id": "pending-txt2img",
+            "oldest_pending_created_at": 1782050100.0,
+        },
+        "face_swap": {
+            "pending_count": 3,
+            "max_pending_wait_seconds": 901,
+            "oldest_pending_task_id": "pending-face-swap",
+            "oldest_pending_created_at": 1782050000.0,
+        },
+        "scail2_video_replacement": {
+            "pending_count": 2,
+            "max_pending_wait_seconds": 620,
+            "oldest_pending_task_id": "pending-scail2-replacement",
+            "oldest_pending_created_at": 1782050200.0,
+        },
+        "scail2_face_swap_v2": {
+            "pending_count": 9,
+            "max_pending_wait_seconds": 999,
+            "oldest_pending_task_id": "pending-scail2-face-swap",
+            "oldest_pending_created_at": 1782050300.0,
+        },
+    }
+
+    data = await system_service.get_system_status_proxy_payload(
+        httpx_async_client_factory=lambda **_kwargs: _FakeAsyncClient(
+            {
+                "queue_size": 0,
+                "queue_by_type": {},
+                "active_workers": 1,
+                "healthy_workers": 1,
+                "comfy_online": True,
+            }
+        ),
+        get_system_task_stats_func=AsyncMock(return_value=(active_tasks, {})),
+        get_pending_queue_wait_details_func=AsyncMock(
+            return_value=pending_wait_details
+        ),
+    )
+
+    profiles = {
+        item["profile"]: item for item in data["runpod_profile_queue_details"]
+    }
+
+    assert list(profiles) == [
+        "img2img",
+        "image_to_video",
+        "wan22_video_v2",
+        "i2i_pro",
+        "scail2",
+        "ltx_video",
+    ]
+    assert profiles["i2i_pro"] == {
+        "profile": "i2i_pro",
+        "label": "i2i_pro / txt2img / face_swap",
+        "supported_task_types": [
+            "i2i_pro",
+            "t2i-pornmaster-turbo",
+            "face_swap",
+        ],
+        "active_count": 3,
+        "pending_count": 5,
+        "max_pending_wait_seconds": 901,
+        "oldest_pending_task_id": "pending-face-swap",
+        "oldest_pending_created_at": 1782050000.0,
+    }
+    assert profiles["scail2"]["active_count"] == 1
+    assert profiles["scail2"]["pending_count"] == 2
+    assert profiles["scail2"]["max_pending_wait_seconds"] == 620
+    assert profiles["scail2"]["oldest_pending_task_id"] == "pending-scail2-replacement"
+    assert profiles["ltx_video"]["active_count"] == 0
+    assert profiles["ltx_video"]["pending_count"] == 0
+    assert profiles["ltx_video"]["max_pending_wait_seconds"] is None
+
+
+@pytest.mark.asyncio
 async def test_get_system_status_proxy_payload_degrades_when_pending_wait_fails():
     active_tasks = {
         "registry-task-1": {"task_type": "i2i_pro"},
