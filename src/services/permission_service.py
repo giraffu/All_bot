@@ -48,6 +48,7 @@ class PermissionService:
             "invitations": stats.get("invitation_count", 0),
             "checkins": stats.get("checkin_count", 0),
             "generations": stats.get("generation_count", 0),
+            "today_generations": stats.get("today_generation_count", 0),
             "total_contributions": stats.get("total_contributions", 0),
             "approved_contributions": stats.get("approved_contributions", 0),
             "invitation_recharge": invitation_recharge_stats,

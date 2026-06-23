@@ -113,6 +113,7 @@ def build_personal_center_payload(
         identity_display=identity_display,
         priority=dto.current_priority,
         credits=dto.credits,
+        today_generations=getattr(dto, "today_generations", 0),
         invitations=dto.invitations,
         checkins=dto.checkins,
         generations=dto.generations,

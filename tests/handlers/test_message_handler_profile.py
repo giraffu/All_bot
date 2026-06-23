@@ -36,6 +36,7 @@ def test_build_personal_center_payload_builds_unlocked_markup():
         invitations=2,
         checkins=5,
         generations=18,
+        today_generations=3,
         is_unlocked=True,
     )
 
@@ -46,6 +47,9 @@ def test_build_personal_center_payload_builds_unlocked_markup():
     )
 
     assert "突破至筑基期" in msg
+    assert "今日生成次数" in msg
+    assert "`3` 次" in msg
+    assert msg.index("排队加速") < msg.index("今日生成次数") < msg.index("灵石余额")
     assert "合欢密宗已解锁" in msg
     assert reply_markup is not None
     assert reply_markup.inline_keyboard[0][0].text == "📱 Mini App 自动登录"

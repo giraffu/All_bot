@@ -22,6 +22,7 @@ class UserDashboardDTO(BaseModel):
     invitations: int
     checkins: int
     generations: int
+    today_generations: int = 0
     invitation_recharge: Dict[str, Any]
     is_unlocked: bool
 
@@ -145,6 +146,7 @@ async def get_user_dashboard_info(
         invitations=stats["invitations"],
         checkins=stats["checkins"],
         generations=stats["generations"],
+        today_generations=stats.get("today_generations", 0),
         invitation_recharge=stats["invitation_recharge"],
         is_unlocked=is_unlocked,
         breakthrough_conditions=breakthrough_conditions,

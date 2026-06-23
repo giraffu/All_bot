@@ -204,3 +204,36 @@ async def test_calculate_user_priority_addition():
     permission_service.quota_manager.get_daily_usage.return_value = 150
     priority = await permission_service.calculate_user_priority(123)
     assert priority == 1  # 0 + 1
+
+
+@pytest.mark.asyncio
+async def test_build_user_detailed_stats_includes_today_generations():
+    permission_service = PermissionService()
+    permission_service.quota_manager.get_user_stats = AsyncMock(
+        return_value={
+            "identity_expire_at": None,
+            "invitation_count": 2,
+            "checkin_count": 4,
+            "generation_count": 11,
+            "today_generation_count": 3,
+            "total_contributions": 0,
+            "approved_contributions": 0,
+        }
+    )
+    permission_service.identity_priority.get_user_group = AsyncMock(
+        return_value="练气期"
+    )
+    permission_service.identity_priority.get_user_identity = AsyncMock(
+        return_value="真传弟子"
+    )
+    permission_service.identity_priority.calculate_user_priority = AsyncMock(
+        return_value=48
+    )
+    permission_service.quota_manager.get_credits = AsyncMock(return_value=2078)
+    permission_service.growth_channel.get_invitation_recharge_stats = AsyncMock(
+        return_value={}
+    )
+
+    stats = await permission_service._build_user_detailed_stats(123)
+
+    assert stats["today_generations"] == 3

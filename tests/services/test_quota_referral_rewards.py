@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -228,5 +229,48 @@ async def test_first_logged_generation_triggers_generation_referral_reward(monke
             if log.operation_type.startswith("referral_reward")
         ]
         assert reward_logs == [("referral_reward_generation", 10)]
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_get_user_stats_counts_today_generations(monkeypatch):
+    engine, session_factory = await _create_session_factory(monkeypatch)
+    try:
+        today = datetime.now().replace(hour=10, minute=0, second=0, microsecond=0)
+        yesterday = today - timedelta(days=1)
+        async with session_factory() as session:
+            session.add(User(id=1, username="cultivator", generation_count=9))
+            session.add_all(
+                [
+                    History(
+                        user_id=1, task_id="today-1", type="image", created_at=today
+                    ),
+                    History(
+                        user_id=1,
+                        task_id="today-2",
+                        type="video",
+                        created_at=today + timedelta(hours=1),
+                    ),
+                    History(
+                        user_id=1,
+                        task_id="yesterday",
+                        type="image",
+                        created_at=yesterday,
+                    ),
+                    History(
+                        user_id=2,
+                        task_id="other-user",
+                        type="image",
+                        created_at=today,
+                    ),
+                ]
+            )
+            await session.commit()
+
+        stats = await QuotaManager().get_user_stats(1)
+
+        assert stats["generation_count"] == 9
+        assert stats["today_generation_count"] == 2
     finally:
         await engine.dispose()

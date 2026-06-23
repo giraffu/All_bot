@@ -929,7 +929,7 @@
     "breakthrough_foundation": "🚀 **Requirements to reach Golden Core**:\n🔸 Invite more than 10 cultivators ({invite_done})\n🔸 Check in for more than 30 days ({checkin_done})\n🔸 Complete more than 100 generations ({generation_done})",
     "breakthrough_core": "🚀 **Requirements to reach Nascent Soul**:\n🔸 Invite more than 100 cultivators ({invite_done})\n🔸 Check in for more than 300 days ({checkin_done})\n🔸 Complete more than 1000 generations ({generation_done})",
     "breakthrough_nascent": "✨ **You have reached Nascent Soul. Vast power now protects you.**",
-    "personal_center": "👤 **User**: `{name}`\n📜 **Realm**: `{group}`\n🪪 **Identity**: {identity_display}\n⚡ **Queue Boost**: `+{priority}` priority\n💰 **Credits**: `{credits}`\n\n📊 **Stats**:\n  - Invited cultivators: `{invitations}`\n  - Check-in days: `{checkins}`\n  - Generations: `{generations}`\n\n💡 *Hint: 1 point of queue boost saves about 1 minute of waiting time.*\n\n{breakthrough_msg}",
+    "personal_center": "👤 **User**: `{name}`\n📜 **Realm**: `{group}`\n🪪 **Identity**: {identity_display}\n⚡ **Queue Boost**: `+{priority}` priority\n🎨 **Generations Today**: `{today_generations}`\n💰 **Credits**: `{credits}`\n\n📊 **Stats**:\n  - Invited cultivators: `{invitations}`\n  - Check-in days: `{checkins}`\n  - Generations: `{generations}`\n\n💡 *Hint: 1 point of queue boost saves about 1 minute of waiting time.*\n\n{breakthrough_msg}",
     "web_unlocked": "🌐 **Hehuan Sect web access unlocked**",
     "web_button": "🌐 Browser Web Login",
     "miniapp_button": "📱 Mini App Auto Login",

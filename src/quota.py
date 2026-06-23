@@ -1,6 +1,6 @@
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Literal, Optional
 
 from sqlalchemy import func, or_, select, update
@@ -11,6 +11,7 @@ from .constants import GENERATION_TASK_TYPES
 from .database.core import AsyncSessionLocal
 from .database.models import (
     CheckinHistory,
+    History,
     Referral,
     TemplateContribution,
     User,
@@ -779,15 +780,28 @@ class QuotaManager:
                     "invitation_count": 0,
                     "checkin_count": 0,
                     "generation_count": 0,
+                    "today_generation_count": 0,
                     "is_channel_member": False,
                     "total_contributions": 0,
                     "approved_contributions": 0,
                 }
 
+            today_start = datetime.now().replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            tomorrow_start = today_start + timedelta(days=1)
+            today_generation_stmt = select(func.count(History.id)).where(
+                History.user_id == user_id,
+                History.created_at >= today_start,
+                History.created_at < tomorrow_start,
+            )
+            today_generation_result = await session.execute(today_generation_stmt)
+
             return {
                 "invitation_count": user.referral_count or 0,
                 "checkin_count": user.checkin_count or 0,
                 "generation_count": user.generation_count or 0,
+                "today_generation_count": today_generation_result.scalar() or 0,
                 "is_channel_member": user.is_channel_member,
                 "total_contributions": user.total_contributions or 0,
                 "approved_contributions": user.approved_contributions or 0,
