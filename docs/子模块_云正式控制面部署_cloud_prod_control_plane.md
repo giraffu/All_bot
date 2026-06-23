@@ -93,8 +93,9 @@ worker 没有 `current_task_id`。旧 Pod 原地重启可能复用
 `RUNPOD_DRY_RUN=false` 与 `RUNPOD_AUTOSCALER_ENABLED=true`；`RUNPOD_MAX_PODS_TOTAL`、
 `RUNPOD_MAX_PODS_PER_TYPE`、`RUNPOD_MAX_HOURLY_COST_USD` 不再作为 provider/Dashboard 的容量门禁。
 若目标 slot 超过默认手动 slot 上限，只在本次命令环境中临时设置
-`RUNPOD_PROD_MAX_MANUAL_SLOTS=<slot上限>`。如果 RunPod 返回
-`There are no instances currently available`，优先对同一个 profile/count 使用
+`RUNPOD_PROD_MAX_MANUAL_SLOTS=<slot上限>`。如果 RunPod create-pod 返回库存/机器资源类错误
+（例如 `There are no instances currently available`、`This machine does not have the resources to deploy your pod`
+或 `Please try again later`），优先对同一个 profile/count 使用
 `scripts/runpod_prod_ops.sh add --retry-unavailable --max-attempts N --retry-interval SEC --execute`
 做有界重试；不要并发启动多条相同 profile/count 的创建循环。底层 prod-worker 会按 profile
 持有文件锁，并在每个 slot create 前重新读取 RunPod 列表；发现目标 `manual_NN` 已被占用会在写

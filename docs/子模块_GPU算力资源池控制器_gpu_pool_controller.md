@@ -492,7 +492,8 @@ direct TCP `root@<public-ip> -p <mapped-port>` 会因容器内无 `sshd` 而拒�
 | 业务 canary | `scripts/runpod_prod_ops.sh canary --profile img2img --slot 01 --execute` | 真实 Web canary，结束后保持目标 worker disabled |
 | 回滚 | `scripts/runpod_prod_ops.sh rollback --profile img2img --keep-pod --execute` 或 `--delete-pod` | `--keep-pod` 等价 disable；`--delete-pod` 在指定 slot 时走 down，未指定 slot 时走 `scale --desired 0` |
 
-RunPod 4090 库存不足时，`up/add/scale` 可显式使用有界重试，不要开多条并发创建循环。日常新增模板：
+RunPod 4090 库存不足或 create-pod 返回机器资源/稍后再试类 500 时，`up/add/scale`
+可显式使用有界重试，不要开多条并发创建循环。日常新增模板：
 
 ```bash
 scripts/runpod_prod_ops.sh add \
@@ -611,7 +612,9 @@ heartbeat；看到 disabled heartbeat 后才 enable 目标 slot。启动过程�
 `RUNNING` 但 `worker_seen=false`、control 仍是 `disabled`，通常表示 bootstrap 或模型同步
 还没完成，不要手动 enable。
 
-4090 库存不足时，RunPod 常返回 `There are no instances currently available`。优先用
+4090 库存不足或 RunPod create-pod 临时失败时，RunPod 可能返回
+`There are no instances currently available`、`This machine does not have the resources to deploy your pod`
+或 `Please try again later`。优先用
 `scripts/runpod_prod_ops.sh add --retry-unavailable` 对同一个 profile/count 做有界重试；
 不要同时开多条相同 profile/count 的创建循环，避免重复抢同一批空闲 slot。推荐模板：
 

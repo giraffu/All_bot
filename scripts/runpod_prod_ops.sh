@@ -47,7 +47,7 @@ Options:
   --delete-pod                With rollback, delete capacity after drain.
   --runpod-env-file <path>    RunPod env/profile defaults. Default .env.cloud.test.
   --prod-env-file <path>      Prod Central/Web/R2 values. Default .env.cloud.prod.
-  --retry-unavailable         Retry up/add/scale when RunPod reports no GPU inventory.
+  --retry-unavailable         Retry up/add/scale on RunPod inventory/resource errors.
   --max-attempts <N>          Max attempts with --retry-unavailable. Default 20.
   --retry-interval <sec>      Sleep seconds between retry attempts. Default 90.
   --dry-run                   Print guarded mutation plan only. Default.
@@ -100,7 +100,7 @@ run_controller() {
 is_retryable_unavailable_output() {
   local path="$1"
   grep -Eiq \
-    'There are no instances currently available|no instances currently available|no[[:space:]_-]*instances.*available|instances.*currently.*available' \
+    'There are no instances currently available|no instances currently available|no[[:space:]_-]*instances.*available|instances.*currently.*available|machine does not have the resources to deploy your pod|Please try a different machine|Please try again later|runpod create-pod failed.*runpod_http_500' \
     "$path"
 }
 
@@ -131,7 +131,7 @@ run_controller_with_unavailable_retry() {
       return "$status"
     fi
     rm -f "$output_file"
-    echo "[runpod-prod-ops] RunPod inventory unavailable; retry ${attempt}/${max_attempts}, sleeping ${RETRY_INTERVAL_SECONDS}s before next attempt." >&2
+    echo "[runpod-prod-ops] RunPod inventory/resource unavailable; retry ${attempt}/${max_attempts}, sleeping ${RETRY_INTERVAL_SECONDS}s before next attempt." >&2
     sleep "$RETRY_INTERVAL_SECONDS"
     attempt=$((attempt + 1))
   done
@@ -218,7 +218,7 @@ dry_run_plan() {
     up)
       echo "[dry-run] Would create/start a cloud-prod manual RunPod Pod and wait for disabled heartbeat."
       if [ "$RETRY_UNAVAILABLE" = "true" ]; then
-        echo "[dry-run] Would retry RunPod no-inventory responses up to ${MAX_ATTEMPTS} attempts every ${RETRY_INTERVAL_SECONDS}s."
+        echo "[dry-run] Would retry RunPod inventory/resource-unavailable responses up to ${MAX_ATTEMPTS} attempts every ${RETRY_INTERVAL_SECONDS}s."
       fi
       print_shell_command up --execute
       ;;
@@ -226,7 +226,7 @@ dry_run_plan() {
       echo "[dry-run] Would add ${COUNT} cloud-prod manual RunPod worker(s), choosing only free slots."
       echo "[dry-run] Would not enable, disable, drain, delete, or recreate any existing RunPod slot."
       if [ "$RETRY_UNAVAILABLE" = "true" ]; then
-        echo "[dry-run] Would retry RunPod no-inventory responses up to ${MAX_ATTEMPTS} attempts every ${RETRY_INTERVAL_SECONDS}s."
+        echo "[dry-run] Would retry RunPod inventory/resource-unavailable responses up to ${MAX_ATTEMPTS} attempts every ${RETRY_INTERVAL_SECONDS}s."
       fi
       print_shell_command add --count "$COUNT" --execute
       ;;
@@ -250,7 +250,7 @@ dry_run_plan() {
     scale)
       echo "[dry-run] Would scale the selected cloud-prod manual RunPod profile to desired=${DESIRED}."
       if [ "$RETRY_UNAVAILABLE" = "true" ]; then
-        echo "[dry-run] Would retry RunPod no-inventory responses up to ${MAX_ATTEMPTS} attempts every ${RETRY_INTERVAL_SECONDS}s."
+        echo "[dry-run] Would retry RunPod inventory/resource-unavailable responses up to ${MAX_ATTEMPTS} attempts every ${RETRY_INTERVAL_SECONDS}s."
       fi
       print_shell_command scale --desired "$DESIRED" --execute
       ;;
