@@ -144,7 +144,7 @@ done
 | ComfyUI URL | ComfyUI | PyTorch | RIFE 节点备注 |
 | :--- | :--- | :--- | :--- |
 | `http://192.168.1.226:8188` | `0.17.0` | `2.10.0+cu130` | `FL_RIFE` 存在，`RIFE VFI` 为空 |
-| `http://192.168.1.177:8190` | `0.21.1` | `2.11.0+cu128` | AIO `image_to_video`，`--disable-dynamic-vram` |
+| `http://192.168.1.177:8190` | `0.21.1` | `2.11.0+cu128` | AIO `wan22_video_v2`，`--disable-dynamic-vram` |
 | `http://192.168.1.177:8191` | `0.19.5` | `2.11.0+cu128` | AIO `ltx_video` |
 | `http://192.168.1.252:8190` | `0.21.1` | `2.11.0+cu128` | AIO `img2img/img2img_lora` |
 | `http://192.168.1.252:8191` | `0.21.1` | `2.11.0+cu128` | AIO `wan22_video_v2`，当前 maintenance disabled；故障 GPU 已拆除，无本地 GPU1 |

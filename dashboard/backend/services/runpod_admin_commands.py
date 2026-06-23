@@ -137,6 +137,24 @@ class RunPodAdminCommandBuilder:
             "--execute",
         ]
 
+    def lan_aio_control_command(self, action: str, slot_id: str) -> list[str]:
+        if action not in {"disable-aio", "enable-aio"}:
+            raise ValueError(f"unsupported LAN AIO control action: {action}")
+        return [
+            "python3",
+            self.lan_aio_ops_script(),
+            action,
+            "--slot",
+            slot_id,
+            "--prod-env-file",
+            self.lan_aio_prod_env_file(),
+            "--aio-env-file",
+            self.lan_aio_aio_env_file(),
+            "--model-env-file",
+            self.lan_aio_model_env_file(),
+            "--execute",
+        ]
+
     def default_prod_max_manual_slots(self) -> int:
         raw = os.getenv("RUNPOD_PROD_MAX_MANUAL_SLOTS", "").strip()
         if not raw:

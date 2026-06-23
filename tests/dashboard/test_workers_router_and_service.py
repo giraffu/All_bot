@@ -88,7 +88,10 @@ async def test_get_worker_history_payload_builds_paginated_response():
     assert result.size == 10
     assert result.data[0].start_time == "2026-01-01T12:00:00"
     assert "worker_logs.worker_id = :worker_id_1" in db.executed_stmts[1]
-    assert "ORDER BY worker_logs.start_time DESC" in db.executed_stmts[1]
+    assert (
+        "ORDER BY worker_logs.end_time DESC, worker_logs.start_time DESC"
+        in db.executed_stmts[1]
+    )
 
 
 @pytest.mark.asyncio

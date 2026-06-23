@@ -18,7 +18,9 @@ async def get_worker_history_payload(*, worker_id: str | None, page: int, size: 
 
     total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar()
     result = await db.execute(
-        query.order_by(desc(WorkerLog.start_time)).offset((page - 1) * size).limit(size)
+        query.order_by(desc(WorkerLog.end_time), desc(WorkerLog.start_time))
+        .offset((page - 1) * size)
+        .limit(size)
     )
     logs = result.scalars().all()
     return WorkerHistoryListResponse(

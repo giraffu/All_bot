@@ -81,6 +81,32 @@ def test_lan_aio_restart_command_uses_prod_fleet_helper(monkeypatch, tmp_path):
     assert "--execute" in command
 
 
+def test_lan_aio_control_command_uses_prod_fleet_helper(monkeypatch, tmp_path):
+    builder = RunPodAdminCommandBuilder(project_root=tmp_path)
+    monkeypatch.delenv("DASHBOARD_LAN_AIO_OPS_SCRIPT", raising=False)
+    monkeypatch.delenv("DASHBOARD_LAN_AIO_PROD_ENV_FILE", raising=False)
+    monkeypatch.delenv("DASHBOARD_LAN_AIO_AIO_ENV_FILE", raising=False)
+    monkeypatch.delenv("DASHBOARD_LAN_AIO_MODEL_ENV_FILE", raising=False)
+    container_env = tmp_path / "container.env"
+    monkeypatch.setenv("DASHBOARD_RUNPOD_CONTAINER_ENV_FILE", str(container_env))
+
+    command = builder.lan_aio_control_command(
+        "disable-aio",
+        "gpu-177-gpu0-image_to_video",
+    )
+
+    assert command[:3] == [
+        "python3",
+        str(tmp_path / "scripts" / "lan_aio_fleet_prod_ops.py"),
+        "disable-aio",
+    ]
+    assert command[command.index("--slot") + 1] == "gpu-177-gpu0-image_to_video"
+    assert command[command.index("--prod-env-file") + 1] == str(container_env)
+    assert command[command.index("--aio-env-file") + 1] == str(container_env)
+    assert command[command.index("--model-env-file") + 1] == str(container_env)
+    assert "--execute" in command
+
+
 def test_operation_env_opens_mutation_gates_and_drops_legacy_limits(monkeypatch):
     builder = RunPodAdminCommandBuilder(project_root=Path.cwd())
     monkeypatch.setenv("RUNPOD_DRY_RUN", "true")

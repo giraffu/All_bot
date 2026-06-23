@@ -157,7 +157,7 @@
 | GPU 服务器 | 物理 GPU | ComfyUI 端口 | 生产 Agent | 主要支持任务 |
 | :--- | :--- | :--- | :--- | :--- |
 | `192.168.1.226` | 1 x RTX 5090 32G | `8188` | `cloud_prod_worker_01` | `face_swap`、`i2i_pro`、`i2i_draw`、`face_video`、`video_edit`、`image_to_video`、`t2i-pornmaster-turbo` |
-| `192.168.1.177` | 2 x RTX 5090 32G | AIO `8190`、`8191` only；旧 `8188`/`8189` 已退役删除 | `lan_aio_prod_gpu177_gpu0_image_to_video_01`、`lan_aio_prod_gpu177_gpu1_ltx_video_01` | `image_to_video`（兼容 `video_insert` / `video_edit` alias）、`ltx_video` |
+| `192.168.1.177` | 2 x RTX 5090 32G | AIO `8190`、`8191` only；旧 `8188`/`8189` 已退役删除 | `lan_aio_prod_gpu177_gpu0_image_to_video_01`、`lan_aio_prod_gpu177_gpu1_ltx_video_01` | `wan22_video_v2`、`ltx_video` |
 | `192.168.1.252` | 2 x RTX 4090 48G | `8188`；AIO `8191`，旧 `8189` stopped rollback | `cloud_prod_worker_04`、`lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` | `img2img`、`img2img_lora`、`wan22_video_v2` |
 | `192.168.1.2` | 2 x RTX 4090 48G | AIO `8190`、`8191`；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu002_gpu0_scail2_01`、`lan_aio_prod_gpu002_gpu1_image_to_video_01` | `scail2_action_transfer`、`scail2_video_replacement`、`image_to_video`（兼容 alias） |
 

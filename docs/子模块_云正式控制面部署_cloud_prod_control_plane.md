@@ -113,7 +113,7 @@ Central control 和创建 Pod 前中止。最终验收以 `reconcile.managed_cou
 | 容器 | AGENT_ID | ComfyUI |
 | :--- | :--- | :--- |
 | `cloud-prod-comfy-agent-1` | `cloud_prod_worker_01` | `192.168.1.226:8188` |
-| `cloud-prod-comfy-agent-2` | `cloud_prod_worker_02` | 已退役；原 `192.168.1.177:8188` 已由 `lan_aio_prod_gpu177_gpu0_image_to_video_01` / AIO `8190` 替换 |
+| `cloud-prod-comfy-agent-2` | `cloud_prod_worker_02` | 已退役；原 `192.168.1.177:8188` 已由 `lan_aio_prod_gpu177_gpu0_image_to_video_01` / AIO `8190` 替换，当前该 slot 渲染为 `wan22_video_v2` |
 | `cloud-prod-comfy-agent-3` | `cloud_prod_worker_03` | 已退役；原 `192.168.1.177:8189` 已由 `lan_aio_prod_gpu177_gpu1_ltx_video_01` / AIO `8191` 替换 |
 | `cloud-prod-comfy-agent-4` | `cloud_prod_worker_04` | `192.168.1.252:8188` |
 | `cloud-prod-comfy-agent-5` | `cloud_prod_worker_05` | 原 `192.168.1.252:8189`，现为 stopped rollback baseline；正式 `wan22_video_v2` 由 `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` 接管 |

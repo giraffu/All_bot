@@ -211,7 +211,7 @@ gpu-002 专用 helper 已证明 all-in-one runtime 可以在正式 Central 下�
 
 | Slot | Legacy worker | AIO agent | Profile | Host port | 阶段 |
 | :--- | :--- | :--- | :--- | ---: | :--- |
-| `gpu-177-gpu0-image_to_video` | `cloud_prod_worker_02` | `lan_aio_prod_gpu177_gpu0_image_to_video_01` | `image_to_video` | 8190 | `prod_enabled` |
+| `gpu-177-gpu0-image_to_video` | `cloud_prod_worker_02` | `lan_aio_prod_gpu177_gpu0_image_to_video_01` | `wan22_video_v2` | 8190 | `prod_enabled` |
 | `gpu-177-gpu1-ltx_video` | `cloud_prod_worker_03` | `lan_aio_prod_gpu177_gpu1_ltx_video_01` | `ltx_video` | 8191 | `prod_enabled` |
 | `gpu-252-gpu0-img2img_lora` | `cloud_prod_worker_04` | `lan_aio_prod_gpu252_gpu0_img2img_lora_01` | `img2img/img2img_lora` | 8190 | `prod_enabled` |
 | `gpu-252-gpu1-wan22_video_v2` | `cloud_prod_worker_05` | `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` | `wan22_video_v2` | 8191 | `maintenance_disabled` |
@@ -223,7 +223,7 @@ gpu-002 专用 helper 已证明 all-in-one runtime 可以在正式 Central 下�
 
 | 层级 | 已覆盖/候选能力 | 当前口径 |
 | :--- | :--- | :--- |
-| LAN AIO 正式接单 | `img2img`、`img2img_lora`、`image_to_video`（兼容 `video_insert` / `video_edit` alias）、`ltx_video`、`scail2_action_transfer`、`scail2_video_replacement` | `gpu-177` 双卡已整机 AIO；`gpu-252` GPU0 已恢复 AIO；SCAIL-2 由 `gpu-002` slot0 正式 AIO 承载 |
+| LAN AIO 正式接单 | `img2img`、`img2img_lora`、`image_to_video`（兼容 `video_insert` / `video_edit` alias）、`wan22_video_v2`、`ltx_video`、`scail2_action_transfer`、`scail2_video_replacement` | `gpu-177` GPU0 渲染为 `wan22_video_v2`、GPU1 为 LTX；`gpu-252` GPU0 已恢复 AIO；SCAIL-2 由 `gpu-002` slot0 正式 AIO 承载，legacy `image_to_video` 主要由 gpu-002 slot1/外部容量承接 |
 | LAN AIO canary-ready | 暂无固定常驻候选 | 后续新增 slot 仍必须逐 slot 验收，不跨节点批量 enable |
 | 有镜像但未作为 LAN AIO 正式容量 | `i2i_pro`、`t2i-pornmaster-turbo`、`face_swap` | 当前主要是 RunPod profile / legacy worker 口径，LAN AIO 接管需单独 slot 规划 |
 | 暂缓 | `face_i2i_t2i` / `gpu-226` 综合能力 | 仍是 host-service runtime，需先迁成容器化 ComfyUI |
@@ -255,7 +255,7 @@ LAN AIO compose 固定带 `restart: unless-stopped`。AIO bootstrap/entrypoint �
 
 `start-disabled` 支持在 slot 配置中声明 `legacy_hot_cache_copies`，用于把旧 ComfyUI 容器或 GPU 节点宿主机上由 custom node 运行期下载的热缓存文件预置进 AIO 容器。`gpu-177` 的旧 `comfy0` 来源已在 2026-06-20 退役删除，后续重建应使用带 RIFE 缓存的 `20260619-wan22aio-rife-bcf3ebd` 或模型缓存补齐，不得再从旧容器复制；`gpu-252-gpu1-wan22_video_v2` 仍声明从宿主机旧 `inst1` 路径复制同一文件。它们都是 `FL_RIFE` 后处理的运行依赖，不能依赖 AIO 容器运行时访问 HuggingFace；RunPod split video 也遵循同一红线，旧 Pod 需要 helper/模型目录补齐，新 Pod 应使用 baked RIFE 的新镜像 tag。
 
-2026-06-18 `gpu-177` 进入整机 LAN AIO 接管：GPU0 由 `lan_aio_prod_gpu177_gpu0_image_to_video_01` 提供 `image_to_video`，GPU1 由 `lan_aio_prod_gpu177_gpu1_ltx_video_01` 提供 `ltx_video`。2026-06-20 已按用户确认退役本地旧链路：旧 `cloud_prod_worker_02/03` control 为 `disabled`，本地主 `cloud-prod-comfy-agent-2/3`、GPU 节点 `comfy0/comfy1`、旧 `/data/comfy` 和旧镜像已删除；gpu-177 不再提供本地旧链路回滚，恢复入口改为 AIO restart/recreate 或外部容量兜底。
+2026-06-18 `gpu-177` 进入整机 LAN AIO 接管：GPU0 最初由 `lan_aio_prod_gpu177_gpu0_image_to_video_01` 提供 `image_to_video`，GPU1 由 `lan_aio_prod_gpu177_gpu1_ltx_video_01` 提供 `ltx_video`。2026-06-20 已按用户确认退役本地旧链路：旧 `cloud_prod_worker_02/03` control 为 `disabled`，本地主 `cloud-prod-comfy-agent-2/3`、GPU 节点 `comfy0/comfy1`、旧 `/data/comfy` 和旧镜像已删除；gpu-177 不再提供本地旧链路回滚，恢复入口改为 AIO restart/recreate 或外部容量兜底。2026-06-23 起，fleet 配置保留 GPU0 的历史 slot/agent/container 名称以避免 8190 端口 orphan，但 `target_profile_id` 改为 `wan22_video_v2`，并用 `target_task_types=[wan22_video_v2]` 避免误接 legacy alias。
 
 2026-06-18 `gpu-252-gpu1-wan22_video_v2` 已替换 `cloud_prod_worker_05`：AIO agent `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` 连接正式 Central，host `8191`，只声明 `SUPPORTED_TASK_TYPES=wan22_video_v2`，不承接普通 `image_to_video` 或 `video_edit`。旧 `comfy1` 与 `cloud-prod-comfy-agent-5` 已停止保留为回滚基线。2026-06-19 重启后该 slot 配置改回 `gpu_index: 1`；实测第二个生产 wan22 任务仍让 GPU1/ComfyUI 进入 unhealthy 且 Docker 无法 stop/kill 的状态，当前 control 必须保持 `disabled`，RunPod `wan22_video_v2` 继续作为正式兜底容量。
 
@@ -263,7 +263,7 @@ LAN AIO compose 固定带 `restart: unless-stopped`。AIO bootstrap/entrypoint �
 
 后续优化方向：
 - 配置阶段应区分 `prod_enabled`、`canary_ready`、`blocked_host_service_runtime`，避免已正式接管的 slot 仍被误读为 canary。
-- `wan22_video_v2` 在 `gpu-252` 已通过 slot-level `target_task_types` 收窄为只接 `wan22_video_v2`；后续新增共享镜像 slot 时也应优先显式声明目标 task type，避免 profile 默认 alias 误接单。
+- `wan22_video_v2` 在 `gpu-177` GPU0 与 `gpu-252` GPU1 slot 都通过 slot-level `target_task_types` 收窄为只接 `wan22_video_v2`；后续新增共享镜像 slot 时也应优先显式声明目标 task type，避免 profile 默认 alias 误接单。
 - `preflight` / `start-disabled` 需要继续强化 workflow 文件、remote_workers 挂载、模型 manifest、对象桶和 image digest 检查，减少“容器健康但工作流资产缺失”的误启用。
 - LAN registry 仍依赖 GPU 节点 Docker insecure registry；配置会重启整机 Docker daemon，后续优先评估 TLS registry 或免 daemon 重启的镜像分发路径。
 - Dashboard 需要把 AIO agent 的 `node_id`、`gpu_index`、`runtime_profile`、image tag/digest、旧 runtime 状态和最近失败原因展示出来，作为正式排障入口。
@@ -487,7 +487,7 @@ direct TCP `root@<public-ip> -p <mapped-port>` 会因容器内无 `sshd` 而拒�
 | 停止接单 | `scripts/runpod_prod_ops.sh disable --profile img2img --slot 01 --execute` | 保留 Pod，设置 Central control 为 disabled |
 | 原地重启 | `scripts/runpod_prod_ops.sh restart --profile img2img --slot 01 --execute` | 调用 RunPod 原生 restart，不使用 stop/start，等待 heartbeat 并恢复 enabled；若等待阶段失败但复查确认 Pod RUNNING、worker idle 且 control 仍是本次 restart disable，会安全补一次 enable |
 | 删除 Pod | `scripts/runpod_prod_ops.sh down --profile img2img --slot 01 --execute` | disable 后等待 `current_task_id` 为空，再删除目标 Pod |
-| 新增容量 | `scripts/runpod_prod_ops.sh add --profile img2img --count 1 --execute` | 只创建空闲 slot，不触碰已有 RunPod |
+| 新增容量 | `scripts/runpod_prod_ops.sh add --profile img2img --count 1 --execute` | 只创建空闲 slot，不触碰已有 RunPod；新 slot ready 后自动 enable |
 | 高级精确目标 | `scripts/runpod_prod_ops.sh scale --profile img2img --desired 1 --execute` | 会删除超出 desired 的 slot，Dashboard 禁止使用 |
 | 业务 canary | `scripts/runpod_prod_ops.sh canary --profile img2img --slot 01 --execute` | 真实 Web canary，结束后保持目标 worker disabled |
 | 回滚 | `scripts/runpod_prod_ops.sh rollback --profile img2img --keep-pod --execute` 或 `--delete-pod` | `--keep-pod` 等价 disable；`--delete-pod` 在指定 slot 时走 down，未指定 slot 时走 `scale --desired 0` |
@@ -504,19 +504,22 @@ scripts/runpod_prod_ops.sh add \
   --execute
 ```
 
+`add --count N --execute` 对 RunPod create 的“半成功”有窄恢复：如果 create 返回失败，但复查目标 slot 的 Pod 已是 `RUNNING`、对应 worker 是 `idle` 且 Central control 仍是本次 create 写入的 `disabled`，控制器会继续等待/确认 disabled heartbeat 并 enable 该新 slot。若目标 Pod 不存在、worker 不健康、control 已被其它操作改动或 task type 不匹配，operation 仍保持失败，等待人工排障。
+
 Dashboard 系统监控页也提供正式手动 RunPod 池的日常 Web 入口：
 
 | Dashboard 动作 | 后端 API | 底层命令语义 |
 | :--- | :--- | :--- |
 | `RunPod 管理` 提交多 profile 新增数量 | `POST /api/runpod/scale` | 拆成 profile 级 `scripts/runpod_prod_ops.sh add --count N --retry-unavailable --execute` operation |
-| Worker 卡片 `暂停` | `POST /api/runpod/workers/{agent_id}/pause` | `disable --slot NN --execute`，只停接新单，保留 Pod |
+| Worker 卡片 `暂停/开启` (RunPod) | `POST /api/runpod/workers/{agent_id}/pause` / `POST /api/runpod/workers/{agent_id}/enable` | `disable|enable --slot NN --execute`，只切换 Central control，不创建/删除 Pod |
+| Worker 卡片 `暂停/开启` (LAN AIO) | `POST /api/runpod/lan-aio/workers/{agent_id}/pause` / `POST /api/runpod/lan-aio/workers/{agent_id}/enable` | `lan_aio_fleet_prod_ops.py disable-aio|enable-aio --slot ... --execute`，只切换目标 AIO agent 是否接新单；enable 仍执行 AIO gate 校验 |
 | Worker 卡片 `重启` (RunPod) | `POST /api/runpod/workers/{agent_id}/restart` | `restart --slot NN --execute`，先 disabled，调用 RunPod 原生 restart，等待 heartbeat 后 enable；若底层等待阶段失败但目标已健康 idle，会安全恢复 enabled；禁止用 stop/start 模拟重启 |
 | Worker 卡片 `重启` (LAN AIO) | `POST /api/runpod/lan-aio/workers/{agent_id}/restart` | `lan_aio_fleet_prod_ops.py restart-aio --slot ... --execute`，只重启目标 AIO 容器，等待健康/heartbeat 后 enable |
 | Worker 卡片 `删除` | `DELETE /api/runpod/workers/{agent_id}` | `down --slot NN --execute`，先停接并等待当前任务结束，再删除 Pod |
 | 最近操作 | `GET /api/runpod/operations` | 只读 Dashboard 后端内存 operation 状态和脱敏日志尾部 |
 | 最近操作 `终止` | `POST /api/runpod/operations/{operation_id}/terminate` | 仅用于运行中的 `add` operation；终止 Dashboard 子进程后，按该次新增日志记录到的 slot 逐个执行 `down --slot NN --execute` 释放 Pod |
 
-Dashboard 入口不重写 RunPod provider 逻辑，只异步调用 `scripts/runpod_prod_ops.sh`。数量字段是新增数量；旧前端若仍发送 `desired_count`，后端也按新增数量解释，不会触发 `scale --desired` 或删除既有 slot。当前 Dashboard profile 列表包含 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、`scail2 / 视频生视频` 与 `ltx_video / 高级图生视频`；`scail2` 对应 `scail2_action_transfer,scail2_video_replacement` 两类正式任务，`ltx_video` 对应 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`。同一请求里同一 profile 只能出现一次；若同 profile 已有未结束的 `add` operation，Dashboard 后端会返回 409，禁止再次提交，避免并发新增抢到同一个 `manual_NN` slot。后台 operation 默认使用 30 秒间隔、100 次无库存重试，真实执行只打开 `RUNPOD_DRY_RUN=false` 与 `RUNPOD_AUTOSCALER_ENABLED=true`，并把 `RUNPOD_PROD_MAX_MANUAL_SLOTS` 设为 `100` 或请求指定值。运行中的新增 operation 可从最近操作点 `终止`，后端会先向该 operation 的进程组发送 SIGTERM；如果该次 operation 已记录 `runpod_create_pod_NN`，会继续提交对应 slot 的 `down` 清理。未记录到创建 slot 的终止只停止等待/重试进程，不推测删除其它 Pod。云正式 Dashboard 后端默认优先把容器内 `/app/.env` 同时作为 `--runpod-env-file` 与 `--prod-env-file`；该文件由云正式 `.env.cloud.prod` 挂载，必须包含完整、shell-compatible 的 `RUNPOD_*` 手动池配置和可用 `RUNPOD_API_KEY`。不要把本机测试专用 `RUNPOD_PUBLIC_KEY_FILE` 路径带入云正式容器；生产路径默认不依赖 RunPod SSH。必要时仍可通过 `DASHBOARD_RUNPOD_ENV_FILE` / `DASHBOARD_RUNPOD_PROD_ENV_FILE` 覆盖 env 路径；不得在 API 响应、operation 日志或文档中输出任何 env 内容或密钥。
+Dashboard 入口不重写 RunPod provider 逻辑，只异步调用 `scripts/runpod_prod_ops.sh` 或 LAN AIO fleet helper。Worker 卡片看到 `control_state=disabled|draining` 时显示 `暂停中`，接单控制按钮显示 `开启`；其它状态显示 `暂停`。数量字段是新增数量；旧前端若仍发送 `desired_count`，后端也按新增数量解释，不会触发 `scale --desired` 或删除既有 slot。当前 Dashboard profile 列表包含 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、`scail2 / 视频生视频` 与 `ltx_video / 高级图生视频`；`scail2` 对应 `scail2_action_transfer,scail2_video_replacement` 两类正式任务，`ltx_video` 对应 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`。同一请求里同一 profile 只能出现一次；若同 profile 已有未结束的 `add` operation，Dashboard 后端会返回 409，禁止再次提交，避免并发新增抢到同一个 `manual_NN` slot。后台 operation 默认使用 30 秒间隔、100 次无库存重试，真实执行只打开 `RUNPOD_DRY_RUN=false` 与 `RUNPOD_AUTOSCALER_ENABLED=true`，并把 `RUNPOD_PROD_MAX_MANUAL_SLOTS` 设为 `100` 或请求指定值。运行中的新增 operation 可从最近操作点 `终止`，后端会先向该 operation 的进程组发送 SIGTERM；如果该次 operation 已记录 `runpod_create_pod_NN`，会继续提交对应 slot 的 `down` 清理。未记录到创建 slot 的终止只停止等待/重试进程，不推测删除其它 Pod。云正式 Dashboard 后端默认优先把容器内 `/app/.env` 同时作为 `--runpod-env-file` 与 `--prod-env-file`；该文件由云正式 `.env.cloud.prod` 挂载，必须包含完整、shell-compatible 的 `RUNPOD_*` 手动池配置和可用 `RUNPOD_API_KEY`。不要把本机测试专用 `RUNPOD_PUBLIC_KEY_FILE` 路径带入云正式容器；生产路径默认不依赖 RunPod SSH。必要时仍可通过 `DASHBOARD_RUNPOD_ENV_FILE` / `DASHBOARD_RUNPOD_PROD_ENV_FILE` 覆盖 env 路径；不得在 API 响应、operation 日志或文档中输出任何 env 内容或密钥。
 
 `down` 删除已有 Pod 的 preflight 只做 RunPod key、Pod 列表、reconcile 与 Central health 检查，不渲染 create pod request，因此不会因缺少 `RUNPOD_IMAGE_NAME_I2I_PRO` / `RUNPOD_IMAGE_NAME_SCAIL2` / `RUNPOD_IMAGE_NAME_LTX_VIDEO` 这类创建镜像配置而阻断删除；`up` / `add` / `render` / `canary` 仍必须具备目标 profile 的正式镜像与模型配置。
 

@@ -106,6 +106,7 @@ describe('WorkerHistoryModal', () => {
           task_type: 'img2img',
           status: 'success',
           start_time: '2026-06-22T02:27:57',
+          end_time: '2026-06-22T02:28:12',
           duration: 15,
           error_message: null,
         },
@@ -125,6 +126,8 @@ describe('WorkerHistoryModal', () => {
     expect(wrapper.text()).toContain('worker-1')
     expect(wrapper.text()).toContain('task-1')
     expect(wrapper.text()).toContain('img2img')
+    expect(wrapper.text()).toContain('完成时间')
+    expect(wrapper.text()).toContain('链路耗时')
   })
 
   it('refetches with the current worker when pagination changes', async () => {

@@ -332,7 +332,7 @@ GPU worker 不在云服务器运行；本地 `workers/docker-compose-cloud-worke
 
 | Worker | Profile | 默认 ComfyUI | 任务类型 | 口径 |
 | :--- | :--- | :--- | :--- | :--- |
-| `cloud_worker_test_02` | `shared-aio-canary` | `192.168.1.177:8190` | `image_to_video,video_insert` | gpu-177 GPU0 AIO |
+| `cloud_worker_test_02` | `shared-aio-canary` | `192.168.1.177:8190` | `wan22_video_v2` | gpu-177 GPU0 AIO |
 | `cloud_worker_test_03` | `shared-aio-canary` | `192.168.1.177:8191` | `ltx_video,*` | gpu-177 GPU1 LTX AIO |
 | `cloud_worker_test_04` | `shared-aio-canary` | `192.168.1.252:8190` | `img2img,img2img_lora` | gpu-252 GPU0 AIO |
 | `cloud_worker_test_05` | `wan22-canary` | 无健康默认入口 | `wan22_video_v2` | 默认指向 `127.0.0.1:9` 占位，必须先换成有效 RunPod/LAN endpoint |

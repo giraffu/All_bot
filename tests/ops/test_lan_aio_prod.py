@@ -23,6 +23,8 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
         "gpu-252-gpu1-wan22_video_v2",
     ]
     assert slots["gpu-177-gpu0-image_to_video"].legacy_worker_id == "cloud_prod_worker_02"
+    assert slots["gpu-177-gpu0-image_to_video"].target_profile_id == "wan22_video_v2"
+    assert slots["gpu-177-gpu0-image_to_video"].target_task_types == ("wan22_video_v2",)
     assert slots["gpu-177-gpu1-ltx_video"].legacy_worker_id == "cloud_prod_worker_03"
     assert slots["gpu-252-gpu0-img2img_lora"].agent_id == (
         "lan_aio_prod_gpu252_gpu0_img2img_lora_01"
@@ -92,7 +94,7 @@ def test_lan_aio_fleet_render_patches_remote_workers_mount_for_gpu_252():
     assert "remote_workers_bundle:" in rendered
 
 
-def test_lan_aio_fleet_render_supports_gpu_177_video_profile():
+def test_lan_aio_fleet_render_supports_gpu_177_wan22_v2_profile():
     ops = LanAioProdOps(
         config_root=None,
         prod_env_file=Path(".env.cloud.prod.missing"),
@@ -103,9 +105,10 @@ def test_lan_aio_fleet_render_supports_gpu_177_video_profile():
     rendered = ops.render_compose(slot)
 
     assert "POOL_NODE_ID: gpu-177" in rendered
-    assert "POOL_RUNTIME_PROFILE: image_to_video" in rendered
-    assert "SUPPORTED_TASK_TYPES: video_insert,video_edit,image_to_video" in rendered
-    assert "RUNPOD_MODEL_MANIFEST_KEY: image_to_video/2026-06-13-test/manifest.json" in rendered
+    assert "POOL_RUNTIME_PROFILE: wan22_video_v2" in rendered
+    assert "SUPPORTED_TASK_TYPES: wan22_video_v2" in rendered
+    assert "SUPPORTED_TASK_TYPES: wan22_video_v2,video_edit,image_to_video" not in rendered
+    assert "RUNPOD_MODEL_MANIFEST_KEY: wan22_video_v2/2026-06-13-test/manifest.json" in rendered
     assert "--disable-dynamic-vram" in rendered
     assert "host_port: 8190" in rendered
 

@@ -161,6 +161,11 @@ def _lan_aio_restart_command(slot_id: str) -> list[str]:
     return _command_builder.lan_aio_restart_command(slot_id)
 
 
+def _lan_aio_control_command(action: str, slot_id: str) -> list[str]:
+    _sync_runtime_paths()
+    return _command_builder.lan_aio_control_command(action, slot_id)
+
+
 def _default_prod_max_manual_slots() -> int:
     return _command_builder.default_prod_max_manual_slots()
 
@@ -289,6 +294,32 @@ async def pause_runpod_worker_payload(
     return {"status": "accepted", "operation": _operation_payload(operation)}
 
 
+async def enable_runpod_worker_payload(
+    agent_id: str,
+    request: RunPodWorkerActionRequest,
+    *,
+    spawn_task_func=None,
+) -> dict[str, Any]:
+    _sync_runtime_paths()
+    max_manual_slots = request.prod_max_manual_slots or _default_prod_max_manual_slots()
+    profile, slot = _agent_selection_or_422(
+        agent_id,
+        max_manual_slots=max_manual_slots,
+    )
+    command = _base_command("enable", profile=profile, slot=slot)
+    command.append("--execute")
+    operation = await _register_operation(
+        action="enable",
+        profile=profile,
+        command=command,
+        env=_operation_env(prod_max_manual_slots=max_manual_slots),
+        agent_id=agent_id,
+        slot=slot,
+        spawn_task_func=spawn_task_func,
+    )
+    return {"status": "accepted", "operation": _operation_payload(operation)}
+
+
 async def restart_runpod_worker_payload(
     agent_id: str,
     request: RunPodWorkerActionRequest,
@@ -354,6 +385,48 @@ async def restart_lan_aio_worker_payload(
         action="restart",
         profile=slot.target_profile_id,
         command=_lan_aio_restart_command(slot.id),
+        env=dict(os.environ),
+        agent_id=agent_id,
+        slot=slot.id,
+        spawn_task_func=spawn_task_func,
+    )
+    return {"status": "accepted", "operation": _operation_payload(operation)}
+
+
+async def pause_lan_aio_worker_payload(
+    agent_id: str,
+    request: RunPodWorkerActionRequest,
+    *,
+    spawn_task_func=None,
+) -> dict[str, Any]:
+    _sync_runtime_paths()
+    del request
+    slot = _lan_aio_slot_selection_or_422(agent_id)
+    operation = await _register_operation(
+        action="pause",
+        profile=slot.target_profile_id,
+        command=_lan_aio_control_command("disable-aio", slot.id),
+        env=dict(os.environ),
+        agent_id=agent_id,
+        slot=slot.id,
+        spawn_task_func=spawn_task_func,
+    )
+    return {"status": "accepted", "operation": _operation_payload(operation)}
+
+
+async def enable_lan_aio_worker_payload(
+    agent_id: str,
+    request: RunPodWorkerActionRequest,
+    *,
+    spawn_task_func=None,
+) -> dict[str, Any]:
+    _sync_runtime_paths()
+    del request
+    slot = _lan_aio_slot_selection_or_422(agent_id)
+    operation = await _register_operation(
+        action="enable",
+        profile=slot.target_profile_id,
+        command=_lan_aio_control_command("enable-aio", slot.id),
         env=dict(os.environ),
         agent_id=agent_id,
         slot=slot.id,

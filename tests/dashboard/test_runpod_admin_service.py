@@ -308,6 +308,26 @@ async def test_pause_restart_and_delete_runpod_worker_build_slot_scoped_operatio
 
 
 @pytest.mark.asyncio
+async def test_enable_runpod_worker_builds_slot_scoped_operation():
+    payload = await runpod_admin_service.enable_runpod_worker_payload(
+        agent_id="runpod_prod_wan22_video_v2_manual_03",
+        request=RunPodWorkerActionRequest(),
+        spawn_task_func=_discard_operation_coroutine,
+    )
+
+    operation = payload["operation"]
+    command = operation["command"]
+    assert operation["status"] == "pending"
+    assert operation["action"] == "enable"
+    assert operation["profile"] == "wan22_video_v2"
+    assert operation["slot"] == "03"
+    assert "enable" in command
+    assert command[command.index("--profile") + 1] == "wan22_video_v2"
+    assert command[command.index("--slot") + 1] == "03"
+    assert "--execute" in command
+
+
+@pytest.mark.asyncio
 async def test_restart_lan_aio_worker_builds_slot_scoped_operation():
     payload = await runpod_admin_service.restart_lan_aio_worker_payload(
         agent_id="lan_aio_prod_gpu177_gpu0_image_to_video_01",
@@ -319,7 +339,7 @@ async def test_restart_lan_aio_worker_builds_slot_scoped_operation():
     command = operation["command"]
     assert operation["status"] == "pending"
     assert operation["action"] == "restart"
-    assert operation["profile"] == "image_to_video"
+    assert operation["profile"] == "wan22_video_v2"
     assert operation["slot"] == "gpu-177-gpu0-image_to_video"
     assert command[:3] == [
         "python3",
@@ -328,6 +348,46 @@ async def test_restart_lan_aio_worker_builds_slot_scoped_operation():
     ]
     assert command[command.index("--slot") + 1] == "gpu-177-gpu0-image_to_video"
     assert "--execute" in command
+
+
+@pytest.mark.asyncio
+async def test_pause_and_enable_lan_aio_worker_build_slot_scoped_operations():
+    pause_payload = await runpod_admin_service.pause_lan_aio_worker_payload(
+        agent_id="lan_aio_prod_gpu177_gpu0_image_to_video_01",
+        request=RunPodWorkerActionRequest(),
+        spawn_task_func=_discard_operation_coroutine,
+    )
+    enable_payload = await runpod_admin_service.enable_lan_aio_worker_payload(
+        agent_id="lan_aio_prod_gpu177_gpu0_image_to_video_01",
+        request=RunPodWorkerActionRequest(),
+        spawn_task_func=_discard_operation_coroutine,
+    )
+
+    pause_operation = pause_payload["operation"]
+    enable_operation = enable_payload["operation"]
+    pause_command = pause_operation["command"]
+    enable_command = enable_operation["command"]
+    assert pause_operation["status"] == "pending"
+    assert pause_operation["action"] == "pause"
+    assert pause_operation["profile"] == "wan22_video_v2"
+    assert pause_operation["slot"] == "gpu-177-gpu0-image_to_video"
+    assert pause_command[:3] == [
+        "python3",
+        str(runpod_admin_service.PROJECT_ROOT / "scripts" / "lan_aio_fleet_prod_ops.py"),
+        "disable-aio",
+    ]
+    assert pause_command[pause_command.index("--slot") + 1] == "gpu-177-gpu0-image_to_video"
+    assert "--execute" in pause_command
+    assert enable_operation["action"] == "enable"
+    assert enable_operation["profile"] == "wan22_video_v2"
+    assert enable_operation["slot"] == "gpu-177-gpu0-image_to_video"
+    assert enable_command[:3] == [
+        "python3",
+        str(runpod_admin_service.PROJECT_ROOT / "scripts" / "lan_aio_fleet_prod_ops.py"),
+        "enable-aio",
+    ]
+    assert enable_command[enable_command.index("--slot") + 1] == "gpu-177-gpu0-image_to_video"
+    assert "--execute" in enable_command
 
 
 @pytest.mark.asyncio

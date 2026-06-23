@@ -28,7 +28,7 @@
       :data-source="historyData"
       :loading="loading"
       :pagination="paginationConfig"
-      :scroll="{ x: 980, y: 520 }"
+      :scroll="{ x: 1150, y: 520 }"
       row-key="id"
       size="small"
       @change="handleTableChange"
@@ -47,6 +47,9 @@
         </template>
         <template v-else-if="column.key === 'start_time'">
           {{ formatDate(record.start_time) }}
+        </template>
+        <template v-else-if="column.key === 'end_time'">
+          {{ formatDate(record.end_time) }}
         </template>
         <template v-else-if="column.key === 'error_message'">
           <div class="worker-history-error" :title="record.error_message || '-'">
@@ -106,8 +109,9 @@ const columns = [
   { title: '任务ID', dataIndex: 'task_id', key: 'task_id', width: 250, ellipsis: true },
   { title: '任务类型', dataIndex: 'task_type', key: 'task_type', width: 130 },
   { title: '状态', dataIndex: 'status', key: 'status', width: 90 },
-  { title: '开始时间', dataIndex: 'start_time', key: 'start_time', width: 170 },
-  { title: '耗时', dataIndex: 'duration', key: 'duration', width: 90 },
+  { title: '提交时间', dataIndex: 'start_time', key: 'start_time', width: 170 },
+  { title: '完成时间', dataIndex: 'end_time', key: 'end_time', width: 170 },
+  { title: '链路耗时', dataIndex: 'duration', key: 'duration', width: 100 },
   { title: '错误信息', dataIndex: 'error_message', key: 'error_message', ellipsis: true },
 ]
 

@@ -213,6 +213,30 @@ class FailingRestartRunPodProvider(FakeRunPodProvider):
         return {"ok": False, "error": "native restart failed after disable"}
 
 
+class FailingCreateAfterPodRunPodProvider(FakeRunPodProvider):
+    def create_pod(self, *, task_type, environment, execute):
+        super().create_pod(
+            task_type=task_type,
+            environment=environment,
+            execute=execute,
+        )
+        return {
+            "ok": False,
+            "error": "runpod_http_500: Unknown column 'NetworkVolume.userId'",
+        }
+
+    def for_prod_agent_id(self, agent_id: str):
+        return FailingCreateAfterPodRunPodProvider(
+            replace(self.settings, prod_agent_id=agent_id),
+            pods=self.pods,
+            create_log=self.create_log,
+            delete_log=self.delete_log,
+            start_log=self.start_log,
+            stop_log=self.stop_log,
+            restart_log=self.restart_log,
+        )
+
+
 class FailingRenderRunPodProvider(FakeRunPodProvider):
     def render_create_pod_request(self, *, task_type, environment, redact=True):
         raise AssertionError("down should not render a create pod request")
@@ -881,6 +905,41 @@ def test_prod_worker_add_execute_rechecks_slot_before_create(monkeypatch, tmp_pa
     assert "slot 02 is no longer free" in payload["error"]
     assert provider.create_calls == 0
     assert _control_posts(runner) == []
+
+
+def test_prod_worker_add_recovers_when_create_error_left_healthy_disabled_pod():
+    provider = FailingCreateAfterPodRunPodProvider(
+        _settings(
+            dry_run=False,
+            autoscaler_enabled=True,
+            prod_max_manual_slots=8,
+        ),
+        pods=[_prod_pod("01")],
+    )
+    options = RunPodProdWorkerOptions(
+        action="add",
+        execute=True,
+        add_count=1,
+        agent_token="agent_token",
+        quiet=True,
+    )
+    runner = FakeHttpProdWorkerRunner(
+        provider,
+        options,
+        workers=[_worker("01"), _worker("02")],
+        sleep_func=lambda _seconds: None,
+    )
+
+    payload = runner.run()
+
+    assert payload["ok"] is True
+    assert provider.create_calls == 1
+    assert payload["operations"][0]["create_recovery"]["recovered"] is True
+    assert payload["operations"][0]["slot"] == "02"
+    assert _control_posts(runner) == [
+        ("runpod_prod_img2img_manual_02", "disabled"),
+        ("runpod_prod_img2img_manual_02", "enabled"),
+    ]
 
 
 def test_prod_worker_add_fails_before_mutation_when_free_slots_insufficient():

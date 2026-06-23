@@ -89,6 +89,11 @@ const formatTimeUntil = (timestamp) => {
   return `${m}m ${s}s 后`
 }
 
+const isPausedControlWorker = (worker) => {
+  const controlState = String(worker.control_state || '').toLowerCase()
+  return controlState === 'disabled' || controlState === 'draining'
+}
+
 const healthSummary = computed(() => {
   const activeWorkers = Number(status.value.active_workers || 0)
   const healthyWorkers = Number(status.value.healthy_workers || 0)
@@ -109,6 +114,15 @@ const healthSummary = computed(() => {
 })
 
 const getWorkerStatusMeta = (worker) => {
+  if (isPausedControlWorker(worker)) {
+    return {
+      cardClass: 'border-t-2 border-t-orange-500',
+      badgeStatus: 'warning',
+      text: '暂停中',
+      iconClass: 'text-orange-500',
+      emptyText: '暂停接单中',
+    }
+  }
   if (worker.status === 'running') {
     return {
       cardClass: 'border-t-2 border-t-green-500',
@@ -154,7 +168,8 @@ const getWorkerStatusMeta = (worker) => {
   }
 }
 
-const isFaultWorker = (worker) => ['error', 'quarantined'].includes(worker.status)
+const isFaultWorker = (worker) =>
+  !isPausedControlWorker(worker) && ['error', 'quarantined'].includes(worker.status)
 
 const openWorkerHistory = (agentId) => {
   if (!agentId) return

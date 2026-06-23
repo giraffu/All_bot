@@ -266,6 +266,23 @@ describe('QueueStats worker health display', () => {
     expect(agentName.classes()).not.toContain('truncate')
   })
 
+  it('shows paused status from worker control state', async () => {
+    queueStatsMocks.workersRef.value = [
+      {
+        agent_id: 'lan_aio_prod_gpu177_gpu0_image_to_video_01',
+        types: 'wan22_video_v2',
+        status: 'idle',
+        control_state: 'disabled',
+        last_seen: Date.now() / 1000,
+      },
+    ]
+
+    const wrapper = await mountQueueStats()
+
+    expect(wrapper.text()).toContain('暂停中')
+    expect(wrapper.text()).toContain('暂停接单中')
+  })
+
   it('opens worker history modal when a worker card is clicked', async () => {
     const agentId = 'worker_remote_01'
     queueStatsMocks.workersRef.value = [

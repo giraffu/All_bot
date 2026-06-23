@@ -1191,14 +1191,40 @@ class RunPodProdWorkerRunner:
             environment=self.options.environment,
             execute=True,
         )
-        self._require_ok(create_payload, f"runpod create-pod failed for slot {slot}")
-        pod_id = _extract_pod_id(create_payload)
-        operation["pod"] = _pod_summary(
-            create_payload, operation["render"].get("imageName", "")
-        )
-        self._phase(summary, f"runpod_create_pod_{slot}", "ok", {"pod_id": pod_id})
-        self._wait_pod_readiness(pod_id, summary, provider=provider)
-        worker = self._wait_prod_worker_for_agent(
+        recovered_worker: dict[str, Any] | None = None
+        if create_payload.get("ok"):
+            pod_id = _extract_pod_id(create_payload)
+            operation["pod"] = _pod_summary(
+                create_payload, operation["render"].get("imageName", "")
+            )
+            self._phase(summary, f"runpod_create_pod_{slot}", "ok", {"pod_id": pod_id})
+            self._wait_pod_readiness(pod_id, summary, provider=provider)
+        else:
+            recovery = self._recover_created_slot_after_create_error(
+                slot,
+                agent_id,
+                provider,
+                summary,
+                create_reason=create_reason,
+            )
+            operation["create_recovery"] = recovery
+            if not recovery.get("recovered"):
+                self._require_ok(
+                    create_payload,
+                    f"runpod create-pod failed for slot {slot}",
+                )
+            pod = recovery.get("pod") if isinstance(recovery.get("pod"), dict) else {}
+            pod_id = str(recovery.get("pod_id") or "")
+            operation["pod"] = _pod_summary(
+                {"pod": pod},
+                operation["render"].get("imageName", ""),
+            )
+            recovered_worker = (
+                recovery.get("worker")
+                if isinstance(recovery.get("worker"), dict)
+                else None
+            )
+        worker = recovered_worker or self._wait_prod_worker_for_agent(
             agent_id,
             summary,
             require_disabled=True,
@@ -1210,6 +1236,158 @@ class RunPodProdWorkerRunner:
             reason=enable_reason,
         )
         return operation
+
+    def _recover_created_slot_after_create_error(
+        self,
+        slot: str,
+        agent_id: str,
+        provider: Any,
+        summary: dict[str, Any],
+        *,
+        create_reason: str,
+    ) -> dict[str, Any]:
+        phase_name = f"runpod_create_pod_{slot}_recovery"
+        recovery: dict[str, Any] = {
+            "recovered": False,
+            "slot": slot,
+            "agent_id": agent_id,
+        }
+        self._phase(summary, phase_name, "running", {"agent_id": agent_id})
+        first = self._created_slot_recovery_observation(slot, agent_id, provider)
+        if first.get("pod") is None:
+            recovery["blockers"] = ["target_pod_missing_after_create_error"]
+            recovery["last_observed"] = self._create_recovery_observation_payload(first)
+            self._phase(summary, phase_name, "skipped", recovery)
+            return recovery
+
+        deadline = time.monotonic() + self.options.worker_timeout_seconds
+        last = first
+        while time.monotonic() <= deadline:
+            blockers = self._created_slot_recovery_blockers(
+                last,
+                create_reason=create_reason,
+            )
+            if not blockers:
+                pod = last["pod"]
+                pod_id = str(pod.get("id") or pod.get("podId") or "")
+                recovery.update(
+                    {
+                        "recovered": True,
+                        "pod_id": pod_id,
+                        "pod": _pod_minimal(pod),
+                        "worker": last.get("worker"),
+                        "control": last.get("control"),
+                    }
+                )
+                self._phase(
+                    summary,
+                    phase_name,
+                    "ok",
+                    {
+                        "pod_id": pod_id,
+                        "control_state": recovery["control"].get("state"),
+                    },
+                )
+                return recovery
+            last["blockers"] = blockers
+            self._sleep(self.options.poll_interval_seconds)
+            last = self._created_slot_recovery_observation(slot, agent_id, provider)
+
+        recovery["blockers"] = last.get("blockers") or ["recovery_timeout"]
+        recovery["last_observed"] = self._create_recovery_observation_payload(last)
+        self._phase(summary, phase_name, "skipped", recovery)
+        return recovery
+
+    def _created_slot_recovery_observation(
+        self,
+        slot: str,
+        agent_id: str,
+        provider: Any,
+    ) -> dict[str, Any]:
+        observation: dict[str, Any] = {"slot": slot, "agent_id": agent_id}
+        listed = provider.list_pods(managed_only=True)
+        observation["list_pods"] = {
+            "ok": listed.get("ok"),
+            "count": listed.get("count"),
+        }
+        if not listed.get("ok"):
+            observation["list_pods"]["error"] = listed.get("error")
+            return observation
+        slot_pods = _prod_manual_slot_pods(
+            list(listed.get("pods") or []),
+            max_manual_slots=self.provider.settings.prod_max_manual_slots,
+            profile=self.options.profile,
+        )
+        pod = slot_pods.get(slot)
+        observation["pod"] = pod
+        observation["pod_summary"] = _pod_minimal(pod) if pod else None
+        worker = _find_worker(self._fetch_workers(), agent_id)
+        observation["worker"] = _worker_summary(worker)
+        observation["control"] = redact_payload(
+            self._get_agent_control_for_agent(agent_id)
+        )
+        return observation
+
+    def _create_recovery_observation_payload(
+        self,
+        observation: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "slot": observation.get("slot"),
+            "agent_id": observation.get("agent_id"),
+            "list_pods": observation.get("list_pods"),
+            "pod": observation.get("pod_summary"),
+            "worker": observation.get("worker"),
+            "control": observation.get("control"),
+            "blockers": observation.get("blockers"),
+        }
+
+    def _created_slot_recovery_blockers(
+        self,
+        observation: dict[str, Any],
+        *,
+        create_reason: str,
+    ) -> list[str]:
+        blockers: list[str] = []
+        pod = observation.get("pod")
+        if not isinstance(pod, dict) or not pod:
+            blockers.append("target_pod_missing")
+        else:
+            pod_id = str(pod.get("id") or pod.get("podId") or "")
+            desired_status = str(
+                pod.get("desiredStatus") or pod.get("status") or ""
+            ).upper()
+            if not pod_id:
+                blockers.append("pod_missing_id")
+            if desired_status != "RUNNING":
+                blockers.append(f"pod_not_running:{desired_status or 'unknown'}")
+
+        worker = observation.get("worker")
+        if not isinstance(worker, dict) or not worker:
+            blockers.append("worker_missing")
+        else:
+            worker_status = str(worker.get("status") or "")
+            if worker_status != "idle":
+                blockers.append(f"worker_not_idle:{worker_status or 'unknown'}")
+            if worker.get("current_task_type"):
+                blockers.append("worker_has_current_task_type")
+            if not _worker_supports_types(
+                worker,
+                self._expected_supported_task_types(),
+            ):
+                blockers.append("worker_supported_types_mismatch")
+
+        control = observation.get("control")
+        if not isinstance(control, dict) or not control:
+            blockers.append("control_missing")
+        else:
+            control_state = str(control.get("state") or "")
+            control_reason = str(control.get("reason") or "")
+            if control_state != "disabled":
+                blockers.append(f"control_not_disabled:{control_state or 'unknown'}")
+            if control_reason and control_reason != create_reason:
+                blockers.append("control_reason_not_create_disable")
+        return blockers
 
     def _assert_slot_still_free(
         self,

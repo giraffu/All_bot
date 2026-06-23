@@ -3,7 +3,9 @@ slots:
     enabled: true
     phase: prod_enabled
     assignment_id: lan-177-8188-worker-02
-    target_profile_id: image_to_video
+    target_profile_id: wan22_video_v2
+    target_task_types:
+      - wan22_video_v2
     host_port: 8190
     agent_id: lan_aio_prod_gpu177_gpu0_image_to_video_01
     container_name: allbot-lan-aio-gpu-177-gpu0-image_to_video-prod
@@ -11,7 +13,7 @@ slots:
     old_local_agent_container: cloud-prod-comfy-agent-2
     remote_dir: /home/ubantui/allbot-runpod-aio-prod/gpu177-gpu0-image-to-video
     rollout_order: 10
-    notes: gpu-177 GPU0 production AIO takeover for image_to_video; legacy worker 02/comfy0 were retired and removed on 2026-06-20, so local rollback is no longer available.
+    notes: gpu-177 GPU0 production AIO slot now renders the wan22_video_v2 split profile on the existing 8190 container/agent identity; legacy worker 02/comfy0 were retired and removed on 2026-06-20, so local rollback is no longer available. The image_to_video names are retained to recreate the existing container without leaving an orphan on the same port.
 
   - id: gpu-252-gpu0-img2img_lora
     enabled: true
