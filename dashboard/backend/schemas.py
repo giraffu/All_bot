@@ -216,6 +216,11 @@ class RunPodWorkerActionRequest(BaseModel):
     prod_max_manual_slots: Optional[int] = Field(default=None, ge=1, le=1000)
 
 
+class RunPodAutoscalerControlRequest(BaseModel):
+    enabled: bool
+    reason: Optional[str] = None
+
+
 class GalleryPostUpdate(BaseModel):
     is_active: Optional[bool] = None
     likes_count: Optional[int] = Field(default=None, ge=0)

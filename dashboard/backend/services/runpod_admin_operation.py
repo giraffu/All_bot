@@ -51,6 +51,8 @@ class RunPodAdminOperation:
     cleanup_exit_codes: list[int] = field(default_factory=list)
     log_lines: list[str] = field(default_factory=list)
     active_add_profile: str | None = None
+    source: str = "manual"
+    trigger_reason: str | None = None
     process: Any | None = field(default=None, repr=False)
 
 
@@ -157,12 +159,16 @@ def operation_payload(
         "cleanup_exit_codes": list(operation.cleanup_exit_codes),
         "log_tail": list(operation.log_lines[-log_lines:]),
         "command": redacted_command(operation.command),
+        "source": operation.source,
+        "trigger_reason": operation.trigger_reason,
     }
 
 
 def normalized_stored_operation_payload(payload: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(payload)
     normalized.setdefault("owner_id", "")
+    normalized.setdefault("source", "manual")
+    normalized.setdefault("trigger_reason", None)
     normalized["attached"] = False
     action = normalized.get("action")
     status = normalized.get("status")

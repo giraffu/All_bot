@@ -29,6 +29,7 @@ from dashboard.backend.services.runpod_operation_store import (
     RunPodOperationStore,
     build_default_runpod_operation_store,
 )
+from ops.gpu_pool_controller.runpod_profile_catalog import prod_agent_id_from_slot
 
 logger = logging.getLogger("dashboard.runpod")
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -258,6 +259,7 @@ async def start_runpod_scale_payload(
                 env=env,
                 requested_count=requested_count,
                 active_add_profile=profile,
+                source="manual",
                 spawn_task_func=spawn_task_func,
             )
         )
@@ -372,6 +374,79 @@ async def delete_runpod_worker_payload(
     return {"status": "accepted", "operation": _operation_payload(operation)}
 
 
+async def start_runpod_autoscaler_add_operation(
+    *,
+    profile: str,
+    trigger_reason: str,
+    spawn_task_func=None,
+) -> RunPodAdminOperation:
+    _sync_runtime_paths()
+    normalized_profile = _normalize_profile_or_422(profile)
+    active_operation = await _active_add_operation_for_profile(normalized_profile)
+    if active_operation is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "RunPod add operation is already active for profile "
+                f"{normalized_profile}: {active_operation['id']}"
+            ),
+        )
+    command = _base_command("add", profile=normalized_profile)
+    command.extend(
+        [
+            "--count",
+            "1",
+            "--retry-unavailable",
+            "--max-attempts",
+            "100",
+            "--retry-interval",
+            "30",
+            "--execute",
+        ]
+    )
+    return await _register_operation(
+        action="add",
+        profile=normalized_profile,
+        command=command,
+        env=_operation_env(),
+        requested_count=1,
+        active_add_profile=normalized_profile,
+        source="autoscaler",
+        trigger_reason=trigger_reason,
+        spawn_task_func=spawn_task_func,
+    )
+
+
+async def start_runpod_autoscaler_delete_operation(
+    *,
+    profile: str,
+    slot: str,
+    trigger_reason: str,
+    spawn_task_func=None,
+) -> RunPodAdminOperation:
+    _sync_runtime_paths()
+    normalized_profile = _normalize_profile_or_422(profile)
+    max_manual_slots = _default_prod_max_manual_slots()
+    agent_id = prod_agent_id_from_slot(
+        slot,
+        profile=normalized_profile,
+        max_manual_slots=max_manual_slots,
+    )
+    command = _base_command("down", profile=normalized_profile, slot=slot)
+    command.append("--execute")
+    return await _register_operation(
+        action="delete",
+        profile=normalized_profile,
+        command=command,
+        env=_operation_env(prod_max_manual_slots=max_manual_slots),
+        agent_id=agent_id,
+        slot=slot,
+        source="autoscaler",
+        trigger_reason=trigger_reason,
+        spawn_task_func=spawn_task_func,
+    )
+
+
 async def restart_lan_aio_worker_payload(
     agent_id: str,
     request: RunPodWorkerActionRequest,
@@ -445,6 +520,8 @@ async def _register_operation(
     agent_id: str | None = None,
     slot: str | None = None,
     active_add_profile: str | None = None,
+    source: str = "manual",
+    trigger_reason: str | None = None,
     spawn_task_func=None,
 ) -> RunPodAdminOperation:
     return await _operation_runner.register_operation(
@@ -456,6 +533,8 @@ async def _register_operation(
         agent_id=agent_id,
         slot=slot,
         active_add_profile=active_add_profile,
+        source=source,
+        trigger_reason=trigger_reason,
         spawn_task_func=spawn_task_func,
     )
 

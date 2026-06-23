@@ -196,6 +196,8 @@ class RunPodAdminOperationRunner:
         agent_id: str | None = None,
         slot: str | None = None,
         active_add_profile: str | None = None,
+        source: str = "manual",
+        trigger_reason: str | None = None,
         spawn_task_func=None,
     ) -> RunPodAdminOperation:
         operation = RunPodAdminOperation(
@@ -207,6 +209,8 @@ class RunPodAdminOperationRunner:
             agent_id=agent_id,
             slot=slot,
             active_add_profile=active_add_profile,
+            source=source,
+            trigger_reason=trigger_reason,
         )
         if active_add_profile is not None:
             acquired = await self.store.acquire_active_add(

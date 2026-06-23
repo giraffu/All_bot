@@ -319,7 +319,7 @@ RunPod provider 当前覆盖五类路径：
 | 云测试 split video canary | `image_to_video` 与 `wan22_video_v2` 分 profile 验证 | `wan22_video_v2` 已完成 Web 端真实闭环；后续以 `split-video-canary` 复验 |
 | 云测试图生图 Pro canary | `i2i_pro` RunPod runtime profile，串行验证 `i2i_pro`、Web `txt2img`、`face_swap` | 已通过单任务 cloud-test Web canary；三任务 canary 由 `runpod canary --task-type i2i_pro` 承担 |
 | 云测试 SCAIL-2 canary | `scail2` RunPod runtime profile，串行验证动作迁移和视频换人 | 用于 cloud-test；会临时 disable 同环境非 RunPod SCAIL-2 worker |
-| 手动云正式备用 worker | `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、`scail2` | 代码已支持；默认创建后先 `disabled`，不开启生产自动扩容 |
+| 手动云正式备用 worker / Dashboard 自动管理 | `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、`scail2`、`ltx_video` | 底层 `prod-worker` 仍是手动安全入口；Dashboard 后端可按队列等待阈值自动调用 `add` / `down` |
 
 RunPod 只读 / dry-run 命令：
 
@@ -521,6 +521,18 @@ Dashboard 系统监控页也提供正式手动 RunPod 池的日常 Web 入口：
 | 最近操作 `终止` | `POST /api/runpod/operations/{operation_id}/terminate` | 仅用于运行中的 `add` operation；终止 Dashboard 子进程后，按该次新增日志记录到的 slot 逐个执行 `down --slot NN --execute` 释放 Pod |
 
 Dashboard 入口不重写 RunPod provider 逻辑，只异步调用 `scripts/runpod_prod_ops.sh` 或 LAN AIO fleet helper。Worker 卡片看到 `control_state=disabled|draining` 时显示 `暂停中`，接单控制按钮显示 `开启`；其它状态显示 `暂停`。数量字段是新增数量；旧前端若仍发送 `desired_count`，后端也按新增数量解释，不会触发 `scale --desired` 或删除既有 slot。当前 Dashboard profile 列表包含 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、`scail2 / 视频生视频` 与 `ltx_video / 高级图生视频`；`scail2` 对应 `scail2_action_transfer,scail2_video_replacement` 两类正式任务，`ltx_video` 对应 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`。系统监控页的活跃 RunPod 详情来自 Dashboard `/api/system/status.runpod_profile_queue_details`，按这 6 个 profile 固定聚合 active/pending 和最长 pending 等待；`i2i_pro` 汇总 `i2i_pro,t2i-pornmaster-turbo,face_swap`，正式 RunPod `scail2` 不统计 `scail2_face_swap_v2`。同一请求里同一 profile 只能出现一次；若同 profile 已有未结束的 `add` operation，Dashboard 后端会返回 409，禁止再次提交，避免并发新增抢到同一个 `manual_NN` slot。后台 operation 默认使用 30 秒间隔、100 次无库存重试，真实执行只打开 `RUNPOD_DRY_RUN=false` 与 `RUNPOD_AUTOSCALER_ENABLED=true`，并把 `RUNPOD_PROD_MAX_MANUAL_SLOTS` 设为 `100` 或请求指定值。运行中的新增 operation 可从最近操作点 `终止`，后端会先向该 operation 的进程组发送 SIGTERM；如果该次 operation 已记录 `runpod_create_pod_NN`，会继续提交对应 slot 的 `down` 清理。未记录到创建 slot 的终止只停止等待/重试进程，不推测删除其它 Pod。云正式 Dashboard 后端默认优先把容器内 `/app/.env` 同时作为 `--runpod-env-file` 与 `--prod-env-file`；该文件由云正式 `.env.cloud.prod` 挂载，必须包含完整、shell-compatible 的 `RUNPOD_*` 手动池配置和可用 `RUNPOD_API_KEY`。不要把本机测试专用 `RUNPOD_PUBLIC_KEY_FILE` 路径带入云正式容器；生产路径默认不依赖 RunPod SSH。必要时仍可通过 `DASHBOARD_RUNPOD_ENV_FILE` / `DASHBOARD_RUNPOD_PROD_ENV_FILE` 覆盖 env 路径；不得在 API 响应、operation 日志或文档中输出任何 env 内容或密钥。
+
+Dashboard 后端的 RunPod autoscaler 只复用上述安全入口，不直接调用 RunPod API。正式启用时
+`DASHBOARD_RUNPOD_AUTOSCALER_ENABLED=true`，后台循环默认每 60 秒读取
+`/api/system/status.runpod_profile_queue_details` 与 `/api/system/workers`：某 profile
+排队数大于 0 且最长等待超过 1800 秒时，若该 profile 当前 RunPod 数小于
+`DASHBOARD_RUNPOD_AUTOSCALER_MAX_RUNPODS_PER_PROFILE`（默认 5）且没有同 profile
+未完成 operation，则提交一次 `add --count 1 --retry-unavailable --max-attempts 100 --retry-interval 30 --execute`。
+新增 operation 完成或失败后，同 profile 默认冷却 600 秒。某 profile 无排队或最长等待低于 60 秒时，
+若 RunPod + 本地健康 enabled 可接单 worker 总数大于 1，则选择该 profile 最高 slot 的 idle RunPod
+执行 `down --slot NN --execute`；本地 worker 只参与容量保底，不会被 autoscaler 启停。autoscaler
+必须拿到 Redis leader lease 才执行 mutation；拿不到 Redis/leader 或系统快照失败时只记录 hold/error。
+管理弹窗的 `/api/runpod/autoscaler` 与 `/api/runpod/autoscaler/control` 可查看决策并紧急暂停/恢复。
 
 `down` 删除已有 Pod 的 preflight 只做 RunPod key、Pod 列表、reconcile 与 Central health 检查，不渲染 create pod request，因此不会因缺少 `RUNPOD_IMAGE_NAME_I2I_PRO` / `RUNPOD_IMAGE_NAME_SCAIL2` / `RUNPOD_IMAGE_NAME_LTX_VIDEO` 这类创建镜像配置而阻断删除；`up` / `add` / `render` / `canary` 仍必须具备目标 profile 的正式镜像与模型配置。
 

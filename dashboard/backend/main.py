@@ -35,6 +35,10 @@ from fastapi_cache import FastAPICache
 from fastapi_cache.backends.inmemory import InMemoryBackend
 from dashboard.backend.services.worker_listener import start_worker_listener
 from dashboard.backend.services.balance_monitor import update_external_balances
+from dashboard.backend.services.runpod_autoscaler_service import (
+    run_runpod_autoscaler_loop,
+    should_start_runpod_autoscaler_loop,
+)
 from src.billing_core_provider_setup import ensure_billing_core_providers_registered
 from src.database.core import init_db
 from src.task_core_provider_setup import ensure_task_core_service_providers_registered
@@ -85,6 +89,12 @@ async def startup_event():
     balance_task = asyncio.create_task(update_external_balances())
     background_tasks.add(balance_task)
     balance_task.add_done_callback(background_tasks.discard)
+
+    if should_start_runpod_autoscaler_loop():
+        runpod_autoscaler_task = asyncio.create_task(run_runpod_autoscaler_loop())
+        background_tasks.add(runpod_autoscaler_task)
+        runpod_autoscaler_task.add_done_callback(background_tasks.discard)
+
     app.state.dashboard_health["startup_complete"] = True
 
 

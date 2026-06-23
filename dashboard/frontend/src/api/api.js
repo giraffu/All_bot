@@ -161,6 +161,11 @@ export const fetchRunPodProfiles = async () => get('/api/runpod/profiles')
 
 export const fetchRunPodOperations = async () => get('/api/runpod/operations')
 
+export const fetchRunPodAutoscaler = async () => get('/api/runpod/autoscaler')
+
+export const controlRunPodAutoscaler = async (payload) =>
+  post('/api/runpod/autoscaler/control', payload)
+
 export const scaleRunPodCapacity = async (payload) => post('/api/runpod/scale', payload)
 
 export const terminateRunPodOperation = async (operationId) =>

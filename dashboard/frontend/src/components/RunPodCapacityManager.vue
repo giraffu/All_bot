@@ -3,11 +3,16 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import {
   CloudServerOutlined,
   DeleteOutlined,
+  PauseCircleOutlined,
+  PlayCircleOutlined,
   PlusOutlined,
+  RobotOutlined,
   StopOutlined,
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import {
+  controlRunPodAutoscaler,
+  fetchRunPodAutoscaler,
   fetchRunPodOperations,
   fetchRunPodProfiles,
   scaleRunPodCapacity,
@@ -29,6 +34,8 @@ type RunPodOperation = {
   id: string
   action: string
   profile: string
+  source?: string
+  trigger_reason?: string
   requested_count?: number
   status: string
   created_at?: string
@@ -39,6 +46,32 @@ type RunPodOperation = {
   can_terminate?: boolean
   terminate_requested?: boolean
   cleanup_status?: string
+}
+
+type RunPodAutoscalerDecision = {
+  profile: string
+  action: string
+  reason: string
+  slot?: string | null
+  pending_count?: number
+  max_pending_wait_seconds?: number | null
+  runpod_count?: number
+  total_accepting_count?: number
+}
+
+type RunPodAutoscalerPayload = {
+  enabled: boolean
+  configured_enabled: boolean
+  control_enabled: boolean
+  mutation_skipped_reason?: string
+  config?: {
+    scale_up_wait_seconds?: number
+    scale_down_wait_seconds?: number
+    cooldown_seconds?: number
+    max_runpods_per_profile?: number
+  }
+  decisions?: RunPodAutoscalerDecision[]
+  recent_operations?: RunPodOperation[]
 }
 
 const emit = defineEmits<{
@@ -80,9 +113,12 @@ const fallbackProfiles: RunPodProfile[] = [
 
 const open = ref(false)
 const submitting = ref(false)
+const autoscalerLoading = ref(false)
+const autoscalerControlSubmitting = ref(false)
 const terminatingOperationIds = ref<Set<string>>(new Set())
 const profiles = ref<RunPodProfile[]>(fallbackProfiles)
 const operations = ref<RunPodOperation[]>([])
+const autoscaler = ref<RunPodAutoscalerPayload | null>(null)
 const rows = ref<ScaleRow[]>([
   { profile: 'img2img', count: 1 },
 ])
@@ -102,6 +138,8 @@ const profileOptions = computed(() =>
 
 const recentOperations = computed(() => operations.value.slice(0, 6))
 
+const autoscalerDecisions = computed(() => autoscaler.value?.decisions || [])
+
 const profileLabel = (profile: string) =>
   profiles.value.find(item => item.profile === profile)?.label || profile
 
@@ -118,6 +156,25 @@ const statusColor = (status: string) => {
 const canTerminateOperation = (operation: RunPodOperation) =>
   operation.can_terminate === true ||
   (operation.action === 'add' && operation.status === 'running' && !operation.terminate_requested)
+
+const operationSourceLabel = (operation: RunPodOperation) =>
+  operation.source === 'autoscaler' ? '自动' : '手动'
+
+const operationSourceColor = (operation: RunPodOperation) =>
+  operation.source === 'autoscaler' ? 'cyan' : 'default'
+
+const autoscalerDecisionLabel = (action: string) => {
+  if (action === 'scale_up') return '扩容'
+  if (action === 'scale_down') return '缩容'
+  if (action === 'hold') return '保持'
+  return action
+}
+
+const autoscalerDecisionColor = (action: string) => {
+  if (action === 'scale_up') return 'blue'
+  if (action === 'scale_down') return 'orange'
+  return 'default'
+}
 
 const isTerminatingOperation = (operationId: string) =>
   terminatingOperationIds.value.has(operationId)
@@ -152,9 +209,20 @@ const loadOperations = async () => {
   }
 }
 
+const loadAutoscaler = async () => {
+  autoscalerLoading.value = true
+  try {
+    autoscaler.value = await fetchRunPodAutoscaler()
+  } catch (err) {
+    console.error(err)
+  } finally {
+    autoscalerLoading.value = false
+  }
+}
+
 const showModal = async () => {
   open.value = true
-  await Promise.all([loadProfiles(), loadOperations()])
+  await Promise.all([loadProfiles(), loadOperations(), loadAutoscaler()])
 }
 
 const addRow = () => {
@@ -222,10 +290,29 @@ const terminateOperation = async (operation: RunPodOperation) => {
   }
 }
 
+const setAutoscalerEnabled = async (enabled: boolean) => {
+  autoscalerControlSubmitting.value = true
+  try {
+    autoscaler.value = await controlRunPodAutoscaler({
+      enabled,
+      reason: enabled ? 'dashboard resume' : 'dashboard pause',
+    })
+    message.success(enabled ? '已恢复 RunPod 自动管理' : '已暂停 RunPod 自动管理')
+    await loadOperations()
+  } catch (err) {
+    console.error(err)
+    message.error('RunPod 自动管理状态更新失败')
+  } finally {
+    autoscalerControlSubmitting.value = false
+  }
+}
+
 onMounted(() => {
   void loadOperations()
+  void loadAutoscaler()
   operationTimer = setInterval(() => {
     void loadOperations()
+    void loadAutoscaler()
   }, 10000)
 })
 
@@ -253,6 +340,59 @@ onUnmounted(() => {
     @ok="submit"
   >
     <div class="flex flex-col gap-4">
+      <div class="runpod-autoscaler-panel">
+        <div class="runpod-autoscaler-header">
+          <div class="runpod-autoscaler-title">
+            <robot-outlined />
+            <span>自动管理</span>
+            <a-tag :color="autoscaler?.enabled ? 'green' : 'default'" class="m-0">
+              {{ autoscaler?.enabled ? '运行中' : '暂停' }}
+            </a-tag>
+          </div>
+          <a-button
+            size="small"
+            :loading="autoscalerLoading || autoscalerControlSubmitting"
+            @click="setAutoscalerEnabled(!autoscaler?.control_enabled)"
+          >
+            <template #icon>
+              <pause-circle-outlined v-if="autoscaler?.control_enabled" />
+              <play-circle-outlined v-else />
+            </template>
+            {{ autoscaler?.control_enabled ? '暂停自动管理' : '恢复自动管理' }}
+          </a-button>
+        </div>
+
+        <div class="runpod-autoscaler-metrics">
+          <span>扩容等待 {{ autoscaler?.config?.scale_up_wait_seconds || 1800 }}s</span>
+          <span>缩容等待 {{ autoscaler?.config?.scale_down_wait_seconds || 60 }}s</span>
+          <span>冷却 {{ autoscaler?.config?.cooldown_seconds || 600 }}s</span>
+          <span>每类最多 {{ autoscaler?.config?.max_runpods_per_profile || 5 }}</span>
+        </div>
+
+        <div
+          v-if="autoscaler?.mutation_skipped_reason"
+          class="runpod-autoscaler-warning"
+        >
+          {{ autoscaler.mutation_skipped_reason }}
+        </div>
+
+        <div v-if="autoscalerDecisions.length" class="runpod-autoscaler-decisions">
+          <div
+            v-for="decision in autoscalerDecisions"
+            :key="decision.profile"
+            class="runpod-autoscaler-decision"
+          >
+            <span class="runpod-autoscaler-profile">{{ profileLabel(decision.profile) }}</span>
+            <a-tag :color="autoscalerDecisionColor(decision.action)" class="m-0">
+              {{ autoscalerDecisionLabel(decision.action) }}
+            </a-tag>
+            <span class="runpod-autoscaler-reason" :title="decision.reason">
+              {{ decision.reason }}
+            </span>
+          </div>
+        </div>
+      </div>
+
       <div class="flex flex-col gap-2">
         <div
           v-for="(row, index) in rows"
@@ -310,8 +450,14 @@ onUnmounted(() => {
               <span v-if="operation.requested_count !== null && operation.requested_count !== undefined">
                 · 新增 {{ operation.requested_count }}
               </span>
+              <span v-if="operation.trigger_reason">
+                · {{ operation.trigger_reason }}
+              </span>
             </span>
             <div class="flex items-center gap-2 shrink-0">
+              <a-tag :color="operationSourceColor(operation)" class="m-0 shrink-0">
+                {{ operationSourceLabel(operation) }}
+              </a-tag>
               <a-tag :color="statusColor(operation.status)" class="m-0 shrink-0">
                 {{ operation.status }}
               </a-tag>
@@ -354,5 +500,79 @@ onUnmounted(() => {
   gap: 2px;
   font-size: 11px;
   color: #6b7280;
+}
+
+.runpod-autoscaler-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #d7f1f5;
+  border-radius: 6px;
+  background: #f7fdff;
+}
+
+.runpod-autoscaler-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.runpod-autoscaler-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-weight: 700;
+  color: #334155;
+}
+
+.runpod-autoscaler-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  font-size: 11px;
+  color: #64748b;
+}
+
+.runpod-autoscaler-warning {
+  font-size: 12px;
+  color: #b45309;
+}
+
+.runpod-autoscaler-decisions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.runpod-autoscaler-decision {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.2fr);
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.runpod-autoscaler-profile,
+.runpod-autoscaler-reason {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .runpod-autoscaler-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .runpod-autoscaler-metrics,
+  .runpod-autoscaler-decisions {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
