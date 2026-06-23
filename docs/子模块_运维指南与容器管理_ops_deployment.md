@@ -139,6 +139,9 @@
 - LTX 正式 RunPod 停摆或输出异常
   - 现象：`runpod_prod_ltx_video_manual_NN` heartbeat 进入 `error` / unhealthy，或 canary/正式任务未产出有效 MP4。
   - 处理：先 `disable` 停接，确认无当前任务后优先 `down --profile ltx_video --slot NN --execute` 删除重建；恢复时重新 `up/add`、等待 disabled heartbeat、跑一单 `canary --profile ltx_video` 5s I2V MP4，确认产物后再 enable。不要把模型临时打入正在运行的 LAN LTX AIO 容器来修 RunPod；RunPod 只认 GHCR 镜像 + `allbot-model-cache/ltx_video/2026-06-10/manifest.json` + v1.2 workflow override。
+- LTX 正式 LAN AIO workflow bundle 过旧
+  - 现象：`lan_aio_prod_gpu177_gpu1_ltx_video_01` heartbeat 正常但 `remote_workers` 缺少 10Eros v1.2 workflow，或容器 env 缺少 `TASK_TYPE_WORKFLOW_OVERRIDES`。
+  - 处理：在正式生成维护开启且队列为空时，只对 `gpu-177-gpu1-ltx_video` 执行 `scripts/lan_aio_fleet_prod_ops.py start-disabled --slot gpu-177-gpu1-ltx_video --execute`，确认 disabled heartbeat、AIO `/object_info`、v1.2 workflow 文件和模型文件后再 `enable-aio`。不要批量重启 GPU 节点，不要通过 RunPod 脚本修 LAN AIO。
 
 ## 6. 文档维护口径
 - 涉及本地正式灾备 compose 的文档必须和 `safe_deploy.sh` 的真实顺序保持一致；云正式和云测试文档必须分别以对应 cloud compose / cloud deploy 脚本为准。
