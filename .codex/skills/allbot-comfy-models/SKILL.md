@@ -147,7 +147,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 - **文件定位**：`src/lora_catalog.py`、`src/handlers/fsm/ltx_video_fsm.py`、`frontend/src/views/SingleImageToVideo.vue`、`frontend/src/components/template-apply/TemplateImageToVideoPanel.vue`
 - **当前事实**：
   - Telegram FSM 允许多选最多 3 个 LoRA，并支持逐项调整强度；LoRA 后会进入同屏设置面板，合并选择 LTX 模式（单首帧、首尾帧）、清晰度和时长，普通入口不再需要确认按钮，用户直接发送起始帧图片即确认当前设置并进入下一步。旧 `ltx_mode_v2v_audio` 回调必须提示暂未开放，不能继续提交 Bot 任务。
-  - Web 单图视频页只支持 LTX 单首帧/首尾帧切换；练功房不再展示独立 `ltx_video_audio` 模式。练功房高级图生视频仍可在当前结果区直接用 `extra_outputs.last_frame` 扩展生成。
+  - Web 单图视频页与模板应用面板都支持 LTX 单首帧/首尾帧切换：一键应用 `TemplateImageToVideoPanel` 上传 1 张起始帧时提交 `ltx_mode=i2v`，额外上传终止帧时提交 `ltx_mode=flf2v`、`use_end_frame=true`。练功房不再展示独立 `ltx_video_audio` 模式。练功房高级图生视频仍可在当前结果区直接用 `extra_outputs.last_frame` 扩展生成。
   - 前端主路径提交 `inputs.lora_items`，而不是只提交单个 `inputs.lora_name`。
   - LTX 结果若存在 `extra_outputs.last_frame`，Web 结果区/历史详情和 Bot 结果消息可进入“扩展生成”，把尾帧作为下一段起始帧。Bot 扩展入口会先展示扩展设置面板，可选择直接续写或追加终止帧；该面板不展示确认按钮，用户直接发送提示词代表直接续写，直接发送图片代表追加终止帧并写入 `end_image_path`，随后以 `ltx_mode=flf2v` 续写。Web/Bot 续段提交会携带 `inputs.ltx_prev_task_id` 与 `inputs.ltx_chain_task_ids`；Web finalizer 和 Bot completion 会把它们持久化到 `extra_outputs._ltx_context`，历史/结果响应转成 `result_meta.ltx_prev_task_id`、`result_meta.ltx_chain_task_ids`、`result_meta.ltx_segment_index`。
   - LTX 续段结果（存在 `result_meta.ltx_prev_task_id`）可在练功房结果区或闪回瓶详情调用 `/users/history/{task_id}/ltx-chain/stitch` 拼接整条链，拼接历史使用 `extra_outputs.ltx_chain_stitch` 标记。首段只有扩展按钮，不显示拼接按钮。

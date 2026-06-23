@@ -2,12 +2,24 @@
 import { CloseCircleOutlined, InboxOutlined } from '@ant-design/icons-vue'
 import { warnIfPropsExceedBudget } from '@/utils/componentPropsBudget'
 
-const props = defineProps<{
-  filePreview: string | null
-  uploadingSlots: Record<string, boolean>
-  progressBySlot: Record<string, number>
-  beforeUpload: (rawFile: File | { originFileObj?: File }) => Promise<boolean> | boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    filePreview: string | null
+    uploadingSlots: Record<string, boolean>
+    progressBySlot: Record<string, number>
+    beforeUpload: (rawFile: File | { originFileObj?: File }) => Promise<boolean> | boolean
+    title?: string
+    uploadText?: string
+    uploadHint?: string
+    showProgress?: boolean
+  }>(),
+  {
+    title: '',
+    uploadText: '',
+    uploadHint: '',
+    showProgress: true,
+  },
+)
 
 warnIfPropsExceedBudget('TemplateApplyUploadSection', Object.keys(props).length)
 
@@ -18,7 +30,7 @@ const emit = defineEmits<{
 
 <template>
   <div class="rounded-xl border border-slate-700 bg-slate-800/70 p-4">
-    <div class="text-sm font-semibold text-slate-200 mb-3">{{ $t('template_apply.common.base_image') }}</div>
+    <div class="text-sm font-semibold text-slate-200 mb-3">{{ title || $t('template_apply.common.base_image') }}</div>
     <div v-if="filePreview" class="relative rounded-xl overflow-hidden border border-slate-700 bg-slate-950/80">
       <img :src="filePreview" class="h-56 w-full object-contain bg-slate-950/80" />
       <button
@@ -38,13 +50,13 @@ const emit = defineEmits<{
       <p class="ant-upload-drag-icon">
         <InboxOutlined class="text-cyan-400" />
       </p>
-      <p class="text-slate-200">{{ $t('template_apply.common.upload_base_image') }}</p>
-      <p class="text-slate-400 text-xs">{{ $t('template_apply.common.continue_after_close') }}</p>
+      <p class="text-slate-200">{{ uploadText || $t('template_apply.common.upload_base_image') }}</p>
+      <p class="text-slate-400 text-xs">{{ uploadHint || $t('template_apply.common.continue_after_close') }}</p>
     </a-upload-dragger>
   </div>
 
   <div
-    v-if="Object.values(uploadingSlots).some(Boolean)"
+    v-if="showProgress && Object.values(uploadingSlots).some(Boolean)"
     class="mt-4 space-y-2"
   >
     <div

@@ -38,9 +38,13 @@ const t = (key: string) => i18n.global.t(key)
 
 const getTemplateApplyNotice = (
   isTemplateVideoSettingsLocked: boolean,
-  isTemplatePromptLocked: boolean
+  isTemplatePromptLocked: boolean,
+  taskType: SupportedVideoTaskType
 ): string => {
   if (isTemplateVideoSettingsLocked && isTemplatePromptLocked) {
+    if (taskType === 'ltx_video') {
+      return t('template_apply.image_to_video.template_notice_complete_ltx')
+    }
     return t('template_apply.image_to_video.template_notice_complete')
   }
 
@@ -108,7 +112,8 @@ export const resolveTemplateVideoApplyState = (
     isTemplatePromptLocked,
     templateApplyNotice: getTemplateApplyNotice(
       isTemplateVideoSettingsLocked,
-      isTemplatePromptLocked
+      isTemplatePromptLocked,
+      taskType
     ),
     templateSettingsWarning: warnings.join(' ')
   }

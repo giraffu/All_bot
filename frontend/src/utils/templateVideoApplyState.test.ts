@@ -201,6 +201,7 @@ describe('templateVideoApplyState', () => {
     expect(state?.loraName).toBe('ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors')
     expect(state?.isTemplateVideoSettingsLocked).toBe(true)
     expect(state?.isTemplatePromptLocked).toBe(true)
+    expect(state?.templateApplyNotice).toContain('终止帧')
   })
 
   it('prefers requested_duration for ltx_video templates when metadata duration is dirty', () => {

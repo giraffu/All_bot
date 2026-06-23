@@ -60,6 +60,8 @@ const taskTitle = computed(() => {
 
 const objectKey = ref<string | null>(null)
 const filePreview = ref<string | null>(null)
+const endFrameObjectKey = ref<string | null>(null)
+const endFramePreview = ref<string | null>(null)
 const resolution = ref('preview')
 const duration = ref('5')
 const prompt = ref('')
@@ -78,8 +80,10 @@ const templateSettingsWarning = ref('')
 const templateApplyNotice = ref('')
 const showActionSection = computed(() => !isTemplatePromptLocked.value)
 const showOutputSettingsSection = computed(() => !isTemplateVideoSettingsLocked.value)
+const shouldSubmitLtxEndFrame = computed(() => isLtxVideo.value && Boolean(endFrameObjectKey.value))
 
 const initialObjectKey = ref<string | null>(null)
+const initialEndFrameObjectKey = ref<string | null>(null)
 const initialResolution = ref('512')
 const initialDuration = ref('5')
 const initialPrompt = ref('')
@@ -143,10 +147,11 @@ watch(
 )
 
 watch(
-  [objectKey, resolution, duration, prompt, negativePrompt, loraSelection, ltxLoraItems],
+  [objectKey, endFrameObjectKey, resolution, duration, prompt, negativePrompt, loraSelection, ltxLoraItems],
   () => {
     const isDirty =
       objectKey.value !== initialObjectKey.value
+      || endFrameObjectKey.value !== initialEndFrameObjectKey.value
       || resolution.value !== initialResolution.value
       || duration.value !== initialDuration.value
       || prompt.value.trim() !== initialPrompt.value
@@ -170,8 +175,13 @@ const cleanup = async () => {
   if (filePreview.value?.startsWith('blob:')) {
     URL.revokeObjectURL(filePreview.value)
   }
+  if (endFramePreview.value?.startsWith('blob:')) {
+    URL.revokeObjectURL(endFramePreview.value)
+  }
   filePreview.value = null
   objectKey.value = null
+  endFramePreview.value = null
+  endFrameObjectKey.value = null
   templateApplyStore.setDirtyState(false)
   templateApplyStore.setPendingUploads(false)
   setSubmittedTaskId(null)
@@ -219,6 +229,7 @@ const initializeFromContext = () => {
   }
 
   initialObjectKey.value = null
+  initialEndFrameObjectKey.value = null
   initialResolution.value = resolution.value
   initialDuration.value = duration.value
   initialPrompt.value = prompt.value.trim()
@@ -247,6 +258,26 @@ const beforeUpload = async (rawFile: File | { originFileObj?: File }) => {
   return false
 }
 
+const beforeUploadEndFrame = async (rawFile: File | { originFileObj?: File }) => {
+  const file = rawFile instanceof File ? rawFile : rawFile.originFileObj
+  if (!(file instanceof File)) {
+    message.error(t('template_apply.image_prompt.upload_read_failed'))
+    return false
+  }
+
+  const { objectKey: uploadedKey } = await uploadFile(file, { slot: 'end_image' })
+  if (!uploadedKey) {
+    return false
+  }
+
+  if (endFramePreview.value?.startsWith('blob:')) {
+    URL.revokeObjectURL(endFramePreview.value)
+  }
+  endFramePreview.value = URL.createObjectURL(file)
+  endFrameObjectKey.value = uploadedKey
+  return false
+}
+
 const handleRemove = () => {
   if (filePreview.value?.startsWith('blob:')) {
     URL.revokeObjectURL(filePreview.value)
@@ -255,15 +286,27 @@ const handleRemove = () => {
   objectKey.value = null
 }
 
+const handleRemoveEndFrame = () => {
+  if (endFramePreview.value?.startsWith('blob:')) {
+    URL.revokeObjectURL(endFramePreview.value)
+  }
+  endFramePreview.value = null
+  endFrameObjectKey.value = null
+}
+
 const handleGenerate = async () => {
   if (!objectKey.value) {
     message.warning(t('template_apply.image_to_video.upload_first'))
     return
   }
+  const images = [
+    objectKey.value,
+    ...(shouldSubmitLtxEndFrame.value ? [endFrameObjectKey.value as string] : []),
+  ]
 
   const payload = buildGenerationTaskPayload({
     taskType: getImageToVideoRequestTaskType(taskType.value, loraSelection.value),
-    images: [objectKey.value],
+    images,
     resolution: isLtxVideo.value ? resolution.value : undefined,
     duration: isLtxVideo.value
       ? Number(duration.value)
@@ -274,12 +317,16 @@ const handleGenerate = async () => {
     loraName: loraName.value,
     loraStrength: loraStrength.value,
     loraItems: isLtxVideo.value ? ltxLoraItems.value : undefined,
-    extraInputs: !isLtxVideo.value
+    extraInputs: isLtxVideo.value
       ? {
+          ltx_mode: shouldSubmitLtxEndFrame.value ? 'flf2v' : 'i2v',
+          use_end_frame: shouldSubmitLtxEndFrame.value,
+          extract_last_frame: true,
+        }
+      : {
           resolution_preset: normalizeWan22VideoV2ResolutionPreset(resolution.value),
           use_end_frame: false,
-        }
-      : undefined,
+        },
     isTemplate: isTemplateApplied.value,
     sourcePostId: templateSourcePostId.value,
   })
@@ -311,7 +358,9 @@ onBeforeUnmount(() => {
     <section class="w-full lg:w-[52%] flex flex-col bg-slate-900/70 rounded-2xl border border-slate-700/70 overflow-hidden">
       <div class="p-6 overflow-y-auto flex-1">
         <h2 class="text-2xl font-bold text-slate-100 mb-2">{{ taskTitle }}</h2>
-        <p class="text-slate-400 text-sm mb-6">{{ t('template_apply.image_to_video.current_page_desc') }}</p>
+        <p class="text-slate-400 text-sm mb-6">
+          {{ isLtxVideo ? t('template_apply.image_to_video.current_page_desc_ltx') : t('template_apply.image_to_video.current_page_desc') }}
+        </p>
 
         <TemplateApplyTemplateLocks
           class="mb-6"
@@ -320,13 +369,30 @@ onBeforeUnmount(() => {
           :template-settings-warning="templateSettingsWarning"
         />
 
-        <TemplateApplyUploadSection
-          :file-preview="filePreview"
-          :uploading-slots="uploadingSlots"
-          :progress-by-slot="progressBySlot"
-          :before-upload="beforeUpload"
-          @remove="handleRemove"
-        />
+        <div class="space-y-4">
+          <TemplateApplyUploadSection
+            :title="isLtxVideo ? t('template_apply.common.start_frame') : t('template_apply.common.base_image')"
+            :upload-text="isLtxVideo ? t('template_apply.common.upload_start_frame') : t('template_apply.common.upload_base_image')"
+            :file-preview="filePreview"
+            :uploading-slots="uploadingSlots"
+            :progress-by-slot="progressBySlot"
+            :before-upload="beforeUpload"
+            @remove="handleRemove"
+          />
+
+          <TemplateApplyUploadSection
+            v-if="isLtxVideo"
+            :title="t('template_apply.common.end_frame')"
+            :upload-text="t('template_apply.common.upload_end_frame')"
+            :upload-hint="t('template_apply.image_to_video.end_frame_optional_hint')"
+            :file-preview="endFramePreview"
+            :uploading-slots="uploadingSlots"
+            :progress-by-slot="progressBySlot"
+            :before-upload="beforeUploadEndFrame"
+            :show-progress="false"
+            @remove="handleRemoveEndFrame"
+          />
+        </div>
 
         <TemplateApplyLoraPromptSection
           class="mt-6"

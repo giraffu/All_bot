@@ -680,7 +680,10 @@ describe('TemplateImageToVideoPanel', () => {
         images: ['uploads/base.png'],
         resolution: '1280x704',
         duration: 5,
-        prompt: 'wide cinematic dolly shot'
+        prompt: 'wide cinematic dolly shot',
+        ltx_mode: 'i2v',
+        use_end_frame: false,
+        extract_last_frame: true
       },
       priority: 0,
       is_template: true,
@@ -749,11 +752,87 @@ describe('TemplateImageToVideoPanel', () => {
             name: 'ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors',
             strength: 0.8
           }
-        ]
+        ],
+        ltx_mode: 'i2v',
+        use_end_frame: false,
+        extract_last_frame: true
       },
       priority: 0,
       is_template: true,
       source_post_id: 123
+    })
+  })
+
+  it('submits ltx_video template payload as first-last-frame when an end frame is uploaded', async () => {
+    uploadFileMock.mockImplementation(async (_file, options) => ({
+      uploadId: `upload-${options.slot}`,
+      objectKey: options.slot === 'end_image' ? 'uploads/end.png' : 'uploads/start.png'
+    }))
+
+    const wrapper = mountPanel({
+      raw: {
+        post_id: 8,
+        source_post_id: 124,
+        task_id: 'task-template-ltx-flf2v',
+        media_type: 'video',
+        task_type: 'ltx_video',
+        prompt: 'start and end cinematic move',
+        width: 1280,
+        height: 704,
+        duration: 10,
+        requested_duration: 10,
+        billing_resolution: '1280x704'
+      },
+      rawEntityId: 8,
+      rawTaskType: 'ltx_video',
+      taskType: 'ltx_video',
+      sourcePostId: 124,
+      prompt: 'start and end cinematic move',
+      width: 1280,
+      height: 704,
+      duration: 10,
+      requestedDuration: 10,
+      billingResolution: '1280x704'
+    })
+    await nextTick()
+
+    expect(wrapper.text()).toContain('终止帧')
+
+    const uploaders = wrapper.findAllComponents(UploadDraggerStub)
+    expect(uploaders).toHaveLength(2)
+
+    await uploaders[0].props('beforeUpload')(new File(['start'], 'start.png', { type: 'image/png' }))
+    await uploaders[1].props('beforeUpload')(new File(['end'], 'end.png', { type: 'image/png' }))
+    await flushPromises()
+
+    const generateButton = wrapper
+      .findAllComponents(ButtonStub)
+      .find(button => button.text().includes('生成视频'))
+
+    if (!generateButton) {
+      throw new Error('Expected generate button to exist')
+    }
+
+    await generateButton.trigger('click')
+    await flushPromises()
+
+    expect(uploadFileMock).toHaveBeenCalledWith(expect.any(File), { slot: 'base_image' })
+    expect(uploadFileMock).toHaveBeenCalledWith(expect.any(File), { slot: 'end_image' })
+    expect(submitTaskMock).toHaveBeenCalledTimes(1)
+    expect(submitTaskMock.mock.calls[0]?.[0]).toEqual({
+      task_type: 'ltx_video',
+      inputs: {
+        images: ['uploads/start.png', 'uploads/end.png'],
+        resolution: '1280x704',
+        duration: 10,
+        prompt: 'start and end cinematic move',
+        ltx_mode: 'flf2v',
+        use_end_frame: true,
+        extract_last_frame: true
+      },
+      priority: 0,
+      is_template: true,
+      source_post_id: 124
     })
   })
 })
