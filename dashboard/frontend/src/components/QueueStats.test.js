@@ -352,16 +352,59 @@ describe('QueueStats worker health display', () => {
         },
       ],
     }
+    queueStatsMocks.workersRef.value = [
+      {
+        agent_id: 'runpod_prod_i2i_pro_manual_01',
+        types: 'i2i_pro,t2i-pornmaster-turbo,face_swap',
+        provider: 'runpod',
+        status: 'idle',
+        last_seen: Date.now() / 1000,
+      },
+      {
+        agent_id: 'runpod_prod_i2i_pro_manual_02',
+        types: 'i2i_pro',
+        status: 'running',
+        last_seen: Date.now() / 1000,
+      },
+      {
+        agent_id: 'lan_aio_prod_gpu999_gpu0_i2i_pro_01',
+        types: 'i2i_pro,t2i-pornmaster-turbo',
+        provider: 'lan_ssh',
+        pool_managed: true,
+        status: 'idle',
+        last_seen: Date.now() / 1000,
+      },
+      {
+        agent_id: 'worker_remote_face_swap',
+        types: 'face_swap',
+        status: 'idle',
+        last_seen: Date.now() / 1000,
+      },
+      {
+        agent_id: 'runpod_prod_scail2_manual_01',
+        types: 'scail2_action_transfer',
+        provider: 'runpod',
+        status: 'idle',
+        last_seen: Date.now() / 1000,
+      },
+    ]
 
     const wrapper = await mountQueueStats()
+    const i2iRow = wrapper
+      .findAll('.runpod-profile-detail-table tbody tr')
+      .find(row => row.text().includes('i2i_pro / txt2img / face_swap'))
 
     expect(wrapper.text()).toContain('活跃 RunPod 详情')
     expect(wrapper.text()).toContain('i2i_pro / txt2img / face_swap')
     expect(wrapper.text()).toContain('t2i-pornmaster-turbo')
     expect(wrapper.text()).toContain('15m 1s')
+    expect(i2iRow?.exists()).toBe(true)
+    expect(i2iRow?.text()).toContain('RunPod2')
+    expect(i2iRow?.text()).toContain('本地2')
     expect(wrapper.findAll('.runpod-profile-detail-table tbody tr')).toHaveLength(6)
     expect(wrapper.findAll('.runpod-profile-detail-table thead th').map(th => th.text())).toEqual([
       'RunPod 类型',
+      '服务器',
       '活跃数',
       '排队数',
       '最长等待',

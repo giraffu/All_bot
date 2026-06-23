@@ -51,6 +51,44 @@ const taskTotals = computed(() => {
   return totals
 })
 
+const RUNPOD_AGENT_ID_PATTERN =
+  /^runpod_prod_(img2img|image_to_video|wan22_video_v2|i2i_pro|scail2|ltx_video)_manual_\d+$/
+
+const splitWorkerTypes = (worker) =>
+  String(worker.types || '')
+    .split(',')
+    .map((type) => type.trim())
+    .filter(Boolean)
+
+const isRunPodServerWorker = (worker) => {
+  const provider = String(worker.provider || '').toLowerCase()
+  const agentId = String(worker.agent_id || '')
+  return provider === 'runpod' || RUNPOD_AGENT_ID_PATTERN.test(agentId)
+}
+
+const supportsRunPodProfile = (worker, profile) => {
+  const supportedTaskTypes = new Set(profile.supportedTaskTypes || [])
+  const runtimeProfile = String(worker.runtime_profile || '').trim()
+  if (runtimeProfile && runtimeProfile === profile.profile) {
+    return true
+  }
+  return splitWorkerTypes(worker).some((type) => supportedTaskTypes.has(type))
+}
+
+const runpodProfileRows = computed(() =>
+  runpodProfileQueueDisplay.value.map((profile) => {
+    const supportingWorkers = workers.value.filter((worker) =>
+      supportsRunPodProfile(worker, profile)
+    )
+    const runpodServerCount = supportingWorkers.filter(isRunPodServerWorker).length
+    return {
+      ...profile,
+      runpodServerCount,
+      localWorkerCount: supportingWorkers.length - runpodServerCount,
+    }
+  })
+)
+
 const handleCleanZombies = () => {
   Modal.confirm({
     title: '确认清理卡死任务？',
@@ -357,12 +395,13 @@ const handleSyncLock = async (userId) => {
       <a-card hoverable class="queue-card runpod-profile-detail-card border-l-4 border-l-cyan-500">
         <div class="flex items-center justify-between gap-3 mb-3">
           <div class="text-gray-700 font-bold">活跃 RunPod 详情</div>
-          <a-tag color="cyan" class="m-0">共 {{ runpodProfileQueueDisplay.length }} 类</a-tag>
+          <a-tag color="cyan" class="m-0">共 {{ runpodProfileRows.length }} 类</a-tag>
         </div>
         <div class="overflow-x-auto">
           <table class="runpod-profile-detail-table">
             <colgroup>
               <col class="runpod-profile-col" />
+              <col class="runpod-server-col" />
               <col class="runpod-metric-col" />
               <col class="runpod-metric-col" />
               <col class="runpod-wait-col" />
@@ -370,13 +409,14 @@ const handleSyncLock = async (userId) => {
             <thead>
               <tr>
                 <th>RunPod 类型</th>
+                <th>服务器</th>
                 <th>活跃数</th>
                 <th>排队数</th>
                 <th>最长等待</th>
               </tr>
             </thead>
-            <tbody v-if="runpodProfileQueueDisplay.length > 0">
-              <tr v-for="item in runpodProfileQueueDisplay" :key="item.profile">
+            <tbody v-if="runpodProfileRows.length > 0">
+              <tr v-for="item in runpodProfileRows" :key="item.profile">
                 <td>
                   <div class="runpod-profile-cell">
                     <span class="runpod-profile-name" :title="item.profile">{{ item.profile }}</span>
@@ -396,6 +436,18 @@ const handleSyncLock = async (userId) => {
                   </div>
                 </td>
                 <td>
+                  <div class="server-count-cell">
+                    <span class="server-count-row">
+                      <span class="server-count-label">RunPod</span>
+                      <span class="server-count-value text-cyan-600">{{ item.runpodServerCount }}</span>
+                    </span>
+                    <span class="server-count-row">
+                      <span class="server-count-label">本地</span>
+                      <span class="server-count-value text-green-600">{{ item.localWorkerCount }}</span>
+                    </span>
+                  </div>
+                </td>
+                <td>
                   <span class="metric-value text-purple-600">{{ item.activeCount }}</span>
                 </td>
                 <td>
@@ -410,7 +462,7 @@ const handleSyncLock = async (userId) => {
             </tbody>
             <tbody v-else>
               <tr>
-                <td colspan="4" class="empty-detail-cell">暂无 RunPod 统计</td>
+                <td colspan="5" class="empty-detail-cell">暂无 RunPod 统计</td>
               </tr>
             </tbody>
           </table>
@@ -697,10 +749,15 @@ const handleSyncLock = async (userId) => {
 .active-task-detail-table,
 .runpod-profile-detail-table {
   width: 100%;
-  min-width: 100%;
   table-layout: fixed;
   border-collapse: collapse;
   font-size: 13px;
+}
+.active-task-detail-table {
+  min-width: 520px;
+}
+.runpod-profile-detail-table {
+  min-width: 640px;
 }
 .task-type-col {
   width: 34%;
@@ -712,13 +769,16 @@ const handleSyncLock = async (userId) => {
   width: 26%;
 }
 .runpod-profile-col {
-  width: 42%;
+  width: 34%;
 }
-.runpod-metric-col {
+.runpod-server-col {
   width: 18%;
 }
+.runpod-metric-col {
+  width: 14%;
+}
 .runpod-wait-col {
-  width: 22%;
+  width: 20%;
 }
 .active-task-detail-table th,
 .runpod-profile-detail-table th {
@@ -771,6 +831,29 @@ const handleSyncLock = async (userId) => {
   font-size: 11px;
   line-height: 1.3;
   overflow-wrap: anywhere;
+}
+.server-count-cell {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.server-count-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.server-count-label {
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.2;
+}
+.server-count-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
 }
 .metric-value {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
