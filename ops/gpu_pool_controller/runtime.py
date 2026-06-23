@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .config_loader import ControllerConfig
+from .runpod_profile_catalog import RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES
 from .types import Assignment, ComfyInstance, GpuNode, RuntimePlanItem, TaskProfile
 
 
@@ -20,6 +21,9 @@ LAN_AIO_DISABLE_DYNAMIC_VRAM_PROFILES = frozenset(
         "wan22_video_v2",
     }
 )
+LAN_AIO_WORKFLOW_OVERRIDES_BY_PROFILE = {
+    "ltx_video": RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
+}
 LAN_AIO_ENVIRONMENTS = {
     "cloud-test": {
         "central_url": "https://worker-central-test.aivison.it.com",
@@ -361,6 +365,9 @@ class RuntimePlanner:
         model_manifest_key = (
             profile.model_manifest_key or f"{model_prefix.rstrip('/')}/manifest.json"
         )
+        workflow_overrides = LAN_AIO_WORKFLOW_OVERRIDES_BY_PROFILE.get(
+            profile.runtime_profile
+        )
         model_target_dir = "/workspace/ComfyUI/models"
         state_root = "/workspace/allbot-state"
         compose = {
@@ -444,6 +451,11 @@ class RuntimePlanner:
                         "LOCAL_RELAY_PORT": "8013",
                         "RUNPOD_RELAY_READY_PATH": "/ready",
                         "SUPPORTED_TASK_TYPES": supported_task_types,
+                        **(
+                            {"TASK_TYPE_WORKFLOW_OVERRIDES": workflow_overrides}
+                            if workflow_overrides
+                            else {}
+                        ),
                         "POOL_NODE_ID": node.id,
                         "POOL_PROVIDER": assignment.provider,
                         "POOL_GPU_INDEX": str(

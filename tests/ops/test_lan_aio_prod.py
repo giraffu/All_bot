@@ -10,6 +10,9 @@ from ops.gpu_pool_controller.lan_aio_prod import (
     load_lan_aio_prod_slots,
     patch_remote_workers_mount,
 )
+from ops.gpu_pool_controller.runpod_profile_catalog import (
+    RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
+)
 from ops.gpu_pool_controller.runtime import RuntimePlanner, RuntimeRenderOverrides
 
 
@@ -128,6 +131,22 @@ def test_lan_aio_fleet_render_supports_gpu_177_ltx_profile():
     assert "POOL_RUNTIME_PROFILE: ltx_video" in rendered
     assert "SUPPORTED_TASK_TYPES: ltx_video" in rendered
     assert "SUPPORTED_TASK_TYPES: ltx_video,image_to_video" not in rendered
+    assert "TASK_TYPE_WORKFLOW_OVERRIDES:" in rendered
+    assert "LTX 2.3 10Eros v1.2 I2V 6.1.json" in rendered
+    import yaml
+
+    compose = yaml.safe_load(rendered)
+    service = compose["services"][slot.container_name]
+    assert (
+        service["environment"]["TASK_TYPE_WORKFLOW_OVERRIDES"]
+        == RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES
+    )
+    assert (
+        json.loads(service["environment"]["TASK_TYPE_WORKFLOW_OVERRIDES"])[
+            "ltx_video_flf2v"
+        ]
+        == "LTX 2.3 10Eros v1.2 FLF2V 6.1.json"
+    )
     assert "RUNPOD_MODEL_MANIFEST_KEY: ltx_video/2026-06-10/manifest.json" in rendered
     assert "MINIO_RESULT_BUCKET: user-data-prod" in rendered
     assert "host_port: 8191" in rendered
