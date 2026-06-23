@@ -173,4 +173,3 @@ async def stitch_ltx_video_callback(update: Update, context: ContextTypes.DEFAUL
     except Exception as exc:
         logger.error("stitch ltx_video failed: %s", exc, exc_info=True)
         await safe_answer_query(query, text="拼接失败，请稍后再试", show_alert=True)
-
