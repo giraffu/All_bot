@@ -542,10 +542,16 @@ Dashboard 后端的 RunPod autoscaler 只复用上述安全入口，不直接调
 同 profile 默认冷却 600 秒。缩容只在 `pending_count == 0` 时考虑，若 RunPod + 本地健康 enabled 可接单
 worker 总数大于 1，则选择该 profile 最高 slot 的 idle RunPod 执行 `down --slot NN --execute`；autoscaler
 创建的 RunPod 未满 `DASHBOARD_RUNPOD_AUTOSCALER_MIN_RUNPOD_LIFETIME_SECONDS`（默认 1800）不会被缩容。
-本地 worker 只参与容量保底，不会被 autoscaler 启停。autoscaler 必须拿到 Redis leader lease 才执行
-mutation；拿不到 Redis/leader 或系统快照失败时只记录 hold/error。管理弹窗的 `/api/runpod/autoscaler`
-与 `/api/runpod/autoscaler/control` 可查看 `scale_up: estimated clear time ...`、`hold: no backlog`、
-`hold: max runpod capacity reached`、`hold: minimum lifetime remaining Ns` 等决策并紧急暂停/恢复。
+autoscaler 会优先自愈正式 RunPod worker：`status=error|quarantined` 且 `last_error_at` 已持续超过
+`DASHBOARD_RUNPOD_AUTOSCALER_FAULT_RESTART_SECONDS`（默认 300）时，提交
+`restart --slot NN --execute`；`control_state=disabled|draining` 且 worker 仍健康 `idle|running`
+时，提交 `enable --slot NN --execute`。RunPod `restart` 底层会先 disabled、调用 RunPod 原生
+restart、等待健康 heartbeat，再恢复 enabled 接单。本地 worker 只参与容量保底，不会被 autoscaler
+启停。autoscaler 必须拿到 Redis leader lease 才执行 mutation；拿不到 Redis/leader 或系统快照失败时
+只记录 hold/error。管理弹窗的 `/api/runpod/autoscaler` 与 `/api/runpod/autoscaler/control`
+可查看 `scale_up: estimated clear time ...`、`restart: runpod fault persisted ...`、
+`enable: runpod paused worker available`、`hold: no backlog`、`hold: max runpod capacity reached`、
+`hold: minimum lifetime remaining Ns` 等决策并紧急暂停/恢复。
 
 `down` 删除已有 Pod 的 preflight 只做 RunPod key、Pod 列表、reconcile 与 Central health 检查，不渲染 create pod request，因此不会因缺少 `RUNPOD_IMAGE_NAME_I2I_PRO` / `RUNPOD_IMAGE_NAME_SCAIL2` / `RUNPOD_IMAGE_NAME_LTX_VIDEO` 这类创建镜像配置而阻断删除；`up` / `add` / `render` / `canary` 仍必须具备目标 profile 的正式镜像与模型配置。
 

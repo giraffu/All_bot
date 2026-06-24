@@ -62,7 +62,7 @@
 - `$96/mo` Droplet 当前作为正式生产控制面；生产 Postgres、Valkey 与对象存储不在该 Droplet 上长期自托管。
 - 2026-06-16 原地扩容后，系统盘事实容量已从约 160GB 扩到约 320GB；后续缩容不能再按“保留 160GB 磁盘”的旧口径假设。
 - 公开媒体与新生成对象走 Cloudflare R2 `user-data-prod`；本地 MinIO 保留为 legacy 迁移补齐、人工回滚、旧外链排障与本地热数据保留，不再是正式 Web/Dashboard 运行时 fallback。
-- 本地主服务器可每日维护云正式 shadow 副本：PostgreSQL `bot_db_prod_shadow`、MinIO `user-data-prod-shadow` 与 `user-data-prod-shadow-quarantine/<timestamp>/`。数据库 dump 默认由 `allbot-do-sgp1-control` 在云机执行并经 R2 临时前缀 HTTPS 中转回本地，不依赖本地主公网/VPN 出口作为托管数据库 trusted source。该副本用于灾备预热和只读分析，不是云正式服务运行时 fallback，也不会自动接管本地正式写入口。
+- 本地主服务器可每日维护云正式 shadow 副本：PostgreSQL `bot_db_prod_shadow`、R2 纯镜像 MinIO `user-data-prod-shadow`、完整合并桶 `user-data-complete-shadow` 与 `user-data-prod-shadow-quarantine/<timestamp>/`。数据库 dump 默认由 `allbot-do-sgp1-control` 在云机执行并经 R2 临时前缀 HTTPS 中转回本地，不依赖本地主公网/VPN 出口作为托管数据库 trusted source。完整桶每日只从本地 R2 shadow 非破坏式 copy；legacy MinIO 旧桶只做一次性手动导入。该副本用于灾备预热和只读分析，不是云正式服务运行时 fallback，也不会自动接管本地正式写入口。
 - 本地 7 张 GPU 和 ComfyUI 不迁移；本地 `cloud-prod-comfy-agent-*` compose、LAN AIO、`remote_workers` 与手动 RunPod 都通过 Central worker 协议接入。当前可用容量必须以 `/system/workers` 为准。
 - 后续如继续增长，优先单独评估 Dashboard/后台任务拆分、PostgreSQL 规格或连接池预算；不要同时放大 Web worker 数和 DB 连接池。
 
@@ -137,7 +137,7 @@
 - 云端正式管理面：`cloud-dashboard-backend-prod`、`cloud-dashboard-frontend-prod`、`cloud-imgproxy-prod`
 - 本地正式 worker compose：`cloud-prod-worker-relay` 与 `cloud-prod-comfy-agent-1` 至 `cloud-prod-comfy-agent-7`；这是本地 compose 声明，不等于每个容器都必须长期运行
 - 正式弹性/灰度算力：LAN AIO agent、`remote_workers` 与手动 RunPod worker 可按运维目标接入 Central；2026-06-18 快照中 Central 看到 13 个 healthy active workers
-- 本地 legacy 与 shadow 数据：原 PostgreSQL/Redis/MinIO 只作为保留或 fallback；`bot_db_prod_shadow`、`user-data-prod-shadow` 是云正式每日 shadow 副本，不应继续作为正式写入事实源，除非进入本地正式灾备并人工停同步、确认 RPO 后切写入口
+- 本地 legacy 与 shadow 数据：原 PostgreSQL/Redis/MinIO 只作为保留或 fallback；`bot_db_prod_shadow`、`user-data-prod-shadow`、`user-data-complete-shadow` 是云正式每日 shadow/备份副本，不应继续作为正式写入事实源，除非进入本地正式灾备并人工停同步、确认 RPO 后切写入口
 
 测试/辅助服务类型：
 - 云测试入口：`cloud-tg-bot-test`、`cloud-web-api-test`、`cloud-dashboard-backend-test`、`cloud-dashboard-frontend-test`、`cloud-imgproxy-test`；`cloud-qqcc-bot-test` 为可选 QQCC 测试入口，必须使用独立 `QQCC_BOT_TOKEN_TEST`
@@ -275,7 +275,7 @@ ComfyUI 版本快照：
 shadow 同步只记录 Redis/Valkey `INFO memory` 与 `DBSIZE` 摘要，不恢复队列、锁、heartbeat 或其它运行态 key。灾备切本地时 Redis 视为运行态重建/人工对账问题，不把 shadow 摘要当作可恢复数据源。
 
 ### MinIO
-MinIO 本地数据目录：`/home/hfy/APP/minio-deploy/data`，迁移前快照总量约 453GB。当前正式新数据写入 R2；本地 MinIO 保留 legacy 历史媒体、旧输入和本地热数据，不应作为新生成结果公开事实源。2026-06-24 起新增 R2 shadow 同步：`user-data-prod-shadow` 保存 R2 `user-data-prod` 的本地增量副本，`user-data-prod-shadow-quarantine/<timestamp>/` 保存云端覆盖或删除导致的旧本地对象，禁止硬删替代 quarantine。
+MinIO 本地数据目录：`/home/hfy/APP/minio-deploy/data`，迁移前快照总量约 453GB。当前正式新数据写入 R2；本地 MinIO 保留 legacy 历史媒体、旧输入和本地热数据，不应作为新生成结果公开事实源。2026-06-24 起新增 R2 shadow 同步：`user-data-prod-shadow` 保存 R2 `user-data-prod` 的本地增量副本，`user-data-prod-shadow-quarantine/<timestamp>/` 保存云端覆盖或删除导致的旧本地对象，禁止硬删替代 quarantine。2026-06-25 起可启用 `user-data-complete-shadow` 作为完整合并备份桶：每日从本地 `user-data-prod-shadow` 非破坏式 copy，不重复从 R2 拉取；`bot-data` / `comfyui-temp` 只在一次性手动补齐时用 `--ignore-existing` 导入，避免每日任务重复扫描 legacy 大桶。
 
 | 桶/目录 | 当前体积 | 备注 |
 | :--- | ---: | :--- |
@@ -286,6 +286,7 @@ MinIO 本地数据目录：`/home/hfy/APP/minio-deploy/data`，迁移前快照�
 | `bot-data-test` | 266MB | 测试输入桶 |
 | `comfyui-input` | 17MB | 旧/兼容输入目录 |
 | `user-data-prod-shadow` | 待首次同步后采集 | R2 `user-data-prod` 的本地 shadow 副本 |
+| `user-data-complete-shadow` | 待首次合并后采集 | R2 shadow + legacy MinIO 的完整合并备份桶；日常只 copy shadow，legacy 只手动首导 |
 | `user-data-prod-shadow-quarantine` | 待首次同步后采集 | rclone `--backup-dir` quarantine 桶，按 timestamp 保留旧对象 |
 
 MinIO 是主服务器历史数据与内存占用大户之一。规划清理时应先确认 R2 命中率、可见热集补齐状态和 legacy 旧外链/人工回滚访问量，再逐步缩短本地热数据生命周期。

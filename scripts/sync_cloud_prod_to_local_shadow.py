@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
+import fcntl
 import hashlib
 import json
 import os
@@ -55,6 +56,10 @@ class ShadowSyncConfig:
     r2_transfers: int
     r2_checkers: int
     retention_days: int
+    complete_media_sync_enabled: bool = False
+    local_minio_complete_bucket: str = "user-data-complete-shadow"
+    complete_media_import_legacy: bool = False
+    complete_media_legacy_buckets: tuple[str, ...] = ("bot-data", "comfyui-temp")
     cloud_redis_url: str | None = None
     cloud_worker_redis_url: str | None = None
     cloud_db_tunnel_ssh_host: str | None = None
@@ -234,10 +239,32 @@ def non_negative_int_value(values: dict[str, str], key: str, default: int) -> in
     return parsed
 
 
+def bool_value(values: dict[str, str], key: str, default: bool) -> bool:
+    raw = values.get(key)
+    if raw is None or raw == "":
+        return default
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    raise ShadowSyncError(f"{key} must be a boolean")
+
+
+def csv_tuple(values: dict[str, str], key: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    raw = values.get(key)
+    if raw is None or raw.strip() == "":
+        return default
+    return tuple(item.strip() for item in raw.split(",") if item.strip())
+
+
 def build_config(args: argparse.Namespace) -> ShadowSyncConfig:
     values = merged_env_file_values(args.env_file)
     timestamp = args.timestamp or datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_root = Path(values.get("SHADOW_SYNC_BACKUP_ROOT", str(DEFAULT_BACKUP_ROOT)))
+    include_legacy_media_import = bool(
+        getattr(args, "include_legacy_media_import", False)
+    )
     return ShadowSyncConfig(
         cloud_database_url=require(values, "CLOUD_PROD_DATABASE_URL"),
         local_postgres_maintenance_url=require(values, "LOCAL_POSTGRES_MAINTENANCE_URL"),
@@ -263,6 +290,24 @@ def build_config(args: argparse.Namespace) -> ShadowSyncConfig:
         r2_transfers=int_value(values, "R2_SYNC_TRANSFERS", 4),
         r2_checkers=int_value(values, "R2_SYNC_CHECKERS", 8),
         retention_days=int_value(values, "SHADOW_SYNC_RETENTION_DAYS", 14),
+        complete_media_sync_enabled=bool_value(
+            values,
+            "COMPLETE_MEDIA_SYNC_ENABLED",
+            False,
+        ),
+        local_minio_complete_bucket=values.get(
+            "LOCAL_MINIO_COMPLETE_BUCKET",
+            "user-data-complete-shadow",
+        ),
+        complete_media_import_legacy=(
+            bool_value(values, "COMPLETE_MEDIA_IMPORT_LEGACY", False)
+            or include_legacy_media_import
+        ),
+        complete_media_legacy_buckets=csv_tuple(
+            values,
+            "COMPLETE_MEDIA_LEGACY_BUCKETS",
+            ("bot-data", "comfyui-temp"),
+        ),
         cloud_redis_url=optional(values, "CLOUD_PROD_REDIS_URL"),
         cloud_worker_redis_url=optional(values, "CLOUD_PROD_WORKER_REDIS_URL"),
         cloud_db_tunnel_ssh_host=optional(values, "CLOUD_PROD_DB_TUNNEL_SSH_HOST"),
@@ -378,6 +423,28 @@ def validate_config(config: ShadowSyncConfig) -> None:
         raise ShadowSyncError("local shadow bucket must not reuse the R2 production bucket name")
     if config.local_minio_shadow_bucket == config.local_minio_quarantine_bucket:
         raise ShadowSyncError("shadow and quarantine buckets must be different")
+    if config.complete_media_import_legacy and not config.complete_media_sync_enabled:
+        raise ShadowSyncError(
+            "COMPLETE_MEDIA_SYNC_ENABLED must be true when legacy media import is requested"
+        )
+    if config.complete_media_sync_enabled:
+        if not config.local_minio_complete_bucket:
+            raise ShadowSyncError("LOCAL_MINIO_COMPLETE_BUCKET must not be empty")
+        if config.local_minio_complete_bucket == config.r2_bucket:
+            raise ShadowSyncError(
+                "local complete media bucket must not reuse the R2 production bucket name"
+            )
+        conflicting_buckets = {
+            config.local_minio_shadow_bucket,
+            config.local_minio_quarantine_bucket,
+            *config.complete_media_legacy_buckets,
+        }
+        if config.local_minio_complete_bucket in conflicting_buckets:
+            raise ShadowSyncError(
+                "local complete media bucket must be different from shadow, quarantine, and legacy source buckets"
+            )
+        if config.complete_media_import_legacy and not config.complete_media_legacy_buckets:
+            raise ShadowSyncError("COMPLETE_MEDIA_LEGACY_BUCKETS must not be empty")
     if config.cloud_db_tunnel_ssh_host:
         parsed_cloud = parsed_url(config.normalized_cloud_database_url)
         if not parsed_cloud.hostname:
@@ -906,6 +973,7 @@ def validate_and_write_dump_checksum(config: ShadowSyncConfig) -> str:
         expected = sha_path.read_text(encoding="utf-8").split()[0]
         if expected != dump_sha:
             raise ShadowSyncError("downloaded dump checksum does not match sidecar sha256")
+        return dump_sha
     sha_path.write_text(
         f"{dump_sha}  {config.dump_path.name}\n",
         encoding="utf-8",
@@ -1031,6 +1099,51 @@ def run_r2_sync(config: ShadowSyncConfig, runner: CommandRunner) -> None:
     )
 
 
+def rclone_copy_common_flags(config: ShadowSyncConfig) -> str:
+    return (
+        f"--transfers {config.r2_transfers} "
+        f"--checkers {config.r2_checkers} "
+        f"--bwlimit {shlex.quote(config.r2_bwlimit)} "
+        "--fast-list --stats 60s"
+    )
+
+
+def run_complete_media_sync(config: ShadowSyncConfig, runner: CommandRunner) -> None:
+    if not config.complete_media_sync_enabled:
+        print("Complete media bucket sync skipped: COMPLETE_MEDIA_SYNC_ENABLED=false")
+        return
+
+    complete_bucket = shlex.quote(config.local_minio_complete_bucket)
+    shadow_bucket = shlex.quote(config.local_minio_shadow_bucket)
+    lines = [
+        "set -eu",
+        f"rclone mkdir localminio:{complete_bucket}",
+        "rclone copy "
+        f"localminio:{shadow_bucket} "
+        f"localminio:{complete_bucket} "
+        f"{rclone_copy_common_flags(config)}",
+    ]
+    if config.complete_media_import_legacy:
+        for source_bucket in config.complete_media_legacy_buckets:
+            lines.append(
+                "rclone copy "
+                f"localminio:{shlex.quote(source_bucket)} "
+                f"localminio:{complete_bucket} "
+                "--ignore-existing "
+                f"{rclone_copy_common_flags(config)}"
+            )
+
+    runner.run(
+        docker_cmd(
+            RCLONE_IMAGE,
+            "\n".join(lines),
+            env_keys=tuple(rclone_env(config).keys()),
+            entrypoint="sh",
+        ),
+        env=rclone_env(config),
+    )
+
+
 def run_redis_audit(
     config: ShadowSyncConfig,
     runner: CommandRunner,
@@ -1108,6 +1221,23 @@ def write_manifest(config: ShadowSyncConfig, *, dump_sha256: str) -> None:
         "r2_bucket": config.r2_bucket,
         "local_minio_shadow_bucket": config.local_minio_shadow_bucket,
         "local_minio_quarantine_bucket": config.local_minio_quarantine_bucket,
+        "complete_media_sync": {
+            "enabled": config.complete_media_sync_enabled,
+            "source_shadow_bucket": (
+                config.local_minio_shadow_bucket
+                if config.complete_media_sync_enabled
+                else None
+            ),
+            "complete_bucket": (
+                config.local_minio_complete_bucket
+                if config.complete_media_sync_enabled
+                else None
+            ),
+            "legacy_import": config.complete_media_import_legacy,
+            "legacy_buckets": list(config.complete_media_legacy_buckets),
+            "daily_mode": "shadow_copy_without_delete",
+            "legacy_mode": "manual_copy_ignore_existing",
+        },
         "dump_sha256": dump_sha256,
         "dump_file": str(config.dump_path),
         "alembic_version": (
@@ -1126,6 +1256,30 @@ def write_manifest(config: ShadowSyncConfig, *, dump_sha256: str) -> None:
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+
+
+@contextmanager
+def sync_run_lock(config: ShadowSyncConfig, *, execute: bool):
+    lock_path = config.backup_root / ".shadow-sync.lock"
+    if not execute:
+        print(f"[dry-run] Would acquire sync lock: {lock_path}")
+        yield
+        return
+
+    config.backup_root.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("w", encoding="utf-8") as handle:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise ShadowSyncError(
+                f"another cloud-prod shadow sync is already running: {lock_path}"
+            ) from exc
+        handle.write(f"pid={os.getpid()} timestamp={config.timestamp}\n")
+        handle.flush()
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 def maybe_prepare_backup_dir(config: ShadowSyncConfig, *, execute: bool) -> None:
@@ -1168,6 +1322,14 @@ def log_preflight(config: ShadowSyncConfig, *, execute: bool) -> None:
                 "r2_bucket": config.r2_bucket,
                 "local_shadow_bucket": config.local_minio_shadow_bucket,
                 "local_quarantine_bucket": config.local_minio_quarantine_bucket,
+                "complete_media_sync_enabled": config.complete_media_sync_enabled,
+                "local_complete_bucket": (
+                    config.local_minio_complete_bucket
+                    if config.complete_media_sync_enabled
+                    else None
+                ),
+                "complete_media_import_legacy": config.complete_media_import_legacy,
+                "complete_media_legacy_buckets": list(config.complete_media_legacy_buckets),
                 "backup_parent_free_gib": round(free_bytes / 1024 / 1024 / 1024, 2),
             },
             ensure_ascii=False,
@@ -1180,26 +1342,28 @@ def run_shadow_sync(config: ShadowSyncConfig, *, execute: bool) -> CommandRunner
     validate_config(config)
     runner = CommandRunner(execute=execute, redactor=redactor_for_config(config))
     log_preflight(config, execute=execute)
-    maybe_prepare_backup_dir(config, execute=execute)
+    with sync_run_lock(config, execute=execute):
+        maybe_prepare_backup_dir(config, execute=execute)
 
-    run_cloud_db_dump(config, runner, execute=execute)
-    dump_sha = "<dry-run>"
-    if execute:
-        dump_sha = validate_and_write_dump_checksum(config)
+        run_cloud_db_dump(config, runner, execute=execute)
+        dump_sha = "<dry-run>"
+        if execute:
+            dump_sha = validate_and_write_dump_checksum(config)
 
-    run_db_restore_to_next(config, runner)
-    run_db_validation(config, runner)
-    run_db_atomic_switch(config, runner)
-    run_r2_sync(config, runner)
-    run_redis_audit(config, runner, url=config.cloud_redis_url, label="app")
-    run_redis_audit(config, runner, url=config.cloud_worker_redis_url, label="worker")
+        run_db_restore_to_next(config, runner)
+        run_db_validation(config, runner)
+        run_db_atomic_switch(config, runner)
+        run_r2_sync(config, runner)
+        run_complete_media_sync(config, runner)
+        run_redis_audit(config, runner, url=config.cloud_redis_url, label="app")
+        run_redis_audit(config, runner, url=config.cloud_worker_redis_url, label="worker")
 
-    if execute:
-        write_manifest(config, dump_sha256=dump_sha)
-        print(f"Manifest written: {config.manifest_path}")
-    else:
-        print("[dry-run] Would write manifest with dump sha256 and validation counts")
-    prune_old_backups(config, execute=execute)
+        if execute:
+            write_manifest(config, dump_sha256=dump_sha)
+            print(f"Manifest written: {config.manifest_path}")
+        else:
+            print("[dry-run] Would write manifest with dump sha256 and validation counts")
+        prune_old_backups(config, execute=execute)
     return runner
 
 
@@ -1221,6 +1385,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--timestamp",
         help="override timestamp for tests or one-off recovery runs",
+    )
+    parser.add_argument(
+        "--include-legacy-media-import",
+        action="store_true",
+        help=(
+            "one-off complete bucket backfill from local legacy MinIO buckets; "
+            "daily timer should normally leave this off"
+        ),
     )
     return parser
 

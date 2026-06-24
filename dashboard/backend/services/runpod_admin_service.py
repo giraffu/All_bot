@@ -447,6 +447,58 @@ async def start_runpod_autoscaler_delete_operation(
     )
 
 
+async def start_runpod_autoscaler_enable_operation(
+    *,
+    profile: str,
+    slot: str,
+    agent_id: str,
+    trigger_reason: str,
+    spawn_task_func=None,
+) -> RunPodAdminOperation:
+    _sync_runtime_paths()
+    normalized_profile = _normalize_profile_or_422(profile)
+    max_manual_slots = _default_prod_max_manual_slots()
+    command = _base_command("enable", profile=normalized_profile, slot=slot)
+    command.append("--execute")
+    return await _register_operation(
+        action="enable",
+        profile=normalized_profile,
+        command=command,
+        env=_operation_env(prod_max_manual_slots=max_manual_slots),
+        agent_id=agent_id,
+        slot=slot,
+        source="autoscaler",
+        trigger_reason=trigger_reason,
+        spawn_task_func=spawn_task_func,
+    )
+
+
+async def start_runpod_autoscaler_restart_operation(
+    *,
+    profile: str,
+    slot: str,
+    agent_id: str,
+    trigger_reason: str,
+    spawn_task_func=None,
+) -> RunPodAdminOperation:
+    _sync_runtime_paths()
+    normalized_profile = _normalize_profile_or_422(profile)
+    max_manual_slots = _default_prod_max_manual_slots()
+    command = _base_command("restart", profile=normalized_profile, slot=slot)
+    command.append("--execute")
+    return await _register_operation(
+        action="restart",
+        profile=normalized_profile,
+        command=command,
+        env=_operation_env(prod_max_manual_slots=max_manual_slots),
+        agent_id=agent_id,
+        slot=slot,
+        source="autoscaler",
+        trigger_reason=trigger_reason,
+        spawn_task_func=spawn_task_func,
+    )
+
+
 async def restart_lan_aio_worker_payload(
     agent_id: str,
     request: RunPodWorkerActionRequest,

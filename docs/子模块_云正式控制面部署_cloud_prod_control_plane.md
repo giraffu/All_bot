@@ -298,13 +298,18 @@ lease 后才会自动执行：有排队且预计清空时间超过该 profile �
 `ltx_video/ltx_video_flf2v/ltx_video_v2v_audio=120s`、unknown `100s`。缩容只在 `pending_count == 0` 且
 RunPod + 本地健康 enabled 可接单总容量大于 1 时，删除最高 slot 的 idle RunPod；autoscaler 创建的
 RunPod 未满 `DASHBOARD_RUNPOD_AUTOSCALER_MIN_RUNPOD_LIFETIME_SECONDS`（默认 1800）不会被缩容。
-本地 worker 只参与保底，不会被 autoscaler 启停；管理弹窗可通过
-`/api/runpod/autoscaler/control` 紧急暂停。默认清空阈值为 `img2img=20 分钟`、`scail2=40 分钟`、
-其它正式 profile `30 分钟`；系统监控页“活跃 RunPod 详情”的“清空阈值/单任务耗时”通过
-`/api/runpod/autoscaler/settings` 保存 profile 级分钟数与 `task_duration_seconds_by_type` 到 Redis，
-下一轮 autoscaler 评估立即使用。Dashboard 决策会展示 `scale_up: estimated clear time ... exceeds ...`、
+autoscaler 会优先自愈正式 RunPod worker：`status=error|quarantined` 且 `last_error_at` 已持续超过
+`DASHBOARD_RUNPOD_AUTOSCALER_FAULT_RESTART_SECONDS`（默认 300）时提交 `restart --slot NN --execute`；
+`control_state=disabled|draining` 且 worker 仍健康 `idle|running` 时提交 `enable --slot NN --execute`。
+RunPod `restart` 会先 disabled、调用 RunPod 原生 restart、等待健康 heartbeat，再恢复 enabled 接单。
+本地 worker 只参与保底，不会被 autoscaler 启停；管理弹窗可通过 `/api/runpod/autoscaler/control`
+紧急暂停。默认清空阈值为 `img2img=20 分钟`、`scail2=40 分钟`、其它正式 profile `30 分钟`；
+系统监控页“活跃 RunPod 详情”的“清空阈值/单任务耗时”通过 `/api/runpod/autoscaler/settings`
+保存 profile 级分钟数与 `task_duration_seconds_by_type` 到 Redis，下一轮 autoscaler 评估立即使用。
+Dashboard 决策会展示 `scale_up: estimated clear time ... exceeds ...`、
+`restart: runpod fault persisted ...`、`enable: runpod paused worker available`、
 `hold: estimated clear time within threshold`、`hold: no backlog`、`hold: max runpod capacity reached`、
-`hold: minimum lifetime remaining Ns` 这类原因，便于区分真实容量不足、无排队和生命周期保护。
+`hold: minimum lifetime remaining Ns` 这类原因，便于区分真实容量不足、RunPod 自愈、无排队和生命周期保护。
 
 QQCC 懒人 Bot 单独更新时使用专用脚本：
 
@@ -587,13 +592,15 @@ scripts/install_cloud_prod_shadow_sync_timer.sh --execute
 - 数据库默认使用 `CLOUD_PROD_DB_DUMP_MODE=remote_r2`：脚本通过 SSH 让 `allbot-do-sgp1-control` 在云机读取 `.env.cloud.prod`，用 Docker 工具容器 `postgres:18`（可由 `SHADOW_SYNC_POSTGRES_IMAGE` 覆盖）执行 `pg_dump -Fc --serializable-deferrable`，把 dump/sha256 上传到 R2 临时前缀 `user-data-prod/__shadow-transfer/<timestamp>`，本地主服务器再经 HTTPS/rclone 下载到 ignored 的 `backups/cloud-prod-shadow/<timestamp>/`，校验 sha256 后恢复到 PostgreSQL 18 shadow 目标库 `bot_db_prod_shadow_next`，完成 Alembic/head 与关键表行数校验后，再把 `_next` 切成当前 `bot_db_prod_shadow`。云机临时目录和 R2 临时前缀在下载后清理。
 - 本地主服务器家宽/VPN 出口不应作为长期托管服务 trusted source；`remote_r2` 模式不需要把本地主公网 IP 加到托管 PostgreSQL trusted sources。旧 `CLOUD_PROD_DB_DUMP_MODE=local_tunnel` 仅作为 fallback/专项诊断；`.env.cloud-prod-shadow-sync.local` 可保留 `CLOUD_PROD_DB_TUNNEL_SSH_HOST=allbot-do-sgp1-control`，用于 Redis/Valkey 摘要采集或 fallback 时短生命周期 `local -> cloud control -> managed service` SSH 本地转发。`CLOUD_PROD_DB_TUNNEL_LOCAL_PORT=0` 表示自动选择空闲本地端口。
 - 本地到 R2 的 dump 下载可按网络情况设置 `R2_SYNC_HTTP_PROXY` / `R2_SYNC_HTTPS_PROXY`，同时用 `R2_SYNC_NO_PROXY` 保留 `127.0.0.1,localhost,192.168.1.115` 等本地 MinIO/LAN 地址直连。
-- 对象同步使用 `rclone/rclone` 工具容器，把 R2 `user-data-prod` 增量同步到本地 MinIO `user-data-prod-shadow`；云端删除或覆盖导致的旧本地对象进入 `user-data-prod-shadow-quarantine/<timestamp>/`，不硬删。
+- 对象同步使用 `rclone/rclone` 工具容器，先把 R2 `user-data-prod` 增量同步到本地 MinIO 纯镜像桶 `user-data-prod-shadow`；云端删除或覆盖导致的旧本地对象进入 `user-data-prod-shadow-quarantine/<timestamp>/`，不硬删。
+- 若开启 `COMPLETE_MEDIA_SYNC_ENABLED=true`，每日任务会把 `user-data-prod-shadow` 非破坏式 copy 到完整合并桶 `user-data-complete-shadow`，不从 R2 下载第二遍，也不会删除完整桶内 legacy-only 对象。`bot-data` / `comfyui-temp` 等旧本地桶只用于一次性手动补齐，执行时显式追加 `--include-legacy-media-import` 或临时设置 `COMPLETE_MEDIA_IMPORT_LEGACY=true`；timer 日常运行应保持 legacy import 关闭，避免每天重复扫描历史大桶。
 - Redis/Valkey 只记录 `INFO memory` / `DBSIZE` 摘要，不恢复运行态、队列、锁或 heartbeat。
 - systemd timer 为 `allbot-cloud-prod-shadow-sync.timer`，默认每日 Asia/Shanghai 05:00，`Persistent=true`，`RandomizedDelaySec=15m`。
 
 安全边界：
 - `.env.cloud-prod-shadow-sync.local` 只放在本地主服务器并保持 ignored；不得把 DB 密码、R2 key、Bot token、presigned URL、`.env.cloud.prod` 内容写入日志、manifest、文档或聊天。
-- 目标库禁止使用本地正式 `bot_db` 或云正式 `bot_db_prod`；脚本还会拒绝源/目标 DB host 相同、R2 目标指回云端、R2 bucket 与本地 shadow bucket 同名。`remote_r2` / SSH tunnel 只改变 PostgreSQL/Redis 读取与传输路径，不改变 shadow 数据库和本地对象桶目标。
+- 目标库禁止使用本地正式 `bot_db` 或云正式 `bot_db_prod`；脚本还会拒绝源/目标 DB host 相同、R2 目标指回云端、R2 bucket 与本地 shadow bucket 同名，以及完整合并桶与 shadow/quarantine/legacy 源桶重名。`remote_r2` / SSH tunnel 只改变 PostgreSQL/Redis 读取与传输路径，不改变 shadow 数据库和本地对象桶目标。
+- 脚本执行时会持有 `backups/cloud-prod-shadow/.shadow-sync.lock`；手动长跑与 systemd timer 不应并发覆盖同一 shadow 目标。
 - 本地服务不会自动切到 `bot_db_prod_shadow`；云正式整体故障时仍按本地灾备文档人工确认、停同步 timer、核对 manifest/RPO 后再切写入口。
 - 本轮不建设业务分析表、数据 mart、BI 或 Notebook；涉及完整提示词、用户明细等敏感数据时，后续分析方案必须单独定义访问边界。
 
@@ -639,12 +646,12 @@ docker logs --since 2m --tail 100 cloud-prod-comfy-agent-1
 - Gallery/History 热路径索引必须存在，尤其是 `ix_gallery_posts_active_created_at_id`、`ix_history_task_id`、`ix_history_user_id_id_desc`、`ix_user_interactions_user_action_post`。
 - 新生成对象写入 R2 `user-data-prod`。
 - 旧历史媒体的正式应用读路径应通过 R2 或当前 R2/S3 短签读取；`assets.aivison.it.com` 只作为人工回滚、旧外链和迁移补漏排障入口。
-- 本地 shadow 验收只读检查 `bot_db_prod_shadow`、`backups/cloud-prod-shadow/<timestamp>/manifest.json`、MinIO `user-data-prod-shadow` 抽样对象；不要把 shadow 验收当作云正式服务已经切到本地。
+- 本地 shadow 验收只读检查 `bot_db_prod_shadow`、`backups/cloud-prod-shadow/<timestamp>/manifest.json`、MinIO `user-data-prod-shadow` 抽样对象；若启用完整合并桶，还要抽查 `user-data-complete-shadow` 中 R2 新对象和 legacy 旧对象是否都可读。不要把 shadow 验收当作云正式服务已经切到本地。
 
 ## 6. 回滚与事故处理
 - 只重建 Central/Web/Dashboard 代码后，若服务异常，优先回滚目标容器代码或恢复热修前备份文件，再只重建目标服务。
 - worker 更新后如果单节点异常，可只重建对应 `cloud-prod-comfy-agent-N`；不要全量清理 `workers` project。
 - 已经启动云 Bot 并产生新写入后，不做简单整站回滚；走数据核对与定向修复。
-- 云正式整体不可用且短时无法恢复时，才执行本地正式灾备切换。具体步骤见 `docs/子模块_本地正式灾备切换_local_prod_fallback.md`；切换前必须保证生产 Bot 单实例，优先核对最近一次 `bot_db_prod_shadow` / `user-data-prod-shadow` 同步 manifest，并接受 shadow RPO 与灾备期间新增写入的对账成本。
+- 云正式整体不可用且短时无法恢复时，才执行本地正式灾备切换。具体步骤见 `docs/子模块_本地正式灾备切换_local_prod_fallback.md`；切换前必须保证生产 Bot 单实例，优先核对最近一次 `bot_db_prod_shadow` / `user-data-prod-shadow` / `user-data-complete-shadow` 同步 manifest，并接受 shadow RPO 与灾备期间新增写入的对账成本。
 - `/system/status` 慢或 Dashboard 卡顿时，先检查 Central 状态观测缓存、托管 Valkey 连接、Dashboard stats 缓存和前端轮询频率，不要把 GPU 生成停顿直接当成控制面故障。
 - Web 公网慢但云内健康时，不要优先重启 Web API；先检查 Cloudflare/Tailscale 链路、R2 result timeout、R2 公开域名/短签和前端串行请求。若正式响应出现 legacy `assets` URL，再按回归缺陷排查。

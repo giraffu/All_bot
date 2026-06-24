@@ -43,6 +43,10 @@ SCALE_UP_WAIT_MINUTES_MAX = 240
 TASK_DURATION_SECONDS_MIN = 1
 TASK_DURATION_SECONDS_MAX = 3600
 UNKNOWN_TASK_DURATION_SECONDS = 100
+RUNPOD_FAULT_RESTART_SECONDS_DEFAULT = 5 * 60
+RUNPOD_UNHEALTHY_STATUSES = {"error", "quarantined"}
+RUNPOD_PAUSED_CONTROL_STATES = {"disabled", "draining"}
+RUNPOD_RECOVERABLE_STATUSES = {"idle", "running"}
 DEFAULT_TASK_DURATION_SECONDS_BY_TYPE: dict[str, int] = {
     "img2img": 13,
     "img2img_lora": 13,
@@ -220,6 +224,7 @@ class RunPodAutoscalerConfig:
     max_runpods_per_profile: int = 5
     heartbeat_max_age_seconds: int = 5 * 60
     min_runpod_lifetime_seconds: int = 30 * 60
+    runpod_fault_restart_seconds: int = RUNPOD_FAULT_RESTART_SECONDS_DEFAULT
     leader_ttl_seconds: int = 90
     owner_id: str = AUTOSCALER_OWNER_ID
     scale_up_wait_seconds_by_profile: dict[str, int] = field(default_factory=dict)
@@ -245,6 +250,11 @@ class RunPodAutoscalerConfig:
             self,
             "min_runpod_lifetime_seconds",
             max(0, int(self.min_runpod_lifetime_seconds or 0)),
+        )
+        object.__setattr__(
+            self,
+            "runpod_fault_restart_seconds",
+            max(0, int(self.runpod_fault_restart_seconds or 0)),
         )
 
     def scale_up_wait_seconds_for_profile(self, profile: str) -> int:
@@ -303,6 +313,7 @@ class RunPodAutoscalerConfig:
             "max_runpods_per_profile": self.max_runpods_per_profile,
             "heartbeat_max_age_seconds": self.heartbeat_max_age_seconds,
             "min_runpod_lifetime_seconds": self.min_runpod_lifetime_seconds,
+            "runpod_fault_restart_seconds": self.runpod_fault_restart_seconds,
             "leader_ttl_seconds": self.leader_ttl_seconds,
         }
 
@@ -348,6 +359,11 @@ def config_from_env() -> RunPodAutoscalerConfig:
         min_runpod_lifetime_seconds=_int_env(
             "DASHBOARD_RUNPOD_AUTOSCALER_MIN_RUNPOD_LIFETIME_SECONDS",
             default=30 * 60,
+            minimum=0,
+        ),
+        runpod_fault_restart_seconds=_int_env(
+            "DASHBOARD_RUNPOD_AUTOSCALER_FAULT_RESTART_SECONDS",
+            default=RUNPOD_FAULT_RESTART_SECONDS_DEFAULT,
             minimum=0,
         ),
         leader_ttl_seconds=_int_env(
@@ -746,6 +762,76 @@ def _worker_seen_recently(
     return 0 <= now - last_seen <= heartbeat_max_age_seconds
 
 
+def _worker_status(worker: dict[str, Any]) -> str:
+    return str(worker.get("status") or "").strip().lower()
+
+
+def _worker_control_state(worker: dict[str, Any]) -> str:
+    return str(worker.get("control_state") or "enabled").strip().lower()
+
+
+def _runpod_slot_for_worker(worker: dict[str, Any], *, profile: str) -> str | None:
+    try:
+        return prod_slot_from_agent_id(str(worker.get("agent_id") or ""), profile=profile)
+    except ValueError:
+        return None
+
+
+def _runpod_fault_age_seconds(worker: dict[str, Any], *, now: float) -> int | None:
+    if _worker_status(worker) not in RUNPOD_UNHEALTHY_STATUSES:
+        return None
+    last_error_at = _safe_float(worker.get("last_error_at"))
+    if last_error_at is None:
+        return None
+    return max(0, int(now - last_error_at))
+
+
+def _runpod_restart_recovery_candidate(
+    worker: dict[str, Any],
+    *,
+    profile: str,
+    now: float,
+    heartbeat_max_age_seconds: int,
+    fault_restart_seconds: int,
+) -> tuple[int, str, dict[str, Any]] | None:
+    if not _worker_seen_recently(
+        worker,
+        now=now,
+        heartbeat_max_age_seconds=heartbeat_max_age_seconds,
+    ):
+        return None
+    slot = _runpod_slot_for_worker(worker, profile=profile)
+    if not slot:
+        return None
+    fault_age_seconds = _runpod_fault_age_seconds(worker, now=now)
+    if fault_age_seconds is None or fault_age_seconds < fault_restart_seconds:
+        return None
+    return fault_age_seconds, slot, worker
+
+
+def _runpod_enable_recovery_candidate(
+    worker: dict[str, Any],
+    *,
+    profile: str,
+    now: float,
+    heartbeat_max_age_seconds: int,
+) -> tuple[int, str, dict[str, Any]] | None:
+    if not _worker_seen_recently(
+        worker,
+        now=now,
+        heartbeat_max_age_seconds=heartbeat_max_age_seconds,
+    ):
+        return None
+    if _worker_status(worker) not in RUNPOD_RECOVERABLE_STATUSES:
+        return None
+    if _worker_control_state(worker) not in RUNPOD_PAUSED_CONTROL_STATES:
+        return None
+    slot = _runpod_slot_for_worker(worker, profile=profile)
+    if not slot:
+        return None
+    return int(slot), slot, worker
+
+
 def _worker_accepting(
     worker: dict[str, Any],
     *,
@@ -758,8 +844,8 @@ def _worker_accepting(
             now=now,
             heartbeat_max_age_seconds=heartbeat_max_age_seconds,
         )
-        and str(worker.get("status") or "").lower() in {"idle", "running"}
-        and str(worker.get("control_state") or "enabled").lower() == "enabled"
+        and _worker_status(worker) in RUNPOD_RECOVERABLE_STATUSES
+        and _worker_control_state(worker) == "enabled"
     )
 
 
@@ -828,6 +914,33 @@ def _autoscaler_cooldown_remaining_seconds(
         if _operation_profile(operation) != profile:
             continue
         if operation.get("source") != "autoscaler":
+            continue
+        ended_at = _parse_operation_time(operation.get("ended_at"))
+        if ended_at is None:
+            continue
+        if latest_ended_at is None or ended_at > latest_ended_at:
+            latest_ended_at = ended_at
+    if latest_ended_at is None:
+        return 0
+    remaining = int(cooldown_seconds - (now - latest_ended_at))
+    return max(0, remaining)
+
+
+def _autoscaler_agent_cooldown_remaining_seconds(
+    operations: list[dict[str, Any]],
+    *,
+    agent_id: str,
+    actions: set[str],
+    now: float,
+    cooldown_seconds: int,
+) -> int:
+    latest_ended_at: float | None = None
+    for operation in operations:
+        if operation.get("source") != "autoscaler":
+            continue
+        if str(operation.get("agent_id") or "") != agent_id:
+            continue
+        if str(operation.get("action") or "") not in actions:
             continue
         ended_at = _parse_operation_time(operation.get("ended_at"))
         if ended_at is None:
@@ -1013,6 +1126,8 @@ def build_runpod_autoscaler_decisions(
         accepting_local_count = 0
         runpod_total_count = 0
         running_remaining_seconds = 0
+        runpod_restart_candidates: list[tuple[int, str, dict[str, Any]]] = []
+        runpod_enable_candidates: list[tuple[int, str, dict[str, Any]]] = []
 
         for worker in workers:
             runpod_profile = _runpod_profile_for_worker(worker)
@@ -1044,6 +1159,23 @@ def build_runpod_autoscaler_decisions(
                     heartbeat_max_age_seconds=config.heartbeat_max_age_seconds,
                 ):
                     idle_runpod_workers.append(worker)
+                restart_candidate = _runpod_restart_recovery_candidate(
+                    worker,
+                    profile=profile,
+                    now=now,
+                    heartbeat_max_age_seconds=config.heartbeat_max_age_seconds,
+                    fault_restart_seconds=config.runpod_fault_restart_seconds,
+                )
+                if restart_candidate is not None:
+                    runpod_restart_candidates.append(restart_candidate)
+                enable_candidate = _runpod_enable_recovery_candidate(
+                    worker,
+                    profile=profile,
+                    now=now,
+                    heartbeat_max_age_seconds=config.heartbeat_max_age_seconds,
+                )
+                if enable_candidate is not None:
+                    runpod_enable_candidates.append(enable_candidate)
             else:
                 if accepting:
                     accepting_local_count += 1
@@ -1089,6 +1221,9 @@ def build_runpod_autoscaler_decisions(
             "estimated_backlog_seconds": estimated_backlog_seconds,
             "estimated_clear_time_seconds": estimated_clear_time_seconds,
             "capacity_status": capacity_status,
+            "runpod_fault_restart_seconds": config.runpod_fault_restart_seconds,
+            "runpod_fault_candidate_count": len(runpod_restart_candidates),
+            "runpod_paused_candidate_count": len(runpod_enable_candidates),
         }
 
         active_operation = _active_operation_for_profile(operations, profile=profile)
@@ -1106,6 +1241,71 @@ def build_runpod_autoscaler_decisions(
                 )
             )
             continue
+
+        if runpod_restart_candidates:
+            fault_age_seconds, slot, worker = max(
+                runpod_restart_candidates,
+                key=lambda item: item[0],
+            )
+            agent_id = str(worker.get("agent_id") or "")
+            recovery_cooldown_remaining = (
+                _autoscaler_agent_cooldown_remaining_seconds(
+                    operations,
+                    agent_id=agent_id,
+                    actions={"restart"},
+                    now=now,
+                    cooldown_seconds=config.cooldown_seconds,
+                )
+            )
+            if recovery_cooldown_remaining <= 0:
+                decisions.append(
+                    _decision(
+                        profile=profile,
+                        action="restart",
+                        reason=(
+                            "restart: runpod fault persisted "
+                            f"{fault_age_seconds}s"
+                        ),
+                        metrics={
+                            **metrics,
+                            "agent_id": agent_id,
+                            "runpod_fault_age_seconds": fault_age_seconds,
+                        },
+                        slot=slot,
+                    )
+                )
+                continue
+
+        if runpod_enable_candidates:
+            _slot_number, slot, worker = max(
+                runpod_enable_candidates,
+                key=lambda item: item[0],
+            )
+            agent_id = str(worker.get("agent_id") or "")
+            recovery_cooldown_remaining = (
+                _autoscaler_agent_cooldown_remaining_seconds(
+                    operations,
+                    agent_id=agent_id,
+                    actions={"enable"},
+                    now=now,
+                    cooldown_seconds=config.cooldown_seconds,
+                )
+            )
+            if recovery_cooldown_remaining <= 0:
+                decisions.append(
+                    _decision(
+                        profile=profile,
+                        action="enable",
+                        reason="enable: runpod paused worker available",
+                        metrics={
+                            **metrics,
+                            "agent_id": agent_id,
+                            "runpod_control_state": _worker_control_state(worker),
+                        },
+                        slot=slot,
+                    )
+                )
+                continue
 
         cooldown_remaining = _autoscaler_cooldown_remaining_seconds(
             operations,
@@ -1274,6 +1474,8 @@ async def evaluate_runpod_autoscaler_once(
     fetch_operations_func=runpod_admin_service.get_runpod_operations_payload,
     start_add_func=runpod_admin_service.start_runpod_autoscaler_add_operation,
     start_delete_func=runpod_admin_service.start_runpod_autoscaler_delete_operation,
+    start_restart_func=runpod_admin_service.start_runpod_autoscaler_restart_operation,
+    start_enable_func=runpod_admin_service.start_runpod_autoscaler_enable_operation,
     now_func=time.time,
     spawn_task_func=None,
 ) -> dict[str, Any]:
@@ -1398,6 +1600,34 @@ async def evaluate_runpod_autoscaler_once(
                     operation = await start_delete_func(
                         profile=decision["profile"],
                         slot=str(decision["slot"]),
+                        trigger_reason=decision["reason"],
+                        spawn_task_func=spawn_task_func,
+                    )
+                    decision["operation_id"] = operation.id
+                    executed_operations.append(operation_payload(operation))
+                elif (
+                    decision["action"] == "restart"
+                    and decision.get("slot")
+                    and decision.get("agent_id")
+                ):
+                    operation = await start_restart_func(
+                        profile=decision["profile"],
+                        slot=str(decision["slot"]),
+                        agent_id=str(decision["agent_id"]),
+                        trigger_reason=decision["reason"],
+                        spawn_task_func=spawn_task_func,
+                    )
+                    decision["operation_id"] = operation.id
+                    executed_operations.append(operation_payload(operation))
+                elif (
+                    decision["action"] == "enable"
+                    and decision.get("slot")
+                    and decision.get("agent_id")
+                ):
+                    operation = await start_enable_func(
+                        profile=decision["profile"],
+                        slot=str(decision["slot"]),
+                        agent_id=str(decision["agent_id"]),
                         trigger_reason=decision["reason"],
                         spawn_task_func=spawn_task_func,
                     )

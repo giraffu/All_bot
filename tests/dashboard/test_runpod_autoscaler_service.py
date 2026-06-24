@@ -98,6 +98,7 @@ def _runpod_worker(
     current_task_id: str | None = None,
     current_task_type: str | None = None,
     current_task_created_at: float | None = None,
+    last_error_at: float | None = None,
 ):
     profile_agent = {
         "img2img": "runpod_prod_img2img_manual_",
@@ -126,6 +127,7 @@ def _runpod_worker(
         "current_task_id": current_task_id,
         "current_task_type": current_task_type,
         "current_task_created_at": current_task_created_at,
+        "last_error_at": last_error_at,
     }
 
 
@@ -395,6 +397,140 @@ async def test_autoscaler_scales_up_when_backlog_has_no_accepting_workers():
     assert decision["capacity_status"] == "no_accepting_workers"
     assert decision["reason"] == "scale_up: no accepting workers for backlog"
     assert calls[0]["profile"] == "image_to_video"
+
+
+async def test_autoscaler_restarts_runpod_after_persistent_fault():
+    calls = []
+
+    async def start_restart(**kwargs):
+        calls.append(kwargs)
+        return RunPodAdminOperation(
+            id="op-restart",
+            action="restart",
+            profile=kwargs["profile"],
+            command=["runpod", "restart"],
+            agent_id=kwargs["agent_id"],
+            slot=kwargs["slot"],
+            source="autoscaler",
+            trigger_reason=kwargs["trigger_reason"],
+        )
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=InMemoryRunPodAutoscalerStateStore(),
+        status_payload=_status(profile="scail2", pending=0, wait=None),
+        workers_payload=_workers(
+            _runpod_worker(
+                "scail2",
+                "01",
+                status="error",
+                last_error_at=650.0,
+            )
+        ),
+        operations_payload={"operations": []},
+        start_restart_func=start_restart,
+        now_func=lambda: 1000.0,
+    )
+
+    decision = {item["profile"]: item for item in payload["decisions"]}["scail2"]
+    assert decision["action"] == "restart"
+    assert decision["reason"] == "restart: runpod fault persisted 350s"
+    assert decision["agent_id"] == "runpod_prod_scail2_manual_01"
+    assert decision["slot"] == "01"
+    assert calls == [
+        {
+            "profile": "scail2",
+            "slot": "01",
+            "agent_id": "runpod_prod_scail2_manual_01",
+            "trigger_reason": "restart: runpod fault persisted 350s",
+            "spawn_task_func": None,
+        }
+    ]
+    assert payload["executed_operations"][0]["action"] == "restart"
+
+
+async def test_autoscaler_waits_before_restarting_recent_runpod_fault():
+    calls = []
+
+    async def start_restart(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("should not restart before fault grace expires")
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=InMemoryRunPodAutoscalerStateStore(),
+        status_payload=_status(profile="scail2", pending=0, wait=None),
+        workers_payload=_workers(
+            _runpod_worker(
+                "scail2",
+                "01",
+                status="error",
+                last_error_at=800.0,
+            )
+        ),
+        operations_payload={"operations": []},
+        start_restart_func=start_restart,
+        now_func=lambda: 1000.0,
+    )
+
+    decision = {item["profile"]: item for item in payload["decisions"]}["scail2"]
+    assert decision["action"] == "hold"
+    assert calls == []
+
+
+async def test_autoscaler_enables_paused_runpod_worker():
+    calls = []
+
+    async def start_enable(**kwargs):
+        calls.append(kwargs)
+        return RunPodAdminOperation(
+            id="op-enable",
+            action="enable",
+            profile=kwargs["profile"],
+            command=["runpod", "enable"],
+            agent_id=kwargs["agent_id"],
+            slot=kwargs["slot"],
+            source="autoscaler",
+            trigger_reason=kwargs["trigger_reason"],
+        )
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=InMemoryRunPodAutoscalerStateStore(),
+        status_payload=_status(profile="image_to_video", pending=0, wait=None),
+        workers_payload=_workers(
+            _runpod_worker(
+                "image_to_video",
+                "03",
+                status="idle",
+                control_state="disabled",
+            )
+        ),
+        operations_payload={"operations": []},
+        start_enable_func=start_enable,
+        now_func=lambda: 1000.0,
+    )
+
+    decision = {item["profile"]: item for item in payload["decisions"]}[
+        "image_to_video"
+    ]
+    assert decision["action"] == "enable"
+    assert decision["reason"] == "enable: runpod paused worker available"
+    assert decision["agent_id"] == "runpod_prod_image_to_video_manual_03"
+    assert decision["slot"] == "03"
+    assert calls == [
+        {
+            "profile": "image_to_video",
+            "slot": "03",
+            "agent_id": "runpod_prod_image_to_video_manual_03",
+            "trigger_reason": "enable: runpod paused worker available",
+            "spawn_task_func": None,
+        }
+    ]
+    assert payload["executed_operations"][0]["action"] == "enable"
 
 
 async def test_autoscaler_executes_at_most_one_scale_up_per_round():

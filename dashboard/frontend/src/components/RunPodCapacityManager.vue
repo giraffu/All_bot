@@ -73,6 +73,7 @@ type RunPodAutoscalerPayload = {
     cooldown_seconds?: number
     max_runpods_per_profile?: number
     min_runpod_lifetime_seconds?: number
+    runpod_fault_restart_seconds?: number
     task_duration_seconds_by_type?: Record<string, number>
   }
   decisions?: RunPodAutoscalerDecision[]
@@ -168,9 +169,20 @@ const operationSourceLabel = (operation: RunPodOperation) =>
 const operationSourceColor = (operation: RunPodOperation) =>
   operation.source === 'autoscaler' ? 'cyan' : 'default'
 
+const operationActionLabel = (action: string) => {
+  if (action === 'add') return '新增'
+  if (action === 'delete') return '删除'
+  if (action === 'restart') return '重启'
+  if (action === 'enable') return '开启'
+  if (action === 'pause') return '暂停'
+  return action
+}
+
 const autoscalerDecisionLabel = (action: string) => {
   if (action === 'scale_up') return '扩容'
   if (action === 'scale_down') return '缩容'
+  if (action === 'restart') return '重启'
+  if (action === 'enable') return '开启'
   if (action === 'hold') return '保持'
   return action
 }
@@ -178,6 +190,8 @@ const autoscalerDecisionLabel = (action: string) => {
 const autoscalerDecisionColor = (action: string) => {
   if (action === 'scale_up') return 'blue'
   if (action === 'scale_down') return 'orange'
+  if (action === 'restart') return 'red'
+  if (action === 'enable') return 'green'
   return 'default'
 }
 
@@ -372,6 +386,7 @@ onUnmounted(() => {
           <span>缩容等待 {{ autoscaler?.config?.scale_down_wait_seconds || 60 }}s</span>
           <span>冷却 {{ autoscaler?.config?.cooldown_seconds || 600 }}s</span>
           <span>最短生命周期 {{ autoscaler?.config?.min_runpod_lifetime_seconds || 1800 }}s</span>
+          <span>故障重启 {{ autoscaler?.config?.runpod_fault_restart_seconds || 300 }}s</span>
           <span>每类最多 {{ autoscaler?.config?.max_runpods_per_profile || 5 }}</span>
         </div>
 
@@ -452,7 +467,7 @@ onUnmounted(() => {
             class="flex items-center justify-between gap-3 text-xs border border-gray-100 rounded px-2 py-1"
           >
             <span class="min-w-0 flex-1 truncate">
-              {{ operation.action }} · {{ profileLabel(operation.profile) }}
+              {{ operationActionLabel(operation.action) }} · {{ profileLabel(operation.profile) }}
               <span v-if="operation.requested_count !== null && operation.requested_count !== undefined">
                 · 新增 {{ operation.requested_count }}
               </span>
@@ -536,7 +551,7 @@ onUnmounted(() => {
 
 .runpod-autoscaler-metrics {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   font-size: 11px;
   color: #64748b;

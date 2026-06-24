@@ -64,6 +64,8 @@ def test_parser_defaults_to_dry_run_and_requires_execute_for_mutation():
 
     assert parser.parse_args([]).execute is False
     assert parser.parse_args(["--execute"]).execute is True
+    assert parser.parse_args([]).include_legacy_media_import is False
+    assert parser.parse_args(["--include-legacy-media-import"]).include_legacy_media_import is True
 
 
 def test_dry_run_plans_commands_without_creating_backup_directory(tmp_path, capsys):
@@ -88,6 +90,65 @@ def test_dry_run_plans_commands_without_creating_backup_directory(tmp_path, caps
     assert "rclone delete" not in commands
     assert "--delete-excluded" not in commands
     assert not config.backup_dir.exists()
+
+
+def test_complete_media_sync_copies_shadow_to_complete_without_destructive_sync(
+    tmp_path,
+    capsys,
+):
+    config = build_config(
+        tmp_path,
+        COMPLETE_MEDIA_SYNC_ENABLED="true",
+        LOCAL_MINIO_COMPLETE_BUCKET="user-data-complete-shadow",
+    )
+
+    runner = sync.run_shadow_sync(config, execute=False)
+
+    commands = "\n".join(runner.commands)
+    assert "rclone mkdir localminio:user-data-complete-shadow" in commands
+    assert (
+        "rclone copy localminio:user-data-prod-shadow "
+        "localminio:user-data-complete-shadow"
+    ) in commands
+    assert (
+        "rclone copy cloudr2:user-data-prod localminio:user-data-complete-shadow"
+        not in commands
+    )
+    complete_lines = [
+        line for line in commands.splitlines() if "user-data-complete-shadow" in line
+    ]
+    assert complete_lines
+    assert all("rclone sync" not in line for line in complete_lines)
+    assert all("--backup-dir" not in line for line in complete_lines)
+    assert "--ignore-existing" not in "\n".join(complete_lines)
+    assert not config.backup_dir.exists()
+
+
+def test_complete_media_legacy_import_is_manual_and_preserves_existing_objects(
+    tmp_path,
+    capsys,
+):
+    config = build_config(
+        tmp_path,
+        COMPLETE_MEDIA_SYNC_ENABLED="true",
+        COMPLETE_MEDIA_IMPORT_LEGACY="true",
+        LOCAL_MINIO_COMPLETE_BUCKET="user-data-complete-shadow",
+        COMPLETE_MEDIA_LEGACY_BUCKETS="bot-data,comfyui-temp",
+    )
+
+    runner = sync.run_shadow_sync(config, execute=False)
+
+    commands = "\n".join(runner.commands)
+    assert (
+        "rclone copy localminio:bot-data localminio:user-data-complete-shadow "
+        "--ignore-existing"
+    ) in commands
+    assert (
+        "rclone copy localminio:comfyui-temp localminio:user-data-complete-shadow "
+        "--ignore-existing"
+    ) in commands
+    assert "rclone sync localminio:bot-data" not in commands
+    assert "rclone delete localminio:user-data-complete-shadow" not in commands
 
 
 def test_postgres_tool_image_defaults_to_cloud_prod_major_version(tmp_path):
@@ -248,6 +309,23 @@ def test_execute_remote_r2_dump_mode_downloads_dump_and_writes_manifest(
     )
     assert manifest["dump_sha256"] == dump_sha
     assert manifest["table_counts"]["users"] == 10
+
+
+def test_existing_matching_checksum_sidecar_is_not_rewritten(tmp_path):
+    config = build_config(tmp_path)
+    config.backup_dir.mkdir(parents=True)
+    dump_bytes = b"fake remote r2 dump"
+    dump_sha = hashlib.sha256(dump_bytes).hexdigest()
+    config.dump_path.write_bytes(dump_bytes)
+    sha_path = config.backup_dir / "cloud_prod.dump.sha256"
+    sha_path.write_text(f"{dump_sha}  cloud_prod.dump\n", encoding="utf-8")
+    sha_path.chmod(0o444)
+
+    try:
+        assert sync.validate_and_write_dump_checksum(config) == dump_sha
+        assert sha_path.read_text(encoding="utf-8") == f"{dump_sha}  cloud_prod.dump\n"
+    finally:
+        sha_path.chmod(0o644)
 
 
 def test_execute_can_dump_cloud_db_through_ssh_tunnel(tmp_path, monkeypatch):
@@ -423,6 +501,24 @@ def test_postgres_and_redis_passwords_are_not_passed_as_process_arguments(tmp_pa
         (
             {"CLOUD_PROD_DB_DUMP_MODE": "remote_r2"},
             "REMOTE_DUMP_SSH_HOST is required",
+        ),
+        (
+            {"COMPLETE_MEDIA_IMPORT_LEGACY": "true"},
+            "COMPLETE_MEDIA_SYNC_ENABLED must be true",
+        ),
+        (
+            {
+                "COMPLETE_MEDIA_SYNC_ENABLED": "true",
+                "LOCAL_MINIO_COMPLETE_BUCKET": "user-data-prod-shadow",
+            },
+            "complete media bucket must be different",
+        ),
+        (
+            {
+                "COMPLETE_MEDIA_SYNC_ENABLED": "true",
+                "LOCAL_MINIO_COMPLETE_BUCKET": "bot-data",
+            },
+            "complete media bucket must be different",
         ),
     ],
 )

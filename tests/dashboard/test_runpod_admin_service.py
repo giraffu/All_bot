@@ -328,6 +328,49 @@ async def test_enable_runpod_worker_builds_slot_scoped_operation():
 
 
 @pytest.mark.asyncio
+async def test_autoscaler_recovery_operations_build_slot_scoped_operations():
+    restart_operation = (
+        await runpod_admin_service.start_runpod_autoscaler_restart_operation(
+            profile="scail2",
+            slot="01",
+            agent_id="runpod_prod_scail2_manual_01",
+            trigger_reason="restart: runpod fault persisted 350s",
+            spawn_task_func=_discard_operation_coroutine,
+        )
+    )
+    enable_operation = (
+        await runpod_admin_service.start_runpod_autoscaler_enable_operation(
+            profile="image_to_video",
+            slot="03",
+            agent_id="runpod_prod_image_to_video_manual_03",
+            trigger_reason="enable: runpod paused worker available",
+            spawn_task_func=_discard_operation_coroutine,
+        )
+    )
+
+    restart_command = restart_operation.command
+    enable_command = enable_operation.command
+    assert restart_operation.action == "restart"
+    assert restart_operation.source == "autoscaler"
+    assert restart_operation.trigger_reason == "restart: runpod fault persisted 350s"
+    assert restart_operation.agent_id == "runpod_prod_scail2_manual_01"
+    assert restart_operation.slot == "01"
+    assert "restart" in restart_command
+    assert restart_command[restart_command.index("--profile") + 1] == "scail2"
+    assert restart_command[restart_command.index("--slot") + 1] == "01"
+    assert "--execute" in restart_command
+    assert enable_operation.action == "enable"
+    assert enable_operation.source == "autoscaler"
+    assert enable_operation.trigger_reason == "enable: runpod paused worker available"
+    assert enable_operation.agent_id == "runpod_prod_image_to_video_manual_03"
+    assert enable_operation.slot == "03"
+    assert "enable" in enable_command
+    assert enable_command[enable_command.index("--profile") + 1] == "image_to_video"
+    assert enable_command[enable_command.index("--slot") + 1] == "03"
+    assert "--execute" in enable_command
+
+
+@pytest.mark.asyncio
 async def test_restart_lan_aio_worker_builds_slot_scoped_operation():
     payload = await runpod_admin_service.restart_lan_aio_worker_payload(
         agent_id="lan_aio_prod_gpu177_gpu0_image_to_video_01",

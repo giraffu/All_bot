@@ -21,6 +21,7 @@ vi.mock('../api/api', () => ({
       scale_down_wait_seconds: 60,
       cooldown_seconds: 600,
       min_runpod_lifetime_seconds: 1800,
+      runpod_fault_restart_seconds: 300,
       max_runpods_per_profile: 5,
     },
     decisions: [
@@ -35,6 +36,16 @@ vi.mock('../api/api', () => ({
         profile: 'i2i_pro',
         action: 'hold',
         reason: 'hold: estimated clear time within threshold',
+      },
+      {
+        profile: 'scail2',
+        action: 'restart',
+        reason: 'restart: runpod fault persisted 350s',
+      },
+      {
+        profile: 'image_to_video',
+        action: 'enable',
+        reason: 'enable: runpod paused worker available',
       },
     ],
   }),
@@ -121,6 +132,7 @@ describe('RunPodCapacityManager', () => {
         scale_down_wait_seconds: 60,
         cooldown_seconds: 600,
         min_runpod_lifetime_seconds: 1800,
+        runpod_fault_restart_seconds: 300,
         max_runpods_per_profile: 5,
       },
       decisions: [
@@ -135,6 +147,16 @@ describe('RunPodCapacityManager', () => {
           profile: 'i2i_pro',
           action: 'hold',
           reason: 'hold: estimated clear time within threshold',
+        },
+        {
+          profile: 'scail2',
+          action: 'restart',
+          reason: 'restart: runpod fault persisted 350s',
+        },
+        {
+          profile: 'image_to_video',
+          action: 'enable',
+          reason: 'enable: runpod paused worker available',
         },
       ],
     })
@@ -180,8 +202,13 @@ describe('RunPodCapacityManager', () => {
     expect(wrapper.text()).toContain('运行中')
     expect(wrapper.text()).toContain('清空阈值 1800s')
     expect(wrapper.text()).toContain('最短生命周期 1800s')
+    expect(wrapper.text()).toContain('故障重启 300s')
     expect(wrapper.text()).toContain('扩容')
+    expect(wrapper.text()).toContain('重启')
+    expect(wrapper.text()).toContain('开启')
     expect(wrapper.text()).toContain('scale_up: estimated clear time 1900s exceeds 1800s')
+    expect(wrapper.text()).toContain('restart: runpod fault persisted 350s')
+    expect(wrapper.text()).toContain('enable: runpod paused worker available')
     expect(wrapper.text()).toContain('自动')
   })
 
