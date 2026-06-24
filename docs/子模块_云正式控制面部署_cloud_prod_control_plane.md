@@ -29,6 +29,7 @@
 | Dashboard Frontend | `cloud-dashboard-frontend-prod` | `100.107.220.127:8086` | 管理后台云端 Nginx 前端，同源反代 Dashboard Backend |
 | imgproxy | `cloud-imgproxy-prod` | compose 内部端口 | 图片缩略与代理 |
 | Bot | `cloud-tg-bot-prod` | `bot` profile | 正式 Bot polling；必须保证全网单实例 |
+| QQCC Bot | `cloud-qqcc-bot-prod` | `qqcc-bot` profile | QQCC 懒人 Bot 独立 polling；只开放懒人 P 图/懒人动图，必须使用独立 `QQCC_BOT_TOKEN` |
 | Paid Group Guard Bot | `cloud-paid-group-guard-bot-prod` | 无对外端口 | 独立付费群审核与轻量群管理 Bot，使用独立 `PAID_GROUP_BOT_TOKEN` |
 
 云端不长期自托管正式 PostgreSQL、Valkey 或 MinIO；正式库与运行态 Redis/Valkey 使用托管服务或外部服务。
@@ -57,6 +58,7 @@ RUNPOD_MODEL_MANIFEST_KEY=img2img_lora/2026-06-10/manifest.json
 | :--- | :--- | :--- |
 | `MINIO_*` / `R2_*` | `user-data-prod` + `https://r2.aivison.it.com` | 正式新生成对象、Web 媒体、历史/Gallery 读取与 worker 结果上传事实源 |
 | `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | `.env.cloud.prod` 真实值；RunPod Pod 内使用 `allbot_cloud_prod_r2_access_key` / `allbot_cloud_prod_r2_secret_key` secret | 只读写 `user-data-prod`，不得用于模型缓存 |
+| `QQCC_BOT_TOKEN` | `.env.cloud.prod` 真实值 | `cloud-qqcc-bot-prod` 的独立 Telegram token；不得写入仓库、docs、日志或 `docker compose config` 输出，正式上线前若已暴露应轮换 |
 | `MEMBERSHIP_SETTLEMENT_V2_ENABLED` / `AFFILIATE_MEMBERSHIP_REDEEM_ENABLED` | `true` | 正式 Web 与 Bot 的 affiliate 返佣兑身份硬开关；缺失或为 false 会让用户看到“返佣兑换身份功能未开启”，正式 preflight 必须阻断 |
 | `RUNPOD_PROD_AGENT_SECRET_TOKEN_REF` | `{{ RUNPOD_SECRET_allbot_cloud_prod_agent_secret_token }}` | 正式 RunPod Pod 访问 Central agent API 的 token 引用 |
 | `RUNPOD_PROD_R2_ACCESS_KEY_REF` / `RUNPOD_PROD_R2_SECRET_KEY_REF` | `{{ RUNPOD_SECRET_allbot_cloud_prod_r2_access_key }}` / `{{ RUNPOD_SECRET_allbot_cloud_prod_r2_secret_key }}` | 正式 RunPod Pod 读写 `user-data-prod` 的 secret 引用 |
@@ -216,18 +218,19 @@ scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod --with-db
 ```
 
 该脚本默认流程：
-1. 在远端写 `runtime/cloud-prod/GENERATION_MAINTENANCE`，并在正在运行的 `cloud-web-api-prod` / `cloud-tg-bot-prod` 内写 `/app/GENERATION_MAINTENANCE`，只阻止新生成任务提交。
+1. 在远端写 `runtime/cloud-prod/GENERATION_MAINTENANCE`，并在正在运行的 `cloud-web-api-prod` / `cloud-tg-bot-prod` / `cloud-qqcc-bot-prod` 内写 `/app/GENERATION_MAINTENANCE`，只阻止新生成任务提交。
 2. 等待 Central `comfy:queue:pending` 与 `comfy:queue:running` 同时清空；不取消任务、不退款、不清 Redis。
 3. `rsync` 同步本地代码到 `allbot-do-sgp1-control:/home/deploy/APP/All_bot`，默认不使用 `--delete`，并排除 `.env*`、`logs/`、`runtime/`、`backups/`、`node_modules/`、`bin/cloudflared`、临时素材等本地数据目录。
 4. 默认不更新 `.env.cloud.prod`；只有显式传 `--sync-env --env-file FILE` 时才会先备份远端 env、同步并做 checksum 校验。
 5. 远端先执行 `scripts/safe_deploy_cloud_prod.sh --preflight-only`，再按 scope 执行控制面发布或单服务热修。
-6. 默认不启动/重建正式 Bot；如需 Bot，必须显式传 `--bot-mode auto|start|stop`，且执行前确认全网没有第二个生产 Telegram polling 实例。
+6. 默认不启动/重建正式 Bot；如需主 Bot，必须显式传 `--bot-mode auto|start|stop`，如需 QQCC Bot，必须显式传 `--qqcc-bot-mode auto|start|stop`，且执行前确认对应 token 全网没有第二个生产 Telegram polling 实例。
 7. 默认不发布 Cloudflare Pages、不中断本地 worker、不操作 RunPod、不改 DNS/Tunnel；这些能力仍按独立 SOP 处理。
 8. 验证云内健康检查、公网正式入口、本地 worker relay、Central queue/status/workers、目标容器 restart count 与最近错误日志，成功后解除生成维护；失败时维护保持开启。
 
 常用参数：
 - `--scope control-plane`：默认，使用 `scripts/safe_deploy_cloud_prod.sh --start-control-plane` 更新 Central/Web/Payment/Dashboard/imgproxy。
 - `--scope services --services "web-api-prod dashboard-backend-prod"`：只重建指定云端服务；禁止把 `bot-prod` 放入 `--services`。
+- `--qqcc-bot-mode start|stop|auto|skip`：默认 `skip`。`start` 会重建并启动 `qqcc-bot-prod`，要求远端 `.env.cloud.prod` 已配置 `QQCC_BOT_TOKEN`；`auto` 只在 `cloud-qqcc-bot-prod` 原本运行时重建并启动。
 - `--skip-generation-maintenance`：仅支持 `--scope services`，跳过生成维护和队列 drain。用于不影响生成入口的低风险服务更新，例如只更新 `dashboard-backend-prod dashboard-frontend-prod paid-group-guard-bot-prod`。
 - `--with-db-upgrade`：随 `--scope control-plane` 显式执行 Alembic upgrade head；有迁移时必须走控制面发布并传该参数。
 - `--sync-env --env-file FILE`：显式同步正式 env；默认不动远端 `.env.cloud.prod`。
@@ -249,7 +252,7 @@ scripts/safe_deploy_cloud_prod.sh --start-control-plane --with-db-upgrade
 - `docker compose config` 输出会展开密钥，只能本机查看。
 - 有 Alembic 变更时必须确认单 head，并显式执行 `alembic upgrade head`；不要写“容器启动自动迁移”。
 - 正式 Bot 重建前必须确认全网只有一个生产 Telegram polling 实例。
-- `cloud-web-api-prod` 与 `cloud-tg-bot-prod` 挂载 `../runtime/cloud-prod:/app/runtime-flags`，并通过 `GENERATION_MAINTENANCE_FILE=/app/runtime-flags/GENERATION_MAINTENANCE` 读取持久生成维护标记；这保证控制面重建后新容器仍保持维护，直到脚本最后解除。
+- `cloud-web-api-prod`、`cloud-tg-bot-prod` 与 `cloud-qqcc-bot-prod` 挂载 `../runtime/cloud-prod:/app/runtime-flags`，并通过 `GENERATION_MAINTENANCE_FILE=/app/runtime-flags/GENERATION_MAINTENANCE` 读取持久生成维护标记；这保证控制面重建后新容器仍保持维护，直到脚本最后解除。
 
 ### 4.2 云端单服务热修
 只改云端某个 COPY 型服务代码时，可以只重建目标服务：
@@ -327,7 +330,7 @@ scripts/cloud_prod_generation_release_gate.py wait-pending --threshold 10 --time
 scripts/cloud_prod_generation_release_gate.py refund-pending --threshold 10 --execute
 ```
 
-`enable-maintenance --execute` 在 `cloud-web-api-prod` 与 `cloud-tg-bot-prod` 内写 `/app/GENERATION_MAINTENANCE`，只阻止新生成进入。不要为这类低影响发布写 `/app/MAINTENANCE`，它会触发 Web API 全局 503 并影响结果轮询、历史等非提交接口。`wait-pending` 与 `refund-pending` 必须在能访问正式 Redis 的 `allbot-do-sgp1-control` 上运行；本地主服务器直连正式 Redis 超时不代表队列闸门不可用。`refund-pending --execute` 只处理仍在 Central pending zset 中的任务，按维护发布退款类型 `refund_prod_maintenance_release` 走统一 finalization，释放并发锁并退款；running 任务不强杀。
+`enable-maintenance --execute` 在 `cloud-web-api-prod`、`cloud-tg-bot-prod` 与正在运行的 `cloud-qqcc-bot-prod` 内写 `/app/GENERATION_MAINTENANCE`，只阻止新生成进入。不要为这类低影响发布写 `/app/MAINTENANCE`，它会触发 Web API 全局 503 并影响结果轮询、历史等非提交接口。`wait-pending` 与 `refund-pending` 必须在能访问正式 Redis 的 `allbot-do-sgp1-control` 上运行；本地主服务器直连正式 Redis 超时不代表队列闸门不可用。`refund-pending --execute` 只处理仍在 Central pending zset 中的任务，按维护发布退款类型 `refund_prod_maintenance_release` 走统一 finalization，释放并发锁并退款；running 任务不强杀。
 
 slot0 runtime 接管：
 

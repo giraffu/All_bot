@@ -64,7 +64,7 @@ async def submit_bot_task(
         task_type=submission.task_type,
         inputs=submission.inputs,
         task_id=task_id,
-        client_type="bot",
+        client_type=submission.client_type,
         source_post_id=submission.source_post_id,
         deduct_quota=submission.deduct_quota,
     )
@@ -347,6 +347,8 @@ async def run_bot_task_application(
     failure_policy = flow.failure_policy
     cleanup_policy = flow.cleanup_policy
     execution = _BotTaskExecutionState(message_spec=presentation.message_spec)
+    bot_data = getattr(request.context, "bot_data", {}) or {}
+    client_type = bot_data.get("bot_client_type", "bot")
     submission = BotTaskSubmissionContext(
         runtime_state=flow.runtime_state,
         internal_user_id=request.internal_user_id,
@@ -355,6 +357,7 @@ async def run_bot_task_application(
         inputs=request.inputs,
         source_post_id=request.source_post_id,
         deduct_quota=request.deduct_quota,
+        client_type=client_type,
     )
 
     try:

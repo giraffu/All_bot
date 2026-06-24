@@ -11,14 +11,58 @@ from src.utils import create_background_task
 logger = logging.getLogger(__name__)
 
 
-async def recover_active_tasks(application):
+def should_recover_task_record(
+    task_data: dict,
+    *,
+    client_type: str | None = None,
+    include_legacy: bool = True,
+) -> bool:
+    if client_type is None:
+        return True
+
+    task_client_type = task_data.get("client_type")
+    if task_client_type == client_type:
+        return True
+    if include_legacy and not task_client_type:
+        return True
+    return False
+
+
+async def recover_active_tasks(
+    application,
+    *,
+    client_type: str | None = None,
+    include_legacy: bool = True,
+):
     tasks = await TaskRegistry.get_all_tasks()
     if not tasks:
         logger.info("No active tasks to recover.")
         return
 
-    logger.info(f"Found {len(tasks)} active tasks in Redis. Attempting recovery...")
-    for registry_task_id, task_data in tasks.items():
+    filtered_tasks = {
+        registry_task_id: task_data
+        for registry_task_id, task_data in tasks.items()
+        if should_recover_task_record(
+            task_data,
+            client_type=client_type,
+            include_legacy=include_legacy,
+        )
+    }
+    if not filtered_tasks:
+        logger.info(
+            "Found %s active tasks in Redis, none match recovery client_type=%s.",
+            len(tasks),
+            client_type,
+        )
+        return
+
+    logger.info(
+        "Found %s active tasks in Redis. Recovering %s for client_type=%s.",
+        len(tasks),
+        len(filtered_tasks),
+        client_type,
+    )
+    for registry_task_id, task_data in filtered_tasks.items():
         create_background_task(
             application, _recover_single_task(registry_task_id, task_data, application)
         )

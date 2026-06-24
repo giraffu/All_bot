@@ -16,6 +16,7 @@ description: "处理 Telegram FSM、全局菜单黑盒退出、callback 路由�
 - **临时文件生命周期**：常规 FSM 文件流已优先收口到 `fsm_temp_file_service.py`，负责目录创建、下载与清理；大文件 Monkey Patch 不是唯一主路径。
 - **语言切换同步**：语言切换不只是菜单文案变化，还涉及 DB + Redis 双缓存同步。
 - **独立付费群审核 Bot**：`paid_group_guard_bot/` 使用独立 token，订阅目标群 `chat_join_request` 与普通 `message` update；入群资格只读查订单/修为，普通消息只做轻量群管理（非管理员链接、违禁词、结构化日志），不要把它接入主业务 FSM 或复用主业务 `BOT_TOKEN`。
+- **QQCC 懒人 Bot**：`qqcc_bot/` 是独立简化 polling 服务，只注册 quick image/video FSM 和最小菜单；修改它时必须叠加 `allbot-qqcc-lazy-bot`。
 
 ## 2. 输入输出规范
 ### FSM 状态流转
@@ -59,6 +60,7 @@ def build_handler() -> ConversationHandler:
 ## 4. 核心红线
 - Web API 严禁直接消费 Telegram 表示层逻辑；Bot 任务提交通常走 `bot_task_service` / 各 FSM entrypoint / `run_bot_task_application(...)`。
 - 付费群审核 Bot 必须和主业务 Bot token 隔离；同一个 token 不得同时被两个 polling 进程使用。
+- QQCC Bot 必须和主业务 Bot token 隔离，且不能导入 `src.bot_main` 或注册主 Bot 的高级/支付/gallery handler。
 - FSM 内不得依赖硬编码菜单词做全局退出判断，必须走统一菜单路由。
 - 临时文件、下载目录和清理逻辑应优先下沉到服务层，避免各 FSM 重复拼装。
 - callback 路由拆分时必须确保主入口导入子模块触发注册，不能因加载顺序拿到空路由表。

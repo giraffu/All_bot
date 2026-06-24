@@ -80,7 +80,7 @@
 | 实测 CPU / 内存 | 1 vCPU；约 1.9GiB RAM，当前 available 约 751MiB |
 | 实测系统盘 | 约 48G 总量；当前约 16G 已用、33G 可用，使用率约 32% |
 | SSH 日常入口 | `ssh allbot-do-sgp1-test-control`，默认 `deploy` 用户 |
-| 运行服务 | `cloud-postgres-test`、`cloud-redis-test`、`cloud-central-api-test`、`cloud-web-api-test`、`cloud-dashboard-backend-test`、`cloud-dashboard-frontend-test`、`cloud-imgproxy-test`、`cloud-tg-bot-test` |
+| 运行服务 | `cloud-postgres-test`、`cloud-redis-test`、`cloud-central-api-test`、`cloud-web-api-test`、`cloud-dashboard-backend-test`、`cloud-dashboard-frontend-test`、`cloud-imgproxy-test`、`cloud-tg-bot-test`；`cloud-qqcc-bot-test` 是可选 `qqcc-bot` profile，需独立测试 token 才启动 |
 | 公网保护 | 服务端口绑定 `100.82.124.91`；`allbot-cloud-test-firewall.service` drop 公网 eth0 的 `8001/8004/8044/8084/8087` |
 
 使用边界：
@@ -111,7 +111,9 @@
 | `cloud-dashboard-backend-prod` | `gunicorn -w 1` | `DB_POOL_SIZE=6`、`DB_MAX_OVERFLOW=4` | 10 |
 | `cloud-payment-api-prod` | 单进程 | `DB_POOL_SIZE=4`、`DB_MAX_OVERFLOW=3` | 7 |
 | `cloud-tg-bot-prod` | 单进程 | `DB_POOL_SIZE=4`、`DB_MAX_OVERFLOW=4` | 8 |
-| 合计 | - | - | 73 |
+| `cloud-qqcc-bot-prod` | 单进程，仅启用 `qqcc-bot` profile 时 | `DB_POOL_SIZE=4`、`DB_MAX_OVERFLOW=4` | 8 |
+| 基线合计 | - | 未启用 QQCC profile | 73 |
+| 启用 QQCC 后合计 | - | QQCC Bot 与主 Bot 同时运行 | 81 |
 
 延迟拆分基线：
 - 云机内部访问 `100.107.220.127:8000/8003/8043` 通常为 5-40ms。
@@ -128,7 +130,7 @@
 正式控制面当前在云端，本地主服务器保留本地 GPU worker 与旧数据。测试/开发服务仍可能在本地或云测试控制面运行，必须按 compose、端口、环境变量、数据库与 Valkey/Redis DB 隔离。
 
 当前正式生产常驻类型：
-- 云端正式入口：`cloud-tg-bot-prod`、`cloud-web-api-prod`、`cloud-payment-api-prod`
+- 云端正式入口：`cloud-tg-bot-prod`、`cloud-web-api-prod`、`cloud-payment-api-prod`；`cloud-qqcc-bot-prod` 是可选 `qqcc-bot` profile 入口，正式启动需单独确认
 - 云端正式执行面：`cloud-central-api-prod`，Tailscale `100.107.220.127:8003`
 - 云端正式管理面：`cloud-dashboard-backend-prod`、`cloud-dashboard-frontend-prod`、`cloud-imgproxy-prod`
 - 本地正式 worker compose：`cloud-prod-worker-relay` 与 `cloud-prod-comfy-agent-1` 至 `cloud-prod-comfy-agent-7`；这是本地 compose 声明，不等于每个容器都必须长期运行
@@ -136,7 +138,7 @@
 - 本地 legacy 数据：原 PostgreSQL/Redis/MinIO 只作为保留或 fallback，不应继续作为正式写入事实源
 
 测试/辅助服务类型：
-- 云测试入口：`cloud-tg-bot-test`、`cloud-web-api-test`、`cloud-dashboard-backend-test`、`cloud-dashboard-frontend-test`、`cloud-imgproxy-test`
+- 云测试入口：`cloud-tg-bot-test`、`cloud-web-api-test`、`cloud-dashboard-backend-test`、`cloud-dashboard-frontend-test`、`cloud-imgproxy-test`；`cloud-qqcc-bot-test` 为可选 QQCC 测试入口，必须使用独立 `QQCC_BOT_TOKEN_TEST`
 - 云测试执行面：`cloud-central-api-test`，Tailscale `100.82.124.91:8004`
 - 云测试数据面：`cloud-postgres-test`、`cloud-redis-test`，仅 Docker 内网可达
 - 本地云测试 worker：`cloud-comfy-agent-test-1` 至 `cloud-comfy-agent-test-8`，其中 `test-8` 是 SCAIL-2 测试接单层

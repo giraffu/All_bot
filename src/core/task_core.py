@@ -191,6 +191,7 @@ async def process_and_submit_task(
             request=request,
             dependencies=dependencies,
         )
+        submission_context.client_type = client_type
 
         credits_deducted = await maybe_deduct_submission_credits(
             user_id=user_id,

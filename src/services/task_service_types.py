@@ -20,6 +20,7 @@ class BotTaskSubmissionContext:
     inputs: dict
     source_post_id: Optional[int] = None
     deduct_quota: bool = True
+    client_type: str = "bot"
 
 
 @dataclass(frozen=True)

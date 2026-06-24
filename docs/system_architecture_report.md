@@ -34,6 +34,7 @@ graph TD
 
     subgraph Gateway[云正式接入与应用层]
         BOT[cloud-tg-bot-prod]
+        QQCC[cloud-qqcc-bot-prod]
         PGBOT[paid-group-guard-bot]
         API[cloud-web-api-prod / FastAPI]
         PAYAPI[cloud-payment-api-prod]
@@ -60,6 +61,7 @@ graph TD
     end
 
     TG --> TGAPI --> BOT
+    TGAPI --> QQCC
     WEB --> CFPAGES
     WEB --> CFTUNNEL --> API
     DASH --> VLAN --> DFRONT --> DBACK
@@ -67,6 +69,8 @@ graph TD
 
     BOT --> AUTH
     BOT --> TASK
+    QQCC --> AUTH
+    QQCC --> TASK
     PGBOT --> PG
     API --> AUTH
     API --> TASK
@@ -87,6 +91,7 @@ graph TD
     BILL --> AFF
     API --> PG
     BOT --> PG
+    QQCC --> PG
 ```
 
 ### 1.2 当前分层说明
@@ -96,6 +101,7 @@ graph TD
   - Dashboard 与支付 API 都是独立边界，不再是 Bot 的附属模块。
 - **接入与应用层**
   - `tg-bot` 负责 Telegram 交互、FSM、结果消息与支付通知。
+  - `qqcc_bot` 是独立简化 Telegram polling 入口，只开放懒人 P 图与懒人动图生成，复用同一用户、灵石、任务队列、对象存储与 worker 链路，不承载充值、affiliate、gallery 浏览或高级 FSM。
   - `paid_group_guard_bot` 是独立 Telegram 审核 Bot，订阅付费群 `chat_join_request` 与普通 `message` update，按成功订单、后台赠送订单或筑基期及以上修为只读判断入群资格，并可对目标群执行非管理员链接/违禁词删除，不承载主业务 Bot 的菜单、生成、支付回调或文件处理。
   - `web-api` 承担认证、任务提交、任务运行态、历史、广场、用户中心、返佣兑换与站点通知读取等主能力。
   - `payment-api` 负责 RMB 回调；Stars 与 TON 各有对应履约入口。
@@ -111,13 +117,13 @@ graph TD
 
 ### 1.3 云正式生产口径
 2026-06-07 晚间正式生产已经切到“云控制面 + 托管 PostgreSQL/Valkey + R2 + 本地 GPU worker / LAN AIO / remote_workers / 手动 RunPod 备用池”：
-- 云端 Droplet `allbot-do-sgp1-control` 承载 `cloud-central-api-prod`、`cloud-web-api-prod`、`cloud-payment-api-prod`、`cloud-dashboard-backend-prod`、`cloud-dashboard-frontend-prod`、`cloud-imgproxy-prod` 与 `cloud-tg-bot-prod`。
+- 云端 Droplet `allbot-do-sgp1-control` 承载 `cloud-central-api-prod`、`cloud-web-api-prod`、`cloud-payment-api-prod`、`cloud-dashboard-backend-prod`、`cloud-dashboard-frontend-prod`、`cloud-imgproxy-prod` 与 `cloud-tg-bot-prod`；`cloud-qqcc-bot-prod` 是独立 `qqcc-bot` profile 服务，正式启动需单独确认。
 - `workers/docker-compose-cloud-prod-worker.yml` 仍声明本地 `cloud-prod-comfy-agent-1..7` 与 `cloud-prod-worker-relay`；线上实际可用 worker 还可能包含 LAN AIO、`remote_workers` 与手动 RunPod。2026-06-18 03:06 快照为 13 个 healthy active workers，属于运行态快照，不作为固定容量承诺。
 - `web.aivison.it.com` 已由 Cloudflare Pages 承接静态前端；正式 Web API 独立走 `api.aivison.it.com` Cloudflare Tunnel 回源云 Web API；`rmb.aivison.it.com` 回源云 Payment API；`assets.aivison.it.com` 保留本地 legacy MinIO 只读代理，但正式应用不再生成该域名 URL。
 - 长期运维细节见 `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`。
 
 ### 1.4 云测试与本地灾备口径
-- 云测试控制面运行在独立 DigitalOcean Droplet `allbot-do-sgp1-test-control`，Tailscale IP `100.82.124.91`。同机容器承载测试 PostgreSQL、Redis、Central API、Web API、Dashboard Backend、Dashboard Frontend、imgproxy 与测试 Bot；本地主服务器运行 8 个 cloud-worker 测试容器并连接云测试 Central，其中 `cloud_worker_test_08` 指向 gpu-002 SCAIL-2 LAN AIO runtime。
+- 云测试控制面运行在独立 DigitalOcean Droplet `allbot-do-sgp1-test-control`，Tailscale IP `100.82.124.91`。同机容器承载测试 PostgreSQL、Redis、Central API、Web API、Dashboard Backend、Dashboard Frontend、imgproxy 与测试 Bot；`cloud-qqcc-bot-test` 仅在配置独立 `QQCC_BOT_TOKEN_TEST` 且显式/原运行状态需要时启动。本地主服务器运行 8 个 cloud-worker 测试容器并连接云测试 Central，其中 `cloud_worker_test_08` 指向 gpu-002 SCAIL-2 LAN AIO runtime。
 - 云测试 Web 公网入口是 `web-test.aivison.it.com`，由 Web/Nginx VPS 提供 `/root/dist-test` 静态站，`/api/` 回源云测试 Web API `100.82.124.91:8001`。云测试端口绑定 Tailscale IP，公网 eth0 端口由测试机防火墙 drop。
 - 本地主服务器不再保留一套日常正式入口；只保留云正式整体故障时的临时本地正式灾备方案。操作手册见 `docs/子模块_本地正式灾备切换_local_prod_fallback.md`。
 
@@ -131,7 +137,7 @@ graph TD
 sequenceDiagram
     autonumber
     actor U as 用户
-    participant Entry as Bot / Web
+    participant Entry as Bot / QQCC Bot / Web
     participant Auth as Auth / Permission
     participant Facade as task_core facade
     participant Deps as provider / dependencies

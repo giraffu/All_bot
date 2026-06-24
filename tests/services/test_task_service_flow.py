@@ -63,6 +63,37 @@ async def test_submit_bot_task_sets_runtime_state_and_returns_saved_inputs(monke
 
 
 @pytest.mark.asyncio
+async def test_submit_bot_task_uses_submission_client_type(monkeypatch):
+    process_submit = AsyncMock(
+        return_value={
+            "cost": 6,
+            "registry_task_id": "registry-qqcc",
+            "backend_task_id": "backend-qqcc",
+            "saved_inputs": [],
+        }
+    )
+    monkeypatch.setattr(task_service_flow, "process_and_submit_task", process_submit)
+
+    await task_service_flow.submit_bot_task(
+        submission=BotTaskSubmissionContext(
+            runtime_state=SimpleNamespace(
+                task_submitted=False,
+                actual_cost=0,
+                registry_task_id=None,
+                backend_task_id=None,
+            ),
+            internal_user_id=789,
+            username="qqcc",
+            task_type="quick_image",
+            inputs={"prompt": "lazy"},
+            client_type="bot:qqcc",
+        ),
+    )
+
+    assert process_submit.await_args.kwargs["client_type"] == "bot:qqcc"
+
+
+@pytest.mark.asyncio
 async def test_send_initial_task_status_uses_reply_text_when_update_present(monkeypatch):
     reply_text = AsyncMock(return_value="sent")
     monkeypatch.setattr(task_service_flow, "robust_reply_text", reply_text)
@@ -268,3 +299,87 @@ async def test_run_bot_task_application_monitors_with_backend_task_id_and_comple
     completion_stage.assert_awaited_once()
     assert completion_stage.await_args.kwargs["registry_task_id"] == "registry-123"
     assert completion_stage.await_args.kwargs["backend_task_id"] == "backend-456"
+
+
+@pytest.mark.asyncio
+async def test_run_bot_task_application_reads_client_type_from_bot_data(monkeypatch):
+    submission_stage = AsyncMock(
+        return_value=(
+            "status-msg",
+            "registry-qqcc",
+            "backend-qqcc",
+            [],
+            BotTaskMessageSpec(initial_status_text="提交中"),
+        )
+    )
+    monkeypatch.setattr(
+        task_service_flow,
+        "run_bot_task_submission_stage",
+        submission_stage,
+    )
+    monkeypatch.setattr(
+        task_service_flow,
+        "run_bot_task_monitor_stage",
+        AsyncMock(return_value={"status": "done"}),
+    )
+    monkeypatch.setattr(
+        task_service_flow,
+        "run_bot_task_completion_stage",
+        AsyncMock(return_value=(b"media", "output.png")),
+    )
+    monkeypatch.setattr(task_service_flow, "cleanup_bot_task_flow", AsyncMock())
+
+    flow = SimpleNamespace(
+        runtime_state=SimpleNamespace(
+            registry_task_id=None,
+            backend_task_id=None,
+            task_submitted=False,
+            actual_cost=0,
+            terminal_state_finalized=False,
+        ),
+        request=SimpleNamespace(
+            context=SimpleNamespace(bot_data={"bot_client_type": "bot:qqcc"}),
+            update=None,
+            chat_id=100,
+            status_msg_id=None,
+            internal_user_id=200,
+            username="tester",
+            task_type="quick_image",
+            inputs={"prompt": "hello"},
+            prompt="hello",
+            is_video=False,
+            source_post_id=None,
+            deduct_quota=True,
+        ),
+        presentation=SimpleNamespace(
+            message_spec=BotTaskMessageSpec(initial_status_text="提交中"),
+            submitted_status_builder=None,
+            send_result=True,
+            reply_markup=None,
+            result_meta=None,
+            delete_status=True,
+            allow_contribute=True,
+            prefer_edit_status=False,
+        ),
+        billing=SimpleNamespace(
+            billing_resolution=None,
+            requested_duration=None,
+            missing_output_should_refund=True,
+        ),
+        failure_policy=SimpleNamespace(
+            unexpected_error_log_message="err {error}",
+            unexpected_error_prefix="出错了",
+            refund_suffix_mode="if_refunded",
+            unexpected_should_refund=None,
+        ),
+        cleanup_policy=SimpleNamespace(
+            cleanup_paths=[],
+            cleanup_enabled=False,
+            cleanup_files_func=lambda *_args, **_kwargs: None,
+        ),
+    )
+
+    await task_service_flow.run_bot_task_application(flow=flow)
+
+    submission = submission_stage.await_args.kwargs["submission"]
+    assert submission.client_type == "bot:qqcc"

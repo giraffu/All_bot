@@ -50,7 +50,7 @@
 - `.env.cloud.prod` 是本机私有文件，已被 `.gitignore` 忽略；`.env.cloud.prod.example` 只提供变量契约和占位值。`.dockerignore` 必须忽略 `.env.*`，避免 root Docker build 把真实云正式变量 COPY 进镜像。
 - 云正式 Web API 需要 `JWT_SECRET_KEY`，且不能使用默认占位值；该 key 已纳入 `.env.cloud.prod.example` 和 `scripts/safe_deploy_cloud_prod.sh` preflight 必填检查。
 - 云测试环境退役入口为 `scripts/cleanup_cloud_test_for_prod.sh`。脚本默认 dry-run，真实清理必须传 `--execute`；它不得删除 R2 `user-data-test`，不得误改正式服务或 `web.aivison.it.com`。
-- 云正式控制面包含 Central API、Web API、Payment API、Dashboard Backend、Dashboard Frontend、imgproxy 和正式 Bot；`cloud-tg-bot-prod` 使用 `bot` profile，重建前必须确认全网只有一个生产 polling 实例。
+- 云正式控制面包含 Central API、Web API、Payment API、Dashboard Backend、Dashboard Frontend、imgproxy、正式 Bot 和可选 QQCC 懒人 Bot；`cloud-tg-bot-prod` 使用 `bot` profile，`cloud-qqcc-bot-prod` 使用 `qqcc-bot` profile，重建前必须确认对应 token 全网只有一个生产 polling 实例。
 - 云正式本地 worker compose 声明 `cloud-prod-worker-relay` 与 `cloud-prod-comfy-agent-1..7`；线上实际容量还可能包含 LAN AIO agent、`remote_workers` 与手动 RunPod worker。启动或重建后必须在云 Central `/system/workers` 验证当次目标 worker 集合的 heartbeat、control state 与任务类型，状态不能是 `error` 或 `quarantined`；不要把固定 7 个 heartbeat 当成所有场景的唯一验收标准。
 - 云正式 R2 在线口径为 `user-data-prod` 单桶，`MINIO_*` 兼容变量和 `R2_*` 都指向正式 R2；`MINIO_PUBLIC_URL` 保持空，结果公开读取依赖 `R2_PUBLIC_DOMAIN=https://r2.aivison.it.com`。
 - 正式 Web API / Dashboard 运行时不再通过 `LEGACY_MINIO_*` 回源本地 MinIO；云正式 compose 对 Web/Dashboard 应设置 `LEGACY_MINIO_READ_FALLBACK_ENABLED=false` 并清空 legacy endpoint/key/public URL。R2 miss 后只允许当前 R2/S3 短签、空值或 `pending_result`，worker 仍只写 R2，不得把 legacy MinIO 配进 worker 写路径。
@@ -66,7 +66,7 @@
 ## 2.4 本地正式灾备
 - 本地主服务器只保留一套临时本地正式接管方案，不再保留日常正式入口。
 - 触发条件是云正式控制面、Tunnel 或云侧数据面整体不可用，且短时间无法恢复。
-- 切换前必须确认 `cloud-tg-bot-prod` 已停止或不可用，避免生产 Bot token 双实例 polling。
+- 切换前必须确认 `cloud-tg-bot-prod` 已停止或不可用；若 QQCC 懒人 Bot 也切换到本地灾备，还必须确认 `cloud-qqcc-bot-prod` 已停止或不可用，避免任一生产 Bot token 双实例 polling。
 - 本地 `.env` 必须是生产口径；如果能从云端导出最新数据库，应先恢复到本地 PostgreSQL 再开放写入口。云端完全不可用时，要接受本地快照导致的对账成本。
 - 旧本地 compose 仍有历史硬编码默认值和占位值；本地灾备前必须核对 Central API、Dashboard 与 worker 的 compose 渲染和容器内实际环境变量，不能只依赖 `source .env` 判断配置已生效。渲染输出和 `env` 输出可能包含密钥，只能本机查看。
 - 切换 Web/API/RMB 入口前，优先只选一条网络路径，不要同时改 Pages、Tunnel、Nginx 和 DNS。

@@ -203,7 +203,9 @@ async def post_init(application):
         )
 
     # Recover tasks from Redis
-    task_recover = asyncio.create_task(recover_active_tasks(application))
+    task_recover = asyncio.create_task(
+        recover_active_tasks(application, client_type="bot", include_legacy=True)
+    )
     application.bot_data["bg_tasks"].add(task_recover)
     task_recover.add_done_callback(application.bot_data["bg_tasks"].discard)
 

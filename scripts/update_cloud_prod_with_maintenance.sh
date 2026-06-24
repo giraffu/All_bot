@@ -28,6 +28,8 @@ SCOPE="control-plane"
 SERVICES=""
 BOT_MODE="skip"
 BOT_WAS_RUNNING="unknown"
+QQCC_BOT_MODE="skip"
+QQCC_BOT_WAS_RUNNING="unknown"
 MAINTENANCE_ACTIVE=false
 ERROR_REPORTED=false
 
@@ -70,6 +72,9 @@ Options:
   --env-file FILE              Local prod env file to sync when --sync-env is set.
   --bot-mode MODE              skip|auto|start|stop. Default: skip.
                                auto rebuilds/starts bot-prod only if it was running at start.
+  --qqcc-bot-mode MODE         skip|auto|start|stop. Default: skip.
+                               auto rebuilds/starts qqcc-bot-prod only if it was running at start.
+                               start requires QQCC_BOT_TOKEN in the remote env.
   --keep-maintenance           Leave generation maintenance enabled after success.
   --skip-public-verify         Skip public domain verification.
   --skip-local-relay-verify    Skip local 127.0.0.1:8013 relay verification.
@@ -183,6 +188,14 @@ while [ "$#" -gt 0 ]; do
             esac
             shift 2
             ;;
+        --qqcc-bot-mode)
+            QQCC_BOT_MODE="${2:-}"
+            case "$QQCC_BOT_MODE" in
+                skip|auto|start|stop) ;;
+                *) die "--qqcc-bot-mode must be skip, auto, start, or stop" ;;
+            esac
+            shift 2
+            ;;
         --keep-maintenance)
             KEEP_MAINTENANCE=true
             shift
@@ -267,7 +280,7 @@ validate_services() {
     local service
     for service in $SERVICES; do
         case "$service" in
-            central-api-prod|web-api-prod|payment-api-prod|dashboard-backend-prod|dashboard-frontend-prod|imgproxy-prod|paid-group-guard-bot-prod) ;;
+            central-api-prod|web-api-prod|payment-api-prod|dashboard-backend-prod|dashboard-frontend-prod|imgproxy-prod|paid-group-guard-bot-prod|qqcc-bot-prod) ;;
             bot-prod)
                 die "do not put bot-prod in --services; use --bot-mode auto|start|stop explicitly"
                 ;;
@@ -328,20 +341,43 @@ remote_bot_was_running() {
         "docker ps --format '{{.Names}}' | grep -qx cloud-tg-bot-prod"
 }
 
-capture_initial_bot_state() {
-    [ "$BOT_MODE" = "auto" ] || return 0
+remote_qqcc_bot_was_running() {
+    if [ "$EXECUTE" != true ]; then
+        return 1
+    fi
+    ssh -o BatchMode=yes "$REMOTE_HOST" \
+        "docker ps --format '{{.Names}}' | grep -qx cloud-qqcc-bot-prod"
+}
 
-    log "Capture initial bot-prod state"
-    if [ "$EXECUTE" = true ]; then
-        if remote_bot_was_running; then
-            BOT_WAS_RUNNING=true
-            echo "bot-prod=running"
+capture_initial_bot_state() {
+    if [ "$BOT_MODE" = "auto" ]; then
+        log "Capture initial bot-prod state"
+        if [ "$EXECUTE" = true ]; then
+            if remote_bot_was_running; then
+                BOT_WAS_RUNNING=true
+                echo "bot-prod=running"
+            else
+                BOT_WAS_RUNNING=false
+                echo "bot-prod=stopped"
+            fi
         else
-            BOT_WAS_RUNNING=false
-            echo "bot-prod=stopped"
+            echo "[dry-run] query whether cloud-tg-bot-prod is running before deployment"
         fi
-    else
-        echo "[dry-run] query whether cloud-tg-bot-prod is running before deployment"
+    fi
+
+    if [ "$QQCC_BOT_MODE" = "auto" ]; then
+        log "Capture initial qqcc-bot-prod state"
+        if [ "$EXECUTE" = true ]; then
+            if remote_qqcc_bot_was_running; then
+                QQCC_BOT_WAS_RUNNING=true
+                echo "qqcc-bot-prod=running"
+            else
+                QQCC_BOT_WAS_RUNNING=false
+                echo "qqcc-bot-prod=stopped"
+            fi
+        else
+            echo "[dry-run] query whether cloud-qqcc-bot-prod is running before deployment"
+        fi
     fi
 }
 
@@ -352,7 +388,7 @@ set -euo pipefail
 cd "$REMOTE_DIR"
 mkdir -p "$(dirname "$REMOTE_MAINTENANCE_FILE")"
 printf '1\n' > "$REMOTE_MAINTENANCE_FILE"
-for container in cloud-web-api-prod cloud-tg-bot-prod; do
+for container in cloud-web-api-prod cloud-tg-bot-prod cloud-qqcc-bot-prod; do
   if docker ps --format '{{.Names}}' | grep -qx "$container"; then
     docker exec "$container" sh -lc '
       set -eu
@@ -377,7 +413,7 @@ disable_maintenance() {
 set -euo pipefail
 cd "$REMOTE_DIR"
 rm -f "$REMOTE_MAINTENANCE_FILE"
-for container in cloud-web-api-prod cloud-tg-bot-prod; do
+for container in cloud-web-api-prod cloud-tg-bot-prod cloud-qqcc-bot-prod; do
   if docker ps --format '{{.Names}}' | grep -qx "$container"; then
     docker exec "$container" sh -lc 'rm -f /app/GENERATION_MAINTENANCE /app/runtime-flags/GENERATION_MAINTENANCE || true'
     echo "$container=open"
@@ -631,6 +667,59 @@ REMOTE
 )"
 }
 
+deploy_qqcc_bot_if_requested() {
+    case "$QQCC_BOT_MODE" in
+        skip)
+            log "Skip qqcc-bot-prod"
+            return
+            ;;
+        stop)
+            log "Stop qqcc-bot-prod by request"
+            remote_sh "$(cat <<'REMOTE'
+set -euo pipefail
+cd "$REMOTE_DIR"
+docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.yml --profile qqcc-bot stop qqcc-bot-prod
+REMOTE
+)"
+            return
+            ;;
+    esac
+
+    local should_start=false
+    case "$QQCC_BOT_MODE" in
+        auto)
+            if [ "$EXECUTE" != true ]; then
+                log "qqcc-bot-prod auto mode would use the initial running/stopped snapshot"
+                return
+            fi
+            if [ "$QQCC_BOT_WAS_RUNNING" = true ]; then
+                should_start=true
+            fi
+            ;;
+        start)
+            should_start=true
+            ;;
+    esac
+
+    if [ "$should_start" != true ]; then
+        log "qqcc-bot-prod was not running; keep it stopped"
+        return
+    fi
+
+    log "Rebuild and start qqcc-bot-prod"
+    remote_sh "$(cat <<'REMOTE'
+set -euo pipefail
+cd "$REMOTE_DIR"
+if ! grep -q '^QQCC_BOT_TOKEN=.' .env.cloud.prod; then
+  echo "QQCC_BOT_TOKEN is required before starting qqcc-bot-prod" >&2
+  exit 2
+fi
+docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.yml --profile qqcc-bot build qqcc-bot-prod
+docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.yml --profile qqcc-bot up -d --no-deps qqcc-bot-prod
+REMOTE
+)"
+}
+
 verify_remote() {
     log "Verify cloud-prod services"
     remote_sh "$(cat <<'REMOTE'
@@ -682,7 +771,7 @@ client = redis.Redis.from_url(url, decode_responses=True, socket_connect_timeout
 print(f"queue pending={client.zcard('comfy:queue:pending')} running={client.scard('comfy:queue:running')}")
 PY
 
-for c in cloud-central-api-prod cloud-web-api-prod cloud-payment-api-prod cloud-dashboard-backend-prod cloud-dashboard-frontend-prod cloud-imgproxy-prod cloud-paid-group-guard-bot-prod; do
+for c in cloud-central-api-prod cloud-web-api-prod cloud-payment-api-prod cloud-dashboard-backend-prod cloud-dashboard-frontend-prod cloud-imgproxy-prod cloud-paid-group-guard-bot-prod cloud-qqcc-bot-prod; do
   if docker ps -a --format '{{.Names}}' | grep -qx "$c"; then
     docker inspect -f "$c restart_count={{.RestartCount}} status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}" "$c"
     errors="$(docker logs --since 5m "$c" 2>&1 | grep -Eic 'ERROR|Traceback|Exception' || true)"
@@ -764,6 +853,7 @@ main() {
     esac
 
     deploy_bot_if_requested
+    deploy_qqcc_bot_if_requested
     verify_remote
     verify_public_endpoints
     verify_local_relay

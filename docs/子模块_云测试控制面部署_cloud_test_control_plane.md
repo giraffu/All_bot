@@ -90,24 +90,25 @@ scripts/update_cloud_test_with_maintenance.sh --execute
 ```
 
 该脚本默认流程：
-1. 在云测试 `cloud-web-api-test` / `cloud-tg-bot-test` 写入生成维护标记，阻止新的生成任务提交。
+1. 在云测试 `cloud-web-api-test` / `cloud-tg-bot-test` / 正在运行的 `cloud-qqcc-bot-test` 写入生成维护标记，阻止新的生成任务提交。
 2. 等待 Central Redis `comfy:queue:pending` 与 `comfy:queue:running` 同时清空。
 3. 用 `rsync` 同步当前工作区代码到 `allbot-do-sgp1-test-control:/home/deploy/APP/All_bot`，保留远端 `logs/`、`runtime/`，清理并排除 `node_modules/`、`backups/`、临时模板素材等运行时或本地数据目录，并继续排除通配 `.env.*`，避免误同步正式或本地密钥文件。
 4. 单独同步本地 `.env.cloud.test` 到远端 `.env.cloud.test`；同步前远端会创建 `.env.cloud.test.bak.<timestamp>` 备份，目标文件权限设为 `600`，并用校验和确认远端文件与本地一致。若需要保留远端 env，可显式加 `--skip-env-sync`。
 5. 在远端执行 `scripts/safe_deploy_cloud_test.sh` 重建 Central API、Web API、Dashboard Backend、Dashboard Frontend 与 imgproxy。
-6. 若测试 Bot 原本在运行，按 `bot` profile 重建并拉起 `bot-test`；若原本未运行，默认保持停止，避免抢占测试 token。
+6. 若测试 Bot 原本在运行，按 `bot` profile 重建并拉起 `bot-test`；若 QQCC 测试 Bot 原本在运行，按 `qqcc-bot` profile 重建并拉起 `qqcc-bot-test`。没有独立 `QQCC_BOT_TOKEN_TEST` 时，QQCC 测试 Bot 保持停止，避免同 token 双 polling。
 7. 默认执行 `frontend npm run deploy:edge-test` 发布 `web-test.aivison.it.com` 静态前端。
 8. 验证 cloud-test compose、健康检查、Central `/system/workers` 与队列快照；队列快照按 `CLOUD_TEST_WORKER_REDIS_URL` 的 DB 读取。成功后解除生成维护；失败时维护标记保持开启，避免半更新状态继续进新任务。
 
 常用参数：
 - `--bot-mode start|skip|stop|auto`：默认 `auto`，只在 Bot 原本运行时重建并启动。
+- `--qqcc-bot-mode start|skip|stop|auto`：默认 `auto`，只在 QQCC Bot 原本运行时重建并启动；`start` 仍要求远端 `.env.cloud.test` 配置 `QQCC_BOT_TOKEN_TEST`。
 - `--env-file FILE`：指定要同步到远端 `.env.cloud.test` 的本地测试环境文件，默认读取仓库根目录 `.env.cloud.test`。
 - `--skip-env-sync`：不更新远端 `.env.cloud.test`，仅使用远端现有环境文件。
 - `--skip-edge-web`：只更新控制面，不发布边缘测试 Web 静态站。
 - `--keep-maintenance`：部署成功后仍保持 Web/Bot 生成维护，便于人工验收后再手动解除。
 - `--skip-drain`：跳过排空等待，仅用于明确接受测试环境中断的紧急更新。
 
-测试 Web/Bot compose 挂载 `../runtime/cloud-test:/app/runtime-flags`，并通过 `GENERATION_MAINTENANCE_FILE=/app/runtime-flags/GENERATION_MAINTENANCE` 读取生成维护标记。维护式脚本会先写远端 `runtime/cloud-test/GENERATION_MAINTENANCE`，因此重建后的新容器仍会保持维护状态，直到脚本最后解除。
+测试 Web/Bot/QQCC Bot compose 挂载 `../runtime/cloud-test:/app/runtime-flags`，并通过 `GENERATION_MAINTENANCE_FILE=/app/runtime-flags/GENERATION_MAINTENANCE` 读取生成维护标记。维护式脚本会先写远端 `runtime/cloud-test/GENERATION_MAINTENANCE`，因此重建后的新容器仍会保持维护状态，直到脚本最后解除。
 
 专项情况下，也可以从本地主服务器同步代码后，在云端只执行控制面重建子步骤：
 
@@ -431,7 +432,7 @@ curl -fsS -X POST -H "$AUTH_HEADER" -H 'Content-Type: application/json' \
 
 ```bash
 docker-compose --env-file .env.cloud.test -f workers/docker-compose-cloud-worker-test.yml stop
-ssh allbot-do-sgp1-test-control 'cd /home/deploy/APP/All_bot && docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml --profile bot stop bot-test'
+ssh allbot-do-sgp1-test-control 'cd /home/deploy/APP/All_bot && docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml --profile bot stop bot-test && docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml --profile qqcc-bot stop qqcc-bot-test'
 ```
 
 旧本地测试 compose 和 `safe_deploy_test.sh` 仅作为历史迁移/人工取证材料保留。若必须短时启动，应另起临时排障计划，确认不会抢占测试 token、GPU、Redis 队列、对象桶或边缘 `web-test` 入口，结束后立即停止并保留数据。

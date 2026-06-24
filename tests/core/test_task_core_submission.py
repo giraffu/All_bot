@@ -8,6 +8,7 @@ from src.core.task_core_submission import (
     compensate_failed_submission,
     dispatch_registered_task,
     execute_task_submission_saga,
+    register_task_submission,
 )
 from src.core.task_core_types import CoreDomainError
 
@@ -46,6 +47,7 @@ async def test_execute_task_submission_saga_returns_composed_result():
         is_video_task=False,
         allow_contribute=True,
         metadata={},
+        client_type="bot",
     )
     register_task_submission_func = AsyncMock(return_value="registry-2")
     dispatch_registered_task_func = AsyncMock(return_value="backend-2")
@@ -76,6 +78,36 @@ async def test_execute_task_submission_saga_returns_composed_result():
     assert result.registry_task_id == "registry-2"
     assert result.backend_task_id == "backend-2"
     assert result.submission_context is submission_context
+
+
+@pytest.mark.asyncio
+async def test_register_task_submission_persists_client_type():
+    add_task = AsyncMock(return_value="registry-qqcc")
+    submission_context = SimpleNamespace(
+        task_type="random_faceswap",
+        log_prompt="prompt",
+        registry_saved_inputs=lambda: ["input.jpg"],
+        is_video_task=False,
+        final_priority=3,
+        allow_contribute=False,
+        client_type="bot:qqcc",
+        metadata={"mode": "random_faceswap"},
+    )
+
+    result = await register_task_submission(
+        registry_task_id="registry-qqcc",
+        user_id=42,
+        username="qqcc",
+        cost=2,
+        submission_context=submission_context,
+        add_task_func=add_task,
+    )
+
+    assert result == "registry-qqcc"
+    add_task.assert_awaited_once()
+    kwargs = add_task.await_args.kwargs
+    assert kwargs["client_type"] == "bot:qqcc"
+    assert kwargs["metadata"] == {"mode": "random_faceswap"}
 
 
 @pytest.mark.asyncio
@@ -154,6 +186,7 @@ async def test_execute_task_submission_saga_default_reuses_single_default_depend
         is_video_task=False,
         allow_contribute=True,
         metadata={},
+        client_type="bot",
     )
     dependencies = SimpleNamespace(
         add_task_func=AsyncMock(return_value="registry-5"),

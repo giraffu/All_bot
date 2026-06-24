@@ -25,6 +25,7 @@ class TaskSubmissionContext:
     allow_contribute: bool
     final_priority: int
     video_request: VideoTaskRequest = field(default_factory=VideoTaskRequest)
+    client_type: str = "web"
 
     @property
     def log_prompt(self) -> str:

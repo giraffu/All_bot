@@ -37,6 +37,7 @@ async def register_task_submission(
         is_video=submission_context.is_video_task,
         priority=submission_context.final_priority,
         allow_contribute=submission_context.allow_contribute,
+        client_type=submission_context.client_type,
         metadata=submission_context.metadata,
     )
 

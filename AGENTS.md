@@ -30,6 +30,7 @@
 | **计费、鉴权与会员体系** | `allbot-billing-auth` | 灵石账本 (credits)、JWT 无状态鉴权、支付回调幂等、身份折算 |
 | **对象存储与画廊社区** | `allbot-gallery-storage` | MinIO 直传/容灾、R2 边缘分发、社区防并发点赞、一键克隆限制 |
 | **Telegram 交互与文件** | `allbot-tg-fsm` | PTB 状态机、多语言(i18n)精准路由、菜单互斥防死锁、大文件 Monkey Patch |
+| **QQCC 懒人 Bot** | `allbot-qqcc-lazy-bot` | 独立 QQCC polling 服务、简化菜单、quick image/video FSM、`bot:qqcc` 任务来源和双 polling 红线 |
 | **部署、容器与容灾排障** | `allbot-ops-deployment` | Docker Compose 编排、Alembic 迁移、测试优先发布、云正式/云测试控制面、本地正式灾备切换、MinIO/网络故障恢复 |
 | **文档维护与知识库同步** | `allbot-kb-auto-updater` | 智能监控代码变更影响，自动维护 AGENTS.md、`.codex/skills` 和 /docs/ 的逻辑一致性 |
 | **Bug 诊断闭环** | `allbot-diagnosing-bugs` | 建立可复现反馈环、排序假设、精准插桩、修复回归与收尾清理 |
@@ -51,6 +52,7 @@
 - **局域网 GPU 节点 SSH 管理**：`/docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md`（本地 GPU 节点 SSH key、Host 别名、权限边界与验证命令）
 - **局域网 GPU 节点资源与运维**：`/docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md`（GPU 节点硬件、ComfyUI 容器、模型挂载与单容器安全操作边界）
 - **云测试控制面部署**：`/docs/子模块_云测试控制面部署_cloud_test_control_plane.md`（DigitalOcean 云测试控制面 compose、部署脚本、端口转发与验证命令）
+- **QQCC 懒人 Bot**：`/docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md`（独立简化 Telegram Bot、部署、token 与任务恢复归属）
 - **本地正式灾备切换**：`/docs/子模块_本地正式灾备切换_local_prod_fallback.md`（云正式整体故障时临时切回本地主服务器的操作、验证与回切）
 - **生成任务全链路**：`/docs/子模块_生成任务全链路_task_full_chain.md`（前端提交、task core、执行面、worker、结果回流、扩展与排障）
 - **前端预览截图**：`/docs/子模块_前端浏览器预览截图_frontend_browser_preview.md`

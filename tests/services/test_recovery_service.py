@@ -7,6 +7,80 @@ from src.services import recovery_service
 
 
 @pytest.mark.asyncio
+async def test_recover_active_tasks_filters_by_client_type(monkeypatch):
+    monkeypatch.setattr(
+        recovery_service.TaskRegistry,
+        "get_all_tasks",
+        AsyncMock(
+            return_value={
+                "main-task": {"client_type": "bot", "backend_task_id": "backend-main"},
+                "qqcc-task": {
+                    "client_type": "bot:qqcc",
+                    "backend_task_id": "backend-qqcc",
+                },
+                "legacy-task": {"backend_task_id": "backend-legacy"},
+            }
+        ),
+    )
+    scheduled = []
+
+    def fake_create_background_task(_application, coroutine):
+        scheduled.append(coroutine)
+        coroutine.close()
+
+    monkeypatch.setattr(
+        recovery_service,
+        "create_background_task",
+        fake_create_background_task,
+    )
+
+    await recovery_service.recover_active_tasks(
+        SimpleNamespace(bot=SimpleNamespace()),
+        client_type="bot:qqcc",
+        include_legacy=False,
+    )
+
+    assert len(scheduled) == 1
+
+
+@pytest.mark.asyncio
+async def test_recover_active_tasks_can_include_legacy_main_bot_tasks(monkeypatch):
+    monkeypatch.setattr(
+        recovery_service.TaskRegistry,
+        "get_all_tasks",
+        AsyncMock(
+            return_value={
+                "main-task": {"client_type": "bot", "backend_task_id": "backend-main"},
+                "qqcc-task": {
+                    "client_type": "bot:qqcc",
+                    "backend_task_id": "backend-qqcc",
+                },
+                "legacy-task": {"backend_task_id": "backend-legacy"},
+            }
+        ),
+    )
+    scheduled = []
+
+    def fake_create_background_task(_application, coroutine):
+        scheduled.append(coroutine)
+        coroutine.close()
+
+    monkeypatch.setattr(
+        recovery_service,
+        "create_background_task",
+        fake_create_background_task,
+    )
+
+    await recovery_service.recover_active_tasks(
+        SimpleNamespace(bot=SimpleNamespace()),
+        client_type="bot",
+        include_legacy=True,
+    )
+
+    assert len(scheduled) == 2
+
+
+@pytest.mark.asyncio
 async def test_recover_single_task_success_uses_cleanup_runtime(monkeypatch):
     run_recovered = AsyncMock(return_value=True)
     cleanup_runtime = AsyncMock()

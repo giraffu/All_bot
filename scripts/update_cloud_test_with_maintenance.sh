@@ -12,6 +12,7 @@ REMOTE_ENV_FILE=".env.cloud.test"
 DRAIN_TIMEOUT_SECONDS=7200
 DRAIN_INTERVAL_SECONDS=15
 BOT_MODE="auto"
+QQCC_BOT_MODE="auto"
 EXECUTE=false
 KEEP_MAINTENANCE=false
 SKIP_DRAIN=false
@@ -46,6 +47,9 @@ Options:
   --no-delete                  Do not delete stale remote files during rsync.
   --bot-mode MODE              auto|start|skip|stop. Default: auto.
                                auto rebuilds/starts bot-test only if it was already running.
+  --qqcc-bot-mode MODE         auto|start|skip|stop. Default: auto.
+                               auto rebuilds/starts qqcc-bot-test only if it was already running.
+                               start still requires QQCC_BOT_TOKEN_TEST in the remote env.
   --skip-edge-web              Do not run frontend npm run deploy:edge-test.
   --keep-maintenance           Leave generation maintenance enabled after success.
   -h, --help                   Show this help.
@@ -128,6 +132,14 @@ while [ "$#" -gt 0 ]; do
             case "$BOT_MODE" in
                 auto|start|skip|stop) ;;
                 *) die "--bot-mode must be auto, start, skip, or stop" ;;
+            esac
+            shift 2
+            ;;
+        --qqcc-bot-mode)
+            QQCC_BOT_MODE="${2:-}"
+            case "$QQCC_BOT_MODE" in
+                auto|start|skip|stop) ;;
+                *) die "--qqcc-bot-mode must be auto, start, skip, or stop" ;;
             esac
             shift 2
             ;;
@@ -229,6 +241,14 @@ remote_bot_was_running() {
         "docker ps --format '{{.Names}}' | grep -qx cloud-tg-bot-test"
 }
 
+remote_qqcc_bot_was_running() {
+    if [ "$EXECUTE" != true ]; then
+        return 1
+    fi
+    ssh -o BatchMode=yes "$REMOTE_HOST" \
+        "docker ps --format '{{.Names}}' | grep -qx cloud-qqcc-bot-test"
+}
+
 enable_maintenance() {
     log "Enable cloud-test generation maintenance"
     remote_sh "$(cat <<'REMOTE'
@@ -236,7 +256,7 @@ set -euo pipefail
 cd "$REMOTE_DIR"
 mkdir -p "$(dirname "$REMOTE_MAINTENANCE_FILE")"
 printf '1\n' > "$REMOTE_MAINTENANCE_FILE"
-for container in cloud-web-api-test cloud-tg-bot-test; do
+for container in cloud-web-api-test cloud-tg-bot-test cloud-qqcc-bot-test; do
   if docker ps --format '{{.Names}}' | grep -qx "$container"; then
     docker exec "$container" sh -lc 'printf "1\n" > /app/GENERATION_MAINTENANCE'
     echo "$container=generation_maintenance"
@@ -255,7 +275,7 @@ disable_maintenance() {
 set -euo pipefail
 cd "$REMOTE_DIR"
 rm -f "$REMOTE_MAINTENANCE_FILE"
-for container in cloud-web-api-test cloud-tg-bot-test; do
+for container in cloud-web-api-test cloud-tg-bot-test cloud-qqcc-bot-test; do
   if docker ps --format '{{.Names}}' | grep -qx "$container"; then
     if docker exec "$container" sh -lc 'rm -f /app/GENERATION_MAINTENANCE /app/runtime-flags/GENERATION_MAINTENANCE || true'; then
       echo "$container=open"
@@ -504,6 +524,62 @@ REMOTE
 )"
 }
 
+deploy_qqcc_bot_if_needed() {
+    local qqcc_bot_was_running=$1
+    local should_start=false
+
+    case "$QQCC_BOT_MODE" in
+        auto)
+            [ "$qqcc_bot_was_running" = true ] && should_start=true
+            ;;
+        start)
+            should_start=true
+            ;;
+        skip)
+            log "Skip qqcc-bot-test by request"
+            return
+            ;;
+        stop)
+            log "Stop qqcc-bot-test by request"
+            remote_sh "$(cat <<'REMOTE'
+set -euo pipefail
+cd "$REMOTE_DIR"
+if docker compose version >/dev/null 2>&1; then
+  COMPOSE_CMD="docker compose"
+else
+  COMPOSE_CMD="docker-compose"
+fi
+$COMPOSE_CMD --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml --profile qqcc-bot stop qqcc-bot-test
+REMOTE
+)"
+            return
+            ;;
+    esac
+
+    if [ "$should_start" != true ]; then
+        log "qqcc-bot-test was not running; keep it stopped"
+        return
+    fi
+
+    log "Rebuild and start qqcc-bot-test"
+    remote_sh "$(cat <<'REMOTE'
+set -euo pipefail
+cd "$REMOTE_DIR"
+if ! grep -q '^QQCC_BOT_TOKEN_TEST=.' .env.cloud.test; then
+  echo "qqcc-bot-test=skipped_missing_QQCC_BOT_TOKEN_TEST"
+  exit 0
+fi
+if docker compose version >/dev/null 2>&1; then
+  COMPOSE_CMD="docker compose"
+else
+  COMPOSE_CMD="docker-compose"
+fi
+$COMPOSE_CMD --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml --profile qqcc-bot build qqcc-bot-test
+$COMPOSE_CMD --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml --profile qqcc-bot up -d --no-deps qqcc-bot-test
+REMOTE
+)"
+}
+
 deploy_edge_web() {
     if [ "$SKIP_EDGE_WEB" = true ]; then
         log "Skip edge test Web deploy by request"
@@ -590,6 +666,11 @@ main() {
         bot_was_running=true
     fi
     echo "bot-test initially running: ${bot_was_running}"
+    local qqcc_bot_was_running=false
+    if remote_qqcc_bot_was_running; then
+        qqcc_bot_was_running=true
+    fi
+    echo "qqcc-bot-test initially running: ${qqcc_bot_was_running}"
 
     enable_maintenance
     wait_for_queue_drain
@@ -597,6 +678,7 @@ main() {
     sync_env_file
     deploy_control_plane
     deploy_bot_if_needed "$bot_was_running"
+    deploy_qqcc_bot_if_needed "$qqcc_bot_was_running"
     deploy_edge_web
     verify_remote
 

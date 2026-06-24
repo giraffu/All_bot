@@ -21,7 +21,11 @@ PENDING_KEY = "comfy:queue:pending"
 RUNNING_KEY = "comfy:queue:running"
 TASK_PREFIX = "comfy:task:"
 TASK_EVENT_PREFIX = "comfy:task_events:"
-MAINTENANCE_CONTAINERS = ("cloud-web-api-prod", "cloud-tg-bot-prod")
+MAINTENANCE_CONTAINERS = (
+    "cloud-web-api-prod",
+    "cloud-tg-bot-prod",
+    "cloud-qqcc-bot-prod",
+)
 GENERATION_MAINTENANCE_PATH = "/app/GENERATION_MAINTENANCE"
 REFUND_TASK_TYPE = "refund_prod_maintenance_release"
 

@@ -294,6 +294,50 @@ services:
       central-api-test:
         condition: service_healthy
 
+  qqcc-bot-test:
+    build:
+      context: ../
+      dockerfile: Dockerfile.qqcc
+    container_name: cloud-qqcc-bot-test
+    profiles: ["qqcc-bot"]
+    restart: always
+    env_file:
+      - ../.env.cloud.test
+    environment:
+      BOT_TYPE: TEST
+      REDIS_PREFIX: cloud_test_bot_
+      ENABLE_PUBLIC_SHARE: "false"
+      API_BASE: http://central-api-test:8003
+      API_BASE_TEST: http://central-api-test:8003
+      QQCC_BOT_TOKEN_TEST: ${QQCC_BOT_TOKEN_TEST:-}
+      DATABASE_URL: ${CLOUD_TEST_DATABASE_URL:?CLOUD_TEST_DATABASE_URL is required}
+      DATABASE_URL_TEST: ${CLOUD_TEST_DATABASE_URL:?CLOUD_TEST_DATABASE_URL is required}
+      REDIS_URL: ${CLOUD_TEST_REDIS_URL:?CLOUD_TEST_REDIS_URL is required}
+      REDIS_URL_TEST: ${CLOUD_TEST_REDIS_URL:?CLOUD_TEST_REDIS_URL is required}
+      WORKER_REDIS_URL: ${CLOUD_TEST_WORKER_REDIS_URL:?CLOUD_TEST_WORKER_REDIS_URL is required}
+      GENERATION_MAINTENANCE_FILE: /app/runtime-flags/GENERATION_MAINTENANCE
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:?MINIO_ENDPOINT is required}
+      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-}
+      MINIO_SECURE: ${MINIO_SECURE:-false}
+      TON_PAYMENT_POLLING_ENABLED: "false"
+      TZ: Asia/Shanghai
+    volumes:
+      - ../logs/cloud-test:/app/logs
+      - ../runtime/cloud-test:/app/runtime-flags
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+      central-api-test:
+        condition: service_healthy
+    command:
+      [
+        "sh",
+        "-lc",
+        "test -n \"$${QQCC_BOT_TOKEN_TEST}\" || { echo 'QQCC_BOT_TOKEN_TEST is required'; exit 1; }; exec python -m qqcc_bot.main",
+      ]
+
 volumes:
   cloud-postgres-test-data:
   cloud-redis-test-data:
