@@ -5,6 +5,7 @@ import pytest
 from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler, TypeHandler
 
 from qqcc_bot import keyboards, main as qqcc_main, prompt_handlers
+from src.handlers import prompt_router
 
 
 def _keyboard_texts(reply_markup):
@@ -45,6 +46,15 @@ def test_qqcc_prompt_routes_are_limited_to_lazy_menus():
         "menu.main_menu",
         "menu.back_main",
     }
+
+
+def test_qqcc_lazy_main_buttons_are_routable_without_main_bot_prompt_routes(monkeypatch):
+    monkeypatch.setattr(prompt_router, "prompt_routes", {}, raising=False)
+
+    prompt_router.build_global_menu_filter()
+
+    assert prompt_router.GLOBAL_REVERSE_MAP["🖼️ 懒人P图"] == "menu.photo_edit"
+    assert prompt_router.GLOBAL_REVERSE_MAP["🎬 视频创作"] == "menu.video_edit"
 
 
 def test_register_handlers_only_registers_qqcc_surface(monkeypatch):
