@@ -68,7 +68,7 @@ RUNPOD_MODEL_MANIFEST_KEY=img2img_lora/2026-06-10/manifest.json
 | `RUNPOD_MODEL_BUCKET` / `RUNPOD_MODEL_PREFIX` / `RUNPOD_MODEL_MANIFEST_KEY` | `allbot-model-cache` + profile-specific manifest | 手动正式 RunPod `img2img` 使用 `img2img_lora/2026-06-10/manifest.json`；`image_to_video` 使用 `image_to_video/2026-06-13-test/manifest.json`；`wan22_video_v2` 使用 `wan22_video_v2/2026-06-13-test/manifest.json`；`i2i_pro` 使用 `i2i_pro/2026-06-14-test/manifest.json`；`scail2` 使用 `scail2/2026-06-17-test/manifest.json`；`ltx_video` 使用 `ltx_video/2026-06-10/manifest.json` |
 | `RUNPOD_MODEL_ACCESS_KEY_REF` / `RUNPOD_MODEL_SECRET_KEY_REF` | `{{ RUNPOD_SECRET_allbot_model_cache_r2_access_key }}` / `{{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}` | RunPod Pod 同步 `allbot-model-cache` 的 secret 引用，可与云测试共用模型缓存 secret |
 | `DASHBOARD_RUNPOD_AUTOSCALER_ENABLED` / `DASHBOARD_RUNPOD_AUTOSCALER_MODE` | 云正式 Dashboard Backend compose 默认 `true` / `execute`，可由 `.env.cloud.prod` 覆盖 | 启用 Dashboard 后端 RunPod 自动管理；后台按队列等待阈值调用现有 `add` / `down` operation，不直接操作本地 worker |
-| `DASHBOARD_RUNPOD_AUTOSCALER_*` 阈值 | 默认扩容等待 `1800s`、缩容等待 `60s`、冷却 `600s`、每 profile 最多 `5` 台 RunPod、heartbeat 新鲜度 `300s` | 自动管理安全边界；只统计健康 enabled 可接单 worker，缩容保底为 RunPod + 本地可接单总容量至少 1 |
+| `DASHBOARD_RUNPOD_AUTOSCALER_*` 阈值 | 默认扩容等待按 profile：`img2img=20m`、`scail2=40m`、其它正式 profile `30m`；缩容等待 `60s`、冷却 `600s`、每 profile 最多 `5` 台 RunPod、heartbeat 新鲜度 `300s` | 自动管理安全边界；只统计健康 enabled 可接单 worker，缩容保底为 RunPod + 本地可接单总容量至少 1；Dashboard 表格保存的 profile 级扩容阈值会写入 Redis 并在下一轮评估生效 |
 | `GITHUB_TOKEN` / `GHCR_TOKEN` / `all-github-token` | `.env.cloud.prod` 可保存真实值作为人工密钥来源 | 只用于本机 `docker login ghcr.io`、GHCR push 或 GitHub package 管理；不属于云正式服务容器运行时变量，不进入 RunPod Pod env |
 
 `.env.cloud.prod` 不应保存 Cloudflare `cfat_...` API token，也不应把真实 R2 key、GitHub/GHCR token 写入知识库、日志或 `docker compose config` 输出。当前环境文件中出现的 `all-github-token` 带中划线，不能被 `source .env.cloud.prod` 导出为 shell 变量；需要推 GHCR 时应临时映射到 `GHCR_TOKEN` 或 `GITHUB_TOKEN` 后执行 `docker login ghcr.io`，并在 push 后用空 `DOCKER_CONFIG` 匿名验证 package public。正式 RunPod `prod-worker` 代码入口已支持 `--profile img2img`、`--profile image_to_video`、`--profile wan22_video_v2`、`--profile i2i_pro`、`--profile scail2` 与 `--profile ltx_video` 六条手动备用路径；真实创建、启用或 canary 生产任务仍必须由用户明确确认并满足 RunPod 门禁。
@@ -285,10 +285,12 @@ curl -fsS http://100.107.220.127:8086/api/health
 Dashboard RunPod 管理入口当前支持 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、
 `scail2 / 视频生视频` 与 `ltx_video / 高级图生视频`；它只提交正式 RunPod 池新增/暂停/删除操作，不直接启停其它正式服务。
 Dashboard 后端 RunPod autoscaler 默认随正式 `dashboard-backend-prod` 启动，只有拿到 Redis leader
-lease 后才会自动执行：最长等待超过 30 分钟且有排队时提交 `add --count 1 --retry-unavailable`，
+lease 后才会自动执行：有排队且最长等待超过该 profile 扩容阈值时提交 `add --count 1 --retry-unavailable`，
 无排队或等待低于 1 分钟且 RunPod + 本地健康 enabled 可接单总容量大于 1 时，删除最高 slot
 的 idle RunPod。本地 worker 只参与保底，不会被 autoscaler 启停；管理弹窗可通过
-`/api/runpod/autoscaler/control` 紧急暂停。
+`/api/runpod/autoscaler/control` 紧急暂停。默认扩容阈值为 `img2img=20 分钟`、`scail2=40 分钟`、
+其它正式 profile `30 分钟`；系统监控页“活跃 RunPod 详情”的“扩容阈值”列通过
+`/api/runpod/autoscaler/settings` 保存 profile 级分钟数到 Redis，下一轮 autoscaler 评估立即使用。
 
 付费群审核 Bot 与 Dashboard 管理页单独上线时，只触碰三个服务：
 

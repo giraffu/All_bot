@@ -221,6 +221,11 @@ class RunPodAutoscalerControlRequest(BaseModel):
     reason: Optional[str] = None
 
 
+class RunPodAutoscalerSettingsRequest(BaseModel):
+    scale_up_wait_minutes_by_profile: Dict[str, Any] = Field(default_factory=dict)
+    reason: Optional[str] = None
+
+
 class GalleryPostUpdate(BaseModel):
     is_active: Optional[bool] = None
     likes_count: Optional[int] = Field(default=None, ge=0)

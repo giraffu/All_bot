@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import pytest
+from fastapi import HTTPException
 
 from dashboard.backend.services.runpod_admin_operation import RunPodAdminOperation
 from dashboard.backend.services.runpod_autoscaler_service import (
     InMemoryRunPodAutoscalerStateStore,
     RunPodAutoscalerConfig,
     evaluate_runpod_autoscaler_once,
+    set_runpod_autoscaler_settings_payload,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -157,6 +159,72 @@ async def test_autoscaler_scales_up_when_wait_exceeds_threshold():
     assert calls[0]["profile"] == "img2img"
     assert payload["decisions"][0]["action"] == "scale_up"
     assert payload["executed_operations"][0]["source"] == "autoscaler"
+
+
+async def test_autoscaler_uses_default_profile_scale_up_thresholds():
+    config = _config()
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=False,
+        config=config,
+        store=InMemoryRunPodAutoscalerStateStore(),
+        status_payload=_status(profile="scail2", pending=1, wait=1900),
+        workers_payload=_workers(),
+        operations_payload={"operations": []},
+        now_func=lambda: 1000.0,
+    )
+
+    decisions = {item["profile"]: item for item in payload["decisions"]}
+    thresholds = payload["config"]["scale_up_wait_seconds_by_profile"]
+    assert thresholds["img2img"] == 20 * 60
+    assert thresholds["scail2"] == 40 * 60
+    assert thresholds["image_to_video"] == 30 * 60
+    assert decisions["scail2"]["action"] == "hold"
+    assert decisions["scail2"]["scale_up_wait_seconds"] == 40 * 60
+    assert decisions["scail2"]["reason"] == "within thresholds"
+
+
+async def test_autoscaler_uses_persisted_profile_scale_up_threshold_on_next_evaluate():
+    store = InMemoryRunPodAutoscalerStateStore()
+    await set_runpod_autoscaler_settings_payload(
+        scale_up_wait_minutes_by_profile={"scail2": 31},
+        reason="test threshold update",
+        store=store,
+        refresh_payload=False,
+    )
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=False,
+        config=_config(),
+        store=store,
+        status_payload=_status(profile="scail2", pending=1, wait=1900),
+        workers_payload=_workers(),
+        operations_payload={"operations": []},
+        now_func=lambda: 1000.0,
+    )
+
+    decision = {item["profile"]: item for item in payload["decisions"]}["scail2"]
+    assert payload["config"]["scale_up_wait_seconds_by_profile"]["scail2"] == 31 * 60
+    assert decision["action"] == "scale_up"
+    assert decision["scale_up_wait_seconds"] == 31 * 60
+    assert decision["reason"] == "pending wait 1900s exceeds 1860s"
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"unknown": 30},
+        {"img2img": 0},
+        {"img2img": 241},
+    ],
+)
+async def test_autoscaler_rejects_invalid_profile_scale_up_threshold_settings(updates):
+    with pytest.raises(HTTPException) as exc_info:
+        await set_runpod_autoscaler_settings_payload(
+            scale_up_wait_minutes_by_profile=updates,
+            store=InMemoryRunPodAutoscalerStateStore(),
+        )
+
+    assert exc_info.value.status_code == 422
 
 
 async def test_autoscaler_does_not_duplicate_active_or_cooling_profile_operations():

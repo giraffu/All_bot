@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { 
   ThunderboltOutlined, 
   PictureOutlined, 
@@ -10,9 +10,15 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   ClearOutlined,
+  HistoryOutlined,
   LockOutlined
 } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
+import {
+  fetchRunPodAutoscaler,
+  fetchRunPodOperations,
+  updateRunPodAutoscalerSettings,
+} from '../api/api'
 import { useQueueStatsMonitor } from '../composables/useQueueStatsMonitor'
 import RunPodCapacityManager from './RunPodCapacityManager.vue'
 import RunPodWorkerActions from './RunPodWorkerActions.vue'
@@ -33,6 +39,21 @@ const {
 
 const workerHistoryOpen = ref(false)
 const selectedWorkerHistoryId = ref('')
+const autoscalerConfig = ref({})
+const thresholdDrafts = ref({})
+const savingThresholdProfile = ref('')
+const runpodOperationLogOpen = ref(false)
+const runpodOperationLogLoading = ref(false)
+const runpodOperations = ref([])
+
+const DEFAULT_SCALE_UP_WAIT_SECONDS_BY_PROFILE = {
+  img2img: 20 * 60,
+  image_to_video: 30 * 60,
+  wan22_video_v2: 30 * 60,
+  i2i_pro: 30 * 60,
+  scail2: 40 * 60,
+  ltx_video: 30 * 60,
+}
 
 const taskTotals = computed(() => {
   const totals = queueByTypeDisplay.value.reduce(
@@ -88,6 +109,145 @@ const runpodProfileRows = computed(() =>
     }
   })
 )
+
+const scaleUpThresholdSecondsByProfile = computed(() => ({
+  ...DEFAULT_SCALE_UP_WAIT_SECONDS_BY_PROFILE,
+  ...(autoscalerConfig.value?.scale_up_wait_seconds_by_profile || {}),
+}))
+
+const thresholdMinutesForProfile = (profile) => {
+  const seconds = Number(
+    scaleUpThresholdSecondsByProfile.value[profile] ??
+      DEFAULT_SCALE_UP_WAIT_SECONDS_BY_PROFILE[profile] ??
+      30 * 60
+  )
+  return Math.max(1, Math.round(seconds / 60))
+}
+
+const thresholdDraftValue = (profile) => {
+  const value = thresholdDrafts.value[profile]
+  return value === undefined || value === null ? thresholdMinutesForProfile(profile) : value
+}
+
+const setThresholdDraft = (profile, value) => {
+  thresholdDrafts.value = {
+    ...thresholdDrafts.value,
+    [profile]: value,
+  }
+}
+
+const isThresholdValid = (profile) => {
+  const minutes = Number(thresholdDraftValue(profile))
+  return Number.isInteger(minutes) && minutes >= 1 && minutes <= 240
+}
+
+const isThresholdDirty = (profile) => {
+  const minutes = Number(thresholdDraftValue(profile))
+  return Number.isFinite(minutes) && minutes !== thresholdMinutesForProfile(profile)
+}
+
+const syncThresholdDraftsFromConfig = () => {
+  thresholdDrafts.value = runpodProfileQueueDisplay.value.reduce((acc, profile) => {
+    acc[profile.profile] = thresholdMinutesForProfile(profile.profile)
+    return acc
+  }, {})
+}
+
+const loadAutoscalerSettings = async () => {
+  try {
+    const payload = await fetchRunPodAutoscaler()
+    autoscalerConfig.value = payload?.config || {}
+    syncThresholdDraftsFromConfig()
+  } catch (err) {
+    console.error(err)
+  }
+}
+
+const saveScaleUpThreshold = async (profile) => {
+  if (!isThresholdValid(profile)) {
+    message.warning('扩容阈值必须是 1-240 分钟')
+    return
+  }
+  const minutes = Number(thresholdDraftValue(profile))
+  savingThresholdProfile.value = profile
+  try {
+    const payload = await updateRunPodAutoscalerSettings({
+      scale_up_wait_minutes_by_profile: {
+        [profile]: minutes,
+      },
+      reason: 'dashboard threshold update',
+    })
+    autoscalerConfig.value = payload?.config || autoscalerConfig.value
+    syncThresholdDraftsFromConfig()
+    message.success(`已更新 ${profile} 扩容阈值`)
+  } catch (err) {
+    console.error(err)
+    message.error('扩容阈值保存失败')
+  } finally {
+    savingThresholdProfile.value = ''
+  }
+}
+
+const runpodCreateDeleteOperations = computed(() =>
+  runpodOperations.value
+    .filter((operation) => ['add', 'delete'].includes(String(operation.action || '')))
+    .slice(0, 50)
+)
+
+const operationActionLabel = (action) => {
+  if (action === 'add') return '创建'
+  if (action === 'delete') return '删除'
+  return action || '-'
+}
+
+const operationSourceLabel = (source) => {
+  if (source === 'autoscaler') return '自动'
+  return '手动'
+}
+
+const operationStatusColor = (status) => {
+  if (status === 'succeeded') return 'green'
+  if (status === 'failed') return 'red'
+  if (status === 'running') return 'blue'
+  if (status === 'terminated') return 'orange'
+  if (status === 'terminating') return 'orange'
+  if (status === 'terminate_failed') return 'red'
+  return 'default'
+}
+
+const operationDetailText = (operation) => {
+  if (operation.error) return operation.error
+  if (operation.trigger_reason) return operation.trigger_reason
+  const logTail = Array.isArray(operation.log_tail) ? operation.log_tail : []
+  if (logTail.length > 0) return logTail[logTail.length - 1]
+  return '-'
+}
+
+const formatOperationTime = (value) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value)
+  const pad = (num) => String(num).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+const loadRunPodOperationLogs = async () => {
+  runpodOperationLogLoading.value = true
+  try {
+    const payload = await fetchRunPodOperations()
+    runpodOperations.value = payload?.operations || []
+  } catch (err) {
+    console.error(err)
+    message.error('RunPod 日志加载失败')
+  } finally {
+    runpodOperationLogLoading.value = false
+  }
+}
+
+const openRunPodOperationLog = async () => {
+  runpodOperationLogOpen.value = true
+  await loadRunPodOperationLogs()
+}
 
 const handleCleanZombies = () => {
   Modal.confirm({
@@ -253,6 +413,10 @@ const handleSyncLock = async (userId) => {
     message.error('同步并发锁失败')
   }
 }
+
+onMounted(() => {
+  void loadAutoscalerSettings()
+})
 </script>
 
 <template>
@@ -395,7 +559,18 @@ const handleSyncLock = async (userId) => {
       <a-card hoverable class="queue-card runpod-profile-detail-card border-l-4 border-l-cyan-500">
         <div class="flex items-center justify-between gap-3 mb-3">
           <div class="text-gray-700 font-bold">活跃 RunPod 详情</div>
-          <a-tag color="cyan" class="m-0">共 {{ runpodProfileRows.length }} 类</a-tag>
+          <div class="runpod-detail-actions">
+            <a-button
+              size="small"
+              class="runpod-log-button"
+              :loading="runpodOperationLogLoading"
+              @click="openRunPodOperationLog"
+            >
+              <template #icon><history-outlined /></template>
+              日志
+            </a-button>
+            <a-tag color="cyan" class="m-0">共 {{ runpodProfileRows.length }} 类</a-tag>
+          </div>
         </div>
         <div class="overflow-x-auto">
           <table class="runpod-profile-detail-table">
@@ -405,6 +580,7 @@ const handleSyncLock = async (userId) => {
               <col class="runpod-metric-col" />
               <col class="runpod-metric-col" />
               <col class="runpod-wait-col" />
+              <col class="runpod-threshold-col" />
             </colgroup>
             <thead>
               <tr>
@@ -413,6 +589,7 @@ const handleSyncLock = async (userId) => {
                 <th>活跃数</th>
                 <th>排队数</th>
                 <th>最长等待</th>
+                <th>扩容阈值</th>
               </tr>
             </thead>
             <tbody v-if="runpodProfileRows.length > 0">
@@ -458,17 +635,124 @@ const handleSyncLock = async (userId) => {
                     {{ formatWaitDuration(item.maxPendingWaitSeconds) }}
                   </span>
                 </td>
+                <td>
+                  <div class="scale-threshold-cell">
+                    <a-input-number
+                      size="small"
+                      class="scale-threshold-input"
+                      :min="1"
+                      :max="240"
+                      :value="thresholdDraftValue(item.profile)"
+                      @update:value="value => setThresholdDraft(item.profile, value)"
+                    />
+                    <span class="scale-threshold-unit">分钟</span>
+                    <a-button
+                      type="text"
+                      size="small"
+                      class="scale-threshold-save"
+                      :disabled="!isThresholdDirty(item.profile) || !isThresholdValid(item.profile)"
+                      :loading="savingThresholdProfile === item.profile"
+                      @click="saveScaleUpThreshold(item.profile)"
+                    >
+                      <template #icon><check-circle-outlined /></template>
+                    </a-button>
+                  </div>
+                </td>
               </tr>
             </tbody>
             <tbody v-else>
               <tr>
-                <td colspan="5" class="empty-detail-cell">暂无 RunPod 统计</td>
+                <td colspan="6" class="empty-detail-cell">暂无 RunPod 统计</td>
               </tr>
             </tbody>
           </table>
         </div>
       </a-card>
     </div>
+
+    <a-modal
+      v-model:open="runpodOperationLogOpen"
+      title="RunPod 创建/删除日志"
+      width="860px"
+      :footer="null"
+    >
+      <div class="runpod-operation-log-panel">
+        <div class="runpod-operation-log-toolbar">
+          <span class="runpod-operation-log-count">
+            最近 {{ runpodCreateDeleteOperations.length }} 条创建/删除记录
+          </span>
+          <a-button
+            size="small"
+            :loading="runpodOperationLogLoading"
+            @click="loadRunPodOperationLogs"
+          >
+            <template #icon><sync-outlined /></template>
+            刷新
+          </a-button>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table
+            v-if="runpodCreateDeleteOperations.length > 0"
+            class="runpod-operation-log-table"
+          >
+            <thead>
+              <tr>
+                <th>时间</th>
+                <th>操作</th>
+                <th>类型</th>
+                <th>来源</th>
+                <th>状态</th>
+                <th>Slot</th>
+                <th>记录</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="operation in runpodCreateDeleteOperations"
+                :key="operation.id"
+              >
+                <td class="operation-time-cell">
+                  {{ formatOperationTime(operation.started_at || operation.created_at) }}
+                </td>
+                <td>
+                  <span class="operation-action-cell">
+                    {{ operationActionLabel(operation.action) }}
+                    <span
+                      v-if="operation.requested_count"
+                      class="operation-count"
+                    >
+                      x{{ operation.requested_count }}
+                    </span>
+                  </span>
+                </td>
+                <td class="operation-profile-cell">{{ operation.profile || '-' }}</td>
+                <td>{{ operationSourceLabel(operation.source) }}</td>
+                <td>
+                  <a-tag :color="operationStatusColor(operation.status)" class="m-0">
+                    {{ operation.status || '-' }}
+                  </a-tag>
+                </td>
+                <td class="operation-slot-cell">
+                  {{ operation.slot || (operation.cleanup_slots || []).join(', ') || '-' }}
+                </td>
+                <td>
+                  <span
+                    class="operation-detail-cell"
+                    :title="operationDetailText(operation)"
+                  >
+                    {{ operationDetailText(operation) }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-else class="runpod-operation-log-empty">
+            暂无 RunPod 创建/删除记录
+          </div>
+        </div>
+      </div>
+    </a-modal>
 
     <!-- Worker 实时状态卡片组 -->
     <div class="mb-2 mt-6">
@@ -746,6 +1030,17 @@ const handleSyncLock = async (userId) => {
   overflow: hidden;
   min-width: 0;
 }
+.runpod-detail-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.runpod-log-button {
+  display: inline-flex;
+  align-items: center;
+}
 .active-task-detail-table,
 .runpod-profile-detail-table {
   width: 100%;
@@ -757,7 +1052,7 @@ const handleSyncLock = async (userId) => {
   min-width: 520px;
 }
 .runpod-profile-detail-table {
-  min-width: 640px;
+  min-width: 760px;
 }
 .task-type-col {
   width: 34%;
@@ -769,16 +1064,19 @@ const handleSyncLock = async (userId) => {
   width: 26%;
 }
 .runpod-profile-col {
-  width: 34%;
+  width: 30%;
 }
 .runpod-server-col {
-  width: 18%;
+  width: 15%;
 }
 .runpod-metric-col {
-  width: 14%;
+  width: 11%;
 }
 .runpod-wait-col {
-  width: 20%;
+  width: 15%;
+}
+.runpod-threshold-col {
+  width: 18%;
 }
 .active-task-detail-table th,
 .runpod-profile-detail-table th {
@@ -858,6 +1156,90 @@ const handleSyncLock = async (userId) => {
 .metric-value {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-weight: 700;
+}
+.scale-threshold-cell {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.scale-threshold-input {
+  width: 72px;
+  flex: 0 0 72px;
+}
+.scale-threshold-unit {
+  color: #6b7280;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.scale-threshold-save {
+  flex: 0 0 auto;
+}
+.runpod-operation-log-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.runpod-operation-log-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.runpod-operation-log-count {
+  color: #64748b;
+  font-size: 12px;
+}
+.runpod-operation-log-table {
+  width: 100%;
+  min-width: 780px;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.runpod-operation-log-table th {
+  color: #6b7280;
+  font-weight: 600;
+  text-align: left;
+  background: #f9fafb;
+  border-bottom: 1px solid #eef0f3;
+  padding: 8px 10px;
+}
+.runpod-operation-log-table td {
+  border-bottom: 1px solid #f0f2f5;
+  padding: 8px 10px;
+  vertical-align: middle;
+}
+.operation-time-cell,
+.operation-profile-cell,
+.operation-slot-cell {
+  color: #475569;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+.operation-action-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 700;
+  color: #334155;
+}
+.operation-count {
+  color: #64748b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 11px;
+  font-weight: 700;
+}
+.operation-detail-cell {
+  display: block;
+  color: #475569;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.runpod-operation-log-empty {
+  padding: 28px 0;
+  color: #9ca3af;
+  text-align: center;
 }
 .empty-detail-cell {
   color: #9ca3af;

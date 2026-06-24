@@ -7,10 +7,11 @@ import os
 import socket
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
+from fastapi import HTTPException
 import redis.asyncio as redis
 
 from dashboard.backend.services import runpod_admin_service
@@ -35,7 +36,80 @@ logger = logging.getLogger("dashboard.runpod.autoscaler")
 AUTOSCALER_CONTROL_KEY = "dashboard:runpod:autoscaler:control"
 AUTOSCALER_LEADER_KEY = "dashboard:runpod:autoscaler:leader"
 AUTOSCALER_LAST_DECISIONS_KEY = "dashboard:runpod:autoscaler:last_decisions"
+AUTOSCALER_SETTINGS_KEY = "dashboard:runpod:autoscaler:settings"
 AUTOSCALER_OWNER_ID = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex}"
+SCALE_UP_WAIT_MINUTES_MIN = 1
+SCALE_UP_WAIT_MINUTES_MAX = 240
+
+
+def _runpod_profile_names() -> list[str]:
+    return [str(option["profile"]) for option in RUNPOD_ADMIN_PROFILE_OPTIONS]
+
+
+def _default_scale_up_wait_seconds_by_profile(
+    fallback_seconds: int,
+) -> dict[str, int]:
+    thresholds = {profile: int(fallback_seconds) for profile in _runpod_profile_names()}
+    thresholds["img2img"] = 20 * 60
+    thresholds["scail2"] = 40 * 60
+    return thresholds
+
+
+def _normalize_scale_up_wait_seconds_by_profile(
+    raw: dict[str, Any] | None,
+) -> dict[str, int]:
+    valid_profiles = set(_runpod_profile_names())
+    normalized: dict[str, int] = {}
+    for profile, raw_seconds in (raw or {}).items():
+        profile_name = str(profile)
+        if profile_name not in valid_profiles:
+            continue
+        try:
+            seconds = int(raw_seconds)
+        except (TypeError, ValueError):
+            continue
+        if seconds < SCALE_UP_WAIT_MINUTES_MIN * 60:
+            continue
+        if seconds > SCALE_UP_WAIT_MINUTES_MAX * 60:
+            continue
+        normalized[profile_name] = seconds
+    return normalized
+
+
+def _validate_scale_up_wait_minutes_by_profile(
+    updates: dict[str, Any] | None,
+) -> dict[str, int]:
+    if not updates:
+        return {}
+    valid_profiles = set(_runpod_profile_names())
+    normalized: dict[str, int] = {}
+    for profile, raw_minutes in updates.items():
+        profile_name = str(profile)
+        if profile_name not in valid_profiles:
+            raise HTTPException(
+                status_code=422,
+                detail=f"unsupported RunPod profile: {profile_name}",
+            )
+        try:
+            minutes = int(raw_minutes)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"invalid scale-up threshold minutes for {profile_name}",
+            ) from exc
+        if (
+            minutes < SCALE_UP_WAIT_MINUTES_MIN
+            or minutes > SCALE_UP_WAIT_MINUTES_MAX
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"scale-up threshold for {profile_name} must be between "
+                    f"{SCALE_UP_WAIT_MINUTES_MIN} and {SCALE_UP_WAIT_MINUTES_MAX} minutes"
+                ),
+            )
+        normalized[profile_name] = minutes * 60
+    return normalized
 
 
 def _bool_env(name: str, *, default: bool = False) -> bool:
@@ -68,6 +142,32 @@ class RunPodAutoscalerConfig:
     heartbeat_max_age_seconds: int = 5 * 60
     leader_ttl_seconds: int = 90
     owner_id: str = AUTOSCALER_OWNER_ID
+    scale_up_wait_seconds_by_profile: dict[str, int] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        merged = _default_scale_up_wait_seconds_by_profile(self.scale_up_wait_seconds)
+        merged.update(
+            _normalize_scale_up_wait_seconds_by_profile(
+                self.scale_up_wait_seconds_by_profile
+            )
+        )
+        object.__setattr__(self, "scale_up_wait_seconds_by_profile", merged)
+
+    def scale_up_wait_seconds_for_profile(self, profile: str) -> int:
+        return int(
+            self.scale_up_wait_seconds_by_profile.get(
+                profile,
+                self.scale_up_wait_seconds,
+            )
+        )
+
+    def with_scale_up_wait_seconds_by_profile(
+        self,
+        thresholds: dict[str, int] | None,
+    ) -> "RunPodAutoscalerConfig":
+        merged = dict(self.scale_up_wait_seconds_by_profile)
+        merged.update(_normalize_scale_up_wait_seconds_by_profile(thresholds))
+        return replace(self, scale_up_wait_seconds_by_profile=merged)
 
     def payload(self) -> dict[str, Any]:
         return {
@@ -75,6 +175,9 @@ class RunPodAutoscalerConfig:
             "mode": self.mode,
             "interval_seconds": self.interval_seconds,
             "scale_up_wait_seconds": self.scale_up_wait_seconds,
+            "scale_up_wait_seconds_by_profile": dict(
+                self.scale_up_wait_seconds_by_profile
+            ),
             "scale_down_wait_seconds": self.scale_down_wait_seconds,
             "cooldown_seconds": self.cooldown_seconds,
             "max_runpods_per_profile": self.max_runpods_per_profile,
@@ -136,6 +239,17 @@ class RunPodAutoscalerStateStore(Protocol):
     async def set_control_enabled(self, enabled: bool, *, reason: str | None) -> None:
         ...
 
+    async def get_scale_up_wait_seconds_by_profile(self) -> dict[str, int]:
+        ...
+
+    async def set_scale_up_wait_seconds_by_profile(
+        self,
+        thresholds: dict[str, int],
+        *,
+        reason: str | None,
+    ) -> None:
+        ...
+
     async def acquire_leader(self, owner_id: str, *, ttl_seconds: int) -> bool:
         ...
 
@@ -152,6 +266,17 @@ class DisabledRunPodAutoscalerStateStore:
 
     async def set_control_enabled(self, enabled: bool, *, reason: str | None) -> None:
         del enabled, reason
+
+    async def get_scale_up_wait_seconds_by_profile(self) -> dict[str, int]:
+        return {}
+
+    async def set_scale_up_wait_seconds_by_profile(
+        self,
+        thresholds: dict[str, int],
+        *,
+        reason: str | None,
+    ) -> None:
+        del thresholds, reason
 
     async def acquire_leader(self, owner_id: str, *, ttl_seconds: int) -> bool:
         del owner_id, ttl_seconds
@@ -170,6 +295,8 @@ class InMemoryRunPodAutoscalerStateStore:
         self.control_reason: str | None = None
         self.leader_available = leader_available
         self.last_decisions: dict[str, Any] | None = None
+        self.scale_up_wait_seconds_by_profile: dict[str, int] = {}
+        self.settings_reason: str | None = None
 
     async def get_control_enabled(self, *, default: bool) -> bool:
         return default if self.control_enabled is None else self.control_enabled
@@ -177,6 +304,20 @@ class InMemoryRunPodAutoscalerStateStore:
     async def set_control_enabled(self, enabled: bool, *, reason: str | None) -> None:
         self.control_enabled = bool(enabled)
         self.control_reason = reason
+
+    async def get_scale_up_wait_seconds_by_profile(self) -> dict[str, int]:
+        return dict(self.scale_up_wait_seconds_by_profile)
+
+    async def set_scale_up_wait_seconds_by_profile(
+        self,
+        thresholds: dict[str, int],
+        *,
+        reason: str | None,
+    ) -> None:
+        self.scale_up_wait_seconds_by_profile.update(
+            _normalize_scale_up_wait_seconds_by_profile(thresholds)
+        )
+        self.settings_reason = reason
 
     async def acquire_leader(self, owner_id: str, *, ttl_seconds: int) -> bool:
         del owner_id, ttl_seconds
@@ -212,6 +353,37 @@ class RedisRunPodAutoscalerStateStore:
         }
         await self.redis.set(
             AUTOSCALER_CONTROL_KEY,
+            json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+        )
+
+    async def get_scale_up_wait_seconds_by_profile(self) -> dict[str, int]:
+        raw = await self.redis.get(AUTOSCALER_SETTINGS_KEY)
+        if not raw:
+            return {}
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+        return _normalize_scale_up_wait_seconds_by_profile(
+            payload.get("scale_up_wait_seconds_by_profile")
+        )
+
+    async def set_scale_up_wait_seconds_by_profile(
+        self,
+        thresholds: dict[str, int],
+        *,
+        reason: str | None,
+    ) -> None:
+        current = await self.get_scale_up_wait_seconds_by_profile()
+        current.update(_normalize_scale_up_wait_seconds_by_profile(thresholds))
+        payload = {
+            "scale_up_wait_seconds_by_profile": current,
+            "reason": reason or "",
+            "updated_at": time.time(),
+            "owner_id": AUTOSCALER_OWNER_ID,
+        }
+        await self.redis.set(
+            AUTOSCALER_SETTINGS_KEY,
             json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
         )
 
@@ -497,6 +669,7 @@ def build_runpod_autoscaler_decisions(
         pending_count = int(detail.get("pending_count") or 0)
         active_count = int(detail.get("active_count") or 0)
         wait_seconds = _safe_float(detail.get("max_pending_wait_seconds"))
+        scale_up_wait_seconds = config.scale_up_wait_seconds_for_profile(profile)
 
         profile_runpod_workers: list[dict[str, Any]] = []
         profile_local_workers: list[dict[str, Any]] = []
@@ -551,6 +724,7 @@ def build_runpod_autoscaler_decisions(
             "local_accepting_count": accepting_local_count,
             "total_accepting_count": total_accepting_count,
             "max_runpods_per_profile": config.max_runpods_per_profile,
+            "scale_up_wait_seconds": scale_up_wait_seconds,
         }
 
         active_operation = _active_operation_for_profile(operations, profile=profile)
@@ -589,7 +763,7 @@ def build_runpod_autoscaler_decisions(
         if (
             pending_count > 0
             and wait_seconds is not None
-            and wait_seconds > config.scale_up_wait_seconds
+            and wait_seconds > scale_up_wait_seconds
         ):
             if runpod_total_count >= config.max_runpods_per_profile:
                 decisions.append(
@@ -607,7 +781,7 @@ def build_runpod_autoscaler_decisions(
                         action="scale_up",
                         reason=(
                             f"pending wait {int(wait_seconds)}s exceeds "
-                            f"{config.scale_up_wait_seconds}s"
+                            f"{scale_up_wait_seconds}s"
                         ),
                         metrics=metrics,
                     )
@@ -696,6 +870,14 @@ async def evaluate_runpod_autoscaler_once(
     active_store = store or _state_store
     now = float(now_func())
     control_error: str | None = None
+    settings_error: str | None = None
+    try:
+        active_config = active_config.with_scale_up_wait_seconds_by_profile(
+            await active_store.get_scale_up_wait_seconds_by_profile()
+        )
+    except Exception as exc:
+        logger.warning("RunPod autoscaler settings unavailable", exc_info=True)
+        settings_error = str(exc)
     try:
         control_enabled = await active_store.get_control_enabled(
             default=active_config.configured_enabled
@@ -730,6 +912,7 @@ async def evaluate_runpod_autoscaler_once(
                 ).isoformat().replace("+00:00", "Z"),
                 "mutation_skipped_reason": "leader lease not acquired",
                 "control_error": control_error,
+                "settings_error": settings_error,
             }
             await _safe_store_save_decisions(active_store, payload)
             return payload
@@ -760,6 +943,7 @@ async def evaluate_runpod_autoscaler_once(
             "mutation_skipped_reason": "snapshot unavailable",
             "error": str(exc),
             "control_error": control_error,
+            "settings_error": settings_error,
         }
         await _safe_store_save_decisions(active_store, payload)
         return payload
@@ -820,6 +1004,7 @@ async def evaluate_runpod_autoscaler_once(
             now, tz=timezone.utc
         ).isoformat().replace("+00:00", "Z"),
         "control_error": control_error,
+        "settings_error": settings_error,
     }
     await _safe_store_save_decisions(active_store, payload)
     return payload
@@ -836,6 +1021,31 @@ async def set_runpod_autoscaler_control_payload(
 ) -> dict[str, Any]:
     await _state_store.set_control_enabled(enabled, reason=reason)
     return await get_runpod_autoscaler_payload()
+
+
+async def set_runpod_autoscaler_settings_payload(
+    *,
+    scale_up_wait_minutes_by_profile: dict[str, Any] | None,
+    reason: str | None = None,
+    store: RunPodAutoscalerStateStore | None = None,
+    config: RunPodAutoscalerConfig | None = None,
+    refresh_payload: bool = True,
+) -> dict[str, Any]:
+    thresholds = _validate_scale_up_wait_minutes_by_profile(
+        scale_up_wait_minutes_by_profile
+    )
+    active_store = store or _state_store
+    await active_store.set_scale_up_wait_seconds_by_profile(thresholds, reason=reason)
+    active_config = (config or config_from_env()).with_scale_up_wait_seconds_by_profile(
+        await active_store.get_scale_up_wait_seconds_by_profile()
+    )
+    if not refresh_payload:
+        return {"config": active_config.payload()}
+    return await evaluate_runpod_autoscaler_once(
+        mutate=False,
+        config=active_config,
+        store=active_store,
+    )
 
 
 def should_start_runpod_autoscaler_loop(

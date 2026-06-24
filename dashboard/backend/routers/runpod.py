@@ -2,12 +2,14 @@ from fastapi import APIRouter
 
 from dashboard.backend.schemas import (
     RunPodAutoscalerControlRequest,
+    RunPodAutoscalerSettingsRequest,
     RunPodScaleRequest,
     RunPodWorkerActionRequest,
 )
 from dashboard.backend.services.runpod_autoscaler_service import (
     get_runpod_autoscaler_payload,
     set_runpod_autoscaler_control_payload,
+    set_runpod_autoscaler_settings_payload,
 )
 from dashboard.backend.services.runpod_admin_service import (
     delete_runpod_worker_payload,
@@ -45,6 +47,14 @@ async def get_runpod_autoscaler():
 async def control_runpod_autoscaler(req: RunPodAutoscalerControlRequest):
     return await set_runpod_autoscaler_control_payload(
         enabled=req.enabled,
+        reason=req.reason,
+    )
+
+
+@router.post("/autoscaler/settings")
+async def update_runpod_autoscaler_settings(req: RunPodAutoscalerSettingsRequest):
+    return await set_runpod_autoscaler_settings_payload(
+        scale_up_wait_minutes_by_profile=req.scale_up_wait_minutes_by_profile,
         reason=req.reason,
     )
 

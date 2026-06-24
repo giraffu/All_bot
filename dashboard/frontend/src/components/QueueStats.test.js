@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { defineComponent, ref } from 'vue'
+import { flushPromises } from '@vue/test-utils'
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -9,6 +10,14 @@ const queueStatsMocks = vi.hoisted(() => ({
   workersRef: null,
   concurrencyStatsRef: null,
 }))
+
+const apiMocks = vi.hoisted(() => ({
+  fetchRunPodAutoscaler: vi.fn(),
+  fetchRunPodOperations: vi.fn(),
+  updateRunPodAutoscalerSettings: vi.fn(),
+}))
+
+vi.mock('../api/api', () => apiMocks)
 
 vi.mock('../composables/useQueueStatsMonitor', async () => {
   const { computed, ref } = await vi.importActual('vue')
@@ -91,6 +100,20 @@ const slotStub = (name) => defineComponent({
   template: '<div><slot name="title" /><slot name="icon" /><slot name="prefix" /><slot name="suffix" /><slot /></div>',
 })
 
+const ButtonStub = defineComponent({
+  name: 'ButtonStub',
+  props: ['disabled', 'loading'],
+  emits: ['click'],
+  template: '<button type="button" :disabled="disabled" @click="$emit(\'click\')"><slot name="icon" /><slot /></button>',
+})
+
+const InputNumberStub = defineComponent({
+  name: 'InputNumberStub',
+  props: ['value'],
+  emits: ['update:value'],
+  template: '<input type="number" :value="value" @input="$emit(\'update:value\', Number($event.target.value))" />',
+})
+
 const BadgeStub = defineComponent({
   name: 'BadgeStub',
   props: ['text'],
@@ -101,6 +124,13 @@ const StatisticStub = defineComponent({
   name: 'StatisticStub',
   props: ['title', 'value'],
   template: '<div><span>{{ title }}</span><span>{{ value }}</span><slot name="prefix" /><slot name="suffix" /></div>',
+})
+
+const ModalStub = defineComponent({
+  name: 'ModalStub',
+  props: ['open', 'title'],
+  emits: ['update:open'],
+  template: '<div v-if="open" class="modal-stub"><h2>{{ title }}</h2><slot /></div>',
 })
 
 const WorkerHistoryModalStub = defineComponent({
@@ -120,10 +150,12 @@ const mountQueueStats = async () => {
   return mount(QueueStats, {
     global: {
       stubs: {
-        'a-button': slotStub('AButtonStub'),
+        'a-button': ButtonStub,
         'a-card': slotStub('ACardStub'),
         'a-col': slotStub('AColStub'),
         'a-row': slotStub('ARowStub'),
+        'a-input-number': InputNumberStub,
+        'a-modal': ModalStub,
         'a-tag': slotStub('ATagStub'),
         'a-table': slotStub('ATableStub'),
         'a-table-column': TableColumnStub,
@@ -156,6 +188,32 @@ describe('QueueStats worker health display', () => {
     })
     queueStatsMocks.workersRef = ref([])
     queueStatsMocks.concurrencyStatsRef = ref([])
+    vi.clearAllMocks()
+    apiMocks.fetchRunPodAutoscaler.mockResolvedValue({
+      config: {
+        scale_up_wait_seconds_by_profile: {
+          img2img: 20 * 60,
+          image_to_video: 30 * 60,
+          wan22_video_v2: 30 * 60,
+          i2i_pro: 30 * 60,
+          scail2: 40 * 60,
+          ltx_video: 30 * 60,
+        },
+      },
+    })
+    apiMocks.updateRunPodAutoscalerSettings.mockResolvedValue({
+      config: {
+        scale_up_wait_seconds_by_profile: {
+          img2img: 25 * 60,
+          image_to_video: 30 * 60,
+          wan22_video_v2: 30 * 60,
+          i2i_pro: 30 * 60,
+          scail2: 40 * 60,
+          ltx_video: 30 * 60,
+        },
+      },
+    })
+    apiMocks.fetchRunPodOperations.mockResolvedValue({ operations: [] })
     vi.resetModules()
   })
 
@@ -408,7 +466,108 @@ describe('QueueStats worker health display', () => {
       '活跃数',
       '排队数',
       '最长等待',
+      '扩容阈值',
     ])
+  })
+
+  it('renders default runpod scale-up thresholds and saves profile updates', async () => {
+    queueStatsMocks.statusRef.value = {
+      ...queueStatsMocks.statusRef.value,
+      runpod_profile_queue_details: [
+        {
+          profile: 'img2img',
+          label: 'img2img / img2img_lora',
+          supported_task_types: ['img2img', 'img2img_lora'],
+          active_count: 2,
+          pending_count: 1,
+          max_pending_wait_seconds: 120,
+        },
+        {
+          profile: 'scail2',
+          label: 'scail2 / 视频生视频',
+          supported_task_types: ['scail2_action_transfer', 'scail2_video_replacement'],
+          active_count: 0,
+          pending_count: 0,
+          max_pending_wait_seconds: null,
+        },
+      ],
+    }
+
+    const wrapper = await mountQueueStats()
+    await flushPromises()
+    const rows = wrapper.findAll('.runpod-profile-detail-table tbody tr')
+    const img2imgRow = rows.find(row => row.text().includes('img2img / img2img_lora'))
+    const scail2Row = rows.find(row => row.text().includes('scail2 / 视频生视频'))
+
+    expect(img2imgRow?.find('input').element.value).toBe('20')
+    expect(scail2Row?.find('input').element.value).toBe('40')
+
+    await img2imgRow?.find('input').setValue('25')
+    await img2imgRow?.find('.scale-threshold-save').trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.updateRunPodAutoscalerSettings).toHaveBeenCalledWith({
+      scale_up_wait_minutes_by_profile: {
+        img2img: 25,
+      },
+      reason: 'dashboard threshold update',
+    })
+  })
+
+  it('opens runpod create and delete operation logs from the profile card', async () => {
+    apiMocks.fetchRunPodOperations.mockResolvedValue({
+      operations: [
+        {
+          id: 'op-add',
+          action: 'add',
+          profile: 'img2img',
+          source: 'autoscaler',
+          status: 'succeeded',
+          requested_count: 1,
+          created_at: '2026-06-24T01:00:00Z',
+          trigger_reason: 'pending wait 1900s exceeds 1200s',
+          log_tail: ['runpod_create_pod_03: ok'],
+        },
+        {
+          id: 'op-delete',
+          action: 'delete',
+          profile: 'scail2',
+          source: 'manual',
+          status: 'running',
+          slot: '02',
+          created_at: '2026-06-24T01:05:00Z',
+          log_tail: ['down manual_02'],
+        },
+        {
+          id: 'op-restart',
+          action: 'restart',
+          profile: 'ltx_video',
+          source: 'manual',
+          status: 'succeeded',
+          created_at: '2026-06-24T01:10:00Z',
+        },
+      ],
+    })
+
+    const wrapper = await mountQueueStats()
+    await flushPromises()
+
+    const logButton = wrapper
+      .findAll('button')
+      .find(button => button.text().includes('日志'))
+    expect(logButton).toBeTruthy()
+    await logButton?.trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.fetchRunPodOperations).toHaveBeenCalled()
+    expect(wrapper.text()).toContain('RunPod 创建/删除日志')
+    expect(wrapper.text()).toContain('最近 2 条创建/删除记录')
+    expect(wrapper.text()).toContain('创建')
+    expect(wrapper.text()).toContain('删除')
+    expect(wrapper.text()).toContain('img2img')
+    expect(wrapper.text()).toContain('scail2')
+    expect(wrapper.text()).toContain('自动')
+    expect(wrapper.text()).not.toContain('ltx_video')
   })
 
   it('renders long worker names without the truncation class', async () => {
