@@ -5,10 +5,11 @@
 ## 系统核心架构
 
 系统采用 BFF 架构和多服务编排：
-- **Web API**: FastAPI 提供 REST/SSE 和 JWT 鉴权
-- **TG Bot**: Python-Telegram-Bot 处理 Telegram Update
-- **Payment API**: 独立回调服务保障资产一致性
-- **Worker Node**: ComfyUI 阵列与 Redis Pub/Sub 队列通信
+- **Web API**: FastAPI 提供用户 REST/SSE、JWT 鉴权、历史与社区工作台接口
+- **Central API**: FastAPI 承接执行面任务队列、worker heartbeat、状态/result 与系统视图
+- **TG Bot / QQCC Bot / Paid Group Bot**: 多个独立 Telegram polling 入口，各自使用独立 token 与职责边界
+- **Payment API**: 独立回调服务保障支付履约、会员与 affiliate 资产一致性
+- **Worker Node**: 本地 worker、LAN AIO 与 RunPod worker 通过 Central/Redis/HTTP 协议驱动 ComfyUI runtime
 
 ## 业务板块与产品规范
 
@@ -24,6 +25,7 @@
 
 <!-- DOCS_INDEX_START -->
 - [Compat / Seam 退出表](./docs/compat_seam_exit_table.md)
+- [AllBot Knowledge Base Audit Matrix](./docs/knowledge_base_audit_matrix.md)
 - [修仙主题 AI 创作工作台 - 系统架构与业务分析报告](./docs/system_architecture_report.md)
 - [双入口职责矩阵](./docs/入口职责矩阵_entry_responsibility_matrix.md)
 - [双入口重复能力 Inventory](./docs/双入口重复能力_inventory.md)
@@ -57,9 +59,9 @@
 - [测试与入口命名约定](./docs/测试与入口命名约定.md)
 <!-- DOCS_INDEX_END -->
 
-历史迁云、一次性变更说明和问题复盘已归档到 [`docs/archive/2026-06-cloud-migration/`](./docs/archive/2026-06-cloud-migration/README.md)。归档材料不作为当前部署 SOP。
+历史迁云、一次性变更说明和问题复盘已归档到 [`docs/archive/2026-06-cloud-migration/`](./docs/archive/2026-06-cloud-migration/README.md) 与 [`docs/archive/2026-06-runtime-canaries/`](./docs/archive/2026-06-runtime-canaries/README.md)。归档材料不作为当前部署 SOP，排障报告默认保留在 `logs/`。
 
 ## 持续集成与部署
 
 - 本项目通过 GitHub Actions 实现对 Markdown 文档的自动校验（`markdownlint`）和自动目录更新。
-- 当前研发验证首选云测试控制面；正式热修走云正式 compose / cloud deploy 脚本；本地 `safe_deploy.sh` 只保留为云正式整体故障时的临时本地正式灾备入口。
+- 当前研发验证首选云测试控制面，日常维护式更新入口为 `scripts/update_cloud_test_with_maintenance.sh --execute`；正式热修走云正式 compose / cloud deploy 脚本；本地 `safe_deploy.sh` 只保留为云正式整体故障时的临时本地正式灾备入口。

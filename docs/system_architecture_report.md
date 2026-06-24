@@ -123,7 +123,7 @@ graph TD
 - 长期运维细节见 `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`。
 
 ### 1.4 云测试与本地灾备口径
-- 云测试控制面运行在独立 DigitalOcean Droplet `allbot-do-sgp1-test-control`，Tailscale IP `100.82.124.91`。同机容器承载测试 PostgreSQL、Redis、Central API、Web API、Dashboard Backend、Dashboard Frontend、imgproxy 与测试 Bot；`cloud-qqcc-bot-test` 仅在配置独立 `QQCC_BOT_TOKEN_TEST` 且显式/原运行状态需要时启动。本地主服务器运行 8 个 cloud-worker 测试容器并连接云测试 Central，其中 `cloud_worker_test_08` 指向 gpu-002 SCAIL-2 LAN AIO runtime。
+- 云测试控制面运行在独立 DigitalOcean Droplet `allbot-do-sgp1-test-control`，Tailscale IP `100.82.124.91`。同机容器承载测试 PostgreSQL、Redis、Central API、Web API、Dashboard Backend、Dashboard Frontend、imgproxy 与测试 Bot；`cloud-qqcc-bot-test` 仅在配置独立 `QQCC_BOT_TOKEN_TEST` 且显式/原运行状态需要时启动。本地主服务器的 `workers/docker-compose-cloud-worker-test.yml` 声明 `cloud-comfy-agent-test-1..8`，默认常驻只保留 test-1 与 test-8，其余测试 worker 只在 smoke/canary 窗口按需启用；`cloud_worker_test_08` 指向 gpu-002 SCAIL-2 LAN AIO runtime。
 - 云测试 Web 公网入口是 `web-test.aivison.it.com`，由 Web/Nginx VPS 提供 `/root/dist-test` 静态站，`/api/` 回源云测试 Web API `100.82.124.91:8001`。云测试端口绑定 Tailscale IP，公网 eth0 端口由测试机防火墙 drop。
 - 本地主服务器不再保留一套日常正式入口；只保留云正式整体故障时的临时本地正式灾备方案。操作手册见 `docs/子模块_本地正式灾备切换_local_prod_fallback.md`。
 
@@ -250,12 +250,12 @@ sequenceDiagram
 - 若技能文档与代码入口冲突，应先更新 skill / docs，再继续开发。
 
 ### 5.1 维护基线与知识库口径
-- 2026-06-18 知识库维护口径：`AGENTS.md` 只保留全局路由，细节以 `.codex/skills/*/SKILL.md` 和 `/docs` 为准；技能正文应记录稳定边界和入口，不沉淀一次性 Pod ID、任务 ID、失败尝试流水账或真实密钥值。一次性 canary、迁移证据和模型上传流水应进入 `docs/archive/` 或 `logs/`。
+- 2026-06-24 知识库维护口径：`AGENTS.md` 只保留全局路由，细节以 `.codex/skills/*/SKILL.md`、`/docs` 与 `docs/knowledge_base_audit_matrix.md` 为准；技能正文应记录稳定边界和入口，不沉淀一次性 Pod ID、任务 ID、失败尝试流水账或真实密钥值。一次性 canary、迁移证据和模型上传流水应进入 `docs/archive/` 或 `logs/`。
 - `src/task_core_process_defaults.py` 是 task core process 默认装配的真实入口。
-- RunPod Provider v0 的稳定边界是云测试 `img2img/img2img_lora` canary、云测试 split video profile (`image_to_video` / `wan22_video_v2`) canary、云测试 `i2i_pro` 三任务 canary、云测试 `scail2` 两任务 canary、云测试 `ltx_video` I2V canary，以及手动云正式备用 worker；生产自动按队列扩容仍未开启。`prod-worker --profile i2i_pro` 支持 `i2i_pro`、Web 文生图执行类型 `t2i-pornmaster-turbo` 与 `face_swap`；`prod-worker --profile scail2` 支持 `scail2_action_transfer` 与 `scail2_video_replacement`；`prod-worker --profile ltx_video` 支持 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio` 并默认使用 10Eros v1.2 workflow override。Dashboard 已提供正式手动 RunPod 新增/暂停/删除入口并支持 `scail2 / 视频生视频` 与 `ltx_video / 高级图生视频`，但这些 RunPod profile 是手动备用/临时扩容能力，不代表线上固定常驻容量。
+- RunPod Provider v0 的稳定边界是云测试 `img2img/img2img_lora` canary、云测试 split video profile (`image_to_video` / `wan22_video_v2`) canary、云测试 `i2i_pro` 三任务 canary、云测试 `scail2` 两任务 canary、云测试 `ltx_video` I2V canary，以及云正式手动备用 worker。`prod-worker --profile i2i_pro` 支持 `i2i_pro`、Web 文生图执行类型 `t2i-pornmaster-turbo` 与 `face_swap`；`prod-worker --profile scail2` 支持 `scail2_action_transfer` 与 `scail2_video_replacement`；`prod-worker --profile ltx_video` 支持 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio` 并默认使用 10Eros v1.2 workflow override。Dashboard 已提供正式 RunPod 新增/暂停/删除入口和 autoscaler；autoscaler 通过现有 operation store、Redis leader lease、profile 阈值和 RunPod 门禁调用 `add` / `down`，不直接操作本地 worker，也不代表线上固定常驻容量。
 - `wan22_aio_video` 只保留为兼容/回滚 profile；新视频测试、扩容和正式备用 worker 都应使用 split profile。
-- 2026-06-18 全局质量评估未发现 Critical/High 级架构阻断，`src/core` 未发现直接依赖 Telegram `Update` 或 FastAPI `Request/APIRouter` 等平台对象；Alembic 为单 head `7f3a9c1d2e4b`；`pytest --collect-only` 可收集 1362 个测试。
-- 当前主要风险集中在长期维护成本：Worker `agent_main.py::process_task`、Dashboard RunPod 管理服务、任务提交 provider/dependencies 装配、Bot 进度监控、练功房主 composable 与前端生成页重复逻辑。`ruff check` 仍有 11 个低风险 lint 项，主要是未使用 import 与脚本级 `E402`。
+- 2026-06-24 轻量复核：`src/core` 未发现直接依赖 Telegram `Update` 或 FastAPI `Request/APIRouter` 等平台对象；Alembic 为单 head `7f3a9c1d2e4b`；`pytest --collect-only -q` 可收集 `1678` 个测试；`ruff check --statistics` 剩余 `2` 个 `F401`，均为 `ops/gpu_pool_controller/runpod_pod_request.py` 的未使用 import。
+- 当前主要风险集中在长期维护成本：Worker `agent_main.py::process_task`、Dashboard RunPod 管理/自动扩缩服务、任务提交 provider/dependencies 装配、Bot 进度监控、练功房主 composable 与前端生成页重复逻辑。
 - workflow 资产已收口到 `workers/comfy_agent/workflows`；Central API 不再维护 backend 副本，也不再执行 workflow 启动校验。
 - `TaskCoreServiceProviders` 与主要 capability 已补强 `Protocol` / 精确 `Callable` 契约；新增 provider/capability 时继续沿用显式类型与 dependencies seam。
 - 详细质量基线见 `docs/子模块_代码静态分析与质量评估规范_code_quality.md` 与 `logs/code_analysis_report_20260618_0306.md`。

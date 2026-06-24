@@ -4,7 +4,7 @@
 
 当前主入口：
 - 云正式生产：`scripts/safe_deploy_cloud_prod.sh`、`deploy/docker-compose-cloud-prod.yml`、`workers/docker-compose-cloud-prod-worker.yml`
-- 云测试环境：`scripts/safe_deploy_cloud_test.sh`、`deploy/docker-compose-cloud-test.yml`、`workers/docker-compose-cloud-worker-test.yml`
+- 云测试环境：`scripts/update_cloud_test_with_maintenance.sh --execute`、`scripts/safe_deploy_cloud_test.sh`、`deploy/docker-compose-cloud-test.yml`、`workers/docker-compose-cloud-worker-test.yml`
 - 本地正式灾备：`docs/子模块_本地正式灾备切换_local_prod_fallback.md`
 
 ## 1. `safe_deploy.sh` 的当前边界
@@ -21,7 +21,13 @@
 
 ## 2. `safe_deploy_test.sh` 的归档边界
 
-`safe_deploy_test.sh` 是旧本地隔离测试栈脚本。当前默认测试环境已经迁到独立 DigitalOcean 测试机 `allbot-do-sgp1-test-control`，旧本地测试栈不再作为受支持测试环境或回滚方案。新研发、联调和配置验证使用：
+`safe_deploy_test.sh` 是旧本地隔离测试栈脚本。当前默认测试环境已经迁到独立 DigitalOcean 测试机 `allbot-do-sgp1-test-control`，旧本地测试栈不再作为受支持测试环境或回滚方案。新研发、联调和配置验证优先使用维护式更新脚本：
+
+```bash
+scripts/update_cloud_test_with_maintenance.sh --execute
+```
+
+远端控制面重建子步骤仍由云测试机上的脚本执行：
 
 ```bash
 ssh allbot-do-sgp1-test-control

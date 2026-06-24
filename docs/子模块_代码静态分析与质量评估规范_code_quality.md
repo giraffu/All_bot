@@ -73,12 +73,20 @@
 
 ## 5. 2026-06-18 复核快照
 
-最新复核报告位于 `logs/code_analysis_report_20260618_0306.md`。本轮覆盖 `src/`、`backend/app/`、`dashboard/backend/`、`workers/comfy_agent/`、`remote_workers/`、`ops/`、`scripts/` 与 `tests/`，并同步抽查知识库、部署 compose、云正式/云测试控制面和运行态资源。
+最近一次完整复核报告位于 `logs/code_analysis_report_20260618_0306.md`。该轮覆盖 `src/`、`backend/app/`、`dashboard/backend/`、`workers/comfy_agent/`、`remote_workers/`、`ops/`、`scripts/` 与 `tests/`，并同步抽查知识库、部署 compose、云正式/云测试控制面和运行态资源。
 
 当前结论：
 - 未发现 Critical / High 级架构阻断。
 - `src/core` 未发现 Telegram `Update`、FastAPI `Request/APIRouter` 等平台对象 import，Core Isolation 成立。
 - Alembic 当前为单 head `7f3a9c1d2e4b`。
-- `pytest --collect-only -q` 可收集 1362 个测试；未执行完整测试套件。
-- `ruff check` 剩余 11 个低风险问题，主要为未使用 import 与脚本级 `E402`。
 - 中等维护风险集中在 `workers/comfy_agent/agent_main.py`、`dashboard/backend/services/runpod_admin_service.py` 与 `src/web_api/services/task_submission_service.py`，后续改动应优先加 focused regression。
+
+## 6. 2026-06-24 知识库校准轻量复核
+
+本轮不是完整全局代码质量报告，只用于校准实时知识库中的可验证事实。
+
+当前结果：
+- Alembic 当前为单 head `7f3a9c1d2e4b`。
+- `pytest --collect-only -q` 可收集 `1678` 个测试，用时约 74 秒；未执行完整测试套件。
+- `ruff check --statistics` 剩余 `2` 个 `F401`，均为 `ops/gpu_pool_controller/runpod_pod_request.py` 中未使用的 RunPod LTX import。
+- 文档结构检查 `python scripts/doc_quality_checker.py` 通过。

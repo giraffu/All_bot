@@ -33,9 +33,15 @@
 - **ComfyUI Runtime**：实际加载模型并执行 workflow 的运行时，可以是宿主机、LAN AIO 或 RunPod 容器。
 - **workflow 事实源**：当前运行时 workflow 资产以 `workers/comfy_agent/workflows` 和同步后的 `remote_workers/` bundle 为准。
 - **LAN AIO**：局域网 GPU 上的 all-in-one runtime 形态，将 ComfyUI、relay/agent 和模型同步收在受控容器链路里。
-- **RunPod 手动池**：云正式备用或临时扩容的手动 GPU worker 池，默认不自动按生产队列扩容。
+- **RunPod 手动池**：云正式备用或临时扩容的 GPU worker 池，可由人工操作，也可由 Dashboard autoscaler 在门禁满足时提交 `add` / `down`。
+- **Dashboard RunPod autoscaler**：由 Dashboard backend 根据队列等待、worker 健康、profile 阈值和 RunPod operation store 自动提交 RunPod `add` / `down` 的管理循环。
 - **云测试控制面**：研发、联调、缺陷修复和配置验证的默认发布目标。
+- **维护式更新**：先进入生成维护、等待队列、同步代码/env、执行目标环境重建子步骤、再恢复入口的部署方式。
 - **云正式控制面**：生产控制面，任何正式发布、重建或生产 RunPod mutation 都需要用户明确确认。
+- **本地正式灾备**：云正式整体不可用时，由本地主服务器临时接管正式入口的应急形态。
+- **运行态快照**：某次探测得到的服务、worker、磁盘或网络状态，只代表当次现场，不等同于长期容量承诺。
+- **实时知识库**：`README.md`、`AGENTS.md`、`docs/` 当前文档和 `.codex/skills/` 中用于指导后续开发、运维、排障的活跃知识。
+- **归档/取证材料**：`docs/archive/` 与 `logs/` 中保存的历史证据、事故报告或 canary 记录，不作为当前 SOP。
 
 ## 架构词汇
 - **Module**：有 interface 和 implementation 的能力单元。

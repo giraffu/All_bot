@@ -27,6 +27,7 @@
 ## 2. Codex 技能维护约定
 - Codex 项目级技能主入口为 `.codex/skills/<skill>/SKILL.md`。当会话没有自动暴露项目 Skill 时，AI 助手必须按需手动读取该文件。
 - `AGENTS.md` 只维护全局路由和高压红线，不承载长篇模块细节；业务规则、接口契约和排障策略放到对应 Skill 与 `/docs`。
+- `docs/knowledge_base_audit_matrix.md` 维护 docs / skills 的逐项核对台账。完成知识库校准时，应同步记录事实源、状态和处理结果。
 - 技能描述必须模型无关，不写死某个历史模型版本；重点描述触发场景、当前真实入口和不能越过的边界。
 
 ## 3. 使用建议
