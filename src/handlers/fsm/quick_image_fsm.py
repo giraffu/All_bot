@@ -3,6 +3,7 @@ import random
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
+    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     ConversationHandler,
@@ -12,6 +13,7 @@ from telegram.ext import (
 
 from config import ENABLE_PUBLIC_SHARE
 from src.constants import (
+    MODE_I2I_DRAW,
     MODE_MASTURBATION,
     MODE_RANDOM_FACESWAP,
     MODE_UNDRESS,
@@ -37,6 +39,15 @@ from src.i18n.translator import get_text
 
 logger = logging.getLogger("fsm.quick_image")
 
+QQCC_BOT_CLIENT_TYPE = "bot:qqcc"
+QUICK_UNDRESS_LEGACY_CALLBACK = "quick_undress_legacy"
+QUICK_UNDRESS_I2I_DRAW_CALLBACK = "quick_undress_i2i_draw"
+DEFAULT_I2I_DRAW_UNDRESS_PROMPT = (
+    "全身广角镜头，保持面部五官、脸型、发型、表情和肤色不变，"
+    "保持身体姿势不变。将衣服自然移除，生成真实皮肤质感和完整身体，"
+    "不要改变人物身份，不要裁剪头部。"
+)
+
 # Map button text to mode
 QUICK_MODES = {
     "menu.photo_edit_undress": MODE_UNDRESS,
@@ -59,6 +70,58 @@ def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, _user_id: int):
     context.user_data.pop("in_conversation", None)
     fsm_data = context.user_data.pop("quick_image_data", {})
     cleanup_fsm_temp_files([fsm_data.get("image_path")])
+
+
+def _is_qqcc_bot_context(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    bot_data = getattr(context, "bot_data", None)
+    if bot_data is None:
+        application = getattr(context, "application", None)
+        bot_data = getattr(application, "bot_data", None)
+    return bool(bot_data and bot_data.get("bot_client_type") == QQCC_BOT_CLIENT_TYPE)
+
+
+def _initialize_quick_image_context(
+    context: ContextTypes.DEFAULT_TYPE, *, mode: str, cost: int
+) -> None:
+    context.user_data["in_conversation"] = f"QUICK_IMAGE_{mode}"
+    context.user_data["quick_image_data"] = {
+        "mode": mode,
+        "cost": cost,
+        "image_path": None,
+    }
+
+
+def _build_undress_method_keyboard(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    _t(context, "fsm.quick_image.undress_legacy_button"),
+                    callback_data=QUICK_UNDRESS_LEGACY_CALLBACK,
+                ),
+                InlineKeyboardButton(
+                    _t(context, "fsm.quick_image.undress_i2i_draw_button"),
+                    callback_data=QUICK_UNDRESS_I2I_DRAW_CALLBACK,
+                ),
+            ]
+        ]
+    )
+
+
+def _resolve_quick_image_start_message(
+    context: ContextTypes.DEFAULT_TYPE, *, mode: str, cost: int
+) -> str:
+    if mode == MODE_UNDRESS:
+        return _t(context, "fsm.quick_image.undress_start", cost=cost)
+    if mode == MODE_MASTURBATION:
+        return _t(context, "fsm.quick_image.masturbation_start", cost=cost)
+    if mode == MODE_RANDOM_FACESWAP:
+        return _t(context, "fsm.quick_image.random_faceswap_start", cost=cost)
+    if mode == MODE_I2I_DRAW:
+        return _t(context, "fsm.quick_image.undress_i2i_draw_start", cost=cost)
+    return _t(context, "fsm.quick_image.undress_start", cost=cost)
 
 
 def _resolve_image_file_id(message) -> str | None:
@@ -206,6 +269,16 @@ async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     mode = None
     route_key = GLOBAL_REVERSE_MAP.get(text)
+    if _is_qqcc_bot_context(context) and route_key == "menu.photo_edit_undress":
+        context.user_data["in_conversation"] = "QUICK_IMAGE_UNDRESS_CHOICE"
+        await robust_reply_text(
+            update.message,
+            _t(context, "fsm.quick_image.undress_choice_intro"),
+            reply_markup=_build_undress_method_keyboard(context),
+            parse_mode="Markdown",
+        )
+        return QuickImageState.WAIT_UNDRESS_METHOD
+
     if route_key:
         mode = QUICK_MODES.get(route_key)
 
@@ -213,22 +286,47 @@ async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return ConversationHandler.END
 
     cost = TASK_COSTS.get(mode, 2)
-
-    context.user_data["in_conversation"] = f"QUICK_IMAGE_{mode}"
-    context.user_data["quick_image_data"] = {
-        "mode": mode,
-        "cost": cost,
-        "image_path": None,
-    }
-
-    if mode == MODE_UNDRESS:
-        msg = _t(context, "fsm.quick_image.undress_start", cost=cost)
-    elif mode == MODE_MASTURBATION:
-        msg = _t(context, "fsm.quick_image.masturbation_start", cost=cost)
-    elif mode == MODE_RANDOM_FACESWAP:
-        msg = _t(context, "fsm.quick_image.random_faceswap_start", cost=cost)
+    _initialize_quick_image_context(context, mode=mode, cost=cost)
+    msg = _resolve_quick_image_start_message(context, mode=mode, cost=cost)
 
     await robust_reply_text(update.message, msg, parse_mode="Markdown")
+    return QuickImageState.WAIT_IMAGE
+
+
+async def select_undress_mode(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    query = update.callback_query
+    await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
+
+    if context.user_data.get("in_conversation") != "QUICK_IMAGE_UNDRESS_CHOICE":
+        await robust_edit_text(
+            query.message,
+            _t(context, "fsm.quick_image.expired_alert"),
+            parse_mode="Markdown",
+        )
+        _cleanup_context(
+            context,
+            update.effective_user.id if update.effective_user else "Unknown",
+        )
+        return ConversationHandler.END
+
+    if query.data == QUICK_UNDRESS_LEGACY_CALLBACK:
+        mode = MODE_UNDRESS
+        msg_key = "fsm.quick_image.undress_legacy_start"
+    elif query.data == QUICK_UNDRESS_I2I_DRAW_CALLBACK:
+        mode = MODE_I2I_DRAW
+        msg_key = "fsm.quick_image.undress_i2i_draw_start"
+    else:
+        return QuickImageState.WAIT_UNDRESS_METHOD
+
+    cost = TASK_COSTS.get(mode, 2)
+    _initialize_quick_image_context(context, mode=mode, cost=cost)
+    await robust_edit_text(
+        query.message,
+        _t(context, msg_key, cost=cost),
+        parse_mode="Markdown",
+    )
     return QuickImageState.WAIT_IMAGE
 
 
@@ -324,8 +422,13 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             )
 
     else:
-        # Undress or Masturbation
-        prompt = prompts_config.get(mode, mode)
+        # Single-image quick modes share the same task submission path.
+        if mode == MODE_I2I_DRAW:
+            prompt = prompts_config.get(
+                "i2i_draw_quick_undress", DEFAULT_I2I_DRAW_UNDRESS_PROMPT
+            )
+        else:
+            prompt = prompts_config.get(mode, mode)
         create_background_task(
             context,
             process_generation_task(
@@ -405,6 +508,19 @@ def get_quick_image_fsm_handler() -> ConversationHandler:
             )
         ],
         states={
+            QuickImageState.WAIT_UNDRESS_METHOD: [
+                CallbackQueryHandler(
+                    select_undress_mode,
+                    pattern=(
+                        f"^({QUICK_UNDRESS_LEGACY_CALLBACK}|"
+                        f"{QUICK_UNDRESS_I2I_DRAW_CALLBACK})$"
+                    ),
+                ),
+                MessageHandler(
+                    (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
+                    unexpected_input,
+                ),
+            ],
             QuickImageState.WAIT_IMAGE: [
                 MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_image),
                 MessageHandler(

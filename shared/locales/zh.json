@@ -902,6 +902,11 @@
       "expired_alert": "交互已失效或任务已提交，请重新开始"
     },
     "quick_image": {
+      "undress_choice_intro": "💃 **快速脱衣**\n\n请选择一种懒人模式：\n\n**头像/半身补全**：头像、半身照也能用，会自动补全全身裸图。\n**全身保脸重绘**：建议上传全身照，质感更真实，更稳定保留面部。\n\n选好后直接发送图片即可。",
+      "undress_legacy_button": "头像/半身补全",
+      "undress_i2i_draw_button": "全身保脸重绘",
+      "undress_legacy_start": "💃 **已切换到【头像/半身补全】模式** (消耗 {cost} 灵石)。\n\n请发送一张头像、半身照或人物照，我将自动补全处理。\n\n随时可以发送 /cancel 退出流程。",
+      "undress_i2i_draw_start": "💃 **已切换到【全身保脸重绘】模式** (消耗 {cost} 灵石)。\n\n请发送一张清晰全身照；这个模式质感更真实，也更稳定保留面部。\n\n随时可以发送 /cancel 退出流程。",
       "undress_start": "💃 **已切换到【快速脱衣】模式** (消耗 {cost} 灵石)。\n\n请发送一张包含人物的图片，我将自动处理。\n\n随时可以发送 /cancel 退出流程。",
       "masturbation_start": "🥵 **已切换到【快速自慰】模式** (消耗 {cost} 灵石)。\n\n请发送一张包含人物的图片，我将自动处理。\n\n随时可以发送 /cancel 退出流程。",
       "random_faceswap_start": "🎭 **已切换到【随机换脸】模式** (消耗 {cost} 灵石)。\n\n请发送一张【正脸】图片，我将自动匹配模板处理。\n\n随时可以发送 /cancel 退出流程。",
@@ -910,6 +915,7 @@
       "no_template": "❌ 系统错误：未找到身体模板。请联系管理员添加图片。",
       "again_button": "🔄 再来一张",
       "public_button": "🌐 公开",
+      "expired_alert": "交互已失效或任务已提交，请重新开始。",
       "system_error": "❌ 系统错误：{error_msg}"
     },
     "quick_video": {

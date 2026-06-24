@@ -10,6 +10,7 @@ from src.constants import (
     MODE_CUSTOM_VIDEO,
     MODE_EDIT,
     MODE_IMAGE_TO_VIDEO,
+    MODE_I2I_DRAW,
     MODE_IMG2IMG_LORA,
 )
 from src.core.exceptions import InsufficientCreditsError
@@ -18,6 +19,7 @@ from src.handlers.fsm import (
     faceswap_fsm,
     image_to_video_fsm,
     ltx_video_fsm,
+    quick_image_fsm,
     quick_video_fsm,
 )
 
@@ -273,6 +275,133 @@ async def test_start_quick_image_uses_english_locale(monkeypatch):
     assert result == quick_image_fsm.QuickImageState.WAIT_IMAGE
     reply_mock.assert_awaited_once()
     assert "Entered Quick Undress mode" in reply_mock.await_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_qqcc_quick_undress_entry_shows_method_choices(monkeypatch):
+    reply_mock = AsyncMock()
+
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(quick_image_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setitem(
+        __import__(
+            "src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]
+        ).GLOBAL_REVERSE_MAP,
+        "💃 快速脱衣",
+        "menu.photo_edit_undress",
+    )
+
+    update = _build_update_with_message(text="💃 快速脱衣")
+    context = SimpleNamespace(
+        user_data={},
+        bot_data={"bot_client_type": "bot:qqcc"},
+        lang="zh",
+    )
+
+    result = await quick_image_fsm.start_quick_image(update, context)
+
+    assert result == quick_image_fsm.QuickImageState.WAIT_UNDRESS_METHOD
+    assert context.user_data["in_conversation"] == "QUICK_IMAGE_UNDRESS_CHOICE"
+    reply_markup = reply_mock.await_args.kwargs["reply_markup"]
+    button_texts = [
+        button.text
+        for row in reply_markup.inline_keyboard
+        for button in row
+    ]
+    assert button_texts == ["头像/半身补全", "全身保脸重绘"]
+
+
+@pytest.mark.asyncio
+async def test_qqcc_undress_inpaint_choice_waits_for_image(monkeypatch):
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+
+    query = SimpleNamespace(
+        data="quick_undress_i2i_draw",
+        answer=AsyncMock(),
+        message=SimpleNamespace(edit_text=AsyncMock()),
+    )
+    update = SimpleNamespace(callback_query=query, effective_user=_build_user())
+    context = SimpleNamespace(
+        user_data={"in_conversation": "QUICK_IMAGE_UNDRESS_CHOICE"},
+        bot_data={"bot_client_type": "bot:qqcc"},
+        lang="zh",
+    )
+
+    result = await quick_image_fsm.select_undress_mode(update, context)
+
+    assert result == quick_image_fsm.QuickImageState.WAIT_IMAGE
+    query.answer.assert_awaited_once()
+    assert context.user_data["quick_image_data"]["mode"] == MODE_I2I_DRAW
+    assert context.user_data["quick_image_data"]["cost"] == 3
+    assert "全身保脸重绘" in query.message.edit_text.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_quick_image_i2i_draw_submits_inpaint_task(monkeypatch):
+    reply_mock = AsyncMock()
+    scheduled = []
+    captured = {}
+
+    async def fake_process_generation_task(**kwargs):
+        captured.update(kwargs)
+        return None, None
+
+    def fake_create_background_task(_context, coroutine):
+        scheduled.append(coroutine)
+
+    monkeypatch.setattr(quick_image_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "_validate_quick_image_submission",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "_download_quick_image_input",
+        AsyncMock(return_value="/tmp/i2i-draw.png"),
+    )
+    monkeypatch.setattr(
+        quick_image_fsm, "process_generation_task", fake_process_generation_task
+    )
+    monkeypatch.setattr(
+        quick_image_fsm, "create_background_task", fake_create_background_task
+    )
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "load_prompts",
+        lambda: {"i2i_draw_quick_undress": "保持面部稳定，保持身体姿势不变"},
+    )
+
+    update = SimpleNamespace(
+        effective_user=_build_user(),
+        effective_chat=SimpleNamespace(id=10001),
+        message=SimpleNamespace(
+            document=None,
+            photo=[SimpleNamespace(file_id="photo-file-id")],
+            chat_id=10001,
+        ),
+    )
+    context = SimpleNamespace(
+        user_data={
+            "in_conversation": "QUICK_IMAGE_i2i_draw",
+            "quick_image_data": {
+                "mode": MODE_I2I_DRAW,
+                "cost": 3,
+                "image_path": None,
+            },
+        },
+        bot=SimpleNamespace(),
+        lang="zh",
+    )
+
+    result = await quick_image_fsm.receive_image(update, context)
+
+    assert result == ConversationHandler.END
+    assert len(scheduled) == 1
+    await scheduled[0]
+    assert captured["task_type"] == MODE_I2I_DRAW
+    assert captured["images"] == ["/tmp/i2i-draw.png"]
+    assert "保持面部" in captured["prompt"]
 
 
 @pytest.mark.asyncio

@@ -50,7 +50,7 @@
 | 文档 | 事实源 | 本轮状态 | 处理结果 |
 | :--- | :--- | :--- | :--- |
 | `docs/子模块_交互状态机_fsm_handlers.md` | `src/handlers`、FSM tests | 已核对 | 主 Bot FSM 边界有效 |
-| `docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md` | `qqcc_bot/main.py`、cloud compose QQCC profile、`scripts/update_cloud_prod_qqcc_bot.sh` | 已修正 | 补充正式 QQCC Bot 单服务更新脚本、独立 token、`bot:qqcc` 来源、双 polling 红线有效 |
+| `docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md` | `qqcc_bot/main.py`、`qqcc_bot/keyboards.py`、cloud compose QQCC profile、`scripts/update_cloud_prod_qqcc_bot.sh`、`src/handlers/fsm/quick_image_fsm.py` | 已修正 | 补充正式 QQCC Bot 单服务更新脚本、独立 token、`bot:qqcc` 来源、快速脱衣主菜单入口与两种处理方式选择；双 polling 红线有效 |
 | `docs/子模块_付费群审核Bot_paid_group_guard_bot.md` | `paid_group_guard_bot`、Dashboard paid group router/service、cloud compose | 已核对 | 独立 Bot 与 Dashboard 配置管理边界有效 |
 | `docs/子模块_Telegram本地API与文件代理_tg_local_api.md` | Telegram API env、Bot file handling | 已核对 | 文件代理边界有效 |
 
@@ -112,7 +112,7 @@
 | `.codex/skills/allbot-task-engine/SKILL.md` | task core、queue manager、runtime cleanup | 已核对 | 任务生命周期边界有效 |
 | `.codex/skills/allbot-comfy-models/SKILL.md` | workflow patcher、remote_workers | 已核对 | workflow/模型边界有效 |
 | `.codex/skills/allbot-tg-fsm/SKILL.md` | `src/handlers`、Bot entrypoint | 已核对 | FSM 边界有效 |
-| `.codex/skills/allbot-qqcc-lazy-bot/SKILL.md` | `qqcc_bot`、cloud compose、`scripts/update_cloud_prod_qqcc_bot.sh` | 已修正 | 补充正式单独更新脚本与 `--confirm-single-polling` 门禁；QQCC 独立 Bot 边界有效 |
+| `.codex/skills/allbot-qqcc-lazy-bot/SKILL.md` | `qqcc_bot`、cloud compose、`scripts/update_cloud_prod_qqcc_bot.sh`、`src/handlers/fsm/quick_image_fsm.py` | 已修正 | 补充正式单独更新脚本、`--confirm-single-polling` 门禁与快速脱衣主菜单入口；QQCC 独立 Bot 边界有效 |
 | `.codex/skills/allbot-billing-auth/SKILL.md` | auth/billing/affiliate code | 已核对 | 计费鉴权边界有效 |
 | `.codex/skills/allbot-gallery-storage/SKILL.md` | Gallery/R2 code | 已核对 | 存储与社区边界有效 |
 | `.codex/skills/allbot-diagnosing-bugs/SKILL.md` | bug 诊断流程 | 已核对 | 诊断闭环有效 |

@@ -15,14 +15,14 @@ def _keyboard_texts(reply_markup):
 def test_qqcc_main_menu_only_contains_lazy_generation_entries():
     keyboard = _keyboard_texts(keyboards.get_qqcc_main_menu_keyboard("zh"))
 
-    assert keyboard == [["🖼️ 懒人P图", "🎬 视频创作"]]
+    assert keyboard == [["💃 快速脱衣"], ["🖼️ 懒人P图", "🎬 视频创作"]]
 
 
 def test_qqcc_photo_menu_excludes_fast_face_swap():
     rows = _keyboard_texts(keyboards.get_qqcc_photo_edit_keyboard("zh"))
     flat = [text for row in rows for text in row]
 
-    assert "💃 快速脱衣" in flat
+    assert "💃 快速脱衣" not in flat
     assert "🥵 快速自慰" in flat
     assert "🎭 随机换脸" in flat
     assert "🎭 快速换脸" not in flat
@@ -53,6 +53,7 @@ def test_qqcc_lazy_main_buttons_are_routable_without_main_bot_prompt_routes(monk
 
     prompt_router.build_global_menu_filter()
 
+    assert prompt_router.GLOBAL_REVERSE_MAP["💃 快速脱衣"] == "menu.photo_edit_undress"
     assert prompt_router.GLOBAL_REVERSE_MAP["🖼️ 懒人P图"] == "menu.photo_edit"
     assert prompt_router.GLOBAL_REVERSE_MAP["🎬 视频创作"] == "menu.video_edit"
 
@@ -121,4 +122,7 @@ async def test_qqcc_start_returns_simplified_menu(monkeypatch):
 
     reply_text.assert_awaited_once()
     kwargs = reply_text.await_args.kwargs
-    assert _keyboard_texts(kwargs["reply_markup"]) == [["🖼️ 懒人P图", "🎬 视频创作"]]
+    assert _keyboard_texts(kwargs["reply_markup"]) == [
+        ["💃 快速脱衣"],
+        ["🖼️ 懒人P图", "🎬 视频创作"],
+    ]

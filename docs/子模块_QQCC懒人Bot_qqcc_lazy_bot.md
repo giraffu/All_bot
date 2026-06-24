@@ -7,13 +7,17 @@ QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位�
 
 ## 2. 功能边界
 主菜单只包含：
+- `快速脱衣`
 - `懒人P图`
 - `视频创作`
 
 `懒人P图` 只开放：
-- 快速脱衣
 - 快速自慰
 - 随机换脸
+
+`快速脱衣` 必须放在主菜单，不放入 `懒人P图` 子菜单。它仍只走 `get_quick_image_fsm_handler()`；用户点击主菜单 `快速脱衣` 后进入两种懒人处理方式选择：
+- `头像/半身补全`：复用原 `undress` 快速图生图流程，头像、半身照也可直接发图。
+- `全身保脸重绘`：复用 Web 侧 `i2i_draw` / 局部重绘任务，建议上传全身照，质感更真实且更稳定保留面部。
 
 明确不开放 `快速换脸` / `faceswap_fsm` 双图换脸入口。
 
@@ -36,6 +40,7 @@ QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位�
 - `qqcc_bot/commands.py`：QQCC `/start` 与 `/cancel`，复用用户创建和准入逻辑，返回简化菜单。
 - `qqcc_bot/prompt_handlers.py`：只路由 `menu.photo_edit`、`menu.video_edit`、`menu.main_menu`、`menu.back_main`。
 - `qqcc_bot/callback_handler.py`：只导入任务取消、结果评分、随机换脸再来一张等必要 callback 注册模块。
+- `src/handlers/fsm/quick_image_fsm.py`：在 `bot_client_type=bot:qqcc` 时把主菜单 `快速脱衣` 转为两种处理方式选择；其它 Bot 仍保持原快速脱衣直达流程。
 
 主 Bot 入口仍是 `src/bot_main.py`。不要在 `qqcc_bot/` 中导入 `src.bot_main`，否则会把主 Bot 的完整 handler 面一起注册进来。
 
@@ -119,3 +124,9 @@ pytest tests/core/test_task_core_submission.py tests/services/test_task_service_
 ```bash
 pytest tests/handlers/test_fsm_state_priority.py -q
 ```
+
+QQCC 快速脱衣入口至少覆盖：
+- `/start` 主菜单展示 `快速脱衣`，`懒人P图` 子菜单不再展示 `快速脱衣`。
+- 点击主菜单 `快速脱衣` 先展示 `头像/半身补全` 与 `全身保脸重绘`。
+- `头像/半身补全` 进入 `undress`，`全身保脸重绘` 进入 `i2i_draw`。
+- 两个分支都保持“选择按钮后只发送 1 张图片即可提交”的懒人交互。

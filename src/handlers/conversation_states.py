@@ -74,6 +74,7 @@ class Txt2ImgState(IntEnum):
 class QuickImageState(IntEnum):
     """懒人P图 (脱衣/自慰/随机换脸) 状态枚举"""
 
+    WAIT_UNDRESS_METHOD = auto()
     WAIT_IMAGE = auto()
 
 
