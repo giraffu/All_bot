@@ -223,6 +223,7 @@ class RunPodAutoscalerControlRequest(BaseModel):
 
 class RunPodAutoscalerSettingsRequest(BaseModel):
     scale_up_wait_minutes_by_profile: Dict[str, Any] = Field(default_factory=dict)
+    task_duration_seconds_by_type: Dict[str, Any] = Field(default_factory=dict)
     reason: Optional[str] = None
 
 

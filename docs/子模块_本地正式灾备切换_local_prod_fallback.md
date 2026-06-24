@@ -65,7 +65,7 @@ systemctl stop allbot-cloud-prod-shadow-sync.timer
 systemctl status allbot-cloud-prod-shadow-sync.timer --no-pager
 ```
 
-若云端仍可读且时间允许，先手工跑一次最终 shadow 同步；脚本默认 dry-run，真实执行必须显式 `--execute`：
+若云端仍可读且时间允许，先手工跑一次最终 shadow 同步。当前推荐 `.env.cloud-prod-shadow-sync.local` 使用 `CLOUD_PROD_DB_DUMP_MODE=remote_r2`：由 `allbot-do-sgp1-control` 在云机执行 PostgreSQL dump，临时上传到 R2 `user-data-prod/__shadow-transfer/<timestamp>`，本地主服务器经 HTTPS/rclone 下载并校验后 restore；这样不依赖本地主公网/VPN 出口作为托管数据库 trusted source。`CLOUD_PROD_DB_TUNNEL_SSH_HOST=allbot-do-sgp1-control` 可继续保留给 Redis/Valkey 摘要采集和旧 `local_tunnel` fallback。脚本默认 dry-run，真实执行必须显式 `--execute`：
 
 ```bash
 cd /home/hfy/APP/All_bot

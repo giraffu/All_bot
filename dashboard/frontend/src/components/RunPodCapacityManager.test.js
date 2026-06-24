@@ -20,18 +20,21 @@ vi.mock('../api/api', () => ({
       scale_up_wait_seconds: 1800,
       scale_down_wait_seconds: 60,
       cooldown_seconds: 600,
+      min_runpod_lifetime_seconds: 1800,
       max_runpods_per_profile: 5,
     },
     decisions: [
       {
         profile: 'img2img',
         action: 'scale_up',
-        reason: 'pending wait 1900s exceeds 1800s',
+        reason: 'scale_up: estimated clear time 1900s exceeds 1800s',
+        estimated_clear_time_seconds: 1900,
+        capacity_status: 'ok',
       },
       {
         profile: 'i2i_pro',
         action: 'hold',
-        reason: 'within thresholds',
+        reason: 'hold: estimated clear time within threshold',
       },
     ],
   }),
@@ -117,18 +120,21 @@ describe('RunPodCapacityManager', () => {
         scale_up_wait_seconds: 1800,
         scale_down_wait_seconds: 60,
         cooldown_seconds: 600,
+        min_runpod_lifetime_seconds: 1800,
         max_runpods_per_profile: 5,
       },
       decisions: [
         {
           profile: 'img2img',
           action: 'scale_up',
-          reason: 'pending wait 1900s exceeds 1800s',
+          reason: 'scale_up: estimated clear time 1900s exceeds 1800s',
+          estimated_clear_time_seconds: 1900,
+          capacity_status: 'ok',
         },
         {
           profile: 'i2i_pro',
           action: 'hold',
-          reason: 'within thresholds',
+          reason: 'hold: estimated clear time within threshold',
         },
       ],
     })
@@ -159,7 +165,7 @@ describe('RunPodCapacityManager', () => {
           action: 'add',
           profile: 'img2img',
           source: 'autoscaler',
-          trigger_reason: 'pending wait 1900s exceeds 1800s',
+          trigger_reason: 'scale_up: estimated clear time 1900s exceeds 1800s',
           status: 'running',
           requested_count: 1,
         },
@@ -172,9 +178,10 @@ describe('RunPodCapacityManager', () => {
 
     expect(wrapper.text()).toContain('自动管理')
     expect(wrapper.text()).toContain('运行中')
-    expect(wrapper.text()).toContain('扩容等待 1800s')
+    expect(wrapper.text()).toContain('清空阈值 1800s')
+    expect(wrapper.text()).toContain('最短生命周期 1800s')
     expect(wrapper.text()).toContain('扩容')
-    expect(wrapper.text()).toContain('pending wait 1900s exceeds 1800s')
+    expect(wrapper.text()).toContain('scale_up: estimated clear time 1900s exceeds 1800s')
     expect(wrapper.text()).toContain('自动')
   })
 

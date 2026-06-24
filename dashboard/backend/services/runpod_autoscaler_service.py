@@ -37,13 +37,27 @@ AUTOSCALER_CONTROL_KEY = "dashboard:runpod:autoscaler:control"
 AUTOSCALER_LEADER_KEY = "dashboard:runpod:autoscaler:leader"
 AUTOSCALER_LAST_DECISIONS_KEY = "dashboard:runpod:autoscaler:last_decisions"
 AUTOSCALER_SETTINGS_KEY = "dashboard:runpod:autoscaler:settings"
-AUTOSCALER_SCALE_UP_CONFIRMATIONS_KEY = (
-    "dashboard:runpod:autoscaler:scale_up_confirmations"
-)
 AUTOSCALER_OWNER_ID = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex}"
 SCALE_UP_WAIT_MINUTES_MIN = 1
 SCALE_UP_WAIT_MINUTES_MAX = 240
-SINGLE_OUTLIER_LOW_PRIORITY_MAX = 0
+TASK_DURATION_SECONDS_MIN = 1
+TASK_DURATION_SECONDS_MAX = 3600
+UNKNOWN_TASK_DURATION_SECONDS = 100
+DEFAULT_TASK_DURATION_SECONDS_BY_TYPE: dict[str, int] = {
+    "img2img": 13,
+    "img2img_lora": 13,
+    "image_to_video": 60,
+    "wan22_video_v2": 60,
+    "i2i_pro": 12,
+    "t2i-pornmaster-turbo": 12,
+    "face_swap": 12,
+    "scail2_action_transfer": 300,
+    "scail2_video_replacement": 300,
+    "ltx_video": 120,
+    "ltx_video_flf2v": 120,
+    "ltx_video_v2v_audio": 120,
+    "unknown": UNKNOWN_TASK_DURATION_SECONDS,
+}
 
 
 def _runpod_profile_names() -> list[str]:
@@ -116,20 +130,64 @@ def _validate_scale_up_wait_minutes_by_profile(
     return normalized
 
 
-def _normalize_scale_up_confirmation_counts(
+def _valid_autoscaler_task_types() -> set[str]:
+    task_types = {"unknown"}
+    for option in RUNPOD_ADMIN_PROFILE_OPTIONS:
+        task_types.update(_normalized_supported_task_types(option.get("supported_task_types")))
+    return task_types
+
+
+def _normalize_task_duration_seconds_by_type(
     raw: dict[str, Any] | None,
 ) -> dict[str, int]:
-    valid_profiles = set(_runpod_profile_names())
     normalized: dict[str, int] = {}
-    for profile, raw_count in (raw or {}).items():
-        profile_name = str(profile)
-        if profile_name not in valid_profiles:
+    valid_task_types = _valid_autoscaler_task_types()
+    for raw_task_type, raw_seconds in (raw or {}).items():
+        task_type = resolve_worker_execution_task_type(str(raw_task_type))
+        if task_type not in valid_task_types:
             continue
         try:
-            count = int(raw_count)
+            seconds = int(raw_seconds)
         except (TypeError, ValueError):
             continue
-        normalized[profile_name] = max(0, count)
+        if seconds < TASK_DURATION_SECONDS_MIN:
+            continue
+        if seconds > TASK_DURATION_SECONDS_MAX:
+            continue
+        normalized[task_type] = seconds
+    return normalized
+
+
+def _validate_task_duration_seconds_by_type(
+    updates: dict[str, Any] | None,
+) -> dict[str, int]:
+    if not updates:
+        return {}
+    normalized: dict[str, int] = {}
+    valid_task_types = _valid_autoscaler_task_types()
+    for raw_task_type, raw_seconds in updates.items():
+        task_type = resolve_worker_execution_task_type(str(raw_task_type))
+        if task_type not in valid_task_types:
+            raise HTTPException(
+                status_code=422,
+                detail=f"unsupported task type duration setting: {raw_task_type}",
+            )
+        try:
+            seconds = int(raw_seconds)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"invalid task duration seconds for {raw_task_type}",
+            ) from exc
+        if seconds < TASK_DURATION_SECONDS_MIN or seconds > TASK_DURATION_SECONDS_MAX:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"task duration for {raw_task_type} must be between "
+                    f"{TASK_DURATION_SECONDS_MIN} and {TASK_DURATION_SECONDS_MAX} seconds"
+                ),
+            )
+        normalized[task_type] = seconds
     return normalized
 
 
@@ -157,14 +215,15 @@ class RunPodAutoscalerConfig:
     mode: str = "execute"
     interval_seconds: int = 60
     scale_up_wait_seconds: int = 30 * 60
-    scale_up_confirmation_rounds: int = 3
     scale_down_wait_seconds: int = 60
     cooldown_seconds: int = 10 * 60
     max_runpods_per_profile: int = 5
     heartbeat_max_age_seconds: int = 5 * 60
+    min_runpod_lifetime_seconds: int = 30 * 60
     leader_ttl_seconds: int = 90
     owner_id: str = AUTOSCALER_OWNER_ID
     scale_up_wait_seconds_by_profile: dict[str, int] = field(default_factory=dict)
+    task_duration_seconds_by_type: dict[str, int] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         merged = _default_scale_up_wait_seconds_by_profile(self.scale_up_wait_seconds)
@@ -174,10 +233,18 @@ class RunPodAutoscalerConfig:
             )
         )
         object.__setattr__(self, "scale_up_wait_seconds_by_profile", merged)
+        duration_seconds = dict(DEFAULT_TASK_DURATION_SECONDS_BY_TYPE)
+        duration_seconds.update(
+            _normalize_task_duration_seconds_by_type(
+                self.task_duration_seconds_by_type
+            )
+        )
+        duration_seconds.setdefault("unknown", UNKNOWN_TASK_DURATION_SECONDS)
+        object.__setattr__(self, "task_duration_seconds_by_type", duration_seconds)
         object.__setattr__(
             self,
-            "scale_up_confirmation_rounds",
-            max(1, int(self.scale_up_confirmation_rounds or 1)),
+            "min_runpod_lifetime_seconds",
+            max(0, int(self.min_runpod_lifetime_seconds or 0)),
         )
 
     def scale_up_wait_seconds_for_profile(self, profile: str) -> int:
@@ -196,20 +263,46 @@ class RunPodAutoscalerConfig:
         merged.update(_normalize_scale_up_wait_seconds_by_profile(thresholds))
         return replace(self, scale_up_wait_seconds_by_profile=merged)
 
+    def task_duration_seconds_for_type(self, task_type: str | None) -> int:
+        normalized = resolve_worker_execution_task_type(task_type)
+        return int(
+            self.task_duration_seconds_by_type.get(
+                normalized,
+                self.task_duration_seconds_by_type.get(
+                    "unknown",
+                    UNKNOWN_TASK_DURATION_SECONDS,
+                ),
+            )
+        )
+
+    def with_task_duration_seconds_by_type(
+        self,
+        durations: dict[str, int] | None,
+    ) -> "RunPodAutoscalerConfig":
+        merged = dict(self.task_duration_seconds_by_type)
+        merged.update(_normalize_task_duration_seconds_by_type(durations))
+        return replace(self, task_duration_seconds_by_type=merged)
+
     def payload(self) -> dict[str, Any]:
         return {
             "configured_enabled": self.configured_enabled,
             "mode": self.mode,
             "interval_seconds": self.interval_seconds,
             "scale_up_wait_seconds": self.scale_up_wait_seconds,
-            "scale_up_confirmation_rounds": self.scale_up_confirmation_rounds,
             "scale_up_wait_seconds_by_profile": dict(
                 self.scale_up_wait_seconds_by_profile
+            ),
+            "task_duration_seconds_by_type": dict(
+                self.task_duration_seconds_by_type
+            ),
+            "unknown_task_duration_seconds": self.task_duration_seconds_for_type(
+                "unknown"
             ),
             "scale_down_wait_seconds": self.scale_down_wait_seconds,
             "cooldown_seconds": self.cooldown_seconds,
             "max_runpods_per_profile": self.max_runpods_per_profile,
             "heartbeat_max_age_seconds": self.heartbeat_max_age_seconds,
+            "min_runpod_lifetime_seconds": self.min_runpod_lifetime_seconds,
             "leader_ttl_seconds": self.leader_ttl_seconds,
         }
 
@@ -232,11 +325,6 @@ def config_from_env() -> RunPodAutoscalerConfig:
             default=30 * 60,
             minimum=1,
         ),
-        scale_up_confirmation_rounds=_int_env(
-            "DASHBOARD_RUNPOD_AUTOSCALER_SCALE_UP_CONFIRMATION_ROUNDS",
-            default=3,
-            minimum=1,
-        ),
         scale_down_wait_seconds=_int_env(
             "DASHBOARD_RUNPOD_AUTOSCALER_SCALE_DOWN_WAIT_SECONDS",
             default=60,
@@ -256,6 +344,11 @@ def config_from_env() -> RunPodAutoscalerConfig:
             "DASHBOARD_RUNPOD_AUTOSCALER_HEARTBEAT_MAX_AGE_SECONDS",
             default=5 * 60,
             minimum=1,
+        ),
+        min_runpod_lifetime_seconds=_int_env(
+            "DASHBOARD_RUNPOD_AUTOSCALER_MIN_RUNPOD_LIFETIME_SECONDS",
+            default=30 * 60,
+            minimum=0,
         ),
         leader_ttl_seconds=_int_env(
             "DASHBOARD_RUNPOD_AUTOSCALER_LEADER_TTL_SECONDS",
@@ -283,12 +376,14 @@ class RunPodAutoscalerStateStore(Protocol):
     ) -> None:
         ...
 
-    async def get_scale_up_confirmation_counts(self) -> dict[str, int]:
+    async def get_task_duration_seconds_by_type(self) -> dict[str, int]:
         ...
 
-    async def save_scale_up_confirmation_counts(
+    async def set_task_duration_seconds_by_type(
         self,
-        counts: dict[str, int],
+        durations: dict[str, int],
+        *,
+        reason: str | None,
     ) -> None:
         ...
 
@@ -320,14 +415,16 @@ class DisabledRunPodAutoscalerStateStore:
     ) -> None:
         del thresholds, reason
 
-    async def get_scale_up_confirmation_counts(self) -> dict[str, int]:
+    async def get_task_duration_seconds_by_type(self) -> dict[str, int]:
         return {}
 
-    async def save_scale_up_confirmation_counts(
+    async def set_task_duration_seconds_by_type(
         self,
-        counts: dict[str, int],
+        durations: dict[str, int],
+        *,
+        reason: str | None,
     ) -> None:
-        del counts
+        del durations, reason
 
     async def acquire_leader(self, owner_id: str, *, ttl_seconds: int) -> bool:
         del owner_id, ttl_seconds
@@ -347,7 +444,7 @@ class InMemoryRunPodAutoscalerStateStore:
         self.leader_available = leader_available
         self.last_decisions: dict[str, Any] | None = None
         self.scale_up_wait_seconds_by_profile: dict[str, int] = {}
-        self.scale_up_confirmation_counts: dict[str, int] = {}
+        self.task_duration_seconds_by_type: dict[str, int] = {}
         self.settings_reason: str | None = None
 
     async def get_control_enabled(self, *, default: bool) -> bool:
@@ -371,16 +468,19 @@ class InMemoryRunPodAutoscalerStateStore:
         )
         self.settings_reason = reason
 
-    async def get_scale_up_confirmation_counts(self) -> dict[str, int]:
-        return dict(self.scale_up_confirmation_counts)
+    async def get_task_duration_seconds_by_type(self) -> dict[str, int]:
+        return dict(self.task_duration_seconds_by_type)
 
-    async def save_scale_up_confirmation_counts(
+    async def set_task_duration_seconds_by_type(
         self,
-        counts: dict[str, int],
+        durations: dict[str, int],
+        *,
+        reason: str | None,
     ) -> None:
-        self.scale_up_confirmation_counts = _normalize_scale_up_confirmation_counts(
-            counts
+        self.task_duration_seconds_by_type.update(
+            _normalize_task_duration_seconds_by_type(durations)
         )
+        self.settings_reason = reason
 
     async def acquire_leader(self, owner_id: str, *, ttl_seconds: int) -> bool:
         del owner_id, ttl_seconds
@@ -431,49 +531,63 @@ class RedisRunPodAutoscalerStateStore:
             payload.get("scale_up_wait_seconds_by_profile")
         )
 
-    async def set_scale_up_wait_seconds_by_profile(
-        self,
-        thresholds: dict[str, int],
-        *,
-        reason: str | None,
-    ) -> None:
-        current = await self.get_scale_up_wait_seconds_by_profile()
-        current.update(_normalize_scale_up_wait_seconds_by_profile(thresholds))
-        payload = {
-            "scale_up_wait_seconds_by_profile": current,
-            "reason": reason or "",
-            "updated_at": time.time(),
-            "owner_id": AUTOSCALER_OWNER_ID,
-        }
-        await self.redis.set(
-            AUTOSCALER_SETTINGS_KEY,
-            json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-        )
-
-    async def get_scale_up_confirmation_counts(self) -> dict[str, int]:
-        raw = await self.redis.get(AUTOSCALER_SCALE_UP_CONFIRMATIONS_KEY)
+    async def _get_settings_payload(self) -> dict[str, Any]:
+        raw = await self.redis.get(AUTOSCALER_SETTINGS_KEY)
         if not raw:
             return {}
         try:
             payload = json.loads(raw)
         except json.JSONDecodeError:
             return {}
-        return _normalize_scale_up_confirmation_counts(payload.get("counts"))
+        return payload if isinstance(payload, dict) else {}
 
-    async def save_scale_up_confirmation_counts(
+    async def _save_settings_payload(
         self,
-        counts: dict[str, int],
+        payload: dict[str, Any],
+        *,
+        reason: str | None,
     ) -> None:
-        payload = {
-            "counts": _normalize_scale_up_confirmation_counts(counts),
-            "updated_at": time.time(),
-            "owner_id": AUTOSCALER_OWNER_ID,
-        }
+        payload["reason"] = reason or ""
+        payload["updated_at"] = time.time()
+        payload["owner_id"] = AUTOSCALER_OWNER_ID
         await self.redis.set(
-            AUTOSCALER_SCALE_UP_CONFIRMATIONS_KEY,
+            AUTOSCALER_SETTINGS_KEY,
             json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-            ex=24 * 60 * 60,
         )
+
+    async def set_scale_up_wait_seconds_by_profile(
+        self,
+        thresholds: dict[str, int],
+        *,
+        reason: str | None,
+    ) -> None:
+        payload = await self._get_settings_payload()
+        current = _normalize_scale_up_wait_seconds_by_profile(
+            payload.get("scale_up_wait_seconds_by_profile")
+        )
+        current.update(_normalize_scale_up_wait_seconds_by_profile(thresholds))
+        payload["scale_up_wait_seconds_by_profile"] = current
+        await self._save_settings_payload(payload, reason=reason)
+
+    async def get_task_duration_seconds_by_type(self) -> dict[str, int]:
+        payload = await self._get_settings_payload()
+        return _normalize_task_duration_seconds_by_type(
+            payload.get("task_duration_seconds_by_type")
+        )
+
+    async def set_task_duration_seconds_by_type(
+        self,
+        durations: dict[str, int],
+        *,
+        reason: str | None,
+    ) -> None:
+        payload = await self._get_settings_payload()
+        current = _normalize_task_duration_seconds_by_type(
+            payload.get("task_duration_seconds_by_type")
+        )
+        current.update(_normalize_task_duration_seconds_by_type(durations))
+        payload["task_duration_seconds_by_type"] = current
+        await self._save_settings_payload(payload, reason=reason)
 
     async def acquire_leader(self, owner_id: str, *, ttl_seconds: int) -> bool:
         current = await self.redis.get(AUTOSCALER_LEADER_KEY)
@@ -562,44 +676,6 @@ def _pending_wait_records(detail: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
     return records
-
-
-def _pending_over_threshold_count(
-    detail: dict[str, Any],
-    *,
-    scale_up_wait_seconds: int,
-) -> int:
-    records = _pending_wait_records(detail)
-    if records:
-        return sum(
-            1
-            for record in records
-            if float(record["wait_seconds"]) > scale_up_wait_seconds
-        )
-
-    wait_seconds = _safe_float(detail.get("max_pending_wait_seconds"))
-    if wait_seconds is None:
-        return 0
-    return int(wait_seconds > scale_up_wait_seconds)
-
-
-def _is_single_low_priority_wait_outlier(
-    detail: dict[str, Any],
-    *,
-    scale_up_wait_seconds: int,
-) -> bool:
-    records = _pending_wait_records(detail)
-    if not records:
-        return False
-    breached_records = [
-        record
-        for record in records
-        if float(record["wait_seconds"]) > scale_up_wait_seconds
-    ]
-    if len(breached_records) != 1:
-        return False
-    priority = breached_records[0].get("priority")
-    return priority is not None and priority <= SINGLE_OUTLIER_LOW_PRIORITY_MAX
 
 
 def _parse_operation_time(value: Any) -> float | None:
@@ -778,6 +854,110 @@ def _highest_slot_worker(workers: list[dict[str, Any]], *, profile: str) -> dict
     return max(candidates, key=lambda item: item[0])[1]
 
 
+def _safe_count_map(value: Any) -> dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    counts: dict[str, int] = {}
+    for raw_task_type, raw_count in value.items():
+        task_type = resolve_worker_execution_task_type(str(raw_task_type))
+        count = _safe_int_or_none(raw_count)
+        if count is None or count <= 0:
+            continue
+        counts[task_type] = counts.get(task_type, 0) + count
+    return counts
+
+
+def _pending_count_by_task_type(detail: dict[str, Any]) -> dict[str, int]:
+    counts = _safe_count_map(detail.get("pending_count_by_task_type"))
+    if counts:
+        return counts
+    pending_count = _safe_int_or_none(detail.get("pending_count")) or 0
+    if pending_count <= 0:
+        return {}
+    supported_task_types = _normalized_supported_task_types(
+        detail.get("supported_task_types")
+    )
+    fallback_task_type = supported_task_types[0] if supported_task_types else "unknown"
+    return {fallback_task_type: pending_count}
+
+
+def _pending_work_seconds(
+    pending_counts: dict[str, int],
+    *,
+    config: RunPodAutoscalerConfig,
+) -> int:
+    return sum(
+        count * config.task_duration_seconds_for_type(task_type)
+        for task_type, count in pending_counts.items()
+    )
+
+
+def _running_remaining_seconds_for_worker(
+    worker: dict[str, Any],
+    *,
+    config: RunPodAutoscalerConfig,
+    now: float,
+) -> int:
+    if str(worker.get("status") or "").lower() != "running":
+        return 0
+    task_type = resolve_worker_execution_task_type(worker.get("current_task_type"))
+    duration_seconds = config.task_duration_seconds_for_type(task_type)
+    started_at = _safe_float(worker.get("current_task_created_at"))
+    if started_at is None or started_at <= 0:
+        return duration_seconds
+    elapsed_seconds = max(0, int(now - started_at))
+    return max(duration_seconds - elapsed_seconds, 0)
+
+
+def _autoscaler_created_slot_started_at(
+    operations: list[dict[str, Any]],
+    *,
+    profile: str,
+    slot: str,
+) -> float | None:
+    newest_started_at: float | None = None
+    for operation in operations:
+        if _operation_profile(operation) != profile:
+            continue
+        if operation.get("source") != "autoscaler":
+            continue
+        if operation.get("action") != "add":
+            continue
+        cleanup_slots = {str(item) for item in operation.get("cleanup_slots") or []}
+        if slot not in cleanup_slots:
+            continue
+        started_at = (
+            _parse_operation_time(operation.get("ended_at"))
+            or _parse_operation_time(operation.get("started_at"))
+            or _parse_operation_time(operation.get("created_at"))
+        )
+        if started_at is None:
+            continue
+        if newest_started_at is None or started_at > newest_started_at:
+            newest_started_at = started_at
+    return newest_started_at
+
+
+def _minimum_lifetime_remaining_seconds(
+    operations: list[dict[str, Any]],
+    *,
+    profile: str,
+    slot: str,
+    now: float,
+    min_lifetime_seconds: int,
+) -> int:
+    if min_lifetime_seconds <= 0:
+        return 0
+    started_at = _autoscaler_created_slot_started_at(
+        operations,
+        profile=profile,
+        slot=slot,
+    )
+    if started_at is None:
+        return 0
+    return max(0, int(min_lifetime_seconds - (now - started_at)))
+
+
 def _decision(
     *,
     profile: str,
@@ -805,7 +985,6 @@ def build_runpod_autoscaler_decisions(
     operations_payload: dict[str, Any],
     config: RunPodAutoscalerConfig,
     now: float,
-    scale_up_confirmation_counts: dict[str, int] | None = None,
 ) -> list[dict[str, Any]]:
     queue_details = {
         str(item.get("profile")): item
@@ -814,9 +993,6 @@ def build_runpod_autoscaler_decisions(
     workers = list(workers_payload.get("workers") or [])
     operations = list(operations_payload.get("operations") or [])
     profile_task_types = _profile_task_types()
-    confirmation_counts = _normalize_scale_up_confirmation_counts(
-        scale_up_confirmation_counts
-    )
     decisions: list[dict[str, Any]] = []
 
     for option in RUNPOD_ADMIN_PROFILE_OPTIONS:
@@ -825,18 +1001,18 @@ def build_runpod_autoscaler_decisions(
         pending_count = int(detail.get("pending_count") or 0)
         active_count = int(detail.get("active_count") or 0)
         wait_seconds = _safe_float(detail.get("max_pending_wait_seconds"))
-        scale_up_wait_seconds = config.scale_up_wait_seconds_for_profile(profile)
-        pending_over_threshold_count = _pending_over_threshold_count(
-            detail,
-            scale_up_wait_seconds=scale_up_wait_seconds,
+        clear_time_threshold_seconds = config.scale_up_wait_seconds_for_profile(profile)
+        pending_counts_by_task_type = _pending_count_by_task_type(detail)
+        pending_work_seconds = _pending_work_seconds(
+            pending_counts_by_task_type,
+            config=config,
         )
 
-        profile_runpod_workers: list[dict[str, Any]] = []
-        profile_local_workers: list[dict[str, Any]] = []
         idle_runpod_workers: list[dict[str, Any]] = []
         accepting_runpod_count = 0
         accepting_local_count = 0
         runpod_total_count = 0
+        running_remaining_seconds = 0
 
         for worker in workers:
             runpod_profile = _runpod_profile_for_worker(worker)
@@ -854,7 +1030,6 @@ def build_runpod_autoscaler_decisions(
                 heartbeat_max_age_seconds=config.heartbeat_max_age_seconds,
             )
             if is_runpod:
-                profile_runpod_workers.append(worker)
                 if _worker_seen_recently(
                     worker,
                     now=now,
@@ -870,11 +1045,29 @@ def build_runpod_autoscaler_decisions(
                 ):
                     idle_runpod_workers.append(worker)
             else:
-                profile_local_workers.append(worker)
                 if accepting:
                     accepting_local_count += 1
+            if accepting:
+                running_remaining_seconds += _running_remaining_seconds_for_worker(
+                    worker,
+                    config=config,
+                    now=now,
+                )
 
         total_accepting_count = accepting_runpod_count + accepting_local_count
+        estimated_backlog_seconds = pending_work_seconds + running_remaining_seconds
+        estimated_clear_time_seconds: float | None
+        if total_accepting_count > 0:
+            estimated_clear_time_seconds = (
+                estimated_backlog_seconds / total_accepting_count
+            )
+            capacity_status = "ok"
+        elif pending_count > 0 or running_remaining_seconds > 0:
+            estimated_clear_time_seconds = None
+            capacity_status = "no_accepting_workers"
+        else:
+            estimated_clear_time_seconds = 0.0
+            capacity_status = "idle"
         metrics = {
             "active_count": active_count,
             "pending_count": pending_count,
@@ -884,11 +1077,18 @@ def build_runpod_autoscaler_decisions(
             "local_accepting_count": accepting_local_count,
             "total_accepting_count": total_accepting_count,
             "max_runpods_per_profile": config.max_runpods_per_profile,
-            "scale_up_wait_seconds": scale_up_wait_seconds,
-            "pending_over_threshold_count": pending_over_threshold_count,
-            "scale_up_confirmation_count": 0,
-            "scale_up_confirmation_required": config.scale_up_confirmation_rounds,
-            "scale_up_confirmation_active": False,
+            "scale_up_wait_seconds": clear_time_threshold_seconds,
+            "clear_time_threshold_seconds": clear_time_threshold_seconds,
+            "pending_count_by_task_type": pending_counts_by_task_type,
+            "task_duration_seconds_by_type": {
+                task_type: config.task_duration_seconds_for_type(task_type)
+                for task_type in pending_counts_by_task_type
+            },
+            "estimated_pending_work_seconds": pending_work_seconds,
+            "estimated_running_remaining_seconds": running_remaining_seconds,
+            "estimated_backlog_seconds": estimated_backlog_seconds,
+            "estimated_clear_time_seconds": estimated_clear_time_seconds,
+            "capacity_status": capacity_status,
         }
 
         active_operation = _active_operation_for_profile(operations, profile=profile)
@@ -924,139 +1124,131 @@ def build_runpod_autoscaler_decisions(
             )
             continue
 
-        if (
-            pending_count > 0
-            and wait_seconds is not None
-            and wait_seconds > scale_up_wait_seconds
-        ):
-            if _is_single_low_priority_wait_outlier(
-                detail,
-                scale_up_wait_seconds=scale_up_wait_seconds,
-            ):
-                decisions.append(
-                    _decision(
-                        profile=profile,
-                        action="hold",
-                        reason="hold: single low-priority wait outlier",
-                        metrics=metrics,
-                    )
-                )
-                continue
-
+        if pending_count > 0:
             if runpod_total_count >= config.max_runpods_per_profile:
                 decisions.append(
                     _decision(
                         profile=profile,
                         action="hold",
-                        reason="max runpod capacity reached",
+                        reason="hold: max runpod capacity reached",
                         metrics=metrics,
                     )
                 )
-            else:
-                confirmation_count = min(
-                    config.scale_up_confirmation_rounds,
-                    int(confirmation_counts.get(profile, 0)) + 1,
-                )
-                confirmation_metrics = {
-                    **metrics,
-                    "scale_up_confirmation_count": confirmation_count,
-                    "scale_up_confirmation_active": (
-                        confirmation_count < config.scale_up_confirmation_rounds
-                    ),
-                }
-                if confirmation_count < config.scale_up_confirmation_rounds:
-                    decisions.append(
-                        _decision(
-                            profile=profile,
-                            action="hold",
-                            reason=(
-                                "hold: scale-up signal confirming "
-                                f"{confirmation_count}/"
-                                f"{config.scale_up_confirmation_rounds}"
-                            ),
-                            metrics=confirmation_metrics,
-                        )
-                    )
-                    continue
+                continue
 
+            if capacity_status == "no_accepting_workers":
+                decisions.append(
+                    _decision(
+                        profile=profile,
+                        action="scale_up",
+                        reason="scale_up: no accepting workers for backlog",
+                        metrics=metrics,
+                    )
+                )
+                continue
+
+            if (
+                estimated_clear_time_seconds is not None
+                and estimated_clear_time_seconds > clear_time_threshold_seconds
+            ):
                 decisions.append(
                     _decision(
                         profile=profile,
                         action="scale_up",
                         reason=(
-                            f"pending wait {int(wait_seconds)}s exceeds "
-                            f"{scale_up_wait_seconds}s"
+                            "scale_up: estimated clear time "
+                            f"{int(estimated_clear_time_seconds)}s exceeds "
+                            f"{clear_time_threshold_seconds}s"
                         ),
-                        metrics=confirmation_metrics,
+                        metrics=metrics,
                     )
                 )
-            continue
+                continue
 
-        should_scale_down = pending_count == 0 or wait_seconds is None or (
-            wait_seconds < config.scale_down_wait_seconds
-        )
-        if should_scale_down:
-            if total_accepting_count <= 1:
-                decisions.append(
-                    _decision(
-                        profile=profile,
-                        action="hold",
-                        reason="minimum total accepting capacity reached",
-                        metrics=metrics,
-                    )
-                )
-                continue
-            candidate = _highest_slot_worker(idle_runpod_workers, profile=profile)
-            if candidate is None:
-                decisions.append(
-                    _decision(
-                        profile=profile,
-                        action="hold",
-                        reason="no idle runpod candidate",
-                        metrics=metrics,
-                    )
-                )
-                continue
-            slot = prod_slot_from_agent_id(
-                str(candidate.get("agent_id") or ""),
-                profile=profile,
-            )
             decisions.append(
                 _decision(
                     profile=profile,
-                    action="scale_down",
-                    reason="pending wait below scale-down threshold",
+                    action="hold",
+                    reason="hold: estimated clear time within threshold",
                     metrics=metrics,
+                )
+            )
+            continue
+
+        if runpod_total_count <= 0:
+            decisions.append(
+                _decision(
+                    profile=profile,
+                    action="hold",
+                    reason="hold: no backlog",
+                    metrics=metrics,
+                )
+            )
+            continue
+
+        if total_accepting_count <= 1:
+            decisions.append(
+                _decision(
+                    profile=profile,
+                    action="hold",
+                    reason="hold: minimum total accepting capacity reached",
+                    metrics=metrics,
+                )
+            )
+            continue
+        candidate = _highest_slot_worker(idle_runpod_workers, profile=profile)
+        if candidate is None:
+            decisions.append(
+                _decision(
+                    profile=profile,
+                    action="hold",
+                    reason="hold: no idle runpod candidate",
+                    metrics=metrics,
+                )
+            )
+            continue
+        slot = prod_slot_from_agent_id(
+            str(candidate.get("agent_id") or ""),
+            profile=profile,
+        )
+        lifetime_remaining_seconds = _minimum_lifetime_remaining_seconds(
+            operations,
+            profile=profile,
+            slot=slot,
+            now=now,
+            min_lifetime_seconds=config.min_runpod_lifetime_seconds,
+        )
+        if lifetime_remaining_seconds > 0:
+            decisions.append(
+                _decision(
+                    profile=profile,
+                    action="hold",
+                    reason=(
+                        "hold: minimum lifetime remaining "
+                        f"{lifetime_remaining_seconds}s"
+                    ),
+                    metrics={
+                        **metrics,
+                        "minimum_lifetime_remaining_seconds": (
+                            lifetime_remaining_seconds
+                        ),
+                    },
                     slot=slot,
                 )
             )
             continue
-
         decisions.append(
             _decision(
                 profile=profile,
-                action="hold",
-                reason="within thresholds",
+                action="scale_down",
+                reason="scale_down: no backlog and idle runpod available",
                 metrics=metrics,
+                slot=slot,
             )
         )
+        continue
 
     return decisions
-
-
-def _scale_up_confirmation_counts_from_decisions(
-    decisions: list[dict[str, Any]],
-) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for decision in decisions:
-        profile = str(decision.get("profile") or "")
-        if not profile:
-            continue
-        if decision.get("scale_up_confirmation_active"):
-            counts[profile] = int(decision.get("scale_up_confirmation_count") or 0)
-        else:
-            counts[profile] = 0
-    return counts
 
 
 async def _safe_store_save_decisions(
@@ -1067,19 +1259,6 @@ async def _safe_store_save_decisions(
         await store.save_last_decisions(payload)
     except Exception:
         logger.warning("Failed to persist RunPod autoscaler decisions", exc_info=True)
-
-
-async def _safe_store_save_scale_up_confirmation_counts(
-    store: RunPodAutoscalerStateStore,
-    counts: dict[str, int],
-) -> None:
-    try:
-        await store.save_scale_up_confirmation_counts(counts)
-    except Exception:
-        logger.warning(
-            "Failed to persist RunPod autoscaler scale-up confirmations",
-            exc_info=True,
-        )
 
 
 async def evaluate_runpod_autoscaler_once(
@@ -1103,11 +1282,12 @@ async def evaluate_runpod_autoscaler_once(
     now = float(now_func())
     control_error: str | None = None
     settings_error: str | None = None
-    confirmation_error: str | None = None
-    scale_up_confirmation_counts: dict[str, int] = {}
     try:
         active_config = active_config.with_scale_up_wait_seconds_by_profile(
             await active_store.get_scale_up_wait_seconds_by_profile()
+        )
+        active_config = active_config.with_task_duration_seconds_by_type(
+            await active_store.get_task_duration_seconds_by_type()
         )
     except Exception as exc:
         logger.warning("RunPod autoscaler settings unavailable", exc_info=True)
@@ -1120,16 +1300,6 @@ async def evaluate_runpod_autoscaler_once(
         logger.warning("RunPod autoscaler control state unavailable", exc_info=True)
         control_enabled = False
         control_error = str(exc)
-    try:
-        scale_up_confirmation_counts = (
-            await active_store.get_scale_up_confirmation_counts()
-        )
-    except Exception as exc:
-        logger.warning(
-            "RunPod autoscaler scale-up confirmations unavailable",
-            exc_info=True,
-        )
-        confirmation_error = str(exc)
     effective_enabled = bool(active_config.configured_enabled and control_enabled)
     leader_acquired: bool | None = None
 
@@ -1157,7 +1327,6 @@ async def evaluate_runpod_autoscaler_once(
                 "mutation_skipped_reason": "leader lease not acquired",
                 "control_error": control_error,
                 "settings_error": settings_error,
-                "confirmation_error": confirmation_error,
             }
             await _safe_store_save_decisions(active_store, payload)
             return payload
@@ -1189,7 +1358,6 @@ async def evaluate_runpod_autoscaler_once(
             "error": str(exc),
             "control_error": control_error,
             "settings_error": settings_error,
-            "confirmation_error": confirmation_error,
         }
         await _safe_store_save_decisions(active_store, payload)
         return payload
@@ -1200,7 +1368,6 @@ async def evaluate_runpod_autoscaler_once(
         operations_payload=operations,
         config=active_config,
         now=now,
-        scale_up_confirmation_counts=scale_up_confirmation_counts,
     )
     recent_operations = [
         operation
@@ -1210,15 +1377,22 @@ async def evaluate_runpod_autoscaler_once(
 
     executed_operations: list[dict[str, Any]] = []
     if mutate and effective_enabled:
+        scale_up_executed = False
         for decision in decisions:
             try:
                 if decision["action"] == "scale_up":
+                    if scale_up_executed:
+                        decision["operation_skipped_reason"] = (
+                            "scale-up already executed this round"
+                        )
+                        continue
                     operation = await start_add_func(
                         profile=decision["profile"],
                         trigger_reason=decision["reason"],
                         spawn_task_func=spawn_task_func,
                     )
                     decision["operation_id"] = operation.id
+                    scale_up_executed = True
                     executed_operations.append(operation_payload(operation))
                 elif decision["action"] == "scale_down" and decision.get("slot"):
                     operation = await start_delete_func(
@@ -1238,12 +1412,6 @@ async def evaluate_runpod_autoscaler_once(
                 decision["action"] = "hold"
                 decision["operation_error"] = str(exc)
 
-    if mutate and effective_enabled and leader_acquired is True:
-        await _safe_store_save_scale_up_confirmation_counts(
-            active_store,
-            _scale_up_confirmation_counts_from_decisions(decisions),
-        )
-
     payload = {
         "enabled": effective_enabled,
         "configured_enabled": active_config.configured_enabled,
@@ -1258,7 +1426,6 @@ async def evaluate_runpod_autoscaler_once(
         ).isoformat().replace("+00:00", "Z"),
         "control_error": control_error,
         "settings_error": settings_error,
-        "confirmation_error": confirmation_error,
     }
     await _safe_store_save_decisions(active_store, payload)
     return payload
@@ -1280,6 +1447,7 @@ async def set_runpod_autoscaler_control_payload(
 async def set_runpod_autoscaler_settings_payload(
     *,
     scale_up_wait_minutes_by_profile: dict[str, Any] | None,
+    task_duration_seconds_by_type: dict[str, Any] | None = None,
     reason: str | None = None,
     store: RunPodAutoscalerStateStore | None = None,
     config: RunPodAutoscalerConfig | None = None,
@@ -1288,10 +1456,18 @@ async def set_runpod_autoscaler_settings_payload(
     thresholds = _validate_scale_up_wait_minutes_by_profile(
         scale_up_wait_minutes_by_profile
     )
+    durations = _validate_task_duration_seconds_by_type(
+        task_duration_seconds_by_type
+    )
     active_store = store or _state_store
-    await active_store.set_scale_up_wait_seconds_by_profile(thresholds, reason=reason)
+    if thresholds:
+        await active_store.set_scale_up_wait_seconds_by_profile(thresholds, reason=reason)
+    if durations:
+        await active_store.set_task_duration_seconds_by_type(durations, reason=reason)
     active_config = (config or config_from_env()).with_scale_up_wait_seconds_by_profile(
         await active_store.get_scale_up_wait_seconds_by_profile()
+    ).with_task_duration_seconds_by_type(
+        await active_store.get_task_duration_seconds_by_type()
     )
     if not refresh_payload:
         return {"config": active_config.payload()}

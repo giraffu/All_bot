@@ -55,6 +55,9 @@ type RunPodAutoscalerDecision = {
   slot?: string | null
   pending_count?: number
   max_pending_wait_seconds?: number | null
+  clear_time_threshold_seconds?: number
+  estimated_clear_time_seconds?: number | null
+  capacity_status?: string
   runpod_count?: number
   total_accepting_count?: number
 }
@@ -69,6 +72,8 @@ type RunPodAutoscalerPayload = {
     scale_down_wait_seconds?: number
     cooldown_seconds?: number
     max_runpods_per_profile?: number
+    min_runpod_lifetime_seconds?: number
+    task_duration_seconds_by_type?: Record<string, number>
   }
   decisions?: RunPodAutoscalerDecision[]
   recent_operations?: RunPodOperation[]
@@ -363,9 +368,10 @@ onUnmounted(() => {
         </div>
 
         <div class="runpod-autoscaler-metrics">
-          <span>扩容等待 {{ autoscaler?.config?.scale_up_wait_seconds || 1800 }}s</span>
+          <span>清空阈值 {{ autoscaler?.config?.scale_up_wait_seconds || 1800 }}s</span>
           <span>缩容等待 {{ autoscaler?.config?.scale_down_wait_seconds || 60 }}s</span>
           <span>冷却 {{ autoscaler?.config?.cooldown_seconds || 600 }}s</span>
+          <span>最短生命周期 {{ autoscaler?.config?.min_runpod_lifetime_seconds || 1800 }}s</span>
           <span>每类最多 {{ autoscaler?.config?.max_runpods_per_profile || 5 }}</span>
         </div>
 
@@ -530,7 +536,7 @@ onUnmounted(() => {
 
 .runpod-autoscaler-metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 6px;
   font-size: 11px;
   color: #64748b;

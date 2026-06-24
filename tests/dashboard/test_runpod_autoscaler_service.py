@@ -14,14 +14,14 @@ from dashboard.backend.services.runpod_autoscaler_service import (
 pytestmark = pytest.mark.asyncio
 
 
-def _config(*, scale_up_confirmation_rounds: int = 3) -> RunPodAutoscalerConfig:
+def _config(*, min_runpod_lifetime_seconds: int = 0) -> RunPodAutoscalerConfig:
     return RunPodAutoscalerConfig(
         configured_enabled=True,
         cooldown_seconds=600,
         max_runpods_per_profile=5,
         heartbeat_max_age_seconds=300,
         owner_id="test-autoscaler",
-        scale_up_confirmation_rounds=scale_up_confirmation_rounds,
+        min_runpod_lifetime_seconds=min_runpod_lifetime_seconds,
     )
 
 
@@ -33,6 +33,7 @@ def _status(
     active: int = 0,
     priority: int = 1,
     pending_wait_records: list[dict] | None = None,
+    pending_count_by_task_type: dict[str, int] | None = None,
 ):
     profiles = [
         "img2img",
@@ -42,14 +43,31 @@ def _status(
         "scail2",
         "ltx_video",
     ]
+    profile_task_types = {
+        "img2img": ["img2img", "img2img_lora"],
+        "image_to_video": ["image_to_video"],
+        "wan22_video_v2": ["wan22_video_v2"],
+        "i2i_pro": ["i2i_pro", "t2i-pornmaster-turbo", "face_swap"],
+        "scail2": ["scail2_action_transfer", "scail2_video_replacement"],
+        "ltx_video": ["ltx_video", "ltx_video_flf2v", "ltx_video_v2v_audio"],
+    }
     return {
         "runpod_profile_queue_details": [
             {
                 "profile": item,
                 "label": item,
-                "supported_task_types": [item],
+                "supported_task_types": profile_task_types[item],
                 "active_count": active if item == profile else 0,
                 "pending_count": pending if item == profile else 0,
+                "pending_count_by_task_type": (
+                    pending_count_by_task_type
+                    if item == profile and pending_count_by_task_type is not None
+                    else (
+                        {profile_task_types[item][0]: pending}
+                        if item == profile and pending > 0
+                        else {}
+                    )
+                ),
                 "max_pending_wait_seconds": wait if item == profile else None,
                 "pending_wait_records": (
                     (
@@ -78,6 +96,8 @@ def _runpod_worker(
     control_state: str = "enabled",
     last_seen: float = 1000.0,
     current_task_id: str | None = None,
+    current_task_type: str | None = None,
+    current_task_created_at: float | None = None,
 ):
     profile_agent = {
         "img2img": "runpod_prod_img2img_manual_",
@@ -104,6 +124,8 @@ def _runpod_worker(
         "control_state": control_state,
         "last_seen": last_seen,
         "current_task_id": current_task_id,
+        "current_task_type": current_task_type,
+        "current_task_created_at": current_task_created_at,
     }
 
 
@@ -113,6 +135,8 @@ def _local_worker(
     status: str = "idle",
     control_state: str = "enabled",
     last_seen: float = 1000.0,
+    current_task_type: str | None = None,
+    current_task_created_at: float | None = None,
 ):
     return {
         "agent_id": f"local_{task_types.replace(',', '_')}",
@@ -121,6 +145,8 @@ def _local_worker(
         "status": status,
         "control_state": control_state,
         "last_seen": last_seen,
+        "current_task_type": current_task_type,
+        "current_task_created_at": current_task_created_at,
     }
 
 
@@ -128,7 +154,12 @@ async def _empty_operations():
     return {"operations": []}
 
 
-def _finished_autoscaler_operation(profile: str, *, ended_at: str):
+def _finished_autoscaler_operation(
+    profile: str,
+    *,
+    ended_at: str,
+    cleanup_slots: list[str] | None = None,
+):
     return {
         "id": f"{profile}-finished",
         "profile": profile,
@@ -136,6 +167,7 @@ def _finished_autoscaler_operation(profile: str, *, ended_at: str):
         "status": "succeeded",
         "source": "autoscaler",
         "ended_at": ended_at,
+        "cleanup_slots": cleanup_slots or [],
     }
 
 
@@ -149,7 +181,7 @@ def _active_operation(profile: str, *, action: str = "add"):
     }
 
 
-async def test_autoscaler_scales_up_after_three_confirmed_wait_breaches():
+async def test_autoscaler_scales_up_when_estimated_clear_time_exceeds_threshold():
     calls = []
     store = InMemoryRunPodAutoscalerStateStore()
 
@@ -164,35 +196,27 @@ async def test_autoscaler_scales_up_after_three_confirmed_wait_breaches():
             trigger_reason=kwargs["trigger_reason"],
         )
 
-    payloads = []
-    for _ in range(3):
-        payloads.append(
-            await evaluate_runpod_autoscaler_once(
-                mutate=True,
-                config=_config(),
-                store=store,
-                status_payload=_status(profile="img2img", pending=1, wait=1801),
-                workers_payload=_workers(),
-                operations_payload={"operations": []},
-                start_add_func=start_add,
-                now_func=lambda: 1000.0,
-            )
-        )
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=store,
+        status_payload=_status(profile="img2img", pending=100, wait=10),
+        workers_payload=_workers(_local_worker("img2img,img2img_lora")),
+        operations_payload={"operations": []},
+        start_add_func=start_add,
+        now_func=lambda: 1000.0,
+    )
 
-    assert payloads[0]["decisions"][0]["action"] == "hold"
-    assert payloads[0]["decisions"][0]["reason"] == (
-        "hold: scale-up signal confirming 1/3"
-    )
-    assert payloads[1]["decisions"][0]["action"] == "hold"
-    assert payloads[1]["decisions"][0]["reason"] == (
-        "hold: scale-up signal confirming 2/3"
-    )
     assert calls[0]["profile"] == "img2img"
-    assert payloads[2]["decisions"][0]["action"] == "scale_up"
-    assert payloads[2]["executed_operations"][0]["source"] == "autoscaler"
+    decision = payload["decisions"][0]
+    assert decision["action"] == "scale_up"
+    assert decision["reason"] == "scale_up: estimated clear time 1300s exceeds 1200s"
+    assert decision["estimated_pending_work_seconds"] == 1300
+    assert decision["estimated_clear_time_seconds"] == 1300
+    assert payload["executed_operations"][0]["source"] == "autoscaler"
 
 
-async def test_autoscaler_holds_single_low_priority_wait_outlier():
+async def test_autoscaler_holds_long_wait_single_task_when_clear_time_is_low():
     calls = []
 
     async def start_add(**kwargs):
@@ -205,15 +229,13 @@ async def test_autoscaler_holds_single_low_priority_wait_outlier():
         store=InMemoryRunPodAutoscalerStateStore(),
         status_payload=_status(
             profile="img2img",
-            pending=3,
+            pending=1,
             wait=2400,
             pending_wait_records=[
                 {"wait_seconds": 2400, "priority": 0},
-                {"wait_seconds": 80, "priority": 5},
-                {"wait_seconds": 40, "priority": 5},
             ],
         ),
-        workers_payload=_workers(),
+        workers_payload=_workers(_local_worker("img2img,img2img_lora")),
         operations_payload={"operations": []},
         start_add_func=start_add,
         now_func=lambda: 1000.0,
@@ -221,8 +243,8 @@ async def test_autoscaler_holds_single_low_priority_wait_outlier():
 
     decision = payload["decisions"][0]
     assert decision["action"] == "hold"
-    assert decision["reason"] == "hold: single low-priority wait outlier"
-    assert decision["pending_over_threshold_count"] == 1
+    assert decision["reason"] == "hold: estimated clear time within threshold"
+    assert decision["estimated_clear_time_seconds"] == 13
     assert calls == []
 
 
@@ -233,7 +255,7 @@ async def test_autoscaler_uses_default_profile_scale_up_thresholds():
         config=config,
         store=InMemoryRunPodAutoscalerStateStore(),
         status_payload=_status(profile="scail2", pending=1, wait=1900),
-        workers_payload=_workers(),
+        workers_payload=_workers(_local_worker("scail2_action_transfer")),
         operations_payload={"operations": []},
         now_func=lambda: 1000.0,
     )
@@ -245,7 +267,8 @@ async def test_autoscaler_uses_default_profile_scale_up_thresholds():
     assert thresholds["image_to_video"] == 30 * 60
     assert decisions["scail2"]["action"] == "hold"
     assert decisions["scail2"]["scale_up_wait_seconds"] == 40 * 60
-    assert decisions["scail2"]["reason"] == "within thresholds"
+    assert decisions["scail2"]["clear_time_threshold_seconds"] == 40 * 60
+    assert decisions["scail2"]["reason"] == "hold: estimated clear time within threshold"
 
 
 async def test_autoscaler_uses_persisted_profile_scale_up_threshold_on_next_evaluate():
@@ -259,10 +282,10 @@ async def test_autoscaler_uses_persisted_profile_scale_up_threshold_on_next_eval
 
     payload = await evaluate_runpod_autoscaler_once(
         mutate=False,
-        config=_config(scale_up_confirmation_rounds=1),
+        config=_config(),
         store=store,
-        status_payload=_status(profile="scail2", pending=1, wait=1900),
-        workers_payload=_workers(),
+        status_payload=_status(profile="scail2", pending=7, wait=10),
+        workers_payload=_workers(_local_worker("scail2_action_transfer")),
         operations_payload={"operations": []},
         now_func=lambda: 1000.0,
     )
@@ -271,7 +294,36 @@ async def test_autoscaler_uses_persisted_profile_scale_up_threshold_on_next_eval
     assert payload["config"]["scale_up_wait_seconds_by_profile"]["scail2"] == 31 * 60
     assert decision["action"] == "scale_up"
     assert decision["scale_up_wait_seconds"] == 31 * 60
-    assert decision["reason"] == "pending wait 1900s exceeds 1860s"
+    assert decision["estimated_clear_time_seconds"] == 2100
+    assert decision["reason"] == "scale_up: estimated clear time 2100s exceeds 1860s"
+
+
+async def test_autoscaler_uses_persisted_task_duration_settings_on_next_evaluate():
+    store = InMemoryRunPodAutoscalerStateStore()
+    await set_runpod_autoscaler_settings_payload(
+        scale_up_wait_minutes_by_profile=None,
+        task_duration_seconds_by_type={"img2img": 20},
+        reason="test duration update",
+        store=store,
+        refresh_payload=False,
+    )
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=False,
+        config=_config(),
+        store=store,
+        status_payload=_status(profile="img2img", pending=61, wait=10),
+        workers_payload=_workers(_local_worker("img2img,img2img_lora")),
+        operations_payload={"operations": []},
+        now_func=lambda: 1000.0,
+    )
+
+    decision = {item["profile"]: item for item in payload["decisions"]}["img2img"]
+    assert payload["config"]["task_duration_seconds_by_type"]["img2img"] == 20
+    assert decision["action"] == "scale_up"
+    assert decision["estimated_pending_work_seconds"] == 1220
+    assert decision["estimated_clear_time_seconds"] == 1220
+    assert decision["reason"] == "scale_up: estimated clear time 1220s exceeds 1200s"
 
 
 @pytest.mark.parametrize(
@@ -290,6 +342,104 @@ async def test_autoscaler_rejects_invalid_profile_scale_up_threshold_settings(up
         )
 
     assert exc_info.value.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"unsupported": 30},
+        {"img2img": 0},
+        {"img2img": 3601},
+    ],
+)
+async def test_autoscaler_rejects_invalid_task_duration_settings(updates):
+    with pytest.raises(HTTPException) as exc_info:
+        await set_runpod_autoscaler_settings_payload(
+            scale_up_wait_minutes_by_profile=None,
+            task_duration_seconds_by_type=updates,
+            store=InMemoryRunPodAutoscalerStateStore(),
+        )
+
+    assert exc_info.value.status_code == 422
+
+
+async def test_autoscaler_scales_up_when_backlog_has_no_accepting_workers():
+    calls = []
+
+    async def start_add(**kwargs):
+        calls.append(kwargs)
+        return RunPodAdminOperation(
+            id="op-add",
+            action="add",
+            profile=kwargs["profile"],
+            command=["runpod", "add"],
+            source="autoscaler",
+            trigger_reason=kwargs["trigger_reason"],
+        )
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=InMemoryRunPodAutoscalerStateStore(),
+        status_payload=_status(profile="image_to_video", pending=1, wait=10),
+        workers_payload=_workers(),
+        operations_payload={"operations": []},
+        start_add_func=start_add,
+        now_func=lambda: 1000.0,
+    )
+
+    decision = {item["profile"]: item for item in payload["decisions"]}[
+        "image_to_video"
+    ]
+    assert decision["action"] == "scale_up"
+    assert decision["capacity_status"] == "no_accepting_workers"
+    assert decision["reason"] == "scale_up: no accepting workers for backlog"
+    assert calls[0]["profile"] == "image_to_video"
+
+
+async def test_autoscaler_executes_at_most_one_scale_up_per_round():
+    calls = []
+    status_payload = _status(profile="img2img", pending=100, wait=10)
+    for detail in status_payload["runpod_profile_queue_details"]:
+        if detail["profile"] == "scail2":
+            detail["pending_count"] = 10
+            detail["pending_count_by_task_type"] = {"scail2_action_transfer": 10}
+            detail["max_pending_wait_seconds"] = 10
+            detail["pending_wait_records"] = [{"wait_seconds": 10, "priority": 1}]
+
+    async def start_add(**kwargs):
+        calls.append(kwargs)
+        return RunPodAdminOperation(
+            id=f"op-add-{kwargs['profile']}",
+            action="add",
+            profile=kwargs["profile"],
+            command=["runpod", "add"],
+            source="autoscaler",
+            trigger_reason=kwargs["trigger_reason"],
+        )
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=InMemoryRunPodAutoscalerStateStore(),
+        status_payload=status_payload,
+        workers_payload=_workers(
+            _local_worker("img2img,img2img_lora"),
+            _local_worker("scail2_action_transfer"),
+        ),
+        operations_payload={"operations": []},
+        start_add_func=start_add,
+        now_func=lambda: 1000.0,
+    )
+
+    decisions = {item["profile"]: item for item in payload["decisions"]}
+    assert decisions["img2img"]["action"] == "scale_up"
+    assert decisions["scail2"]["action"] == "scale_up"
+    assert decisions["scail2"]["operation_skipped_reason"] == (
+        "scale-up already executed this round"
+    )
+    assert [item["profile"] for item in calls] == ["img2img"]
+    assert [item["profile"] for item in payload["executed_operations"]] == ["img2img"]
 
 
 async def test_autoscaler_does_not_duplicate_active_or_cooling_profile_operations():
@@ -348,7 +498,7 @@ async def test_autoscaler_holds_when_profile_reaches_runpod_limit():
 
     decision = payload["decisions"][0]
     assert decision["action"] == "hold"
-    assert decision["reason"] == "max runpod capacity reached"
+    assert decision["reason"] == "hold: max runpod capacity reached"
     assert calls == []
 
 
@@ -387,7 +537,7 @@ async def test_autoscaler_scales_down_idle_runpod_when_local_capacity_remains():
         {
             "profile": "i2i_pro",
             "slot": "01",
-            "trigger_reason": "pending wait below scale-down threshold",
+            "trigger_reason": "scale_down: no backlog and idle runpod available",
             "spawn_task_func": None,
         }
     ]
@@ -415,7 +565,7 @@ async def test_autoscaler_does_not_scale_down_below_one_total_accepting_worker()
         "wan22_video_v2"
     ]
     assert decision["action"] == "hold"
-    assert decision["reason"] == "minimum total accepting capacity reached"
+    assert decision["reason"] == "hold: minimum total accepting capacity reached"
     assert calls == []
 
 
@@ -473,7 +623,44 @@ async def test_autoscaler_does_not_scale_down_without_idle_runpod_candidate():
 
     decision = {item["profile"]: item for item in payload["decisions"]}["scail2"]
     assert decision["action"] == "hold"
-    assert decision["reason"] == "no idle runpod candidate"
+    assert decision["reason"] == "hold: no idle runpod candidate"
+    assert calls == []
+
+
+async def test_autoscaler_holds_scale_down_for_autoscaler_minimum_lifetime():
+    calls = []
+
+    async def start_delete(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("should not delete")
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(min_runpod_lifetime_seconds=1800),
+        store=InMemoryRunPodAutoscalerStateStore(),
+        status_payload=_status(profile="i2i_pro", pending=0, wait=None),
+        workers_payload=_workers(
+            _runpod_worker("i2i_pro", "01"),
+            _local_worker("i2i_pro,t2i-pornmaster-turbo,face_swap"),
+        ),
+        operations_payload={
+            "operations": [
+                _finished_autoscaler_operation(
+                    "i2i_pro",
+                    ended_at="1970-01-01T00:05:00Z",
+                    cleanup_slots=["01"],
+                )
+            ]
+        },
+        start_delete_func=start_delete,
+        now_func=lambda: 1000.0,
+    )
+
+    decision = {item["profile"]: item for item in payload["decisions"]}["i2i_pro"]
+    assert decision["action"] == "hold"
+    assert decision["slot"] == "01"
+    assert decision["minimum_lifetime_remaining_seconds"] == 1100
+    assert decision["reason"] == "hold: minimum lifetime remaining 1100s"
     assert calls == []
 
 

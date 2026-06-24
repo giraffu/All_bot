@@ -2,6 +2,7 @@ import argparse
 import hashlib
 import json
 import subprocess
+from urllib.parse import urlparse
 
 import pytest
 
@@ -74,13 +75,74 @@ def test_dry_run_plans_commands_without_creating_backup_directory(tmp_path, caps
     commands = "\n".join(runner.commands)
     assert "[dry-run]" in output
     assert "pg_dump -Fc --serializable-deferrable" in commands
+    assert "postgres:18" in commands
     assert "pg_restore" in commands
+    assert '--maintenance-db="$LOCAL_MAINTENANCE_DB"' in commands
+    assert "CLOUD_DATABASE_URL" not in commands
+    assert "LOCAL_MAINTENANCE_URL" not in commands
+    assert "LOCAL_NEXT_DATABASE_URL" not in commands
     assert "rclone sync" in commands
     assert "--backup-dir" in commands
     assert "--entrypoint sh rclone/rclone:latest -lc" in commands
     assert "rclone/rclone:latest sh -lc" not in commands
     assert "rclone delete" not in commands
     assert "--delete-excluded" not in commands
+    assert not config.backup_dir.exists()
+
+
+def test_postgres_tool_image_defaults_to_cloud_prod_major_version(tmp_path):
+    config = build_config(tmp_path)
+
+    assert config.postgres_image == "postgres:18"
+
+
+def test_postgres_tool_image_can_be_overridden_for_tests(tmp_path, capsys):
+    config = build_config(tmp_path, SHADOW_SYNC_POSTGRES_IMAGE="postgres:18-alpine")
+
+    runner = sync.run_shadow_sync(config, execute=False)
+
+    assert "postgres:18-alpine" in "\n".join(runner.commands)
+
+
+def test_dry_run_remote_r2_dump_mode_plans_cloud_dump_transfer_and_cleanup(
+    tmp_path,
+    capsys,
+):
+    config = build_config(
+        tmp_path,
+        CLOUD_PROD_DB_DUMP_MODE="remote_r2",
+        CLOUD_PROD_DB_REMOTE_DUMP_SSH_HOST="allbot-do-sgp1-control",
+        CLOUD_PROD_DB_REMOTE_ROOT="/home/deploy/APP/All_bot",
+        CLOUD_PROD_DB_REMOTE_ENV_FILE="/home/deploy/APP/All_bot/.env.cloud.prod",
+        CLOUD_PROD_DB_REMOTE_DUMP_DIR="backups/cloud-prod-shadow",
+        CLOUD_PROD_DB_REMOTE_TRANSFER_PREFIX="__shadow-transfer",
+        R2_SYNC_HTTP_PROXY="http://127.0.0.1:7890",
+        R2_SYNC_HTTPS_PROXY="http://127.0.0.1:7890",
+        R2_SYNC_NO_PROXY="127.0.0.1,localhost",
+    )
+
+    runner = sync.run_shadow_sync(config, execute=False)
+
+    output = capsys.readouterr().out
+    commands = "\n".join(runner.commands)
+    assert "cloud_db_dump_mode" in output
+    assert "remote_r2" in output
+    assert (
+        "ssh -o BatchMode=yes -o ConnectTimeout=20 "
+        "allbot-do-sgp1-control bash -s < remote-cloud-dump-script"
+    ) in commands
+    assert (
+        "ssh -o BatchMode=yes -o ConnectTimeout=20 "
+        "allbot-do-sgp1-control bash -s < remote-shadow-cleanup-script"
+    ) in commands
+    assert "cloudr2:user-data-prod/__shadow-transfer/20260624_050000" in commands
+    assert "rclone copy cloudr2:user-data-prod/__shadow-transfer/20260624_050000 /backup" in commands
+    assert "rclone purge cloudr2:user-data-prod/__shadow-transfer/20260624_050000" in commands
+    assert "HTTPS_PROXY=<redacted>" in commands
+    assert "HTTP_PROXY=<redacted>" in commands
+    assert "NO_PROXY=<redacted>" in commands
+    assert "pg_dump -Fc --serializable-deferrable" not in commands
+    assert "cloud_password_123" not in output + commands
     assert not config.backup_dir.exists()
 
 
@@ -92,6 +154,8 @@ def test_execute_runs_tool_container_commands_and_writes_manifest(tmp_path, monk
         calls.append((cmd, kwargs))
         rendered = " ".join(cmd)
         if "pg_dump" in rendered:
+            assert "CLOUD_DATABASE_URL" not in kwargs["env"]
+            assert kwargs["env"]["PGDATABASE"] == "bot_db_prod"
             config.dump_path.write_bytes(b"fake cloud prod dump")
         if "alembic_version.txt" in rendered:
             (config.backup_dir / "alembic_version.txt").write_text(
@@ -119,6 +183,222 @@ def test_execute_runs_tool_container_commands_and_writes_manifest(tmp_path, monk
     assert manifest["redis_audit"] == {"app": False, "worker": False}
 
 
+def test_execute_remote_r2_dump_mode_downloads_dump_and_writes_manifest(
+    tmp_path,
+    monkeypatch,
+):
+    config = build_config(
+        tmp_path,
+        CLOUD_PROD_DB_DUMP_MODE="remote_r2",
+        CLOUD_PROD_DB_REMOTE_DUMP_SSH_HOST="allbot-do-sgp1-control",
+        R2_SYNC_HTTP_PROXY="http://127.0.0.1:7890",
+        R2_SYNC_HTTPS_PROXY="http://127.0.0.1:7890",
+        R2_SYNC_NO_PROXY="127.0.0.1,localhost",
+    )
+    calls = []
+    ssh_inputs = []
+    download_envs = []
+    dump_bytes = b"fake remote r2 dump"
+    dump_sha = hashlib.sha256(dump_bytes).hexdigest()
+
+    def fake_run(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        rendered = " ".join(cmd)
+        if cmd[:1] == ["ssh"]:
+            ssh_inputs.append(kwargs.get("input", ""))
+        if (
+            "rclone copy cloudr2:user-data-prod/__shadow-transfer/20260624_050000 /backup"
+            in rendered
+        ):
+            download_envs.append(kwargs["env"])
+            config.dump_path.write_bytes(dump_bytes)
+            (config.backup_dir / "cloud_prod.dump.sha256").write_text(
+                f"{dump_sha}  cloud_prod.dump\n",
+                encoding="utf-8",
+            )
+        if "alembic_version.txt" in rendered:
+            (config.backup_dir / "alembic_version.txt").write_text(
+                "abc123\n",
+                encoding="utf-8",
+            )
+            (config.backup_dir / "table_counts.tsv").write_text(
+                "users\t10\nhistory\t20\norders\t3\nuser_logs\t7\nworker_logs\t4\n",
+                encoding="utf-8",
+            )
+        return subprocess.CompletedProcess(cmd, 0, stdout="")
+
+    monkeypatch.setattr(sync.subprocess, "run", fake_run)
+
+    runner = sync.run_shadow_sync(config, execute=True)
+
+    rendered_commands = "\n".join(runner.commands)
+    manifest = json.loads(config.manifest_path.read_text(encoding="utf-8"))
+    assert calls
+    assert len(ssh_inputs) == 2
+    assert "pg_dump -Fc --serializable-deferrable" in ssh_inputs[0]
+    assert "pg_dump -Fc --serializable-deferrable" not in rendered_commands
+    assert "remote-cloud-dump-script" in rendered_commands
+    assert "remote-shadow-cleanup-script" in rendered_commands
+    assert download_envs[0]["HTTPS_PROXY"] == "http://127.0.0.1:7890"
+    assert manifest["cloud_database_dump_mode"] == "remote_r2"
+    assert manifest["cloud_database_remote_dump_host"] == "allbot-do-sgp1-control"
+    assert (
+        manifest["cloud_database_remote_transfer_prefix"]
+        == "__shadow-transfer/20260624_050000"
+    )
+    assert manifest["dump_sha256"] == dump_sha
+    assert manifest["table_counts"]["users"] == 10
+
+
+def test_execute_can_dump_cloud_db_through_ssh_tunnel(tmp_path, monkeypatch):
+    config = build_config(
+        tmp_path,
+        CLOUD_PROD_DB_TUNNEL_SSH_HOST="allbot-do-sgp1-control",
+        CLOUD_PROD_DB_TUNNEL_LOCAL_PORT="15432",
+    )
+    calls = []
+    popen_calls = []
+
+    class FakeTunnelProcess:
+        returncode = None
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self):
+            self.returncode = 0
+
+        def wait(self, timeout=None):
+            self.returncode = 0
+            return self.returncode
+
+        def kill(self):
+            self.returncode = -9
+
+    class FakeSocket:
+        def close(self):
+            pass
+
+    def fake_popen(cmd, **kwargs):
+        popen_calls.append((cmd, kwargs))
+        return FakeTunnelProcess()
+
+    def fake_create_connection(address, timeout=None):
+        assert address == ("127.0.0.1", 15432)
+        return FakeSocket()
+
+    def fake_run(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        rendered = " ".join(cmd)
+        if "pg_dump" in rendered:
+            assert "CLOUD_DATABASE_URL" not in kwargs["env"]
+            assert kwargs["env"]["PGHOST"] == "127.0.0.1"
+            assert kwargs["env"]["PGPORT"] == "15432"
+            assert kwargs["env"]["PGDATABASE"] == "bot_db_prod"
+            assert kwargs["env"]["PGSSLMODE"] == "require"
+            config.dump_path.write_bytes(b"fake cloud prod dump")
+        if "alembic_version.txt" in rendered:
+            (config.backup_dir / "alembic_version.txt").write_text("abc123\n", encoding="utf-8")
+            (config.backup_dir / "table_counts.tsv").write_text(
+                "users\t10\nhistory\t20\norders\t3\nuser_logs\t7\nworker_logs\t4\n",
+                encoding="utf-8",
+            )
+        return subprocess.CompletedProcess(cmd, 0, stdout="")
+
+    monkeypatch.setattr(sync.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(sync.subprocess, "run", fake_run)
+    monkeypatch.setattr(sync.socket, "create_connection", fake_create_connection)
+
+    runner = sync.run_shadow_sync(config, execute=True)
+
+    assert popen_calls
+    ssh_cmd = " ".join(popen_calls[0][0])
+    assert "-L 127.0.0.1:15432:cloud-prod-db.example.internal:5432" in ssh_cmd
+    assert "allbot-do-sgp1-control" in ssh_cmd
+    assert any("ssh -o BatchMode=yes" in command for command in runner.commands)
+    assert config.manifest_path.exists()
+
+
+def test_execute_tunnels_redis_audit_when_ssh_tunnel_is_enabled(tmp_path, monkeypatch):
+    config = build_config(
+        tmp_path,
+        CLOUD_PROD_DB_TUNNEL_SSH_HOST="allbot-do-sgp1-control",
+        CLOUD_PROD_DB_TUNNEL_LOCAL_PORT="15432",
+        CLOUD_PROD_REDIS_URL="redis://:redis_password_123@redis.example.internal:25061/0",
+    )
+    redis_urls = []
+
+    class FakeTunnelProcess:
+        returncode = None
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self):
+            self.returncode = 0
+
+        def wait(self, timeout=None):
+            self.returncode = 0
+            return self.returncode
+
+        def kill(self):
+            self.returncode = -9
+
+    class FakeSocket:
+        def close(self):
+            pass
+
+    def fake_run(cmd, **kwargs):
+        rendered = " ".join(cmd)
+        if "pg_dump" in rendered:
+            config.dump_path.write_bytes(b"fake cloud prod dump")
+        if "alembic_version.txt" in rendered:
+            (config.backup_dir / "alembic_version.txt").write_text("abc123\n", encoding="utf-8")
+            (config.backup_dir / "table_counts.tsv").write_text(
+                "users\t10\nhistory\t20\norders\t3\nuser_logs\t7\nworker_logs\t4\n",
+                encoding="utf-8",
+            )
+        if "redis-cli" in rendered:
+            assert "CLOUD_REDIS_URL" not in kwargs["env"]
+            redis_urls.append(kwargs["env"])
+        return subprocess.CompletedProcess(cmd, 0, stdout="")
+
+    monkeypatch.setattr(sync.subprocess, "Popen", lambda *args, **kwargs: FakeTunnelProcess())
+    monkeypatch.setattr(sync.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        sync.socket,
+        "create_connection",
+        lambda address, timeout=None: FakeSocket(),
+    )
+
+    sync.run_shadow_sync(config, execute=True)
+
+    assert redis_urls
+    assert redis_urls[0]["REDIS_HOST"] == "127.0.0.1"
+    assert redis_urls[0]["REDIS_PORT"] == "15432"
+    assert redis_urls[0]["REDIS_DB"] == "0"
+    assert redis_urls[0]["REDISCLI_AUTH"] == "redis_password_123"
+
+
+def test_postgres_and_redis_passwords_are_not_passed_as_process_arguments(tmp_path, capsys):
+    config = build_config(
+        tmp_path,
+        CLOUD_PROD_REDIS_URL="redis://:redis_password_123@redis.example.internal:25061/0",
+    )
+
+    runner = sync.run_shadow_sync(config, execute=False)
+
+    output = capsys.readouterr().out
+    rendered = output + "\n".join(runner.commands)
+    assert "cloud_password_123" not in rendered
+    assert "local_password_456" not in rendered
+    assert "redis_password_123" not in rendered
+    assert "postgresql://cloud_user" not in rendered
+    assert "redis://:" not in rendered
+    assert 'pg_dump -Fc --serializable-deferrable --lock-wait-timeout=5s --file=/backup/cloud_prod.dump' in rendered
+    assert 'redis-cli $TLS_FLAG -h "$REDIS_HOST" -p "$REDIS_PORT" -n "$REDIS_DB"' in rendered
+
+
 @pytest.mark.parametrize(
     ("overrides", "message"),
     [
@@ -139,6 +419,10 @@ def test_execute_runs_tool_container_commands_and_writes_manifest(tmp_path, monk
         (
             {"LOCAL_MINIO_SHADOW_BUCKET": "user-data-prod"},
             "must not reuse the R2 production bucket name",
+        ),
+        (
+            {"CLOUD_PROD_DB_DUMP_MODE": "remote_r2"},
+            "REMOTE_DUMP_SSH_HOST is required",
         ),
     ],
 )

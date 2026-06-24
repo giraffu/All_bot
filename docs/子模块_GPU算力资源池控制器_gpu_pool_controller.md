@@ -525,22 +525,27 @@ Dashboard 入口不重写 RunPod provider 逻辑，只异步调用 `scripts/runp
 Dashboard 后端的 RunPod autoscaler 只复用上述安全入口，不直接调用 RunPod API。正式启用时
 `DASHBOARD_RUNPOD_AUTOSCALER_ENABLED=true`，后台循环默认每 60 秒读取
 `/api/system/status.runpod_profile_queue_details` 与 `/api/system/workers`：某 profile
-排队数大于 0、最长等待超过该 profile 扩容阈值、不是单个低优先级超时 outlier，并且连续
-`DASHBOARD_RUNPOD_AUTOSCALER_SCALE_UP_CONFIRMATION_ROUNDS` 轮成立（默认 3）时，若该 profile
-当前 RunPod 数小于 `DASHBOARD_RUNPOD_AUTOSCALER_MAX_RUNPODS_PER_PROFILE`（默认 5）且没有同 profile
-未完成 operation，则提交一次 `add --count 1 --retry-unavailable --max-attempts 100 --retry-interval 30 --execute`。
-扩容阈值默认按 profile 生效：`img2img=20 分钟`、`scail2=40 分钟`，其它正式 profile
+排队数大于 0 且预计清空时间超过该 profile 清空阈值时，若该 profile 当前 RunPod 数小于
+`DASHBOARD_RUNPOD_AUTOSCALER_MAX_RUNPODS_PER_PROFILE`（默认 5）且没有同 profile 未完成 operation，
+则每轮最多提交一次 `add --count 1 --retry-unavailable --max-attempts 100 --retry-interval 30 --execute`。
+预计清空时间按静态单任务耗时估算：`pending_work_seconds=sum(pending_count_by_task_type * task_duration_seconds)`，
+再加 running worker 的预计剩余秒数后除以 RunPod + 本地健康 enabled 可接单 worker 数；有 backlog
+但无可接单 worker 时标记 `capacity_status=no_accepting_workers`，允许扩容。清空阈值默认按 profile
+生效：`img2img=20 分钟`、`scail2=40 分钟`，其它正式 profile
 （`image_to_video`、`wan22_video_v2`、`i2i_pro`、`ltx_video`）为 `30 分钟`；
-系统监控页“活跃 RunPod 详情”的“扩容阈值”列可保存 profile 级分钟数，后端写入 Redis
+系统监控页“活跃 RunPod 详情”的“清空阈值”列可保存 profile 级分钟数，后端写入 Redis
 并由 `/api/runpod/autoscaler/settings` 合并到下一轮评估；`DASHBOARD_RUNPOD_AUTOSCALER_SCALE_UP_WAIT_SECONDS`
-仅作为未配置 profile 的 fallback。
-Dashboard status 会从 Central pending 任务读取轻量 `pending_wait_records`（等待秒数与 priority），
-用于识别 `hold: single low-priority wait outlier`；连续确认轮次存入 Redis，Dashboard 只读查看不会推进确认计数。
-新增 operation 完成或失败后，同 profile 默认冷却 600 秒。某 profile 无排队或最长等待低于 60 秒时，
-若 RunPod + 本地健康 enabled 可接单 worker 总数大于 1，则选择该 profile 最高 slot 的 idle RunPod
-执行 `down --slot NN --execute`；本地 worker 只参与容量保底，不会被 autoscaler 启停。autoscaler
-必须拿到 Redis leader lease 才执行 mutation；拿不到 Redis/leader 或系统快照失败时只记录 hold/error。
-管理弹窗的 `/api/runpod/autoscaler` 与 `/api/runpod/autoscaler/control` 可查看决策并紧急暂停/恢复。
+仅作为未配置 profile 的 fallback。静态耗时可通过同一 settings API 的 `task_duration_seconds_by_type`
+更新，允许 1-3600 秒；默认值为 `img2img/img2img_lora=13s`、`image_to_video/wan22_video_v2=60s`、
+`i2i_pro/t2i-pornmaster-turbo/face_swap=12s`、`scail2_action_transfer/scail2_video_replacement=300s`、
+`ltx_video/ltx_video_flf2v/ltx_video_v2v_audio=120s`、unknown `100s`。新增 operation 完成或失败后，
+同 profile 默认冷却 600 秒。缩容只在 `pending_count == 0` 时考虑，若 RunPod + 本地健康 enabled 可接单
+worker 总数大于 1，则选择该 profile 最高 slot 的 idle RunPod 执行 `down --slot NN --execute`；autoscaler
+创建的 RunPod 未满 `DASHBOARD_RUNPOD_AUTOSCALER_MIN_RUNPOD_LIFETIME_SECONDS`（默认 1800）不会被缩容。
+本地 worker 只参与容量保底，不会被 autoscaler 启停。autoscaler 必须拿到 Redis leader lease 才执行
+mutation；拿不到 Redis/leader 或系统快照失败时只记录 hold/error。管理弹窗的 `/api/runpod/autoscaler`
+与 `/api/runpod/autoscaler/control` 可查看 `scale_up: estimated clear time ...`、`hold: no backlog`、
+`hold: max runpod capacity reached`、`hold: minimum lifetime remaining Ns` 等决策并紧急暂停/恢复。
 
 `down` 删除已有 Pod 的 preflight 只做 RunPod key、Pod 列表、reconcile 与 Central health 检查，不渲染 create pod request，因此不会因缺少 `RUNPOD_IMAGE_NAME_I2I_PRO` / `RUNPOD_IMAGE_NAME_SCAIL2` / `RUNPOD_IMAGE_NAME_LTX_VIDEO` 这类创建镜像配置而阻断删除；`up` / `add` / `render` / `canary` 仍必须具备目标 profile 的正式镜像与模型配置。
 

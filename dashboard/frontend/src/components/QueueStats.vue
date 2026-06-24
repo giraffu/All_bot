@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { 
   ThunderboltOutlined, 
   PictureOutlined, 
@@ -40,11 +40,15 @@ const {
 const workerHistoryOpen = ref(false)
 const selectedWorkerHistoryId = ref('')
 const autoscalerConfig = ref({})
+const autoscalerDecisions = ref([])
 const thresholdDrafts = ref({})
-const savingThresholdProfile = ref('')
+const durationDrafts = ref({})
+const savingSettingsProfile = ref('')
 const runpodOperationLogOpen = ref(false)
 const runpodOperationLogLoading = ref(false)
 const runpodOperations = ref([])
+let autoscalerSettingsTimer = null
+const autoscalerSettingsRefreshIntervalMs = 10000
 
 const DEFAULT_SCALE_UP_WAIT_SECONDS_BY_PROFILE = {
   img2img: 20 * 60,
@@ -53,6 +57,22 @@ const DEFAULT_SCALE_UP_WAIT_SECONDS_BY_PROFILE = {
   i2i_pro: 30 * 60,
   scail2: 40 * 60,
   ltx_video: 30 * 60,
+}
+
+const DEFAULT_TASK_DURATION_SECONDS_BY_TYPE = {
+  img2img: 13,
+  img2img_lora: 13,
+  image_to_video: 60,
+  wan22_video_v2: 60,
+  i2i_pro: 12,
+  't2i-pornmaster-turbo': 12,
+  face_swap: 12,
+  scail2_action_transfer: 300,
+  scail2_video_replacement: 300,
+  ltx_video: 120,
+  ltx_video_flf2v: 120,
+  ltx_video_v2v_audio: 120,
+  unknown: 100,
 }
 
 const taskTotals = computed(() => {
@@ -115,6 +135,20 @@ const scaleUpThresholdSecondsByProfile = computed(() => ({
   ...(autoscalerConfig.value?.scale_up_wait_seconds_by_profile || {}),
 }))
 
+const taskDurationSecondsByType = computed(() => ({
+  ...DEFAULT_TASK_DURATION_SECONDS_BY_TYPE,
+  ...(autoscalerConfig.value?.task_duration_seconds_by_type || {}),
+}))
+
+const autoscalerDecisionsByProfile = computed(() =>
+  autoscalerDecisions.value.reduce((acc, decision) => {
+    if (decision?.profile) {
+      acc[decision.profile] = decision
+    }
+    return acc
+  }, {})
+)
+
 const thresholdMinutesForProfile = (profile) => {
   const seconds = Number(
     scaleUpThresholdSecondsByProfile.value[profile] ??
@@ -136,6 +170,30 @@ const setThresholdDraft = (profile, value) => {
   }
 }
 
+const durationSecondsForProfile = (profileRow) => {
+  const taskTypes = profileRow?.supportedTaskTypes || []
+  const firstTaskType = taskTypes[0] || 'unknown'
+  const seconds = Number(
+    taskDurationSecondsByType.value[firstTaskType] ??
+      DEFAULT_TASK_DURATION_SECONDS_BY_TYPE[firstTaskType] ??
+      DEFAULT_TASK_DURATION_SECONDS_BY_TYPE.unknown
+  )
+  return Math.max(1, Math.round(seconds))
+}
+
+const durationDraftValue = (profileRow) => {
+  const profile = profileRow.profile
+  const value = durationDrafts.value[profile]
+  return value === undefined || value === null ? durationSecondsForProfile(profileRow) : value
+}
+
+const setDurationDraft = (profile, value) => {
+  durationDrafts.value = {
+    ...durationDrafts.value,
+    [profile]: value,
+  }
+}
+
 const isThresholdValid = (profile) => {
   const minutes = Number(thresholdDraftValue(profile))
   return Number.isInteger(minutes) && minutes >= 1 && minutes <= 240
@@ -146,45 +204,89 @@ const isThresholdDirty = (profile) => {
   return Number.isFinite(minutes) && minutes !== thresholdMinutesForProfile(profile)
 }
 
+const isDurationValid = (profileRow) => {
+  const seconds = Number(durationDraftValue(profileRow))
+  return Number.isInteger(seconds) && seconds >= 1 && seconds <= 3600
+}
+
+const isDurationDirty = (profileRow) => {
+  const seconds = Number(durationDraftValue(profileRow))
+  return Number.isFinite(seconds) && seconds !== durationSecondsForProfile(profileRow)
+}
+
+const isRunPodSettingsDirty = (profileRow) =>
+  isThresholdDirty(profileRow.profile) || isDurationDirty(profileRow)
+
 const syncThresholdDraftsFromConfig = () => {
   thresholdDrafts.value = runpodProfileQueueDisplay.value.reduce((acc, profile) => {
     acc[profile.profile] = thresholdMinutesForProfile(profile.profile)
     return acc
   }, {})
+  durationDrafts.value = runpodProfileQueueDisplay.value.reduce((acc, profile) => {
+    acc[profile.profile] = durationSecondsForProfile(profile)
+    return acc
+  }, {})
 }
 
-const loadAutoscalerSettings = async () => {
+const loadAutoscalerSettings = async ({ syncDrafts = true } = {}) => {
   try {
     const payload = await fetchRunPodAutoscaler()
     autoscalerConfig.value = payload?.config || {}
-    syncThresholdDraftsFromConfig()
+    autoscalerDecisions.value = payload?.decisions || []
+    if (syncDrafts) {
+      syncThresholdDraftsFromConfig()
+    }
   } catch (err) {
     console.error(err)
   }
 }
 
-const saveScaleUpThreshold = async (profile) => {
+const refreshAutoscalerDecisions = () => loadAutoscalerSettings({ syncDrafts: false })
+
+const clearTimeDisplayForProfile = (profile) => {
+  const decision = autoscalerDecisionsByProfile.value[profile]
+  if (!decision) return '-'
+  if (decision.capacity_status === 'no_accepting_workers') return '无可接单'
+  return formatWaitDuration(decision.estimated_clear_time_seconds)
+}
+
+const decisionReasonForProfile = (profile) =>
+  autoscalerDecisionsByProfile.value[profile]?.reason || ''
+
+const saveRunPodSettings = async (profileRow) => {
+  const profile = profileRow.profile
   if (!isThresholdValid(profile)) {
-    message.warning('扩容阈值必须是 1-240 分钟')
+    message.warning('清空阈值必须是 1-240 分钟')
+    return
+  }
+  if (!isDurationValid(profileRow)) {
+    message.warning('单任务耗时必须是 1-3600 秒')
     return
   }
   const minutes = Number(thresholdDraftValue(profile))
-  savingThresholdProfile.value = profile
+  const durationSeconds = Number(durationDraftValue(profileRow))
+  const taskDurationUpdates = (profileRow.supportedTaskTypes || []).reduce((acc, taskType) => {
+    acc[taskType] = durationSeconds
+    return acc
+  }, {})
+  savingSettingsProfile.value = profile
   try {
     const payload = await updateRunPodAutoscalerSettings({
       scale_up_wait_minutes_by_profile: {
         [profile]: minutes,
       },
-      reason: 'dashboard threshold update',
+      task_duration_seconds_by_type: taskDurationUpdates,
+      reason: 'dashboard clear-time settings update',
     })
     autoscalerConfig.value = payload?.config || autoscalerConfig.value
+    autoscalerDecisions.value = payload?.decisions || autoscalerDecisions.value
     syncThresholdDraftsFromConfig()
-    message.success(`已更新 ${profile} 扩容阈值`)
+    message.success(`已更新 ${profile} 清空阈值`)
   } catch (err) {
     console.error(err)
-    message.error('扩容阈值保存失败')
+    message.error('清空阈值保存失败')
   } finally {
-    savingThresholdProfile.value = ''
+    savingSettingsProfile.value = ''
   }
 }
 
@@ -416,6 +518,16 @@ const handleSyncLock = async (userId) => {
 
 onMounted(() => {
   void loadAutoscalerSettings()
+  autoscalerSettingsTimer = setInterval(() => {
+    void refreshAutoscalerDecisions()
+  }, autoscalerSettingsRefreshIntervalMs)
+})
+
+onUnmounted(() => {
+  if (autoscalerSettingsTimer) {
+    clearInterval(autoscalerSettingsTimer)
+    autoscalerSettingsTimer = null
+  }
 })
 </script>
 
@@ -580,6 +692,8 @@ onMounted(() => {
               <col class="runpod-metric-col" />
               <col class="runpod-metric-col" />
               <col class="runpod-wait-col" />
+              <col class="runpod-clear-time-col" />
+              <col class="runpod-duration-col" />
               <col class="runpod-threshold-col" />
             </colgroup>
             <thead>
@@ -589,7 +703,9 @@ onMounted(() => {
                 <th>活跃数</th>
                 <th>排队数</th>
                 <th>最长等待</th>
-                <th>扩容阈值</th>
+                <th>预计清空</th>
+                <th>单任务耗时</th>
+                <th>清空阈值</th>
               </tr>
             </thead>
             <tbody v-if="runpodProfileRows.length > 0">
@@ -636,6 +752,33 @@ onMounted(() => {
                   </span>
                 </td>
                 <td>
+                  <div class="clear-time-cell">
+                    <span class="metric-value text-cyan-700">
+                      {{ clearTimeDisplayForProfile(item.profile) }}
+                    </span>
+                    <span
+                      v-if="decisionReasonForProfile(item.profile)"
+                      class="runpod-decision-reason"
+                      :title="decisionReasonForProfile(item.profile)"
+                    >
+                      {{ decisionReasonForProfile(item.profile) }}
+                    </span>
+                  </div>
+                </td>
+                <td>
+                  <div class="task-duration-cell">
+                    <a-input-number
+                      size="small"
+                      class="task-duration-input"
+                      :min="1"
+                      :max="3600"
+                      :value="durationDraftValue(item)"
+                      @update:value="value => setDurationDraft(item.profile, value)"
+                    />
+                    <span class="scale-threshold-unit">秒</span>
+                  </div>
+                </td>
+                <td>
                   <div class="scale-threshold-cell">
                     <a-input-number
                       size="small"
@@ -650,9 +793,9 @@ onMounted(() => {
                       type="text"
                       size="small"
                       class="scale-threshold-save"
-                      :disabled="!isThresholdDirty(item.profile) || !isThresholdValid(item.profile)"
-                      :loading="savingThresholdProfile === item.profile"
-                      @click="saveScaleUpThreshold(item.profile)"
+                      :disabled="!isRunPodSettingsDirty(item) || !isThresholdValid(item.profile) || !isDurationValid(item)"
+                      :loading="savingSettingsProfile === item.profile"
+                      @click="saveRunPodSettings(item)"
                     >
                       <template #icon><check-circle-outlined /></template>
                     </a-button>
@@ -662,7 +805,7 @@ onMounted(() => {
             </tbody>
             <tbody v-else>
               <tr>
-                <td colspan="6" class="empty-detail-cell">暂无 RunPod 统计</td>
+                <td colspan="8" class="empty-detail-cell">暂无 RunPod 统计</td>
               </tr>
             </tbody>
           </table>
@@ -1052,7 +1195,7 @@ onMounted(() => {
   min-width: 520px;
 }
 .runpod-profile-detail-table {
-  min-width: 760px;
+  min-width: 980px;
 }
 .task-type-col {
   width: 34%;
@@ -1064,19 +1207,25 @@ onMounted(() => {
   width: 26%;
 }
 .runpod-profile-col {
-  width: 30%;
+  width: 24%;
 }
 .runpod-server-col {
-  width: 15%;
+  width: 12%;
 }
 .runpod-metric-col {
-  width: 11%;
+  width: 8%;
 }
 .runpod-wait-col {
-  width: 15%;
+  width: 11%;
+}
+.runpod-clear-time-col {
+  width: 17%;
+}
+.runpod-duration-col {
+  width: 13%;
 }
 .runpod-threshold-col {
-  width: 18%;
+  width: 15%;
 }
 .active-task-detail-table th,
 .runpod-profile-detail-table th {
@@ -1156,6 +1305,31 @@ onMounted(() => {
 .metric-value {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-weight: 700;
+}
+.clear-time-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.runpod-decision-reason {
+  display: block;
+  color: #64748b;
+  font-size: 10px;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-duration-cell {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.task-duration-input {
+  width: 76px;
+  flex: 0 0 76px;
 }
 .scale-threshold-cell {
   display: flex;

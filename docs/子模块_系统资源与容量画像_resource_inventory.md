@@ -10,7 +10,7 @@
 最近一次云正式只读负载/数据巡检：2026-06-18 03:06，Asia/Shanghai。
 最近一次云测试控制面核对：2026-06-18 03:06，Asia/Shanghai。
 最近一次 gpu-252/worker05 LAN AIO 接管更新：2026-06-18，Asia/Shanghai。
-最近一次本地云正式 shadow 同步能力更新：2026-06-24，Asia/Shanghai。
+最近一次本地云正式 shadow 同步能力更新：2026-06-25，Asia/Shanghai。
 
 ## 2. 主服务器
 当前主服务器不再是正式公开控制面的主承载点。正式 Bot/Web/Payment/Central/Dashboard 已迁到云控制面；本机主要保留本地 GPU worker、ComfyUI 访问、legacy MinIO 数据、本地旧正式数据保留、云正式 shadow DB/MinIO 副本、测试/开发辅助容器和运维工具。
@@ -62,7 +62,7 @@
 - `$96/mo` Droplet 当前作为正式生产控制面；生产 Postgres、Valkey 与对象存储不在该 Droplet 上长期自托管。
 - 2026-06-16 原地扩容后，系统盘事实容量已从约 160GB 扩到约 320GB；后续缩容不能再按“保留 160GB 磁盘”的旧口径假设。
 - 公开媒体与新生成对象走 Cloudflare R2 `user-data-prod`；本地 MinIO 保留为 legacy 迁移补齐、人工回滚、旧外链排障与本地热数据保留，不再是正式 Web/Dashboard 运行时 fallback。
-- 本地主服务器可每日维护云正式 shadow 副本：PostgreSQL `bot_db_prod_shadow`、MinIO `user-data-prod-shadow` 与 `user-data-prod-shadow-quarantine/<timestamp>/`。该副本用于灾备预热和只读分析，不是云正式服务运行时 fallback，也不会自动接管本地正式写入口。
+- 本地主服务器可每日维护云正式 shadow 副本：PostgreSQL `bot_db_prod_shadow`、MinIO `user-data-prod-shadow` 与 `user-data-prod-shadow-quarantine/<timestamp>/`。数据库 dump 默认由 `allbot-do-sgp1-control` 在云机执行并经 R2 临时前缀 HTTPS 中转回本地，不依赖本地主公网/VPN 出口作为托管数据库 trusted source。该副本用于灾备预热和只读分析，不是云正式服务运行时 fallback，也不会自动接管本地正式写入口。
 - 本地 7 张 GPU 和 ComfyUI 不迁移；本地 `cloud-prod-comfy-agent-*` compose、LAN AIO、`remote_workers` 与手动 RunPod 都通过 Central worker 协议接入。当前可用容量必须以 `/system/workers` 为准。
 - 后续如继续增长，优先单独评估 Dashboard/后台任务拆分、PostgreSQL 规格或连接池预算；不要同时放大 Web worker 数和 DB 连接池。
 
@@ -235,7 +235,7 @@ ComfyUI 版本快照：
 ### PostgreSQL
 2026-06-18 03:06 生产数据库 `bot_db` 约 3444MB。生产库主要体积来自历史与日志表；迁移、归档或索引决策前必须重新采集。
 
-2026-06-24 起，本地主服务器新增云正式 shadow 同步能力：`scripts/sync_cloud_prod_to_local_shadow.py --execute` 会把云正式 PostgreSQL dump 恢复为本地 `bot_db_prod_shadow`，中间库为 `bot_db_prod_shadow_next`，旧版本保留为带时间戳的 `bot_db_prod_shadow_previous_<timestamp>`；dump、sha256 与 manifest 位于 ignored 的 `backups/cloud-prod-shadow/<timestamp>/`。该库可供灾备预热和后续只读分析；业务分析表、BI、Notebook、脱敏访问边界尚未定义，不应默认扩大访问权限。
+2026-06-25 起，本地主服务器云正式 shadow 同步的数据库获取路径正式切为 `CLOUD_PROD_DB_DUMP_MODE=remote_r2`：`scripts/sync_cloud_prod_to_local_shadow.py --execute` 通过 SSH 让 `allbot-do-sgp1-control` 在云机执行 PostgreSQL dump，临时上传 dump/sha256 到 R2 `user-data-prod/__shadow-transfer/<timestamp>`，本地主服务器经 HTTPS/rclone 下载校验后恢复为本地 `bot_db_prod_shadow`；中间库为 `bot_db_prod_shadow_next`，旧版本保留为带时间戳的 `bot_db_prod_shadow_previous_<timestamp>`；dump、sha256 与 manifest 位于 ignored 的 `backups/cloud-prod-shadow/<timestamp>/`。Redis/Valkey 摘要采集仍可通过 `CLOUD_PROD_DB_TUNNEL_SSH_HOST=allbot-do-sgp1-control` 经云正式控制面 SSH tunnel 访问托管服务；旧 `local_tunnel` dump 模式仅作为 fallback/专项诊断。该库可供灾备预热和后续只读分析；业务分析表、BI、Notebook、脱敏访问边界尚未定义，不应默认扩大访问权限。
 
 | 表 | 近似行数 | 总体积 |
 | :--- | ---: | ---: |

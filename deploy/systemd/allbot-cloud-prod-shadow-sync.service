@@ -1,6 +1,5 @@
 [Unit]
 Description=AllBot cloud production data sync to local shadow copies
-Documentation=file:__ALLBOT_ROOT__/docs/子模块_云正式控制面部署_cloud_prod_control_plane.md
 After=docker.service network-online.target
 Wants=network-online.target
 Requires=docker.service

@@ -168,6 +168,8 @@ def build_runpod_profile_queue_details(queue_type_details: dict) -> list[dict]:
         )
         active_count = 0
         pending_count = 0
+        active_count_by_task_type: dict[str, int] = {}
+        pending_count_by_task_type: dict[str, int] = {}
         max_pending_wait_seconds = None
         oldest_pending_task_id = None
         oldest_pending_created_at = None
@@ -175,8 +177,14 @@ def build_runpod_profile_queue_details(queue_type_details: dict) -> list[dict]:
 
         for task_type in supported_task_types:
             detail = queue_type_details.get(task_type) or {}
-            active_count += _safe_int(detail.get("active_count"))
-            pending_count += _safe_int(detail.get("pending_count"))
+            task_active_count = _safe_int(detail.get("active_count"))
+            task_pending_count = _safe_int(detail.get("pending_count"))
+            active_count += task_active_count
+            pending_count += task_pending_count
+            if task_active_count:
+                active_count_by_task_type[task_type] = task_active_count
+            if task_pending_count:
+                pending_count_by_task_type[task_type] = task_pending_count
             pending_wait_records.extend(detail.get("pending_wait_records") or [])
 
             wait_seconds = _safe_wait_seconds(
@@ -199,6 +207,8 @@ def build_runpod_profile_queue_details(queue_type_details: dict) -> list[dict]:
                 "supported_task_types": supported_task_types,
                 "active_count": active_count,
                 "pending_count": pending_count,
+                "active_count_by_task_type": active_count_by_task_type,
+                "pending_count_by_task_type": pending_count_by_task_type,
                 "max_pending_wait_seconds": max_pending_wait_seconds,
                 "oldest_pending_task_id": oldest_pending_task_id,
                 "oldest_pending_created_at": oldest_pending_created_at,

@@ -96,6 +96,8 @@ export function useQueueStatsMonitor() {
           : [],
         activeCount: Number(item.active_count || 0),
         pendingCount: Number(item.pending_count || 0),
+        activeCountByTaskType: item.active_count_by_task_type || {},
+        pendingCountByTaskType: item.pending_count_by_task_type || {},
         maxPendingWaitSeconds: Number.isFinite(maxPendingWaitSeconds)
           ? maxPendingWaitSeconds
           : null,

@@ -390,6 +390,15 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
         ],
         "active_count": 3,
         "pending_count": 5,
+        "active_count_by_task_type": {
+            "i2i_pro": 1,
+            "t2i-pornmaster-turbo": 1,
+            "face_swap": 1,
+        },
+        "pending_count_by_task_type": {
+            "t2i-pornmaster-turbo": 2,
+            "face_swap": 3,
+        },
         "max_pending_wait_seconds": 901,
         "oldest_pending_task_id": "pending-face-swap",
         "oldest_pending_created_at": 1782050000.0,

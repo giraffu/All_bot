@@ -3,7 +3,7 @@
 import { defineComponent, ref } from 'vue'
 import { flushPromises } from '@vue/test-utils'
 import { mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const queueStatsMocks = vi.hoisted(() => ({
   statusRef: null,
@@ -47,6 +47,8 @@ vi.mock('../composables/useQueueStatsMonitor', async () => {
             supportedTaskTypes: item.supported_task_types || [],
             activeCount: Number(item.active_count || 0),
             pendingCount: Number(item.pending_count || 0),
+            activeCountByTaskType: item.active_count_by_task_type || {},
+            pendingCountByTaskType: item.pending_count_by_task_type || {},
             maxPendingWaitSeconds: Number.isFinite(maxPendingWaitSeconds)
               ? maxPendingWaitSeconds
               : null,
@@ -109,7 +111,7 @@ const ButtonStub = defineComponent({
 
 const InputNumberStub = defineComponent({
   name: 'InputNumberStub',
-  props: ['value'],
+  props: ['value', 'size', 'min', 'max'],
   emits: ['update:value'],
   template: '<input type="number" :value="value" @input="$emit(\'update:value\', Number($event.target.value))" />',
 })
@@ -145,9 +147,11 @@ const TableColumnStub = defineComponent({
   template: '<div />',
 })
 
+const mountedWrappers = []
+
 const mountQueueStats = async () => {
   const QueueStats = (await import('./QueueStats.vue')).default
-  return mount(QueueStats, {
+  const wrapper = mount(QueueStats, {
     global: {
       stubs: {
         'a-button': ButtonStub,
@@ -169,6 +173,8 @@ const mountQueueStats = async () => {
       },
     },
   })
+  mountedWrappers.push(wrapper)
+  return wrapper
 }
 
 describe('QueueStats worker health display', () => {
@@ -199,7 +205,31 @@ describe('QueueStats worker health display', () => {
           scail2: 40 * 60,
           ltx_video: 30 * 60,
         },
+        task_duration_seconds_by_type: {
+          img2img: 13,
+          img2img_lora: 13,
+          image_to_video: 60,
+          wan22_video_v2: 60,
+          i2i_pro: 12,
+          't2i-pornmaster-turbo': 12,
+          face_swap: 12,
+          scail2_action_transfer: 300,
+          scail2_video_replacement: 300,
+          ltx_video: 120,
+          ltx_video_flf2v: 120,
+          ltx_video_v2v_audio: 120,
+          unknown: 100,
+        },
       },
+      decisions: [
+        {
+          profile: 'i2i_pro',
+          action: 'scale_up',
+          reason: 'scale_up: estimated clear time 1860s exceeds 1800s',
+          estimated_clear_time_seconds: 1860,
+          capacity_status: 'ok',
+        },
+      ],
     })
     apiMocks.updateRunPodAutoscalerSettings.mockResolvedValue({
       config: {
@@ -211,10 +241,22 @@ describe('QueueStats worker health display', () => {
           scail2: 40 * 60,
           ltx_video: 30 * 60,
         },
+        task_duration_seconds_by_type: {
+          img2img: 15,
+          img2img_lora: 15,
+        },
       },
+      decisions: [],
     })
     apiMocks.fetchRunPodOperations.mockResolvedValue({ operations: [] })
     vi.resetModules()
+  })
+
+  afterEach(() => {
+    for (const wrapper of mountedWrappers.splice(0)) {
+      wrapper.unmount()
+    }
+    vi.useRealTimers()
   })
 
   it('shows all-fault status and does not render unhealthy workers as idle', async () => {
@@ -448,6 +490,7 @@ describe('QueueStats worker health display', () => {
     ]
 
     const wrapper = await mountQueueStats()
+    await flushPromises()
     const i2iRow = wrapper
       .findAll('.runpod-profile-detail-table tbody tr')
       .find(row => row.text().includes('i2i_pro / txt2img / face_swap'))
@@ -456,6 +499,8 @@ describe('QueueStats worker health display', () => {
     expect(wrapper.text()).toContain('i2i_pro / txt2img / face_swap')
     expect(wrapper.text()).toContain('t2i-pornmaster-turbo')
     expect(wrapper.text()).toContain('15m 1s')
+    expect(wrapper.text()).toContain('31m 0s')
+    expect(wrapper.text()).toContain('scale_up: estimated clear time 1860s exceeds 1800s')
     expect(i2iRow?.exists()).toBe(true)
     expect(i2iRow?.text()).toContain('RunPod2')
     expect(i2iRow?.text()).toContain('本地2')
@@ -466,11 +511,13 @@ describe('QueueStats worker health display', () => {
       '活跃数',
       '排队数',
       '最长等待',
-      '扩容阈值',
+      '预计清空',
+      '单任务耗时',
+      '清空阈值',
     ])
   })
 
-  it('renders default runpod scale-up thresholds and saves profile updates', async () => {
+  it('renders default runpod clear-time settings and saves profile updates', async () => {
     queueStatsMocks.statusRef.value = {
       ...queueStatsMocks.statusRef.value,
       runpod_profile_queue_details: [
@@ -499,10 +546,13 @@ describe('QueueStats worker health display', () => {
     const img2imgRow = rows.find(row => row.text().includes('img2img / img2img_lora'))
     const scail2Row = rows.find(row => row.text().includes('scail2 / 视频生视频'))
 
-    expect(img2imgRow?.find('input').element.value).toBe('20')
-    expect(scail2Row?.find('input').element.value).toBe('40')
+    expect(img2imgRow?.find('.scale-threshold-input').element.value).toBe('20')
+    expect(img2imgRow?.find('.task-duration-input').element.value).toBe('13')
+    expect(scail2Row?.find('.scale-threshold-input').element.value).toBe('40')
+    expect(scail2Row?.find('.task-duration-input').element.value).toBe('300')
 
-    await img2imgRow?.find('input').setValue('25')
+    await img2imgRow?.find('.scale-threshold-input').setValue('25')
+    await img2imgRow?.find('.task-duration-input').setValue('15')
     await img2imgRow?.find('.scale-threshold-save').trigger('click')
     await flushPromises()
 
@@ -510,8 +560,89 @@ describe('QueueStats worker health display', () => {
       scale_up_wait_minutes_by_profile: {
         img2img: 25,
       },
-      reason: 'dashboard threshold update',
+      task_duration_seconds_by_type: {
+        img2img: 15,
+        img2img_lora: 15,
+      },
+      reason: 'dashboard clear-time settings update',
     })
+  })
+
+  it('refreshes autoscaler decisions without resetting draft settings', async () => {
+    vi.useFakeTimers()
+    queueStatsMocks.statusRef.value = {
+      ...queueStatsMocks.statusRef.value,
+      runpod_profile_queue_details: [
+        {
+          profile: 'img2img',
+          label: 'img2img / img2img_lora',
+          supported_task_types: ['img2img', 'img2img_lora'],
+          active_count: 106,
+          pending_count: 102,
+          max_pending_wait_seconds: 1149,
+        },
+      ],
+    }
+    apiMocks.fetchRunPodAutoscaler
+      .mockResolvedValueOnce({
+        config: {
+          scale_up_wait_seconds_by_profile: {
+            img2img: 20 * 60,
+          },
+          task_duration_seconds_by_type: {
+            img2img: 13,
+            img2img_lora: 13,
+          },
+        },
+        decisions: [
+          {
+            profile: 'img2img',
+            action: 'hold',
+            reason: 'hold: estimated clear time within threshold',
+            estimated_clear_time_seconds: 37,
+            capacity_status: 'ok',
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        config: {
+          scale_up_wait_seconds_by_profile: {
+            img2img: 20 * 60,
+          },
+          task_duration_seconds_by_type: {
+            img2img: 13,
+            img2img_lora: 13,
+          },
+        },
+        decisions: [
+          {
+            profile: 'img2img',
+            action: 'hold',
+            reason: 'hold: estimated clear time within threshold',
+            estimated_clear_time_seconds: 361,
+            capacity_status: 'ok',
+          },
+        ],
+      })
+
+    const wrapper = await mountQueueStats()
+    await flushPromises()
+    let row = wrapper
+      .findAll('.runpod-profile-detail-table tbody tr')
+      .find(item => item.text().includes('img2img / img2img_lora'))
+
+    expect(row?.text()).toContain('37s')
+    await row?.find('.scale-threshold-input').setValue('25')
+
+    await vi.advanceTimersByTimeAsync(10000)
+    await flushPromises()
+    row = wrapper
+      .findAll('.runpod-profile-detail-table tbody tr')
+      .find(item => item.text().includes('img2img / img2img_lora'))
+
+    expect(apiMocks.fetchRunPodAutoscaler).toHaveBeenCalledTimes(2)
+    expect(row?.text()).toContain('6m 1s')
+    expect(row?.find('.scale-threshold-input').element.value).toBe('25')
   })
 
   it('opens runpod create and delete operation logs from the profile card', async () => {
@@ -525,7 +656,7 @@ describe('QueueStats worker health display', () => {
           status: 'succeeded',
           requested_count: 1,
           created_at: '2026-06-24T01:00:00Z',
-          trigger_reason: 'pending wait 1900s exceeds 1200s',
+          trigger_reason: 'scale_up: estimated clear time 1300s exceeds 1200s',
           log_tail: ['runpod_create_pod_03: ok'],
         },
         {

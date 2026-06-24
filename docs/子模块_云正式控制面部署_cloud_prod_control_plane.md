@@ -70,8 +70,8 @@ RUNPOD_MODEL_MANIFEST_KEY=img2img_lora/2026-06-10/manifest.json
 | `RUNPOD_IMAGE_NAME_LTX_VIDEO` / `RUNPOD_USE_TEMPLATE_LTX_VIDEO` | 创建/render/canary 前必须显式配置，镜像须以 `ghcr.io/giraffu/allbot-comfy-runpod-ltx-video:` 开头 / `false` | 正式 `ltx_video` 高级图生视频 RunPod 创建、render 与 canary 所需镜像；删除已有 Pod 不依赖该创建镜像配置 |
 | `RUNPOD_MODEL_BUCKET` / `RUNPOD_MODEL_PREFIX` / `RUNPOD_MODEL_MANIFEST_KEY` | `allbot-model-cache` + profile-specific manifest | 手动正式 RunPod `img2img` 使用 `img2img_lora/2026-06-10/manifest.json`；`image_to_video` 使用 `image_to_video/2026-06-13-test/manifest.json`；`wan22_video_v2` 使用 `wan22_video_v2/2026-06-13-test/manifest.json`；`i2i_pro` 使用 `i2i_pro/2026-06-14-test/manifest.json`；`scail2` 使用 `scail2/2026-06-17-test/manifest.json`；`ltx_video` 使用 `ltx_video/2026-06-10/manifest.json` |
 | `RUNPOD_MODEL_ACCESS_KEY_REF` / `RUNPOD_MODEL_SECRET_KEY_REF` | `{{ RUNPOD_SECRET_allbot_model_cache_r2_access_key }}` / `{{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}` | RunPod Pod 同步 `allbot-model-cache` 的 secret 引用，可与云测试共用模型缓存 secret |
-| `DASHBOARD_RUNPOD_AUTOSCALER_ENABLED` / `DASHBOARD_RUNPOD_AUTOSCALER_MODE` | 云正式 Dashboard Backend compose 默认 `true` / `execute`，可由 `.env.cloud.prod` 覆盖 | 启用 Dashboard 后端 RunPod 自动管理；后台按队列等待阈值、低优先级 outlier 抑制和连续确认调用现有 `add` / `down` operation，不直接操作本地 worker |
-| `DASHBOARD_RUNPOD_AUTOSCALER_*` 阈值 | 默认扩容等待按 profile：`img2img=20m`、`scail2=40m`、其它正式 profile `30m`；扩容确认 `3` 轮；缩容等待 `60s`、冷却 `600s`、每 profile 最多 `5` 台 RunPod、heartbeat 新鲜度 `300s` | 自动管理安全边界；只统计健康 enabled 可接单 worker，缩容保底为 RunPod + 本地可接单总容量至少 1；Dashboard 表格保存的 profile 级扩容阈值会写入 Redis 并在下一轮评估生效 |
+| `DASHBOARD_RUNPOD_AUTOSCALER_ENABLED` / `DASHBOARD_RUNPOD_AUTOSCALER_MODE` | 云正式 Dashboard Backend compose 默认 `true` / `execute`，可由 `.env.cloud.prod` 覆盖 | 启用 Dashboard 后端 RunPod 自动管理；后台按预计清空时间阈值调用现有 `add` / `down` operation，不直接操作本地 worker |
+| `DASHBOARD_RUNPOD_AUTOSCALER_*` 阈值 | 默认清空阈值按 profile：`img2img=20m`、`scail2=40m`、其它正式 profile `30m`；缩容等待 `60s`、冷却 `600s`、每 profile 最多 `5` 台 RunPod、heartbeat 新鲜度 `300s`、autoscaler RunPod 最短生命周期 `1800s` | 自动管理安全边界；只统计健康 enabled 可接单 worker，缩容只在 `pending_count == 0` 时考虑，保底为 RunPod + 本地可接单总容量至少 1；Dashboard 表格保存的 profile 级清空阈值和 task duration 会写入 Redis 并在下一轮评估生效 |
 | `GITHUB_TOKEN` / `GHCR_TOKEN` / `all-github-token` | `.env.cloud.prod` 可保存真实值作为人工密钥来源 | 只用于本机 `docker login ghcr.io`、GHCR push 或 GitHub package 管理；不属于云正式服务容器运行时变量，不进入 RunPod Pod env |
 
 `.env.cloud.prod` 不应保存 Cloudflare `cfat_...` API token，也不应把真实 R2 key、GitHub/GHCR token 写入知识库、日志或 `docker compose config` 输出。当前环境文件中出现的 `all-github-token` 带中划线，不能被 `source .env.cloud.prod` 导出为 shell 变量；需要推 GHCR 时应临时映射到 `GHCR_TOKEN` 或 `GITHUB_TOKEN` 后执行 `docker login ghcr.io`，并在 push 后用空 `DOCKER_CONFIG` 匿名验证 package public。正式 RunPod `prod-worker` 代码入口已支持 `--profile img2img`、`--profile image_to_video`、`--profile wan22_video_v2`、`--profile i2i_pro`、`--profile scail2` 与 `--profile ltx_video` 六条手动备用路径；真实创建、启用或 canary 生产任务仍必须由用户明确确认并满足 RunPod 门禁。
@@ -290,15 +290,21 @@ curl -fsS http://100.107.220.127:8086/api/health
 Dashboard RunPod 管理入口当前支持 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、
 `scail2 / 视频生视频` 与 `ltx_video / 高级图生视频`；它只提交正式 RunPod 池新增/暂停/删除操作，不直接启停其它正式服务。
 Dashboard 后端 RunPod autoscaler 默认随正式 `dashboard-backend-prod` 启动，只有拿到 Redis leader
-lease 后才会自动执行：有排队、最长等待超过该 profile 扩容阈值、不是单个低优先级超时 outlier，
-并且连续 3 轮成立时才提交 `add --count 1 --retry-unavailable`；无排队或等待低于 1 分钟且
-RunPod + 本地健康 enabled 可接单总容量大于 1 时，删除最高 slot 的 idle RunPod。
+lease 后才会自动执行：有排队且预计清空时间超过该 profile 清空阈值时，提交至多一次
+`add --count 1 --retry-unavailable`；有 backlog 但没有健康 enabled 可接单 worker 时也允许扩容。
+预计清空时间按 `pending_work_seconds + running_remaining_seconds` 除以 RunPod + 本地可接单 worker 数估算；
+静态单任务耗时默认 `img2img/img2img_lora=13s`、`image_to_video/wan22_video_v2=60s`、
+`i2i_pro/t2i-pornmaster-turbo/face_swap=12s`、`scail2_action_transfer/scail2_video_replacement=300s`、
+`ltx_video/ltx_video_flf2v/ltx_video_v2v_audio=120s`、unknown `100s`。缩容只在 `pending_count == 0` 且
+RunPod + 本地健康 enabled 可接单总容量大于 1 时，删除最高 slot 的 idle RunPod；autoscaler 创建的
+RunPod 未满 `DASHBOARD_RUNPOD_AUTOSCALER_MIN_RUNPOD_LIFETIME_SECONDS`（默认 1800）不会被缩容。
 本地 worker 只参与保底，不会被 autoscaler 启停；管理弹窗可通过
-`/api/runpod/autoscaler/control` 紧急暂停。默认扩容阈值为 `img2img=20 分钟`、`scail2=40 分钟`、
-其它正式 profile `30 分钟`；系统监控页“活跃 RunPod 详情”的“扩容阈值”列通过
-`/api/runpod/autoscaler/settings` 保存 profile 级分钟数到 Redis，下一轮 autoscaler 评估立即使用。
-Dashboard 决策会展示 `hold: single low-priority wait outlier`、`hold: scale-up signal confirming N/3`
-这类原因，便于区分真实容量不足和单个低优先级任务长期等待。
+`/api/runpod/autoscaler/control` 紧急暂停。默认清空阈值为 `img2img=20 分钟`、`scail2=40 分钟`、
+其它正式 profile `30 分钟`；系统监控页“活跃 RunPod 详情”的“清空阈值/单任务耗时”通过
+`/api/runpod/autoscaler/settings` 保存 profile 级分钟数与 `task_duration_seconds_by_type` 到 Redis，
+下一轮 autoscaler 评估立即使用。Dashboard 决策会展示 `scale_up: estimated clear time ... exceeds ...`、
+`hold: estimated clear time within threshold`、`hold: no backlog`、`hold: max runpod capacity reached`、
+`hold: minimum lifetime remaining Ns` 这类原因，便于区分真实容量不足、无排队和生命周期保护。
 
 QQCC 懒人 Bot 单独更新时使用专用脚本：
 
@@ -578,14 +584,16 @@ scripts/install_cloud_prod_shadow_sync_timer.sh --execute
 
 运行口径：
 - 主脚本默认 dry-run；真实同步必须显式 `--execute`。
-- 数据库使用 Docker 工具容器 `postgres:15` 执行云端 `pg_dump -Fc --serializable-deferrable`，dump 写入 ignored 的 `backups/cloud-prod-shadow/<timestamp>/`，恢复到 `bot_db_prod_shadow_next` 并完成 Alembic/head 与关键表行数校验后，再把 `_next` 切成当前 `bot_db_prod_shadow`。
+- 数据库默认使用 `CLOUD_PROD_DB_DUMP_MODE=remote_r2`：脚本通过 SSH 让 `allbot-do-sgp1-control` 在云机读取 `.env.cloud.prod`，用 Docker 工具容器 `postgres:18`（可由 `SHADOW_SYNC_POSTGRES_IMAGE` 覆盖）执行 `pg_dump -Fc --serializable-deferrable`，把 dump/sha256 上传到 R2 临时前缀 `user-data-prod/__shadow-transfer/<timestamp>`，本地主服务器再经 HTTPS/rclone 下载到 ignored 的 `backups/cloud-prod-shadow/<timestamp>/`，校验 sha256 后恢复到 PostgreSQL 18 shadow 目标库 `bot_db_prod_shadow_next`，完成 Alembic/head 与关键表行数校验后，再把 `_next` 切成当前 `bot_db_prod_shadow`。云机临时目录和 R2 临时前缀在下载后清理。
+- 本地主服务器家宽/VPN 出口不应作为长期托管服务 trusted source；`remote_r2` 模式不需要把本地主公网 IP 加到托管 PostgreSQL trusted sources。旧 `CLOUD_PROD_DB_DUMP_MODE=local_tunnel` 仅作为 fallback/专项诊断；`.env.cloud-prod-shadow-sync.local` 可保留 `CLOUD_PROD_DB_TUNNEL_SSH_HOST=allbot-do-sgp1-control`，用于 Redis/Valkey 摘要采集或 fallback 时短生命周期 `local -> cloud control -> managed service` SSH 本地转发。`CLOUD_PROD_DB_TUNNEL_LOCAL_PORT=0` 表示自动选择空闲本地端口。
+- 本地到 R2 的 dump 下载可按网络情况设置 `R2_SYNC_HTTP_PROXY` / `R2_SYNC_HTTPS_PROXY`，同时用 `R2_SYNC_NO_PROXY` 保留 `127.0.0.1,localhost,192.168.1.115` 等本地 MinIO/LAN 地址直连。
 - 对象同步使用 `rclone/rclone` 工具容器，把 R2 `user-data-prod` 增量同步到本地 MinIO `user-data-prod-shadow`；云端删除或覆盖导致的旧本地对象进入 `user-data-prod-shadow-quarantine/<timestamp>/`，不硬删。
 - Redis/Valkey 只记录 `INFO memory` / `DBSIZE` 摘要，不恢复运行态、队列、锁或 heartbeat。
 - systemd timer 为 `allbot-cloud-prod-shadow-sync.timer`，默认每日 Asia/Shanghai 05:00，`Persistent=true`，`RandomizedDelaySec=15m`。
 
 安全边界：
 - `.env.cloud-prod-shadow-sync.local` 只放在本地主服务器并保持 ignored；不得把 DB 密码、R2 key、Bot token、presigned URL、`.env.cloud.prod` 内容写入日志、manifest、文档或聊天。
-- 目标库禁止使用本地正式 `bot_db` 或云正式 `bot_db_prod`；脚本还会拒绝源/目标 DB host 相同、R2 目标指回云端、R2 bucket 与本地 shadow bucket 同名。
+- 目标库禁止使用本地正式 `bot_db` 或云正式 `bot_db_prod`；脚本还会拒绝源/目标 DB host 相同、R2 目标指回云端、R2 bucket 与本地 shadow bucket 同名。`remote_r2` / SSH tunnel 只改变 PostgreSQL/Redis 读取与传输路径，不改变 shadow 数据库和本地对象桶目标。
 - 本地服务不会自动切到 `bot_db_prod_shadow`；云正式整体故障时仍按本地灾备文档人工确认、停同步 timer、核对 manifest/RPO 后再切写入口。
 - 本轮不建设业务分析表、数据 mart、BI 或 Notebook；涉及完整提示词、用户明细等敏感数据时，后续分析方案必须单独定义访问边界。
 

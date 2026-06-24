@@ -55,6 +55,7 @@ async def control_runpod_autoscaler(req: RunPodAutoscalerControlRequest):
 async def update_runpod_autoscaler_settings(req: RunPodAutoscalerSettingsRequest):
     return await set_runpod_autoscaler_settings_payload(
         scale_up_wait_minutes_by_profile=req.scale_up_wait_minutes_by_profile,
+        task_duration_seconds_by_type=req.task_duration_seconds_by_type,
         reason=req.reason,
     )
 
