@@ -50,7 +50,7 @@
 - `.env.cloud.prod` 是本机私有文件，已被 `.gitignore` 忽略；`.env.cloud.prod.example` 只提供变量契约和占位值。`.dockerignore` 必须忽略 `.env.*`，避免 root Docker build 把真实云正式变量 COPY 进镜像。
 - 云正式 Web API 需要 `JWT_SECRET_KEY`，且不能使用默认占位值；该 key 已纳入 `.env.cloud.prod.example` 和 `scripts/safe_deploy_cloud_prod.sh` preflight 必填检查。
 - 云测试环境退役入口为 `scripts/cleanup_cloud_test_for_prod.sh`。脚本默认 dry-run，真实清理必须传 `--execute`；它不得删除 R2 `user-data-test`，不得误改正式服务或 `web.aivison.it.com`。
-- 云正式控制面包含 Central API、Web API、Payment API、Dashboard Backend、Dashboard Frontend、imgproxy、正式 Bot 和可选 QQCC 懒人 Bot；`cloud-tg-bot-prod` 使用 `bot` profile，`cloud-qqcc-bot-prod` 使用 `qqcc-bot` profile，重建前必须确认对应 token 全网只有一个生产 polling 实例。
+- 云正式控制面包含 Central API、Web API、Payment API、Dashboard Backend、Dashboard Frontend、imgproxy、正式 Bot 和可选 QQCC 懒人 Bot；`cloud-tg-bot-prod` 使用 `bot` profile，`cloud-qqcc-bot-prod` 使用 `qqcc-bot` profile，重建前必须确认对应 token 全网只有一个生产 polling 实例。只单独更新正式 QQCC Bot 时使用 `scripts/update_cloud_prod_qqcc_bot.sh --execute --confirm-prod --confirm-single-polling`，该路径不重建其它正式服务。
 - 云正式本地 worker compose 声明 `cloud-prod-worker-relay` 与 `cloud-prod-comfy-agent-1..7`；线上实际容量还可能包含 LAN AIO agent、`remote_workers` 与手动 RunPod worker。启动或重建后必须在云 Central `/system/workers` 验证当次目标 worker 集合的 heartbeat、control state 与任务类型，状态不能是 `error` 或 `quarantined`；不要把固定 7 个 heartbeat 当成所有场景的唯一验收标准。
 - 云正式 R2 在线口径为 `user-data-prod` 单桶，`MINIO_*` 兼容变量和 `R2_*` 都指向正式 R2；`MINIO_PUBLIC_URL` 保持空，结果公开读取依赖 `R2_PUBLIC_DOMAIN=https://r2.aivison.it.com`。
 - 正式 Web API / Dashboard 运行时不再通过 `LEGACY_MINIO_*` 回源本地 MinIO；云正式 compose 对 Web/Dashboard 应设置 `LEGACY_MINIO_READ_FALLBACK_ENABLED=false` 并清空 legacy endpoint/key/public URL。R2 miss 后只允许当前 R2/S3 短签、空值或 `pending_result`，worker 仍只写 R2，不得把 legacy MinIO 配进 worker 写路径。

@@ -11,6 +11,7 @@ description: "处理 QQCC 懒人 Telegram Bot 独立服务、简化菜单、quic
 - 代码入口：`qqcc_bot/main.py`
 - 正式 service：`qqcc-bot-prod` / `cloud-qqcc-bot-prod` / profile `qqcc-bot`
 - 测试 service：`qqcc-bot-test` / `cloud-qqcc-bot-test` / profile `qqcc-bot`
+- 正式单独更新脚本：`scripts/update_cloud_prod_qqcc_bot.sh`
 - 领域文档：`docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md`
 
 ## 2. 功能范围
@@ -46,7 +47,7 @@ token 只允许放在 ignored env 文件：
 
 不得把真实 token 写入仓库、docs、日志、工单或聊天记录。QQCC Bot 不启动 TON 轮询，不注册支付回调，不作为充值入口。测试环境没有独立 token 时，`qqcc-bot-test` 必须保持停止。
 
-正式启动或重建前必须用户明确确认，并确认全网没有第二个 `@QQCC666_bot` polling 实例。
+正式启动或重建前必须用户明确确认，并确认全网没有第二个 `@QQCC666_bot` polling 实例。只单独更新正式 QQCC Bot 时优先使用 `scripts/update_cloud_prod_qqcc_bot.sh`；真实执行必须传 `--execute --confirm-prod --confirm-single-polling`，该路径只 build/up `qqcc-bot-prod`，不重建其它正式服务。
 
 ## 5. 验证要求
 至少覆盖：

@@ -231,6 +231,7 @@ scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod --with-db
 - `--scope control-plane`：默认，使用 `scripts/safe_deploy_cloud_prod.sh --start-control-plane` 更新 Central/Web/Payment/Dashboard/imgproxy。
 - `--scope services --services "web-api-prod dashboard-backend-prod"`：只重建指定云端服务；禁止把 `bot-prod` 放入 `--services`。
 - `--qqcc-bot-mode start|stop|auto|skip`：默认 `skip`。`start` 会重建并启动 `qqcc-bot-prod`，要求远端 `.env.cloud.prod` 已配置 `QQCC_BOT_TOKEN`；`auto` 只在 `cloud-qqcc-bot-prod` 原本运行时重建并启动。
+- `scripts/update_cloud_prod_qqcc_bot.sh`：只更新正式 QQCC Bot 的专用窄入口，默认 dry-run，真实执行必须传 `--execute --confirm-prod --confirm-single-polling`。
 - `--skip-generation-maintenance`：仅支持 `--scope services`，跳过生成维护和队列 drain。用于不影响生成入口的低风险服务更新，例如只更新 `dashboard-backend-prod dashboard-frontend-prod paid-group-guard-bot-prod`。
 - `--with-db-upgrade`：随 `--scope control-plane` 显式执行 Alembic upgrade head；有迁移时必须走控制面发布并传该参数。
 - `--sync-env --env-file FILE`：显式同步正式 env；默认不动远端 `.env.cloud.prod`。
@@ -294,6 +295,16 @@ lease 后才会自动执行：有排队且最长等待超过该 profile 扩容�
 `/api/runpod/autoscaler/control` 紧急暂停。默认扩容阈值为 `img2img=20 分钟`、`scail2=40 分钟`、
 其它正式 profile `30 分钟`；系统监控页“活跃 RunPod 详情”的“扩容阈值”列通过
 `/api/runpod/autoscaler/settings` 保存 profile 级分钟数到 Redis，下一轮 autoscaler 评估立即使用。
+
+QQCC 懒人 Bot 单独更新时使用专用脚本：
+
+```bash
+cd /home/hfy/APP/All_bot
+scripts/update_cloud_prod_qqcc_bot.sh
+scripts/update_cloud_prod_qqcc_bot.sh --execute --confirm-prod --confirm-single-polling
+```
+
+该路径只触碰 `qqcc-bot-prod` / `cloud-qqcc-bot-prod`：默认 dry-run，真实执行前必须确认全网没有第二个 `@QQCC666_bot` polling 实例；脚本同步代码、可选同步 `.env.cloud.prod`、执行只读 preflight、按 `qqcc-bot` profile build/up `qqcc-bot-prod`，并检查容器 running、非敏感 env 合同与近 3 分钟错误日志。它不写 `GENERATION_MAINTENANCE`、不等待或清理 Central 队列、不重建 Central/Web/Payment/Dashboard/主 Bot/Worker/RunPod，也不操作 Cloudflare Pages/DNS/边缘路由。
 
 付费群审核 Bot 与 Dashboard 管理页单独上线时，只触碰三个服务：
 

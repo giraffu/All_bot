@@ -21,6 +21,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 ## 1. 当前运维口径
 - **测试优先部署**：功能研发、联调、修复与配置调整默认先更新云测试控制面，优先使用 `scripts/update_cloud_test_with_maintenance.sh --execute`；它会让测试 Web/Bot 进入生成维护、按 `CLOUD_TEST_WORKER_REDIS_URL` 指向的 Central Redis DB 等待 pending/running 队列清空、同步代码、单独备份并同步 `.env.cloud.test`、远端执行 `scripts/safe_deploy_cloud_test.sh`、按需重建测试 Bot，并默认发布边缘测试 Web。只有用户明确要求正式发布、上线或交付验证时，才允许进入云正式部署。
 - **标准部署入口**：云测试完整更新使用 `scripts/update_cloud_test_with_maintenance.sh`，云测试远端控制面重建子步骤使用 `scripts/safe_deploy_cloud_test.sh`；云正式完整控制面更新优先使用更保守的 `scripts/update_cloud_prod_with_maintenance.sh`，默认 dry-run，真实执行必须同时传 `--execute --confirm-prod`，远端控制面重建子步骤仍由 `scripts/safe_deploy_cloud_prod.sh` 完成；本地 `safe_deploy.sh` 只用于云正式整体故障时的本地正式灾备。
+- **QQCC 正式单服务更新**：只更新正式 QQCC 懒人 Bot 时优先用 `scripts/update_cloud_prod_qqcc_bot.sh`，默认 dry-run，真实执行必须 `--execute --confirm-prod --confirm-single-polling`。该脚本只同步代码、可选同步 env、执行只读 preflight、按 `qqcc-bot` profile build/up `qqcc-bot-prod` 并验证 `cloud-qqcc-bot-prod`，不写生成维护、不等待队列、不重建 Central/Web/Payment/Dashboard/主 Bot/Worker/RunPod/Cloudflare。
 - **云测试控制面**：`allbot-do-sgp1-test-control` 使用 `deploy/docker-compose-cloud-test.yml`，同机运行测试 Postgres、Redis、Central API、Web API、Dashboard Backend/Frontend、imgproxy 与测试 Bot；本地主服务器 cloud-test worker 经 Tailscale 访问云测试 Central，对象存储为 R2 `user-data-test`。默认常驻只保留 test-1 与 test-8；test-2..7 复用正式 LAN AIO runtime，已加 compose profile，默认停止且 control `disabled`，只允许在 smoke/canary 窗口按需启用，并保持 prefetch/pipeline 关闭和单 worker 并发 1，避免抢占正式生成容量。
 - **云正式控制面**：正式生产运行在 `allbot-do-sgp1-control`，使用 `.env.cloud.prod`、`deploy/docker-compose-cloud-prod.yml`、`workers/docker-compose-cloud-prod-worker.yml`、`scripts/update_cloud_prod_with_maintenance.sh`、`scripts/safe_deploy_cloud_prod.sh` 与 `scripts/start_cloud_prod_worker.sh`。云端运行 Central/Web/Payment/Dashboard/imgproxy/TG Bot；本地主服务器 compose 声明 `cloud-prod-worker-relay` 与 `cloud-prod-comfy-agent-1..7`，但线上实际容量还可能包含 LAN AIO agent、`remote_workers` 与手动 RunPod。容量判断必须以 Central `/system/workers` 的当次快照和运维目标为准，不能写死为 7 个本地 worker。
 - **生产 Bot 安全**：重建或启动 `cloud-tg-bot-prod` 前，必须确认全网没有第二个同 token Telegram polling 实例。QQCC 懒人 Bot 使用独立 `QQCC_BOT_TOKEN` 与 profile `qqcc-bot`，启动 `cloud-qqcc-bot-prod` 前也必须确认全网没有第二个 `@QQCC666_bot` polling 实例。独立付费群审核 Bot 必须使用 `PAID_GROUP_BOT_TOKEN`，只订阅目标群 `chat_join_request` 与普通 `message` update，不得复用主业务 `BOT_TOKEN`。
@@ -74,7 +75,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 - 云测试退役脚本 `scripts/cleanup_cloud_test_for_prod.sh` 默认 dry-run；不得删除 R2 `user-data-test` 或误改正式入口。
 
 ## 3. 生产单服务重建
-用户明确要求只重建某个正式服务时，先确认 service 存在，再按目标服务最小范围处理；优先用 `scripts/update_cloud_prod_with_maintenance.sh --scope services --services "..."` 走维护、排队等待、同步、验证和失败保持维护的保守流程，只有紧急抢修或脚本不适用时才手工执行 compose 单服务命令。若包含 Alembic 迁移，不走单服务 scope，改用 `--scope control-plane --with-db-upgrade`。
+用户明确要求只重建某个正式服务时，先确认 service 存在，再按目标服务最小范围处理；优先用 `scripts/update_cloud_prod_with_maintenance.sh --scope services --services "..."` 走维护、排队等待、同步、验证和失败保持维护的保守流程，只有紧急抢修或脚本不适用时才手工执行 compose 单服务命令。若目标是 QQCC 正式 Bot，优先使用 `scripts/update_cloud_prod_qqcc_bot.sh` 的专用单服务入口。若包含 Alembic 迁移，不走单服务 scope，改用 `--scope control-plane --with-db-upgrade`。
 
 本地主服务器旧版 `docker-compose 1.29.2` 可能在 recreate 时触发 `KeyError: 'ContainerConfig'`。恢复时只删除目标 service 的容器和同 service label 残留，再 `up -d --no-deps`；禁止 `--remove-orphans`。
 

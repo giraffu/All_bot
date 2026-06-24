@@ -79,7 +79,16 @@ scripts/update_cloud_test_with_maintenance.sh --execute
 
 默认 `--qqcc-bot-mode auto`，只在 `qqcc-bot-test` 原本运行且远端 env 配置了 `QQCC_BOT_TOKEN_TEST` 时重建启动。
 
-云正式更新仍默认不碰 QQCC Bot；真实启动或重建必须显式传：
+只更新云正式 QQCC Bot 时，优先使用专用窄入口：
+
+```bash
+scripts/update_cloud_prod_qqcc_bot.sh
+scripts/update_cloud_prod_qqcc_bot.sh --execute --confirm-prod --confirm-single-polling
+```
+
+该脚本默认 dry-run；真实执行必须确认正式环境和全网单 polling。它只同步代码、按需同步 env、执行只读 preflight、重建并启动 `qqcc-bot-prod`，然后验证 `cloud-qqcc-bot-prod` 状态；不写生成维护标记、不等待队列 drain、不重建 Central/Web/Payment/Dashboard/主 Bot/Worker/RunPod、不操作 Cloudflare Pages/DNS/边缘路由。
+
+完整云正式控制面更新仍默认不碰 QQCC Bot；若需要随控制面一起重建 QQCC Bot，必须显式传：
 
 ```bash
 scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod --qqcc-bot-mode start
@@ -94,7 +103,9 @@ scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod --qqcc-bo
 pytest tests/qqcc_bot/test_qqcc_bot_entrypoint.py \
   tests/services/test_task_service_flow.py \
   tests/services/test_recovery_service.py -q
-bash -n scripts/update_cloud_test_with_maintenance.sh scripts/update_cloud_prod_with_maintenance.sh
+bash -n scripts/update_cloud_test_with_maintenance.sh \
+  scripts/update_cloud_prod_with_maintenance.sh \
+  scripts/update_cloud_prod_qqcc_bot.sh
 ```
 
 涉及任务 registry 或 core 提交流程时，补跑：

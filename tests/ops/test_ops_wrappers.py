@@ -30,6 +30,44 @@ def test_runpod_prod_ops_shell_syntax():
     assert result.returncode == 0, result.stderr
 
 
+def test_cloud_prod_qqcc_update_shell_syntax():
+    result = run_script("bash", "-n", "scripts/update_cloud_prod_qqcc_bot.sh")
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_cloud_prod_qqcc_update_dry_run_is_single_service():
+    result = run_script(
+        "bash",
+        "scripts/update_cloud_prod_qqcc_bot.sh",
+        "--skip-sync",
+        "--skip-safe-preflight",
+    )
+
+    assert result.returncode == 0, result.stderr
+    output = result.stdout
+    assert "QQCC single-service cloud-prod update" in output
+    assert "No generation maintenance, queue drain, control-plane deploy" in output
+    assert "--profile qqcc-bot build qqcc-bot-prod" in output
+    assert "--profile qqcc-bot up -d --no-deps qqcc-bot-prod" in output
+    assert "cloud-tg-bot-prod" not in output
+    assert "--start-control-plane" not in output
+
+
+def test_cloud_prod_qqcc_update_execute_requires_single_polling_confirmation():
+    result = run_script(
+        "bash",
+        "scripts/update_cloud_prod_qqcc_bot.sh",
+        "--execute",
+        "--confirm-prod",
+        "--skip-sync",
+        "--skip-safe-preflight",
+    )
+
+    assert result.returncode == 2
+    assert "--confirm-single-polling" in result.stderr
+
+
 def test_lan_aio_enable_dry_run_shows_safe_order():
     result = run_script("bash", "scripts/lan_aio_prod_ops.sh", "enable-aio", "--dry-run")
 
