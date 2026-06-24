@@ -7,7 +7,7 @@
 
 触发前必须确认：
 - 云正式 Web API、Central API、Payment API 或 Bot 已经无法满足生产入口。
-- 已决定接受本地灾备的 RPO/RTO 风险：本地 PostgreSQL/Redis 不是云正式库的实时同步副本。
+- 已决定接受本地灾备的 RPO/RTO 风险：本地 `bot_db_prod_shadow` 与 MinIO `user-data-prod-shadow` 是每日 shadow 副本，不是实时同步；Redis/Valkey 只保留摘要，不恢复运行态。
 - 有权限切换 Cloudflare Tunnel、Pages/DNS 或边缘 Nginx。
 - 可以保证生产 Telegram Bot token 全网只有一个 polling 实例。
 
@@ -16,8 +16,8 @@
 | 层级 | 当前正式 | 本地灾备 |
 | :--- | :--- | :--- |
 | Bot/Web/Payment/Central/Dashboard | 云 Droplet `allbot-do-sgp1-control` | 本地主服务器旧正式 compose |
-| 数据库/缓存 | 云正式 PostgreSQL/Valkey | 本地 `.env` 指向的 PostgreSQL/Redis；必要时先从云备份恢复 |
-| 新对象存储 | R2 `user-data-prod` | 仍优先保持 R2；本地 MinIO 只做旧外链、人工回滚和迁移补漏 |
+| 数据库/缓存 | 云正式 PostgreSQL/Valkey | 优先以本地 `bot_db_prod_shadow` 作为最近云正式快照基线；Redis/Valkey 运行态不恢复，只按本地灾备 Redis 重新启动 |
+| 新对象存储 | R2 `user-data-prod` | 优先保持 R2；本地 MinIO `user-data-prod-shadow` 是每日同步副本，`user-data-prod-shadow-quarantine/*` 保存云端覆盖/删除导致的旧对象 |
 | GPU worker | 本地 `cloud-prod-comfy-agent-*` 接云 Central | 本地旧 `comfy-agent-*` 接本地 Central |
 | Web 静态站 | Cloudflare Pages `web.aivison.it.com` | 优先保留 Pages；把 API base/origin 切到本地 Web API，或临时回滚到边缘 VPS `/root/dist` |
 | Web API 入口 | `api.aivison.it.com` Tunnel -> 云 Web API | Tunnel/边缘回源 -> 本地 `127.0.0.1:8000` 或本地主机 Tailscale IP |
@@ -58,7 +58,22 @@ set +a
 
 旧本地正式 compose 仍保留若干历史硬编码默认值和占位值，尤其是 `backend/docker-compose.yml`、`dashboard/docker-compose.yml` 与 `workers/docker-compose.yml`。因此灾备切换前不能只看 `.env` 文件是否正确，还必须本机核对 compose 渲染和容器内实际环境变量，确认 Central API、Dashboard、worker 的 `AUTH_TOKEN`/`AGENT_SECRET_TOKEN`、数据库、Redis、对象存储桶和 `BOT_TYPE=PROD` 均为正式口径。`docker compose config` 和 `docker exec <container> env` 输出可能包含密钥，只能在本机查看，不得贴到聊天、日志或文档。
 
-计划内切换时，优先从云正式 PostgreSQL 做最终 dump 并恢复到本地 `bot_db`，再启动本地写入口。云端完全不可用时，只能使用本地现有数据快照，后续必须对订单、余额、任务历史和用户写入做人工对账。
+本地主服务器每日 shadow 同步入口为 `scripts/sync_cloud_prod_to_local_shadow.py`，systemd timer 为 `allbot-cloud-prod-shadow-sync.timer`。灾备前必须先停止 timer，避免本地写入口启用后又被下一次 shadow 覆盖：
+
+```bash
+systemctl stop allbot-cloud-prod-shadow-sync.timer
+systemctl status allbot-cloud-prod-shadow-sync.timer --no-pager
+```
+
+若云端仍可读且时间允许，先手工跑一次最终 shadow 同步；脚本默认 dry-run，真实执行必须显式 `--execute`：
+
+```bash
+cd /home/hfy/APP/All_bot
+scripts/sync_cloud_prod_to_local_shadow.py
+scripts/sync_cloud_prod_to_local_shadow.py --execute
+```
+
+云端完全不可用时，优先核对最近一次 `backups/cloud-prod-shadow/<timestamp>/manifest.json`、`bot_db_prod_shadow` 可连接性、Alembic 版本和关键表行数，再决定是否把 `bot_db_prod_shadow` 作为本地灾备写入基线。旧本地 compose 如果仍硬编码或默认指向 `bot_db`，必须先备份现有 `bot_db`，再由人工明确把 `bot_db_prod_shadow` 复制/提升为本地写库；不要在未备份的情况下直接覆盖本地正式库。后续必须对订单、余额、任务历史和用户写入做人工对账。
 
 ### 3.3 停止会抢资源的本地 cloud worker
 若本地旧正式 worker 将接管本地 Central，先停云正式 worker，释放 GPU 容量：
@@ -167,6 +182,7 @@ curl -fsS https://rmb.aivison.it.com/pay/result
 - RMB 支付结果页可打开，回调日志无高频失败。
 - Dashboard 能登录并刷新系统状态。
 - `tg-bot` 与 `cloud-tg-bot-prod` 不得同时运行。
+- 本地写入口使用的数据库基线来自已确认的 `bot_db_prod_shadow`，且 shadow sync timer 在灾备写入期间保持停止。
 
 ## 7. 回切云正式
 
@@ -191,6 +207,7 @@ scripts/stop_local_prod_entry_preserve.sh --execute --include-workers
 - 禁止把本地灾备当成日常测试环境。
 - 禁止本地 Bot 与云 Bot 同时使用同一个生产 token polling。
 - 禁止在未确认数据口径时启动本地写入口。
+- 禁止在本地灾备写入期间保持 `allbot-cloud-prod-shadow-sync.timer` 运行。
 - 禁止在灾备窗口清理本地 PostgreSQL、Redis、MinIO、R2 或 Nginx cache。
 - 禁止用 `safe_deploy.sh` 更新当前云正式生产。
 - 禁止把 `.env`、`.env.cloud.prod`、Tunnel token、Bot token 或 R2 密钥写入文档、日志或聊天。

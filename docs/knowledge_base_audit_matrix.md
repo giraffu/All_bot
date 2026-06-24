@@ -12,6 +12,7 @@
 | Ruff | `ruff check --statistics` 剩余 `2` 个 `F401`，均在 `ops/gpu_pool_controller/runpod_pod_request.py` |
 | 云测试入口 | 日常维护式更新首选 `scripts/update_cloud_test_with_maintenance.sh --execute`；远端控制面重建子步骤为 `scripts/safe_deploy_cloud_test.sh` |
 | 云正式入口 | 正式发布需明确确认；控制面入口为 `scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod` 或 `scripts/safe_deploy_cloud_prod.sh` 子步骤；QQCC 正式 Bot 单独更新入口为 `scripts/update_cloud_prod_qqcc_bot.sh --execute --confirm-prod --confirm-single-polling` |
+| 本地云正式 shadow 同步 | `scripts/sync_cloud_prod_to_local_shadow.py` 默认 dry-run，`--execute` 才把云正式 PostgreSQL 恢复为本地 `bot_db_prod_shadow` 并把 R2 `user-data-prod` 增量同步到 MinIO `user-data-prod-shadow`；systemd timer 默认每日 Asia/Shanghai 05:00 |
 | 旧本地脚本 | `safe_deploy.sh` 只用于云正式整体故障时的本地正式灾备；`safe_deploy_test.sh` 只作历史取证 |
 | 归档材料 | `docs/archive/` 与 `logs/` 只作历史证据或排障报告，不作为当前 SOP |
 
@@ -77,14 +78,14 @@
 | `docs/SAFE_DEPLOY_GUIDE.md` | deploy scripts、cloud compose | 已修正 | 云测试主入口改为维护式更新脚本，`safe_deploy_cloud_test.sh` 标为子步骤 |
 | `docs/子模块_运维指南与容器管理_ops_deployment.md` | deploy scripts、compose、ops Skill | 已修正 | 补充正式 QQCC Bot 单服务更新入口；运维总口径有效 |
 | `docs/子模块_云测试控制面部署_cloud_test_control_plane.md` | `deploy/docker-compose-cloud-test.yml`、`scripts/update_cloud_test_with_maintenance.sh` | 已核对 | 云测试 SOP 以维护式更新为主，仍有效 |
-| `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md` | `deploy/docker-compose-cloud-prod.yml`、`scripts/update_cloud_prod_with_maintenance.sh`、`scripts/update_cloud_prod_qqcc_bot.sh`、Dashboard autoscaler env | 已修正 | 补充正式 QQCC Bot 专用窄更新入口；云正式 SOP 有效 |
-| `docs/子模块_本地正式灾备切换_local_prod_fallback.md` | `safe_deploy.sh`、cloud prod scripts | 已核对 | 仅灾备使用的边界有效 |
+| `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md` | `deploy/docker-compose-cloud-prod.yml`、`scripts/update_cloud_prod_with_maintenance.sh`、`scripts/update_cloud_prod_qqcc_bot.sh`、`scripts/sync_cloud_prod_to_local_shadow.py`、systemd timer | 已修正 | 补充正式 QQCC Bot 专用窄更新入口；新增本地 shadow 同步入口、timer、安全边界与验收口径 |
+| `docs/子模块_本地正式灾备切换_local_prod_fallback.md` | `safe_deploy.sh`、cloud prod scripts、shadow sync script | 已修正 | 灾备时优先核对/使用 `bot_db_prod_shadow` 与 `user-data-prod-shadow`，本地写入前停止 shadow timer |
 | `docs/子模块_网络暴露与代理穿透_network_proxy.md` | Cloudflare/Tunnel scripts、network docs | 已核对 | 网络入口和回滚边界有效 |
 | `docs/子模块_边缘节点运维指南_edge_node_ops.md` | edge docs、cloud prod preflight | 已核对 | 边缘节点说明有效 |
 | `docs/子模块_云控制面SSH密钥管理_cloud_ssh_access.md` | SSH docs、cloud compose | 已核对 | 不含私钥，作为登录边界文档保留 |
 | `docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md` | LAN SSH docs、GPU resource docs | 已核对 | 不含私钥，作为节点访问文档保留 |
 | `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md` | LAN AIO scripts、GPU pool config、worker compose | 已核对 | 长运行态文档保留，容量需按实时探测复核 |
-| `docs/子模块_系统资源与容量画像_resource_inventory.md` | compose、resource docs、deployment scripts | 已修正 | 云正式/云测试入口口径更新；运行态快照仍需人工探测 |
+| `docs/子模块_系统资源与容量画像_resource_inventory.md` | compose、resource docs、deployment scripts、shadow sync script | 已修正 | 云正式/云测试入口口径更新；补充本地 shadow DB/MinIO bucket 资源事实；运行态快照仍需人工探测 |
 | `docs/子模块_容灾与持久化_database_recovery.md` | migrations、runtime checkpoint code | 已核对 | 恢复主链有效 |
 | `docs/子模块_代码静态分析与质量评估规范_code_quality.md` | `pytest --collect-only`、`ruff check`、Alembic | 已修正 | 增加 2026-06-24 轻量复核结果 |
 | `docs/子模块_前端浏览器预览截图_frontend_browser_preview.md` | Playwright preview skill | 已核对 | 前端截图验收口径有效 |
@@ -107,7 +108,7 @@
 | 文件 | 事实源 | 本轮状态 | 处理结果 |
 | :--- | :--- | :--- | :--- |
 | `.codex/skills/allbot-kb-auto-updater/SKILL.md` | 本矩阵、KB 维护流程 | 已修正 | 补充核对矩阵输出要求 |
-| `.codex/skills/allbot-ops-deployment/SKILL.md` | deploy scripts、compose | 已修正 | 补充正式 QQCC Bot 单服务更新脚本；已包含云测试维护式更新和云正式 autoscaler 口径 |
+| `.codex/skills/allbot-ops-deployment/SKILL.md` | deploy scripts、compose、shadow sync script | 已修正 | 补充正式 QQCC Bot 单服务更新脚本；补充本地 cloud-prod shadow 同步和灾备前停 timer 口径；已包含云测试维护式更新和云正式 autoscaler 口径 |
 | `.codex/skills/allbot-task-engine/SKILL.md` | task core、queue manager、runtime cleanup | 已核对 | 任务生命周期边界有效 |
 | `.codex/skills/allbot-comfy-models/SKILL.md` | workflow patcher、remote_workers | 已核对 | workflow/模型边界有效 |
 | `.codex/skills/allbot-tg-fsm/SKILL.md` | `src/handlers`、Bot entrypoint | 已核对 | FSM 边界有效 |

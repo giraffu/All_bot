@@ -114,6 +114,7 @@ workers/comfy_agent*/input/
 # Environment and Secret files
 .env
 .env.cloud.*
+.env.cloud-prod-shadow-sync.local
 .env.local
 .env.backup.local
 .env.development.local
@@ -125,6 +126,7 @@ workers/comfy_agent*/input/
 .env.lan-*
 !.env.example
 !.env.cloud.prod.example
+!.env.cloud-prod-shadow-sync.example
 !.env.paid-group.local.example
 !.env.lan.model-cache.example
 !.env.lan-aio-test.example

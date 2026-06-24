@@ -10,6 +10,7 @@
 - 本地 GPU worker compose：`workers/docker-compose-cloud-prod-worker.yml`。
 - 正式对象存储事实源：Cloudflare R2 `user-data-prod`。
 - 本地 MinIO：只作为 legacy 迁移补齐、人工回滚、旧外链排障和本地热数据保留，不再是新生成结果或正式 Web/Dashboard 运行时读路径的公开事实源。
+- 本地 shadow 同步：本地主服务器可通过 `scripts/sync_cloud_prod_to_local_shadow.py` 每日把云正式 PostgreSQL 全量快照恢复为 `bot_db_prod_shadow`，并把 R2 `user-data-prod` 增量同步到本地 MinIO `user-data-prod-shadow`；该副本只供灾备预热和后续只读分析，不会让本地服务自动切库。
 - 本地 GPU/ComfyUI：仍在武汉内网运行，worker 默认通过本机 `cloud-prod-worker-relay` 访问云 Central API；relay 再经 Tailscale 访问云端。
 - 公共 Web API 与 RMB 支付入口已经由云端控制面承接；`assets.aivison.it.com` 继续保留到 legacy MinIO 的只读代理，但正式应用不再生成该域名 URL。
 - Cloudflare Pages/API Tunnel 已成为正式入口：`web.aivison.it.com` 由 Pages 项目 `allbot-web-prod` 承接，`api.aivison.it.com` 通过云机上的 Cloudflare Tunnel 回源云 Web API `100.107.220.127:8000`。历史 `web-cf-test`/`api-cf-test` 仅作为 canary/归档语义，不再是迁移待办。
@@ -560,6 +561,31 @@ docker-compose -f docker-compose-cloud-prod-worker.yml up -d --no-deps $services
 
 worker 正在处理任务时重建会中断该 worker 当前单任务。常规正式 worker/relay 更新应先开启 Web/Bot 维护或等价门禁，阻止新生成任务进入，等待 pending/running 或至少目标 worker 当前任务自然归零，再重建 relay/worker，最后关闭维护并验收。紧急抢修可以按目标 worker 直接处理，但必须明确接受该 worker 当前任务可能中断。
 
+### 4.6 本地 shadow 同步
+本地主服务器保留每日低影响 shadow 同步，用于灾备预热和后续只读数据分析。入口是：
+
+```bash
+cd /home/hfy/APP/All_bot
+cp .env.cloud-prod-shadow-sync.example .env.cloud-prod-shadow-sync.local
+scripts/sync_cloud_prod_to_local_shadow.py
+scripts/sync_cloud_prod_to_local_shadow.py --execute
+scripts/install_cloud_prod_shadow_sync_timer.sh
+scripts/install_cloud_prod_shadow_sync_timer.sh --execute
+```
+
+运行口径：
+- 主脚本默认 dry-run；真实同步必须显式 `--execute`。
+- 数据库使用 Docker 工具容器 `postgres:15` 执行云端 `pg_dump -Fc --serializable-deferrable`，dump 写入 ignored 的 `backups/cloud-prod-shadow/<timestamp>/`，恢复到 `bot_db_prod_shadow_next` 并完成 Alembic/head 与关键表行数校验后，再把 `_next` 切成当前 `bot_db_prod_shadow`。
+- 对象同步使用 `rclone/rclone` 工具容器，把 R2 `user-data-prod` 增量同步到本地 MinIO `user-data-prod-shadow`；云端删除或覆盖导致的旧本地对象进入 `user-data-prod-shadow-quarantine/<timestamp>/`，不硬删。
+- Redis/Valkey 只记录 `INFO memory` / `DBSIZE` 摘要，不恢复运行态、队列、锁或 heartbeat。
+- systemd timer 为 `allbot-cloud-prod-shadow-sync.timer`，默认每日 Asia/Shanghai 05:00，`Persistent=true`，`RandomizedDelaySec=15m`。
+
+安全边界：
+- `.env.cloud-prod-shadow-sync.local` 只放在本地主服务器并保持 ignored；不得把 DB 密码、R2 key、Bot token、presigned URL、`.env.cloud.prod` 内容写入日志、manifest、文档或聊天。
+- 目标库禁止使用本地正式 `bot_db` 或云正式 `bot_db_prod`；脚本还会拒绝源/目标 DB host 相同、R2 目标指回云端、R2 bucket 与本地 shadow bucket 同名。
+- 本地服务不会自动切到 `bot_db_prod_shadow`；云正式整体故障时仍按本地灾备文档人工确认、停同步 timer、核对 manifest/RPO 后再切写入口。
+- 本轮不建设业务分析表、数据 mart、BI 或 Notebook；涉及完整提示词、用户明细等敏感数据时，后续分析方案必须单独定义访问边界。
+
 ## 5. 验证 Checklist
 
 ### 5.1 云控制面
@@ -602,11 +628,12 @@ docker logs --since 2m --tail 100 cloud-prod-comfy-agent-1
 - Gallery/History 热路径索引必须存在，尤其是 `ix_gallery_posts_active_created_at_id`、`ix_history_task_id`、`ix_history_user_id_id_desc`、`ix_user_interactions_user_action_post`。
 - 新生成对象写入 R2 `user-data-prod`。
 - 旧历史媒体的正式应用读路径应通过 R2 或当前 R2/S3 短签读取；`assets.aivison.it.com` 只作为人工回滚、旧外链和迁移补漏排障入口。
+- 本地 shadow 验收只读检查 `bot_db_prod_shadow`、`backups/cloud-prod-shadow/<timestamp>/manifest.json`、MinIO `user-data-prod-shadow` 抽样对象；不要把 shadow 验收当作云正式服务已经切到本地。
 
 ## 6. 回滚与事故处理
 - 只重建 Central/Web/Dashboard 代码后，若服务异常，优先回滚目标容器代码或恢复热修前备份文件，再只重建目标服务。
 - worker 更新后如果单节点异常，可只重建对应 `cloud-prod-comfy-agent-N`；不要全量清理 `workers` project。
 - 已经启动云 Bot 并产生新写入后，不做简单整站回滚；走数据核对与定向修复。
-- 云正式整体不可用且短时无法恢复时，才执行本地正式灾备切换。具体步骤见 `docs/子模块_本地正式灾备切换_local_prod_fallback.md`；切换前必须保证生产 Bot 单实例，并接受本地数据库非实时同步带来的对账成本。
+- 云正式整体不可用且短时无法恢复时，才执行本地正式灾备切换。具体步骤见 `docs/子模块_本地正式灾备切换_local_prod_fallback.md`；切换前必须保证生产 Bot 单实例，优先核对最近一次 `bot_db_prod_shadow` / `user-data-prod-shadow` 同步 manifest，并接受 shadow RPO 与灾备期间新增写入的对账成本。
 - `/system/status` 慢或 Dashboard 卡顿时，先检查 Central 状态观测缓存、托管 Valkey 连接、Dashboard stats 缓存和前端轮询频率，不要把 GPU 生成停顿直接当成控制面故障。
 - Web 公网慢但云内健康时，不要优先重启 Web API；先检查 Cloudflare/Tailscale 链路、R2 result timeout、R2 公开域名/短签和前端串行请求。若正式响应出现 legacy `assets` URL，再按回归缺陷排查。
