@@ -37,9 +37,13 @@ AUTOSCALER_CONTROL_KEY = "dashboard:runpod:autoscaler:control"
 AUTOSCALER_LEADER_KEY = "dashboard:runpod:autoscaler:leader"
 AUTOSCALER_LAST_DECISIONS_KEY = "dashboard:runpod:autoscaler:last_decisions"
 AUTOSCALER_SETTINGS_KEY = "dashboard:runpod:autoscaler:settings"
+AUTOSCALER_SCALE_UP_CONFIRMATIONS_KEY = (
+    "dashboard:runpod:autoscaler:scale_up_confirmations"
+)
 AUTOSCALER_OWNER_ID = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex}"
 SCALE_UP_WAIT_MINUTES_MIN = 1
 SCALE_UP_WAIT_MINUTES_MAX = 240
+SINGLE_OUTLIER_LOW_PRIORITY_MAX = 0
 
 
 def _runpod_profile_names() -> list[str]:
@@ -112,6 +116,23 @@ def _validate_scale_up_wait_minutes_by_profile(
     return normalized
 
 
+def _normalize_scale_up_confirmation_counts(
+    raw: dict[str, Any] | None,
+) -> dict[str, int]:
+    valid_profiles = set(_runpod_profile_names())
+    normalized: dict[str, int] = {}
+    for profile, raw_count in (raw or {}).items():
+        profile_name = str(profile)
+        if profile_name not in valid_profiles:
+            continue
+        try:
+            count = int(raw_count)
+        except (TypeError, ValueError):
+            continue
+        normalized[profile_name] = max(0, count)
+    return normalized
+
+
 def _bool_env(name: str, *, default: bool = False) -> bool:
     raw = os.getenv(name, "").strip().lower()
     if not raw:
@@ -136,6 +157,7 @@ class RunPodAutoscalerConfig:
     mode: str = "execute"
     interval_seconds: int = 60
     scale_up_wait_seconds: int = 30 * 60
+    scale_up_confirmation_rounds: int = 3
     scale_down_wait_seconds: int = 60
     cooldown_seconds: int = 10 * 60
     max_runpods_per_profile: int = 5
@@ -152,6 +174,11 @@ class RunPodAutoscalerConfig:
             )
         )
         object.__setattr__(self, "scale_up_wait_seconds_by_profile", merged)
+        object.__setattr__(
+            self,
+            "scale_up_confirmation_rounds",
+            max(1, int(self.scale_up_confirmation_rounds or 1)),
+        )
 
     def scale_up_wait_seconds_for_profile(self, profile: str) -> int:
         return int(
@@ -175,6 +202,7 @@ class RunPodAutoscalerConfig:
             "mode": self.mode,
             "interval_seconds": self.interval_seconds,
             "scale_up_wait_seconds": self.scale_up_wait_seconds,
+            "scale_up_confirmation_rounds": self.scale_up_confirmation_rounds,
             "scale_up_wait_seconds_by_profile": dict(
                 self.scale_up_wait_seconds_by_profile
             ),
@@ -202,6 +230,11 @@ def config_from_env() -> RunPodAutoscalerConfig:
         scale_up_wait_seconds=_int_env(
             "DASHBOARD_RUNPOD_AUTOSCALER_SCALE_UP_WAIT_SECONDS",
             default=30 * 60,
+            minimum=1,
+        ),
+        scale_up_confirmation_rounds=_int_env(
+            "DASHBOARD_RUNPOD_AUTOSCALER_SCALE_UP_CONFIRMATION_ROUNDS",
+            default=3,
             minimum=1,
         ),
         scale_down_wait_seconds=_int_env(
@@ -250,6 +283,15 @@ class RunPodAutoscalerStateStore(Protocol):
     ) -> None:
         ...
 
+    async def get_scale_up_confirmation_counts(self) -> dict[str, int]:
+        ...
+
+    async def save_scale_up_confirmation_counts(
+        self,
+        counts: dict[str, int],
+    ) -> None:
+        ...
+
     async def acquire_leader(self, owner_id: str, *, ttl_seconds: int) -> bool:
         ...
 
@@ -278,6 +320,15 @@ class DisabledRunPodAutoscalerStateStore:
     ) -> None:
         del thresholds, reason
 
+    async def get_scale_up_confirmation_counts(self) -> dict[str, int]:
+        return {}
+
+    async def save_scale_up_confirmation_counts(
+        self,
+        counts: dict[str, int],
+    ) -> None:
+        del counts
+
     async def acquire_leader(self, owner_id: str, *, ttl_seconds: int) -> bool:
         del owner_id, ttl_seconds
         return False
@@ -296,6 +347,7 @@ class InMemoryRunPodAutoscalerStateStore:
         self.leader_available = leader_available
         self.last_decisions: dict[str, Any] | None = None
         self.scale_up_wait_seconds_by_profile: dict[str, int] = {}
+        self.scale_up_confirmation_counts: dict[str, int] = {}
         self.settings_reason: str | None = None
 
     async def get_control_enabled(self, *, default: bool) -> bool:
@@ -318,6 +370,17 @@ class InMemoryRunPodAutoscalerStateStore:
             _normalize_scale_up_wait_seconds_by_profile(thresholds)
         )
         self.settings_reason = reason
+
+    async def get_scale_up_confirmation_counts(self) -> dict[str, int]:
+        return dict(self.scale_up_confirmation_counts)
+
+    async def save_scale_up_confirmation_counts(
+        self,
+        counts: dict[str, int],
+    ) -> None:
+        self.scale_up_confirmation_counts = _normalize_scale_up_confirmation_counts(
+            counts
+        )
 
     async def acquire_leader(self, owner_id: str, *, ttl_seconds: int) -> bool:
         del owner_id, ttl_seconds
@@ -387,6 +450,31 @@ class RedisRunPodAutoscalerStateStore:
             json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
         )
 
+    async def get_scale_up_confirmation_counts(self) -> dict[str, int]:
+        raw = await self.redis.get(AUTOSCALER_SCALE_UP_CONFIRMATIONS_KEY)
+        if not raw:
+            return {}
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+        return _normalize_scale_up_confirmation_counts(payload.get("counts"))
+
+    async def save_scale_up_confirmation_counts(
+        self,
+        counts: dict[str, int],
+    ) -> None:
+        payload = {
+            "counts": _normalize_scale_up_confirmation_counts(counts),
+            "updated_at": time.time(),
+            "owner_id": AUTOSCALER_OWNER_ID,
+        }
+        await self.redis.set(
+            AUTOSCALER_SCALE_UP_CONFIRMATIONS_KEY,
+            json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+            ex=24 * 60 * 60,
+        )
+
     async def acquire_leader(self, owner_id: str, *, ttl_seconds: int) -> bool:
         current = await self.redis.get(AUTOSCALER_LEADER_KEY)
         if current == owner_id:
@@ -448,6 +536,70 @@ def _safe_float(value: Any) -> float | None:
     if parsed != parsed:
         return None
     return parsed
+
+
+def _safe_int_or_none(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _pending_wait_records(detail: dict[str, Any]) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for raw_record in detail.get("pending_wait_records") or []:
+        if not isinstance(raw_record, dict):
+            continue
+        wait_seconds = _safe_float(raw_record.get("wait_seconds"))
+        if wait_seconds is None or wait_seconds < 0:
+            continue
+        records.append(
+            {
+                "wait_seconds": wait_seconds,
+                "priority": _safe_int_or_none(raw_record.get("priority")),
+            }
+        )
+    return records
+
+
+def _pending_over_threshold_count(
+    detail: dict[str, Any],
+    *,
+    scale_up_wait_seconds: int,
+) -> int:
+    records = _pending_wait_records(detail)
+    if records:
+        return sum(
+            1
+            for record in records
+            if float(record["wait_seconds"]) > scale_up_wait_seconds
+        )
+
+    wait_seconds = _safe_float(detail.get("max_pending_wait_seconds"))
+    if wait_seconds is None:
+        return 0
+    return int(wait_seconds > scale_up_wait_seconds)
+
+
+def _is_single_low_priority_wait_outlier(
+    detail: dict[str, Any],
+    *,
+    scale_up_wait_seconds: int,
+) -> bool:
+    records = _pending_wait_records(detail)
+    if not records:
+        return False
+    breached_records = [
+        record
+        for record in records
+        if float(record["wait_seconds"]) > scale_up_wait_seconds
+    ]
+    if len(breached_records) != 1:
+        return False
+    priority = breached_records[0].get("priority")
+    return priority is not None and priority <= SINGLE_OUTLIER_LOW_PRIORITY_MAX
 
 
 def _parse_operation_time(value: Any) -> float | None:
@@ -653,6 +805,7 @@ def build_runpod_autoscaler_decisions(
     operations_payload: dict[str, Any],
     config: RunPodAutoscalerConfig,
     now: float,
+    scale_up_confirmation_counts: dict[str, int] | None = None,
 ) -> list[dict[str, Any]]:
     queue_details = {
         str(item.get("profile")): item
@@ -661,6 +814,9 @@ def build_runpod_autoscaler_decisions(
     workers = list(workers_payload.get("workers") or [])
     operations = list(operations_payload.get("operations") or [])
     profile_task_types = _profile_task_types()
+    confirmation_counts = _normalize_scale_up_confirmation_counts(
+        scale_up_confirmation_counts
+    )
     decisions: list[dict[str, Any]] = []
 
     for option in RUNPOD_ADMIN_PROFILE_OPTIONS:
@@ -670,6 +826,10 @@ def build_runpod_autoscaler_decisions(
         active_count = int(detail.get("active_count") or 0)
         wait_seconds = _safe_float(detail.get("max_pending_wait_seconds"))
         scale_up_wait_seconds = config.scale_up_wait_seconds_for_profile(profile)
+        pending_over_threshold_count = _pending_over_threshold_count(
+            detail,
+            scale_up_wait_seconds=scale_up_wait_seconds,
+        )
 
         profile_runpod_workers: list[dict[str, Any]] = []
         profile_local_workers: list[dict[str, Any]] = []
@@ -725,6 +885,10 @@ def build_runpod_autoscaler_decisions(
             "total_accepting_count": total_accepting_count,
             "max_runpods_per_profile": config.max_runpods_per_profile,
             "scale_up_wait_seconds": scale_up_wait_seconds,
+            "pending_over_threshold_count": pending_over_threshold_count,
+            "scale_up_confirmation_count": 0,
+            "scale_up_confirmation_required": config.scale_up_confirmation_rounds,
+            "scale_up_confirmation_active": False,
         }
 
         active_operation = _active_operation_for_profile(operations, profile=profile)
@@ -765,6 +929,20 @@ def build_runpod_autoscaler_decisions(
             and wait_seconds is not None
             and wait_seconds > scale_up_wait_seconds
         ):
+            if _is_single_low_priority_wait_outlier(
+                detail,
+                scale_up_wait_seconds=scale_up_wait_seconds,
+            ):
+                decisions.append(
+                    _decision(
+                        profile=profile,
+                        action="hold",
+                        reason="hold: single low-priority wait outlier",
+                        metrics=metrics,
+                    )
+                )
+                continue
+
             if runpod_total_count >= config.max_runpods_per_profile:
                 decisions.append(
                     _decision(
@@ -775,6 +953,32 @@ def build_runpod_autoscaler_decisions(
                     )
                 )
             else:
+                confirmation_count = min(
+                    config.scale_up_confirmation_rounds,
+                    int(confirmation_counts.get(profile, 0)) + 1,
+                )
+                confirmation_metrics = {
+                    **metrics,
+                    "scale_up_confirmation_count": confirmation_count,
+                    "scale_up_confirmation_active": (
+                        confirmation_count < config.scale_up_confirmation_rounds
+                    ),
+                }
+                if confirmation_count < config.scale_up_confirmation_rounds:
+                    decisions.append(
+                        _decision(
+                            profile=profile,
+                            action="hold",
+                            reason=(
+                                "hold: scale-up signal confirming "
+                                f"{confirmation_count}/"
+                                f"{config.scale_up_confirmation_rounds}"
+                            ),
+                            metrics=confirmation_metrics,
+                        )
+                    )
+                    continue
+
                 decisions.append(
                     _decision(
                         profile=profile,
@@ -783,7 +987,7 @@ def build_runpod_autoscaler_decisions(
                             f"pending wait {int(wait_seconds)}s exceeds "
                             f"{scale_up_wait_seconds}s"
                         ),
-                        metrics=metrics,
+                        metrics=confirmation_metrics,
                     )
                 )
             continue
@@ -840,6 +1044,21 @@ def build_runpod_autoscaler_decisions(
     return decisions
 
 
+def _scale_up_confirmation_counts_from_decisions(
+    decisions: list[dict[str, Any]],
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for decision in decisions:
+        profile = str(decision.get("profile") or "")
+        if not profile:
+            continue
+        if decision.get("scale_up_confirmation_active"):
+            counts[profile] = int(decision.get("scale_up_confirmation_count") or 0)
+        else:
+            counts[profile] = 0
+    return counts
+
+
 async def _safe_store_save_decisions(
     store: RunPodAutoscalerStateStore,
     payload: dict[str, Any],
@@ -848,6 +1067,19 @@ async def _safe_store_save_decisions(
         await store.save_last_decisions(payload)
     except Exception:
         logger.warning("Failed to persist RunPod autoscaler decisions", exc_info=True)
+
+
+async def _safe_store_save_scale_up_confirmation_counts(
+    store: RunPodAutoscalerStateStore,
+    counts: dict[str, int],
+) -> None:
+    try:
+        await store.save_scale_up_confirmation_counts(counts)
+    except Exception:
+        logger.warning(
+            "Failed to persist RunPod autoscaler scale-up confirmations",
+            exc_info=True,
+        )
 
 
 async def evaluate_runpod_autoscaler_once(
@@ -871,6 +1103,8 @@ async def evaluate_runpod_autoscaler_once(
     now = float(now_func())
     control_error: str | None = None
     settings_error: str | None = None
+    confirmation_error: str | None = None
+    scale_up_confirmation_counts: dict[str, int] = {}
     try:
         active_config = active_config.with_scale_up_wait_seconds_by_profile(
             await active_store.get_scale_up_wait_seconds_by_profile()
@@ -886,6 +1120,16 @@ async def evaluate_runpod_autoscaler_once(
         logger.warning("RunPod autoscaler control state unavailable", exc_info=True)
         control_enabled = False
         control_error = str(exc)
+    try:
+        scale_up_confirmation_counts = (
+            await active_store.get_scale_up_confirmation_counts()
+        )
+    except Exception as exc:
+        logger.warning(
+            "RunPod autoscaler scale-up confirmations unavailable",
+            exc_info=True,
+        )
+        confirmation_error = str(exc)
     effective_enabled = bool(active_config.configured_enabled and control_enabled)
     leader_acquired: bool | None = None
 
@@ -913,6 +1157,7 @@ async def evaluate_runpod_autoscaler_once(
                 "mutation_skipped_reason": "leader lease not acquired",
                 "control_error": control_error,
                 "settings_error": settings_error,
+                "confirmation_error": confirmation_error,
             }
             await _safe_store_save_decisions(active_store, payload)
             return payload
@@ -944,6 +1189,7 @@ async def evaluate_runpod_autoscaler_once(
             "error": str(exc),
             "control_error": control_error,
             "settings_error": settings_error,
+            "confirmation_error": confirmation_error,
         }
         await _safe_store_save_decisions(active_store, payload)
         return payload
@@ -954,6 +1200,7 @@ async def evaluate_runpod_autoscaler_once(
         operations_payload=operations,
         config=active_config,
         now=now,
+        scale_up_confirmation_counts=scale_up_confirmation_counts,
     )
     recent_operations = [
         operation
@@ -991,6 +1238,12 @@ async def evaluate_runpod_autoscaler_once(
                 decision["action"] = "hold"
                 decision["operation_error"] = str(exc)
 
+    if mutate and effective_enabled and leader_acquired is True:
+        await _safe_store_save_scale_up_confirmation_counts(
+            active_store,
+            _scale_up_confirmation_counts_from_decisions(decisions),
+        )
+
     payload = {
         "enabled": effective_enabled,
         "configured_enabled": active_config.configured_enabled,
@@ -1005,6 +1258,7 @@ async def evaluate_runpod_autoscaler_once(
         ).isoformat().replace("+00:00", "Z"),
         "control_error": control_error,
         "settings_error": settings_error,
+        "confirmation_error": confirmation_error,
     }
     await _safe_store_save_decisions(active_store, payload)
     return payload

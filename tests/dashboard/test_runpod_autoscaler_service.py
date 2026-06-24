@@ -52,13 +52,13 @@ def _status(
                 "pending_count": pending if item == profile else 0,
                 "max_pending_wait_seconds": wait if item == profile else None,
                 "pending_wait_records": (
-                    pending_wait_records
-                    if pending_wait_records is not None
-                    else (
-                        [{"wait_seconds": wait, "priority": priority}]
-                        if item == profile and pending > 0 and wait is not None
-                        else []
+                    (
+                        pending_wait_records
+                        if pending_wait_records is not None
+                        else [{"wait_seconds": wait, "priority": priority}]
                     )
+                    if item == profile and pending > 0 and wait is not None
+                    else []
                 ),
             }
             for item in profiles

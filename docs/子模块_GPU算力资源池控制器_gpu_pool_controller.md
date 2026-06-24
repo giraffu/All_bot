@@ -525,14 +525,17 @@ Dashboard 入口不重写 RunPod provider 逻辑，只异步调用 `scripts/runp
 Dashboard 后端的 RunPod autoscaler 只复用上述安全入口，不直接调用 RunPod API。正式启用时
 `DASHBOARD_RUNPOD_AUTOSCALER_ENABLED=true`，后台循环默认每 60 秒读取
 `/api/system/status.runpod_profile_queue_details` 与 `/api/system/workers`：某 profile
-排队数大于 0 且最长等待超过该 profile 扩容阈值时，若该 profile 当前 RunPod 数小于
-`DASHBOARD_RUNPOD_AUTOSCALER_MAX_RUNPODS_PER_PROFILE`（默认 5）且没有同 profile
+排队数大于 0、最长等待超过该 profile 扩容阈值、不是单个低优先级超时 outlier，并且连续
+`DASHBOARD_RUNPOD_AUTOSCALER_SCALE_UP_CONFIRMATION_ROUNDS` 轮成立（默认 3）时，若该 profile
+当前 RunPod 数小于 `DASHBOARD_RUNPOD_AUTOSCALER_MAX_RUNPODS_PER_PROFILE`（默认 5）且没有同 profile
 未完成 operation，则提交一次 `add --count 1 --retry-unavailable --max-attempts 100 --retry-interval 30 --execute`。
 扩容阈值默认按 profile 生效：`img2img=20 分钟`、`scail2=40 分钟`，其它正式 profile
 （`image_to_video`、`wan22_video_v2`、`i2i_pro`、`ltx_video`）为 `30 分钟`；
 系统监控页“活跃 RunPod 详情”的“扩容阈值”列可保存 profile 级分钟数，后端写入 Redis
 并由 `/api/runpod/autoscaler/settings` 合并到下一轮评估；`DASHBOARD_RUNPOD_AUTOSCALER_SCALE_UP_WAIT_SECONDS`
 仅作为未配置 profile 的 fallback。
+Dashboard status 会从 Central pending 任务读取轻量 `pending_wait_records`（等待秒数与 priority），
+用于识别 `hold: single low-priority wait outlier`；连续确认轮次存入 Redis，Dashboard 只读查看不会推进确认计数。
 新增 operation 完成或失败后，同 profile 默认冷却 600 秒。某 profile 无排队或最长等待低于 60 秒时，
 若 RunPod + 本地健康 enabled 可接单 worker 总数大于 1，则选择该 profile 最高 slot 的 idle RunPod
 执行 `down --slot NN --execute`；本地 worker 只参与容量保底，不会被 autoscaler 启停。autoscaler

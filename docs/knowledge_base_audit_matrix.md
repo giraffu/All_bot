@@ -23,7 +23,7 @@
 | `README.md` | `docs/` 清单、`.github/workflows/docs_ci.yml`、部署脚本 | 已修正 | 增加知识库矩阵入口；同步云测试维护式更新口径 |
 | `AGENTS.md` | `.codex/skills/*/SKILL.md`、运维脚本 | 已修正 | 测试优先部署改为维护式更新脚本优先，补充矩阵导览 |
 | `docs/knowledge_base_audit_matrix.md` | 本轮只读扫描与校验命令 | 新增 | 作为后续知识库校准台账 |
-| `docs/system_architecture_report.md` | compose、RunPod/Dashboard 服务、测试收集、ruff | 已修正 | 更新 2026-06-24 轻量复核、autoscaler、云测试 worker 口径 |
+| `docs/system_architecture_report.md` | compose、RunPod/Dashboard 服务、测试收集、ruff | 已修正 | 更新 2026-06-24 轻量复核、autoscaler 三轮确认/outlier 抑制、云测试 worker 口径 |
 | `docs/skills/README.md` | `.codex/skills` 清单 | 已修正 | 增加矩阵维护约定，避免 Skill 与 docs 漂移 |
 | `docs/domain/CONTEXT.md` | 领域文档与运维脚本 | 已修正 | 补充实时知识库、归档材料、运行态快照、维护式更新等术语 |
 | `docs/adr/0000-template.md` | ADR 模板 | 已核对 | 模板有效，无需新增 ADR |
@@ -36,7 +36,7 @@
 | `docs/子模块_生成任务全链路_task_full_chain.md` | `src/web_api/services/*task*`、`backend/app`、`workers/comfy_agent` | 已核对 | 主链路仍符合现状；保留长链路排障细节 |
 | `docs/子模块_中控API与节点通信_central_api.md` | `backend/app/main.py`、`backend/app/queue_manager.py`、worker relay | 已核对 | Central / worker protocol 口径有效 |
 | `docs/子模块_任务黄金路径回归清单_task_golden_path.md` | `tests/backend`、`tests/core`、`tests/web_api`、worker tests | 已核对 | 回归分组仍可用 |
-| `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` | `ops/gpu_pool_controller`、Dashboard RunPod 服务、RunPod scripts | 已核对 | 已包含 Dashboard autoscaler 与 RunPod/LAN AIO 当前边界 |
+| `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` | `ops/gpu_pool_controller`、Dashboard RunPod 服务、RunPod scripts | 已修正 | 已包含 Dashboard autoscaler 三轮确认/outlier 抑制与 RunPod/LAN AIO 当前边界 |
 | `docs/子模块_附加模型配置指南_comfy_models.md` | `workers/comfy_agent/workflows`、`remote_workers`、workflow patcher | 已核对 | workflow 事实源和 SCAIL-2/LTX 口径有效 |
 | `docs/compat_seam_exit_table.md` | compat 文件现状、`rg` 引用 | 已核对 | 作为 compat 清理挂账表保留 |
 | `docs/双入口重复能力_inventory.md` | `backend/app`、`src/web_api` | 已核对 | 双入口分层描述有效 |
@@ -78,7 +78,7 @@
 | `docs/SAFE_DEPLOY_GUIDE.md` | deploy scripts、cloud compose | 已修正 | 云测试主入口改为维护式更新脚本，`safe_deploy_cloud_test.sh` 标为子步骤 |
 | `docs/子模块_运维指南与容器管理_ops_deployment.md` | deploy scripts、compose、ops Skill | 已修正 | 补充正式 QQCC Bot 单服务更新入口；运维总口径有效 |
 | `docs/子模块_云测试控制面部署_cloud_test_control_plane.md` | `deploy/docker-compose-cloud-test.yml`、`scripts/update_cloud_test_with_maintenance.sh` | 已核对 | 云测试 SOP 以维护式更新为主，仍有效 |
-| `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md` | `deploy/docker-compose-cloud-prod.yml`、`scripts/update_cloud_prod_with_maintenance.sh`、`scripts/update_cloud_prod_qqcc_bot.sh`、`scripts/sync_cloud_prod_to_local_shadow.py`、systemd timer | 已修正 | 补充正式 QQCC Bot 专用窄更新入口；新增本地 shadow 同步入口、timer、安全边界与验收口径 |
+| `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md` | `deploy/docker-compose-cloud-prod.yml`、`scripts/update_cloud_prod_with_maintenance.sh`、`scripts/update_cloud_prod_qqcc_bot.sh`、`scripts/sync_cloud_prod_to_local_shadow.py`、systemd timer、Dashboard autoscaler service | 已修正 | 补充正式 QQCC Bot 专用窄更新入口；新增本地 shadow 同步入口、timer、安全边界与验收口径；同步 autoscaler 三轮确认/outlier 抑制 |
 | `docs/子模块_本地正式灾备切换_local_prod_fallback.md` | `safe_deploy.sh`、cloud prod scripts、shadow sync script | 已修正 | 灾备时优先核对/使用 `bot_db_prod_shadow` 与 `user-data-prod-shadow`，本地写入前停止 shadow timer |
 | `docs/子模块_网络暴露与代理穿透_network_proxy.md` | Cloudflare/Tunnel scripts、network docs | 已核对 | 网络入口和回滚边界有效 |
 | `docs/子模块_边缘节点运维指南_edge_node_ops.md` | edge docs、cloud prod preflight | 已核对 | 边缘节点说明有效 |
@@ -108,7 +108,7 @@
 | 文件 | 事实源 | 本轮状态 | 处理结果 |
 | :--- | :--- | :--- | :--- |
 | `.codex/skills/allbot-kb-auto-updater/SKILL.md` | 本矩阵、KB 维护流程 | 已修正 | 补充核对矩阵输出要求 |
-| `.codex/skills/allbot-ops-deployment/SKILL.md` | deploy scripts、compose、shadow sync script | 已修正 | 补充正式 QQCC Bot 单服务更新脚本；补充本地 cloud-prod shadow 同步和灾备前停 timer 口径；已包含云测试维护式更新和云正式 autoscaler 口径 |
+| `.codex/skills/allbot-ops-deployment/SKILL.md` | deploy scripts、compose、shadow sync script、Dashboard autoscaler service | 已修正 | 补充正式 QQCC Bot 单服务更新脚本；补充本地 cloud-prod shadow 同步和灾备前停 timer 口径；已包含云测试维护式更新和云正式 autoscaler 三轮确认/outlier 抑制口径 |
 | `.codex/skills/allbot-task-engine/SKILL.md` | task core、queue manager、runtime cleanup | 已核对 | 任务生命周期边界有效 |
 | `.codex/skills/allbot-comfy-models/SKILL.md` | workflow patcher、remote_workers | 已核对 | workflow/模型边界有效 |
 | `.codex/skills/allbot-tg-fsm/SKILL.md` | `src/handlers`、Bot entrypoint | 已核对 | FSM 边界有效 |

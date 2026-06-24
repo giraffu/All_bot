@@ -221,10 +221,12 @@ async def test_get_pending_queue_wait_details_uses_created_at_not_priority_score
             "comfy:task:newer-but-higher-priority": {
                 "type": "custom_video",
                 "created_at": "1900",
+                "priority": "5",
             },
             "comfy:task:oldest-by-created-at": {
                 "type": "image_to_video",
                 "created_at": "1000",
+                "priority": "0",
             },
         },
     )
@@ -239,6 +241,10 @@ async def test_get_pending_queue_wait_details_uses_created_at_not_priority_score
     assert details["image_to_video"]["max_pending_wait_seconds"] == 1000
     assert details["image_to_video"]["oldest_pending_task_id"] == "oldest-by-created-at"
     assert details["image_to_video"]["oldest_pending_created_at"] == 1000.0
+    assert details["image_to_video"]["pending_wait_records"] == [
+        {"wait_seconds": 100, "priority": 5},
+        {"wait_seconds": 1000, "priority": 0},
+    ]
     assert redis_client.closed is True
 
 
@@ -387,6 +393,7 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
         "max_pending_wait_seconds": 901,
         "oldest_pending_task_id": "pending-face-swap",
         "oldest_pending_created_at": 1782050000.0,
+        "pending_wait_records": [],
     }
     assert profiles["scail2"]["active_count"] == 1
     assert profiles["scail2"]["pending_count"] == 2

@@ -113,6 +113,9 @@ def build_queue_type_details(
         detail["oldest_pending_created_at"] = pending_detail.get(
             "oldest_pending_created_at"
         )
+        pending_wait_records = pending_detail.get("pending_wait_records")
+        if pending_wait_records is not None:
+            detail["pending_wait_records"] = list(pending_wait_records)
 
     return details
 
@@ -122,6 +125,15 @@ def _safe_int(value: Any) -> int:
         return int(value or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def _safe_optional_int(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _safe_wait_seconds(value: Any) -> float | int | None:
@@ -159,11 +171,13 @@ def build_runpod_profile_queue_details(queue_type_details: dict) -> list[dict]:
         max_pending_wait_seconds = None
         oldest_pending_task_id = None
         oldest_pending_created_at = None
+        pending_wait_records: list[dict] = []
 
         for task_type in supported_task_types:
             detail = queue_type_details.get(task_type) or {}
             active_count += _safe_int(detail.get("active_count"))
             pending_count += _safe_int(detail.get("pending_count"))
+            pending_wait_records.extend(detail.get("pending_wait_records") or [])
 
             wait_seconds = _safe_wait_seconds(
                 detail.get("max_pending_wait_seconds")
@@ -188,6 +202,7 @@ def build_runpod_profile_queue_details(queue_type_details: dict) -> list[dict]:
                 "max_pending_wait_seconds": max_pending_wait_seconds,
                 "oldest_pending_task_id": oldest_pending_task_id,
                 "oldest_pending_created_at": oldest_pending_created_at,
+                "pending_wait_records": pending_wait_records,
             }
         )
 
@@ -235,13 +250,15 @@ async def get_pending_queue_wait_details(
             task_key = f"{CENTRAL_TASK_KEY_PREFIX}{task_id}"
             pipeline.hget(task_key, "type")
             pipeline.hget(task_key, "created_at")
+            pipeline.hget(task_key, "priority")
         values = await pipeline.execute()
 
         now = float(now_func())
         details: dict[str, dict] = {}
         for index, task_id in enumerate(normalized_task_ids):
-            task_type = _decode_redis_value(values[index * 2])
-            created_at = _decode_redis_value(values[index * 2 + 1])
+            task_type = _decode_redis_value(values[index * 3])
+            created_at = _decode_redis_value(values[index * 3 + 1])
+            priority = _safe_optional_int(_decode_redis_value(values[index * 3 + 2]))
             if not task_type or created_at in (None, ""):
                 continue
 
@@ -254,6 +271,12 @@ async def get_pending_queue_wait_details(
             wait_seconds = max(0, int(now - created_at_float))
             detail = details.setdefault(execution_type, _empty_queue_type_detail())
             detail["pending_count"] += 1
+            detail.setdefault("pending_wait_records", []).append(
+                {
+                    "wait_seconds": wait_seconds,
+                    "priority": priority,
+                }
+            )
 
             current_max = detail.get("max_pending_wait_seconds")
             if current_max is None or wait_seconds > current_max:
