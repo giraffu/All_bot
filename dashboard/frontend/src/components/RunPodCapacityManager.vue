@@ -74,6 +74,9 @@ type RunPodAutoscalerPayload = {
     max_runpods_per_profile?: number
     min_runpod_lifetime_seconds?: number
     runpod_fault_restart_seconds?: number
+    runpod_bootstrap_timeout_seconds?: number
+    runpod_bootstrap_replacement_limit?: number
+    runpod_bootstrap_replacement_window_seconds?: number
     task_duration_seconds_by_type?: Record<string, number>
   }
   decisions?: RunPodAutoscalerDecision[]
@@ -387,6 +390,8 @@ onUnmounted(() => {
           <span>冷却 {{ autoscaler?.config?.cooldown_seconds || 600 }}s</span>
           <span>最短生命周期 {{ autoscaler?.config?.min_runpod_lifetime_seconds || 1800 }}s</span>
           <span>故障重启 {{ autoscaler?.config?.runpod_fault_restart_seconds || 300 }}s</span>
+          <span>启动超时 {{ autoscaler?.config?.runpod_bootstrap_timeout_seconds || 2400 }}s</span>
+          <span>替换上限 {{ autoscaler?.config?.runpod_bootstrap_replacement_limit || 2 }}</span>
           <span>每类最多 {{ autoscaler?.config?.max_runpods_per_profile || 5 }}</span>
         </div>
 
@@ -551,7 +556,7 @@ onUnmounted(() => {
 
 .runpod-autoscaler-metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
   font-size: 11px;
   color: #64748b;

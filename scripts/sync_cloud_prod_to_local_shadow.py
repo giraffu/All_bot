@@ -29,6 +29,8 @@ RCLONE_IMAGE = "rclone/rclone:latest"
 REDIS_IMAGE = "redis:7-alpine"
 DENIED_TARGET_DATABASES = {"bot_db", "bot_db_prod", "postgres", "template0", "template1"}
 SAFE_DB_NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
+POSTGRES_IDENTIFIER_MAX_LENGTH = 63
+PREVIOUS_DB_HASH_CHARS = 10
 KEY_TABLES = ("users", "history", "orders", "user_logs", "worker_logs")
 
 
@@ -56,6 +58,7 @@ class ShadowSyncConfig:
     r2_transfers: int
     r2_checkers: int
     retention_days: int
+    r2_shadow_seed_with_copy: bool = False
     complete_media_sync_enabled: bool = False
     local_minio_complete_bucket: str = "user-data-complete-shadow"
     complete_media_import_legacy: bool = False
@@ -95,7 +98,7 @@ class ShadowSyncConfig:
 
     @property
     def previous_database_name(self) -> str:
-        return f"{self.shadow_database_name}_previous_{self.timestamp}"
+        return previous_database_name_for(self.shadow_database_name, self.timestamp)
 
     @property
     def normalized_cloud_database_url(self) -> str:
@@ -265,6 +268,9 @@ def build_config(args: argparse.Namespace) -> ShadowSyncConfig:
     include_legacy_media_import = bool(
         getattr(args, "include_legacy_media_import", False)
     )
+    seed_r2_shadow_with_copy = bool(
+        getattr(args, "seed_r2_shadow_with_copy", False)
+    )
     return ShadowSyncConfig(
         cloud_database_url=require(values, "CLOUD_PROD_DATABASE_URL"),
         local_postgres_maintenance_url=require(values, "LOCAL_POSTGRES_MAINTENANCE_URL"),
@@ -287,9 +293,13 @@ def build_config(args: argparse.Namespace) -> ShadowSyncConfig:
         backup_root=backup_root,
         timestamp=timestamp,
         r2_bwlimit=values.get("R2_SYNC_BWLIMIT", "20M"),
-        r2_transfers=int_value(values, "R2_SYNC_TRANSFERS", 4),
-        r2_checkers=int_value(values, "R2_SYNC_CHECKERS", 8),
+        r2_transfers=int_value(values, "R2_SYNC_TRANSFERS", 8),
+        r2_checkers=int_value(values, "R2_SYNC_CHECKERS", 16),
         retention_days=int_value(values, "SHADOW_SYNC_RETENTION_DAYS", 14),
+        r2_shadow_seed_with_copy=(
+            bool_value(values, "R2_SHADOW_SEED_WITH_COPY", False)
+            or seed_r2_shadow_with_copy
+        ),
         complete_media_sync_enabled=bool_value(
             values,
             "COMPLETE_MEDIA_SYNC_ENABLED",
@@ -380,6 +390,27 @@ def database_name_from_url(url: str) -> str:
     return parsed.path.lstrip("/").split("/", 1)[0]
 
 
+def previous_database_name_for(shadow_database_name: str, timestamp: str) -> str:
+    candidate = f"{shadow_database_name}_previous_{timestamp}"
+    if len(candidate) <= POSTGRES_IDENTIFIER_MAX_LENGTH:
+        return candidate
+
+    digest = hashlib.sha1(timestamp.encode("utf-8")).hexdigest()[:PREVIOUS_DB_HASH_CHARS]
+    prefix = f"{shadow_database_name}_prev_"
+    separator = "_"
+    available_timestamp_length = (
+        POSTGRES_IDENTIFIER_MAX_LENGTH
+        - len(prefix)
+        - len(separator)
+        - len(digest)
+    )
+    if available_timestamp_length < 1:
+        raise ShadowSyncError(
+            "SHADOW_DATABASE_NAME is too long to build a safe previous shadow database name"
+        )
+    return f"{prefix}{timestamp[:available_timestamp_length]}{separator}{digest}"
+
+
 def normalized_host(url_or_endpoint: str) -> str:
     parsed = urlparse(url_or_endpoint)
     if parsed.hostname:
@@ -391,6 +422,10 @@ def normalized_host(url_or_endpoint: str) -> str:
 def validate_database_name(name: str, *, label: str) -> None:
     if not SAFE_DB_NAME_RE.match(name):
         raise ShadowSyncError(f"{label} must contain only letters, numbers, and underscores")
+    if len(name) > POSTGRES_IDENTIFIER_MAX_LENGTH:
+        raise ShadowSyncError(
+            f"{label} must be {POSTGRES_IDENTIFIER_MAX_LENGTH} characters or fewer"
+        )
     if name in DENIED_TARGET_DATABASES:
         raise ShadowSyncError(f"{label} may not be production or maintenance database: {name}")
 
@@ -869,7 +904,8 @@ def build_remote_dump_script(config: ShadowSyncConfig) -> str:
             '--env-file "$RUN_DIR/rclone-transfer.env" --entrypoint sh "$RCLONE_IMAGE" '
             '-lc "rclone copy /data \\"$TRANSFER_TARGET\\" '
             '--include cloud_prod.dump --include cloud_prod.dump.sha256 '
-            '--transfers $R2_TRANSFERS --checkers $R2_CHECKERS --stats 10s"',
+            '--transfers $R2_TRANSFERS --checkers $R2_CHECKERS '
+            '--stats 10s --stats-log-level NOTICE"',
         ]
     )
 
@@ -898,7 +934,7 @@ def run_r2_transfer_download(config: ShadowSyncConfig, runner: CommandRunner) ->
             "--include cloud_prod.dump --include cloud_prod.dump.sha256 "
             f"--transfers {config.r2_transfers} "
             f"--checkers {config.r2_checkers} "
-            "--stats 10s",
+            "--stats 10s --stats-log-level NOTICE",
         ]
     )
     runner.run(
@@ -1073,11 +1109,24 @@ def run_db_atomic_switch(config: ShadowSyncConfig, runner: CommandRunner) -> Non
 
 
 def run_r2_sync(config: ShadowSyncConfig, runner: CommandRunner) -> None:
-    script = "\n".join(
-        [
-            "set -eu",
-            f"rclone mkdir localminio:{shlex.quote(config.local_minio_shadow_bucket)}",
-            f"rclone mkdir localminio:{shlex.quote(config.local_minio_quarantine_bucket)}",
+    lines = [
+        "set -eu",
+        f"rclone mkdir localminio:{shlex.quote(config.local_minio_shadow_bucket)}",
+        f"rclone mkdir localminio:{shlex.quote(config.local_minio_quarantine_bucket)}",
+    ]
+    if config.r2_shadow_seed_with_copy:
+        lines.append(
+            "rclone copy "
+            f"cloudr2:{shlex.quote(config.r2_bucket)} "
+            f"localminio:{shlex.quote(config.local_minio_shadow_bucket)} "
+            "--no-traverse "
+            f"--transfers {config.r2_transfers} "
+            f"--checkers {config.r2_checkers} "
+            f"--bwlimit {shlex.quote(config.r2_bwlimit)} "
+            "--stats 60s --stats-log-level NOTICE"
+        )
+    else:
+        lines.append(
             "rclone sync "
             f"cloudr2:{shlex.quote(config.r2_bucket)} "
             f"localminio:{shlex.quote(config.local_minio_shadow_bucket)} "
@@ -1085,9 +1134,9 @@ def run_r2_sync(config: ShadowSyncConfig, runner: CommandRunner) -> None:
             f"--transfers {config.r2_transfers} "
             f"--checkers {config.r2_checkers} "
             f"--bwlimit {shlex.quote(config.r2_bwlimit)} "
-            "--fast-list --stats 60s",
-        ]
-    )
+            "--fast-list --stats 60s --stats-log-level NOTICE"
+        )
+    script = "\n".join(lines)
     runner.run(
         docker_cmd(
             RCLONE_IMAGE,
@@ -1101,10 +1150,11 @@ def run_r2_sync(config: ShadowSyncConfig, runner: CommandRunner) -> None:
 
 def rclone_copy_common_flags(config: ShadowSyncConfig) -> str:
     return (
+        "--no-traverse "
         f"--transfers {config.r2_transfers} "
         f"--checkers {config.r2_checkers} "
         f"--bwlimit {shlex.quote(config.r2_bwlimit)} "
-        "--fast-list --stats 60s"
+        "--stats 60s --stats-log-level NOTICE"
     )
 
 
@@ -1221,6 +1271,7 @@ def write_manifest(config: ShadowSyncConfig, *, dump_sha256: str) -> None:
         "r2_bucket": config.r2_bucket,
         "local_minio_shadow_bucket": config.local_minio_shadow_bucket,
         "local_minio_quarantine_bucket": config.local_minio_quarantine_bucket,
+        "r2_shadow_seed_with_copy": config.r2_shadow_seed_with_copy,
         "complete_media_sync": {
             "enabled": config.complete_media_sync_enabled,
             "source_shadow_bucket": (
@@ -1322,6 +1373,7 @@ def log_preflight(config: ShadowSyncConfig, *, execute: bool) -> None:
                 "r2_bucket": config.r2_bucket,
                 "local_shadow_bucket": config.local_minio_shadow_bucket,
                 "local_quarantine_bucket": config.local_minio_quarantine_bucket,
+                "r2_shadow_seed_with_copy": config.r2_shadow_seed_with_copy,
                 "complete_media_sync_enabled": config.complete_media_sync_enabled,
                 "local_complete_bucket": (
                     config.local_minio_complete_bucket
@@ -1392,6 +1444,14 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "one-off complete bucket backfill from local legacy MinIO buckets; "
             "daily timer should normally leave this off"
+        ),
+    )
+    parser.add_argument(
+        "--seed-r2-shadow-with-copy",
+        action="store_true",
+        help=(
+            "one-off initial R2 shadow bucket seed using rclone copy --no-traverse; "
+            "daily timer should normally use sync/quarantine instead"
         ),
     )
     return parser

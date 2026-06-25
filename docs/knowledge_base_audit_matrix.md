@@ -12,7 +12,7 @@
 | Ruff | `ruff check --statistics` 剩余 `2` 个 `F401`，均在 `ops/gpu_pool_controller/runpod_pod_request.py` |
 | 云测试入口 | 日常维护式更新首选 `scripts/update_cloud_test_with_maintenance.sh --execute`；远端控制面重建子步骤为 `scripts/safe_deploy_cloud_test.sh` |
 | 云正式入口 | 正式发布需明确确认；控制面入口为 `scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod` 或 `scripts/safe_deploy_cloud_prod.sh` 子步骤；QQCC 正式 Bot 单独更新入口为 `scripts/update_cloud_prod_qqcc_bot.sh --execute --confirm-prod --confirm-single-polling` |
-| 本地云正式 shadow 同步 | `scripts/sync_cloud_prod_to_local_shadow.py` 默认 dry-run，`--execute` 才把云正式 PostgreSQL 恢复为本地 `bot_db_prod_shadow` 并把 R2 `user-data-prod` 增量同步到 MinIO `user-data-prod-shadow`；数据库获取主路径为 `CLOUD_PROD_DB_DUMP_MODE=remote_r2`，由 `allbot-do-sgp1-control` 在云机 dump 后临时上传 R2 `user-data-prod/__shadow-transfer/<timestamp>`，本地经 HTTPS/rclone 下载校验后 restore，避免依赖家宽/VPN 出口 IP 作为托管 DB trusted source；`COMPLETE_MEDIA_SYNC_ENABLED=true` 时每日从本地 R2 shadow 非破坏式 copy 到 `user-data-complete-shadow`，legacy `bot-data`/`comfyui-temp` 只在手动 `--include-legacy-media-import` 首次/补漏时导入；脚本持有 `.shadow-sync.lock` 防并发；`CLOUD_PROD_DB_TUNNEL_SSH_HOST=allbot-do-sgp1-control` 保留给 Redis/Valkey 摘要和旧 fallback；systemd timer 默认每日 Asia/Shanghai 05:00 |
+| 本地云正式 shadow 同步 | `scripts/sync_cloud_prod_to_local_shadow.py` 默认 dry-run，`--execute` 才把云正式 PostgreSQL 恢复为本地 `bot_db_prod_shadow` 并把 R2 `user-data-prod` 增量同步到 MinIO `user-data-prod-shadow`；数据库获取主路径为 `CLOUD_PROD_DB_DUMP_MODE=remote_r2`，由 `allbot-do-sgp1-control` 在云机 dump 后临时上传 R2 `user-data-prod/__shadow-transfer/<timestamp>`，本地经 HTTPS/rclone 下载校验后 restore，避免依赖家宽/VPN 出口 IP 作为托管 DB trusted source；R2 传输默认 `20M` 带宽上限、`transfers=8`、`checkers=16`；首次 seed 空 shadow 可手动 `--seed-r2-shadow-with-copy` 走 `copy --no-traverse`，timer 日常仍用 sync/quarantine；`COMPLETE_MEDIA_SYNC_ENABLED=true` 时每日从本地 R2 shadow 非破坏式 copy 到 `user-data-complete-shadow`，legacy `bot-data`/`comfyui-temp` 只在手动 `--include-legacy-media-import` 首次/补漏时导入；脚本持有 `.shadow-sync.lock` 防并发；`CLOUD_PROD_DB_TUNNEL_SSH_HOST=allbot-do-sgp1-control` 保留给 Redis/Valkey 摘要和旧 fallback；systemd timer 默认每日 Asia/Shanghai 05:00 |
 | 旧本地脚本 | `safe_deploy.sh` 只用于云正式整体故障时的本地正式灾备；`safe_deploy_test.sh` 只作历史取证 |
 | 归档材料 | `docs/archive/` 与 `logs/` 只作历史证据或排障报告，不作为当前 SOP |
 
@@ -36,7 +36,7 @@
 | `docs/子模块_生成任务全链路_task_full_chain.md` | `src/web_api/services/*task*`、`backend/app`、`workers/comfy_agent` | 已核对 | 主链路仍符合现状；保留长链路排障细节 |
 | `docs/子模块_中控API与节点通信_central_api.md` | `backend/app/main.py`、`backend/app/queue_manager.py`、worker relay | 已核对 | Central / worker protocol 口径有效 |
 | `docs/子模块_任务黄金路径回归清单_task_golden_path.md` | `tests/backend`、`tests/core`、`tests/web_api`、worker tests | 已核对 | 回归分组仍可用 |
-| `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` | `ops/gpu_pool_controller`、Dashboard RunPod 服务、RunPod scripts | 已修正 | 已包含 Dashboard autoscaler 预计清空时间模型、RunPod 故障/暂停自愈与 RunPod/LAN AIO 当前边界 |
+| `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` | `ops/gpu_pool_controller`、Dashboard RunPod 服务、RunPod scripts | 已修正 | 已包含 Dashboard autoscaler 预计清空时间模型、profile 级自动管理暂停、RunPod 故障/暂停自愈、bootstrap timeout 换机清理与 RunPod/LAN AIO 当前边界 |
 | `docs/子模块_附加模型配置指南_comfy_models.md` | `workers/comfy_agent/workflows`、`remote_workers`、workflow patcher | 已核对 | workflow 事实源和 SCAIL-2/LTX 口径有效 |
 | `docs/compat_seam_exit_table.md` | compat 文件现状、`rg` 引用 | 已核对 | 作为 compat 清理挂账表保留 |
 | `docs/双入口重复能力_inventory.md` | `backend/app`、`src/web_api` | 已核对 | 双入口分层描述有效 |
@@ -78,7 +78,7 @@
 | `docs/SAFE_DEPLOY_GUIDE.md` | deploy scripts、cloud compose | 已修正 | 云测试主入口改为维护式更新脚本，`safe_deploy_cloud_test.sh` 标为子步骤 |
 | `docs/子模块_运维指南与容器管理_ops_deployment.md` | deploy scripts、compose、ops Skill | 已修正 | 补充正式 QQCC Bot 单服务更新入口；运维总口径有效 |
 | `docs/子模块_云测试控制面部署_cloud_test_control_plane.md` | `deploy/docker-compose-cloud-test.yml`、`scripts/update_cloud_test_with_maintenance.sh` | 已核对 | 云测试 SOP 以维护式更新为主，仍有效 |
-| `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md` | `deploy/docker-compose-cloud-prod.yml`、`scripts/update_cloud_prod_with_maintenance.sh`、`scripts/update_cloud_prod_qqcc_bot.sh`、`scripts/sync_cloud_prod_to_local_shadow.py`、systemd timer、Dashboard autoscaler service | 已修正 | 补充正式 QQCC Bot 专用窄更新入口；本地 shadow 同步已更新为云机 dump + R2/HTTPS 临时中转 + 本地 restore 主路径，并补充完整合并桶、timer、安全边界、旧 tunnel fallback 与验收口径；同步 autoscaler 预计清空时间模型和 RunPod 故障/暂停自愈口径 |
+| `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md` | `deploy/docker-compose-cloud-prod.yml`、`scripts/update_cloud_prod_with_maintenance.sh`、`scripts/update_cloud_prod_qqcc_bot.sh`、`scripts/sync_cloud_prod_to_local_shadow.py`、systemd timer、Dashboard autoscaler service | 已修正 | 补充正式 QQCC Bot 专用窄更新入口；本地 shadow 同步已更新为云机 dump + R2/HTTPS 临时中转 + 本地 restore 主路径，并补充完整合并桶、timer、安全边界、旧 tunnel fallback 与验收口径；同步 autoscaler 预计清空时间模型、profile 级自动管理暂停、RunPod 故障/暂停自愈和 bootstrap timeout 换机口径 |
 | `docs/子模块_本地正式灾备切换_local_prod_fallback.md` | `safe_deploy.sh`、cloud prod scripts、shadow sync script | 已修正 | 灾备时优先核对/使用 `bot_db_prod_shadow`、`user-data-prod-shadow` 与 `user-data-complete-shadow`，本地写入前停止 shadow timer |
 | `docs/子模块_网络暴露与代理穿透_network_proxy.md` | Cloudflare/Tunnel scripts、network docs | 已核对 | 网络入口和回滚边界有效 |
 | `docs/子模块_边缘节点运维指南_edge_node_ops.md` | edge docs、cloud prod preflight | 已核对 | 边缘节点说明有效 |
@@ -108,7 +108,7 @@
 | 文件 | 事实源 | 本轮状态 | 处理结果 |
 | :--- | :--- | :--- | :--- |
 | `.codex/skills/allbot-kb-auto-updater/SKILL.md` | 本矩阵、KB 维护流程 | 已修正 | 补充核对矩阵输出要求 |
-| `.codex/skills/allbot-ops-deployment/SKILL.md` | deploy scripts、compose、shadow sync script、Dashboard autoscaler service | 已修正 | 补充正式 QQCC Bot 单服务更新脚本；本地 cloud-prod shadow 同步已更新为 remote_r2 主路径、完整合并桶、手动 legacy 导入、SSH tunnel fallback/Redis 摘要和灾备前停 timer 口径；已包含云测试维护式更新和云正式 autoscaler 预计清空时间、RunPod 故障/暂停自愈口径 |
+| `.codex/skills/allbot-ops-deployment/SKILL.md` | deploy scripts、compose、shadow sync script、Dashboard autoscaler service | 已修正 | 补充正式 QQCC Bot 单服务更新脚本；本地 cloud-prod shadow 同步已更新为 remote_r2 主路径、R2 shadow seed copy、完整合并桶、手动 legacy 导入、SSH tunnel fallback/Redis 摘要和灾备前停 timer 口径；已包含云测试维护式更新和云正式 autoscaler 预计清空时间、profile 级自动管理暂停、RunPod 故障/暂停自愈、bootstrap timeout 换机口径 |
 | `.codex/skills/allbot-task-engine/SKILL.md` | task core、queue manager、runtime cleanup | 已核对 | 任务生命周期边界有效 |
 | `.codex/skills/allbot-comfy-models/SKILL.md` | workflow patcher、remote_workers | 已核对 | workflow/模型边界有效 |
 | `.codex/skills/allbot-tg-fsm/SKILL.md` | `src/handlers`、Bot entrypoint | 已核对 | FSM 边界有效 |

@@ -11,7 +11,9 @@ import {
   CloseCircleOutlined,
   ClearOutlined,
   HistoryOutlined,
-  LockOutlined
+  LockOutlined,
+  PauseCircleOutlined,
+  PlayCircleOutlined
 } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
 import {
@@ -44,6 +46,7 @@ const autoscalerDecisions = ref([])
 const thresholdDrafts = ref({})
 const durationDrafts = ref({})
 const savingSettingsProfile = ref('')
+const togglingAutoscalerProfile = ref('')
 const runpodOperationLogOpen = ref(false)
 const runpodOperationLogLoading = ref(false)
 const runpodOperations = ref([])
@@ -139,6 +142,17 @@ const taskDurationSecondsByType = computed(() => ({
   ...DEFAULT_TASK_DURATION_SECONDS_BY_TYPE,
   ...(autoscalerConfig.value?.task_duration_seconds_by_type || {}),
 }))
+
+const profileAutoscalerPausedByProfile = computed(() => {
+  const pausedProfiles = new Set(autoscalerConfig.value?.paused_profiles || [])
+  return {
+    ...(autoscalerConfig.value?.profile_autoscaler_paused_by_profile || {}),
+    ...Array.from(pausedProfiles).reduce((acc, profile) => {
+      acc[profile] = true
+      return acc
+    }, {}),
+  }
+})
 
 const autoscalerDecisionsByProfile = computed(() =>
   autoscalerDecisions.value.reduce((acc, decision) => {
@@ -253,6 +267,9 @@ const clearTimeDisplayForProfile = (profile) => {
 const decisionReasonForProfile = (profile) =>
   autoscalerDecisionsByProfile.value[profile]?.reason || ''
 
+const isProfileAutoscalerPaused = (profile) =>
+  profileAutoscalerPausedByProfile.value?.[profile] === true
+
 const saveRunPodSettings = async (profileRow) => {
   const profile = profileRow.profile
   if (!isThresholdValid(profile)) {
@@ -287,6 +304,32 @@ const saveRunPodSettings = async (profileRow) => {
     message.error('清空阈值保存失败')
   } finally {
     savingSettingsProfile.value = ''
+  }
+}
+
+const toggleProfileAutoscaler = async (profileRow) => {
+  const profile = profileRow.profile
+  const nextPaused = !isProfileAutoscalerPaused(profile)
+  togglingAutoscalerProfile.value = profile
+  try {
+    const payload = await updateRunPodAutoscalerSettings({
+      scale_up_wait_minutes_by_profile: {},
+      task_duration_seconds_by_type: {},
+      profile_autoscaler_paused_by_profile: {
+        [profile]: nextPaused,
+      },
+      reason: nextPaused
+        ? 'dashboard pause profile autoscaler'
+        : 'dashboard resume profile autoscaler',
+    })
+    autoscalerConfig.value = payload?.config || autoscalerConfig.value
+    autoscalerDecisions.value = payload?.decisions || autoscalerDecisions.value
+    message.success(nextPaused ? `已暂停 ${profile} 自动管理` : `已恢复 ${profile} 自动管理`)
+  } catch (err) {
+    console.error(err)
+    message.error('RunPod 类型自动管理状态更新失败')
+  } finally {
+    togglingAutoscalerProfile.value = ''
   }
 }
 
@@ -695,6 +738,7 @@ onUnmounted(() => {
               <col class="runpod-clear-time-col" />
               <col class="runpod-duration-col" />
               <col class="runpod-threshold-col" />
+              <col class="runpod-autoscaler-col" />
             </colgroup>
             <thead>
               <tr>
@@ -706,6 +750,7 @@ onUnmounted(() => {
                 <th>预计清空</th>
                 <th>单任务耗时</th>
                 <th>清空阈值</th>
+                <th>自动管理</th>
               </tr>
             </thead>
             <tbody v-if="runpodProfileRows.length > 0">
@@ -801,11 +846,34 @@ onUnmounted(() => {
                     </a-button>
                   </div>
                 </td>
+                <td>
+                  <div class="profile-autoscaler-cell">
+                    <a-tag
+                      :color="isProfileAutoscalerPaused(item.profile) ? 'orange' : 'green'"
+                      class="m-0"
+                    >
+                      {{ isProfileAutoscalerPaused(item.profile) ? '暂停中' : '自动' }}
+                    </a-tag>
+                    <a-button
+                      type="text"
+                      size="small"
+                      class="profile-autoscaler-toggle"
+                      :loading="togglingAutoscalerProfile === item.profile"
+                      @click="toggleProfileAutoscaler(item)"
+                    >
+                      <template #icon>
+                        <play-circle-outlined v-if="isProfileAutoscalerPaused(item.profile)" />
+                        <pause-circle-outlined v-else />
+                      </template>
+                      {{ isProfileAutoscalerPaused(item.profile) ? '恢复' : '暂停' }}
+                    </a-button>
+                  </div>
+                </td>
               </tr>
             </tbody>
             <tbody v-else>
               <tr>
-                <td colspan="8" class="empty-detail-cell">暂无 RunPod 统计</td>
+                <td colspan="9" class="empty-detail-cell">暂无 RunPod 统计</td>
               </tr>
             </tbody>
           </table>
@@ -1195,7 +1263,7 @@ onUnmounted(() => {
   min-width: 520px;
 }
 .runpod-profile-detail-table {
-  min-width: 980px;
+  min-width: 1120px;
 }
 .task-type-col {
   width: 34%;
@@ -1226,6 +1294,9 @@ onUnmounted(() => {
 }
 .runpod-threshold-col {
   width: 15%;
+}
+.runpod-autoscaler-col {
+  width: 13%;
 }
 .active-task-detail-table th,
 .runpod-profile-detail-table th {
@@ -1347,6 +1418,16 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 .scale-threshold-save {
+  flex: 0 0 auto;
+}
+.profile-autoscaler-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.profile-autoscaler-toggle {
   flex: 0 0 auto;
 }
 .runpod-operation-log-panel {

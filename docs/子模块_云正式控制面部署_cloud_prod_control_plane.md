@@ -80,7 +80,7 @@ RUNPOD_MODEL_MANIFEST_KEY=img2img_lora/2026-06-10/manifest.json
 
 `prod-worker --profile scail2` 使用 `runpod_prod_scail2_manual_NN` agent 和 `allbot-runpod-prod-scail2-manual-NN` Pod 名称，固定请求 `NVIDIA GeForce RTX 4090`，生产 Pod 不开启长期 SSH。该 profile 的 `SUPPORTED_TASK_TYPES` 为 `scail2_action_transfer,scail2_video_replacement`，模型从 `allbot-model-cache/scail2/2026-06-17-test/manifest.json` 同步，用户输入和结果只写 `user-data-prod`。生产 canary 会串行提交 `scail2_action_transfer 5s` 与 `scail2_video_replacement 5s` 两单，全部由 `runpod_prod_scail2_manual_NN` 接单并返回可播放 MP4 后，才可与 LAN SCAIL-2 并行 enable。当前长期口径是：`scail2` RunPod 已具备代码、镜像、模型 manifest 与 Dashboard 管理入口，但不是必须常驻的正式容量；没有 heartbeat 或已删除的 `manual_NN` 不能当作可用 worker。SCAIL-2 正式主路径仍以 gpu-002 slot0 LAN runtime 为准，RunPod 只作为手动备用/临时扩容。
 
-`prod-worker --profile ltx_video` 使用 `runpod_prod_ltx_video_manual_NN` agent 和 `allbot-runpod-prod-ltx-video-manual-NN` Pod 名称，优先请求 `NVIDIA GeForce RTX 5090,NVIDIA GeForce RTX 4090`，`containerDiskInGb` 至少 `180`，生产 Pod 不开启长期 SSH。该 profile 的 `SUPPORTED_TASK_TYPES` 为 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`，镜像由 `.github/workflows/runpod_ltx_video_profile_image.yml` 发布到 `ghcr.io/giraffu/allbot-comfy-runpod-ltx-video:<prod-tag>`，模型从 `allbot-model-cache/ltx_video/2026-06-10/manifest.json` 同步，并通过 `RUNPOD_TASK_TYPE_WORKFLOW_OVERRIDES_LTX_VIDEO` 默认指向三份 10Eros v1.2 workflow。生产 canary 只提交一单 `ltx_video` 5s I2V，全部由 `runpod_prod_ltx_video_manual_NN` 接单并返回可播放 MP4 后，才可手动 enable 接正式高级图生视频订单。该 profile 不改变 LAN LTX AIO，也不覆盖老 `LTX 2.3 *.json` workflow。
+`prod-worker --profile ltx_video` 使用 `runpod_prod_ltx_video_manual_NN` agent 和 `allbot-runpod-prod-ltx-video-manual-NN` Pod 名称，优先请求 `NVIDIA GeForce RTX 5090,NVIDIA GeForce RTX 4090`，`containerDiskInGb` 至少 `180`，生产 Pod 不开启长期 SSH。该 profile 的 `SUPPORTED_TASK_TYPES` 为 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`，镜像由 `.github/workflows/runpod_ltx_video_profile_image.yml` 发布到 `ghcr.io/giraffu/allbot-comfy-runpod-ltx-video:<prod-tag>`，模型从 `allbot-model-cache/ltx_video/2026-06-10/manifest.json` 同步；云端 R2 该 manifest 当前为 10Eros v1.2-only，不包含旧 v1 正式回退。生产 profile 通过 `RUNPOD_TASK_TYPE_WORKFLOW_OVERRIDES_LTX_VIDEO` 默认指向三份 10Eros v1.2 workflow。生产 canary 只提交一单 `ltx_video` 5s I2V，全部由 `runpod_prod_ltx_video_manual_NN` 接单并返回可播放 MP4 后，才可手动 enable 接正式高级图生视频订单。该 profile 不改变 LAN LTX AIO，也不覆盖老 `LTX 2.3 *.json` workflow。
 
 RunPod 正式手动 worker 的“启动”和“接单”是两层：`prod-worker up --execute`
 只创建/启动 Pod 并等待 disabled heartbeat；`prod-worker enable --execute` 才把
@@ -291,13 +291,18 @@ Dashboard RunPod 管理入口当前支持 `img2img`、`image_to_video`、`wan22_
 `scail2 / 视频生视频` 与 `ltx_video / 高级图生视频`；它只提交正式 RunPod 池新增/暂停/删除操作，不直接启停其它正式服务。
 Dashboard 后端 RunPod autoscaler 默认随正式 `dashboard-backend-prod` 启动，只有拿到 Redis leader
 lease 后才会自动执行：有排队且预计清空时间超过该 profile 清空阈值时，提交至多一次
-`add --count 1 --retry-unavailable`；有 backlog 但没有健康 enabled 可接单 worker 时也允许扩容。
+`add --count 1 --retry-unavailable --worker-timeout 2400`；有 backlog 但没有健康 enabled 可接单 worker 时也允许扩容。
 预计清空时间按 `pending_work_seconds + running_remaining_seconds` 除以 RunPod + 本地可接单 worker 数估算；
 静态单任务耗时默认 `img2img/img2img_lora=13s`、`image_to_video/wan22_video_v2=60s`、
 `i2i_pro/t2i-pornmaster-turbo/face_swap=12s`、`scail2_action_transfer/scail2_video_replacement=300s`、
 `ltx_video/ltx_video_flf2v/ltx_video_v2v_audio=120s`、unknown `100s`。缩容只在 `pending_count == 0` 且
 RunPod + 本地健康 enabled 可接单总容量大于 1 时，删除最高 slot 的 idle RunPod；autoscaler 创建的
 RunPod 未满 `DASHBOARD_RUNPOD_AUTOSCALER_MIN_RUNPOD_LIFETIME_SECONDS`（默认 1800）不会被缩容。
+autoscaler add 若已创建 slot 但 `DASHBOARD_RUNPOD_AUTOSCALER_BOOTSTRAP_TIMEOUT_SECONDS`（默认 2400）内
+仍无健康 heartbeat，会失败并自动对记录到的 slot 执行 `down --slot NN --execute` 清理；清理成功的
+bootstrap 失败不进入普通 cooldown，下一轮可重新 add。同 profile 在
+`DASHBOARD_RUNPOD_AUTOSCALER_BOOTSTRAP_REPLACEMENT_WINDOW_SECONDS`（默认 7200）内最多替换
+`DASHBOARD_RUNPOD_AUTOSCALER_BOOTSTRAP_REPLACEMENT_LIMIT`（默认 2）次，超过后 hold。
 autoscaler 会优先自愈正式 RunPod worker：`status=error|quarantined` 且 `last_error_at` 已持续超过
 `DASHBOARD_RUNPOD_AUTOSCALER_FAULT_RESTART_SECONDS`（默认 300）时提交 `restart --slot NN --execute`；
 `control_state=disabled|draining` 且 worker 仍健康 `idle|running` 时提交 `enable --slot NN --execute`。
@@ -305,11 +310,17 @@ RunPod `restart` 会先 disabled、调用 RunPod 原生 restart、等待健康 h
 本地 worker 只参与保底，不会被 autoscaler 启停；管理弹窗可通过 `/api/runpod/autoscaler/control`
 紧急暂停。默认清空阈值为 `img2img=20 分钟`、`scail2=40 分钟`、其它正式 profile `30 分钟`；
 系统监控页“活跃 RunPod 详情”的“清空阈值/单任务耗时”通过 `/api/runpod/autoscaler/settings`
-保存 profile 级分钟数与 `task_duration_seconds_by_type` 到 Redis，下一轮 autoscaler 评估立即使用。
+保存 profile 级分钟数与 `task_duration_seconds_by_type` 到 Redis，下一轮 autoscaler 评估立即使用；
+同表格“自动管理”按钮通过 `profile_autoscaler_paused_by_profile` 暂停/恢复单个 profile 的 autoscaler，
+暂停后该 profile 直接显示 `hold: profile autoscaler paused`，不会自动 add/down/restart/enable，
+不影响其它 profile，也不改变现有 worker 接单状态。
 Dashboard 决策会展示 `scale_up: estimated clear time ... exceeds ...`、
 `restart: runpod fault persisted ...`、`enable: runpod paused worker available`、
+`replace: previous runpod bootstrap timed out ...`、`hold: runpod add still bootstrapping Ns`、
 `hold: estimated clear time within threshold`、`hold: no backlog`、`hold: max runpod capacity reached`、
-`hold: minimum lifetime remaining Ns` 这类原因，便于区分真实容量不足、RunPod 自愈、无排队和生命周期保护。
+`hold: bootstrap replacement limit reached`、`hold: profile autoscaler paused`、
+`hold: minimum lifetime remaining Ns` 这类原因，
+便于区分真实容量不足、RunPod 自愈、启动换机、无排队和生命周期保护。
 
 QQCC 懒人 Bot 单独更新时使用专用脚本：
 
@@ -591,8 +602,9 @@ scripts/install_cloud_prod_shadow_sync_timer.sh --execute
 - 主脚本默认 dry-run；真实同步必须显式 `--execute`。
 - 数据库默认使用 `CLOUD_PROD_DB_DUMP_MODE=remote_r2`：脚本通过 SSH 让 `allbot-do-sgp1-control` 在云机读取 `.env.cloud.prod`，用 Docker 工具容器 `postgres:18`（可由 `SHADOW_SYNC_POSTGRES_IMAGE` 覆盖）执行 `pg_dump -Fc --serializable-deferrable`，把 dump/sha256 上传到 R2 临时前缀 `user-data-prod/__shadow-transfer/<timestamp>`，本地主服务器再经 HTTPS/rclone 下载到 ignored 的 `backups/cloud-prod-shadow/<timestamp>/`，校验 sha256 后恢复到 PostgreSQL 18 shadow 目标库 `bot_db_prod_shadow_next`，完成 Alembic/head 与关键表行数校验后，再把 `_next` 切成当前 `bot_db_prod_shadow`。云机临时目录和 R2 临时前缀在下载后清理。
 - 本地主服务器家宽/VPN 出口不应作为长期托管服务 trusted source；`remote_r2` 模式不需要把本地主公网 IP 加到托管 PostgreSQL trusted sources。旧 `CLOUD_PROD_DB_DUMP_MODE=local_tunnel` 仅作为 fallback/专项诊断；`.env.cloud-prod-shadow-sync.local` 可保留 `CLOUD_PROD_DB_TUNNEL_SSH_HOST=allbot-do-sgp1-control`，用于 Redis/Valkey 摘要采集或 fallback 时短生命周期 `local -> cloud control -> managed service` SSH 本地转发。`CLOUD_PROD_DB_TUNNEL_LOCAL_PORT=0` 表示自动选择空闲本地端口。
-- 本地到 R2 的 dump 下载可按网络情况设置 `R2_SYNC_HTTP_PROXY` / `R2_SYNC_HTTPS_PROXY`，同时用 `R2_SYNC_NO_PROXY` 保留 `127.0.0.1,localhost,192.168.1.115` 等本地 MinIO/LAN 地址直连。
+- 本地到 R2 的 dump 下载可按网络情况设置 `R2_SYNC_HTTP_PROXY` / `R2_SYNC_HTTPS_PROXY`，同时用 `R2_SYNC_NO_PROXY` 保留 `127.0.0.1,localhost,192.168.1.115` 等本地 MinIO/LAN 地址直连；默认保留 `R2_SYNC_BWLIMIT=20M`，并用 `R2_SYNC_TRANSFERS=8` / `R2_SYNC_CHECKERS=16` 改善小对象吞吐。
 - 对象同步使用 `rclone/rclone` 工具容器，先把 R2 `user-data-prod` 增量同步到本地 MinIO 纯镜像桶 `user-data-prod-shadow`；云端删除或覆盖导致的旧本地对象进入 `user-data-prod-shadow-quarantine/<timestamp>/`，不硬删。
+- 首次 seed 空的 `user-data-prod-shadow` 或长时间卡在全桶 `sync --fast-list` 清单阶段时，可手动追加 `--seed-r2-shadow-with-copy`，先用 `rclone copy --no-traverse` 可重入地填充 R2 shadow；timer 日常运行不应长期启用该模式，仍以 `sync + quarantine` 捕获云端删除/覆盖。
 - 若开启 `COMPLETE_MEDIA_SYNC_ENABLED=true`，每日任务会把 `user-data-prod-shadow` 非破坏式 copy 到完整合并桶 `user-data-complete-shadow`，不从 R2 下载第二遍，也不会删除完整桶内 legacy-only 对象。`bot-data` / `comfyui-temp` 等旧本地桶只用于一次性手动补齐，执行时显式追加 `--include-legacy-media-import` 或临时设置 `COMPLETE_MEDIA_IMPORT_LEGACY=true`；timer 日常运行应保持 legacy import 关闭，避免每天重复扫描历史大桶。
 - Redis/Valkey 只记录 `INFO memory` / `DBSIZE` 摘要，不恢复运行态、队列、锁或 heartbeat。
 - systemd timer 为 `allbot-cloud-prod-shadow-sync.timer`，默认每日 Asia/Shanghai 05:00，`Persistent=true`，`RandomizedDelaySec=15m`。

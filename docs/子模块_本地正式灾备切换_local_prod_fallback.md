@@ -72,7 +72,7 @@ cd /home/hfy/APP/All_bot
 scripts/sync_cloud_prod_to_local_shadow.py
 scripts/sync_cloud_prod_to_local_shadow.py --execute
 # 仅首次或明确补齐旧桶时使用：
-scripts/sync_cloud_prod_to_local_shadow.py --execute --include-legacy-media-import
+scripts/sync_cloud_prod_to_local_shadow.py --execute --seed-r2-shadow-with-copy --include-legacy-media-import
 ```
 
 云端完全不可用时，优先核对最近一次 `backups/cloud-prod-shadow/<timestamp>/manifest.json`、`bot_db_prod_shadow` 可连接性、Alembic 版本、关键表行数，以及 `user-data-complete-shadow` 抽样对象，再决定是否把 `bot_db_prod_shadow` 作为本地灾备写入基线。旧本地 compose 如果仍硬编码或默认指向 `bot_db`，必须先备份现有 `bot_db`，再由人工明确把 `bot_db_prod_shadow` 复制/提升为本地写库；不要在未备份的情况下直接覆盖本地正式库。后续必须对订单、余额、任务历史和用户写入做人工对账。

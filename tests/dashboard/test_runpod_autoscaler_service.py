@@ -22,6 +22,9 @@ def _config(*, min_runpod_lifetime_seconds: int = 0) -> RunPodAutoscalerConfig:
         heartbeat_max_age_seconds=300,
         owner_id="test-autoscaler",
         min_runpod_lifetime_seconds=min_runpod_lifetime_seconds,
+        runpod_bootstrap_timeout_seconds=2400,
+        runpod_bootstrap_replacement_limit=2,
+        runpod_bootstrap_replacement_window_seconds=7200,
     )
 
 
@@ -173,13 +176,41 @@ def _finished_autoscaler_operation(
     }
 
 
-def _active_operation(profile: str, *, action: str = "add"):
+def _failed_bootstrap_operation(
+    profile: str,
+    *,
+    ended_at: str,
+    slot: str,
+    operation_id: str | None = None,
+):
+    return {
+        "id": operation_id or f"{profile}-failed-bootstrap-{slot}",
+        "profile": profile,
+        "action": "add",
+        "status": "failed",
+        "source": "autoscaler",
+        "ended_at": ended_at,
+        "cleanup_slots": [slot],
+        "cleanup_status": "succeeded",
+        "error": "runpod operation exited with code 1",
+    }
+
+
+def _active_operation(
+    profile: str,
+    *,
+    action: str = "add",
+    started_at: str | None = None,
+    cleanup_slots: list[str] | None = None,
+):
     return {
         "id": f"{profile}-active",
         "profile": profile,
         "action": action,
         "status": "running",
         "source": "autoscaler",
+        "started_at": started_at,
+        "cleanup_slots": cleanup_slots or [],
     }
 
 
@@ -328,6 +359,83 @@ async def test_autoscaler_uses_persisted_task_duration_settings_on_next_evaluate
     assert decision["reason"] == "scale_up: estimated clear time 1220s exceeds 1200s"
 
 
+async def test_autoscaler_holds_paused_profile_without_scaling():
+    calls = []
+    store = InMemoryRunPodAutoscalerStateStore()
+    await set_runpod_autoscaler_settings_payload(
+        scale_up_wait_minutes_by_profile=None,
+        task_duration_seconds_by_type=None,
+        profile_autoscaler_paused_by_profile={"img2img": True},
+        reason="pause img2img autoscaler",
+        store=store,
+        refresh_payload=False,
+    )
+
+    async def start_add(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("paused profile should not start add")
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=store,
+        status_payload=_status(profile="img2img", pending=100, wait=10),
+        workers_payload=_workers(_local_worker("img2img,img2img_lora")),
+        operations_payload={"operations": []},
+        start_add_func=start_add,
+        now_func=lambda: 1000.0,
+    )
+
+    decision = {item["profile"]: item for item in payload["decisions"]}["img2img"]
+    assert payload["config"]["profile_autoscaler_paused_by_profile"]["img2img"] is True
+    assert "img2img" in payload["config"]["paused_profiles"]
+    assert decision["action"] == "hold"
+    assert decision["reason"] == "hold: profile autoscaler paused"
+    assert decision["profile_autoscaler_paused"] is True
+    assert calls == []
+
+
+async def test_autoscaler_profile_pause_does_not_pause_other_profiles():
+    calls = []
+    store = InMemoryRunPodAutoscalerStateStore()
+    await set_runpod_autoscaler_settings_payload(
+        scale_up_wait_minutes_by_profile=None,
+        task_duration_seconds_by_type=None,
+        profile_autoscaler_paused_by_profile={"scail2": True},
+        reason="pause scail2 autoscaler",
+        store=store,
+        refresh_payload=False,
+    )
+
+    async def start_add(**kwargs):
+        calls.append(kwargs)
+        return RunPodAdminOperation(
+            id="op-add",
+            action="add",
+            profile=kwargs["profile"],
+            command=["runpod", "add"],
+            source="autoscaler",
+            trigger_reason=kwargs["trigger_reason"],
+        )
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=store,
+        status_payload=_status(profile="img2img", pending=100, wait=10),
+        workers_payload=_workers(_local_worker("img2img,img2img_lora")),
+        operations_payload={"operations": []},
+        start_add_func=start_add,
+        now_func=lambda: 1000.0,
+    )
+
+    decisions = {item["profile"]: item for item in payload["decisions"]}
+    assert decisions["img2img"]["action"] == "scale_up"
+    assert decisions["scail2"]["action"] == "hold"
+    assert decisions["scail2"]["reason"] == "hold: profile autoscaler paused"
+    assert calls[0]["profile"] == "img2img"
+
+
 @pytest.mark.parametrize(
     "updates",
     [
@@ -359,6 +467,25 @@ async def test_autoscaler_rejects_invalid_task_duration_settings(updates):
         await set_runpod_autoscaler_settings_payload(
             scale_up_wait_minutes_by_profile=None,
             task_duration_seconds_by_type=updates,
+            store=InMemoryRunPodAutoscalerStateStore(),
+        )
+
+    assert exc_info.value.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"unknown": True},
+        {"img2img": "maybe"},
+    ],
+)
+async def test_autoscaler_rejects_invalid_profile_pause_settings(updates):
+    with pytest.raises(HTTPException) as exc_info:
+        await set_runpod_autoscaler_settings_payload(
+            scale_up_wait_minutes_by_profile=None,
+            task_duration_seconds_by_type=None,
+            profile_autoscaler_paused_by_profile=updates,
             store=InMemoryRunPodAutoscalerStateStore(),
         )
 
@@ -609,6 +736,119 @@ async def test_autoscaler_does_not_duplicate_active_or_cooling_profile_operation
     assert "operation active" in decisions["img2img"]["reason"]
     assert decisions["image_to_video"]["action"] == "hold"
     assert "cooldown" in decisions["image_to_video"]["reason"]
+    assert calls == []
+
+
+async def test_autoscaler_explains_active_runpod_bootstrap_wait():
+    calls = []
+
+    async def start_add(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("should not start add while bootstrap is active")
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=InMemoryRunPodAutoscalerStateStore(),
+        status_payload=_status(profile="img2img", pending=100, wait=10),
+        workers_payload=_workers(),
+        operations_payload={
+            "operations": [
+                _active_operation(
+                    "img2img",
+                    started_at="1970-01-01T00:10:00Z",
+                    cleanup_slots=["03"],
+                )
+            ]
+        },
+        start_add_func=start_add,
+        now_func=lambda: 1000.0,
+    )
+
+    decision = {item["profile"]: item for item in payload["decisions"]}["img2img"]
+    assert decision["action"] == "hold"
+    assert decision["reason"] == "hold: runpod add still bootstrapping 400s"
+    assert decision["runpod_bootstrap_elapsed_seconds"] == 400
+    assert calls == []
+
+
+async def test_autoscaler_retries_immediately_after_bootstrap_cleanup():
+    calls = []
+
+    async def start_add(**kwargs):
+        calls.append(kwargs)
+        return RunPodAdminOperation(
+            id="op-retry",
+            action="add",
+            profile=kwargs["profile"],
+            command=["runpod", "add"],
+            source="autoscaler",
+            trigger_reason=kwargs["trigger_reason"],
+        )
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=InMemoryRunPodAutoscalerStateStore(),
+        status_payload=_status(profile="img2img", pending=100, wait=10),
+        workers_payload=_workers(_local_worker("img2img,img2img_lora")),
+        operations_payload={
+            "operations": [
+                _failed_bootstrap_operation(
+                    "img2img",
+                    ended_at="1970-01-01T00:15:00Z",
+                    slot="03",
+                )
+            ]
+        },
+        start_add_func=start_add,
+        now_func=lambda: 1000.0,
+    )
+
+    decision = {item["profile"]: item for item in payload["decisions"]}["img2img"]
+    assert decision["action"] == "scale_up"
+    assert decision["reason"].startswith("replace: previous runpod bootstrap timed out")
+    assert decision["runpod_bootstrap_replacement_count"] == 1
+    assert calls[0]["profile"] == "img2img"
+
+
+async def test_autoscaler_holds_after_bootstrap_replacement_limit():
+    calls = []
+
+    async def start_add(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("should not retry after replacement limit")
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=InMemoryRunPodAutoscalerStateStore(),
+        status_payload=_status(profile="img2img", pending=100, wait=10),
+        workers_payload=_workers(_local_worker("img2img,img2img_lora")),
+        operations_payload={
+            "operations": [
+                _failed_bootstrap_operation(
+                    "img2img",
+                    ended_at="1970-01-01T00:15:00Z",
+                    slot="03",
+                    operation_id="failed-1",
+                ),
+                _failed_bootstrap_operation(
+                    "img2img",
+                    ended_at="1970-01-01T00:14:00Z",
+                    slot="04",
+                    operation_id="failed-2",
+                ),
+            ]
+        },
+        start_add_func=start_add,
+        now_func=lambda: 1000.0,
+    )
+
+    decision = {item["profile"]: item for item in payload["decisions"]}["img2img"]
+    assert decision["action"] == "hold"
+    assert decision["reason"] == "hold: bootstrap replacement limit reached"
+    assert decision["runpod_bootstrap_replacement_count"] == 2
     assert calls == []
 
 

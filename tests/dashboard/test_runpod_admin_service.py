@@ -371,6 +371,20 @@ async def test_autoscaler_recovery_operations_build_slot_scoped_operations():
 
 
 @pytest.mark.asyncio
+async def test_autoscaler_add_operation_uses_bootstrap_timeout():
+    operation = await runpod_admin_service.start_runpod_autoscaler_add_operation(
+        profile="img2img",
+        trigger_reason="scale_up: estimated clear time 1300s exceeds 1200s",
+        spawn_task_func=_discard_operation_coroutine,
+    )
+
+    command = operation.command
+    assert operation.action == "add"
+    assert command[command.index("--worker-timeout") + 1] == "2400"
+    assert "--execute" in command
+
+
+@pytest.mark.asyncio
 async def test_restart_lan_aio_worker_builds_slot_scoped_operation():
     payload = await runpod_admin_service.restart_lan_aio_worker_payload(
         agent_id="lan_aio_prod_gpu177_gpu0_image_to_video_01",
@@ -590,6 +604,53 @@ async def test_termination_cleanup_runs_down_for_recorded_slots():
     assert command[command.index("--profile") + 1] == "wan22_video_v2"
     assert command[command.index("--slot") + 1] == "03"
     assert "--execute" in command
+
+
+@pytest.mark.asyncio
+async def test_failed_runpod_add_operation_auto_cleans_recorded_slots():
+    commands = []
+    processes = [
+        _FakeProcess(
+            exit_code=1,
+            lines=[
+                "[runpod-prod-worker] runpod_create_pod_03: running",
+                "prod worker heartbeat timeout",
+            ],
+        ),
+        _FakeProcess(exit_code=0, lines=["cleanup ok"]),
+    ]
+    operation = runpod_admin_service.RunPodAdminOperation(
+        id="op-failed-add",
+        action="add",
+        profile="wan22_video_v2",
+        command=["bash", "scripts/runpod_prod_ops.sh", "add"],
+        source="autoscaler",
+    )
+    runpod_admin_service._operations[operation.id] = operation
+
+    async def fake_create_subprocess_exec(*command, **_kwargs):
+        commands.append(list(command))
+        return processes.pop(0)
+
+    runpod_admin_service._operation_runner.create_subprocess_exec = (
+        fake_create_subprocess_exec
+    )
+
+    await runpod_admin_service._run_operation(
+        operation.id,
+        command=operation.command,
+        env={},
+    )
+
+    assert operation.status == "failed"
+    assert operation.cleanup_slots == ["03"]
+    assert operation.cleanup_status == "succeeded"
+    assert operation.cleanup_exit_codes == [0]
+    cleanup_command = commands[1]
+    assert "down" in cleanup_command
+    assert cleanup_command[cleanup_command.index("--profile") + 1] == "wan22_video_v2"
+    assert cleanup_command[cleanup_command.index("--slot") + 1] == "03"
+    assert "--execute" in cleanup_command
 
 
 def test_runpod_operation_env_opens_required_mutation_gates(monkeypatch):

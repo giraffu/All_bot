@@ -66,6 +66,8 @@ def test_parser_defaults_to_dry_run_and_requires_execute_for_mutation():
     assert parser.parse_args(["--execute"]).execute is True
     assert parser.parse_args([]).include_legacy_media_import is False
     assert parser.parse_args(["--include-legacy-media-import"]).include_legacy_media_import is True
+    assert parser.parse_args([]).seed_r2_shadow_with_copy is False
+    assert parser.parse_args(["--seed-r2-shadow-with-copy"]).seed_r2_shadow_with_copy is True
 
 
 def test_dry_run_plans_commands_without_creating_backup_directory(tmp_path, capsys):
@@ -90,6 +92,29 @@ def test_dry_run_plans_commands_without_creating_backup_directory(tmp_path, caps
     assert "rclone delete" not in commands
     assert "--delete-excluded" not in commands
     assert not config.backup_dir.exists()
+
+
+def test_initial_r2_shadow_seed_uses_copy_without_quarantine_sync(tmp_path, capsys):
+    config = build_config(
+        tmp_path,
+        R2_SHADOW_SEED_WITH_COPY="true",
+    )
+
+    runner = sync.run_shadow_sync(config, execute=False)
+
+    commands = "\n".join(runner.commands)
+    assert (
+        "rclone copy cloudr2:user-data-prod localminio:user-data-prod-shadow "
+        "--no-traverse"
+    ) in commands
+    assert "rclone sync cloudr2:user-data-prod localminio:user-data-prod-shadow" not in commands
+    seed_lines = [
+        line
+        for line in commands.splitlines()
+        if "cloudr2:user-data-prod localminio:user-data-prod-shadow" in line
+    ]
+    assert seed_lines
+    assert all("--backup-dir" not in line for line in seed_lines)
 
 
 def test_complete_media_sync_copies_shadow_to_complete_without_destructive_sync(
@@ -149,6 +174,19 @@ def test_complete_media_legacy_import_is_manual_and_preserves_existing_objects(
     ) in commands
     assert "rclone sync localminio:bot-data" not in commands
     assert "rclone delete localminio:user-data-complete-shadow" not in commands
+
+
+def test_long_manual_timestamp_uses_compact_previous_database_name(tmp_path):
+    env_file = write_env_file(tmp_path)
+    timestamp = "manual_complete_seed_20260625_032920"
+    config = sync.build_config(argparse.Namespace(env_file=env_file, timestamp=timestamp))
+
+    expected_digest = hashlib.sha1(timestamp.encode("utf-8")).hexdigest()[:10]
+    assert len(config.previous_database_name) <= sync.POSTGRES_IDENTIFIER_MAX_LENGTH
+    assert config.previous_database_name.startswith(
+        "bot_db_prod_shadow_prev_manual_complete_seed_"
+    )
+    assert config.previous_database_name.endswith(f"_{expected_digest}")
 
 
 def test_postgres_tool_image_defaults_to_cloud_prod_major_version(tmp_path):

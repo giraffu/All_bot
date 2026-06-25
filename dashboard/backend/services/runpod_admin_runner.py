@@ -298,6 +298,22 @@ class RunPodAdminOperationRunner:
                     operation.error = (
                         f"runpod operation exited with code {operation.exit_code}"
                     )
+                    if (
+                        operation.source == "autoscaler"
+                        and operation.action == "add"
+                        and operation.cleanup_slots
+                    ):
+                        append_operation_log(
+                            operation,
+                            "[dashboard-runpod] autoscaler add failed after "
+                            "creating RunPod slot; cleanup started",
+                        )
+                        cleanup_ok = await self.run_termination_cleanup(
+                            operation,
+                            env=env,
+                        )
+                        if not cleanup_ok:
+                            operation.error = operation.cleanup_error or operation.error
         except Exception as exc:
             if operation.terminate_requested:
                 operation.status = "terminate_failed"

@@ -22,6 +22,9 @@ vi.mock('../api/api', () => ({
       cooldown_seconds: 600,
       min_runpod_lifetime_seconds: 1800,
       runpod_fault_restart_seconds: 300,
+      runpod_bootstrap_timeout_seconds: 2400,
+      runpod_bootstrap_replacement_limit: 2,
+      runpod_bootstrap_replacement_window_seconds: 7200,
       max_runpods_per_profile: 5,
     },
     decisions: [
@@ -133,6 +136,9 @@ describe('RunPodCapacityManager', () => {
         cooldown_seconds: 600,
         min_runpod_lifetime_seconds: 1800,
         runpod_fault_restart_seconds: 300,
+        runpod_bootstrap_timeout_seconds: 2400,
+        runpod_bootstrap_replacement_limit: 2,
+        runpod_bootstrap_replacement_window_seconds: 7200,
         max_runpods_per_profile: 5,
       },
       decisions: [
@@ -203,6 +209,8 @@ describe('RunPodCapacityManager', () => {
     expect(wrapper.text()).toContain('清空阈值 1800s')
     expect(wrapper.text()).toContain('最短生命周期 1800s')
     expect(wrapper.text()).toContain('故障重启 300s')
+    expect(wrapper.text()).toContain('启动超时 2400s')
+    expect(wrapper.text()).toContain('替换上限 2')
     expect(wrapper.text()).toContain('扩容')
     expect(wrapper.text()).toContain('重启')
     expect(wrapper.text()).toContain('开启')

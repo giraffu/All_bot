@@ -33,6 +33,7 @@ from ops.gpu_pool_controller.runpod_profile_catalog import prod_agent_id_from_sl
 
 logger = logging.getLogger("dashboard.runpod")
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+RUNPOD_AUTOSCALER_BOOTSTRAP_TIMEOUT_SECONDS_DEFAULT = 40 * 60
 
 _operation_store: RunPodOperationStore = build_default_runpod_operation_store()
 _command_builder = RunPodAdminCommandBuilder(project_root=PROJECT_ROOT)
@@ -169,6 +170,24 @@ def _lan_aio_control_command(action: str, slot_id: str) -> list[str]:
 
 def _default_prod_max_manual_slots() -> int:
     return _command_builder.default_prod_max_manual_slots()
+
+
+def _autoscaler_bootstrap_timeout_seconds() -> int:
+    raw = os.getenv("DASHBOARD_RUNPOD_AUTOSCALER_BOOTSTRAP_TIMEOUT_SECONDS", "")
+    try:
+        return (
+            max(60, int(raw))
+            if raw.strip()
+            else RUNPOD_AUTOSCALER_BOOTSTRAP_TIMEOUT_SECONDS_DEFAULT
+        )
+    except ValueError:
+        logger.warning(
+            "Invalid DASHBOARD_RUNPOD_AUTOSCALER_BOOTSTRAP_TIMEOUT_SECONDS=%r; "
+            "using %s",
+            raw,
+            RUNPOD_AUTOSCALER_BOOTSTRAP_TIMEOUT_SECONDS_DEFAULT,
+        )
+        return RUNPOD_AUTOSCALER_BOOTSTRAP_TIMEOUT_SECONDS_DEFAULT
 
 
 def _operation_env(*, prod_max_manual_slots: int | None = None) -> dict[str, str]:
@@ -401,6 +420,8 @@ async def start_runpod_autoscaler_add_operation(
             "100",
             "--retry-interval",
             "30",
+            "--worker-timeout",
+            str(_autoscaler_bootstrap_timeout_seconds()),
             "--execute",
         ]
     )

@@ -305,7 +305,7 @@ scripts/lan_scail2_aio_prod.sh rollback --execute
 - 真实密钥只放在 ignored env 文件，例如 `.env.lan.model-cache`、`.env.lan-aio-test` 和 `.env.lan-aio-prod`；生产 helper 也可用 allowlist 从 `.env.cloud.prod` 与 `.env.lan.model-cache` 读取必要变量，不直接 `source`。
 - compose 模板只允许出现 `${LAN_AIO_*:?}` / `${LAN_MODEL_CACHE_*:?}` 占位符。
 - 不要直接 `source .env.cloud.test`；RunPod dry-run 继续只使用 controller 的 `--env-file` loader。
-- LAN 模型缓存 bucket 固定为 `allbot-model-cache`；截至 2026-06-22，`192.168.1.115:9010` 已缓存 `img2img_lora/2026-06-10/manifest.json`、`i2i_pro/2026-06-14-test/manifest.json`、`scail2/2026-06-17-test/manifest.json` 与 `ltx_video/2026-06-10/manifest.json`。LTX manifest 同时保留旧 v1 主模型和 10Eros v1.2 主模型。
+- LAN 模型缓存 bucket 固定为 `allbot-model-cache`；截至 2026-06-22，`192.168.1.115:9010` 已缓存 `img2img_lora/2026-06-10/manifest.json`、`i2i_pro/2026-06-14-test/manifest.json`、`scail2/2026-06-17-test/manifest.json` 与 `ltx_video/2026-06-10/manifest.json`。LAN LTX 缓存可能仍有旧 v1 残留；云端 R2 `ltx_video/2026-06-10/manifest.json` 当前是 10Eros v1.2-only，正式 RunPod 不依赖旧 v1 回退。
 - 全任务 LAN cache 入口为 `scripts/upload_all_task_models_to_lan_cache.py --env-file .env.lan.model-cache`，默认 dry-run；真实上传必须另行显式加 `--execute`。helper 复用共享对象池 `models/by-sha256/<sha[:2]>/<sha>`，并会复用已存在且 size/sha256 metadata 匹配的旧对象 key。
 - canonical manifest 目标为 `img2img_lora/2026-06-10/manifest.json`、`i2i_pro/2026-06-14-test/manifest.json`、`image_to_video/2026-06-13-test/manifest.json`、`wan22_video_v2/2026-06-13-test/manifest.json`、`wan22_aio_video/2026-06-12-test/manifest.json`、`ltx_video/2026-06-10/manifest.json`、`face_i2i_t2i/2026-06-10/manifest.json`、`scail2/2026-06-17-test/manifest.json`。`video_basic/2026-06-10` 不作为主 manifest；legacy `video_insert` / `video_edit` 只作为兼容任务类型归入 `image_to_video`。
 - 单 bundle 通用入口仍为 `scripts/upload_model_bundle_to_r2.py`，通过 `.env.lan.model-cache` 映射 `LAN_MODEL_CACHE_*` 到 `RUNPOD_MODEL_*` 后写入 LAN cache；脚本按对象 size 与 sha256 metadata 跳过已有对象，metadata key 需大小写不敏感处理以兼容 MinIO。
@@ -527,19 +527,28 @@ Dashboard 后端的 RunPod autoscaler 只复用上述安全入口，不直接调
 `/api/system/status.runpod_profile_queue_details` 与 `/api/system/workers`：某 profile
 排队数大于 0 且预计清空时间超过该 profile 清空阈值时，若该 profile 当前 RunPod 数小于
 `DASHBOARD_RUNPOD_AUTOSCALER_MAX_RUNPODS_PER_PROFILE`（默认 5）且没有同 profile 未完成 operation，
-则每轮最多提交一次 `add --count 1 --retry-unavailable --max-attempts 100 --retry-interval 30 --execute`。
+则每轮最多提交一次
+`add --count 1 --retry-unavailable --max-attempts 100 --retry-interval 30 --worker-timeout 2400 --execute`。
 预计清空时间按静态单任务耗时估算：`pending_work_seconds=sum(pending_count_by_task_type * task_duration_seconds)`，
 再加 running worker 的预计剩余秒数后除以 RunPod + 本地健康 enabled 可接单 worker 数；有 backlog
 但无可接单 worker 时标记 `capacity_status=no_accepting_workers`，允许扩容。清空阈值默认按 profile
 生效：`img2img=20 分钟`、`scail2=40 分钟`，其它正式 profile
 （`image_to_video`、`wan22_video_v2`、`i2i_pro`、`ltx_video`）为 `30 分钟`；
 系统监控页“活跃 RunPod 详情”的“清空阈值”列可保存 profile 级分钟数，后端写入 Redis
-并由 `/api/runpod/autoscaler/settings` 合并到下一轮评估；`DASHBOARD_RUNPOD_AUTOSCALER_SCALE_UP_WAIT_SECONDS`
+并由 `/api/runpod/autoscaler/settings` 合并到下一轮评估；同一表格的“自动管理”按钮通过
+`profile_autoscaler_paused_by_profile` 保存 profile 级暂停状态，暂停后该 profile 决策直接
+`hold: profile autoscaler paused`，不会再自动 add/down/restart/enable，不影响其它 profile，也不改变
+已有 worker 接单状态。`DASHBOARD_RUNPOD_AUTOSCALER_SCALE_UP_WAIT_SECONDS`
 仅作为未配置 profile 的 fallback。静态耗时可通过同一 settings API 的 `task_duration_seconds_by_type`
 更新，允许 1-3600 秒；默认值为 `img2img/img2img_lora=13s`、`image_to_video/wan22_video_v2=60s`、
 `i2i_pro/t2i-pornmaster-turbo/face_swap=12s`、`scail2_action_transfer/scail2_video_replacement=300s`、
 `ltx_video/ltx_video_flf2v/ltx_video_v2v_audio=120s`、unknown `100s`。新增 operation 完成或失败后，
-同 profile 默认冷却 600 秒。缩容只在 `pending_count == 0` 时考虑，若 RunPod + 本地健康 enabled 可接单
+同 profile 默认冷却 600 秒；但 autoscaler add 若已创建 slot 且因
+`DASHBOARD_RUNPOD_AUTOSCALER_BOOTSTRAP_TIMEOUT_SECONDS`（默认 2400）内没有健康 heartbeat 失败，会自动对记录到的
+slot 执行 `down --slot NN --execute` 清理，清理成功后不进入 cooldown，下一轮可重新 add。同 profile 在
+`DASHBOARD_RUNPOD_AUTOSCALER_BOOTSTRAP_REPLACEMENT_WINDOW_SECONDS`（默认 7200）内最多替换
+`DASHBOARD_RUNPOD_AUTOSCALER_BOOTSTRAP_REPLACEMENT_LIMIT`（默认 2）次，超过后显示
+`hold: bootstrap replacement limit reached`。缩容只在 `pending_count == 0` 时考虑，若 RunPod + 本地健康 enabled 可接单
 worker 总数大于 1，则选择该 profile 最高 slot 的 idle RunPod 执行 `down --slot NN --execute`；autoscaler
 创建的 RunPod 未满 `DASHBOARD_RUNPOD_AUTOSCALER_MIN_RUNPOD_LIFETIME_SECONDS`（默认 1800）不会被缩容。
 autoscaler 会优先自愈正式 RunPod worker：`status=error|quarantined` 且 `last_error_at` 已持续超过
@@ -550,8 +559,9 @@ restart、等待健康 heartbeat，再恢复 enabled 接单。本地 worker 只�
 启停。autoscaler 必须拿到 Redis leader lease 才执行 mutation；拿不到 Redis/leader 或系统快照失败时
 只记录 hold/error。管理弹窗的 `/api/runpod/autoscaler` 与 `/api/runpod/autoscaler/control`
 可查看 `scale_up: estimated clear time ...`、`restart: runpod fault persisted ...`、
-`enable: runpod paused worker available`、`hold: no backlog`、`hold: max runpod capacity reached`、
-`hold: minimum lifetime remaining Ns` 等决策并紧急暂停/恢复。
+`enable: runpod paused worker available`、`replace: previous runpod bootstrap timed out ...`、
+`hold: runpod add still bootstrapping Ns`、`hold: no backlog`、`hold: max runpod capacity reached`、
+`hold: profile autoscaler paused`、`hold: minimum lifetime remaining Ns` 等决策并紧急暂停/恢复。
 
 `down` 删除已有 Pod 的 preflight 只做 RunPod key、Pod 列表、reconcile 与 Central health 检查，不渲染 create pod request，因此不会因缺少 `RUNPOD_IMAGE_NAME_I2I_PRO` / `RUNPOD_IMAGE_NAME_SCAIL2` / `RUNPOD_IMAGE_NAME_LTX_VIDEO` 这类创建镜像配置而阻断删除；`up` / `add` / `render` / `canary` 仍必须具备目标 profile 的正式镜像与模型配置。
 
@@ -791,7 +801,7 @@ python scripts/gpu_pool_controller.py runpod prod-worker up \
 | `RUNPOD_MODEL_PREFIX_WAN22_VIDEO_V2` / `RUNPOD_MODEL_MANIFEST_KEY_WAN22_VIDEO_V2` | split `wan22_video_v2` 模型 manifest | `wan22_video_v2/2026-06-13-test/manifest.json` | 同 cloud-test manifest |
 | `RUNPOD_MODEL_PREFIX_I2I_PRO` / `RUNPOD_MODEL_MANIFEST_KEY_I2I_PRO` | `i2i_pro` 三任务模型 manifest | `i2i_pro/2026-06-14-test/manifest.json` | 同 cloud-test manifest |
 | `RUNPOD_MODEL_PREFIX_SCAIL2` / `RUNPOD_MODEL_MANIFEST_KEY_SCAIL2` | `scail2` 视频生视频模型 manifest | `scail2/2026-06-17-test/manifest.json` | 同 cloud-test manifest |
-| `RUNPOD_MODEL_PREFIX_LTX_VIDEO` / `RUNPOD_MODEL_MANIFEST_KEY_LTX_VIDEO` | `ltx_video` 高级图生视频模型 manifest | `ltx_video/2026-06-10/manifest.json` | 同 cloud-test manifest，manifest 内长期保留 10Eros v1.2 与旧 v1 主模型 |
+| `RUNPOD_MODEL_PREFIX_LTX_VIDEO` / `RUNPOD_MODEL_MANIFEST_KEY_LTX_VIDEO` | `ltx_video` 高级图生视频模型 manifest | `ltx_video/2026-06-10/manifest.json` | 同 cloud-test manifest；云端 R2 manifest 当前为 10Eros v1.2-only，不保留旧 v1 正式回退 |
 | `RUNPOD_MODEL_PREFIX_WAN22_AIO_VIDEO` / `RUNPOD_MODEL_MANIFEST_KEY_WAN22_AIO_VIDEO` | 兼容/回滚全集 manifest | `wan22_aio_video/2026-06-12-test/manifest.json` | 不作为正式主路径 |
 
 RunPod secret reference 固定口径：
@@ -823,7 +833,7 @@ RUNPOD_MODEL_SECRET_KEY={{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}
 - `i2i_pro` RunPod 镜像构建入口是 `remote_workers/docker/runpod_profiles/i2i_pro/`，默认 base 为 `yanwk/comfyui-boot:cu128-slim`，与现有图生图和 Wan22 RunPod 镜像基线保持一致；ComfyUI pin 到 `16cd8d8a8f5f16ce7e5f929fdba9f783990254ea`。不得使用 `cu130` 基线，否则在当前 RunPod 4090 宿主机上可能因 PyTorch CUDA 版本高于宿主机驱动能力而失败；`20260614-i2ipro-6b167aa-cu128-min4` 已在 `NVIDIA GeForce RTX 4090` cloud-test Web canary 中完成模型同步、ComfyUI CUDA 初始化、worker heartbeat 和 `i2i_pro` 真实任务出图；当前 `.env.cloud.test` 候选镜像为 `20260614-i2ipro-b75c6a9-cu128-min5-ssh`，在 min4 的可用基线上补齐 `openssh` 与 direct TCP SSH smoke。当前 workflow 只要求 ComfyUI/core `nodes` 与 `comfy_extras` 中的 `UNETLoader`、`CLIPLoader`、`VAELoader`、`ReferenceLatent`、`EmptyFlux2LatentImage`、`Flux2Scheduler`、`SamplerCustomAdvanced`，不 baked 自定义节点或业务模型。GitHub Actions smoke 在 CPU runner 上用静态源码检查确认这些节点存在，避免导入 ComfyUI 时触发 CUDA 初始化；GPU import 与真实执行以 cloud-test canary 为准。镜像 smoke 还必须检查 `ffmpeg`、`curl`、`git`、`ssh-keygen` 与 `sshd`，确保 direct TCP SSH 诊断可用。
 - RunPod `i2i_pro` 三任务能力依赖 `remote_workers/src/workflow_mapping_validation.py` 支持 `TASK_TYPE_WORKFLOW_OVERRIDES`，并且 `remote_workers/comfy_agent/workflows/` 内存在 `txt2img_from_i2i_pro.json` 与 `face_swap_v2.json`。`runpod_bootstrap_from_git.sh` 只在 `/workspace/allbot/repo/remote_workers` 不存在时 clone `deploy`，若旧 Pod 原地重启且已有旧 bundle，可能继续复用旧文件；新建/重建 Pod 会拉最新 `deploy`。若已运行的旧生产 Pod 因远端 bundle 缺 override 支持而读取旧默认 workflow，可先通过 Central agent control 将目标 worker 置为 `disabled`，再在 Pod 内覆盖默认 `face_swap.json` 与默认 Pornmaster workflow 为对应 v2/i2i_pro 派生模板；`WorkflowPatcher.load_workflow()` 每单重新读 JSON，文件级热修无需删除或重启 Pod，但长期修复仍必须进入 git 与新镜像/新 Pod。
 - `scail2` RunPod 镜像构建入口是 `remote_workers/docker/runpod_profiles/scail2/`，GHCR ref 必须为 `ghcr.io/giraffu/allbot-comfy-runpod-scail2:<tag>`。镜像必须包含 ComfyUI SCAIL-2 core 节点、VideoHelperSuite、KJNodes、rgthree、Frame-Interpolation、Fill-Nodes、ffmpeg、bootstrap/sshd 诊断依赖和 `remote_workers/requirements.txt`，不得 baked 任何 `.safetensors` 模型权重。模型 manifest 固定为 `allbot-model-cache/scail2/2026-06-17-test/manifest.json`，LoRA 相对路径必须保持 `loras/Wan2.1/Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors`。正式 RunPod `scail2` profile 只接 `scail2_action_transfer,scail2_video_replacement`，结果写 `user-data-prod`；cloud-test RunPod profile 结果写 `user-data-test`。
-- `ltx_video` RunPod 镜像构建入口是 `remote_workers/docker/runpod_profiles/ltx_video/`，GHCR ref 必须为 `ghcr.io/giraffu/allbot-comfy-runpod-ltx-video:<tag>`，发布 workflow 为 `.github/workflows/runpod_ltx_video_profile_image.yml`。Dockerfile 默认从可公网拉取的 Wan22 GHCR 节点源复制所需 custom nodes，不依赖 LAN registry；镜像只 baked LTX custom nodes、shim、bootstrap 与运行依赖，不 baked `.safetensors`。模型 manifest 固定为 `allbot-model-cache/ltx_video/2026-06-10/manifest.json`，正式 RunPod profile 默认通过 `RUNPOD_TASK_TYPE_WORKFLOW_OVERRIDES_LTX_VIDEO` 使用三份 10Eros v1.2 workflow，同时保留老 `LTX 2.3 *.json` 和 LAN AIO 默认行为。
+- `ltx_video` RunPod 镜像构建入口是 `remote_workers/docker/runpod_profiles/ltx_video/`，GHCR ref 必须为 `ghcr.io/giraffu/allbot-comfy-runpod-ltx-video:<tag>`，发布 workflow 为 `.github/workflows/runpod_ltx_video_profile_image.yml`。Dockerfile 默认从可公网拉取的 Wan22 GHCR 节点源复制所需 custom nodes，不依赖 LAN registry；镜像只 baked LTX custom nodes、shim、bootstrap 与运行依赖，不 baked `.safetensors`。模型 manifest 固定为 `allbot-model-cache/ltx_video/2026-06-10/manifest.json`，云端 R2 当前只包含 10Eros v1.2 所需权重，正式 RunPod profile 默认通过 `RUNPOD_TASK_TYPE_WORKFLOW_OVERRIDES_LTX_VIDEO` 使用三份 10Eros v1.2 workflow；老 `LTX 2.3 *.json` 和 LAN AIO 默认行为仍保留为独立入口，但不作为新 RunPod 回退路径。
 - `i2i_pro_baseline` 模型包从 `gpu-226` / `192.168.1.226:8188` 同步到 R2 `allbot-model-cache/i2i_pro/2026-06-14-test/manifest.json`，包含 6 个文件，总计 `38,769,838,190` bytes（约 `36.11 GiB`）。这 6 个文件同时覆盖 `i2i_pro.json`、`txt2img_from_i2i_pro.json` 与 `face_swap_v2.json`；本地主模型 registry 的 import spec 已按这两个 runtime overrides 生成 manifest，不再把 legacy Pornmaster/t2i 或旧 `face_swap.json` 专属模型纳入 `i2i_pro_baseline`。首次 cloud-test canary 使用 `RUNPOD_CONTAINER_DISK_GB=120`，GPU 只请求 `NVIDIA GeForce RTX 4090`，模型同步只写 ComfyUI `models/`，不得写 `input/output/temp/custom_nodes/workflows`。
 
 `i2i_pro_baseline` 模型清单：

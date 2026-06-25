@@ -16,6 +16,8 @@ PROD_ENV_FILE=".env.cloud.prod"
 RETRY_UNAVAILABLE="false"
 MAX_ATTEMPTS="20"
 RETRY_INTERVAL_SECONDS="90"
+READINESS_TIMEOUT_SECONDS=""
+WORKER_TIMEOUT_SECONDS=""
 
 STATUS_PROFILES=(img2img image_to_video wan22_video_v2 i2i_pro scail2 ltx_video)
 
@@ -50,6 +52,8 @@ Options:
   --retry-unavailable         Retry up/add/scale on RunPod inventory/resource errors.
   --max-attempts <N>          Max attempts with --retry-unavailable. Default 20.
   --retry-interval <sec>      Sleep seconds between retry attempts. Default 90.
+  --readiness-timeout <sec>   Override prod-worker pod readiness timeout.
+  --worker-timeout <sec>      Override prod-worker heartbeat timeout.
   --dry-run                   Print guarded mutation plan only. Default.
   --execute                   Execute the selected mutation.
   -h, --help                  Show this help.
@@ -75,6 +79,12 @@ print_shell_command() {
   if [ -n "$SLOT" ]; then
     printf ' %q' --slot "$SLOT"
   fi
+  if [ -n "$READINESS_TIMEOUT_SECONDS" ]; then
+    printf ' %q' --readiness-timeout "$READINESS_TIMEOUT_SECONDS"
+  fi
+  if [ -n "$WORKER_TIMEOUT_SECONDS" ]; then
+    printf ' %q' --worker-timeout "$WORKER_TIMEOUT_SECONDS"
+  fi
   while [ "$#" -gt 0 ]; do
     printf ' %q' "$1"
     shift
@@ -92,6 +102,12 @@ run_controller() {
   fi
   if [ -n "$SLOT" ]; then
     cmd+=(--slot "$SLOT")
+  fi
+  if [ -n "$READINESS_TIMEOUT_SECONDS" ]; then
+    cmd+=(--readiness-timeout "$READINESS_TIMEOUT_SECONDS")
+  fi
+  if [ -n "$WORKER_TIMEOUT_SECONDS" ]; then
+    cmd+=(--worker-timeout "$WORKER_TIMEOUT_SECONDS")
   fi
   cmd+=("$@")
   "${cmd[@]}"
@@ -377,6 +393,14 @@ while [ "$#" -gt 0 ]; do
       ;;
     --retry-interval)
       RETRY_INTERVAL_SECONDS="${2:?missing value for --retry-interval}"
+      shift 2
+      ;;
+    --readiness-timeout)
+      READINESS_TIMEOUT_SECONDS="${2:?missing value for --readiness-timeout}"
+      shift 2
+      ;;
+    --worker-timeout)
+      WORKER_TIMEOUT_SECONDS="${2:?missing value for --worker-timeout}"
       shift 2
       ;;
     --execute)

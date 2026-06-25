@@ -197,6 +197,8 @@ describe('QueueStats worker health display', () => {
     vi.clearAllMocks()
     apiMocks.fetchRunPodAutoscaler.mockResolvedValue({
       config: {
+        paused_profiles: [],
+        profile_autoscaler_paused_by_profile: {},
         scale_up_wait_seconds_by_profile: {
           img2img: 20 * 60,
           image_to_video: 30 * 60,
@@ -233,6 +235,8 @@ describe('QueueStats worker health display', () => {
     })
     apiMocks.updateRunPodAutoscalerSettings.mockResolvedValue({
       config: {
+        paused_profiles: [],
+        profile_autoscaler_paused_by_profile: {},
         scale_up_wait_seconds_by_profile: {
           img2img: 25 * 60,
           image_to_video: 30 * 60,
@@ -514,6 +518,7 @@ describe('QueueStats worker health display', () => {
       '预计清空',
       '单任务耗时',
       '清空阈值',
+      '自动管理',
     ])
   })
 
@@ -566,6 +571,87 @@ describe('QueueStats worker health display', () => {
       },
       reason: 'dashboard clear-time settings update',
     })
+  })
+
+  it('toggles autoscaler management for a single runpod profile', async () => {
+    queueStatsMocks.statusRef.value = {
+      ...queueStatsMocks.statusRef.value,
+      runpod_profile_queue_details: [
+        {
+          profile: 'img2img',
+          label: 'img2img / img2img_lora',
+          supported_task_types: ['img2img', 'img2img_lora'],
+          active_count: 2,
+          pending_count: 1,
+          max_pending_wait_seconds: 120,
+        },
+        {
+          profile: 'scail2',
+          label: 'scail2 / 视频生视频',
+          supported_task_types: ['scail2_action_transfer', 'scail2_video_replacement'],
+          active_count: 0,
+          pending_count: 0,
+          max_pending_wait_seconds: null,
+        },
+      ],
+    }
+    apiMocks.updateRunPodAutoscalerSettings.mockResolvedValueOnce({
+      config: {
+        paused_profiles: ['img2img'],
+        profile_autoscaler_paused_by_profile: {
+          img2img: true,
+          scail2: false,
+        },
+        scale_up_wait_seconds_by_profile: {
+          img2img: 20 * 60,
+          scail2: 40 * 60,
+        },
+        task_duration_seconds_by_type: {
+          img2img: 13,
+          img2img_lora: 13,
+          scail2_action_transfer: 300,
+          scail2_video_replacement: 300,
+        },
+      },
+      decisions: [
+        {
+          profile: 'img2img',
+          action: 'hold',
+          reason: 'hold: profile autoscaler paused',
+          estimated_clear_time_seconds: 13,
+          capacity_status: 'ok',
+        },
+      ],
+    })
+
+    const wrapper = await mountQueueStats()
+    await flushPromises()
+    const img2imgRow = wrapper
+      .findAll('.runpod-profile-detail-table tbody tr')
+      .find(row => row.text().includes('img2img / img2img_lora'))
+
+    expect(img2imgRow?.text()).toContain('自动')
+    await img2imgRow?.find('.profile-autoscaler-toggle').trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.updateRunPodAutoscalerSettings).toHaveBeenCalledWith({
+      scale_up_wait_minutes_by_profile: {},
+      task_duration_seconds_by_type: {},
+      profile_autoscaler_paused_by_profile: {
+        img2img: true,
+      },
+      reason: 'dashboard pause profile autoscaler',
+    })
+
+    const refreshedImg2imgRow = wrapper
+      .findAll('.runpod-profile-detail-table tbody tr')
+      .find(row => row.text().includes('img2img / img2img_lora'))
+    const scail2Row = wrapper
+      .findAll('.runpod-profile-detail-table tbody tr')
+      .find(row => row.text().includes('scail2 / 视频生视频'))
+
+    expect(refreshedImg2imgRow?.text()).toContain('暂停中')
+    expect(scail2Row?.text()).toContain('自动')
   })
 
   it('refreshes autoscaler decisions without resetting draft settings', async () => {

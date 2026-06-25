@@ -138,7 +138,7 @@ ComfyUI：
 
 2026-06-22 LTX 10Eros v1.2 canary 模型：
 - `gpu-177-gpu1-ltx_video` 的 AIO `/workspace` 挂载来自宿主机 `/srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/ltx_video/workspace`，模型应落在容器内 `/workspace/ComfyUI/models/diffusion_models/LTX 2.3/`。
-- 10Eros v1.2 canary workflow 期望模型文件 `10Eros_v1.2_fp8mixed_learned.safetensors`。该模型仍不应 baked 到镜像；已纳入 `allbot-model-cache/ltx_video/2026-06-10/manifest.json` 长期保留，AIO 重建应从 model-cache 恢复，而不是依赖运行中容器的临时文件。
+- 10Eros v1.2 canary workflow 期望模型文件 `10Eros_v1.2_fp8mixed_learned.safetensors`。该模型仍不应 baked 到镜像；云端 R2 `allbot-model-cache/ltx_video/2026-06-10/manifest.json` 当前为 v1.2-only，正式 RunPod 不再依赖旧 v1 回退。AIO 重建应从目标 model-cache 恢复 v1.2 权重，而不是依赖运行中容器的临时文件。
 
 运维边界：
 - 不要对 `comfy0/comfy1` 执行 Docker 操作；本机没有这类 Comfy 容器。

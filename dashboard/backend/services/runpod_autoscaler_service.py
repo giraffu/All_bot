@@ -44,6 +44,9 @@ TASK_DURATION_SECONDS_MIN = 1
 TASK_DURATION_SECONDS_MAX = 3600
 UNKNOWN_TASK_DURATION_SECONDS = 100
 RUNPOD_FAULT_RESTART_SECONDS_DEFAULT = 5 * 60
+RUNPOD_BOOTSTRAP_TIMEOUT_SECONDS_DEFAULT = 40 * 60
+RUNPOD_BOOTSTRAP_REPLACEMENT_LIMIT_DEFAULT = 2
+RUNPOD_BOOTSTRAP_REPLACEMENT_WINDOW_SECONDS_DEFAULT = 2 * 60 * 60
 RUNPOD_UNHEALTHY_STATUSES = {"error", "quarantined"}
 RUNPOD_PAUSED_CONTROL_STATES = {"disabled", "draining"}
 RUNPOD_RECOVERABLE_STATUSES = {"idle", "running"}
@@ -195,6 +198,60 @@ def _validate_task_duration_seconds_by_type(
     return normalized
 
 
+def _normalize_paused_profiles(raw: Any) -> set[str]:
+    valid_profiles = set(_runpod_profile_names())
+    if isinstance(raw, dict):
+        candidates = []
+        for profile, paused in raw.items():
+            try:
+                is_paused = _coerce_bool_setting(paused)
+            except ValueError:
+                continue
+            if is_paused:
+                candidates.append(str(profile))
+    else:
+        candidates = [str(profile) for profile in (raw or [])]
+    return {profile for profile in candidates if profile in valid_profiles}
+
+
+def _coerce_bool_setting(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    raise ValueError("invalid boolean setting")
+
+
+def _validate_profile_autoscaler_paused_by_profile(
+    updates: dict[str, Any] | None,
+) -> dict[str, bool]:
+    if not updates:
+        return {}
+    valid_profiles = set(_runpod_profile_names())
+    normalized: dict[str, bool] = {}
+    for profile, raw_paused in updates.items():
+        profile_name = str(profile)
+        if profile_name not in valid_profiles:
+            raise HTTPException(
+                status_code=422,
+                detail=f"unsupported RunPod profile: {profile_name}",
+            )
+        try:
+            normalized[profile_name] = _coerce_bool_setting(raw_paused)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"invalid autoscaler pause flag for {profile_name}",
+            ) from exc
+    return normalized
+
+
 def _bool_env(name: str, *, default: bool = False) -> bool:
     raw = os.getenv(name, "").strip().lower()
     if not raw:
@@ -225,10 +282,18 @@ class RunPodAutoscalerConfig:
     heartbeat_max_age_seconds: int = 5 * 60
     min_runpod_lifetime_seconds: int = 30 * 60
     runpod_fault_restart_seconds: int = RUNPOD_FAULT_RESTART_SECONDS_DEFAULT
+    runpod_bootstrap_timeout_seconds: int = RUNPOD_BOOTSTRAP_TIMEOUT_SECONDS_DEFAULT
+    runpod_bootstrap_replacement_limit: int = (
+        RUNPOD_BOOTSTRAP_REPLACEMENT_LIMIT_DEFAULT
+    )
+    runpod_bootstrap_replacement_window_seconds: int = (
+        RUNPOD_BOOTSTRAP_REPLACEMENT_WINDOW_SECONDS_DEFAULT
+    )
     leader_ttl_seconds: int = 90
     owner_id: str = AUTOSCALER_OWNER_ID
     scale_up_wait_seconds_by_profile: dict[str, int] = field(default_factory=dict)
     task_duration_seconds_by_type: dict[str, int] = field(default_factory=dict)
+    paused_profiles: set[str] = field(default_factory=set)
 
     def __post_init__(self) -> None:
         merged = _default_scale_up_wait_seconds_by_profile(self.scale_up_wait_seconds)
@@ -248,6 +313,11 @@ class RunPodAutoscalerConfig:
         object.__setattr__(self, "task_duration_seconds_by_type", duration_seconds)
         object.__setattr__(
             self,
+            "paused_profiles",
+            _normalize_paused_profiles(self.paused_profiles),
+        )
+        object.__setattr__(
+            self,
             "min_runpod_lifetime_seconds",
             max(0, int(self.min_runpod_lifetime_seconds or 0)),
         )
@@ -255,6 +325,21 @@ class RunPodAutoscalerConfig:
             self,
             "runpod_fault_restart_seconds",
             max(0, int(self.runpod_fault_restart_seconds or 0)),
+        )
+        object.__setattr__(
+            self,
+            "runpod_bootstrap_timeout_seconds",
+            max(60, int(self.runpod_bootstrap_timeout_seconds or 0)),
+        )
+        object.__setattr__(
+            self,
+            "runpod_bootstrap_replacement_limit",
+            max(0, int(self.runpod_bootstrap_replacement_limit or 0)),
+        )
+        object.__setattr__(
+            self,
+            "runpod_bootstrap_replacement_window_seconds",
+            max(60, int(self.runpod_bootstrap_replacement_window_seconds or 0)),
         )
 
     def scale_up_wait_seconds_for_profile(self, profile: str) -> int:
@@ -293,7 +378,20 @@ class RunPodAutoscalerConfig:
         merged.update(_normalize_task_duration_seconds_by_type(durations))
         return replace(self, task_duration_seconds_by_type=merged)
 
+    def is_profile_paused(self, profile: str) -> bool:
+        return str(profile) in self.paused_profiles
+
+    def with_paused_profiles(
+        self,
+        paused_profiles: Any,
+    ) -> "RunPodAutoscalerConfig":
+        return replace(
+            self,
+            paused_profiles=_normalize_paused_profiles(paused_profiles),
+        )
+
     def payload(self) -> dict[str, Any]:
+        paused_profiles = sorted(self.paused_profiles)
         return {
             "configured_enabled": self.configured_enabled,
             "mode": self.mode,
@@ -308,12 +406,26 @@ class RunPodAutoscalerConfig:
             "unknown_task_duration_seconds": self.task_duration_seconds_for_type(
                 "unknown"
             ),
+            "paused_profiles": paused_profiles,
+            "profile_autoscaler_paused_by_profile": {
+                profile: profile in self.paused_profiles
+                for profile in _runpod_profile_names()
+            },
             "scale_down_wait_seconds": self.scale_down_wait_seconds,
             "cooldown_seconds": self.cooldown_seconds,
             "max_runpods_per_profile": self.max_runpods_per_profile,
             "heartbeat_max_age_seconds": self.heartbeat_max_age_seconds,
             "min_runpod_lifetime_seconds": self.min_runpod_lifetime_seconds,
             "runpod_fault_restart_seconds": self.runpod_fault_restart_seconds,
+            "runpod_bootstrap_timeout_seconds": (
+                self.runpod_bootstrap_timeout_seconds
+            ),
+            "runpod_bootstrap_replacement_limit": (
+                self.runpod_bootstrap_replacement_limit
+            ),
+            "runpod_bootstrap_replacement_window_seconds": (
+                self.runpod_bootstrap_replacement_window_seconds
+            ),
             "leader_ttl_seconds": self.leader_ttl_seconds,
         }
 
@@ -366,6 +478,21 @@ def config_from_env() -> RunPodAutoscalerConfig:
             default=RUNPOD_FAULT_RESTART_SECONDS_DEFAULT,
             minimum=0,
         ),
+        runpod_bootstrap_timeout_seconds=_int_env(
+            "DASHBOARD_RUNPOD_AUTOSCALER_BOOTSTRAP_TIMEOUT_SECONDS",
+            default=RUNPOD_BOOTSTRAP_TIMEOUT_SECONDS_DEFAULT,
+            minimum=60,
+        ),
+        runpod_bootstrap_replacement_limit=_int_env(
+            "DASHBOARD_RUNPOD_AUTOSCALER_BOOTSTRAP_REPLACEMENT_LIMIT",
+            default=RUNPOD_BOOTSTRAP_REPLACEMENT_LIMIT_DEFAULT,
+            minimum=0,
+        ),
+        runpod_bootstrap_replacement_window_seconds=_int_env(
+            "DASHBOARD_RUNPOD_AUTOSCALER_BOOTSTRAP_REPLACEMENT_WINDOW_SECONDS",
+            default=RUNPOD_BOOTSTRAP_REPLACEMENT_WINDOW_SECONDS_DEFAULT,
+            minimum=60,
+        ),
         leader_ttl_seconds=_int_env(
             "DASHBOARD_RUNPOD_AUTOSCALER_LEADER_TTL_SECONDS",
             default=90,
@@ -398,6 +525,17 @@ class RunPodAutoscalerStateStore(Protocol):
     async def set_task_duration_seconds_by_type(
         self,
         durations: dict[str, int],
+        *,
+        reason: str | None,
+    ) -> None:
+        ...
+
+    async def get_paused_profiles(self) -> set[str]:
+        ...
+
+    async def set_profile_autoscaler_paused_by_profile(
+        self,
+        updates: dict[str, bool],
         *,
         reason: str | None,
     ) -> None:
@@ -442,6 +580,17 @@ class DisabledRunPodAutoscalerStateStore:
     ) -> None:
         del durations, reason
 
+    async def get_paused_profiles(self) -> set[str]:
+        return set()
+
+    async def set_profile_autoscaler_paused_by_profile(
+        self,
+        updates: dict[str, bool],
+        *,
+        reason: str | None,
+    ) -> None:
+        del updates, reason
+
     async def acquire_leader(self, owner_id: str, *, ttl_seconds: int) -> bool:
         del owner_id, ttl_seconds
         return False
@@ -461,6 +610,7 @@ class InMemoryRunPodAutoscalerStateStore:
         self.last_decisions: dict[str, Any] | None = None
         self.scale_up_wait_seconds_by_profile: dict[str, int] = {}
         self.task_duration_seconds_by_type: dict[str, int] = {}
+        self.paused_profiles: set[str] = set()
         self.settings_reason: str | None = None
 
     async def get_control_enabled(self, *, default: bool) -> bool:
@@ -496,6 +646,23 @@ class InMemoryRunPodAutoscalerStateStore:
         self.task_duration_seconds_by_type.update(
             _normalize_task_duration_seconds_by_type(durations)
         )
+        self.settings_reason = reason
+
+    async def get_paused_profiles(self) -> set[str]:
+        return set(self.paused_profiles)
+
+    async def set_profile_autoscaler_paused_by_profile(
+        self,
+        updates: dict[str, bool],
+        *,
+        reason: str | None,
+    ) -> None:
+        normalized = _validate_profile_autoscaler_paused_by_profile(updates)
+        for profile, paused in normalized.items():
+            if paused:
+                self.paused_profiles.add(profile)
+            else:
+                self.paused_profiles.discard(profile)
         self.settings_reason = reason
 
     async def acquire_leader(self, owner_id: str, *, ttl_seconds: int) -> bool:
@@ -603,6 +770,28 @@ class RedisRunPodAutoscalerStateStore:
         )
         current.update(_normalize_task_duration_seconds_by_type(durations))
         payload["task_duration_seconds_by_type"] = current
+        await self._save_settings_payload(payload, reason=reason)
+
+    async def get_paused_profiles(self) -> set[str]:
+        payload = await self._get_settings_payload()
+        return _normalize_paused_profiles(payload.get("paused_profiles"))
+
+    async def set_profile_autoscaler_paused_by_profile(
+        self,
+        updates: dict[str, bool],
+        *,
+        reason: str | None,
+    ) -> None:
+        payload = await self._get_settings_payload()
+        paused_profiles = _normalize_paused_profiles(payload.get("paused_profiles"))
+        for profile, paused in _validate_profile_autoscaler_paused_by_profile(
+            updates
+        ).items():
+            if paused:
+                paused_profiles.add(profile)
+            else:
+                paused_profiles.discard(profile)
+        payload["paused_profiles"] = sorted(paused_profiles)
         await self._save_settings_payload(payload, reason=reason)
 
     async def acquire_leader(self, owner_id: str, *, ttl_seconds: int) -> bool:
@@ -891,6 +1080,65 @@ def _operation_active(operation: dict[str, Any]) -> bool:
     return str(operation.get("status") or "") not in FINISHED_OPERATION_STATUSES
 
 
+def _operation_started_at(operation: dict[str, Any]) -> float | None:
+    return (
+        _parse_operation_time(operation.get("started_at"))
+        or _parse_operation_time(operation.get("created_at"))
+    )
+
+
+def _operation_cleanup_slots(operation: dict[str, Any]) -> set[str]:
+    return {str(item) for item in operation.get("cleanup_slots") or []}
+
+
+def _operation_is_bootstrap_cleanup_success(operation: dict[str, Any]) -> bool:
+    return (
+        operation.get("source") == "autoscaler"
+        and str(operation.get("action") or "") == "add"
+        and str(operation.get("status") or "") == "failed"
+        and str(operation.get("cleanup_status") or "") == "succeeded"
+        and bool(_operation_cleanup_slots(operation))
+    )
+
+
+def _active_bootstrap_elapsed_seconds(
+    operation: dict[str, Any],
+    *,
+    now: float,
+) -> int | None:
+    if operation.get("source") != "autoscaler":
+        return None
+    if str(operation.get("action") or "") != "add":
+        return None
+    if not _operation_cleanup_slots(operation):
+        return None
+    started_at = _operation_started_at(operation)
+    if started_at is None:
+        return None
+    return max(0, int(now - started_at))
+
+
+def _bootstrap_replacement_count(
+    operations: list[dict[str, Any]],
+    *,
+    profile: str,
+    now: float,
+    window_seconds: int,
+) -> int:
+    count = 0
+    for operation in operations:
+        if _operation_profile(operation) != profile:
+            continue
+        if not _operation_is_bootstrap_cleanup_success(operation):
+            continue
+        ended_at = _parse_operation_time(operation.get("ended_at"))
+        if ended_at is None:
+            continue
+        if 0 <= now - ended_at <= window_seconds:
+            count += 1
+    return count
+
+
 def _active_operation_for_profile(
     operations: list[dict[str, Any]],
     *,
@@ -914,6 +1162,8 @@ def _autoscaler_cooldown_remaining_seconds(
         if _operation_profile(operation) != profile:
             continue
         if operation.get("source") != "autoscaler":
+            continue
+        if _operation_is_bootstrap_cleanup_success(operation):
             continue
         ended_at = _parse_operation_time(operation.get("ended_at"))
         if ended_at is None:
@@ -1200,6 +1450,12 @@ def build_runpod_autoscaler_decisions(
         else:
             estimated_clear_time_seconds = 0.0
             capacity_status = "idle"
+        bootstrap_replacement_count = _bootstrap_replacement_count(
+            operations,
+            profile=profile,
+            now=now,
+            window_seconds=config.runpod_bootstrap_replacement_window_seconds,
+        )
         metrics = {
             "active_count": active_count,
             "pending_count": pending_count,
@@ -1224,19 +1480,56 @@ def build_runpod_autoscaler_decisions(
             "runpod_fault_restart_seconds": config.runpod_fault_restart_seconds,
             "runpod_fault_candidate_count": len(runpod_restart_candidates),
             "runpod_paused_candidate_count": len(runpod_enable_candidates),
+            "runpod_bootstrap_timeout_seconds": (
+                config.runpod_bootstrap_timeout_seconds
+            ),
+            "runpod_bootstrap_replacement_count": bootstrap_replacement_count,
+            "runpod_bootstrap_replacement_limit": (
+                config.runpod_bootstrap_replacement_limit
+            ),
+            "runpod_bootstrap_replacement_window_seconds": (
+                config.runpod_bootstrap_replacement_window_seconds
+            ),
+            "profile_autoscaler_paused": config.is_profile_paused(profile),
         }
 
-        active_operation = _active_operation_for_profile(operations, profile=profile)
-        if active_operation is not None:
+        if config.is_profile_paused(profile):
             decisions.append(
                 _decision(
                     profile=profile,
                     action="hold",
-                    reason=(
-                        "operation active: "
-                        f"{active_operation.get('action')} {active_operation.get('status')}"
-                    ),
+                    reason="hold: profile autoscaler paused",
                     metrics=metrics,
+                )
+            )
+            continue
+
+        active_operation = _active_operation_for_profile(operations, profile=profile)
+        if active_operation is not None:
+            bootstrap_elapsed_seconds = _active_bootstrap_elapsed_seconds(
+                active_operation,
+                now=now,
+            )
+            active_reason = (
+                f"hold: runpod add still bootstrapping {bootstrap_elapsed_seconds}s"
+                if bootstrap_elapsed_seconds is not None
+                else (
+                    "operation active: "
+                    f"{active_operation.get('action')} {active_operation.get('status')}"
+                )
+            )
+            active_metrics = metrics
+            if bootstrap_elapsed_seconds is not None:
+                active_metrics = {
+                    **metrics,
+                    "runpod_bootstrap_elapsed_seconds": bootstrap_elapsed_seconds,
+                }
+            decisions.append(
+                _decision(
+                    profile=profile,
+                    action="hold",
+                    reason=active_reason,
+                    metrics=active_metrics,
                     operation_id=str(active_operation.get("id") or ""),
                 )
             )
@@ -1325,6 +1618,21 @@ def build_runpod_autoscaler_decisions(
             continue
 
         if pending_count > 0:
+            if (
+                config.runpod_bootstrap_replacement_limit > 0
+                and bootstrap_replacement_count
+                >= config.runpod_bootstrap_replacement_limit
+            ):
+                decisions.append(
+                    _decision(
+                        profile=profile,
+                        action="hold",
+                        reason="hold: bootstrap replacement limit reached",
+                        metrics=metrics,
+                    )
+                )
+                continue
+
             if runpod_total_count >= config.max_runpods_per_profile:
                 decisions.append(
                     _decision(
@@ -1351,15 +1659,24 @@ def build_runpod_autoscaler_decisions(
                 estimated_clear_time_seconds is not None
                 and estimated_clear_time_seconds > clear_time_threshold_seconds
             ):
+                if bootstrap_replacement_count > 0:
+                    scale_up_reason = (
+                        "replace: previous runpod bootstrap timed out; "
+                        "estimated clear time "
+                        f"{int(estimated_clear_time_seconds)}s exceeds "
+                        f"{clear_time_threshold_seconds}s"
+                    )
+                else:
+                    scale_up_reason = (
+                        "scale_up: estimated clear time "
+                        f"{int(estimated_clear_time_seconds)}s exceeds "
+                        f"{clear_time_threshold_seconds}s"
+                    )
                 decisions.append(
                     _decision(
                         profile=profile,
                         action="scale_up",
-                        reason=(
-                            "scale_up: estimated clear time "
-                            f"{int(estimated_clear_time_seconds)}s exceeds "
-                            f"{clear_time_threshold_seconds}s"
-                        ),
+                        reason=scale_up_reason,
                         metrics=metrics,
                     )
                 )
@@ -1490,6 +1807,9 @@ async def evaluate_runpod_autoscaler_once(
         )
         active_config = active_config.with_task_duration_seconds_by_type(
             await active_store.get_task_duration_seconds_by_type()
+        )
+        active_config = active_config.with_paused_profiles(
+            await active_store.get_paused_profiles()
         )
     except Exception as exc:
         logger.warning("RunPod autoscaler settings unavailable", exc_info=True)
@@ -1678,6 +1998,7 @@ async def set_runpod_autoscaler_settings_payload(
     *,
     scale_up_wait_minutes_by_profile: dict[str, Any] | None,
     task_duration_seconds_by_type: dict[str, Any] | None = None,
+    profile_autoscaler_paused_by_profile: dict[str, Any] | None = None,
     reason: str | None = None,
     store: RunPodAutoscalerStateStore | None = None,
     config: RunPodAutoscalerConfig | None = None,
@@ -1689,15 +2010,25 @@ async def set_runpod_autoscaler_settings_payload(
     durations = _validate_task_duration_seconds_by_type(
         task_duration_seconds_by_type
     )
+    paused_updates = _validate_profile_autoscaler_paused_by_profile(
+        profile_autoscaler_paused_by_profile
+    )
     active_store = store or _state_store
     if thresholds:
         await active_store.set_scale_up_wait_seconds_by_profile(thresholds, reason=reason)
     if durations:
         await active_store.set_task_duration_seconds_by_type(durations, reason=reason)
+    if paused_updates:
+        await active_store.set_profile_autoscaler_paused_by_profile(
+            paused_updates,
+            reason=reason,
+        )
     active_config = (config or config_from_env()).with_scale_up_wait_seconds_by_profile(
         await active_store.get_scale_up_wait_seconds_by_profile()
     ).with_task_duration_seconds_by_type(
         await active_store.get_task_duration_seconds_by_type()
+    ).with_paused_profiles(
+        await active_store.get_paused_profiles()
     )
     if not refresh_payload:
         return {"config": active_config.payload()}
