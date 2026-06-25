@@ -47,6 +47,7 @@ def build_global_menu_filter():
         "menu.back_main",  # 🔙 返回主菜单
         "menu.photo_edit",  # 🖼️ 懒人P图 / AI Edit
         "menu.video_edit",  # 🎬 视频创作 / AI Video
+        "menu.open_main_bot",  # 前往主bot / Open Main Bot
         "menu.face_video",  # 🎬 视频换脸
         "menu.video_to_video",  # 🎬 视频生视频
         "menu.video_to_video_replacement",  # 🪄 视频换人

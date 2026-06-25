@@ -1,5 +1,8 @@
 import contextlib
 import logging
+import os
+import re
+from urllib.parse import urlparse
 
 from telegram import BotCommand, Update
 from telegram.ext import Application, ContextTypes
@@ -16,6 +19,7 @@ from src.utils import (
 )
 
 logger = logging.getLogger("qqcc_bot.command")
+_BOT_USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_]{5,32}$")
 
 
 async def setup_commands(app: Application):
@@ -30,6 +34,36 @@ async def setup_commands(app: Application):
     await app.bot.set_my_commands(commands_zh, language_code="zh")
     await app.bot.set_my_commands(commands_en, language_code="en")
     await app.bot.set_my_commands(commands_en)
+
+
+def _is_supported_telegram_url(url: str) -> bool:
+    parsed = urlparse(url)
+    if parsed.scheme in {"http", "https"}:
+        return parsed.netloc.lower() in {"t.me", "telegram.me"} and bool(
+            parsed.path.strip("/")
+        )
+    if parsed.scheme == "tg":
+        return parsed.netloc == "resolve" and bool(parsed.query)
+    return False
+
+
+def resolve_main_bot_url() -> str | None:
+    configured_url = (os.getenv("QQCC_MAIN_BOT_URL") or "").strip()
+    if configured_url:
+        if _is_supported_telegram_url(configured_url):
+            return configured_url
+        logger.warning("Ignoring unsupported QQCC main bot URL configuration.")
+        return None
+
+    configured_username = (os.getenv("QQCC_MAIN_BOT_USERNAME") or "").strip()
+    if not configured_username:
+        return None
+
+    username = configured_username.removeprefix("@")
+    if not _BOT_USERNAME_PATTERN.fullmatch(username):
+        logger.warning("Ignoring unsupported QQCC main bot username: %s", username)
+        return None
+    return f"https://t.me/{username}"
 
 
 @with_db_logging_context
@@ -111,4 +145,3 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=get_qqcc_main_menu_keyboard(context.lang),
         parse_mode="Markdown",
     )
-

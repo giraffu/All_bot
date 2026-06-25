@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from telegram import ReplyKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 
 from src.i18n.translator import get_text
 
@@ -13,8 +13,19 @@ def get_qqcc_main_menu_keyboard(lang: str) -> ReplyKeyboardMarkup:
             get_text("menu.photo_edit", lang),
             get_text("menu.video_edit", lang),
         ],
+        [get_text("menu.open_main_bot", lang)],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+
+def get_qqcc_main_bot_link_keyboard(
+    lang: str, main_bot_url: str
+) -> InlineKeyboardMarkup:
+    button = InlineKeyboardButton(
+        get_text("menu.open_main_bot", lang),
+        url=main_bot_url,
+    )
+    return InlineKeyboardMarkup([[button]])
 
 
 @lru_cache(maxsize=10)

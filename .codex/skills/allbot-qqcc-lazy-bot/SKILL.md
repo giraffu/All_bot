@@ -15,7 +15,7 @@ description: "处理 QQCC 懒人 Telegram Bot 独立服务、简化菜单、quic
 - 领域文档：`docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md`
 
 ## 2. 功能范围
-主菜单只能有 `快速脱衣`、`懒人P图` 和 `视频创作`。`快速脱衣` 必须位于主菜单，不再放入 `懒人P图` 子菜单。
+主菜单业务入口只能有 `快速脱衣`、`懒人P图` 和 `视频创作`。`快速脱衣` 必须位于主菜单，不再放入 `懒人P图` 子菜单。主菜单可额外有一个非生成入口 `前往主bot`；Telegram reply keyboard 不能直接承载 URL，因此点击该菜单项后由 QQCC Bot 回复主 Bot 的 inline URL 跳转按钮。
 
 允许的 P 图入口：
 - 快速自慰
@@ -47,14 +47,18 @@ QQCC Bot 必须设置 `application.bot_data["bot_client_type"] = "bot:qqcc"`，B
 token 只允许放在 ignored env 文件：
 - 正式：`QQCC_BOT_TOKEN`
 - 测试：`QQCC_BOT_TOKEN_TEST`
+- 可选主 Bot 跳转：`QQCC_MAIN_BOT_URL` 或 `QQCC_MAIN_BOT_USERNAME`
 
 不得把真实 token 写入仓库、docs、日志、工单或聊天记录。QQCC Bot 不启动 TON 轮询，不注册支付回调，不作为充值入口。测试环境没有独立 token 时，`qqcc-bot-test` 必须保持停止。
 
-正式启动或重建前必须用户明确确认，并确认全网没有第二个 `@QQCC666_bot` polling 实例。只单独更新正式 QQCC Bot 时优先使用 `scripts/update_cloud_prod_qqcc_bot.sh`；真实执行必须传 `--execute --confirm-prod --confirm-single-polling`，该路径只 build/up `qqcc-bot-prod`，不重建其它正式服务。
+主 Bot 跳转按钮优先使用 `QQCC_MAIN_BOT_URL`，未配置时可用 `QQCC_MAIN_BOT_USERNAME` 自动生成 `https://t.me/<username>`；两者均未配置时不得硬编码主 Bot 地址，按钮不展示。
+
+正式启动或重建前必须有用户明确要求进入 QQCC 正式单服务更新。只单独更新正式 QQCC Bot 时优先使用 `scripts/update_cloud_prod_qqcc_bot.sh`；真实执行必须传 `--execute --confirm-prod --confirm-single-polling`，该路径只 build/up `qqcc-bot-prod`，不重建其它正式服务。用户已经明确说“QQCC 单服务更新/走单服务更新/单独更新 QQCC Bot”时，可视为当次正式与单 polling 操作确认，不要再要求逐字复述“没有第二个 polling 实例”；但若发现目标容器状态异常、疑似多实例、token/远端 env 异常、不是专用脚本路径，或要启动一个当前停止的新正式 QQCC 实例，必须停下并追问确认。
 
 ## 5. 验证要求
 至少覆盖：
 - QQCC `/start` 只返回简化主菜单，且主菜单包含 `快速脱衣`、`懒人P图`、`视频创作`。
+- QQCC `/start` 只返回简化主菜单，不额外发送主 Bot 跳转消息；配置主 Bot 跳转 env 时，点击菜单里的 `前往主bot` 后回复 inline URL 跳转按钮。
 - P 图子菜单包含自慰、随机换脸，不包含快速脱衣和快速换脸。
 - QQCC 点击快速脱衣后出现 `头像/半身补全` 与 `全身保脸重绘` 两个懒人选择，选择后只需发送图片。
 - 视频子菜单包含五个懒人动图场景。

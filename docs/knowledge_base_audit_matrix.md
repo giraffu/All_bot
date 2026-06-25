@@ -11,7 +11,7 @@
 | 测试收集 | `pytest --collect-only -q` 收集 `1678` 个测试，用时约 74 秒 |
 | Ruff | `ruff check --statistics` 剩余 `2` 个 `F401`，均在 `ops/gpu_pool_controller/runpod_pod_request.py` |
 | 云测试入口 | 日常维护式更新首选 `scripts/update_cloud_test_with_maintenance.sh --execute`；远端控制面重建子步骤为 `scripts/safe_deploy_cloud_test.sh` |
-| 云正式入口 | 正式发布需明确确认；控制面入口为 `scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod` 或 `scripts/safe_deploy_cloud_prod.sh` 子步骤；QQCC 正式 Bot 单独更新入口为 `scripts/update_cloud_prod_qqcc_bot.sh --execute --confirm-prod --confirm-single-polling` |
+| 云正式入口 | 正式发布需明确确认；控制面入口为 `scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod` 或 `scripts/safe_deploy_cloud_prod.sh` 子步骤；QQCC 正式 Bot 单独更新入口为 `scripts/update_cloud_prod_qqcc_bot.sh --execute --confirm-prod --confirm-single-polling`，用户明确要求 QQCC 单服务更新即可作为当次单 polling 操作确认 |
 | 本地云正式 shadow 同步 | `scripts/sync_cloud_prod_to_local_shadow.py` 默认 dry-run，`--execute` 才把云正式 PostgreSQL 恢复为本地 `bot_db_prod_shadow` 并把 R2 `user-data-prod` 增量同步到 MinIO `user-data-prod-shadow`；数据库获取主路径为 `CLOUD_PROD_DB_DUMP_MODE=remote_r2`，由 `allbot-do-sgp1-control` 在云机 dump 后临时上传 R2 `user-data-prod/__shadow-transfer/<timestamp>`，本地经 HTTPS/rclone 下载校验后 restore，避免依赖家宽/VPN 出口 IP 作为托管 DB trusted source；R2 传输默认 `20M` 带宽上限、`transfers=8`、`checkers=16`；首次 seed 空 shadow 可手动 `--seed-r2-shadow-with-copy` 走 `copy --no-traverse`，timer 日常仍用 sync/quarantine；`COMPLETE_MEDIA_SYNC_ENABLED=true` 时每日从本地 R2 shadow 非破坏式 copy 到 `user-data-complete-shadow`，legacy `bot-data`/`comfyui-temp` 只在手动 `--include-legacy-media-import` 首次/补漏时导入；脚本持有 `.shadow-sync.lock` 防并发；`CLOUD_PROD_DB_TUNNEL_SSH_HOST=allbot-do-sgp1-control` 保留给 Redis/Valkey 摘要和旧 fallback；systemd timer 默认每日 Asia/Shanghai 05:00 |
 | 旧本地脚本 | `safe_deploy.sh` 只用于云正式整体故障时的本地正式灾备；`safe_deploy_test.sh` 只作历史取证 |
 | 归档材料 | `docs/archive/` 与 `logs/` 只作历史证据或排障报告，不作为当前 SOP |
@@ -50,7 +50,7 @@
 | 文档 | 事实源 | 本轮状态 | 处理结果 |
 | :--- | :--- | :--- | :--- |
 | `docs/子模块_交互状态机_fsm_handlers.md` | `src/handlers`、FSM tests | 已核对 | 主 Bot FSM 边界有效 |
-| `docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md` | `qqcc_bot/main.py`、`qqcc_bot/keyboards.py`、cloud compose QQCC profile、`scripts/update_cloud_prod_qqcc_bot.sh`、`src/handlers/fsm/quick_image_fsm.py` | 已修正 | 补充正式 QQCC Bot 单服务更新脚本、独立 token、`bot:qqcc` 来源、快速脱衣主菜单入口与两种处理方式选择；双 polling 红线有效 |
+| `docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md` | `qqcc_bot/main.py`、`qqcc_bot/commands.py`、`qqcc_bot/keyboards.py`、`qqcc_bot/prompt_handlers.py`、cloud compose QQCC profile、`scripts/update_cloud_prod_qqcc_bot.sh`、`src/handlers/fsm/quick_image_fsm.py` | 已修正 | 补充 QQCC 主菜单 `前往主bot` 非生成入口、正式 QQCC Bot 单服务更新脚本、单 polling 确认口径、独立 token、`bot:qqcc` 来源、快速脱衣主菜单入口与两种处理方式选择；双 polling 红线有效 |
 | `docs/子模块_付费群审核Bot_paid_group_guard_bot.md` | `paid_group_guard_bot`、Dashboard paid group router/service、cloud compose | 已核对 | 独立 Bot 与 Dashboard 配置管理边界有效 |
 | `docs/子模块_Telegram本地API与文件代理_tg_local_api.md` | Telegram API env、Bot file handling | 已核对 | 文件代理边界有效 |
 
@@ -108,11 +108,11 @@
 | 文件 | 事实源 | 本轮状态 | 处理结果 |
 | :--- | :--- | :--- | :--- |
 | `.codex/skills/allbot-kb-auto-updater/SKILL.md` | 本矩阵、KB 维护流程 | 已修正 | 补充核对矩阵输出要求 |
-| `.codex/skills/allbot-ops-deployment/SKILL.md` | deploy scripts、compose、shadow sync script、Dashboard autoscaler service | 已修正 | 补充正式 QQCC Bot 单服务更新脚本；本地 cloud-prod shadow 同步已更新为 remote_r2 主路径、R2 shadow seed copy、完整合并桶、手动 legacy 导入、SSH tunnel fallback/Redis 摘要和灾备前停 timer 口径；已包含云测试维护式更新和云正式 autoscaler 预计清空时间、profile 级自动管理暂停、RunPod 故障/暂停自愈、bootstrap timeout 换机口径 |
+| `.codex/skills/allbot-ops-deployment/SKILL.md` | deploy scripts、compose、shadow sync script、Dashboard autoscaler service | 已修正 | 补充正式 QQCC Bot 单服务更新脚本和单 polling 确认口径；本地 cloud-prod shadow 同步已更新为 remote_r2 主路径、R2 shadow seed copy、完整合并桶、手动 legacy 导入、SSH tunnel fallback/Redis 摘要和灾备前停 timer 口径；已包含云测试维护式更新和云正式 autoscaler 预计清空时间、profile 级自动管理暂停、RunPod 故障/暂停自愈、bootstrap timeout 换机口径 |
 | `.codex/skills/allbot-task-engine/SKILL.md` | task core、queue manager、runtime cleanup | 已核对 | 任务生命周期边界有效 |
 | `.codex/skills/allbot-comfy-models/SKILL.md` | workflow patcher、remote_workers | 已核对 | workflow/模型边界有效 |
 | `.codex/skills/allbot-tg-fsm/SKILL.md` | `src/handlers`、Bot entrypoint | 已核对 | FSM 边界有效 |
-| `.codex/skills/allbot-qqcc-lazy-bot/SKILL.md` | `qqcc_bot`、cloud compose、`scripts/update_cloud_prod_qqcc_bot.sh`、`src/handlers/fsm/quick_image_fsm.py` | 已修正 | 补充正式单独更新脚本、`--confirm-single-polling` 门禁与快速脱衣主菜单入口；QQCC 独立 Bot 边界有效 |
+| `.codex/skills/allbot-qqcc-lazy-bot/SKILL.md` | `qqcc_bot`、cloud compose、`scripts/update_cloud_prod_qqcc_bot.sh`、`src/handlers/fsm/quick_image_fsm.py` | 已修正 | 补充 QQCC 主菜单 `前往主bot` 非生成入口、正式单独更新脚本、单 polling 确认口径与快速脱衣主菜单入口；QQCC 独立 Bot 边界有效 |
 | `.codex/skills/allbot-billing-auth/SKILL.md` | auth/billing/affiliate code | 已核对 | 计费鉴权边界有效 |
 | `.codex/skills/allbot-gallery-storage/SKILL.md` | Gallery/R2 code | 已核对 | 存储与社区边界有效 |
 | `.codex/skills/allbot-diagnosing-bugs/SKILL.md` | bug 诊断流程 | 已核对 | 诊断闭环有效 |

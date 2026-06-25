@@ -4,10 +4,12 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from qqcc_bot.keyboards import (
+    get_qqcc_main_bot_link_keyboard,
     get_qqcc_main_menu_keyboard,
     get_qqcc_photo_edit_keyboard,
     get_qqcc_video_edit_keyboard,
 )
+from qqcc_bot.commands import resolve_main_bot_url
 from src.handlers.message_handler_common import (
     build_private_prompt_fallback,
     dispatch_prompt_route,
@@ -61,11 +63,29 @@ async def handle_back_to_main_menu(update, context, text: str = None):
     )
 
 
+async def handle_open_main_bot(update, context, text: str = None):
+    main_bot_url = resolve_main_bot_url()
+    if not main_bot_url:
+        return await _reply_payload(
+            update,
+            context,
+            context.t("system.main_bot_link_unavailable"),
+            get_qqcc_main_menu_keyboard(context.lang),
+        )
+    return await _reply_payload(
+        update,
+        context,
+        context.t("system.open_main_bot_hint"),
+        get_qqcc_main_bot_link_keyboard(context.lang, main_bot_url),
+    )
+
+
 QQCC_PROMPT_ROUTES = {
     "menu.photo_edit": handle_photo_edit_menu,
     "menu.video_edit": handle_video_edit_menu,
     "menu.main_menu": handle_back_to_main_menu,
     "menu.back_main": handle_back_to_main_menu,
+    "menu.open_main_bot": handle_open_main_bot,
 }
 
 
@@ -93,4 +113,3 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_text=robust_reply_text,
         logger=logger,
     )
-

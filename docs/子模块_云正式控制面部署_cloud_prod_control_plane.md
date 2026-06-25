@@ -330,7 +330,7 @@ scripts/update_cloud_prod_qqcc_bot.sh
 scripts/update_cloud_prod_qqcc_bot.sh --execute --confirm-prod --confirm-single-polling
 ```
 
-该路径只触碰 `qqcc-bot-prod` / `cloud-qqcc-bot-prod`：默认 dry-run，真实执行前必须确认全网没有第二个 `@QQCC666_bot` polling 实例；脚本同步代码、可选同步 `.env.cloud.prod`、执行只读 preflight、按 `qqcc-bot` profile build/up `qqcc-bot-prod`，并检查容器 running、非敏感 env 合同与近 3 分钟错误日志。它不写 `GENERATION_MAINTENANCE`、不等待或清理 Central 队列、不重建 Central/Web/Payment/Dashboard/主 Bot/Worker/RunPod，也不操作 Cloudflare Pages/DNS/边缘路由。
+该路径只触碰 `qqcc-bot-prod` / `cloud-qqcc-bot-prod`：默认 dry-run，真实执行必须传 `--execute --confirm-prod --confirm-single-polling`。用户明确要求“QQCC 单服务更新/走单服务更新/单独更新 QQCC Bot”时，可视为当次正式与单 polling 操作确认，不需要额外逐字追问；若发现目标容器状态异常、疑似多实例、token/远端 env 异常、不是专用脚本路径，或要启动一个当前停止的新正式 QQCC 实例，必须停下确认。脚本同步代码、可选同步 `.env.cloud.prod`、执行只读 preflight、按 `qqcc-bot` profile build/up `qqcc-bot-prod`，并检查容器 running、非敏感 env 合同与近 3 分钟错误日志。它不写 `GENERATION_MAINTENANCE`、不等待或清理 Central 队列、不重建 Central/Web/Payment/Dashboard/主 Bot/Worker/RunPod，也不操作 Cloudflare Pages/DNS/边缘路由。
 
 付费群审核 Bot 与 Dashboard 管理页单独上线时，只触碰三个服务：
 
