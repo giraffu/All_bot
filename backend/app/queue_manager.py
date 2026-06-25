@@ -562,6 +562,36 @@ class QueueManager:
             task_id,
         )
 
+    async def get_queue_position_by_type(self, task_id: str) -> Optional[int]:
+        global_pos = await self.get_queue_position(task_id)
+        if global_pos is None:
+            return None
+
+        target_task_type = await self._get_task_type(task_id)
+        if not target_task_type:
+            return None
+
+        pending_task_ids = await self._retry_redis_call(
+            "get_queue_position_by_type_zrange",
+            self.redis.zrange,
+            self.pending_key,
+            0,
+            global_pos,
+        )
+        pending_task_types = await self._fetch_pending_task_types(pending_task_ids)
+
+        type_position = 0
+        for pending_task_id, pending_task_type in zip(pending_task_ids, pending_task_types):
+            pending_task_id = self._decode_redis_value(pending_task_id)
+            if pending_task_id == task_id:
+                return type_position
+            if (
+                pending_task_type
+                and self._decode_redis_value(pending_task_type) == target_task_type
+            ):
+                type_position += 1
+        return None
+
     async def get_queue_size(self) -> int:
         return await self._retry_redis_call(
             "get_queue_size",

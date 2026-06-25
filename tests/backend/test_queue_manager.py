@@ -970,6 +970,27 @@ async def test_get_queue_position_returns_sorted_rank():
 
 
 @pytest.mark.asyncio
+async def test_get_queue_position_by_type_returns_sorted_rank_within_task_type():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+
+    await redis.zadd(
+        manager.pending_key,
+        {"task-a": 1.0, "task-b": 2.0, "task-c": 3.0, "task-d": 4.0},
+    )
+    await redis.hset(f"{manager.task_prefix}task-a", mapping={"type": TaskType.IMG2IMG})
+    await redis.hset(f"{manager.task_prefix}task-b", mapping={"type": TaskType.FACE_SWAP})
+    await redis.hset(f"{manager.task_prefix}task-c", mapping={"type": TaskType.IMG2IMG})
+    await redis.hset(f"{manager.task_prefix}task-d", mapping={"type": TaskType.IMG2IMG})
+
+    assert await manager.get_queue_position_by_type("task-a") == 0
+    assert await manager.get_queue_position_by_type("task-c") == 1
+    assert await manager.get_queue_position_by_type("task-d") == 2
+    assert await manager.get_queue_position_by_type("task-b") == 0
+    assert await manager.get_queue_position_by_type("missing-task") is None
+
+
+@pytest.mark.asyncio
 async def test_get_queue_size_returns_pending_count():
     redis = _FakeRedis()
     manager = QueueManager(redis)

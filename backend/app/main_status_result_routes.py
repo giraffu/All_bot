@@ -20,12 +20,17 @@ def register_task_status_route(
     queue_manager_dep,
     build_task_status_response_func,
 ) -> None:
-    async def endpoint(task_id: str, queue_manager: queue_manager_dep):
+    async def endpoint(
+        task_id: str,
+        queue_manager: queue_manager_dep,
+        include_type_position: bool = False,
+    ):
         return await build_task_status_response_func(
             task_id=task_id,
             queue_manager=queue_manager,
             include_image_url=include_image_url,
             include_task_type=include_task_type,
+            include_type_position=include_type_position,
         )
 
     endpoint.__name__ = handler_name

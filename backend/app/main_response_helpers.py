@@ -312,6 +312,7 @@ async def build_task_status_response(
     queue_manager,
     include_image_url: bool = False,
     include_task_type: bool = False,
+    include_type_position: bool = False,
     build_result_url_func,
 ) -> TaskStatusResponse:
     async def collect_status() -> dict[str, Any]:
@@ -321,9 +322,12 @@ async def build_task_status_response(
 
         status = task.get("status")
         queue_pos = None
+        queue_type_pos = None
         queue_remaining = None
         if status == "pending":
             queue_pos = await queue_manager.get_queue_position(task_id)
+            if include_type_position:
+                queue_type_pos = await queue_manager.get_queue_position_by_type(task_id)
             queue_remaining = queue_pos if queue_pos is not None else 0
 
         result_path = task.get("result_path")
@@ -331,6 +335,7 @@ async def build_task_status_response(
         response_kwargs = {
             "status": status,
             "queue_pos": queue_pos,
+            "queue_type_pos": queue_type_pos,
             "queue_remaining": queue_remaining,
             "progress": float(task.get("progress", 0.0)),
             "error": task.get("error_msg"),
@@ -356,6 +361,7 @@ async def build_task_status_response(
         task_id,
         include_image_url,
         include_task_type,
+        include_type_position,
     )
     response_kwargs = await _get_cached_snapshot(
         cache=_task_status_snapshot_cache,

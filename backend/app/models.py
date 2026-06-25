@@ -58,6 +58,7 @@ class Txt2ImgRequest(BaseModel):
 class TaskStatusResponse(BaseModel):
     status: TaskStatus
     queue_pos: Optional[int] = None
+    queue_type_pos: Optional[int] = None
     queue_remaining: Optional[int] = None
     progress: Optional[float] = None
     error: Optional[str] = None

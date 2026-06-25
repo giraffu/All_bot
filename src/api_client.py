@@ -804,10 +804,21 @@ class APIClient:
             yield info
 
     @async_retry(max_retries=3)
-    async def get_task_status(self, task_id: str) -> dict[str, Any] | None:
+    async def get_task_status(
+        self,
+        task_id: str,
+        *,
+        include_type_position: bool = False,
+    ) -> dict[str, Any] | None:
         status_url = f"{STATUS_ENDPOINT}/{task_id}"
+        params = {"include_type_position": "true"} if include_type_position else None
         try:
-            response = await self._request("GET", status_url, timeout=10)
+            response = await self._request(
+                "GET",
+                status_url,
+                timeout=10,
+                params=params,
+            )
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
                 return None

@@ -384,9 +384,17 @@ class ImageService:
         """Get system queue info"""
         return await api_client.get_system_status()
 
-    async def get_task_status(self, task_id: str) -> dict[str, Any] | None:
+    async def get_task_status(
+        self,
+        task_id: str,
+        *,
+        include_type_position: bool = False,
+    ) -> dict[str, Any] | None:
         """Get current backend task status"""
-        return await api_client.get_task_status(task_id)
+        return await api_client.get_task_status(
+            task_id,
+            include_type_position=include_type_position,
+        )
 
 
 # Singleton instance

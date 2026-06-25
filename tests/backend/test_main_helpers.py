@@ -723,12 +723,14 @@ async def test_build_task_status_response_uses_short_task_snapshot_cache(monkeyp
             self.agent_heartbeat_prefix = "agent:"
             self.status_calls = 0
             self.position_calls = 0
+            self.type_position_calls = 0
 
         async def get_task_status(self, task_id):
             assert task_id == "task-1"
             self.status_calls += 1
             return {
                 "status": "pending",
+                "type": "img2img",
                 "progress": "0.25",
                 "error_msg": "",
                 "result_path": "",
@@ -739,6 +741,11 @@ async def test_build_task_status_response_uses_short_task_snapshot_cache(monkeyp
             assert task_id == "task-1"
             self.position_calls += 1
             return 4
+
+        async def get_queue_position_by_type(self, task_id):
+            assert task_id == "task-1"
+            self.type_position_calls += 1
+            return 1
 
         @staticmethod
         def _maybe_parse_json_dict(value):
@@ -754,18 +761,67 @@ async def test_build_task_status_response_uses_short_task_snapshot_cache(monkeyp
     first = await main_response_helpers.build_task_status_response(
         task_id="task-1",
         queue_manager=queue_manager,
+        include_type_position=True,
         build_result_url_func=lambda _path: "unused",
     )
     second = await main_response_helpers.build_task_status_response(
         task_id="task-1",
         queue_manager=queue_manager,
+        include_type_position=True,
         build_result_url_func=lambda _path: "unused",
     )
 
     assert first.queue_pos == 4
+    assert first.queue_type_pos == 1
     assert second.queue_pos == 4
+    assert second.queue_type_pos == 1
     assert queue_manager.status_calls == 1
     assert queue_manager.position_calls == 1
+    assert queue_manager.type_position_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_build_task_status_response_skips_type_position_by_default():
+    class FakeQueueManager:
+        redis = object()
+        pending_key = "pending"
+        running_key = "running"
+        agent_heartbeat_prefix = "agent:"
+
+        async def get_task_status(self, task_id):
+            assert task_id == "task-1"
+            return {
+                "status": "pending",
+                "type": "img2img",
+                "progress": "0.25",
+                "error_msg": "",
+                "result_path": "",
+                "extra_outputs": "",
+            }
+
+        async def get_queue_position(self, task_id):
+            assert task_id == "task-1"
+            return 4
+
+        async def get_queue_position_by_type(self, _task_id):
+            raise AssertionError("type position should be opt-in")
+
+        @staticmethod
+        def _maybe_parse_json_dict(value):
+            return None if not value else value
+
+        @staticmethod
+        def _as_bool(value):
+            return bool(value)
+
+    result = await main_response_helpers.build_task_status_response(
+        task_id="task-1",
+        queue_manager=FakeQueueManager(),
+        build_result_url_func=lambda _path: "unused",
+    )
+
+    assert result.queue_pos == 4
+    assert result.queue_type_pos is None
 
 
 @pytest.mark.asyncio

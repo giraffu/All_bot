@@ -171,13 +171,13 @@ def test_normalize_queue_type_counts_for_display_merges_legacy_img2video_aliases
     }
 
 
-def test_build_user_task_status_text_prefers_queue_position():
+def test_build_user_task_status_text_prefers_type_queue_position():
     context = SimpleNamespace(
         t=lambda key, **kwargs: f"T:{key}:{kwargs}" if kwargs else f"T:{key}"
     )
 
     pending_text = message_handler_runtime._build_user_task_status_text(
-        {"status": "pending", "queue_pos": 3},
+        {"status": "pending", "queue_pos": 9, "queue_type_pos": 3},
         context,
     )
     running_text = message_handler_runtime._build_user_task_status_text(
@@ -186,9 +186,22 @@ def test_build_user_task_status_text_prefers_queue_position():
     )
     submitting_text = message_handler_runtime._build_user_task_status_text(None, context)
 
-    assert pending_text == "T:profile.my_tasks_status_pending_position:{'queue_pos': 4}"
+    assert pending_text == "T:profile.my_tasks_status_pending_type_position:{'queue_pos': 4}"
     assert running_text == "T:profile.my_tasks_status_running"
     assert submitting_text == "T:profile.my_tasks_status_submitting"
+
+
+def test_build_user_task_status_text_falls_back_to_global_queue_position():
+    context = SimpleNamespace(
+        t=lambda key, **kwargs: f"T:{key}:{kwargs}" if kwargs else f"T:{key}"
+    )
+
+    pending_text = message_handler_runtime._build_user_task_status_text(
+        {"status": "pending", "queue_pos": 3},
+        context,
+    )
+
+    assert pending_text == "T:profile.my_tasks_status_pending_position:{'queue_pos': 4}"
 
 
 @pytest.mark.asyncio

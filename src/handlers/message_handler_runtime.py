@@ -69,6 +69,12 @@ def _build_user_task_status_text(status_data: dict | None, context) -> str:
 
     state = str(status_data.get("status") or "").lower()
     if state == "pending":
+        queue_type_pos = _format_queue_rank(status_data.get("queue_type_pos"))
+        if queue_type_pos is not None:
+            return context.t(
+                "profile.my_tasks_status_pending_type_position",
+                queue_pos=queue_type_pos,
+            )
         queue_pos = _format_queue_rank(status_data.get("queue_pos"))
         if queue_pos is not None:
             return context.t("profile.my_tasks_status_pending_position", queue_pos=queue_pos)
@@ -112,7 +118,12 @@ async def _build_user_queue_tasks_for_display(user, context) -> list[dict]:
     for task in user_tasks[:3]:
         backend_task_id = task.get("backend_task_id")
         status_data = (
-            await image_service.get_task_status(backend_task_id) if backend_task_id else None
+            await image_service.get_task_status(
+                backend_task_id,
+                include_type_position=True,
+            )
+            if backend_task_id
+            else None
         )
         display_tasks.append(
             {

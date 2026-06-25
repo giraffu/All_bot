@@ -74,6 +74,7 @@
     "my_tasks_title": "My Tasks",
     "my_tasks_status_submitting": "Submitting",
     "my_tasks_status_pending": "Queued",
+    "my_tasks_status_pending_type_position": "Queue position for this type #{queue_pos}",
     "my_tasks_status_pending_position": "Global queue position #{queue_pos}",
     "my_tasks_status_running": "Generating",
     "my_tasks_status_done": "Done",

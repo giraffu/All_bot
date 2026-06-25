@@ -74,6 +74,7 @@
     "my_tasks_title": "我的任务",
     "my_tasks_status_submitting": "提交中",
     "my_tasks_status_pending": "排队中",
+    "my_tasks_status_pending_type_position": "同类排队第 {queue_pos} 位",
     "my_tasks_status_pending_position": "全局排队第 {queue_pos} 位",
     "my_tasks_status_running": "生成中",
     "my_tasks_status_done": "已完成",
