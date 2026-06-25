@@ -2,6 +2,10 @@ from functools import lru_cache
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 
+from src.handlers.fsm.quick_video_callback_data import (
+    QUICK_VIDEO_MODE_KEYS,
+    build_quick_video_mode_callback_data,
+)
 from src.i18n.translator import get_text
 
 
@@ -11,7 +15,7 @@ def get_qqcc_main_menu_keyboard(lang: str) -> ReplyKeyboardMarkup:
         [get_text("menu.photo_edit_undress", lang)],
         [
             get_text("menu.photo_edit", lang),
-            get_text("menu.video_edit", lang),
+            get_text("qqcc.menu.video_edit", lang),
         ],
         [get_text("menu.open_main_bot", lang)],
     ]
@@ -53,3 +57,16 @@ def get_qqcc_video_edit_keyboard(lang: str) -> ReplyKeyboardMarkup:
         [get_text("menu.back_main", lang)],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+
+@lru_cache(maxsize=10)
+def get_qqcc_video_edit_inline_keyboard(lang: str) -> InlineKeyboardMarkup:
+    buttons = [
+        InlineKeyboardButton(
+            get_text(route_key, lang),
+            callback_data=build_quick_video_mode_callback_data(route_key),
+        )
+        for route_key in QUICK_VIDEO_MODE_KEYS
+    ]
+    keyboard = [buttons[index : index + 3] for index in range(0, len(buttons), 3)]
+    return InlineKeyboardMarkup(keyboard)

@@ -29,6 +29,11 @@ from src.handlers.fsm.fsm_shared import (
     translate_fsm_text,
 )
 from src.handlers.conversation_states import QuickVideoState
+from src.handlers.fsm.quick_video_callback_data import (
+    QUICK_VIDEO_MODE_CALLBACK_PATTERN,
+    QUICK_VIDEO_MODE_KEYS,
+    parse_quick_video_mode_callback_data,
+)
 from src.handlers.prompt_router import GLOBAL_REVERSE_MAP
 from src.services.permission_service import permission_service
 from src.services.task_service_entrypoints_video import process_video_task_template
@@ -36,7 +41,12 @@ from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
     download_telegram_file_to_fsm_temp,
 )
-from src.utils import create_background_task, robust_edit_text, robust_reply_text
+from src.utils import (
+    create_background_task,
+    robust_edit_text,
+    robust_reply_text,
+    safe_answer_query,
+)
 import contextlib
 
 from src.filters.i18n_filter import I18nFilter
@@ -83,6 +93,31 @@ def _normalize_quick_video_selection(
     if resolution == "1024p" and duration == "10s":
         return "720p", "10s"
     return resolution, duration
+
+
+def _strip_menu_prefix(text: str) -> str:
+    text = (text or "").strip()
+    first_token, _, rest = text.partition(" ")
+    if rest and not any(char.isalnum() for char in first_token):
+        return rest.strip()
+    return text
+
+
+def _resolve_quick_video_entry(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> tuple[str | None, str, object | None]:
+    query = update.callback_query
+    if query:
+        route_key = parse_quick_video_mode_callback_data(query.data)
+        mode = QUICK_VIDEO_MODES.get(route_key) if route_key else None
+        mode_name = _strip_menu_prefix(_t(context, route_key)) if route_key else ""
+        return mode, mode_name, getattr(query, "message", None)
+
+    message = update.message or update.edited_message
+    text = message.text.strip() if message and message.text else ""
+    route_key = GLOBAL_REVERSE_MAP.get(text)
+    mode = QUICK_VIDEO_MODES.get(route_key) if route_key else None
+    return mode, _strip_menu_prefix(text), message
 
 
 async def _build_quick_video_settings_markup(
@@ -141,32 +176,28 @@ def _resolve_quick_video_mode_submission(mode: str) -> tuple[str, str] | None:
 
 async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Entry point for 懒人动图 (单步图生视频)"""
-    message = update.message or update.edited_message
-    text = message.text.strip() if message and message.text else ""
+    query = update.callback_query
+    if query:
+        await safe_answer_query(query)
+    mode, mode_name, reply_message = _resolve_quick_video_entry(update, context)
 
     from src.utils import is_maintenance_mode
 
     if is_maintenance_mode():
         msg = _t(context, "fsm.common.maintenance")
-        if update.callback_query:
-            await robust_edit_text(
-                update.callback_query.message, msg, parse_mode="Markdown"
-            )
-        else:
-            await robust_reply_text(update.message, msg, parse_mode="Markdown")
+        if query:
+            await robust_edit_text(query.message, msg, parse_mode="Markdown")
+        elif reply_message:
+            await robust_reply_text(reply_message, msg, parse_mode="Markdown")
         return ConversationHandler.END
 
     if context.user_data.get("in_conversation"):
         msg = _t(context, "fsm.common.conflict")
-        await robust_reply_text(update.message, msg)
+        if reply_message:
+            await robust_reply_text(reply_message, msg)
         return ConversationHandler.END
 
-    mode = None
-    route_key = GLOBAL_REVERSE_MAP.get(text)
-    if route_key:
-        mode = QUICK_VIDEO_MODES.get(route_key)
-
-    if not mode:
+    if not mode or not reply_message:
         return ConversationHandler.END
 
     context.user_data["in_conversation"] = f"QUICK_VIDEO_{mode}"
@@ -177,9 +208,8 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         "image_path": None,
     }
 
-    mode_name = text[2:] if len(text) > 2 else text
     msg = _t(context, "fsm.quick_video.start", mode_name=mode_name)
-    await robust_reply_text(update.message, msg, parse_mode="Markdown")
+    await robust_reply_text(reply_message, msg, parse_mode="Markdown")
     return QuickVideoState.WAIT_IMAGE
 
 
@@ -426,17 +456,13 @@ def get_quick_video_fsm_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
             MessageHandler(
-                I18nFilter(
-                    [
-                        "menu.video_edit_missionary",
-                        "menu.video_edit_doggy",
-                        "menu.video_edit_blowjob",
-                        "menu.video_edit_undress_tongue",
-                        "menu.video_edit_closeup_blowjob",
-                    ]
-                ),
+                I18nFilter(list(QUICK_VIDEO_MODE_KEYS)),
                 start_quick_video,
-            )
+            ),
+            CallbackQueryHandler(
+                start_quick_video,
+                pattern=QUICK_VIDEO_MODE_CALLBACK_PATTERN,
+            ),
         ],
         states={
             QuickVideoState.WAIT_IMAGE: [

@@ -50,7 +50,7 @@
 | 文档 | 事实源 | 本轮状态 | 处理结果 |
 | :--- | :--- | :--- | :--- |
 | `docs/子模块_交互状态机_fsm_handlers.md` | `src/handlers`、FSM tests | 已核对 | 主 Bot FSM 边界有效 |
-| `docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md` | `qqcc_bot/main.py`、`qqcc_bot/commands.py`、`qqcc_bot/keyboards.py`、`qqcc_bot/prompt_handlers.py`、cloud compose QQCC profile、`scripts/update_cloud_prod_qqcc_bot.sh`、`src/handlers/fsm/quick_image_fsm.py` | 已修正 | 补充 QQCC 主菜单 `前往主bot` 非生成入口、正式 QQCC Bot 单服务更新脚本、单 polling 确认口径、独立 token、`bot:qqcc` 来源、快速脱衣主菜单入口与两种处理方式选择；双 polling 红线有效 |
+| `docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md` | `qqcc_bot/main.py`、`qqcc_bot/commands.py`、`qqcc_bot/keyboards.py`、`qqcc_bot/prompt_handlers.py`、cloud compose QQCC profile、`scripts/update_cloud_prod_qqcc_bot.sh`、`src/handlers/fsm/quick_image_fsm.py`、`src/handlers/fsm/quick_video_fsm.py` | 已修正 | 补充 QQCC 主菜单 `前往主bot` 非生成入口、正式 QQCC Bot 单服务更新脚本、单 polling 确认口径、独立 token、`bot:qqcc` 来源、快速脱衣主菜单入口与两种处理方式选择；`视频创作` 已在 QQCC 专用显示层改为 `AI动图`，其二级场景改为挂在 Bot 回复下方的 inline 按钮且三项一行；双 polling 红线有效 |
 | `docs/子模块_付费群审核Bot_paid_group_guard_bot.md` | `paid_group_guard_bot`、Dashboard paid group router/service、cloud compose | 已核对 | 独立 Bot 与 Dashboard 配置管理边界有效 |
 | `docs/子模块_Telegram本地API与文件代理_tg_local_api.md` | Telegram API env、Bot file handling | 已核对 | 文件代理边界有效 |
 
@@ -62,6 +62,7 @@
 | `docs/子模块_计费与支付_billing_payment.md` | `src/core/billing_core*`、`src/payment_api_server.py`、affiliate migrations | 已核对 | 支付履约与 affiliate 账本口径有效 |
 | `docs/子模块_社区与存储_gallery_storage.md` | `src/core/gallery*`、`src/web_api/services/*gallery*`、R2 scripts | 已核对 | R2/legacy MinIO 退出口径有效 |
 | `docs/子模块_后台监控与清理_dashboard_monitoring.md` | `dashboard/backend`、`dashboard/frontend`、RunPod admin services | 已核对 | Dashboard 监控和清理边界有效 |
+| `docs/子模块_本地数据分析平台_local_analytics_platform.md` | `local_analytics_platform`、`bot_db_prod_shadow`、本地 compose | 已新增 | 记录独立本地分析平台入口、只读 shadow 数据边界、媒体引用核验与不挂载现有 Dashboard 的运行口径 |
 | `docs/business/00_INDEX_业务板块分类与规范总览.md` | business docs | 已核对 | 业务导航有效 |
 | `docs/business/00_DICT_全局业务数据字典.md` | models、domain config、business docs | 已核对 | 数据字典有效 |
 | `docs/business/01_BIZ_AI创作与生成板块.md` | task type registry、FSM、Web task routes | 已核对 | 生成业务描述有效 |
@@ -112,7 +113,7 @@
 | `.codex/skills/allbot-task-engine/SKILL.md` | task core、queue manager、runtime cleanup | 已核对 | 任务生命周期边界有效 |
 | `.codex/skills/allbot-comfy-models/SKILL.md` | workflow patcher、remote_workers | 已核对 | workflow/模型边界有效 |
 | `.codex/skills/allbot-tg-fsm/SKILL.md` | `src/handlers`、Bot entrypoint | 已核对 | FSM 边界有效 |
-| `.codex/skills/allbot-qqcc-lazy-bot/SKILL.md` | `qqcc_bot`、cloud compose、`scripts/update_cloud_prod_qqcc_bot.sh`、`src/handlers/fsm/quick_image_fsm.py` | 已修正 | 补充 QQCC 主菜单 `前往主bot` 非生成入口、正式单独更新脚本、单 polling 确认口径与快速脱衣主菜单入口；QQCC 独立 Bot 边界有效 |
+| `.codex/skills/allbot-qqcc-lazy-bot/SKILL.md` | `qqcc_bot`、cloud compose、`scripts/update_cloud_prod_qqcc_bot.sh`、`src/handlers/fsm/quick_image_fsm.py`、`src/handlers/fsm/quick_video_fsm.py` | 已修正 | 补充 QQCC 主菜单 `前往主bot` 非生成入口、正式单独更新脚本、单 polling 确认口径、快速脱衣主菜单入口、`AI动图` 专用文案与 quick video inline 场景按钮契约；QQCC 独立 Bot 边界有效 |
 | `.codex/skills/allbot-billing-auth/SKILL.md` | auth/billing/affiliate code | 已核对 | 计费鉴权边界有效 |
 | `.codex/skills/allbot-gallery-storage/SKILL.md` | Gallery/R2 code | 已核对 | 存储与社区边界有效 |
 | `.codex/skills/allbot-diagnosing-bugs/SKILL.md` | bug 诊断流程 | 已核对 | 诊断闭环有效 |

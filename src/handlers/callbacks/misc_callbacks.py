@@ -31,6 +31,7 @@ async def noop_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @register_callback("set_")
 @register_callback("editlora_select_")
 @register_callback("lora_select_")
+@register_callback("qvid_mode:")
 @register_callback("qvid_start_")
 @register_callback("confirm_ltx_video")
 async def fsm_fallback_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

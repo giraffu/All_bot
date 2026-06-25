@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>本地数据分析平台</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div id="app" class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar-brand">
+          <div class="eyebrow">AllBot Shadow Analytics</div>
+          <h1>本地数据分析平台</h1>
+          <div id="sourceLine" class="source-line">连接中</div>
+        </div>
+
+        <nav class="side-tabs" aria-label="本地分析模块">
+          <button class="tab-button active" type="button" data-tab="overview">
+            <span class="tab-label">经营概览</span>
+            <span class="tab-meta">收入、用户、生成</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="finance">
+            <span class="tab-label">充值分析</span>
+            <span class="tab-meta">渠道、首充、复购</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="generation">
+            <span class="tab-label">生成分析</span>
+            <span class="tab-meta">类型、消耗、复用</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="prompts">
+            <span class="tab-label">提示词洞察</span>
+            <span class="tab-meta">评分、标签、输入</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="templates">
+            <span class="tab-label">模板候选</span>
+            <span class="tab-meta">场景样本沉淀</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="media">
+            <span class="tab-label">媒体核验</span>
+            <span class="tab-meta">输入输出引用</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-status">
+          <div class="status-label">Shadow 状态</div>
+          <div id="sidebarStatus" class="status-value">等待刷新</div>
+        </div>
+      </aside>
+
+      <div class="workspace">
+        <header class="topbar">
+          <div class="title-block">
+            <div id="activeKicker" class="eyebrow">经营概览</div>
+            <h2 id="activeTitle">收入、用户、生成和媒体状态</h2>
+            <div id="activeSubtitle" class="source-line">本地 shadow 数据分析</div>
+            <div id="lastUpdated" class="timestamp"></div>
+          </div>
+        <div class="controls">
+          <label>
+            <span>统计周期</span>
+            <select id="daysSelect">
+              <option value="7">7 天</option>
+              <option value="30" selected>30 天</option>
+              <option value="90">90 天</option>
+              <option value="180">180 天</option>
+            </select>
+          </label>
+          <label>
+            <span>Prompt 周期</span>
+            <select id="promptDaysSelect">
+              <option value="7">7 天</option>
+              <option value="30" selected>30 天</option>
+              <option value="90">90 天</option>
+              <option value="180">180 天</option>
+            </select>
+          </label>
+          <label>
+            <span>任务类型</span>
+            <select id="taskTypeSelect">
+              <option value="">全部</option>
+            </select>
+          </label>
+          <button id="refreshButton" type="button">刷新</button>
+        </div>
+      </header>
+
+      <main>
+        <div id="errorBanner" class="error-banner hidden"></div>
+
+        <section class="band overview-band tab-panel active" data-panel="overview">
+          <div id="metricGrid" class="metric-grid"></div>
+          <div class="chart-strip">
+            <div>
+              <div class="chart-title">每日生成</div>
+              <div id="generationSpark" class="spark-bars"></div>
+            </div>
+            <div>
+              <div class="chart-title">每日 RMB</div>
+              <div id="rmbSpark" class="spark-bars amber"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="band tab-panel" data-panel="finance">
+          <div id="financeSummary" class="metric-grid compact"></div>
+          <div class="split-grid">
+            <div class="table-shell">
+              <div class="table-title">渠道表现</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>渠道</th>
+                    <th>成功订单</th>
+                    <th>付费人数</th>
+                    <th>金额</th>
+                    <th>均单</th>
+                    <th>发放灵石</th>
+                  </tr>
+                </thead>
+                <tbody id="financeChannels"></tbody>
+              </table>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">用户分层</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>分层</th>
+                    <th>人数</th>
+                    <th>订单</th>
+                    <th>RMB</th>
+                    <th>人均 RMB</th>
+                  </tr>
+                </thead>
+                <tbody id="financeSegments"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="band tab-panel" data-panel="generation">
+          <div id="generationSummary" class="metric-grid compact"></div>
+          <div class="split-grid">
+            <div class="table-shell">
+              <div class="table-title">任务类型</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>类型</th>
+                    <th>生成</th>
+                    <th>用户</th>
+                    <th>结果</th>
+                    <th>收藏</th>
+                    <th>投稿</th>
+                    <th>应用</th>
+                  </tr>
+                </thead>
+                <tbody id="generationTypes"></tbody>
+              </table>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">灵石消耗</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>类型</th>
+                    <th>扣费次数</th>
+                    <th>消耗</th>
+                    <th>均次</th>
+                  </tr>
+                </thead>
+                <tbody id="generationCredits"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="table-shell full">
+            <div class="table-title">小时分布</div>
+            <div id="hourlyBars" class="hourly-bars"></div>
+          </div>
+        </section>
+
+        <section class="band tab-panel" data-panel="prompts">
+          <div id="tagSummary" class="tag-row"></div>
+          <div class="prompt-layout">
+            <div class="table-shell">
+              <div class="table-title">Prompt 排行</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>评分</th>
+                    <th>类型</th>
+                    <th>Prompt</th>
+                    <th>信号</th>
+                    <th>媒体</th>
+                  </tr>
+                </thead>
+                <tbody id="promptRows"></tbody>
+              </table>
+            </div>
+            <aside id="promptDetail" class="detail-panel"></aside>
+          </div>
+        </section>
+
+        <section class="band tab-panel" data-panel="templates">
+          <div id="templateCandidates" class="candidate-grid"></div>
+        </section>
+
+        <section class="band media-band tab-panel" data-panel="media">
+          <div id="mediaSummary" class="metric-grid compact"></div>
+          <div class="table-shell full">
+            <div class="table-title">最近媒体记录</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>类型</th>
+                  <th>输入</th>
+                  <th>输出</th>
+                  <th>尺寸/时长</th>
+                </tr>
+              </thead>
+              <tbody id="mediaRows"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+      </div>
+    </div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

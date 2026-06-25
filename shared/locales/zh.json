@@ -67,6 +67,11 @@
     "gallery_applied": "🪄 最多应用",
     "gallery_mine": "🙋 我的投稿"
   },
+  "qqcc": {
+    "menu": {
+      "video_edit": "AI动图"
+    }
+  },
   "profile": {
     "queue_status_title": "炼丹炉状态",
     "refresh_queue": "刷新",

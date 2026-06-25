@@ -6,11 +6,19 @@ from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler, T
 
 from qqcc_bot import keyboards, main as qqcc_main, prompt_handlers
 from qqcc_bot import commands as qqcc_commands
+from src.handlers.fsm.quick_video_callback_data import (
+    build_quick_video_mode_callback_data,
+)
 from src.handlers import prompt_router
+from src.i18n.translator import get_text
 
 
 def _keyboard_texts(reply_markup):
     return [[getattr(button, "text", button) for button in row] for row in reply_markup.keyboard]
+
+
+def _inline_keyboard_texts(reply_markup):
+    return [[button.text for button in row] for row in reply_markup.inline_keyboard]
 
 
 def _clear_main_bot_link_env(monkeypatch):
@@ -26,9 +34,10 @@ def test_qqcc_main_menu_only_contains_lazy_generation_entries():
 
     assert keyboard == [
         ["💃 快速脱衣"],
-        ["🖼️ 懒人P图", "🎬 视频创作"],
+        ["🖼️ 懒人P图", "AI动图"],
         ["前往主bot"],
     ]
+    assert get_text("menu.video_edit", "zh") == "🎬 视频创作"
 
 
 def test_qqcc_main_bot_link_keyboard_uses_url_button():
@@ -67,14 +76,44 @@ def test_qqcc_photo_menu_excludes_fast_face_swap():
 
 
 def test_qqcc_video_menu_contains_lazy_video_scenes():
-    rows = _keyboard_texts(keyboards.get_qqcc_video_edit_keyboard("zh"))
+    reply_markup = keyboards.get_qqcc_video_edit_inline_keyboard("zh")
+    rows = _inline_keyboard_texts(reply_markup)
     flat = [text for row in rows for text in row]
 
+    assert [len(row) for row in rows] == [3, 2]
     assert "🛌 动图传教士" in flat
     assert "🎬 动图后入" in flat
     assert "🎬 口交黑人" in flat
     assert "🎬 脱衣吐舌" in flat
     assert "🎬 特写口交" in flat
+    assert reply_markup.inline_keyboard[0][0].callback_data == (
+        build_quick_video_mode_callback_data("menu.video_edit_missionary")
+    )
+
+
+@pytest.mark.asyncio
+async def test_qqcc_video_menu_route_replies_with_inline_scene_buttons():
+    reply_text = AsyncMock()
+    message = SimpleNamespace(reply_text=reply_text)
+    update = SimpleNamespace(
+        effective_message=message,
+        message=None,
+        edited_message=None,
+    )
+    context = SimpleNamespace(
+        lang="zh",
+        t=lambda key: f"translated:{key}",
+    )
+
+    await prompt_handlers.handle_video_edit_menu(update, context)
+
+    reply_text.assert_awaited_once()
+    kwargs = reply_text.await_args.kwargs
+    assert kwargs["text"] == "translated:system.video_edit_hint"
+    assert _inline_keyboard_texts(kwargs["reply_markup"]) == [
+        ["🛌 动图传教士", "🎬 动图后入", "🎬 口交黑人"],
+        ["🎬 脱衣吐舌", "🎬 特写口交"],
+    ]
 
 
 def test_qqcc_prompt_routes_are_limited_to_lazy_menus():
@@ -94,6 +133,7 @@ def test_qqcc_lazy_main_buttons_are_routable_without_main_bot_prompt_routes(monk
 
     assert prompt_router.GLOBAL_REVERSE_MAP["💃 快速脱衣"] == "menu.photo_edit_undress"
     assert prompt_router.GLOBAL_REVERSE_MAP["🖼️ 懒人P图"] == "menu.photo_edit"
+    assert prompt_router.GLOBAL_REVERSE_MAP["AI动图"] == "menu.video_edit"
     assert prompt_router.GLOBAL_REVERSE_MAP["🎬 视频创作"] == "menu.video_edit"
     assert prompt_router.GLOBAL_REVERSE_MAP["前往主bot"] == "menu.open_main_bot"
 
@@ -165,7 +205,7 @@ async def test_qqcc_start_returns_simplified_menu(monkeypatch):
     kwargs = reply_text.await_args.kwargs
     assert _keyboard_texts(kwargs["reply_markup"]) == [
         ["💃 快速脱衣"],
-        ["🖼️ 懒人P图", "🎬 视频创作"],
+        ["🖼️ 懒人P图", "AI动图"],
         ["前往主bot"],
     ]
 
@@ -213,7 +253,7 @@ async def test_qqcc_start_keeps_main_bot_jump_in_menu_when_configured(monkeypatc
     assert getattr(kwargs["reply_markup"], "inline_keyboard", None) is None
     assert _keyboard_texts(kwargs["reply_markup"]) == [
         ["💃 快速脱衣"],
-        ["🖼️ 懒人P图", "🎬 视频创作"],
+        ["🖼️ 懒人P图", "AI动图"],
         ["前往主bot"],
     ]
 

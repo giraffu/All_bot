@@ -15,7 +15,7 @@ description: "处理 QQCC 懒人 Telegram Bot 独立服务、简化菜单、quic
 - 领域文档：`docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md`
 
 ## 2. 功能范围
-主菜单业务入口只能有 `快速脱衣`、`懒人P图` 和 `视频创作`。`快速脱衣` 必须位于主菜单，不再放入 `懒人P图` 子菜单。主菜单可额外有一个非生成入口 `前往主bot`；Telegram reply keyboard 不能直接承载 URL，因此点击该菜单项后由 QQCC Bot 回复主 Bot 的 inline URL 跳转按钮。
+主菜单业务入口只能有 `快速脱衣`、`懒人P图` 和 `AI动图`。`AI动图` 是 QQCC 对 `menu.video_edit` 的专用显示文案，不要直接改共享 `menu.video_edit` 以免影响主 Bot。`快速脱衣` 必须位于主菜单，不再放入 `懒人P图` 子菜单。主菜单可额外有一个非生成入口 `前往主bot`；Telegram reply keyboard 不能直接承载 URL，因此点击该菜单项后由 QQCC Bot 回复主 Bot 的 inline URL 跳转按钮。
 
 允许的 P 图入口：
 - 快速自慰
@@ -31,6 +31,8 @@ description: "处理 QQCC 懒人 Telegram Bot 独立服务、简化菜单、quic
 - 口交
 - 脱衣吐舌
 - 近景口交
+
+QQCC `AI动图` 的二级场景菜单必须挂在 Bot 回复消息下方，用 inline button 展示，每行最多 3 个；场景按钮 callback 前缀为 `qvid_mode:`，由 `get_quick_video_fsm_handler()` 直接承接并进入发送图片步骤。
 
 注册的 FSM 只能是 `get_quick_image_fsm_handler()` 与 `get_quick_video_fsm_handler()`。不得注册 `faceswap_fsm`、高级图像、高级视频、充值、affiliate redeem 或 gallery 浏览入口。
 
@@ -57,11 +59,11 @@ token 只允许放在 ignored env 文件：
 
 ## 5. 验证要求
 至少覆盖：
-- QQCC `/start` 只返回简化主菜单，且主菜单包含 `快速脱衣`、`懒人P图`、`视频创作`。
+- QQCC `/start` 只返回简化主菜单，且主菜单包含 `快速脱衣`、`懒人P图`、`AI动图`。
 - QQCC `/start` 只返回简化主菜单，不额外发送主 Bot 跳转消息；配置主 Bot 跳转 env 时，点击菜单里的 `前往主bot` 后回复 inline URL 跳转按钮。
 - P 图子菜单包含自慰、随机换脸，不包含快速脱衣和快速换脸。
 - QQCC 点击快速脱衣后出现 `头像/半身补全` 与 `全身保脸重绘` 两个懒人选择，选择后只需发送图片。
-- 视频子菜单包含五个懒人动图场景。
+- `AI动图` 点击后回复 inline 场景按钮，三个一行，包含五个懒人动图场景；点击场景 callback 不转圈并进入 quick video 发送图片步骤。
 - QQCC main 只注册 quick image/video FSM。
 - `bot:qqcc` 能进入 task submission、active registry 和 recovery filter。
 - compose/script 语法检查通过。

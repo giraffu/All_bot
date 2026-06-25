@@ -11,7 +11,9 @@ QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位�
 主菜单业务入口只包含：
 - `快速脱衣`
 - `懒人P图`
-- `视频创作`
+- `AI动图`
+
+`AI动图` 是 QQCC Bot 的专用展示文案，对应共享路由 `menu.video_edit`。不要直接修改共享 `menu.video_edit` 文案来实现 QQCC 菜单改名，否则会影响主 Bot 的正式菜单。
 
 主菜单非生成入口：
 - `前往主bot`
@@ -26,12 +28,14 @@ QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位�
 
 明确不开放 `快速换脸` / `faceswap_fsm` 双图换脸入口。
 
-`视频创作` 只开放五个懒人动图场景：
+`AI动图` 只开放五个懒人动图场景：
 - 传教士
 - 后入
 - 口交
 - 脱衣吐舌
 - 近景口交
+
+用户点击主菜单 `AI动图` 后，QQCC Bot 回复 `system.video_edit_hint`，并把上述场景作为 inline button 挂在该回复消息下方展示；按钮按三个一行排布，callback 使用 `qvid_mode:<menu.video_edit_*>`，由 `get_quick_video_fsm_handler()` 直接进入发送图片步骤。不要再把这些场景塞回 Telegram 底部 reply keyboard。
 
 注册的 FSM 只允许：
 - `get_quick_image_fsm_handler()`
@@ -41,7 +45,7 @@ QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位�
 
 ## 3. 代码入口
 - `qqcc_bot/main.py`：独立启动入口，读取 `QQCC_BOT_TOKEN` 或 `QQCC_BOT_TOKEN_TEST`，设置 `bot_client_type=bot:qqcc`，注册最小 handler 集。
-- `qqcc_bot/keyboards.py`：QQCC 专用主菜单、P 图子菜单、视频子菜单。
+- `qqcc_bot/keyboards.py`：QQCC 专用主菜单、P 图子菜单、`AI动图` inline 场景菜单。
 - `qqcc_bot/commands.py`：QQCC `/start` 与 `/cancel`，复用用户创建和准入逻辑，返回简化菜单。
 - `qqcc_bot/prompt_handlers.py`：只路由 `menu.photo_edit`、`menu.video_edit`、`menu.main_menu`、`menu.back_main`。
 - `qqcc_bot/callback_handler.py`：只导入任务取消、结果评分、随机换脸再来一张等必要 callback 注册模块。
@@ -138,6 +142,7 @@ QQCC 快速脱衣入口至少覆盖：
 - `/start` 主菜单展示 `快速脱衣`，`懒人P图` 子菜单不再展示 `快速脱衣`。
 - `/start` 只返回简化主菜单，不额外发送跳转消息；主菜单包含非生成入口 `前往主bot`。
 - 配置 `QQCC_MAIN_BOT_URL` 或 `QQCC_MAIN_BOT_USERNAME` 时，点击 `前往主bot` 回复 inline URL 跳转按钮；未配置时回复入口未配置提示。
+- 点击主菜单 `AI动图` 后，Bot 回复下方展示五个 inline 场景按钮，第一行 3 个、第二行 2 个；点击任一场景进入 quick video 发送图片步骤。
 - 点击主菜单 `快速脱衣` 先展示 `头像/半身补全` 与 `全身保脸重绘`。
 - `头像/半身补全` 进入 `undress`，`全身保脸重绘` 进入 `i2i_draw`。
 - 两个分支都保持“选择按钮后只发送 1 张图片即可提交”的懒人交互。

@@ -67,6 +67,11 @@
     "gallery_applied": "🪄 Most Applied",
     "gallery_mine": "🙋 My Submissions"
   },
+  "qqcc": {
+    "menu": {
+      "video_edit": "AI GIF"
+    }
+  },
   "profile": {
     "queue_status_title": "Furnace Status",
     "refresh_queue": "Refresh",

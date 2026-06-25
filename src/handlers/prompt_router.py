@@ -87,6 +87,11 @@ def build_global_menu_filter():
         video_lora_text = _get_nested_translation_value(translations, "menu.video_lora")
         if video_lora_text and isinstance(video_lora_text, str):
             GLOBAL_REVERSE_MAP[video_lora_text] = "menu.video_lora"
+        qqcc_video_text = _get_nested_translation_value(
+            translations, "qqcc.menu.video_edit"
+        )
+        if qqcc_video_text and isinstance(qqcc_video_text, str):
+            GLOBAL_REVERSE_MAP[qqcc_video_text] = "menu.video_edit"
 
     # 增加硬编码向后兼容映射：支持老用户点击旧键盘的按钮
     hardcoded_backward_map = {
@@ -94,6 +99,7 @@ def build_global_menu_filter():
         "💰 个人中心": "menu.profile",
         "👤 个人中心": "menu.profile",
         "🎬 懒人动图": "menu.video_edit",
+        "AI动图": "menu.video_edit",
         "🎬 自定义图生视频": "menu.custom_video",
         "自定义图生视频": "menu.custom_video",
     }

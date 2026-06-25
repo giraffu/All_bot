@@ -7,7 +7,7 @@ from qqcc_bot.keyboards import (
     get_qqcc_main_bot_link_keyboard,
     get_qqcc_main_menu_keyboard,
     get_qqcc_photo_edit_keyboard,
-    get_qqcc_video_edit_keyboard,
+    get_qqcc_video_edit_inline_keyboard,
 )
 from qqcc_bot.commands import resolve_main_bot_url
 from src.handlers.message_handler_common import (
@@ -50,7 +50,7 @@ async def handle_video_edit_menu(update, context, text: str = None):
         update,
         context,
         context.t("system.video_edit_hint"),
-        get_qqcc_video_edit_keyboard(context.lang),
+        get_qqcc_video_edit_inline_keyboard(context.lang),
     )
 
 

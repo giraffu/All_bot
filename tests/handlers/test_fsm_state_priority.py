@@ -1878,6 +1878,40 @@ async def test_start_quick_video_uses_english_locale(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_start_quick_video_callback_selects_mode(monkeypatch):
+    reply_mock = AsyncMock()
+    answer_mock = AsyncMock()
+
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr("src.handlers.fsm.quick_video_fsm.robust_reply_text", reply_mock)
+
+    user = _build_user()
+    callback_message = SimpleNamespace(chat_id=10001)
+    update = SimpleNamespace(
+        effective_user=user,
+        effective_chat=SimpleNamespace(id=10001),
+        message=None,
+        edited_message=None,
+        callback_query=SimpleNamespace(
+            data="qvid_mode:menu.video_edit_doggy",
+            message=callback_message,
+            answer=answer_mock,
+            from_user=user,
+        ),
+    )
+    context = SimpleNamespace(user_data={}, lang="zh")
+
+    result = await quick_video_fsm.start_quick_video(update, context)
+
+    assert result == quick_video_fsm.QuickVideoState.WAIT_IMAGE
+    assert context.user_data["quick_video_data"]["mode"] == quick_video_fsm.MODE_DOGGY_STYLE
+    answer_mock.assert_awaited_once()
+    reply_mock.assert_awaited_once()
+    assert reply_mock.await_args.args[0] is callback_message
+    assert "动图后入" in reply_mock.await_args.args[1]
+
+
+@pytest.mark.asyncio
 async def test_start_faceswap_uses_english_locale(monkeypatch):
     reply_mock = AsyncMock()
 
