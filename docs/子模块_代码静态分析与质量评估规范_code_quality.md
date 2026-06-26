@@ -90,3 +90,14 @@
 - `pytest --collect-only -q` 可收集 `1678` 个测试，用时约 74 秒；未执行完整测试套件。
 - `ruff check --statistics` 剩余 `2` 个 `F401`，均为 `ops/gpu_pool_controller/runpod_pod_request.py` 中未使用的 RunPod LTX import。
 - 文档结构检查 `python scripts/doc_quality_checker.py` 通过。
+
+## 7. 2026-06-27 知识库校准轻量复核
+
+本轮基于 `deploy` 分支 `2bd2866` 重新校准实时知识库，不做远端 SSH、线上 curl、Docker 运行态探测或完整测试执行。
+
+当前结果：
+- `src/core` 未发现 Telegram `Update`、FastAPI `Request/APIRouter` 等平台对象 import，Core Isolation 当前成立。
+- Alembic 当前为单 head `7f3a9c1d2e4b`。
+- `pytest --collect-only -q` 可收集 `1778` 个测试，用时约 118 秒；未执行完整测试套件。
+- `ruff check --statistics` 剩余 `7` 个可自动修复问题：`local_analytics_platform/app/main.py` 1 个 `F541`，`local_analytics_platform/app/prompt_vectors.py`、`ops/gpu_pool_controller/runpod_pod_request.py`、`scripts/import_minio_bucket_normalized.py`、`tests/local_analytics/test_prompt_vectors_refresh.py` 与 `tests/scripts/test_cloud_prod_shadow_sync.py` 合计 6 个 `F401`。
+- 文档结构检查 `python scripts/doc_quality_checker.py` 通过。

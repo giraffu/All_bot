@@ -1,15 +1,17 @@
 # AllBot Knowledge Base Audit Matrix
 
-本矩阵记录 2026-06-24 对 AllBot 实时知识库的逐项核对结果。事实源优先级为当前代码、compose、脚本、Alembic、`pytest --collect-only` 与 `ruff check`；本轮不做远端 SSH、线上 curl 或 Docker 运行态探测。
+本矩阵记录 2026-06-27 对 AllBot 实时知识库的逐项核对结果。事实源优先级为当前代码、compose、脚本、Alembic、`pytest --collect-only`、`ruff check` 与文档结构检查；本轮不做远端 SSH、线上 curl 或 Docker 运行态探测。
 
 ## 1. 本轮校准基线
 
 | 项目 | 当前事实 |
 | :--- | :--- |
-| Git 分支 / 提交 | `deploy` / `9a91388` |
+| Git 分支 / 提交 | `deploy` / `2bd2866` |
 | Alembic | 单 head：`7f3a9c1d2e4b` |
-| 测试收集 | `pytest --collect-only -q` 收集 `1678` 个测试，用时约 74 秒 |
-| Ruff | `ruff check --statistics` 剩余 `2` 个 `F401`，均在 `ops/gpu_pool_controller/runpod_pod_request.py` |
+| 测试收集 | `pytest --collect-only -q` 收集 `1778` 个测试，用时约 118 秒 |
+| Ruff | `ruff check --statistics` 剩余 `7` 个可自动修复问题：1 个 `F541`、6 个 `F401`，集中在 `local_analytics_platform/`、`ops/gpu_pool_controller/runpod_pod_request.py`、`scripts/import_minio_bucket_normalized.py` 与测试文件 |
+| 文档结构 | `python scripts/doc_quality_checker.py` 通过 |
+| Core Isolation | `rg` 轻量扫描 `src/core` 未发现 Telegram `Update` 或 FastAPI `Request/APIRouter` 等平台对象 import |
 | 云测试入口 | 日常维护式更新首选 `scripts/update_cloud_test_with_maintenance.sh --execute`；远端控制面重建子步骤为 `scripts/safe_deploy_cloud_test.sh` |
 | 云正式入口 | 正式发布需明确确认；控制面入口为 `scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod` 或 `scripts/safe_deploy_cloud_prod.sh` 子步骤；QQCC 正式 Bot 单独更新入口为 `scripts/update_cloud_prod_qqcc_bot.sh --execute --confirm-prod --confirm-single-polling`，用户明确要求 QQCC 单服务更新即可作为当次单 polling 操作确认 |
 | 本地云正式 shadow 同步 | `scripts/sync_cloud_prod_to_local_shadow.py` 默认 dry-run，`--execute` 才把云正式 PostgreSQL 恢复为本地 `bot_db_prod_shadow`；数据库获取主路径为 `CLOUD_PROD_DB_DUMP_MODE=remote_r2`，由 `allbot-do-sgp1-control` 在云机 dump 后临时上传 R2 `user-data-prod/__shadow-transfer/<timestamp>`，本地经 HTTPS/rclone 下载校验后 restore，避免依赖家宽/VPN 出口 IP 作为托管 DB trusted source；`R2_BUCKET_SYNC_ENABLED=true` 时才把 R2 `user-data-prod` 增量同步到 MinIO `user-data-prod-shadow` 并用 quarantine 保留云端覆盖/删除的旧对象，设为 `false` 时每日任务只保留数据库 dump/restore 与 Redis 摘要；该开关不影响 `remote_r2` 的 `__shadow-transfer` 临时 dump 传输；R2 传输默认 `20M` 带宽上限、`transfers=8`、`checkers=16`；首次 seed 空 shadow 可手动 `--seed-r2-shadow-with-copy` 走 `copy --no-traverse`；`COMPLETE_MEDIA_SYNC_ENABLED=true` 时每日从本地 R2 shadow 非破坏式 copy 到 `user-data-complete-shadow`，数据库-only timer 应同时设为 `false`；legacy `bot-data`/`comfyui-temp` 只在手动 `--include-legacy-media-import` 首次/补漏时导入；脚本持有 `.shadow-sync.lock` 防并发；`CLOUD_PROD_DB_TUNNEL_SSH_HOST=allbot-do-sgp1-control` 保留给 Redis/Valkey 摘要和旧 fallback；systemd timer 默认每日 Asia/Shanghai 05:00 |
@@ -20,12 +22,12 @@
 
 | 文档 | 事实源 | 本轮状态 | 处理结果 |
 | :--- | :--- | :--- | :--- |
-| `README.md` | `docs/` 清单、`.github/workflows/docs_ci.yml`、部署脚本 | 已修正 | 增加知识库矩阵入口；同步云测试维护式更新口径 |
+| `README.md` | `docs/` 清单、`.github/workflows/docs_ci.yml`、部署脚本 | 已修正 | 按 `docs/*.md` 当前清单补齐活跃索引，恢复 GPU Pool、QQCC、付费群审核、本地数据分析平台等入口；保留知识库矩阵与云测试维护式更新口径 |
 | `AGENTS.md` | `.codex/skills/*/SKILL.md`、运维脚本 | 已修正 | 测试优先部署改为维护式更新脚本优先，补充矩阵导览 |
-| `docs/knowledge_base_audit_matrix.md` | 本轮只读扫描与校验命令 | 新增 | 作为后续知识库校准台账 |
-| `docs/system_architecture_report.md` | compose、RunPod/Dashboard 服务、测试收集、ruff | 已修正 | 更新 2026-06-24 轻量复核、autoscaler 预计清空时间模型、云测试 worker 口径 |
+| `docs/knowledge_base_audit_matrix.md` | 本轮只读扫描与校验命令 | 已修正 | 更新 2026-06-27 基线、ruff/pytest/doc checker/Core Isolation 结果和本轮知识库处理结果 |
+| `docs/system_architecture_report.md` | compose、RunPod/Dashboard/本地分析服务、测试收集、ruff | 已修正 | 更新 2026-06-27 轻量复核、autoscaler 预计清空时间模型、云测试 worker 口径，并补充 `local_analytics_platform` 独立只读 shadow 分析入口 |
 | `docs/skills/README.md` | `.codex/skills` 清单 | 已修正 | 增加矩阵维护约定，避免 Skill 与 docs 漂移 |
-| `docs/domain/CONTEXT.md` | 领域文档与运维脚本 | 已修正 | 补充实时知识库、归档材料、运行态快照、维护式更新等术语 |
+| `docs/domain/CONTEXT.md` | 领域文档、运维脚本、本地分析平台代码与文档 | 已修正 | 补充实时知识库、归档材料、运行态快照、维护式更新、本地数据分析平台、shadow 数据库、Prompt Mart、提示词瘦身与向量相似审核等术语 |
 | `docs/adr/0000-template.md` | ADR 模板 | 已核对 | 模板有效，无需新增 ADR |
 
 ## 3. 任务、Worker、Comfy 与 RunPod
@@ -88,7 +90,7 @@
 | `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md` | LAN AIO scripts、GPU pool config、worker compose | 已核对 | 长运行态文档保留，容量需按实时探测复核 |
 | `docs/子模块_系统资源与容量画像_resource_inventory.md` | compose、resource docs、deployment scripts、shadow sync script | 已修正 | 云正式/云测试入口口径更新；补充本地 shadow DB、R2 shadow、完整合并桶与 MinIO bucket 资源事实，并记录 shadow DB 获取路径已切为云机 dump + R2/HTTPS 中转；运行态快照仍需人工探测 |
 | `docs/子模块_容灾与持久化_database_recovery.md` | migrations、runtime checkpoint code | 已核对 | 恢复主链有效 |
-| `docs/子模块_代码静态分析与质量评估规范_code_quality.md` | `pytest --collect-only`、`ruff check`、Alembic | 已修正 | 增加 2026-06-24 轻量复核结果 |
+| `docs/子模块_代码静态分析与质量评估规范_code_quality.md` | `pytest --collect-only`、`ruff check`、Alembic、Core Isolation 扫描、doc checker | 已修正 | 保留 2026-06-24 历史快照，新增 2026-06-27 轻量复核结果 |
 | `docs/子模块_前端浏览器预览截图_frontend_browser_preview.md` | Playwright preview skill | 已核对 | 前端截图验收口径有效 |
 
 ## 7. 归档材料
@@ -113,7 +115,7 @@
 | `.codex/skills/allbot-task-engine/SKILL.md` | task core、queue manager、runtime cleanup | 已核对 | 任务生命周期边界有效 |
 | `.codex/skills/allbot-comfy-models/SKILL.md` | workflow patcher、remote_workers | 已核对 | workflow/模型边界有效 |
 | `.codex/skills/allbot-tg-fsm/SKILL.md` | `src/handlers`、Bot entrypoint | 已核对 | FSM 边界有效 |
-| `.codex/skills/allbot-qqcc-lazy-bot/SKILL.md` | `qqcc_bot`、cloud compose、`scripts/update_cloud_prod_qqcc_bot.sh`、`src/handlers/fsm/quick_image_fsm.py`、`src/handlers/fsm/quick_video_fsm.py` | 已修正 | 补充 QQCC 主菜单 `前往主bot` 非生成入口、正式单独更新脚本、单 polling 确认口径、快速脱衣主菜单入口、`AI动图` 专用文案与 quick video inline 场景按钮契约；QQCC 独立 Bot 边界有效 |
+| `.codex/skills/allbot-qqcc-lazy-bot/SKILL.md` | `qqcc_bot`、cloud compose、`scripts/update_cloud_prod_qqcc_bot.sh`、`src/services/qqcc_config_service.py`、`src/handlers/fsm/quick_image_fsm.py`、`src/handlers/fsm/quick_video_fsm.py` | 已修正 | 补充 QQCC 主菜单 `前往主bot` 非生成入口、正式单独更新脚本、单 polling 确认口径、快速脱衣主菜单入口、`AI动图` 专用文案与 quick video inline 场景按钮契约；修正未配置主 Bot URL/username 时“按钮不展示”的旧口径，改为由 `main_bot_link` 配置控制菜单项，点击时提示入口未配置；QQCC 独立 Bot 边界有效 |
 | `.codex/skills/allbot-billing-auth/SKILL.md` | auth/billing/affiliate code | 已核对 | 计费鉴权边界有效 |
 | `.codex/skills/allbot-gallery-storage/SKILL.md` | Gallery/R2 code | 已核对 | 存储与社区边界有效 |
 | `.codex/skills/allbot-diagnosing-bugs/SKILL.md` | bug 诊断流程 | 已核对 | 诊断闭环有效 |

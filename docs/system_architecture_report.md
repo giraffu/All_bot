@@ -21,6 +21,7 @@ graph TD
         TG[Telegram 用户]
         WEB[Web 工作台]
         DASH[Dashboard]
+        LANANA[本地分析平台]
         PAY[RMB 网关 / Telegram Stars / TON]
     end
 
@@ -40,6 +41,11 @@ graph TD
         PAYAPI[cloud-payment-api-prod]
         DFRONT[cloud-dashboard-frontend-prod]
         DBACK[cloud-dashboard-backend-prod]
+    end
+
+    subgraph LocalAna[本地只读分析]
+        LANA[local_analytics_platform]
+        SHADOW[(bot_db_prod_shadow)]
     end
 
     subgraph Core[核心领域与调度]
@@ -66,6 +72,7 @@ graph TD
     WEB --> CFTUNNEL --> API
     DASH --> VLAN --> DFRONT --> DBACK
     PAY --> CFTUNNEL --> PAYAPI
+    LANANA --> LANA --> SHADOW
 
     BOT --> AUTH
     BOT --> TASK
@@ -99,6 +106,7 @@ graph TD
   - Telegram 仍是核心入口之一。
   - Web 工作台已成为生成、历史管理、广场浏览与模板应用的主路径。
   - Dashboard 与支付 API 都是独立边界，不再是 Bot 的附属模块。
+  - 本地数据分析平台是独立 LAN/本地只读入口，只分析 shadow 数据，不挂载到正式 Dashboard 菜单。
 - **接入与应用层**
   - `tg-bot` 负责 Telegram 交互、FSM、结果消息与支付通知。
   - `qqcc_bot` 是独立简化 Telegram polling 入口，只开放主菜单快速脱衣、懒人 P 图与懒人动图生成，复用同一用户、灵石、任务队列、对象存储与 worker 链路，不承载充值、affiliate、gallery 浏览或高级 FSM。
@@ -216,6 +224,8 @@ sequenceDiagram
   - R2 正式写入、legacy MinIO 迁移补齐/人工回滚、结果 URL 生命周期。
 - **交互状态机与回调路由**
   - Telegram FSM、全局菜单黑盒退出、callback prefix 路由、临时文件服务。
+- **本地经营与提示词分析**
+  - `local_analytics_platform` 只读连接本地 shadow 数据库，提供用户、灵石、充值、生成、Prompt Mart、提示词瘦身、向量相似和媒体引用核验，不承担线上管理后台写操作。
 
 ---
 
@@ -250,11 +260,11 @@ sequenceDiagram
 - 若技能文档与代码入口冲突，应先更新 skill / docs，再继续开发。
 
 ### 5.1 维护基线与知识库口径
-- 2026-06-24 知识库维护口径：`AGENTS.md` 只保留全局路由，细节以 `.codex/skills/*/SKILL.md`、`/docs` 与 `docs/knowledge_base_audit_matrix.md` 为准；技能正文应记录稳定边界和入口，不沉淀一次性 Pod ID、任务 ID、失败尝试流水账或真实密钥值。一次性 canary、迁移证据和模型上传流水应进入 `docs/archive/` 或 `logs/`。
+- 2026-06-27 知识库维护口径：`AGENTS.md` 只保留全局路由，细节以 `.codex/skills/*/SKILL.md`、`/docs` 与 `docs/knowledge_base_audit_matrix.md` 为准；技能正文应记录稳定边界和入口，不沉淀一次性 Pod ID、任务 ID、失败尝试流水账或真实密钥值。一次性 canary、迁移证据和模型上传流水应进入 `docs/archive/` 或 `logs/`。
 - `src/task_core_process_defaults.py` 是 task core process 默认装配的真实入口。
 - RunPod Provider v0 的稳定边界是云测试 `img2img/img2img_lora` canary、云测试 split video profile (`image_to_video` / `wan22_video_v2`) canary、云测试 `i2i_pro` 三任务 canary、云测试 `scail2` 两任务 canary、云测试 `ltx_video` I2V canary，以及云正式手动备用 worker。`prod-worker --profile i2i_pro` 支持 `i2i_pro`、Web 文生图执行类型 `t2i-pornmaster-turbo` 与 `face_swap`；`prod-worker --profile scail2` 支持 `scail2_action_transfer` 与 `scail2_video_replacement`；`prod-worker --profile ltx_video` 支持 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio` 并默认使用 10Eros v1.2 workflow override。Dashboard 已提供正式 RunPod 新增/暂停/删除入口和 autoscaler；autoscaler 通过现有 operation store、Redis leader lease、profile 清空阈值、静态 task duration、预计清空时间和 RunPod 门禁调用 `add` / `down`，不直接操作本地 worker，也不代表线上固定常驻容量。
 - `wan22_aio_video` 只保留为兼容/回滚 profile；新视频测试、扩容和正式备用 worker 都应使用 split profile。
-- 2026-06-24 轻量复核：`src/core` 未发现直接依赖 Telegram `Update` 或 FastAPI `Request/APIRouter` 等平台对象；Alembic 为单 head `7f3a9c1d2e4b`；`pytest --collect-only -q` 可收集 `1678` 个测试；`ruff check --statistics` 剩余 `2` 个 `F401`，均为 `ops/gpu_pool_controller/runpod_pod_request.py` 的未使用 import。
+- 2026-06-27 轻量复核：`src/core` 未发现直接依赖 Telegram `Update` 或 FastAPI `Request/APIRouter` 等平台对象；Alembic 为单 head `7f3a9c1d2e4b`；`pytest --collect-only -q` 可收集 `1778` 个测试；`ruff check --statistics` 剩余 `7` 个可自动修复问题，集中在本地分析平台、RunPod 请求模块、MinIO 导入脚本和测试文件；`python scripts/doc_quality_checker.py` 通过。
 - 当前主要风险集中在长期维护成本：Worker `agent_main.py::process_task`、Dashboard RunPod 管理/自动扩缩服务、任务提交 provider/dependencies 装配、Bot 进度监控、练功房主 composable 与前端生成页重复逻辑。
 - workflow 资产已收口到 `workers/comfy_agent/workflows`；Central API 不再维护 backend 副本，也不再执行 workflow 启动校验。
 - `TaskCoreServiceProviders` 与主要 capability 已补强 `Protocol` / 精确 `Callable` 契约；新增 provider/capability 时继续沿用显式类型与 dependencies seam。
