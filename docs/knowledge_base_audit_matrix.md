@@ -26,7 +26,7 @@
 | `AGENTS.md` | `.codex/skills/*/SKILL.md`、运维脚本 | 已修正 | 测试优先部署改为维护式更新脚本优先，补充矩阵导览 |
 | `docs/knowledge_base_audit_matrix.md` | 本轮只读扫描与校验命令 | 已修正 | 更新 2026-06-27 基线、ruff/pytest/doc checker/Core Isolation 结果和本轮知识库处理结果 |
 | `docs/system_architecture_report.md` | compose、RunPod/Dashboard/本地分析服务、测试收集、ruff | 已修正 | 更新 2026-06-27 轻量复核、autoscaler 预计清空时间模型、云测试 worker 口径，并补充 `local_analytics_platform` 独立只读 shadow 分析入口 |
-| `docs/skills/README.md` | `.codex/skills` 清单 | 已修正 | 增加矩阵维护约定，避免 Skill 与 docs 漂移 |
+| `docs/skills/README.md` | `.codex/skills` 清单与本轮 Skill 体积审计 | 已修正 | 增加矩阵维护约定和 Skill 正文体积维护规则；记录 `allbot-ops-deployment`、`allbot-comfy-models` 与 `allbot-task-engine` 已瘦身，`allbot-gallery-storage` 已折叠超长行 |
 | `docs/domain/CONTEXT.md` | 领域文档、运维脚本、本地分析平台代码与文档 | 已修正 | 补充实时知识库、归档材料、运行态快照、维护式更新、本地数据分析平台、shadow 数据库、Prompt Mart、提示词瘦身与向量相似审核等术语 |
 | `docs/adr/0000-template.md` | ADR 模板 | 已核对 | 模板有效，无需新增 ADR |
 
@@ -35,11 +35,11 @@
 | 文档 | 事实源 | 本轮状态 | 处理结果 |
 | :--- | :--- | :--- | :--- |
 | `docs/子模块_任务调度_task_scheduler.md` | `src/core/task_core*.py`、`src/task_core_process_defaults.py`、部署脚本 | 已修正 | 部署章节同步云测试维护式更新入口 |
-| `docs/子模块_生成任务全链路_task_full_chain.md` | `src/web_api/services/*task*`、`backend/app`、`workers/comfy_agent` | 已核对 | 主链路仍符合现状；保留长链路排障细节 |
+| `docs/子模块_生成任务全链路_task_full_chain.md` | `src/web_api/services/*task*`、`backend/app`、`workers/comfy_agent` | 已核对 | 主链路仍符合现状；继续作为 `allbot-task-engine` 的长链路与排障事实源 |
 | `docs/子模块_中控API与节点通信_central_api.md` | `backend/app/main.py`、`backend/app/queue_manager.py`、worker relay | 已核对 | Central / worker protocol 口径有效 |
 | `docs/子模块_任务黄金路径回归清单_task_golden_path.md` | `tests/backend`、`tests/core`、`tests/web_api`、worker tests | 已核对 | 回归分组仍可用 |
 | `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` | `ops/gpu_pool_controller`、Dashboard RunPod 服务、RunPod scripts | 已修正 | 已包含 Dashboard autoscaler 预计清空时间模型、profile 级自动管理暂停、RunPod 故障/暂停自愈、bootstrap timeout 换机清理与 RunPod/LAN AIO 当前边界 |
-| `docs/子模块_附加模型配置指南_comfy_models.md` | `workers/comfy_agent/workflows`、`remote_workers`、workflow patcher | 已核对 | workflow 事实源和 SCAIL-2/LTX 口径有效 |
+| `docs/子模块_附加模型配置指南_comfy_models.md` | `workers/comfy_agent/workflows`、`remote_workers`、workflow patcher | 已核对 | workflow 事实源和 SCAIL-2/LTX 口径有效；继续作为 `allbot-comfy-models` 的节点级细节事实源 |
 | `docs/compat_seam_exit_table.md` | compat 文件现状、`rg` 引用 | 已核对 | 作为 compat 清理挂账表保留 |
 | `docs/双入口重复能力_inventory.md` | `backend/app`、`src/web_api` | 已核对 | 双入口分层描述有效 |
 | `docs/入口职责矩阵_entry_responsibility_matrix.md` | Web/Central/Dashboard/Payment/Bot entrypoints | 已核对 | 入口职责有效 |
@@ -111,13 +111,13 @@
 | 文件 | 事实源 | 本轮状态 | 处理结果 |
 | :--- | :--- | :--- | :--- |
 | `.codex/skills/allbot-kb-auto-updater/SKILL.md` | 本矩阵、KB 维护流程 | 已修正 | 补充核对矩阵输出要求 |
-| `.codex/skills/allbot-ops-deployment/SKILL.md` | deploy scripts、compose、shadow sync script、Dashboard autoscaler service | 已修正 | 补充正式 QQCC Bot 单服务更新脚本和单 polling 确认口径；本地 cloud-prod shadow 同步已更新为 remote_r2 主路径、R2 shadow seed copy、完整合并桶、手动 legacy 导入、SSH tunnel fallback/Redis 摘要和灾备前停 timer 口径；已包含云测试维护式更新和云正式 autoscaler 预计清空时间、profile 级自动管理暂停、RunPod 故障/暂停自愈、bootstrap timeout 换机口径 |
-| `.codex/skills/allbot-task-engine/SKILL.md` | task core、queue manager、runtime cleanup | 已核对 | 任务生命周期边界有效 |
-| `.codex/skills/allbot-comfy-models/SKILL.md` | workflow patcher、remote_workers | 已核对 | workflow/模型边界有效 |
+| `.codex/skills/allbot-ops-deployment/SKILL.md` | deploy scripts、compose、shadow sync script、Dashboard autoscaler service、Skill 体积审计 | 已修正 | 从约 51KB 瘦身为约 10KB 的路由型入口，保留测试优先、正式确认、密钥红线、部署入口、RunPod/LAN AIO/shadow/验证矩阵；低频运行态细节改为按需读取 docs/reference，避免触发时正文被截断 |
+| `.codex/skills/allbot-task-engine/SKILL.md` | task core、queue manager、runtime cleanup、Skill 体积审计 | 已修正 | 已从约 23KB 瘦身为约 8.4KB 的任务生命周期路由入口，保留 core/Web/Central/Worker 边界、双 ID 红线、新任务类型清单和验证要求；长链路细节改由任务调度/生成全链路文档按需加载 |
+| `.codex/skills/allbot-comfy-models/SKILL.md` | workflow patcher、remote_workers、Skill 体积审计 | 已修正 | 已从约 36KB 瘦身为约 7.4KB 的模型/workflow 路由入口，保留 workflow 事实源、Central/Worker 边界、Wan22/LTX/SCAIL-2 关键提醒和部署验收；节点级细节改由 Comfy 子模块文档与 runtime reference 按需加载 |
 | `.codex/skills/allbot-tg-fsm/SKILL.md` | `src/handlers`、Bot entrypoint | 已核对 | FSM 边界有效 |
 | `.codex/skills/allbot-qqcc-lazy-bot/SKILL.md` | `qqcc_bot`、cloud compose、`scripts/update_cloud_prod_qqcc_bot.sh`、`src/services/qqcc_config_service.py`、`src/handlers/fsm/quick_image_fsm.py`、`src/handlers/fsm/quick_video_fsm.py` | 已修正 | 补充 QQCC 主菜单 `前往主bot` 非生成入口、正式单独更新脚本、单 polling 确认口径、快速脱衣主菜单入口、`AI动图` 专用文案与 quick video inline 场景按钮契约；修正未配置主 Bot URL/username 时“按钮不展示”的旧口径，改为由 `main_bot_link` 配置控制菜单项，点击时提示入口未配置；QQCC 独立 Bot 边界有效 |
 | `.codex/skills/allbot-billing-auth/SKILL.md` | auth/billing/affiliate code | 已核对 | 计费鉴权边界有效 |
-| `.codex/skills/allbot-gallery-storage/SKILL.md` | Gallery/R2 code | 已核对 | 存储与社区边界有效 |
+| `.codex/skills/allbot-gallery-storage/SKILL.md` | Gallery/R2 code、Skill 体积审计 | 已修正 | 存储与社区边界有效；本轮仅折叠媒体 URL 策略超长行，正文约 13KB，暂不需要拆分 |
 | `.codex/skills/allbot-diagnosing-bugs/SKILL.md` | bug 诊断流程 | 已核对 | 诊断闭环有效 |
 | `.codex/skills/allbot-tdd/SKILL.md` | tests、dependencies seam | 已核对 | TDD seam 口径有效 |
 | `.codex/skills/allbot-codebase-design/SKILL.md` | 架构词汇 | 已核对 | 设计词汇有效 |

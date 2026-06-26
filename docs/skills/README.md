@@ -44,9 +44,21 @@
 ## 4. 维护原则
 - `docs/skills/README.md` 只维护技能目录与高层边界，不重复拷贝各 `SKILL.md` 的全部细节。
 - `SKILL.md` 只沉淀触发边界、当前真实入口、不可越过的红线和最小验证要求；不要记录一次性 Pod ID、任务 ID、失败尝试流水账或长篇现场日志。这类材料应进入 `/docs/archive/` 或 `logs/`。
+- Skill 正文应优先保持短入口形态：接近 20KB、出现超过 800 字符的超长行、或需要读入大量低频运行态细节时，应拆到 `references/` 或对应 `/docs/子模块_*.md`，并在 `SKILL.md` 中写清“什么时候读哪个文件”。接近 35KB 的 Skill 视为需排期瘦身。
 - 项目共享词汇进入 `docs/domain/CONTEXT.md`；架构决策只在难逆、非显然且有真实取舍时进入 `docs/adr/`。
 - 若新增技能，必须同时同步：
   - `.codex/skills/<skill>/SKILL.md`
   - `AGENTS.md` 路由表
   - 本 README 的技能清单
 - 若技能文档中的主入口文件、超时值、关键对象名或异常类型已失真，应视为知识库过期，需要优先修复。
+
+## 5. 2026-06-27 Skill 体积审计
+
+本轮只量化 `.codex/skills/*/SKILL.md`，不展开远端运行态探测。`allbot-ops-deployment`、`allbot-comfy-models` 与 `allbot-task-engine` 已按“短入口 + 按需文档/reference”形态瘦身；`allbot-gallery-storage` 已折叠超长媒体 URL 策略行。
+
+| Skill | 当前大小 | 结论 |
+| :--- | :--- | :--- |
+| `allbot-ops-deployment` | 约 10KB，最大单行 256 字符 | 已从约 51KB 瘦身为路由型入口，低频 RunPod/LAN AIO/shadow 细节改由 docs/reference 按需加载 |
+| `allbot-comfy-models` | 约 7.4KB，最大单行 167 字符 | 已从约 36KB 瘦身为模型/workflow 路由入口，节点级和运行态细节改由 Comfy 子模块文档与 runtime reference 按需加载 |
+| `allbot-task-engine` | 约 8.4KB，最大单行 212 字符 | 已从约 23KB 瘦身为任务生命周期路由入口，长链路、新任务类型 checklist 与排障细节改由任务调度/全链路文档按需加载 |
+| `allbot-gallery-storage` | 约 13KB，最大单行 757 字符 | 正文体量可接受；本轮已折叠超长媒体 URL 策略行，暂不需要拆分 |
