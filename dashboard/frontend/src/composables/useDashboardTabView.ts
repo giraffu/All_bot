@@ -42,6 +42,7 @@ const TAB_COMPONENTS = {
   paid_group_guard: markRaw(
     defineAsyncComponent(() => import('../components/PaidGroupGuardSettings.vue'))
   ),
+  qqcc_bot: markRaw(defineAsyncComponent(() => import('../components/QqccBotSettings.vue'))),
   recharge: markRaw(defineAsyncComponent(() => import('../components/RechargeSystem.vue'))),
   templates: markRaw(defineAsyncComponent(() => import('../components/TemplateManager.vue'))),
   gallery: markRaw(defineAsyncComponent(() => import('../components/GalleryTable.vue'))),
@@ -118,6 +119,11 @@ export function useDashboardTabView(
     },
     paid_group_guard: {
       component: TAB_COMPONENTS.paid_group_guard,
+      containerClass: BASE_CONTAINER_CLASS,
+      bindings: {},
+    },
+    qqcc_bot: {
+      component: TAB_COMPONENTS.qqcc_bot,
       containerClass: BASE_CONTAINER_CLASS,
       bindings: {},
     },

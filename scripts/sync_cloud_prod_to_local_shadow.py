@@ -58,6 +58,7 @@ class ShadowSyncConfig:
     r2_transfers: int
     r2_checkers: int
     retention_days: int
+    r2_bucket_sync_enabled: bool = True
     r2_shadow_seed_with_copy: bool = False
     complete_media_sync_enabled: bool = False
     local_minio_complete_bucket: str = "user-data-complete-shadow"
@@ -296,6 +297,7 @@ def build_config(args: argparse.Namespace) -> ShadowSyncConfig:
         r2_transfers=int_value(values, "R2_SYNC_TRANSFERS", 8),
         r2_checkers=int_value(values, "R2_SYNC_CHECKERS", 16),
         retention_days=int_value(values, "SHADOW_SYNC_RETENTION_DAYS", 14),
+        r2_bucket_sync_enabled=bool_value(values, "R2_BUCKET_SYNC_ENABLED", True),
         r2_shadow_seed_with_copy=(
             bool_value(values, "R2_SHADOW_SEED_WITH_COPY", False)
             or seed_r2_shadow_with_copy
@@ -1109,6 +1111,10 @@ def run_db_atomic_switch(config: ShadowSyncConfig, runner: CommandRunner) -> Non
 
 
 def run_r2_sync(config: ShadowSyncConfig, runner: CommandRunner) -> None:
+    if not config.r2_bucket_sync_enabled:
+        print("R2 bucket sync skipped: R2_BUCKET_SYNC_ENABLED=false")
+        return
+
     lines = [
         "set -eu",
         f"rclone mkdir localminio:{shlex.quote(config.local_minio_shadow_bucket)}",
@@ -1271,6 +1277,7 @@ def write_manifest(config: ShadowSyncConfig, *, dump_sha256: str) -> None:
         "r2_bucket": config.r2_bucket,
         "local_minio_shadow_bucket": config.local_minio_shadow_bucket,
         "local_minio_quarantine_bucket": config.local_minio_quarantine_bucket,
+        "r2_bucket_sync_enabled": config.r2_bucket_sync_enabled,
         "r2_shadow_seed_with_copy": config.r2_shadow_seed_with_copy,
         "complete_media_sync": {
             "enabled": config.complete_media_sync_enabled,
@@ -1373,6 +1380,7 @@ def log_preflight(config: ShadowSyncConfig, *, execute: bool) -> None:
                 "r2_bucket": config.r2_bucket,
                 "local_shadow_bucket": config.local_minio_shadow_bucket,
                 "local_quarantine_bucket": config.local_minio_quarantine_bucket,
+                "r2_bucket_sync_enabled": config.r2_bucket_sync_enabled,
                 "r2_shadow_seed_with_copy": config.r2_shadow_seed_with_copy,
                 "complete_media_sync_enabled": config.complete_media_sync_enabled,
                 "local_complete_bucket": (

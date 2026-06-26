@@ -4,7 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>本地数据分析平台</title>
-    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/static/styles.css?v=20260626-prompt-vector-ui-v1" />
   </head>
   <body>
     <div id="app" class="app-shell">
@@ -16,21 +17,33 @@
         </div>
 
         <nav class="side-tabs" aria-label="本地分析模块">
-          <button class="tab-button active" type="button" data-tab="overview">
-            <span class="tab-label">经营概览</span>
-            <span class="tab-meta">收入、用户、生成</span>
+          <button class="tab-button active" type="button" data-tab="users">
+            <span class="tab-label">用户画像</span>
+            <span class="tab-meta">增长、活跃、分层</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="credit-flow">
+            <span class="tab-label">灵石收支</span>
+            <span class="tab-meta">来源、消耗、风险</span>
           </button>
           <button class="tab-button" type="button" data-tab="finance">
-            <span class="tab-label">充值分析</span>
-            <span class="tab-meta">渠道、首充、复购</span>
+            <span class="tab-label">充值情况</span>
+            <span class="tab-meta">订单、渠道、套餐</span>
           </button>
           <button class="tab-button" type="button" data-tab="generation">
             <span class="tab-label">生成分析</span>
-            <span class="tab-meta">类型、消耗、复用</span>
+            <span class="tab-meta">趋势、质量、效率</span>
           </button>
           <button class="tab-button" type="button" data-tab="prompts">
             <span class="tab-label">提示词洞察</span>
-            <span class="tab-meta">评分、标签、输入</span>
+            <span class="tab-meta">复用、字数、互动</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="prompt-slim">
+            <span class="tab-label">提示词瘦身</span>
+            <span class="tab-meta">候选、剔除、信号</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="prompt-vectors">
+            <span class="tab-label">向量相似</span>
+            <span class="tab-meta">语义簇、近邻、审核</span>
           </button>
           <button class="tab-button" type="button" data-tab="templates">
             <span class="tab-label">模板候选</span>
@@ -51,8 +64,8 @@
       <div class="workspace">
         <header class="topbar">
           <div class="title-block">
-            <div id="activeKicker" class="eyebrow">经营概览</div>
-            <h2 id="activeTitle">收入、用户、生成和媒体状态</h2>
+            <div id="activeKicker" class="eyebrow">用户画像</div>
+            <h2 id="activeTitle">用户增长、活跃和分层</h2>
             <div id="activeSubtitle" class="source-line">本地 shadow 数据分析</div>
             <div id="lastUpdated" class="timestamp"></div>
           </div>
@@ -60,25 +73,13 @@
           <label>
             <span>统计周期</span>
             <select id="daysSelect">
-              <option value="7">7 天</option>
-              <option value="30" selected>30 天</option>
-              <option value="90">90 天</option>
+              <option value="0">所有</option>
+              <option value="360">360 天</option>
+              <option value="240">240 天</option>
               <option value="180">180 天</option>
-            </select>
-          </label>
-          <label>
-            <span>Prompt 周期</span>
-            <select id="promptDaysSelect">
-              <option value="7">7 天</option>
-              <option value="30" selected>30 天</option>
               <option value="90">90 天</option>
-              <option value="180">180 天</option>
-            </select>
-          </label>
-          <label>
-            <span>任务类型</span>
-            <select id="taskTypeSelect">
-              <option value="">全部</option>
+              <option value="30" selected>30 天</option>
+              <option value="7">7 天</option>
             </select>
           </label>
           <button id="refreshButton" type="button">刷新</button>
@@ -88,32 +89,216 @@
       <main>
         <div id="errorBanner" class="error-banner hidden"></div>
 
-        <section class="band overview-band tab-panel active" data-panel="overview">
-          <div id="metricGrid" class="metric-grid"></div>
-          <div class="chart-strip">
+        <section class="band users-band tab-panel active" data-panel="users">
+          <div id="userSummary" class="metric-grid"></div>
+          <div class="chart-strip three">
             <div>
-              <div class="chart-title">每日生成</div>
-              <div id="generationSpark" class="spark-bars"></div>
+              <div class="chart-title">每日新增用户</div>
+              <div id="userNewSpark" class="spark-bars blue"></div>
             </div>
             <div>
-              <div class="chart-title">每日 RMB</div>
-              <div id="rmbSpark" class="spark-bars amber"></div>
+              <div class="chart-title">每日活跃用户</div>
+              <div id="userActiveSpark" class="spark-bars"></div>
+            </div>
+            <div>
+              <div class="chart-title">每日签到</div>
+              <div id="userCheckinSpark" class="spark-bars amber"></div>
+            </div>
+          </div>
+          <div class="distribution-grid">
+            <div class="table-shell">
+              <div class="table-title">身份组分布</div>
+              <div id="identityDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">修为分布</div>
+              <div id="groupDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">灵石持有分布</div>
+              <div id="creditDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">生成次数分布</div>
+              <div id="generationDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">活跃分层</div>
+              <div id="activityDistribution" class="distribution-bars"></div>
+            </div>
+          </div>
+          <div class="leaderboard-grid">
+            <div class="table-shell">
+              <div class="table-title">生成排行</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>用户</th>
+                    <th>身份</th>
+                    <th>生成</th>
+                    <th>最近活跃</th>
+                  </tr>
+                </thead>
+                <tbody id="generationLeaderboard"></tbody>
+              </table>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">灵石排行</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>用户</th>
+                    <th>身份</th>
+                    <th>灵石</th>
+                    <th>生成</th>
+                  </tr>
+                </thead>
+                <tbody id="creditsLeaderboard"></tbody>
+              </table>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">邀请排行</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>用户</th>
+                    <th>修为</th>
+                    <th>邀请</th>
+                    <th>入宗门</th>
+                  </tr>
+                </thead>
+                <tbody id="referralsLeaderboard"></tbody>
+              </table>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">最近活跃</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>用户</th>
+                    <th>身份</th>
+                    <th>活跃时间</th>
+                    <th>灵石</th>
+                  </tr>
+                </thead>
+                <tbody id="recentActiveLeaderboard"></tbody>
+              </table>
             </div>
           </div>
         </section>
 
-        <section class="band tab-panel" data-panel="finance">
+        <section class="band credit-flow-band tab-panel" data-panel="credit-flow">
+          <div id="creditFlowSummary" class="metric-grid compact"></div>
+          <div class="chart-strip three">
+            <div>
+              <div class="chart-title">每日收入</div>
+              <div id="creditIncomeSpark" class="spark-bars blue"></div>
+            </div>
+            <div>
+              <div class="chart-title">每日支出</div>
+              <div id="creditExpenseSpark" class="spark-bars red"></div>
+            </div>
+            <div>
+              <div class="chart-title">每日净变化</div>
+              <div id="creditNetSpark" class="spark-bars"></div>
+            </div>
+          </div>
+          <div class="distribution-grid credit-flow-grid">
+            <div class="table-shell">
+              <div class="table-title">收入类别</div>
+              <div id="creditIncomeCategories" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">支出类别</div>
+              <div id="creditExpenseCategories" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">来源身份组</div>
+              <div id="creditCompositionIdentity" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">来源修为</div>
+              <div id="creditCompositionGroup" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">宗门组成</div>
+              <div id="creditCompositionChannel" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">付费组成</div>
+              <div id="creditCompositionPayer" class="distribution-bars"></div>
+            </div>
+          </div>
+          <div class="table-shell full">
+            <div class="table-title">健康风险标记</div>
+            <div id="creditHealthFlags" class="health-flags"></div>
+          </div>
+          <div class="table-shell full">
+            <div class="table-title">可疑用户复核</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>用户</th>
+                  <th>风险</th>
+                  <th>收入 / 支出</th>
+                  <th>来源组成</th>
+                  <th>余额</th>
+                </tr>
+              </thead>
+              <tbody id="creditRiskUsers"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="band finance-band tab-panel" data-panel="finance">
           <div id="financeSummary" class="metric-grid compact"></div>
-          <div class="split-grid">
+          <div class="chart-strip three">
+            <div>
+              <div class="chart-title">每日 USDT 估算</div>
+              <div id="financeRevenueSpark" class="spark-bars blue"></div>
+            </div>
+            <div>
+              <div class="chart-title">每日发放灵石</div>
+              <div id="financeCreditsSpark" class="spark-bars amber"></div>
+            </div>
+            <div>
+              <div class="chart-title">每日成功订单</div>
+              <div id="financeOrdersSpark" class="spark-bars"></div>
+            </div>
+          </div>
+          <div class="table-shell full">
+            <div class="table-title">分时充值</div>
+            <div id="financeHourlyBars" class="hourly-bars"></div>
+          </div>
+          <div class="distribution-grid finance-grid">
+            <div class="table-shell">
+              <div class="table-title">渠道收入组成</div>
+              <div id="financeChannelDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">套餐收入组成</div>
+              <div id="financePlanDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">受邀充值</div>
+              <div id="financeInvitationSummary" class="finance-stat-list"></div>
+            </div>
+            <div class="table-shell full-span">
+              <div class="table-title">充值健康标记</div>
+              <div id="financeHealthFlags" class="health-flags"></div>
+            </div>
+          </div>
+          <div class="leaderboard-grid finance-tables">
             <div class="table-shell">
               <div class="table-title">渠道表现</div>
               <table>
                 <thead>
                   <tr>
                     <th>渠道</th>
-                    <th>成功订单</th>
+                    <th>成功/处理中/失败</th>
                     <th>付费人数</th>
                     <th>金额</th>
+                    <th>USDT</th>
                     <th>均单</th>
                     <th>发放灵石</th>
                   </tr>
@@ -122,38 +307,117 @@
               </table>
             </div>
             <div class="table-shell">
-              <div class="table-title">用户分层</div>
+              <div class="table-title">套餐表现</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>套餐</th>
+                    <th>身份</th>
+                    <th>成功/总订单</th>
+                    <th>付费人数</th>
+                    <th>USDT</th>
+                    <th>灵石</th>
+                    <th>成功率</th>
+                  </tr>
+                </thead>
+                <tbody id="financePlans"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="split-grid finance-wide">
+            <div class="table-shell">
+              <div class="table-title">付费分层</div>
               <table>
                 <thead>
                   <tr>
                     <th>分层</th>
                     <th>人数</th>
                     <th>订单</th>
-                    <th>RMB</th>
-                    <th>人均 RMB</th>
+                    <th>USDT</th>
+                    <th>人均 USDT</th>
+                    <th>最近付款</th>
                   </tr>
                 </thead>
                 <tbody id="financeSegments"></tbody>
               </table>
             </div>
+            <div class="table-shell">
+              <div class="table-title">Top 付费用户</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>用户</th>
+                    <th>订单</th>
+                    <th>USDT</th>
+                    <th>渠道金额</th>
+                    <th>灵石</th>
+                    <th>最近</th>
+                  </tr>
+                </thead>
+                <tbody id="financeTopPayers"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="table-shell full">
+            <div class="table-title">最近充值订单</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>订单</th>
+                  <th>用户</th>
+                  <th>套餐</th>
+                  <th>渠道/状态</th>
+                  <th>金额</th>
+                  <th>时间</th>
+                </tr>
+              </thead>
+              <tbody id="financeRecentOrders"></tbody>
+            </table>
           </div>
         </section>
 
-        <section class="band tab-panel" data-panel="generation">
+        <section class="band generation-band tab-panel" data-panel="generation">
           <div id="generationSummary" class="metric-grid compact"></div>
-          <div class="split-grid">
+          <div class="chart-strip three">
+            <div>
+              <div class="chart-title">每日生成</div>
+              <div id="generationVolumeSpark" class="spark-bars blue"></div>
+            </div>
+            <div>
+              <div class="chart-title">每日灵石消耗</div>
+              <div id="generationCreditsSpark" class="spark-bars amber"></div>
+            </div>
+            <div>
+              <div class="chart-title">每日失败</div>
+              <div id="generationFailuresSpark" class="spark-bars red"></div>
+            </div>
+          </div>
+          <div class="distribution-grid generation-grid">
             <div class="table-shell">
-              <div class="table-title">任务类型</div>
+              <div class="table-title">来源组成</div>
+              <div id="generationSourceMix" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">质量漏斗</div>
+              <div id="generationQualitySegments" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">生成健康标记</div>
+              <div id="generationHealthFlags" class="health-flags"></div>
+            </div>
+          </div>
+          <div class="leaderboard-grid generation-tables">
+            <div class="table-shell">
+              <div class="table-title">任务类型表现</div>
               <table>
                 <thead>
                   <tr>
                     <th>类型</th>
-                    <th>生成</th>
-                    <th>用户</th>
-                    <th>结果</th>
-                    <th>收藏</th>
-                    <th>投稿</th>
-                    <th>应用</th>
+                    <th>生成 / 用户</th>
+                    <th>输出 / 输入</th>
+                    <th>Gallery / 互动</th>
+                    <th>灵石</th>
+                    <th>失败 / 耗时</th>
                   </tr>
                 </thead>
                 <tbody id="generationTypes"></tbody>
@@ -174,31 +438,353 @@
               </table>
             </div>
           </div>
-          <div class="table-shell full">
-            <div class="table-title">小时分布</div>
-            <div id="hourlyBars" class="hourly-bars"></div>
+          <div class="leaderboard-grid generation-tables">
+            <div class="table-shell">
+              <div class="table-title">生成用户排行</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>用户</th>
+                    <th>生成</th>
+                    <th>结果</th>
+                    <th>Gallery</th>
+                    <th>最近</th>
+                  </tr>
+                </thead>
+                <tbody id="generationUserLeaderboard"></tbody>
+              </table>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">灵石消耗用户</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>用户</th>
+                    <th>消耗</th>
+                    <th>扣费</th>
+                    <th>均次</th>
+                    <th>余额</th>
+                  </tr>
+                </thead>
+                <tbody id="generationCreditLeaderboard"></tbody>
+              </table>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">Gallery 表现用户</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>用户</th>
+                    <th>作品</th>
+                    <th>互动</th>
+                    <th>评分</th>
+                    <th>最近</th>
+                  </tr>
+                </thead>
+                <tbody id="generationGalleryLeaderboard"></tbody>
+              </table>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">近期高信号作品</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>任务</th>
+                    <th>用户</th>
+                    <th>互动</th>
+                    <th>信号</th>
+                    <th>时间</th>
+                  </tr>
+                </thead>
+                <tbody id="generationRecentHighSignal"></tbody>
+              </table>
+            </div>
           </div>
         </section>
 
         <section class="band tab-panel" data-panel="prompts">
-          <div id="tagSummary" class="tag-row"></div>
+          <div id="promptSummary" class="metric-grid compact"></div>
+          <div class="prompt-filter-bar">
+            <label>
+              <span>搜索</span>
+              <input id="promptSearchInput" type="search" placeholder="提示词关键词" />
+            </label>
+            <label>
+              <span>来源范围</span>
+              <select id="promptScopeSelect">
+                <option value="natural" selected>自然输入</option>
+                <option value="builtin_template">内置模板</option>
+                <option value="source_template">源模板</option>
+                <option value="derived">一键应用衍生</option>
+                <option value="all">全部</option>
+              </select>
+            </label>
+            <label>
+              <span>任务类型</span>
+              <select id="taskTypeSelect">
+                <option value="">全部</option>
+              </select>
+            </label>
+            <label>
+              <span>排序</span>
+              <select id="promptSortSelect">
+                <option value="value_score" selected>价值分</option>
+                <option value="users">使用用户</option>
+                <option value="uses">使用次数</option>
+                <option value="last_seen">最近使用</option>
+                <option value="likes">点赞</option>
+                <option value="applies">应用</option>
+                <option value="prompt_unlocks">解锁</option>
+                <option value="char_count">字数</option>
+              </select>
+            </label>
+            <label>
+              <span>最少用户</span>
+              <input id="promptMinUsersInput" type="number" min="1" max="100000" value="1" />
+            </label>
+            <label>
+              <span>最少次数</span>
+              <input id="promptMinUsesInput" type="number" min="1" max="100000" value="1" />
+            </label>
+          </div>
+          <div class="distribution-grid prompt-distribution-grid">
+            <div class="table-shell">
+              <div class="table-title">字数分布</div>
+              <div id="promptLengthDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">复用分层</div>
+              <div id="promptReuseDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">任务类型</div>
+              <div id="promptTaskTypeDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">来源组成</div>
+              <div id="promptScopeDistribution" class="distribution-bars"></div>
+            </div>
+          </div>
           <div class="prompt-layout">
             <div class="table-shell">
-              <div class="table-title">Prompt 排行</div>
+              <div class="table-title prompt-table-title">
+                <span>提示词库</span>
+                <span id="promptPageInfo" class="muted small"></span>
+              </div>
               <table>
                 <thead>
                   <tr>
-                    <th>评分</th>
-                    <th>类型</th>
+                    <th>价值</th>
                     <th>Prompt</th>
-                    <th>信号</th>
-                    <th>媒体</th>
+                    <th>复用</th>
+                    <th>互动</th>
+                    <th>来源</th>
+                    <th>最近</th>
                   </tr>
                 </thead>
                 <tbody id="promptRows"></tbody>
               </table>
+              <div class="prompt-pagination">
+                <button id="promptPrevButton" type="button">上一页</button>
+                <button id="promptNextButton" type="button">下一页</button>
+              </div>
             </div>
             <aside id="promptDetail" class="detail-panel"></aside>
+          </div>
+        </section>
+
+        <section class="band tab-panel" data-panel="prompt-slim">
+          <div id="promptSlimSummary" class="metric-grid compact"></div>
+          <div class="prompt-filter-bar prompt-slim-filter-bar">
+            <label>
+              <span>搜索</span>
+              <input id="promptSlimSearchInput" type="search" placeholder="提示词关键词" />
+            </label>
+            <label>
+              <span>阶段</span>
+              <select id="promptSlimStageSelect">
+                <option value="all" selected>全部</option>
+                <option value="candidate">候选</option>
+                <option value="auto_rejected">自动剔除</option>
+                <option value="manual_keep">人工保留</option>
+                <option value="manual_reject">人工剔除</option>
+                <option value="excellent">优秀</option>
+                <option value="archived">归档</option>
+              </select>
+            </label>
+            <label>
+              <span>来源</span>
+              <select id="promptSlimSourceSelect">
+                <option value="all" selected>全部</option>
+                <option value="natural">自然输入</option>
+                <option value="source_template">源模板</option>
+              </select>
+            </label>
+            <label>
+              <span>规则原因</span>
+              <select id="promptSlimReasonSelect">
+                <option value="all" selected>全部</option>
+                <option value="too_short">too_short</option>
+                <option value="short_oneoff">short_oneoff</option>
+                <option value="symbol_or_digit_only">symbol_or_digit_only</option>
+                <option value="known_junk">known_junk</option>
+              </select>
+            </label>
+            <label>
+              <span>任务类型</span>
+              <select id="promptSlimTaskTypeSelect">
+                <option value="">全部</option>
+              </select>
+            </label>
+            <label>
+              <span>排序</span>
+              <select id="promptSlimSortSelect">
+                <option value="quality_score" selected>质量分</option>
+                <option value="uses">使用次数</option>
+                <option value="users">使用用户</option>
+                <option value="last_seen">最近使用</option>
+                <option value="result_likes">结果点赞</option>
+                <option value="result_dislikes">结果点踩</option>
+                <option value="gallery_applies">Gallery 应用</option>
+                <option value="prompt_unlocks">解锁</option>
+                <option value="char_count">字数</option>
+              </select>
+            </label>
+            <label>
+              <span>最少用户</span>
+              <input id="promptSlimMinUsersInput" type="number" min="1" max="100000" value="1" />
+            </label>
+            <label>
+              <span>最少次数</span>
+              <input id="promptSlimMinUsesInput" type="number" min="1" max="100000" value="1" />
+            </label>
+          </div>
+          <div class="distribution-grid prompt-slim-distribution-grid">
+            <div class="table-shell">
+              <div class="table-title">阶段分布</div>
+              <div id="promptSlimStageDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">剔除原因</div>
+              <div id="promptSlimReasonDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">任务类型</div>
+              <div id="promptSlimTaskTypeDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">来源组成</div>
+              <div id="promptSlimSourceDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">字数分布</div>
+              <div id="promptSlimLengthDistribution" class="distribution-bars"></div>
+            </div>
+          </div>
+          <div class="prompt-layout prompt-slim-layout">
+            <div class="table-shell">
+              <div class="table-title prompt-table-title">
+                <span>瘦身提示词表</span>
+                <span id="promptSlimPageInfo" class="muted small"></span>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>阶段/评分</th>
+                    <th>Prompt</th>
+                    <th>使用</th>
+                    <th>结果反馈</th>
+                    <th>Gallery</th>
+                    <th>规则/最近</th>
+                  </tr>
+                </thead>
+                <tbody id="promptSlimRows"></tbody>
+              </table>
+              <div class="prompt-pagination">
+                <button id="promptSlimPrevButton" type="button">上一页</button>
+                <button id="promptSlimNextButton" type="button">下一页</button>
+              </div>
+            </div>
+            <aside id="promptSlimDetail" class="detail-panel"></aside>
+          </div>
+        </section>
+
+        <section class="band tab-panel" data-panel="prompt-vectors">
+          <div id="promptVectorSummary" class="metric-grid compact"></div>
+          <div class="prompt-filter-bar prompt-vector-filter-bar">
+            <label>
+              <span>搜索</span>
+              <input id="promptVectorSearchInput" type="search" placeholder="代表提示词关键词" />
+            </label>
+            <label>
+              <span>任务类型</span>
+              <select id="promptVectorTaskTypeSelect">
+                <option value="">全部</option>
+              </select>
+            </label>
+            <label>
+              <span>最小相似度</span>
+              <select id="promptVectorMinSimilaritySelect">
+                <option value="0.92" selected>0.92</option>
+                <option value="0.94">0.94</option>
+                <option value="0.96">0.96</option>
+                <option value="0.98">0.98</option>
+                <option value="0.86">0.86</option>
+              </select>
+            </label>
+            <label>
+              <span>最小成员</span>
+              <input id="promptVectorMinSizeInput" type="number" min="2" max="1000" value="2" />
+            </label>
+            <label>
+              <span>排序</span>
+              <select id="promptVectorSortSelect">
+                <option value="member_count" selected>成员数</option>
+                <option value="quality_score">代表质量分</option>
+                <option value="total_uses">总使用</option>
+                <option value="similarity">平均相似度</option>
+                <option value="refreshed_at">最近刷新</option>
+              </select>
+            </label>
+          </div>
+          <div class="distribution-grid prompt-vector-distribution-grid">
+            <div class="table-shell">
+              <div class="table-title">任务类型</div>
+              <div id="promptVectorTaskTypeDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">簇规模</div>
+              <div id="promptVectorSizeDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">相似边</div>
+              <div id="promptVectorBandDistribution" class="distribution-bars"></div>
+            </div>
+          </div>
+          <div class="prompt-layout prompt-vector-layout">
+            <div class="table-shell">
+              <div class="table-title prompt-table-title">
+                <span>语义相似簇</span>
+                <span id="promptVectorPageInfo" class="muted small"></span>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>簇/相似度</th>
+                    <th>代表 Prompt</th>
+                    <th>使用信号</th>
+                    <th>成员</th>
+                    <th>刷新</th>
+                  </tr>
+                </thead>
+                <tbody id="promptVectorRows"></tbody>
+              </table>
+              <div class="prompt-pagination">
+                <button id="promptVectorPrevButton" type="button">上一页</button>
+                <button id="promptVectorNextButton" type="button">下一页</button>
+              </div>
+            </div>
+            <aside id="promptVectorDetail" class="detail-panel"></aside>
           </div>
         </section>
 
@@ -227,6 +813,6 @@
       </main>
       </div>
     </div>
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=20260626-prompt-vector-ui-v1"></script>
   </body>
 </html>

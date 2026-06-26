@@ -23,6 +23,14 @@ from src.handlers.conversation_states import QuickImageState
 from src.handlers.prompt_router import GLOBAL_REVERSE_MAP, is_global_menu_command
 from src.services.task_service_generation_image import process_standard_generation_task as process_generation_task
 from src.services.permission_service import permission_service
+from src.services.qqcc_config_service import (
+    is_qqcc_main_button_enabled,
+    is_qqcc_photo_button_enabled,
+    is_qqcc_undress_method_enabled,
+    load_runtime_qqcc_config,
+    normalize_qqcc_config,
+    resolve_qqcc_prompt,
+)
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
     download_telegram_file_to_fsm_temp,
@@ -80,6 +88,69 @@ def _is_qqcc_bot_context(context: ContextTypes.DEFAULT_TYPE) -> bool:
     return bool(bot_data and bot_data.get("bot_client_type") == QQCC_BOT_CLIENT_TYPE)
 
 
+async def _load_qqcc_config_for_context(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> dict | None:
+    if not _is_qqcc_bot_context(context):
+        return None
+    try:
+        return await load_runtime_qqcc_config()
+    except Exception:
+        logger.exception("Failed to load QQCC lazy bot config; using defaults.")
+        return normalize_qqcc_config(None)
+
+
+async def _reply_qqcc_feature_disabled(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    text = _t(context, "qqcc.feature_disabled")
+    query = update.callback_query
+    if query:
+        await robust_edit_text(query.message, text, parse_mode="Markdown")
+        return
+    message = update.message or update.edited_message
+    if message:
+        await robust_reply_text(message, text, parse_mode="Markdown")
+
+
+def _is_qqcc_quick_image_route_enabled(config: dict, route_key: str | None) -> bool:
+    if route_key == "menu.photo_edit_undress":
+        return is_qqcc_main_button_enabled(config, "quick_undress") and (
+            is_qqcc_undress_method_enabled(config, "legacy")
+            or is_qqcc_undress_method_enabled(config, "i2i_draw")
+        )
+    if route_key == "menu.photo_edit_masturbation":
+        return is_qqcc_main_button_enabled(
+            config, "photo_edit"
+        ) and is_qqcc_photo_button_enabled(config, "masturbation")
+    if route_key == "menu.photo_edit_random_faceswap":
+        return is_qqcc_main_button_enabled(
+            config, "photo_edit"
+        ) and is_qqcc_photo_button_enabled(config, "random_faceswap")
+    return False
+
+
+def _is_qqcc_quick_image_mode_enabled(config: dict, mode: str) -> bool:
+    if mode == MODE_UNDRESS:
+        return is_qqcc_main_button_enabled(
+            config, "quick_undress"
+        ) and is_qqcc_undress_method_enabled(config, "legacy")
+    if mode == MODE_I2I_DRAW:
+        return is_qqcc_main_button_enabled(
+            config, "quick_undress"
+        ) and is_qqcc_undress_method_enabled(config, "i2i_draw")
+    if mode == MODE_MASTURBATION:
+        return is_qqcc_main_button_enabled(
+            config, "photo_edit"
+        ) and is_qqcc_photo_button_enabled(config, "masturbation")
+    if mode == MODE_RANDOM_FACESWAP:
+        return is_qqcc_main_button_enabled(
+            config, "photo_edit"
+        ) and is_qqcc_photo_button_enabled(config, "random_faceswap")
+    return False
+
+
 def _initialize_quick_image_context(
     context: ContextTypes.DEFAULT_TYPE, *, mode: str, cost: int
 ) -> None:
@@ -93,21 +164,25 @@ def _initialize_quick_image_context(
 
 def _build_undress_method_keyboard(
     context: ContextTypes.DEFAULT_TYPE,
+    config: dict | None = None,
 ) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
+    config = normalize_qqcc_config(config)
+    row = []
+    if is_qqcc_undress_method_enabled(config, "legacy"):
+        row.append(
+            InlineKeyboardButton(
                     _t(context, "fsm.quick_image.undress_legacy_button"),
                     callback_data=QUICK_UNDRESS_LEGACY_CALLBACK,
-                ),
-                InlineKeyboardButton(
+            )
+        )
+    if is_qqcc_undress_method_enabled(config, "i2i_draw"):
+        row.append(
+            InlineKeyboardButton(
                     _t(context, "fsm.quick_image.undress_i2i_draw_button"),
                     callback_data=QUICK_UNDRESS_I2I_DRAW_CALLBACK,
-                ),
-            ]
-        ]
-    )
+            )
+        )
+    return InlineKeyboardMarkup([row] if row else [])
 
 
 def _resolve_quick_image_start_message(
@@ -269,12 +344,19 @@ async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     mode = None
     route_key = GLOBAL_REVERSE_MAP.get(text)
+    qqcc_config = await _load_qqcc_config_for_context(context)
+    if qqcc_config is not None and not _is_qqcc_quick_image_route_enabled(
+        qqcc_config, route_key
+    ):
+        await _reply_qqcc_feature_disabled(update, context)
+        return ConversationHandler.END
+
     if _is_qqcc_bot_context(context) and route_key == "menu.photo_edit_undress":
         context.user_data["in_conversation"] = "QUICK_IMAGE_UNDRESS_CHOICE"
         await robust_reply_text(
             update.message,
             _t(context, "fsm.quick_image.undress_choice_intro"),
-            reply_markup=_build_undress_method_keyboard(context),
+            reply_markup=_build_undress_method_keyboard(context, qqcc_config),
             parse_mode="Markdown",
         )
         return QuickImageState.WAIT_UNDRESS_METHOD
@@ -311,10 +393,29 @@ async def select_undress_mode(
         )
         return ConversationHandler.END
 
+    qqcc_config = await _load_qqcc_config_for_context(context)
     if query.data == QUICK_UNDRESS_LEGACY_CALLBACK:
+        if qqcc_config is not None and not _is_qqcc_quick_image_mode_enabled(
+            qqcc_config, MODE_UNDRESS
+        ):
+            await _reply_qqcc_feature_disabled(update, context)
+            _cleanup_context(
+                context,
+                update.effective_user.id if update.effective_user else "Unknown",
+            )
+            return ConversationHandler.END
         mode = MODE_UNDRESS
         msg_key = "fsm.quick_image.undress_legacy_start"
     elif query.data == QUICK_UNDRESS_I2I_DRAW_CALLBACK:
+        if qqcc_config is not None and not _is_qqcc_quick_image_mode_enabled(
+            qqcc_config, MODE_I2I_DRAW
+        ):
+            await _reply_qqcc_feature_disabled(update, context)
+            _cleanup_context(
+                context,
+                update.effective_user.id if update.effective_user else "Unknown",
+            )
+            return ConversationHandler.END
         mode = MODE_I2I_DRAW
         msg_key = "fsm.quick_image.undress_i2i_draw_start"
     else:
@@ -336,6 +437,13 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     fsm_data = context.user_data["quick_image_data"]
     mode = fsm_data["mode"]
     cost = fsm_data["cost"]
+    qqcc_config = await _load_qqcc_config_for_context(context)
+    if qqcc_config is not None and not _is_qqcc_quick_image_mode_enabled(
+        qqcc_config, mode
+    ):
+        await _reply_qqcc_feature_disabled(update, context)
+        _cleanup_context(context, user_id)
+        return ConversationHandler.END
 
     file_id = _resolve_image_file_id(message)
     if not file_id:
@@ -389,13 +497,18 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 _cleanup_context(context, user_id)
                 return ConversationHandler.END
 
-            prompt, swapped_images, reply_markup_builder = (
-                _resolve_random_faceswap_submission(
-                    prompts_config=prompts_config,
-                    template_files=template_files,
-                    image_path=image_path,
-                )
+            prompt, swapped_images, reply_markup_builder = _resolve_random_faceswap_submission(
+                prompts_config=prompts_config,
+                template_files=template_files,
+                image_path=image_path,
             )
+            if qqcc_config is not None:
+                prompt = resolve_qqcc_prompt(
+                    qqcc_config,
+                    "face_swap",
+                    prompts_config,
+                    "face swap",
+                )
             reply_markup = reply_markup_builder(context)
 
             # Save face image path globally for "Again" button (outside FSM)
@@ -424,11 +537,20 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     else:
         # Single-image quick modes share the same task submission path.
         if mode == MODE_I2I_DRAW:
-            prompt = prompts_config.get(
-                "i2i_draw_quick_undress", DEFAULT_I2I_DRAW_UNDRESS_PROMPT
+            prompt_key = "i2i_draw_quick_undress"
+            fallback_prompt = DEFAULT_I2I_DRAW_UNDRESS_PROMPT
+        else:
+            prompt_key = mode
+            fallback_prompt = mode
+        if qqcc_config is not None:
+            prompt = resolve_qqcc_prompt(
+                qqcc_config,
+                prompt_key,
+                prompts_config,
+                fallback_prompt,
             )
         else:
-            prompt = prompts_config.get(mode, mode)
+            prompt = prompts_config.get(prompt_key, fallback_prompt)
         create_background_task(
             context,
             process_generation_task(

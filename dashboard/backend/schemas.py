@@ -262,6 +262,22 @@ class SiteNoticeCreateRequest(SiteNoticeUpsertRequest):
     pass
 
 
+class QqccBotConfigRequest(BaseModel):
+    global_enabled: Optional[bool] = None
+    main_buttons: Dict[str, Any] = Field(default_factory=dict)
+    photo_buttons: Dict[str, Any] = Field(default_factory=dict)
+    undress_methods: Dict[str, Any] = Field(default_factory=dict)
+    video_buttons: Dict[str, Any] = Field(default_factory=dict)
+    video_settings: Dict[str, Any] = Field(default_factory=dict)
+    prompts: Dict[str, Any] = Field(default_factory=dict)
+
+
+class QqccBotConfigResponse(BaseModel):
+    key: str
+    config: Dict[str, Any]
+    updated_at: Optional[datetime] = None
+
+
 class SiteNoticeResponse(BaseModel):
     id: Optional[int] = None
     title: str = ""

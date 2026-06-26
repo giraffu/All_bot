@@ -37,6 +37,22 @@ QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位�
 
 用户点击主菜单 `AI动图` 后，QQCC Bot 回复 `system.video_edit_hint`，并把上述场景作为 inline button 挂在该回复消息下方展示；按钮按三个一行排布，callback 使用 `qvid_mode:<menu.video_edit_*>`，由 `get_quick_video_fsm_handler()` 直接进入发送图片步骤。不要再把这些场景塞回 Telegram 底部 reply keyboard。
 
+QQCC 功能开关与 QQCC 专用提示词覆盖由管理后台 `懒人Bot配置` 页维护。配置存入 `runtime_checkpoints`，固定 key 为 `qqcc_lazy_bot_config:v1`，不新增表。Dashboard Backend 暴露：
+- `GET /api/qqcc/config`：返回合并默认值后的有效配置。
+- `PUT /api/qqcc/config`：规范化并保存配置，只保留已知 key。
+
+配置结构固定包含：
+- `global_enabled`
+- `main_buttons`: `quick_undress`, `photo_edit`, `video_edit`, `main_bot_link`
+- `photo_buttons`: `masturbation`, `random_faceswap`
+- `undress_methods`: `legacy`, `i2i_draw`
+- `video_buttons`: `missionary`, `doggy`, `blowjob`, `undress_tongue`, `closeup_blowjob`
+- `video_settings.resolutions`: `512p`, `720p`, `1024p`
+- `video_settings.durations`: `5s`, `8s`, `10s`
+- `prompts`: `undress`, `i2i_draw_quick_undress`, `masturbation`, `face_swap`, `perfect_video_insert`, `doggy_style`, `blowjob`, `undress_tongue`, `closeup_blowjob`
+
+关闭功能后，QQCC Bot 会隐藏新菜单按钮，并在旧 reply keyboard / 旧 callback 入口回复 `功能暂未开放`，不提交新任务。画质/时长按钮会同时受用户权限与 QQCC 配置过滤，仍保持 `1024p` 与 `10s` 不能同时选择。`prompts` 中空字符串表示回退当前 `prompts.ini`；非空覆盖只作用于 QQCC Bot，主 Bot 不受影响。
+
 注册的 FSM 只允许：
 - `get_quick_image_fsm_handler()`
 - `get_quick_video_fsm_handler()`
@@ -50,6 +66,9 @@ QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位�
 - `qqcc_bot/prompt_handlers.py`：只路由 `menu.photo_edit`、`menu.video_edit`、`menu.main_menu`、`menu.back_main`。
 - `qqcc_bot/callback_handler.py`：只导入任务取消、结果评分、随机换脸再来一张等必要 callback 注册模块。
 - `src/handlers/fsm/quick_image_fsm.py`：在 `bot_client_type=bot:qqcc` 时把主菜单 `快速脱衣` 转为两种处理方式选择；其它 Bot 仍保持原快速脱衣直达流程。
+- `src/services/qqcc_config_service.py`：QQCC 配置默认值、normalize、runtime checkpoint 读写与 QQCC prompt override 解析。
+- `dashboard/backend/routers/qqcc.py`：管理后台 QQCC 配置 API。
+- `dashboard/frontend/src/components/QqccBotSettings.vue`：管理后台 `懒人Bot配置` 页。
 
 主 Bot 入口仍是 `src/bot_main.py`。不要在 `qqcc_bot/` 中导入 `src.bot_main`，否则会把主 Bot 的完整 handler 面一起注册进来。
 
@@ -106,6 +125,14 @@ scripts/update_cloud_prod_qqcc_bot.sh --execute --confirm-prod --confirm-single-
 
 该脚本默认 dry-run；真实执行必须传 `--execute --confirm-prod --confirm-single-polling`。当用户已经明确要求“QQCC 单服务更新/走单服务更新/单独更新 QQCC Bot”时，这句话本身可作为当次正式与单 polling 操作确认，不需要再额外逐字复述；若发现目标容器状态异常、疑似多实例、token/远端 env 异常、不是专用脚本路径，或要启动一个当前停止的新正式 QQCC 实例，必须停下并追问确认。它只同步代码、按需同步 env、执行只读 preflight、重建并启动 `qqcc-bot-prod`，然后验证 `cloud-qqcc-bot-prod` 状态；不写生成维护标记、不等待队列 drain、不重建 Central/Web/Payment/Dashboard/主 Bot/Worker/RunPod、不操作 Cloudflare Pages/DNS/边缘路由。
 
+只更新正式管理后台与 QQCC 配置相关代码时，Dashboard 走 services scope 单服务更新：
+
+```bash
+scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod --scope services --services "dashboard-backend-prod dashboard-frontend-prod" --skip-generation-maintenance
+```
+
+该路径不得开启 `GENERATION_MAINTENANCE`，不得重建 Central/Web/Payment/主 Bot/Worker/RunPod。发布后确认 `cloud-dashboard-backend-prod`、`cloud-dashboard-frontend-prod` 与 `cloud-qqcc-bot-prod` running/healthy，并确认非目标服务启动时间未变化。
+
 完整云正式控制面更新仍默认不碰 QQCC Bot；若需要随控制面一起重建 QQCC Bot，必须显式传：
 
 ```bash
@@ -118,6 +145,9 @@ scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod --qqcc-bo
 代码变更至少跑：
 
 ```bash
+pytest tests/qqcc_bot tests/dashboard -q
+cd dashboard/frontend && npm run typecheck && npm run test && npm run build
+python -m alembic heads
 pytest tests/qqcc_bot/test_qqcc_bot_entrypoint.py \
   tests/services/test_task_service_flow.py \
   tests/services/test_recovery_service.py -q
@@ -146,3 +176,5 @@ QQCC 快速脱衣入口至少覆盖：
 - 点击主菜单 `快速脱衣` 先展示 `头像/半身补全` 与 `全身保脸重绘`。
 - `头像/半身补全` 进入 `undress`，`全身保脸重绘` 进入 `i2i_draw`。
 - 两个分支都保持“选择按钮后只发送 1 张图片即可提交”的懒人交互。
+- 关闭任一 QQCC 配置开关后，新菜单隐藏对应按钮，旧按钮/旧 callback 回复 `功能暂未开放` 且不提交任务。
+- QQCC 专用 prompt override 生效时不影响主 Bot。

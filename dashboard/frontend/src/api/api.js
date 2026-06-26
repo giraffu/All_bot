@@ -232,6 +232,11 @@ export const fetchPaidGroupGuardConfig = async () => get('/api/paid-group-guard/
 export const updatePaidGroupGuardConfig = async (payload) =>
   put('/api/paid-group-guard/config', payload)
 
+export const fetchQqccBotConfig = async () => get('/api/qqcc/config')
+
+export const updateQqccBotConfig = async (payload) =>
+  put('/api/qqcc/config', payload)
+
 export const fetchPaidGroupGuardLogs = async ({
   page = 1,
   pageSize = 20,

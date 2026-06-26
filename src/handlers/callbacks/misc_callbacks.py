@@ -10,6 +10,13 @@ from src.core.user_core import get_or_create_user_by_telegram
 from src.handlers.callback_router import register_callback
 from src.services.task_service_generation_image import process_standard_generation_task as process_generation_task
 from src.services.permission_service import permission_service
+from src.services.qqcc_config_service import (
+    is_qqcc_main_button_enabled,
+    is_qqcc_photo_button_enabled,
+    load_runtime_qqcc_config,
+    normalize_qqcc_config,
+    resolve_qqcc_prompt,
+)
 from src.services.storage import storage
 from src.utils import (
     create_background_task,
@@ -20,6 +27,33 @@ from src.utils import (
 )
 
 logger = logging.getLogger(__name__)
+QQCC_BOT_CLIENT_TYPE = "bot:qqcc"
+
+
+def _is_qqcc_bot_context(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    bot_data = getattr(context, "bot_data", None)
+    if bot_data is None:
+        application = getattr(context, "application", None)
+        bot_data = getattr(application, "bot_data", None)
+    return bool(bot_data and bot_data.get("bot_client_type") == QQCC_BOT_CLIENT_TYPE)
+
+
+async def _load_qqcc_config_for_context(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> dict | None:
+    if not _is_qqcc_bot_context(context):
+        return None
+    try:
+        return await load_runtime_qqcc_config()
+    except Exception:
+        logger.exception("Failed to load QQCC lazy bot config; using defaults.")
+        return normalize_qqcc_config(None)
+
+
+def _is_qqcc_random_faceswap_enabled(config: dict) -> bool:
+    return is_qqcc_main_button_enabled(
+        config, "photo_edit"
+    ) and is_qqcc_photo_button_enabled(config, "random_faceswap")
 
 
 @register_callback("noop")
@@ -47,6 +81,15 @@ async def random_faceswap_again_callback(
 
     # ⚠️ 必须在这里补充 answer_query，否则拆分后按钮会一直转圈
     await safe_answer_query(query)
+
+    qqcc_config = await _load_qqcc_config_for_context(context)
+    if qqcc_config is not None and not _is_qqcc_random_faceswap_enabled(qqcc_config):
+        await robust_send_message(
+            context.bot,
+            query.message.chat_id,
+            "功能暂未开放",
+        )
+        return
 
     if is_maintenance_mode():
         await robust_send_message(
@@ -113,7 +156,15 @@ async def random_faceswap_again_callback(
         random_template = random.choice(template_files)
         template_path = f"template:{random_template}"
 
-        prompt = prompts_config.get("face_swap", "face swap")
+        if qqcc_config is not None:
+            prompt = resolve_qqcc_prompt(
+                qqcc_config,
+                "face_swap",
+                prompts_config,
+                "face swap",
+            )
+        else:
+            prompt = prompts_config.get("face_swap", "face swap")
         swapped_images = [template_path, face_image_path]
 
         reply_markup = InlineKeyboardMarkup(

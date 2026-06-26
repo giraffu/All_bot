@@ -18,6 +18,15 @@ from src.handlers.message_handler_common import (
     get_reply_message,
 )
 from src.handlers.message_handler_prompt import handle_prompt_impl
+from src.services.qqcc_config_service import (
+    has_enabled_qqcc_values,
+    has_enabled_qqcc_video_settings,
+    is_qqcc_global_enabled,
+    is_qqcc_main_bot_link_enabled,
+    is_qqcc_main_button_enabled,
+    load_runtime_qqcc_config,
+    normalize_qqcc_config,
+)
 from src.utils import robust_reply_text
 
 logger = logging.getLogger("qqcc_bot.prompt")
@@ -36,41 +45,85 @@ async def _reply_payload(update, context, text: str, reply_markup):
     return None
 
 
+async def _load_menu_config() -> dict:
+    try:
+        return await load_runtime_qqcc_config()
+    except Exception:
+        logger.exception("Failed to load QQCC lazy bot config; using defaults.")
+        return normalize_qqcc_config(None)
+
+
+def _can_open_photo_menu(config: dict) -> bool:
+    return (
+        is_qqcc_global_enabled(config)
+        and is_qqcc_main_button_enabled(config, "photo_edit")
+        and has_enabled_qqcc_values(config, "photo_buttons")
+    )
+
+
+def _can_open_video_menu(config: dict) -> bool:
+    return (
+        is_qqcc_global_enabled(config)
+        and is_qqcc_main_button_enabled(config, "video_edit")
+        and has_enabled_qqcc_values(config, "video_buttons")
+        and has_enabled_qqcc_video_settings(config)
+    )
+
+
+async def _reply_feature_disabled(update, context, config: dict):
+    return await _reply_payload(
+        update,
+        context,
+        context.t("qqcc.feature_disabled"),
+        get_qqcc_main_menu_keyboard(context.lang, config),
+    )
+
+
 async def handle_photo_edit_menu(update, context, text: str = None):
+    config = await _load_menu_config()
+    if not _can_open_photo_menu(config):
+        return await _reply_feature_disabled(update, context, config)
     return await _reply_payload(
         update,
         context,
         context.t("system.photo_edit_hint"),
-        get_qqcc_photo_edit_keyboard(context.lang),
+        get_qqcc_photo_edit_keyboard(context.lang, config),
     )
 
 
 async def handle_video_edit_menu(update, context, text: str = None):
+    config = await _load_menu_config()
+    if not _can_open_video_menu(config):
+        return await _reply_feature_disabled(update, context, config)
     return await _reply_payload(
         update,
         context,
         context.t("system.video_edit_hint"),
-        get_qqcc_video_edit_inline_keyboard(context.lang),
+        get_qqcc_video_edit_inline_keyboard(context.lang, config),
     )
 
 
 async def handle_back_to_main_menu(update, context, text: str = None):
+    config = await _load_menu_config()
     return await _reply_payload(
         update,
         context,
         context.t("system.back_to_main"),
-        get_qqcc_main_menu_keyboard(context.lang),
+        get_qqcc_main_menu_keyboard(context.lang, config),
     )
 
 
 async def handle_open_main_bot(update, context, text: str = None):
+    config = await _load_menu_config()
+    if not is_qqcc_main_bot_link_enabled(config):
+        return await _reply_feature_disabled(update, context, config)
     main_bot_url = resolve_main_bot_url()
     if not main_bot_url:
         return await _reply_payload(
             update,
             context,
             context.t("system.main_bot_link_unavailable"),
-            get_qqcc_main_menu_keyboard(context.lang),
+            get_qqcc_main_menu_keyboard(context.lang, config),
         )
     return await _reply_payload(
         update,

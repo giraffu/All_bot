@@ -245,6 +245,46 @@ def test_dry_run_remote_r2_dump_mode_plans_cloud_dump_transfer_and_cleanup(
     assert not config.backup_dir.exists()
 
 
+def test_database_only_sync_skips_media_buckets_but_keeps_remote_dump_transfer(
+    tmp_path,
+    capsys,
+):
+    config = build_config(
+        tmp_path,
+        CLOUD_PROD_DB_DUMP_MODE="remote_r2",
+        CLOUD_PROD_DB_REMOTE_DUMP_SSH_HOST="allbot-do-sgp1-control",
+        CLOUD_PROD_DB_REMOTE_ROOT="/home/deploy/APP/All_bot",
+        CLOUD_PROD_DB_REMOTE_ENV_FILE="/home/deploy/APP/All_bot/.env.cloud.prod",
+        CLOUD_PROD_DB_REMOTE_DUMP_DIR="backups/cloud-prod-shadow",
+        CLOUD_PROD_DB_REMOTE_TRANSFER_PREFIX="__shadow-transfer",
+        R2_BUCKET_SYNC_ENABLED="false",
+        COMPLETE_MEDIA_SYNC_ENABLED="false",
+    )
+
+    runner = sync.run_shadow_sync(config, execute=False)
+
+    output = capsys.readouterr().out
+    commands = "\n".join(runner.commands)
+    assert "R2 bucket sync skipped: R2_BUCKET_SYNC_ENABLED=false" in output
+    assert "Complete media bucket sync skipped: COMPLETE_MEDIA_SYNC_ENABLED=false" in output
+    assert "cloudr2:user-data-prod/__shadow-transfer/20260624_050000" in commands
+    assert (
+        "rclone copy cloudr2:user-data-prod/__shadow-transfer/20260624_050000 /backup"
+        in commands
+    )
+    assert "rclone purge cloudr2:user-data-prod/__shadow-transfer/20260624_050000" in commands
+    assert (
+        "rclone sync cloudr2:user-data-prod localminio:user-data-prod-shadow"
+        not in commands
+    )
+    assert (
+        "rclone copy cloudr2:user-data-prod localminio:user-data-prod-shadow"
+        not in commands
+    )
+    assert "localminio:user-data-complete-shadow" not in commands
+    assert not config.backup_dir.exists()
+
+
 def test_execute_runs_tool_container_commands_and_writes_manifest(tmp_path, monkeypatch):
     config = build_config(tmp_path)
     calls = []

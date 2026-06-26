@@ -12,6 +12,8 @@ from telegram.ext import (
 )
 
 from src.constants import (
+    DURATION_MULTIPLIER,
+    DURATION_PERMISSIONS,
     DEFAULT_DURATION,
     DEFAULT_RESOLUTION,
     MODE_BLOWJOB,
@@ -19,6 +21,8 @@ from src.constants import (
     MODE_DOGGY_STYLE,
     MODE_PERFECT_VIDEO_INSERT,
     MODE_UNDRESS_TONGUE,
+    RESOLUTION_COST,
+    RESOLUTION_PERMISSIONS,
     get_video_settings_keyboard,
 )
 from src.domain_config.wan22_aio_video import get_wan22_video_v2_cost
@@ -36,6 +40,16 @@ from src.handlers.fsm.quick_video_callback_data import (
 )
 from src.handlers.prompt_router import GLOBAL_REVERSE_MAP
 from src.services.permission_service import permission_service
+from src.services.qqcc_config_service import (
+    VIDEO_DURATION_KEYS,
+    VIDEO_RESOLUTION_KEYS,
+    get_qqcc_prompt_override,
+    has_enabled_qqcc_video_settings,
+    is_qqcc_main_button_enabled,
+    is_qqcc_video_button_enabled,
+    load_runtime_qqcc_config,
+    normalize_qqcc_config,
+)
 from src.services.task_service_entrypoints_video import process_video_task_template
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
@@ -53,12 +67,30 @@ from src.filters.i18n_filter import I18nFilter
 
 logger = logging.getLogger("fsm.quick_video")
 
+QQCC_BOT_CLIENT_TYPE = "bot:qqcc"
+
 QUICK_VIDEO_MODES = {
     "menu.video_edit_missionary": MODE_PERFECT_VIDEO_INSERT,
     "menu.video_edit_doggy": MODE_DOGGY_STYLE,
     "menu.video_edit_blowjob": MODE_BLOWJOB,
     "menu.video_edit_undress_tongue": MODE_UNDRESS_TONGUE,
     "menu.video_edit_closeup_blowjob": MODE_CLOSEUP_BLOWJOB,
+}
+
+QUICK_VIDEO_ROUTE_CONFIG_KEYS = {
+    "menu.video_edit_missionary": "missionary",
+    "menu.video_edit_doggy": "doggy",
+    "menu.video_edit_blowjob": "blowjob",
+    "menu.video_edit_undress_tongue": "undress_tongue",
+    "menu.video_edit_closeup_blowjob": "closeup_blowjob",
+}
+
+QUICK_VIDEO_MODE_CONFIG_KEYS = {
+    MODE_PERFECT_VIDEO_INSERT: "missionary",
+    MODE_DOGGY_STYLE: "doggy",
+    MODE_BLOWJOB: "blowjob",
+    MODE_UNDRESS_TONGUE: "undress_tongue",
+    MODE_CLOSEUP_BLOWJOB: "closeup_blowjob",
 }
 
 
@@ -69,6 +101,60 @@ def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, _user_id: int):
     context.user_data.pop("in_conversation", None)
     fsm_data = context.user_data.pop("quick_video_data", {})
     cleanup_fsm_temp_files([fsm_data.get("image_path")])
+
+
+def _is_qqcc_bot_context(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    bot_data = getattr(context, "bot_data", None)
+    if bot_data is None:
+        application = getattr(context, "application", None)
+        bot_data = getattr(application, "bot_data", None)
+    return bool(bot_data and bot_data.get("bot_client_type") == QQCC_BOT_CLIENT_TYPE)
+
+
+async def _load_qqcc_config_for_context(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> dict | None:
+    if not _is_qqcc_bot_context(context):
+        return None
+    try:
+        return await load_runtime_qqcc_config()
+    except Exception:
+        logger.exception("Failed to load QQCC lazy bot config; using defaults.")
+        return normalize_qqcc_config(None)
+
+
+async def _reply_qqcc_feature_disabled(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    text = _t(context, "qqcc.feature_disabled")
+    query = update.callback_query
+    if query:
+        await robust_edit_text(query.message, text, parse_mode="Markdown")
+        return
+    message = update.message or update.edited_message
+    if message:
+        await robust_reply_text(message, text, parse_mode="Markdown")
+
+
+def _is_qqcc_quick_video_route_enabled(config: dict, route_key: str | None) -> bool:
+    config_key = QUICK_VIDEO_ROUTE_CONFIG_KEYS.get(route_key or "")
+    return bool(
+        config_key
+        and is_qqcc_main_button_enabled(config, "video_edit")
+        and is_qqcc_video_button_enabled(config, config_key)
+        and has_enabled_qqcc_video_settings(config)
+    )
+
+
+def _is_qqcc_quick_video_mode_enabled(config: dict, mode: str | None) -> bool:
+    config_key = QUICK_VIDEO_MODE_CONFIG_KEYS.get(mode or "")
+    return bool(
+        config_key
+        and is_qqcc_main_button_enabled(config, "video_edit")
+        and is_qqcc_video_button_enabled(config, config_key)
+        and has_enabled_qqcc_video_settings(config)
+    )
 
 
 def _resolve_quick_video_file_id(message) -> str | None:
@@ -95,6 +181,73 @@ def _normalize_quick_video_selection(
     return resolution, duration
 
 
+async def _resolve_quick_video_allowed_settings(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
+    qqcc_config: dict | None,
+) -> tuple[list[str], list[str], str, str]:
+    from src.core.user_core import get_or_create_user_by_telegram
+
+    internal_user, _ = await get_or_create_user_by_telegram(user_id)
+    user_group = await permission_service.get_user_group(internal_user.id)
+    user_identity = await permission_service.get_user_identity(internal_user.id)
+
+    group_res_allowed = RESOLUTION_PERMISSIONS.get(user_group, ["512p"])
+    identity_res_allowed = RESOLUTION_PERMISSIONS.get(user_identity, ["512p"])
+    allowed_resolutions = [
+        res
+        for res in VIDEO_RESOLUTION_KEYS
+        if res in set(group_res_allowed + identity_res_allowed)
+    ]
+
+    group_dur_allowed = DURATION_PERMISSIONS.get(user_group, ["5s"])
+    identity_dur_allowed = DURATION_PERMISSIONS.get(user_identity, ["5s"])
+    allowed_durations = [
+        dur
+        for dur in VIDEO_DURATION_KEYS
+        if dur in set(group_dur_allowed + identity_dur_allowed)
+    ]
+
+    if qqcc_config is not None:
+        normalized = normalize_qqcc_config(qqcc_config)
+        settings = normalized["video_settings"]
+        allowed_resolutions = [
+            res for res in allowed_resolutions if settings["resolutions"].get(res)
+        ]
+        allowed_durations = [
+            dur for dur in allowed_durations if settings["durations"].get(dur)
+        ]
+
+    return allowed_resolutions, allowed_durations, user_group, user_identity
+
+
+def _normalize_allowed_quick_video_settings(
+    *,
+    resolution: str,
+    duration: str,
+    allowed_resolutions: list[str],
+    allowed_durations: list[str],
+) -> tuple[str | None, str | None]:
+    if not allowed_resolutions or not allowed_durations:
+        return None, None
+
+    if resolution not in allowed_resolutions:
+        resolution = allowed_resolutions[0]
+    if duration not in allowed_durations:
+        duration = allowed_durations[0]
+
+    if resolution == "1024p" and duration == "10s":
+        if "720p" in allowed_resolutions:
+            resolution = "720p"
+        elif "8s" in allowed_durations:
+            duration = "8s"
+        else:
+            resolution = allowed_resolutions[0]
+            duration = allowed_durations[0]
+    return resolution, duration
+
+
 def _strip_menu_prefix(text: str) -> str:
     text = (text or "").strip()
     first_token, _, rest = text.partition(" ")
@@ -105,19 +258,19 @@ def _strip_menu_prefix(text: str) -> str:
 
 def _resolve_quick_video_entry(
     update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> tuple[str | None, str, object | None]:
+) -> tuple[str | None, str, object | None, str | None]:
     query = update.callback_query
     if query:
         route_key = parse_quick_video_mode_callback_data(query.data)
         mode = QUICK_VIDEO_MODES.get(route_key) if route_key else None
         mode_name = _strip_menu_prefix(_t(context, route_key)) if route_key else ""
-        return mode, mode_name, getattr(query, "message", None)
+        return mode, mode_name, getattr(query, "message", None), route_key
 
     message = update.message or update.edited_message
     text = message.text.strip() if message and message.text else ""
     route_key = GLOBAL_REVERSE_MAP.get(text)
     mode = QUICK_VIDEO_MODES.get(route_key) if route_key else None
-    return mode, _strip_menu_prefix(text), message
+    return mode, _strip_menu_prefix(text), message, route_key
 
 
 async def _build_quick_video_settings_markup(
@@ -126,16 +279,56 @@ async def _build_quick_video_settings_markup(
     user_id: int,
     resolution: str,
     duration: str,
+    qqcc_config: dict | None = None,
 ) -> InlineKeyboardMarkup:
-    from src.core.user_core import get_or_create_user_by_telegram
+    if qqcc_config is None:
+        (
+            _allowed_resolutions,
+            _allowed_durations,
+            user_group,
+            user_identity,
+        ) = await _resolve_quick_video_allowed_settings(
+            context=context,
+            user_id=user_id,
+            qqcc_config=None,
+        )
+        reply_markup = get_video_settings_keyboard(
+            user_group, user_identity, resolution, duration, context.lang
+        )
+        keyboard = list(reply_markup.inline_keyboard)
+    else:
+        allowed_resolutions, allowed_durations, _user_group, _user_identity = (
+            await _resolve_quick_video_allowed_settings(
+                context=context,
+                user_id=user_id,
+                qqcc_config=qqcc_config,
+            )
+        )
+        credits_text = _t(context, "app.credits")
+        keyboard = []
+        res_row = []
+        for res in allowed_resolutions:
+            if res == "1024p" and duration == "10s":
+                continue
+            base_cost = RESOLUTION_COST.get(res, 6)
+            multiplier = DURATION_MULTIPLIER.get(duration, 1.0)
+            display_text = f"{res} ({int(base_cost * multiplier)}{credits_text})"
+            text = f"✅ {display_text}" if res == resolution else display_text
+            res_row.append(InlineKeyboardButton(text, callback_data=f"set_res_{res}"))
+        if res_row:
+            keyboard.append(res_row)
 
-    internal_user, _ = await get_or_create_user_by_telegram(user_id)
-    user_group = await permission_service.get_user_group(internal_user.id)
-    user_identity = await permission_service.get_user_identity(internal_user.id)
-    reply_markup = get_video_settings_keyboard(
-        user_group, user_identity, resolution, duration, context.lang
-    )
-    keyboard = list(reply_markup.inline_keyboard)
+        dur_row = []
+        for dur in allowed_durations:
+            if dur == "10s" and resolution == "1024p":
+                continue
+            multiplier = DURATION_MULTIPLIER.get(dur, 1.0)
+            display_text = f"{dur} (x{multiplier})"
+            text = f"✅ {display_text}" if dur == duration else display_text
+            dur_row.append(InlineKeyboardButton(text, callback_data=f"set_dur_{dur}"))
+        if dur_row:
+            keyboard.append(dur_row)
+
     keyboard.append(
         [
             InlineKeyboardButton(
@@ -179,7 +372,9 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     query = update.callback_query
     if query:
         await safe_answer_query(query)
-    mode, mode_name, reply_message = _resolve_quick_video_entry(update, context)
+    mode, mode_name, reply_message, route_key = _resolve_quick_video_entry(
+        update, context
+    )
 
     from src.utils import is_maintenance_mode
 
@@ -195,6 +390,13 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         msg = _t(context, "fsm.common.conflict")
         if reply_message:
             await robust_reply_text(reply_message, msg)
+        return ConversationHandler.END
+
+    qqcc_config = await _load_qqcc_config_for_context(context)
+    if qqcc_config is not None and not _is_qqcc_quick_video_route_enabled(
+        qqcc_config, route_key
+    ):
+        await _reply_qqcc_feature_disabled(update, context)
         return ConversationHandler.END
 
     if not mode or not reply_message:
@@ -217,6 +419,14 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     user_id = update.effective_user.id
     message = update.message
     fsm_data = context.user_data["quick_video_data"]
+    mode = fsm_data.get("mode")
+    qqcc_config = await _load_qqcc_config_for_context(context)
+    if qqcc_config is not None and not _is_qqcc_quick_video_mode_enabled(
+        qqcc_config, mode
+    ):
+        await _reply_qqcc_feature_disabled(update, context)
+        _cleanup_context(context, user_id)
+        return ConversationHandler.END
 
     file_id = _resolve_quick_video_file_id(message)
     if not file_id:
@@ -238,11 +448,32 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     res = fsm_data["resolution"]
     dur = fsm_data["duration"]
+    if qqcc_config is not None:
+        allowed_resolutions, allowed_durations, _group, _identity = (
+            await _resolve_quick_video_allowed_settings(
+                context=context,
+                user_id=user_id,
+                qqcc_config=qqcc_config,
+            )
+        )
+        res, dur = _normalize_allowed_quick_video_settings(
+            resolution=res,
+            duration=dur,
+            allowed_resolutions=allowed_resolutions,
+            allowed_durations=allowed_durations,
+        )
+        if res is None or dur is None:
+            await _reply_qqcc_feature_disabled(update, context)
+            _cleanup_context(context, user_id)
+            return ConversationHandler.END
+        fsm_data["resolution"] = res
+        fsm_data["duration"] = dur
     reply_markup = await _build_quick_video_settings_markup(
         context=context,
         user_id=user_id,
         resolution=res,
         duration=dur,
+        qqcc_config=qqcc_config,
     )
 
     await robust_reply_text(
@@ -269,12 +500,38 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             await query.answer(_t(context, "fsm.quick_video.expired_alert"), show_alert=True)
         return ConversationHandler.END
 
+    qqcc_config = await _load_qqcc_config_for_context(context)
+    if qqcc_config is not None and not _is_qqcc_quick_video_mode_enabled(
+        qqcc_config, fsm_data.get("mode")
+    ):
+        await _reply_qqcc_feature_disabled(update, context)
+        _cleanup_context(context, user_id)
+        return ConversationHandler.END
+
     if data == "qvid_start_generation":
         await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
         return await start_generation(update, context)
 
+    allowed_resolutions: list[str] | None = None
+    allowed_durations: list[str] | None = None
+    if qqcc_config is not None:
+        allowed_resolutions, allowed_durations, _group, _identity = (
+            await _resolve_quick_video_allowed_settings(
+                context=context,
+                user_id=user_id,
+                qqcc_config=qqcc_config,
+            )
+        )
+        if not allowed_resolutions or not allowed_durations:
+            await _reply_qqcc_feature_disabled(update, context)
+            _cleanup_context(context, user_id)
+            return ConversationHandler.END
+
     if data.startswith("set_res_"):
         new_res = data.split("_")[2]
+        if allowed_resolutions is not None and new_res not in allowed_resolutions:
+            await query.answer(_t(context, "qqcc.feature_disabled"), show_alert=True)
+            return QuickVideoState.WAIT_SETTINGS
         if new_res == "1024p" and fsm_data.get("duration") == "10s":
             fsm_data["duration"] = "8s"
             with contextlib.suppress(Exception):
@@ -284,6 +541,9 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         fsm_data["resolution"] = new_res
     elif data.startswith("set_dur_"):
         new_dur = data.split("_")[2]
+        if allowed_durations is not None and new_dur not in allowed_durations:
+            await query.answer(_t(context, "qqcc.feature_disabled"), show_alert=True)
+            return QuickVideoState.WAIT_SETTINGS
         if new_dur == "10s" and fsm_data.get("resolution") == "1024p":
             fsm_data["resolution"] = "720p"
             with contextlib.suppress(Exception):
@@ -294,11 +554,28 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     res = fsm_data["resolution"]
     dur = fsm_data["duration"]
+    if allowed_resolutions is not None and allowed_durations is not None:
+        normalized_res, normalized_dur = _normalize_allowed_quick_video_settings(
+            resolution=res,
+            duration=dur,
+            allowed_resolutions=allowed_resolutions,
+            allowed_durations=allowed_durations,
+        )
+        if normalized_res is None or normalized_dur is None:
+            await _reply_qqcc_feature_disabled(update, context)
+            _cleanup_context(context, user_id)
+            return ConversationHandler.END
+        res = normalized_res
+        dur = normalized_dur
+        fsm_data["resolution"] = res
+        fsm_data["duration"] = dur
+
     reply_markup = await _build_quick_video_settings_markup(
         context=context,
         user_id=user_id,
         resolution=res,
         duration=dur,
+        qqcc_config=qqcc_config,
     )
 
     with contextlib.suppress(Exception):
@@ -329,6 +606,14 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if not fsm_data:
         return ConversationHandler.END
 
+    qqcc_config = await _load_qqcc_config_for_context(context)
+    if qqcc_config is not None and not _is_qqcc_quick_video_mode_enabled(
+        qqcc_config, fsm_data.get("mode")
+    ):
+        await _reply_qqcc_feature_disabled(update, context)
+        _cleanup_context(context, user_id)
+        return ConversationHandler.END
+
     image_path = fsm_data.pop("image_path", None)
     if not image_path:
         logger.warning(
@@ -343,6 +628,28 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         resolution=fsm_data["resolution"],
         duration=fsm_data["duration"],
     )
+    if qqcc_config is not None:
+        allowed_resolutions, allowed_durations, _group, _identity = (
+            await _resolve_quick_video_allowed_settings(
+                context=context,
+                user_id=user_id,
+                qqcc_config=qqcc_config,
+            )
+        )
+        res, dur = _normalize_allowed_quick_video_settings(
+            resolution=res,
+            duration=dur,
+            allowed_resolutions=allowed_resolutions,
+            allowed_durations=allowed_durations,
+        )
+        if res is None or dur is None:
+            await _reply_qqcc_feature_disabled(update, context)
+            if image_path and os.path.exists(image_path):
+                with contextlib.suppress(OSError):
+                    os.remove(image_path)
+            _cleanup_context(context, user_id)
+            return ConversationHandler.END
+
     mode = fsm_data["mode"]
     fsm_data["resolution"] = res
     fsm_data["duration"] = dur
@@ -389,6 +696,11 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     mode_submission = _resolve_quick_video_mode_submission(mode)
     if mode_submission:
         default_prompt_key, default_prompt_text = mode_submission
+        prompt_override = (
+            get_qqcc_prompt_override(qqcc_config, default_prompt_key)
+            if qqcc_config is not None
+            else None
+        )
         create_background_task(
             context,
             process_video_task_template(
@@ -396,6 +708,7 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 mode=mode,
                 default_prompt_key=default_prompt_key,
                 default_prompt_text=default_prompt_text,
+                prompt_override=prompt_override,
                 image_path=image_path,
                 cleanup=True,
                 allow_contribute=True,

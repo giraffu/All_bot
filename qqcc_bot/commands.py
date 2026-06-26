@@ -17,9 +17,18 @@ from src.utils import (
     notify_inviter_reward,
     robust_send_message,
 )
+from src.services.qqcc_config_service import load_runtime_qqcc_config, normalize_qqcc_config
 
 logger = logging.getLogger("qqcc_bot.command")
 _BOT_USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_]{5,32}$")
+
+
+async def _load_menu_config() -> dict:
+    try:
+        return await load_runtime_qqcc_config()
+    except Exception:
+        logger.exception("Failed to load QQCC lazy bot config; using defaults.")
+        return normalize_qqcc_config(None)
 
 
 async def setup_commands(app: Application):
@@ -126,9 +135,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info("QQCC user started: %s (@%s)", user.id, user.username or "N/A")
 
     context.user_data["mode"] = "none"
+    qqcc_config = await _load_menu_config()
     await update.message.reply_text(
         context.t("command.start_intro"),
-        reply_markup=get_qqcc_main_menu_keyboard(context.lang),
+        reply_markup=get_qqcc_main_menu_keyboard(context.lang, qqcc_config),
         parse_mode="Markdown",
     )
 
@@ -140,8 +150,9 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for key in keys_to_remove:
         context.user_data.pop(key, None)
 
+    qqcc_config = await _load_menu_config()
     await update.message.reply_text(
         context.t("command.force_cancel"),
-        reply_markup=get_qqcc_main_menu_keyboard(context.lang),
+        reply_markup=get_qqcc_main_menu_keyboard(context.lang, qqcc_config),
         parse_mode="Markdown",
     )

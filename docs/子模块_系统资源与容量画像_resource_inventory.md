@@ -235,7 +235,7 @@ ComfyUI 版本快照：
 ### PostgreSQL
 2026-06-18 03:06 生产数据库 `bot_db` 约 3444MB。生产库主要体积来自历史与日志表；迁移、归档或索引决策前必须重新采集。
 
-2026-06-25 起，本地主服务器云正式 shadow 同步的数据库获取路径正式切为 `CLOUD_PROD_DB_DUMP_MODE=remote_r2`：`scripts/sync_cloud_prod_to_local_shadow.py --execute` 通过 SSH 让 `allbot-do-sgp1-control` 在云机执行 PostgreSQL dump，临时上传 dump/sha256 到 R2 `user-data-prod/__shadow-transfer/<timestamp>`，本地主服务器经 HTTPS/rclone 下载校验后恢复为本地 `bot_db_prod_shadow`；中间库为 `bot_db_prod_shadow_next`，旧版本保留为带时间戳的 `bot_db_prod_shadow_previous_<timestamp>`；dump、sha256 与 manifest 位于 ignored 的 `backups/cloud-prod-shadow/<timestamp>/`。Redis/Valkey 摘要采集仍可通过 `CLOUD_PROD_DB_TUNNEL_SSH_HOST=allbot-do-sgp1-control` 经云正式控制面 SSH tunnel 访问托管服务；旧 `local_tunnel` dump 模式仅作为 fallback/专项诊断。该库可供灾备预热和后续只读分析；业务分析表、BI、Notebook、脱敏访问边界尚未定义，不应默认扩大访问权限。
+2026-06-25 起，本地主服务器云正式 shadow 同步的数据库获取路径正式切为 `CLOUD_PROD_DB_DUMP_MODE=remote_r2`：`scripts/sync_cloud_prod_to_local_shadow.py --execute` 通过 SSH 让 `allbot-do-sgp1-control` 在云机执行 PostgreSQL dump，临时上传 dump/sha256 到 R2 `user-data-prod/__shadow-transfer/<timestamp>`，本地主服务器经 HTTPS/rclone 下载校验后恢复为本地 `bot_db_prod_shadow`；中间库为 `bot_db_prod_shadow_next`，旧版本保留为带时间戳的 `bot_db_prod_shadow_previous_<timestamp>`；dump、sha256 与 manifest 位于 ignored 的 `backups/cloud-prod-shadow/<timestamp>/`。`R2_BUCKET_SYNC_ENABLED=false` 时每日任务只保留数据库 dump/restore 与 Redis 摘要，不镜像生产媒体桶；该开关不影响 `remote_r2` 的 `__shadow-transfer` 临时 dump 传输。Redis/Valkey 摘要采集仍可通过 `CLOUD_PROD_DB_TUNNEL_SSH_HOST=allbot-do-sgp1-control` 经云正式控制面 SSH tunnel 访问托管服务；旧 `local_tunnel` dump 模式仅作为 fallback/专项诊断。该库可供灾备预热和后续只读分析；业务分析表、BI、Notebook、脱敏访问边界尚未定义，不应默认扩大访问权限。
 
 | 表 | 近似行数 | 总体积 |
 | :--- | ---: | ---: |
@@ -275,7 +275,7 @@ ComfyUI 版本快照：
 shadow 同步只记录 Redis/Valkey `INFO memory` 与 `DBSIZE` 摘要，不恢复队列、锁、heartbeat 或其它运行态 key。灾备切本地时 Redis 视为运行态重建/人工对账问题，不把 shadow 摘要当作可恢复数据源。
 
 ### MinIO
-MinIO 本地数据目录：`/home/hfy/APP/minio-deploy/data`，迁移前快照总量约 453GB。当前正式新数据写入 R2；本地 MinIO 保留 legacy 历史媒体、旧输入和本地热数据，不应作为新生成结果公开事实源。2026-06-24 起新增 R2 shadow 同步：`user-data-prod-shadow` 保存 R2 `user-data-prod` 的本地增量副本，`user-data-prod-shadow-quarantine/<timestamp>/` 保存云端覆盖或删除导致的旧本地对象，禁止硬删替代 quarantine。2026-06-25 起可启用 `user-data-complete-shadow` 作为完整合并备份桶：每日从本地 `user-data-prod-shadow` 非破坏式 copy，不重复从 R2 拉取；`bot-data` / `comfyui-temp` 只在一次性手动补齐时用 `--ignore-existing` 导入，避免每日任务重复扫描 legacy 大桶。
+MinIO 本地数据目录：`/home/hfy/APP/minio-deploy/data`，迁移前快照总量约 453GB。当前正式新数据写入 R2；本地 MinIO 保留 legacy 历史媒体、旧输入和本地热数据，不应作为新生成结果公开事实源。2026-06-24 起新增可选 R2 shadow 同步：`R2_BUCKET_SYNC_ENABLED=true` 时，`user-data-prod-shadow` 保存 R2 `user-data-prod` 的本地增量副本，`user-data-prod-shadow-quarantine/<timestamp>/` 保存云端覆盖或删除导致的旧本地对象，禁止硬删替代 quarantine；数据库-only timer 可设 `R2_BUCKET_SYNC_ENABLED=false` 跳过该媒体桶镜像。2026-06-25 起可启用 `user-data-complete-shadow` 作为完整合并备份桶：每日从本地 `user-data-prod-shadow` 非破坏式 copy，不重复从 R2 拉取；`bot-data` / `comfyui-temp` 只在一次性手动补齐时用 `--ignore-existing` 导入，避免每日任务重复扫描 legacy 大桶。
 
 | 桶/目录 | 当前体积 | 备注 |
 | :--- | ---: | :--- |

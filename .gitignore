@@ -102,6 +102,7 @@ logs/
 runtime/
 tmp/
 temp/
+local_analytics_platform/data/
 .dbg/
 *.diff
 *.patch

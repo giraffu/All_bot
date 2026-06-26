@@ -6,6 +6,9 @@ services:
     container_name: allbot-local-analytics-platform
     restart: unless-stopped
     network_mode: host
+    volumes:
+      - ../prompts.ini:/app/prompts.ini:ro
+      - ./data:/app/data
     environment:
       LOCAL_ANALYTICS_DATABASE_URL: ${LOCAL_ANALYTICS_DATABASE_URL:?LOCAL_ANALYTICS_DATABASE_URL is required}
       LOCAL_ANALYTICS_HOST: ${LOCAL_ANALYTICS_HOST:-0.0.0.0}

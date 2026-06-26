@@ -37,6 +37,7 @@ async def process_video_task_template(
     mode: str,
     default_prompt_key: str,
     default_prompt_text: str,
+    prompt_override: Optional[str] = None,
     update: Update | None = None,
     image_path: str,
     cleanup: bool = True,
@@ -63,7 +64,9 @@ async def process_video_task_template(
     )
 
     prompts_config = load_prompts()
-    base_prompt = prompts_config.get(default_prompt_key, default_prompt_text)
+    base_prompt = prompt_override or prompts_config.get(
+        default_prompt_key, default_prompt_text
+    )
 
     display_mode_name = resolve_display_mode_name(
         mode,
