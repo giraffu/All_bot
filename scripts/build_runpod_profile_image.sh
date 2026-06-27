@@ -47,7 +47,7 @@ Usage:
   scripts/build_runpod_profile_image.sh [options]
 
 Options:
-  --profile <name>       Profile to build: img2img_lora, wan22_aio_video, i2i_pro, scail2, or ltx_video.
+  --profile <name>       Profile to build: img2img_lora, wan22_aio_video, i2i_pro, scail2, ltx_video, or pornmaster_flux2_edit.
   --image-ref <ref>      Target image ref. Defaults to a local allbot/comfy-runpod-* tag.
   --base-image <ref>     Base image. Defaults per profile; i2i_pro uses yanwk/comfyui-boot:cu128-slim.
   --comfyui-ref <ref>    ComfyUI git ref used when the base image does not include ComfyUI.
@@ -135,6 +135,9 @@ case "$PROFILE" in
     i2i_pro)
         IMAGE_REF="${IMAGE_REF:-allbot/comfy-runpod-i2i-pro:local}"
         ;;
+    pornmaster_flux2_edit)
+        IMAGE_REF="${IMAGE_REF:-allbot/comfy-runpod-pornmaster-flux2-edit:local}"
+        ;;
     scail2)
         IMAGE_REF="${IMAGE_REF:-allbot/comfy-runpod-scail2:local}"
         ;;
@@ -181,7 +184,7 @@ if [ -n "$KJNODES_SOURCE" ]; then
     context_for_build="$cleanup_dir"
 elif [ "$PROFILE" = "scail2" ] || [ "$PROFILE" = "ltx_video" ]; then
     context_for_build="."
-elif [ "$PROFILE" = "wan22_aio_video" ] || [ "$PROFILE" = "i2i_pro" ] || [ "$PROFILE" = "img2img_lora" ]; then
+elif [ "$PROFILE" = "wan22_aio_video" ] || [ "$PROFILE" = "i2i_pro" ] || [ "$PROFILE" = "pornmaster_flux2_edit" ] || [ "$PROFILE" = "img2img_lora" ]; then
     cleanup_dir="$(mktemp -d)"
     trap 'rm -rf "$cleanup_dir"' EXIT
     mkdir -p \
@@ -347,6 +350,32 @@ if find "${comfyui_dir}/models" -type f -name "*.safetensors" -print -quit | gre
   exit 1
 fi
 echo "SCAIL2_CORE_AND_CUSTOM_NODES_PRESENT=true"
+'
+    elif [ "$PROFILE" = "pornmaster_flux2_edit" ]; then
+        docker run --rm --entrypoint bash "$IMAGE_REF" -lc '
+set -euo pipefail
+comfyui_dir="$(cat /opt/allbot-comfyui-dir)"
+test -f "${comfyui_dir}/main.py"
+command -v ffmpeg >/dev/null
+command -v curl >/dev/null
+command -v git >/dev/null
+command -v ssh-keygen >/dev/null
+if ! command -v sshd >/dev/null && [ ! -x /usr/sbin/sshd ]; then
+  echo "sshd must be available for RunPod direct TCP diagnostics" >&2
+  exit 1
+fi
+COMFYUI_DIR="${comfyui_dir}" python3 -c '"'"'from pathlib import Path; import os, sys; root=Path(os.environ["COMFYUI_DIR"]); checks={root/"nodes.py":("UNETLoader","CLIPLoader","VAELoader"),root/"comfy_extras"/"nodes_custom_sampler.py":("SamplerCustomAdvanced",),root/"comfy_extras"/"nodes_edit_model.py":("ReferenceLatent",),root/"comfy_extras"/"nodes_flux.py":("EmptyFlux2LatentImage","Flux2Scheduler")}; missing=[]; [missing.append(f"{path}:{name}") for path,names in checks.items() for name in names if name not in path.read_text(encoding="utf-8")]; sys.exit("missing PornMaster Flux2 edit node sources: "+",".join(missing)) if missing else None'"'"'
+if find "${comfyui_dir}/models" -type f \( \
+  -name "PornMaster_flux2_klein_9b_turbo_fp8_V4.safetensors" -o \
+  -name "pornmasterFlux2Klein_v4TurboFp8.safetensors" -o \
+  -name "qwen_3_8b_fp8mixed.safetensors" -o \
+  -name "full_encoder_small_decoder.safetensors" \
+  \) -print -quit | grep -q .; then
+  echo "PornMaster Flux2 business model files must stay out of the profile image" >&2
+  exit 1
+fi
+echo "COMFYUI_DIR=${comfyui_dir}"
+echo "PORNMASTER_FLUX2_EDIT_CORE_NODES_PRESENT=true"
 '
     else
         docker run --rm --entrypoint bash "$IMAGE_REF" -lc '

@@ -27,6 +27,12 @@ TASK_TYPE_WORKFLOW_FILENAMES = {
     "scail2_action_transfer": "SCAIL-2_Animation_multi-char_audio.api.json",
     "scail2_video_replacement": "SCAIL-2_Replacement_audio.api.json",
     "scail2_face_swap_v2": "SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json",
+    "pornmaster_flux2_single_edit": (
+        "PornMaster_F2K_9B_Turbo_Single-image-editing_Automatic_V1_2026_05_27.api.json"
+    ),
+    "pornmaster_flux2_multi_edit": (
+        "PornMaster_F2K_9B_Turbo_Multiple-images-editing_Automatic_V1_2026_05_27.api.json"
+    ),
 }
 
 

@@ -1,0 +1,18 @@
+[Unit]
+Description=AllBot local analytics refresh after cloud production shadow sync
+After=docker.service network-online.target allbot-cloud-prod-shadow-sync.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=__ALLBOT_USER__
+Group=__ALLBOT_GROUP__
+WorkingDirectory=__ALLBOT_ROOT__
+ExecStart=/usr/bin/env python3 __ALLBOT_ROOT__/scripts/run_local_analytics_shadow_pipeline.py --execute --batch-size 128
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=18h
+PrivateTmp=true
+NoNewPrivileges=true

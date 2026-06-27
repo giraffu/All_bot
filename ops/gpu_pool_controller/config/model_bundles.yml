@@ -61,7 +61,20 @@ bundles:
       model_dir: /home/ubantu/comfyui/models
       discovered_size_gb: 36.11
       import_status: planned
-      notes: Dedicated Flux2/Z-Image model set shared by i2i_pro, t2i-pornmaster-turbo via txt2img_from_i2i_pro.json, and face_swap via face_swap_v2.json.
+    notes: Dedicated Flux2/Z-Image model set shared by i2i_pro, t2i-pornmaster-turbo via txt2img_from_i2i_pro.json, and face_swap via face_swap_v2.json.
+    files: []
+
+  pornmaster_flux2_edit_baseline:
+    version: 2026-06-27
+    profiles:
+      - pornmaster_flux2_edit
+    source:
+      node_id: local-model-downloads
+      comfy_id: local-registry
+      model_dir: /srv/allbot/model-downloads/pornmaster_flux2_image_edit/2026-06-27
+      discovered_size_gb: 17.5
+      import_status: blocked_on_authorized_unet
+      notes: Planned bundle for the PornMaster Flux2 9B Turbo single/multiple automatic image-editing workflows. qwen_3_8b_fp8mixed is reused from i2i_pro_baseline, full_encoder_small_decoder is downloaded locally, and the PornMaster 9B UNET requires an authorized Civitai download or a user-provided local file before the registry manifest can be written.
     files: []
 
   scail2_baseline:

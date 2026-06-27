@@ -1,10 +1,11 @@
 import pytest
+import asyncpg
 
+from local_analytics_platform.app.refresh_prompt_vectors import _is_closed_connection_error
 from local_analytics_platform.app.prompt_mart import PROMPT_NORMALIZATION_VERSION
 from local_analytics_platform.app.prompt_vectors import (
     CREATE_PROMPT_VECTOR_SCHEMA_SQL,
     DEFAULT_VECTOR_MODEL_ID,
-    CandidatePrompt,
     EmbeddedPrompt,
     PromptVectorConfig,
     _build_exact_edges,
@@ -40,6 +41,11 @@ def test_prompt_embedding_is_l2_normalized_float16_bytes():
     restored = embedding_from_bytes(embedding_to_bytes(vector), 2)
     assert restored.dtype.name == "float16"
     assert float((restored.astype("float32") ** 2).sum()) == pytest.approx(1.0, abs=0.001)
+
+
+def test_refresh_prompt_vectors_treats_asyncpg_connection_errors_as_retryable():
+    assert _is_closed_connection_error(asyncpg.ConnectionDoesNotExistError("server closed"))
+    assert _is_closed_connection_error(asyncpg.InterfaceError("connection is closed"))
 
 
 class FakeEmbeddingConn:
@@ -193,3 +199,76 @@ async def test_similarity_clusters_use_duplicate_edges_and_choose_quality_repres
     assert cluster_rows[0][7] == 1
     assert {row[1] for row in member_rows} == {"a" * 32, "b" * 32}
     assert any(row[1] == "a" * 32 and row[4] is True for row in member_rows)
+
+
+class FakeChainedClusterConn:
+    def __init__(self):
+        self.executed = []
+        self.executemany_calls = []
+
+    async def fetch(self, query, *args):
+        self.executed.append((query, args))
+        lower = query.lower()
+        if "from analytics_prompt_similarity_edges" in lower:
+            return [
+                {"task_type": "edit", "source_hash": "a" * 32, "neighbor_hash": "b" * 32, "similarity": 0.95},
+                {"task_type": "edit", "source_hash": "b" * 32, "neighbor_hash": "a" * 32, "similarity": 0.95},
+                {"task_type": "edit", "source_hash": "b" * 32, "neighbor_hash": "c" * 32, "similarity": 0.95},
+                {"task_type": "edit", "source_hash": "c" * 32, "neighbor_hash": "b" * 32, "similarity": 0.95},
+            ]
+        if "select cluster_id" in lower:
+            return []
+        if "from analytics_prompt_slim_candidates" in lower:
+            return [
+                {
+                    "prompt_hash": "a" * 32,
+                    "prompt": "best prompt",
+                    "task_type": "edit",
+                    "quality_score": 30.0,
+                    "uses": 10,
+                    "users": 5,
+                    "last_seen": None,
+                },
+                {
+                    "prompt_hash": "b" * 32,
+                    "prompt": "bridge prompt",
+                    "task_type": "edit",
+                    "quality_score": 20.0,
+                    "uses": 10,
+                    "users": 5,
+                    "last_seen": None,
+                },
+                {
+                    "prompt_hash": "c" * 32,
+                    "prompt": "different prompt on the other side",
+                    "task_type": "edit",
+                    "quality_score": 10.0,
+                    "uses": 10,
+                    "users": 5,
+                    "last_seen": None,
+                },
+            ]
+        raise AssertionError(f"unexpected query: {query}")
+
+    async def execute(self, query, *args):
+        self.executed.append((query, args))
+        return "OK"
+
+    async def executemany(self, query, rows):
+        self.executemany_calls.append((query, rows))
+
+
+@pytest.mark.asyncio
+async def test_similarity_clusters_do_not_merge_chained_duplicate_edges_into_one_family():
+    conn = FakeChainedClusterConn()
+    config = PromptVectorConfig(model_id=DEFAULT_VECTOR_MODEL_ID, duplicate_threshold=0.92)
+
+    status = await refresh_prompt_similarity_clusters(conn, config)
+
+    assert status == {"cluster_count": 1, "member_count": 2}
+    _, cluster_rows = conn.executemany_calls[0]
+    _, member_rows = conn.executemany_calls[1]
+    assert cluster_rows[0][4] == "a" * 32
+    assert cluster_rows[0][6] == 2
+    assert {row[1] for row in member_rows} == {"a" * 32, "b" * 32}
+    assert "c" * 32 not in {row[1] for row in member_rows}

@@ -340,6 +340,65 @@ on conflict (prompt_hash) do update set
 """
 
 
+CREATE_AFFECTED_PROMPT_HASHES_TABLE_SQL = """
+drop table if exists analytics_prompt_refresh_hashes;
+create temporary table analytics_prompt_refresh_hashes (
+    prompt_hash text primary key
+)
+"""
+
+
+INSERT_AFFECTED_PROMPT_HASHES_SQL = """
+insert into analytics_prompt_refresh_hashes (prompt_hash)
+with cursor_state as (
+    select coalesce(
+        (select value::bigint from analytics_prompt_mart_state where key = 'last_history_id'),
+        0
+    ) as last_history_id
+)
+select distinct o.prompt_hash
+from analytics_prompt_occurrence o
+cross join cursor_state
+where o.history_id > cursor_state.last_history_id
+   or o.created_at >= now() - ($1::int * interval '1 day')
+on conflict do nothing
+"""
+
+
+REFRESH_PROMPT_DIM_FOR_AFFECTED_SQL = """
+insert into analytics_prompt_dim (
+    prompt_hash,
+    prompt,
+    char_count,
+    builtin_template_key,
+    first_seen,
+    last_seen,
+    occurrence_count,
+    updated_at
+)
+select
+    prompt_hash,
+    min(prompt) as prompt,
+    max(char_count)::int as char_count,
+    min(builtin_template_key) filter (where builtin_template_key is not null) as builtin_template_key,
+    min(created_at) as first_seen,
+    max(created_at) as last_seen,
+    count(*)::bigint as occurrence_count,
+    now() as updated_at
+from analytics_prompt_occurrence
+where prompt_hash in (select prompt_hash from analytics_prompt_refresh_hashes)
+group by prompt_hash
+on conflict (prompt_hash) do update set
+    prompt = excluded.prompt,
+    char_count = excluded.char_count,
+    builtin_template_key = excluded.builtin_template_key,
+    first_seen = excluded.first_seen,
+    last_seen = excluded.last_seen,
+    occurrence_count = excluded.occurrence_count,
+    updated_at = now()
+"""
+
+
 REBUILD_PROMPT_GROUP_STATS_SQL = """
 truncate table analytics_prompt_group_stats;
 
@@ -680,6 +739,29 @@ from grouped
 """
 
 
+REBUILD_AFFECTED_PROMPT_GROUP_STATS_SQL = REBUILD_PROMPT_GROUP_STATS_SQL.replace(
+    "truncate table analytics_prompt_group_stats;",
+    "delete from analytics_prompt_group_stats "
+    "where prompt_hash in (select prompt_hash from analytics_prompt_refresh_hashes);",
+).replace(
+    "from analytics_prompt_occurrence o\n    left join gallery_by_task gp on gp.task_id = o.task_id",
+    "from analytics_prompt_occurrence o\n"
+    "    join analytics_prompt_refresh_hashes affected on affected.prompt_hash = o.prompt_hash\n"
+    "    left join gallery_by_task gp on gp.task_id = o.task_id",
+)
+
+
+REBUILD_AFFECTED_PROMPT_ROLLUP_STATS_SQL = REBUILD_PROMPT_ROLLUP_STATS_SQL.replace(
+    "truncate table analytics_prompt_rollup_stats;",
+    "delete from analytics_prompt_rollup_stats "
+    "where prompt_hash in (select prompt_hash from analytics_prompt_refresh_hashes);",
+).replace(
+    "join analytics_prompt_occurrence o on o.created_at >= p.since",
+    "join analytics_prompt_occurrence o on o.created_at >= p.since\n"
+    "    join analytics_prompt_refresh_hashes affected on affected.prompt_hash = o.prompt_hash",
+)
+
+
 UPDATE_PROMPT_MART_STATE_SQL = """
 insert into analytics_prompt_mart_state (key, value, updated_at)
 values
@@ -734,22 +816,36 @@ async def refresh_prompt_mart(
         full,
         recent_days,
     )
-    await conn.execute(REFRESH_PROMPT_DIM_SQL)
-    await conn.execute(REBUILD_PROMPT_GROUP_STATS_SQL)
-    await conn.execute(REBUILD_PROMPT_ROLLUP_STATS_SQL)
+    affected_prompt_hash_count = None
+    if full:
+        await conn.execute(REFRESH_PROMPT_DIM_SQL)
+        await conn.execute(REBUILD_PROMPT_GROUP_STATS_SQL)
+        await conn.execute(REBUILD_PROMPT_ROLLUP_STATS_SQL)
+    else:
+        await conn.execute(CREATE_AFFECTED_PROMPT_HASHES_TABLE_SQL)
+        await conn.execute(INSERT_AFFECTED_PROMPT_HASHES_SQL, recent_days)
+        affected_prompt_hash_count = await conn.fetchval(
+            "select count(*)::bigint from analytics_prompt_refresh_hashes"
+        )
+        if affected_prompt_hash_count:
+            await conn.execute(REFRESH_PROMPT_DIM_FOR_AFFECTED_SQL)
+            await conn.execute(REBUILD_AFFECTED_PROMPT_GROUP_STATS_SQL)
+            await conn.execute(REBUILD_AFFECTED_PROMPT_ROLLUP_STATS_SQL)
     await conn.execute(UPDATE_PROMPT_MART_STATE_SQL, full, PROMPT_NORMALIZATION_VERSION)
-    for table in (
-        "analytics_prompt_occurrence",
-        "analytics_prompt_dim",
-        "analytics_prompt_group_stats",
-        "analytics_prompt_rollup_stats",
-    ):
-        await conn.execute(f"analyze {table}")
+    if full or affected_prompt_hash_count:
+        for table in (
+            "analytics_prompt_occurrence",
+            "analytics_prompt_dim",
+            "analytics_prompt_group_stats",
+            "analytics_prompt_rollup_stats",
+        ):
+            await conn.execute(f"analyze {table}")
 
     status = await conn.fetchrow(PROMPT_MART_STATUS_SQL)
     return {
         **dict(status or {}),
         "occurrence_upsert_result": occurrence_result,
+        "affected_prompt_hash_count": affected_prompt_hash_count,
         "full": full,
         "recent_days": recent_days,
     }

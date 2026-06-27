@@ -2,7 +2,6 @@ import argparse
 import hashlib
 import json
 import subprocess
-from urllib.parse import urlparse
 
 import pytest
 
@@ -92,6 +91,60 @@ def test_dry_run_plans_commands_without_creating_backup_directory(tmp_path, caps
     assert "rclone delete" not in commands
     assert "--delete-excluded" not in commands
     assert not config.backup_dir.exists()
+
+
+def test_dry_run_preserves_local_analytics_tables_before_shadow_switch(tmp_path, capsys):
+    config = build_config(tmp_path)
+
+    runner = sync.run_shadow_sync(config, execute=False)
+
+    commands = "\n".join(runner.commands)
+    assert "local_analytics_tables.txt" in commands
+    assert "local_analytics.dump" in commands
+    assert "analytics_prompt_*" in commands
+    assert "analytics_prompt_%" in commands
+    assert "pg_dump --dbname=\"$SHADOW_DB\"" in commands
+    assert "pg_restore --no-owner --no-privileges --dbname=\"$SHADOW_NEXT_DB\"" in commands
+    assert commands.index("pg_restore") < commands.index("ALTER DATABASE")
+
+
+def test_local_analytics_preservation_can_be_disabled(tmp_path, capsys):
+    config = build_config(
+        tmp_path,
+        LOCAL_ANALYTICS_PRESERVE_ON_SHADOW_SYNC="false",
+    )
+
+    runner = sync.run_shadow_sync(config, execute=False)
+
+    commands = "\n".join(runner.commands)
+    assert "local_analytics.dump" not in commands
+    assert "analytics_prompt_%" not in commands
+
+
+def test_manifest_records_local_analytics_preservation(tmp_path):
+    config = build_config(tmp_path)
+    config.backup_dir.mkdir(parents=True)
+    (config.backup_dir / "alembic_version.txt").write_text("abc123\n", encoding="utf-8")
+    (config.backup_dir / "table_counts.tsv").write_text("users\t10\n", encoding="utf-8")
+    (config.backup_dir / "local_analytics_tables.txt").write_text(
+        "analytics_prompt_embeddings\nanalytics_prompt_slim_candidates\n",
+        encoding="utf-8",
+    )
+
+    sync.write_manifest(config, dump_sha256="fake-sha")
+
+    manifest = json.loads(config.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["local_analytics_preservation"] == {
+        "enabled": True,
+        "source_database": "bot_db_prod_shadow",
+        "target_database": "bot_db_prod_shadow_next",
+        "preserved": True,
+        "table_count": 2,
+        "tables": [
+            "analytics_prompt_embeddings",
+            "analytics_prompt_slim_candidates",
+        ],
+    }
 
 
 def test_initial_r2_shadow_seed_uses_copy_without_quarantine_sync(tmp_path, capsys):
@@ -292,7 +345,7 @@ def test_execute_runs_tool_container_commands_and_writes_manifest(tmp_path, monk
     def fake_run(cmd, **kwargs):
         calls.append((cmd, kwargs))
         rendered = " ".join(cmd)
-        if "pg_dump" in rendered:
+        if "pg_dump" in rendered and "cloud_prod.dump" in rendered:
             assert "CLOUD_DATABASE_URL" not in kwargs["env"]
             assert kwargs["env"]["PGDATABASE"] == "bot_db_prod"
             config.dump_path.write_bytes(b"fake cloud prod dump")
@@ -446,7 +499,7 @@ def test_execute_can_dump_cloud_db_through_ssh_tunnel(tmp_path, monkeypatch):
     def fake_run(cmd, **kwargs):
         calls.append((cmd, kwargs))
         rendered = " ".join(cmd)
-        if "pg_dump" in rendered:
+        if "pg_dump" in rendered and "cloud_prod.dump" in rendered:
             assert "CLOUD_DATABASE_URL" not in kwargs["env"]
             assert kwargs["env"]["PGHOST"] == "127.0.0.1"
             assert kwargs["env"]["PGPORT"] == "15432"

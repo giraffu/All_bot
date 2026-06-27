@@ -13,6 +13,31 @@
 - Worker 启动时会基于 `workers/comfy_agent/workflows/mappings.json` 校验映射节点与输入名；Central API 只负责参数网关和队列入队，不再用 workflow 文件做启动门禁。
 - 重导 workflow 后必须复核硬编码节点 ID、`mappings.json` 节点输入名、`TASK_TYPE_WORKFLOW_FILENAMES` 绑定和 Worker `SUPPORTED_TASK_TYPES`，避免 Worker 校验通过但执行面读到旧文件。
 - 共享 workflow 的 alias 必须同轮维护：`image_to_video`、`video_insert`、`video_edit` 都绑定 `Wan22AioV82.json`，并必须同时存在于 `mappings.json` 与 `TASK_SPECIFIC_PATCHERS`，且复用 `patch_image_to_video_workflow`。生产 worker 的 workflow/mapping 目录可能是 bind mount，而 patcher 可能随镜像烘焙；只更新挂载目录不重建对应 agent，会造成半更新并触发 ComfyUI 400。
+- LAN AIO profile 镜像不得 baked `.safetensors` 业务模型；新增大模型 workflow 时先落 API workflow、`mappings.json`、`TASK_TYPE_WORKFLOW_FILENAMES`、`remote_workers/` 同步和本地 model registry 导入脚本，再上传 `allbot-model-cache/<profile>/<version>/manifest.json`。
+
+---
+
+## 一-A、PornMaster Flux2 图片编辑自动工作流
+
+2026-06-27 新增两份 API-format workflow：
+
+| task type | API workflow | 输入映射 |
+| :--- | :--- | :--- |
+| `pornmaster_flux2_single_edit` | `PornMaster_F2K_9B_Turbo_Single-image-editing_Automatic_V1_2026_05_27.api.json` | `image -> LoadImage 15.image`、`prompt -> CLIPTextEncode 185.text`、`seed -> RandomNoise 28.noise_seed` |
+| `pornmaster_flux2_multi_edit` | `PornMaster_F2K_9B_Turbo_Multiple-images-editing_Automatic_V1_2026_05_27.api.json` | `image -> LoadImage 17.image`、`image2 -> LoadImage 29.image`、`prompt -> CLIPTextEncode 8.text`、`seed -> RandomNoise 43.noise_seed` |
+
+这两份 workflow 已移除空的 `Lora Loader (LoraManager)` 节点，运行依赖收敛为 ComfyUI Flux2 core 节点：`UNETLoader`、`CLIPLoader`、`VAELoader`、`ReferenceLatent`、`EmptyFlux2LatentImage`、`Flux2Scheduler`、`SamplerCustomAdvanced` 等。对应文件必须同时存在于 `workers/comfy_agent/workflows/` 与 `remote_workers/comfy_agent/workflows/`，并同步 `src/workflow_mapping_validation.py` 与 `remote_workers/src/workflow_mapping_validation.py`。
+
+模型 bundle 口径为 `pornmaster_flux2_edit_baseline/2026-06-27`，LAN cache prefix 为 `pornmaster_flux2_edit/2026-06-27`。需要的模型相对路径为：
+- `diffusion_models/flux2/PornMaster_flux2_klein_9b_turbo_fp8_V4.safetensors`
+- `text_encoders/flux2/qwen_3_8b_fp8mixed.safetensors`
+- `vae/flux2/full_encoder_small_decoder.safetensors`
+
+Qwen text encoder 可复用 `i2i_pro_baseline/2026-06-14-test` 的本地 registry blob；VAE 可下载到 `/srv/allbot/model-downloads/pornmaster_flux2_image_edit/2026-06-27/vae/full_encoder_small_decoder.safetensors` 后校验 sha256；PornMaster 9B UNET 需要授权 Civitai 下载或用户提供本地文件。导入入口是 `scripts/import_pornmaster_flux2_edit_models.py --execute`，默认读取 ignored `.env.local` 中的 `CIVITAI_API_TOKEN`；真实 token 只能放 ignored env 文件，不得写入文档、代码或 git。缺少 UNET 时脚本必须返回阻断状态并拒绝写半截 manifest。完整导入后再执行 `scripts/upload_pornmaster_flux2_edit_models_to_lan_cache.sh --execute`。
+
+当前默认运行模型固定为 `V4_turbo_fp8`，因为两份 workflow 与 RunningHub 资源名都指向 `PornMaster_flux2_klein_9b_turbo_fp8_V4.safetensors`，且 fp8 更适合标准 24GB RTX 4090 的稳定推理。Civitai 同页还有 `V4_turbo_bf16`，发布时间晚于 fp8、权重约 17.7GB，理论上量化损失更少，但会显著增加显存和加载压力；只有在 48GB 4090 或明确接受 CPU/offload 降速时，才建议另建 bf16 canary profile 测画质，不直接替换当前 fp8 默认 profile。
+
+LAN AIO 镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_edit/Dockerfile`，专用构建 wrapper 为 `scripts/build_pornmaster_flux2_edit_lan_aio_image.sh --push`。该镜像基于 i2i_pro LAN AIO 镜像，只 smoke ComfyUI core 节点与基础诊断依赖，模型仍由启动时的 LAN model cache manifest 同步，不得 baked 到镜像层。
 
 ---
 

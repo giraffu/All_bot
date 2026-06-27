@@ -115,6 +115,28 @@ profiles:
     model_prefix: i2i_pro/2026-06-14-test
     model_manifest_key: i2i_pro/2026-06-14-test/manifest.json
 
+  pornmaster_flux2_edit:
+    runtime_profile: pornmaster_flux2_edit
+    task_types:
+      - pornmaster_flux2_single_edit
+      - pornmaster_flux2_multi_edit
+    model_bundles:
+      - pornmaster_flux2_edit_baseline
+    required_nodes:
+      - UNETLoader
+      - CLIPLoader
+      - VAELoader
+      - ReferenceLatent
+      - EmptyFlux2LatentImage
+      - Flux2Scheduler
+      - SamplerCustomAdvanced
+    workflow: workers/comfy_agent/workflows/PornMaster_F2K_9B_Turbo_Single-image-editing_Automatic_V1_2026_05_27.api.json
+    min_vram_gb: 48
+    image_ref: 192.168.1.115:5000/allbot/comfy-runpod-pornmaster-flux2-edit:20260627-pornmaster-flux2-edit-cu128-core1
+    all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-pornmaster-flux2-edit:20260627-pornmaster-flux2-edit-cu128-core1
+    model_prefix: pornmaster_flux2_edit/2026-06-27
+    model_manifest_key: pornmaster_flux2_edit/2026-06-27/manifest.json
+
   scail2:
     runtime_profile: scail2
     task_types:

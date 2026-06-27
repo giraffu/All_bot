@@ -14,7 +14,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-import asyncpg
 import numpy as np
 
 from .prompt_mart import PROMPT_NORMALIZATION_VERSION
@@ -707,29 +706,6 @@ async def refresh_prompt_similarity_edges(conn: Any, config: PromptVectorConfig)
     return {"edge_count": edge_count, "task_edge_counts": task_counts}
 
 
-class UnionFind:
-    def __init__(self) -> None:
-        self.parent: dict[str, str] = {}
-
-    def find(self, item: str) -> str:
-        self.parent.setdefault(item, item)
-        if self.parent[item] != item:
-            self.parent[item] = self.find(self.parent[item])
-        return self.parent[item]
-
-    def union(self, left: str, right: str) -> None:
-        left_root = self.find(left)
-        right_root = self.find(right)
-        if left_root != right_root:
-            self.parent[right_root] = left_root
-
-    def groups(self) -> list[list[str]]:
-        buckets: dict[str, list[str]] = {}
-        for item in list(self.parent):
-            buckets.setdefault(self.find(item), []).append(item)
-        return list(buckets.values())
-
-
 async def refresh_prompt_similarity_clusters(conn: Any, config: PromptVectorConfig) -> dict[str, Any]:
     edge_rows = await conn.fetch(
         """
@@ -746,7 +722,7 @@ async def refresh_prompt_similarity_clusters(conn: Any, config: PromptVectorConf
         config.duplicate_threshold,
         config.task_type,
     )
-    task_union: dict[str, UnionFind] = {}
+    task_adjacency: dict[str, dict[str, dict[str, float]]] = {}
     edge_similarity: dict[tuple[str, str], float] = {}
     hashes: set[str] = set()
     for row in edge_rows:
@@ -754,7 +730,18 @@ async def refresh_prompt_similarity_clusters(conn: Any, config: PromptVectorConf
         source_hash = row["source_hash"]
         neighbor_hash = row["neighbor_hash"]
         similarity = float(row["similarity"] or 0)
-        task_union.setdefault(task_type, UnionFind()).union(source_hash, neighbor_hash)
+        if similarity < config.duplicate_threshold:
+            continue
+        task_adjacency.setdefault(task_type, {}).setdefault(source_hash, {})
+        task_adjacency.setdefault(task_type, {}).setdefault(neighbor_hash, {})
+        task_adjacency[task_type][source_hash][neighbor_hash] = max(
+            similarity,
+            task_adjacency[task_type][source_hash].get(neighbor_hash, 0),
+        )
+        task_adjacency[task_type][neighbor_hash][source_hash] = max(
+            similarity,
+            task_adjacency[task_type][neighbor_hash].get(source_hash, 0),
+        )
         edge_similarity[tuple(sorted((source_hash, neighbor_hash)))] = max(
             similarity,
             edge_similarity.get(tuple(sorted((source_hash, neighbor_hash))), 0),
@@ -798,14 +785,8 @@ async def refresh_prompt_similarity_clusters(conn: Any, config: PromptVectorConf
         stats[item["prompt_hash"]] = item
     cluster_rows = []
     member_rows = []
-    for task_type, union in task_union.items():
-        for members in union.groups():
-            if len(members) < 2:
-                continue
-            members = [member for member in members if member in stats]
-            if len(members) < 2:
-                continue
-            representative = _choose_representative(members, stats)
+    for task_type, adjacency in task_adjacency.items():
+        for representative, members in _build_guarded_similarity_groups(adjacency, stats, config.duplicate_threshold):
             representative_row = stats[representative]
             similarities = [
                 edge_similarity.get(tuple(sorted((left, right))), 1.0)
@@ -916,6 +897,49 @@ async def refresh_prompt_similarity_clusters(conn: Any, config: PromptVectorConf
             member_rows,
         )
     return {"cluster_count": len(cluster_rows), "member_count": len(member_rows)}
+
+
+def _build_guarded_similarity_groups(
+    adjacency: dict[str, dict[str, float]],
+    stats: dict[str, Any],
+    threshold: float,
+) -> list[tuple[str, list[str]]]:
+    candidates = [prompt_hash for prompt_hash in adjacency if prompt_hash in stats]
+    ordered = sorted(candidates, key=lambda prompt_hash: (*_representative_score(stats[prompt_hash]), prompt_hash), reverse=True)
+    unassigned = set(ordered)
+    groups: list[tuple[str, list[str]]] = []
+
+    for representative in ordered:
+        if representative not in unassigned:
+            continue
+
+        members = [representative]
+        neighbors = [
+            neighbor
+            for neighbor, similarity in adjacency.get(representative, {}).items()
+            if neighbor in unassigned and neighbor in stats and similarity >= threshold
+        ]
+        neighbors.sort(
+            key=lambda neighbor: (
+                adjacency[representative].get(neighbor, 0),
+                *_representative_score(stats[neighbor]),
+                neighbor,
+            ),
+            reverse=True,
+        )
+
+        for neighbor in neighbors:
+            if all(adjacency.get(neighbor, {}).get(member, 0) >= threshold for member in members):
+                members.append(neighbor)
+
+        unassigned.discard(representative)
+        if len(members) < 2:
+            continue
+        for member in members[1:]:
+            unassigned.discard(member)
+        groups.append((representative, members))
+
+    return groups
 
 
 async def _delete_clusters(conn: Any, config: PromptVectorConfig) -> None:

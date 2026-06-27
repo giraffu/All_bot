@@ -147,6 +147,24 @@
         "negative_prompt": "7",
         "negative_prompt_input": "text"
     },
+    "pornmaster_flux2_single_edit": {
+        "image": "15",
+        "image_input": "image",
+        "prompt": "185",
+        "prompt_input": "text",
+        "seed": "28",
+        "seed_input": "noise_seed"
+    },
+    "pornmaster_flux2_multi_edit": {
+        "image": "17",
+        "image_input": "image",
+        "image2": "29",
+        "image2_input": "image",
+        "prompt": "8",
+        "prompt_input": "text",
+        "seed": "43",
+        "seed_input": "noise_seed"
+    },
     "img2img_lora": {
         "image": "8",
         "image2": "20",

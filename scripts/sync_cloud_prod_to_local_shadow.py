@@ -32,6 +32,10 @@ SAFE_DB_NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
 POSTGRES_IDENTIFIER_MAX_LENGTH = 63
 PREVIOUS_DB_HASH_CHARS = 10
 KEY_TABLES = ("users", "history", "orders", "user_logs", "worker_logs")
+LOCAL_ANALYTICS_TABLE_LIKE_PATTERN = "analytics_prompt_%"
+LOCAL_ANALYTICS_PG_DUMP_PATTERN = "analytics_prompt_*"
+LOCAL_ANALYTICS_TABLE_LIST_FILE = "local_analytics_tables.txt"
+LOCAL_ANALYTICS_DUMP_FILE = "local_analytics.dump"
 
 
 class ShadowSyncError(RuntimeError):
@@ -80,6 +84,7 @@ class ShadowSyncConfig:
     r2_http_proxy: str | None = None
     r2_https_proxy: str | None = None
     r2_no_proxy: str | None = None
+    local_analytics_preserve_on_shadow_sync: bool = True
 
     @property
     def backup_dir(self) -> Path:
@@ -362,6 +367,11 @@ def build_config(args: argparse.Namespace) -> ShadowSyncConfig:
         r2_http_proxy=optional(values, "R2_SYNC_HTTP_PROXY"),
         r2_https_proxy=optional(values, "R2_SYNC_HTTPS_PROXY"),
         r2_no_proxy=optional(values, "R2_SYNC_NO_PROXY"),
+        local_analytics_preserve_on_shadow_sync=bool_value(
+            values,
+            "LOCAL_ANALYTICS_PRESERVE_ON_SHADOW_SYNC",
+            True,
+        ),
     )
 
 
@@ -1068,6 +1078,79 @@ def run_db_validation(config: ShadowSyncConfig, runner: CommandRunner) -> None:
     )
 
 
+def run_local_analytics_table_preservation(
+    config: ShadowSyncConfig,
+    runner: CommandRunner,
+) -> None:
+    if not config.local_analytics_preserve_on_shadow_sync:
+        print("Local analytics table preservation skipped: LOCAL_ANALYTICS_PRESERVE_ON_SHADOW_SYNC=false")
+        return
+
+    env = local_postgres_env(config)
+    table_list_sql = (
+        "select tablename from pg_tables "
+        "where schemaname = 'public' "
+        f"and tablename like '{LOCAL_ANALYTICS_TABLE_LIKE_PATTERN}' "
+        "order by tablename"
+    )
+    script = "\n".join(
+        [
+            "set -eu",
+            "db_exists() {",
+            '  psql --dbname="$LOCAL_MAINTENANCE_DB" -At -c "SELECT 1 FROM pg_database WHERE datname = \'$1\'" | grep -qx 1',
+            "}",
+            'if ! db_exists "$SHADOW_DB"; then',
+            f"  : > /backup/{LOCAL_ANALYTICS_TABLE_LIST_FILE}",
+            '  echo "Local analytics table preservation skipped: source shadow database is missing"',
+            "  exit 0",
+            "fi",
+            'psql --dbname="$SHADOW_DB" -v ON_ERROR_STOP=1 -At '
+            f"-c {shlex.quote(table_list_sql)} "
+            f"> /backup/{LOCAL_ANALYTICS_TABLE_LIST_FILE}",
+            f"if [ ! -s /backup/{LOCAL_ANALYTICS_TABLE_LIST_FILE} ]; then",
+            '  echo "Local analytics table preservation skipped: no analytics_prompt tables found"',
+            "  exit 0",
+            "fi",
+            f"rm -f /backup/{LOCAL_ANALYTICS_DUMP_FILE}",
+            "pg_dump "
+            '--dbname="$SHADOW_DB" '
+            "--format=custom "
+            "--schema=public "
+            f"--table=public.{LOCAL_ANALYTICS_PG_DUMP_PATTERN} "
+            f"--file=/backup/{LOCAL_ANALYTICS_DUMP_FILE}",
+            'psql --dbname="$SHADOW_NEXT_DB" -v ON_ERROR_STOP=1 <<\'SQL\'',
+            "do $$",
+            "declare row record;",
+            "begin",
+            "  for row in",
+            "    select schemaname, tablename",
+            "    from pg_tables",
+            "    where schemaname = 'public'",
+            f"      and tablename like '{LOCAL_ANALYTICS_TABLE_LIKE_PATTERN}'",
+            "  loop",
+            "    execute format('drop table if exists %I.%I cascade', row.schemaname, row.tablename);",
+            "  end loop;",
+            "end $$;",
+            "SQL",
+            "pg_restore "
+            "--no-owner "
+            "--no-privileges "
+            '--dbname="$SHADOW_NEXT_DB" '
+            f"/backup/{LOCAL_ANALYTICS_DUMP_FILE}",
+            'echo "Local analytics tables preserved into $SHADOW_NEXT_DB"',
+        ]
+    )
+    runner.run(
+        docker_cmd(
+            config.postgres_image,
+            script,
+            backup_dir=config.backup_dir,
+            env_keys=tuple(env),
+        ),
+        env=env,
+    )
+
+
 def run_db_atomic_switch(config: ShadowSyncConfig, runner: CommandRunner) -> None:
     env = local_postgres_env(config)
     terminate_sql = (
@@ -1260,6 +1343,24 @@ def read_table_counts(path: Path) -> dict[str, int]:
     return counts
 
 
+def read_lines(path: Path) -> list[str]:
+    if not path.exists():
+        return []
+    return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def local_analytics_preservation_manifest(config: ShadowSyncConfig) -> dict[str, object]:
+    tables = read_lines(config.backup_dir / LOCAL_ANALYTICS_TABLE_LIST_FILE)
+    return {
+        "enabled": config.local_analytics_preserve_on_shadow_sync,
+        "source_database": config.shadow_database_name,
+        "target_database": config.next_database_name,
+        "preserved": bool(tables),
+        "table_count": len(tables),
+        "tables": tables,
+    }
+
+
 def write_manifest(config: ShadowSyncConfig, *, dump_sha256: str) -> None:
     manifest = {
         "timestamp": config.timestamp,
@@ -1304,6 +1405,7 @@ def write_manifest(config: ShadowSyncConfig, *, dump_sha256: str) -> None:
             else None
         ),
         "table_counts": read_table_counts(config.backup_dir / "table_counts.tsv"),
+        "local_analytics_preservation": local_analytics_preservation_manifest(config),
         "retention_days": config.retention_days,
         "redis_audit": {
             "app": bool(config.cloud_redis_url),
@@ -1390,6 +1492,9 @@ def log_preflight(config: ShadowSyncConfig, *, execute: bool) -> None:
                 ),
                 "complete_media_import_legacy": config.complete_media_import_legacy,
                 "complete_media_legacy_buckets": list(config.complete_media_legacy_buckets),
+                "local_analytics_preserve_on_shadow_sync": (
+                    config.local_analytics_preserve_on_shadow_sync
+                ),
                 "backup_parent_free_gib": round(free_bytes / 1024 / 1024 / 1024, 2),
             },
             ensure_ascii=False,
@@ -1412,6 +1517,7 @@ def run_shadow_sync(config: ShadowSyncConfig, *, execute: bool) -> CommandRunner
 
         run_db_restore_to_next(config, runner)
         run_db_validation(config, runner)
+        run_local_analytics_table_preservation(config, runner)
         run_db_atomic_switch(config, runner)
         run_r2_sync(config, runner)
         run_complete_media_sync(config, runner)

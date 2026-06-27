@@ -14,7 +14,7 @@
 | Core Isolation | `rg` 轻量扫描 `src/core` 未发现 Telegram `Update` 或 FastAPI `Request/APIRouter` 等平台对象 import |
 | 云测试入口 | 日常维护式更新首选 `scripts/update_cloud_test_with_maintenance.sh --execute`；远端控制面重建子步骤为 `scripts/safe_deploy_cloud_test.sh` |
 | 云正式入口 | 正式发布需明确确认；控制面入口为 `scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod` 或 `scripts/safe_deploy_cloud_prod.sh` 子步骤；QQCC 正式 Bot 单独更新入口为 `scripts/update_cloud_prod_qqcc_bot.sh --execute --confirm-prod --confirm-single-polling`，用户明确要求 QQCC 单服务更新即可作为当次单 polling 操作确认 |
-| 本地云正式 shadow 同步 | `scripts/sync_cloud_prod_to_local_shadow.py` 默认 dry-run，`--execute` 才把云正式 PostgreSQL 恢复为本地 `bot_db_prod_shadow`；数据库获取主路径为 `CLOUD_PROD_DB_DUMP_MODE=remote_r2`，由 `allbot-do-sgp1-control` 在云机 dump 后临时上传 R2 `user-data-prod/__shadow-transfer/<timestamp>`，本地经 HTTPS/rclone 下载校验后 restore，避免依赖家宽/VPN 出口 IP 作为托管 DB trusted source；`R2_BUCKET_SYNC_ENABLED=true` 时才把 R2 `user-data-prod` 增量同步到 MinIO `user-data-prod-shadow` 并用 quarantine 保留云端覆盖/删除的旧对象，设为 `false` 时每日任务只保留数据库 dump/restore 与 Redis 摘要；该开关不影响 `remote_r2` 的 `__shadow-transfer` 临时 dump 传输；R2 传输默认 `20M` 带宽上限、`transfers=8`、`checkers=16`；首次 seed 空 shadow 可手动 `--seed-r2-shadow-with-copy` 走 `copy --no-traverse`；`COMPLETE_MEDIA_SYNC_ENABLED=true` 时每日从本地 R2 shadow 非破坏式 copy 到 `user-data-complete-shadow`，数据库-only timer 应同时设为 `false`；legacy `bot-data`/`comfyui-temp` 只在手动 `--include-legacy-media-import` 首次/补漏时导入；脚本持有 `.shadow-sync.lock` 防并发；`CLOUD_PROD_DB_TUNNEL_SSH_HOST=allbot-do-sgp1-control` 保留给 Redis/Valkey 摘要和旧 fallback；systemd timer 默认每日 Asia/Shanghai 05:00 |
+| 本地云正式 shadow 同步 | `scripts/sync_cloud_prod_to_local_shadow.py` 默认 dry-run，`--execute` 才把云正式 PostgreSQL 恢复为本地 `bot_db_prod_shadow`；数据库获取主路径为 `CLOUD_PROD_DB_DUMP_MODE=remote_r2`，由 `allbot-do-sgp1-control` 在云机 dump 后临时上传 R2 `user-data-prod/__shadow-transfer/<timestamp>`，本地经 HTTPS/rclone 下载校验后 restore，避免依赖家宽/VPN 出口 IP 作为托管 DB trusted source；恢复 `_next` 后、切换 shadow 前默认用 `LOCAL_ANALYTICS_PRESERVE_ON_SHADOW_SYNC=true` 保留旧 shadow 中 `analytics_prompt_*` 本地分析表；`R2_BUCKET_SYNC_ENABLED=true` 时才把 R2 `user-data-prod` 增量同步到 MinIO `user-data-prod-shadow` 并用 quarantine 保留云端覆盖/删除的旧对象；`COMPLETE_MEDIA_SYNC_ENABLED=true` 时每日从本地 R2 shadow 非破坏式 copy 到 `user-data-complete-shadow`；legacy `bot-data`/`comfyui-temp` 只在手动 `--include-legacy-media-import` 首次/补漏时导入；脚本持有 `.shadow-sync.lock` 防并发；本地分析刷新入口为 `scripts/run_local_analytics_shadow_pipeline.py` 与 `allbot-local-analytics-refresh.timer`，默认每日 Asia/Shanghai 05:45；若 `.refresh_prompt_vectors.lock` 显示上一轮向量刷新仍在运行则整轮跳过，否则按 affected `prompt_hash` 增量刷新 Mart 并续跑瘦身/向量链路，05:00 切库断线后向量阶段重连并断点续跑 |
 | 旧本地脚本 | `safe_deploy.sh` 只用于云正式整体故障时的本地正式灾备；`safe_deploy_test.sh` 只作历史取证 |
 | 归档材料 | `docs/archive/` 与 `logs/` 只作历史证据或排障报告，不作为当前 SOP |
 
@@ -38,8 +38,8 @@
 | `docs/子模块_生成任务全链路_task_full_chain.md` | `src/web_api/services/*task*`、`backend/app`、`workers/comfy_agent` | 已核对 | 主链路仍符合现状；继续作为 `allbot-task-engine` 的长链路与排障事实源 |
 | `docs/子模块_中控API与节点通信_central_api.md` | `backend/app/main.py`、`backend/app/queue_manager.py`、worker relay | 已核对 | Central / worker protocol 口径有效 |
 | `docs/子模块_任务黄金路径回归清单_task_golden_path.md` | `tests/backend`、`tests/core`、`tests/web_api`、worker tests | 已核对 | 回归分组仍可用 |
-| `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` | `ops/gpu_pool_controller`、Dashboard RunPod 服务、RunPod scripts | 已修正 | 已包含 Dashboard autoscaler 预计清空时间模型、profile 级自动管理暂停、RunPod 故障/暂停自愈、bootstrap timeout 换机清理与 RunPod/LAN AIO 当前边界 |
-| `docs/子模块_附加模型配置指南_comfy_models.md` | `workers/comfy_agent/workflows`、`remote_workers`、workflow patcher | 已核对 | workflow 事实源和 SCAIL-2/LTX 口径有效；继续作为 `allbot-comfy-models` 的节点级细节事实源 |
+| `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` | `ops/gpu_pool_controller`、Dashboard RunPod 服务、RunPod scripts、PornMaster Flux2 edit profile/scripts | 已修正 | 已包含 Dashboard autoscaler 预计清空时间模型、profile 级自动管理暂停、RunPod 故障/暂停自愈、bootstrap timeout 换机清理、RunPod/LAN AIO 当前边界，并记录 `pornmaster_flux2_edit` 镜像/模型 manifest、ignored token env 与 fp8/bf16 运行口径 |
+| `docs/子模块_附加模型配置指南_comfy_models.md` | `workers/comfy_agent/workflows`、`remote_workers`、workflow patcher、PornMaster Flux2 edit workflow/API 映射 | 已修正 | workflow 事实源和 SCAIL-2/LTX 口径有效；新增 PornMaster Flux2 single/multiple edit API workflow、模型 bundle、LAN cache、Civitai token 安全入口、fp8 默认与 bf16 canary 口径；继续作为 `allbot-comfy-models` 的节点级细节事实源 |
 | `docs/compat_seam_exit_table.md` | compat 文件现状、`rg` 引用 | 已核对 | 作为 compat 清理挂账表保留 |
 | `docs/双入口重复能力_inventory.md` | `backend/app`、`src/web_api` | 已核对 | 双入口分层描述有效 |
 | `docs/入口职责矩阵_entry_responsibility_matrix.md` | Web/Central/Dashboard/Payment/Bot entrypoints | 已核对 | 入口职责有效 |
@@ -64,7 +64,7 @@
 | `docs/子模块_计费与支付_billing_payment.md` | `src/core/billing_core*`、`src/payment_api_server.py`、affiliate migrations | 已核对 | 支付履约与 affiliate 账本口径有效 |
 | `docs/子模块_社区与存储_gallery_storage.md` | `src/core/gallery*`、`src/web_api/services/*gallery*`、R2 scripts | 已核对 | R2/legacy MinIO 退出口径有效 |
 | `docs/子模块_后台监控与清理_dashboard_monitoring.md` | `dashboard/backend`、`dashboard/frontend`、RunPod admin services | 已核对 | Dashboard 监控和清理边界有效 |
-| `docs/子模块_本地数据分析平台_local_analytics_platform.md` | `local_analytics_platform`、`bot_db_prod_shadow`、本地 compose | 已更新 | 记录独立本地分析平台入口、只读 shadow 数据边界、提示词瘦身、向量相似审核、媒体引用核验与不挂载现有 Dashboard 的运行口径 |
+| `docs/子模块_本地数据分析平台_local_analytics_platform.md` | `local_analytics_platform`、`scripts/run_local_analytics_shadow_pipeline.py`、`bot_db_prod_shadow`、本地 compose | 已更新 | 记录独立本地分析平台入口、只读 shadow 数据边界、每日 shadow 后保留 `analytics_prompt_*`、05:45 自动链路的 shadow/vector 双锁、Mart 增量刷新、瘦身与向量断点续跑链路、提示词瘦身、向量相似审核、相似族从 duplicate 边传递闭包改为代表点和族内两两阈值守卫、媒体引用核验与不挂载现有 Dashboard 的运行口径 |
 | `docs/business/00_INDEX_业务板块分类与规范总览.md` | business docs | 已核对 | 业务导航有效 |
 | `docs/business/00_DICT_全局业务数据字典.md` | models、domain config、business docs | 已核对 | 数据字典有效 |
 | `docs/business/01_BIZ_AI创作与生成板块.md` | task type registry、FSM、Web task routes | 已核对 | 生成业务描述有效 |
@@ -81,13 +81,13 @@
 | `docs/SAFE_DEPLOY_GUIDE.md` | deploy scripts、cloud compose | 已修正 | 云测试主入口改为维护式更新脚本，`safe_deploy_cloud_test.sh` 标为子步骤 |
 | `docs/子模块_运维指南与容器管理_ops_deployment.md` | deploy scripts、compose、ops Skill | 已修正 | 补充正式 QQCC Bot 单服务更新入口；运维总口径有效 |
 | `docs/子模块_云测试控制面部署_cloud_test_control_plane.md` | `deploy/docker-compose-cloud-test.yml`、`scripts/update_cloud_test_with_maintenance.sh` | 已核对 | 云测试 SOP 以维护式更新为主，仍有效 |
-| `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md` | `deploy/docker-compose-cloud-prod.yml`、`scripts/update_cloud_prod_with_maintenance.sh`、`scripts/update_cloud_prod_qqcc_bot.sh`、`scripts/sync_cloud_prod_to_local_shadow.py`、systemd timer、Dashboard autoscaler service | 已修正 | 补充正式 QQCC Bot 专用窄更新入口；本地 shadow 同步已更新为云机 dump + R2/HTTPS 临时中转 + 本地 restore 主路径，并补充完整合并桶、timer、安全边界、旧 tunnel fallback 与验收口径；同步 autoscaler 预计清空时间模型、profile 级自动管理暂停、RunPod 故障/暂停自愈和 bootstrap timeout 换机口径 |
+| `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md` | `deploy/docker-compose-cloud-prod.yml`、`scripts/update_cloud_prod_with_maintenance.sh`、`scripts/update_cloud_prod_qqcc_bot.sh`、`scripts/sync_cloud_prod_to_local_shadow.py`、`scripts/run_local_analytics_shadow_pipeline.py`、systemd timer、Dashboard autoscaler service | 已修正 | 补充正式 QQCC Bot 专用窄更新入口；本地 shadow 同步已更新为云机 dump + R2/HTTPS 临时中转 + 本地 restore 主路径，并补充完整合并桶、timer、安全边界、旧 tunnel fallback、本地分析表保留、05:45 自动分析刷新与验收口径；同步 autoscaler 预计清空时间模型、profile 级自动管理暂停、RunPod 故障/暂停自愈和 bootstrap timeout 换机口径 |
 | `docs/子模块_本地正式灾备切换_local_prod_fallback.md` | `safe_deploy.sh`、cloud prod scripts、shadow sync script | 已修正 | 灾备时优先核对/使用 `bot_db_prod_shadow`、`user-data-prod-shadow` 与 `user-data-complete-shadow`，本地写入前停止 shadow timer |
 | `docs/子模块_网络暴露与代理穿透_network_proxy.md` | Cloudflare/Tunnel scripts、network docs | 已核对 | 网络入口和回滚边界有效 |
 | `docs/子模块_边缘节点运维指南_edge_node_ops.md` | edge docs、cloud prod preflight | 已核对 | 边缘节点说明有效 |
 | `docs/子模块_云控制面SSH密钥管理_cloud_ssh_access.md` | SSH docs、cloud compose | 已核对 | 不含私钥，作为登录边界文档保留 |
 | `docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md` | LAN SSH docs、GPU resource docs | 已核对 | 不含私钥，作为节点访问文档保留 |
-| `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md` | LAN AIO scripts、GPU pool config、worker compose | 已核对 | 长运行态文档保留，容量需按实时探测复核 |
+| `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md` | LAN AIO scripts、GPU pool config、worker compose、PornMaster Flux2 edit profile/image | 已修正 | 长运行态文档保留，容量需按实时探测复核；新增 PornMaster Flux2 edit 为未放量准备 profile，缺授权 UNET 时不得启用接单 slot |
 | `docs/子模块_系统资源与容量画像_resource_inventory.md` | compose、resource docs、deployment scripts、shadow sync script | 已修正 | 云正式/云测试入口口径更新；补充本地 shadow DB、R2 shadow、完整合并桶与 MinIO bucket 资源事实，并记录 shadow DB 获取路径已切为云机 dump + R2/HTTPS 中转；运行态快照仍需人工探测 |
 | `docs/子模块_容灾与持久化_database_recovery.md` | migrations、runtime checkpoint code | 已核对 | 恢复主链有效 |
 | `docs/子模块_代码静态分析与质量评估规范_code_quality.md` | `pytest --collect-only`、`ruff check`、Alembic、Core Isolation 扫描、doc checker | 已修正 | 保留 2026-06-24 历史快照，新增 2026-06-27 轻量复核结果 |

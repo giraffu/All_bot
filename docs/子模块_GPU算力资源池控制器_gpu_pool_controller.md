@@ -123,12 +123,15 @@ LAN registry 缓存已验证 GHCR RunPod 镜像，也保存 SCAIL-2 这类本地
 - `ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh` -> `192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh`
 - `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd` -> `192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd`
 - `remote_workers/docker/runpod_profiles/scail2/Dockerfile` -> `192.168.1.115:5000/allbot/comfy-runpod-scail2:20260617-scail2-cu128-a492b2b-proddeps1`
+- `remote_workers/docker/runpod_profiles/pornmaster_flux2_edit/Dockerfile` -> `192.168.1.115:5000/allbot/comfy-runpod-pornmaster-flux2-edit:20260627-pornmaster-flux2-edit-cu128-core1`，该镜像只声明 PornMaster Flux2 single/multiple image-edit runtime，不 baked 模型权重；模型 manifest 需等授权 UNET 导入后才可上传。
 
 注意：旧 `20260613-wan22aio-lanbase-ab9b7ea` Wan22 镜像不能被假定已 baked `rife49.pth`，只应作为回滚/热缓存场景。当前稳定新 tag `20260619-wan22aio-rife-bcf3ebd` 已 baked `rife49.pth`、`runpod_bootstrap_from_git.sh`，并通过构建 smoke 检查 `ComfyUI_Fill-Nodes` 与 `ComfyUI-Frame-Interpolation` 两处缓存路径。
 
 GPU 节点 Docker daemon 必须信任 HTTP registry `192.168.1.115:5000` 后才能直接 `docker pull 192.168.1.115:5000/...`；未配置 insecure registry 时会被 Docker 强制按 HTTPS 访问并报 `HTTP response to HTTPS client`。修改 `/etc/docker/daemon.json` 并 restart Docker 会影响节点容器运行态，只能放在明确的节点维护窗口执行。若目标 SSH 用户没有免密 sudo，短期可在本地主服务器执行 `docker save <lan-registry-image> | ssh <gpu-host> docker load` 预置镜像；fleet `preflight` 会接受“registry 已配置”或“目标镜像已存在”任一条件。
 
 `wan22_aio_video`、`image_to_video`、`wan22_video_v2` 三个 LAN AIO profile 共用同一个 Wan22 AIO 镜像；差异只在 runtime profile、`SUPPORTED_TASK_TYPES` 与模型 manifest。LAN AIO 的 `image_to_video` / `wan22_video_v2` split profile 由 runtime-render 自动在 `COMFY_EXTRA_ARGS` 追加 `--disable-dynamic-vram`，用于规避 cu128 ComfyUI DynamicVRAM 在 32G 5090 上的概率性 OOM。Wan22 V82 的 `FL_RIFE` 后处理还需要 `rife49.pth`，它不是大模型 manifest 的主权重；新镜像要 baked，旧镜像要用热缓存/启动 helper 补齐，不能依赖任务运行时访问 HuggingFace。
+
+`pornmaster_flux2_edit` 是 2026-06-27 新增的准备 profile，面向 `pornmaster_flux2_single_edit` 与 `pornmaster_flux2_multi_edit` 两个执行面 task type。它复用 i2i_pro 的 ComfyUI Flux2 core 节点能力，新增 workflow/API 映射和专用 LAN AIO 镜像；当前未写入任何 `assignments.yml` slot，也不接正式流量。模型 bundle `pornmaster_flux2_edit_baseline/2026-06-27` 需要三个文件：`diffusion_models/flux2/PornMaster_flux2_klein_9b_turbo_fp8_V4.safetensors`、`text_encoders/flux2/qwen_3_8b_fp8mixed.safetensors`、`vae/flux2/full_encoder_small_decoder.safetensors`。其中 Qwen 可从 `i2i_pro_baseline` 复用，VAE 可下载到本地模型下载目录，PornMaster 9B UNET 使用 ignored `.env.local` 的 `CIVITAI_API_TOKEN` 授权下载；真实 token 不得写入文档或 git。fp8 是当前默认 profile，bf16 只作为 48GB 级显存 canary 候选。
 
 all-in-one compose 渲染：
 
@@ -225,7 +228,7 @@ gpu-002 专用 helper 已证明 all-in-one runtime 可以在正式 Central 下�
 | :--- | :--- | :--- |
 | LAN AIO 正式接单 | `img2img`、`img2img_lora`、`image_to_video`（兼容 `video_insert` / `video_edit` alias）、`wan22_video_v2`、`ltx_video`、`scail2_action_transfer`、`scail2_video_replacement` | `gpu-177` GPU0 渲染为 `wan22_video_v2`、GPU1 为 LTX；`gpu-252` GPU0 已恢复 AIO；SCAIL-2 由 `gpu-002` slot0 正式 AIO 承载，legacy `image_to_video` 主要由 gpu-002 slot1/外部容量承接 |
 | LAN AIO canary-ready | 暂无固定常驻候选 | 后续新增 slot 仍必须逐 slot 验收，不跨节点批量 enable |
-| 有镜像但未作为 LAN AIO 正式容量 | `i2i_pro`、`t2i-pornmaster-turbo`、`face_swap` | 当前主要是 RunPod profile / legacy worker 口径，LAN AIO 接管需单独 slot 规划 |
+| 有镜像但未作为 LAN AIO 正式容量 | `i2i_pro`、`t2i-pornmaster-turbo`、`face_swap`、`pornmaster_flux2_single_edit`、`pornmaster_flux2_multi_edit` | i2i_pro 仍主要是 RunPod profile / legacy worker 口径；PornMaster Flux2 edit 仅完成 workflow/profile/image 准备，模型 manifest 还受授权 UNET 阻断，LAN AIO 接管需单独 slot 规划 |
 | 暂缓 | `face_i2i_t2i` / `gpu-226` 综合能力 | 仍是 host-service runtime，需先迁成容器化 ComfyUI |
 
 常用 dry-run / 只读命令：
@@ -308,6 +311,7 @@ scripts/lan_scail2_aio_prod.sh rollback --execute
 - LAN 模型缓存 bucket 固定为 `allbot-model-cache`；截至 2026-06-22，`192.168.1.115:9010` 已缓存 `img2img_lora/2026-06-10/manifest.json`、`i2i_pro/2026-06-14-test/manifest.json`、`scail2/2026-06-17-test/manifest.json` 与 `ltx_video/2026-06-10/manifest.json`。LAN LTX 缓存可能仍有旧 v1 残留；云端 R2 `ltx_video/2026-06-10/manifest.json` 当前是 10Eros v1.2-only，正式 RunPod 不依赖旧 v1 回退。
 - 全任务 LAN cache 入口为 `scripts/upload_all_task_models_to_lan_cache.py --env-file .env.lan.model-cache`，默认 dry-run；真实上传必须另行显式加 `--execute`。helper 复用共享对象池 `models/by-sha256/<sha[:2]>/<sha>`，并会复用已存在且 size/sha256 metadata 匹配的旧对象 key。
 - canonical manifest 目标为 `img2img_lora/2026-06-10/manifest.json`、`i2i_pro/2026-06-14-test/manifest.json`、`image_to_video/2026-06-13-test/manifest.json`、`wan22_video_v2/2026-06-13-test/manifest.json`、`wan22_aio_video/2026-06-12-test/manifest.json`、`ltx_video/2026-06-10/manifest.json`、`face_i2i_t2i/2026-06-10/manifest.json`、`scail2/2026-06-17-test/manifest.json`。`video_basic/2026-06-10` 不作为主 manifest；legacy `video_insert` / `video_edit` 只作为兼容任务类型归入 `image_to_video`。
+- `pornmaster_flux2_edit/2026-06-27/manifest.json` 是新增准备目标，不纳入全任务批量上传；先用 `scripts/import_pornmaster_flux2_edit_models.py --download-unet --execute` 完整导入本地 registry，再用 `scripts/upload_pornmaster_flux2_edit_models_to_lan_cache.sh --execute` 单独上传。若 PornMaster 9B UNET 缺失或未授权，导入脚本应返回 `pornmaster_unet_missing_or_unauthorized` 并拒绝写 manifest。
 - 单 bundle 通用入口仍为 `scripts/upload_model_bundle_to_r2.py`，通过 `.env.lan.model-cache` 映射 `LAN_MODEL_CACHE_*` 到 `RUNPOD_MODEL_*` 后写入 LAN cache；脚本按对象 size 与 sha256 metadata 跳过已有对象，metadata key 需大小写不敏感处理以兼容 MinIO。
 
 ## 4. RunPod Provider v0
