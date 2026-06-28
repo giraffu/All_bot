@@ -92,25 +92,35 @@ class PermissionGrowthChannelService:
             return False, 0, msg, 0, 0
 
         identity = await self.get_user_identity_func(internal_user_id)
-        reward = 10
+        base_reward = 10
         if user_group == "元婴期":
-            reward = 20
+            base_reward = 20
         elif user_group == "金丹期":
-            reward = 15
+            base_reward = 15
         elif user_group == "筑基期":
-            reward = 12
+            base_reward = 12
         elif user_group == "练气期":
-            reward = 10
+            base_reward = 10
 
+        identity_bonus = 0
         if identity == "内门弟子":
-            reward += 30
+            identity_bonus = 30
         elif identity == "核心弟子":
-            reward += 40
+            identity_bonus = 40
         elif identity == "真传弟子":
-            reward += 50
+            identity_bonus = 50
+
+        reward = base_reward + identity_bonus
 
         success = await self.quota_manager.checkin(
-            internal_user_id, username=username, full_name=full_name, reward=reward
+            internal_user_id,
+            username=username,
+            full_name=full_name,
+            reward=reward,
+            checkin_base_reward=base_reward,
+            checkin_identity_bonus=identity_bonus,
+            checkin_user_group=user_group,
+            checkin_identity=identity,
         )
         if success:
             await self.refresh_user_group_func(internal_user_id)

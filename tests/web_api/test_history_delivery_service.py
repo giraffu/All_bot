@@ -146,7 +146,12 @@ def test_build_telegram_upload_request_uses_test_token_in_test_mode(monkeypatch)
 
 @pytest.mark.parametrize(
     "history_type",
-    ["scail2_action_transfer", "scail2_video_replacement", "scail2_face_swap_v2"],
+    [
+        "scail2_action_transfer",
+        "scail2_action_transfer_long",
+        "scail2_video_replacement",
+        "scail2_face_swap_v2",
+    ],
 )
 def test_build_telegram_upload_request_sends_scail2_results_as_video(
     monkeypatch,

@@ -121,6 +121,7 @@ def test_allowed_web_submit_types_include_wan22_video_v2():
 
 def test_allowed_web_submit_types_include_scail2_video_modes():
     assert "scail2_action_transfer" in ALLOWED_WEB_SUBMIT_TYPES
+    assert "scail2_action_transfer_long" in ALLOWED_WEB_SUBMIT_TYPES
     assert "scail2_video_replacement" in ALLOWED_WEB_SUBMIT_TYPES
     assert "scail2_face_swap_v2" in ALLOWED_WEB_SUBMIT_TYPES
 

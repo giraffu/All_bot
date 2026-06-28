@@ -543,12 +543,20 @@ def patch_image_to_video_workflow(
     )
 
 
-def _resolve_scail2_duration_seconds(params: dict[str, Any]) -> int:
+def _resolve_scail2_duration_seconds(
+    params: dict[str, Any],
+    *,
+    task_type: str | None = None,
+) -> int:
     for key in ("length", "duration", "requested_duration"):
         value = params.get(key)
         if value is not None:
-            return normalize_scail2_duration_seconds(value, strict=True)
-    return normalize_scail2_duration_seconds(None)
+            return normalize_scail2_duration_seconds(
+                value,
+                strict=True,
+                task_type=task_type,
+            )
+    return normalize_scail2_duration_seconds(None, task_type=task_type)
 
 
 def _patch_scail2_workflow(
@@ -561,8 +569,15 @@ def _patch_scail2_workflow(
     output_task_prefix: str,
     **_: Any,
 ) -> None:
-    duration_seconds = _resolve_scail2_duration_seconds(params)
-    frame_count = get_scail2_frame_count(duration_seconds, strict=True)
+    duration_seconds = _resolve_scail2_duration_seconds(
+        params,
+        task_type=output_task_prefix,
+    )
+    frame_count = get_scail2_frame_count(
+        duration_seconds,
+        strict=True,
+        task_type=output_task_prefix,
+    )
 
     if params.get("image"):
         set_node_input(
@@ -667,6 +682,18 @@ def patch_scail2_action_transfer_workflow(
     )
 
 
+def patch_scail2_action_transfer_long_workflow(
+    workflow: dict[str, Any],
+    **kwargs: Any,
+) -> None:
+    _patch_scail2_workflow(
+        workflow,
+        replacement_mode=False,
+        output_task_prefix="scail2_action_transfer_long",
+        **kwargs,
+    )
+
+
 def patch_scail2_video_replacement_workflow(
     workflow: dict[str, Any],
     **kwargs: Any,
@@ -703,6 +730,7 @@ TASK_SPECIFIC_PATCHERS = {
     "image_to_video": patch_image_to_video_workflow,
     "wan22_video_v2": patch_wan22_video_v2_workflow,
     "scail2_action_transfer": patch_scail2_action_transfer_workflow,
+    "scail2_action_transfer_long": patch_scail2_action_transfer_long_workflow,
     "scail2_video_replacement": patch_scail2_video_replacement_workflow,
     "scail2_face_swap_v2": patch_scail2_face_swap_v2_workflow,
 }

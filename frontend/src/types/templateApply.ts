@@ -5,6 +5,8 @@ export type TemplateApplyTaskType =
   | 'i2i_draw'
   | 'edit'
   | 'img2img_lora'
+  | 'pornmaster_flux2_single_edit'
+  | 'pornmaster_flux2_multi_edit'
   | 'face_swap'
   | 'face_video'
   | 'custom_video'
@@ -12,6 +14,7 @@ export type TemplateApplyTaskType =
   | 'wan22_video_v2'
   | 'ltx_video'
   | 'scail2_action_transfer'
+  | 'scail2_action_transfer_long'
   | 'scail2_video_replacement'
   | 'scail2_face_swap_v2'
 

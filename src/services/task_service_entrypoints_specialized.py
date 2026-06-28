@@ -7,6 +7,7 @@ from src.constants import (
     MODE_FACE_VIDEO_STEP1,
     MODE_NAME_MAP,
     MODE_SCAIL2_ACTION_TRANSFER,
+    MODE_SCAIL2_ACTION_TRANSFER_LONG,
     MODE_SCAIL2_FACE_SWAP_V2,
     MODE_SCAIL2_VIDEO_REPLACEMENT,
 )
@@ -214,18 +215,28 @@ async def process_scail2_video_task(
 ):
     if task_type not in {
         MODE_SCAIL2_ACTION_TRANSFER,
+        MODE_SCAIL2_ACTION_TRANSFER_LONG,
         MODE_SCAIL2_VIDEO_REPLACEMENT,
         MODE_SCAIL2_FACE_SWAP_V2,
     }:
         raise ValueError(f"Unsupported SCAIL-2 task type: {task_type}")
 
+    public_task_type = (
+        MODE_SCAIL2_ACTION_TRANSFER
+        if task_type == MODE_SCAIL2_ACTION_TRANSFER_LONG
+        else task_type
+    )
     internal_user_id = await resolve_internal_user_id(user_id, username)
 
-    duration_seconds = normalize_scail2_duration_seconds(duration, strict=True)
-    normalized_prompt = normalize_scail2_positive_prompt(task_type, prompt)
-    cost = get_scail2_cost(duration_seconds, strict=True)
+    duration_seconds = normalize_scail2_duration_seconds(
+        duration,
+        strict=True,
+        task_type=public_task_type,
+    )
+    normalized_prompt = normalize_scail2_positive_prompt(public_task_type, prompt)
+    cost = get_scail2_cost(duration_seconds, strict=True, task_type=public_task_type)
     resolution = f"{SCAIL2_FIXED_WIDTH}x{SCAIL2_FIXED_HEIGHT}"
-    mode_name_key = MODE_NAME_MAP[task_type]
+    mode_name_key = MODE_NAME_MAP[public_task_type]
     mode_name = translate_context_text(context, mode_name_key)
     duration_label = f"{duration_seconds}s"
     runtime_state = BotTaskRuntimeState(actual_cost=cost)
@@ -273,7 +284,7 @@ async def process_scail2_video_task(
     billing_args = resolve_video_billing_args(
         is_video=True,
         resolution=resolution,
-        task_type=task_type,
+        task_type=public_task_type,
         duration=duration_seconds,
         duration_transform=normalize_requested_duration_seconds,
     )
@@ -285,7 +296,7 @@ async def process_scail2_video_task(
             status_msg_id=message_id,
             internal_user_id=internal_user_id,
             username=username,
-            task_type=task_type,
+            task_type=public_task_type,
             inputs=inputs,
             prompt=normalized_prompt,
             is_video=True,

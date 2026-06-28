@@ -23,6 +23,9 @@ from config import (
     LTX_VIDEO_V2V_AUDIO_ENDPOINT,
     PERFECT_VIDEO_EDIT_ENDPOINT,
     PERFECT_VIDEO_INSERT_ENDPOINT,
+    PORNMASTER_FLUX2_MULTI_EDIT_ENDPOINT,
+    PORNMASTER_FLUX2_SINGLE_EDIT_ENDPOINT,
+    SCAIL2_ACTION_TRANSFER_LONG_ENDPOINT,
     SCAIL2_ACTION_TRANSFER_ENDPOINT,
     SCAIL2_FACE_SWAP_V2_ENDPOINT,
     SCAIL2_VIDEO_REPLACEMENT_ENDPOINT,
@@ -33,6 +36,7 @@ from config import (
 )
 from src.circuit_breaker import CircuitBreaker, CircuitBreakerOpenException
 from src.domain_config.scail2_video import (
+    SCAIL2_ACTION_TRANSFER_LONG_TASK_TYPE,
     SCAIL2_ACTION_TRANSFER_TASK_TYPE,
     SCAIL2_FACE_SWAP_V2_TASK_TYPE,
     SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
@@ -267,6 +271,54 @@ class APIClient:
             f"Submitting img2img_lora task. Prompt: {prompt}, LoRA: {lora_name}, Images: {len(image_paths)}, Priority: {priority}"
         )
         r = await self._request("POST", IMG2IMG_LORA_ENDPOINT, json=data)
+        return r.json()["task_id"]
+
+    @async_retry(max_retries=3)
+    async def submit_pornmaster_flux2_edit(
+        self,
+        task_id: str,
+        *,
+        execution_task_type: str,
+        prompt: str,
+        image_paths: list[str],
+        negative_prompt: str = " ",
+        priority: int = 0,
+    ) -> str:
+        if execution_task_type == "pornmaster_flux2_single_edit":
+            endpoint = PORNMASTER_FLUX2_SINGLE_EDIT_ENDPOINT
+            expected_images = 1
+        elif execution_task_type == "pornmaster_flux2_multi_edit":
+            endpoint = PORNMASTER_FLUX2_MULTI_EDIT_ENDPOINT
+            expected_images = 2
+        else:
+            raise ValueError(f"Unsupported PornMaster Flux2 edit task type: {execution_task_type}")
+
+        if len(image_paths) < expected_images:
+            raise ValueError(
+                f"{execution_task_type} requires {expected_images} image(s)"
+            )
+
+        data = {
+            "task_id": task_id,
+            "images": image_paths[:expected_images],
+            "image": image_paths[0],
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "num_inference_steps": 6,
+            "guidance_scale": 1.0,
+            "priority": priority,
+        }
+        if expected_images == 2:
+            data["image2"] = image_paths[1]
+
+        logger.info(
+            "Submitting %s task. Prompt: %s, Images: %s, Priority: %s",
+            execution_task_type,
+            prompt,
+            expected_images,
+            priority,
+        )
+        r = await self._request("POST", endpoint, json=data)
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
@@ -557,6 +609,9 @@ class APIClient:
     ) -> str:
         endpoint_by_type = {
             SCAIL2_ACTION_TRANSFER_TASK_TYPE: SCAIL2_ACTION_TRANSFER_ENDPOINT,
+            SCAIL2_ACTION_TRANSFER_LONG_TASK_TYPE: (
+                SCAIL2_ACTION_TRANSFER_LONG_ENDPOINT
+            ),
             SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE: SCAIL2_VIDEO_REPLACEMENT_ENDPOINT,
             SCAIL2_FACE_SWAP_V2_TASK_TYPE: SCAIL2_FACE_SWAP_V2_ENDPOINT,
         }

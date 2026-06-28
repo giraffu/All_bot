@@ -26,16 +26,18 @@ def test_workflow_patcher_validates_real_worker_workflows_on_init():
 
 
 @pytest.mark.parametrize(
-    ("task_type", "replacement_mode", "frame_count"),
+    ("task_type", "replacement_mode", "duration", "frame_count"),
     [
-        ("scail2_action_transfer", False, 129),
-        ("scail2_video_replacement", True, 129),
-        ("scail2_face_swap_v2", True, 129),
+        ("scail2_action_transfer", False, 8, 129),
+        ("scail2_action_transfer_long", False, 20, 321),
+        ("scail2_video_replacement", True, 8, 129),
+        ("scail2_face_swap_v2", True, 8, 129),
     ],
 )
 def test_workflow_patcher_overrides_scail2_runtime_parameters(
     task_type,
     replacement_mode,
+    duration,
     frame_count,
 ):
     patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
@@ -49,7 +51,7 @@ def test_workflow_patcher_overrides_scail2_runtime_parameters(
             "video": "motion.mp4",
             "prompt": "dance naturally",
             "negative_prompt": "blur",
-            "length": 8,
+            "length": duration,
         },
     )
 

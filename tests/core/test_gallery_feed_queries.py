@@ -188,6 +188,66 @@ async def test_fetch_gallery_feed_page_supports_edit_group_none_filter():
 
 
 @pytest.mark.asyncio
+async def test_fetch_gallery_feed_page_supports_free_edit_v2_group_filter():
+    session = _FakeSession([_ScalarResult(0), _ItemsResult([])])
+
+    await fetch_gallery_feed_page(
+        session=session,
+        page=1,
+        size=20,
+        media_type=None,
+        task_type="free_edit_v2_group",
+        lora_model=None,
+        sort_by="latest",
+        time_range="all",
+        user_id=None,
+        category=None,
+        is_active=True,
+    )
+
+    compiled = session.executed_statements[1].compile()
+    sql = str(compiled).lower()
+    task_types = next(
+        value for value in compiled.params.values() if isinstance(value, list)
+    )
+
+    assert "history.type" in sql
+    assert task_types == [
+        "pornmaster_flux2_single_edit",
+        "pornmaster_flux2_multi_edit",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_fetch_gallery_feed_page_merges_legacy_long_action_transfer_filter():
+    session = _FakeSession([_ScalarResult(0), _ItemsResult([])])
+
+    await fetch_gallery_feed_page(
+        session=session,
+        page=1,
+        size=20,
+        media_type=None,
+        task_type="scail2_action_transfer",
+        lora_model=None,
+        sort_by="latest",
+        time_range="all",
+        user_id=None,
+        category=None,
+        is_active=True,
+    )
+
+    compiled = session.executed_statements[1].compile()
+    task_types = next(
+        value for value in compiled.params.values() if isinstance(value, list)
+    )
+
+    assert task_types == [
+        "scail2_action_transfer",
+        "scail2_action_transfer_long",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_fetch_gallery_feed_page_supports_img2video_group_model_filter():
     session = _FakeSession([_ScalarResult(0), _ItemsResult([])])
 

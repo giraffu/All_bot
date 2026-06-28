@@ -55,6 +55,7 @@ def build_global_menu_filter():
         "menu.txt2img",  # ✨ 文生图
         "menu.i2i_pro",  # 🌟 幻想换脸
         "menu.free_edit",  # 🎨 自由P图
+        "menu.free_edit_v2",  # 🎨 自由P图 v2
         "menu.video_lora",  # 🎬 图生视频
         "menu.custom_video",  # 🎬 图生视频(兼容入口)
         "menu.ltx_video",  # 🎬 高级图生视频

@@ -1,6 +1,7 @@
 import os
 
 from src.domain_config.scail2_video import (
+    SCAIL2_ACTION_TRANSFER_LONG_TASK_TYPE,
     SCAIL2_ACTION_TRANSFER_TASK_TYPE,
     SCAIL2_FACE_SWAP_V2_TASK_TYPE,
     SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
@@ -41,12 +42,16 @@ MODE_IMAGE_TO_VIDEO_LITERAL = "image_to_video"
 MODE_LTX_VIDEO = "ltx_video"
 MODE_WAN22_VIDEO_V2 = "wan22_video_v2"
 MODE_SCAIL2_ACTION_TRANSFER = SCAIL2_ACTION_TRANSFER_TASK_TYPE
+MODE_SCAIL2_ACTION_TRANSFER_LONG = SCAIL2_ACTION_TRANSFER_LONG_TASK_TYPE
 MODE_SCAIL2_VIDEO_REPLACEMENT = SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE
 MODE_SCAIL2_FACE_SWAP_V2 = SCAIL2_FACE_SWAP_V2_TASK_TYPE
 MODE_TXT2IMG = "txt2img"
 MODE_I2I_PRO = "i2i_pro"
 MODE_I2I_DRAW = "i2i_draw"
 MODE_IMG2IMG_LORA = "img2img_lora"
+MODE_FREE_EDIT_V2 = "free_edit_v2"
+MODE_PORNMASTER_FLUX2_SINGLE_EDIT = "pornmaster_flux2_single_edit"
+MODE_PORNMASTER_FLUX2_MULTI_EDIT = "pornmaster_flux2_multi_edit"
 MODE_TEMPLATE_CONTRIBUTE = "template_contribute"
 MODE_NONE = "none"
 
@@ -56,6 +61,8 @@ MODE_NAME_MAP = {
     MODE_I2I_PRO: "task.mode_i2i_pro",
     MODE_I2I_DRAW: "task.mode_i2i_draw",
     MODE_IMG2IMG_LORA: "task.mode_img2img_lora",
+    MODE_PORNMASTER_FLUX2_SINGLE_EDIT: "task.mode_free_edit_v2",
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT: "task.mode_free_edit_v2",
     MODE_UNDRESS: "task.mode_undress",
     MODE_MASTURBATION: "task.mode_masturbation",
     MODE_FACESWAP_STEP1: "task.mode_faceswap_step1",
@@ -74,6 +81,7 @@ MODE_NAME_MAP = {
     MODE_LTX_VIDEO: "task.mode_ltx_video",
     MODE_WAN22_VIDEO_V2: "task.mode_wan22_video_v2",
     MODE_SCAIL2_ACTION_TRANSFER: "task.mode_scail2_action_transfer",
+    MODE_SCAIL2_ACTION_TRANSFER_LONG: "task.mode_scail2_action_transfer",
     MODE_SCAIL2_VIDEO_REPLACEMENT: "task.mode_scail2_video_replacement",
     MODE_SCAIL2_FACE_SWAP_V2: "task.mode_scail2_face_swap_v2",
     MODE_TXT2IMG: "task.mode_txt2img",
@@ -100,6 +108,7 @@ TASK_COSTS = {
     MODE_LTX_VIDEO: 10,
     MODE_WAN22_VIDEO_V2: 6,
     MODE_SCAIL2_ACTION_TRANSFER: 40,
+    MODE_SCAIL2_ACTION_TRANSFER_LONG: 40,
     MODE_SCAIL2_VIDEO_REPLACEMENT: 40,
     MODE_SCAIL2_FACE_SWAP_V2: 40,
     MODE_TXT2IMG: 2,
@@ -108,6 +117,8 @@ TASK_COSTS = {
     MODE_I2I_PRO: 6,
     MODE_I2I_DRAW: 3,
     MODE_IMG2IMG_LORA: 6,
+    MODE_PORNMASTER_FLUX2_SINGLE_EDIT: 2,
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT: 6,
 }
 
 # Default Video Resolutions based on User Group
@@ -356,6 +367,8 @@ GENERATION_TASK_TYPES = [
     MODE_TXT2IMG,
     MODE_I2I_PRO,
     MODE_I2I_DRAW,
+    MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT,
 ]
 
 VIDEO_TASK_TYPES = [

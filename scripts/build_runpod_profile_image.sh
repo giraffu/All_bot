@@ -18,6 +18,9 @@ default_base_image_for_profile() {
         i2i_pro)
             printf '%s\n' "yanwk/comfyui-boot:cu128-slim"
             ;;
+        pornmaster_flux2_edit)
+            printf '%s\n' "192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh"
+            ;;
         *)
             printf '%s\n' "yanwk/comfyui-boot:cu128-slim"
             ;;
@@ -184,7 +187,9 @@ if [ -n "$KJNODES_SOURCE" ]; then
     context_for_build="$cleanup_dir"
 elif [ "$PROFILE" = "scail2" ] || [ "$PROFILE" = "ltx_video" ]; then
     context_for_build="."
-elif [ "$PROFILE" = "wan22_aio_video" ] || [ "$PROFILE" = "i2i_pro" ] || [ "$PROFILE" = "pornmaster_flux2_edit" ] || [ "$PROFILE" = "img2img_lora" ]; then
+elif [ "$PROFILE" = "pornmaster_flux2_edit" ]; then
+    context_for_build="$context_dir"
+elif [ "$PROFILE" = "wan22_aio_video" ] || [ "$PROFILE" = "i2i_pro" ] || [ "$PROFILE" = "img2img_lora" ]; then
     cleanup_dir="$(mktemp -d)"
     trap 'rm -rf "$cleanup_dir"' EXIT
     mkdir -p \
@@ -365,6 +370,7 @@ if ! command -v sshd >/dev/null && [ ! -x /usr/sbin/sshd ]; then
   exit 1
 fi
 COMFYUI_DIR="${comfyui_dir}" python3 -c '"'"'from pathlib import Path; import os, sys; root=Path(os.environ["COMFYUI_DIR"]); checks={root/"nodes.py":("UNETLoader","CLIPLoader","VAELoader"),root/"comfy_extras"/"nodes_custom_sampler.py":("SamplerCustomAdvanced",),root/"comfy_extras"/"nodes_edit_model.py":("ReferenceLatent",),root/"comfy_extras"/"nodes_flux.py":("EmptyFlux2LatentImage","Flux2Scheduler")}; missing=[]; [missing.append(f"{path}:{name}") for path,names in checks.items() for name in names if name not in path.read_text(encoding="utf-8")]; sys.exit("missing PornMaster Flux2 edit node sources: "+",".join(missing)) if missing else None'"'"'
+COMFYUI_DIR="${comfyui_dir}" python3 -c '"'"'from pathlib import Path; import os; root=Path(os.environ["COMFYUI_DIR"]); auto=(root/"comfy/ldm/models/autoencoder.py").read_text(encoding="utf-8"); sd=(root/"comfy/sd.py").read_text(encoding="utf-8"); assert "decoder_ddconfig = kwargs.pop" in auto; assert "decoder_ch = sd[" in sd'"'"'
 if find "${comfyui_dir}/models" -type f \( \
   -name "PornMaster_flux2_klein_9b_turbo_fp8_V4.safetensors" -o \
   -name "pornmasterFlux2Klein_v4TurboFp8.safetensors" -o \
@@ -423,5 +429,17 @@ fi
 
 if [ "$PUSH" = "true" ]; then
     echo "Pushing ${IMAGE_REF}"
-    docker push "$IMAGE_REF"
+    if ! docker push "$IMAGE_REF"; then
+        case "$IMAGE_REF" in
+            192.168.1.115:5000/*)
+                fallback_ref="localhost:5000/${IMAGE_REF#192.168.1.115:5000/}"
+                echo "Direct push to ${IMAGE_REF} failed; retrying via ${fallback_ref}"
+                docker tag "$IMAGE_REF" "$fallback_ref"
+                docker push "$fallback_ref"
+                ;;
+            *)
+                exit 1
+                ;;
+        esac
+    fi
 fi

@@ -33,11 +33,11 @@
 - `text_encoders/flux2/qwen_3_8b_fp8mixed.safetensors`
 - `vae/flux2/full_encoder_small_decoder.safetensors`
 
-Qwen text encoder 可复用 `i2i_pro_baseline/2026-06-14-test` 的本地 registry blob；VAE 可下载到 `/srv/allbot/model-downloads/pornmaster_flux2_image_edit/2026-06-27/vae/full_encoder_small_decoder.safetensors` 后校验 sha256；PornMaster 9B UNET 需要授权 Civitai 下载或用户提供本地文件。导入入口是 `scripts/import_pornmaster_flux2_edit_models.py --execute`，默认读取 ignored `.env.local` 中的 `CIVITAI_API_TOKEN`；真实 token 只能放 ignored env 文件，不得写入文档、代码或 git。缺少 UNET 时脚本必须返回阻断状态并拒绝写半截 manifest。完整导入后再执行 `scripts/upload_pornmaster_flux2_edit_models_to_lan_cache.sh --execute`。
+Qwen text encoder 复用 `i2i_pro_baseline/2026-06-14-test` 的本地 registry blob；VAE 与 PornMaster 9B fp8 UNET 已导入 `/srv/allbot/model-registry/bundles/pornmaster_flux2_edit_baseline/2026-06-27/manifest.yml` 并记录 sha256。复核或更新入口是 `scripts/import_pornmaster_flux2_edit_models.py --execute`，默认读取 ignored `.env.local` 中的 `CIVITAI_API_TOKEN`；真实 token 只能放 ignored env 文件，不得写入文档、代码或 git。缺少 UNET 时脚本必须返回阻断状态并拒绝写半截 manifest。完整导入后再执行 `scripts/upload_pornmaster_flux2_edit_models_to_lan_cache.sh --execute`。
 
 当前默认运行模型固定为 `V4_turbo_fp8`，因为两份 workflow 与 RunningHub 资源名都指向 `PornMaster_flux2_klein_9b_turbo_fp8_V4.safetensors`，且 fp8 更适合标准 24GB RTX 4090 的稳定推理。Civitai 同页还有 `V4_turbo_bf16`，发布时间晚于 fp8、权重约 17.7GB，理论上量化损失更少，但会显著增加显存和加载压力；只有在 48GB 4090 或明确接受 CPU/offload 降速时，才建议另建 bf16 canary profile 测画质，不直接替换当前 fp8 默认 profile。
 
-LAN AIO 镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_edit/Dockerfile`，专用构建 wrapper 为 `scripts/build_pornmaster_flux2_edit_lan_aio_image.sh --push`。该镜像基于 i2i_pro LAN AIO 镜像，只 smoke ComfyUI core 节点与基础诊断依赖，模型仍由启动时的 LAN model cache manifest 同步，不得 baked 到镜像层。
+LAN AIO 镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_edit/Dockerfile`，专用构建 wrapper 为 `scripts/build_pornmaster_flux2_edit_lan_aio_image.sh --push`。该镜像基于 i2i_pro LAN AIO 镜像，只 smoke ComfyUI core 节点、FLUX.2 small-decoder VAE 兼容补丁与基础诊断依赖，模型仍由启动时的 LAN model cache manifest 同步，不得 baked 到镜像层。
 
 ---
 
@@ -188,26 +188,33 @@ LAN AIO 镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_
 
 ## 四、 SCAIL-2 视频生视频工作流
 
-SCAIL-2 当前是正式可用的视频生视频能力。正式 LAN slot0 worker 支持三个 task type；
-正式 RunPod `scail2` profile 仍只保持动作迁移/视频换人两任务。`scail2_face_swap_v2`
-使用 SCAIL-2 FaceSwap v10 first-frame image-swap + replacement audio 方案：
+SCAIL-2 当前是正式可用的视频生视频能力。用户侧只展示三个入口：动作迁移、视频换人、视频换脸。
+动作迁移的业务/History task type 始终是 `scail2_action_transfer`；dispatcher 按时长决定执行面：
+`5s/8s` 走旧动作迁移 workflow，`10s/15s/20s` 走隐藏执行类型 `scail2_action_transfer_long`
+和 Context Windows workflow。正式 RunPod `scail2` profile 仍只保持动作迁移/视频换人两任务。
+`scail2_face_swap_v2` 使用 SCAIL-2 FaceSwap v10 first-frame image-swap + replacement audio 方案：
 
 | task type | 用户能力 | API workflow | 关键模式 |
 | :--- | :--- | :--- | :--- |
 | `scail2_action_transfer` | 动作迁移 | `SCAIL-2_Animation_multi-char_audio.api.json` | `replacement_mode=false` |
+| `scail2_action_transfer_long` | 隐藏执行路由（动作迁移 10/15/20s） | `SCAIL-2_Animation_WAN-Context-Windows.api.json` | `replacement_mode=false`，不作为用户入口 |
 | `scail2_video_replacement` | 视频换人 | `SCAIL-2_Replacement_audio.api.json` | `replacement_mode=true` |
 | `scail2_face_swap_v2` | 视频换脸 v10 two-stage | `SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json` | `replacement_mode=true` |
 
 Nomadoor 的四个 UI workflow 仍保存在 `workers/comfy_agent/workflows/` 与
 `remote_workers/comfy_agent/workflows/`，用于人工打开 ComfyUI 编辑、对照和 smoke。业务执行必须使用
-派生的 API-format workflow，不得直接把 UI JSON 提交给 worker。
+派生的 API-format workflow，不得直接把 UI JSON 提交给 worker。`SCAIL-2_Animation_WAN-Context-Windows.json`
+原始文件是 ComfyUI UI workflow，保存时长为 133 帧、16fps，约 8.3s；已转换为
+`SCAIL-2_Animation_WAN-Context-Windows.api.json` 给动作迁移 10/15/20s 隐藏执行路由使用，但该能力
+只动态改生成帧数和 `VHS_LoadVideo.frame_load_cap`，不表示支持无限长输入。
 
 ### 1. 用户参数与计费
 - Web payload 使用 `inputs.images=[reference_image_key, motion_video_key]`，第一个 input 是参考图，第二个 input 是驱动视频。
-- Bot 入口位于“视频生视频”二级菜单，顺序为“视频换人 / 动作迁移 / 视频换脸 / 返回主菜单”；Bot 的“视频换脸”入口走 `scail2_face_swap_v2`，旧 `face_video` FSM 仅保留兼容入口。
-- Bot 的 SCAIL-2 流程收参考图片、驱动视频、可选正向提示词和 `5s/8s` 时长；Bot 可点击跳过正向提示词，Web 可留空，空值由 `normalize_scail2_positive_prompt(...)` 按 task type 补默认提示词；负面词固定使用 `SCAIL2_DEFAULT_NEGATIVE_PROMPT`。
-- 驱动视频上传上限为 40MB；Web 侧也应按短视频能力限制上传体积，不开放长视频。
-- 固定输出规格为 `512x896`，第一版只开放 `5s=40` 灵石和 `8s=80` 灵石，不承诺 context-window 长视频。
+- Bot 入口位于“视频生视频”二级菜单，默认顺序为“视频换人 / 动作迁移 / 视频换脸 / 返回主菜单”；不再有独立长时长动作迁移入口。Bot 的“视频换脸”入口走 `scail2_face_swap_v2`，旧 `face_video` FSM 仅保留兼容入口。
+- Bot 的 SCAIL-2 流程收参考图片、驱动视频、可选正向提示词和时长；Bot 可点击跳过正向提示词，Web 可留空，空值由 `normalize_scail2_positive_prompt(...)` 按 task type 补默认提示词；负面词固定使用 `SCAIL2_DEFAULT_NEGATIVE_PROMPT`。
+- 公开 `scail2_action_transfer` 开放 `5s/8s/10s/15s/20s`，计费为 `40/80/120/180/260` 灵石；`scail2_video_replacement` / `scail2_face_swap_v2` 仍只开放 `5s/8s`，计费为 `40/80` 灵石。用户提交 10/15/20s 时，业务记录仍是 `scail2_action_transfer`，执行面才切到 `scail2_action_transfer_long`。
+- 驱动视频上传上限仍为 40MB；Web 端按驱动视频实际时长过滤可选时长，但后端仍会按 task type 做最终校验。
+- 固定输出规格为 `512x896`。长时间模式的硬上限是 20s，不开放无限长度，也不新增长时间视频换人/换脸。
 
 ### 2. Worker patcher 约定
 SCAIL-2 workflow 的硬编码节点必须与 `workflow_task_patchers.py` 和测试保持一致：
@@ -222,9 +229,12 @@ SCAIL-2 workflow 的硬编码节点必须与 `workflow_task_patchers.py` 和测�
 | 读取帧数 | `VHS_LoadVideo.frame_load_cap` |
 | 输出前缀 | `VHS_VideoCombine 49.filename_prefix` |
 
-时长映射固定为 `5s -> 81`、`8s -> 129`，`VHS_LoadVideo.force_rate=16`，
+短 workflow 时长映射固定为 `5s -> 81`、`8s -> 129`；Context Windows workflow 映射固定为
+`10s -> 161`、`15s -> 241`、`20s -> 321`。`VHS_LoadVideo.force_rate=16`，
 `skip_first_frames=0`。`scail2_video_replacement` 与 `scail2_face_swap_v2`
-必须强制 replacement mode 为 true，`scail2_action_transfer` 必须强制 false。
+必须强制 replacement mode 为 true，`scail2_action_transfer` 与
+`scail2_action_transfer_long` 必须强制 false。长时间 workflow 中的
+`WanContextWindowsManual` 窗口参数保持 workflow 默认值，不由业务请求动态改。
 audio 候选 workflow 的 `VHS_VideoCombine 49.inputs.audio` 应接 `VHS_LoadVideo 113`
 的 audio 输出，且 `trim_to_audio=false`。重导 workflow 后要同时更新：
 `SCAIL-2_*.api.json`、`mappings.json`、`workflow_task_patchers.py`、

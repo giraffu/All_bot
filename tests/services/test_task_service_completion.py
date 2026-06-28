@@ -375,7 +375,12 @@ def test_build_result_reply_markup_supports_wan22_video_v2_gallery_button():
 
 @pytest.mark.parametrize(
     "task_type",
-    ["scail2_action_transfer", "scail2_video_replacement", "scail2_face_swap_v2"],
+    [
+        "scail2_action_transfer",
+        "scail2_action_transfer_long",
+        "scail2_video_replacement",
+        "scail2_face_swap_v2",
+    ],
 )
 def test_build_result_reply_markup_supports_scail2_gallery_button(task_type):
     final_markup = tg_runtime_helpers.build_result_reply_markup(

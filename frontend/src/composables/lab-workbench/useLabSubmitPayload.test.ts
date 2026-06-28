@@ -209,6 +209,35 @@ describe('useLabSubmitPayload', () => {
     }), 'lab.cards.custom_edit_title')
   })
 
+  it('maps free edit v2 submissions to single or multi PornMaster task types', async () => {
+    const harness = createHarness('edit_v2')
+    harness.uploadedReferences.value = [refImage('base.png')]
+    harness.prompt.value = 'clean up details'
+
+    await harness.handleSubmit()
+
+    expect(harness.submitTask).toHaveBeenLastCalledWith(expect.objectContaining({
+      task_type: 'pornmaster_flux2_single_edit',
+      inputs: {
+        images: ['base.png'],
+      },
+      prompt: 'clean up details',
+    }), 'lab.cards.custom_edit_v2_title')
+
+    harness.submitTask.mockClear()
+    harness.uploadedReferences.value = [refImage('base.png'), refImage('style.png')]
+
+    await harness.handleSubmit()
+
+    expect(harness.submitTask).toHaveBeenLastCalledWith(expect.objectContaining({
+      task_type: 'pornmaster_flux2_multi_edit',
+      inputs: {
+        images: ['base.png', 'style.png'],
+      },
+      prompt: 'clean up details',
+    }), 'lab.cards.custom_edit_v2_title')
+  })
+
   it('builds custom video LoRA payloads with WAN22 chain metadata', async () => {
     const harness = createHarness('custom_video')
     harness.uploadedReferences.value = [refImage('start.png'), refImage('end.png')]
@@ -280,6 +309,30 @@ describe('useLabSubmitPayload', () => {
       priority: 0,
       is_template: false,
     }, 'lab.cards.scail2_face_swap_v2_title')
+  })
+
+  it('builds merged long SCAIL-2 action transfer payloads from structured slots', async () => {
+    const harness = createHarness('scail2_action_transfer')
+    harness.uploadedSlotAssets.value = {
+      reference_image: slotAsset('reference.png'),
+      motion_video: slotAsset('motion.mp4', 'video'),
+    }
+    harness.duration.value = '20'
+    harness.prompt.value = 'follow the motion'
+
+    await harness.handleSubmit()
+
+    expect(harness.submitTask).toHaveBeenCalledWith({
+      task_type: 'scail2_action_transfer',
+      inputs: {
+        images: ['reference.png', 'motion.mp4'],
+        duration: 20,
+        prompt: 'follow the motion',
+        negative_prompt: DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT,
+      },
+      priority: 0,
+      is_template: false,
+    }, 'lab.cards.scail2_action_transfer_title')
   })
 
   it('builds face video payloads from structured slots', async () => {

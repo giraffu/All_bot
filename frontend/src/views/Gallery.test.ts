@@ -395,11 +395,14 @@ describe('Gallery template apply integration', () => {
           { id: 'i2i_pro', name: '幻想换脸' },
           { id: 'edit', name: '自由P图' },
           { id: 'img2img_lora', name: '图生图(附加模型)' },
+          { id: 'pornmaster_flux2_single_edit', name: '自由P图 v2' },
+          { id: 'pornmaster_flux2_multi_edit', name: '自由P图 v2' },
           { id: 'custom_video', name: '图生视频' },
           { id: 'video_lora', name: '图生视频(附加模型)' },
           { id: 'ltx_video', name: '高级图生视频' },
           { id: 'wan22_video_v2', name: '图生视频 v2' },
           { id: 'scail2_action_transfer', name: '动作迁移' },
+          { id: 'scail2_action_transfer_long', name: '动作迁移' },
           { id: 'scail2_video_replacement', name: '视频换人' },
         ],
         lora_models: [
@@ -425,15 +428,19 @@ describe('Gallery template apply integration', () => {
     }
 
     expect(findButtonsByText('自由P图')).toHaveLength(1)
+    expect(findButtonsByText('自由P图 v2')).toHaveLength(1)
     expect(findButtonsByText('图生视频')).toHaveLength(1)
     expect(findButtonsByText('图生视频 v2')).toHaveLength(1)
     expect(findButtonsByText('动作迁移')).toHaveLength(1)
+    expect(findButtonsByText('动作迁移（长时间）')).toHaveLength(0)
     expect(findButtonsByText('视频换人')).toHaveLength(1)
     expect(findButtonsByText('文生图')).toHaveLength(0)
     expect(findButtonsByText('gallery.tabs.txt2img')).toHaveLength(0)
     expect(findButtonsByText('gallery.tabs.scail2_action_transfer')).toHaveLength(0)
+    expect(findButtonsByText('gallery.tabs.scail2_action_transfer_long')).toHaveLength(0)
     expect(findButtonsByText('gallery.tabs.scail2_video_replacement')).toHaveLength(0)
     expect(findButtonsByText('scail2_action_transfer')).toHaveLength(0)
+    expect(findButtonsByText('scail2_action_transfer_long')).toHaveLength(0)
     expect(findButtonsByText('scail2_video_replacement')).toHaveLength(0)
     expect(findButtonsByText('图生图(附加模型)')).toHaveLength(0)
     expect(findButtonsByText('图生视频(附加模型)')).toHaveLength(0)
@@ -461,6 +468,14 @@ describe('Gallery template apply integration', () => {
     expect(getLastGalleryPostsParams()).toEqual(expect.objectContaining({
       task_type: 'edit_group',
       lora_model: 'style-a',
+    }))
+
+    await findButtonsByText('自由P图 v2')[0]!.trigger('click')
+    await flushPromises()
+    await flushPromises()
+    expect(getLastGalleryPostsParams()).toEqual(expect.objectContaining({
+      task_type: 'free_edit_v2_group',
+      lora_model: undefined,
     }))
 
     await findButtonsByText('图生视频')[0]!.trigger('click')

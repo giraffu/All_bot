@@ -14,6 +14,7 @@ from src.constants import (
     MODE_WAN22_VIDEO_V2,
 )
 from src.domain_config.scail2_video import (
+    SCAIL2_ACTION_TRANSFER_LONG_TASK_TYPE,
     SCAIL2_ACTION_TRANSFER_TASK_TYPE,
     SCAIL2_FACE_SWAP_V2_TASK_TYPE,
     SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
@@ -65,6 +66,7 @@ def _supports_gallery_submission(task_type: str, allow_contribute: bool) -> bool
         MODE_WAN22_VIDEO_V2,
         MODE_IMG2IMG_LORA,
         SCAIL2_ACTION_TRANSFER_TASK_TYPE,
+        SCAIL2_ACTION_TRANSFER_LONG_TASK_TYPE,
         SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
         SCAIL2_FACE_SWAP_V2_TASK_TYPE,
     }

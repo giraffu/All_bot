@@ -21,7 +21,7 @@ from src.constants import (
 )
 from src.core.exceptions import InsufficientCreditsError
 from src.domain_config.scail2_video import (
-    SCAIL2_ALLOWED_DURATION_SECONDS,
+    get_scail2_allowed_duration_seconds,
     get_scail2_cost,
     normalize_scail2_duration_seconds,
 )
@@ -90,19 +90,29 @@ def _safe_suffix(file_name: str | None, *, default: str, allowed: set[str]) -> s
 
 
 def _build_duration_keyboard(context: ContextTypes.DEFAULT_TYPE) -> InlineKeyboardMarkup:
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                _t(
-                    context,
-                    "fsm.scail2_video.duration_button",
-                    duration=duration,
-                    cost=get_scail2_cost(duration, strict=True),
+    fsm_data = context.user_data.get(SCAIL2_VIDEO_DATA_KEY, {})
+    task_type = fsm_data.get("task_type")
+    durations = get_scail2_allowed_duration_seconds(task_type)
+    duration_buttons = [
+        InlineKeyboardButton(
+            _t(
+                context,
+                "fsm.scail2_video.duration_button",
+                duration=duration,
+                cost=get_scail2_cost(
+                    duration,
+                    strict=True,
+                    task_type=task_type,
                 ),
-                callback_data=f"fsm_scail2_duration_{duration}",
-            )
-            for duration in SCAIL2_ALLOWED_DURATION_SECONDS
-        ],
+            ),
+            callback_data=f"fsm_scail2_duration_{duration}",
+        )
+        for duration in durations
+    ]
+    keyboard = [
+        duration_buttons[index : index + 2]
+        for index in range(0, len(duration_buttons), 2)
+    ] + [
         [
             InlineKeyboardButton(
                 _t(context, "fsm.scail2_video.cancel_button"),
@@ -201,7 +211,11 @@ async def _start_scail2_video(
         await robust_reply_text(update.message, _t(context, "fsm.common.conflict"))
         return ConversationHandler.END
 
-    cost = get_scail2_cost(5, strict=True)
+    cost = get_scail2_cost(5, strict=True, task_type=task_type)
+    duration_options = "/".join(
+        f"{duration}秒"
+        for duration in get_scail2_allowed_duration_seconds(task_type)
+    )
     context.user_data["in_conversation"] = SCAIL2_CONVERSATION_LOCK
     context.user_data[SCAIL2_VIDEO_DATA_KEY] = {"task_type": task_type}
 
@@ -211,6 +225,7 @@ async def _start_scail2_video(
             context,
             "fsm.scail2_video.start",
             mode_name=_get_mode_name(context, task_type),
+            duration_options=duration_options,
             cost=cost,
         ),
         parse_mode="Markdown",
@@ -445,6 +460,7 @@ async def process_duration_selection(
         duration = normalize_scail2_duration_seconds(
             data.rsplit("_", 1)[-1],
             strict=True,
+            task_type=fsm_data.get("task_type"),
         )
     except Exception:
         await robust_edit_text(
@@ -454,7 +470,11 @@ async def process_duration_selection(
         _cleanup_context(context)
         return ConversationHandler.END
 
-    cost = get_scail2_cost(duration, strict=True)
+    cost = get_scail2_cost(
+        duration,
+        strict=True,
+        task_type=fsm_data.get("task_type"),
+    )
     try:
         await permission_service.check_quota(
             user.id,

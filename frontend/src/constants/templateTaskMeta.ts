@@ -5,7 +5,8 @@ import type {
 } from '@/types/templateApply'
 
 const TEMPLATE_TASK_TYPE_ALIASES: Record<string, TemplateApplyTaskType> = {
-  faceswap: 'face_swap'
+  faceswap: 'face_swap',
+  scail2_action_transfer_long: 'scail2_action_transfer'
 }
 
 const buildLegacyQuery = (
@@ -59,6 +60,22 @@ export const TEMPLATE_TASK_META_MAP: Record<TemplateApplyTaskType, TemplateTaskM
     legacyTitleKey: 'lab.cards.custom_edit_title',
     legacyCost: 2
   }),
+  pornmaster_flux2_single_edit: createMeta({
+    taskType: 'pornmaster_flux2_single_edit',
+    supportMode: 'workbench',
+    panelKind: 'imagePrompt',
+    legacyRouteName: 'ImageAndPrompt',
+    legacyTitleKey: 'lab.cards.custom_edit_v2_title',
+    legacyCost: 2
+  }),
+  pornmaster_flux2_multi_edit: createMeta({
+    taskType: 'pornmaster_flux2_multi_edit',
+    supportMode: 'workbench',
+    panelKind: 'imagePrompt',
+    legacyRouteName: 'ImageAndPrompt',
+    legacyTitleKey: 'lab.cards.custom_edit_v2_title',
+    legacyCost: 6
+  }),
   face_swap: createMeta({
     taskType: 'face_swap',
     supportMode: 'workbench',
@@ -108,6 +125,14 @@ export const TEMPLATE_TASK_META_MAP: Record<TemplateApplyTaskType, TemplateTaskM
     legacyCost: 10
   }),
   scail2_action_transfer: createMeta({
+    taskType: 'scail2_action_transfer',
+    supportMode: 'workbench',
+    panelKind: 'scail2Video',
+    legacyRouteName: 'CustomFeatures',
+    legacyTitleKey: 'lab.cards.scail2_action_transfer_title',
+    legacyCost: 40
+  }),
+  scail2_action_transfer_long: createMeta({
     taskType: 'scail2_action_transfer',
     supportMode: 'workbench',
     panelKind: 'scail2Video',

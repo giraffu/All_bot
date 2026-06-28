@@ -983,6 +983,7 @@ class RuntimePlanner:
         ws_url = self._effective_ws_url(node=node, comfy=comfy, overrides=overrides)
         if self._effective_runtime_shape(comfy, overrides) == RUNPOD_AIO_RUNTIME_SHAPE:
             agent_id = overrides.agent_id or assignment.worker_id
+            target_tasks = ",".join(profile.task_types) or "matching"
             image_ref = self._target_image_ref(
                 comfy=comfy,
                 profile=profile,
@@ -1010,7 +1011,7 @@ class RuntimePlanner:
                 ),
                 (
                     f"# real canary window: disable {assignment.worker_id}, enable "
-                    f"{agent_id}, submit one img2img_lora Web task, then restore"
+                    f"{agent_id}, submit one matching Web task ({target_tasks}), then restore"
                 ),
                 f"# dry-run render: {self._render_command(assignment, profile, overrides)}",
             ]

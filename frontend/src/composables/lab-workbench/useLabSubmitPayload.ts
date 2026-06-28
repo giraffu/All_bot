@@ -12,6 +12,11 @@ import {
   type Wan22VideoV2ResolutionPreset,
 } from '@/features/generation/imageToVideo'
 import type { LabModeConfig, LabUploadSlotId } from '@/features/generation/labModeConfig'
+import {
+  FREE_EDIT_V2_MODE_ID,
+  PORNMASTER_FLUX2_MULTI_EDIT_TASK_TYPE,
+  PORNMASTER_FLUX2_SINGLE_EDIT_TASK_TYPE,
+} from '@/features/generation/labModeConfig'
 import { isScail2ModeId } from './modeHelpers'
 import type {
   LabAssetUploadSlot,
@@ -47,6 +52,12 @@ type UseLabSubmitPayloadOptions = {
   setSubmittedTaskId: (taskId: string | null) => void
   t: TranslateFn
 }
+
+const resolveFreeEditV2TaskType = (imageCount: number) => (
+  imageCount >= 2
+    ? PORNMASTER_FLUX2_MULTI_EDIT_TASK_TYPE
+    : PORNMASTER_FLUX2_SINGLE_EDIT_TASK_TYPE
+)
 
 export function useLabSubmitPayload({
   currentMode,
@@ -166,9 +177,13 @@ export function useLabSubmitPayload({
       return
     }
 
+    const uploadedReferenceKeys = uploadedReferences.value.map(item => item.key)
+
     await submitAndTrack(buildGenerationTaskPayload({
-      taskType: currentMode.value.taskType,
-      images: uploadedReferences.value.map(item => item.key),
+      taskType: currentMode.value.id === FREE_EDIT_V2_MODE_ID
+        ? resolveFreeEditV2TaskType(uploadedReferenceKeys.length)
+        : currentMode.value.taskType,
+      images: uploadedReferenceKeys,
       prompt: prompt.value,
       promptTarget: currentMode.value.promptTarget,
       loraName: currentMode.value.id === 'edit'

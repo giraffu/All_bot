@@ -127,6 +127,16 @@
         "negative_prompt": "7",
         "negative_prompt_input": "text"
     },
+    "scail2_action_transfer_long": {
+        "image": "58",
+        "image_input": "image",
+        "video": "113",
+        "video_input": "video",
+        "prompt": "6",
+        "prompt_input": "text",
+        "negative_prompt": "7",
+        "negative_prompt_input": "text"
+    },
     "scail2_video_replacement": {
         "image": "58",
         "image_input": "image",

@@ -24,6 +24,7 @@ const SPLIT_INPUT_RE = /\|/
 const WAN22_TASK_TYPES = new Set(['wan22_video_v2', 'custom_video', 'video_lora'])
 const SCAIL2_TASK_TYPES = new Set([
   'scail2_action_transfer',
+  'scail2_action_transfer_long',
   'scail2_video_replacement',
   'scail2_face_swap_v2',
 ])
@@ -76,7 +77,14 @@ const resolveInputLabelKey = (
     return index === 0 ? 'face_image' : 'target_video'
   }
 
-  if (['i2i_pro', 'i2i_draw', 'img2img_lora', 'edit'].includes(taskType)) {
+  if ([
+    'i2i_pro',
+    'i2i_draw',
+    'img2img_lora',
+    'edit',
+    'pornmaster_flux2_single_edit',
+    'pornmaster_flux2_multi_edit',
+  ].includes(taskType)) {
     return total === 1 ? 'reference_image' : 'input_n'
   }
 

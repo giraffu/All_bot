@@ -331,6 +331,44 @@ describe('TemplateScail2VideoPanel', () => {
     expect(wrapper.findAllComponents(RadioButtonStub).map(button => button.text())).toEqual(['5 秒', '8 秒'])
   })
 
+  it('maps legacy long action transfer templates to merged action transfer', async () => {
+    const wrapper = mountPanel({
+      rawTaskType: 'scail2_action_transfer_long',
+      taskType: 'scail2_action_transfer_long',
+      requestedDuration: 20,
+      raw: {
+        ...buildContext().raw,
+        task_type: 'scail2_action_transfer_long',
+        requested_duration: 20
+      }
+    })
+    await nextTick()
+    await loadMotionVideoMetadata(wrapper, 20)
+
+    expect(wrapper.findAllComponents(RadioButtonStub).map(button => button.text())).toEqual([
+      '5 秒',
+      '8 秒',
+      '10 秒',
+      '15 秒',
+      '20 秒'
+    ])
+
+    const file = new File(['reference'], 'reference.png', { type: 'image/png' })
+    await wrapper.findComponent(UploadDraggerStub).props('beforeUpload')(file)
+    await flushPromises()
+
+    await wrapper.findAllComponents(ButtonStub).at(-1)!.trigger('click')
+    await flushPromises()
+
+    expect(submitTaskMock.mock.calls[0][0]).toMatchObject({
+      task_type: 'scail2_action_transfer',
+      inputs: {
+        images: ['uploads/reference.png', 'uploads/motion.mp4'],
+        duration: 20
+      }
+    })
+  })
+
   it('disables submission when the template has no reusable motion video', async () => {
     const wrapper = mountPanel({
       inputFile: null,

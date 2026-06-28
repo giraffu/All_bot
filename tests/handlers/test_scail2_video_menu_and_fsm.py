@@ -72,6 +72,7 @@ def test_main_menu_uses_video_to_video_in_old_face_video_position():
 
 
 def test_video_to_video_keyboard_order():
+    get_video_to_video_keyboard.cache_clear()
     keyboard = get_video_to_video_keyboard("zh")
 
     assert [_button_texts(row) for row in keyboard.keyboard] == [
@@ -102,6 +103,12 @@ def test_global_menu_filter_includes_video_to_video_and_keeps_face_video_compat(
     assert (
         prompt_router.GLOBAL_REVERSE_MAP[
             get_text("menu.video_to_video_action_transfer", "zh")
+        ]
+        == "menu.video_to_video_action_transfer"
+    )
+    assert (
+        prompt_router.GLOBAL_REVERSE_MAP[
+            get_text("menu.video_to_video_action_transfer_long", "zh")
         ]
         == "menu.video_to_video_action_transfer"
     )
@@ -155,6 +162,26 @@ async def test_start_action_transfer_initializes_mode(monkeypatch):
         == MODE_SCAIL2_ACTION_TRANSFER
     )
     reply_mock.assert_awaited_once()
+
+
+def test_action_transfer_duration_keyboard_uses_merged_options():
+    context = _build_context(
+        scail2_video_data={"task_type": MODE_SCAIL2_ACTION_TRANSFER}
+    )
+
+    keyboard = scail2_video_fsm._build_duration_keyboard(context)
+
+    assert [
+        button.callback_data
+        for row in keyboard.inline_keyboard[:-1]
+        for button in row
+    ] == [
+        "fsm_scail2_duration_5",
+        "fsm_scail2_duration_8",
+        "fsm_scail2_duration_10",
+        "fsm_scail2_duration_15",
+        "fsm_scail2_duration_20",
+    ]
 
 
 @pytest.mark.asyncio

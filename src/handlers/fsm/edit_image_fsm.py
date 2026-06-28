@@ -10,7 +10,16 @@ from telegram.ext import (
     filters,
 )
 
-from src.constants import MODE_EDIT, MODE_I2I_PRO, MODE_IMG2IMG_LORA, TASK_COSTS
+from config import ENABLE_FREE_EDIT_V2
+from src.constants import (
+    MODE_EDIT,
+    MODE_FREE_EDIT_V2,
+    MODE_I2I_PRO,
+    MODE_IMG2IMG_LORA,
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT,
+    MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+    TASK_COSTS,
+)
 from src.handlers.conversation_states import EditImageState
 from src.handlers.prompt_router import GLOBAL_REVERSE_MAP, is_global_menu_command
 from src.lora_catalog import (
@@ -54,7 +63,11 @@ def _resolve_edit_image_mode(text: str) -> str:
     from src.handlers.prompt_router import GLOBAL_REVERSE_MAP
 
     route_key = GLOBAL_REVERSE_MAP.get(text)
-    return MODE_EDIT if route_key == "menu.free_edit" else MODE_I2I_PRO
+    if route_key == "menu.free_edit":
+        return MODE_EDIT
+    if route_key == "menu.free_edit_v2" and ENABLE_FREE_EDIT_V2:
+        return MODE_FREE_EDIT_V2
+    return MODE_I2I_PRO
 
 
 def _build_edit_lora_keyboard(lang: str = "zh") -> InlineKeyboardMarkup:
@@ -83,6 +96,10 @@ def _build_edit_image_start_message(
         from src.i18n.translator import get_text
 
         return (get_text("fsm.edit_image.start_i2i_pro", lang, cost=cost), None)
+    if mode == MODE_FREE_EDIT_V2:
+        from src.i18n.translator import get_text
+
+        return (get_text("fsm.edit_image.start_free_edit_v2", lang, cost=cost), None)
 
     from src.i18n.translator import get_text
 
@@ -111,15 +128,26 @@ def _build_reference_image_received_message(
         return get_text("fsm.edit_image.reference_received_i2i", lang)
 
     num_images = len(fsm_data["images"])
+    is_free_edit_v2 = fsm_data["mode"] == MODE_FREE_EDIT_V2
     if num_images == 1:
         from src.i18n.translator import get_text
 
-        return get_text("fsm.edit_image.reference_received_first", lang)
+        key = (
+            "fsm.edit_image.reference_received_first_v2"
+            if is_free_edit_v2
+            else "fsm.edit_image.reference_received_first"
+        )
+        return get_text(key, lang)
 
     fsm_data["cost"] = 6
     from src.i18n.translator import get_text
 
-    return get_text("fsm.edit_image.reference_received_second", lang)
+    key = (
+        "fsm.edit_image.reference_received_second_v2"
+        if is_free_edit_v2
+        else "fsm.edit_image.reference_received_second"
+    )
+    return get_text(key, lang)
 
 
 def _normalize_edit_prompt(prompt: str, lora_name: str) -> str:
@@ -152,6 +180,28 @@ def _submit_edit_image_task(
                 username=username,
                 prompt=prompt,
                 images=images,
+            ),
+        )
+        return
+
+    if mode == MODE_FREE_EDIT_V2:
+        task_type = (
+            MODE_PORNMASTER_FLUX2_MULTI_EDIT
+            if len(images) >= 2
+            else MODE_PORNMASTER_FLUX2_SINGLE_EDIT
+        )
+        create_background_task(
+            context,
+            process_generation_task(
+                context=context,
+                chat_id=chat_id,
+                user_id=user_id,
+                username=username,
+                prompt=prompt,
+                images=images[:2],
+                is_video=False,
+                task_type=task_type,
+                cleanup=True,
             ),
         )
         return
@@ -207,7 +257,7 @@ async def start_edit_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     )
     return (
         EditImageState.WAIT_REFERENCE_IMAGES
-        if mode == MODE_I2I_PRO
+        if mode in (MODE_I2I_PRO, MODE_FREE_EDIT_V2)
         else EditImageState.WAIT_LORA_SELECTION
     )
 
@@ -298,7 +348,7 @@ async def receive_additional_image(
         return EditImageState.WAIT_PROMPT
 
     if (
-        fsm_data["mode"] in (MODE_EDIT, MODE_IMG2IMG_LORA)
+        fsm_data["mode"] in (MODE_EDIT, MODE_IMG2IMG_LORA, MODE_FREE_EDIT_V2)
         and len(fsm_data["images"]) >= 2
     ):
         await robust_reply_text(
@@ -432,11 +482,13 @@ async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 def get_edit_image_fsm_handler() -> ConversationHandler:
+    entry_menu_keys = ["menu.free_edit", "menu.i2i_pro"]
+    if ENABLE_FREE_EDIT_V2:
+        entry_menu_keys.insert(1, "menu.free_edit_v2")
+
     return ConversationHandler(
         entry_points=[
-            MessageHandler(
-                I18nFilter(["menu.free_edit", "menu.i2i_pro"]), start_edit_image
-            )
+            MessageHandler(I18nFilter(entry_menu_keys), start_edit_image)
         ],
         states={
             EditImageState.WAIT_LORA_SELECTION: [

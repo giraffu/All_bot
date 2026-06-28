@@ -20,7 +20,7 @@
 ## 3. 当前功能
 
 - 用户画像: 用户增长、生成活跃、签到趋势、身份/修为/灵石/生成/活跃分布和用户排行。
-- 灵石收支: 基于 `user_logs`、`users`、`orders` 只读聚合灵石收入、支出、净变化、来源组成、消耗去向、健康指标和可疑用户复核线索；风险判断只用于人工复核，不修改用户资产。
+- 灵石收支: 基于 `user_logs`、`users`、`orders` 只读聚合灵石收入、支出、净变化、来源组成、消耗去向、健康指标和可疑用户复核线索；签到收入在分析层拆为“免费签到”和“身份加成签到”，新流水优先读取 `checkin_base_reward` / `checkin_identity_bonus` 元数据，旧流水按奖励总额、当前身份和修为兼容推断；风险判断只用于人工复核，不修改用户资产。
 - 充值情况: 参考管理后台充值口径，只读聚合成功/处理中/失败订单、RMB / TON / Stars、USDT 估算、套餐发放灵石、分时充值、渠道/套餐/付费分层、受邀充值、Top 付费用户、最近订单和充值健康指标；真实收入仅统计 `RMB`、`TON`、`XTR` 成功订单，`manual_` / `GIFT:` 等内部赠送单单独展示。
 - 生成分析: 合并原经营概览里的生成总览，按趋势、质量漏斗、来源组成、任务类型、灵石消耗效率、Worker 成功/失败和耗时、用户排行、近期高信号作品综合分析生成健康度。
 - 经营概览: 不再作为可见 Tab；`/api/overview` 仅保留给侧栏 shadow 状态、数据源展示和旧 `#overview` 链接兼容。
@@ -54,3 +54,4 @@
 
 - 2026-06-26: 新增提示词候选向量化与“向量相似”审核 Tab；新增 `analytics_prompt_embeddings`、`analytics_prompt_similarity_edges`、`analytics_prompt_similarity_clusters`、`analytics_prompt_similarity_members` 和 `analytics_prompt_vector_state`，使用 LM Studio `text-embedding-qwen3-embedding-8b` + USEARCH 同任务类型内聚类，仅生成审核候选。
 - 2026-06-27: cloud-prod shadow sync 默认保留 `analytics_prompt_*` 本地分析表；新增 `scripts/run_local_analytics_shadow_pipeline.py` 与 `allbot-local-analytics-refresh.timer`，形成每日 05:45 的 Mart 增量刷新、瘦身与向量断点续跑链路。
+- 2026-06-28: 灵石收支页将签到收入拆分为免费签到与身份加成签到；签到流水新增基础奖励和身份加成元数据，旧流水由本地分析 SQL 兼容推断。

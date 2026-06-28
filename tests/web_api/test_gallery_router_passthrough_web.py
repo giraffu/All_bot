@@ -51,6 +51,10 @@ def test_default_gallery_allowed_type_configs_include_scail2_modes():
         "scail2_action_transfer",
         "task.mode_scail2_action_transfer",
     ) in DEFAULT_GALLERY_ALLOWED_TYPE_CONFIGS
+    assert not any(
+        task_type == "scail2_action_transfer_long"
+        for task_type, _label_key in DEFAULT_GALLERY_ALLOWED_TYPE_CONFIGS
+    )
     assert (
         "scail2_video_replacement",
         "task.mode_scail2_video_replacement",

@@ -417,6 +417,10 @@ class QuotaManager:
         username: str = None,
         full_name: str = None,
         reward: int = 10,
+        checkin_base_reward: int | None = None,
+        checkin_identity_bonus: int = 0,
+        checkin_user_group: str | None = None,
+        checkin_identity: str | None = None,
     ) -> bool:
         """
         Perform daily check-in.
@@ -460,13 +464,22 @@ class QuotaManager:
             new_balance = user.credits
             await session.commit()
 
+            extra_info = {"checkin_date": today.isoformat(), "reward": reward}
+            if checkin_base_reward is not None:
+                extra_info["checkin_base_reward"] = checkin_base_reward
+                extra_info["checkin_identity_bonus"] = max(checkin_identity_bonus, 0)
+            if checkin_user_group:
+                extra_info["checkin_user_group"] = checkin_user_group
+            if checkin_identity:
+                extra_info["checkin_identity"] = checkin_identity
+
             await LogService.log_action(
                 user_id=user_id,
                 username=username or user.username,
                 operation_type="checkin",
                 credit_change=reward,
                 current_balance=new_balance,
-                extra_info={"checkin_date": today.isoformat(), "reward": reward},
+                extra_info=extra_info,
             )
             return True
 

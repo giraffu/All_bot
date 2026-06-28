@@ -20,8 +20,6 @@ export function useGalleryFilters(options: UseGalleryFiltersOptions) {
   const sortBy = ref('latest')
   const timeRange = ref('all')
 
-  const hasAddonSubfilters = computed(() => isGalleryGroupedTaskType(taskType.value))
-
   const currentLoraModels = computed(() => {
     if (taskType.value === GALLERY_EDIT_GROUP_TASK_TYPE) {
       return options.img2imgLoraModels.value
@@ -31,6 +29,10 @@ export function useGalleryFilters(options: UseGalleryFiltersOptions) {
     }
     return []
   })
+
+  const hasAddonSubfilters = computed(() => (
+    isGalleryGroupedTaskType(taskType.value) && currentLoraModels.value.length > 0
+  ))
 
   const requestLoraModel = computed(() => {
     if (!hasAddonSubfilters.value || loraModel.value === 'all') {

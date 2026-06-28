@@ -2,6 +2,8 @@ from src.constants import (
     DYNAMIC_PRIORITY_RULES,
     MODE_IMAGE_TO_VIDEO,
     MODE_SCAIL2_ACTION_TRANSFER,
+    MODE_SCAIL2_ACTION_TRANSFER_LONG,
+    MODE_SCAIL2_FACE_SWAP_V2,
     MODE_SCAIL2_VIDEO_REPLACEMENT,
     VIDEO_TASK_TYPES,
 )
@@ -22,7 +24,9 @@ def test_video_task_types_constant():
         "video_lora",
         "ltx_video",
         MODE_SCAIL2_ACTION_TRANSFER,
+        MODE_SCAIL2_ACTION_TRANSFER_LONG,
         MODE_SCAIL2_VIDEO_REPLACEMENT,
+        MODE_SCAIL2_FACE_SWAP_V2,
     ]
     for mode in expected_modes:
         assert mode in VIDEO_TASK_TYPES

@@ -9,9 +9,12 @@ from telegram.warnings import PTBUserWarning
 from src.constants import (
     MODE_CUSTOM_VIDEO,
     MODE_EDIT,
+    MODE_FREE_EDIT_V2,
     MODE_IMAGE_TO_VIDEO,
     MODE_I2I_DRAW,
     MODE_IMG2IMG_LORA,
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT,
+    MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
 )
 from src.core.exceptions import InsufficientCreditsError
 from src.handlers.fsm import (
@@ -226,6 +229,88 @@ async def test_start_edit_image_routes_free_edit_to_lora_selection(monkeypatch):
     reply_mock.assert_awaited_once()
     assert "已进入【自由P图】模式" in reply_mock.await_args.args[1]
     assert reply_mock.await_args.kwargs["reply_markup"] is not None
+
+
+@pytest.mark.asyncio
+async def test_start_edit_image_v2_skips_lora_selection(monkeypatch):
+    reply_mock = AsyncMock()
+
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(edit_image_fsm, "ENABLE_FREE_EDIT_V2", True)
+    monkeypatch.setattr(edit_image_fsm, "robust_reply_text", reply_mock)
+
+    update = _build_update_with_message(text="自由P图 v2")
+    context = SimpleNamespace(user_data={})
+
+    monkeypatch.setitem(
+        __import__("src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]).GLOBAL_REVERSE_MAP,
+        "自由P图 v2",
+        "menu.free_edit_v2",
+    )
+
+    result = await edit_image_fsm.start_edit_image(update, context)
+
+    assert result == edit_image_fsm.EditImageState.WAIT_REFERENCE_IMAGES
+    assert context.user_data["edit_image_data"]["mode"] == MODE_FREE_EDIT_V2
+    assert context.user_data["edit_image_data"]["cost"] == 2
+    reply_mock.assert_awaited_once()
+    assert "自由P图 v2" in reply_mock.await_args.args[1]
+    assert reply_mock.await_args.kwargs["reply_markup"] is None
+
+
+@pytest.mark.asyncio
+async def test_edit_image_v2_submit_selects_single_or_multi_task_type(monkeypatch):
+    reply_mock = AsyncMock()
+    scheduled = []
+    captured = []
+
+    async def fake_process_generation_task(**kwargs):
+        captured.append(kwargs)
+        return None, None
+
+    def fake_create_background_task(_context, coroutine):
+        scheduled.append(coroutine)
+
+    monkeypatch.setattr(edit_image_fsm, "is_global_menu_command", lambda _text: False)
+    monkeypatch.setattr(edit_image_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(edit_image_fsm.permission_service, "check_quota", AsyncMock())
+    monkeypatch.setattr(edit_image_fsm, "process_generation_task", fake_process_generation_task)
+    monkeypatch.setattr(edit_image_fsm, "create_background_task", fake_create_background_task)
+
+    update = _build_update_with_message(text="make it cinematic")
+    context = SimpleNamespace(
+        bot=SimpleNamespace(),
+        user_data={
+            "in_conversation": "EDIT_IMAGE",
+            "edit_image_data": {
+                "mode": MODE_FREE_EDIT_V2,
+                "cost": 2,
+                "images": ["/tmp/single.png"],
+            },
+        },
+    )
+
+    result = await edit_image_fsm.receive_prompt(update, context)
+    assert result == ConversationHandler.END
+    await scheduled.pop()
+    assert captured[-1]["task_type"] == MODE_PORNMASTER_FLUX2_SINGLE_EDIT
+    assert "lora_name" not in captured[-1]
+    assert "lora_strength" not in captured[-1]
+
+    context.user_data = {
+        "in_conversation": "EDIT_IMAGE",
+        "edit_image_data": {
+            "mode": MODE_FREE_EDIT_V2,
+            "cost": 6,
+            "images": ["/tmp/a.png", "/tmp/b.png"],
+        },
+    }
+
+    result = await edit_image_fsm.receive_prompt(update, context)
+    assert result == ConversationHandler.END
+    await scheduled.pop()
+    assert captured[-1]["task_type"] == MODE_PORNMASTER_FLUX2_MULTI_EDIT
+    assert captured[-1]["images"] == ["/tmp/a.png", "/tmp/b.png"]
 
 
 @pytest.mark.asyncio

@@ -8,6 +8,7 @@ from app.models import (
     LtxVideoFlf2VRequest,
     LtxVideoRequest,
     LtxVideoV2VAudioRequest,
+    Scail2ActionTransferLongRequest,
     Scail2VideoRequest,
     TaskResponse,
     TaskType,
@@ -35,8 +36,11 @@ SIMPLE_TASK_TYPE_MAP = {
     "ltx_video_v2v_audio": TaskType.LTX_VIDEO_V2V_AUDIO,
     "wan22_video_v2": TaskType.WAN22_VIDEO_V2,
     "scail2_action_transfer": TaskType.SCAIL2_ACTION_TRANSFER,
+    "scail2_action_transfer_long": TaskType.SCAIL2_ACTION_TRANSFER_LONG,
     "scail2_video_replacement": TaskType.SCAIL2_VIDEO_REPLACEMENT,
     "scail2_face_swap_v2": TaskType.SCAIL2_FACE_SWAP_V2,
+    "pornmaster_flux2_single_edit": TaskType.PORNMASTER_FLUX2_SINGLE_EDIT,
+    "pornmaster_flux2_multi_edit": TaskType.PORNMASTER_FLUX2_MULTI_EDIT,
 }
 
 LEGACY_WAN22_SIMPLE_TASK_KEYS = {"video_insert", "video_edit"}
@@ -174,6 +178,12 @@ SIMPLE_TASK_ROUTE_SPECS = (
         "create_scail2_action_transfer_task",
     ),
     (
+        "/api/v1/scail2_action_transfer_long",
+        Scail2ActionTransferLongRequest,
+        "scail2_action_transfer_long",
+        "create_scail2_action_transfer_long_task",
+    ),
+    (
         "/api/v1/scail2_video_replacement",
         Scail2VideoRequest,
         "scail2_video_replacement",
@@ -184,6 +194,18 @@ SIMPLE_TASK_ROUTE_SPECS = (
         Scail2VideoRequest,
         "scail2_face_swap_v2",
         "create_scail2_face_swap_v2_task",
+    ),
+    (
+        "/api/v1/pornmaster_flux2_single_edit",
+        Img2ImgRequest,
+        "pornmaster_flux2_single_edit",
+        "create_pornmaster_flux2_single_edit_task",
+    ),
+    (
+        "/api/v1/pornmaster_flux2_multi_edit",
+        Img2ImgRequest,
+        "pornmaster_flux2_multi_edit",
+        "create_pornmaster_flux2_multi_edit_task",
     ),
 )
 

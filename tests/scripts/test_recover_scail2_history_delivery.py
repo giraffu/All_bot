@@ -105,6 +105,11 @@ def test_filter_scail2_candidates_keeps_only_target_task_types():
             "internal_user_id": 1001,
             "submission_context": {"task_type": "scail2_face_swap_v2"},
         },
+        "task-5": {
+            "backend_task_id": "backend-5",
+            "internal_user_id": 1001,
+            "submission_context": {"task_type": "scail2_action_transfer_long"},
+        },
     }
 
     candidates = recovery.filter_scail2_candidates(
@@ -116,6 +121,7 @@ def test_filter_scail2_candidates_keeps_only_target_task_types():
         "task-1",
         "task-3",
         "task-4",
+        "task-5",
     ]
 
 

@@ -11,6 +11,10 @@ from src.constants import (
     MODE_IMG2IMG_LORA,
     MODE_I2I_PRO,
     MODE_I2I_DRAW,
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT,
+    MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+    MODE_SCAIL2_ACTION_TRANSFER,
+    MODE_SCAIL2_ACTION_TRANSFER_LONG,
     MODE_SCAIL2_FACE_SWAP_V2,
     MODE_SCAIL2_VIDEO_REPLACEMENT,
     MODE_WAN22_VIDEO_V2,
@@ -29,6 +33,7 @@ from src.domain_config.scail2_video import (
     normalize_scail2_duration_seconds,
     normalize_scail2_negative_prompt,
     normalize_scail2_positive_prompt,
+    resolve_scail2_execution_task_type,
 )
 from src.core.task_core_service_providers import get_task_core_image_service
 from src.domain_config.wan22_aio_video import (
@@ -44,6 +49,10 @@ from src.lora_catalog import normalize_ltx_video_lora_items
 
 
 EDIT_LIKE_TASK_TYPES = {MODE_EDIT, MODE_IMG2IMG_LORA}
+PORNMASTER_FLUX2_EDIT_TASK_TYPES = {
+    MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT,
+}
 FACE_VIDEO_TASK_TYPES = {"face_video", "face_video_step1", "face_video_step2"}
 LTX_VIDEO_MODE_I2V = "i2v"
 LTX_VIDEO_MODE_FLF2V = "flf2v"
@@ -246,13 +255,21 @@ def _build_wan22_submission_context(inputs: Dict[str, Any]) -> _Wan22SubmissionC
 
 
 def _resolve_scail2_duration_seconds(inputs: Dict[str, Any]) -> int:
+    task_type = str(inputs.get("task_type") or "").strip() or None
     try:
         return normalize_scail2_duration_seconds(
             inputs.get("duration") or inputs.get("length"),
             strict=True,
+            task_type=task_type,
         )
     except Scail2DurationError as exc:
-        raise CoreDomainError("SCAIL-2 目前只支持 5 秒或 8 秒。") from exc
+        if task_type == MODE_SCAIL2_ACTION_TRANSFER_LONG:
+            message = "SCAIL-2 长时间动作迁移目前只支持 10、15 或 20 秒。"
+        elif task_type == MODE_SCAIL2_ACTION_TRANSFER:
+            message = "SCAIL-2 动作迁移目前只支持 5、8、10、15 或 20 秒。"
+        else:
+            message = "SCAIL-2 目前只支持 5 秒或 8 秒。"
+        raise CoreDomainError(message) from exc
 
 
 def _build_scail2_submission_context(
@@ -261,14 +278,20 @@ def _build_scail2_submission_context(
     task_type: str,
 ) -> _Scail2SubmissionContext:
     saved_images = _get_saved_input_images(inputs)
-    duration_seconds = _resolve_scail2_duration_seconds(inputs)
+    duration_seconds = _resolve_scail2_duration_seconds(
+        {**inputs, "task_type": task_type}
+    )
     return _Scail2SubmissionContext(
         prompt=normalize_scail2_positive_prompt(task_type, inputs.get("prompt")),
         reference_image_path=saved_images[0] if len(saved_images) > 0 else "",
         motion_video_path=saved_images[1] if len(saved_images) > 1 else "",
         negative_prompt=normalize_scail2_negative_prompt(inputs.get("negative_prompt")),
         duration_seconds=duration_seconds,
-        frame_count=get_scail2_frame_count(duration_seconds, strict=True),
+        frame_count=get_scail2_frame_count(
+            duration_seconds,
+            strict=True,
+            task_type=task_type,
+        ),
     )
 
 
@@ -434,6 +457,50 @@ class DefaultImageStrategy(BaseTaskStrategy):
                 negative_prompt=submission.negative_prompt,
                 priority=priority,
             )
+
+
+class PornmasterFlux2EditStrategy(BaseTaskStrategy):
+    def __init__(self, task_type: str):
+        self.task_type = task_type
+
+    def _ensure_enabled(self) -> None:
+        from config import ENABLE_FREE_EDIT_V2
+
+        if not ENABLE_FREE_EDIT_V2:
+            raise CoreDomainError("自由P图 v2 当前未开放。")
+
+    def _expected_image_count(self) -> int:
+        return 1 if self.task_type == MODE_PORNMASTER_FLUX2_SINGLE_EDIT else 2
+
+    def get_cost(self, inputs: Dict[str, Any]) -> int:
+        self._ensure_enabled()
+        return TASK_COSTS.get(self.task_type, 2)
+
+    def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        return {"saved_inputs": _get_saved_input_images(inputs)}
+
+    async def submit_task(
+        self, task_id: str, inputs: Dict[str, Any], priority: int
+    ) -> str:
+        self._ensure_enabled()
+        submission = _build_default_image_submission_context(
+            inputs,
+            seed_provider=_generate_dispatch_seed,
+        )
+        expected_images = self._expected_image_count()
+        if len(submission.image_paths) != expected_images:
+            raise CoreDomainError(
+                f"自由P图 v2 当前任务需要上传 {expected_images} 张参考图。"
+            )
+        image_service = _get_dispatch_image_service()
+        return await image_service.submit_pornmaster_flux2_edit_task(
+            task_id,
+            execution_task_type=self.task_type,
+            prompt=submission.prompt,
+            image_paths=submission.image_paths,
+            negative_prompt=submission.negative_prompt,
+            priority=priority,
+        )
 
 
 class FaceSwapStrategy(BaseTaskStrategy):
@@ -745,10 +812,14 @@ class Scail2VideoStrategy(BaseTaskStrategy):
         }
 
     def _resolve_duration_seconds(self, inputs: Dict[str, Any]) -> int:
-        return _resolve_scail2_duration_seconds(inputs)
+        return _resolve_scail2_duration_seconds({**inputs, "task_type": self.task_type})
 
     def get_cost(self, inputs: Dict[str, Any]) -> int:
-        return get_scail2_cost(self._resolve_duration_seconds(inputs), strict=True)
+        return get_scail2_cost(
+            self._resolve_duration_seconds(inputs),
+            strict=True,
+            task_type=self.task_type,
+        )
 
     def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
         if "images" in inputs and isinstance(inputs.get("images"), list):
@@ -766,6 +837,7 @@ class Scail2VideoStrategy(BaseTaskStrategy):
             "scail2_frame_count": get_scail2_frame_count(
                 duration_seconds,
                 strict=True,
+                task_type=self.task_type,
             ),
             "scail2_width": SCAIL2_FIXED_WIDTH,
             "scail2_height": SCAIL2_FIXED_HEIGHT,
@@ -782,9 +854,13 @@ class Scail2VideoStrategy(BaseTaskStrategy):
         if not submission.reference_image_path or not submission.motion_video_path:
             raise CoreDomainError("SCAIL-2 任务需要同时上传参考图片和驱动视频。")
 
+        execution_task_type = resolve_scail2_execution_task_type(
+            self.task_type,
+            submission.duration_seconds,
+        )
         return await image_service.submit_scail2_video_task(
             task_id,
-            task_type=self.task_type,
+            task_type=execution_task_type,
             reference_image_path=submission.reference_image_path,
             motion_video_path=submission.motion_video_path,
             prompt=submission.prompt,
@@ -811,6 +887,10 @@ STRATEGY_BUILDERS: dict[str, callable] = {
     **dict.fromkeys(
         SCAIL2_TASK_TYPES,
         lambda task_type: Scail2VideoStrategy(task_type),
+    ),
+    **dict.fromkeys(
+        PORNMASTER_FLUX2_EDIT_TASK_TYPES,
+        lambda task_type: PornmasterFlux2EditStrategy(task_type),
     ),
     MODE_I2I_PRO: _build_default_image_strategy,
     MODE_I2I_DRAW: _build_default_image_strategy,

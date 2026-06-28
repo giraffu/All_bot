@@ -19,7 +19,10 @@ from src.constants import (
     MODE_IMAGE_TO_VIDEO,
     MODE_IMAGE_TO_VIDEO_LITERAL,
     MODE_IMG2IMG_LORA,
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT,
+    MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_SCAIL2_ACTION_TRANSFER,
+    MODE_SCAIL2_ACTION_TRANSFER_LONG,
     MODE_SCAIL2_FACE_SWAP_V2,
     MODE_SCAIL2_VIDEO_REPLACEMENT,
     MODE_TXT2IMG,
@@ -56,6 +59,10 @@ def test_strategy_factory_returns_correct_strategy():
     strategy = StrategyFactory.get_strategy(MODE_SCAIL2_ACTION_TRANSFER)
     assert isinstance(strategy, Scail2VideoStrategy)
     assert strategy.task_type == MODE_SCAIL2_ACTION_TRANSFER
+
+    strategy = StrategyFactory.get_strategy(MODE_SCAIL2_ACTION_TRANSFER_LONG)
+    assert isinstance(strategy, Scail2VideoStrategy)
+    assert strategy.task_type == MODE_SCAIL2_ACTION_TRANSFER_LONG
 
     strategy = StrategyFactory.get_strategy(MODE_SCAIL2_VIDEO_REPLACEMENT)
     assert isinstance(strategy, Scail2VideoStrategy)
@@ -201,9 +208,41 @@ def test_scail2_strategy_cost_follows_strict_duration():
     assert strategy.get_cost({}) == 40
     assert strategy.get_cost({"duration": 5}) == 40
     assert strategy.get_cost({"duration": "8s"}) == 80
+    assert strategy.get_cost({"duration": 10}) == 120
+    assert strategy.get_cost({"duration": 15}) == 180
+    assert strategy.get_cost({"duration": 20}) == 260
 
     with pytest.raises(CoreDomainError):
-        strategy.get_cost({"duration": 10})
+        strategy.get_cost({"duration": 25})
+
+    replacement = StrategyFactory.get_strategy(MODE_SCAIL2_VIDEO_REPLACEMENT)
+    with pytest.raises(CoreDomainError):
+        replacement.get_cost({"duration": 10})
+
+
+def test_scail2_long_strategy_cost_and_metadata_follow_hidden_execution_duration():
+    strategy = StrategyFactory.get_strategy(MODE_SCAIL2_ACTION_TRANSFER_LONG)
+
+    with pytest.raises(CoreDomainError):
+        strategy.get_cost({"duration": 5})
+
+    assert strategy.get_cost({"duration": "10s"}) == 120
+    assert strategy.get_cost({"duration": 15}) == 180
+    assert strategy.get_cost({"duration": 20}) == 260
+
+    with pytest.raises(CoreDomainError):
+        strategy.get_cost({"duration": 8})
+
+    metadata = strategy.get_metadata(
+        {
+            "saved_input_images": ["demo/ref.png", "demo/motion.mp4"],
+            "duration": 20,
+        }
+    )
+
+    assert metadata["scail2_duration_seconds"] == 20
+    assert metadata["scail2_frame_count"] == 321
+    assert metadata["scail2_replacement_mode"] is False
 
 
 def test_scail2_strategy_metadata_keeps_frame_count_and_mode():
@@ -345,6 +384,74 @@ async def test_scail2_strategy_forwards_reference_video_prompt_and_duration(
         prompt="dance naturally",
         negative_prompt="blur",
         length=8,
+        priority=7,
+    )
+
+
+@pytest.mark.asyncio
+async def test_scail2_action_transfer_long_duration_uses_hidden_execution_type(
+    monkeypatch,
+):
+    strategy = StrategyFactory.get_strategy(MODE_SCAIL2_ACTION_TRANSFER)
+    submit_mock = AsyncMock(return_value="backend-task-id")
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_scail2_video_task=submit_mock,
+    )
+
+    result = await strategy.submit_task(
+        "task-1",
+        {
+            "prompt": "dance naturally",
+            "negative_prompt": "blur",
+            "saved_input_images": ["demo/ref.png", "demo/motion.mp4"],
+            "duration": 20,
+        },
+        priority=7,
+    )
+
+    assert result == "backend-task-id"
+    submit_mock.assert_awaited_once_with(
+        "task-1",
+        task_type=MODE_SCAIL2_ACTION_TRANSFER_LONG,
+        reference_image_path="demo/ref.png",
+        motion_video_path="demo/motion.mp4",
+        prompt="dance naturally",
+        negative_prompt="blur",
+        length=20,
+        priority=7,
+    )
+
+
+@pytest.mark.asyncio
+async def test_scail2_long_strategy_forwards_long_task_type_and_duration(monkeypatch):
+    strategy = StrategyFactory.get_strategy(MODE_SCAIL2_ACTION_TRANSFER_LONG)
+    submit_mock = AsyncMock(return_value="backend-task-id")
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_scail2_video_task=submit_mock,
+    )
+
+    result = await strategy.submit_task(
+        "task-1",
+        {
+            "prompt": "dance naturally",
+            "negative_prompt": "blur",
+            "saved_input_images": ["demo/ref.png", "demo/motion.mp4"],
+            "duration": 20,
+        },
+        priority=7,
+    )
+
+    assert result == "backend-task-id"
+    submit_mock.assert_awaited_once_with(
+        "task-1",
+        task_type=MODE_SCAIL2_ACTION_TRANSFER_LONG,
+        reference_image_path="demo/ref.png",
+        motion_video_path="demo/motion.mp4",
+        prompt="dance naturally",
+        negative_prompt="blur",
+        length=20,
         priority=7,
     )
 
@@ -492,6 +599,65 @@ async def test_default_image_strategy_normalizes_legacy_lora_mode_before_submit(
         priority=2,
         lora_strength=1.0,
     )
+
+
+@pytest.mark.asyncio
+async def test_pornmaster_flux2_edit_strategy_routes_single_and_multi(monkeypatch):
+    monkeypatch.setattr("config.ENABLE_FREE_EDIT_V2", True)
+    submit_mock = AsyncMock(return_value="backend-task-id")
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_pornmaster_flux2_edit_task=submit_mock,
+    )
+
+    single_strategy = StrategyFactory.get_strategy(MODE_PORNMASTER_FLUX2_SINGLE_EDIT)
+    multi_strategy = StrategyFactory.get_strategy(MODE_PORNMASTER_FLUX2_MULTI_EDIT)
+
+    assert single_strategy.get_cost({"images": ["a.png"]}) == 2
+    assert multi_strategy.get_cost({"images": ["a.png", "b.png"]}) == 6
+
+    await single_strategy.submit_task(
+        "task-single",
+        {
+            "prompt": "clean the background",
+            "saved_input_images": ["demo/input.png"],
+            "negative_prompt": "blur",
+        },
+        priority=2,
+    )
+    await multi_strategy.submit_task(
+        "task-multi",
+        {
+            "prompt": "merge details",
+            "saved_input_images": ["demo/a.png", "demo/b.png"],
+        },
+        priority=3,
+    )
+
+    submit_mock.assert_any_await(
+        "task-single",
+        execution_task_type=MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+        prompt="clean the background",
+        image_paths=["demo/input.png"],
+        negative_prompt="blur",
+        priority=2,
+    )
+    submit_mock.assert_any_await(
+        "task-multi",
+        execution_task_type=MODE_PORNMASTER_FLUX2_MULTI_EDIT,
+        prompt="merge details",
+        image_paths=["demo/a.png", "demo/b.png"],
+        negative_prompt=" ",
+        priority=3,
+    )
+
+
+def test_pornmaster_flux2_edit_strategy_respects_feature_flag(monkeypatch):
+    monkeypatch.setattr("config.ENABLE_FREE_EDIT_V2", False)
+    strategy = StrategyFactory.get_strategy(MODE_PORNMASTER_FLUX2_SINGLE_EDIT)
+
+    with pytest.raises(CoreDomainError, match="自由P图 v2 当前未开放"):
+        strategy.get_cost({"images": ["a.png"]})
 
 
 @pytest.mark.asyncio

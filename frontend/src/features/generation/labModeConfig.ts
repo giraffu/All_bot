@@ -7,6 +7,7 @@ import {
 
 export type UnifiedLabModeId =
   | 'edit'
+  | 'edit_v2'
   | 'txt2img'
   | 'i2i_pro'
   | 'i2i_draw'
@@ -111,26 +112,60 @@ export const LTX_VIDEO_DURATION_OPTIONS = [
 export const SCAIL2_VIDEO_DURATION_OPTIONS = [
   { value: '5', label: '5 秒' },
   { value: '8', label: '8 秒' },
+  { value: '10', label: '10 秒' },
+  { value: '15', label: '15 秒' },
+  { value: '20', label: '20 秒' },
 ] as const
 
-export const SCAIL2_EIGHT_SECOND_MIN_TEMPLATE_DURATION_SECONDS = 8
+export const SCAIL2_SHORT_VIDEO_DURATION_OPTIONS = [
+  { value: '5', label: '5 秒' },
+  { value: '8', label: '8 秒' },
+] as const
 
-export const getScail2VideoDurationOptionsForMotionVideo = (
-  motionVideoDurationSeconds: number | null | undefined
-) => {
-  const canUseEightSecondDuration =
-    typeof motionVideoDurationSeconds === 'number'
-    && Number.isFinite(motionVideoDurationSeconds)
-    && motionVideoDurationSeconds >= SCAIL2_EIGHT_SECOND_MIN_TEMPLATE_DURATION_SECONDS
-
-  return canUseEightSecondDuration
-    ? SCAIL2_VIDEO_DURATION_OPTIONS
-    : SCAIL2_VIDEO_DURATION_OPTIONS.filter(option => option.value === '5')
+const SCAIL2_ACTION_TRANSFER_COST_BY_DURATION: Record<number, number> = {
+  5: 40,
+  8: 80,
+  10: 120,
+  15: 180,
+  20: 260,
 }
 
-export const getScail2VideoCost = (duration: string | number) => (
-  String(duration).replace(/s$/i, '') === '8' ? 80 : 40
+const isScail2ActionTransferModeId = (modeId?: string) => (
+  !modeId
+  || modeId === 'scail2_action_transfer'
+  || modeId === 'scail2_action_transfer_long'
 )
+
+export const getScail2VideoDurationOptionsForMotionVideo = (
+  motionVideoDurationSeconds: number | null | undefined,
+  modeId?: string,
+) => {
+  const options = isScail2ActionTransferModeId(modeId)
+    ? SCAIL2_VIDEO_DURATION_OPTIONS
+    : SCAIL2_SHORT_VIDEO_DURATION_OPTIONS
+
+  if (
+    typeof motionVideoDurationSeconds !== 'number'
+    || !Number.isFinite(motionVideoDurationSeconds)
+  ) {
+    return options.filter(option => option.value === '5')
+  }
+
+  const availableOptions = options.filter(
+    option => Number(option.value) <= motionVideoDurationSeconds,
+  )
+  return availableOptions.length > 0
+    ? availableOptions
+    : options.filter(option => option.value === '5')
+}
+
+export const getScail2VideoCost = (duration: string | number, modeId?: string) => {
+  const normalizedDuration = Number(String(duration).replace(/s$/i, ''))
+  if (!isScail2ActionTransferModeId(modeId)) {
+    return normalizedDuration === 8 ? 80 : 40
+  }
+  return SCAIL2_ACTION_TRANSFER_COST_BY_DURATION[normalizedDuration] ?? 40
+}
 
 export const DEFAULT_VIDEO_RESOLUTION = '512'
 export const DEFAULT_FACE_VIDEO_RESOLUTION = '720'
@@ -141,6 +176,11 @@ export const FACE_VIDEO_RESOLUTION_OPTIONS = [
   { value: '720', label: '720p' },
   { value: '1024', label: '1024p' },
 ] as const
+
+export const FREE_EDIT_V2_MODE_ID = 'edit_v2' as const
+export const FREE_EDIT_V2_ENABLED = import.meta.env.VITE_ENABLE_FREE_EDIT_V2 === 'true'
+export const PORNMASTER_FLUX2_SINGLE_EDIT_TASK_TYPE = 'pornmaster_flux2_single_edit'
+export const PORNMASTER_FLUX2_MULTI_EDIT_TASK_TYPE = 'pornmaster_flux2_multi_edit'
 
 export const LAB_MODE_CONFIGS: LabModeConfig[] = [
   {
@@ -159,6 +199,25 @@ export const LAB_MODE_CONFIGS: LabModeConfig[] = [
     supportsEditLora: true,
     supportsVideoOptions: false,
     supportsAdvancedOptions: true,
+    promptRequired: true,
+    unified: true,
+  },
+  {
+    id: FREE_EDIT_V2_MODE_ID,
+    taskType: PORNMASTER_FLUX2_SINGLE_EDIT_TASK_TYPE,
+    titleKey: 'lab.cards.custom_edit_v2_title',
+    descriptionKey: 'lab.cards.custom_edit_v2_desc',
+    kindKey: 'lab.workbench.mode_kinds.image',
+    baseCost: 2,
+    promptPlaceholderKey: 'lab.workbench.prompt_placeholders.edit_v2',
+    promptTarget: 'topLevel',
+    submitLabelKey: 'lab.workbench.submit_image',
+    referenceTitleKey: 'template_apply.common.base_image',
+    maxImages: 2,
+    supportsUpload: true,
+    supportsEditLora: false,
+    supportsVideoOptions: false,
+    supportsAdvancedOptions: false,
     promptRequired: true,
     unified: true,
   },
@@ -496,7 +555,9 @@ export const LAB_MODE_CONFIG_MAP = Object.fromEntries(
 
 export const DEFAULT_LAB_MODE_ID: UnifiedLabModeId = 'edit'
 
-export const UNIFIED_LAB_MODES = LAB_MODE_CONFIGS.filter(mode => mode.unified) as LabModeConfig[]
+export const UNIFIED_LAB_MODES = LAB_MODE_CONFIGS.filter(mode => (
+  mode.unified && (mode.id !== FREE_EDIT_V2_MODE_ID || FREE_EDIT_V2_ENABLED)
+)) as LabModeConfig[]
 export const LEGACY_LAB_MODES = LAB_MODE_CONFIGS.filter(mode => !mode.unified) as LabModeConfig[]
 
 export const getLabModeConfig = (modeId: LabModeId): LabModeConfig =>
@@ -506,6 +567,9 @@ export const resolveLabModeIdFromTaskType = (taskType: string | null | undefined
   switch (taskType) {
     case 'txt2img':
       return 'txt2img'
+    case PORNMASTER_FLUX2_SINGLE_EDIT_TASK_TYPE:
+    case PORNMASTER_FLUX2_MULTI_EDIT_TASK_TYPE:
+      return FREE_EDIT_V2_MODE_ID
     case 'i2i_pro':
       return 'i2i_pro'
     case 'i2i_draw':
@@ -519,6 +583,8 @@ export const resolveLabModeIdFromTaskType = (taskType: string | null | undefined
       return 'face_video'
     case 'ltx_video':
       return 'ltx_video'
+    case 'scail2_action_transfer_long':
+      return 'scail2_action_transfer'
     case 'wan22_video_v2':
       return 'wan22_video_v2'
     case 'scail2_action_transfer':

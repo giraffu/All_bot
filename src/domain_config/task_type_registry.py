@@ -22,8 +22,11 @@ from src.constants import (
     MODE_PERFECT_VIDEO_INSERT,
     MODE_PENETRATION_STEP1,
     MODE_PENETRATION_STEP2,
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT,
+    MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_RANDOM_FACESWAP,
     MODE_SCAIL2_ACTION_TRANSFER,
+    MODE_SCAIL2_ACTION_TRANSFER_LONG,
     MODE_SCAIL2_FACE_SWAP_V2,
     MODE_SCAIL2_VIDEO_REPLACEMENT,
     MODE_TXT2IMG,
@@ -186,6 +189,26 @@ TASK_TYPE_REGISTRY: dict[str, TaskTypeRegistryEntry] = {
         central_type="img2img_lora",
         workflow_filename="Qwen-Rapid-AIO.json",
         runpod_profile="img2img_lora",
+        is_generation=True,
+        gallery_supported=True,
+        cost=6,
+    ),
+    MODE_PORNMASTER_FLUX2_SINGLE_EDIT: _entry(
+        MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+        central_type=MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+        workflow_filename=(
+            "PornMaster_F2K_9B_Turbo_Single-image-editing_Automatic_V1_2026_05_27.api.json"
+        ),
+        is_generation=True,
+        gallery_supported=True,
+        cost=2,
+    ),
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT: _entry(
+        MODE_PORNMASTER_FLUX2_MULTI_EDIT,
+        central_type=MODE_PORNMASTER_FLUX2_MULTI_EDIT,
+        workflow_filename=(
+            "PornMaster_F2K_9B_Turbo_Multiple-images-editing_Automatic_V1_2026_05_27.api.json"
+        ),
         is_generation=True,
         gallery_supported=True,
         cost=6,
@@ -413,6 +436,16 @@ TASK_TYPE_REGISTRY: dict[str, TaskTypeRegistryEntry] = {
         apply_input_reuse_supported=True,
         cost=40,
     ),
+    MODE_SCAIL2_ACTION_TRANSFER_LONG: _entry(
+        MODE_SCAIL2_ACTION_TRANSFER_LONG,
+        central_type=MODE_SCAIL2_ACTION_TRANSFER_LONG,
+        workflow_filename="SCAIL-2_Animation_WAN-Context-Windows.api.json",
+        is_generation=True,
+        is_video=True,
+        gallery_supported=True,
+        apply_input_reuse_supported=True,
+        cost=40,
+    ),
     MODE_SCAIL2_VIDEO_REPLACEMENT: _entry(
         MODE_SCAIL2_VIDEO_REPLACEMENT,
         central_type=MODE_SCAIL2_VIDEO_REPLACEMENT,
@@ -475,10 +508,13 @@ _GALLERY_SUBMIT_TASK_TYPE_ORDER = (
     MODE_LTX_VIDEO,
     MODE_WAN22_VIDEO_V2,
     MODE_SCAIL2_ACTION_TRANSFER,
+    MODE_SCAIL2_ACTION_TRANSFER_LONG,
     MODE_SCAIL2_VIDEO_REPLACEMENT,
     MODE_SCAIL2_FACE_SWAP_V2,
     MODE_EDIT,
     MODE_IMG2IMG_LORA,
+    MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT,
 )
 
 _GALLERY_DISPLAY_TASK_TYPE_ORDER = (
@@ -487,6 +523,8 @@ _GALLERY_DISPLAY_TASK_TYPE_ORDER = (
     MODE_I2I_DRAW,
     MODE_EDIT,
     MODE_IMG2IMG_LORA,
+    MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT,
     MODE_CUSTOM_VIDEO,
     MODE_IMAGE_TO_VIDEO,
     MODE_LTX_VIDEO,

@@ -203,7 +203,10 @@ export function useLabWorkbench() {
     isLtxLabModeId(currentMode.value.id)
       ? LTX_VIDEO_DURATION_OPTIONS
       : isScail2ModeId(currentMode.value.id)
-        ? getScail2VideoDurationOptionsForMotionVideo(slots.scail2MotionVideoDurationSeconds.value)
+        ? getScail2VideoDurationOptionsForMotionVideo(
+            slots.scail2MotionVideoDurationSeconds.value,
+            currentMode.value.id,
+          )
         : VIDEO_DURATION_OPTIONS
   ))
 

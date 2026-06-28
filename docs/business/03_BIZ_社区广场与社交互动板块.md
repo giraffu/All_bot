@@ -53,6 +53,8 @@ sequenceDiagram
 ## 4. 当前接口与数据契约
 - 发布入口基于历史记录与 gallery post 关联，不再把社区流程叙述成直接耦合旧单体 core。
 - 一键应用当前主路径是 Web apply-context / workbench，不应再把 Telegram compat 流程写成唯一主入口。
+- 市集筛选中自由P图 v2 是独立分组，不与旧自由P图共用 tab；旧自由P图分组保留 `edit` / `quick_image` / `img2img_lora`，v2 分组只收 `pornmaster_flux2_single_edit` / `pornmaster_flux2_multi_edit`。
+- 自由P图 v2 支持投稿与 Web 一键应用；应用时复用并锁定原提示词，用户重新上传 1/2 张参考图，不展示 LoRA，提交按图片数量落到 single/multi v2 任务，并通过 `source_post_id` 记应用计数。
 - Wan22 一键应用只开放单段记录：旧 `custom_video` / `video_lora` 与 `wan22_video_v2` 单段可进入模板应用，所有 stitched 拼接结果必须禁用按钮并由 apply-context 返回 400；v2 单段需回填负面提示词与分辨率档位。
 - Gallery/修仙笔记展示用响应会从 `History.input_file` 暴露 `input_file/input_file_url/input_files/input_file_urls`，仅用于原始输入缩略图和详情预览；`txt2img` 不展示输入，单输入任务展示一张，多输入任务按顺序展示并在卡片角标显示叠层/`+N`。
 - Wan22 首尾帧投稿展示为“起始帧 / 终止帧”。SCAIL-2 `scail2_action_transfer` / `scail2_video_replacement` / `scail2_face_swap_v2` 投稿展示为“参考图 / 驱动视频”。

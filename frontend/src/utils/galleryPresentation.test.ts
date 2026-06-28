@@ -26,11 +26,23 @@ describe('resolveGalleryTaskTypeLabel', () => {
     expect(resolveGalleryTaskTypeLabel('wan22_video_v2', t)).toBe('图生视频 v2')
   })
 
+  it('returns translated free edit v2 group label', () => {
+    const t = (key: string) => {
+      if (key === 'gallery.tabs.free_edit_v2_group') {
+        return '自由P图 v2'
+      }
+      return key
+    }
+
+    expect(resolveGalleryTaskTypeLabel('free_edit_v2_group', t)).toBe('自由P图 v2')
+  })
+
   it('returns translated scail2 labels from the shared locale', () => {
     i18n.global.locale.value = 'zh'
     const t = (key: string) => String(i18n.global.t(key))
 
     expect(resolveGalleryTaskTypeLabel('scail2_action_transfer', t)).toBe('动作迁移')
+    expect(resolveGalleryTaskTypeLabel('scail2_action_transfer_long', t)).toBe('动作迁移')
     expect(resolveGalleryTaskTypeLabel('scail2_video_replacement', t)).toBe('视频换人')
     expect(resolveGalleryTaskTypeLabel('scail2_face_swap_v2', t)).toBe('视频换脸')
   })

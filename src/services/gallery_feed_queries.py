@@ -5,7 +5,11 @@ from datetime import datetime, timedelta
 from sqlalchemy import desc, func, not_, or_, select
 from sqlalchemy.orm import selectinload
 
-from src.constants import MODE_IMAGE_TO_VIDEO
+from src.constants import (
+    MODE_IMAGE_TO_VIDEO,
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT,
+    MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+)
 from src.database.models import GalleryPost, History, User
 from src.domain_config.scail2_video import SCAIL2_FACE_SWAP_V2_TASK_TYPE
 from src.lora_catalog import IMAGE_LORA_MODELS, VIDEO_LORA_MODELS
@@ -13,8 +17,20 @@ from src.lora_catalog import IMAGE_LORA_MODELS, VIDEO_LORA_MODELS
 GALLERY_LORA_MODEL_NONE = "__none__"
 
 GALLERY_GROUPED_TASK_TYPE_FAMILIES = {
-    "edit_group": ("edit", "quick_image", "img2img_lora"),
+    "edit_group": (
+        "edit",
+        "quick_image",
+        "img2img_lora",
+    ),
+    "free_edit_v2_group": (
+        MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+        MODE_PORNMASTER_FLUX2_MULTI_EDIT,
+    ),
     "img2video_group": ("custom_video", MODE_IMAGE_TO_VIDEO),
+    "scail2_action_transfer": (
+        "scail2_action_transfer",
+        "scail2_action_transfer_long",
+    ),
 }
 
 GALLERY_GROUPED_TASK_TYPE_LORA_MODELS = {

@@ -9,6 +9,7 @@ LTX_VIDEO_TASK_TYPES = {
 }
 SCAIL2_VIDEO_TASK_TYPES = {
     "scail2_action_transfer",
+    "scail2_action_transfer_long",
     "scail2_video_replacement",
     "scail2_face_swap_v2",
 }

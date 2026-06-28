@@ -274,6 +274,7 @@ function renderCreditFlow() {
     metric("收支净额", fmtSigned(summary.net_change), `收入 ${fmt(summary.gross_income)} / 支出 ${fmt(summary.gross_expense)}`),
     metric("支出覆盖", fmtPercent(health.expense_coverage_ratio), `日均支出 ${fmtAmount(summary.avg_daily_expense)}`),
     metric("付费充值占比", fmtPercent(health.paid_recharge_ratio), `充值 ${fmt(summary.paid_recharge_income)}`),
+    metric("签到发放", fmt(summary.checkin_income), `免费 ${fmt(summary.free_checkin_income)} / 身份加成 ${fmt(summary.identity_checkin_bonus_income)}`),
     metric("非付费发放", fmtPercent(health.non_paid_grant_ratio), `签到/邀请等 ${fmt(summary.non_paid_grant_income)}`),
     metric("退款率", fmtPercent(health.refund_to_generation_ratio), `退款 ${fmt(summary.refund_income)} / 生成 ${fmt(summary.generation_expense)}`),
     metric("余额可消耗", fmtAmount(summary.balance_burn_days, " 天"), `当前余额 ${fmt(summary.current_total_credits)}`),
@@ -476,8 +477,9 @@ function renderCreditRiskUsers(rows = []) {
           <div class="muted small">净 ${fmtSigned(row.net_change)}</div>
         </td>
         <td>
-          <div>签到 ${fmt(row.checkin_income)} · 邀请 ${fmt(row.referral_income)}</div>
-          <div>退款 ${fmt(row.refund_income)} · 充值 ${fmt(row.recharge_income)}</div>
+          <div>免费签到 ${fmt(row.free_checkin_income)} · 加成 ${fmt(row.identity_checkin_bonus_income)}</div>
+          <div>邀请 ${fmt(row.referral_income)} · 退款 ${fmt(row.refund_income)}</div>
+          <div class="muted small">充值 ${fmt(row.recharge_income)}</div>
           <div class="muted small">生成消耗 ${fmt(row.generation_expense)}</div>
         </td>
         <td>

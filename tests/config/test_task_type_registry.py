@@ -106,6 +106,11 @@ def test_registry_records_known_legacy_aliases_and_execution_profiles():
             "scail2_action_transfer",
             "SCAIL-2_Animation_multi-char_audio.api.json",
         ),
+        "scail2_action_transfer_long": (
+            "scail2_action_transfer_long",
+            "scail2_action_transfer_long",
+            "SCAIL-2_Animation_WAN-Context-Windows.api.json",
+        ),
         "scail2_video_replacement": (
             "scail2_video_replacement",
             "scail2_video_replacement",
@@ -118,6 +123,16 @@ def test_registry_records_known_legacy_aliases_and_execution_profiles():
             "Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json",
         ),
         "face_swap": ("face_swap", "face_swap", "face_swap.json"),
+        "pornmaster_flux2_single_edit": (
+            "pornmaster_flux2_single_edit",
+            "pornmaster_flux2_single_edit",
+            "PornMaster_F2K_9B_Turbo_Single-image-editing_Automatic_V1_2026_05_27.api.json",
+        ),
+        "pornmaster_flux2_multi_edit": (
+            "pornmaster_flux2_multi_edit",
+            "pornmaster_flux2_multi_edit",
+            "PornMaster_F2K_9B_Turbo_Multiple-images-editing_Automatic_V1_2026_05_27.api.json",
+        ),
     }
 
     for task_type, (public_type, execution_type, workflow_filename) in expected.items():
@@ -203,6 +218,17 @@ def test_registry_query_helpers_cover_key_task_type_relationships():
             "gallery": True,
             "apply": True,
         },
+        "scail2_action_transfer_long": {
+            "public": "scail2_action_transfer_long",
+            "execution": "scail2_action_transfer_long",
+            "central": "scail2_action_transfer_long",
+            "workflow": "SCAIL-2_Animation_WAN-Context-Windows.api.json",
+            "runpod": None,
+            "video": True,
+            "cost": 40,
+            "gallery": True,
+            "apply": True,
+        },
         "scail2_video_replacement": {
             "public": "scail2_video_replacement",
             "execution": "scail2_video_replacement",
@@ -247,6 +273,28 @@ def test_registry_query_helpers_cover_key_task_type_relationships():
             "gallery": False,
             "apply": True,
         },
+        "pornmaster_flux2_single_edit": {
+            "public": "pornmaster_flux2_single_edit",
+            "execution": "pornmaster_flux2_single_edit",
+            "central": "pornmaster_flux2_single_edit",
+            "workflow": "PornMaster_F2K_9B_Turbo_Single-image-editing_Automatic_V1_2026_05_27.api.json",
+            "runpod": None,
+            "video": False,
+            "cost": 2,
+            "gallery": True,
+            "apply": False,
+        },
+        "pornmaster_flux2_multi_edit": {
+            "public": "pornmaster_flux2_multi_edit",
+            "execution": "pornmaster_flux2_multi_edit",
+            "central": "pornmaster_flux2_multi_edit",
+            "workflow": "PornMaster_F2K_9B_Turbo_Multiple-images-editing_Automatic_V1_2026_05_27.api.json",
+            "runpod": None,
+            "video": False,
+            "cost": 6,
+            "gallery": True,
+            "apply": False,
+        },
     }
 
     for task_type, facts in expected.items():
@@ -271,10 +319,13 @@ def test_registry_gallery_helpers_preserve_existing_lists_and_order():
         "ltx_video",
         "wan22_video_v2",
         "scail2_action_transfer",
+        "scail2_action_transfer_long",
         "scail2_video_replacement",
         "scail2_face_swap_v2",
         "edit",
         "img2img_lora",
+        "pornmaster_flux2_single_edit",
+        "pornmaster_flux2_multi_edit",
     ]
     assert list(gallery_supported_task_types()) == ALLOWED_WEB_SUBMIT_TYPES
 
@@ -284,6 +335,8 @@ def test_registry_gallery_helpers_preserve_existing_lists_and_order():
         ("i2i_draw", "task.mode_i2i_draw"),
         ("edit", "task.mode_edit"),
         ("img2img_lora", "task.mode_img2img_lora"),
+        ("pornmaster_flux2_single_edit", "task.mode_free_edit_v2"),
+        ("pornmaster_flux2_multi_edit", "task.mode_free_edit_v2"),
         ("custom_video", "task.mode_custom_video"),
         ("video_lora", "task.mode_video_lora"),
         ("ltx_video", "task.mode_ltx_video"),
@@ -298,6 +351,7 @@ def test_registry_gallery_helpers_preserve_existing_lists_and_order():
         "face_swap",
         "face_video",
         "scail2_action_transfer",
+        "scail2_action_transfer_long",
         "scail2_video_replacement",
         "scail2_face_swap_v2",
     }

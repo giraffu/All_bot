@@ -52,7 +52,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 - Wan22 AIO 是当前 `image_to_video`、`video_insert`、`video_edit` 的主执行面。常见关键节点包括 LoRA loader、正负 prompt、首尾图、RIFE、视频保存和尺寸节点；节点 ID 以文档为准，修改前必须重新打开 workflow JSON 核对。
 - LTX 系列的用户可见 task type 与执行 profile 不完全同名。`ltx_video`、`ltx_video_flf2v`、`ltx_video_v2v_audio` 等映射必须同时核对 registry、payload builder、worker mapping 和模型 catalog。
 - LTX LoRA 多选使用 `lora_items` 结构，当前限制最多 3 个。legacy `lora_name/lora_strength` 只作兼容，不应作为新入口。
-- SCAIL-2 是独立视频生视频 profile，用户入口和执行 profile 要保持映射清晰。涉及成本、时长、尺寸或首帧抽取时，同时检查 task registry、billing 配置和 GPU Pool 文档。
+- SCAIL-2 是独立视频生视频 profile，用户入口和执行 profile 要保持映射清晰。用户侧只展示 `scail2_action_transfer` 动作迁移，支持 5/8/10/15/20s；dispatcher 会把 10/15/20s 隐式送到内部执行类型 `scail2_action_transfer_long` 和 Context Windows workflow。`scail2_action_transfer_long` 不作为 Bot/Web 入口，也不进入正式 RunPod profile。涉及成本、时长、尺寸或首帧抽取时，同时检查 task registry、billing 配置和 GPU Pool 文档。
 - workflow 里的节点 ID 是高风险事实。不要凭记忆改 `node_id`，必须读取当前 JSON；文档中的 ID 只作为导航提示。
 
 ## 6. 运行态与部署红线

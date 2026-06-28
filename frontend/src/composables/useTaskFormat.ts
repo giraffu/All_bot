@@ -10,6 +10,8 @@ export function useTaskFormat() {
     const map: Record<string, string> = {
       'image': '自由P图',
       'edit': '自由P图',
+      'pornmaster_flux2_single_edit': '自由P图 v2',
+      'pornmaster_flux2_multi_edit': '自由P图 v2',
       'i2i_pro': '幻想换脸',
       'i2i_draw': '局部重绘',
       'undress': '快速脱衣',
@@ -40,6 +42,7 @@ export function useTaskFormat() {
       'wan22_video_v2': '图生视频 v2',
       'scail2_video_replacement': '视频换人',
       'scail2_action_transfer': '动作迁移',
+      'scail2_action_transfer_long': '动作迁移',
       'scail2_face_swap_v2': '视频换脸',
       'template_contribute': '模板共建',
       'txt2img': '文生图',

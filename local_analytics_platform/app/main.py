@@ -108,6 +108,53 @@ RMB_TO_USDT = 1.0 / 6.7
 TON_TO_USDT = 1.4
 STARS_TO_USDT = 0.013
 
+CHECKIN_SPLIT_CTES = """
+checkin_enriched as (
+    select
+        flows.*,
+        coalesce(nullif(u.current_identity, ''), '外门弟子') as current_identity,
+        coalesce(nullif(u.user_group, ''), '凡人') as user_group,
+        (substring(
+            coalesce(flows.extra_info, '')
+            from '"checkin_base_reward"[[:space:]]*:[[:space:]]*([0-9]+)'
+        ))::numeric as logged_checkin_base_reward
+    from flows
+    left join users u on u.id = flows.user_id
+),
+checkin_split as (
+    select
+        *,
+        case
+            when operation_type = 'checkin' and credit_change > 0 then
+                least(
+                    credit_change,
+                    greatest(
+                        0::numeric,
+                        coalesce(
+                            logged_checkin_base_reward,
+                            case
+                                when credit_change <= 20 then credit_change
+                                when current_identity = '内门弟子' and credit_change - 30 in (10, 12, 15, 20) then credit_change - 30
+                                when current_identity = '核心弟子' and credit_change - 40 in (10, 12, 15, 20) then credit_change - 40
+                                when current_identity = '真传弟子' and credit_change - 50 in (10, 12, 15, 20) then credit_change - 50
+                                when user_group = '元婴期' and credit_change - 20 in (0, 30, 40, 50) then 20
+                                when user_group = '金丹期' and credit_change - 15 in (0, 30, 40, 50) then 15
+                                when user_group = '筑基期' and credit_change - 12 in (0, 30, 40, 50) then 12
+                                when user_group = '练气期' and credit_change - 10 in (0, 30, 40, 50) then 10
+                                when credit_change - 30 in (10, 12, 15, 20) then credit_change - 30
+                                when credit_change - 40 in (10, 12, 15, 20) then credit_change - 40
+                                when credit_change - 50 in (10, 12, 15, 20) then credit_change - 50
+                                else least(credit_change, 20)
+                            end
+                        )
+                    )
+                )
+            else 0::numeric
+        end as free_checkin_income
+    from checkin_enriched
+)
+"""
+
 app = FastAPI(title="AllBot Local Analytics", version="0.1.0")
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -1087,23 +1134,29 @@ async def credit_flow_analytics(
     chart_days = _chart_days(days)
     limit = _clamp(limit, 1, 50)
     summary_row = await _fetchrow(
-        """
+        f"""
         with bounds as (
             select now() - ($1::int * interval '1 day') as since
         ),
         flows as (
             select
+                user_id,
                 coalesce(operation_type, '') as operation_type,
-                coalesce(credit_change, 0)::numeric as credit_change
+                coalesce(credit_change, 0)::numeric as credit_change,
+                extra_info
             from user_logs, bounds
             where created_at >= bounds.since
         ),
+        {CHECKIN_SPLIT_CTES},
         summary as (
             select
                 coalesce(sum(credit_change) filter (where credit_change > 0), 0)::bigint as gross_income,
                 abs(coalesce(sum(credit_change) filter (where credit_change < 0), 0))::bigint as gross_expense,
                 coalesce(sum(credit_change), 0)::bigint as net_change,
                 coalesce(sum(credit_change) filter (where credit_change > 0 and operation_type = 'recharge'), 0)::bigint as paid_recharge_income,
+                coalesce(sum(credit_change) filter (where credit_change > 0 and operation_type = 'checkin'), 0)::bigint as checkin_income,
+                coalesce(sum(free_checkin_income) filter (where credit_change > 0 and operation_type = 'checkin'), 0)::bigint as free_checkin_income,
+                coalesce(sum(greatest(credit_change - free_checkin_income, 0)) filter (where credit_change > 0 and operation_type = 'checkin'), 0)::bigint as identity_checkin_bonus_income,
                 coalesce(sum(credit_change) filter (
                     where credit_change > 0
                       and (
@@ -1115,7 +1168,7 @@ async def credit_flow_analytics(
                 abs(coalesce(sum(credit_change) filter (where credit_change < 0 and operation_type = any($2::text[])), 0))::bigint as generation_expense,
                 coalesce(sum(credit_change) filter (where credit_change > 0 and operation_type = 'gallery_prompt_unlock_reward'), 0)::bigint as internal_transfer_income,
                 abs(coalesce(sum(credit_change) filter (where credit_change < 0 and operation_type = 'gallery_prompt_unlock_purchase'), 0))::bigint as internal_transfer_expense
-            from flows
+            from checkin_split
         ),
         balances as (
             select coalesce(sum(coalesce(credits, 0)), 0)::bigint as current_total_credits
@@ -1126,6 +1179,9 @@ async def credit_flow_analytics(
             summary.gross_expense,
             summary.net_change,
             summary.paid_recharge_income,
+            summary.checkin_income,
+            summary.free_checkin_income,
+            summary.identity_checkin_bonus_income,
             summary.non_paid_grant_income,
             summary.refund_income,
             summary.generation_expense,
@@ -1143,7 +1199,7 @@ async def credit_flow_analytics(
         GENERATION_OPERATION_TYPES,
     )
     daily = await _fetch(
-        """
+        f"""
         with days as (
             select generate_series(
                 current_date - (($1::int - 1) * interval '1 day'),
@@ -1151,18 +1207,30 @@ async def credit_flow_analytics(
                 interval '1 day'
             )::date as day
         ),
-        daily_logs as (
+        flows as (
             select
                 created_at::date as day,
+                user_id,
+                coalesce(operation_type, '') as operation_type,
+                coalesce(credit_change, 0)::numeric as credit_change,
+                extra_info
+            from user_logs
+            where created_at >= current_date - (($1::int - 1) * interval '1 day')
+        ),
+        {CHECKIN_SPLIT_CTES},
+        daily_logs as (
+            select
+                day,
                 coalesce(sum(credit_change) filter (where credit_change > 0), 0)::bigint as income,
                 abs(coalesce(sum(credit_change) filter (where credit_change < 0), 0))::bigint as expense,
                 coalesce(sum(credit_change), 0)::bigint as net_change,
                 coalesce(sum(credit_change) filter (where credit_change > 0 and operation_type = 'recharge'), 0)::bigint as recharge_income,
                 coalesce(sum(credit_change) filter (where credit_change > 0 and operation_type = 'checkin'), 0)::bigint as checkin_income,
+                coalesce(sum(free_checkin_income) filter (where credit_change > 0 and operation_type = 'checkin'), 0)::bigint as free_checkin_income,
+                coalesce(sum(greatest(credit_change - free_checkin_income, 0)) filter (where credit_change > 0 and operation_type = 'checkin'), 0)::bigint as identity_checkin_bonus_income,
                 abs(coalesce(sum(credit_change) filter (where credit_change < 0 and operation_type = any($2::text[])), 0))::bigint as generation_expense,
                 coalesce(sum(credit_change) filter (where credit_change > 0 and operation_type like 'refund%'), 0)::bigint as refund_income
-            from user_logs
-            where created_at >= current_date - (($1::int - 1) * interval '1 day')
+            from checkin_split
             group by 1
         )
         select
@@ -1173,6 +1241,8 @@ async def credit_flow_analytics(
             coalesce(daily_logs.net_change, 0)::bigint as net_change,
             coalesce(daily_logs.recharge_income, 0)::bigint as recharge_income,
             coalesce(daily_logs.checkin_income, 0)::bigint as checkin_income,
+            coalesce(daily_logs.free_checkin_income, 0)::bigint as free_checkin_income,
+            coalesce(daily_logs.identity_checkin_bonus_income, 0)::bigint as identity_checkin_bonus_income,
             coalesce(daily_logs.generation_expense, 0)::bigint as generation_expense,
             coalesce(daily_logs.refund_income, 0)::bigint as refund_income
         from days
@@ -1183,18 +1253,19 @@ async def credit_flow_analytics(
         GENERATION_OPERATION_TYPES,
     )
     categories = await _fetch(
-        """
+        f"""
         with category_order(category, direction, sort_order) as (
             values
                 ('充值/套餐发放', 'income', 1),
-                ('签到', 'income', 2),
-                ('注册欢迎', 'income', 3),
-                ('邀请奖励', 'income', 4),
-                ('返佣兑换', 'income', 5),
-                ('退款/补偿', 'income', 6),
-                ('Gallery 解锁收入', 'income', 7),
-                ('后台调整', 'income', 8),
-                ('其他收入', 'income', 9),
+                ('免费签到', 'income', 2),
+                ('身份加成签到', 'income', 3),
+                ('注册欢迎', 'income', 4),
+                ('邀请奖励', 'income', 5),
+                ('返佣兑换', 'income', 6),
+                ('退款/补偿', 'income', 7),
+                ('Gallery 解锁收入', 'income', 8),
+                ('后台调整', 'income', 9),
+                ('其他收入', 'income', 10),
                 ('生成/消费支出', 'expense', 20),
                 ('Gallery 解锁支出', 'expense', 21),
                 ('后台调整', 'expense', 22),
@@ -1203,14 +1274,49 @@ async def credit_flow_analytics(
         bounds as (
             select now() - ($1::int * interval '1 day') as since
         ),
+        flows as (
+            select
+                user_id,
+                created_at,
+                coalesce(operation_type, '') as operation_type,
+                coalesce(credit_change, 0)::numeric as credit_change,
+                extra_info
+            from user_logs, bounds
+            where created_at >= bounds.since
+              and credit_change <> 0
+        ),
+        {CHECKIN_SPLIT_CTES},
         classified as (
+            select
+                user_id,
+                free_checkin_income as credit_change,
+                'income' as direction,
+                '免费签到' as category
+            from checkin_split
+            where credit_change > 0
+              and operation_type = 'checkin'
+              and free_checkin_income > 0
+
+            union all
+
+            select
+                user_id,
+                greatest(credit_change - free_checkin_income, 0) as credit_change,
+                'income' as direction,
+                '身份加成签到' as category
+            from checkin_split
+            where credit_change > 0
+              and operation_type = 'checkin'
+              and greatest(credit_change - free_checkin_income, 0) > 0
+
+            union all
+
             select
                 user_id,
                 credit_change,
                 case when credit_change > 0 then 'income' else 'expense' end as direction,
                 case
                     when credit_change > 0 and operation_type = 'recharge' then '充值/套餐发放'
-                    when credit_change > 0 and operation_type = 'checkin' then '签到'
                     when credit_change > 0 and operation_type = 'welcome_bonus' then '注册欢迎'
                     when credit_change > 0 and operation_type like 'referral_reward%' then '邀请奖励'
                     when credit_change > 0 and operation_type = 'affiliate_credits_redeem' then '返佣兑换'
@@ -1223,9 +1329,9 @@ async def credit_flow_analytics(
                     when credit_change < 0 and operation_type = 'admin_update' then '后台调整'
                     else '其他支出'
                 end as category
-            from user_logs, bounds
-            where created_at >= bounds.since
-              and credit_change <> 0
+            from checkin_split
+            where credit_change <> 0
+              and not (credit_change > 0 and operation_type = 'checkin')
         ),
         grouped as (
             select
@@ -1355,7 +1461,7 @@ async def credit_flow_analytics(
         query_days,
     )
     health_row = await _fetchrow(
-        """
+        f"""
         with bounds as (
             select now() - ($1::int * interval '1 day') as since
         ),
@@ -1363,10 +1469,12 @@ async def credit_flow_analytics(
             select
                 user_id,
                 coalesce(operation_type, '') as operation_type,
-                coalesce(credit_change, 0)::numeric as credit_change
+                coalesce(credit_change, 0)::numeric as credit_change,
+                extra_info
             from user_logs, bounds
             where created_at >= bounds.since
         ),
+        {CHECKIN_SPLIT_CTES},
         summary as (
             select
                 coalesce(sum(credit_change) filter (where credit_change > 0), 0)::numeric as gross_income,
@@ -1382,13 +1490,13 @@ async def credit_flow_analytics(
                 coalesce(sum(credit_change) filter (where credit_change > 0 and operation_type like 'refund%'), 0)::numeric as refund_income,
                 abs(coalesce(sum(credit_change) filter (where credit_change < 0 and operation_type = any($2::text[])), 0))::numeric as generation_expense,
                 coalesce(sum(credit_change) filter (where credit_change > 0 and operation_type = 'checkin'), 0)::numeric as checkin_income
-            from flows
+            from checkin_split
         ),
         top_income as (
             select coalesce(max(user_income), 0)::numeric as top_user_income
             from (
                 select user_id, sum(credit_change) as user_income
-                from flows
+                from checkin_split
                 where credit_change > 0
                 group by user_id
             ) ranked
@@ -1407,10 +1515,23 @@ async def credit_flow_analytics(
         GENERATION_OPERATION_TYPES,
     )
     risk_users = await _fetch(
-        """
+        f"""
         with bounds as (
             select now() - ($1::int * interval '1 day') as since
         ),
+        flows as (
+            select
+                user_id,
+                created_at,
+                current_balance,
+                coalesce(operation_type, '') as operation_type,
+                coalesce(credit_change, 0)::numeric as credit_change,
+                extra_info
+            from user_logs, bounds
+            where created_at >= bounds.since
+              and credit_change <> 0
+        ),
+        {CHECKIN_SPLIT_CTES},
         user_flow as (
             select
                 user_id,
@@ -1419,14 +1540,14 @@ async def credit_flow_analytics(
                 abs(coalesce(sum(credit_change) filter (where credit_change < 0), 0))::bigint as expense,
                 coalesce(sum(credit_change), 0)::bigint as net_change,
                 coalesce(sum(credit_change) filter (where credit_change > 0 and operation_type = 'checkin'), 0)::bigint as checkin_income,
+                coalesce(sum(free_checkin_income) filter (where credit_change > 0 and operation_type = 'checkin'), 0)::bigint as free_checkin_income,
+                coalesce(sum(greatest(credit_change - free_checkin_income, 0)) filter (where credit_change > 0 and operation_type = 'checkin'), 0)::bigint as identity_checkin_bonus_income,
                 coalesce(sum(credit_change) filter (where credit_change > 0 and operation_type like 'referral_reward%'), 0)::bigint as referral_income,
                 coalesce(sum(credit_change) filter (where credit_change > 0 and operation_type like 'refund%'), 0)::bigint as refund_income,
                 coalesce(sum(credit_change) filter (where credit_change > 0 and operation_type = 'recharge'), 0)::bigint as recharge_income,
                 abs(coalesce(sum(credit_change) filter (where credit_change < 0 and operation_type = any($2::text[])), 0))::bigint as generation_expense,
                 (array_agg(current_balance order by created_at desc))[1] as latest_balance
-            from user_logs, bounds
-            where created_at >= bounds.since
-              and credit_change <> 0
+            from checkin_split
             group by user_id
         ),
         scored as (
@@ -1443,6 +1564,8 @@ async def credit_flow_analytics(
                 user_flow.expense,
                 user_flow.net_change,
                 user_flow.checkin_income,
+                user_flow.free_checkin_income,
+                user_flow.identity_checkin_bonus_income,
                 user_flow.referral_income,
                 user_flow.refund_income,
                 user_flow.recharge_income,
@@ -1480,6 +1603,8 @@ async def credit_flow_analytics(
             expense,
             net_change,
             checkin_income,
+            free_checkin_income,
+            identity_checkin_bonus_income,
             referral_income,
             refund_income,
             recharge_income,

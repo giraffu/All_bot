@@ -25,6 +25,9 @@ async def test_credit_flow_analytics_returns_flow_health_and_risk_users(monkeypa
             "gross_expense": 700,
             "net_change": 300,
             "paid_recharge_income": 250,
+            "checkin_income": 300,
+            "free_checkin_income": 120,
+            "identity_checkin_bonus_income": 180,
             "non_paid_grant_income": 500,
             "refund_income": 50,
             "generation_expense": 650,
@@ -47,15 +50,20 @@ async def test_credit_flow_analytics_returns_flow_health_and_risk_users(monkeypa
                     "net_change": 30,
                     "recharge_income": 25,
                     "checkin_income": 40,
+                    "free_checkin_income": 12,
+                    "identity_checkin_bonus_income": 28,
                     "generation_expense": 65,
                     "refund_income": 5,
                 }
             ]
         if "credit_flow_category" in query:
             assert args == (30, analytics_main.GENERATION_OPERATION_TYPES)
+            assert "免费签到" in query
+            assert "身份加成签到" in query
             return [
                 {"category": "充值/套餐发放", "direction": "income", "events": 3, "users": 2, "income": 250, "expense": 0, "net_change": 250},
-                {"category": "签到", "direction": "income", "events": 20, "users": 20, "income": 300, "expense": 0, "net_change": 300},
+                {"category": "免费签到", "direction": "income", "events": 20, "users": 20, "income": 120, "expense": 0, "net_change": 120},
+                {"category": "身份加成签到", "direction": "income", "events": 6, "users": 6, "income": 180, "expense": 0, "net_change": 180},
                 {"category": "退款/补偿", "direction": "income", "events": 2, "users": 1, "income": 50, "expense": 0, "net_change": 50},
                 {"category": "Gallery 解锁收入", "direction": "income", "events": 1, "users": 1, "income": 20, "expense": 0, "net_change": 20},
                 {"category": "Gallery 解锁支出", "direction": "expense", "events": 1, "users": 1, "income": 0, "expense": 20, "net_change": -20},
@@ -87,6 +95,8 @@ async def test_credit_flow_analytics_returns_flow_health_and_risk_users(monkeypa
                     "expense": 25,
                     "net_change": 475,
                     "checkin_income": 300,
+                    "free_checkin_income": 120,
+                    "identity_checkin_bonus_income": 180,
                     "referral_income": 120,
                     "refund_income": 50,
                     "recharge_income": 0,
@@ -111,9 +121,12 @@ async def test_credit_flow_analytics_returns_flow_health_and_risk_users(monkeypa
     assert payload["days"] == 30
     assert payload["limit"] == 12
     assert payload["summary"]["gross_income"] == 1000
+    assert payload["summary"]["free_checkin_income"] == 120
+    assert payload["summary"]["identity_checkin_bonus_income"] == 180
     assert payload["categories"][0]["category"] == "充值/套餐发放"
-    assert {row["category"] for row in payload["categories"]} >= {"签到", "退款/补偿", "Gallery 解锁收入", "Gallery 解锁支出"}
+    assert {row["category"] for row in payload["categories"]} >= {"免费签到", "身份加成签到", "退款/补偿", "Gallery 解锁收入", "Gallery 解锁支出"}
     assert payload["composition"]["identity"][0]["label"] == "外门弟子"
     assert payload["health"]["flags"]
+    assert payload["risk_users"][0]["identity_checkin_bonus_income"] == 180
     assert payload["risk_users"][0]["username"] == "risk_user"
     assert any(call[0] == "fetch" and call[2] == (30, analytics_main.GENERATION_OPERATION_TYPES, 12) for call in calls)

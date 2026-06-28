@@ -12,7 +12,7 @@ from app import main_simple_task_routes
 from app import main_status_result_routes
 from app import main_t2i_helpers as t2i_helpers
 from app.main_t2i_wiring import T2IWiring
-from app.models import Scail2VideoRequest, TaskType
+from app.models import Scail2ActionTransferLongRequest, Scail2VideoRequest, TaskType
 
 
 @pytest.fixture(autouse=True)
@@ -348,12 +348,24 @@ def test_simple_task_type_map_keeps_image_to_video_and_video_lora_compatibility(
         == TaskType.SCAIL2_ACTION_TRANSFER
     )
     assert (
+        main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["scail2_action_transfer_long"]
+        == TaskType.SCAIL2_ACTION_TRANSFER_LONG
+    )
+    assert (
         main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["scail2_video_replacement"]
         == TaskType.SCAIL2_VIDEO_REPLACEMENT
     )
     assert (
         main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["scail2_face_swap_v2"]
         == TaskType.SCAIL2_FACE_SWAP_V2
+    )
+    assert (
+        main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["pornmaster_flux2_single_edit"]
+        == TaskType.PORNMASTER_FLUX2_SINGLE_EDIT
+    )
+    assert (
+        main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["pornmaster_flux2_multi_edit"]
+        == TaskType.PORNMASTER_FLUX2_MULTI_EDIT
     )
     assert main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["img2img"] == TaskType.IMG2IMG
     assert (
@@ -401,6 +413,10 @@ def test_simple_task_route_specs_cover_expected_paths_and_handlers():
         "scail2_action_transfer",
         "create_scail2_action_transfer_task",
     )
+    assert specs_by_path["/api/v1/scail2_action_transfer_long"][1:] == (
+        "scail2_action_transfer_long",
+        "create_scail2_action_transfer_long_task",
+    )
     assert specs_by_path["/api/v1/scail2_video_replacement"][1:] == (
         "scail2_video_replacement",
         "create_scail2_video_replacement_task",
@@ -408,6 +424,14 @@ def test_simple_task_route_specs_cover_expected_paths_and_handlers():
     assert specs_by_path["/api/v1/scail2_face_swap_v2"][1:] == (
         "scail2_face_swap_v2",
         "create_scail2_face_swap_v2_task",
+    )
+    assert specs_by_path["/api/v1/pornmaster_flux2_single_edit"][1:] == (
+        "pornmaster_flux2_single_edit",
+        "create_pornmaster_flux2_single_edit_task",
+    )
+    assert specs_by_path["/api/v1/pornmaster_flux2_multi_edit"][1:] == (
+        "pornmaster_flux2_multi_edit",
+        "create_pornmaster_flux2_multi_edit_task",
     )
 
 
@@ -431,12 +455,24 @@ def test_simple_task_routes_are_registered_with_stable_endpoint_names():
         == "create_scail2_action_transfer_task"
     )
     assert (
+        routes_by_path["/api/v1/scail2_action_transfer_long"]
+        == "create_scail2_action_transfer_long_task"
+    )
+    assert (
         routes_by_path["/api/v1/scail2_video_replacement"]
         == "create_scail2_video_replacement_task"
     )
     assert (
         routes_by_path["/api/v1/scail2_face_swap_v2"]
         == "create_scail2_face_swap_v2_task"
+    )
+    assert (
+        routes_by_path["/api/v1/pornmaster_flux2_single_edit"]
+        == "create_pornmaster_flux2_single_edit_task"
+    )
+    assert (
+        routes_by_path["/api/v1/pornmaster_flux2_multi_edit"]
+        == "create_pornmaster_flux2_multi_edit_task"
     )
 
 
@@ -459,6 +495,28 @@ def test_scail2_video_request_accepts_only_supported_lengths():
             prompt="dance",
             length=10,
         )
+
+
+def test_scail2_action_transfer_long_request_accepts_only_long_lengths():
+    for length in (10, 15, 20):
+        request = Scail2ActionTransferLongRequest(
+            task_id=f"task-{length}",
+            image="ref.png",
+            video="motion.mp4",
+            prompt="dance",
+            length=length,
+        )
+        assert request.length == length
+
+    for length in (5, 8, 25):
+        with pytest.raises(ValidationError):
+            Scail2ActionTransferLongRequest(
+                task_id=f"task-{length}",
+                image="ref.png",
+                video="motion.mp4",
+                prompt="dance",
+                length=length,
+            )
 
 
 def test_task_status_and_result_route_specs_cover_expected_handlers():
@@ -522,6 +580,32 @@ async def test_enqueue_configured_task_uses_registered_task_type(monkeypatch):
         "task_type": TaskType.FACE_SWAP,
         "queue_manager": "qm",
     }
+
+
+@pytest.mark.asyncio
+async def test_enqueue_configured_task_allows_hidden_scail2_long_route(monkeypatch):
+    enqueue_mock = AsyncMock(return_value="queued")
+    request_model = Scail2ActionTransferLongRequest(
+        task_id="task-1",
+        image="ref.png",
+        video="motion.mp4",
+        prompt="dance",
+        length=10,
+    )
+
+    response = await main_simple_task_routes.enqueue_configured_task(
+        request_model=request_model,
+        task_key="scail2_action_transfer_long",
+        queue_manager="qm",
+        enqueue_task_from_request_func=enqueue_mock,
+    )
+
+    assert response == "queued"
+    enqueue_mock.assert_awaited_once_with(
+        request_model=request_model,
+        task_type=TaskType.SCAIL2_ACTION_TRANSFER_LONG,
+        queue_manager="qm",
+    )
 
 
 def test_normalize_legacy_video_simple_request_uses_wan22_contract():

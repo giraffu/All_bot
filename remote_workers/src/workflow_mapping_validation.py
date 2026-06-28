@@ -25,6 +25,7 @@ TASK_TYPE_WORKFLOW_FILENAMES = {
     "ltx_video_v2v_audio": "LTX 2.3 V2V Audio 6.1.json",
     "wan22_video_v2": "Wan22AioV82.json",
     "scail2_action_transfer": "SCAIL-2_Animation_multi-char_audio.api.json",
+    "scail2_action_transfer_long": "SCAIL-2_Animation_WAN-Context-Windows.api.json",
     "scail2_video_replacement": "SCAIL-2_Replacement_audio.api.json",
     "scail2_face_swap_v2": "SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json",
     "pornmaster_flux2_single_edit": (

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REGISTRY="${PORNMASTER_FLUX2_EDIT_REGISTRY:-192.168.1.115:5000}"
-TAG="${PORNMASTER_FLUX2_EDIT_IMAGE_TAG:-20260627-pornmaster-flux2-edit-cu128-core1}"
+TAG="${PORNMASTER_FLUX2_EDIT_IMAGE_TAG:-20260628-pornmaster-flux2-edit-cu128-smallvae1}"
 IMAGE_REF="${PORNMASTER_FLUX2_EDIT_IMAGE_REF:-${REGISTRY}/allbot/comfy-runpod-pornmaster-flux2-edit:${TAG}}"
 BASE_IMAGE="${PORNMASTER_FLUX2_EDIT_BASE_IMAGE:-${REGISTRY}/allbot/comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh}"
 PUSH="false"

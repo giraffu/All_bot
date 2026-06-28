@@ -41,9 +41,11 @@
     "video_to_video": "🎬 Video-to-Video",
     "video_to_video_replacement": "🪄 Video Replacement",
     "video_to_video_action_transfer": "🕺 Action Transfer",
+    "video_to_video_action_transfer_long": "🕺 Action Transfer",
     "txt2img": "✨ Text2Img",
     "i2i_pro": "🌟 Face Swap Pro",
     "free_edit": "🎨 Free Edit",
+    "free_edit_v2": "🎨 Free Edit v2",
     "video_lora": "🎬 Img2Video",
     "custom_video": "🎬 Img2Video",
     "ltx_video": "🎬 Pro Video",
@@ -167,6 +169,7 @@
     "face_video": "Video FaceSwap",
     "scail2_video_replacement": "Video Replacement",
     "scail2_action_transfer": "Action Transfer",
+    "scail2_action_transfer_long": "Action Transfer",
     "scail2_face_swap_v2": "Video Face Swap",
     "t2i_pornmaster_turbo": "Text2Img"
   },
@@ -242,6 +245,7 @@
       "face_swap": "Face Swap",
       "i2i_draw": "Inpaint",
       "edit_group": "Custom Edit",
+      "free_edit_v2_group": "Free Edit v2",
       "custom_edit": "Custom Edit",
       "img2img": "Img2Img (Addon)",
       "custom_video": "Custom Img2Video",
@@ -250,6 +254,7 @@
       "high_res_video": "High-Res Video",
     "wan22_video_v2": "Img2Video V2",
     "scail2_action_transfer": "Action Transfer",
+    "scail2_action_transfer_long": "Action Transfer",
     "scail2_video_replacement": "Video Replacement",
     "scail2_face_swap_v2": "Video Face Swap"
     },
@@ -427,6 +432,8 @@
       "i2i_draw_desc": "Upload a single-person image and edit local regions while keeping the pose stable.",
       "custom_edit_title": "Custom Edit",
       "custom_edit_desc": "Upload an image and provide a prompt, AI will edit the content.",
+      "custom_edit_v2_title": "Free Edit v2",
+      "custom_edit_v2_desc": "Upload one or two reference images and edit them directly with a text instruction.",
       "fast_face_swap_title": "Fast Face Swap",
       "fast_face_swap_desc": "Rapid face replacement, suitable for standard fast processing.",
       "video_face_swap_title": "Video Face Swap",
@@ -441,6 +448,8 @@
       "wan22_video_v2_desc": "Supports positive and negative prompts, first/last frames, color match, perfect loop, and continuous extension.",
       "scail2_action_transfer_title": "Action Transfer",
       "scail2_action_transfer_desc": "Upload a reference image and motion video to animate the reference character.",
+      "scail2_action_transfer_long_title": "Action Transfer",
+      "scail2_action_transfer_long_desc": "Upload a reference image and motion video to animate the reference character.",
       "scail2_video_replacement_title": "Video Replacement",
       "scail2_video_replacement_desc": "Upload a reference person and motion video to replace the performer while keeping the shot.",
       "scail2_face_swap_v2_title": "Video Face Swap",
@@ -539,11 +548,12 @@
       "legacy_badge": "Phase 3 Later",
       "cost_hints": {
         "edit": "Custom Edit supports dual-image fusion. Uploading the second image raises the cost to 6 credits.",
+        "edit_v2": "Free Edit v2 does not support addon models. Uploading the second image raises the cost to 6 credits.",
         "custom_video": "Img2Video supports 5s/8s/10s clips and is priced by resolution and duration.",
         "face_video": "Video Face Swap v2 is fixed at 512x896: 5s costs 40 credits, 8s costs 80 credits.",
         "ltx_video": "High-Res Video uses fixed 1280x704 output; longer duration costs more.",
         "wan22_video_v2": "Img2Video V2 supports 5s/8s/10s clips and is priced by resolution and duration.",
-        "scail2_video": "This mode is fixed at 512x896: 5s costs 40 credits, 8s costs 80 credits."
+        "scail2_video": "Fixed at 512x896. Action Transfer supports 5s/8s/10s/15s/20s for 40/80/120/180/260 credits. Video Replacement and Video Face Swap support 5s/8s."
       },
       "template_notices": {
         "face_swap": "Face swap template loaded. The body image is locked; upload a face image to start.",
@@ -555,9 +565,11 @@
       },
       "prompt_placeholders": {
         "edit": "Describe how AI should edit the image, for example: change the background to a beach, add sunglasses, and make it feel like a cinematic still.",
+        "edit_v2": "Describe how AI should edit the image, for example: adjust the background, outfit, pose, or local details.",
         "txt2img": "Describe the image you want directly, for example: cinematic portrait, moonlight, detailed face, soft rim light, realistic skin.",
         "video": "Describe the motion and camera movement, for example: the subject smiles and turns, hair moves in the wind, camera slowly pushes in.",
         "scail2_action_transfer": "Leave blank to use the default prompt, or add guidance such as natural motion and stable framing.",
+        "scail2_action_transfer_long": "Leave blank to use the default prompt, or add reference and motion guidance such as natural motion and stable framing.",
         "scail2_video_replacement": "Leave blank to use the default prompt, or add guidance such as natural motion and preserved background.",
         "scail2_face_swap_v2": "Leave blank to use the default prompt, or add guidance such as a natural face blend."
       },
@@ -677,6 +689,7 @@
     "mode_txt2img": "Text2Img",
     "mode_i2i_pro": "Pro Face Swap",
     "mode_img2img_lora": "Img2Img (Addon)",
+    "mode_free_edit_v2": "Free Edit v2",
     "mode_undress": "Fast Undress",
     "mode_masturbation": "Fast Masturbation",
     "mode_faceswap_step1": "Fast Face Swap",
@@ -695,6 +708,7 @@
     "mode_ltx_video": "High-Res Video",
     "mode_wan22_video_v2": "Img2Video V2",
     "mode_scail2_action_transfer": "Action Transfer",
+    "mode_scail2_action_transfer_long": "Action Transfer",
     "mode_scail2_video_replacement": "Video Replacement",
     "mode_scail2_face_swap_v2": "Video Face Swap",
     "mode_video_lora": "Img2Video",
@@ -769,6 +783,7 @@
     "common": {
       "task_initializing": "⏳ Initializing task...",
       "maintenance": "⚠️ 🛠️ **System maintenance in progress**\n\nImage and video generation nodes are temporarily unavailable while we upgrade the service.\n\nYour credits and membership perks are safe. Please try again later!",
+      "feature_unavailable": "This feature is not available yet. Please try again later.",
       "conflict": "⚠️ You already have an unfinished interactive flow. Please send /cancel before starting a new one.",
       "invalid_image_file": "❌ Invalid format. Please send an image file (PNG/JPG), not another document type.",
       "invalid_image": "❌ Unrecognized input. Please send an image.",
@@ -798,7 +813,7 @@
       "submitting": "🚀 Submitting the video face swap task ({resolution}p). Estimated cost: {cost} credits. Please wait..."
     },
     "scail2_video": {
-      "start": "🎬 **Entered {mode_name} mode**\n\nV1 is fixed at 512x896 and only supports 5s/8s. 5s costs {cost} credits.\n\n**Step 1:** Send one reference image.\n\nYou can send /cancel anytime to exit.",
+      "start": "🎬 **Entered {mode_name} mode**\n\nThis mode is fixed at 512x896 and supports {duration_options}. 5s costs {cost} credits.\n\n**Step 1:** Send one reference image.\n\nYou can send /cancel anytime to exit.",
       "reference_received": "✅ **Reference image received!**\n\n**Step 2:** Send the motion video (max {max_mb}MB).\n\nA clear 5-8 second subject video is recommended.",
       "video_received": "✅ **Motion video received!**\n\n**Step 3:** Send a positive prompt, or tap the button below to use the default prompt.",
       "prompt_only": "⚠️ Please send the prompt as text, or tap the button below to skip it.",
@@ -810,17 +825,20 @@
       "cancel_button": "❌ Cancel",
       "cancelled_short": "🚫 Video-to-video flow cancelled.",
       "expired_alert": "The interaction expired or the task was submitted. Please start again.",
-      "invalid_duration": "⚠️ This mode currently only supports 5s or 8s. Please start again.",
+      "invalid_duration": "⚠️ This mode does not support that duration. Please start again.",
       "video_too_large": "⚠️ The motion video must be under {max_mb}MB. Please compress or trim it and send again.",
       "submitting": "🚀 Submitting the {mode_name} task, duration {duration}s. Estimated cost: {cost} credits. Please wait..."
     },
     "edit_image": {
       "start_i2i_pro": "🌟 **Entered Face Swap Pro mode** (cost: {cost} credits).\n\n**Step 1:** Send 1 reference image.\n\nYou can send /cancel anytime to exit.",
       "start_free_edit": "🎨 **Entered Free Edit mode**.\n\n**Step 1:** Choose the addon model you want to use.\n\nYou can send /cancel anytime to exit.",
+      "start_free_edit_v2": "🎨 **Entered Free Edit v2 mode** (cost starts at {cost} credits).\n\n**Step 1:** Send 1 reference image. For dual-image fusion, send a second image; dual-image fusion costs 6 credits.\n\nYou can send /cancel anytime to exit.",
       "selected_model": "✅ Selected model: **{model_name}**\n\n**Step 2:** Send the reference image.\n\nYou can send /cancel anytime to exit.",
       "reference_received_i2i": "✅ **Received 1 reference image.**\n\n**Step 2:** Send the **prompt text** to start generation.\n\n💡 **Prompt hint:**\nDescribe the imagined character and scene. The face from the reference image will be swapped into the generated scene.",
       "reference_received_first": "✅ **Received 1 reference image.**\n\n**Step 3:** Send the **prompt text** to start generation.\n(If you want dual-image fusion, you can send a second image. That will cost 6 credits.)",
       "reference_received_second": "✅ **Received 2 reference images.**\n\n**Step 3:** Send the **prompt text** to start generation.\n(Dual-image fusion costs 6 credits. Extra images will be ignored.)",
+      "reference_received_first_v2": "✅ **Received 1 reference image.**\n\n**Step 2:** Send the **prompt text** to start generation.\n(For dual-image fusion, send a second image. That will cost 6 credits.)",
+      "reference_received_second_v2": "✅ **Received 2 reference images.**\n\n**Step 2:** Send the **prompt text** to start generation.\n(Dual-image fusion costs 6 credits. Extra images will be ignored.)",
       "single_image_only": "⚠️ Face Swap Pro only needs 1 image. Please send the text prompt directly.",
       "max_two_images": "⚠️ Free Edit supports up to 2 input images. Extra images will be ignored. Please send the text prompt to continue.",
       "submitting": "🚀 Submitting the generation task. Estimated cost: {cost} credits. Please wait..."

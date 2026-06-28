@@ -64,6 +64,26 @@ describe('templateApply store', () => {
     expect(store.featureTitleKey).toBe('lab.cards.i2i_pro_title')
   })
 
+  it('opens free edit v2 in the image prompt workbench', async () => {
+    const store = useTemplateApplyStore()
+
+    const result = await store.openFromRawContext({
+      source: 'gallery',
+      entryEntityId: 18,
+      rawContext: {
+        post_id: 18,
+        source_post_id: 18,
+        task_type: 'pornmaster_flux2_single_edit',
+        prompt: 'clean up the background'
+      }
+    })
+
+    expect(result.status).toBe('opened')
+    expect(store.taskType).toBe('pornmaster_flux2_single_edit')
+    expect(store.panelKind).toBe('imagePrompt')
+    expect(store.featureTitleKey).toBe('lab.cards.custom_edit_v2_title')
+  })
+
   it('opens wan22_video_v2 in the image-to-video workbench', async () => {
     const store = useTemplateApplyStore()
 

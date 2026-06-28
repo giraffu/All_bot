@@ -71,6 +71,7 @@ logger = logging.getLogger(__name__)
 SCAIL2_TASK_TYPES = frozenset(
     {
         "scail2_action_transfer",
+        "scail2_action_transfer_long",
         "scail2_video_replacement",
         "scail2_face_swap_v2",
     }

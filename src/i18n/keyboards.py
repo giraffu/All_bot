@@ -2,6 +2,7 @@ from functools import lru_cache
 
 from telegram import ReplyKeyboardMarkup
 
+from config import ENABLE_FREE_EDIT_V2
 from src.i18n.translator import get_text
 
 
@@ -32,6 +33,11 @@ def get_main_menu_keyboard(lang: str) -> ReplyKeyboardMarkup:
             get_text("menu.i2i_pro", lang),
             get_text("menu.free_edit", lang),
         ],
+        *(
+            [[get_text("menu.free_edit_v2", lang)]]
+            if ENABLE_FREE_EDIT_V2
+            else []
+        ),
         [
             get_text("menu.video_lora", lang),
             get_text("menu.ltx_video", lang),

@@ -41,9 +41,11 @@
     "video_to_video": "🎬 视频生视频",
     "video_to_video_replacement": "🪄 视频换人",
     "video_to_video_action_transfer": "🕺 动作迁移",
+    "video_to_video_action_transfer_long": "🕺 动作迁移",
     "txt2img": "✨ 文生图",
     "i2i_pro": "🌟 幻想换脸",
     "free_edit": "🎨 自由P图",
+    "free_edit_v2": "🎨 自由P图 v2",
     "video_lora": "🎬 图生视频",
     "custom_video": "🎬 图生视频",
     "ltx_video": "🎬 高级图生视频",
@@ -167,6 +169,7 @@
     "face_video": "视频换脸",
     "scail2_video_replacement": "视频换人",
     "scail2_action_transfer": "动作迁移",
+    "scail2_action_transfer_long": "动作迁移",
     "scail2_face_swap_v2": "视频换脸",
     "t2i_pornmaster_turbo": "文生图"
   },
@@ -243,6 +246,7 @@
       "face_swap": "幻想换脸",
       "i2i_draw": "局部重绘",
       "edit_group": "自由P图",
+      "free_edit_v2_group": "自由P图 v2",
       "custom_edit": "自由P图",
       "img2img": "图生图(附加模型)",
       "custom_video": "自定义图生视频",
@@ -251,6 +255,7 @@
       "high_res_video": "高级图生视频",
     "wan22_video_v2": "图生视频 v2",
     "scail2_action_transfer": "动作迁移",
+    "scail2_action_transfer_long": "动作迁移",
     "scail2_video_replacement": "视频换人",
     "scail2_face_swap_v2": "视频换脸"
     },
@@ -428,6 +433,8 @@
       "i2i_draw_desc": "上传一张单人女性的图片，输入提示词（不改变动作，不然会有面部变形），AI 将局部修改画面。",
       "custom_edit_title": "自由P图",
       "custom_edit_desc": "上传图片并提供文字指令，AI 将根据你的描述修改图片内容。",
+      "custom_edit_v2_title": "自由P图 v2",
+      "custom_edit_v2_desc": "上传图片并用文字指令直接修改画面。",
       "fast_face_swap_title": "快速换脸",
       "fast_face_swap_desc": "极速人脸替换体验，适合标准场景的快速处理。",
       "video_face_swap_title": "视频换脸",
@@ -442,6 +449,8 @@
       "wan22_video_v2_desc": "支持正负提示词、首尾帧、色彩匹配、无缝循环与连续扩展。",
       "scail2_action_transfer_title": "动作迁移",
       "scail2_action_transfer_desc": "上传参考图和驱动视频，让参考角色跟随视频动作生成短片。",
+      "scail2_action_transfer_long_title": "动作迁移",
+      "scail2_action_transfer_long_desc": "上传参考图和驱动视频，让参考角色跟随视频动作生成短片。",
       "scail2_video_replacement_title": "视频换人",
       "scail2_video_replacement_desc": "上传参考人物和驱动视频，保留镜头关系并替换视频中的人物。",
       "scail2_face_swap_v2_title": "视频换脸",
@@ -540,11 +549,12 @@
       "legacy_badge": "阶段三待评估",
       "cost_hints": {
         "edit": "自由P图支持双图融合，上传第 2 张图后会自动切到 6 灵石。",
+        "edit_v2": "自由P图 v2 不支持附加模型，上传第 2 张图后会自动切到 6 灵石。",
         "custom_video": "图生视频支持 5/8/10 秒，按分辨率和时长计费。",
         "face_video": "视频换脸 v2 固定 512x896，5 秒 40 灵石，8 秒 80 灵石。",
         "ltx_video": "高级图生视频固定 1280x704，时长越长消耗越高。",
         "wan22_video_v2": "图生视频 v2 支持 5/8/10 秒，按分辨率和时长计费。",
-        "scail2_video": "当前模式固定 512x896，5 秒 40 灵石，8 秒 80 灵石。"
+        "scail2_video": "固定 512x896；动作迁移支持 5/8/10/15/20 秒，分别消耗 40/80/120/180/260 灵石；视频换人和视频换脸支持 5/8 秒。"
       },
       "template_notices": {
         "face_swap": "已加载一键换脸模板，身体图已锁定，请上传脸部图即可开始换脸。",
@@ -556,9 +566,11 @@
       },
       "prompt_placeholders": {
         "edit": "描述你希望 AI 如何修改这张图，例如：把背景换成海边，让人物戴上墨镜，整体更像电影剧照。",
+        "edit_v2": "描述你希望 AI 如何修改这张图，例如：调整背景、服饰、姿态或局部细节。",
         "txt2img": "描述你想直接生成的画面，例如：cinematic portrait, moonlight, detailed face, soft rim light, realistic skin。",
         "video": "描述视频里的动作和镜头，例如：人物微笑转头，风吹动发丝，镜头缓慢推近。",
         "scail2_action_transfer": "可留空使用默认提示词；也可补充参考角色与动作效果，例如：动作自然，镜头稳定。",
+        "scail2_action_transfer_long": "可留空使用默认提示词；也可补充参考角色与动作效果，例如：动作自然，镜头稳定。",
         "scail2_video_replacement": "可留空使用默认提示词；也可补充替换后的画面，例如：动作自然，背景保持。",
         "scail2_face_swap_v2": "可留空使用默认提示词；也可补充换脸效果，例如：参考人脸自然融入原视频。"
       },
@@ -679,6 +691,7 @@
     "mode_i2i_pro": "幻想换脸",
     "mode_i2i_draw": "局部重绘",
     "mode_img2img_lora": "图生图(附加模型)",
+    "mode_free_edit_v2": "自由P图 v2",
     "mode_undress": "快速脱衣",
     "mode_masturbation": "快速自慰",
     "mode_faceswap_step1": "快速换脸",
@@ -697,6 +710,7 @@
     "mode_ltx_video": "高级图生视频",
     "mode_wan22_video_v2": "图生视频 v2",
     "mode_scail2_action_transfer": "动作迁移",
+    "mode_scail2_action_transfer_long": "动作迁移",
     "mode_scail2_video_replacement": "视频换人",
     "mode_scail2_face_swap_v2": "视频换脸",
     "mode_video_lora": "图生视频",
@@ -771,6 +785,7 @@
     "common": {
       "task_initializing": "⏳ 任务初始化中...",
       "maintenance": "⚠️ 🛠️ **系统正在维护升级中**\n\n为了提供更好的服务，当前生图/生视频节点正在维护，暂不接受新任务。\n\n您的灵石和会员权益不受影响，请稍后再试！",
+      "feature_unavailable": "功能暂未开放，请稍后再试。",
       "conflict": "⚠️ 您当前有未完成的交互流程，请先发送 /cancel 退出当前流程后再试。",
       "invalid_image_file": "❌ 格式错误！请发送一张图片文件 (PNG/JPG)，而不是其他文档。",
       "invalid_image": "❌ 无法识别。请发送图片！",
@@ -800,7 +815,7 @@
       "submitting": "🚀 正在提交视频换脸任务 ({resolution}p)，预计消耗 {cost} 灵石，请耐心等待..."
     },
     "scail2_video": {
-      "start": "🎬 **已进入【{mode_name}】模式**\n\n第一版固定 512x896，仅支持 5秒/8秒。5秒消耗 {cost} 灵石。\n\n【第一步】请发送一张参考图片。\n\n随时可以发送 /cancel 退出流程。",
+      "start": "🎬 **已进入【{mode_name}】模式**\n\n当前固定 512x896，支持 {duration_options}。5秒消耗 {cost} 灵石。\n\n【第一步】请发送一张参考图片。\n\n随时可以发送 /cancel 退出流程。",
       "reference_received": "✅ **参考图片已收到！**\n\n【第二步】请发送驱动视频（不超过 {max_mb}MB）。\n\n建议使用 5-8 秒、主体清晰的视频。",
       "video_received": "✅ **驱动视频已收到！**\n\n【第三步】请发送正向提示词，或点击下方按钮使用默认提示词。",
       "prompt_only": "⚠️ 请直接发送文字提示词，或点击下方按钮跳过。",
@@ -812,17 +827,20 @@
       "cancel_button": "❌ 取消",
       "cancelled_short": "🚫 已取消视频生视频操作。",
       "expired_alert": "交互已失效或任务已提交，请重新开始",
-      "invalid_duration": "⚠️ 当前模式只支持 5秒 或 8秒，请重新开始。",
+      "invalid_duration": "⚠️ 当前模式不支持该时长，请重新开始。",
       "video_too_large": "⚠️ 驱动视频不能超过 {max_mb}MB，请压缩或裁剪后重新发送。",
       "submitting": "🚀 正在提交【{mode_name}】任务，时长 {duration} 秒，预计消耗 {cost} 灵石，请耐心等待..."
     },
     "edit_image": {
       "start_i2i_pro": "🌟 **已进入【幻想换脸】模式** (消耗 {cost} 灵石)。\n\n【第一步】请发送 1 张您的参考图片。\n\n随时可以发送 /cancel 退出流程。",
       "start_free_edit": "🎨 **已进入【自由P图】模式**。\n\n【第一步】请选择您要附加的模型：\n\n随时可以发送 /cancel 退出流程。",
+      "start_free_edit_v2": "🎨 **已进入【自由P图 v2】模式** (消耗 {cost} 灵石起)。\n\n【第一步】请发送 1 张参考图片；如需双图融合，可继续发送第 2 张图片，双图融合消耗 6 灵石。\n\n随时可以发送 /cancel 退出流程。",
       "selected_model": "✅ 已选择模型：**{model_name}**\n\n【第二步】请发送【参考图片】。\n\n随时可以发送 /cancel 退出流程。",
       "reference_received_i2i": "✅ **已收到 1 张参考图。**\n\n【第二步】请直接发送**提示词 (Text)** 开始生成。\n\n💡 **提示词要求**：\n描述幻想的人物和场景，后续会将参考图中的人物换脸到幻想的场景人物中。",
       "reference_received_first": "✅ **已收到 1 张参考图。**\n\n【第三步】请直接发送**提示词 (Text)** 开始生成。\n（如果是双图融合，您可以继续发送第2张图片，双图融合将消耗 6 灵石）",
       "reference_received_second": "✅ **已收到 2 张参考图。**\n\n【第三步】请直接发送**提示词 (Text)** 开始生成。\n（双图融合将消耗 6 灵石，多余的图片将不生效）",
+      "reference_received_first_v2": "✅ **已收到 1 张参考图。**\n\n【第二步】请直接发送**提示词 (Text)** 开始生成。\n（如需双图融合，可以继续发送第 2 张图片，双图融合将消耗 6 灵石）",
+      "reference_received_second_v2": "✅ **已收到 2 张参考图。**\n\n【第二步】请直接发送**提示词 (Text)** 开始生成。\n（双图融合将消耗 6 灵石，多余的图片将不生效）",
       "single_image_only": "⚠️ 幻想换脸模式只需要 1 张图片，请直接发送文字提示词。",
       "max_two_images": "⚠️ 自由P图最多只支持 2 张图片融合，多余的图片将不生效，请直接发送文字提示词开始生成。",
       "submitting": "🚀 正在提交生成任务，预计消耗 {cost} 灵石，请耐心等待..."

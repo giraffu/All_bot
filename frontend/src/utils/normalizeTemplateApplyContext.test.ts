@@ -99,30 +99,52 @@ describe('normalizeTemplateApplyContext', () => {
     })
   })
 
+  it('normalizes free edit v2 task types as workbench templates', () => {
+    const normalized = normalizeTemplateApplyContext(
+      {
+        post_id: 19,
+        source_post_id: 19,
+        task_type: 'pornmaster_flux2_multi_edit',
+        prompt: 'adjust clothes and lighting'
+      },
+      { source: 'gallery', entryEntityId: 19 }
+    )
+
+    expect(normalized).not.toBeNull()
+    expect(normalized).toMatchObject({
+      rawTaskType: 'pornmaster_flux2_multi_edit',
+      taskType: 'pornmaster_flux2_multi_edit',
+      supportMode: 'workbench',
+      sourcePostId: 19,
+      prompt: 'adjust clothes and lighting'
+    })
+  })
+
   it('normalizes reusable input file arrays for scail2 templates', () => {
     const normalized = normalizeTemplateApplyContext(
       {
         post_id: 22,
         source_post_id: 22,
-        task_type: 'scail2_action_transfer',
+        task_type: 'scail2_action_transfer_long',
         input_file: null,
         input_file_url: null,
         input_files: ['history/demo/motion.mp4'],
         input_file_urls: ['https://example.com/motion.mp4'],
-        requested_duration: '8'
+        requested_duration: '20'
       },
       { source: 'gallery', entryEntityId: 22 }
     )
 
     expect(normalized).not.toBeNull()
     expect(normalized).toMatchObject({
+      rawTaskType: 'scail2_action_transfer_long',
       taskType: 'scail2_action_transfer',
       supportMode: 'workbench',
       inputFile: 'history/demo/motion.mp4',
       inputFileUrl: 'https://example.com/motion.mp4',
       inputFiles: ['history/demo/motion.mp4'],
       inputFileUrls: ['https://example.com/motion.mp4'],
-      requestedDuration: 8
+      requestedDuration: 20
     })
   })
 })

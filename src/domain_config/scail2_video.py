@@ -4,11 +4,13 @@ from typing import Any
 
 
 SCAIL2_ACTION_TRANSFER_TASK_TYPE = "scail2_action_transfer"
+SCAIL2_ACTION_TRANSFER_LONG_TASK_TYPE = "scail2_action_transfer_long"
 SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE = "scail2_video_replacement"
 SCAIL2_FACE_SWAP_V2_TASK_TYPE = "scail2_face_swap_v2"
 SCAIL2_TASK_TYPES = frozenset(
     {
         SCAIL2_ACTION_TRANSFER_TASK_TYPE,
+        SCAIL2_ACTION_TRANSFER_LONG_TASK_TYPE,
         SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
         SCAIL2_FACE_SWAP_V2_TASK_TYPE,
     }
@@ -16,13 +18,29 @@ SCAIL2_TASK_TYPES = frozenset(
 
 SCAIL2_DEFAULT_DURATION_SECONDS = 5
 SCAIL2_ALLOWED_DURATION_SECONDS = (5, 8)
+SCAIL2_ACTION_TRANSFER_ALLOWED_DURATION_SECONDS = (5, 8, 10, 15, 20)
+SCAIL2_ACTION_TRANSFER_LONG_ALLOWED_DURATION_SECONDS = (10, 15, 20)
+SCAIL2_ALLOWED_DURATION_SECONDS_BY_TASK_TYPE = {
+    SCAIL2_ACTION_TRANSFER_TASK_TYPE: SCAIL2_ACTION_TRANSFER_ALLOWED_DURATION_SECONDS,
+    SCAIL2_ACTION_TRANSFER_LONG_TASK_TYPE: (
+        SCAIL2_ACTION_TRANSFER_LONG_ALLOWED_DURATION_SECONDS
+    ),
+    SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE: SCAIL2_ALLOWED_DURATION_SECONDS,
+    SCAIL2_FACE_SWAP_V2_TASK_TYPE: SCAIL2_ALLOWED_DURATION_SECONDS,
+}
 SCAIL2_FRAME_COUNT_BY_DURATION_SECONDS = {
     5: 81,
     8: 129,
+    10: 161,
+    15: 241,
+    20: 321,
 }
 SCAIL2_COST_BY_DURATION_SECONDS = {
     5: 40,
     8: 80,
+    10: 120,
+    15: 180,
+    20: 260,
 }
 SCAIL2_FIXED_WIDTH = 512
 SCAIL2_FIXED_HEIGHT = 896
@@ -65,6 +83,9 @@ SCAIL2_FACE_SWAP_V2_DEFAULT_POSITIVE_PROMPT = (
 
 SCAIL2_DEFAULT_POSITIVE_PROMPT_BY_TASK_TYPE = {
     SCAIL2_ACTION_TRANSFER_TASK_TYPE: SCAIL2_ACTION_TRANSFER_DEFAULT_POSITIVE_PROMPT,
+    SCAIL2_ACTION_TRANSFER_LONG_TASK_TYPE: (
+        SCAIL2_ACTION_TRANSFER_DEFAULT_POSITIVE_PROMPT
+    ),
     SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE: SCAIL2_VIDEO_REPLACEMENT_DEFAULT_POSITIVE_PROMPT,
     SCAIL2_FACE_SWAP_V2_TASK_TYPE: SCAIL2_FACE_SWAP_V2_DEFAULT_POSITIVE_PROMPT,
 }
@@ -78,10 +99,43 @@ def is_scail2_task_type(task_type: str | None) -> bool:
     return str(task_type or "").strip() in SCAIL2_TASK_TYPES
 
 
+def resolve_scail2_execution_task_type(
+    task_type: str | None,
+    duration_seconds: Any,
+) -> str:
+    task_type_text = str(task_type or "").strip()
+    if task_type_text != SCAIL2_ACTION_TRANSFER_TASK_TYPE:
+        return task_type_text
+
+    duration = normalize_scail2_duration_seconds(
+        duration_seconds,
+        strict=True,
+        task_type=SCAIL2_ACTION_TRANSFER_TASK_TYPE,
+    )
+    if duration in SCAIL2_ACTION_TRANSFER_LONG_ALLOWED_DURATION_SECONDS:
+        return SCAIL2_ACTION_TRANSFER_LONG_TASK_TYPE
+    return SCAIL2_ACTION_TRANSFER_TASK_TYPE
+
+
+def get_scail2_allowed_duration_seconds(task_type: str | None = None) -> tuple[int, ...]:
+    task_type_text = str(task_type or "").strip()
+    return SCAIL2_ALLOWED_DURATION_SECONDS_BY_TASK_TYPE.get(
+        task_type_text,
+        SCAIL2_ALLOWED_DURATION_SECONDS,
+    )
+
+
+def _duration_error_message(task_type: str | None = None) -> str:
+    allowed = get_scail2_allowed_duration_seconds(task_type)
+    allowed_text = " or ".join(f"{duration}s" for duration in allowed)
+    return f"SCAIL-2 only supports {allowed_text} duration."
+
+
 def normalize_scail2_duration_seconds(
     value: Any,
     *,
     strict: bool = False,
+    task_type: str | None = None,
 ) -> int:
     if value in (None, ""):
         return SCAIL2_DEFAULT_DURATION_SECONDS
@@ -94,24 +148,42 @@ def normalize_scail2_duration_seconds(
         duration_seconds = int(text)
     except (TypeError, ValueError) as exc:
         if strict:
-            raise Scail2DurationError("SCAIL-2 only supports 5s or 8s duration.") from exc
+            raise Scail2DurationError(_duration_error_message(task_type)) from exc
         return SCAIL2_DEFAULT_DURATION_SECONDS
 
-    if duration_seconds in SCAIL2_ALLOWED_DURATION_SECONDS:
+    if duration_seconds in get_scail2_allowed_duration_seconds(task_type):
         return duration_seconds
 
     if strict:
-        raise Scail2DurationError("SCAIL-2 only supports 5s or 8s duration.")
+        raise Scail2DurationError(_duration_error_message(task_type))
     return SCAIL2_DEFAULT_DURATION_SECONDS
 
 
-def get_scail2_frame_count(duration_seconds: Any, *, strict: bool = False) -> int:
-    normalized = normalize_scail2_duration_seconds(duration_seconds, strict=strict)
+def get_scail2_frame_count(
+    duration_seconds: Any,
+    *,
+    strict: bool = False,
+    task_type: str | None = None,
+) -> int:
+    normalized = normalize_scail2_duration_seconds(
+        duration_seconds,
+        strict=strict,
+        task_type=task_type,
+    )
     return SCAIL2_FRAME_COUNT_BY_DURATION_SECONDS[normalized]
 
 
-def get_scail2_cost(duration_seconds: Any, *, strict: bool = False) -> int:
-    normalized = normalize_scail2_duration_seconds(duration_seconds, strict=strict)
+def get_scail2_cost(
+    duration_seconds: Any,
+    *,
+    strict: bool = False,
+    task_type: str | None = None,
+) -> int:
+    normalized = normalize_scail2_duration_seconds(
+        duration_seconds,
+        strict=strict,
+        task_type=task_type,
+    )
     return SCAIL2_COST_BY_DURATION_SECONDS[normalized]
 
 

@@ -17,6 +17,15 @@ def _get_env_value(name: str, default: str | None = None) -> str | None:
             return test_value
     return os.getenv(name, default)
 
+
+def _get_bool_env(name: str, default: str = "false") -> bool:
+    return str(_get_env_value(name, default) or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
 # --- Bot Configuration ---
 TELEGRAM_API_BASE_URL = os.getenv("TELEGRAM_API_BASE_URL", "http://69.63.220.115:8081")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -131,6 +140,8 @@ API_TOKEN = _get_env_value("API_TOKEN", "your_secure_token_here")  # Added based
 # Endpoints constructed from API_BASE
 IMG2IMG_ENDPOINT = f"{API_BASE}/comfy_img2img"
 IMG2IMG_LORA_ENDPOINT = f"{API_BASE}/comfy_img2img_lora"
+PORNMASTER_FLUX2_SINGLE_EDIT_ENDPOINT = f"{API_BASE}/api/v1/pornmaster_flux2_single_edit"
+PORNMASTER_FLUX2_MULTI_EDIT_ENDPOINT = f"{API_BASE}/api/v1/pornmaster_flux2_multi_edit"
 STATUS_ENDPOINT = f"{API_BASE}/status"
 IMAGE_ENDPOINT = f"{API_BASE}/image"
 VIDEO_ENDPOINT = f"{API_BASE}/video"
@@ -148,6 +159,9 @@ LTX_VIDEO_FLF2V_ENDPOINT = f"{API_BASE}/api/v1/ltx_video_flf2v"
 LTX_VIDEO_V2V_AUDIO_ENDPOINT = f"{API_BASE}/api/v1/ltx_video_v2v_audio"
 WAN22_VIDEO_V2_ENDPOINT = f"{API_BASE}/api/v1/wan22_video_v2"
 SCAIL2_ACTION_TRANSFER_ENDPOINT = f"{API_BASE}/api/v1/scail2_action_transfer"
+SCAIL2_ACTION_TRANSFER_LONG_ENDPOINT = (
+    f"{API_BASE}/api/v1/scail2_action_transfer_long"
+)
 SCAIL2_VIDEO_REPLACEMENT_ENDPOINT = f"{API_BASE}/api/v1/scail2_video_replacement"
 SCAIL2_FACE_SWAP_V2_ENDPOINT = f"{API_BASE}/api/v1/scail2_face_swap_v2"
 
@@ -167,6 +181,11 @@ CHANNEL_INVITE_LINK = os.getenv("CHANNEL_INVITE_LINK")
 REFUGE_GROUP_ID = os.getenv("REFUGE_GROUP_ID")
 REFUGE_INVITE_LINK = os.getenv("REFUGE_INVITE_LINK")
 ENABLE_PUBLIC_SHARE = os.getenv("ENABLE_PUBLIC_SHARE", "false").lower() == "true"
+ENABLE_FREE_EDIT_V2 = _get_bool_env("ENABLE_FREE_EDIT_V2", "false")
+ENABLE_SCAIL2_LONG_ACTION_TRANSFER = _get_bool_env(
+    "ENABLE_SCAIL2_LONG_ACTION_TRANSFER",
+    "false",
+)
 
 # --- Limit Configuration ---
 DAILY_LIMIT = int(os.getenv("DAILY_LIMIT", "10"))

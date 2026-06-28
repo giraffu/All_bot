@@ -35,11 +35,11 @@
 | 文档 | 事实源 | 本轮状态 | 处理结果 |
 | :--- | :--- | :--- | :--- |
 | `docs/子模块_任务调度_task_scheduler.md` | `src/core/task_core*.py`、`src/task_core_process_defaults.py`、部署脚本 | 已修正 | 部署章节同步云测试维护式更新入口 |
-| `docs/子模块_生成任务全链路_task_full_chain.md` | `src/web_api/services/*task*`、`backend/app`、`workers/comfy_agent` | 已核对 | 主链路仍符合现状；继续作为 `allbot-task-engine` 的长链路与排障事实源 |
+| `docs/子模块_生成任务全链路_task_full_chain.md` | `src/web_api/services/*task*`、`backend/app`、`workers/comfy_agent` | 已修正 | 主链路仍符合现状；补充自由P图 v2 到 `pornmaster_flux2_single_edit` / `pornmaster_flux2_multi_edit` 的费用、无 LoRA 和 exact worker task type 路由；修正 SCAIL-2 动作迁移合并长时长：用户侧仍为 `scail2_action_transfer`，10/15/20s 隐式路由到 `scail2_action_transfer_long` 执行 |
 | `docs/子模块_中控API与节点通信_central_api.md` | `backend/app/main.py`、`backend/app/queue_manager.py`、worker relay | 已核对 | Central / worker protocol 口径有效 |
 | `docs/子模块_任务黄金路径回归清单_task_golden_path.md` | `tests/backend`、`tests/core`、`tests/web_api`、worker tests | 已核对 | 回归分组仍可用 |
-| `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` | `ops/gpu_pool_controller`、Dashboard RunPod 服务、RunPod scripts、PornMaster Flux2 edit profile/scripts | 已修正 | 已包含 Dashboard autoscaler 预计清空时间模型、profile 级自动管理暂停、RunPod 故障/暂停自愈、bootstrap timeout 换机清理、RunPod/LAN AIO 当前边界，并记录 `pornmaster_flux2_edit` 镜像/模型 manifest、ignored token env 与 fp8/bf16 运行口径 |
-| `docs/子模块_附加模型配置指南_comfy_models.md` | `workers/comfy_agent/workflows`、`remote_workers`、workflow patcher、PornMaster Flux2 edit workflow/API 映射 | 已修正 | workflow 事实源和 SCAIL-2/LTX 口径有效；新增 PornMaster Flux2 single/multiple edit API workflow、模型 bundle、LAN cache、Civitai token 安全入口、fp8 默认与 bf16 canary 口径；继续作为 `allbot-comfy-models` 的节点级细节事实源 |
+| `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` | `ops/gpu_pool_controller`、Dashboard RunPod 服务、RunPod scripts、PornMaster Flux2 edit profile/scripts | 已修正 | 已包含 Dashboard autoscaler 预计清空时间模型、profile 级自动管理暂停、RunPod 故障/暂停自愈、bootstrap timeout 换机清理、RunPod/LAN AIO 当前边界，并记录 `pornmaster_flux2_edit` 镜像、cached 模型 manifest、gpu252:8192 cloud-test canary helper、ignored token env 与 fp8/bf16 运行口径；补充 cloud-test worker8 可额外承接 `scail2_action_transfer_long` 且正式 RunPod 不承接 |
+| `docs/子模块_附加模型配置指南_comfy_models.md` | `workers/comfy_agent/workflows`、`remote_workers`、workflow patcher、PornMaster Flux2 edit workflow/API 映射 | 已修正 | workflow 事实源和 SCAIL-2/LTX 口径有效；新增 PornMaster Flux2 single/multiple edit API workflow、cached 模型 bundle、LAN cache、Civitai token 安全入口、fp8 默认与 bf16 canary 口径；修正 SCAIL-2 Context Windows API workflow 为动作迁移 10/15/20s hidden execution，不作为独立用户入口；继续作为 `allbot-comfy-models` 的节点级细节事实源 |
 | `docs/compat_seam_exit_table.md` | compat 文件现状、`rg` 引用 | 已核对 | 作为 compat 清理挂账表保留 |
 | `docs/双入口重复能力_inventory.md` | `backend/app`、`src/web_api` | 已核对 | 双入口分层描述有效 |
 | `docs/入口职责矩阵_entry_responsibility_matrix.md` | Web/Central/Dashboard/Payment/Bot entrypoints | 已核对 | 入口职责有效 |
@@ -80,14 +80,14 @@
 | :--- | :--- | :--- | :--- |
 | `docs/SAFE_DEPLOY_GUIDE.md` | deploy scripts、cloud compose | 已修正 | 云测试主入口改为维护式更新脚本，`safe_deploy_cloud_test.sh` 标为子步骤 |
 | `docs/子模块_运维指南与容器管理_ops_deployment.md` | deploy scripts、compose、ops Skill | 已修正 | 补充正式 QQCC Bot 单服务更新入口；运维总口径有效 |
-| `docs/子模块_云测试控制面部署_cloud_test_control_plane.md` | `deploy/docker-compose-cloud-test.yml`、`scripts/update_cloud_test_with_maintenance.sh` | 已核对 | 云测试 SOP 以维护式更新为主，仍有效 |
+| `docs/子模块_云测试控制面部署_cloud_test_control_plane.md` | `deploy/docker-compose-cloud-test.yml`、`scripts/update_cloud_test_with_maintenance.sh`、`workers/docker-compose-cloud-worker-test.yml` | 已修正 | 云测试 SOP 以维护式更新为主；补充自由P图 v2 开关、worker4 覆盖到 gpu252:8192 PornMaster AIO 和单 worker canary 启动口径；修正 worker8 的 SCAIL-2 `scail2_action_transfer_long` 为动作迁移 10/15/20s hidden execution/workflow override，不再由用户入口 feature flag 控制 |
 | `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md` | `deploy/docker-compose-cloud-prod.yml`、`scripts/update_cloud_prod_with_maintenance.sh`、`scripts/update_cloud_prod_qqcc_bot.sh`、`scripts/sync_cloud_prod_to_local_shadow.py`、`scripts/run_local_analytics_shadow_pipeline.py`、systemd timer、Dashboard autoscaler service | 已修正 | 补充正式 QQCC Bot 专用窄更新入口；本地 shadow 同步已更新为云机 dump + R2/HTTPS 临时中转 + 本地 restore 主路径，并补充完整合并桶、timer、安全边界、旧 tunnel fallback、本地分析表保留、05:45 自动分析刷新与验收口径；同步 autoscaler 预计清空时间模型、profile 级自动管理暂停、RunPod 故障/暂停自愈和 bootstrap timeout 换机口径 |
 | `docs/子模块_本地正式灾备切换_local_prod_fallback.md` | `safe_deploy.sh`、cloud prod scripts、shadow sync script | 已修正 | 灾备时优先核对/使用 `bot_db_prod_shadow`、`user-data-prod-shadow` 与 `user-data-complete-shadow`，本地写入前停止 shadow timer |
 | `docs/子模块_网络暴露与代理穿透_network_proxy.md` | Cloudflare/Tunnel scripts、network docs | 已核对 | 网络入口和回滚边界有效 |
 | `docs/子模块_边缘节点运维指南_edge_node_ops.md` | edge docs、cloud prod preflight | 已核对 | 边缘节点说明有效 |
 | `docs/子模块_云控制面SSH密钥管理_cloud_ssh_access.md` | SSH docs、cloud compose | 已核对 | 不含私钥，作为登录边界文档保留 |
 | `docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md` | LAN SSH docs、GPU resource docs | 已核对 | 不含私钥，作为节点访问文档保留 |
-| `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md` | LAN AIO scripts、GPU pool config、worker compose、PornMaster Flux2 edit profile/image | 已修正 | 长运行态文档保留，容量需按实时探测复核；新增 PornMaster Flux2 edit 为未放量准备 profile，缺授权 UNET 时不得启用接单 slot |
+| `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md` | LAN AIO scripts、GPU pool config、worker compose、PornMaster Flux2 edit profile/image | 已修正 | 长运行态文档保留，容量需按实时探测复核；新增 PornMaster Flux2 edit 为 cloud-test canary profile，使用 gpu252 GPU0 host 8192，需先 drain/disable 原 img2img_lora 正式 slot 并在验证后 restore |
 | `docs/子模块_系统资源与容量画像_resource_inventory.md` | compose、resource docs、deployment scripts、shadow sync script | 已修正 | 云正式/云测试入口口径更新；补充本地 shadow DB、R2 shadow、完整合并桶与 MinIO bucket 资源事实，并记录 shadow DB 获取路径已切为云机 dump + R2/HTTPS 中转；运行态快照仍需人工探测 |
 | `docs/子模块_容灾与持久化_database_recovery.md` | migrations、runtime checkpoint code | 已核对 | 恢复主链有效 |
 | `docs/子模块_代码静态分析与质量评估规范_code_quality.md` | `pytest --collect-only`、`ruff check`、Alembic、Core Isolation 扫描、doc checker | 已修正 | 保留 2026-06-24 历史快照，新增 2026-06-27 轻量复核结果 |
@@ -112,12 +112,12 @@
 | :--- | :--- | :--- | :--- |
 | `.codex/skills/allbot-kb-auto-updater/SKILL.md` | 本矩阵、KB 维护流程 | 已修正 | 补充核对矩阵输出要求 |
 | `.codex/skills/allbot-ops-deployment/SKILL.md` | deploy scripts、compose、shadow sync script、Dashboard autoscaler service、Skill 体积审计 | 已修正 | 从约 51KB 瘦身为约 10KB 的路由型入口，保留测试优先、正式确认、密钥红线、部署入口、RunPod/LAN AIO/shadow/验证矩阵；低频运行态细节改为按需读取 docs/reference，避免触发时正文被截断 |
-| `.codex/skills/allbot-task-engine/SKILL.md` | task core、queue manager、runtime cleanup、Skill 体积审计 | 已修正 | 已从约 23KB 瘦身为约 8.4KB 的任务生命周期路由入口，保留 core/Web/Central/Worker 边界、双 ID 红线、新任务类型清单和验证要求；长链路细节改由任务调度/生成全链路文档按需加载 |
-| `.codex/skills/allbot-comfy-models/SKILL.md` | workflow patcher、remote_workers、Skill 体积审计 | 已修正 | 已从约 36KB 瘦身为约 7.4KB 的模型/workflow 路由入口，保留 workflow 事实源、Central/Worker 边界、Wan22/LTX/SCAIL-2 关键提醒和部署验收；节点级细节改由 Comfy 子模块文档与 runtime reference 按需加载 |
+| `.codex/skills/allbot-task-engine/SKILL.md` | task core、queue manager、runtime cleanup、Skill 体积审计 | 已修正 | 已从约 23KB 瘦身为约 8.4KB 的任务生命周期路由入口，保留 core/Web/Central/Worker 边界、双 ID 红线、新任务类型清单和验证要求；修正 SCAIL-2 合并长时长后的 public/history/execution 路由口径；长链路细节改由任务调度/生成全链路文档按需加载 |
+| `.codex/skills/allbot-comfy-models/SKILL.md` | workflow patcher、remote_workers、Skill 体积审计 | 已修正 | 已从约 36KB 瘦身为约 7.4KB 的模型/workflow 路由入口，保留 workflow 事实源、Central/Worker 边界、Wan22/LTX/SCAIL-2 关键提醒和部署验收；修正 `scail2_action_transfer_long` 为动作迁移 10/15/20s hidden execution；节点级细节改由 Comfy 子模块文档与 runtime reference 按需加载 |
 | `.codex/skills/allbot-tg-fsm/SKILL.md` | `src/handlers`、Bot entrypoint | 已核对 | FSM 边界有效 |
 | `.codex/skills/allbot-qqcc-lazy-bot/SKILL.md` | `qqcc_bot`、cloud compose、`scripts/update_cloud_prod_qqcc_bot.sh`、`src/services/qqcc_config_service.py`、`src/handlers/fsm/quick_image_fsm.py`、`src/handlers/fsm/quick_video_fsm.py` | 已修正 | 补充 QQCC 主菜单 `前往主bot` 非生成入口、正式单独更新脚本、单 polling 确认口径、快速脱衣主菜单入口、`AI动图` 专用文案与 quick video inline 场景按钮契约；修正未配置主 Bot URL/username 时“按钮不展示”的旧口径，改为由 `main_bot_link` 配置控制菜单项，点击时提示入口未配置；QQCC 独立 Bot 边界有效 |
 | `.codex/skills/allbot-billing-auth/SKILL.md` | auth/billing/affiliate code | 已核对 | 计费鉴权边界有效 |
-| `.codex/skills/allbot-gallery-storage/SKILL.md` | Gallery/R2 code、Skill 体积审计 | 已修正 | 存储与社区边界有效；本轮仅折叠媒体 URL 策略超长行，正文约 13KB，暂不需要拆分 |
+| `.codex/skills/allbot-gallery-storage/SKILL.md` | Gallery/R2 code、Skill 体积审计 | 已修正 | 存储与社区边界有效；已补充自由P图 v2 独立 `free_edit_v2_group`、Web 一键应用无 LoRA/重传参考图和 single/multi 提交口径 |
 | `.codex/skills/allbot-diagnosing-bugs/SKILL.md` | bug 诊断流程 | 已核对 | 诊断闭环有效 |
 | `.codex/skills/allbot-tdd/SKILL.md` | tests、dependencies seam | 已核对 | TDD seam 口径有效 |
 | `.codex/skills/allbot-codebase-design/SKILL.md` | 架构词汇 | 已核对 | 设计词汇有效 |

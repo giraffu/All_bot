@@ -42,7 +42,7 @@ echo "📤 上传静态包到边缘 VPS..."
 $SCP_CMD "$LOCAL_ARCHIVE" "${EDGE_HOST}:${REMOTE_ARCHIVE}"
 
 echo "📂 解压并替换边缘 VPS 测试目录..."
-$SSH_CMD "$EDGE_HOST" "rm -rf '${EDGE_TEST_DIR}'/* && tar -xzf '${REMOTE_ARCHIVE}' -C '${EDGE_TEST_DIR}'"
+$SSH_CMD "$EDGE_HOST" "rm -rf '${EDGE_TEST_DIR}'/* && tar -xzf '${REMOTE_ARCHIVE}' -C '${EDGE_TEST_DIR}' && chown -R root:root '${EDGE_TEST_DIR}' && find '${EDGE_TEST_DIR}' -type d -exec chmod 755 {} + && find '${EDGE_TEST_DIR}' -type f -exec chmod 644 {} +"
 
 cat <<EOF
 ✅ 测试 Web 已同步到边缘 VPS。

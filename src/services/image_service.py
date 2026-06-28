@@ -236,6 +236,26 @@ class ImageService:
             lora_strength=lora_strength,
         )
 
+    async def submit_pornmaster_flux2_edit_task(
+        self,
+        task_id: str,
+        *,
+        execution_task_type: str,
+        prompt: str,
+        image_paths: list[str],
+        negative_prompt: str = " ",
+        priority: int = 0,
+    ) -> str:
+        """Submit PornMaster Flux2 single/multiple image-edit task."""
+        return await api_client.submit_pornmaster_flux2_edit(
+            task_id,
+            execution_task_type=execution_task_type,
+            prompt=prompt,
+            image_paths=image_paths,
+            negative_prompt=negative_prompt,
+            priority=priority,
+        )
+
     async def submit_perfect_video_edit(
         self,
         task_id: str,

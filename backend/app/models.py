@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, field_validator
 
 from src.domain_config.scail2_video import (
+    SCAIL2_ACTION_TRANSFER_LONG_TASK_TYPE,
     SCAIL2_ACTION_TRANSFER_TASK_TYPE,
     SCAIL2_FACE_SWAP_V2_TASK_TYPE,
     SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
@@ -36,8 +37,11 @@ class TaskType(str, Enum):
     LTX_VIDEO_V2V_AUDIO = "ltx_video_v2v_audio"
     WAN22_VIDEO_V2 = "wan22_video_v2"
     SCAIL2_ACTION_TRANSFER = SCAIL2_ACTION_TRANSFER_TASK_TYPE
+    SCAIL2_ACTION_TRANSFER_LONG = SCAIL2_ACTION_TRANSFER_LONG_TASK_TYPE
     SCAIL2_VIDEO_REPLACEMENT = SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE
     SCAIL2_FACE_SWAP_V2 = SCAIL2_FACE_SWAP_V2_TASK_TYPE
+    PORNMASTER_FLUX2_SINGLE_EDIT = "pornmaster_flux2_single_edit"
+    PORNMASTER_FLUX2_MULTI_EDIT = "pornmaster_flux2_multi_edit"
 
 
 class TaskResponse(BaseModel):
@@ -266,7 +270,7 @@ class Wan22VideoV2Request(BaseModel):
     priority: int = 0
 
 
-class Scail2VideoRequest(BaseModel):
+class _Scail2VideoRequestBase(BaseModel):
     task_id: str
     image: str
     video: str
@@ -275,6 +279,8 @@ class Scail2VideoRequest(BaseModel):
     length: int = 5
     priority: int = 0
 
+
+class Scail2VideoRequest(_Scail2VideoRequestBase):
     @field_validator("length")
     @classmethod
     def validate_length(cls, value: int) -> int:
@@ -282,3 +288,19 @@ class Scail2VideoRequest(BaseModel):
             return normalize_scail2_duration_seconds(value, strict=True)
         except Scail2DurationError as exc:
             raise ValueError("SCAIL-2 only supports 5s or 8s duration.") from exc
+
+
+class Scail2ActionTransferLongRequest(_Scail2VideoRequestBase):
+    @field_validator("length")
+    @classmethod
+    def validate_length(cls, value: int) -> int:
+        try:
+            return normalize_scail2_duration_seconds(
+                value,
+                strict=True,
+                task_type=SCAIL2_ACTION_TRANSFER_LONG_TASK_TYPE,
+            )
+        except Scail2DurationError as exc:
+            raise ValueError(
+                "SCAIL-2 long action transfer only supports 10s, 15s or 20s duration."
+            ) from exc

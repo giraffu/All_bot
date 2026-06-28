@@ -52,7 +52,12 @@ const initialPrompt = ref('')
 const initialNegativePrompt = ref('')
 const initialDuration = ref('5')
 
-const taskType = computed(() => props.context.taskType ?? 'scail2_action_transfer')
+const taskType = computed(() => {
+  const rawTaskType = props.context.taskType ?? 'scail2_action_transfer'
+  return rawTaskType === 'scail2_action_transfer_long'
+    ? 'scail2_action_transfer'
+    : rawTaskType
+})
 const scail2TitleKeyByTaskType: Record<string, string> = {
   scail2_action_transfer: 'lab.cards.scail2_action_transfer_title',
   scail2_video_replacement: 'lab.cards.scail2_video_replacement_title',
@@ -72,9 +77,9 @@ const promptPlaceholder = computed(() => t(
 const motionVideoKey = computed(() => props.context.inputFile ?? props.context.inputFiles?.[0] ?? null)
 const motionVideoUrl = computed(() => props.context.inputFileUrl ?? props.context.inputFileUrls?.[0] ?? null)
 const availableDurationOptions = computed(() => (
-  getScail2VideoDurationOptionsForMotionVideo(motionVideoDurationSeconds.value)
+  getScail2VideoDurationOptionsForMotionVideo(motionVideoDurationSeconds.value, taskType.value)
 ))
-const taskCost = computed(() => getScail2VideoCost(duration.value))
+const taskCost = computed(() => getScail2VideoCost(duration.value, taskType.value))
 
 const revokePreview = (preview: string | null) => {
   if (preview?.startsWith('blob:')) {
@@ -113,7 +118,10 @@ const cleanup = async () => {
 
 const normalizeDuration = (value: number | string | null | undefined) => {
   const normalized = String(value ?? '5').replace(/s$/i, '')
-  return normalized === '8' ? '8' : '5'
+  const allowedDurations = taskType.value === 'scail2_action_transfer'
+    ? ['5', '8', '10', '15', '20']
+    : ['5', '8']
+  return allowedDurations.includes(normalized) ? normalized : '5'
 }
 
 const coerceDurationToAvailableOption = (value: number | string | null | undefined) => {
