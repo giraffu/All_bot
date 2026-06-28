@@ -18,13 +18,14 @@ describe('labModeConfig', () => {
     expect(getLabModeConfig('wan22_video_v2').baseCost).toBe(6)
   })
 
-  it('keeps free edit v2 configured but hidden unless the build flag enables it', () => {
+  it('shows free edit v2 next to the original free edit mode', () => {
     const mode = getLabModeConfig('edit_v2')
+    const modeIds = UNIFIED_LAB_MODES.map(item => item.id)
 
     expect(mode.taskType).toBe('pornmaster_flux2_single_edit')
     expect(mode.supportsEditLora).toBe(false)
     expect(mode.maxImages).toBe(2)
-    expect(UNIFIED_LAB_MODES.map(item => item.id)).not.toContain('edit_v2')
+    expect(modeIds.slice(0, 2)).toEqual(['edit', 'edit_v2'])
     expect(resolveLabModeIdFromTaskType('pornmaster_flux2_single_edit')).toBe('edit_v2')
     expect(resolveLabModeIdFromTaskType('pornmaster_flux2_multi_edit')).toBe('edit_v2')
   })

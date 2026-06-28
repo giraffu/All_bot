@@ -178,7 +178,7 @@ export const FACE_VIDEO_RESOLUTION_OPTIONS = [
 ] as const
 
 export const FREE_EDIT_V2_MODE_ID = 'edit_v2' as const
-export const FREE_EDIT_V2_ENABLED = import.meta.env.VITE_ENABLE_FREE_EDIT_V2 === 'true'
+export const FREE_EDIT_V2_ENABLED = import.meta.env.VITE_ENABLE_FREE_EDIT_V2 !== 'false'
 export const PORNMASTER_FLUX2_SINGLE_EDIT_TASK_TYPE = 'pornmaster_flux2_single_edit'
 export const PORNMASTER_FLUX2_MULTI_EDIT_TASK_TYPE = 'pornmaster_flux2_multi_edit'
 
