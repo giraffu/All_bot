@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>本地数据分析平台</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/static/styles.css?v=20260626-prompt-vector-ui-v1" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260628-vector-resume-v1" />
   </head>
   <body>
     <div id="app" class="app-shell">
@@ -91,14 +91,22 @@
 
         <section class="band users-band tab-panel active" data-panel="users">
           <div id="userSummary" class="metric-grid"></div>
-          <div class="chart-strip three">
+          <div class="chart-strip user-trends">
             <div>
               <div class="chart-title">每日新增用户</div>
               <div id="userNewSpark" class="spark-bars blue"></div>
             </div>
             <div>
+              <div class="chart-title">每日新增入宗门</div>
+              <div id="userNewChannelSpark" class="spark-bars green"></div>
+            </div>
+            <div>
+              <div class="chart-title">每日新增生成用户</div>
+              <div id="userNewGenerationSpark" class="spark-bars"></div>
+            </div>
+            <div>
               <div class="chart-title">每日活跃用户</div>
-              <div id="userActiveSpark" class="spark-bars"></div>
+              <div id="userActiveSpark" class="spark-bars blue-soft"></div>
             </div>
             <div>
               <div class="chart-title">每日签到</div>
@@ -711,6 +719,13 @@
 
         <section class="band tab-panel" data-panel="prompt-vectors">
           <div id="promptVectorSummary" class="metric-grid compact"></div>
+          <div class="prompt-vector-action-bar">
+            <div class="prompt-vector-action-copy">
+              <strong>向量化续跑</strong>
+              <span id="promptVectorResumeStatus">等待状态</span>
+            </div>
+            <button id="promptVectorResumeButton" type="button">续跑向量化</button>
+          </div>
           <div class="prompt-filter-bar prompt-vector-filter-bar">
             <label>
               <span>搜索</span>
@@ -813,6 +828,6 @@
       </main>
       </div>
     </div>
-    <script src="/static/app.js?v=20260626-prompt-vector-ui-v1"></script>
+    <script src="/static/app.js?v=20260628-vector-resume-v1"></script>
   </body>
 </html>

@@ -22,14 +22,17 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
     assert list(slots) == [
         "gpu-177-gpu0-image_to_video",
         "gpu-177-gpu1-ltx_video",
-        "gpu-252-gpu0-img2img_lora",
+        "gpu-252-gpu0-pornmaster_flux2_edit",
         "gpu-252-gpu1-wan22_video_v2",
     ]
     assert slots["gpu-177-gpu0-image_to_video"].legacy_worker_id == "cloud_prod_worker_02"
     assert slots["gpu-177-gpu0-image_to_video"].target_profile_id == "wan22_video_v2"
     assert slots["gpu-177-gpu0-image_to_video"].target_task_types == ("wan22_video_v2",)
     assert slots["gpu-177-gpu1-ltx_video"].legacy_worker_id == "cloud_prod_worker_03"
-    assert slots["gpu-252-gpu0-img2img_lora"].agent_id == (
+    assert slots["gpu-252-gpu0-pornmaster_flux2_edit"].agent_id == (
+        "lan_aio_prod_gpu252_gpu0_pornmaster_flux2_edit_01"
+    )
+    assert slots["gpu-252-gpu0-pornmaster_flux2_edit"].legacy_worker_id == (
         "lan_aio_prod_gpu252_gpu0_img2img_lora_01"
     )
     assert slots["gpu-252-gpu1-wan22_video_v2"].host_port == 8191
@@ -40,6 +43,10 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
 
     assert slots["gpu-177-gpu1-ltx_video"].enabled is True
     assert slots["gpu-177-gpu1-ltx_video"].phase == "prod_enabled"
+    assert slots["gpu-252-gpu0-img2img_lora"].enabled is False
+    assert slots["gpu-252-gpu0-img2img_lora"].phase == (
+        "superseded_by_pornmaster_flux2_edit"
+    )
     config = load_controller_config()
     assert (
         config.profiles["ltx_video"].all_in_one_image_ref
@@ -78,12 +85,18 @@ def test_lan_aio_fleet_render_patches_remote_workers_mount_for_gpu_252():
         aio_env_file=Path(".env.lan-aio-prod.missing"),
         model_env_file=Path(".env.lan.model-cache.missing"),
     )
-    slot = ops.slots["gpu-252-gpu0-img2img_lora"]
+    slot = ops.slots["gpu-252-gpu0-pornmaster_flux2_edit"]
     rendered = ops.render_compose(slot)
 
     assert "RUNPOD_ENVIRONMENT: cloud-prod" in rendered
     assert "CENTRAL_API_URL: https://worker-central.aivison.it.com" in rendered
     assert "MINIO_RESULT_BUCKET: user-data-prod" in rendered
+    assert (
+        "SUPPORTED_TASK_TYPES: pornmaster_flux2_single_edit,"
+        "pornmaster_flux2_multi_edit"
+    ) in rendered
+    assert "POOL_RUNTIME_PROFILE: pornmaster_flux2_edit" in rendered
+    assert "host_port: 8192" in rendered
     assert "--disable-dynamic-vram" not in rendered
     assert "cloud-test" not in rendered
     assert "user-data-test" not in rendered
@@ -95,6 +108,23 @@ def test_lan_aio_fleet_render_patches_remote_workers_mount_for_gpu_252():
     assert f"{slot.remote_workers_dir}:/workspace/allbot/remote_workers" in rendered
     assert "PYTHONPATH: /workspace/allbot/remote_workers" in rendered
     assert "remote_workers_bundle:" in rendered
+
+
+def test_lan_aio_stop_old_dry_run_omits_empty_local_agent_container():
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+    slot = ops.slots["gpu-252-gpu0-pornmaster_flux2_edit"]
+
+    payload = ops.dry_run_action("stop-old", [slot])
+
+    assert payload["operations"] == [
+        "set lan_aio_prod_gpu252_gpu0_img2img_lora_01=disabled",
+        "ssh allbot-gpu-252 docker stop allbot-lan-aio-gpu-252-gpu0-img2img_lora-prod",
+    ]
 
 
 def test_lan_aio_fleet_render_supports_gpu_177_wan22_v2_profile():
@@ -189,7 +219,7 @@ def test_lan_aio_fleet_render_disables_dynamic_vram_for_wan22_v2():
 
 def test_lan_aio_prod_compose_assertion_rejects_test_storage():
     config = load_controller_config()
-    slot = load_lan_aio_prod_slots()["gpu-252-gpu0-img2img_lora"]
+    slot = load_lan_aio_prod_slots()["gpu-252-gpu0-pornmaster_flux2_edit"]
     rendered = RuntimePlanner(config).render_compose(
         slot.assignment_id,
         target_profile_id=slot.target_profile_id,

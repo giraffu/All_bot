@@ -187,7 +187,10 @@ def test_runpod_all_in_one_render_supports_cloud_prod_scail2_slot0():
     assert "RUNPOD_ENVIRONMENT: cloud-prod" in rendered
     assert "CENTRAL_API_URL: https://worker-central.aivison.it.com" in rendered
     assert "MINIO_RESULT_BUCKET: user-data-prod" in rendered
-    assert "SUPPORTED_TASK_TYPES: scail2_action_transfer,scail2_video_replacement" in rendered
+    assert (
+        "SUPPORTED_TASK_TYPES: scail2_action_transfer,scail2_action_transfer_long,"
+        "scail2_video_replacement,scail2_face_swap_v2"
+    ) in rendered
     assert "POOL_RUNTIME_PROFILE: scail2" in rendered
     assert "RUNPOD_MODEL_PREFIX: scail2/2026-06-17-test" in rendered
     assert "RUNPOD_MODEL_MANIFEST_KEY: scail2/2026-06-17-test/manifest.json" in rendered

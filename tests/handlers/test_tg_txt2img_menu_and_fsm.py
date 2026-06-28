@@ -22,6 +22,18 @@ def test_main_menu_places_txt2img_left_of_i2i_pro():
     ]
 
 
+def test_main_menu_does_not_show_free_edit_v2_as_top_level_button():
+    get_main_menu_keyboard.cache_clear()
+    keyboard = get_main_menu_keyboard("zh")
+    button_texts = [
+        button.text
+        for row in keyboard.keyboard
+        for button in row
+    ]
+
+    assert get_text("menu.free_edit_v2", "zh") not in button_texts
+
+
 def test_build_global_menu_filter_includes_txt2img_label():
     prompt_router.GLOBAL_REVERSE_MAP.clear()
 

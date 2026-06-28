@@ -32,6 +32,8 @@ async def test_user_analytics_returns_profile_distributions_and_leaderboards(mon
                 {
                     "day": "2026-06-24",
                     "new_users": 3,
+                    "new_channel_members": 2,
+                    "new_generation_users": 5,
                     "active_users": 9,
                     "checkins": 4,
                 }
@@ -85,6 +87,8 @@ async def test_user_analytics_returns_profile_distributions_and_leaderboards(mon
     assert payload["days"] == 30
     assert payload["limit"] == 12
     assert payload["summary"]["total_users"] == 100
+    assert payload["daily"][0]["new_channel_members"] == 2
+    assert payload["daily"][0]["new_generation_users"] == 5
     assert payload["distributions"]["identity"][0] == {"label": "外门弟子", "count": 70}
     assert payload["leaderboards"]["generation"][0]["username"] == "maker"
     assert payload["leaderboards"]["credits"][0]["full_name"] is None

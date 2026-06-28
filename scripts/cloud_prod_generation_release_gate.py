@@ -27,6 +27,7 @@ MAINTENANCE_CONTAINERS = (
     "cloud-qqcc-bot-prod",
 )
 GENERATION_MAINTENANCE_PATH = "/app/GENERATION_MAINTENANCE"
+GENERATION_MAINTENANCE_RUNTIME_PATH = "/app/runtime-flags/GENERATION_MAINTENANCE"
 REFUND_TASK_TYPE = "refund_prod_maintenance_release"
 
 
@@ -91,11 +92,17 @@ def run_ssh(host: str, script: str, *, execute: bool) -> None:
 
 
 def set_maintenance(host: str, *, enabled: bool, execute: bool) -> None:
-    operation = (
-        f"touch {GENERATION_MAINTENANCE_PATH}"
-        if enabled
-        else f"rm -f {GENERATION_MAINTENANCE_PATH}"
-    )
+    if enabled:
+        operation = (
+            f"mkdir -p {GENERATION_MAINTENANCE_RUNTIME_PATH.rsplit('/', 1)[0]} && "
+            f"printf '1\\n' > {GENERATION_MAINTENANCE_PATH} && "
+            f"printf '1\\n' > {GENERATION_MAINTENANCE_RUNTIME_PATH}"
+        )
+    else:
+        operation = (
+            f"rm -f {GENERATION_MAINTENANCE_PATH} "
+            f"{GENERATION_MAINTENANCE_RUNTIME_PATH}"
+        )
     script = "\n".join(
         [
             "set -euo pipefail",
@@ -118,7 +125,7 @@ def maintenance_status(host: str) -> None:
             "set -euo pipefail",
             f"for container in {' '.join(MAINTENANCE_CONTAINERS)}; do",
             "  if docker ps --format '{{.Names}}' | grep -qx \"$container\"; then",
-            f"    if docker exec \"$container\" test -f {GENERATION_MAINTENANCE_PATH}; then",
+            f"    if docker exec \"$container\" sh -lc 'test -f {GENERATION_MAINTENANCE_PATH} || test -f {GENERATION_MAINTENANCE_RUNTIME_PATH}'; then",
             "      echo \"$container=generation_maintenance\"",
             "    else",
             "      echo \"$container=open\"",

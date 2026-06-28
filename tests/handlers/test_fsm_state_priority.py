@@ -209,6 +209,7 @@ async def test_start_edit_image_routes_free_edit_to_lora_selection(monkeypatch):
     reply_mock = AsyncMock()
 
     monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(edit_image_fsm, "ENABLE_FREE_EDIT_V2", True)
     monkeypatch.setattr(edit_image_fsm, "robust_reply_text", reply_mock)
 
     update = _build_update_with_message(text="自由P图")
@@ -228,7 +229,19 @@ async def test_start_edit_image_routes_free_edit_to_lora_selection(monkeypatch):
     assert context.user_data["edit_image_data"]["mode"] == MODE_EDIT
     reply_mock.assert_awaited_once()
     assert "已进入【自由P图】模式" in reply_mock.await_args.args[1]
-    assert reply_mock.await_args.kwargs["reply_markup"] is not None
+    assert "请选择生成方式" in reply_mock.await_args.args[1]
+    reply_markup = reply_mock.await_args.kwargs["reply_markup"]
+    assert reply_markup is not None
+    inline_buttons = [
+        button
+        for row in reply_markup.inline_keyboard
+        for button in row
+    ]
+    assert any(
+        button.text == "🎨 自由P图 v2"
+        and button.callback_data == edit_image_fsm.EDIT_LORA_FREE_EDIT_V2_CALLBACK
+        for button in inline_buttons
+    )
 
 
 @pytest.mark.asyncio
@@ -539,6 +552,42 @@ async def test_edit_image_lora_selection_switches_to_img2img_lora(monkeypatch):
     assert context.user_data["edit_image_data"]["mode"] == MODE_IMG2IMG_LORA
     assert context.user_data["edit_image_data"]["cost"] == 2
     edit_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_edit_image_lora_selection_can_switch_to_free_edit_v2(monkeypatch):
+    edit_mock = AsyncMock()
+    monkeypatch.setattr(edit_image_fsm, "robust_edit_text", edit_mock)
+
+    query = SimpleNamespace(
+        data=edit_image_fsm.EDIT_LORA_FREE_EDIT_V2_CALLBACK,
+        answer=AsyncMock(),
+        message=SimpleNamespace(),
+    )
+    update = SimpleNamespace(callback_query=query)
+    context = SimpleNamespace(
+        user_data={
+            "edit_image_data": {
+                "mode": MODE_IMG2IMG_LORA,
+                "cost": 6,
+                "images": [],
+                "lora_name": "legacy-lora",
+                "lora_strength": 0.8,
+            }
+        }
+    )
+
+    result = await edit_image_fsm.handle_lora_selection(update, context)
+
+    assert result == edit_image_fsm.EditImageState.WAIT_REFERENCE_IMAGES
+    query.answer.assert_awaited_once()
+    fsm_data = context.user_data["edit_image_data"]
+    assert fsm_data["mode"] == MODE_FREE_EDIT_V2
+    assert fsm_data["cost"] == 2
+    assert "lora_name" not in fsm_data
+    assert "lora_strength" not in fsm_data
+    edit_mock.assert_awaited_once()
+    assert "自由P图 v2" in edit_mock.await_args.args[1]
 
 
 @pytest.mark.asyncio

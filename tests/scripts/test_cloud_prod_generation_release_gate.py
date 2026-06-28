@@ -59,6 +59,7 @@ def test_generation_maintenance_uses_dedicated_marker(capsys):
     output = capsys.readouterr().out
 
     assert "/app/GENERATION_MAINTENANCE" in output
+    assert "/app/runtime-flags/GENERATION_MAINTENANCE" in output
     assert "/app/MAINTENANCE" not in output
 
 

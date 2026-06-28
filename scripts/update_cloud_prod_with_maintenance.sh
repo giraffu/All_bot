@@ -515,6 +515,7 @@ sync_code() {
         --exclude=templates/temps/
         --exclude=templates/video_nice/
         --exclude=templates/quick_face/
+        --exclude=local_analytics_platform/
         --exclude=node_modules/
         --exclude=frontend/node_modules/
         --exclude=frontend/dist/

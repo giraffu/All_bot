@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import configparser
+import fcntl
 import functools
 import json
 import os
 import re
+import subprocess
+import sys
 import unicodedata
 from datetime import date, datetime
 from decimal import Decimal
@@ -20,8 +23,10 @@ from starlette.middleware.gzip import GZipMiddleware
 
 from .prompt_mart import PROMPT_MART_READY_SQL, PROMPT_MART_STATUS_SQL, PROMPT_NORMALIZATION_VERSION
 from .prompt_vectors import (
+    DEFAULT_LM_STUDIO_BASE_URL,
     DEFAULT_DUPLICATE_THRESHOLD,
     DEFAULT_SIMILAR_THRESHOLD,
+    DEFAULT_VECTOR_DATA_DIR,
     DEFAULT_VECTOR_MODEL_ID,
     DEFAULT_VECTOR_MODEL_KEY,
     PROMPT_VECTOR_READY_SQL,
@@ -102,6 +107,13 @@ MEDIA_EXTENSIONS = (
     ".webm",
     ".avi",
     ".mkv",
+)
+
+PROMPT_VECTOR_RESUME_LOG = Path(
+    os.getenv(
+        "LOCAL_ANALYTICS_VECTOR_RESUME_LOG",
+        "/tmp/local_analytics_prompt_vector_resume.log",
+    )
 )
 
 RMB_TO_USDT = 1.0 / 6.7
@@ -568,6 +580,59 @@ async def _prompt_vector_tables_ready() -> bool:
     return bool(ready.get("ready"))
 
 
+def _prompt_vector_data_dir() -> str:
+    return os.getenv("LOCAL_ANALYTICS_VECTOR_DATA_DIR", DEFAULT_VECTOR_DATA_DIR)
+
+
+def _prompt_vector_lock_path() -> Path:
+    return Path(_prompt_vector_data_dir()) / ".refresh_prompt_vectors.lock"
+
+
+def _is_prompt_vector_refresh_lock_held() -> bool:
+    lock_path = _prompt_vector_lock_path()
+    if not lock_path.exists():
+        return False
+    with lock_path.open("a", encoding="utf-8") as handle:
+        locked = False
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            locked = True
+        finally:
+            if not locked:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+        return locked
+
+
+def _active_prompt_vector_resume_process() -> subprocess.Popen | None:
+    process = getattr(app.state, "prompt_vector_resume_process", None)
+    if process is None:
+        return None
+    return_code = process.poll()
+    if return_code is None:
+        return process
+    app.state.prompt_vector_resume_last_exit = {
+        "pid": process.pid,
+        "returncode": return_code,
+        "finished_at": datetime.now().isoformat(),
+    }
+    app.state.prompt_vector_resume_process = None
+    return None
+
+
+def _prompt_vector_resume_status() -> dict[str, Any]:
+    process = _active_prompt_vector_resume_process()
+    lock_held = _is_prompt_vector_refresh_lock_held()
+    return {
+        "running": bool(process) or lock_held,
+        "lock_held": lock_held,
+        "pid": process.pid if process else None,
+        "started_at": getattr(app.state, "prompt_vector_resume_started_at", None) if process else None,
+        "last_exit": getattr(app.state, "prompt_vector_resume_last_exit", None),
+        "log_path": str(PROMPT_VECTOR_RESUME_LOG),
+    }
+
+
 PROMPT_GROUPS_CTE = """
 with bounds as (select now() - ($1::int * interval '1 day') as since),
 unlock_counts as (
@@ -845,6 +910,24 @@ async def user_analytics(
             where created_at >= current_date - (($1::int - 1) * interval '1 day')
             group by 1
         ),
+        channel_member_daily as (
+            select created_at::date as day, count(*)::bigint as new_channel_members
+            from users
+            where created_at >= current_date - (($1::int - 1) * interval '1 day')
+              and is_channel_member is true
+            group by 1
+        ),
+        first_generation_daily as (
+            select first_day as day, count(*)::bigint as new_generation_users
+            from (
+                select user_id, min(created_at)::date as first_day
+                from history
+                where user_id is not null
+                group by user_id
+            ) first_generations
+            where first_day >= current_date - (($1::int - 1) * interval '1 day')
+            group by 1
+        ),
         active_daily as (
             select created_at::date as day, count(distinct user_id)::bigint as active_users
             from history
@@ -860,10 +943,14 @@ async def user_analytics(
         select
             to_char(days.day, 'YYYY-MM-DD') as day,
             coalesce(user_daily.new_users, 0)::bigint as new_users,
+            coalesce(channel_member_daily.new_channel_members, 0)::bigint as new_channel_members,
+            coalesce(first_generation_daily.new_generation_users, 0)::bigint as new_generation_users,
             coalesce(active_daily.active_users, 0)::bigint as active_users,
             coalesce(checkin_daily.checkins, 0)::bigint as checkins
         from days
         left join user_daily using (day)
+        left join channel_member_daily using (day)
+        left join first_generation_daily using (day)
         left join active_daily using (day)
         left join checkin_daily using (day)
         order by days.day
@@ -3572,6 +3659,71 @@ async def prompt_slim(
     }
 
 
+@app.post("/api/prompt-vectors/resume")
+async def resume_prompt_vector_embeddings(
+    batch_size: int = Query(8, ge=1, le=128),
+    statement_timeout_ms: int = Query(3_600_000, ge=60_000, le=24 * 60 * 60 * 1000),
+    model_id: str = Query(DEFAULT_VECTOR_MODEL_ID),
+    model_key: str = Query(DEFAULT_VECTOR_MODEL_KEY),
+    base_url: str = Query(DEFAULT_LM_STUDIO_BASE_URL),
+    task_type: str | None = Query(None),
+) -> dict[str, Any]:
+    if _active_prompt_vector_resume_process() is not None or _is_prompt_vector_refresh_lock_held():
+        return {
+            "status": "running",
+            "message": "已有向量化任务在运行",
+            "resume": _prompt_vector_resume_status(),
+        }
+
+    command = [
+        sys.executable,
+        "-m",
+        "app.refresh_prompt_vectors",
+        "--embed-only",
+        "--batch-size",
+        str(batch_size),
+        "--statement-timeout-ms",
+        str(statement_timeout_ms),
+        "--model-id",
+        model_id,
+        "--model-key",
+        model_key,
+        "--base-url",
+        base_url,
+        "--data-dir",
+        _prompt_vector_data_dir(),
+    ]
+    task_filter = (task_type or "").strip()
+    if task_filter:
+        command.extend(["--task-type", task_filter])
+
+    PROMPT_VECTOR_RESUME_LOG.parent.mkdir(parents=True, exist_ok=True)
+    env = os.environ.copy()
+    env["LOCAL_ANALYTICS_DATABASE_URL"] = _database_url()
+    try:
+        with PROMPT_VECTOR_RESUME_LOG.open("ab") as log_handle:
+            process = subprocess.Popen(
+                command,
+                cwd=str(ROOT_DIR),
+                env=env,
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+    except Exception as exc:  # pragma: no cover - surfaced to the UI.
+        raise HTTPException(status_code=500, detail=f"failed to start prompt vector refresh: {type(exc).__name__}") from exc
+
+    app.state.prompt_vector_resume_process = process
+    app.state.prompt_vector_resume_started_at = datetime.now().isoformat()
+    app.state.prompt_vector_resume_last_exit = None
+    return {
+        "status": "started",
+        "message": "已开始续跑缺失向量",
+        "pid": process.pid,
+        "log_path": str(PROMPT_VECTOR_RESUME_LOG),
+    }
+
+
 @app.get("/api/prompt-vectors")
 async def prompt_vectors(
     limit: int = Query(40, ge=1, le=100),
@@ -3622,6 +3774,7 @@ async def prompt_vectors(
             "distributions": {"task_type": [], "cluster_size": [], "band": []},
             "clusters": [],
             "pagination": {"page": page, "limit": limit, "total": 0, "has_next": False},
+            "resume": _prompt_vector_resume_status(),
         }
 
     state_prefix = f"{model_id}:{PROMPT_NORMALIZATION_VERSION}:"
@@ -3886,6 +4039,7 @@ async def prompt_vectors(
             "total": total,
             "has_next": offset + limit < total,
         },
+        "resume": _prompt_vector_resume_status(),
     }
 
 

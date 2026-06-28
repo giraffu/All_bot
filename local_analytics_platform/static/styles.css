@@ -340,6 +340,10 @@ main {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.chart-strip.user-trends {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .chart-title,
 .table-title {
   margin-bottom: 10px;
@@ -401,6 +405,14 @@ main {
 
 .spark-bars.blue .spark-bar {
   background: var(--blue);
+}
+
+.spark-bars.blue-soft .spark-bar {
+  background: #2b7a8b;
+}
+
+.spark-bars.green .spark-bar {
+  background: var(--green);
 }
 
 .spark-bars.red .spark-bar,
@@ -795,6 +807,40 @@ tr:last-child td {
   grid-template-columns: minmax(240px, 1.5fr) minmax(130px, 1fr) minmax(110px, 0.8fr) minmax(110px, 0.8fr) minmax(130px, 1fr);
 }
 
+.prompt-vector-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 16px 0;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.prompt-vector-action-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.prompt-vector-action-copy strong {
+  font-size: 13px;
+}
+
+.prompt-vector-action-copy span {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.prompt-vector-action-bar button {
+  flex: 0 0 auto;
+  min-width: 118px;
+}
+
 .prompt-vector-distribution-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-bottom: 18px;
@@ -1077,6 +1123,7 @@ tr:last-child td {
   .prompt-filter-bar,
   .chart-strip,
   .chart-strip.three,
+  .chart-strip.user-trends,
   .distribution-grid,
   .leaderboard-grid,
   .candidate-grid {
@@ -1164,6 +1211,11 @@ tr:last-child td {
   .controls label,
   .controls button {
     flex: 1 1 150px;
+  }
+
+  .prompt-vector-action-bar {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .tab-button {

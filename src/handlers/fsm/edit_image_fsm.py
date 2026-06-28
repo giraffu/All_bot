@@ -41,6 +41,9 @@ from src.i18n.translator import get_text
 
 logger = logging.getLogger("fsm.edit_image")
 
+EDIT_LORA_SELECT_PREFIX = "editlora_select_"
+EDIT_LORA_FREE_EDIT_V2_CALLBACK = "editlora_free_edit_v2"
+
 
 def _t(context: ContextTypes.DEFAULT_TYPE, key: str, **kwargs) -> str:
     translator = getattr(context, "t", None)
@@ -74,10 +77,17 @@ def _build_edit_lora_keyboard(lang: str = "zh") -> InlineKeyboardMarkup:
     buttons = [
         InlineKeyboardButton(
             get_image_lora_display_name(backend_name, lang),
-            callback_data=f"editlora_select_{backend_name}",
+            callback_data=f"{EDIT_LORA_SELECT_PREFIX}{backend_name}",
         )
         for backend_name in IMAGE_LORA_MODELS.keys()
     ]
+    if ENABLE_FREE_EDIT_V2:
+        buttons.append(
+            InlineKeyboardButton(
+                get_text("menu.free_edit_v2", lang),
+                callback_data=EDIT_LORA_FREE_EDIT_V2_CALLBACK,
+            )
+        )
     keyboard = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
     return InlineKeyboardMarkup(keyboard)
 
@@ -269,10 +279,25 @@ async def handle_lora_selection(
     await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
     data = query.data
 
-    if not data.startswith("editlora_select_"):
+    if data == EDIT_LORA_FREE_EDIT_V2_CALLBACK:
+        fsm_data = context.user_data.get("edit_image_data", {})
+        if not fsm_data:
+            await query.edit_message_text(_t(context, "fsm.face_video.expired_alert"))
+            return ConversationHandler.END
+
+        fsm_data["mode"] = MODE_FREE_EDIT_V2
+        fsm_data["cost"] = TASK_COSTS.get(MODE_PORNMASTER_FLUX2_SINGLE_EDIT, 2)
+        fsm_data.pop("lora_name", None)
+        fsm_data.pop("lora_strength", None)
+
+        msg = _t(context, "fsm.edit_image.selected_free_edit_v2")
+        await robust_edit_text(query.message, msg, parse_mode="Markdown")
+        return EditImageState.WAIT_REFERENCE_IMAGES
+
+    if not data.startswith(EDIT_LORA_SELECT_PREFIX):
         return EditImageState.WAIT_LORA_SELECTION
 
-    lora_name = data.replace("editlora_select_", "")
+    lora_name = data.replace(EDIT_LORA_SELECT_PREFIX, "")
 
     fsm_data = context.user_data.get("edit_image_data", {})
     if not fsm_data:
@@ -493,7 +518,8 @@ def get_edit_image_fsm_handler() -> ConversationHandler:
         states={
             EditImageState.WAIT_LORA_SELECTION: [
                 CallbackQueryHandler(
-                    handle_lora_selection, pattern="^editlora_select_"
+                    handle_lora_selection,
+                    pattern=f"^({EDIT_LORA_SELECT_PREFIX}|{EDIT_LORA_FREE_EDIT_V2_CALLBACK}$)",
                 ),
                 MessageHandler(
                     (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),

@@ -354,7 +354,7 @@ scripts/update_cloud_prod_with_maintenance.sh \
 SCAIL-2 的正式上线起始边界是“只更新云正式主控制面 + 正式 Web/Bot 入口 + gpu-002 slot0 SCAIL-2 AIO runtime/agent”。这条低影响路径不重建 `cloud-prod-comfy-agent-1..7`，不执行 `scripts/start_cloud_prod_worker.sh --start`，不修改 gpu-002 slot1/`8191` 或其它 GPU 节点。后续需要增加正式视频生视频容量时，可以使用手动正式 RunPod `scail2` profile 作为并行 worker；它不替代 slot0 LAN runtime，canary 通过后可与 `lan_aio_prod_gpu002_gpu0_scail2_01` 同时 enabled 接单。
 
 正式 task type：
-- `scail2_action_transfer`：动作迁移，5s/8s，40/80 灵石
+- `scail2_action_transfer`：动作迁移，用户侧开放 5s/8s/10s/15s/20s，计费 40/80/120/180/260 灵石；10s/15s/20s 在执行面路由为隐藏类型 `scail2_action_transfer_long`
 - `scail2_video_replacement`：视频换人，5s/8s，40/80 灵石
 - `scail2_face_swap_v2`：视频换脸 v10 two-stage，5s/8s，40/80 灵石；仅由 gpu-002 LAN SCAIL-2 正式 worker 承接，正式 RunPod `scail2` 仍保持动作迁移/视频换人两任务。
 
@@ -379,13 +379,17 @@ scripts/lan_scail2_aio_prod.sh verify --execute
 scripts/lan_scail2_aio_prod.sh enable --execute
 ```
 
+已在运行的 SCAIL-2 正式 AIO 更新 worker bundle 或任务类型时，使用 `restart-disabled --execute` 代替 `start-disabled --execute`：它只 drain/recreate `lan_aio_prod_gpu002_gpu0_scail2_01`，不会恢复旧 slot0 AIO。
+
 `scripts/lan_scail2_aio_prod.sh` 只操作 gpu-002 slot0/`8190`：
 - 新 agent：`lan_aio_prod_gpu002_gpu0_scail2_01`
 - 新容器：`allbot-lan-aio-gpu-002-gpu0-scail2-prod`
 - 旧 slot0 AIO agent：`lan_aio_prod_gpu002_gpu0_img2img_lora_01`
 - 旧 slot0 容器：`allbot-lan-aio-gpu-002-gpu0-img2img_lora-canary`
 
-渲染出的 compose 必须为 `RUNPOD_ENVIRONMENT=cloud-prod`、`CENTRAL_API_URL=https://worker-central.aivison.it.com`、`MINIO_*_BUCKET=user-data-prod`，声明 `SUPPORTED_TASK_TYPES=scail2_action_transfer,scail2_video_replacement,scail2_face_swap_v2`，并通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 绑定三份 audio/v10 workflow；`scail2_face_swap_v2` 必须开启 `SCAIL2_FACE_SWAP_V10_*` 预处理，先调用 `face_swap_v2.json` 生成换脸首帧。compose 不得出现 `cloud-test` / `user-data-test`。`start-disabled --execute` 会先 drain 旧 slot0 AIO 并等待其自然空闲，停止旧 slot0 容器后启动 SCAIL-2 disabled heartbeat；只有 `/system_stats`、`/object_info` 必需节点、模型枚举和 disabled heartbeat 全部通过后，才允许 `enable --execute`。
+渲染出的 compose 必须为 `RUNPOD_ENVIRONMENT=cloud-prod`、`CENTRAL_API_URL=https://worker-central.aivison.it.com`、`MINIO_*_BUCKET=user-data-prod`，声明 `SUPPORTED_TASK_TYPES=scail2_action_transfer,scail2_action_transfer_long,scail2_video_replacement,scail2_face_swap_v2`，并通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 绑定动作迁移 audio、动作迁移 Context-Windows、视频换人 audio 与视频换脸 v10 workflow；`scail2_face_swap_v2` 必须开启 `SCAIL2_FACE_SWAP_V10_*` 预处理，先调用 `face_swap_v2.json` 生成换脸首帧。compose 不得出现 `cloud-test` / `user-data-test`。`start-disabled --execute` 会先 drain 旧 slot0 AIO 并等待其自然空闲，停止旧 slot0 容器后启动 SCAIL-2 disabled heartbeat；只有 `/system_stats`、`/object_info` 必需节点、模型枚举和 disabled heartbeat 全部通过后，才允许 `enable --execute`。
+
+自由P图 v2 正式接入使用 GPU252 GPU0 的 LAN AIO fleet slot `gpu-252-gpu0-pornmaster_flux2_edit`，agent 为 `lan_aio_prod_gpu252_gpu0_pornmaster_flux2_edit_01`，host port `8192`，只声明 `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit`。旧 `lan_aio_prod_gpu252_gpu0_img2img_lora_01` / `allbot-lan-aio-gpu-252-gpu0-img2img_lora-prod` 保留为 rollback 目标；正式入口需在 `.env.cloud.prod` 设置 `ENABLE_FREE_EDIT_V2=true`，前端 Pages 构建需设置 `VITE_ENABLE_FREE_EDIT_V2=true`。
 
 控制面服务发布仍按单服务最小范围处理：
 

@@ -831,9 +831,10 @@
     },
     "edit_image": {
       "start_i2i_pro": "🌟 **Entered Face Swap Pro mode** (cost: {cost} credits).\n\n**Step 1:** Send 1 reference image.\n\nYou can send /cancel anytime to exit.",
-      "start_free_edit": "🎨 **Entered Free Edit mode**.\n\n**Step 1:** Choose the addon model you want to use.\n\nYou can send /cancel anytime to exit.",
+      "start_free_edit": "🎨 **Entered Free Edit mode**.\n\n**Step 1:** Choose a generation mode:\nselect an addon model, or choose **Free Edit v2** for the newer Free Edit flow.\n\nYou can send /cancel anytime to exit.",
       "start_free_edit_v2": "🎨 **Entered Free Edit v2 mode** (cost starts at {cost} credits).\n\n**Step 1:** Send 1 reference image. For dual-image fusion, send a second image; dual-image fusion costs 6 credits.\n\nYou can send /cancel anytime to exit.",
       "selected_model": "✅ Selected model: **{model_name}**\n\n**Step 2:** Send the reference image.\n\nYou can send /cancel anytime to exit.",
+      "selected_free_edit_v2": "✅ Selected: **Free Edit v2**\n\n**Step 2:** Send 1 reference image. For dual-image fusion, send a second image; dual-image fusion costs 6 credits.\n\nYou can send /cancel anytime to exit.",
       "reference_received_i2i": "✅ **Received 1 reference image.**\n\n**Step 2:** Send the **prompt text** to start generation.\n\n💡 **Prompt hint:**\nDescribe the imagined character and scene. The face from the reference image will be swapped into the generated scene.",
       "reference_received_first": "✅ **Received 1 reference image.**\n\n**Step 3:** Send the **prompt text** to start generation.\n(If you want dual-image fusion, you can send a second image. That will cost 6 credits.)",
       "reference_received_second": "✅ **Received 2 reference images.**\n\n**Step 3:** Send the **prompt text** to start generation.\n(Dual-image fusion costs 6 credits. Extra images will be ignored.)",

@@ -29,8 +29,8 @@ REMOTE_COMPOSE_FILE="${REMOTE_DIR}/docker-compose.yml"
 REMOTE_ENV_FILE="${REMOTE_DIR}/.env.lan-scail2-prod"
 REMOTE_WORKERS_SOURCE_DIR="${SCAIL2_PROD_REMOTE_WORKERS_SOURCE_DIR:-remote_workers}"
 REMOTE_WORKERS_TARGET_DIR="/workspace/allbot/remote_workers"
-SCAIL2_PROD_SUPPORTED_TASK_TYPES="${SCAIL2_PROD_SUPPORTED_TASK_TYPES:-scail2_action_transfer,scail2_video_replacement,scail2_face_swap_v2}"
-SCAIL2_PROD_TASK_TYPE_WORKFLOW_OVERRIDES="${SCAIL2_PROD_TASK_TYPE_WORKFLOW_OVERRIDES:-{\"scail2_action_transfer\":\"SCAIL-2_Animation_multi-char_audio.api.json\",\"scail2_video_replacement\":\"SCAIL-2_Replacement_audio.api.json\",\"scail2_face_swap_v2\":\"SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json\"}}"
+SCAIL2_PROD_SUPPORTED_TASK_TYPES="${SCAIL2_PROD_SUPPORTED_TASK_TYPES:-scail2_action_transfer,scail2_action_transfer_long,scail2_video_replacement,scail2_face_swap_v2}"
+SCAIL2_PROD_TASK_TYPE_WORKFLOW_OVERRIDES="${SCAIL2_PROD_TASK_TYPE_WORKFLOW_OVERRIDES:-{\"scail2_action_transfer\":\"SCAIL-2_Animation_multi-char_audio.api.json\",\"scail2_action_transfer_long\":\"SCAIL-2_Animation_WAN-Context-Windows.api.json\",\"scail2_video_replacement\":\"SCAIL-2_Replacement_audio.api.json\",\"scail2_face_swap_v2\":\"SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json\"}}"
 SCAIL2_PROD_FACE_SWAP_V10_ENABLED="${SCAIL2_PROD_FACE_SWAP_V10_ENABLED:-true}"
 SCAIL2_PROD_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL="${SCAIL2_PROD_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL:-http://192.168.1.226:8188}"
 SCAIL2_PROD_FACE_SWAP_V10_FACE_SWAP_WORKFLOW="${SCAIL2_PROD_FACE_SWAP_V10_FACE_SWAP_WORKFLOW:-face_swap_v2.json}"
@@ -45,6 +45,7 @@ Actions:
   render          Render the cloud-prod SCAIL-2 slot0 compose locally.
   preflight       Verify prod URLs, LAN registry/cache, render guardrails and gpu-002 basics.
   start-disabled  Drain old slot0 AIO, stop its container, start SCAIL-2 prod AIO disabled.
+  restart-disabled Drain SCAIL-2, recreate the prod AIO, leave the agent disabled.
   verify          Verify SCAIL-2 ComfyUI health, required nodes and disabled heartbeat metadata.
   enable          Enable SCAIL-2 prod agent.
   drain-scail2    Drain SCAIL-2 prod agent and wait until idle.
@@ -262,6 +263,7 @@ face_swap_workflow = sys.argv[7]
 
 required_tasks = {
     "scail2_action_transfer",
+    "scail2_action_transfer_long",
     "scail2_video_replacement",
     "scail2_face_swap_v2",
 }
@@ -277,12 +279,13 @@ if not isinstance(overrides, dict):
     raise SystemExit("SCAIL2_PROD_TASK_TYPE_WORKFLOW_OVERRIDES must be a JSON object")
 required_overrides = {
     "scail2_action_transfer": "SCAIL-2_Animation_multi-char_audio.api.json",
+    "scail2_action_transfer_long": "SCAIL-2_Animation_WAN-Context-Windows.api.json",
     "scail2_video_replacement": "SCAIL-2_Replacement_audio.api.json",
     "scail2_face_swap_v2": "SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json",
 }
 if overrides != required_overrides:
     raise SystemExit(
-        "SCAIL2_PROD_TASK_TYPE_WORKFLOW_OVERRIDES must match the verified audio/v10 mapping"
+        "SCAIL2_PROD_TASK_TYPE_WORKFLOW_OVERRIDES must match the verified audio/context-window/v10 mapping"
     )
 if face_swap_enabled.strip().lower() != "true":
     raise SystemExit("SCAIL2_PROD_FACE_SWAP_V10_ENABLED must stay true for prod v10")
@@ -319,8 +322,9 @@ assert_prod_compose() {
   local file="$1"
   grep -q "RUNPOD_ENVIRONMENT: cloud-prod" "$file"
   grep -q "CENTRAL_API_URL: https://worker-central.aivison.it.com" "$file"
-  grep -q "SUPPORTED_TASK_TYPES: scail2_action_transfer,scail2_video_replacement,scail2_face_swap_v2" "$file"
+  grep -q "SUPPORTED_TASK_TYPES: scail2_action_transfer,scail2_action_transfer_long,scail2_video_replacement,scail2_face_swap_v2" "$file"
   grep -q "SCAIL-2_Animation_multi-char_audio.api.json" "$file"
+  grep -q "SCAIL-2_Animation_WAN-Context-Windows.api.json" "$file"
   grep -q "SCAIL-2_Replacement_audio.api.json" "$file"
   grep -q "SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json" "$file"
   grep -q "SCAIL2_FACE_SWAP_V10_ENABLED: 'true'" "$file"
@@ -632,6 +636,32 @@ run_start_disabled() {
   verify_disabled_heartbeat
 }
 
+run_restart_disabled() {
+  run_drain_scail2
+  control_agent "$TEMP_AGENT_ID" "disabled" "scail2_prod_restart_disabled"
+
+  local tmp_compose tmp_env
+  tmp_compose="$(mktemp)"
+  tmp_env="$(mktemp)"
+  render_compose_to "$tmp_compose"
+  if [ "$MODE" != "execute" ]; then
+    echo "[dry-run] Would sync ${REMOTE_WORKERS_SOURCE_DIR} to ${SSH_HOST}:${REMOTE_DIR}/remote_workers"
+    echo "[dry-run] Would write compose to ${SSH_HOST}:${REMOTE_COMPOSE_FILE}"
+    echo "[dry-run] Would recreate ${CONTAINER_NAME} and keep ${TEMP_AGENT_ID} disabled"
+    rm -f "$tmp_compose" "$tmp_env"
+    return 0
+  fi
+  write_runtime_env_file "$tmp_env"
+  sync_remote_workers_bundle
+  ssh "$SSH_HOST" "mkdir -p '${REMOTE_DIR}' && chmod 700 '${REMOTE_DIR}'"
+  scp -q "$tmp_compose" "${SSH_HOST}:${REMOTE_COMPOSE_FILE}"
+  scp -q "$tmp_env" "${SSH_HOST}:${REMOTE_ENV_FILE}"
+  rm -f "$tmp_compose" "$tmp_env"
+  remote_compose "up -d --force-recreate"
+  wait_remote_port_ready "$HOST_PORT"
+  verify_disabled_heartbeat
+}
+
 run_verify() {
   if [ "$MODE" != "execute" ]; then
     echo "[dry-run] Would verify http://${PUBLIC_HOST}:${HOST_PORT}/system_stats and /object_info"
@@ -671,7 +701,7 @@ run_rollback() {
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    status|render|preflight|start-disabled|verify|enable|drain-scail2|rollback)
+    status|render|preflight|start-disabled|restart-disabled|verify|enable|drain-scail2|rollback)
       ACTION="$1"
       ;;
     --execute)
@@ -723,6 +753,7 @@ case "$ACTION" in
   render) run_render ;;
   preflight) run_preflight ;;
   start-disabled) run_start_disabled ;;
+  restart-disabled) run_restart_disabled ;;
   verify) run_verify ;;
   enable) run_enable ;;
   drain-scail2) run_drain_scail2 ;;

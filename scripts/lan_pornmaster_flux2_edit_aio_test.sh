@@ -219,9 +219,9 @@ preflight() {
 start_test_aio() {
   preflight
   set_test_agent_control disabled
-  run "$ROOT_DIR/scripts/lan_aio_fleet_prod_ops.py" drain-aio --slot "$PROD_SLOT" --execute
-  run "$ROOT_DIR/scripts/lan_aio_fleet_prod_ops.py" wait-idle --slot "$PROD_SLOT" --execute
-  run "$ROOT_DIR/scripts/lan_aio_fleet_prod_ops.py" disable-aio --slot "$PROD_SLOT" --execute
+  run "$ROOT_DIR/scripts/lan_aio_fleet_prod_ops.py" drain-aio --slot "$PROD_SLOT" --include-disabled --execute
+  run "$ROOT_DIR/scripts/lan_aio_fleet_prod_ops.py" wait-idle --slot "$PROD_SLOT" --include-disabled --execute
+  run "$ROOT_DIR/scripts/lan_aio_fleet_prod_ops.py" disable-aio --slot "$PROD_SLOT" --include-disabled --execute
   run ssh "$SSH_HOST" bash -lc "docker stop '$PROD_CONTAINER' >/dev/null 2>&1 || true"
 
   local local_compose
@@ -247,7 +247,7 @@ restore_prod_aio() {
   set_test_agent_control disabled
   run ssh "$SSH_HOST" docker compose --env-file "$REMOTE_DIR/.env" -f "$REMOTE_DIR/docker-compose.yml" down
   run ssh "$SSH_HOST" docker start "$PROD_CONTAINER"
-  run "$ROOT_DIR/scripts/lan_aio_fleet_prod_ops.py" enable-aio --slot "$PROD_SLOT" --execute
+  run "$ROOT_DIR/scripts/lan_aio_fleet_prod_ops.py" enable-aio --slot "$PROD_SLOT" --include-disabled --execute
 }
 
 shift || true
@@ -271,7 +271,7 @@ done
 
 case "$ACTION" in
   status)
-    "$ROOT_DIR/scripts/lan_aio_fleet_prod_ops.py" status --slot "$PROD_SLOT"
+    "$ROOT_DIR/scripts/lan_aio_fleet_prod_ops.py" status --slot "$PROD_SLOT" --include-disabled
     ssh "$SSH_HOST" "docker ps -a --filter name=$CONTAINER_NAME --format '{{.Names}} {{.Status}}'"
     ;;
   render)

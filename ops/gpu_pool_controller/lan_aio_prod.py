@@ -70,6 +70,8 @@ class LanAioProdSlot:
     old_local_agent_container: str
     remote_dir: str
     rollout_order: int
+    legacy_health_port: int | None = None
+    legacy_preflight_required: bool = True
     target_task_types: tuple[str, ...] = ()
     legacy_hot_cache_copies: tuple[LegacyHotCacheCopy, ...] = ()
     notes: str = ""
@@ -182,6 +184,12 @@ def load_lan_aio_prod_slots(
                 or f"/srv/allbot/runpod-runtime/aio-prod/{node.id}-gpu{configured_gpu_index}-{profile_label}"
             ),
             rollout_order=int(item.get("rollout_order") or 1000),
+            legacy_health_port=(
+                int(item["legacy_health_port"])
+                if item.get("legacy_health_port") is not None
+                else None
+            ),
+            legacy_preflight_required=bool(item.get("legacy_preflight_required", True)),
             target_task_types=tuple(
                 str(task_type) for task_type in item.get("target_task_types") or []
             ),
@@ -220,6 +228,8 @@ def slot_to_jsonable(
         "old_runtime_container": slot.old_runtime_container,
         "old_local_agent_container": slot.old_local_agent_container,
         "remote_dir": slot.remote_dir,
+        "legacy_health_port": slot.legacy_health_port,
+        "legacy_preflight_required": slot.legacy_preflight_required,
         "target_task_types": list(slot.target_task_types),
         "legacy_hot_cache_copies": [
             {
@@ -425,17 +435,36 @@ class LanAioProdOps:
                     f"( {registry_or_image_check} || "
                     f"docker image inspect '{image_ref}' >/dev/null 2>&1 )"
                 )
+            legacy_checks = []
+            if slot.legacy_preflight_required:
+                legacy_checks.extend(
+                    [
+                        self._remote_check(
+                            slot,
+                            "legacy_system_stats",
+                            f"curl -fsS --max-time 8 http://127.0.0.1:{port}/system_stats >/dev/null",
+                        ),
+                        self._remote_check(
+                            slot,
+                            "legacy_queue",
+                            f"curl -fsS --max-time 8 http://127.0.0.1:{port}/queue >/dev/null",
+                        ),
+                    ]
+                )
+            else:
+                legacy_checks.append(
+                    self._remote_check(
+                        slot,
+                        "legacy_health_optional",
+                        (
+                            f"curl -fsS --max-time 8 http://127.0.0.1:{port}/queue "
+                            ">/dev/null 2>&1 && echo legacy_port_ready || "
+                            "echo legacy_port_not_required"
+                        ),
+                    )
+                )
             slot_checks = [
-                self._remote_check(
-                    slot,
-                    "legacy_system_stats",
-                    f"curl -fsS --max-time 8 http://127.0.0.1:{port}/system_stats >/dev/null",
-                ),
-                self._remote_check(
-                    slot,
-                    "legacy_queue",
-                    f"curl -fsS --max-time 8 http://127.0.0.1:{port}/queue >/dev/null",
-                ),
+                *legacy_checks,
                 self._remote_check(
                     slot,
                     "docker_registry_or_image_present",
@@ -519,11 +548,12 @@ class LanAioProdOps:
             elif action == "stop-old":
                 operations.extend(
                     [
-                        f"verify {slot.agent_id} enabled and healthy",
+                        f"set {slot.legacy_worker_id}=disabled",
                         f"ssh {slot.ssh_host} docker stop {slot.old_runtime_container}",
-                        f"local docker stop {slot.old_local_agent_container}",
                     ]
                 )
+                if slot.old_local_agent_container:
+                    operations.append(f"local docker stop {slot.old_local_agent_container}")
         return {"ok": True, "dry_run": True, "action": action, "operations": operations}
 
     def drain_legacy(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
@@ -710,6 +740,12 @@ class LanAioProdOps:
 
     def stop_old(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
         for slot in slots:
+            self._set_control(
+                slot.legacy_worker_id,
+                "disabled",
+                "lan_aio_fleet_stop_old_disable_legacy",
+                ttl_seconds=CONTROL_TTL_SECONDS,
+            )
             self._ssh(slot.ssh_host, f"docker stop '{slot.old_runtime_container}' >/dev/null || true")
             if slot.old_local_agent_container:
                 self._local(["docker", "stop", slot.old_local_agent_container], capture=True)
@@ -1232,6 +1268,8 @@ def _worker_summary(worker: dict[str, Any]) -> dict[str, Any]:
 
 
 def _legacy_port_for_slot(config: ControllerConfig, slot: LanAioProdSlot) -> int:
+    if slot.legacy_health_port is not None:
+        return slot.legacy_health_port
     assignment = config.assignments[slot.assignment_id]
     node = config.nodes[assignment.node_id]
     comfy = next(unit for unit in node.comfy if unit.id == assignment.comfy_id)

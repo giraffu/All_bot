@@ -18,6 +18,8 @@ const state = {
   promptPage: 1,
   promptSlimPage: 1,
   promptVectorPage: 1,
+  promptVectorResume: null,
+  promptVectorResumeLoading: false,
   activeTab: "users",
   tabDays: {
     users: 30,
@@ -183,14 +185,14 @@ function metric(label, value, note = "") {
   `;
 }
 
-async function fetchJson(path, params = {}) {
+async function fetchJson(path, params = {}, options = {}) {
   const url = new URL(path, window.location.origin);
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== "") {
       url.searchParams.set(key, value);
     }
   });
-  const response = await fetch(url);
+  const response = await fetch(url, options);
   if (!response.ok) {
     let detail = response.statusText;
     try {
@@ -202,6 +204,35 @@ async function fetchJson(path, params = {}) {
     throw new Error(`${response.status} ${detail}`);
   }
   return response.json();
+}
+
+function promptVectorResumeNote() {
+  const resume = state.promptVectors?.resume || state.promptVectorResume?.resume || {};
+  const summary = state.promptVectors?.summary || {};
+  if (state.promptVectorResumeLoading) return "正在启动";
+  if (resume.running) {
+    const started = resume.started_at ? ` · ${fmtDate(resume.started_at)}` : "";
+    return resume.pid ? `运行中 · PID ${fmt(resume.pid)}${started}` : "已有向量化在运行";
+  }
+  if (state.promptVectorResume?.status === "started") {
+    return `已启动 · PID ${fmt(state.promptVectorResume.pid)}`;
+  }
+  if (resume.last_exit) {
+    return `上次退出 ${fmtDate(resume.last_exit.finished_at)} · code ${fmt(resume.last_exit.returncode)}`;
+  }
+  const coverage = summary.embedding_coverage === undefined ? "" : `覆盖 ${fmtAmount(summary.embedding_coverage)}%`;
+  return coverage ? `${coverage} · 可续跑缺失向量` : "可续跑缺失向量";
+}
+
+function renderPromptVectorResumeStatus() {
+  const button = $("#promptVectorResumeButton");
+  const status = $("#promptVectorResumeStatus");
+  if (!button || !status) return;
+  const resume = state.promptVectors?.resume || state.promptVectorResume?.resume || {};
+  const running = Boolean(resume.running);
+  button.disabled = state.promptVectorResumeLoading || running;
+  button.textContent = state.promptVectorResumeLoading ? "启动中" : running ? "运行中" : "续跑向量化";
+  status.textContent = promptVectorResumeNote();
 }
 
 function renderSource() {
@@ -250,6 +281,8 @@ function renderUsers() {
   ].join("");
 
   renderSpark("#userNewSpark", state.users?.daily || [], "new_users");
+  renderSpark("#userNewChannelSpark", state.users?.daily || [], "new_channel_members");
+  renderSpark("#userNewGenerationSpark", state.users?.daily || [], "new_generation_users");
   renderSpark("#userActiveSpark", state.users?.daily || [], "active_users");
   renderSpark("#userCheckinSpark", state.users?.daily || [], "checkins");
 
@@ -1310,6 +1343,7 @@ function renderPromptVectorSignalText(row = {}) {
 function renderPromptVectors() {
   renderPromptVectorFilterOptions();
   renderPromptVectorSummary();
+  renderPromptVectorResumeStatus();
   renderPromptVectorDistributions();
 
   const rows = state.promptVectors?.clusters || [];
@@ -1593,6 +1627,23 @@ async function loadPromptVectors() {
   }
 }
 
+async function resumePromptVectorEmbeddings() {
+  state.promptVectorResumeLoading = true;
+  renderPromptVectorResumeStatus();
+  setError(null);
+  try {
+    state.promptVectorResume = await fetchJson("/api/prompt-vectors/resume", {}, { method: "POST" });
+    markTabStale("prompt-vectors");
+    await loadPromptVectors();
+    markTabLoaded("prompt-vectors");
+  } catch (error) {
+    setError(error);
+  } finally {
+    state.promptVectorResumeLoading = false;
+    renderPromptVectorResumeStatus();
+  }
+}
+
 async function loadPromptVectorDetail(clusterId) {
   if (!clusterId) return;
   state.promptVectorDetail = await fetchJson(`/api/prompt-vectors/clusters/${encodeURIComponent(clusterId)}`);
@@ -1766,6 +1817,7 @@ $("#promptVectorNextButton").addEventListener("click", () => {
   markTabStale("prompt-vectors");
   loadCurrentTab({ force: true });
 });
+$("#promptVectorResumeButton").addEventListener("click", resumePromptVectorEmbeddings);
 document.querySelectorAll(".tab-button").forEach((button) => {
   button.addEventListener("click", () => setActiveTab(button.dataset.tab));
 });
