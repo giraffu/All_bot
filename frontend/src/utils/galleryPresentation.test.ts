@@ -37,6 +37,14 @@ describe('resolveGalleryTaskTypeLabel', () => {
     expect(resolveGalleryTaskTypeLabel('free_edit_v2_group', t)).toBe('自由P图 v2')
   })
 
+  it('maps raw free edit v2 task types to the shared gallery label', () => {
+    i18n.global.locale.value = 'zh'
+    const t = (key: string) => String(i18n.global.t(key))
+
+    expect(resolveGalleryTaskTypeLabel('pornmaster_flux2_single_edit', t)).toBe('自由P图 v2')
+    expect(resolveGalleryTaskTypeLabel('pornmaster_flux2_multi_edit', t)).toBe('自由P图 v2')
+  })
+
   it('returns translated scail2 labels from the shared locale', () => {
     i18n.global.locale.value = 'zh'
     const t = (key: string) => String(i18n.global.t(key))

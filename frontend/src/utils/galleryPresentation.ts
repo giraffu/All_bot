@@ -37,6 +37,8 @@ export function resolveGalleryTaskTypeLabel(
     edit: 'custom_edit',
     edit_group: 'edit_group',
     free_edit_v2_group: 'free_edit_v2_group',
+    pornmaster_flux2_single_edit: 'free_edit_v2_group',
+    pornmaster_flux2_multi_edit: 'free_edit_v2_group',
     img2img_lora: 'img2img',
     custom_video: 'img2video',
     video_lora: 'img2video',
