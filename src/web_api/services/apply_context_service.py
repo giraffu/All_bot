@@ -14,8 +14,13 @@ from src.domain_config.scail2_video import (
     SCAIL2_DEFAULT_NEGATIVE_PROMPT,
     is_scail2_task_type,
 )
+from src.lora_catalog import normalize_ltx_video_lora_items
 from src.lora_mapping import extract_prompt_lora_context
 from src.domain_config.wan22_aio_video import is_wan22_chain_history_task_type
+from src.services.ltx_video_extension_service import (
+    extract_ltx_history_context,
+    is_ltx_video_history_task_type,
+)
 from src.services.wan22_video_v2_extension_service import (
     extract_wan22_history_context,
     is_wan22_stitched_result,
@@ -34,6 +39,14 @@ def _pick_first_non_none(*values):
         if value is not None:
             return value
     return None
+
+
+def _coerce_positive_int(value) -> int | None:
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError):
+        return None
+    return normalized if normalized > 0 else None
 
 
 def split_history_input_files(input_file: str | None) -> list[str]:
@@ -77,6 +90,12 @@ def resolve_wan22_apply_context_metadata(history: History) -> dict[str, object]:
     return extract_wan22_history_context(getattr(history, "extra_outputs", None))
 
 
+def resolve_ltx_apply_context_metadata(history: History) -> dict[str, object]:
+    if not is_ltx_video_history_task_type(history.type):
+        return {}
+    return extract_ltx_history_context(getattr(history, "extra_outputs", None))
+
+
 def resolve_wan22_apply_negative_prompt(history: History) -> str | None:
     context = resolve_wan22_apply_context_metadata(history)
     negative_prompt = str(context.get("wan22_negative_prompt") or "").strip()
@@ -109,12 +128,55 @@ def resolve_wan22_apply_requested_duration(history: History) -> object:
                 history.requested_duration,
                 context.get("scail2_duration_seconds"),
             )
+        if is_ltx_video_history_task_type(history.type):
+            context = resolve_ltx_apply_context_metadata(history)
+            return _pick_first_non_none(
+                history.requested_duration,
+                context.get("ltx_duration_seconds"),
+            )
         return history.requested_duration
     context = resolve_wan22_apply_context_metadata(history)
     return _pick_first_non_none(
         history.requested_duration,
         context.get("wan22_duration_seconds"),
     )
+
+
+def resolve_ltx_apply_lora_items(
+    *,
+    history: History,
+    prompt_lora_name: str | None,
+    prompt_lora_strength: float | None,
+) -> list[dict] | None:
+    if not is_ltx_video_history_task_type(history.type):
+        return None
+
+    context = resolve_ltx_apply_context_metadata(history)
+    normalized_context_items = normalize_ltx_video_lora_items(
+        context.get("lora_items") if isinstance(context.get("lora_items"), list) else []
+    )
+    if normalized_context_items:
+        return normalized_context_items
+
+    context_lora_name = str(context.get("lora_name") or "").strip()
+    if context_lora_name:
+        return normalize_ltx_video_lora_items(
+            [
+                {
+                    "name": context_lora_name,
+                    "strength": context.get("lora_strength"),
+                }
+            ]
+        ) or None
+
+    if prompt_lora_name:
+        return [
+            {
+                "name": prompt_lora_name,
+                "strength": prompt_lora_strength or 1.0,
+            }
+        ]
+    return None
 
 
 def build_apply_context_response(
@@ -262,9 +324,11 @@ async def build_history_apply_context_response(
         resolve_wan22_apply_negative_prompt(history)
         or resolve_scail2_apply_negative_prompt(history)
     )
-    lora_items = None
-    if history.type == "ltx_video" and lora_name:
-        lora_items = [{"name": lora_name, "strength": lora_strength or 1.0}]
+    lora_items = resolve_ltx_apply_lora_items(
+        history=history,
+        prompt_lora_name=lora_name,
+        prompt_lora_strength=lora_strength,
+    )
 
     media_type, width, height, duration = resolve_apply_context_media_metadata(
         task_type=history.type,
@@ -276,6 +340,10 @@ async def build_history_apply_context_response(
         fallback_height=fallback_height,
         fallback_duration=fallback_duration,
     )
+    ltx_context = resolve_ltx_apply_context_metadata(history)
+    if ltx_context:
+        width = _pick_first_non_none(width, _coerce_positive_int(ltx_context.get("ltx_width")))
+        height = _pick_first_non_none(height, _coerce_positive_int(ltx_context.get("ltx_height")))
     billing_resolution = resolve_history_billing_resolution(
         history,
         width=width,

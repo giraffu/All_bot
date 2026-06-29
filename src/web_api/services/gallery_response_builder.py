@@ -19,6 +19,13 @@ from src.services.wan22_video_v2_extension_service import (
     resolve_wan22_segment_index,
     resolve_wan22_stitched_segment_count,
 )
+from src.services.ltx_video_extension_service import (
+    extract_ltx_history_context,
+    is_ltx_video_history_task_type,
+    is_ltx_stitched_result,
+    resolve_ltx_segment_index,
+    resolve_ltx_stitched_segment_count,
+)
 from src.domain_config.wan22_aio_video import is_wan22_chain_history_task_type
 from src.web_api.common.utils import (
     release_read_transaction,
@@ -117,7 +124,11 @@ def _append_history_mode_tags(
     tags: list[str],
     history: History | None,
 ) -> list[str]:
-    if not history or not is_wan22_chain_history_task_type(history.type):
+    if not history:
+        return tags
+    if is_ltx_video_history_task_type(history.type):
+        return _append_ltx_history_mode_tags(tags=tags, history=history)
+    if not is_wan22_chain_history_task_type(history.type):
         return tags
     if is_wan22_stitched_result(getattr(history, "extra_outputs", None)):
         segment_count = resolve_wan22_stitched_segment_count(
@@ -139,6 +150,36 @@ def _append_history_mode_tags(
     segment_index = resolve_wan22_segment_index(getattr(history, "extra_outputs", None))
     if segment_index:
         segment_tag = f"task.wan22_segment:{segment_index}"
+        if segment_tag not in next_tags:
+            next_tags = [*next_tags, segment_tag]
+    return next_tags
+
+
+def _append_ltx_history_mode_tags(
+    *,
+    tags: list[str],
+    history: History,
+) -> list[str]:
+    extra_outputs = getattr(history, "extra_outputs", None)
+    if is_ltx_stitched_result(extra_outputs):
+        segment_count = resolve_ltx_stitched_segment_count(extra_outputs)
+        if segment_count:
+            stitched_tag = f"task.ltx_stitched_video:{segment_count}"
+            if stitched_tag not in tags:
+                return [*tags, stitched_tag]
+        return tags
+
+    result_meta = extract_ltx_history_context(extra_outputs)
+    mode_tag = (
+        "task.ltx_start_end_frame"
+        if bool(result_meta.get("ltx_use_end_frame"))
+        or str(result_meta.get("ltx_mode") or "").strip() == "flf2v"
+        else "task.ltx_start_frame"
+    )
+    next_tags = tags if mode_tag in tags else [*tags, mode_tag]
+    segment_index = resolve_ltx_segment_index(extra_outputs)
+    if segment_index:
+        segment_tag = f"task.ltx_segment:{segment_index}"
         if segment_tag not in next_tags:
             next_tags = [*next_tags, segment_tag]
     return next_tags

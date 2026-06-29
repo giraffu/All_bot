@@ -5,7 +5,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from src.constants import MODE_LTX_VIDEO
+from src.constants import MODE_LTX_VIDEO, MODE_LTX_VIDEO_FLF2V
 from src.core.media_paths import resolve_storage_object
 from src.core import user_core
 from src.database.core import AsyncSessionLocal
@@ -20,6 +20,7 @@ from src.services.wan22_video_v2_extension_service import (
 
 LTX_HISTORY_CONTEXT_KEY = "_ltx_context"
 LTX_STITCH_RESULT_KEY = "ltx_chain_stitch"
+LTX_VIDEO_HISTORY_TASK_TYPES = frozenset({MODE_LTX_VIDEO, MODE_LTX_VIDEO_FLF2V})
 
 
 class LtxVideoExtensionError(Exception):
@@ -41,6 +42,10 @@ class LtxVideoStitchedHistoryResult:
     allow_contribute: bool
     segment_count: int
     history: History
+
+
+def is_ltx_video_history_task_type(task_type: str | None) -> bool:
+    return str(task_type or "").strip() in LTX_VIDEO_HISTORY_TASK_TYPES
 
 
 async def resolve_internal_user_id_from_telegram(
@@ -74,7 +79,7 @@ async def load_owned_ltx_history(
         history = result.scalar_one_or_none()
     if history is None:
         raise LtxVideoExtensionError("未找到对应的视频记录，或该记录不属于您。")
-    if history.type != MODE_LTX_VIDEO:
+    if not is_ltx_video_history_task_type(history.type):
         raise LtxVideoExtensionError("当前仅支持 LTX 高级图生视频记录的扩展生成。")
     return history
 
@@ -94,7 +99,7 @@ async def load_owned_ltx_history_for_internal_user(
         history = result.scalar_one_or_none()
     if history is None:
         raise LtxVideoExtensionError("未找到对应的视频记录，或该记录不属于您。")
-    if history.type != MODE_LTX_VIDEO:
+    if not is_ltx_video_history_task_type(history.type):
         raise LtxVideoExtensionError("当前仅支持 LTX 高级图生视频记录的扩展生成。")
     return history
 
@@ -257,7 +262,7 @@ def merge_ltx_history_context_into_extra_outputs(
     extra_outputs: dict | None,
     metadata: dict | None,
 ) -> dict[str, object] | None:
-    if task_type != MODE_LTX_VIDEO:
+    if not is_ltx_video_history_task_type(task_type):
         return extra_outputs
     context = build_ltx_history_context_from_metadata(metadata)
     if not context and not extra_outputs:

@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import desc, func, select
 
 from src.database.models import GalleryPost, History
+from src.services.gallery_feed_queries import resolve_gallery_task_type_filter_values
 
 
 def gallery_post_sort_key(post):
@@ -128,7 +129,12 @@ async def fetch_favorite_gallery_histories(
     )
 
     if task_type:
-        query = query.where(History.type == task_type)
+        task_type_values = resolve_gallery_task_type_filter_values(task_type)
+        if task_type_values:
+            if len(task_type_values) == 1:
+                query = query.where(History.type == task_type_values[0])
+            else:
+                query = query.where(History.type.in_(task_type_values))
 
     total_query = select(func.count()).select_from(query.subquery())
     total = (await db.execute(total_query)).scalar()

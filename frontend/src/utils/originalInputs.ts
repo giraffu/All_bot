@@ -22,6 +22,7 @@ export interface OriginalInputPreview {
 
 const SPLIT_INPUT_RE = /\|/
 const WAN22_TASK_TYPES = new Set(['wan22_video_v2', 'custom_video', 'video_lora'])
+const LTX_TASK_TYPES = new Set(['ltx_video', 'ltx_video_flf2v'])
 const SCAIL2_TASK_TYPES = new Set([
   'scail2_action_transfer',
   'scail2_action_transfer_long',
@@ -88,7 +89,7 @@ const resolveInputLabelKey = (
     return total === 1 ? 'reference_image' : 'input_n'
   }
 
-  if (taskType === 'ltx_video') {
+  if (LTX_TASK_TYPES.has(taskType)) {
     if (total > 1) {
       return index === 0 ? 'start_frame' : 'end_frame'
     }

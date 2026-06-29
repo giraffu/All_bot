@@ -16,6 +16,7 @@ from src.services.wan22_video_v2_extension_service import (
 )
 from src.services.ltx_video_extension_service import (
     extract_ltx_history_context,
+    is_ltx_video_history_task_type,
     is_ltx_stitched_result,
     resolve_ltx_segment_index,
 )
@@ -374,7 +375,7 @@ def extract_history_result_meta(
             if segment_index:
                 result_meta["wan22_segment_index"] = segment_index
         return result_meta
-    if task_type == "ltx_video":
+    if is_ltx_video_history_task_type(task_type):
         result_meta = extract_ltx_history_context(extra_outputs)
         if is_ltx_stitched_result(extra_outputs):
             result_meta["ltx_is_stitched"] = True

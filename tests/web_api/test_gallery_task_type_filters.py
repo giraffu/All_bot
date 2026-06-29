@@ -1,6 +1,7 @@
 import pytest
 
 from src.web_api.routers import users as users_router
+from src.services.gallery_feed_queries import build_gallery_feed_query
 from src.web_api.schemas.gallery_schema import GalleryPostResponse
 from src.web_api.services.gallery_service_queries import (
     get_gallery_posts_payload,
@@ -69,6 +70,21 @@ def _statement_contains_task_type_filter(stmt, expected_task_type: str) -> bool:
     return "history.type" in sql.lower() and expected_task_type in compiled.params.values()
 
 
+def _statement_contains_task_type_values(stmt, expected_task_types: set[str]) -> bool:
+    compiled = stmt.compile()
+    sql = str(compiled).lower()
+    if "history.type" not in sql:
+        return False
+
+    values = set()
+    for value in compiled.params.values():
+        if isinstance(value, (list, tuple, set)):
+            values.update(str(item) for item in value)
+        else:
+            values.add(str(value))
+    return expected_task_types.issubset(values)
+
+
 @pytest.mark.asyncio
 async def test_get_my_gallery_posts_applies_task_type_filter():
     session = _AsyncSessionContext([
@@ -87,6 +103,31 @@ async def test_get_my_gallery_posts_applies_task_type_filter():
     assert response.total == 0
     assert any(
         _statement_contains_task_type_filter(stmt, "edit")
+        for stmt in session.executed_statements
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_my_gallery_posts_ltx_filter_includes_execution_alias():
+    session = _AsyncSessionContext([
+        _ScalarResult(0),
+        _ItemsResult([]),
+    ])
+
+    response = await get_my_gallery_posts_payload(
+        page=1,
+        size=20,
+        task_type="ltx_video",
+        current_user=type("User", (), {"id": 123})(),
+        db=session,
+    )
+
+    assert response.total == 0
+    assert any(
+        _statement_contains_task_type_values(
+            stmt,
+            {"ltx_video", "ltx_video_flf2v"},
+        )
         for stmt in session.executed_statements
     )
 
@@ -115,6 +156,32 @@ async def test_get_my_favorite_posts_applies_task_type_filter():
 
 
 @pytest.mark.asyncio
+async def test_get_my_favorite_posts_ltx_filter_includes_execution_alias():
+    session = _AsyncSessionContext([
+        _ScalarResult(0),
+        _ItemsResult([]),
+    ])
+
+    response = await get_my_favorite_posts_payload(
+        page=1,
+        size=20,
+        filter_type="apply",
+        task_type="ltx_video",
+        current_user=type("User", (), {"id": 123})(),
+        db=session,
+    )
+
+    assert response.total == 0
+    assert any(
+        _statement_contains_task_type_values(
+            stmt,
+            {"ltx_video", "ltx_video_flf2v"},
+        )
+        for stmt in session.executed_statements
+    )
+
+
+@pytest.mark.asyncio
 async def test_get_my_prompt_unlocked_posts_applies_task_type_filter():
     session = _AsyncSessionContext([
         _ScalarResult(0),
@@ -132,6 +199,31 @@ async def test_get_my_prompt_unlocked_posts_applies_task_type_filter():
     assert response.total == 0
     assert any(
         _statement_contains_task_type_filter(stmt, "custom_video")
+        for stmt in session.executed_statements
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_my_prompt_unlocked_posts_ltx_filter_includes_execution_alias():
+    session = _AsyncSessionContext([
+        _ScalarResult(0),
+        _ItemsResult([]),
+    ])
+
+    response = await get_my_prompt_unlocked_posts_payload(
+        page=1,
+        size=20,
+        task_type="ltx_video",
+        current_user=type("User", (), {"id": 123})(),
+        db=session,
+    )
+
+    assert response.total == 0
+    assert any(
+        _statement_contains_task_type_values(
+            stmt,
+            {"ltx_video", "ltx_video_flf2v"},
+        )
         for stmt in session.executed_statements
     )
 
@@ -228,3 +320,39 @@ async def test_get_gallery_posts_normalizes_all_filters_and_builds_response():
         "posts": ["post-1"],
         "user": current_user,
     }
+
+
+def test_gallery_feed_ltx_filter_includes_execution_alias():
+    stmt = build_gallery_feed_query(
+        media_type=None,
+        task_type="ltx_video",
+        lora_model=None,
+        sort_by="newest",
+        time_range="all",
+        user_id=None,
+        category=None,
+        is_active=True,
+    )
+
+    assert _statement_contains_task_type_values(
+        stmt,
+        {"ltx_video", "ltx_video_flf2v"},
+    )
+
+
+def test_gallery_feed_ltx_category_includes_execution_alias():
+    stmt = build_gallery_feed_query(
+        media_type=None,
+        task_type=None,
+        lora_model=None,
+        sort_by="newest",
+        time_range="all",
+        user_id=None,
+        category="ltxvid",
+        is_active=True,
+    )
+
+    assert _statement_contains_task_type_values(
+        stmt,
+        {"ltx_video", "ltx_video_flf2v"},
+    )

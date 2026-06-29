@@ -143,6 +143,62 @@ def test_extract_history_tags_skips_mode_tag_for_stitched_wan22_record():
     assert tags == ["task.wan22_stitched_video:3"]
 
 
+def test_extract_history_tags_adds_ltx_mode_tag_for_single_start_frame():
+    tags = extract_history_tags(
+        "prompt",
+        task_type="ltx_video",
+        extra_outputs={"_ltx_context": {"ltx_mode": "i2v"}},
+    )
+
+    assert tags == ["task.ltx_start_frame", "task.ltx_segment:1"]
+
+
+def test_extract_history_tags_adds_ltx_mode_tag_for_start_end_frame():
+    tags = extract_history_tags(
+        "prompt",
+        task_type="ltx_video",
+        extra_outputs={
+            "_ltx_context": {
+                "ltx_mode": "flf2v",
+                "ltx_use_end_frame": True,
+            }
+        },
+    )
+
+    assert tags == ["task.ltx_start_end_frame", "task.ltx_segment:1"]
+
+
+def test_extract_history_tags_adds_ltx_segment_tag_for_non_first_segment():
+    tags = extract_history_tags(
+        "prompt",
+        task_type="ltx_video",
+        extra_outputs={
+            "_ltx_context": {
+                "ltx_mode": "i2v",
+                "ltx_prev_task_id": "ltx-task-1",
+                "ltx_chain_task_ids": ["ltx-task-1", "ltx-task-2"],
+            }
+        },
+    )
+
+    assert tags == ["task.ltx_start_frame", "task.ltx_segment:3"]
+
+
+def test_extract_history_tags_adds_ltx_stitched_video_tag():
+    tags = extract_history_tags(
+        "prompt",
+        task_type="ltx_video",
+        extra_outputs={
+            "ltx_chain_stitch": {
+                "segment_count": 2,
+                "ltx_chain_task_ids": ["ltx-task-1", "ltx-task-2"],
+            }
+        },
+    )
+
+    assert tags == ["task.ltx_stitched_video:2"]
+
+
 def test_extract_history_result_meta_marks_stitched_wan22_record():
     result_meta = extract_history_result_meta(
         task_type="wan22_video_v2",

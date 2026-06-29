@@ -4,6 +4,8 @@ from typing import Any
 from src.constants import (
     MODE_IMAGE_TO_VIDEO,
     MODE_IMAGE_TO_VIDEO_LITERAL,
+    MODE_LTX_VIDEO,
+    MODE_LTX_VIDEO_FLF2V,
     MODE_WAN22_VIDEO_V2,
     VIDEO_TASK_TYPES,
 )
@@ -14,6 +16,7 @@ from src.domain_config.wan22_aio_video import (
 
 
 VIDEO_BILLING_TASK_TYPES = frozenset(VIDEO_TASK_TYPES)
+LTX_VIDEO_BILLING_TASK_TYPES = frozenset({MODE_LTX_VIDEO, MODE_LTX_VIDEO_FLF2V})
 LTX_ALLOWED_DURATIONS = (5, 10, 15, 20)
 MAX_LEGACY_LTX_DURATION_DRIFT = 2
 TIER_VIDEO_ALLOWED_DURATIONS = (5, 8, 10)
@@ -32,6 +35,10 @@ def _is_legacy_wan22_video_task_type(task_type: str | None) -> bool:
 
 def _is_wan22_tier_video_task_type(task_type: str | None) -> bool:
     return task_type in WAN22_TIER_VIDEO_TASK_TYPES
+
+
+def _is_ltx_video_task_type(task_type: str | None) -> bool:
+    return task_type in LTX_VIDEO_BILLING_TASK_TYPES
 
 
 def _normalize_tier_from_video_side(
@@ -78,7 +85,7 @@ def normalize_requested_billing_resolution(
         except ValueError:
             return None
 
-        if task_type == "ltx_video":
+        if _is_ltx_video_task_type(task_type):
             return f"{width}x{height}"
         return _normalize_tier_from_video_side(min(width, height))
 
@@ -147,7 +154,7 @@ def infer_legacy_video_requested_duration(
     task_type: str | None,
     duration: Any,
 ) -> int | None:
-    if task_type == "ltx_video":
+    if _is_ltx_video_task_type(task_type):
         return infer_legacy_ltx_requested_duration(duration)
     if task_type in LEGACY_TIER_VIDEO_TASK_TYPES:
         return infer_legacy_tier_video_requested_duration(duration)
@@ -174,7 +181,7 @@ def resolve_apply_prompt_and_requested_duration(
     requested_duration: Any,
 ) -> tuple[str, int | None]:
     resolved_prompt = prompt or ""
-    if task_type == "ltx_video" or _is_wan22_tier_video_task_type(task_type):
+    if _is_ltx_video_task_type(task_type) or _is_wan22_tier_video_task_type(task_type):
         _, _, resolved_prompt = extract_video_prompt_prefix(resolved_prompt)
     return resolved_prompt, requested_duration
 
@@ -201,7 +208,7 @@ def infer_billing_resolution_from_dimensions(
     if not is_video_billing_task_type(task_type):
         return None
 
-    if task_type == "ltx_video" and width and height:
+    if _is_ltx_video_task_type(task_type) and width and height:
         return f"{width}x{height}"
 
     inferred_side = None

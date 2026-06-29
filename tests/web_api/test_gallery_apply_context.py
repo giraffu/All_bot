@@ -11,6 +11,7 @@ from src.domain_config.scail2_video import SCAIL2_DEFAULT_NEGATIVE_PROMPT
 from src.core import gallery_core
 from src.core import gallery_submission_effects
 from src.services import storage as storage_module
+from src.web_api.services import gallery_response_builder
 from src.web_api.services.gallery_response_builder import build_gallery_post_responses
 from src.web_api.services import gallery_media_resolver
 from src.web_api.services.gallery_service_queries import get_gallery_apply_context_payload
@@ -150,6 +151,72 @@ async def test_build_post_responses_marks_wan22_stitched_template_apply_disabled
     assert responses[0].result_meta == {"wan22_is_stitched": True}
     assert responses[0].template_apply_supported is False
     assert responses[0].template_apply_disabled_reason == "wan22_stitched"
+
+
+@pytest.mark.asyncio
+async def test_build_post_responses_adds_ltx_flf2v_tags_and_original_inputs(monkeypatch):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-ltx-flf2v",
+        type="ltx_video",
+        prompt="cinematic motion",
+        input_file="uploads/start.png|uploads/end.png",
+        output_file="bot-data/history/task-ltx-flf2v/output.mp4",
+        extra_outputs={
+            "_ltx_context": {
+                "ltx_mode": "flf2v",
+                "ltx_use_end_frame": True,
+            }
+        },
+    )
+    post = GalleryPost(
+        id=2,
+        task_id="task-ltx-flf2v",
+        media_type="video",
+        width=1280,
+        height=704,
+        duration=10,
+        tags='["#task.mode_ltx_video"]',
+        likes_count=0,
+        dislikes_count=0,
+        applied_count=0,
+        is_active=True,
+        created_at=datetime.now(),
+    )
+    session = _FakeSession([_FakeResult(many=[history])])
+
+    monkeypatch.setattr(
+        gallery_response_builder,
+        "build_history_input_file_payload",
+        lambda input_file: {
+            "input_file": "uploads/start.png",
+            "input_file_url": "https://storage.test/uploads/start.png",
+            "input_files": ["uploads/start.png", "uploads/end.png"],
+            "input_file_urls": [
+                "https://storage.test/uploads/start.png",
+                "https://storage.test/uploads/end.png",
+            ],
+        },
+    )
+
+    responses = await build_gallery_post_responses(
+        session=session,
+        posts=[post],
+        current_user=None,
+        pick_gallery_media_urls=AsyncMock(return_value=("media-url", "thumb-url")),
+    )
+
+    assert responses[0].tags == [
+        "#task.mode_ltx_video",
+        "task.ltx_start_end_frame",
+        "task.ltx_segment:1",
+    ]
+    assert responses[0].input_files == ["uploads/start.png", "uploads/end.png"]
+    assert responses[0].input_file_urls == [
+        "https://storage.test/uploads/start.png",
+        "https://storage.test/uploads/end.png",
+    ]
 
 
 @pytest.mark.asyncio
@@ -346,6 +413,72 @@ async def test_get_apply_context_strips_ltx_prefix_without_promoting_it_to_reque
     assert response.prompt == "wide cinematic dolly shot"
     assert response.duration == 1
     assert response.requested_duration is None
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_apply_context_restores_ltx_context_loras_size_duration_and_two_inputs():
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-ltx-flf2v",
+        type="ltx_video",
+        prompt="[1344x768|20s] cinematic dolly shot",
+        input_file="uploads/start.png|uploads/end.png",
+        billing_resolution=None,
+        width=None,
+        height=None,
+        duration=None,
+        requested_duration=None,
+        extra_outputs={
+            "_ltx_context": {
+                "ltx_mode": "flf2v",
+                "ltx_use_end_frame": True,
+                "ltx_width": 1344,
+                "ltx_height": 768,
+                "ltx_duration_seconds": 20,
+                "lora_items": [
+                    {"name": "ltx2.3/lora_a.safetensors", "strength": 0.8},
+                ],
+            }
+        },
+    )
+    post = GalleryPost(
+        id=2,
+        task_id="task-ltx-flf2v",
+        media_type="video",
+        width=None,
+        height=None,
+        duration=None,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=post),
+            _FakeResult(many=[history]),
+        ]
+    )
+
+    response = await get_gallery_apply_context_payload(
+        post_id=2,
+        db=session,
+        build_input_file_url=lambda key: f"https://storage.test/{key}",
+    )
+
+    assert response.task_type == "ltx_video"
+    assert response.prompt == "cinematic dolly shot"
+    assert response.width == 1344
+    assert response.height == 768
+    assert response.requested_duration == 20
+    assert response.lora_items == [
+        {"name": "ltx2.3/lora_a.safetensors", "strength": 0.8},
+    ]
+    assert response.input_file == "uploads/start.png"
+    assert response.input_files == ["uploads/start.png", "uploads/end.png"]
+    assert response.input_file_url == "https://storage.test/uploads/start.png"
+    assert response.input_file_urls == [
+        "https://storage.test/uploads/start.png",
+        "https://storage.test/uploads/end.png",
+    ]
     session.commit.assert_not_awaited()
 
 

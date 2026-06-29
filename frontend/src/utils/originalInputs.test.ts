@@ -32,6 +32,23 @@ describe('resolveOriginalInputPreviews', () => {
     ])
   })
 
+  it('labels LTX FLF2V execution alias start and end frames in input order', () => {
+    const previews = resolveOriginalInputPreviews({
+      task_type: 'ltx_video_flf2v',
+      input_files: ['uploads/start.png', 'uploads/end.png'],
+      input_file_urls: ['https://cdn.test/start.png', 'https://cdn.test/end.png'],
+    }, t)
+
+    expect(previews.map((preview) => preview.label)).toEqual([
+      'original_inputs.start_frame',
+      'original_inputs.end_frame',
+    ])
+    expect(previews.map((preview) => preview.url)).toEqual([
+      'https://cdn.test/start.png',
+      'https://cdn.test/end.png',
+    ])
+  })
+
   it('labels SCAIL-2 reference image and motion video', () => {
     const previews = resolveOriginalInputPreviews({
       task_type: 'scail2_action_transfer_long',

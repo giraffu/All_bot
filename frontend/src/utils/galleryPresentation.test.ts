@@ -54,6 +54,13 @@ describe('resolveGalleryTaskTypeLabel', () => {
     expect(resolveGalleryTaskTypeLabel('scail2_video_replacement', t)).toBe('视频换人')
     expect(resolveGalleryTaskTypeLabel('scail2_face_swap_v2', t)).toBe('视频换脸')
   })
+
+  it('maps LTX FLF2V execution alias to the shared high-res video label', () => {
+    i18n.global.locale.value = 'zh'
+    const t = (key: string) => String(i18n.global.t(key))
+
+    expect(resolveGalleryTaskTypeLabel('ltx_video_flf2v', t)).toBe('高级图生视频')
+  })
 })
 
 describe('formatGalleryTag', () => {
@@ -87,5 +94,18 @@ describe('formatGalleryTag', () => {
 
     expect(formatGalleryTag('task.wan22_segment:1', t)).toBe('第1段')
     expect(formatGalleryTag('task.wan22_segment:4', t)).toBe('第4段')
+  })
+
+  it('formats ltx frame and chain tags with translation', () => {
+    const t = (key: string, params?: Record<string, unknown>) => {
+      if (key === 'task.ltx_start_end_frame') return 'LTX 首尾帧'
+      if (key === 'task.ltx_segment') return `LTX 第${params?.count as number}段`
+      if (key === 'task.ltx_stitched_video') return `LTX 拼接-${params?.count as number}`
+      return key
+    }
+
+    expect(formatGalleryTag('task.ltx_start_end_frame', t)).toBe('LTX 首尾帧')
+    expect(formatGalleryTag('task.ltx_segment:2', t)).toBe('LTX 第2段')
+    expect(formatGalleryTag('task.ltx_stitched_video:3', t)).toBe('LTX 拼接-3')
   })
 })

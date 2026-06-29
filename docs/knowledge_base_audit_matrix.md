@@ -62,7 +62,7 @@
 | :--- | :--- | :--- | :--- |
 | `docs/子模块_用户认证与权限_user_auth_permission.md` | `src/core/auth_core*`、`src/web_api/core/security.py` | 已核对 | JWT、password_version、权限复核口径有效 |
 | `docs/子模块_计费与支付_billing_payment.md` | `src/core/billing_core*`、`src/payment_api_server.py`、affiliate migrations | 已核对 | 支付履约与 affiliate 账本口径有效 |
-| `docs/子模块_社区与存储_gallery_storage.md` | `src/core/gallery*`、`src/web_api/services/*gallery*`、R2 scripts | 已核对 | R2/legacy MinIO 退出口径有效 |
+| `docs/子模块_社区与存储_gallery_storage.md` | `src/core/gallery*`、`src/web_api/services/*gallery*`、R2 scripts | 已修正 | R2/legacy MinIO 退出口径有效；补充 LTX 高级图生视频首尾帧 Gallery 标签、apply-context 回填与 `ltx_video_flf2v` alias 口径 |
 | `docs/子模块_后台监控与清理_dashboard_monitoring.md` | `dashboard/backend`、`dashboard/frontend`、RunPod admin services | 已核对 | Dashboard 监控和清理边界有效 |
 | `docs/子模块_本地数据分析平台_local_analytics_platform.md` | `local_analytics_platform`、`scripts/run_local_analytics_shadow_pipeline.py`、`bot_db_prod_shadow`、本地 compose | 已更新 | 记录独立本地分析平台入口、只读 shadow 数据边界、核心四 Tab ECharts 可视化与新增对比 API、每日 shadow 后保留 `analytics_prompt_*`、05:45 自动链路的 shadow/vector 双锁、Mart 增量刷新、瘦身与向量断点续跑链路、提示词瘦身、向量相似审核、Prompt 语义场景提炼 v1、相似族从 duplicate 边传递闭包改为代表点和族内两两阈值守卫、媒体引用核验与不挂载现有 Dashboard 的运行口径 |
 | `docs/business/00_INDEX_业务板块分类与规范总览.md` | business docs | 已核对 | 业务导航有效 |
@@ -117,7 +117,7 @@
 | `.codex/skills/allbot-tg-fsm/SKILL.md` | `src/handlers`、Bot entrypoint | 已核对 | FSM 边界有效 |
 | `.codex/skills/allbot-qqcc-lazy-bot/SKILL.md` | `qqcc_bot`、cloud compose、`scripts/update_cloud_prod_qqcc_bot.sh`、`src/services/qqcc_config_service.py`、`src/handlers/fsm/quick_image_fsm.py`、`src/handlers/fsm/quick_video_fsm.py` | 已修正 | 补充 QQCC 主菜单 `前往主bot` 非生成入口、正式单独更新脚本、单 polling 确认口径、快速脱衣主菜单入口、`AI动图` 专用文案与 quick video inline 场景按钮契约；修正未配置主 Bot URL/username 时“按钮不展示”的旧口径，改为由 `main_bot_link` 配置控制菜单项，点击时提示入口未配置；QQCC 独立 Bot 边界有效 |
 | `.codex/skills/allbot-billing-auth/SKILL.md` | auth/billing/affiliate code | 已核对 | 计费鉴权边界有效 |
-| `.codex/skills/allbot-gallery-storage/SKILL.md` | Gallery/R2 code、Skill 体积审计 | 已修正 | 存储与社区边界有效；已补充自由P图 v2 独立 `free_edit_v2_group`、Web 一键应用无 LoRA/重传参考图和 single/multi 提交口径 |
+| `.codex/skills/allbot-gallery-storage/SKILL.md` | Gallery/R2 code、Skill 体积审计 | 已修正 | 存储与社区边界有效；已补充自由P图 v2 独立 `free_edit_v2_group`、Web 一键应用无 LoRA/重传参考图和 single/multi 提交口径；补充 LTX 首尾帧 tag、apply-context 回填与 `ltx_video_flf2v` alias 口径 |
 | `.codex/skills/allbot-diagnosing-bugs/SKILL.md` | bug 诊断流程 | 已核对 | 诊断闭环有效 |
 | `.codex/skills/allbot-tdd/SKILL.md` | tests、dependencies seam | 已核对 | TDD seam 口径有效 |
 | `.codex/skills/allbot-codebase-design/SKILL.md` | 架构词汇 | 已核对 | 设计词汇有效 |

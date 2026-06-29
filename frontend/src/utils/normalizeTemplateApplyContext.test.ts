@@ -99,6 +99,35 @@ describe('normalizeTemplateApplyContext', () => {
     })
   })
 
+  it('normalizes LTX FLF2V execution alias to the shared high-res video task type', () => {
+    const normalized = normalizeTemplateApplyContext(
+      {
+        post_id: 20,
+        source_post_id: 20,
+        task_type: 'ltx_video_flf2v',
+        input_files: ['history/demo/start.png', 'history/demo/end.png'],
+        input_file_urls: ['https://example.com/start.png', 'https://example.com/end.png'],
+        requested_duration: 20,
+        width: 1344,
+        height: 768
+      },
+      { source: 'gallery', entryEntityId: 20 }
+    )
+
+    expect(normalized).not.toBeNull()
+    expect(normalized).toMatchObject({
+      rawTaskType: 'ltx_video_flf2v',
+      taskType: 'ltx_video',
+      supportMode: 'workbench',
+      sourcePostId: 20,
+      inputFiles: ['history/demo/start.png', 'history/demo/end.png'],
+      inputFileUrls: ['https://example.com/start.png', 'https://example.com/end.png'],
+      requestedDuration: 20,
+      width: 1344,
+      height: 768
+    })
+  })
+
   it('normalizes free edit v2 task types as workbench templates', () => {
     const normalized = normalizeTemplateApplyContext(
       {

@@ -8,6 +8,13 @@ from src.services.wan22_video_v2_extension_service import (
     resolve_wan22_segment_index,
     resolve_wan22_stitched_segment_count,
 )
+from src.services.ltx_video_extension_service import (
+    extract_ltx_history_context,
+    is_ltx_video_history_task_type,
+    is_ltx_stitched_result,
+    resolve_ltx_segment_index,
+    resolve_ltx_stitched_segment_count,
+)
 from src.domain_config.wan22_aio_video import is_wan22_chain_history_task_type
 from src.web_api.common.utils import (
     build_storage_input_file_url,
@@ -55,6 +62,22 @@ def extract_history_tags(
         segment_index = resolve_wan22_segment_index(extra_outputs)
         if segment_index:
             tags.append(f"task.wan22_segment:{segment_index}")
+    if is_ltx_video_history_task_type(task_type):
+        if is_ltx_stitched_result(extra_outputs):
+            segment_count = resolve_ltx_stitched_segment_count(extra_outputs)
+            if segment_count:
+                tags.append(f"task.ltx_stitched_video:{segment_count}")
+            return tags
+        result_meta = extract_ltx_history_context(extra_outputs)
+        tags.append(
+            "task.ltx_start_end_frame"
+            if bool(result_meta.get("ltx_use_end_frame"))
+            or str(result_meta.get("ltx_mode") or "").strip() == "flf2v"
+            else "task.ltx_start_frame"
+        )
+        segment_index = resolve_ltx_segment_index(extra_outputs)
+        if segment_index:
+            tags.append(f"task.ltx_segment:{segment_index}")
     return tags
 
 

@@ -40,6 +40,7 @@ MODE_VIDEO_LORA = "video_lora"
 MODE_IMAGE_TO_VIDEO = MODE_VIDEO_LORA
 MODE_IMAGE_TO_VIDEO_LITERAL = "image_to_video"
 MODE_LTX_VIDEO = "ltx_video"
+MODE_LTX_VIDEO_FLF2V = "ltx_video_flf2v"
 MODE_WAN22_VIDEO_V2 = "wan22_video_v2"
 MODE_SCAIL2_ACTION_TRANSFER = SCAIL2_ACTION_TRANSFER_TASK_TYPE
 MODE_SCAIL2_ACTION_TRANSFER_LONG = SCAIL2_ACTION_TRANSFER_LONG_TASK_TYPE
@@ -79,6 +80,7 @@ MODE_NAME_MAP = {
     MODE_CLOSEUP_BLOWJOB: "task.mode_closeup_blowjob",
     MODE_CUSTOM_VIDEO: "task.mode_custom_video",
     MODE_LTX_VIDEO: "task.mode_ltx_video",
+    MODE_LTX_VIDEO_FLF2V: "task.mode_ltx_video",
     MODE_WAN22_VIDEO_V2: "task.mode_wan22_video_v2",
     MODE_SCAIL2_ACTION_TRANSFER: "task.mode_scail2_action_transfer",
     MODE_SCAIL2_ACTION_TRANSFER_LONG: "task.mode_scail2_action_transfer",
@@ -383,7 +385,8 @@ VIDEO_TASK_TYPES = [
     "face_video_step2",
     MODE_IMAGE_TO_VIDEO,
     MODE_IMAGE_TO_VIDEO_LITERAL,
-    "ltx_video",
+    MODE_LTX_VIDEO,
+    MODE_LTX_VIDEO_FLF2V,
     MODE_WAN22_VIDEO_V2,
     *SCAIL2_TASK_TYPES,
     "video_edit",

@@ -99,6 +99,7 @@ sequenceDiagram
 - 用户公开主页里的作品详情必须复用 Gallery 详情的提示词解锁逻辑，不能因为入口来自个人主页而隐藏 `prompt_unlockable` 的解锁入口。
 - Gallery feed 查询拼装已从 `src/core` 迁到 `src/services/gallery_feed_queries.py`，旧 `src/core/gallery_feed_queries.py` 兼容 re-export 已删除；新增列表查询条件应继续放在 service 层，避免 core 重新直连 SQL 细节。
 - Gallery 前端分组中，旧自由P图使用 `edit_group`，只包含 `edit` / `quick_image` / `img2img_lora`；自由P图 v2 使用独立 `free_edit_v2_group`，只包含 `pornmaster_flux2_single_edit` / `pornmaster_flux2_multi_edit`，不得混入旧自由P图 tab。
+- LTX 高级图生视频只保留 `ltx_video` 一个 Gallery 展示/筛选入口；历史或执行别名 `ltx_video_flf2v` 必须 canonical 到 `ltx_video`，投稿允许该别名但不新增展示 tab，筛选时同时查询两种 `History.type`。
 - Gallery 列表/详情、我的投稿、我的收藏、我的提示词模版与用户主页 recent posts 基于 `GalleryPostResponse.input_file/input_file_url/input_files/input_file_urls` 展示 `History.input_file` 的原始输入素材预览；这是展示字段，不改变投稿、收藏或模板应用语义。
 
 ### 4.5 提示词付费解锁
@@ -122,6 +123,7 @@ sequenceDiagram
 - 旧图生视频 `custom_video` / `video_lora` 投稿应用时会把旧 `512p/720p/1024p` 归一为 Wan22 v2 档位 `preview/standard/hd`，把 `0.36 MP - Small` 归一为 `small`，并恢复 canonical `5s/8s/10s` 时长，缺失或非 canonical 时回退 5 秒；`video_lora` 还会从历史 prompt 中的 `[模型: xxx]` 兼容解析 `lora_name`。
 - 自由P图 v2 投稿支持 Web 一键应用：模板应用会复用并锁定原 prompt、记录 `source_post_id`，但用户需要重新上传 1/2 张参考图；面板不展示 LoRA/附加模型，提交时按上传图数选择 `pornmaster_flux2_single_edit` 或 `pornmaster_flux2_multi_edit`。
 - `wan22_video_v2` 单段投稿支持一键应用，回填正向提示词、`_wan22_context.wan22_negative_prompt`、`_wan22_context.wan22_resolution_preset` 和 `_wan22_context.wan22_duration_seconds`，不复刻首尾帧或链式上下文。
+- `ltx_video` 单首帧/首尾帧投稿支持一键应用，保留两张原始输入图顺序，并从 `_ltx_context` 回填 `lora_items`、`ltx_width`、`ltx_height`、`ltx_duration_seconds`；执行别名 `ltx_video_flf2v` 仍按 `ltx_video` 模板入口处理。
 - `scail2_action_transfer` / `scail2_video_replacement` / `scail2_face_swap_v2` 投稿支持 Web 一键应用：模板只复用原历史第二个输入 motion/driving video，复用者重新上传 reference image；旧兼容字段 `input_file` 也指向该 motion video。缺失 motion video 时列表/详情返回 `template_apply_supported=false` 与 `template_apply_disabled_reason="missing_scail2_motion_video"`，apply-context 返回 400。
 - 所有 Wan22 stitched 拼接记录（旧 `custom_video` / `video_lora` 与 `wan22_video_v2`）都不支持一键应用：列表/详情应返回 `template_apply_supported=false` 与 `template_apply_disabled_reason="wan22_stitched"`，apply-context 入口必须返回 400 防绕过。
 - 这已经是 Web workbench 模板应用的主入口，Telegram 内的老 `gallery_apply_fsm` 只应视为兼容路径。
@@ -132,6 +134,7 @@ sequenceDiagram
 - 单输入任务在卡片左上角显示 1 张输入缩略图；详情中显示“原始输入”区域。
 - 多输入任务在卡片左上角显示叠层与 `+N`，详情按数组顺序展示全部输入素材。
 - Wan22 首尾帧按顺序显示为“起始帧 / 终止帧”。LTX 高级图生视频单首帧显示为“起始帧”，首尾帧显示为“起始帧 / 终止帧”；历史兼容的视频配音记录可显示为“输入视频”，但当前 Web/Bot 不再提供该入口。SCAIL-2 按顺序显示为“参考图 / 驱动视频”。
+- Wan22 与 LTX 的链式视频标签由服务端从历史上下文补齐：单首帧、首尾帧、`segment:{n}` 和 `stitched_video:{n}` 只作为 Gallery/历史展示 tag，不新增单独筛选 tab。
 - SCAIL-2 的展示输入与 apply-context 复用输入必须分开理解：展示层显示 reference image 与 motion/driving video 两份素材；模板应用仍只复用第二个 motion/driving video，复用者重新上传 reference image。
 - 闪回瓶历史详情复用 `HistoryItem.input_file_urls` 展示原始输入。历史列表本身仍以任务输出缩略图为主，不把输入素材替代为结果图。
 - 这些输入 URL 只做短签展示，不在列表热路径增加对象存储 HEAD 探测。
@@ -183,7 +186,7 @@ python scripts/audit_visible_hotset_r2_objects.py \
 - 我的关注/我的粉丝列表方向正确性，以及粉丝列表的回关状态
 - 提示词解锁首次扣费、重复请求不重复扣费、唯一约束并发冲突回滚、`my-prompt-unlocks` 列表过滤
 - apply-context 对 `requested_duration` / `billing_resolution` / `negative_prompt` / `input_file_url` / `input_files` 的返回准确性
-- Gallery/修仙笔记/我的投稿卡片左上角原始输入缩略图、详情“原始输入”区域、多输入顺序和 SCAIL-2 展示/复用语义分离
+- Gallery/修仙笔记/我的投稿卡片左上角原始输入缩略图、详情“原始输入”区域、多输入顺序、LTX 首尾帧标签与 SCAIL-2 展示/复用语义分离
 - Wan22 v2 单段一键应用回填与 stitched 拼接记录禁用、400 拒绝；SCAIL-2 一键应用只复用 motion video，缺失 motion video 时禁用并 400 拒绝
 - Dashboard 封禁投稿并批量下架时，用户封禁状态、帖子上下架状态和多条 `History.is_public` 同步
 - Gallery 列表、我的投稿、我的收藏和历史详情需要覆盖 R2 hit、R2 miss 后当前 R2/S3 短签或空值/`pending_result`、不得返回 legacy URL、缩略图 fallback 与对象存储慢响应场景。

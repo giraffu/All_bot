@@ -7,6 +7,8 @@ from sqlalchemy.orm import selectinload
 
 from src.constants import (
     MODE_IMAGE_TO_VIDEO,
+    MODE_LTX_VIDEO,
+    MODE_LTX_VIDEO_FLF2V,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
 )
@@ -15,6 +17,7 @@ from src.domain_config.scail2_video import SCAIL2_FACE_SWAP_V2_TASK_TYPE
 from src.lora_catalog import IMAGE_LORA_MODELS, VIDEO_LORA_MODELS
 
 GALLERY_LORA_MODEL_NONE = "__none__"
+GALLERY_LTX_VIDEO_TASK_TYPES = (MODE_LTX_VIDEO, MODE_LTX_VIDEO_FLF2V)
 
 GALLERY_GROUPED_TASK_TYPE_FAMILIES = {
     "edit_group": (
@@ -31,6 +34,7 @@ GALLERY_GROUPED_TASK_TYPE_FAMILIES = {
         "scail2_action_transfer",
         "scail2_action_transfer_long",
     ),
+    MODE_LTX_VIDEO: GALLERY_LTX_VIDEO_TASK_TYPES,
 }
 
 GALLERY_GROUPED_TASK_TYPE_LORA_MODELS = {
@@ -42,6 +46,11 @@ GALLERY_GROUPED_TASK_TYPE_LORA_MODELS = {
 def _resolve_grouped_task_type_values(
     *, task_type: str | None, lora_model: str | None
 ):
+    _ = lora_model
+    return resolve_gallery_task_type_filter_values(task_type)
+
+
+def resolve_gallery_task_type_filter_values(task_type: str | None):
     if not task_type or task_type == "all":
         return None
 
@@ -94,7 +103,7 @@ def _apply_task_type_or_category_filter(
     if category == "vidlora":
         return query.where(History.type == MODE_IMAGE_TO_VIDEO)
     if category == "ltxvid":
-        return query.where(History.type == "ltx_video")
+        return query.where(History.type.in_(GALLERY_LTX_VIDEO_TASK_TYPES))
     return query
 
 

@@ -12,6 +12,7 @@ const GALLERY_GROUPED_TASK_TYPE_ALIASES: Record<string, string> = {
   pornmaster_flux2_multi_edit: GALLERY_FREE_EDIT_V2_GROUP_TASK_TYPE,
   custom_video: GALLERY_IMG2VIDEO_GROUP_TASK_TYPE,
   video_lora: GALLERY_IMG2VIDEO_GROUP_TASK_TYPE,
+  ltx_video_flf2v: 'ltx_video',
   scail2_action_transfer_long: 'scail2_action_transfer',
 }
 
