@@ -11,6 +11,7 @@ minio
 boto3
 httpx
 python-dotenv
+PyYAML
 python-telegram-bot
 redis
 asgi-correlation-id
