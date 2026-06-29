@@ -24,6 +24,7 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
         "gpu-177-gpu1-ltx_video",
         "gpu-252-gpu0-pornmaster_flux2_edit",
         "gpu-252-gpu1-wan22_video_v2",
+        "gpu-002-gpu1-image_to_video",
     ]
     assert slots["gpu-177-gpu0-image_to_video"].legacy_worker_id == "cloud_prod_worker_02"
     assert slots["gpu-177-gpu0-image_to_video"].target_profile_id == "wan22_video_v2"
@@ -36,6 +37,18 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
         "lan_aio_prod_gpu252_gpu0_img2img_lora_01"
     )
     assert slots["gpu-252-gpu1-wan22_video_v2"].host_port == 8191
+    assert slots["gpu-002-gpu1-image_to_video"].agent_id == (
+        "lan_aio_prod_gpu002_gpu1_image_to_video_01"
+    )
+    assert slots["gpu-002-gpu1-image_to_video"].legacy_worker_id == (
+        "cloud_prod_worker_07"
+    )
+    assert slots["gpu-002-gpu1-image_to_video"].old_runtime_container == "comfy1"
+    assert slots["gpu-002-gpu1-image_to_video"].target_task_types == (
+        "video_insert",
+        "video_edit",
+        "image_to_video",
+    )
 
 
 def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
@@ -50,6 +63,9 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
     assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].enabled is False
     assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].phase == (
         "superseded_by_image_to_video"
+    )
+    assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].legacy_worker_id == (
+        "lan_aio_prod_gpu002_gpu1_image_to_video_01"
     )
     config = load_controller_config()
     assert (
@@ -80,6 +96,19 @@ def test_lan_aio_prod_slot_declares_gpu252_host_rife_hot_cache_copy():
         "/default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth",
         "/default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth",
     )
+
+
+def test_lan_aio_prod_slot_declares_gpu002_image_to_video_hot_cache_copy():
+    slot = load_lan_aio_prod_slots()["gpu-002-gpu1-image_to_video"]
+
+    assert len(slot.legacy_hot_cache_copies) == 1
+    hot_cache = slot.legacy_hot_cache_copies[0]
+    assert hot_cache.source_container == "__host__"
+    assert hot_cache.source_path == (
+        "/data/comfy/inst1/custom_nodes/ComfyUI_Fill-Nodes/"
+        "nodes/cache/rife_models/rife49.pth"
+    )
+    assert hot_cache.required is True
 
 
 def test_lan_aio_fleet_render_patches_remote_workers_mount_for_gpu_252():
@@ -331,6 +360,44 @@ def test_lan_aio_remote_status_matches_container_lines_with_status_suffix():
     assert f"^{slot.old_runtime_container}$" not in ops.command
 
 
+def test_lan_aio_remote_shell_commands_are_noninteractive():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.commands: list[list[str]] = []
+
+        def _local(
+            self,
+            cmd: list[str],
+            *,
+            capture: bool = False,
+            input_text: str | None = None,
+            extra_env: dict[str, str] | None = None,
+        ) -> str:
+            self.commands.append(cmd)
+            return ""
+
+    ops = RecordingOps()
+
+    ops._ssh("allbot-gpu-002", "hostname", capture=True)
+    ops._scp(Path("/tmp/local.env"), "allbot-gpu-002", "/tmp/remote.env")
+
+    for command in ops.commands:
+        assert "-o" in command
+        assert "BatchMode=yes" in command
+        assert "ConnectTimeout=10" in command
+        assert "StrictHostKeyChecking=accept-new" in command
+    assert ops.commands[0][:2] == ["ssh", "-o"]
+    assert ops.commands[0][-2:] == ["allbot-gpu-002", "hostname"]
+    assert ops.commands[1][:2] == ["scp", "-o"]
+    assert ops.commands[1][-2:] == ["/tmp/local.env", "allbot-gpu-002:/tmp/remote.env"]
+
+
 def test_lan_aio_enable_rejects_old_runtime_gpu_memory():
     class RecordingOps(LanAioProdOps):
         def __init__(self):
@@ -502,6 +569,137 @@ def test_lan_aio_warm_cache_runs_one_off_model_sync_without_agent_or_ports():
     assert ops.marker is not None
     assert ops.marker["profile"] == "pornmaster_flux2_edit"
     assert ops.marker["physical_slot_key"] == "gpu-252:gpu0"
+
+
+def test_lan_aio_takeover_runs_single_slot_sequence():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.events: list[str] = []
+
+        def preflight_payload(self, slots, *, execute: bool = False):
+            self.events.append(f"preflight:{execute}")
+            return {"ok": True, "action": "preflight"}
+
+        def pull_image(self, slots):
+            self.events.append("pull-image")
+            return {"ok": True, "action": "pull-image"}
+
+        def warm_cache(self, slots):
+            self.events.append("warm-cache")
+            return {"ok": True, "action": "warm-cache"}
+
+        def drain_legacy(self, slots):
+            self.events.append("drain-legacy")
+            return {"ok": True, "action": "drain-legacy"}
+
+        def wait_idle(self, slots):
+            self.events.append("wait-idle")
+            return {"ok": True, "action": "wait-idle"}
+
+        def stop_old(self, slots):
+            self.events.append("stop-old")
+            return {"ok": True, "action": "stop-old"}
+
+        def start_disabled(self, slots):
+            self.events.append("start-disabled")
+            return {"ok": True, "action": "start-disabled"}
+
+        def enable_aio(self, slots):
+            self.events.append("enable-aio")
+            return {"ok": True, "action": "enable-aio"}
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-002-gpu1-pornmaster_flux2_edit"]
+
+    result = ops.takeover([slot])
+
+    assert result["ok"] is True
+    assert result["action"] == "takeover"
+    assert result["slot"] == "gpu-002-gpu1-pornmaster_flux2_edit"
+    assert [step["action"] for step in result["steps"]] == [
+        "preflight",
+        "pull-image",
+        "warm-cache",
+        "drain-legacy",
+        "wait-idle",
+        "stop-old",
+        "start-disabled",
+        "enable-aio",
+    ]
+    assert ops.events == [
+        "preflight:True",
+        "pull-image",
+        "warm-cache",
+        "drain-legacy",
+        "wait-idle",
+        "stop-old",
+        "start-disabled",
+        "enable-aio",
+    ]
+
+
+def test_lan_aio_takeover_stops_after_failed_preflight(capsys):
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.events: list[str] = []
+
+        def preflight_payload(self, slots, *, execute: bool = False):
+            self.events.append("preflight")
+            return {
+                "ok": False,
+                "action": "preflight",
+                "checks": [{"name": "lan_registry_health", "ok": False}],
+            }
+
+        def pull_image(self, slots):
+            self.events.append("pull-image")
+            return {"ok": True, "action": "pull-image"}
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-002-gpu1-pornmaster_flux2_edit"]
+
+    with pytest.raises(RuntimeError, match="preflight failed"):
+        ops.takeover([slot])
+
+    assert ops.events == ["preflight"]
+    output = capsys.readouterr().out
+    assert "[lan-aio-takeover] preflight failed" in output
+    assert "lan_registry_health" in output
+
+
+def test_lan_aio_takeover_dry_run_shows_full_sequence():
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+    slot = ops.slots["gpu-002-gpu1-pornmaster_flux2_edit"]
+
+    payload = ops.dry_run_action("takeover", [slot])
+
+    assert payload["operations"][:8] == [
+        "run preflight for gpu-002-gpu1-pornmaster_flux2_edit",
+        "run pull-image for gpu-002-gpu1-pornmaster_flux2_edit",
+        "run warm-cache for gpu-002-gpu1-pornmaster_flux2_edit",
+        "run drain-legacy for gpu-002-gpu1-pornmaster_flux2_edit",
+        "run wait-idle for gpu-002-gpu1-pornmaster_flux2_edit",
+        "run stop-old for gpu-002-gpu1-pornmaster_flux2_edit",
+        "run start-disabled for gpu-002-gpu1-pornmaster_flux2_edit",
+        "run enable-aio for gpu-002-gpu1-pornmaster_flux2_edit",
+    ]
 
 
 def test_lan_aio_restart_disables_restarts_and_reenables_slot():

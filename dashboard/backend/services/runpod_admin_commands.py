@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -99,6 +100,144 @@ class RunPodAdminCommandBuilder:
             ),
         )
 
+    def lan_aio_execution_mode(self) -> str:
+        mode = os.getenv("DASHBOARD_LAN_AIO_EXECUTION_MODE", "local").strip().lower()
+        if mode in {"", "local"}:
+            return "local"
+        if mode in {"ssh", "remote-ssh", "lan-runner"}:
+            return "ssh"
+        raise HTTPException(
+            status_code=500,
+            detail=f"unsupported DASHBOARD_LAN_AIO_EXECUTION_MODE: {mode}",
+        )
+
+    def lan_aio_runner_host(self) -> str:
+        host = os.getenv("DASHBOARD_LAN_AIO_RUNNER_HOST", "").strip()
+        if not host:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "LAN AIO runner host is not configured; set "
+                    "DASHBOARD_LAN_AIO_RUNNER_HOST for ssh execution mode"
+                ),
+            )
+        return host
+
+    def lan_aio_runner_project_root(self) -> str:
+        return os.getenv(
+            "DASHBOARD_LAN_AIO_RUNNER_PROJECT_ROOT",
+            str(self.project_root),
+        ).strip()
+
+    def lan_aio_runner_path(self, env_name: str, relative_path: str) -> str:
+        configured = os.getenv(env_name, "").strip()
+        if configured:
+            return configured
+        return str(Path(self.lan_aio_runner_project_root()) / relative_path)
+
+    def lan_aio_runner_ops_script(self) -> str:
+        return self.lan_aio_runner_path(
+            "DASHBOARD_LAN_AIO_RUNNER_OPS_SCRIPT",
+            "scripts/lan_aio_fleet_prod_ops.py",
+        )
+
+    def lan_aio_runner_prod_env_file(self) -> str:
+        return self.lan_aio_runner_path(
+            "DASHBOARD_LAN_AIO_RUNNER_PROD_ENV_FILE",
+            ".env.cloud.prod",
+        )
+
+    def lan_aio_runner_aio_env_file(self) -> str:
+        return self.lan_aio_runner_path(
+            "DASHBOARD_LAN_AIO_RUNNER_AIO_ENV_FILE",
+            ".env.lan-aio-prod",
+        )
+
+    def lan_aio_runner_model_env_file(self) -> str:
+        return self.lan_aio_runner_path(
+            "DASHBOARD_LAN_AIO_RUNNER_MODEL_ENV_FILE",
+            ".env.lan.model-cache",
+        )
+
+    def lan_aio_runner_ssh_base_command(self) -> list[str]:
+        configured = os.getenv("DASHBOARD_LAN_AIO_RUNNER_SSH_COMMAND", "").strip()
+        command = shlex.split(configured) if configured else ["ssh"]
+        command.extend(
+            [
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "ConnectTimeout=10",
+                "-o",
+                "ServerAliveInterval=15",
+                "-o",
+                "ServerAliveCountMax=2",
+                "-o",
+                "StrictHostKeyChecking=accept-new",
+            ]
+        )
+        return command
+
+    def lan_aio_runner_env_exports(self) -> list[str]:
+        exports: list[str] = []
+        for env_name, remote_names in (
+            (
+                "DASHBOARD_LAN_AIO_RUNNER_HTTP_PROXY",
+                ("http_proxy", "HTTP_PROXY"),
+            ),
+            (
+                "DASHBOARD_LAN_AIO_RUNNER_HTTPS_PROXY",
+                ("https_proxy", "HTTPS_PROXY"),
+            ),
+            (
+                "DASHBOARD_LAN_AIO_RUNNER_ALL_PROXY",
+                ("all_proxy", "ALL_PROXY"),
+            ),
+            (
+                "DASHBOARD_LAN_AIO_RUNNER_NO_PROXY",
+                ("no_proxy", "NO_PROXY"),
+            ),
+        ):
+            value = os.getenv(env_name, "").strip()
+            if not value:
+                continue
+            for remote_name in remote_names:
+                exports.append(f"export {remote_name}={shlex.quote(value)}")
+        return exports
+
+    def wrap_lan_aio_runner_command(self, command: list[str]) -> list[str]:
+        if self.lan_aio_execution_mode() == "local":
+            return command
+
+        remote_root = self.lan_aio_runner_project_root()
+        remote_args = [
+            "python3",
+            self.lan_aio_runner_ops_script(),
+            command[2],
+            "--slot",
+            command[command.index("--slot") + 1],
+            "--include-disabled",
+            "--prod-env-file",
+            self.lan_aio_runner_prod_env_file(),
+            "--aio-env-file",
+            self.lan_aio_runner_aio_env_file(),
+            "--model-env-file",
+            self.lan_aio_runner_model_env_file(),
+            "--execute",
+        ]
+        remote_command = " && ".join(
+            [
+                *self.lan_aio_runner_env_exports(),
+                f"cd {shlex.quote(remote_root)}",
+                " ".join(shlex.quote(part) for part in remote_args),
+            ]
+        )
+        return [
+            *self.lan_aio_runner_ssh_base_command(),
+            self.lan_aio_runner_host(),
+            f"bash -lc {shlex.quote(remote_command)}",
+        ]
+
     def base_command(
         self,
         action: str,
@@ -136,6 +275,7 @@ class RunPodAdminCommandBuilder:
             "warm-cache",
             "drain-legacy",
             "wait-idle",
+            "takeover",
             "stop-old",
             "start-disabled",
             "enable-aio",
@@ -144,7 +284,7 @@ class RunPodAdminCommandBuilder:
         }
         if action not in supported_actions:
             raise ValueError(f"unsupported LAN AIO action: {action}")
-        return [
+        command = [
             "python3",
             self.lan_aio_ops_script(),
             action,
@@ -159,6 +299,7 @@ class RunPodAdminCommandBuilder:
             self.lan_aio_model_env_file(),
             "--execute",
         ]
+        return self.wrap_lan_aio_runner_command(command)
 
     def default_prod_max_manual_slots(self) -> int:
         raw = os.getenv("RUNPOD_PROD_MAX_MANUAL_SLOTS", "").strip()

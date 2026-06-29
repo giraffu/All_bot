@@ -223,6 +223,7 @@ describe('LanAioFleetManager', () => {
     expect(wrapper.text()).toContain('预检')
     expect(wrapper.text()).toContain('预热模型')
     expect(wrapper.text()).toContain('启用接单')
+    expect(wrapper.text()).toContain('一键切换')
   })
 
   it('submits the selected step action for one slot', async () => {
@@ -243,6 +244,27 @@ describe('LanAioFleetManager', () => {
       'gpu-252-gpu0-pornmaster_flux2_edit',
       'warm-cache',
       { reason: 'dashboard lan aio warm-cache' }
+    )
+  })
+
+  it('submits a guarded takeover action for one slot', async () => {
+    const wrapper = mountLanAioFleetManager()
+
+    await wrapper.get('button').trigger('click')
+    await flushPromises()
+
+    const takeoverButton = wrapper
+      .findAll('button')
+      .find(button => button.text().includes('一键切换'))
+    expect(takeoverButton).toBeTruthy()
+    await takeoverButton?.trigger('click')
+    await flushPromises()
+
+    expect(antMocks.confirm).toHaveBeenCalled()
+    expect(apiMocks.startLanAioSlotAction).toHaveBeenCalledWith(
+      'gpu-252-gpu0-pornmaster_flux2_edit',
+      'takeover',
+      { reason: 'dashboard lan aio takeover' }
     )
   })
 

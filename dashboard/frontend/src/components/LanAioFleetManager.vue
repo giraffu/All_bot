@@ -116,6 +116,7 @@ type LanAioActionKey =
   | 'warm-cache'
   | 'drain-legacy'
   | 'wait-idle'
+  | 'takeover'
   | 'stop-old'
   | 'start-disabled'
   | 'enable-aio'
@@ -132,6 +133,7 @@ const emit = defineEmits<{
 }>()
 
 const slotActions: LanAioAction[] = [
+  { key: 'takeover', label: '一键切换', danger: true, icon: 'enable' },
   { key: 'preflight', label: '预检', icon: 'preflight' },
   { key: 'pull-image', label: '拉镜像', icon: 'pull' },
   { key: 'warm-cache', label: '预热模型', icon: 'warm' },

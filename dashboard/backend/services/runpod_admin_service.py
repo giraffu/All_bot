@@ -326,6 +326,7 @@ LAN_AIO_SLOT_ACTIONS: dict[str, tuple[str, str]] = {
     "warm-cache": ("warm-cache", "lan-aio-warm-cache"),
     "drain-legacy": ("drain-legacy", "lan-aio-drain-legacy"),
     "wait-idle": ("wait-idle", "lan-aio-wait-idle"),
+    "takeover": ("takeover", "lan-aio-takeover"),
     "stop-old": ("stop-old", "lan-aio-stop-old"),
     "start-disabled": ("start-disabled", "lan-aio-start-disabled"),
     "enable-aio": ("enable-aio", "lan-aio-enable"),

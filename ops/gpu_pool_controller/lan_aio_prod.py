@@ -30,6 +30,28 @@ DEFAULT_MODEL_CACHE_HEALTH_URL = "http://192.168.1.115:9010/minio/health/ready"
 REMOTE_WORKERS_TARGET_DIR = "/workspace/allbot/remote_workers"
 CONTROL_TTL_SECONDS = 3600
 WARM_CACHE_MARKER_FILE = "model-cache-marker.json"
+TAKEOVER_STEPS = (
+    "preflight",
+    "pull-image",
+    "warm-cache",
+    "drain-legacy",
+    "wait-idle",
+    "stop-old",
+    "start-disabled",
+    "enable-aio",
+)
+SSH_BATCH_OPTIONS = (
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=10",
+    "-o",
+    "ServerAliveInterval=15",
+    "-o",
+    "ServerAliveCountMax=2",
+    "-o",
+    "StrictHostKeyChecking=accept-new",
+)
 
 ENV_ALLOWLIST = {
     "AGENT_SECRET_TOKEN",
@@ -500,7 +522,11 @@ class LanAioProdOps:
     def dry_run_action(self, action: str, slots: list[LanAioProdSlot]) -> dict[str, Any]:
         operations: list[str] = []
         for slot in slots:
-            if action == "configure-registry":
+            if action == "takeover":
+                operations.extend(
+                    f"run {step} for {slot.id}" for step in TAKEOVER_STEPS
+                )
+            elif action == "configure-registry":
                 operations.extend(
                     [
                         f"backup {slot.ssh_host}:/etc/docker/daemon.json",
@@ -805,6 +831,39 @@ class LanAioProdOps:
             if slot.old_local_agent_container:
                 self._local(["docker", "stop", slot.old_local_agent_container], capture=True)
         return {"ok": True, "action": "stop-old", "slots": [slot.id for slot in slots]}
+
+    def takeover(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
+        if len(slots) != 1:
+            raise RuntimeError("takeover requires exactly one --slot")
+        slot = slots[0]
+        results: list[dict[str, Any]] = []
+
+        print(f"[lan-aio-takeover] preflight started for {slot.id}", flush=True)
+        preflight = self.preflight_payload([slot], execute=True)
+        results.append({"action": "preflight", "payload": preflight})
+        if not preflight.get("ok"):
+            print(
+                "[lan-aio-takeover] preflight failed "
+                + json.dumps(preflight, ensure_ascii=False, separators=(",", ":")),
+                flush=True,
+            )
+            raise RuntimeError(f"takeover preflight failed for {slot.id}")
+
+        step_handlers = (
+            ("pull-image", self.pull_image),
+            ("warm-cache", self.warm_cache),
+            ("drain-legacy", self.drain_legacy),
+            ("wait-idle", self.wait_idle),
+            ("stop-old", self.stop_old),
+            ("start-disabled", self.start_disabled),
+            ("enable-aio", self.enable_aio),
+        )
+        for action, handler in step_handlers:
+            print(f"[lan-aio-takeover] {action} started for {slot.id}", flush=True)
+            payload = handler([slot])
+            results.append({"action": action, "payload": payload})
+
+        return {"ok": True, "action": "takeover", "slot": slot.id, "steps": results}
 
     def _system_workers(self) -> list[dict[str, Any]]:
         payload = self._json_get(f"{self.central_url}/system/workers")
@@ -1358,10 +1417,13 @@ docker exec "{slot.container_name}" bash -lc "curl -fsS http://127.0.0.1:8013/re
         raise TimeoutError(f"timed out waiting for disabled heartbeat from {slot.agent_id}")
 
     def _ssh(self, host: str, command: str, *, capture: bool = False) -> str:
-        return self._local(["ssh", host, command], capture=capture)
+        return self._local(["ssh", *SSH_BATCH_OPTIONS, host, command], capture=capture)
 
     def _scp(self, source: Path, host: str, remote_path: str) -> None:
-        self._local(["scp", str(source), f"{host}:{remote_path}"], capture=True)
+        self._local(
+            ["scp", *SSH_BATCH_OPTIONS, str(source), f"{host}:{remote_path}"],
+            capture=True,
+        )
 
     def _local(
         self,
@@ -1467,6 +1529,7 @@ def build_parser() -> argparse.ArgumentParser:
             "warm-cache",
             "drain-legacy",
             "wait-idle",
+            "takeover",
             "start-disabled",
             "enable-aio",
             "drain-aio",
@@ -1540,6 +1603,8 @@ def main(argv: list[str] | None = None) -> int:
         payload = ops.drain_legacy(slots)
     elif args.action == "wait-idle":
         payload = ops.wait_idle(slots)
+    elif args.action == "takeover":
+        payload = ops.takeover(slots)
     elif args.action == "start-disabled":
         payload = ops.start_disabled(slots)
     elif args.action == "enable-aio":

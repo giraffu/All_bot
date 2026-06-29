@@ -1,4 +1,5 @@
 from pathlib import Path
+import shlex
 
 import pytest
 from fastapi import HTTPException
@@ -127,6 +128,141 @@ def test_lan_aio_action_command_supports_warm_cache(monkeypatch, tmp_path):
     )
     assert "--include-disabled" in command
     assert "--execute" in command
+
+
+def test_lan_aio_action_command_supports_takeover(monkeypatch, tmp_path):
+    builder = RunPodAdminCommandBuilder(project_root=tmp_path)
+    monkeypatch.setenv("DASHBOARD_RUNPOD_CONTAINER_ENV_FILE", str(tmp_path / "env"))
+
+    command = builder.lan_aio_action_command(
+        "takeover",
+        "gpu-002-gpu1-pornmaster_flux2_edit",
+    )
+
+    assert command[:3] == [
+        "python3",
+        str(tmp_path / "scripts" / "lan_aio_fleet_prod_ops.py"),
+        "takeover",
+    ]
+    assert command[command.index("--slot") + 1] == (
+        "gpu-002-gpu1-pornmaster_flux2_edit"
+    )
+    assert "--include-disabled" in command
+    assert "--execute" in command
+
+
+def test_lan_aio_action_command_can_run_on_lan_runner_over_ssh(monkeypatch, tmp_path):
+    builder = RunPodAdminCommandBuilder(project_root=tmp_path)
+    monkeypatch.setenv("DASHBOARD_LAN_AIO_EXECUTION_MODE", "ssh")
+    monkeypatch.setenv("DASHBOARD_LAN_AIO_RUNNER_HOST", "hfy@100.99.254.53")
+    monkeypatch.setenv(
+        "DASHBOARD_LAN_AIO_RUNNER_PROJECT_ROOT",
+        "/home/hfy/APP/All_bot",
+    )
+    monkeypatch.delenv("DASHBOARD_LAN_AIO_RUNNER_PROD_ENV_FILE", raising=False)
+    monkeypatch.delenv("DASHBOARD_LAN_AIO_RUNNER_AIO_ENV_FILE", raising=False)
+    monkeypatch.delenv("DASHBOARD_LAN_AIO_RUNNER_MODEL_ENV_FILE", raising=False)
+
+    command = builder.lan_aio_action_command(
+        "takeover",
+        "gpu-002-gpu1-pornmaster_flux2_edit",
+    )
+
+    assert command[:10] == [
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "ServerAliveInterval=15",
+        "-o",
+        "ServerAliveCountMax=2",
+        "-o",
+    ]
+    assert command[10] == "StrictHostKeyChecking=accept-new"
+    assert command[11] == "hfy@100.99.254.53"
+    remote_command = command[12]
+    assert remote_command.startswith("bash -lc ")
+    remote_script = shlex.split(shlex.split(remote_command)[2])
+    assert remote_script[:4] == [
+        "cd",
+        "/home/hfy/APP/All_bot",
+        "&&",
+        "python3",
+    ]
+    assert remote_script[4:7] == [
+        "/home/hfy/APP/All_bot/scripts/lan_aio_fleet_prod_ops.py",
+        "takeover",
+        "--slot",
+    ]
+    assert "gpu-002-gpu1-pornmaster_flux2_edit" in remote_script
+    assert "/home/hfy/APP/All_bot/.env.cloud.prod" in remote_script
+    assert "/home/hfy/APP/All_bot/.env.lan-aio-prod" in remote_script
+    assert "/home/hfy/APP/All_bot/.env.lan.model-cache" in remote_script
+    assert "--execute" in remote_script
+
+
+def test_lan_aio_action_command_requires_runner_host_for_ssh_mode(
+    monkeypatch,
+    tmp_path,
+):
+    builder = RunPodAdminCommandBuilder(project_root=tmp_path)
+    monkeypatch.setenv("DASHBOARD_LAN_AIO_EXECUTION_MODE", "ssh")
+    monkeypatch.delenv("DASHBOARD_LAN_AIO_RUNNER_HOST", raising=False)
+
+    with pytest.raises(HTTPException) as exc_info:
+        builder.lan_aio_action_command("takeover", "gpu-002-gpu1-pornmaster_flux2_edit")
+
+    assert exc_info.value.status_code == 503
+    assert "LAN AIO runner host is not configured" in exc_info.value.detail
+
+
+def test_lan_aio_runner_command_exports_configured_proxy_env(
+    monkeypatch,
+    tmp_path,
+):
+    builder = RunPodAdminCommandBuilder(project_root=tmp_path)
+    monkeypatch.setenv("DASHBOARD_LAN_AIO_EXECUTION_MODE", "ssh")
+    monkeypatch.setenv("DASHBOARD_LAN_AIO_RUNNER_HOST", "hfy@100.99.254.53")
+    monkeypatch.setenv("DASHBOARD_LAN_AIO_RUNNER_PROJECT_ROOT", "/home/hfy/APP/All_bot")
+    monkeypatch.setenv(
+        "DASHBOARD_LAN_AIO_RUNNER_HTTP_PROXY",
+        "http://127.0.0.1:7890",
+    )
+    monkeypatch.setenv(
+        "DASHBOARD_LAN_AIO_RUNNER_HTTPS_PROXY",
+        "http://127.0.0.1:7890",
+    )
+    monkeypatch.setenv(
+        "DASHBOARD_LAN_AIO_RUNNER_ALL_PROXY",
+        "http://127.0.0.1:7890",
+    )
+    monkeypatch.setenv(
+        "DASHBOARD_LAN_AIO_RUNNER_NO_PROXY",
+        "127.0.0.1,localhost,192.168.1.115,192.168.1.2",
+    )
+
+    command = builder.lan_aio_action_command(
+        "preflight",
+        "gpu-002-gpu1-pornmaster_flux2_edit",
+    )
+
+    remote_command = shlex.split(command[-1])[2]
+    assert "export http_proxy=http://127.0.0.1:7890" in remote_command
+    assert "export HTTP_PROXY=http://127.0.0.1:7890" in remote_command
+    assert "export https_proxy=http://127.0.0.1:7890" in remote_command
+    assert "export HTTPS_PROXY=http://127.0.0.1:7890" in remote_command
+    assert "export all_proxy=http://127.0.0.1:7890" in remote_command
+    assert "export ALL_PROXY=http://127.0.0.1:7890" in remote_command
+    assert (
+        "export no_proxy=127.0.0.1,localhost,192.168.1.115,192.168.1.2"
+        in remote_command
+    )
+    assert (
+        "export NO_PROXY=127.0.0.1,localhost,192.168.1.115,192.168.1.2"
+        in remote_command
+    )
 
 
 def test_operation_env_opens_mutation_gates_and_drops_legacy_limits(monkeypatch):

@@ -149,6 +149,14 @@ async def test_lan_aio_slots_payload_groups_enabled_and_disabled_candidates(monk
     assert "gpu-252-gpu0-pornmaster_flux2_edit" in gpu252_slots
     assert gpu252_slots["gpu-252-gpu0-img2img_lora"]["slot"]["enabled"] is False
     assert gpu252_slots["gpu-252-gpu0-pornmaster_flux2_edit"]["model_cache"]["status"] == "ready"
+    gpu002_slots = {
+        item["slot"]["id"]: item
+        for item in groups["gpu-002:gpu1"]["slots"]
+    }
+    assert "gpu-002-gpu1-image_to_video" in gpu002_slots
+    assert "gpu-002-gpu1-pornmaster_flux2_edit" in gpu002_slots
+    assert gpu002_slots["gpu-002-gpu1-image_to_video"]["slot"]["enabled"] is True
+    assert gpu002_slots["gpu-002-gpu1-pornmaster_flux2_edit"]["slot"]["enabled"] is False
 
 
 @pytest.mark.asyncio
@@ -566,6 +574,35 @@ async def test_lan_aio_slot_action_builds_operation_and_locks_physical_slot():
 
     assert exc_info.value.status_code == 409
     assert "gpu-252:gpu0" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_lan_aio_takeover_action_builds_single_slot_operation():
+    payload = await runpod_admin_service.start_lan_aio_slot_action_payload(
+        slot_id="gpu-002-gpu1-pornmaster_flux2_edit",
+        action="takeover",
+        request=LanAioSlotActionRequest(),
+        spawn_task_func=_discard_operation_coroutine,
+    )
+
+    operation = payload["operation"]
+    command = operation["command"]
+    assert operation["status"] == "pending"
+    assert operation["action"] == "lan-aio-takeover"
+    assert operation["profile"] == "pornmaster_flux2_edit"
+    assert operation["slot"] == "gpu-002-gpu1-pornmaster_flux2_edit"
+    assert operation["active_lan_aio_slot"] == "gpu-002:gpu1"
+    assert operation["trigger_reason"] == "dashboard lan-aio-takeover"
+    assert command[:3] == [
+        "python3",
+        str(runpod_admin_service.PROJECT_ROOT / "scripts" / "lan_aio_fleet_prod_ops.py"),
+        "takeover",
+    ]
+    assert command[command.index("--slot") + 1] == (
+        "gpu-002-gpu1-pornmaster_flux2_edit"
+    )
+    assert "--include-disabled" in command
+    assert "--execute" in command
 
 
 @pytest.mark.asyncio
