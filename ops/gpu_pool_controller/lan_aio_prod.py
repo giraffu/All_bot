@@ -14,6 +14,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,7 @@ DEFAULT_REGISTRY_HEALTH_URL = "http://192.168.1.115:5000/v2/"
 DEFAULT_MODEL_CACHE_HEALTH_URL = "http://192.168.1.115:9010/minio/health/ready"
 REMOTE_WORKERS_TARGET_DIR = "/workspace/allbot/remote_workers"
 CONTROL_TTL_SECONDS = 3600
+WARM_CACHE_MARKER_FILE = "model-cache-marker.json"
 
 ENV_ALLOWLIST = {
     "AGENT_SECRET_TOKEN",
@@ -231,6 +233,7 @@ def slot_to_jsonable(
         "legacy_health_port": slot.legacy_health_port,
         "legacy_preflight_required": slot.legacy_preflight_required,
         "target_task_types": list(slot.target_task_types),
+        "physical_slot_key": physical_slot_key(slot),
         "legacy_hot_cache_copies": [
             {
                 "source_container": copy.source_container,
@@ -242,8 +245,16 @@ def slot_to_jsonable(
         ],
         "has_all_in_one_image": bool(profile and profile.all_in_one_image_ref),
         "all_in_one_image_ref": profile.all_in_one_image_ref if profile else None,
+        "model_prefix": profile.model_prefix if profile else None,
+        "model_manifest_key": profile.model_manifest_key if profile else None,
+        "min_vram_gb": profile.min_vram_gb if profile else None,
         "notes": slot.notes,
     }
+
+
+def physical_slot_key(slot: LanAioProdSlot) -> str:
+    gpu_label = f"gpu{slot.gpu_index}" if slot.gpu_index is not None else slot.comfy_id
+    return f"{slot.node_id}:{gpu_label}"
 
 
 def load_env_allowlist(paths: list[Path]) -> dict[str, str]:
@@ -391,6 +402,7 @@ class LanAioProdOps:
                         "aio": self._control_state(slot.agent_id),
                     },
                     "remote_containers": self._remote_container_status(slot),
+                    "model_cache": self._remote_cache_marker(slot),
                 }
             )
         return payload
@@ -500,6 +512,17 @@ class LanAioProdOps:
             elif action == "pull-image":
                 image_ref = self.config.profiles[slot.target_profile_id].all_in_one_image_ref
                 operations.append(f"ssh {slot.ssh_host} docker pull {image_ref}")
+            elif action == "warm-cache":
+                operations.extend(
+                    [
+                        f"render runtime metadata for {slot.id}",
+                        f"sync remote_workers to {slot.ssh_host}:{slot.remote_workers_dir}",
+                        f"copy model-cache env to {slot.ssh_host}:{slot.remote_env_file}",
+                        f"docker run --rm without ports or agent for {slot.target_profile_id}",
+                        f"sync {slot.target_profile_id} manifest models into the slot workspace",
+                        f"write {WARM_CACHE_MARKER_FILE} under {slot.remote_dir}",
+                    ]
+                )
             elif action == "start-disabled":
                 operations.extend(
                     [
@@ -666,6 +689,38 @@ class LanAioProdOps:
             pulled.append({"slot": slot.id, "image_ref": image_ref, "status": "pulled"})
         return {"ok": True, "action": "pull-image", "pulled": pulled}
 
+    def warm_cache(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
+        if len(slots) != 1:
+            raise RuntimeError("warm-cache requires exactly one --slot")
+        slot = slots[0]
+        metadata = self._runtime_metadata(slot)
+        image_ref = str(metadata.get("image_ref") or "")
+        if not image_ref:
+            raise RuntimeError(f"profile {slot.target_profile_id} has no image_ref")
+        env_content = runtime_env_content(self.env_values)
+        self._sync_remote_workers(slot)
+        with tempfile.TemporaryDirectory() as tmp:
+            env_file = Path(tmp) / ".env.lan-aio-prod"
+            env_file.write_text(env_content, encoding="utf-8")
+            self._ssh(slot.ssh_host, f"mkdir -p '{slot.remote_dir}' && chmod 700 '{slot.remote_dir}'")
+            self._scp(env_file, slot.ssh_host, slot.remote_env_file)
+            self._ssh(slot.ssh_host, f"chmod 600 '{slot.remote_env_file}'")
+        self._ssh(slot.ssh_host, self._warm_cache_command(slot, metadata))
+        marker = {
+            "ok": True,
+            "slot": slot.id,
+            "physical_slot_key": physical_slot_key(slot),
+            "profile": slot.target_profile_id,
+            "image_ref": image_ref,
+            "model_cache_bucket": metadata.get("model_cache_bucket"),
+            "model_prefix": metadata.get("model_prefix"),
+            "model_manifest_key": metadata.get("model_manifest_key"),
+            "workspace_host_dir": metadata.get("workspace_host_dir"),
+            "synced_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self._write_cache_marker(slot, marker)
+        return {"ok": True, "action": "warm-cache", "slot": slot.id, "model_cache": marker}
+
     def wait_idle(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
         targets = {slot.legacy_worker_id for slot in slots}
         deadline = time.time() + 7200
@@ -754,6 +809,128 @@ class LanAioProdOps:
     def _system_workers(self) -> list[dict[str, Any]]:
         payload = self._json_get(f"{self.central_url}/system/workers")
         return [item for item in payload.get("workers", []) if isinstance(item, dict)]
+
+    def _runtime_metadata(self, slot: LanAioProdSlot) -> dict[str, Any]:
+        try:
+            import yaml  # type: ignore
+        except Exception as exc:  # pragma: no cover
+            raise RuntimeError("LAN AIO runtime metadata requires PyYAML") from exc
+        rendered = self.render_compose(slot)
+        payload = yaml.safe_load(rendered) or {}
+        metadata = payload.get("x-allbot-runtime")
+        if not isinstance(metadata, dict):
+            raise RuntimeError(f"rendered compose missing x-allbot-runtime for {slot.id}")
+        return metadata
+
+    def _warm_cache_container_name(self, slot: LanAioProdSlot) -> str:
+        return f"allbot-lan-aio-cache-{_sanitize(slot.id).lower()}"
+
+    def _warm_cache_command(
+        self,
+        slot: LanAioProdSlot,
+        metadata: dict[str, Any],
+    ) -> str:
+        workspace_host_dir = str(metadata["workspace_host_dir"])
+        model_target_dir = str(metadata["model_target_dir"])
+        image_ref = str(metadata["image_ref"])
+        container_name = self._warm_cache_container_name(slot)
+        inner_script = "\n".join(
+            [
+                "set -euo pipefail",
+                f"remote_root={shlex.quote(REMOTE_WORKERS_TARGET_DIR)}",
+                'export RUNPOD_MODEL_ACCESS_KEY="${RUNPOD_MODEL_ACCESS_KEY:-${LAN_MODEL_CACHE_ACCESS_KEY:-}}"',
+                'export RUNPOD_MODEL_SECRET_KEY="${RUNPOD_MODEL_SECRET_KEY:-${LAN_MODEL_CACHE_SECRET_KEY:-}}"',
+                'test -n "${RUNPOD_MODEL_ACCESS_KEY:-}"',
+                'test -n "${RUNPOD_MODEL_SECRET_KEY:-}"',
+                'mkdir -p "${RUNPOD_MODEL_TARGET_DIR:?}"',
+                (
+                    'python3 - <<\'PY\' || '
+                    'python3 -m pip install --no-cache-dir -r "$remote_root/requirements.txt"\n'
+                    "import minio\n"
+                    "PY"
+                ),
+                (
+                    'python3 "$remote_root/scripts/runpod_sync_models_from_r2.py" '
+                    '--bucket "$RUNPOD_MODEL_BUCKET" '
+                    '--prefix "$RUNPOD_MODEL_PREFIX" '
+                    '--target-dir "$RUNPOD_MODEL_TARGET_DIR"'
+                ),
+            ]
+        )
+        docker_command = [
+            "docker",
+            "run",
+            "--rm",
+            "--name",
+            container_name,
+            "--env-file",
+            slot.remote_env_file,
+            "-e",
+            f"RUNPOD_MODEL_ENDPOINT={metadata['model_cache_endpoint']}",
+            "-e",
+            f"RUNPOD_MODEL_BUCKET={metadata['model_cache_bucket']}",
+            "-e",
+            f"RUNPOD_MODEL_PREFIX={metadata['model_prefix']}",
+            "-e",
+            f"RUNPOD_MODEL_MANIFEST_KEY={metadata['model_manifest_key']}",
+            "-e",
+            f"RUNPOD_MODEL_TARGET_DIR={model_target_dir}",
+            "-e",
+            "RUNPOD_MODEL_SECURE=false",
+            "-e",
+            f"RUNPOD_REMOTE_WORKER_ROOT={REMOTE_WORKERS_TARGET_DIR}",
+            "-v",
+            f"{workspace_host_dir}:/workspace",
+            "-v",
+            f"{slot.remote_workers_dir}:{REMOTE_WORKERS_TARGET_DIR}:ro",
+            image_ref,
+            "bash",
+            "-lc",
+            inner_script,
+        ]
+        script = "\n".join(
+            [
+                "set -euo pipefail",
+                f"mkdir -p {shlex.quote(workspace_host_dir)}",
+                f"docker rm -f {shlex.quote(container_name)} >/dev/null 2>&1 || true",
+                " ".join(shlex.quote(part) for part in docker_command),
+            ]
+        )
+        return "bash -lc " + shlex.quote(script)
+
+    def _write_cache_marker(
+        self,
+        slot: LanAioProdSlot,
+        marker: dict[str, Any],
+    ) -> None:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json") as file_obj:
+            json.dump(marker, file_obj, ensure_ascii=False, indent=2)
+            file_obj.write("\n")
+            file_obj.flush()
+            self._scp(
+                Path(file_obj.name),
+                slot.ssh_host,
+                f"{slot.remote_dir}/{WARM_CACHE_MARKER_FILE}",
+            )
+
+    def _remote_cache_marker(self, slot: LanAioProdSlot) -> dict[str, Any]:
+        marker_path = f"{slot.remote_dir}/{WARM_CACHE_MARKER_FILE}"
+        try:
+            output = self._ssh(
+                slot.ssh_host,
+                f"test -f '{marker_path}' && cat '{marker_path}' || true",
+                capture=True,
+            )
+        except Exception as exc:
+            return {"status": "unavailable", "error": str(exc)}
+        if not output.strip():
+            return {"status": "missing"}
+        try:
+            payload = json.loads(output)
+        except json.JSONDecodeError:
+            return {"status": "invalid", "raw": output.strip()[:500]}
+        payload.setdefault("status", "ready" if payload.get("ok") else "unknown")
+        return payload
 
     def _control_state(self, agent_id: str) -> str:
         token = self.env_values.get("LAN_AIO_AGENT_SECRET_TOKEN") or self.env_values.get(
@@ -1287,6 +1464,7 @@ def build_parser() -> argparse.ArgumentParser:
             "preflight",
             "configure-registry",
             "pull-image",
+            "warm-cache",
             "drain-legacy",
             "wait-idle",
             "start-disabled",
@@ -1356,6 +1534,8 @@ def main(argv: list[str] | None = None) -> int:
         payload = ops.configure_registry(slots)
     elif args.action == "pull-image":
         payload = ops.pull_image(slots)
+    elif args.action == "warm-cache":
+        payload = ops.warm_cache(slots)
     elif args.action == "drain-legacy":
         payload = ops.drain_legacy(slots)
     elif args.action == "wait-idle":

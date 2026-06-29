@@ -45,8 +45,8 @@
 | :--- | :--- | :--- | :--- |
 | `gpu-226` | `allbot-gpu-226` / `192.168.1.226` | 1 x RTX 5090 | 宿主机 ComfyUI `8188` |
 | `gpu-177` | `allbot-gpu-177` / `192.168.1.177` | 2 x RTX 5090 | 正式 LAN AIO `8190/8191` only；旧 `comfy0/comfy1` 与本地主 agent 2/3 已退役删除 |
-| `gpu-252` | `allbot-gpu-252` / `192.168.1.252` | 1 x RTX 4090 48G active | 正式 LAN AIO GPU0 `8190` 承载 `img2img/img2img_lora`；故障 RTX 4090 已拆除，GPU1 `wan22_video_v2` 本地 AIO 当前 maintenance disabled，RunPod 兜底；旧 `comfy0/comfy1` stopped rollback |
-| `gpu-002` | `allbot-gpu-002` / `192.168.1.2` | 2 x RTX 4090 48G | 正式 LAN AIO slot0 SCAIL-2 `8190` + slot1 image_to_video `8191`；旧 `comfy0/comfy1` stopped rollback |
+| `gpu-252` | `allbot-gpu-252` / `192.168.1.252` | 1 x RTX 4090 48G active | 正式 LAN AIO GPU0 PornMaster Flux2 edit `8192`；旧 `img2img_lora` AIO stopped rollback；故障 RTX 4090 已拆除，GPU1 `wan22_video_v2` 本地 AIO 当前 maintenance disabled，RunPod 兜底 |
+| `gpu-002` | `allbot-gpu-002` / `192.168.1.2` | 2 x RTX 4090 48G | 正式 LAN AIO slot0 SCAIL-2 `8190` + slot1 image_to_video `8191`；PornMaster Flux2 edit AIO stopped rollback，旧 `comfy0/comfy1` stopped rollback |
 
 必须分清两层运行态：
 
@@ -166,7 +166,7 @@ scripts/lan_runpod_aio_canary.sh --action restore --dry-run
 
 `start-heartbeat --execute` 会先把临时 agent control 设为 `disabled`，再把 compose/env 推到 `allbot-gpu-002` 并启动 canary 容器；不会放开接单。`enable-canary --execute` 只允许在真实 Web canary 窗口内临时 disable `cloud_worker_test_06` 并 enable 临时 agent；结束后必须执行 `restore --execute`，恢复旧 worker 并停止 canary 容器。失败现场需要保留容器和日志时，`restore --execute --keep-container` 只恢复 control，不停止容器。
 
-gpu-002 早期 AIO 正式日常入口是 `scripts/lan_aio_prod_ops.sh`。它只管理原固定生产接管范围：slot0 `img2img/img2img_lora` 与 slot1 `image_to_video/video_insert/video_edit`，默认 dry-run，真实动作必须显式加 `--execute`。2026-06-18 后 slot0/`8190` 已由 `scripts/lan_scail2_aio_prod.sh` 接管为正式 SCAIL-2 AIO，旧 `lan_aio_prod_ops.sh` 不再能代表 gpu-002 全局现状；slot0 当前状态以 SCAIL-2 helper 为准，slot1 `image_to_video` 仍可用旧 helper 观测。底层 `scripts/lan_runpod_aio_prod_canary.sh` 仍保留给旧 img2img_lora slot 的渲染、registry 配置、heartbeat-only、回滚和专项排障。
+gpu-002 早期 AIO 正式日常入口是 `scripts/lan_aio_prod_ops.sh`。它只管理原固定生产接管范围：slot0 `img2img/img2img_lora` 与 slot1 `image_to_video/video_insert/video_edit`，默认 dry-run，真实动作必须显式加 `--execute`。2026-06-18 后 slot0/`8190` 已由 `scripts/lan_scail2_aio_prod.sh` 接管为正式 SCAIL-2 AIO；slot1/`8191` 在 2026-06-28 短暂由 fleet 配置 `gpu-002-gpu1-pornmaster_flux2_edit` 接管，已于 2026-06-29 回切到 `lan_aio_prod_gpu002_gpu1_image_to_video_01`。因此旧 `lan_aio_prod_ops.sh` 仍可作为 slot1 image_to_video 的观测/恢复入口，但不能代表 gpu-002 slot0 的 SCAIL-2 全局现状。
 
 | 日常动作 | 命令 | 语义 |
 | :--- | :--- | :--- |
@@ -218,6 +218,7 @@ gpu-002 专用 helper 已证明 all-in-one runtime 可以在正式 Central 下�
 | `gpu-177-gpu1-ltx_video` | `cloud_prod_worker_03` | `lan_aio_prod_gpu177_gpu1_ltx_video_01` | `ltx_video` | 8191 | `prod_enabled` |
 | `gpu-252-gpu0-pornmaster_flux2_edit` | `lan_aio_prod_gpu252_gpu0_img2img_lora_01` | `lan_aio_prod_gpu252_gpu0_pornmaster_flux2_edit_01` | `pornmaster_flux2_edit` | 8192 | `prod_enabled` |
 | `gpu-252-gpu1-wan22_video_v2` | `cloud_prod_worker_05` | `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` | `wan22_video_v2` | 8191 | `maintenance_disabled` |
+| `gpu-002-gpu1-pornmaster_flux2_edit` | `lan_aio_prod_gpu002_gpu1_image_to_video_01` | `lan_aio_prod_gpu002_gpu1_pornmaster_flux2_edit_01` | `pornmaster_flux2_edit` | 8191 | `superseded_by_image_to_video` |
 
 暂缓 slot：
 - `gpu-226-gpu0-face_i2i_t2i`：当前是宿主机 ComfyUI，不是 Docker `comfy0`；需要单独的 host-service 到容器化迁移方案。
@@ -226,7 +227,7 @@ gpu-002 专用 helper 已证明 all-in-one runtime 可以在正式 Central 下�
 
 | 层级 | 已覆盖/候选能力 | 当前口径 |
 | :--- | :--- | :--- |
-| LAN AIO 正式接单 | `img2img`、`img2img_lora`、`image_to_video`（兼容 `video_insert` / `video_edit` alias）、`wan22_video_v2`、`ltx_video`、`scail2_action_transfer`、`scail2_action_transfer_long`、`scail2_video_replacement`、`scail2_face_swap_v2`、`pornmaster_flux2_single_edit`、`pornmaster_flux2_multi_edit` | `gpu-177` GPU0 渲染为 `wan22_video_v2`、GPU1 为 LTX；`gpu-252` GPU0 正式切给 PornMaster Flux2 edit，旧 `img2img_lora` AIO 保留为 rollback；SCAIL-2 由 `gpu-002` slot0 正式 AIO 承载，legacy `image_to_video` 主要由 gpu-002 slot1/外部容量承接 |
+| LAN AIO 正式接单 | `img2img`、`img2img_lora`、`image_to_video`（兼容 `video_insert` / `video_edit` alias）、`wan22_video_v2`、`ltx_video`、`scail2_action_transfer`、`scail2_action_transfer_long`、`scail2_video_replacement`、`scail2_face_swap_v2`、`pornmaster_flux2_single_edit`、`pornmaster_flux2_multi_edit` | `gpu-177` GPU0 渲染为 `wan22_video_v2`、GPU1 为 LTX；`gpu-252` GPU0 正式切给 PornMaster Flux2 edit；SCAIL-2 由 `gpu-002` slot0 正式 AIO 承载；`gpu-002` slot1 当前恢复为 `image_to_video` AIO |
 | LAN AIO canary-ready | 暂无固定常驻候选 | 后续新增 slot 仍必须逐 slot 验收，不跨节点批量 enable |
 | 有镜像但未作为 LAN AIO 正式容量 | `i2i_pro`、`t2i-pornmaster-turbo`、`face_swap` | i2i_pro 仍主要是 RunPod profile / legacy worker 口径 |
 | 暂缓 | `face_i2i_t2i` / `gpu-226` 综合能力 | 仍是 host-service runtime，需先迁成容器化 ComfyUI |
@@ -240,6 +241,7 @@ scripts/lan_aio_fleet_prod_ops.py render --slot gpu-252-gpu0-img2img_lora
 scripts/lan_aio_fleet_prod_ops.py preflight
 scripts/lan_aio_fleet_prod_ops.py configure-registry --slot gpu-252-gpu0-img2img_lora
 scripts/lan_aio_fleet_prod_ops.py pull-image --slot gpu-252-gpu0-img2img_lora
+scripts/lan_aio_fleet_prod_ops.py warm-cache --slot gpu-252-gpu0-img2img_lora --include-disabled
 scripts/lan_aio_fleet_prod_ops.py start-disabled --slot gpu-252-gpu0-img2img_lora
 scripts/lan_aio_fleet_prod_ops.py restart-aio --slot gpu-177-gpu0-image_to_video
 ```
@@ -249,10 +251,11 @@ scripts/lan_aio_fleet_prod_ops.py restart-aio --slot gpu-177-gpu0-image_to_video
 1. `preflight --execute` 只读确认正式 Central/Web、LAN registry、LAN model cache、目标旧 ComfyUI `/system_stats`/`/queue`、磁盘，以及目标节点已配置 Docker insecure registry 或已预置目标镜像。
 2. 在维护窗口内执行 `configure-registry --slot ... --execute`；该动作会重启目标 GPU 节点 Docker daemon，必须先确保目标 legacy worker drain 且队列为空。若目标用户无免密 sudo，可改用 `docker save ... | ssh ... docker load` 预置镜像，跳过 daemon restart。
 3. `pull-image --slot ... --execute` 预拉 LAN mirror 镜像。
-4. `start-disabled --slot ... --execute` 启动 AIO 容器，只等待 disabled heartbeat，不允许接单。
-5. 验收 compose 不含 `cloud-test` / `user-data-test`，Central heartbeat 必须带 `node_id`、`provider=lan_ssh`、`runtime_profile`、`pool_managed=true`；`image_to_video` / `wan22_video_v2` slot 的 `COMFY_EXTRA_ARGS` 必须包含 `--disable-dynamic-vram`。
-6. `enable-aio --slot ... --execute` 会先把 legacy worker 置为 disabled，并拒绝在 legacy 仍 running、AIO disabled heartbeat 不可见或旧 runtime 容器仍占 GPU 显存时放开 AIO，避免同卡双 ComfyUI 抢单。
-7. 灰度期可保留旧 runtime 作为热回滚；全量接管时允许在 AIO enable 前后用 `stop-old --slot ... --execute` 停旧 ComfyUI 和本地主旧 agent，但不删除容器。若用户明确放弃本地旧链路，可在确认 AIO 健康后删除旧容器、旧模型目录和旧 agent，并同步把 legacy control 固定为 `disabled`；此后该节点不得再使用 `rollback --slot ... --execute`。
+4. `warm-cache --slot ... --include-disabled --execute` 用候选 profile 的 AIO 镜像在目标 workspace 运行一次无端口、无 agent、无接单的模型同步，并写入 `model-cache-marker.json`；若模型 manifest 尚未进入 LAN model cache，应让该步骤失败暴露，不在后台临时导入任意模型。
+5. `start-disabled --slot ... --execute` 启动 AIO 容器，只等待 disabled heartbeat，不允许接单。
+6. 验收 compose 不含 `cloud-test` / `user-data-test`，Central heartbeat 必须带 `node_id`、`provider=lan_ssh`、`runtime_profile`、`pool_managed=true`；`image_to_video` / `wan22_video_v2` slot 的 `COMFY_EXTRA_ARGS` 必须包含 `--disable-dynamic-vram`。
+7. `enable-aio --slot ... --execute` 会先把 legacy worker 置为 disabled，并拒绝在 legacy 仍 running、AIO disabled heartbeat 不可见或旧 runtime 容器仍占 GPU 显存时放开 AIO，避免同卡双 ComfyUI 抢单。
+8. 灰度期可保留旧 runtime 作为热回滚；全量接管时允许在 AIO enable 前后用 `stop-old --slot ... --execute` 停旧 ComfyUI 和本地主旧 agent，但不删除容器。若用户明确放弃本地旧链路，可在确认 AIO 健康后删除旧容器、旧模型目录和旧 agent，并同步把 legacy control 固定为 `disabled`；此后该节点不得再使用 `rollback --slot ... --execute`。
 
 LAN AIO compose 固定带 `restart: unless-stopped`。AIO bootstrap/entrypoint 会同时监管 ComfyUI、relay 与 agent；任一关键进程退出都会退出容器，由 Docker restart policy 重建干净 runtime，避免 ComfyUI 子进程 OOM 后只剩 agent 心跳继续存活。手动恢复某个已接管 AIO worker 时使用 `restart-aio --slot ... --execute` 或 Dashboard worker 卡片 `重启`：它先将目标 AIO agent control 置为 `disabled`，只对该 slot 的 all-in-one compose 执行原地 `restart`，等待容器健康和 disabled heartbeat，再把目标 agent 置回 `enabled`。该动作不重启整机 Docker daemon、不触碰旧 runtime、不跨 slot 操作；若当前 worker 正在执行任务，原地重启会中断该 worker 的当前任务，后续仍需按任务终态/僵尸清理链路收口。
 
@@ -264,12 +267,14 @@ LAN AIO compose 固定带 `restart: unless-stopped`。AIO bootstrap/entrypoint �
 
 2026-06-19 `gpu-252-gpu0-img2img_lora` 从 canary-ready 转入正式 LAN AIO 接流：AIO agent `lan_aio_prod_gpu252_gpu0_img2img_lora_01` 连接正式 Central，host `8190`，按 `img2img_lora` profile 承接 `img2img` 与 `img2img_lora`。2026-06-28 起该 slot 被 `gpu-252-gpu0-pornmaster_flux2_edit` 正式替换，新的 AIO agent `lan_aio_prod_gpu252_gpu0_pornmaster_flux2_edit_01` 监听 host `8192`，只接 `pornmaster_flux2_single_edit` 与 `pornmaster_flux2_multi_edit`。旧 `img2img_lora` AIO 容器 `allbot-lan-aio-gpu-252-gpu0-img2img_lora-prod` 与 agent identity 保留为 rollback 目标，不应与新 v2 AIO 同时 enabled 或同卡占用显存。
 
+2026-06-28 `gpu-002-gpu1-pornmaster_flux2_edit` 曾通过 fleet 入口替换旧 slot1 `image_to_video` AIO。2026-06-29 已按单 slot 回切：先 drain/disable PornMaster agent，等待当前任务完成后停止 `allbot-lan-aio-gpu-002-gpu1-pornmaster-flux2-edit-prod`，再用 `scripts/lan_runpod_aio_prod_canary.sh --action start-heartbeat --slot slot1 --execute` 启动 `allbot-lan-aio-gpu-002-gpu1-image_to_video-canary`，验收 disabled heartbeat 后执行 `enable-canary --slot slot1 --execute`。当前 `lan_aio_prod_gpu002_gpu1_image_to_video_01` 在 host `8191` 接 `image_to_video` / `video_insert` / `video_edit`，`cloud_prod_worker_07` 保持 disabled，PornMaster agent/container 固定 disabled/stopped rollback；不得让两个 8191 容器或两个 GPU1 agent 同时 enabled。
+
 后续优化方向：
 - 配置阶段应区分 `prod_enabled`、`canary_ready`、`blocked_host_service_runtime`，避免已正式接管的 slot 仍被误读为 canary。
 - `wan22_video_v2` 在 `gpu-177` GPU0 与 `gpu-252` GPU1 slot 都通过 slot-level `target_task_types` 收窄为只接 `wan22_video_v2`；后续新增共享镜像 slot 时也应优先显式声明目标 task type，避免 profile 默认 alias 误接单。
 - `preflight` / `start-disabled` 需要继续强化 workflow 文件、remote_workers 挂载、模型 manifest、对象桶和 image digest 检查，减少“容器健康但工作流资产缺失”的误启用。
 - LAN registry 仍依赖 GPU 节点 Docker insecure registry；配置会重启整机 Docker daemon，后续优先评估 TLS registry 或免 daemon 重启的镜像分发路径。
-- Dashboard 需要把 AIO agent 的 `node_id`、`gpu_index`、`runtime_profile`、image tag/digest、旧 runtime 状态和最近失败原因展示出来，作为正式排障入口。
+- Dashboard `LAN AIO 管理` 已按物理 GPU 展示当前/候选 slot、AIO profile、image/manifest、Central control、远端容器、模型缓存 marker 和最近 LAN AIO operation；后续只补更细的 image digest 与失败原因结构化归因。
 
 SCAIL-2 LAN AIO runtime 已用于 Web/Bot 的视频生视频能力：正式 LAN slot0 包含 `scail2_action_transfer`（动作迁移 5s/8s）、隐藏执行类型 `scail2_action_transfer_long`（动作迁移 10s/15s/20s）、`scail2_video_replacement`（视频换人）和 `scail2_face_swap_v2`（视频换脸 v10 two-stage）。它有测试 runtime、云测试 RunPod profile、云正式 slot0 runtime 与云正式手动 RunPod profile 四条边界，不能混用测试/正式桶或 worker；正式 RunPod `scail2` profile 仍只声明动作迁移/视频换人两任务。
 
@@ -522,10 +527,13 @@ Dashboard 系统监控页也提供正式手动 RunPod 池的日常 Web 入口：
 | Worker 卡片 `重启` (RunPod) | `POST /api/runpod/workers/{agent_id}/restart` | `restart --slot NN --execute`，先 disabled，调用 RunPod 原生 restart，等待 heartbeat 后 enable；若底层等待阶段失败但目标已健康 idle，会安全恢复 enabled；禁止用 stop/start 模拟重启 |
 | Worker 卡片 `重启` (LAN AIO) | `POST /api/runpod/lan-aio/workers/{agent_id}/restart` | `lan_aio_fleet_prod_ops.py restart-aio --slot ... --execute`，只重启目标 AIO 容器，等待健康/heartbeat 后 enable |
 | Worker 卡片 `删除` | `DELETE /api/runpod/workers/{agent_id}` | `down --slot NN --execute`，先停接并等待当前任务结束，再删除 Pod |
+| `LAN AIO 管理` 类型列表 | `GET /api/runpod/lan-aio/profiles` | 只返回 `task_profiles.yml` 内同时具备 `all_in_one_image_ref` 与 `model_manifest_key` 的 profile，不接受后台自由镜像/manifest |
+| `LAN AIO 管理` slot 列表 | `GET /api/runpod/lan-aio/slots?include_disabled=true` | 按物理 GPU 汇总 enabled 当前 slot 与 disabled 候选 slot，展示 Central control、remote container、image/manifest 和 `model-cache-marker.json` 摘要 |
+| `LAN AIO 管理` 分步操作 | `POST /api/runpod/lan-aio/slots/{slot_id}/{action}` | 固定动作 `preflight`、`pull-image`、`warm-cache`、`drain-legacy`、`wait-idle`、`stop-old`、`start-disabled`、`enable-aio`，底层命令总是 `lan_aio_fleet_prod_ops.py ... --include-disabled --execute` |
 | 最近操作 | `GET /api/runpod/operations` | 只读 Dashboard 后端内存 operation 状态和脱敏日志尾部 |
 | 最近操作 `终止` | `POST /api/runpod/operations/{operation_id}/terminate` | 仅用于运行中的 `add` operation；终止 Dashboard 子进程后，按该次新增日志记录到的 slot 逐个执行 `down --slot NN --execute` 释放 Pod |
 
-Dashboard 入口不重写 RunPod provider 逻辑，只异步调用 `scripts/runpod_prod_ops.sh` 或 LAN AIO fleet helper。Worker 卡片看到 `control_state=disabled|draining` 时显示 `暂停中`，接单控制按钮显示 `开启`；其它状态显示 `暂停`。数量字段是新增数量；旧前端若仍发送 `desired_count`，后端也按新增数量解释，不会触发 `scale --desired` 或删除既有 slot。当前 Dashboard profile 列表包含 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、`scail2 / 视频生视频` 与 `ltx_video / 高级图生视频`；`scail2` 对应 `scail2_action_transfer,scail2_video_replacement` 两类正式任务，`ltx_video` 对应 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`。系统监控页的活跃 RunPod 详情来自 Dashboard `/api/system/status.runpod_profile_queue_details`，按这 6 个 profile 固定聚合 active/pending 和最长 pending 等待；`i2i_pro` 汇总 `i2i_pro,t2i-pornmaster-turbo,face_swap`，正式 RunPod `scail2` 不统计 `scail2_face_swap_v2`。同一请求里同一 profile 只能出现一次；若同 profile 已有未结束的 `add` operation，Dashboard 后端会返回 409，禁止再次提交，避免并发新增抢到同一个 `manual_NN` slot。后台 operation 默认使用 30 秒间隔、100 次无库存重试，真实执行只打开 `RUNPOD_DRY_RUN=false` 与 `RUNPOD_AUTOSCALER_ENABLED=true`，并把 `RUNPOD_PROD_MAX_MANUAL_SLOTS` 设为 `100` 或请求指定值。运行中的新增 operation 可从最近操作点 `终止`，后端会先向该 operation 的进程组发送 SIGTERM；如果该次 operation 已记录 `runpod_create_pod_NN`，会继续提交对应 slot 的 `down` 清理。未记录到创建 slot 的终止只停止等待/重试进程，不推测删除其它 Pod。云正式 Dashboard 后端默认优先把容器内 `/app/.env` 同时作为 `--runpod-env-file` 与 `--prod-env-file`；该文件由云正式 `.env.cloud.prod` 挂载，必须包含完整、shell-compatible 的 `RUNPOD_*` 手动池配置和可用 `RUNPOD_API_KEY`。不要把本机测试专用 `RUNPOD_PUBLIC_KEY_FILE` 路径带入云正式容器；生产路径默认不依赖 RunPod SSH。必要时仍可通过 `DASHBOARD_RUNPOD_ENV_FILE` / `DASHBOARD_RUNPOD_PROD_ENV_FILE` 覆盖 env 路径；不得在 API 响应、operation 日志或文档中输出任何 env 内容或密钥。
+Dashboard 入口不重写 RunPod provider 逻辑，只异步调用 `scripts/runpod_prod_ops.sh` 或 LAN AIO fleet helper。LAN AIO 管理第一版不提供自由镜像、自由 manifest、测试环境切换或一键全流程切换；每个按钮只提交单 slot 单步骤 operation，并用物理 slot 级 lock 拒绝同一 GPU 上的并发切换/缓存操作，返回 409 让操作者先看正在运行的 operation。Worker 卡片看到 `control_state=disabled|draining` 时显示 `暂停中`，接单控制按钮显示 `开启`；其它状态显示 `暂停`。数量字段是新增数量；旧前端若仍发送 `desired_count`，后端也按新增数量解释，不会触发 `scale --desired` 或删除既有 slot。当前 Dashboard profile 列表包含 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、`scail2 / 视频生视频` 与 `ltx_video / 高级图生视频`；`scail2` 对应 `scail2_action_transfer,scail2_video_replacement` 两类正式任务，`ltx_video` 对应 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`。系统监控页的活跃 RunPod 详情来自 Dashboard `/api/system/status.runpod_profile_queue_details`，按这 6 个 profile 固定聚合 active/pending 和最长 pending 等待；`i2i_pro` 汇总 `i2i_pro,t2i-pornmaster-turbo,face_swap`，正式 RunPod `scail2` 不统计 `scail2_face_swap_v2`。同一请求里同一 profile 只能出现一次；若同 profile 已有未结束的 `add` operation，Dashboard 后端会返回 409，禁止再次提交，避免并发新增抢到同一个 `manual_NN` slot。后台 operation 默认使用 30 秒间隔、100 次无库存重试，真实执行只打开 `RUNPOD_DRY_RUN=false` 与 `RUNPOD_AUTOSCALER_ENABLED=true`，并把 `RUNPOD_PROD_MAX_MANUAL_SLOTS` 设为 `100` 或请求指定值。运行中的新增 operation 可从最近操作点 `终止`，后端会先向该 operation 的进程组发送 SIGTERM；如果该次 operation 已记录 `runpod_create_pod_NN`，会继续提交对应 slot 的 `down` 清理。未记录到创建 slot 的终止只停止等待/重试进程，不推测删除其它 Pod。云正式 Dashboard 后端默认优先把容器内 `/app/.env` 同时作为 `--runpod-env-file` 与 `--prod-env-file`；该文件由云正式 `.env.cloud.prod` 挂载，必须包含完整、shell-compatible 的 `RUNPOD_*` 手动池配置和可用 `RUNPOD_API_KEY`。LAN AIO 管理还需要 `DASHBOARD_LAN_AIO_PROD_ENV_FILE`、`DASHBOARD_LAN_AIO_AIO_ENV_FILE`、`DASHBOARD_LAN_AIO_MODEL_ENV_FILE` 或默认 env 文件可读。不要把本机测试专用 `RUNPOD_PUBLIC_KEY_FILE` 路径带入云正式容器；生产路径默认不依赖 RunPod SSH。必要时仍可通过 `DASHBOARD_RUNPOD_ENV_FILE` / `DASHBOARD_RUNPOD_PROD_ENV_FILE` 覆盖 env 路径；不得在 API 响应、operation 日志或文档中输出任何 env 内容或密钥。
 
 Dashboard 后端的 RunPod autoscaler 只复用上述安全入口，不直接调用 RunPod API。正式启用时
 `DASHBOARD_RUNPOD_AUTOSCALER_ENABLED=true`，后台循环默认每 60 秒读取

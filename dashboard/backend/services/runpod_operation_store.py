@@ -11,6 +11,7 @@ import redis.asyncio as redis
 OPERATIONS_ZSET_KEY = "dashboard:runpod:operations"
 OPERATION_KEY_PREFIX = "dashboard:runpod:operation:"
 ACTIVE_ADD_KEY_PREFIX = "dashboard:runpod:active_add:"
+ACTIVE_LAN_AIO_SLOT_KEY_PREFIX = "dashboard:runpod:active_lan_aio_slot:"
 FINISHED_OPERATION_TTL_SECONDS = 24 * 60 * 60
 
 
@@ -42,12 +43,30 @@ class RunPodOperationStore(Protocol):
     async def release_active_add(self, profile: str, operation_id: str) -> None:
         ...
 
+    async def acquire_active_lan_aio_slot(
+        self,
+        physical_slot_key: str,
+        operation_id: str,
+    ) -> bool:
+        ...
+
+    async def get_active_lan_aio_slot(self, physical_slot_key: str) -> str | None:
+        ...
+
+    async def release_active_lan_aio_slot(
+        self,
+        physical_slot_key: str,
+        operation_id: str,
+    ) -> None:
+        ...
+
 
 class InMemoryRunPodOperationStore:
     def __init__(self) -> None:
         self.operations: dict[str, dict[str, Any]] = {}
         self.scores: dict[str, float] = {}
         self.active_add: dict[str, str] = {}
+        self.active_lan_aio_slot: dict[str, str] = {}
 
     async def save_operation(
         self,
@@ -96,6 +115,27 @@ class InMemoryRunPodOperationStore:
         if self.active_add.get(profile) == operation_id:
             self.active_add.pop(profile, None)
 
+    async def acquire_active_lan_aio_slot(
+        self,
+        physical_slot_key: str,
+        operation_id: str,
+    ) -> bool:
+        if physical_slot_key in self.active_lan_aio_slot:
+            return False
+        self.active_lan_aio_slot[physical_slot_key] = operation_id
+        return True
+
+    async def get_active_lan_aio_slot(self, physical_slot_key: str) -> str | None:
+        return self.active_lan_aio_slot.get(physical_slot_key)
+
+    async def release_active_lan_aio_slot(
+        self,
+        physical_slot_key: str,
+        operation_id: str,
+    ) -> None:
+        if self.active_lan_aio_slot.get(physical_slot_key) == operation_id:
+            self.active_lan_aio_slot.pop(physical_slot_key, None)
+
 
 class RedisRunPodOperationStore:
     def __init__(self, redis_client) -> None:
@@ -108,6 +148,10 @@ class RedisRunPodOperationStore:
     @staticmethod
     def active_add_key(profile: str) -> str:
         return f"{ACTIVE_ADD_KEY_PREFIX}{profile}"
+
+    @staticmethod
+    def active_lan_aio_slot_key(physical_slot_key: str) -> str:
+        return f"{ACTIVE_LAN_AIO_SLOT_KEY_PREFIX}{physical_slot_key}"
 
     async def save_operation(
         self,
@@ -186,6 +230,41 @@ end
 return 0
 """
         await self.redis.eval(script, 1, self.active_add_key(profile), operation_id)
+
+    async def acquire_active_lan_aio_slot(
+        self,
+        physical_slot_key: str,
+        operation_id: str,
+    ) -> bool:
+        return bool(
+            await self.redis.set(
+                self.active_lan_aio_slot_key(physical_slot_key),
+                operation_id,
+                nx=True,
+            )
+        )
+
+    async def get_active_lan_aio_slot(self, physical_slot_key: str) -> str | None:
+        value = await self.redis.get(self.active_lan_aio_slot_key(physical_slot_key))
+        return str(value) if value else None
+
+    async def release_active_lan_aio_slot(
+        self,
+        physical_slot_key: str,
+        operation_id: str,
+    ) -> None:
+        script = """
+if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("del", KEYS[1])
+end
+return 0
+"""
+        await self.redis.eval(
+            script,
+            1,
+            self.active_lan_aio_slot_key(physical_slot_key),
+            operation_id,
+        )
 
 
 def build_default_runpod_operation_store() -> RunPodOperationStore:

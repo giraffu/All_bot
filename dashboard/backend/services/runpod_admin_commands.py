@@ -122,30 +122,35 @@ class RunPodAdminCommandBuilder:
         return command
 
     def lan_aio_restart_command(self, slot_id: str) -> list[str]:
-        return [
-            "python3",
-            self.lan_aio_ops_script(),
-            "restart-aio",
-            "--slot",
-            slot_id,
-            "--prod-env-file",
-            self.lan_aio_prod_env_file(),
-            "--aio-env-file",
-            self.lan_aio_aio_env_file(),
-            "--model-env-file",
-            self.lan_aio_model_env_file(),
-            "--execute",
-        ]
+        return self.lan_aio_action_command("restart-aio", slot_id)
 
     def lan_aio_control_command(self, action: str, slot_id: str) -> list[str]:
         if action not in {"disable-aio", "enable-aio"}:
             raise ValueError(f"unsupported LAN AIO control action: {action}")
+        return self.lan_aio_action_command(action, slot_id)
+
+    def lan_aio_action_command(self, action: str, slot_id: str) -> list[str]:
+        supported_actions = {
+            "preflight",
+            "pull-image",
+            "warm-cache",
+            "drain-legacy",
+            "wait-idle",
+            "stop-old",
+            "start-disabled",
+            "enable-aio",
+            "disable-aio",
+            "restart-aio",
+        }
+        if action not in supported_actions:
+            raise ValueError(f"unsupported LAN AIO action: {action}")
         return [
             "python3",
             self.lan_aio_ops_script(),
             action,
             "--slot",
             slot_id,
+            "--include-disabled",
             "--prod-env-file",
             self.lan_aio_prod_env_file(),
             "--aio-env-file",

@@ -51,6 +51,7 @@ class RunPodAdminOperation:
     cleanup_exit_codes: list[int] = field(default_factory=list)
     log_lines: list[str] = field(default_factory=list)
     active_add_profile: str | None = None
+    active_lan_aio_slot: str | None = None
     source: str = "manual"
     trigger_reason: str | None = None
     process: Any | None = field(default=None, repr=False)
@@ -159,6 +160,7 @@ def operation_payload(
         "cleanup_exit_codes": list(operation.cleanup_exit_codes),
         "log_tail": list(operation.log_lines[-log_lines:]),
         "command": redacted_command(operation.command),
+        "active_lan_aio_slot": operation.active_lan_aio_slot,
         "source": operation.source,
         "trigger_reason": operation.trigger_reason,
     }

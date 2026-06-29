@@ -4,6 +4,7 @@ import pytest
 from fastapi import HTTPException
 
 from dashboard.backend.schemas import (
+    LanAioSlotActionRequest,
     RunPodScaleItem,
     RunPodScaleRequest,
     RunPodWorkerActionRequest,
@@ -12,6 +13,11 @@ from dashboard.backend.services.runpod_operation_store import (
     InMemoryRunPodOperationStore,
 )
 from dashboard.backend.services import runpod_admin_service
+from ops.gpu_pool_controller.config_loader import load_controller_config
+from ops.gpu_pool_controller.lan_aio_prod import (
+    load_lan_aio_prod_slots,
+    slot_to_jsonable,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -76,6 +82,73 @@ async def test_runpod_profiles_payload_lists_supported_prod_profiles():
         "img2img",
         "img2img_lora",
     ]
+
+
+@pytest.mark.asyncio
+async def test_lan_aio_profiles_payload_lists_configured_aio_profiles():
+    payload = await runpod_admin_service.get_lan_aio_profiles_payload()
+
+    profiles = {item["profile"]: item for item in payload["profiles"]}
+    assert "pornmaster_flux2_edit" in profiles
+    assert "scail2" in profiles
+    assert "face_i2i_t2i" not in profiles
+    assert profiles["pornmaster_flux2_edit"]["all_in_one_image_ref"]
+    assert profiles["pornmaster_flux2_edit"]["model_manifest_key"] == (
+        "pornmaster_flux2_edit/2026-06-27/manifest.json"
+    )
+
+
+@pytest.mark.asyncio
+async def test_lan_aio_slots_payload_groups_enabled_and_disabled_candidates(monkeypatch):
+    class FakeLanAioOps:
+        def __init__(self):
+            self.config = load_controller_config()
+            self.slots = load_lan_aio_prod_slots(include_disabled=True)
+
+        def select_slots(self, slot_id, *, include_disabled=False):
+            if slot_id is not None:
+                return [self.slots[slot_id]]
+            return [
+                slot
+                for slot in self.slots.values()
+                if include_disabled or slot.enabled
+            ]
+
+        def status_payload(self, slots):
+            return {
+                "ok": True,
+                "slots": [
+                    {
+                        "slot": slot_to_jsonable(slot, self.config),
+                        "workers": [],
+                        "control": {"legacy": "disabled", "aio": "enabled"},
+                        "remote_containers": [],
+                        "model_cache": {"status": "ready", "profile": slot.target_profile_id},
+                    }
+                    for slot in slots
+                ],
+            }
+
+    monkeypatch.setattr(
+        runpod_admin_service,
+        "_build_lan_aio_ops",
+        lambda: FakeLanAioOps(),
+    )
+
+    payload = await runpod_admin_service.get_lan_aio_slots_payload(
+        include_disabled=True,
+    )
+
+    groups = {item["physical_slot_key"]: item for item in payload["groups"]}
+    assert "gpu-252:gpu0" in groups
+    gpu252_slots = {
+        item["slot"]["id"]: item
+        for item in groups["gpu-252:gpu0"]["slots"]
+    }
+    assert "gpu-252-gpu0-img2img_lora" in gpu252_slots
+    assert "gpu-252-gpu0-pornmaster_flux2_edit" in gpu252_slots
+    assert gpu252_slots["gpu-252-gpu0-img2img_lora"]["slot"]["enabled"] is False
+    assert gpu252_slots["gpu-252-gpu0-pornmaster_flux2_edit"]["model_cache"]["status"] == "ready"
 
 
 @pytest.mark.asyncio
@@ -202,6 +275,14 @@ async def test_runpod_operation_store_fake_create_list_update_prune_and_lock():
     assert await store.get_active_add("img2img") == "op-2"
     await store.release_active_add("img2img", "op-2")
     assert await store.get_active_add("img2img") is None
+
+    assert await store.acquire_active_lan_aio_slot("gpu-252:gpu0", "op-2") is True
+    assert await store.acquire_active_lan_aio_slot("gpu-252:gpu0", "op-3") is False
+    assert await store.get_active_lan_aio_slot("gpu-252:gpu0") == "op-2"
+    await store.release_active_lan_aio_slot("gpu-252:gpu0", "op-other")
+    assert await store.get_active_lan_aio_slot("gpu-252:gpu0") == "op-2"
+    await store.release_active_lan_aio_slot("gpu-252:gpu0", "op-2")
+    assert await store.get_active_lan_aio_slot("gpu-252:gpu0") is None
 
     await store.prune_operations(max_records=1)
     assert [item["id"] for item in await store.list_operations(limit=10)] == ["op-2"]
@@ -445,6 +526,46 @@ async def test_pause_and_enable_lan_aio_worker_build_slot_scoped_operations():
     ]
     assert enable_command[enable_command.index("--slot") + 1] == "gpu-177-gpu0-image_to_video"
     assert "--execute" in enable_command
+
+
+@pytest.mark.asyncio
+async def test_lan_aio_slot_action_builds_operation_and_locks_physical_slot():
+    first_payload = await runpod_admin_service.start_lan_aio_slot_action_payload(
+        slot_id="gpu-252-gpu0-pornmaster_flux2_edit",
+        action="warm-cache",
+        request=LanAioSlotActionRequest(reason="dashboard warm cache"),
+        spawn_task_func=_discard_operation_coroutine,
+    )
+
+    operation = first_payload["operation"]
+    command = operation["command"]
+    assert operation["status"] == "pending"
+    assert operation["action"] == "lan-aio-warm-cache"
+    assert operation["profile"] == "pornmaster_flux2_edit"
+    assert operation["slot"] == "gpu-252-gpu0-pornmaster_flux2_edit"
+    assert operation["active_lan_aio_slot"] == "gpu-252:gpu0"
+    assert operation["trigger_reason"] == "dashboard warm cache"
+    assert command[:3] == [
+        "python3",
+        str(runpod_admin_service.PROJECT_ROOT / "scripts" / "lan_aio_fleet_prod_ops.py"),
+        "warm-cache",
+    ]
+    assert command[command.index("--slot") + 1] == (
+        "gpu-252-gpu0-pornmaster_flux2_edit"
+    )
+    assert "--include-disabled" in command
+    assert "--execute" in command
+
+    with pytest.raises(HTTPException) as exc_info:
+        await runpod_admin_service.start_lan_aio_slot_action_payload(
+            slot_id="gpu-252-gpu0-img2img_lora",
+            action="pull-image",
+            request=LanAioSlotActionRequest(),
+            spawn_task_func=_discard_operation_coroutine,
+        )
+
+    assert exc_info.value.status_code == 409
+    assert "gpu-252:gpu0" in exc_info.value.detail
 
 
 @pytest.mark.asyncio

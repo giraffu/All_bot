@@ -74,6 +74,23 @@ class RunPodAdminOperationRunner:
                 operation.id,
             )
 
+    async def release_active_lan_aio_slot_if_needed(
+        self,
+        operation: RunPodAdminOperation,
+    ) -> None:
+        if operation.active_lan_aio_slot:
+            await self.store.release_active_lan_aio_slot(
+                operation.active_lan_aio_slot,
+                operation.id,
+            )
+
+    async def release_active_locks_if_needed(
+        self,
+        operation: RunPodAdminOperation,
+    ) -> None:
+        await self.release_active_add_if_needed(operation)
+        await self.release_active_lan_aio_slot_if_needed(operation)
+
     async def active_add_operation_for_profile(
         self,
         profile: str,
@@ -95,6 +112,37 @@ class RunPodAdminOperationRunner:
             return None
         if payload.get("status") in FINISHED_OPERATION_STATUSES:
             await self.store.release_active_add(profile, active_operation_id)
+            return None
+        return normalized_stored_operation_payload(payload)
+
+    async def active_lan_aio_operation_for_slot(
+        self,
+        physical_slot_key: str,
+    ) -> dict[str, Any] | None:
+        for operation in self.operations.values():
+            if (
+                operation.active_lan_aio_slot == physical_slot_key
+                and operation.status not in FINISHED_OPERATION_STATUSES
+            ):
+                return operation_payload(operation)
+
+        active_operation_id = await self.store.get_active_lan_aio_slot(
+            physical_slot_key
+        )
+        if not active_operation_id:
+            return None
+        payload = await self.store.get_operation(active_operation_id)
+        if payload is None:
+            await self.store.release_active_lan_aio_slot(
+                physical_slot_key,
+                active_operation_id,
+            )
+            return None
+        if payload.get("status") in FINISHED_OPERATION_STATUSES:
+            await self.store.release_active_lan_aio_slot(
+                physical_slot_key,
+                active_operation_id,
+            )
             return None
         return normalized_stored_operation_payload(payload)
 
@@ -182,7 +230,7 @@ class RunPodAdminOperationRunner:
 
         await self.persist_operation(operation)
         if operation.status in FINISHED_OPERATION_STATUSES:
-            await self.release_active_add_if_needed(operation)
+            await self.release_active_locks_if_needed(operation)
         return {"status": "accepted", "operation": operation_payload(operation)}
 
     async def register_operation(
@@ -196,6 +244,7 @@ class RunPodAdminOperationRunner:
         agent_id: str | None = None,
         slot: str | None = None,
         active_add_profile: str | None = None,
+        active_lan_aio_slot: str | None = None,
         source: str = "manual",
         trigger_reason: str | None = None,
         spawn_task_func=None,
@@ -209,6 +258,7 @@ class RunPodAdminOperationRunner:
             agent_id=agent_id,
             slot=slot,
             active_add_profile=active_add_profile,
+            active_lan_aio_slot=active_lan_aio_slot,
             source=source,
             trigger_reason=trigger_reason,
         )
@@ -226,6 +276,27 @@ class RunPodAdminOperationRunner:
                     detail=(
                         "RunPod add operation is already active for profile "
                         f"{active_add_profile}: {active_operation_id}"
+                    ),
+                )
+        if active_lan_aio_slot is not None:
+            acquired = await self.store.acquire_active_lan_aio_slot(
+                active_lan_aio_slot,
+                operation.id,
+            )
+            if not acquired:
+                active_operation_id = await self.store.get_active_lan_aio_slot(
+                    active_lan_aio_slot
+                )
+                if active_add_profile is not None:
+                    await self.store.release_active_add(
+                        active_add_profile,
+                        operation.id,
+                    )
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "LAN AIO operation is already active for physical slot "
+                        f"{active_lan_aio_slot}: {active_operation_id}"
                     ),
                 )
 
@@ -257,7 +328,7 @@ class RunPodAdminOperationRunner:
             operation.cleanup_status = "skipped"
             operation.ended_at = time.time()
             await self.persist_operation(operation)
-            await self.release_active_add_if_needed(operation)
+            await self.release_active_locks_if_needed(operation)
             return
         operation.status = "running"
         operation.started_at = time.time()
@@ -327,7 +398,7 @@ class RunPodAdminOperationRunner:
             operation.process = None
             operation.ended_at = time.time()
             await self.persist_operation(operation)
-            await self.release_active_add_if_needed(operation)
+            await self.release_active_locks_if_needed(operation)
 
     def terminate_process_group(self, operation: RunPodAdminOperation) -> None:
         process = operation.process

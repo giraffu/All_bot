@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from dashboard.backend.schemas import (
+    LanAioSlotActionRequest,
     RunPodAutoscalerControlRequest,
     RunPodAutoscalerSettingsRequest,
     RunPodScaleRequest,
@@ -15,12 +16,15 @@ from dashboard.backend.services.runpod_admin_service import (
     delete_runpod_worker_payload,
     enable_lan_aio_worker_payload,
     enable_runpod_worker_payload,
+    get_lan_aio_profiles_payload,
+    get_lan_aio_slots_payload,
     get_runpod_operations_payload,
     get_runpod_profiles_payload,
     pause_lan_aio_worker_payload,
     pause_runpod_worker_payload,
     restart_lan_aio_worker_payload,
     restart_runpod_worker_payload,
+    start_lan_aio_slot_action_payload,
     start_runpod_scale_payload,
     terminate_runpod_operation_payload,
 )
@@ -106,3 +110,26 @@ async def enable_lan_aio_worker(agent_id: str, req: RunPodWorkerActionRequest):
 @router.post("/lan-aio/workers/{agent_id}/restart")
 async def restart_lan_aio_worker(agent_id: str, req: RunPodWorkerActionRequest):
     return await restart_lan_aio_worker_payload(agent_id=agent_id, request=req)
+
+
+@router.get("/lan-aio/profiles")
+async def get_lan_aio_profiles():
+    return await get_lan_aio_profiles_payload()
+
+
+@router.get("/lan-aio/slots")
+async def get_lan_aio_slots(include_disabled: bool = False):
+    return await get_lan_aio_slots_payload(include_disabled=include_disabled)
+
+
+@router.post("/lan-aio/slots/{slot_id}/{action}")
+async def start_lan_aio_slot_action(
+    slot_id: str,
+    action: str,
+    req: LanAioSlotActionRequest,
+):
+    return await start_lan_aio_slot_action_payload(
+        slot_id=slot_id,
+        action=action,
+        request=req,
+    )

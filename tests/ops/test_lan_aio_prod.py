@@ -47,6 +47,10 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
     assert slots["gpu-252-gpu0-img2img_lora"].phase == (
         "superseded_by_pornmaster_flux2_edit"
     )
+    assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].enabled is False
+    assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].phase == (
+        "superseded_by_image_to_video"
+    )
     config = load_controller_config()
     assert (
         config.profiles["ltx_video"].all_in_one_image_ref
@@ -439,6 +443,65 @@ def test_lan_aio_start_disabled_force_recreates_container():
 
     assert result["ok"] is True
     assert ops.compose_ops == ["up -d --force-recreate"]
+
+
+def test_lan_aio_warm_cache_runs_one_off_model_sync_without_agent_or_ports():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.commands: list[str] = []
+            self.marker: dict[str, object] | None = None
+            self.env_values.update(
+                {
+                    "LAN_AIO_AGENT_SECRET_TOKEN": "test-token",
+                    "LAN_AIO_MINIO_ENDPOINT": "minio.example",
+                    "LAN_AIO_MINIO_ACCESS_KEY": "minio-access",
+                    "LAN_AIO_MINIO_SECRET_KEY": "minio-secret",
+                    "LAN_MODEL_CACHE_ACCESS_KEY": "model-access",
+                    "LAN_MODEL_CACHE_SECRET_KEY": "model-secret",
+                }
+            )
+
+        def _sync_remote_workers(self, slot) -> None:
+            return None
+
+        def _scp(self, source: Path, host: str, target: str) -> None:
+            return None
+
+        def _ssh(self, host: str, command: str, *, capture: bool = False) -> str:
+            self.commands.append(command)
+            return ""
+
+        def _write_cache_marker(self, slot, marker: dict[str, object]) -> None:
+            self.marker = marker
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-252-gpu0-pornmaster_flux2_edit"]
+
+    result = ops.warm_cache([slot])
+
+    assert result["ok"] is True
+    assert result["action"] == "warm-cache"
+    docker_command = next(command for command in ops.commands if "docker run" in command)
+    docker_run_line = next(
+        line.strip()
+        for line in docker_command.splitlines()
+        if line.strip().startswith("docker run")
+    )
+    assert "docker run --rm" in docker_run_line
+    assert "--env-file" in docker_run_line
+    assert "runpod_sync_models_from_r2.py" in docker_command
+    assert " -p " not in docker_run_line
+    assert "--publish" not in docker_run_line
+    assert "AGENT_ID" not in docker_run_line
+    assert ops.marker is not None
+    assert ops.marker["profile"] == "pornmaster_flux2_edit"
+    assert ops.marker["physical_slot_key"] == "gpu-252:gpu0"
 
 
 def test_lan_aio_restart_disables_restarts_and_reenables_slot():

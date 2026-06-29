@@ -77,7 +77,8 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 - RunPod 不属于局域网 SSH GPU 池；RunPod profile、镜像、manifest、override 事实源在 `ops/gpu_pool_controller/` 与 GPU Pool 文档。
 - Dashboard RunPod/LAN AIO 管理只调用既有脚本，不重写 provider 逻辑；`desired_count` 兼容字段按“新增数量”解释，不代表目标总数。
 - Dashboard autoscaler 基于预计清空时间、profile 阈值、Redis leader lease 与 operation store 做 add/down/restart/enable；不直接操作本地 worker，不绕过 RunPod 门禁。
-- LAN AIO 真实接管按单 slot 执行：preflight -> registry/镜像准备 -> start disabled -> 验证 disabled heartbeat -> enable -> drain/观察 -> stop old。
+- LAN AIO Dashboard 只展示配置内 profile/slot，支持 `preflight`、`pull-image`、`warm-cache`、`drain-legacy`、`wait-idle`、`stop-old`、`start-disabled`、`enable-aio` 单步 operation；不提供自由镜像/manifest 或一键全流程切换，同一物理 GPU 用 operation lock 防并发。
+- LAN AIO 真实接管按单 slot 执行：preflight -> registry/镜像准备 -> warm-cache -> start disabled -> 验证 disabled heartbeat -> enable -> drain/观察 -> stop old。
 - 低频镜像 tag、RIFE 缓存、SCAIL-2/LTX profile、gpu-177/gpu-252/gpu-002 细节只在需要时读取 `references/runpod-lan-runtime.md` 和 GPU Pool 文档。
 
 ## 5. 生产单服务重建

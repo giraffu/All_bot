@@ -104,6 +104,28 @@ def test_lan_aio_control_command_uses_prod_fleet_helper(monkeypatch, tmp_path):
     assert command[command.index("--prod-env-file") + 1] == str(container_env)
     assert command[command.index("--aio-env-file") + 1] == str(container_env)
     assert command[command.index("--model-env-file") + 1] == str(container_env)
+    assert "--include-disabled" in command
+    assert "--execute" in command
+
+
+def test_lan_aio_action_command_supports_warm_cache(monkeypatch, tmp_path):
+    builder = RunPodAdminCommandBuilder(project_root=tmp_path)
+    monkeypatch.setenv("DASHBOARD_RUNPOD_CONTAINER_ENV_FILE", str(tmp_path / "env"))
+
+    command = builder.lan_aio_action_command(
+        "warm-cache",
+        "gpu-252-gpu0-pornmaster_flux2_edit",
+    )
+
+    assert command[:3] == [
+        "python3",
+        str(tmp_path / "scripts" / "lan_aio_fleet_prod_ops.py"),
+        "warm-cache",
+    ]
+    assert command[command.index("--slot") + 1] == (
+        "gpu-252-gpu0-pornmaster_flux2_edit"
+    )
+    assert "--include-disabled" in command
     assert "--execute" in command
 
 
