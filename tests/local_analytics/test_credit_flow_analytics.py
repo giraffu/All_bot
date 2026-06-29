@@ -40,6 +40,30 @@ async def test_credit_flow_analytics_returns_flow_health_and_risk_users(monkeypa
 
     async def fake_fetch(query, *args):
         calls.append(("fetch", query, args))
+        if "credit_flow_daily_category" in query:
+            assert args == (30, analytics_main.GENERATION_OPERATION_TYPES)
+            return [
+                {
+                    "day": "2026-06-25",
+                    "category": "充值/套餐发放",
+                    "direction": "income",
+                    "events": 2,
+                    "users": 1,
+                    "income": 25,
+                    "expense": 0,
+                    "net_change": 25,
+                },
+                {
+                    "day": "2026-06-25",
+                    "category": "生成/消费支出",
+                    "direction": "expense",
+                    "events": 7,
+                    "users": 3,
+                    "income": 0,
+                    "expense": 65,
+                    "net_change": -65,
+                },
+            ]
         if "credit_flow_daily" in query:
             assert args == (30, analytics_main.GENERATION_OPERATION_TYPES)
             return [
@@ -123,6 +147,8 @@ async def test_credit_flow_analytics_returns_flow_health_and_risk_users(monkeypa
     assert payload["summary"]["gross_income"] == 1000
     assert payload["summary"]["free_checkin_income"] == 120
     assert payload["summary"]["identity_checkin_bonus_income"] == 180
+    assert payload["daily_categories"][0]["category"] == "充值/套餐发放"
+    assert payload["daily_categories"][1]["expense"] == 65
     assert payload["categories"][0]["category"] == "充值/套餐发放"
     assert {row["category"] for row in payload["categories"]} >= {"免费签到", "身份加成签到", "退款/补偿", "Gallery 解锁收入", "Gallery 解锁支出"}
     assert payload["composition"]["identity"][0]["label"] == "外门弟子"

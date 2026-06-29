@@ -344,80 +344,92 @@ main {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
+.analytics-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.analytics-chart-grid.user-distribution-charts,
+.analytics-chart-grid.credit-flow-grid,
+.analytics-chart-grid.finance-grid,
+.analytics-chart-grid.generation-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.chart-card {
+  min-width: 0;
+  min-height: 320px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.chart-card-wide,
+.chart-card.full {
+  grid-column: 1 / -1;
+}
+
+.analytics-chart {
+  width: 100%;
+  height: 300px;
+  min-width: 0;
+}
+
+.analytics-chart.compact-chart {
+  height: 260px;
+}
+
+.chart-control-row,
+.chart-mode-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.chart-control-row label {
+  display: grid;
+  gap: 4px;
+  min-width: 180px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.chart-control-row input,
+.chart-control-row select {
+  min-height: 34px;
+}
+
+.chart-control-row button,
+.chart-toggle {
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.chart-toggle.active,
+.chart-control-row button.active {
+  border-color: var(--teal);
+  background: var(--teal);
+  color: #fff;
+}
+
 .chart-title,
 .table-title {
   margin-bottom: 10px;
   color: var(--muted);
   font-size: 13px;
   font-weight: 800;
-}
-
-.spark-bars {
-  display: flex;
-  align-items: end;
-  gap: 3px;
-  min-height: 88px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
-}
-
-.spark-bar {
-  flex: 1 1 0;
-}
-
-.hourly-bars {
-  display: grid;
-  grid-template-columns: repeat(24, minmax(18px, 1fr));
-  align-items: end;
-  gap: 3px;
-  min-height: 88px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
-}
-
-.hour-slot {
-  display: grid;
-  align-items: end;
-  gap: 6px;
-  min-height: 112px;
-  text-align: center;
-}
-
-.hour-slot span {
-  color: var(--muted);
-  font-size: 10px;
-}
-
-.spark-bar,
-.hourly-bar {
-  min-height: 4px;
-  border-radius: 4px 4px 0 0;
-  background: var(--teal);
-}
-
-.spark-bars.amber .spark-bar {
-  background: var(--amber);
-}
-
-.spark-bars.blue .spark-bar {
-  background: var(--blue);
-}
-
-.spark-bars.blue-soft .spark-bar {
-  background: #2b7a8b;
-}
-
-.spark-bars.green .spark-bar {
-  background: var(--green);
-}
-
-.spark-bars.red .spark-bar,
-.spark-bar.negative {
-  background: var(--red);
 }
 
 .distribution-grid {
@@ -1136,6 +1148,11 @@ tr:last-child td {
   .split-grid,
   .prompt-layout,
   .prompt-filter-bar,
+  .analytics-chart-grid,
+  .analytics-chart-grid.user-distribution-charts,
+  .analytics-chart-grid.credit-flow-grid,
+  .analytics-chart-grid.finance-grid,
+  .analytics-chart-grid.generation-grid,
   .chart-strip,
   .chart-strip.three,
   .chart-strip.user-trends,
@@ -1226,6 +1243,22 @@ tr:last-child td {
   .controls label,
   .controls button {
     flex: 1 1 150px;
+  }
+
+  .chart-control-row label,
+  .chart-control-row button,
+  .chart-toggle {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .chart-card {
+    min-height: 280px;
+  }
+
+  .analytics-chart,
+  .analytics-chart.compact-chart {
+    height: 250px;
   }
 
   .prompt-vector-action-bar {

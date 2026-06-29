@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>本地数据分析平台</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/static/styles.css?v=20260629-prompt-scenes-v1" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260629-echarts-v1" />
   </head>
   <body>
     <div id="app" class="app-shell">
@@ -95,48 +95,36 @@
 
         <section class="band users-band tab-panel active" data-panel="users">
           <div id="userSummary" class="metric-grid"></div>
-          <div class="chart-strip user-trends">
-            <div>
-              <div class="chart-title">每日新增用户</div>
-              <div id="userNewSpark" class="spark-bars blue"></div>
+          <div class="analytics-chart-grid user-chart-grid">
+            <div class="chart-card chart-card-wide">
+              <div class="chart-title">用户增长、活跃与签到趋势</div>
+              <div id="userTrendChart" class="analytics-chart"></div>
             </div>
-            <div>
-              <div class="chart-title">每日新增入宗门</div>
-              <div id="userNewChannelSpark" class="spark-bars green"></div>
-            </div>
-            <div>
-              <div class="chart-title">每日新增生成用户</div>
-              <div id="userNewGenerationSpark" class="spark-bars"></div>
-            </div>
-            <div>
-              <div class="chart-title">每日活跃用户</div>
-              <div id="userActiveSpark" class="spark-bars blue-soft"></div>
-            </div>
-            <div>
-              <div class="chart-title">每日签到</div>
-              <div id="userCheckinSpark" class="spark-bars amber"></div>
+            <div class="chart-card">
+              <div class="chart-title">新增转化漏斗</div>
+              <div id="userConversionChart" class="analytics-chart"></div>
             </div>
           </div>
-          <div class="distribution-grid">
-            <div class="table-shell">
+          <div class="analytics-chart-grid user-distribution-charts">
+            <div class="chart-card">
               <div class="table-title">身份组分布</div>
-              <div id="identityDistribution" class="distribution-bars"></div>
+              <div id="identityDistributionChart" class="analytics-chart compact-chart"></div>
             </div>
-            <div class="table-shell">
+            <div class="chart-card">
               <div class="table-title">修为分布</div>
-              <div id="groupDistribution" class="distribution-bars"></div>
+              <div id="groupDistributionChart" class="analytics-chart compact-chart"></div>
             </div>
-            <div class="table-shell">
+            <div class="chart-card">
               <div class="table-title">灵石持有分布</div>
-              <div id="creditDistribution" class="distribution-bars"></div>
+              <div id="creditDistributionChart" class="analytics-chart compact-chart"></div>
             </div>
-            <div class="table-shell">
+            <div class="chart-card">
               <div class="table-title">生成次数分布</div>
-              <div id="generationDistribution" class="distribution-bars"></div>
+              <div id="generationDistributionChart" class="analytics-chart compact-chart"></div>
             </div>
-            <div class="table-shell">
+            <div class="chart-card">
               <div class="table-title">活跃分层</div>
-              <div id="activityDistribution" class="distribution-bars"></div>
+              <div id="activityDistributionChart" class="analytics-chart compact-chart"></div>
             </div>
           </div>
           <div class="leaderboard-grid">
@@ -201,49 +189,53 @@
 
         <section class="band credit-flow-band tab-panel" data-panel="credit-flow">
           <div id="creditFlowSummary" class="metric-grid compact"></div>
-          <div class="chart-strip three">
-            <div>
-              <div class="chart-title">每日收入</div>
-              <div id="creditIncomeSpark" class="spark-bars blue"></div>
+          <div class="analytics-chart-grid credit-flow-charts">
+            <div class="chart-card chart-card-wide">
+              <div class="chart-title">每日收入、支出与净变化</div>
+              <div class="chart-mode-row">
+                <button class="chart-toggle active" type="button" data-credit-mode="daily">每日</button>
+                <button class="chart-toggle" type="button" data-credit-mode="cumulative">累计</button>
+              </div>
+              <div id="creditFlowTrendChart" class="analytics-chart"></div>
             </div>
-            <div>
-              <div class="chart-title">每日支出</div>
-              <div id="creditExpenseSpark" class="spark-bars red"></div>
-            </div>
-            <div>
-              <div class="chart-title">每日净变化</div>
-              <div id="creditNetSpark" class="spark-bars"></div>
+            <div class="chart-card chart-card-wide">
+              <div class="chart-title">每日来源与去向堆叠</div>
+              <div id="creditDailyCategoryChart" class="analytics-chart"></div>
             </div>
           </div>
-          <div class="distribution-grid credit-flow-grid">
-            <div class="table-shell">
+          <div class="analytics-chart-grid credit-flow-grid">
+            <div class="chart-card">
               <div class="table-title">收入类别</div>
-              <div id="creditIncomeCategories" class="distribution-bars"></div>
+              <div id="creditIncomeCategoryChart" class="analytics-chart compact-chart"></div>
             </div>
-            <div class="table-shell">
+            <div class="chart-card">
               <div class="table-title">支出类别</div>
-              <div id="creditExpenseCategories" class="distribution-bars"></div>
+              <div id="creditExpenseCategoryChart" class="analytics-chart compact-chart"></div>
             </div>
-            <div class="table-shell">
+            <div class="chart-card">
               <div class="table-title">来源身份组</div>
-              <div id="creditCompositionIdentity" class="distribution-bars"></div>
+              <div id="creditCompositionIdentityChart" class="analytics-chart compact-chart"></div>
             </div>
-            <div class="table-shell">
+            <div class="chart-card">
               <div class="table-title">来源修为</div>
-              <div id="creditCompositionGroup" class="distribution-bars"></div>
+              <div id="creditCompositionGroupChart" class="analytics-chart compact-chart"></div>
             </div>
-            <div class="table-shell">
+            <div class="chart-card">
               <div class="table-title">宗门组成</div>
-              <div id="creditCompositionChannel" class="distribution-bars"></div>
+              <div id="creditCompositionChannelChart" class="analytics-chart compact-chart"></div>
             </div>
-            <div class="table-shell">
+            <div class="chart-card">
               <div class="table-title">付费组成</div>
-              <div id="creditCompositionPayer" class="distribution-bars"></div>
+              <div id="creditCompositionPayerChart" class="analytics-chart compact-chart"></div>
             </div>
           </div>
           <div class="table-shell full">
             <div class="table-title">健康风险标记</div>
             <div id="creditHealthFlags" class="health-flags"></div>
+          </div>
+          <div class="chart-card full">
+            <div class="chart-title">可疑用户收入 / 支出 / 余额散点</div>
+            <div id="creditRiskScatterChart" class="analytics-chart"></div>
           </div>
           <div class="table-shell full">
             <div class="table-title">可疑用户复核</div>
@@ -264,32 +256,57 @@
 
         <section class="band finance-band tab-panel" data-panel="finance">
           <div id="financeSummary" class="metric-grid compact"></div>
-          <div class="chart-strip three">
-            <div>
-              <div class="chart-title">每日 USDT 估算</div>
-              <div id="financeRevenueSpark" class="spark-bars blue"></div>
+          <div class="analytics-chart-grid finance-chart-grid">
+            <div class="chart-card chart-card-wide">
+              <div class="chart-title">充值趋势与累计</div>
+              <div class="chart-control-row">
+                <label>
+                  <span>指标</span>
+                  <select id="financeMetricSelect">
+                    <option value="usdt_amount" selected>USDT</option>
+                    <option value="plan_reward_credits">发放灵石</option>
+                    <option value="success_orders">成功订单</option>
+                    <option value="payers">付费人数</option>
+                  </select>
+                </label>
+              </div>
+              <div id="financeTrendChart" class="analytics-chart"></div>
             </div>
-            <div>
-              <div class="chart-title">每日发放灵石</div>
-              <div id="financeCreditsSpark" class="spark-bars amber"></div>
-            </div>
-            <div>
-              <div class="chart-title">每日成功订单</div>
-              <div id="financeOrdersSpark" class="spark-bars"></div>
+            <div class="chart-card">
+              <div class="chart-title">订单状态漏斗</div>
+              <div id="financeStatusChart" class="analytics-chart"></div>
             </div>
           </div>
-          <div class="table-shell full">
-            <div class="table-title">分时充值</div>
-            <div id="financeHourlyBars" class="hourly-bars"></div>
+          <div class="chart-card full">
+            <div class="table-title">分时充值对比</div>
+            <div class="chart-control-row">
+              <label>
+                <span>对比日期</span>
+                <input id="financeCompareDatesInput" type="text" placeholder="YYYY-MM-DD,YYYY-MM-DD" />
+              </label>
+              <label>
+                <span>累计周期</span>
+                <select id="financeHourlyRangeSelect">
+                  <option value="7">7 天</option>
+                  <option value="30" selected>30 天</option>
+                  <option value="90">90 天</option>
+                  <option value="180">180 天</option>
+                  <option value="360">360 天</option>
+                </select>
+              </label>
+              <button id="financeHourlyCompareButton" type="button">对比</button>
+              <button id="financeHourlyCumulativeButton" type="button">累计</button>
+            </div>
+            <div id="financeHourlyChart" class="analytics-chart"></div>
           </div>
-          <div class="distribution-grid finance-grid">
-            <div class="table-shell">
+          <div class="analytics-chart-grid finance-grid">
+            <div class="chart-card">
               <div class="table-title">渠道收入组成</div>
-              <div id="financeChannelDistribution" class="distribution-bars"></div>
+              <div id="financeChannelChart" class="analytics-chart compact-chart"></div>
             </div>
-            <div class="table-shell">
+            <div class="chart-card">
               <div class="table-title">套餐收入组成</div>
-              <div id="financePlanDistribution" class="distribution-bars"></div>
+              <div id="financePlanChart" class="analytics-chart compact-chart"></div>
             </div>
             <div class="table-shell">
               <div class="table-title">受邀充值</div>
@@ -390,32 +407,57 @@
 
         <section class="band generation-band tab-panel" data-panel="generation">
           <div id="generationSummary" class="metric-grid compact"></div>
-          <div class="chart-strip three">
-            <div>
-              <div class="chart-title">每日生成</div>
-              <div id="generationVolumeSpark" class="spark-bars blue"></div>
+          <div class="analytics-chart-grid generation-chart-grid">
+            <div class="chart-card chart-card-wide">
+              <div class="chart-title">每日生成、创作者与来源</div>
+              <div id="generationTrendChart" class="analytics-chart"></div>
             </div>
-            <div>
-              <div class="chart-title">每日灵石消耗</div>
-              <div id="generationCreditsSpark" class="spark-bars amber"></div>
-            </div>
-            <div>
-              <div class="chart-title">每日失败</div>
-              <div id="generationFailuresSpark" class="spark-bars red"></div>
+            <div class="chart-card">
+              <div class="chart-title">质量漏斗</div>
+              <div id="generationQualityFunnelChart" class="analytics-chart"></div>
             </div>
           </div>
-          <div class="distribution-grid generation-grid">
-            <div class="table-shell">
+          <div class="analytics-chart-grid generation-grid">
+            <div class="chart-card">
               <div class="table-title">来源组成</div>
-              <div id="generationSourceMix" class="distribution-bars"></div>
+              <div id="generationSourceMixChart" class="analytics-chart compact-chart"></div>
             </div>
-            <div class="table-shell">
-              <div class="table-title">质量漏斗</div>
-              <div id="generationQualitySegments" class="distribution-bars"></div>
+            <div class="chart-card">
+              <div class="table-title">Worker 成功 / 失败</div>
+              <div id="generationWorkerChart" class="analytics-chart compact-chart"></div>
             </div>
             <div class="table-shell">
               <div class="table-title">生成健康标记</div>
               <div id="generationHealthFlags" class="health-flags"></div>
+            </div>
+          </div>
+          <div class="analytics-chart-grid generation-chart-grid">
+            <div class="chart-card chart-card-wide">
+              <div class="chart-title">任务类型效率气泡</div>
+              <div id="generationTypeBubbleChart" class="analytics-chart"></div>
+            </div>
+            <div class="chart-card chart-card-wide">
+              <div class="chart-title">分时生成与类型对比</div>
+              <div class="chart-control-row">
+                <label>
+                  <span>对比日期</span>
+                  <input id="generationCompareDatesInput" type="text" placeholder="YYYY-MM-DD,YYYY-MM-DD" />
+                </label>
+                <label>
+                  <span>累计周期</span>
+                  <select id="generationHourlyRangeSelect">
+                    <option value="7">7 天</option>
+                    <option value="30" selected>30 天</option>
+                    <option value="90">90 天</option>
+                    <option value="180">180 天</option>
+                    <option value="360">360 天</option>
+                  </select>
+                </label>
+                <button id="generationHourlyCompareButton" type="button">小时对比</button>
+                <button id="generationHourlyCumulativeButton" type="button">小时累计</button>
+                <button id="generationTypeCompareButton" type="button">类型对比</button>
+              </div>
+              <div id="generationCompareChart" class="analytics-chart"></div>
             </div>
           </div>
           <div class="leaderboard-grid generation-tables">
@@ -911,6 +953,7 @@
       </main>
       </div>
     </div>
-    <script src="/static/app.js?v=20260629-prompt-scenes-v1"></script>
+    <script src="/static/vendor/echarts.min.js?v=6.0.0"></script>
+    <script src="/static/app.js?v=20260629-echarts-v1"></script>
   </body>
 </html>

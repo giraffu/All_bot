@@ -163,3 +163,105 @@ async def test_generation_returns_comprehensive_analytics(monkeypatch):
     assert payload["leaderboards"]["gallery"][0]["username"] == "popular"
     assert payload["recent_high_signal"][0]["signal_score"] == 57
     assert any(call[0] == "fetch" and call[2] == (30, analytics_main.GENERATION_OPERATION_TYPES, 12) for call in calls)
+
+
+@pytest.mark.asyncio
+async def test_generation_hourly_comparison_returns_selected_dates(monkeypatch):
+    async def fake_fetch(query, *args):
+        assert "generation_hourly_comparison" in query
+        assert args == (["2026-06-25", "2026-06-24"], analytics_main.GENERATION_OPERATION_TYPES)
+        return [
+            {
+                "date": "2026-06-25",
+                "hour": 12,
+                "generations": 10,
+                "creators": 4,
+                "web_generations": 8,
+                "bot_generations": 2,
+                "credits_spent": 30,
+                "worker_successes": 9,
+                "worker_failures": 1,
+            },
+            {
+                "date": "2026-06-24",
+                "hour": 13,
+                "generations": 6,
+                "creators": 3,
+                "web_generations": 5,
+                "bot_generations": 1,
+                "credits_spent": 18,
+                "worker_successes": 6,
+                "worker_failures": 0,
+            },
+        ]
+
+    monkeypatch.setattr(analytics_main, "_fetch", fake_fetch)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=analytics_main.app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get("/api/generation/hourly-comparison?dates=2026-06-25,2026-06-24")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["dates"] == ["2026-06-25", "2026-06-24"]
+    assert payload["hourly"][0]["generations"] == 10
+    assert payload["hourly"][0]["worker_failures"] == 1
+
+
+@pytest.mark.asyncio
+async def test_generation_hourly_cumulative_returns_period_totals(monkeypatch):
+    async def fake_fetch(query, *args):
+        assert "generation_hourly_cumulative" in query
+        assert args == (30, analytics_main.GENERATION_OPERATION_TYPES)
+        return [
+            {
+                "hour": 12,
+                "generations": 30,
+                "creators": 8,
+                "web_generations": 24,
+                "bot_generations": 6,
+                "credits_spent": 90,
+                "worker_successes": 28,
+                "worker_failures": 2,
+            }
+        ]
+
+    monkeypatch.setattr(analytics_main, "_fetch", fake_fetch)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=analytics_main.app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get("/api/generation/hourly-cumulative?days=30")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["days"] == 30
+    assert payload["hourly"][0]["hour"] == 12
+    assert payload["hourly"][0]["credits_spent"] == 90
+
+
+@pytest.mark.asyncio
+async def test_generation_type_comparison_returns_selected_dates(monkeypatch):
+    async def fake_fetch(query, *args):
+        assert "generation_type_comparison" in query
+        assert args == (["2026-06-25", "2026-06-24"],)
+        return [
+            {"date": "2026-06-25", "task_type": "edit", "generations": 12, "creators": 4},
+            {"date": "2026-06-24", "task_type": "face_swap", "generations": 8, "creators": 3},
+        ]
+
+    monkeypatch.setattr(analytics_main, "_fetch", fake_fetch)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=analytics_main.app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get("/api/generation/type-comparison?dates=2026-06-25,2026-06-24")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["dates"] == ["2026-06-25", "2026-06-24"]
+    assert payload["types"][0]["task_type"] == "edit"

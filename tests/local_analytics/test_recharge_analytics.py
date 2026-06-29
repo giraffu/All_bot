@@ -67,6 +67,9 @@ async def test_finance_returns_recharge_situation_details(monkeypatch):
                     "rmb_amount": 120,
                     "ton_amount": 1.5,
                     "stars_amount": 200,
+                    "rmb_usdt_amount": 17.91,
+                    "ton_usdt_amount": 2.10,
+                    "stars_usdt_amount": 2.60,
                     "usdt_amount": 48.41,
                     "success_orders": 4,
                     "payers": 3,
@@ -158,6 +161,9 @@ async def test_finance_returns_recharge_situation_details(monkeypatch):
     assert payload["summary"]["real_payers"] == 9
     assert payload["summary"]["internal_success_orders"] == 1
     assert payload["daily"][0]["plan_reward_credits"] == 2400
+    assert payload["daily"][0]["rmb_usdt_amount"] == 17.91
+    assert payload["daily"][0]["ton_usdt_amount"] == 2.10
+    assert payload["daily"][0]["stars_usdt_amount"] == 2.60
     assert payload["hourly"][0]["hour"] == 12
     assert payload["channels"][0]["channel"] == "RMB"
     assert payload["plans"][0]["identity_name"] == "纯灵石"
@@ -166,3 +172,87 @@ async def test_finance_returns_recharge_situation_details(monkeypatch):
     assert payload["top_payers"][0]["username"] == "payer"
     assert payload["recent_orders"][0]["is_internal_order"] is False
     assert any(call[0] == "fetch" and call[2] == (30, 12) for call in calls)
+
+
+@pytest.mark.asyncio
+async def test_finance_hourly_comparison_returns_selected_dates(monkeypatch):
+    async def fake_fetch(query, *args):
+        assert "finance_hourly_comparison" in query
+        assert args == (["2026-06-25", "2026-06-24"],)
+        return [
+            {
+                "date": "2026-06-25",
+                "hour": 12,
+                "success_orders": 3,
+                "plan_reward_credits": 1800,
+                "rmb_amount": 90,
+                "ton_amount": 0,
+                "stars_amount": 200,
+                "usdt_amount": 16.02,
+                "inner_disciples": 1,
+                "core_disciples": 0,
+                "true_disciples": 0,
+            },
+            {
+                "date": "2026-06-24",
+                "hour": 13,
+                "success_orders": 1,
+                "plan_reward_credits": 400,
+                "rmb_amount": 30,
+                "ton_amount": 0,
+                "stars_amount": 0,
+                "usdt_amount": 4.48,
+                "inner_disciples": 1,
+                "core_disciples": 0,
+                "true_disciples": 0,
+            },
+        ]
+
+    monkeypatch.setattr(analytics_main, "_fetch", fake_fetch)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=analytics_main.app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get("/api/finance/hourly-comparison?dates=2026-06-25,2026-06-24")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["dates"] == ["2026-06-25", "2026-06-24"]
+    assert payload["hourly"][0]["date"] == "2026-06-25"
+    assert payload["hourly"][0]["usdt_amount"] == 16.02
+
+
+@pytest.mark.asyncio
+async def test_finance_hourly_cumulative_returns_period_totals(monkeypatch):
+    async def fake_fetch(query, *args):
+        assert "finance_hourly_cumulative" in query
+        assert args == (30,)
+        return [
+            {
+                "hour": 12,
+                "success_orders": 8,
+                "plan_reward_credits": 4200,
+                "rmb_amount": 150,
+                "ton_amount": 1.5,
+                "stars_amount": 200,
+                "usdt_amount": 27.09,
+                "inner_disciples": 3,
+                "core_disciples": 1,
+                "true_disciples": 0,
+            }
+        ]
+
+    monkeypatch.setattr(analytics_main, "_fetch", fake_fetch)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=analytics_main.app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get("/api/finance/hourly-cumulative?days=30")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["days"] == 30
+    assert payload["hourly"][0]["hour"] == 12
+    assert payload["hourly"][0]["plan_reward_credits"] == 4200

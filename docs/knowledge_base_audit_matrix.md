@@ -64,7 +64,7 @@
 | `docs/子模块_计费与支付_billing_payment.md` | `src/core/billing_core*`、`src/payment_api_server.py`、affiliate migrations | 已核对 | 支付履约与 affiliate 账本口径有效 |
 | `docs/子模块_社区与存储_gallery_storage.md` | `src/core/gallery*`、`src/web_api/services/*gallery*`、R2 scripts | 已核对 | R2/legacy MinIO 退出口径有效 |
 | `docs/子模块_后台监控与清理_dashboard_monitoring.md` | `dashboard/backend`、`dashboard/frontend`、RunPod admin services | 已核对 | Dashboard 监控和清理边界有效 |
-| `docs/子模块_本地数据分析平台_local_analytics_platform.md` | `local_analytics_platform`、`scripts/run_local_analytics_shadow_pipeline.py`、`bot_db_prod_shadow`、本地 compose | 已更新 | 记录独立本地分析平台入口、只读 shadow 数据边界、每日 shadow 后保留 `analytics_prompt_*`、05:45 自动链路的 shadow/vector 双锁、Mart 增量刷新、瘦身与向量断点续跑链路、提示词瘦身、向量相似审核、Prompt 语义场景提炼 v1、相似族从 duplicate 边传递闭包改为代表点和族内两两阈值守卫、媒体引用核验与不挂载现有 Dashboard 的运行口径 |
+| `docs/子模块_本地数据分析平台_local_analytics_platform.md` | `local_analytics_platform`、`scripts/run_local_analytics_shadow_pipeline.py`、`bot_db_prod_shadow`、本地 compose | 已更新 | 记录独立本地分析平台入口、只读 shadow 数据边界、核心四 Tab ECharts 可视化与新增对比 API、每日 shadow 后保留 `analytics_prompt_*`、05:45 自动链路的 shadow/vector 双锁、Mart 增量刷新、瘦身与向量断点续跑链路、提示词瘦身、向量相似审核、Prompt 语义场景提炼 v1、相似族从 duplicate 边传递闭包改为代表点和族内两两阈值守卫、媒体引用核验与不挂载现有 Dashboard 的运行口径 |
 | `docs/business/00_INDEX_业务板块分类与规范总览.md` | business docs | 已核对 | 业务导航有效 |
 | `docs/business/00_DICT_全局业务数据字典.md` | models、domain config、business docs | 已核对 | 数据字典有效 |
 | `docs/business/01_BIZ_AI创作与生成板块.md` | task type registry、FSM、Web task routes | 已核对 | 生成业务描述有效 |

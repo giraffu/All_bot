@@ -24,6 +24,11 @@ const state = {
   promptScenePage: 1,
   promptVectorResume: null,
   promptVectorResumeLoading: false,
+  charts: {},
+  creditFlowMode: "daily",
+  financeMetric: "usdt_amount",
+  financeHourlyMode: "period",
+  generationCompareMode: "hourly-period",
   activeTab: "users",
   tabDays: {
     users: 30,
@@ -195,6 +200,213 @@ function metric(label, value, note = "") {
   `;
 }
 
+const chartPalette = ["#2563eb", "#0f766e", "#b7791f", "#7c3aed", "#dc2626", "#0891b2", "#16a34a", "#ea580c", "#9333ea", "#475569"];
+const tabChartIds = {
+  users: ["userTrendChart", "userConversionChart", "identityDistributionChart", "groupDistributionChart", "creditDistributionChart", "generationDistributionChart", "activityDistributionChart"],
+  "credit-flow": ["creditFlowTrendChart", "creditDailyCategoryChart", "creditIncomeCategoryChart", "creditExpenseCategoryChart", "creditCompositionIdentityChart", "creditCompositionGroupChart", "creditCompositionChannelChart", "creditCompositionPayerChart", "creditRiskScatterChart"],
+  finance: ["financeTrendChart", "financeStatusChart", "financeHourlyChart", "financeChannelChart", "financePlanChart"],
+  generation: ["generationTrendChart", "generationQualityFunnelChart", "generationSourceMixChart", "generationWorkerChart", "generationTypeBubbleChart", "generationCompareChart"],
+};
+
+function numeric(value) {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function shortNumber(value) {
+  const parsed = numeric(value);
+  if (Math.abs(parsed) >= 1000000) return `${Math.round(parsed / 100000) / 10}M`;
+  if (Math.abs(parsed) >= 1000) return `${Math.round(parsed / 100) / 10}k`;
+  return `${parsed}`;
+}
+
+function cumulative(values) {
+  let total = 0;
+  return values.map((value) => {
+    total += numeric(value);
+    return Math.round(total * 100) / 100;
+  });
+}
+
+function dateLabel(value) {
+  const text = String(value || "");
+  return /^\d{4}-\d{2}-\d{2}/.test(text) ? text.slice(5) : text || "-";
+}
+
+function defaultCompareDates(rows = []) {
+  const dates = rows.map((row) => row.day || row.date).filter(Boolean).slice(-2);
+  return dates.length ? dates : [new Date().toISOString().slice(0, 10)];
+}
+
+function ensureCompareInput(selector, rows = []) {
+  const input = $(selector);
+  if (input && !input.value) {
+    input.value = defaultCompareDates(rows).join(",");
+  }
+}
+
+function getCompareDates(selector, rows = []) {
+  ensureCompareInput(selector, rows);
+  const value = $(selector)?.value || "";
+  return value.split(",").map((item) => item.trim()).filter(Boolean).slice(0, 3);
+}
+
+function chartEmptyOption(message = "暂无数据") {
+  return {
+    title: {
+      text: message,
+      left: "center",
+      top: "middle",
+      textStyle: { color: "#687083", fontSize: 14, fontWeight: 600 },
+    },
+  };
+}
+
+function renderChart(id, option) {
+  const element = document.getElementById(id);
+  if (!element) return;
+  if (!window.echarts) {
+    element.innerHTML = '<div class="empty">图表资源加载失败</div>';
+    return;
+  }
+  if (!state.charts[id]) {
+    state.charts[id] = window.echarts.init(element);
+  }
+  state.charts[id].setOption(option || chartEmptyOption(), true);
+}
+
+function disposeChartsForTab(tab) {
+  (tabChartIds[tab] || []).forEach((id) => {
+    if (state.charts[id]) {
+      state.charts[id].dispose();
+      delete state.charts[id];
+    }
+  });
+}
+
+function resizeCharts() {
+  Object.values(state.charts).forEach((chart) => chart.resize());
+}
+
+function baseTooltip() {
+  return {
+    trigger: "axis",
+    axisPointer: { type: "shadow" },
+    valueFormatter: (value) => fmtAmount(value),
+  };
+}
+
+function buildLineBarOption({ dates, series, yAxis = [{ type: "value" }], legendBottom = true }) {
+  if (!dates?.length || !series?.length) return chartEmptyOption();
+  return {
+    color: chartPalette,
+    tooltip: baseTooltip(),
+    legend: { type: "scroll", bottom: legendBottom ? 0 : undefined, top: legendBottom ? undefined : 0 },
+    grid: { left: 42, right: 34, top: legendBottom ? 24 : 44, bottom: legendBottom ? 48 : 32, containLabel: true },
+    xAxis: { type: "category", data: dates.map(dateLabel), axisTick: { alignWithLabel: true } },
+    yAxis,
+    series,
+  };
+}
+
+function buildStackedBarOption({ dates, rows, categories, valueKey = "value", titleSuffix = "" }) {
+  if (!dates?.length || !categories?.length) return chartEmptyOption();
+  const series = categories.map((category) => ({
+    name: `${category}${titleSuffix}`,
+    type: "bar",
+    stack: "total",
+    emphasis: { focus: "series" },
+    data: dates.map((day) => numeric(rows.find((row) => (row.day || row.date) === day && (row.category || row.label) === category)?.[valueKey])),
+    barMaxWidth: 26,
+  }));
+  return buildLineBarOption({ dates, series });
+}
+
+function buildDonutOption(rows = [], valueKey = "count", labelKey = "label") {
+  const data = rows
+    .map((row) => ({ name: row[labelKey] || row.category || "-", value: numeric(row[valueKey]) }))
+    .filter((item) => item.value > 0);
+  if (!data.length) return chartEmptyOption();
+  return {
+    color: chartPalette,
+    tooltip: { trigger: "item", formatter: "{b}: {c} ({d}%)" },
+    legend: { type: "scroll", orient: "vertical", left: 0, top: "middle" },
+    series: [{
+      type: "pie",
+      radius: ["42%", "68%"],
+      center: ["62%", "50%"],
+      data,
+      label: { show: false },
+      labelLine: { show: false },
+      emphasis: { scale: true },
+    }],
+  };
+}
+
+function buildHorizontalBarOption(rows = [], valueKey = "count", labelKey = "label") {
+  const data = rows
+    .map((row) => ({ label: row[labelKey] || row.category || "-", value: numeric(row[valueKey]) }))
+    .filter((item) => item.value > 0)
+    .slice(0, 12)
+    .reverse();
+  if (!data.length) return chartEmptyOption();
+  return {
+    color: [chartPalette[1]],
+    tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
+    grid: { left: 96, right: 28, top: 16, bottom: 22 },
+    xAxis: { type: "value", axisLabel: { formatter: shortNumber }, splitLine: { lineStyle: { type: "dashed" } } },
+    yAxis: { type: "category", data: data.map((item) => item.label), axisLabel: { width: 86, overflow: "truncate" } },
+    series: [{ type: "bar", data: data.map((item) => item.value), barMaxWidth: 16, itemStyle: { borderRadius: [0, 5, 5, 0] } }],
+  };
+}
+
+function buildFunnelOption(rows = [], valueKey = "count", labelKey = "label") {
+  const data = rows.map((row) => ({ name: row[labelKey] || "-", value: numeric(row[valueKey]) })).filter((item) => item.value > 0);
+  if (!data.length) return chartEmptyOption();
+  return {
+    color: chartPalette,
+    tooltip: { trigger: "item", formatter: "{b}: {c}" },
+    series: [{
+      type: "funnel",
+      left: "8%",
+      top: 18,
+      bottom: 18,
+      width: "84%",
+      minSize: "10%",
+      maxSize: "100%",
+      sort: "none",
+      gap: 2,
+      label: { formatter: "{b}: {c}" },
+      data,
+    }],
+  };
+}
+
+function buildHourlyOption(rows = [], { dateKey = "date", metric = "generations", name = "分时" } = {}) {
+  const hours = Array.from({ length: 24 }, (_, hour) => hour);
+  const dates = Array.from(new Set(rows.map((row) => row[dateKey]).filter(Boolean)));
+  if (dates.length) {
+    return buildLineBarOption({
+      dates: hours.map((hour) => `${String(hour).padStart(2, "0")}时`),
+      series: dates.map((date) => ({
+        name: dateLabel(date),
+        type: "bar",
+        data: hours.map((hour) => numeric(rows.find((row) => row[dateKey] === date && numeric(row.hour) === hour)?.[metric])),
+        barMaxWidth: 18,
+      })),
+    });
+  }
+  return buildLineBarOption({
+    dates: hours.map((hour) => `${String(hour).padStart(2, "0")}时`),
+    series: [{
+      name,
+      type: "bar",
+      data: hours.map((hour) => numeric(rows.find((row) => numeric(row.hour) === hour)?.[metric])),
+      barMaxWidth: 20,
+    }],
+  });
+}
+
 async function fetchJson(path, params = {}, options = {}) {
   const url = new URL(path, window.location.origin);
   Object.entries(params).forEach(([key, value]) => {
@@ -256,6 +468,10 @@ function renderSource() {
 function setActiveTab(tabName, syncHash = true, shouldLoad = true) {
   const requested = tabName === "overview" ? "generation" : tabName;
   const tab = tabs[requested] ? requested : "users";
+  const previousTab = state.activeTab;
+  if (previousTab && previousTab !== tab) {
+    disposeChartsForTab(previousTab);
+  }
   state.activeTab = tab;
   document.querySelectorAll(".tab-button").forEach((button) => {
     button.classList.toggle("active", button.dataset.tab === tab);
@@ -290,24 +506,46 @@ function renderUsers() {
     metric("投稿封禁", fmt(summary.submission_banned_users), "is_submission_banned"),
   ].join("");
 
-  renderSpark("#userNewSpark", state.users?.daily || [], "new_users");
-  renderSpark("#userNewChannelSpark", state.users?.daily || [], "new_channel_members");
-  renderSpark("#userNewGenerationSpark", state.users?.daily || [], "new_generation_users");
-  renderSpark("#userActiveSpark", state.users?.daily || [], "active_users");
-  renderSpark("#userCheckinSpark", state.users?.daily || [], "checkins");
-
-  const distributions = state.users?.distributions || {};
-  renderDistribution("#identityDistribution", distributions.identity || []);
-  renderDistribution("#groupDistribution", distributions.user_group || []);
-  renderDistribution("#creditDistribution", distributions.credit_holding || []);
-  renderDistribution("#generationDistribution", distributions.generation_count || []);
-  renderDistribution("#activityDistribution", distributions.activity_segments || []);
+  renderUserCharts();
 
   const leaderboards = state.users?.leaderboards || {};
   renderUserLeaderboard("#generationLeaderboard", leaderboards.generation, (row) => fmt(row.generation_count), (row) => fmtDate(row.last_activity));
   renderUserLeaderboard("#creditsLeaderboard", leaderboards.credits, (row) => fmt(row.credits), (row) => fmt(row.generation_count));
   renderUserLeaderboard("#referralsLeaderboard", leaderboards.referrals, (row) => fmt(row.referral_count), (row) => row.is_channel_member ? "是" : "否");
   renderUserLeaderboard("#recentActiveLeaderboard", leaderboards.recent_active, (row) => fmtDate(row.last_activity), (row) => fmt(row.credits));
+}
+
+function renderUserCharts() {
+  const daily = state.users?.daily || [];
+  const dates = daily.map((row) => row.day);
+  renderChart("userTrendChart", buildLineBarOption({
+    dates,
+    series: [
+      { name: "新增用户", type: "line", smooth: true, data: daily.map((row) => numeric(row.new_users)), areaStyle: { opacity: 0.08 } },
+      { name: "新增入宗门", type: "line", smooth: true, data: daily.map((row) => numeric(row.new_channel_members)) },
+      { name: "新增生成用户", type: "line", smooth: true, data: daily.map((row) => numeric(row.new_generation_users)) },
+      { name: "活跃用户", type: "bar", yAxisIndex: 1, data: daily.map((row) => numeric(row.active_users)), barMaxWidth: 20 },
+      { name: "签到", type: "bar", yAxisIndex: 1, data: daily.map((row) => numeric(row.checkins)), barMaxWidth: 20 },
+    ],
+    yAxis: [
+      { type: "value", name: "新增", axisLabel: { formatter: shortNumber } },
+      { type: "value", name: "活跃/签到", axisLabel: { formatter: shortNumber }, splitLine: { show: false } },
+    ],
+  }));
+
+  const summary = state.users?.summary || {};
+  renderChart("userConversionChart", buildFunnelOption([
+    { label: "新增用户", count: summary.new_users },
+    { label: "新增入宗门", count: daily.reduce((sum, row) => sum + numeric(row.new_channel_members), 0) },
+    { label: "新增生成用户", count: daily.reduce((sum, row) => sum + numeric(row.new_generation_users), 0) },
+  ]));
+
+  const distributions = state.users?.distributions || {};
+  renderChart("identityDistributionChart", buildDonutOption(distributions.identity || []));
+  renderChart("groupDistributionChart", buildDonutOption(distributions.user_group || []));
+  renderChart("activityDistributionChart", buildDonutOption(distributions.activity_segments || []));
+  renderChart("creditDistributionChart", buildHorizontalBarOption(distributions.credit_holding || []));
+  renderChart("generationDistributionChart", buildHorizontalBarOption(distributions.generation_count || []));
 }
 
 function renderCreditFlow() {
@@ -325,47 +563,72 @@ function renderCreditFlow() {
     metric("内部转移", fmt(summary.internal_transfer_income), `Gallery 支出 ${fmt(summary.internal_transfer_expense)}`),
   ].join("");
 
-  const daily = state.creditFlow?.daily || [];
-  renderSpark("#creditIncomeSpark", daily, "income");
-  renderSpark("#creditExpenseSpark", daily, "expense");
-  renderSpark("#creditNetSpark", daily, "net_change", { absolute: true, signed: true });
-
-  const categories = state.creditFlow?.categories || [];
-  renderAmountDistribution(
-    "#creditIncomeCategories",
-    categories.filter((row) => row.direction === "income" && Number(row.income || 0) > 0),
-    "income"
-  );
-  renderAmountDistribution(
-    "#creditExpenseCategories",
-    categories.filter((row) => row.direction === "expense" && Number(row.expense || 0) > 0),
-    "expense"
-  );
-
-  const composition = state.creditFlow?.composition || {};
-  renderAmountDistribution("#creditCompositionIdentity", composition.identity || [], "income");
-  renderAmountDistribution("#creditCompositionGroup", composition.user_group || [], "income");
-  renderAmountDistribution("#creditCompositionChannel", composition.channel_member || [], "income");
-  renderAmountDistribution("#creditCompositionPayer", composition.payer || [], "income");
+  renderCreditFlowCharts();
   renderHealthFlags(health.flags || []);
   renderCreditRiskUsers(state.creditFlow?.risk_users || []);
 }
 
-function renderSpark(selector, rows, key, options = {}) {
-  const values = rows.map((row) => {
-    const raw = Number(row[key] || 0);
-    return options.absolute ? Math.abs(raw) : Math.max(raw, 0);
-  });
-  const max = Math.max(1, ...values);
-  $(selector).innerHTML = rows
-    .map((row, index) => {
-      const raw = Number(row[key] || 0);
-      const height = Math.max(4, Math.round((values[index] / max) * 86));
-      const display = options.signed ? fmtSigned(raw) : fmt(raw);
-      const className = raw < 0 ? "spark-bar negative" : "spark-bar";
-      return `<div class="${className}" style="height:${height}px" title="${escapeHtml(row.day)}: ${display}"></div>`;
-    })
-    .join("");
+function renderCreditFlowCharts() {
+  const daily = state.creditFlow?.daily || [];
+  const dates = daily.map((row) => row.day);
+  const income = daily.map((row) => numeric(row.income));
+  const expense = daily.map((row) => numeric(row.expense));
+  const net = daily.map((row) => numeric(row.net_change));
+  const mode = state.creditFlowMode;
+  const dailySeries = [
+    { name: mode === "cumulative" ? "累计收入" : "收入", type: "bar", data: mode === "cumulative" ? cumulative(income) : income, barMaxWidth: 22 },
+    { name: mode === "cumulative" ? "累计支出" : "支出", type: "bar", data: mode === "cumulative" ? cumulative(expense) : expense, barMaxWidth: 22 },
+    { name: mode === "cumulative" ? "累计净变化" : "净变化", type: "line", smooth: true, data: mode === "cumulative" ? cumulative(net) : net },
+  ];
+  renderChart("creditFlowTrendChart", buildLineBarOption({ dates, series: dailySeries }));
+
+  const dailyCategories = state.creditFlow?.daily_categories || [];
+  const categoryRows = dailyCategories.map((row) => ({
+    ...row,
+    value: row.direction === "expense" ? -numeric(row.expense) : numeric(row.income),
+  }));
+  const categories = Array.from(new Set(categoryRows.map((row) => row.category)));
+  renderChart("creditDailyCategoryChart", buildStackedBarOption({ dates, rows: categoryRows, categories }));
+
+  const categoriesTotal = state.creditFlow?.categories || [];
+  const incomeRows = categoriesTotal.filter((row) => row.direction === "income" && numeric(row.income) > 0);
+  const expenseRows = categoriesTotal.filter((row) => row.direction === "expense" && numeric(row.expense) > 0);
+  renderChart("creditIncomeCategoryChart", buildDonutOption(incomeRows, "income", "category"));
+  renderChart("creditExpenseCategoryChart", buildDonutOption(expenseRows, "expense", "category"));
+
+  const composition = state.creditFlow?.composition || {};
+  renderChart("creditCompositionIdentityChart", buildHorizontalBarOption(composition.identity || [], "income"));
+  renderChart("creditCompositionGroupChart", buildHorizontalBarOption(composition.user_group || [], "income"));
+  renderChart("creditCompositionChannelChart", buildDonutOption(composition.channel_member || [], "income"));
+  renderChart("creditCompositionPayerChart", buildDonutOption(composition.payer || [], "income"));
+
+  const riskUsers = state.creditFlow?.risk_users || [];
+  const scatterData = riskUsers.map((row) => [
+    numeric(row.income),
+    numeric(row.expense),
+    numeric(row.current_balance),
+    numeric(row.risk_score),
+    row.full_name || row.username || `ID ${row.id}`,
+  ]);
+  renderChart("creditRiskScatterChart", scatterData.length ? {
+    color: ["#b42318"],
+    tooltip: {
+      trigger: "item",
+      formatter: (params) => {
+        const [incomeValue, expenseValue, balance, riskScore, name] = params.value;
+        return `${escapeHtml(name)}<br/>收入 ${fmt(incomeValue)}<br/>支出 ${fmt(expenseValue)}<br/>余额 ${fmt(balance)}<br/>风险分 ${fmt(riskScore)}`;
+      },
+    },
+    grid: { left: 52, right: 36, top: 24, bottom: 36, containLabel: true },
+    xAxis: { type: "value", name: "收入", axisLabel: { formatter: shortNumber }, splitLine: { lineStyle: { type: "dashed" } } },
+    yAxis: { type: "value", name: "支出", axisLabel: { formatter: shortNumber }, splitLine: { lineStyle: { type: "dashed" } } },
+    series: [{
+      name: "风险用户",
+      type: "scatter",
+      data: scatterData,
+      symbolSize: (value) => Math.max(8, Math.min(42, Math.sqrt(numeric(value[2])) * 1.2 + numeric(value[3]) / 8)),
+    }],
+  } : chartEmptyOption("暂无风险用户"));
 }
 
 function renderDistribution(selector, rows = []) {
@@ -385,64 +648,6 @@ function renderDistribution(selector, rows = []) {
           <div class="distribution-meta">
             <span>${escapeHtml(row.label)}</span>
             <strong>${fmt(count)}</strong>
-          </div>
-          <div class="distribution-track">
-            <div class="distribution-fill" style="width:${width}%"></div>
-          </div>
-          <div class="distribution-share">${share}</div>
-        </div>
-      `;
-    })
-    .join("");
-}
-
-function renderFunnelDistribution(selector, rows = [], total = 0) {
-  if (!rows.length) {
-    $(selector).innerHTML = '<div class="empty">暂无数据</div>';
-    return;
-  }
-  const denominator = Math.max(1, Number(total || 0));
-  $(selector).innerHTML = rows
-    .map((row) => {
-      const count = Number(row.count || 0);
-      const width = Math.max(2, Math.min(100, Math.round((count / denominator) * 100)));
-      const share = `${Math.round((count / denominator) * 1000) / 10}%`;
-      return `
-        <div class="distribution-row">
-          <div class="distribution-meta">
-            <span>${escapeHtml(row.label)}</span>
-            <strong>${fmt(count)}</strong>
-          </div>
-          <div class="distribution-track">
-            <div class="distribution-fill" style="width:${width}%"></div>
-          </div>
-          <div class="distribution-share">${share}</div>
-        </div>
-      `;
-    })
-    .join("");
-}
-
-function renderAmountDistribution(selector, rows = [], valueKey = "income") {
-  if (!rows.length) {
-    $(selector).innerHTML = '<div class="empty">暂无数据</div>';
-    return;
-  }
-  const total = rows.reduce((sum, row) => sum + Number(row[valueKey] || 0), 0);
-  const max = Math.max(1, ...rows.map((row) => Number(row[valueKey] || 0)));
-  $(selector).innerHTML = rows
-    .map((row) => {
-      const value = Number(row[valueKey] || 0);
-      const width = Math.max(2, Math.round((value / max) * 100));
-      const share = total ? `${Math.round((value / total) * 1000) / 10}%` : "0%";
-      const label = row.label || row.category || "-";
-      const detail = `${fmt(row.users)} 人 · ${fmt(row.events)} 次`;
-      return `
-        <div class="distribution-row amount-row">
-          <div class="distribution-meta">
-            <span>${escapeHtml(label)}</span>
-            <strong>${fmt(value)}</strong>
-            <small>${detail}</small>
           </div>
           <div class="distribution-track">
             <div class="distribution-fill" style="width:${width}%"></div>
@@ -559,23 +764,6 @@ function renderOrderStatusBadge(status, isInternal = false) {
   `;
 }
 
-function renderFinanceHourly() {
-  const rows = state.finance?.hourly || [];
-  const byHour = new Map(rows.map((row) => [Number(row.hour), row]));
-  const max = Math.max(1, ...rows.map((row) => Number(row.plan_reward_credits || 0)));
-  $("#financeHourlyBars").innerHTML = Array.from({ length: 24 }, (_, hour) => {
-    const row = byHour.get(hour) || { success_orders: 0, plan_reward_credits: 0 };
-    const height = Math.max(5, Math.round((Number(row.plan_reward_credits || 0) / max) * 100));
-    const title = `${hour}:00 订单 ${fmt(row.success_orders)} · 灵石 ${fmt(row.plan_reward_credits)} · RMB ${fmtAmount(row.rmb_amount)}`;
-    return `
-      <div class="hour-slot">
-        <div class="hourly-bar finance-hourly-bar" style="height:${height}px" title="${escapeHtml(title)}"></div>
-        <span>${hour}</span>
-      </div>
-    `;
-  }).join("");
-}
-
 function renderFinanceInvitation(invitation = {}) {
   $("#financeInvitationSummary").innerHTML = `
     <div class="finance-stat-row"><span>受邀付费人数</span><strong>${fmt(invitation.invitee_payers)}</strong></div>
@@ -603,31 +791,8 @@ function renderFinance() {
   ].join("");
 
   const daily = state.finance?.daily || [];
-  renderSpark("#financeRevenueSpark", daily, "usdt_amount");
-  renderSpark("#financeCreditsSpark", daily, "plan_reward_credits");
-  renderSpark("#financeOrdersSpark", daily, "success_orders");
-  renderFinanceHourly();
-
-  renderAmountDistribution(
-    "#financeChannelDistribution",
-    (state.finance?.channels || []).map((row) => ({
-      label: channelLabel(row.channel),
-      income: row.usdt_amount,
-      users: row.payers,
-      events: row.success_orders,
-    })),
-    "income"
-  );
-  renderAmountDistribution(
-    "#financePlanDistribution",
-    (state.finance?.plans || []).map((row) => ({
-      label: row.plan_name,
-      income: row.usdt_amount,
-      users: row.payers,
-      events: row.success_orders,
-    })),
-    "income"
-  );
+  ensureCompareInput("#financeCompareDatesInput", daily);
+  renderFinanceCharts();
   renderFinanceInvitation(state.finance?.invitation || {});
   renderHealthFlags(health.flags || [], "#financeHealthFlags");
 
@@ -707,6 +872,60 @@ function renderFinance() {
   `);
 }
 
+const financeMetricLabels = {
+  usdt_amount: "USDT",
+  plan_reward_credits: "发放灵石",
+  success_orders: "成功订单",
+  payers: "付费人数",
+};
+
+function renderFinanceCharts(hourlyRows = null, hourlyLabel = "近周期累计") {
+  const daily = state.finance?.daily || [];
+  const dates = daily.map((row) => row.day);
+  const metric = $("#financeMetricSelect")?.value || state.financeMetric || "usdt_amount";
+  state.financeMetric = metric;
+  const metricLabel = financeMetricLabels[metric] || metric;
+  let trendSeries;
+  if (metric === "usdt_amount") {
+    trendSeries = [
+      { name: "RMB 折 USDT", type: "bar", stack: "revenue", data: daily.map((row) => numeric(row.rmb_usdt_amount)), barMaxWidth: 22 },
+      { name: "TON 折 USDT", type: "bar", stack: "revenue", data: daily.map((row) => numeric(row.ton_usdt_amount)), barMaxWidth: 22 },
+      { name: "Stars 折 USDT", type: "bar", stack: "revenue", data: daily.map((row) => numeric(row.stars_usdt_amount)), barMaxWidth: 22 },
+      { name: "累计 USDT", type: "line", smooth: true, data: cumulative(daily.map((row) => numeric(row.usdt_amount))) },
+    ];
+  } else {
+    const values = daily.map((row) => numeric(row[metric]));
+    trendSeries = [
+      { name: `每日${metricLabel}`, type: "bar", data: values, barMaxWidth: 22 },
+      { name: `累计${metricLabel}`, type: "line", smooth: true, data: cumulative(values) },
+    ];
+  }
+  renderChart("financeTrendChart", buildLineBarOption({ dates, series: trendSeries }));
+
+  const summary = state.finance?.summary || {};
+  renderChart("financeStatusChart", buildFunnelOption([
+    { label: "全部订单", count: numeric(summary.success_orders) + numeric(summary.pending_orders) + numeric(summary.failed_orders) },
+    { label: "成功", count: summary.success_orders },
+    { label: "处理中", count: summary.pending_orders },
+    { label: "失败", count: summary.failed_orders },
+    { label: "内部/赠送成功", count: summary.internal_success_orders },
+  ]));
+
+  renderChart("financeHourlyChart", buildHourlyOption(hourlyRows || (state.finance?.hourly || []), {
+    metric: "plan_reward_credits",
+    name: hourlyLabel,
+  }));
+
+  renderChart("financeChannelChart", buildDonutOption(
+    (state.finance?.channels || []).map((row) => ({ label: channelLabel(row.channel), value: row.usdt_amount })),
+    "value"
+  ));
+  renderChart("financePlanChart", buildDonutOption(
+    (state.finance?.plans || []).map((row) => ({ label: row.plan_name, value: row.usdt_amount })),
+    "value"
+  ));
+}
+
 function generationHealthFlags(summary = {}) {
   const flags = [];
   if (Number(summary.worker_failure_rate || 0) >= 5) flags.push("Worker 失败率偏高");
@@ -735,22 +954,8 @@ function renderGeneration() {
     metric("最近生成", fmtDate(summary.latest_generation_at), `${fmt(Math.round(summary.avg_width || 0))} x ${fmt(Math.round(summary.avg_height || 0))}`),
   ].join("");
 
-  const daily = state.generation?.daily || [];
-  renderSpark("#generationVolumeSpark", daily, "generations");
-  renderSpark("#generationCreditsSpark", daily, "credits_spent");
-  renderSpark("#generationFailuresSpark", daily, "worker_failures");
-
-  renderAmountDistribution(
-    "#generationSourceMix",
-    (state.generation?.source_mix || []).map((row) => ({
-      label: row.label,
-      count: row.count,
-      users: row.creators,
-      events: row.count,
-    })),
-    "count"
-  );
-  renderFunnelDistribution("#generationQualitySegments", state.generation?.quality_segments || [], summary.generations);
+  ensureCompareInput("#generationCompareDatesInput", state.generation?.daily || []);
+  renderGenerationCharts();
   renderHealthFlags(generationHealthFlags(summary), "#generationHealthFlags");
 
   $("#generationTypes").innerHTML = tableRows(state.generation?.by_type, (row) => `
@@ -855,6 +1060,87 @@ function renderGeneration() {
       <td>${fmtDate(row.created_at)}</td>
     </tr>
   `);
+}
+
+function renderGenerationCharts(compareRows = null, compareKind = "hourly-period") {
+  const daily = state.generation?.daily || [];
+  const dates = daily.map((row) => row.day);
+  renderChart("generationTrendChart", buildLineBarOption({
+    dates,
+    series: [
+      { name: "生成量", type: "line", smooth: true, data: daily.map((row) => numeric(row.generations)), areaStyle: { opacity: 0.08 } },
+      { name: "创作者", type: "line", smooth: true, data: daily.map((row) => numeric(row.creators)) },
+      { name: "Web", type: "bar", stack: "source", data: daily.map((row) => numeric(row.web_generations)), barMaxWidth: 22 },
+      { name: "Bot", type: "bar", stack: "source", data: daily.map((row) => numeric(row.bot_generations)), barMaxWidth: 22 },
+      { name: "灵石消耗", type: "line", yAxisIndex: 1, smooth: true, data: daily.map((row) => numeric(row.credits_spent)) },
+    ],
+    yAxis: [
+      { type: "value", name: "生成", axisLabel: { formatter: shortNumber } },
+      { type: "value", name: "灵石", axisLabel: { formatter: shortNumber }, splitLine: { show: false } },
+    ],
+  }));
+
+  renderChart("generationQualityFunnelChart", buildFunnelOption(state.generation?.quality_segments || []));
+  renderChart("generationSourceMixChart", buildDonutOption(state.generation?.source_mix || [], "count"));
+
+  renderChart("generationWorkerChart", buildLineBarOption({
+    dates,
+    series: [
+      { name: "Worker 成功", type: "bar", stack: "worker", data: daily.map((row) => numeric(row.worker_successes)), barMaxWidth: 18 },
+      { name: "Worker 失败", type: "bar", stack: "worker", data: daily.map((row) => numeric(row.worker_failures)), barMaxWidth: 18 },
+      {
+        name: "失败率",
+        type: "line",
+        yAxisIndex: 1,
+        data: daily.map((row) => {
+          const total = numeric(row.worker_successes) + numeric(row.worker_failures);
+          return total ? Math.round((numeric(row.worker_failures) / total) * 10000) / 100 : 0;
+        }),
+      },
+    ],
+    yAxis: [
+      { type: "value", name: "事件", axisLabel: { formatter: shortNumber } },
+      { type: "value", name: "失败率%", min: 0, max: 100, splitLine: { show: false } },
+    ],
+  }));
+
+  const bubbleRows = state.generation?.by_type || [];
+  renderChart("generationTypeBubbleChart", bubbleRows.length ? {
+    color: chartPalette,
+    tooltip: {
+      trigger: "item",
+      formatter: (params) => {
+        const row = bubbleRows[params.dataIndex] || {};
+        return `${escapeHtml(row.task_type)}<br/>生成 ${fmt(row.generations)}<br/>输出率 ${fmtPercent(row.result_rate)}<br/>失败率 ${fmtPercent(row.worker_failure_rate)}<br/>灵石 ${fmt(row.credits_spent)}`;
+      },
+    },
+    grid: { left: 54, right: 34, top: 22, bottom: 42, containLabel: true },
+    xAxis: { type: "value", name: "生成量", axisLabel: { formatter: shortNumber }, splitLine: { lineStyle: { type: "dashed" } } },
+    yAxis: { type: "value", name: "输出率%", min: 0, max: 100, splitLine: { lineStyle: { type: "dashed" } } },
+    series: [{
+      name: "任务类型",
+      type: "scatter",
+      data: bubbleRows.map((row) => [numeric(row.generations), numeric(row.result_rate), numeric(row.credits_spent), row.task_type]),
+      symbolSize: (value) => Math.max(10, Math.min(54, Math.sqrt(numeric(value[2])) * 1.4)),
+    }],
+  } : chartEmptyOption());
+
+  if (compareKind === "types") {
+    const rows = compareRows || [];
+    const compareDates = Array.from(new Set(rows.map((row) => row.date)));
+    const taskTypes = Array.from(new Set(rows.map((row) => row.task_type))).slice(0, 12);
+    renderChart("generationCompareChart", buildStackedBarOption({
+      dates: compareDates,
+      rows: rows.map((row) => ({ ...row, category: row.task_type, value: row.generations })),
+      categories: taskTypes,
+    }));
+    return;
+  }
+
+  renderChart("generationCompareChart", buildHourlyOption(compareRows || (state.generation?.hourly || []), {
+    metric: "generations",
+    name: compareKind === "hourly-cumulative" ? "累计生成量" : "分时生成量",
+  }));
 }
 
 function renderPromptMetricSummary() {
@@ -1795,6 +2081,66 @@ async function loadGeneration(days) {
   renderGeneration();
 }
 
+async function loadFinanceHourlyComparison() {
+  try {
+    setError(null);
+    const dates = getCompareDates("#financeCompareDatesInput", state.finance?.daily || []);
+    const payload = await fetchJson("/api/finance/hourly-comparison", { dates: dates.join(",") });
+    state.financeHourlyMode = "comparison";
+    renderFinanceCharts(payload.hourly || [], "日期对比");
+  } catch (error) {
+    setError(error);
+  }
+}
+
+async function loadFinanceHourlyCumulative() {
+  try {
+    setError(null);
+    const days = selectNumber("#financeHourlyRangeSelect", 30);
+    const payload = await fetchJson("/api/finance/hourly-cumulative", { days });
+    state.financeHourlyMode = "cumulative";
+    renderFinanceCharts(payload.hourly || [], `近 ${fmt(days)} 天累计`);
+  } catch (error) {
+    setError(error);
+  }
+}
+
+async function loadGenerationHourlyComparison() {
+  try {
+    setError(null);
+    const dates = getCompareDates("#generationCompareDatesInput", state.generation?.daily || []);
+    const payload = await fetchJson("/api/generation/hourly-comparison", { dates: dates.join(",") });
+    state.generationCompareMode = "hourly-comparison";
+    renderGenerationCharts(payload.hourly || [], "hourly-comparison");
+  } catch (error) {
+    setError(error);
+  }
+}
+
+async function loadGenerationHourlyCumulative() {
+  try {
+    setError(null);
+    const days = selectNumber("#generationHourlyRangeSelect", 30);
+    const payload = await fetchJson("/api/generation/hourly-cumulative", { days });
+    state.generationCompareMode = "hourly-cumulative";
+    renderGenerationCharts(payload.hourly || [], "hourly-cumulative");
+  } catch (error) {
+    setError(error);
+  }
+}
+
+async function loadGenerationTypeComparison() {
+  try {
+    setError(null);
+    const dates = getCompareDates("#generationCompareDatesInput", state.generation?.daily || []);
+    const payload = await fetchJson("/api/generation/type-comparison", { dates: dates.join(",") });
+    state.generationCompareMode = "types";
+    renderGenerationCharts(payload.types || [], "types");
+  } catch (error) {
+    setError(error);
+  }
+}
+
 async function loadPrompts(days) {
   const generation = await fetchJson("/api/generation", { days, limit: 12 });
   state.promptTaskTypes = generation.by_type || [];
@@ -1943,6 +2289,24 @@ $("#daysSelect").addEventListener("change", () => {
   setCurrentDays(selectNumber("#daysSelect", 30));
   reloadCurrentTab();
 });
+document.querySelectorAll("[data-credit-mode]").forEach((button) => {
+  button.addEventListener("click", () => {
+    state.creditFlowMode = button.dataset.creditMode || "daily";
+    document.querySelectorAll("[data-credit-mode]").forEach((item) => {
+      item.classList.toggle("active", item === button);
+    });
+    if (state.creditFlow) renderCreditFlowCharts();
+  });
+});
+$("#financeMetricSelect")?.addEventListener("change", () => {
+  state.financeMetric = $("#financeMetricSelect").value || "usdt_amount";
+  if (state.finance) renderFinanceCharts();
+});
+$("#financeHourlyCompareButton")?.addEventListener("click", loadFinanceHourlyComparison);
+$("#financeHourlyCumulativeButton")?.addEventListener("click", loadFinanceHourlyCumulative);
+$("#generationHourlyCompareButton")?.addEventListener("click", loadGenerationHourlyComparison);
+$("#generationHourlyCumulativeButton")?.addEventListener("click", loadGenerationHourlyCumulative);
+$("#generationTypeCompareButton")?.addEventListener("click", loadGenerationTypeComparison);
 $("#taskTypeSelect").addEventListener("change", () => {
   state.promptPage = 1;
   state.selectedPrompt = null;
@@ -2073,6 +2437,7 @@ document.querySelectorAll(".tab-button").forEach((button) => {
   button.addEventListener("click", () => setActiveTab(button.dataset.tab));
 });
 window.addEventListener("hashchange", () => setActiveTab(location.hash.replace("#", ""), false));
+window.addEventListener("resize", resizeCharts);
 
 setActiveTab(location.hash.replace("#", "") || "users", false, false);
 syncDaysControl();

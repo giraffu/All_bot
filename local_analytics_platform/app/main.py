@@ -286,6 +286,26 @@ def _chart_days(days: int) -> int:
     return MAX_ANALYTICS_DAYS if days <= 0 else days
 
 
+def _parse_compare_dates(value: str) -> list[str]:
+    raw_dates = [item.strip() for item in (value or "").split(",") if item.strip()]
+    if not raw_dates:
+        raise HTTPException(status_code=400, detail="dates is required")
+    if len(raw_dates) > 3:
+        raise HTTPException(status_code=400, detail="dates supports at most 3 values")
+
+    parsed: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_dates:
+        try:
+            normalized = date.fromisoformat(raw).isoformat()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"invalid date: {raw}") from exc
+        if normalized not in seen:
+            parsed.append(normalized)
+            seen.add(normalized)
+    return parsed
+
+
 def _metric_number(row: dict[str, Any], key: str) -> float:
     value = row.get(key, 0)
     try:
@@ -1376,6 +1396,129 @@ async def credit_flow_analytics(
         chart_days,
         GENERATION_OPERATION_TYPES,
     )
+    daily_categories = await _fetch(
+        f"""
+        with days as (
+            select generate_series(
+                current_date - (($1::int - 1) * interval '1 day'),
+                current_date,
+                interval '1 day'
+            )::date as day
+        ),
+        category_order(category, direction, sort_order) as (
+            values
+                ('充值/套餐发放', 'income', 1),
+                ('免费签到', 'income', 2),
+                ('身份加成签到', 'income', 3),
+                ('注册欢迎', 'income', 4),
+                ('邀请奖励', 'income', 5),
+                ('返佣兑换', 'income', 6),
+                ('退款/补偿', 'income', 7),
+                ('Gallery 解锁收入', 'income', 8),
+                ('后台调整', 'income', 9),
+                ('其他收入', 'income', 10),
+                ('生成/消费支出', 'expense', 20),
+                ('Gallery 解锁支出', 'expense', 21),
+                ('后台调整', 'expense', 22),
+                ('其他支出', 'expense', 23)
+        ),
+        flows as (
+            select
+                created_at::date as day,
+                user_id,
+                coalesce(operation_type, '') as operation_type,
+                coalesce(credit_change, 0)::numeric as credit_change,
+                extra_info
+            from user_logs
+            where created_at >= current_date - (($1::int - 1) * interval '1 day')
+              and credit_change <> 0
+        ),
+        {CHECKIN_SPLIT_CTES},
+        classified as (
+            select
+                day,
+                user_id,
+                free_checkin_income as credit_change,
+                'income' as direction,
+                '免费签到' as category
+            from checkin_split
+            where credit_change > 0
+              and operation_type = 'checkin'
+              and free_checkin_income > 0
+
+            union all
+
+            select
+                day,
+                user_id,
+                greatest(credit_change - free_checkin_income, 0) as credit_change,
+                'income' as direction,
+                '身份加成签到' as category
+            from checkin_split
+            where credit_change > 0
+              and operation_type = 'checkin'
+              and greatest(credit_change - free_checkin_income, 0) > 0
+
+            union all
+
+            select
+                day,
+                user_id,
+                credit_change,
+                case when credit_change > 0 then 'income' else 'expense' end as direction,
+                case
+                    when credit_change > 0 and operation_type = 'recharge' then '充值/套餐发放'
+                    when credit_change > 0 and operation_type = 'welcome_bonus' then '注册欢迎'
+                    when credit_change > 0 and operation_type like 'referral_reward%' then '邀请奖励'
+                    when credit_change > 0 and operation_type = 'affiliate_credits_redeem' then '返佣兑换'
+                    when credit_change > 0 and operation_type like 'refund%' then '退款/补偿'
+                    when credit_change > 0 and operation_type = 'gallery_prompt_unlock_reward' then 'Gallery 解锁收入'
+                    when credit_change > 0 and operation_type = 'admin_update' then '后台调整'
+                    when credit_change > 0 then '其他收入'
+                    when credit_change < 0 and operation_type = any($2::text[]) then '生成/消费支出'
+                    when credit_change < 0 and operation_type = 'gallery_prompt_unlock_purchase' then 'Gallery 解锁支出'
+                    when credit_change < 0 and operation_type = 'admin_update' then '后台调整'
+                    else '其他支出'
+                end as category
+            from checkin_split
+            where credit_change <> 0
+              and not (credit_change > 0 and operation_type = 'checkin')
+        ),
+        grouped as (
+            select
+                day,
+                category,
+                direction,
+                count(*)::bigint as events,
+                count(distinct user_id)::bigint as users,
+                coalesce(sum(credit_change) filter (where credit_change > 0), 0)::bigint as income,
+                abs(coalesce(sum(credit_change) filter (where credit_change < 0), 0))::bigint as expense,
+                coalesce(sum(credit_change), 0)::bigint as net_change
+            from classified
+            group by 1, 2, 3
+        )
+        select
+            'credit_flow_daily_category' as row_type,
+            to_char(days.day, 'YYYY-MM-DD') as day,
+            category_order.category,
+            category_order.direction,
+            coalesce(grouped.events, 0)::bigint as events,
+            coalesce(grouped.users, 0)::bigint as users,
+            coalesce(grouped.income, 0)::bigint as income,
+            coalesce(grouped.expense, 0)::bigint as expense,
+            coalesce(grouped.net_change, 0)::bigint as net_change
+        from days
+        cross join category_order
+        left join grouped
+          on grouped.day = days.day
+         and grouped.category = category_order.category
+         and grouped.direction = category_order.direction
+        where coalesce(grouped.events, 0) > 0
+        order by days.day, category_order.sort_order
+        """,
+        chart_days,
+        GENERATION_OPERATION_TYPES,
+    )
     categories = await _fetch(
         f"""
         with category_order(category, direction, sort_order) as (
@@ -1752,6 +1895,7 @@ async def credit_flow_analytics(
         "limit": limit,
         "summary": summary,
         "daily": _rows(daily),
+        "daily_categories": _rows(daily_categories),
         "categories": _rows(categories),
         "composition": {
             "identity": _rows(composition_identity),
@@ -1966,6 +2110,9 @@ async def finance(
                 coalesce(sum(final_price) filter (where real_success and payment_channel = 'RMB'), 0) as rmb_amount,
                 coalesce(sum(final_price) filter (where real_success and payment_channel = 'TON'), 0) as ton_amount,
                 coalesce(sum(final_price) filter (where real_success and payment_channel = 'XTR'), 0) as stars_amount,
+                round(coalesce(sum(final_price) filter (where real_success and payment_channel = 'RMB'), 0) * {RMB_TO_USDT}, 2) as rmb_usdt_amount,
+                round(coalesce(sum(final_price) filter (where real_success and payment_channel = 'TON'), 0) * {TON_TO_USDT}, 2) as ton_usdt_amount,
+                round(coalesce(sum(final_price) filter (where real_success and payment_channel = 'XTR'), 0) * {STARS_TO_USDT}, 2) as stars_usdt_amount,
                 round(coalesce(sum(final_price) filter (where real_success and payment_channel = 'RMB'), 0) * {RMB_TO_USDT}
                     + coalesce(sum(final_price) filter (where real_success and payment_channel = 'TON'), 0) * {TON_TO_USDT}
                     + coalesce(sum(final_price) filter (where real_success and payment_channel = 'XTR'), 0) * {STARS_TO_USDT}, 2) as usdt_amount,
@@ -1985,6 +2132,9 @@ async def finance(
             coalesce(daily_orders.rmb_amount, 0) as rmb_amount,
             coalesce(daily_orders.ton_amount, 0) as ton_amount,
             coalesce(daily_orders.stars_amount, 0) as stars_amount,
+            coalesce(daily_orders.rmb_usdt_amount, 0) as rmb_usdt_amount,
+            coalesce(daily_orders.ton_usdt_amount, 0) as ton_usdt_amount,
+            coalesce(daily_orders.stars_usdt_amount, 0) as stars_usdt_amount,
             coalesce(daily_orders.usdt_amount, 0) as usdt_amount,
             coalesce(daily_orders.success_orders, 0)::bigint as success_orders,
             coalesce(daily_orders.payers, 0)::bigint as payers,
@@ -2431,6 +2581,153 @@ async def finance(
         "top_payers": _rows(top_payers),
         "recent_orders": _rows(recent_orders),
     }
+
+
+@app.get("/api/finance/hourly-comparison")
+async def finance_hourly_comparison(
+    dates: str = Query(..., description="Comma-separated YYYY-MM-DD values, max 3"),
+) -> dict[str, Any]:
+    compare_dates = _parse_compare_dates(dates)
+    hourly = await _fetch(
+        f"""
+        with selected_dates as (
+            select unnest($1::text[]) as selected_date
+        ),
+        hours as (
+            select generate_series(0, 23)::int as hour
+        ),
+        grid as (
+            select selected_dates.selected_date, hours.hour
+            from selected_dates
+            cross join hours
+        ),
+        bounded as (
+            select
+                to_char(coalesce(o.paid_at, o.updated_at, o.created_at)::date, 'YYYY-MM-DD') as selected_date,
+                extract(hour from coalesce(o.paid_at, o.updated_at, o.created_at))::int as hour,
+                lower(coalesce(o.status, '')) as status_lower,
+                o.internal_user_id,
+                o.payment_channel,
+                o.final_price,
+                coalesce(mp.reward_credits, 0) as reward_credits,
+                coalesce(mp.identity_name, '') as identity_name,
+                (
+                    lower(coalesce(o.status, '')) = 'success'
+                    and o.payment_channel in ('RMB', 'TON', 'XTR')
+                    and coalesce(o.tx_hash, '') not like 'manual_%'
+                    and coalesce(o.order_id, '') not like 'GIFT:%'
+                ) as real_success
+            from orders o
+            left join membership_plans mp on mp.id = o.plan_id
+            where to_char(coalesce(o.paid_at, o.updated_at, o.created_at)::date, 'YYYY-MM-DD') = any($1::text[])
+        ),
+        hourly_orders as (
+            select
+                selected_date,
+                hour,
+                count(*) filter (where status_lower = 'success')::bigint as success_orders,
+                coalesce(sum(reward_credits) filter (where status_lower = 'success'), 0)::bigint as plan_reward_credits,
+                coalesce(sum(final_price) filter (where real_success and payment_channel = 'RMB'), 0) as rmb_amount,
+                coalesce(sum(final_price) filter (where real_success and payment_channel = 'TON'), 0) as ton_amount,
+                coalesce(sum(final_price) filter (where real_success and payment_channel = 'XTR'), 0) as stars_amount,
+                round(coalesce(sum(final_price) filter (where real_success and payment_channel = 'RMB'), 0) * {RMB_TO_USDT}
+                    + coalesce(sum(final_price) filter (where real_success and payment_channel = 'TON'), 0) * {TON_TO_USDT}
+                    + coalesce(sum(final_price) filter (where real_success and payment_channel = 'XTR'), 0) * {STARS_TO_USDT}, 2) as usdt_amount,
+                count(*) filter (where status_lower = 'success' and identity_name like '%内门%')::bigint as inner_disciples,
+                count(*) filter (where status_lower = 'success' and identity_name like '%核心%')::bigint as core_disciples,
+                count(*) filter (where status_lower = 'success' and identity_name like '%真传%')::bigint as true_disciples
+            from bounded
+            group by 1, 2
+        )
+        select
+            'finance_hourly_comparison' as row_type,
+            grid.selected_date as date,
+            grid.hour,
+            coalesce(hourly_orders.success_orders, 0)::bigint as success_orders,
+            coalesce(hourly_orders.plan_reward_credits, 0)::bigint as plan_reward_credits,
+            coalesce(hourly_orders.rmb_amount, 0) as rmb_amount,
+            coalesce(hourly_orders.ton_amount, 0) as ton_amount,
+            coalesce(hourly_orders.stars_amount, 0) as stars_amount,
+            coalesce(hourly_orders.usdt_amount, 0) as usdt_amount,
+            coalesce(hourly_orders.inner_disciples, 0)::bigint as inner_disciples,
+            coalesce(hourly_orders.core_disciples, 0)::bigint as core_disciples,
+            coalesce(hourly_orders.true_disciples, 0)::bigint as true_disciples
+        from grid
+        left join hourly_orders
+          on hourly_orders.selected_date = grid.selected_date
+         and hourly_orders.hour = grid.hour
+        order by array_position($1::text[], grid.selected_date), grid.hour
+        """,
+        compare_dates,
+    )
+    return {"dates": compare_dates, "hourly": _rows(hourly)}
+
+
+@app.get("/api/finance/hourly-cumulative")
+async def finance_hourly_cumulative(
+    days: int = Query(30, ge=1, le=MAX_ANALYTICS_DAYS),
+) -> dict[str, Any]:
+    days = _clamp(days, 1, MAX_ANALYTICS_DAYS)
+    hourly = await _fetch(
+        f"""
+        with hours as (
+            select generate_series(0, 23)::int as hour
+        ),
+        bounded as (
+            select
+                extract(hour from coalesce(o.paid_at, o.updated_at, o.created_at))::int as hour,
+                lower(coalesce(o.status, '')) as status_lower,
+                o.internal_user_id,
+                o.payment_channel,
+                o.final_price,
+                coalesce(mp.reward_credits, 0) as reward_credits,
+                coalesce(mp.identity_name, '') as identity_name,
+                (
+                    lower(coalesce(o.status, '')) = 'success'
+                    and o.payment_channel in ('RMB', 'TON', 'XTR')
+                    and coalesce(o.tx_hash, '') not like 'manual_%'
+                    and coalesce(o.order_id, '') not like 'GIFT:%'
+                ) as real_success
+            from orders o
+            left join membership_plans mp on mp.id = o.plan_id
+            where coalesce(o.paid_at, o.updated_at, o.created_at) >= now() - ($1::int * interval '1 day')
+        ),
+        hourly_orders as (
+            select
+                hour,
+                count(*) filter (where status_lower = 'success')::bigint as success_orders,
+                coalesce(sum(reward_credits) filter (where status_lower = 'success'), 0)::bigint as plan_reward_credits,
+                coalesce(sum(final_price) filter (where real_success and payment_channel = 'RMB'), 0) as rmb_amount,
+                coalesce(sum(final_price) filter (where real_success and payment_channel = 'TON'), 0) as ton_amount,
+                coalesce(sum(final_price) filter (where real_success and payment_channel = 'XTR'), 0) as stars_amount,
+                round(coalesce(sum(final_price) filter (where real_success and payment_channel = 'RMB'), 0) * {RMB_TO_USDT}
+                    + coalesce(sum(final_price) filter (where real_success and payment_channel = 'TON'), 0) * {TON_TO_USDT}
+                    + coalesce(sum(final_price) filter (where real_success and payment_channel = 'XTR'), 0) * {STARS_TO_USDT}, 2) as usdt_amount,
+                count(*) filter (where status_lower = 'success' and identity_name like '%内门%')::bigint as inner_disciples,
+                count(*) filter (where status_lower = 'success' and identity_name like '%核心%')::bigint as core_disciples,
+                count(*) filter (where status_lower = 'success' and identity_name like '%真传%')::bigint as true_disciples
+            from bounded
+            group by 1
+        )
+        select
+            'finance_hourly_cumulative' as row_type,
+            hours.hour,
+            coalesce(hourly_orders.success_orders, 0)::bigint as success_orders,
+            coalesce(hourly_orders.plan_reward_credits, 0)::bigint as plan_reward_credits,
+            coalesce(hourly_orders.rmb_amount, 0) as rmb_amount,
+            coalesce(hourly_orders.ton_amount, 0) as ton_amount,
+            coalesce(hourly_orders.stars_amount, 0) as stars_amount,
+            coalesce(hourly_orders.usdt_amount, 0) as usdt_amount,
+            coalesce(hourly_orders.inner_disciples, 0)::bigint as inner_disciples,
+            coalesce(hourly_orders.core_disciples, 0)::bigint as core_disciples,
+            coalesce(hourly_orders.true_disciples, 0)::bigint as true_disciples
+        from hours
+        left join hourly_orders using (hour)
+        order by hours.hour
+        """,
+        days,
+    )
+    return {"days": days, "hourly": _rows(hourly)}
 
 
 @app.get("/api/generation")
@@ -2997,6 +3294,171 @@ async def generation(
         },
         "recent_high_signal": _rows(recent_high_signal),
     }
+
+
+@app.get("/api/generation/hourly-comparison")
+async def generation_hourly_comparison(
+    dates: str = Query(..., description="Comma-separated YYYY-MM-DD values, max 3"),
+) -> dict[str, Any]:
+    compare_dates = _parse_compare_dates(dates)
+    hourly = await _fetch(
+        """
+        with selected_dates as (
+            select unnest($1::text[]) as selected_date
+        ),
+        hours as (
+            select generate_series(0, 23)::int as hour
+        ),
+        grid as (
+            select selected_dates.selected_date, hours.hour
+            from selected_dates
+            cross join hours
+        ),
+        history_hourly as (
+            select
+                to_char(created_at::date, 'YYYY-MM-DD') as selected_date,
+                extract(hour from created_at)::int as hour,
+                count(*)::bigint as generations,
+                count(distinct user_id)::bigint as creators,
+                count(*) filter (where source = 'web')::bigint as web_generations,
+                count(*) filter (where source = 'bot')::bigint as bot_generations
+            from history
+            where to_char(created_at::date, 'YYYY-MM-DD') = any($1::text[])
+            group by 1, 2
+        ),
+        credit_hourly as (
+            select
+                to_char(created_at::date, 'YYYY-MM-DD') as selected_date,
+                extract(hour from created_at)::int as hour,
+                abs(coalesce(sum(credit_change), 0))::bigint as credits_spent
+            from user_logs
+            where to_char(created_at::date, 'YYYY-MM-DD') = any($1::text[])
+              and credit_change < 0
+              and operation_type = any($2::text[])
+            group by 1, 2
+        ),
+        worker_hourly as (
+            select
+                to_char(start_time::date, 'YYYY-MM-DD') as selected_date,
+                extract(hour from start_time)::int as hour,
+                count(*) filter (where lower(status) = 'success')::bigint as worker_successes,
+                count(*) filter (where lower(status) = 'failed')::bigint as worker_failures
+            from worker_logs
+            where to_char(start_time::date, 'YYYY-MM-DD') = any($1::text[])
+            group by 1, 2
+        )
+        select
+            'generation_hourly_comparison' as row_type,
+            grid.selected_date as date,
+            grid.hour,
+            coalesce(history_hourly.generations, 0)::bigint as generations,
+            coalesce(history_hourly.creators, 0)::bigint as creators,
+            coalesce(history_hourly.web_generations, 0)::bigint as web_generations,
+            coalesce(history_hourly.bot_generations, 0)::bigint as bot_generations,
+            coalesce(credit_hourly.credits_spent, 0)::bigint as credits_spent,
+            coalesce(worker_hourly.worker_successes, 0)::bigint as worker_successes,
+            coalesce(worker_hourly.worker_failures, 0)::bigint as worker_failures
+        from grid
+        left join history_hourly
+          on history_hourly.selected_date = grid.selected_date
+         and history_hourly.hour = grid.hour
+        left join credit_hourly
+          on credit_hourly.selected_date = grid.selected_date
+         and credit_hourly.hour = grid.hour
+        left join worker_hourly
+          on worker_hourly.selected_date = grid.selected_date
+         and worker_hourly.hour = grid.hour
+        order by array_position($1::text[], grid.selected_date), grid.hour
+        """,
+        compare_dates,
+        GENERATION_OPERATION_TYPES,
+    )
+    return {"dates": compare_dates, "hourly": _rows(hourly)}
+
+
+@app.get("/api/generation/hourly-cumulative")
+async def generation_hourly_cumulative(
+    days: int = Query(30, ge=1, le=MAX_ANALYTICS_DAYS),
+) -> dict[str, Any]:
+    days = _clamp(days, 1, MAX_ANALYTICS_DAYS)
+    hourly = await _fetch(
+        """
+        with hours as (
+            select generate_series(0, 23)::int as hour
+        ),
+        history_hourly as (
+            select
+                extract(hour from created_at)::int as hour,
+                count(*)::bigint as generations,
+                count(distinct user_id)::bigint as creators,
+                count(*) filter (where source = 'web')::bigint as web_generations,
+                count(*) filter (where source = 'bot')::bigint as bot_generations
+            from history
+            where created_at >= now() - ($1::int * interval '1 day')
+            group by 1
+        ),
+        credit_hourly as (
+            select
+                extract(hour from created_at)::int as hour,
+                abs(coalesce(sum(credit_change), 0))::bigint as credits_spent
+            from user_logs
+            where created_at >= now() - ($1::int * interval '1 day')
+              and credit_change < 0
+              and operation_type = any($2::text[])
+            group by 1
+        ),
+        worker_hourly as (
+            select
+                extract(hour from start_time)::int as hour,
+                count(*) filter (where lower(status) = 'success')::bigint as worker_successes,
+                count(*) filter (where lower(status) = 'failed')::bigint as worker_failures
+            from worker_logs
+            where start_time >= now() - ($1::int * interval '1 day')
+            group by 1
+        )
+        select
+            'generation_hourly_cumulative' as row_type,
+            hours.hour,
+            coalesce(history_hourly.generations, 0)::bigint as generations,
+            coalesce(history_hourly.creators, 0)::bigint as creators,
+            coalesce(history_hourly.web_generations, 0)::bigint as web_generations,
+            coalesce(history_hourly.bot_generations, 0)::bigint as bot_generations,
+            coalesce(credit_hourly.credits_spent, 0)::bigint as credits_spent,
+            coalesce(worker_hourly.worker_successes, 0)::bigint as worker_successes,
+            coalesce(worker_hourly.worker_failures, 0)::bigint as worker_failures
+        from hours
+        left join history_hourly using (hour)
+        left join credit_hourly using (hour)
+        left join worker_hourly using (hour)
+        order by hours.hour
+        """,
+        days,
+        GENERATION_OPERATION_TYPES,
+    )
+    return {"days": days, "hourly": _rows(hourly)}
+
+
+@app.get("/api/generation/type-comparison")
+async def generation_type_comparison(
+    dates: str = Query(..., description="Comma-separated YYYY-MM-DD values, max 3"),
+) -> dict[str, Any]:
+    compare_dates = _parse_compare_dates(dates)
+    type_rows = await _fetch(
+        """
+        select
+            'generation_type_comparison' as row_type,
+            to_char(created_at::date, 'YYYY-MM-DD') as date,
+            coalesce(type, 'unknown') as task_type,
+            count(*)::bigint as generations,
+            count(distinct user_id)::bigint as creators
+        from history
+        where to_char(created_at::date, 'YYYY-MM-DD') = any($1::text[])
+        group by 2, 3
+        order by array_position($1::text[], to_char(created_at::date, 'YYYY-MM-DD')), generations desc, task_type
+        """,
+        compare_dates,
+    )
+    return {"dates": compare_dates, "types": _rows(type_rows)}
 
 
 @app.get("/api/prompts")

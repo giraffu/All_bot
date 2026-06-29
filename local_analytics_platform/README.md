@@ -5,6 +5,8 @@
 ## Scope
 
 - 用户画像、灵石收支、充值情况、生成分析、提示词洞察、提示词瘦身、向量相似、语义场景、模板候选和媒体引用核验；用户画像每日趋势包含新增用户、新增入宗门、新增生成用户、活跃用户和签到；`/api/overview` 仅保留给侧栏状态和旧链接兼容。
+- 用户画像、灵石收支、充值情况、生成分析四个核心 Tab 使用本地静态 `ECharts 6.0.0` 呈现坐标轴、图例、tooltip、donut、漏斗、堆叠柱、累计折线、分时对比和风险散点，不复用 Dashboard Vue 构建链。
+- 灵石收支接口返回 `daily_categories[]`；充值接口返回渠道折算 USDT 日字段，并提供 `/api/finance/hourly-comparison`、`/api/finance/hourly-cumulative`；生成接口提供 `/api/generation/hourly-comparison`、`/api/generation/hourly-cumulative`、`/api/generation/type-comparison`。
 - 页面顶部只保留一个统计周期，下拉值按当前 Tab 独立保存；切换周期或点击刷新只请求当前 Tab 对应接口，避免一次刷新扫描所有分析模块。
 - 提示词洞察页通过 Prompt Mart 读取预清洗数据，不再在页面刷新时现场扫描 `history.prompt`；支持分页搜索、任务类型、来源范围、最少用户/次数和排序筛选，并可在详情面板懒加载同组原文变体；默认排除一键应用生成的衍生记录和 `prompts.ini` 内置默认模板，同时保留原始 Gallery 模板的点赞、应用、评论和解锁信号；内置模板可通过 `builtin_template` 来源范围单独查看。
 - 数据库连接必须通过 `LOCAL_ANALYTICS_DATABASE_URL` 显式传入。
