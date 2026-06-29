@@ -367,7 +367,7 @@ onUnmounted(() => {
   <a-modal
     v-model:open="open"
     title="LAN AIO 管理"
-    :width="1180"
+    width="min(1380px, calc(100vw - 32px))"
     :z-index="1400"
     wrap-class-name="lan-aio-modal-wrap"
     :footer="null"
@@ -387,6 +387,15 @@ onUnmounted(() => {
 
       <div class="lan-aio-table-wrap">
         <table class="lan-aio-table">
+          <colgroup>
+            <col class="lan-aio-col-physical" />
+            <col class="lan-aio-col-slot" />
+            <col class="lan-aio-col-profile" />
+            <col class="lan-aio-col-worker" />
+            <col class="lan-aio-col-cache" />
+            <col class="lan-aio-col-container" />
+            <col class="lan-aio-col-actions" />
+          </colgroup>
           <thead>
             <tr>
               <th>节点/GPU</th>
@@ -497,27 +506,34 @@ onUnmounted(() => {
                 </td>
                 <td>
                   <div class="action-grid">
-                    <a-button
+                    <a-tooltip
                       v-for="action in slotActions"
                       :key="action.key"
-                      size="small"
-                      :danger="action.danger"
-                      :loading="isSlotActionLoading(slotStatus.slot.id, action.key)"
-                      :disabled="isSlotLocked(slotStatus.slot)"
-                      @click="confirmSlotAction(slotStatus, action)"
+                      :title="action.label"
+                      placement="top"
                     >
-                      <template #icon>
-                        <safety-certificate-outlined v-if="action.icon === 'preflight'" />
-                        <cloud-sync-outlined v-else-if="action.icon === 'pull'" />
-                        <database-outlined v-else-if="action.icon === 'warm'" />
-                        <stop-outlined v-else-if="action.icon === 'drain'" />
-                        <sync-outlined v-else-if="action.icon === 'wait'" />
-                        <stop-outlined v-else-if="action.icon === 'stop'" />
-                        <play-circle-outlined v-else-if="action.icon === 'start'" />
-                        <rocket-outlined v-else />
-                      </template>
-                      {{ action.label }}
-                    </a-button>
+                      <a-button
+                        class="action-button"
+                        size="small"
+                        :danger="action.danger"
+                        :loading="isSlotActionLoading(slotStatus.slot.id, action.key)"
+                        :disabled="isSlotLocked(slotStatus.slot)"
+                        :aria-label="action.label"
+                        @click="confirmSlotAction(slotStatus, action)"
+                      >
+                        <template #icon>
+                          <safety-certificate-outlined v-if="action.icon === 'preflight'" />
+                          <cloud-sync-outlined v-else-if="action.icon === 'pull'" />
+                          <database-outlined v-else-if="action.icon === 'warm'" />
+                          <stop-outlined v-else-if="action.icon === 'drain'" />
+                          <sync-outlined v-else-if="action.icon === 'wait'" />
+                          <stop-outlined v-else-if="action.icon === 'stop'" />
+                          <play-circle-outlined v-else-if="action.icon === 'start'" />
+                          <rocket-outlined v-else />
+                        </template>
+                        <span class="action-label">{{ action.label }}</span>
+                      </a-button>
+                    </a-tooltip>
                   </div>
                 </td>
               </tr>
@@ -588,21 +604,50 @@ onUnmounted(() => {
 }
 
 .lan-aio-table-wrap {
-  overflow-x: auto;
+  overflow-x: hidden;
   border: 1px solid #e5e7eb;
   border-radius: 6px;
 }
 
 .lan-aio-table {
   width: 100%;
-  min-width: 1080px;
+  min-width: 0;
   border-collapse: collapse;
   table-layout: fixed;
 }
 
+.lan-aio-col-physical {
+  width: 9%;
+}
+
+.lan-aio-col-slot {
+  width: 16%;
+}
+
+.lan-aio-col-profile {
+  width: 18%;
+}
+
+.lan-aio-col-worker {
+  width: 18%;
+}
+
+.lan-aio-col-cache {
+  width: 13%;
+}
+
+.lan-aio-col-container {
+  width: 11%;
+}
+
+.lan-aio-col-actions {
+  width: 15%;
+}
+
 .lan-aio-table th,
 .lan-aio-table td {
-  padding: 8px;
+  min-width: 0;
+  padding: 8px 7px;
   border-bottom: 1px solid #edf0f3;
   border-right: 1px solid #f1f5f9;
   vertical-align: top;
@@ -614,34 +659,6 @@ onUnmounted(() => {
   font-weight: 700;
   background: #f8fafc;
   white-space: nowrap;
-}
-
-.lan-aio-table th:nth-child(1) {
-  width: 120px;
-}
-
-.lan-aio-table th:nth-child(2) {
-  width: 190px;
-}
-
-.lan-aio-table th:nth-child(3) {
-  width: 210px;
-}
-
-.lan-aio-table th:nth-child(4) {
-  width: 210px;
-}
-
-.lan-aio-table th:nth-child(5) {
-  width: 150px;
-}
-
-.lan-aio-table th:nth-child(6) {
-  width: 180px;
-}
-
-.lan-aio-table th:nth-child(7) {
-  width: 220px;
 }
 
 .lan-aio-table tr:last-child td {
@@ -689,6 +706,16 @@ onUnmounted(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+  min-width: 0;
+}
+
+.physical-cell :deep(.ant-tag),
+.slot-tags :deep(.ant-tag),
+.control-row :deep(.ant-tag),
+.cache-cell :deep(.ant-tag) {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .profile-tasks,
@@ -728,8 +755,17 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 100%;
   min-width: 0;
   padding-inline: 6px;
+  font-size: 12px;
+}
+
+.action-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .lan-aio-operations {
@@ -795,7 +831,59 @@ onUnmounted(() => {
 }
 
 :global(.lan-aio-modal-wrap .ant-modal) {
-  max-width: calc(100vw - 24px);
+  max-width: calc(100vw - 32px);
+}
+
+:global(.lan-aio-modal-wrap .ant-modal-body) {
+  overflow-x: hidden;
+}
+
+@media (max-width: 1240px) {
+  .lan-aio-table th,
+  .lan-aio-table td {
+    padding: 7px 6px;
+  }
+
+  .lan-aio-col-physical {
+    width: 8.5%;
+  }
+
+  .lan-aio-col-slot {
+    width: 16.5%;
+  }
+
+  .lan-aio-col-profile {
+    width: 18.5%;
+  }
+
+  .lan-aio-col-worker {
+    width: 18.5%;
+  }
+
+  .lan-aio-col-cache {
+    width: 12%;
+  }
+
+  .lan-aio-col-container {
+    width: 11%;
+  }
+
+  .lan-aio-col-actions {
+    width: 15%;
+  }
+
+  .action-grid {
+    grid-template-columns: repeat(4, minmax(22px, 1fr));
+  }
+
+  .action-grid :deep(.ant-btn) {
+    height: 24px;
+    padding-inline: 0;
+  }
+
+  .action-label {
+    display: none;
+  }
 }
 
 :global(.lan-aio-modal-wrap) {

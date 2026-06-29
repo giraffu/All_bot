@@ -548,6 +548,8 @@ docker-compose -f docker-compose-cloud-prod-worker.yml up -d --no-deps $services
 ### 4.4 Cloudflare Pages/API Tunnel 维护
 正式 Web/API 已完成切换。日常维护只需要确认 Pages 项目、Tunnel connector 和 CORS allowlist 仍与正式域名一致。
 
+Cloudflare Pages 正式 Web 发布细节以 `docs/子模块_边缘节点运维指南_edge_node_ops.md` 的“发布与回滚”小节为准。当前 Pages 构建会使用 Node 24 / npm 10（2026-06-28 实测 `npm@10.9.2`），前端 lockfile 变更发布前必须用 `npx -y npm@10.9.2 ci --progress=false` 和 `npx -y npm@10.9.2 run build:cf-prod` 验证；若 Pages 报 `Missing: @emnapi/runtime@1.11.1 from lock file`，用同版本 npm 执行 `install --package-lock-only` 刷新 `frontend/package-lock.json` 后再提交。
+
 历史 canary 流程已经归档到 `docs/archive/2026-06-cloud-migration/`；以下原则仍有效：
 
 - Tunnel connector 必须运行在云机 `allbot-do-sgp1-control`，不得复用本地主服务器 RMB tunnel。

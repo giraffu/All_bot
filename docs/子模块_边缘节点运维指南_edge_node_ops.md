@@ -114,6 +114,23 @@ npm run build:cf-prod
 
 Cloudflare Pages 项目 `allbot-web-prod` 使用 Git 集成，生产分支 `deploy`，构建命令 `npm ci && npm run build:cf-prod`。VPS `/root/dist` 仅作为紧急回滚副本；需要回滚到 VPS 时才使用：
 
+Cloudflare Pages 当前构建环境会按项目检测结果使用 Node 24 / npm 10（2026-06-28 实测为 `nodejs@24.13.1`、`npm@10.9.2`）。涉及 `frontend/package-lock.json`、Vite、Tailwind、optional/peer dependency 的前端发布，不能只用本机默认 npm 验证；推送 `deploy` 前先用 Pages 同款 npm 复现依赖安装和构建：
+
+```bash
+cd /home/hfy/APP/All_bot/frontend
+npx -y npm@10.9.2 ci --progress=false
+npx -y npm@10.9.2 run build:cf-prod
+```
+
+若 Pages 日志在 `npm clean-install --progress=false` 阶段报 `npm ci can only install packages when your package.json and package-lock.json or npm-shrinkwrap.json are in sync`，并出现类似 `Missing: @emnapi/runtime@1.11.1 from lock file`，说明 lockfile 对 npm 10 不完整。使用同版本 npm 只刷新 lockfile 后提交：
+
+```bash
+cd /home/hfy/APP/All_bot/frontend
+npx -y npm@10.9.2 install --package-lock-only --progress=false
+npx -y npm@10.9.2 ci --progress=false
+npx -y npm@10.9.2 run build:cf-prod
+```
+
 ```bash
 cd /home/hfy/APP/All_bot/frontend
 npm run build
