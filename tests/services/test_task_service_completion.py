@@ -20,6 +20,8 @@ from src.constants import (
     MODE_IMAGE_TO_VIDEO,
     MODE_LTX_VIDEO,
     MODE_NAME_MAP,
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT,
+    MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_WAN22_VIDEO_V2,
 )
 from src.services import task_service_completion as completion_helpers
@@ -357,6 +359,51 @@ def test_build_result_reply_markup_injects_gallery_button_when_missing():
 
     first_row = final_markup.inline_keyboard[0]
     assert first_row[0].callback_data == "submit_gallery_task-3"
+
+
+@pytest.mark.parametrize(
+    "task_type",
+    [
+        MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+        MODE_PORNMASTER_FLUX2_MULTI_EDIT,
+    ],
+)
+def test_build_result_reply_markup_supports_free_edit_v2_gallery_button(task_type):
+    final_markup = tg_runtime_helpers.build_result_reply_markup(
+        task_type=task_type,
+        task_id="task-free-edit-v2",
+        allow_contribute=True,
+        reply_markup=None,
+    )
+
+    first_row = final_markup.inline_keyboard[0]
+    assert first_row[0].callback_data == "submit_gallery_task-free-edit-v2"
+
+
+@pytest.mark.parametrize(
+    "task_type",
+    [
+        MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+        MODE_PORNMASTER_FLUX2_MULTI_EDIT,
+    ],
+)
+def test_build_result_reply_markup_hides_free_edit_v2_gallery_button_when_blocked(
+    task_type,
+):
+    final_markup = tg_runtime_helpers.build_result_reply_markup(
+        task_type=task_type,
+        task_id="task-free-edit-v2",
+        allow_contribute=False,
+        reply_markup=None,
+    )
+
+    callbacks = [
+        button.callback_data
+        for row in final_markup.inline_keyboard
+        for button in row
+        if button.callback_data
+    ]
+    assert "submit_gallery_task-free-edit-v2" not in callbacks
 
 
 def test_build_result_reply_markup_supports_wan22_video_v2_gallery_button():
