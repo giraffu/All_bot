@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>本地数据分析平台</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/static/styles.css?v=20260628-vector-resume-v1" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260629-prompt-scenes-v1" />
   </head>
   <body>
     <div id="app" class="app-shell">
@@ -44,6 +44,10 @@
           <button class="tab-button" type="button" data-tab="prompt-vectors">
             <span class="tab-label">向量相似</span>
             <span class="tab-meta">语义簇、近邻、审核</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="prompt-scenes">
+            <span class="tab-label">语义场景</span>
+            <span class="tab-meta">场景、候选、沉淀</span>
           </button>
           <button class="tab-button" type="button" data-tab="templates">
             <span class="tab-label">模板候选</span>
@@ -803,6 +807,85 @@
           </div>
         </section>
 
+        <section class="band tab-panel" data-panel="prompt-scenes">
+          <div id="promptSceneSummary" class="metric-grid compact"></div>
+          <div class="prompt-filter-bar prompt-vector-filter-bar">
+            <label>
+              <span>搜索</span>
+              <input id="promptSceneSearchInput" type="search" placeholder="代表提示词关键词" />
+            </label>
+            <label>
+              <span>任务类型</span>
+              <select id="promptSceneTaskTypeSelect">
+                <option value="">全部</option>
+              </select>
+            </label>
+            <label>
+              <span>置信度</span>
+              <select id="promptSceneConfidenceSelect">
+                <option value="all" selected>全部</option>
+                <option value="high">high</option>
+                <option value="medium">medium</option>
+                <option value="low">low</option>
+              </select>
+            </label>
+            <label>
+              <span>最小成员</span>
+              <input id="promptSceneMinSizeInput" type="number" min="1" max="1000000" value="1" />
+            </label>
+            <label>
+              <span>排序</span>
+              <select id="promptSceneSortSelect">
+                <option value="member_count" selected>成员数</option>
+                <option value="candidate_count">候选数</option>
+                <option value="quality_score">代表质量分</option>
+                <option value="total_uses">总使用</option>
+                <option value="similarity">平均相似度</option>
+                <option value="refreshed_at">最近刷新</option>
+              </select>
+            </label>
+          </div>
+          <div class="distribution-grid prompt-vector-distribution-grid">
+            <div class="table-shell">
+              <div class="table-title">任务类型</div>
+              <div id="promptSceneTaskTypeDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">场景规模</div>
+              <div id="promptSceneSizeDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">归属置信度</div>
+              <div id="promptSceneConfidenceDistribution" class="distribution-bars"></div>
+            </div>
+          </div>
+          <div class="prompt-layout prompt-vector-layout prompt-scene-layout">
+            <div class="table-shell">
+              <div class="table-title prompt-table-title">
+                <span>语义场景目录</span>
+                <span id="promptScenePageInfo" class="muted small"></span>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>规模</th>
+                    <th>场景代表</th>
+                    <th>使用信号</th>
+                    <th>置信度</th>
+                    <th>刷新</th>
+                  </tr>
+                </thead>
+                <tbody id="promptSceneRows"></tbody>
+              </table>
+              <div class="prompt-pagination">
+                <button id="promptScenePrevButton" type="button">上一页</button>
+                <button id="promptSceneNextButton" type="button">下一页</button>
+              </div>
+            </div>
+            <aside id="promptSceneDetail" class="detail-panel"></aside>
+          </div>
+        </section>
+
         <section class="band tab-panel" data-panel="templates">
           <div id="templateCandidates" class="candidate-grid"></div>
         </section>
@@ -828,6 +911,6 @@
       </main>
       </div>
     </div>
-    <script src="/static/app.js?v=20260628-vector-resume-v1"></script>
+    <script src="/static/app.js?v=20260629-prompt-scenes-v1"></script>
   </body>
 </html>

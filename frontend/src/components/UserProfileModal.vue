@@ -7,11 +7,14 @@ import { followUser, getPublicUserProfile, unfollowUser } from '@/api/social'
 import GalleryDetailModal from '@/components/GalleryDetailModal.vue'
 import GalleryMediaCard from '@/components/GalleryMediaCard.vue'
 import OriginalInputBadge from '@/components/OriginalInputBadge.vue'
+import PagedNavigation from '@/components/PagedNavigation.vue'
 import { useCurrentDetailMedia } from '@/composables/useCurrentDetailMedia'
 import { useDetailTemplateApply } from '@/composables/useDetailTemplateApply'
 import { useGalleryComments } from '@/composables/useGalleryComments'
 import { useGalleryDetailModalAdapter } from '@/composables/useGalleryDetailModalAdapter'
 import { useGalleryPostInteractions } from '@/composables/useGalleryPostInteractions'
+import { useGalleryPromptUnlock } from '@/composables/useGalleryPromptUnlock'
+import { usePagedPostBrowser } from '@/composables/usePagedPostBrowser'
 import { usePostPromptCopy } from '@/composables/usePostPromptCopy'
 import { useViewport } from '@/composables/useViewport'
 import { useTemplateApplyStore } from '@/stores/templateApply'
@@ -38,25 +41,73 @@ const { t } = useI18n()
 const { isMobile } = useViewport()
 const templateApplyStore = useTemplateApplyStore()
 
-const loading = ref(false)
 const followLoading = ref(false)
 const errorText = ref('')
 const profile = ref<PublicUserProfileResponse | null>(null)
-const recentPosts = ref<Post[]>([])
-const detailVisible = ref(false)
-const currentPost = ref<Post | null>(null)
+const pageSize = ref(12)
 
-const currentIndex = computed(() => {
-  if (!currentPost.value) {
-    return -1
-  }
-  return recentPosts.value.findIndex((post) => post.id === currentPost.value?.id)
+const mapProfilePosts = (items: Post[]) =>
+  items.map((post) => {
+    const cardView = resolveMediaCardView(post, {
+      normalizeGalleryThumbnail: true,
+      fallbackToOriginalWithoutThumbnail: true,
+    })
+    return {
+      ...post,
+      src: cardView.initialSrc,
+      cardIsVideo: cardView.isVideo,
+      cardPoster: cardView.posterSrc,
+    }
+  })
+
+const {
+  posts: recentPosts,
+  loading,
+  errorMessage: profileErrorMessage,
+  currentPage,
+  totalPages,
+  detailVisible,
+  currentPost,
+  hasPrev,
+  hasNext,
+  clearBrowserState,
+  goNext,
+  goPrev,
+  goToPage,
+  loadPosts,
+  openDetail,
+} = usePagedPostBrowser<Post>({
+  pageSize,
+  fetchPageData: async (pageNumber) => {
+    const requestedUserId = props.userId
+    if (!requestedUserId) {
+      return { items: [], total: 0, pages: 0 }
+    }
+
+    const response = await getPublicUserProfile(requestedUserId, {
+      page: pageNumber,
+      size: pageSize.value,
+    })
+    if (!props.open || props.userId !== requestedUserId) {
+      return { items: [], total: 0, pages: 0 }
+    }
+    profile.value = response
+    const pagePayload = response.posts ?? {
+      items: response.recent_posts || [],
+      total: response.recent_posts?.length ?? 0,
+      pages: response.recent_posts?.length ? 1 : 0,
+    }
+    return {
+      items: mapProfilePosts(pagePayload.items || []),
+      total: pagePayload.total,
+      pages: pagePayload.pages,
+    }
+  },
+  onFetchError: (error) => {
+    console.error(error)
+  },
+  getFetchErrorMessage: () => t('social.profile_load_failed'),
 })
-
-const hasPrev = computed(() => currentIndex.value > 0)
-const hasNext = computed(
-  () => currentIndex.value >= 0 && currentIndex.value < recentPosts.value.length - 1,
-)
 
 const displayPosts = computed(() => recentPosts.value)
 
@@ -65,28 +116,20 @@ const loadProfile = async () => {
     return
   }
 
-  loading.value = true
   errorText.value = ''
   try {
-    const response = await getPublicUserProfile(props.userId)
-    profile.value = response
-    recentPosts.value = (response.recent_posts || []).map((post) => {
-      const cardView = resolveMediaCardView(post, {
-        normalizeGalleryThumbnail: true,
-      })
-      return {
-        ...post,
-        src: cardView.initialSrc,
-        cardIsVideo: cardView.isVideo,
-        cardPoster: cardView.posterSrc,
-      }
-    })
+    await loadPosts(true)
+    if (!profile.value) {
+      errorText.value = profileErrorMessage.value || t('social.profile_load_failed')
+    }
   } catch (error) {
     console.error(error)
     errorText.value = t('social.profile_load_failed')
-  } finally {
-    loading.value = false
   }
+}
+
+const handlePageChange = (pageNumber: number) => {
+  void goToPage(pageNumber)
 }
 
 const toggleFollow = async () => {
@@ -131,6 +174,11 @@ const currentDetailMedia = useCurrentDetailMedia(currentPost, {
 })
 const formatTag = (tag: string) => formatGalleryTag(tag, t)
 const { copyPrompt } = usePostPromptCopy(t)
+const { promptUnlockingPostId, handleUnlockPrompt } = useGalleryPromptUnlock({
+  posts: recentPosts,
+  currentPost,
+  t,
+})
 const { handleInteract } = useGalleryPostInteractions<Post>({
   resolveSuccessMessage: (action, state) => {
     if (action === 'like') {
@@ -188,8 +236,13 @@ const detailStandardActions = computed(() => ({
   showMobileReaction: true,
   showMobileApply: true,
   showMobileCopy: false,
-  showPromptPanelCopy: false,
-  maskPromptText: true,
+  showPromptPanelCopy: currentPost.value?.prompt_unlocked === true,
+  showPromptPanelUnlock: !!currentPost.value?.prompt_unlockable,
+  maskPromptText: currentPost.value?.prompt_unlocked === true
+    ? false
+    : currentPost.value?.prompt_is_masked === true
+      ? false
+      : true,
   promptVisibleRatio: 0.5,
   desktopApplyPlacement: 'before' as const,
   applyLabel: t('gallery.modal.apply_btn'),
@@ -197,6 +250,12 @@ const detailStandardActions = computed(() => ({
   applyDisabled: currentTemplateApplyDisabledReason.value !== null,
   applyHint: currentTemplateApplyDisabledMessage.value || t('gallery.modal.apply_hint'),
   copyLabel: t('my_posts.copy_prompt'),
+  unlockLabel: t('prompt_panel.unlock', {
+    cost: currentPost.value?.prompt_unlock_price ?? 1,
+  }),
+  unlockLoading: currentPost.value
+    ? promptUnlockingPostId.value === Number(currentPost.value.id)
+    : false,
   onLike: () => {
     if (currentPost.value) {
       void handleInteract(currentPost.value, 'like')
@@ -217,6 +276,9 @@ const detailStandardActions = computed(() => ({
     if (currentPost.value) {
       copyPrompt(currentPost.value)
     }
+  },
+  onUnlockPrompt: () => {
+    void handleUnlockPrompt()
   },
 }))
 const {
@@ -246,20 +308,15 @@ const {
   loadMoreComments,
   submitComment,
   goPrev: () => {
-    if (currentIndex.value > 0) {
-      currentPost.value = recentPosts.value[currentIndex.value - 1] ?? null
-    }
+    void goPrev()
   },
   goNext: () => {
-    if (currentIndex.value >= 0 && currentIndex.value < recentPosts.value.length - 1) {
-      currentPost.value = recentPosts.value[currentIndex.value + 1] ?? null
-    }
+    void goNext()
   },
 })
 
 const openPostDetail = (post: Post) => {
-  currentPost.value = post
-  detailVisible.value = true
+  openDetail(post)
 }
 
 watch(
@@ -269,7 +326,7 @@ watch(
       void loadProfile()
     } else if (!props.open) {
       profile.value = null
-      recentPosts.value = []
+      clearBrowserState()
       errorText.value = ''
     }
   },
@@ -408,7 +465,18 @@ watch(
               </GalleryMediaCard>
             </div>
 
-            <div v-else class="user-profile-modal__empty-state rounded-2xl p-6 text-center text-sm">
+            <PagedNavigation
+              v-if="totalPages > 1"
+              class="pt-1"
+              :current-page="currentPage"
+              :total-pages="totalPages"
+              :disabled="loading"
+              compact
+              minimal
+              @change="handlePageChange"
+            />
+
+            <div v-if="!displayPosts.length" class="user-profile-modal__empty-state rounded-2xl p-6 text-center text-sm">
               {{ t('social.no_public_posts') }}
             </div>
           </div>

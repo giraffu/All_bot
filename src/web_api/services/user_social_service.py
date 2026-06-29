@@ -10,6 +10,7 @@ from src.web_api.schemas.user_social_schema import (
     PublicUserSummary,
 )
 from src.web_api.services.gallery_response_builder import build_gallery_post_responses
+from src.web_api.schemas.gallery_schema import PaginatedGalleryResponse
 
 
 def _resolve_author_name(user: User) -> str:
@@ -63,20 +64,47 @@ async def _is_following(*, db, follower_id: int, followee_id: int) -> bool:
     return result.scalar_one_or_none() is not None
 
 
-async def _fetch_public_recent_posts(*, db, user_id: int, limit: int):
+def _build_paginated_gallery_response(
+    *,
+    items,
+    total: int,
+    page: int,
+    size: int,
+) -> PaginatedGalleryResponse:
+    pages = (total + size - 1) // size
+    return PaginatedGalleryResponse(
+        items=items,
+        total=total,
+        page=page,
+        size=size,
+        pages=pages,
+    )
+
+
+async def _fetch_public_posts_page(*, db, user_id: int, page: int, size: int):
+    filters = (
+        GalleryPost.user_id == user_id,
+        GalleryPost.is_active.is_(True),
+        History.is_visible.is_not(False),
+    )
+    total_query = (
+        select(func.count(func.distinct(GalleryPost.id)))
+        .select_from(GalleryPost)
+        .outerjoin(History, GalleryPost.task_id == History.task_id)
+        .where(*filters)
+    )
+    total = (await db.execute(total_query)).scalar() or 0
     query = (
         select(GalleryPost)
         .outerjoin(History, GalleryPost.task_id == History.task_id)
-        .where(
-            GalleryPost.user_id == user_id,
-            GalleryPost.is_active.is_(True),
-            History.is_visible.is_not(False),
-        )
+        .where(*filters)
         .distinct()
         .order_by(GalleryPost.id.desc())
-        .limit(limit)
+        .offset((page - 1) * size)
+        .limit(size)
     )
-    return (await db.execute(query)).scalars().all()
+    posts = (await db.execute(query)).scalars().all()
+    return posts, total
 
 
 def _build_public_user_summary(
@@ -193,12 +221,61 @@ async def get_my_following_payload(
     return FollowingListResponse(items=items, total=len(items))
 
 
+async def get_my_followers_payload(
+    *,
+    current_user,
+    db,
+) -> FollowingListResponse:
+    public_posts_count = _public_post_count_subquery()
+    followers_count = _followers_count_subquery()
+    following_count = _following_count_subquery()
+
+    result = await db.execute(
+        select(
+            User,
+            public_posts_count.label("public_posts_count"),
+            followers_count.label("followers_count"),
+            following_count.label("following_count"),
+        )
+        .join(UserFollow, User.id == UserFollow.follower_id)
+        .where(UserFollow.followee_id == current_user.id)
+        .order_by(UserFollow.created_at.desc(), User.id.desc())
+    )
+    rows = result.all()
+    follower_ids = [user.id for user, *_ in rows]
+    followed_back_ids: set[int] = set()
+
+    if follower_ids:
+        followed_back_result = await db.execute(
+            select(UserFollow.followee_id).where(
+                UserFollow.follower_id == current_user.id,
+                UserFollow.followee_id.in_(follower_ids),
+            )
+        )
+        followed_back_ids = set(followed_back_result.scalars().all())
+
+    items = [
+        _build_public_user_summary(
+            user=user,
+            public_posts_count=public_posts_count_value or 0,
+            followers_count=followers_count_value or 0,
+            following_count=following_count_value or 0,
+            is_following=user.id in followed_back_ids,
+            current_user_id=current_user.id,
+        )
+        for user, public_posts_count_value, followers_count_value, following_count_value in rows
+    ]
+    return FollowingListResponse(items=items, total=len(items))
+
+
 async def get_public_user_profile_payload(
     *,
     target_user_id: int,
     current_user,
     db,
-    recent_posts_limit: int = 12,
+    page: int = 1,
+    size: int = 12,
+    build_post_responses_fn=build_gallery_post_responses,
 ) -> PublicUserProfileResponse:
     public_posts_count = _public_post_count_subquery()
     followers_count = _followers_count_subquery()
@@ -224,14 +301,15 @@ async def get_public_user_profile_payload(
         followee_id=target_user.id,
     )
 
-    recent_posts = await _fetch_public_recent_posts(
+    posts, total = await _fetch_public_posts_page(
         db=db,
         user_id=target_user.id,
-        limit=recent_posts_limit,
+        page=page,
+        size=size,
     )
-    recent_post_responses = await build_gallery_post_responses(
+    post_responses = await build_post_responses_fn(
         session=db,
-        posts=recent_posts,
+        posts=posts,
         current_user=current_user,
     )
 
@@ -244,5 +322,11 @@ async def get_public_user_profile_payload(
             is_following=is_following,
             current_user_id=current_user.id,
         ),
-        recent_posts=recent_post_responses,
+        posts=_build_paginated_gallery_response(
+            items=post_responses,
+            total=total,
+            page=page,
+            size=size,
+        ),
+        recent_posts=post_responses,
     )

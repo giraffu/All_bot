@@ -46,6 +46,7 @@ const themeOptions = computed<{ label: string; value: ThemePreference }[]>(() =>
   { label: t('theme.dark'), value: 'dark' },
 ])
 const showFollowingModal = ref(false)
+const showFollowersModal = ref(false)
 
 const selectedTheme = computed<ThemePreference>({
   get: () => themeStore.selectedTheme,
@@ -144,6 +145,9 @@ const { quickActions } = useProfileQuickActions({
   openFollowingModal: () => {
     showFollowingModal.value = true
   },
+  openFollowersModal: () => {
+    showFollowersModal.value = true
+  },
   icons: {
     Wallet,
     Award,
@@ -228,7 +232,8 @@ onMounted(async () => {
       :handle-bind-password="handleBindPassword"
     />
 
-    <ProfileFollowingModal v-model:open="showFollowingModal" />
+    <ProfileFollowingModal v-model:open="showFollowingModal" mode="following" />
+    <ProfileFollowingModal v-model:open="showFollowersModal" mode="followers" />
   </div>
 </template>
 

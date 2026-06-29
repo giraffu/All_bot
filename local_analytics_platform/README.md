@@ -4,7 +4,7 @@
 
 ## Scope
 
-- 用户画像、灵石收支、充值情况、生成分析、提示词洞察、提示词瘦身、向量相似、模板候选和媒体引用核验；用户画像每日趋势包含新增用户、新增入宗门、新增生成用户、活跃用户和签到；`/api/overview` 仅保留给侧栏状态和旧链接兼容。
+- 用户画像、灵石收支、充值情况、生成分析、提示词洞察、提示词瘦身、向量相似、语义场景、模板候选和媒体引用核验；用户画像每日趋势包含新增用户、新增入宗门、新增生成用户、活跃用户和签到；`/api/overview` 仅保留给侧栏状态和旧链接兼容。
 - 页面顶部只保留一个统计周期，下拉值按当前 Tab 独立保存；切换周期或点击刷新只请求当前 Tab 对应接口，避免一次刷新扫描所有分析模块。
 - 提示词洞察页通过 Prompt Mart 读取预清洗数据，不再在页面刷新时现场扫描 `history.prompt`；支持分页搜索、任务类型、来源范围、最少用户/次数和排序筛选，并可在详情面板懒加载同组原文变体；默认排除一键应用生成的衍生记录和 `prompts.ini` 内置默认模板，同时保留原始 Gallery 模板的点赞、应用、评论和解锁信号；内置模板可通过 `builtin_template` 来源范围单独查看。
 - 数据库连接必须通过 `LOCAL_ANALYTICS_DATABASE_URL` 显式传入。
@@ -81,3 +81,19 @@ docker exec allbot-local-analytics-platform \
 - `GET /api/prompt-vectors`：返回模型状态、向量覆盖率、相似边/簇统计、任务/规模/边类型分布和分页簇列表。
 - `GET /api/prompt-vectors/clusters/{cluster_id}`：返回代表 prompt 与簇成员的相似度、使用/用户/反馈信号。
 - `POST /api/prompt-vectors/resume`：后台启动 `python -m app.refresh_prompt_vectors --embed-only` 续跑缺失 embedding；如果 `.refresh_prompt_vectors.lock` 已被占用，则只返回运行中状态，不启动第二条向量化。
+
+## Prompt Semantic Scenes
+
+语义场景用于把已向量化的候选 prompt 按 `task_type` 提炼成约 1000 个可运营审核场景，独立于相似边/近重复族，不依赖 top-k 相似边：
+
+```bash
+docker exec allbot-local-analytics-platform \
+  python -m app.refresh_prompt_scenes --statement-timeout-ms 3600000
+```
+
+刷新只读取 `analytics_prompt_embeddings` + `analytics_prompt_slim_candidates` 中 `quality_stage='candidate'` 且 `status='embedded'` 的数据。目标场景数按任务类型候选量的平方根分配，单类型默认最多 220 个；每个场景保留 Top 30 高价值候选 prompt，`manual_label` 预留给人工命名，稳定 `scene_id` 的人工标签会在刷新中保留。
+
+新增 API：
+
+- `GET /api/prompt-scenes`：返回场景 summary、任务/规模/置信度分布和分页场景列表，支持任务类型、关键词、最小成员数、置信度和排序筛选。
+- `GET /api/prompt-scenes/{scene_id}`：只返回该场景的 Top 候选 prompt，不拉取全部成员。

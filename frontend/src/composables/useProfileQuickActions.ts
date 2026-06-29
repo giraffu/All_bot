@@ -18,6 +18,7 @@ export function useProfileQuickActions(options: {
   openRedeemMembershipModal: () => void
   handleBindPasswordModalOpen: () => void
   openFollowingModal: () => void
+  openFollowersModal: () => void
   icons: {
     Wallet: unknown
     Award: unknown
@@ -53,6 +54,13 @@ export function useProfileQuickActions(options: {
       className: 'quick-action-btn--sky',
       icon: options.icons.Users,
       onClick: options.openFollowingModal,
+    },
+    {
+      key: 'followers',
+      label: options.t('social.my_followers'),
+      className: 'quick-action-btn--sky',
+      icon: options.icons.Users,
+      onClick: options.openFollowersModal,
     },
     {
       key: 'password',

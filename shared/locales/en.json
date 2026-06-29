@@ -99,6 +99,7 @@
     "quick_guide": "Quick Actions",
     "quick_guide_desc": "Recharge, view favorites, redeem commission, or update your account settings.",
     "go_to_lab": "Go to Lab",
+    "back_to_profile": "Back to Profile",
     "redeem_credits": "Redeem Credits",
     "redeem_membership": "Redeem Membership",
     "change_password": "Change Password",
@@ -134,7 +135,9 @@
   },
   "social": {
     "my_following": "My Following",
+    "my_followers": "My Followers",
     "follow": "Follow",
+    "follow_back": "Follow Back",
     "unfollow": "Unfollow",
     "open_profile": "Open Profile",
     "followers": "Followers",
@@ -143,6 +146,7 @@
     "history_posts": "Post History",
     "checkin_days": "Check-in Days",
     "no_following": "You are not following anyone yet",
+    "no_followers": "No one is following you yet",
     "no_public_posts": "This user has no public posts yet",
     "no_media": "No content",
     "anonymous_user": "Anonymous Cultivator",
@@ -150,7 +154,8 @@
     "unfollow_success": "Unfollowed successfully",
     "follow_action_failed": "Follow action failed, please try again later",
     "profile_load_failed": "Failed to load user profile",
-    "following_load_failed": "Failed to load following list"
+    "following_load_failed": "Failed to load following list",
+    "followers_load_failed": "Failed to load followers list"
   },
   "task_type": {
     "img2img": "Img2Img",

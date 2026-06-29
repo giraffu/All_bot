@@ -11,6 +11,7 @@ export interface GalleryDetailStandardActions {
   showMobileApply?: boolean
   showMobileCopy?: boolean
   showPromptPanelCopy?: boolean
+  showPromptPanelUnlock?: boolean
   maskPromptText?: boolean
   promptVisibleRatio?: number
   desktopApplyPlacement?: 'before' | 'after'
@@ -21,11 +22,14 @@ export interface GalleryDetailStandardActions {
   applyLoadingLabel?: string
   applyHint?: string
   copyLabel?: string
+  unlockLabel?: string
+  unlockLoading?: boolean
   onLike?: () => void
   onDislike?: () => void
   onComment?: () => void
   onApply?: () => void
   onCopy?: () => void
+  onUnlockPrompt?: () => void
 }
 
 interface GalleryDetailModalBindings<TPost> {

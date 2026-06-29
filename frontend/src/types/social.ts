@@ -1,4 +1,4 @@
-import type { GalleryPost } from '@/types/gallery'
+import type { GalleryPost, PaginatedGalleryResponse } from '@/types/gallery'
 
 export interface PublicUserSummary {
   id: number
@@ -16,6 +16,7 @@ export interface PublicUserSummary {
 
 export interface PublicUserProfileResponse {
   user: PublicUserSummary
+  posts: PaginatedGalleryResponse<GalleryPost>
   recent_posts: GalleryPost[]
 }
 
@@ -23,6 +24,8 @@ export interface FollowingListResponse {
   items: PublicUserSummary[]
   total: number
 }
+
+export type FollowersListResponse = FollowingListResponse
 
 export interface FollowActionResponse {
   success: boolean

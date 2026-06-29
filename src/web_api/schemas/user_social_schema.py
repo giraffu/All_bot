@@ -2,7 +2,10 @@ from typing import List, Optional
 
 from pydantic import BaseModel
 
-from src.web_api.schemas.gallery_schema import GalleryPostResponse
+from src.web_api.schemas.gallery_schema import (
+    GalleryPostResponse,
+    PaginatedGalleryResponse,
+)
 
 
 class PublicUserSummary(BaseModel):
@@ -21,6 +24,7 @@ class PublicUserSummary(BaseModel):
 
 class PublicUserProfileResponse(BaseModel):
     user: PublicUserSummary
+    posts: PaginatedGalleryResponse
     recent_posts: List[GalleryPostResponse]
 
 

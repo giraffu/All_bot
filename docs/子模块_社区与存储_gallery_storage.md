@@ -7,6 +7,7 @@
 - 评论系统与评论计数
 - 我的投稿 / 我的收藏
 - 提示词付费解锁与我的提示词模版
+- 用户公开主页、关注列表与粉丝列表
 - Gallery / 修仙笔记 / 闪回瓶详情的原始输入素材预览
 - Web workbench 一键应用上下文
 - R2 媒体与缩略图优先返回
@@ -25,6 +26,8 @@
   - 仍是帖子内容来源与 apply-context 的事实源，包含 `prompt / input_file / requested_duration / billing_resolution / allow_contribute` 等字段。
 - `users`
   - `is_submission_banned / submission_banned_at / submission_ban_reason` 控制用户是否仍可投稿，不能用身份或修为字段模拟。
+- `user_follows`
+  - 关注关系表，`follower_id + followee_id` 唯一；Web 用户中心用它展示“我的关注”和“我的粉丝”，粉丝列表的 `is_following` 表示当前用户是否已经回关。
 
 ## 3. 当前主流程
 
@@ -87,8 +90,13 @@ sequenceDiagram
   - 我的投稿 `my-posts`
   - 我的收藏/应用历史 `my-favorites`
   - 我的提示词模版 `my-prompt-unlocks`
+  - 用户公开主页 `GET /api/users/{user_id}/public-profile?page=&size=`
+  - 我的关注 `GET /api/users/me/follows`
+  - 我的粉丝 `GET /api/users/me/followers`
 - `my-favorites` 不是单独表，而是从 `user_interactions` 反查点赞和应用记录。
 - `my-prompt-unlocks` 从 `gallery_prompt_unlocks` 反查当前用户已解锁提示词的活跃帖子；服务端会根据是否作者/是否已解锁决定返回完整 prompt 或遮罩 prompt。
+- 用户公开主页响应以 `posts: { items,total,page,size,pages }` 作为公开投稿分页主字段，`recent_posts` 仅保留为当前页 items 的兼容字段；公开投稿统计和分页必须使用同一组可见性条件，避免统计数大于实际可翻页内容。
+- 用户公开主页里的作品详情必须复用 Gallery 详情的提示词解锁逻辑，不能因为入口来自个人主页而隐藏 `prompt_unlockable` 的解锁入口。
 - Gallery feed 查询拼装已从 `src/core` 迁到 `src/services/gallery_feed_queries.py`，旧 `src/core/gallery_feed_queries.py` 兼容 re-export 已删除；新增列表查询条件应继续放在 service 层，避免 core 重新直连 SQL 细节。
 - Gallery 前端分组中，旧自由P图使用 `edit_group`，只包含 `edit` / `quick_image` / `img2img_lora`；自由P图 v2 使用独立 `free_edit_v2_group`，只包含 `pornmaster_flux2_single_edit` / `pornmaster_flux2_multi_edit`，不得混入旧自由P图 tab。
 - Gallery 列表/详情、我的投稿、我的收藏、我的提示词模版与用户主页 recent posts 基于 `GalleryPostResponse.input_file/input_file_url/input_files/input_file_urls` 展示 `History.input_file` 的原始输入素材预览；这是展示字段，不改变投稿、收藏或模板应用语义。
@@ -171,6 +179,8 @@ python scripts/audit_visible_hotset_r2_objects.py \
 - 并发点赞/点踩的一致性
 - 评论并发下架时的回滚与 404
 - `my-favorites` 过滤 like/apply 的正确性
+- 用户公开主页公开投稿分页的总数、页数和可见性过滤；个人主页详情提示词解锁入口与解锁后状态同步
+- 我的关注/我的粉丝列表方向正确性，以及粉丝列表的回关状态
 - 提示词解锁首次扣费、重复请求不重复扣费、唯一约束并发冲突回滚、`my-prompt-unlocks` 列表过滤
 - apply-context 对 `requested_duration` / `billing_resolution` / `negative_prompt` / `input_file_url` / `input_files` 的返回准确性
 - Gallery/修仙笔记/我的投稿卡片左上角原始输入缩略图、详情“原始输入”区域、多输入顺序和 SCAIL-2 展示/复用语义分离

@@ -124,12 +124,32 @@ describe('Profile affiliate commission display', () => {
     authStoreMock.fetchUser.mockClear()
     apiGetMock.mockReset()
     routerPushMock.mockReset()
-    apiGetMock.mockResolvedValue({
-      data: {
-        comfy_online: true,
-        queue_size: 0,
-        queue_by_type: {},
-      },
+    apiGetMock.mockImplementation((url: string) => {
+      if (url === '/users/me/followers') {
+        return Promise.resolve({
+          data: {
+            items: [],
+            total: 0,
+          },
+        })
+      }
+
+      if (url === '/users/me/follows') {
+        return Promise.resolve({
+          data: {
+            items: [],
+            total: 0,
+          },
+        })
+      }
+
+      return Promise.resolve({
+        data: {
+          comfy_online: true,
+          queue_size: 0,
+          queue_by_type: {},
+        },
+      })
     })
   })
 
@@ -205,5 +225,40 @@ describe('Profile affiliate commission display', () => {
     await billingAction.trigger('click')
 
     expect(routerPushMock).toHaveBeenCalledWith('/billing')
+  })
+
+  it('opens followers quick action from the profile page', async () => {
+    const wrapper = mount(Profile, {
+      global: {
+        plugins: [i18n],
+        stubs: {
+          'a-card': slotStub('ACardStub'),
+          'a-button': slotStub('AButtonStub'),
+          'a-modal': slotStub('AModalStub'),
+          'a-radio-group': slotStub('ARadioGroupStub'),
+          'a-radio': slotStub('ARadioStub'),
+          Wallet: true,
+          Activity: true,
+          CalendarCheck: true,
+          Zap: true,
+          Award: true,
+          User: true,
+          Lock: true,
+          Bookmark: true,
+          Star: true,
+        },
+        renderStubDefaultSlot: true,
+      },
+    })
+
+    await flushPromises()
+
+    const followersAction = wrapper.find('[data-testid="quick-action-followers"]')
+    expect(followersAction.exists()).toBe(true)
+
+    await followersAction.trigger('click')
+    await flushPromises()
+
+    expect(apiGetMock).toHaveBeenCalledWith('/users/me/followers')
   })
 })

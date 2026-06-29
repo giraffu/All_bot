@@ -14,6 +14,7 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 - **互动防刷**：`user_interactions` 记录 `like/dislike/apply`，依赖唯一约束与原子更新防止连点覆盖。
 - **评论系统**：支持评论创建、分页查询、Redis 限频与 `comments_count` 原子维护。
 - **个人视图**：支持 `my-posts`、`my-favorites` 与 `my-prompt-unlocks`；`my-favorites` 从互动记录反查点赞/应用历史，`my-prompt-unlocks` 从提示词解锁记录反查已解锁模板。
+- **用户主页与关注关系**：Web 用户公开主页 `GET /api/users/{user_id}/public-profile` 返回公开投稿分页 `posts` 并兼容 `recent_posts`；公开主页详情必须复用 Gallery 提示词解锁能力。`/api/users/me/follows` 与 `/api/users/me/followers` 分别返回我关注的人和关注我的人，粉丝列表的 `is_following` 表示我是否已回关。
 - **提示词付费解锁**：Gallery 列表/详情未解锁时只能返回服务端遮罩 prompt；`POST /api/gallery/posts/{post_id}/prompt-unlock` 固定消耗 1 灵石并给作者入账，`gallery_prompt_unlocks.user_id + post_id` 是幂等锚点。
 - **Web apply-context**：`/api/gallery/posts/{post_id}/apply-context` 已是模板应用主入口，返回 `prompt`、`negative_prompt`、`lora_name`、`input_file/input_file_url`、`input_files/input_file_urls`、`requested_duration`、`billing_resolution` 等上下文；自由P图 v2 投稿在独立 `free_edit_v2_group` 中展示，一键应用复用并锁定 prompt、重新上传 1/2 张参考图、不展示 LoRA，并按图数提交 single/multi v2 任务；旧 `custom_video` / `video_lora` 投稿会把旧分辨率映射为 Wan22 v2 档位，并恢复 canonical `5s/8s/10s` 时长；`wan22_video_v2` 单段投稿可回填正向/负面提示词、分辨率档位与 canonical 时长；SCAIL-2 `scail2_action_transfer` / `scail2_video_replacement` / `scail2_face_swap_v2` 投稿可作为视频模板，apply-context 只复用原 motion/driving video，复用者必须上传自己的 reference image。
 - **Feed 查询边界**：Gallery feed SQL 查询拼装位于 `src/services/gallery_feed_queries.py`；旧 `src/core/gallery_feed_queries.py` 兼容 re-export 已删除，新增查询条件不要回写到 core。

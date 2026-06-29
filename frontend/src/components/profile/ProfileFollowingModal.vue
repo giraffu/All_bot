@@ -1,16 +1,25 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { ExternalLink, UserMinus, Users } from 'lucide-vue-next'
+import { ExternalLink, UserMinus, UserPlus, Users } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
-import { getMyFollowing, unfollowUser } from '@/api/social'
+import { followUser, getMyFollowers, getMyFollowing, unfollowUser } from '@/api/social'
 import { useViewport } from '@/composables/useViewport'
 import type { PublicUserSummary } from '@/types/social'
 import UserProfileModal from '@/components/UserProfileModal.vue'
+import ProfileBackButton from '@/components/profile/ProfileBackButton.vue'
 
-const props = defineProps<{
-  open: boolean
-}>()
+type SocialListMode = 'following' | 'followers'
+
+const props = withDefaults(
+  defineProps<{
+    open: boolean
+    mode?: SocialListMode
+  }>(),
+  {
+    mode: 'following',
+  },
+)
 
 const emit = defineEmits<{
   'update:open': [value: boolean]
@@ -25,9 +34,19 @@ const errorText = ref('')
 const items = ref<PublicUserSummary[]>([])
 const profileOpen = ref(false)
 const activeProfileUserId = ref<number | null>(null)
-const unfollowingUserId = ref<number | null>(null)
+const actionLoadingUserId = ref<number | null>(null)
 
-const loadFollowing = async () => {
+const isFollowersMode = computed(() => props.mode === 'followers')
+const modalTitle = computed(() =>
+  isFollowersMode.value ? t('social.my_followers') : t('social.my_following')
+)
+const emptyText = computed(() =>
+  errorText.value || (
+    isFollowersMode.value ? t('social.no_followers') : t('social.no_following')
+  )
+)
+
+const loadSocialList = async () => {
   if (!props.open) {
     return
   }
@@ -35,28 +54,58 @@ const loadFollowing = async () => {
   loading.value = true
   errorText.value = ''
   try {
-    const response = await getMyFollowing()
+    const response = isFollowersMode.value
+      ? await getMyFollowers()
+      : await getMyFollowing()
     items.value = response.items
   } catch (error) {
     console.error(error)
-    errorText.value = t('social.following_load_failed')
+    errorText.value = isFollowersMode.value
+      ? t('social.followers_load_failed')
+      : t('social.following_load_failed')
   } finally {
     loading.value = false
   }
 }
 
-const handleUnfollow = async (userId: number) => {
-  unfollowingUserId.value = userId
+const updateItemFollowState = (userId: number, isFollowing: boolean) => {
+  items.value = items.value.map((item) =>
+    item.id === userId
+      ? {
+          ...item,
+          is_following: isFollowing,
+          followers_count: Math.max(
+            0,
+            item.followers_count + (isFollowing ? 1 : -1),
+          ),
+        }
+      : item,
+  )
+}
+
+const handleToggleFollow = async (item: PublicUserSummary) => {
+  const shouldUnfollow = props.mode === 'following' || item.is_following
+  actionLoadingUserId.value = item.id
   try {
-    await unfollowUser(userId)
-    items.value = items.value.filter((item) => item.id !== userId)
-    emit('followUpdated', { userId, isFollowing: false })
-    message.success(t('social.unfollow_success'))
+    const response = shouldUnfollow
+      ? await unfollowUser(item.id)
+      : await followUser(item.id)
+
+    if (props.mode === 'following' && !response.is_following) {
+      items.value = items.value.filter((currentItem) => currentItem.id !== item.id)
+    } else {
+      updateItemFollowState(item.id, response.is_following)
+    }
+
+    emit('followUpdated', { userId: item.id, isFollowing: response.is_following })
+    message.success(
+      response.is_following ? t('social.follow_success') : t('social.unfollow_success'),
+    )
   } catch (error) {
     console.error(error)
     message.error(t('social.follow_action_failed'))
   } finally {
-    unfollowingUserId.value = null
+    actionLoadingUserId.value = null
   }
 }
 
@@ -66,19 +115,26 @@ const openUserProfile = (userId: number) => {
 }
 
 const handleProfileFollowUpdated = (payload: { userId: number; isFollowing: boolean }) => {
-  if (!payload.isFollowing) {
+  if (props.mode === 'following' && !payload.isFollowing) {
     items.value = items.value.filter((item) => item.id !== payload.userId)
+  } else {
+    updateItemFollowState(payload.userId, payload.isFollowing)
   }
   emit('followUpdated', payload)
 }
 
+const closeModal = () => {
+  emit('update:open', false)
+}
+
 watch(
-  () => props.open,
-  (isOpen) => {
+  () => [props.open, props.mode],
+  ([isOpen]) => {
     if (isOpen) {
-      void loadFollowing()
+      void loadSocialList()
     } else {
       errorText.value = ''
+      items.value = []
     }
   },
   { immediate: true },
@@ -89,6 +145,7 @@ watch(
   <a-modal
     :open="open"
     :footer="null"
+    :closable="false"
     :width="isMobile ? '100%' : 760"
     :style="isMobile ? { top: 0, padding: 0, margin: 0, maxWidth: '100%' } : { top: '32px' }"
     class="profile-following-modal"
@@ -96,11 +153,14 @@ watch(
     @update:open="emit('update:open', $event)"
   >
     <div class="profile-following-modal__panel p-5 sm:p-6">
-      <div class="flex items-center gap-2 mb-4">
-        <Users :size="18" class="profile-following-modal__icon" />
-        <h3 class="profile-following-modal__title text-lg font-bold">
-          {{ t('social.my_following') }}
-        </h3>
+      <div class="profile-following-modal__header mb-4">
+        <ProfileBackButton :label="t('profile.back_to_profile')" @click="closeModal" />
+        <div class="flex items-center gap-2 min-w-0">
+          <Users :size="18" class="profile-following-modal__icon shrink-0" />
+          <h3 class="profile-following-modal__title text-lg font-bold truncate">
+            {{ modalTitle }}
+          </h3>
+        </div>
       </div>
 
       <a-spin :spinning="loading">
@@ -147,13 +207,19 @@ watch(
               </a-button>
               <a-button
                 class="profile-following-modal__action-btn"
-                danger
-                :loading="unfollowingUserId === item.id"
-                @click="handleUnfollow(item.id)"
+                :danger="mode === 'following' || item.is_following"
+                :loading="actionLoadingUserId === item.id"
+                @click="handleToggleFollow(item)"
               >
                 <span class="profile-following-modal__action-content">
-                  <UserMinus :size="16" class="profile-following-modal__action-icon" />
-                  <span>{{ t('social.unfollow') }}</span>
+                  <component
+                    :is="mode === 'following' || item.is_following ? UserMinus : UserPlus"
+                    :size="16"
+                    class="profile-following-modal__action-icon"
+                  />
+                  <span>
+                    {{ mode === 'following' || item.is_following ? t('social.unfollow') : t('social.follow_back') }}
+                  </span>
                 </span>
               </a-button>
             </div>
@@ -164,7 +230,7 @@ watch(
           v-else
           class="profile-following-modal__empty rounded-2xl p-8 text-center text-sm"
         >
-          {{ errorText || t('social.no_following') }}
+          {{ emptyText }}
         </div>
       </a-spin>
     </div>
@@ -178,6 +244,13 @@ watch(
 </template>
 
 <style scoped>
+.profile-following-modal__header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 2.625rem;
+}
+
 .profile-following-modal__panel {
   background: var(--theme-card-bg);
 }
@@ -230,5 +303,10 @@ watch(
   background: linear-gradient(135deg, #06b6d4, #4f46e5);
   color: #fff;
   box-shadow: 0 10px 20px rgba(79, 70, 229, 0.22);
+}
+
+:global(.profile-following-modal .ant-modal-content) {
+  background-color: var(--theme-card-bg) !important;
+  color: var(--theme-text-primary) !important;
 }
 </style>

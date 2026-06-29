@@ -99,6 +99,7 @@
     "quick_guide": "常用操作",
     "quick_guide_desc": "快速进行充值、查看收藏、兑换返佣或修改账户信息。",
     "go_to_lab": "前往 练功房",
+    "back_to_profile": "返回个人中心",
     "redeem_credits": "返佣兑灵石",
     "redeem_membership": "返佣兑身份",
     "change_password": "修改密咒",
@@ -134,7 +135,9 @@
   },
   "social": {
     "my_following": "我的关注",
+    "my_followers": "我的粉丝",
     "follow": "关注",
+    "follow_back": "回关",
     "unfollow": "取消关注",
     "open_profile": "打开主页",
     "followers": "粉丝",
@@ -143,6 +146,7 @@
     "history_posts": "历史投稿内容",
     "checkin_days": "签到天数",
     "no_following": "你还没有关注任何用户",
+    "no_followers": "还没有用户关注你",
     "no_public_posts": "这个用户还没有公开投稿",
     "no_media": "暂无内容",
     "anonymous_user": "匿名修士",
@@ -150,7 +154,8 @@
     "unfollow_success": "已取消关注",
     "follow_action_failed": "关注操作失败，请稍后再试",
     "profile_load_failed": "加载用户主页失败，请稍后再试",
-    "following_load_failed": "加载关注列表失败，请稍后再试"
+    "following_load_failed": "加载关注列表失败，请稍后再试",
+    "followers_load_failed": "加载粉丝列表失败，请稍后再试"
   },
   "task_type": {
     "img2img": "图生图",

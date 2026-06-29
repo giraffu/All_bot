@@ -9,11 +9,14 @@ import {
   Loader
 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { useBillingPayments } from '@/composables/useBillingPayments'
 import { useProfileWelcomeSummary } from '@/composables/useProfileWelcomeSummary'
 import { useAuthStore } from '@/stores/auth'
+import ProfileBackButton from '@/components/profile/ProfileBackButton.vue'
 
 const { t } = useI18n()
+const router = useRouter()
 const authStore = useAuthStore()
 const currentUser = computed(() => authStore.user)
 const { identityExpireText } = useProfileWelcomeSummary({
@@ -120,10 +123,18 @@ const displayPlans = computed<BillingPlanDisplay[]>(() => {
     .filter((plan): plan is BillingPlanDisplay => Boolean(plan))
 })
 
+const returnToProfile = () => {
+  void router.push({ name: 'Profile' })
+}
+
 </script>
 
 <template>
   <div class="billing-container space-y-6">
+    <div class="billing-return-row">
+      <ProfileBackButton :label="t('profile.back_to_profile')" @click="returnToProfile" />
+    </div>
+
     <div
       v-if="selectedPlan"
       class="billing-mask fixed inset-0 z-30 backdrop-blur-[1px]"
@@ -370,6 +381,12 @@ const displayPlans = computed<BillingPlanDisplay[]>(() => {
 </template>
 
 <style scoped>
+.billing-return-row {
+  display: flex;
+  align-items: center;
+  min-height: 2.625rem;
+}
+
 .billing-mask {
   background: rgba(15, 23, 42, 0.38);
 }

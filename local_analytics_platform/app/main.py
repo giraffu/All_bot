@@ -22,6 +22,11 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
 from .prompt_mart import PROMPT_MART_READY_SQL, PROMPT_MART_STATUS_SQL, PROMPT_NORMALIZATION_VERSION
+from .prompt_scenes import (
+    DEFAULT_CANDIDATES_PER_SCENE,
+    PROMPT_SCENE_ALGORITHM_VERSION,
+    PROMPT_SCENE_READY_SQL,
+)
 from .prompt_vectors import (
     DEFAULT_LM_STUDIO_BASE_URL,
     DEFAULT_DUPLICATE_THRESHOLD,
@@ -95,6 +100,15 @@ PROMPT_VECTOR_SORTS = {
     "similarity",
     "refreshed_at",
 }
+PROMPT_SCENE_SORTS = {
+    "member_count",
+    "candidate_count",
+    "quality_score",
+    "total_uses",
+    "similarity",
+    "refreshed_at",
+}
+PROMPT_SCENE_CONFIDENCE_BANDS = {"all", "high", "medium", "low"}
 
 MEDIA_EXTENSIONS = (
     ".png",
@@ -545,6 +559,24 @@ def _enrich_prompt_vector_member(record: asyncpg.Record) -> dict[str, Any]:
     return item
 
 
+def _enrich_prompt_scene(record: asyncpg.Record) -> dict[str, Any]:
+    item = _row(record)
+    item.pop("centroid_f16", None)
+    prompt = item.get("representative_prompt") or item.get("prompt") or ""
+    item["representative_prompt"] = prompt
+    item["representative_preview"] = _collapse_text(prompt, 240)
+    item["display_label"] = item.get("manual_label") or item["representative_preview"]
+    return item
+
+
+def _enrich_prompt_scene_member(record: asyncpg.Record) -> dict[str, Any]:
+    item = _row(record)
+    item["prompt"] = item.get("prompt") or ""
+    item["prompt_preview"] = _collapse_text(item.get("prompt"), 260)
+    item["raw_prompt_preview"] = _collapse_text(item.get("raw_prompt_representative"), 180)
+    return item
+
+
 async def _prompt_mart_status_or_error() -> dict[str, Any]:
     mart_ready = _row(await _fetchrow(PROMPT_MART_READY_SQL))
     if not mart_ready.get("ready"):
@@ -577,6 +609,11 @@ async def _prompt_slim_ready_or_error() -> None:
 
 async def _prompt_vector_tables_ready() -> bool:
     ready = _row(await _fetchrow(PROMPT_VECTOR_READY_SQL))
+    return bool(ready.get("ready"))
+
+
+async def _prompt_scene_tables_ready() -> bool:
+    ready = _row(await _fetchrow(PROMPT_SCENE_READY_SQL))
     return bool(ready.get("ready"))
 
 
@@ -1963,7 +2000,7 @@ async def finance(
         chart_days,
     )
     hourly = await _fetch(
-        f"""
+        """
         with hours as (
             select generate_series(0, 23)::int as hour
         ),
@@ -4110,6 +4147,415 @@ async def prompt_vector_cluster_detail(
         "normalization_version": PROMPT_NORMALIZATION_VERSION,
         "cluster": _enrich_prompt_vector_cluster(cluster),
         "members": [_enrich_prompt_vector_member(record) for record in members],
+    }
+
+
+@app.get("/api/prompt-scenes")
+async def prompt_scenes(
+    limit: int = Query(40, ge=1, le=100),
+    page: int = Query(1, ge=1, le=10000),
+    task_type: str | None = Query(None),
+    min_size: int = Query(1, ge=1, le=1_000_000),
+    confidence_band: str = Query("all"),
+    q: str | None = Query(None),
+    sort: str = Query("member_count"),
+    model_id: str = Query(DEFAULT_VECTOR_MODEL_ID),
+) -> dict[str, Any]:
+    limit = _clamp(limit, 1, 100)
+    page = _clamp(page, 1, 10000)
+    min_size = _clamp(min_size, 1, 1_000_000)
+    task_filter = (task_type or "").strip() or None
+    confidence_filter = (confidence_band or "all").strip()
+    if confidence_filter not in PROMPT_SCENE_CONFIDENCE_BANDS:
+        raise HTTPException(status_code=400, detail="invalid prompt scene confidence band")
+    sort = (sort or "member_count").strip()
+    if sort not in PROMPT_SCENE_SORTS:
+        raise HTTPException(status_code=400, detail="invalid prompt scene sort")
+    search = (q or "").strip()
+    normalized_search = _normalize_prompt_text(search)
+    search_pattern = f"%{normalized_search}%" if normalized_search else None
+    offset = (page - 1) * limit
+
+    if not await _prompt_scene_tables_ready():
+        return {
+            "ready": False,
+            "message": "prompt semantic scenes are not built; run python -m app.refresh_prompt_scenes",
+            "model": {
+                "model_id": model_id,
+                "model_key": DEFAULT_VECTOR_MODEL_KEY,
+                "normalization_version": PROMPT_NORMALIZATION_VERSION,
+                "algorithm_version": PROMPT_SCENE_ALGORITHM_VERSION,
+                "candidates_per_scene": DEFAULT_CANDIDATES_PER_SCENE,
+            },
+            "summary": {
+                "candidate_count": 0,
+                "embedded_count": 0,
+                "embedding_coverage": 0,
+                "scene_count": 0,
+                "scene_members": 0,
+                "top_candidates": 0,
+            },
+            "distributions": {"task_type": [], "scene_size": [], "confidence": []},
+            "scenes": [],
+            "pagination": {"page": page, "limit": limit, "total": 0, "has_next": False},
+        }
+
+    state_prefix = f"{model_id}:{PROMPT_NORMALIZATION_VERSION}:{PROMPT_SCENE_ALGORITHM_VERSION}:"
+    state_rows = await _fetch(
+        """
+        select key, value, updated_at
+        from analytics_prompt_semantic_scene_state
+        where key like $1::text
+        order by key
+        """,
+        f"{state_prefix}%",
+    )
+    scene_state: dict[str, Any] = {}
+    state_updated_at = None
+    for row in state_rows:
+        key = str(row["key"])[len(state_prefix) :]
+        value = row["value"]
+        try:
+            scene_state[key] = json.loads(value)
+        except (TypeError, json.JSONDecodeError):
+            scene_state[key] = value
+        if row["updated_at"] and (state_updated_at is None or row["updated_at"] > state_updated_at):
+            state_updated_at = row["updated_at"]
+
+    summary = _row(
+        await _fetchrow(
+            """
+            select
+                coalesce((
+                    select count(*)::bigint
+                    from analytics_prompt_slim_candidates
+                    where quality_stage = 'candidate'
+                      and normalization_version = $2::text
+                ), 0)::bigint as candidate_count,
+                coalesce((
+                    select count(*)::bigint
+                    from analytics_prompt_embeddings
+                    where model_id = $1::text
+                      and normalization_version = $2::text
+                      and status = 'embedded'
+                ), 0)::bigint as embedded_count,
+                coalesce((
+                    select count(*)::bigint
+                    from analytics_prompt_semantic_scenes
+                    where model_id = $1::text
+                      and normalization_version = $2::text
+                      and algorithm_version = $3::text
+                ), 0)::bigint as scene_count,
+                coalesce((
+                    select count(*)::bigint
+                    from analytics_prompt_semantic_scene_members m
+                    join analytics_prompt_semantic_scenes s on s.scene_id = m.scene_id
+                    where s.model_id = $1::text
+                      and s.normalization_version = $2::text
+                      and s.algorithm_version = $3::text
+                ), 0)::bigint as scene_members,
+                coalesce((
+                    select count(*)::bigint
+                    from analytics_prompt_semantic_scene_members m
+                    join analytics_prompt_semantic_scenes s on s.scene_id = m.scene_id
+                    where s.model_id = $1::text
+                      and s.normalization_version = $2::text
+                      and s.algorithm_version = $3::text
+                      and m.candidate_rank is not null
+                ), 0)::bigint as top_candidates,
+                (
+                    select max(refreshed_at)
+                    from analytics_prompt_semantic_scenes
+                    where model_id = $1::text
+                      and normalization_version = $2::text
+                      and algorithm_version = $3::text
+                ) as latest_refreshed_at
+            """,
+            model_id,
+            PROMPT_NORMALIZATION_VERSION,
+            PROMPT_SCENE_ALGORITHM_VERSION,
+        )
+    )
+    candidate_count = float(summary.get("candidate_count") or 0)
+    embedded_count = float(summary.get("embedded_count") or 0)
+    summary["embedding_coverage"] = round((embedded_count / candidate_count * 100) if candidate_count else 0, 2)
+
+    filtered_cte = """
+        with filtered as (
+            select
+                c.*,
+                coalesce(s.uses, 0)::bigint as representative_uses,
+                coalesce(s.users, 0)::bigint as representative_users,
+                coalesce(s.result_likes, 0)::bigint as representative_result_likes,
+                coalesce(s.result_dislikes, 0)::bigint as representative_result_dislikes,
+                coalesce(s.gallery_applies, 0)::bigint as representative_gallery_applies,
+                coalesce(s.prompt_unlocks, 0)::bigint as representative_prompt_unlocks,
+                s.char_count,
+                s.last_seen
+            from analytics_prompt_semantic_scenes c
+            left join analytics_prompt_slim_candidates s on s.prompt_hash = c.representative_hash
+            where c.model_id = $1::text
+              and c.normalization_version = $2::text
+              and c.algorithm_version = $3::text
+              and ($4::text is null or c.task_type = $4::text)
+              and c.member_count >= $5::int
+              and ($6::text is null or coalesce(c.manual_label, '') like $6::text or c.representative_prompt like $6::text)
+              and (
+                  $7::text = 'all'
+                  or exists (
+                      select 1
+                      from analytics_prompt_semantic_scene_members m
+                      where m.scene_id = c.scene_id
+                        and m.confidence_band = $7::text
+                  )
+              )
+        )
+    """
+    common_args = (
+        model_id,
+        PROMPT_NORMALIZATION_VERSION,
+        PROMPT_SCENE_ALGORITHM_VERSION,
+        task_filter,
+        min_size,
+        search_pattern,
+        confidence_filter,
+    )
+    total_row = _row(
+        await _fetchrow(
+            f"""
+            {filtered_cte}
+            select count(*)::bigint as total
+            from filtered
+            """,
+            *common_args,
+        )
+    )
+    rows = await _fetch(
+        f"""
+        {filtered_cte}
+        select
+            scene_id,
+            model_id,
+            normalization_version,
+            algorithm_version,
+            task_type,
+            representative_hash,
+            representative_prompt,
+            manual_label,
+            member_count,
+            candidate_count,
+            high_confidence_count,
+            medium_confidence_count,
+            low_confidence_count,
+            min_similarity,
+            avg_similarity,
+            max_similarity,
+            total_uses,
+            total_users,
+            quality_score,
+            representative_uses,
+            representative_users,
+            representative_result_likes,
+            representative_result_dislikes,
+            representative_gallery_applies,
+            representative_prompt_unlocks,
+            char_count,
+            last_seen,
+            refreshed_at
+        from filtered
+        order by
+            case when $8::text = 'member_count' then member_count end desc,
+            case when $8::text = 'candidate_count' then candidate_count end desc,
+            case when $8::text = 'quality_score' then quality_score end desc,
+            case when $8::text = 'total_uses' then total_uses end desc,
+            case when $8::text = 'similarity' then avg_similarity end desc,
+            case when $8::text = 'refreshed_at' then refreshed_at end desc,
+            member_count desc,
+            quality_score desc,
+            avg_similarity desc,
+            scene_id
+        limit $9::int
+        offset $10::int
+        """,
+        *common_args,
+        sort,
+        limit,
+        offset,
+    )
+    task_distribution = await _fetch(
+        """
+        select task_type as label, count(*)::bigint as count
+        from analytics_prompt_semantic_scenes
+        where model_id = $1::text
+          and normalization_version = $2::text
+          and algorithm_version = $3::text
+        group by task_type
+        order by count desc, label
+        limit 40
+        """,
+        model_id,
+        PROMPT_NORMALIZATION_VERSION,
+        PROMPT_SCENE_ALGORITHM_VERSION,
+    )
+    size_distribution = await _fetch(
+        """
+        select bucket.label, count(*)::bigint as count
+        from analytics_prompt_semantic_scenes c
+        cross join lateral (
+            select
+                case
+                    when member_count = 1 then '1 条'
+                    when member_count <= 10 then '2-10 条'
+                    when member_count <= 50 then '11-50 条'
+                    when member_count <= 200 then '51-200 条'
+                    else '200+ 条'
+                end as label,
+                case
+                    when member_count = 1 then 1
+                    when member_count <= 10 then 2
+                    when member_count <= 50 then 3
+                    when member_count <= 200 then 4
+                    else 5
+                end as sort_order
+        ) bucket
+        where c.model_id = $1::text
+          and c.normalization_version = $2::text
+          and c.algorithm_version = $3::text
+        group by bucket.label, bucket.sort_order
+        order by bucket.sort_order
+        """,
+        model_id,
+        PROMPT_NORMALIZATION_VERSION,
+        PROMPT_SCENE_ALGORITHM_VERSION,
+    )
+    confidence_distribution = await _fetch(
+        """
+        select m.confidence_band as label, count(*)::bigint as count
+        from analytics_prompt_semantic_scene_members m
+        join analytics_prompt_semantic_scenes s on s.scene_id = m.scene_id
+        where s.model_id = $1::text
+          and s.normalization_version = $2::text
+          and s.algorithm_version = $3::text
+        group by m.confidence_band
+        order by count desc, label
+        """,
+        model_id,
+        PROMPT_NORMALIZATION_VERSION,
+        PROMPT_SCENE_ALGORITHM_VERSION,
+    )
+    total = int(total_row.get("total") or 0)
+    return {
+        "ready": True,
+        "model": {
+            "model_id": model_id,
+            "model_key": scene_state.get("model_key") or DEFAULT_VECTOR_MODEL_KEY,
+            "normalization_version": PROMPT_NORMALIZATION_VERSION,
+            "algorithm_version": PROMPT_SCENE_ALGORITHM_VERSION,
+            "target_scene_count": scene_state.get("target_scene_count"),
+            "candidates_per_scene": scene_state.get("candidates_per_scene") or DEFAULT_CANDIDATES_PER_SCENE,
+            "last_success_at": scene_state.get("last_success_at"),
+            "state_updated_at": _json_value(state_updated_at),
+        },
+        "limit": limit,
+        "page": page,
+        "task_type": task_filter,
+        "min_size": min_size,
+        "confidence_band": confidence_filter,
+        "query": search,
+        "sort": sort,
+        "summary": summary,
+        "distributions": {
+            "task_type": _rows(task_distribution),
+            "scene_size": _rows(size_distribution),
+            "confidence": _rows(confidence_distribution),
+        },
+        "scenes": [_enrich_prompt_scene(record) for record in rows],
+        "pagination": {
+            "page": page,
+            "limit": limit,
+            "total": total,
+            "has_next": offset + limit < total,
+        },
+    }
+
+
+@app.get("/api/prompt-scenes/{scene_id}")
+async def prompt_scene_detail(
+    scene_id: str,
+    model_id: str = Query(DEFAULT_VECTOR_MODEL_ID),
+    limit: int = Query(DEFAULT_CANDIDATES_PER_SCENE, ge=1, le=100),
+) -> dict[str, Any]:
+    if not await _prompt_scene_tables_ready():
+        raise HTTPException(status_code=503, detail="prompt semantic scenes are not built")
+    limit = _clamp(limit, 1, 100)
+    scene = await _fetchrow(
+        """
+        select
+            c.*,
+            coalesce(s.uses, 0)::bigint as representative_uses,
+            coalesce(s.users, 0)::bigint as representative_users,
+            s.char_count,
+            s.first_seen,
+            s.last_seen
+        from analytics_prompt_semantic_scenes c
+        left join analytics_prompt_slim_candidates s on s.prompt_hash = c.representative_hash
+        where c.scene_id = $1::text
+          and c.model_id = $2::text
+          and c.normalization_version = $3::text
+          and c.algorithm_version = $4::text
+        """,
+        scene_id,
+        model_id,
+        PROMPT_NORMALIZATION_VERSION,
+        PROMPT_SCENE_ALGORITHM_VERSION,
+    )
+    if scene is None:
+        raise HTTPException(status_code=404, detail="prompt semantic scene not found")
+    members = await _fetch(
+        """
+        select
+            m.scene_id,
+            m.prompt_hash,
+            m.task_type,
+            m.similarity_to_scene,
+            m.confidence_band,
+            m.member_rank,
+            m.candidate_rank,
+            s.prompt,
+            s.raw_prompt_representative,
+            s.variant_count,
+            s.char_count,
+            s.uses,
+            s.users,
+            s.result_likes,
+            s.result_dislikes,
+            s.gallery_likes,
+            s.gallery_dislikes,
+            s.gallery_applies,
+            s.prompt_unlocks,
+            s.quality_score,
+            s.positive_signal_score,
+            s.negative_signal_score,
+            s.source_scopes,
+            s.first_seen,
+            s.last_seen
+        from analytics_prompt_semantic_scene_members m
+        left join analytics_prompt_slim_candidates s on s.prompt_hash = m.prompt_hash
+        where m.scene_id = $1::text
+          and m.candidate_rank is not null
+        order by m.candidate_rank, m.member_rank, m.prompt_hash
+        limit $2::int
+        """,
+        scene_id,
+        limit,
+    )
+    return {
+        "model_id": model_id,
+        "normalization_version": PROMPT_NORMALIZATION_VERSION,
+        "algorithm_version": PROMPT_SCENE_ALGORITHM_VERSION,
+        "candidate_limit": limit,
+        "scene": _enrich_prompt_scene(scene),
+        "candidates": [_enrich_prompt_scene_member(record) for record in members],
     }
 
 

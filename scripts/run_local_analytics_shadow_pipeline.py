@@ -177,6 +177,37 @@ def task_type_query_cmd(config: PipelineConfig) -> list[str]:
     ]
 
 
+def embedding_coverage_query_cmd(config: PipelineConfig) -> list[str]:
+    sql = (
+        "with candidate as ("
+        "  select count(*)::bigint as n "
+        "  from analytics_prompt_slim_candidates "
+        "  where quality_stage = 'candidate' "
+        "    and normalization_version = 'v4-task-type-prefix-strip'"
+        "), embedded as ("
+        "  select count(*)::bigint as n "
+        "  from analytics_prompt_embeddings "
+        "  where model_id = 'qwen3-embedding-8b' "
+        "    and normalization_version = 'v4-task-type-prefix-strip' "
+        "    and status = 'embedded'"
+        ") "
+        "select (candidate.n > 0 and candidate.n = embedded.n)::text "
+        "from candidate, embedded"
+    )
+    return [
+        "docker",
+        "exec",
+        config.postgres_container,
+        "psql",
+        "-U",
+        config.postgres_user,
+        "-d",
+        config.shadow_db,
+        "-tAc",
+        sql,
+    ]
+
+
 def lm_studio_ready(config: PipelineConfig) -> bool:
     try:
         with urllib.request.urlopen(f"{config.lm_studio_base_url.rstrip('/')}/models", timeout=8) as response:
@@ -253,7 +284,7 @@ def run_pipeline(
             handle.write(json.dumps(message, sort_keys=True) + "\n")
         return message
 
-    result = {"status": "ok", "embedding": "not_requested"}
+    result = {"status": "ok", "embedding": "not_requested", "scenes": "not_requested"}
     try:
         wait_for_shadow_sync(config)
         if vector_refresh_lock_is_held(config):
@@ -285,24 +316,42 @@ def run_pipeline(
             label="refresh-prompt-slim",
         )
 
-        if not lm_studio_checker(config):
+        lm_studio_available = lm_studio_checker(config)
+        if not lm_studio_available:
             result["embedding"] = "skipped_lm_studio_unavailable"
-            runner.run(["sh", "-lc", "echo LM Studio embedding model unavailable; skipping vectors"], label="skip-vectors")
+            runner.run(["sh", "-lc", "echo LM Studio embedding model unavailable; skipping embeddings"], label="skip-embeddings")
+        else:
+            runner.run(
+                analytics_python_cmd(
+                    config,
+                    "app.refresh_prompt_vectors",
+                    "--embed-only",
+                    "--batch-size",
+                    str(config.batch_size),
+                    "--statement-timeout-ms",
+                    str(config.statement_timeout_ms),
+                ),
+                label="refresh-prompt-embeddings",
+            )
+            result["embedding"] = "attempted"
+
+        coverage_complete = runner.capture(embedding_coverage_query_cmd(config), label="check-vector-coverage")
+        if config.execute and coverage_complete.strip().lower() != "t":
+            result["scenes"] = "skipped_embedding_incomplete"
+            with config.log_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps({"status": "skipped_prompt_scenes_embedding_incomplete"}, sort_keys=True) + "\n")
             return result
 
         runner.run(
             analytics_python_cmd(
                 config,
-                "app.refresh_prompt_vectors",
-                "--embed-only",
-                "--batch-size",
-                str(config.batch_size),
+                "app.refresh_prompt_scenes",
                 "--statement-timeout-ms",
                 str(config.statement_timeout_ms),
             ),
-            label="refresh-prompt-embeddings",
+            label="refresh-prompt-scenes",
         )
-        result["embedding"] = "attempted"
+        result["scenes"] = "attempted"
 
         raw_task_types = runner.capture(task_type_query_cmd(config), label="list-vector-task-types")
         for task_type in [line.strip() for line in raw_task_types.splitlines() if line.strip()]:

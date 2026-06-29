@@ -8,6 +8,8 @@ const state = {
   promptSlim: null,
   promptVectors: null,
   promptVectorDetail: null,
+  promptScenes: null,
+  promptSceneDetail: null,
   templates: null,
   media: null,
   promptTaskTypes: [],
@@ -15,9 +17,11 @@ const state = {
   selectedPrompt: null,
   selectedPromptSlim: null,
   selectedPromptVectorCluster: null,
+  selectedPromptScene: null,
   promptPage: 1,
   promptSlimPage: 1,
   promptVectorPage: 1,
+  promptScenePage: 1,
   promptVectorResume: null,
   promptVectorResumeLoading: false,
   activeTab: "users",
@@ -29,6 +33,7 @@ const state = {
     prompts: 30,
     "prompt-slim": 0,
     "prompt-vectors": 0,
+    "prompt-scenes": 0,
     templates: 30,
     media: 30,
   },
@@ -71,6 +76,11 @@ const tabs = {
     kicker: "向量相似",
     title: "提示词语义相似簇审核",
     subtitle: "读取持久化向量与相似簇表，只在同任务类型内生成审核候选",
+  },
+  "prompt-scenes": {
+    kicker: "语义场景",
+    title: "提示词语义场景目录",
+    subtitle: "按任务类型沉淀可运营审核的场景和 Top 候选提示词",
   },
   templates: {
     kicker: "模板候选",
@@ -143,7 +153,7 @@ function setCurrentDays(days) {
 function syncDaysControl() {
   const select = $("#daysSelect");
   if (!select) return;
-  const lockedAllTimeTabs = new Set(["prompt-slim", "prompt-vectors"]);
+  const lockedAllTimeTabs = new Set(["prompt-slim", "prompt-vectors", "prompt-scenes"]);
   const locked = lockedAllTimeTabs.has(state.activeTab);
   select.disabled = locked;
   select.value = String(locked ? 0 : currentDays());
@@ -1439,6 +1449,178 @@ function renderPromptVectorDetail() {
   `;
 }
 
+function promptSceneConfidenceLabel(label) {
+  if (label === "high") return "高";
+  if (label === "medium") return "中";
+  if (label === "low") return "低";
+  return label || "-";
+}
+
+function promptSceneConfidenceClass(label) {
+  if (label === "high") return "success";
+  if (label === "medium") return "neutral";
+  if (label === "low") return "warn";
+  return "gray";
+}
+
+function renderPromptSceneFilterOptions() {
+  const distributions = state.promptScenes?.distributions || {};
+  renderPromptVectorOptionSet(
+    "#promptSceneTaskTypeSelect",
+    distributions.task_type || [],
+    [{ value: "", label: "全部" }]
+  );
+}
+
+function renderPromptSceneSummary() {
+  const summary = state.promptScenes?.summary || {};
+  const model = state.promptScenes?.model || {};
+  if (state.promptScenes && state.promptScenes.ready === false) {
+    $("#promptSceneSummary").innerHTML = [
+      metric("场景表状态", "未构建", state.promptScenes.message || "等待刷新命令"),
+      metric("模型", escapeHtml(model.model_id || "-"), escapeHtml(model.model_key || "-")),
+      metric("候选覆盖", "0%", "embedding 完整后刷新场景"),
+      metric("语义场景", "0", "暂无场景目录"),
+    ].join("");
+    return;
+  }
+  $("#promptSceneSummary").innerHTML = [
+    metric("候选提示词", fmt(summary.candidate_count), "quality_stage = candidate"),
+    metric("已向量化", fmt(summary.embedded_count), `覆盖 ${fmtAmount(summary.embedding_coverage)}%`),
+    metric("语义场景", fmt(summary.scene_count), `成员 ${fmt(summary.scene_members)}`),
+    metric("Top 候选", fmt(summary.top_candidates), `每场景 ${fmt(model.candidates_per_scene || 30)} 条`),
+    metric("目标场景", fmt(model.target_scene_count || 1000), escapeHtml(model.algorithm_version || "-")),
+    metric("刷新", fmtDate(summary.latest_refreshed_at || model.last_success_at), `模型 ${escapeHtml(model.model_id || "-")}`),
+  ].join("");
+}
+
+function renderPromptSceneDistributions() {
+  const distributions = state.promptScenes?.distributions || {};
+  renderDistribution("#promptSceneTaskTypeDistribution", distributions.task_type || []);
+  renderDistribution("#promptSceneSizeDistribution", distributions.scene_size || []);
+  renderDistribution("#promptSceneConfidenceDistribution", (distributions.confidence || []).map((row) => ({
+    ...row,
+    label: promptSceneConfidenceLabel(row.label),
+  })));
+}
+
+function renderPromptSceneSignalText(row = {}) {
+  return `
+    <div>总使用 ${fmt(row.total_uses)} · 总用户 ${fmt(row.total_users)}</div>
+    <div class="muted small">代表 ${fmt(row.representative_uses)} 次 / ${fmt(row.representative_users)} 人</div>
+    <div class="muted small">赞 ${fmt(row.representative_result_likes)} · 应用 ${fmt(row.representative_gallery_applies)} · 解锁 ${fmt(row.representative_prompt_unlocks)}</div>
+  `;
+}
+
+function renderPromptSceneConfidenceText(row = {}) {
+  return `
+    <div class="pill-list">
+      <span class="pill ${promptSceneConfidenceClass("high")}">高 ${fmt(row.high_confidence_count)}</span>
+      <span class="pill ${promptSceneConfidenceClass("medium")}">中 ${fmt(row.medium_confidence_count)}</span>
+      <span class="pill ${promptSceneConfidenceClass("low")}">低 ${fmt(row.low_confidence_count)}</span>
+    </div>
+    <div class="muted small">均值 ${fmtAmount(Number(row.avg_similarity || 0) * 100)}% · 最低 ${fmtAmount(Number(row.min_similarity || 0) * 100)}%</div>
+  `;
+}
+
+function renderPromptScenes() {
+  renderPromptSceneFilterOptions();
+  renderPromptSceneSummary();
+  renderPromptSceneDistributions();
+
+  const rows = state.promptScenes?.scenes || [];
+  if (!state.selectedPromptScene || !rows.some((item) => item.scene_id === state.selectedPromptScene.scene_id)) {
+    state.selectedPromptScene = rows[0] || null;
+    state.promptSceneDetail = null;
+  }
+
+  $("#promptSceneRows").innerHTML = tableRows(rows, (row) => `
+    <tr data-scene-id="${escapeHtml(row.scene_id)}" class="${state.selectedPromptScene?.scene_id === row.scene_id ? "selected-row" : ""}">
+      <td>
+        <strong>${fmt(row.member_count)}</strong> 条
+        <div class="muted small">候选 ${fmt(row.candidate_count)}</div>
+        <div class="muted small mono">${escapeHtml(row.scene_id || "-")}</div>
+      </td>
+      <td>
+        <div class="prompt-preview">${escapeHtml(row.display_label || row.representative_preview)}</div>
+        <div class="pill-list">
+          <span class="pill gray">${escapeHtml(row.task_type || "-")}</span>
+          <span class="pill">质量 ${fmtAmount(row.quality_score)}</span>
+          ${row.manual_label ? '<span class="pill">人工命名</span>' : ""}
+        </div>
+      </td>
+      <td>${renderPromptSceneSignalText(row)}</td>
+      <td>${renderPromptSceneConfidenceText(row)}</td>
+      <td>
+        <div>${fmtDate(row.refreshed_at)}</div>
+        <div class="muted small">${fmtDate(row.last_seen)}</div>
+      </td>
+    </tr>
+  `);
+
+  document.querySelectorAll("#promptSceneRows tr").forEach((row) => {
+    row.addEventListener("click", () => {
+      state.selectedPromptScene = rows.find((item) => item.scene_id === row.dataset.sceneId) || rows[0] || null;
+      state.promptSceneDetail = null;
+      renderPromptScenes();
+      if (state.selectedPromptScene) {
+        loadPromptSceneDetail(state.selectedPromptScene.scene_id).catch(setError);
+      }
+    });
+  });
+
+  const pagination = state.promptScenes?.pagination || {};
+  const total = Number(pagination.total || 0);
+  $("#promptScenePageInfo").textContent = `第 ${fmt(pagination.page || 1)} 页 · 共 ${fmt(total)} 场景`;
+  $("#promptScenePrevButton").disabled = Number(pagination.page || 1) <= 1;
+  $("#promptSceneNextButton").disabled = !pagination.has_next;
+
+  renderPromptSceneDetail();
+}
+
+function renderPromptSceneDetail() {
+  const selected = state.selectedPromptScene;
+  if (!selected) {
+    $("#promptSceneDetail").innerHTML = '<div class="empty">暂无语义场景</div>';
+    return;
+  }
+  if (!state.promptSceneDetail || state.promptSceneDetail.scene?.scene_id !== selected.scene_id) {
+    $("#promptSceneDetail").innerHTML = `
+      <h3>场景 · ${fmt(selected.member_count)} 条</h3>
+      <p class="prompt-fulltext">${escapeHtml(selected.display_label || selected.representative_prompt || selected.representative_preview || "")}</p>
+      <div class="empty compact">正在加载 Top 候选</div>
+    `;
+    return;
+  }
+  const scene = state.promptSceneDetail.scene || selected;
+  const candidates = state.promptSceneDetail.candidates || [];
+  $("#promptSceneDetail").innerHTML = `
+    <h3>${escapeHtml(scene.manual_label || scene.task_type || "-")} · ${fmt(scene.member_count)} 条</h3>
+    <p class="prompt-fulltext">${escapeHtml(scene.representative_prompt || scene.representative_preview || "")}</p>
+    <dl>
+      <dt>Scene</dt><dd class="mono">${escapeHtml(scene.scene_id)}</dd>
+      <dt>代表 Hash</dt><dd class="mono">${escapeHtml(scene.representative_hash)}</dd>
+      <dt>候选</dt><dd>${fmt(scene.candidate_count)} 条 Top 候选 / ${fmt(scene.member_count)} 条成员</dd>
+      <dt>相似度</dt><dd>均值 ${fmtAmount(Number(scene.avg_similarity || 0) * 100)}% · 最低 ${fmtAmount(Number(scene.min_similarity || 0) * 100)}%</dd>
+      <dt>置信度</dt><dd>高 ${fmt(scene.high_confidence_count)} · 中 ${fmt(scene.medium_confidence_count)} · 低 ${fmt(scene.low_confidence_count)}</dd>
+      <dt>总信号</dt><dd>使用 ${fmt(scene.total_uses)} · 用户 ${fmt(scene.total_users)} · 质量 ${fmtAmount(scene.quality_score)}</dd>
+      <dt>刷新</dt><dd>${fmtDate(scene.refreshed_at)}</dd>
+    </dl>
+    <div class="cluster-member-list">
+      ${candidates.map((member) => `
+        <div class="cluster-member ${Number(member.candidate_rank || 0) === 1 ? "representative" : ""}">
+          <div class="cluster-member-head">
+            <span class="pill ${promptSceneConfidenceClass(member.confidence_band)}">#${fmt(member.candidate_rank)} · ${escapeHtml(promptSceneConfidenceLabel(member.confidence_band))} ${fmtAmount(Number(member.similarity_to_scene || 0) * 100)}%</span>
+            <span class="muted small">使用 ${fmt(member.uses)} · 用户 ${fmt(member.users)} · 质量 ${fmtAmount(member.quality_score)}</span>
+          </div>
+          <div class="cluster-member-prompt">${escapeHtml(member.prompt_preview || member.prompt || "-")}</div>
+          <div class="muted small">结果赞 ${fmt(member.result_likes)} · 踩 ${fmt(member.result_dislikes)} · Gallery 应用 ${fmt(member.gallery_applies)} · 解锁 ${fmt(member.prompt_unlocks)}</div>
+        </div>
+      `).join("") || '<div class="empty compact">暂无候选</div>'}
+    </div>
+  `;
+}
+
 function renderTemplateCandidates(source = state.templates) {
   const candidates = (source?.candidates || [])
     .filter((item) => Number(item.prompt_score || 0) >= 20)
@@ -1562,6 +1744,18 @@ function getPromptVectorParams() {
   };
 }
 
+function getPromptSceneParams() {
+  return {
+    task_type: $("#promptSceneTaskTypeSelect")?.value || "",
+    confidence_band: $("#promptSceneConfidenceSelect")?.value || "all",
+    min_size: Number($("#promptSceneMinSizeInput")?.value || 1),
+    q: $("#promptSceneSearchInput")?.value?.trim() || "",
+    sort: $("#promptSceneSortSelect")?.value || "member_count",
+    page: state.promptScenePage,
+    limit: 40,
+  };
+}
+
 function getTemplatePromptParams(days = currentDays()) {
   return {
     days,
@@ -1627,6 +1821,19 @@ async function loadPromptVectors() {
   }
 }
 
+async function loadPromptScenes() {
+  state.promptScenes = await fetchJson("/api/prompt-scenes", getPromptSceneParams());
+  const rows = state.promptScenes?.scenes || [];
+  if (!state.selectedPromptScene || !rows.some((row) => row.scene_id === state.selectedPromptScene.scene_id)) {
+    state.selectedPromptScene = rows[0] || null;
+    state.promptSceneDetail = null;
+  }
+  renderPromptScenes();
+  if (state.selectedPromptScene && state.promptScenes?.ready !== false) {
+    await loadPromptSceneDetail(state.selectedPromptScene.scene_id);
+  }
+}
+
 async function resumePromptVectorEmbeddings() {
   state.promptVectorResumeLoading = true;
   renderPromptVectorResumeStatus();
@@ -1650,6 +1857,12 @@ async function loadPromptVectorDetail(clusterId) {
   renderPromptVectorDetail();
 }
 
+async function loadPromptSceneDetail(sceneId) {
+  if (!sceneId) return;
+  state.promptSceneDetail = await fetchJson(`/api/prompt-scenes/${encodeURIComponent(sceneId)}`);
+  renderPromptSceneDetail();
+}
+
 async function loadTemplates(days) {
   state.templates = await fetchJson("/api/prompts", getTemplatePromptParams(days));
   renderTemplateCandidates(state.templates);
@@ -1668,6 +1881,7 @@ const tabLoaders = {
   prompts: loadPrompts,
   "prompt-slim": loadPromptSlim,
   "prompt-vectors": loadPromptVectors,
+  "prompt-scenes": loadPromptScenes,
   templates: loadTemplates,
   media: loadMedia,
 };
@@ -1714,6 +1928,11 @@ function reloadCurrentTab() {
     state.promptVectorPage = 1;
     state.selectedPromptVectorCluster = null;
     state.promptVectorDetail = null;
+  }
+  if (state.activeTab === "prompt-scenes") {
+    state.promptScenePage = 1;
+    state.selectedPromptScene = null;
+    state.promptSceneDetail = null;
   }
   markTabStale(state.activeTab);
   loadCurrentTab({ force: true });
@@ -1818,6 +2037,38 @@ $("#promptVectorNextButton").addEventListener("click", () => {
   loadCurrentTab({ force: true });
 });
 $("#promptVectorResumeButton").addEventListener("click", resumePromptVectorEmbeddings);
+function resetPromptScenePageAndLoad() {
+  state.promptScenePage = 1;
+  state.selectedPromptScene = null;
+  state.promptSceneDetail = null;
+  markTabStale("prompt-scenes");
+  if (state.activeTab === "prompt-scenes") {
+    loadCurrentTab({ force: true });
+  }
+}
+["#promptSceneTaskTypeSelect", "#promptSceneConfidenceSelect", "#promptSceneMinSizeInput", "#promptSceneSortSelect"].forEach((selector) => {
+  const element = $(selector);
+  if (element) element.addEventListener("change", resetPromptScenePageAndLoad);
+});
+let promptSceneSearchTimer = null;
+$("#promptSceneSearchInput").addEventListener("input", () => {
+  window.clearTimeout(promptSceneSearchTimer);
+  promptSceneSearchTimer = window.setTimeout(resetPromptScenePageAndLoad, 300);
+});
+$("#promptScenePrevButton").addEventListener("click", () => {
+  state.promptScenePage = Math.max(1, state.promptScenePage - 1);
+  state.selectedPromptScene = null;
+  state.promptSceneDetail = null;
+  markTabStale("prompt-scenes");
+  loadCurrentTab({ force: true });
+});
+$("#promptSceneNextButton").addEventListener("click", () => {
+  state.promptScenePage += 1;
+  state.selectedPromptScene = null;
+  state.promptSceneDetail = null;
+  markTabStale("prompt-scenes");
+  loadCurrentTab({ force: true });
+});
 document.querySelectorAll(".tab-button").forEach((button) => {
   button.addEventListener("click", () => setActiveTab(button.dataset.tab));
 });

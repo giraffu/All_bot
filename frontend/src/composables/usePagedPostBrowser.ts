@@ -30,7 +30,7 @@ export const usePagedPostBrowser = <T extends { id: number | string }>(
   const errorMessage = ref('')
   const detailVisible = ref(false)
   const currentPost = ref<T | null>(null)
-  const pendingPages = new Set<number>()
+  const pendingPageRequests = new Map<number, Promise<boolean>>()
 
   let currentVisibleRequestId = 0
   let currentQueryVersion = 0
@@ -88,47 +88,85 @@ export const usePagedPostBrowser = <T extends { id: number | string }>(
       return true
     }
 
-    if (pendingPages.has(pageNumber)) {
-      return false
+    const pendingRequest = pendingPageRequests.get(pageNumber)
+    if (pendingRequest) {
+      const visibleRequestId = activate
+        ? ++currentVisibleRequestId
+        : currentVisibleRequestId
+
+      if (activate) {
+        loading.value = true
+      }
+
+      try {
+        const loaded = await pendingRequest
+        const cachedItemsAfterPending = pageCache.value[pageNumber]
+        if (
+          activate
+          && loaded
+          && visibleRequestId === currentVisibleRequestId
+          && cachedItemsAfterPending
+        ) {
+          currentPage.value = pageNumber
+          posts.value = cachedItemsAfterPending
+          errorMessage.value = ''
+        }
+        return loaded
+      } finally {
+        if (
+          activate
+          && visibleRequestId === currentVisibleRequestId
+        ) {
+          loading.value = false
+        }
+      }
     }
 
     const requestVersion = currentQueryVersion
     const visibleRequestId = activate ? ++currentVisibleRequestId : currentVisibleRequestId
-    pendingPages.add(pageNumber)
 
     if (activate) {
       loading.value = true
     }
 
-    try {
-      const result = await options.fetchPageData(pageNumber)
-      if (requestVersion !== currentQueryVersion) {
-        return false
-      }
+    let requestPromise: Promise<boolean> | null = null
+    const runRequest = async () => {
+      try {
+        const result = await options.fetchPageData(pageNumber)
+        if (requestVersion !== currentQueryVersion) {
+          return false
+        }
 
-      syncPageResult(pageNumber, result)
-      errorMessage.value = ''
-      if (activate && visibleRequestId === currentVisibleRequestId) {
-        currentPage.value = pageNumber
-        posts.value = result.items
-      }
-      return true
-    } catch (error) {
-      if (requestVersion !== currentQueryVersion) {
+        syncPageResult(pageNumber, result)
+        errorMessage.value = ''
+        if (activate && visibleRequestId === currentVisibleRequestId) {
+          currentPage.value = pageNumber
+          posts.value = result.items
+        }
+        return true
+      } catch (error) {
+        if (requestVersion !== currentQueryVersion) {
+          return false
+        }
+        errorMessage.value = options.getFetchErrorMessage?.(error) ?? ''
+        options.onFetchError?.(error)
         return false
-      }
-      errorMessage.value = options.getFetchErrorMessage?.(error) ?? ''
-      options.onFetchError?.(error)
-      return false
-    } finally {
-      pendingPages.delete(pageNumber)
-      if (
-        activate
-        && visibleRequestId === currentVisibleRequestId
-      ) {
-        loading.value = false
+      } finally {
+        if (requestPromise && pendingPageRequests.get(pageNumber) === requestPromise) {
+          pendingPageRequests.delete(pageNumber)
+        }
+        if (
+          activate
+          && visibleRequestId === currentVisibleRequestId
+        ) {
+          loading.value = false
+        }
       }
     }
+
+    requestPromise = runRequest()
+    pendingPageRequests.set(pageNumber, requestPromise)
+    return requestPromise
   }
 
   const prefetchNextPage = () => {
