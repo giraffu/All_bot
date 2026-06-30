@@ -81,7 +81,18 @@ async def test_toggle_user_language_persists_context_db_and_redis(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_get_queue_status_reply_handles_success_and_unavailable(monkeypatch):
-    context = SimpleNamespace(t=lambda key, **kwargs: f"T:{key}:{kwargs}" if kwargs else f"T:{key}")
+    translations = {
+        "profile.queue_free_max_wait": "免费最长等待",
+        "profile.queue_paid_max_wait": "付费最长等待",
+        "profile.queue_wait_none": "暂无",
+    }
+
+    def translate(key, **kwargs):
+        if key in translations:
+            return translations[key]
+        return f"T:{key}:{kwargs}" if kwargs else f"T:{key}"
+
+    context = SimpleNamespace(lang="zh", t=translate)
     user = SimpleNamespace(id=123)
 
     monkeypatch.setattr(
@@ -90,7 +101,7 @@ async def test_get_queue_status_reply_handles_success_and_unavailable(monkeypatc
         AsyncMock(
             side_effect=[
                 {
-                    "queue_size": 11,
+                    "queue_size": 14,
                     "queue_by_type": {
                         "img2img": 1,
                         "video_edit": 2,
@@ -100,7 +111,23 @@ async def test_get_queue_status_reply_handles_success_and_unavailable(monkeypatc
                         "wan22_video_v2": 1,
                         "scail2_video_replacement": 1,
                         "scail2_action_transfer": 1,
+                        "pornmaster_flux2_single_edit": 1,
+                        "pornmaster_flux2_multi_edit": 2,
                         "custom_x": 1,
+                    },
+                    "queue_by_type_details": {
+                        "img2img": {
+                            "max_free_pending_wait_seconds": 75,
+                            "max_paid_pending_wait_seconds": 8,
+                        },
+                        "pornmaster_flux2_single_edit": {
+                            "max_free_pending_wait_seconds": 100,
+                            "max_paid_pending_wait_seconds": None,
+                        },
+                        "pornmaster_flux2_multi_edit": {
+                            "max_free_pending_wait_seconds": 130,
+                            "max_paid_pending_wait_seconds": 65,
+                        },
                     },
                 },
                 None,
@@ -126,6 +153,7 @@ async def test_get_queue_status_reply_handles_success_and_unavailable(monkeypatc
             "wan22_video_v2": "task.mode_wan22_video_v2",
             "scail2_video_replacement": "task.mode_scail2_video_replacement",
             "scail2_action_transfer": "task.mode_scail2_action_transfer",
+            "free_edit_v2": "task.mode_free_edit_v2",
         },
         user=user,
     )
@@ -135,12 +163,16 @@ async def test_get_queue_status_reply_handles_success_and_unavailable(monkeypatc
         user=user,
     )
 
-    assert "T:profile.total_queue：`11` T:profile.tasks_unit" in text
+    assert "T:profile.total_queue：`14` T:profile.tasks_unit" in text
     assert "T:task.img2img：`1` T:profile.tasks_unit" in text
     assert "T:task.mode_video_lora：`6` T:profile.tasks_unit" in text
     assert "T:task.mode_wan22_video_v2：`1` T:profile.tasks_unit" in text
     assert "T:task.mode_scail2_video_replacement：`1` T:profile.tasks_unit" in text
     assert "T:task.mode_scail2_action_transfer：`1` T:profile.tasks_unit" in text
+    assert "T:task.mode_free_edit_v2：`3` T:profile.tasks_unit" in text
+    assert "pornmaster_flux2_single_edit" not in text
+    assert "pornmaster_flux2_multi_edit" not in text
+    assert "免费最长等待：`2分10秒`，付费最长等待：`1分05秒`" in text
     assert "video_insert" not in text
     assert "❓ T:profile.other_types (custom\\_x)：`1` T:profile.tasks_unit" in text
     assert "**T:profile.my_tasks_title**" in text

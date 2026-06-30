@@ -110,6 +110,7 @@ class SystemWorkersResponse(BaseModel):
 class SystemStatusResponse(BaseModel):
     queue_size: int
     queue_by_type: dict[str, int] = {}
+    queue_by_type_details: dict[str, dict[str, Any]] = {}
     active_workers: int
     healthy_workers: int = 0
     accepting_workers: int = 0

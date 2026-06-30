@@ -257,11 +257,18 @@ def _build_worker_control_counts(workers: list[dict[str, Any]]) -> dict[str, int
 
 
 async def _get_system_status_snapshot(queue_manager) -> dict[str, Any]:
+    async def collect_queue_type_details() -> dict[str, dict[str, Any]]:
+        get_details = getattr(queue_manager, "get_queue_metrics_by_type_details", None)
+        if get_details is None:
+            return {}
+        return dict(await get_details())
+
     async def collect_status() -> dict[str, Any]:
-        queue_size, workers, queue_by_type = await asyncio.gather(
+        queue_size, workers, queue_by_type, queue_by_type_details = await asyncio.gather(
             queue_manager.get_queue_size(),
             _get_worker_snapshot(queue_manager),
             queue_manager.get_queue_metrics_by_type(),
+            collect_queue_type_details(),
         )
         workers_by_status = _build_worker_status_counts(workers)
         workers_by_control_state = _build_worker_control_counts(workers)
@@ -279,6 +286,7 @@ async def _get_system_status_snapshot(queue_manager) -> dict[str, Any]:
         return {
             "queue_size": queue_size,
             "queue_by_type": dict(queue_by_type),
+            "queue_by_type_details": queue_by_type_details,
             "active_workers": len(workers),
             "healthy_workers": healthy_workers,
             "accepting_workers": accepting_workers,

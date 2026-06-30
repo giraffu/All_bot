@@ -1001,6 +1001,50 @@ async def test_get_queue_size_returns_pending_count():
 
 
 @pytest.mark.asyncio
+async def test_get_queue_metrics_by_type_details_splits_free_and_paid_wait(monkeypatch):
+    monkeypatch.setattr(queue_manager_module.time, "time", lambda: 2000.0)
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+
+    await redis.hset(
+        manager._task_key("free-old"),
+        mapping={
+            "type": TaskType.IMG2IMG,
+            "created_at": "1800",
+            "priority": "0",
+        },
+    )
+    await redis.hset(
+        manager._task_key("free-new"),
+        mapping={
+            "type": TaskType.IMG2IMG,
+            "created_at": "1900",
+            "priority": "0",
+        },
+    )
+    await redis.hset(
+        manager._task_key("paid"),
+        mapping={
+            "type": TaskType.IMG2IMG,
+            "created_at": "1950",
+            "priority": "40",
+        },
+    )
+    await redis.zadd(
+        manager.pending_key,
+        {"free-old": 1.0, "free-new": 2.0, "paid": 3.0},
+    )
+
+    details = await manager.get_queue_metrics_by_type_details()
+
+    assert details["img2img"] == {
+        "pending_count": 3,
+        "max_free_pending_wait_seconds": 200,
+        "max_paid_pending_wait_seconds": 50,
+    }
+
+
+@pytest.mark.asyncio
 async def test_update_task_heartbeat_uses_task_heartbeat_key():
     redis = _FakeRedis()
     manager = QueueManager(redis)

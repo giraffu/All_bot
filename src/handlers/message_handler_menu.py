@@ -1,4 +1,5 @@
 import re
+from typing import Any
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
@@ -82,9 +83,85 @@ def _strip_queue_display_icon(label: str) -> str:
     return re.sub(r"^[^\w\u4e00-\u9fff]+\s*", "", label)
 
 
-def build_queue_status_message(queue_size: int, queue_by_type: dict, context, task_type_display_names: dict) -> str:
+def _context_text(context, key: str, default: str) -> str:
+    try:
+        text = context.t(key)
+    except Exception:
+        return default
+    return default if text == key else text
+
+
+def _coerce_wait_seconds(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        wait_seconds = int(float(value))
+    except (TypeError, ValueError):
+        return None
+    return wait_seconds if wait_seconds >= 0 else None
+
+
+def _format_wait_duration(value: Any, context) -> str | None:
+    wait_seconds = _coerce_wait_seconds(value)
+    if wait_seconds is None:
+        return None
+
+    hours, remainder = divmod(wait_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if getattr(context, "lang", "zh") == "en":
+        if hours:
+            return f"{hours}h {minutes:02d}m {seconds:02d}s"
+        if minutes:
+            return f"{minutes}m {seconds:02d}s"
+        return f"{seconds}s"
+
+    if hours:
+        return f"{hours}小时{minutes:02d}分{seconds:02d}秒"
+    if minutes:
+        return f"{minutes}分{seconds:02d}秒"
+    return f"{seconds}秒"
+
+
+def _build_wait_stats_suffix(queue_type_detail: dict | None, context) -> str:
+    queue_type_detail = queue_type_detail or {}
+    free_label = _context_text(
+        context,
+        "profile.queue_free_max_wait",
+        "免费最长等待",
+    )
+    paid_label = _context_text(
+        context,
+        "profile.queue_paid_max_wait",
+        "付费最长等待",
+    )
+    empty_label = _context_text(context, "profile.queue_wait_none", "暂无")
+    free_wait = (
+        _format_wait_duration(
+            queue_type_detail.get("max_free_pending_wait_seconds"),
+            context,
+        )
+        or empty_label
+    )
+    paid_wait = (
+        _format_wait_duration(
+            queue_type_detail.get("max_paid_pending_wait_seconds"),
+            context,
+        )
+        or empty_label
+    )
+    return f"（{free_label}：`{free_wait}`，{paid_label}：`{paid_wait}`）"
+
+
+def build_queue_status_message(
+    queue_size: int,
+    queue_by_type: dict,
+    context,
+    task_type_display_names: dict,
+    queue_by_type_details: dict | None = None,
+) -> str:
     total_queue_label = context.t("profile.total_queue")
     tasks_unit = context.t("profile.tasks_unit")
+    queue_by_type_details = queue_by_type_details or {}
     msg_lines = [
         f"📊 **{context.t('profile.queue_status_title')}**\n",
         f"👥 {total_queue_label}：`{queue_size}` {tasks_unit}",
@@ -93,13 +170,21 @@ def build_queue_status_message(queue_size: int, queue_by_type: dict, context, ta
     for task_type, i18n_key in task_type_display_names.items():
         count = queue_by_type.get(task_type, 0)
         display_name = _strip_queue_display_icon(context.t(i18n_key))
-        msg_lines.append(f"{display_name}：`{count}` {tasks_unit}")
+        wait_suffix = _build_wait_stats_suffix(
+            queue_by_type_details.get(task_type),
+            context,
+        )
+        msg_lines.append(f"{display_name}：`{count}` {tasks_unit}{wait_suffix}")
 
     for task_type, count in queue_by_type.items():
         if task_type not in task_type_display_names and count > 0:
             safe_task_type = task_type.replace("_", "\\_")
+            wait_suffix = _build_wait_stats_suffix(
+                queue_by_type_details.get(task_type),
+                context,
+            )
             msg_lines.append(
-                f"❓ {context.t('profile.other_types')} ({safe_task_type})：`{count}` {tasks_unit}"
+                f"❓ {context.t('profile.other_types')} ({safe_task_type})：`{count}` {tasks_unit}{wait_suffix}"
             )
 
     return "\n".join(msg_lines)

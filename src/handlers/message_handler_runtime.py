@@ -1,6 +1,9 @@
 from src.constants import (
     MODE_FACE_VIDEO_STEP1,
     MODE_FACE_VIDEO_STEP2,
+    MODE_FREE_EDIT_V2,
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT,
+    MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_TXT2IMG,
 )
 from src.domain_config.wan22_aio_video import is_legacy_wan22_image_to_video_task_type
@@ -34,6 +37,11 @@ def _normalize_queue_task_type_for_display(task_type: str | None) -> str:
     raw_task_type = str(task_type or "").strip()
     if is_legacy_wan22_image_to_video_task_type(raw_task_type):
         return "img2video_group"
+    if raw_task_type in {
+        MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+        MODE_PORNMASTER_FLUX2_MULTI_EDIT,
+    }:
+        return MODE_FREE_EDIT_V2
     if raw_task_type in {"face_video", MODE_FACE_VIDEO_STEP1, MODE_FACE_VIDEO_STEP2}:
         return "face_video"
     if raw_task_type == MODE_TXT2IMG:
@@ -52,6 +60,57 @@ def _normalize_queue_type_counts_for_display(queue_by_type: dict | None) -> dict
         )
 
     return normalized_counts
+
+
+def _safe_wait_seconds(value) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        wait_seconds = int(float(value))
+    except (TypeError, ValueError):
+        return None
+    return wait_seconds if wait_seconds >= 0 else None
+
+
+def _merge_max_wait(
+    target: dict,
+    field: str,
+    candidate,
+) -> None:
+    wait_seconds = _safe_wait_seconds(candidate)
+    if wait_seconds is None:
+        return
+    current = target.get(field)
+    if current is None or wait_seconds > current:
+        target[field] = wait_seconds
+
+
+def _normalize_queue_type_details_for_display(
+    queue_by_type_details: dict | None,
+) -> dict[str, dict]:
+    normalized_details: dict[str, dict] = {}
+    for task_type, detail in (queue_by_type_details or {}).items():
+        if not isinstance(detail, dict):
+            continue
+        normalized_task_type = _normalize_queue_task_type_for_display(task_type)
+        target = normalized_details.setdefault(
+            normalized_task_type,
+            {
+                "max_free_pending_wait_seconds": None,
+                "max_paid_pending_wait_seconds": None,
+            },
+        )
+        _merge_max_wait(
+            target,
+            "max_free_pending_wait_seconds",
+            detail.get("max_free_pending_wait_seconds"),
+        )
+        _merge_max_wait(
+            target,
+            "max_paid_pending_wait_seconds",
+            detail.get("max_paid_pending_wait_seconds"),
+        )
+    return normalized_details
 
 
 def _format_queue_rank(raw_queue_pos) -> int | str | None:
@@ -164,6 +223,9 @@ async def get_queue_status_reply(
         _normalize_queue_type_counts_for_display(status.get("queue_by_type", {})),
         context,
         task_type_display_names,
+        _normalize_queue_type_details_for_display(
+            status.get("queue_by_type_details", {})
+        ),
     )
     user_tasks_section = build_user_queue_tasks_section(
         await _build_user_queue_tasks_for_display(user, context),

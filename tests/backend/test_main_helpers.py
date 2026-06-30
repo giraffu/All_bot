@@ -680,6 +680,20 @@ async def test_build_system_status_response_uses_queue_metrics_and_worker_count(
         async def get_queue_metrics_by_type(self):
             return {"ltx_video": 2, "i2i_pro": 1}
 
+        async def get_queue_metrics_by_type_details(self):
+            return {
+                "ltx_video": {
+                    "pending_count": 2,
+                    "max_free_pending_wait_seconds": 120,
+                    "max_paid_pending_wait_seconds": 60,
+                },
+                "i2i_pro": {
+                    "pending_count": 1,
+                    "max_free_pending_wait_seconds": None,
+                    "max_paid_pending_wait_seconds": 30,
+                },
+            }
+
     response = await main_response_helpers.build_system_status_response(
         FakeQueueManager()
     )
@@ -699,6 +713,18 @@ async def test_build_system_status_response_uses_queue_metrics_and_worker_count(
     assert response.workers_by_control_state == {"enabled": 4}
     assert response.comfy_online is True
     assert response.queue_by_type == {"ltx_video": 2, "i2i_pro": 1}
+    assert response.queue_by_type_details == {
+        "ltx_video": {
+            "pending_count": 2,
+            "max_free_pending_wait_seconds": 120,
+            "max_paid_pending_wait_seconds": 60,
+        },
+        "i2i_pro": {
+            "pending_count": 1,
+            "max_free_pending_wait_seconds": None,
+            "max_paid_pending_wait_seconds": 30,
+        },
+    }
 
 
 @pytest.mark.asyncio

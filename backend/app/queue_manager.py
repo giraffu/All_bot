@@ -311,6 +311,40 @@ class QueueManager:
                 counts[type_str] = counts.get(type_str, 0) + 1
         return counts
 
+    @staticmethod
+    def _safe_int(value: Any) -> int | None:
+        if value in (None, ""):
+            return None
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _task_type_key(value: Any) -> str:
+        value = QueueManager._decode_redis_value(value)
+        if isinstance(value, TaskType):
+            return value.value
+        return str(value or "").strip()
+
+    @staticmethod
+    def _empty_queue_metrics_detail() -> dict[str, Any]:
+        return {
+            "pending_count": 0,
+            "max_free_pending_wait_seconds": None,
+            "max_paid_pending_wait_seconds": None,
+        }
+
+    @staticmethod
+    def _update_wait_max(
+        detail: dict[str, Any],
+        field: str,
+        wait_seconds: int,
+    ) -> None:
+        current = detail.get(field)
+        if current is None or wait_seconds > current:
+            detail[field] = wait_seconds
+
     async def _scan_agent_heartbeat_keys(self) -> list[Any]:
         return await scan_agent_heartbeat_keys_flow(
             scan_func=lambda *args, **kwargs: self._retry_redis_call(
@@ -792,3 +826,46 @@ class QueueManager:
             fetch_pending_task_types_func=self._fetch_pending_task_types,
             accumulate_type_counts_func=self._accumulate_type_counts,
         )
+
+    async def get_queue_metrics_by_type_details(self) -> dict[str, dict[str, Any]]:
+        async def fetch_pending_task_details():
+            task_ids = await self.redis.zrange(self.pending_key, 0, -1)
+            if not task_ids:
+                return [], []
+
+            pipeline = self.redis.pipeline()
+            for task_id in task_ids:
+                task_id_str = self._decode_redis_value(task_id)
+                task_key = self._task_key(task_id_str)
+                pipeline.hget(task_key, "type")
+                pipeline.hget(task_key, "created_at")
+                pipeline.hget(task_key, "priority")
+            return task_ids, await pipeline.execute()
+
+        task_ids, values = await self._retry_redis_call(
+            "get_queue_metrics_by_type_details",
+            fetch_pending_task_details,
+        )
+        if not task_ids:
+            return {}
+
+        now = time.time()
+        details: dict[str, dict[str, Any]] = {}
+        for index, _task_id in enumerate(task_ids):
+            task_type = self._task_type_key(values[index * 3])
+            created_at = self._safe_int(self._decode_redis_value(values[index * 3 + 1]))
+            priority = self._safe_int(self._decode_redis_value(values[index * 3 + 2]))
+            if not task_type or created_at is None:
+                continue
+
+            wait_seconds = max(0, int(now - created_at))
+            detail = details.setdefault(task_type, self._empty_queue_metrics_detail())
+            detail["pending_count"] += 1
+            wait_field = (
+                "max_paid_pending_wait_seconds"
+                if (priority or 0) > 0
+                else "max_free_pending_wait_seconds"
+            )
+            self._update_wait_max(detail, wait_field, wait_seconds)
+
+        return details
