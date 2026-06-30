@@ -3,6 +3,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Tuple
 
+from src.constants import CONCURRENT_TASK_LIMITS_BY_IDENTITY
 from src.constants import MAX_CONCURRENT_TASKS
 from src.core.billing_core_membership import DEFAULT_IDENTITY
 from src.core.billing_core_membership import IDENTITY_PRIORITY
@@ -11,8 +12,8 @@ from src.core.billing_core_membership import MembershipSettlementResult
 from src.core.billing_core_membership import calculate_identity_conversion
 from src.core.billing_core_membership import calculate_identity_manual_conversion
 from src.core.billing_core_membership import calculate_membership_settlement
-from src.core.exceptions import InsufficientCreditsError
 from src.core.billing_core_membership import normalize_membership_identity
+from src.core.exceptions import InsufficientCreditsError
 
 logger = logging.getLogger(__name__)
 _configured_billing_core_providers = None
@@ -37,6 +38,7 @@ __all__ = [
     "calculate_membership_settlement",
     "check_and_deduct_credits",
     "check_concurrency_lock",
+    "get_concurrent_task_limit_for_identity",
     "get_user_priority_and_identity",
     "normalize_membership_identity",
     "refund_credits",
@@ -129,6 +131,14 @@ def build_default_billing_core_dependencies(
     )
 
 
+def get_concurrent_task_limit_for_identity(identity: str | None) -> int:
+    normalized_identity = normalize_membership_identity(identity)
+    return CONCURRENT_TASK_LIMITS_BY_IDENTITY.get(
+        normalized_identity,
+        MAX_CONCURRENT_TASKS,
+    )
+
+
 async def check_concurrency_lock(
     internal_user_id: int,
     *,
@@ -142,7 +152,9 @@ async def check_concurrency_lock(
 
     # 1. 检查队列长度与身份
     identity_str = await dependencies.get_user_identity_func(internal_user_id)
-    if identity_str == "外门弟子":
+    normalized_identity = normalize_membership_identity(identity_str)
+    concurrent_task_limit = get_concurrent_task_limit_for_identity(normalized_identity)
+    if normalized_identity == "外门弟子":
         # 补充检查修为境界：凡人、练气期不可突破排队限制，筑基期及以上可以
         user_group = await dependencies.get_user_group_func(internal_user_id)
         if user_group in ["凡人", "练气期"]:
@@ -164,11 +176,11 @@ async def check_concurrency_lock(
 
     # 2. 原有并发锁检查
     active_tasks = await dependencies.increment_user_concurrency_func(internal_user_id)
-    if active_tasks > MAX_CONCURRENT_TASKS:
+    if active_tasks > concurrent_task_limit:
         await dependencies.decrement_user_concurrency_func(internal_user_id)
         return (
             False,
-            f"您当前已有 {MAX_CONCURRENT_TASKS} 个任务正在处理中，请等待其中一个完成后再试！",
+            f"您当前已有 {concurrent_task_limit} 个任务正在处理中，请等待其中一个完成后再试！",
         )
     return True, ""
 

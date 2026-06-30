@@ -138,7 +138,14 @@ DEFAULT_RESOLUTION = "512p"
 DEFAULT_DURATION = "5s"
 
 # Task Limits
-MAX_CONCURRENT_TASKS = 3
+CONCURRENT_TASK_LIMITS_BY_IDENTITY = {
+    "外门弟子": 3,
+    "内门弟子": 5,
+    "核心弟子": 8,
+    "真传弟子": 12,
+}
+
+MAX_CONCURRENT_TASKS = CONCURRENT_TASK_LIMITS_BY_IDENTITY["外门弟子"]
 
 # TON Payment Constants
 TON_TO_NANOTON = 1_000_000_000

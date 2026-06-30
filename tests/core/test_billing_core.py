@@ -8,6 +8,39 @@ from src.core import billing_core
 from src.core.exceptions import InsufficientCreditsError
 
 
+def _make_concurrency_dependencies(
+    *,
+    identity: str | None,
+    group: str = "筑基期",
+    queue_size: int = 0,
+    active_tasks: int = 1,
+):
+    get_identity = AsyncMock(return_value=identity)
+    get_group = AsyncMock(return_value=group)
+    get_system_status = AsyncMock(return_value={"queue_size": queue_size})
+    increment_concurrency = AsyncMock(return_value=active_tasks)
+    decrement_concurrency = AsyncMock()
+
+    dependencies = SimpleNamespace(
+        get_system_status_func=get_system_status,
+        get_user_identity_func=get_identity,
+        get_user_group_func=get_group,
+        calculate_user_priority_func=AsyncMock(),
+        increment_user_concurrency_func=increment_concurrency,
+        decrement_user_concurrency_func=decrement_concurrency,
+        deduct_credits_func=AsyncMock(),
+        add_credits_func=AsyncMock(),
+    )
+
+    return dependencies, SimpleNamespace(
+        get_identity=get_identity,
+        get_group=get_group,
+        get_system_status=get_system_status,
+        increment_concurrency=increment_concurrency,
+        decrement_concurrency=decrement_concurrency,
+    )
+
+
 @pytest.mark.asyncio
 async def test_check_concurrency_lock_uses_explicit_dependencies():
     get_identity = AsyncMock(return_value="外门弟子")
@@ -75,6 +108,85 @@ async def test_check_concurrency_lock_allows_low_tier_at_queue_limit():
     get_system_status.assert_awaited_once()
     increment_concurrency.assert_awaited_once_with(123)
     decrement_concurrency.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("identity", "limit"),
+    [
+        ("外门弟子", 3),
+        ("内门弟子", 5),
+        ("核心弟子", 8),
+        ("真传弟子", 12),
+    ],
+)
+@pytest.mark.asyncio
+async def test_check_concurrency_lock_allows_at_identity_limit(identity, limit):
+    dependencies, calls = _make_concurrency_dependencies(
+        identity=identity,
+        group="凡人",
+        active_tasks=limit,
+    )
+
+    allowed, message = await billing_core.check_concurrency_lock(
+        123,
+        dependencies=dependencies,
+    )
+
+    assert allowed is True
+    assert message == ""
+    calls.increment_concurrency.assert_awaited_once_with(123)
+    calls.decrement_concurrency.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("identity", "limit", "over_limit_count"),
+    [
+        ("外门弟子", 3, 4),
+        ("内门弟子", 5, 6),
+        ("核心弟子", 8, 9),
+        ("真传弟子", 12, 13),
+    ],
+)
+@pytest.mark.asyncio
+async def test_check_concurrency_lock_rejects_over_identity_limit_and_rolls_back(
+    identity,
+    limit,
+    over_limit_count,
+):
+    dependencies, calls = _make_concurrency_dependencies(
+        identity=identity,
+        group="凡人",
+        active_tasks=over_limit_count,
+    )
+
+    allowed, message = await billing_core.check_concurrency_lock(
+        123,
+        dependencies=dependencies,
+    )
+
+    assert allowed is False
+    assert f"已有 {limit} 个任务正在处理中" in message
+    calls.increment_concurrency.assert_awaited_once_with(123)
+    calls.decrement_concurrency.assert_awaited_once_with(123)
+
+
+@pytest.mark.parametrize("identity", ["凡人", "未知身份", None])
+@pytest.mark.asyncio
+async def test_check_concurrency_lock_falls_back_to_low_tier_limit(identity):
+    dependencies, calls = _make_concurrency_dependencies(
+        identity=identity,
+        active_tasks=4,
+    )
+
+    allowed, message = await billing_core.check_concurrency_lock(
+        123,
+        dependencies=dependencies,
+    )
+
+    assert allowed is False
+    assert "已有 3 个任务正在处理中" in message
+    calls.increment_concurrency.assert_awaited_once_with(123)
+    calls.decrement_concurrency.assert_awaited_once_with(123)
 
 
 @pytest.mark.asyncio

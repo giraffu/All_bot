@@ -70,7 +70,7 @@
 | `docs/business/01_BIZ_AI创作与生成板块.md` | task type registry、FSM、Web task routes | 已核对 | 生成业务描述有效 |
 | `docs/business/02_BIZ_商业化与会员资产板块.md` | billing/auth/affiliate code | 已核对 | 商业化描述有效 |
 | `docs/business/03_BIZ_社区广场与社交互动板块.md` | Gallery models/services | 已修正 | 补充低信任免费层不能新增提示词解锁转账，但作者自看和已解锁记录不受影响 |
-| `docs/business/04_BIZ_用户修为与身份权限体系.md` | User model、auth core、permission service | 已修正 | 补充低信任免费层实时标记、非低信任用户 `+40` 队列加成和 Gallery 提示词解锁限制口径 |
+| `docs/business/04_BIZ_用户修为与身份权限体系.md` | User model、auth core、permission service、billing core | 已修正 | 补充身份分级并发上限：外门/默认 3、内门 5、核心 8、真传 12，并保留低信任免费层实时标记、非低信任用户 `+40` 队列加成和 Gallery 提示词解锁限制口径 |
 | `docs/business/image_to_image_flow.md` | image FSM/task routes | 已核对 | 图生图流程有效 |
 | `docs/business/image_to_video_flow.md` | video FSM/task routes、Wan22/LTX/SCAIL-2 docs | 已核对 | 图生视频流程有效 |
 
