@@ -96,6 +96,28 @@ const taskTotals = computed(() => {
   return totals
 })
 
+const lowTrustPendingTotals = computed(() => {
+  const detailTotals = queueByTypeDisplay.value.reduce(
+    (acc, item) => {
+      acc.userCount += Number(item.lowTrustFreeTierUserCount || 0)
+      acc.taskCount += Number(item.lowTrustFreeTierTaskCount || 0)
+      return acc
+    },
+    { userCount: 0, taskCount: 0 }
+  )
+
+  return {
+    userCount: Number(
+      status.value.low_trust_free_tier_pending_user_count ??
+        detailTotals.userCount
+    ),
+    taskCount: Number(
+      status.value.low_trust_free_tier_pending_task_count ??
+        detailTotals.taskCount
+    ),
+  }
+})
+
 const RUNPOD_AGENT_ID_PATTERN =
   /^runpod_prod_(img2img|image_to_video|wan22_video_v2|i2i_pro|scail2|ltx_video)_manual_\d+$/
 
@@ -233,7 +255,8 @@ const isDurationDirty = (profileRow) => {
 }
 
 const isRunPodSettingsDirty = (profileRow) =>
-  isThresholdDirty(profileRow.profile) || isDurationDirty(profileRow)
+  isProfileAutoscalerEnabled(profileRow) &&
+  (isThresholdDirty(profileRow.profile) || isDurationDirty(profileRow))
 
 const syncThresholdDraftsFromConfig = () => {
   thresholdDrafts.value = runpodProfileQueueDisplay.value.reduce((acc, profile) => {
@@ -261,8 +284,9 @@ const loadAutoscalerSettings = async ({ syncDrafts = true } = {}) => {
 
 const refreshAutoscalerDecisions = () => loadAutoscalerSettings({ syncDrafts: false })
 
-const clearTimeDisplayForProfile = (profile) => {
-  const decision = autoscalerDecisionsByProfile.value[profile]
+const clearTimeDisplayForProfile = (profileRow) => {
+  if (!isProfileAutoscalerEnabled(profileRow)) return '-'
+  const decision = autoscalerDecisionsByProfile.value[profileRow.profile]
   if (!decision) return '-'
   if (decision.capacity_status === 'no_accepting_workers') return '无可接单'
   return formatWaitDuration(decision.estimated_clear_time_seconds)
@@ -271,10 +295,20 @@ const clearTimeDisplayForProfile = (profile) => {
 const decisionReasonForProfile = (profile) =>
   autoscalerDecisionsByProfile.value[profile]?.reason || ''
 
+const isProfileAutoscalerEnabled = (profileRow) =>
+  profileRow?.autoscalerEnabled !== false
+
 const isProfileAutoscalerPaused = (profile) =>
   profileAutoscalerPausedByProfile.value?.[profile] === true
 
+const localOnlyProfileLabel = (profileRow) =>
+  isProfileAutoscalerEnabled(profileRow) ? '' : '本地/手动'
+
 const saveRunPodSettings = async (profileRow) => {
+  if (!isProfileAutoscalerEnabled(profileRow)) {
+    message.info(`${profileRow.profile} 不接入 RunPod 自动管理`)
+    return
+  }
   const profile = profileRow.profile
   if (!isThresholdValid(profile)) {
     message.warning('清空阈值必须是 1-240 分钟')
@@ -312,6 +346,10 @@ const saveRunPodSettings = async (profileRow) => {
 }
 
 const toggleProfileAutoscaler = async (profileRow) => {
+  if (!isProfileAutoscalerEnabled(profileRow)) {
+    message.info(`${profileRow.profile} 不接入 RunPod 自动管理`)
+    return
+  }
   const profile = profileRow.profile
   const nextPaused = !isProfileAutoscalerPaused(profile)
   togglingAutoscalerProfile.value = profile
@@ -331,7 +369,7 @@ const toggleProfileAutoscaler = async (profileRow) => {
     message.success(nextPaused ? `已暂停 ${profile} 自动管理` : `已恢复 ${profile} 自动管理`)
   } catch (err) {
     console.error(err)
-    message.error('RunPod 类型自动管理状态更新失败')
+    message.error('Worker 类型自动管理状态更新失败')
   } finally {
     togglingAutoscalerProfile.value = ''
   }
@@ -629,6 +667,14 @@ onUnmounted(() => {
                 <span>{{ taskTotals.pendingCount }}</span>
               </div>
               <div class="task-total-caption">等待 Worker 接单</div>
+              <div class="task-total-submetric">
+                <span>低信任免费层</span>
+                <strong>{{ lowTrustPendingTotals.userCount }}</strong>
+                <span>人</span>
+                <span class="task-total-submetric-muted">
+                  {{ lowTrustPendingTotals.taskCount }} 任务
+                </span>
+              </div>
             </div>
           </div>
         </a-card>
@@ -683,6 +729,7 @@ onUnmounted(() => {
               <col class="task-type-col" />
               <col class="task-metric-col" />
               <col class="task-metric-col" />
+              <col class="task-low-trust-col" />
               <col class="task-wait-col" />
             </colgroup>
             <thead>
@@ -690,6 +737,7 @@ onUnmounted(() => {
                 <th>任务类型</th>
                 <th>活跃数</th>
                 <th>排队数</th>
+                <th>低信任用户</th>
                 <th>最长排队等待</th>
               </tr>
             </thead>
@@ -705,6 +753,14 @@ onUnmounted(() => {
                   <span class="metric-value text-blue-600">{{ item.pendingCount }}</span>
                 </td>
                 <td>
+                  <span
+                    class="metric-value text-red-600"
+                    :title="`${item.lowTrustFreeTierTaskCount} 个排队任务`"
+                  >
+                    {{ item.lowTrustFreeTierUserCount }}
+                  </span>
+                </td>
+                <td>
                   <span class="metric-value text-orange-600">
                     {{ formatWaitDuration(item.maxPendingWaitSeconds) }}
                   </span>
@@ -713,7 +769,7 @@ onUnmounted(() => {
             </tbody>
             <tbody v-else>
               <tr>
-                <td colspan="4" class="empty-detail-cell">暂无活跃任务</td>
+                <td colspan="5" class="empty-detail-cell">暂无活跃任务</td>
               </tr>
             </tbody>
           </table>
@@ -722,7 +778,7 @@ onUnmounted(() => {
 
       <a-card hoverable class="queue-card runpod-profile-detail-card border-l-4 border-l-cyan-500">
         <div class="flex items-center justify-between gap-3 mb-3">
-          <div class="text-gray-700 font-bold">活跃 RunPod 详情</div>
+          <div class="text-gray-700 font-bold">活跃 Worker 详情</div>
           <div class="runpod-detail-actions">
             <a-button
               size="small"
@@ -731,7 +787,7 @@ onUnmounted(() => {
               @click="openRunPodOperationLog"
             >
               <template #icon><history-outlined /></template>
-              日志
+              RunPod 日志
             </a-button>
             <a-tag color="cyan" class="m-0">共 {{ runpodProfileRows.length }} 类</a-tag>
           </div>
@@ -744,6 +800,7 @@ onUnmounted(() => {
               <col class="runpod-metric-col" />
               <col class="runpod-metric-col" />
               <col class="runpod-wait-col" />
+              <col class="runpod-non-low-trust-wait-col" />
               <col class="runpod-clear-time-col" />
               <col class="runpod-duration-col" />
               <col class="runpod-threshold-col" />
@@ -751,11 +808,12 @@ onUnmounted(() => {
             </colgroup>
             <thead>
               <tr>
-                <th>RunPod 类型</th>
+                <th>Worker 类型</th>
                 <th>服务器</th>
                 <th>活跃数</th>
                 <th>排队数</th>
                 <th>最长等待</th>
+                <th>非低信任最长等待</th>
                 <th>预计清空</th>
                 <th>单任务耗时</th>
                 <th>清空阈值</th>
@@ -806,12 +864,17 @@ onUnmounted(() => {
                   </span>
                 </td>
                 <td>
+                  <span class="metric-value text-emerald-700">
+                    {{ formatWaitDuration(item.maxNonLowTrustPendingWaitSeconds) }}
+                  </span>
+                </td>
+                <td>
                   <div class="clear-time-cell">
                     <span class="metric-value text-cyan-700">
-                      {{ clearTimeDisplayForProfile(item.profile) }}
+                      {{ clearTimeDisplayForProfile(item) }}
                     </span>
                     <span
-                      v-if="decisionReasonForProfile(item.profile)"
+                      v-if="isProfileAutoscalerEnabled(item) && decisionReasonForProfile(item.profile)"
                       class="runpod-decision-reason"
                       :title="decisionReasonForProfile(item.profile)"
                     >
@@ -820,7 +883,7 @@ onUnmounted(() => {
                   </div>
                 </td>
                 <td>
-                  <div class="task-duration-cell">
+                  <div v-if="isProfileAutoscalerEnabled(item)" class="task-duration-cell">
                     <a-input-number
                       size="small"
                       class="task-duration-input"
@@ -831,9 +894,10 @@ onUnmounted(() => {
                     />
                     <span class="scale-threshold-unit">秒</span>
                   </div>
+                  <span v-else class="worker-profile-static">-</span>
                 </td>
                 <td>
-                  <div class="scale-threshold-cell">
+                  <div v-if="isProfileAutoscalerEnabled(item)" class="scale-threshold-cell">
                     <a-input-number
                       size="small"
                       class="scale-threshold-input"
@@ -854,16 +918,22 @@ onUnmounted(() => {
                       <template #icon><check-circle-outlined /></template>
                     </a-button>
                   </div>
+                  <span v-else class="worker-profile-static">-</span>
                 </td>
                 <td>
                   <div class="profile-autoscaler-cell">
                     <a-tag
+                      v-if="isProfileAutoscalerEnabled(item)"
                       :color="isProfileAutoscalerPaused(item.profile) ? 'orange' : 'green'"
                       class="m-0"
                     >
                       {{ isProfileAutoscalerPaused(item.profile) ? '暂停中' : '自动' }}
                     </a-tag>
+                    <a-tag v-else color="default" class="m-0">
+                      {{ localOnlyProfileLabel(item) }}
+                    </a-tag>
                     <a-button
+                      v-if="isProfileAutoscalerEnabled(item)"
                       type="text"
                       size="small"
                       class="profile-autoscaler-toggle"
@@ -882,7 +952,7 @@ onUnmounted(() => {
             </tbody>
             <tbody v-else>
               <tr>
-                <td colspan="9" class="empty-detail-cell">暂无 RunPod 统计</td>
+                <td colspan="10" class="empty-detail-cell">暂无 Worker 统计</td>
               </tr>
             </tbody>
           </table>
@@ -1181,6 +1251,24 @@ onUnmounted(() => {
   margin-top: 5px;
   overflow-wrap: anywhere;
 }
+.task-total-submetric {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.3;
+  margin-top: 6px;
+}
+.task-total-submetric strong {
+  color: #dc2626;
+  font-weight: 700;
+}
+.task-total-submetric-muted {
+  color: #9ca3af;
+}
 .task-total-divider {
   align-self: stretch;
   width: 1px;
@@ -1251,7 +1339,7 @@ onUnmounted(() => {
 }
 .queue-detail-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
@@ -1280,42 +1368,49 @@ onUnmounted(() => {
 }
 .active-task-detail-table {
   min-width: 520px;
+  font-size: 12px;
 }
 .runpod-profile-detail-table {
-  min-width: 1120px;
+  min-width: 1080px;
 }
 .task-type-col {
-  width: 34%;
+  width: 28%;
 }
 .task-metric-col {
-  width: 20%;
+  width: 13%;
+}
+.task-low-trust-col {
+  width: 16%;
 }
 .task-wait-col {
-  width: 26%;
+  width: 30%;
 }
 .runpod-profile-col {
-  width: 24%;
+  width: 18%;
 }
 .runpod-server-col {
-  width: 12%;
-}
-.runpod-metric-col {
   width: 8%;
 }
+.runpod-metric-col {
+  width: 6%;
+}
 .runpod-wait-col {
-  width: 11%;
+  width: 8%;
+}
+.runpod-non-low-trust-wait-col {
+  width: 12%;
 }
 .runpod-clear-time-col {
-  width: 17%;
+  width: 12%;
 }
 .runpod-duration-col {
-  width: 13%;
+  width: 10%;
 }
 .runpod-threshold-col {
-  width: 15%;
+  width: 12%;
 }
 .runpod-autoscaler-col {
-  width: 13%;
+  width: 8%;
 }
 .active-task-detail-table th,
 .runpod-profile-detail-table th {
@@ -1438,6 +1533,11 @@ onUnmounted(() => {
 }
 .scale-threshold-save {
   flex: 0 0 auto;
+}
+.worker-profile-static {
+  color: #9ca3af;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-weight: 700;
 }
 .profile-autoscaler-cell {
   display: inline-flex;

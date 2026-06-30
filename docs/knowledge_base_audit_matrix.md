@@ -63,7 +63,7 @@
 | `docs/子模块_用户认证与权限_user_auth_permission.md` | `src/core/auth_core*`、`src/web_api/core/security.py` | 已核对 | JWT、password_version、权限复核口径有效 |
 | `docs/子模块_计费与支付_billing_payment.md` | `src/core/billing_core*`、`src/payment_api_server.py`、affiliate migrations | 已核对 | 支付履约与 affiliate 账本口径有效 |
 | `docs/子模块_社区与存储_gallery_storage.md` | `src/core/gallery*`、`src/web_api/services/*gallery*`、R2 scripts | 已修正 | R2/legacy MinIO 退出口径有效；补充 LTX 高级图生视频首尾帧 Gallery 标签、apply-context 回填与 `ltx_video_flf2v` alias 口径 |
-| `docs/子模块_后台监控与清理_dashboard_monitoring.md` | `dashboard/backend`、`dashboard/frontend`、RunPod admin services | 已核对 | Dashboard 监控和清理边界有效 |
+| `docs/子模块_后台监控与清理_dashboard_monitoring.md` | `dashboard/backend`、`dashboard/frontend`、RunPod admin/autoscaler services | 已更新 | Dashboard 监控和清理边界有效；同步 `/api/system/status` 低信任免费层 pending 用户数/任务数、非低信任最长等待、`pornmaster_flux2_edit` 本地/手动 Worker profile 展示与 `autoscaler_enabled=false` 不进 RunPod autoscaler 的口径 |
 | `docs/子模块_本地数据分析平台_local_analytics_platform.md` | `local_analytics_platform`、`scripts/run_local_analytics_shadow_pipeline.py`、`bot_db_prod_shadow`、本地 compose | 已更新 | 记录独立本地分析平台入口、只读 shadow 数据边界、核心四 Tab ECharts 可视化与新增对比 API、每日 shadow 后保留 `analytics_prompt_*`、05:45 自动链路的 shadow/vector 双锁、Mart 增量刷新、瘦身与向量断点续跑链路、提示词瘦身、向量相似审核、Prompt 语义场景提炼 v1、Prompt 语义图谱 v2 单任务自然社区派生表/API/前端 Tab、相似族从 duplicate 边传递闭包改为代表点和族内两两阈值守卫、媒体引用核验与不挂载现有 Dashboard 的运行口径 |
 | `docs/business/00_INDEX_业务板块分类与规范总览.md` | business docs | 已核对 | 业务导航有效 |
 | `docs/business/00_DICT_全局业务数据字典.md` | models、domain config、business docs | 已核对 | 数据字典有效 |

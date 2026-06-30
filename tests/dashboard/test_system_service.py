@@ -60,8 +60,7 @@ class _FakePendingPipeline:
 
     async def execute(self):
         return [
-            self.redis_client.hashes.get(key, {}).get(field)
-            for key, field in self.ops
+            self.redis_client.hashes.get(key, {}).get(field) for key, field in self.ops
         ]
 
 
@@ -249,6 +248,131 @@ async def test_get_pending_queue_wait_details_uses_created_at_not_priority_score
 
 
 @pytest.mark.asyncio
+async def test_get_pending_queue_wait_details_counts_low_trust_free_tier_users():
+    redis_client = _FakePendingRedis(
+        pending_scores={
+            "backend-task-low-1": 1.0,
+            "backend-task-low-2": 2.0,
+            "backend-task-normal": 3.0,
+        },
+        hashes={
+            "comfy:task:backend-task-low-1": {
+                "type": "image_to_video",
+                "created_at": "1000",
+                "priority": "0",
+            },
+            "comfy:task:backend-task-low-2": {
+                "type": "image_to_video",
+                "created_at": "1010",
+                "priority": "0",
+            },
+            "comfy:task:backend-task-normal": {
+                "type": "i2i_pro",
+                "created_at": "1020",
+                "priority": "3",
+            },
+        },
+    )
+    get_low_trust_user_ids = AsyncMock(return_value={10})
+
+    details = await system_service.get_pending_queue_wait_details(
+        redis_url="redis://worker",
+        redis_from_url_func=lambda *_args, **_kwargs: redis_client,
+        now_func=lambda: 2000,
+        backend_task_user_ids={
+            "backend-task-low-1": 10,
+            "backend-task-low-2": 10,
+            "backend-task-normal": 20,
+        },
+        get_low_trust_free_tier_user_ids_func=get_low_trust_user_ids,
+    )
+
+    image_detail = details["image_to_video"]
+    assert image_detail["pending_count"] == 2
+    assert image_detail["low_trust_free_tier_task_count"] == 2
+    assert image_detail["low_trust_free_tier_user_count"] == 1
+    assert image_detail["max_non_low_trust_pending_wait_seconds"] is None
+    assert image_detail[system_service.LOW_TRUST_FREE_TIER_USER_IDS_DETAIL_KEY] == {10}
+    assert details["i2i_pro"]["low_trust_free_tier_task_count"] == 0
+    assert details["i2i_pro"]["max_non_low_trust_pending_wait_seconds"] == 980
+    get_low_trust_user_ids.assert_awaited_once_with({10, 20})
+
+
+@pytest.mark.asyncio
+async def test_get_pending_queue_wait_details_excludes_unknown_users_from_non_low_trust_wait():
+    redis_client = _FakePendingRedis(
+        pending_scores={
+            "backend-task-low": 1.0,
+            "backend-task-normal": 2.0,
+            "backend-task-unknown": 3.0,
+        },
+        hashes={
+            "comfy:task:backend-task-low": {
+                "type": "pornmaster_flux2_single_edit",
+                "created_at": "900",
+                "priority": "0",
+            },
+            "comfy:task:backend-task-normal": {
+                "type": "pornmaster_flux2_single_edit",
+                "created_at": "1000",
+                "priority": "0",
+            },
+            "comfy:task:backend-task-unknown": {
+                "type": "pornmaster_flux2_single_edit",
+                "created_at": "500",
+                "priority": "0",
+            },
+        },
+    )
+
+    details = await system_service.get_pending_queue_wait_details(
+        redis_url="redis://worker",
+        redis_from_url_func=lambda *_args, **_kwargs: redis_client,
+        now_func=lambda: 2000,
+        backend_task_user_ids={
+            "backend-task-low": 10,
+            "backend-task-normal": 20,
+        },
+        get_low_trust_free_tier_user_ids_func=AsyncMock(return_value={10}),
+    )
+
+    detail = details["pornmaster_flux2_single_edit"]
+    assert detail["max_pending_wait_seconds"] == 1500
+    assert detail["max_non_low_trust_pending_wait_seconds"] == 1000
+    assert detail["low_trust_free_tier_task_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_pending_queue_wait_details_does_not_default_to_non_low_trust_on_lookup_failure():
+    redis_client = _FakePendingRedis(
+        pending_scores={
+            "backend-task-normal": 1.0,
+        },
+        hashes={
+            "comfy:task:backend-task-normal": {
+                "type": "pornmaster_flux2_multi_edit",
+                "created_at": "1000",
+                "priority": "0",
+            },
+        },
+    )
+
+    details = await system_service.get_pending_queue_wait_details(
+        redis_url="redis://worker",
+        redis_from_url_func=lambda *_args, **_kwargs: redis_client,
+        now_func=lambda: 2000,
+        backend_task_user_ids={"backend-task-normal": 20},
+        get_low_trust_free_tier_user_ids_func=AsyncMock(
+            side_effect=RuntimeError("database down")
+        ),
+    )
+
+    detail = details["pornmaster_flux2_multi_edit"]
+    assert detail["max_pending_wait_seconds"] == 1000
+    assert detail["max_non_low_trust_pending_wait_seconds"] is None
+
+
+@pytest.mark.asyncio
 async def test_get_system_status_proxy_payload_uses_active_task_registry_counts():
     middleware_payload = {
         "queue_size": 71,
@@ -261,9 +385,21 @@ async def test_get_system_status_proxy_payload_uses_active_task_registry_counts(
         "comfy_online": True,
     }
     active_tasks = {
-        "registry-task-1": {"task_type": "i2i_pro"},
-        "registry-task-2": {"task_type": "ltx_video"},
-        "registry-task-3": {"task_type": "ltx_video"},
+        "registry-task-1": {
+            "task_type": "i2i_pro",
+            "backend_task_id": "backend-task-1",
+            "user_id": 1001,
+        },
+        "registry-task-2": {
+            "task_type": "ltx_video",
+            "backend_task_id": "backend-task-2",
+            "user_id": 1002,
+        },
+        "registry-task-3": {
+            "task_type": "ltx_video",
+            "backend_task_id": "backend-task-3",
+            "user_id": 1003,
+        },
     }
     pending_wait_details = {
         "ltx_video": {
@@ -271,17 +407,21 @@ async def test_get_system_status_proxy_payload_uses_active_task_registry_counts(
             "max_pending_wait_seconds": 742,
             "oldest_pending_task_id": "backend-task-2",
             "oldest_pending_created_at": 1782050000.0,
+            "low_trust_free_tier_task_count": 1,
+            "low_trust_free_tier_user_count": 1,
+            system_service.LOW_TRUST_FREE_TIER_USER_IDS_DETAIL_KEY: {1002},
         }
     }
+    get_pending_queue_wait_details = AsyncMock(return_value=pending_wait_details)
 
     data = await system_service.get_system_status_proxy_payload(
-        httpx_async_client_factory=lambda **_kwargs: _FakeAsyncClient(middleware_payload),
+        httpx_async_client_factory=lambda **_kwargs: _FakeAsyncClient(
+            middleware_payload
+        ),
         get_system_task_stats_func=AsyncMock(
             return_value=(active_tasks, {1001: 1, 1002: 2})
         ),
-        get_pending_queue_wait_details_func=AsyncMock(
-            return_value=pending_wait_details
-        ),
+        get_pending_queue_wait_details_func=get_pending_queue_wait_details,
     )
 
     assert data["queue_size"] == 3
@@ -291,17 +431,36 @@ async def test_get_system_status_proxy_payload_uses_active_task_registry_counts(
             "active_count": 1,
             "pending_count": 0,
             "max_pending_wait_seconds": None,
+            "max_non_low_trust_pending_wait_seconds": None,
             "oldest_pending_task_id": None,
             "oldest_pending_created_at": None,
+            "low_trust_free_tier_task_count": 0,
+            "low_trust_free_tier_user_count": 0,
         },
         "ltx_video": {
             "active_count": 2,
             "pending_count": 1,
             "max_pending_wait_seconds": 742,
+            "max_non_low_trust_pending_wait_seconds": None,
             "oldest_pending_task_id": "backend-task-2",
             "oldest_pending_created_at": 1782050000.0,
+            "low_trust_free_tier_task_count": 1,
+            "low_trust_free_tier_user_count": 1,
         },
     }
+    assert (
+        system_service.LOW_TRUST_FREE_TIER_USER_IDS_DETAIL_KEY
+        not in data["queue_by_type_details"]["ltx_video"]
+    )
+    assert data["low_trust_free_tier_pending_task_count"] == 1
+    assert data["low_trust_free_tier_pending_user_count"] == 1
+    get_pending_queue_wait_details.assert_awaited_once_with(
+        backend_task_user_ids={
+            "backend-task-1": 1001,
+            "backend-task-2": 1002,
+            "backend-task-3": 1003,
+        }
+    )
     assert data["middleware_queue_size"] == 71
     assert data["middleware_queue_by_type"] == {"i2i_pro": 23, "ltx_video": 33}
     assert data["concurrency_locks"] == 3
@@ -324,23 +483,28 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
         "face-swap-task": {"task_type": "face_swap"},
         "scail2-action-task": {"task_type": "scail2_action_transfer"},
         "scail2-face-swap-task": {"task_type": "scail2_face_swap_v2"},
+        "pornmaster-single-task": {"task_type": "pornmaster_flux2_single_edit"},
+        "pornmaster-multi-task": {"task_type": "pornmaster_flux2_multi_edit"},
     }
     pending_wait_details = {
         "t2i-pornmaster-turbo": {
             "pending_count": 2,
             "max_pending_wait_seconds": 300,
+            "max_non_low_trust_pending_wait_seconds": 280,
             "oldest_pending_task_id": "pending-txt2img",
             "oldest_pending_created_at": 1782050100.0,
         },
         "face_swap": {
             "pending_count": 3,
             "max_pending_wait_seconds": 901,
+            "max_non_low_trust_pending_wait_seconds": 700,
             "oldest_pending_task_id": "pending-face-swap",
             "oldest_pending_created_at": 1782050000.0,
         },
         "scail2_video_replacement": {
             "pending_count": 2,
             "max_pending_wait_seconds": 620,
+            "max_non_low_trust_pending_wait_seconds": 500,
             "oldest_pending_task_id": "pending-scail2-replacement",
             "oldest_pending_created_at": 1782050200.0,
         },
@@ -349,6 +513,20 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
             "max_pending_wait_seconds": 999,
             "oldest_pending_task_id": "pending-scail2-face-swap",
             "oldest_pending_created_at": 1782050300.0,
+        },
+        "pornmaster_flux2_single_edit": {
+            "pending_count": 1,
+            "max_pending_wait_seconds": 800,
+            "max_non_low_trust_pending_wait_seconds": 800,
+            "oldest_pending_task_id": "pending-pornmaster-single",
+            "oldest_pending_created_at": 1782050400.0,
+        },
+        "pornmaster_flux2_multi_edit": {
+            "pending_count": 2,
+            "max_pending_wait_seconds": 1200,
+            "max_non_low_trust_pending_wait_seconds": 1000,
+            "oldest_pending_task_id": "pending-pornmaster-multi",
+            "oldest_pending_created_at": 1782050500.0,
         },
     }
 
@@ -368,9 +546,7 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
         ),
     )
 
-    profiles = {
-        item["profile"]: item for item in data["runpod_profile_queue_details"]
-    }
+    profiles = {item["profile"]: item for item in data["runpod_profile_queue_details"]}
 
     assert list(profiles) == [
         "img2img",
@@ -379,6 +555,7 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
         "i2i_pro",
         "scail2",
         "ltx_video",
+        "pornmaster_flux2_edit",
     ]
     assert profiles["i2i_pro"] == {
         "profile": "i2i_pro",
@@ -388,6 +565,7 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
             "t2i-pornmaster-turbo",
             "face_swap",
         ],
+        "autoscaler_enabled": True,
         "active_count": 3,
         "pending_count": 5,
         "active_count_by_task_type": {
@@ -400,6 +578,7 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
             "face_swap": 3,
         },
         "max_pending_wait_seconds": 901,
+        "max_non_low_trust_pending_wait_seconds": 700,
         "oldest_pending_task_id": "pending-face-swap",
         "oldest_pending_created_at": 1782050000.0,
         "pending_wait_records": [],
@@ -407,10 +586,26 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
     assert profiles["scail2"]["active_count"] == 1
     assert profiles["scail2"]["pending_count"] == 2
     assert profiles["scail2"]["max_pending_wait_seconds"] == 620
+    assert profiles["scail2"]["max_non_low_trust_pending_wait_seconds"] == 500
     assert profiles["scail2"]["oldest_pending_task_id"] == "pending-scail2-replacement"
     assert profiles["ltx_video"]["active_count"] == 0
     assert profiles["ltx_video"]["pending_count"] == 0
     assert profiles["ltx_video"]["max_pending_wait_seconds"] is None
+    assert profiles["pornmaster_flux2_edit"]["label"] == "pornmaster_flux2"
+    assert profiles["pornmaster_flux2_edit"]["supported_task_types"] == [
+        "pornmaster_flux2_single_edit",
+        "pornmaster_flux2_multi_edit",
+    ]
+    assert profiles["pornmaster_flux2_edit"]["autoscaler_enabled"] is False
+    assert profiles["pornmaster_flux2_edit"]["active_count"] == 2
+    assert profiles["pornmaster_flux2_edit"]["pending_count"] == 3
+    assert profiles["pornmaster_flux2_edit"]["max_pending_wait_seconds"] == 1200
+    assert (
+        profiles["pornmaster_flux2_edit"][
+            "max_non_low_trust_pending_wait_seconds"
+        ]
+        == 1000
+    )
 
 
 @pytest.mark.asyncio
@@ -465,9 +660,14 @@ async def test_get_system_status_proxy_payload_degrades_when_pending_wait_fails(
         "active_count": 1,
         "pending_count": 0,
         "max_pending_wait_seconds": None,
+        "max_non_low_trust_pending_wait_seconds": None,
         "oldest_pending_task_id": None,
         "oldest_pending_created_at": None,
+        "low_trust_free_tier_task_count": 0,
+        "low_trust_free_tier_user_count": 0,
     }
+    assert data["low_trust_free_tier_pending_task_count"] == 0
+    assert data["low_trust_free_tier_pending_user_count"] == 0
 
 
 @pytest.mark.asyncio
@@ -629,9 +829,11 @@ async def test_fetch_backend_task_statuses_prunes_old_cache(monkeypatch):
     )
 
     assert len(system_service._backend_task_status_cache) == 1
-    assert [
-        call.args[0] for call in request_backend_status_func.await_args_list
-    ] == ["backend-1", "backend-2", "backend-1"]
+    assert [call.args[0] for call in request_backend_status_func.await_args_list] == [
+        "backend-1",
+        "backend-2",
+        "backend-1",
+    ]
 
 
 @pytest.mark.asyncio

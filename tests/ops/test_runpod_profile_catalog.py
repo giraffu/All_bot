@@ -106,3 +106,23 @@ def test_dashboard_profile_options_are_sourced_from_catalog():
         "ltx_video_flf2v",
         "ltx_video_v2v_audio",
     ]
+    assert "pornmaster_flux2_edit" not in options
+
+
+def test_dashboard_worker_profile_options_include_local_only_pornmaster_flux2():
+    worker_options = {
+        str(option["profile"]): option
+        for option in catalog.DASHBOARD_WORKER_PROFILE_OPTIONS
+    }
+    autoscaler_profiles = {
+        str(option["profile"])
+        for option in catalog.RUNPOD_AUTOSCALER_PROFILE_OPTIONS
+    }
+
+    assert worker_options["pornmaster_flux2_edit"]["label"] == "pornmaster_flux2"
+    assert worker_options["pornmaster_flux2_edit"]["supported_task_types"] == [
+        "pornmaster_flux2_single_edit",
+        "pornmaster_flux2_multi_edit",
+    ]
+    assert worker_options["pornmaster_flux2_edit"]["autoscaler_enabled"] is False
+    assert "pornmaster_flux2_edit" not in autoscaler_profiles

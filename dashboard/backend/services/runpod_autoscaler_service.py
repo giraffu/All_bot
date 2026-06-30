@@ -24,7 +24,7 @@ from dashboard.backend.services.system_service import (
     get_system_workers_proxy_payload,
 )
 from ops.gpu_pool_controller.runpod_profile_catalog import (
-    RUNPOD_ADMIN_PROFILE_OPTIONS,
+    RUNPOD_AUTOSCALER_PROFILE_OPTIONS,
     normalize_prod_worker_profile,
     prod_slot_from_agent_id,
     prod_worker_profile_from_agent_id,
@@ -68,7 +68,7 @@ DEFAULT_TASK_DURATION_SECONDS_BY_TYPE: dict[str, int] = {
 
 
 def _runpod_profile_names() -> list[str]:
-    return [str(option["profile"]) for option in RUNPOD_ADMIN_PROFILE_OPTIONS]
+    return [str(option["profile"]) for option in RUNPOD_AUTOSCALER_PROFILE_OPTIONS]
 
 
 def _default_scale_up_wait_seconds_by_profile(
@@ -139,7 +139,7 @@ def _validate_scale_up_wait_minutes_by_profile(
 
 def _valid_autoscaler_task_types() -> set[str]:
     task_types = {"unknown"}
-    for option in RUNPOD_ADMIN_PROFILE_OPTIONS:
+    for option in RUNPOD_AUTOSCALER_PROFILE_OPTIONS:
         task_types.update(_normalized_supported_task_types(option.get("supported_task_types")))
     return task_types
 
@@ -909,7 +909,7 @@ def _profile_task_types() -> dict[str, set[str]]:
         str(option["profile"]): set(
             _normalized_supported_task_types(option.get("supported_task_types"))
         )
-        for option in RUNPOD_ADMIN_PROFILE_OPTIONS
+        for option in RUNPOD_AUTOSCALER_PROFILE_OPTIONS
     }
 
 
@@ -1366,7 +1366,7 @@ def build_runpod_autoscaler_decisions(
     profile_task_types = _profile_task_types()
     decisions: list[dict[str, Any]] = []
 
-    for option in RUNPOD_ADMIN_PROFILE_OPTIONS:
+    for option in RUNPOD_AUTOSCALER_PROFILE_OPTIONS:
         profile = str(option["profile"])
         detail = queue_details.get(profile) or {}
         pending_count = int(detail.get("pending_count") or 0)

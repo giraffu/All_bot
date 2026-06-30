@@ -306,6 +306,53 @@ async def test_autoscaler_uses_default_profile_scale_up_thresholds():
     assert decisions["scail2"]["reason"] == "hold: estimated clear time within threshold"
 
 
+async def test_autoscaler_skips_display_only_worker_profiles():
+    calls = []
+    status_payload = _status(profile="img2img", pending=0, wait=None)
+    status_payload["runpod_profile_queue_details"].append(
+        {
+            "profile": "pornmaster_flux2_edit",
+            "label": "pornmaster_flux2",
+            "supported_task_types": [
+                "pornmaster_flux2_single_edit",
+                "pornmaster_flux2_multi_edit",
+            ],
+            "autoscaler_enabled": False,
+            "active_count": 0,
+            "pending_count": 12,
+            "pending_count_by_task_type": {
+                "pornmaster_flux2_single_edit": 6,
+                "pornmaster_flux2_multi_edit": 6,
+            },
+            "max_pending_wait_seconds": 1800,
+            "pending_wait_records": [{"wait_seconds": 1800, "priority": 0}],
+        }
+    )
+
+    async def start_add(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("display-only worker profile should not start add")
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=InMemoryRunPodAutoscalerStateStore(),
+        status_payload=status_payload,
+        workers_payload=_workers(
+            _local_worker(
+                "pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit"
+            )
+        ),
+        operations_payload={"operations": []},
+        start_add_func=start_add,
+        now_func=lambda: 1000.0,
+    )
+
+    decisions = {item["profile"]: item for item in payload["decisions"]}
+    assert "pornmaster_flux2_edit" not in decisions
+    assert calls == []
+
+
 async def test_autoscaler_uses_persisted_profile_scale_up_threshold_on_next_evaluate():
     store = InMemoryRunPodAutoscalerStateStore()
     await set_runpod_autoscaler_settings_payload(

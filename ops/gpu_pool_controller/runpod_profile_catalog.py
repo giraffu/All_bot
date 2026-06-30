@@ -263,6 +263,25 @@ RUNPOD_ADMIN_PROFILE_OPTIONS: tuple[dict[str, object], ...] = (
     },
 )
 
+DASHBOARD_WORKER_PROFILE_OPTIONS: tuple[dict[str, object], ...] = (
+    *RUNPOD_ADMIN_PROFILE_OPTIONS,
+    {
+        "profile": "pornmaster_flux2_edit",
+        "label": "pornmaster_flux2",
+        "supported_task_types": [
+            "pornmaster_flux2_single_edit",
+            "pornmaster_flux2_multi_edit",
+        ],
+        "autoscaler_enabled": False,
+    },
+)
+
+RUNPOD_AUTOSCALER_PROFILE_OPTIONS: tuple[dict[str, object], ...] = tuple(
+    option
+    for option in DASHBOARD_WORKER_PROFILE_OPTIONS
+    if option.get("autoscaler_enabled", True) is not False
+)
+
 
 def _int_env(value: str | None, *, default: int) -> int:
     if value is None or not value.strip():

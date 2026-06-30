@@ -309,9 +309,9 @@ autoscaler 会优先自愈正式 RunPod worker：`status=error|quarantined` 且 
 RunPod `restart` 会先 disabled、调用 RunPod 原生 restart、等待健康 heartbeat，再恢复 enabled 接单。
 本地 worker 只参与保底，不会被 autoscaler 启停；管理弹窗可通过 `/api/runpod/autoscaler/control`
 紧急暂停。默认清空阈值为 `img2img=20 分钟`、`scail2=40 分钟`、其它正式 profile `30 分钟`；
-系统监控页“活跃 RunPod 详情”的“清空阈值/单任务耗时”通过 `/api/runpod/autoscaler/settings`
+系统监控页“活跃 Worker 详情”的“清空阈值/单任务耗时”通过 `/api/runpod/autoscaler/settings`
 保存 profile 级分钟数与 `task_duration_seconds_by_type` 到 Redis，下一轮 autoscaler 评估立即使用；
-同表格“自动管理”按钮通过 `profile_autoscaler_paused_by_profile` 暂停/恢复单个 profile 的 autoscaler，
+同表格中 `autoscaler_enabled=true` 行的“自动管理”按钮通过 `profile_autoscaler_paused_by_profile` 暂停/恢复单个 profile 的 autoscaler，
 暂停后该 profile 直接显示 `hold: profile autoscaler paused`，不会自动 add/down/restart/enable，
 不影响其它 profile，也不改变现有 worker 接单状态。
 Dashboard 决策会展示 `scale_up: estimated clear time ... exceeds ...`、

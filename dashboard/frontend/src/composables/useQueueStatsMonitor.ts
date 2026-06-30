@@ -18,6 +18,8 @@ const defaultStatus = () => ({
   workers_by_status: {},
   comfy_online: false,
   runpod_profile_queue_details: [],
+  low_trust_free_tier_pending_user_count: 0,
+  low_trust_free_tier_pending_task_count: 0,
 })
 
 const queueRefreshIntervalMs = 10000
@@ -52,14 +54,32 @@ export function useQueueStatsMonitor() {
           rawWaitSeconds === null || rawWaitSeconds === undefined
             ? null
             : Number(rawWaitSeconds)
+        const rawNonLowTrustWaitSeconds =
+          detail.max_non_low_trust_pending_wait_seconds
+        const maxNonLowTrustPendingWaitSeconds =
+          rawNonLowTrustWaitSeconds === null ||
+          rawNonLowTrustWaitSeconds === undefined
+            ? null
+            : Number(rawNonLowTrustWaitSeconds)
 
         return {
           type,
           count: Number(detail.active_count ?? queueByType[type] ?? 0),
           activeCount: Number(detail.active_count ?? queueByType[type] ?? 0),
           pendingCount: Number(detail.pending_count ?? 0),
+          lowTrustFreeTierUserCount: Number(
+            detail.low_trust_free_tier_user_count ?? 0
+          ),
+          lowTrustFreeTierTaskCount: Number(
+            detail.low_trust_free_tier_task_count ?? 0
+          ),
           maxPendingWaitSeconds: Number.isFinite(maxPendingWaitSeconds)
             ? maxPendingWaitSeconds
+            : null,
+          maxNonLowTrustPendingWaitSeconds: Number.isFinite(
+            maxNonLowTrustPendingWaitSeconds
+          )
+            ? maxNonLowTrustPendingWaitSeconds
             : null,
           oldestPendingTaskId: detail.oldest_pending_task_id || null,
           oldestPendingCreatedAt: detail.oldest_pending_created_at || null,
@@ -87,10 +107,18 @@ export function useQueueStatsMonitor() {
         rawWaitSeconds === null || rawWaitSeconds === undefined
           ? null
           : Number(rawWaitSeconds)
+      const rawNonLowTrustWaitSeconds =
+        item.max_non_low_trust_pending_wait_seconds
+      const maxNonLowTrustPendingWaitSeconds =
+        rawNonLowTrustWaitSeconds === null ||
+        rawNonLowTrustWaitSeconds === undefined
+          ? null
+          : Number(rawNonLowTrustWaitSeconds)
 
       return {
         profile: item.profile,
         label: item.label,
+        autoscalerEnabled: item.autoscaler_enabled !== false,
         supportedTaskTypes: Array.isArray(item.supported_task_types)
           ? item.supported_task_types
           : [],
@@ -100,6 +128,11 @@ export function useQueueStatsMonitor() {
         pendingCountByTaskType: item.pending_count_by_task_type || {},
         maxPendingWaitSeconds: Number.isFinite(maxPendingWaitSeconds)
           ? maxPendingWaitSeconds
+          : null,
+        maxNonLowTrustPendingWaitSeconds: Number.isFinite(
+          maxNonLowTrustPendingWaitSeconds
+        )
+          ? maxNonLowTrustPendingWaitSeconds
           : null,
         oldestPendingTaskId: item.oldest_pending_task_id || null,
         oldestPendingCreatedAt: item.oldest_pending_created_at || null,

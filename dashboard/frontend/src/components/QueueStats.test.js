@@ -40,10 +40,18 @@ vi.mock('../composables/useQueueStatsMonitor', async () => {
             rawWaitSeconds === null || rawWaitSeconds === undefined
               ? null
               : Number(rawWaitSeconds)
+          const rawNonLowTrustWaitSeconds =
+            item.max_non_low_trust_pending_wait_seconds
+          const maxNonLowTrustPendingWaitSeconds =
+            rawNonLowTrustWaitSeconds === null ||
+            rawNonLowTrustWaitSeconds === undefined
+              ? null
+              : Number(rawNonLowTrustWaitSeconds)
 
           return {
             profile: item.profile,
             label: item.label,
+            autoscalerEnabled: item.autoscaler_enabled !== false,
             supportedTaskTypes: item.supported_task_types || [],
             activeCount: Number(item.active_count || 0),
             pendingCount: Number(item.pending_count || 0),
@@ -51,6 +59,11 @@ vi.mock('../composables/useQueueStatsMonitor', async () => {
             pendingCountByTaskType: item.pending_count_by_task_type || {},
             maxPendingWaitSeconds: Number.isFinite(maxPendingWaitSeconds)
               ? maxPendingWaitSeconds
+              : null,
+            maxNonLowTrustPendingWaitSeconds: Number.isFinite(
+              maxNonLowTrustPendingWaitSeconds
+            )
+              ? maxNonLowTrustPendingWaitSeconds
               : null,
             oldestPendingTaskId: item.oldest_pending_task_id || null,
             oldestPendingCreatedAt: item.oldest_pending_created_at || null,
@@ -71,14 +84,32 @@ vi.mock('../composables/useQueueStatsMonitor', async () => {
               rawWaitSeconds === null || rawWaitSeconds === undefined
                 ? null
                 : Number(rawWaitSeconds)
+            const rawNonLowTrustWaitSeconds =
+              detail.max_non_low_trust_pending_wait_seconds
+            const maxNonLowTrustPendingWaitSeconds =
+              rawNonLowTrustWaitSeconds === null ||
+              rawNonLowTrustWaitSeconds === undefined
+                ? null
+                : Number(rawNonLowTrustWaitSeconds)
 
             return {
               type,
               count: Number(detail.active_count ?? queueByType[type] ?? 0),
               activeCount: Number(detail.active_count ?? queueByType[type] ?? 0),
               pendingCount: Number(detail.pending_count ?? 0),
+              lowTrustFreeTierUserCount: Number(
+                detail.low_trust_free_tier_user_count ?? 0
+              ),
+              lowTrustFreeTierTaskCount: Number(
+                detail.low_trust_free_tier_task_count ?? 0
+              ),
               maxPendingWaitSeconds: Number.isFinite(maxPendingWaitSeconds)
                 ? maxPendingWaitSeconds
+                : null,
+              maxNonLowTrustPendingWaitSeconds: Number.isFinite(
+                maxNonLowTrustPendingWaitSeconds
+              )
+                ? maxNonLowTrustPendingWaitSeconds
                 : null,
             }
           })
@@ -191,6 +222,8 @@ describe('QueueStats worker health display', () => {
       concurrency_locks: 0,
       queue_by_type_details: {},
       runpod_profile_queue_details: [],
+      low_trust_free_tier_pending_user_count: 0,
+      low_trust_free_tier_pending_task_count: 0,
     })
     queueStatsMocks.workersRef = ref([])
     queueStatsMocks.concurrencyStatsRef = ref([])
@@ -344,6 +377,8 @@ describe('QueueStats worker health display', () => {
           active_count: 46,
           pending_count: 12,
           max_pending_wait_seconds: 742,
+          low_trust_free_tier_user_count: 3,
+          low_trust_free_tier_task_count: 4,
         },
         i2i_pro: {
           active_count: 2,
@@ -351,14 +386,19 @@ describe('QueueStats worker health display', () => {
           max_pending_wait_seconds: null,
         },
       },
+      low_trust_free_tier_pending_user_count: 3,
+      low_trust_free_tier_pending_task_count: 4,
     }
 
     const wrapper = await mountQueueStats()
 
     expect(wrapper.text()).toContain('活跃数')
     expect(wrapper.text()).toContain('排队数')
+    expect(wrapper.text()).toContain('低信任免费层')
     expect(wrapper.get('.task-total-active .task-total-value').text()).toContain('48')
     expect(wrapper.get('.task-total-pending .task-total-value').text()).toContain('12')
+    expect(wrapper.get('.task-total-submetric').text()).toContain('3')
+    expect(wrapper.get('.task-total-submetric').text()).toContain('4 任务')
   })
 
   it('renders all active task detail rows with pending wait metrics', async () => {
@@ -376,6 +416,8 @@ describe('QueueStats worker health display', () => {
           max_pending_wait_seconds: 742,
           oldest_pending_task_id: 'backend-task-old',
           oldest_pending_created_at: 1782050000,
+          low_trust_free_tier_user_count: 2,
+          low_trust_free_tier_task_count: 3,
         },
         i2i_pro: {
           active_count: 2,
@@ -383,6 +425,8 @@ describe('QueueStats worker health display', () => {
           max_pending_wait_seconds: null,
           oldest_pending_task_id: null,
           oldest_pending_created_at: null,
+          low_trust_free_tier_user_count: 0,
+          low_trust_free_tier_task_count: 0,
         },
       },
     }
@@ -392,12 +436,14 @@ describe('QueueStats worker health display', () => {
     expect(wrapper.text()).toContain('活跃任务详情')
     expect(wrapper.text()).toContain('image_to_video')
     expect(wrapper.text()).toContain('i2i_pro')
+    expect(wrapper.text()).toContain('低信任用户')
     expect(wrapper.text()).toContain('12m 22s')
     expect(wrapper.findAll('.active-task-detail-table tbody tr')).toHaveLength(2)
     expect(wrapper.findAll('.active-task-detail-table thead th').map(th => th.text())).toEqual([
       '任务类型',
       '活跃数',
       '排队数',
+      '低信任用户',
       '最长排队等待',
     ])
   })
@@ -437,6 +483,7 @@ describe('QueueStats worker health display', () => {
           active_count: 15,
           pending_count: 8,
           max_pending_wait_seconds: 901,
+          max_non_low_trust_pending_wait_seconds: 720,
         },
         {
           profile: 'scail2',
@@ -445,6 +492,7 @@ describe('QueueStats worker health display', () => {
           active_count: 2,
           pending_count: 1,
           max_pending_wait_seconds: 620,
+          max_non_low_trust_pending_wait_seconds: 500,
         },
         {
           profile: 'ltx_video',
@@ -453,6 +501,19 @@ describe('QueueStats worker health display', () => {
           active_count: 0,
           pending_count: 0,
           max_pending_wait_seconds: null,
+        },
+        {
+          profile: 'pornmaster_flux2_edit',
+          label: 'pornmaster_flux2',
+          supported_task_types: [
+            'pornmaster_flux2_single_edit',
+            'pornmaster_flux2_multi_edit',
+          ],
+          autoscaler_enabled: false,
+          active_count: 3,
+          pending_count: 4,
+          max_pending_wait_seconds: 1000,
+          max_non_low_trust_pending_wait_seconds: 880,
         },
       ],
     }
@@ -491,6 +552,14 @@ describe('QueueStats worker health display', () => {
         status: 'idle',
         last_seen: Date.now() / 1000,
       },
+      {
+        agent_id: 'lan_aio_prod_gpu252_gpu0_pornmaster_flux2_edit_01',
+        types: 'pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit',
+        runtime_profile: 'pornmaster_flux2_edit',
+        provider: 'lan_ssh',
+        status: 'idle',
+        last_seen: Date.now() / 1000,
+      },
     ]
 
     const wrapper = await mountQueueStats()
@@ -498,23 +567,36 @@ describe('QueueStats worker health display', () => {
     const i2iRow = wrapper
       .findAll('.runpod-profile-detail-table tbody tr')
       .find(row => row.text().includes('i2i_pro / txt2img / face_swap'))
+    const pornmasterRow = wrapper
+      .findAll('.runpod-profile-detail-table tbody tr')
+      .find(row => row.text().includes('pornmaster_flux2'))
 
-    expect(wrapper.text()).toContain('活跃 RunPod 详情')
+    expect(wrapper.text()).toContain('活跃 Worker 详情')
     expect(wrapper.text()).toContain('i2i_pro / txt2img / face_swap')
     expect(wrapper.text()).toContain('t2i-pornmaster-turbo')
     expect(wrapper.text()).toContain('15m 1s')
+    expect(i2iRow?.text()).toContain('12m 0s')
     expect(wrapper.text()).toContain('31m 0s')
     expect(wrapper.text()).toContain('scale_up: estimated clear time 1860s exceeds 1800s')
+    expect(pornmasterRow?.exists()).toBe(true)
+    expect(pornmasterRow?.text()).toContain('pornmaster_flux2_single_edit')
+    expect(pornmasterRow?.text()).toContain('16m 40s')
+    expect(pornmasterRow?.text()).toContain('14m 40s')
+    expect(pornmasterRow?.text()).toContain('RunPod0')
+    expect(pornmasterRow?.text()).toContain('本地1')
+    expect(pornmasterRow?.text()).toContain('本地/手动')
+    expect(pornmasterRow?.find('.profile-autoscaler-toggle').exists()).toBe(false)
     expect(i2iRow?.exists()).toBe(true)
     expect(i2iRow?.text()).toContain('RunPod2')
     expect(i2iRow?.text()).toContain('本地2')
-    expect(wrapper.findAll('.runpod-profile-detail-table tbody tr')).toHaveLength(6)
+    expect(wrapper.findAll('.runpod-profile-detail-table tbody tr')).toHaveLength(7)
     expect(wrapper.findAll('.runpod-profile-detail-table thead th').map(th => th.text())).toEqual([
-      'RunPod 类型',
+      'Worker 类型',
       '服务器',
       '活跃数',
       '排队数',
       '最长等待',
+      '非低信任最长等待',
       '预计清空',
       '单任务耗时',
       '清空阈值',
