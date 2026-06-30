@@ -31,7 +31,19 @@ const getTaskLabel = (task: any) => {
   return '失败'
 }
 
-const handleClose = (task: any) => {
+const getCloseButtonLabel = (task: any) => {
+  if (task.status === 'pending' && !task.cancelRequested) {
+    return '撤销任务'
+  }
+  return '收起任务'
+}
+
+const handleClose = async (task: any) => {
+  if (task.status === 'pending' && !task.cancelRequested) {
+    await doCancelTask(task.id)
+    return
+  }
+
   tasksStore.removeTask(task.id)
   if (task.status === 'cancelled') {
     message.info(task.refundMessage || '任务已取消')
@@ -135,6 +147,8 @@ const doCancelTask = async (taskId: string) => {
         <button 
           @click.stop="handleClose(task)" 
           class="task-fab-close"
+          :title="getCloseButtonLabel(task)"
+          :aria-label="getCloseButtonLabel(task)"
         >
           <close-outlined class="text-[10px]" />
         </button>

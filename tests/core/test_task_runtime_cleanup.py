@@ -460,3 +460,125 @@ async def test_sync_user_concurrency_uses_runtime_redis_provider():
     redis.set.assert_awaited_once_with(key, 2)
     redis.expire.assert_awaited_once_with(key, 3600)
     redis.delete.assert_awaited_once_with(key)
+
+
+@pytest.mark.asyncio
+async def test_cancel_user_task_finalizes_confirmed_pending_cancellation():
+    finalize_cancellation = AsyncMock(
+        return_value=SimpleNamespace(
+            refunded=True,
+            user_message="任务已撤销，预扣的 12 灵石已全额退回。",
+        )
+    )
+    runtime_dependencies = SimpleNamespace(
+        get_task_func=AsyncMock(
+            return_value={
+                "user_id": 42,
+                "username": "daoist",
+                "cost": 12,
+                "credits_deducted": True,
+                "backend_task_id": "backend-42",
+            }
+        ),
+        find_task_by_backend_task_id_func=AsyncMock(),
+        cancel_task_func=AsyncMock(
+            return_value={
+                "state": "cancelled",
+                "task_id": "backend-42",
+                "message": "任务已从排队队列移除",
+            }
+        ),
+    )
+
+    result = await task_core_runtime.cancel_user_task(
+        "registry-42",
+        42,
+        runtime_dependencies=runtime_dependencies,
+        finalize_task_cancellation_func=finalize_cancellation,
+    )
+
+    runtime_dependencies.cancel_task_func.assert_awaited_once_with("backend-42")
+    finalize_cancellation.assert_awaited_once_with(
+        internal_user_id=42,
+        username="daoist",
+        cost=12,
+        task_submitted=True,
+        registry_task_id="registry-42",
+        release_lock=True,
+    )
+    assert result["message"] == "任务已撤销，预扣的 12 灵石已全额退回。"
+
+
+@pytest.mark.asyncio
+async def test_cancel_user_task_does_not_finalize_running_cancel_request():
+    finalize_cancellation = AsyncMock()
+    runtime_dependencies = SimpleNamespace(
+        get_task_func=AsyncMock(
+            return_value={
+                "user_id": 42,
+                "username": "daoist",
+                "cost": 12,
+                "credits_deducted": True,
+                "backend_task_id": "backend-43",
+            }
+        ),
+        find_task_by_backend_task_id_func=AsyncMock(),
+        cancel_task_func=AsyncMock(
+            return_value={
+                "state": "cancellation_requested",
+                "task_id": "backend-43",
+                "message": "任务已请求取消，等待执行端确认",
+            }
+        ),
+    )
+
+    result = await task_core_runtime.cancel_user_task(
+        "registry-43",
+        42,
+        runtime_dependencies=runtime_dependencies,
+        finalize_task_cancellation_func=finalize_cancellation,
+    )
+
+    runtime_dependencies.cancel_task_func.assert_awaited_once_with("backend-43")
+    finalize_cancellation.assert_not_awaited()
+    assert result["state"] == "cancellation_requested"
+
+
+@pytest.mark.asyncio
+async def test_cancel_user_task_skips_refund_for_non_deducted_pending_task():
+    finalize_cancellation = AsyncMock(return_value=SimpleNamespace(user_message=None))
+    runtime_dependencies = SimpleNamespace(
+        get_task_func=AsyncMock(
+            return_value={
+                "user_id": 42,
+                "username": "daoist",
+                "cost": 12,
+                "credits_deducted": False,
+                "backend_task_id": "backend-free",
+            }
+        ),
+        find_task_by_backend_task_id_func=AsyncMock(),
+        cancel_task_func=AsyncMock(
+            return_value={
+                "state": "cancelled",
+                "task_id": "backend-free",
+                "message": "任务已从排队队列移除",
+            }
+        ),
+    )
+
+    await task_core_runtime.cancel_user_task(
+        "registry-free",
+        42,
+        runtime_dependencies=runtime_dependencies,
+        finalize_task_cancellation_func=finalize_cancellation,
+    )
+
+    finalize_cancellation.assert_awaited_once_with(
+        internal_user_id=42,
+        username="daoist",
+        cost=12,
+        task_submitted=False,
+        registry_task_id="registry-free",
+        release_lock=True,
+    )

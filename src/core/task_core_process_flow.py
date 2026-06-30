@@ -120,6 +120,7 @@ async def execute_task_submission_attempt(
         inputs=inputs,
         registry_task_id=registry_task_id,
         cost=cost,
+        credits_deducted=deduct_quota,
         submission_context=submission_context,
     )
     maybe_awaitable = dependencies.attach_submission_side_effects_func(

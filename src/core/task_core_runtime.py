@@ -203,6 +203,7 @@ async def cancel_user_task(
     *,
     task_registry=None,
     cancel_task_func=None,
+    finalize_task_cancellation_func=None,
     runtime_dependencies=None,
 ):
     """供用户主动调用的任务撤销逻辑"""
@@ -241,4 +242,36 @@ async def cancel_user_task(
     except Exception as e:
         logger.error(f"中控取消任务网络异常: {e}")
         raise CoreDomainError("撤销请求失败，请稍后重试")
+
+    if isinstance(cancel_result, dict) and cancel_result.get("state") == "cancelled":
+        if finalize_task_cancellation_func is None:
+            from src.core.task_core_finalization import (
+                finalize_task_cancellation_default,
+            )
+
+            finalize_task_cancellation_func = finalize_task_cancellation_default
+
+        try:
+            cost = int(task.get("cost") or 0)
+        except (TypeError, ValueError):
+            cost = 0
+
+        finalization_result = await finalize_task_cancellation_func(
+            internal_user_id=user_id,
+            username=task.get("username") or "",
+            cost=cost,
+            task_submitted=bool(task.get("credits_deducted", True)),
+            registry_task_id=registry_task_id,
+            release_lock=True,
+        )
+        if getattr(finalization_result, "user_message", None):
+            cancel_result = {
+                **cancel_result,
+                "message": finalization_result.user_message,
+            }
+        if hasattr(finalization_result, "refunded"):
+            cancel_result = {
+                **cancel_result,
+                "refunded": finalization_result.refunded,
+            }
     return cancel_result

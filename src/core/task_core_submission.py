@@ -23,6 +23,7 @@ async def register_task_submission(
     user_id: int,
     username: str,
     cost: int,
+    credits_deducted: bool = True,
     submission_context: TaskSubmissionContext,
     add_task_func: Callable[..., Awaitable[str]],
 ) -> str:
@@ -38,6 +39,7 @@ async def register_task_submission(
         priority=submission_context.final_priority,
         allow_contribute=submission_context.allow_contribute,
         client_type=submission_context.client_type,
+        credits_deducted=credits_deducted,
         metadata=submission_context.metadata,
     )
 
@@ -83,6 +85,7 @@ async def execute_task_submission_saga(
     inputs: dict,
     registry_task_id: str,
     cost: int,
+    credits_deducted: bool = True,
     submission_context: TaskSubmissionContext,
     register_task_submission_func: Callable[..., Awaitable[str]],
     dispatch_registered_task_func: Callable[..., Awaitable[str]],
@@ -92,6 +95,7 @@ async def execute_task_submission_saga(
         user_id=submission_context.user_logger.user_id,
         username=submission_context.user_logger.username,
         cost=cost,
+        credits_deducted=credits_deducted,
         submission_context=submission_context,
     )
     backend_task_id = await dispatch_registered_task_func(
@@ -174,6 +178,7 @@ async def register_task_submission_default(
     user_id: int,
     username: str,
     cost: int,
+    credits_deducted: bool = True,
     submission_context: TaskSubmissionContext,
     dependencies=None,
     logger_override: logging.Logger | None = None,
@@ -189,6 +194,7 @@ async def register_task_submission_default(
         user_id=user_id,
         username=username,
         cost=cost,
+        credits_deducted=credits_deducted,
         submission_context=submission_context,
         add_task_func=dependencies.add_task_func,
     )
@@ -229,6 +235,7 @@ async def execute_task_submission_saga_default(
     inputs: dict,
     registry_task_id: str,
     cost: int,
+    credits_deducted: bool = True,
     submission_context: TaskSubmissionContext,
     dependencies=None,
     is_task_backend_busy_error_func=is_task_backend_busy_error,
@@ -245,6 +252,7 @@ async def execute_task_submission_saga_default(
         inputs=inputs,
         registry_task_id=registry_task_id,
         cost=cost,
+        credits_deducted=credits_deducted,
         submission_context=submission_context,
         register_task_submission_func=lambda **kwargs: register_task_submission_default(
             **kwargs,

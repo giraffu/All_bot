@@ -60,6 +60,7 @@
 
 ```bash
 pytest   tests/backend/test_main_helpers.py   tests/backend/test_queue_manager.py   tests/web_api/test_tasks_action_api_service.py   tests/web_api/test_tasks_generate.py   tests/web_api/test_tasks_stream.py   tests/web_api/test_task_runtime_api_service.py   tests/services/test_task_service_flow.py   tests/services/test_task_service_completion.py   tests/services/test_task_service_message_support.py
+pytest   tests/core/test_task_runtime_cleanup.py
 ```
 
 ## 5. 完整黄金路径集
@@ -67,6 +68,7 @@ pytest   tests/backend/test_main_helpers.py   tests/backend/test_queue_manager.p
 
 ```bash
 pytest   tests/integration/test_saga_and_queue.py   tests/backend/test_main_helpers.py   tests/backend/test_queue_manager.py   tests/web_api/test_tasks_action_api_service.py   tests/web_api/test_tasks_generate.py   tests/web_api/test_tasks_stream.py   tests/web_api/test_task_runtime_api_service.py   tests/services/test_task_service_flow.py   tests/services/test_task_service_completion.py   tests/services/test_task_service_message_support.py
+pytest   tests/core/test_task_runtime_cleanup.py
 ```
 
 ## 6. 检查项
@@ -106,11 +108,15 @@ pytest   tests/integration/test_saga_and_queue.py   tests/backend/test_main_help
 - [ ] `/tasks/generate` 成功时仍返回统一提交 DTO
 - [ ] `/tasks/generate` 继续映射 `429 / 402 / 400 / 500`
 - [ ] `/tasks/cancel/{task_id}` 继续返回统一 success shape
+- [ ] confirmed pending cancel 会通过 `finalize_task_cancellation` 退款、释放并发锁并清理 active registry
+- [ ] 免扣任务的 active registry 会记录 `credits_deducted=false`，confirmed cancel 只清理不退款
+- [ ] running cancel request 只标记等待执行端确认，不提前退款或清理 active registry
 - [ ] router 仍保持薄壳，只做 service 转发
 
 对应测试：
 - `tests/web_api/test_tasks_action_api_service.py`
 - `tests/web_api/test_tasks_generate.py`
+- `tests/core/test_task_runtime_cleanup.py`
 
 ### 6.5 SSE 与历史兜底
 - [ ] terminal backend 状态仍映射为 Web success/failed payload

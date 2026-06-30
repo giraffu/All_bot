@@ -96,6 +96,7 @@ sequenceDiagram
 3. `tasksStore.startStatusPolling(...)` 默认每 15 秒查询 `/tasks/{task_id}/status` 粗状态；pending 可显示队列位置，running 不显示生成百分比
 4. 收到粗状态 `success` 后，前端转入 `/tasks/{task_id}/result` 轮询；结果 URL 未就绪时保持 `awaitingResult=true` 并展示“保存结果中”，当前轮询窗口约 120 次 * 1.5 秒，需覆盖视频 R2 warmup 可能超过 60 秒的情况
 5. 若历史已落库，也可能通过最近历史或详情弹层展示结果
+6. pending 悬浮任务的关闭按钮按用户撤销处理，调用 `/tasks/cancel/{registry_task_id}`；非 pending 关闭按钮仅收起本地悬浮任务，不代表后端取消
 
 前端当前的状态语义重点：
 - `pending`: 已提交但还在排队
@@ -471,6 +472,7 @@ Web 端当前用户侧运行态与结果查询链路分成三层：
 重要语义：
 - `status` / `stream` / `result` 对外接收的都是 `registry_task_id`
 - service 内部会尽量解析出真正的 `runtime_task_id` / `backend_task_id`
+- 用户侧取消入口对外接收 `registry_task_id`；core 会解析 active registry 中的 `backend_task_id` 发给 Central。active registry 同时记录 `credits_deducted`，confirmed cancel 退款必须按该字段判断，不能只看 `cost`。Central 返回 `state=cancelled` 时表示 pending 已确认取消，Web/Bot 侧必须立即走 `finalize_task_cancellation`，完成退款、并发锁释放和 active registry 清理；若仅返回 `cancellation_requested`，说明运行中任务只进入等待执行端确认阶段，不得提前退款或清理 active registry
 - 用户侧不展示生成百分比；Central 和 Worker 内部仍可写入完整 progress/status/heartbeat，供 monitor、排障和终态收口使用
 - 若运行态已消失但历史已存在，SSE 应返回可终止的 fallback 语义，而不是无限轮询
 - SSE 不能只依赖 Redis Pub/Sub 事件。Pub/Sub 是进度快路径；Web API 订阅、读取或关闭 Pub/Sub 失败时不得让 SSE 冒 ASGI Exception，同一连接应继续通过 Central `/status/{backend_task_id}` 补偿轮询到终态。任务进入 `running` 后仍需周期性查询 Central `/status/{backend_task_id}`，用于补偿终态事件丢失、Web 连接断开重连或 worker 回报路径异常时的前端收口。Web API 会对同一 `api_base + backend_task_id` 的 status 拉取做约 2 秒共享缓存，避免多个浏览器连接重复打 Central；同一任务状态/队列位置/进度连续不变时，Web SSE 补偿轮询会从 pending 约 5 秒、running 约 10 秒逐步退避到默认最多约 20 秒，状态变化后恢复初始间隔。

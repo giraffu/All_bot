@@ -67,6 +67,7 @@ async def test_execute_task_submission_saga_returns_composed_result():
         user_id=42,
         username="tester",
         cost=10,
+        credits_deducted=True,
         submission_context=submission_context,
     )
     dispatch_registered_task_func.assert_awaited_once_with(
@@ -107,7 +108,35 @@ async def test_register_task_submission_persists_client_type():
     add_task.assert_awaited_once()
     kwargs = add_task.await_args.kwargs
     assert kwargs["client_type"] == "bot:qqcc"
+    assert kwargs["credits_deducted"] is True
     assert kwargs["metadata"] == {"mode": "random_faceswap"}
+
+
+@pytest.mark.asyncio
+async def test_register_task_submission_persists_non_deducted_tasks():
+    add_task = AsyncMock(return_value="registry-free")
+    submission_context = SimpleNamespace(
+        task_type="ltx_video",
+        log_prompt="prompt",
+        registry_saved_inputs=lambda: [],
+        is_video_task=True,
+        final_priority=3,
+        allow_contribute=False,
+        client_type="bot",
+        metadata={},
+    )
+
+    await register_task_submission(
+        registry_task_id="registry-free",
+        user_id=42,
+        username="free",
+        cost=18,
+        credits_deducted=False,
+        submission_context=submission_context,
+        add_task_func=add_task,
+    )
+
+    assert add_task.await_args.kwargs["credits_deducted"] is False
 
 
 @pytest.mark.asyncio
