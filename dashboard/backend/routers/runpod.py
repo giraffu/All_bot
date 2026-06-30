@@ -18,8 +18,10 @@ from dashboard.backend.services.runpod_admin_service import (
     enable_runpod_worker_payload,
     get_lan_aio_profiles_payload,
     get_lan_aio_slots_payload,
+    get_locked_runpod_workers_payload,
     get_runpod_operations_payload,
     get_runpod_profiles_payload,
+    lock_runpod_worker_payload,
     pause_lan_aio_worker_payload,
     pause_runpod_worker_payload,
     restart_lan_aio_worker_payload,
@@ -27,6 +29,7 @@ from dashboard.backend.services.runpod_admin_service import (
     start_lan_aio_slot_action_payload,
     start_runpod_scale_payload,
     terminate_runpod_operation_payload,
+    unlock_runpod_worker_payload,
 )
 
 router = APIRouter(prefix="/api/runpod", tags=["runpod"])
@@ -40,6 +43,11 @@ async def get_runpod_profiles():
 @router.get("/operations")
 async def get_runpod_operations():
     return await get_runpod_operations_payload()
+
+
+@router.get("/workers/locks")
+async def get_locked_runpod_workers():
+    return await get_locked_runpod_workers_payload()
 
 
 @router.get("/autoscaler")
@@ -90,6 +98,16 @@ async def enable_runpod_worker(agent_id: str, req: RunPodWorkerActionRequest):
 @router.post("/workers/{agent_id}/restart")
 async def restart_runpod_worker(agent_id: str, req: RunPodWorkerActionRequest):
     return await restart_runpod_worker_payload(agent_id=agent_id, request=req)
+
+
+@router.post("/workers/{agent_id}/lock")
+async def lock_runpod_worker(agent_id: str, req: RunPodWorkerActionRequest):
+    return await lock_runpod_worker_payload(agent_id=agent_id, request=req)
+
+
+@router.post("/workers/{agent_id}/unlock")
+async def unlock_runpod_worker(agent_id: str, req: RunPodWorkerActionRequest):
+    return await unlock_runpod_worker_payload(agent_id=agent_id, request=req)
 
 
 @router.delete("/workers/{agent_id}")

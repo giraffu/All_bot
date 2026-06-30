@@ -12,6 +12,7 @@ OPERATIONS_ZSET_KEY = "dashboard:runpod:operations"
 OPERATION_KEY_PREFIX = "dashboard:runpod:operation:"
 ACTIVE_ADD_KEY_PREFIX = "dashboard:runpod:active_add:"
 ACTIVE_LAN_AIO_SLOT_KEY_PREFIX = "dashboard:runpod:active_lan_aio_slot:"
+LOCKED_RUNPOD_WORKERS_KEY = "dashboard:runpod:locked_workers"
 FINISHED_OPERATION_TTL_SECONDS = 24 * 60 * 60
 
 
@@ -60,6 +61,25 @@ class RunPodOperationStore(Protocol):
     ) -> None:
         ...
 
+    async def set_locked_runpod_worker(
+        self,
+        agent_id: str,
+        payload: dict[str, Any],
+    ) -> None:
+        ...
+
+    async def get_locked_runpod_worker(
+        self,
+        agent_id: str,
+    ) -> dict[str, Any] | None:
+        ...
+
+    async def list_locked_runpod_workers(self) -> dict[str, dict[str, Any]]:
+        ...
+
+    async def clear_locked_runpod_worker(self, agent_id: str) -> None:
+        ...
+
 
 class InMemoryRunPodOperationStore:
     def __init__(self) -> None:
@@ -67,6 +87,7 @@ class InMemoryRunPodOperationStore:
         self.scores: dict[str, float] = {}
         self.active_add: dict[str, str] = {}
         self.active_lan_aio_slot: dict[str, str] = {}
+        self.locked_runpod_workers: dict[str, dict[str, Any]] = {}
 
     async def save_operation(
         self,
@@ -135,6 +156,26 @@ class InMemoryRunPodOperationStore:
     ) -> None:
         if self.active_lan_aio_slot.get(physical_slot_key) == operation_id:
             self.active_lan_aio_slot.pop(physical_slot_key, None)
+
+    async def set_locked_runpod_worker(
+        self,
+        agent_id: str,
+        payload: dict[str, Any],
+    ) -> None:
+        self.locked_runpod_workers[str(agent_id)] = deepcopy(payload)
+
+    async def get_locked_runpod_worker(
+        self,
+        agent_id: str,
+    ) -> dict[str, Any] | None:
+        payload = self.locked_runpod_workers.get(str(agent_id))
+        return deepcopy(payload) if payload is not None else None
+
+    async def list_locked_runpod_workers(self) -> dict[str, dict[str, Any]]:
+        return deepcopy(self.locked_runpod_workers)
+
+    async def clear_locked_runpod_worker(self, agent_id: str) -> None:
+        self.locked_runpod_workers.pop(str(agent_id), None)
 
 
 class RedisRunPodOperationStore:
@@ -265,6 +306,47 @@ return 0
             self.active_lan_aio_slot_key(physical_slot_key),
             operation_id,
         )
+
+    async def set_locked_runpod_worker(
+        self,
+        agent_id: str,
+        payload: dict[str, Any],
+    ) -> None:
+        await self.redis.hset(
+            LOCKED_RUNPOD_WORKERS_KEY,
+            str(agent_id),
+            json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+        )
+
+    async def get_locked_runpod_worker(
+        self,
+        agent_id: str,
+    ) -> dict[str, Any] | None:
+        raw = await self.redis.hget(LOCKED_RUNPOD_WORKERS_KEY, str(agent_id))
+        if not raw:
+            return None
+        return json.loads(raw)
+
+    async def list_locked_runpod_workers(self) -> dict[str, dict[str, Any]]:
+        raw_items = await self.redis.hgetall(LOCKED_RUNPOD_WORKERS_KEY)
+        locked: dict[str, dict[str, Any]] = {}
+        stale_agent_ids: list[str] = []
+        for agent_id, raw_payload in raw_items.items():
+            try:
+                payload = json.loads(raw_payload)
+            except json.JSONDecodeError:
+                stale_agent_ids.append(str(agent_id))
+                continue
+            if isinstance(payload, dict):
+                locked[str(agent_id)] = payload
+            else:
+                stale_agent_ids.append(str(agent_id))
+        if stale_agent_ids:
+            await self.redis.hdel(LOCKED_RUNPOD_WORKERS_KEY, *stale_agent_ids)
+        return locked
+
+    async def clear_locked_runpod_worker(self, agent_id: str) -> None:
+        await self.redis.hdel(LOCKED_RUNPOD_WORKERS_KEY, str(agent_id))
 
 
 def build_default_runpod_operation_store() -> RunPodOperationStore:

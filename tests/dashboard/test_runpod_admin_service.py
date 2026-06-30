@@ -115,18 +115,40 @@ async def test_lan_aio_slots_payload_groups_enabled_and_disabled_candidates(monk
             ]
 
         def status_payload(self, slots):
+            status_by_slot = {}
+            for slot in slots:
+                workers = []
+                remote_containers = []
+                if slot.id == "gpu-002-gpu1-image_to_video":
+                    remote_containers = [
+                        "allbot-lan-aio-gpu-002-gpu1-image_to_video-canary Exited (143) 3 hours ago "
+                    ]
+                elif slot.id == "gpu-002-gpu1-pornmaster_flux2_edit":
+                    workers = [
+                        {
+                            "agent_id": "lan_aio_prod_gpu002_gpu1_pornmaster_flux2_edit_01",
+                            "status": "running",
+                            "current_task_type": "pornmaster_flux2_single_edit",
+                        }
+                    ]
+                    remote_containers = [
+                        "allbot-lan-aio-gpu-002-gpu1-pornmaster-flux2-edit-prod Up 3 hours (healthy)"
+                    ]
+                slot_payload = slot_to_jsonable(slot, self.config)
+                if slot.id == "gpu-002-gpu1-image_to_video":
+                    slot_payload["enabled"] = True
+                elif slot.id == "gpu-002-gpu1-pornmaster_flux2_edit":
+                    slot_payload["enabled"] = False
+                status_by_slot[slot.id] = {
+                    "slot": slot_payload,
+                    "workers": workers,
+                    "control": {"legacy": "disabled", "aio": "enabled"},
+                    "remote_containers": remote_containers,
+                    "model_cache": {"status": "ready", "profile": slot.target_profile_id},
+                }
             return {
                 "ok": True,
-                "slots": [
-                    {
-                        "slot": slot_to_jsonable(slot, self.config),
-                        "workers": [],
-                        "control": {"legacy": "disabled", "aio": "enabled"},
-                        "remote_containers": [],
-                        "model_cache": {"status": "ready", "profile": slot.target_profile_id},
-                    }
-                    for slot in slots
-                ],
+                "slots": [status_by_slot[slot.id] for slot in slots],
             }
 
     monkeypatch.setattr(
@@ -157,6 +179,11 @@ async def test_lan_aio_slots_payload_groups_enabled_and_disabled_candidates(monk
     assert "gpu-002-gpu1-pornmaster_flux2_edit" in gpu002_slots
     assert gpu002_slots["gpu-002-gpu1-image_to_video"]["slot"]["enabled"] is True
     assert gpu002_slots["gpu-002-gpu1-pornmaster_flux2_edit"]["slot"]["enabled"] is False
+    assert gpu002_slots["gpu-002-gpu1-image_to_video"]["slot"]["runtime_current"] is False
+    assert gpu002_slots["gpu-002-gpu1-pornmaster_flux2_edit"]["slot"]["runtime_current"] is True
+    assert groups["gpu-002:gpu1"]["active_slot_id"] == (
+        "gpu-002-gpu1-pornmaster_flux2_edit"
+    )
 
 
 @pytest.mark.asyncio
@@ -292,6 +319,20 @@ async def test_runpod_operation_store_fake_create_list_update_prune_and_lock():
     await store.release_active_lan_aio_slot("gpu-252:gpu0", "op-2")
     assert await store.get_active_lan_aio_slot("gpu-252:gpu0") is None
 
+    lock_payload = {
+        "agent_id": "runpod_prod_wan22_video_v2_manual_03",
+        "profile": "wan22_video_v2",
+        "slot": "03",
+        "locked": True,
+    }
+    await store.set_locked_runpod_worker(lock_payload["agent_id"], lock_payload)
+    assert await store.get_locked_runpod_worker(lock_payload["agent_id"]) == lock_payload
+    assert await store.list_locked_runpod_workers() == {
+        lock_payload["agent_id"]: lock_payload
+    }
+    await store.clear_locked_runpod_worker(lock_payload["agent_id"])
+    assert await store.get_locked_runpod_worker(lock_payload["agent_id"]) is None
+
     await store.prune_operations(max_records=1)
     assert [item["id"] for item in await store.list_operations(limit=10)] == ["op-2"]
 
@@ -394,6 +435,67 @@ async def test_pause_restart_and_delete_runpod_worker_build_slot_scoped_operatio
     assert pause_payload["operation"]["status"] == "pending"
     assert restart_payload["operation"]["action"] == "restart"
     assert delete_payload["operation"]["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_lock_runpod_worker_marks_payload_and_blocks_deletes():
+    agent_id = "runpod_prod_wan22_video_v2_manual_03"
+
+    lock_payload = await runpod_admin_service.lock_runpod_worker_payload(
+        agent_id=agent_id,
+        request=RunPodWorkerActionRequest(reason="pin expensive pod"),
+    )
+
+    assert lock_payload["status"] == "locked"
+    assert lock_payload["worker"]["agent_id"] == agent_id
+    assert lock_payload["worker"]["profile"] == "wan22_video_v2"
+    assert lock_payload["worker"]["slot"] == "03"
+    assert lock_payload["worker"]["locked"] is True
+    assert lock_payload["worker"]["reason"] == "pin expensive pod"
+
+    workers_payload = await runpod_admin_service.annotate_runpod_worker_locks_payload(
+        {
+            "workers": [
+                {"agent_id": agent_id, "provider": "runpod"},
+                {"agent_id": "runpod_prod_wan22_video_v2_manual_04", "provider": "runpod"},
+            ]
+        }
+    )
+    assert workers_payload["workers"][0]["runpod_locked"] is True
+    assert workers_payload["workers"][0]["runpod_lock"]["slot"] == "03"
+    assert workers_payload["workers"][1]["runpod_locked"] is False
+
+    with pytest.raises(HTTPException) as manual_exc:
+        await runpod_admin_service.delete_runpod_worker_payload(
+            agent_id=agent_id,
+            request=RunPodWorkerActionRequest(),
+            spawn_task_func=_discard_operation_coroutine,
+        )
+    assert manual_exc.value.status_code == 409
+    assert "unlock before deleting" in manual_exc.value.detail
+
+    with pytest.raises(HTTPException) as autoscaler_exc:
+        await runpod_admin_service.start_runpod_autoscaler_delete_operation(
+            profile="wan22_video_v2",
+            slot="03",
+            trigger_reason="scale_down: no backlog and idle runpod available",
+            spawn_task_func=_discard_operation_coroutine,
+        )
+    assert autoscaler_exc.value.status_code == 409
+
+    unlock_payload = await runpod_admin_service.unlock_runpod_worker_payload(
+        agent_id=agent_id,
+        request=RunPodWorkerActionRequest(),
+    )
+    assert unlock_payload["status"] == "unlocked"
+    assert unlock_payload["worker"]["locked"] is False
+
+    delete_payload = await runpod_admin_service.delete_runpod_worker_payload(
+        agent_id=agent_id,
+        request=RunPodWorkerActionRequest(),
+        spawn_task_func=_discard_operation_coroutine,
+    )
+    assert delete_payload["operation"]["action"] == "delete"
 
 
 @pytest.mark.asyncio

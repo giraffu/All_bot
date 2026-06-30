@@ -1,13 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
-  CloudSyncOutlined,
-  DatabaseOutlined,
-  PlayCircleOutlined,
   ReloadOutlined,
   RocketOutlined,
-  SafetyCertificateOutlined,
-  StopOutlined,
   SyncOutlined,
 } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
@@ -35,6 +30,9 @@ type LanAioProfile = {
 type LanAioSlot = {
   id: string
   enabled?: boolean
+  configured_current?: boolean
+  runtime_current?: boolean
+  current_source?: string
   phase?: string
   assignment_id?: string
   target_profile_id: string
@@ -91,6 +89,8 @@ type LanAioSlotStatus = {
 
 type LanAioSlotGroup = {
   physical_slot_key: string
+  active_slot_id?: string | null
+  active_slot_source?: string | null
   node_id?: string
   gpu_index?: number | null
   slots: LanAioSlotStatus[]
@@ -110,22 +110,12 @@ type RunPodOperation = {
   error?: string
 }
 
-type LanAioActionKey =
-  | 'preflight'
-  | 'pull-image'
-  | 'warm-cache'
-  | 'drain-legacy'
-  | 'wait-idle'
-  | 'takeover'
-  | 'stop-old'
-  | 'start-disabled'
-  | 'enable-aio'
+type LanAioActionKey = 'takeover'
 
 type LanAioAction = {
   key: LanAioActionKey
   label: string
   danger?: boolean
-  icon: 'preflight' | 'pull' | 'warm' | 'drain' | 'wait' | 'stop' | 'start' | 'enable'
 }
 
 const emit = defineEmits<{
@@ -133,15 +123,7 @@ const emit = defineEmits<{
 }>()
 
 const slotActions: LanAioAction[] = [
-  { key: 'takeover', label: '一键切换', danger: true, icon: 'enable' },
-  { key: 'preflight', label: '预检', icon: 'preflight' },
-  { key: 'pull-image', label: '拉镜像', icon: 'pull' },
-  { key: 'warm-cache', label: '预热模型', icon: 'warm' },
-  { key: 'drain-legacy', label: '排空旧服务', danger: true, icon: 'drain' },
-  { key: 'wait-idle', label: '等待空闲', icon: 'wait' },
-  { key: 'stop-old', label: '停旧容器', danger: true, icon: 'stop' },
-  { key: 'start-disabled', label: '启动候选', danger: true, icon: 'start' },
-  { key: 'enable-aio', label: '启用接单', danger: true, icon: 'enable' },
+  { key: 'takeover', label: '一键切换', danger: true },
 ]
 
 const open = ref(false)
@@ -202,6 +184,12 @@ const activeOperationForSlot = (slot: LanAioSlot) =>
   activeLanAioOperationBySlot.value.get(slotPhysicalKey(slot))
 
 const isSlotLocked = (slot: LanAioSlot) => Boolean(activeOperationForSlot(slot))
+
+const isCurrentSlot = (slotStatus: LanAioSlotStatus) =>
+  slotStatus.slot.runtime_current ?? slotStatus.slot.enabled ?? false
+
+const isSlotActionDisabled = (slotStatus: LanAioSlotStatus, action: LanAioAction) =>
+  isSlotLocked(slotStatus.slot) || (action.key === 'takeover' && isCurrentSlot(slotStatus))
 
 const loadProfiles = async () => {
   try {
@@ -271,6 +259,10 @@ const confirmSlotAction = (slotStatus: LanAioSlotStatus, action: LanAioAction) =
   Modal.confirm({
     title: `${action.label}：${slot.id}`,
     content: `${slotPhysicalKey(slot)} / ${slot.target_profile_id}`,
+    zIndex: 1800,
+    centered: true,
+    width: 480,
+    getContainer: () => document.body,
     okText: action.label,
     okType: action.danger ? 'danger' : 'primary',
     cancelText: '取消',
@@ -406,7 +398,7 @@ onUnmounted(() => {
               <th>Worker / Control</th>
               <th>缓存</th>
               <th>容器</th>
-              <th>分步操作</th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody v-if="groups.length > 0">
@@ -432,8 +424,8 @@ onUnmounted(() => {
                   <div class="slot-cell">
                     <span class="slot-id" :title="slotStatus.slot.id">{{ slotStatus.slot.id }}</span>
                     <div class="slot-tags">
-                      <a-tag :color="slotStatus.slot.enabled ? 'green' : 'default'" class="m-0">
-                        {{ slotStatus.slot.enabled ? '当前' : '候选' }}
+                      <a-tag :color="isCurrentSlot(slotStatus) ? 'green' : 'default'" class="m-0">
+                        {{ isCurrentSlot(slotStatus) ? '当前' : '候选' }}
                       </a-tag>
                       <a-tag color="geekblue" class="m-0">{{ slotStatus.slot.phase || '-' }}</a-tag>
                       <a-tag v-if="slotStatus.slot.host_port" color="cyan" class="m-0">
@@ -519,19 +511,12 @@ onUnmounted(() => {
                         size="small"
                         :danger="action.danger"
                         :loading="isSlotActionLoading(slotStatus.slot.id, action.key)"
-                        :disabled="isSlotLocked(slotStatus.slot)"
+                        :disabled="isSlotActionDisabled(slotStatus, action)"
                         :aria-label="action.label"
                         @click="confirmSlotAction(slotStatus, action)"
                       >
                         <template #icon>
-                          <safety-certificate-outlined v-if="action.icon === 'preflight'" />
-                          <cloud-sync-outlined v-else-if="action.icon === 'pull'" />
-                          <database-outlined v-else-if="action.icon === 'warm'" />
-                          <stop-outlined v-else-if="action.icon === 'drain'" />
-                          <sync-outlined v-else-if="action.icon === 'wait'" />
-                          <stop-outlined v-else-if="action.icon === 'stop'" />
-                          <play-circle-outlined v-else-if="action.icon === 'start'" />
-                          <rocket-outlined v-else />
+                          <rocket-outlined />
                         </template>
                         <span class="action-label">{{ action.label }}</span>
                       </a-button>
@@ -749,7 +734,7 @@ onUnmounted(() => {
 
 .action-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 5px;
 }
 
@@ -874,17 +859,9 @@ onUnmounted(() => {
     width: 15%;
   }
 
-  .action-grid {
-    grid-template-columns: repeat(4, minmax(22px, 1fr));
-  }
-
   .action-grid :deep(.ant-btn) {
     height: 24px;
-    padding-inline: 0;
-  }
-
-  .action-label {
-    display: none;
+    padding-inline: 6px;
   }
 }
 

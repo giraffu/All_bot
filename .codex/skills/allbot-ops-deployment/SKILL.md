@@ -76,8 +76,8 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 ### RunPod 与 LAN AIO
 - RunPod 不属于局域网 SSH GPU 池；RunPod profile、镜像、manifest、override 事实源在 `ops/gpu_pool_controller/` 与 GPU Pool 文档。
 - Dashboard RunPod/LAN AIO 管理只调用既有脚本，不重写 provider 逻辑；`desired_count` 兼容字段按“新增数量”解释，不代表目标总数。
-- Dashboard autoscaler 基于预计清空时间、profile 阈值、Redis leader lease 与 operation store 做 add/down/restart/enable；不直接操作本地 worker，不绕过 RunPod 门禁。
-- LAN AIO Dashboard 只展示配置内 profile/slot，支持 `preflight`、`pull-image`、`warm-cache`、`drain-legacy`、`wait-idle`、`stop-old`、`start-disabled`、`enable-aio` 单步 operation，也支持受控 `takeover` 一键串联；不提供自由镜像/manifest 或跨 slot 批量切换，同一物理 GPU 用 operation lock 防并发。
+- Dashboard autoscaler 基于预计清空时间、profile 阈值、Redis leader lease 与 operation store 做 add/down/restart/enable；不直接操作本地 worker，不绕过 RunPod 门禁；RunPod Worker 卡片的 `锁定/解锁` 会让手动删除、autoscaler down 和 add cleanup 跳过该 worker。
+- LAN AIO Dashboard 只展示配置内 profile/slot，页面操作只暴露受控 `takeover` 一键切换；`preflight`、`pull-image`、`warm-cache`、`drain-legacy`、`wait-idle`、`stop-old`、`start-disabled`、`enable-aio` 单步 operation 保留为后端/API/CLI 排障入口；不提供自由镜像/manifest 或跨 slot 批量切换，同一物理 GPU 用 operation lock 防并发。
 - 云正式 Dashboard 若触发 LAN AIO mutation，应通过 `DASHBOARD_LAN_AIO_EXECUTION_MODE=ssh` 指向本地主服务器 runner 执行 `scripts/lan_aio_fleet_prod_ops.py`；Dashboard 后端只读挂载 runner 专用 SSH key，不要把 LAN GPU SSH key、`allbot-gpu-*` Host alias 或 `192.168.1.0/24` 私网路由塞进云控制面。
 - LAN AIO 真实接管按单 slot 执行：preflight -> registry/镜像准备 -> pull-image -> warm-cache -> drain-legacy -> wait-idle -> stop-old -> start-disabled -> 验证 disabled heartbeat -> enable-aio。
 - 低频镜像 tag、RIFE 缓存、SCAIL-2/LTX profile、gpu-177/gpu-252/gpu-002 细节只在需要时读取 `references/runpod-lan-runtime.md` 和 GPU Pool 文档。

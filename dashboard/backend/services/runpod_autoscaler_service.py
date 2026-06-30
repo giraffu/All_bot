@@ -959,6 +959,14 @@ def _worker_control_state(worker: dict[str, Any]) -> str:
     return str(worker.get("control_state") or "enabled").strip().lower()
 
 
+def _worker_runpod_locked(worker: dict[str, Any]) -> bool:
+    value = worker.get("runpod_locked", worker.get("locked", False))
+    try:
+        return _coerce_bool_setting(value)
+    except ValueError:
+        return False
+
+
 def _runpod_slot_for_worker(worker: dict[str, Any], *, profile: str) -> str | None:
     try:
         return prod_slot_from_agent_id(str(worker.get("agent_id") or ""), profile=profile)
@@ -1375,6 +1383,8 @@ def build_runpod_autoscaler_decisions(
         accepting_runpod_count = 0
         accepting_local_count = 0
         runpod_total_count = 0
+        locked_runpod_count = 0
+        locked_idle_runpod_count = 0
         running_remaining_seconds = 0
         runpod_restart_candidates: list[tuple[int, str, dict[str, Any]]] = []
         runpod_enable_candidates: list[tuple[int, str, dict[str, Any]]] = []
@@ -1403,7 +1413,19 @@ def build_runpod_autoscaler_decisions(
                     runpod_total_count += 1
                 if accepting:
                     accepting_runpod_count += 1
-                if _worker_idle_delete_candidate(
+                runpod_locked = _worker_runpod_locked(worker)
+                if runpod_locked:
+                    locked_runpod_count += 1
+                if (
+                    runpod_locked
+                    and _worker_idle_delete_candidate(
+                        worker,
+                        now=now,
+                        heartbeat_max_age_seconds=config.heartbeat_max_age_seconds,
+                    )
+                ):
+                    locked_idle_runpod_count += 1
+                if (not runpod_locked) and _worker_idle_delete_candidate(
                     worker,
                     now=now,
                     heartbeat_max_age_seconds=config.heartbeat_max_age_seconds,
@@ -1462,6 +1484,9 @@ def build_runpod_autoscaler_decisions(
             "max_pending_wait_seconds": wait_seconds,
             "runpod_count": runpod_total_count,
             "runpod_accepting_count": accepting_runpod_count,
+            "runpod_locked_count": locked_runpod_count,
+            "runpod_locked_idle_count": locked_idle_runpod_count,
+            "runpod_idle_delete_candidate_count": len(idle_runpod_workers),
             "local_accepting_count": accepting_local_count,
             "total_accepting_count": total_accepting_count,
             "max_runpods_per_profile": config.max_runpods_per_profile,
@@ -1715,11 +1740,16 @@ def build_runpod_autoscaler_decisions(
             continue
         candidate = _highest_slot_worker(idle_runpod_workers, profile=profile)
         if candidate is None:
+            reason = (
+                "hold: all idle runpod candidates are locked"
+                if locked_idle_runpod_count > 0
+                else "hold: no idle runpod candidate"
+            )
             decisions.append(
                 _decision(
                     profile=profile,
                     action="hold",
-                    reason="hold: no idle runpod candidate",
+                    reason=reason,
                     metrics=metrics,
                 )
             )

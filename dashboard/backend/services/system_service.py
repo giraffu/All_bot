@@ -830,6 +830,7 @@ async def get_system_workers_proxy_payload(
     api_base: str = API_BASE,
     httpx_async_client_factory=httpx.AsyncClient,
     logger_override: logging.Logger | None = None,
+    annotate_runpod_locks_func=None,
 ) -> dict:
     active_logger = logger_override or logger
     try:
@@ -838,6 +839,19 @@ async def get_system_workers_proxy_payload(
             httpx_async_client_factory=httpx_async_client_factory,
         )
         if status_code == 200:
+            if annotate_runpod_locks_func is None:
+                from dashboard.backend.services import runpod_admin_service
+
+                annotate_runpod_locks_func = (
+                    runpod_admin_service.annotate_runpod_worker_locks_payload
+                )
+            try:
+                payload = await annotate_runpod_locks_func(payload)
+            except Exception as exc:
+                active_logger.warning(
+                    "Could not annotate RunPod worker locks: %s",
+                    exc,
+                )
             return payload
         return {
             "workers": [],

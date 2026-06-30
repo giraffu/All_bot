@@ -822,6 +822,24 @@ describe('QueueStats worker health display', () => {
     expect(wrapper.text()).toContain('暂停接单中')
   })
 
+  it('shows locked status for locked RunPod worker cards', async () => {
+    queueStatsMocks.workersRef.value = [
+      {
+        agent_id: 'runpod_prod_wan22_video_v2_manual_03',
+        provider: 'runpod',
+        types: 'wan22_video_v2',
+        status: 'idle',
+        runpod_locked: true,
+        last_seen: Date.now() / 1000,
+      },
+    ]
+
+    const wrapper = await mountQueueStats()
+
+    expect(wrapper.text()).toContain('已锁定')
+    expect(wrapper.text()).toContain('空闲')
+  })
+
   it('opens worker history modal when a worker card is clicked', async () => {
     const agentId = 'worker_remote_01'
     queueStatsMocks.workersRef.value = [

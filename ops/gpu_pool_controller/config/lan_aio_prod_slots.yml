@@ -73,8 +73,8 @@ slots:
     notes: Replaces worker 05 with a LAN AIO worker that only accepts wan22_video_v2. The faulty RTX 4090 UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e was removed on 2026-06-20 after Xid 119/154 followed the physical card across slots; no GPU1 is currently present, so production control must stay disabled and RunPod remains the wan22_video_v2 fallback.
 
   - id: gpu-002-gpu1-image_to_video
-    enabled: true
-    phase: prod_enabled
+    enabled: false
+    phase: superseded_by_pornmaster_flux2_edit
     assignment_id: lan-002-8189-worker-07
     target_profile_id: image_to_video
     target_task_types:
@@ -85,9 +85,10 @@ slots:
     host_port: 8191
     agent_id: lan_aio_prod_gpu002_gpu1_image_to_video_01
     container_name: allbot-lan-aio-gpu-002-gpu1-image_to_video-canary
-    legacy_worker_id: cloud_prod_worker_07
-    old_runtime_container: comfy1
-    old_local_agent_container: cloud-prod-comfy-agent-7
+    legacy_health_port: 8191
+    legacy_worker_id: lan_aio_prod_gpu002_gpu1_pornmaster_flux2_edit_01
+    old_runtime_container: allbot-lan-aio-gpu-002-gpu1-pornmaster-flux2-edit-prod
+    old_local_agent_container: ""
     remote_dir: /home/chuzeyu/allbot-runpod-aio-prod/gpu002-image-to-video
     legacy_hot_cache_copies:
       - source_container: __host__
@@ -96,11 +97,11 @@ slots:
           - /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth
           - /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth
     rollout_order: 39
-    notes: Active production gpu-002 GPU1 image_to_video LAN AIO restored on 2026-06-29 after the short PornMaster Flux2 edit replacement trial. Keep this slot visible as the current operable AIO row; gpu-002-gpu1-pornmaster_flux2_edit remains a disabled candidate that replaces this agent/container only during an explicit single-slot takeover.
+    notes: Image_to_video rollback candidate for gpu-002 GPU1. It restores lan_aio_prod_gpu002_gpu1_image_to_video_01 / allbot-lan-aio-gpu-002-gpu1-image_to_video-canary on host port 8191 by replacing the currently active PornMaster Flux2 edit AIO when a single-slot takeover is explicitly requested.
 
   - id: gpu-002-gpu1-pornmaster_flux2_edit
-    enabled: false
-    phase: superseded_by_image_to_video
+    enabled: true
+    phase: prod_enabled
     assignment_id: lan-002-8189-worker-07
     target_profile_id: pornmaster_flux2_edit
     target_task_types:
@@ -116,7 +117,7 @@ slots:
     old_local_agent_container: ""
     remote_dir: /home/chuzeyu/allbot-runpod-aio-prod/gpu002-gpu1-pornmaster-flux2-edit
     rollout_order: 40
-    notes: Production replacement trial for gpu-002 GPU1 on 2026-06-28, reverted on 2026-06-29. The active production slot is again lan_aio_prod_gpu002_gpu1_image_to_video_01 / allbot-lan-aio-gpu-002-gpu1-image_to_video-canary on host port 8191. This PornMaster Flux2 edit agent/container must stay disabled/stopped unless a new single-slot replacement window explicitly re-enables it.
+    notes: Active production gpu-002 GPU1 PornMaster Flux2 edit LAN AIO after the 2026-06-29 23:17 Asia/Shanghai Dashboard takeover. It replaces lan_aio_prod_gpu002_gpu1_image_to_video_01 / allbot-lan-aio-gpu-002-gpu1-image_to_video-canary on host port 8191; image_to_video remains the stopped rollback candidate.
 
   - id: gpu-177-gpu1-ltx_video
     enabled: true

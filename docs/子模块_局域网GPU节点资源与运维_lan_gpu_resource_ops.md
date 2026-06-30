@@ -13,8 +13,8 @@
 最近一次 LAN AIO fleet 泛化脚手架更新：2026-06-18，Asia/Shanghai。
 最近一次 gpu-177/gpu0 LAN AIO 生产 canary 复启：2026-06-18，Asia/Shanghai。
 最近一次 gpu-252/worker05 LAN AIO 生产接管：2026-06-18，Asia/Shanghai。
-最近一次 gpu-002/gpu1 PornMaster Flux2 edit 替换接管：2026-06-28，Asia/Shanghai。
-最近一次 gpu-002/gpu1 image_to_video 回切：2026-06-29，Asia/Shanghai。
+最近一次 gpu-002/gpu1 PornMaster Flux2 edit 替换接管：2026-06-29 23:17，Asia/Shanghai。
+最近一次 gpu-002/gpu1 image_to_video 回切候选配置修正：2026-06-30，Asia/Shanghai。
 
 ## 2. 总体拓扑
 
@@ -37,7 +37,7 @@
 | `192.168.1.226` | `allbot-gpu-226` | Ryzen 9 9950X，16C/32T | 60GiB | 1 x RTX 5090 32G | `/` 1.8T，已用 738G，可用 1001G | 单 ComfyUI，worker 01，face/i2i/t2i 与 LTX 补充容量 |
 | `192.168.1.177` | `allbot-gpu-177` | Ryzen 7 9700X，8C/16T | 60GiB | 2 x RTX 5090 32G | `/` 915G，已用 190G，可用 680G | LAN AIO `8190/8191` only；legacy 02/03 已退役 |
 | `192.168.1.252` | `allbot-gpu-252` | Ryzen 7 9700X，8C/16T | 60GiB | 1 x RTX 4090 48G active | `/` 937G，已用 352G，可用 538G | 健康卡 UUID `GPU-09b7ea85-23df-a9b8-19d9-703534e47666` 由 LAN AIO 承载 PornMaster Flux2 edit；故障卡已拆，`wan22_video_v2` 由 RunPod 兜底 |
-| `192.168.1.2` | `allbot-gpu-002` | Ryzen 7 9700X，8C/16T | 60GiB | 2 x RTX 4090 48G | `/` 936G，已用 455G，可用 442G | slot0 SCAIL-2 LAN AIO `8190`，slot1 image_to_video LAN AIO `8191`；PornMaster Flux2 edit AIO stopped rollback |
+| `192.168.1.2` | `allbot-gpu-002` | Ryzen 7 9700X，8C/16T | 60GiB | 2 x RTX 4090 48G | `/` 936G，已用 455G，可用 442G | slot0 SCAIL-2 LAN AIO `8190`，slot1 PornMaster Flux2 edit LAN AIO `8191`；image_to_video AIO stopped rollback |
 
 容量警戒：
 - 2026-06-08 已清理各 GPU 节点 ComfyUI 旧素材，`192.168.1.177` 从高风险的约 `14G` 可用恢复；2026-06-18 快照可用约 `243G`，已回升到约 73% 使用率，模型下载和大视频压测前应重点复查。
@@ -59,7 +59,7 @@
 | `cloud-prod-comfy-agent-4` | Worker 04 | `192.168.1.252:8188` | `img2img,img2img_lora` |
 | `cloud-prod-comfy-agent-5` | 旧 Worker 05，stopped rollback | 原 `192.168.1.252:8189` | 已由 `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` 替换，只保留回滚 |
 | `cloud-prod-comfy-agent-6` | Worker 06，stopped rollback | 原 `192.168.1.2:8188` | 已由 gpu-002 slot0 SCAIL-2 AIO 接管；旧 img2img_lora AIO 也为 stopped rollback |
-| `cloud-prod-comfy-agent-7` | Worker 07，stopped rollback | 原 `192.168.1.2:8189` | 本地主 legacy agent 保持 disabled；`image_to_video/video_insert/video_edit` 当前由 gpu-002 slot1 AIO `lan_aio_prod_gpu002_gpu1_image_to_video_01` 承接 |
+| `cloud-prod-comfy-agent-7` | Worker 07，stopped rollback | 原 `192.168.1.2:8189` | 本地主 legacy agent 保持 disabled；gpu-002 slot1 当前由 `lan_aio_prod_gpu002_gpu1_pornmaster_flux2_edit_01` 承接 PornMaster Flux2 edit，image_to_video AIO 只作同卡回切候选 |
 
 `video_insert` / `video_edit` 在 worker 能力列表中只表示 legacy alias，canonical 执行面类型是 `image_to_video`。排障或扩容时不要为它们新建独立 workflow、模型 profile 或 RunPod manifest。
 
@@ -94,13 +94,14 @@ LAN AIO fleet 首批候选：
 | `gpu-177-gpu1-ltx_video` | `cloud_prod_worker_03` | `lan_aio_prod_gpu177_gpu1_ltx_video_01` | `ltx_video` | 8191 | `prod_enabled` |
 | `gpu-252-gpu0-pornmaster_flux2_edit` | `lan_aio_prod_gpu252_gpu0_img2img_lora_01` | `lan_aio_prod_gpu252_gpu0_pornmaster_flux2_edit_01` | `pornmaster_flux2_edit` | 8192 | `prod_enabled` |
 | `gpu-252-gpu1-wan22_video_v2` | `cloud_prod_worker_05` | `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` | `wan22_video_v2` | 8191 | `maintenance_disabled` |
-| `gpu-002-gpu1-pornmaster_flux2_edit` | `lan_aio_prod_gpu002_gpu1_image_to_video_01` | `lan_aio_prod_gpu002_gpu1_pornmaster_flux2_edit_01` | `pornmaster_flux2_edit` | 8191 | `superseded_by_image_to_video` |
+| `gpu-002-gpu1-pornmaster_flux2_edit` | `lan_aio_prod_gpu002_gpu1_image_to_video_01` | `lan_aio_prod_gpu002_gpu1_pornmaster_flux2_edit_01` | `pornmaster_flux2_edit` | 8191 | `prod_enabled` |
+| `gpu-002-gpu1-image_to_video` | `lan_aio_prod_gpu002_gpu1_pornmaster_flux2_edit_01` | `lan_aio_prod_gpu002_gpu1_image_to_video_01` | `image_to_video` | 8191 | `superseded_by_pornmaster_flux2_edit` |
 
 每个 slot 必须先 `preflight`、维护窗口配置 Docker insecure registry、预拉镜像、`start-disabled` 验收 disabled heartbeat，最后才小窗口 `enable-aio`。禁止一次性接管整台节点或跨节点批量启用。
 
 2026-06-18 `gpu-177` 进入整机 LAN AIO 接管：GPU0 最初由 `lan_aio_prod_gpu177_gpu0_image_to_video_01` 接正式 `image_to_video`，GPU1 由 `lan_aio_prod_gpu177_gpu1_ltx_video_01` 接正式 `ltx_video`。2026-06-20 已执行安全素材清理并退役旧本地链路：`cloud_prod_worker_02/03` control 固定 `disabled`，本地主 `cloud-prod-comfy-agent-2/3`、GPU 节点 `comfy0/comfy1`、旧 `/data/comfy` 模型/实例目录和旧镜像已删除；gpu-177 不再有本地旧链路回滚。2026-06-23 起 GPU0 保留历史 slot/agent/container 名称，但 fleet 配置渲染为 `wan22_video_v2` 且只声明 `SUPPORTED_TASK_TYPES=wan22_video_v2`。后续恢复优先使用 `restart-aio`、按 fleet 配置重建 AIO，或临时启用 RunPod/其它 LAN AIO 容量。当前稳定 LAN AIO 正式能力包括 `img2img`、`img2img_lora`、`image_to_video`、`wan22_video_v2`、`ltx_video`、`scail2_action_transfer`、`scail2_action_transfer_long`、`scail2_video_replacement`、`scail2_face_swap_v2`、`pornmaster_flux2_single_edit` 与 `pornmaster_flux2_multi_edit`。
 
-2026-06-27 新增 PornMaster Flux2 single/multiple image-edit profile：workflow API 文件同步在 `workers/comfy_agent/workflows/` 与 `remote_workers/comfy_agent/workflows/`，task type 为 `pornmaster_flux2_single_edit` / `pornmaster_flux2_multi_edit`，运行时镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_edit/Dockerfile`。本地主服务器已使用 `192.168.1.115:5000/allbot/comfy-runpod-pornmaster-flux2-edit:20260628-pornmaster-flux2-edit-cu128-smallvae1`，该镜像不包含模型权重，但包含 FLUX.2 `full_encoder_small_decoder` 非对称 decoder 兼容补丁；模型 bundle 已导入并上传到 `allbot-model-cache/pornmaster_flux2_edit/2026-06-27/manifest.json`。当前正式 fleet slot 为 `gpu-252-gpu0-pornmaster_flux2_edit`（agent `lan_aio_prod_gpu252_gpu0_pornmaster_flux2_edit_01`，容器 `allbot-lan-aio-gpu-252-gpu0-pornmaster-flux2-edit-prod`，host `8192`）。`gpu-002-gpu1-pornmaster_flux2_edit` 曾在 2026-06-28 短暂接管 `8191`，已于 2026-06-29 回切 `image_to_video`；其 agent/container 只保留为 stopped rollback 目标。cloud-test 专项验证仍可用 `scripts/lan_pornmaster_flux2_edit_aio_test.sh`。
+2026-06-27 新增 PornMaster Flux2 single/multiple image-edit profile：workflow API 文件同步在 `workers/comfy_agent/workflows/` 与 `remote_workers/comfy_agent/workflows/`，task type 为 `pornmaster_flux2_single_edit` / `pornmaster_flux2_multi_edit`，运行时镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_edit/Dockerfile`。本地主服务器已使用 `192.168.1.115:5000/allbot/comfy-runpod-pornmaster-flux2-edit:20260628-pornmaster-flux2-edit-cu128-smallvae1`，该镜像不包含模型权重，但包含 FLUX.2 `full_encoder_small_decoder` 非对称 decoder 兼容补丁；模型 bundle 已导入并上传到 `allbot-model-cache/pornmaster_flux2_edit/2026-06-27/manifest.json`。当前正式 fleet slot 包括 `gpu-252-gpu0-pornmaster_flux2_edit`（agent `lan_aio_prod_gpu252_gpu0_pornmaster_flux2_edit_01`，容器 `allbot-lan-aio-gpu-252-gpu0-pornmaster-flux2-edit-prod`，host `8192`）和 `gpu-002-gpu1-pornmaster_flux2_edit`（agent `lan_aio_prod_gpu002_gpu1_pornmaster_flux2_edit_01`，容器 `allbot-lan-aio-gpu-002-gpu1-pornmaster-flux2-edit-prod`，host `8191`）。`gpu-002-gpu1-image_to_video` 当前只保留为同卡回切候选。cloud-test 专项验证仍可用 `scripts/lan_pornmaster_flux2_edit_aio_test.sh`。
 
 2026-06-18 `gpu-252-gpu1-wan22_video_v2` 已替换 `cloud_prod_worker_05`：新 AIO agent 为 `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01`，容器 `allbot-lan-aio-gpu-252-gpu1-wan22_video_v2-prod` 监听 host `8191`，只接 `wan22_video_v2`。旧 `comfy1` 和本地主 `cloud-prod-comfy-agent-5` 已停止保留为回滚基线，不应再与 AIO 同时运行或 enabled。2026-06-20 交叉换槽确认 Xid 119/154 跟随实体卡 `GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e`，该卡已拆除；当前无本地 GPU1，control 保持 `disabled`，RunPod `wan22_video_v2` 兜底。
 
@@ -245,8 +246,8 @@ ComfyUI 实例：
 
 容器：
 - `allbot-lan-aio-gpu-002-gpu0-scail2-prod`：正式 SCAIL-2 AIO，GPU0，host `8190`
-- `allbot-lan-aio-gpu-002-gpu1-image_to_video-canary`：正式 image_to_video AIO，GPU1，host `8191`
-- `allbot-lan-aio-gpu-002-gpu1-pornmaster-flux2-edit-prod`：旧 PornMaster Flux2 edit AIO，stopped rollback
+- `allbot-lan-aio-gpu-002-gpu1-pornmaster-flux2-edit-prod`：正式 PornMaster Flux2 edit AIO，GPU1，host `8191`
+- `allbot-lan-aio-gpu-002-gpu1-image_to_video-canary`：image_to_video 回切候选，GPU1，host `8191`，stopped rollback
 - `comfy0` / `comfy1`：旧 `yanwk/comfyui-boot:cu128-slim`，stopped rollback
 - `dcgm_exporter`
 - `node_exporter`
@@ -256,16 +257,16 @@ ComfyUI 实例：
 | 容器 | GPU | Host 端口 | 容器端口 | 模型目录 | 独立目录 | 对应 worker |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | `allbot-lan-aio-gpu-002-gpu0-scail2-prod` | Docker device `0` | `8190` | `8188` | AIO workspace `/workspace/ComfyUI/models`（由 SCAIL-2 manifest 同步） | `/workspace/allbot-state/{comfy-input,comfy-output,comfy-temp}` | `lan_aio_prod_gpu002_gpu0_scail2_01` |
-| `allbot-lan-aio-gpu-002-gpu1-image_to_video-canary` | Docker device `1` | `8191` | `8188` | AIO workspace `/workspace/ComfyUI/models`（由 image_to_video manifest 同步） | `/workspace/allbot-state/{comfy-input,comfy-output,comfy-temp}` | `lan_aio_prod_gpu002_gpu1_image_to_video_01` |
-| `allbot-lan-aio-gpu-002-gpu1-pornmaster-flux2-edit-prod` | Docker device `1` | `8191` | `8188` | AIO workspace `/workspace/ComfyUI/models`（由 PornMaster Flux2 manifest 同步） | `/workspace/allbot-state/{comfy-input,comfy-output,comfy-temp}` | 旧 `lan_aio_prod_gpu002_gpu1_pornmaster_flux2_edit_01`，stopped rollback |
+| `allbot-lan-aio-gpu-002-gpu1-pornmaster-flux2-edit-prod` | Docker device `1` | `8191` | `8188` | AIO workspace `/workspace/ComfyUI/models`（由 PornMaster Flux2 manifest 同步） | `/workspace/allbot-state/{comfy-input,comfy-output,comfy-temp}` | `lan_aio_prod_gpu002_gpu1_pornmaster_flux2_edit_01` |
+| `allbot-lan-aio-gpu-002-gpu1-image_to_video-canary` | Docker device `1` | `8191` | `8188` | AIO workspace `/workspace/ComfyUI/models`（由 image_to_video manifest 同步） | `/workspace/allbot-state/{comfy-input,comfy-output,comfy-temp}` | `lan_aio_prod_gpu002_gpu1_image_to_video_01`，stopped rollback |
 | `comfy0` | GPU `0` | `8188` | `8188` | `/data/comfy/models` | `/data/comfy/inst0/{input,output,temp,custom_nodes,workflows}` | 旧 `cloud-prod-comfy-agent-6`，stopped rollback |
 | `comfy1` | GPU `1` | `8189` | `8188` | `/data/comfy/models` | `/data/comfy/inst1/{input,output,temp,custom_nodes,workflows}` | 旧 `cloud-prod-comfy-agent-7`，stopped rollback |
 
 共享模型目录：`/data/comfy/models`，约 `85G`。
 
 运维边界：
-- gpu-002 GPU0 当前由 `scripts/lan_scail2_aio_prod.sh` 管理 SCAIL-2 正式 AIO；GPU1 当前由 fleet 配置 `gpu-002-gpu1-image_to_video` 作为当前可操作 AIO slot 展示，同时仍可用 `scripts/lan_runpod_aio_prod_canary.sh` / `scripts/lan_aio_prod_ops.sh` 的 slot1 口径做高级排障或历史恢复。
-- `cloud_prod_worker_07` 与 `lan_aio_prod_gpu002_gpu1_pornmaster_flux2_edit_01` control 固定 disabled；PornMaster 容器只作为 stopped rollback，不应与 image_to_video AIO 同时 enabled 或同卡占用显存。
+- gpu-002 GPU0 当前由 `scripts/lan_scail2_aio_prod.sh` 管理 SCAIL-2 正式 AIO；GPU1 当前由 fleet 配置 `gpu-002-gpu1-pornmaster_flux2_edit` 作为当前可操作 AIO slot 展示，`gpu-002-gpu1-image_to_video` 是同卡回切候选。
+- `cloud_prod_worker_07` 保持 disabled；`lan_aio_prod_gpu002_gpu1_image_to_video_01` 只在回切窗口启用，不应与 PornMaster AIO 同时 enabled 或同卡占用显存。
 - 可只重启目标 AIO/Comfy 容器；不要因为一个容器异常而重启整台 GPU 节点。
 
 LAN RunPod 化一体容器试点：
@@ -277,7 +278,7 @@ LAN RunPod 化一体容器试点：
 - 受控入口为 `scripts/lan_runpod_aio_canary.sh`；默认 dry-run，`--execute` 才会复制 compose/env 到 `allbot-gpu-002` 或修改 agent control。
 - heartbeat-only 阶段必须保持临时 agent control 为 `disabled`。真实 canary 窗口才临时 disable `cloud_worker_test_06` 并 enable 临时 agent；结束后恢复 `cloud_worker_test_06`、disable 临时 agent、停止 canary 容器。
 
-Dashboard 生产 `LAN AIO 管理` 是 `scripts/lan_aio_fleet_prod_ops.py` 的 Web 外壳，只展示配置内已声明的 enabled 当前 slot 与 disabled 候选 slot。它按物理 GPU 展示 AIO profile、Central control、远端容器、镜像/manifest 与 `model-cache-marker.json` 摘要，并提供 `preflight`、`pull-image`、`warm-cache`、`drain-legacy`、`wait-idle`、`stop-old`、`start-disabled`、`enable-aio` 单步 operation；`一键切换` 使用同一后端 operation 通道提交受控 `takeover`，按 `preflight -> pull-image -> warm-cache -> drain-legacy -> wait-idle -> stop-old -> start-disabled -> enable-aio` 串联，任何一步失败即停止。不提供自由镜像、自由 manifest、测试环境切换或跨 slot 批量切换。同一物理 GPU 有运行中 LAN AIO operation 时，后台返回 409，避免两个切换/缓存操作同时碰同一卡。
+Dashboard 生产 `LAN AIO 管理` 是 `scripts/lan_aio_fleet_prod_ops.py` 的 Web 外壳，只展示配置内已声明的 enabled 当前 slot 与 disabled 候选 slot，并优先用 runtime heartbeat / running container 判定当前；没有运行态信号时才回退到静态 `enabled`。它按物理 GPU 展示 AIO profile、Central control、远端容器、镜像/manifest 与 `model-cache-marker.json` 摘要；页面操作只暴露 `一键切换`，使用后端 operation 通道提交受控 `takeover`，按 `preflight -> pull-image -> warm-cache -> drain-legacy -> wait-idle -> stop-old -> start-disabled -> enable-aio` 串联，任何一步失败即停止。当前 slot 的 `一键切换` 按钮应禁用；切换应点同物理 GPU 下的候选 slot。后端/API/CLI 仍保留 `preflight`、`pull-image`、`warm-cache`、`drain-legacy`、`wait-idle`、`stop-old`、`start-disabled`、`enable-aio` 单步 operation 用于排障，不作为页面日常按钮。不提供自由镜像、自由 manifest、测试环境切换或跨 slot 批量切换。同一物理 GPU 有运行中 LAN AIO operation 时，后台返回 409，避免两个切换/缓存操作同时碰同一卡。
 
 生产灰度入口为 `scripts/lan_runpod_aio_prod_canary.sh`，只允许 gpu-002 固定映射：slot0 `cloud_prod_worker_06 -> lan_aio_prod_gpu002_gpu0_img2img_lora_01`，端口 `8190`；slot1 `cloud_prod_worker_07 -> lan_aio_prod_gpu002_gpu1_image_to_video_01`，端口 `8191`。生产灰度必须使用 `--environment cloud-prod` 渲染出的 compose，写入 `user-data-prod`，并在启动前确认 compose 不含 `cloud-test` / `user-data-test`。首次拉取 LAN mirror 前需要维护窗口配置 Docker insecure registry `192.168.1.115:5000`，该操作会重启 Docker，必须先将 `cloud_prod_worker_06/07` 置为 `draining` 并等 `8188/8189` 队列清空。heartbeat-only 成功标准不是容器健康，而是 Central 能看到临时 agent 在 `disabled` control 下无 `current_task_type` 且 status 非 `running`，并携带 `node_id=gpu-002`、`provider=lan_ssh`、`runtime_profile`、`pool_managed=true`；Central 若残留旧 `current_task_id` 但 worker 已 `idle` 且无 `current_task_type`，不视为正在运行。缺任一项都应视为镜像或 remote_workers bundle 不可控，不能进入 `enable-canary`。helper 会同步并挂载当前 `remote_workers/`，AIO 启动时先安装 `remote_workers/requirements.txt`，再同步 LAN cache manifest 到 `/workspace/ComfyUI/models`，并把 baked ComfyUI 的 `models` 链接到该目录；slot1 `image_to_video` 启动后还必须从宿主机 `/data/comfy/inst1/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth`（或共享模型 fallback `/data/comfy/models/upscale_models/rife49.pth`）预置到 AIO 内 `ComfyUI_Fill-Nodes` 与 `ComfyUI-Frame-Interpolation` 两处 RIFE 缓存路径，不能在正式任务后处理阶段访问 HuggingFace。达到目标接单数后先 `drain-temp --execute`，再等任务终态并 `restore --execute`。
 
@@ -285,9 +286,9 @@ Dashboard 生产 `LAN AIO 管理` 是 `scripts/lan_aio_fleet_prod_ops.py` 的 We
 
 2026-06-16 已将 gpu-002 slot0/slot1 切到生产 AIO 接新单：`cloud_prod_worker_06/07` 先 drain 并等待自然空闲，再 disable legacy worker、enable `lan_aio_prod_gpu002_gpu0_img2img_lora_01` 与 `lan_aio_prod_gpu002_gpu1_image_to_video_01`。切换时原 `comfy0/comfy1` 容器继续运行在 `8188/8189`，本地主服务器 `cloud-prod-comfy-agent-6/7` 也继续保留，作为热回滚基线；AIO 观察到 slot0 多单成功、slot1 视频单成功后，已执行 `docker stop comfy0 comfy1` 与 `docker stop cloud-prod-comfy-agent-6 cloud-prod-comfy-agent-7` 释放资源，容器未删除。回滚顺序是先 `docker start comfy0 comfy1`，确认 `8188/8189` `/system_stats` 与 `/queue` 正常，再启动 `cloud-prod-comfy-agent-6/7`，最后用 helper `restore --slot slot0|slot1 --execute` 恢复 `cloud_prod_worker_06/07`。
 
-SCAIL-2 正式 slot0 接管会牺牲原 slot0 `img2img_lora` AIO 产能；slot1 当前仍用于 `image_to_video` AIO。SCAIL-2 入口是 `scripts/lan_scail2_aio_prod.sh`，默认 dry-run，真实执行必须加 `--execute`。`start-disabled --execute` 只 drain 旧 slot0 AIO agent `lan_aio_prod_gpu002_gpu0_img2img_lora_01` 并等待自然空闲，停止旧 slot0 容器 `allbot-lan-aio-gpu-002-gpu0-img2img_lora-canary` 后启动 `allbot-lan-aio-gpu-002-gpu0-scail2-prod`，先保持 `lan_aio_prod_gpu002_gpu0_scail2_01` 为 disabled heartbeat；已在运行的正式 SCAIL-2 更新用 `restart-disabled --execute` 原地重建。验收时必须确认 `http://192.168.1.2:8190/system_stats`、`/queue`、`/object_info` 中的 `WanSCAILToVideo` / `SCAIL2ColoredMask` / `SAM3_VideoTrack` / `WanContextWindowsManual` / `VHS_LoadVideo` / `VHS_VideoCombine`，并确认主模型、SAM、CLIP Vision、Wan VAE、UMT5 和 LightX2V LoRA 枚举齐全，以及 compose/env 中只有 `cloud-prod`、正式 Central、`user-data-prod`、四任务 `SUPPORTED_TASK_TYPES`、audio/context-window/v10 workflow override 与 `SCAIL2_FACE_SWAP_V10_*` 预处理。回滚执行 `scripts/lan_scail2_aio_prod.sh rollback --execute`，只恢复旧 slot0 img2img_lora AIO，不删除 SCAIL-2 workspace、模型缓存、旧 img2img workspace、slot1 或其它 GPU 节点。
+SCAIL-2 正式 slot0 接管会牺牲原 slot0 `img2img_lora` AIO 产能；slot1 当前用于 PornMaster Flux2 edit AIO。SCAIL-2 入口是 `scripts/lan_scail2_aio_prod.sh`，默认 dry-run，真实执行必须加 `--execute`。`start-disabled --execute` 只 drain 旧 slot0 AIO agent `lan_aio_prod_gpu002_gpu0_img2img_lora_01` 并等待自然空闲，停止旧 slot0 容器 `allbot-lan-aio-gpu-002-gpu0-img2img_lora-canary` 后启动 `allbot-lan-aio-gpu-002-gpu0-scail2-prod`，先保持 `lan_aio_prod_gpu002_gpu0_scail2_01` 为 disabled heartbeat；已在运行的正式 SCAIL-2 更新用 `restart-disabled --execute` 原地重建。验收时必须确认 `http://192.168.1.2:8190/system_stats`、`/queue`、`/object_info` 中的 `WanSCAILToVideo` / `SCAIL2ColoredMask` / `SAM3_VideoTrack` / `WanContextWindowsManual` / `VHS_LoadVideo` / `VHS_VideoCombine`，并确认主模型、SAM、CLIP Vision、Wan VAE、UMT5 和 LightX2V LoRA 枚举齐全，以及 compose/env 中只有 `cloud-prod`、正式 Central、`user-data-prod`、四任务 `SUPPORTED_TASK_TYPES`、audio/context-window/v10 workflow override 与 `SCAIL2_FACE_SWAP_V10_*` 预处理。回滚执行 `scripts/lan_scail2_aio_prod.sh rollback --execute`，只恢复旧 slot0 img2img_lora AIO，不删除 SCAIL-2 workspace、模型缓存、旧 img2img workspace、slot1 或其它 GPU 节点。
 
-2026-06-28 `gpu-002-gpu1-pornmaster_flux2_edit` 曾通过 `scripts/lan_aio_fleet_prod_ops.py` 接管 slot1：drain 旧 `lan_aio_prod_gpu002_gpu1_image_to_video_01`，等待 `image_to_video` 任务自然完成，停止 `allbot-lan-aio-gpu-002-gpu1-image_to_video-canary`，预拉并启动 `allbot-lan-aio-gpu-002-gpu1-pornmaster-flux2-edit-prod`。2026-06-29 已回切：PornMaster agent drain/disable 并等待空闲，停止 `allbot-lan-aio-gpu-002-gpu1-pornmaster-flux2-edit-prod`，重新启动 `allbot-lan-aio-gpu-002-gpu1-image_to_video-canary`，补齐 RIFE 热缓存，验收 disabled heartbeat 后 enable `lan_aio_prod_gpu002_gpu1_image_to_video_01`。当前 `gpu-002-gpu1-image_to_video` 是 fleet 中的当前可操作 slot，`gpu-002-gpu1-pornmaster_flux2_edit` 是同卡候选替换 slot；不得让两个 8191 容器或两个 GPU1 agent 同时 enabled。
+2026-06-28 `gpu-002-gpu1-pornmaster_flux2_edit` 曾通过 `scripts/lan_aio_fleet_prod_ops.py` 接管 slot1：drain 旧 `lan_aio_prod_gpu002_gpu1_image_to_video_01`，等待 `image_to_video` 任务自然完成，停止 `allbot-lan-aio-gpu-002-gpu1-image_to_video-canary`，预拉并启动 `allbot-lan-aio-gpu-002-gpu1-pornmaster-flux2-edit-prod`。2026-06-29 曾回切到 image_to_video；同日 23:17 Asia/Shanghai 后又通过 Dashboard LAN AIO takeover 切回 PornMaster。当前 `gpu-002-gpu1-pornmaster_flux2_edit` 是 fleet 中的当前可操作 slot，`gpu-002-gpu1-image_to_video` 是同卡候选回切 slot；回切时先 drain/disable PornMaster agent，等待当前任务自然结束，停止 `allbot-lan-aio-gpu-002-gpu1-pornmaster-flux2-edit-prod`，再启动 `allbot-lan-aio-gpu-002-gpu1-image_to_video-canary` 并补齐 RIFE 热缓存。不得让两个 8191 容器或两个 GPU1 agent 同时 enabled。
 
 gpu-002 AIO 正式日常入口为 `scripts/lan_aio_prod_ops.sh`，底层 `scripts/lan_runpod_aio_prod_canary.sh` 仅作为高级灰度/排障入口。日常命令默认 dry-run，真实执行必须加 `--execute`：
 

@@ -99,6 +99,9 @@ const taskTotals = computed(() => {
 const RUNPOD_AGENT_ID_PATTERN =
   /^runpod_prod_(img2img|image_to_video|wan22_video_v2|i2i_pro|scail2|ltx_video)_manual_\d+$/
 
+const isTruthyFlag = (value) =>
+  value === true || value === 1 || value === '1' || value === 'true' || value === 'True'
+
 const splitWorkerTypes = (worker) =>
   String(worker.types || '')
     .split(',')
@@ -455,6 +458,10 @@ const isPausedControlWorker = (worker) => {
   const controlState = String(worker.control_state || '').toLowerCase()
   return controlState === 'disabled' || controlState === 'draining'
 }
+
+const isRunPodLocked = (worker) =>
+  isRunPodServerWorker(worker) &&
+  (isTruthyFlag(worker.runpod_locked) || isTruthyFlag(worker.locked))
 
 const healthSummary = computed(() => {
   const activeWorkers = Number(status.value.active_workers || 0)
@@ -992,7 +999,10 @@ onUnmounted(() => {
               <span class="worker-card-agent" :title="worker.agent_id">{{ worker.agent_id }}</span>
               <div class="worker-card-controls" @click.stop @keydown.stop>
                 <run-pod-worker-actions :worker="worker" @changed="updateQueue" />
-                <a-badge :status="getWorkerStatusMeta(worker).badgeStatus" :text="getWorkerStatusMeta(worker).text" />
+                <div class="worker-card-status-tags">
+                  <a-tag v-if="isRunPodLocked(worker)" color="orange" class="m-0">已锁定</a-tag>
+                  <a-badge :status="getWorkerStatusMeta(worker).badgeStatus" :text="getWorkerStatusMeta(worker).text" />
+                </div>
               </div>
             </div>
           </template>
@@ -1221,6 +1231,13 @@ onUnmounted(() => {
   gap: 8px;
   flex-wrap: wrap;
   width: 100%;
+}
+.worker-card-status-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-left: auto;
 }
 .dashboard-monitor-toolbar {
   flex-wrap: wrap;

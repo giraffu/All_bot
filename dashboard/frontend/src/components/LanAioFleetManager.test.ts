@@ -64,6 +64,7 @@ const slotsPayload = {
           slot: {
             id: 'gpu-252-gpu0-pornmaster_flux2_edit',
             enabled: true,
+            runtime_current: true,
             phase: 'aio_enabled',
             target_profile_id: 'pornmaster_flux2_edit',
             host_port: 8188,
@@ -99,6 +100,7 @@ const slotsPayload = {
           slot: {
             id: 'gpu-252-gpu0-img2img_lora',
             enabled: false,
+            runtime_current: false,
             phase: 'candidate',
             target_profile_id: 'img2img_lora',
             host_port: 8190,
@@ -183,13 +185,8 @@ const mountLanAioFleetManager = () =>
         'a-button': ButtonStub,
         'a-modal': ModalStub,
         'a-tag': slotStub('TagStub'),
-        CloudSyncOutlined: slotStub('CloudSyncOutlinedStub'),
-        DatabaseOutlined: slotStub('DatabaseOutlinedStub'),
-        PlayCircleOutlined: slotStub('PlayCircleOutlinedStub'),
         ReloadOutlined: slotStub('ReloadOutlinedStub'),
         RocketOutlined: slotStub('RocketOutlinedStub'),
-        SafetyCertificateOutlined: slotStub('SafetyCertificateOutlinedStub'),
-        StopOutlined: slotStub('StopOutlinedStub'),
         SyncOutlined: slotStub('SyncOutlinedStub'),
       },
     },
@@ -220,31 +217,57 @@ describe('LanAioFleetManager', () => {
     expect(wrapper.text()).toContain('候选')
     expect(wrapper.text()).toContain('ready')
     expect(wrapper.text()).toContain('missing')
-    expect(wrapper.text()).toContain('预检')
-    expect(wrapper.text()).toContain('预热模型')
-    expect(wrapper.text()).toContain('启用接单')
     expect(wrapper.text()).toContain('一键切换')
+    expect(wrapper.text()).not.toContain('预检')
+    expect(wrapper.text()).not.toContain('预热模型')
+    expect(wrapper.text()).not.toContain('启用接单')
   })
 
-  it('submits the selected step action for one slot', async () => {
+  it('prefers runtime current over the static enabled flag', async () => {
+    const runtimePayload = JSON.parse(JSON.stringify(slotsPayload))
+    runtimePayload.groups[0].active_slot_id = 'gpu-252-gpu0-img2img_lora'
+    runtimePayload.groups[0].active_slot_source = 'runtime'
+    runtimePayload.groups[0].slots[0].slot.runtime_current = false
+    runtimePayload.groups[0].slots[1].slot.runtime_current = true
+    apiMocks.fetchLanAioSlots.mockResolvedValue(runtimePayload)
+
     const wrapper = mountLanAioFleetManager()
 
     await wrapper.get('button').trigger('click')
     await flushPromises()
 
+    const rows = wrapper.findAll('tbody tr')
+    const configuredRow = rows.find(row =>
+      row.text().includes('gpu-252-gpu0-pornmaster_flux2_edit')
+    )
+    const runtimeRow = rows.find(row =>
+      row.text().includes('gpu-252-gpu0-img2img_lora')
+    )
+
+    expect(configuredRow?.text()).toContain('候选')
+    expect(runtimeRow?.text()).toContain('当前')
+  })
+
+  it('only exposes the guarded takeover action for slots', async () => {
+    const wrapper = mountLanAioFleetManager()
+
+    await wrapper.get('button').trigger('click')
+    await flushPromises()
+
+    const slotRows = wrapper.findAll('tbody tr').filter(row =>
+      row.text().includes('gpu-252-gpu0-')
+    )
+    expect(slotRows).toHaveLength(2)
+    slotRows.forEach(row => {
+      expect(row.text()).toContain('一键切换')
+      expect(row.text()).not.toContain('预热模型')
+      expect(row.text()).not.toContain('启用接单')
+    })
+
     const warmCacheButton = wrapper
       .findAll('button')
       .find(button => button.text().includes('预热模型'))
-    expect(warmCacheButton).toBeTruthy()
-    await warmCacheButton?.trigger('click')
-    await flushPromises()
-
-    expect(antMocks.confirm).toHaveBeenCalled()
-    expect(apiMocks.startLanAioSlotAction).toHaveBeenCalledWith(
-      'gpu-252-gpu0-pornmaster_flux2_edit',
-      'warm-cache',
-      { reason: 'dashboard lan aio warm-cache' }
-    )
+    expect(warmCacheButton).toBeUndefined()
   })
 
   it('submits a guarded takeover action for one slot', async () => {
@@ -253,16 +276,27 @@ describe('LanAioFleetManager', () => {
     await wrapper.get('button').trigger('click')
     await flushPromises()
 
-    const takeoverButton = wrapper
+    const takeoverButtons = wrapper
       .findAll('button')
-      .find(button => button.text().includes('一键切换'))
-    expect(takeoverButton).toBeTruthy()
-    await takeoverButton?.trigger('click')
+      .filter(button => button.text().includes('一键切换'))
+    expect(takeoverButtons).toHaveLength(2)
+    expect(takeoverButtons[0].attributes('disabled')).toBeDefined()
+    expect(takeoverButtons[1].attributes('disabled')).toBeUndefined()
+
+    await takeoverButtons[1].trigger('click')
     await flushPromises()
 
     expect(antMocks.confirm).toHaveBeenCalled()
+    expect(antMocks.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        zIndex: 1800,
+        centered: true,
+        width: 480,
+        getContainer: expect.any(Function),
+      })
+    )
     expect(apiMocks.startLanAioSlotAction).toHaveBeenCalledWith(
-      'gpu-252-gpu0-pornmaster_flux2_edit',
+      'gpu-252-gpu0-img2img_lora',
       'takeover',
       { reason: 'dashboard lan aio takeover' }
     )

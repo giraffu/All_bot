@@ -193,6 +193,12 @@ export const enableRunPodWorker = async (agentId, payload = {}) =>
 export const restartRunPodWorker = async (agentId, payload = {}) =>
   post(`/api/runpod/workers/${agentId}/restart`, payload)
 
+export const lockRunPodWorker = async (agentId, payload = {}) =>
+  post(`/api/runpod/workers/${agentId}/lock`, payload)
+
+export const unlockRunPodWorker = async (agentId, payload = {}) =>
+  post(`/api/runpod/workers/${agentId}/unlock`, payload)
+
 export const deleteRunPodWorker = async (agentId, payload = {}) =>
   del(`/api/runpod/workers/${agentId}`, { data: payload })
 

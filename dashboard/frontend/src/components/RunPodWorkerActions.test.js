@@ -8,16 +8,19 @@ const apiMocks = vi.hoisted(() => ({
   deleteRunPodWorker: vi.fn().mockResolvedValue({ status: 'accepted' }),
   enableLanAioWorker: vi.fn().mockResolvedValue({ status: 'accepted' }),
   enableRunPodWorker: vi.fn().mockResolvedValue({ status: 'accepted' }),
+  lockRunPodWorker: vi.fn().mockResolvedValue({ status: 'locked' }),
   pauseLanAioWorker: vi.fn().mockResolvedValue({ status: 'accepted' }),
   pauseRunPodWorker: vi.fn().mockResolvedValue({ status: 'accepted' }),
   restartLanAioWorker: vi.fn().mockResolvedValue({ status: 'accepted' }),
   restartRunPodWorker: vi.fn().mockResolvedValue({ status: 'accepted' }),
+  unlockRunPodWorker: vi.fn().mockResolvedValue({ status: 'unlocked' }),
 }))
 
 const antMocks = vi.hoisted(() => ({
   confirm: vi.fn(options => options.onOk()),
   error: vi.fn(),
   success: vi.fn(),
+  warning: vi.fn(),
 }))
 
 vi.mock('../api/api', () => apiMocks)
@@ -26,6 +29,7 @@ vi.mock('ant-design-vue', () => ({
   message: {
     error: antMocks.error,
     success: antMocks.success,
+    warning: antMocks.warning,
   },
   Modal: {
     confirm: antMocks.confirm,
@@ -36,10 +40,10 @@ import RunPodWorkerActions from './RunPodWorkerActions.vue'
 
 const ButtonStub = defineComponent({
   name: 'ButtonStub',
-  props: ['danger', 'loading', 'type', 'size'],
+  props: ['danger', 'disabled', 'loading', 'type', 'size'],
   emits: ['click'],
   template: `
-    <button type="button" :data-danger="String(!!danger)" @click="$emit('click', $event)">
+    <button type="button" :disabled="disabled" :data-danger="String(!!danger)" @click="$emit('click', $event)">
       <slot name="icon" />
       <slot />
     </button>
@@ -58,9 +62,11 @@ const mountActions = worker =>
       stubs: {
         'a-button': ButtonStub,
         DeleteOutlined: iconStub('DeleteOutlinedStub'),
+        LockOutlined: iconStub('LockOutlinedStub'),
         PauseCircleOutlined: iconStub('PauseCircleOutlinedStub'),
         PlayCircleOutlined: iconStub('PlayCircleOutlinedStub'),
         ReloadOutlined: iconStub('ReloadOutlinedStub'),
+        UnlockOutlined: iconStub('UnlockOutlinedStub'),
       },
     },
   })
@@ -105,6 +111,48 @@ describe('RunPodWorkerActions', () => {
     await flushPromises()
 
     expect(apiMocks.enableRunPodWorker).toHaveBeenCalledWith(agentId)
+  })
+
+  it('locks RunPod workers from the card action', async () => {
+    const agentId = 'runpod_prod_wan22_video_v2_manual_03'
+    const wrapper = mountActions({
+      agent_id: agentId,
+      status: 'idle',
+    })
+
+    const lockButton = wrapper.findAll('button').find(button => button.text().includes('锁定'))
+    expect(lockButton).toBeTruthy()
+    expect(wrapper.text()).toContain('删除')
+
+    await lockButton.trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.lockRunPodWorker).toHaveBeenCalledWith(agentId, {
+      reason: 'dashboard lock runpod worker',
+    })
+    expect(antMocks.success).toHaveBeenCalledWith('已锁定 RunPod Worker')
+  })
+
+  it('shows unlock and disables delete for locked RunPod workers', async () => {
+    const agentId = 'runpod_prod_wan22_video_v2_manual_03'
+    const wrapper = mountActions({
+      agent_id: agentId,
+      runpod_locked: true,
+      status: 'idle',
+    })
+
+    expect(wrapper.text()).toContain('解锁')
+    const deleteButton = wrapper.findAll('button').find(button => button.text().includes('删除'))
+    expect(deleteButton.attributes('disabled')).toBeDefined()
+
+    const unlockButton = wrapper.findAll('button').find(button => button.text().includes('解锁'))
+    await unlockButton.trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.unlockRunPodWorker).toHaveBeenCalledWith(agentId, {
+      reason: 'dashboard unlock runpod worker',
+    })
+    expect(apiMocks.deleteRunPodWorker).not.toHaveBeenCalled()
   })
 
   it('treats draining LAN AIO workers as paused and enables them on click', async () => {

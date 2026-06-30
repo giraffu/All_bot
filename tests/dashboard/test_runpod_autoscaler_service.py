@@ -97,6 +97,7 @@ def _runpod_worker(
     *,
     status: str = "idle",
     control_state: str = "enabled",
+    runpod_locked: bool = False,
     last_seen: float = 1000.0,
     current_task_id: str | None = None,
     current_task_type: str | None = None,
@@ -126,6 +127,7 @@ def _runpod_worker(
         "types": profile_types[profile],
         "status": status,
         "control_state": control_state,
+        "runpod_locked": runpod_locked,
         "last_seen": last_seen,
         "current_task_id": current_task_id,
         "current_task_type": current_task_type,
@@ -917,6 +919,72 @@ async def test_autoscaler_scales_down_idle_runpod_when_local_capacity_remains():
             "spawn_task_func": None,
         }
     ]
+
+
+async def test_autoscaler_skips_locked_runpod_scale_down_candidate():
+    calls = []
+
+    async def start_delete(**kwargs):
+        calls.append(kwargs)
+        return RunPodAdminOperation(
+            id="op-delete",
+            action="delete",
+            profile=kwargs["profile"],
+            command=["runpod", "down"],
+            slot=kwargs["slot"],
+            source="autoscaler",
+            trigger_reason=kwargs["trigger_reason"],
+        )
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=InMemoryRunPodAutoscalerStateStore(),
+        status_payload=_status(profile="i2i_pro", pending=0, wait=None),
+        workers_payload=_workers(
+            _runpod_worker("i2i_pro", "01"),
+            _runpod_worker("i2i_pro", "02", runpod_locked=True),
+            _local_worker("i2i_pro,t2i-pornmaster-turbo,face_swap"),
+        ),
+        operations_payload={"operations": []},
+        start_delete_func=start_delete,
+        now_func=lambda: 1000.0,
+    )
+
+    decision = {item["profile"]: item for item in payload["decisions"]}["i2i_pro"]
+    assert decision["action"] == "scale_down"
+    assert decision["slot"] == "01"
+    assert decision["runpod_locked_count"] == 1
+    assert decision["runpod_locked_idle_count"] == 1
+    assert calls[0]["slot"] == "01"
+
+
+async def test_autoscaler_holds_when_all_idle_runpod_candidates_are_locked():
+    calls = []
+
+    async def start_delete(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("should not delete locked runpod")
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=InMemoryRunPodAutoscalerStateStore(),
+        status_payload=_status(profile="i2i_pro", pending=0, wait=None),
+        workers_payload=_workers(
+            _runpod_worker("i2i_pro", "01", runpod_locked=True),
+            _local_worker("i2i_pro,t2i-pornmaster-turbo,face_swap"),
+        ),
+        operations_payload={"operations": []},
+        start_delete_func=start_delete,
+        now_func=lambda: 1000.0,
+    )
+
+    decision = {item["profile"]: item for item in payload["decisions"]}["i2i_pro"]
+    assert decision["action"] == "hold"
+    assert decision["reason"] == "hold: all idle runpod candidates are locked"
+    assert decision["runpod_locked_count"] == 1
+    assert calls == []
 
 
 async def test_autoscaler_does_not_scale_down_below_one_total_accepting_worker():

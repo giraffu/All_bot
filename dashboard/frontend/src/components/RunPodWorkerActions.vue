@@ -2,19 +2,23 @@
 import { computed, reactive } from 'vue'
 import {
   DeleteOutlined,
+  LockOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
   ReloadOutlined,
+  UnlockOutlined,
 } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
 import {
   deleteRunPodWorker,
   enableLanAioWorker,
   enableRunPodWorker,
+  lockRunPodWorker,
   pauseLanAioWorker,
   pauseRunPodWorker,
   restartLanAioWorker,
   restartRunPodWorker,
+  unlockRunPodWorker,
 } from '../api/api'
 
 type WorkerInfo = {
@@ -25,6 +29,8 @@ type WorkerInfo = {
   pool_managed?: boolean | string | number
   runtime_profile?: string
   control_state?: string
+  runpod_locked?: boolean | string | number
+  locked?: boolean | string | number
 }
 
 const props = defineProps<{
@@ -38,6 +44,7 @@ const emit = defineEmits<{
 const loading = reactive({
   control: false,
   restart: false,
+  lock: false,
   delete: false,
 })
 
@@ -71,6 +78,11 @@ const isPausedForControl = computed(() => {
 
 const controlActionLabel = computed(() => (isPausedForControl.value ? '开启' : '暂停'))
 
+const isRunPodLocked = computed(() =>
+  isRunPodWorker.value &&
+  (isTruthyFlag(props.worker.runpod_locked) || isTruthyFlag(props.worker.locked))
+)
+
 const runControlAction = async () => {
   const shouldEnable = isPausedForControl.value
   loading.control = true
@@ -97,6 +109,10 @@ const runControlAction = async () => {
 }
 
 const runAction = async (action: 'restart' | 'delete') => {
+  if (action === 'delete' && isRunPodLocked.value) {
+    message.warning('请先解锁后再删除 RunPod Worker')
+    return
+  }
   loading[action] = true
   try {
     if (action === 'restart') {
@@ -117,6 +133,29 @@ const runAction = async (action: 'restart' | 'delete') => {
     message.error(`${actionName}提交失败`)
   } finally {
     loading[action] = false
+  }
+}
+
+const runLockAction = async () => {
+  const shouldUnlock = isRunPodLocked.value
+  loading.lock = true
+  try {
+    if (shouldUnlock) {
+      await unlockRunPodWorker(props.worker.agent_id, {
+        reason: 'dashboard unlock runpod worker',
+      })
+    } else {
+      await lockRunPodWorker(props.worker.agent_id, {
+        reason: 'dashboard lock runpod worker',
+      })
+    }
+    message.success(shouldUnlock ? '已解锁 RunPod Worker' : '已锁定 RunPod Worker')
+    emit('changed')
+  } catch (err) {
+    console.error(err)
+    message.error(shouldUnlock ? '解锁提交失败' : '锁定提交失败')
+  } finally {
+    loading.lock = false
   }
 }
 
@@ -149,7 +188,24 @@ const confirmRestart = () => {
   })
 }
 
+const confirmLock = () => {
+  const shouldUnlock = isRunPodLocked.value
+  Modal.confirm({
+    title: shouldUnlock ? '解锁 RunPod Worker？' : '锁定 RunPod Worker？',
+    content: shouldUnlock
+      ? `${props.worker.agent_id} 解锁后允许手动删除，也会重新成为自动缩容候选。`
+      : `${props.worker.agent_id} 锁定后不会被手动删除，也不会被自动缩容删除。`,
+    okText: shouldUnlock ? '解锁' : '锁定',
+    cancelText: '取消',
+    onOk: () => runLockAction(),
+  })
+}
+
 const confirmDelete = () => {
+  if (isRunPodLocked.value) {
+    message.warning('请先解锁后再删除 RunPod Worker')
+    return
+  }
   Modal.confirm({
     title: '删除 RunPod Worker？',
     content: `${props.worker.agent_id} 将先暂停接单，等待当前任务结束后删除 Pod。`,
@@ -174,7 +230,22 @@ const confirmDelete = () => {
       <template #icon><reload-outlined /></template>
       重启
     </a-button>
-    <a-button v-if="isRunPodWorker" size="small" type="text" danger :loading="loading.delete" @click.stop="confirmDelete">
+    <a-button v-if="isRunPodWorker" size="small" type="text" :loading="loading.lock" @click.stop="confirmLock">
+      <template #icon>
+        <unlock-outlined v-if="isRunPodLocked" />
+        <lock-outlined v-else />
+      </template>
+      {{ isRunPodLocked ? '解锁' : '锁定' }}
+    </a-button>
+    <a-button
+      v-if="isRunPodWorker"
+      size="small"
+      type="text"
+      danger
+      :disabled="isRunPodLocked"
+      :loading="loading.delete"
+      @click.stop="confirmDelete"
+    >
       <template #icon><delete-outlined /></template>
       删除
     </a-button>

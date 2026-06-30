@@ -214,6 +214,7 @@ class RunPodScaleRequest(BaseModel):
 
 class RunPodWorkerActionRequest(BaseModel):
     prod_max_manual_slots: Optional[int] = Field(default=None, ge=1, le=1000)
+    reason: Optional[str] = None
 
 
 class LanAioSlotActionRequest(BaseModel):

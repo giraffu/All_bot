@@ -24,7 +24,7 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
         "gpu-177-gpu1-ltx_video",
         "gpu-252-gpu0-pornmaster_flux2_edit",
         "gpu-252-gpu1-wan22_video_v2",
-        "gpu-002-gpu1-image_to_video",
+        "gpu-002-gpu1-pornmaster_flux2_edit",
     ]
     assert slots["gpu-177-gpu0-image_to_video"].legacy_worker_id == "cloud_prod_worker_02"
     assert slots["gpu-177-gpu0-image_to_video"].target_profile_id == "wan22_video_v2"
@@ -37,17 +37,18 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
         "lan_aio_prod_gpu252_gpu0_img2img_lora_01"
     )
     assert slots["gpu-252-gpu1-wan22_video_v2"].host_port == 8191
-    assert slots["gpu-002-gpu1-image_to_video"].agent_id == (
+    assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].agent_id == (
+        "lan_aio_prod_gpu002_gpu1_pornmaster_flux2_edit_01"
+    )
+    assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].legacy_worker_id == (
         "lan_aio_prod_gpu002_gpu1_image_to_video_01"
     )
-    assert slots["gpu-002-gpu1-image_to_video"].legacy_worker_id == (
-        "cloud_prod_worker_07"
+    assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].old_runtime_container == (
+        "allbot-lan-aio-gpu-002-gpu1-image_to_video-canary"
     )
-    assert slots["gpu-002-gpu1-image_to_video"].old_runtime_container == "comfy1"
-    assert slots["gpu-002-gpu1-image_to_video"].target_task_types == (
-        "video_insert",
-        "video_edit",
-        "image_to_video",
+    assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].target_task_types == (
+        "pornmaster_flux2_single_edit",
+        "pornmaster_flux2_multi_edit",
     )
 
 
@@ -60,12 +61,15 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
     assert slots["gpu-252-gpu0-img2img_lora"].phase == (
         "superseded_by_pornmaster_flux2_edit"
     )
-    assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].enabled is False
-    assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].phase == (
-        "superseded_by_image_to_video"
+    assert slots["gpu-002-gpu1-image_to_video"].enabled is False
+    assert slots["gpu-002-gpu1-image_to_video"].phase == (
+        "superseded_by_pornmaster_flux2_edit"
     )
-    assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].legacy_worker_id == (
-        "lan_aio_prod_gpu002_gpu1_image_to_video_01"
+    assert slots["gpu-002-gpu1-image_to_video"].legacy_worker_id == (
+        "lan_aio_prod_gpu002_gpu1_pornmaster_flux2_edit_01"
+    )
+    assert slots["gpu-002-gpu1-image_to_video"].old_runtime_container == (
+        "allbot-lan-aio-gpu-002-gpu1-pornmaster-flux2-edit-prod"
     )
     config = load_controller_config()
     assert (
@@ -99,7 +103,9 @@ def test_lan_aio_prod_slot_declares_gpu252_host_rife_hot_cache_copy():
 
 
 def test_lan_aio_prod_slot_declares_gpu002_image_to_video_hot_cache_copy():
-    slot = load_lan_aio_prod_slots()["gpu-002-gpu1-image_to_video"]
+    slot = load_lan_aio_prod_slots(include_disabled=True)[
+        "gpu-002-gpu1-image_to_video"
+    ]
 
     assert len(slot.legacy_hot_cache_copies) == 1
     hot_cache = slot.legacy_hot_cache_copies[0]

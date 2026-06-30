@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,7 @@ from dashboard.backend.services.runpod_admin_operation import (
     can_terminate_operation,
     can_terminate_operation_reason,
     normalized_stored_operation_payload,
+    now_iso,
     operation_attached,
     operation_payload,
     redacted_command,
@@ -235,6 +237,114 @@ async def get_runpod_operations_payload() -> dict[str, Any]:
     return await _operation_runner.operations_payload()
 
 
+def _runpod_worker_lock_payload(
+    *,
+    agent_id: str,
+    profile: str,
+    slot: str,
+    reason: str | None,
+) -> dict[str, Any]:
+    locked_at = time.time()
+    return {
+        "agent_id": agent_id,
+        "profile": profile,
+        "slot": slot,
+        "locked": True,
+        "locked_at": now_iso(locked_at),
+        "reason": reason or "dashboard lock runpod worker",
+    }
+
+
+async def is_runpod_worker_locked(agent_id: str) -> bool:
+    return await _operation_store.get_locked_runpod_worker(agent_id) is not None
+
+
+async def get_locked_runpod_workers_payload() -> dict[str, Any]:
+    locked = await _operation_store.list_locked_runpod_workers()
+    return {
+        "locked_workers": [
+            locked[agent_id] for agent_id in sorted(locked)
+        ],
+        "count": len(locked),
+    }
+
+
+async def lock_runpod_worker_payload(
+    agent_id: str,
+    request: RunPodWorkerActionRequest,
+) -> dict[str, Any]:
+    _sync_runtime_paths()
+    max_manual_slots = request.prod_max_manual_slots or _default_prod_max_manual_slots()
+    profile, slot = _agent_selection_or_422(
+        agent_id,
+        max_manual_slots=max_manual_slots,
+    )
+    payload = _runpod_worker_lock_payload(
+        agent_id=agent_id,
+        profile=profile,
+        slot=slot,
+        reason=request.reason,
+    )
+    await _operation_store.set_locked_runpod_worker(agent_id, payload)
+    return {"status": "locked", "worker": payload}
+
+
+async def unlock_runpod_worker_payload(
+    agent_id: str,
+    request: RunPodWorkerActionRequest,
+) -> dict[str, Any]:
+    _sync_runtime_paths()
+    max_manual_slots = request.prod_max_manual_slots or _default_prod_max_manual_slots()
+    profile, slot = _agent_selection_or_422(
+        agent_id,
+        max_manual_slots=max_manual_slots,
+    )
+    await _operation_store.clear_locked_runpod_worker(agent_id)
+    return {
+        "status": "unlocked",
+        "worker": {
+            "agent_id": agent_id,
+            "profile": profile,
+            "slot": slot,
+            "locked": False,
+        },
+    }
+
+
+async def _raise_if_runpod_worker_locked(agent_id: str) -> None:
+    locked = await _operation_store.get_locked_runpod_worker(agent_id)
+    if locked is None:
+        return
+    raise HTTPException(
+        status_code=409,
+        detail=f"RunPod worker is locked; unlock before deleting: {agent_id}",
+    )
+
+
+async def annotate_runpod_worker_locks_payload(
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    workers = payload.get("workers") if isinstance(payload, dict) else None
+    if not isinstance(workers, list):
+        return payload
+    locked = await _operation_store.list_locked_runpod_workers()
+    if not locked:
+        for worker in workers:
+            if isinstance(worker, dict) and "runpod_locked" not in worker:
+                worker["runpod_locked"] = False
+        return payload
+    for worker in workers:
+        if not isinstance(worker, dict):
+            continue
+        agent_id = str(worker.get("agent_id") or "")
+        lock_payload = locked.get(agent_id)
+        worker["runpod_locked"] = lock_payload is not None
+        if lock_payload is not None:
+            worker["runpod_lock"] = lock_payload
+    payload["locked_runpod_worker_count"] = len(locked)
+    return payload
+
+
 def _build_lan_aio_ops() -> LanAioProdOps:
     _sync_runtime_paths()
     return LanAioProdOps(
@@ -268,6 +378,58 @@ async def get_lan_aio_profiles_payload() -> dict[str, Any]:
             }
         )
     return {"profiles": sorted(profiles, key=lambda item: item["profile"])}
+
+
+def _lan_aio_slot_has_runtime_signal(slot_status: dict[str, Any]) -> bool:
+    slot = slot_status.get("slot") if isinstance(slot_status, dict) else None
+    if not isinstance(slot, dict):
+        return False
+
+    agent_id = str(slot.get("agent_id") or "")
+    if agent_id:
+        for worker in slot_status.get("workers") or []:
+            if isinstance(worker, dict) and str(worker.get("agent_id") or "") == agent_id:
+                return True
+
+    container_name = str(slot.get("container_name") or "")
+    if container_name:
+        for raw_line in slot_status.get("remote_containers") or []:
+            line = str(raw_line)
+            if line.startswith(f"{container_name} ") and " Up " in f" {line} ":
+                return True
+    return False
+
+
+def _annotate_lan_aio_runtime_current(groups: dict[str, dict[str, Any]]) -> None:
+    for group in groups.values():
+        slot_statuses = group.get("slots") or []
+        runtime_current = [
+            item for item in slot_statuses if _lan_aio_slot_has_runtime_signal(item)
+        ]
+        current_source = "runtime" if runtime_current else "config"
+        current_items = runtime_current or [
+            item
+            for item in slot_statuses
+            if bool((item.get("slot") or {}).get("enabled"))
+        ]
+        current_id_list = [
+            str((item.get("slot") or {}).get("id") or "")
+            for item in current_items
+        ]
+        current_ids = {slot_id for slot_id in current_id_list if slot_id}
+
+        for item in slot_statuses:
+            slot = item.get("slot") or {}
+            slot_id = str(slot.get("id") or "")
+            slot["configured_current"] = bool(slot.get("enabled"))
+            slot["runtime_current"] = bool(slot_id and slot_id in current_ids)
+            slot["current_source"] = current_source
+
+        group["active_slot_id"] = next(
+            (slot_id for slot_id in current_id_list if slot_id),
+            None,
+        )
+        group["active_slot_source"] = current_source
 
 
 async def get_lan_aio_slots_payload(
@@ -308,6 +470,8 @@ async def get_lan_aio_slots_payload(
             },
         )
         group["slots"].append(slot_payload)
+
+    _annotate_lan_aio_runtime_current(groups)
 
     return {
         "ok": status_error is None,
@@ -542,6 +706,7 @@ async def delete_runpod_worker_payload(
         agent_id,
         max_manual_slots=max_manual_slots,
     )
+    await _raise_if_runpod_worker_locked(agent_id)
     command = _base_command("down", profile=profile, slot=slot)
     command.append("--execute")
     operation = await _register_operation(
@@ -616,6 +781,7 @@ async def start_runpod_autoscaler_delete_operation(
         profile=normalized_profile,
         max_manual_slots=max_manual_slots,
     )
+    await _raise_if_runpod_worker_locked(agent_id)
     command = _base_command("down", profile=normalized_profile, slot=slot)
     command.append("--execute")
     return await _register_operation(

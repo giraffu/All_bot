@@ -414,6 +414,30 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
 
 
 @pytest.mark.asyncio
+async def test_get_system_workers_proxy_payload_annotates_runpod_locks():
+    async def annotate(payload):
+        payload["workers"][0]["runpod_locked"] = True
+        return payload
+
+    data = await system_service.get_system_workers_proxy_payload(
+        httpx_async_client_factory=lambda **_kwargs: _FakeAsyncClient(
+            {
+                "workers": [
+                    {
+                        "agent_id": "runpod_prod_wan22_video_v2_manual_03",
+                        "provider": "runpod",
+                    }
+                ],
+                "count": 1,
+            }
+        ),
+        annotate_runpod_locks_func=annotate,
+    )
+
+    assert data["workers"][0]["runpod_locked"] is True
+
+
+@pytest.mark.asyncio
 async def test_get_system_status_proxy_payload_degrades_when_pending_wait_fails():
     active_tasks = {
         "registry-task-1": {"task_type": "i2i_pro"},

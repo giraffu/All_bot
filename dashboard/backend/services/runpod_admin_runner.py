@@ -27,6 +27,7 @@ from dashboard.backend.services.runpod_operation_store import (
     RunPodOperationStore,
 )
 from ops.gpu_pool_controller.providers.runpod import redact_text
+from ops.gpu_pool_controller.runpod_profile_catalog import prod_agent_id_from_slot
 
 CreateSubprocessExec = Callable[..., Awaitable[Any]]
 KillProcessGroup = Callable[[int, int], None]
@@ -450,7 +451,27 @@ class RunPodAdminOperationRunner:
         operation.cleanup_status = "running"
         await self.persist_operation(operation)
         cleanup_ok = True
+        locked_skips: list[str] = []
         for slot in cleanup_slots:
+            try:
+                agent_id = prod_agent_id_from_slot(
+                    slot,
+                    profile=operation.profile,
+                    max_manual_slots=self.command_builder.default_prod_max_manual_slots(),
+                )
+            except ValueError:
+                agent_id = ""
+            if agent_id and await self.store.get_locked_runpod_worker(agent_id):
+                locked_skips.append(agent_id)
+                append_operation_log(
+                    operation,
+                    (
+                        "[dashboard-runpod] cleanup down slot "
+                        f"{slot} skipped: RunPod worker locked"
+                    ),
+                )
+                await self.persist_operation(operation)
+                continue
             command = self.command_builder.base_command(
                 "down", profile=operation.profile, slot=slot
             )
@@ -475,7 +496,17 @@ class RunPodAdminOperationRunner:
                 )
                 await self.persist_operation(operation)
 
-        operation.cleanup_status = "succeeded" if cleanup_ok else "failed"
+        if locked_skips:
+            if operation.cleanup_exit_codes:
+                operation.cleanup_status = "partial_locked" if cleanup_ok else "failed"
+            else:
+                operation.cleanup_status = "skipped_locked"
+            operation.cleanup_error = (
+                "cleanup skipped locked RunPod worker(s): "
+                + ", ".join(locked_skips)
+            )
+        else:
+            operation.cleanup_status = "succeeded" if cleanup_ok else "failed"
         await self.persist_operation(operation)
         return cleanup_ok
 
