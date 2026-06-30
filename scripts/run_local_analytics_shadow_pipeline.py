@@ -284,7 +284,7 @@ def run_pipeline(
             handle.write(json.dumps(message, sort_keys=True) + "\n")
         return message
 
-    result = {"status": "ok", "embedding": "not_requested", "scenes": "not_requested"}
+    result = {"status": "ok", "embedding": "not_requested", "scenes": "not_requested", "graph": "not_requested"}
     try:
         wait_for_shadow_sync(config)
         if vector_refresh_lock_is_held(config):
@@ -338,6 +338,7 @@ def run_pipeline(
         coverage_complete = runner.capture(embedding_coverage_query_cmd(config), label="check-vector-coverage")
         if config.execute and coverage_complete.strip().lower() != "t":
             result["scenes"] = "skipped_embedding_incomplete"
+            result["graph"] = "skipped_embedding_incomplete"
             with config.log_path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps({"status": "skipped_prompt_scenes_embedding_incomplete"}, sort_keys=True) + "\n")
             return result
@@ -367,6 +368,16 @@ def run_pipeline(
                 ),
                 label=f"refresh-vector-similarity:{task_type}",
             )
+        runner.run(
+            analytics_python_cmd(
+                config,
+                "app.refresh_prompt_graph",
+                "--statement-timeout-ms",
+                str(config.statement_timeout_ms),
+            ),
+            label="refresh-prompt-graph",
+        )
+        result["graph"] = "attempted"
         return result
     finally:
         if lock_handle is not None:

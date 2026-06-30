@@ -7,14 +7,35 @@ from src.database.core import AsyncSessionLocal
 from src.quota import QuotaManager
 
 
+LOW_TRUST_FREE_TIER_CHECKIN_THRESHOLD = 7
+TRUSTED_USER_PRIORITY_BONUS = 40
+
+
+def _coerce_int(value, default: int = 0) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return default
+
+
 class PermissionIdentityPriorityService:
     def __init__(self, quota_manager: QuotaManager):
         self.quota_manager = quota_manager
 
     async def calculate_user_priority(self, user_id: int) -> int:
         stats = await self.quota_manager.get_user_stats(user_id)
-        if stats.get("generation_count", 0) < 2:
-            return 30
+        is_low_trust_free_tier = await self.is_low_trust_free_tier_user(
+            user_id,
+            stats=stats,
+        )
+
+        if _coerce_int(stats.get("generation_count")) < 2:
+            base_priority = 30
+            return (
+                base_priority
+                if is_low_trust_free_tier
+                else base_priority + TRUSTED_USER_PRIORITY_BONUS
+            )
 
         group = await self.get_user_group(user_id)
         identity = await self.get_user_identity(user_id)
@@ -34,7 +55,46 @@ class PermissionIdentityPriorityService:
                 identity_priority = priority
                 break
 
-        return group_priority + identity_priority
+        base_priority = group_priority + identity_priority
+        return (
+            base_priority
+            if is_low_trust_free_tier
+            else base_priority + TRUSTED_USER_PRIORITY_BONUS
+        )
+
+    async def _has_successful_order(self, user_id: int) -> bool:
+        async with AsyncSessionLocal() as session:
+            from sqlalchemy import select
+
+            from src.database.models import Order
+
+            stmt = (
+                select(Order.id)
+                .where(
+                    Order.internal_user_id == user_id,
+                    Order.status == "SUCCESS",
+                )
+                .limit(1)
+            )
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none() is not None
+
+    async def is_low_trust_free_tier_user(
+        self,
+        user_id: int,
+        *,
+        stats: dict | None = None,
+    ) -> bool:
+        if stats is None:
+            stats = await self.quota_manager.get_user_stats(user_id)
+
+        if (
+            _coerce_int(stats.get("checkin_count"))
+            <= LOW_TRUST_FREE_TIER_CHECKIN_THRESHOLD
+        ):
+            return False
+
+        return not await self._has_successful_order(user_id)
 
     async def refresh_user_group(self, user_id: int, is_member: bool = None) -> str:
         stats = await self.quota_manager.get_user_stats(user_id)

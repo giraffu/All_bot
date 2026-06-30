@@ -13,7 +13,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -40,6 +40,8 @@ TAKEOVER_STEPS = (
     "start-disabled",
     "enable-aio",
 )
+SAFE_STALE_CONTAINER_STATES = {"created", "exited", "dead", "removing"}
+FAILURE_POLICY_AUTO_ROLLBACK = "auto_rollback"
 SSH_BATCH_OPTIONS = (
     "-o",
     "BatchMode=yes",
@@ -98,6 +100,7 @@ class LanAioProdSlot:
     legacy_preflight_required: bool = True
     target_task_types: tuple[str, ...] = ()
     legacy_hot_cache_copies: tuple[LegacyHotCacheCopy, ...] = ()
+    retargetable: bool = False
     notes: str = ""
 
     @property
@@ -131,6 +134,10 @@ def _dump_yaml(payload: Any) -> str:
 
 def _sanitize(value: str) -> str:
     return "".join(ch if ch.isalnum() else "_" for ch in value).strip("_")
+
+
+def _agent_node_label(node_id: str) -> str:
+    return _sanitize(node_id).replace("_", "")
 
 
 def _parse_legacy_hot_cache_copies(
@@ -223,6 +230,7 @@ def load_lan_aio_prod_slots(
                     item.get("old_runtime_container") or f"comfy{configured_gpu_index}"
                 ),
             ),
+            retargetable=bool(item.get("retargetable", False)),
             notes=str(item.get("notes") or ""),
         )
         if slot.enabled or include_disabled:
@@ -255,6 +263,7 @@ def slot_to_jsonable(
         "legacy_health_port": slot.legacy_health_port,
         "legacy_preflight_required": slot.legacy_preflight_required,
         "target_task_types": list(slot.target_task_types),
+        "retargetable": slot.retargetable,
         "physical_slot_key": physical_slot_key(slot),
         "legacy_hot_cache_copies": [
             {
@@ -401,6 +410,246 @@ class LanAioProdOps:
         assert_prod_compose(rendered, slot)
         return rendered
 
+    def retarget_slot(
+        self,
+        candidate: LanAioProdSlot,
+        replacement_target_slot_id: str,
+    ) -> LanAioProdSlot:
+        if not candidate.retargetable:
+            raise RuntimeError(f"slot {candidate.id} is not retargetable")
+        if replacement_target_slot_id not in self.slots:
+            raise KeyError(f"unknown LAN AIO replacement target slot: {replacement_target_slot_id}")
+        target = self.slots[replacement_target_slot_id]
+        if target.id == candidate.id:
+            raise RuntimeError("replacement target must be different from the candidate slot")
+        if target.node_id != candidate.node_id:
+            raise RuntimeError(
+                "replacement target must be on the same GPU node: "
+                f"{candidate.node_id} != {target.node_id}"
+            )
+        if not target.enabled:
+            raise RuntimeError(f"replacement target {target.id} is not an enabled current slot")
+        if target.target_profile_id == candidate.target_profile_id:
+            raise RuntimeError(
+                "replacement target already has the candidate profile: "
+                f"{candidate.target_profile_id}"
+            )
+
+        target_gpu_index = target.gpu_index if target.gpu_index is not None else 0
+        profile_label = _sanitize(candidate.target_profile_id)
+        dir_profile_label = profile_label.replace("_", "-")
+        node_dir_label = target.node_id.replace("-", "")
+        remote_parent = posixpath.dirname(target.remote_dir.rstrip("/"))
+        return LanAioProdSlot(
+            id=candidate.id,
+            enabled=candidate.enabled,
+            phase=candidate.phase,
+            assignment_id=target.assignment_id,
+            target_profile_id=candidate.target_profile_id,
+            host_port=target.host_port,
+            agent_id=(
+                f"lan_aio_prod_{_agent_node_label(target.node_id)}_gpu{target_gpu_index}_"
+                f"{profile_label}_01"
+            ),
+            container_name=(
+                f"allbot-lan-aio-{target.node_id}-gpu{target_gpu_index}-"
+                f"{candidate.target_profile_id}-prod"
+            ),
+            ssh_host=target.ssh_host,
+            node_id=target.node_id,
+            comfy_id=target.comfy_id,
+            gpu_index=target.gpu_index,
+            legacy_worker_id=target.agent_id,
+            old_runtime_container=target.container_name,
+            old_local_agent_container="",
+            remote_dir=(
+                f"{remote_parent}/{node_dir_label}-gpu{target_gpu_index}-"
+                f"{dir_profile_label}"
+            ),
+            rollout_order=candidate.rollout_order,
+            legacy_health_port=target.host_port,
+            legacy_preflight_required=target.legacy_preflight_required,
+            target_task_types=candidate.target_task_types,
+            legacy_hot_cache_copies=candidate.legacy_hot_cache_copies,
+            retargetable=candidate.retargetable,
+            notes=(
+                f"Retargeted from {candidate.id} to replace {target.id}; "
+                f"candidate notes: {candidate.notes}"
+            ),
+        )
+
+    def candidate_plan(
+        self,
+        *,
+        node_id: str,
+        profile: str,
+        replace_slot_id: str,
+    ) -> dict[str, Any]:
+        target = self.slots.get(replace_slot_id)
+        if target is None:
+            raise KeyError(f"unknown LAN AIO replacement target slot: {replace_slot_id}")
+        if target.node_id != node_id:
+            raise RuntimeError(
+                "candidate node must match replacement target node: "
+                f"{node_id} != {target.node_id}"
+            )
+        profile_config = self.config.profiles.get(profile)
+        if profile_config is None:
+            raise KeyError(f"unknown LAN AIO profile: {profile}")
+        if not profile_config.all_in_one_image_ref:
+            raise RuntimeError(f"profile {profile} has no all_in_one_image_ref")
+        if not profile_config.model_manifest_key:
+            raise RuntimeError(f"profile {profile} has no model_manifest_key")
+
+        candidate_template = self._candidate_template_for_plan(
+            node_id=node_id,
+            profile=profile,
+            target=target,
+        )
+        candidate = self.retarget_slot(candidate_template, target.id)
+        if not candidate.target_task_types:
+            candidate = replace(
+                candidate,
+                target_task_types=tuple(profile_config.task_types),
+            )
+        yaml_item = self._slot_yaml_item(candidate, phase="candidate")
+        metadata = self._runtime_metadata(candidate)
+        return {
+            "ok": True,
+            "action": "candidate-plan",
+            "node_id": node_id,
+            "profile": profile,
+            "replace_slot": replace_slot_id,
+            "candidate_slot": yaml_item,
+            "yaml_patch": _dump_yaml({"slots": [yaml_item]}),
+            "render_summary": {
+                "id": candidate.id,
+                "node_id": candidate.node_id,
+                "physical_slot_key": physical_slot_key(candidate),
+                "gpu_index": candidate.gpu_index,
+                "host_port": candidate.host_port,
+                "agent_id": candidate.agent_id,
+                "container_name": candidate.container_name,
+                "remote_dir": candidate.remote_dir,
+                "target_profile_id": candidate.target_profile_id,
+                "target_task_types": list(candidate.target_task_types),
+                "image_ref": metadata.get("image_ref"),
+                "model_prefix": metadata.get("model_prefix"),
+                "model_manifest_key": metadata.get("model_manifest_key"),
+                "workspace_host_dir": metadata.get("workspace_host_dir"),
+            },
+            "preflight_commands": [
+                (
+                    "python scripts/lan_aio_fleet_prod_ops.py render "
+                    f"--slot {candidate.id} --include-disabled"
+                ),
+                (
+                    "python scripts/lan_aio_fleet_prod_ops.py preflight "
+                    f"--slot {candidate.id} --include-disabled --execute"
+                ),
+                (
+                    "python scripts/lan_aio_fleet_prod_ops.py takeover "
+                    f"--slot {candidate.id} --replace-slot {target.id} --include-disabled"
+                ),
+            ],
+        }
+
+    def _candidate_template_for_plan(
+        self,
+        *,
+        node_id: str,
+        profile: str,
+        target: LanAioProdSlot,
+    ) -> LanAioProdSlot:
+        candidates = [
+            slot
+            for slot in self.slots.values()
+            if slot.node_id == node_id
+            and slot.target_profile_id == profile
+            and slot.retargetable
+            and slot.id != target.id
+        ]
+        if candidates:
+            return sorted(candidates, key=lambda item: item.rollout_order)[0]
+
+        profile_config = self.config.profiles[profile]
+        target_gpu_index = target.gpu_index if target.gpu_index is not None else 0
+        profile_label = _sanitize(profile)
+        dir_profile_label = profile_label.replace("_", "-")
+        node_dir_label = target.node_id.replace("-", "")
+        remote_parent = posixpath.dirname(target.remote_dir.rstrip("/"))
+        return LanAioProdSlot(
+            id=f"{target.node_id}-gpu{target_gpu_index}-{profile}",
+            enabled=False,
+            phase="candidate",
+            assignment_id=target.assignment_id,
+            target_profile_id=profile,
+            host_port=target.host_port,
+            agent_id=(
+                f"lan_aio_prod_{_agent_node_label(target.node_id)}_gpu{target_gpu_index}_"
+                f"{profile_label}_01"
+            ),
+            container_name=(
+                f"allbot-lan-aio-{target.node_id}-gpu{target_gpu_index}-"
+                f"{profile}-prod"
+            ),
+            ssh_host=target.ssh_host,
+            node_id=target.node_id,
+            comfy_id=target.comfy_id,
+            gpu_index=target.gpu_index,
+            legacy_worker_id=target.agent_id,
+            old_runtime_container=target.container_name,
+            old_local_agent_container="",
+            remote_dir=(
+                f"{remote_parent}/{node_dir_label}-gpu{target_gpu_index}-"
+                f"{dir_profile_label}"
+            ),
+            rollout_order=target.rollout_order + 1,
+            legacy_health_port=target.host_port,
+            legacy_preflight_required=target.legacy_preflight_required,
+            target_task_types=tuple(profile_config.task_types),
+            retargetable=True,
+            notes=(
+                f"Generated candidate plan for {profile} replacing {target.id}. "
+                "Review and commit this YAML patch before production takeover."
+            ),
+        )
+
+    def _slot_yaml_item(
+        self,
+        slot: LanAioProdSlot,
+        *,
+        phase: str,
+    ) -> dict[str, Any]:
+        item: dict[str, Any] = {
+            "id": slot.id,
+            "enabled": False,
+            "phase": phase,
+            "retargetable": True,
+            "assignment_id": slot.assignment_id,
+            "target_profile_id": slot.target_profile_id,
+        }
+        if slot.target_task_types:
+            item["target_task_types"] = list(slot.target_task_types)
+        if slot.gpu_index is not None:
+            item["gpu_index"] = slot.gpu_index
+        item.update(
+            {
+                "host_port": slot.host_port,
+                "legacy_health_port": slot.legacy_health_port,
+                "legacy_preflight_required": slot.legacy_preflight_required,
+                "agent_id": slot.agent_id,
+                "container_name": slot.container_name,
+                "legacy_worker_id": slot.legacy_worker_id,
+                "old_runtime_container": slot.old_runtime_container,
+                "old_local_agent_container": slot.old_local_agent_container,
+                "remote_dir": slot.remote_dir,
+                "rollout_order": slot.rollout_order,
+                "notes": slot.notes,
+            }
+        )
+        return {key: value for key, value in item.items() if value not in (None, "")}
+
     def status_payload(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
         workers = self._system_workers()
         payload = {
@@ -477,11 +726,15 @@ class LanAioProdOps:
                             slot,
                             "legacy_system_stats",
                             f"curl -fsS --max-time 8 http://127.0.0.1:{port}/system_stats >/dev/null",
+                            attempts=5,
+                            retry_delay_seconds=3.0,
                         ),
                         self._remote_check(
                             slot,
                             "legacy_queue",
                             f"curl -fsS --max-time 8 http://127.0.0.1:{port}/queue >/dev/null",
+                            attempts=5,
+                            retry_delay_seconds=3.0,
                         ),
                     ]
                 )
@@ -790,6 +1043,7 @@ class LanAioProdOps:
             self._scp(compose_file, slot.ssh_host, slot.remote_compose_file)
             self._scp(env_file, slot.ssh_host, slot.remote_env_file)
             self._ssh(slot.ssh_host, f"chmod 600 '{slot.remote_env_file}'")
+        stale_target_container = self._ensure_target_container_recreate_safe(slot)
         self._remote_compose(slot, "up -d --force-recreate")
         self._wait_container_health(slot)
         hot_cache_copies = self._preseed_legacy_hot_caches(slot)
@@ -798,6 +1052,7 @@ class LanAioProdOps:
             "ok": True,
             "action": "start-disabled",
             "slot": slot.id,
+            "stale_target_container": stale_target_container,
             "legacy_hot_cache_copies": hot_cache_copies,
         }
 
@@ -809,6 +1064,10 @@ class LanAioProdOps:
                 "lan_aio_fleet_rollback_disable_aio",
                 ttl_seconds=CONTROL_TTL_SECONDS,
             )
+            self._ssh(
+                slot.ssh_host,
+                f"docker stop '{slot.container_name}' >/dev/null 2>&1 || true",
+            )
             self._ssh(slot.ssh_host, f"docker start '{slot.old_runtime_container}' >/dev/null")
             if slot.old_local_agent_container:
                 self._local(["docker", "start", slot.old_local_agent_container], capture=True)
@@ -817,7 +1076,12 @@ class LanAioProdOps:
                 "enabled",
                 "lan_aio_fleet_rollback_enable_legacy",
             )
-        return {"ok": True, "action": "rollback", "slots": [slot.id for slot in slots]}
+        return {
+            "ok": True,
+            "action": "rollback",
+            "recovery_status": "succeeded",
+            "slots": [slot.id for slot in slots],
+        }
 
     def stop_old(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
         for slot in slots:
@@ -832,11 +1096,17 @@ class LanAioProdOps:
                 self._local(["docker", "stop", slot.old_local_agent_container], capture=True)
         return {"ok": True, "action": "stop-old", "slots": [slot.id for slot in slots]}
 
-    def takeover(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
+    def takeover(
+        self,
+        slots: list[LanAioProdSlot],
+        *,
+        failure_policy: str = FAILURE_POLICY_AUTO_ROLLBACK,
+    ) -> dict[str, Any]:
         if len(slots) != 1:
             raise RuntimeError("takeover requires exactly one --slot")
         slot = slots[0]
         results: list[dict[str, Any]] = []
+        recovery_armed = False
 
         print(f"[lan-aio-takeover] preflight started for {slot.id}", flush=True)
         preflight = self.preflight_payload([slot], execute=True)
@@ -858,12 +1128,160 @@ class LanAioProdOps:
             ("start-disabled", self.start_disabled),
             ("enable-aio", self.enable_aio),
         )
-        for action, handler in step_handlers:
-            print(f"[lan-aio-takeover] {action} started for {slot.id}", flush=True)
-            payload = handler([slot])
-            results.append({"action": action, "payload": payload})
+        try:
+            for action, handler in step_handlers:
+                if action in {"stop-old", "start-disabled", "enable-aio"}:
+                    recovery_armed = True
+                print(f"[lan-aio-takeover] {action} started for {slot.id}", flush=True)
+                payload = handler([slot])
+                results.append({"action": action, "payload": payload})
+        except Exception as exc:
+            if failure_policy != FAILURE_POLICY_AUTO_ROLLBACK or not recovery_armed:
+                raise
+            print(
+                f"[lan-aio-takeover] failure after stop-old window for {slot.id}; "
+                "auto rollback started",
+                flush=True,
+            )
+            try:
+                recovery = self.rollback([slot])
+            except Exception as recovery_exc:
+                results.append(
+                    {
+                        "action": "recover",
+                        "payload": {
+                            "ok": False,
+                            "recovery_status": "failed",
+                            "error": str(recovery_exc),
+                        },
+                    }
+                )
+                raise RuntimeError(
+                    "takeover failed; recovery_status=failed; "
+                    f"original={exc}; recovery_error={recovery_exc}"
+                ) from exc
+            results.append({"action": "recover", "payload": recovery})
+            print(
+                f"[lan-aio-takeover] auto rollback completed for {slot.id}",
+                flush=True,
+            )
+            raise RuntimeError(
+                f"takeover failed during protected window; "
+                f"recovery_status={recovery.get('recovery_status', 'succeeded')}; "
+                f"original={exc}"
+            ) from exc
 
         return {"ok": True, "action": "takeover", "slot": slot.id, "steps": results}
+
+    def recover_physical_slot(
+        self,
+        *,
+        physical_slot: str,
+        prefer: str = "old",
+        selected_slot_id: str | None = None,
+    ) -> dict[str, Any]:
+        if prefer not in {"old", "candidate"}:
+            raise RuntimeError("recover --prefer must be old or candidate")
+        sibling_slots = [
+            slot for slot in self.slots.values() if physical_slot_key(slot) == physical_slot
+        ]
+        if not sibling_slots:
+            raise KeyError(f"unknown LAN AIO physical slot: {physical_slot}")
+        if selected_slot_id:
+            selected = next(
+                (slot for slot in sibling_slots if slot.id == selected_slot_id),
+                None,
+            )
+            if selected is None:
+                raise KeyError(
+                    f"LAN AIO slot {selected_slot_id} is not on physical slot {physical_slot}"
+                )
+            if selected.phase == "maintenance_disabled" or selected.phase.startswith(
+                "blocked_"
+            ):
+                raise RuntimeError(
+                    f"LAN AIO slot is not recoverable: {selected.id} phase={selected.phase}"
+                )
+            if not selected.enabled and not selected.retargetable:
+                raise RuntimeError(f"LAN AIO slot is not recoverable: {selected.id}")
+        elif prefer == "old":
+            selected = next(
+                (
+                    slot
+                    for slot in sorted(sibling_slots, key=lambda item: item.rollout_order)
+                    if slot.enabled and slot.phase in {"prod_enabled", "aio_enabled"}
+                ),
+                None,
+            )
+        else:
+            selected = next(
+                (
+                    slot
+                    for slot in sorted(sibling_slots, key=lambda item: item.rollout_order)
+                    if slot.retargetable
+                ),
+                None,
+            )
+        if selected is None:
+            raise RuntimeError(
+                f"no recoverable {prefer} slot found for physical slot {physical_slot}"
+            )
+        for slot in sibling_slots:
+            if slot.id == selected.id:
+                continue
+            self._set_control(
+                slot.agent_id,
+                "disabled",
+                "lan_aio_fleet_recover_disable_sibling",
+                ttl_seconds=CONTROL_TTL_SECONDS,
+            )
+            self._ssh(
+                slot.ssh_host,
+                f"docker stop '{slot.container_name}' >/dev/null 2>&1 || true",
+            )
+        self._set_control(
+            selected.agent_id,
+            "disabled",
+            "lan_aio_fleet_recover_start_disabled",
+            ttl_seconds=CONTROL_TTL_SECONDS,
+        )
+        target_state = self._remote_target_container_state(selected)
+        if not target_state.get("exists"):
+            start_payload = self.start_disabled([selected])
+        else:
+            status = str(target_state.get("status") or "unknown").lower()
+            if not bool(target_state.get("running")):
+                if status not in SAFE_STALE_CONTAINER_STATES:
+                    raise RuntimeError(
+                        "target container exists but is not safe to start: "
+                        f"{selected.container_name} status={status}"
+                    )
+                self._ssh(
+                    selected.ssh_host,
+                    f"docker start '{selected.container_name}' >/dev/null",
+                )
+            self._wait_container_health(selected)
+            self._verify_disabled_heartbeat(selected)
+            start_payload = {
+                "ok": True,
+                "action": "docker-start",
+                "slot": selected.id,
+                "previous_state": status,
+            }
+        self._set_control(
+            selected.agent_id,
+            "enabled",
+            f"lan_aio_fleet_recover_prefer_{prefer}",
+        )
+        return {
+            "ok": True,
+            "action": "recover",
+            "physical_slot": physical_slot,
+            "prefer": prefer,
+            "selected_slot": selected.id,
+            "start": start_payload,
+            "recovery_status": "succeeded",
+        }
 
     def _system_workers(self) -> list[dict[str, Any]]:
         payload = self._json_get(f"{self.central_url}/system/workers")
@@ -890,6 +1308,7 @@ class LanAioProdOps:
         metadata: dict[str, Any],
     ) -> str:
         workspace_host_dir = str(metadata["workspace_host_dir"])
+        workspace_parent_dir = posixpath.dirname(workspace_host_dir.rstrip("/")) or "/"
         model_target_dir = str(metadata["model_target_dir"])
         image_ref = str(metadata["image_ref"])
         container_name = self._warm_cache_container_name(slot)
@@ -950,7 +1369,24 @@ class LanAioProdOps:
         script = "\n".join(
             [
                 "set -euo pipefail",
-                f"mkdir -p {shlex.quote(workspace_host_dir)}",
+                (
+                    f"mkdir -p {shlex.quote(workspace_host_dir)} || "
+                    + " ".join(
+                        shlex.quote(part)
+                        for part in [
+                            "docker",
+                            "run",
+                            "--rm",
+                            "-v",
+                            f"{workspace_parent_dir}:{workspace_parent_dir}",
+                            image_ref,
+                            "bash",
+                            "-lc",
+                            f"mkdir -p {shlex.quote(workspace_host_dir)}",
+                        ]
+                    )
+                ),
+                f"test -d {shlex.quote(workspace_host_dir)}",
                 f"docker rm -f {shlex.quote(container_name)} >/dev/null 2>&1 || true",
                 " ".join(shlex.quote(part) for part in docker_command),
             ]
@@ -1078,20 +1514,35 @@ class LanAioProdOps:
         slot: LanAioProdSlot,
         name: str,
         command: str,
+        *,
+        attempts: int = 1,
+        retry_delay_seconds: float = 0.0,
     ) -> dict[str, Any]:
-        try:
-            output = self._ssh(slot.ssh_host, command, capture=True)
-        except subprocess.CalledProcessError as exc:
-            error = (exc.stderr or exc.stdout or "").strip()
-            if not error:
-                error = f"remote check failed with exit code {exc.returncode}"
-            return {"name": name, "ok": False, "error": error}
-        except Exception as exc:
-            return {"name": name, "ok": False, "error": str(exc)}
+        attempts = max(1, int(attempts))
+        last_error = ""
+        for attempt in range(1, attempts + 1):
+            try:
+                output = self._ssh(slot.ssh_host, command, capture=True)
+                break
+            except subprocess.CalledProcessError as exc:
+                last_error = (exc.stderr or exc.stdout or "").strip()
+                if not last_error:
+                    last_error = f"remote check failed with exit code {exc.returncode}"
+            except Exception as exc:
+                last_error = str(exc)
+            if attempt < attempts:
+                self._sleep(retry_delay_seconds)
+        else:
+            if attempts > 1:
+                last_error = f"failed after {attempts} attempts: {last_error}"
+            return {"name": name, "ok": False, "error": last_error}
         result: dict[str, Any] = {"name": name, "ok": True}
         if output.strip():
             result["output"] = output.strip()
         return result
+
+    def _sleep(self, seconds: float) -> None:
+        time.sleep(seconds)
 
     def _remote_container_status(self, slot: LanAioProdSlot) -> list[str]:
         pattern = (
@@ -1107,6 +1558,65 @@ class LanAioProdOps:
         except Exception as exc:
             return [f"status_unavailable: {exc}"]
         return [line for line in output.splitlines() if line.strip()]
+
+    def _remote_target_container_state(
+        self,
+        slot: LanAioProdSlot,
+    ) -> dict[str, Any]:
+        command = (
+            "docker inspect -f "
+            "'{{.Name}}|{{.State.Status}}|{{.State.Running}}' "
+            f"{shlex.quote(slot.container_name)} 2>/dev/null || true"
+        )
+        output = self._ssh(slot.ssh_host, command, capture=True).strip()
+        if not output:
+            return {"exists": False, "name": slot.container_name, "status": "missing"}
+        name, _, tail = output.partition("|")
+        status, _, running = tail.partition("|")
+        normalized_name = name.strip().removeprefix("/")
+        return {
+            "exists": True,
+            "name": normalized_name,
+            "status": status.strip().lower() or "unknown",
+            "running": running.strip().lower() == "true",
+        }
+
+    def _remove_remote_container(
+        self,
+        slot: LanAioProdSlot,
+        container_name: str,
+    ) -> None:
+        self._ssh(slot.ssh_host, f"docker rm {shlex.quote(container_name)} >/dev/null")
+
+    def _ensure_target_container_recreate_safe(
+        self,
+        slot: LanAioProdSlot,
+    ) -> dict[str, Any]:
+        state = self._remote_target_container_state(slot)
+        if not state.get("exists"):
+            return {
+                "status": "not_present",
+                "container_name": slot.container_name,
+                "previous_state": "missing",
+            }
+        state_name = str(state.get("name") or "")
+        status = str(state.get("status") or "unknown").lower()
+        if state_name != slot.container_name:
+            raise RuntimeError(
+                "target container inspect returned mismatched name: "
+                f"{state_name!r} != {slot.container_name!r}"
+            )
+        if bool(state.get("running")) or status not in SAFE_STALE_CONTAINER_STATES:
+            raise RuntimeError(
+                "target container already exists and is not safe to remove: "
+                f"{slot.container_name} status={status}"
+            )
+        self._remove_remote_container(slot, slot.container_name)
+        return {
+            "status": "removed",
+            "container_name": slot.container_name,
+            "previous_state": status,
+        }
 
     def _remote_image_present(self, slot: LanAioProdSlot, image_ref: str) -> bool:
         try:
@@ -1500,6 +2010,8 @@ def _worker_summary(worker: dict[str, Any]) -> dict[str, Any]:
         "node_id",
         "provider",
         "runtime_profile",
+        "types",
+        "supported_task_types",
         "pool_managed",
         "image_ref",
     ]
@@ -1537,9 +2049,22 @@ def build_parser() -> argparse.ArgumentParser:
             "restart-aio",
             "rollback",
             "stop-old",
+            "recover",
+            "candidate-plan",
         ),
     )
     parser.add_argument("--slot", default=None)
+    parser.add_argument("--replace-slot", default=None)
+    parser.add_argument("--node-id", default=None)
+    parser.add_argument("--profile", default=None)
+    parser.add_argument("--physical-slot", default=None)
+    parser.add_argument("--operation-id", default=None)
+    parser.add_argument("--prefer", choices=("old", "candidate"), default="old")
+    parser.add_argument(
+        "--failure-policy",
+        choices=(FAILURE_POLICY_AUTO_ROLLBACK, "none"),
+        default=FAILURE_POLICY_AUTO_ROLLBACK,
+    )
     parser.add_argument("--include-disabled", action="store_true")
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--config-root", type=Path, default=None)
@@ -1567,7 +2092,92 @@ def main(argv: list[str] | None = None) -> int:
     if args.action == "list":
         print(json.dumps(ops.list_payload(include_disabled=args.include_disabled), ensure_ascii=False, indent=2))
         return 0
+    if args.action == "candidate-plan":
+        if not args.node_id or not args.profile or not args.replace_slot:
+            raise SystemExit(
+                "candidate-plan requires --node-id, --profile and --replace-slot"
+            )
+        print(
+            json.dumps(
+                ops.candidate_plan(
+                    node_id=args.node_id,
+                    profile=args.profile,
+                    replace_slot_id=args.replace_slot,
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+    if args.action == "recover":
+        selected_slot_id = None
+        physical_slot = args.physical_slot
+        if args.slot:
+            selected_slot = ops.select_slots(args.slot, include_disabled=True)[0]
+            selected_slot_id = selected_slot.id
+            selected_physical_slot = physical_slot_key(selected_slot)
+            if physical_slot and physical_slot != selected_physical_slot:
+                raise SystemExit(
+                    "--slot does not belong to --physical-slot: "
+                    f"{selected_slot_id} -> {selected_physical_slot}, got {physical_slot}"
+                )
+            physical_slot = selected_physical_slot
+        if args.operation_id and not physical_slot:
+            raise SystemExit(
+                "recover --operation-id is accepted for audit logs, but this CLI "
+                "currently requires --physical-slot to avoid broad recovery"
+            )
+        if not physical_slot:
+            raise SystemExit("recover requires --physical-slot")
+        if not args.execute:
+            print(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "dry_run": True,
+                        "action": "recover",
+                        "physical_slot": physical_slot,
+                        "prefer": args.prefer,
+                        "selected_slot": selected_slot_id,
+                        "operations": [
+                            (
+                                "disable sibling LAN AIO agents on "
+                                f"{physical_slot}"
+                            ),
+                            (
+                                "start selected "
+                                f"{args.prefer} container on {physical_slot}"
+                            ),
+                            (
+                                "enable selected LAN AIO agent on "
+                                f"{physical_slot}"
+                            ),
+                        ],
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0
+        print(
+            json.dumps(
+                ops.recover_physical_slot(
+                    physical_slot=physical_slot,
+                    prefer=args.prefer,
+                    selected_slot_id=selected_slot_id,
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
     slots = ops.select_slots(args.slot, include_disabled=args.include_disabled)
+    if args.replace_slot:
+        if args.action != "takeover":
+            raise SystemExit("--replace-slot is only supported for takeover")
+        if len(slots) != 1:
+            raise SystemExit("takeover --replace-slot requires exactly one --slot")
+        slots = [ops.retarget_slot(slots[0], args.replace_slot)]
     if args.action == "status":
         print(json.dumps(ops.status_payload(slots), ensure_ascii=False, indent=2))
         return 0
@@ -1604,7 +2214,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.action == "wait-idle":
         payload = ops.wait_idle(slots)
     elif args.action == "takeover":
-        payload = ops.takeover(slots)
+        payload = ops.takeover(slots, failure_policy=args.failure_policy)
     elif args.action == "start-disabled":
         payload = ops.start_disabled(slots)
     elif args.action == "enable-aio":

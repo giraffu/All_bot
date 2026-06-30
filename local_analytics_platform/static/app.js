@@ -10,6 +10,8 @@ const state = {
   promptVectorDetail: null,
   promptScenes: null,
   promptSceneDetail: null,
+  promptGraph: null,
+  promptGraphDetail: null,
   templates: null,
   media: null,
   promptTaskTypes: [],
@@ -18,6 +20,7 @@ const state = {
   selectedPromptSlim: null,
   selectedPromptVectorCluster: null,
   selectedPromptScene: null,
+  selectedPromptGraphCommunity: null,
   promptPage: 1,
   promptSlimPage: 1,
   promptVectorPage: 1,
@@ -39,6 +42,7 @@ const state = {
     "prompt-slim": 0,
     "prompt-vectors": 0,
     "prompt-scenes": 0,
+    "prompt-graph": 0,
     templates: 30,
     media: 30,
   },
@@ -86,6 +90,11 @@ const tabs = {
     kicker: "语义场景",
     title: "提示词语义场景目录",
     subtitle: "按任务类型沉淀可运营审核的场景和 Top 候选提示词",
+  },
+  "prompt-graph": {
+    kicker: "语义图谱",
+    title: "提示词语义图谱",
+    subtitle: "展示全量候选覆盖、场景社区、微簇长尾和跨任务桥接",
   },
   templates: {
     kicker: "模板候选",
@@ -158,7 +167,7 @@ function setCurrentDays(days) {
 function syncDaysControl() {
   const select = $("#daysSelect");
   if (!select) return;
-  const lockedAllTimeTabs = new Set(["prompt-slim", "prompt-vectors", "prompt-scenes"]);
+  const lockedAllTimeTabs = new Set(["prompt-slim", "prompt-vectors", "prompt-scenes", "prompt-graph"]);
   const locked = lockedAllTimeTabs.has(state.activeTab);
   select.disabled = locked;
   select.value = String(locked ? 0 : currentDays());
@@ -1907,6 +1916,247 @@ function renderPromptSceneDetail() {
   `;
 }
 
+function promptGraphStatusLabel(label) {
+  const labels = {
+    clustered: "已入微簇",
+    singleton: "长尾单点",
+    no_scene: "未入场景",
+    unembedded: "未向量化",
+  };
+  return labels[label] || label || "-";
+}
+
+function promptGraphCommunityLabel(label) {
+  const labels = {
+    scene: "场景",
+    micro: "微簇",
+    task: "任务",
+  };
+  return labels[label] || label || "-";
+}
+
+function renderPromptGraphFilterOptions() {
+  const select = $("#promptGraphTaskTypeSelect");
+  if (!select) return;
+  const rows = state.promptGraph?.available_task_types || state.promptGraph?.distributions?.task_type || [];
+  const selected = state.promptGraph?.selected_task_type || state.promptGraph?.task_type || select.value || rows[0]?.label || "";
+  const seen = new Set();
+  select.innerHTML = rows.map((row) => {
+    const value = row.label || "";
+    if (!value || seen.has(value)) return "";
+    seen.add(value);
+    return `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`;
+  }).join("");
+  if (selected && !seen.has(selected)) {
+    select.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(selected)}">${escapeHtml(selected)}</option>`);
+  }
+  select.value = selected && Array.from(select.options).some((option) => option.value === selected)
+    ? selected
+    : select.options[0]?.value || "";
+}
+
+function renderPromptGraphSummary() {
+  const summary = state.promptGraph?.summary || {};
+  const taskSummary = state.promptGraph?.task_summary || {};
+  const model = state.promptGraph?.model || {};
+  const selectedTaskType = state.promptGraph?.selected_task_type || state.promptGraph?.task_type || "-";
+  if (state.promptGraph && state.promptGraph.ready === false) {
+    $("#promptGraphSummary").innerHTML = [
+      metric("图谱状态", "未构建", state.promptGraph.message || "等待刷新命令"),
+      metric("模型", escapeHtml(model.model_id || "-"), escapeHtml(model.model_key || "-")),
+      metric("图节点", "0", "候选全量覆盖后展示"),
+      metric("社区边", "0", "等待图谱派生表"),
+    ].join("");
+    return;
+  }
+  $("#promptGraphSummary").innerHTML = [
+    metric("候选提示词", fmt(summary.candidate_count), `全量 ${fmt(summary.node_count)} 图节点`),
+    metric("已向量化", fmt(summary.embedded_count), `覆盖 ${fmtAmount(summary.embedding_coverage)}%`),
+    metric("当前任务图", escapeHtml(selectedTaskType), `节点 ${fmt(taskSummary.node_count)} · 候选 ${fmt(taskSummary.candidate_count)}`),
+    metric("自然场景 / 微簇", `${fmt(taskSummary.scene_count)} / ${fmt(taskSummary.micro_count)}`, escapeHtml(model.algorithm_version || "-")),
+    metric("长尾 / 未入场景", `${fmt(taskSummary.singleton_count)} / ${fmt(taskSummary.no_scene_count)}`, "单任务内可见"),
+    metric("任务内边", fmt(taskSummary.edge_count), "不跨任务连接"),
+    metric("刷新", fmtDate(summary.latest_refreshed_at || model.last_success_at), escapeHtml(model.layout_algorithm || "-")),
+  ].join("");
+}
+
+function renderPromptGraphDistributions() {
+  const distributions = state.promptGraph?.distributions || {};
+  renderDistribution("#promptGraphTaskTypeDistribution", distributions.task_type || []);
+  renderDistribution("#promptGraphNodeStatusDistribution", (distributions.node_status || []).map((row) => ({
+    ...row,
+    label: promptGraphStatusLabel(row.label),
+  })));
+  renderDistribution("#promptGraphCommunityTypeDistribution", (distributions.community_type || []).map((row) => ({
+    ...row,
+    label: promptGraphCommunityLabel(row.label),
+  })));
+}
+
+function buildPromptGraphOption(graph = {}) {
+  const rawNodes = graph.nodes || [];
+  const nodeIds = new Set(rawNodes.map((node) => node.id));
+  if (!rawNodes.length) return chartEmptyOption("暂无语义图谱");
+  const categories = [...new Set(rawNodes.map((node) => node.task_type || "-"))].map((name) => ({ name }));
+  const widthScale = state.promptGraph?.level === "micro" ? 520 : 420;
+  const heightScale = state.promptGraph?.level === "micro" ? 380 : 300;
+  const nodes = rawNodes.map((node) => ({
+    id: node.id,
+    name: node.name || node.label || node.id,
+    value: node.member_count || 0,
+    x: Number(node.x || 0) * widthScale,
+    y: Number(node.y || 0) * heightScale,
+    symbolSize: Number(node.symbol_size || node.radius || 12),
+    category: node.task_type || "-",
+    raw: node,
+    label: { show: false },
+  }));
+  const edges = (graph.edges || [])
+    .filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target))
+    .map((edge) => ({
+      source: edge.source,
+      target: edge.target,
+      value: edge.weight || edge.prompt_edge_count || 1,
+      raw: edge,
+      lineStyle: {
+        width: Math.max(1, Math.min(6, Number(edge.prompt_edge_count || 0) > 0 ? Math.log1p(Number(edge.prompt_edge_count || 0)) : Number(edge.weight || 0) * 4)),
+        opacity: 0.3,
+        curveness: edge.edge_type === "scene_micro" ? 0.08 : 0.04,
+        type: "solid",
+      },
+    }));
+  return {
+    color: chartPalette,
+    tooltip: {
+      trigger: "item",
+      formatter(params) {
+        const raw = params.data?.raw || {};
+        if (params.dataType === "edge") {
+          return `${escapeHtml(raw.edge_type || "-")}<br/>${escapeHtml(raw.source_community_id || raw.source)} → ${escapeHtml(raw.target_community_id || raw.target)}<br/>权重 ${fmtAmount(raw.weight)} · 边 ${fmt(raw.prompt_edge_count)}`;
+        }
+        return `${escapeHtml(raw.label || raw.name || "-")}<br/>${escapeHtml(raw.task_type || "-")} · 成员 ${fmt(raw.member_count)}<br/>微簇 ${fmt(raw.micro_count)} · 长尾 ${fmt(raw.singleton_count)}`;
+      },
+    },
+    legend: [{ data: categories.slice(0, 12).map((item) => item.name), bottom: 0, type: "scroll" }],
+    series: [{
+      type: "graph",
+      layout: "none",
+      roam: true,
+      draggable: true,
+      categories,
+      data: nodes,
+      links: edges,
+      label: {
+        show: false,
+        position: "right",
+        formatter: "{b}",
+        fontSize: 10,
+      },
+      emphasis: {
+        focus: "adjacency",
+        label: { show: true },
+        lineStyle: { opacity: 0.8 },
+      },
+      lineStyle: {
+        color: "source",
+      },
+    }],
+  };
+}
+
+function renderPromptGraphChart() {
+  renderChart("promptGraphChart", buildPromptGraphOption(state.promptGraph?.graph || {}));
+  const chart = state.charts.promptGraphChart;
+  if (!chart) return;
+  chart.off("click");
+  chart.on("click", (params) => {
+    if (params.dataType !== "node") return;
+    const community = params.data?.raw;
+    if (!community?.id) return;
+    state.selectedPromptGraphCommunity = community;
+    state.promptGraphDetail = null;
+    renderPromptGraphDetail();
+    loadPromptGraphDetail(community.id).catch(setError);
+  });
+}
+
+function renderPromptGraph() {
+  renderPromptGraphFilterOptions();
+  renderPromptGraphSummary();
+  renderPromptGraphDistributions();
+  const rows = state.promptGraph?.graph?.nodes || [];
+  if (!state.selectedPromptGraphCommunity || !rows.some((row) => row.id === state.selectedPromptGraphCommunity.id)) {
+    state.selectedPromptGraphCommunity = rows[0] || null;
+    state.promptGraphDetail = null;
+  }
+  renderPromptGraphChart();
+  renderPromptGraphDetail();
+}
+
+function renderPromptGraphDetail() {
+  const selected = state.selectedPromptGraphCommunity;
+  if (!selected) {
+    $("#promptGraphDetail").innerHTML = '<div class="empty">暂无语义社区</div>';
+    return;
+  }
+  if (!state.promptGraphDetail || state.promptGraphDetail.community?.community_id !== selected.id) {
+    $("#promptGraphDetail").innerHTML = `
+      <h3>${escapeHtml(selected.name || selected.label || selected.id)}</h3>
+      <p class="prompt-fulltext">${escapeHtml(selected.representative_preview || selected.representative_prompt || "")}</p>
+      <div class="empty compact">正在加载社区详情</div>
+    `;
+    return;
+  }
+  const community = state.promptGraphDetail.community || {};
+  const children = state.promptGraphDetail.children || [];
+  const members = state.promptGraphDetail.members || [];
+  const bridgeEdges = state.promptGraphDetail.bridge_edges || [];
+  $("#promptGraphDetail").innerHTML = `
+    <h3>${escapeHtml(community.label || community.community_id || "-")}</h3>
+    <p class="prompt-fulltext">${escapeHtml(community.representative_prompt || "")}</p>
+    <dl>
+      <dt>社区</dt><dd class="mono">${escapeHtml(community.community_id || "-")}</dd>
+      <dt>类型</dt><dd>${escapeHtml(promptGraphCommunityLabel(community.community_type))} · ${escapeHtml(community.task_type || "-")}</dd>
+      <dt>规模</dt><dd>${fmt(community.member_count)} 成员 · ${fmt(community.micro_count)} 微簇 · ${fmt(community.singleton_count)} 长尾</dd>
+      <dt>信号</dt><dd>使用 ${fmt(community.total_uses)} · 用户 ${fmt(community.total_users)} · 质量 ${fmtAmount(community.quality_score)}</dd>
+      <dt>相似度</dt><dd>均值 ${fmtAmount(Number(community.avg_similarity || 0) * 100)}% · 最高 ${fmtAmount(Number(community.max_similarity || 0) * 100)}%</dd>
+    </dl>
+    <div class="cluster-member-list">
+      <div class="table-title">子微簇</div>
+      ${children.map((child) => `
+        <div class="cluster-member compact">
+          <div class="cluster-member-head">
+            <span class="pill gray">${escapeHtml(child.community_id || "-")}</span>
+            <span class="muted small">${fmt(child.member_count)} 成员 · ${fmtAmount(Number(child.avg_similarity || 0) * 100)}%</span>
+          </div>
+          <div class="cluster-member-prompt">${escapeHtml(child.label || "-")}</div>
+        </div>
+      `).join("") || '<div class="empty compact">暂无子微簇</div>'}
+      <div class="table-title">代表成员</div>
+      ${members.map((member) => `
+        <div class="cluster-member">
+          <div class="cluster-member-head">
+            <span class="pill ${promptSceneConfidenceClass(member.confidence_band)}">${escapeHtml(promptSceneConfidenceLabel(member.confidence_band))} ${fmtAmount(Number(member.confidence || 0) * 100)}%</span>
+            <span class="muted small">使用 ${fmt(member.uses)} · 用户 ${fmt(member.users)} · 质量 ${fmtAmount(member.quality_score)}</span>
+          </div>
+          <div class="cluster-member-prompt">${escapeHtml(member.prompt_preview || member.prompt || "-")}</div>
+          <div class="muted small">赞 ${fmt(member.result_likes)} · 踩 ${fmt(member.result_dislikes)} · Gallery 应用 ${fmt(member.gallery_applies)} · 解锁 ${fmt(member.prompt_unlocks)}</div>
+        </div>
+      `).join("") || '<div class="empty compact">暂无成员</div>'}
+      <div class="table-title">桥接社区</div>
+      ${bridgeEdges.map((edge) => `
+        <div class="cluster-member compact">
+          <div class="cluster-member-head">
+            <span class="pill">${escapeHtml(edge.edge_type || "-")}</span>
+            <span class="muted small">权重 ${fmtAmount(edge.weight)} · 边 ${fmt(edge.prompt_edge_count)}</span>
+          </div>
+          <div class="cluster-member-prompt mono">${escapeHtml(edge.target_community_id || "-")}</div>
+        </div>
+      `).join("") || '<div class="empty compact">暂无桥接边</div>'}
+    </div>
+  `;
+}
+
 function renderTemplateCandidates(source = state.templates) {
   const candidates = (source?.candidates || [])
     .filter((item) => Number(item.prompt_score || 0) >= 20)
@@ -2039,6 +2289,17 @@ function getPromptSceneParams() {
     sort: $("#promptSceneSortSelect")?.value || "member_count",
     page: state.promptScenePage,
     limit: 40,
+  };
+}
+
+function getPromptGraphParams() {
+  return {
+    level: $("#promptGraphLevelSelect")?.value || "scene",
+    task_type: $("#promptGraphTaskTypeSelect")?.value || "",
+    edge_type: $("#promptGraphEdgeTypeSelect")?.value || "all",
+    min_size: Number($("#promptGraphMinSizeInput")?.value || 1),
+    q: $("#promptGraphSearchInput")?.value?.trim() || "",
+    limit: 80,
   };
 }
 
@@ -2180,6 +2441,19 @@ async function loadPromptScenes() {
   }
 }
 
+async function loadPromptGraph() {
+  state.promptGraph = await fetchJson("/api/prompt-graph", getPromptGraphParams());
+  const rows = state.promptGraph?.graph?.nodes || [];
+  if (!state.selectedPromptGraphCommunity || !rows.some((row) => row.id === state.selectedPromptGraphCommunity.id)) {
+    state.selectedPromptGraphCommunity = rows[0] || null;
+    state.promptGraphDetail = null;
+  }
+  renderPromptGraph();
+  if (state.selectedPromptGraphCommunity && state.promptGraph?.ready !== false) {
+    await loadPromptGraphDetail(state.selectedPromptGraphCommunity.id);
+  }
+}
+
 async function resumePromptVectorEmbeddings() {
   state.promptVectorResumeLoading = true;
   renderPromptVectorResumeStatus();
@@ -2209,6 +2483,12 @@ async function loadPromptSceneDetail(sceneId) {
   renderPromptSceneDetail();
 }
 
+async function loadPromptGraphDetail(communityId) {
+  if (!communityId) return;
+  state.promptGraphDetail = await fetchJson(`/api/prompt-graph/communities/${encodeURIComponent(communityId)}`);
+  renderPromptGraphDetail();
+}
+
 async function loadTemplates(days) {
   state.templates = await fetchJson("/api/prompts", getTemplatePromptParams(days));
   renderTemplateCandidates(state.templates);
@@ -2228,6 +2508,7 @@ const tabLoaders = {
   "prompt-slim": loadPromptSlim,
   "prompt-vectors": loadPromptVectors,
   "prompt-scenes": loadPromptScenes,
+  "prompt-graph": loadPromptGraph,
   templates: loadTemplates,
   media: loadMedia,
 };
@@ -2279,6 +2560,10 @@ function reloadCurrentTab() {
     state.promptScenePage = 1;
     state.selectedPromptScene = null;
     state.promptSceneDetail = null;
+  }
+  if (state.activeTab === "prompt-graph") {
+    state.selectedPromptGraphCommunity = null;
+    state.promptGraphDetail = null;
   }
   markTabStale(state.activeTab);
   loadCurrentTab({ force: true });
@@ -2432,6 +2717,23 @@ $("#promptSceneNextButton").addEventListener("click", () => {
   state.promptSceneDetail = null;
   markTabStale("prompt-scenes");
   loadCurrentTab({ force: true });
+});
+function resetPromptGraphAndLoad() {
+  state.selectedPromptGraphCommunity = null;
+  state.promptGraphDetail = null;
+  markTabStale("prompt-graph");
+  if (state.activeTab === "prompt-graph") {
+    loadCurrentTab({ force: true });
+  }
+}
+["#promptGraphLevelSelect", "#promptGraphTaskTypeSelect", "#promptGraphEdgeTypeSelect", "#promptGraphMinSizeInput"].forEach((selector) => {
+  const element = $(selector);
+  if (element) element.addEventListener("change", resetPromptGraphAndLoad);
+});
+let promptGraphSearchTimer = null;
+$("#promptGraphSearchInput").addEventListener("input", () => {
+  window.clearTimeout(promptGraphSearchTimer);
+  promptGraphSearchTimer = window.setTimeout(resetPromptGraphAndLoad, 300);
 });
 document.querySelectorAll(".tab-button").forEach((button) => {
   button.addEventListener("click", () => setActiveTab(button.dataset.tab));

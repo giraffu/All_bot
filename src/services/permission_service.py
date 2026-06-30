@@ -57,6 +57,9 @@ class PermissionService:
     async def calculate_user_priority(self, user_id: int) -> int:
         return await self.identity_priority.calculate_user_priority(user_id)
 
+    async def is_low_trust_free_tier_user(self, user_id: int) -> bool:
+        return await self.identity_priority.is_low_trust_free_tier_user(user_id)
+
     async def check_access(
         self, tg_id: int, username: str, full_name: str, is_member: bool = None
     ) -> int:

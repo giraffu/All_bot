@@ -219,6 +219,8 @@ class RunPodWorkerActionRequest(BaseModel):
 
 class LanAioSlotActionRequest(BaseModel):
     reason: Optional[str] = None
+    replacement_target_slot_id: Optional[str] = None
+    failure_policy: str = "auto_rollback"
 
 
 class RunPodAutoscalerControlRequest(BaseModel):

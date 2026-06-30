@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from src.services.permission_identity_priority_service import TRUSTED_USER_PRIORITY_BONUS
 from src.services.permission_service import PermissionService
 
 
@@ -16,7 +17,7 @@ async def test_calculate_user_priority_newbie_bonus():
         "generation_count": 1
     }
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 30
+    assert priority == 30 + TRUSTED_USER_PRIORITY_BONUS
 
     # Test generation_count == 2
     permission_service.quota_manager.get_user_stats.return_value = {
@@ -26,7 +27,83 @@ async def test_calculate_user_priority_newbie_bonus():
     permission_service.identity_priority.get_user_identity = AsyncMock(return_value="外门弟子")
     permission_service.quota_manager.get_daily_usage = AsyncMock(return_value=0)
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 0  # Fallback to normal calculation
+    assert priority == TRUSTED_USER_PRIORITY_BONUS  # Fallback to normal calculation
+
+
+@pytest.mark.asyncio
+async def test_calculate_user_priority_low_trust_free_tier_keeps_newbie_base_priority():
+    permission_service = PermissionService()
+    permission_service.quota_manager.get_user_stats = AsyncMock(
+        return_value={"checkin_count": 8, "generation_count": 1}
+    )
+    permission_service.identity_priority._has_successful_order = AsyncMock(
+        return_value=False
+    )
+    permission_service.identity_priority.get_user_group = AsyncMock()
+    permission_service.identity_priority.get_user_identity = AsyncMock()
+    permission_service.quota_manager.get_daily_usage = AsyncMock()
+
+    priority = await permission_service.calculate_user_priority(123)
+
+    assert priority == 30
+    permission_service.identity_priority.get_user_group.assert_not_awaited()
+    permission_service.identity_priority.get_user_identity.assert_not_awaited()
+    permission_service.quota_manager.get_daily_usage.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_calculate_user_priority_low_trust_free_tier_skips_trusted_bonus():
+    permission_service = PermissionService()
+    permission_service.quota_manager.get_user_stats = AsyncMock(
+        return_value={"checkin_count": 8, "generation_count": 10}
+    )
+    permission_service.identity_priority._has_successful_order = AsyncMock(
+        return_value=False
+    )
+    permission_service.identity_priority.get_user_group = AsyncMock(return_value="筑基期")
+    permission_service.identity_priority.get_user_identity = AsyncMock(return_value="外门弟子")
+    permission_service.quota_manager.get_daily_usage = AsyncMock(return_value=9)
+
+    priority = await permission_service.calculate_user_priority(123)
+
+    assert priority == 5
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "successful_order_kind",
+    ["paid_success_order", "manual_success_order", "gift_success_order"],
+)
+async def test_calculate_user_priority_success_order_exempts_low_trust(
+    successful_order_kind,
+):
+    permission_service = PermissionService()
+    permission_service.quota_manager.get_user_stats = AsyncMock(
+        return_value={"checkin_count": 8, "generation_count": 1}
+    )
+    permission_service.identity_priority._has_successful_order = AsyncMock(
+        return_value=True
+    )
+
+    priority = await permission_service.calculate_user_priority(123)
+
+    assert priority == 30 + TRUSTED_USER_PRIORITY_BONUS, successful_order_kind
+
+
+@pytest.mark.asyncio
+async def test_is_low_trust_free_tier_user_skips_order_lookup_under_threshold():
+    permission_service = PermissionService()
+    permission_service.identity_priority._has_successful_order = AsyncMock()
+
+    is_low_trust = (
+        await permission_service.identity_priority.is_low_trust_free_tier_user(
+            123,
+            stats={"checkin_count": 7, "generation_count": 10},
+        )
+    )
+
+    assert is_low_trust is False
+    permission_service.identity_priority._has_successful_order.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -45,27 +122,27 @@ async def test_calculate_user_priority_nascent_soul():
     # Test Case 1: 0 usage -> Priority 12
     permission_service.quota_manager.get_daily_usage.return_value = 0
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 12
+    assert priority == 52
 
     # Test Case 2: 9 usage -> Priority 12
     permission_service.quota_manager.get_daily_usage.return_value = 9
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 12
+    assert priority == 52
 
     # Test Case 3: 10 usage -> Priority 5
     permission_service.quota_manager.get_daily_usage.return_value = 10
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 5
+    assert priority == 45
 
     # Test Case 4: 49 usage -> Priority 5
     permission_service.quota_manager.get_daily_usage.return_value = 49
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 5
+    assert priority == 45
 
     # Test Case 5: 100 usage -> Priority 0
     permission_service.quota_manager.get_daily_usage.return_value = 100
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 0
+    assert priority == 40
 
 
 @pytest.mark.asyncio
@@ -84,32 +161,32 @@ async def test_calculate_user_priority_golden_core():
     # Test Case 1: 0 usage -> Priority 8
     permission_service.quota_manager.get_daily_usage.return_value = 0
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 8
+    assert priority == 48
 
     # Test Case 2: 9 usage -> Priority 8
     permission_service.quota_manager.get_daily_usage.return_value = 9
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 8
+    assert priority == 48
 
     # Test Case 3: 10 usage -> Priority 3
     permission_service.quota_manager.get_daily_usage.return_value = 10
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 3
+    assert priority == 43
 
     # Test Case 4: 49 usage -> Priority 3
     permission_service.quota_manager.get_daily_usage.return_value = 49
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 3
+    assert priority == 43
 
     # Test Case 5: 100 usage -> Priority 0
     permission_service.quota_manager.get_daily_usage.return_value = 100
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 0
+    assert priority == 40
 
     # Test Case 6: 150 usage -> Priority 0
     permission_service.quota_manager.get_daily_usage.return_value = 150
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 0
+    assert priority == 40
 
 
 @pytest.mark.asyncio
@@ -128,12 +205,12 @@ async def test_calculate_user_priority_foundation():
     # < 10 -> 5
     permission_service.quota_manager.get_daily_usage.return_value = 9
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 5
+    assert priority == 45
 
     # >= 50 -> 0
     permission_service.quota_manager.get_daily_usage.return_value = 50
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 0
+    assert priority == 40
 
 
 @pytest.mark.asyncio
@@ -152,12 +229,12 @@ async def test_calculate_user_priority_qi_refining():
     # < 10 -> 3
     permission_service.quota_manager.get_daily_usage.return_value = 9
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 3
+    assert priority == 43
 
     # >= 50 -> 0
     permission_service.quota_manager.get_daily_usage.return_value = 50
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 0
+    assert priority == 40
 
 
 @pytest.mark.asyncio
@@ -175,11 +252,11 @@ async def test_calculate_user_priority_mortal():
 
     permission_service.quota_manager.get_daily_usage.return_value = 0
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 0
+    assert priority == 40
 
     permission_service.quota_manager.get_daily_usage.return_value = 100
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 0
+    assert priority == 40
 
 
 @pytest.mark.asyncio
@@ -198,12 +275,12 @@ async def test_calculate_user_priority_addition():
     # Rule: Golden Core (3) + True Disciple (45) -> usage 19: Golden Core=3 (since 10 <= 19 < 50), True Disciple=45 (since 19 < 40)
     permission_service.quota_manager.get_daily_usage.return_value = 19
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 48  # 3 + 45
+    assert priority == 88  # 3 + 45 + trusted bonus
 
     # Rule: Golden Core (3) + True Disciple (1) -> usage 150: Golden Core=0 (since 150 >= 100), True Disciple=1 (since 150 >= 70)
     permission_service.quota_manager.get_daily_usage.return_value = 150
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 1  # 0 + 1
+    assert priority == 41  # 0 + 1 + trusted bonus
 
 
 @pytest.mark.asyncio

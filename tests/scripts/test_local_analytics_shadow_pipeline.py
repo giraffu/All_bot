@@ -61,10 +61,12 @@ def test_pipeline_restores_refreshes_embeddings_and_clusters_in_order(tmp_path):
     assert "python -m app.refresh_prompt_scenes --statement-timeout-ms" in commands
     assert "python -m app.refresh_prompt_vectors --similarity-only --task-type img2img" in commands
     assert "python -m app.refresh_prompt_vectors --similarity-only --task-type ltx_video" in commands
+    assert "python -m app.refresh_prompt_graph --statement-timeout-ms" in commands
     assert commands.index("refresh_prompt_mart") < commands.index("refresh_prompt_slim_table")
     assert commands.index("refresh_prompt_slim_table") < commands.index("refresh_prompt_vectors --embed-only")
     assert commands.index("refresh_prompt_vectors --embed-only") < commands.index("refresh_prompt_scenes")
     assert commands.index("refresh_prompt_scenes") < commands.index("refresh_prompt_vectors --similarity-only")
+    assert commands.index("refresh_prompt_vectors --similarity-only --task-type ltx_video") < commands.index("refresh_prompt_graph")
 
 
 def test_pipeline_skips_embedding_when_lm_studio_is_unavailable(tmp_path):
@@ -86,6 +88,7 @@ def test_pipeline_skips_embedding_when_lm_studio_is_unavailable(tmp_path):
     assert "refresh_prompt_vectors --embed-only" not in commands
     assert "refresh_prompt_scenes" in commands
     assert "similarity-only" in commands
+    assert "refresh_prompt_graph" in commands
 
 
 def test_pipeline_skips_scenes_and_similarity_when_embeddings_are_incomplete(tmp_path):
@@ -110,6 +113,7 @@ def test_pipeline_skips_scenes_and_similarity_when_embeddings_are_incomplete(tmp
     assert result["scenes"] == "skipped_embedding_incomplete"
     assert "refresh_prompt_scenes" not in commands
     assert "similarity-only" not in commands
+    assert "refresh_prompt_graph" not in commands
 
 
 def test_pipeline_can_force_full_mart_refresh(tmp_path):

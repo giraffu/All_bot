@@ -383,6 +383,18 @@ main {
   height: 260px;
 }
 
+.prompt-graph-layout {
+  grid-template-columns: minmax(0, 1fr) 360px;
+}
+
+.prompt-graph-card {
+  min-height: 560px;
+}
+
+.prompt-graph-chart {
+  height: 500px;
+}
+
 .chart-control-row,
 .chart-mode-row {
   display: flex;

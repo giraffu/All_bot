@@ -49,6 +49,10 @@
             <span class="tab-label">语义场景</span>
             <span class="tab-meta">场景、候选、沉淀</span>
           </button>
+          <button class="tab-button" type="button" data-tab="prompt-graph">
+            <span class="tab-label">语义图谱</span>
+            <span class="tab-meta">图谱、长尾、桥接</span>
+          </button>
           <button class="tab-button" type="button" data-tab="templates">
             <span class="tab-label">模板候选</span>
             <span class="tab-meta">场景样本沉淀</span>
@@ -925,6 +929,60 @@
               </div>
             </div>
             <aside id="promptSceneDetail" class="detail-panel"></aside>
+          </div>
+        </section>
+
+        <section class="band tab-panel" data-panel="prompt-graph">
+          <div id="promptGraphSummary" class="metric-grid compact"></div>
+          <div class="prompt-filter-bar prompt-vector-filter-bar">
+            <label>
+              <span>搜索</span>
+              <input id="promptGraphSearchInput" type="search" placeholder="社区或代表提示词关键词" />
+            </label>
+            <label>
+              <span>图层</span>
+              <select id="promptGraphLevelSelect">
+                <option value="scene" selected>自然场景</option>
+                <option value="micro">微簇</option>
+              </select>
+            </label>
+            <label>
+              <span>任务类型</span>
+              <select id="promptGraphTaskTypeSelect"></select>
+            </label>
+            <label>
+              <span>边类型</span>
+              <select id="promptGraphEdgeTypeSelect">
+                <option value="all" selected>全部</option>
+                <option value="similarity">相似边</option>
+                <option value="scene_micro">场景-微簇</option>
+              </select>
+            </label>
+            <label>
+              <span>最小成员</span>
+              <input id="promptGraphMinSizeInput" type="number" min="1" max="1000000" value="1" />
+            </label>
+          </div>
+          <div class="distribution-grid prompt-vector-distribution-grid">
+            <div class="table-shell">
+              <div class="table-title">任务类型</div>
+              <div id="promptGraphTaskTypeDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">节点状态</div>
+              <div id="promptGraphNodeStatusDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">社区类型</div>
+              <div id="promptGraphCommunityTypeDistribution" class="distribution-bars"></div>
+            </div>
+          </div>
+          <div class="prompt-layout prompt-vector-layout prompt-graph-layout">
+            <div class="chart-card full prompt-graph-card">
+              <div class="chart-title">语义社区图谱</div>
+              <div id="promptGraphChart" class="analytics-chart prompt-graph-chart"></div>
+            </div>
+            <aside id="promptGraphDetail" class="detail-panel"></aside>
           </div>
         </section>
 

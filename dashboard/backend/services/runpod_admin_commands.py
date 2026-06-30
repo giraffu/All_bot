@@ -210,21 +210,40 @@ class RunPodAdminCommandBuilder:
             return command
 
         remote_root = self.lan_aio_runner_project_root()
+        action = command[2]
         remote_args = [
             "python3",
             self.lan_aio_runner_ops_script(),
-            command[2],
-            "--slot",
-            command[command.index("--slot") + 1],
-            "--include-disabled",
-            "--prod-env-file",
-            self.lan_aio_runner_prod_env_file(),
-            "--aio-env-file",
-            self.lan_aio_runner_aio_env_file(),
-            "--model-env-file",
-            self.lan_aio_runner_model_env_file(),
-            "--execute",
+            action,
         ]
+        if "--slot" in command:
+            remote_args.extend(["--slot", command[command.index("--slot") + 1]])
+        if "--physical-slot" in command:
+            remote_args.extend(
+                ["--physical-slot", command[command.index("--physical-slot") + 1]]
+            )
+        if "--prefer" in command:
+            remote_args.extend(["--prefer", command[command.index("--prefer") + 1]])
+        remote_args.extend(
+            [
+                "--include-disabled",
+                "--prod-env-file",
+                self.lan_aio_runner_prod_env_file(),
+                "--aio-env-file",
+                self.lan_aio_runner_aio_env_file(),
+                "--model-env-file",
+                self.lan_aio_runner_model_env_file(),
+                "--execute",
+            ]
+        )
+        if "--replace-slot" in command:
+            remote_args.extend(
+                ["--replace-slot", command[command.index("--replace-slot") + 1]]
+            )
+        if "--failure-policy" in command:
+            remote_args.extend(
+                ["--failure-policy", command[command.index("--failure-policy") + 1]]
+            )
         remote_command = " && ".join(
             [
                 *self.lan_aio_runner_env_exports(),
@@ -268,7 +287,16 @@ class RunPodAdminCommandBuilder:
             raise ValueError(f"unsupported LAN AIO control action: {action}")
         return self.lan_aio_action_command(action, slot_id)
 
-    def lan_aio_action_command(self, action: str, slot_id: str) -> list[str]:
+    def lan_aio_action_command(
+        self,
+        action: str,
+        slot_id: str,
+        *,
+        replacement_target_slot_id: str | None = None,
+        failure_policy: str | None = None,
+        physical_slot: str | None = None,
+        recover_prefer: str | None = None,
+    ) -> list[str]:
         supported_actions = {
             "preflight",
             "pull-image",
@@ -281,6 +309,7 @@ class RunPodAdminCommandBuilder:
             "enable-aio",
             "disable-aio",
             "restart-aio",
+            "recover",
         }
         if action not in supported_actions:
             raise ValueError(f"unsupported LAN AIO action: {action}")
@@ -288,8 +317,6 @@ class RunPodAdminCommandBuilder:
             "python3",
             self.lan_aio_ops_script(),
             action,
-            "--slot",
-            slot_id,
             "--include-disabled",
             "--prod-env-file",
             self.lan_aio_prod_env_file(),
@@ -299,6 +326,25 @@ class RunPodAdminCommandBuilder:
             self.lan_aio_model_env_file(),
             "--execute",
         ]
+        if action == "recover":
+            if not physical_slot:
+                raise ValueError("LAN AIO recover requires physical_slot")
+            command.extend(
+                [
+                    "--slot",
+                    slot_id,
+                    "--physical-slot",
+                    physical_slot,
+                    "--prefer",
+                    recover_prefer or "old",
+                ]
+            )
+        else:
+            command.extend(["--slot", slot_id])
+        if action == "takeover":
+            command.extend(["--failure-policy", failure_policy or "auto_rollback"])
+        if replacement_target_slot_id:
+            command.extend(["--replace-slot", replacement_target_slot_id])
         return self.wrap_lan_aio_runner_command(command)
 
     def default_prod_max_manual_slots(self) -> int:

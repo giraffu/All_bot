@@ -16,6 +16,13 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     assert "buildLineBarOption" in app_js
     assert "buildDonutOption" in app_js
     assert "buildStackedBarOption" in app_js
+    assert 'data-tab="prompt-graph"' in html
+    assert 'id="promptGraphChart"' in html
+    assert "renderPromptGraph" in app_js
+    assert '<select id="promptGraphTaskTypeSelect"></select>' in html
+    assert 'value="centroid_bridge"' not in html
+    assert "自然场景 / 微簇" in app_js
+    assert "不跨任务连接" in app_js
 
     for mount_id in [
         "userTrendChart",
@@ -24,5 +31,6 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
         "financeHourlyChart",
         "generationTrendChart",
         "generationCompareChart",
+        "promptGraphChart",
     ]:
         assert f'id="{mount_id}"' in html

@@ -4,6 +4,7 @@ import configparser
 import fcntl
 import functools
 import json
+import math
 import os
 import re
 import subprocess
@@ -21,6 +22,11 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
+from .prompt_graph import (
+    PROMPT_GRAPH_ALGORITHM_VERSION,
+    PROMPT_GRAPH_LAYOUT_ALGORITHM,
+    PROMPT_GRAPH_READY_SQL,
+)
 from .prompt_mart import PROMPT_MART_READY_SQL, PROMPT_MART_STATUS_SQL, PROMPT_NORMALIZATION_VERSION
 from .prompt_scenes import (
     DEFAULT_CANDIDATES_PER_SCENE,
@@ -109,6 +115,8 @@ PROMPT_SCENE_SORTS = {
     "refreshed_at",
 }
 PROMPT_SCENE_CONFIDENCE_BANDS = {"all", "high", "medium", "low"}
+PROMPT_GRAPH_LEVELS = {"scene", "micro"}
+PROMPT_GRAPH_EDGE_TYPES = {"all", "similarity", "centroid_bridge", "scene_micro"}
 
 MEDIA_EXTENSIONS = (
     ".png",
@@ -597,6 +605,34 @@ def _enrich_prompt_scene_member(record: asyncpg.Record) -> dict[str, Any]:
     return item
 
 
+def _enrich_prompt_graph_node(record: asyncpg.Record) -> dict[str, Any]:
+    item = _row(record)
+    community_id = item.get("community_id")
+    label = item.get("label") or item.get("representative_prompt") or community_id or ""
+    item["id"] = community_id
+    item["name"] = _collapse_text(label, 80)
+    item["label"] = label
+    item["representative_preview"] = _collapse_text(item.get("representative_prompt"), 220)
+    item["symbol_size"] = max(8, min(42, 6 + math.log1p(float(item.get("member_count") or 0)) * 3))
+    return item
+
+
+def _enrich_prompt_graph_edge(record: asyncpg.Record) -> dict[str, Any]:
+    item = _row(record)
+    item["source"] = item.get("source_community_id")
+    item["target"] = item.get("target_community_id")
+    item["value"] = item.get("weight")
+    return item
+
+
+def _enrich_prompt_graph_member(record: asyncpg.Record) -> dict[str, Any]:
+    item = _row(record)
+    item["prompt"] = item.get("prompt") or ""
+    item["prompt_preview"] = _collapse_text(item.get("prompt"), 260)
+    item["raw_prompt_preview"] = _collapse_text(item.get("raw_prompt_representative"), 180)
+    return item
+
+
 async def _prompt_mart_status_or_error() -> dict[str, Any]:
     mart_ready = _row(await _fetchrow(PROMPT_MART_READY_SQL))
     if not mart_ready.get("ready"):
@@ -634,6 +670,11 @@ async def _prompt_vector_tables_ready() -> bool:
 
 async def _prompt_scene_tables_ready() -> bool:
     ready = _row(await _fetchrow(PROMPT_SCENE_READY_SQL))
+    return bool(ready.get("ready"))
+
+
+async def _prompt_graph_tables_ready() -> bool:
+    ready = _row(await _fetchrow(PROMPT_GRAPH_READY_SQL))
     return bool(ready.get("ready"))
 
 
@@ -5018,6 +5059,422 @@ async def prompt_scene_detail(
         "candidate_limit": limit,
         "scene": _enrich_prompt_scene(scene),
         "candidates": [_enrich_prompt_scene_member(record) for record in members],
+    }
+
+
+@app.get("/api/prompt-graph")
+async def prompt_graph(
+    level: str = Query("scene"),
+    task_type: str | None = Query(None),
+    min_size: int = Query(1, ge=1, le=1_000_000),
+    q: str | None = Query(None),
+    edge_type: str = Query("all"),
+    limit: int = Query(40, ge=1, le=500),
+    model_id: str = Query(DEFAULT_VECTOR_MODEL_ID),
+) -> dict[str, Any]:
+    level = (level or "scene").strip()
+    if level not in PROMPT_GRAPH_LEVELS:
+        raise HTTPException(status_code=400, detail="invalid prompt graph level")
+    edge_filter = (edge_type or "all").strip()
+    if edge_filter not in PROMPT_GRAPH_EDGE_TYPES:
+        raise HTTPException(status_code=400, detail="invalid prompt graph edge type")
+    limit = _clamp(limit, 1, 500)
+    min_size = _clamp(min_size, 1, 1_000_000)
+    task_filter = (task_type or "").strip() or None
+    search = (q or "").strip()
+    search_pattern = f"%{_normalize_prompt_text(search)}%" if search else None
+
+    if not await _prompt_graph_tables_ready():
+        return {
+            "ready": False,
+            "message": "prompt graph is not built; run python -m app.refresh_prompt_graph",
+            "model": {
+                "model_id": model_id,
+                "model_key": DEFAULT_VECTOR_MODEL_KEY,
+                "normalization_version": PROMPT_NORMALIZATION_VERSION,
+                "algorithm_version": PROMPT_GRAPH_ALGORITHM_VERSION,
+                "layout_algorithm": PROMPT_GRAPH_LAYOUT_ALGORITHM,
+            },
+            "summary": {
+                "candidate_count": 0,
+                "node_count": 0,
+                "embedded_count": 0,
+                "scene_count": 0,
+                "micro_count": 0,
+                "singleton_count": 0,
+                "no_scene_count": 0,
+                "community_count": 0,
+                "edge_count": 0,
+                "centroid_bridge_count": 0,
+                "embedding_coverage": 0,
+            },
+            "task_summary": {
+                "candidate_count": 0,
+                "node_count": 0,
+                "scene_count": 0,
+                "micro_count": 0,
+                "singleton_count": 0,
+                "no_scene_count": 0,
+                "edge_count": 0,
+            },
+            "selected_task_type": None,
+            "available_task_types": [],
+            "distributions": {"task_type": [], "node_status": [], "community_type": []},
+            "graph": {"nodes": [], "edges": []},
+            "pagination": {"limit": limit, "total": 0},
+        }
+
+    state_prefix = f"{model_id}:{PROMPT_NORMALIZATION_VERSION}:{PROMPT_GRAPH_ALGORITHM_VERSION}:"
+    state_rows = await _fetch(
+        """
+        select key, value, updated_at
+        from analytics_prompt_graph_state
+        where key like $1::text
+        order by key
+        """,
+        f"{state_prefix}%",
+    )
+    graph_state: dict[str, Any] = {}
+    state_updated_at = None
+    for row in state_rows:
+        key = str(row["key"])[len(state_prefix) :]
+        value = row["value"]
+        try:
+            graph_state[key] = json.loads(value)
+        except (TypeError, json.JSONDecodeError):
+            graph_state[key] = value
+        if row["updated_at"] and (state_updated_at is None or row["updated_at"] > state_updated_at):
+            state_updated_at = row["updated_at"]
+
+    summary = _row(
+        await _fetchrow(
+            """
+            select
+                coalesce((select count(*)::bigint from analytics_prompt_slim_candidates where quality_stage = 'candidate' and normalization_version = $2::text), 0)::bigint as candidate_count,
+                coalesce((select count(*)::bigint from analytics_prompt_graph_nodes where model_id = $1::text and normalization_version = $2::text and algorithm_version = $3::text), 0)::bigint as node_count,
+                coalesce((select count(*)::bigint from analytics_prompt_graph_nodes where model_id = $1::text and normalization_version = $2::text and algorithm_version = $3::text and has_embedding), 0)::bigint as embedded_count,
+                coalesce((select count(*)::bigint from analytics_prompt_graph_communities where model_id = $1::text and normalization_version = $2::text and algorithm_version = $3::text and community_type = 'scene'), 0)::bigint as scene_count,
+                coalesce((select count(*)::bigint from analytics_prompt_graph_communities where model_id = $1::text and normalization_version = $2::text and algorithm_version = $3::text and community_type = 'micro'), 0)::bigint as micro_count,
+                coalesce((select count(*)::bigint from analytics_prompt_graph_nodes where model_id = $1::text and normalization_version = $2::text and algorithm_version = $3::text and node_status = 'singleton'), 0)::bigint as singleton_count,
+                coalesce((select count(*)::bigint from analytics_prompt_graph_nodes where model_id = $1::text and normalization_version = $2::text and algorithm_version = $3::text and node_status = 'no_scene'), 0)::bigint as no_scene_count,
+                coalesce((select count(*)::bigint from analytics_prompt_graph_communities where model_id = $1::text and normalization_version = $2::text and algorithm_version = $3::text), 0)::bigint as community_count,
+                coalesce((select count(*)::bigint from analytics_prompt_graph_community_edges where model_id = $1::text and normalization_version = $2::text and algorithm_version = $3::text), 0)::bigint as edge_count,
+                0::bigint as centroid_bridge_count,
+                (select max(refreshed_at) from analytics_prompt_graph_communities where model_id = $1::text and normalization_version = $2::text and algorithm_version = $3::text) as latest_refreshed_at
+            """,
+            model_id,
+            PROMPT_NORMALIZATION_VERSION,
+            PROMPT_GRAPH_ALGORITHM_VERSION,
+        )
+    )
+    candidate_count = float(summary.get("candidate_count") or 0)
+    embedded_count = float(summary.get("embedded_count") or 0)
+    summary["embedding_coverage"] = round((embedded_count / candidate_count * 100) if candidate_count else 0, 2)
+
+    available_task_types = await _fetch(
+        """
+        select task_type as label, count(*)::bigint as count
+        from analytics_prompt_graph_nodes
+        where model_id = $1::text
+          and normalization_version = $2::text
+          and algorithm_version = $3::text
+        group by task_type
+        order by count desc, label
+        limit 80
+        """,
+        model_id,
+        PROMPT_NORMALIZATION_VERSION,
+        PROMPT_GRAPH_ALGORITHM_VERSION,
+    )
+    selected_task_type = task_filter or (str(available_task_types[0]["label"]) if available_task_types else None)
+    task_summary = _row(
+        await _fetchrow(
+            """
+            select
+                coalesce((select count(*)::bigint from analytics_prompt_slim_candidates where quality_stage = 'candidate' and normalization_version = $2::text and $4::text = any(task_types)), 0)::bigint as candidate_count,
+                coalesce((select count(*)::bigint from analytics_prompt_graph_nodes where model_id = $1::text and normalization_version = $2::text and algorithm_version = $3::text and task_type = $4::text), 0)::bigint as node_count,
+                coalesce((select count(*)::bigint from analytics_prompt_graph_communities where model_id = $1::text and normalization_version = $2::text and algorithm_version = $3::text and community_type = 'scene' and task_type = $4::text), 0)::bigint as scene_count,
+                coalesce((select count(*)::bigint from analytics_prompt_graph_communities where model_id = $1::text and normalization_version = $2::text and algorithm_version = $3::text and community_type = 'micro' and task_type = $4::text), 0)::bigint as micro_count,
+                coalesce((select count(*)::bigint from analytics_prompt_graph_nodes where model_id = $1::text and normalization_version = $2::text and algorithm_version = $3::text and task_type = $4::text and node_status = 'singleton'), 0)::bigint as singleton_count,
+                coalesce((select count(*)::bigint from analytics_prompt_graph_nodes where model_id = $1::text and normalization_version = $2::text and algorithm_version = $3::text and task_type = $4::text and node_status = 'no_scene'), 0)::bigint as no_scene_count,
+                coalesce((select count(*)::bigint from analytics_prompt_graph_community_edges where model_id = $1::text and normalization_version = $2::text and algorithm_version = $3::text and source_task_type = $4::text and target_task_type = $4::text), 0)::bigint as edge_count
+            """,
+            model_id,
+            PROMPT_NORMALIZATION_VERSION,
+            PROMPT_GRAPH_ALGORITHM_VERSION,
+            selected_task_type,
+        )
+    )
+
+    nodes = await _fetch(
+        """
+        select
+            c.community_id,
+            c.community_type,
+            c.task_type,
+            c.label,
+            c.representative_hash,
+            c.representative_prompt,
+            c.member_count,
+            c.micro_count,
+            c.singleton_count,
+            c.no_scene_count,
+            c.quality_score,
+            c.total_uses,
+            c.total_users,
+            c.avg_similarity,
+            c.refreshed_at,
+            l.x,
+            l.y,
+            l.radius
+        from analytics_prompt_graph_communities c
+        join analytics_prompt_graph_layout l
+          on l.community_id = c.community_id
+         and l.model_id = c.model_id
+         and l.normalization_version = c.normalization_version
+         and l.algorithm_version = c.algorithm_version
+         and l.layout_algorithm = 'pca-v1'
+        where c.model_id = $1::text
+          and c.normalization_version = $2::text
+          and c.algorithm_version = $3::text
+          and c.community_type = $4::text
+          and c.task_type = $5::text
+          and c.member_count >= $6::int
+          and ($7::text is null or c.label like $7::text or c.representative_prompt like $7::text)
+        order by c.member_count desc, c.quality_score desc, c.community_id
+        limit $8::int
+        """,
+        model_id,
+        PROMPT_NORMALIZATION_VERSION,
+        PROMPT_GRAPH_ALGORITHM_VERSION,
+        level,
+        selected_task_type,
+        min_size,
+        search_pattern,
+        limit,
+    )
+    node_ids = [str(row["community_id"]) for row in nodes]
+    edges = (
+        await _fetch(
+            """
+            select
+                source_community_id,
+                target_community_id,
+                edge_type,
+                weight,
+                prompt_edge_count,
+                duplicate_edge_count,
+                similar_edge_count,
+                avg_similarity,
+                max_similarity
+            from analytics_prompt_graph_community_edges
+            where model_id = $1::text
+              and normalization_version = $2::text
+              and algorithm_version = $3::text
+              and source_community_id = any($4::text[])
+              and target_community_id = any($4::text[])
+              and source_task_type = $6::text
+              and target_task_type = $6::text
+              and ($5::text = 'all' or edge_type = $5::text)
+            order by weight desc, prompt_edge_count desc
+            limit 2000
+            """,
+            model_id,
+            PROMPT_NORMALIZATION_VERSION,
+            PROMPT_GRAPH_ALGORITHM_VERSION,
+            node_ids,
+            edge_filter,
+            selected_task_type,
+        )
+        if node_ids
+        else []
+    )
+    task_distribution = await _fetch(
+        """
+        select task_type as label, count(*)::bigint as count
+        from analytics_prompt_graph_communities
+        where model_id = $1::text
+          and normalization_version = $2::text
+          and algorithm_version = $3::text
+          and community_type = $4::text
+        group by task_type
+        order by count desc, label
+        limit 40
+        """,
+        model_id,
+        PROMPT_NORMALIZATION_VERSION,
+        PROMPT_GRAPH_ALGORITHM_VERSION,
+        level,
+    )
+    node_status_distribution = await _fetch(
+        """
+        select node_status as label, count(*)::bigint as count
+        from analytics_prompt_graph_nodes
+        where model_id = $1::text
+          and normalization_version = $2::text
+          and algorithm_version = $3::text
+        group by node_status
+        order by count desc, label
+        """,
+        model_id,
+        PROMPT_NORMALIZATION_VERSION,
+        PROMPT_GRAPH_ALGORITHM_VERSION,
+    )
+    community_type_distribution = await _fetch(
+        """
+        select community_type as label, count(*)::bigint as count
+        from analytics_prompt_graph_communities
+        where model_id = $1::text
+          and normalization_version = $2::text
+          and algorithm_version = $3::text
+        group by community_type
+        order by count desc, label
+        """,
+        model_id,
+        PROMPT_NORMALIZATION_VERSION,
+        PROMPT_GRAPH_ALGORITHM_VERSION,
+    )
+    return {
+        "ready": True,
+        "model": {
+            "model_id": model_id,
+            "model_key": graph_state.get("model_key") or DEFAULT_VECTOR_MODEL_KEY,
+            "normalization_version": PROMPT_NORMALIZATION_VERSION,
+            "algorithm_version": PROMPT_GRAPH_ALGORITHM_VERSION,
+            "layout_algorithm": graph_state.get("layout_algorithm") or PROMPT_GRAPH_LAYOUT_ALGORITHM,
+            "last_success_at": graph_state.get("last_success_at"),
+            "state_updated_at": _json_value(state_updated_at),
+        },
+        "level": level,
+        "task_type": selected_task_type,
+        "selected_task_type": selected_task_type,
+        "available_task_types": _rows(available_task_types),
+        "min_size": min_size,
+        "query": search,
+        "edge_type": edge_filter,
+        "summary": summary,
+        "task_summary": task_summary,
+        "distributions": {
+            "task_type": _rows(task_distribution),
+            "node_status": _rows(node_status_distribution),
+            "community_type": _rows(community_type_distribution),
+        },
+        "graph": {
+            "nodes": [_enrich_prompt_graph_node(record) for record in nodes],
+            "edges": [_enrich_prompt_graph_edge(record) for record in edges],
+        },
+        "pagination": {"limit": limit, "total": len(nodes)},
+    }
+
+
+@app.get("/api/prompt-graph/communities/{community_id}")
+async def prompt_graph_community_detail(
+    community_id: str,
+    model_id: str = Query(DEFAULT_VECTOR_MODEL_ID),
+    member_limit: int = Query(30, ge=1, le=100),
+    child_limit: int = Query(20, ge=1, le=100),
+) -> dict[str, Any]:
+    if not await _prompt_graph_tables_ready():
+        raise HTTPException(status_code=503, detail="prompt graph is not built")
+    member_limit = _clamp(member_limit, 1, 100)
+    child_limit = _clamp(child_limit, 1, 100)
+    community = await _fetchrow(
+        """
+        select *
+        from analytics_prompt_graph_communities
+        where community_id = $1::text
+          and model_id = $2::text
+          and normalization_version = $3::text
+          and algorithm_version = $4::text
+        """,
+        community_id,
+        model_id,
+        PROMPT_NORMALIZATION_VERSION,
+        PROMPT_GRAPH_ALGORITHM_VERSION,
+    )
+    if community is None:
+        raise HTTPException(status_code=404, detail="prompt graph community not found")
+    children = await _fetch(
+        """
+        select child.community_id, child.label, child.member_count, child.avg_similarity
+        from analytics_prompt_graph_communities child
+        where child.parent_community_id = $1::text
+          and child.model_id = $2::text
+          and child.normalization_version = $3::text
+          and child.algorithm_version = $4::text
+        order by child.member_count desc, child.quality_score desc, child.community_id
+        limit $5::int
+        """,
+        community_id,
+        model_id,
+        PROMPT_NORMALIZATION_VERSION,
+        PROMPT_GRAPH_ALGORITHM_VERSION,
+        child_limit,
+    )
+    members = await _fetch(
+        """
+        select
+            m.community_id,
+            m.prompt_hash,
+            m.membership_type,
+            m.confidence,
+            m.confidence_band,
+            m.member_rank,
+            s.prompt,
+            s.raw_prompt_representative,
+            s.uses,
+            s.users,
+            s.quality_score,
+            s.result_likes,
+            s.result_dislikes,
+            s.gallery_applies,
+            s.prompt_unlocks,
+            s.last_seen
+        from analytics_prompt_graph_memberships m
+        left join analytics_prompt_slim_candidates s on s.prompt_hash = m.prompt_hash
+        where m.community_id = $1::text
+        order by
+            case when m.confidence_band = 'high' then 3 when m.confidence_band = 'medium' then 2 when m.confidence_band = 'low' then 1 else 0 end desc,
+            m.confidence desc nulls last,
+            m.member_rank,
+            m.prompt_hash
+        limit $2::int
+        """,
+        community_id,
+        member_limit,
+    )
+    bridge_edges = await _fetch(
+        """
+        select
+            case when source_community_id = $1::text then target_community_id else source_community_id end as target_community_id,
+            edge_type,
+            weight,
+            prompt_edge_count,
+            duplicate_edge_count,
+            avg_similarity,
+            max_similarity
+        from analytics_prompt_graph_community_edges
+        where model_id = $2::text
+          and normalization_version = $3::text
+          and algorithm_version = $4::text
+          and (source_community_id = $1::text or target_community_id = $1::text)
+        order by weight desc, prompt_edge_count desc
+        limit $5::int
+        """,
+        community_id,
+        model_id,
+        PROMPT_NORMALIZATION_VERSION,
+        PROMPT_GRAPH_ALGORITHM_VERSION,
+        child_limit,
+    )
+    return {
+        "model_id": model_id,
+        "normalization_version": PROMPT_NORMALIZATION_VERSION,
+        "algorithm_version": PROMPT_GRAPH_ALGORITHM_VERSION,
+        "community": _row(community),
+        "children": _rows(children),
+        "members": [_enrich_prompt_graph_member(record) for record in members],
+        "bridge_edges": _rows(bridge_edges),
     }
 
 

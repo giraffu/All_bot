@@ -37,7 +37,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 - Dashboard/服务窄更新：优先用 `scripts/update_cloud_prod_with_maintenance.sh --scope services --services "..."`，只重建目标服务。
 - cloud-prod shadow 同步：`scripts/sync_cloud_prod_to_local_shadow.py` 默认 dry-run，真实执行必须 `--execute`。
 - RunPod 正式手动池：日常入口优先 `scripts/runpod_prod_ops.sh status|up|add|enable|disable|restart|down|scale|canary|rollback`。
-- GPU/LAN AIO fleet：入口优先 `scripts/lan_aio_fleet_prod_ops.py`；gpu-002 SCAIL-2 正式 slot0 用 `scripts/lan_scail2_aio_prod.sh`。
+- GPU/LAN AIO fleet：入口优先 `scripts/lan_aio_fleet_prod_ops.py`；gpu-002 SCAIL-2 正式 slot0 也必须先声明在 fleet 配置里让 Dashboard 可见，`scripts/lan_scail2_aio_prod.sh` 仅作为 SCAIL-2 低层启动/重建/回滚工具。
 
 ## 3. 高压红线
 
@@ -77,9 +77,10 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 - RunPod 不属于局域网 SSH GPU 池；RunPod profile、镜像、manifest、override 事实源在 `ops/gpu_pool_controller/` 与 GPU Pool 文档。
 - Dashboard RunPod/LAN AIO 管理只调用既有脚本，不重写 provider 逻辑；`desired_count` 兼容字段按“新增数量”解释，不代表目标总数。
 - Dashboard autoscaler 基于预计清空时间、profile 阈值、Redis leader lease 与 operation store 做 add/down/restart/enable；不直接操作本地 worker，不绕过 RunPod 门禁；RunPod Worker 卡片的 `锁定/解锁` 会让手动删除、autoscaler down 和 add cleanup 跳过该 worker。
-- LAN AIO Dashboard 只展示配置内 profile/slot，页面操作只暴露受控 `takeover` 一键切换；`preflight`、`pull-image`、`warm-cache`、`drain-legacy`、`wait-idle`、`stop-old`、`start-disabled`、`enable-aio` 单步 operation 保留为后端/API/CLI 排障入口；不提供自由镜像/manifest 或跨 slot 批量切换，同一物理 GPU 用 operation lock 防并发。
+- LAN AIO Dashboard 只展示配置内 profile/slot，当前态只认 live heartbeat/running container；页面操作只暴露受控 `takeover` 一键切换和空物理 GPU 的受控 `recover` 恢复入口，默认 `failure_policy=auto_rollback`，同一物理 GPU 用 operation lock 防并发。`preflight`、`pull-image`、`warm-cache`、`drain-legacy`、`wait-idle`、`stop-old`、`start-disabled`、`enable-aio` 单步 operation 保留为后端/API/CLI 排障入口；不提供自由镜像/manifest 或跨 slot 批量切换。
+- 新增 LAN AIO 候选先走 `scripts/lan_aio_fleet_prod_ops.py candidate-plan --node-id ... --profile ... --replace-slot ...` 生成 YAML patch 和校验摘要，再由 Git/YAML 事实源合入；Dashboard 不直接写生产配置。失败现场恢复入口只允许 `recover --physical-slot <node>:gpuN --slot <slot-id> --prefer old|candidate` 这种单物理 GPU/精确 slot 范围。
 - 云正式 Dashboard 若触发 LAN AIO mutation，应通过 `DASHBOARD_LAN_AIO_EXECUTION_MODE=ssh` 指向本地主服务器 runner 执行 `scripts/lan_aio_fleet_prod_ops.py`；Dashboard 后端只读挂载 runner 专用 SSH key，不要把 LAN GPU SSH key、`allbot-gpu-*` Host alias 或 `192.168.1.0/24` 私网路由塞进云控制面。
-- LAN AIO 真实接管按单 slot 执行：preflight -> registry/镜像准备 -> pull-image -> warm-cache -> drain-legacy -> wait-idle -> stop-old -> start-disabled -> 验证 disabled heartbeat -> enable-aio。
+- LAN AIO 真实接管按单 slot 执行：preflight -> registry/镜像准备 -> pull-image -> warm-cache -> drain-legacy -> wait-idle -> stop-old -> start-disabled -> 验证 disabled heartbeat -> enable-aio；`stop-old` 保护窗口后失败应自动回滚旧服务，优先恢复产能。
 - 低频镜像 tag、RIFE 缓存、SCAIL-2/LTX profile、gpu-177/gpu-252/gpu-002 细节只在需要时读取 `references/runpod-lan-runtime.md` 和 GPU Pool 文档。
 
 ## 5. 生产单服务重建

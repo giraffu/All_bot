@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+from fastapi import HTTPException
 import pytest
 from sqlalchemy.exc import IntegrityError
 
@@ -63,11 +64,11 @@ class _Quota:
         return SimpleNamespace(from_user=SimpleNamespace(new_balance=4))
 
 
-def _post() -> GalleryPost:
+def _post(*, user_id: int = 200) -> GalleryPost:
     return GalleryPost(
         id=10,
         task_id="task-1",
-        user_id=200,
+        user_id=user_id,
         media_type="image",
         is_active=True,
     )
@@ -99,6 +100,7 @@ async def test_unlock_gallery_prompt_creates_unlock_and_transfers_credit():
         current_user=SimpleNamespace(id=123, username="buyer"),
         db=session,
         quota_manager=quota,
+        is_low_trust_free_tier_user_func=AsyncMock(return_value=False),
     )
 
     assert response.prompt == "full secret prompt"
@@ -138,12 +140,14 @@ async def test_unlock_gallery_prompt_existing_unlock_is_idempotent():
         ]
     )
     quota = _Quota()
+    is_low_trust = AsyncMock(return_value=True)
 
     response = await unlock_gallery_prompt_payload(
         post_id=10,
         current_user=SimpleNamespace(id=123, username="buyer"),
         db=session,
         quota_manager=quota,
+        is_low_trust_free_tier_user_func=is_low_trust,
     )
 
     assert response.prompt == "full secret prompt"
@@ -151,6 +155,7 @@ async def test_unlock_gallery_prompt_existing_unlock_is_idempotent():
     assert response.already_unlocked is True
     assert session.added == []
     assert quota.transfer_kwargs is None
+    is_low_trust.assert_not_awaited()
     session.commit.assert_not_awaited()
 
 
@@ -173,10 +178,71 @@ async def test_unlock_gallery_prompt_unique_conflict_rolls_back_without_transfer
         current_user=SimpleNamespace(id=123, username="buyer"),
         db=session,
         quota_manager=quota,
+        is_low_trust_free_tier_user_func=AsyncMock(return_value=False),
     )
 
     assert response.already_unlocked is True
     assert response.current_credits == 5
     assert quota.transfer_kwargs is None
     session.rollback.assert_awaited_once()
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_unlock_gallery_prompt_low_trust_user_is_blocked_before_transfer():
+    session = _Session(
+        [
+            _Result(single=_post()),
+            _Result(many=[_history()]),
+            _Result(scalar=5),
+            _Result(single=None),
+        ]
+    )
+    quota = _Quota()
+    is_low_trust = AsyncMock(return_value=True)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await unlock_gallery_prompt_payload(
+            post_id=10,
+            current_user=SimpleNamespace(id=123, username="buyer"),
+            db=session,
+            quota_manager=quota,
+            is_low_trust_free_tier_user_func=is_low_trust,
+        )
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "当前账号暂不可解锁提示词，请完成一次充值后再试"
+    assert session.added == []
+    assert quota.transfer_kwargs is None
+    is_low_trust.assert_awaited_once_with(123)
+    session.commit.assert_not_awaited()
+    session.rollback.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_unlock_gallery_prompt_low_trust_author_self_view_is_allowed():
+    session = _Session(
+        [
+            _Result(single=_post(user_id=123)),
+            _Result(many=[_history()]),
+            _Result(scalar=5),
+        ]
+    )
+    quota = _Quota()
+    is_low_trust = AsyncMock(return_value=True)
+
+    response = await unlock_gallery_prompt_payload(
+        post_id=10,
+        current_user=SimpleNamespace(id=123, username="buyer"),
+        db=session,
+        quota_manager=quota,
+        is_low_trust_free_tier_user_func=is_low_trust,
+    )
+
+    assert response.prompt == "full secret prompt"
+    assert response.current_credits == 5
+    assert response.already_unlocked is True
+    assert session.added == []
+    assert quota.transfer_kwargs is None
+    is_low_trust.assert_not_awaited()
     session.commit.assert_not_awaited()

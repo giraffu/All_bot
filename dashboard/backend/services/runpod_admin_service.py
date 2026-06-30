@@ -180,9 +180,24 @@ def _lan_aio_control_command(action: str, slot_id: str) -> list[str]:
     return _command_builder.lan_aio_control_command(action, slot_id)
 
 
-def _lan_aio_action_command(action: str, slot_id: str) -> list[str]:
+def _lan_aio_action_command(
+    action: str,
+    slot_id: str,
+    *,
+    replacement_target_slot_id: str | None = None,
+    failure_policy: str | None = None,
+    physical_slot: str | None = None,
+    recover_prefer: str | None = None,
+) -> list[str]:
     _sync_runtime_paths()
-    return _command_builder.lan_aio_action_command(action, slot_id)
+    return _command_builder.lan_aio_action_command(
+        action,
+        slot_id,
+        replacement_target_slot_id=replacement_target_slot_id,
+        failure_policy=failure_policy,
+        physical_slot=physical_slot,
+        recover_prefer=recover_prefer,
+    )
 
 
 def _default_prod_max_manual_slots() -> int:
@@ -400,18 +415,98 @@ def _lan_aio_slot_has_runtime_signal(slot_status: dict[str, Any]) -> bool:
     return False
 
 
+def _parse_task_type_csv(raw: Any) -> list[str]:
+    if isinstance(raw, (list, tuple)):
+        return [str(item).strip() for item in raw if str(item).strip()]
+    text = str(raw or "").strip()
+    if not text:
+        return []
+    return [item.strip() for item in text.split(",") if item.strip()]
+
+
+def _lan_aio_worker_for_slot(slot_status: dict[str, Any]) -> dict[str, Any] | None:
+    slot = slot_status.get("slot") if isinstance(slot_status, dict) else None
+    if not isinstance(slot, dict):
+        return None
+    agent_id = str(slot.get("agent_id") or "")
+    if not agent_id:
+        return None
+    for worker in slot_status.get("workers") or []:
+        if isinstance(worker, dict) and str(worker.get("agent_id") or "") == agent_id:
+            return worker
+    return None
+
+
+def _configured_task_types_for_slot(
+    slot: dict[str, Any],
+    config: Any,
+) -> list[str]:
+    explicit = _parse_task_type_csv(slot.get("target_task_types"))
+    if explicit:
+        return explicit
+    profile = config.profiles.get(str(slot.get("target_profile_id") or ""))
+    return list(profile.task_types) if profile else []
+
+
+def _annotate_lan_aio_slot_runtime(
+    slot_status: dict[str, Any],
+    config: Any,
+) -> None:
+    slot = slot_status.get("slot") if isinstance(slot_status, dict) else None
+    if not isinstance(slot, dict):
+        return
+
+    configured_profile_id = str(slot.get("target_profile_id") or "")
+    configured_task_types = _configured_task_types_for_slot(slot, config)
+    worker = _lan_aio_worker_for_slot(slot_status)
+    live_runtime_profile = str((worker or {}).get("runtime_profile") or "").strip()
+    live_types_raw = (worker or {}).get("types") or (worker or {}).get(
+        "supported_task_types"
+    )
+    live_task_types = _parse_task_type_csv(live_types_raw)
+    live_image_ref = str((worker or {}).get("image_ref") or "").strip()
+    configured_image_ref = str(slot.get("all_in_one_image_ref") or "").strip()
+    drift_reasons: list[str] = []
+
+    if live_runtime_profile and live_runtime_profile != configured_profile_id:
+        drift_reasons.append("profile")
+    if live_image_ref and configured_image_ref and live_image_ref != configured_image_ref:
+        drift_reasons.append("image")
+    if live_task_types and configured_task_types and set(live_task_types) != set(
+        configured_task_types
+    ):
+        drift_reasons.append("task_types")
+
+    slot["configured_profile_id"] = configured_profile_id
+    slot["configured_task_types"] = configured_task_types
+    slot["live_runtime_profile"] = live_runtime_profile or None
+    slot["live_types"] = str(live_types_raw or "") or None
+    slot["live_task_types"] = live_task_types
+    slot["live_image_ref"] = live_image_ref or None
+    slot["runtime_drift"] = bool(drift_reasons)
+    slot["runtime_drift_reasons"] = drift_reasons
+    slot.setdefault("replacement_targets", [])
+
+
+def _lan_aio_slot_allows_config_current(slot: dict[str, Any]) -> bool:
+    if not bool(slot.get("enabled")):
+        return False
+    phase = str(slot.get("phase") or "").strip()
+    if phase in {"maintenance_disabled", "candidate"}:
+        return False
+    if phase.startswith("blocked_") or phase.startswith("superseded_"):
+        return False
+    return phase in {"", "prod_enabled", "aio_enabled"}
+
+
 def _annotate_lan_aio_runtime_current(groups: dict[str, dict[str, Any]]) -> None:
     for group in groups.values():
         slot_statuses = group.get("slots") or []
         runtime_current = [
             item for item in slot_statuses if _lan_aio_slot_has_runtime_signal(item)
         ]
-        current_source = "runtime" if runtime_current else "config"
-        current_items = runtime_current or [
-            item
-            for item in slot_statuses
-            if bool((item.get("slot") or {}).get("enabled"))
-        ]
+        current_source = "runtime" if runtime_current else "none"
+        current_items = runtime_current
         current_id_list = [
             str((item.get("slot") or {}).get("id") or "")
             for item in current_items
@@ -430,6 +525,294 @@ def _annotate_lan_aio_runtime_current(groups: dict[str, dict[str, Any]]) -> None
             None,
         )
         group["active_slot_source"] = current_source
+
+
+def _parse_lan_aio_container_state(
+    slot_status: dict[str, Any],
+) -> dict[str, Any]:
+    slot = slot_status.get("slot") if isinstance(slot_status, dict) else None
+    container_name = str((slot or {}).get("container_name") or "")
+    status_unavailable = None
+    if not container_name:
+        return {"state": "unknown"}
+    for raw_line in slot_status.get("remote_containers") or []:
+        line = str(raw_line)
+        if line.startswith("status_unavailable:"):
+            status_unavailable = line
+            continue
+        if not line.startswith(f"{container_name} "):
+            continue
+        summary = line
+        if " Up " in f" {line} ":
+            return {"state": "running", "summary": summary}
+        lowered = line.lower()
+        if "exited" in lowered:
+            return {"state": "exited", "summary": summary}
+        if "created" in lowered:
+            return {"state": "created", "summary": summary}
+        if "dead" in lowered:
+            return {"state": "dead", "summary": summary}
+        return {"state": "unknown", "summary": summary}
+    if status_unavailable:
+        return {"state": "unknown", "summary": status_unavailable}
+    return {"state": "missing"}
+
+
+def _switch_reason_label(reason: str) -> str:
+    return reason.replace("_", " ")
+
+
+def _annotate_lan_aio_switch_state(groups: dict[str, dict[str, Any]]) -> None:
+    for group in groups.values():
+        active_slot_id = group.get("active_slot_id")
+        for slot_status in group.get("slots") or []:
+            if not isinstance(slot_status, dict):
+                continue
+            slot = slot_status.get("slot")
+            if not isinstance(slot, dict):
+                continue
+            container_state = _parse_lan_aio_container_state(slot_status)
+            has_runtime = _lan_aio_slot_has_runtime_signal(slot_status)
+            phase = str(slot.get("phase") or "")
+            control = slot_status.get("control") if isinstance(slot_status.get("control"), dict) else {}
+            aio_control = str((control or {}).get("aio") or "")
+            cache = (
+                slot_status.get("model_cache")
+                if isinstance(slot_status.get("model_cache"), dict)
+                else {}
+            )
+            cache_status = str((cache or {}).get("status") or "")
+            hard_blockers: list[str] = []
+            warnings: list[str] = []
+
+            state = str(container_state.get("state") or "unknown")
+            is_current = bool(slot.get("runtime_current"))
+            has_active_sibling = bool(active_slot_id) and not is_current
+            if has_runtime:
+                live_state = "running"
+            elif state in {"exited", "created", "dead"}:
+                live_state = "stopped"
+            elif state == "missing":
+                live_state = "missing"
+            else:
+                live_state = "unknown"
+
+            if is_current:
+                hard_blockers.append("current_slot")
+            if phase == "maintenance_disabled":
+                hard_blockers.append("maintenance_disabled")
+            if phase.startswith("blocked_"):
+                hard_blockers.append(phase)
+            if bool(slot.get("enabled")) and phase in {"prod_enabled", "aio_enabled", ""} and not has_runtime:
+                if has_active_sibling:
+                    warnings.append("missing_live_runtime")
+                else:
+                    hard_blockers.append("missing_live_runtime")
+            if aio_control == "enabled" and not has_runtime:
+                if has_active_sibling or (slot.get("retargetable") and not is_current):
+                    warnings.append("control_enabled_without_live_runtime")
+                else:
+                    hard_blockers.append("control_enabled_without_live_runtime")
+            if state == "running" and not has_runtime:
+                hard_blockers.append("target_container_running_without_heartbeat")
+            elif state in {"exited", "created", "dead"}:
+                warnings.append("stale_target_container")
+
+            selectable_targets = [
+                target
+                for target in slot.get("replacement_targets") or []
+                if isinstance(target, dict) and target.get("selectable")
+            ]
+            if slot.get("retargetable") and not slot.get("runtime_current"):
+                if not selectable_targets:
+                    hard_blockers.append("missing_live_target")
+                if cache_status in {"missing", "invalid", "unavailable", "failed"}:
+                    warnings.append(f"model_cache_{cache_status}")
+            elif has_active_sibling and cache_status in {
+                "missing",
+                "invalid",
+                "unavailable",
+                "failed",
+            }:
+                warnings.append(f"model_cache_{cache_status}")
+            elif not slot.get("runtime_current"):
+                if phase.startswith("superseded_"):
+                    warnings.append("superseded_slot")
+                elif phase == "candidate":
+                    warnings.append("candidate_disabled")
+
+            switch_blockers = list(dict.fromkeys([*hard_blockers, *warnings]))
+            if hard_blockers:
+                readiness = "blocked"
+            elif warnings:
+                readiness = "warning"
+            else:
+                readiness = (
+                    "ready"
+                    if slot.get("retargetable") or has_active_sibling
+                    else "blocked"
+                )
+
+            slot["target_container_state"] = container_state
+            slot["live_state"] = live_state
+            slot["switch_readiness"] = readiness
+            slot["switch_blockers"] = switch_blockers
+            slot["switch_blocker_labels"] = [
+                _switch_reason_label(reason) for reason in switch_blockers
+            ]
+            slot["last_failed_operation_id"] = None
+            slot["recovery_status"] = None
+            slot_status["target_container_state"] = container_state
+            slot_status["live_state"] = live_state
+            slot_status["switch_readiness"] = readiness
+            slot_status["switch_blockers"] = switch_blockers
+
+
+def _slot_can_be_selected_for_recover(slot: dict[str, Any]) -> bool:
+    phase = str(slot.get("phase") or "").strip()
+    if phase == "maintenance_disabled" or phase.startswith("blocked_"):
+        return False
+    if bool(slot.get("runtime_current")):
+        return False
+    if bool(slot.get("retargetable")):
+        return True
+    return bool(slot.get("enabled")) and phase in {"", "prod_enabled", "aio_enabled"}
+
+
+def _recover_prefer_for_slot(slot: dict[str, Any]) -> str:
+    if bool(slot.get("retargetable")) and not bool(slot.get("enabled")):
+        return "candidate"
+    return "old"
+
+
+def _annotate_lan_aio_recover_state(groups: dict[str, dict[str, Any]]) -> None:
+    for group in groups.values():
+        active_slot_id = group.get("active_slot_id")
+        recoverable_slot_ids: list[str] = []
+        for slot_status in group.get("slots") or []:
+            if not isinstance(slot_status, dict):
+                continue
+            slot = slot_status.get("slot")
+            if not isinstance(slot, dict):
+                continue
+
+            container_state = (
+                slot.get("target_container_state")
+                if isinstance(slot.get("target_container_state"), dict)
+                else _parse_lan_aio_container_state(slot_status)
+            )
+            cache = (
+                slot_status.get("model_cache")
+                if isinstance(slot_status.get("model_cache"), dict)
+                else {}
+            )
+            control = (
+                slot_status.get("control")
+                if isinstance(slot_status.get("control"), dict)
+                else {}
+            )
+            cache_status = str((cache or {}).get("status") or "")
+            aio_control = str((control or {}).get("aio") or "")
+            state = str((container_state or {}).get("state") or "unknown")
+            blockers: list[str] = []
+            warnings: list[str] = []
+
+            if active_slot_id:
+                blockers.append("physical_slot_has_active_runtime")
+            if slot.get("runtime_current"):
+                blockers.append("current_slot")
+            if not _slot_can_be_selected_for_recover(slot):
+                phase = str(slot.get("phase") or "").strip()
+                blockers.append(phase or "not_recoverable")
+            if state == "running" and not _lan_aio_slot_has_runtime_signal(slot_status):
+                warnings.append("target_container_running_without_heartbeat")
+            elif state in {"exited", "created", "dead"}:
+                warnings.append("stale_target_container")
+            elif state == "missing":
+                warnings.append("target_container_missing")
+            if aio_control == "enabled" and not _lan_aio_slot_has_runtime_signal(
+                slot_status
+            ):
+                warnings.append("control_enabled_without_live_runtime")
+            if cache_status in {"missing", "invalid", "unavailable", "failed"}:
+                warnings.append(f"model_cache_{cache_status}")
+
+            recover_blockers = list(dict.fromkeys([*blockers, *warnings]))
+            if blockers:
+                readiness = "blocked"
+            elif warnings:
+                readiness = "warning"
+            else:
+                readiness = "ready"
+
+            slot["recover_readiness"] = readiness
+            slot["recover_blockers"] = recover_blockers
+            slot["recover_blocker_labels"] = [
+                _switch_reason_label(reason) for reason in recover_blockers
+            ]
+            slot["recover_prefer"] = _recover_prefer_for_slot(slot)
+            slot_status["recover_readiness"] = readiness
+            slot_status["recover_blockers"] = recover_blockers
+            if readiness in {"ready", "warning"}:
+                slot_id = str(slot.get("id") or "")
+                if slot_id:
+                    recoverable_slot_ids.append(slot_id)
+
+        group["recoverable_slot_ids"] = recoverable_slot_ids
+        group["recoverable_count"] = len(recoverable_slot_ids)
+
+
+def _annotate_lan_aio_replacement_targets(
+    groups: dict[str, dict[str, Any]],
+) -> None:
+    all_statuses = [
+        item
+        for group in groups.values()
+        for item in group.get("slots") or []
+        if isinstance(item, dict) and isinstance(item.get("slot"), dict)
+    ]
+    current_by_node: dict[str, list[dict[str, Any]]] = {}
+    for item in all_statuses:
+        slot = item["slot"]
+        if not slot.get("runtime_current"):
+            continue
+        node_id = str(slot.get("node_id") or "")
+        if node_id:
+            current_by_node.setdefault(node_id, []).append(item)
+
+    for item in all_statuses:
+        slot = item["slot"]
+        slot["replacement_targets"] = []
+        if slot.get("runtime_current") or not slot.get("retargetable"):
+            continue
+
+        candidate_profile = str(
+            slot.get("configured_profile_id") or slot.get("target_profile_id") or ""
+        )
+        node_id = str(slot.get("node_id") or "")
+        for target_item in current_by_node.get(node_id, []):
+            target_slot = target_item["slot"]
+            if target_slot.get("id") == slot.get("id"):
+                continue
+            target_profile = str(target_slot.get("live_runtime_profile") or "")
+            disabled_reason = None
+            if not target_profile:
+                disabled_reason = "missing_live_profile"
+            elif target_profile == candidate_profile:
+                disabled_reason = "same_profile"
+            slot["replacement_targets"].append(
+                {
+                    "slot_id": target_slot.get("id"),
+                    "physical_slot_key": target_slot.get("physical_slot_key"),
+                    "node_id": target_slot.get("node_id"),
+                    "gpu_index": target_slot.get("gpu_index"),
+                    "host_port": target_slot.get("host_port"),
+                    "live_runtime_profile": target_slot.get("live_runtime_profile"),
+                    "configured_profile_id": target_slot.get("configured_profile_id"),
+                    "selectable": disabled_reason is None,
+                    "disabled_reason": disabled_reason,
+                }
+            )
 
 
 async def get_lan_aio_slots_payload(
@@ -471,7 +854,13 @@ async def get_lan_aio_slots_payload(
         )
         group["slots"].append(slot_payload)
 
+    for group in groups.values():
+        for slot_status in group.get("slots") or []:
+            _annotate_lan_aio_slot_runtime(slot_status, ops.config)
     _annotate_lan_aio_runtime_current(groups)
+    _annotate_lan_aio_replacement_targets(groups)
+    _annotate_lan_aio_switch_state(groups)
+    _annotate_lan_aio_recover_state(groups)
 
     return {
         "ok": status_error is None,
@@ -494,7 +883,86 @@ LAN_AIO_SLOT_ACTIONS: dict[str, tuple[str, str]] = {
     "stop-old": ("stop-old", "lan-aio-stop-old"),
     "start-disabled": ("start-disabled", "lan-aio-start-disabled"),
     "enable-aio": ("enable-aio", "lan-aio-enable"),
+    "recover": ("recover", "lan-aio-recover"),
 }
+
+
+def _lan_aio_recover_status_or_422(
+    ops: LanAioProdOps,
+    slot: Any,
+) -> dict[str, Any]:
+    lock_key = physical_slot_key(slot)
+    all_slots = getattr(ops, "slots", {}) or {}
+    sibling_slots = [
+        candidate
+        for candidate in all_slots.values()
+        if physical_slot_key(candidate) == lock_key
+    ]
+    if not sibling_slots:
+        sibling_slots = [slot]
+    try:
+        status_payload = ops.status_payload(sibling_slots)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"failed to verify LAN AIO recover readiness: {exc}",
+        ) from exc
+
+    status_by_id: dict[str, dict[str, Any]] = {}
+    for item in status_payload.get("slots", []):
+        slot_payload = item.get("slot") if isinstance(item, dict) else None
+        item_slot_id = slot_payload.get("id") if isinstance(slot_payload, dict) else None
+        if item_slot_id:
+            status_by_id[str(item_slot_id)] = item
+
+    groups: dict[str, dict[str, Any]] = {}
+    for sibling in sibling_slots:
+        slot_status = status_by_id.get(sibling.id) or {
+            "slot": slot_to_jsonable(sibling, ops.config),
+            "workers": [],
+            "control": {"legacy": "unknown", "aio": "unknown"},
+            "remote_containers": [],
+            "model_cache": {"status": "unknown"},
+        }
+        group = groups.setdefault(
+            physical_slot_key(sibling),
+            {
+                "physical_slot_key": physical_slot_key(sibling),
+                "node_id": sibling.node_id,
+                "gpu_index": sibling.gpu_index,
+                "slots": [],
+            },
+        )
+        group["slots"].append(slot_status)
+
+    for group in groups.values():
+        for slot_status in group.get("slots") or []:
+            _annotate_lan_aio_slot_runtime(slot_status, ops.config)
+    _annotate_lan_aio_runtime_current(groups)
+    _annotate_lan_aio_replacement_targets(groups)
+    _annotate_lan_aio_switch_state(groups)
+    _annotate_lan_aio_recover_state(groups)
+
+    group = groups.get(lock_key) or {}
+    selected_status = next(
+        (
+            item
+            for item in group.get("slots") or []
+            if str((item.get("slot") or {}).get("id") or "") == slot.id
+        ),
+        None,
+    )
+    selected_slot = (selected_status or {}).get("slot") or {}
+    if not selected_status or selected_slot.get("recover_readiness") == "blocked":
+        labels = selected_slot.get("recover_blocker_labels") or selected_slot.get(
+            "recover_blockers"
+        ) or []
+        detail = " / ".join(str(label) for label in labels) or "not recoverable"
+        raise HTTPException(
+            status_code=422,
+            detail=f"LAN AIO recover blocked for {slot.id}: {detail}",
+        )
+    return selected_status
 
 
 async def start_lan_aio_slot_action_payload(
@@ -507,6 +975,11 @@ async def start_lan_aio_slot_action_payload(
     _sync_runtime_paths()
     if action not in LAN_AIO_SLOT_ACTIONS:
         raise HTTPException(status_code=422, detail=f"unsupported LAN AIO action: {action}")
+    if request.failure_policy not in {"auto_rollback", "none"}:
+        raise HTTPException(
+            status_code=422,
+            detail=f"unsupported LAN AIO failure_policy: {request.failure_policy}",
+        )
     ops = _build_lan_aio_ops()
     try:
         slot = ops.select_slots(slot_id, include_disabled=True)[0]
@@ -518,7 +991,92 @@ async def start_lan_aio_slot_action_payload(
     except RuntimeError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    lock_key = physical_slot_key(slot)
+    replacement_target_slot_id = (request.replacement_target_slot_id or "").strip()
+    replacement_target = None
+    replacement_target_status: dict[str, Any] | None = None
+    if replacement_target_slot_id and action != "takeover":
+        raise HTTPException(
+            status_code=422,
+            detail="replacement_target_slot_id is only supported for takeover",
+        )
+    if replacement_target_slot_id:
+        if not slot.retargetable:
+            raise HTTPException(
+                status_code=422,
+                detail=f"LAN AIO slot is not retargetable: {slot.id}",
+            )
+        try:
+            replacement_target = ops.select_slots(
+                replacement_target_slot_id,
+                include_disabled=True,
+            )[0]
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"unknown LAN AIO replacement target slot: {replacement_target_slot_id}",
+            ) from exc
+        if replacement_target.id == slot.id:
+            raise HTTPException(
+                status_code=422,
+                detail="replacement target must be different from the candidate slot",
+            )
+        if replacement_target.node_id != slot.node_id:
+            raise HTTPException(
+                status_code=422,
+                detail="replacement target must be on the same GPU node",
+            )
+
+        status_by_id: dict[str, dict[str, Any]] = {}
+        try:
+            status_payload = ops.status_payload([slot, replacement_target])
+            for item in status_payload.get("slots", []):
+                slot_payload = item.get("slot") if isinstance(item, dict) else None
+                item_slot_id = (
+                    slot_payload.get("id") if isinstance(slot_payload, dict) else None
+                )
+                if item_slot_id:
+                    _annotate_lan_aio_slot_runtime(item, ops.config)
+                    status_by_id[str(item_slot_id)] = item
+        except Exception as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"failed to verify LAN AIO replacement target runtime: {exc}",
+            ) from exc
+
+        replacement_target_status = status_by_id.get(replacement_target.id)
+        if not replacement_target_status or not _lan_aio_slot_has_runtime_signal(
+            replacement_target_status
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail=f"replacement target is not a current running slot: {replacement_target.id}",
+            )
+        target_slot_payload = replacement_target_status.get("slot") or {}
+        target_live_profile = str(target_slot_payload.get("live_runtime_profile") or "")
+        if not target_live_profile:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "replacement target has no live runtime profile: "
+                    f"{replacement_target.id}"
+                ),
+            )
+        if target_live_profile == slot.target_profile_id:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "replacement target already runs the candidate profile: "
+                    f"{target_live_profile}"
+                ),
+            )
+
+    lock_key = physical_slot_key(replacement_target or slot)
+    recover_prefer = None
+    if action == "recover":
+        recover_status = _lan_aio_recover_status_or_422(ops, slot)
+        recover_slot = recover_status.get("slot") or {}
+        recover_prefer = str(recover_slot.get("recover_prefer") or "old")
+
     active_operation = await _operation_runner.active_lan_aio_operation_for_slot(
         lock_key
     )
@@ -533,10 +1091,23 @@ async def start_lan_aio_slot_action_payload(
 
     cli_action, operation_action = LAN_AIO_SLOT_ACTIONS[action]
     reason = request.reason or f"dashboard {operation_action}"
+    if replacement_target is not None:
+        reason = f"{reason}; replace {replacement_target.id}"
+    if action == "recover":
+        reason = f"{reason}; recover {lock_key} prefer {recover_prefer or 'old'}"
     operation = await _register_operation(
         action=operation_action,
         profile=slot.target_profile_id,
-        command=_lan_aio_action_command(cli_action, slot.id),
+        command=_lan_aio_action_command(
+            cli_action,
+            slot.id,
+            replacement_target_slot_id=(
+                replacement_target.id if replacement_target is not None else None
+            ),
+            failure_policy=request.failure_policy,
+            physical_slot=lock_key if action == "recover" else None,
+            recover_prefer=recover_prefer,
+        ),
         env=dict(os.environ),
         agent_id=slot.agent_id,
         slot=slot.id,
