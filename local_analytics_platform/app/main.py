@@ -42,6 +42,11 @@ from .prompt_vectors import (
     DEFAULT_VECTOR_MODEL_KEY,
     PROMPT_VECTOR_READY_SQL,
 )
+from .user_profile_analytics import (
+    get_user_profile_detail,
+    get_user_profile_groups,
+    get_user_profile_users,
+)
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -288,6 +293,24 @@ def _clamp_days(value: int) -> int:
 
 def _query_days(days: int) -> int:
     return ALL_TIME_QUERY_DAYS if days <= 0 else days
+
+
+def _resolve_user_profile_period(
+    days: int,
+    start_date: date | None,
+    end_date: date | None,
+) -> tuple[int, int, date | None, date | None]:
+    days = _clamp_days(days)
+    if start_date is None and end_date is None:
+        return days, _query_days(days), None, None
+    if start_date is None or end_date is None:
+        raise HTTPException(status_code=400, detail="start_date and end_date must be provided together")
+    if start_date > end_date:
+        raise HTTPException(status_code=400, detail="start_date must be before or equal to end_date")
+    selected_days = (end_date - start_date).days + 1
+    if selected_days > MAX_ANALYTICS_DAYS:
+        raise HTTPException(status_code=400, detail=f"date range cannot exceed {MAX_ANALYTICS_DAYS} days")
+    return selected_days, selected_days, start_date, end_date
 
 
 def _chart_days(days: int) -> int:
@@ -965,6 +988,90 @@ async def user_analytics(
         """
         with bounds as (
             select now() - ($1::int * interval '1 day') as since
+        ),
+        successful_order_users as (
+            select distinct internal_user_id as user_id
+            from orders
+            where status = 'SUCCESS'
+              and internal_user_id is not null
+        ),
+        real_success_payers as (
+            select distinct internal_user_id as user_id
+            from orders
+            where status = 'SUCCESS'
+              and coalesce(final_price, 0) > 0
+              and payment_channel in ('RMB', 'TON', 'XTR')
+              and internal_user_id is not null
+        ),
+        low_trust_free_tier_users as (
+            select users.*
+            from users
+            left join successful_order_users on successful_order_users.user_id = users.id
+            where coalesce(users.checkin_count, 0) > 7
+              and successful_order_users.user_id is null
+        ),
+        referred_real_success_orders as (
+            select orders.*
+            from orders
+            join referrals on referrals.invitee_id = orders.internal_user_id
+            where orders.status = 'SUCCESS'
+              and coalesce(orders.final_price, 0) > 0
+              and orders.payment_channel in ('RMB', 'TON', 'XTR')
+              and orders.internal_user_id is not null
+        ),
+        low_trust_referral_edges as (
+            select
+                referrals.inviter_id,
+                referrals.invitee_id,
+                invitees.is_channel_member,
+                coalesce(invitees.generation_count, 0) as invitee_generation_count,
+                (
+                    coalesce(invitees.checkin_count, 0) > 7
+                    and invitee_success.user_id is null
+                ) as invitee_is_low_trust_free_tier
+            from referrals
+            join low_trust_free_tier_users inviters on inviters.id = referrals.inviter_id
+            left join users invitees on invitees.id = referrals.invitee_id
+            left join successful_order_users invitee_success on invitee_success.user_id = referrals.invitee_id
+        ),
+        low_trust_referred_real_success_orders as (
+            select orders.*
+            from orders
+            join low_trust_referral_edges edges on edges.invitee_id = orders.internal_user_id
+            where orders.status = 'SUCCESS'
+              and coalesce(orders.final_price, 0) > 0
+              and orders.payment_channel in ('RMB', 'TON', 'XTR')
+              and orders.internal_user_id is not null
+        ),
+        inviter_recharge_rates as (
+            select
+                referrals.inviter_id,
+                count(distinct referrals.invitee_id)::numeric as referral_relations,
+                count(distinct real_success_payers.user_id)::numeric as recharged_invitees_count,
+                round(
+                    case
+                        when count(distinct referrals.invitee_id) > 0
+                        then count(distinct real_success_payers.user_id)::numeric
+                            / count(distinct referrals.invitee_id)::numeric * 100
+                        else 0
+                    end,
+                    2
+                )::numeric as invitee_recharge_rate
+            from referrals
+            left join real_success_payers on real_success_payers.user_id = referrals.invitee_id
+            group by referrals.inviter_id
+        ),
+        affiliate_ledger as (
+            select
+                coalesce(sum(amount_usdt) filter (where direction = 'IN'), 0)::numeric as total_commission_usdt,
+                coalesce(sum(amount_usdt) filter (where direction = 'OUT'), 0)::numeric as spent_commission_usdt,
+                coalesce(sum(case
+                    when direction = 'IN' then amount_usdt
+                    when direction = 'OUT' then -amount_usdt
+                    else 0
+                end), 0)::numeric as available_balance_usdt
+            from affiliate_transactions
+            where status = 'SUCCESS'
         )
         select
             count(*)::bigint as total_users,
@@ -974,13 +1081,79 @@ async def user_analytics(
             count(*) filter (where hashed_password is not null)::bigint as password_users,
             count(*) filter (where is_submission_banned is true)::bigint as submission_banned_users,
             count(*) filter (where coalesce(generation_count, 0) > 0)::bigint as generation_users,
+            (select count(*) from real_success_payers)::bigint as paying_users,
             (
-                select count(distinct internal_user_id)
-                from orders
-                where lower(status) = 'success'
-                  and payment_channel in ('RMB', 'TON', 'XTR')
-                  and internal_user_id is not null
-            )::bigint as paying_users,
+                select count(*)
+                from real_success_payers
+                join users payer_users on payer_users.id = real_success_payers.user_id
+                where payer_users.is_channel_member is true
+            )::bigint as paying_channel_members,
+            (
+                select count(*)
+                from real_success_payers
+                join users payer_users on payer_users.id = real_success_payers.user_id
+                where coalesce(payer_users.generation_count, 0) > 0
+            )::bigint as paying_generation_users,
+            (
+                select count(*)
+                from real_success_payers
+                join users payer_users on payer_users.id = real_success_payers.user_id
+                join bounds payer_bounds on true
+                where payer_users.last_activity >= payer_bounds.since
+            )::bigint as active_paying_users,
+            round(
+                case
+                    when count(*) > 0
+                    then (select count(*) from real_success_payers)::numeric / count(*)::numeric * 100
+                    else 0
+                end,
+                2
+            )::numeric as recharge_rate_total_users,
+            round(
+                case
+                    when count(*) filter (where is_channel_member is true) > 0
+                    then (
+                        select count(*)
+                        from real_success_payers
+                        join users payer_users on payer_users.id = real_success_payers.user_id
+                        where payer_users.is_channel_member is true
+                    )::numeric / (count(*) filter (where is_channel_member is true))::numeric * 100
+                    else 0
+                end,
+                2
+            )::numeric as recharge_rate_channel_members,
+            round(
+                case
+                    when count(*) filter (where coalesce(generation_count, 0) > 0) > 0
+                    then (
+                        select count(*)
+                        from real_success_payers
+                        join users payer_users on payer_users.id = real_success_payers.user_id
+                        where coalesce(payer_users.generation_count, 0) > 0
+                    )::numeric / (count(*) filter (where coalesce(generation_count, 0) > 0))::numeric * 100
+                    else 0
+                end,
+                2
+            )::numeric as recharge_rate_generation_users,
+            round(
+                case
+                    when count(*) filter (where last_activity >= bounds.since) > 0
+                    then (
+                        select count(*)
+                        from real_success_payers
+                        join users payer_users on payer_users.id = real_success_payers.user_id
+                        join bounds payer_bounds on true
+                        where payer_users.last_activity >= payer_bounds.since
+                    )::numeric / (count(*) filter (where last_activity >= bounds.since))::numeric * 100
+                    else 0
+                end,
+                2
+            )::numeric as recharge_rate_active_users,
+            coalesce((
+                select round(avg(invitee_recharge_rate), 2)
+                from inviter_recharge_rates
+            ), 0)::numeric as avg_inviter_invitee_recharge_rate,
+            (select count(*) from inviter_recharge_rates)::bigint as inviter_recharge_rate_sample_size,
             coalesce(sum(coalesce(credits, 0)), 0)::bigint as total_credits,
             coalesce(
                 sum(coalesce(credits, 0)) filter (
@@ -988,10 +1161,69 @@ async def user_analytics(
                        or last_activity >= bounds.since
                 ),
                 0
-            )::bigint as active_credits
+            )::bigint as active_credits,
+            (select count(*) from low_trust_free_tier_users)::bigint as low_trust_free_tier_users,
+            (
+                select count(*)
+                from low_trust_free_tier_users, bounds as low_trust_bounds
+                where last_activity >= low_trust_bounds.since
+            )::bigint as low_trust_active_users,
+            (select count(*) from low_trust_free_tier_users where coalesce(generation_count, 0) > 0)::bigint as low_trust_generation_users,
+            (select coalesce(sum(coalesce(credits, 0)), 0) from low_trust_free_tier_users)::bigint as low_trust_total_credits,
+            (select count(distinct inviter_id) from low_trust_referral_edges)::bigint as low_trust_inviters_count,
+            (
+                select count(distinct invitee_id)
+                from low_trust_referral_edges
+                where invitee_is_low_trust_free_tier is false
+            )::bigint as low_trust_non_low_trust_invitees_count,
+            (
+                select count(distinct internal_user_id)
+                from low_trust_referred_real_success_orders
+            )::bigint as low_trust_recharged_invitees_count,
+            (select count(*) from referrals)::bigint as referral_relations,
+            (select count(distinct inviter_id) from referrals)::bigint as inviters_count,
+            (
+                select count(distinct referrals.invitee_id)
+                from referrals
+                join users invitees on invitees.id = referrals.invitee_id
+                where invitees.is_channel_member is true
+            )::bigint as invitee_channel_members,
+            (
+                select count(distinct referrals.invitee_id)
+                from referrals
+                join users invitees on invitees.id = referrals.invitee_id
+                where coalesce(invitees.generation_count, 0) > 0
+            )::bigint as invitee_generation_users,
+            (select count(distinct internal_user_id) from referred_real_success_orders)::bigint as recharged_invitees_count,
+            (select count(*) from referred_real_success_orders)::bigint as invitee_recharge_orders,
+            coalesce((
+                select sum(final_price) from referred_real_success_orders where payment_channel = 'RMB'
+            ), 0)::numeric as invitee_recharge_total_rmb,
+            coalesce((
+                select sum(final_price) from referred_real_success_orders where payment_channel = 'TON'
+            ), 0)::numeric as invitee_recharge_total_ton,
+            coalesce((
+                select sum(final_price) from referred_real_success_orders where payment_channel = 'XTR'
+            ), 0)::numeric as invitee_recharge_total_stars,
+            coalesce((
+                select
+                    sum(case
+                        when payment_channel = 'RMB' then final_price * $2::numeric
+                        when payment_channel = 'TON' then final_price * $3::numeric
+                        when payment_channel = 'XTR' then final_price * $4::numeric
+                        else 0
+                    end)
+                from referred_real_success_orders
+            ), 0)::numeric as invitee_recharge_total_usdt,
+            (select total_commission_usdt from affiliate_ledger)::numeric as affiliate_total_commission_usdt,
+            (select spent_commission_usdt from affiliate_ledger)::numeric as affiliate_spent_commission_usdt,
+            (select available_balance_usdt from affiliate_ledger)::numeric as affiliate_available_balance_usdt
         from users, bounds
         """,
         query_days,
+        RMB_TO_USDT,
+        TON_TO_USDT,
+        STARS_TO_USDT,
     )
     daily = await _fetch(
         """
@@ -1244,26 +1476,227 @@ async def user_analytics(
     )
     referrals_rank = await _fetch(
         """
+        with inviter_recharge as (
+            select
+                referrals.inviter_id,
+                count(distinct referrals.invitee_id)::bigint as referral_relations,
+                count(distinct referrals.invitee_id) filter (
+                    where invitees.is_channel_member is true
+                )::bigint as invitee_channel_members,
+                count(distinct referrals.invitee_id) filter (
+                    where coalesce(invitees.generation_count, 0) > 0
+                )::bigint as invitee_generation_users,
+                count(distinct orders.internal_user_id) filter (
+                    where orders.id is not null
+                )::bigint as recharged_invitees_count,
+                round(
+                    case
+                        when count(distinct referrals.invitee_id) > 0
+                        then count(distinct orders.internal_user_id) filter (where orders.id is not null)::numeric
+                            / count(distinct referrals.invitee_id)::numeric * 100
+                        else 0
+                    end,
+                    2
+                )::numeric as invitee_recharge_rate,
+                count(orders.id)::bigint as invitee_recharge_orders,
+                coalesce(sum(orders.final_price) filter (where orders.payment_channel = 'RMB'), 0)::numeric as invitee_recharge_total_rmb,
+                coalesce(sum(orders.final_price) filter (where orders.payment_channel = 'TON'), 0)::numeric as invitee_recharge_total_ton,
+                coalesce(sum(orders.final_price) filter (where orders.payment_channel = 'XTR'), 0)::numeric as invitee_recharge_total_stars,
+                coalesce(sum(case
+                    when orders.payment_channel = 'RMB' then orders.final_price * $2::numeric
+                    when orders.payment_channel = 'TON' then orders.final_price * $3::numeric
+                    when orders.payment_channel = 'XTR' then orders.final_price * $4::numeric
+                    else 0
+                end), 0)::numeric as invitee_recharge_total_usdt
+            from referrals
+            left join users invitees on invitees.id = referrals.invitee_id
+            left join orders on orders.internal_user_id = referrals.invitee_id
+                and orders.status = 'SUCCESS'
+                and coalesce(orders.final_price, 0) > 0
+                and orders.payment_channel in ('RMB', 'TON', 'XTR')
+            group by referrals.inviter_id
+        ),
+        affiliate_ledger as (
+            select
+                user_id,
+                coalesce(sum(amount_usdt) filter (where direction = 'IN'), 0)::numeric as affiliate_total_commission_usdt,
+                coalesce(sum(amount_usdt) filter (where direction = 'OUT'), 0)::numeric as affiliate_spent_commission_usdt,
+                coalesce(sum(case
+                    when direction = 'IN' then amount_usdt
+                    when direction = 'OUT' then -amount_usdt
+                    else 0
+                end), 0)::numeric as affiliate_available_balance_usdt
+            from affiliate_transactions
+            where status = 'SUCCESS'
+            group by user_id
+        )
         select
             'referrals_rank' as leaderboard,
-            id,
-            username,
-            full_name,
-            coalesce(nullif(current_identity, ''), '外门弟子') as current_identity,
-            coalesce(nullif(user_group, ''), '凡人') as user_group,
-            coalesce(generation_count, 0)::bigint as generation_count,
-            coalesce(credits, 0)::bigint as credits,
-            coalesce(referral_count, 0)::bigint as referral_count,
-            coalesce(checkin_count, 0)::bigint as checkin_count,
-            last_activity,
-            created_at,
-            is_channel_member,
-            is_submission_banned
+            users.id,
+            users.username,
+            users.full_name,
+            coalesce(nullif(users.current_identity, ''), '外门弟子') as current_identity,
+            coalesce(nullif(users.user_group, ''), '凡人') as user_group,
+            coalesce(users.generation_count, 0)::bigint as generation_count,
+            coalesce(users.credits, 0)::bigint as credits,
+            coalesce(inviter_recharge.referral_relations, users.referral_count, 0)::bigint as referral_count,
+            coalesce(inviter_recharge.referral_relations, users.referral_count, 0)::bigint as referral_relations,
+            coalesce(inviter_recharge.invitee_channel_members, 0)::bigint as invitee_channel_members,
+            coalesce(inviter_recharge.invitee_generation_users, 0)::bigint as invitee_generation_users,
+            coalesce(inviter_recharge.recharged_invitees_count, 0)::bigint as recharged_invitees_count,
+            coalesce(inviter_recharge.invitee_recharge_rate, 0)::numeric as invitee_recharge_rate,
+            coalesce(inviter_recharge.invitee_recharge_orders, 0)::bigint as invitee_recharge_orders,
+            coalesce(inviter_recharge.invitee_recharge_total_rmb, 0)::numeric as invitee_recharge_total_rmb,
+            coalesce(inviter_recharge.invitee_recharge_total_ton, 0)::numeric as invitee_recharge_total_ton,
+            coalesce(inviter_recharge.invitee_recharge_total_stars, 0)::numeric as invitee_recharge_total_stars,
+            coalesce(inviter_recharge.invitee_recharge_total_usdt, 0)::numeric as invitee_recharge_total_usdt,
+            coalesce(affiliate_ledger.affiliate_total_commission_usdt, 0)::numeric as affiliate_total_commission_usdt,
+            coalesce(affiliate_ledger.affiliate_spent_commission_usdt, 0)::numeric as affiliate_spent_commission_usdt,
+            coalesce(affiliate_ledger.affiliate_available_balance_usdt, 0)::numeric as affiliate_available_balance_usdt,
+            coalesce(users.checkin_count, 0)::bigint as checkin_count,
+            users.last_activity,
+            users.created_at,
+            users.is_channel_member,
+            users.is_submission_banned
         from users
-        order by coalesce(referral_count, 0) desc, id desc
+        join inviter_recharge on inviter_recharge.inviter_id = users.id
+        left join affiliate_ledger on affiliate_ledger.user_id = users.id
+        order by
+            coalesce(inviter_recharge.recharged_invitees_count, 0) desc,
+            coalesce(inviter_recharge.invitee_recharge_total_usdt, 0) desc,
+            coalesce(inviter_recharge.referral_relations, users.referral_count, 0) desc,
+            users.id desc
         limit $1::int
         """,
         limit,
+        RMB_TO_USDT,
+        TON_TO_USDT,
+        STARS_TO_USDT,
+    )
+    low_trust_rank = await _fetch(
+        """
+        with successful_order_users as (
+            select distinct internal_user_id as user_id
+            from orders
+            where status = 'SUCCESS'
+              and internal_user_id is not null
+        ),
+        low_trust_users as (
+            select users.*
+            from users
+            left join successful_order_users on successful_order_users.user_id = users.id
+            where coalesce(users.checkin_count, 0) > 7
+              and successful_order_users.user_id is null
+        ),
+        invitee_rollup as (
+            select
+                referrals.inviter_id,
+                count(distinct referrals.invitee_id)::bigint as referral_relations,
+                count(distinct referrals.invitee_id) filter (
+                    where not (
+                        coalesce(invitees.checkin_count, 0) > 7
+                        and invitee_success.user_id is null
+                    )
+                )::bigint as non_low_trust_invitees_count,
+                round(
+                    case
+                        when count(distinct referrals.invitee_id) > 0
+                        then count(distinct referrals.invitee_id) filter (
+                            where not (
+                                coalesce(invitees.checkin_count, 0) > 7
+                                and invitee_success.user_id is null
+                            )
+                        )::numeric / count(distinct referrals.invitee_id)::numeric * 100
+                        else 0
+                    end,
+                    2
+                )::numeric as non_low_trust_invitee_rate,
+                count(distinct referrals.invitee_id) filter (
+                    where coalesce(invitees.checkin_count, 0) > 7
+                      and invitee_success.user_id is null
+                )::bigint as low_trust_invitees_count,
+                count(distinct referrals.invitee_id) filter (
+                    where invitees.is_channel_member is true
+                )::bigint as invitee_channel_members,
+                count(distinct referrals.invitee_id) filter (
+                    where coalesce(invitees.generation_count, 0) > 0
+                )::bigint as invitee_generation_users,
+                count(distinct orders.internal_user_id) filter (
+                    where orders.id is not null
+                )::bigint as recharged_invitees_count,
+                round(
+                    case
+                        when count(distinct referrals.invitee_id) > 0
+                        then count(distinct orders.internal_user_id) filter (where orders.id is not null)::numeric
+                            / count(distinct referrals.invitee_id)::numeric * 100
+                        else 0
+                    end,
+                    2
+                )::numeric as invitee_recharge_rate,
+                count(orders.id)::bigint as invitee_recharge_orders,
+                coalesce(sum(orders.final_price) filter (where orders.payment_channel = 'RMB'), 0)::numeric as invitee_recharge_total_rmb,
+                coalesce(sum(orders.final_price) filter (where orders.payment_channel = 'TON'), 0)::numeric as invitee_recharge_total_ton,
+                coalesce(sum(orders.final_price) filter (where orders.payment_channel = 'XTR'), 0)::numeric as invitee_recharge_total_stars,
+                coalesce(sum(case
+                    when orders.payment_channel = 'RMB' then orders.final_price * $2::numeric
+                    when orders.payment_channel = 'TON' then orders.final_price * $3::numeric
+                    when orders.payment_channel = 'XTR' then orders.final_price * $4::numeric
+                    else 0
+                end), 0)::numeric as invitee_recharge_total_usdt
+            from referrals
+            left join users invitees on invitees.id = referrals.invitee_id
+            left join successful_order_users invitee_success on invitee_success.user_id = referrals.invitee_id
+            left join orders on orders.internal_user_id = referrals.invitee_id
+                and orders.status = 'SUCCESS'
+                and coalesce(orders.final_price, 0) > 0
+                and orders.payment_channel in ('RMB', 'TON', 'XTR')
+            group by referrals.inviter_id
+        )
+        select
+            'low_trust_rank' as leaderboard,
+            low_trust_users.id,
+            low_trust_users.username,
+            low_trust_users.full_name,
+            coalesce(nullif(low_trust_users.current_identity, ''), '外门弟子') as current_identity,
+            coalesce(nullif(low_trust_users.user_group, ''), '凡人') as user_group,
+            coalesce(low_trust_users.generation_count, 0)::bigint as generation_count,
+            coalesce(low_trust_users.credits, 0)::bigint as credits,
+            coalesce(invitee_rollup.referral_relations, low_trust_users.referral_count, 0)::bigint as referral_count,
+            coalesce(invitee_rollup.referral_relations, low_trust_users.referral_count, 0)::bigint as referral_relations,
+            coalesce(invitee_rollup.non_low_trust_invitees_count, 0)::bigint as non_low_trust_invitees_count,
+            coalesce(invitee_rollup.non_low_trust_invitee_rate, 0)::numeric as non_low_trust_invitee_rate,
+            coalesce(invitee_rollup.low_trust_invitees_count, 0)::bigint as low_trust_invitees_count,
+            coalesce(invitee_rollup.invitee_channel_members, 0)::bigint as invitee_channel_members,
+            coalesce(invitee_rollup.invitee_generation_users, 0)::bigint as invitee_generation_users,
+            coalesce(invitee_rollup.recharged_invitees_count, 0)::bigint as recharged_invitees_count,
+            coalesce(invitee_rollup.invitee_recharge_rate, 0)::numeric as invitee_recharge_rate,
+            coalesce(invitee_rollup.invitee_recharge_orders, 0)::bigint as invitee_recharge_orders,
+            coalesce(invitee_rollup.invitee_recharge_total_rmb, 0)::numeric as invitee_recharge_total_rmb,
+            coalesce(invitee_rollup.invitee_recharge_total_ton, 0)::numeric as invitee_recharge_total_ton,
+            coalesce(invitee_rollup.invitee_recharge_total_stars, 0)::numeric as invitee_recharge_total_stars,
+            coalesce(invitee_rollup.invitee_recharge_total_usdt, 0)::numeric as invitee_recharge_total_usdt,
+            coalesce(low_trust_users.checkin_count, 0)::bigint as checkin_count,
+            low_trust_users.last_activity,
+            low_trust_users.created_at,
+            low_trust_users.is_channel_member,
+            low_trust_users.is_submission_banned,
+            true as is_low_trust_free_tier
+        from low_trust_users
+        left join invitee_rollup on invitee_rollup.inviter_id = low_trust_users.id
+        order by
+            coalesce(invitee_rollup.non_low_trust_invitees_count, 0) desc,
+            coalesce(invitee_rollup.recharged_invitees_count, 0) desc,
+            coalesce(invitee_rollup.invitee_recharge_total_usdt, 0) desc,
+            coalesce(invitee_rollup.invitee_generation_users, 0) desc,
+            coalesce(invitee_rollup.invitee_channel_members, 0) desc,
+            coalesce(low_trust_users.checkin_count, 0) desc,
+            low_trust_users.id desc
+        limit $1::int
+        """,
+        limit,
+        RMB_TO_USDT,
+        TON_TO_USDT,
+        STARS_TO_USDT,
     )
     recent_active_rank = await _fetch(
         """
@@ -1304,9 +1737,99 @@ async def user_analytics(
             "generation": _rows(generation_rank),
             "credits": _rows(credits_rank),
             "referrals": _rows(referrals_rank),
+            "low_trust": _rows(low_trust_rank),
             "recent_active": _rows(recent_active_rank),
         },
     }
+
+
+@app.get("/api/user-analytics/users")
+async def user_analytics_users(
+    days: int = Query(30, ge=0, le=MAX_ANALYTICS_DAYS),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+    page: int = Query(1, ge=1, le=10000),
+    size: int = Query(25, ge=1, le=100),
+    search: str = Query(""),
+    segment: str = Query("all"),
+    sort: str = Query("last_activity"),
+    dimension: str = Query(""),
+    group_key: str = Query(""),
+) -> dict[str, Any]:
+    days, query_days, resolved_start_date, resolved_end_date = _resolve_user_profile_period(
+        days,
+        start_date,
+        end_date,
+    )
+    return await get_user_profile_users(
+        fetch=_fetch,
+        fetchrow=_fetchrow,
+        days=days,
+        query_days=query_days,
+        page=page,
+        size=size,
+        search=search,
+        segment=segment,
+        sort=sort,
+        dimension=dimension or None,
+        group_key=group_key,
+        rmb_to_usdt=RMB_TO_USDT,
+        ton_to_usdt=TON_TO_USDT,
+        stars_to_usdt=STARS_TO_USDT,
+        start_date=resolved_start_date,
+        end_date=resolved_end_date,
+    )
+
+
+@app.get("/api/user-analytics/groups")
+async def user_analytics_groups(
+    days: int = Query(30, ge=0, le=MAX_ANALYTICS_DAYS),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+    dimension: str = Query("payer"),
+    segment: str = Query("all"),
+    search: str = Query(""),
+    sort: str = Query("users"),
+    limit: int = Query(20, ge=1, le=100),
+) -> dict[str, Any]:
+    days, query_days, resolved_start_date, resolved_end_date = _resolve_user_profile_period(
+        days,
+        start_date,
+        end_date,
+    )
+    return await get_user_profile_groups(
+        fetch=_fetch,
+        days=days,
+        query_days=query_days,
+        dimension=dimension,
+        segment=segment,
+        search=search,
+        sort=sort,
+        limit=limit,
+        rmb_to_usdt=RMB_TO_USDT,
+        ton_to_usdt=TON_TO_USDT,
+        stars_to_usdt=STARS_TO_USDT,
+        start_date=resolved_start_date,
+        end_date=resolved_end_date,
+    )
+
+
+@app.get("/api/user-analytics/users/{user_id}")
+async def user_analytics_user_detail(
+    user_id: int,
+    days: int = Query(30, ge=0, le=MAX_ANALYTICS_DAYS),
+) -> dict[str, Any]:
+    days = _clamp_days(days)
+    return await get_user_profile_detail(
+        fetch=_fetch,
+        fetchrow=_fetchrow,
+        user_id=user_id,
+        days=days,
+        query_days=_query_days(days),
+        rmb_to_usdt=RMB_TO_USDT,
+        ton_to_usdt=TON_TO_USDT,
+        stars_to_usdt=STARS_TO_USDT,
+    )
 
 
 @app.get("/api/credit-flow-analytics")

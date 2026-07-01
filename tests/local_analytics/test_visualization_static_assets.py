@@ -10,6 +10,8 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     app_js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
 
     assert "/static/vendor/echarts.min.js" in html
+    assert "/static/styles.css?v=20260701-user-date-range-v1" in html
+    assert "/static/app.js?v=20260701-user-date-range-v1" in html
     assert "spark-bars" not in html
     assert "hourly-bars" not in html
     assert "renderChart(id, option)" in app_js
@@ -25,7 +27,6 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     assert "不跨任务连接" in app_js
 
     for mount_id in [
-        "userTrendChart",
         "creditFlowTrendChart",
         "financeTrendChart",
         "financeHourlyChart",
@@ -34,3 +35,59 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
         "promptGraphChart",
     ]:
         assert f'id="{mount_id}"' in html
+
+    for removed_user_mount in [
+        "userTrendChart",
+        "userConversionChart",
+        "referralConversionChart",
+        "identityDistributionChart",
+        "groupDistributionChart",
+        "creditDistributionChart",
+        "generationDistributionChart",
+        "activityDistributionChart",
+        "generationLeaderboard",
+        "creditsLeaderboard",
+        "referralsLeaderboard",
+        "lowTrustLeaderboard",
+        "recentActiveLeaderboard",
+    ]:
+        assert f'id="{removed_user_mount}"' not in html
+
+    assert 'id="userRechargeRates"' in html
+    assert 'id="daysSelectControl"' in html
+    assert 'id="userDateRangeControls"' in html
+    assert 'id="userStartDateInput"' in html
+    assert 'id="userEndDateInput"' in html
+    assert 'id="userGroupRows"' in html
+    assert 'id="userGroupDimensionSelect"' in html
+    assert 'id="userGroupSegmentSelect"' not in html
+    assert 'id="userGroupSortSelect"' in html
+    assert 'id="userGroupLimitSelect"' in html
+    assert 'id="userGroupSelectionLabel"' in html
+    assert 'id="userGroupClearButton"' in html
+    assert 'id="userProfileRows"' in html
+    assert 'id="userProfileDrawer"' in html
+    assert 'id="userProfileSearchInput"' in html
+    assert 'id="userProfileSegmentSelect"' in html
+    assert 'id="userProfileSortSelect"' in html
+    assert "人群透视分析" in html
+    assert "人群下钻用户列表" in html
+    assert "renderUserGroups" in app_js
+    assert "selectUserGroup" in app_js
+    assert "userPeriodParams" in app_js
+    assert "currentUserDateRange" in app_js
+    assert "start_date" in app_js
+    assert "userGroupSegmentSelect" not in app_js
+    assert "renderUserCharts" not in app_js
+    assert "renderReferralLeaderboard" not in app_js
+    assert "renderLowTrustLeaderboard" not in app_js
+    assert "renderUserProfileList" in app_js
+    assert "openUserProfile" in app_js
+    assert "renderUserProfileDetail" in app_js
+    assert "/api/user-analytics/groups" in app_js
+    assert "/api/user-analytics/users" in app_js
+    assert "recharge_rate_total_users" in app_js
+    assert "avg_inviter_invitee_recharge_rate" in app_js
+    assert "invitee_recharge_rate" in app_js
+    assert "non_low_trust_invitees_count" in app_js
+    assert "低信任免费层" in app_js

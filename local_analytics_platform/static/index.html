@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>本地数据分析平台</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/static/styles.css?v=20260629-echarts-v1" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260701-user-date-range-v1" />
   </head>
   <body>
     <div id="app" class="app-shell">
@@ -78,7 +78,7 @@
             <div id="lastUpdated" class="timestamp"></div>
           </div>
         <div class="controls">
-          <label>
+          <label id="daysSelectControl">
             <span>统计周期</span>
             <select id="daysSelect">
               <option value="0">所有</option>
@@ -90,6 +90,16 @@
               <option value="7">7 天</option>
             </select>
           </label>
+          <div id="userDateRangeControls" class="date-range-controls hidden" aria-label="用户画像日期范围">
+            <label>
+              <span>开始日期</span>
+              <input id="userStartDateInput" type="date" />
+            </label>
+            <label>
+              <span>结束日期</span>
+              <input id="userEndDateInput" type="date" />
+            </label>
+          </div>
           <button id="refreshButton" type="button">刷新</button>
         </div>
       </header>
@@ -99,94 +109,146 @@
 
         <section class="band users-band tab-panel active" data-panel="users">
           <div id="userSummary" class="metric-grid"></div>
-          <div class="analytics-chart-grid user-chart-grid">
-            <div class="chart-card chart-card-wide">
-              <div class="chart-title">用户增长、活跃与签到趋势</div>
-              <div id="userTrendChart" class="analytics-chart"></div>
+          <div id="userRechargeRates" class="metric-grid compact"></div>
+          <div class="table-shell user-group-panel">
+            <div class="table-title-row">
+              <div>
+                <div class="table-title">人群透视分析</div>
+                <div id="userGroupStatus" class="muted small">按同一套用户画像字段聚合</div>
+              </div>
             </div>
-            <div class="chart-card">
-              <div class="chart-title">新增转化漏斗</div>
-              <div id="userConversionChart" class="analytics-chart"></div>
+            <div class="profile-filter-bar group-filter-bar">
+              <label>
+                <span>维度</span>
+                <select id="userGroupDimensionSelect">
+                  <option value="payer">付费层</option>
+                  <option value="channel_member">入宗门</option>
+                  <option value="trust">信任层</option>
+                  <option value="identity">身份</option>
+                  <option value="user_group">修为</option>
+                  <option value="generation_band">历史生成次数</option>
+                  <option value="credit_band">灵石余额</option>
+                  <option value="checkin_band">历史签到</option>
+                  <option value="invitation">邀请</option>
+                  <option value="community">投稿社区</option>
+                  <option value="prompt_unlock">提示词解锁</option>
+                  <option value="social">关注关系</option>
+                  <option value="submission">投稿权限</option>
+                </select>
+              </label>
+              <label>
+                <span>排序</span>
+                <select id="userGroupSortSelect">
+                  <option value="users">用户数</option>
+                  <option value="active_rate">活跃率</option>
+                  <option value="paying_rate">付费率</option>
+                  <option value="recharge_usdt">充值金额</option>
+                  <option value="generation_count">生成次数</option>
+                  <option value="credit_net_change">灵石净变化</option>
+                  <option value="gallery_signal">投稿信号</option>
+                  <option value="prompt_unlocks">提示词解锁</option>
+                  <option value="followers">粉丝数</option>
+                  <option value="checkins">签到数</option>
+                </select>
+              </label>
+              <label>
+                <span>展示分组数</span>
+                <select id="userGroupLimitSelect">
+                  <option value="10">10</option>
+                  <option value="20" selected>20</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                </select>
+              </label>
+              <button id="userGroupRefreshButton" type="button">分析</button>
+            </div>
+            <div class="table-scroll">
+              <table class="group-table">
+                <thead>
+                  <tr>
+                    <th>人群</th>
+                    <th>用户 / 占比</th>
+                    <th>活跃 / 入宗门</th>
+                    <th>充值</th>
+                    <th>生成 / 签到</th>
+                    <th>灵石</th>
+                    <th>邀请 / 社区</th>
+                    <th>解锁 / 社交</th>
+                  </tr>
+                </thead>
+                <tbody id="userGroupRows"></tbody>
+              </table>
             </div>
           </div>
-          <div class="analytics-chart-grid user-distribution-charts">
-            <div class="chart-card">
-              <div class="table-title">身份组分布</div>
-              <div id="identityDistributionChart" class="analytics-chart compact-chart"></div>
+          <div class="table-shell user-profile-panel">
+            <div class="table-title-row">
+              <div>
+                <div class="table-title">人群下钻用户列表</div>
+                <div id="userGroupSelectionLabel" class="muted small">全部人群</div>
+              </div>
+              <div class="table-title-actions">
+                <button id="userGroupClearButton" type="button">清除人群</button>
+                <div id="userProfilePagination" class="pagination-status"></div>
+              </div>
             </div>
-            <div class="chart-card">
-              <div class="table-title">修为分布</div>
-              <div id="groupDistributionChart" class="analytics-chart compact-chart"></div>
+            <div class="profile-filter-bar">
+              <label>
+                <span>搜索</span>
+                <input id="userProfileSearchInput" type="search" placeholder="ID / username / 昵称" />
+              </label>
+              <label>
+                <span>分层</span>
+                <select id="userProfileSegmentSelect">
+                  <option value="all">全部用户</option>
+                  <option value="active">近周期活跃</option>
+                  <option value="low_trust_free_tier">低信任免费层</option>
+                  <option value="real_payer">真实付费</option>
+                  <option value="non_payer_generator">未付费生成用户</option>
+                  <option value="has_invites">有邀请</option>
+                  <option value="has_gallery_posts">有投稿</option>
+                  <option value="has_prompt_unlocks">有提示词解锁</option>
+                  <option value="has_followers">有粉丝</option>
+                  <option value="submission_banned">投稿封禁</option>
+                </select>
+              </label>
+              <label>
+                <span>排序</span>
+                <select id="userProfileSortSelect">
+                  <option value="last_activity">最近活跃</option>
+                  <option value="generation_count">生成次数</option>
+                  <option value="credits">灵石余额</option>
+                  <option value="recharge_usdt">充值金额</option>
+                  <option value="credit_income">灵石收入</option>
+                  <option value="credit_expense">灵石支出</option>
+                  <option value="referral_count">邀请数</option>
+                  <option value="gallery_signal">投稿信号</option>
+                  <option value="followers">粉丝数</option>
+                  <option value="prompt_unlocks">提示词解锁</option>
+                  <option value="checkins">签到数</option>
+                </select>
+              </label>
+              <button id="userProfileRefreshButton" type="button">查询</button>
             </div>
-            <div class="chart-card">
-              <div class="table-title">灵石持有分布</div>
-              <div id="creditDistributionChart" class="analytics-chart compact-chart"></div>
-            </div>
-            <div class="chart-card">
-              <div class="table-title">生成次数分布</div>
-              <div id="generationDistributionChart" class="analytics-chart compact-chart"></div>
-            </div>
-            <div class="chart-card">
-              <div class="table-title">活跃分层</div>
-              <div id="activityDistributionChart" class="analytics-chart compact-chart"></div>
-            </div>
-          </div>
-          <div class="leaderboard-grid">
-            <div class="table-shell">
-              <div class="table-title">生成排行</div>
-              <table>
+            <div class="table-scroll">
+              <table class="profile-table">
                 <thead>
                   <tr>
                     <th>用户</th>
-                    <th>身份</th>
-                    <th>生成</th>
-                    <th>最近活跃</th>
+                    <th>状态</th>
+                    <th>生成 / 签到</th>
+                    <th>灵石 / 收支</th>
+                    <th>充值</th>
+                    <th>邀请 / 社区</th>
+                    <th>社交 / 解锁</th>
+                    <th>操作</th>
                   </tr>
                 </thead>
-                <tbody id="generationLeaderboard"></tbody>
+                <tbody id="userProfileRows"></tbody>
               </table>
             </div>
-            <div class="table-shell">
-              <div class="table-title">灵石排行</div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>用户</th>
-                    <th>身份</th>
-                    <th>灵石</th>
-                    <th>生成</th>
-                  </tr>
-                </thead>
-                <tbody id="creditsLeaderboard"></tbody>
-              </table>
-            </div>
-            <div class="table-shell">
-              <div class="table-title">邀请排行</div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>用户</th>
-                    <th>修为</th>
-                    <th>邀请</th>
-                    <th>入宗门</th>
-                  </tr>
-                </thead>
-                <tbody id="referralsLeaderboard"></tbody>
-              </table>
-            </div>
-            <div class="table-shell">
-              <div class="table-title">最近活跃</div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>用户</th>
-                    <th>身份</th>
-                    <th>活跃时间</th>
-                    <th>灵石</th>
-                  </tr>
-                </thead>
-                <tbody id="recentActiveLeaderboard"></tbody>
-              </table>
+            <div class="profile-pagination">
+              <button id="userProfilePrevButton" type="button">上一页</button>
+              <button id="userProfileNextButton" type="button">下一页</button>
             </div>
           </div>
         </section>
@@ -1011,7 +1073,18 @@
       </main>
       </div>
     </div>
+    <div id="userProfileDrawerBackdrop" class="profile-drawer-backdrop hidden"></div>
+    <aside id="userProfileDrawer" class="profile-drawer" aria-hidden="true">
+      <div class="profile-drawer__header">
+        <div>
+          <div class="eyebrow">用户画像详情</div>
+          <h3 id="userProfileDrawerTitle">用户画像</h3>
+        </div>
+        <button id="userProfileDrawerClose" class="profile-drawer__close" type="button" aria-label="关闭">×</button>
+      </div>
+      <div id="userProfileDrawerContent" class="profile-drawer__content"></div>
+    </aside>
     <script src="/static/vendor/echarts.min.js?v=6.0.0"></script>
-    <script src="/static/app.js?v=20260629-echarts-v1"></script>
+    <script src="/static/app.js?v=20260701-user-date-range-v1"></script>
   </body>
 </html>

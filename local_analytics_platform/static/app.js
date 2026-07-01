@@ -1,5 +1,8 @@
 const state = {
   users: null,
+  userGroups: null,
+  userProfiles: null,
+  userProfileDetail: null,
   creditFlow: null,
   overview: null,
   finance: null,
@@ -21,10 +24,17 @@ const state = {
   selectedPromptVectorCluster: null,
   selectedPromptScene: null,
   selectedPromptGraphCommunity: null,
+  selectedUserGroup: null,
+  userDateRange: {
+    start: "",
+    end: "",
+  },
   promptPage: 1,
   promptSlimPage: 1,
   promptVectorPage: 1,
   promptScenePage: 1,
+  userProfilePage: 1,
+  userProfileSearchTimer: null,
   promptVectorResume: null,
   promptVectorResumeLoading: false,
   charts: {},
@@ -53,8 +63,8 @@ const state = {
 const tabs = {
   users: {
     kicker: "用户画像",
-    title: "用户增长、活跃和分层",
-    subtitle: "增长、活跃、身份、灵石和用户排行",
+    title: "人群透视和单用户画像",
+    subtitle: "按画像字段聚合人群，并下钻到单用户画像抽屉",
   },
   "credit-flow": {
     kicker: "灵石收支",
@@ -156,17 +166,96 @@ function selectNumber(selector, fallback) {
   return Number.isFinite(numeric) ? numeric : fallback;
 }
 
+function toDateInputValue(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseDateInputValue(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || "");
+  if (!match) return null;
+  const parsed = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function inclusiveDateDays(startValue, endValue) {
+  const start = parseDateInputValue(startValue);
+  const end = parseDateInputValue(endValue);
+  if (!start || !end || start > end) return null;
+  return Math.round((end - start) / 86400000) + 1;
+}
+
+function setUserDateRangeForDays(days = 30) {
+  const normalizedDays = Math.max(1, Number(days) || 30);
+  const end = new Date();
+  const start = new Date(end);
+  start.setDate(end.getDate() - normalizedDays + 1);
+  state.userDateRange = {
+    start: toDateInputValue(start),
+    end: toDateInputValue(end),
+  };
+}
+
+function ensureUserDateRange() {
+  if (!state.userDateRange.start || !state.userDateRange.end) {
+    setUserDateRangeForDays(state.tabDays.users || 30);
+  }
+  const startInput = $("#userStartDateInput");
+  const endInput = $("#userEndDateInput");
+  if (startInput && !startInput.value) startInput.value = state.userDateRange.start;
+  if (endInput && !endInput.value) endInput.value = state.userDateRange.end;
+  return state.userDateRange;
+}
+
+function currentUserDateRange() {
+  ensureUserDateRange();
+  const start = $("#userStartDateInput")?.value || state.userDateRange.start;
+  const end = $("#userEndDateInput")?.value || state.userDateRange.end;
+  const days = inclusiveDateDays(start, end) || Number(state.tabDays.users || 30);
+  state.userDateRange = { start, end };
+  state.tabDays.users = days;
+  return { start, end, days };
+}
+
+function userPeriodParams() {
+  const range = currentUserDateRange();
+  return {
+    days: range.days,
+    start_date: range.start,
+    end_date: range.end,
+  };
+}
+
 function currentDays() {
+  if (state.activeTab === "users") {
+    return currentUserDateRange().days;
+  }
   return Number(state.tabDays[state.activeTab] ?? 30);
 }
 
 function setCurrentDays(days) {
+  if (state.activeTab === "users") {
+    setUserDateRangeForDays(days);
+    return;
+  }
   state.tabDays[state.activeTab] = Number.isFinite(Number(days)) ? Number(days) : 30;
 }
 
 function syncDaysControl() {
   const select = $("#daysSelect");
+  const daysControl = $("#daysSelectControl");
+  const userDateRangeControls = $("#userDateRangeControls");
   if (!select) return;
+  if (state.activeTab === "users") {
+    ensureUserDateRange();
+    if (daysControl) daysControl.classList.add("hidden");
+    if (userDateRangeControls) userDateRangeControls.classList.remove("hidden");
+    return;
+  }
+  if (daysControl) daysControl.classList.remove("hidden");
+  if (userDateRangeControls) userDateRangeControls.classList.add("hidden");
   const lockedAllTimeTabs = new Set(["prompt-slim", "prompt-vectors", "prompt-scenes", "prompt-graph"]);
   const locked = lockedAllTimeTabs.has(state.activeTab);
   select.disabled = locked;
@@ -211,7 +300,7 @@ function metric(label, value, note = "") {
 
 const chartPalette = ["#2563eb", "#0f766e", "#b7791f", "#7c3aed", "#dc2626", "#0891b2", "#16a34a", "#ea580c", "#9333ea", "#475569"];
 const tabChartIds = {
-  users: ["userTrendChart", "userConversionChart", "identityDistributionChart", "groupDistributionChart", "creditDistributionChart", "generationDistributionChart", "activityDistributionChart"],
+  users: [],
   "credit-flow": ["creditFlowTrendChart", "creditDailyCategoryChart", "creditIncomeCategoryChart", "creditExpenseCategoryChart", "creditCompositionIdentityChart", "creditCompositionGroupChart", "creditCompositionChannelChart", "creditCompositionPayerChart", "creditRiskScatterChart"],
   finance: ["financeTrendChart", "financeStatusChart", "financeHourlyChart", "financeChannelChart", "financePlanChart"],
   generation: ["generationTrendChart", "generationQualityFunnelChart", "generationSourceMixChart", "generationWorkerChart", "generationTypeBubbleChart", "generationCompareChart"],
@@ -513,48 +602,189 @@ function renderUsers() {
     metric("生成用户", fmt(summary.generation_users), "generation_count > 0"),
     metric("持有灵石", fmt(summary.total_credits), `活跃用户持有 ${fmt(summary.active_credits)}`),
     metric("投稿封禁", fmt(summary.submission_banned_users), "is_submission_banned"),
+    metric("低信任免费层", fmt(summary.low_trust_free_tier_users), `有邀请 ${fmt(summary.low_trust_inviters_count)} / 非低信任受邀 ${fmt(summary.low_trust_non_low_trust_invitees_count)} / 充值 ${fmt(summary.low_trust_recharged_invitees_count)}`),
+    metric("邀请关系", fmt(summary.referral_relations), `邀请人 ${fmt(summary.inviters_count)}`),
+    metric("受邀充值", fmt(summary.recharged_invitees_count), `${fmt(summary.invitee_recharge_orders)} 笔 / ${fmtAmount(summary.invitee_recharge_total_usdt, " USDT")}`),
+    metric("返佣余额", fmtAmount(summary.affiliate_available_balance_usdt, " USDT"), `累计 ${fmtAmount(summary.affiliate_total_commission_usdt, " USDT")} / 已兑 ${fmtAmount(summary.affiliate_spent_commission_usdt, " USDT")}`),
+  ].join("");
+  $("#userRechargeRates").innerHTML = [
+    metric("总用户充值率", fmtPercent(summary.recharge_rate_total_users), `充值 ${fmt(summary.paying_users)} / 总 ${fmt(summary.total_users)}`),
+    metric("入宗门充值率", fmtPercent(summary.recharge_rate_channel_members), `充值 ${fmt(summary.paying_channel_members)} / 入宗门 ${fmt(summary.channel_members)}`),
+    metric("生成用户充值率", fmtPercent(summary.recharge_rate_generation_users), `充值 ${fmt(summary.paying_generation_users)} / 生成 ${fmt(summary.generation_users)}`),
+    metric("活跃用户充值率", fmtPercent(summary.recharge_rate_active_users), `充值 ${fmt(summary.active_paying_users)} / 活跃 ${fmt(summary.active_users)}`),
+    metric("平均邀请充值率", fmtPercent(summary.avg_inviter_invitee_recharge_rate), `样本邀请人 ${fmt(summary.inviter_recharge_rate_sample_size)}`),
   ].join("");
 
-  renderUserCharts();
-
-  const leaderboards = state.users?.leaderboards || {};
-  renderUserLeaderboard("#generationLeaderboard", leaderboards.generation, (row) => fmt(row.generation_count), (row) => fmtDate(row.last_activity));
-  renderUserLeaderboard("#creditsLeaderboard", leaderboards.credits, (row) => fmt(row.credits), (row) => fmt(row.generation_count));
-  renderUserLeaderboard("#referralsLeaderboard", leaderboards.referrals, (row) => fmt(row.referral_count), (row) => row.is_channel_member ? "是" : "否");
-  renderUserLeaderboard("#recentActiveLeaderboard", leaderboards.recent_active, (row) => fmtDate(row.last_activity), (row) => fmt(row.credits));
+  renderUserGroups();
+  renderUserProfileList();
 }
 
-function renderUserCharts() {
-  const daily = state.users?.daily || [];
-  const dates = daily.map((row) => row.day);
-  renderChart("userTrendChart", buildLineBarOption({
-    dates,
-    series: [
-      { name: "新增用户", type: "line", smooth: true, data: daily.map((row) => numeric(row.new_users)), areaStyle: { opacity: 0.08 } },
-      { name: "新增入宗门", type: "line", smooth: true, data: daily.map((row) => numeric(row.new_channel_members)) },
-      { name: "新增生成用户", type: "line", smooth: true, data: daily.map((row) => numeric(row.new_generation_users)) },
-      { name: "活跃用户", type: "bar", yAxisIndex: 1, data: daily.map((row) => numeric(row.active_users)), barMaxWidth: 20 },
-      { name: "签到", type: "bar", yAxisIndex: 1, data: daily.map((row) => numeric(row.checkins)), barMaxWidth: 20 },
-    ],
-    yAxis: [
-      { type: "value", name: "新增", axisLabel: { formatter: shortNumber } },
-      { type: "value", name: "活跃/签到", axisLabel: { formatter: shortNumber }, splitLine: { show: false } },
-    ],
-  }));
+function renderUserGroups() {
+  const payload = state.userGroups || {};
+  const rows = payload.rows || [];
+  const dimensionLabel = payload.dimension?.label || "人群";
+  const filters = payload.filters || {};
+  const segmentLabel = $("#userProfileSegmentSelect")?.selectedOptions?.[0]?.textContent || "全部用户";
+  const dateLabel = filters.start_date && filters.end_date ? `${filters.start_date} 至 ${filters.end_date}` : fmtPeriod(payload.days);
+  const searchLabel = filters.search ? ` · 搜索 ${filters.search}` : "";
+  $("#userGroupStatus").textContent = `${dimensionLabel} · ${fmt(rows.length)} 个分桶 · 来自下方列表筛选范围（${dateLabel} · ${segmentLabel}${searchLabel}）`;
+  $("#userGroupRows").innerHTML = tableRows(rows, (row) => {
+    const isSelected = state.selectedUserGroup
+      && state.selectedUserGroup.dimension === (payload.dimension?.key || "")
+      && state.selectedUserGroup.group_key === row.group_key;
+    return `
+      <tr class="clickable-row user-group-row ${isSelected ? "selected" : ""}" data-group-key="${escapeHtml(row.group_key)}" data-group-label="${escapeHtml(row.group_label)}" tabindex="0">
+        <td>
+          <strong>${escapeHtml(row.group_label || row.group_key || "未分组")}</strong>
+          <div class="muted small">${escapeHtml(dimensionLabel)} · ${escapeHtml(row.group_key || "-")}</div>
+        </td>
+        <td>
+          <strong>${fmt(row.users)}</strong>
+          <div class="muted small">占比 ${fmtPercent(row.share_percent)}</div>
+        </td>
+        <td>
+          <strong>${fmt(row.active_users)} / ${fmt(row.channel_members)}</strong>
+          <div class="muted small">活跃 ${fmtPercent(row.active_rate)} · 入宗门 ${fmtPercent(row.channel_member_rate)}</div>
+        </td>
+        <td>
+          <strong>${fmtAmount(row.recharge_usdt, " USDT")}</strong>
+          <div class="muted small">付费 ${fmt(row.real_payers)} · 付费率 ${fmtPercent(row.paying_rate)} · ${fmt(row.real_success_orders)} 单</div>
+        </td>
+        <td>
+          <strong>${fmt(row.generation_count)} / ${fmt(row.period_checkins)}</strong>
+          <div class="muted small">周期生成 ${fmt(row.period_generations)} · 签到用户 ${fmt(row.checkin_users)}</div>
+        </td>
+        <td>
+          <strong>${fmtSigned(row.credit_net_change)}</strong>
+          <div class="muted small">收入 ${fmt(row.credit_income)} / 支出 ${fmt(row.credit_expense)}</div>
+        </td>
+        <td>
+          <strong>邀 ${fmt(row.referral_relations)} · 投稿 ${fmt(row.gallery_posts)}</strong>
+          <div class="muted small">受邀充值 ${fmtPercent(row.invitee_recharge_rate)} · 信号 ${fmt(row.gallery_signal)}</div>
+        </td>
+        <td>
+          <strong>解锁 ${fmt(row.prompt_unlocks)} · 粉 ${fmt(row.followers_count)}</strong>
+          <div class="muted small">买 ${fmt(row.prompt_unlocks_bought)} / 卖 ${fmt(row.prompt_unlocks_sold)} · 关 ${fmt(row.following_count)}</div>
+        </td>
+      </tr>
+    `;
+  });
+  document.querySelectorAll(".user-group-row").forEach((row) => {
+    row.addEventListener("click", () => selectUserGroup(row.dataset.groupKey || "", row.dataset.groupLabel || ""));
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        selectUserGroup(row.dataset.groupKey || "", row.dataset.groupLabel || "");
+      }
+    });
+  });
+}
 
-  const summary = state.users?.summary || {};
-  renderChart("userConversionChart", buildFunnelOption([
-    { label: "新增用户", count: summary.new_users },
-    { label: "新增入宗门", count: daily.reduce((sum, row) => sum + numeric(row.new_channel_members), 0) },
-    { label: "新增生成用户", count: daily.reduce((sum, row) => sum + numeric(row.new_generation_users), 0) },
-  ]));
+function currentUserGroupDimensionMeta() {
+  return state.userGroups?.dimension || {
+    key: $("#userGroupDimensionSelect")?.value || "payer",
+    label: $("#userGroupDimensionSelect")?.selectedOptions?.[0]?.textContent || "人群",
+  };
+}
 
-  const distributions = state.users?.distributions || {};
-  renderChart("identityDistributionChart", buildDonutOption(distributions.identity || []));
-  renderChart("groupDistributionChart", buildDonutOption(distributions.user_group || []));
-  renderChart("activityDistributionChart", buildDonutOption(distributions.activity_segments || []));
-  renderChart("creditDistributionChart", buildHorizontalBarOption(distributions.credit_holding || []));
-  renderChart("generationDistributionChart", buildHorizontalBarOption(distributions.generation_count || []));
+function selectUserGroup(groupKey, groupLabel) {
+  const dimension = currentUserGroupDimensionMeta();
+  state.selectedUserGroup = {
+    dimension: dimension.key,
+    dimension_label: dimension.label,
+    group_key: groupKey,
+    group_label: groupLabel || groupKey,
+  };
+  state.userProfilePage = 1;
+  markTabStale("users");
+  if (state.activeTab === "users") {
+    loadCurrentTab({ force: true });
+  }
+}
+
+function clearUserGroupSelection({ reload = true } = {}) {
+  state.selectedUserGroup = null;
+  state.userProfilePage = 1;
+  if (reload) {
+    markTabStale("users");
+    if (state.activeTab === "users") {
+      loadCurrentTab({ force: true });
+    }
+  }
+}
+
+function renderUserProfileList() {
+  const payload = state.userProfiles || {};
+  const rows = payload.items || [];
+  const pagination = payload.pagination || { page: 1, size: 20, total: 0 };
+  const page = numeric(pagination.page) || 1;
+  const size = numeric(pagination.size) || 20;
+  const total = numeric(pagination.total);
+  const start = total ? (page - 1) * size + 1 : 0;
+  const end = Math.min(total, page * size);
+  const selection = state.selectedUserGroup;
+  $("#userGroupSelectionLabel").textContent = selection
+    ? `${selection.dimension_label}: ${selection.group_label}`
+    : "全部人群";
+  $("#userGroupClearButton").disabled = !selection;
+  $("#userProfilePagination").textContent = total ? `${fmt(start)}-${fmt(end)} / ${fmt(total)}` : "暂无用户";
+  $("#userProfilePrevButton").disabled = page <= 1;
+  $("#userProfileNextButton").disabled = page * size >= total;
+  $("#userProfileRows").innerHTML = tableRows(rows, (row) => {
+    const userId = Number(row.user_id || row.id || 0);
+    return `
+    <tr class="clickable-row user-profile-row" data-user-id="${userId}" tabindex="0">
+      <td>${renderUserIdentity(row)}</td>
+      <td>
+        <div class="pill-list">
+          ${renderUserBadge(row)}
+          ${renderUserBadge(row, "user_group")}
+          ${row.is_channel_member ? '<span class="status-badge success">入宗门</span>' : '<span class="status-badge neutral">未入宗门</span>'}
+          ${Number(row.real_success_orders || 0) > 0 ? '<span class="status-badge success">真实付费</span>' : ""}
+        </div>
+        <div class="muted small">注册 ${fmtDate(row.created_at)}</div>
+      </td>
+      <td>
+        <strong>${fmt(row.generation_count)}</strong> 次
+        <div class="muted small">周期 ${fmt(row.period_generations)} · 活跃天 ${fmt(row.active_generation_days)} · 签到 ${fmt(row.checkin_count)}</div>
+      </td>
+      <td>
+        <strong>${fmt(row.credits)}</strong>
+        <div class="muted small">收入 ${fmt(row.credit_income)} / 支出 ${fmt(row.credit_expense)} / 净 ${fmtSigned(row.credit_net_change)}</div>
+      </td>
+      <td>
+        <strong>${fmtAmount(row.recharge_usdt, " USDT")}</strong>
+        <div class="muted small">${fmt(row.real_success_orders)} 单 · 最近 ${fmtDate(row.last_recharge_at)}</div>
+      </td>
+      <td>
+        <strong>邀 ${fmt(row.referral_relations)} · 投稿 ${fmt(row.gallery_posts)}</strong>
+        <div class="muted small">受邀生成 ${fmt(row.invitee_generation_users)} · 投稿信号 ${fmt(row.gallery_signal)}</div>
+      </td>
+      <td>
+        <strong>粉 ${fmt(row.followers_count)} · 关 ${fmt(row.following_count)}</strong>
+        <div class="muted small">买 ${fmt(row.prompt_unlocks_bought)} / 卖 ${fmt(row.prompt_unlocks_sold)}</div>
+      </td>
+      <td>
+        <button class="table-action" type="button" data-open-user-profile="${userId}">画像</button>
+      </td>
+    </tr>
+  `;
+  });
+  document.querySelectorAll("[data-open-user-profile]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openUserProfile(Number(button.dataset.openUserProfile));
+    });
+  });
+  document.querySelectorAll(".user-profile-row").forEach((row) => {
+    row.addEventListener("click", () => openUserProfile(Number(row.dataset.userId)));
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openUserProfile(Number(row.dataset.userId));
+      }
+    });
+  });
 }
 
 function renderCreditFlow() {
@@ -675,11 +905,13 @@ function renderHealthFlags(flags = [], selector = "#creditHealthFlags") {
 }
 
 function renderUserIdentity(row) {
+  const userId = row.user_id || row.id;
   return `
     <div class="user-cell">
       <strong>${escapeHtml(row.full_name || "未知用户")}</strong>
-      <span>ID ${fmt(row.id)} · @${escapeHtml(row.username || "n/a")}</span>
+      <span>ID ${fmt(userId)} · @${escapeHtml(row.username || "n/a")}</span>
       ${row.is_submission_banned ? '<span class="status-badge danger">投稿封禁</span>' : ""}
+      ${row.is_low_trust_free_tier ? '<span class="status-badge warn">低信任免费层</span>' : ""}
     </div>
   `;
 }
@@ -690,18 +922,228 @@ function renderUserBadge(row, key = "current_identity") {
   return `<span class="status-badge ${badgeClass}">${escapeHtml(value)}</span>`;
 }
 
-function renderUserLeaderboard(selector, rows = [], valueRenderer, noteRenderer) {
-  $(selector).innerHTML = tableRows(rows, (row) => `
-    <tr>
-      <td>${renderUserIdentity(row)}</td>
-      <td>
-        ${renderUserBadge(row)}
-        <div class="muted small">${escapeHtml(row.user_group || "凡人")}</div>
-      </td>
-      <td><strong>${valueRenderer(row)}</strong></td>
-      <td>${noteRenderer(row)}</td>
-    </tr>
+function renderProfileMetric(label, value, note = "") {
+  return `
+    <div class="profile-metric">
+      <span>${escapeHtml(label)}</span>
+      <strong>${value}</strong>
+      ${note ? `<small>${escapeHtml(note)}</small>` : ""}
+    </div>
+  `;
+}
+
+function renderProfileMetricGrid(items = []) {
+  return `<div class="profile-metric-grid">${items.map((item) => renderProfileMetric(item.label, item.value, item.note)).join("")}</div>`;
+}
+
+function renderProfileSection(title, content) {
+  return `
+    <section class="profile-section">
+      <h4>${escapeHtml(title)}</h4>
+      ${content}
+    </section>
+  `;
+}
+
+function renderCompactList(rows = [], renderer) {
+  if (!rows.length) return '<div class="empty compact">暂无数据</div>';
+  return `<div class="compact-list">${rows.map(renderer).join("")}</div>`;
+}
+
+function renderCompactItem(title, meta = "", value = "") {
+  return `
+    <div class="compact-item">
+      <div>
+        <strong>${escapeHtml(title || "-")}</strong>
+        ${meta ? `<span>${escapeHtml(meta)}</span>` : ""}
+      </div>
+      ${value ? `<em>${value}</em>` : ""}
+    </div>
+  `;
+}
+
+function openUserProfileDrawer() {
+  $("#userProfileDrawerBackdrop").classList.remove("hidden");
+  $("#userProfileDrawer").classList.add("open");
+  $("#userProfileDrawer").setAttribute("aria-hidden", "false");
+  document.body.classList.add("profile-drawer-open");
+}
+
+function closeUserProfileDrawer() {
+  $("#userProfileDrawerBackdrop").classList.add("hidden");
+  $("#userProfileDrawer").classList.remove("open");
+  $("#userProfileDrawer").setAttribute("aria-hidden", "true");
+  document.body.classList.remove("profile-drawer-open");
+}
+
+async function openUserProfile(userId) {
+  if (!userId) return;
+  openUserProfileDrawer();
+  $("#userProfileDrawerTitle").textContent = `ID ${fmt(userId)}`;
+  $("#userProfileDrawerContent").innerHTML = '<div class="empty">加载中</div>';
+  try {
+    const payload = await fetchJson(`/api/user-analytics/users/${userId}`, { days: userPeriodParams().days });
+    state.userProfileDetail = payload;
+    renderUserProfileDetail(payload);
+  } catch (error) {
+    $("#userProfileDrawerContent").innerHTML = `<div class="error-panel">${escapeHtml(error.message || String(error))}</div>`;
+  }
+}
+
+function renderUserProfileDetail(payload = {}) {
+  const profile = payload.profile || {};
+  const displayName = profile.full_name || profile.username || `ID ${profile.id}`;
+  $("#userProfileDrawerTitle").textContent = displayName;
+
+  const credit = payload.credit_flow || {};
+  const recharge = payload.recharge || {};
+  const invitation = payload.invitation || {};
+  const generation = payload.generation || {};
+  const checkin = payload.checkin || {};
+  const community = payload.community || {};
+  const unlock = payload.prompt_unlock || {};
+  const social = payload.social || {};
+
+  const creditSummary = credit.summary || {};
+  const rechargeSummary = recharge.summary || {};
+  const invitationSummary = invitation.summary || {};
+  const generationSummary = generation.summary || {};
+  const checkinSummary = checkin.summary || {};
+  const communitySummary = community.summary || {};
+  const unlockSummary = unlock.summary || {};
+  const socialSummary = social.summary || {};
+
+  const profileHeader = `
+    <div class="profile-head">
+      ${renderUserIdentity(profile)}
+      <div class="pill-list">
+        ${renderUserBadge(profile)}
+        ${renderUserBadge(profile, "user_group")}
+        ${profile.is_channel_member ? '<span class="status-badge success">入宗门</span>' : '<span class="status-badge neutral">未入宗门</span>'}
+        ${profile.is_real_payer ? '<span class="status-badge success">真实付费</span>' : '<span class="status-badge neutral">未付费</span>'}
+        ${profile.is_low_trust_free_tier ? '<span class="status-badge warn">低信任免费层</span>' : ""}
+      </div>
+    </div>
+  `;
+
+  const baseMetrics = renderProfileMetricGrid([
+    { label: "灵石", value: fmt(profile.credits), note: `收入 ${fmt(creditSummary.gross_income)} / 支出 ${fmt(creditSummary.gross_expense)}` },
+    { label: "生成", value: fmt(profile.generation_count), note: `周期 ${fmt(generationSummary.period_generations)} / 活跃天 ${fmt(generationSummary.active_days)}` },
+    { label: "签到", value: fmt(profile.checkin_count), note: `连续 ${fmt(checkinSummary.current_streak)} / 最长 ${fmt(checkinSummary.longest_streak)}` },
+    { label: "充值", value: fmtAmount(rechargeSummary.real_success_usdt, " USDT"), note: `${fmt(rechargeSummary.real_success_orders)} 个真实成功订单` },
+    { label: "邀请", value: fmt(invitationSummary.referral_relations), note: `受邀充值率 ${fmtPercent(invitationSummary.invitee_recharge_rate)}` },
+    { label: "社区", value: fmt(communitySummary.gallery_posts), note: `信号 ${fmt(communitySummary.gallery_signal)} / 粉丝 ${fmt(socialSummary.followers_count)}` },
+  ]);
+
+  const creditSection = renderProfileSection("灵石收支", `
+    ${renderProfileMetricGrid([
+      { label: "收入", value: fmt(creditSummary.gross_income) },
+      { label: "支出", value: fmt(creditSummary.gross_expense) },
+      { label: "净变化", value: fmtSigned(creditSummary.net_change) },
+      { label: "生成支出", value: fmt(creditSummary.generation_expense) },
+      { label: "解锁收入", value: fmt(creditSummary.prompt_unlock_income) },
+      { label: "解锁支出", value: fmt(creditSummary.prompt_unlock_expense) },
+    ])}
+    ${renderCompactList(credit.categories || [], (row) => renderCompactItem(row.category, row.direction, `${fmt(row.income || row.expense || row.net_change)} 灵石`))}
+    ${renderCompactList(credit.recent_logs || [], (row) => renderCompactItem(row.operation_type, fmtDate(row.created_at), `${fmtSigned(row.credit_change)} / ${fmt(row.current_balance)}`))}
   `);
+
+  const rechargeSection = renderProfileSection("充值情况", `
+    ${renderProfileMetricGrid([
+      { label: "真实成功", value: fmt(rechargeSummary.real_success_orders), note: fmtAmount(rechargeSummary.real_success_usdt, " USDT") },
+      { label: "内部/赠送", value: fmt(rechargeSummary.internal_success_orders) },
+      { label: "RMB", value: fmtAmount(rechargeSummary.real_success_rmb) },
+      { label: "TON", value: fmtAmount(rechargeSummary.real_success_ton) },
+      { label: "Stars", value: fmt(rechargeSummary.real_success_stars) },
+      { label: "最近充值", value: fmtDate(rechargeSummary.last_recharge_at) },
+    ])}
+    ${renderCompactList(recharge.recent_orders || [], (row) => renderCompactItem(`${row.status || "-"} · ${channelLabel(row.payment_channel)}`, row.plan_name || fmtDate(row.occurred_at), fmtAmount(row.final_price)))}
+  `);
+
+  const invitationSection = renderProfileSection("邀请和返佣", `
+    ${renderProfileMetricGrid([
+      { label: "邀请关系", value: fmt(invitationSummary.referral_relations) },
+      { label: "受邀入宗门", value: fmt(invitationSummary.invitee_channel_members) },
+      { label: "受邀生成", value: fmt(invitationSummary.invitee_generation_users) },
+      { label: "受邀充值", value: fmt(invitationSummary.recharged_invitees_count), note: fmtPercent(invitationSummary.invitee_recharge_rate) },
+      { label: "邀请奖励", value: fmt(invitationSummary.referral_reward_credits) },
+      { label: "可兑返佣", value: fmtAmount(invitationSummary.affiliate_available_balance_usdt, " USDT") },
+    ])}
+    ${renderCompactList(invitation.recent_invitees || [], (row) => renderCompactItem(row.full_name || row.username || `ID ${row.id}`, `${row.is_channel_member ? "入宗门" : "未入宗门"} · 生成 ${fmt(row.generation_count)}`, row.is_real_payer ? "已充值" : "未充值"))}
+  `);
+
+  const generationSection = renderProfileSection("生成情况", `
+    ${renderProfileMetricGrid([
+      { label: "历史生成", value: fmt(generationSummary.all_generations) },
+      { label: "周期生成", value: fmt(generationSummary.period_generations) },
+      { label: "活跃天", value: fmt(generationSummary.active_days) },
+      { label: "Web", value: fmt(generationSummary.web_generations) },
+      { label: "Bot", value: fmt(generationSummary.bot_generations) },
+      { label: "公开", value: fmt(generationSummary.public_generations) },
+    ])}
+    ${renderCompactList(generation.type_distribution || [], (row) => renderCompactItem(row.task_type, fmtDate(row.last_generation_at), `${fmt(row.generations)} 次`))}
+    ${renderCompactList(generation.source_distribution || [], (row) => renderCompactItem(row.source, "来源", `${fmt(row.generations)} 次`))}
+    ${renderCompactList(generation.hour_distribution || [], (row) => renderCompactItem(`${fmt(row.hour)} 时`, "生成时段", `${fmt(row.generations)} 次`))}
+    ${renderCompactList(generation.weekday_distribution || [], (row) => renderCompactItem(`星期 ${fmt(row.weekday)}`, "生成星期", `${fmt(row.generations)} 次`))}
+    ${renderCompactList(generation.recent_generations || [], (row) => renderCompactItem(row.type || "unknown", `${row.task_id || "-"} · ${fmtDate(row.created_at)}`, `评分 ${fmt(row.rating)}`))}
+  `);
+
+  const checkinSection = renderProfileSection("签到情况", `
+    ${renderProfileMetricGrid([
+      { label: "历史签到", value: fmt(checkinSummary.total_checkins) },
+      { label: "周期签到", value: fmt(checkinSummary.period_checkins) },
+      { label: "当前连续", value: fmt(checkinSummary.current_streak) },
+      { label: "最长连续", value: fmt(checkinSummary.longest_streak) },
+      { label: "最近签到", value: fmtDate(checkinSummary.last_checkin_date) },
+    ])}
+    ${renderCompactList(checkin.recent_checkins || [], (row) => renderCompactItem(row.checkin_date, fmtDate(row.created_at)))}
+  `);
+
+  const communitySection = renderProfileSection("投稿和社区", `
+    ${renderProfileMetricGrid([
+      { label: "投稿", value: fmt(communitySummary.gallery_posts) },
+      { label: "赞", value: fmt(communitySummary.likes) },
+      { label: "踩", value: fmt(communitySummary.dislikes) },
+      { label: "应用", value: fmt(communitySummary.applies) },
+      { label: "评论", value: fmt(communitySummary.comments) },
+      { label: "信号", value: fmt(communitySummary.gallery_signal) },
+    ])}
+    ${renderCompactList(community.samples || [], (row) => renderCompactItem(row.task_type || row.media_type || "投稿", `${row.task_id || "-"} · ${fmtDate(row.created_at)}`, `赞 ${fmt(row.likes_count)} / 应用 ${fmt(row.applied_count)}`))}
+  `);
+
+  const unlockSection = renderProfileSection("提示词解锁", `
+    ${renderProfileMetricGrid([
+      { label: "购买解锁", value: fmt(unlockSummary.purchased_unlocks), note: `花费 ${fmt(unlockSummary.spent_credits)} 灵石` },
+      { label: "被解锁", value: fmt(unlockSummary.sold_unlocks), note: `收入 ${fmt(unlockSummary.earned_credits)} 灵石` },
+      { label: "最近购买", value: fmtDate(unlockSummary.latest_purchase_at) },
+      { label: "最近售出", value: fmtDate(unlockSummary.latest_sale_at) },
+    ])}
+    ${renderCompactList(unlock.recent_purchases || [], (row) => renderCompactItem(`Post ${fmt(row.post_id)}`, `${row.task_type || "-"} · 作者 ${fmt(row.author_id)}`, `${fmt(row.cost_credits)} 灵石`))}
+    ${renderCompactList(unlock.recent_sales || [], (row) => renderCompactItem(`Post ${fmt(row.post_id)}`, `${row.task_type || "-"} · 买家 ${row.buyer_username || fmt(row.buyer_id)}`, `${fmt(row.cost_credits)} 灵石`))}
+  `);
+
+  const socialSection = renderProfileSection("关注关系", `
+    ${renderProfileMetricGrid([
+      { label: "粉丝", value: fmt(socialSummary.followers_count) },
+      { label: "关注", value: fmt(socialSummary.following_count) },
+      { label: "互关", value: fmt(socialSummary.mutual_follow_count) },
+    ])}
+    ${renderCompactList(social.recent_followers || [], (row) => renderCompactItem(row.full_name || row.username || `ID ${row.id}`, `${row.user_group || "凡人"} · ${fmtDate(row.followed_at)}`, "粉丝"))}
+    ${renderCompactList(social.recent_following || [], (row) => renderCompactItem(row.full_name || row.username || `ID ${row.id}`, `${row.user_group || "凡人"} · ${fmtDate(row.followed_at)}`, "关注"))}
+  `);
+
+  $("#userProfileDrawerContent").innerHTML = [
+    profileHeader,
+    baseMetrics,
+    creditSection,
+    rechargeSection,
+    invitationSection,
+    generationSection,
+    checkinSection,
+    communitySection,
+    unlockSection,
+    socialSection,
+  ].join("");
 }
 
 function asList(value) {
@@ -2303,6 +2745,31 @@ function getPromptGraphParams() {
   };
 }
 
+function getUserProfileParams() {
+  const selectedGroup = state.selectedUserGroup;
+  return {
+    ...userPeriodParams(),
+    page: state.userProfilePage,
+    size: 20,
+    search: $("#userProfileSearchInput")?.value?.trim() || "",
+    segment: $("#userProfileSegmentSelect")?.value || "all",
+    sort: $("#userProfileSortSelect")?.value || "last_activity",
+    dimension: selectedGroup?.dimension || "",
+    group_key: selectedGroup?.group_key || "",
+  };
+}
+
+function getUserGroupParams() {
+  return {
+    ...userPeriodParams(),
+    dimension: $("#userGroupDimensionSelect")?.value || "payer",
+    search: $("#userProfileSearchInput")?.value?.trim() || "",
+    segment: $("#userProfileSegmentSelect")?.value || "all",
+    sort: $("#userGroupSortSelect")?.value || "users",
+    limit: Number($("#userGroupLimitSelect")?.value || 20),
+  };
+}
+
 function getTemplatePromptParams(days = currentDays()) {
   return {
     days,
@@ -2323,7 +2790,15 @@ async function loadOverviewStatus() {
 }
 
 async function loadUsers(days) {
-  state.users = await fetchJson("/api/user-analytics", { days, limit: 12 });
+  const period = userPeriodParams();
+  const [users, userGroups, userProfiles] = await Promise.all([
+    fetchJson("/api/user-analytics", { days: period.days || days, limit: 12 }),
+    fetchJson("/api/user-analytics/groups", getUserGroupParams()),
+    fetchJson("/api/user-analytics/users", getUserProfileParams()),
+  ]);
+  state.users = users;
+  state.userGroups = userGroups;
+  state.userProfiles = userProfiles;
   renderUsers();
 }
 
@@ -2542,6 +3017,10 @@ function resetPromptPageAndLoad() {
 }
 
 function reloadCurrentTab() {
+  if (state.activeTab === "users") {
+    state.userProfilePage = 1;
+    state.selectedUserGroup = null;
+  }
   if (state.activeTab === "prompts") {
     state.promptPage = 1;
     state.selectedPrompt = null;
@@ -2573,6 +3052,66 @@ $("#refreshButton").addEventListener("click", reloadCurrentTab);
 $("#daysSelect").addEventListener("change", () => {
   setCurrentDays(selectNumber("#daysSelect", 30));
   reloadCurrentTab();
+});
+function resetUserProfilePageAndLoad({ clearGroup = false } = {}) {
+  state.userProfilePage = 1;
+  if (clearGroup) {
+    state.selectedUserGroup = null;
+  }
+  markTabStale("users");
+  if (state.activeTab === "users") {
+    loadCurrentTab({ force: true });
+  }
+}
+
+function resetUserGroupsAndLoad() {
+  clearUserGroupSelection({ reload: false });
+  markTabStale("users");
+  if (state.activeTab === "users") {
+    loadCurrentTab({ force: true });
+  }
+}
+
+function resetUserDateRangeAndLoad() {
+  const range = currentUserDateRange();
+  const days = inclusiveDateDays(range.start, range.end);
+  if (!days) {
+    setError(new Error("请选择有效的开始和结束日期"));
+    return;
+  }
+  resetUserProfilePageAndLoad({ clearGroup: true });
+}
+
+$("#userGroupDimensionSelect")?.addEventListener("change", resetUserGroupsAndLoad);
+$("#userGroupSortSelect")?.addEventListener("change", resetUserGroupsAndLoad);
+$("#userGroupLimitSelect")?.addEventListener("change", resetUserGroupsAndLoad);
+$("#userGroupRefreshButton")?.addEventListener("click", resetUserGroupsAndLoad);
+$("#userGroupClearButton")?.addEventListener("click", () => clearUserGroupSelection());
+$("#userStartDateInput")?.addEventListener("change", resetUserDateRangeAndLoad);
+$("#userEndDateInput")?.addEventListener("change", resetUserDateRangeAndLoad);
+$("#userProfileSegmentSelect")?.addEventListener("change", () => resetUserProfilePageAndLoad({ clearGroup: true }));
+$("#userProfileSortSelect")?.addEventListener("change", () => resetUserProfilePageAndLoad());
+$("#userProfileRefreshButton")?.addEventListener("click", () => resetUserProfilePageAndLoad({ clearGroup: true }));
+$("#userProfileSearchInput")?.addEventListener("input", () => {
+  window.clearTimeout(state.userProfileSearchTimer);
+  state.userProfileSearchTimer = window.setTimeout(() => resetUserProfilePageAndLoad({ clearGroup: true }), 300);
+});
+$("#userProfilePrevButton")?.addEventListener("click", () => {
+  state.userProfilePage = Math.max(1, state.userProfilePage - 1);
+  markTabStale("users");
+  loadCurrentTab({ force: true });
+});
+$("#userProfileNextButton")?.addEventListener("click", () => {
+  state.userProfilePage += 1;
+  markTabStale("users");
+  loadCurrentTab({ force: true });
+});
+$("#userProfileDrawerClose")?.addEventListener("click", closeUserProfileDrawer);
+$("#userProfileDrawerBackdrop")?.addEventListener("click", closeUserProfileDrawer);
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && $("#userProfileDrawer")?.classList.contains("open")) {
+    closeUserProfileDrawer();
+  }
 });
 document.querySelectorAll("[data-credit-mode]").forEach((button) => {
   button.addEventListener("click", () => {
