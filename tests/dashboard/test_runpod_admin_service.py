@@ -492,7 +492,12 @@ async def test_lan_aio_slots_payload_uses_runner_status_in_ssh_mode(monkeypatch)
                 }
             ],
         }
-        return _FakeProcess(lines=[json.dumps(payload)])
+        return _FakeProcess(
+            lines=[
+                "Warning: Permanently added '100.99.254.53' (ED25519) to the list of known hosts.\n",
+                json.dumps(payload),
+            ]
+        )
 
     monkeypatch.setenv("DASHBOARD_LAN_AIO_EXECUTION_MODE", "ssh")
     monkeypatch.setenv("DASHBOARD_LAN_AIO_RUNNER_HOST", "hfy@100.99.254.53")
@@ -520,6 +525,7 @@ async def test_lan_aio_slots_payload_uses_runner_status_in_ssh_mode(monkeypatch)
     assert group["active_slot_id"] == "gpu-177-gpu1-ltx_video"
     assert slot["runtime_current"] is True
     assert slot["target_container_state"]["state"] == "running"
+    assert payload.get("status_error") is None
 
 
 @pytest.mark.asyncio

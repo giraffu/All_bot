@@ -413,8 +413,19 @@ async def _lan_aio_status_payload(
     try:
         payload = json.loads(output)
     except json.JSONDecodeError as exc:
-        detail = output[:500] if output else "empty output"
-        raise RuntimeError(f"LAN AIO runner status returned invalid JSON: {detail}") from exc
+        json_start = output.find("{")
+        if json_start < 0:
+            detail = output[:500] if output else "empty output"
+            raise RuntimeError(
+                f"LAN AIO runner status returned invalid JSON: {detail}"
+            ) from exc
+        try:
+            payload = json.loads(output[json_start:])
+        except json.JSONDecodeError as inner_exc:
+            detail = output[:500] if output else "empty output"
+            raise RuntimeError(
+                f"LAN AIO runner status returned invalid JSON: {detail}"
+            ) from inner_exc
     if not isinstance(payload, dict):
         raise RuntimeError("LAN AIO runner status returned non-object JSON")
     return payload
