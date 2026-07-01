@@ -224,18 +224,20 @@ class RunPodAdminCommandBuilder:
             )
         if "--prefer" in command:
             remote_args.extend(["--prefer", command[command.index("--prefer") + 1]])
+        if "--include-disabled" in command:
+            remote_args.append("--include-disabled")
         remote_args.extend(
             [
-                "--include-disabled",
                 "--prod-env-file",
                 self.lan_aio_runner_prod_env_file(),
                 "--aio-env-file",
                 self.lan_aio_runner_aio_env_file(),
                 "--model-env-file",
                 self.lan_aio_runner_model_env_file(),
-                "--execute",
             ]
         )
+        if "--execute" in command:
+            remote_args.append("--execute")
         if "--replace-slot" in command:
             remote_args.extend(
                 ["--replace-slot", command[command.index("--replace-slot") + 1]]
@@ -256,6 +258,22 @@ class RunPodAdminCommandBuilder:
             self.lan_aio_runner_host(),
             f"bash -lc {shlex.quote(remote_command)}",
         ]
+
+    def lan_aio_status_command(self, *, include_disabled: bool = False) -> list[str]:
+        command = [
+            "python3",
+            self.lan_aio_ops_script(),
+            "status",
+            "--prod-env-file",
+            self.lan_aio_prod_env_file(),
+            "--aio-env-file",
+            self.lan_aio_aio_env_file(),
+            "--model-env-file",
+            self.lan_aio_model_env_file(),
+        ]
+        if include_disabled:
+            command.append("--include-disabled")
+        return self.wrap_lan_aio_runner_command(command)
 
     def base_command(
         self,

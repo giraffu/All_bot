@@ -502,6 +502,128 @@ describe('LanAioFleetManager', () => {
     )
   })
 
+  it('defaults retarget takeover to the current slot on the same physical GPU', async () => {
+    const gpu177Payload = JSON.parse(JSON.stringify(slotsPayload))
+    gpu177Payload.groups = [
+      {
+        physical_slot_key: 'gpu-177:gpu1',
+        node_id: 'gpu-177',
+        gpu_index: 1,
+        active_slot_id: 'gpu-177-gpu1-ltx_video',
+        active_slot_source: 'runtime',
+        slots: [
+          {
+            slot: {
+              ...gpu177Payload.groups[0].slots[0].slot,
+              id: 'gpu-177-gpu1-ltx_video',
+              target_profile_id: 'ltx_video',
+              configured_profile_id: 'ltx_video',
+              configured_task_types: ['ltx_video'],
+              live_runtime_profile: 'ltx_video',
+              live_task_types: ['ltx_video'],
+              runtime_current: true,
+              live_state: 'running',
+              switch_readiness: 'blocked',
+              switch_blockers: ['current_slot'],
+              retargetable: false,
+              replacement_targets: [],
+              host_port: 8191,
+              node_id: 'gpu-177',
+              gpu_index: 1,
+              physical_slot_key: 'gpu-177:gpu1',
+            },
+            workers: [
+              {
+                agent_id: 'lan_aio_prod_gpu177_gpu1_ltx_video_01',
+                status: 'idle',
+                runtime_profile: 'ltx_video',
+              },
+            ],
+            control: { legacy: 'disabled', aio: 'enabled' },
+            remote_containers: [
+              'allbot-lan-aio-gpu-177-gpu1-ltx_video-prod Up 8 days',
+            ],
+            model_cache: { status: 'ready' },
+          },
+          {
+            slot: {
+              ...gpu177Payload.groups[0].slots[1].slot,
+              id: 'gpu-177-gpu1-wan22_video_v2',
+              target_profile_id: 'wan22_video_v2',
+              configured_profile_id: 'wan22_video_v2',
+              configured_task_types: ['wan22_video_v2'],
+              live_runtime_profile: null,
+              live_task_types: [],
+              runtime_current: false,
+              live_state: 'missing',
+              switch_readiness: 'warning',
+              switch_blockers: ['model_cache_missing'],
+              retargetable: true,
+              replacement_targets: [
+                {
+                  slot_id: 'gpu-177-gpu0-image_to_video',
+                  physical_slot_key: 'gpu-177:gpu0',
+                  node_id: 'gpu-177',
+                  gpu_index: 0,
+                  host_port: 8190,
+                  live_runtime_profile: 'image_to_video',
+                  configured_profile_id: 'image_to_video',
+                  selectable: true,
+                  disabled_reason: null,
+                },
+                {
+                  slot_id: 'gpu-177-gpu1-ltx_video',
+                  physical_slot_key: 'gpu-177:gpu1',
+                  node_id: 'gpu-177',
+                  gpu_index: 1,
+                  host_port: 8191,
+                  live_runtime_profile: 'ltx_video',
+                  configured_profile_id: 'ltx_video',
+                  selectable: true,
+                  disabled_reason: null,
+                },
+              ],
+              host_port: 8191,
+              node_id: 'gpu-177',
+              gpu_index: 1,
+              physical_slot_key: 'gpu-177:gpu1',
+            },
+            workers: [],
+            control: { legacy: 'enabled', aio: 'enabled' },
+            remote_containers: [],
+            model_cache: { status: 'missing' },
+          },
+        ],
+      },
+    ]
+    apiMocks.fetchLanAioSlots.mockResolvedValue(gpu177Payload)
+
+    const wrapper = mountLanAioFleetManager()
+
+    await wrapper.get('button').trigger('click')
+    await flushPromises()
+
+    const candidateRow = wrapper.findAll('tbody tr').find(row =>
+      row.text().includes('gpu-177-gpu1-wan22_video_v2')
+    )
+    const takeoverButton = candidateRow
+      ?.findAll('button')
+      .find(button => button.text().includes('一键切换'))
+
+    await takeoverButton?.trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.startLanAioSlotAction).toHaveBeenCalledWith(
+      'gpu-177-gpu1-wan22_video_v2',
+      'takeover',
+      {
+        failure_policy: 'auto_rollback',
+        reason: 'dashboard lan aio takeover',
+        replacement_target_slot_id: 'gpu-177-gpu1-ltx_video',
+      }
+    )
+  })
+
   it('enables recovery for an idle physical GPU after local inspection', async () => {
     const recoverPayload = JSON.parse(JSON.stringify(slotsPayload))
     recoverPayload.groups[0].active_slot_id = null

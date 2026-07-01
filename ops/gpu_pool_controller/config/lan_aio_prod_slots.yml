@@ -162,8 +162,8 @@ slots:
 
   - id: gpu-177-gpu1-wan22_video_v2
     enabled: false
-    phase: candidate
-    retargetable: true
+    phase: blocked_oom_32gb
+    retargetable: false
     assignment_id: lan-177-8189-worker-03
     target_profile_id: wan22_video_v2
     target_task_types:
@@ -178,7 +178,7 @@ slots:
     old_local_agent_container: ""
     remote_dir: /home/ubantui/allbot-runpod-aio-prod/gpu177-gpu1-wan22-video-v2
     rollout_order: 12
-    notes: Disabled candidate for gpu-177. It can replace a same-node current AIO, such as GPU1 ltx_video on host port 8191 or GPU0 image_to_video on host port 8190, when a single-slot Dashboard takeover explicitly selects that target. gpu-177 GPU0 remains the active image_to_video production slot unless such a takeover is requested.
+    notes: Blocked on 2026-07-01 after a correct takeover to gpu-177 GPU1 LTX succeeded but the first real wan22_video_v2 task OOM-killed ComfyUI with status 137 on the RTX 5090 32GB card. Keep disabled and do not expose as a takeover candidate; use RunPod or 48GB+ LAN capacity until a smaller Wan22 profile is validated. gpu-177 GPU0 remains image_to_video and GPU1 remains LTX.
 
   - id: gpu-177-gpu1-scail2
     enabled: false

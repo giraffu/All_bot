@@ -581,10 +581,17 @@ const submitSlotAction = async (
   }
 }
 
+const preferredReplacementTarget = (slot: LanAioSlot) => {
+  const targets = selectableReplacementTargets(slot)
+  return targets.find(target =>
+    target.physical_slot_key && target.physical_slot_key === slotPhysicalKey(slot)
+  ) || targets[0]
+}
+
 const confirmSlotAction = (slotStatus: LanAioSlotStatus, action: LanAioAction) => {
   const slot = slotStatus.slot
   const selectableTargets = selectableReplacementTargets(slot)
-  let selectedTargetSlotId = selectableTargets[0]?.slot_id || ''
+  let selectedTargetSlotId = preferredReplacementTarget(slot)?.slot_id || ''
   const replacementTargetOptions = slot.replacement_targets || []
   const blockerLabels = switchBlockerLabels(slot)
   const recoverLabels = recoverBlockerLabels(slot)

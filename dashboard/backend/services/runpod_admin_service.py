@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import os
 import time
@@ -200,6 +202,13 @@ def _lan_aio_action_command(
     )
 
 
+def _lan_aio_status_command(*, include_disabled: bool = False) -> list[str]:
+    _sync_runtime_paths()
+    return _command_builder.lan_aio_status_command(
+        include_disabled=include_disabled,
+    )
+
+
 def _default_prod_max_manual_slots() -> int:
     return _command_builder.default_prod_max_manual_slots()
 
@@ -369,6 +378,46 @@ def _build_lan_aio_ops() -> LanAioProdOps:
         model_env_file=Path(_lan_aio_model_env_file()),
         remote_workers_source_dir=PROJECT_ROOT / "remote_workers",
     )
+
+
+async def _lan_aio_status_payload(
+    ops: LanAioProdOps,
+    slots: list[Any],
+    *,
+    include_disabled: bool,
+) -> dict[str, Any]:
+    if _command_builder.lan_aio_execution_mode() != "ssh":
+        return ops.status_payload(slots)
+
+    command = _lan_aio_status_command(include_disabled=include_disabled)
+    process = await _operation_runner._create_subprocess_exec(
+        *command,
+        cwd=str(PROJECT_ROOT),
+        env=dict(os.environ),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+        start_new_session=True,
+    )
+    assert process.stdout is not None
+    output_parts: list[str] = []
+    while True:
+        raw = await process.stdout.readline()
+        if not raw:
+            break
+        output_parts.append(raw.decode("utf-8", errors="replace"))
+    exit_code = await process.wait()
+    output = "".join(output_parts).strip()
+    if exit_code != 0:
+        detail = output.splitlines()[-1] if output else f"exit code {exit_code}"
+        raise RuntimeError(f"LAN AIO runner status failed: {detail}")
+    try:
+        payload = json.loads(output)
+    except json.JSONDecodeError as exc:
+        detail = output[:500] if output else "empty output"
+        raise RuntimeError(f"LAN AIO runner status returned invalid JSON: {detail}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError("LAN AIO runner status returned non-object JSON")
+    return payload
 
 
 async def get_lan_aio_profiles_payload() -> dict[str, Any]:
@@ -824,7 +873,11 @@ async def get_lan_aio_slots_payload(
     slot_status_by_id: dict[str, dict[str, Any]] = {}
     status_error = None
     try:
-        status_payload = ops.status_payload(slots)
+        status_payload = await _lan_aio_status_payload(
+            ops,
+            slots,
+            include_disabled=include_disabled,
+        )
         for item in status_payload.get("slots", []):
             slot_payload = item.get("slot") if isinstance(item, dict) else None
             slot_id = slot_payload.get("id") if isinstance(slot_payload, dict) else None
@@ -965,6 +1018,142 @@ def _lan_aio_recover_status_or_422(
     return selected_status
 
 
+def _lan_aio_status_by_slot_id_or_422(
+    ops: LanAioProdOps,
+    slots: list[Any],
+    *,
+    context: str,
+) -> dict[str, dict[str, Any]]:
+    status_by_id: dict[str, dict[str, Any]] = {}
+    try:
+        status_payload = ops.status_payload(slots)
+        for item in status_payload.get("slots", []):
+            slot_payload = item.get("slot") if isinstance(item, dict) else None
+            item_slot_id = (
+                slot_payload.get("id") if isinstance(slot_payload, dict) else None
+            )
+            if item_slot_id:
+                _annotate_lan_aio_slot_runtime(item, ops.config)
+                status_by_id[str(item_slot_id)] = item
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"failed to verify LAN AIO {context}: {exc}",
+        ) from exc
+    return status_by_id
+
+
+def _validate_lan_aio_replacement_target_or_422(
+    ops: LanAioProdOps,
+    slot: Any,
+    replacement_target: Any,
+) -> dict[str, Any]:
+    if replacement_target.id == slot.id:
+        raise HTTPException(
+            status_code=422,
+            detail="replacement target must be different from the candidate slot",
+        )
+    if replacement_target.node_id != slot.node_id:
+        raise HTTPException(
+            status_code=422,
+            detail="replacement target must be on the same GPU node",
+        )
+
+    status_by_id = _lan_aio_status_by_slot_id_or_422(
+        ops,
+        [slot, replacement_target],
+        context="replacement target runtime",
+    )
+    replacement_target_status = status_by_id.get(replacement_target.id)
+    if not replacement_target_status or not _lan_aio_slot_has_runtime_signal(
+        replacement_target_status
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=f"replacement target is not a current running slot: {replacement_target.id}",
+        )
+    target_slot_payload = replacement_target_status.get("slot") or {}
+    target_live_profile = str(target_slot_payload.get("live_runtime_profile") or "")
+    if not target_live_profile:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "replacement target has no live runtime profile: "
+                f"{replacement_target.id}"
+            ),
+        )
+    if target_live_profile == slot.target_profile_id:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "replacement target already runs the candidate profile: "
+                f"{target_live_profile}"
+            ),
+        )
+    return replacement_target_status
+
+
+def _infer_lan_aio_replacement_target_or_422(
+    ops: LanAioProdOps,
+    slot: Any,
+) -> Any:
+    all_slots = list((getattr(ops, "slots", {}) or {}).values())
+    if not all_slots:
+        all_slots = ops.select_slots(None, include_disabled=True)
+    same_node_slots = [
+        candidate
+        for candidate in all_slots
+        if candidate.id != slot.id and candidate.node_id == slot.node_id
+    ]
+    status_by_id = _lan_aio_status_by_slot_id_or_422(
+        ops,
+        [slot, *same_node_slots],
+        context="replacement target runtime",
+    )
+    eligible_targets: list[Any] = []
+    for candidate in same_node_slots:
+        status = status_by_id.get(candidate.id)
+        if not status or not _lan_aio_slot_has_runtime_signal(status):
+            continue
+        target_slot_payload = status.get("slot") or {}
+        target_live_profile = str(target_slot_payload.get("live_runtime_profile") or "")
+        if not target_live_profile or target_live_profile == slot.target_profile_id:
+            continue
+        eligible_targets.append(candidate)
+
+    same_physical_targets = [
+        candidate
+        for candidate in eligible_targets
+        if physical_slot_key(candidate) == physical_slot_key(slot)
+    ]
+    if len(same_physical_targets) == 1:
+        return same_physical_targets[0]
+    if len(same_physical_targets) > 1:
+        ids = ", ".join(candidate.id for candidate in same_physical_targets)
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "multiple same-physical LAN AIO replacement targets are live; "
+                f"choose one explicitly: {ids}"
+            ),
+        )
+    if len(eligible_targets) == 1:
+        return eligible_targets[0]
+    if len(eligible_targets) > 1:
+        ids = ", ".join(candidate.id for candidate in eligible_targets)
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "multiple LAN AIO replacement targets are live; choose one "
+                f"explicitly: {ids}"
+            ),
+        )
+    raise HTTPException(
+        status_code=422,
+        detail=f"no current running replacement target found for {slot.id}",
+    )
+
+
 async def start_lan_aio_slot_action_payload(
     slot_id: str,
     action: str,
@@ -991,83 +1180,52 @@ async def start_lan_aio_slot_action_payload(
     except RuntimeError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    slot_phase = str(getattr(slot, "phase", "") or "")
+    if action == "takeover" and (
+        slot_phase == "maintenance_disabled" or slot_phase.startswith("blocked_")
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=f"LAN AIO slot is not available for takeover: {slot.id} phase={slot_phase}",
+        )
+
     replacement_target_slot_id = (request.replacement_target_slot_id or "").strip()
     replacement_target = None
-    replacement_target_status: dict[str, Any] | None = None
     if replacement_target_slot_id and action != "takeover":
         raise HTTPException(
             status_code=422,
             detail="replacement_target_slot_id is only supported for takeover",
         )
-    if replacement_target_slot_id:
+    if (replacement_target_slot_id or action == "takeover") and slot.retargetable:
+        if replacement_target_slot_id:
+            try:
+                replacement_target = ops.select_slots(
+                    replacement_target_slot_id,
+                    include_disabled=True,
+                )[0]
+            except KeyError as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "unknown LAN AIO replacement target slot: "
+                        f"{replacement_target_slot_id}"
+                    ),
+                ) from exc
+        else:
+            replacement_target = _infer_lan_aio_replacement_target_or_422(
+                ops,
+                slot,
+            )
+        _validate_lan_aio_replacement_target_or_422(
+            ops,
+            slot,
+            replacement_target,
+        )
+    elif replacement_target_slot_id:
         if not slot.retargetable:
             raise HTTPException(
                 status_code=422,
                 detail=f"LAN AIO slot is not retargetable: {slot.id}",
-            )
-        try:
-            replacement_target = ops.select_slots(
-                replacement_target_slot_id,
-                include_disabled=True,
-            )[0]
-        except KeyError as exc:
-            raise HTTPException(
-                status_code=422,
-                detail=f"unknown LAN AIO replacement target slot: {replacement_target_slot_id}",
-            ) from exc
-        if replacement_target.id == slot.id:
-            raise HTTPException(
-                status_code=422,
-                detail="replacement target must be different from the candidate slot",
-            )
-        if replacement_target.node_id != slot.node_id:
-            raise HTTPException(
-                status_code=422,
-                detail="replacement target must be on the same GPU node",
-            )
-
-        status_by_id: dict[str, dict[str, Any]] = {}
-        try:
-            status_payload = ops.status_payload([slot, replacement_target])
-            for item in status_payload.get("slots", []):
-                slot_payload = item.get("slot") if isinstance(item, dict) else None
-                item_slot_id = (
-                    slot_payload.get("id") if isinstance(slot_payload, dict) else None
-                )
-                if item_slot_id:
-                    _annotate_lan_aio_slot_runtime(item, ops.config)
-                    status_by_id[str(item_slot_id)] = item
-        except Exception as exc:
-            raise HTTPException(
-                status_code=422,
-                detail=f"failed to verify LAN AIO replacement target runtime: {exc}",
-            ) from exc
-
-        replacement_target_status = status_by_id.get(replacement_target.id)
-        if not replacement_target_status or not _lan_aio_slot_has_runtime_signal(
-            replacement_target_status
-        ):
-            raise HTTPException(
-                status_code=422,
-                detail=f"replacement target is not a current running slot: {replacement_target.id}",
-            )
-        target_slot_payload = replacement_target_status.get("slot") or {}
-        target_live_profile = str(target_slot_payload.get("live_runtime_profile") or "")
-        if not target_live_profile:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "replacement target has no live runtime profile: "
-                    f"{replacement_target.id}"
-                ),
-            )
-        if target_live_profile == slot.target_profile_id:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "replacement target already runs the candidate profile: "
-                    f"{target_live_profile}"
-                ),
             )
 
     lock_key = physical_slot_key(replacement_target or slot)

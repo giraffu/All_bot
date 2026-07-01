@@ -1,4 +1,6 @@
+import json
 import signal
+from dataclasses import replace
 
 import pytest
 from fastapi import HTTPException
@@ -64,6 +66,16 @@ class _FakeProcess:
 
     async def wait(self):
         return self._exit_code
+
+
+def _gpu177_wan22_candidate_slots():
+    slots = dict(load_lan_aio_prod_slots(include_disabled=True))
+    slots["gpu-177-gpu1-wan22_video_v2"] = replace(
+        slots["gpu-177-gpu1-wan22_video_v2"],
+        phase="candidate",
+        retargetable=True,
+    )
+    return slots
 
 
 @pytest.mark.asyncio
@@ -306,7 +318,7 @@ async def test_lan_aio_slots_payload_allows_inactive_configured_slot_when_siblin
     class FakeLanAioOps:
         def __init__(self):
             self.config = load_controller_config()
-            self.slots = load_lan_aio_prod_slots(include_disabled=True)
+            self.slots = _gpu177_wan22_candidate_slots()
 
         def select_slots(self, slot_id, *, include_disabled=False):
             if slot_id is not None:
@@ -435,6 +447,79 @@ async def test_lan_aio_slots_payload_marks_runtime_drift_and_live_profile(monkey
     assert slot["live_image_ref"] == "old-image-to-video-image"
     assert slot["runtime_drift"] is True
     assert set(slot["runtime_drift_reasons"]) == {"profile", "image", "task_types"}
+
+
+@pytest.mark.asyncio
+async def test_lan_aio_slots_payload_uses_runner_status_in_ssh_mode(monkeypatch):
+    class FakeLanAioOps:
+        def __init__(self):
+            self.config = load_controller_config()
+            self.slots = load_lan_aio_prod_slots(include_disabled=True)
+
+        def select_slots(self, slot_id, *, include_disabled=False):
+            if slot_id is not None:
+                return [self.slots[slot_id]]
+            return [self.slots["gpu-177-gpu1-ltx_video"]]
+
+        def status_payload(self, slots):
+            raise AssertionError("local LAN AIO status should not run in ssh mode")
+
+    seen_command = {}
+
+    async def fake_create_subprocess_exec(*command, **kwargs):
+        seen_command["command"] = list(command)
+        slot = load_lan_aio_prod_slots(include_disabled=True)[
+            "gpu-177-gpu1-ltx_video"
+        ]
+        payload = {
+            "ok": True,
+            "slots": [
+                {
+                    "slot": slot_to_jsonable(slot, load_controller_config()),
+                    "workers": [
+                        {
+                            "agent_id": slot.agent_id,
+                            "status": "idle",
+                            "runtime_profile": "ltx_video",
+                            "types": "ltx_video",
+                        }
+                    ],
+                    "control": {"legacy": "disabled", "aio": "enabled"},
+                    "remote_containers": [
+                        f"{slot.container_name} Up 8 days (healthy)"
+                    ],
+                    "model_cache": {"status": "ready"},
+                }
+            ],
+        }
+        return _FakeProcess(lines=[json.dumps(payload)])
+
+    monkeypatch.setenv("DASHBOARD_LAN_AIO_EXECUTION_MODE", "ssh")
+    monkeypatch.setenv("DASHBOARD_LAN_AIO_RUNNER_HOST", "hfy@100.99.254.53")
+    monkeypatch.setattr(
+        runpod_admin_service,
+        "_build_lan_aio_ops",
+        lambda: FakeLanAioOps(),
+    )
+    runpod_admin_service._operation_runner.create_subprocess_exec = (
+        fake_create_subprocess_exec
+    )
+
+    payload = await runpod_admin_service.get_lan_aio_slots_payload(
+        include_disabled=True,
+    )
+
+    command = seen_command["command"]
+    assert command[0] == "ssh"
+    assert "hfy@100.99.254.53" in command
+    assert "status" in command[-1]
+    assert "--include-disabled" in command[-1]
+    group = payload["groups"][0]
+    slot = group["slots"][0]["slot"]
+    assert payload["ok"] is True
+    assert group["active_slot_id"] == "gpu-177-gpu1-ltx_video"
+    assert slot["runtime_current"] is True
+    assert slot["target_container_state"]["state"] == "running"
 
 
 @pytest.mark.asyncio
@@ -1087,7 +1172,7 @@ async def test_lan_aio_takeover_can_target_current_slot_on_same_node(monkeypatch
     class FakeLanAioOps:
         def __init__(self):
             self.config = load_controller_config()
-            self.slots = load_lan_aio_prod_slots(include_disabled=True)
+            self.slots = _gpu177_wan22_candidate_slots()
 
         def select_slots(self, slot_id, *, include_disabled=False):
             if slot_id is not None:
@@ -1156,11 +1241,167 @@ async def test_lan_aio_takeover_can_target_current_slot_on_same_node(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_lan_aio_takeover_defaults_to_same_physical_target(monkeypatch):
+    class FakeLanAioOps:
+        def __init__(self):
+            self.config = load_controller_config()
+            self.slots = _gpu177_wan22_candidate_slots()
+
+        def select_slots(self, slot_id, *, include_disabled=False):
+            if slot_id is not None:
+                return [self.slots[slot_id]]
+            return [
+                slot
+                for slot in self.slots.values()
+                if include_disabled or slot.enabled
+            ]
+
+        def status_payload(self, slots):
+            rows = []
+            for slot in slots:
+                workers = []
+                remote_containers = []
+                if slot.id == "gpu-177-gpu0-image_to_video":
+                    workers = [
+                        {
+                            "agent_id": slot.agent_id,
+                            "status": "idle",
+                            "runtime_profile": "image_to_video",
+                            "types": "image_to_video",
+                        }
+                    ]
+                    remote_containers = [
+                        f"{slot.container_name} Up 6 hours (healthy)"
+                    ]
+                elif slot.id == "gpu-177-gpu1-ltx_video":
+                    workers = [
+                        {
+                            "agent_id": slot.agent_id,
+                            "status": "idle",
+                            "runtime_profile": "ltx_video",
+                            "types": "ltx_video",
+                        }
+                    ]
+                    remote_containers = [
+                        f"{slot.container_name} Up 8 days (healthy)"
+                    ]
+                rows.append(
+                    {
+                        "slot": slot_to_jsonable(slot, self.config),
+                        "workers": workers,
+                        "control": {"legacy": "disabled", "aio": "enabled"},
+                        "remote_containers": remote_containers,
+                        "model_cache": {"status": "ready"},
+                    }
+                )
+            return {"ok": True, "slots": rows}
+
+    monkeypatch.setattr(
+        runpod_admin_service,
+        "_build_lan_aio_ops",
+        lambda: FakeLanAioOps(),
+    )
+
+    payload = await runpod_admin_service.start_lan_aio_slot_action_payload(
+        slot_id="gpu-177-gpu1-wan22_video_v2",
+        action="takeover",
+        request=LanAioSlotActionRequest(),
+        spawn_task_func=_discard_operation_coroutine,
+    )
+
+    operation = payload["operation"]
+    command = operation["command"]
+    assert operation["active_lan_aio_slot"] == "gpu-177:gpu1"
+    assert "replace gpu-177-gpu1-ltx_video" in operation["trigger_reason"]
+    assert command[command.index("--replace-slot") + 1] == (
+        "gpu-177-gpu1-ltx_video"
+    )
+
+
+@pytest.mark.asyncio
+async def test_lan_aio_takeover_rejects_blocked_phase():
+    with pytest.raises(HTTPException) as exc_info:
+        await runpod_admin_service.start_lan_aio_slot_action_payload(
+            slot_id="gpu-177-gpu1-wan22_video_v2",
+            action="takeover",
+            request=LanAioSlotActionRequest(
+                replacement_target_slot_id="gpu-177-gpu1-ltx_video",
+            ),
+            spawn_task_func=_discard_operation_coroutine,
+        )
+
+    assert exc_info.value.status_code == 422
+    assert "blocked_oom_32gb" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_lan_aio_takeover_rejects_ambiguous_default_target(monkeypatch):
+    class FakeLanAioOps:
+        def __init__(self):
+            self.config = load_controller_config()
+            self.slots = _gpu177_wan22_candidate_slots()
+
+        def select_slots(self, slot_id, *, include_disabled=False):
+            if slot_id is not None:
+                return [self.slots[slot_id]]
+            return [
+                slot
+                for slot in self.slots.values()
+                if include_disabled or slot.enabled
+            ]
+
+        def status_payload(self, slots):
+            rows = []
+            for slot in slots:
+                workers = []
+                remote_containers = []
+                if slot.id in {"gpu-177-gpu1-ltx_video", "gpu-177-gpu1-scail2"}:
+                    workers = [
+                        {
+                            "agent_id": slot.agent_id,
+                            "status": "idle",
+                            "runtime_profile": slot.target_profile_id,
+                            "types": slot.target_profile_id,
+                        }
+                    ]
+                    remote_containers = [
+                        f"{slot.container_name} Up 5 minutes (healthy)"
+                    ]
+                rows.append(
+                    {
+                        "slot": slot_to_jsonable(slot, self.config),
+                        "workers": workers,
+                        "control": {"legacy": "disabled", "aio": "enabled"},
+                        "remote_containers": remote_containers,
+                        "model_cache": {"status": "ready"},
+                    }
+                )
+            return {"ok": True, "slots": rows}
+
+    monkeypatch.setattr(
+        runpod_admin_service,
+        "_build_lan_aio_ops",
+        lambda: FakeLanAioOps(),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await runpod_admin_service.start_lan_aio_slot_action_payload(
+            slot_id="gpu-177-gpu1-wan22_video_v2",
+            action="takeover",
+            request=LanAioSlotActionRequest(),
+            spawn_task_func=_discard_operation_coroutine,
+        )
+
+    assert exc_info.value.status_code == 422
+    assert "multiple same-physical LAN AIO replacement targets" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
 async def test_lan_aio_takeover_rejects_same_live_profile_target(monkeypatch):
     class FakeLanAioOps:
         def __init__(self):
             self.config = load_controller_config()
-            self.slots = load_lan_aio_prod_slots(include_disabled=True)
+            self.slots = _gpu177_wan22_candidate_slots()
 
         def select_slots(self, slot_id, *, include_disabled=False):
             return [self.slots[slot_id]]
