@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import socket
@@ -164,6 +165,58 @@ def operation_payload(
         "source": operation.source,
         "trigger_reason": operation.trigger_reason,
     }
+
+
+def _lan_aio_failed_checks_from_payload(payload: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    for slot_result in payload.get("slots") or []:
+        if not isinstance(slot_result, dict):
+            continue
+        slot = str(slot_result.get("slot") or "unknown-slot")
+        for check in slot_result.get("checks") or []:
+            if not isinstance(check, dict) or check.get("ok") is not False:
+                continue
+            name = str(check.get("name") or "unknown_check")
+            detail = str(check.get("error") or check.get("output") or "failed")
+            if name == "docker_registry_or_image_present":
+                flags = []
+                for key in (
+                    "registry_configured",
+                    "remote_image_present",
+                    "runner_image_present",
+                ):
+                    if key in check:
+                        flags.append(f"{key}={check.get(key)}")
+                image_ref = check.get("image_ref")
+                if image_ref:
+                    flags.append(f"image={image_ref}")
+                if flags:
+                    detail = f"{detail} ({', '.join(flags)})"
+            failures.append(f"{slot} {name}: {detail}")
+    return failures
+
+
+def summarize_operation_failure(operation: RunPodAdminOperation) -> str:
+    default = f"runpod operation exited with code {operation.exit_code}"
+    if not operation.action.startswith("lan-aio"):
+        return default
+    marker = "preflight failed "
+    for line in reversed(operation.log_lines):
+        if marker not in line:
+            continue
+        _, _, payload_text = line.partition(marker)
+        try:
+            payload = json.loads(payload_text)
+        except json.JSONDecodeError:
+            return line.strip()
+        failures = _lan_aio_failed_checks_from_payload(payload)
+        if failures:
+            return "LAN AIO preflight failed: " + "; ".join(failures[:3])
+        return "LAN AIO preflight failed"
+    for line in reversed(operation.log_lines):
+        if "RuntimeError:" in line:
+            return line.split("RuntimeError:", 1)[1].strip()
+    return default
 
 
 def normalized_stored_operation_payload(payload: dict[str, Any]) -> dict[str, Any]:

@@ -9,6 +9,7 @@ from ops.gpu_pool_controller.lan_aio_prod import (
     LanAioProdOps,
     assert_prod_compose,
     load_lan_aio_prod_slots,
+    main as lan_aio_main,
     patch_remote_workers_mount,
 )
 from ops.gpu_pool_controller.runpod_profile_catalog import (
@@ -344,6 +345,147 @@ def test_lan_aio_retarget_candidate_uses_target_gpu_and_candidate_profile():
     assert "POOL_RUNTIME_PROFILE: wan22_video_v2" in rendered
     assert "SUPPORTED_TASK_TYPES: wan22_video_v2" in rendered
     assert "host_port: 8190" in rendered
+
+
+def test_lan_aio_retarget_preflight_allows_runner_local_image_fallback():
+    class ImageFallbackOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+
+        def render_compose(self, slot):
+            return "services: {}"
+
+        def _http_check(self, name, url):
+            return {"name": name, "ok": True}
+
+        def _ssh(self, host: str, command: str, *, capture: bool = False) -> str:
+            if "docker info" in command or "docker image inspect" in command:
+                raise subprocess.CalledProcessError(1, command)
+            if "df -h" in command:
+                return "/dev/nvme0n1p2  915G  329G  540G  38% /"
+            return ""
+
+        def _local_image_present(self, image_ref: str | None) -> bool:
+            return bool(image_ref and "wan22aio-rife-bcf3ebd" in image_ref)
+
+    ops = ImageFallbackOps()
+    candidate = ops.select_slots(
+        "gpu-177-gpu1-wan22_video_v2",
+        include_disabled=True,
+    )[0]
+    retargeted = ops.retarget_slot(candidate, "gpu-177-gpu0-image_to_video")
+
+    payload = ops.preflight_payload([retargeted], execute=True)
+
+    assert payload["ok"] is True
+    image_check = payload["slots"][0]["checks"][2]
+    assert image_check["name"] == "docker_registry_or_image_present"
+    assert image_check["registry_configured"] is False
+    assert image_check["remote_image_present"] is False
+    assert image_check["runner_image_present"] is True
+    assert image_check["output"] == "runner_local_image_available_for_stream_load"
+
+
+def test_lan_aio_pull_image_loads_runner_local_image_when_remote_pull_fails():
+    class ImageLoadOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.loaded: list[tuple[str, str]] = []
+
+        def _remote_image_present(self, slot, image_ref: str) -> bool:
+            return False
+
+        def _ssh(self, host: str, command: str, *, capture: bool = False) -> str:
+            if command.startswith("docker pull"):
+                raise subprocess.CalledProcessError(
+                    1,
+                    command,
+                    stderr="HTTP response to HTTPS client",
+                )
+            return ""
+
+        def _local_image_present(self, image_ref: str | None) -> bool:
+            return bool(image_ref)
+
+        def _load_local_image_to_remote(self, slot, image_ref: str) -> str:
+            self.loaded.append((slot.id, image_ref))
+            return "Loaded image: sha256:abc123"
+
+    ops = ImageLoadOps()
+    candidate = ops.select_slots(
+        "gpu-177-gpu1-wan22_video_v2",
+        include_disabled=True,
+    )[0]
+    retargeted = ops.retarget_slot(candidate, "gpu-177-gpu0-image_to_video")
+
+    payload = ops.pull_image([retargeted])
+
+    assert payload["ok"] is True
+    assert payload["pulled"][0]["status"] == "loaded_from_runner"
+    assert ops.loaded == [
+        (
+            "gpu-177-gpu1-wan22_video_v2",
+            "192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd",
+        )
+    ]
+
+
+def test_lan_aio_cli_allows_replace_slot_for_retarget_render(capsys, tmp_path):
+    result = lan_aio_main(
+        [
+            "render",
+            "--slot",
+            "gpu-177-gpu1-wan22_video_v2",
+            "--replace-slot",
+            "gpu-177-gpu0-image_to_video",
+            "--include-disabled",
+            "--prod-env-file",
+            str(tmp_path / "missing-prod.env"),
+            "--aio-env-file",
+            str(tmp_path / "missing-aio.env"),
+            "--model-env-file",
+            str(tmp_path / "missing-model.env"),
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert result == 0
+    assert "host_port: 8190" in output
+    assert "POOL_GPU_INDEX: '0'" in output
+    assert "POOL_RUNTIME_PROFILE: wan22_video_v2" in output
+
+
+def test_lan_aio_cli_rejects_replace_slot_for_dangerous_single_step(tmp_path):
+    with pytest.raises(SystemExit) as exc_info:
+        lan_aio_main(
+            [
+                "stop-old",
+                "--slot",
+                "gpu-177-gpu1-wan22_video_v2",
+                "--replace-slot",
+                "gpu-177-gpu0-image_to_video",
+                "--include-disabled",
+                "--prod-env-file",
+                str(tmp_path / "missing-prod.env"),
+                "--aio-env-file",
+                str(tmp_path / "missing-aio.env"),
+                "--model-env-file",
+                str(tmp_path / "missing-model.env"),
+            ]
+        )
+
+    assert "--replace-slot is only supported for:" in str(exc_info.value)
+    assert "takeover" in str(exc_info.value)
 
 
 def test_lan_aio_fleet_render_supports_gpu_177_ltx_profile():

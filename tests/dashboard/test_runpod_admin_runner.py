@@ -1,3 +1,4 @@
+import json
 import logging
 import signal
 
@@ -247,6 +248,64 @@ async def test_runner_run_operation_persists_exit_code_and_redacted_logs(tmp_pat
     assert stored["status"] == "succeeded"
     assert stored["exit_code"] == 0
     assert "super-secret" not in "\n".join(stored["log_tail"])
+
+
+@pytest.mark.asyncio
+async def test_runner_summarizes_lan_aio_preflight_failure(tmp_path):
+    failure_payload = {
+        "ok": False,
+        "slots": [
+            {
+                "slot": "gpu-177-gpu1-wan22_video_v2",
+                "checks": [
+                    {
+                        "name": "docker_registry_or_image_present",
+                        "ok": False,
+                        "error": "LAN AIO image unavailable",
+                        "registry_configured": False,
+                        "remote_image_present": False,
+                        "runner_image_present": True,
+                        "image_ref": "192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:tag",
+                    }
+                ],
+            }
+        ],
+    }
+
+    async def fake_create_subprocess_exec(*_command, **_kwargs):
+        return _FakeProcess(
+            exit_code=1,
+            lines=[
+                "[lan-aio-takeover] preflight failed "
+                + json.dumps(failure_payload, separators=(",", ":")),
+                "RuntimeError: takeover preflight failed",
+            ],
+        )
+
+    runner, store = _build_runner(
+        tmp_path,
+        create_subprocess_exec=fake_create_subprocess_exec,
+    )
+    operation = RunPodAdminOperation(
+        id="op-lan-aio-failed",
+        action="lan-aio-takeover",
+        profile="wan22_video_v2",
+        command=["python3", "lan_aio_fleet_prod_ops.py", "takeover"],
+    )
+    runner.operations[operation.id] = operation
+
+    await runner.run_operation(
+        operation.id,
+        command=operation.command,
+        env={},
+    )
+
+    assert operation.status == "failed"
+    assert operation.error.startswith("LAN AIO preflight failed:")
+    assert "docker_registry_or_image_present" in operation.error
+    assert "runner_image_present=True" in operation.error
+    stored = await store.get_operation(operation.id)
+    assert stored["error"] == operation.error
 
 
 @pytest.mark.asyncio

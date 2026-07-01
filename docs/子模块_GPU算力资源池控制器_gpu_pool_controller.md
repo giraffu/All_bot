@@ -127,7 +127,7 @@ LAN registry 缓存已验证 GHCR RunPod 镜像，也保存 SCAIL-2 这类本地
 
 注意：旧 `20260613-wan22aio-lanbase-ab9b7ea` Wan22 镜像不能被假定已 baked `rife49.pth`，只应作为回滚/热缓存场景。当前稳定新 tag `20260619-wan22aio-rife-bcf3ebd` 已 baked `rife49.pth`、`runpod_bootstrap_from_git.sh`，并通过构建 smoke 检查 `ComfyUI_Fill-Nodes` 与 `ComfyUI-Frame-Interpolation` 两处缓存路径。
 
-GPU 节点 Docker daemon 必须信任 HTTP registry `192.168.1.115:5000` 后才能直接 `docker pull 192.168.1.115:5000/...`；未配置 insecure registry 时会被 Docker 强制按 HTTPS 访问并报 `HTTP response to HTTPS client`。修改 `/etc/docker/daemon.json` 并 restart Docker 会影响节点容器运行态，只能放在明确的节点维护窗口执行。若目标 SSH 用户没有免密 sudo，短期可在本地主服务器执行 `docker save <lan-registry-image> | ssh <gpu-host> docker load` 预置镜像；fleet `preflight` 会接受“registry 已配置”或“目标镜像已存在”任一条件。
+GPU 节点 Docker daemon 必须信任 HTTP registry `192.168.1.115:5000` 后才能直接 `docker pull 192.168.1.115:5000/...`；未配置 insecure registry 时会被 Docker 强制按 HTTPS 访问并报 `HTTP response to HTTPS client`。修改 `/etc/docker/daemon.json` 并 restart Docker 会影响节点容器运行态，只能放在明确的节点维护窗口执行。若目标 SSH 用户没有免密 sudo，优先在本地主服务器 runner 执行 `docker save <lan-registry-image> | ssh <gpu-host> docker load` 预置镜像，避免为了镜像分发重启 Docker daemon；fleet `preflight` 会接受“registry 已配置”、“目标镜像已存在”或“runner 本地已有目标镜像可流式加载”任一条件，`pull-image --execute` 在远端 pull 失败且 runner 本地有镜像时会自动走 save/load 兜底。
 
 `wan22_aio_video`、`image_to_video`、`wan22_video_v2` 三个 LAN AIO profile 共用同一个 Wan22 AIO 镜像；差异只在 runtime profile、`SUPPORTED_TASK_TYPES` 与模型 manifest。LAN AIO 的 `image_to_video` / `wan22_video_v2` split profile 由 runtime-render 自动在 `COMFY_EXTRA_ARGS` 追加 `--disable-dynamic-vram`，用于规避 cu128 ComfyUI DynamicVRAM 在 32G 5090 上的概率性 OOM。Wan22 V82 的 `FL_RIFE` 后处理还需要 `rife49.pth`，它不是大模型 manifest 的主权重；新镜像要 baked，旧镜像要用热缓存/启动 helper 补齐，不能依赖任务运行时访问 HuggingFace。
 
@@ -258,9 +258,9 @@ scripts/lan_aio_fleet_prod_ops.py recover --physical-slot gpu-252:gpu0 --slot gp
 
 真实接管顺序必须逐 slot 执行，不得一次替换整台或多台 GPU：
 
-1. `preflight --execute` 只读确认正式 Central/Web、LAN registry、LAN model cache、目标旧 ComfyUI `/system_stats`/`/queue`、磁盘，以及目标节点已配置 Docker insecure registry 或已预置目标镜像；legacy `/system_stats` 和 `/queue` 对刚重启的 ComfyUI 有短重试，连续失败才阻断切换。
-2. 在维护窗口内执行 `configure-registry --slot ... --execute`；该动作会重启目标 GPU 节点 Docker daemon，必须先确保目标 legacy worker drain 且队列为空。若目标用户无免密 sudo，可改用 `docker save ... | ssh ... docker load` 预置镜像，跳过 daemon restart。
-3. `pull-image --slot ... --execute` 预拉 LAN mirror 镜像。
+1. `preflight --execute` 只读确认正式 Central/Web、LAN registry、LAN model cache、目标旧 ComfyUI `/system_stats`/`/queue`、磁盘，以及目标节点已配置 Docker insecure registry、已预置目标镜像或 runner 本地已有目标镜像可流式加载；legacy `/system_stats` 和 `/queue` 对刚重启的 ComfyUI 有短重试，连续失败才阻断切换。
+2. 在维护窗口内执行 `configure-registry --slot ... --execute`；该动作会重启目标 GPU 节点 Docker daemon，必须先确保目标 legacy worker drain 且队列为空。若目标用户无免密 sudo 或不想中断节点 Docker，改用 runner `docker save ... | ssh ... docker load` 预置镜像，跳过 daemon restart。
+3. `pull-image --slot ... --execute` 预拉 LAN mirror 镜像；若目标节点未配置 insecure registry 而 runner 本地已有同 tag 镜像，helper 会自动用 save/load 把镜像加载到目标节点。
 4. `warm-cache --slot ... --include-disabled --execute` 用候选 profile 的 AIO 镜像在目标 workspace 运行一次无端口、无 agent、无接单的模型同步，并写入 `model-cache-marker.json`；若模型 manifest 尚未进入 LAN model cache，应让该步骤失败暴露，不在后台临时导入任意模型。
 5. `drain-legacy --slot ... --include-disabled --execute` 阻止旧 agent 接新单。
 6. `wait-idle --slot ... --include-disabled --execute` 最多等待当前旧任务自然终态，不用强制重启替代 drain。
@@ -269,7 +269,7 @@ scripts/lan_aio_fleet_prod_ops.py recover --physical-slot gpu-252:gpu0 --slot gp
 9. 验收 compose 不含 `cloud-test` / `user-data-test`，Central heartbeat 必须带 `node_id`、`provider=lan_ssh`、`runtime_profile`、`pool_managed=true`；`image_to_video` / `wan22_video_v2` slot 的 `COMFY_EXTRA_ARGS` 必须包含 `--disable-dynamic-vram`。
 10. `enable-aio --slot ... --execute` 会先把 legacy worker 置为 disabled，并拒绝在 legacy 仍 running、AIO disabled heartbeat 不可见或旧 runtime 容器仍占 GPU 显存时放开 AIO，避免同卡双 ComfyUI 抢单。
 
-Dashboard 的 `一键切换` / CLI `takeover --slot ... --include-disabled --execute` 按 `preflight -> pull-image -> warm-cache -> drain-legacy -> wait-idle -> stop-old -> start-disabled -> enable-aio` 串联上述步骤，默认 `--failure-policy auto_rollback`。Dashboard 当前态只认 live runtime；若同一物理 GPU 已有 live current，而另一个配置上 `prod_enabled` 的 slot 因恢复/回切处于 stopped/no-live 状态，它会作为“需确认”的可切换目标显示，不再因自身无 live runtime 被硬阻断。`warm-cache` 对 retarget 后 root-owned 的 `/srv/allbot/runpod-runtime/...` workspace 有 Docker root helper 兜底：SSH 用户 `mkdir` 权限不足时，helper 会用目标镜像挂载 workspace parent 创建目录，再继续模型同步和 marker 写入。`stop-old` 保护窗口开始后，若 `start-disabled`、`enable-aio` 或中途检查失败，helper 会先 disable 新候选、停止新候选容器、启动旧 runtime、恢复旧 agent control，并在 operation log 中记录 `recovery_status`；operation 本身仍按失败处理，避免误判切换成功。若需要首次配置 Docker insecure registry，仍要在维护窗口先单独执行 `configure-registry` 或用离线 `docker load` 预置镜像。
+Dashboard 的 `一键切换` / CLI `takeover --slot ... --include-disabled --execute` 按 `preflight -> pull-image -> warm-cache -> drain-legacy -> wait-idle -> stop-old -> start-disabled -> enable-aio` 串联上述步骤，默认 `--failure-policy auto_rollback`。Dashboard 当前态只认 live runtime；若同一物理 GPU 已有 live current，而另一个配置上 `prod_enabled` 的 slot 因恢复/回切处于 stopped/no-live 状态，它会作为“需确认”的可切换目标显示，不再因自身无 live runtime 被硬阻断。`render`、`preflight`、`pull-image`、`warm-cache` 和 `takeover` 支持 `--replace-slot`，用于 retarget 候选在目标物理 GPU 上做只读检查、镜像准备和缓存预热；`stop-old`、`start-disabled`、`enable-aio` 等危险单步仍不接受 retarget。`warm-cache` 对 retarget 后 root-owned 的 `/srv/allbot/runpod-runtime/...` workspace 有 Docker root helper 兜底：SSH 用户 `mkdir` 权限不足时，helper 会用目标镜像挂载 workspace parent 创建目录，再继续模型同步和 marker 写入。`stop-old` 保护窗口开始后，若 `start-disabled`、`enable-aio` 或中途检查失败，helper 会先 disable 新候选、停止新候选容器、启动旧 runtime、恢复旧 agent control，并在 operation log 中记录 `recovery_status`；operation 本身仍按失败处理，避免误判切换成功。若需要首次配置 Docker insecure registry，仍要在维护窗口先单独执行 `configure-registry` 或用 runner save/load 预置镜像。
 
 失败现场手工恢复入口是 `recover --physical-slot <node>:gpuN --prefer old|candidate`，它只作用于单个物理 GPU，不跨节点、不批量操作；需要恢复到明确候选时可追加 `--slot <slot-id>`，脚本会校验 slot 必须属于该物理 GPU。恢复会先 disable/stop 同卡其它 AIO，再把目标 slot 置为 disabled、启动或在容器缺失时按 `start-disabled` 渲染重建，验证容器健康和 disabled heartbeat 后才 enable 目标 agent。`--operation-id` 只作为审计提示，实际恢复仍要求显式指定 `--physical-slot` 或能由 `--slot` 推导出唯一 physical slot，避免从历史 operation 推断出过宽恢复范围。生产执行仍必须显式 `--execute`，否则只输出 dry-run 操作计划。
 
@@ -289,7 +289,7 @@ LAN AIO compose 固定带 `restart: unless-stopped`。AIO bootstrap/entrypoint �
 - 配置阶段应区分 `prod_enabled`、`canary_ready`、`blocked_host_service_runtime`，避免已正式接管的 slot 仍被误读为 canary。
 - `wan22_video_v2` 在 `gpu-177` GPU1 候选与 `gpu-252` GPU1 slot 都通过 slot-level `target_task_types` 收窄为只接 `wan22_video_v2`；后续新增共享镜像 slot 时也应优先显式声明目标 task type，避免 profile 默认 alias 误接单。`gpu-177` GPU0 当前配置和 live runtime 都应按 `image_to_video` 判断。
 - `preflight` / `switch-plan` 仍需继续强化 workflow 文件、remote_workers 挂载、模型 manifest、对象桶和 image digest 检查，减少“容器健康但工作流资产缺失”的误启用。
-- LAN registry 仍依赖 GPU 节点 Docker insecure registry；配置会重启整机 Docker daemon，后续优先评估 TLS registry 或免 daemon 重启的镜像分发路径。
+- LAN registry 直拉仍依赖 GPU 节点 Docker insecure registry；配置会重启整机 Docker daemon。当前 fleet helper 已支持 runner 本地镜像 save/load 兜底，后续优先评估 TLS registry 或更标准的免 daemon 重启镜像分发路径。
 - Dashboard `LAN AIO 管理` 已按节点/物理 GPU/候选 profile 三层展示当前/候选 slot、AIO profile、image/manifest、Central control、远端容器、模型缓存 marker、`live_state`、`switch_readiness`、`switch_blockers` 和最近 LAN AIO operation；后续只补更细的 image digest 与失败原因结构化归因。
 
 SCAIL-2 LAN AIO runtime 已用于 Web/Bot 的视频生视频能力：正式 LAN slot0 包含 `scail2_action_transfer`（动作迁移 5s/8s）、隐藏执行类型 `scail2_action_transfer_long`（动作迁移 10s/15s/20s）、`scail2_video_replacement`（视频换人）和 `scail2_face_swap_v2`（视频换脸 v10 two-stage）。它有测试 runtime、云测试 RunPod profile、云正式 slot0 runtime 与云正式手动 RunPod profile 四条边界，不能混用测试/正式桶或 worker；正式 RunPod `scail2` profile 仍只声明动作迁移/视频换人两任务。

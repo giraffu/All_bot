@@ -21,6 +21,7 @@ from dashboard.backend.services.runpod_admin_operation import (
     can_terminate_operation_reason,
     normalized_stored_operation_payload,
     operation_payload,
+    summarize_operation_failure,
 )
 from dashboard.backend.services.runpod_operation_store import (
     FINISHED_OPERATION_TTL_SECONDS,
@@ -367,9 +368,7 @@ class RunPodAdminOperationRunner:
             else:
                 operation.status = "succeeded" if operation.exit_code == 0 else "failed"
                 if operation.exit_code != 0:
-                    operation.error = (
-                        f"runpod operation exited with code {operation.exit_code}"
-                    )
+                    operation.error = summarize_operation_failure(operation)
                     if (
                         operation.source == "autoscaler"
                         and operation.action == "add"

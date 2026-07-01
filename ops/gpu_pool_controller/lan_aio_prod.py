@@ -40,6 +40,13 @@ TAKEOVER_STEPS = (
     "start-disabled",
     "enable-aio",
 )
+RETARGETABLE_REPLACE_SLOT_ACTIONS = {
+    "render",
+    "preflight",
+    "pull-image",
+    "warm-cache",
+    "takeover",
+}
 SAFE_STALE_CONTAINER_STATES = {"created", "exited", "dead", "removing"}
 FAILURE_POLICY_AUTO_ROLLBACK = "auto_rollback"
 SSH_BATCH_OPTIONS = (
@@ -712,12 +719,6 @@ class LanAioProdOps:
             self.render_compose(slot)
             port = _legacy_port_for_slot(self.config, slot)
             image_ref = self.config.profiles[slot.target_profile_id].all_in_one_image_ref
-            registry_or_image_check = "docker info 2>/dev/null | grep -q '192.168.1.115:5000'"
-            if image_ref:
-                registry_or_image_check = (
-                    f"( {registry_or_image_check} || "
-                    f"docker image inspect '{image_ref}' >/dev/null 2>&1 )"
-                )
             legacy_checks = []
             if slot.legacy_preflight_required:
                 legacy_checks.extend(
@@ -752,11 +753,7 @@ class LanAioProdOps:
                 )
             slot_checks = [
                 *legacy_checks,
-                self._remote_check(
-                    slot,
-                    "docker_registry_or_image_present",
-                    registry_or_image_check,
-                ),
+                self._image_readiness_check(slot, image_ref),
                 self._remote_check(slot, "disk_root", "df -h / | tail -1"),
             ]
             results.append(
@@ -964,7 +961,26 @@ class LanAioProdOps:
                     }
                 )
                 continue
-            self._ssh(slot.ssh_host, f"docker pull '{image_ref}'")
+            try:
+                self._ssh(slot.ssh_host, f"docker pull '{image_ref}'", capture=True)
+            except subprocess.CalledProcessError as exc:
+                if not self._local_image_present(image_ref):
+                    error = (exc.stderr or exc.stdout or "").strip()
+                    raise RuntimeError(
+                        "failed to pull LAN AIO image on remote host and runner "
+                        f"does not have a local copy: slot={slot.id} image={image_ref} "
+                        f"error={error or exc.returncode}"
+                    ) from exc
+                load_output = self._load_local_image_to_remote(slot, image_ref)
+                pulled.append(
+                    {
+                        "slot": slot.id,
+                        "image_ref": image_ref,
+                        "status": "loaded_from_runner",
+                        "output": load_output.strip() if load_output.strip() else None,
+                    }
+                )
+                continue
             pulled.append({"slot": slot.id, "image_ref": image_ref, "status": "pulled"})
         return {"ok": True, "action": "pull-image", "pulled": pulled}
 
@@ -1541,6 +1557,54 @@ class LanAioProdOps:
             result["output"] = output.strip()
         return result
 
+    def _remote_command_ok(self, slot: LanAioProdSlot, command: str) -> bool:
+        try:
+            self._ssh(slot.ssh_host, command, capture=True)
+        except Exception:
+            return False
+        return True
+
+    def _local_image_present(self, image_ref: str | None) -> bool:
+        if not image_ref:
+            return False
+        try:
+            self._local(["docker", "image", "inspect", image_ref], capture=True)
+        except Exception:
+            return False
+        return True
+
+    def _image_readiness_check(
+        self,
+        slot: LanAioProdSlot,
+        image_ref: str | None,
+    ) -> dict[str, Any]:
+        registry_configured = self._remote_command_ok(
+            slot,
+            "docker info 2>/dev/null | grep -q '192.168.1.115:5000'",
+        )
+        remote_image_present = (
+            self._remote_image_present(slot, image_ref) if image_ref else False
+        )
+        runner_image_present = self._local_image_present(image_ref)
+        ok = bool(registry_configured or remote_image_present or runner_image_present)
+        result: dict[str, Any] = {
+            "name": "docker_registry_or_image_present",
+            "ok": ok,
+            "image_ref": image_ref,
+            "registry_configured": registry_configured,
+            "remote_image_present": remote_image_present,
+            "runner_image_present": runner_image_present,
+        }
+        if not ok:
+            result["error"] = (
+                "LAN AIO image unavailable: remote Docker is not configured for "
+                "192.168.1.115:5000, remote image is missing, and runner local "
+                f"image is missing: {image_ref}"
+            )
+        elif runner_image_present and not (registry_configured or remote_image_present):
+            result["output"] = "runner_local_image_available_for_stream_load"
+        return result
+
     def _sleep(self, seconds: float) -> None:
         time.sleep(seconds)
 
@@ -1627,6 +1691,47 @@ class LanAioProdOps:
         except Exception:
             return False
         return True
+
+    def _load_local_image_to_remote(self, slot: LanAioProdSlot, image_ref: str) -> str:
+        save_proc = subprocess.Popen(
+            ["docker", "save", image_ref],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        assert save_proc.stdout is not None
+        load_proc = subprocess.Popen(
+            ["ssh", *SSH_BATCH_OPTIONS, slot.ssh_host, "docker load"],
+            stdin=save_proc.stdout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        save_proc.stdout.close()
+        load_stdout, load_stderr = load_proc.communicate()
+        save_stderr = b""
+        if save_proc.stderr is not None:
+            save_stderr = save_proc.stderr.read()
+        save_returncode = save_proc.wait()
+        if save_returncode != 0:
+            raise subprocess.CalledProcessError(
+                save_returncode,
+                ["docker", "save", image_ref],
+                stderr=save_stderr.decode("utf-8", errors="replace"),
+            )
+        if load_proc.returncode != 0:
+            raise subprocess.CalledProcessError(
+                load_proc.returncode,
+                ["ssh", *SSH_BATCH_OPTIONS, slot.ssh_host, "docker load"],
+                output=load_stdout.decode("utf-8", errors="replace"),
+                stderr=load_stderr.decode("utf-8", errors="replace"),
+            )
+        return "\n".join(
+            item
+            for item in (
+                load_stdout.decode("utf-8", errors="replace").strip(),
+                load_stderr.decode("utf-8", errors="replace").strip(),
+            )
+            if item
+        )
 
     def _assert_enable_aio_gate(self, slot: LanAioProdSlot) -> dict[str, Any]:
         legacy_control = self._control_state(slot.legacy_worker_id)
@@ -2173,10 +2278,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     slots = ops.select_slots(args.slot, include_disabled=args.include_disabled)
     if args.replace_slot:
-        if args.action != "takeover":
-            raise SystemExit("--replace-slot is only supported for takeover")
+        if args.action not in RETARGETABLE_REPLACE_SLOT_ACTIONS:
+            allowed = ", ".join(sorted(RETARGETABLE_REPLACE_SLOT_ACTIONS))
+            raise SystemExit(f"--replace-slot is only supported for: {allowed}")
         if len(slots) != 1:
-            raise SystemExit("takeover --replace-slot requires exactly one --slot")
+            raise SystemExit("--replace-slot requires exactly one --slot")
         slots = [ops.retarget_slot(slots[0], args.replace_slot)]
     if args.action == "status":
         print(json.dumps(ops.status_payload(slots), ensure_ascii=False, indent=2))
