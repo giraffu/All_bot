@@ -751,8 +751,13 @@ class LanAioProdOps:
                         ),
                     )
                 )
+            port_owner_check = self._host_port_owner_check(
+                slot,
+                allowed_containers={slot.container_name, slot.old_runtime_container},
+            )
             slot_checks = [
                 *legacy_checks,
+                port_owner_check,
                 self._image_readiness_check(slot, image_ref),
                 self._remote_check(slot, "disk_root", "df -h / | tail -1"),
             ]
@@ -1060,6 +1065,9 @@ class LanAioProdOps:
             self._scp(env_file, slot.ssh_host, slot.remote_env_file)
             self._ssh(slot.ssh_host, f"chmod 600 '{slot.remote_env_file}'")
         stale_target_container = self._ensure_target_container_recreate_safe(slot)
+        port_owner_check = self._host_port_owner_check(slot, allowed_containers=set())
+        if not port_owner_check["ok"]:
+            raise RuntimeError(str(port_owner_check["error"]))
         self._remote_compose(slot, "up -d --force-recreate")
         self._wait_container_health(slot)
         hot_cache_copies = self._preseed_legacy_hot_caches(slot)
@@ -1621,7 +1629,98 @@ class LanAioProdOps:
             output = self._ssh(slot.ssh_host, command, capture=True)
         except Exception as exc:
             return [f"status_unavailable: {exc}"]
-        return [line for line in output.splitlines() if line.strip()]
+        lines = [line for line in output.splitlines() if line.strip()]
+        try:
+            owners = self._remote_published_port_owners(slot, slot.host_port)
+        except Exception:
+            owners = []
+        for owner in owners:
+            owner_name = str(owner.get("name") or "").strip()
+            if not owner_name:
+                continue
+            if any(line == owner_name or line.startswith(f"{owner_name} ") for line in lines):
+                continue
+            owner_line = " ".join(
+                part
+                for part in (
+                    owner_name,
+                    str(owner.get("status") or "").strip(),
+                    str(owner.get("ports") or "").strip(),
+                    "host_port_owner",
+                )
+                if part
+            )
+            if owner_line and owner_line not in lines:
+                lines.append(owner_line)
+        return lines
+
+    def _remote_published_port_owners(
+        self,
+        slot: LanAioProdSlot,
+        host_port: int,
+    ) -> list[dict[str, Any]]:
+        command = (
+            f"docker ps --filter publish={int(host_port)} "
+            "--format '{{json .}}'"
+        )
+        output = self._ssh(slot.ssh_host, command, capture=True)
+        owners: list[dict[str, Any]] = []
+        for line in output.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                name, _, ports = line.partition(" ")
+                owners.append({"name": name, "ports": ports.strip()})
+                continue
+            name = str(row.get("Names") or "").strip()
+            if not name:
+                continue
+            owners.append(
+                {
+                    "name": name,
+                    "ports": str(row.get("Ports") or "").strip(),
+                    "image": str(row.get("Image") or "").strip(),
+                    "status": str(row.get("Status") or "").strip(),
+                }
+            )
+        return owners
+
+    def _host_port_owner_check(
+        self,
+        slot: LanAioProdSlot,
+        *,
+        allowed_containers: set[str],
+    ) -> dict[str, Any]:
+        allowed = {name for name in allowed_containers if name}
+        try:
+            owners = self._remote_published_port_owners(slot, slot.host_port)
+        except Exception as exc:
+            return {
+                "name": "host_port_owner",
+                "ok": False,
+                "host_port": slot.host_port,
+                "allowed_containers": sorted(allowed),
+                "owners": [],
+                "error": str(exc),
+            }
+        unexpected = [owner for owner in owners if owner.get("name") not in allowed]
+        result: dict[str, Any] = {
+            "name": "host_port_owner",
+            "ok": not unexpected,
+            "host_port": slot.host_port,
+            "allowed_containers": sorted(allowed),
+            "owners": owners,
+        }
+        if unexpected:
+            result["unexpected_owners"] = unexpected
+            result["error"] = (
+                f"host port {slot.host_port} is published by unexpected container(s): "
+                + ", ".join(str(owner.get("name")) for owner in unexpected)
+            )
+        return result
 
     def _remote_target_container_state(
         self,

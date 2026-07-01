@@ -387,7 +387,11 @@ def test_lan_aio_retarget_preflight_allows_runner_local_image_fallback():
     payload = ops.preflight_payload([retargeted], execute=True)
 
     assert payload["ok"] is True
-    image_check = payload["slots"][0]["checks"][2]
+    image_check = next(
+        check
+        for check in payload["slots"][0]["checks"]
+        if check["name"] == "docker_registry_or_image_present"
+    )
     assert image_check["name"] == "docker_registry_or_image_present"
     assert image_check["registry_configured"] is False
     assert image_check["remote_image_present"] is False
@@ -902,6 +906,155 @@ def test_lan_aio_start_disabled_removes_safe_exited_target_container():
     }
     assert ops.removed == [slot.container_name]
     assert ops.compose_ops == ["up -d --force-recreate"]
+
+
+def test_lan_aio_preflight_blocks_unexpected_host_port_owner():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+
+        def _http_ok(self, url: str) -> None:
+            return None
+
+        def _remote_check(self, slot, name: str, command: str, **kwargs):
+            return {"name": name, "ok": True, "output": "ok"}
+
+        def _image_readiness_check(self, slot, image_ref):
+            return {"name": "docker_registry_or_image_present", "ok": True}
+
+        def _remote_published_port_owners(self, slot, host_port: int):
+            return [
+                {
+                    "name": "allbot-lan-aio-gpu-002-gpu1-image_to_video-prod",
+                    "ports": "0.0.0.0:8191->8188/tcp",
+                }
+            ]
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-002-gpu1-pornmaster_flux2_edit"]
+
+    payload = ops.preflight_payload([slot], execute=True)
+
+    slot_checks = payload["slots"][0]["checks"]
+    port_check = next(check for check in slot_checks if check["name"] == "host_port_owner")
+    assert payload["ok"] is False
+    assert port_check["ok"] is False
+    assert port_check["allowed_containers"] == [
+        "allbot-lan-aio-gpu-002-gpu1-image_to_video-canary",
+        "allbot-lan-aio-gpu-002-gpu1-pornmaster-flux2-edit-prod",
+    ]
+    assert port_check["unexpected_owners"] == [
+        {
+            "name": "allbot-lan-aio-gpu-002-gpu1-image_to_video-prod",
+            "ports": "0.0.0.0:8191->8188/tcp",
+        }
+    ]
+
+
+def test_lan_aio_status_lists_unexpected_host_port_owner():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+
+        def _ssh(self, host: str, command: str, *, capture: bool = False) -> str:
+            return "allbot-lan-aio-gpu-002-gpu1-pornmaster-flux2-edit-prod Created"
+
+        def _remote_published_port_owners(self, slot, host_port: int):
+            return [
+                {
+                    "name": "allbot-lan-aio-gpu-002-gpu1-image_to_video-prod",
+                    "ports": "0.0.0.0:8191->8188/tcp",
+                    "status": "Up 10 hours (healthy)",
+                }
+            ]
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-002-gpu1-pornmaster_flux2_edit"]
+
+    lines = ops._remote_container_status(slot)
+
+    assert lines == [
+        "allbot-lan-aio-gpu-002-gpu1-pornmaster-flux2-edit-prod Created",
+        (
+            "allbot-lan-aio-gpu-002-gpu1-image_to_video-prod "
+            "Up 10 hours (healthy) 0.0.0.0:8191->8188/tcp host_port_owner"
+        ),
+    ]
+
+
+def test_lan_aio_start_disabled_refuses_lingering_host_port_owner():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.env_values.update(
+                {
+                    "LAN_AIO_AGENT_SECRET_TOKEN": "test-token",
+                    "LAN_AIO_MINIO_ENDPOINT": "minio.example",
+                    "LAN_AIO_MINIO_ACCESS_KEY": "minio-access",
+                    "LAN_AIO_MINIO_SECRET_KEY": "minio-secret",
+                    "LAN_MODEL_CACHE_ACCESS_KEY": "model-access",
+                    "LAN_MODEL_CACHE_SECRET_KEY": "model-secret",
+                }
+            )
+
+        def _set_control(
+            self,
+            agent_id: str,
+            state: str,
+            reason: str,
+            *,
+            ttl_seconds: int | None = None,
+        ) -> None:
+            return None
+
+        def _sync_remote_workers(self, slot) -> None:
+            return None
+
+        def _scp(self, source: Path, host: str, target: str) -> None:
+            return None
+
+        def _ssh(self, host: str, command: str, *, capture: bool = False) -> str:
+            return ""
+
+        def _remote_target_container_state(self, slot) -> dict[str, object]:
+            return {
+                "exists": False,
+                "name": slot.container_name,
+                "status": "missing",
+                "running": False,
+            }
+
+        def _remote_published_port_owners(self, slot, host_port: int):
+            return [
+                {
+                    "name": "allbot-lan-aio-gpu-002-gpu1-image_to_video-prod",
+                    "ports": "0.0.0.0:8191->8188/tcp",
+                }
+            ]
+
+        def _remote_compose(self, slot, op: str) -> None:
+            raise AssertionError("compose must not run while host port is occupied")
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-002-gpu1-pornmaster_flux2_edit"]
+
+    with pytest.raises(RuntimeError, match="host port 8191.*image_to_video-prod"):
+        ops.start_disabled([slot])
 
 
 def test_lan_aio_start_disabled_blocks_running_target_container():
