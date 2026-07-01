@@ -1,9 +1,83 @@
 from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from src.database.models import MembershipPlan, Order, Referral, User
 from src.services.permission_identity_priority_service import TRUSTED_USER_PRIORITY_BONUS
 from src.services.permission_service import PermissionService
+
+
+async def _create_low_trust_session_factory(monkeypatch):
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(User.__table__.create)
+        await conn.run_sync(Referral.__table__.create)
+        await conn.run_sync(MembershipPlan.__table__.create)
+        await conn.run_sync(Order.__table__.create)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    monkeypatch.setattr(
+        "src.services.permission_identity_priority_service.AsyncSessionLocal",
+        session_factory,
+    )
+    return engine, session_factory
+
+
+async def _seed_referral_conversion_case(
+    session_factory,
+    *,
+    inviter_id: int = 123,
+    invitee_count: int,
+    successful_invitee_ids: set[int],
+):
+    async with session_factory() as session:
+        session.add(
+            User(
+                id=inviter_id,
+                username="inviter",
+                checkin_count=8,
+                generation_count=1,
+            )
+        )
+        session.add(
+            MembershipPlan(
+                id=1,
+                name="gift",
+                identity_name="外门弟子",
+                price_ton=0,
+                price_stars=0,
+                price_rmb=0,
+                reward_credits=0,
+            )
+        )
+        invitees = []
+        referrals = []
+        orders = []
+        for index in range(invitee_count):
+            invitee_id = 10_000 + index
+            invitees.append(User(id=invitee_id, username=f"invitee{index}"))
+            referrals.append(
+                Referral(inviter_id=inviter_id, invitee_id=invitee_id)
+            )
+            if invitee_id in successful_invitee_ids:
+                orders.append(
+                    Order(
+                        order_id=f"GIFT:{invitee_id}",
+                        internal_user_id=invitee_id,
+                        plan_id=1,
+                        original_price=0,
+                        final_price=0,
+                        status="SUCCESS",
+                        tx_hash=f"manual_{invitee_id}",
+                        payment_channel=None,
+                    )
+                )
+
+        session.add_all(invitees)
+        session.add_all(referrals)
+        session.add_all(orders)
+        await session.commit()
 
 
 @pytest.mark.asyncio
@@ -39,6 +113,9 @@ async def test_calculate_user_priority_low_trust_free_tier_keeps_newbie_base_pri
     permission_service.identity_priority._has_successful_order = AsyncMock(
         return_value=False
     )
+    permission_service.identity_priority._has_high_quality_referral_exemption = (
+        AsyncMock(return_value=False)
+    )
     permission_service.identity_priority.get_user_group = AsyncMock()
     permission_service.identity_priority.get_user_identity = AsyncMock()
     permission_service.quota_manager.get_daily_usage = AsyncMock()
@@ -59,6 +136,9 @@ async def test_calculate_user_priority_low_trust_free_tier_skips_trusted_bonus()
     )
     permission_service.identity_priority._has_successful_order = AsyncMock(
         return_value=False
+    )
+    permission_service.identity_priority._has_high_quality_referral_exemption = (
+        AsyncMock(return_value=False)
     )
     permission_service.identity_priority.get_user_group = AsyncMock(return_value="筑基期")
     permission_service.identity_priority.get_user_identity = AsyncMock(return_value="外门弟子")
@@ -84,16 +164,23 @@ async def test_calculate_user_priority_success_order_exempts_low_trust(
     permission_service.identity_priority._has_successful_order = AsyncMock(
         return_value=True
     )
+    permission_service.identity_priority._has_high_quality_referral_exemption = (
+        AsyncMock()
+    )
 
     priority = await permission_service.calculate_user_priority(123)
 
     assert priority == 30 + TRUSTED_USER_PRIORITY_BONUS, successful_order_kind
+    permission_service.identity_priority._has_high_quality_referral_exemption.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_is_low_trust_free_tier_user_skips_order_lookup_under_threshold():
     permission_service = PermissionService()
     permission_service.identity_priority._has_successful_order = AsyncMock()
+    permission_service.identity_priority._has_high_quality_referral_exemption = (
+        AsyncMock()
+    )
 
     is_low_trust = (
         await permission_service.identity_priority.is_low_trust_free_tier_user(
@@ -104,6 +191,91 @@ async def test_is_low_trust_free_tier_user_skips_order_lookup_under_threshold():
 
     assert is_low_trust is False
     permission_service.identity_priority._has_successful_order.assert_not_awaited()
+    permission_service.identity_priority._has_high_quality_referral_exemption.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_low_trust_inviter_with_100_invitees_is_not_exempt(monkeypatch):
+    engine, session_factory = await _create_low_trust_session_factory(monkeypatch)
+    try:
+        successful_invitees = {10_000, 10_001, 10_002, 10_003}
+        await _seed_referral_conversion_case(
+            session_factory,
+            invitee_count=100,
+            successful_invitee_ids=successful_invitees,
+        )
+        permission_service = PermissionService()
+        permission_service.quota_manager.get_user_stats = AsyncMock(
+            return_value={"checkin_count": 8, "generation_count": 1}
+        )
+
+        is_low_trust = (
+            await permission_service.identity_priority.is_low_trust_free_tier_user(
+                123,
+            )
+        )
+
+        assert is_low_trust is True
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_low_trust_inviter_with_exact_3_percent_invitee_conversion_is_not_exempt(
+    monkeypatch,
+):
+    engine, session_factory = await _create_low_trust_session_factory(monkeypatch)
+    try:
+        successful_invitees = {10_000 + index for index in range(6)}
+        await _seed_referral_conversion_case(
+            session_factory,
+            invitee_count=200,
+            successful_invitee_ids=successful_invitees,
+        )
+        permission_service = PermissionService()
+        permission_service.quota_manager.get_user_stats = AsyncMock(
+            return_value={"checkin_count": 8, "generation_count": 1}
+        )
+
+        is_low_trust = (
+            await permission_service.identity_priority.is_low_trust_free_tier_user(
+                123,
+            )
+        )
+
+        assert is_low_trust is True
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_high_quality_inviter_exemption_counts_zero_price_success_orders(
+    monkeypatch,
+):
+    engine, session_factory = await _create_low_trust_session_factory(monkeypatch)
+    try:
+        successful_invitees = {10_000, 10_001, 10_002, 10_003}
+        await _seed_referral_conversion_case(
+            session_factory,
+            invitee_count=101,
+            successful_invitee_ids=successful_invitees,
+        )
+        permission_service = PermissionService()
+        permission_service.quota_manager.get_user_stats = AsyncMock(
+            return_value={"checkin_count": 8, "generation_count": 1}
+        )
+
+        is_low_trust = (
+            await permission_service.identity_priority.is_low_trust_free_tier_user(
+                123,
+            )
+        )
+        priority = await permission_service.calculate_user_priority(123)
+
+        assert is_low_trust is False
+        assert priority == 30 + TRUSTED_USER_PRIORITY_BONUS
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.asyncio

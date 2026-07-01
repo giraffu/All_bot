@@ -3,11 +3,13 @@ from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.requests import Request
 
 from dashboard.backend.routers import system as system_router
 from dashboard.backend.services import system_service
 from src.core.task_core import TaskTerminationFinalizationResult
+from src.database.models import MembershipPlan, Order, Referral, User
 
 
 class _FakeResponse:
@@ -87,6 +89,76 @@ class _FakePendingRedis:
 
     async def aclose(self):
         self.closed = True
+
+
+async def _create_low_trust_session_factory():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(User.__table__.create)
+        await conn.run_sync(Referral.__table__.create)
+        await conn.run_sync(MembershipPlan.__table__.create)
+        await conn.run_sync(Order.__table__.create)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    return engine, session_factory
+
+
+async def _seed_dashboard_low_trust_case(session_factory):
+    async with session_factory() as session:
+        session.add(
+            MembershipPlan(
+                id=1,
+                name="gift",
+                identity_name="外门弟子",
+                price_ton=0,
+                price_stars=0,
+                price_rmb=0,
+                reward_credits=0,
+            )
+        )
+        session.add_all(
+            [
+                User(id=10, username="low", checkin_count=8),
+                User(id=20, username="quality", checkin_count=8),
+                User(id=30, username="ordered", checkin_count=8),
+                User(id=40, username="under", checkin_count=7),
+            ]
+        )
+        session.add(
+            Order(
+                order_id="own-success",
+                internal_user_id=30,
+                plan_id=1,
+                original_price=0,
+                final_price=0,
+                status="SUCCESS",
+                tx_hash="manual_own_success",
+            )
+        )
+
+        invitees = []
+        referrals = []
+        orders = []
+        for index in range(101):
+            invitee_id = 20_000 + index
+            invitees.append(User(id=invitee_id, username=f"invitee{index}"))
+            referrals.append(Referral(inviter_id=20, invitee_id=invitee_id))
+            if index < 4:
+                orders.append(
+                    Order(
+                        order_id=f"GIFT:{invitee_id}",
+                        internal_user_id=invitee_id,
+                        plan_id=1,
+                        original_price=0,
+                        final_price=0,
+                        status="SUCCESS",
+                        tx_hash=f"manual_invitee_{invitee_id}",
+                    )
+                )
+        session.add_all(invitees)
+        session.add_all(referrals)
+        session.add_all(orders)
+        await session.commit()
 
 
 @pytest.fixture(autouse=True)
@@ -296,6 +368,22 @@ async def test_get_pending_queue_wait_details_counts_low_trust_free_tier_users()
     assert details["i2i_pro"]["low_trust_free_tier_task_count"] == 0
     assert details["i2i_pro"]["max_non_low_trust_pending_wait_seconds"] == 980
     get_low_trust_user_ids.assert_awaited_once_with({10, 20})
+
+
+@pytest.mark.asyncio
+async def test_get_low_trust_free_tier_user_ids_excludes_high_quality_inviters():
+    engine, session_factory = await _create_low_trust_session_factory()
+    try:
+        await _seed_dashboard_low_trust_case(session_factory)
+
+        low_trust_user_ids = await system_service.get_low_trust_free_tier_user_ids(
+            {10, 20, 30, 40},
+            session_factory=session_factory,
+        )
+
+        assert low_trust_user_ids == {10}
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.asyncio

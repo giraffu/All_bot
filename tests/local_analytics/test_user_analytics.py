@@ -20,9 +20,11 @@ async def test_user_analytics_returns_profile_distributions_and_leaderboards(mon
         )
         assert "coalesce(users.checkin_count, 0) > 7" in query
         assert "orders.status = 'SUCCESS'" in query
-        assert "orders.payment_channel in ('RMB', 'TON', 'XTR')" in query
+        assert "payment_channel in ('RMB', 'TON', 'XTR')" in query
         assert "real_success_payers as" in query
         assert "coalesce(final_price, 0) > 0" in query
+        assert "high_quality_referral_exempt_users" in query
+        assert "successful_invitees_count * 100 > referral_relations * 3" in query
         assert "avg(invitee_recharge_rate)" in query
         assert "else 0" in query
         assert "from affiliate_transactions" in query
@@ -117,7 +119,8 @@ async def test_user_analytics_returns_profile_distributions_and_leaderboards(mon
                 analytics_main.STARS_TO_USDT,
             )
             assert "orders.status = 'SUCCESS'" in query
-            assert "orders.payment_channel in ('RMB', 'TON', 'XTR')" in query
+            assert "orders.payment_channel in ('RMB', 'TON', 'XTR')" not in query
+            assert "coalesce(orders.final_price, 0) > 0" not in query
             assert "invitee_recharge_rate" in query
             assert "from affiliate_transactions" in query
             return [
@@ -146,7 +149,11 @@ async def test_user_analytics_returns_profile_distributions_and_leaderboards(mon
                 analytics_main.STARS_TO_USDT,
             )
             assert "coalesce(users.checkin_count, 0) > 7" in query
+            assert "high_quality_referral_exempt_users" in query
+            assert "successful_invitees_count * 100 > referral_relations * 3" in query
             assert "orders" in query
+            assert "orders.payment_channel in ('RMB', 'TON', 'XTR')" not in query
+            assert "coalesce(orders.final_price, 0) > 0" not in query
             assert "non_low_trust_invitees_count" in query
             assert "non_low_trust_invitee_rate" in query
             assert "invitee_recharge_rate" in query
@@ -229,6 +236,7 @@ async def test_user_profile_users_returns_paginated_cross_table_rollups(monkeypa
         assert "orders.status = 'SUCCESS'" in query
         assert "orders.payment_channel in ('RMB', 'TON', 'XTR')" in query
         assert "coalesce(final_price, 0) > 0" in query
+        assert "high_quality_referral_exempt_users" in query
         assert "real_success_orders > 0" in query
         assert "is_in_period_scope is true" in query
         assert "bounds.start_at" in query
@@ -329,6 +337,7 @@ async def test_user_profile_groups_returns_dimension_rollups(monkeypatch):
         assert "orders.status = 'SUCCESS'" in query
         assert "orders.payment_channel in ('RMB', 'TON', 'XTR')" in query
         assert "coalesce(final_price, 0) > 0" in query
+        assert "high_quality_referral_exempt_users" in query
         assert "real_success_orders > 0" in query
         assert "paying_rate" in query
         assert "gallery_signal" in query
@@ -643,6 +652,7 @@ async def test_user_profile_detail_returns_all_profile_sections(monkeypatch):
         if "user_profile_profile" in query:
             assert args == (202,)
             assert "successful_order_users" in query
+            assert "high_quality_referral_exempt_users" in query
             return {
                 "row_type": "user_profile_profile",
                 "id": 202,
@@ -669,6 +679,9 @@ async def test_user_profile_detail_returns_all_profile_sections(monkeypatch):
             return {"real_success_orders": 3, "real_success_usdt": 18.8, "internal_success_orders": 1}
         if "user_invitation_summary" in query:
             assert "from referrals" in query
+            assert "successful_invitee_orders" in query
+            assert "coalesce(orders.final_price, 0) > 0" not in query
+            assert "orders.payment_channel in ('RMB', 'TON', 'XTR')" not in query
             assert "from affiliate_transactions" in query
             return {
                 "referral_relations": 2,

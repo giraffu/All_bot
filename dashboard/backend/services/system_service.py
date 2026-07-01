@@ -9,7 +9,7 @@ import httpx
 import redis.asyncio as redis
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import and_, func, select
 
 from config import API_BASE, STATUS_ENDPOINT
 from ops.gpu_pool_controller.runpod_profile_catalog import (
@@ -20,9 +20,10 @@ from src.core.task_core_finalization import finalize_terminated_task
 from src.core.task_core import sync_user_concurrency as core_sync_user_concurrency
 from src.core.task_execution_types import resolve_worker_execution_task_type
 from src.database.core import AsyncSessionLocal
-from src.database.models import Order, User
+from src.database.models import Order, Referral, User
 from src.services.permission_identity_priority_service import (
     LOW_TRUST_FREE_TIER_CHECKIN_THRESHOLD,
+    has_high_quality_referral_exemption,
 )
 from src.services.image_service import image_service
 
@@ -212,11 +213,45 @@ async def get_low_trust_free_tier_user_ids(
             User.checkin_count > LOW_TRUST_FREE_TIER_CHECKIN_THRESHOLD,
         )
         low_trust_result = await session.execute(low_trust_stmt)
-        return {
+        low_trust_candidate_ids = {
             int(user_id)
             for user_id in low_trust_result.scalars().all()
             if user_id is not None
         }
+        if not low_trust_candidate_ids:
+            return set()
+
+        referral_rollup_stmt = (
+            select(
+                Referral.inviter_id,
+                func.count(func.distinct(Referral.invitee_id)).label("referral_count"),
+                func.count(func.distinct(Order.internal_user_id)).label(
+                    "successful_invitee_count"
+                ),
+            )
+            .select_from(Referral)
+            .outerjoin(
+                Order,
+                and_(
+                    Order.internal_user_id == Referral.invitee_id,
+                    Order.status == "SUCCESS",
+                ),
+            )
+            .where(Referral.inviter_id.in_(low_trust_candidate_ids))
+            .group_by(Referral.inviter_id)
+        )
+        referral_rollup_result = await session.execute(referral_rollup_stmt)
+        exempt_user_ids = {
+            int(row.inviter_id)
+            for row in referral_rollup_result.all()
+            if row.inviter_id is not None
+            and has_high_quality_referral_exemption(
+                referral_count=row.referral_count,
+                successful_invitee_count=row.successful_invitee_count,
+            )
+        }
+
+        return low_trust_candidate_ids - exempt_user_ids
 
 
 def summarize_queue_low_trust_counts(queue_type_details: dict) -> tuple[int, int]:

@@ -8,6 +8,8 @@ from src.quota import QuotaManager
 
 
 LOW_TRUST_FREE_TIER_CHECKIN_THRESHOLD = 7
+LOW_TRUST_INVITEE_COUNT_EXEMPTION_THRESHOLD = 100
+LOW_TRUST_INVITEE_SUCCESS_RATE_PERCENT_THRESHOLD = 3
 TRUSTED_USER_PRIORITY_BONUS = 40
 
 
@@ -16,6 +18,20 @@ def _coerce_int(value, default: int = 0) -> int:
         return int(value or 0)
     except (TypeError, ValueError):
         return default
+
+
+def has_high_quality_referral_exemption(
+    *,
+    referral_count: int,
+    successful_invitee_count: int,
+) -> bool:
+    referral_count = _coerce_int(referral_count)
+    successful_invitee_count = _coerce_int(successful_invitee_count)
+    return (
+        referral_count > LOW_TRUST_INVITEE_COUNT_EXEMPTION_THRESHOLD
+        and successful_invitee_count * 100
+        > referral_count * LOW_TRUST_INVITEE_SUCCESS_RATE_PERCENT_THRESHOLD
+    )
 
 
 class PermissionIdentityPriorityService:
@@ -79,6 +95,34 @@ class PermissionIdentityPriorityService:
             result = await session.execute(stmt)
             return result.scalar_one_or_none() is not None
 
+    async def _has_high_quality_referral_exemption(self, user_id: int) -> bool:
+        async with AsyncSessionLocal() as session:
+            from sqlalchemy import and_, func, select
+
+            from src.database.models import Order, Referral
+
+            stmt = (
+                select(
+                    func.count(func.distinct(Referral.invitee_id)),
+                    func.count(func.distinct(Order.internal_user_id)),
+                )
+                .select_from(Referral)
+                .outerjoin(
+                    Order,
+                    and_(
+                        Order.internal_user_id == Referral.invitee_id,
+                        Order.status == "SUCCESS",
+                    ),
+                )
+                .where(Referral.inviter_id == user_id)
+            )
+            result = await session.execute(stmt)
+            referral_count, successful_invitee_count = result.one()
+            return has_high_quality_referral_exemption(
+                referral_count=referral_count,
+                successful_invitee_count=successful_invitee_count,
+            )
+
     async def is_low_trust_free_tier_user(
         self,
         user_id: int,
@@ -94,7 +138,10 @@ class PermissionIdentityPriorityService:
         ):
             return False
 
-        return not await self._has_successful_order(user_id)
+        if await self._has_successful_order(user_id):
+            return False
+
+        return not await self._has_high_quality_referral_exemption(user_id)
 
     async def refresh_user_group(self, user_id: int, is_member: bool = None) -> str:
         stats = await self.quota_manager.get_user_stats(user_id)

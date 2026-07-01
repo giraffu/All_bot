@@ -295,6 +295,29 @@ successful_order_users as (
     where status = 'SUCCESS'
       and internal_user_id is not null
 ),
+referral_quality as (
+    select
+        referrals.inviter_id as user_id,
+        count(distinct referrals.invitee_id)::bigint as referral_relations,
+        count(distinct successful_order_users.user_id)::bigint as successful_invitees_count
+    from referrals
+    left join successful_order_users on successful_order_users.user_id = referrals.invitee_id
+    group by referrals.inviter_id
+),
+high_quality_referral_exempt_users as (
+    select user_id
+    from referral_quality
+    where referral_relations > 100
+      and successful_invitees_count * 100 > referral_relations * 3
+),
+period_success_order_users as (
+    select distinct orders.internal_user_id as user_id
+    from orders, bounds
+    where orders.status = 'SUCCESS'
+      and orders.internal_user_id is not null
+      and coalesce(orders.paid_at, orders.updated_at, orders.created_at) >= bounds.start_at
+      and coalesce(orders.paid_at, orders.updated_at, orders.created_at) < bounds.end_at
+),
 real_success_orders as (
     select
         orders.internal_user_id as user_id,
@@ -349,11 +372,11 @@ invitation_rollup as (
         count(distinct referrals.invitee_id)::bigint as referral_relations,
         count(distinct referrals.invitee_id) filter (where invitees.is_channel_member is true)::bigint as invitee_channel_members,
         count(distinct referrals.invitee_id) filter (where coalesce(invitees.generation_count, 0) > 0)::bigint as invitee_generation_users,
-        count(distinct real_success_orders.user_id)::bigint as recharged_invitees_count
+        count(distinct period_success_order_users.user_id)::bigint as recharged_invitees_count
     from referrals
     cross join bounds
     left join users invitees on invitees.id = referrals.invitee_id
-    left join real_success_orders on real_success_orders.user_id = referrals.invitee_id
+    left join period_success_order_users on period_success_order_users.user_id = referrals.invitee_id
     where referrals.created_at >= bounds.start_at
       and referrals.created_at < bounds.end_at
     group by referrals.inviter_id
@@ -452,6 +475,7 @@ user_profile_rows as (
         (
             coalesce(users.checkin_count, 0) > 7
             and successful_order_users.user_id is null
+            and high_quality_referral_exempt_users.user_id is null
         ) as is_low_trust_free_tier,
         (
             (users.last_activity >= bounds.start_at and users.last_activity < bounds.end_at)
@@ -510,6 +534,7 @@ user_profile_rows as (
     from users
     cross join bounds
     left join successful_order_users on successful_order_users.user_id = users.id
+    left join high_quality_referral_exempt_users on high_quality_referral_exempt_users.user_id = users.id
     left join real_success_orders on real_success_orders.user_id = users.id
     left join user_credit_flow on user_credit_flow.user_id = users.id
     left join period_generation on period_generation.user_id = users.id
@@ -837,6 +862,21 @@ with successful_order_users as (
     where status = 'SUCCESS'
       and internal_user_id is not null
 ),
+referral_quality as (
+    select
+        referrals.inviter_id as user_id,
+        count(distinct referrals.invitee_id)::bigint as referral_relations,
+        count(distinct successful_order_users.user_id)::bigint as successful_invitees_count
+    from referrals
+    left join successful_order_users on successful_order_users.user_id = referrals.invitee_id
+    group by referrals.inviter_id
+),
+high_quality_referral_exempt_users as (
+    select user_id
+    from referral_quality
+    where referral_relations > 100
+      and successful_invitees_count * 100 > referral_relations * 3
+),
 real_success_payers as (
     select distinct internal_user_id as user_id
     from orders
@@ -874,11 +914,13 @@ select
     (
         coalesce(users.checkin_count, 0) > 7
         and successful_order_users.user_id is null
+        and high_quality_referral_exempt_users.user_id is null
     ) as is_low_trust_free_tier
 from users
 left join referrals on referrals.invitee_id = users.id
 left join users inviter on inviter.id = coalesce(referrals.inviter_id, users.invited_by)
 left join successful_order_users on successful_order_users.user_id = users.id
+left join high_quality_referral_exempt_users on high_quality_referral_exempt_users.user_id = users.id
 left join real_success_payers on real_success_payers.user_id = users.id
 where users.id = $1::bigint
 """
@@ -1022,10 +1064,10 @@ limit 12
 """
 
 USER_INVITATION_SUMMARY_SQL = """
-with real_success_orders as (
+with successful_invitee_orders as (
     select
         orders.internal_user_id as user_id,
-        count(*)::bigint as real_success_orders,
+        count(*)::bigint as success_orders,
         coalesce(sum(case
             when orders.payment_channel = 'RMB' then orders.final_price * $2::numeric
             when orders.payment_channel = 'TON' then orders.final_price * $3::numeric
@@ -1034,8 +1076,6 @@ with real_success_orders as (
         end), 0)::numeric as recharge_usdt
     from orders
     where orders.status = 'SUCCESS'
-      and coalesce(orders.final_price, 0) > 0
-      and orders.payment_channel in ('RMB', 'TON', 'XTR')
       and orders.internal_user_id is not null
     group by orders.internal_user_id
 ),
@@ -1070,13 +1110,13 @@ select
     count(distinct invitees.invitee_id)::bigint as referral_relations,
     count(distinct invitees.invitee_id) filter (where invitees.is_channel_member is true)::bigint as invitee_channel_members,
     count(distinct invitees.invitee_id) filter (where invitees.generation_count > 0)::bigint as invitee_generation_users,
-    count(distinct real_success_orders.user_id)::bigint as recharged_invitees_count,
-    coalesce(sum(real_success_orders.real_success_orders), 0)::bigint as invitee_recharge_orders,
-    coalesce(sum(real_success_orders.recharge_usdt), 0)::numeric as invitee_recharge_usdt,
+    count(distinct successful_invitee_orders.user_id)::bigint as recharged_invitees_count,
+    coalesce(sum(successful_invitee_orders.success_orders), 0)::bigint as invitee_recharge_orders,
+    coalesce(sum(successful_invitee_orders.recharge_usdt), 0)::numeric as invitee_recharge_usdt,
     round(
         case
             when count(distinct invitees.invitee_id) > 0
-            then count(distinct real_success_orders.user_id)::numeric / count(distinct invitees.invitee_id)::numeric * 100
+            then count(distinct successful_invitee_orders.user_id)::numeric / count(distinct invitees.invitee_id)::numeric * 100
             else 0
         end,
         2
@@ -1086,16 +1126,14 @@ select
     (select affiliate_spent_commission_usdt from affiliate_ledger)::numeric as affiliate_spent_commission_usdt,
     (select affiliate_available_balance_usdt from affiliate_ledger)::numeric as affiliate_available_balance_usdt
 from invitees
-left join real_success_orders on real_success_orders.user_id = invitees.invitee_id
+left join successful_invitee_orders on successful_invitee_orders.user_id = invitees.invitee_id
 """
 
 USER_RECENT_INVITEES_SQL = """
-with real_success_payers as (
+with successful_order_users as (
     select distinct internal_user_id as user_id
     from orders
     where status = 'SUCCESS'
-      and coalesce(final_price, 0) > 0
-      and payment_channel in ('RMB', 'TON', 'XTR')
       and internal_user_id is not null
 )
 select
@@ -1107,11 +1145,11 @@ select
     coalesce(nullif(invitees.user_group, ''), '凡人') as user_group,
     invitees.is_channel_member,
     coalesce(invitees.generation_count, 0)::bigint as generation_count,
-    real_success_payers.user_id is not null as is_real_payer,
+    successful_order_users.user_id is not null as is_real_payer,
     referrals.created_at as referred_at
 from referrals
 left join users invitees on invitees.id = referrals.invitee_id
-left join real_success_payers on real_success_payers.user_id = referrals.invitee_id
+left join successful_order_users on successful_order_users.user_id = referrals.invitee_id
 where referrals.inviter_id = $1::bigint
 order by referrals.created_at desc, referrals.id desc
 limit 12

@@ -995,6 +995,21 @@ async def user_analytics(
             where status = 'SUCCESS'
               and internal_user_id is not null
         ),
+        referral_quality as (
+            select
+                referrals.inviter_id as user_id,
+                count(distinct referrals.invitee_id)::bigint as referral_relations,
+                count(distinct successful_order_users.user_id)::bigint as successful_invitees_count
+            from referrals
+            left join successful_order_users on successful_order_users.user_id = referrals.invitee_id
+            group by referrals.inviter_id
+        ),
+        high_quality_referral_exempt_users as (
+            select user_id
+            from referral_quality
+            where referral_relations > 100
+              and successful_invitees_count * 100 > referral_relations * 3
+        ),
         real_success_payers as (
             select distinct internal_user_id as user_id
             from orders
@@ -1007,16 +1022,16 @@ async def user_analytics(
             select users.*
             from users
             left join successful_order_users on successful_order_users.user_id = users.id
+            left join high_quality_referral_exempt_users on high_quality_referral_exempt_users.user_id = users.id
             where coalesce(users.checkin_count, 0) > 7
               and successful_order_users.user_id is null
+              and high_quality_referral_exempt_users.user_id is null
         ),
         referred_real_success_orders as (
             select orders.*
             from orders
             join referrals on referrals.invitee_id = orders.internal_user_id
             where orders.status = 'SUCCESS'
-              and coalesce(orders.final_price, 0) > 0
-              and orders.payment_channel in ('RMB', 'TON', 'XTR')
               and orders.internal_user_id is not null
         ),
         low_trust_referral_edges as (
@@ -1028,37 +1043,37 @@ async def user_analytics(
                 (
                     coalesce(invitees.checkin_count, 0) > 7
                     and invitee_success.user_id is null
+                    and invitee_high_quality.user_id is null
                 ) as invitee_is_low_trust_free_tier
             from referrals
             join low_trust_free_tier_users inviters on inviters.id = referrals.inviter_id
             left join users invitees on invitees.id = referrals.invitee_id
             left join successful_order_users invitee_success on invitee_success.user_id = referrals.invitee_id
+            left join high_quality_referral_exempt_users invitee_high_quality on invitee_high_quality.user_id = referrals.invitee_id
         ),
         low_trust_referred_real_success_orders as (
             select orders.*
             from orders
             join low_trust_referral_edges edges on edges.invitee_id = orders.internal_user_id
             where orders.status = 'SUCCESS'
-              and coalesce(orders.final_price, 0) > 0
-              and orders.payment_channel in ('RMB', 'TON', 'XTR')
               and orders.internal_user_id is not null
         ),
         inviter_recharge_rates as (
             select
                 referrals.inviter_id,
                 count(distinct referrals.invitee_id)::numeric as referral_relations,
-                count(distinct real_success_payers.user_id)::numeric as recharged_invitees_count,
+                count(distinct successful_order_users.user_id)::numeric as recharged_invitees_count,
                 round(
                     case
                         when count(distinct referrals.invitee_id) > 0
-                        then count(distinct real_success_payers.user_id)::numeric
+                        then count(distinct successful_order_users.user_id)::numeric
                             / count(distinct referrals.invitee_id)::numeric * 100
                         else 0
                     end,
                     2
                 )::numeric as invitee_recharge_rate
             from referrals
-            left join real_success_payers on real_success_payers.user_id = referrals.invitee_id
+            left join successful_order_users on successful_order_users.user_id = referrals.invitee_id
             group by referrals.inviter_id
         ),
         affiliate_ledger as (
@@ -1512,8 +1527,6 @@ async def user_analytics(
             left join users invitees on invitees.id = referrals.invitee_id
             left join orders on orders.internal_user_id = referrals.invitee_id
                 and orders.status = 'SUCCESS'
-                and coalesce(orders.final_price, 0) > 0
-                and orders.payment_channel in ('RMB', 'TON', 'XTR')
             group by referrals.inviter_id
         ),
         affiliate_ledger as (
@@ -1581,12 +1594,29 @@ async def user_analytics(
             where status = 'SUCCESS'
               and internal_user_id is not null
         ),
+        referral_quality as (
+            select
+                referrals.inviter_id as user_id,
+                count(distinct referrals.invitee_id)::bigint as referral_relations,
+                count(distinct successful_order_users.user_id)::bigint as successful_invitees_count
+            from referrals
+            left join successful_order_users on successful_order_users.user_id = referrals.invitee_id
+            group by referrals.inviter_id
+        ),
+        high_quality_referral_exempt_users as (
+            select user_id
+            from referral_quality
+            where referral_relations > 100
+              and successful_invitees_count * 100 > referral_relations * 3
+        ),
         low_trust_users as (
             select users.*
             from users
             left join successful_order_users on successful_order_users.user_id = users.id
+            left join high_quality_referral_exempt_users on high_quality_referral_exempt_users.user_id = users.id
             where coalesce(users.checkin_count, 0) > 7
               and successful_order_users.user_id is null
+              and high_quality_referral_exempt_users.user_id is null
         ),
         invitee_rollup as (
             select
@@ -1596,6 +1626,7 @@ async def user_analytics(
                     where not (
                         coalesce(invitees.checkin_count, 0) > 7
                         and invitee_success.user_id is null
+                        and invitee_high_quality.user_id is null
                     )
                 )::bigint as non_low_trust_invitees_count,
                 round(
@@ -1605,6 +1636,7 @@ async def user_analytics(
                             where not (
                                 coalesce(invitees.checkin_count, 0) > 7
                                 and invitee_success.user_id is null
+                                and invitee_high_quality.user_id is null
                             )
                         )::numeric / count(distinct referrals.invitee_id)::numeric * 100
                         else 0
@@ -1614,6 +1646,7 @@ async def user_analytics(
                 count(distinct referrals.invitee_id) filter (
                     where coalesce(invitees.checkin_count, 0) > 7
                       and invitee_success.user_id is null
+                      and invitee_high_quality.user_id is null
                 )::bigint as low_trust_invitees_count,
                 count(distinct referrals.invitee_id) filter (
                     where invitees.is_channel_member is true
@@ -1646,10 +1679,9 @@ async def user_analytics(
             from referrals
             left join users invitees on invitees.id = referrals.invitee_id
             left join successful_order_users invitee_success on invitee_success.user_id = referrals.invitee_id
+            left join high_quality_referral_exempt_users invitee_high_quality on invitee_high_quality.user_id = referrals.invitee_id
             left join orders on orders.internal_user_id = referrals.invitee_id
                 and orders.status = 'SUCCESS'
-                and coalesce(orders.final_price, 0) > 0
-                and orders.payment_channel in ('RMB', 'TON', 'XTR')
             group by referrals.inviter_id
         )
         select
