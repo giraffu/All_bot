@@ -23,9 +23,14 @@ from .providers.runpod import (
     RUNPOD_LTX_VIDEO_MODEL_PREFIX,
     RUNPOD_LTX_VIDEO_SUPPORTED_TASK_TYPES,
     RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_SUPPORTED_TASK_TYPES,
     RUNPOD_PROD_AGENT_ID,
     RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
+    RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX,
     RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
     RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE,
     RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX,
@@ -77,6 +82,7 @@ PROD_WAN22_VIDEO_V2_TASK_TYPE = "wan22_video_v2"
 PROD_I2I_PRO_TASK_TYPE = "i2i_pro"
 PROD_SCAIL2_TASK_TYPE = "scail2"
 PROD_LTX_VIDEO_TASK_TYPE = "ltx_video"
+PROD_PORNMASTER_FLUX2_EDIT_TASK_TYPE = "pornmaster_flux2_edit"
 PROD_WORKER_DEFAULT_HEARTBEAT_TIMEOUT_SECONDS = 3600.0
 HEALTHY_WORKER_STATUSES = {"idle", "running"}
 
@@ -856,6 +862,14 @@ class RunPodProdWorkerRunner:
             elif self.options.profile == "ltx_video":
                 image_object_key = self._resolve_canary_image(summary)
                 task_results = [self._run_ltx_video_task(image_object_key, summary)]
+            elif self.options.profile == "pornmaster_flux2_edit":
+                image_object_key = self._resolve_canary_image(summary)
+                task_results = [
+                    self._run_pornmaster_flux2_edit_task_case(task_case, summary)
+                    for task_case in self._pornmaster_flux2_edit_task_cases(
+                        image_object_key
+                    )
+                ]
             else:
                 image_object_key = self._resolve_canary_image(summary)
                 task_results = [self._run_img2img_task(image_object_key, summary)]
@@ -1658,6 +1672,8 @@ class RunPodProdWorkerRunner:
         expected_gpu_type_ids = (
             target_settings.gpu_type_ids_ltx_video
             if spec["runpod_task_type"] == PROD_LTX_VIDEO_TASK_TYPE
+            else target_settings.gpu_type_ids_pornmaster_flux2_edit
+            if spec["runpod_task_type"] == PROD_PORNMASTER_FLUX2_EDIT_TASK_TYPE
             else target_settings.prod_gpu_type_ids
         )
         if list(body.get("gpuTypeIds") or []) != list(expected_gpu_type_ids):
@@ -1675,6 +1691,23 @@ class RunPodProdWorkerRunner:
             if rendered_disk < min_disk:
                 failures.append(
                     f"containerDiskInGb must be at least {min_disk} for ltx_video"
+                )
+        if spec["runpod_task_type"] == PROD_PORNMASTER_FLUX2_EDIT_TASK_TYPE:
+            min_disk = int(
+                getattr(
+                    target_settings,
+                    "container_disk_gb_pornmaster_flux2_edit",
+                    RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB,
+                )
+            )
+            try:
+                rendered_disk = int(body.get("containerDiskInGb") or 0)
+            except (TypeError, ValueError):
+                rendered_disk = 0
+            if rendered_disk < min_disk:
+                failures.append(
+                    "containerDiskInGb must be at least "
+                    f"{min_disk} for pornmaster_flux2_edit"
                 )
         expected_refs = {
             "AGENT_SECRET_TOKEN": target_settings.prod_agent_secret_token_ref,
@@ -1951,6 +1984,14 @@ class RunPodProdWorkerRunner:
     def _i2i_pro_task_cases(self, image_object_key: str) -> list[dict[str, Any]]:
         return self._canary_cases().i2i_pro_task_cases(image_object_key)
 
+    def _pornmaster_flux2_edit_task_cases(
+        self,
+        image_object_key: str,
+    ) -> list[dict[str, Any]]:
+        return self._canary_cases().pornmaster_flux2_edit_task_cases(
+            image_object_key
+        )
+
     def _run_i2i_pro_task_case(
         self,
         task_case: dict[str, Any],
@@ -1959,6 +2000,13 @@ class RunPodProdWorkerRunner:
         return self._canary_executor().run_task_case(task_case, summary)
 
     def _run_scail2_task_case(
+        self,
+        task_case: dict[str, Any],
+        summary: dict[str, Any],
+    ) -> dict[str, Any]:
+        return self._canary_executor().run_task_case(task_case, summary)
+
+    def _run_pornmaster_flux2_edit_task_case(
         self,
         task_case: dict[str, Any],
         summary: dict[str, Any],
@@ -2245,6 +2293,8 @@ def _prod_task_type_for_profile(profile: str) -> str:
         return PROD_SCAIL2_TASK_TYPE
     if profile_key == "ltx_video":
         return PROD_LTX_VIDEO_TASK_TYPE
+    if profile_key == "pornmaster_flux2_edit":
+        return PROD_PORNMASTER_FLUX2_EDIT_TASK_TYPE
     return PROD_TASK_TYPE
 
 
@@ -2331,6 +2381,23 @@ def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
                 settings.task_type_workflow_overrides_ltx_video
                 or RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES
             ),
+        }
+    if profile_key == "pornmaster_flux2_edit":
+        return {
+            "runpod_task_type": PROD_PORNMASTER_FLUX2_EDIT_TASK_TYPE,
+            "runtime_profile": "pornmaster_flux2_edit",
+            "supported_task_types": RUNPOD_PORNMASTER_FLUX2_EDIT_SUPPORTED_TASK_TYPES,
+            "model_prefix": (
+                settings.model_prefix_pornmaster_flux2_edit
+                or RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX
+            ),
+            "model_manifest_key": (
+                settings.model_manifest_key_pornmaster_flux2_edit
+                or RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY
+            ),
+            "image_exact": "",
+            "image_prefix": RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX,
+            "workflow_overrides": "",
         }
     return {
         "runpod_task_type": "img2img_lora",
@@ -2534,7 +2601,15 @@ def _prod_manual_slot_from_pod_name(
 
 def _candidate_prod_profiles(profile: str | None) -> tuple[str, ...]:
     if profile is None:
-        return ("img2img", "image_to_video", "wan22_video_v2", "i2i_pro", "scail2")
+        return (
+            "img2img",
+            "image_to_video",
+            "wan22_video_v2",
+            "i2i_pro",
+            "scail2",
+            "ltx_video",
+            "pornmaster_flux2_edit",
+        )
     return (normalize_prod_worker_profile(profile),)
 
 

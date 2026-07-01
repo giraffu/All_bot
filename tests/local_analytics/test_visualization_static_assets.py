@@ -10,8 +10,8 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     app_js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
 
     assert "/static/vendor/echarts.min.js" in html
-    assert "/static/styles.css?v=20260701-user-date-range-v1" in html
-    assert "/static/app.js?v=20260701-user-date-range-v1" in html
+    assert "/static/styles.css?v=20260701-user-visuals-v1" in html
+    assert "/static/app.js?v=20260701-user-visuals-v1" in html
     assert "spark-bars" not in html
     assert "hourly-bars" not in html
     assert "renderChart(id, option)" in app_js
@@ -33,6 +33,11 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
         "generationTrendChart",
         "generationCompareChart",
         "promptGraphChart",
+        "userCoreTrendChart",
+        "userTrustCompositionChart",
+        "userConversionFunnelChart",
+        "userDailyActivityChart",
+        "userRechargeRateChart",
     ]:
         assert f'id="{mount_id}"' in html
 
@@ -73,6 +78,12 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     assert "人群透视分析" in html
     assert "人群下钻用户列表" in html
     assert "renderUserGroups" in app_js
+    assert "renderUserVisualCharts" in app_js
+    assert "userCoreTrendChart" in app_js
+    assert "userTrustCompositionChart" in app_js
+    assert "userConversionFunnelChart" in app_js
+    assert "userDailyActivityChart" in app_js
+    assert "userRechargeRateChart" in app_js
     assert "selectUserGroup" in app_js
     assert "userPeriodParams" in app_js
     assert "currentUserDateRange" in app_js
@@ -86,8 +97,9 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     assert "renderUserProfileDetail" in app_js
     assert "/api/user-analytics/groups" in app_js
     assert "/api/user-analytics/users" in app_js
+    assert "visualizations" in app_js
+    assert "low_trust_exempt_users" in app_js
     assert "recharge_rate_total_users" in app_js
     assert "avg_inviter_invitee_recharge_rate" in app_js
     assert "invitee_recharge_rate" in app_js
-    assert "non_low_trust_invitees_count" in app_js
     assert "低信任免费层" in app_js

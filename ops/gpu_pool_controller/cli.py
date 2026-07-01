@@ -824,6 +824,7 @@ def build_parser() -> argparse.ArgumentParser:
             "i2i_pro",
             "scail2",
             "ltx_video",
+            "pornmaster_flux2_edit",
         ),
         default=None,
         help="prod RunPod worker profile; default img2img",

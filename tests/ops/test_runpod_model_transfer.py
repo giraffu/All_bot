@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -34,6 +35,10 @@ def _args(**overrides):
         "gpu_type_ids": ["NVIDIA GeForce RTX 4090"],
         "container_disk_gb": 20,
         "image": "python:3.11-slim",
+        "keepalive_on_complete": False,
+        "civitai_token_secret_ref": "{{ RUNPOD_SECRET_allbot_civitai_api_token }}",
+        "pornmaster_flux2_edit": False,
+        "confirm_model_transfer": False,
     }
     values.update(overrides)
     return argparse.Namespace(**values)
@@ -80,6 +85,34 @@ def test_batch_transfer_render_redacts_all_source_urls(tmp_path, monkeypatch):
     assert rendered.count("<source-url>") >= 2
     assert redacted["env"]["RUNPOD_MODEL_ACCESS_KEY"] == "<redacted>"
     assert redacted["env"]["RUNPOD_MODEL_SECRET_KEY"] == "<redacted>"
+    assert body["env"]["RUNPOD_MODEL_TRANSFER_EXIT_ON_COMPLETE"] == "true"
+    assert "tail -f /dev/null" in body["dockerStartCmd"][2]
+    assert "exit 0" in body["dockerStartCmd"][2]
+
+
+def test_pornmaster_flux2_edit_batch_uses_cloud_model_prefix_and_token_secret(monkeypatch):
+    module = _load_module()
+    monkeypatch.setenv("RUNPOD_MODEL_ENDPOINT", "https://r2.example.test")
+
+    args = _args(pornmaster_flux2_edit=True)
+    items = module._load_transfer_items(args)
+    body = module._create_body(args, items)
+    redacted = module._redacted_body(body)
+    rendered = json.dumps(redacted, ensure_ascii=False)
+
+    assert len(items) == 3
+    assert body["env"]["RUNPOD_MODEL_TRANSFER_COUNT"] == "3"
+    assert body["env"]["CIVITAI_API_TOKEN"] == "{{ RUNPOD_SECRET_allbot_civitai_api_token }}"
+    assert items[0]["source_token_env"] == "CIVITAI_API_TOKEN"
+    assert items[0]["source_token_query_param"] == "token"
+    assert all(
+        item["key"].startswith("pornmaster_flux2_edit/2026-06-27/models/")
+        for item in items
+    )
+    assert "https://civitai.com/api/download/models/2973304" not in rendered
+    assert "huggingface.co" not in rendered
+    assert redacted["env"]["CIVITAI_API_TOKEN"] == "<redacted>"
+    assert rendered.count("<source-url>") >= 3
 
 
 def test_single_transfer_mode_stays_compatible():
@@ -124,6 +157,20 @@ def test_transfer_guard_blocks_when_transfer_pod_limit_reached():
     assert "model transfer pod limit reached" in reasons
 
 
+def test_transfer_guard_requires_explicit_confirm_for_execute():
+    module = _load_module()
+
+    reasons = module._transfer_guard_reasons(
+        dry_run=False,
+        autoscaler_enabled=True,
+        max_pods_total=1,
+        existing_count=0,
+        confirmed=False,
+    )
+
+    assert "--confirm-model-transfer is required" in reasons
+
+
 def test_transfer_dry_run_renders_without_runpod_api_key(tmp_path, monkeypatch):
     batch = tmp_path / "transfers.json"
     batch.write_text(
@@ -166,3 +213,31 @@ def test_transfer_dry_run_renders_without_runpod_api_key(tmp_path, monkeypatch):
     assert payload["transfer_count"] == 1
     assert payload["request"]["env"]["RUNPOD_MODEL_TRANSFER_COUNT"] == "1"
     assert "missing_RUNPOD_API_KEY" not in result.stdout
+
+
+def test_transfer_execute_requires_confirm_before_runpod_lookup(tmp_path, monkeypatch):
+    monkeypatch.setenv("RUNPOD_API_KEY", "dummy-key")
+    monkeypatch.setenv("RUNPOD_DRY_RUN", "false")
+    monkeypatch.setenv("RUNPOD_AUTOSCALER_ENABLED", "true")
+
+    env = os.environ.copy()
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(MODULE_PATH),
+            "--env-file",
+            str(tmp_path / "missing.env"),
+            "--pornmaster-flux2-edit",
+            "--execute",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    payload = json.loads(result.stdout)
+
+    assert result.returncode == 2
+    assert "--confirm-model-transfer is required" in payload["guard"]["reasons"]
+    assert payload["pod_lookup_skipped"] is True
+    assert "runpod_http" not in result.stdout

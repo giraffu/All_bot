@@ -52,8 +52,11 @@ def test_pipeline_restores_refreshes_embeddings_and_clusters_in_order(tmp_path):
     commands = rendered(fake)
     assert result["embedding"] == "attempted"
     assert "copy-local-analytics" in [label for label, _ in fake.commands]
-    assert "analytics_prompt_*" in commands
     assert "analytics_prompt_%" in commands
+    assert "analytics_user_profile_%" in commands
+    assert "local_analytics_tables.txt" in commands
+    assert "--table=public.$table_name" in commands
+    assert "python -m app.refresh_user_profile_snapshots --statement-timeout-ms" in commands
     assert "python -m app.refresh_prompt_mart --statement-timeout-ms" in commands
     assert "refresh_prompt_mart --full" not in commands
     assert "python -m app.refresh_prompt_slim_table" in commands
@@ -62,6 +65,7 @@ def test_pipeline_restores_refreshes_embeddings_and_clusters_in_order(tmp_path):
     assert "python -m app.refresh_prompt_vectors --similarity-only --task-type img2img" in commands
     assert "python -m app.refresh_prompt_vectors --similarity-only --task-type ltx_video" in commands
     assert "python -m app.refresh_prompt_graph --statement-timeout-ms" in commands
+    assert commands.index("refresh_user_profile_snapshots") < commands.index("refresh_prompt_mart")
     assert commands.index("refresh_prompt_mart") < commands.index("refresh_prompt_slim_table")
     assert commands.index("refresh_prompt_slim_table") < commands.index("refresh_prompt_vectors --embed-only")
     assert commands.index("refresh_prompt_vectors --embed-only") < commands.index("refresh_prompt_scenes")
@@ -83,6 +87,7 @@ def test_pipeline_skips_embedding_when_lm_studio_is_unavailable(tmp_path):
     assert result["embedding"] == "skipped_lm_studio_unavailable"
     assert result["scenes"] == "attempted"
     assert "refresh_prompt_mart --statement-timeout-ms" in commands
+    assert "refresh_user_profile_snapshots --statement-timeout-ms" in commands
     assert "refresh_prompt_mart --full" not in commands
     assert "refresh_prompt_slim_table" in commands
     assert "refresh_prompt_vectors --embed-only" not in commands
@@ -161,4 +166,5 @@ def test_vector_lock_prevents_refresh_chain_from_starting(tmp_path):
         fcntl.flock(handle, fcntl.LOCK_UN)
 
     assert result["status"] == "skipped_vector_lock_held"
-    assert fake.commands == []
+    assert len(fake.commands) == 1
+    assert "refresh_user_profile_snapshots" in rendered(fake)

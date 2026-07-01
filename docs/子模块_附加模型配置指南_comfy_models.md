@@ -13,7 +13,7 @@
 - Worker 启动时会基于 `workers/comfy_agent/workflows/mappings.json` 校验映射节点与输入名；Central API 只负责参数网关和队列入队，不再用 workflow 文件做启动门禁。
 - 重导 workflow 后必须复核硬编码节点 ID、`mappings.json` 节点输入名、`TASK_TYPE_WORKFLOW_FILENAMES` 绑定和 Worker `SUPPORTED_TASK_TYPES`，避免 Worker 校验通过但执行面读到旧文件。
 - 共享 workflow 的 alias 必须同轮维护：`image_to_video`、`video_insert`、`video_edit` 都绑定 `Wan22AioV82.json`，并必须同时存在于 `mappings.json` 与 `TASK_SPECIFIC_PATCHERS`，且复用 `patch_image_to_video_workflow`。生产 worker 的 workflow/mapping 目录可能是 bind mount，而 patcher 可能随镜像烘焙；只更新挂载目录不重建对应 agent，会造成半更新并触发 ComfyUI 400。
-- LAN AIO profile 镜像不得 baked `.safetensors` 业务模型；新增大模型 workflow 时先落 API workflow、`mappings.json`、`TASK_TYPE_WORKFLOW_FILENAMES`、`remote_workers/` 同步和本地 model registry 导入脚本，再上传 `allbot-model-cache/<profile>/<version>/manifest.json`。
+- LAN AIO / RunPod profile 镜像不得 baked `.safetensors` 业务模型；新增大模型 workflow 时先落 API workflow、`mappings.json`、`TASK_TYPE_WORKFLOW_FILENAMES`、`remote_workers/` 同步和 model registry / 云端转存脚本。云端正式 RunPod 模型优先用临时 RunPod transfer Pod 从授权下载链接流式写入 `allbot-model-cache/<profile>/<version>/models/...`，再 HEAD 校验并发布 manifest；不要从本地上传大模型。
 
 ---
 
@@ -33,7 +33,9 @@
 - `text_encoders/flux2/qwen_3_8b_fp8mixed.safetensors`
 - `vae/flux2/full_encoder_small_decoder.safetensors`
 
-Qwen text encoder 复用 `i2i_pro_baseline/2026-06-14-test` 的本地 registry blob；VAE 与 PornMaster 9B fp8 UNET 已导入 `/srv/allbot/model-registry/bundles/pornmaster_flux2_edit_baseline/2026-06-27/manifest.yml` 并记录 sha256。复核或更新入口是 `scripts/import_pornmaster_flux2_edit_models.py --execute`，默认读取 ignored `.env.local` 中的 `CIVITAI_API_TOKEN`；真实 token 只能放 ignored env 文件，不得写入文档、代码或 git。缺少 UNET 时脚本必须返回阻断状态并拒绝写半截 manifest。完整导入后再执行 `scripts/upload_pornmaster_flux2_edit_models_to_lan_cache.sh --execute`。
+Qwen text encoder 复用 `i2i_pro_baseline/2026-06-14-test` 的本地 registry blob；VAE 与 PornMaster 9B fp8 UNET 已导入 `/srv/allbot/model-registry/bundles/pornmaster_flux2_edit_baseline/2026-06-27/manifest.yml` 并记录 sha256。LAN cache 复核或更新入口是 `scripts/import_pornmaster_flux2_edit_models.py --execute`，默认读取 ignored `.env.local` 中的 `CIVITAI_API_TOKEN`；真实 token 只能放 ignored env 文件，不得写入文档、代码或 git。缺少 UNET 时脚本必须返回阻断状态并拒绝写半截 manifest。完整导入后可执行 `scripts/upload_pornmaster_flux2_edit_models_to_lan_cache.sh --execute` 维护 LAN model cache。
+
+云端正式 RunPod 的模型准备不要走本地上传。使用 `scripts/create_runpod_model_transfer_pod.py --pornmaster-flux2-edit` 渲染三文件 batch，确认 dry-run 中 bucket、prefix、key、sha256、size 正确且 source URL 已脱敏；execute 还必须显式传入 `--confirm-model-transfer`，临时 RunPod 以 `python:3.11-slim` 从 Civitai/HuggingFace 链接流式 multipart 上传到 `allbot-model-cache/pornmaster_flux2_edit/2026-06-27/models/...`，完成后默认退出。Civitai 权限通过 RunPod secret `allbot_civitai_api_token` 或一次性下载 URL 提供，不能写入 batch 明文。转存完成后运行 `scripts/publish_pornmaster_flux2_model_manifest.py`，它会 HEAD 三个对象并要求 `ContentLength` 与 metadata `sha256` 匹配，再写 `pornmaster_flux2_edit/2026-06-27/manifest.json`。
 
 当前默认运行模型固定为 `V4_turbo_fp8`，因为两份 workflow 与 RunningHub 资源名都指向 `PornMaster_flux2_klein_9b_turbo_fp8_V4.safetensors`，且 fp8 更适合标准 24GB RTX 4090 的稳定推理。Civitai 同页还有 `V4_turbo_bf16`，发布时间晚于 fp8、权重约 17.7GB，理论上量化损失更少，但会显著增加显存和加载压力；只有在 48GB 4090 或明确接受 CPU/offload 降速时，才建议另建 bf16 canary profile 测画质，不直接替换当前 fp8 默认 profile。
 
@@ -276,3 +278,9 @@ canary MP4，再决定是否 enable。正式用户输入和结果只允许写 `u
 和三份 10Eros v1.2 workflow override；不修改 LAN LTX AIO，也不覆盖默认 `LTX 2.3 *.json`
 workflow。canary 只提交一单 5s I2V MP4，结束后目标 worker 保持 `disabled`，确认产物后再
 手动 enable。
+
+正式 RunPod `pornmaster_flux2_edit` profile 使用 `runpod_prod_pornmaster_flux2_edit_manual_NN`、
+`user-data-prod` 和 `allbot-model-cache/pornmaster_flux2_edit/2026-06-27/manifest.json`，只承接
+`pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit`。它可通过 Dashboard 或
+`scripts/runpod_prod_ops.sh` 手动新增、pause/delete、canary 与 enable，但 `autoscaler_enabled=false`，
+不会进入自动扩缩容。canary 必须串行验证 single-edit 与 multi-edit 两单均由目标 RunPod agent 接单并返回 image。

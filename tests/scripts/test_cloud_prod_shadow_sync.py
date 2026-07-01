@@ -101,8 +101,9 @@ def test_dry_run_preserves_local_analytics_tables_before_shadow_switch(tmp_path,
     commands = "\n".join(runner.commands)
     assert "local_analytics_tables.txt" in commands
     assert "local_analytics.dump" in commands
-    assert "analytics_prompt_*" in commands
     assert "analytics_prompt_%" in commands
+    assert "analytics_user_profile_%" in commands
+    assert "--table=public.$table_name" in commands
     assert "pg_dump --dbname=\"$SHADOW_DB\"" in commands
     assert "pg_restore --no-owner --no-privileges --dbname=\"$SHADOW_NEXT_DB\"" in commands
     assert commands.index("pg_restore") < commands.index("ALTER DATABASE")
@@ -119,6 +120,7 @@ def test_local_analytics_preservation_can_be_disabled(tmp_path, capsys):
     commands = "\n".join(runner.commands)
     assert "local_analytics.dump" not in commands
     assert "analytics_prompt_%" not in commands
+    assert "analytics_user_profile_%" not in commands
 
 
 def test_manifest_records_local_analytics_preservation(tmp_path):
@@ -127,7 +129,7 @@ def test_manifest_records_local_analytics_preservation(tmp_path):
     (config.backup_dir / "alembic_version.txt").write_text("abc123\n", encoding="utf-8")
     (config.backup_dir / "table_counts.tsv").write_text("users\t10\n", encoding="utf-8")
     (config.backup_dir / "local_analytics_tables.txt").write_text(
-        "analytics_prompt_embeddings\nanalytics_prompt_slim_candidates\n",
+        "analytics_prompt_embeddings\nanalytics_prompt_slim_candidates\nanalytics_user_profile_daily_snapshots\n",
         encoding="utf-8",
     )
 
@@ -139,10 +141,11 @@ def test_manifest_records_local_analytics_preservation(tmp_path):
         "source_database": "bot_db_prod_shadow",
         "target_database": "bot_db_prod_shadow_next",
         "preserved": True,
-        "table_count": 2,
+        "table_count": 3,
         "tables": [
             "analytics_prompt_embeddings",
             "analytics_prompt_slim_candidates",
+            "analytics_user_profile_daily_snapshots",
         ],
     }
 

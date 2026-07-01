@@ -25,6 +25,8 @@ PROD_IMAGE_TO_VIDEO_TASK_TYPE = "image_to_video"
 PROD_WAN22_VIDEO_V2_TASK_TYPE = "wan22_video_v2"
 PROD_LTX_VIDEO_TASK_TYPE = "ltx_video"
 PROD_I2I_PRO_TASK_TYPE = "i2i_pro"
+PROD_PORNMASTER_FLUX2_SINGLE_EDIT_TASK_TYPE = "pornmaster_flux2_single_edit"
+PROD_PORNMASTER_FLUX2_MULTI_EDIT_TASK_TYPE = "pornmaster_flux2_multi_edit"
 PROD_SCAIL2_ACTION_TRANSFER_TASK_TYPE = "scail2_action_transfer"
 PROD_SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE = "scail2_video_replacement"
 PROD_TXT2IMG_PUBLIC_TASK_TYPE = "txt2img"
@@ -72,6 +74,11 @@ class RunPodProdWorkerCanaryCaseBuilder:
             task_summary = (
                 "submit prod Web scail2_action_transfer and "
                 "scail2_video_replacement 5s tasks serially"
+            )
+        elif self.config.profile == "pornmaster_flux2_edit":
+            task_summary = (
+                "submit prod Web pornmaster_flux2_single_edit and "
+                "pornmaster_flux2_multi_edit tasks serially"
             )
         else:
             task_summary = (
@@ -180,6 +187,48 @@ class RunPodProdWorkerCanaryCaseBuilder:
                     },
                     "prompt": self.config.prompt,
                     "negative_prompt": self.config.negative_prompt,
+                    "priority": 0,
+                },
+                "result_kind": "image",
+            },
+        ]
+
+    def pornmaster_flux2_edit_task_cases(
+        self,
+        image_object_key: str,
+    ) -> list[dict[str, Any]]:
+        prompt = self.config.prompt or "precise natural image edit, high quality"
+        negative_prompt = self.config.negative_prompt
+        return [
+            {
+                "label": "prod_pornmaster_flux2_single_edit_canary",
+                "expected_central_task_type": PROD_PORNMASTER_FLUX2_SINGLE_EDIT_TASK_TYPE,
+                "payload": {
+                    "task_type": PROD_PORNMASTER_FLUX2_SINGLE_EDIT_TASK_TYPE,
+                    "inputs": {
+                        "images": [image_object_key],
+                        "image": image_object_key,
+                        "seed": 20260627,
+                    },
+                    "prompt": prompt,
+                    "negative_prompt": negative_prompt,
+                    "priority": 0,
+                },
+                "result_kind": "image",
+            },
+            {
+                "label": "prod_pornmaster_flux2_multi_edit_canary",
+                "expected_central_task_type": PROD_PORNMASTER_FLUX2_MULTI_EDIT_TASK_TYPE,
+                "payload": {
+                    "task_type": PROD_PORNMASTER_FLUX2_MULTI_EDIT_TASK_TYPE,
+                    "inputs": {
+                        "images": [image_object_key, image_object_key],
+                        "image": image_object_key,
+                        "image2": image_object_key,
+                        "seed": 20260627,
+                    },
+                    "prompt": prompt,
+                    "negative_prompt": negative_prompt,
                     "priority": 0,
                 },
                 "result_kind": "image",

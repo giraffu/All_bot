@@ -4,8 +4,9 @@
 
 ## Scope
 
-- 用户画像、灵石收支、充值情况、生成分析、提示词洞察、提示词瘦身、向量相似、语义场景、模板候选和媒体引用核验；用户画像以人群透视分析、用户宽表和单用户详情抽屉为主，用户画像 Tab 使用开始/结束日期控件精确收敛用户宽表范围，`/api/user-analytics/groups` 继承用户宽表的日期、搜索和分层筛选后按同一套画像字段聚合人群，`/api/user-analytics/users` 支持按人群分桶下钻，`/api/user-analytics/users/{user_id}` 展示单用户画像；旧用户增长概览、漏斗、分布图和排行榜不再作为用户画像 Tab 主入口；`/api/overview` 仅保留给侧栏状态和旧链接兼容。
-- 灵石收支、充值情况、生成分析继续使用本地静态 `ECharts 6.0.0` 呈现坐标轴、图例、tooltip、donut、漏斗、堆叠柱、累计折线、分时对比和风险散点；用户画像 Tab 改为表格化人群透视与下钻列表，不复用 Dashboard Vue 构建链。
+- 用户画像、灵石收支、充值情况、生成分析、提示词洞察、提示词瘦身、向量相似、语义场景、模板候选和媒体引用核验；用户画像以固定画像看板、人群透视分析、用户宽表和单用户详情抽屉为主，用户画像 Tab 使用开始/结束日期控件精确收敛周期范围。`/api/user-analytics` 返回固定 KPI、快照趋势、状态占比、转化漏斗和充值率对比；`/api/user-analytics/groups` 继承用户宽表的日期、搜索和分层筛选后按同一套画像字段聚合人群，`/api/user-analytics/users` 支持按人群分桶下钻，`/api/user-analytics/users/{user_id}` 展示单用户画像；旧用户增长概览、旧分布图和排行榜不再作为用户画像 Tab 主入口；`/api/overview` 仅保留给侧栏状态和旧链接兼容。
+- 用户画像状态趋势使用本地派生表 `analytics_user_profile_daily_snapshots`，由 `python -m app.refresh_user_profile_snapshots` 在每日 shadow 刷新后 upsert；表缺失时页面仍展示当前汇总，只是不显示快照趋势和环比。
+- 用户画像、灵石收支、充值情况、生成分析继续使用本地静态 `ECharts 6.0.0` 呈现坐标轴、图例、tooltip、donut、漏斗、堆叠柱、累计折线、分时对比和风险散点；不复用 Dashboard Vue 构建链。
 - 灵石收支接口返回 `daily_categories[]`；充值接口返回渠道折算 USDT 日字段，并提供 `/api/finance/hourly-comparison`、`/api/finance/hourly-cumulative`；生成接口提供 `/api/generation/hourly-comparison`、`/api/generation/hourly-cumulative`、`/api/generation/type-comparison`。
 - 页面顶部周期控件按当前 Tab 独立保存；用户画像 Tab 使用开始/结束日期，其他 Tab 使用统计周期下拉；切换周期或点击刷新只请求当前 Tab 对应接口，避免一次刷新扫描所有分析模块。
 - 提示词洞察页通过 Prompt Mart 读取预清洗数据，不再在页面刷新时现场扫描 `history.prompt`；支持分页搜索、任务类型、来源范围、最少用户/次数和排序筛选，并可在详情面板懒加载同组原文变体；默认排除一键应用生成的衍生记录和 `prompts.ini` 内置默认模板，同时保留原始 Gallery 模板的点赞、应用、评论和解锁信号；内置模板可通过 `builtin_template` 来源范围单独查看。

@@ -26,8 +26,7 @@ DEFAULT_VECTOR_LOCK_PATH = (
 SAFE_DB_NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
 DEFAULT_MODEL_ID = "qwen3-embedding-8b"
 DEFAULT_MODEL_KEY = "text-embedding-qwen3-embedding-8b"
-LOCAL_ANALYTICS_SQL_LIKE_PATTERN = "analytics_prompt_%"
-LOCAL_ANALYTICS_PG_DUMP_PATTERN = "analytics_prompt_*"
+LOCAL_ANALYTICS_SQL_LIKE_PATTERNS = ("analytics_prompt_%", "analytics_user_profile_%")
 
 
 class PipelineError(RuntimeError):
@@ -117,26 +116,45 @@ def copy_local_analytics_tables_cmd(config: PipelineConfig, source_db: str) -> l
     source = shlex.quote(source_db)
     target = shlex.quote(config.shadow_db)
     user = shlex.quote(config.postgres_user)
+    table_predicate = " or ".join(
+        f"tablename like '{pattern}'" for pattern in LOCAL_ANALYTICS_SQL_LIKE_PATTERNS
+    )
+    table_list_sql = (
+        "select tablename from pg_tables "
+        "where schemaname = 'public' "
+        f"and ({table_predicate}) "
+        "order by tablename"
+    )
     script = "\n".join(
         [
             "set -eu",
             "tmp_dump=/tmp/allbot_local_analytics_restore.dump",
+            "tmp_tables=/tmp/allbot_local_analytics_tables.txt",
             "rm -f \"$tmp_dump\"",
-            f"pg_dump -U {user} -d {source} --format=custom --schema=public --table=public.{LOCAL_ANALYTICS_PG_DUMP_PATTERN} --file=\"$tmp_dump\"",
+            f"psql -U {user} -d {source} -v ON_ERROR_STOP=1 -At -c {shlex.quote(table_list_sql)} > \"$tmp_tables\"",
+            "if [ ! -s \"$tmp_tables\" ]; then",
+            "  echo 'Local analytics table restore skipped: no local analytics tables found'",
+            "  exit 0",
+            "fi",
+            "dump_table_args=\"\"",
+            "while IFS= read -r table_name; do",
+            "  dump_table_args=\"$dump_table_args --table=public.$table_name\"",
+            "done < \"$tmp_tables\"",
+            f"pg_dump -U {user} -d {source} --format=custom --schema=public $dump_table_args --file=\"$tmp_dump\"",
             f"psql -U {user} -d {target} -v ON_ERROR_STOP=1 <<'SQL'",
             "do $$",
             "declare row record;",
             "begin",
             "  for row in",
             "    select schemaname, tablename from pg_tables",
-            f"    where schemaname = 'public' and tablename like '{LOCAL_ANALYTICS_SQL_LIKE_PATTERN}'",
+            f"    where schemaname = 'public' and ({table_predicate})",
             "  loop",
             "    execute format('drop table if exists %I.%I cascade', row.schemaname, row.tablename);",
             "  end loop;",
             "end $$;",
             "SQL",
             f"pg_restore -U {user} --no-owner --no-privileges -d {target} \"$tmp_dump\"",
-            "rm -f \"$tmp_dump\"",
+            "rm -f \"$tmp_dump\" \"$tmp_tables\"",
         ]
     )
     return ["docker", "exec", config.postgres_container, "sh", "-lc", script]
@@ -287,17 +305,27 @@ def run_pipeline(
     result = {"status": "ok", "embedding": "not_requested", "scenes": "not_requested", "graph": "not_requested"}
     try:
         wait_for_shadow_sync(config)
-        if vector_refresh_lock_is_held(config):
-            message = {"status": "skipped_vector_lock_held"}
-            with config.log_path.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(message, sort_keys=True) + "\n")
-            return message
-
         if config.restore_from_db:
             runner.run(
                 copy_local_analytics_tables_cmd(config, config.restore_from_db),
                 label="copy-local-analytics",
             )
+
+        runner.run(
+            analytics_python_cmd(
+                config,
+                "app.refresh_user_profile_snapshots",
+                "--statement-timeout-ms",
+                str(config.statement_timeout_ms),
+            ),
+            label="refresh-user-profile-snapshot",
+        )
+
+        if vector_refresh_lock_is_held(config):
+            message = {"status": "skipped_vector_lock_held"}
+            with config.log_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(message, sort_keys=True) + "\n")
+            return message
 
         mart_args = ["--statement-timeout-ms", str(config.statement_timeout_ms)]
         if config.mart_full:
@@ -388,7 +416,10 @@ def run_pipeline(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Refresh local analytics after cloud-prod shadow sync.")
     parser.add_argument("--execute", action="store_true", help="run real Docker/PostgreSQL commands")
-    parser.add_argument("--restore-from-db", help="copy analytics_prompt_* tables from this database first")
+    parser.add_argument(
+        "--restore-from-db",
+        help="copy local analytics tables such as analytics_prompt_* and analytics_user_profile_* from this database first",
+    )
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument(
         "--full-mart",

@@ -21,6 +21,12 @@ RUNPOD_PROD_SCAIL2_AGENT_ID_PREFIX = "runpod_prod_scail2_manual_"
 RUNPOD_PROD_SCAIL2_POD_NAME_PREFIX = "allbot-runpod-prod-scail2-manual-"
 RUNPOD_PROD_LTX_VIDEO_AGENT_ID_PREFIX = "runpod_prod_ltx_video_manual_"
 RUNPOD_PROD_LTX_VIDEO_POD_NAME_PREFIX = "allbot-runpod-prod-ltx-video-manual-"
+RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_AGENT_ID_PREFIX = (
+    "runpod_prod_pornmaster_flux2_edit_manual_"
+)
+RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_POD_NAME_PREFIX = (
+    "allbot-runpod-prod-pornmaster-flux2-edit-manual-"
+)
 RUNPOD_PROD_DEFAULT_MAX_MANUAL_SLOTS = 100
 RUNPOD_PROD_MAX_MANUAL_SLOTS = RUNPOD_PROD_DEFAULT_MAX_MANUAL_SLOTS
 RUNPOD_PROD_AGENT_ID = "runpod_prod_img2img_manual_01"
@@ -43,6 +49,9 @@ RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX = (
 )
 RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX = (
     "ghcr.io/giraffu/allbot-comfy-runpod-ltx-video:"
+)
+RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX = (
+    "ghcr.io/giraffu/allbot-comfy-runpod-pornmaster-flux2-edit:"
 )
 RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS = (
     "NVIDIA GeForce RTX 5090",
@@ -135,6 +144,21 @@ RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES = json.dumps(
     separators=(",", ":"),
 )
 RUNPOD_LTX_VIDEO_DOCKER_START_CMD = RUNPOD_BOOTSTRAP_DOCKER_START_CMD
+RUNPOD_PORNMASTER_FLUX2_EDIT_GPU_TYPE_IDS = (
+    "NVIDIA GeForce RTX 4090",
+    "NVIDIA L40S",
+    "NVIDIA GeForce RTX 5090",
+)
+RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX = "pornmaster_flux2_edit/2026-06-27"
+RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY = (
+    "pornmaster_flux2_edit/2026-06-27/manifest.json"
+)
+RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB = 120
+RUNPOD_PORNMASTER_FLUX2_EDIT_SUPPORTED_TASK_TYPES = (
+    "pornmaster_flux2_single_edit",
+    "pornmaster_flux2_multi_edit",
+)
+RUNPOD_PORNMASTER_FLUX2_EDIT_DOCKER_START_CMD = RUNPOD_BOOTSTRAP_DOCKER_START_CMD
 
 
 @dataclass(frozen=True)
@@ -221,6 +245,33 @@ RUNPOD_TASK_PROFILES: dict[str, RunPodTaskProfile] = {
         gpu_type_env_key="RUNPOD_GPU_TYPE_IDS_LTX_VIDEO",
         image_env_key="RUNPOD_IMAGE_NAME_LTX_VIDEO",
     ),
+    "pornmaster_flux2_edit": RunPodTaskProfile(
+        task_type="pornmaster_flux2_edit",
+        supported_task_types=RUNPOD_PORNMASTER_FLUX2_EDIT_SUPPORTED_TASK_TYPES,
+        runtime_profile="pornmaster_flux2_edit",
+        agent_id_prefix="runpod_test_pornmaster_flux2_edit",
+        template_env_key="RUNPOD_TEMPLATE_ID_PORNMASTER_FLUX2_EDIT",
+        gpu_type_env_key="RUNPOD_GPU_TYPE_IDS_PORNMASTER_FLUX2_EDIT",
+        image_env_key="RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT",
+    ),
+    "pornmaster_flux2_single_edit": RunPodTaskProfile(
+        task_type="pornmaster_flux2_edit",
+        supported_task_types=RUNPOD_PORNMASTER_FLUX2_EDIT_SUPPORTED_TASK_TYPES,
+        runtime_profile="pornmaster_flux2_edit",
+        agent_id_prefix="runpod_test_pornmaster_flux2_edit",
+        template_env_key="RUNPOD_TEMPLATE_ID_PORNMASTER_FLUX2_EDIT",
+        gpu_type_env_key="RUNPOD_GPU_TYPE_IDS_PORNMASTER_FLUX2_EDIT",
+        image_env_key="RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT",
+    ),
+    "pornmaster_flux2_multi_edit": RunPodTaskProfile(
+        task_type="pornmaster_flux2_edit",
+        supported_task_types=RUNPOD_PORNMASTER_FLUX2_EDIT_SUPPORTED_TASK_TYPES,
+        runtime_profile="pornmaster_flux2_edit",
+        agent_id_prefix="runpod_test_pornmaster_flux2_edit",
+        template_env_key="RUNPOD_TEMPLATE_ID_PORNMASTER_FLUX2_EDIT",
+        gpu_type_env_key="RUNPOD_GPU_TYPE_IDS_PORNMASTER_FLUX2_EDIT",
+        image_env_key="RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT",
+    ),
 }
 
 RUNPOD_ADMIN_PROFILE_OPTIONS: tuple[dict[str, object], ...] = (
@@ -261,19 +312,19 @@ RUNPOD_ADMIN_PROFILE_OPTIONS: tuple[dict[str, object], ...] = (
             "ltx_video_v2v_audio",
         ],
     },
-)
-
-DASHBOARD_WORKER_PROFILE_OPTIONS: tuple[dict[str, object], ...] = (
-    *RUNPOD_ADMIN_PROFILE_OPTIONS,
     {
         "profile": "pornmaster_flux2_edit",
-        "label": "pornmaster_flux2",
+        "label": "pornmaster_flux2 / 自由P图 v2",
         "supported_task_types": [
             "pornmaster_flux2_single_edit",
             "pornmaster_flux2_multi_edit",
         ],
         "autoscaler_enabled": False,
     },
+)
+
+DASHBOARD_WORKER_PROFILE_OPTIONS: tuple[dict[str, object], ...] = (
+    RUNPOD_ADMIN_PROFILE_OPTIONS
 )
 
 RUNPOD_AUTOSCALER_PROFILE_OPTIONS: tuple[dict[str, object], ...] = tuple(
@@ -355,9 +406,11 @@ def normalize_prod_worker_profile(profile: str | None) -> str:
         return "scail2"
     if value == "ltx_video":
         return "ltx_video"
+    if value == "pornmaster_flux2_edit":
+        return "pornmaster_flux2_edit"
     raise ValueError(
         "prod RunPod profile must be img2img, image_to_video, "
-        "wan22_video_v2, i2i_pro, scail2, or ltx_video"
+        "wan22_video_v2, i2i_pro, scail2, ltx_video, or pornmaster_flux2_edit"
     )
 
 
@@ -375,9 +428,14 @@ def prod_worker_profile_for_task_type(task_type: str) -> str:
         return "scail2"
     if value == "ltx_video" or value in RUNPOD_LTX_VIDEO_SUPPORTED_TASK_TYPES:
         return "ltx_video"
+    if (
+        value == "pornmaster_flux2_edit"
+        or value in RUNPOD_PORNMASTER_FLUX2_EDIT_SUPPORTED_TASK_TYPES
+    ):
+        return "pornmaster_flux2_edit"
     raise ValueError(
         "prod RunPod worker only supports img2img, image_to_video, "
-        "wan22_video_v2, i2i_pro, scail2, or ltx_video"
+        "wan22_video_v2, i2i_pro, scail2, ltx_video, or pornmaster_flux2_edit"
     )
 
 
@@ -399,6 +457,8 @@ def prod_profile_from_agent_id(agent_id: str) -> str:
         return "scail2"
     if raw.startswith(RUNPOD_PROD_LTX_VIDEO_AGENT_ID_PREFIX):
         return "ltx_video"
+    if raw.startswith(RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_AGENT_ID_PREFIX):
+        return "pornmaster_flux2_edit"
     raise ValueError(
         "prod RunPod agent_id must start with one of "
         f"{RUNPOD_PROD_AGENT_ID_PREFIX}, "
@@ -406,7 +466,8 @@ def prod_profile_from_agent_id(agent_id: str) -> str:
         f"{RUNPOD_PROD_WAN22_VIDEO_V2_AGENT_ID_PREFIX}, "
         f"{RUNPOD_PROD_I2I_PRO_AGENT_ID_PREFIX}, "
         f"{RUNPOD_PROD_SCAIL2_AGENT_ID_PREFIX}, "
-        f"{RUNPOD_PROD_LTX_VIDEO_AGENT_ID_PREFIX}"
+        f"{RUNPOD_PROD_LTX_VIDEO_AGENT_ID_PREFIX}, "
+        f"{RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_AGENT_ID_PREFIX}"
     )
 
 
@@ -422,6 +483,8 @@ def prod_agent_id_prefix_for(profile: str | None) -> str:
         return RUNPOD_PROD_SCAIL2_AGENT_ID_PREFIX
     if profile_key == "ltx_video":
         return RUNPOD_PROD_LTX_VIDEO_AGENT_ID_PREFIX
+    if profile_key == "pornmaster_flux2_edit":
+        return RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_AGENT_ID_PREFIX
     return RUNPOD_PROD_AGENT_ID_PREFIX
 
 
@@ -437,6 +500,8 @@ def prod_pod_name_prefix_for(profile: str | None) -> str:
         return RUNPOD_PROD_SCAIL2_POD_NAME_PREFIX
     if profile_key == "ltx_video":
         return RUNPOD_PROD_LTX_VIDEO_POD_NAME_PREFIX
+    if profile_key == "pornmaster_flux2_edit":
+        return RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_POD_NAME_PREFIX
     return RUNPOD_PROD_POD_NAME_PREFIX
 
 

@@ -68,19 +68,22 @@ RUNPOD_MODEL_MANIFEST_KEY=img2img_lora/2026-06-10/manifest.json
 | `RUNPOD_IMAGE_NAME_I2I_PRO` / `RUNPOD_USE_TEMPLATE_I2I_PRO` | 创建/render/canary 前必须显式配置，镜像须以 `ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:` 开头 / `false` | 正式 `i2i_pro` 三任务 RunPod 创建、render 与 canary 所需镜像；删除已有 Pod 不依赖该创建镜像配置 |
 | `RUNPOD_IMAGE_NAME_SCAIL2` / `RUNPOD_USE_TEMPLATE_SCAIL2` | 创建/render/canary 前必须显式配置，镜像须以 `ghcr.io/giraffu/allbot-comfy-runpod-scail2:` 开头 / `false` | 正式 `scail2` 手动备用 RunPod 创建、render 与 canary 所需镜像；删除已有 Pod 不依赖该创建镜像配置 |
 | `RUNPOD_IMAGE_NAME_LTX_VIDEO` / `RUNPOD_USE_TEMPLATE_LTX_VIDEO` | 创建/render/canary 前必须显式配置，镜像须以 `ghcr.io/giraffu/allbot-comfy-runpod-ltx-video:` 开头 / `false` | 正式 `ltx_video` 高级图生视频 RunPod 创建、render 与 canary 所需镜像；删除已有 Pod 不依赖该创建镜像配置 |
-| `RUNPOD_MODEL_BUCKET` / `RUNPOD_MODEL_PREFIX` / `RUNPOD_MODEL_MANIFEST_KEY` | `allbot-model-cache` + profile-specific manifest | 手动正式 RunPod `img2img` 使用 `img2img_lora/2026-06-10/manifest.json`；`image_to_video` 使用 `image_to_video/2026-06-13-test/manifest.json`；`wan22_video_v2` 使用 `wan22_video_v2/2026-06-13-test/manifest.json`；`i2i_pro` 使用 `i2i_pro/2026-06-14-test/manifest.json`；`scail2` 使用 `scail2/2026-06-17-test/manifest.json`；`ltx_video` 使用 `ltx_video/2026-06-10/manifest.json` |
+| `RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT` / `RUNPOD_USE_TEMPLATE_PORNMASTER_FLUX2_EDIT` | 创建/render/canary 前必须显式配置，镜像须以 `ghcr.io/giraffu/allbot-comfy-runpod-pornmaster-flux2-edit:` 开头 / `false` | 正式 `pornmaster_flux2_edit` 自由P图 v2 RunPod 创建、render 与 canary 所需镜像；删除已有 Pod 不依赖该创建镜像配置 |
+| `RUNPOD_MODEL_BUCKET` / `RUNPOD_MODEL_PREFIX` / `RUNPOD_MODEL_MANIFEST_KEY` | `allbot-model-cache` + profile-specific manifest | 手动正式 RunPod `img2img` 使用 `img2img_lora/2026-06-10/manifest.json`；`image_to_video` 使用 `image_to_video/2026-06-13-test/manifest.json`；`wan22_video_v2` 使用 `wan22_video_v2/2026-06-13-test/manifest.json`；`i2i_pro` 使用 `i2i_pro/2026-06-14-test/manifest.json`；`scail2` 使用 `scail2/2026-06-17-test/manifest.json`；`ltx_video` 使用 `ltx_video/2026-06-10/manifest.json`；`pornmaster_flux2_edit` 使用 `pornmaster_flux2_edit/2026-06-27/manifest.json` |
 | `RUNPOD_MODEL_ACCESS_KEY_REF` / `RUNPOD_MODEL_SECRET_KEY_REF` | `{{ RUNPOD_SECRET_allbot_model_cache_r2_access_key }}` / `{{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}` | RunPod Pod 同步 `allbot-model-cache` 的 secret 引用，可与云测试共用模型缓存 secret |
 | `DASHBOARD_RUNPOD_AUTOSCALER_ENABLED` / `DASHBOARD_RUNPOD_AUTOSCALER_MODE` | 云正式 Dashboard Backend compose 默认 `true` / `execute`，可由 `.env.cloud.prod` 覆盖 | 启用 Dashboard 后端 RunPod 自动管理；后台按预计清空时间阈值调用现有 `add` / `down` operation，不直接操作本地 worker |
 | `DASHBOARD_RUNPOD_AUTOSCALER_*` 阈值 | 默认清空阈值按 profile：`img2img=20m`、`scail2=40m`、其它正式 profile `30m`；缩容等待 `60s`、冷却 `600s`、每 profile 最多 `5` 台 RunPod、heartbeat 新鲜度 `300s`、autoscaler RunPod 最短生命周期 `1800s` | 自动管理安全边界；只统计健康 enabled 可接单 worker，缩容只在 `pending_count == 0` 时考虑，保底为 RunPod + 本地可接单总容量至少 1；Dashboard 表格保存的 profile 级清空阈值和 task duration 会写入 Redis 并在下一轮评估生效 |
 | `GITHUB_TOKEN` / `GHCR_TOKEN` / `all-github-token` | `.env.cloud.prod` 可保存真实值作为人工密钥来源 | 只用于本机 `docker login ghcr.io`、GHCR push 或 GitHub package 管理；不属于云正式服务容器运行时变量，不进入 RunPod Pod env |
 
-`.env.cloud.prod` 不应保存 Cloudflare `cfat_...` API token，也不应把真实 R2 key、GitHub/GHCR token 写入知识库、日志或 `docker compose config` 输出。当前环境文件中出现的 `all-github-token` 带中划线，不能被 `source .env.cloud.prod` 导出为 shell 变量；需要推 GHCR 时应临时映射到 `GHCR_TOKEN` 或 `GITHUB_TOKEN` 后执行 `docker login ghcr.io`，并在 push 后用空 `DOCKER_CONFIG` 匿名验证 package public。正式 RunPod `prod-worker` 代码入口已支持 `--profile img2img`、`--profile image_to_video`、`--profile wan22_video_v2`、`--profile i2i_pro`、`--profile scail2` 与 `--profile ltx_video` 六条手动备用路径；真实创建、启用或 canary 生产任务仍必须由用户明确确认并满足 RunPod 门禁。
+`.env.cloud.prod` 不应保存 Cloudflare `cfat_...` API token，也不应把真实 R2 key、GitHub/GHCR token 写入知识库、日志或 `docker compose config` 输出。当前环境文件中出现的 `all-github-token` 带中划线，不能被 `source .env.cloud.prod` 导出为 shell 变量；需要推 GHCR 时应临时映射到 `GHCR_TOKEN` 或 `GITHUB_TOKEN` 后执行 `docker login ghcr.io`，并在 push 后用空 `DOCKER_CONFIG` 匿名验证 package public。正式 RunPod `prod-worker` 代码入口已支持 `--profile img2img`、`--profile image_to_video`、`--profile wan22_video_v2`、`--profile i2i_pro`、`--profile scail2`、`--profile ltx_video` 与 `--profile pornmaster_flux2_edit` 七条手动备用路径；真实创建、启用或 canary 生产任务仍必须由用户明确确认并满足 RunPod 门禁。
 
 `prod-worker --profile i2i_pro` 使用 `runpod_prod_i2i_pro_manual_NN` agent 和 `allbot-runpod-prod-i2i-pro-manual-NN` Pod 名称，固定请求 `NVIDIA GeForce RTX 4090`，生产 Pod 不开启 SSH。该 profile 的 `SUPPORTED_TASK_TYPES` 为 `i2i_pro,t2i-pornmaster-turbo,face_swap`，并通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 将 `t2i-pornmaster-turbo` 指向 `txt2img_from_i2i_pro.json`、`face_swap` 指向 `face_swap_v2.json`。`prod-worker` heartbeat 等待默认 `3600s`，覆盖 i2i_pro 首次同步约 36GiB 模型的启动窗口；生产 canary 会串行提交 `i2i_pro`、Web `txt2img` 与 `face_swap` 三单，全部由 `runpod_prod_i2i_pro_manual_NN` 接单并出图后才可启用接正式队列。
 
 `prod-worker --profile scail2` 使用 `runpod_prod_scail2_manual_NN` agent 和 `allbot-runpod-prod-scail2-manual-NN` Pod 名称，固定请求 `NVIDIA GeForce RTX 4090`，生产 Pod 不开启长期 SSH。该 profile 的 `SUPPORTED_TASK_TYPES` 为 `scail2_action_transfer,scail2_video_replacement`，模型从 `allbot-model-cache/scail2/2026-06-17-test/manifest.json` 同步，用户输入和结果只写 `user-data-prod`。生产 canary 会串行提交 `scail2_action_transfer 5s` 与 `scail2_video_replacement 5s` 两单，全部由 `runpod_prod_scail2_manual_NN` 接单并返回可播放 MP4 后，才可与 LAN SCAIL-2 并行 enable。当前长期口径是：`scail2` RunPod 已具备代码、镜像、模型 manifest 与 Dashboard 管理入口，但不是必须常驻的正式容量；没有 heartbeat 或已删除的 `manual_NN` 不能当作可用 worker。SCAIL-2 正式主路径仍以 gpu-002 slot0 LAN runtime 为准，RunPod 只作为手动备用/临时扩容。
 
 `prod-worker --profile ltx_video` 使用 `runpod_prod_ltx_video_manual_NN` agent 和 `allbot-runpod-prod-ltx-video-manual-NN` Pod 名称，优先请求 `NVIDIA GeForce RTX 5090,NVIDIA GeForce RTX 4090`，`containerDiskInGb` 至少 `180`，生产 Pod 不开启长期 SSH。该 profile 的 `SUPPORTED_TASK_TYPES` 为 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`，镜像由 `.github/workflows/runpod_ltx_video_profile_image.yml` 发布到 `ghcr.io/giraffu/allbot-comfy-runpod-ltx-video:<prod-tag>`，模型从 `allbot-model-cache/ltx_video/2026-06-10/manifest.json` 同步；云端 R2 该 manifest 当前为 10Eros v1.2-only，不包含旧 v1 正式回退。生产 profile 通过 `RUNPOD_TASK_TYPE_WORKFLOW_OVERRIDES_LTX_VIDEO` 默认指向三份 10Eros v1.2 workflow。生产 canary 只提交一单 `ltx_video` 5s I2V，全部由 `runpod_prod_ltx_video_manual_NN` 接单并返回可播放 MP4 后，才可手动 enable 接正式高级图生视频订单。该 profile 不改变 LAN LTX AIO，也不覆盖老 `LTX 2.3 *.json` workflow。
+
+`prod-worker --profile pornmaster_flux2_edit` 使用 `runpod_prod_pornmaster_flux2_edit_manual_NN` agent 和 `allbot-runpod-prod-pornmaster-flux2-edit-manual-NN` Pod 名称，优先请求 `NVIDIA GeForce RTX 4090,NVIDIA L40S,NVIDIA GeForce RTX 5090`，`containerDiskInGb` 至少 `120`，生产 Pod 不开启长期 SSH。该 profile 的 `SUPPORTED_TASK_TYPES` 为 `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit`，镜像由 `.github/workflows/runpod_pornmaster_flux2_edit_profile_image.yml` 发布到 `ghcr.io/giraffu/allbot-comfy-runpod-pornmaster-flux2-edit:<prod-tag>`，模型从 `allbot-model-cache/pornmaster_flux2_edit/2026-06-27/manifest.json` 同步。模型准备不得从本地上传大权重，优先用 `scripts/create_runpod_model_transfer_pod.py --pornmaster-flux2-edit` 在临时 RunPod 内从授权下载链接流式转存，再用 `scripts/publish_pornmaster_flux2_model_manifest.py` 发布 manifest。生产 canary 会串行提交 `pornmaster_flux2_single_edit` 与 `pornmaster_flux2_multi_edit` 两单，全部由 `runpod_prod_pornmaster_flux2_edit_manual_NN` 接单并返回 image 后，才可手动 enable 接正式自由P图 v2 队列。Dashboard 可手动新增该 profile，但 autoscaler 对其保持关闭。
 
 RunPod 正式手动 worker 的“启动”和“接单”是两层：`prod-worker up --execute`
 只创建/启动 Pod 并等待 disabled heartbeat；`prod-worker enable --execute` 才把
@@ -391,6 +394,8 @@ scripts/lan_scail2_aio_prod.sh enable --execute
 
 自由P图 v2 正式接入使用 GPU252 GPU0 的 LAN AIO fleet slot `gpu-252-gpu0-pornmaster_flux2_edit`，agent 为 `lan_aio_prod_gpu252_gpu0_pornmaster_flux2_edit_01`，host port `8192`，只声明 `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit`。旧 `lan_aio_prod_gpu252_gpu0_img2img_lora_01` / `allbot-lan-aio-gpu-252-gpu0-img2img_lora-prod` 保留为 rollback 目标；正式入口需在 `.env.cloud.prod` 设置 `ENABLE_FREE_EDIT_V2=true`，前端 Pages 构建需设置 `VITE_ENABLE_FREE_EDIT_V2=true`。
 
+自由P图 v2 的正式 RunPod 手动备用容量使用同一个 `pornmaster_flux2_edit` runtime profile，不写 `user-data-prod` 以外的用户结果桶，也不把模型 baked 进镜像。启用前必须确认 `RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT` 指向公开 GHCR tag，`RUNPOD_MODEL_PREFIX_PORNMASTER_FLUX2_EDIT=pornmaster_flux2_edit/2026-06-27`，`RUNPOD_MODEL_MANIFEST_KEY_PORNMASTER_FLUX2_EDIT=pornmaster_flux2_edit/2026-06-27/manifest.json`。
+
 控制面服务发布仍按单服务最小范围处理：
 
 ```bash
@@ -439,6 +444,29 @@ scripts/runpod_prod_ops.sh enable --profile scail2 --slot 01 --execute
 ```
 
 `prod-worker canary --profile scail2` 会提交 `scail2_action_transfer 5s` 与 `scail2_video_replacement 5s` 两个正式内部任务。若要强制两单命中 RunPod，应先等待 SCAIL-2 pending 清空，临时 disable `lan_aio_prod_gpu002_gpu0_scail2_01`，canary 完成后再恢复 LAN agent；其它正式 worker 与其它 RunPod profile 不在本操作范围内。
+
+正式 PornMaster Flux2 RunPod 模型转存与创建验收：
+
+```bash
+python scripts/create_runpod_model_transfer_pod.py --pornmaster-flux2-edit --env-file .env.cloud.test
+# 确认 request 中 source URL 已脱敏、bucket/prefix/sha256/size 正确后，按用户确认打开门禁执行
+RUNPOD_DRY_RUN=false RUNPOD_AUTOSCALER_ENABLED=true RUNPOD_MAX_PODS_TOTAL=1 \
+python scripts/create_runpod_model_transfer_pod.py --pornmaster-flux2-edit --env-file .env.cloud.test --execute --confirm-model-transfer
+
+python scripts/publish_pornmaster_flux2_model_manifest.py --env-file .env.cloud.test
+python scripts/publish_pornmaster_flux2_model_manifest.py --env-file .env.cloud.test --execute
+
+RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT=ghcr.io/giraffu/allbot-comfy-runpod-pornmaster-flux2-edit:<prod-tag> \
+python scripts/gpu_pool_controller.py runpod prod-worker render --profile pornmaster_flux2_edit --slot 01
+
+RUNPOD_DRY_RUN=false RUNPOD_AUTOSCALER_ENABLED=true \
+scripts/runpod_prod_ops.sh add --profile pornmaster_flux2_edit --count 1 --execute
+
+scripts/runpod_prod_ops.sh canary --profile pornmaster_flux2_edit --slot 01 --execute
+scripts/runpod_prod_ops.sh enable --profile pornmaster_flux2_edit --slot 01 --execute
+```
+
+`prod-worker canary --profile pornmaster_flux2_edit` 会提交 single-edit 与 multi-edit 两个正式内部任务。若要强制两单命中 RunPod，应先等待自由P图 v2 pending 清空，并临时 disable 对应 LAN PornMaster AIO agent；canary 完成后再恢复 LAN agent 或按容量计划手动 enable RunPod。
 
 ### 4.3 Agent control 正式灰度更新指南
 
@@ -607,7 +635,7 @@ scripts/install_cloud_prod_shadow_sync_timer.sh --execute
 运行口径：
 - 主脚本默认 dry-run；真实同步必须显式 `--execute`。
 - 数据库默认使用 `CLOUD_PROD_DB_DUMP_MODE=remote_r2`：脚本通过 SSH 让 `allbot-do-sgp1-control` 在云机读取 `.env.cloud.prod`，用 Docker 工具容器 `postgres:18`（可由 `SHADOW_SYNC_POSTGRES_IMAGE` 覆盖）执行 `pg_dump -Fc --serializable-deferrable`，把 dump/sha256 上传到 R2 临时前缀 `user-data-prod/__shadow-transfer/<timestamp>`，本地主服务器再经 HTTPS/rclone 下载到 ignored 的 `backups/cloud-prod-shadow/<timestamp>/`，校验 sha256 后恢复到 PostgreSQL 18 shadow 目标库 `bot_db_prod_shadow_next`，完成 Alembic/head 与关键表行数校验后，再把 `_next` 切成当前 `bot_db_prod_shadow`。云机临时目录和 R2 临时前缀在下载后清理。
-- `LOCAL_ANALYTICS_PRESERVE_ON_SHADOW_SYNC=true` 默认开启：每日恢复 `_next` 后、切换当前 shadow 前，会把旧 `bot_db_prod_shadow` 内本地分析平台生成的 `analytics_prompt_*` 表复制到 `_next`，避免云端 dump 覆盖掉 Prompt Mart、提示词瘦身、向量相似和语义场景表；无这些表时只跳过，不阻断 shadow 备份。manifest 会记录本轮保留的表名与数量。
+- `LOCAL_ANALYTICS_PRESERVE_ON_SHADOW_SYNC=true` 默认开启：每日恢复 `_next` 后、切换当前 shadow 前，会把旧 `bot_db_prod_shadow` 内本地分析平台生成的 `analytics_prompt_*` 与 `analytics_user_profile_*` 表复制到 `_next`，避免云端 dump 覆盖掉 Prompt Mart、提示词瘦身、向量相似、语义场景和用户画像快照表；无这些表时只跳过，不阻断 shadow 备份。manifest 会记录本轮保留的表名与数量。
 - 本地主服务器家宽/VPN 出口不应作为长期托管服务 trusted source；`remote_r2` 模式不需要把本地主公网 IP 加到托管 PostgreSQL trusted sources。旧 `CLOUD_PROD_DB_DUMP_MODE=local_tunnel` 仅作为 fallback/专项诊断；`.env.cloud-prod-shadow-sync.local` 可保留 `CLOUD_PROD_DB_TUNNEL_SSH_HOST=allbot-do-sgp1-control`，用于 Redis/Valkey 摘要采集或 fallback 时短生命周期 `local -> cloud control -> managed service` SSH 本地转发。`CLOUD_PROD_DB_TUNNEL_LOCAL_PORT=0` 表示自动选择空闲本地端口。
 - 本地到 R2 的 dump 下载可按网络情况设置 `R2_SYNC_HTTP_PROXY` / `R2_SYNC_HTTPS_PROXY`，同时用 `R2_SYNC_NO_PROXY` 保留 `127.0.0.1,localhost,192.168.1.115` 等本地 MinIO/LAN 地址直连；默认保留 `R2_SYNC_BWLIMIT=20M`，并用 `R2_SYNC_TRANSFERS=8` / `R2_SYNC_CHECKERS=16` 改善小对象吞吐。
 - 对象同步使用 `rclone/rclone` 工具容器；`R2_BUCKET_SYNC_ENABLED=true` 时把 R2 `user-data-prod` 增量同步到本地 MinIO 纯镜像桶 `user-data-prod-shadow`，云端删除或覆盖导致的旧本地对象进入 `user-data-prod-shadow-quarantine/<timestamp>/`，不硬删。若设为 `false`，每日任务只做数据库 dump/restore 与 Redis 摘要，不执行生产媒体桶镜像；`remote_r2` 数据库 dump 仍会使用 R2 `__shadow-transfer` 临时前缀传输 dump/sha256。
@@ -615,7 +643,7 @@ scripts/install_cloud_prod_shadow_sync_timer.sh --execute
 - 若开启 `COMPLETE_MEDIA_SYNC_ENABLED=true`，每日任务会把 `user-data-prod-shadow` 非破坏式 copy 到完整合并桶 `user-data-complete-shadow`，不从 R2 下载第二遍，也不会删除完整桶内 legacy-only 对象。数据库-only timer 应同时设置 `R2_BUCKET_SYNC_ENABLED=false` 与 `COMPLETE_MEDIA_SYNC_ENABLED=false`。`bot-data` / `comfyui-temp` 等旧本地桶只用于一次性手动补齐，执行时显式追加 `--include-legacy-media-import` 或临时设置 `COMPLETE_MEDIA_IMPORT_LEGACY=true`；timer 日常运行应保持 legacy import 关闭，避免每天重复扫描历史大桶。
 - Redis/Valkey 只记录 `INFO memory` / `DBSIZE` 摘要，不恢复运行态、队列、锁或 heartbeat。
 - systemd timer 为 `allbot-cloud-prod-shadow-sync.timer`，默认每日 Asia/Shanghai 05:00，`Persistent=true`，`RandomizedDelaySec=15m`。
-- 本地分析刷新 timer 为 `allbot-local-analytics-refresh.timer`，默认每日 Asia/Shanghai 05:45，入口 `scripts/run_local_analytics_shadow_pipeline.py --execute --batch-size 128`。该链路会等待 shadow sync 锁释放；若检测到 `/app/data/prompt_vectors/.refresh_prompt_vectors.lock` 对应宿主锁仍被上一轮向量刷新持有，则整轮输出 `skipped_vector_lock_held` 并退出，不刷新 Mart/slim、不启动第二条 embedding 流。无向量锁时按受影响 `prompt_hash` 增量刷新 Prompt Mart、刷新提示词瘦身表，LM Studio embedding 模型可用时续跑缺失向量；已有向量按 `prompt_hash` 断点续跑，不重新计算。embedding 覆盖完整后会先运行 `python -m app.refresh_prompt_scenes` 生成语义场景，再按 `task_type` 刷新相似边/近重复族；若 LM Studio 不可用但 embedding 已完整，仍允许刷新语义场景。05:00 shadow 切库造成 asyncpg 连接断开时，向量刷新会重连并从缺失 embedding 继续。仅人工重建 Mart 时才给 pipeline 追加 `--full-mart`。
+- 本地分析刷新 timer 为 `allbot-local-analytics-refresh.timer`，默认每日 Asia/Shanghai 05:45，入口 `scripts/run_local_analytics_shadow_pipeline.py --execute --batch-size 128`。该链路会等待 shadow sync 锁释放，先按需恢复本地分析表并运行 `python -m app.refresh_user_profile_snapshots` upsert 当天用户画像快照；若随后检测到 `/app/data/prompt_vectors/.refresh_prompt_vectors.lock` 对应宿主锁仍被上一轮向量刷新持有，则输出 `skipped_vector_lock_held` 并跳过 Mart/slim/embedding 链，但画像快照已完成。无向量锁时按受影响 `prompt_hash` 增量刷新 Prompt Mart、刷新提示词瘦身表，LM Studio embedding 模型可用时续跑缺失向量；已有向量按 `prompt_hash` 断点续跑，不重新计算。embedding 覆盖完整后会先运行 `python -m app.refresh_prompt_scenes` 生成语义场景，再按 `task_type` 刷新相似边/近重复族；若 LM Studio 不可用但 embedding 已完整，仍允许刷新语义场景。05:00 shadow 切库造成 asyncpg 连接断开时，向量刷新会重连并从缺失 embedding 继续。仅人工重建 Mart 时才给 pipeline 追加 `--full-mart`。
 
 安全边界：
 - `.env.cloud-prod-shadow-sync.local` 只放在本地主服务器并保持 ignored；不得把 DB 密码、R2 key、Bot token、presigned URL、`.env.cloud.prod` 内容写入日志、manifest、文档或聊天。

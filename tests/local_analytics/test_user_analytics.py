@@ -12,11 +12,16 @@ async def test_user_analytics_returns_profile_distributions_and_leaderboards(mon
 
     async def fake_fetchrow(query, *args):
         calls.append(("fetchrow", query, args))
+        if "to_regclass('public.analytics_user_profile_daily_snapshots')" in query:
+            assert args == ()
+            return {"table_name": "analytics_user_profile_daily_snapshots"}
         assert args == (
             30,
             analytics_main.RMB_TO_USDT,
             analytics_main.TON_TO_USDT,
             analytics_main.STARS_TO_USDT,
+            None,
+            None,
         )
         assert "coalesce(users.checkin_count, 0) > 7" in query
         assert "orders.status = 'SUCCESS'" in query
@@ -24,6 +29,8 @@ async def test_user_analytics_returns_profile_distributions_and_leaderboards(mon
         assert "real_success_payers as" in query
         assert "coalesce(final_price, 0) > 0" in query
         assert "high_quality_referral_exempt_users" in query
+        assert "low_trust_exempt_users as" in query
+        assert "period_generation_users as" in query
         assert "successful_invitees_count * 100 > referral_relations * 3" in query
         assert "avg(invitee_recharge_rate)" in query
         assert "else 0" in query
@@ -52,6 +59,7 @@ async def test_user_analytics_returns_profile_distributions_and_leaderboards(mon
             "low_trust_active_users": 4,
             "low_trust_generation_users": 5,
             "low_trust_total_credits": 321,
+            "low_trust_exempt_users": 3,
             "low_trust_inviters_count": 4,
             "low_trust_non_low_trust_invitees_count": 13,
             "low_trust_recharged_invitees_count": 2,
@@ -73,7 +81,7 @@ async def test_user_analytics_returns_profile_distributions_and_leaderboards(mon
     async def fake_fetch(query, *args):
         calls.append(("fetch", query, args))
         if "as new_users" in query and "checkin_history" in query:
-            assert args == (30,)
+            assert args == (30, None, None)
             return [
                 {
                     "day": "2026-06-24",
@@ -93,8 +101,36 @@ async def test_user_analytics_returns_profile_distributions_and_leaderboards(mon
         if "generation_bucket" in query:
             return [{"label": "11-20", "count": 18}]
         if "activity_segment" in query:
-            assert args == (30,)
+            assert args == (30, None, None)
             return [{"label": "近周期活跃", "count": 34}]
+        if "from analytics_user_profile_daily_snapshots" in query:
+            assert args == (30, None, None)
+            return [
+                {
+                    "day": "2026-06-30",
+                    "total_users": 90,
+                    "active_users_7d": 20,
+                    "active_users_30d": 30,
+                    "channel_members": 50,
+                    "generation_users": 40,
+                    "real_payers": 7,
+                    "low_trust_free_tier_users": 5,
+                    "low_trust_exempt_users": 2,
+                    "submission_banned_users": 1,
+                },
+                {
+                    "day": "2026-07-01",
+                    "total_users": 100,
+                    "active_users_7d": 24,
+                    "active_users_30d": 34,
+                    "channel_members": 56,
+                    "generation_users": 45,
+                    "real_payers": 8,
+                    "low_trust_free_tier_users": 6,
+                    "low_trust_exempt_users": 3,
+                    "submission_banned_users": 2,
+                },
+            ]
         if "generation_rank" in query:
             assert args == (12,)
             return [
@@ -199,6 +235,7 @@ async def test_user_analytics_returns_profile_distributions_and_leaderboards(mon
     assert payload["limit"] == 12
     assert payload["summary"]["total_users"] == 100
     assert payload["summary"]["low_trust_free_tier_users"] == 6
+    assert payload["summary"]["low_trust_exempt_users"] == 3
     assert payload["summary"]["low_trust_non_low_trust_invitees_count"] == 13
     assert payload["summary"]["recharged_invitees_count"] == 7
     assert payload["summary"]["affiliate_available_balance_usdt"] == 8.88
@@ -213,6 +250,18 @@ async def test_user_analytics_returns_profile_distributions_and_leaderboards(mon
     assert payload["summary"]["inviter_recharge_rate_sample_size"] == 9
     assert payload["daily"][0]["new_channel_members"] == 2
     assert payload["daily"][0]["new_generation_users"] == 5
+    assert payload["visualizations"]["metrics"][0]["key"] == "total_users"
+    assert payload["visualizations"]["metrics"][0]["share_percent"] == 100
+    assert payload["visualizations"]["metrics"][0]["delta"]["value"] == 10
+    assert payload["visualizations"]["metrics"][6]["key"] == "low_trust_exempt_users"
+    assert payload["visualizations"]["trust_composition"] == [
+        {"label": "常规用户", "count": 91, "share_percent": 91.0},
+        {"label": "低信任免费层", "count": 6, "share_percent": 6.0},
+        {"label": "豁免低信任", "count": 3, "share_percent": 3.0},
+    ]
+    assert payload["visualizations"]["conversion_funnel"][-1] == {"label": "真实付费", "count": 8}
+    assert payload["visualizations"]["recharge_rates"][0]["rate"] == 8.0
+    assert payload["visualizations"]["trend"][-1]["low_trust_exempt_users"] == 3
     assert payload["distributions"]["identity"][0] == {"label": "外门弟子", "count": 70}
     assert payload["leaderboards"]["generation"][0]["username"] == "maker"
     assert payload["leaderboards"]["credits"][0]["full_name"] is None
@@ -224,6 +273,91 @@ async def test_user_analytics_returns_profile_distributions_and_leaderboards(mon
     assert payload["leaderboards"]["low_trust"][0]["invitee_recharge_total_usdt"] == 9.9
     assert payload["leaderboards"]["low_trust"][0]["is_low_trust_free_tier"] is True
     assert ("fetchrow",) == tuple(calls[0][:1])
+
+
+@pytest.mark.asyncio
+async def test_user_analytics_accepts_date_range_and_missing_snapshot_table(monkeypatch):
+    start = date(2026, 6, 24)
+    end = date(2026, 7, 1)
+
+    async def fake_fetchrow(query, *args):
+        if "to_regclass('public.analytics_user_profile_daily_snapshots')" in query:
+            return {"table_name": None}
+        assert "period_generation_users as" in query
+        assert args == (
+            8,
+            analytics_main.RMB_TO_USDT,
+            analytics_main.TON_TO_USDT,
+            analytics_main.STARS_TO_USDT,
+            start,
+            end,
+        )
+        return {
+            "total_users": 20,
+            "new_users": 4,
+            "active_users": 9,
+            "channel_members": 10,
+            "generation_users": 11,
+            "paying_users": 2,
+            "paying_channel_members": 1,
+            "paying_generation_users": 2,
+            "active_paying_users": 1,
+            "submission_banned_users": 1,
+            "low_trust_free_tier_users": 3,
+            "low_trust_exempt_users": 2,
+            "recharge_rate_total_users": 10,
+            "recharge_rate_channel_members": 10,
+            "recharge_rate_generation_users": 18.18,
+            "recharge_rate_active_users": 11.11,
+        }
+
+    async def fake_fetch(query, *args):
+        if "as new_users" in query and "checkin_history" in query:
+            assert args == (8, start, end)
+            return [{"day": "2026-06-24", "new_users": 1, "active_users": 2, "checkins": 3}]
+        if "activity_segment" in query:
+            assert args == (8, start, end)
+            return []
+        if "identity_label" in query or "user_group_label" in query or "credit_bucket" in query or "generation_bucket" in query:
+            return []
+        if "generation_rank" in query or "credits_rank" in query or "referrals_rank" in query or "low_trust_rank" in query or "recent_active_rank" in query:
+            return []
+        raise AssertionError(f"unexpected query: {query}")
+
+    monkeypatch.setattr(analytics_main, "_fetchrow", fake_fetchrow)
+    monkeypatch.setattr(analytics_main, "_fetch", fake_fetch)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=analytics_main.app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get(
+            "/api/user-analytics",
+            params={"start_date": "2026-06-24", "end_date": "2026-07-01"},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["days"] == 8
+    assert payload["filters"] == {"start_date": "2026-06-24", "end_date": "2026-07-01"}
+    assert payload["visualizations"]["trend"] == [
+        {"day": "2026-06-24", "new_users": 1, "active_users": 2, "checkins": 3}
+    ]
+    assert payload["visualizations"]["metrics"][0]["delta"] == {"value": None, "percent": None}
+
+
+@pytest.mark.asyncio
+async def test_user_analytics_rejects_reversed_date_range():
+    async with AsyncClient(
+        transport=ASGITransport(app=analytics_main.app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get(
+            "/api/user-analytics?start_date=2026-07-01&end_date=2026-06-24"
+        )
+
+    assert response.status_code == 400
+    assert "start_date" in response.json()["detail"]
 
 
 @pytest.mark.asyncio

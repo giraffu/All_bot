@@ -300,7 +300,7 @@ function metric(label, value, note = "") {
 
 const chartPalette = ["#2563eb", "#0f766e", "#b7791f", "#7c3aed", "#dc2626", "#0891b2", "#16a34a", "#ea580c", "#9333ea", "#475569"];
 const tabChartIds = {
-  users: [],
+  users: ["userCoreTrendChart", "userTrustCompositionChart", "userConversionFunnelChart", "userDailyActivityChart", "userRechargeRateChart"],
   "credit-flow": ["creditFlowTrendChart", "creditDailyCategoryChart", "creditIncomeCategoryChart", "creditExpenseCategoryChart", "creditCompositionIdentityChart", "creditCompositionGroupChart", "creditCompositionChannelChart", "creditCompositionPayerChart", "creditRiskScatterChart"],
   finance: ["financeTrendChart", "financeStatusChart", "financeHourlyChart", "financeChannelChart", "financePlanChart"],
   generation: ["generationTrendChart", "generationQualityFunnelChart", "generationSourceMixChart", "generationWorkerChart", "generationTypeBubbleChart", "generationCompareChart"],
@@ -592,20 +592,24 @@ function setActiveTab(tabName, syncHash = true, shouldLoad = true) {
 
 function renderUsers() {
   const summary = state.users?.summary || {};
+  const visuals = state.users?.visualizations || {};
   const period = fmtPeriod(state.users?.days);
-  $("#userSummary").innerHTML = [
-    metric("总用户", fmt(summary.total_users), `${period}新增 ${fmt(summary.new_users)}`),
-    metric("近周期活跃", fmt(summary.active_users), "按生成记录去重"),
-    metric("入宗门用户", fmt(summary.channel_members), "is_channel_member"),
-    metric("密码用户", fmt(summary.password_users), "Web 登录账号"),
-    metric("真实付费用户", fmt(summary.paying_users), "RMB / TON / Stars"),
-    metric("生成用户", fmt(summary.generation_users), "generation_count > 0"),
-    metric("持有灵石", fmt(summary.total_credits), `活跃用户持有 ${fmt(summary.active_credits)}`),
-    metric("投稿封禁", fmt(summary.submission_banned_users), "is_submission_banned"),
-    metric("低信任免费层", fmt(summary.low_trust_free_tier_users), `有邀请 ${fmt(summary.low_trust_inviters_count)} / 非低信任受邀 ${fmt(summary.low_trust_non_low_trust_invitees_count)} / 充值 ${fmt(summary.low_trust_recharged_invitees_count)}`),
-    metric("邀请关系", fmt(summary.referral_relations), `邀请人 ${fmt(summary.inviters_count)}`),
-    metric("受邀充值", fmt(summary.recharged_invitees_count), `${fmt(summary.invitee_recharge_orders)} 笔 / ${fmtAmount(summary.invitee_recharge_total_usdt, " USDT")}`),
-    metric("返佣余额", fmtAmount(summary.affiliate_available_balance_usdt, " USDT"), `累计 ${fmtAmount(summary.affiliate_total_commission_usdt, " USDT")} / 已兑 ${fmtAmount(summary.affiliate_spent_commission_usdt, " USDT")}`),
+  const fixedMetrics = visuals.metrics || [];
+  $("#userSummary").innerHTML = fixedMetrics.length ? fixedMetrics.map((item) => {
+    const delta = item.delta || {};
+    const deltaText = delta.value === null || delta.value === undefined
+      ? "暂无上一快照"
+      : `较上一快照 ${fmtSigned(delta.value)}${delta.percent === null || delta.percent === undefined ? "" : ` / ${fmtSigned(delta.percent)}%`}`;
+    return metric(item.label, fmt(item.value), `占比 ${fmtPercent(item.share_percent)} · ${deltaText}`);
+  }).join("") : [
+    metric("总用户数", fmt(summary.total_users), `${period}新增 ${fmt(summary.new_users)}`),
+    metric("周期活跃用户数", fmt(summary.active_users), "last_activity 或生成记录"),
+    metric("入宗门用户数", fmt(summary.channel_members), "is_channel_member"),
+    metric("生成用户数", fmt(summary.generation_users), "generation_count > 0"),
+    metric("真实付费用户数", fmt(summary.paying_users), "RMB / TON / Stars"),
+    metric("低信任免费层用户数", fmt(summary.low_trust_free_tier_users), "签到高且未付费未豁免"),
+    metric("豁免低信任用户数", fmt(summary.low_trust_exempt_users), "高质量邀请者豁免"),
+    metric("投稿封禁用户数", fmt(summary.submission_banned_users), "is_submission_banned"),
   ].join("");
   $("#userRechargeRates").innerHTML = [
     metric("总用户充值率", fmtPercent(summary.recharge_rate_total_users), `充值 ${fmt(summary.paying_users)} / 总 ${fmt(summary.total_users)}`),
@@ -615,8 +619,50 @@ function renderUsers() {
     metric("平均邀请充值率", fmtPercent(summary.avg_inviter_invitee_recharge_rate), `样本邀请人 ${fmt(summary.inviter_recharge_rate_sample_size)}`),
   ].join("");
 
+  renderUserVisualCharts();
   renderUserGroups();
   renderUserProfileList();
+}
+
+function renderUserVisualCharts() {
+  const visuals = state.users?.visualizations || {};
+  const trend = visuals.trend || [];
+  const snapshotRows = trend.filter((row) => row.total_users !== undefined && row.total_users !== null);
+  const snapshotDates = snapshotRows.map((row) => row.day);
+  if (snapshotRows.length) {
+    renderChart("userCoreTrendChart", buildLineBarOption({
+      dates: snapshotDates,
+      series: [
+        { name: "总用户", type: "line", smooth: true, data: snapshotRows.map((row) => numeric(row.total_users)) },
+        { name: "7日活跃", type: "line", smooth: true, data: snapshotRows.map((row) => numeric(row.active_users_7d)) },
+        { name: "30日活跃", type: "line", smooth: true, data: snapshotRows.map((row) => numeric(row.active_users_30d)) },
+        { name: "入宗门", type: "line", smooth: true, data: snapshotRows.map((row) => numeric(row.channel_members)) },
+        { name: "生成用户", type: "line", smooth: true, data: snapshotRows.map((row) => numeric(row.generation_users)) },
+        { name: "真实付费", type: "line", smooth: true, data: snapshotRows.map((row) => numeric(row.real_payers)) },
+        { name: "低信任", type: "line", smooth: true, data: snapshotRows.map((row) => numeric(row.low_trust_free_tier_users)) },
+        { name: "豁免低信任", type: "line", smooth: true, data: snapshotRows.map((row) => numeric(row.low_trust_exempt_users)) },
+      ],
+    }));
+  } else {
+    renderChart("userCoreTrendChart", chartEmptyOption("暂无快照趋势"));
+  }
+
+  renderChart("userTrustCompositionChart", buildDonutOption(visuals.trust_composition || []));
+  renderChart("userConversionFunnelChart", buildFunnelOption(visuals.conversion_funnel || []));
+
+  const dailyRows = trend.filter((row) => row.new_users !== undefined || row.active_users !== undefined || row.checkins !== undefined);
+  renderChart("userDailyActivityChart", dailyRows.length ? buildLineBarOption({
+    dates: dailyRows.map((row) => row.day),
+    series: [
+      { name: "新增用户", type: "bar", stack: "new", data: dailyRows.map((row) => numeric(row.new_users)), barMaxWidth: 22 },
+      { name: "新增入宗门", type: "bar", stack: "new", data: dailyRows.map((row) => numeric(row.new_channel_members)), barMaxWidth: 22 },
+      { name: "新增生成用户", type: "bar", stack: "new", data: dailyRows.map((row) => numeric(row.new_generation_users)), barMaxWidth: 22 },
+      { name: "日生成活跃", type: "line", smooth: true, data: dailyRows.map((row) => numeric(row.active_users)) },
+      { name: "签到数", type: "line", smooth: true, data: dailyRows.map((row) => numeric(row.checkins)) },
+    ],
+  }) : chartEmptyOption());
+
+  renderChart("userRechargeRateChart", buildHorizontalBarOption(visuals.recharge_rates || [], "rate", "label"));
 }
 
 function renderUserGroups() {
@@ -2792,7 +2838,7 @@ async function loadOverviewStatus() {
 async function loadUsers(days) {
   const period = userPeriodParams();
   const [users, userGroups, userProfiles] = await Promise.all([
-    fetchJson("/api/user-analytics", { days: period.days || days, limit: 12 }),
+    fetchJson("/api/user-analytics", { ...period, days: period.days || days, limit: 12 }),
     fetchJson("/api/user-analytics/groups", getUserGroupParams()),
     fetchJson("/api/user-analytics/users", getUserProfileParams()),
   ]);

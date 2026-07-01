@@ -20,6 +20,12 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
     RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF,
     RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_DOCKER_START_CMD,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_GPU_TYPE_IDS,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_SUPPORTED_TASK_TYPES,
     RUNPOD_PROD_AGENT_ID,
     RUNPOD_PROD_AGENT_SECRET_TOKEN_REF,
     RUNPOD_PROD_BUCKET,
@@ -31,6 +37,7 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_PROD_WORKER_CENTRAL_URL,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
     RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX,
+    RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX,
     RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
     RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE,
     RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX,
@@ -711,6 +718,61 @@ def test_render_create_scail2_cloud_test_profile_uses_r2_manifest_and_bootstrap(
     assert "TASK_TYPE_WORKFLOW_OVERRIDES" not in env
 
 
+def test_render_create_pornmaster_flux2_cloud_test_profile_uses_r2_manifest_and_bootstrap():
+    image_ref = (
+        RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX
+        + "20260701-pornmaster-flux2-edit-test"
+    )
+    provider = RunPodProvider(
+        _settings(
+            image_name_pornmaster_flux2_edit=image_ref,
+            model_sync_enabled=True,
+            model_bucket="allbot-model-cache",
+            model_prefix_pornmaster_flux2_edit=RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX,
+            model_manifest_key_pornmaster_flux2_edit=(
+                RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY
+            ),
+            comfy_custom_nodes_enabled=False,
+            comfy_kjnodes_enabled=False,
+            container_disk_gb=80,
+        )
+    )
+
+    payload = provider.render_create_pod_request(
+        task_type="pornmaster_flux2_edit",
+        environment="cloud-test",
+        redact=False,
+    )
+    body = payload["json"]
+    env = body["env"]
+
+    assert "templateId" not in body
+    assert body["name"] == "allbot-runpod-test-pornmaster-flux2-edit"
+    assert body["imageName"] == image_ref
+    assert body["gpuTypeIds"] == list(RUNPOD_PORNMASTER_FLUX2_EDIT_GPU_TYPE_IDS)
+    assert body["containerDiskInGb"] == RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB
+    assert body["dockerStartCmd"] == list(
+        RUNPOD_PORNMASTER_FLUX2_EDIT_DOCKER_START_CMD
+    )
+    assert env["RUNPOD_ENVIRONMENT"] == "cloud-test"
+    assert env["RUNPOD_TASK_TYPE"] == "pornmaster_flux2_edit"
+    assert env["AGENT_ID_PREFIX"] == "runpod_test_pornmaster_flux2_edit"
+    assert env["SUPPORTED_TASK_TYPES"] == ",".join(
+        RUNPOD_PORNMASTER_FLUX2_EDIT_SUPPORTED_TASK_TYPES
+    )
+    assert env["POOL_RUNTIME_PROFILE"] == "pornmaster_flux2_edit"
+    assert env["MINIO_RESULT_BUCKET"] == "user-data-test"
+    assert env["RUNPOD_MODEL_BUCKET"] == "allbot-model-cache"
+    assert env["RUNPOD_MODEL_PREFIX"] == RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX
+    assert (
+        env["RUNPOD_MODEL_MANIFEST_KEY"]
+        == RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY
+    )
+    assert env["RUNPOD_COMFY_CUSTOM_NODES_ENABLED"] == "false"
+    assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
+    assert "TASK_TYPE_WORKFLOW_OVERRIDES" not in env
+
+
 def test_runpod_settings_from_env_split_video_profiles_ignore_legacy_wan22_image_template(
     tmp_path,
     monkeypatch,
@@ -919,6 +981,94 @@ def test_runpod_settings_from_env_ltx_video_uses_git_bootstrap_by_default(monkey
     settings = RunPodSettings.from_env()
 
     assert settings.docker_start_cmd_ltx_video == RUNPOD_LTX_VIDEO_DOCKER_START_CMD
+
+
+def test_runpod_settings_from_env_supports_pornmaster_flux2_edit_profile_keys(
+    tmp_path,
+    monkeypatch,
+):
+    script = tmp_path / "pornmaster-bootstrap.sh"
+    script.write_text("echo pornmaster bootstrap\n", encoding="utf-8")
+    image_ref = (
+        RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX
+        + "20260701-pornmaster-flux2-edit"
+    )
+    monkeypatch.setenv("RUNPOD_USE_TEMPLATE_PORNMASTER_FLUX2_EDIT", "true")
+    monkeypatch.setenv(
+        "RUNPOD_TEMPLATE_ID_PORNMASTER_FLUX2_EDIT",
+        "pornmaster-template",
+    )
+    monkeypatch.setenv("RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT", image_ref)
+    monkeypatch.setenv(
+        "RUNPOD_DOCKER_START_SCRIPT_FILE_PORNMASTER_FLUX2_EDIT",
+        str(script),
+    )
+    monkeypatch.setenv(
+        "RUNPOD_GPU_TYPE_IDS_PORNMASTER_FLUX2_EDIT",
+        "NVIDIA GeForce RTX 4090,NVIDIA L40S,NVIDIA GeForce RTX 5090",
+    )
+    monkeypatch.setenv("RUNPOD_CONTAINER_DISK_GB_PORNMASTER_FLUX2_EDIT", "140")
+    monkeypatch.setenv(
+        "RUNPOD_PROJECTED_COST_PER_HR_PORNMASTER_FLUX2_EDIT",
+        "0.88",
+    )
+    monkeypatch.setenv(
+        "RUNPOD_MODEL_PREFIX_PORNMASTER_FLUX2_EDIT",
+        RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX,
+    )
+    monkeypatch.setenv(
+        "RUNPOD_MODEL_MANIFEST_KEY_PORNMASTER_FLUX2_EDIT",
+        RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY,
+    )
+
+    settings = RunPodSettings.from_env()
+
+    assert settings.use_template_pornmaster_flux2_edit is True
+    assert settings.template_id_pornmaster_flux2_edit == "pornmaster-template"
+    assert settings.image_name_pornmaster_flux2_edit == image_ref
+    assert settings.docker_start_cmd_pornmaster_flux2_edit == (
+        "bash",
+        "-lc",
+        "echo pornmaster bootstrap\n",
+    )
+    assert (
+        settings.gpu_type_ids_pornmaster_flux2_edit
+        == RUNPOD_PORNMASTER_FLUX2_EDIT_GPU_TYPE_IDS
+    )
+    assert settings.container_disk_gb_pornmaster_flux2_edit == 140
+    assert settings.projected_cost_per_hr_pornmaster_flux2_edit == 0.88
+    assert (
+        settings.model_prefix_pornmaster_flux2_edit
+        == RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX
+    )
+    assert (
+        settings.model_manifest_key_pornmaster_flux2_edit
+        == RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY
+    )
+
+
+def test_runpod_settings_from_env_pornmaster_uses_git_bootstrap_by_default(
+    monkeypatch,
+):
+    monkeypatch.delenv(
+        "RUNPOD_DOCKER_START_CMD_JSON_PORNMASTER_FLUX2_EDIT",
+        raising=False,
+    )
+    monkeypatch.delenv(
+        "RUNPOD_DOCKER_START_SCRIPT_PORNMASTER_FLUX2_EDIT",
+        raising=False,
+    )
+    monkeypatch.delenv(
+        "RUNPOD_DOCKER_START_SCRIPT_FILE_PORNMASTER_FLUX2_EDIT",
+        raising=False,
+    )
+
+    settings = RunPodSettings.from_env()
+
+    assert (
+        settings.docker_start_cmd_pornmaster_flux2_edit
+        == RUNPOD_PORNMASTER_FLUX2_EDIT_DOCKER_START_CMD
+    )
 
 
 def test_runpod_settings_from_env_injects_public_key_file(
@@ -1363,6 +1513,69 @@ def test_render_create_cloud_prod_ltx_video_uses_v12_override_and_manifest():
     assert env["RUNPOD_MODEL_BUCKET"] == "allbot-model-cache"
     assert env["RUNPOD_MODEL_PREFIX"] == RUNPOD_LTX_VIDEO_MODEL_PREFIX
     assert env["RUNPOD_MODEL_MANIFEST_KEY"] == RUNPOD_LTX_VIDEO_MODEL_MANIFEST_KEY
+    assert env["RUNPOD_COMFY_CUSTOM_NODES_ENABLED"] == "false"
+    assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
+    assert env["RUNPOD_START_SSHD"] == "false"
+    assert env["AGENT_SECRET_TOKEN"] == RUNPOD_PROD_AGENT_SECRET_TOKEN_REF
+    assert env["MINIO_ACCESS_KEY"] == RUNPOD_PROD_R2_ACCESS_KEY_REF
+    assert env["MINIO_SECRET_KEY"] == RUNPOD_PROD_R2_SECRET_KEY_REF
+    assert env["RUNPOD_MODEL_ACCESS_KEY"] == RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF
+    assert env["RUNPOD_MODEL_SECRET_KEY"] == RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF
+
+
+def test_render_create_cloud_prod_pornmaster_flux2_edit_uses_prod_refs_and_manifest():
+    image_ref = (
+        RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX
+        + "20260701-pornmaster-flux2-edit"
+    )
+    agent_id = prod_agent_id_from_slot("01", profile="pornmaster_flux2_edit")
+    provider = RunPodProvider(
+        _settings(
+            image_name_pornmaster_flux2_edit=image_ref,
+            prod_agent_id=agent_id,
+            model_bucket="allbot-model-cache",
+            model_prefix_pornmaster_flux2_edit=RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX,
+            model_manifest_key_pornmaster_flux2_edit=(
+                RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY
+            ),
+            container_disk_gb=80,
+            prod_gpu_type_ids=("NVIDIA GeForce RTX 4090",),
+        )
+    )
+
+    payload = provider.render_create_pod_request(
+        task_type="pornmaster_flux2_edit",
+        environment="cloud-prod",
+        redact=False,
+    )
+    body = payload["json"]
+    env = body["env"]
+
+    assert "templateId" not in body
+    assert body["name"] == "allbot-runpod-prod-pornmaster-flux2-edit-manual-01"
+    assert body["imageName"] == image_ref
+    assert body["gpuTypeIds"] == list(RUNPOD_PORNMASTER_FLUX2_EDIT_GPU_TYPE_IDS)
+    assert body["containerDiskInGb"] == RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB
+    assert body["dockerStartCmd"] == list(
+        RUNPOD_PORNMASTER_FLUX2_EDIT_DOCKER_START_CMD
+    )
+    assert env["ENVIRONMENT"] == "prod"
+    assert env["RUNPOD_ENVIRONMENT"] == "cloud-prod"
+    assert env["RUNPOD_TASK_TYPE"] == "pornmaster_flux2_edit"
+    assert env["AGENT_ID"] == "runpod_prod_pornmaster_flux2_edit_manual_01"
+    assert env["AGENT_ID_PREFIX"] == "runpod_prod_pornmaster_flux2_edit_manual_01"
+    assert env["SUPPORTED_TASK_TYPES"] == ",".join(
+        RUNPOD_PORNMASTER_FLUX2_EDIT_SUPPORTED_TASK_TYPES
+    )
+    assert env["CENTRAL_API_URL"] == RUNPOD_PROD_WORKER_CENTRAL_URL
+    assert env["POOL_RUNTIME_PROFILE"] == "pornmaster_flux2_edit"
+    assert env["MINIO_RESULT_BUCKET"] == RUNPOD_PROD_BUCKET
+    assert env["RUNPOD_MODEL_BUCKET"] == "allbot-model-cache"
+    assert env["RUNPOD_MODEL_PREFIX"] == RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX
+    assert (
+        env["RUNPOD_MODEL_MANIFEST_KEY"]
+        == RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY
+    )
     assert env["RUNPOD_COMFY_CUSTOM_NODES_ENABLED"] == "false"
     assert env["RUNPOD_COMFY_KJNODES_ENABLED"] == "false"
     assert env["RUNPOD_START_SSHD"] == "false"

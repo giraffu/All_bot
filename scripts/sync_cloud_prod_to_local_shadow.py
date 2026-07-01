@@ -32,8 +32,7 @@ SAFE_DB_NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
 POSTGRES_IDENTIFIER_MAX_LENGTH = 63
 PREVIOUS_DB_HASH_CHARS = 10
 KEY_TABLES = ("users", "history", "orders", "user_logs", "worker_logs")
-LOCAL_ANALYTICS_TABLE_LIKE_PATTERN = "analytics_prompt_%"
-LOCAL_ANALYTICS_PG_DUMP_PATTERN = "analytics_prompt_*"
+LOCAL_ANALYTICS_TABLE_LIKE_PATTERNS = ("analytics_prompt_%", "analytics_user_profile_%")
 LOCAL_ANALYTICS_TABLE_LIST_FILE = "local_analytics_tables.txt"
 LOCAL_ANALYTICS_DUMP_FILE = "local_analytics.dump"
 
@@ -1087,10 +1086,13 @@ def run_local_analytics_table_preservation(
         return
 
     env = local_postgres_env(config)
+    table_predicate = " or ".join(
+        f"tablename like '{pattern}'" for pattern in LOCAL_ANALYTICS_TABLE_LIKE_PATTERNS
+    )
     table_list_sql = (
         "select tablename from pg_tables "
         "where schemaname = 'public' "
-        f"and tablename like '{LOCAL_ANALYTICS_TABLE_LIKE_PATTERN}' "
+        f"and ({table_predicate}) "
         "order by tablename"
     )
     script = "\n".join(
@@ -1108,15 +1110,19 @@ def run_local_analytics_table_preservation(
             f"-c {shlex.quote(table_list_sql)} "
             f"> /backup/{LOCAL_ANALYTICS_TABLE_LIST_FILE}",
             f"if [ ! -s /backup/{LOCAL_ANALYTICS_TABLE_LIST_FILE} ]; then",
-            '  echo "Local analytics table preservation skipped: no analytics_prompt tables found"',
+            '  echo "Local analytics table preservation skipped: no local analytics tables found"',
             "  exit 0",
             "fi",
             f"rm -f /backup/{LOCAL_ANALYTICS_DUMP_FILE}",
+            "dump_table_args=\"\"",
+            "while IFS= read -r table_name; do",
+            "  dump_table_args=\"$dump_table_args --table=public.$table_name\"",
+            f"done < /backup/{LOCAL_ANALYTICS_TABLE_LIST_FILE}",
             "pg_dump "
             '--dbname="$SHADOW_DB" '
             "--format=custom "
             "--schema=public "
-            f"--table=public.{LOCAL_ANALYTICS_PG_DUMP_PATTERN} "
+            "$dump_table_args "
             f"--file=/backup/{LOCAL_ANALYTICS_DUMP_FILE}",
             'psql --dbname="$SHADOW_NEXT_DB" -v ON_ERROR_STOP=1 <<\'SQL\'',
             "do $$",
@@ -1126,7 +1132,7 @@ def run_local_analytics_table_preservation(
             "    select schemaname, tablename",
             "    from pg_tables",
             "    where schemaname = 'public'",
-            f"      and tablename like '{LOCAL_ANALYTICS_TABLE_LIKE_PATTERN}'",
+            f"      and ({table_predicate})",
             "  loop",
             "    execute format('drop table if exists %I.%I cascade', row.schemaname, row.tablename);",
             "  end loop;",

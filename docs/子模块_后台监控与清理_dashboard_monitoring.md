@@ -61,7 +61,7 @@ sequenceDiagram
 - 系统监控页的 Worker 卡片可打开单节点历史生成记录弹窗；该弹窗只在管理员点击具体卡片后调用既有 `/api/workers/history?worker_id=...` 分页接口，默认每页 10 条。Worker 历史记录不得加入 `/api/system/status` / `/api/system/workers` 的高频轮询，也不得随 Worker 卡片批量预取。
 - Worker/queue 监控通过云 Central `/system/status` 与 `/system/workers` 获取短缓存观测快照；这两个接口不是强一致调度入口，管理后台不要用高频轮询压垮 Central/Valkey。
 - Dashboard `/api/system/status` 会保留 `queue_by_type` 作为 active registry 口径的活跃任务数，并补充 `queue_by_type_details`：`active_count` 同 active registry，`pending_count` / `max_pending_wait_seconds` / `oldest_pending_task_id` / `oldest_pending_created_at` 只读采样 Central `comfy:queue:pending` 与 `comfy:task:{task_id}`。`max_pending_wait_seconds` 严格按 pending 任务的 `created_at` 计算，不使用带优先级偏移的 zset score；执行中任务只计入活跃数，不计入最长排队等待。Dashboard 还会通过 active registry 的 `backend_task_id -> user_id` 映射批量判定 pending 队列中的 `low_trust_free_tier`，响应顶层返回 `low_trust_free_tier_pending_user_count` / `low_trust_free_tier_pending_task_count`，各类型详情返回 `low_trust_free_tier_user_count` / `low_trust_free_tier_task_count`，并返回 `max_non_low_trust_pending_wait_seconds` 表示“已知用户且确认不是低信任免费层”的最长等待；未知用户不计入该字段，低信任查询失败时该字段降级为空，不能把用户默认当作非低信任。该统计只读复用线上业务口径：`checkin_count > 7`、自身无 `SUCCESS` 订单，且不满足 `referrals` 真实邀请数 `>100` 与受邀成功订单用户去重率 `>3%` 的高质量邀请者豁免；受邀成功订单只要求 `orders.status='SUCCESS'`。该统计不改变优先级、扣费或调度。Worker Redis 或低信任批量查询失败时详情列降级为空或 `0`，不能影响系统监控主响应。
-- Dashboard `/api/system/status` 同时返回 `runpod_profile_queue_details` 兼容字段，前端展示为“活跃 Worker 详情”：按正式 RunPod profile 事实源聚合 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、`scail2`、`ltx_video`，并额外展示本地/手动 profile `pornmaster_flux2_edit`（UI label `pornmaster_flux2`，统计 `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit`）。该字段的最长等待和非低信任最长等待均取 profile 覆盖任务类型中的最大 pending 等待，不包含执行中任务运行时长；`pornmaster_flux2_edit` 返回 `autoscaler_enabled=false`，只用于 Worker/queue 可观测展示，不进入 Dashboard RunPod autoscaler 或手动 RunPod 新增入口。
+- Dashboard `/api/system/status` 同时返回 `runpod_profile_queue_details` 兼容字段，前端展示为“活跃 Worker 详情”：按正式手动 RunPod profile 事实源聚合 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、`scail2`、`ltx_video`、`pornmaster_flux2_edit`（UI label `pornmaster_flux2 / 自由P图 v2`，统计 `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit`）。该字段的最长等待和非低信任最长等待均取 profile 覆盖任务类型中的最大 pending 等待，不包含执行中任务运行时长；`pornmaster_flux2_edit` 返回 `autoscaler_enabled=false`，可在 Dashboard RunPod 管理中手动新增/暂停/删除，但不进入 Dashboard RunPod autoscaler 自动扩缩容。
 - Dashboard 生产前端已具备云端 Nginx 网关配置：`cloud-dashboard-frontend-prod` 默认绑定云正式 Tailscale IP 的 `8086`，静态资源由云控制面提供，`/api/` 在 Docker 内网直连 `dashboard-backend-prod:8043`。本地局域网 `http://192.168.1.115:8086/` 仍可作为局域网/回退入口，但不再是唯一前端承载方式。
 - 前端队列监控默认约 10 秒轮询一次；并发统计约 60 秒刷新一次；活动任务表约 15 秒刷新一次。除非有明确压测证据，不要降到 2 秒或更高频。
 - Dashboard Nginx 网关会对 `/api/stats*` 做约 15 秒短缓存，对 `/api/system/status`、`/api/system/workers`、`/api/system/concurrency_stats` 做约 5 秒短缓存；登录、退款、封禁、删除、清理僵尸任务等写操作不得缓存。
@@ -81,7 +81,7 @@ sequenceDiagram
 - 系统监控页顶部的 `RunPod 管理` 是云正式手动 RunPod 池的 Web 日常入口；后端 API 位于 `dashboard/backend/routers/runpod.py`，执行层收口到 `dashboard/backend/services/runpod_admin_service.py`。
 - Dashboard 不直接实现 RunPod 创建/删除逻辑，只异步调用 `scripts/runpod_prod_ops.sh`，继承 CLI 的门禁、无库存重试、disabled heartbeat、自动 enable、drain/delete 语义。
 - `POST /api/runpod/scale` 接收多 profile 新增数量，后台拆成 profile 级 `add --count N` operation。旧字段 `desired_count` 只作兼容输入并按新增数量解释，不再代表目标总数；同一请求中同一 profile 不允许重复。
-- 当前可管理 profile 为 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、`scail2 / 视频生视频` 与 `ltx_video / 高级图生视频`。`scail2` 支持正式 `scail2_action_transfer`、`scail2_video_replacement`；`ltx_video` 支持正式 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio` 并默认使用 10Eros v1.2 workflow override。二者都是手动备用/临时扩容能力，不代表系统里固定常驻一个 RunPod；没有 heartbeat 或已删除的 `manual_NN` 不应计入可用容量。
+- 当前可管理 profile 为 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、`scail2 / 视频生视频`、`ltx_video / 高级图生视频` 与 `pornmaster_flux2 / 自由P图 v2`。`scail2` 支持正式 `scail2_action_transfer`、`scail2_video_replacement`；`ltx_video` 支持正式 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio` 并默认使用 10Eros v1.2 workflow override；`pornmaster_flux2_edit` 支持正式 `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit`，模型 manifest 为 `allbot-model-cache/pornmaster_flux2_edit/2026-06-27/manifest.json`。这些 profile 都是手动备用/临时扩容能力，不代表系统里固定常驻一个 RunPod；没有 heartbeat 或已删除的 `manual_NN` 不应计入可用容量。
 - `POST /api/runpod/workers/{agent_id}/pause` 只提交 `disable` operation，停止目标 RunPod worker 接新单但保留 Pod。
 - `DELETE /api/runpod/workers/{agent_id}` 提交 `down` operation，先 disable 并等待 `current_task_id` 清空，再删除 Pod 释放 RunPod 计费资源。
 - RunPod operation 状态通过 `RunPodOperationStore` seam 持久化；生产默认使用 Redis，测试可注入 in-memory fake。Redis key 固定为 `dashboard:runpod:operations` sorted set、`dashboard:runpod:operation:{id}` JSON、`dashboard:runpod:active_add:{profile}` active add 锁。
@@ -96,11 +96,11 @@ sequenceDiagram
 - 覆盖 Dashboard 鉴权中间件
 - 覆盖系统统计接口的基础返回
 - 覆盖 `queue_by_type_details` 的 active/pending 分离、最长 pending 等待按 `created_at` 而不是 zset score 计算、low trust free tier pending 用户/任务数聚合，以及 Worker Redis / 低信任统计失败时的降级返回。
-- 覆盖 `runpod_profile_queue_details` 的 6 类 RunPod profile 加 `pornmaster_flux2_edit` 本地/手动 profile 固定返回、`i2i_pro` 三执行类型汇总、`pornmaster_flux2_single_edit/pornmaster_flux2_multi_edit` 汇总、`scail2_face_swap_v2` 不计入正式 RunPod `scail2`、最长等待与非低信任最长等待取 profile 内最大 pending 等待，以及 `autoscaler_enabled=false` profile 不进入自动扩缩容。
+- 覆盖 `runpod_profile_queue_details` 的 7 类正式手动 RunPod profile 固定返回、`i2i_pro` 三执行类型汇总、`pornmaster_flux2_single_edit/pornmaster_flux2_multi_edit` 汇总、`scail2_face_swap_v2` 不计入正式 RunPod `scail2`、最长等待与非低信任最长等待取 profile 内最大 pending 等待，以及 `autoscaler_enabled=false` profile 只允许手动操作、不进入自动扩缩容。
 - 覆盖 `healthy_workers`、`accepting_workers`、`error_workers`、`quarantined_workers`、`workers_by_status` 与 `workers_by_control_state` 聚合
 - 覆盖 Dashboard 对 `error/quarantined` Worker 的红色/隔离态展示
 - 覆盖系统监控页 Worker 历史弹窗的点击后懒加载、分页、失败提示，以及点击 RunPod 操作区不触发弹窗。
-- 覆盖 Dashboard RunPod 管理入口的 profile 校验、新增数量 add 命令、旧 `desired_count` 兼容、`scail2 / 视频生视频` 与 `ltx_video / 高级图生视频` 选项、worker pause/delete slot 解析，以及前端 typecheck / 系统监控页渲染。
+- 覆盖 Dashboard RunPod 管理入口的 profile 校验、新增数量 add 命令、旧 `desired_count` 兼容、`scail2 / 视频生视频`、`ltx_video / 高级图生视频` 与 `pornmaster_flux2 / 自由P图 v2` 选项、worker pause/delete slot 解析，以及前端 typecheck / 系统监控页渲染。
 - 覆盖管理员强制终止时的：
   - `registry_task_id` 清理
   - `backend_task_id` best-effort cancel

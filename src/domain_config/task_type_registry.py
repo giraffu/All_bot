@@ -200,6 +200,7 @@ TASK_TYPE_REGISTRY: dict[str, TaskTypeRegistryEntry] = {
         workflow_filename=(
             "PornMaster_F2K_9B_Turbo_Single-image-editing_Automatic_V1_2026_05_27.api.json"
         ),
+        runpod_profile="pornmaster_flux2_edit",
         is_generation=True,
         gallery_supported=True,
         cost=2,
@@ -210,6 +211,7 @@ TASK_TYPE_REGISTRY: dict[str, TaskTypeRegistryEntry] = {
         workflow_filename=(
             "PornMaster_F2K_9B_Turbo_Multiple-images-editing_Automatic_V1_2026_05_27.api.json"
         ),
+        runpod_profile="pornmaster_flux2_edit",
         is_generation=True,
         gallery_supported=True,
         cost=6,

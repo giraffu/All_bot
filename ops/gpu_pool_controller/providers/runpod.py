@@ -27,6 +27,12 @@ from ..runpod_profile_catalog import (
     RUNPOD_LTX_VIDEO_MODEL_PREFIX,
     RUNPOD_LTX_VIDEO_SUPPORTED_TASK_TYPES,
     RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_DOCKER_START_CMD,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_GPU_TYPE_IDS,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_SUPPORTED_TASK_TYPES,
     RUNPOD_PROD_AGENT_ID,
     RUNPOD_PROD_AGENT_ID_PREFIX,
     RUNPOD_PROD_BUCKET,
@@ -38,6 +44,8 @@ from ..runpod_profile_catalog import (
     RUNPOD_PROD_I2I_PRO_POD_NAME_PREFIX,
     RUNPOD_PROD_LTX_VIDEO_AGENT_ID_PREFIX,
     RUNPOD_PROD_LTX_VIDEO_POD_NAME_PREFIX,
+    RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_AGENT_ID_PREFIX,
+    RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_POD_NAME_PREFIX,
     RUNPOD_PROD_MAX_MANUAL_SLOTS,
     RUNPOD_PROD_NODE_ID,
     RUNPOD_PROD_POD_NAME_PREFIX,
@@ -48,6 +56,7 @@ from ..runpod_profile_catalog import (
     RUNPOD_PROD_WAN22_VIDEO_V2_POD_NAME_PREFIX,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
     RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX,
+    RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX,
     RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
     RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE,
     RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX,
@@ -114,6 +123,12 @@ __all__ = (
     "RUNPOD_LTX_VIDEO_MODEL_PREFIX",
     "RUNPOD_LTX_VIDEO_SUPPORTED_TASK_TYPES",
     "RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES",
+    "RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB",
+    "RUNPOD_PORNMASTER_FLUX2_EDIT_DOCKER_START_CMD",
+    "RUNPOD_PORNMASTER_FLUX2_EDIT_GPU_TYPE_IDS",
+    "RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY",
+    "RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX",
+    "RUNPOD_PORNMASTER_FLUX2_EDIT_SUPPORTED_TASK_TYPES",
     "RUNPOD_PROD_AGENT_ID",
     "RUNPOD_PROD_AGENT_ID_PREFIX",
     "RUNPOD_PROD_BUCKET",
@@ -125,6 +140,8 @@ __all__ = (
     "RUNPOD_PROD_I2I_PRO_POD_NAME_PREFIX",
     "RUNPOD_PROD_LTX_VIDEO_AGENT_ID_PREFIX",
     "RUNPOD_PROD_LTX_VIDEO_POD_NAME_PREFIX",
+    "RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_AGENT_ID_PREFIX",
+    "RUNPOD_PROD_PORNMASTER_FLUX2_EDIT_POD_NAME_PREFIX",
     "RUNPOD_PROD_MAX_MANUAL_SLOTS",
     "RUNPOD_PROD_NODE_ID",
     "RUNPOD_PROD_POD_NAME_PREFIX",
@@ -135,6 +152,7 @@ __all__ = (
     "RUNPOD_PROD_WAN22_VIDEO_V2_POD_NAME_PREFIX",
     "RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE",
     "RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX",
+    "RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX",
     "RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX",
     "RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE",
     "RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX",
@@ -350,6 +368,7 @@ class RunPodSettings:
     projected_cost_per_hr_i2i_pro: float = 0.0
     projected_cost_per_hr_scail2: float = 0.0
     projected_cost_per_hr_ltx_video: float = 0.0
+    projected_cost_per_hr_pornmaster_flux2_edit: float = 0.0
     cloud_type: str = "SECURE"
     interruptible: bool = False
     gpu_type_ids_img2img_lora: tuple[str, ...] = (
@@ -363,9 +382,15 @@ class RunPodSettings:
     gpu_type_ids_i2i_pro: tuple[str, ...] = RUNPOD_I2I_PRO_GPU_TYPE_IDS
     gpu_type_ids_scail2: tuple[str, ...] = RUNPOD_SCAIL2_GPU_TYPE_IDS
     gpu_type_ids_ltx_video: tuple[str, ...] = RUNPOD_LTX_VIDEO_GPU_TYPE_IDS
+    gpu_type_ids_pornmaster_flux2_edit: tuple[
+        str, ...
+    ] = RUNPOD_PORNMASTER_FLUX2_EDIT_GPU_TYPE_IDS
     data_center_ids: tuple[str, ...] = ()
     container_disk_gb: int = 80
     container_disk_gb_ltx_video: int = RUNPOD_LTX_VIDEO_CONTAINER_DISK_GB
+    container_disk_gb_pornmaster_flux2_edit: int = (
+        RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB
+    )
     volume_gb: int = 0
     volume_mount_path: str = "/workspace"
     network_volume_id: str = ""
@@ -377,6 +402,7 @@ class RunPodSettings:
     use_template_i2i_pro: bool = False
     use_template_scail2: bool = False
     use_template_ltx_video: bool = False
+    use_template_pornmaster_flux2_edit: bool = False
     docker_start_cmd_img2img_lora: tuple[
         str, ...
     ] = RUNPOD_IMG2IMG_LORA_DOCKER_START_CMD
@@ -386,6 +412,9 @@ class RunPodSettings:
     docker_start_cmd_i2i_pro: tuple[str, ...] = ()
     docker_start_cmd_scail2: tuple[str, ...] = RUNPOD_SCAIL2_DOCKER_START_CMD
     docker_start_cmd_ltx_video: tuple[str, ...] = RUNPOD_LTX_VIDEO_DOCKER_START_CMD
+    docker_start_cmd_pornmaster_flux2_edit: tuple[
+        str, ...
+    ] = RUNPOD_PORNMASTER_FLUX2_EDIT_DOCKER_START_CMD
     template_id_img2img_lora: str = ""
     template_id_wan22_aio_video: str = ""
     template_id_image_to_video: str = ""
@@ -393,6 +422,7 @@ class RunPodSettings:
     template_id_i2i_pro: str = ""
     template_id_scail2: str = ""
     template_id_ltx_video: str = ""
+    template_id_pornmaster_flux2_edit: str = ""
     image_name_img2img_lora: str = ""
     image_name_wan22_aio_video: str = ""
     image_name_image_to_video: str = RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE
@@ -400,6 +430,7 @@ class RunPodSettings:
     image_name_i2i_pro: str = ""
     image_name_scail2: str = ""
     image_name_ltx_video: str = ""
+    image_name_pornmaster_flux2_edit: str = ""
     worker_central_url_cloud_test: str = "https://worker-central-test.example.com"
     worker_central_url_cloud_prod: str = RUNPOD_PROD_WORKER_CENTRAL_URL
     prod_agent_id: str = RUNPOD_PROD_AGENT_ID
@@ -444,6 +475,12 @@ class RunPodSettings:
     model_prefix_ltx_video: str = RUNPOD_LTX_VIDEO_MODEL_PREFIX
     model_manifest_key_ltx_video: str = RUNPOD_LTX_VIDEO_MODEL_MANIFEST_KEY
     task_type_workflow_overrides_ltx_video: str = RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES
+    model_prefix_pornmaster_flux2_edit: str = (
+        RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX
+    )
+    model_manifest_key_pornmaster_flux2_edit: str = (
+        RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY
+    )
     model_endpoint: str = ""
     model_secure: bool = True
     model_access_key_ref: str = RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF
@@ -542,6 +579,10 @@ class RunPodSettings:
                 os.getenv("RUNPOD_PROJECTED_COST_PER_HR_LTX_VIDEO"),
                 default=0.0,
             ),
+            projected_cost_per_hr_pornmaster_flux2_edit=_float_env(
+                os.getenv("RUNPOD_PROJECTED_COST_PER_HR_PORNMASTER_FLUX2_EDIT"),
+                default=0.0,
+            ),
             cloud_type=os.getenv("RUNPOD_CLOUD_TYPE", "SECURE"),
             interruptible=_bool_env(os.getenv("RUNPOD_INTERRUPTIBLE"), default=False),
             gpu_type_ids_img2img_lora=_csv(
@@ -578,6 +619,11 @@ class RunPodSettings:
                 default=cls.gpu_type_ids_ltx_video,
             )
             or RUNPOD_LTX_VIDEO_GPU_TYPE_IDS,
+            gpu_type_ids_pornmaster_flux2_edit=_csv(
+                os.getenv("RUNPOD_GPU_TYPE_IDS_PORNMASTER_FLUX2_EDIT"),
+                default=cls.gpu_type_ids_pornmaster_flux2_edit,
+            )
+            or RUNPOD_PORNMASTER_FLUX2_EDIT_GPU_TYPE_IDS,
             data_center_ids=_csv(os.getenv("RUNPOD_ALLOWED_DATACENTERS")),
             container_disk_gb=_int_env(
                 os.getenv("RUNPOD_CONTAINER_DISK_GB"),
@@ -586,6 +632,10 @@ class RunPodSettings:
             container_disk_gb_ltx_video=_int_env(
                 os.getenv("RUNPOD_CONTAINER_DISK_GB_LTX_VIDEO"),
                 default=RUNPOD_LTX_VIDEO_CONTAINER_DISK_GB,
+            ),
+            container_disk_gb_pornmaster_flux2_edit=_int_env(
+                os.getenv("RUNPOD_CONTAINER_DISK_GB_PORNMASTER_FLUX2_EDIT"),
+                default=RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB,
             ),
             volume_gb=_int_env(os.getenv("RUNPOD_VOLUME_GB"), default=0),
             volume_mount_path=os.getenv("RUNPOD_VOLUME_MOUNT_PATH", "/workspace"),
@@ -617,6 +667,10 @@ class RunPodSettings:
             ),
             use_template_ltx_video=_bool_env(
                 os.getenv("RUNPOD_USE_TEMPLATE_LTX_VIDEO"),
+                default=False,
+            ),
+            use_template_pornmaster_flux2_edit=_bool_env(
+                os.getenv("RUNPOD_USE_TEMPLATE_PORNMASTER_FLUX2_EDIT"),
                 default=False,
             ),
             docker_start_cmd_img2img_lora=_docker_start_cmd_env(
@@ -670,6 +724,13 @@ class RunPodSettings:
                 json_env_name="RUNPOD_DOCKER_START_CMD_JSON_LTX_VIDEO",
             )
             or RUNPOD_LTX_VIDEO_DOCKER_START_CMD,
+            docker_start_cmd_pornmaster_flux2_edit=_docker_start_cmd_env(
+                os.getenv("RUNPOD_DOCKER_START_CMD_JSON_PORNMASTER_FLUX2_EDIT"),
+                os.getenv("RUNPOD_DOCKER_START_SCRIPT_PORNMASTER_FLUX2_EDIT"),
+                os.getenv("RUNPOD_DOCKER_START_SCRIPT_FILE_PORNMASTER_FLUX2_EDIT"),
+                json_env_name="RUNPOD_DOCKER_START_CMD_JSON_PORNMASTER_FLUX2_EDIT",
+            )
+            or RUNPOD_PORNMASTER_FLUX2_EDIT_DOCKER_START_CMD,
             template_id_img2img_lora=os.getenv("RUNPOD_TEMPLATE_ID_IMG2IMG_LORA", ""),
             template_id_wan22_aio_video=os.getenv(
                 "RUNPOD_TEMPLATE_ID_WAN22_AIO_VIDEO",
@@ -680,6 +741,10 @@ class RunPodSettings:
             template_id_i2i_pro=os.getenv("RUNPOD_TEMPLATE_ID_I2I_PRO", ""),
             template_id_scail2=os.getenv("RUNPOD_TEMPLATE_ID_SCAIL2", ""),
             template_id_ltx_video=os.getenv("RUNPOD_TEMPLATE_ID_LTX_VIDEO", ""),
+            template_id_pornmaster_flux2_edit=os.getenv(
+                "RUNPOD_TEMPLATE_ID_PORNMASTER_FLUX2_EDIT",
+                "",
+            ),
             image_name_img2img_lora=os.getenv("RUNPOD_IMAGE_NAME_IMG2IMG_LORA", ""),
             image_name_wan22_aio_video=wan22_aio_image,
             image_name_image_to_video=image_to_video_image,
@@ -687,6 +752,10 @@ class RunPodSettings:
             image_name_i2i_pro=os.getenv("RUNPOD_IMAGE_NAME_I2I_PRO", ""),
             image_name_scail2=os.getenv("RUNPOD_IMAGE_NAME_SCAIL2", ""),
             image_name_ltx_video=os.getenv("RUNPOD_IMAGE_NAME_LTX_VIDEO", ""),
+            image_name_pornmaster_flux2_edit=os.getenv(
+                "RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT",
+                "",
+            ),
             worker_central_url_cloud_test=os.getenv(
                 "RUNPOD_CLOUD_TEST_CENTRAL_API_URL",
                 os.getenv(
@@ -827,6 +896,18 @@ class RunPodSettings:
             task_type_workflow_overrides_ltx_video=os.getenv(
                 "RUNPOD_TASK_TYPE_WORKFLOW_OVERRIDES_LTX_VIDEO",
                 RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
+            ),
+            model_prefix_pornmaster_flux2_edit=os.getenv(
+                "RUNPOD_MODEL_PREFIX_PORNMASTER_FLUX2_EDIT",
+                global_model_prefix
+                if global_model_prefix.startswith("pornmaster_flux2_edit/")
+                else RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX,
+            ),
+            model_manifest_key_pornmaster_flux2_edit=os.getenv(
+                "RUNPOD_MODEL_MANIFEST_KEY_PORNMASTER_FLUX2_EDIT",
+                global_model_manifest_key
+                if global_model_manifest_key.startswith("pornmaster_flux2_edit/")
+                else RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY,
             ),
             model_endpoint=os.getenv("RUNPOD_MODEL_ENDPOINT", ""),
             model_secure=_bool_env(os.getenv("RUNPOD_MODEL_SECURE"), default=True),

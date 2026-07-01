@@ -107,6 +107,28 @@ def test_case_builder_preserves_profile_payloads(tmp_path):
         "motion.mp4",
     ]
 
+    pornmaster_cases = RunPodProdWorkerCanaryCaseBuilder(
+        _config(
+            tmp_path,
+            profile="pornmaster_flux2_edit",
+            task_type="pornmaster_flux2_edit",
+        )
+    ).pornmaster_flux2_edit_task_cases("ref.png")
+    assert [case["payload"]["task_type"] for case in pornmaster_cases] == [
+        "pornmaster_flux2_single_edit",
+        "pornmaster_flux2_multi_edit",
+    ]
+    assert [case["expected_central_task_type"] for case in pornmaster_cases] == [
+        "pornmaster_flux2_single_edit",
+        "pornmaster_flux2_multi_edit",
+    ]
+    assert pornmaster_cases[0]["payload"]["inputs"]["images"] == ["ref.png"]
+    assert pornmaster_cases[1]["payload"]["inputs"]["images"] == [
+        "ref.png",
+        "ref.png",
+    ]
+    assert pornmaster_cases[1]["payload"]["inputs"]["image2"] == "ref.png"
+
 
 def test_assets_upload_bytes_uses_presigned_put(tmp_path):
     calls: list[tuple[str, str, dict[str, object]]] = []

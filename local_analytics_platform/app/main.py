@@ -47,6 +47,10 @@ from .user_profile_analytics import (
     get_user_profile_groups,
     get_user_profile_users,
 )
+from .user_profile_snapshots import (
+    build_user_profile_visualizations,
+    get_user_profile_snapshot_rows,
+)
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -978,16 +982,19 @@ async def health() -> dict[str, Any]:
 @app.get("/api/user-analytics")
 async def user_analytics(
     days: int = Query(30, ge=0, le=MAX_ANALYTICS_DAYS),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
     limit: int = Query(12, ge=1, le=50),
 ) -> dict[str, Any]:
-    days = _clamp_days(days)
-    query_days = _query_days(days)
+    days, query_days, start_date, end_date = _resolve_user_profile_period(days, start_date, end_date)
     chart_days = _chart_days(days)
     limit = _clamp(limit, 1, 50)
     summary = await _fetchrow(
         """
         with bounds as (
-            select now() - ($1::int * interval '1 day') as since
+            select
+                coalesce($5::date::timestamp, now() - ($1::int * interval '1 day')) as start_at,
+                coalesce(($6::date + interval '1 day')::timestamp, now()) as end_at
         ),
         successful_order_users as (
             select distinct internal_user_id as user_id
@@ -1018,6 +1025,13 @@ async def user_analytics(
               and payment_channel in ('RMB', 'TON', 'XTR')
               and internal_user_id is not null
         ),
+        period_generation_users as (
+            select distinct history.user_id
+            from history, bounds
+            where history.user_id is not null
+              and history.created_at >= bounds.start_at
+              and history.created_at < bounds.end_at
+        ),
         low_trust_free_tier_users as (
             select users.*
             from users
@@ -1026,6 +1040,14 @@ async def user_analytics(
             where coalesce(users.checkin_count, 0) > 7
               and successful_order_users.user_id is null
               and high_quality_referral_exempt_users.user_id is null
+        ),
+        low_trust_exempt_users as (
+            select users.*
+            from users
+            left join successful_order_users on successful_order_users.user_id = users.id
+            join high_quality_referral_exempt_users on high_quality_referral_exempt_users.user_id = users.id
+            where coalesce(users.checkin_count, 0) > 7
+              and successful_order_users.user_id is null
         ),
         referred_real_success_orders as (
             select orders.*
@@ -1090,8 +1112,14 @@ async def user_analytics(
         )
         select
             count(*)::bigint as total_users,
-            count(*) filter (where created_at >= bounds.since)::bigint as new_users,
-            count(*) filter (where last_activity >= bounds.since)::bigint as active_users,
+            count(*) filter (
+                where created_at >= bounds.start_at
+                  and created_at < bounds.end_at
+            )::bigint as new_users,
+            count(*) filter (
+                where (last_activity >= bounds.start_at and last_activity < bounds.end_at)
+                   or period_generation_users.user_id is not null
+            )::bigint as active_users,
             count(*) filter (where is_channel_member is true)::bigint as channel_members,
             count(*) filter (where hashed_password is not null)::bigint as password_users,
             count(*) filter (where is_submission_banned is true)::bigint as submission_banned_users,
@@ -1114,7 +1142,13 @@ async def user_analytics(
                 from real_success_payers
                 join users payer_users on payer_users.id = real_success_payers.user_id
                 join bounds payer_bounds on true
-                where payer_users.last_activity >= payer_bounds.since
+                left join period_generation_users payer_period_generation
+                    on payer_period_generation.user_id = payer_users.id
+                where (
+                    payer_users.last_activity >= payer_bounds.start_at
+                    and payer_users.last_activity < payer_bounds.end_at
+                )
+                   or payer_period_generation.user_id is not null
             )::bigint as active_paying_users,
             round(
                 case
@@ -1152,14 +1186,26 @@ async def user_analytics(
             )::numeric as recharge_rate_generation_users,
             round(
                 case
-                    when count(*) filter (where last_activity >= bounds.since) > 0
+                    when count(*) filter (
+                        where (last_activity >= bounds.start_at and last_activity < bounds.end_at)
+                           or period_generation_users.user_id is not null
+                    ) > 0
                     then (
                         select count(*)
                         from real_success_payers
                         join users payer_users on payer_users.id = real_success_payers.user_id
                         join bounds payer_bounds on true
-                        where payer_users.last_activity >= payer_bounds.since
-                    )::numeric / (count(*) filter (where last_activity >= bounds.since))::numeric * 100
+                        left join period_generation_users payer_period_generation
+                            on payer_period_generation.user_id = payer_users.id
+                        where (
+                            payer_users.last_activity >= payer_bounds.start_at
+                            and payer_users.last_activity < payer_bounds.end_at
+                        )
+                           or payer_period_generation.user_id is not null
+                    )::numeric / (count(*) filter (
+                        where (last_activity >= bounds.start_at and last_activity < bounds.end_at)
+                           or period_generation_users.user_id is not null
+                    ))::numeric * 100
                     else 0
                 end,
                 2
@@ -1173,18 +1219,27 @@ async def user_analytics(
             coalesce(
                 sum(coalesce(credits, 0)) filter (
                     where coalesce(generation_count, 0) > 0
-                       or last_activity >= bounds.since
+                       or (last_activity >= bounds.start_at and last_activity < bounds.end_at)
+                       or period_generation_users.user_id is not null
                 ),
                 0
             )::bigint as active_credits,
             (select count(*) from low_trust_free_tier_users)::bigint as low_trust_free_tier_users,
             (
                 select count(*)
-                from low_trust_free_tier_users, bounds as low_trust_bounds
-                where last_activity >= low_trust_bounds.since
+                from low_trust_free_tier_users
+                cross join bounds as low_trust_bounds
+                left join period_generation_users
+                    on period_generation_users.user_id = low_trust_free_tier_users.id
+                where (
+                    last_activity >= low_trust_bounds.start_at
+                    and last_activity < low_trust_bounds.end_at
+                )
+                   or period_generation_users.user_id is not null
             )::bigint as low_trust_active_users,
             (select count(*) from low_trust_free_tier_users where coalesce(generation_count, 0) > 0)::bigint as low_trust_generation_users,
             (select coalesce(sum(coalesce(credits, 0)), 0) from low_trust_free_tier_users)::bigint as low_trust_total_credits,
+            (select count(*) from low_trust_exempt_users)::bigint as low_trust_exempt_users,
             (select count(distinct inviter_id) from low_trust_referral_edges)::bigint as low_trust_inviters_count,
             (
                 select count(distinct invitee_id)
@@ -1233,32 +1288,44 @@ async def user_analytics(
             (select total_commission_usdt from affiliate_ledger)::numeric as affiliate_total_commission_usdt,
             (select spent_commission_usdt from affiliate_ledger)::numeric as affiliate_spent_commission_usdt,
             (select available_balance_usdt from affiliate_ledger)::numeric as affiliate_available_balance_usdt
-        from users, bounds
+        from users
+        cross join bounds
+        left join period_generation_users on period_generation_users.user_id = users.id
         """,
         query_days,
         RMB_TO_USDT,
         TON_TO_USDT,
         STARS_TO_USDT,
+        start_date,
+        end_date,
     )
     daily = await _fetch(
         """
-        with days as (
+        with bounds as (
+            select
+                coalesce($2::date, current_date - (($1::int - 1) * interval '1 day'))::date as start_date,
+                coalesce($3::date, current_date)::date as end_date
+        ),
+        days as (
             select generate_series(
-                current_date - (($1::int - 1) * interval '1 day'),
-                current_date,
+                bounds.start_date,
+                bounds.end_date,
                 interval '1 day'
             )::date as day
+            from bounds
         ),
         user_daily as (
             select created_at::date as day, count(*)::bigint as new_users
-            from users
-            where created_at >= current_date - (($1::int - 1) * interval '1 day')
+            from users, bounds
+            where created_at >= bounds.start_date::timestamp
+              and created_at < (bounds.end_date + 1)::timestamp
             group by 1
         ),
         channel_member_daily as (
             select created_at::date as day, count(*)::bigint as new_channel_members
-            from users
-            where created_at >= current_date - (($1::int - 1) * interval '1 day')
+            from users, bounds
+            where created_at >= bounds.start_date::timestamp
+              and created_at < (bounds.end_date + 1)::timestamp
               and is_channel_member is true
             group by 1
         ),
@@ -1269,20 +1336,23 @@ async def user_analytics(
                 from history
                 where user_id is not null
                 group by user_id
-            ) first_generations
-            where first_day >= current_date - (($1::int - 1) * interval '1 day')
+            ) first_generations, bounds
+            where first_day >= bounds.start_date
+              and first_day <= bounds.end_date
             group by 1
         ),
         active_daily as (
             select created_at::date as day, count(distinct user_id)::bigint as active_users
-            from history
-            where created_at >= current_date - (($1::int - 1) * interval '1 day')
+            from history, bounds
+            where created_at >= bounds.start_date::timestamp
+              and created_at < (bounds.end_date + 1)::timestamp
             group by 1
         ),
         checkin_daily as (
             select checkin_date::date as day, count(*)::bigint as checkins
-            from checkin_history
-            where checkin_date >= current_date - (($1::int - 1) * interval '1 day')
+            from checkin_history, bounds
+            where checkin_date >= bounds.start_date
+              and checkin_date <= bounds.end_date
             group by 1
         )
         select
@@ -1301,6 +1371,8 @@ async def user_analytics(
         order by days.day
         """,
         chart_days,
+        start_date,
+        end_date,
     )
     identity = await _fetch(
         """
@@ -1418,13 +1490,15 @@ async def user_analytics(
     activity_segments = await _fetch(
         """
         with bounds as (
-            select now() - ($1::int * interval '1 day') as since
+            select
+                coalesce($2::date::timestamp, now() - ($1::int * interval '1 day')) as start_at,
+                coalesce(($3::date + interval '1 day')::timestamp, now()) as end_at
         ),
         bucketed as (
             select case
                 when last_activity >= now() - interval '1 day' then '24h 活跃'
                 when last_activity >= now() - interval '7 day' then '7天活跃'
-                when last_activity >= bounds.since then '近周期活跃'
+                when last_activity >= bounds.start_at and last_activity < bounds.end_at then '近周期活跃'
                 when last_activity is null then '从未活跃'
                 else '沉睡用户'
             end as activity_segment
@@ -1442,6 +1516,8 @@ async def user_analytics(
         end
         """,
         query_days,
+        start_date,
+        end_date,
     )
     generation_rank = await _fetch(
         """
@@ -1753,11 +1829,30 @@ async def user_analytics(
         """,
         limit,
     )
+    summary_row = _row(summary)
+    daily_rows = _rows(daily)
+    snapshot_rows = await get_user_profile_snapshot_rows(
+        fetch=_fetch,
+        fetchrow=_fetchrow,
+        days=chart_days,
+        start_date=start_date,
+        end_date=end_date,
+    )
     return {
         "days": days,
         "limit": limit,
-        "summary": _row(summary),
-        "daily": _rows(daily),
+        "filters": {
+            "start_date": start_date.isoformat() if start_date else "",
+            "end_date": end_date.isoformat() if end_date else "",
+        },
+        "summary": summary_row,
+        "daily": daily_rows,
+        "visualizations": build_user_profile_visualizations(
+            summary=summary_row,
+            daily=daily_rows,
+            snapshots=snapshot_rows,
+            days=days,
+        ),
         "distributions": {
             "identity": _rows(identity),
             "user_group": _rows(user_group),

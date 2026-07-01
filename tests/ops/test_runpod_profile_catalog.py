@@ -36,6 +36,9 @@ def test_provider_reexports_profile_catalog_symbols_for_old_imports():
         ("ltx_video", "ltx_video"),
         ("ltx_video_flf2v", "ltx_video"),
         ("ltx_video_v2v_audio", "ltx_video"),
+        ("pornmaster_flux2_edit", "pornmaster_flux2_edit"),
+        ("pornmaster_flux2_single_edit", "pornmaster_flux2_edit"),
+        ("pornmaster_flux2_multi_edit", "pornmaster_flux2_edit"),
     ],
 )
 def test_prod_worker_profile_for_task_type_matches_catalog(task_type, profile):
@@ -75,6 +78,11 @@ def test_prod_worker_profile_for_task_type_matches_catalog(task_type, profile):
             "runpod_prod_ltx_video_manual_01",
             "allbot-runpod-prod-ltx-video-manual-01",
         ),
+        (
+            "pornmaster_flux2_edit",
+            "runpod_prod_pornmaster_flux2_edit_manual_01",
+            "allbot-runpod-prod-pornmaster-flux2-edit-manual-01",
+        ),
     ],
 )
 def test_prod_agent_and_pod_names_are_profile_specific(profile, agent_id, pod_name):
@@ -106,10 +114,13 @@ def test_dashboard_profile_options_are_sourced_from_catalog():
         "ltx_video_flf2v",
         "ltx_video_v2v_audio",
     ]
-    assert "pornmaster_flux2_edit" not in options
+    assert options["pornmaster_flux2_edit"] == [
+        "pornmaster_flux2_single_edit",
+        "pornmaster_flux2_multi_edit",
+    ]
 
 
-def test_dashboard_worker_profile_options_include_local_only_pornmaster_flux2():
+def test_pornmaster_flux2_profile_is_manual_only_and_excluded_from_autoscaler():
     worker_options = {
         str(option["profile"]): option
         for option in catalog.DASHBOARD_WORKER_PROFILE_OPTIONS
@@ -119,7 +130,10 @@ def test_dashboard_worker_profile_options_include_local_only_pornmaster_flux2():
         for option in catalog.RUNPOD_AUTOSCALER_PROFILE_OPTIONS
     }
 
-    assert worker_options["pornmaster_flux2_edit"]["label"] == "pornmaster_flux2"
+    assert (
+        worker_options["pornmaster_flux2_edit"]["label"]
+        == "pornmaster_flux2 / 自由P图 v2"
+    )
     assert worker_options["pornmaster_flux2_edit"]["supported_task_types"] == [
         "pornmaster_flux2_single_edit",
         "pornmaster_flux2_multi_edit",

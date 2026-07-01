@@ -9,8 +9,13 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_LTX_VIDEO_MODEL_MANIFEST_KEY,
     RUNPOD_LTX_VIDEO_MODEL_PREFIX,
     RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_DOCKER_START_CMD,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
     RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX,
+    RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX,
     RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX,
     RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE,
     RUNPOD_SCAIL2_DOCKER_START_CMD,
@@ -32,6 +37,10 @@ I2I_PRO_IMAGE = (
 )
 SCAIL2_IMAGE = RUNPOD_PUBLIC_SCAIL2_IMAGE_PREFIX + "20260617-scail2-prod"
 LTX_VIDEO_IMAGE = RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX + "20260622-ltx-prod"
+PORNMASTER_FLUX2_EDIT_IMAGE = (
+    RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX
+    + "20260701-pornmaster-flux2-edit"
+)
 
 
 def _settings_for_profile(profile: str) -> RunPodSettings:
@@ -43,6 +52,7 @@ def _settings_for_profile(profile: str) -> RunPodSettings:
         image_name_i2i_pro=I2I_PRO_IMAGE,
         image_name_scail2=SCAIL2_IMAGE,
         image_name_ltx_video=LTX_VIDEO_IMAGE,
+        image_name_pornmaster_flux2_edit=PORNMASTER_FLUX2_EDIT_IMAGE,
         model_prefix_image_to_video=RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX,
         model_manifest_key_image_to_video=RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY,
         model_prefix_wan22_video_v2=RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX,
@@ -53,6 +63,10 @@ def _settings_for_profile(profile: str) -> RunPodSettings:
         model_manifest_key_scail2=RUNPOD_SCAIL2_MODEL_MANIFEST_KEY,
         model_prefix_ltx_video=RUNPOD_LTX_VIDEO_MODEL_PREFIX,
         model_manifest_key_ltx_video=RUNPOD_LTX_VIDEO_MODEL_MANIFEST_KEY,
+        model_prefix_pornmaster_flux2_edit=RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX,
+        model_manifest_key_pornmaster_flux2_edit=(
+            RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY
+        ),
     )
 
 
@@ -64,6 +78,7 @@ def test_pod_request_builder_matches_provider_render_for_prod_profiles():
         ("i2i_pro", "i2i_pro"),
         ("scail2", "scail2"),
         ("ltx_video", "ltx_video"),
+        ("pornmaster_flux2_edit", "pornmaster_flux2_edit"),
     ]
     for task_type, profile in cases:
         settings = _settings_for_profile(profile)
@@ -103,6 +118,12 @@ def test_pod_request_builder_keeps_profile_specific_prod_env():
         task_type="ltx_video",
         environment="cloud-prod",
     )
+    pornmaster = RunPodPodRequestBuilder(
+        _settings_for_profile("pornmaster_flux2_edit")
+    ).create_pod_body(
+        task_type="pornmaster_flux2_edit",
+        environment="cloud-prod",
+    )
 
     assert img2img["imageName"] == RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE
     assert img2img["dockerStartCmd"] == list(RUNPOD_IMG2IMG_LORA_DOCKER_START_CMD)
@@ -117,3 +138,19 @@ def test_pod_request_builder_keeps_profile_specific_prod_env():
     assert ltx["containerDiskInGb"] == RUNPOD_LTX_VIDEO_CONTAINER_DISK_GB
     assert ltx["env"]["TASK_TYPE_WORKFLOW_OVERRIDES"] == RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES
     assert ltx["env"]["RUNPOD_MODEL_MANIFEST_KEY"] == RUNPOD_LTX_VIDEO_MODEL_MANIFEST_KEY
+    assert pornmaster["imageName"] == PORNMASTER_FLUX2_EDIT_IMAGE
+    assert pornmaster["containerDiskInGb"] == RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB
+    assert pornmaster["dockerStartCmd"] == list(
+        RUNPOD_PORNMASTER_FLUX2_EDIT_DOCKER_START_CMD
+    )
+    assert pornmaster["env"]["SUPPORTED_TASK_TYPES"] == (
+        "pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit"
+    )
+    assert (
+        pornmaster["env"]["RUNPOD_MODEL_PREFIX"]
+        == RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX
+    )
+    assert (
+        pornmaster["env"]["RUNPOD_MODEL_MANIFEST_KEY"]
+        == RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY
+    )
