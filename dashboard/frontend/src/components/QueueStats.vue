@@ -291,8 +291,17 @@ const clearTimeDisplayForProfile = (profileRow) => {
   if (!isProfileAutoscalerEnabled(profileRow)) return '-'
   const decision = autoscalerDecisionsByProfile.value[profileRow.profile]
   if (!decision) return '-'
+  const nonLowTrustPendingCount = Number(
+    decision.non_low_trust_clear_pending_count ??
+      profileRow.nonLowTrustClearPendingCount ??
+      0
+  )
+  if (nonLowTrustPendingCount <= 0) return '-'
   if (decision.capacity_status === 'no_accepting_workers') return '无可接单'
-  return formatWaitDuration(decision.estimated_clear_time_seconds)
+  return formatWaitDuration(
+    decision.estimated_non_low_trust_clear_time_seconds ??
+      decision.estimated_clear_time_seconds
+  )
 }
 
 const decisionReasonForProfile = (profile) =>
@@ -817,7 +826,7 @@ onUnmounted(() => {
                 <th>排队数</th>
                 <th>最长等待</th>
                 <th>非低信任最长等待</th>
-                <th>预计清空</th>
+                <th>预计非低信任用户清空</th>
                 <th>单任务耗时</th>
                 <th>清空阈值</th>
                 <th>自动管理</th>
@@ -1168,6 +1177,26 @@ onUnmounted(() => {
             <span class="font-bold text-gray-800">{{ text }}</span>
           </template>
         </a-table-column>
+        <a-table-column title="有效身份" dataIndex="effective_identity" key="effective_identity">
+          <template #default="{ record }">
+            <div class="flex flex-col gap-1">
+              <a-tag :color="record.effective_identity === '外门弟子' ? 'default' : 'gold'">
+                {{ record.effective_identity || record.current_identity || '外门弟子' }}
+              </a-tag>
+              <span
+                v-if="record.current_identity && record.current_identity !== record.effective_identity"
+                class="text-xs text-gray-400"
+              >
+                原 {{ record.current_identity }}
+              </span>
+            </div>
+          </template>
+        </a-table-column>
+        <a-table-column title="最大并发" dataIndex="max_concurrent_tasks" key="max_concurrent_tasks">
+          <template #default="{ text }">
+            <a-tag color="cyan">{{ text ?? 3 }}</a-tag>
+          </template>
+        </a-table-column>
         <a-table-column title="当前并发锁" dataIndex="concurrency_locks" key="concurrency_locks">
           <template #default="{ text }">
             <a-tag :color="text > 0 ? 'orange' : 'default'">{{ text }}</a-tag>
@@ -1180,7 +1209,13 @@ onUnmounted(() => {
         </a-table-column>
         <a-table-column title="状态评估" key="status_eval">
           <template #default="{ record }">
-            <a-tag v-if="record.concurrency_locks > record.active_tasks" color="red">可能有锁遗留</a-tag>
+            <a-tag
+              v-if="record.max_concurrent_tasks && record.concurrency_locks > record.max_concurrent_tasks"
+              color="red"
+            >
+              超过身份上限
+            </a-tag>
+            <a-tag v-else-if="record.concurrency_locks > record.active_tasks" color="red">可能有锁遗留</a-tag>
             <a-tag v-else-if="record.concurrency_locks === record.active_tasks && record.active_tasks > 0" color="green">正常执行</a-tag>
             <a-tag v-else-if="record.active_tasks > record.concurrency_locks" color="purple">超限排队</a-tag>
             <span v-else class="text-gray-400 text-xs">空闲</span>

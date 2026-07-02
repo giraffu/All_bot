@@ -1254,6 +1254,14 @@ def _pending_count_by_task_type(detail: dict[str, Any]) -> dict[str, int]:
     return {fallback_task_type: pending_count}
 
 
+def _non_low_trust_clear_pending_count_by_task_type(
+    detail: dict[str, Any],
+) -> dict[str, int]:
+    return _safe_count_map(
+        detail.get("non_low_trust_clear_pending_count_by_task_type")
+    )
+
+
 def _pending_work_seconds(
     pending_counts: dict[str, int],
     *,
@@ -1376,8 +1384,18 @@ def build_runpod_autoscaler_decisions(
         wait_seconds = _safe_float(detail.get("max_pending_wait_seconds"))
         clear_time_threshold_seconds = config.scale_up_wait_seconds_for_profile(profile)
         pending_counts_by_task_type = _pending_count_by_task_type(detail)
-        pending_work_seconds = _pending_work_seconds(
+        total_pending_work_seconds = _pending_work_seconds(
             pending_counts_by_task_type,
+            config=config,
+        )
+        non_low_trust_clear_pending_counts_by_task_type = (
+            _non_low_trust_clear_pending_count_by_task_type(detail)
+        )
+        non_low_trust_clear_pending_count = sum(
+            non_low_trust_clear_pending_counts_by_task_type.values()
+        )
+        pending_work_seconds = _pending_work_seconds(
+            non_low_trust_clear_pending_counts_by_task_type,
             config=config,
         )
 
@@ -1463,7 +1481,12 @@ def build_runpod_autoscaler_decisions(
         total_accepting_count = accepting_runpod_count + accepting_local_count
         estimated_backlog_seconds = pending_work_seconds + running_remaining_seconds
         estimated_clear_time_seconds: float | None
-        if total_accepting_count > 0:
+        if non_low_trust_clear_pending_count <= 0:
+            estimated_clear_time_seconds = None
+            capacity_status = (
+                "no_non_low_trust_backlog" if pending_count > 0 else "idle"
+            )
+        elif total_accepting_count > 0:
             estimated_clear_time_seconds = (
                 estimated_backlog_seconds / total_accepting_count
             )
@@ -1495,14 +1518,29 @@ def build_runpod_autoscaler_decisions(
             "scale_up_wait_seconds": clear_time_threshold_seconds,
             "clear_time_threshold_seconds": clear_time_threshold_seconds,
             "pending_count_by_task_type": pending_counts_by_task_type,
+            "non_low_trust_clear_pending_count": non_low_trust_clear_pending_count,
+            "non_low_trust_clear_pending_count_by_task_type": (
+                non_low_trust_clear_pending_counts_by_task_type
+            ),
+            "last_non_low_trust_pending_queue_index": detail.get(
+                "last_non_low_trust_pending_queue_index"
+            ),
             "task_duration_seconds_by_type": {
                 task_type: config.task_duration_seconds_for_type(task_type)
-                for task_type in pending_counts_by_task_type
+                for task_type in {
+                    *pending_counts_by_task_type,
+                    *non_low_trust_clear_pending_counts_by_task_type,
+                }
             },
+            "estimated_total_pending_work_seconds": total_pending_work_seconds,
             "estimated_pending_work_seconds": pending_work_seconds,
+            "estimated_non_low_trust_pending_work_seconds": pending_work_seconds,
             "estimated_running_remaining_seconds": running_remaining_seconds,
             "estimated_backlog_seconds": estimated_backlog_seconds,
             "estimated_clear_time_seconds": estimated_clear_time_seconds,
+            "estimated_non_low_trust_clear_time_seconds": (
+                estimated_clear_time_seconds
+            ),
             "capacity_status": capacity_status,
             "runpod_fault_restart_seconds": config.runpod_fault_restart_seconds,
             "runpod_fault_candidate_count": len(runpod_restart_candidates),
@@ -1645,6 +1683,17 @@ def build_runpod_autoscaler_decisions(
             continue
 
         if pending_count > 0:
+            if non_low_trust_clear_pending_count <= 0:
+                decisions.append(
+                    _decision(
+                        profile=profile,
+                        action="hold",
+                        reason="hold: no non-low-trust backlog",
+                        metrics=metrics,
+                    )
+                )
+                continue
+
             if (
                 config.runpod_bootstrap_replacement_limit > 0
                 and bootstrap_replacement_count
@@ -1689,13 +1738,13 @@ def build_runpod_autoscaler_decisions(
                 if bootstrap_replacement_count > 0:
                     scale_up_reason = (
                         "replace: previous runpod bootstrap timed out; "
-                        "estimated clear time "
+                        "estimated non-low-trust clear time "
                         f"{int(estimated_clear_time_seconds)}s exceeds "
                         f"{clear_time_threshold_seconds}s"
                     )
                 else:
                     scale_up_reason = (
-                        "scale_up: estimated clear time "
+                        "scale_up: estimated non-low-trust clear time "
                         f"{int(estimated_clear_time_seconds)}s exceeds "
                         f"{clear_time_threshold_seconds}s"
                     )
@@ -1713,7 +1762,9 @@ def build_runpod_autoscaler_decisions(
                 _decision(
                     profile=profile,
                     action="hold",
-                    reason="hold: estimated clear time within threshold",
+                    reason=(
+                        "hold: estimated non-low-trust clear time within threshold"
+                    ),
                     metrics=metrics,
                 )
             )

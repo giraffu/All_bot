@@ -126,6 +126,13 @@ export function useQueueStatsMonitor() {
         pendingCount: Number(item.pending_count || 0),
         activeCountByTaskType: item.active_count_by_task_type || {},
         pendingCountByTaskType: item.pending_count_by_task_type || {},
+        nonLowTrustClearPendingCount: Number(
+          item.non_low_trust_clear_pending_count || 0
+        ),
+        nonLowTrustClearPendingCountByTaskType:
+          item.non_low_trust_clear_pending_count_by_task_type || {},
+        lastNonLowTrustPendingQueueIndex:
+          item.last_non_low_trust_pending_queue_index ?? null,
         maxPendingWaitSeconds: Number.isFinite(maxPendingWaitSeconds)
           ? maxPendingWaitSeconds
           : null,

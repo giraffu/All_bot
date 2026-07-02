@@ -57,6 +57,13 @@ vi.mock('../composables/useQueueStatsMonitor', async () => {
             pendingCount: Number(item.pending_count || 0),
             activeCountByTaskType: item.active_count_by_task_type || {},
             pendingCountByTaskType: item.pending_count_by_task_type || {},
+            nonLowTrustClearPendingCount: Number(
+              item.non_low_trust_clear_pending_count || 0
+            ),
+            nonLowTrustClearPendingCountByTaskType:
+              item.non_low_trust_clear_pending_count_by_task_type || {},
+            lastNonLowTrustPendingQueueIndex:
+              item.last_non_low_trust_pending_queue_index ?? null,
             maxPendingWaitSeconds: Number.isFinite(maxPendingWaitSeconds)
               ? maxPendingWaitSeconds
               : null,
@@ -175,7 +182,8 @@ const WorkerHistoryModalStub = defineComponent({
 
 const TableColumnStub = defineComponent({
   name: 'TableColumnStub',
-  template: '<div />',
+  props: ['title'],
+  template: '<div class="table-column-stub">{{ title }}</div>',
 })
 
 const mountedWrappers = []
@@ -263,15 +271,19 @@ describe('QueueStats worker health display', () => {
         {
           profile: 'i2i_pro',
           action: 'scale_up',
-          reason: 'scale_up: estimated clear time 1860s exceeds 1800s',
+          reason: 'scale_up: estimated non-low-trust clear time 1860s exceeds 1800s',
           estimated_clear_time_seconds: 1860,
+          estimated_non_low_trust_clear_time_seconds: 1860,
+          non_low_trust_clear_pending_count: 155,
           capacity_status: 'ok',
         },
         {
           profile: 'pornmaster_flux2_edit',
           action: 'hold',
-          reason: 'hold: estimated clear time within threshold',
+          reason: 'hold: estimated non-low-trust clear time within threshold',
           estimated_clear_time_seconds: 60,
+          estimated_non_low_trust_clear_time_seconds: 60,
+          non_low_trust_clear_pending_count: 2,
           capacity_status: 'ok',
         },
       ],
@@ -410,6 +422,26 @@ describe('QueueStats worker health display', () => {
     expect(wrapper.get('.task-total-pending .task-total-value').text()).toContain('12')
     expect(wrapper.get('.task-total-submetric').text()).toContain('3')
     expect(wrapper.get('.task-total-submetric').text()).toContain('4 任务')
+  })
+
+  it('shows identity and max concurrency columns for user lock rows', async () => {
+    queueStatsMocks.concurrencyStatsRef.value = [
+      {
+        user_id: 123,
+        username: 'tester',
+        current_identity: '核心弟子',
+        effective_identity: '核心弟子',
+        max_concurrent_tasks: 8,
+        concurrency_locks: 3,
+        active_tasks: 3,
+      },
+    ]
+
+    const wrapper = await mountQueueStats()
+
+    expect(wrapper.text()).toContain('用户并发锁状态监控')
+    expect(wrapper.text()).toContain('有效身份')
+    expect(wrapper.text()).toContain('最大并发')
   })
 
   it('renders all active task detail rows with pending wait metrics', async () => {
@@ -594,7 +626,9 @@ describe('QueueStats worker health display', () => {
     expect(wrapper.text()).toContain('15m 1s')
     expect(i2iRow?.text()).toContain('12m 0s')
     expect(wrapper.text()).toContain('31m 0s')
-    expect(wrapper.text()).toContain('scale_up: estimated clear time 1860s exceeds 1800s')
+    expect(wrapper.text()).toContain(
+      'scale_up: estimated non-low-trust clear time 1860s exceeds 1800s'
+    )
     expect(pornmasterRow?.exists()).toBe(true)
     expect(pornmasterRow?.text()).toContain('pornmaster_flux2_single_edit')
     expect(pornmasterRow?.text()).toContain('16m 40s')
@@ -615,7 +649,7 @@ describe('QueueStats worker health display', () => {
       '排队数',
       '最长等待',
       '非低信任最长等待',
-      '预计清空',
+      '预计非低信任用户清空',
       '单任务耗时',
       '清空阈值',
       '自动管理',
@@ -784,8 +818,10 @@ describe('QueueStats worker health display', () => {
           {
             profile: 'img2img',
             action: 'hold',
-            reason: 'hold: estimated clear time within threshold',
+            reason: 'hold: estimated non-low-trust clear time within threshold',
             estimated_clear_time_seconds: 37,
+            estimated_non_low_trust_clear_time_seconds: 37,
+            non_low_trust_clear_pending_count: 3,
             capacity_status: 'ok',
           },
         ],
@@ -804,8 +840,10 @@ describe('QueueStats worker health display', () => {
           {
             profile: 'img2img',
             action: 'hold',
-            reason: 'hold: estimated clear time within threshold',
+            reason: 'hold: estimated non-low-trust clear time within threshold',
             estimated_clear_time_seconds: 361,
+            estimated_non_low_trust_clear_time_seconds: 361,
+            non_low_trust_clear_pending_count: 28,
             capacity_status: 'ok',
           },
         ],
@@ -842,7 +880,8 @@ describe('QueueStats worker health display', () => {
           status: 'succeeded',
           requested_count: 1,
           created_at: '2026-06-24T01:00:00Z',
-          trigger_reason: 'scale_up: estimated clear time 1300s exceeds 1200s',
+          trigger_reason:
+            'scale_up: estimated non-low-trust clear time 1300s exceeds 1200s',
           log_tail: ['runpod_create_pod_03: ok'],
         },
         {

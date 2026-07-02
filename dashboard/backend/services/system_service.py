@@ -3,6 +3,7 @@ import logging
 import os
 import time
 from collections.abc import Iterable
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -15,6 +16,9 @@ from config import API_BASE, STATUS_ENDPOINT
 from ops.gpu_pool_controller.runpod_profile_catalog import (
     DASHBOARD_WORKER_PROFILE_OPTIONS,
 )
+from src.core.billing_core import DEFAULT_IDENTITY
+from src.core.billing_core import get_concurrent_task_limit_for_identity
+from src.core.billing_core import normalize_membership_identity
 from src.core.task_core import get_system_task_stats
 from src.core.task_core_finalization import finalize_terminated_task
 from src.core.task_core import sync_user_concurrency as core_sync_user_concurrency
@@ -37,6 +41,7 @@ BACKEND_TASK_STATUS_CACHE_MAX_ENTRIES = int(
 CENTRAL_PENDING_QUEUE_KEY = "comfy:queue:pending"
 CENTRAL_TASK_KEY_PREFIX = "comfy:task:"
 LOW_TRUST_FREE_TIER_USER_IDS_DETAIL_KEY = "_low_trust_free_tier_user_ids"
+PENDING_QUEUE_RECORDS_DETAIL_KEY = "pending_queue_records"
 _backend_task_status_cache: dict[tuple[str, str], tuple[float, dict]] = {}
 _backend_task_status_locks: dict[tuple[str, str], asyncio.Lock] = {}
 
@@ -138,6 +143,9 @@ def build_queue_type_details(
         pending_wait_records = pending_detail.get("pending_wait_records")
         if pending_wait_records is not None:
             detail["pending_wait_records"] = list(pending_wait_records)
+        pending_queue_records = pending_detail.get(PENDING_QUEUE_RECORDS_DETAIL_KEY)
+        if pending_queue_records is not None:
+            detail[PENDING_QUEUE_RECORDS_DETAIL_KEY] = list(pending_queue_records)
 
     return details
 
@@ -281,6 +289,7 @@ def summarize_queue_low_trust_counts(queue_type_details: dict) -> tuple[int, int
 def strip_private_queue_detail_fields(queue_type_details: dict) -> None:
     for detail in queue_type_details.values():
         detail.pop(LOW_TRUST_FREE_TIER_USER_IDS_DETAIL_KEY, None)
+        detail.pop(PENDING_QUEUE_RECORDS_DETAIL_KEY, None)
 
 
 def _safe_wait_seconds(value: Any) -> float | int | None:
@@ -322,6 +331,7 @@ def build_runpod_profile_queue_details(queue_type_details: dict) -> list[dict]:
         oldest_pending_task_id = None
         oldest_pending_created_at = None
         pending_wait_records: list[dict] = []
+        pending_queue_records: list[dict] = []
 
         for task_type in supported_task_types:
             detail = queue_type_details.get(task_type) or {}
@@ -334,6 +344,20 @@ def build_runpod_profile_queue_details(queue_type_details: dict) -> list[dict]:
             if task_pending_count:
                 pending_count_by_task_type[task_type] = task_pending_count
             pending_wait_records.extend(detail.get("pending_wait_records") or [])
+            for record in detail.get(PENDING_QUEUE_RECORDS_DETAIL_KEY) or []:
+                if not isinstance(record, dict):
+                    continue
+                pending_queue_records.append(
+                    {
+                        "queue_index": _safe_optional_int(
+                            record.get("queue_index")
+                        ),
+                        "execution_type": resolve_worker_execution_task_type(
+                            record.get("execution_type") or task_type
+                        ),
+                        "is_non_low_trust": record.get("is_non_low_trust") is True,
+                    }
+                )
 
             wait_seconds = _safe_wait_seconds(detail.get("max_pending_wait_seconds"))
             if wait_seconds is None:
@@ -355,6 +379,37 @@ def build_runpod_profile_queue_details(queue_type_details: dict) -> list[dict]:
             ):
                 max_non_low_trust_pending_wait_seconds = non_low_trust_wait_seconds
 
+        valid_queue_records = [
+            record
+            for record in pending_queue_records
+            if record.get("queue_index") is not None
+        ]
+        last_non_low_trust_pending_queue_index = None
+        for record in valid_queue_records:
+            if not record.get("is_non_low_trust"):
+                continue
+            queue_index = record["queue_index"]
+            if (
+                last_non_low_trust_pending_queue_index is None
+                or queue_index > last_non_low_trust_pending_queue_index
+            ):
+                last_non_low_trust_pending_queue_index = queue_index
+
+        non_low_trust_clear_pending_count_by_task_type: dict[str, int] = {}
+        if last_non_low_trust_pending_queue_index is not None:
+            for record in valid_queue_records:
+                if record["queue_index"] > last_non_low_trust_pending_queue_index:
+                    continue
+                execution_type = resolve_worker_execution_task_type(
+                    record.get("execution_type")
+                )
+                non_low_trust_clear_pending_count_by_task_type[execution_type] = (
+                    non_low_trust_clear_pending_count_by_task_type.get(
+                        execution_type, 0
+                    )
+                    + 1
+                )
+
         profile_details.append(
             {
                 "profile": option.get("profile"),
@@ -368,6 +423,15 @@ def build_runpod_profile_queue_details(queue_type_details: dict) -> list[dict]:
                 "max_pending_wait_seconds": max_pending_wait_seconds,
                 "max_non_low_trust_pending_wait_seconds": (
                     max_non_low_trust_pending_wait_seconds
+                ),
+                "non_low_trust_clear_pending_count": sum(
+                    non_low_trust_clear_pending_count_by_task_type.values()
+                ),
+                "non_low_trust_clear_pending_count_by_task_type": (
+                    non_low_trust_clear_pending_count_by_task_type
+                ),
+                "last_non_low_trust_pending_queue_index": (
+                    last_non_low_trust_pending_queue_index
                 ),
                 "oldest_pending_task_id": oldest_pending_task_id,
                 "oldest_pending_created_at": oldest_pending_created_at,
@@ -453,6 +517,7 @@ async def get_pending_queue_wait_details(
             pending_records.append(
                 {
                     "task_id": task_id,
+                    "queue_index": index,
                     "execution_type": execution_type,
                     "created_at": created_at_float,
                     "priority": priority,
@@ -488,12 +553,14 @@ async def get_pending_queue_wait_details(
             )
 
             user_id = record["user_id"]
+            is_non_low_trust = False
             if user_id in low_trust_user_ids:
                 detail["low_trust_free_tier_task_count"] += 1
                 detail.setdefault(LOW_TRUST_FREE_TIER_USER_IDS_DETAIL_KEY, set()).add(
                     user_id
                 )
             elif trust_lookup_succeeded and user_id is not None:
+                is_non_low_trust = True
                 current_non_low_trust_max = detail.get(
                     "max_non_low_trust_pending_wait_seconds"
                 )
@@ -504,6 +571,13 @@ async def get_pending_queue_wait_details(
                     detail["max_non_low_trust_pending_wait_seconds"] = record[
                         "wait_seconds"
                     ]
+            detail.setdefault(PENDING_QUEUE_RECORDS_DETAIL_KEY, []).append(
+                {
+                    "queue_index": record["queue_index"],
+                    "execution_type": execution_type,
+                    "is_non_low_trust": is_non_low_trust,
+                }
+            )
 
             current_max = detail.get("max_pending_wait_seconds")
             if current_max is None or record["wait_seconds"] > current_max:
@@ -658,16 +732,48 @@ async def sync_user_concurrency_payload(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-async def _load_user_names_for_stats(
+def _resolve_effective_identity_for_concurrency(
+    current_identity: str | None,
+    identity_expire_at,
+    *,
+    now: datetime | None = None,
+) -> str:
+    normalized_identity = normalize_membership_identity(current_identity)
+    if normalized_identity == DEFAULT_IDENTITY:
+        return DEFAULT_IDENTITY
+
+    if identity_expire_at is None:
+        return normalized_identity
+
+    comparison_now = now or datetime.now(identity_expire_at.tzinfo)
+    if identity_expire_at > comparison_now:
+        return normalized_identity
+
+    return DEFAULT_IDENTITY
+
+
+async def _load_user_concurrency_info_for_stats(
     *, user_ids: set[int], session_factory
-) -> dict[int, str]:
+) -> dict[int, dict[str, Any]]:
     if not user_ids:
         return {}
 
     async with session_factory() as db:
-        stmt = select(User.id, User.username).where(User.id.in_(list(user_ids)))
+        stmt = select(
+            User.id,
+            User.username,
+            User.current_identity,
+            User.identity_expire_at,
+        ).where(User.id.in_(list(user_ids)))
         result = await db.execute(stmt)
-        return {row.id: row.username for row in result.all()}
+        return {
+            row.id: {
+                "username": row.username,
+                "current_identity": row.current_identity,
+                "identity_expire_at": row.identity_expire_at,
+            }
+            for row in result.all()
+        }
 
 
 async def get_concurrency_stats_payload(
@@ -696,21 +802,34 @@ async def get_concurrency_stats_payload(
                     user_names[uid] = task.get("username")
 
         all_uids = set(concurrencies.keys()).union(set(user_active_tasks.keys()))
-        missing_uids = all_uids - set(user_names.keys())
-        if missing_uids:
-            user_names.update(
-                await _load_user_names_for_stats(
-                    user_ids=missing_uids,
-                    session_factory=session_factory,
-                )
-            )
+        user_info = await _load_user_concurrency_info_for_stats(
+            user_ids=all_uids,
+            session_factory=session_factory,
+        )
+
+        for uid, info in user_info.items():
+            if info.get("username") and uid not in user_names:
+                user_names[uid] = info["username"]
 
         stats = []
         for uid in all_uids:
+            info = user_info.get(uid, {})
+            current_identity = normalize_membership_identity(
+                info.get("current_identity")
+            )
+            effective_identity = _resolve_effective_identity_for_concurrency(
+                current_identity,
+                info.get("identity_expire_at"),
+            )
             stats.append(
                 {
                     "user_id": uid,
                     "username": user_names.get(uid, f"User_{uid}"),
+                    "current_identity": current_identity,
+                    "effective_identity": effective_identity,
+                    "max_concurrent_tasks": get_concurrent_task_limit_for_identity(
+                        effective_identity
+                    ),
                     "concurrency_locks": concurrencies.get(uid, 0),
                     "active_tasks": user_active_tasks.get(uid, 0),
                 }
@@ -1043,6 +1162,9 @@ async def get_system_status_proxy_payload(
             active_tasks,
             pending_wait_details,
         )
+        data["runpod_profile_queue_details"] = build_runpod_profile_queue_details(
+            data["queue_by_type_details"]
+        )
         (
             low_trust_pending_task_count,
             low_trust_pending_user_count,
@@ -1062,8 +1184,9 @@ async def get_system_status_proxy_payload(
 
     data.setdefault("low_trust_free_tier_pending_task_count", 0)
     data.setdefault("low_trust_free_tier_pending_user_count", 0)
-    data["runpod_profile_queue_details"] = build_runpod_profile_queue_details(
-        data.get("queue_by_type_details") or {}
+    data.setdefault(
+        "runpod_profile_queue_details",
+        build_runpod_profile_queue_details(data.get("queue_by_type_details") or {}),
     )
     return data
 

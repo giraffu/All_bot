@@ -37,6 +37,7 @@ def _status(
     priority: int = 1,
     pending_wait_records: list[dict] | None = None,
     pending_count_by_task_type: dict[str, int] | None = None,
+    non_low_trust_clear_pending_count_by_task_type: dict[str, int] | None = None,
 ):
     profiles = [
         "img2img",
@@ -74,6 +75,40 @@ def _status(
                         {profile_task_types[item][0]: pending}
                         if item == profile and pending > 0
                         else {}
+                    )
+                ),
+                "non_low_trust_clear_pending_count": (
+                    sum(
+                        (
+                            non_low_trust_clear_pending_count_by_task_type
+                            if non_low_trust_clear_pending_count_by_task_type
+                            is not None
+                            else (
+                                pending_count_by_task_type
+                                if pending_count_by_task_type is not None
+                                else (
+                                    {profile_task_types[item][0]: pending}
+                                    if pending > 0
+                                    else {}
+                                )
+                            )
+                        ).values()
+                    )
+                    if item == profile
+                    else 0
+                ),
+                "non_low_trust_clear_pending_count_by_task_type": (
+                    non_low_trust_clear_pending_count_by_task_type
+                    if item == profile
+                    and non_low_trust_clear_pending_count_by_task_type is not None
+                    else (
+                        pending_count_by_task_type
+                        if item == profile and pending_count_by_task_type is not None
+                        else (
+                            {profile_task_types[item][0]: pending}
+                            if item == profile and pending > 0
+                            else {}
+                        )
                     )
                 ),
                 "max_pending_wait_seconds": wait if item == profile else None,
@@ -254,9 +289,15 @@ async def test_autoscaler_scales_up_when_estimated_clear_time_exceeds_threshold(
     assert calls[0]["profile"] == "img2img"
     decision = payload["decisions"][0]
     assert decision["action"] == "scale_up"
-    assert decision["reason"] == "scale_up: estimated clear time 1300s exceeds 1200s"
+    assert (
+        decision["reason"]
+        == "scale_up: estimated non-low-trust clear time 1300s exceeds 1200s"
+    )
     assert decision["estimated_pending_work_seconds"] == 1300
+    assert decision["estimated_non_low_trust_pending_work_seconds"] == 1300
+    assert decision["estimated_total_pending_work_seconds"] == 1300
     assert decision["estimated_clear_time_seconds"] == 1300
+    assert decision["estimated_non_low_trust_clear_time_seconds"] == 1300
     assert payload["executed_operations"][0]["source"] == "autoscaler"
 
 
@@ -287,8 +328,40 @@ async def test_autoscaler_holds_long_wait_single_task_when_clear_time_is_low():
 
     decision = payload["decisions"][0]
     assert decision["action"] == "hold"
-    assert decision["reason"] == "hold: estimated clear time within threshold"
+    assert decision["reason"] == "hold: estimated non-low-trust clear time within threshold"
     assert decision["estimated_clear_time_seconds"] == 13
+    assert calls == []
+
+
+async def test_autoscaler_holds_when_only_low_trust_backlog_exists():
+    calls = []
+
+    async def start_add(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("should not start add")
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=InMemoryRunPodAutoscalerStateStore(),
+        status_payload=_status(
+            profile="img2img",
+            pending=100,
+            wait=2400,
+            non_low_trust_clear_pending_count_by_task_type={},
+        ),
+        workers_payload=_workers(_local_worker("img2img,img2img_lora")),
+        operations_payload={"operations": []},
+        start_add_func=start_add,
+        now_func=lambda: 1000.0,
+    )
+
+    decision = payload["decisions"][0]
+    assert decision["action"] == "hold"
+    assert decision["reason"] == "hold: no non-low-trust backlog"
+    assert decision["non_low_trust_clear_pending_count"] == 0
+    assert decision["estimated_total_pending_work_seconds"] == 1300
+    assert decision["estimated_clear_time_seconds"] is None
     assert calls == []
 
 
@@ -312,7 +385,10 @@ async def test_autoscaler_uses_default_profile_scale_up_thresholds():
     assert decisions["scail2"]["action"] == "hold"
     assert decisions["scail2"]["scale_up_wait_seconds"] == 40 * 60
     assert decisions["scail2"]["clear_time_threshold_seconds"] == 40 * 60
-    assert decisions["scail2"]["reason"] == "hold: estimated clear time within threshold"
+    assert (
+        decisions["scail2"]["reason"]
+        == "hold: estimated non-low-trust clear time within threshold"
+    )
 
 
 async def test_autoscaler_scales_pornmaster_flux2_edit_profile():
@@ -365,8 +441,54 @@ async def test_autoscaler_scales_pornmaster_flux2_edit_profile():
     ] == 30
     assert decision["action"] == "scale_up"
     assert decision["estimated_pending_work_seconds"] == 1830
+    assert decision["estimated_non_low_trust_pending_work_seconds"] == 1830
+    assert decision["estimated_total_pending_work_seconds"] == 1830
     assert decision["estimated_clear_time_seconds"] == 1830
     assert calls[0]["profile"] == "pornmaster_flux2_edit"
+
+
+async def test_autoscaler_uses_non_low_trust_clear_prefix_instead_of_total_pending():
+    calls = []
+
+    async def start_add(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("should not start add")
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=InMemoryRunPodAutoscalerStateStore(),
+        status_payload=_status(
+            profile="pornmaster_flux2_edit",
+            pending=100,
+            wait=2400,
+            pending_count_by_task_type={
+                "pornmaster_flux2_single_edit": 50,
+                "pornmaster_flux2_multi_edit": 50,
+            },
+            non_low_trust_clear_pending_count_by_task_type={
+                "pornmaster_flux2_single_edit": 1,
+            },
+        ),
+        workers_payload=_workers(
+            _local_worker(
+                "pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit"
+            )
+        ),
+        operations_payload={"operations": []},
+        start_add_func=start_add,
+        now_func=lambda: 1000.0,
+    )
+
+    decision = {item["profile"]: item for item in payload["decisions"]}[
+        "pornmaster_flux2_edit"
+    ]
+    assert decision["action"] == "hold"
+    assert decision["reason"] == "hold: estimated non-low-trust clear time within threshold"
+    assert decision["estimated_total_pending_work_seconds"] == 3000
+    assert decision["estimated_non_low_trust_pending_work_seconds"] == 30
+    assert decision["estimated_clear_time_seconds"] == 30
+    assert calls == []
 
 
 async def test_autoscaler_uses_persisted_profile_scale_up_threshold_on_next_evaluate():
@@ -393,7 +515,10 @@ async def test_autoscaler_uses_persisted_profile_scale_up_threshold_on_next_eval
     assert decision["action"] == "scale_up"
     assert decision["scale_up_wait_seconds"] == 31 * 60
     assert decision["estimated_clear_time_seconds"] == 2100
-    assert decision["reason"] == "scale_up: estimated clear time 2100s exceeds 1860s"
+    assert (
+        decision["reason"]
+        == "scale_up: estimated non-low-trust clear time 2100s exceeds 1860s"
+    )
 
 
 async def test_autoscaler_uses_persisted_task_duration_settings_on_next_evaluate():
@@ -421,7 +546,10 @@ async def test_autoscaler_uses_persisted_task_duration_settings_on_next_evaluate
     assert decision["action"] == "scale_up"
     assert decision["estimated_pending_work_seconds"] == 1220
     assert decision["estimated_clear_time_seconds"] == 1220
-    assert decision["reason"] == "scale_up: estimated clear time 1220s exceeds 1200s"
+    assert (
+        decision["reason"]
+        == "scale_up: estimated non-low-trust clear time 1220s exceeds 1200s"
+    )
 
 
 async def test_autoscaler_holds_paused_profile_without_scaling():
@@ -591,6 +719,38 @@ async def test_autoscaler_scales_up_when_backlog_has_no_accepting_workers():
     assert calls[0]["profile"] == "image_to_video"
 
 
+async def test_autoscaler_holds_low_trust_only_backlog_without_accepting_workers():
+    calls = []
+
+    async def start_add(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("should not start add")
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=InMemoryRunPodAutoscalerStateStore(),
+        status_payload=_status(
+            profile="image_to_video",
+            pending=5,
+            wait=10,
+            non_low_trust_clear_pending_count_by_task_type={},
+        ),
+        workers_payload=_workers(),
+        operations_payload={"operations": []},
+        start_add_func=start_add,
+        now_func=lambda: 1000.0,
+    )
+
+    decision = {item["profile"]: item for item in payload["decisions"]}[
+        "image_to_video"
+    ]
+    assert decision["action"] == "hold"
+    assert decision["capacity_status"] == "no_non_low_trust_backlog"
+    assert decision["reason"] == "hold: no non-low-trust backlog"
+    assert calls == []
+
+
 async def test_autoscaler_restarts_runpod_after_persistent_fault():
     calls = []
 
@@ -732,6 +892,10 @@ async def test_autoscaler_executes_at_most_one_scale_up_per_round():
         if detail["profile"] == "scail2":
             detail["pending_count"] = 10
             detail["pending_count_by_task_type"] = {"scail2_action_transfer": 10}
+            detail["non_low_trust_clear_pending_count"] = 10
+            detail["non_low_trust_clear_pending_count_by_task_type"] = {
+                "scail2_action_transfer": 10
+            }
             detail["max_pending_wait_seconds"] = 10
             detail["pending_wait_records"] = [{"wait_seconds": 10, "priority": 1}]
 

@@ -57,6 +57,12 @@ type RunPodAutoscalerDecision = {
   max_pending_wait_seconds?: number | null
   clear_time_threshold_seconds?: number
   estimated_clear_time_seconds?: number | null
+  estimated_non_low_trust_clear_time_seconds?: number | null
+  estimated_non_low_trust_pending_work_seconds?: number
+  estimated_total_pending_work_seconds?: number
+  non_low_trust_clear_pending_count?: number
+  non_low_trust_clear_pending_count_by_task_type?: Record<string, number>
+  last_non_low_trust_pending_queue_index?: number | null
   capacity_status?: string
   runpod_count?: number
   total_accepting_count?: number

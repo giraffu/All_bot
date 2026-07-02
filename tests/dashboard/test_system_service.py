@@ -1,4 +1,5 @@
 import sys
+from datetime import datetime, timedelta
 from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -461,6 +462,98 @@ async def test_get_pending_queue_wait_details_does_not_default_to_non_low_trust_
 
 
 @pytest.mark.asyncio
+async def test_runpod_profile_queue_details_count_tasks_until_last_non_low_trust_pending():
+    active_tasks = {
+        "txt2img-task": {"task_type": "txt2img"},
+        "face-swap-task": {"task_type": "face_swap"},
+    }
+    pending_wait_details = {
+        "t2i-pornmaster-turbo": {
+            "pending_count": 3,
+            "max_pending_wait_seconds": 300,
+            "max_non_low_trust_pending_wait_seconds": 200,
+            "pending_queue_records": [
+                {
+                    "queue_index": 0,
+                    "execution_type": "t2i-pornmaster-turbo",
+                    "is_non_low_trust": False,
+                },
+                {
+                    "queue_index": 3,
+                    "execution_type": "t2i-pornmaster-turbo",
+                    "is_non_low_trust": True,
+                },
+                {
+                    "queue_index": 5,
+                    "execution_type": "t2i-pornmaster-turbo",
+                    "is_non_low_trust": False,
+                },
+            ],
+        },
+        "face_swap": {
+            "pending_count": 2,
+            "max_pending_wait_seconds": 250,
+            "max_non_low_trust_pending_wait_seconds": 100,
+            "pending_queue_records": [
+                {
+                    "queue_index": 2,
+                    "execution_type": "face_swap",
+                    "is_non_low_trust": False,
+                },
+                {
+                    "queue_index": 4,
+                    "execution_type": "face_swap",
+                    "is_non_low_trust": True,
+                },
+            ],
+        },
+        "image_to_video": {
+            "pending_count": 1,
+            "max_pending_wait_seconds": 400,
+            "max_non_low_trust_pending_wait_seconds": 400,
+            "pending_queue_records": [
+                {
+                    "queue_index": 1,
+                    "execution_type": "image_to_video",
+                    "is_non_low_trust": True,
+                },
+            ],
+        },
+    }
+
+    data = await system_service.get_system_status_proxy_payload(
+        httpx_async_client_factory=lambda **_kwargs: _FakeAsyncClient(
+            {
+                "queue_size": 0,
+                "queue_by_type": {},
+                "active_workers": 1,
+                "healthy_workers": 1,
+                "comfy_online": True,
+            }
+        ),
+        get_system_task_stats_func=AsyncMock(return_value=(active_tasks, {})),
+        get_pending_queue_wait_details_func=AsyncMock(
+            return_value=pending_wait_details
+        ),
+    )
+
+    profiles = {item["profile"]: item for item in data["runpod_profile_queue_details"]}
+    i2i_profile = profiles["i2i_pro"]
+
+    assert i2i_profile["pending_count"] == 5
+    assert i2i_profile["last_non_low_trust_pending_queue_index"] == 4
+    assert i2i_profile["non_low_trust_clear_pending_count"] == 4
+    assert i2i_profile["non_low_trust_clear_pending_count_by_task_type"] == {
+        "t2i-pornmaster-turbo": 2,
+        "face_swap": 2,
+    }
+    assert "pending_queue_records" not in data["queue_by_type_details"][
+        "t2i-pornmaster-turbo"
+    ]
+    assert profiles["image_to_video"]["non_low_trust_clear_pending_count"] == 1
+
+
+@pytest.mark.asyncio
 async def test_get_system_status_proxy_payload_uses_active_task_registry_counts():
     middleware_payload = {
         "queue_size": 71,
@@ -667,6 +760,9 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
         },
         "max_pending_wait_seconds": 901,
         "max_non_low_trust_pending_wait_seconds": 700,
+        "non_low_trust_clear_pending_count": 0,
+        "non_low_trust_clear_pending_count_by_task_type": {},
+        "last_non_low_trust_pending_queue_index": None,
         "oldest_pending_task_id": "pending-face-swap",
         "oldest_pending_created_at": 1782050000.0,
         "pending_wait_records": [],
@@ -781,6 +877,58 @@ async def test_sync_user_concurrency_payload_repairs_excess_lock():
 
     assert result["status"] == "success"
     sync_func.assert_awaited_once_with(123, 1)
+
+
+@pytest.mark.asyncio
+async def test_get_concurrency_stats_payload_includes_effective_identity_limits():
+    now = datetime.now()
+
+    result = await system_service.get_concurrency_stats_payload(
+        get_system_task_stats_func=AsyncMock(
+            return_value=(
+                {
+                    "task-1": {"user_id": 123, "username": "task-name"},
+                    "task-2": {"user_id": 456},
+                },
+                {123: 2, 456: 1, 789: 4},
+            )
+        ),
+        session_factory=lambda: _FakeDbSession(
+            [
+                SimpleNamespace(
+                    id=123,
+                    username="db-name",
+                    current_identity="核心弟子",
+                    identity_expire_at=now + timedelta(days=1),
+                ),
+                SimpleNamespace(
+                    id=456,
+                    username="expired-user",
+                    current_identity="真传弟子",
+                    identity_expire_at=now - timedelta(days=1),
+                ),
+                SimpleNamespace(
+                    id=789,
+                    username="lifetime-user",
+                    current_identity="内门弟子",
+                    identity_expire_at=None,
+                ),
+            ]
+        ),
+    )
+
+    rows = {row["user_id"]: row for row in result["data"]}
+
+    assert rows[123]["username"] == "task-name"
+    assert rows[123]["current_identity"] == "核心弟子"
+    assert rows[123]["effective_identity"] == "核心弟子"
+    assert rows[123]["max_concurrent_tasks"] == 8
+    assert rows[456]["current_identity"] == "真传弟子"
+    assert rows[456]["effective_identity"] == "外门弟子"
+    assert rows[456]["max_concurrent_tasks"] == 3
+    assert rows[789]["current_identity"] == "内门弟子"
+    assert rows[789]["effective_identity"] == "内门弟子"
+    assert rows[789]["max_concurrent_tasks"] == 5
 
 
 @pytest.mark.asyncio

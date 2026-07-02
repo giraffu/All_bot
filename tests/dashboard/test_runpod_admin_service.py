@@ -915,7 +915,9 @@ async def test_autoscaler_recovery_operations_build_slot_scoped_operations():
 async def test_autoscaler_add_operation_uses_bootstrap_timeout():
     operation = await runpod_admin_service.start_runpod_autoscaler_add_operation(
         profile="img2img",
-        trigger_reason="scale_up: estimated clear time 1300s exceeds 1200s",
+        trigger_reason=(
+            "scale_up: estimated non-low-trust clear time 1300s exceeds 1200s"
+        ),
         spawn_task_func=_discard_operation_coroutine,
     )
 

@@ -1,6 +1,6 @@
 version: 1
 managed_by: allbot-lan-aio-operator
-last_verified_at: "2026-07-02T12:23:39Z"
+last_verified_at: "2026-07-02T16:00:06Z"
 sources:
   slot_catalog: ops/gpu_pool_controller/config/lan_aio_prod_slots.yml
   profile_catalog: ops/gpu_pool_controller/config/task_profiles.yml
@@ -131,15 +131,15 @@ nodes:
       - gpu_index: 0
         hardware: NVIDIA GeForce RTX 4090 48G
         current:
-          profile: pornmaster_flux2_edit
-          slot_id: gpu-252-gpu0-pornmaster_flux2_edit
-          agent_id: lan_aio_prod_gpu252_gpu0_pornmaster_flux2_edit_01
-          container_name: allbot-lan-aio-gpu-252-gpu0-pornmaster-flux2-edit-prod
+          profile: image_to_video
+          slot_id: gpu-252-gpu0-image_to_video
+          agent_id: lan_aio_prod_gpu252_gpu0_image_to_video_01
+          container_name: allbot-lan-aio-gpu-252-gpu0-image_to_video-prod
           host_port: 8192
           state: running
-          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-pornmaster-flux2-edit:20260628-pornmaster-flux2-edit-cu128-smallvae1
-          model_manifest_key: pornmaster_flux2_edit/2026-06-27/manifest.json
-          workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/pornmaster_flux2_edit/workspace
+          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd
+          model_manifest_key: image_to_video/2026-06-13-test/manifest.json
+          workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/image_to_video/workspace
         cached_profiles:
           - profile: pornmaster_flux2_edit
             cache_state: ready
@@ -150,17 +150,15 @@ nodes:
             model_manifest_key: img2img_lora/2026-06-10/manifest.json
             workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/img2img_lora/workspace
           - profile: image_to_video
-            cache_state: missing
+            cache_state: ready
             model_manifest_key: image_to_video/2026-06-13-test/manifest.json
             workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/image_to_video/workspace
         fast_switch_candidates:
-          - slot_id: gpu-252-gpu0-img2img_lora
-            profile: img2img_lora
+          - slot_id: gpu-252-gpu0-pornmaster_flux2_edit
+            profile: pornmaster_flux2_edit
             cache_state: ready
-          - slot_id: gpu-252-gpu0-image_to_video
-            profile: image_to_video
-            cache_state: missing
         blocked_profiles: []
+        notes: Switched from PornMaster Flux2 edit to image_to_video on 2026-07-02 with scripts/lan_aio_fleet_prod_ops.py takeover. Startup validation showed the image_to_video container healthy, model cache ready, Central runtime_profile image_to_video, and immediate live image_to_video intake. Live tasks 03294dd7-d552-4615-892a-aa77f5f60a0a, fb40f1f4-4ed6-4e33-84c4-d2e8e7cdf4f7, and 983edb91-53ad-4122-8c86-885d3ff0ece8 completed, uploaded two assets each via sidecar, and posted /complete 200; keep PornMaster as the same-card rollback candidate.
       - gpu_index: 1
         hardware: removed RTX 4090
         current:

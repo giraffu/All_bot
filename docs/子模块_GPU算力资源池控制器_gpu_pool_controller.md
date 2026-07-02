@@ -546,12 +546,17 @@ Dashboard 入口不重写 RunPod provider 逻辑，只异步调用 `scripts/runp
 Dashboard 后端的 RunPod autoscaler 只复用上述安全入口，不直接调用 RunPod API。正式启用时
 `DASHBOARD_RUNPOD_AUTOSCALER_ENABLED=true`，后台循环默认每 60 秒读取
 `/api/system/status.runpod_profile_queue_details` 与 `/api/system/workers`：某 profile
-排队数大于 0 且预计清空时间超过该 profile 清空阈值时，若该 profile 当前 RunPod 数小于
+存在已知非低信任 pending，且预计非低信任用户清空时间超过该 profile 清空阈值时，若该 profile 当前 RunPod 数小于
 `DASHBOARD_RUNPOD_AUTOSCALER_MAX_RUNPODS_PER_PROFILE`（默认 5）且没有同 profile 未完成 operation，
 则每轮最多提交一次
 `add --count 1 --retry-unavailable --max-attempts 100 --retry-interval 30 --worker-timeout 2400 --execute`。
-预计清空时间按静态单任务耗时估算：`pending_work_seconds=sum(pending_count_by_task_type * task_duration_seconds)`，
-再加 running worker 的预计剩余秒数后除以 RunPod + 本地健康 enabled 可接单 worker 数；有 backlog
+预计非低信任用户清空时间按静态单任务耗时估算：先用 `non_low_trust_clear_pending_count_by_task_type`
+统计 Central pending 队列中清到最后一个已知非低信任任务所需的同 profile 前缀任务数，再计算
+`pending_work_seconds=sum(non_low_trust_clear_pending_count_by_task_type * task_duration_seconds)`，
+再加 running worker 的预计剩余秒数后除以 RunPod + 本地健康 enabled 可接单 worker 数；总
+`pending_count_by_task_type` 只保留为 `estimated_total_pending_work_seconds` 观测对照，不参与扩容判定。
+若某 profile 只有低信任或未知用户 pending，则记录 `hold: no non-low-trust backlog`，不会因总 pending
+或总预计清空时间扩容。有非低信任 backlog
 但无可接单 worker 时标记 `capacity_status=no_accepting_workers`，允许扩容。清空阈值默认按 profile
 生效：`img2img=20 分钟`、`scail2=40 分钟`，其它正式 profile
 （`image_to_video`、`wan22_video_v2`、`i2i_pro`、`ltx_video`）为 `30 分钟`；
@@ -580,9 +585,9 @@ autoscaler 会优先自愈正式 RunPod worker：`status=error|quarantined` 且 
 restart、等待健康 heartbeat，再恢复 enabled 接单。本地 worker 只参与容量保底，不会被 autoscaler
 启停。autoscaler 必须拿到 Redis leader lease 才执行 mutation；拿不到 Redis/leader 或系统快照失败时
 只记录 hold/error。管理弹窗的 `/api/runpod/autoscaler` 与 `/api/runpod/autoscaler/control`
-可查看 `scale_up: estimated clear time ...`、`restart: runpod fault persisted ...`、
+可查看 `scale_up: estimated non-low-trust clear time ...`、`restart: runpod fault persisted ...`、
 `enable: runpod paused worker available`、`replace: previous runpod bootstrap timed out ...`、
-`hold: runpod add still bootstrapping Ns`、`hold: no backlog`、`hold: max runpod capacity reached`、
+`hold: runpod add still bootstrapping Ns`、`hold: no non-low-trust backlog`、`hold: no backlog`、`hold: max runpod capacity reached`、
 `hold: profile autoscaler paused`、`hold: minimum lifetime remaining Ns` 等决策并紧急暂停/恢复。
 
 `down` 删除已有 Pod 的 preflight 只做 RunPod key、Pod 列表、reconcile 与 Central health 检查，不渲染 create pod request，因此不会因缺少 `RUNPOD_IMAGE_NAME_I2I_PRO` / `RUNPOD_IMAGE_NAME_SCAIL2` / `RUNPOD_IMAGE_NAME_LTX_VIDEO` 这类创建镜像配置而阻断删除；`up` / `add` / `render` / `canary` 仍必须具备目标 profile 的正式镜像与模型配置。

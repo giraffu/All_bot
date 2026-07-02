@@ -75,6 +75,8 @@ class PromptNearGraphConfig:
     lower_bound: float = DEFAULT_NEAR_GRAPH_LOWER_BOUND
     max_neighbors: int = DEFAULT_NEAR_GRAPH_MAX_NEIGHBORS
     task_type: str | None = None
+    batch_insert_size: int = 5000
+    progress_interval: int = 10000
 
 
 @dataclass(frozen=True)
@@ -497,13 +499,14 @@ def search_result_may_be_truncated(*, returned_neighbor_count: int, max_neighbor
     )
 
 
-def _edge_rows_for_task(
+def _edge_row_batches_for_task(
     task_type: str,
     prompts: list[EmbeddedPrompt],
     config: PromptNearGraphConfig,
-) -> tuple[list[tuple[Any, ...]], int]:
+) -> Any:
     if len(prompts) < 2:
-        return [], 0
+        yield [], len(prompts), 0, True
+        return
     try:
         from usearch.index import Index
     except ImportError as exc:
@@ -549,6 +552,9 @@ def _edge_rows_for_task(
                     round(float(similarity), 6),
                 )
             )
+            if len(rows) >= config.batch_insert_size:
+                yield rows, source_pos + 1, possible_truncated, False
+                rows = []
         if search_result_may_be_truncated(
             returned_neighbor_count=neighbor_rank,
             max_neighbors=config.max_neighbors,
@@ -556,7 +562,10 @@ def _edge_rows_for_task(
             lower_bound=config.lower_bound,
         ):
             possible_truncated += 1
-    return rows, possible_truncated
+        if (source_pos + 1) % config.progress_interval == 0:
+            yield rows, source_pos + 1, possible_truncated, False
+            rows = []
+    yield rows, len(prompts), possible_truncated, True
 
 
 async def refresh_prompt_near_graph_edges(conn: Any, config: PromptNearGraphConfig) -> dict[str, Any]:
@@ -606,10 +615,45 @@ async def refresh_prompt_near_graph_edges(conn: Any, config: PromptNearGraphConf
             PROMPT_NORMALIZATION_VERSION,
             task_type,
         )
-        rows, task_truncated = await asyncio.to_thread(_edge_rows_for_task, task_type, prompts, config)
+        task_truncated = 0
+        candidate_edge_rows = 0
+        for rows, processed_count, task_truncated, done in _edge_row_batches_for_task(task_type, prompts, config):
+            if rows:
+                candidate_edge_rows += len(rows)
+                await conn.executemany(insert_sql, rows)
+            should_report = done or (
+                processed_count > 0
+                and processed_count % config.progress_interval == 0
+            )
+            if should_report:
+                await set_near_graph_state(
+                    conn,
+                    config.model_id,
+                    {
+                        "current_task_type": task_type,
+                        "current_task_processed": processed_count,
+                        "current_task_total": len(prompts),
+                        "current_task_candidate_edge_rows": candidate_edge_rows,
+                        "possible_truncated_count": possible_truncated_count + task_truncated,
+                        "progress_updated_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                )
+                print(
+                    json.dumps(
+                        {
+                            "status": "progress",
+                            "task_type": task_type,
+                            "processed": processed_count,
+                            "total": len(prompts),
+                            "candidate_edge_rows": candidate_edge_rows,
+                            "possible_truncated_count": possible_truncated_count + task_truncated,
+                        },
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    flush=True,
+                )
         possible_truncated_count += task_truncated
-        for start in range(0, len(rows), 5000):
-            await conn.executemany(insert_sql, rows[start : start + 5000])
         count_row = await conn.fetchrow(
             """
             select count(*)::bigint as count
@@ -623,6 +667,19 @@ async def refresh_prompt_near_graph_edges(conn: Any, config: PromptNearGraphConf
             task_type,
         )
         task_counts[task_type] = int(count_row["count"] or 0)
+        print(
+            json.dumps(
+                {
+                    "status": "task_done",
+                    "task_type": task_type,
+                    "edge_count": task_counts[task_type],
+                    "possible_truncated_count": possible_truncated_count,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+            flush=True,
+        )
 
     edge_count = sum(task_counts.values())
     seconds = round(time.monotonic() - started, 2)
@@ -658,6 +715,8 @@ def prompt_near_graph_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--data-dir", default=os.getenv("LOCAL_ANALYTICS_VECTOR_DATA_DIR", DEFAULT_VECTOR_DATA_DIR))
     parser.add_argument("--lower-bound", type=float, default=DEFAULT_NEAR_GRAPH_LOWER_BOUND)
     parser.add_argument("--max-neighbors", type=int, default=DEFAULT_NEAR_GRAPH_MAX_NEIGHBORS)
+    parser.add_argument("--batch-insert-size", type=int, default=5000)
+    parser.add_argument("--progress-interval", type=int, default=10000)
     parser.add_argument("--task-type", default=None)
     parser.add_argument("--statement-timeout-ms", type=int, default=3_600_000)
     return parser
@@ -671,6 +730,8 @@ def config_from_args(args: argparse.Namespace) -> PromptNearGraphConfig:
         lower_bound=max(0.0, min(1.0, float(args.lower_bound))),
         max_neighbors=max(1, int(args.max_neighbors)),
         task_type=(args.task_type or "").strip() or None,
+        batch_insert_size=max(1, int(args.batch_insert_size)),
+        progress_interval=max(1, int(args.progress_interval)),
     )
 
 

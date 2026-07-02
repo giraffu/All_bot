@@ -71,7 +71,7 @@ RUNPOD_MODEL_MANIFEST_KEY=img2img_lora/2026-06-10/manifest.json
 | `RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT` / `RUNPOD_USE_TEMPLATE_PORNMASTER_FLUX2_EDIT` | 创建/render/canary 前必须显式配置，镜像须以 `ghcr.io/giraffu/allbot-comfy-runpod-pornmaster-flux2-edit:` 开头 / `false` | 正式 `pornmaster_flux2_edit` 自由P图 v2 RunPod 创建、render 与 canary 所需镜像；删除已有 Pod 不依赖该创建镜像配置 |
 | `RUNPOD_MODEL_BUCKET` / `RUNPOD_MODEL_PREFIX` / `RUNPOD_MODEL_MANIFEST_KEY` | `allbot-model-cache` + profile-specific manifest | 手动正式 RunPod `img2img` 使用 `img2img_lora/2026-06-10/manifest.json`；`image_to_video` 使用 `image_to_video/2026-06-13-test/manifest.json`；`wan22_video_v2` 使用 `wan22_video_v2/2026-06-13-test/manifest.json`；`i2i_pro` 使用 `i2i_pro/2026-06-14-test/manifest.json`；`scail2` 使用 `scail2/2026-06-17-test/manifest.json`；`ltx_video` 使用 `ltx_video/2026-06-10/manifest.json`；`pornmaster_flux2_edit` 使用 `pornmaster_flux2_edit/2026-06-27/manifest.json` |
 | `RUNPOD_MODEL_ACCESS_KEY_REF` / `RUNPOD_MODEL_SECRET_KEY_REF` | `{{ RUNPOD_SECRET_allbot_model_cache_r2_access_key }}` / `{{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}` | RunPod Pod 同步 `allbot-model-cache` 的 secret 引用，可与云测试共用模型缓存 secret |
-| `DASHBOARD_RUNPOD_AUTOSCALER_ENABLED` / `DASHBOARD_RUNPOD_AUTOSCALER_MODE` | 云正式 Dashboard Backend compose 默认 `true` / `execute`，可由 `.env.cloud.prod` 覆盖 | 启用 Dashboard 后端 RunPod 自动管理；后台按预计清空时间阈值调用现有 `add` / `down` operation，不直接操作本地 worker |
+| `DASHBOARD_RUNPOD_AUTOSCALER_ENABLED` / `DASHBOARD_RUNPOD_AUTOSCALER_MODE` | 云正式 Dashboard Backend compose 默认 `true` / `execute`，可由 `.env.cloud.prod` 覆盖 | 启用 Dashboard 后端 RunPod 自动管理；后台按预计非低信任用户清空时间阈值调用现有 `add` / `down` operation，不直接操作本地 worker |
 | `DASHBOARD_RUNPOD_AUTOSCALER_*` 阈值 | 默认清空阈值按 profile：`img2img=20m`、`scail2=40m`、其它正式 profile `30m`；缩容等待 `60s`、冷却 `600s`、每 profile 最多 `5` 台 RunPod、heartbeat 新鲜度 `300s`、autoscaler RunPod 最短生命周期 `1800s` | 自动管理安全边界；只统计健康 enabled 可接单 worker，缩容只在 `pending_count == 0` 时考虑，保底为 RunPod + 本地可接单总容量至少 1；Dashboard 表格保存的 profile 级清空阈值和 task duration 会写入 Redis 并在下一轮评估生效 |
 | `GITHUB_TOKEN` / `GHCR_TOKEN` / `all-github-token` | `.env.cloud.prod` 可保存真实值作为人工密钥来源 | 只用于本机 `docker login ghcr.io`、GHCR push 或 GitHub package 管理；不属于云正式服务容器运行时变量，不进入 RunPod Pod env |
 
@@ -293,9 +293,12 @@ curl -fsS http://100.107.220.127:8086/api/health
 Dashboard RunPod 管理入口当前支持 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、
 `scail2 / 视频生视频` 与 `ltx_video / 高级图生视频`；它只提交正式 RunPod 池新增/暂停/删除操作，不直接启停其它正式服务。
 Dashboard 后端 RunPod autoscaler 默认随正式 `dashboard-backend-prod` 启动，只有拿到 Redis leader
-lease 后才会自动执行：有排队且预计清空时间超过该 profile 清空阈值时，提交至多一次
-`add --count 1 --retry-unavailable --worker-timeout 2400`；有 backlog 但没有健康 enabled 可接单 worker 时也允许扩容。
-预计清空时间按 `pending_work_seconds + running_remaining_seconds` 除以 RunPod + 本地可接单 worker 数估算；
+lease 后才会自动执行：有已知非低信任 pending 且预计非低信任用户清空时间超过该 profile 清空阈值时，提交至多一次
+`add --count 1 --retry-unavailable --worker-timeout 2400`；有非低信任 backlog 但没有健康 enabled 可接单 worker 时也允许扩容。
+预计非低信任用户清空时间按 `non_low_trust_clear_pending_count_by_task_type` 对应的
+`pending_work_seconds + running_remaining_seconds` 除以 RunPod + 本地可接单 worker 数估算；总 pending
+工作量只作为 `estimated_total_pending_work_seconds` 观测对照，不触发扩容。只有低信任或未知用户 pending 时显示
+`hold: no non-low-trust backlog`。
 静态单任务耗时默认 `img2img/img2img_lora=13s`、`image_to_video/wan22_video_v2=60s`、
 `i2i_pro/t2i-pornmaster-turbo/face_swap=12s`、`scail2_action_transfer/scail2_video_replacement=300s`、
 `ltx_video/ltx_video_flf2v/ltx_video_v2v_audio=120s`、unknown `100s`。缩容只在 `pending_count == 0` 且
@@ -317,10 +320,10 @@ RunPod `restart` 会先 disabled、调用 RunPod 原生 restart、等待健康 h
 同表格中 `autoscaler_enabled=true` 行的“自动管理”按钮通过 `profile_autoscaler_paused_by_profile` 暂停/恢复单个 profile 的 autoscaler，
 暂停后该 profile 直接显示 `hold: profile autoscaler paused`，不会自动 add/down/restart/enable，
 不影响其它 profile，也不改变现有 worker 接单状态。
-Dashboard 决策会展示 `scale_up: estimated clear time ... exceeds ...`、
+Dashboard 决策会展示 `scale_up: estimated non-low-trust clear time ... exceeds ...`、
 `restart: runpod fault persisted ...`、`enable: runpod paused worker available`、
 `replace: previous runpod bootstrap timed out ...`、`hold: runpod add still bootstrapping Ns`、
-`hold: estimated clear time within threshold`、`hold: no backlog`、`hold: max runpod capacity reached`、
+`hold: estimated non-low-trust clear time within threshold`、`hold: no non-low-trust backlog`、`hold: no backlog`、`hold: max runpod capacity reached`、
 `hold: bootstrap replacement limit reached`、`hold: profile autoscaler paused`、
 `hold: minimum lifetime remaining Ns` 这类原因，
 便于区分真实容量不足、RunPod 自愈、启动换机、无排队和生命周期保护。

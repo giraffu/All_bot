@@ -31,14 +31,14 @@ vi.mock('../api/api', () => ({
       {
         profile: 'img2img',
         action: 'scale_up',
-        reason: 'scale_up: estimated clear time 1900s exceeds 1800s',
+        reason: 'scale_up: estimated non-low-trust clear time 1900s exceeds 1800s',
         estimated_clear_time_seconds: 1900,
         capacity_status: 'ok',
       },
       {
         profile: 'i2i_pro',
         action: 'hold',
-        reason: 'hold: estimated clear time within threshold',
+        reason: 'hold: estimated non-low-trust clear time within threshold',
       },
       {
         profile: 'scail2',
@@ -145,14 +145,14 @@ describe('RunPodCapacityManager', () => {
         {
           profile: 'img2img',
           action: 'scale_up',
-          reason: 'scale_up: estimated clear time 1900s exceeds 1800s',
+          reason: 'scale_up: estimated non-low-trust clear time 1900s exceeds 1800s',
           estimated_clear_time_seconds: 1900,
           capacity_status: 'ok',
         },
         {
           profile: 'i2i_pro',
           action: 'hold',
-          reason: 'hold: estimated clear time within threshold',
+          reason: 'hold: estimated non-low-trust clear time within threshold',
         },
         {
           profile: 'scail2',
@@ -194,7 +194,7 @@ describe('RunPodCapacityManager', () => {
           action: 'add',
           profile: 'img2img',
           source: 'autoscaler',
-          trigger_reason: 'scale_up: estimated clear time 1900s exceeds 1800s',
+          trigger_reason: 'scale_up: estimated non-low-trust clear time 1900s exceeds 1800s',
           status: 'running',
           requested_count: 1,
         },
@@ -215,7 +215,7 @@ describe('RunPodCapacityManager', () => {
     expect(wrapper.text()).toContain('扩容')
     expect(wrapper.text()).toContain('重启')
     expect(wrapper.text()).toContain('开启')
-    expect(wrapper.text()).toContain('scale_up: estimated clear time 1900s exceeds 1800s')
+    expect(wrapper.text()).toContain('scale_up: estimated non-low-trust clear time 1900s exceeds 1800s')
     expect(wrapper.text()).toContain('restart: runpod fault persisted 350s')
     expect(wrapper.text()).toContain('enable: runpod paused worker available')
     expect(wrapper.text()).toContain('自动')
