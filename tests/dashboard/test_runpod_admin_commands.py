@@ -109,46 +109,17 @@ def test_lan_aio_control_command_uses_prod_fleet_helper(monkeypatch, tmp_path):
     assert "--execute" in command
 
 
-def test_lan_aio_action_command_supports_warm_cache(monkeypatch, tmp_path):
+def test_lan_aio_action_command_rejects_slot_management_actions(tmp_path):
     builder = RunPodAdminCommandBuilder(project_root=tmp_path)
-    monkeypatch.setenv("DASHBOARD_RUNPOD_CONTAINER_ENV_FILE", str(tmp_path / "env"))
 
-    command = builder.lan_aio_action_command(
-        "warm-cache",
-        "gpu-252-gpu0-pornmaster_flux2_edit",
-    )
+    for action in ("warm-cache", "takeover", "recover", "preflight"):
+        with pytest.raises(ValueError) as exc_info:
+            builder.lan_aio_action_command(
+                action,
+                "gpu-002-gpu1-pornmaster_flux2_edit",
+            )
 
-    assert command[:3] == [
-        "python3",
-        str(tmp_path / "scripts" / "lan_aio_fleet_prod_ops.py"),
-        "warm-cache",
-    ]
-    assert command[command.index("--slot") + 1] == (
-        "gpu-252-gpu0-pornmaster_flux2_edit"
-    )
-    assert "--include-disabled" in command
-    assert "--execute" in command
-
-
-def test_lan_aio_action_command_supports_takeover(monkeypatch, tmp_path):
-    builder = RunPodAdminCommandBuilder(project_root=tmp_path)
-    monkeypatch.setenv("DASHBOARD_RUNPOD_CONTAINER_ENV_FILE", str(tmp_path / "env"))
-
-    command = builder.lan_aio_action_command(
-        "takeover",
-        "gpu-002-gpu1-pornmaster_flux2_edit",
-    )
-
-    assert command[:3] == [
-        "python3",
-        str(tmp_path / "scripts" / "lan_aio_fleet_prod_ops.py"),
-        "takeover",
-    ]
-    assert command[command.index("--slot") + 1] == (
-        "gpu-002-gpu1-pornmaster_flux2_edit"
-    )
-    assert "--include-disabled" in command
-    assert "--execute" in command
+        assert f"unsupported LAN AIO action: {action}" in str(exc_info.value)
 
 
 def test_lan_aio_action_command_can_run_on_lan_runner_over_ssh(monkeypatch, tmp_path):
@@ -163,10 +134,7 @@ def test_lan_aio_action_command_can_run_on_lan_runner_over_ssh(monkeypatch, tmp_
     monkeypatch.delenv("DASHBOARD_LAN_AIO_RUNNER_AIO_ENV_FILE", raising=False)
     monkeypatch.delenv("DASHBOARD_LAN_AIO_RUNNER_MODEL_ENV_FILE", raising=False)
 
-    command = builder.lan_aio_action_command(
-        "takeover",
-        "gpu-002-gpu1-pornmaster_flux2_edit",
-    )
+    command = builder.lan_aio_restart_command("gpu-002-gpu1-pornmaster_flux2_edit")
 
     assert command[:10] == [
         "ssh",
@@ -193,7 +161,7 @@ def test_lan_aio_action_command_can_run_on_lan_runner_over_ssh(monkeypatch, tmp_
     ]
     assert remote_script[4:7] == [
         "/home/hfy/APP/All_bot/scripts/lan_aio_fleet_prod_ops.py",
-        "takeover",
+        "restart-aio",
         "--slot",
     ]
     assert "gpu-002-gpu1-pornmaster_flux2_edit" in remote_script
@@ -212,7 +180,7 @@ def test_lan_aio_action_command_requires_runner_host_for_ssh_mode(
     monkeypatch.delenv("DASHBOARD_LAN_AIO_RUNNER_HOST", raising=False)
 
     with pytest.raises(HTTPException) as exc_info:
-        builder.lan_aio_action_command("takeover", "gpu-002-gpu1-pornmaster_flux2_edit")
+        builder.lan_aio_restart_command("gpu-002-gpu1-pornmaster_flux2_edit")
 
     assert exc_info.value.status_code == 503
     assert "LAN AIO runner host is not configured" in exc_info.value.detail
@@ -243,8 +211,8 @@ def test_lan_aio_runner_command_exports_configured_proxy_env(
         "127.0.0.1,localhost,192.168.1.115,192.168.1.2",
     )
 
-    command = builder.lan_aio_action_command(
-        "preflight",
+    command = builder.lan_aio_control_command(
+        "enable-aio",
         "gpu-002-gpu1-pornmaster_flux2_edit",
     )
 

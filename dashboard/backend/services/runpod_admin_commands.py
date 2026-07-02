@@ -218,12 +218,6 @@ class RunPodAdminCommandBuilder:
         ]
         if "--slot" in command:
             remote_args.extend(["--slot", command[command.index("--slot") + 1]])
-        if "--physical-slot" in command:
-            remote_args.extend(
-                ["--physical-slot", command[command.index("--physical-slot") + 1]]
-            )
-        if "--prefer" in command:
-            remote_args.extend(["--prefer", command[command.index("--prefer") + 1]])
         if "--include-disabled" in command:
             remote_args.append("--include-disabled")
         remote_args.extend(
@@ -238,14 +232,6 @@ class RunPodAdminCommandBuilder:
         )
         if "--execute" in command:
             remote_args.append("--execute")
-        if "--replace-slot" in command:
-            remote_args.extend(
-                ["--replace-slot", command[command.index("--replace-slot") + 1]]
-            )
-        if "--failure-policy" in command:
-            remote_args.extend(
-                ["--failure-policy", command[command.index("--failure-policy") + 1]]
-            )
         remote_command = " && ".join(
             [
                 *self.lan_aio_runner_env_exports(),
@@ -258,22 +244,6 @@ class RunPodAdminCommandBuilder:
             self.lan_aio_runner_host(),
             f"bash -lc {shlex.quote(remote_command)}",
         ]
-
-    def lan_aio_status_command(self, *, include_disabled: bool = False) -> list[str]:
-        command = [
-            "python3",
-            self.lan_aio_ops_script(),
-            "status",
-            "--prod-env-file",
-            self.lan_aio_prod_env_file(),
-            "--aio-env-file",
-            self.lan_aio_aio_env_file(),
-            "--model-env-file",
-            self.lan_aio_model_env_file(),
-        ]
-        if include_disabled:
-            command.append("--include-disabled")
-        return self.wrap_lan_aio_runner_command(command)
 
     def base_command(
         self,
@@ -309,26 +279,8 @@ class RunPodAdminCommandBuilder:
         self,
         action: str,
         slot_id: str,
-        *,
-        replacement_target_slot_id: str | None = None,
-        failure_policy: str | None = None,
-        physical_slot: str | None = None,
-        recover_prefer: str | None = None,
     ) -> list[str]:
-        supported_actions = {
-            "preflight",
-            "pull-image",
-            "warm-cache",
-            "drain-legacy",
-            "wait-idle",
-            "takeover",
-            "stop-old",
-            "start-disabled",
-            "enable-aio",
-            "disable-aio",
-            "restart-aio",
-            "recover",
-        }
+        supported_actions = {"disable-aio", "enable-aio", "restart-aio"}
         if action not in supported_actions:
             raise ValueError(f"unsupported LAN AIO action: {action}")
         command = [
@@ -343,26 +295,9 @@ class RunPodAdminCommandBuilder:
             "--model-env-file",
             self.lan_aio_model_env_file(),
             "--execute",
+            "--slot",
+            slot_id,
         ]
-        if action == "recover":
-            if not physical_slot:
-                raise ValueError("LAN AIO recover requires physical_slot")
-            command.extend(
-                [
-                    "--slot",
-                    slot_id,
-                    "--physical-slot",
-                    physical_slot,
-                    "--prefer",
-                    recover_prefer or "old",
-                ]
-            )
-        else:
-            command.extend(["--slot", slot_id])
-        if action == "takeover":
-            command.extend(["--failure-policy", failure_policy or "auto_rollback"])
-        if replacement_target_slot_id:
-            command.extend(["--replace-slot", replacement_target_slot_id])
         return self.wrap_lan_aio_runner_command(command)
 
     def default_prod_max_manual_slots(self) -> int:
