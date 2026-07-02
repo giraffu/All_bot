@@ -77,7 +77,7 @@ def test_workflow_patcher_overrides_scail2_runtime_parameters(
     assert patched["49"]["inputs"]["frame_rate"] == 16
     assert patched["49"]["inputs"]["filename_prefix"].startswith(f"{task_type}_")
     if task_type == "scail2_action_transfer_long":
-        assert patched["124"]["inputs"]["freenoise"] is False
+        assert patched["124"]["inputs"]["freenoise"] is True
 
 
 def test_workflow_patcher_uses_scail2_default_prompt_when_empty():

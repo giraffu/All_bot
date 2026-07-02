@@ -670,13 +670,13 @@ def _patch_scail2_workflow(
         value=True,
     )
 
-    # FreeNoise can reuse earlier noise blocks and make long motion transfer loop.
+    # Keep FreeNoise enabled for long motion transfer throughput.
     if output_task_prefix == "scail2_action_transfer_long":
         set_node_input(
             workflow,
             node_id=SCAIL2_CONTEXT_WINDOWS_NODE_ID,
             input_name="freenoise",
-            value=False,
+            value=True,
         )
 
 

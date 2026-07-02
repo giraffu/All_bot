@@ -359,7 +359,7 @@
       "context_stride": 1,
       "closed_loop": false,
       "fuse_method": "pyramid",
-      "freenoise": false
+      "freenoise": true
     }
   }
 }

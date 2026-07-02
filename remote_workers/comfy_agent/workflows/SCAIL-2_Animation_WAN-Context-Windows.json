@@ -1429,7 +1429,7 @@
         1,
         false,
         "pyramid",
-        false
+        true
       ],
       "color": "#223",
       "bgcolor": "#335"
