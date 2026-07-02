@@ -13,6 +13,8 @@ const state = {
   promptVectorDetail: null,
   promptNearRepresentatives: null,
   promptNearRepresentativeDetail: null,
+  promptNearGraph: null,
+  promptNearGraphDetail: null,
   promptScenes: null,
   promptSceneDetail: null,
   promptGraph: null,
@@ -25,6 +27,7 @@ const state = {
   selectedPromptSlim: null,
   selectedPromptVectorCluster: null,
   selectedPromptNearRepresentative: null,
+  selectedPromptNearGraphFamily: null,
   selectedPromptScene: null,
   selectedPromptGraphCommunity: null,
   selectedUserGroup: null,
@@ -56,6 +59,7 @@ const state = {
     "prompt-slim": 0,
     "prompt-vectors": 0,
     "prompt-near-representatives": 0,
+    "prompt-near-graph": 0,
     "prompt-scenes": 0,
     "prompt-graph": 0,
     templates: 30,
@@ -105,6 +109,11 @@ const tabs = {
     kicker: "近似代表",
     title: "提示词近似代表阈值实验",
     subtitle: "实时调整相似度阈值，观察代表压缩率和近似组质量",
+  },
+  "prompt-near-graph": {
+    kicker: "近似图",
+    title: "提示词近似聚类族桥接图",
+    subtitle: "按阈值查看守卫式近似族、族间桥接和孤立近似族",
   },
   "prompt-scenes": {
     kicker: "语义场景",
@@ -266,7 +275,7 @@ function syncDaysControl() {
   }
   if (daysControl) daysControl.classList.remove("hidden");
   if (userDateRangeControls) userDateRangeControls.classList.add("hidden");
-  const lockedAllTimeTabs = new Set(["prompt-slim", "prompt-vectors", "prompt-near-representatives", "prompt-scenes", "prompt-graph"]);
+  const lockedAllTimeTabs = new Set(["prompt-slim", "prompt-vectors", "prompt-near-representatives", "prompt-near-graph", "prompt-scenes", "prompt-graph"]);
   const locked = lockedAllTimeTabs.has(state.activeTab);
   select.disabled = locked;
   select.value = String(locked ? 0 : currentDays());
@@ -314,6 +323,8 @@ const tabChartIds = {
   "credit-flow": ["creditFlowTrendChart", "creditDailyCategoryChart", "creditIncomeCategoryChart", "creditExpenseCategoryChart", "creditCompositionIdentityChart", "creditCompositionGroupChart", "creditCompositionChannelChart", "creditCompositionPayerChart", "creditRiskScatterChart"],
   finance: ["financeTrendChart", "financeStatusChart", "financeHourlyChart", "financeChannelChart", "financePlanChart"],
   generation: ["generationTrendChart", "generationQualityFunnelChart", "generationSourceMixChart", "generationWorkerChart", "generationTypeBubbleChart", "generationCompareChart"],
+  "prompt-near-graph": ["promptNearGraphChart"],
+  "prompt-graph": ["promptGraphChart"],
 };
 
 function numeric(value) {
@@ -2389,6 +2400,258 @@ function renderPromptNearRepresentativeDetail() {
   `;
 }
 
+function promptNearGraphThreshold() {
+  const value = Number($("#promptNearGraphThresholdInput")?.value || $("#promptNearGraphThresholdRange")?.value || 0.95);
+  return Math.max(0.90, Math.min(0.99, Number.isFinite(value) ? value : 0.95));
+}
+
+function syncPromptNearGraphThresholdControls(value = promptNearGraphThreshold()) {
+  const threshold = Math.max(0.90, Math.min(0.99, Number(value || 0.95)));
+  const display = threshold.toFixed(3);
+  if ($("#promptNearGraphThresholdRange")) $("#promptNearGraphThresholdRange").value = String(threshold);
+  if ($("#promptNearGraphThresholdInput")) $("#promptNearGraphThresholdInput").value = String(threshold);
+  if ($("#promptNearGraphThresholdValue")) $("#promptNearGraphThresholdValue").textContent = display;
+}
+
+function renderPromptNearGraphFilterOptions() {
+  const select = $("#promptNearGraphTaskTypeSelect");
+  if (select) {
+    const rows = state.promptNearGraph?.available_task_types || state.promptNearGraph?.distributions?.task_type || [];
+    const selected = state.promptNearGraph?.selected_task_type || state.promptNearGraph?.task_type || select.value || rows[0]?.label || "";
+    const seen = new Set();
+    select.innerHTML = rows.map((row) => {
+      const value = row.label || "";
+      if (!value || seen.has(value)) return "";
+      seen.add(value);
+      return `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`;
+    }).join("");
+    if (selected && !seen.has(selected)) {
+      select.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(selected)}">${escapeHtml(selected)}</option>`);
+    }
+    select.value = selected && Array.from(select.options).some((option) => option.value === selected)
+      ? selected
+      : select.options[0]?.value || "";
+  }
+  syncPromptNearGraphThresholdControls(state.promptNearGraph?.model?.threshold || promptNearGraphThreshold());
+}
+
+function renderPromptNearGraphSummary() {
+  const summary = state.promptNearGraph?.summary || {};
+  const model = state.promptNearGraph?.model || {};
+  if (state.promptNearGraph && state.promptNearGraph.ready === false) {
+    $("#promptNearGraphSummary").innerHTML = [
+      metric("近似图状态", "未构建", state.promptNearGraph.message || "等待刷新命令"),
+      metric("阈值", fmtAmount(Number(model.threshold || 0.95)), "可在 0.90-0.99 调整"),
+      metric("族节点", "0", "暂无阈值边"),
+      metric("截断诊断", "0", "等待离线边"),
+    ].join("");
+    return;
+  }
+  $("#promptNearGraphSummary").innerHTML = [
+    metric("已向量化", fmt(summary.embedded_count), `覆盖 ${fmtAmount(summary.embedding_coverage)}%`),
+    metric("阈值边", fmt(summary.threshold_edge_count), `阈值 ${fmtAmount(model.threshold || promptNearGraphThreshold())}`),
+    metric("近似族", fmt(summary.family_count), `图中 ${fmt(summary.graph_node_count)} · 孤立 ${fmt(summary.isolated_family_count)}`),
+    metric("桥接边", fmt(summary.graph_edge_count), `任务 ${escapeHtml(state.promptNearGraph?.selected_task_type || "-")}`),
+    metric("Singleton", fmt(summary.singleton_count), "单点只统计"),
+    metric("截断诊断", fmt(summary.possible_truncated_count), `max_neighbors ${fmt(model.max_neighbors || summary.max_neighbors || 512)}`),
+  ].join("");
+}
+
+function renderPromptNearGraphDistributions() {
+  const distributions = state.promptNearGraph?.distributions || {};
+  renderDistribution("#promptNearGraphTaskTypeDistribution", distributions.task_type || []);
+  renderDistribution("#promptNearGraphSizeDistribution", distributions.family_size || []);
+  renderDistribution("#promptNearGraphDegreeDistribution", distributions.bridge_degree || []);
+}
+
+function buildPromptNearGraphOption(graph = {}) {
+  const rawNodes = graph.nodes || [];
+  const nodeIds = new Set(rawNodes.map((node) => node.family_id || node.id));
+  if (!rawNodes.length) return chartEmptyOption("暂无近似桥接图");
+  const widthScale = 520;
+  const heightScale = 380;
+  const categories = [...new Set(rawNodes.map((node) => node.task_type || "-"))].map((name) => ({ name }));
+  const nodes = rawNodes.map((node) => ({
+    id: node.family_id || node.id,
+    name: node.label || node.family_id,
+    value: node.member_count || 0,
+    x: Number(node.x || 0) * widthScale,
+    y: Number(node.y || 0) * heightScale,
+    symbolSize: Number(node.symbol_size || node.radius || 12),
+    category: node.task_type || "-",
+    raw: node,
+    label: { show: false },
+  }));
+  const edges = (graph.edges || [])
+    .filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target))
+    .map((edge) => ({
+      source: edge.source,
+      target: edge.target,
+      value: edge.prompt_edge_count || edge.weight || 1,
+      raw: edge,
+      lineStyle: {
+        width: Math.max(1, Math.min(7, Math.log1p(Number(edge.prompt_edge_count || 1)))),
+        opacity: 0.34,
+        curveness: 0.05,
+      },
+    }));
+  return {
+    color: chartPalette,
+    tooltip: {
+      trigger: "item",
+      formatter(params) {
+        const raw = params.data?.raw || {};
+        if (params.dataType === "edge") {
+          return `桥接边<br/>${escapeHtml(raw.source_family_id || raw.source)} → ${escapeHtml(raw.target_family_id || raw.target)}<br/>Prompt 边 ${fmt(raw.prompt_edge_count)} · 最高 ${fmtAmount(Number(raw.max_similarity || 0) * 100)}%`;
+        }
+        return `${escapeHtml(raw.center_preview || raw.label || "-")}<br/>${escapeHtml(raw.task_type || "-")} · 成员 ${fmt(raw.member_count)}<br/>桥接 ${fmt(raw.bridge_degree)} · 均值 ${fmtAmount(Number(raw.avg_similarity || 0) * 100)}%`;
+      },
+    },
+    legend: [{ data: categories.slice(0, 12).map((item) => item.name), bottom: 0, type: "scroll" }],
+    series: [{
+      type: "graph",
+      layout: "none",
+      roam: true,
+      draggable: true,
+      categories,
+      data: nodes,
+      links: edges,
+      label: {
+        show: false,
+        position: "right",
+        formatter: "{b}",
+        fontSize: 10,
+      },
+      emphasis: {
+        focus: "adjacency",
+        label: { show: true },
+        lineStyle: { opacity: 0.85 },
+      },
+      lineStyle: {
+        color: "source",
+      },
+    }],
+  };
+}
+
+function renderPromptNearGraphChart() {
+  renderChart("promptNearGraphChart", buildPromptNearGraphOption(state.promptNearGraph?.graph || {}));
+  const chart = state.charts.promptNearGraphChart;
+  if (!chart) return;
+  chart.off("click");
+  chart.on("click", (params) => {
+    if (params.dataType !== "node") return;
+    const family = params.data?.raw;
+    if (!family?.family_id) return;
+    state.selectedPromptNearGraphFamily = family;
+    state.promptNearGraphDetail = null;
+    renderPromptNearGraphDetail();
+    loadPromptNearGraphDetail(family.family_id).catch(setError);
+  });
+}
+
+function renderPromptNearGraph() {
+  renderPromptNearGraphFilterOptions();
+  renderPromptNearGraphSummary();
+  renderPromptNearGraphDistributions();
+  const rows = state.promptNearGraph?.graph?.nodes || [];
+  if (!state.selectedPromptNearGraphFamily || !rows.some((row) => row.family_id === state.selectedPromptNearGraphFamily.family_id)) {
+    state.selectedPromptNearGraphFamily = rows[0] || null;
+    state.promptNearGraphDetail = null;
+  }
+  renderPromptNearGraphChart();
+  renderPromptNearGraphDetail();
+  renderPromptNearGraphIsolates();
+}
+
+function renderPromptNearGraphDetail() {
+  const selected = state.selectedPromptNearGraphFamily;
+  if (!selected) {
+    $("#promptNearGraphDetail").innerHTML = '<div class="empty">暂无近似族节点</div>';
+    return;
+  }
+  if (!state.promptNearGraphDetail || state.promptNearGraphDetail.family?.family_id !== selected.family_id) {
+    $("#promptNearGraphDetail").innerHTML = `
+      <h3>近似族 · ${fmt(selected.member_count)} 条</h3>
+      <p class="prompt-fulltext">${escapeHtml(selected.center_prompt || selected.center_preview || "")}</p>
+      <div class="empty compact">正在加载族详情</div>
+    `;
+    return;
+  }
+  const family = state.promptNearGraphDetail.family || selected;
+  const members = state.promptNearGraphDetail.members || [];
+  const neighbors = state.promptNearGraphDetail.bridge_neighbors || [];
+  const examples = state.promptNearGraphDetail.bridge_examples || [];
+  $("#promptNearGraphDetail").innerHTML = `
+    <h3>${escapeHtml(family.task_type || "-")} · ${fmt(family.member_count)} 条近似族</h3>
+    <p class="prompt-fulltext">${escapeHtml(family.center_prompt || family.center_preview || "")}</p>
+    <dl>
+      <dt>Family</dt><dd class="mono">${escapeHtml(family.family_id || "-")}</dd>
+      <dt>中心 Hash</dt><dd class="mono">${escapeHtml(family.center_hash || family.representative_hash || "-")}</dd>
+      <dt>内部相似</dt><dd>均值 ${fmtAmount(Number(family.avg_similarity || 0) * 100)}% · 最低 ${fmtAmount(Number(family.min_similarity || 0) * 100)}%</dd>
+      <dt>桥接</dt><dd>${fmt(family.bridge_degree)} 个邻居 · 阈值 ${fmtAmount(Number(state.promptNearGraphDetail.threshold || promptNearGraphThreshold()))}</dd>
+      <dt>信号</dt><dd>使用 ${fmt(family.total_uses)} · 用户 ${fmt(family.total_users)} · 质量 ${fmtAmount(family.quality_score)}</dd>
+    </dl>
+    <div class="cluster-member-list">
+      <div class="table-title">桥接邻居</div>
+      ${neighbors.map((item) => `
+        <div class="cluster-member">
+          <div class="cluster-member-head">
+            <span class="pill">边 ${fmt(item.bridge?.prompt_edge_count)} · 最高 ${fmtAmount(Number(item.bridge?.max_similarity || 0) * 100)}%</span>
+            <span class="muted small">成员 ${fmt(item.family?.member_count)} · 桥接 ${fmt(item.family?.bridge_degree)}</span>
+          </div>
+          <div class="cluster-member-prompt">${escapeHtml(item.family?.center_preview || item.family?.representative_preview || "-")}</div>
+        </div>
+      `).join("") || '<div class="empty compact">暂无桥接邻居</div>'}
+      <div class="table-title">成员</div>
+      ${members.map((member) => `
+        <div class="cluster-member ${member.is_center ? "representative" : ""}">
+          <div class="cluster-member-head">
+            <span class="pill ${member.is_center ? "" : "gray"}">${member.is_center ? "聚类中心" : `中心相似 ${fmtAmount(Number(member.similarity_to_center || 0) * 100)}%`}</span>
+            <span class="muted small">使用 ${fmt(member.uses)} · 用户 ${fmt(member.users)} · 质量 ${fmtAmount(member.quality_score)}</span>
+          </div>
+          <div class="cluster-member-prompt">${escapeHtml(member.prompt_preview || member.prompt || "-")}</div>
+        </div>
+      `).join("") || '<div class="empty compact">暂无成员</div>'}
+      <div class="table-title">桥接样例</div>
+      ${examples.map((example) => `
+        <div class="cluster-member">
+          <div class="cluster-member-head">
+            <span class="pill">相似 ${fmtAmount(Number(example.similarity || 0) * 100)}%</span>
+            <span class="muted small mono">${escapeHtml(example.source_hash)} → ${escapeHtml(example.target_hash)}</span>
+          </div>
+          <div class="cluster-member-prompt">${escapeHtml(example.source_preview || "-")}</div>
+          <div class="cluster-member-prompt">${escapeHtml(example.target_preview || "-")}</div>
+        </div>
+      `).join("") || '<div class="empty compact">暂无桥接样例</div>'}
+    </div>
+  `;
+}
+
+function renderPromptNearGraphIsolates() {
+  const rows = state.promptNearGraph?.isolated_families || [];
+  $("#promptNearGraphIsolates").innerHTML = rows.map((family) => `
+    <button class="near-family-card" type="button" data-family-id="${escapeHtml(family.family_id)}">
+      <div class="cluster-member-head">
+        <span class="pill gray">${escapeHtml(family.task_type || "-")} · ${fmt(family.member_count)} 条</span>
+        <span class="muted small">均值 ${fmtAmount(Number(family.avg_similarity || 0) * 100)}%</span>
+      </div>
+      <div class="prompt-preview">${escapeHtml(family.center_preview || family.representative_preview || "-")}</div>
+      <div class="muted small">使用 ${fmt(family.total_uses)} · 用户 ${fmt(family.total_users)} · 质量 ${fmtAmount(family.quality_score)}</div>
+    </button>
+  `).join("") || '<div class="empty compact">暂无孤立近似族</div>';
+  document.querySelectorAll("#promptNearGraphIsolates [data-family-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const family = rows.find((item) => item.family_id === button.dataset.familyId);
+      if (!family) return;
+      state.selectedPromptNearGraphFamily = family;
+      state.promptNearGraphDetail = null;
+      renderPromptNearGraphDetail();
+      loadPromptNearGraphDetail(family.family_id).catch(setError);
+    });
+  });
+}
+
 function promptSceneConfidenceLabel(label) {
   if (label === "high") return "高";
   if (label === "medium") return "中";
@@ -2937,6 +3200,16 @@ function getPromptNearParams() {
   };
 }
 
+function getPromptNearGraphParams() {
+  return {
+    task_type: $("#promptNearGraphTaskTypeSelect")?.value || state.promptNearGraph?.selected_task_type || "",
+    threshold: promptNearGraphThreshold(),
+    min_size: Number($("#promptNearGraphMinSizeInput")?.value || 1),
+    q: $("#promptNearGraphSearchInput")?.value?.trim() || "",
+    limit: Number($("#promptNearGraphLimitInput")?.value || 120),
+  };
+}
+
 function getPromptSceneParams() {
   return {
     task_type: $("#promptSceneTaskTypeSelect")?.value || "",
@@ -3131,6 +3404,19 @@ async function loadPromptNearRepresentatives() {
   }
 }
 
+async function loadPromptNearGraph() {
+  state.promptNearGraph = await fetchJson("/api/prompt-near-graph", getPromptNearGraphParams());
+  const rows = state.promptNearGraph?.graph?.nodes || [];
+  if (!state.selectedPromptNearGraphFamily || !rows.some((row) => row.family_id === state.selectedPromptNearGraphFamily.family_id)) {
+    state.selectedPromptNearGraphFamily = rows[0] || null;
+    state.promptNearGraphDetail = null;
+  }
+  renderPromptNearGraph();
+  if (state.selectedPromptNearGraphFamily && state.promptNearGraph?.ready !== false) {
+    await loadPromptNearGraphDetail(state.selectedPromptNearGraphFamily.family_id);
+  }
+}
+
 async function loadPromptScenes() {
   state.promptScenes = await fetchJson("/api/prompt-scenes", getPromptSceneParams());
   const rows = state.promptScenes?.scenes || [];
@@ -3192,6 +3478,18 @@ async function loadPromptNearRepresentativeDetail(representativeHash) {
   renderPromptNearRepresentativeDetail();
 }
 
+async function loadPromptNearGraphDetail(familyId) {
+  if (!familyId) return;
+  state.promptNearGraphDetail = await fetchJson(
+    `/api/prompt-near-graph/families/${encodeURIComponent(familyId)}`,
+    {
+      task_type: $("#promptNearGraphTaskTypeSelect")?.value || state.promptNearGraph?.selected_task_type || "",
+      threshold: promptNearGraphThreshold(),
+    }
+  );
+  renderPromptNearGraphDetail();
+}
+
 async function loadPromptSceneDetail(sceneId) {
   if (!sceneId) return;
   state.promptSceneDetail = await fetchJson(`/api/prompt-scenes/${encodeURIComponent(sceneId)}`);
@@ -3223,6 +3521,7 @@ const tabLoaders = {
   "prompt-slim": loadPromptSlim,
   "prompt-vectors": loadPromptVectors,
   "prompt-near-representatives": loadPromptNearRepresentatives,
+  "prompt-near-graph": loadPromptNearGraph,
   "prompt-scenes": loadPromptScenes,
   "prompt-graph": loadPromptGraph,
   templates: loadTemplates,
@@ -3280,6 +3579,10 @@ function reloadCurrentTab() {
     state.promptNearPage = 1;
     state.selectedPromptNearRepresentative = null;
     state.promptNearRepresentativeDetail = null;
+  }
+  if (state.activeTab === "prompt-near-graph") {
+    state.selectedPromptNearGraphFamily = null;
+    state.promptNearGraphDetail = null;
   }
   if (state.activeTab === "prompt-scenes") {
     state.promptScenePage = 1;
@@ -3517,6 +3820,38 @@ $("#promptNearNextButton")?.addEventListener("click", () => {
   state.promptNearRepresentativeDetail = null;
   markTabStale("prompt-near-representatives");
   loadCurrentTab({ force: true });
+});
+function resetPromptNearGraphAndLoad() {
+  state.selectedPromptNearGraphFamily = null;
+  state.promptNearGraphDetail = null;
+  markTabStale("prompt-near-graph");
+  if (state.activeTab === "prompt-near-graph") {
+    loadCurrentTab({ force: true });
+  }
+}
+["#promptNearGraphTaskTypeSelect", "#promptNearGraphMinSizeInput", "#promptNearGraphLimitInput"].forEach((selector) => {
+  const element = $(selector);
+  if (element) element.addEventListener("change", resetPromptNearGraphAndLoad);
+});
+let promptNearGraphSearchTimer = null;
+$("#promptNearGraphSearchInput")?.addEventListener("input", () => {
+  window.clearTimeout(promptNearGraphSearchTimer);
+  promptNearGraphSearchTimer = window.setTimeout(resetPromptNearGraphAndLoad, 300);
+});
+let promptNearGraphThresholdTimer = null;
+function schedulePromptNearGraphThresholdLoad(value) {
+  syncPromptNearGraphThresholdControls(value);
+  window.clearTimeout(promptNearGraphThresholdTimer);
+  promptNearGraphThresholdTimer = window.setTimeout(resetPromptNearGraphAndLoad, 350);
+}
+$("#promptNearGraphThresholdRange")?.addEventListener("input", (event) => {
+  schedulePromptNearGraphThresholdLoad(event.target.value);
+});
+$("#promptNearGraphThresholdInput")?.addEventListener("input", (event) => {
+  schedulePromptNearGraphThresholdLoad(event.target.value);
+});
+$("#promptNearGraphThresholdInput")?.addEventListener("change", (event) => {
+  schedulePromptNearGraphThresholdLoad(event.target.value);
 });
 function resetPromptScenePageAndLoad() {
   state.promptScenePage = 1;

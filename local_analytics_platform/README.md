@@ -96,6 +96,24 @@ docker exec allbot-local-analytics-platform \
 - `GET /api/prompt-near-representatives`：返回候选覆盖、阈值命中边、代表组数、合并成员、singleton、代表压缩率、任务/组规模分布和分页代表组。
 - `GET /api/prompt-near-representatives/groups/{representative_hash}`：按同一 `threshold/task_type/model_id` 返回代表组成员及相似度、使用/用户/质量信号。
 
+## Prompt Near Graph
+
+“近似图”Tab 用于查看从 embedding 生成的近似族图，不复用 top-k=20 的 `analytics_prompt_similarity_edges`，也不替代语义场景。先用离线命令按 `task_type` 从全量 `analytics_prompt_embeddings` 生成 `0.90+` 的高召回阈值边：
+
+```bash
+docker exec allbot-local-analytics-platform \
+  python -m app.refresh_prompt_near_graph_edges --statement-timeout-ms 3600000
+```
+
+刷新会写入 `analytics_prompt_near_graph_edges` 和 `analytics_prompt_near_graph_state`，默认 `lower_bound=0.90`、`max_neighbors=512`。这是高召回阈值边，不承诺数学精确全量两两相似度；若 `possible_truncated_count` 较高，说明部分 prompt 在第 512 个候选仍达到下限，需要提高 `--max-neighbors` 后按任务类型重刷。
+
+Tab 支持在 `0.90-0.99` 内调阈值，默认 `0.95`。节点是守卫式近似族，族内成员必须与中心及组内已有成员达到阈值；A-B、B-C 相似但 A-C 不相似时不会被并成一个族，而是在族节点之间画桥接边。无桥接的非单点近似族单独列出，孤立单点只进入 summary 统计。
+
+新增 API：
+
+- `GET /api/prompt-near-graph`：返回阈值边覆盖、近似族、桥接边、孤立族、截断诊断和 ECharts 图数据。
+- `GET /api/prompt-near-graph/families/{family_id}`：按同一 `threshold/task_type/model_id` 返回聚类中心、成员、桥接邻居和桥接 prompt pair 样例。
+
 ## Prompt Semantic Scenes
 
 语义场景用于把已向量化的候选 prompt 按 `task_type` 提炼成约 1000 个可运营审核场景，独立于相似边/近重复族，不依赖 top-k 相似边：

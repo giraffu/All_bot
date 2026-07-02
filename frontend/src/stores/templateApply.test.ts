@@ -185,7 +185,7 @@ describe('templateApply store', () => {
       trigger: 'open_replace',
       confirmReason: 'dirty'
     })
-    expect(store.taskType).toBe('face_video')
+    expect(store.taskType).toBe('scail2_face_swap_v2')
   })
 
   it('replaces a clean visible session immediately', async () => {

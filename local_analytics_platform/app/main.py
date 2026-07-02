@@ -34,6 +34,21 @@ from .prompt_near_representatives import (
     build_near_representative_groups,
     representative_score,
 )
+from .prompt_near_graph import (
+    DEFAULT_NEAR_GRAPH_LOWER_BOUND,
+    DEFAULT_NEAR_GRAPH_MAX_NEIGHBORS,
+    DEFAULT_NEAR_GRAPH_THRESHOLD,
+    PROMPT_NEAR_GRAPH_ALGORITHM_VERSION,
+    PROMPT_NEAR_GRAPH_LAYOUT_ALGORITHM,
+    PROMPT_NEAR_GRAPH_READY_SQL,
+    NearGraphEdge,
+    NearGraphPromptStats,
+    bridge_record,
+    build_near_graph,
+    build_near_graph_layout,
+    family_record,
+    member_records,
+)
 from .prompt_scenes import (
     DEFAULT_CANDIDATES_PER_SCENE,
     PROMPT_SCENE_ALGORITHM_VERSION,
@@ -47,6 +62,7 @@ from .prompt_vectors import (
     DEFAULT_VECTOR_MODEL_ID,
     DEFAULT_VECTOR_MODEL_KEY,
     PROMPT_VECTOR_READY_SQL,
+    embedding_from_bytes,
 )
 from .user_profile_analytics import (
     get_user_profile_detail,
@@ -727,6 +743,11 @@ async def _prompt_scene_tables_ready() -> bool:
 
 async def _prompt_graph_tables_ready() -> bool:
     ready = _row(await _fetchrow(PROMPT_GRAPH_READY_SQL))
+    return bool(ready.get("ready"))
+
+
+async def _prompt_near_graph_tables_ready() -> bool:
+    ready = _row(await _fetchrow(PROMPT_NEAR_GRAPH_READY_SQL))
     return bool(ready.get("ready"))
 
 
@@ -5340,6 +5361,479 @@ async def prompt_near_representative_detail(
                 "members": _near_group_member_records(group, context["stats_by_hash"]),
             }
     raise HTTPException(status_code=404, detail="prompt near representative group not found")
+
+
+def _near_graph_threshold(value: float) -> float:
+    if not math.isfinite(float(value)):
+        return DEFAULT_NEAR_GRAPH_THRESHOLD
+    return round(max(DEFAULT_NEAR_GRAPH_LOWER_BOUND, min(0.99, float(value))), 3)
+
+
+def _near_graph_stats_from_row(row: dict[str, Any]) -> NearGraphPromptStats:
+    embedding = None
+    if row.get("embedding_f16") is not None and row.get("embedding_dim") is not None:
+        embedding = embedding_from_bytes(row["embedding_f16"], int(row["embedding_dim"]))
+    return NearGraphPromptStats(
+        prompt_hash=str(row.get("prompt_hash") or ""),
+        task_type=str(row.get("task_type") or "unknown"),
+        prompt=str(row.get("prompt") or ""),
+        quality_score=float(row.get("quality_score") or 0),
+        uses=int(row.get("uses") or 0),
+        users=int(row.get("users") or 0),
+        last_seen=row.get("last_seen"),
+        embedding=embedding,
+        result_likes=int(row.get("result_likes") or 0),
+        result_dislikes=int(row.get("result_dislikes") or 0),
+        gallery_applies=int(row.get("gallery_applies") or 0),
+        prompt_unlocks=int(row.get("prompt_unlocks") or 0),
+        char_count=int(row["char_count"]) if row.get("char_count") is not None else None,
+    )
+
+
+async def _prompt_near_graph_state(model_id: str) -> tuple[dict[str, Any], Any]:
+    state_prefix = f"{model_id}:{PROMPT_NORMALIZATION_VERSION}:{PROMPT_NEAR_GRAPH_ALGORITHM_VERSION}:"
+    state_rows = await _fetch(
+        """
+        select key, value, updated_at
+        from analytics_prompt_near_graph_state
+        where key like $1::text
+        order by key
+        """,
+        f"{state_prefix}%",
+    )
+    near_graph_state: dict[str, Any] = {}
+    state_updated_at = None
+    for row in state_rows:
+        key = str(row["key"])[len(state_prefix) :]
+        value = row["value"]
+        try:
+            near_graph_state[key] = json.loads(value)
+        except (TypeError, json.JSONDecodeError):
+            near_graph_state[key] = value
+        if row["updated_at"] and (state_updated_at is None or row["updated_at"] > state_updated_at):
+            state_updated_at = row["updated_at"]
+    return near_graph_state, state_updated_at
+
+
+def _empty_prompt_near_graph_response(
+    *,
+    model_id: str,
+    threshold: float,
+    limit: int,
+    min_size: int,
+    task_type: str | None = None,
+    query: str = "",
+    message: str = "prompt near graph edges are not built; run python -m app.refresh_prompt_near_graph_edges",
+) -> dict[str, Any]:
+    return {
+        "ready": False,
+        "message": message,
+        "model": {
+            "model_id": model_id,
+            "model_key": DEFAULT_VECTOR_MODEL_KEY,
+            "normalization_version": PROMPT_NORMALIZATION_VERSION,
+            "algorithm_version": PROMPT_NEAR_GRAPH_ALGORITHM_VERSION,
+            "layout_algorithm": PROMPT_NEAR_GRAPH_LAYOUT_ALGORITHM,
+            "lower_bound": DEFAULT_NEAR_GRAPH_LOWER_BOUND,
+            "max_neighbors": DEFAULT_NEAR_GRAPH_MAX_NEIGHBORS,
+            "threshold": threshold,
+        },
+        "threshold": threshold,
+        "task_type": task_type,
+        "selected_task_type": task_type,
+        "min_size": min_size,
+        "query": query,
+        "available_task_types": [],
+        "summary": {
+            "candidate_count": 0,
+            "embedded_count": 0,
+            "embedding_coverage": 0,
+            "threshold_edge_count": 0,
+            "family_count": 0,
+            "graph_node_count": 0,
+            "graph_edge_count": 0,
+            "isolated_family_count": 0,
+            "singleton_count": 0,
+            "possible_truncated_count": 0,
+        },
+        "distributions": {"task_type": [], "family_size": [], "bridge_degree": []},
+        "graph": {"nodes": [], "edges": []},
+        "isolated_families": [],
+        "pagination": {"limit": limit, "total_nodes": 0, "total_isolated": 0},
+    }
+
+
+async def _load_prompt_near_graph_context(
+    *,
+    model_id: str,
+    threshold: float,
+    task_filter: str | None,
+) -> dict[str, Any]:
+    near_graph_state, state_updated_at = await _prompt_near_graph_state(model_id)
+    available_task_types = _rows(
+        await _fetch(
+            """
+            select task_type as label, count(*)::bigint as count
+            from analytics_prompt_near_graph_edges
+            where model_id = $1::text
+              and normalization_version = $2::text
+            group by task_type
+            order by count desc, label
+            limit 80
+            """,
+            model_id,
+            PROMPT_NORMALIZATION_VERSION,
+        )
+    )
+    selected_task_type = task_filter or (str(available_task_types[0]["label"]) if available_task_types else None)
+    summary = _row(
+        await _fetchrow(
+            """
+            select
+                coalesce((
+                    select count(*)::bigint
+                    from analytics_prompt_slim_candidates
+                    where quality_stage = 'candidate'
+                      and normalization_version = $2::text
+                      and ($4::text is null or $4::text = any(task_types))
+                ), 0)::bigint as candidate_count,
+                coalesce((
+                    select count(*)::bigint
+                    from analytics_prompt_embeddings
+                    where model_id = $1::text
+                      and normalization_version = $2::text
+                      and status = 'embedded'
+                      and ($4::text is null or task_type = $4::text)
+                ), 0)::bigint as embedded_count,
+                coalesce((
+                    select count(*)::bigint
+                    from analytics_prompt_near_graph_edges
+                    where model_id = $1::text
+                      and normalization_version = $2::text
+                      and similarity >= $3::numeric
+                      and ($4::text is null or task_type = $4::text)
+                ), 0)::bigint as threshold_edge_count,
+                (
+                    select max(created_at)
+                    from analytics_prompt_near_graph_edges
+                    where model_id = $1::text
+                      and normalization_version = $2::text
+                      and ($4::text is null or task_type = $4::text)
+                ) as latest_refreshed_at
+            """,
+            model_id,
+            PROMPT_NORMALIZATION_VERSION,
+            threshold,
+            selected_task_type,
+        )
+    )
+    edge_rows = _rows(
+        await _fetch(
+            """
+            select task_type, source_hash, target_hash, similarity::float8 as similarity
+            from analytics_prompt_near_graph_edges
+            where model_id = $1::text
+              and normalization_version = $2::text
+              and similarity >= $3::numeric
+              and ($4::text is null or task_type = $4::text)
+            order by task_type, similarity desc, source_hash, target_hash
+            """,
+            model_id,
+            PROMPT_NORMALIZATION_VERSION,
+            threshold,
+            selected_task_type,
+        )
+    )
+    edges = [
+        NearGraphEdge(
+            str(row.get("task_type") or "unknown"),
+            str(row.get("source_hash") or ""),
+            str(row.get("target_hash") or ""),
+            float(row.get("similarity") or 0),
+        )
+        for row in edge_rows
+    ]
+    prompt_hashes = sorted({edge.source_hash for edge in edges} | {edge.target_hash for edge in edges})
+    if prompt_hashes:
+        stats_rows = _rows(
+            await _fetch(
+                """
+                select
+                    e.prompt_hash,
+                    e.task_type,
+                    e.prompt,
+                    e.embedding_dim,
+                    e.embedding_f16,
+                    coalesce(s.quality_score, 0)::float8 as quality_score,
+                    coalesce(s.uses, 0)::bigint as uses,
+                    coalesce(s.users, 0)::bigint as users,
+                    s.last_seen,
+                    coalesce(s.result_likes, 0)::bigint as result_likes,
+                    coalesce(s.result_dislikes, 0)::bigint as result_dislikes,
+                    coalesce(s.gallery_applies, 0)::bigint as gallery_applies,
+                    coalesce(s.prompt_unlocks, 0)::bigint as prompt_unlocks,
+                    s.char_count
+                from analytics_prompt_embeddings e
+                join analytics_prompt_slim_candidates s on s.prompt_hash = e.prompt_hash
+                where e.prompt_hash = any($1::text[])
+                  and e.model_id = $2::text
+                  and e.normalization_version = $3::text
+                  and e.status = 'embedded'
+                  and s.quality_stage = 'candidate'
+                  and s.normalization_version = $3::text
+                """,
+                prompt_hashes,
+                model_id,
+                PROMPT_NORMALIZATION_VERSION,
+            )
+        )
+    else:
+        stats_rows = []
+    stats_by_hash = {
+        str(row.get("prompt_hash")): _near_graph_stats_from_row(row)
+        for row in stats_rows
+        if row.get("prompt_hash")
+    }
+    graph = build_near_graph(edges, stats_by_hash, threshold=threshold)
+    family_by_id = {family.family_id: family for family in graph.families}
+    candidate_count = float(summary.get("candidate_count") or 0)
+    embedded_count = int(summary.get("embedded_count") or 0)
+    threshold_edge_count = int(summary.get("threshold_edge_count") or graph.edge_count)
+    grouped_hashes = {prompt_hash for family in graph.families for prompt_hash in family.member_hashes}
+    singleton_count = max(0, embedded_count - len(grouped_hashes)) + sum(1 for family in graph.families if len(family.member_hashes) == 1)
+    summary.update(
+        {
+            "embedding_coverage": round((embedded_count / candidate_count * 100) if candidate_count else 0, 2),
+            "threshold_edge_count": threshold_edge_count,
+            "family_count": len(graph.families),
+            "graph_edge_count": len(graph.bridges),
+            "singleton_count": singleton_count,
+            "possible_truncated_count": int(near_graph_state.get("possible_truncated_count") or 0),
+            "lower_bound": float(near_graph_state.get("lower_bound") or DEFAULT_NEAR_GRAPH_LOWER_BOUND),
+            "max_neighbors": int(near_graph_state.get("max_neighbors") or DEFAULT_NEAR_GRAPH_MAX_NEIGHBORS),
+            "state_updated_at": _json_value(state_updated_at),
+        }
+    )
+    return {
+        "state": near_graph_state,
+        "state_updated_at": state_updated_at,
+        "available_task_types": available_task_types,
+        "selected_task_type": selected_task_type,
+        "summary": summary,
+        "graph": graph,
+        "family_by_id": family_by_id,
+        "stats_by_hash": stats_by_hash,
+    }
+
+
+def _near_graph_family_matches(family: Any, stats_by_hash: dict[str, NearGraphPromptStats], search: str) -> bool:
+    if not search:
+        return True
+    needle = _normalize_prompt_text(search)
+    if not needle:
+        return True
+    center = stats_by_hash.get(family.center_hash)
+    haystacks = [family.family_id, family.task_type, center.prompt if center else ""]
+    return any(needle in _normalize_prompt_text(value) for value in haystacks)
+
+
+def _near_graph_distributions(families: list[Any]) -> dict[str, list[dict[str, Any]]]:
+    size_buckets: dict[str, int] = {}
+    degree_buckets: dict[str, int] = {}
+    for family in families:
+        size = len(family.member_hashes)
+        if size == 1:
+            size_label = "1 条"
+        elif size == 2:
+            size_label = "2 条"
+        elif size <= 5:
+            size_label = "3-5 条"
+        elif size <= 10:
+            size_label = "6-10 条"
+        elif size <= 20:
+            size_label = "11-20 条"
+        else:
+            size_label = "20+ 条"
+        if family.bridged_degree == 0:
+            degree_label = "孤立"
+        elif family.bridged_degree == 1:
+            degree_label = "1 条边"
+        elif family.bridged_degree <= 3:
+            degree_label = "2-3 条边"
+        elif family.bridged_degree <= 10:
+            degree_label = "4-10 条边"
+        else:
+            degree_label = "10+ 条边"
+        size_buckets[size_label] = size_buckets.get(size_label, 0) + 1
+        degree_buckets[degree_label] = degree_buckets.get(degree_label, 0) + 1
+    size_order = {"1 条": 1, "2 条": 2, "3-5 条": 3, "6-10 条": 4, "11-20 条": 5, "20+ 条": 6}
+    degree_order = {"孤立": 1, "1 条边": 2, "2-3 条边": 3, "4-10 条边": 4, "10+ 条边": 5}
+    return {
+        "family_size": [
+            {"label": label, "count": count}
+            for label, count in sorted(size_buckets.items(), key=lambda item: size_order.get(item[0], 99))
+        ],
+        "bridge_degree": [
+            {"label": label, "count": count}
+            for label, count in sorted(degree_buckets.items(), key=lambda item: degree_order.get(item[0], 99))
+        ],
+    }
+
+
+@app.get("/api/prompt-near-graph")
+async def prompt_near_graph(
+    threshold: float = Query(DEFAULT_NEAR_GRAPH_THRESHOLD, ge=DEFAULT_NEAR_GRAPH_LOWER_BOUND, le=0.99),
+    task_type: str | None = Query(None),
+    min_size: int = Query(1, ge=1, le=1000),
+    q: str | None = Query(None),
+    limit: int = Query(120, ge=1, le=500),
+    model_id: str = Query(DEFAULT_VECTOR_MODEL_ID),
+) -> dict[str, Any]:
+    threshold = _near_graph_threshold(threshold)
+    task_filter = (task_type or "").strip() or None
+    search = (q or "").strip()
+    min_size = _clamp(min_size, 1, 1000)
+    limit = _clamp(limit, 1, 500)
+    if not await _prompt_near_graph_tables_ready():
+        return _empty_prompt_near_graph_response(
+            model_id=model_id,
+            threshold=threshold,
+            limit=limit,
+            min_size=min_size,
+            task_type=task_filter,
+            query=search,
+        )
+    context = await _load_prompt_near_graph_context(model_id=model_id, threshold=threshold, task_filter=task_filter)
+    graph = context["graph"]
+    stats_by_hash = context["stats_by_hash"]
+    visible_candidates = [
+        family
+        for family in graph.families
+        if len(family.member_hashes) >= min_size and _near_graph_family_matches(family, stats_by_hash, search)
+    ]
+    family_ids_matching_filters = {family.family_id for family in visible_candidates}
+    graph_family_ids = {
+        family_id
+        for bridge in graph.bridges
+        for family_id in (bridge.source_family_id, bridge.target_family_id)
+        if family_id in family_ids_matching_filters
+    }
+    graph_families = [family for family in visible_candidates if family.family_id in graph_family_ids][:limit]
+    visible_graph_ids = {family.family_id for family in graph_families}
+    graph_bridges = [
+        bridge
+        for bridge in graph.bridges
+        if bridge.source_family_id in visible_graph_ids and bridge.target_family_id in visible_graph_ids
+    ]
+    isolated_families = [
+        family
+        for family in visible_candidates
+        if family.bridged_degree == 0 and len(family.member_hashes) > 1
+    ][:80]
+    layout = build_near_graph_layout(graph_families, stats_by_hash)
+    distributions = _near_graph_distributions(visible_candidates)
+    summary = dict(context["summary"])
+    summary.update(
+        {
+            "graph_node_count": len(graph_families),
+            "graph_edge_count": len(graph_bridges),
+            "isolated_family_count": len([family for family in visible_candidates if family.bridged_degree == 0 and len(family.member_hashes) > 1]),
+        }
+    )
+    state_data = context["state"]
+    return {
+        "ready": True,
+        "model": {
+            "model_id": model_id,
+            "model_key": state_data.get("model_key") or DEFAULT_VECTOR_MODEL_KEY,
+            "normalization_version": PROMPT_NORMALIZATION_VERSION,
+            "algorithm_version": PROMPT_NEAR_GRAPH_ALGORITHM_VERSION,
+            "layout_algorithm": PROMPT_NEAR_GRAPH_LAYOUT_ALGORITHM,
+            "lower_bound": float(state_data.get("lower_bound") or DEFAULT_NEAR_GRAPH_LOWER_BOUND),
+            "max_neighbors": int(state_data.get("max_neighbors") or DEFAULT_NEAR_GRAPH_MAX_NEIGHBORS),
+            "last_success_at": state_data.get("last_success_at"),
+            "last_error": state_data.get("last_error"),
+            "threshold": threshold,
+        },
+        "threshold": threshold,
+        "task_type": context["selected_task_type"],
+        "selected_task_type": context["selected_task_type"],
+        "min_size": min_size,
+        "query": search,
+        "available_task_types": context["available_task_types"],
+        "summary": summary,
+        "distributions": {
+            "task_type": context["available_task_types"],
+            **distributions,
+        },
+        "graph": {
+            "nodes": [
+                family_record(family, stats_by_hash, include_layout=True, layout=layout)
+                for family in graph_families
+            ],
+            "edges": [bridge_record(bridge) for bridge in graph_bridges],
+        },
+        "isolated_families": [family_record(family, stats_by_hash) for family in isolated_families],
+        "pagination": {
+            "limit": limit,
+            "total_nodes": len(graph_family_ids),
+            "total_isolated": summary["isolated_family_count"],
+        },
+    }
+
+
+@app.get("/api/prompt-near-graph/families/{family_id}")
+async def prompt_near_graph_family_detail(
+    family_id: str,
+    threshold: float = Query(DEFAULT_NEAR_GRAPH_THRESHOLD, ge=DEFAULT_NEAR_GRAPH_LOWER_BOUND, le=0.99),
+    task_type: str | None = Query(None),
+    model_id: str = Query(DEFAULT_VECTOR_MODEL_ID),
+) -> dict[str, Any]:
+    threshold = _near_graph_threshold(threshold)
+    task_filter = (task_type or "").strip() or None
+    if not await _prompt_near_graph_tables_ready():
+        raise HTTPException(status_code=503, detail="prompt near graph edges are not built")
+    context = await _load_prompt_near_graph_context(model_id=model_id, threshold=threshold, task_filter=task_filter)
+    family = context["family_by_id"].get(family_id)
+    if family is None:
+        raise HTTPException(status_code=404, detail="prompt near graph family not found")
+    stats_by_hash = context["stats_by_hash"]
+    bridge_neighbors = []
+    bridge_examples = []
+    for bridge in context["graph"].bridges:
+        if bridge.source_family_id != family_id and bridge.target_family_id != family_id:
+            continue
+        other_id = bridge.target_family_id if bridge.source_family_id == family_id else bridge.source_family_id
+        other_family = context["family_by_id"].get(other_id)
+        if other_family is not None:
+            bridge_neighbors.append(
+                {
+                    "family": family_record(other_family, stats_by_hash),
+                    "bridge": bridge_record(bridge),
+                }
+            )
+        for example in bridge.examples:
+            source_stats = stats_by_hash.get(example["source_hash"])
+            target_stats = stats_by_hash.get(example["target_hash"])
+            bridge_examples.append(
+                {
+                    **example,
+                    "source_preview": _collapse_text(source_stats.prompt if source_stats else "", 180),
+                    "target_preview": _collapse_text(target_stats.prompt if target_stats else "", 180),
+                }
+            )
+    bridge_neighbors.sort(key=lambda item: (item["bridge"]["prompt_edge_count"], item["bridge"]["max_similarity"]), reverse=True)
+    return {
+        "model_id": model_id,
+        "normalization_version": PROMPT_NORMALIZATION_VERSION,
+        "algorithm_version": PROMPT_NEAR_GRAPH_ALGORITHM_VERSION,
+        "threshold": threshold,
+        "task_type": context["selected_task_type"],
+        "family": family_record(family, stats_by_hash),
+        "members": member_records(family, stats_by_hash),
+        "bridge_neighbors": bridge_neighbors[:30],
+        "bridge_examples": bridge_examples[:30],
+    }
 
 
 @app.get("/api/prompt-vectors")

@@ -49,6 +49,10 @@
             <span class="tab-label">近似代表</span>
             <span class="tab-meta">阈值、代表、压缩</span>
           </button>
+          <button class="tab-button" type="button" data-tab="prompt-near-graph">
+            <span class="tab-label">近似图</span>
+            <span class="tab-meta">族图、桥接、孤立</span>
+          </button>
           <button class="tab-button" type="button" data-tab="prompt-scenes">
             <span class="tab-label">语义场景</span>
             <span class="tab-meta">场景、候选、沉淀</span>
@@ -1007,6 +1011,58 @@
               </div>
             </div>
             <aside id="promptNearDetail" class="detail-panel"></aside>
+          </div>
+        </section>
+
+        <section class="band tab-panel" data-panel="prompt-near-graph">
+          <div id="promptNearGraphSummary" class="metric-grid compact"></div>
+          <div class="prompt-filter-bar prompt-near-graph-filter-bar">
+            <label>
+              <span>搜索</span>
+              <input id="promptNearGraphSearchInput" type="search" placeholder="聚类中心或族 ID 关键词" />
+            </label>
+            <label>
+              <span>任务类型</span>
+              <select id="promptNearGraphTaskTypeSelect"></select>
+            </label>
+            <label class="threshold-control">
+              <span>图阈值 <b id="promptNearGraphThresholdValue">0.950</b></span>
+              <input id="promptNearGraphThresholdRange" type="range" min="0.90" max="0.99" step="0.005" value="0.95" />
+              <input id="promptNearGraphThresholdInput" type="number" min="0.90" max="0.99" step="0.005" value="0.95" />
+            </label>
+            <label>
+              <span>最小成员</span>
+              <input id="promptNearGraphMinSizeInput" type="number" min="1" max="1000" value="1" />
+            </label>
+            <label>
+              <span>节点上限</span>
+              <input id="promptNearGraphLimitInput" type="number" min="20" max="500" value="120" />
+            </label>
+          </div>
+          <div class="distribution-grid prompt-vector-distribution-grid">
+            <div class="table-shell">
+              <div class="table-title">任务类型</div>
+              <div id="promptNearGraphTaskTypeDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">族规模</div>
+              <div id="promptNearGraphSizeDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">桥接度</div>
+              <div id="promptNearGraphDegreeDistribution" class="distribution-bars"></div>
+            </div>
+          </div>
+          <div class="prompt-layout prompt-graph-layout prompt-near-graph-layout">
+            <div class="chart-card prompt-graph-card">
+              <div class="chart-title">近似聚类族桥接图</div>
+              <div id="promptNearGraphChart" class="analytics-chart prompt-graph-chart"></div>
+            </div>
+            <aside id="promptNearGraphDetail" class="detail-panel"></aside>
+          </div>
+          <div class="table-shell full prompt-near-graph-isolates">
+            <div class="table-title">孤立近似族</div>
+            <div id="promptNearGraphIsolates" class="near-family-list"></div>
           </div>
         </section>
 

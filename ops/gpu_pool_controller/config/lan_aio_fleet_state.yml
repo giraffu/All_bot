@@ -149,10 +149,17 @@ nodes:
             cache_state: ready
             model_manifest_key: img2img_lora/2026-06-10/manifest.json
             workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/img2img_lora/workspace
+          - profile: image_to_video
+            cache_state: missing
+            model_manifest_key: image_to_video/2026-06-13-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/image_to_video/workspace
         fast_switch_candidates:
           - slot_id: gpu-252-gpu0-img2img_lora
             profile: img2img_lora
             cache_state: ready
+          - slot_id: gpu-252-gpu0-image_to_video
+            profile: image_to_video
+            cache_state: missing
         blocked_profiles: []
       - gpu_index: 1
         hardware: removed RTX 4090

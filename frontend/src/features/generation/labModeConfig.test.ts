@@ -52,6 +52,7 @@ describe('labModeConfig', () => {
     expect(resolveLabModeIdFromTaskType('scail2_action_transfer_long')).toBe('scail2_action_transfer')
     expect(resolveLabModeIdFromTaskType('scail2_video_replacement')).toBe('scail2_video_replacement')
     expect(resolveLabModeIdFromTaskType('scail2_face_swap_v2')).toBe('scail2_face_swap_v2')
+    expect(resolveLabModeIdFromTaskType('face_video')).toBe('scail2_face_swap_v2')
     expect(SCAIL2_VIDEO_DURATION_OPTIONS.map(option => option.value)).toEqual(['5', '8', '10', '15', '20'])
     expect(SCAIL2_SHORT_VIDEO_DURATION_OPTIONS.map(option => option.value)).toEqual(['5', '8'])
     expect(getScail2VideoCost('5')).toBe(40)
@@ -60,6 +61,7 @@ describe('labModeConfig', () => {
     expect(getScail2VideoCost('15', 'scail2_action_transfer')).toBe(180)
     expect(getScail2VideoCost('20', 'scail2_action_transfer')).toBe(260)
     expect(UNIFIED_LAB_MODES.map(item => item.id)).not.toContain('scail2_action_transfer_long')
+    expect(UNIFIED_LAB_MODES.map(item => item.id)).not.toContain('face_video')
   })
 
   it('keeps LTX video dubbing out of the user-facing lab modes', () => {
