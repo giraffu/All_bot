@@ -19,8 +19,19 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     assert "buildDonutOption" in app_js
     assert "buildStackedBarOption" in app_js
     assert 'data-tab="prompt-graph"' in html
+    assert 'data-tab="prompt-near-representatives"' in html
+    assert 'id="promptNearThresholdRange"' in html
+    assert 'id="promptNearThresholdInput"' in html
+    assert 'id="promptNearRows"' in html
+    assert 'id="promptNearDetail"' in html
     assert 'id="promptGraphChart"' in html
     assert "renderPromptGraph" in app_js
+    assert "renderPromptNearRepresentatives" in app_js
+    assert "loadPromptNearRepresentatives" in app_js
+    assert "resetPromptNearPageAndLoad" in app_js
+    assert "schedulePromptNearThresholdLoad" in app_js
+    assert "/api/prompt-near-representatives" in app_js
+    assert '"prompt-near-representatives": 0' in app_js
     assert '<select id="promptGraphTaskTypeSelect"></select>' in html
     assert 'value="centroid_bridge"' not in html
     assert "自然场景 / 微簇" in app_js

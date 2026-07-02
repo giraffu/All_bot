@@ -45,6 +45,10 @@
             <span class="tab-label">向量相似</span>
             <span class="tab-meta">语义簇、近邻、审核</span>
           </button>
+          <button class="tab-button" type="button" data-tab="prompt-near-representatives">
+            <span class="tab-label">近似代表</span>
+            <span class="tab-meta">阈值、代表、压缩</span>
+          </button>
           <button class="tab-button" type="button" data-tab="prompt-scenes">
             <span class="tab-label">语义场景</span>
             <span class="tab-meta">场景、候选、沉淀</span>
@@ -934,6 +938,75 @@
               </div>
             </div>
             <aside id="promptVectorDetail" class="detail-panel"></aside>
+          </div>
+        </section>
+
+        <section class="band tab-panel" data-panel="prompt-near-representatives">
+          <div id="promptNearSummary" class="metric-grid compact"></div>
+          <div class="prompt-filter-bar prompt-near-filter-bar">
+            <label>
+              <span>搜索</span>
+              <input id="promptNearSearchInput" type="search" placeholder="代表提示词关键词" />
+            </label>
+            <label>
+              <span>任务类型</span>
+              <select id="promptNearTaskTypeSelect">
+                <option value="">全部</option>
+              </select>
+            </label>
+            <label class="threshold-control">
+              <span>相似度阈值 <b id="promptNearThresholdValue">0.920</b></span>
+              <input id="promptNearThresholdRange" type="range" min="0.86" max="0.99" step="0.005" value="0.92" />
+              <input id="promptNearThresholdInput" type="number" min="0.86" max="0.99" step="0.005" value="0.92" />
+            </label>
+            <label>
+              <span>最小成员</span>
+              <input id="promptNearMinSizeInput" type="number" min="2" max="1000" value="2" />
+            </label>
+            <label>
+              <span>排序</span>
+              <select id="promptNearSortSelect">
+                <option value="member_count" selected>成员数</option>
+                <option value="quality_score">代表质量分</option>
+                <option value="total_uses">总使用</option>
+                <option value="similarity">平均相似度</option>
+              </select>
+            </label>
+          </div>
+          <div class="distribution-grid prompt-near-distribution-grid">
+            <div class="table-shell">
+              <div class="table-title">任务类型</div>
+              <div id="promptNearTaskTypeDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">代表组规模</div>
+              <div id="promptNearSizeDistribution" class="distribution-bars"></div>
+            </div>
+          </div>
+          <div class="prompt-layout prompt-vector-layout">
+            <div class="table-shell">
+              <div class="table-title prompt-table-title">
+                <span>近似代表组</span>
+                <span id="promptNearPageInfo" class="muted small"></span>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>组/相似度</th>
+                    <th>代表 Prompt</th>
+                    <th>使用信号</th>
+                    <th>成员</th>
+                    <th>最近</th>
+                  </tr>
+                </thead>
+                <tbody id="promptNearRows"></tbody>
+              </table>
+              <div class="prompt-pagination">
+                <button id="promptNearPrevButton" type="button">上一页</button>
+                <button id="promptNearNextButton" type="button">下一页</button>
+              </div>
+            </div>
+            <aside id="promptNearDetail" class="detail-panel"></aside>
           </div>
         </section>
 

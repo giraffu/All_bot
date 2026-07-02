@@ -28,6 +28,12 @@ from .prompt_graph import (
     PROMPT_GRAPH_READY_SQL,
 )
 from .prompt_mart import PROMPT_MART_READY_SQL, PROMPT_MART_STATUS_SQL, PROMPT_NORMALIZATION_VERSION
+from .prompt_near_representatives import (
+    NearPromptEdge,
+    NearPromptStats,
+    build_near_representative_groups,
+    representative_score,
+)
 from .prompt_scenes import (
     DEFAULT_CANDIDATES_PER_SCENE,
     PROMPT_SCENE_ALGORITHM_VERSION,
@@ -114,6 +120,12 @@ PROMPT_VECTOR_SORTS = {
     "total_uses",
     "similarity",
     "refreshed_at",
+}
+PROMPT_NEAR_REPRESENTATIVE_SORTS = {
+    "member_count",
+    "quality_score",
+    "total_uses",
+    "similarity",
 }
 PROMPT_SCENE_SORTS = {
     "member_count",
@@ -611,6 +623,19 @@ def _enrich_prompt_vector_member(record: asyncpg.Record) -> dict[str, Any]:
     item["prompt"] = item.get("prompt") or ""
     item["prompt_preview"] = _collapse_text(item.get("prompt"), 260)
     item["raw_prompt_preview"] = _collapse_text(item.get("raw_prompt_representative"), 180)
+    return item
+
+
+def _enrich_prompt_near_representative_group(item: dict[str, Any]) -> dict[str, Any]:
+    prompt = item.get("representative_prompt") or item.get("prompt") or ""
+    item["representative_prompt"] = prompt
+    item["representative_preview"] = _collapse_text(prompt, 240)
+    return item
+
+
+def _enrich_prompt_near_representative_member(item: dict[str, Any]) -> dict[str, Any]:
+    item["prompt"] = item.get("prompt") or ""
+    item["prompt_preview"] = _collapse_text(item.get("prompt"), 260)
     return item
 
 
@@ -4912,6 +4937,409 @@ async def resume_prompt_vector_embeddings(
         "pid": process.pid,
         "log_path": str(PROMPT_VECTOR_RESUME_LOG),
     }
+
+
+def _near_representative_threshold(value: float) -> float:
+    return round(max(DEFAULT_SIMILAR_THRESHOLD, min(0.99, float(value))), 3)
+
+
+def _near_prompt_stats_from_row(row: dict[str, Any]) -> NearPromptStats:
+    return NearPromptStats(
+        prompt_hash=str(row.get("prompt_hash") or ""),
+        task_type=str(row.get("task_type") or "unknown"),
+        prompt=str(row.get("prompt") or ""),
+        quality_score=float(row.get("quality_score") or 0),
+        uses=int(row.get("uses") or 0),
+        users=int(row.get("users") or 0),
+        last_seen=row.get("last_seen"),
+        result_likes=int(row.get("result_likes") or 0),
+        result_dislikes=int(row.get("result_dislikes") or 0),
+        gallery_applies=int(row.get("gallery_applies") or 0),
+        prompt_unlocks=int(row.get("prompt_unlocks") or 0),
+        char_count=int(row["char_count"]) if row.get("char_count") is not None else None,
+    )
+
+
+def _near_group_pair_stats(group: Any) -> tuple[float, float, float]:
+    similarities = [float(value) for value in group.pair_similarities if value is not None] or [1.0]
+    return (
+        round(min(similarities), 6),
+        round(sum(similarities) / len(similarities), 6),
+        round(max(similarities), 6),
+    )
+
+
+def _near_group_record(group: Any, stats_by_hash: dict[str, NearPromptStats]) -> dict[str, Any]:
+    representative = stats_by_hash[group.representative_hash]
+    members = [stats_by_hash[prompt_hash] for prompt_hash in group.member_hashes if prompt_hash in stats_by_hash]
+    min_similarity, avg_similarity, max_similarity = _near_group_pair_stats(group)
+    record = {
+        "representative_hash": group.representative_hash,
+        "task_type": group.task_type,
+        "representative_prompt": representative.prompt,
+        "member_count": len(members),
+        "pair_edge_count": len(group.pair_similarities),
+        "min_similarity": min_similarity,
+        "avg_similarity": avg_similarity,
+        "max_similarity": max_similarity,
+        "total_uses": sum(item.uses for item in members),
+        "total_users": sum(item.users for item in members),
+        "quality_score": representative.quality_score,
+        "representative_uses": representative.uses,
+        "representative_users": representative.users,
+        "representative_result_likes": representative.result_likes,
+        "representative_result_dislikes": representative.result_dislikes,
+        "representative_gallery_applies": representative.gallery_applies,
+        "representative_prompt_unlocks": representative.prompt_unlocks,
+        "char_count": representative.char_count,
+        "last_seen": _json_value(representative.last_seen),
+    }
+    return _enrich_prompt_near_representative_group(record)
+
+
+def _near_group_member_records(group: Any, stats_by_hash: dict[str, NearPromptStats]) -> list[dict[str, Any]]:
+    representative_hash = group.representative_hash
+    sorted_members = sorted(
+        group.member_hashes,
+        key=lambda prompt_hash: (
+            prompt_hash != representative_hash,
+            -representative_score(stats_by_hash[prompt_hash])[0],
+            -representative_score(stats_by_hash[prompt_hash])[1],
+            -representative_score(stats_by_hash[prompt_hash])[2],
+            prompt_hash,
+        ),
+    )
+    records = []
+    for rank, prompt_hash in enumerate(sorted_members, start=1):
+        stats = stats_by_hash[prompt_hash]
+        records.append(
+            _enrich_prompt_near_representative_member(
+                {
+                    "representative_hash": representative_hash,
+                    "prompt_hash": prompt_hash,
+                    "task_type": stats.task_type,
+                    "similarity_to_representative": round(
+                        float(group.similarity_to_representative.get(prompt_hash, 0)), 6
+                    ),
+                    "is_representative": prompt_hash == representative_hash,
+                    "member_rank": rank,
+                    "prompt": stats.prompt,
+                    "uses": stats.uses,
+                    "users": stats.users,
+                    "result_likes": stats.result_likes,
+                    "result_dislikes": stats.result_dislikes,
+                    "gallery_applies": stats.gallery_applies,
+                    "prompt_unlocks": stats.prompt_unlocks,
+                    "quality_score": stats.quality_score,
+                    "char_count": stats.char_count,
+                    "last_seen": _json_value(stats.last_seen),
+                }
+            )
+        )
+    return records
+
+
+async def _load_prompt_near_representatives(
+    *,
+    model_id: str,
+    threshold: float,
+    task_filter: str | None,
+) -> dict[str, Any]:
+    summary = _row(
+        await _fetchrow(
+            """
+            select
+                coalesce((
+                    select count(*)::bigint
+                    from analytics_prompt_slim_candidates
+                    where quality_stage = 'candidate'
+                      and normalization_version = $2::text
+                      and ($4::text is null or $4::text = any(task_types))
+                ), 0)::bigint as candidate_count,
+                coalesce((
+                    select count(*)::bigint
+                    from analytics_prompt_embeddings
+                    where model_id = $1::text
+                      and normalization_version = $2::text
+                      and status = 'embedded'
+                      and ($4::text is null or task_type = $4::text)
+                ), 0)::bigint as embedded_count,
+                coalesce((
+                    select count(*)::bigint
+                    from analytics_prompt_similarity_edges
+                    where model_id = $1::text
+                      and normalization_version = $2::text
+                      and similarity >= $3::numeric
+                      and ($4::text is null or task_type = $4::text)
+                ), 0)::bigint as threshold_edge_count,
+                (
+                    select max(created_at)
+                    from analytics_prompt_similarity_edges
+                    where model_id = $1::text
+                      and normalization_version = $2::text
+                      and ($4::text is null or task_type = $4::text)
+                ) as latest_refreshed_at
+            """,
+            model_id,
+            PROMPT_NORMALIZATION_VERSION,
+            threshold,
+            task_filter,
+        )
+    )
+    edge_rows = _rows(
+        await _fetch(
+            """
+            select task_type, source_hash, neighbor_hash, similarity::float8 as similarity
+            from analytics_prompt_similarity_edges
+            where model_id = $1::text
+              and normalization_version = $2::text
+              and similarity >= $3::numeric
+              and ($4::text is null or task_type = $4::text)
+            order by task_type, similarity desc, source_hash, neighbor_hash
+            """,
+            model_id,
+            PROMPT_NORMALIZATION_VERSION,
+            threshold,
+            task_filter,
+        )
+    )
+    edges = [
+        NearPromptEdge(
+            str(row.get("task_type") or "unknown"),
+            str(row.get("source_hash") or ""),
+            str(row.get("neighbor_hash") or ""),
+            float(row.get("similarity") or 0),
+        )
+        for row in edge_rows
+    ]
+    prompt_hashes = sorted({edge.source_hash for edge in edges} | {edge.neighbor_hash for edge in edges})
+    if prompt_hashes:
+        stats_rows = _rows(
+            await _fetch(
+                """
+                select
+                    s.prompt_hash,
+                    coalesce(s.task_types[1], 'unknown') as task_type,
+                    s.prompt,
+                    coalesce(s.quality_score, 0)::float8 as quality_score,
+                    coalesce(s.uses, 0)::bigint as uses,
+                    coalesce(s.users, 0)::bigint as users,
+                    s.last_seen,
+                    coalesce(s.result_likes, 0)::bigint as result_likes,
+                    coalesce(s.result_dislikes, 0)::bigint as result_dislikes,
+                    coalesce(s.gallery_applies, 0)::bigint as gallery_applies,
+                    coalesce(s.prompt_unlocks, 0)::bigint as prompt_unlocks,
+                    s.char_count
+                from analytics_prompt_slim_candidates s
+                where s.prompt_hash = any($1::text[])
+                  and s.quality_stage = 'candidate'
+                  and s.normalization_version = $2::text
+                """,
+                prompt_hashes,
+                PROMPT_NORMALIZATION_VERSION,
+            )
+        )
+    else:
+        stats_rows = []
+    stats_by_hash = {
+        str(row.get("prompt_hash")): _near_prompt_stats_from_row(row)
+        for row in stats_rows
+        if row.get("prompt_hash")
+    }
+    groups = build_near_representative_groups(edges, stats_by_hash, threshold=threshold)
+    grouped_hashes = {prompt_hash for group in groups for prompt_hash in group.member_hashes}
+    embedded_count = int(summary.get("embedded_count") or 0)
+    group_count = len(groups)
+    grouped_prompts = len(grouped_hashes)
+    singleton_count = max(0, embedded_count - grouped_prompts)
+    representative_count = singleton_count + group_count
+    merged_members = max(0, grouped_prompts - group_count)
+    candidate_count = float(summary.get("candidate_count") or 0)
+    summary.update(
+        {
+            "embedding_coverage": round((embedded_count / candidate_count * 100) if candidate_count else 0, 2),
+            "group_count": group_count,
+            "grouped_prompts": grouped_prompts,
+            "merged_members": merged_members,
+            "singleton_count": singleton_count,
+            "representative_count": representative_count,
+            "compression_rate": round((merged_members / embedded_count * 100) if embedded_count else 0, 2),
+        }
+    )
+    return {"summary": summary, "groups": groups, "stats_by_hash": stats_by_hash}
+
+
+def _near_group_size_label(size: int) -> tuple[str, int]:
+    if size == 2:
+        return "2 条", 1
+    if size <= 5:
+        return "3-5 条", 2
+    if size <= 10:
+        return "6-10 条", 3
+    if size <= 20:
+        return "11-20 条", 4
+    return "20+ 条", 5
+
+
+def _near_group_distributions(group_records: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    task_counts: dict[str, int] = {}
+    size_counts: dict[str, tuple[int, int]] = {}
+    for record in group_records:
+        task = str(record.get("task_type") or "unknown")
+        task_counts[task] = task_counts.get(task, 0) + 1
+        label, order = _near_group_size_label(int(record.get("member_count") or 0))
+        count, _ = size_counts.get(label, (0, order))
+        size_counts[label] = (count + 1, order)
+    return {
+        "task_type": [
+            {"label": label, "count": count}
+            for label, count in sorted(task_counts.items(), key=lambda item: (-item[1], item[0]))[:40]
+        ],
+        "group_size": [
+            {"label": label, "count": count}
+            for label, (count, _order) in sorted(size_counts.items(), key=lambda item: item[1][1])
+        ],
+    }
+
+
+def _sort_near_group_records(records: list[dict[str, Any]], sort: str) -> list[dict[str, Any]]:
+    sort_keys = {
+        "member_count": lambda item: float(item.get("member_count") or 0),
+        "quality_score": lambda item: float(item.get("quality_score") or 0),
+        "total_uses": lambda item: float(item.get("total_uses") or 0),
+        "similarity": lambda item: float(item.get("avg_similarity") or 0),
+    }
+    key_func = sort_keys.get(sort, sort_keys["member_count"])
+    return sorted(
+        records,
+        key=lambda item: (
+            key_func(item),
+            float(item.get("member_count") or 0),
+            float(item.get("quality_score") or 0),
+            float(item.get("avg_similarity") or 0),
+            str(item.get("representative_hash") or ""),
+        ),
+        reverse=True,
+    )
+
+
+@app.get("/api/prompt-near-representatives")
+async def prompt_near_representatives(
+    limit: int = Query(40, ge=1, le=100),
+    page: int = Query(1, ge=1, le=10000),
+    task_type: str | None = Query(None),
+    min_size: int = Query(2, ge=2, le=1000),
+    threshold: float = Query(DEFAULT_DUPLICATE_THRESHOLD, ge=DEFAULT_SIMILAR_THRESHOLD, le=0.99),
+    q: str | None = Query(None),
+    sort: str = Query("member_count"),
+    model_id: str = Query(DEFAULT_VECTOR_MODEL_ID),
+) -> dict[str, Any]:
+    limit = _clamp(limit, 1, 100)
+    page = _clamp(page, 1, 10000)
+    min_size = _clamp(min_size, 2, 1000)
+    threshold = _near_representative_threshold(threshold)
+    task_filter = (task_type or "").strip() or None
+    sort = (sort or "member_count").strip()
+    if sort not in PROMPT_NEAR_REPRESENTATIVE_SORTS:
+        raise HTTPException(status_code=400, detail="invalid prompt near representative sort")
+    search = (q or "").strip()
+    normalized_search = _normalize_prompt_text(search)
+    offset = (page - 1) * limit
+
+    if not await _prompt_vector_tables_ready():
+        return {
+            "ready": False,
+            "message": "prompt similarity edges are not built; run python -m app.refresh_prompt_vectors --similarity-only",
+            "model": {
+                "model_id": model_id,
+                "model_key": DEFAULT_VECTOR_MODEL_KEY,
+                "normalization_version": PROMPT_NORMALIZATION_VERSION,
+                "threshold": threshold,
+                "min_threshold": DEFAULT_SIMILAR_THRESHOLD,
+                "max_threshold": 0.99,
+            },
+            "summary": {
+                "candidate_count": 0,
+                "embedded_count": 0,
+                "embedding_coverage": 0,
+                "threshold_edge_count": 0,
+                "group_count": 0,
+                "grouped_prompts": 0,
+                "merged_members": 0,
+                "singleton_count": 0,
+                "representative_count": 0,
+                "compression_rate": 0,
+            },
+            "distributions": {"task_type": [], "group_size": []},
+            "groups": [],
+            "pagination": {"page": page, "limit": limit, "total": 0, "has_next": False},
+        }
+
+    context = await _load_prompt_near_representatives(model_id=model_id, threshold=threshold, task_filter=task_filter)
+    group_records = [_near_group_record(group, context["stats_by_hash"]) for group in context["groups"]]
+    filtered_records = [
+        record
+        for record in group_records
+        if int(record.get("member_count") or 0) >= min_size
+        and (
+            not normalized_search
+            or normalized_search in _normalize_prompt_text(str(record.get("representative_prompt") or ""))
+        )
+    ]
+    rows = _sort_near_group_records(filtered_records, sort)[offset : offset + limit]
+    total = len(filtered_records)
+    return {
+        "ready": True,
+        "model": {
+            "model_id": model_id,
+            "model_key": DEFAULT_VECTOR_MODEL_KEY,
+            "normalization_version": PROMPT_NORMALIZATION_VERSION,
+            "threshold": threshold,
+            "min_threshold": DEFAULT_SIMILAR_THRESHOLD,
+            "max_threshold": 0.99,
+            "latest_refreshed_at": context["summary"].get("latest_refreshed_at"),
+        },
+        "limit": limit,
+        "page": page,
+        "task_type": task_filter,
+        "min_size": min_size,
+        "threshold": threshold,
+        "query": search,
+        "sort": sort,
+        "summary": context["summary"],
+        "distributions": _near_group_distributions(group_records),
+        "groups": rows,
+        "pagination": {
+            "page": page,
+            "limit": limit,
+            "total": total,
+            "has_next": offset + limit < total,
+        },
+    }
+
+
+@app.get("/api/prompt-near-representatives/groups/{representative_hash}")
+async def prompt_near_representative_detail(
+    representative_hash: str,
+    task_type: str | None = Query(None),
+    threshold: float = Query(DEFAULT_DUPLICATE_THRESHOLD, ge=DEFAULT_SIMILAR_THRESHOLD, le=0.99),
+    model_id: str = Query(DEFAULT_VECTOR_MODEL_ID),
+) -> dict[str, Any]:
+    threshold = _near_representative_threshold(threshold)
+    task_filter = (task_type or "").strip() or None
+    if not await _prompt_vector_tables_ready():
+        raise HTTPException(status_code=503, detail="prompt similarity edges are not built")
+    context = await _load_prompt_near_representatives(model_id=model_id, threshold=threshold, task_filter=task_filter)
+    for group in context["groups"]:
+        if group.representative_hash == representative_hash:
+            return {
+                "model_id": model_id,
+                "normalization_version": PROMPT_NORMALIZATION_VERSION,
+                "threshold": threshold,
+                "group": _near_group_record(group, context["stats_by_hash"]),
+                "members": _near_group_member_records(group, context["stats_by_hash"]),
+            }
+    raise HTTPException(status_code=404, detail="prompt near representative group not found")
 
 
 @app.get("/api/prompt-vectors")

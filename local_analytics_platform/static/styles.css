@@ -1181,6 +1181,27 @@ tr:last-child td {
   grid-template-columns: minmax(240px, 1.5fr) minmax(130px, 1fr) minmax(110px, 0.8fr) minmax(110px, 0.8fr) minmax(130px, 1fr);
 }
 
+.prompt-near-filter-bar {
+  grid-template-columns: minmax(220px, 1.2fr) minmax(130px, 0.8fr) minmax(240px, 1.3fr) minmax(110px, 0.7fr) minmax(130px, 0.8fr);
+}
+
+.threshold-control {
+  grid-template-columns: 1fr 74px;
+  align-items: end;
+}
+
+.threshold-control span {
+  grid-column: 1 / -1;
+}
+
+.threshold-control input[type="range"] {
+  min-height: 36px;
+}
+
+.threshold-control input[type="number"] {
+  min-width: 0;
+}
+
 .prompt-vector-action-bar {
   display: flex;
   align-items: center;
@@ -1217,6 +1238,11 @@ tr:last-child td {
 
 .prompt-vector-distribution-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 18px;
+}
+
+.prompt-near-distribution-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-bottom: 18px;
 }
 

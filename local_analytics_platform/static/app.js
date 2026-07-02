@@ -11,6 +11,8 @@ const state = {
   promptSlim: null,
   promptVectors: null,
   promptVectorDetail: null,
+  promptNearRepresentatives: null,
+  promptNearRepresentativeDetail: null,
   promptScenes: null,
   promptSceneDetail: null,
   promptGraph: null,
@@ -22,6 +24,7 @@ const state = {
   selectedPrompt: null,
   selectedPromptSlim: null,
   selectedPromptVectorCluster: null,
+  selectedPromptNearRepresentative: null,
   selectedPromptScene: null,
   selectedPromptGraphCommunity: null,
   selectedUserGroup: null,
@@ -32,6 +35,7 @@ const state = {
   promptPage: 1,
   promptSlimPage: 1,
   promptVectorPage: 1,
+  promptNearPage: 1,
   promptScenePage: 1,
   userProfilePage: 1,
   userProfileSearchTimer: null,
@@ -51,6 +55,7 @@ const state = {
     prompts: 30,
     "prompt-slim": 0,
     "prompt-vectors": 0,
+    "prompt-near-representatives": 0,
     "prompt-scenes": 0,
     "prompt-graph": 0,
     templates: 30,
@@ -95,6 +100,11 @@ const tabs = {
     kicker: "向量相似",
     title: "提示词语义相似簇审核",
     subtitle: "读取持久化向量与相似簇表，只在同任务类型内生成审核候选",
+  },
+  "prompt-near-representatives": {
+    kicker: "近似代表",
+    title: "提示词近似代表阈值实验",
+    subtitle: "实时调整相似度阈值，观察代表压缩率和近似组质量",
   },
   "prompt-scenes": {
     kicker: "语义场景",
@@ -256,7 +266,7 @@ function syncDaysControl() {
   }
   if (daysControl) daysControl.classList.remove("hidden");
   if (userDateRangeControls) userDateRangeControls.classList.add("hidden");
-  const lockedAllTimeTabs = new Set(["prompt-slim", "prompt-vectors", "prompt-scenes", "prompt-graph"]);
+  const lockedAllTimeTabs = new Set(["prompt-slim", "prompt-vectors", "prompt-near-representatives", "prompt-scenes", "prompt-graph"]);
   const locked = lockedAllTimeTabs.has(state.activeTab);
   select.disabled = locked;
   select.value = String(locked ? 0 : currentDays());
@@ -2232,6 +2242,153 @@ function renderPromptVectorDetail() {
   `;
 }
 
+function promptNearThreshold() {
+  const value = Number($("#promptNearThresholdInput")?.value || $("#promptNearThresholdRange")?.value || 0.92);
+  return Math.max(0.86, Math.min(0.99, Number.isFinite(value) ? value : 0.92));
+}
+
+function syncPromptNearThresholdControls(value = promptNearThreshold()) {
+  const threshold = Math.max(0.86, Math.min(0.99, Number(value || 0.92)));
+  const display = threshold.toFixed(3);
+  if ($("#promptNearThresholdRange")) $("#promptNearThresholdRange").value = String(threshold);
+  if ($("#promptNearThresholdInput")) $("#promptNearThresholdInput").value = String(threshold);
+  if ($("#promptNearThresholdValue")) $("#promptNearThresholdValue").textContent = display;
+}
+
+function renderPromptNearFilterOptions() {
+  const distributions = state.promptNearRepresentatives?.distributions || {};
+  renderPromptVectorOptionSet(
+    "#promptNearTaskTypeSelect",
+    distributions.task_type || [],
+    [{ value: "", label: "全部" }]
+  );
+  syncPromptNearThresholdControls(state.promptNearRepresentatives?.model?.threshold || promptNearThreshold());
+}
+
+function renderPromptNearSummary() {
+  const summary = state.promptNearRepresentatives?.summary || {};
+  const model = state.promptNearRepresentatives?.model || {};
+  if (state.promptNearRepresentatives && state.promptNearRepresentatives.ready === false) {
+    $("#promptNearSummary").innerHTML = [
+      metric("相似边状态", "未构建", state.promptNearRepresentatives.message || "等待向量相似刷新"),
+      metric("阈值", fmtAmount(Number(model.threshold || 0.92), ""), "可在 0.86-0.99 调整"),
+      metric("代表组", "0", "暂无近似代表"),
+      metric("压缩率", "0%", "等待相似边"),
+    ].join("");
+    return;
+  }
+  $("#promptNearSummary").innerHTML = [
+    metric("已向量化", fmt(summary.embedded_count), `覆盖 ${fmtAmount(summary.embedding_coverage)}%`),
+    metric("命中边", fmt(summary.threshold_edge_count), `阈值 ${fmtAmount(model.threshold || promptNearThreshold())}`),
+    metric("代表组", fmt(summary.group_count), `合并成员 ${fmt(summary.merged_members)}`),
+    metric("Singleton", fmt(summary.singleton_count), `代表总数 ${fmt(summary.representative_count)}`),
+    metric("压缩率", `${fmtAmount(summary.compression_rate)}%`, `分组成员 ${fmt(summary.grouped_prompts)}`),
+    metric("刷新", fmtDate(model.latest_refreshed_at), `模型 ${escapeHtml(model.model_id || "-")}`),
+  ].join("");
+}
+
+function renderPromptNearDistributions() {
+  const distributions = state.promptNearRepresentatives?.distributions || {};
+  renderDistribution("#promptNearTaskTypeDistribution", distributions.task_type || []);
+  renderDistribution("#promptNearSizeDistribution", distributions.group_size || []);
+}
+
+function renderPromptNearRepresentatives() {
+  renderPromptNearFilterOptions();
+  renderPromptNearSummary();
+  renderPromptNearDistributions();
+
+  const rows = state.promptNearRepresentatives?.groups || [];
+  if (!state.selectedPromptNearRepresentative || !rows.some((item) => item.representative_hash === state.selectedPromptNearRepresentative.representative_hash)) {
+    state.selectedPromptNearRepresentative = rows[0] || null;
+    state.promptNearRepresentativeDetail = null;
+  }
+
+  $("#promptNearRows").innerHTML = tableRows(rows, (row) => `
+    <tr data-representative-hash="${escapeHtml(row.representative_hash)}" class="${state.selectedPromptNearRepresentative?.representative_hash === row.representative_hash ? "selected-row" : ""}">
+      <td>
+        <strong>${fmt(row.member_count)}</strong> 条
+        <div class="muted small">均值 ${fmtAmount(Number(row.avg_similarity || 0) * 100)}%</div>
+        <div class="muted small">${fmtAmount(Number(row.min_similarity || 0) * 100)}% - ${fmtAmount(Number(row.max_similarity || 0) * 100)}%</div>
+      </td>
+      <td>
+        <div class="prompt-preview">${escapeHtml(row.representative_preview)}</div>
+        <div class="pill-list">
+          <span class="pill gray">${escapeHtml(row.task_type || "-")}</span>
+          <span class="pill">质量 ${fmtAmount(row.quality_score)}</span>
+        </div>
+      </td>
+      <td>${renderPromptVectorSignalText(row)}</td>
+      <td>
+        <div>两两边 ${fmt(row.pair_edge_count)}</div>
+        <div class="muted small mono">${escapeHtml(row.representative_hash || "-")}</div>
+      </td>
+      <td>
+        <div>${fmtDate(row.last_seen)}</div>
+      </td>
+    </tr>
+  `);
+
+  document.querySelectorAll("#promptNearRows tr").forEach((row) => {
+    row.addEventListener("click", () => {
+      state.selectedPromptNearRepresentative = rows.find((item) => item.representative_hash === row.dataset.representativeHash) || rows[0] || null;
+      state.promptNearRepresentativeDetail = null;
+      renderPromptNearRepresentatives();
+      if (state.selectedPromptNearRepresentative) {
+        loadPromptNearRepresentativeDetail(state.selectedPromptNearRepresentative.representative_hash).catch(setError);
+      }
+    });
+  });
+
+  const pagination = state.promptNearRepresentatives?.pagination || {};
+  const total = Number(pagination.total || 0);
+  $("#promptNearPageInfo").textContent = `第 ${fmt(pagination.page || 1)} 页 · 共 ${fmt(total)} 组`;
+  $("#promptNearPrevButton").disabled = Number(pagination.page || 1) <= 1;
+  $("#promptNearNextButton").disabled = !pagination.has_next;
+
+  renderPromptNearRepresentativeDetail();
+}
+
+function renderPromptNearRepresentativeDetail() {
+  const selected = state.selectedPromptNearRepresentative;
+  if (!selected) {
+    $("#promptNearDetail").innerHTML = '<div class="empty">暂无近似代表组</div>';
+    return;
+  }
+  if (!state.promptNearRepresentativeDetail || state.promptNearRepresentativeDetail.group?.representative_hash !== selected.representative_hash) {
+    $("#promptNearDetail").innerHTML = `
+      <h3>近似代表 · ${fmt(selected.member_count)} 条</h3>
+      <p class="prompt-fulltext">${escapeHtml(selected.representative_prompt || selected.representative_preview || "")}</p>
+      <div class="empty compact">正在加载成员</div>
+    `;
+    return;
+  }
+  const group = state.promptNearRepresentativeDetail.group || selected;
+  const members = state.promptNearRepresentativeDetail.members || [];
+  $("#promptNearDetail").innerHTML = `
+    <h3>${escapeHtml(group.task_type || "-")} · ${fmt(group.member_count)} 条近似提示词</h3>
+    <p class="prompt-fulltext">${escapeHtml(group.representative_prompt || group.representative_preview || "")}</p>
+    <dl>
+      <dt>代表 Hash</dt><dd class="mono">${escapeHtml(group.representative_hash)}</dd>
+      <dt>阈值</dt><dd>${fmtAmount(Number(state.promptNearRepresentativeDetail.threshold || promptNearThreshold()))}</dd>
+      <dt>相似度</dt><dd>均值 ${fmtAmount(Number(group.avg_similarity || 0) * 100)}% · 最低 ${fmtAmount(Number(group.min_similarity || 0) * 100)}%</dd>
+      <dt>总信号</dt><dd>使用 ${fmt(group.total_uses)} · 用户 ${fmt(group.total_users)} · 质量 ${fmtAmount(group.quality_score)}</dd>
+    </dl>
+    <div class="cluster-member-list">
+      ${members.map((member) => `
+        <div class="cluster-member ${member.is_representative ? "representative" : ""}">
+          <div class="cluster-member-head">
+            <span class="pill ${member.is_representative ? "" : "gray"}">${member.is_representative ? "代表项" : `近似 ${fmtAmount(Number(member.similarity_to_representative || 0) * 100)}%`}</span>
+            <span class="muted small">使用 ${fmt(member.uses)} · 用户 ${fmt(member.users)} · 质量 ${fmtAmount(member.quality_score)}</span>
+          </div>
+          <div class="cluster-member-prompt">${escapeHtml(member.prompt_preview || member.prompt || "-")}</div>
+          <div class="muted small">结果赞 ${fmt(member.result_likes)} · 踩 ${fmt(member.result_dislikes)} · Gallery 应用 ${fmt(member.gallery_applies)} · 解锁 ${fmt(member.prompt_unlocks)}</div>
+        </div>
+      `).join("") || '<div class="empty compact">暂无成员</div>'}
+    </div>
+  `;
+}
+
 function promptSceneConfidenceLabel(label) {
   if (label === "high") return "高";
   if (label === "medium") return "中";
@@ -2768,6 +2925,18 @@ function getPromptVectorParams() {
   };
 }
 
+function getPromptNearParams() {
+  return {
+    task_type: $("#promptNearTaskTypeSelect")?.value || "",
+    threshold: promptNearThreshold(),
+    min_size: Number($("#promptNearMinSizeInput")?.value || 2),
+    q: $("#promptNearSearchInput")?.value?.trim() || "",
+    sort: $("#promptNearSortSelect")?.value || "member_count",
+    page: state.promptNearPage,
+    limit: 40,
+  };
+}
+
 function getPromptSceneParams() {
   return {
     task_type: $("#promptSceneTaskTypeSelect")?.value || "",
@@ -2949,6 +3118,19 @@ async function loadPromptVectors() {
   }
 }
 
+async function loadPromptNearRepresentatives() {
+  state.promptNearRepresentatives = await fetchJson("/api/prompt-near-representatives", getPromptNearParams());
+  const rows = state.promptNearRepresentatives?.groups || [];
+  if (!state.selectedPromptNearRepresentative || !rows.some((row) => row.representative_hash === state.selectedPromptNearRepresentative.representative_hash)) {
+    state.selectedPromptNearRepresentative = rows[0] || null;
+    state.promptNearRepresentativeDetail = null;
+  }
+  renderPromptNearRepresentatives();
+  if (state.selectedPromptNearRepresentative && state.promptNearRepresentatives?.ready !== false) {
+    await loadPromptNearRepresentativeDetail(state.selectedPromptNearRepresentative.representative_hash);
+  }
+}
+
 async function loadPromptScenes() {
   state.promptScenes = await fetchJson("/api/prompt-scenes", getPromptSceneParams());
   const rows = state.promptScenes?.scenes || [];
@@ -2998,6 +3180,18 @@ async function loadPromptVectorDetail(clusterId) {
   renderPromptVectorDetail();
 }
 
+async function loadPromptNearRepresentativeDetail(representativeHash) {
+  if (!representativeHash) return;
+  state.promptNearRepresentativeDetail = await fetchJson(
+    `/api/prompt-near-representatives/groups/${encodeURIComponent(representativeHash)}`,
+    {
+      task_type: $("#promptNearTaskTypeSelect")?.value || "",
+      threshold: promptNearThreshold(),
+    }
+  );
+  renderPromptNearRepresentativeDetail();
+}
+
 async function loadPromptSceneDetail(sceneId) {
   if (!sceneId) return;
   state.promptSceneDetail = await fetchJson(`/api/prompt-scenes/${encodeURIComponent(sceneId)}`);
@@ -3028,6 +3222,7 @@ const tabLoaders = {
   prompts: loadPrompts,
   "prompt-slim": loadPromptSlim,
   "prompt-vectors": loadPromptVectors,
+  "prompt-near-representatives": loadPromptNearRepresentatives,
   "prompt-scenes": loadPromptScenes,
   "prompt-graph": loadPromptGraph,
   templates: loadTemplates,
@@ -3080,6 +3275,11 @@ function reloadCurrentTab() {
     state.promptVectorPage = 1;
     state.selectedPromptVectorCluster = null;
     state.promptVectorDetail = null;
+  }
+  if (state.activeTab === "prompt-near-representatives") {
+    state.promptNearPage = 1;
+    state.selectedPromptNearRepresentative = null;
+    state.promptNearRepresentativeDetail = null;
   }
   if (state.activeTab === "prompt-scenes") {
     state.promptScenePage = 1;
@@ -3271,6 +3471,53 @@ $("#promptVectorNextButton").addEventListener("click", () => {
   loadCurrentTab({ force: true });
 });
 $("#promptVectorResumeButton").addEventListener("click", resumePromptVectorEmbeddings);
+function resetPromptNearPageAndLoad() {
+  state.promptNearPage = 1;
+  state.selectedPromptNearRepresentative = null;
+  state.promptNearRepresentativeDetail = null;
+  markTabStale("prompt-near-representatives");
+  if (state.activeTab === "prompt-near-representatives") {
+    loadCurrentTab({ force: true });
+  }
+}
+["#promptNearTaskTypeSelect", "#promptNearMinSizeInput", "#promptNearSortSelect"].forEach((selector) => {
+  const element = $(selector);
+  if (element) element.addEventListener("change", resetPromptNearPageAndLoad);
+});
+let promptNearSearchTimer = null;
+$("#promptNearSearchInput")?.addEventListener("input", () => {
+  window.clearTimeout(promptNearSearchTimer);
+  promptNearSearchTimer = window.setTimeout(resetPromptNearPageAndLoad, 300);
+});
+let promptNearThresholdTimer = null;
+function schedulePromptNearThresholdLoad(value) {
+  syncPromptNearThresholdControls(value);
+  window.clearTimeout(promptNearThresholdTimer);
+  promptNearThresholdTimer = window.setTimeout(resetPromptNearPageAndLoad, 350);
+}
+$("#promptNearThresholdRange")?.addEventListener("input", (event) => {
+  schedulePromptNearThresholdLoad(event.target.value);
+});
+$("#promptNearThresholdInput")?.addEventListener("input", (event) => {
+  schedulePromptNearThresholdLoad(event.target.value);
+});
+$("#promptNearThresholdInput")?.addEventListener("change", (event) => {
+  schedulePromptNearThresholdLoad(event.target.value);
+});
+$("#promptNearPrevButton")?.addEventListener("click", () => {
+  state.promptNearPage = Math.max(1, state.promptNearPage - 1);
+  state.selectedPromptNearRepresentative = null;
+  state.promptNearRepresentativeDetail = null;
+  markTabStale("prompt-near-representatives");
+  loadCurrentTab({ force: true });
+});
+$("#promptNearNextButton")?.addEventListener("click", () => {
+  state.promptNearPage += 1;
+  state.selectedPromptNearRepresentative = null;
+  state.promptNearRepresentativeDetail = null;
+  markTabStale("prompt-near-representatives");
+  loadCurrentTab({ force: true });
+});
 function resetPromptScenePageAndLoad() {
   state.promptScenePage = 1;
   state.selectedPromptScene = null;

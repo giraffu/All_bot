@@ -85,6 +85,17 @@ docker exec allbot-local-analytics-platform \
 - `GET /api/prompt-vectors/clusters/{cluster_id}`：返回代表 prompt 与簇成员的相似度、使用/用户/反馈信号。
 - `POST /api/prompt-vectors/resume`：后台启动 `python -m app.refresh_prompt_vectors --embed-only` 续跑缺失 embedding；如果 `.refresh_prompt_vectors.lock` 已被占用，则只返回运行中状态，不启动第二条向量化。
 
+## Prompt Near Representatives
+
+“近似代表”Tab 是阈值实验视图，不新增持久化表，也不改自动刷新链。它实时读取 `analytics_prompt_similarity_edges`，在 `0.86-0.99` 范围内按当前阈值即时重组代表组，用于观察多少阈值能稳定挑出代表 prompt。默认阈值为 `0.92`；低于 `0.86` 的实验需要先用更低 `--similar-threshold` 重建相似边。
+
+分组规则复用向量相似的守卫式近重复逻辑：每个组先按质量/使用/用户/最近出现选择代表，只纳入与代表以及组内已有成员两两达到当前阈值的未分配 prompt，避免桥接内容被误合并。
+
+新增 API：
+
+- `GET /api/prompt-near-representatives`：返回候选覆盖、阈值命中边、代表组数、合并成员、singleton、代表压缩率、任务/组规模分布和分页代表组。
+- `GET /api/prompt-near-representatives/groups/{representative_hash}`：按同一 `threshold/task_type/model_id` 返回代表组成员及相似度、使用/用户/质量信号。
+
 ## Prompt Semantic Scenes
 
 语义场景用于把已向量化的候选 prompt 按 `task_type` 提炼成约 1000 个可运营审核场景，独立于相似边/近重复族，不依赖 top-k 相似边：
