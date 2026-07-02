@@ -1,6 +1,6 @@
 version: 1
 managed_by: allbot-lan-aio-operator
-last_verified_at: "2026-07-02T09:14:49Z"
+last_verified_at: "2026-07-02T11:01:34Z"
 sources:
   slot_catalog: ops/gpu_pool_controller/config/lan_aio_prod_slots.yml
   profile_catalog: ops/gpu_pool_controller/config/task_profiles.yml
@@ -18,7 +18,7 @@ nodes:
     physical_gpus:
       - gpu_index: 0
         hardware: NVIDIA GeForce RTX 5090 32G
-        mode: host_service
+        mode: host_service_with_aio_candidate
         current:
           profile: face_i2i_t2i
           slot_id: gpu-226-gpu0-face_i2i_t2i
@@ -26,12 +26,22 @@ nodes:
           container_name: null
           host_port: 8188
           state: host_service
-        cached_profiles: []
-        fast_switch_candidates: []
+        cached_profiles:
+          - profile: image_to_video
+            cache_state: missing
+            model_manifest_key: image_to_video/2026-06-13-test/manifest.json
+            workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/image_to_video/workspace
+        fast_switch_candidates:
+          - slot_id: gpu-226-gpu0-image_to_video
+            profile: image_to_video
+            cache_state: missing
+            note: Candidate added for host-service migration; run pull-image and warm-cache before disabled heartbeat.
         blocked_profiles:
           - profile: face_i2i_t2i
-            reason: blocked_host_service_runtime; requires host-service to container migration before LAN AIO takeover.
-        notes: gpu-226 is not a Docker LAN AIO runtime today.
+            reason: blocked_host_service_runtime; current production runtime is still systemd comfyui.service.
+          - profile: image_to_video
+            reason: pending_disabled_heartbeat_and_canary on RTX 5090 32G; gpu-177 GPU1 image_to_video previously OOM-killed ComfyUI with status 137.
+        notes: gpu-226 host-service remains active while gpu-226-gpu0-image_to_video is prepared as a Docker LAN AIO candidate on host port 8190.
 
   gpu-177:
     host: allbot-gpu-177
@@ -179,6 +189,8 @@ nodes:
           image_ref: 192.168.1.115:5000/allbot/comfy-runpod-scail2:20260617-scail2-cu128-a492b2b-proddeps1
           model_manifest_key: scail2/2026-06-17-test/manifest.json
           workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu0/profiles/scail2/workspace
+          remote_workers_host_dir: /home/chuzeyu/allbot-scail2-aio-prod/gpu002-slot0/remote_workers
+          last_restart_at: "2026-07-02T11:00:16Z"
         cached_profiles:
           - profile: scail2
             cache_state: ready
@@ -190,6 +202,7 @@ nodes:
             workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu0/profiles/img2img_lora/workspace
         fast_switch_candidates: []
         blocked_profiles: []
+        notes: SCAIL-2 slot0 remote_workers bundle hotfixed on 2026-07-02 to disable freenoise for scail2_action_transfer_long; post-restart verification saw the container healthy, Central enabled, and a live scail2_action_transfer_long task running on the refreshed bundle.
       - gpu_index: 1
         hardware: NVIDIA GeForce RTX 4090 48G
         current:

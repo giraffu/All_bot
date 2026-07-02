@@ -16,6 +16,20 @@ assignments:
       - t2i-pornmaster-turbo
     max_parallel_tasks: 2
 
+  - id: lan-226-8190-worker-01-aio
+    enabled: false
+    provider: lan_ssh
+    node_id: gpu-226
+    comfy_id: aio-gpu0
+    worker_id: cloud_prod_worker_01
+    profile_id: image_to_video
+    task_types:
+      - video_insert
+      - video_edit
+      - image_to_video
+    max_parallel_tasks: 1
+    notes: Docker LAN AIO candidate for migrating gpu-226 from host-service worker 01 to image_to_video-only capacity.
+
   - id: lan-177-8188-worker-02
     enabled: false
     provider: lan_ssh
