@@ -55,6 +55,7 @@ Do not print `.env*`, compose config expansion, tokens, agent secrets, R2 keys, 
 - 未经用户明确要求，不执行生产 mutation。
 - 一次只操作一个 physical GPU / slot；禁止跨节点批量切换。
 - 不手写 Docker Compose，不自由指定镜像或 manifest，不绕过 `lan_aio_prod_slots.yml`。
+- 不调用 Dashboard `/api/runpod/lan-aio/slots*` 或 `/profiles` 管理 LAN AIO；这些 Web slot 管理 API 已废弃，候选切换、恢复和缓存预热只走本地主 AI operator/CLI。
 - 不 reboot GPU 主机，不 restart Docker daemon，除非用户明确要求维护窗口。
 - 切换前必须确认当前 slot 无 running task；等待自然空闲，不强杀任务。
 - `blocked_*`、`maintenance_disabled`、`blocked_host_service_runtime` 不允许直接 takeover，除非先通过配置和验证解除阻断。
