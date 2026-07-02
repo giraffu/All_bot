@@ -27,12 +27,15 @@ async def register_task_submission(
     submission_context: TaskSubmissionContext,
     add_task_func: Callable[..., Awaitable[str]],
 ) -> str:
+    delivery_context = getattr(submission_context, "delivery_context", {}) or {}
     return await add_task_func(
         task_id=registry_task_id,
         user_id=user_id,
         username=username,
         cost=cost,
         task_type=submission_context.task_type,
+        chat_id=delivery_context.get("chat_id"),
+        message_id=delivery_context.get("message_id"),
         prompt=submission_context.log_prompt,
         saved_input_images=submission_context.registry_saved_inputs(),
         is_video=submission_context.is_video_task,

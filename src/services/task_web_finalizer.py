@@ -33,6 +33,7 @@ def _serialize_submission_context(
         "metadata": dict(submission_context.metadata),
         "allow_contribute": submission_context.allow_contribute,
         "final_priority": submission_context.final_priority,
+        "delivery_context": dict(submission_context.delivery_context),
         "video_request": {
             "requested_duration": submission_context.requested_duration,
             "output_width": submission_context.output_width,
@@ -59,6 +60,7 @@ def _deserialize_submission_context(
         metadata=dict(payload.get("metadata") or {}),
         allow_contribute=bool(payload.get("allow_contribute", True)),
         final_priority=int(payload.get("final_priority", 0)),
+        delivery_context=dict(payload.get("delivery_context") or {}),
         video_request=VideoTaskRequest(
             requested_duration=video_request_payload.get("requested_duration"),
             output_width=video_request_payload.get("output_width"),

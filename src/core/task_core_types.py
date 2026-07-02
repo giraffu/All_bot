@@ -26,6 +26,7 @@ class TaskSubmissionContext:
     final_priority: int
     video_request: VideoTaskRequest = field(default_factory=VideoTaskRequest)
     client_type: str = "web"
+    delivery_context: dict[str, Any] = field(default_factory=dict)
 
     @property
     def log_prompt(self) -> str:

@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from src.core.task_core_error_helpers import (
     build_failed_task_user_message,
@@ -157,6 +157,7 @@ async def process_and_submit_task(
     check_lock: bool = True,
     source_post_id: Optional[int] = None,
     submission_side_effect_plan: TaskSubmissionSideEffectPlan | None = None,
+    delivery_context: dict[str, Any] | None = None,
     dependencies: TaskCoreProcessDependencies | None = None,
 ) -> dict:
     dependencies = dependencies or get_default_task_core_process_dependencies()
@@ -192,6 +193,14 @@ async def process_and_submit_task(
             dependencies=dependencies,
         )
         submission_context.client_type = client_type
+        if delivery_context:
+            submission_context.delivery_context.update(
+                {
+                    key: value
+                    for key, value in delivery_context.items()
+                    if key in {"chat_id", "message_id"} and value is not None
+                }
+            )
 
         credits_deducted = await maybe_deduct_submission_credits(
             user_id=user_id,

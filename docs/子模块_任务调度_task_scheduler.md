@@ -142,6 +142,7 @@ Bot flow 已拆成五段式上下文：
 取消态改为专用异常 `BotTaskCancelled`，不再依赖字符串 sentinel `"cancelled"`。
 当前 Bot `task_service_flow.py` 与 Web `task_web_lifecycle_monitor.py` 已共享 `task_lifecycle_runner.py` 的 monitor->route 骨架；Web monitor 与 `task_web_finalizer.py` 进一步共享 backend terminal router，避免多处重复写 success/cancelled/failure 分流。
 Bot 前台 `monitor_task_progress(...)` 已进一步拆出纯状态渲染 `render_progress_transition(...)`；Telegram I/O、取消/失败处理仍留在 runtime 层，双 ID 与 FSM 全局菜单退出语义不变。
+Bot 提交到 `task_core.process_and_submit_task(...)` 时必须携带纯数据 `delivery_context`（当前包括 `chat_id` 与可选 `message_id`），由 registry 持久化为 active task 顶层字段；这样 Bot 进程重启后 `recover_active_tasks(..., client_type="bot")` 才能重新监控 backend task 并把结果发回原 Telegram 会话。`core` 仍不得接收 Telegram `Update`、`Message` 或 `Context` 对象。
 
 ## 5. API 口径
 当前 Web 任务入口以 `/api/tasks/generate` 为主，body 口径为：

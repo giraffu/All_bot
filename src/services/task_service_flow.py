@@ -51,9 +51,18 @@ def mark_task_submission_succeeded(runtime_state, result: dict) -> list[str]:
     return result["saved_inputs"]
 
 
+def build_bot_delivery_context(*, chat_id, status_msg) -> dict:
+    delivery_context = {"chat_id": chat_id}
+    message_id = getattr(status_msg, "message_id", None)
+    if message_id is not None:
+        delivery_context["message_id"] = message_id
+    return delivery_context
+
+
 async def submit_bot_task(
     *,
     submission: BotTaskSubmissionContext,
+    delivery_context: dict | None = None,
 ) -> tuple[str, str, list[str]]:
     task_id = str(uuid.uuid4())
     correlation_id.set(task_id)
@@ -67,6 +76,7 @@ async def submit_bot_task(
         client_type=submission.client_type,
         source_post_id=submission.source_post_id,
         deduct_quota=submission.deduct_quota,
+        delivery_context=delivery_context,
     )
     saved_inputs = mark_task_submission_succeeded(submission.runtime_state, result)
     backend_task_id = submission.runtime_state.backend_task_id or task_id
@@ -133,6 +143,10 @@ async def prepare_and_submit_bot_task(
     )
     submission_result = await submit_bot_task(
         submission=submission,
+        delivery_context=build_bot_delivery_context(
+            chat_id=chat_id,
+            status_msg=status_msg,
+        ),
     )
     if len(submission_result) == 2:
         registry_task_id, saved_inputs = submission_result

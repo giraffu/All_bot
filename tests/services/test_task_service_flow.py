@@ -60,6 +60,7 @@ async def test_submit_bot_task_sets_runtime_state_and_returns_saved_inputs(monke
     assert kwargs["client_type"] == "bot"
     assert kwargs["source_post_id"] == 9
     assert kwargs["deduct_quota"] is False
+    assert kwargs["delivery_context"] is None
 
 
 @pytest.mark.asyncio
@@ -196,12 +197,51 @@ async def test_prepare_and_submit_bot_task_updates_status_through_helpers(monkey
             task_type="image",
             inputs={"prompt": "hello"},
         ),
+        delivery_context={"chat_id": 123},
     )
     update_submitted.assert_awaited_once_with(
         status_msg="status-msg",
         message_spec=spec,
         registry_task_id="registry-1",
     )
+
+
+@pytest.mark.asyncio
+async def test_prepare_and_submit_bot_task_persists_status_message_delivery_context(
+    monkeypatch,
+):
+    send_initial = AsyncMock(return_value=SimpleNamespace(message_id=77))
+    submit_bot_task = AsyncMock(return_value=("registry-1", "backend-1", []))
+    update_submitted = AsyncMock()
+    runtime_state = SimpleNamespace(actual_cost=2)
+    spec = BotTaskMessageSpec(initial_status_text="正在提交")
+
+    monkeypatch.setattr(task_service_flow, "send_initial_task_status", send_initial)
+    monkeypatch.setattr(task_service_flow, "submit_bot_task", submit_bot_task)
+    monkeypatch.setattr(
+        task_service_flow,
+        "update_submitted_task_status",
+        update_submitted,
+    )
+
+    await task_service_flow.prepare_and_submit_bot_task(
+        context=object(),
+        update=None,
+        chat_id=123,
+        message_spec=spec,
+        submission=BotTaskSubmissionContext(
+            runtime_state=runtime_state,
+            internal_user_id=456,
+            username="tester",
+            task_type="image",
+            inputs={"prompt": "hello"},
+        ),
+    )
+
+    assert submit_bot_task.await_args.kwargs["delivery_context"] == {
+        "chat_id": 123,
+        "message_id": 77,
+    }
 
 
 @pytest.mark.asyncio

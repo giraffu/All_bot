@@ -113,6 +113,35 @@ async def test_register_task_submission_persists_client_type():
 
 
 @pytest.mark.asyncio
+async def test_register_task_submission_persists_delivery_context():
+    add_task = AsyncMock(return_value="registry-bot")
+    submission_context = SimpleNamespace(
+        task_type="img2img_lora",
+        log_prompt="prompt",
+        registry_saved_inputs=lambda: ["input.jpg"],
+        is_video_task=False,
+        final_priority=8,
+        allow_contribute=True,
+        client_type="bot",
+        delivery_context={"chat_id": 12345, "message_id": 678},
+        metadata={},
+    )
+
+    await register_task_submission(
+        registry_task_id="registry-bot",
+        user_id=42,
+        username="tester",
+        cost=3,
+        submission_context=submission_context,
+        add_task_func=add_task,
+    )
+
+    kwargs = add_task.await_args.kwargs
+    assert kwargs["chat_id"] == 12345
+    assert kwargs["message_id"] == 678
+
+
+@pytest.mark.asyncio
 async def test_register_task_submission_persists_non_deducted_tasks():
     add_task = AsyncMock(return_value="registry-free")
     submission_context = SimpleNamespace(
