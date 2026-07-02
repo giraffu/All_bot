@@ -15,6 +15,8 @@ from config import MINI_APP_URL, build_versioned_mini_app_url
 from src.constants import (
     MODE_CUSTOM_VIDEO,
     MODE_EDIT,
+    MODE_FACE_VIDEO_STEP1,
+    MODE_FACE_VIDEO_STEP2,
     MODE_I2I_DRAW,
     MODE_I2I_PRO,
     MODE_IMAGE_TO_VIDEO,
@@ -45,13 +47,19 @@ from src.services.gallery_browse_service import (
     resolve_gallery_media_source,
     send_gallery_media_message,
 )
-from src.services.ltx_video_extension_service import extract_ltx_history_context
+from src.services.ltx_video_extension_service import (
+    extract_ltx_history_context,
+    is_ltx_stitched_result,
+)
 from src.services.task_service_entrypoints_generation import process_i2i_pro_task
 from src.services.task_service_entrypoints_specialized import process_ltx_video_task
 from src.services.task_service_generation_image import process_standard_generation_task
 from src.services.task_service_generation_video import process_image_to_video_generation_task
 from src.services.task_service_generation_wan22 import process_wan22_video_v2_generation_task
-from src.services.wan22_video_v2_extension_service import extract_wan22_history_context
+from src.services.wan22_video_v2_extension_service import (
+    extract_wan22_history_context,
+    is_wan22_stitched_result,
+)
 from src.utils import (
     robust_delete_message,
     robust_reply_text,
@@ -112,6 +120,12 @@ WEB_FALLBACK_TASK_TYPES = {
     MODE_SCAIL2_VIDEO_REPLACEMENT,
     MODE_SCAIL2_FACE_SWAP_V2,
 }
+WEB_ONLY_MARKET_TASK_TYPES = {
+    "face_video",
+    MODE_FACE_VIDEO_STEP1,
+    MODE_FACE_VIDEO_STEP2,
+    MODE_SCAIL2_FACE_SWAP_V2,
+}
 NATIVE_IMAGE_TASK_TYPES = {
     MODE_I2I_PRO,
     MODE_EDIT,
@@ -124,6 +138,29 @@ NATIVE_VIDEO_TASK_TYPES = {
     MODE_WAN22_VIDEO_V2,
     MODE_LTX_VIDEO,
 }
+TASK_TYPE_LABEL_KEYS = {
+    MODE_I2I_PRO: "qqcc.market.tabs.i2i_pro",
+    MODE_I2I_DRAW: "qqcc.market.tabs.i2i_draw",
+    MODE_EDIT: "qqcc.market.tabs.edit_group",
+    MODE_IMG2IMG_LORA: "task.mode_img2img_lora",
+    MODE_PORNMASTER_FLUX2_SINGLE_EDIT: "qqcc.market.tabs.free_edit_v2_group",
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT: "qqcc.market.tabs.free_edit_v2_group",
+    "face_video": "task.face_video",
+    MODE_FACE_VIDEO_STEP1: "task.mode_face_video_step1",
+    MODE_FACE_VIDEO_STEP2: "task.mode_face_video_step2",
+    MODE_CUSTOM_VIDEO: "qqcc.market.tabs.img2video_group",
+    MODE_IMAGE_TO_VIDEO: "qqcc.market.tabs.img2video_group",
+    MODE_LTX_VIDEO: "qqcc.market.tabs.ltx_video",
+    MODE_LTX_VIDEO_FLF2V: "qqcc.market.tabs.ltx_video",
+    MODE_WAN22_VIDEO_V2: "qqcc.market.tabs.wan22_video_v2",
+    MODE_SCAIL2_ACTION_TRANSFER: "qqcc.market.tabs.scail2_action_transfer",
+    MODE_SCAIL2_ACTION_TRANSFER_LONG: "qqcc.market.tabs.scail2_action_transfer",
+    MODE_SCAIL2_VIDEO_REPLACEMENT: "qqcc.market.tabs.scail2_video_replacement",
+    MODE_SCAIL2_FACE_SWAP_V2: "qqcc.market.tabs.scail2_face_swap_v2",
+    "edit_group": "qqcc.market.tabs.edit_group",
+    "free_edit_v2_group": "qqcc.market.tabs.free_edit_v2_group",
+    "img2video_group": "qqcc.market.tabs.img2video_group",
+}
 
 
 def _t(context, key: str, **kwargs) -> str:
@@ -131,6 +168,11 @@ def _t(context, key: str, **kwargs) -> str:
     if callable(translator):
         return translator(key, **kwargs)
     return key.format(**kwargs) if kwargs else key
+
+
+def _translated(context, key: str) -> str | None:
+    value = _t(context, key)
+    return value if value and value != key else None
 
 
 def _tab_label(context, tab: MarketTab) -> str:
@@ -241,9 +283,70 @@ def _history_type(history) -> str | None:
     return str(getattr(history, "type", "") or "").strip() or None
 
 
+def _task_type_label(context, task_type: str | None) -> str:
+    normalized = str(task_type or "").strip()
+    if not normalized:
+        return "unknown"
+
+    explicit_key = TASK_TYPE_LABEL_KEYS.get(normalized)
+    if explicit_key:
+        explicit_label = _translated(context, explicit_key)
+        if explicit_label:
+            return explicit_label
+
+    if normalized.startswith("task."):
+        direct_label = _translated(context, normalized)
+        if direct_label:
+            return direct_label
+        if normalized.startswith("task.mode_"):
+            normalized = normalized.removeprefix("task.mode_")
+
+    explicit_key = TASK_TYPE_LABEL_KEYS.get(normalized)
+    if explicit_key:
+        explicit_label = _translated(context, explicit_key)
+        if explicit_label:
+            return explicit_label
+
+    inferred_label = _translated(context, f"task.mode_{normalized}")
+    return inferred_label or normalized
+
+
+def translate_market_tags(tags: list[str], *, context) -> list[str]:
+    translated_tags = []
+    for tag in tags:
+        raw_tag = str(tag or "").strip()
+        if not raw_tag:
+            continue
+
+        lora_tag = translate_tags([raw_tag])[0]
+        if lora_tag != raw_tag:
+            translated_tags.append(lora_tag)
+            continue
+
+        prefix = "#" if raw_tag.startswith("#") else ""
+        tag_body = raw_tag[1:] if prefix else raw_tag
+        label = _task_type_label(context, tag_body)
+        translated_tags.append(f"{prefix}{label}" if label != tag_body else raw_tag)
+    return translated_tags
+
+
+def _is_stitched_market_history(history) -> bool:
+    if history is None:
+        return False
+    extra_outputs = getattr(history, "extra_outputs", None)
+    return is_wan22_stitched_result(extra_outputs) or is_ltx_stitched_result(extra_outputs)
+
+
+def _is_web_only_market_history(history) -> bool:
+    return _history_type(history) in WEB_ONLY_MARKET_TASK_TYPES
+
+
 def resolve_qqcc_gallery_apply_mode(history) -> tuple[str, str | None]:
     if history is None:
         return "disabled", "missing_history"
+
+    if _is_stitched_market_history(history):
+        return "hidden", "stitched_video"
 
     disabled_reason = resolve_history_template_apply_disabled_reason(history)
     if disabled_reason:
@@ -283,10 +386,11 @@ def _build_post_caption(*, post, history, translated_tags: list[str], context) -
         )
 
     task_type = _history_type(history) or getattr(post, "task_type", None) or "unknown"
+    task_type_label = _task_type_label(context, task_type)
     return (
         f"<b>{html.escape(_t(context, 'qqcc.market.title'))}</b>\n\n"
         f"<b>作者</b>：{html.escape(_author_name(post))}\n"
-        f"<b>类型</b>：{html.escape(task_type)}\n"
+        f"<b>类型</b>：{html.escape(task_type_label)}\n"
         f"<b>提示词</b>：<code>*** 已隐藏，可一键应用体验 ***</code>\n"
         f"<b>标签</b>：{html.escape(tags)}\n"
         f"<b>规格</b>：{html.escape(spec)}\n\n"
@@ -311,12 +415,20 @@ def build_qqcc_market_post_markup(
         apply_row.append(
             InlineKeyboardButton("一键应用", callback_data=f"{QG_APPLY_PREFIX}{post.id}")
         )
+        apply_row.append(
+            InlineKeyboardButton("Web应用", url=build_market_web_apply_url(post.id))
+        )
     elif apply_mode == "web":
+        if not _is_web_only_market_history(history):
+            apply_row.append(
+                InlineKeyboardButton("一键应用", callback_data=f"{QG_APPLY_PREFIX}{post.id}")
+            )
         apply_row.append(
             InlineKeyboardButton("Web应用", url=build_market_web_apply_url(post.id))
         )
     else:
-        apply_row.append(InlineKeyboardButton("不可应用", callback_data="noop"))
+        if apply_mode != "hidden":
+            apply_row.append(InlineKeyboardButton("不可应用", callback_data="noop"))
 
     rows = [
         [
@@ -329,31 +441,36 @@ def build_qqcc_market_post_markup(
                 callback_data=f"{QG_DISLIKE_PREFIX}{post.id}:{type_code}:{sort_code}:{page}",
             ),
         ],
-        apply_row,
-        [
-            InlineKeyboardButton("最新", callback_data=f"{QG_PAGE_PREFIX}{type_code}:new:0"),
-            InlineKeyboardButton("热门", callback_data=f"{QG_PAGE_PREFIX}{type_code}:hot:0"),
-            InlineKeyboardButton("常用", callback_data=f"{QG_PAGE_PREFIX}{type_code}:app:0"),
-        ],
-        [
-            (
-                InlineKeyboardButton(
-                    "上一个",
-                    callback_data=f"{QG_PAGE_PREFIX}{type_code}:{sort_code}:{max(0, page - 1)}",
-                )
-                if page > 0
-                else InlineKeyboardButton("分类", callback_data=QG_MENU_CALLBACK)
-            ),
-            (
-                InlineKeyboardButton(
-                    "下一个",
-                    callback_data=f"{QG_PAGE_PREFIX}{type_code}:{sort_code}:{page + 1}",
-                )
-                if has_next
-                else InlineKeyboardButton("分类", callback_data=QG_MENU_CALLBACK)
-            ),
-        ],
     ]
+    if apply_row:
+        rows.append(apply_row)
+    rows.extend(
+        [
+            [
+                InlineKeyboardButton("最新", callback_data=f"{QG_PAGE_PREFIX}{type_code}:new:0"),
+                InlineKeyboardButton("热门", callback_data=f"{QG_PAGE_PREFIX}{type_code}:hot:0"),
+                InlineKeyboardButton("常用", callback_data=f"{QG_PAGE_PREFIX}{type_code}:app:0"),
+            ],
+            [
+                (
+                    InlineKeyboardButton(
+                        "上一个",
+                        callback_data=f"{QG_PAGE_PREFIX}{type_code}:{sort_code}:{max(0, page - 1)}",
+                    )
+                    if page > 0
+                    else InlineKeyboardButton("分类", callback_data=QG_MENU_CALLBACK)
+                ),
+                (
+                    InlineKeyboardButton(
+                        "下一个",
+                        callback_data=f"{QG_PAGE_PREFIX}{type_code}:{sort_code}:{page + 1}",
+                    )
+                    if has_next
+                    else InlineKeyboardButton("分类", callback_data=QG_MENU_CALLBACK)
+                ),
+            ],
+        ]
+    )
     return InlineKeyboardMarkup(rows)
 
 
@@ -386,7 +503,7 @@ async def display_qqcc_market_page(
         caption = _build_post_caption(
             post=post,
             history=history,
-            translated_tags=translate_tags(_parse_tags(post)),
+            translated_tags=translate_market_tags(_parse_tags(post), context=context),
             context=context,
         )
         reply_markup = build_qqcc_market_post_markup(
@@ -499,7 +616,7 @@ async def _load_apply_context_or_mode(post_id: int):
         if not history:
             raise HTTPException(status_code=404, detail="未找到原任务详情")
         apply_mode, reason = resolve_qqcc_gallery_apply_mode(history)
-        if apply_mode == "disabled":
+        if apply_mode in {"disabled", "hidden"}:
             raise HTTPException(status_code=400, detail=reason or "apply_disabled")
         if apply_mode == "web":
             return None, "web"

@@ -9,7 +9,11 @@ from src.constants import (
     MODE_LTX_VIDEO,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
     MODE_SCAIL2_ACTION_TRANSFER,
+    MODE_SCAIL2_FACE_SWAP_V2,
+    MODE_WAN22_VIDEO_V2,
 )
+from src.services.ltx_video_extension_service import build_ltx_stitched_extra_outputs
+from src.services.wan22_video_v2_extension_service import build_wan22_stitched_extra_outputs
 
 
 def _button_texts(markup):
@@ -35,7 +39,7 @@ def test_market_tabs_align_with_web_visible_types_without_txt2img():
     assert labels[0] == ["qqcc.market.tabs.all", "qqcc.market.tabs.i2i_pro"]
 
 
-def test_market_post_markup_uses_native_web_and_disabled_apply_modes(monkeypatch):
+def test_market_post_markup_shows_one_click_and_web_for_applyable_posts(monkeypatch):
     monkeypatch.setattr(
         gallery_market,
         "build_market_web_apply_url",
@@ -51,7 +55,9 @@ def test_market_post_markup_uses_native_web_and_disabled_apply_modes(monkeypatch
         page=0,
         has_next=False,
     )
-    assert _button_callbacks(native_markup)[1] == [f"{gallery_market.QG_APPLY_PREFIX}1"]
+    assert _button_texts(native_markup)[1] == ["一键应用", "Web应用"]
+    assert _button_callbacks(native_markup)[1] == [f"{gallery_market.QG_APPLY_PREFIX}1", None]
+    assert native_markup.inline_keyboard[1][1].url == "https://web.example/gallery?apply_id=1"
 
     web_post = SimpleNamespace(id=2, likes_count=0, dislikes_count=0)
     web_markup = gallery_market.build_qqcc_market_post_markup(
@@ -66,7 +72,26 @@ def test_market_post_markup_uses_native_web_and_disabled_apply_modes(monkeypatch
         page=0,
         has_next=False,
     )
-    assert web_markup.inline_keyboard[1][0].url == "https://web.example/gallery?apply_id=2"
+    assert _button_texts(web_markup)[1] == ["一键应用", "Web应用"]
+    assert _button_callbacks(web_markup)[1] == [f"{gallery_market.QG_APPLY_PREFIX}2", None]
+    assert web_markup.inline_keyboard[1][1].url == "https://web.example/gallery?apply_id=2"
+
+    face_swap_post = SimpleNamespace(id=4, likes_count=0, dislikes_count=0)
+    face_swap_markup = gallery_market.build_qqcc_market_post_markup(
+        post=face_swap_post,
+        history=SimpleNamespace(
+            type=MODE_SCAIL2_FACE_SWAP_V2,
+            input_file="reference.png|motion.mp4",
+            extra_outputs={},
+        ),
+        type_code="scf",
+        sort_code="new",
+        page=0,
+        has_next=False,
+    )
+    assert _button_texts(face_swap_markup)[1] == ["Web应用"]
+    assert _button_callbacks(face_swap_markup)[1] == [None]
+    assert face_swap_markup.inline_keyboard[1][0].url == "https://web.example/gallery?apply_id=4"
 
     disabled_post = SimpleNamespace(id=3, likes_count=0, dislikes_count=0)
     disabled_markup = gallery_market.build_qqcc_market_post_markup(
@@ -78,6 +103,77 @@ def test_market_post_markup_uses_native_web_and_disabled_apply_modes(monkeypatch
         has_next=False,
     )
     assert _button_callbacks(disabled_markup)[1] == ["noop"]
+
+
+def test_market_post_markup_hides_apply_buttons_for_stitched_videos():
+    for history in (
+        SimpleNamespace(
+            type=MODE_WAN22_VIDEO_V2,
+            extra_outputs=build_wan22_stitched_extra_outputs(
+                chain_task_ids=["wan-a", "wan-b"],
+                source_task_id="wan-a",
+            ),
+        ),
+        SimpleNamespace(
+            type=MODE_LTX_VIDEO,
+            extra_outputs=build_ltx_stitched_extra_outputs(
+                chain_task_ids=["ltx-a", "ltx-b"],
+                source_task_id="ltx-a",
+            ),
+        ),
+    ):
+        markup = gallery_market.build_qqcc_market_post_markup(
+            post=SimpleNamespace(id=5, likes_count=0, dislikes_count=0),
+            history=history,
+            type_code="all",
+            sort_code="new",
+            page=0,
+            has_next=False,
+        )
+        flat_texts = [button.text for row in markup.inline_keyboard for button in row]
+
+        assert "一键应用" not in flat_texts
+        assert "Web应用" not in flat_texts
+        assert "不可应用" not in flat_texts
+        assert _button_texts(markup)[1] == ["最新", "热门", "常用"]
+
+
+def test_market_caption_translates_task_type_and_task_tags():
+    context = SimpleNamespace(
+        t=lambda key, **_kwargs: {
+            "qqcc.market.title": "修仙市集",
+            "qqcc.market.tabs.scail2_video_replacement": "视频换人",
+            "task.mode_scail2_video_replacement": "视频换人",
+        }.get(key, key)
+    )
+    post = SimpleNamespace(
+        id=10,
+        user=None,
+        user_id=None,
+        media_type="video",
+        duration=6,
+        width=512,
+        height=896,
+        likes_count=0,
+        dislikes_count=0,
+        applied_count=0,
+        task_type="scail2_video_replacement",
+    )
+    history = SimpleNamespace(type="scail2_video_replacement")
+
+    caption = gallery_market._build_post_caption(
+        post=post,
+        history=history,
+        translated_tags=gallery_market.translate_market_tags(
+            ["#task.mode_scail2_video_replacement"],
+            context=context,
+        ),
+        context=context,
+    )
+
+    assert "<b>类型</b>：视频换人" in caption
+    assert "<b>标签</b>：#视频换人" in caption
+    assert "scail2_video_replacement" not in caption
 
 
 @pytest.mark.asyncio

@@ -128,7 +128,7 @@ sequenceDiagram
 - `scail2_action_transfer` / `scail2_video_replacement` / `scail2_face_swap_v2` 投稿支持 Web 一键应用：模板只复用原历史第二个输入 motion/driving video，复用者重新上传 reference image；旧兼容字段 `input_file` 也指向该 motion video。缺失 motion video 时列表/详情返回 `template_apply_supported=false` 与 `template_apply_disabled_reason="missing_scail2_motion_video"`，apply-context 返回 400。
 - 所有 Wan22 stitched 拼接记录（旧 `custom_video` / `video_lora` 与 `wan22_video_v2`）都不支持一键应用：列表/详情应返回 `template_apply_supported=false` 与 `template_apply_disabled_reason="wan22_stitched"`，apply-context 入口必须返回 400 防绕过。
 - 这已经是 Web workbench 模板应用的主入口，Telegram 内的老 `gallery_apply_fsm` 只应视为兼容路径。
-- QQCC 懒人 Bot 的 `修仙市集` 是轻量 Bot 入口，不取代 Web workbench 主路径。它按 Web 当前可见分组浏览 Gallery 投稿，支持点赞/点踩；安全的单图模板可在 Bot 内重新收 1 张参考图并提交，必须带 `source_post_id` 与 `allow_contribute=False`。SCAIL-2、多图、多视频、LTX 首尾帧等复杂模板返回 Web 深链 `/gallery?apply_source=gallery&apply_id=<post_id>`，由 Web Gallery 打开对应 apply-context。
+- QQCC 懒人 Bot 的 `修仙市集` 是轻量 Bot 入口，不取代 Web workbench 主路径。它按 Web 当前可见分组浏览 Gallery 投稿，支持点赞/点踩；普通可应用投稿同时展示 `一键应用` 与 `Web应用`，视频换脸类模板只展示 `Web应用`，Wan22/LTX 多段拼接结果不展示任何应用入口，并把类型和 `#task.mode_*` 标签翻译成当前语言展示。安全的单图模板可在 Bot 内重新收 1 张参考图并提交，必须带 `source_post_id` 与 `allow_contribute=False`。SCAIL-2、多图、多视频、LTX 首尾帧等复杂模板的一键应用只返回 Web 深链 `/gallery?apply_source=gallery&apply_id=<post_id>`，由 Web Gallery 打开对应 apply-context。
 
 ### 4.7 展示用原始输入预览
 - `GalleryPostResponse` 现在额外暴露展示字段：`input_file`、`input_file_url`、`input_files`、`input_file_urls`。其中兼容字段指向展示列表第一个输入，数组字段保留 `History.input_file` 的原始顺序。
