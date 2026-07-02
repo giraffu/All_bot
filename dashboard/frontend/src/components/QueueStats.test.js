@@ -558,6 +558,26 @@ describe('QueueStats worker health display', () => {
           max_non_low_trust_pending_wait_seconds: 880,
         },
       ],
+      queue_by_type_details: {
+        scail2_action_transfer: {
+          active_count: 2,
+          pending_count: 1,
+          max_pending_wait_seconds: 620,
+          max_non_low_trust_pending_wait_seconds: 500,
+        },
+        scail2_action_transfer_long: {
+          active_count: 0,
+          pending_count: 5,
+          max_pending_wait_seconds: 5940,
+          max_non_low_trust_pending_wait_seconds: 5940,
+        },
+        scail2_face_swap_v2: {
+          active_count: 7,
+          pending_count: 7,
+          max_pending_wait_seconds: 6900,
+          max_non_low_trust_pending_wait_seconds: 6900,
+        },
+      },
     }
     queueStatsMocks.workersRef.value = [
       {
@@ -619,6 +639,9 @@ describe('QueueStats worker health display', () => {
     const pornmasterRow = wrapper
       .findAll('.runpod-profile-detail-table tbody tr')
       .find(row => row.text().includes('pornmaster_flux2'))
+    const scail2Row = wrapper
+      .findAll('.runpod-profile-detail-table tbody tr')
+      .find(row => row.text().includes('scail2 / 视频生视频'))
 
     expect(wrapper.text()).toContain('活跃 Worker 详情')
     expect(wrapper.text()).toContain('i2i_pro / txt2img / face_swap')
@@ -638,6 +661,12 @@ describe('QueueStats worker health display', () => {
     expect(pornmasterRow?.text()).toContain('1m 0s')
     expect(pornmasterRow?.text()).toContain('自动')
     expect(pornmasterRow?.find('.profile-autoscaler-toggle').exists()).toBe(true)
+    expect(scail2Row?.exists()).toBe(true)
+    expect(scail2Row?.text()).toContain('scail2_action_transfer_long')
+    expect(scail2Row?.text()).toContain('scail2_face_swap_v2')
+    expect(scail2Row?.findAll('td')[2]?.text()).toBe('9')
+    expect(scail2Row?.findAll('td')[3]?.text()).toBe('13')
+    expect(scail2Row?.findAll('td')[4]?.text()).toBe('1h 55m')
     expect(i2iRow?.exists()).toBe(true)
     expect(i2iRow?.text()).toContain('RunPod2')
     expect(i2iRow?.text()).toContain('本地2')

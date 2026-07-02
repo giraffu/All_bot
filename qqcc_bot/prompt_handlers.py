@@ -21,7 +21,7 @@ from src.handlers.message_handler_common import (
 from src.handlers.message_handler_prompt import handle_prompt_impl
 from src.services.qqcc_config_service import (
     has_enabled_qqcc_values,
-    has_enabled_qqcc_video_settings,
+    has_enabled_qqcc_video_scenes,
     is_qqcc_global_enabled,
     is_qqcc_main_bot_link_enabled,
     is_qqcc_main_button_enabled,
@@ -66,8 +66,7 @@ def _can_open_video_menu(config: dict) -> bool:
     return (
         is_qqcc_global_enabled(config)
         and is_qqcc_main_button_enabled(config, "video_edit")
-        and has_enabled_qqcc_values(config, "video_buttons")
-        and has_enabled_qqcc_video_settings(config)
+        and has_enabled_qqcc_video_scenes(config)
     )
 
 

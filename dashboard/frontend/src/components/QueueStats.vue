@@ -82,6 +82,12 @@ const DEFAULT_TASK_DURATION_SECONDS_BY_TYPE = {
   unknown: 100,
 }
 
+const WORKER_PROFILE_TASK_TYPE_EXTENSIONS = {
+  scail2: ['scail2_action_transfer_long', 'scail2_face_swap_v2'],
+}
+
+const uniqueTaskTypes = (taskTypes) => Array.from(new Set((taskTypes || []).filter(Boolean)))
+
 const taskTotals = computed(() => {
   const totals = queueByTypeDisplay.value.reduce(
     (acc, item) => {
@@ -148,14 +154,81 @@ const supportsRunPodProfile = (worker, profile) => {
   return splitWorkerTypes(worker).some((type) => supportedTaskTypes.has(type))
 }
 
+const queueByTypeLookup = computed(() =>
+  queueByTypeDisplay.value.reduce((acc, item) => {
+    acc[item.type] = item
+    return acc
+  }, {})
+)
+
+const aggregateWorkerProfileTaskStats = (profile) => {
+  let hasQueueTypeDetail = false
+  const totals = {
+    activeCount: 0,
+    pendingCount: 0,
+    maxPendingWaitSeconds: null,
+    maxNonLowTrustPendingWaitSeconds: null,
+  }
+
+  for (const taskType of profile.supportedTaskTypes || []) {
+    const detail = queueByTypeLookup.value[taskType]
+    if (!detail) continue
+    hasQueueTypeDetail = true
+    totals.activeCount += Number(detail.activeCount || 0)
+    totals.pendingCount += Number(detail.pendingCount || 0)
+    const waitSeconds = detail.maxPendingWaitSeconds
+    if (
+      waitSeconds !== null &&
+      waitSeconds !== undefined &&
+      (totals.maxPendingWaitSeconds === null || waitSeconds > totals.maxPendingWaitSeconds)
+    ) {
+      totals.maxPendingWaitSeconds = waitSeconds
+    }
+    const nonLowTrustWaitSeconds = detail.maxNonLowTrustPendingWaitSeconds
+    if (
+      nonLowTrustWaitSeconds !== null &&
+      nonLowTrustWaitSeconds !== undefined &&
+      (
+        totals.maxNonLowTrustPendingWaitSeconds === null ||
+        nonLowTrustWaitSeconds > totals.maxNonLowTrustPendingWaitSeconds
+      )
+    ) {
+      totals.maxNonLowTrustPendingWaitSeconds = nonLowTrustWaitSeconds
+    }
+  }
+
+  if (!hasQueueTypeDetail) {
+    return {
+      activeCount: profile.activeCount,
+      pendingCount: profile.pendingCount,
+      maxPendingWaitSeconds: profile.maxPendingWaitSeconds,
+      maxNonLowTrustPendingWaitSeconds: profile.maxNonLowTrustPendingWaitSeconds,
+    }
+  }
+
+  return totals
+}
+
 const runpodProfileRows = computed(() =>
   runpodProfileQueueDisplay.value.map((profile) => {
+    const autoscalerSupportedTaskTypes = profile.supportedTaskTypes || []
+    const supportedTaskTypes = uniqueTaskTypes([
+      ...autoscalerSupportedTaskTypes,
+      ...(WORKER_PROFILE_TASK_TYPE_EXTENSIONS[profile.profile] || []),
+    ])
+    const displayProfile = {
+      ...profile,
+      autoscalerSupportedTaskTypes,
+      supportedTaskTypes,
+    }
     const supportingWorkers = workers.value.filter((worker) =>
-      supportsRunPodProfile(worker, profile)
+      supportsRunPodProfile(worker, displayProfile)
     )
     const runpodServerCount = supportingWorkers.filter(isRunPodServerWorker).length
+    const taskStats = aggregateWorkerProfileTaskStats(displayProfile)
     return {
-      ...profile,
+      ...displayProfile,
+      ...taskStats,
       runpodServerCount,
       localWorkerCount: supportingWorkers.length - runpodServerCount,
     }
@@ -214,7 +287,7 @@ const setThresholdDraft = (profile, value) => {
 }
 
 const durationSecondsForProfile = (profileRow) => {
-  const taskTypes = profileRow?.supportedTaskTypes || []
+  const taskTypes = profileRow?.autoscalerSupportedTaskTypes || profileRow?.supportedTaskTypes || []
   const firstTaskType = taskTypes[0] || 'unknown'
   const seconds = Number(
     taskDurationSecondsByType.value[firstTaskType] ??
@@ -332,7 +405,11 @@ const saveRunPodSettings = async (profileRow) => {
   }
   const minutes = Number(thresholdDraftValue(profile))
   const durationSeconds = Number(durationDraftValue(profileRow))
-  const taskDurationUpdates = (profileRow.supportedTaskTypes || []).reduce((acc, taskType) => {
+  const taskDurationUpdates = (
+    profileRow.autoscalerSupportedTaskTypes ||
+    profileRow.supportedTaskTypes ||
+    []
+  ).reduce((acc, taskType) => {
     acc[taskType] = durationSeconds
     return acc
   }, {})

@@ -48,12 +48,34 @@ const CheckboxStub = defineComponent({
     '<label><input type="checkbox" :checked="checked" @change="$emit(\'update:checked\', $event.target.checked)" /><slot /></label>',
 })
 
+const InputStub = defineComponent({
+  name: 'InputStub',
+  props: ['value'],
+  emits: ['update:value'],
+  template:
+    '<input :value="value" @input="$emit(\'update:value\', $event.target.value)" />',
+})
+
 const TextareaStub = defineComponent({
   name: 'TextareaStub',
   props: ['value', 'rows', 'placeholder'],
   emits: ['update:value'],
   template:
     '<textarea :value="value" :rows="rows" :placeholder="placeholder" @input="$emit(\'update:value\', $event.target.value)" />',
+})
+
+const SelectStub = defineComponent({
+  name: 'SelectStub',
+  props: ['value'],
+  emits: ['update:value', 'change'],
+  template:
+    '<select :value="value" @change="$emit(\'update:value\', $event.target.value); $emit(\'change\', $event.target.value)"><slot /></select>',
+})
+
+const SelectOptionStub = defineComponent({
+  name: 'SelectOptionStub',
+  props: ['value'],
+  template: '<option :value="value"><slot /></option>',
 })
 
 const passthroughStub = (name: string) =>
@@ -69,11 +91,16 @@ const mountSettings = () =>
         'a-button': ButtonStub,
         'a-switch': SwitchStub,
         'a-checkbox': CheckboxStub,
+        'a-input': InputStub,
         'a-textarea': TextareaStub,
+        'a-select': SelectStub,
+        'a-select-option': SelectOptionStub,
         'a-spin': passthroughStub('SpinStub'),
         'a-form-item': passthroughStub('FormItemStub'),
         ReloadOutlined: passthroughStub('ReloadOutlinedStub'),
         SaveOutlined: passthroughStub('SaveOutlinedStub'),
+        DeleteOutlined: passthroughStub('DeleteOutlinedStub'),
+        PlusOutlined: passthroughStub('PlusOutlinedStub'),
       },
     },
   })
@@ -96,6 +123,14 @@ describe('QqccBotSettings', () => {
         prompts: {
           undress: 'old prompt',
         },
+        video_scenes: [
+          {
+            id: 'kiss',
+            name: '亲吻',
+            prompt: 'kissing prompt',
+            duration: '8s',
+          },
+        ],
       },
     })
     apiMocks.updateQqccBotConfig.mockImplementation(payload =>
@@ -116,14 +151,19 @@ describe('QqccBotSettings', () => {
     expect(wrapper.text()).toContain('状态：开启')
     expect(wrapper.text()).toContain('修仙市集')
     expect(wrapper.text()).toContain('AI动图场景')
+    expect((wrapper.get('[data-testid="video-scene-name-0"]').element as HTMLInputElement).value).toBe('亲吻')
+    expect(wrapper.text()).not.toContain('画质与时长')
   })
 
-  it('saves switch and prompt changes in the payload', async () => {
+  it('saves switch, prompt, and dynamic video scene changes in the payload', async () => {
     const wrapper = mountSettings()
     await flushPromises()
 
     await wrapper.get('[data-testid="global-enabled"]').setValue(false)
-    await wrapper.findAll('textarea')[0].setValue('new prompt')
+    await wrapper.get('[data-testid="video-scene-name-0"]').setValue('贴贴')
+    await wrapper.get('[data-testid="video-scene-prompt-0"]').setValue('new scene prompt')
+    await wrapper.get('[data-testid="video-scene-duration-0"]').setValue('10s')
+    await wrapper.get('[data-testid="non-video-prompt-undress"]').setValue('new prompt')
     await wrapper.findAll('button').at(1)!.trigger('click')
     await flushPromises()
 
@@ -133,6 +173,43 @@ describe('QqccBotSettings', () => {
     expect(payload.prompts.undress).toBe('new prompt')
     expect(payload.main_buttons.video_edit).toBe(false)
     expect(payload.main_buttons.market).toBe(true)
+    expect(payload.video_scenes).toEqual([
+      {
+        id: 'kiss',
+        name: '贴贴',
+        prompt: 'new scene prompt',
+        duration: '10s',
+      },
+    ])
     expect(antMocks.success).toHaveBeenCalledWith('懒人Bot配置已保存')
+  })
+
+  it('adds and removes dynamic video scenes before saving', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="add-video-scene"]').trigger('click')
+    await wrapper.get('[data-testid="video-scene-name-1"]').setValue('转身')
+    await wrapper.get('[data-testid="video-scene-prompt-1"]').setValue('turn around')
+    await wrapper.get('[data-testid="remove-video-scene-0"]').trigger('click')
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
+    expect(payload.video_scenes).toHaveLength(1)
+    expect(payload.video_scenes[0].name).toBe('转身')
+    expect(payload.video_scenes[0].prompt).toBe('turn around')
+  })
+
+  it('blocks saving incomplete dynamic video scenes', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="video-scene-prompt-0"]').setValue('')
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.updateQqccBotConfig).not.toHaveBeenCalled()
+    expect(antMocks.error).toHaveBeenCalledWith('请完善AI动图场景的按钮名称和提示词')
   })
 })

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime
+import re
 from typing import Any
 
 from sqlalchemy import select
@@ -27,6 +28,8 @@ VIDEO_BUTTON_KEYS = (
 )
 VIDEO_RESOLUTION_KEYS = ("512p", "720p", "1024p")
 VIDEO_DURATION_KEYS = ("5s", "8s", "10s")
+VIDEO_SCENE_MAX_COUNT = 20
+VIDEO_SCENE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 PROMPT_KEYS = (
     "undress",
     "i2i_draw_quick_undress",
@@ -38,6 +41,59 @@ PROMPT_KEYS = (
     "undress_tongue",
     "closeup_blowjob",
 )
+VIDEO_PROMPT_KEYS = (
+    "perfect_video_insert",
+    "doggy_style",
+    "blowjob",
+    "undress_tongue",
+    "closeup_blowjob",
+)
+
+LEGACY_VIDEO_SCENE_DEFINITIONS = (
+    {
+        "id": "missionary",
+        "name": "🛌 动图传教士",
+        "button_key": "missionary",
+        "prompt_key": "perfect_video_insert",
+    },
+    {
+        "id": "doggy",
+        "name": "🎬 动图后入",
+        "button_key": "doggy",
+        "prompt_key": "doggy_style",
+    },
+    {
+        "id": "blowjob",
+        "name": "🎬 口交黑人",
+        "button_key": "blowjob",
+        "prompt_key": "blowjob",
+    },
+    {
+        "id": "undress_tongue",
+        "name": "🎬 脱衣吐舌",
+        "button_key": "undress_tongue",
+        "prompt_key": "undress_tongue",
+    },
+    {
+        "id": "closeup_blowjob",
+        "name": "🎬 特写口交",
+        "button_key": "closeup_blowjob",
+        "prompt_key": "closeup_blowjob",
+    },
+)
+
+
+def _default_video_scenes() -> list[dict[str, str]]:
+    return [
+        {
+            "id": scene["id"],
+            "name": scene["name"],
+            "prompt": "",
+            "duration": "5s",
+            "prompt_key": scene["prompt_key"],
+        }
+        for scene in LEGACY_VIDEO_SCENE_DEFINITIONS
+    ]
 
 DEFAULT_QQCC_LAZY_BOT_CONFIG: dict[str, Any] = {
     "global_enabled": True,
@@ -75,6 +131,7 @@ DEFAULT_QQCC_LAZY_BOT_CONFIG: dict[str, Any] = {
             "10s": True,
         },
     },
+    "video_scenes": _default_video_scenes(),
     "prompts": {
         "undress": "",
         "i2i_draw_quick_undress": "",
@@ -102,6 +159,111 @@ def _normalize_bool_section(
         value = raw.get(key, default[key])
         normalized[key] = value if isinstance(value, bool) else default[key]
     return normalized
+
+
+def _build_unique_scene_id(
+    raw_id: Any,
+    *,
+    index: int,
+    used_ids: set[str],
+) -> str:
+    scene_id = raw_id.strip() if isinstance(raw_id, str) else ""
+    if not VIDEO_SCENE_ID_PATTERN.fullmatch(scene_id) or scene_id in used_ids:
+        base_id = f"scene_{index + 1}"
+        scene_id = base_id
+        suffix = 2
+        while scene_id in used_ids:
+            scene_id = f"{base_id}_{suffix}"
+            suffix += 1
+    used_ids.add(scene_id)
+    return scene_id
+
+
+def _normalize_scene_prompt_key(raw_prompt_key: Any) -> str | None:
+    if not isinstance(raw_prompt_key, str):
+        return None
+    prompt_key = raw_prompt_key.strip()
+    return prompt_key if prompt_key in VIDEO_PROMPT_KEYS else None
+
+
+def _normalize_video_scene(
+    raw_scene: Any,
+    *,
+    index: int,
+    used_ids: set[str],
+) -> dict[str, str] | None:
+    if not isinstance(raw_scene, dict):
+        return None
+
+    name = raw_scene.get("name")
+    name = name.strip() if isinstance(name, str) else ""
+    if not name:
+        return None
+
+    prompt = raw_scene.get("prompt")
+    prompt = prompt.strip() if isinstance(prompt, str) else ""
+    prompt_key = _normalize_scene_prompt_key(raw_scene.get("prompt_key"))
+    if not prompt and prompt_key is None:
+        return None
+
+    duration = raw_scene.get("duration")
+    duration = duration.strip() if isinstance(duration, str) else ""
+    if duration not in VIDEO_DURATION_KEYS:
+        duration = "5s"
+
+    scene = {
+        "id": _build_unique_scene_id(
+            raw_scene.get("id"),
+            index=index,
+            used_ids=used_ids,
+        ),
+        "name": name,
+        "prompt": prompt,
+        "duration": duration,
+    }
+    if prompt_key:
+        scene["prompt_key"] = prompt_key
+    return scene
+
+
+def _normalize_video_scenes(raw_scenes: Any) -> list[dict[str, str]]:
+    if not isinstance(raw_scenes, list):
+        return []
+    scenes: list[dict[str, str]] = []
+    used_ids: set[str] = set()
+    for index, raw_scene in enumerate(raw_scenes[:VIDEO_SCENE_MAX_COUNT]):
+        scene = _normalize_video_scene(raw_scene, index=index, used_ids=used_ids)
+        if scene is not None:
+            scenes.append(scene)
+    return scenes
+
+
+def _migrate_legacy_video_scenes(raw: dict[str, Any]) -> list[dict[str, str]]:
+    raw_buttons = raw.get("video_buttons")
+    if not isinstance(raw_buttons, dict):
+        raw_buttons = {}
+    raw_prompts = raw.get("prompts")
+    if not isinstance(raw_prompts, dict):
+        raw_prompts = {}
+
+    scenes = []
+    for scene in LEGACY_VIDEO_SCENE_DEFINITIONS:
+        button_key = scene["button_key"]
+        enabled = raw_buttons.get(button_key, True)
+        if enabled is not True:
+            continue
+        prompt_key = scene["prompt_key"]
+        prompt = raw_prompts.get(prompt_key)
+        scenes.append(
+            {
+                "id": scene["id"],
+                "name": scene["name"],
+                "prompt": prompt.strip() if isinstance(prompt, str) else "",
+                "duration": "5s",
+                "prompt_key": prompt_key,
+            }
+        )
+    return scenes
 
 
 def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
@@ -152,6 +314,10 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
             keys=VIDEO_DURATION_KEYS,
         ),
     }
+    if "video_scenes" in raw:
+        config["video_scenes"] = _normalize_video_scenes(raw.get("video_scenes"))
+    else:
+        config["video_scenes"] = _migrate_legacy_video_scenes(raw)
 
     raw_prompts = raw.get("prompts")
     if not isinstance(raw_prompts, dict):
@@ -173,6 +339,26 @@ def has_enabled_qqcc_video_settings(config: dict[str, Any]) -> bool:
     normalized = normalize_qqcc_config(config)
     settings = normalized["video_settings"]
     return any(settings["resolutions"].values()) and any(settings["durations"].values())
+
+
+def get_enabled_qqcc_video_scenes(config: dict[str, Any]) -> list[dict[str, str]]:
+    return normalize_qqcc_config(config).get("video_scenes", [])
+
+
+def has_enabled_qqcc_video_scenes(config: dict[str, Any]) -> bool:
+    return bool(get_enabled_qqcc_video_scenes(config))
+
+
+def get_qqcc_video_scene(
+    config: dict[str, Any],
+    scene_id: str | None,
+) -> dict[str, str] | None:
+    if not scene_id:
+        return None
+    for scene in get_enabled_qqcc_video_scenes(config):
+        if scene.get("id") == scene_id:
+            return scene
+    return None
 
 
 def is_qqcc_global_enabled(config: dict[str, Any]) -> bool:

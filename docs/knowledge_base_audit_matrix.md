@@ -53,7 +53,7 @@
 | 文档 | 事实源 | 本轮状态 | 处理结果 |
 | :--- | :--- | :--- | :--- |
 | `docs/子模块_交互状态机_fsm_handlers.md` | `src/handlers`、FSM tests | 已核对 | 主 Bot FSM 边界有效 |
-| `docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md` | `qqcc_bot/main.py`、`qqcc_bot/gallery_market.py`、`qqcc_bot/keyboards.py`、`qqcc_bot/prompt_handlers.py`、`src/services/qqcc_config_service.py`、Gallery/apply-context 服务、cloud compose QQCC profile、`scripts/update_cloud_prod_qqcc_bot.sh` | 已修正 | 补充 QQCC 主菜单 `修仙市集` 非生成入口、`main_buttons.market` 配置、`qg:` 专用 Gallery callback、Telegram file_id/R2 媒体缓存、普通投稿双应用入口、视频换脸 Web-only、拼接视频无应用入口、复杂模板 Web handoff 与类型/标签翻译边界；保留快速脱衣/懒人P图/AI动图三项业务入口、`bot:qqcc` 来源和双 polling 红线 |
+| `docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md` | `qqcc_bot/main.py`、`qqcc_bot/gallery_market.py`、`qqcc_bot/keyboards.py`、`qqcc_bot/prompt_handlers.py`、`src/services/qqcc_config_service.py`、quick video FSM、Gallery/apply-context 服务、cloud compose QQCC profile、`scripts/update_cloud_prod_qqcc_bot.sh` | 已修正 | 补充 AI 动图 `video_scenes` 动态配置、`qvid_scene:` callback、旧 `qvid_mode:` 兼容、场景固定时长、Bot 只选画质、动态场景统一提交 `custom_video` 且底层复用 `image_to_video` / `Wan22AioV82.json`；保留 QQCC 市集、快速入口、`bot:qqcc` 来源和双 polling 红线 |
 | `docs/子模块_付费群审核Bot_paid_group_guard_bot.md` | `paid_group_guard_bot`、Dashboard paid group router/service、cloud compose | 已核对 | 独立 Bot 与 Dashboard 配置管理边界有效 |
 | `docs/子模块_Telegram本地API与文件代理_tg_local_api.md` | Telegram API env、Bot file handling | 已核对 | 文件代理边界有效 |
 
@@ -117,7 +117,7 @@
 | `.codex/skills/allbot-task-engine/SKILL.md` | task core、queue manager、runtime cleanup、Skill 体积审计 | 已修正 | 已从约 23KB 瘦身为约 8.4KB 的任务生命周期路由入口，保留 core/Web/Central/Worker 边界、双 ID 红线、新任务类型清单和验证要求；修正 SCAIL-2 合并长时长后的 public/history/execution 路由口径；补充 `i2i_draw` Web 入口级禁用不等于全局删除能力；长链路细节改由任务调度/生成全链路文档按需加载 |
 | `.codex/skills/allbot-comfy-models/SKILL.md` | workflow patcher、remote_workers、Skill 体积审计 | 已修正 | 已从约 36KB 瘦身为约 7.4KB 的模型/workflow 路由入口，保留 workflow 事实源、Central/Worker 边界、Wan22/LTX/SCAIL-2 关键提醒和部署验收；修正 `scail2_action_transfer_long` 为动作迁移 10/15/20s hidden execution；节点级细节改由 Comfy 子模块文档与 runtime reference 按需加载 |
 | `.codex/skills/allbot-tg-fsm/SKILL.md` | `src/handlers`、Bot entrypoint | 已核对 | FSM 边界有效 |
-| `.codex/skills/allbot-qqcc-lazy-bot/SKILL.md` | `qqcc_bot`、`qqcc_bot/gallery_market.py`、cloud compose、`scripts/update_cloud_prod_qqcc_bot.sh`、`src/services/qqcc_config_service.py`、quick image/video FSM | 已修正 | 补充 QQCC 主菜单 `修仙市集` 与 `前往主bot` 非生成入口、`main_buttons.market`、`qg:` 专用市集 callback、file_id/R2 缓存、普通投稿双应用入口、视频换脸 Web-only、拼接视频无应用入口、复杂模板 Web handoff 与类型/标签翻译边界；QQCC 独立 Bot、快速入口和单 polling 红线有效 |
+| `.codex/skills/allbot-qqcc-lazy-bot/SKILL.md` | `qqcc_bot`、`qqcc_bot/gallery_market.py`、cloud compose、`scripts/update_cloud_prod_qqcc_bot.sh`、`src/services/qqcc_config_service.py`、quick image/video FSM | 已修正 | 补充 QQCC AI 动图动态 `video_scenes` 配置、`qvid_scene:` callback、旧 `qvid_mode:` 兼容、后台固定时长、Bot 只选画质与 `custom_video` 提交口径；QQCC 独立 Bot、快速入口、市集入口和单 polling 红线有效 |
 | `.codex/skills/allbot-billing-auth/SKILL.md` | auth/billing/affiliate code | 已核对 | 计费鉴权边界有效 |
 | `.codex/skills/allbot-gallery-storage/SKILL.md` | Gallery/R2 code、`src/services/gallery_browse_service.py`、QQCC 市集代码、Skill 体积审计 | 已修正 | 存储与社区边界有效；补充 QQCC 修仙市集轻量 Bot 浏览、Telegram file_id 秒发缓存、R2/S3 URL 刷新、普通投稿双应用入口、视频换脸 Web-only、拼接视频无应用入口、复杂模板 Web handoff 与类型/标签翻译口径；自由P图 v2、LTX、SCAIL-2、`i2i_draw` 与 apply-context 口径继续有效 |
 | `.codex/skills/allbot-diagnosing-bugs/SKILL.md` | bug 诊断流程 | 已核对 | 诊断闭环有效 |

@@ -1,28 +1,19 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 
 from src.handlers.fsm.quick_video_callback_data import (
-    QUICK_VIDEO_MODE_KEYS,
-    build_quick_video_mode_callback_data,
+    build_quick_video_scene_callback_data,
 )
 from src.i18n.translator import get_text
 from src.services.qqcc_config_service import (
+    get_enabled_qqcc_video_scenes,
     has_enabled_qqcc_values,
-    has_enabled_qqcc_video_settings,
+    has_enabled_qqcc_video_scenes,
     is_qqcc_global_enabled,
     is_qqcc_main_bot_link_enabled,
     is_qqcc_main_button_enabled,
     is_qqcc_photo_button_enabled,
-    is_qqcc_video_button_enabled,
     normalize_qqcc_config,
 )
-
-VIDEO_ROUTE_TO_CONFIG_KEY = {
-    "menu.video_edit_missionary": "missionary",
-    "menu.video_edit_doggy": "doggy",
-    "menu.video_edit_blowjob": "blowjob",
-    "menu.video_edit_undress_tongue": "undress_tongue",
-    "menu.video_edit_closeup_blowjob": "closeup_blowjob",
-}
 
 
 def _can_show_quick_undress(config: dict) -> bool:
@@ -42,8 +33,7 @@ def _can_show_photo_edit(config: dict) -> bool:
 def _can_show_video_edit(config: dict) -> bool:
     return (
         is_qqcc_main_button_enabled(config, "video_edit")
-        and has_enabled_qqcc_values(config, "video_buttons")
-        and has_enabled_qqcc_video_settings(config)
+        and has_enabled_qqcc_video_scenes(config)
     )
 
 
@@ -107,11 +97,7 @@ def get_qqcc_video_edit_keyboard(
     config: dict | None = None,
 ) -> ReplyKeyboardMarkup:
     config = normalize_qqcc_config(config)
-    route_texts = [
-        get_text(route_key, lang)
-        for route_key in QUICK_VIDEO_MODE_KEYS
-        if is_qqcc_video_button_enabled(config, VIDEO_ROUTE_TO_CONFIG_KEY[route_key])
-    ]
+    route_texts = [scene["name"] for scene in get_enabled_qqcc_video_scenes(config)]
     keyboard = [
         route_texts[index : index + 2] for index in range(0, len(route_texts), 2)
     ]
@@ -126,11 +112,10 @@ def get_qqcc_video_edit_inline_keyboard(
     config = normalize_qqcc_config(config)
     buttons = [
         InlineKeyboardButton(
-            get_text(route_key, lang),
-            callback_data=build_quick_video_mode_callback_data(route_key),
+            scene["name"],
+            callback_data=build_quick_video_scene_callback_data(scene["id"]),
         )
-        for route_key in QUICK_VIDEO_MODE_KEYS
-        if is_qqcc_video_button_enabled(config, VIDEO_ROUTE_TO_CONFIG_KEY[route_key])
+        for scene in get_enabled_qqcc_video_scenes(config)
     ]
     keyboard = [buttons[index : index + 3] for index in range(0, len(buttons), 3)]
     return InlineKeyboardMarkup(keyboard)

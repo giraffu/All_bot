@@ -29,14 +29,14 @@ QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位�
 
 明确不开放 `快速换脸` / `faceswap_fsm` 双图换脸入口。
 
-`AI动图` 只开放五个懒人动图场景：
+`AI动图` 场景由管理后台动态配置。默认配置兼容旧五个懒人动图场景：
 - 传教士
 - 后入
 - 口交
 - 脱衣吐舌
 - 近景口交
 
-用户点击主菜单 `AI动图` 后，QQCC Bot 回复 `system.video_edit_hint`，并把上述场景作为 inline button 挂在该回复消息下方展示；按钮按三个一行排布，callback 使用 `qvid_mode:<menu.video_edit_*>`，由 `get_quick_video_fsm_handler()` 直接进入发送图片步骤。不要再把这些场景塞回 Telegram 底部 reply keyboard。
+后台可增删场景、调整按钮名称、提示词和固定时长。用户点击主菜单 `AI动图` 后，QQCC Bot 回复 `system.video_edit_hint`，并把当前有效场景作为 inline button 挂在该回复消息下方展示；按钮按三个一行排布，callback 使用 `qvid_scene:<scene_id>`，由 `get_quick_video_fsm_handler()` 直接进入发送图片步骤。旧 `qvid_mode:<menu.video_edit_*>` callback 只作为已发消息兼容，若后台已删除对应场景必须回复 `功能暂未开放`。不要再把这些场景塞回 Telegram 底部 reply keyboard。
 
 用户点击主菜单 `修仙市集` 后，QQCC Bot 使用专用 `qqcc_bot/gallery_market.py` 入口展示当前 Web Gallery 可见类型的投稿，不复用旧主 Bot 的 gallery 分类常量。callback 前缀为 `qg:`，支持分类、分页、点赞、点踩、一键应用和 Web 应用跳转；不提供留言入口。普通可应用投稿的卡片同时展示 `一键应用` 与 `Web应用`，视频换脸类模板只展示 `Web应用`，Wan22/LTX 多段拼接结果不展示任何应用入口；Bot caption 中的类型和 `#task.mode_*` 标签走当前语言翻译，不直接暴露内部变量名。分类对齐 Web 可见 tab：`all`、`i2i_pro`、`i2i_draw`、`edit_group`、`free_edit_v2_group`、`img2video_group`、`ltx_video`、`wan22_video_v2`、`scail2_action_transfer`、`scail2_video_replacement`、`scail2_face_swap_v2`，不展示 `txt2img`。
 
@@ -53,12 +53,11 @@ QQCC 功能开关与 QQCC 专用提示词覆盖由管理后台 `懒人Bot配置`
 - `main_buttons`: `quick_undress`, `photo_edit`, `video_edit`, `market`, `main_bot_link`
 - `photo_buttons`: `masturbation`, `random_faceswap`
 - `undress_methods`: `legacy`, `i2i_draw`
-- `video_buttons`: `missionary`, `doggy`, `blowjob`, `undress_tongue`, `closeup_blowjob`
-- `video_settings.resolutions`: `512p`, `720p`, `1024p`
-- `video_settings.durations`: `5s`, `8s`, `10s`
+- `video_scenes`: `[{ id, name, prompt, duration, prompt_key? }]`；`duration` 只能是 `5s`、`8s`、`10s`，`id` 只能用于短安全 callback；旧五场景允许空 `prompt` 回退 `prompts.ini`，自定义场景必须有非空 `name` 和 `prompt`
+- `video_buttons` 与 `video_settings` 仅保留旧配置兼容；管理后台不再编辑 AI 动图画质或全局时长
 - `prompts`: `undress`, `i2i_draw_quick_undress`, `masturbation`, `face_swap`, `perfect_video_insert`, `doggy_style`, `blowjob`, `undress_tongue`, `closeup_blowjob`
 
-关闭功能后，QQCC Bot 会隐藏新菜单按钮，并在旧 reply keyboard / 旧 callback 入口回复 `功能暂未开放`，不提交新任务。画质/时长按钮会同时受用户权限与 QQCC 配置过滤，仍保持 `1024p` 与 `10s` 不能同时选择。`prompts` 中空字符串表示回退当前 `prompts.ini`；非空覆盖只作用于 QQCC Bot，主 Bot 不受影响。
+关闭功能后，QQCC Bot 会隐藏新菜单按钮，并在旧 reply keyboard / 旧 callback 入口回复 `功能暂未开放`，不提交新任务。AI 动图每个场景的时长由后台固定，用户在 Bot 中只选择画质；画质只受用户权限过滤，仍保持 `1024p` 与 `10s` 不能同时选择。旧五场景 `prompt` 空字符串表示回退当前 `prompts.ini`；非空覆盖只作用于 QQCC Bot，主 Bot 不受影响。动态场景统一提交 `custom_video`，底层仍复用现有 `image_to_video` / `Wan22AioV82.json` 执行面，不新增 workflow、RunPod profile 或数据库表。
 
 注册的 FSM 只允许：
 - `get_quick_image_fsm_handler()`
@@ -180,7 +179,7 @@ QQCC 快速脱衣入口至少覆盖：
 - `/start` 主菜单展示 `快速脱衣`，`懒人P图` 子菜单不再展示 `快速脱衣`。
 - `/start` 只返回简化主菜单，不额外发送跳转消息；主菜单包含非生成入口 `修仙市集` 与 `前往主bot`。
 - 配置 `QQCC_MAIN_BOT_URL` 或 `QQCC_MAIN_BOT_USERNAME` 时，点击 `前往主bot` 回复 inline URL 跳转按钮；未配置时回复入口未配置提示。
-- 点击主菜单 `AI动图` 后，Bot 回复下方展示五个 inline 场景按钮，第一行 3 个、第二行 2 个；点击任一场景进入 quick video 发送图片步骤。
+- 点击主菜单 `AI动图` 后，Bot 回复下方展示当前后台配置的 inline 场景按钮，默认第一行 3 个、第二行 2 个；点击 `qvid_scene:<id>` 进入 quick video 发送图片步骤。旧 `qvid_mode:*` 已发按钮兼容到对应场景，场景删除后回复 `功能暂未开放` 且不提交任务。
 - 点击主菜单 `修仙市集` 后展示 QQCC 专用类型菜单；浏览投稿时支持点赞、点踩、上一条/下一条、分类返回、一键应用或 Web 应用，不展示留言入口。
 - `修仙市集` 二次查看已缓存作品时优先用 Telegram file_id，file_id 失效后从当前 R2/S3 URL resolver 刷新；不能回退旧 legacy MinIO bytes 主路径。
 - Bot 原生应用必须传 `source_post_id` 且 `allow_contribute=False`，复杂模板必须跳 Web 深链，点击应用不直接增加 `applied_count`。
@@ -188,4 +187,4 @@ QQCC 快速脱衣入口至少覆盖：
 - `头像/半身补全` 进入 `undress`，`全身保脸重绘` 进入 `i2i_draw`。
 - 两个分支都保持“选择按钮后只发送 1 张图片即可提交”的懒人交互。
 - 关闭任一 QQCC 配置开关后，新菜单隐藏对应按钮，旧按钮/旧 callback 回复 `功能暂未开放` 且不提交任务。
-- QQCC 专用 prompt override 生效时不影响主 Bot。
+- QQCC 动态场景 prompt、按钮名和固定时长生效时不影响主 Bot；Bot 发图后只展示画质选项和开始按钮。

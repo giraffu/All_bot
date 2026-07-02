@@ -7,9 +7,10 @@ from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler, T
 from qqcc_bot import keyboards, main as qqcc_main, prompt_handlers
 from qqcc_bot import commands as qqcc_commands
 from src.handlers.fsm import quick_image_fsm, quick_video_fsm
-from src.constants import MODE_PERFECT_VIDEO_INSERT
+from src.constants import MODE_CUSTOM_VIDEO, MODE_PERFECT_VIDEO_INSERT
 from src.handlers.fsm.quick_video_callback_data import (
     build_quick_video_mode_callback_data,
+    build_quick_video_scene_callback_data,
 )
 from src.handlers import prompt_router
 from src.i18n.translator import get_text
@@ -115,7 +116,7 @@ def test_qqcc_video_menu_contains_lazy_video_scenes():
     assert "🎬 脱衣吐舌" in flat
     assert "🎬 特写口交" in flat
     assert reply_markup.inline_keyboard[0][0].callback_data == (
-        build_quick_video_mode_callback_data("menu.video_edit_missionary")
+        build_quick_video_scene_callback_data("missionary")
     )
 
 
@@ -147,6 +148,49 @@ async def test_qqcc_video_menu_route_replies_with_inline_scene_buttons(monkeypat
         ["🛌 动图传教士", "🎬 动图后入", "🎬 口交黑人"],
         ["🎬 脱衣吐舌", "🎬 特写口交"],
     ]
+
+
+def test_qqcc_video_menu_uses_dynamic_scene_config():
+    config = normalize_qqcc_config(
+        {
+            "video_scenes": [
+                {
+                    "id": "kiss",
+                    "name": "亲吻",
+                    "prompt": "kissing prompt",
+                    "duration": "8s",
+                },
+                {
+                    "id": "dance",
+                    "name": "跳舞",
+                    "prompt": "dance prompt",
+                    "duration": "10s",
+                },
+                {
+                    "id": "turn",
+                    "name": "转身",
+                    "prompt": "turn prompt",
+                    "duration": "5s",
+                },
+                {
+                    "id": "smile",
+                    "name": "微笑",
+                    "prompt": "smile prompt",
+                    "duration": "5s",
+                },
+            ]
+        }
+    )
+
+    reply_markup = keyboards.get_qqcc_video_edit_inline_keyboard("zh", config)
+
+    assert _inline_keyboard_texts(reply_markup) == [
+        ["亲吻", "跳舞", "转身"],
+        ["微笑"],
+    ]
+    assert reply_markup.inline_keyboard[0][1].callback_data == (
+        build_quick_video_scene_callback_data("dance")
+    )
 
 
 @pytest.mark.asyncio
@@ -416,10 +460,18 @@ async def test_qqcc_video_settings_buttons_are_filtered(monkeypatch):
     )
     config = normalize_qqcc_config(
         {
+            "video_scenes": [
+                {
+                    "id": "long",
+                    "name": "长动图",
+                    "prompt": "long prompt",
+                    "duration": "10s",
+                }
+            ],
             "video_settings": {
-                "resolutions": {"512p": True, "720p": False, "1024p": True},
-                "durations": {"5s": True, "8s": False, "10s": True},
-            }
+                "resolutions": {"512p": False, "720p": False, "1024p": False},
+                "durations": {"5s": False, "8s": False, "10s": False},
+            },
         }
     )
     context = SimpleNamespace(
@@ -431,7 +483,7 @@ async def test_qqcc_video_settings_buttons_are_filtered(monkeypatch):
         context=context,
         user_id=123,
         resolution="512p",
-        duration="5s",
+        duration="10s",
         qqcc_config=config,
     )
     callbacks = [
@@ -441,11 +493,9 @@ async def test_qqcc_video_settings_buttons_are_filtered(monkeypatch):
     ]
 
     assert "set_res_512p" in callbacks
-    assert "set_res_720p" not in callbacks
-    assert "set_res_1024p" in callbacks
-    assert "set_dur_5s" in callbacks
-    assert "set_dur_8s" not in callbacks
-    assert "set_dur_10s" in callbacks
+    assert "set_res_720p" in callbacks
+    assert "set_res_1024p" not in callbacks
+    assert not any(callback.startswith("set_dur_") for callback in callbacks)
 
 
 @pytest.mark.asyncio
@@ -457,7 +507,17 @@ async def test_qqcc_video_prompt_override_does_not_affect_main_bot(monkeypatch):
         "load_runtime_qqcc_config",
         AsyncMock(
             return_value=normalize_qqcc_config(
-                {"prompts": {"perfect_video_insert": "qqcc override"}}
+                {
+                    "video_scenes": [
+                        {
+                            "id": "missionary",
+                            "name": "自定义动图",
+                            "prompt": "qqcc scene prompt",
+                            "duration": "8s",
+                        }
+                    ],
+                    "prompts": {"perfect_video_insert": "legacy override"},
+                }
             )
         ),
     )
@@ -517,9 +577,12 @@ async def test_qqcc_video_prompt_override_does_not_affect_main_bot(monkeypatch):
             bot_data=bot_data,
             user_data={
                 "quick_video_data": {
-                    "mode": MODE_PERFECT_VIDEO_INSERT,
+                    "mode": MODE_CUSTOM_VIDEO if bot_data else MODE_PERFECT_VIDEO_INSERT,
+                    "scene_id": "missionary" if bot_data else None,
+                    "mode_name": "自定义动图" if bot_data else None,
+                    "prompt_override": "qqcc scene prompt" if bot_data else None,
                     "resolution": "512p",
-                    "duration": "5s",
+                    "duration": "8s" if bot_data else "5s",
                     "image_path": "/tmp/input.png",
                 }
             },
@@ -534,8 +597,133 @@ async def test_qqcc_video_prompt_override_does_not_affect_main_bot(monkeypatch):
     update, context = make_update_and_context({})
     await quick_video_fsm.start_generation(update, context)
 
-    assert captured[0]["prompt_override"] == "qqcc override"
+    assert captured[0]["mode"] == MODE_CUSTOM_VIDEO
+    assert captured[0]["default_prompt_key"] == MODE_CUSTOM_VIDEO
+    assert captured[0]["default_prompt_text"] == "qqcc scene prompt"
+    assert captured[0]["prompt_override"] == "qqcc scene prompt"
+    assert captured[0]["display_mode_name_override"] == "自定义动图"
     assert captured[1]["prompt_override"] is None
+
+
+@pytest.mark.asyncio
+async def test_qqcc_quick_video_scene_callback_selects_dynamic_scene(monkeypatch):
+    reply_mock = AsyncMock()
+    answer_mock = AsyncMock()
+    config = normalize_qqcc_config(
+        {
+            "video_scenes": [
+                {
+                    "id": "kiss",
+                    "name": "亲吻",
+                    "prompt": "kissing prompt",
+                    "duration": "8s",
+                }
+            ]
+        }
+    )
+
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(quick_video_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(
+        quick_video_fsm,
+        "load_runtime_qqcc_config",
+        AsyncMock(return_value=config),
+    )
+
+    user = SimpleNamespace(id=123, username="tester")
+    callback_message = SimpleNamespace(chat_id=456)
+    update = SimpleNamespace(
+        effective_user=user,
+        effective_chat=SimpleNamespace(id=456),
+        message=None,
+        edited_message=None,
+        callback_query=SimpleNamespace(
+            data=build_quick_video_scene_callback_data("kiss"),
+            message=callback_message,
+            answer=answer_mock,
+            from_user=user,
+        ),
+    )
+    context = SimpleNamespace(
+        bot_data={"bot_client_type": "bot:qqcc"},
+        user_data={},
+        lang="zh",
+        t=lambda key, **kwargs: f"{key}:{kwargs}" if kwargs else key,
+    )
+
+    result = await quick_video_fsm.start_quick_video(update, context)
+
+    assert result == quick_video_fsm.QuickVideoState.WAIT_IMAGE
+    assert context.user_data["quick_video_data"] == {
+        "mode": MODE_CUSTOM_VIDEO,
+        "scene_id": "kiss",
+        "mode_name": "亲吻",
+        "prompt_override": "kissing prompt",
+        "default_prompt_key": MODE_CUSTOM_VIDEO,
+        "default_prompt_text": "kissing prompt",
+        "resolution": "512p",
+        "duration": "8s",
+        "image_path": None,
+    }
+    answer_mock.assert_awaited_once()
+    reply_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_qqcc_legacy_quick_video_callback_is_blocked_after_scene_removed(monkeypatch):
+    edit_mock = AsyncMock()
+    answer_mock = AsyncMock()
+    config = normalize_qqcc_config(
+        {
+            "video_scenes": [
+                {
+                    "id": "kiss",
+                    "name": "亲吻",
+                    "prompt": "kissing prompt",
+                    "duration": "8s",
+                }
+            ]
+        }
+    )
+
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(quick_video_fsm, "robust_edit_text", edit_mock)
+    monkeypatch.setattr(
+        quick_video_fsm,
+        "load_runtime_qqcc_config",
+        AsyncMock(return_value=config),
+    )
+
+    user = SimpleNamespace(id=123, username="tester")
+    callback_message = SimpleNamespace(chat_id=456)
+    update = SimpleNamespace(
+        effective_user=user,
+        effective_chat=SimpleNamespace(id=456),
+        message=None,
+        edited_message=None,
+        callback_query=SimpleNamespace(
+            data=build_quick_video_mode_callback_data("menu.video_edit_doggy"),
+            message=callback_message,
+            answer=answer_mock,
+            from_user=user,
+        ),
+    )
+    context = SimpleNamespace(
+        bot_data={"bot_client_type": "bot:qqcc"},
+        user_data={},
+        lang="zh",
+        t=lambda key, **_kwargs: {"qqcc.feature_disabled": "功能暂未开放"}.get(
+            key, key
+        ),
+    )
+
+    result = await quick_video_fsm.start_quick_video(update, context)
+
+    assert result == -1
+    answer_mock.assert_awaited_once()
+    edit_mock.assert_awaited_once_with(
+        callback_message, "功能暂未开放", parse_mode="Markdown"
+    )
 
 
 @pytest.mark.asyncio

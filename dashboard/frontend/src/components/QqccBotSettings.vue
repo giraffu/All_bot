@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { ReloadOutlined, SaveOutlined } from '@ant-design/icons-vue'
+import { DeleteOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons-vue'
 
 import { fetchQqccBotConfig, updateQqccBotConfig } from '../api/api'
 
@@ -22,6 +22,14 @@ type PromptKey =
   | 'undress_tongue'
   | 'closeup_blowjob'
 
+interface VideoSceneConfig {
+  id: string
+  name: string
+  prompt: string
+  duration: DurationKey
+  prompt_key?: PromptKey
+}
+
 interface QqccBotConfig {
   global_enabled: boolean
   main_buttons: Record<MainButtonKey, boolean>
@@ -32,6 +40,7 @@ interface QqccBotConfig {
     resolutions: Record<ResolutionKey, boolean>
     durations: Record<DurationKey, boolean>
   }
+  video_scenes: VideoSceneConfig[]
   prompts: Record<PromptKey, string>
 }
 
@@ -77,6 +86,43 @@ const defaultConfig = (): QqccBotConfig => ({
       '10s': true,
     },
   },
+  video_scenes: [
+    {
+      id: 'missionary',
+      name: '🛌 动图传教士',
+      prompt: '',
+      duration: '5s',
+      prompt_key: 'perfect_video_insert',
+    },
+    {
+      id: 'doggy',
+      name: '🎬 动图后入',
+      prompt: '',
+      duration: '5s',
+      prompt_key: 'doggy_style',
+    },
+    {
+      id: 'blowjob',
+      name: '🎬 口交黑人',
+      prompt: '',
+      duration: '5s',
+      prompt_key: 'blowjob',
+    },
+    {
+      id: 'undress_tongue',
+      name: '🎬 脱衣吐舌',
+      prompt: '',
+      duration: '5s',
+      prompt_key: 'undress_tongue',
+    },
+    {
+      id: 'closeup_blowjob',
+      name: '🎬 特写口交',
+      prompt: '',
+      duration: '5s',
+      prompt_key: 'closeup_blowjob',
+    },
+  ],
   prompts: {
     undress: '',
     i2i_draw_quick_undress: '',
@@ -119,16 +165,11 @@ const videoButtonOptions: Array<{ key: VideoButtonKey; label: string }> = [
 const resolutionOptions: ResolutionKey[] = ['512p', '720p', '1024p']
 const durationOptions: DurationKey[] = ['5s', '8s', '10s']
 
-const promptOptions: Array<{ key: PromptKey; label: string }> = [
+const nonVideoPromptOptions: Array<{ key: PromptKey; label: string }> = [
   { key: 'undress', label: '快速脱衣' },
   { key: 'i2i_draw_quick_undress', label: '全身保脸重绘' },
   { key: 'masturbation', label: '快速自慰' },
   { key: 'face_swap', label: '随机换脸' },
-  { key: 'perfect_video_insert', label: '动图传教士' },
-  { key: 'doggy_style', label: '动图后入' },
-  { key: 'blowjob', label: '口交' },
-  { key: 'undress_tongue', label: '脱衣吐舌' },
-  { key: 'closeup_blowjob', label: '特写口交' },
 ]
 
 const loading = ref(false)
@@ -136,6 +177,7 @@ const saving = ref(false)
 const configKey = ref('')
 const updatedAt = ref<string | null>(null)
 const config = reactive<QqccBotConfig>(defaultConfig())
+const sceneCounter = ref(0)
 
 const statusText = computed(() => (config.global_enabled ? '开启' : '关闭'))
 const updatedAtText = computed(() => updatedAt.value || '-')
@@ -171,11 +213,70 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
     const value = raw.video_settings?.durations?.[key]
     if (typeof value === 'boolean') merged.video_settings.durations[key] = value
   })
-  promptOptions.forEach(({ key }) => {
-    const value = raw.prompts?.[key]
-    if (typeof value === 'string') merged.prompts[key] = value
+  if (Array.isArray(raw.video_scenes)) {
+    merged.video_scenes = raw.video_scenes
+      .map((scene, index) => {
+        const id = typeof scene?.id === 'string' && scene.id.trim() ? scene.id.trim() : `scene_${index + 1}`
+        const name = typeof scene?.name === 'string' ? scene.name : ''
+        const prompt = typeof scene?.prompt === 'string' ? scene.prompt : ''
+        const duration = durationOptions.includes(scene?.duration as DurationKey)
+          ? (scene.duration as DurationKey)
+          : '5s'
+        const promptKey = typeof scene?.prompt_key === 'string' ? (scene.prompt_key as PromptKey) : undefined
+        return {
+          id,
+          name,
+          prompt,
+          duration,
+          ...(promptKey ? { prompt_key: promptKey } : {}),
+        }
+      })
+      .filter((scene) => scene.name.trim() || scene.prompt.trim() || scene.prompt_key)
+  }
+  Object.keys(merged.prompts).forEach((key) => {
+    const promptKey = key as PromptKey
+    const value = raw.prompts?.[promptKey]
+    if (typeof value === 'string') merged.prompts[promptKey] = value
   })
   return merged
+}
+
+const createVideoSceneId = () => {
+  sceneCounter.value += 1
+  return `scene_${Date.now().toString(36)}_${sceneCounter.value}`
+}
+
+const addVideoScene = () => {
+  config.video_scenes.push({
+    id: createVideoSceneId(),
+    name: '',
+    prompt: '',
+    duration: '5s',
+  })
+}
+
+const removeVideoScene = (index: number) => {
+  config.video_scenes.splice(index, 1)
+}
+
+const validateVideoScenes = () =>
+  config.video_scenes.every((scene) => {
+    if (!scene.name.trim()) return false
+    if (scene.prompt_key) return true
+    return Boolean(scene.prompt.trim())
+  })
+
+const buildPayload = (): QqccBotConfig => {
+  const payload = JSON.parse(JSON.stringify(config)) as QqccBotConfig
+  payload.video_scenes = payload.video_scenes
+    .map((scene) => ({
+      ...scene,
+      id: scene.id.trim(),
+      name: scene.name.trim(),
+      prompt: scene.prompt.trim(),
+    }))
+    .filter((scene) => scene.name || scene.prompt || scene.prompt_key)
+  return payload
 }
 
 const applyResponse = (payload: QqccBotConfigResponse) => {
@@ -183,8 +284,6 @@ const applyResponse = (payload: QqccBotConfigResponse) => {
   configKey.value = payload.key || ''
   updatedAt.value = payload.updated_at || null
 }
-
-const buildPayload = (): QqccBotConfig => JSON.parse(JSON.stringify(config))
 
 const loadConfig = async () => {
   loading.value = true
@@ -199,6 +298,10 @@ const loadConfig = async () => {
 }
 
 const saveConfig = async () => {
+  if (!validateVideoScenes()) {
+    message.error('请完善AI动图场景的按钮名称和提示词')
+    return
+  }
   saving.value = true
   try {
     const saved = await updateQqccBotConfig(buildPayload())
@@ -296,46 +399,62 @@ onMounted(() => {
     </section>
 
     <section class="rounded-lg border border-slate-200 bg-white p-5">
-      <div class="grid gap-5 xl:grid-cols-[1fr_320px]">
-        <div>
-          <h3 class="mb-4 text-sm font-semibold text-slate-800">AI动图场景</h3>
-          <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            <div
-              v-for="item in videoButtonOptions"
-              :key="item.key"
-              class="flex min-h-12 items-center justify-between gap-3 rounded-lg border border-slate-200 px-4"
-            >
-              <span class="text-sm text-slate-700">{{ item.label }}</span>
-              <a-switch v-model:checked="config.video_buttons[item.key]" />
-            </div>
-          </div>
-        </div>
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h3 class="text-sm font-semibold text-slate-800">AI动图场景</h3>
+        <a-button data-testid="add-video-scene" @click="addVideoScene">
+          <template #icon><PlusOutlined /></template>
+          添加
+        </a-button>
+      </div>
 
-        <div class="rounded-lg border border-slate-200 p-4">
-          <h3 class="mb-4 text-sm font-semibold text-slate-800">画质与时长</h3>
-          <div class="mb-4">
-            <div class="mb-2 text-xs font-medium text-slate-500">画质</div>
-            <div class="flex flex-wrap gap-2">
-              <a-checkbox
-                v-for="item in resolutionOptions"
-                :key="item"
-                v-model:checked="config.video_settings.resolutions[item]"
+      <div>
+        <div>
+          <div
+            class="hidden grid-cols-[180px_minmax(360px,1fr)_120px_56px] gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid"
+          >
+            <span>按钮名称</span>
+            <span>提示词</span>
+            <span>时长</span>
+            <span>操作</span>
+          </div>
+          <div
+            v-for="(scene, index) in config.video_scenes"
+            :key="scene.id"
+            class="grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[180px_minmax(360px,1fr)_120px_56px]"
+          >
+            <a-input
+              v-model:value="scene.name"
+              :data-testid="`video-scene-name-${index}`"
+            />
+            <a-textarea
+              v-model:value="scene.prompt"
+              :rows="3"
+              :data-testid="`video-scene-prompt-${index}`"
+              placeholder="留空使用 prompts.ini"
+            />
+            <div
+              class="grid grid-cols-[1fr_56px] gap-3 md:contents"
+            >
+              <a-select
+                v-model:value="scene.duration"
+                :data-testid="`video-scene-duration-${index}`"
+                class="w-full"
               >
-                {{ item }}
-              </a-checkbox>
+                <a-select-option v-for="item in durationOptions" :key="item" :value="item">
+                  {{ item }}
+                </a-select-option>
+              </a-select>
+              <a-button
+                danger
+                :data-testid="`remove-video-scene-${index}`"
+                @click="removeVideoScene(index)"
+              >
+                <template #icon><DeleteOutlined /></template>
+              </a-button>
             </div>
           </div>
-          <div>
-            <div class="mb-2 text-xs font-medium text-slate-500">时长</div>
-            <div class="flex flex-wrap gap-2">
-              <a-checkbox
-                v-for="item in durationOptions"
-                :key="item"
-                v-model:checked="config.video_settings.durations[item]"
-              >
-                {{ item }}
-              </a-checkbox>
-            </div>
+          <div v-if="config.video_scenes.length === 0" class="py-6 text-center text-sm text-slate-400">
+            暂无场景
           </div>
         </div>
       </div>
@@ -344,10 +463,11 @@ onMounted(() => {
     <section class="rounded-lg border border-slate-200 bg-white p-5">
       <h3 class="mb-4 text-sm font-semibold text-slate-800">提示词覆盖</h3>
       <div class="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-        <a-form-item v-for="item in promptOptions" :key="item.key" :label="item.label">
+        <a-form-item v-for="item in nonVideoPromptOptions" :key="item.key" :label="item.label">
           <a-textarea
             v-model:value="config.prompts[item.key]"
             :rows="5"
+            :data-testid="`non-video-prompt-${item.key}`"
             placeholder="留空使用 prompts.ini"
           />
         </a-form-item>
