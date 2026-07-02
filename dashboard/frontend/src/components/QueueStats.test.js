@@ -239,6 +239,7 @@ describe('QueueStats worker health display', () => {
           i2i_pro: 30 * 60,
           scail2: 40 * 60,
           ltx_video: 30 * 60,
+          pornmaster_flux2_edit: 30 * 60,
         },
         task_duration_seconds_by_type: {
           img2img: 13,
@@ -253,6 +254,8 @@ describe('QueueStats worker health display', () => {
           ltx_video: 120,
           ltx_video_flf2v: 120,
           ltx_video_v2v_audio: 120,
+          pornmaster_flux2_single_edit: 30,
+          pornmaster_flux2_multi_edit: 30,
           unknown: 100,
         },
       },
@@ -262,6 +265,13 @@ describe('QueueStats worker health display', () => {
           action: 'scale_up',
           reason: 'scale_up: estimated clear time 1860s exceeds 1800s',
           estimated_clear_time_seconds: 1860,
+          capacity_status: 'ok',
+        },
+        {
+          profile: 'pornmaster_flux2_edit',
+          action: 'hold',
+          reason: 'hold: estimated clear time within threshold',
+          estimated_clear_time_seconds: 60,
           capacity_status: 'ok',
         },
       ],
@@ -277,6 +287,7 @@ describe('QueueStats worker health display', () => {
           i2i_pro: 30 * 60,
           scail2: 40 * 60,
           ltx_video: 30 * 60,
+          pornmaster_flux2_edit: 30 * 60,
         },
         task_duration_seconds_by_type: {
           img2img: 15,
@@ -509,7 +520,6 @@ describe('QueueStats worker health display', () => {
             'pornmaster_flux2_single_edit',
             'pornmaster_flux2_multi_edit',
           ],
-          autoscaler_enabled: false,
           active_count: 3,
           pending_count: 4,
           max_pending_wait_seconds: 1000,
@@ -553,6 +563,13 @@ describe('QueueStats worker health display', () => {
         last_seen: Date.now() / 1000,
       },
       {
+        agent_id: 'runpod_prod_pornmaster_flux2_edit_manual_01',
+        types: 'pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit',
+        runtime_profile: 'pornmaster_flux2_edit',
+        status: 'idle',
+        last_seen: Date.now() / 1000,
+      },
+      {
         agent_id: 'lan_aio_prod_gpu252_gpu0_pornmaster_flux2_edit_01',
         types: 'pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit',
         runtime_profile: 'pornmaster_flux2_edit',
@@ -582,10 +599,11 @@ describe('QueueStats worker health display', () => {
     expect(pornmasterRow?.text()).toContain('pornmaster_flux2_single_edit')
     expect(pornmasterRow?.text()).toContain('16m 40s')
     expect(pornmasterRow?.text()).toContain('14m 40s')
-    expect(pornmasterRow?.text()).toContain('RunPod0')
+    expect(pornmasterRow?.text()).toContain('RunPod1')
     expect(pornmasterRow?.text()).toContain('本地1')
-    expect(pornmasterRow?.text()).toContain('本地/手动')
-    expect(pornmasterRow?.find('.profile-autoscaler-toggle').exists()).toBe(false)
+    expect(pornmasterRow?.text()).toContain('1m 0s')
+    expect(pornmasterRow?.text()).toContain('自动')
+    expect(pornmasterRow?.find('.profile-autoscaler-toggle').exists()).toBe(true)
     expect(i2iRow?.exists()).toBe(true)
     expect(i2iRow?.text()).toContain('RunPod2')
     expect(i2iRow?.text()).toContain('本地2')

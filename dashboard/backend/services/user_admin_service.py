@@ -39,6 +39,7 @@ from src.services.membership_settlement_service import (
     MembershipSettlementAuditSource,
     settle_membership_plan_in_session,
 )
+from src.services.referral_stats_service import query_invited_recharge_totals_usdt
 from src.services.submission_ban_service import build_submission_ban_message
 from src.services.storage import storage
 from src.web_api.services.users_history_service import get_my_favorites_payload
@@ -175,6 +176,7 @@ def _present_user_list_item(user: User) -> dict:
     user_dict["identity_expire_at"] = user.identity_expire_at
     user_dict["total_contributions"] = int(user.total_contributions or 0)
     user_dict["approved_contributions"] = int(user.approved_contributions or 0)
+    user_dict["invited_total_usdt"] = 0.0
     user_dict["channel_joined"] = (
         bool(user.is_channel_member) if hasattr(user, "is_channel_member") else False
     )
@@ -234,7 +236,16 @@ async def get_users_payload(
         stmt = _apply_user_list_sort(stmt, normalized_sort_by, normalized_sort_order)
         stmt = stmt.offset(user_query.skip).limit(user_query.limit)
         result = await db.execute(stmt)
-        items = [_present_user_list_item(user) for user in result.scalars().all()]
+        users = result.scalars().all()
+        invited_totals_usdt = await query_invited_recharge_totals_usdt(
+            db,
+            [user.id for user in users],
+        )
+        items = []
+        for user in users:
+            item = _present_user_list_item(user)
+            item["invited_total_usdt"] = invited_totals_usdt.get(int(user.id), 0.0)
+            items.append(item)
 
         return {
             "items": items,

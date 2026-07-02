@@ -61,6 +61,7 @@ const DEFAULT_SCALE_UP_WAIT_SECONDS_BY_PROFILE = {
   i2i_pro: 30 * 60,
   scail2: 40 * 60,
   ltx_video: 30 * 60,
+  pornmaster_flux2_edit: 30 * 60,
 }
 
 const DEFAULT_TASK_DURATION_SECONDS_BY_TYPE = {
@@ -76,6 +77,8 @@ const DEFAULT_TASK_DURATION_SECONDS_BY_TYPE = {
   ltx_video: 120,
   ltx_video_flf2v: 120,
   ltx_video_v2v_audio: 120,
+  pornmaster_flux2_single_edit: 30,
+  pornmaster_flux2_multi_edit: 30,
   unknown: 100,
 }
 
@@ -119,7 +122,7 @@ const lowTrustPendingTotals = computed(() => {
 })
 
 const RUNPOD_AGENT_ID_PATTERN =
-  /^runpod_prod_(img2img|image_to_video|wan22_video_v2|i2i_pro|scail2|ltx_video)_manual_\d+$/
+  /^runpod_prod_(img2img|image_to_video|wan22_video_v2|i2i_pro|scail2|ltx_video|pornmaster_flux2_edit)_manual_\d+$/
 
 const isTruthyFlag = (value) =>
   value === true || value === 1 || value === '1' || value === 'true' || value === 'True'

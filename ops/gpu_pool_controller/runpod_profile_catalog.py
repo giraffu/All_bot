@@ -319,7 +319,6 @@ RUNPOD_ADMIN_PROFILE_OPTIONS: tuple[dict[str, object], ...] = (
             "pornmaster_flux2_single_edit",
             "pornmaster_flux2_multi_edit",
         ],
-        "autoscaler_enabled": False,
     },
 )
 

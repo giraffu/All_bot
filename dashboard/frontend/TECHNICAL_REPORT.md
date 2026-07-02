@@ -64,7 +64,7 @@ graph TD
 | :--- | :--- | :--- | :--- |
 | **GET** | `/api/stats` | 全局统计数据 | 返回 `today_users`, `total_credits`, `generation_distribution`, `avg_daily_distribution`, `credit_distribution`, `avg_daily_credit_distribution`, `credit_holding_distribution` 等 |
 | **GET** | `/api/stats/history` | 历史趋势数据 | `days=7` (默认), 返回每日新增用户、生成量、消耗积分、**用户增长率**等 |
-| **GET** | `/api/users` | 用户列表 | `skip`, `limit`, 返回包含 `inviter_info`, `referral_count` 的用户对象 |
+| **GET** | `/api/users` | 用户列表 | `skip`, `limit`, 返回包含 `inviter_info`, `referral_count`, `invited_total_usdt` 的用户对象 |
 | **DELETE** | `/api/users/{id}` | 删除用户 | **高危**: 级联删除历史、签到、推荐关系等所有关联数据 |
 | **GET** | `/api/bot/queue` | 队列状态 | 调用 `image_service` 获取 ComfyUI 实时排队数 |
 | **POST** | `/api/templates/.../approve` | 批准模板 | 移动文件至正式目录，并自动发放积分奖励 |

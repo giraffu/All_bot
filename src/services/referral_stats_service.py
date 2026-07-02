@@ -139,6 +139,56 @@ async def query_invitation_recharge_stats(
     }
 
 
+async def query_invited_recharge_totals_usdt(
+    session: AsyncSession, inviter_ids: list[int]
+) -> dict[int, float]:
+    normalized_inviter_ids = [int(inviter_id) for inviter_id in inviter_ids if inviter_id]
+    if not normalized_inviter_ids:
+        return {}
+
+    stmt = (
+        select(
+            Referral.inviter_id,
+            Order.payment_channel,
+            func.sum(Order.final_price).label("total_amount"),
+        )
+        .join(Order, Order.internal_user_id == Referral.invitee_id)
+        .where(
+            and_(
+                Referral.inviter_id.in_(normalized_inviter_ids),
+                Order.status == "SUCCESS",
+                Order.final_price > 0,
+                Order.payment_channel.in_(VALID_PAYMENT_CHANNELS),
+            )
+        )
+        .group_by(Referral.inviter_id, Order.payment_channel)
+    )
+    rows = (await session.execute(stmt)).all()
+    if not rows:
+        return {}
+
+    rates = await get_exchange_rates()
+    rate_by_channel = {
+        "TON": Decimal(str(rates.get("ton_to_usdt", 1.4))),
+        "RMB": Decimal(str(rates.get("rmb_to_usdt", 1.0 / 6.7))),
+        "XTR": Decimal(str(rates.get("stars_to_usdt", 0.013))),
+    }
+
+    totals: dict[int, Decimal] = {}
+    for inviter_id, payment_channel, total_amount in rows:
+        multiplier = rate_by_channel.get(payment_channel)
+        if multiplier is None:
+            continue
+        totals[int(inviter_id)] = totals.get(int(inviter_id), ZERO_DECIMAL) + (
+            Decimal(str(total_amount or 0)) * multiplier
+        )
+
+    return {
+        inviter_id: _round_money(total_usdt)
+        for inviter_id, total_usdt in totals.items()
+    }
+
+
 async def query_referral_rewards(session: AsyncSession) -> list[dict]:
     Invitee = aliased(User)
     stmt = (

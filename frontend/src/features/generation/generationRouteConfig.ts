@@ -14,6 +14,8 @@ export interface ResolvedGenerationRouteConfig {
   routeApplyEnabled: ComputedRef<boolean>
 }
 
+const WEB_DISABLED_QUERY_TASK_TYPES = new Set<string>(['i2i_draw'])
+
 function resolveMetaDefaults(
   route: RouteLocationNormalizedLoaded,
   fallback: GenerationRouteDefaults,
@@ -31,13 +33,27 @@ export function useGenerationRouteConfig(
   fallback: GenerationRouteDefaults,
 ): ResolvedGenerationRouteConfig {
   const metaDefaults = computed(() => resolveMetaDefaults(route, fallback))
+  const queryTaskType = computed(() => (
+    typeof route.query.type === 'string' ? route.query.type : ''
+  ))
+  const isQueryTaskDisabled = computed(() => (
+    WEB_DISABLED_QUERY_TASK_TYPES.has(queryTaskType.value)
+  ))
 
   return {
-    taskType: computed(() => (route.query.type as string) || metaDefaults.value.taskType),
-    taskTitle: computed(() => (route.query.title as string) || metaDefaults.value.title),
+    taskType: computed(() => (
+      queryTaskType.value && !isQueryTaskDisabled.value
+        ? queryTaskType.value
+        : metaDefaults.value.taskType
+    )),
+    taskTitle: computed(() => (
+      typeof route.query.title === 'string' && !isQueryTaskDisabled.value
+        ? route.query.title
+        : metaDefaults.value.title
+    )),
     taskCost: computed(() => {
       const queryCost = Number(route.query.cost)
-      return Number.isFinite(queryCost) && queryCost > 0
+      return Number.isFinite(queryCost) && queryCost > 0 && !isQueryTaskDisabled.value
         ? queryCost
         : metaDefaults.value.cost
     }),

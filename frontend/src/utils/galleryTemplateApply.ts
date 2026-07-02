@@ -2,12 +2,17 @@ import type { GalleryPost } from '@/types/gallery'
 
 export const GALLERY_TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED = 'wan22_stitched'
 export const GALLERY_TEMPLATE_APPLY_DISABLED_REASON_MISSING_SCAIL2_MOTION_VIDEO = 'missing_scail2_motion_video'
+export const GALLERY_TEMPLATE_APPLY_DISABLED_REASON_I2I_DRAW_DISABLED = 'i2i_draw_disabled'
 
 export const resolveGalleryTemplateApplyDisabledReason = (
   post: GalleryPost | null | undefined
 ): string | null => {
   if (!post) {
     return null
+  }
+
+  if (post.task_type === 'i2i_draw') {
+    return GALLERY_TEMPLATE_APPLY_DISABLED_REASON_I2I_DRAW_DISABLED
   }
 
   if (post.template_apply_supported === false) {
@@ -39,6 +44,9 @@ export const resolveGalleryTemplateApplyDisabledMessage = (
   }
   if (reason === GALLERY_TEMPLATE_APPLY_DISABLED_REASON_MISSING_SCAIL2_MOTION_VIDEO) {
     return t('template_apply.disabled.missing_scail2_motion_video')
+  }
+  if (reason === GALLERY_TEMPLATE_APPLY_DISABLED_REASON_I2I_DRAW_DISABLED) {
+    return t('template_apply.disabled.i2i_draw_disabled')
   }
   return t('template_apply.disabled.unsupported')
 }

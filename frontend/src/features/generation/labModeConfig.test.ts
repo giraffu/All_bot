@@ -68,6 +68,11 @@ describe('labModeConfig', () => {
     expect(resolveLabModeIdFromTaskType('ltx_video_audio')).toBe(DEFAULT_LAB_MODE_ID)
   })
 
+  it('keeps i2i draw out of the web lab modes while it is disabled', () => {
+    expect(UNIFIED_LAB_MODES.map(mode => mode.id)).not.toContain('i2i_draw')
+    expect(resolveLabModeIdFromTaskType('i2i_draw')).toBe(DEFAULT_LAB_MODE_ID)
+  })
+
   it('filters scail2 duration options by motion video length', () => {
     expect(getScail2VideoDurationOptionsForMotionVideo(null).map(option => option.value)).toEqual(['5'])
     expect(getScail2VideoDurationOptionsForMotionVideo(6).map(option => option.value)).toEqual(['5'])

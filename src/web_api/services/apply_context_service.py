@@ -31,6 +31,7 @@ TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED = "wan22_stitched"
 TEMPLATE_APPLY_DISABLED_REASON_MISSING_SCAIL2_MOTION_VIDEO = (
     "missing_scail2_motion_video"
 )
+TEMPLATE_APPLY_DISABLED_REASON_I2I_DRAW_DISABLED = "i2i_draw_disabled"
 SCAIL2_HISTORY_CONTEXT_KEY = "scail2_context"
 
 
@@ -72,6 +73,8 @@ def resolve_reusable_apply_input_files(history: History | None) -> list[str]:
 def resolve_history_template_apply_disabled_reason(
     history: History | None,
 ) -> str | None:
+    if history and getattr(history, "type", None) == "i2i_draw":
+        return TEMPLATE_APPLY_DISABLED_REASON_I2I_DRAW_DISABLED
     if history and is_wan22_stitched_result(getattr(history, "extra_outputs", None)):
         return TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED
     if history and is_scail2_task_type(getattr(history, "type", None)):

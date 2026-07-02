@@ -151,6 +151,13 @@ const baseColumns = [
     sorter: true,
   },
   {
+    title: '邀请折合(USDT)',
+    dataIndex: 'invited_total_usdt',
+    key: 'invited_total_usdt',
+    width: 140,
+    align: 'center',
+  },
+  {
     title: '已入宗门',
     key: 'channel_joined',
     width: 100,
@@ -253,7 +260,7 @@ const columns = computed(() =>
         }"
         @change="handleTableChange"
         size="middle"
-        :scroll="{ y: 'calc(100vh - 350px)', x: 1400 }"
+        :scroll="{ y: 'calc(100vh - 350px)', x: 1540 }"
         class="ant-table-striped"
       >
       <template #bodyCell="{ column, record, index }">
@@ -316,6 +323,12 @@ const columns = computed(() =>
           <a-tag :color="record.referral_count > 0 ? 'green' : 'default'">
             {{ record.referral_count }}
           </a-tag>
+        </template>
+
+        <template v-else-if="column.key === 'invited_total_usdt'">
+          <span class="font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded border border-emerald-100">
+            $ {{ Number(record.invited_total_usdt || 0).toFixed(2) }}
+          </span>
         </template>
 
         <template v-else-if="column.key === 'channel_joined'">

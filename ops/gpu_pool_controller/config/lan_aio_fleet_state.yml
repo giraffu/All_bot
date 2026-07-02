@@ -1,0 +1,219 @@
+version: 1
+managed_by: allbot-lan-aio-operator
+last_verified_at: "2026-07-02T09:14:49Z"
+sources:
+  slot_catalog: ops/gpu_pool_controller/config/lan_aio_prod_slots.yml
+  profile_catalog: ops/gpu_pool_controller/config/task_profiles.yml
+  live_status_command: python scripts/lan_aio_fleet_prod_ops.py status --include-disabled
+  gpu_probe: ssh <gpu-host> nvidia-smi --query-gpu=index,name,memory.total,memory.used,utilization.gpu,temperature.gpu --format=csv,noheader,nounits
+rules:
+  - Live status is authoritative when it conflicts with this file.
+  - Update this file after every operator-managed LAN AIO takeover, recover, restart, or cache warmup.
+  - Store only non-sensitive facts: image refs, manifest keys, workspace paths, cache state, blockers, and timestamps.
+  - Do not store env values, tokens, presigned URLs, secrets, or long task histories.
+
+nodes:
+  gpu-226:
+    host: allbot-gpu-226
+    physical_gpus:
+      - gpu_index: 0
+        hardware: NVIDIA GeForce RTX 5090 32G
+        mode: host_service
+        current:
+          profile: face_i2i_t2i
+          slot_id: gpu-226-gpu0-face_i2i_t2i
+          agent_id: cloud_prod_worker_01
+          container_name: null
+          host_port: 8188
+          state: host_service
+        cached_profiles: []
+        fast_switch_candidates: []
+        blocked_profiles:
+          - profile: face_i2i_t2i
+            reason: blocked_host_service_runtime; requires host-service to container migration before LAN AIO takeover.
+        notes: gpu-226 is not a Docker LAN AIO runtime today.
+
+  gpu-177:
+    host: allbot-gpu-177
+    physical_gpus:
+      - gpu_index: 0
+        hardware: NVIDIA GeForce RTX 5090 32G
+        current:
+          profile: wan22_video_v2
+          slot_id: gpu-177-gpu0-wan22_video_v2
+          agent_id: lan_aio_prod_gpu177_gpu0_wan22_video_v2_01
+          container_name: allbot-lan-aio-gpu-177-gpu0-wan22_video_v2-prod
+          host_port: 8190
+          state: running
+          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd
+          model_manifest_key: wan22_video_v2/2026-06-13-test/manifest.json
+          workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-177-gpu0/profiles/wan22_video_v2/workspace
+        cached_profiles:
+          - profile: wan22_video_v2
+            cache_state: ready
+            model_manifest_key: wan22_video_v2/2026-06-13-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-177-gpu0/profiles/wan22_video_v2/workspace
+            synced_at: "2026-07-01T08:47:56.077092+00:00"
+          - profile: image_to_video
+            cache_state: ready_unmarked
+            model_manifest_key: image_to_video/2026-06-13-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-177-gpu0/profiles/image_to_video/workspace
+            note: Workspace exists from previous production runtime, but helper marker is missing; run warm-cache before rollback takeover.
+          - profile: scail2
+            cache_state: partial
+            model_manifest_key: scail2/2026-06-17-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-177-gpu0/profiles/scail2/workspace
+        fast_switch_candidates:
+          - slot_id: gpu-177-gpu0-image_to_video
+            profile: image_to_video
+            cache_state: ready_unmarked
+            note: Run warm-cache to refresh model-cache-marker.json before rollback takeover.
+        blocked_profiles: []
+        notes: Reconciled on 2026-07-02 from live 8190 Wan22 runtime; image_to_video remains the same-card rollback candidate.
+      - gpu_index: 1
+        hardware: NVIDIA GeForce RTX 5090 32G
+        current:
+          profile: ltx_video
+          slot_id: gpu-177-gpu1-ltx_video
+          agent_id: lan_aio_prod_gpu177_gpu1_ltx_video_01
+          container_name: allbot-lan-aio-gpu-177-gpu1-ltx_video-prod
+          host_port: 8191
+          state: running
+          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-ltx-video:20260618-ltx-min-cu128-sageattn1
+          model_manifest_key: ltx_video/2026-06-10/manifest.json
+          workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/ltx_video/workspace
+          last_takeover_at: "2026-07-02T09:12:54Z"
+        cached_profiles:
+          - profile: ltx_video
+            cache_state: ready
+            model_manifest_key: ltx_video/2026-06-10/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/ltx_video/workspace
+            synced_at: "2026-07-02T09:12:54.977184+00:00"
+          - profile: image_to_video
+            cache_state: ready_blocked
+            model_manifest_key: image_to_video/2026-06-13-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/image_to_video/workspace
+            synced_at: "2026-07-02T08:13:04.737800+00:00"
+            note: Cache marker is ready, but runtime is blocked after repeated ComfyUI status 137 restarts on RTX 5090 32G.
+          - profile: wan22_video_v2
+            cache_state: ready
+            model_manifest_key: wan22_video_v2/2026-06-13-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/wan22_video_v2/workspace
+            synced_at: "2026-07-01T15:01:39.659450+00:00"
+          - profile: scail2
+            cache_state: ready
+            model_manifest_key: scail2/2026-06-17-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/scail2/workspace
+            synced_at: "2026-07-02T08:58:02.181921+00:00"
+        fast_switch_candidates:
+          - slot_id: gpu-177-gpu1-scail2
+            profile: scail2
+            cache_state: ready
+        blocked_profiles:
+          - profile: image_to_video
+            reason: blocked_oom_32gb after 2026-07-02 takeover; real tasks repeatedly killed ComfyUI with status 137/restart on RTX 5090 32G, then the slot was rolled back to LTX.
+          - profile: wan22_video_v2
+            reason: blocked_oom_32gb after 2026-07-01 production task OOM on RTX 5090 32G.
+        notes: Switched back from SCAIL-2 to LTX on 2026-07-02 with scripts/lan_aio_fleet_prod_ops.py takeover while SCAIL-2 was idle. Startup validation showed Docker healthy, /system_stats OK, LTX cache marker ready, Central runtime_profile ltx_video, and the worker resumed ltx_video intake.
+
+  gpu-252:
+    host: allbot-gpu-252
+    physical_gpus:
+      - gpu_index: 0
+        hardware: NVIDIA GeForce RTX 4090 48G
+        current:
+          profile: pornmaster_flux2_edit
+          slot_id: gpu-252-gpu0-pornmaster_flux2_edit
+          agent_id: lan_aio_prod_gpu252_gpu0_pornmaster_flux2_edit_01
+          container_name: allbot-lan-aio-gpu-252-gpu0-pornmaster-flux2-edit-prod
+          host_port: 8192
+          state: running
+          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-pornmaster-flux2-edit:20260628-pornmaster-flux2-edit-cu128-smallvae1
+          model_manifest_key: pornmaster_flux2_edit/2026-06-27/manifest.json
+          workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/pornmaster_flux2_edit/workspace
+        cached_profiles:
+          - profile: pornmaster_flux2_edit
+            cache_state: ready
+            model_manifest_key: pornmaster_flux2_edit/2026-06-27/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/pornmaster_flux2_edit/workspace
+          - profile: img2img_lora
+            cache_state: ready
+            model_manifest_key: img2img_lora/2026-06-10/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/img2img_lora/workspace
+        fast_switch_candidates:
+          - slot_id: gpu-252-gpu0-img2img_lora
+            profile: img2img_lora
+            cache_state: ready
+        blocked_profiles: []
+      - gpu_index: 1
+        hardware: removed RTX 4090
+        current:
+          profile: none
+          slot_id: gpu-252-gpu1-wan22_video_v2
+          agent_id: lan_aio_prod_gpu252_gpu1_wan22_video_v2_01
+          container_name: allbot-lan-aio-gpu-252-gpu1-wan22_video_v2-prod
+          host_port: 8191
+          state: maintenance_disabled
+        cached_profiles:
+          - profile: wan22_video_v2
+            cache_state: ready
+            model_manifest_key: wan22_video_v2/2026-06-13-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu1/profiles/wan22_video_v2/workspace
+        fast_switch_candidates: []
+        blocked_profiles:
+          - profile: wan22_video_v2
+            reason: no active local GPU1 after faulty card removal; RunPod is fallback.
+
+  gpu-002:
+    host: allbot-gpu-002
+    physical_gpus:
+      - gpu_index: 0
+        hardware: NVIDIA GeForce RTX 4090 48G
+        current:
+          profile: scail2
+          slot_id: gpu-002-gpu0-scail2
+          agent_id: lan_aio_prod_gpu002_gpu0_scail2_01
+          container_name: allbot-lan-aio-gpu-002-gpu0-scail2-prod
+          host_port: 8190
+          state: running
+          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-scail2:20260617-scail2-cu128-a492b2b-proddeps1
+          model_manifest_key: scail2/2026-06-17-test/manifest.json
+          workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu0/profiles/scail2/workspace
+        cached_profiles:
+          - profile: scail2
+            cache_state: ready
+            model_manifest_key: scail2/2026-06-17-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu0/profiles/scail2/workspace
+          - profile: img2img_lora
+            cache_state: ready
+            model_manifest_key: img2img_lora/2026-06-10/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu0/profiles/img2img_lora/workspace
+        fast_switch_candidates: []
+        blocked_profiles: []
+      - gpu_index: 1
+        hardware: NVIDIA GeForce RTX 4090 48G
+        current:
+          profile: image_to_video
+          slot_id: gpu-002-gpu1-image_to_video
+          agent_id: lan_aio_prod_gpu002_gpu1_image_to_video_01
+          container_name: allbot-lan-aio-gpu-002-gpu1-image_to_video-prod
+          host_port: 8191
+          state: running
+          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd
+          model_manifest_key: image_to_video/2026-06-13-test/manifest.json
+          workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu1/profiles/image_to_video/workspace
+        cached_profiles:
+          - profile: image_to_video
+            cache_state: ready
+            model_manifest_key: image_to_video/2026-06-13-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu1/profiles/image_to_video/workspace
+          - profile: pornmaster_flux2_edit
+            cache_state: ready
+            model_manifest_key: pornmaster_flux2_edit/2026-06-27/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu1/profiles/pornmaster_flux2_edit/workspace
+        fast_switch_candidates:
+          - slot_id: gpu-002-gpu1-pornmaster_flux2_edit
+            profile: pornmaster_flux2_edit
+            cache_state: ready
+        blocked_profiles: []
+        notes: Live runtime is image_to_video as of this verification; reconcile slot phase before operating this GPU.

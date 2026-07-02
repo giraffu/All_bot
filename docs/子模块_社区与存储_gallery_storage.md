@@ -122,6 +122,7 @@ sequenceDiagram
   - 宽高与媒体元数据
 - 旧图生视频 `custom_video` / `video_lora` 投稿应用时会把旧 `512p/720p/1024p` 归一为 Wan22 v2 档位 `preview/standard/hd`，把 `0.36 MP - Small` 归一为 `small`，并恢复 canonical `5s/8s/10s` 时长，缺失或非 canonical 时回退 5 秒；`video_lora` 还会从历史 prompt 中的 `[模型: xxx]` 兼容解析 `lora_name`。
 - 自由P图 v2 投稿支持 Web 一键应用：模板应用会复用并锁定原 prompt、记录 `source_post_id`，但用户需要重新上传 1/2 张参考图；面板不展示 LoRA/附加模型，提交时按上传图数选择 `pornmaster_flux2_single_edit` 或 `pornmaster_flux2_multi_edit`。
+- `i2i_draw` 局部重绘当前已在 Web 一键应用关闭：作品仍可展示，但列表/详情必须返回 `template_apply_supported=false` 与 `template_apply_disabled_reason="i2i_draw_disabled"`，apply-context 入口必须返回 400 防绕过。
 - `wan22_video_v2` 单段投稿支持一键应用，回填正向提示词、`_wan22_context.wan22_negative_prompt`、`_wan22_context.wan22_resolution_preset` 和 `_wan22_context.wan22_duration_seconds`，不复刻首尾帧或链式上下文。
 - `ltx_video` 单首帧/首尾帧投稿支持一键应用，保留两张原始输入图顺序，并从 `_ltx_context` 回填 `lora_items`、`ltx_width`、`ltx_height`、`ltx_duration_seconds`；执行别名 `ltx_video_flf2v` 仍按 `ltx_video` 模板入口处理。
 - `scail2_action_transfer` / `scail2_video_replacement` / `scail2_face_swap_v2` 投稿支持 Web 一键应用：模板只复用原历史第二个输入 motion/driving video，复用者重新上传 reference image；旧兼容字段 `input_file` 也指向该 motion video。缺失 motion video 时列表/详情返回 `template_apply_supported=false` 与 `template_apply_disabled_reason="missing_scail2_motion_video"`，apply-context 返回 400。
@@ -173,7 +174,7 @@ python scripts/audit_visible_hotset_r2_objects.py \
 - 投稿封禁属于用户能力控制，不得通过篡改 `allow_contribute`、`current_identity` 或 `user_group` 去模拟。
 - 用户级批量下架必须同时更新 `GalleryPost.is_active=False` 与投稿关联的 `History.is_public=False`，避免只隐藏列表但保留旧公开资源入口。
 - `apply-context` 必须从 `History` 取请求语义字段，不能只依赖帖子展示用的输出元数据。
-- `apply-context` 必须服务端拒绝 Wan22 stitched 拼接记录和缺少 motion video 的 SCAIL-2 记录，不能只靠前端隐藏按钮。
+- `apply-context` 必须服务端拒绝 Wan22 stitched 拼接记录、缺少 motion video 的 SCAIL-2 记录和 Web 已关闭的 `i2i_draw` 记录，不能只靠前端隐藏按钮。
 - 对象存储异常只能降级，不能阻断广场浏览主链路。
 - 广场列表热路径不得恢复为“每条媒体公网 HEAD 探测 + 持有 DB 只读事务等待对象存储”的模式。
 
@@ -187,7 +188,7 @@ python scripts/audit_visible_hotset_r2_objects.py \
 - 提示词解锁首次扣费、重复请求不重复扣费、唯一约束并发冲突回滚、`my-prompt-unlocks` 列表过滤
 - apply-context 对 `requested_duration` / `billing_resolution` / `negative_prompt` / `input_file_url` / `input_files` 的返回准确性
 - Gallery/修仙笔记/我的投稿卡片左上角原始输入缩略图、详情“原始输入”区域、多输入顺序、LTX 首尾帧标签与 SCAIL-2 展示/复用语义分离
-- Wan22 v2 单段一键应用回填与 stitched 拼接记录禁用、400 拒绝；SCAIL-2 一键应用只复用 motion video，缺失 motion video 时禁用并 400 拒绝
+- Wan22 v2 单段一键应用回填与 stitched 拼接记录禁用、400 拒绝；SCAIL-2 一键应用只复用 motion video，缺失 motion video 时禁用并 400 拒绝；`i2i_draw` Web 一键应用禁用字段与 apply-context 400 拒绝
 - Dashboard 封禁投稿并批量下架时，用户封禁状态、帖子上下架状态和多条 `History.is_public` 同步
 - Gallery 列表、我的投稿、我的收藏和历史详情需要覆盖 R2 hit、R2 miss 后当前 R2/S3 短签或空值/`pending_result`、不得返回 legacy URL、缩略图 fallback 与对象存储慢响应场景。
 

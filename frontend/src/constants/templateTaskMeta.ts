@@ -10,6 +10,8 @@ const TEMPLATE_TASK_TYPE_ALIASES: Record<string, TemplateApplyTaskType> = {
   scail2_action_transfer_long: 'scail2_action_transfer'
 }
 
+const WEB_DISABLED_TEMPLATE_TASK_TYPES = new Set<string>(['i2i_draw'])
+
 const buildLegacyQuery = (
   _ctx: TemplateApplyContext,
   t: (key: string) => string,
@@ -160,7 +162,15 @@ export const TEMPLATE_TASK_META_MAP: Record<TemplateApplyTaskType, TemplateTaskM
 }
 
 export const getCanonicalTemplateTaskType = (taskType: string): TemplateApplyTaskType | null => {
+  if (WEB_DISABLED_TEMPLATE_TASK_TYPES.has(taskType)) {
+    return null
+  }
+
   const normalizedTaskType = TEMPLATE_TASK_TYPE_ALIASES[taskType] ?? taskType
+  if (WEB_DISABLED_TEMPLATE_TASK_TYPES.has(normalizedTaskType)) {
+    return null
+  }
+
   return TEMPLATE_TASK_META_MAP[normalizedTaskType as TemplateApplyTaskType]
     ? (normalizedTaskType as TemplateApplyTaskType)
     : null

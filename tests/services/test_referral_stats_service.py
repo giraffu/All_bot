@@ -94,6 +94,38 @@ def test_round_money_uses_half_up_decimal_rounding():
 
 
 @pytest.mark.asyncio
+async def test_query_invited_recharge_totals_usdt_uses_reward_exchange_rates(monkeypatch):
+    async def _fake_rates():
+        return {
+            "ton_to_usdt": 1.4,
+            "rmb_to_usdt": 0.15,
+            "stars_to_usdt": 0.013,
+        }
+
+    monkeypatch.setattr(referral_stats_service, "get_exchange_rates", _fake_rates)
+    session = _FakeSession(
+        results=[
+            [
+                (1001, "RMB", Decimal("67.00")),
+                (1001, "TON", Decimal("2.50")),
+                (1001, "XTR", Decimal("100")),
+                (2002, "RMB", Decimal("1.00")),
+            ],
+        ]
+    )
+
+    totals = await referral_stats_service.query_invited_recharge_totals_usdt(
+        session,
+        [1001, 2002],
+    )
+
+    assert totals == {
+        1001: 14.85,
+        2002: 0.15,
+    }
+
+
+@pytest.mark.asyncio
 async def test_query_invitation_recharge_stats_reads_history_and_balance_from_ledger():
     session = _FakeSession(
         results=[

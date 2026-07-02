@@ -314,6 +314,7 @@
     "disabled": {
       "wan22_stitched": "拼接视频暂不支持一键应用，请选择单段视频模板。",
       "missing_scail2_motion_video": "该投稿缺少可复用驱动视频，暂不支持一键应用。",
+      "i2i_draw_disabled": "局部重绘已在 Web 端关闭，暂不支持一键应用。",
       "unsupported": "当前作品暂不支持一键应用。"
     },
     "close": {

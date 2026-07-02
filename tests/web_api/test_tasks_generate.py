@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock
 
 import pytest
+from fastapi import HTTPException
 
 from src.core import task_core
 from src.core.task_core_dependencies import TaskCoreProcessDependencies
@@ -283,6 +284,34 @@ async def test_web_generate_accepts_literal_image_to_video_task_type(monkeypatch
     assert submission_context.is_video_task is True
     assert submission_context.billing_resolution == "preview"
     assert submission_context.requested_duration == 5
+
+
+@pytest.mark.asyncio
+async def test_web_generate_rejects_i2i_draw_without_submitting(monkeypatch):
+    process_task = AsyncMock()
+    monkeypatch.setattr(
+        task_submission_service,
+        "process_and_submit_task",
+        process_task,
+    )
+
+    request = TaskGenerateRequest(
+        task_type="i2i_draw",
+        inputs={
+            "images": ["123/input_images/base.png"],
+        },
+        prompt="repaint local area",
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await tasks_router.create_generation_task(
+            request,
+            current_user=_build_current_user(),
+        )
+
+    assert exc_info.value.status_code == 400
+    assert "局部重绘" in exc_info.value.detail
+    process_task.assert_not_awaited()
 
 
 @pytest.mark.asyncio

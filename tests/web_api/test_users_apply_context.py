@@ -225,6 +225,38 @@ async def test_build_favorite_gallery_payload_marks_wan22_stitched_template_appl
 
 
 @pytest.mark.asyncio
+async def test_build_favorite_gallery_payload_marks_i2i_draw_template_apply_disabled(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-i2i-draw",
+        type="i2i_draw",
+        prompt="repaint local area",
+        output_file="bot-data/history/task-i2i-draw/output.png",
+        created_at=datetime.now(),
+    )
+
+    async def _fake_resolve_history_media_urls(**_kwargs):
+        return ("https://example.com/output.png", "https://example.com/thumb.png")
+
+    monkeypatch.setattr(
+        history_response_builder,
+        "resolve_history_media_urls",
+        _fake_resolve_history_media_urls,
+    )
+
+    response_items = await build_favorite_gallery_payload(
+        histories=[history],
+        gallery_post_map={},
+    )
+
+    assert response_items[0].template_apply_supported is False
+    assert response_items[0].template_apply_disabled_reason == "i2i_draw_disabled"
+
+
+@pytest.mark.asyncio
 async def test_get_my_favorites_payload_returns_favorited_txt2img_history(
     monkeypatch,
 ):
@@ -773,6 +805,37 @@ async def test_get_favorite_apply_context_rejects_wan22_stitched_records(
 
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == "wan22_stitched"
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_favorite_apply_context_rejects_i2i_draw_records(monkeypatch):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-i2i-draw",
+        type="i2i_draw",
+        prompt="repaint local area",
+        width=512,
+        height=512,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=history),
+            _FakeResult(many=[]),
+        ]
+    )
+
+    monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
+    with pytest.raises(HTTPException) as exc_info:
+        await users_router.get_favorite_apply_context(
+            "task-i2i-draw",
+            current_user=type("User", (), {"id": 123})(),
+            db=session,
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "i2i_draw_disabled"
     session.commit.assert_not_awaited()
 
 

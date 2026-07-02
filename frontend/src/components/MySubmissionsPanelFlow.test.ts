@@ -155,7 +155,7 @@ const samplePost = {
   has_disliked: false,
   is_active: true,
   prompt: 'demo prompt',
-  task_type: 'i2i_draw',
+  task_type: 'i2i_pro',
   input_file: 'history/demo/reference.png',
   input_file_url: 'https://example.com/reference.png',
   input_files: ['history/demo/reference.png'],

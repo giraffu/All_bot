@@ -9,6 +9,16 @@ from src.core.task_core_types import TaskSubmissionSideEffectPlan
 from src.utils import is_maintenance_mode
 from src.web_api.schemas.task_schema import TaskGenerateRequest, TaskGenerateResponse
 
+WEB_DISABLED_GENERATION_TASK_TYPE_DETAILS = {
+    "i2i_draw": "局部重绘已在 Web 端关闭，暂不支持提交。",
+}
+
+
+def _raise_if_web_generation_task_disabled(task_type: str) -> None:
+    detail = WEB_DISABLED_GENERATION_TASK_TYPE_DETAILS.get(task_type)
+    if detail:
+        raise CoreDomainError(detail)
+
 
 async def submit_generation_task(
     *,
@@ -20,6 +30,8 @@ async def submit_generation_task(
     try:
         if is_maintenance_mode():
             raise CoreDomainError("系统维护中，生成任务暂时不可提交，请稍后再试。")
+
+        _raise_if_web_generation_task_disabled(req.task_type)
 
         is_template = getattr(req, "is_template", False)
 

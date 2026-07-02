@@ -245,6 +245,7 @@ async def test_get_users_payload_applies_requested_sort_order():
                     User(id=100, username="alpha", credits=9, referral_count=2),
                 ]
             ),
+            _ScalarResult(rows=[]),
         ]
     )
 
@@ -259,6 +260,34 @@ async def test_get_users_payload_applies_requested_sort_order():
     assert [item["id"] for item in result["items"]] == [200, 100]
     list_stmt = db.executed_stmts[1]
     assert "ORDER BY users.credits DESC NULLS LAST, users.id DESC" in list_stmt
+
+
+@pytest.mark.asyncio
+async def test_get_users_payload_includes_invited_recharge_usdt(monkeypatch):
+    db = _FakeUserListDB(
+        [
+            _ScalarResult(value=2),
+            _ScalarResult(
+                rows=[
+                    User(id=200, username="beta", credits=9, referral_count=3),
+                    User(id=100, username="alpha", credits=9, referral_count=2),
+                ]
+            ),
+        ]
+    )
+    totals_mock = AsyncMock(return_value={200: 14.85})
+    monkeypatch.setattr(
+        user_admin_service,
+        "query_invited_recharge_totals_usdt",
+        totals_mock,
+    )
+
+    result = await user_admin_service.get_users_payload(db=db)
+
+    totals_mock.assert_awaited_once_with(db, [200, 100])
+    items_by_id = {item["id"]: item for item in result["items"]}
+    assert items_by_id[200]["invited_total_usdt"] == 14.85
+    assert items_by_id[100]["invited_total_usdt"] == 0.0
 
 
 @pytest.mark.asyncio
@@ -286,6 +315,7 @@ async def test_get_users_payload_filters_submission_banned_users():
                     User(id=300, username="blocked", is_submission_banned=True),
                 ]
             ),
+            _ScalarResult(rows=[]),
         ]
     )
 
@@ -308,6 +338,7 @@ async def test_get_users_payload_filters_by_user_id():
         [
             _ScalarResult(value=1),
             _ScalarResult(rows=[User(id=8106178029, username="cccmmmmm")]),
+            _ScalarResult(rows=[]),
         ]
     )
 

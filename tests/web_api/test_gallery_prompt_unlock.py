@@ -1,7 +1,6 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from fastapi import HTTPException
 import pytest
 from sqlalchemy.exc import IntegrityError
 
@@ -100,7 +99,6 @@ async def test_unlock_gallery_prompt_creates_unlock_and_transfers_credit():
         current_user=SimpleNamespace(id=123, username="buyer"),
         db=session,
         quota_manager=quota,
-        is_low_trust_free_tier_user_func=AsyncMock(return_value=False),
     )
 
     assert response.prompt == "full secret prompt"
@@ -140,14 +138,12 @@ async def test_unlock_gallery_prompt_existing_unlock_is_idempotent():
         ]
     )
     quota = _Quota()
-    is_low_trust = AsyncMock(return_value=True)
 
     response = await unlock_gallery_prompt_payload(
         post_id=10,
         current_user=SimpleNamespace(id=123, username="buyer"),
         db=session,
         quota_manager=quota,
-        is_low_trust_free_tier_user_func=is_low_trust,
     )
 
     assert response.prompt == "full secret prompt"
@@ -155,7 +151,6 @@ async def test_unlock_gallery_prompt_existing_unlock_is_idempotent():
     assert response.already_unlocked is True
     assert session.added == []
     assert quota.transfer_kwargs is None
-    is_low_trust.assert_not_awaited()
     session.commit.assert_not_awaited()
 
 
@@ -178,7 +173,6 @@ async def test_unlock_gallery_prompt_unique_conflict_rolls_back_without_transfer
         current_user=SimpleNamespace(id=123, username="buyer"),
         db=session,
         quota_manager=quota,
-        is_low_trust_free_tier_user_func=AsyncMock(return_value=False),
     )
 
     assert response.already_unlocked is True
@@ -189,7 +183,9 @@ async def test_unlock_gallery_prompt_unique_conflict_rolls_back_without_transfer
 
 
 @pytest.mark.asyncio
-async def test_unlock_gallery_prompt_low_trust_user_is_blocked_before_transfer():
+async def test_unlock_gallery_prompt_does_not_check_low_trust_before_transfer(
+    monkeypatch,
+):
     session = _Session(
         [
             _Result(single=_post()),
@@ -199,23 +195,31 @@ async def test_unlock_gallery_prompt_low_trust_user_is_blocked_before_transfer()
         ]
     )
     quota = _Quota()
-    is_low_trust = AsyncMock(return_value=True)
 
-    with pytest.raises(HTTPException) as exc_info:
-        await unlock_gallery_prompt_payload(
-            post_id=10,
-            current_user=SimpleNamespace(id=123, username="buyer"),
-            db=session,
-            quota_manager=quota,
-            is_low_trust_free_tier_user_func=is_low_trust,
-        )
+    from src.services.permission_service import permission_service
 
-    assert exc_info.value.status_code == 403
-    assert exc_info.value.detail == "当前账号暂不可解锁提示词，请完成一次充值后再试"
-    assert session.added == []
-    assert quota.transfer_kwargs is None
-    is_low_trust.assert_awaited_once_with(123)
-    session.commit.assert_not_awaited()
+    low_trust_lookup = AsyncMock(side_effect=AssertionError("low trust lookup disabled"))
+    monkeypatch.setattr(
+        permission_service,
+        "is_low_trust_free_tier_user",
+        low_trust_lookup,
+    )
+
+    response = await unlock_gallery_prompt_payload(
+        post_id=10,
+        current_user=SimpleNamespace(id=123, username="buyer"),
+        db=session,
+        quota_manager=quota,
+    )
+
+    assert response.prompt == "full secret prompt"
+    assert response.current_credits == 4
+    assert response.already_unlocked is False
+    assert isinstance(session.added[0], GalleryPromptUnlock)
+    assert quota.transfer_kwargs["from_user_id"] == 123
+    assert quota.transfer_kwargs["to_user_id"] == 200
+    low_trust_lookup.assert_not_awaited()
+    session.commit.assert_awaited_once()
     session.rollback.assert_not_awaited()
 
 
@@ -229,14 +233,12 @@ async def test_unlock_gallery_prompt_low_trust_author_self_view_is_allowed():
         ]
     )
     quota = _Quota()
-    is_low_trust = AsyncMock(return_value=True)
 
     response = await unlock_gallery_prompt_payload(
         post_id=10,
         current_user=SimpleNamespace(id=123, username="buyer"),
         db=session,
         quota_manager=quota,
-        is_low_trust_free_tier_user_func=is_low_trust,
     )
 
     assert response.prompt == "full secret prompt"
@@ -244,5 +246,4 @@ async def test_unlock_gallery_prompt_low_trust_author_self_view_is_allowed():
     assert response.already_unlocked is True
     assert session.added == []
     assert quota.transfer_kwargs is None
-    is_low_trust.assert_not_awaited()
     session.commit.assert_not_awaited()

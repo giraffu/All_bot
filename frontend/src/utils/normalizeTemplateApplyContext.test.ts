@@ -78,6 +78,27 @@ describe('normalizeTemplateApplyContext', () => {
     })
   })
 
+  it('treats disabled i2i draw templates as unsupported without dropping context', () => {
+    const normalized = normalizeTemplateApplyContext(
+      {
+        post_id: 8,
+        source_post_id: 8,
+        task_type: 'i2i_draw',
+        prompt: 'repaint local area'
+      },
+      { source: 'gallery', entryEntityId: 8 }
+    )
+
+    expect(normalized).not.toBeNull()
+    expect(normalized).toMatchObject({
+      rawTaskType: 'i2i_draw',
+      taskType: null,
+      supportMode: 'unknown',
+      sourcePostId: 8,
+      prompt: 'repaint local area'
+    })
+  })
+
   it('normalizes known legacy aliases to canonical task types', () => {
     const normalized = normalizeTemplateApplyContext(
       {

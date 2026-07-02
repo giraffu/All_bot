@@ -89,11 +89,19 @@ async def test_runpod_profiles_payload_lists_supported_prod_profiles():
         "i2i_pro",
         "scail2",
         "ltx_video",
+        "pornmaster_flux2_edit",
     ]
     assert payload["profiles"][0]["supported_task_types"] == [
         "img2img",
         "img2img_lora",
     ]
+    pornmaster = payload["profiles"][-1]
+    assert pornmaster["label"] == "pornmaster_flux2 / 自由P图 v2"
+    assert pornmaster["supported_task_types"] == [
+        "pornmaster_flux2_single_edit",
+        "pornmaster_flux2_multi_edit",
+    ]
+    assert pornmaster.get("autoscaler_enabled", True) is True
 
 
 @pytest.mark.asyncio
@@ -920,7 +928,7 @@ async def test_autoscaler_add_operation_uses_bootstrap_timeout():
 @pytest.mark.asyncio
 async def test_restart_lan_aio_worker_builds_slot_scoped_operation():
     payload = await runpod_admin_service.restart_lan_aio_worker_payload(
-        agent_id="lan_aio_prod_gpu177_gpu0_image_to_video_01",
+        agent_id="lan_aio_prod_gpu177_gpu0_wan22_video_v2_01",
         request=RunPodWorkerActionRequest(),
         spawn_task_func=_discard_operation_coroutine,
     )
@@ -929,26 +937,26 @@ async def test_restart_lan_aio_worker_builds_slot_scoped_operation():
     command = operation["command"]
     assert operation["status"] == "pending"
     assert operation["action"] == "restart"
-    assert operation["profile"] == "image_to_video"
-    assert operation["slot"] == "gpu-177-gpu0-image_to_video"
+    assert operation["profile"] == "wan22_video_v2"
+    assert operation["slot"] == "gpu-177-gpu0-wan22_video_v2"
     assert command[:3] == [
         "python3",
         str(runpod_admin_service.PROJECT_ROOT / "scripts" / "lan_aio_fleet_prod_ops.py"),
         "restart-aio",
     ]
-    assert command[command.index("--slot") + 1] == "gpu-177-gpu0-image_to_video"
+    assert command[command.index("--slot") + 1] == "gpu-177-gpu0-wan22_video_v2"
     assert "--execute" in command
 
 
 @pytest.mark.asyncio
 async def test_pause_and_enable_lan_aio_worker_build_slot_scoped_operations():
     pause_payload = await runpod_admin_service.pause_lan_aio_worker_payload(
-        agent_id="lan_aio_prod_gpu177_gpu0_image_to_video_01",
+        agent_id="lan_aio_prod_gpu177_gpu0_wan22_video_v2_01",
         request=RunPodWorkerActionRequest(),
         spawn_task_func=_discard_operation_coroutine,
     )
     enable_payload = await runpod_admin_service.enable_lan_aio_worker_payload(
-        agent_id="lan_aio_prod_gpu177_gpu0_image_to_video_01",
+        agent_id="lan_aio_prod_gpu177_gpu0_wan22_video_v2_01",
         request=RunPodWorkerActionRequest(),
         spawn_task_func=_discard_operation_coroutine,
     )
@@ -959,24 +967,24 @@ async def test_pause_and_enable_lan_aio_worker_build_slot_scoped_operations():
     enable_command = enable_operation["command"]
     assert pause_operation["status"] == "pending"
     assert pause_operation["action"] == "pause"
-    assert pause_operation["profile"] == "image_to_video"
-    assert pause_operation["slot"] == "gpu-177-gpu0-image_to_video"
+    assert pause_operation["profile"] == "wan22_video_v2"
+    assert pause_operation["slot"] == "gpu-177-gpu0-wan22_video_v2"
     assert pause_command[:3] == [
         "python3",
         str(runpod_admin_service.PROJECT_ROOT / "scripts" / "lan_aio_fleet_prod_ops.py"),
         "disable-aio",
     ]
-    assert pause_command[pause_command.index("--slot") + 1] == "gpu-177-gpu0-image_to_video"
+    assert pause_command[pause_command.index("--slot") + 1] == "gpu-177-gpu0-wan22_video_v2"
     assert "--execute" in pause_command
     assert enable_operation["action"] == "enable"
-    assert enable_operation["profile"] == "image_to_video"
-    assert enable_operation["slot"] == "gpu-177-gpu0-image_to_video"
+    assert enable_operation["profile"] == "wan22_video_v2"
+    assert enable_operation["slot"] == "gpu-177-gpu0-wan22_video_v2"
     assert enable_command[:3] == [
         "python3",
         str(runpod_admin_service.PROJECT_ROOT / "scripts" / "lan_aio_fleet_prod_ops.py"),
         "enable-aio",
     ]
-    assert enable_command[enable_command.index("--slot") + 1] == "gpu-177-gpu0-image_to_video"
+    assert enable_command[enable_command.index("--slot") + 1] == "gpu-177-gpu0-wan22_video_v2"
     assert "--execute" in enable_command
 
 

@@ -33,6 +33,7 @@
 | **Telegram 交互与文件** | `allbot-tg-fsm` | PTB 状态机、多语言(i18n)精准路由、菜单互斥防死锁、大文件 Monkey Patch |
 | **QQCC 懒人 Bot** | `allbot-qqcc-lazy-bot` | 独立 QQCC polling 服务、简化菜单、quick image/video FSM、`bot:qqcc` 任务来源和双 polling 红线 |
 | **部署、容器与容灾排障** | `allbot-ops-deployment` | Docker Compose 编排、Alembic 迁移、测试优先发布、云正式/云测试控制面、本地正式灾备切换、MinIO/网络故障恢复 |
+| **局域网 LAN AIO 管理** | `allbot-lan-aio-operator` | 读取 fleet state 与 slot catalog，按单卡 helper 流程管理 LAN AIO 当前态、缓存、候选切换、takeover/recover/restart |
 | **文档维护与知识库同步** | `allbot-kb-auto-updater` | 智能监控代码变更影响，自动维护 AGENTS.md、`.codex/skills` 和 /docs/ 的逻辑一致性 |
 | **Bug 诊断闭环** | `allbot-diagnosing-bugs` | 建立可复现反馈环、排序假设、精准插桩、修复回归与收尾清理 |
 | **测试驱动研发** | `allbot-tdd` | 通过 public facade / API / FSM / provider dependencies seam 做行为测试，一次一个 vertical slice |

@@ -45,6 +45,7 @@ def _status(
         "i2i_pro",
         "scail2",
         "ltx_video",
+        "pornmaster_flux2_edit",
     ]
     profile_task_types = {
         "img2img": ["img2img", "img2img_lora"],
@@ -53,6 +54,10 @@ def _status(
         "i2i_pro": ["i2i_pro", "t2i-pornmaster-turbo", "face_swap"],
         "scail2": ["scail2_action_transfer", "scail2_video_replacement"],
         "ltx_video": ["ltx_video", "ltx_video_flf2v", "ltx_video_v2v_audio"],
+        "pornmaster_flux2_edit": [
+            "pornmaster_flux2_single_edit",
+            "pornmaster_flux2_multi_edit",
+        ],
     }
     return {
         "runpod_profile_queue_details": [
@@ -111,6 +116,7 @@ def _runpod_worker(
         "i2i_pro": "runpod_prod_i2i_pro_manual_",
         "scail2": "runpod_prod_scail2_manual_",
         "ltx_video": "runpod_prod_ltx_video_manual_",
+        "pornmaster_flux2_edit": "runpod_prod_pornmaster_flux2_edit_manual_",
     }
     profile_types = {
         "img2img": "img2img,img2img_lora",
@@ -119,6 +125,9 @@ def _runpod_worker(
         "i2i_pro": "i2i_pro,t2i-pornmaster-turbo,face_swap",
         "scail2": "scail2_action_transfer,scail2_video_replacement",
         "ltx_video": "ltx_video,ltx_video_flf2v,ltx_video_v2v_audio",
+        "pornmaster_flux2_edit": (
+            "pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit"
+        ),
     }
     return {
         "agent_id": f"{profile_agent[profile]}{slot}",
@@ -306,38 +315,33 @@ async def test_autoscaler_uses_default_profile_scale_up_thresholds():
     assert decisions["scail2"]["reason"] == "hold: estimated clear time within threshold"
 
 
-async def test_autoscaler_skips_display_only_worker_profiles():
+async def test_autoscaler_scales_pornmaster_flux2_edit_profile():
     calls = []
-    status_payload = _status(profile="img2img", pending=0, wait=None)
-    status_payload["runpod_profile_queue_details"].append(
-        {
-            "profile": "pornmaster_flux2_edit",
-            "label": "pornmaster_flux2",
-            "supported_task_types": [
-                "pornmaster_flux2_single_edit",
-                "pornmaster_flux2_multi_edit",
-            ],
-            "autoscaler_enabled": False,
-            "active_count": 0,
-            "pending_count": 12,
-            "pending_count_by_task_type": {
-                "pornmaster_flux2_single_edit": 6,
-                "pornmaster_flux2_multi_edit": 6,
-            },
-            "max_pending_wait_seconds": 1800,
-            "pending_wait_records": [{"wait_seconds": 1800, "priority": 0}],
-        }
-    )
 
     async def start_add(**kwargs):
         calls.append(kwargs)
-        raise AssertionError("display-only worker profile should not start add")
+        return RunPodAdminOperation(
+            id="op-add-pornmaster",
+            action="add",
+            profile=kwargs["profile"],
+            command=["runpod", "add"],
+            source="autoscaler",
+            trigger_reason=kwargs["trigger_reason"],
+        )
 
     payload = await evaluate_runpod_autoscaler_once(
         mutate=True,
         config=_config(),
         store=InMemoryRunPodAutoscalerStateStore(),
-        status_payload=status_payload,
+        status_payload=_status(
+            profile="pornmaster_flux2_edit",
+            pending=61,
+            wait=1800,
+            pending_count_by_task_type={
+                "pornmaster_flux2_single_edit": 30,
+                "pornmaster_flux2_multi_edit": 31,
+            },
+        ),
         workers_payload=_workers(
             _local_worker(
                 "pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit"
@@ -349,8 +353,20 @@ async def test_autoscaler_skips_display_only_worker_profiles():
     )
 
     decisions = {item["profile"]: item for item in payload["decisions"]}
-    assert "pornmaster_flux2_edit" not in decisions
-    assert calls == []
+    decision = decisions["pornmaster_flux2_edit"]
+    assert payload["config"]["scale_up_wait_seconds_by_profile"][
+        "pornmaster_flux2_edit"
+    ] == 30 * 60
+    assert payload["config"]["task_duration_seconds_by_type"][
+        "pornmaster_flux2_single_edit"
+    ] == 30
+    assert payload["config"]["task_duration_seconds_by_type"][
+        "pornmaster_flux2_multi_edit"
+    ] == 30
+    assert decision["action"] == "scale_up"
+    assert decision["estimated_pending_work_seconds"] == 1830
+    assert decision["estimated_clear_time_seconds"] == 1830
+    assert calls[0]["profile"] == "pornmaster_flux2_edit"
 
 
 async def test_autoscaler_uses_persisted_profile_scale_up_threshold_on_next_evaluate():

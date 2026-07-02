@@ -179,6 +179,7 @@ export const FACE_VIDEO_RESOLUTION_OPTIONS = [
 
 export const FREE_EDIT_V2_MODE_ID = 'edit_v2' as const
 export const FREE_EDIT_V2_ENABLED = import.meta.env.VITE_ENABLE_FREE_EDIT_V2 !== 'false'
+export const WEB_I2I_DRAW_ENABLED = false
 export const PORNMASTER_FLUX2_SINGLE_EDIT_TASK_TYPE = 'pornmaster_flux2_single_edit'
 export const PORNMASTER_FLUX2_MULTI_EDIT_TASK_TYPE = 'pornmaster_flux2_multi_edit'
 
@@ -556,7 +557,9 @@ export const LAB_MODE_CONFIG_MAP = Object.fromEntries(
 export const DEFAULT_LAB_MODE_ID: UnifiedLabModeId = 'edit'
 
 export const UNIFIED_LAB_MODES = LAB_MODE_CONFIGS.filter(mode => (
-  mode.unified && (mode.id !== FREE_EDIT_V2_MODE_ID || FREE_EDIT_V2_ENABLED)
+  mode.unified
+  && (mode.id !== FREE_EDIT_V2_MODE_ID || FREE_EDIT_V2_ENABLED)
+  && (mode.id !== 'i2i_draw' || WEB_I2I_DRAW_ENABLED)
 )) as LabModeConfig[]
 export const LEGACY_LAB_MODES = LAB_MODE_CONFIGS.filter(mode => !mode.unified) as LabModeConfig[]
 
@@ -573,7 +576,7 @@ export const resolveLabModeIdFromTaskType = (taskType: string | null | undefined
     case 'i2i_pro':
       return 'i2i_pro'
     case 'i2i_draw':
-      return 'i2i_draw'
+      return WEB_I2I_DRAW_ENABLED ? 'i2i_draw' : DEFAULT_LAB_MODE_ID
     case 'custom_video':
     case 'video_lora':
       return 'custom_video'

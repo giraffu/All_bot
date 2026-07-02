@@ -120,7 +120,7 @@ def test_dashboard_profile_options_are_sourced_from_catalog():
     ]
 
 
-def test_pornmaster_flux2_profile_is_manual_only_and_excluded_from_autoscaler():
+def test_pornmaster_flux2_profile_is_available_to_autoscaler():
     worker_options = {
         str(option["profile"]): option
         for option in catalog.DASHBOARD_WORKER_PROFILE_OPTIONS
@@ -138,5 +138,5 @@ def test_pornmaster_flux2_profile_is_manual_only_and_excluded_from_autoscaler():
         "pornmaster_flux2_single_edit",
         "pornmaster_flux2_multi_edit",
     ]
-    assert worker_options["pornmaster_flux2_edit"]["autoscaler_enabled"] is False
-    assert "pornmaster_flux2_edit" not in autoscaler_profiles
+    assert worker_options["pornmaster_flux2_edit"].get("autoscaler_enabled", True)
+    assert "pornmaster_flux2_edit" in autoscaler_profiles

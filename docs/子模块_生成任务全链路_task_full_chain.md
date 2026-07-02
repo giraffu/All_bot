@@ -122,6 +122,7 @@ Web 统一入口在：
 - `src/web_api/services/task_submission_service.py`
 
 当前职责：
+- 先执行 Web 入口级禁用任务检查；`i2i_draw` 局部重绘当前在 Web 端关闭，会在生成 `task_id`、扣费和入队前返回领域错误
 - 把 `prompt` 补入 `req.inputs`
 - 生成 Web 侧 `task_id`
 - 设定 correlation id
@@ -218,7 +219,7 @@ Web 统一入口在：
 
 例如：
 - `txt2img` 走 `submit_txt2img_task(...)`
-- `i2i_pro` 和 `i2i_draw` 有独立提交方法
+- `i2i_pro` 和 `i2i_draw` 有独立提交方法；注意这是 dispatcher/Bot/执行面能力说明，Web API 当前会在 `task_submission_service` 入口拒绝 `i2i_draw`
 - `img2img_lora` 会带 `lora_name` 和 `lora_strength`
 - 自由P图 v2 公开入口使用 `free_edit_v2`/`edit_v2`，执行面按参考图数量精确提交：1 张图为 `pornmaster_flux2_single_edit`、2 张图为 `pornmaster_flux2_multi_edit`，费用分别为 2/6，不传 `lora_name` 或 `lora_strength`
 - 视频类会根据分辨率、时长转成底层所需尺寸和帧长

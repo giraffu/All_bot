@@ -313,6 +313,7 @@
     "disabled": {
       "wan22_stitched": "Stitched videos cannot be applied as templates. Please choose a single video segment.",
       "missing_scail2_motion_video": "This post is missing a reusable motion video and cannot be applied as a template.",
+      "i2i_draw_disabled": "Inpaint has been turned off on Web and cannot be applied as a template.",
       "unsupported": "This post cannot be applied as a template."
     },
     "close": {

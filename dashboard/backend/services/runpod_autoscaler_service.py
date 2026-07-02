@@ -63,6 +63,8 @@ DEFAULT_TASK_DURATION_SECONDS_BY_TYPE: dict[str, int] = {
     "ltx_video": 120,
     "ltx_video_flf2v": 120,
     "ltx_video_v2v_audio": 120,
+    "pornmaster_flux2_single_edit": 30,
+    "pornmaster_flux2_multi_edit": 30,
     "unknown": UNKNOWN_TASK_DURATION_SECONDS,
 }
 

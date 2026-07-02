@@ -46,19 +46,12 @@ async def _fetch_existing_unlock(*, db, user_id: int, post_id: int):
     ).scalar_one_or_none()
 
 
-async def _is_low_trust_free_tier_user(user_id: int) -> bool:
-    from src.services.permission_service import permission_service
-
-    return await permission_service.is_low_trust_free_tier_user(user_id)
-
-
 async def unlock_gallery_prompt_payload(
     *,
     post_id: int,
     current_user,
     db,
     quota_manager: QuotaManager | None = None,
-    is_low_trust_free_tier_user_func=None,
 ) -> PromptUnlockResponse:
     post, prompt = await _fetch_prompt_unlock_entities(db=db, post_id=post_id)
     current_credits = await _fetch_current_credits(db=db, user_id=current_user.id)
@@ -82,15 +75,6 @@ async def unlock_gallery_prompt_payload(
             prompt=prompt,
             current_credits=current_credits,
             already_unlocked=True,
-        )
-
-    is_low_trust_free_tier_user_func = (
-        is_low_trust_free_tier_user_func or _is_low_trust_free_tier_user
-    )
-    if await is_low_trust_free_tier_user_func(current_user.id):
-        raise HTTPException(
-            status_code=403,
-            detail="当前账号暂不可解锁提示词，请完成一次充值后再试",
         )
 
     unlock = GalleryPromptUnlock(

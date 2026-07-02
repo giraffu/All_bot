@@ -118,6 +118,14 @@ const fallbackProfiles: RunPodProfile[] = [
     label: 'ltx_video / 高级图生视频',
     supported_task_types: ['ltx_video', 'ltx_video_flf2v', 'ltx_video_v2v_audio'],
   },
+  {
+    profile: 'pornmaster_flux2_edit',
+    label: 'pornmaster_flux2 / 自由P图 v2',
+    supported_task_types: [
+      'pornmaster_flux2_single_edit',
+      'pornmaster_flux2_multi_edit',
+    ],
+  },
 ]
 
 const open = ref(false)

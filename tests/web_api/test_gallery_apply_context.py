@@ -154,6 +154,42 @@ async def test_build_post_responses_marks_wan22_stitched_template_apply_disabled
 
 
 @pytest.mark.asyncio
+async def test_build_post_responses_marks_i2i_draw_template_apply_disabled():
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-i2i-draw",
+        type="i2i_draw",
+        prompt="repaint local area",
+        output_file="bot-data/history/task-i2i-draw/output.png",
+    )
+    post = GalleryPost(
+        id=2,
+        task_id="task-i2i-draw",
+        media_type="image",
+        width=512,
+        height=512,
+        tags="[]",
+        likes_count=0,
+        dislikes_count=0,
+        applied_count=0,
+        is_active=True,
+        created_at=datetime.now(),
+    )
+    session = _FakeSession([_FakeResult(many=[history])])
+
+    responses = await build_gallery_post_responses(
+        session=session,
+        posts=[post],
+        current_user=None,
+        pick_gallery_media_urls=AsyncMock(return_value=("media-url", "thumb-url")),
+    )
+
+    assert responses[0].template_apply_supported is False
+    assert responses[0].template_apply_disabled_reason == "i2i_draw_disabled"
+
+
+@pytest.mark.asyncio
 async def test_build_post_responses_adds_ltx_flf2v_tags_and_original_inputs(monkeypatch):
     history = History(
         id=11,
@@ -871,6 +907,39 @@ async def test_get_apply_context_rejects_wan22_stitched_records(task_type):
 
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == "wan22_stitched"
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_apply_context_rejects_i2i_draw_records():
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-i2i-draw",
+        type="i2i_draw",
+        prompt="repaint local area",
+        width=512,
+        height=512,
+    )
+    post = GalleryPost(
+        id=2,
+        task_id="task-i2i-draw",
+        media_type="image",
+        width=512,
+        height=512,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=post),
+            _FakeResult(many=[history]),
+        ]
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_gallery_apply_context_payload(post_id=2, db=session)
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "i2i_draw_disabled"
     session.commit.assert_not_awaited()
 
 

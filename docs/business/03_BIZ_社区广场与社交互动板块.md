@@ -62,7 +62,7 @@ sequenceDiagram
 - Wan22 首尾帧投稿展示为“起始帧 / 终止帧”。SCAIL-2 `scail2_action_transfer` / `scail2_video_replacement` / `scail2_face_swap_v2` 投稿展示为“参考图 / 驱动视频”。
 - SCAIL-2 支持 Web/Bot 投稿；Web 一键应用时模板只复用投稿的 motion/driving video，复用者必须上传自己的 reference image。展示两份原始输入不代表 apply-context 复用两份输入。模板衍生结果保持 `allow_contribute=false`，不能再次投稿。
 - 互动防并发与去重依赖数据库约束与服务层收口，避免高并发下覆盖更新。
-- 提示词解锁入口为 `POST /api/gallery/posts/{post_id}/prompt-unlock`，依赖 `gallery_prompt_unlocks.user_id + post_id` 唯一约束防重复扣费；低信任免费层用户会在创建解锁记录和转账前返回 403；修仙笔记“提示词模版”入口读取 `GET /api/gallery/my-prompt-unlocks`。
+- 提示词解锁入口为 `POST /api/gallery/posts/{post_id}/prompt-unlock`，依赖 `gallery_prompt_unlocks.user_id + post_id` 唯一约束防重复扣费；解锁不再按低信任免费层拦截，首次解锁只受余额、帖子有效性和转账事务约束；修仙笔记“提示词模版”入口读取 `GET /api/gallery/my-prompt-unlocks`。
 - 用户公开主页入口为 `GET /api/users/{user_id}/public-profile?page=&size=`，返回用户摘要和公开投稿分页 `posts`；兼容字段 `recent_posts` 只等于当前页 items。公开主页投稿详情也必须显示可解锁提示词入口。
 - 用户中心关注入口为 `GET /api/users/me/follows`，粉丝入口为 `GET /api/users/me/followers`；粉丝列表中的 `is_following` 表示当前用户是否已回关该粉丝。
 - Dashboard 广场列表入口为 `GET /api/gallery/all`，后台治理筛选可使用 `username`、`prompt_contains`、`prompt_max_length`，其中提示词条件基于 `History.prompt`。
