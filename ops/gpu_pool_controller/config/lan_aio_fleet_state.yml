@@ -1,6 +1,6 @@
 version: 1
 managed_by: allbot-lan-aio-operator
-last_verified_at: "2026-07-02T11:01:34Z"
+last_verified_at: "2026-07-02T12:23:39Z"
 sources:
   slot_catalog: ops/gpu_pool_controller/config/lan_aio_prod_slots.yml
   profile_catalog: ops/gpu_pool_controller/config/task_profiles.yml
@@ -18,30 +18,29 @@ nodes:
     physical_gpus:
       - gpu_index: 0
         hardware: NVIDIA GeForce RTX 5090 32G
-        mode: host_service_with_aio_candidate
+        mode: lan_aio
         current:
-          profile: face_i2i_t2i
-          slot_id: gpu-226-gpu0-face_i2i_t2i
-          agent_id: cloud_prod_worker_01
-          container_name: null
-          host_port: 8188
-          state: host_service
+          profile: image_to_video
+          slot_id: gpu-226-gpu0-image_to_video
+          agent_id: lan_aio_prod_gpu226_gpu0_image_to_video_01
+          container_name: allbot-lan-aio-gpu-226-gpu0-image_to_video-prod
+          host_port: 8190
+          state: running
+          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd
+          model_manifest_key: image_to_video/2026-06-13-test/manifest.json
+          workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/image_to_video/workspace
+          last_takeover_at: "2026-07-02T12:20:00Z"
         cached_profiles:
           - profile: image_to_video
-            cache_state: missing
+            cache_state: ready
             model_manifest_key: image_to_video/2026-06-13-test/manifest.json
             workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/image_to_video/workspace
-        fast_switch_candidates:
-          - slot_id: gpu-226-gpu0-image_to_video
-            profile: image_to_video
-            cache_state: missing
-            note: Candidate added for host-service migration; run pull-image and warm-cache before disabled heartbeat.
+            synced_at: "2026-07-02T12:03:30.926302+00:00"
+        fast_switch_candidates: []
         blocked_profiles:
           - profile: face_i2i_t2i
-            reason: blocked_host_service_runtime; current production runtime is still systemd comfyui.service.
-          - profile: image_to_video
-            reason: pending_disabled_heartbeat_and_canary on RTX 5090 32G; gpu-177 GPU1 image_to_video previously OOM-killed ComfyUI with status 137.
-        notes: gpu-226 host-service remains active while gpu-226-gpu0-image_to_video is prepared as a Docker LAN AIO candidate on host port 8190.
+            reason: legacy host-service cloud_prod_worker_01 is disabled and cloud-prod-comfy-agent-1 is stopped after the 2026-07-02 cutover; systemd comfyui.service remains active/idle on 8188 as manual rollback metadata.
+        notes: gpu-226 GPU0 is now the production image_to_video LAN AIO on port 8190. The disabled-heartbeat validation, model cache warmup, RIFE hot cache copy, canary task e5784a69-09e6-4d9b-be02-c8e3df9b738c, and subsequent live queue intake passed without OOM/137 keywords; legacy 8188 queue is empty while systemd comfyui.service remains active/idle due no sudo maintenance window. RTX 5090 32G capacity should still be monitored during long queue bursts.
 
   gpu-177:
     host: allbot-gpu-177

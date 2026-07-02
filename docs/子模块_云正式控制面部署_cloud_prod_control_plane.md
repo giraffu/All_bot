@@ -121,8 +121,8 @@ Central control 和创建 Pod 前中止。最终验收以 `reconcile.managed_cou
 
 | 容器 | AGENT_ID | ComfyUI |
 | :--- | :--- | :--- |
-| `cloud-prod-comfy-agent-1` | `cloud_prod_worker_01` | `192.168.1.226:8188` |
-| `cloud-prod-comfy-agent-2` | `cloud_prod_worker_02` | 已退役；原 `192.168.1.177:8188` 已由 `lan_aio_prod_gpu177_gpu0_image_to_video_01` / AIO `8190` 替换，当前 live runtime 为 `image_to_video` |
+| `cloud-prod-comfy-agent-1` | `cloud_prod_worker_01` | 已下线为 stopped rollback；`gpu-226` 当前由 `lan_aio_prod_gpu226_gpu0_image_to_video_01` / AIO `8190` 承接 `image_to_video` |
+| `cloud-prod-comfy-agent-2` | `cloud_prod_worker_02` | 已退役；原 `192.168.1.177:8188` 已由 `lan_aio_prod_gpu177_gpu0_wan22_video_v2_01` / AIO `8190` 替换，当前 live runtime 为 `wan22_video_v2` |
 | `cloud-prod-comfy-agent-3` | `cloud_prod_worker_03` | 已退役；原 `192.168.1.177:8189` 已由 `lan_aio_prod_gpu177_gpu1_ltx_video_01` / AIO `8191` 替换 |
 | `cloud-prod-comfy-agent-4` | `cloud_prod_worker_04` | `192.168.1.252:8188` |
 | `cloud-prod-comfy-agent-5` | `cloud_prod_worker_05` | 原 `192.168.1.252:8189`，现为 stopped rollback baseline；正式 `wan22_video_v2` 由 `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` 接管 |
@@ -135,7 +135,7 @@ Central control 和创建 Pod 前中止。最终验收以 `reconcile.managed_cou
 
 | AGENT_ID | Worker Agent 管理 | ComfyUI Runtime | Runtime 纳管口径 |
 | :--- | :--- | :--- | :--- |
-| `cloud_prod_worker_01` | 本地主服务器 `cloud-prod-comfy-agent-1` 容器 | `gpu-226:8188` 宿主机进程，cwd `/home/ubantu/comfyui` | `comfy_runtime_kind=host_service`，不要执行 `docker restart comfy0` |
+| `cloud_prod_worker_01` | 本地主服务器 `cloud-prod-comfy-agent-1` 容器，当前 stopped rollback 且 Central control disabled | `gpu-226:8188` 宿主机进程仍是手工回滚元数据；当前接单 runtime 是 `lan_aio_prod_gpu226_gpu0_image_to_video_01` / AIO `8190` | 对旧 `8188` 不执行 Docker 操作；AIO 日常操作走 LAN fleet helper |
 | `cloud_prod_worker_02/03` | 已退役，本地主 `cloud-prod-comfy-agent-2/3` 容器已删除 | `gpu-177` 的旧 `comfy0/comfy1` 与 `/data/comfy` 已删除 | control 固定 `disabled`；gpu-177 恢复走 AIO restart/recreate 或外部容量兜底 |
 | `cloud_prod_worker_04` | 本地主服务器 agent 容器 | `gpu-252` 的 `comfy0` Docker 容器 | 只在维护窗口按目标容器操作 |
 | `cloud_prod_worker_05` | 本地主服务器 agent 容器，当前 stopped rollback | `gpu-252` 的旧 `comfy1` Docker 容器，当前 stopped rollback | 正式 `wan22_video_v2` 已由 `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` / AIO `8191` 接管；回滚前不要重新 enabled |

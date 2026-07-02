@@ -42,7 +42,7 @@ nodes:
       - id: aio-gpu0
         port: 8190
         gpu_index: 0
-        worker_id: cloud_prod_worker_01
+        worker_id: lan_aio_prod_gpu226_gpu0_image_to_video_01
         api_url: http://192.168.1.226:8190
         ws_url: ws://192.168.1.226:8190/ws
         model_dir: /home/ubantu/allbot-runpod-runtime/shared/models
@@ -56,7 +56,7 @@ nodes:
         temp_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/legacy/temp
         comfy_runtime_kind: docker_container
         comfy_runtime_managed: true
-        container_name: allbot-comfy-gpu226-gpu0-aio
+        container_name: allbot-lan-aio-gpu-226-gpu0-image_to_video-prod
         container_port: 8188
         compose_template: standard_comfy_runtime_v1
         runtime_shape: standard_comfy_runtime

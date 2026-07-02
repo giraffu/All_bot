@@ -282,9 +282,9 @@ slots:
     notes: Host-service ComfyUI node; requires a separate host-process-to-container migration plan.
 
   - id: gpu-226-gpu0-image_to_video
-    enabled: false
-    phase: candidate
-    retargetable: true
+    enabled: true
+    phase: prod_enabled
+    retargetable: false
     assignment_id: lan-226-8190-worker-01-aio
     target_profile_id: image_to_video
     target_task_types:
@@ -308,4 +308,4 @@ slots:
           - /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth
           - /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth
     rollout_order: 101
-    notes: gpu-226 GPU0 image_to_video LAN AIO candidate. It is prepared beside the existing host-service cloud_prod_worker_01 on host port 8190; final cutover must drain and stop comfyui.service plus cloud-prod-comfy-agent-1 before enabling this AIO, with host-service restart as rollback.
+    notes: Active production gpu-226 GPU0 image_to_video LAN AIO after the 2026-07-02 migration from host-service cloud_prod_worker_01. The canary task e5784a69-09e6-4d9b-be02-c8e3df9b738c and subsequent live tasks completed without OOM/137; cloud-prod-comfy-agent-1 is stopped and cloud_prod_worker_01 control remains disabled as rollback metadata.
