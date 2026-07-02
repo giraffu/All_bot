@@ -79,11 +79,85 @@ def test_build_queue_status_message_includes_known_and_unknown_types():
     )
 
     assert "👥 总排队任务：`3` 个" in text
-    assert "懒人/自由P图：`2` 个" in text
-    assert "视频编辑 (通用)：`0` 个" in text
+    assert "🟢 懒人/自由P图：`2` 个" in text
+    assert "🟢 视频编辑 (通用)：`0` 个" in text
     assert "🎨 懒人/自由P图" not in text
     assert "🎬 视频编辑 (通用)" not in text
-    assert "❓ 其他 (custom\\_x)：`1` 个" in text
+    assert "🟢 ❓ 其他 (custom\\_x)：`1` 个" in text
+
+
+def test_build_queue_status_message_uses_wait_dot_and_merges_duplicate_labels():
+    translations = {
+        "profile.queue_status_title": "排队状态",
+        "profile.total_queue": "总排队任务",
+        "profile.tasks_unit": "个",
+        "profile.other_types": "其他",
+        "task.green": "🍃 绿色任务",
+        "task.yellow": "🟡 黄色任务",
+        "task.orange_a": "🎬 动作迁移",
+        "task.orange_b": "🏃 动作迁移",
+        "task.red": "🔴 红色任务",
+    }
+    context = SimpleNamespace(t=lambda key: translations[key])
+
+    text = message_handler_menu.build_queue_status_message(
+        10,
+        {
+            "green": 1,
+            "yellow": 2,
+            "orange_a": 3,
+            "orange_b": 4,
+            "red": 0,
+        },
+        context,
+        {
+            "green": "task.green",
+            "yellow": "task.yellow",
+            "orange_a": "task.orange_a",
+            "orange_b": "task.orange_b",
+            "red": "task.red",
+        },
+        {
+            "green": {"max_pending_wait_seconds": 599},
+            "yellow": {"max_pending_wait_seconds": 600},
+            "orange_a": {"max_pending_wait_seconds": 1200},
+            "orange_b": {"max_pending_wait_seconds": 1800},
+            "red": {"max_pending_wait_seconds": 3600},
+        },
+    )
+
+    assert "🟢 绿色任务：`1` 个" in text
+    assert "🟡 黄色任务：`2` 个" in text
+    assert "🟠 动作迁移：`7` 个" in text
+    assert text.count("动作迁移") == 1
+    assert "🔴 红色任务：`0` 个" in text
+    assert "免费最长等待" not in text
+    assert "付费最长等待" not in text
+
+
+def test_build_queue_status_message_dot_uses_max_pending_wait():
+    translations = {
+        "profile.queue_status_title": "排队状态",
+        "profile.total_queue": "总排队任务",
+        "profile.tasks_unit": "个",
+        "task.img2img_lora": "🖼 图生图 (附加模型)",
+    }
+    context = SimpleNamespace(t=lambda key: translations[key])
+
+    text = message_handler_menu.build_queue_status_message(
+        14,
+        {"img2img_lora": 14},
+        context,
+        {"img2img_lora": "task.img2img_lora"},
+        {
+            "img2img_lora": {
+                "pending_count": 14,
+                "max_pending_wait_seconds": 40 * 60 + 22,
+            },
+        },
+    )
+
+    assert "🟠 图生图 (附加模型)：`14` 个" in text
 
 
 def test_build_user_queue_tasks_section_uses_display_names_and_status_text():

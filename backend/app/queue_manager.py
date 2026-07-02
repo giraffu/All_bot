@@ -331,8 +331,7 @@ class QueueManager:
     def _empty_queue_metrics_detail() -> dict[str, Any]:
         return {
             "pending_count": 0,
-            "max_free_pending_wait_seconds": None,
-            "max_paid_pending_wait_seconds": None,
+            "max_pending_wait_seconds": None,
         }
 
     @staticmethod
@@ -839,7 +838,6 @@ class QueueManager:
                 task_key = self._task_key(task_id_str)
                 pipeline.hget(task_key, "type")
                 pipeline.hget(task_key, "created_at")
-                pipeline.hget(task_key, "priority")
             return task_ids, await pipeline.execute()
 
         task_ids, values = await self._retry_redis_call(
@@ -852,20 +850,14 @@ class QueueManager:
         now = time.time()
         details: dict[str, dict[str, Any]] = {}
         for index, _task_id in enumerate(task_ids):
-            task_type = self._task_type_key(values[index * 3])
-            created_at = self._safe_int(self._decode_redis_value(values[index * 3 + 1]))
-            priority = self._safe_int(self._decode_redis_value(values[index * 3 + 2]))
+            task_type = self._task_type_key(values[index * 2])
+            created_at = self._safe_int(self._decode_redis_value(values[index * 2 + 1]))
             if not task_type or created_at is None:
                 continue
 
             wait_seconds = max(0, int(now - created_at))
             detail = details.setdefault(task_type, self._empty_queue_metrics_detail())
             detail["pending_count"] += 1
-            wait_field = (
-                "max_paid_pending_wait_seconds"
-                if (priority or 0) > 0
-                else "max_free_pending_wait_seconds"
-            )
-            self._update_wait_max(detail, wait_field, wait_seconds)
+            self._update_wait_max(detail, "max_pending_wait_seconds", wait_seconds)
 
         return details

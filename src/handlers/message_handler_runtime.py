@@ -96,19 +96,13 @@ def _normalize_queue_type_details_for_display(
         target = normalized_details.setdefault(
             normalized_task_type,
             {
-                "max_free_pending_wait_seconds": None,
-                "max_paid_pending_wait_seconds": None,
+                "max_pending_wait_seconds": None,
             },
         )
         _merge_max_wait(
             target,
-            "max_free_pending_wait_seconds",
-            detail.get("max_free_pending_wait_seconds"),
-        )
-        _merge_max_wait(
-            target,
-            "max_paid_pending_wait_seconds",
-            detail.get("max_paid_pending_wait_seconds"),
+            "max_pending_wait_seconds",
+            detail.get("max_pending_wait_seconds"),
         )
     return normalized_details
 

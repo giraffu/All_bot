@@ -1001,7 +1001,7 @@ async def test_get_queue_size_returns_pending_count():
 
 
 @pytest.mark.asyncio
-async def test_get_queue_metrics_by_type_details_splits_free_and_paid_wait(monkeypatch):
+async def test_get_queue_metrics_by_type_details_tracks_max_pending_wait(monkeypatch):
     monkeypatch.setattr(queue_manager_module.time, "time", lambda: 2000.0)
     redis = _FakeRedis()
     manager = QueueManager(redis)
@@ -1039,8 +1039,7 @@ async def test_get_queue_metrics_by_type_details_splits_free_and_paid_wait(monke
 
     assert details["img2img"] == {
         "pending_count": 3,
-        "max_free_pending_wait_seconds": 200,
-        "max_paid_pending_wait_seconds": 50,
+        "max_pending_wait_seconds": 200,
     }
 
 

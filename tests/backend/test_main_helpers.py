@@ -684,13 +684,11 @@ async def test_build_system_status_response_uses_queue_metrics_and_worker_count(
             return {
                 "ltx_video": {
                     "pending_count": 2,
-                    "max_free_pending_wait_seconds": 120,
-                    "max_paid_pending_wait_seconds": 60,
+                    "max_pending_wait_seconds": 120,
                 },
                 "i2i_pro": {
                     "pending_count": 1,
-                    "max_free_pending_wait_seconds": None,
-                    "max_paid_pending_wait_seconds": 30,
+                    "max_pending_wait_seconds": 30,
                 },
             }
 
@@ -716,13 +714,11 @@ async def test_build_system_status_response_uses_queue_metrics_and_worker_count(
     assert response.queue_by_type_details == {
         "ltx_video": {
             "pending_count": 2,
-            "max_free_pending_wait_seconds": 120,
-            "max_paid_pending_wait_seconds": 60,
+            "max_pending_wait_seconds": 120,
         },
         "i2i_pro": {
             "pending_count": 1,
-            "max_free_pending_wait_seconds": None,
-            "max_paid_pending_wait_seconds": 30,
+            "max_pending_wait_seconds": 30,
         },
     }
 

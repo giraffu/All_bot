@@ -83,14 +83,6 @@ def _strip_queue_display_icon(label: str) -> str:
     return re.sub(r"^[^\w\u4e00-\u9fff]+\s*", "", label)
 
 
-def _context_text(context, key: str, default: str) -> str:
-    try:
-        text = context.t(key)
-    except Exception:
-        return default
-    return default if text == key else text
-
-
 def _coerce_wait_seconds(value: Any) -> int | None:
     if value in (None, ""):
         return None
@@ -101,55 +93,78 @@ def _coerce_wait_seconds(value: Any) -> int | None:
     return wait_seconds if wait_seconds >= 0 else None
 
 
-def _format_wait_duration(value: Any, context) -> str | None:
-    wait_seconds = _coerce_wait_seconds(value)
-    if wait_seconds is None:
-        return None
-
-    hours, remainder = divmod(wait_seconds, 3600)
-    minutes, seconds = divmod(remainder, 60)
-    if getattr(context, "lang", "zh") == "en":
-        if hours:
-            return f"{hours}h {minutes:02d}m {seconds:02d}s"
-        if minutes:
-            return f"{minutes}m {seconds:02d}s"
-        return f"{seconds}s"
-
-    if hours:
-        return f"{hours}小时{minutes:02d}分{seconds:02d}秒"
-    if minutes:
-        return f"{minutes}分{seconds:02d}秒"
-    return f"{seconds}秒"
+def _coerce_queue_count(value: Any) -> int:
+    try:
+        count = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(count, 0)
 
 
-def _build_wait_stats_suffix(queue_type_detail: dict | None, context) -> str:
+def _merge_queue_wait_detail(target: dict, source: dict | None) -> None:
+    if not isinstance(source, dict):
+        return
+
+    for field in (
+        "max_pending_wait_seconds",
+        "max_non_low_trust_pending_wait_seconds",
+    ):
+        candidate = _coerce_wait_seconds(source.get(field))
+        if candidate is None:
+            continue
+        current = _coerce_wait_seconds(target.get(field))
+        if current is None or candidate > current:
+            target[field] = candidate
+
+
+def _build_wait_status_dot(queue_type_detail: dict | None) -> str:
     queue_type_detail = queue_type_detail or {}
-    free_label = _context_text(
-        context,
-        "profile.queue_free_max_wait",
-        "免费最长等待",
-    )
-    paid_label = _context_text(
-        context,
-        "profile.queue_paid_max_wait",
-        "付费最长等待",
-    )
-    empty_label = _context_text(context, "profile.queue_wait_none", "暂无")
-    free_wait = (
-        _format_wait_duration(
-            queue_type_detail.get("max_free_pending_wait_seconds"),
-            context,
+    wait_seconds = _coerce_wait_seconds(queue_type_detail.get("max_pending_wait_seconds"))
+    if wait_seconds is None or wait_seconds < 10 * 60:
+        return "🟢"
+    if wait_seconds < 30 * 60:
+        return "🟡"
+    if wait_seconds < 60 * 60:
+        return "🟠"
+    return "🔴"
+
+
+def _collect_queue_status_rows(
+    queue_by_type: dict,
+    context,
+    task_type_display_names: dict,
+    queue_by_type_details: dict,
+) -> list[dict]:
+    rows_by_display_name: dict[str, dict] = {}
+    rows: list[dict] = []
+
+    for task_type, i18n_key in task_type_display_names.items():
+        display_name = _strip_queue_display_icon(context.t(i18n_key))
+        row = rows_by_display_name.get(display_name)
+        if row is None:
+            row = {"display_name": display_name, "count": 0, "detail": {}}
+            rows_by_display_name[display_name] = row
+            rows.append(row)
+
+        row["count"] += _coerce_queue_count(queue_by_type.get(task_type, 0))
+        _merge_queue_wait_detail(
+            row["detail"],
+            queue_by_type_details.get(task_type),
         )
-        or empty_label
-    )
-    paid_wait = (
-        _format_wait_duration(
-            queue_type_detail.get("max_paid_pending_wait_seconds"),
-            context,
-        )
-        or empty_label
-    )
-    return f"（{free_label}：`{free_wait}`，{paid_label}：`{paid_wait}`）"
+
+    for task_type, count in queue_by_type.items():
+        if task_type in task_type_display_names or _coerce_queue_count(count) <= 0:
+            continue
+        safe_task_type = task_type.replace("_", "\\_")
+        row = {
+            "display_name": f"❓ {context.t('profile.other_types')} ({safe_task_type})",
+            "count": _coerce_queue_count(count),
+            "detail": {},
+        }
+        _merge_queue_wait_detail(row["detail"], queue_by_type_details.get(task_type))
+        rows.append(row)
+
+    return rows
 
 
 def build_queue_status_message(
@@ -167,25 +182,16 @@ def build_queue_status_message(
         f"👥 {total_queue_label}：`{queue_size}` {tasks_unit}",
     ]
 
-    for task_type, i18n_key in task_type_display_names.items():
-        count = queue_by_type.get(task_type, 0)
-        display_name = _strip_queue_display_icon(context.t(i18n_key))
-        wait_suffix = _build_wait_stats_suffix(
-            queue_by_type_details.get(task_type),
-            context,
+    for row in _collect_queue_status_rows(
+        queue_by_type,
+        context,
+        task_type_display_names,
+        queue_by_type_details,
+    ):
+        status_dot = _build_wait_status_dot(row["detail"])
+        msg_lines.append(
+            f"{status_dot} {row['display_name']}：`{row['count']}` {tasks_unit}"
         )
-        msg_lines.append(f"{display_name}：`{count}` {tasks_unit}{wait_suffix}")
-
-    for task_type, count in queue_by_type.items():
-        if task_type not in task_type_display_names and count > 0:
-            safe_task_type = task_type.replace("_", "\\_")
-            wait_suffix = _build_wait_stats_suffix(
-                queue_by_type_details.get(task_type),
-                context,
-            )
-            msg_lines.append(
-                f"❓ {context.t('profile.other_types')} ({safe_task_type})：`{count}` {tasks_unit}{wait_suffix}"
-            )
 
     return "\n".join(msg_lines)
 
