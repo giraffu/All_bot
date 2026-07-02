@@ -1,6 +1,6 @@
 version: 1
 managed_by: allbot-lan-aio-operator
-last_verified_at: "2026-07-02T16:00:06Z"
+last_verified_at: "2026-07-02T20:34:03Z"
 sources:
   slot_catalog: ops/gpu_pool_controller/config/lan_aio_prod_slots.yml
   profile_catalog: ops/gpu_pool_controller/config/task_profiles.yml
@@ -140,6 +140,7 @@ nodes:
           image_ref: 192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd
           model_manifest_key: image_to_video/2026-06-13-test/manifest.json
           workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/image_to_video/workspace
+          last_takeover_at: "2026-07-02T20:32:00Z"
         cached_profiles:
           - profile: pornmaster_flux2_edit
             cache_state: ready
@@ -153,12 +154,21 @@ nodes:
             cache_state: ready
             model_manifest_key: image_to_video/2026-06-13-test/manifest.json
             workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/image_to_video/workspace
+            synced_at: "2026-07-02T20:31:32.925637+00:00"
+          - profile: scail2
+            cache_state: ready
+            model_manifest_key: scail2/2026-06-17-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/scail2/workspace
+            synced_at: "2026-07-02T19:53:13.164942+00:00"
         fast_switch_candidates:
+          - slot_id: gpu-252-gpu0-scail2
+            profile: scail2
+            cache_state: ready
           - slot_id: gpu-252-gpu0-pornmaster_flux2_edit
             profile: pornmaster_flux2_edit
             cache_state: ready
         blocked_profiles: []
-        notes: Switched from PornMaster Flux2 edit to image_to_video on 2026-07-02 with scripts/lan_aio_fleet_prod_ops.py takeover. Startup validation showed the image_to_video container healthy, model cache ready, Central runtime_profile image_to_video, and immediate live image_to_video intake. Live tasks 03294dd7-d552-4615-892a-aa77f5f60a0a, fb40f1f4-4ed6-4e33-84c4-d2e8e7cdf4f7, and 983edb91-53ad-4122-8c86-885d3ff0ece8 completed, uploaded two assets each via sidecar, and posted /complete 200; keep PornMaster as the same-card rollback candidate.
+        notes: Switched back from SCAIL-2 to image_to_video on 2026-07-03 with scripts/lan_aio_fleet_prod_ops.py takeover --failure-policy auto_rollback after SCAIL-2 pending drained. Preflight, pull-image, warm-cache, drain/wait-idle, stop-old, start-disabled, and enable-aio passed; post-switch validation showed the image_to_video container healthy, /system_stats OK, model cache ready, Central runtime_profile image_to_video, and immediate image_to_video intake. SCAIL-2 and PornMaster remain same-card rollback candidates.
       - gpu_index: 1
         hardware: removed RTX 4090
         current:
@@ -194,19 +204,20 @@ nodes:
           model_manifest_key: scail2/2026-06-17-test/manifest.json
           workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu0/profiles/scail2/workspace
           remote_workers_host_dir: /home/chuzeyu/allbot-scail2-aio-prod/gpu002-slot0/remote_workers
-          last_restart_at: "2026-07-02T11:00:16Z"
+          last_restart_at: "2026-07-02T20:07:00Z"
         cached_profiles:
           - profile: scail2
             cache_state: ready
             model_manifest_key: scail2/2026-06-17-test/manifest.json
             workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu0/profiles/scail2/workspace
+            synced_at: "2026-07-02T20:06:12.416598+00:00"
           - profile: img2img_lora
             cache_state: ready
             model_manifest_key: img2img_lora/2026-06-10/manifest.json
             workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu0/profiles/img2img_lora/workspace
         fast_switch_candidates: []
         blocked_profiles: []
-        notes: SCAIL-2 slot0 remote_workers bundle hotfixed on 2026-07-02 to disable freenoise for scail2_action_transfer_long; post-restart verification saw the container healthy, Central enabled, and a live scail2_action_transfer_long task running on the refreshed bundle.
+        notes: SCAIL-2 slot0 remote_workers bundle refreshed on 2026-07-03 to restore freenoise=true for scail2_action_transfer_long. The slot catalog remote_dir now points at the live compose/remote_workers host path under /home/chuzeyu/allbot-scail2-aio-prod/gpu002-slot0; post-restart verification saw the container healthy, Central enabled, cache marker ready, and the mounted workflow/patcher both reporting freenoise=true.
       - gpu_index: 1
         hardware: NVIDIA GeForce RTX 4090 48G
         current:
