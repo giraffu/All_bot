@@ -36,6 +36,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 - 本地正式灾备：`safe_deploy.sh` 只用于云正式整体故障时的临时接管，不是日常部署入口。
 - QQCC 正式单服务更新：`scripts/update_cloud_prod_qqcc_bot.sh --execute --confirm-prod --confirm-single-polling`。用户明确要求 QQCC 单服务更新时，可视为当次正式与单 polling 操作确认；若目标容器、token、env、实例数量或脚本路径异常，必须停下追问。
 - Dashboard/服务窄更新：优先用 `scripts/update_cloud_prod_with_maintenance.sh --scope services --services "..."`，只重建目标服务。
+- 云测试/云正式/QQCC 这三条整仓 rsync 更新入口必须排除 `local_analytics_platform/`、`backups/`、`logs/`、前端构建产物和密钥文件；本地分析平台数据不属于远端运行代码包。
 - cloud-prod shadow 同步：`scripts/sync_cloud_prod_to_local_shadow.py` 默认 dry-run，真实执行必须 `--execute`。
 - RunPod 正式手动池：日常入口优先 `scripts/runpod_prod_ops.sh status|up|add|enable|disable|restart|down|scale|canary|rollback`。
 - GPU/LAN AIO fleet：具体状态查看、缓存预热、候选切换、单卡 takeover/recover/restart 优先加载 `allbot-lan-aio-operator`，并通过 `scripts/lan_aio_fleet_prod_ops.py`、`lan_aio_prod_slots.yml` 与 `lan_aio_fleet_state.yml` 操作；gpu-002 SCAIL-2 正式 slot0 也必须先声明在 fleet 配置里让 Dashboard 可见，`scripts/lan_scail2_aio_prod.sh` 仅作为 SCAIL-2 低层启动/重建/回滚工具。

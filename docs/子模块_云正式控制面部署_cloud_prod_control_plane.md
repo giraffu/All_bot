@@ -224,7 +224,7 @@ scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod --with-db
 该脚本默认流程：
 1. 在远端写 `runtime/cloud-prod/GENERATION_MAINTENANCE`，并在正在运行的 `cloud-web-api-prod` / `cloud-tg-bot-prod` / `cloud-qqcc-bot-prod` 内写 `/app/GENERATION_MAINTENANCE`，只阻止新生成任务提交。
 2. 等待 Central `comfy:queue:pending` 与 `comfy:queue:running` 同时清空；不取消任务、不退款、不清 Redis。
-3. `rsync` 同步本地代码到 `allbot-do-sgp1-control:/home/deploy/APP/All_bot`，默认不使用 `--delete`，并排除 `.env*`、`logs/`、`runtime/`、`backups/`、`node_modules/`、`bin/cloudflared`、临时素材等本地数据目录。
+3. `rsync` 同步本地代码到 `allbot-do-sgp1-control:/home/deploy/APP/All_bot`，默认不使用 `--delete`，并排除 `.env*`、`logs/`、`runtime/`、`backups/`、`local_analytics_platform/`、`node_modules/`、`bin/cloudflared`、临时素材等本地数据目录。
 4. 默认不更新 `.env.cloud.prod`；只有显式传 `--sync-env --env-file FILE` 时才会先备份远端 env、同步并做 checksum 校验。
 5. 远端先执行 `scripts/safe_deploy_cloud_prod.sh --preflight-only`，再按 scope 执行控制面发布或单服务热修。
 6. 默认不启动/重建正式 Bot；如需主 Bot，必须显式传 `--bot-mode auto|start|stop`，如需 QQCC Bot，必须显式传 `--qqcc-bot-mode auto|start|stop`，且执行前确认对应 token 全网没有第二个生产 Telegram polling 实例。
@@ -336,7 +336,7 @@ scripts/update_cloud_prod_qqcc_bot.sh
 scripts/update_cloud_prod_qqcc_bot.sh --execute --confirm-prod --confirm-single-polling
 ```
 
-该路径只触碰 `qqcc-bot-prod` / `cloud-qqcc-bot-prod`：默认 dry-run，真实执行必须传 `--execute --confirm-prod --confirm-single-polling`。用户明确要求“QQCC 单服务更新/走单服务更新/单独更新 QQCC Bot”时，可视为当次正式与单 polling 操作确认，不需要额外逐字追问；若发现目标容器状态异常、疑似多实例、token/远端 env 异常、不是专用脚本路径，或要启动一个当前停止的新正式 QQCC 实例，必须停下确认。脚本同步代码、可选同步 `.env.cloud.prod`、执行只读 preflight、按 `qqcc-bot` profile build/up `qqcc-bot-prod`，并检查容器 running、非敏感 env 合同与近 3 分钟错误日志。它不写 `GENERATION_MAINTENANCE`、不等待或清理 Central 队列、不重建 Central/Web/Payment/Dashboard/主 Bot/Worker/RunPod，也不操作 Cloudflare Pages/DNS/边缘路由。
+该路径只触碰 `qqcc-bot-prod` / `cloud-qqcc-bot-prod`：默认 dry-run，真实执行必须传 `--execute --confirm-prod --confirm-single-polling`。用户明确要求“QQCC 单服务更新/走单服务更新/单独更新 QQCC Bot”时，可视为当次正式与单 polling 操作确认，不需要额外逐字追问；若发现目标容器状态异常、疑似多实例、token/远端 env 异常、不是专用脚本路径，或要启动一个当前停止的新正式 QQCC 实例，必须停下确认。脚本同步代码、可选同步 `.env.cloud.prod`、执行只读 preflight、按 `qqcc-bot` profile build/up `qqcc-bot-prod`，并检查容器 running、非敏感 env 合同与近 3 分钟错误日志；整仓 rsync 同样排除 `local_analytics_platform/`、`backups/`、`logs/`、前端构建产物和密钥文件。它不写 `GENERATION_MAINTENANCE`、不等待或清理 Central 队列、不重建 Central/Web/Payment/Dashboard/主 Bot/Worker/RunPod，也不操作 Cloudflare Pages/DNS/边缘路由。
 
 付费群审核 Bot 与 Dashboard 管理页单独上线时，只触碰三个服务：
 

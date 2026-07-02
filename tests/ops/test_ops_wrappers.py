@@ -6,6 +6,11 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
+WHOLE_REPO_RSYNC_SCRIPTS = (
+    "scripts/update_cloud_prod_with_maintenance.sh",
+    "scripts/update_cloud_prod_qqcc_bot.sh",
+    "scripts/update_cloud_test_with_maintenance.sh",
+)
 
 
 def run_script(*args: str) -> subprocess.CompletedProcess[str]:
@@ -34,6 +39,21 @@ def test_cloud_prod_qqcc_update_shell_syntax():
     result = run_script("bash", "-n", "scripts/update_cloud_prod_qqcc_bot.sh")
 
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("script", WHOLE_REPO_RSYNC_SCRIPTS)
+def test_whole_repo_cloud_update_scripts_exclude_local_analytics_platform(script: str):
+    script_text = (ROOT / script).read_text()
+
+    assert 'run_local rsync "${rsync_args[@]}" ./' in script_text
+    assert "--exclude=local_analytics_platform/" in script_text
+
+
+def test_cloud_test_cleanup_removes_stale_local_analytics_platform():
+    script_text = (ROOT / "scripts/update_cloud_test_with_maintenance.sh").read_text()
+
+    assert "cleanup_remote_sync_artifacts" in script_text
+    assert "local_analytics_platform \\" in script_text
 
 
 def test_cloud_prod_qqcc_update_dry_run_is_single_service():

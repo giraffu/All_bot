@@ -400,6 +400,7 @@ rm -rf \
   templates/temps \
   templates/video_nice \
   templates/quick_face \
+  local_analytics_platform \
   ton_payment_frontend/node_modules \
   ton_payment_frontend/dist \
   ton_payment_frontend/.vite
@@ -443,6 +444,7 @@ sync_code() {
         --exclude=templates/temps/
         --exclude=templates/video_nice/
         --exclude=templates/quick_face/
+        --exclude=local_analytics_platform/
         --exclude=node_modules/
         --exclude=frontend/node_modules/
         --exclude=frontend/dist/
