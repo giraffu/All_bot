@@ -4,6 +4,7 @@
     "maintenance_desc": "我们正在进行系统升级与维护，请稍后再试...",
     "refresh": "刷新状态",
     "photo_edit_hint": "🖼️ **懒人P图模式**\n请选择具体功能：",
+    "ai_draw_hint": "🎨 **AI绘图**\n请选择绘图场景：",
     "video_edit_hint": "🎬 **懒人动图**\n请选择演武场景：",
     "video_to_video_hint": "🎬 **视频生视频**\n请选择具体功能：",
     "gallery_hint": "🏆 **修仙界广场**\n\n请选择您想查看的榜单：",
@@ -72,6 +73,7 @@
   "qqcc": {
     "feature_disabled": "功能暂未开放",
     "menu": {
+      "ai_draw": "AI绘图",
       "video_edit": "AI动图",
       "market": "修仙市集"
     },
@@ -981,6 +983,7 @@
       "undress_start": "💃 **已切换到【快速脱衣】模式** (消耗 {cost} 灵石)。\n\n请发送一张包含人物的图片，我将自动处理。\n\n随时可以发送 /cancel 退出流程。",
       "masturbation_start": "🥵 **已切换到【快速自慰】模式** (消耗 {cost} 灵石)。\n\n请发送一张包含人物的图片，我将自动处理。\n\n随时可以发送 /cancel 退出流程。",
       "random_faceswap_start": "🎭 **已切换到【随机换脸】模式** (消耗 {cost} 灵石)。\n\n请发送一张【正脸】图片，我将自动匹配模板处理。\n\n随时可以发送 /cancel 退出流程。",
+      "ai_draw_start": "🎨 **已切换到【{mode_name}】模式** (消耗 {cost} 灵石)。\n\n请发送一张图片，我将按照该场景提示词处理。\n\n随时可以发送 /cancel 退出流程。",
       "priority_exhausted": "⚠️ 您的排队优先级已耗尽（或修为不足），今日已无法再凝聚灵力，请明日再来！",
       "submit": "🚀 正在提交生成任务，预计消耗 {cost} 灵石，请耐心等待...",
       "no_template": "❌ 系统错误：未找到身体模板。请联系管理员添加图片。",

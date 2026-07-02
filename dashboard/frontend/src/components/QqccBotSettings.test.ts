@@ -116,6 +116,7 @@ describe('QqccBotSettings', () => {
         main_buttons: {
           quick_undress: true,
           photo_edit: true,
+          ai_draw: true,
           video_edit: false,
           market: true,
           main_bot_link: true,
@@ -129,6 +130,13 @@ describe('QqccBotSettings', () => {
             name: '亲吻',
             prompt: 'kissing prompt',
             duration: '8s',
+          },
+        ],
+        draw_scenes: [
+          {
+            id: 'soft_light',
+            name: '柔光写真',
+            prompt: 'soft light prompt',
           },
         ],
       },
@@ -151,11 +159,13 @@ describe('QqccBotSettings', () => {
     expect(wrapper.text()).toContain('状态：开启')
     expect(wrapper.text()).toContain('修仙市集')
     expect(wrapper.text()).toContain('AI动图场景')
+    expect(wrapper.text()).toContain('AI绘图场景')
     expect((wrapper.get('[data-testid="video-scene-name-0"]').element as HTMLInputElement).value).toBe('亲吻')
+    expect((wrapper.get('[data-testid="draw-scene-name-0"]').element as HTMLInputElement).value).toBe('柔光写真')
     expect(wrapper.text()).not.toContain('画质与时长')
   })
 
-  it('saves switch, prompt, and dynamic video scene changes in the payload', async () => {
+  it('saves switch, prompt, dynamic video scene, and draw scene changes in the payload', async () => {
     const wrapper = mountSettings()
     await flushPromises()
 
@@ -163,6 +173,8 @@ describe('QqccBotSettings', () => {
     await wrapper.get('[data-testid="video-scene-name-0"]').setValue('贴贴')
     await wrapper.get('[data-testid="video-scene-prompt-0"]').setValue('new scene prompt')
     await wrapper.get('[data-testid="video-scene-duration-0"]').setValue('10s')
+    await wrapper.get('[data-testid="draw-scene-name-0"]').setValue('柔光大片')
+    await wrapper.get('[data-testid="draw-scene-prompt-0"]').setValue('new draw prompt')
     await wrapper.get('[data-testid="non-video-prompt-undress"]').setValue('new prompt')
     await wrapper.findAll('button').at(1)!.trigger('click')
     await flushPromises()
@@ -179,6 +191,13 @@ describe('QqccBotSettings', () => {
         name: '贴贴',
         prompt: 'new scene prompt',
         duration: '10s',
+      },
+    ])
+    expect(payload.draw_scenes).toEqual([
+      {
+        id: 'soft_light',
+        name: '柔光大片',
+        prompt: 'new draw prompt',
       },
     ])
     expect(antMocks.success).toHaveBeenCalledWith('懒人Bot配置已保存')
@@ -201,6 +220,23 @@ describe('QqccBotSettings', () => {
     expect(payload.video_scenes[0].prompt).toBe('turn around')
   })
 
+  it('adds and removes dynamic draw scenes before saving', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="add-draw-scene"]').trigger('click')
+    await wrapper.get('[data-testid="draw-scene-name-1"]').setValue('赛博风')
+    await wrapper.get('[data-testid="draw-scene-prompt-1"]').setValue('cyber style')
+    await wrapper.get('[data-testid="remove-draw-scene-0"]').trigger('click')
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
+    expect(payload.draw_scenes).toHaveLength(1)
+    expect(payload.draw_scenes[0].name).toBe('赛博风')
+    expect(payload.draw_scenes[0].prompt).toBe('cyber style')
+  })
+
   it('blocks saving incomplete dynamic video scenes', async () => {
     const wrapper = mountSettings()
     await flushPromises()
@@ -211,5 +247,17 @@ describe('QqccBotSettings', () => {
 
     expect(apiMocks.updateQqccBotConfig).not.toHaveBeenCalled()
     expect(antMocks.error).toHaveBeenCalledWith('请完善AI动图场景的按钮名称和提示词')
+  })
+
+  it('blocks saving incomplete dynamic draw scenes', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="draw-scene-prompt-0"]').setValue('')
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.updateQqccBotConfig).not.toHaveBeenCalled()
+    expect(antMocks.error).toHaveBeenCalledWith('请完善AI绘图场景的按钮名称和提示词')
   })
 })

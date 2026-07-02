@@ -48,6 +48,7 @@ def build_global_menu_filter():
         "menu.photo_edit",  # 🖼️ 懒人P图 / AI Edit
         "menu.video_edit",  # 🎬 视频创作 / AI Video
         "menu.open_main_bot",  # 前往主bot / Open Main Bot
+        "qqcc.menu.ai_draw",  # AI绘图 / AI Drawing
         "qqcc.menu.market",  # 修仙市集 / Cultivation Market
         "menu.face_video",  # 🎬 视频换脸
         "menu.video_to_video",  # 🎬 视频生视频
@@ -94,6 +95,11 @@ def build_global_menu_filter():
         )
         if qqcc_video_text and isinstance(qqcc_video_text, str):
             GLOBAL_REVERSE_MAP[qqcc_video_text] = "menu.video_edit"
+        qqcc_draw_text = _get_nested_translation_value(
+            translations, "qqcc.menu.ai_draw"
+        )
+        if qqcc_draw_text and isinstance(qqcc_draw_text, str):
+            GLOBAL_REVERSE_MAP[qqcc_draw_text] = "qqcc.menu.ai_draw"
         qqcc_market_text = _get_nested_translation_value(
             translations, "qqcc.menu.market"
         )
@@ -107,6 +113,7 @@ def build_global_menu_filter():
         "👤 个人中心": "menu.profile",
         "🎬 懒人动图": "menu.video_edit",
         "AI动图": "menu.video_edit",
+        "AI绘图": "qqcc.menu.ai_draw",
         "🎬 自定义图生视频": "menu.custom_video",
         "自定义图生视频": "menu.custom_video",
     }

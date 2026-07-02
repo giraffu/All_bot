@@ -4,6 +4,7 @@
     "maintenance_desc": "We are currently upgrading and maintaining the system. Please try again later...",
     "refresh": "Refresh Status",
     "photo_edit_hint": "🖼️ **AI Edit Mode**\nPlease select a feature:",
+    "ai_draw_hint": "🎨 **AI Drawing**\nPlease select a drawing scenario:",
     "video_edit_hint": "🎬 **AI GIF Mode**\nPlease select a scenario:",
     "video_to_video_hint": "🎬 **Video-to-Video**\nPlease select a feature:",
     "gallery_hint": "🏆 **Gallery**\n\nPlease select a category:",
@@ -72,6 +73,7 @@
   "qqcc": {
     "feature_disabled": "This feature is not available yet.",
     "menu": {
+      "ai_draw": "AI Drawing",
       "video_edit": "AI GIF",
       "market": "Cultivation Market"
     },
@@ -979,6 +981,7 @@
       "undress_start": "💃 **Entered Quick Undress mode** (cost: {cost} credits).\n\nSend one image containing a person and I will process it automatically.\n\nYou can send /cancel anytime to exit.",
       "masturbation_start": "🥵 **Entered Quick Masturbation mode** (cost: {cost} credits).\n\nSend one image containing a person and I will process it automatically.\n\nYou can send /cancel anytime to exit.",
       "random_faceswap_start": "🎭 **Entered Random Faceswap mode** (cost: {cost} credits).\n\nSend one **front-face** image and I will automatically match a template for it.\n\nYou can send /cancel anytime to exit.",
+      "ai_draw_start": "🎨 **Entered {mode_name} mode** (cost: {cost} credits).\n\nSend one image and I will process it with this scenario prompt.\n\nYou can send /cancel anytime to exit.",
       "priority_exhausted": "⚠️ Your queue priority is exhausted (or your realm is too low). Please come back tomorrow.",
       "submit": "🚀 Submitting the generation task. Estimated cost: {cost} credits. Please wait...",
       "no_template": "❌ System error: no body template was found. Please contact the admin to add one.",

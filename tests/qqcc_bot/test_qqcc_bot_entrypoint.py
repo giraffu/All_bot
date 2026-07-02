@@ -8,6 +8,9 @@ from qqcc_bot import keyboards, main as qqcc_main, prompt_handlers
 from qqcc_bot import commands as qqcc_commands
 from src.handlers.fsm import quick_image_fsm, quick_video_fsm
 from src.constants import MODE_CUSTOM_VIDEO, MODE_PERFECT_VIDEO_INSERT
+from src.handlers.fsm.quick_draw_callback_data import (
+    build_quick_draw_scene_callback_data,
+)
 from src.handlers.fsm.quick_video_callback_data import (
     build_quick_video_mode_callback_data,
     build_quick_video_scene_callback_data,
@@ -104,6 +107,29 @@ def test_qqcc_config_hides_closed_main_and_submenu_buttons():
     assert photo_rows == [["🎭 随机换脸"], ["🔙 返回主菜单"]]
 
 
+def test_qqcc_main_menu_shows_ai_draw_when_draw_scenes_exist():
+    config = normalize_qqcc_config(
+        {
+            "draw_scenes": [
+                {
+                    "id": "soft_light",
+                    "name": "柔光写真",
+                    "prompt": "soft light prompt",
+                }
+            ]
+        }
+    )
+
+    main_rows = _keyboard_texts(keyboards.get_qqcc_main_menu_keyboard("zh", config))
+
+    assert main_rows == [
+        ["💃 快速脱衣"],
+        ["🖼️ 懒人P图", "AI绘图", "AI动图"],
+        ["修仙市集"],
+        ["前往主bot"],
+    ]
+
+
 def test_qqcc_video_menu_contains_lazy_video_scenes():
     reply_markup = keyboards.get_qqcc_video_edit_inline_keyboard("zh")
     rows = _inline_keyboard_texts(reply_markup)
@@ -193,6 +219,90 @@ def test_qqcc_video_menu_uses_dynamic_scene_config():
     )
 
 
+def test_qqcc_draw_menu_uses_dynamic_scene_config():
+    config = normalize_qqcc_config(
+        {
+            "draw_scenes": [
+                {
+                    "id": "soft_light",
+                    "name": "柔光写真",
+                    "prompt": "soft light prompt",
+                },
+                {
+                    "id": "anime",
+                    "name": "动漫风",
+                    "prompt": "anime style prompt",
+                },
+                {
+                    "id": "oil",
+                    "name": "油画",
+                    "prompt": "oil painting prompt",
+                },
+                {
+                    "id": "cyber",
+                    "name": "赛博",
+                    "prompt": "cyber prompt",
+                },
+            ]
+        }
+    )
+
+    reply_markup = keyboards.get_qqcc_draw_edit_inline_keyboard("zh", config)
+
+    assert _inline_keyboard_texts(reply_markup) == [
+        ["柔光写真", "动漫风", "油画"],
+        ["赛博"],
+    ]
+    assert reply_markup.inline_keyboard[0][1].callback_data == (
+        build_quick_draw_scene_callback_data("anime")
+    )
+
+
+@pytest.mark.asyncio
+async def test_qqcc_ai_draw_menu_route_replies_with_inline_scene_buttons(monkeypatch):
+    config = normalize_qqcc_config(
+        {
+            "draw_scenes": [
+                {
+                    "id": "soft_light",
+                    "name": "柔光写真",
+                    "prompt": "soft light prompt",
+                },
+                {
+                    "id": "anime",
+                    "name": "动漫风",
+                    "prompt": "anime style prompt",
+                },
+            ]
+        }
+    )
+    monkeypatch.setattr(
+        prompt_handlers,
+        "load_runtime_qqcc_config",
+        AsyncMock(return_value=config),
+    )
+    reply_text = AsyncMock()
+    message = SimpleNamespace(reply_text=reply_text)
+    update = SimpleNamespace(
+        effective_message=message,
+        message=None,
+        edited_message=None,
+    )
+    context = SimpleNamespace(
+        lang="zh",
+        t=lambda key: f"translated:{key}",
+    )
+
+    await prompt_handlers.handle_ai_draw_menu(update, context)
+
+    reply_text.assert_awaited_once()
+    kwargs = reply_text.await_args.kwargs
+    assert kwargs["text"] == "translated:system.ai_draw_hint"
+    assert _inline_keyboard_texts(kwargs["reply_markup"]) == [
+        ["柔光写真", "动漫风"],
+    ]
+
+
 @pytest.mark.asyncio
 async def test_qqcc_stale_photo_menu_button_is_blocked(monkeypatch):
     config = normalize_qqcc_config({"main_buttons": {"photo_edit": False}})
@@ -226,6 +336,7 @@ async def test_qqcc_stale_photo_menu_button_is_blocked(monkeypatch):
 def test_qqcc_prompt_routes_are_limited_to_lazy_menus():
     assert set(prompt_handlers.QQCC_PROMPT_ROUTES) == {
         "menu.photo_edit",
+        "qqcc.menu.ai_draw",
         "menu.video_edit",
         "menu.main_menu",
         "menu.back_main",
@@ -241,6 +352,7 @@ def test_qqcc_lazy_main_buttons_are_routable_without_main_bot_prompt_routes(monk
 
     assert prompt_router.GLOBAL_REVERSE_MAP["💃 快速脱衣"] == "menu.photo_edit_undress"
     assert prompt_router.GLOBAL_REVERSE_MAP["🖼️ 懒人P图"] == "menu.photo_edit"
+    assert prompt_router.GLOBAL_REVERSE_MAP["AI绘图"] == "qqcc.menu.ai_draw"
     assert prompt_router.GLOBAL_REVERSE_MAP["AI动图"] == "menu.video_edit"
     assert prompt_router.GLOBAL_REVERSE_MAP["🎬 视频创作"] == "menu.video_edit"
     assert prompt_router.GLOBAL_REVERSE_MAP["修仙市集"] == "qqcc.menu.market"

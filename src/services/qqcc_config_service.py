@@ -13,6 +13,7 @@ QQCC_LAZY_BOT_CONFIG_KEY = "qqcc_lazy_bot_config:v1"
 MAIN_BUTTON_KEYS = (
     "quick_undress",
     "photo_edit",
+    "ai_draw",
     "video_edit",
     "market",
     "main_bot_link",
@@ -30,6 +31,7 @@ VIDEO_RESOLUTION_KEYS = ("512p", "720p", "1024p")
 VIDEO_DURATION_KEYS = ("5s", "8s", "10s")
 VIDEO_SCENE_MAX_COUNT = 20
 VIDEO_SCENE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
+DRAW_SCENE_MAX_COUNT = 20
 PROMPT_KEYS = (
     "undress",
     "i2i_draw_quick_undress",
@@ -100,6 +102,7 @@ DEFAULT_QQCC_LAZY_BOT_CONFIG: dict[str, Any] = {
     "main_buttons": {
         "quick_undress": True,
         "photo_edit": True,
+        "ai_draw": True,
         "video_edit": True,
         "market": True,
         "main_bot_link": True,
@@ -132,6 +135,7 @@ DEFAULT_QQCC_LAZY_BOT_CONFIG: dict[str, Any] = {
         },
     },
     "video_scenes": _default_video_scenes(),
+    "draw_scenes": [],
     "prompts": {
         "undress": "",
         "i2i_draw_quick_undress": "",
@@ -238,6 +242,45 @@ def _normalize_video_scenes(raw_scenes: Any) -> list[dict[str, str]]:
     return scenes
 
 
+def _normalize_draw_scene(
+    raw_scene: Any,
+    *,
+    index: int,
+    used_ids: set[str],
+) -> dict[str, str] | None:
+    if not isinstance(raw_scene, dict):
+        return None
+
+    name = raw_scene.get("name")
+    name = name.strip() if isinstance(name, str) else ""
+    prompt = raw_scene.get("prompt")
+    prompt = prompt.strip() if isinstance(prompt, str) else ""
+    if not name or not prompt:
+        return None
+
+    return {
+        "id": _build_unique_scene_id(
+            raw_scene.get("id"),
+            index=index,
+            used_ids=used_ids,
+        ),
+        "name": name,
+        "prompt": prompt,
+    }
+
+
+def _normalize_draw_scenes(raw_scenes: Any) -> list[dict[str, str]]:
+    if not isinstance(raw_scenes, list):
+        return []
+    scenes: list[dict[str, str]] = []
+    used_ids: set[str] = set()
+    for index, raw_scene in enumerate(raw_scenes[:DRAW_SCENE_MAX_COUNT]):
+        scene = _normalize_draw_scene(raw_scene, index=index, used_ids=used_ids)
+        if scene is not None:
+            scenes.append(scene)
+    return scenes
+
+
 def _migrate_legacy_video_scenes(raw: dict[str, Any]) -> list[dict[str, str]]:
     raw_buttons = raw.get("video_buttons")
     if not isinstance(raw_buttons, dict):
@@ -318,6 +361,7 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
         config["video_scenes"] = _normalize_video_scenes(raw.get("video_scenes"))
     else:
         config["video_scenes"] = _migrate_legacy_video_scenes(raw)
+    config["draw_scenes"] = _normalize_draw_scenes(raw.get("draw_scenes"))
 
     raw_prompts = raw.get("prompts")
     if not isinstance(raw_prompts, dict):
@@ -356,6 +400,26 @@ def get_qqcc_video_scene(
     if not scene_id:
         return None
     for scene in get_enabled_qqcc_video_scenes(config):
+        if scene.get("id") == scene_id:
+            return scene
+    return None
+
+
+def get_enabled_qqcc_draw_scenes(config: dict[str, Any]) -> list[dict[str, str]]:
+    return normalize_qqcc_config(config).get("draw_scenes", [])
+
+
+def has_enabled_qqcc_draw_scenes(config: dict[str, Any]) -> bool:
+    return bool(get_enabled_qqcc_draw_scenes(config))
+
+
+def get_qqcc_draw_scene(
+    config: dict[str, Any],
+    scene_id: str | None,
+) -> dict[str, str] | None:
+    if not scene_id:
+        return None
+    for scene in get_enabled_qqcc_draw_scenes(config):
         if scene.get("id") == scene_id:
             return scene
     return None

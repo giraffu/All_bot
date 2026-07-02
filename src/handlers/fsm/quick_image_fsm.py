@@ -15,15 +15,22 @@ from config import ENABLE_PUBLIC_SHARE
 from src.constants import (
     MODE_I2I_DRAW,
     MODE_MASTURBATION,
+    MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_RANDOM_FACESWAP,
     MODE_UNDRESS,
     TASK_COSTS,
 )
 from src.handlers.conversation_states import QuickImageState
 from src.handlers.prompt_router import GLOBAL_REVERSE_MAP, is_global_menu_command
+from src.handlers.fsm.quick_draw_callback_data import (
+    QUICK_DRAW_SCENE_CALLBACK_PATTERN,
+    parse_quick_draw_scene_callback_data,
+)
 from src.services.task_service_generation_image import process_standard_generation_task as process_generation_task
 from src.services.permission_service import permission_service
 from src.services.qqcc_config_service import (
+    get_qqcc_draw_scene,
+    has_enabled_qqcc_draw_scenes,
     is_qqcc_main_button_enabled,
     is_qqcc_photo_button_enabled,
     is_qqcc_undress_method_enabled,
@@ -148,6 +155,10 @@ def _is_qqcc_quick_image_mode_enabled(config: dict, mode: str) -> bool:
         return is_qqcc_main_button_enabled(
             config, "photo_edit"
         ) and is_qqcc_photo_button_enabled(config, "random_faceswap")
+    if mode == MODE_PORNMASTER_FLUX2_SINGLE_EDIT:
+        return is_qqcc_main_button_enabled(
+            config, "ai_draw"
+        ) and has_enabled_qqcc_draw_scenes(config)
     return False
 
 
@@ -186,7 +197,11 @@ def _build_undress_method_keyboard(
 
 
 def _resolve_quick_image_start_message(
-    context: ContextTypes.DEFAULT_TYPE, *, mode: str, cost: int
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    mode: str,
+    cost: int,
+    mode_name: str | None = None,
 ) -> str:
     if mode == MODE_UNDRESS:
         return _t(context, "fsm.quick_image.undress_start", cost=cost)
@@ -196,6 +211,13 @@ def _resolve_quick_image_start_message(
         return _t(context, "fsm.quick_image.random_faceswap_start", cost=cost)
     if mode == MODE_I2I_DRAW:
         return _t(context, "fsm.quick_image.undress_i2i_draw_start", cost=cost)
+    if mode == MODE_PORNMASTER_FLUX2_SINGLE_EDIT:
+        return _t(
+            context,
+            "fsm.quick_image.ai_draw_start",
+            cost=cost,
+            mode_name=mode_name or _t(context, "qqcc.menu.ai_draw"),
+        )
     return _t(context, "fsm.quick_image.undress_start", cost=cost)
 
 
@@ -207,6 +229,60 @@ def _resolve_image_file_id(message) -> str | None:
     if message.photo:
         return message.photo[-1].file_id
     return None
+
+
+async def _start_qqcc_draw_scene(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    qqcc_config: dict | None,
+    scene_id: str | None,
+) -> int:
+    query = update.callback_query
+    if query:
+        await query.answer(
+            text=_t(context, "fsm.common.task_initializing"),
+            cache_time=2,
+        )
+
+    if qqcc_config is None or not _is_qqcc_quick_image_mode_enabled(
+        qqcc_config, MODE_PORNMASTER_FLUX2_SINGLE_EDIT
+    ):
+        await _reply_qqcc_feature_disabled(update, context)
+        return ConversationHandler.END
+
+    scene = get_qqcc_draw_scene(qqcc_config, scene_id)
+    if scene is None:
+        await _reply_qqcc_feature_disabled(update, context)
+        return ConversationHandler.END
+
+    cost = TASK_COSTS.get(MODE_PORNMASTER_FLUX2_SINGLE_EDIT, 2)
+    _initialize_quick_image_context(
+        context,
+        mode=MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+        cost=cost,
+    )
+    context.user_data["quick_image_data"].update(
+        {
+            "scene_id": scene["id"],
+            "mode_name": scene["name"],
+            "prompt_override": scene["prompt"],
+        }
+    )
+    msg = _resolve_quick_image_start_message(
+        context,
+        mode=MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+        cost=cost,
+        mode_name=scene["name"],
+    )
+
+    if query and query.message:
+        await robust_reply_text(query.message, msg, parse_mode="Markdown")
+    else:
+        message = update.message or update.edited_message
+        if message:
+            await robust_reply_text(message, msg, parse_mode="Markdown")
+    return QuickImageState.WAIT_IMAGE
 
 
 async def _validate_quick_image_submission(
@@ -320,6 +396,10 @@ async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     """Entry point for 懒人P图 (单步图生图)"""
     user_id = update.effective_user.id
     message = update.message or update.edited_message
+    query = update.callback_query
+    draw_scene_id = parse_quick_draw_scene_callback_data(
+        query.data if query else None
+    )
     text = message.text.strip() if message and message.text else ""
     logger.info(
         f"start_quick_image triggered by user {user_id}, text: {text.encode('utf-8')}"
@@ -329,22 +409,32 @@ async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     if is_maintenance_mode():
         msg = _t(context, "fsm.common.maintenance")
-        if update.callback_query:
-            await robust_edit_text(
-                update.callback_query.message, msg, parse_mode="Markdown"
-            )
+        if query:
+            await query.answer(text=msg, cache_time=2)
+            await robust_edit_text(query.message, msg, parse_mode="Markdown")
         else:
             await robust_reply_text(update.message, msg, parse_mode="Markdown")
         return ConversationHandler.END
 
     if context.user_data.get("in_conversation"):
         msg = _t(context, "fsm.common.conflict")
-        await robust_reply_text(update.message, msg)
+        if query:
+            await query.answer(text=msg, cache_time=2)
+            await robust_edit_text(query.message, msg, parse_mode="Markdown")
+        else:
+            await robust_reply_text(update.message, msg)
         return ConversationHandler.END
 
     mode = None
     route_key = GLOBAL_REVERSE_MAP.get(text)
     qqcc_config = await _load_qqcc_config_for_context(context)
+    if draw_scene_id:
+        return await _start_qqcc_draw_scene(
+            update,
+            context,
+            qqcc_config=qqcc_config,
+            scene_id=draw_scene_id,
+        )
     if qqcc_config is not None and not _is_qqcc_quick_image_route_enabled(
         qqcc_config, route_key
     ):
@@ -438,7 +528,15 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     mode = fsm_data["mode"]
     cost = fsm_data["cost"]
     qqcc_config = await _load_qqcc_config_for_context(context)
-    if qqcc_config is not None and not _is_qqcc_quick_image_mode_enabled(
+    if qqcc_config is not None and mode == MODE_PORNMASTER_FLUX2_SINGLE_EDIT:
+        scene = get_qqcc_draw_scene(qqcc_config, fsm_data.get("scene_id"))
+        if scene is None or not _is_qqcc_quick_image_mode_enabled(qqcc_config, mode):
+            await _reply_qqcc_feature_disabled(update, context)
+            _cleanup_context(context, user_id)
+            return ConversationHandler.END
+        fsm_data["mode_name"] = scene["name"]
+        fsm_data["prompt_override"] = scene["prompt"]
+    elif qqcc_config is not None and not _is_qqcc_quick_image_mode_enabled(
         qqcc_config, mode
     ):
         await _reply_qqcc_feature_disabled(update, context)
@@ -536,21 +634,35 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     else:
         # Single-image quick modes share the same task submission path.
-        if mode == MODE_I2I_DRAW:
+        task_type = mode
+        if mode == MODE_PORNMASTER_FLUX2_SINGLE_EDIT:
+            prompt = fsm_data.get("prompt_override", "").strip()
+            fallback_prompt = prompt or MODE_PORNMASTER_FLUX2_SINGLE_EDIT
+            prompt = prompt or fallback_prompt
+        elif mode == MODE_I2I_DRAW:
             prompt_key = "i2i_draw_quick_undress"
             fallback_prompt = DEFAULT_I2I_DRAW_UNDRESS_PROMPT
+            if qqcc_config is not None:
+                prompt = resolve_qqcc_prompt(
+                    qqcc_config,
+                    prompt_key,
+                    prompts_config,
+                    fallback_prompt,
+                )
+            else:
+                prompt = prompts_config.get(prompt_key, fallback_prompt)
         else:
             prompt_key = mode
             fallback_prompt = mode
-        if qqcc_config is not None:
-            prompt = resolve_qqcc_prompt(
-                qqcc_config,
-                prompt_key,
-                prompts_config,
-                fallback_prompt,
-            )
-        else:
-            prompt = prompts_config.get(prompt_key, fallback_prompt)
+            if qqcc_config is not None:
+                prompt = resolve_qqcc_prompt(
+                    qqcc_config,
+                    prompt_key,
+                    prompts_config,
+                    fallback_prompt,
+                )
+            else:
+                prompt = prompts_config.get(prompt_key, fallback_prompt)
         create_background_task(
             context,
             process_generation_task(
@@ -560,7 +672,7 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 username=update.effective_user.username,
                 prompt=prompt,
                 images=[image_path],
-                task_type=mode,
+                task_type=task_type,
                 cleanup=True,
             ),
         )
@@ -627,7 +739,11 @@ def get_quick_image_fsm_handler() -> ConversationHandler:
                     ]
                 ),
                 start_quick_image,
-            )
+            ),
+            CallbackQueryHandler(
+                start_quick_image,
+                pattern=QUICK_DRAW_SCENE_CALLBACK_PATTERN,
+            ),
         ],
         states={
             QuickImageState.WAIT_UNDRESS_METHOD: [

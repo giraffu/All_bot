@@ -6,6 +6,7 @@ from src.database.models import RuntimeCheckpoint
 from src.services.qqcc_config_service import (
     DEFAULT_QQCC_LAZY_BOT_CONFIG,
     QQCC_LAZY_BOT_CONFIG_KEY,
+    get_enabled_qqcc_draw_scenes,
     get_enabled_qqcc_video_scenes,
     load_qqcc_config_payload,
     normalize_qqcc_config,
@@ -48,6 +49,8 @@ def test_normalize_qqcc_config_returns_default_shape_for_empty_config():
 
     assert config == DEFAULT_QQCC_LAZY_BOT_CONFIG
     assert config["main_buttons"]["quick_undress"] is True
+    assert config["main_buttons"]["ai_draw"] is True
+    assert config["draw_scenes"] == []
     assert config["video_settings"]["resolutions"]["1024p"] is True
     assert [scene["id"] for scene in config["video_scenes"]] == [
         "missionary",
@@ -85,6 +88,7 @@ def test_normalize_qqcc_config_drops_unknown_keys_and_keeps_empty_prompt_for_fal
     assert config["main_buttons"] == {
         "quick_undress": False,
         "photo_edit": True,
+        "ai_draw": True,
         "video_edit": True,
         "market": True,
         "main_bot_link": True,
@@ -204,6 +208,52 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
     ]
 
 
+def test_normalize_qqcc_config_keeps_only_valid_dynamic_draw_scenes():
+    config = normalize_qqcc_config(
+        {
+            "draw_scenes": [
+                {
+                    "id": "soft_light",
+                    "name": "柔光写真",
+                    "prompt": "  make it cinematic  ",
+                },
+                {
+                    "id": "soft_light",
+                    "name": "重复 id",
+                    "prompt": "duplicate prompt",
+                },
+                {
+                    "id": "bad id!",
+                    "name": "安全 id",
+                    "prompt": "safe id prompt",
+                },
+                {"id": "empty_prompt", "name": "无提示词", "prompt": ""},
+                {"id": "empty_name", "name": " ", "prompt": "has prompt"},
+            ]
+        }
+    )
+
+    scenes = get_enabled_qqcc_draw_scenes(config)
+
+    assert scenes == [
+        {
+            "id": "soft_light",
+            "name": "柔光写真",
+            "prompt": "make it cinematic",
+        },
+        {
+            "id": "scene_2",
+            "name": "重复 id",
+            "prompt": "duplicate prompt",
+        },
+        {
+            "id": "scene_3",
+            "name": "安全 id",
+            "prompt": "safe id prompt",
+        },
+    ]
+
+
 @pytest.mark.asyncio
 async def test_load_qqcc_config_payload_returns_defaults_when_checkpoint_missing():
     db = _FakeSession()
@@ -246,3 +296,81 @@ async def test_update_qqcc_config_router_routes_to_runtime_checkpoint_service():
 
     assert db.committed is True
     assert response["config"]["main_buttons"]["video_edit"] is False
+
+
+@pytest.mark.asyncio
+async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
+    db = _FakeSession()
+    payload = QqccBotConfigRequest(
+        video_scenes=[
+            {
+                "id": "kiss",
+                "name": "贴贴",
+                "prompt": "custom kiss prompt",
+                "duration": "8s",
+            },
+            {
+                "id": "missionary",
+                "name": "自定义传教士",
+                "prompt": "custom missionary prompt",
+                "duration": "10s",
+                "prompt_key": "perfect_video_insert",
+            },
+        ]
+    )
+
+    response = await router_module.update_qqcc_config(payload, db=db)
+
+    assert db.committed is True
+    assert response["config"]["video_scenes"] == [
+        {
+            "id": "kiss",
+            "name": "贴贴",
+            "prompt": "custom kiss prompt",
+            "duration": "8s",
+        },
+        {
+            "id": "missionary",
+            "name": "自定义传教士",
+            "prompt": "custom missionary prompt",
+            "duration": "10s",
+            "prompt_key": "perfect_video_insert",
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_update_qqcc_config_router_preserves_dynamic_draw_scenes():
+    db = _FakeSession()
+    payload = QqccBotConfigRequest(
+        main_buttons={"ai_draw": True},
+        draw_scenes=[
+            {
+                "id": "soft_light",
+                "name": "柔光写真",
+                "prompt": "custom draw prompt",
+            },
+            {
+                "id": "anime",
+                "name": "动漫风",
+                "prompt": "anime style prompt",
+            },
+        ],
+    )
+
+    response = await router_module.update_qqcc_config(payload, db=db)
+
+    assert db.committed is True
+    assert response["config"]["main_buttons"]["ai_draw"] is True
+    assert response["config"]["draw_scenes"] == [
+        {
+            "id": "soft_light",
+            "name": "柔光写真",
+            "prompt": "custom draw prompt",
+        },
+        {
+            "id": "anime",
+            "name": "动漫风",
+            "prompt": "anime style prompt",
+        },
+    ]

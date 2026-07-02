@@ -5,7 +5,7 @@ import { DeleteOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant
 
 import { fetchQqccBotConfig, updateQqccBotConfig } from '../api/api'
 
-type MainButtonKey = 'quick_undress' | 'photo_edit' | 'video_edit' | 'market' | 'main_bot_link'
+type MainButtonKey = 'quick_undress' | 'photo_edit' | 'ai_draw' | 'video_edit' | 'market' | 'main_bot_link'
 type PhotoButtonKey = 'masturbation' | 'random_faceswap'
 type UndressMethodKey = 'legacy' | 'i2i_draw'
 type VideoButtonKey = 'missionary' | 'doggy' | 'blowjob' | 'undress_tongue' | 'closeup_blowjob'
@@ -30,6 +30,12 @@ interface VideoSceneConfig {
   prompt_key?: PromptKey
 }
 
+interface DrawSceneConfig {
+  id: string
+  name: string
+  prompt: string
+}
+
 interface QqccBotConfig {
   global_enabled: boolean
   main_buttons: Record<MainButtonKey, boolean>
@@ -41,6 +47,7 @@ interface QqccBotConfig {
     durations: Record<DurationKey, boolean>
   }
   video_scenes: VideoSceneConfig[]
+  draw_scenes: DrawSceneConfig[]
   prompts: Record<PromptKey, string>
 }
 
@@ -55,6 +62,7 @@ const defaultConfig = (): QqccBotConfig => ({
   main_buttons: {
     quick_undress: true,
     photo_edit: true,
+    ai_draw: true,
     video_edit: true,
     market: true,
     main_bot_link: true,
@@ -123,6 +131,7 @@ const defaultConfig = (): QqccBotConfig => ({
       prompt_key: 'closeup_blowjob',
     },
   ],
+  draw_scenes: [],
   prompts: {
     undress: '',
     i2i_draw_quick_undress: '',
@@ -139,6 +148,7 @@ const defaultConfig = (): QqccBotConfig => ({
 const mainButtonOptions: Array<{ key: MainButtonKey; label: string }> = [
   { key: 'quick_undress', label: '快速脱衣' },
   { key: 'photo_edit', label: '懒人P图' },
+  { key: 'ai_draw', label: 'AI绘图' },
   { key: 'video_edit', label: 'AI动图' },
   { key: 'market', label: '修仙市集' },
   { key: 'main_bot_link', label: '前往主bot' },
@@ -178,6 +188,7 @@ const configKey = ref('')
 const updatedAt = ref<string | null>(null)
 const config = reactive<QqccBotConfig>(defaultConfig())
 const sceneCounter = ref(0)
+const drawSceneCounter = ref(0)
 
 const statusText = computed(() => (config.global_enabled ? '开启' : '关闭'))
 const updatedAtText = computed(() => updatedAt.value || '-')
@@ -233,6 +244,16 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
       })
       .filter((scene) => scene.name.trim() || scene.prompt.trim() || scene.prompt_key)
   }
+  if (Array.isArray(raw.draw_scenes)) {
+    merged.draw_scenes = raw.draw_scenes
+      .map((scene, index) => {
+        const id = typeof scene?.id === 'string' && scene.id.trim() ? scene.id.trim() : `draw_scene_${index + 1}`
+        const name = typeof scene?.name === 'string' ? scene.name : ''
+        const prompt = typeof scene?.prompt === 'string' ? scene.prompt : ''
+        return { id, name, prompt }
+      })
+      .filter((scene) => scene.name.trim() || scene.prompt.trim())
+  }
   Object.keys(merged.prompts).forEach((key) => {
     const promptKey = key as PromptKey
     const value = raw.prompts?.[promptKey]
@@ -259,12 +280,32 @@ const removeVideoScene = (index: number) => {
   config.video_scenes.splice(index, 1)
 }
 
+const createDrawSceneId = () => {
+  drawSceneCounter.value += 1
+  return `draw_${Date.now().toString(36)}_${drawSceneCounter.value}`
+}
+
+const addDrawScene = () => {
+  config.draw_scenes.push({
+    id: createDrawSceneId(),
+    name: '',
+    prompt: '',
+  })
+}
+
+const removeDrawScene = (index: number) => {
+  config.draw_scenes.splice(index, 1)
+}
+
 const validateVideoScenes = () =>
   config.video_scenes.every((scene) => {
     if (!scene.name.trim()) return false
     if (scene.prompt_key) return true
     return Boolean(scene.prompt.trim())
   })
+
+const validateDrawScenes = () =>
+  config.draw_scenes.every((scene) => Boolean(scene.name.trim()) && Boolean(scene.prompt.trim()))
 
 const buildPayload = (): QqccBotConfig => {
   const payload = JSON.parse(JSON.stringify(config)) as QqccBotConfig
@@ -276,6 +317,14 @@ const buildPayload = (): QqccBotConfig => {
       prompt: scene.prompt.trim(),
     }))
     .filter((scene) => scene.name || scene.prompt || scene.prompt_key)
+  payload.draw_scenes = payload.draw_scenes
+    .map((scene) => ({
+      ...scene,
+      id: scene.id.trim(),
+      name: scene.name.trim(),
+      prompt: scene.prompt.trim(),
+    }))
+    .filter((scene) => scene.name || scene.prompt)
   return payload
 }
 
@@ -300,6 +349,10 @@ const loadConfig = async () => {
 const saveConfig = async () => {
   if (!validateVideoScenes()) {
     message.error('请完善AI动图场景的按钮名称和提示词')
+    return
+  }
+  if (!validateDrawScenes()) {
+    message.error('请完善AI绘图场景的按钮名称和提示词')
     return
   }
   saving.value = true
@@ -456,6 +509,51 @@ onMounted(() => {
           <div v-if="config.video_scenes.length === 0" class="py-6 text-center text-sm text-slate-400">
             暂无场景
           </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="rounded-lg border border-slate-200 bg-white p-5">
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h3 class="text-sm font-semibold text-slate-800">AI绘图场景</h3>
+        <a-button data-testid="add-draw-scene" @click="addDrawScene">
+          <template #icon><PlusOutlined /></template>
+          添加
+        </a-button>
+      </div>
+
+      <div>
+        <div
+          class="hidden grid-cols-[180px_minmax(360px,1fr)_56px] gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid"
+        >
+          <span>按钮名称</span>
+          <span>提示词</span>
+          <span>操作</span>
+        </div>
+        <div
+          v-for="(scene, index) in config.draw_scenes"
+          :key="scene.id"
+          class="grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[180px_minmax(360px,1fr)_56px]"
+        >
+          <a-input
+            v-model:value="scene.name"
+            :data-testid="`draw-scene-name-${index}`"
+          />
+          <a-textarea
+            v-model:value="scene.prompt"
+            :rows="3"
+            :data-testid="`draw-scene-prompt-${index}`"
+          />
+          <a-button
+            danger
+            :data-testid="`remove-draw-scene-${index}`"
+            @click="removeDrawScene(index)"
+          >
+            <template #icon><DeleteOutlined /></template>
+          </a-button>
+        </div>
+        <div v-if="config.draw_scenes.length === 0" class="py-6 text-center text-sm text-slate-400">
+          暂无场景
         </div>
       </div>
     </section>

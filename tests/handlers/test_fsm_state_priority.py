@@ -25,6 +25,8 @@ from src.handlers.fsm import (
     quick_image_fsm,
     quick_video_fsm,
 )
+from src.handlers.fsm.quick_draw_callback_data import build_quick_draw_scene_callback_data
+from src.services.qqcc_config_service import normalize_qqcc_config
 
 
 def _build_user():
@@ -435,6 +437,123 @@ async def test_qqcc_undress_inpaint_choice_waits_for_image(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_qqcc_ai_draw_scene_callback_waits_for_image(monkeypatch):
+    reply_mock = AsyncMock()
+    answer_mock = AsyncMock()
+    config = normalize_qqcc_config(
+        {
+            "draw_scenes": [
+                {
+                    "id": "soft_light",
+                    "name": "柔光写真",
+                    "prompt": "soft light prompt",
+                }
+            ]
+        }
+    )
+
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(quick_image_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "load_runtime_qqcc_config",
+        AsyncMock(return_value=config),
+    )
+
+    user = _build_user()
+    callback_message = SimpleNamespace(chat_id=10001)
+    update = SimpleNamespace(
+        effective_user=user,
+        effective_chat=SimpleNamespace(id=10001),
+        message=None,
+        edited_message=None,
+        callback_query=SimpleNamespace(
+            data=build_quick_draw_scene_callback_data("soft_light"),
+            message=callback_message,
+            answer=answer_mock,
+            from_user=user,
+        ),
+    )
+    context = SimpleNamespace(
+        user_data={},
+        bot_data={"bot_client_type": "bot:qqcc"},
+        lang="zh",
+    )
+
+    result = await quick_image_fsm.start_quick_image(update, context)
+
+    assert result == quick_image_fsm.QuickImageState.WAIT_IMAGE
+    assert context.user_data["quick_image_data"] == {
+        "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+        "cost": 2,
+        "image_path": None,
+        "scene_id": "soft_light",
+        "mode_name": "柔光写真",
+        "prompt_override": "soft light prompt",
+    }
+    answer_mock.assert_awaited_once()
+    reply_mock.assert_awaited_once()
+    assert "柔光写真" in reply_mock.await_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_qqcc_ai_draw_deleted_scene_callback_is_blocked(monkeypatch):
+    edit_mock = AsyncMock()
+    answer_mock = AsyncMock()
+    config = normalize_qqcc_config(
+        {
+            "draw_scenes": [
+                {
+                    "id": "anime",
+                    "name": "动漫风",
+                    "prompt": "anime style prompt",
+                }
+            ]
+        }
+    )
+
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(quick_image_fsm, "robust_edit_text", edit_mock)
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "load_runtime_qqcc_config",
+        AsyncMock(return_value=config),
+    )
+
+    user = _build_user()
+    callback_message = SimpleNamespace(chat_id=10001)
+    update = SimpleNamespace(
+        effective_user=user,
+        effective_chat=SimpleNamespace(id=10001),
+        message=None,
+        edited_message=None,
+        callback_query=SimpleNamespace(
+            data=build_quick_draw_scene_callback_data("soft_light"),
+            message=callback_message,
+            answer=answer_mock,
+            from_user=user,
+        ),
+    )
+    context = SimpleNamespace(
+        user_data={},
+        bot_data={"bot_client_type": "bot:qqcc"},
+        lang="zh",
+        t=lambda key, **_kwargs: {"qqcc.feature_disabled": "功能暂未开放"}.get(
+            key, key
+        ),
+    )
+
+    result = await quick_image_fsm.start_quick_image(update, context)
+
+    assert result == ConversationHandler.END
+    assert "quick_image_data" not in context.user_data
+    answer_mock.assert_awaited_once()
+    edit_mock.assert_awaited_once_with(
+        callback_message, "功能暂未开放", parse_mode="Markdown"
+    )
+
+
+@pytest.mark.asyncio
 async def test_quick_image_i2i_draw_submits_inpaint_task(monkeypatch):
     reply_mock = AsyncMock()
     scheduled = []
@@ -500,6 +619,89 @@ async def test_quick_image_i2i_draw_submits_inpaint_task(monkeypatch):
     assert captured["task_type"] == MODE_I2I_DRAW
     assert captured["images"] == ["/tmp/i2i-draw.png"]
     assert "保持面部" in captured["prompt"]
+
+
+@pytest.mark.asyncio
+async def test_qqcc_ai_draw_scene_submits_free_edit_v2_single_task(monkeypatch):
+    reply_mock = AsyncMock()
+    scheduled = []
+    captured = {}
+    config = normalize_qqcc_config(
+        {
+            "draw_scenes": [
+                {
+                    "id": "soft_light",
+                    "name": "柔光写真",
+                    "prompt": "soft light prompt",
+                }
+            ]
+        }
+    )
+
+    async def fake_process_generation_task(**kwargs):
+        captured.update(kwargs)
+        return None, None
+
+    def fake_create_background_task(_context, coroutine):
+        scheduled.append(coroutine)
+
+    monkeypatch.setattr(quick_image_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "load_runtime_qqcc_config",
+        AsyncMock(return_value=config),
+    )
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "_validate_quick_image_submission",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "_download_quick_image_input",
+        AsyncMock(return_value="/tmp/draw.png"),
+    )
+    monkeypatch.setattr(
+        quick_image_fsm, "process_generation_task", fake_process_generation_task
+    )
+    monkeypatch.setattr(
+        quick_image_fsm, "create_background_task", fake_create_background_task
+    )
+    monkeypatch.setattr(quick_image_fsm, "load_prompts", lambda: {})
+
+    update = SimpleNamespace(
+        effective_user=_build_user(),
+        effective_chat=SimpleNamespace(id=10001),
+        message=SimpleNamespace(
+            document=None,
+            photo=[SimpleNamespace(file_id="photo-file-id")],
+            chat_id=10001,
+        ),
+    )
+    context = SimpleNamespace(
+        user_data={
+            "in_conversation": "QUICK_IMAGE_pornmaster_flux2_single_edit",
+            "quick_image_data": {
+                "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+                "cost": 2,
+                "image_path": None,
+                "scene_id": "soft_light",
+            },
+        },
+        bot=SimpleNamespace(),
+        bot_data={"bot_client_type": "bot:qqcc"},
+        lang="zh",
+    )
+
+    result = await quick_image_fsm.receive_image(update, context)
+
+    assert result == ConversationHandler.END
+    assert len(scheduled) == 1
+    await scheduled[0]
+    assert captured["task_type"] == MODE_PORNMASTER_FLUX2_SINGLE_EDIT
+    assert captured["images"] == ["/tmp/draw.png"]
+    assert captured["prompt"] == "soft light prompt"
+    assert context.bot_data["bot_client_type"] == "bot:qqcc"
 
 
 @pytest.mark.asyncio
