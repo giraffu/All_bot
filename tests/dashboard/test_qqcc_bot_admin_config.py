@@ -77,6 +77,7 @@ def test_normalize_qqcc_config_drops_unknown_keys_and_keeps_empty_prompt_for_fal
         "quick_undress": False,
         "photo_edit": True,
         "video_edit": True,
+        "market": True,
         "main_bot_link": True,
     }
     assert "unknown" not in config["main_buttons"]

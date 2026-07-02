@@ -260,6 +260,7 @@ const openDetailAndFindApplyButton = async () => {
 describe('Gallery template apply integration', () => {
   beforeEach(() => {
     sessionStorage.clear()
+    window.history.replaceState(null, '', '/gallery')
 
     apiGetMock.mockReset()
     messageSuccessMock.mockReset()
@@ -307,6 +308,27 @@ describe('Gallery template apply integration', () => {
       rawContext: faceSwapContext
     })
     expect(messageSuccessMock).toHaveBeenCalledWith('已载入模板工作台')
+  })
+
+  it('opens a gallery apply deep link from query params', async () => {
+    window.history.replaceState(null, '', `/gallery?apply_source=gallery&apply_id=${samplePost.id}`)
+    templateApplyStoreMock.openFromRawContext.mockResolvedValue({
+      status: 'opened',
+      sessionId: 'session-deeplink'
+    })
+
+    mountGallery()
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiGetMock).toHaveBeenCalledWith(`/gallery/items/${samplePost.id}/apply-context`)
+    expect(templateApplyStoreMock.openFromRawContext).toHaveBeenCalledWith({
+      source: 'gallery',
+      entryEntityId: samplePost.id,
+      rawContext: faceSwapContext
+    })
+    expect(messageSuccessMock).toHaveBeenCalledWith('已载入模板工作台')
+    expect(window.location.search).toBe('')
   })
 
   it('disables template apply for stitched Wan22 gallery posts', async () => {

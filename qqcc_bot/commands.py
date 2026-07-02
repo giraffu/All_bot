@@ -146,6 +146,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @with_db_logging_context
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("in_conversation", None)
+    context.user_data.pop("qqcc_gallery_apply", None)
     keys_to_remove = [key for key in context.user_data.keys() if key.endswith("_data")]
     for key in keys_to_remove:
         context.user_data.pop(key, None)

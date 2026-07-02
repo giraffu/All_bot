@@ -35,6 +35,19 @@ import { handleMediaCardImageError } from '@/utils/mediaCardFallback'
 import { resolveMediaCardView } from '@/utils/mediaCardView'
 import { useViewport } from '@/composables/useViewport'
 
+const resolveGalleryApplyIdFromLocation = (): number | null => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('apply_source') !== 'gallery') {
+    return null
+  }
+  const rawApplyId = params.get('apply_id')
+  const applyId = Number(rawApplyId)
+  return Number.isInteger(applyId) && applyId > 0 ? applyId : null
+}
+
 export function useGalleryPageState() {
   const { t } = useI18n()
   const { isMobile } = useViewport()
@@ -43,6 +56,7 @@ export function useGalleryPageState() {
   const userProfileVisible = ref(false)
   const activeProfileUserId = ref<number | null>(null)
   const followLoadingUserId = ref<number | null>(null)
+  const pendingDeepLinkApplyId = ref<number | null>(resolveGalleryApplyIdFromLocation())
 
   const breakpoints = {
     99999: { rowPerView: 6 },
@@ -317,6 +331,45 @@ export function useGalleryPageState() {
     await loadBrowserPosts(reset)
   }
 
+  const clearGalleryApplyDeepLink = () => {
+    if (typeof window === 'undefined') {
+      return
+    }
+    const url = new URL(window.location.href)
+    url.searchParams.delete('apply_source')
+    url.searchParams.delete('apply_id')
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
+  }
+
+  const openDeepLinkApply = async () => {
+    const applyId = pendingDeepLinkApplyId.value
+    if (!applyId) {
+      return
+    }
+    pendingDeepLinkApplyId.value = null
+    clearGalleryApplyDeepLink()
+
+    try {
+      const response = await api.get(`/gallery/items/${applyId}/apply-context`)
+      const result = await templateApplyStore.openFromRawContext({
+        source: 'gallery',
+        entryEntityId: applyId,
+        rawContext: response.data,
+      })
+
+      if (result.status === 'opened') {
+        message.success(t('template_apply.open_success'))
+      } else if (result.status === 'legacy_fallback') {
+        message.error(t('template_apply.open_failed'))
+      } else if (result.status === 'invalid') {
+        message.error(result.message)
+      }
+    } catch (error) {
+      console.error(error)
+      message.error(t('my_notes.template_load_failed'))
+    }
+  }
+
   const resolveTaskTypeLabel = (taskTypeId: string) =>
     resolveGalleryTaskTypeLabel(taskTypeId, t)
 
@@ -394,7 +447,10 @@ export function useGalleryPageState() {
 
   onMounted(() => {
     void loadConfig()
-    void loadPosts(true)
+    void (async () => {
+      await loadPosts(true)
+      await openDeepLinkApply()
+    })()
   })
 
   watch(pageSize, (nextSize, previousSize) => {

@@ -5,7 +5,7 @@ import { ReloadOutlined, SaveOutlined } from '@ant-design/icons-vue'
 
 import { fetchQqccBotConfig, updateQqccBotConfig } from '../api/api'
 
-type MainButtonKey = 'quick_undress' | 'photo_edit' | 'video_edit' | 'main_bot_link'
+type MainButtonKey = 'quick_undress' | 'photo_edit' | 'video_edit' | 'market' | 'main_bot_link'
 type PhotoButtonKey = 'masturbation' | 'random_faceswap'
 type UndressMethodKey = 'legacy' | 'i2i_draw'
 type VideoButtonKey = 'missionary' | 'doggy' | 'blowjob' | 'undress_tongue' | 'closeup_blowjob'
@@ -47,6 +47,7 @@ const defaultConfig = (): QqccBotConfig => ({
     quick_undress: true,
     photo_edit: true,
     video_edit: true,
+    market: true,
     main_bot_link: true,
   },
   photo_buttons: {
@@ -93,6 +94,7 @@ const mainButtonOptions: Array<{ key: MainButtonKey; label: string }> = [
   { key: 'quick_undress', label: '快速脱衣' },
   { key: 'photo_edit', label: '懒人P图' },
   { key: 'video_edit', label: 'AI动图' },
+  { key: 'market', label: '修仙市集' },
   { key: 'main_bot_link', label: '前往主bot' },
 ]
 

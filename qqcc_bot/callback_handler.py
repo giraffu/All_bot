@@ -9,6 +9,7 @@ import src.handlers.callback_router as router
 import src.handlers.callbacks.gallery_callbacks_interactions  # noqa: F401
 import src.handlers.callbacks.misc_callbacks  # noqa: F401
 import src.handlers.callbacks.task_callbacks  # noqa: F401
+import qqcc_bot.gallery_market  # noqa: F401
 
 from src.handlers.utils import with_db_logging_context
 from src.services.permission_service import permission_service
@@ -40,4 +41,3 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     logger.warning("Unmatched QQCC callback data: %s", query.data)
     await safe_answer_query(query)
     await query.message.reply_text(context.t("system.callback_expired"))
-

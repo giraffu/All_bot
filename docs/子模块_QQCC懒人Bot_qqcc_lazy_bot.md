@@ -1,11 +1,11 @@
 # 子模块: QQCC 懒人 Bot (QQCC Lazy Bot)
 
 ## 1. 范围与定位
-QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位于仓库根目录 `qqcc_bot/`，正式名称为 `@QQCC666_bot`。它只提供简化生成入口，用户、灵石、会员、历史、并发锁、队列、对象存储、worker 与结果回流全部复用现有生产数据和任务链路。
+QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位于仓库根目录 `qqcc_bot/`，正式名称为 `@QQCC666_bot`。它提供简化生成入口与 QQCC 专用轻量 `修仙市集`，用户、灵石、会员、历史、并发锁、队列、对象存储、worker 与结果回流全部复用现有生产数据和任务链路。
 
-它不是主 Bot 的完整副本，不承载充值、affiliate 菜单、gallery 浏览、Web 登录、支付回调或高级视频/高级图像入口。
+它不是主 Bot 的完整副本，不承载充值、affiliate 菜单、主 Bot 完整 gallery 浏览、Web 登录、支付回调或高级视频/高级图像入口。
 
-主菜单可额外展示一个非生成入口 `前往主bot`，用于把用户引回完整主 Bot。Telegram 底部菜单按钮不能直接承载 URL，因此用户点击该菜单项后，QQCC Bot 会回复一条带 inline URL 的跳转按钮。该入口不是生成业务入口，不改变“主菜单业务入口只包含三项”的约束。
+主菜单可额外展示两个非生成入口：`修仙市集` 与 `前往主bot`。`修仙市集` 是 QQCC 专用轻量 Gallery 浏览/应用入口；`前往主bot` 用于把用户引回完整主 Bot。Telegram 底部菜单按钮不能直接承载 URL，因此用户点击 `前往主bot` 后，QQCC Bot 会回复一条带 inline URL 的跳转按钮。这两个入口不是生成业务入口，不改变“主菜单业务入口只包含三项”的约束。
 
 ## 2. 功能边界
 主菜单业务入口只包含：
@@ -16,6 +16,7 @@ QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位�
 `AI动图` 是 QQCC Bot 的专用展示文案，对应共享路由 `menu.video_edit`。不要直接修改共享 `menu.video_edit` 文案来实现 QQCC 菜单改名，否则会影响主 Bot 的正式菜单。
 
 主菜单非生成入口：
+- `修仙市集`
 - `前往主bot`
 
 `懒人P图` 只开放：
@@ -37,13 +38,19 @@ QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位�
 
 用户点击主菜单 `AI动图` 后，QQCC Bot 回复 `system.video_edit_hint`，并把上述场景作为 inline button 挂在该回复消息下方展示；按钮按三个一行排布，callback 使用 `qvid_mode:<menu.video_edit_*>`，由 `get_quick_video_fsm_handler()` 直接进入发送图片步骤。不要再把这些场景塞回 Telegram 底部 reply keyboard。
 
+用户点击主菜单 `修仙市集` 后，QQCC Bot 使用专用 `qqcc_bot/gallery_market.py` 入口展示当前 Web Gallery 可见类型的投稿，不复用旧主 Bot 的 gallery 分类常量。callback 前缀为 `qg:`，支持分类、分页、点赞、点踩、一键应用和 Web 应用跳转；不提供留言入口。分类对齐 Web 可见 tab：`all`、`i2i_pro`、`i2i_draw`、`edit_group`、`free_edit_v2_group`、`img2video_group`、`ltx_video`、`wan22_video_v2`、`scail2_action_transfer`、`scail2_video_replacement`、`scail2_face_swap_v2`，不展示 `txt2img`。
+
+`修仙市集` 媒体发送优先使用 `GalleryPost.telegram_file_id`，失效或缺失时通过当前 Gallery R2/S3 URL resolver 下载当前作品并重新写回 Telegram file_id；测试 Bot 不持久化新 file_id。不得恢复旧 `storage.get_file_bytes(...)` / legacy MinIO public URL 作为浏览主路径。
+
+QQCC 市集一键应用是轻量 Bot 流程：安全的单图模板在 Bot 内提示用户重新发送 1 张参考图，并以 `source_post_id`、`allow_contribute=False`、`client_type=bot:qqcc` 提交任务；复杂模板、SCAIL-2、多图/多视频复用与首尾帧复杂链路走 Web 深链 `/gallery?apply_source=gallery&apply_id=<post_id>`。`apply` 次数仍只能在任务成功链路记账，不能在点击按钮时预增。
+
 QQCC 功能开关与 QQCC 专用提示词覆盖由管理后台 `懒人Bot配置` 页维护。配置存入 `runtime_checkpoints`，固定 key 为 `qqcc_lazy_bot_config:v1`，不新增表。Dashboard Backend 暴露：
 - `GET /api/qqcc/config`：返回合并默认值后的有效配置。
 - `PUT /api/qqcc/config`：规范化并保存配置，只保留已知 key。
 
 配置结构固定包含：
 - `global_enabled`
-- `main_buttons`: `quick_undress`, `photo_edit`, `video_edit`, `main_bot_link`
+- `main_buttons`: `quick_undress`, `photo_edit`, `video_edit`, `market`, `main_bot_link`
 - `photo_buttons`: `masturbation`, `random_faceswap`
 - `undress_methods`: `legacy`, `i2i_draw`
 - `video_buttons`: `missionary`, `doggy`, `blowjob`, `undress_tongue`, `closeup_blowjob`
@@ -57,14 +64,15 @@ QQCC 功能开关与 QQCC 专用提示词覆盖由管理后台 `懒人Bot配置`
 - `get_quick_image_fsm_handler()`
 - `get_quick_video_fsm_handler()`
 
-不得注册 `faceswap_fsm`、`txt2img_fsm`、`edit_image_fsm`、`image_to_video_fsm`、`wan22_video_v2_fsm`、`ltx_video_fsm`、`scail2_video_fsm`、充值、affiliate redeem 或 gallery 浏览菜单入口。
+不得注册 `faceswap_fsm`、`txt2img_fsm`、`edit_image_fsm`、`image_to_video_fsm`、`wan22_video_v2_fsm`、`ltx_video_fsm`、`scail2_video_fsm`、充值、affiliate redeem 或主 Bot 完整 gallery 菜单入口。`修仙市集` 只能通过 QQCC 专用 handler 与 `qg:` callback 实现轻量浏览/应用。
 
 ## 3. 代码入口
 - `qqcc_bot/main.py`：独立启动入口，读取 `QQCC_BOT_TOKEN` 或 `QQCC_BOT_TOKEN_TEST`，设置 `bot_client_type=bot:qqcc`，注册最小 handler 集。
 - `qqcc_bot/keyboards.py`：QQCC 专用主菜单、P 图子菜单、`AI动图` inline 场景菜单。
 - `qqcc_bot/commands.py`：QQCC `/start` 与 `/cancel`，复用用户创建和准入逻辑，返回简化菜单。
-- `qqcc_bot/prompt_handlers.py`：只路由 `menu.photo_edit`、`menu.video_edit`、`menu.main_menu`、`menu.back_main`。
-- `qqcc_bot/callback_handler.py`：只导入任务取消、结果评分、随机换脸再来一张等必要 callback 注册模块。
+- `qqcc_bot/prompt_handlers.py`：只路由 `menu.photo_edit`、`menu.video_edit`、`qqcc.menu.market`、`menu.main_menu`、`menu.back_main` 与 `menu.open_main_bot`。
+- `qqcc_bot/gallery_market.py`：QQCC 专用修仙市集，负责 `qg:` callback、Gallery file_id 缓存发送、点赞/点踩和轻量一键应用 session。
+- `qqcc_bot/callback_handler.py`：只导入任务取消、结果评分、随机换脸再来一张、公开分享互动和 QQCC 市集等必要 callback 注册模块。
 - `src/handlers/fsm/quick_image_fsm.py`：在 `bot_client_type=bot:qqcc` 时把主菜单 `快速脱衣` 转为两种处理方式选择；其它 Bot 仍保持原快速脱衣直达流程。
 - `src/services/qqcc_config_service.py`：QQCC 配置默认值、normalize、runtime checkpoint 读写与 QQCC prompt override 解析。
 - `dashboard/backend/routers/qqcc.py`：管理后台 QQCC 配置 API。
@@ -170,9 +178,12 @@ pytest tests/handlers/test_fsm_state_priority.py -q
 
 QQCC 快速脱衣入口至少覆盖：
 - `/start` 主菜单展示 `快速脱衣`，`懒人P图` 子菜单不再展示 `快速脱衣`。
-- `/start` 只返回简化主菜单，不额外发送跳转消息；主菜单包含非生成入口 `前往主bot`。
+- `/start` 只返回简化主菜单，不额外发送跳转消息；主菜单包含非生成入口 `修仙市集` 与 `前往主bot`。
 - 配置 `QQCC_MAIN_BOT_URL` 或 `QQCC_MAIN_BOT_USERNAME` 时，点击 `前往主bot` 回复 inline URL 跳转按钮；未配置时回复入口未配置提示。
 - 点击主菜单 `AI动图` 后，Bot 回复下方展示五个 inline 场景按钮，第一行 3 个、第二行 2 个；点击任一场景进入 quick video 发送图片步骤。
+- 点击主菜单 `修仙市集` 后展示 QQCC 专用类型菜单；浏览投稿时支持点赞、点踩、上一条/下一条、分类返回、一键应用或 Web 应用，不展示留言入口。
+- `修仙市集` 二次查看已缓存作品时优先用 Telegram file_id，file_id 失效后从当前 R2/S3 URL resolver 刷新；不能回退旧 legacy MinIO bytes 主路径。
+- Bot 原生应用必须传 `source_post_id` 且 `allow_contribute=False`，复杂模板必须跳 Web 深链，点击应用不直接增加 `applied_count`。
 - 点击主菜单 `快速脱衣` 先展示 `头像/半身补全` 与 `全身保脸重绘`。
 - `头像/半身补全` 进入 `undress`，`全身保脸重绘` 进入 `i2i_draw`。
 - 两个分支都保持“选择按钮后只发送 1 张图片即可提交”的懒人交互。

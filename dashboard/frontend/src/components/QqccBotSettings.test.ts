@@ -90,6 +90,7 @@ describe('QqccBotSettings', () => {
           quick_undress: true,
           photo_edit: true,
           video_edit: false,
+          market: true,
           main_bot_link: true,
         },
         prompts: {
@@ -113,6 +114,7 @@ describe('QqccBotSettings', () => {
     expect(apiMocks.fetchQqccBotConfig).toHaveBeenCalledOnce()
     expect(wrapper.text()).toContain('懒人Bot配置')
     expect(wrapper.text()).toContain('状态：开启')
+    expect(wrapper.text()).toContain('修仙市集')
     expect(wrapper.text()).toContain('AI动图场景')
   })
 
@@ -130,6 +132,7 @@ describe('QqccBotSettings', () => {
     expect(payload.global_enabled).toBe(false)
     expect(payload.prompts.undress).toBe('new prompt')
     expect(payload.main_buttons.video_edit).toBe(false)
+    expect(payload.main_buttons.market).toBe(true)
     expect(antMocks.success).toHaveBeenCalledWith('懒人Bot配置已保存')
   })
 })

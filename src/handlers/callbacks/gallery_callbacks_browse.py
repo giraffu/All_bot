@@ -16,7 +16,6 @@ from src.services.gallery_browse_service import (
     resolve_gallery_media_source,
     send_gallery_media_message,
 )
-from src.services.storage import storage
 from src.utils import (
     robust_edit_reply_markup,
     robust_delete_message,
@@ -147,7 +146,6 @@ async def display_gallery_sort_page(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     *,
-    storage_service=storage,
     session_factory=AsyncSessionLocal,
 ):
     query = update.callback_query
@@ -196,10 +194,9 @@ async def display_gallery_sort_page(
     )
 
     await safe_answer_query(query, text="正在加载中...")
-    media_source = resolve_gallery_media_source(
+    media_source = await resolve_gallery_media_source(
         post=post,
         history=history,
-        storage_service=storage_service,
     )
     sent_msg = await send_gallery_media_message(
         context=context,
@@ -208,7 +205,6 @@ async def display_gallery_sort_page(
         caption=caption,
         reply_markup=reply_markup,
         media_source=media_source,
-        storage_service=storage_service,
         session_factory=session_factory,
     )
     if sent_msg:

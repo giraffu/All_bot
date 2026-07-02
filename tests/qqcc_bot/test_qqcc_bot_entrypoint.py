@@ -38,6 +38,7 @@ def test_qqcc_main_menu_only_contains_lazy_generation_entries():
     assert keyboard == [
         ["💃 快速脱衣"],
         ["🖼️ 懒人P图", "AI动图"],
+        ["修仙市集"],
         ["前往主bot"],
     ]
     assert get_text("menu.video_edit", "zh") == "🎬 视频创作"
@@ -85,6 +86,7 @@ def test_qqcc_config_hides_closed_main_and_submenu_buttons():
                 "quick_undress": False,
                 "photo_edit": True,
                 "video_edit": False,
+                "market": False,
                 "main_bot_link": True,
             },
             "photo_buttons": {
@@ -184,6 +186,7 @@ def test_qqcc_prompt_routes_are_limited_to_lazy_menus():
         "menu.main_menu",
         "menu.back_main",
         "menu.open_main_bot",
+        "qqcc.menu.market",
     }
 
 
@@ -196,6 +199,7 @@ def test_qqcc_lazy_main_buttons_are_routable_without_main_bot_prompt_routes(monk
     assert prompt_router.GLOBAL_REVERSE_MAP["🖼️ 懒人P图"] == "menu.photo_edit"
     assert prompt_router.GLOBAL_REVERSE_MAP["AI动图"] == "menu.video_edit"
     assert prompt_router.GLOBAL_REVERSE_MAP["🎬 视频创作"] == "menu.video_edit"
+    assert prompt_router.GLOBAL_REVERSE_MAP["修仙市集"] == "qqcc.menu.market"
     assert prompt_router.GLOBAL_REVERSE_MAP["前往主bot"] == "menu.open_main_bot"
 
 
@@ -221,7 +225,7 @@ def test_register_handlers_only_registers_qqcc_surface(monkeypatch):
     assert "quick-video" in handlers
     assert sum(isinstance(handler, CommandHandler) for handler in handlers) == 2
     assert sum(isinstance(handler, CallbackQueryHandler) for handler in handlers) == 1
-    assert sum(isinstance(handler, MessageHandler) for handler in handlers) == 1
+    assert sum(isinstance(handler, MessageHandler) for handler in handlers) == 2
     assert len(error_handlers) == 1
 
 
@@ -271,8 +275,38 @@ async def test_qqcc_start_returns_simplified_menu(monkeypatch):
     assert _keyboard_texts(kwargs["reply_markup"]) == [
         ["💃 快速脱衣"],
         ["🖼️ 懒人P图", "AI动图"],
+        ["修仙市集"],
         ["前往主bot"],
     ]
+
+
+@pytest.mark.asyncio
+async def test_qqcc_cancel_clears_gallery_apply_session(monkeypatch):
+    monkeypatch.setattr(
+        "qqcc_bot.commands.load_runtime_qqcc_config",
+        AsyncMock(return_value=normalize_qqcc_config(None)),
+    )
+    reply_text = AsyncMock()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=123),
+        message=SimpleNamespace(reply_text=reply_text),
+    )
+    context = SimpleNamespace(
+        lang="zh",
+        t=lambda key: f"translated:{key}",
+        user_data={
+            "in_conversation": True,
+            "qqcc_gallery_apply": {"source_post_id": 42},
+            "quick_image_data": {"tmp": "/tmp/a.png"},
+        },
+    )
+
+    await qqcc_commands.cancel(update, context)
+
+    assert "qqcc_gallery_apply" not in context.user_data
+    assert "in_conversation" not in context.user_data
+    assert "quick_image_data" not in context.user_data
+    reply_text.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -323,6 +357,7 @@ async def test_qqcc_start_keeps_main_bot_jump_in_menu_when_configured(monkeypatc
     assert _keyboard_texts(kwargs["reply_markup"]) == [
         ["💃 快速脱衣"],
         ["🖼️ 懒人P图", "AI动图"],
+        ["修仙市集"],
         ["前往主bot"],
     ]
 

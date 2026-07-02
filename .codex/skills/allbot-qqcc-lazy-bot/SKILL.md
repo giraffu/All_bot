@@ -18,7 +18,7 @@ description: "处理 QQCC 懒人 Telegram Bot 独立服务、简化菜单、quic
 - 领域文档：`docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md`
 
 ## 2. 功能范围
-主菜单业务入口只能有 `快速脱衣`、`懒人P图` 和 `AI动图`。`AI动图` 是 QQCC 对 `menu.video_edit` 的专用显示文案，不要直接改共享 `menu.video_edit` 以免影响主 Bot。`快速脱衣` 必须位于主菜单，不再放入 `懒人P图` 子菜单。主菜单可额外有一个非生成入口 `前往主bot`；Telegram reply keyboard 不能直接承载 URL，因此点击该菜单项后由 QQCC Bot 回复主 Bot 的 inline URL 跳转按钮。
+主菜单业务入口只能有 `快速脱衣`、`懒人P图` 和 `AI动图`。`AI动图` 是 QQCC 对 `menu.video_edit` 的专用显示文案，不要直接改共享 `menu.video_edit` 以免影响主 Bot。`快速脱衣` 必须位于主菜单，不再放入 `懒人P图` 子菜单。主菜单可额外有两个非生成入口：`修仙市集` 与 `前往主bot`；Telegram reply keyboard 不能直接承载 URL，因此点击 `前往主bot` 后由 QQCC Bot 回复主 Bot 的 inline URL 跳转按钮。
 
 允许的 P 图入口：
 - 快速自慰
@@ -37,7 +37,11 @@ description: "处理 QQCC 懒人 Telegram Bot 独立服务、简化菜单、quic
 
 QQCC `AI动图` 的二级场景菜单必须挂在 Bot 回复消息下方，用 inline button 展示，每行最多 3 个；场景按钮 callback 前缀为 `qvid_mode:`，由 `get_quick_video_fsm_handler()` 直接承接并进入发送图片步骤。
 
-注册的 FSM 只能是 `get_quick_image_fsm_handler()` 与 `get_quick_video_fsm_handler()`。不得注册 `faceswap_fsm`、高级图像、高级视频、充值、affiliate redeem 或 gallery 浏览入口。
+`修仙市集` 是 QQCC 专用轻量 Gallery 入口，代码在 `qqcc_bot/gallery_market.py`，callback 前缀为 `qg:`。它只允许浏览 Web 当前可见分组投稿、点赞/点踩、一键应用或跳 Web，不提供留言，不复用旧主 Bot gallery 分类常量，不注册主 Bot 完整 gallery handler。媒体发送必须优先复用 `GalleryPost.telegram_file_id`，缺失/失效时走当前 Gallery R2/S3 URL resolver 下载当前作品并刷新 file_id；测试 Bot 不持久化新 file_id。
+
+QQCC 市集 Bot 原生应用只承接安全的单图轻量模板，提交任务必须传 `source_post_id`、`allow_contribute=False` 并保持 `client_type=bot:qqcc`；复杂多图/多视频、SCAIL-2、LTX 首尾帧等模板跳 Web 深链 `/gallery?apply_source=gallery&apply_id=<post_id>`。点击应用不得预增 `applied_count`。
+
+注册的 FSM 只能是 `get_quick_image_fsm_handler()` 与 `get_quick_video_fsm_handler()`。不得注册 `faceswap_fsm`、高级图像、高级视频、充值、affiliate redeem 或主 Bot 完整 gallery 浏览入口。
 
 ## 2.1 管理后台配置
 管理后台有 `懒人Bot配置` 页，配置存入 `runtime_checkpoints`，固定 key 为 `qqcc_lazy_bot_config:v1`，不新增数据库表。API：
@@ -46,7 +50,7 @@ QQCC `AI动图` 的二级场景菜单必须挂在 Bot 回复消息下方，用 i
 
 配置结构固定包含：
 - `global_enabled`
-- `main_buttons`: `quick_undress`, `photo_edit`, `video_edit`, `main_bot_link`
+- `main_buttons`: `quick_undress`, `photo_edit`, `video_edit`, `market`, `main_bot_link`
 - `photo_buttons`: `masturbation`, `random_faceswap`
 - `undress_methods`: `legacy`, `i2i_draw`
 - `video_buttons`: `missionary`, `doggy`, `blowjob`, `undress_tongue`, `closeup_blowjob`
@@ -82,10 +86,13 @@ token 只允许放在 ignored env 文件：
 ## 5. 验证要求
 至少覆盖：
 - QQCC `/start` 只返回简化主菜单，且主菜单包含 `快速脱衣`、`懒人P图`、`AI动图`。
-- QQCC `/start` 只返回简化主菜单，不额外发送主 Bot 跳转消息；配置主 Bot 跳转 env 时，点击菜单里的 `前往主bot` 后回复 inline URL 跳转按钮。
+- QQCC `/start` 只返回简化主菜单，不额外发送主 Bot 跳转消息；主菜单包含非生成入口 `修仙市集` 与 `前往主bot`。配置主 Bot 跳转 env 时，点击菜单里的 `前往主bot` 后回复 inline URL 跳转按钮。
 - P 图子菜单包含自慰、随机换脸，不包含快速脱衣和快速换脸。
 - QQCC 点击快速脱衣后出现 `头像/半身补全` 与 `全身保脸重绘` 两个懒人选择，选择后只需发送图片。
 - `AI动图` 点击后回复 inline 场景按钮，三个一行，包含五个懒人动图场景；点击场景 callback 不转圈并进入 quick video 发送图片步骤。
+- `修仙市集` 点击后展示 QQCC 专用类型菜单；投稿浏览支持点赞、点踩、分页、分类返回、一键应用或 Web 应用，且不展示留言入口。
+- `修仙市集` 已缓存媒体优先用 Telegram file_id，file_id 失效后通过当前 R2/S3 URL resolver 刷新，不走旧 legacy MinIO bytes 主路径。
+- `修仙市集` Bot 原生应用必须传 `source_post_id` 且 `allow_contribute=False`，复杂模板必须跳 Web，点击应用不直接增加 `applied_count`。
 - QQCC main 只注册 quick image/video FSM。
 - `bot:qqcc` 能进入 task submission、active registry 和 recovery filter。
 - 默认配置下现有菜单不变；关闭配置后按钮隐藏，旧按钮/旧 callback 回复 `功能暂未开放` 且不提交任务。

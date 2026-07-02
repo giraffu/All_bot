@@ -17,6 +17,7 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 - **用户主页与关注关系**：Web 用户公开主页 `GET /api/users/{user_id}/public-profile` 返回公开投稿分页 `posts` 并兼容 `recent_posts`；公开主页详情必须复用 Gallery 提示词解锁能力。`/api/users/me/follows` 与 `/api/users/me/followers` 分别返回我关注的人和关注我的人，粉丝列表的 `is_following` 表示我是否已回关。
 - **提示词付费解锁**：Gallery 列表/详情未解锁时只能返回服务端遮罩 prompt；`POST /api/gallery/posts/{post_id}/prompt-unlock` 固定消耗 1 灵石并给作者入账，`gallery_prompt_unlocks.user_id + post_id` 是幂等锚点。
 - **Web apply-context**：`/api/gallery/posts/{post_id}/apply-context` 已是模板应用主入口，返回 `prompt`、`negative_prompt`、`lora_name`、`input_file/input_file_url`、`input_files/input_file_urls`、`requested_duration`、`billing_resolution` 等上下文；自由P图 v2 投稿在独立 `free_edit_v2_group` 中展示，一键应用复用并锁定 prompt、重新上传 1/2 张参考图、不展示 LoRA，并按图数提交 single/multi v2 任务；`i2i_draw` 局部重绘当前已在 Web 一键应用关闭，列表/详情返回 `template_apply_disabled_reason="i2i_draw_disabled"`，apply-context 必须 400；旧 `custom_video` / `video_lora` 投稿会把旧分辨率映射为 Wan22 v2 档位，并恢复 canonical `5s/8s/10s` 时长；`wan22_video_v2` 单段投稿可回填正向/负面提示词、分辨率档位与 canonical 时长；LTX `ltx_video`/`ltx_video_flf2v` 从 `_ltx_context` 回填 LoRA、宽高、时长并保留起始帧/终止帧输入顺序；SCAIL-2 `scail2_action_transfer` / `scail2_video_replacement` / `scail2_face_swap_v2` 投稿可作为视频模板，apply-context 只复用原 motion/driving video，复用者必须上传自己的 reference image。
+- **QQCC 修仙市集**：QQCC Bot 可提供轻量 Gallery 浏览入口，分类对齐 Web 可见分组且隐藏 `txt2img`；支持点赞/点踩、Bot 原生单图应用或 Web 深链 `/gallery?apply_source=gallery&apply_id=<post_id>`。Bot 原生应用必须带 `source_post_id`、`allow_contribute=False` 和 `client_type=bot:qqcc`，点击应用不得预增 `applied_count`。
 - **Feed 查询边界**：Gallery feed SQL 查询拼装位于 `src/services/gallery_feed_queries.py`；旧 `src/core/gallery_feed_queries.py` 兼容 re-export 已删除，新增查询条件不要回写到 core。LTX 高级图生视频只展示一个 `ltx_video` 入口，投稿/筛选兼容 `ltx_video_flf2v` 历史/执行别名。
 - **媒体 URL 策略**：
   - R2 key 候选顺序为标准 `history/{task_id}/original.ext`、原始 object key、raw `output_file`（兼容 `bot-data/...` 前缀镜像）、旧 basename。
@@ -25,6 +26,7 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
   - web/bot 新成功历史都应预热标准 R2 原文件和缩略图，只有 web 来源执行用户历史 R2 cache prune。
   - 云正式 worker 可通过本地上传 sidecar 把 `/app/spool` 结果上传 R2，但仍必须等待 R2/S3 put 成功后才调用 Central `/complete`。
   - Gallery 列表热路径不得对每条媒体做公网 `HEAD`；R2 S3 命中时优先返回 R2 S3 短签 URL，避免 `R2_PUBLIC_DOMAIN` 自定义域名 miss 导致前端空白，预签不可用时才退回公网 URL。
+  - Telegram Gallery 浏览优先复用 `GalleryPost.telegram_file_id` 秒发缓存；缓存缺失或失效时只下载当前作品的 Gallery R2/S3 URL 并刷新 file_id，测试 Bot 不写回。不得恢复旧 `storage.get_file_bytes(...)` / legacy MinIO bytes 主路径。
   - 列表页缩略图 R2 miss 后应快速返回空值，不做深度探测。
   - 历史详情、Wan22 预览等读路径可短超时探测 R2 公网 URL，公网 miss 但 R2 S3 `HEAD` 命中时可返回 R2 S3 短签 URL。
   - Web owner `/result` 延迟敏感路径仍必须用 R2 公网 HEAD 快探测，R2 warmup 未就绪时图片可短签 storage fallback，视频继续 `pending_result` 等 R2。

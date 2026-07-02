@@ -72,7 +72,36 @@
   "qqcc": {
     "feature_disabled": "功能暂未开放",
     "menu": {
-      "video_edit": "AI动图"
+      "video_edit": "AI动图",
+      "market": "修仙市集"
+    },
+    "market": {
+      "title": "修仙市集",
+      "hint": "请选择想看的投稿类型。",
+      "loading": "正在加载市集内容...",
+      "empty": "当前分类暂时没有投稿。",
+      "load_failed": "市集加载失败，请稍后再试。",
+      "media_missing": "抱歉，该作品文件暂时不可用。",
+      "apply_loaded": "已载入模板。请发送 1 张参考图片，我会用这份投稿的参数生成同款。",
+      "apply_need_market": "请先从修仙市集选择一键应用。",
+      "apply_expired": "这次模板应用已过期，请重新从修仙市集选择一键应用。",
+      "apply_disabled": "这个投稿暂时不能一键应用。",
+      "apply_web": "这个模板需要在 Web 工作台中应用。",
+      "apply_submit_failed": "提交失败，请稍后再试。",
+      "invalid_image": "请发送一张图片作为参考。",
+      "tabs": {
+        "all": "全部",
+        "i2i_pro": "幻想换脸",
+        "i2i_draw": "局部重绘",
+        "edit_group": "自由P图",
+        "free_edit_v2_group": "自由P图 v2",
+        "img2video_group": "图生视频",
+        "ltx_video": "高级图生视频",
+        "wan22_video_v2": "图生视频 v2",
+        "scail2_action_transfer": "动作迁移",
+        "scail2_video_replacement": "视频换人",
+        "scail2_face_swap_v2": "视频换脸"
+      }
     }
   },
   "profile": {

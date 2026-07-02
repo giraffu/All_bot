@@ -48,6 +48,7 @@ def build_global_menu_filter():
         "menu.photo_edit",  # 🖼️ 懒人P图 / AI Edit
         "menu.video_edit",  # 🎬 视频创作 / AI Video
         "menu.open_main_bot",  # 前往主bot / Open Main Bot
+        "qqcc.menu.market",  # 修仙市集 / Cultivation Market
         "menu.face_video",  # 🎬 视频换脸
         "menu.video_to_video",  # 🎬 视频生视频
         "menu.video_to_video_replacement",  # 🪄 视频换人
@@ -93,6 +94,11 @@ def build_global_menu_filter():
         )
         if qqcc_video_text and isinstance(qqcc_video_text, str):
             GLOBAL_REVERSE_MAP[qqcc_video_text] = "menu.video_edit"
+        qqcc_market_text = _get_nested_translation_value(
+            translations, "qqcc.menu.market"
+        )
+        if qqcc_market_text and isinstance(qqcc_market_text, str):
+            GLOBAL_REVERSE_MAP[qqcc_market_text] = "qqcc.menu.market"
 
     # 增加硬编码向后兼容映射：支持老用户点击旧键盘的按钮
     hardcoded_backward_map = {

@@ -10,6 +10,7 @@ from qqcc_bot.keyboards import (
     get_qqcc_video_edit_inline_keyboard,
 )
 from qqcc_bot.commands import resolve_main_bot_url
+from qqcc_bot.gallery_market import open_qqcc_gallery_market_menu
 from src.handlers.message_handler_common import (
     build_private_prompt_fallback,
     dispatch_prompt_route,
@@ -70,6 +71,13 @@ def _can_open_video_menu(config: dict) -> bool:
     )
 
 
+def _can_open_market(config: dict) -> bool:
+    return (
+        is_qqcc_global_enabled(config)
+        and is_qqcc_main_button_enabled(config, "market")
+    )
+
+
 async def _reply_feature_disabled(update, context, config: dict):
     return await _reply_payload(
         update,
@@ -104,6 +112,7 @@ async def handle_video_edit_menu(update, context, text: str = None):
 
 
 async def handle_back_to_main_menu(update, context, text: str = None):
+    context.user_data.pop("qqcc_gallery_apply", None)
     config = await _load_menu_config()
     return await _reply_payload(
         update,
@@ -111,6 +120,13 @@ async def handle_back_to_main_menu(update, context, text: str = None):
         context.t("system.back_to_main"),
         get_qqcc_main_menu_keyboard(context.lang, config),
     )
+
+
+async def handle_market_menu(update, context, text: str = None):
+    config = await _load_menu_config()
+    if not _can_open_market(config):
+        return await _reply_feature_disabled(update, context, config)
+    return await open_qqcc_gallery_market_menu(update, context)
 
 
 async def handle_open_main_bot(update, context, text: str = None):
@@ -139,6 +155,7 @@ QQCC_PROMPT_ROUTES = {
     "menu.main_menu": handle_back_to_main_menu,
     "menu.back_main": handle_back_to_main_menu,
     "menu.open_main_bot": handle_open_main_bot,
+    "qqcc.menu.market": handle_market_menu,
 }
 
 

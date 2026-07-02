@@ -9,7 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 QQCC_LAZY_BOT_CONFIG_KEY = "qqcc_lazy_bot_config:v1"
 
-MAIN_BUTTON_KEYS = ("quick_undress", "photo_edit", "video_edit", "main_bot_link")
+MAIN_BUTTON_KEYS = (
+    "quick_undress",
+    "photo_edit",
+    "video_edit",
+    "market",
+    "main_bot_link",
+)
 PHOTO_BUTTON_KEYS = ("masturbation", "random_faceswap")
 UNDRESS_METHOD_KEYS = ("legacy", "i2i_draw")
 VIDEO_BUTTON_KEYS = (
@@ -39,6 +45,7 @@ DEFAULT_QQCC_LAZY_BOT_CONFIG: dict[str, Any] = {
         "quick_undress": True,
         "photo_edit": True,
         "video_edit": True,
+        "market": True,
         "main_bot_link": True,
     },
     "photo_buttons": {

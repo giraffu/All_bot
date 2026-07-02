@@ -47,6 +47,10 @@ def _can_show_video_edit(config: dict) -> bool:
     )
 
 
+def _can_show_market(config: dict) -> bool:
+    return is_qqcc_main_button_enabled(config, "market")
+
+
 def get_qqcc_main_menu_keyboard(
     lang: str,
     config: dict | None = None,
@@ -63,6 +67,9 @@ def get_qqcc_main_menu_keyboard(
         feature_row.append(get_text("qqcc.menu.video_edit", lang))
     if feature_row:
         keyboard.append(feature_row)
+
+    if is_qqcc_global_enabled(config) and _can_show_market(config):
+        keyboard.append([get_text("qqcc.menu.market", lang)])
 
     if is_qqcc_main_bot_link_enabled(config):
         keyboard.append([get_text("menu.open_main_bot", lang)])

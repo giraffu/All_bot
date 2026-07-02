@@ -72,7 +72,36 @@
   "qqcc": {
     "feature_disabled": "This feature is not available yet.",
     "menu": {
-      "video_edit": "AI GIF"
+      "video_edit": "AI GIF",
+      "market": "Cultivation Market"
+    },
+    "market": {
+      "title": "Cultivation Market",
+      "hint": "Choose a submission type to browse.",
+      "loading": "Loading market submissions...",
+      "empty": "No submissions in this category yet.",
+      "load_failed": "Failed to load the market. Please try again later.",
+      "media_missing": "This media file is temporarily unavailable.",
+      "apply_loaded": "Template loaded. Send 1 reference image and I will generate with this submission's settings.",
+      "apply_need_market": "Choose one-click apply from the Cultivation Market first.",
+      "apply_expired": "This template apply session has expired. Choose one-click apply from the Cultivation Market again.",
+      "apply_disabled": "This submission cannot be applied right now.",
+      "apply_web": "This template needs the Web workbench.",
+      "apply_submit_failed": "Submission failed. Please try again later.",
+      "invalid_image": "Please send one image as the reference.",
+      "tabs": {
+        "all": "All",
+        "i2i_pro": "Fantasy Face Swap",
+        "i2i_draw": "Inpaint",
+        "edit_group": "Free Edit",
+        "free_edit_v2_group": "Free Edit v2",
+        "img2video_group": "Image to Video",
+        "ltx_video": "Advanced I2V",
+        "wan22_video_v2": "Image to Video v2",
+        "scail2_action_transfer": "Action Transfer",
+        "scail2_video_replacement": "Video Replacement",
+        "scail2_face_swap_v2": "Video Face Swap"
+      }
     }
   },
   "profile": {

@@ -20,6 +20,7 @@ from telegram.request import HTTPXRequest
 
 from qqcc_bot.callback_handler import handle_callback_query
 from qqcc_bot.commands import cancel, setup_commands, start
+from qqcc_bot.gallery_market import handle_qqcc_gallery_apply_media
 from qqcc_bot.prompt_handlers import handle_prompt
 from src.billing_core_provider_setup import ensure_billing_core_providers_registered
 from src.database.core import init_db
@@ -168,6 +169,9 @@ def register_handlers(app):
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("cancel", cancel))
     app.add_handler(CallbackQueryHandler(handle_callback_query))
+    app.add_handler(
+        MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_qqcc_gallery_apply_media)
+    )
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_prompt))
     app.add_error_handler(global_error_handler)
 
