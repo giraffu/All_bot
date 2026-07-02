@@ -558,6 +558,7 @@ export const DEFAULT_LAB_MODE_ID: UnifiedLabModeId = 'edit'
 
 export const UNIFIED_LAB_MODES = LAB_MODE_CONFIGS.filter(mode => (
   mode.unified
+  && mode.id !== 'face_video'
   && (mode.id !== FREE_EDIT_V2_MODE_ID || FREE_EDIT_V2_ENABLED)
   && (mode.id !== 'i2i_draw' || WEB_I2I_DRAW_ENABLED)
 )) as LabModeConfig[]
@@ -583,7 +584,7 @@ export const resolveLabModeIdFromTaskType = (taskType: string | null | undefined
     case 'face_swap':
       return 'face_swap'
     case 'face_video':
-      return 'face_video'
+      return 'scail2_face_swap_v2'
     case 'ltx_video':
       return 'ltx_video'
     case 'scail2_action_transfer_long':

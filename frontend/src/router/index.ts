@@ -56,8 +56,13 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'video-swap',
         name: 'VideoSwap',
-        component: () => import('@/views/VideoSwap.vue'),
-        meta: { generation: { taskType: 'face_video', title: '视频换脸', cost: 18 } }
+        redirect: to => ({
+          name: 'CustomFeatures',
+          query: {
+            ...to.query,
+            type: 'scail2_face_swap_v2'
+          }
+        })
       },
       {
         path: 'single-image',

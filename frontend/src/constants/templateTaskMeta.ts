@@ -6,6 +6,9 @@ import type {
 
 const TEMPLATE_TASK_TYPE_ALIASES: Record<string, TemplateApplyTaskType> = {
   faceswap: 'face_swap',
+  face_video: 'scail2_face_swap_v2',
+  face_video_step1: 'scail2_face_swap_v2',
+  face_video_step2: 'scail2_face_swap_v2',
   ltx_video_flf2v: 'ltx_video',
   scail2_action_transfer_long: 'scail2_action_transfer'
 }
