@@ -22,7 +22,6 @@ import {
   updateRunPodAutoscalerSettings,
 } from '../api/api'
 import { useQueueStatsMonitor } from '../composables/useQueueStatsMonitor'
-import LanAioFleetManager from './LanAioFleetManager.vue'
 import RunPodCapacityManager from './RunPodCapacityManager.vue'
 import RunPodWorkerActions from './RunPodWorkerActions.vue'
 import WorkerHistoryModal from './WorkerHistoryModal.vue'
@@ -721,7 +720,6 @@ onUnmounted(() => {
       
       <div class="dashboard-monitor-actions ml-auto flex items-center gap-3">
         <run-pod-capacity-manager @changed="updateQueue" />
-        <lan-aio-fleet-manager @changed="updateQueue" />
         <a-button type="primary" danger ghost @click="handleCleanZombies" :loading="cleaning">
           <template #icon><clear-outlined /></template>
           一键清理卡死任务

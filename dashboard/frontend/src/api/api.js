@@ -161,16 +161,6 @@ export const fetchRunPodProfiles = async () => get('/api/runpod/profiles')
 
 export const fetchRunPodOperations = async () => get('/api/runpod/operations')
 
-export const fetchLanAioProfiles = async () => get('/api/runpod/lan-aio/profiles')
-
-export const fetchLanAioSlots = async (includeDisabled = true) =>
-  get(withQuery('/api/runpod/lan-aio/slots', params => {
-    appendQueryParam(params, 'include_disabled', includeDisabled)
-  }))
-
-export const startLanAioSlotAction = async (slotId, action, payload = {}) =>
-  post(`/api/runpod/lan-aio/slots/${slotId}/${action}`, payload)
-
 export const fetchRunPodAutoscaler = async () => get('/api/runpod/autoscaler')
 
 export const controlRunPodAutoscaler = async (payload) =>
