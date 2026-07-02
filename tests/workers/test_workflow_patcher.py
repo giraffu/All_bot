@@ -29,6 +29,8 @@ def test_workflow_patcher_validates_real_worker_workflows_on_init():
     ("task_type", "replacement_mode", "duration", "frame_count"),
     [
         ("scail2_action_transfer", False, 8, 129),
+        ("scail2_action_transfer_long", False, 10, 161),
+        ("scail2_action_transfer_long", False, 15, 241),
         ("scail2_action_transfer_long", False, 20, 321),
         ("scail2_video_replacement", True, 8, 129),
         ("scail2_face_swap_v2", True, 8, 129),
@@ -74,6 +76,8 @@ def test_workflow_patcher_overrides_scail2_runtime_parameters(
     assert patched["107"]["inputs"]["replacement_mode"] is replacement_mode
     assert patched["49"]["inputs"]["frame_rate"] == 16
     assert patched["49"]["inputs"]["filename_prefix"].startswith(f"{task_type}_")
+    if task_type == "scail2_action_transfer_long":
+        assert patched["124"]["inputs"]["freenoise"] is False
 
 
 def test_workflow_patcher_uses_scail2_default_prompt_when_empty():

@@ -236,7 +236,10 @@ SCAIL-2 workflow 的硬编码节点必须与 `workflow_task_patchers.py` 和测�
 `skip_first_frames=0`。`scail2_video_replacement` 与 `scail2_face_swap_v2`
 必须强制 replacement mode 为 true，`scail2_action_transfer` 与
 `scail2_action_transfer_long` 必须强制 false。长时间 workflow 中的
-`WanContextWindowsManual` 窗口参数保持 workflow 默认值，不由业务请求动态改。
+`WanContextWindowsManual` 保持 `context_length=81`、`context_overlap=29`、
+`context_schedule=standard_static`、`fuse_method=pyramid`，但 `freenoise`
+必须固定为 false；动作迁移需要严格跟随驱动视频后段动作，不能让 FreeNoise
+把前段噪声片段重排复制到后续窗口。
 audio 候选 workflow 的 `VHS_VideoCombine 49.inputs.audio` 应接 `VHS_LoadVideo 113`
 的 audio 输出，且 `trim_to_audio=false`。重导 workflow 后要同时更新：
 `SCAIL-2_*.api.json`、`mappings.json`、`workflow_task_patchers.py`、

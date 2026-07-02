@@ -58,6 +58,7 @@ SCAIL2_NEGATIVE_PROMPT_NODE_ID = "7"
 SCAIL2_TO_VIDEO_NODE_ID = "101"
 SCAIL2_COLORED_MASK_NODE_ID = "107"
 SCAIL2_VIDEO_COMBINE_NODE_ID = "49"
+SCAIL2_CONTEXT_WINDOWS_NODE_ID = "124"
 
 
 def _normalize_wan22_video_v2_precision_preset(value: Any) -> str:
@@ -668,6 +669,15 @@ def _patch_scail2_workflow(
         input_name="save_output",
         value=True,
     )
+
+    # FreeNoise can reuse earlier noise blocks and make long motion transfer loop.
+    if output_task_prefix == "scail2_action_transfer_long":
+        set_node_input(
+            workflow,
+            node_id=SCAIL2_CONTEXT_WINDOWS_NODE_ID,
+            input_name="freenoise",
+            value=False,
+        )
 
 
 def patch_scail2_action_transfer_workflow(
