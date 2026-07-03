@@ -24,9 +24,14 @@
 | 字段 | 类型 | 当前语义 |
 | :--- | :--- | :--- |
 | `user_id` | `Integer` | 关联 `users.id`。 |
+| `username` | `String` | 写入流水时的用户名快照。 |
 | `credit_change` | `Integer` | 本次灵石增减值；正数表示加石，负数表示扣石。 |
+| `current_balance` | `Integer` | 本次变动后的余额快照。 |
 | `operation_type` | `String` | 业务来源，如生成扣费、充值、返佣兑换灵石等。 |
-| `description` | `String` | 审计描述。 |
+| `created_at` | `DateTime` | 流水创建时间；用户侧账本按 `created_at desc, id desc` 展示。 |
+| `extra_info` | `Text(JSON)` | 审计扩展信息；Web 用户侧账本只暴露白名单展示字段，不直接返回原始 JSON。 |
+
+当前 Web 个人中心只读接口为 `GET /api/users/me/credits/ledger`，只允许当前登录用户查询自己的非 0 收支流水。
 
 ### 1.3 Orders（订单）
 **职责**：承载本地业务单、支付状态与履约相关字段。

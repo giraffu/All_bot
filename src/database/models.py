@@ -192,6 +192,9 @@ class CheckinHistory(Base):
 
 class UserLog(Base):
     __tablename__ = "user_logs"
+    __table_args__ = (
+        Index("ix_user_logs_user_created_at_id", "user_id", "created_at", "id"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)

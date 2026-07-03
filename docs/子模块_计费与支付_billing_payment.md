@@ -131,6 +131,10 @@ sequenceDiagram
 - 密码登录：`POST /api/auth/login`
 - 绑定/修改密码：`POST /api/auth/bind-password`
 - Affiliate 兑换灵石：位于 `users` 路由下的兑换接口，调用 `redeem_affiliate_balance_to_credits()` 完成。
+- Web 个人中心灵石账本：`GET /api/users/me/credits/ledger?page=&page_size=`
+  - 只允许当前登录用户查询自己的 `user_logs` 非 0 灵石变动。
+  - 返回 `operation_type`、收入/支出方向、`credit_change`、`current_balance`、时间与白名单展示上下文。
+  - 不直接暴露原始 `extra_info`，订单号、tx hash、内部用户 ID、unlock/task 等审计字段不得进入用户侧响应。
 
 ## 6. 必须同步维护的测试面
 - 支付履约幂等
@@ -144,6 +148,7 @@ sequenceDiagram
   - 同 `idempotency_key` 不同参数必须冲突失败。
 - 审计闭环
   - `users.credits` 变化必须与 `user_logs` 对平。
+  - Web 用户侧账本查询必须只读、仅本人可查、排除 0 变动、按 `created_at desc, id desc` 分页，且过滤敏感审计上下文。
   - 标准邀请奖励必须覆盖注册不发邀请人、入群补到 5、首次生成补到 10、老 `referral_reward_initial` 计入目标的 focused tests。
   - `affiliate_transactions` IN/OUT 汇总必须能回推出当前可兑换余额。
 - Provider 启动回归

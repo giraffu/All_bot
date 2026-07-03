@@ -20,12 +20,14 @@ export function useProfileQuickActions(options: {
   openFollowingModal: () => void
   openFollowersModal: () => void
   openSearchModal: () => void
+  openCreditLedgerModal: () => void
   icons: {
     Wallet: unknown
     Award: unknown
     Lock: unknown
     Users: unknown
     Search: unknown
+    ReceiptText: unknown
   }
 }) {
   const quickActions = computed(() => [
@@ -70,6 +72,13 @@ export function useProfileQuickActions(options: {
       className: 'quick-action-btn--cyan',
       icon: options.icons.Search,
       onClick: options.openSearchModal,
+    },
+    {
+      key: 'credit-ledger',
+      label: options.t('credit_ledger.title'),
+      className: 'quick-action-btn--rose',
+      icon: options.icons.ReceiptText,
+      onClick: options.openCreditLedgerModal,
     },
     {
       key: 'password',

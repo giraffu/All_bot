@@ -133,4 +133,15 @@ defineProps<{
   color: #155e75 !important;
   border-color: rgba(6, 182, 212, 0.45) !important;
 }
+
+:deep(.quick-action-btn--rose) {
+  color: #be123c !important;
+  border-color: rgba(244, 63, 94, 0.35) !important;
+}
+
+:deep(.quick-action-btn--rose:hover),
+:deep(.quick-action-btn--rose:focus) {
+  color: #9f1239 !important;
+  border-color: rgba(244, 63, 94, 0.45) !important;
+}
 </style>

@@ -172,6 +172,7 @@ describe('Profile affiliate commission display', () => {
           Clock: true,
           Lock: true,
           Search: true,
+          ReceiptText: true,
           Bookmark: true,
           Star: true,
         },
@@ -212,6 +213,7 @@ describe('Profile affiliate commission display', () => {
           User: true,
           Lock: true,
           Search: true,
+          ReceiptText: true,
           Bookmark: true,
           Star: true,
         },
@@ -247,6 +249,7 @@ describe('Profile affiliate commission display', () => {
           User: true,
           Lock: true,
           Search: true,
+          ReceiptText: true,
           Bookmark: true,
           Star: true,
         },
@@ -283,6 +286,7 @@ describe('Profile affiliate commission display', () => {
           User: true,
           Lock: true,
           Search: true,
+          ReceiptText: true,
           Bookmark: true,
           Star: true,
         },
@@ -299,6 +303,10 @@ describe('Profile affiliate commission display', () => {
     expect(actionIds.indexOf('quick-action-find-friends')).toBe(
       actionIds.indexOf('quick-action-followers') + 1,
     )
+    expect(actionIds.indexOf('quick-action-credit-ledger')).toBe(
+      actionIds.indexOf('quick-action-find-friends') + 1,
+    )
     expect(wrapper.text()).toContain('查找好友')
+    expect(wrapper.text()).toContain('灵石账本')
   })
 })

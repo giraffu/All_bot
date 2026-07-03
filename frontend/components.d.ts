@@ -79,6 +79,7 @@ declare module 'vue' {
     PostCardMetricsBar: typeof import('./src/components/PostCardMetricsBar.vue')['default']
     PostTagPreview: typeof import('./src/components/PostTagPreview.vue')['default']
     ProfileBackButton: typeof import('./src/components/profile/ProfileBackButton.vue')['default']
+    ProfileCreditLedgerModal: typeof import('./src/components/profile/ProfileCreditLedgerModal.vue')['default']
     ProfileFollowingModal: typeof import('./src/components/profile/ProfileFollowingModal.vue')['default']
     ProfileMetricCards: typeof import('./src/components/profile/ProfileMetricCards.vue')['default']
     ProfilePasswordOverlay: typeof import('./src/components/profile/ProfilePasswordOverlay.vue')['default']
