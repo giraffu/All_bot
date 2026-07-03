@@ -1,6 +1,6 @@
 version: 1
 managed_by: allbot-lan-aio-operator
-last_verified_at: "2026-07-03T08:31:51Z"
+last_verified_at: "2026-07-03T17:59:47Z"
 sources:
   slot_catalog: ops/gpu_pool_controller/config/lan_aio_prod_slots.yml
   profile_catalog: ops/gpu_pool_controller/config/task_profiles.yml
@@ -131,16 +131,16 @@ nodes:
       - gpu_index: 0
         hardware: NVIDIA GeForce RTX 4090 48G
         current:
-          profile: img2img_lora
-          slot_id: gpu-252-gpu0-img2img_lora
-          agent_id: lan_aio_prod_gpu252_gpu0_img2img_lora_01
-          container_name: allbot-lan-aio-gpu-252-gpu0-img2img_lora-prod
+          profile: i2i_pro
+          slot_id: gpu-252-gpu0-i2i_pro
+          agent_id: lan_aio_prod_gpu252_gpu0_i2i_pro_01
+          container_name: allbot-lan-aio-gpu-252-gpu0-i2i_pro-prod
           host_port: 8192
           state: running
-          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946
-          model_manifest_key: img2img_lora/2026-06-10/manifest.json
-          workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/img2img_lora/workspace
-          last_takeover_at: "2026-07-03T08:31:51Z"
+          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh
+          model_manifest_key: i2i_pro/2026-06-14-test/manifest.json
+          workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/i2i_pro/workspace
+          last_takeover_at: "2026-07-03T17:17:30Z"
         cached_profiles:
           - profile: pornmaster_flux2_edit
             cache_state: ready
@@ -161,19 +161,27 @@ nodes:
             cache_state: ready
             model_manifest_key: scail2/2026-06-17-test/manifest.json
             workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/scail2/workspace
-            synced_at: "2026-07-02T19:53:13.164942+00:00"
+            synced_at: "2026-07-03T15:38:21.778128+00:00"
+          - profile: i2i_pro
+            cache_state: ready
+            model_manifest_key: i2i_pro/2026-06-14-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/i2i_pro/workspace
+            synced_at: "2026-07-03T17:16:17.154078+00:00"
         fast_switch_candidates:
+          - slot_id: gpu-252-gpu0-scail2
+            profile: scail2
+            cache_state: ready
           - slot_id: gpu-252-gpu0-image_to_video
             profile: image_to_video
             cache_state: ready
           - slot_id: gpu-252-gpu0-pornmaster_flux2_edit
             profile: pornmaster_flux2_edit
             cache_state: ready
-          - slot_id: gpu-252-gpu0-scail2
-            profile: scail2
+          - slot_id: gpu-252-gpu0-img2img_lora
+            profile: img2img_lora
             cache_state: ready
         blocked_profiles: []
-        notes: Switched from image_to_video to img2img_lora on 2026-07-03 with scripts/lan_aio_fleet_prod_ops.py takeover --slot gpu-252-gpu0-img2img_lora --replace-slot gpu-252-gpu0-image_to_video --failure-policy auto_rollback. Preflight, pull-image, warm-cache, drain/wait-idle, stop-old, start-disabled, and enable-aio passed; post-switch validation showed the img2img_lora container healthy on 8192, /system_stats OK, model cache ready, Central runtime_profile img2img_lora, and task types img2img,img2img_lora. Image_to_video, SCAIL-2, and PornMaster remain same-card rollback candidates.
+        notes: Switched from SCAIL-2 to i2i_pro on 2026-07-03 with scripts/lan_aio_fleet_prod_ops.py takeover --slot gpu-252-gpu0-i2i_pro --replace-slot gpu-252-gpu0-scail2 --failure-policy auto_rollback after SCAIL-2 was drained and idle. Render verified LAN AIO workflow overrides for t2i-pornmaster-turbo and face_swap, then preflight, pull-image, warm-cache, drain/wait-idle, stop-old, start-disabled, and enable-aio passed. Post-switch validation showed the i2i_pro container healthy on 8192, /system_stats OK, model cache ready, Central runtime_profile i2i_pro, and task types i2i_pro,t2i-pornmaster-turbo,face_swap. A follow-up enable-aio on 2026-07-03T17:59:47Z restored Central control from aio=draining to aio=enabled after the queue was empty; the gate verified legacy_control disabled, AIO idle, and no old SCAIL-2 GPU memory processes. The worker immediately resumed intake with a face_swap task. SCAIL-2, image_to_video, img2img_lora, and PornMaster remain same-card rollback candidates.
       - gpu_index: 1
         hardware: removed RTX 4090
         current:

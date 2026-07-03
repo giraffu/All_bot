@@ -6,7 +6,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from .config_loader import ControllerConfig
-from .runpod_profile_catalog import RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES
+from .runpod_profile_catalog import (
+    RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
+    RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
+)
 from .types import Assignment, ComfyInstance, GpuNode, RuntimePlanItem, TaskProfile
 
 
@@ -40,6 +43,7 @@ LAN_AIO_SCAIL2_FACE_SWAP_V10_ENV = {
     "SCAIL2_FACE_SWAP_V10_FACE_SWAP_WORKFLOW": "face_swap_v2.json",
 }
 LAN_AIO_WORKFLOW_OVERRIDES_BY_PROFILE = {
+    "i2i_pro": RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
     "ltx_video": RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
     "scail2": LAN_AIO_SCAIL2_WORKFLOW_OVERRIDES,
 }
