@@ -4,11 +4,17 @@ import type {
   FollowersListResponse,
   FollowingListResponse,
   PublicUserProfileResponse,
+  UserSearchResponse,
 } from '@/types/social'
 
 interface PublicUserProfileParams {
   page?: number
   size?: number
+}
+
+interface SearchUsersParams {
+  q: string
+  limit?: number
 }
 
 export async function getMyFollowing(): Promise<FollowingListResponse> {
@@ -18,6 +24,11 @@ export async function getMyFollowing(): Promise<FollowingListResponse> {
 
 export async function getMyFollowers(): Promise<FollowersListResponse> {
   const response = await api.get<FollowersListResponse>('/users/me/followers')
+  return response.data
+}
+
+export async function searchUsers(params: SearchUsersParams): Promise<UserSearchResponse> {
+  const response = await api.get<UserSearchResponse>('/users/search', { params })
   return response.data
 }
 

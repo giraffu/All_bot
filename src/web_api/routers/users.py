@@ -44,6 +44,7 @@ from src.web_api.services.user_social_service import (
     get_my_followers_payload,
     get_my_following_payload,
     get_public_user_profile_payload,
+    search_users_payload,
     unfollow_user_payload,
 )
 from src.web_api.services.user_affiliate_redeem_api_service import (
@@ -219,6 +220,21 @@ async def get_my_followers(
     db: DbSessionDep,
 ):
     return await get_my_followers_payload(current_user=current_user, db=db)
+
+
+@router.get("/search", response_model=FollowingListResponse)
+async def search_users(
+    current_user: CurrentUserDep,
+    db: DbSessionDep,
+    q: str = Query(default="", min_length=0, max_length=100),
+    limit: int = Query(default=20, ge=1, le=30),
+):
+    return await search_users_payload(
+        current_user=current_user,
+        db=db,
+        query=q,
+        limit=limit,
+    )
 
 
 @router.get("/{user_id}/public-profile", response_model=PublicUserProfileResponse)

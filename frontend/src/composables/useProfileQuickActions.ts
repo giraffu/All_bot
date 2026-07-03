@@ -19,11 +19,13 @@ export function useProfileQuickActions(options: {
   handleBindPasswordModalOpen: () => void
   openFollowingModal: () => void
   openFollowersModal: () => void
+  openSearchModal: () => void
   icons: {
     Wallet: unknown
     Award: unknown
     Lock: unknown
     Users: unknown
+    Search: unknown
   }
 }) {
   const quickActions = computed(() => [
@@ -61,6 +63,13 @@ export function useProfileQuickActions(options: {
       className: 'quick-action-btn--sky',
       icon: options.icons.Users,
       onClick: options.openFollowersModal,
+    },
+    {
+      key: 'find-friends',
+      label: options.t('social.find_friends'),
+      className: 'quick-action-btn--cyan',
+      icon: options.icons.Search,
+      onClick: options.openSearchModal,
     },
     {
       key: 'password',

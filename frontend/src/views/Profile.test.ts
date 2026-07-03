@@ -171,6 +171,7 @@ describe('Profile affiliate commission display', () => {
           User: true,
           Clock: true,
           Lock: true,
+          Search: true,
           Bookmark: true,
           Star: true,
         },
@@ -210,6 +211,7 @@ describe('Profile affiliate commission display', () => {
           Award: true,
           User: true,
           Lock: true,
+          Search: true,
           Bookmark: true,
           Star: true,
         },
@@ -244,6 +246,7 @@ describe('Profile affiliate commission display', () => {
           Award: true,
           User: true,
           Lock: true,
+          Search: true,
           Bookmark: true,
           Star: true,
         },
@@ -260,5 +263,42 @@ describe('Profile affiliate commission display', () => {
     await flushPromises()
 
     expect(apiGetMock).toHaveBeenCalledWith('/users/me/followers')
+  })
+
+  it('places find friends after the followers quick action', async () => {
+    const wrapper = mount(Profile, {
+      global: {
+        plugins: [i18n],
+        stubs: {
+          'a-card': slotStub('ACardStub'),
+          'a-button': slotStub('AButtonStub'),
+          'a-modal': slotStub('AModalStub'),
+          'a-radio-group': slotStub('ARadioGroupStub'),
+          'a-radio': slotStub('ARadioStub'),
+          Wallet: true,
+          Activity: true,
+          CalendarCheck: true,
+          Zap: true,
+          Award: true,
+          User: true,
+          Lock: true,
+          Search: true,
+          Bookmark: true,
+          Star: true,
+        },
+        renderStubDefaultSlot: true,
+      },
+    })
+
+    await flushPromises()
+
+    const actionIds = wrapper
+      .findAll('[data-testid^="quick-action-"]')
+      .map((node) => node.attributes('data-testid'))
+
+    expect(actionIds.indexOf('quick-action-find-friends')).toBe(
+      actionIds.indexOf('quick-action-followers') + 1,
+    )
+    expect(wrapper.text()).toContain('查找好友')
   })
 })

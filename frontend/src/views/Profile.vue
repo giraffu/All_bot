@@ -11,6 +11,7 @@ import {
   User,
   Lock,
   Users,
+  Search,
 } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { useViewport } from '@/composables/useViewport'
@@ -47,6 +48,7 @@ const themeOptions = computed<{ label: string; value: ThemePreference }[]>(() =>
 ])
 const showFollowingModal = ref(false)
 const showFollowersModal = ref(false)
+const showSearchModal = ref(false)
 
 const selectedTheme = computed<ThemePreference>({
   get: () => themeStore.selectedTheme,
@@ -148,11 +150,15 @@ const { quickActions } = useProfileQuickActions({
   openFollowersModal: () => {
     showFollowersModal.value = true
   },
+  openSearchModal: () => {
+    showSearchModal.value = true
+  },
   icons: {
     Wallet,
     Award,
     Lock,
     Users,
+    Search,
   },
 })
 
@@ -234,6 +240,7 @@ onMounted(async () => {
 
     <ProfileFollowingModal v-model:open="showFollowingModal" mode="following" />
     <ProfileFollowingModal v-model:open="showFollowersModal" mode="followers" />
+    <ProfileFollowingModal v-model:open="showSearchModal" mode="search" />
   </div>
 </template>
 

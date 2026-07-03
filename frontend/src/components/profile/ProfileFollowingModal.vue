@@ -1,15 +1,21 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { ExternalLink, UserMinus, UserPlus, Users } from 'lucide-vue-next'
+import { ExternalLink, Search, UserMinus, UserPlus, Users } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
-import { followUser, getMyFollowers, getMyFollowing, unfollowUser } from '@/api/social'
+import {
+  followUser,
+  getMyFollowers,
+  getMyFollowing,
+  searchUsers,
+  unfollowUser,
+} from '@/api/social'
 import { useViewport } from '@/composables/useViewport'
 import type { PublicUserSummary } from '@/types/social'
 import UserProfileModal from '@/components/UserProfileModal.vue'
 import ProfileBackButton from '@/components/profile/ProfileBackButton.vue'
 
-type SocialListMode = 'following' | 'followers'
+type SocialListMode = 'following' | 'followers' | 'search'
 
 const props = withDefaults(
   defineProps<{
@@ -35,19 +41,57 @@ const items = ref<PublicUserSummary[]>([])
 const profileOpen = ref(false)
 const activeProfileUserId = ref<number | null>(null)
 const actionLoadingUserId = ref<number | null>(null)
+const searchQuery = ref('')
+const searchHasRun = ref(false)
 
 const isFollowersMode = computed(() => props.mode === 'followers')
-const modalTitle = computed(() =>
-  isFollowersMode.value ? t('social.my_followers') : t('social.my_following')
-)
-const emptyText = computed(() =>
-  errorText.value || (
-    isFollowersMode.value ? t('social.no_followers') : t('social.no_following')
-  )
-)
+const isSearchMode = computed(() => props.mode === 'search')
+const modalTitle = computed(() => {
+  if (isSearchMode.value) {
+    return t('social.find_friends')
+  }
+
+  return isFollowersMode.value ? t('social.my_followers') : t('social.my_following')
+})
+const emptyText = computed(() => {
+  if (errorText.value) {
+    return errorText.value
+  }
+
+  if (isSearchMode.value) {
+    return searchHasRun.value ? t('social.no_search_results') : t('social.search_idle')
+  }
+
+  return isFollowersMode.value ? t('social.no_followers') : t('social.no_following')
+})
 
 const loadSocialList = async () => {
   if (!props.open) {
+    return
+  }
+
+  if (isSearchMode.value) {
+    const query = searchQuery.value.trim()
+    errorText.value = ''
+
+    if (!query) {
+      items.value = []
+      searchHasRun.value = false
+      return
+    }
+
+    loading.value = true
+    searchHasRun.value = true
+    try {
+      const response = await searchUsers({ q: query, limit: 20 })
+      items.value = response.items ?? []
+    } catch (error) {
+      console.error(error)
+      items.value = []
+      errorText.value = t('social.search_load_failed')
+    } finally {
+      loading.value = false
+    }
     return
   }
 
@@ -57,7 +101,7 @@ const loadSocialList = async () => {
     const response = isFollowersMode.value
       ? await getMyFollowers()
       : await getMyFollowing()
-    items.value = response.items
+    items.value = response.items ?? []
   } catch (error) {
     console.error(error)
     errorText.value = isFollowersMode.value
@@ -83,8 +127,19 @@ const updateItemFollowState = (userId: number, isFollowing: boolean) => {
   )
 }
 
+const shouldUnfollowItem = (item: PublicUserSummary) =>
+  props.mode === 'following' || item.is_following
+
+const getFollowActionLabel = (item: PublicUserSummary) => {
+  if (shouldUnfollowItem(item)) {
+    return t('social.unfollow')
+  }
+
+  return props.mode === 'followers' ? t('social.follow_back') : t('social.follow')
+}
+
 const handleToggleFollow = async (item: PublicUserSummary) => {
-  const shouldUnfollow = props.mode === 'following' || item.is_following
+  const shouldUnfollow = shouldUnfollowItem(item)
   actionLoadingUserId.value = item.id
   try {
     const response = shouldUnfollow
@@ -114,6 +169,10 @@ const openUserProfile = (userId: number) => {
   profileOpen.value = true
 }
 
+const handleSearch = () => {
+  void loadSocialList()
+}
+
 const handleProfileFollowUpdated = (payload: { userId: number; isFollowing: boolean }) => {
   if (props.mode === 'following' && !payload.isFollowing) {
     items.value = items.value.filter((item) => item.id !== payload.userId)
@@ -135,6 +194,8 @@ watch(
     } else {
       errorText.value = ''
       items.value = []
+      searchQuery.value = ''
+      searchHasRun.value = false
     }
   },
   { immediate: true },
@@ -162,6 +223,40 @@ watch(
           </h3>
         </div>
       </div>
+
+      <form
+        v-if="isSearchMode"
+        class="profile-following-modal__search mb-4"
+        @submit.prevent="handleSearch"
+      >
+        <label
+          class="profile-following-modal__search-input-wrap"
+          for="profile-user-search-input"
+        >
+          <Search :size="16" class="profile-following-modal__search-icon" />
+          <input
+            id="profile-user-search-input"
+            v-model="searchQuery"
+            data-testid="profile-user-search-input"
+            class="profile-following-modal__search-input"
+            type="search"
+            :placeholder="t('social.search_placeholder')"
+            autocomplete="off"
+            @keydown.enter.prevent="handleSearch"
+          />
+        </label>
+        <a-button
+          data-testid="profile-user-search-submit"
+          class="profile-following-modal__search-btn"
+          :loading="loading"
+          @click="handleSearch"
+        >
+          <span class="profile-following-modal__action-content">
+            <Search :size="16" class="profile-following-modal__action-icon" />
+            <span>{{ t('social.search') }}</span>
+          </span>
+        </a-button>
+      </form>
 
       <a-spin :spinning="loading">
         <div v-if="items.length" class="space-y-3">
@@ -207,18 +302,18 @@ watch(
               </a-button>
               <a-button
                 class="profile-following-modal__action-btn"
-                :danger="mode === 'following' || item.is_following"
+                :danger="shouldUnfollowItem(item)"
                 :loading="actionLoadingUserId === item.id"
                 @click="handleToggleFollow(item)"
               >
                 <span class="profile-following-modal__action-content">
                   <component
-                    :is="mode === 'following' || item.is_following ? UserMinus : UserPlus"
+                    :is="shouldUnfollowItem(item) ? UserMinus : UserPlus"
                     :size="16"
                     class="profile-following-modal__action-icon"
                   />
                   <span>
-                    {{ mode === 'following' || item.is_following ? t('social.unfollow') : t('social.follow_back') }}
+                    {{ getFollowActionLabel(item) }}
                   </span>
                 </span>
               </a-button>
@@ -252,7 +347,7 @@ watch(
 }
 
 .profile-following-modal__panel {
-  background: var(--theme-card-bg);
+  background: #0f172a;
 }
 
 .profile-following-modal__icon {
@@ -272,6 +367,46 @@ watch(
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+.profile-following-modal__search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.625rem;
+}
+
+.profile-following-modal__search-input-wrap {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 2.5rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--theme-border);
+  border-radius: 0.5rem;
+  background: var(--theme-card-strong-bg);
+}
+
+.profile-following-modal__search-icon {
+  flex: 0 0 auto;
+  margin-right: 0.5rem;
+  color: var(--theme-text-secondary);
+}
+
+.profile-following-modal__search-input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--theme-text-primary);
+}
+
+.profile-following-modal__search-input::placeholder {
+  color: var(--theme-text-secondary);
+}
+
+.profile-following-modal__search-btn {
+  min-width: 5.5rem;
 }
 
 .profile-following-modal__card,
@@ -305,8 +440,26 @@ watch(
   box-shadow: 0 10px 20px rgba(79, 70, 229, 0.22);
 }
 
+@media (max-width: 420px) {
+  .profile-following-modal__search {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .profile-following-modal__search-btn {
+    width: 100%;
+  }
+}
+
 :global(.profile-following-modal .ant-modal-content) {
-  background-color: var(--theme-card-bg) !important;
+  background-color: #0f172a !important;
   color: var(--theme-text-primary) !important;
+}
+
+:global(html[data-theme='light']) .profile-following-modal__panel {
+  background: #ffffff;
+}
+
+:global(html[data-theme='light'] .profile-following-modal .ant-modal-content) {
+  background-color: #ffffff !important;
 }
 </style>

@@ -8,6 +8,7 @@ from src.web_api.schemas.gallery_schema import GalleryPostResponse
 from src.web_api.services.user_social_service import (
     get_my_followers_payload,
     get_public_user_profile_payload,
+    search_users_payload,
 )
 
 
@@ -193,6 +194,66 @@ async def test_get_my_followers_returns_followers_with_mutual_follow_state():
             mutual_follower.id: True,
         }
         assert following_only.id not in {item.id for item in response.items}
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_search_users_matches_username_or_full_name_and_returns_follow_state():
+    engine, session = await _create_social_session()
+    now = datetime(2026, 6, 29, 12, 0, 0)
+    try:
+        me = User(id=1, username="hgirraffe-me", full_name="Me")
+        exact_username = User(id=2, username="hgirraffe", full_name="Exact Match")
+        nickname_match = User(id=3, username="fan-three", full_name="Hgirraffe Sage")
+        unrelated = User(id=4, username="wanderer", full_name="Cloud Walker")
+        session.add_all([me, exact_username, nickname_match, unrelated])
+        session.add(
+            UserFollow(
+                follower_id=me.id,
+                followee_id=nickname_match.id,
+                created_at=now,
+            )
+        )
+        session.add_all(
+            [
+                GalleryPost(
+                    id=200,
+                    task_id="public-search-match",
+                    user_id=exact_username.id,
+                    media_type="image",
+                    is_active=True,
+                    created_at=now,
+                ),
+                History(
+                    id=200,
+                    task_id="public-search-match",
+                    user_id=exact_username.id,
+                    is_visible=True,
+                    is_public=True,
+                    created_at=now,
+                ),
+            ]
+        )
+        await session.commit()
+
+        response = await search_users_payload(
+            current_user=me,
+            db=session,
+            query="@hgirraffe",
+            limit=10,
+        )
+
+        assert response.total == 2
+        assert [item.id for item in response.items] == [exact_username.id, nickname_match.id]
+        assert {item.id: item.is_following for item in response.items} == {
+            exact_username.id: False,
+            nickname_match.id: True,
+        }
+        assert response.items[0].total_public_posts == 1
+        assert me.id not in {item.id for item in response.items}
+        assert unrelated.id not in {item.id for item in response.items}
     finally:
         await session.close()
         await engine.dispose()
