@@ -67,6 +67,32 @@ def calculate_qqcc_draw_chain_cost(chain: list[dict[str, object]]) -> int:
     return sum(calculate_qqcc_draw_scene_cost(scene) for scene in chain)
 
 
+def resolve_qqcc_draw_scene_prompt(
+    _config: dict[str, Any],
+    scene: dict[str, object],
+    _prompts_config: dict[str, str] | None = None,
+) -> str:
+    return str(scene.get("prompt") or "").strip()
+
+
+def resolve_qqcc_draw_chain_prompts(
+    config: dict[str, Any],
+    chain: list[dict[str, Any]],
+    prompts_config: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    return [
+        {
+            **scene,
+            "prompt": resolve_qqcc_draw_scene_prompt(
+                config,
+                scene,
+                prompts_config,
+            ),
+        }
+        for scene in chain
+    ]
+
+
 async def execute_qqcc_draw_scene_chain(
     *,
     context: Any,

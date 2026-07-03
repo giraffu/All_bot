@@ -13,6 +13,7 @@ from src.constants import (
     MODE_IMAGE_TO_VIDEO,
     MODE_I2I_DRAW,
     MODE_IMG2IMG_LORA,
+    MODE_RANDOM_FACESWAP,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
 )
@@ -26,7 +27,10 @@ from src.handlers.fsm import (
     quick_video_fsm,
 )
 from src.handlers.fsm.quick_draw_callback_data import build_quick_draw_scene_callback_data
-from src.services.qqcc_config_service import normalize_qqcc_config
+from src.services.qqcc_config_service import (
+    QQCC_SCENE_PRESET_PROMPTS,
+    normalize_qqcc_config,
+)
 
 
 def _build_user():
@@ -378,11 +382,16 @@ async def test_start_quick_image_uses_english_locale(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_qqcc_quick_undress_entry_shows_method_choices(monkeypatch):
+async def test_qqcc_stale_quick_undress_entry_is_blocked(monkeypatch):
     reply_mock = AsyncMock()
 
     monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
     monkeypatch.setattr(quick_image_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "load_runtime_qqcc_config",
+        AsyncMock(return_value=normalize_qqcc_config(None)),
+    )
     monkeypatch.setitem(
         __import__(
             "src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]
@@ -396,44 +405,52 @@ async def test_qqcc_quick_undress_entry_shows_method_choices(monkeypatch):
         user_data={},
         bot_data={"bot_client_type": "bot:qqcc"},
         lang="zh",
+        t=lambda key, **_kwargs: {"qqcc.feature_disabled": "功能暂未开放"}.get(
+            key, key
+        ),
     )
 
     result = await quick_image_fsm.start_quick_image(update, context)
 
-    assert result == quick_image_fsm.QuickImageState.WAIT_UNDRESS_METHOD
-    assert context.user_data["in_conversation"] == "QUICK_IMAGE_UNDRESS_CHOICE"
-    reply_markup = reply_mock.await_args.kwargs["reply_markup"]
-    button_texts = [
-        button.text
-        for row in reply_markup.inline_keyboard
-        for button in row
-    ]
-    assert button_texts == ["头像/半身补全", "全身保脸重绘"]
+    assert result == ConversationHandler.END
+    assert "in_conversation" not in context.user_data
+    reply_mock.assert_awaited_once()
+    assert reply_mock.await_args.args[1] == "功能暂未开放"
 
 
 @pytest.mark.asyncio
-async def test_qqcc_undress_inpaint_choice_waits_for_image(monkeypatch):
-    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+async def test_qqcc_quick_faceswap_entry_waits_for_image(monkeypatch):
+    reply_mock = AsyncMock()
 
-    query = SimpleNamespace(
-        data="quick_undress_i2i_draw",
-        answer=AsyncMock(),
-        message=SimpleNamespace(edit_text=AsyncMock()),
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(quick_image_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "load_runtime_qqcc_config",
+        AsyncMock(return_value=normalize_qqcc_config(None)),
     )
-    update = SimpleNamespace(callback_query=query, effective_user=_build_user())
+    monkeypatch.setitem(
+        __import__(
+            "src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]
+        ).GLOBAL_REVERSE_MAP,
+        "快速换脸",
+        "qqcc.menu.quick_faceswap",
+    )
+
+    update = _build_update_with_message(text="快速换脸")
     context = SimpleNamespace(
-        user_data={"in_conversation": "QUICK_IMAGE_UNDRESS_CHOICE"},
+        user_data={},
         bot_data={"bot_client_type": "bot:qqcc"},
         lang="zh",
     )
 
-    result = await quick_image_fsm.select_undress_mode(update, context)
+    result = await quick_image_fsm.start_quick_image(update, context)
 
     assert result == quick_image_fsm.QuickImageState.WAIT_IMAGE
-    query.answer.assert_awaited_once()
-    assert context.user_data["quick_image_data"]["mode"] == MODE_I2I_DRAW
-    assert context.user_data["quick_image_data"]["cost"] == 3
-    assert "全身保脸重绘" in query.message.edit_text.await_args.args[0]
+    assert context.user_data["quick_image_data"]["mode"] == MODE_RANDOM_FACESWAP
+    assert context.user_data["quick_image_data"]["cost"] == 1
+    reply_mock.assert_awaited_once()
+    assert "快速换脸" in reply_mock.await_args.args[1]
 
 
 @pytest.mark.asyncio
@@ -704,6 +721,80 @@ async def test_qqcc_ai_draw_scene_submits_free_edit_v2_single_task(monkeypatch):
     assert captured["images"] == ["/tmp/draw.png"]
     assert captured["prompt"] == "soft light prompt"
     assert context.bot_data["bot_client_type"] == "bot:qqcc"
+
+
+@pytest.mark.asyncio
+async def test_qqcc_default_ai_draw_scene_uses_scene_prompt_with_free_edit(monkeypatch):
+    reply_mock = AsyncMock()
+    scheduled = []
+    captured = {}
+    config = normalize_qqcc_config(None)
+
+    async def fake_process_generation_task(**kwargs):
+        captured.update(kwargs)
+        return None, None
+
+    def fake_create_background_task(_context, coroutine):
+        scheduled.append(coroutine)
+
+    monkeypatch.setattr(quick_image_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "load_runtime_qqcc_config",
+        AsyncMock(return_value=config),
+    )
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "_validate_quick_image_submission",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "_download_quick_image_input",
+        AsyncMock(return_value="/tmp/default-draw.png"),
+    )
+    monkeypatch.setattr(
+        quick_image_fsm, "process_generation_task", fake_process_generation_task
+    )
+    monkeypatch.setattr(
+        quick_image_fsm, "create_background_task", fake_create_background_task
+    )
+    load_prompts_mock = Mock(side_effect=AssertionError("QQCC draw scenes must not read prompts.ini"))
+    monkeypatch.setattr(quick_image_fsm, "load_prompts", load_prompts_mock)
+
+    update = SimpleNamespace(
+        effective_user=_build_user(),
+        effective_chat=SimpleNamespace(id=10001),
+        message=SimpleNamespace(
+            document=None,
+            photo=[SimpleNamespace(file_id="photo-file-id")],
+            chat_id=10001,
+        ),
+    )
+    context = SimpleNamespace(
+        user_data={
+            "in_conversation": "QUICK_IMAGE_edit",
+            "quick_image_data": {
+                "mode": MODE_EDIT,
+                "cost": 2,
+                "image_path": None,
+                "scene_id": "quick_undress",
+            },
+        },
+        bot=SimpleNamespace(),
+        bot_data={"bot_client_type": "bot:qqcc"},
+        lang="zh",
+    )
+
+    result = await quick_image_fsm.receive_image(update, context)
+
+    assert result == ConversationHandler.END
+    assert len(scheduled) == 1
+    await scheduled[0]
+    assert captured["task_type"] == MODE_EDIT
+    assert captured["images"] == ["/tmp/default-draw.png"]
+    assert captured["prompt"] == QQCC_SCENE_PRESET_PROMPTS["undress"]
+    load_prompts_mock.assert_not_called()
 
 
 @pytest.mark.asyncio

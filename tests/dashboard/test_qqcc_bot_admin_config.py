@@ -6,6 +6,8 @@ from src.database.models import RuntimeCheckpoint
 from src.services.qqcc_config_service import (
     DEFAULT_QQCC_LAZY_BOT_CONFIG,
     QQCC_LAZY_BOT_CONFIG_KEY,
+    QQCC_SCENE_PRESET_PROMPTS,
+    SCENE_PRESET_VERSION,
     DRAW_SCENE_ENGINE_FREE_EDIT,
     DRAW_SCENE_ENGINE_FREE_EDIT_V2,
     VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
@@ -17,6 +19,7 @@ from src.services.qqcc_config_service import (
     resolve_qqcc_prompt,
     save_qqcc_config_payload,
 )
+from src.services.qqcc_draw_chain_service import resolve_qqcc_draw_scene_prompt
 
 
 class _Result:
@@ -52,9 +55,29 @@ def test_normalize_qqcc_config_returns_default_shape_for_empty_config():
     config = normalize_qqcc_config(None)
 
     assert config == DEFAULT_QQCC_LAZY_BOT_CONFIG
-    assert config["main_buttons"]["quick_undress"] is True
+    assert config["scene_preset_version"] == SCENE_PRESET_VERSION
+    assert config["main_buttons"]["quick_undress"] is False
+    assert config["main_buttons"]["quick_faceswap"] is True
+    assert config["main_buttons"]["photo_edit"] is False
     assert config["main_buttons"]["ai_draw"] is True
-    assert config["draw_scenes"] == []
+    assert config["draw_scenes"] == [
+        {
+            "id": "quick_masturbation",
+            "name": "快速自慰",
+            "prompt": QQCC_SCENE_PRESET_PROMPTS["masturbation"],
+            "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
+            "lora_name": "",
+            "postprocess_draw_scene_id": "",
+        },
+        {
+            "id": "quick_undress",
+            "name": "快速脱衣",
+            "prompt": QQCC_SCENE_PRESET_PROMPTS["undress"],
+            "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
+            "lora_name": "",
+            "postprocess_draw_scene_id": "",
+        },
+    ]
     assert config["video_settings"]["resolutions"]["1024p"] is True
     assert [scene["id"] for scene in config["video_scenes"]] == [
         "missionary",
@@ -67,6 +90,33 @@ def test_normalize_qqcc_config_returns_default_shape_for_empty_config():
     assert config["video_scenes"][0]["engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
     assert config["video_scenes"][0]["lora_name"] == ""
     assert config["video_scenes"][0]["end_frame_draw_scene_id"] == ""
+
+
+def test_normalize_qqcc_config_migrates_legacy_config_with_scene_presets():
+    config = normalize_qqcc_config(
+        {
+            "draw_scenes": [
+                {
+                    "id": "little_hip",
+                    "name": "小屁股",
+                    "prompt": "图中女人衣服脱光，屁股变小露出来",
+                    "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+                }
+            ]
+        }
+    )
+
+    assert [scene["id"] for scene in config["draw_scenes"]] == [
+        "quick_masturbation",
+        "quick_undress",
+        "little_hip",
+    ]
+    assert config["draw_scenes"][0]["name"] == "快速自慰"
+    assert config["draw_scenes"][0]["prompt"] == QQCC_SCENE_PRESET_PROMPTS["masturbation"]
+    assert config["draw_scenes"][1]["name"] == "快速脱衣"
+    assert config["draw_scenes"][1]["prompt"] == QQCC_SCENE_PRESET_PROMPTS["undress"]
+    assert config["draw_scenes"][2]["name"] == "小屁股"
+    assert config["scene_preset_version"] == SCENE_PRESET_VERSION
 
 
 def test_normalize_qqcc_config_drops_unknown_keys_and_keeps_empty_prompt_for_fallback():
@@ -94,7 +144,8 @@ def test_normalize_qqcc_config_drops_unknown_keys_and_keeps_empty_prompt_for_fal
     assert config["global_enabled"] is False
     assert config["main_buttons"] == {
         "quick_undress": False,
-        "photo_edit": True,
+        "quick_faceswap": True,
+        "photo_edit": False,
         "ai_draw": True,
         "video_edit": True,
         "market": True,
@@ -158,7 +209,6 @@ def test_normalize_qqcc_config_migrates_legacy_video_buttons_to_scenes():
         "closeup_blowjob",
     ]
     assert scenes[0]["prompt"] == "custom missionary prompt"
-    assert scenes[0]["prompt_key"] == "perfect_video_insert"
     assert scenes[0]["engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
     assert scenes[0]["lora_name"] == ""
     assert scenes[-1]["prompt"] == "custom closeup prompt"
@@ -168,6 +218,7 @@ def test_normalize_qqcc_config_migrates_legacy_video_buttons_to_scenes():
 def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
     config = normalize_qqcc_config(
         {
+            "scene_preset_version": SCENE_PRESET_VERSION,
             "video_scenes": [
                 {
                     "id": "kiss",
@@ -229,6 +280,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
 def test_normalize_qqcc_config_validates_scene_engines_and_loras():
     config = normalize_qqcc_config(
         {
+            "scene_preset_version": SCENE_PRESET_VERSION,
             "video_scenes": [
                 {
                     "id": "legacy_lora",
@@ -290,17 +342,19 @@ def test_normalize_qqcc_config_validates_scene_engines_and_loras():
     assert video_scenes[2]["lora_name"] == ""
 
     draw_scenes = get_enabled_qqcc_draw_scenes(config)
-    assert draw_scenes[0]["engine"] == DRAW_SCENE_ENGINE_FREE_EDIT
-    assert draw_scenes[0]["lora_name"] == "qwen/YARN_1.0.safetensors"
-    assert draw_scenes[1]["engine"] == DRAW_SCENE_ENGINE_FREE_EDIT_V2
-    assert draw_scenes[1]["lora_name"] == ""
-    assert draw_scenes[2]["engine"] == DRAW_SCENE_ENGINE_FREE_EDIT_V2
-    assert draw_scenes[2]["lora_name"] == ""
+    draw_scenes_by_id = {scene["id"]: scene for scene in draw_scenes}
+    assert draw_scenes_by_id["old_draw"]["engine"] == DRAW_SCENE_ENGINE_FREE_EDIT
+    assert draw_scenes_by_id["old_draw"]["lora_name"] == "qwen/YARN_1.0.safetensors"
+    assert draw_scenes_by_id["v2_draw"]["engine"] == DRAW_SCENE_ENGINE_FREE_EDIT_V2
+    assert draw_scenes_by_id["v2_draw"]["lora_name"] == ""
+    assert draw_scenes_by_id["bad_draw"]["engine"] == DRAW_SCENE_ENGINE_FREE_EDIT_V2
+    assert draw_scenes_by_id["bad_draw"]["lora_name"] == ""
 
 
 def test_normalize_qqcc_config_validates_video_end_frame_draw_scene_reference():
     config = normalize_qqcc_config(
         {
+            "scene_preset_version": SCENE_PRESET_VERSION,
             "draw_scenes": [
                 {
                     "id": "tail_pose",
@@ -334,6 +388,7 @@ def test_normalize_qqcc_config_validates_video_end_frame_draw_scene_reference():
 def test_normalize_qqcc_config_validates_draw_postprocess_reference():
     config = normalize_qqcc_config(
         {
+            "scene_preset_version": SCENE_PRESET_VERSION,
             "draw_scenes": [
                 {
                     "id": "base",
@@ -358,15 +413,17 @@ def test_normalize_qqcc_config_validates_draw_postprocess_reference():
     )
 
     scenes = get_enabled_qqcc_draw_scenes(config)
+    scenes_by_id = {scene["id"]: scene for scene in scenes}
 
-    assert scenes[0]["postprocess_draw_scene_id"] == "polish"
-    assert scenes[1]["postprocess_draw_scene_id"] == ""
-    assert scenes[2]["postprocess_draw_scene_id"] == ""
+    assert scenes_by_id["base"]["postprocess_draw_scene_id"] == "polish"
+    assert scenes_by_id["polish"]["postprocess_draw_scene_id"] == ""
+    assert scenes_by_id["missing"]["postprocess_draw_scene_id"] == ""
 
 
 def test_normalize_qqcc_config_breaks_draw_postprocess_cycles():
     config = normalize_qqcc_config(
         {
+            "scene_preset_version": SCENE_PRESET_VERSION,
             "draw_scenes": [
                 {
                     "id": "base",
@@ -391,15 +448,17 @@ def test_normalize_qqcc_config_breaks_draw_postprocess_cycles():
     )
 
     scenes = get_enabled_qqcc_draw_scenes(config)
+    scenes_by_id = {scene["id"]: scene for scene in scenes}
 
-    assert scenes[0]["postprocess_draw_scene_id"] == ""
-    assert scenes[1]["postprocess_draw_scene_id"] == ""
-    assert scenes[2]["postprocess_draw_scene_id"] == "base"
+    assert scenes_by_id["base"]["postprocess_draw_scene_id"] == ""
+    assert scenes_by_id["polish"]["postprocess_draw_scene_id"] == ""
+    assert scenes_by_id["outer"]["postprocess_draw_scene_id"] == "base"
 
 
 def test_normalize_qqcc_config_keeps_only_valid_dynamic_draw_scenes():
     config = normalize_qqcc_config(
         {
+            "scene_preset_version": SCENE_PRESET_VERSION,
             "draw_scenes": [
                 {
                     "id": "soft_light",
@@ -415,6 +474,13 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_draw_scenes():
                     "id": "bad id!",
                     "name": "安全 id",
                     "prompt": "safe id prompt",
+                },
+                {
+                    "id": "builtin",
+                    "name": "内置提示词",
+                    "prompt": "",
+                    "prompt_key": "undress",
+                    "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
                 },
                 {"id": "empty_prompt", "name": "无提示词", "prompt": ""},
                 {"id": "empty_name", "name": " ", "prompt": "has prompt"},
@@ -452,6 +518,69 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_draw_scenes():
     ]
 
 
+def test_normalize_qqcc_config_migrates_legacy_draw_prompt_keys_to_scene_prompts():
+    config = normalize_qqcc_config(
+        {
+            "prompts": {"undress": "  config override  "},
+            "draw_scenes": [
+                {
+                    "id": "quick_undress",
+                    "name": "快速脱衣",
+                    "prompt": "",
+                    "prompt_key": "undress",
+                    "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
+                },
+                {
+                    "id": "quick_masturbation",
+                    "name": "快速自慰",
+                    "prompt": "",
+                    "prompt_key": "masturbation",
+                    "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
+                },
+            ],
+        }
+    )
+    scenes = get_enabled_qqcc_draw_scenes(config)
+    scenes_by_id = {scene["id"]: scene for scene in scenes}
+
+    assert "prompt_key" not in scenes_by_id["quick_undress"]
+    assert "prompt_key" not in scenes_by_id["quick_masturbation"]
+    assert resolve_qqcc_draw_scene_prompt(
+        config,
+        scenes_by_id["quick_undress"],
+        {"undress": "prompts ini undress", "masturbation": "prompts ini masturbation"},
+    ) == "config override"
+    assert resolve_qqcc_draw_scene_prompt(
+        config,
+        scenes_by_id["quick_masturbation"],
+        {"masturbation": "prompts ini masturbation"},
+    ) == QQCC_SCENE_PRESET_PROMPTS["masturbation"]
+
+
+def test_normalize_qqcc_config_seeds_presets_once_and_respects_new_empty_scenes():
+    legacy_config = normalize_qqcc_config(
+        {
+            "main_buttons": {"ai_draw": True},
+            "draw_scenes": [],
+        }
+    )
+    explicit_empty_config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "main_buttons": {"quick_faceswap": True, "ai_draw": True},
+            "draw_scenes": [],
+            "video_scenes": [],
+        }
+    )
+
+    assert [scene["id"] for scene in legacy_config["draw_scenes"]] == [
+        "quick_masturbation",
+        "quick_undress",
+    ]
+    assert explicit_empty_config["draw_scenes"] == []
+    assert explicit_empty_config["video_scenes"] == []
+
+
 @pytest.mark.asyncio
 async def test_load_qqcc_config_payload_returns_defaults_when_checkpoint_missing():
     db = _FakeSession()
@@ -462,6 +591,9 @@ async def test_load_qqcc_config_payload_returns_defaults_when_checkpoint_missing
     assert response["config"] == DEFAULT_QQCC_LAZY_BOT_CONFIG
     assert response["options"]["video_engines"][0]["value"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
     assert response["options"]["draw_engines"][0]["value"] == DRAW_SCENE_ENGINE_FREE_EDIT
+    assert response["options"]["scene_preset_version"] == SCENE_PRESET_VERSION
+    assert response["options"]["default_video_engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
+    assert response["options"]["default_draw_engine"] == DRAW_SCENE_ENGINE_FREE_EDIT_V2
     assert any(
         item["value"] == "BreastGrow"
         for item in response["options"]["video_lora_models"]
@@ -510,6 +642,7 @@ async def test_update_qqcc_config_router_routes_to_runtime_checkpoint_service():
 async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
     db = _FakeSession()
     payload = QqccBotConfigRequest(
+        scene_preset_version=SCENE_PRESET_VERSION,
         draw_scenes=[
             {
                 "id": "tail_pose",
@@ -532,7 +665,6 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
                 "name": "自定义传教士",
                 "prompt": "custom missionary prompt",
                 "duration": "10s",
-                "prompt_key": "perfect_video_insert",
                 "engine": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
                 "lora_name": "BreastGrow",
                 "end_frame_draw_scene_id": "removed_tail",
@@ -558,7 +690,6 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
             "name": "自定义传教士",
             "prompt": "custom missionary prompt",
             "duration": "10s",
-            "prompt_key": "perfect_video_insert",
             "engine": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
             "lora_name": "",
             "end_frame_draw_scene_id": "",
@@ -570,6 +701,7 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
 async def test_update_qqcc_config_router_preserves_dynamic_draw_scenes():
     db = _FakeSession()
     payload = QqccBotConfigRequest(
+        scene_preset_version=SCENE_PRESET_VERSION,
         main_buttons={"ai_draw": True},
         draw_scenes=[
             {

@@ -34,6 +34,7 @@ from src.services.permission_service import permission_service
 from src.services.qqcc_draw_chain_service import (
     calculate_qqcc_draw_chain_cost,
     execute_qqcc_draw_scene_chain,
+    resolve_qqcc_draw_chain_prompts,
     resolve_qqcc_draw_scene_chain,
     resolve_qqcc_draw_scene_task_type as _resolve_qqcc_draw_scene_task_type,
 )
@@ -41,11 +42,14 @@ from src.services.qqcc_config_service import (
     get_qqcc_draw_scene,
     has_enabled_qqcc_draw_scenes,
     is_qqcc_main_button_enabled,
-    is_qqcc_photo_button_enabled,
     is_qqcc_undress_method_enabled,
     load_runtime_qqcc_config,
     normalize_qqcc_config,
     resolve_qqcc_prompt,
+)
+from src.services.qqcc_runtime_context import (
+    is_qqcc_bot_context as _is_qqcc_bot_context,
+    load_qqcc_config_for_context as _load_qqcc_runtime_config_for_context,
 )
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
@@ -64,7 +68,6 @@ from src.i18n.translator import get_text
 
 logger = logging.getLogger("fsm.quick_image")
 
-QQCC_BOT_CLIENT_TYPE = "bot:qqcc"
 QUICK_UNDRESS_LEGACY_CALLBACK = "quick_undress_legacy"
 QUICK_UNDRESS_I2I_DRAW_CALLBACK = "quick_undress_i2i_draw"
 QQCC_AI_DRAW_TASK_TYPES = (
@@ -83,6 +86,7 @@ QUICK_MODES = {
     "menu.photo_edit_undress": MODE_UNDRESS,
     "menu.photo_edit_masturbation": MODE_MASTURBATION,
     "menu.photo_edit_random_faceswap": MODE_RANDOM_FACESWAP,
+    "qqcc.menu.quick_faceswap": MODE_RANDOM_FACESWAP,
 }
 
 
@@ -102,24 +106,14 @@ def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, _user_id: int):
     cleanup_fsm_temp_files([fsm_data.get("image_path")])
 
 
-def _is_qqcc_bot_context(context: ContextTypes.DEFAULT_TYPE) -> bool:
-    bot_data = getattr(context, "bot_data", None)
-    if bot_data is None:
-        application = getattr(context, "application", None)
-        bot_data = getattr(application, "bot_data", None)
-    return bool(bot_data and bot_data.get("bot_client_type") == QQCC_BOT_CLIENT_TYPE)
-
-
 async def _load_qqcc_config_for_context(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> dict | None:
-    if not _is_qqcc_bot_context(context):
-        return None
-    try:
-        return await load_runtime_qqcc_config()
-    except Exception:
-        logger.exception("Failed to load QQCC lazy bot config; using defaults.")
-        return normalize_qqcc_config(None)
+    return await _load_qqcc_runtime_config_for_context(
+        context,
+        logger=logger,
+        load_config_func=load_runtime_qqcc_config,
+    )
 
 
 async def _reply_qqcc_feature_disabled(
@@ -137,39 +131,26 @@ async def _reply_qqcc_feature_disabled(
 
 
 def _is_qqcc_quick_image_route_enabled(config: dict, route_key: str | None) -> bool:
+    if route_key == "qqcc.menu.quick_faceswap":
+        return is_qqcc_main_button_enabled(config, "quick_faceswap")
     if route_key == "menu.photo_edit_undress":
-        return is_qqcc_main_button_enabled(config, "quick_undress") and (
-            is_qqcc_undress_method_enabled(config, "legacy")
-            or is_qqcc_undress_method_enabled(config, "i2i_draw")
-        )
+        return False
     if route_key == "menu.photo_edit_masturbation":
-        return is_qqcc_main_button_enabled(
-            config, "photo_edit"
-        ) and is_qqcc_photo_button_enabled(config, "masturbation")
+        return False
     if route_key == "menu.photo_edit_random_faceswap":
-        return is_qqcc_main_button_enabled(
-            config, "photo_edit"
-        ) and is_qqcc_photo_button_enabled(config, "random_faceswap")
+        return False
     return False
 
 
 def _is_qqcc_quick_image_mode_enabled(config: dict, mode: str) -> bool:
     if mode == MODE_UNDRESS:
-        return is_qqcc_main_button_enabled(
-            config, "quick_undress"
-        ) and is_qqcc_undress_method_enabled(config, "legacy")
+        return False
     if mode == MODE_I2I_DRAW:
-        return is_qqcc_main_button_enabled(
-            config, "quick_undress"
-        ) and is_qqcc_undress_method_enabled(config, "i2i_draw")
+        return False
     if mode == MODE_MASTURBATION:
-        return is_qqcc_main_button_enabled(
-            config, "photo_edit"
-        ) and is_qqcc_photo_button_enabled(config, "masturbation")
+        return False
     if mode == MODE_RANDOM_FACESWAP:
-        return is_qqcc_main_button_enabled(
-            config, "photo_edit"
-        ) and is_qqcc_photo_button_enabled(config, "random_faceswap")
+        return is_qqcc_main_button_enabled(config, "quick_faceswap")
     if mode == MODE_PORNMASTER_FLUX2_SINGLE_EDIT:
         return is_qqcc_main_button_enabled(
             config, "ai_draw"
@@ -424,7 +405,7 @@ def _resolve_random_faceswap_submission(
 
 
 async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Entry point for 懒人P图 (单步图生图)"""
+    """Entry point for single-step quick image flows."""
     user_id = update.effective_user.id
     message = update.message or update.edited_message
     query = update.callback_query
@@ -490,7 +471,11 @@ async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     cost = TASK_COSTS.get(mode, 2)
     _initialize_quick_image_context(context, mode=mode, cost=cost)
-    msg = _resolve_quick_image_start_message(context, mode=mode, cost=cost)
+    msg = (
+        _t(context, "fsm.quick_image.quick_faceswap_start", cost=cost)
+        if qqcc_config is not None and route_key == "qqcc.menu.quick_faceswap"
+        else _resolve_quick_image_start_message(context, mode=mode, cost=cost)
+    )
 
     await robust_reply_text(update.message, msg, parse_mode="Markdown")
     return QuickImageState.WAIT_IMAGE
@@ -621,12 +606,14 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     )
     submit_status_msg_id = getattr(submit_status_msg, "message_id", None)
 
-    prompts_config = load_prompts()
+    if qqcc_config is not None and qqcc_draw_chain:
+        qqcc_draw_chain = resolve_qqcc_draw_chain_prompts(qqcc_config, qqcc_draw_chain)
 
     if mode == MODE_RANDOM_FACESWAP:
         from config import MINIO_TEMPLATE_BUCKET
         from src.services.storage import storage
 
+        prompts_config = load_prompts()
         try:
             template_files = storage.list_objects(
                 "quick_face/", bucket=MINIO_TEMPLATE_BUCKET
@@ -707,6 +694,7 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 fallback_prompt = prompt or mode
                 prompt = prompt or fallback_prompt
             elif mode == MODE_I2I_DRAW:
+                prompts_config = load_prompts()
                 prompt_key = "i2i_draw_quick_undress"
                 fallback_prompt = DEFAULT_I2I_DRAW_UNDRESS_PROMPT
                 if qqcc_config is not None:
@@ -719,6 +707,7 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 else:
                     prompt = prompts_config.get(prompt_key, fallback_prompt)
             else:
+                prompts_config = load_prompts()
                 prompt_key = mode
                 fallback_prompt = mode
                 if qqcc_config is not None:
@@ -812,6 +801,7 @@ def get_quick_image_fsm_handler() -> ConversationHandler:
                         "menu.photo_edit_undress",
                         "menu.photo_edit_masturbation",
                         "menu.photo_edit_random_faceswap",
+                        "qqcc.menu.quick_faceswap",
                     ]
                 ),
                 start_quick_image,

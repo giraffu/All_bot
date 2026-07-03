@@ -29,9 +29,9 @@ from src.handlers.fsm.quick_image_fsm import get_quick_image_fsm_handler
 from src.handlers.fsm.quick_video_fsm import get_quick_video_fsm_handler
 from src.logger import setup_logging
 from src.services.recovery_service import recover_active_tasks
+from src.services.qqcc_runtime_context import QQCC_BOT_CLIENT_TYPE
 from src.task_core_provider_setup import ensure_task_core_service_providers_registered
 
-QQCC_BOT_CLIENT_TYPE = "bot:qqcc"
 logger = logging.getLogger("qqcc_bot.core")
 
 _original_download_to_drive = File.download_to_drive

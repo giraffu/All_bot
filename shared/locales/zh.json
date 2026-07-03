@@ -73,6 +73,7 @@
   "qqcc": {
     "feature_disabled": "功能暂未开放",
     "menu": {
+      "quick_faceswap": "快速换脸",
       "ai_draw": "AI绘图",
       "video_edit": "AI动图",
       "market": "修仙市集"
@@ -1036,6 +1037,7 @@
       "undress_i2i_draw_start": "💃 **已切换到【全身保脸重绘】模式** (消耗 {cost} 灵石)。\n\n请发送一张清晰全身照；这个模式质感更真实，也更稳定保留面部。\n\n随时可以发送 /cancel 退出流程。",
       "undress_start": "💃 **已切换到【快速脱衣】模式** (消耗 {cost} 灵石)。\n\n请发送一张包含人物的图片，我将自动处理。\n\n随时可以发送 /cancel 退出流程。",
       "masturbation_start": "🥵 **已切换到【快速自慰】模式** (消耗 {cost} 灵石)。\n\n请发送一张包含人物的图片，我将自动处理。\n\n随时可以发送 /cancel 退出流程。",
+      "quick_faceswap_start": "🎭 **已切换到【快速换脸】模式** (消耗 {cost} 灵石)。\n\n请发送一张【正脸】图片，我将自动匹配模板处理。\n\n随时可以发送 /cancel 退出流程。",
       "random_faceswap_start": "🎭 **已切换到【随机换脸】模式** (消耗 {cost} 灵石)。\n\n请发送一张【正脸】图片，我将自动匹配模板处理。\n\n随时可以发送 /cancel 退出流程。",
       "ai_draw_start": "🎨 **已切换到【{mode_name}】模式** (消耗 {cost} 灵石)。\n\n请发送一张图片，我将按照该场景提示词处理。\n\n随时可以发送 /cancel 退出流程。",
       "priority_exhausted": "⚠️ 您的排队优先级已耗尽（或修为不足），今日已无法再凝聚灵力，请明日再来！",

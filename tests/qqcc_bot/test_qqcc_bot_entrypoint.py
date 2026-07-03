@@ -22,7 +22,7 @@ from src.handlers.fsm.quick_video_callback_data import (
 )
 from src.handlers import prompt_router
 from src.i18n.translator import get_text
-from src.services.qqcc_config_service import normalize_qqcc_config
+from src.services.qqcc_config_service import SCENE_PRESET_VERSION, normalize_qqcc_config
 
 
 def _keyboard_texts(reply_markup):
@@ -45,8 +45,8 @@ def test_qqcc_main_menu_only_contains_lazy_generation_entries():
     keyboard = _keyboard_texts(keyboards.get_qqcc_main_menu_keyboard("zh"))
 
     assert keyboard == [
-        ["💃 快速脱衣"],
-        ["🖼️ 懒人P图", "AI动图"],
+        ["快速换脸"],
+        ["AI绘图", "AI动图"],
         ["修仙市集"],
         ["前往主bot"],
     ]
@@ -78,14 +78,29 @@ def test_resolve_main_bot_url_can_build_from_username(monkeypatch):
     assert qqcc_commands.resolve_main_bot_url() == "https://t.me/main_bot"
 
 
-def test_qqcc_photo_menu_excludes_fast_face_swap():
-    rows = _keyboard_texts(keyboards.get_qqcc_photo_edit_keyboard("zh"))
-    flat = [text for row in rows for text in row]
+@pytest.mark.asyncio
+async def test_qqcc_photo_menu_is_blocked_for_stale_keyboard_compatibility(monkeypatch):
+    monkeypatch.setattr(
+        prompt_handlers,
+        "load_runtime_qqcc_config",
+        AsyncMock(return_value=normalize_qqcc_config(None)),
+    )
+    reply_text = AsyncMock()
+    message = SimpleNamespace(reply_text=reply_text)
+    update = SimpleNamespace(
+        effective_message=message,
+        message=None,
+        edited_message=None,
+    )
+    context = SimpleNamespace(
+        lang="zh",
+        t=lambda key: {"qqcc.feature_disabled": "功能暂未开放"}.get(key, key),
+    )
 
-    assert "💃 快速脱衣" not in flat
-    assert "🥵 快速自慰" in flat
-    assert "🎭 随机换脸" in flat
-    assert "🎭 快速换脸" not in flat
+    await prompt_handlers.handle_photo_edit_menu(update, context)
+
+    reply_text.assert_awaited_once()
+    assert reply_text.await_args.kwargs["text"] == "功能暂未开放"
 
 
 def test_qqcc_config_hides_closed_main_and_submenu_buttons():
@@ -93,6 +108,7 @@ def test_qqcc_config_hides_closed_main_and_submenu_buttons():
         {
             "main_buttons": {
                 "quick_undress": False,
+                "quick_faceswap": False,
                 "photo_edit": True,
                 "video_edit": False,
                 "market": False,
@@ -106,30 +122,39 @@ def test_qqcc_config_hides_closed_main_and_submenu_buttons():
     )
 
     main_rows = _keyboard_texts(keyboards.get_qqcc_main_menu_keyboard("zh", config))
-    photo_rows = _keyboard_texts(keyboards.get_qqcc_photo_edit_keyboard("zh", config))
 
-    assert main_rows == [["🖼️ 懒人P图"], ["前往主bot"]]
-    assert photo_rows == [["🎭 随机换脸"], ["🔙 返回主菜单"]]
+    assert main_rows == [["AI绘图"], ["前往主bot"]]
 
 
-def test_qqcc_main_menu_shows_ai_draw_when_draw_scenes_exist():
+def test_qqcc_main_menu_shows_default_ai_draw_scenes():
+    main_rows = _keyboard_texts(keyboards.get_qqcc_main_menu_keyboard("zh"))
+    reply_markup = keyboards.get_qqcc_draw_edit_inline_keyboard("zh")
+
+    assert main_rows == [
+        ["快速换脸"],
+        ["AI绘图", "AI动图"],
+        ["修仙市集"],
+        ["前往主bot"],
+    ]
+    assert _inline_keyboard_texts(reply_markup) == [["快速自慰", "快速脱衣"]]
+    assert reply_markup.inline_keyboard[0][0].callback_data == (
+        build_quick_draw_scene_callback_data("quick_masturbation")
+    )
+
+
+def test_qqcc_main_menu_keeps_ai_draw_when_draw_scenes_are_empty():
     config = normalize_qqcc_config(
         {
-            "draw_scenes": [
-                {
-                    "id": "soft_light",
-                    "name": "柔光写真",
-                    "prompt": "soft light prompt",
-                }
-            ]
+            "main_buttons": {"quick_faceswap": True},
+            "draw_scenes": []
         }
     )
 
     main_rows = _keyboard_texts(keyboards.get_qqcc_main_menu_keyboard("zh", config))
 
     assert main_rows == [
-        ["💃 快速脱衣"],
-        ["🖼️ 懒人P图", "AI绘图", "AI动图"],
+        ["快速换脸"],
+        ["AI绘图", "AI动图"],
         ["修仙市集"],
         ["前往主bot"],
     ]
@@ -184,6 +209,7 @@ async def test_qqcc_video_menu_route_replies_with_inline_scene_buttons(monkeypat
 def test_qqcc_video_menu_uses_dynamic_scene_config():
     config = normalize_qqcc_config(
         {
+            "scene_preset_version": SCENE_PRESET_VERSION,
             "video_scenes": [
                 {
                     "id": "kiss",
@@ -255,10 +281,10 @@ def test_qqcc_draw_menu_uses_dynamic_scene_config():
     reply_markup = keyboards.get_qqcc_draw_edit_inline_keyboard("zh", config)
 
     assert _inline_keyboard_texts(reply_markup) == [
-        ["柔光写真", "动漫风", "油画"],
-        ["赛博"],
+        ["快速自慰", "快速脱衣", "柔光写真"],
+        ["动漫风", "油画", "赛博"],
     ]
-    assert reply_markup.inline_keyboard[0][1].callback_data == (
+    assert reply_markup.inline_keyboard[1][0].callback_data == (
         build_quick_draw_scene_callback_data("anime")
     )
 
@@ -304,7 +330,8 @@ async def test_qqcc_ai_draw_menu_route_replies_with_inline_scene_buttons(monkeyp
     kwargs = reply_text.await_args.kwargs
     assert kwargs["text"] == "translated:system.ai_draw_hint"
     assert _inline_keyboard_texts(kwargs["reply_markup"]) == [
-        ["柔光写真", "动漫风"],
+        ["快速自慰", "快速脱衣", "柔光写真"],
+        ["动漫风"],
     ]
 
 
@@ -356,6 +383,7 @@ def test_qqcc_lazy_main_buttons_are_routable_without_main_bot_prompt_routes(monk
     prompt_router.build_global_menu_filter()
 
     assert prompt_router.GLOBAL_REVERSE_MAP["💃 快速脱衣"] == "menu.photo_edit_undress"
+    assert prompt_router.GLOBAL_REVERSE_MAP["快速换脸"] == "qqcc.menu.quick_faceswap"
     assert prompt_router.GLOBAL_REVERSE_MAP["🖼️ 懒人P图"] == "menu.photo_edit"
     assert prompt_router.GLOBAL_REVERSE_MAP["AI绘图"] == "qqcc.menu.ai_draw"
     assert prompt_router.GLOBAL_REVERSE_MAP["AI动图"] == "menu.video_edit"
@@ -434,8 +462,8 @@ async def test_qqcc_start_returns_simplified_menu(monkeypatch):
     reply_text.assert_awaited_once()
     kwargs = reply_text.await_args.kwargs
     assert _keyboard_texts(kwargs["reply_markup"]) == [
-        ["💃 快速脱衣"],
-        ["🖼️ 懒人P图", "AI动图"],
+        ["快速换脸"],
+        ["AI绘图", "AI动图"],
         ["修仙市集"],
         ["前往主bot"],
     ]
@@ -516,8 +544,8 @@ async def test_qqcc_start_keeps_main_bot_jump_in_menu_when_configured(monkeypatc
     kwargs = reply_text.await_args.kwargs
     assert getattr(kwargs["reply_markup"], "inline_keyboard", None) is None
     assert _keyboard_texts(kwargs["reply_markup"]) == [
-        ["💃 快速脱衣"],
-        ["🖼️ 懒人P图", "AI动图"],
+        ["快速换脸"],
+        ["AI绘图", "AI动图"],
         ["修仙市集"],
         ["前往主bot"],
     ]
@@ -577,6 +605,7 @@ async def test_qqcc_video_settings_buttons_are_filtered(monkeypatch):
     )
     config = normalize_qqcc_config(
         {
+            "scene_preset_version": SCENE_PRESET_VERSION,
             "video_scenes": [
                 {
                     "id": "long",
@@ -1512,6 +1541,7 @@ async def test_qqcc_quick_video_scene_callback_selects_dynamic_scene(monkeypatch
     answer_mock = AsyncMock()
     config = normalize_qqcc_config(
         {
+            "scene_preset_version": SCENE_PRESET_VERSION,
             "video_scenes": [
                 {
                     "id": "kiss",
@@ -1579,6 +1609,7 @@ async def test_qqcc_legacy_quick_video_callback_is_blocked_after_scene_removed(m
     answer_mock = AsyncMock()
     config = normalize_qqcc_config(
         {
+            "scene_preset_version": SCENE_PRESET_VERSION,
             "video_scenes": [
                 {
                     "id": "kiss",

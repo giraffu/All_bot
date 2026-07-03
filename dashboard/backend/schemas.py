@@ -264,6 +264,7 @@ class SiteNoticeCreateRequest(SiteNoticeUpsertRequest):
 
 
 class QqccBotConfigRequest(BaseModel):
+    scene_preset_version: Optional[int] = None
     global_enabled: Optional[bool] = None
     main_buttons: Dict[str, Any] = Field(default_factory=dict)
     photo_buttons: Dict[str, Any] = Field(default_factory=dict)

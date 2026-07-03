@@ -24,4 +24,4 @@ async def update_qqcc_config(
     payload: QqccBotConfigRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    return await save_qqcc_config_payload(db, payload.model_dump())
+    return await save_qqcc_config_payload(db, payload.model_dump(exclude_unset=True))

@@ -11,9 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.lora_catalog import IMAGE_LORA_MODELS, VIDEO_LORA_MODELS
 
 QQCC_LAZY_BOT_CONFIG_KEY = "qqcc_lazy_bot_config:v1"
+SCENE_PRESET_VERSION = 1
 
 MAIN_BUTTON_KEYS = (
     "quick_undress",
+    "quick_faceswap",
     "photo_edit",
     "ai_draw",
     "video_edit",
@@ -66,6 +68,22 @@ VIDEO_PROMPT_KEYS = (
     "undress_tongue",
     "closeup_blowjob",
 )
+DRAW_PROMPT_KEYS = ("undress", "masturbation")
+
+QQCC_SCENE_PRESET_PROMPTS = {
+    "undress": "全身广角镜头(full body shot)，确保人物完整的头部和脸部保留在画面中，绝不裁剪头部。给她的衣服脱掉，赤身裸体,露出质感自然的乳房和奶头和乳晕，完全展现她的身体曲线和隐私部位，私处肤色自然且有微微色素沉积，保持面部五官完全一致，不改变动作、身材、脸型、发型、表情和肤色。图中人物的视线要指向镜头中心，不要指向其他方向。",
+    "masturbation": "全身广角镜头(full body shot)，确保人物完整的头部和脸部保留在画面中，绝不裁剪头部。让图片中的人物赤身裸体，露出乳房，注意不要太夸张，双腿叉开，对着镜头露出私处，阴道微张，阴毛稀疏不要太长，遍布三角区域，小穴流出一些白色半透明的粘稠体液，私处不要粉色的动漫感，要真实的成年女性私处，稍微偏褐色。自己用手使劲揉捏自己的乳房。头部保持原样，不要改变五官和发型，表情千万不要动，嘴巴不要张开。图中人物的视线要指向镜头中心，不要指向其他方向。",
+    "perfect_video_insert": "女人快速脱掉身上所有衣服，清晰的露出奶子和阴部，浑身赤裸，女子快速躺下，双腿分开，女人始终看向镜头；一名男子从下方探入。他握着勃起的阴茎，缓缓插入她阴道。",
+    "doggy_style": "女人快速脱掉身上所有衣服，清晰的露出奶子和阴部，浑身赤裸，她朝向右侧趴下，翘起屁股，四肢趴地，始终看着镜头。左侧出现一名裸体男子，他握着勃起的阴茎，随后阴茎缓缓插入女子的阴道（侧视图）。",
+    "blowjob": "图中的人往下扒衣服，漏出乳房，注意不要太夸张。一个黑人从左边漏出阴茎，图中的人用手握住他的阴茎，同时用嘴进行口交。注意脸部不要有变化",
+    "undress_tongue": "女人往下扒衣服，漏出胸脯和奶头，妖娆的吐出舌头，口水滴下，并且开始翻白眼，阿颜黑",
+    "closeup_blowjob": "0-1秒：女性直视镜头，往下扒衣服，漏出乳房，注意不要太夸张；1-2秒：突然脱光衣服，一丝不挂，张大嘴巴，伸出舌头；2-3秒：POV高角度拍摄，双手紧紧抓住她的脸颊，强迫她口交；3-4秒：一根粗硬的阴茎快速而猛烈地在她口中抽插，喷射出液体，节奏疯狂，镜头随着口交的特写镜头而晃动；4-5秒：女性忍不住痛苦嘔吐出來。",
+}
+
+DRAW_SCENE_PRESET_PROMPT_KEYS_BY_ID = {
+    "quick_masturbation": "masturbation",
+    "quick_undress": "undress",
+}
 
 LEGACY_VIDEO_SCENE_DEFINITIONS = (
     {
@@ -100,27 +118,66 @@ LEGACY_VIDEO_SCENE_DEFINITIONS = (
     },
 )
 
+VIDEO_SCENE_PRESET_PROMPT_KEYS_BY_ID = {
+    scene["id"]: scene["prompt_key"] for scene in LEGACY_VIDEO_SCENE_DEFINITIONS
+}
 
-def _default_video_scenes() -> list[dict[str, str]]:
+
+def _preset_prompt(prompt_key: str, raw_prompts: dict[str, Any] | None = None) -> str:
+    if raw_prompts:
+        prompt = raw_prompts.get(prompt_key)
+        if isinstance(prompt, str) and prompt.strip():
+            return prompt.strip()
+    return QQCC_SCENE_PRESET_PROMPTS[prompt_key]
+
+
+def _default_video_scenes(
+    raw_prompts: dict[str, Any] | None = None,
+) -> list[dict[str, str]]:
     return [
         {
             "id": scene["id"],
             "name": scene["name"],
-            "prompt": "",
+            "prompt": _preset_prompt(scene["prompt_key"], raw_prompts),
             "duration": "5s",
             "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
             "lora_name": "",
             "end_frame_draw_scene_id": "",
-            "prompt_key": scene["prompt_key"],
         }
         for scene in LEGACY_VIDEO_SCENE_DEFINITIONS
     ]
 
+
+def _default_draw_scenes(
+    raw_prompts: dict[str, Any] | None = None,
+) -> list[dict[str, str]]:
+    return [
+        {
+            "id": "quick_masturbation",
+            "name": "快速自慰",
+            "prompt": _preset_prompt("masturbation", raw_prompts),
+            "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
+            "lora_name": "",
+            "postprocess_draw_scene_id": "",
+        },
+        {
+            "id": "quick_undress",
+            "name": "快速脱衣",
+            "prompt": _preset_prompt("undress", raw_prompts),
+            "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
+            "lora_name": "",
+            "postprocess_draw_scene_id": "",
+        },
+    ]
+
+
 DEFAULT_QQCC_LAZY_BOT_CONFIG: dict[str, Any] = {
+    "scene_preset_version": SCENE_PRESET_VERSION,
     "global_enabled": True,
     "main_buttons": {
-        "quick_undress": True,
-        "photo_edit": True,
+        "quick_undress": False,
+        "quick_faceswap": True,
+        "photo_edit": False,
         "ai_draw": True,
         "video_edit": True,
         "market": True,
@@ -154,7 +211,7 @@ DEFAULT_QQCC_LAZY_BOT_CONFIG: dict[str, Any] = {
         },
     },
     "video_scenes": _default_video_scenes(),
-    "draw_scenes": [],
+    "draw_scenes": _default_draw_scenes(),
     "prompts": {
         "undress": "",
         "i2i_draw_quick_undress": "",
@@ -209,6 +266,70 @@ def _normalize_scene_prompt_key(raw_prompt_key: Any) -> str | None:
     return prompt_key if prompt_key in VIDEO_PROMPT_KEYS else None
 
 
+def _normalize_draw_scene_prompt_key(raw_prompt_key: Any) -> str | None:
+    if not isinstance(raw_prompt_key, str):
+        return None
+    prompt_key = raw_prompt_key.strip()
+    return prompt_key if prompt_key in DRAW_PROMPT_KEYS else None
+
+
+def _normalize_scene_preset_version(raw_version: Any) -> int:
+    return (
+        raw_version
+        if (
+            isinstance(raw_version, int)
+            and not isinstance(raw_version, bool)
+            and raw_version >= 1
+        )
+        else 0
+    )
+
+
+def _get_legacy_prompt_override(
+    raw_prompts: dict[str, Any],
+    prompt_key: str | None,
+) -> str:
+    if not prompt_key:
+        return ""
+    return _preset_prompt(prompt_key, raw_prompts)
+
+
+def _merge_seeded_scene_presets(
+    *,
+    scenes: list[dict[str, Any]],
+    preset_scenes: list[dict[str, str]],
+    max_count: int,
+) -> list[dict[str, Any]]:
+    scenes_by_id = {str(scene.get("id") or ""): scene for scene in scenes}
+    merged_scenes: list[dict[str, Any]] = []
+    included_ids: set[str] = set()
+    for preset_scene in preset_scenes:
+        scene_id = preset_scene["id"]
+        raw_scene = scenes_by_id.get(scene_id)
+        if raw_scene is None:
+            scene = deepcopy(preset_scene)
+        else:
+            scene = deepcopy(preset_scene)
+            scene.update(raw_scene)
+            scene["id"] = scene_id
+            if not str(scene.get("name") or "").strip():
+                scene["name"] = preset_scene["name"]
+            if not str(scene.get("prompt") or "").strip():
+                scene["prompt"] = preset_scene["prompt"]
+        merged_scenes.append(scene)
+        included_ids.add(scene_id)
+
+    for scene in scenes:
+        scene_id = str(scene.get("id") or "")
+        if scene_id in included_ids:
+            continue
+        if len(merged_scenes) >= max_count:
+            break
+        merged_scenes.append(scene)
+        included_ids.add(scene_id)
+    return merged_scenes
+
+
 def _normalize_scene_engine(
     raw_engine: Any,
     *,
@@ -247,6 +368,8 @@ def _normalize_video_scene(
     index: int,
     used_ids: set[str],
     allowed_end_frame_draw_scene_ids: frozenset[str],
+    raw_prompts: dict[str, Any],
+    migrate_legacy_prompt_keys: bool,
 ) -> dict[str, Any] | None:
     if not isinstance(raw_scene, dict):
         return None
@@ -259,7 +382,14 @@ def _normalize_video_scene(
     prompt = raw_scene.get("prompt")
     prompt = prompt.strip() if isinstance(prompt, str) else ""
     prompt_key = _normalize_scene_prompt_key(raw_scene.get("prompt_key"))
-    if not prompt and prompt_key is None:
+    if not prompt and migrate_legacy_prompt_keys:
+        scene_id = raw_scene.get("id")
+        scene_id = scene_id.strip() if isinstance(scene_id, str) else ""
+        prompt = _get_legacy_prompt_override(
+            raw_prompts,
+            prompt_key or VIDEO_SCENE_PRESET_PROMPT_KEYS_BY_ID.get(scene_id),
+        )
+    if not prompt:
         return None
 
     duration = raw_scene.get("duration")
@@ -295,8 +425,6 @@ def _normalize_video_scene(
             allowed_draw_scene_ids=allowed_end_frame_draw_scene_ids,
         ),
     }
-    if prompt_key:
-        scene["prompt_key"] = prompt_key
     return scene
 
 
@@ -304,6 +432,8 @@ def _normalize_video_scenes(
     raw_scenes: Any,
     *,
     allowed_end_frame_draw_scene_ids: frozenset[str],
+    raw_prompts: dict[str, Any],
+    seed_presets: bool,
 ) -> list[dict[str, Any]]:
     if not isinstance(raw_scenes, list):
         return []
@@ -315,9 +445,17 @@ def _normalize_video_scenes(
             index=index,
             used_ids=used_ids,
             allowed_end_frame_draw_scene_ids=allowed_end_frame_draw_scene_ids,
+            raw_prompts=raw_prompts,
+            migrate_legacy_prompt_keys=seed_presets,
         )
         if scene is not None:
             scenes.append(scene)
+    if seed_presets:
+        scenes = _merge_seeded_scene_presets(
+            scenes=scenes,
+            preset_scenes=_default_video_scenes(raw_prompts),
+            max_count=VIDEO_SCENE_MAX_COUNT,
+        )
     return scenes
 
 
@@ -326,6 +464,8 @@ def _normalize_draw_scene(
     *,
     index: int,
     used_ids: set[str],
+    raw_prompts: dict[str, Any],
+    migrate_legacy_prompt_keys: bool,
 ) -> dict[str, Any] | None:
     if not isinstance(raw_scene, dict):
         return None
@@ -334,6 +474,14 @@ def _normalize_draw_scene(
     name = name.strip() if isinstance(name, str) else ""
     prompt = raw_scene.get("prompt")
     prompt = prompt.strip() if isinstance(prompt, str) else ""
+    prompt_key = _normalize_draw_scene_prompt_key(raw_scene.get("prompt_key"))
+    if not prompt and migrate_legacy_prompt_keys:
+        scene_id = raw_scene.get("id")
+        scene_id = scene_id.strip() if isinstance(scene_id, str) else ""
+        prompt = _get_legacy_prompt_override(
+            raw_prompts,
+            prompt_key or DRAW_SCENE_PRESET_PROMPT_KEYS_BY_ID.get(scene_id),
+        )
     if not name or not prompt:
         return None
 
@@ -356,7 +504,7 @@ def _normalize_draw_scene(
         else ""
     )
 
-    return {
+    scene = {
         "id": _build_unique_scene_id(
             raw_scene.get("id"),
             index=index,
@@ -368,6 +516,7 @@ def _normalize_draw_scene(
         "lora_name": lora_name,
         "postprocess_draw_scene_id": postprocess_draw_scene_id,
     }
+    return scene
 
 
 def _normalize_draw_scene_postprocess_refs(scenes: list[dict[str, Any]]) -> None:
@@ -401,15 +550,35 @@ def _normalize_draw_scene_postprocess_refs(scenes: list[dict[str, Any]]) -> None
         scenes_by_id[scene_id]["postprocess_draw_scene_id"] = ""
 
 
-def _normalize_draw_scenes(raw_scenes: Any) -> list[dict[str, Any]]:
-    if not isinstance(raw_scenes, list):
-        return []
-    scenes: list[dict[str, Any]] = []
+def _normalize_draw_scenes(
+    raw_scenes: Any,
+    *,
+    raw_prompts: dict[str, Any],
+    seed_presets: bool,
+) -> list[dict[str, Any]]:
+    raw_scene_list = raw_scenes if isinstance(raw_scenes, list) else []
+    normalized_raw_scenes: list[dict[str, Any]] = []
     used_ids: set[str] = set()
-    for index, raw_scene in enumerate(raw_scenes[:DRAW_SCENE_MAX_COUNT]):
-        scene = _normalize_draw_scene(raw_scene, index=index, used_ids=used_ids)
+    for index, raw_scene in enumerate(raw_scene_list[:DRAW_SCENE_MAX_COUNT]):
+        scene = _normalize_draw_scene(
+            raw_scene,
+            index=index,
+            used_ids=used_ids,
+            raw_prompts=raw_prompts,
+            migrate_legacy_prompt_keys=seed_presets,
+        )
         if scene is not None:
-            scenes.append(scene)
+            normalized_raw_scenes.append(scene)
+    scenes = (
+        _merge_seeded_scene_presets(
+            scenes=normalized_raw_scenes,
+            preset_scenes=_default_draw_scenes(raw_prompts),
+            max_count=DRAW_SCENE_MAX_COUNT,
+        )
+        if seed_presets
+        else normalized_raw_scenes
+    )
+
     _normalize_draw_scene_postprocess_refs(scenes)
     return scenes
 
@@ -430,16 +599,20 @@ def _migrate_legacy_video_scenes(raw: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         prompt_key = scene["prompt_key"]
         prompt = raw_prompts.get(prompt_key)
+        prompt = (
+            prompt.strip()
+            if isinstance(prompt, str) and prompt.strip()
+            else _preset_prompt(prompt_key)
+        )
         scenes.append(
             {
                 "id": scene["id"],
                 "name": scene["name"],
-                "prompt": prompt.strip() if isinstance(prompt, str) else "",
+                "prompt": prompt,
                 "duration": "5s",
                 "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
                 "lora_name": "",
                 "end_frame_draw_scene_id": "",
-                "prompt_key": prompt_key,
             }
         )
     return scenes
@@ -453,6 +626,16 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
         return defaults
 
     config = deepcopy(defaults)
+    raw_scene_preset_version = _normalize_scene_preset_version(
+        raw.get("scene_preset_version")
+    )
+    seed_scene_presets = raw_scene_preset_version < SCENE_PRESET_VERSION
+    config["scene_preset_version"] = SCENE_PRESET_VERSION
+
+    raw_prompts = raw.get("prompts")
+    if not isinstance(raw_prompts, dict):
+        raw_prompts = {}
+
     global_enabled = raw.get("global_enabled", defaults["global_enabled"])
     config["global_enabled"] = (
         global_enabled if isinstance(global_enabled, bool) else defaults["global_enabled"]
@@ -493,7 +676,16 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
             keys=VIDEO_DURATION_KEYS,
         ),
     }
-    config["draw_scenes"] = _normalize_draw_scenes(raw.get("draw_scenes"))
+    if "draw_scenes" in raw:
+        config["draw_scenes"] = _normalize_draw_scenes(
+            raw.get("draw_scenes"),
+            raw_prompts=raw_prompts,
+            seed_presets=seed_scene_presets,
+        )
+    elif seed_scene_presets:
+        config["draw_scenes"] = _default_draw_scenes(raw_prompts)
+    elif not seed_scene_presets:
+        config["draw_scenes"] = []
     allowed_end_frame_draw_scene_ids = frozenset(
         str(scene.get("id") or "") for scene in config["draw_scenes"]
     )
@@ -501,30 +693,19 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
         config["video_scenes"] = _normalize_video_scenes(
             raw.get("video_scenes"),
             allowed_end_frame_draw_scene_ids=allowed_end_frame_draw_scene_ids,
+            raw_prompts=raw_prompts,
+            seed_presets=seed_scene_presets,
         )
-    else:
+    elif seed_scene_presets:
         config["video_scenes"] = _migrate_legacy_video_scenes(raw)
+    else:
+        config["video_scenes"] = []
 
-    raw_prompts = raw.get("prompts")
-    if not isinstance(raw_prompts, dict):
-        raw_prompts = {}
     config["prompts"] = {
         key: raw_prompts[key].strip() if isinstance(raw_prompts.get(key), str) else ""
         for key in PROMPT_KEYS
     }
     return config
-
-
-def has_enabled_qqcc_values(config: dict[str, Any], section: str) -> bool:
-    normalized = normalize_qqcc_config(config)
-    values = normalized.get(section, {})
-    return isinstance(values, dict) and any(value is True for value in values.values())
-
-
-def has_enabled_qqcc_video_settings(config: dict[str, Any]) -> bool:
-    normalized = normalize_qqcc_config(config)
-    settings = normalized["video_settings"]
-    return any(settings["resolutions"].values()) and any(settings["durations"].values())
 
 
 def get_enabled_qqcc_video_scenes(config: dict[str, Any]) -> list[dict[str, Any]]:
@@ -606,10 +787,6 @@ def is_qqcc_undress_method_enabled(config: dict[str, Any], key: str) -> bool:
     return is_qqcc_flag_enabled(config, "undress_methods", key)
 
 
-def is_qqcc_video_button_enabled(config: dict[str, Any], key: str) -> bool:
-    return is_qqcc_flag_enabled(config, "video_buttons", key)
-
-
 def get_qqcc_prompt_override(config: dict[str, Any], prompt_key: str) -> str | None:
     prompt = normalize_qqcc_config(config)["prompts"].get(prompt_key, "").strip()
     return prompt or None
@@ -637,6 +814,9 @@ def _build_lora_model_options(catalog: dict[str, str]) -> list[dict[str, str]]:
 
 def build_qqcc_config_options() -> dict[str, Any]:
     return {
+        "scene_preset_version": SCENE_PRESET_VERSION,
+        "default_video_engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+        "default_draw_engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
         "video_engines": [
             {
                 "value": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,

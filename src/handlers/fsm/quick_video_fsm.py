@@ -47,6 +47,7 @@ from src.services.permission_service import permission_service
 from src.services.qqcc_draw_chain_service import (
     calculate_qqcc_draw_chain_cost,
     execute_qqcc_draw_scene_chain,
+    resolve_qqcc_draw_chain_prompts,
     resolve_qqcc_draw_scene_chain,
 )
 from src.services.qqcc_config_service import (
@@ -59,7 +60,9 @@ from src.services.qqcc_config_service import (
     has_enabled_qqcc_video_scenes,
     is_qqcc_main_button_enabled,
     load_runtime_qqcc_config,
-    normalize_qqcc_config,
+)
+from src.services.qqcc_runtime_context import (
+    load_qqcc_config_for_context as _load_qqcc_runtime_config_for_context,
 )
 from src.services.task_service_generation_image import (
     process_standard_generation_task as process_generation_task,
@@ -81,8 +84,6 @@ import contextlib
 from src.filters.i18n_filter import I18nFilter
 
 logger = logging.getLogger("fsm.quick_video")
-
-QQCC_BOT_CLIENT_TYPE = "bot:qqcc"
 
 QUICK_VIDEO_MODES = {
     "menu.video_edit_missionary": MODE_PERFECT_VIDEO_INSERT,
@@ -131,24 +132,14 @@ def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, _user_id: int):
     )
 
 
-def _is_qqcc_bot_context(context: ContextTypes.DEFAULT_TYPE) -> bool:
-    bot_data = getattr(context, "bot_data", None)
-    if bot_data is None:
-        application = getattr(context, "application", None)
-        bot_data = getattr(application, "bot_data", None)
-    return bool(bot_data and bot_data.get("bot_client_type") == QQCC_BOT_CLIENT_TYPE)
-
-
 async def _load_qqcc_config_for_context(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> dict | None:
-    if not _is_qqcc_bot_context(context):
-        return None
-    try:
-        return await load_runtime_qqcc_config()
-    except Exception:
-        logger.exception("Failed to load QQCC lazy bot config; using defaults.")
-        return normalize_qqcc_config(None)
+    return await _load_qqcc_runtime_config_for_context(
+        context,
+        logger=logger,
+        load_config_func=load_runtime_qqcc_config,
+    )
 
 
 async def _reply_qqcc_feature_disabled(
@@ -163,15 +154,6 @@ async def _reply_qqcc_feature_disabled(
     message = update.message or update.edited_message
     if message:
         await robust_reply_text(message, text, parse_mode="Markdown")
-
-
-def _is_qqcc_quick_video_route_enabled(config: dict, route_key: str | None) -> bool:
-    scene_id = QUICK_VIDEO_LEGACY_ROUTE_SCENE_IDS.get(route_key or "")
-    return bool(
-        scene_id
-        and is_qqcc_main_button_enabled(config, "video_edit")
-        and get_qqcc_video_scene(config, scene_id)
-    )
 
 
 def _is_qqcc_quick_video_mode_enabled(config: dict, mode: str | None) -> bool:
@@ -330,17 +312,45 @@ def _resolve_qqcc_scene_from_fsm_data(
 
 
 def _resolve_qqcc_scene_default_prompt_text(scene: dict[str, object]) -> str:
-    return (
-        str(scene.get("prompt") or "")
-        or QUICK_VIDEO_PROMPT_FALLBACKS.get(str(scene.get("prompt_key") or ""))
-        or QUICK_VIDEO_PROMPT_FALLBACKS[MODE_CUSTOM_VIDEO]
-    )
+    return str(scene.get("prompt") or "").strip()
 
 
 def _resolve_qqcc_scene_task_type(scene: dict[str, object]) -> str:
     if scene.get("engine") == VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2:
         return MODE_WAN22_VIDEO_V2
     return MODE_IMAGE_TO_VIDEO if str(scene.get("lora_name") or "").strip() else MODE_CUSTOM_VIDEO
+
+
+def _sync_qqcc_scene_to_quick_video_data(
+    fsm_data: dict,
+    scene: dict[str, object],
+    *,
+    include_scene_id: bool = False,
+    include_prompt_details: bool = False,
+) -> str:
+    mode = _resolve_qqcc_scene_task_type(scene)
+    fsm_data.update(
+        {
+            "mode": mode,
+            "duration": scene["duration"],
+            "engine": scene.get("engine"),
+            "lora_name": str(scene.get("lora_name") or ""),
+            "end_frame_draw_scene_id": str(scene.get("end_frame_draw_scene_id") or ""),
+        }
+    )
+    if include_scene_id:
+        fsm_data["scene_id"] = scene["id"]
+    if include_prompt_details:
+        scene_prompt = str(scene.get("prompt", "")).strip()
+        fsm_data.update(
+            {
+                "mode_name": str(scene["name"]),
+                "prompt_override": scene_prompt,
+                "default_prompt_key": MODE_CUSTOM_VIDEO,
+                "default_prompt_text": _resolve_qqcc_scene_default_prompt_text(scene),
+            }
+        )
+    return mode
 
 
 def _resolve_qqcc_video_end_frame_draw_scene(
@@ -571,26 +581,13 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         ):
             await _reply_qqcc_feature_disabled(update, context)
             return ConversationHandler.END
-        mode = _resolve_qqcc_scene_task_type(scene)
-        mode_name = str(scene["name"])
-        scene_prompt = str(scene.get("prompt", ""))
-        prompt_key = str(scene.get("prompt_key") or MODE_CUSTOM_VIDEO)
-        quick_video_data.update(
-            {
-                "mode": mode,
-                "scene_id": scene["id"],
-                "mode_name": mode_name,
-                "prompt_override": scene_prompt or None,
-                "default_prompt_key": prompt_key,
-                "default_prompt_text": _resolve_qqcc_scene_default_prompt_text(scene),
-                "engine": scene.get("engine"),
-                "lora_name": str(scene.get("lora_name") or ""),
-                "end_frame_draw_scene_id": str(
-                    scene.get("end_frame_draw_scene_id") or ""
-                ),
-                "duration": scene["duration"],
-            }
+        mode = _sync_qqcc_scene_to_quick_video_data(
+            quick_video_data,
+            scene,
+            include_scene_id=True,
+            include_prompt_details=True,
         )
+        mode_name = str(quick_video_data["mode_name"])
 
     if not mode or not reply_message:
         return ConversationHandler.END
@@ -619,13 +616,7 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             await _reply_qqcc_feature_disabled(update, context)
             _cleanup_context(context, user_id)
             return ConversationHandler.END
-        fsm_data["duration"] = qqcc_scene["duration"]
-        fsm_data["mode"] = _resolve_qqcc_scene_task_type(qqcc_scene)
-        fsm_data["engine"] = qqcc_scene.get("engine")
-        fsm_data["lora_name"] = str(qqcc_scene.get("lora_name") or "")
-        fsm_data["end_frame_draw_scene_id"] = str(
-            qqcc_scene.get("end_frame_draw_scene_id") or ""
-        )
+        _sync_qqcc_scene_to_quick_video_data(fsm_data, qqcc_scene)
 
     file_id = _resolve_quick_video_file_id(message)
     if not file_id:
@@ -708,13 +699,7 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             await _reply_qqcc_feature_disabled(update, context)
             _cleanup_context(context, user_id)
             return ConversationHandler.END
-        fsm_data["duration"] = qqcc_scene["duration"]
-        fsm_data["mode"] = _resolve_qqcc_scene_task_type(qqcc_scene)
-        fsm_data["engine"] = qqcc_scene.get("engine")
-        fsm_data["lora_name"] = str(qqcc_scene.get("lora_name") or "")
-        fsm_data["end_frame_draw_scene_id"] = str(
-            qqcc_scene.get("end_frame_draw_scene_id") or ""
-        )
+        _sync_qqcc_scene_to_quick_video_data(fsm_data, qqcc_scene)
 
     if data == "qvid_start_generation":
         await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
@@ -846,19 +831,10 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             await _reply_qqcc_feature_disabled(update, context)
             _cleanup_context(context, user_id)
             return ConversationHandler.END
-        fsm_data["duration"] = qqcc_scene["duration"]
-        fsm_data["mode"] = _resolve_qqcc_scene_task_type(qqcc_scene)
-        fsm_data["mode_name"] = qqcc_scene["name"]
-        fsm_data["engine"] = qqcc_scene.get("engine")
-        fsm_data["lora_name"] = str(qqcc_scene.get("lora_name") or "")
-        fsm_data["end_frame_draw_scene_id"] = str(
-            qqcc_scene.get("end_frame_draw_scene_id") or ""
-        )
-        scene_prompt = str(qqcc_scene.get("prompt", ""))
-        fsm_data["prompt_override"] = scene_prompt or None
-        fsm_data["default_prompt_key"] = qqcc_scene.get("prompt_key") or MODE_CUSTOM_VIDEO
-        fsm_data["default_prompt_text"] = _resolve_qqcc_scene_default_prompt_text(
-            qqcc_scene
+        _sync_qqcc_scene_to_quick_video_data(
+            fsm_data,
+            qqcc_scene,
+            include_prompt_details=True,
         )
         tail_draw_scene = _resolve_qqcc_video_end_frame_draw_scene(
             qqcc_config,
@@ -951,6 +927,8 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     mode_submission = _resolve_quick_video_mode_submission(mode)
     if qqcc_config is not None:
+        if tail_draw_chain:
+            tail_draw_chain = resolve_qqcc_draw_chain_prompts(qqcc_config, tail_draw_chain)
         default_prompt_key = fsm_data.get("default_prompt_key") or MODE_CUSTOM_VIDEO
         default_prompt_text = fsm_data.get("default_prompt_text") or "custom video"
         prompt_override = fsm_data.get("prompt_override")

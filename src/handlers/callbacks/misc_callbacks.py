@@ -12,10 +12,11 @@ from src.services.task_service_generation_image import process_standard_generati
 from src.services.permission_service import permission_service
 from src.services.qqcc_config_service import (
     is_qqcc_main_button_enabled,
-    is_qqcc_photo_button_enabled,
     load_runtime_qqcc_config,
-    normalize_qqcc_config,
     resolve_qqcc_prompt,
+)
+from src.services.qqcc_runtime_context import (
+    load_qqcc_config_for_context as _load_qqcc_runtime_config_for_context,
 )
 from src.services.storage import storage
 from src.utils import (
@@ -27,33 +28,20 @@ from src.utils import (
 )
 
 logger = logging.getLogger(__name__)
-QQCC_BOT_CLIENT_TYPE = "bot:qqcc"
-
-
-def _is_qqcc_bot_context(context: ContextTypes.DEFAULT_TYPE) -> bool:
-    bot_data = getattr(context, "bot_data", None)
-    if bot_data is None:
-        application = getattr(context, "application", None)
-        bot_data = getattr(application, "bot_data", None)
-    return bool(bot_data and bot_data.get("bot_client_type") == QQCC_BOT_CLIENT_TYPE)
 
 
 async def _load_qqcc_config_for_context(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> dict | None:
-    if not _is_qqcc_bot_context(context):
-        return None
-    try:
-        return await load_runtime_qqcc_config()
-    except Exception:
-        logger.exception("Failed to load QQCC lazy bot config; using defaults.")
-        return normalize_qqcc_config(None)
+    return await _load_qqcc_runtime_config_for_context(
+        context,
+        logger=logger,
+        load_config_func=load_runtime_qqcc_config,
+    )
 
 
 def _is_qqcc_random_faceswap_enabled(config: dict) -> bool:
-    return is_qqcc_main_button_enabled(
-        config, "photo_edit"
-    ) and is_qqcc_photo_button_enabled(config, "random_faceswap")
+    return is_qqcc_main_button_enabled(config, "quick_faceswap")
 
 
 @register_callback("noop")

@@ -73,6 +73,7 @@
   "qqcc": {
     "feature_disabled": "This feature is not available yet.",
     "menu": {
+      "quick_faceswap": "Quick Faceswap",
       "ai_draw": "AI Drawing",
       "video_edit": "AI GIF",
       "market": "Cultivation Market"
@@ -1034,6 +1035,7 @@
       "undress_i2i_draw_start": "💃 **Entered Full-Body Face-Safe Repaint mode** (cost: {cost} credits).\n\nSend one clear full-body photo. This mode gives more realistic texture and preserves the face more steadily.\n\nYou can send /cancel anytime to exit.",
       "undress_start": "💃 **Entered Quick Undress mode** (cost: {cost} credits).\n\nSend one image containing a person and I will process it automatically.\n\nYou can send /cancel anytime to exit.",
       "masturbation_start": "🥵 **Entered Quick Masturbation mode** (cost: {cost} credits).\n\nSend one image containing a person and I will process it automatically.\n\nYou can send /cancel anytime to exit.",
+      "quick_faceswap_start": "🎭 **Entered Quick Faceswap mode** (cost: {cost} credits).\n\nSend one **front-face** image and I will automatically match a template for it.\n\nYou can send /cancel anytime to exit.",
       "random_faceswap_start": "🎭 **Entered Random Faceswap mode** (cost: {cost} credits).\n\nSend one **front-face** image and I will automatically match a template for it.\n\nYou can send /cancel anytime to exit.",
       "ai_draw_start": "🎨 **Entered {mode_name} mode** (cost: {cost} credits).\n\nSend one image and I will process it with this scenario prompt.\n\nYou can send /cancel anytime to exit.",
       "priority_exhausted": "⚠️ Your queue priority is exhausted (or your realm is too low). Please come back tomorrow.",
