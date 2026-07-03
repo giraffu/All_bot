@@ -28,6 +28,8 @@
 | Payment API | `cloud-payment-api-prod` | `100.107.220.127:8021` | RMB 回调与支付结果页 |
 | Dashboard Backend | `cloud-dashboard-backend-prod` | `100.107.220.127:8043` | 管理后台 API |
 | Dashboard Frontend | `cloud-dashboard-frontend-prod` | `100.107.220.127:8086` | 管理后台云端 Nginx 前端，同源反代 Dashboard Backend |
+| QQCC Config Backend | `cloud-qqcc-config-backend-prod` | `100.107.220.127:8045` | QQCC 懒人 Bot 独立配置 API，使用 `QQCC_CONFIG_*` 独立账号 |
+| QQCC Config Frontend | `cloud-qqcc-config-frontend-prod` | `100.107.220.127:8088` | QQCC 懒人 Bot 独立配置 Web，同源反代 QQCC Config Backend |
 | imgproxy | `cloud-imgproxy-prod` | compose 内部端口 | 图片缩略与代理 |
 | Bot | `cloud-tg-bot-prod` | `bot` profile | 正式 Bot polling；必须保证全网单实例 |
 | QQCC Bot | `cloud-qqcc-bot-prod` | `qqcc-bot` profile | QQCC 懒人 Bot 独立 polling；只开放主菜单快速脱衣、懒人 P 图/懒人动图，必须使用独立 `QQCC_BOT_TOKEN` |
@@ -157,7 +159,7 @@ GPU 节点上的 ComfyUI 服务不在本 compose 内。`cloud-prod-comfy-agent-*
 - `worker-central.aivison.it.com`：远程 worker / RunPod worker 专用 Central 入口，回源 `http://100.107.220.127:8003`；不得用于 Web API，也不得启用会拦截 worker 请求的 Cloudflare Access 登录页。RunPod-Prod 独立 tunnel 若使用新 hostname，需在 Cloudflare Public Hostname 中绑定到 `cloudflared-runpod-prod.service` 对应 tunnel。
 - `rmb.aivison.it.com`：Cloudflare Tunnel 回源到云 Payment API `http://100.107.220.127:8021`；紧急切回本地 Payment API 使用 `scripts/rollback_rmb_tunnel_to_local_prod.sh --execute`。
 - `assets.aivison.it.com`：保留到本地 legacy MinIO 的只读代理，仅用于人工回滚、旧外链和迁移补齐排障；正式 Web/Dashboard 运行时不应生成该域名 URL。
-- 管理后台云端前端：默认仅通过 Tailscale/受控来源访问 `http://100.107.220.127:8086/`。若需要公网域名，必须通过 Cloudflare Tunnel 回源该地址，并启用 Cloudflare Access 身份校验、管理员 allowlist/MFA；禁止把 `8086` 或 `8043` 直接暴露到公网。
+- 管理后台云端前端：默认仅通过 Tailscale/受控来源访问 `http://100.107.220.127:8086/`。QQCC 懒人 Bot 配置已剥离到独立 `http://100.107.220.127:8088/`，后端为 `8045`，使用 `QQCC_CONFIG_*` 独立后台账号。若需要公网管理域名，必须通过 Cloudflare Tunnel 回源对应前端地址，并启用 Cloudflare Access 身份校验、管理员 allowlist/MFA；禁止把 `8086`/`8043`/`8088`/`8045` 直接暴露到公网。
 - `web-test.aivison.it.com`：独立云测试环境的公网 Web 入口，由 Web/Nginx VPS 提供静态站并反代云测试 Web API `100.82.124.91:8001`。
 - `web-cf-test.aivison.it.com` / `api-cf-test.aivison.it.com`：历史 canary 入口；若保留，仍不得复用本地主服务器 RMB tunnel。
 
@@ -233,7 +235,7 @@ scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod --with-db
 
 常用参数：
 - `--scope control-plane`：默认，使用 `scripts/safe_deploy_cloud_prod.sh --start-control-plane` 更新 Central/Web/Payment/Dashboard/imgproxy。
-- `--scope services --services "web-api-prod dashboard-backend-prod"`：只重建指定云端服务；禁止把 `bot-prod` 放入 `--services`。
+- `--scope services --services "web-api-prod dashboard-backend-prod"`：只重建指定云端服务；禁止把 `bot-prod` 放入 `--services`。QQCC 配置 Web 单独更新使用 `--services "qqcc-config-backend-prod qqcc-config-frontend-prod"`。
 - `--qqcc-bot-mode start|stop|auto|skip`：默认 `skip`。`start` 会重建并启动 `qqcc-bot-prod`，要求远端 `.env.cloud.prod` 已配置 `QQCC_BOT_TOKEN`；`auto` 只在 `cloud-qqcc-bot-prod` 原本运行时重建并启动。
 - `scripts/update_cloud_prod_qqcc_bot.sh`：只更新正式 QQCC Bot 的专用窄入口，默认 dry-run，真实执行必须传 `--execute --confirm-prod --confirm-single-polling`。
 - `--skip-generation-maintenance`：仅支持 `--scope services`，跳过生成维护和队列 drain。用于不影响生成入口的低风险服务更新，例如只更新 `dashboard-backend-prod dashboard-frontend-prod paid-group-guard-bot-prod`。
@@ -290,6 +292,16 @@ curl -fsS http://100.107.220.127:8086/api/health
 `dashboard-frontend-prod` 即可。验证时确认 `cloud-dashboard-frontend-prod` 与
 `cloud-dashboard-backend-prod` healthy，且 `cloud-central-api-prod`、`cloud-web-api-prod`、
 `cloud-tg-bot-prod`、`cloud-payment-api-prod`、`cloud-imgproxy-prod` 的启动时间没有变化。
+
+QQCC Config Web 已从主 Dashboard 剥离；只改懒人 Bot 配置页面或独立配置认证时，重建
+`qqcc-config-backend-prod qqcc-config-frontend-prod`，验证：
+
+```bash
+curl -fsS http://100.107.220.127:8045/api/health
+curl -fsS http://100.107.220.127:8088/api/health
+```
+
+该路径不重建 `cloud-dashboard-backend-prod` / `cloud-dashboard-frontend-prod`，也不触碰 `cloud-qqcc-bot-prod` polling。
 Dashboard RunPod 管理入口当前支持 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、
 `scail2 / 视频生视频` 与 `ltx_video / 高级图生视频`；它只提交正式 RunPod 池新增/暂停/删除操作，不直接启停其它正式服务。
 Dashboard 后端 RunPod autoscaler 默认随正式 `dashboard-backend-prod` 启动，只有拿到 Redis leader
@@ -667,13 +679,16 @@ curl -fsS "$CENTRAL/system/workers"
 docker inspect cloud-central-api-prod --format 'restart={{.RestartCount}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}'
 ```
 
-Web、Payment、Dashboard 验证：
+Web、Payment、Dashboard、QQCC Config 验证：
 - `https://web.aivison.it.com` Pages 静态站 200，且 JS bundle 指向 `https://api.aivison.it.com/api`
 - `https://api.aivison.it.com/api/health`
 - `https://api-cf-test.aivison.it.com/api/health` 仅在 canary tunnel 已配置时验证；若未配置，不得把 502 当作云 Web API 故障。
 - `https://rmb.aivison.it.com/pay/result`
 - `http://100.107.220.127:8086/api/health` 仅在云正式 Dashboard Frontend 已启动后验证；如果配置了公网管理域名，还必须确认该域名受 Cloudflare Access 或等价身份层保护。
+- `http://100.107.220.127:8045/api/health` 仅在云正式 QQCC Config Backend 已启动后验证。
+- `http://100.107.220.127:8088/api/health` 仅在云正式 QQCC Config Frontend 已启动后验证；如果配置了公网管理域名，还必须确认该域名受 Cloudflare Access 或等价身份层保护。
 - Dashboard 登录后系统状态、worker 卡片与大盘统计能刷新。
+- QQCC Config Web 使用独立账号登录，能加载并保存 `qqcc_lazy_bot_config:v1`；主 Dashboard 不再出现 `懒人Bot配置` 入口。
 - Dashboard Backend 必须有可用 `REDIS_URL` 或 `DASHBOARD_RUNPOD_OPERATION_REDIS_URL`，用于持久化 RunPod operation store；生产不应依赖进程内 memory store 追踪 operation。
 - Dashboard Backend 启动入口必须调用 `ensure_billing_core_providers_registered()`；退款、强制终止和资产类管理接口会进入 billing core，若只注册 task core provider，会出现 `Billing core providers 未注册`。
 - Web 卡顿专项需额外记录云内、边缘到云、公网三段延迟，并统计边缘 499、Web R2 result timeout、Dashboard circuit breaker；若响应仍出现 `assets.aivison.it.com`，按 legacy 退出回归缺陷处理。

@@ -68,14 +68,18 @@ sequenceDiagram
 | `100.107.220.127:8021` | 云正式 Payment API | RMB Tunnel 当前回源 |
 | `100.107.220.127:8043` | 云正式 Dashboard Backend | 本地 Dashboard 网关使用 |
 | `100.107.220.127:8086` | 云正式 Dashboard Frontend | 仅 Tailscale/Cloudflare Access 受控入口；同源反代 Dashboard Backend |
+| `100.107.220.127:8045` | 云正式 QQCC Config Backend | QQCC 懒人 Bot 独立配置 API |
+| `100.107.220.127:8088` | 云正式 QQCC Config Frontend | 仅 Tailscale/Cloudflare Access 受控入口；同源反代 QQCC Config Backend |
 | `100.82.124.91:8001` | 云测试 Web API | Web/Nginx VPS `web-test` upstream |
 | `100.82.124.91:8004` | 云测试 Central API | 本地云测试 worker 使用 |
 | `100.82.124.91:8044` | 云测试 Dashboard Backend | 测试管理入口 |
 | `100.82.124.91:8087` | 云测试 Dashboard Frontend | 测试管理前端，仅 Tailscale/受控来源访问 |
+| `100.82.124.91:8045` | 云测试 QQCC Config Backend | 测试 QQCC 配置 API |
+| `100.82.124.91:8088` | 云测试 QQCC Config Frontend | 测试 QQCC 配置前端，仅 Tailscale/受控来源访问 |
 | `100.99.254.53:9000` | 本地 legacy MinIO | 只做 `assets.aivison.it.com` 人工回滚、旧外链和迁移排障入口 |
 | `69.63.220.115:8081/8082` | Telegram Local API / 文件服务 | Bot 大文件能力依赖 |
 
-云测试端口绑定云测试 Tailscale IP `100.82.124.91`，公网 eth0 上的 `8001/8004/8044/8084/8087` 由 `allbot-cloud-test-firewall.service` drop。不要把云测试 DB/Redis 暴露到公网。
+云测试端口绑定云测试 Tailscale IP `100.82.124.91`，公网 eth0 上的 `8001/8004/8044/8045/8084/8087/8088` 由 `allbot-cloud-test-firewall.service` drop。不要把云测试 DB/Redis 暴露到公网。
 
 ## 5. RMB Tunnel 切换
 
@@ -117,6 +121,7 @@ curl -fsS https://api.aivison.it.com/api/health
 curl -fsS https://rmb.aivison.it.com/pay/result
 curl -fsS https://web-test.aivison.it.com/api/health
 curl -fsS http://100.107.220.127:8086/api/health
+curl -fsS http://100.107.220.127:8088/api/health
 
 ssh -i frontend/ssh_key/id_rsa.pem root@100.88.57.122 'nginx -t && systemctl is-active nginx tailscaled'
 ssh allbot-do-sgp1-control 'curl -fsS http://100.107.220.127:8000/api/health'

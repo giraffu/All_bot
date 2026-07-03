@@ -82,8 +82,8 @@
 | 实测 CPU / 内存 | 1 vCPU；约 1.9GiB RAM，当前 available 约 751MiB |
 | 实测系统盘 | 约 48G 总量；当前约 16G 已用、33G 可用，使用率约 32% |
 | SSH 日常入口 | `ssh allbot-do-sgp1-test-control`，默认 `deploy` 用户 |
-| 运行服务 | `cloud-postgres-test`、`cloud-redis-test`、`cloud-central-api-test`、`cloud-web-api-test`、`cloud-dashboard-backend-test`、`cloud-dashboard-frontend-test`、`cloud-imgproxy-test`、`cloud-tg-bot-test`；`cloud-qqcc-bot-test` 是可选 `qqcc-bot` profile，需独立测试 token 才启动 |
-| 公网保护 | 服务端口绑定 `100.82.124.91`；`allbot-cloud-test-firewall.service` drop 公网 eth0 的 `8001/8004/8044/8084/8087` |
+| 运行服务 | `cloud-postgres-test`、`cloud-redis-test`、`cloud-central-api-test`、`cloud-web-api-test`、`cloud-dashboard-backend-test`、`cloud-dashboard-frontend-test`、`cloud-qqcc-config-backend-test`、`cloud-qqcc-config-frontend-test`、`cloud-imgproxy-test`、`cloud-tg-bot-test`；`cloud-qqcc-bot-test` 是可选 `qqcc-bot` profile，需独立测试 token 才启动 |
+| 公网保护 | 服务端口绑定 `100.82.124.91`；`allbot-cloud-test-firewall.service` drop 公网 eth0 的 `8001/8004/8044/8045/8084/8087/8088` |
 
 使用边界：
 - 测试 PostgreSQL 与 Redis 均为同机容器，只服务云测试栈，不连接正式托管 PostgreSQL/Valkey。
@@ -99,7 +99,7 @@
 | :--- | :--- | :--- |
 | 云 Droplet CPU/内存 | `nproc=8`，内存约 15GiB，available 约 10GiB | 控制面 CPU/RAM 未打满 |
 | 云 Droplet 磁盘 | 309G 总量，约 125G 已用，185G 可用 | 使用率约 41%，仍有余量 |
-| 云控制面容器 | Central/Web/Payment/Dashboard/imgproxy/Bot 均 `Up` 且关键服务健康；`visible-hotset-input-backfill-cloud` 为一次性补齐任务容器 | 控制面主服务正常，临时任务不写成长期常驻服务 |
+| 云控制面容器 | Central/Web/Payment/Dashboard/QQCC Config/imgproxy/Bot 均 `Up` 且关键服务健康；`visible-hotset-input-backfill-cloud` 为一次性补齐任务容器 | 控制面主服务正常，临时任务不写成长期常驻服务 |
 | Central 队列 | `queue_size=49`，`active_workers=13`，`healthy_workers=13`，`error_workers=0`，`quarantined_workers=0` | 容量由本地 worker、LAN AIO、remote workers 与手动 RunPod 混合构成，不按固定 7 个判断 |
 | 队列类型分布 | `img2img=19`、`img2img_lora=15`、`face_swap=8`、`scail2_video_replacement=2`、`t2i-pornmaster-turbo=2`、`face_video=1`、`i2i_pro=1`、`wan22_video_v2=1` | 排队主要受任务类型和对应 worker 数影响 |
 | 托管 PostgreSQL 连接池预算 | 可用连接按 `100 - 3 reserved = 97` 估算；本轮配置目标峰值约 `73` | 保留约 24 条给迁移、排障、后台任务和抖动 |
@@ -111,6 +111,7 @@
 | :--- | :--- | :--- | ---: |
 | `cloud-web-api-prod` | `uvicorn --workers 4` | `DB_POOL_SIZE=6`、`DB_MAX_OVERFLOW=6` | 48 |
 | `cloud-dashboard-backend-prod` | `gunicorn -w 1` | `DB_POOL_SIZE=6`、`DB_MAX_OVERFLOW=4` | 10 |
+| `cloud-qqcc-config-backend-prod` | `gunicorn -w 1` | `DB_POOL_SIZE=2`、`DB_MAX_OVERFLOW=2` | 4 |
 | `cloud-payment-api-prod` | 单进程 | `DB_POOL_SIZE=4`、`DB_MAX_OVERFLOW=3` | 7 |
 | `cloud-tg-bot-prod` | 单进程 | `DB_POOL_SIZE=4`、`DB_MAX_OVERFLOW=4` | 8 |
 | `cloud-qqcc-bot-prod` | 单进程，仅启用 `qqcc-bot` profile 时 | `DB_POOL_SIZE=4`、`DB_MAX_OVERFLOW=4` | 8 |
@@ -118,14 +119,14 @@
 | 启用 QQCC 后合计 | - | QQCC Bot 与主 Bot 同时运行 | 81 |
 
 延迟拆分基线：
-- 云机内部访问 `100.107.220.127:8000/8003/8043` 通常为 5-40ms。
+- 云机内部访问 `100.107.220.127:8000/8003/8043/8045` 通常为 5-40ms。
 - Web 边缘 VPS 到云 Web API 约 0.51-0.55s；该基线主要用于 `assets`/回滚/`web-test` 排障，不代表当前正式 Pages 主路径。
 - 本地主服务器经公网访问 `api.aivison.it.com` API 约 0.3-0.7s；旧 `web.aivison.it.com/api` 不再作为 API 健康检查入口。
 - 本地主服务器到云 Central Tailscale 约 0.7-2.1s。
 
 云测试控制面 2026-06-18 03:06 快照：
 - 云测试 Droplet 为 1 vCPU / 约 1.9GiB RAM / 48G 根盘，当前约 16G 已用、33G 可用。
-- 测试控制面容器均 `Up`：`cloud-postgres-test`、`cloud-redis-test`、`cloud-central-api-test`、`cloud-web-api-test`、`cloud-dashboard-backend-test`、`cloud-dashboard-frontend-test`、`cloud-imgproxy-test`、`cloud-tg-bot-test`。
+- 测试控制面容器均 `Up`：`cloud-postgres-test`、`cloud-redis-test`、`cloud-central-api-test`、`cloud-web-api-test`、`cloud-dashboard-backend-test`、`cloud-dashboard-frontend-test`、`cloud-qqcc-config-backend-test`、`cloud-qqcc-config-frontend-test`、`cloud-imgproxy-test`、`cloud-tg-bot-test`。
 - Central 测试队列 `queue_size=0`，`active_workers=8`，`healthy_workers=5`，`error_workers=3`，`quarantined_workers=0`。`error` worker 是运行态快照，做测试验收前必须重新查 `/system/workers`，不要把它写成永久故障。
 
 ## 3. 服务与容器分布
@@ -134,13 +135,13 @@
 当前正式生产常驻类型：
 - 云端正式入口：`cloud-tg-bot-prod`、`cloud-web-api-prod`、`cloud-payment-api-prod`；`cloud-qqcc-bot-prod` 是可选 `qqcc-bot` profile 入口，正式启动需单独确认
 - 云端正式执行面：`cloud-central-api-prod`，Tailscale `100.107.220.127:8003`
-- 云端正式管理面：`cloud-dashboard-backend-prod`、`cloud-dashboard-frontend-prod`、`cloud-imgproxy-prod`
+- 云端正式管理面：`cloud-dashboard-backend-prod`、`cloud-dashboard-frontend-prod`、`cloud-qqcc-config-backend-prod`、`cloud-qqcc-config-frontend-prod`、`cloud-imgproxy-prod`
 - 本地正式 worker compose：`cloud-prod-worker-relay` 与 `cloud-prod-comfy-agent-1` 至 `cloud-prod-comfy-agent-7`；这是本地 compose 声明，不等于每个容器都必须长期运行
 - 正式弹性/灰度算力：LAN AIO agent、`remote_workers` 与手动 RunPod worker 可按运维目标接入 Central；2026-06-18 快照中 Central 看到 13 个 healthy active workers
 - 本地 legacy 与 shadow 数据：原 PostgreSQL/Redis/MinIO 只作为保留或 fallback；`bot_db_prod_shadow`、`user-data-prod-shadow`、`user-data-complete-shadow` 是云正式每日 shadow/备份副本，不应继续作为正式写入事实源，除非进入本地正式灾备并人工停同步、确认 RPO 后切写入口
 
 测试/辅助服务类型：
-- 云测试入口：`cloud-tg-bot-test`、`cloud-web-api-test`、`cloud-dashboard-backend-test`、`cloud-dashboard-frontend-test`、`cloud-imgproxy-test`；`cloud-qqcc-bot-test` 为可选 QQCC 测试入口，必须使用独立 `QQCC_BOT_TOKEN_TEST`
+- 云测试入口：`cloud-tg-bot-test`、`cloud-web-api-test`、`cloud-dashboard-backend-test`、`cloud-dashboard-frontend-test`、`cloud-qqcc-config-backend-test`、`cloud-qqcc-config-frontend-test`、`cloud-imgproxy-test`；`cloud-qqcc-bot-test` 为可选 QQCC 测试入口，必须使用独立 `QQCC_BOT_TOKEN_TEST`
 - 云测试执行面：`cloud-central-api-test`，Tailscale `100.82.124.91:8004`
 - 云测试数据面：`cloud-postgres-test`、`cloud-redis-test`，仅 Docker 内网可达
 - 本地云测试 worker：`cloud-comfy-agent-test-1` 至 `cloud-comfy-agent-test-8`，其中 `test-8` 是 SCAIL-2 测试接单层

@@ -42,7 +42,7 @@
 - 云测试 `bot-test` 默认通过 `TON_PAYMENT_POLLING_ENABLED=false` 禁用 TON 链上轮询，避免空云测试库回扫真实商户地址历史交易；仅在专门支付联调时显式开启 `CLOUD_TEST_TON_PAYMENT_POLLING_ENABLED=true`。
 - 云测试库若为空，脚本使用当前 ORM schema 初始化并 `alembic stamp head`；若已有 schema，脚本执行 `alembic upgrade head`。这是云测试控制面的特殊兼容策略，不改变生产脚本的迁移口径。
 - 云测试 `.env.cloud.test` 中 `MINIO_*` 是项目兼容变量名；R2 直连时应保持 `MINIO_SECURE=true`、`MINIO_BUCKET/MINIO_INPUT_BUCKET/MINIO_RESULT_BUCKET/MINIO_TEMPLATE_BUCKET=user-data-test`、`MINIO_PUBLIC_URL=`、`R2_PUBLIC_DOMAIN=https://r2-test.aivison.it.com`。Web owner 视频结果接口依赖 R2 公网 URL，公开域名缺失会导致视频停在 99% / `pending_result`。
-- 云测试公网 Web 使用 `web-test.aivison.it.com` 的边缘 VPS 静态站，`/api/` 反代到云端测试 Web API `http://100.82.124.91:8001`；云端不运行 Web 前端 dev 容器。Dashboard 测试前端由 `cloud-dashboard-frontend-test` 提供，默认 `http://100.82.124.91:8087/`，仅限 Tailscale/受控来源访问。
+- 云测试公网 Web 使用 `web-test.aivison.it.com` 的边缘 VPS 静态站，`/api/` 反代到云端测试 Web API `http://100.82.124.91:8001`；云端不运行 Web 前端 dev 容器。Dashboard 测试前端由 `cloud-dashboard-frontend-test` 提供，默认 `http://100.82.124.91:8087/`；QQCC 懒人 Bot 独立配置 Web 由 `cloud-qqcc-config-frontend-test` 提供，默认 `http://100.82.124.91:8088/`，两者都仅限 Tailscale/受控来源访问。
 - 详细说明见 `/docs/子模块_云测试控制面部署_cloud_test_control_plane.md`。
 
 ## 2.3 云正式控制面
@@ -50,14 +50,14 @@
 - `.env.cloud.prod` 是本机私有文件，已被 `.gitignore` 忽略；`.env.cloud.prod.example` 只提供变量契约和占位值。`.dockerignore` 必须忽略 `.env.*`，避免 root Docker build 把真实云正式变量 COPY 进镜像。
 - 云正式 Web API 需要 `JWT_SECRET_KEY`，且不能使用默认占位值；该 key 已纳入 `.env.cloud.prod.example` 和 `scripts/safe_deploy_cloud_prod.sh` preflight 必填检查。
 - 云测试环境退役入口为 `scripts/cleanup_cloud_test_for_prod.sh`。脚本默认 dry-run，真实清理必须传 `--execute`；它不得删除 R2 `user-data-test`，不得误改正式服务或 `web.aivison.it.com`。
-- 云正式控制面包含 Central API、Web API、Payment API、Dashboard Backend、Dashboard Frontend、imgproxy、正式 Bot 和可选 QQCC 懒人 Bot；`cloud-tg-bot-prod` 使用 `bot` profile，`cloud-qqcc-bot-prod` 使用 `qqcc-bot` profile，重建前必须确认对应 token 全网只有一个生产 polling 实例。只单独更新正式 QQCC Bot 时使用 `scripts/update_cloud_prod_qqcc_bot.sh --execute --confirm-prod --confirm-single-polling`，该路径不重建其它正式服务；正式总更新和 QQCC 专用脚本的整仓 rsync 都必须排除 `local_analytics_platform/`。
+- 云正式控制面包含 Central API、Web API、Payment API、Dashboard Backend、Dashboard Frontend、QQCC Config Backend/Frontend、imgproxy、正式 Bot 和可选 QQCC 懒人 Bot；`cloud-tg-bot-prod` 使用 `bot` profile，`cloud-qqcc-bot-prod` 使用 `qqcc-bot` profile，重建前必须确认对应 token 全网只有一个生产 polling 实例。只单独更新正式 QQCC Bot 时使用 `scripts/update_cloud_prod_qqcc_bot.sh --execute --confirm-prod --confirm-single-polling`，该路径不重建其它正式服务；正式总更新和 QQCC 专用脚本的整仓 rsync 都必须排除 `local_analytics_platform/`。
 - 云正式本地 worker compose 声明 `cloud-prod-worker-relay` 与 `cloud-prod-comfy-agent-1..7`；线上实际容量还可能包含 LAN AIO agent、`remote_workers` 与手动 RunPod worker。启动或重建后必须在云 Central `/system/workers` 验证当次目标 worker 集合的 heartbeat、control state 与任务类型，状态不能是 `error` 或 `quarantined`；不要把固定 7 个 heartbeat 当成所有场景的唯一验收标准。
 - 云正式 R2 在线口径为 `user-data-prod` 单桶，`MINIO_*` 兼容变量和 `R2_*` 都指向正式 R2；`MINIO_PUBLIC_URL` 保持空，结果公开读取依赖 `R2_PUBLIC_DOMAIN=https://r2.aivison.it.com`。
 - 正式 Web API / Dashboard 运行时不再通过 `LEGACY_MINIO_*` 回源本地 MinIO；云正式 compose 对 Web/Dashboard 应设置 `LEGACY_MINIO_READ_FALLBACK_ENABLED=false` 并清空 legacy endpoint/key/public URL。R2 miss 后只允许当前 R2/S3 短签、空值或 `pending_result`，worker 仍只写 R2，不得把 legacy MinIO 配进 worker 写路径。
 - legacy 退出前的用户可见热集补齐使用 `scripts/backfill_history_r2_objects.py --env-file .env.cloud.prod --hotset-profile web-visible-retire-legacy --source-storage legacy --include-input-files --batch-size 500`，默认 dry-run，真实复制必须显式 `--apply`。默认补齐范围包括每用户最近 8 条可见历史、Gallery 投稿/收藏/应用/解锁、History 收藏；若本轮只迁移社区强可见集合，追加 `--skip-per-user-recent-history`，范围收窄为所有 Gallery 投稿、History 收藏、Gallery like/apply 互动关联 active posts 与 prompt unlock 关联 active posts，并使用独立 cursor。先从 legacy 或 current 源复制原文件/已有缩略图/输入文件，再用 `--source-storage current --generate-missing-thumbnails` 从已补齐到 R2 的原文件生成缺失缩略图。
 - 云正式历史详情、Gallery/Wan22 预览等读路径需要验收“返回 URL 可读”，不能只验 R2 S3 `HEAD`。若 `R2_PUBLIC_DOMAIN` 对部分 key 返回 404，但 R2 S3 `HEAD` 命中，Gallery 列表应直接返回 R2 S3 短签 URL，历史详情读路径可返回 R2 S3 短签 URL 兜底；Web owner `/result` 视频仍应按真实结果接口单独验收，不要用历史详情 fallback 代替。
 - 云正式 Web 已由 Cloudflare Pages 项目 `allbot-web-prod` 承接，正式 Web API 独立使用 `api.aivison.it.com` Cloudflare Tunnel 回源云 Web API；`web.aivison.it.com/api/health` 会返回 Pages SPA HTML，不再作为健康检查。Web/Nginx VPS 继续保留 `assets.aivison.it.com` 到本地 MinIO 的 legacy 代理和 `/root/dist` 回滚副本，但正式应用不应再生成 `assets` URL。RMB 支付入口继续使用 Cloudflare Tunnel 回源云 Payment API。如需紧急回滚 RMB 回源，用 `scripts/rollback_rmb_tunnel_to_local_prod.sh --execute` 切回本地 Payment API。切换/回滚脚本默认 dry-run，真实执行必须显式 `--execute`。
-- 云正式 Dashboard Frontend 由 `cloud-dashboard-frontend-prod` 提供，默认绑定 `100.107.220.127:8086`，`/api/` 在 Docker 内网反代 `dashboard-backend-prod:8043`。该入口用于减少本地主服务器前端与本地网关链路；若需要公网管理域名，必须通过 Cloudflare Tunnel + Access 或等价身份层保护，禁止裸开 `8086`/`8043`。
+- 云正式 Dashboard Frontend 由 `cloud-dashboard-frontend-prod` 提供，默认绑定 `100.107.220.127:8086`，`/api/` 在 Docker 内网反代 `dashboard-backend-prod:8043`。QQCC 懒人 Bot 配置已剥离为 `cloud-qqcc-config-frontend-prod` / `cloud-qqcc-config-backend-prod`，默认 `100.107.220.127:8088` / `8045`，并使用独立 `QQCC_CONFIG_*` 管理账号。管理入口若需要公网域名，必须通过 Cloudflare Tunnel + Access 或等价身份层保护，禁止裸开 `8086`/`8043`/`8088`/`8045`。
 - 边缘 VPS 当前至少包含 Web/Nginx 节点 `100.88.57.122`/`154.17.30.113` 与 Telegram Local API 节点 `69.63.220.115`。2026-06-18 快照显示 Web 节点根盘约 6.2G 可用、使用率约 84%，`nginx`/`tailscaled` active 且未安装 `docker`；发布静态资源、调整 Nginx cache 或开启详细日志前仍必须先查 `df -h`。Telegram 节点当前主服务器未配置可用 SSH key，只能做 8081/8082 公网端口探测，完整容器/磁盘排障需先补 SSH。详情见 `docs/子模块_边缘节点运维指南_edge_node_ops.md`。
 - 真实 `docker compose config` 会展开密钥，输出只能本地查看，不得贴到日志、文档或聊天中。
 - 云正式 Central 高频观测接口已加入短缓存和 stale-while-revalidate；Dashboard stats 也有短缓存与 single-flight。不要通过前端 `_t` 或脚本高频击穿缓存。
@@ -85,7 +85,7 @@
 
 ## 4. 服务重建注意事项
 - `web-api`、`payment-api`、Dashboard 等通过镜像 `COPY` 代码的服务，修改代码后都要重建镜像，单纯 `restart` 不会拿到新代码。
-- 只更新管理后台时，操作范围应收窄到 `dashboard-backend-prod` / `dashboard-frontend-prod`：同步相关文件后只 build/up 这两个 service 或其中一个，不重启 Central/Web/Bot/Payment/imgproxy/worker/RunPod。云正式 Dashboard 健康检查优先用 `http://100.107.220.127:8043/api/health` 与 `http://100.107.220.127:8086/api/health`；确认其它正式服务容器启动时间未变化。
+- 只更新管理后台时，操作范围应收窄到 `dashboard-backend-prod` / `dashboard-frontend-prod`：同步相关文件后只 build/up 这两个 service 或其中一个，不重启 Central/Web/Bot/Payment/imgproxy/worker/RunPod。云正式 Dashboard 健康检查优先用 `http://100.107.220.127:8043/api/health` 与 `http://100.107.220.127:8086/api/health`；确认其它正式服务容器启动时间未变化。只更新 QQCC 配置 Web 时，收窄到 `qqcc-config-backend-prod qqcc-config-frontend-prod`，健康检查为 `http://100.107.220.127:8045/api/health` 与 `http://100.107.220.127:8088/api/health`，不触碰主 Dashboard 或 `cloud-qqcc-bot-prod` polling。
 - `workers` 更新环境变量时，应使用 `docker-compose up -d` 触发重新创建，而不是只做 `restart`。
 - 当前受支持的测试环境是云测试控制面；旧本地测试脚本仍可能留在仓库内作为历史迁移/取证材料，但不应被当成回滚目标。
 - 若人工取证确需短时启动旧本地隔离测试栈，应使用独立的 `.env.test`、`backend/docker-compose-test.yml` 与 `workers/docker-compose-test.yml`，并让测试入口服务指向独立的 Central API 端口与独立 Redis 队列；否则可能与正式或云测试环境共用任务调度面。

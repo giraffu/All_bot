@@ -21,6 +21,7 @@
 最近一次 LAN AIO Dashboard 空卡巡检与恢复入口修正：2026-06-30，Asia/Shanghai。
 最近一次 LAN AIO host port owner 门禁修正：2026-07-02，Asia/Shanghai。
 最近一次 gpu-226 image_to_video LAN AIO 正式接管：2026-07-02，Asia/Shanghai。
+最近一次 gpu-252/gpu0 i2i_pro LAN AIO 正式接管：2026-07-04 01:17，Asia/Shanghai。
 
 ## 2. 总体拓扑
 
@@ -42,7 +43,7 @@
 | 云控制面 `allbot-do-sgp1-control-01` | `allbot-do-sgp1-control` | DO-Regular，8 vCPU | 约 15GiB | 无 | `/` 309G，已用 125G，可用 185G | 正式控制面 |
 | `192.168.1.226` | `allbot-gpu-226` | Ryzen 9 9950X，16C/32T | 60GiB | 1 x RTX 5090 32G | `/` 1.8T，已用 738G，可用 1001G | image_to_video LAN AIO `8190`；旧宿主机 ComfyUI `8188` / worker 01 为 stopped rollback 元数据 |
 | `192.168.1.177` | `allbot-gpu-177` | Ryzen 7 9700X，8C/16T | 60GiB | 2 x RTX 5090 32G | `/` 915G，已用 190G，可用 680G | LAN AIO `8190/8191` only；legacy 02/03 已退役 |
-| `192.168.1.252` | `allbot-gpu-252` | Ryzen 7 9700X，8C/16T | 60GiB | 1 x RTX 4090 48G active | `/` 937G，已用 352G，可用 538G | 健康卡 UUID `GPU-09b7ea85-23df-a9b8-19d9-703534e47666` 由 LAN AIO 承载 `img2img_lora`；`image_to_video`、PornMaster Flux2 edit 与 SCAIL-2 为同卡候选；故障卡已拆，`wan22_video_v2` 由 RunPod 兜底 |
+| `192.168.1.252` | `allbot-gpu-252` | Ryzen 7 9700X，8C/16T | 60GiB | 1 x RTX 4090 48G active | `/` 937G，已用 474G，可用 416G | 健康卡 UUID `GPU-09b7ea85-23df-a9b8-19d9-703534e47666` 由 LAN AIO `8192` 承载 `i2i_pro,t2i-pornmaster-turbo,face_swap`；当前 live control 因验证期 policy-blocked item 保持 draining，复开前需复核 moderation；SCAIL-2、`img2img_lora`、`image_to_video` 与 PornMaster Flux2 edit 为同卡候选；故障卡已拆，`wan22_video_v2` 由 RunPod 兜底 |
 | `192.168.1.2` | `allbot-gpu-002` | Ryzen 7 9700X，8C/16T | 60GiB | 2 x RTX 4090 48G | `/` 936G，已用 455G，可用 442G | slot0 SCAIL-2 LAN AIO `8190`，slot1 PornMaster Flux2 edit LAN AIO `8191`；image_to_video AIO stopped rollback |
 
 容量警戒：
@@ -62,14 +63,14 @@
 | `cloud-prod-comfy-agent-1` | 旧 Worker 01，stopped rollback | 原 `192.168.1.226:8188` | 已由 `lan_aio_prod_gpu226_gpu0_image_to_video_01` / AIO `8190` 接管 `image_to_video`；旧综合 face/i2i/t2i 能力不再作为当前容量 |
 | `cloud-prod-comfy-agent-2` | Worker 02，已退役 | 原 `192.168.1.177:8188` | 已由 `lan_aio_prod_gpu177_gpu0_image_to_video_01` 替换；容器已删除，control `disabled` |
 | `cloud-prod-comfy-agent-3` | Worker 03，已退役 | 原 `192.168.1.177:8189` | 已由 `lan_aio_prod_gpu177_gpu1_ltx_video_01` 替换；容器已删除，control `disabled` |
-| `cloud-prod-comfy-agent-4` | Worker 04 | `192.168.1.252:8188` | `img2img,img2img_lora` |
+| `cloud-prod-comfy-agent-4` | 旧 Worker 04，AIO 接管元数据 | 原 `192.168.1.252:8188` | 已由 `lan_aio_prod_gpu252_gpu0_i2i_pro_01` / AIO `8192` 接管 `i2i_pro,t2i-pornmaster-turbo,face_swap`；live control 当前保持 draining，复开前需复核 moderation |
 | `cloud-prod-comfy-agent-5` | 旧 Worker 05，stopped rollback | 原 `192.168.1.252:8189` | 已由 `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` 替换，只保留回滚 |
 | `cloud-prod-comfy-agent-6` | Worker 06，stopped rollback | 原 `192.168.1.2:8188` | 已由 gpu-002 slot0 SCAIL-2 AIO 接管；旧 img2img_lora AIO 也为 stopped rollback |
 | `cloud-prod-comfy-agent-7` | Worker 07，stopped rollback | 原 `192.168.1.2:8189` | 本地主 legacy agent 保持 disabled；gpu-002 slot1 当前由 `lan_aio_prod_gpu002_gpu1_pornmaster_flux2_edit_01` 承接 PornMaster Flux2 edit，image_to_video AIO 只作同卡回切候选 |
 
 `video_insert` / `video_edit` 在 worker 能力列表中只表示 legacy alias，canonical 执行面类型是 `image_to_video`。排障或扩容时不要为它们新建独立 workflow、模型 profile 或 RunPod manifest。
 
-SCAIL-2 动作迁移 / 视频换人 / 视频换脸 v10 有测试与正式链路，不能混用桶和 worker。云测试链路由 `cloud_worker_test_08` 指向 LAN AIO SCAIL-2 runtime `http://192.168.1.2:8190`，可声明 `scail2_action_transfer,scail2_action_transfer_long,scail2_video_replacement,scail2_face_swap_v2` 并通过测试 env 覆盖到 audio/context-window/v10 workflow；视频换脸会先调用 `192.168.1.226:8188` 的 `face_swap_v2.json` 对驱动视频第一帧做图片换脸。测试 runtime 容器 `allbot-lan-aio-gpu-002-gpu0-scail2-test` 本身只跑 ComfyUI、模型同步与 workflow 资产，不注册 Central worker。云正式 SCAIL-2 LAN worker 目前主要是 `gpu-002-gpu0-scail2`；`gpu-177-gpu1-scail2` 已验证可启动并保留为同卡候选，但 2026-07-02 又切回 LTX 当前态。正式 LAN worker 声明 `scail2_action_transfer,scail2_action_transfer_long,scail2_video_replacement,scail2_face_swap_v2`，必须写正式 Central 与 `user-data-prod`，不要把它误判为测试 `cloud_worker_test_08` 能力；正式 RunPod `scail2` 仍保持两任务声明。
+SCAIL-2 动作迁移 / 视频换人 / 视频换脸 v10 有测试与正式链路，不能混用桶和 worker。云测试链路由 `cloud_worker_test_08` 指向 LAN AIO SCAIL-2 runtime `http://192.168.1.2:8190`，可声明 `scail2_action_transfer,scail2_action_transfer_long,scail2_video_replacement,scail2_face_swap_v2` 并通过测试 env 覆盖到 audio/context-window/v10 workflow；视频换脸会先调用 `192.168.1.226:8188` 的 `face_swap_v2.json` 对驱动视频第一帧做图片换脸。测试 runtime 容器 `allbot-lan-aio-gpu-002-gpu0-scail2-test` 本身只跑 ComfyUI、模型同步与 workflow 资产，不注册 Central worker。云正式 SCAIL-2 LAN worker 目前主要是 `gpu-002-gpu0-scail2`；`gpu-177-gpu1-scail2` 已验证可启动并保留为同卡候选，但 2026-07-02 又切回 LTX 当前态；`gpu-252-gpu0-scail2` 在 2026-07-04 切到 i2i_pro 后保留为同卡回滚候选。正式 LAN worker 声明 `scail2_action_transfer,scail2_action_transfer_long,scail2_video_replacement,scail2_face_swap_v2`，必须写正式 Central 与 `user-data-prod`，不要把它误判为测试 `cloud_worker_test_08` 能力；正式 RunPod `scail2` 仍保持两任务声明。
 
 所有 worker 挂载：
 - `/home/hfy/APP/All_bot/workers/comfy_agent/workflows -> /app/worker/workflows`

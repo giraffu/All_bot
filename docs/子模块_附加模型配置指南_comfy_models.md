@@ -142,7 +142,7 @@ LAN AIO 镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_
 
 ## 二-A、QQCC 懒人 Bot 场景附加模型边界
 
-QQCC 管理后台 `懒人Bot配置` 的 `video_scenes` / `draw_scenes` 可以为每个场景选择底层 engine 和附加模型。该配置仍保存在 `runtime_checkpoints.qqcc_lazy_bot_config:v1`，不会新增 workflow、RunPod profile、模型 bundle 或 Alembic 迁移。
+QQCC 独立配置 Web 的 `video_scenes` / `draw_scenes` 可以为每个场景选择底层 engine 和附加模型。该配置仍保存在 `runtime_checkpoints.qqcc_lazy_bot_config:v1`，不会新增 workflow、RunPod profile、模型 bundle 或 Alembic 迁移。
 
 - `AI动图` 默认 engine 为旧 `image_to_video`，不选模型时提交 `custom_video`，选择 `VIDEO_LORA_MODELS` 中的模型时提交 `video_lora` 并透传 `lora_name`。底层仍走旧图生视频 profile 与 `Wan22AioV82.json`，由 `workflow_task_patchers.py` 注入高噪/低噪双 LoRA 节点。
 - `AI动图` 切到 `wan22_video_v2` 时提交 `wan22_video_v2`，使用场景提示词、后台固定时长和用户画质选择；v2 本轮不支持附加模型，配置归一化与前端弹窗都必须自动清空 `lora_name`。
@@ -150,7 +150,7 @@ QQCC 管理后台 `懒人Bot配置` 的 `video_scenes` / `draw_scenes` 可以为
 - `AI绘图` 默认 engine 为自由P图 v2 `free_edit_v2`，提交 `pornmaster_flux2_single_edit`，不支持附加模型。
 - `AI绘图` 切到旧 `free_edit` 时，不选模型提交 `edit`，选择 `IMAGE_LORA_MODELS` 中的模型时提交 `img2img_lora`，并透传 catalog 中的默认 strength。
 - `AI绘图` 的 `postprocess_draw_scene_id` 只链式复用其它 `draw_scenes` 的既有 engine/LoRA 配置，不新增 task type、workflow、profile 或模型 bundle；链路循环必须在配置归一化时清理。
-- Dashboard Backend 的 `GET /api/qqcc/config` 必须返回非持久化 `options`，把 engine 选项和 `src/lora_catalog.py` 中的 LoRA catalog 下发给前端；前端不得手写模型清单，避免和运行时 catalog 漂移。
+- 独立 QQCC Config Backend 的 `GET /api/qqcc/config` 必须返回非持久化 `options`，把 engine 选项和 `src/lora_catalog.py` 中的 LoRA catalog 下发给前端；前端不得手写模型清单，避免和运行时 catalog 漂移。
 
 ---
 

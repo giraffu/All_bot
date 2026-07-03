@@ -1,7 +1,7 @@
 # 子模块: 云测试控制面部署 (Cloud Test Control Plane)
 
 ## 1. 目标与边界
-本模块记录 DigitalOcean SGP1 独立测试 Droplet `allbot-do-sgp1-test-control` 上的云端测试控制面部署方式。当前云端测试栈用于验证 Web API、Central API、Dashboard Backend、Dashboard Frontend、同机测试 PostgreSQL、同机测试 Redis、R2 对象存储、imgproxy 与测试 Bot。
+本模块记录 DigitalOcean SGP1 独立测试 Droplet `allbot-do-sgp1-test-control` 上的云端测试控制面部署方式。当前云端测试栈用于验证 Web API、Central API、Dashboard Backend、Dashboard Frontend、QQCC Config Backend、QQCC Config Frontend、同机测试 PostgreSQL、同机测试 Redis、R2 对象存储、imgproxy 与测试 Bot。
 
 当前推荐形态是云端运行测试控制面、测试数据库、测试缓存与测试 Bot，本地主服务器运行 8 个 cloud-worker 测试容器并继续使用武汉局域网内的 ComfyUI/GPU 节点。云端与本地主服务器之间使用 Tailscale 私有网络互联；SSH 端口转发只作为应急方案。
 
@@ -40,6 +40,10 @@ RUNPOD_MODEL_SECURE=true
 CLOUD_TEST_DATABASE_URL=postgresql+asyncpg://postgres:<password>@postgres-test:5432/bot_db_test
 CLOUD_TEST_REDIS_URL=redis://:<password>@redis-test:6379/3
 CLOUD_TEST_WORKER_REDIS_URL=redis://:<password>@redis-test:6379/4
+QQCC_CONFIG_FRONTEND_TEST_PORT=8088
+QQCC_CONFIG_ADMIN_USERNAME=<qqcc-config-admin-user>
+QQCC_CONFIG_ADMIN_PASSWORD_HASH=<bcrypt-password-hash>
+QQCC_CONFIG_SECRET_KEY=<qqcc-config-jwt-secret>
 ```
 
 `CLOUD_TEST_BIND_IP` 用于云端服务端口绑定；当前绑定云测试 Tailscale IP `100.82.124.91`，不直接开放公网。`CLOUD_TEST_CONTROL_HOST` 用于本地 GPU worker 访问云端 Central API，也应填 `100.82.124.91`。当前云测试对象存储直接使用 Cloudflare R2 S3 兼容接口，`MINIO_*` 是项目内兼容变量名但值指向 R2；`MINIO_PUBLIC_URL` 继续留空，`R2_PUBLIC_DOMAIN` 使用已验证的新对象公网域名。Web owner 视频结果接口只在 R2 公网 URL 可解析时返回成功，若临时清空 `R2_PUBLIC_DOMAIN`，视频任务可能在 99% / `pending_result` 等待结果 URL。
@@ -94,7 +98,7 @@ scripts/update_cloud_test_with_maintenance.sh --execute
 2. 等待 Central Redis `comfy:queue:pending` 与 `comfy:queue:running` 同时清空。
 3. 用 `rsync` 同步当前工作区代码到 `allbot-do-sgp1-test-control:/home/deploy/APP/All_bot`，保留远端 `logs/`、`runtime/`，清理并排除 `node_modules/`、`backups/`、`local_analytics_platform/`、临时模板素材等运行时或本地数据目录，并继续排除通配 `.env.*`，避免误同步正式或本地密钥文件；远端若已有旧的 `local_analytics_platform` 副本会在同步前清理。
 4. 单独同步本地 `.env.cloud.test` 到远端 `.env.cloud.test`；同步前远端会创建 `.env.cloud.test.bak.<timestamp>` 备份，目标文件权限设为 `600`，并用校验和确认远端文件与本地一致。若需要保留远端 env，可显式加 `--skip-env-sync`。
-5. 在远端执行 `scripts/safe_deploy_cloud_test.sh` 重建 Central API、Web API、Dashboard Backend、Dashboard Frontend 与 imgproxy。
+5. 在远端执行 `scripts/safe_deploy_cloud_test.sh` 重建 Central API、Web API、Dashboard Backend、Dashboard Frontend、QQCC Config Backend、QQCC Config Frontend 与 imgproxy。
 6. 若测试 Bot 原本在运行，按 `bot` profile 重建并拉起 `bot-test`；若 QQCC 测试 Bot 原本在运行，按 `qqcc-bot` profile 重建并拉起 `qqcc-bot-test`。没有独立 `QQCC_BOT_TOKEN_TEST` 时，QQCC 测试 Bot 保持停止，避免同 token 双 polling。
 7. 默认执行 `frontend npm run deploy:edge-test` 发布 `web-test.aivison.it.com` 静态前端。
 8. 验证 cloud-test compose、健康检查、Central `/system/workers` 与队列快照；队列快照按 `CLOUD_TEST_WORKER_REDIS_URL` 的 DB 读取。成功后解除生成维护；失败时维护标记保持开启，避免半更新状态继续进新任务。
@@ -121,11 +125,11 @@ cd /home/deploy/APP/All_bot
 `safe_deploy_cloud_test.sh` 执行顺序：
 1. 校验 `CLOUD_TEST_DATABASE_URL`、`CLOUD_TEST_REDIS_URL`、`CLOUD_TEST_WORKER_REDIS_URL` 与同机 Postgres/Redis 密码。
 2. 启动并等待 `postgres-test`、`redis-test` 健康。
-3. 构建 Central API、Web API、Dashboard Backend、Dashboard Frontend 镜像。
+3. 构建 Central API、Web API、Dashboard Backend、Dashboard Frontend、QQCC Config Backend、QQCC Config Frontend 镜像。
 4. 检查 Alembic 只有一个 head。
 5. 初始化或迁移云测试数据库。
-6. 重启控制面服务、Dashboard Frontend 与 imgproxy。
-7. 校验 Central API、Web API、Dashboard API、Dashboard Frontend 健康检查。
+6. 重启控制面服务、Dashboard Frontend、QQCC Config Frontend 与 imgproxy。
+7. 校验 Central API、Web API、Dashboard API、Dashboard Frontend、QQCC Config API 与 QQCC Config Frontend 健康检查。
 
 启动测试 Bot：
 
@@ -196,9 +200,11 @@ VPS Nginx 配置文件为 `/etc/nginx/sites-available/web-test.aivison.it.com`�
 | Web API | `cloud-web-api-test` | `8001` | Web BFF / 主 API |
 | Dashboard Backend | `cloud-dashboard-backend-test` | `8044` | Dashboard 后端 |
 | Dashboard Frontend | `cloud-dashboard-frontend-test` | `8087` | Dashboard 云端 Nginx 前端，仅 Tailscale/受控来源访问 |
+| QQCC Config Backend | `cloud-qqcc-config-backend-test` | `8045` | QQCC 懒人 Bot 独立配置 API |
+| QQCC Config Frontend | `cloud-qqcc-config-frontend-test` | `8088` | QQCC 懒人 Bot 独立配置 Web，仅 Tailscale/受控来源访问 |
 | imgproxy | `cloud-imgproxy-test` | `8084` | 图片代理 |
 
-测试机 systemd 服务 `allbot-cloud-test-firewall.service` 管理公网保护规则，脚本路径为 `/usr/local/sbin/allbot-cloud-test-firewall.sh`，规则写入 Docker `DOCKER-USER` 链。当前公网 eth0 上的 `8001/8004/8044/8084/8087` 全部 drop；Tailscale `tailscale0` 不受该规则影响。
+测试机 systemd 服务 `allbot-cloud-test-firewall.service` 管理公网保护规则，脚本路径为 `/usr/local/sbin/allbot-cloud-test-firewall.sh`，规则写入 Docker `DOCKER-USER` 链。当前公网 eth0 上的 `8001/8004/8044/8045/8084/8087/8088` 全部 drop；Tailscale `tailscale0` 不受该规则影响。
 
 云测试缓存与队列使用同机容器 `redis-test`，不复用正式 Valkey/Redis：
 
@@ -226,7 +232,9 @@ VS Code Remote 或本地 SSH 仍可通过端口转发作为应急访问：
 ssh -N \
   -L 8001:100.82.124.91:8001 \
   -L 8044:100.82.124.91:8044 \
+  -L 8045:100.82.124.91:8045 \
   -L 8087:100.82.124.91:8087 \
+  -L 8088:100.82.124.91:8088 \
   -L 8004:100.82.124.91:8004 \
   allbot-do-sgp1-test-control
 ```
@@ -239,6 +247,8 @@ curl -fsS http://100.82.124.91:8004/health
 curl -fsS http://100.82.124.91:8001/api/health
 curl -fsS http://100.82.124.91:8044/api/health
 curl -fsS http://100.82.124.91:8087/api/health
+curl -fsS http://100.82.124.91:8045/api/health
+curl -fsS http://100.82.124.91:8088/api/health
 docker stats --no-stream
 df -h /
 ```
@@ -300,8 +310,8 @@ df -h /
 - 公网 eth0 测试端口已由 `allbot-cloud-test-firewall.service` drop。
 
 2026-06-09 云端测试容器口径：
-- 云端核心容器：Postgres、Redis、Central API、Web API、Dashboard Backend、Dashboard Frontend、imgproxy、bot-test。
-- 云端不运行 Web 前端 dev 容器，公网测试 Web 入口使用边缘 VPS 静态站；Dashboard 测试前端由 `cloud-dashboard-frontend-test` 提供，默认端口 `8087`，只面向 Tailscale/受控来源。
+- 云端核心容器：Postgres、Redis、Central API、Web API、Dashboard Backend、Dashboard Frontend、QQCC Config Backend、QQCC Config Frontend、imgproxy、bot-test。
+- 云端不运行 Web 前端 dev 容器，公网测试 Web 入口使用边缘 VPS 静态站；Dashboard 测试前端由 `cloud-dashboard-frontend-test` 提供，默认端口 `8087`，QQCC Config 测试前端由 `cloud-qqcc-config-frontend-test` 提供，默认端口 `8088`，两者只面向 Tailscale/受控来源。
 - Dashboard Backend 仅供少量管理员使用，云测试连接池显式压缩为 `DB_POOL_SIZE=1`、`DB_MAX_OVERFLOW=2`。
 - Dashboard Backend 使用项目 `config.py`，`BOT_TYPE=TEST` 时必须显式设置 `DATABASE_URL_TEST` 与 `REDIS_URL_TEST`，否则 `.env.cloud.test` 里的旧测试变量会覆盖 compose 中的 `DATABASE_URL`/`REDIS_URL`。
 
