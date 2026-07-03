@@ -18,6 +18,7 @@ from src.web_api.schemas.user_schema import (
     PreferencesUpdate,
     Wan22HistoryChainResponse,
 )
+from src.web_api.schemas.user_credit_ledger_schema import CreditLedgerResponse
 from src.web_api.schemas.gallery_schema import (
     PaginatedGalleryResponse,
     ApplyContextResponse,
@@ -51,6 +52,9 @@ from src.web_api.services.user_affiliate_redeem_api_service import (
     redeem_current_user_affiliate_credits_payload,
     redeem_current_user_affiliate_membership_payload,
 )
+from src.web_api.services.user_credit_ledger_service import (
+    get_current_user_credit_ledger_payload,
+)
 from src.web_api.services.users_history_mutation_service import (
     favorite_user_history,
     soft_delete_user_history,
@@ -77,6 +81,21 @@ async def get_user_profile(current_user: CurrentUserDep):
     Get current logged in user's profile and credit balance.
     """
     return await get_current_user_profile_payload(current_user)
+
+
+@router.get("/me/credits/ledger", response_model=CreditLedgerResponse)
+async def get_current_user_credit_ledger(
+    current_user: CurrentUserDep,
+    db: DbSessionDep,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=50),
+) -> CreditLedgerResponse:
+    return await get_current_user_credit_ledger_payload(
+        current_user=current_user,
+        db=db,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.post(

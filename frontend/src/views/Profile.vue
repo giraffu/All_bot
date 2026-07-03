@@ -12,6 +12,7 @@ import {
   Lock,
   Users,
   Search,
+  ReceiptText,
 } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { useViewport } from '@/composables/useViewport'
@@ -32,6 +33,7 @@ import ProfileQueueStatusPanel from '@/components/profile/ProfileQueueStatusPane
 import ProfileRedeemOverlays from '@/components/profile/ProfileRedeemOverlays.vue'
 import ProfileWelcomeBanner from '@/components/profile/ProfileWelcomeBanner.vue'
 import ProfileFollowingModal from '@/components/profile/ProfileFollowingModal.vue'
+import ProfileCreditLedgerModal from '@/components/profile/ProfileCreditLedgerModal.vue'
 
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
@@ -49,6 +51,7 @@ const themeOptions = computed<{ label: string; value: ThemePreference }[]>(() =>
 const showFollowingModal = ref(false)
 const showFollowersModal = ref(false)
 const showSearchModal = ref(false)
+const showCreditLedgerModal = ref(false)
 
 const selectedTheme = computed<ThemePreference>({
   get: () => themeStore.selectedTheme,
@@ -153,12 +156,16 @@ const { quickActions } = useProfileQuickActions({
   openSearchModal: () => {
     showSearchModal.value = true
   },
+  openCreditLedgerModal: () => {
+    showCreditLedgerModal.value = true
+  },
   icons: {
     Wallet,
     Award,
     Lock,
     Users,
     Search,
+    ReceiptText,
   },
 })
 
@@ -241,6 +248,7 @@ onMounted(async () => {
     <ProfileFollowingModal v-model:open="showFollowingModal" mode="following" />
     <ProfileFollowingModal v-model:open="showFollowersModal" mode="followers" />
     <ProfileFollowingModal v-model:open="showSearchModal" mode="search" />
+    <ProfileCreditLedgerModal v-model:open="showCreditLedgerModal" />
   </div>
 </template>
 
