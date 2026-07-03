@@ -146,6 +146,7 @@ QQCC 管理后台 `懒人Bot配置` 的 `video_scenes` / `draw_scenes` 可以为
 
 - `AI动图` 默认 engine 为旧 `image_to_video`，不选模型时提交 `custom_video`，选择 `VIDEO_LORA_MODELS` 中的模型时提交 `video_lora` 并透传 `lora_name`。底层仍走旧图生视频 profile 与 `Wan22AioV82.json`，由 `workflow_task_patchers.py` 注入高噪/低噪双 LoRA 节点。
 - `AI动图` 切到 `wan22_video_v2` 时提交 `wan22_video_v2`，使用场景提示词、后台固定时长和用户画质选择；v2 本轮不支持附加模型，配置归一化与前端弹窗都必须自动清空 `lora_name`。
+- `AI动图` 可选 `end_frame_draw_scene_id` 引用当前有效 `AI绘图` 场景生成尾帧。用户仍只上传起始图；QQCC Bot 先隐藏提交被引用绘图场景，成功后把用户原图和生成尾帧作为两张输入提交视频。旧 `custom_video` / `video_lora` 透传两张图并写 `use_end_frame=true`，`wan22_video_v2` 透传 `images=[start,end]`；不新增 workflow、profile 或模型 bundle。
 - `AI绘图` 默认 engine 为自由P图 v2 `free_edit_v2`，提交 `pornmaster_flux2_single_edit`，不支持附加模型。
 - `AI绘图` 切到旧 `free_edit` 时，不选模型提交 `edit`，选择 `IMAGE_LORA_MODELS` 中的模型时提交 `img2img_lora`，并透传 catalog 中的默认 strength。
 - Dashboard Backend 的 `GET /api/qqcc/config` 必须返回非持久化 `options`，把 engine 选项和 `src/lora_catalog.py` 中的 LoRA catalog 下发给前端；前端不得手写模型清单，避免和运行时 catalog 漂移。
