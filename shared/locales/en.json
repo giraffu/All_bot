@@ -168,6 +168,9 @@
   "social": {
     "my_following": "My Following",
     "my_followers": "My Followers",
+    "find_friends": "Find Friends",
+    "search": "Search",
+    "search_placeholder": "Enter TG username or nickname",
     "follow": "Follow",
     "follow_back": "Follow Back",
     "unfollow": "Unfollow",
@@ -179,6 +182,8 @@
     "checkin_days": "Check-in Days",
     "no_following": "You are not following anyone yet",
     "no_followers": "No one is following you yet",
+    "search_idle": "No search results yet",
+    "no_search_results": "No matching users found",
     "no_public_posts": "This user has no public posts yet",
     "no_media": "No content",
     "anonymous_user": "Anonymous Cultivator",
@@ -187,7 +192,8 @@
     "follow_action_failed": "Follow action failed, please try again later",
     "profile_load_failed": "Failed to load user profile",
     "following_load_failed": "Failed to load following list",
-    "followers_load_failed": "Failed to load followers list"
+    "followers_load_failed": "Failed to load followers list",
+    "search_load_failed": "Failed to search users"
   },
   "task_type": {
     "img2img": "Img2Img",

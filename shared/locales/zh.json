@@ -168,6 +168,9 @@
   "social": {
     "my_following": "我的关注",
     "my_followers": "我的粉丝",
+    "find_friends": "查找好友",
+    "search": "查找",
+    "search_placeholder": "输入 TG 用户名或昵称",
     "follow": "关注",
     "follow_back": "回关",
     "unfollow": "取消关注",
@@ -179,6 +182,8 @@
     "checkin_days": "签到天数",
     "no_following": "你还没有关注任何用户",
     "no_followers": "还没有用户关注你",
+    "search_idle": "暂无搜索结果",
+    "no_search_results": "没有找到匹配的用户",
     "no_public_posts": "这个用户还没有公开投稿",
     "no_media": "暂无内容",
     "anonymous_user": "匿名修士",
@@ -187,7 +192,8 @@
     "follow_action_failed": "关注操作失败，请稍后再试",
     "profile_load_failed": "加载用户主页失败，请稍后再试",
     "following_load_failed": "加载关注列表失败，请稍后再试",
-    "followers_load_failed": "加载粉丝列表失败，请稍后再试"
+    "followers_load_failed": "加载粉丝列表失败，请稍后再试",
+    "search_load_failed": "搜索用户失败，请稍后再试"
   },
   "task_type": {
     "img2img": "图生图",

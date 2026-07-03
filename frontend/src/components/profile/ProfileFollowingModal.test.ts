@@ -10,11 +10,13 @@ import type { PublicUserSummary } from '@/types/social'
 const {
   getMyFollowersMock,
   getMyFollowingMock,
+  searchUsersMock,
   followUserMock,
   unfollowUserMock,
 } = vi.hoisted(() => ({
   getMyFollowersMock: vi.fn(),
   getMyFollowingMock: vi.fn(),
+  searchUsersMock: vi.fn(),
   followUserMock: vi.fn(),
   unfollowUserMock: vi.fn(),
 }))
@@ -22,6 +24,7 @@ const {
 vi.mock('@/api/social', () => ({
   getMyFollowers: getMyFollowersMock,
   getMyFollowing: getMyFollowingMock,
+  searchUsers: searchUsersMock,
   followUser: followUserMock,
   unfollowUser: unfollowUserMock,
 }))
@@ -89,7 +92,7 @@ function buildUser(overrides: Partial<PublicUserSummary>): PublicUserSummary {
   }
 }
 
-function mountModal(mode: 'following' | 'followers') {
+function mountModal(mode: 'following' | 'followers' | 'search') {
   return mount(ProfileFollowingModal, {
     props: {
       open: true,
@@ -112,6 +115,7 @@ describe('ProfileFollowingModal', () => {
   beforeEach(() => {
     getMyFollowersMock.mockReset()
     getMyFollowingMock.mockReset()
+    searchUsersMock.mockReset()
     followUserMock.mockReset()
     unfollowUserMock.mockReset()
   })
@@ -190,5 +194,41 @@ describe('ProfileFollowingModal', () => {
 
     expect(unfollowUserMock).toHaveBeenCalledWith(4)
     expect(wrapper.text()).not.toContain('Followed User')
+  })
+
+  it('searches users by username or nickname and lets the user follow a result', async () => {
+    searchUsersMock.mockResolvedValue({
+      items: [
+        buildUser({ id: 5, author_name: 'Hgirraffe Sage', is_following: false }),
+      ],
+      total: 1,
+    })
+    followUserMock.mockResolvedValue({ success: true, is_following: true })
+
+    const wrapper = mountModal('search')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('查找好友')
+    expect(searchUsersMock).not.toHaveBeenCalled()
+
+    await wrapper.find('[data-testid="profile-user-search-input"]').setValue('@hgirraffe')
+    await wrapper.find('[data-testid="profile-user-search-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(searchUsersMock).toHaveBeenCalledWith({ q: '@hgirraffe', limit: 20 })
+    expect(wrapper.text()).toContain('Hgirraffe Sage')
+
+    const followButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().trim() === '关注')
+    expect(followButton).toBeTruthy()
+
+    await followButton!.trigger('click')
+    await flushPromises()
+
+    expect(followUserMock).toHaveBeenCalledWith(5)
+    expect(wrapper.emitted('followUpdated')?.at(-1)).toEqual([
+      { userId: 5, isFollowing: true },
+    ])
   })
 })

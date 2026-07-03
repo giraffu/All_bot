@@ -14,7 +14,7 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 - **互动防刷**：`user_interactions` 记录 `like/dislike/apply`，依赖唯一约束与原子更新防止连点覆盖。
 - **评论系统**：支持评论创建、分页查询、Redis 限频与 `comments_count` 原子维护。
 - **个人视图**：支持 `my-posts`、`my-favorites` 与 `my-prompt-unlocks`；`my-favorites` 从互动记录反查点赞/应用历史，`my-prompt-unlocks` 从提示词解锁记录反查已解锁模板。
-- **用户主页与关注关系**：Web 用户公开主页 `GET /api/users/{user_id}/public-profile` 返回公开投稿分页 `posts` 并兼容 `recent_posts`；公开主页详情必须复用 Gallery 提示词解锁能力。`/api/users/me/follows` 与 `/api/users/me/followers` 分别返回我关注的人和关注我的人，粉丝列表的 `is_following` 表示我是否已回关。
+- **用户主页与关注关系**：Web 用户公开主页 `GET /api/users/{user_id}/public-profile` 返回公开投稿分页 `posts` 并兼容 `recent_posts`；公开主页详情必须复用 Gallery 提示词解锁能力。`GET /api/users/search?q=` 可按 `User.username/full_name` 模糊查找用户并返回关注状态，`/api/users/me/follows` 与 `/api/users/me/followers` 分别返回我关注的人和关注我的人，粉丝列表的 `is_following` 表示我是否已回关。
 - **提示词付费解锁**：Gallery 列表/详情未解锁时只能返回服务端遮罩 prompt；`POST /api/gallery/posts/{post_id}/prompt-unlock` 固定消耗 1 灵石并给作者入账，`gallery_prompt_unlocks.user_id + post_id` 是幂等锚点。
 - **Web apply-context**：`/api/gallery/posts/{post_id}/apply-context` 已是模板应用主入口，返回 `prompt`、`negative_prompt`、`lora_name`、`input_file/input_file_url`、`input_files/input_file_urls`、`requested_duration`、`billing_resolution` 等上下文；自由P图 v2 投稿在独立 `free_edit_v2_group` 中展示，一键应用复用并锁定 prompt、重新上传 1/2 张参考图、不展示 LoRA，并按图数提交 single/multi v2 任务；`i2i_draw` 局部重绘当前已在 Web 一键应用关闭，列表/详情返回 `template_apply_disabled_reason="i2i_draw_disabled"`，apply-context 必须 400；旧 `custom_video` / `video_lora` 投稿会把旧分辨率映射为 Wan22 v2 档位，并恢复 canonical `5s/8s/10s` 时长；`wan22_video_v2` 单段投稿可回填正向/负面提示词、分辨率档位与 canonical 时长；LTX `ltx_video`/`ltx_video_flf2v` 从 `_ltx_context` 回填 LoRA、宽高、时长并保留起始帧/终止帧输入顺序；SCAIL-2 `scail2_action_transfer` / `scail2_video_replacement` / `scail2_face_swap_v2` 投稿可作为视频模板，apply-context 只复用原 motion/driving video，复用者必须上传自己的 reference image。
 - **QQCC 修仙市集**：QQCC Bot 可提供轻量 Gallery 浏览入口，分类对齐 Web 可见分组且隐藏 `txt2img`；支持点赞/点踩、Bot 原生单图应用或 Web 深链 `/gallery?apply_source=gallery&apply_id=<post_id>`。Bot 原生应用必须带 `source_post_id`、`allow_contribute=False` 和 `client_type=bot:qqcc`，点击应用不得预增 `applied_count`。
@@ -54,6 +54,11 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 - **接口**：`POST /api/gallery/posts/{post_id}/comments`
 - **输入**：评论内容
 - **输出**：评论实体与作者信息
+
+### 用户搜索与关注
+- **接口**：`GET /api/users/search?q=&limit=`
+- **输入**：`q` 支持 TG username（可带 `@`）或昵称片段，匹配 `User.username/full_name`；`limit` 默认 20、最大 30。
+- **输出**：复用公开用户摘要列表，包含 `is_following`、公开投稿数、粉丝数等字段；不返回当前用户自己。
 
 ### 应用上下文
 - **接口**：`GET /api/gallery/posts/{post_id}/apply-context`
@@ -97,6 +102,7 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 - 覆盖重复投稿与 `allow_contribute=False` 拦截。
 - 覆盖并发点赞/点踩一致性。
 - 覆盖评论限频、并发下架回滚、分页查询。
+- 覆盖用户搜索 username/full_name 模糊匹配、排除自己和当前关注状态。
 - 覆盖提示词解锁首次扣费、重复解锁幂等、唯一约束并发冲突回滚、作者自看免扣费与 `my-prompt-unlocks` 列表。
 - 覆盖 apply-context 返回的 `requested_duration`、`billing_resolution`、`negative_prompt`、`input_file_url`、`input_files/input_file_urls` 正确性；旧图生视频需额外覆盖 `5s/8s/10s` 恢复、`512/720/1024 -> preview/standard/hd`、`0.36 MP - Small -> small` 和 LoRA prompt 解析，v2 单段需覆盖 `_wan22_context` 负面词/档位/时长回填，LTX 需覆盖首尾帧 tag、两张输入图顺序、`ltx_video_flf2v` alias 与 `_ltx_context` 回填，SCAIL-2 需覆盖只复用 motion video 与缺失 motion video 400，Wan22 stitched 与 Web 关闭的 `i2i_draw` 需覆盖 apply-context 400 与列表禁用字段。
 - 覆盖后台封禁投稿并批量下架时的用户状态、帖子状态与多条 `History` 同步。

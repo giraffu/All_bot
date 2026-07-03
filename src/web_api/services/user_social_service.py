@@ -1,5 +1,5 @@
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.exc import IntegrityError
 
 from src.database.models import GalleryPost, History, User, UserFollow
@@ -62,6 +62,36 @@ async def _is_following(*, db, follower_id: int, followee_id: int) -> bool:
         )
     )
     return result.scalar_one_or_none() is not None
+
+
+def _normalize_user_search_query(query: str) -> str:
+    return query.strip().lstrip("@").strip()
+
+
+def _escape_like_query(query: str) -> str:
+    return (
+        query.replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+    )
+
+
+async def _load_followed_user_ids(
+    *,
+    db,
+    current_user_id: int,
+    user_ids: list[int],
+) -> set[int]:
+    if not user_ids:
+        return set()
+
+    result = await db.execute(
+        select(UserFollow.followee_id).where(
+            UserFollow.follower_id == current_user_id,
+            UserFollow.followee_id.in_(user_ids),
+        )
+    )
+    return set(result.scalars().all())
 
 
 def _build_paginated_gallery_response(
@@ -261,6 +291,75 @@ async def get_my_followers_payload(
             followers_count=followers_count_value or 0,
             following_count=following_count_value or 0,
             is_following=user.id in followed_back_ids,
+            current_user_id=current_user.id,
+        )
+        for user, public_posts_count_value, followers_count_value, following_count_value in rows
+    ]
+    return FollowingListResponse(items=items, total=len(items))
+
+
+async def search_users_payload(
+    *,
+    current_user,
+    db,
+    query: str,
+    limit: int = 20,
+) -> FollowingListResponse:
+    normalized_query = _normalize_user_search_query(query)
+    if not normalized_query:
+        return FollowingListResponse(items=[], total=0)
+
+    public_posts_count = _public_post_count_subquery()
+    followers_count = _followers_count_subquery()
+    following_count = _following_count_subquery()
+    escaped_query = _escape_like_query(normalized_query)
+    like_pattern = f"%{escaped_query}%"
+    prefix_pattern = f"{_escape_like_query(normalized_query.lower())}%"
+    normalized_lower = normalized_query.lower()
+
+    result = await db.execute(
+        select(
+            User,
+            public_posts_count.label("public_posts_count"),
+            followers_count.label("followers_count"),
+            following_count.label("following_count"),
+        )
+        .where(
+            User.id != current_user.id,
+            or_(
+                User.username.ilike(like_pattern, escape="\\"),
+                User.full_name.ilike(like_pattern, escape="\\"),
+            ),
+        )
+        .order_by(
+            case((func.lower(User.username) == normalized_lower, 0), else_=1),
+            case(
+                (func.lower(User.username).like(prefix_pattern, escape="\\"), 0),
+                else_=1,
+            ),
+            case(
+                (func.lower(User.full_name).like(prefix_pattern, escape="\\"), 0),
+                else_=1,
+            ),
+            User.id.desc(),
+        )
+        .limit(limit)
+    )
+    rows = result.all()
+    user_ids = [user.id for user, *_ in rows]
+    followed_user_ids = await _load_followed_user_ids(
+        db=db,
+        current_user_id=current_user.id,
+        user_ids=user_ids,
+    )
+
+    items = [
+        _build_public_user_summary(
+            user=user,
+            public_posts_count=public_posts_count_value or 0,
+            followers_count=followers_count_value or 0,
+            following_count=following_count_value or 0,
+            is_following=user.id in followed_user_ids,
             current_user_id=current_user.id,
         )
         for user, public_posts_count_value, followers_count_value, following_count_value in rows

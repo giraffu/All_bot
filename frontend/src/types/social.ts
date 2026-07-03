@@ -26,6 +26,7 @@ export interface FollowingListResponse {
 }
 
 export type FollowersListResponse = FollowingListResponse
+export type UserSearchResponse = FollowingListResponse
 
 export interface FollowActionResponse {
   success: boolean
