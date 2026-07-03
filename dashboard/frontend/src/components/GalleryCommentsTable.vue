@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { message } from 'ant-design-vue'
+import message from 'ant-design-vue/es/message'
 
 import { fetchAllGalleryComments, updateGalleryComment } from '../api/api'
 import { formatDate } from '../utils/helpers'

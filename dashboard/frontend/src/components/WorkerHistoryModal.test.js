@@ -18,6 +18,12 @@ vi.mock('ant-design-vue', () => ({
   },
 }))
 
+vi.mock('ant-design-vue/es/message', () => ({
+  default: {
+    error: messageErrorMock,
+  },
+}))
+
 const ModalStub = defineComponent({
   name: 'AModalStub',
   props: ['open'],

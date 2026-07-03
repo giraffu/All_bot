@@ -36,6 +36,20 @@ vi.mock('ant-design-vue', () => ({
   },
 }))
 
+vi.mock('ant-design-vue/es/message', () => ({
+  default: {
+    error: antMocks.error,
+    success: antMocks.success,
+    warning: antMocks.warning,
+  },
+}))
+
+vi.mock('ant-design-vue/es/modal', () => ({
+  default: {
+    confirm: antMocks.confirm,
+  },
+}))
+
 import RunPodWorkerActions from './RunPodWorkerActions.vue'
 
 const ButtonStub = defineComponent({

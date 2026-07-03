@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { message } from 'ant-design-vue'
+import message from 'ant-design-vue/es/message'
 import {
   DeleteOutlined,
   PlusOutlined,
@@ -9,9 +9,14 @@ import {
   SettingOutlined,
 } from '@ant-design/icons-vue'
 
-import { fetchQqccBotConfig, updateQqccBotConfig } from '../api/api'
-
-type MainButtonKey = 'quick_undress' | 'photo_edit' | 'ai_draw' | 'video_edit' | 'market' | 'main_bot_link'
+type MainButtonKey =
+  | 'quick_undress'
+  | 'quick_faceswap'
+  | 'photo_edit'
+  | 'ai_draw'
+  | 'video_edit'
+  | 'market'
+  | 'main_bot_link'
 type PhotoButtonKey = 'masturbation' | 'random_faceswap'
 type UndressMethodKey = 'legacy' | 'i2i_draw'
 type VideoButtonKey = 'missionary' | 'doggy' | 'blowjob' | 'undress_tongue' | 'closeup_blowjob'
@@ -39,7 +44,6 @@ interface VideoSceneConfig {
   engine: VideoSceneEngine
   lora_name: string
   end_frame_draw_scene_id: string
-  prompt_key?: PromptKey
 }
 
 interface DrawSceneConfig {
@@ -52,6 +56,7 @@ interface DrawSceneConfig {
 }
 
 interface QqccBotConfig {
+  scene_preset_version: number
   global_enabled: boolean
   main_buttons: Record<MainButtonKey, boolean>
   photo_buttons: Record<PhotoButtonKey, boolean>
@@ -77,6 +82,9 @@ interface LoraModelOption {
 }
 
 interface QqccBotConfigOptions {
+  scene_preset_version: number
+  default_video_engine: VideoSceneEngine
+  default_draw_engine: DrawSceneEngine
   video_engines: SceneEngineOption[]
   draw_engines: SceneEngineOption[]
   video_lora_models: LoraModelOption[]
@@ -90,108 +98,63 @@ interface QqccBotConfigResponse {
   options?: Partial<QqccBotConfigOptions>
 }
 
-const defaultOptions = (): QqccBotConfigOptions => ({
-  video_engines: [
-    { value: 'image_to_video', supports_lora: true },
-    { value: 'wan22_video_v2', supports_lora: false },
-  ],
-  draw_engines: [
-    { value: 'free_edit', supports_lora: true },
-    { value: 'free_edit_v2', supports_lora: false },
-  ],
-  video_lora_models: [{ value: '', label: '无' }],
-  image_lora_models: [{ value: '', label: '无' }],
+const props = defineProps<{
+  fetchConfig: () => Promise<QqccBotConfigResponse>
+  updateConfig: (payload: QqccBotConfig) => Promise<QqccBotConfigResponse>
+}>()
+
+const emptyOptions = (): QqccBotConfigOptions => ({
+  scene_preset_version: 1,
+  default_video_engine: 'image_to_video',
+  default_draw_engine: 'free_edit_v2',
+  video_engines: [],
+  draw_engines: [],
+  video_lora_models: [],
+  image_lora_models: [],
 })
 
-const defaultConfig = (): QqccBotConfig => ({
-  global_enabled: true,
+const drawSceneMaxCount = 20
+
+const emptyConfig = (): QqccBotConfig => ({
+  scene_preset_version: 1,
+  global_enabled: false,
   main_buttons: {
-    quick_undress: true,
-    photo_edit: true,
-    ai_draw: true,
-    video_edit: true,
-    market: true,
-    main_bot_link: true,
+    quick_undress: false,
+    quick_faceswap: false,
+    photo_edit: false,
+    ai_draw: false,
+    video_edit: false,
+    market: false,
+    main_bot_link: false,
   },
   photo_buttons: {
-    masturbation: true,
-    random_faceswap: true,
+    masturbation: false,
+    random_faceswap: false,
   },
   undress_methods: {
-    legacy: true,
-    i2i_draw: true,
+    legacy: false,
+    i2i_draw: false,
   },
   video_buttons: {
-    missionary: true,
-    doggy: true,
-    blowjob: true,
-    undress_tongue: true,
-    closeup_blowjob: true,
+    missionary: false,
+    doggy: false,
+    blowjob: false,
+    undress_tongue: false,
+    closeup_blowjob: false,
   },
   video_settings: {
     resolutions: {
-      '512p': true,
-      '720p': true,
-      '1024p': true,
+      '512p': false,
+      '720p': false,
+      '1024p': false,
     },
     durations: {
-      '5s': true,
-      '8s': true,
-      '10s': true,
+      '5s': false,
+      '8s': false,
+      '10s': false,
     },
   },
-  video_scenes: [
-    {
-      id: 'missionary',
-      name: '🛌 动图传教士',
-      prompt: '',
-      duration: '5s',
-      engine: 'image_to_video',
-      lora_name: '',
-      end_frame_draw_scene_id: '',
-      prompt_key: 'perfect_video_insert',
-    },
-    {
-      id: 'doggy',
-      name: '🎬 动图后入',
-      prompt: '',
-      duration: '5s',
-      engine: 'image_to_video',
-      lora_name: '',
-      end_frame_draw_scene_id: '',
-      prompt_key: 'doggy_style',
-    },
-    {
-      id: 'blowjob',
-      name: '🎬 口交黑人',
-      prompt: '',
-      duration: '5s',
-      engine: 'image_to_video',
-      lora_name: '',
-      end_frame_draw_scene_id: '',
-      prompt_key: 'blowjob',
-    },
-    {
-      id: 'undress_tongue',
-      name: '🎬 脱衣吐舌',
-      prompt: '',
-      duration: '5s',
-      engine: 'image_to_video',
-      lora_name: '',
-      end_frame_draw_scene_id: '',
-      prompt_key: 'undress_tongue',
-    },
-    {
-      id: 'closeup_blowjob',
-      name: '🎬 特写口交',
-      prompt: '',
-      duration: '5s',
-      engine: 'image_to_video',
-      lora_name: '',
-      end_frame_draw_scene_id: '',
-      prompt_key: 'closeup_blowjob',
-    },
-  ],
+  video_scenes: [],
   draw_scenes: [],
   prompts: {
     undress: '',
@@ -207,23 +170,17 @@ const defaultConfig = (): QqccBotConfig => ({
 })
 
 const mainButtonOptions: Array<{ key: MainButtonKey; label: string }> = [
-  { key: 'quick_undress', label: '快速脱衣' },
-  { key: 'photo_edit', label: '懒人P图' },
+  { key: 'quick_faceswap', label: '快速换脸' },
   { key: 'ai_draw', label: 'AI绘图' },
   { key: 'video_edit', label: 'AI动图' },
   { key: 'market', label: '修仙市集' },
   { key: 'main_bot_link', label: '前往主bot' },
 ]
+const legacyMainButtonKeys: MainButtonKey[] = ['quick_undress', 'photo_edit']
 
-const photoButtonOptions: Array<{ key: PhotoButtonKey; label: string }> = [
-  { key: 'masturbation', label: '快速自慰' },
-  { key: 'random_faceswap', label: '随机换脸' },
-]
+const photoButtonKeys: PhotoButtonKey[] = ['masturbation', 'random_faceswap']
 
-const undressMethodOptions: Array<{ key: UndressMethodKey; label: string }> = [
-  { key: 'legacy', label: '头像/半身补全' },
-  { key: 'i2i_draw', label: '全身保脸重绘' },
-]
+const undressMethodKeys: UndressMethodKey[] = ['legacy', 'i2i_draw']
 
 const videoButtonOptions: Array<{ key: VideoButtonKey; label: string }> = [
   { key: 'missionary', label: '动图传教士' },
@@ -247,18 +204,15 @@ const drawEngineLabels: Record<DrawSceneEngine, string> = {
 }
 
 const nonVideoPromptOptions: Array<{ key: PromptKey; label: string }> = [
-  { key: 'undress', label: '快速脱衣' },
-  { key: 'i2i_draw_quick_undress', label: '全身保脸重绘' },
-  { key: 'masturbation', label: '快速自慰' },
-  { key: 'face_swap', label: '随机换脸' },
+  { key: 'face_swap', label: '快速换脸' },
 ]
 
 const loading = ref(false)
 const saving = ref(false)
 const configKey = ref('')
 const updatedAt = ref<string | null>(null)
-const config = reactive<QqccBotConfig>(defaultConfig())
-const modelOptions = reactive<QqccBotConfigOptions>(defaultOptions())
+const config = reactive<QqccBotConfig>(emptyConfig())
+const modelOptions = reactive<QqccBotConfigOptions>(emptyOptions())
 const sceneCounter = ref(0)
 const drawSceneCounter = ref(0)
 const sceneConfig = reactive({
@@ -373,8 +327,13 @@ const normalizeDrawPostprocessRefs = (drawScenes: DrawSceneConfig[]) => {
 }
 
 const mergeOptions = (raw?: Partial<QqccBotConfigOptions>): QqccBotConfigOptions => {
-  const merged = defaultOptions()
+  const merged = emptyOptions()
   if (!raw || typeof raw !== 'object') return merged
+  if (typeof raw.scene_preset_version === 'number' && raw.scene_preset_version >= 1) {
+    merged.scene_preset_version = raw.scene_preset_version
+  }
+  merged.default_video_engine = normalizeVideoEngine(raw.default_video_engine)
+  merged.default_draw_engine = normalizeDrawEngine(raw.default_draw_engine)
   if (Array.isArray(raw.video_engines) && raw.video_engines.length > 0) {
     merged.video_engines = raw.video_engines
       .filter((item) => typeof item?.value === 'string')
@@ -416,7 +375,9 @@ const activeEngineSupportsLora = computed(() =>
   engineSupportsLora(sceneConfig.kind, sceneConfig.engine)
 )
 const activeEndFrameDrawOptions = computed(() =>
-  config.draw_scenes.filter((scene) => scene.id.trim() && scene.name.trim() && scene.prompt.trim())
+  config.draw_scenes.filter(
+    (scene) => scene.id.trim() && scene.name.trim() && scene.prompt.trim(),
+  )
 )
 const activePostprocessDrawOptions = computed(() => {
   const sourceScene = config.draw_scenes[sceneConfig.index]
@@ -435,21 +396,27 @@ const sceneModalTitle = computed(() =>
 )
 
 const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
-  const merged = defaultConfig()
+  const merged = emptyConfig()
   if (!raw || typeof raw !== 'object') return merged
+  if (typeof raw.scene_preset_version === 'number' && raw.scene_preset_version >= 1) {
+    merged.scene_preset_version = raw.scene_preset_version
+  }
   if (typeof raw.global_enabled === 'boolean') {
     merged.global_enabled = raw.global_enabled
   }
 
-  mainButtonOptions.forEach(({ key }) => {
+  ;[...mainButtonOptions.map((item) => item.key), ...legacyMainButtonKeys].forEach((key) => {
     const value = raw.main_buttons?.[key]
     if (typeof value === 'boolean') merged.main_buttons[key] = value
   })
-  photoButtonOptions.forEach(({ key }) => {
+  legacyMainButtonKeys.forEach((key) => {
+    merged.main_buttons[key] = false
+  })
+  photoButtonKeys.forEach((key) => {
     const value = raw.photo_buttons?.[key]
     if (typeof value === 'boolean') merged.photo_buttons[key] = value
   })
-  undressMethodOptions.forEach(({ key }) => {
+  undressMethodKeys.forEach((key) => {
     const value = raw.undress_methods?.[key]
     if (typeof value === 'boolean') merged.undress_methods[key] = value
   })
@@ -466,7 +433,7 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
     if (typeof value === 'boolean') merged.video_settings.durations[key] = value
   })
   if (Array.isArray(raw.draw_scenes)) {
-    merged.draw_scenes = raw.draw_scenes
+    const normalizedDrawScenes = raw.draw_scenes
       .map((scene, index) => {
         const id = typeof scene?.id === 'string' && scene.id.trim() ? scene.id.trim() : `draw_scene_${index + 1}`
         const name = typeof scene?.name === 'string' ? scene.name : ''
@@ -485,7 +452,8 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
         }
       })
       .filter((scene) => scene.name.trim() || scene.prompt.trim())
-    normalizeDrawPostprocessRefs(merged.draw_scenes)
+    normalizeDrawPostprocessRefs(normalizedDrawScenes)
+    merged.draw_scenes = normalizedDrawScenes
   }
   if (Array.isArray(raw.video_scenes)) {
     merged.video_scenes = raw.video_scenes
@@ -496,7 +464,6 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
         const duration = durationOptions.includes(scene?.duration as DurationKey)
           ? (scene.duration as DurationKey)
           : '5s'
-        const promptKey = typeof scene?.prompt_key === 'string' ? (scene.prompt_key as PromptKey) : undefined
         const engine = normalizeVideoEngine(scene?.engine)
         return {
           id,
@@ -509,10 +476,9 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
             scene?.end_frame_draw_scene_id,
             merged.draw_scenes,
           ),
-          ...(promptKey ? { prompt_key: promptKey } : {}),
         }
       })
-      .filter((scene) => scene.name.trim() || scene.prompt.trim() || scene.prompt_key)
+      .filter((scene) => scene.name.trim() || scene.prompt.trim())
   }
   Object.keys(merged.prompts).forEach((key) => {
     const promptKey = key as PromptKey
@@ -533,7 +499,7 @@ const addVideoScene = () => {
     name: '',
     prompt: '',
     duration: '5s',
-    engine: 'image_to_video',
+    engine: normalizeVideoEngine(modelOptions.default_video_engine),
     lora_name: '',
     end_frame_draw_scene_id: '',
   })
@@ -553,7 +519,7 @@ const addDrawScene = () => {
     id: createDrawSceneId(),
     name: '',
     prompt: '',
-    engine: 'free_edit_v2',
+    engine: normalizeDrawEngine(modelOptions.default_draw_engine),
     lora_name: '',
     postprocess_draw_scene_id: '',
   })
@@ -575,18 +541,20 @@ const removeDrawScene = (index: number) => {
 }
 
 const validateVideoScenes = () =>
-  config.video_scenes.every((scene) => {
-    if (!scene.name.trim()) return false
-    if (scene.prompt_key) return true
-    return Boolean(scene.prompt.trim())
-  })
+  config.video_scenes.every((scene) => Boolean(scene.name.trim()) && Boolean(scene.prompt.trim()))
 
 const validateDrawScenes = () =>
-  config.draw_scenes.every((scene) => Boolean(scene.name.trim()) && Boolean(scene.prompt.trim()))
+  config.draw_scenes.every(
+    (scene) => Boolean(scene.name.trim()) && Boolean(scene.prompt.trim()),
+  )
 
 const buildPayload = (): QqccBotConfig => {
   const payload = JSON.parse(JSON.stringify(config)) as QqccBotConfig
-  payload.draw_scenes = payload.draw_scenes
+  payload.scene_preset_version = config.scene_preset_version || modelOptions.scene_preset_version
+  legacyMainButtonKeys.forEach((key) => {
+    payload.main_buttons[key] = false
+  })
+  const normalizedDrawScenes = payload.draw_scenes
     .map((scene) => {
       const engine = normalizeDrawEngine(scene.engine)
       return {
@@ -603,7 +571,8 @@ const buildPayload = (): QqccBotConfig => {
       }
     })
     .filter((scene) => scene.name || scene.prompt)
-  normalizeDrawPostprocessRefs(payload.draw_scenes)
+  normalizeDrawPostprocessRefs(normalizedDrawScenes)
+  payload.draw_scenes = normalizedDrawScenes.slice(0, drawSceneMaxCount)
   payload.video_scenes = payload.video_scenes
     .map((scene) => {
       const engine = normalizeVideoEngine(scene.engine)
@@ -620,7 +589,7 @@ const buildPayload = (): QqccBotConfig => {
         ),
       }
     })
-    .filter((scene) => scene.name || scene.prompt || scene.prompt_key)
+    .filter((scene) => scene.name || scene.prompt)
   return payload
 }
 
@@ -696,7 +665,7 @@ const confirmSceneConfig = () => {
 const loadConfig = async () => {
   loading.value = true
   try {
-    const payload = await fetchQqccBotConfig()
+    const payload = await props.fetchConfig()
     applyResponse(payload)
   } catch {
     message.error('加载懒人Bot配置失败')
@@ -720,7 +689,7 @@ const saveConfig = async () => {
   }
   saving.value = true
   try {
-    const saved = await updateQqccBotConfig(buildPayload())
+    const saved = await props.updateConfig(buildPayload())
     applyResponse(saved)
     message.success('懒人Bot配置已保存')
   } catch {
@@ -736,16 +705,24 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="qqcc-bot-settings flex-1 flex flex-col gap-5">
-    <section class="rounded-lg border border-slate-200 bg-white p-5">
+  <div class="qqcc-bot-settings flex flex-1 flex-col gap-5">
+    <section class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 class="text-base font-semibold text-slate-900">懒人Bot配置</h2>
-          <div class="mt-1 text-sm text-slate-500">
-            状态：{{ statusText }} · 更新时间：{{ updatedAtText }}
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-2">
+            <h2 class="text-lg font-semibold text-slate-950">懒人Bot配置</h2>
+            <span
+              class="rounded-full px-2.5 py-0.5 text-xs font-medium"
+              :class="config.global_enabled ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'bg-slate-100 text-slate-500 ring-1 ring-slate-200'"
+            >
+              状态：{{ statusText }}
+            </span>
+          </div>
+          <div class="mt-1 truncate text-sm text-slate-500">
+            更新时间：{{ updatedAtText }}
           </div>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex shrink-0 items-center gap-2">
           <a-button :loading="loading" @click="loadConfig">
             <template #icon><ReloadOutlined /></template>
             刷新
@@ -759,7 +736,7 @@ onMounted(() => {
 
       <a-spin :spinning="loading">
         <div class="grid gap-5 xl:grid-cols-[280px_1fr]">
-          <div class="rounded-lg border border-slate-200 p-4">
+          <div class="rounded-lg border border-slate-200 bg-slate-50/70 p-4">
             <div class="mb-4 flex items-center justify-between gap-3">
               <span class="text-sm font-medium text-slate-700">全局开关</span>
               <a-switch v-model:checked="config.global_enabled" data-testid="global-enabled" />
@@ -767,8 +744,8 @@ onMounted(() => {
             <div class="text-xs text-slate-400">Key：{{ configKey || '-' }}</div>
           </div>
 
-          <div class="grid gap-4 lg:grid-cols-3">
-            <section class="rounded-lg border border-slate-200 p-4">
+          <div class="grid gap-4 lg:grid-cols-1">
+            <section class="rounded-lg border border-slate-200 bg-slate-50/70 p-4">
               <h3 class="mb-3 text-sm font-semibold text-slate-800">主菜单</h3>
               <div class="space-y-3">
                 <div
@@ -781,42 +758,14 @@ onMounted(() => {
                 </div>
               </div>
             </section>
-
-            <section class="rounded-lg border border-slate-200 p-4">
-              <h3 class="mb-3 text-sm font-semibold text-slate-800">懒人P图</h3>
-              <div class="space-y-3">
-                <div
-                  v-for="item in photoButtonOptions"
-                  :key="item.key"
-                  class="flex items-center justify-between gap-3"
-                >
-                  <span class="text-sm text-slate-700">{{ item.label }}</span>
-                  <a-switch v-model:checked="config.photo_buttons[item.key]" />
-                </div>
-              </div>
-            </section>
-
-            <section class="rounded-lg border border-slate-200 p-4">
-              <h3 class="mb-3 text-sm font-semibold text-slate-800">脱衣方式</h3>
-              <div class="space-y-3">
-                <div
-                  v-for="item in undressMethodOptions"
-                  :key="item.key"
-                  class="flex items-center justify-between gap-3"
-                >
-                  <span class="text-sm text-slate-700">{{ item.label }}</span>
-                  <a-switch v-model:checked="config.undress_methods[item.key]" />
-                </div>
-              </div>
-            </section>
           </div>
         </div>
       </a-spin>
     </section>
 
-    <section class="rounded-lg border border-slate-200 bg-white p-5">
+    <section class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h3 class="text-sm font-semibold text-slate-800">AI动图场景</h3>
+        <h3 class="text-base font-semibold text-slate-900">AI动图场景</h3>
         <a-button data-testid="add-video-scene" @click="addVideoScene">
           <template #icon><PlusOutlined /></template>
           添加
@@ -826,7 +775,7 @@ onMounted(() => {
       <div>
         <div>
           <div
-            class="hidden grid-cols-[180px_minmax(360px,1fr)_88px_88px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid"
+            class="hidden grid-cols-[180px_minmax(0,1fr)_96px_92px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid"
           >
             <span>按钮名称</span>
             <span>提示词</span>
@@ -836,7 +785,7 @@ onMounted(() => {
           <div
             v-for="(scene, index) in config.video_scenes"
             :key="scene.id"
-            class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[180px_minmax(360px,1fr)_88px_88px]"
+            class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[180px_minmax(0,1fr)_96px_92px]"
           >
             <a-input
               v-model:value="scene.name"
@@ -846,7 +795,6 @@ onMounted(() => {
               v-model:value="scene.prompt"
               :rows="3"
               :data-testid="`video-scene-prompt-${index}`"
-              placeholder="留空使用 prompts.ini"
             />
             <div class="scene-duration-cell">
               <a-select
@@ -885,9 +833,9 @@ onMounted(() => {
       </div>
     </section>
 
-    <section class="rounded-lg border border-slate-200 bg-white p-5">
+    <section class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h3 class="text-sm font-semibold text-slate-800">AI绘图场景</h3>
+        <h3 class="text-base font-semibold text-slate-900">AI绘图场景</h3>
         <a-button data-testid="add-draw-scene" @click="addDrawScene">
           <template #icon><PlusOutlined /></template>
           添加
@@ -896,7 +844,7 @@ onMounted(() => {
 
       <div>
         <div
-          class="hidden grid-cols-[180px_minmax(360px,1fr)_88px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid"
+          class="hidden grid-cols-[180px_minmax(0,1fr)_92px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid"
         >
           <span>按钮名称</span>
           <span>提示词</span>
@@ -905,7 +853,7 @@ onMounted(() => {
         <div
           v-for="(scene, index) in config.draw_scenes"
           :key="scene.id"
-          class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[180px_minmax(360px,1fr)_88px]"
+          class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[180px_minmax(0,1fr)_92px]"
         >
           <a-input
             v-model:value="scene.name"
@@ -941,8 +889,8 @@ onMounted(() => {
       </div>
     </section>
 
-    <section class="rounded-lg border border-slate-200 bg-white p-5">
-      <h3 class="mb-4 text-sm font-semibold text-slate-800">提示词覆盖</h3>
+    <section class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <h3 class="mb-4 text-base font-semibold text-slate-900">提示词覆盖</h3>
       <div class="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         <a-form-item v-for="item in nonVideoPromptOptions" :key="item.key" :label="item.label">
           <a-textarea
@@ -1048,6 +996,11 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.qqcc-bot-settings {
+  width: 100%;
+  min-width: 0;
+}
+
 :global(.qqcc-scene-config-modal) {
   width: 100vw;
   left: 0;
@@ -1066,6 +1019,7 @@ onMounted(() => {
 
 .scene-row {
   align-items: center;
+  min-width: 0;
 }
 
 .scene-duration-cell,
@@ -1109,5 +1063,29 @@ onMounted(() => {
   top: 50%;
   margin-top: 0;
   transform: translateY(-50%);
+}
+
+:deep(.ant-input),
+:deep(.ant-input-affix-wrapper),
+:deep(.ant-select-selector),
+:deep(textarea.ant-input) {
+  border-radius: 7px;
+}
+
+:deep(.ant-form-item-label > label) {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+@media (max-width: 767px) {
+  .scene-row {
+    align-items: stretch;
+  }
+
+  .scene-duration-cell,
+  .scene-action-cell {
+    justify-content: flex-start;
+  }
 }
 </style>

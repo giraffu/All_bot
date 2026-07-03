@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { message } from 'ant-design-vue'
+import message from 'ant-design-vue/es/message'
 import { fetchPlans, createPlan, updatePlan, deletePlan, fetchOrders } from '../api/api'
 
 // Plans state

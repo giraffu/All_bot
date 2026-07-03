@@ -2,7 +2,8 @@
 import { ref, onMounted } from 'vue'
 import { fetchTemplateContributions, approveTemplateContribution, deleteTemplateContribution, apiBaseUrl } from '../api/api'
 import { CheckOutlined, DeleteOutlined, UserOutlined, ClockCircleOutlined, FileImageOutlined, EyeOutlined } from '@ant-design/icons-vue'
-import { message, Modal } from 'ant-design-vue'
+import message from 'ant-design-vue/es/message'
+import Modal from 'ant-design-vue/es/modal'
 
 const contributions = ref([])
 const loading = ref(false)

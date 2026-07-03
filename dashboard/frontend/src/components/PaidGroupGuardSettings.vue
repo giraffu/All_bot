@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { message } from 'ant-design-vue'
+import message from 'ant-design-vue/es/message'
 import { ReloadOutlined, SaveOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 

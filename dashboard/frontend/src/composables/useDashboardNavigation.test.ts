@@ -4,19 +4,14 @@ import { describe, expect, it } from 'vitest'
 import { useDashboardNavigation } from './useDashboardNavigation'
 
 describe('useDashboardNavigation', () => {
-  it('includes the QQCC lazy bot settings tab', () => {
+  it('keeps QQCC lazy bot settings out of the main dashboard shell', () => {
     const activeTab = ref(['qqcc_bot'])
     const navigation = useDashboardNavigation(activeTab)
 
-    expect(navigation.menuItems).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          key: 'qqcc_bot',
-          label: '懒人Bot配置',
-        }),
-      ])
+    expect(navigation.menuItems).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: 'qqcc_bot' })])
     )
-    expect(navigation.scrollableTabKeys).toContain('qqcc_bot')
-    expect(navigation.currentTabTitle.value).toBe('懒人Bot配置')
+    expect(navigation.scrollableTabKeys).not.toContain('qqcc_bot')
+    expect(navigation.currentTabTitle.value).toBe('模板共建')
   })
 })

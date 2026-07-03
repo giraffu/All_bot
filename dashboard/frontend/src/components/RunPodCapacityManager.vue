@@ -9,7 +9,7 @@ import {
   RobotOutlined,
   StopOutlined,
 } from '@ant-design/icons-vue'
-import { message } from 'ant-design-vue'
+import message from 'ant-design-vue/es/message'
 import {
   controlRunPodAutoscaler,
   fetchRunPodAutoscaler,

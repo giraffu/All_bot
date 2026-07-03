@@ -1,30 +1,38 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { resolve } from 'node:path'
+
+const normalizeModuleId = (id) => id.replaceAll('\\', '/')
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [vue()],
   build: {
     rollupOptions: {
+      input: {
+        main: resolve(__dirname, 'index.html'),
+        qqccConfig: resolve(__dirname, 'index.qqcc-config.html'),
+      },
       output: {
         manualChunks(id) {
-          if (!id.includes('node_modules')) {
+          const normalizedId = normalizeModuleId(id)
+          if (!normalizedId.includes('node_modules')) {
             return
           }
 
-          if (id.includes('echarts') || id.includes('zrender')) {
-            return 'vendor-charts'
+          if (normalizedId.includes('/zrender/')) {
+            return 'vendor-zrender'
           }
 
-          if (id.includes('ant-design-vue') || id.includes('@ant-design')) {
-            return 'vendor-ant'
+          if (normalizedId.includes('/echarts/') || normalizedId.includes('/vue-echarts/')) {
+            return 'vendor-echarts'
           }
 
-          if (id.includes('/vue/') || id.includes('vue-echarts')) {
+          if (normalizedId.includes('/vue/')) {
             return 'vendor-vue'
           }
 
-          if (id.includes('axios')) {
+          if (normalizedId.includes('axios')) {
             return 'vendor-http'
           }
         },

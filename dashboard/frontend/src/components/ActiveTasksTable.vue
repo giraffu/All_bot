@@ -163,7 +163,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ReloadOutlined, UserOutlined, SyncOutlined } from '@ant-design/icons-vue'
 import { fetchActiveBotTasks, refundBotTask } from '../api/api'
-import { message } from 'ant-design-vue'
+import message from 'ant-design-vue/es/message'
 import { TASK_TYPE_LABELS, getTaskTypeLabel } from '../constants/taskTypes'
 
 const loading = ref(false)

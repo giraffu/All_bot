@@ -1,5 +1,6 @@
 import { onMounted, ref } from 'vue'
-import { message, Modal } from 'ant-design-vue'
+import message from 'ant-design-vue/es/message'
+import Modal from 'ant-design-vue/es/modal'
 import {
   adminGiftPlan,
   clearUserHistory,

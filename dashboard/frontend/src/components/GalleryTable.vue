@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, h } from 'vue'
-import { message, Modal } from 'ant-design-vue'
+import message from 'ant-design-vue/es/message'
+import Modal from 'ant-design-vue/es/modal'
 import {
   AppstoreOutlined,
   ExclamationCircleOutlined,

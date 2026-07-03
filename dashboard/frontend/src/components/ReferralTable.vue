@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { fetchAffiliateRedeemRecords, fetchReferralRewards } from '../api/api'
-import { message } from 'ant-design-vue'
+import message from 'ant-design-vue/es/message'
 
 const activeTab = ref('rewards')
 const rewardsLoading = ref(false)

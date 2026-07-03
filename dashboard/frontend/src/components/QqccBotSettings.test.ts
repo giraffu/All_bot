@@ -14,10 +14,15 @@ const antMocks = vi.hoisted(() => ({
   success: vi.fn(),
 }))
 
-vi.mock('../api/api', () => apiMocks)
-
 vi.mock('ant-design-vue', () => ({
   message: {
+    error: antMocks.error,
+    success: antMocks.success,
+  },
+}))
+
+vi.mock('ant-design-vue/es/message', () => ({
+  default: {
     error: antMocks.error,
     success: antMocks.success,
   },
@@ -92,8 +97,13 @@ const passthroughStub = (name: string) =>
     template: '<div><slot /></div>',
   })
 
-const mountSettings = () =>
+const mountSettings = (props = {}) =>
   mount(QqccBotSettings, {
+    props: {
+      fetchConfig: apiMocks.fetchQqccBotConfig,
+      updateConfig: apiMocks.updateQqccBotConfig,
+      ...props,
+    },
     global: {
       stubs: {
         'a-button': ButtonStub,
@@ -123,9 +133,11 @@ describe('QqccBotSettings', () => {
       key: 'qqcc_lazy_bot_config:v1',
       updated_at: '2026-06-26T12:00:00',
       config: {
+        scene_preset_version: 1,
         global_enabled: true,
         main_buttons: {
           quick_undress: true,
+          quick_faceswap: true,
           photo_edit: true,
           ai_draw: true,
           video_edit: false,
@@ -147,6 +159,22 @@ describe('QqccBotSettings', () => {
           },
         ],
         draw_scenes: [
+          {
+            id: 'quick_masturbation',
+            name: '快速自慰',
+            prompt: 'preset masturbation prompt',
+            engine: 'free_edit',
+            lora_name: '',
+            postprocess_draw_scene_id: '',
+          },
+          {
+            id: 'quick_undress',
+            name: '快速脱衣',
+            prompt: 'preset undress prompt',
+            engine: 'free_edit',
+            lora_name: '',
+            postprocess_draw_scene_id: '',
+          },
           {
             id: 'soft_light',
             name: '柔光写真',
@@ -192,11 +220,19 @@ describe('QqccBotSettings', () => {
     expect(apiMocks.fetchQqccBotConfig).toHaveBeenCalledOnce()
     expect(wrapper.text()).toContain('懒人Bot配置')
     expect(wrapper.text()).toContain('状态：开启')
+    expect(wrapper.text()).toContain('快速换脸')
     expect(wrapper.text()).toContain('修仙市集')
     expect(wrapper.text()).toContain('AI动图场景')
     expect(wrapper.text()).toContain('AI绘图场景')
+    expect(wrapper.text()).not.toContain('懒人P图')
+    expect(wrapper.text()).not.toContain('脱衣方式')
     expect((wrapper.get('[data-testid="video-scene-name-0"]').element as HTMLInputElement).value).toBe('亲吻')
-    expect((wrapper.get('[data-testid="draw-scene-name-0"]').element as HTMLInputElement).value).toBe('柔光写真')
+    expect((wrapper.get('[data-testid="draw-scene-name-0"]').element as HTMLInputElement).value).toBe('快速自慰')
+    expect((wrapper.get('[data-testid="draw-scene-name-1"]').element as HTMLInputElement).value).toBe('快速脱衣')
+    expect((wrapper.get('[data-testid="draw-scene-name-2"]').element as HTMLInputElement).value).toBe('柔光写真')
+    expect(wrapper.find('[data-testid="non-video-prompt-undress"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="non-video-prompt-masturbation"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="non-video-prompt-face_swap"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('画质与时长')
   })
 
@@ -208,16 +244,22 @@ describe('QqccBotSettings', () => {
     await wrapper.get('[data-testid="video-scene-name-0"]').setValue('贴贴')
     await wrapper.get('[data-testid="video-scene-prompt-0"]').setValue('new scene prompt')
     await wrapper.get('[data-testid="video-scene-duration-0"]').setValue('10s')
-    await wrapper.get('[data-testid="draw-scene-name-0"]').setValue('柔光大片')
-    await wrapper.get('[data-testid="draw-scene-prompt-0"]').setValue('new draw prompt')
-    await wrapper.get('[data-testid="non-video-prompt-undress"]').setValue('new prompt')
+    await wrapper.get('[data-testid="draw-scene-name-2"]').setValue('柔光大片')
+    await wrapper.get('[data-testid="draw-scene-prompt-2"]').setValue('new draw prompt')
+    await wrapper.get('[data-testid="non-video-prompt-face_swap"]').setValue('new face prompt')
     await wrapper.findAll('button').at(1)!.trigger('click')
     await flushPromises()
 
     expect(apiMocks.updateQqccBotConfig).toHaveBeenCalledOnce()
     const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
+    expect(payload.scene_preset_version).toBe(1)
+    expect(JSON.stringify(payload)).not.toContain('prompt_key')
     expect(payload.global_enabled).toBe(false)
-    expect(payload.prompts.undress).toBe('new prompt')
+    expect(payload.prompts.undress).toBe('old prompt')
+    expect(payload.prompts.face_swap).toBe('new face prompt')
+    expect(payload.main_buttons.quick_faceswap).toBe(true)
+    expect(payload.main_buttons.quick_undress).toBe(false)
+    expect(payload.main_buttons.photo_edit).toBe(false)
     expect(payload.main_buttons.video_edit).toBe(false)
     expect(payload.main_buttons.market).toBe(true)
     expect(payload.video_scenes).toEqual([
@@ -233,6 +275,22 @@ describe('QqccBotSettings', () => {
     ])
     expect(payload.draw_scenes).toEqual([
       {
+        id: 'quick_masturbation',
+        name: '快速自慰',
+        prompt: 'preset masturbation prompt',
+        engine: 'free_edit',
+        lora_name: '',
+        postprocess_draw_scene_id: '',
+      },
+      {
+        id: 'quick_undress',
+        name: '快速脱衣',
+        prompt: 'preset undress prompt',
+        engine: 'free_edit',
+        lora_name: '',
+        postprocess_draw_scene_id: '',
+      },
+      {
         id: 'soft_light',
         name: '柔光大片',
         prompt: 'new draw prompt',
@@ -242,6 +300,85 @@ describe('QqccBotSettings', () => {
       },
     ])
     expect(antMocks.success).toHaveBeenCalledWith('懒人Bot配置已保存')
+  })
+
+  it('uses injected config API handlers when provided', async () => {
+    const fetchConfig = vi.fn().mockResolvedValue({
+      key: 'qqcc_lazy_bot_config:v1',
+      updated_at: null,
+      config: {
+        global_enabled: true,
+        video_scenes: [
+          {
+            id: 'custom',
+            name: '自定义动图',
+            prompt: 'custom prompt',
+            duration: '5s',
+            engine: 'image_to_video',
+            lora_name: '',
+            end_frame_draw_scene_id: '',
+          },
+        ],
+        draw_scenes: [],
+      },
+    })
+    const updateConfig = vi.fn(payload =>
+      Promise.resolve({
+        key: 'qqcc_lazy_bot_config:v1',
+        updated_at: null,
+        config: payload,
+      })
+    )
+
+    const wrapper = mountSettings({ fetchConfig, updateConfig })
+    await flushPromises()
+
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.fetchQqccBotConfig).not.toHaveBeenCalled()
+    expect(fetchConfig).toHaveBeenCalledOnce()
+    expect(updateConfig).toHaveBeenCalledOnce()
+  })
+
+  it('does not synthesize AI drawing preset scenes when draw scenes are absent', async () => {
+    const fetchConfig = vi.fn().mockResolvedValue({
+      key: 'qqcc_lazy_bot_config:v1',
+      updated_at: null,
+      config: {
+        global_enabled: true,
+        video_scenes: [
+          {
+            id: 'custom',
+            name: '自定义动图',
+            prompt: 'custom prompt',
+            duration: '5s',
+            engine: 'image_to_video',
+            lora_name: '',
+            end_frame_draw_scene_id: '',
+          },
+        ],
+      },
+    })
+    const updateConfig = vi.fn(payload =>
+      Promise.resolve({
+        key: 'qqcc_lazy_bot_config:v1',
+        updated_at: null,
+        config: payload,
+      })
+    )
+
+    const wrapper = mountSettings({ fetchConfig, updateConfig })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="draw-scene-name-0"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('暂无场景')
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    const payload = updateConfig.mock.calls[0][0]
+    expect(payload.scene_preset_version).toBe(1)
+    expect(payload.draw_scenes).toEqual([])
   })
 
   it('adds and removes dynamic video scenes before saving', async () => {
@@ -269,19 +406,21 @@ describe('QqccBotSettings', () => {
     await flushPromises()
 
     await wrapper.get('[data-testid="add-draw-scene"]').trigger('click')
-    await wrapper.get('[data-testid="draw-scene-name-1"]').setValue('赛博风')
-    await wrapper.get('[data-testid="draw-scene-prompt-1"]').setValue('cyber style')
-    await wrapper.get('[data-testid="remove-draw-scene-0"]').trigger('click')
+    await wrapper.get('[data-testid="draw-scene-name-3"]').setValue('赛博风')
+    await wrapper.get('[data-testid="draw-scene-prompt-3"]').setValue('cyber style')
+    await wrapper.get('[data-testid="remove-draw-scene-2"]').trigger('click')
     await wrapper.findAll('button').at(1)!.trigger('click')
     await flushPromises()
 
     const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
-    expect(payload.draw_scenes).toHaveLength(1)
-    expect(payload.draw_scenes[0].name).toBe('赛博风')
-    expect(payload.draw_scenes[0].prompt).toBe('cyber style')
-    expect(payload.draw_scenes[0].engine).toBe('free_edit_v2')
-    expect(payload.draw_scenes[0].lora_name).toBe('')
-    expect(payload.draw_scenes[0].postprocess_draw_scene_id).toBe('')
+    expect(payload.draw_scenes).toHaveLength(3)
+    expect(payload.draw_scenes[0].name).toBe('快速自慰')
+    expect(payload.draw_scenes[1].name).toBe('快速脱衣')
+    expect(payload.draw_scenes[2].name).toBe('赛博风')
+    expect(payload.draw_scenes[2].prompt).toBe('cyber style')
+    expect(payload.draw_scenes[2].engine).toBe('free_edit_v2')
+    expect(payload.draw_scenes[2].lora_name).toBe('')
+    expect(payload.draw_scenes[2].postprocess_draw_scene_id).toBe('')
   })
 
   it('configures a video scene model and clears lora when v2 is selected', async () => {
@@ -333,7 +472,7 @@ describe('QqccBotSettings', () => {
     await wrapper.get('[data-testid="config-video-scene-0"]').trigger('click')
     await wrapper.get('[data-testid="scene-end-frame-select"]').setValue('soft_light')
     await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
-    await wrapper.get('[data-testid="remove-draw-scene-0"]').trigger('click')
+    await wrapper.get('[data-testid="remove-draw-scene-2"]').trigger('click')
     await wrapper.findAll('button').at(1)!.trigger('click')
     await flushPromises()
 
@@ -388,8 +527,10 @@ describe('QqccBotSettings', () => {
     await flushPromises()
 
     const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
-    expect(payload.draw_scenes[0].postprocess_draw_scene_id).toBe('anime_finish')
-    expect(payload.draw_scenes[1].postprocess_draw_scene_id).toBe('')
+    const softLightScene = payload.draw_scenes.find((scene: { id: string }) => scene.id === 'soft_light')!
+    const animeScene = payload.draw_scenes.find((scene: { id: string }) => scene.id === 'anime_finish')!
+    expect(softLightScene.postprocess_draw_scene_id).toBe('anime_finish')
+    expect(animeScene.postprocess_draw_scene_id).toBe('')
   })
 
   it('filters postprocess choices that would create a draw scene cycle', async () => {
@@ -437,7 +578,9 @@ describe('QqccBotSettings', () => {
       .findAll('option')
       .map((option) => (option.element as HTMLOptionElement).value)
 
-    expect(optionValues).toEqual([''])
+    expect(optionValues).toContain('')
+    expect(optionValues).not.toContain('base_draw')
+    expect(optionValues).not.toContain('finish_draw')
   })
 
   it('clears a draw scene postprocess source when the referenced draw scene is removed', async () => {
@@ -484,14 +627,15 @@ describe('QqccBotSettings', () => {
     await flushPromises()
 
     const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
-    expect(payload.draw_scenes[0].postprocess_draw_scene_id).toBe('')
+    const softLightScene = payload.draw_scenes.find((scene: { id: string }) => scene.id === 'soft_light')!
+    expect(softLightScene.postprocess_draw_scene_id).toBe('')
   })
 
   it('configures a draw scene to use legacy free edit with a lora model', async () => {
     const wrapper = mountSettings()
     await flushPromises()
 
-    await wrapper.get('[data-testid="config-draw-scene-0"]').trigger('click')
+    await wrapper.get('[data-testid="config-draw-scene-2"]').trigger('click')
     await wrapper.get('[data-testid="scene-engine-select"]').setValue('free_edit')
     await wrapper.get('[data-testid="scene-lora-select"]').setValue('qwen/YARN_1.0.safetensors')
     await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
@@ -499,8 +643,9 @@ describe('QqccBotSettings', () => {
     await flushPromises()
 
     const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
-    expect(payload.draw_scenes[0].engine).toBe('free_edit')
-    expect(payload.draw_scenes[0].lora_name).toBe('qwen/YARN_1.0.safetensors')
+    const softLightScene = payload.draw_scenes.find((scene: { id: string }) => scene.id === 'soft_light')!
+    expect(softLightScene.engine).toBe('free_edit')
+    expect(softLightScene.lora_name).toBe('qwen/YARN_1.0.safetensors')
   })
 
   it('blocks saving incomplete dynamic video scenes', async () => {
@@ -519,7 +664,7 @@ describe('QqccBotSettings', () => {
     const wrapper = mountSettings()
     await flushPromises()
 
-    await wrapper.get('[data-testid="draw-scene-prompt-0"]').setValue('')
+    await wrapper.get('[data-testid="draw-scene-prompt-2"]').setValue('')
     await wrapper.findAll('button').at(1)!.trigger('click')
     await flushPromises()
 

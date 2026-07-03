@@ -1,4 +1,4 @@
-# Stage 1: build the Vue dashboard.
+# Stage 1: build the QQCC config Vue app.
 FROM node:22-alpine AS build
 
 WORKDIR /app
@@ -11,15 +11,16 @@ COPY public ./public
 COPY src ./src
 RUN npm run build
 
-# Stage 2: serve the built dashboard through a locked-down Nginx gateway.
+# Stage 2: serve the QQCC config app through the same locked-down Nginx gateway.
 FROM nginx:1.27-alpine
 
-ENV DASHBOARD_GATEWAY_PORT=8086
-ENV DASHBOARD_BACKEND_HOST=dashboard-backend-prod:8043
+ENV DASHBOARD_GATEWAY_PORT=8088
+ENV DASHBOARD_BACKEND_HOST=qqcc-config-backend-prod:8045
 
 COPY --from=build /app/dist /usr/share/nginx/html
+RUN cp /usr/share/nginx/html/index.qqcc-config.html /usr/share/nginx/html/index.html
 COPY nginx.cloud-gateway.conf.template /etc/nginx/templates/default.conf.template
 
-EXPOSE 8086
+EXPOSE 8088
 
 CMD ["nginx", "-g", "daemon off;"]
