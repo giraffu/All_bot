@@ -38,6 +38,7 @@ interface VideoSceneConfig {
   duration: DurationKey
   engine: VideoSceneEngine
   lora_name: string
+  end_frame_draw_scene_id: string
   prompt_key?: PromptKey
 }
 
@@ -146,6 +147,7 @@ const defaultConfig = (): QqccBotConfig => ({
       duration: '5s',
       engine: 'image_to_video',
       lora_name: '',
+      end_frame_draw_scene_id: '',
       prompt_key: 'perfect_video_insert',
     },
     {
@@ -155,6 +157,7 @@ const defaultConfig = (): QqccBotConfig => ({
       duration: '5s',
       engine: 'image_to_video',
       lora_name: '',
+      end_frame_draw_scene_id: '',
       prompt_key: 'doggy_style',
     },
     {
@@ -164,6 +167,7 @@ const defaultConfig = (): QqccBotConfig => ({
       duration: '5s',
       engine: 'image_to_video',
       lora_name: '',
+      end_frame_draw_scene_id: '',
       prompt_key: 'blowjob',
     },
     {
@@ -173,6 +177,7 @@ const defaultConfig = (): QqccBotConfig => ({
       duration: '5s',
       engine: 'image_to_video',
       lora_name: '',
+      end_frame_draw_scene_id: '',
       prompt_key: 'undress_tongue',
     },
     {
@@ -182,6 +187,7 @@ const defaultConfig = (): QqccBotConfig => ({
       duration: '5s',
       engine: 'image_to_video',
       lora_name: '',
+      end_frame_draw_scene_id: '',
       prompt_key: 'closeup_blowjob',
     },
   ],
@@ -260,6 +266,7 @@ const sceneConfig = reactive({
   index: -1,
   engine: 'image_to_video',
   lora_name: '',
+  end_frame_draw_scene_id: '',
 })
 
 const statusText = computed(() => (config.global_enabled ? '开启' : '关闭'))
@@ -288,6 +295,11 @@ const normalizeLoraName = (
   const loraName = typeof raw === 'string' ? raw : ''
   const loras = kind === 'video' ? modelOptions.video_lora_models : modelOptions.image_lora_models
   return loras.some((item) => item.value === loraName) ? loraName : ''
+}
+
+const normalizeEndFrameDrawSceneId = (raw: unknown, drawScenes = config.draw_scenes) => {
+  const sceneId = typeof raw === 'string' ? raw.trim() : ''
+  return drawScenes.some((scene) => scene.id === sceneId) ? sceneId : ''
 }
 
 const mergeOptions = (raw?: Partial<QqccBotConfigOptions>): QqccBotConfigOptions => {
@@ -321,6 +333,9 @@ const getEngineLabel = (kind: SceneConfigKind, engine: string) => {
   return drawEngineLabels[normalizeDrawEngine(engine)]
 }
 
+const getSceneSelectPopupContainer = (triggerNode: HTMLElement) =>
+  triggerNode.parentElement || document.body
+
 const activeEngineOptions = computed(() =>
   sceneConfig.kind === 'video' ? modelOptions.video_engines : modelOptions.draw_engines
 )
@@ -329,6 +344,9 @@ const activeLoraOptions = computed(() =>
 )
 const activeEngineSupportsLora = computed(() =>
   engineSupportsLora(sceneConfig.kind, sceneConfig.engine)
+)
+const activeEndFrameDrawOptions = computed(() =>
+  config.draw_scenes.filter((scene) => scene.id.trim() && scene.name.trim() && scene.prompt.trim())
 )
 
 const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
@@ -362,6 +380,23 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
     const value = raw.video_settings?.durations?.[key]
     if (typeof value === 'boolean') merged.video_settings.durations[key] = value
   })
+  if (Array.isArray(raw.draw_scenes)) {
+    merged.draw_scenes = raw.draw_scenes
+      .map((scene, index) => {
+        const id = typeof scene?.id === 'string' && scene.id.trim() ? scene.id.trim() : `draw_scene_${index + 1}`
+        const name = typeof scene?.name === 'string' ? scene.name : ''
+        const prompt = typeof scene?.prompt === 'string' ? scene.prompt : ''
+        const engine = normalizeDrawEngine(scene?.engine)
+        return {
+          id,
+          name,
+          prompt,
+          engine,
+          lora_name: normalizeLoraName(scene?.lora_name, { kind: 'draw', engine }),
+        }
+      })
+      .filter((scene) => scene.name.trim() || scene.prompt.trim())
+  }
   if (Array.isArray(raw.video_scenes)) {
     merged.video_scenes = raw.video_scenes
       .map((scene, index) => {
@@ -380,27 +415,14 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
           duration,
           engine,
           lora_name: normalizeLoraName(scene?.lora_name, { kind: 'video', engine }),
+          end_frame_draw_scene_id: normalizeEndFrameDrawSceneId(
+            scene?.end_frame_draw_scene_id,
+            merged.draw_scenes,
+          ),
           ...(promptKey ? { prompt_key: promptKey } : {}),
         }
       })
       .filter((scene) => scene.name.trim() || scene.prompt.trim() || scene.prompt_key)
-  }
-  if (Array.isArray(raw.draw_scenes)) {
-    merged.draw_scenes = raw.draw_scenes
-      .map((scene, index) => {
-        const id = typeof scene?.id === 'string' && scene.id.trim() ? scene.id.trim() : `draw_scene_${index + 1}`
-        const name = typeof scene?.name === 'string' ? scene.name : ''
-        const prompt = typeof scene?.prompt === 'string' ? scene.prompt : ''
-        const engine = normalizeDrawEngine(scene?.engine)
-        return {
-          id,
-          name,
-          prompt,
-          engine,
-          lora_name: normalizeLoraName(scene?.lora_name, { kind: 'draw', engine }),
-        }
-      })
-      .filter((scene) => scene.name.trim() || scene.prompt.trim())
   }
   Object.keys(merged.prompts).forEach((key) => {
     const promptKey = key as PromptKey
@@ -423,6 +445,7 @@ const addVideoScene = () => {
     duration: '5s',
     engine: 'image_to_video',
     lora_name: '',
+    end_frame_draw_scene_id: '',
   })
 }
 
@@ -446,7 +469,13 @@ const addDrawScene = () => {
 }
 
 const removeDrawScene = (index: number) => {
-  config.draw_scenes.splice(index, 1)
+  const [removed] = config.draw_scenes.splice(index, 1)
+  if (!removed) return
+  config.video_scenes.forEach((scene) => {
+    if (scene.end_frame_draw_scene_id === removed.id) {
+      scene.end_frame_draw_scene_id = ''
+    }
+  })
 }
 
 const validateVideoScenes = () =>
@@ -461,26 +490,36 @@ const validateDrawScenes = () =>
 
 const buildPayload = (): QqccBotConfig => {
   const payload = JSON.parse(JSON.stringify(config)) as QqccBotConfig
-  payload.video_scenes = payload.video_scenes
-    .map((scene) => ({
-      ...scene,
-      id: scene.id.trim(),
-      name: scene.name.trim(),
-      prompt: scene.prompt.trim(),
-      engine: normalizeVideoEngine(scene.engine),
-      lora_name: normalizeLoraName(scene.lora_name, { kind: 'video', engine: normalizeVideoEngine(scene.engine) }),
-    }))
-    .filter((scene) => scene.name || scene.prompt || scene.prompt_key)
   payload.draw_scenes = payload.draw_scenes
-    .map((scene) => ({
-      ...scene,
-      id: scene.id.trim(),
-      name: scene.name.trim(),
-      prompt: scene.prompt.trim(),
-      engine: normalizeDrawEngine(scene.engine),
-      lora_name: normalizeLoraName(scene.lora_name, { kind: 'draw', engine: normalizeDrawEngine(scene.engine) }),
-    }))
+    .map((scene) => {
+      const engine = normalizeDrawEngine(scene.engine)
+      return {
+        ...scene,
+        id: scene.id.trim(),
+        name: scene.name.trim(),
+        prompt: scene.prompt.trim(),
+        engine,
+        lora_name: normalizeLoraName(scene.lora_name, { kind: 'draw', engine }),
+      }
+    })
     .filter((scene) => scene.name || scene.prompt)
+  payload.video_scenes = payload.video_scenes
+    .map((scene) => {
+      const engine = normalizeVideoEngine(scene.engine)
+      return {
+        ...scene,
+        id: scene.id.trim(),
+        name: scene.name.trim(),
+        prompt: scene.prompt.trim(),
+        engine,
+        lora_name: normalizeLoraName(scene.lora_name, { kind: 'video', engine }),
+        end_frame_draw_scene_id: normalizeEndFrameDrawSceneId(
+          scene.end_frame_draw_scene_id,
+          payload.draw_scenes,
+        ),
+      }
+    })
+    .filter((scene) => scene.name || scene.prompt || scene.prompt_key)
   return payload
 }
 
@@ -498,12 +537,17 @@ const openSceneConfig = (kind: SceneConfigKind, index: number) => {
   sceneConfig.index = index
   sceneConfig.engine = scene.engine
   sceneConfig.lora_name = scene.lora_name || ''
+  sceneConfig.end_frame_draw_scene_id =
+    kind === 'video'
+      ? normalizeEndFrameDrawSceneId((scene as VideoSceneConfig).end_frame_draw_scene_id)
+      : ''
   sceneConfig.open = true
 }
 
 const closeSceneConfig = () => {
   sceneConfig.open = false
   sceneConfig.index = -1
+  sceneConfig.end_frame_draw_scene_id = ''
 }
 
 const onSceneEngineChange = () => {
@@ -520,6 +564,7 @@ const confirmSceneConfig = () => {
     const engine = normalizeVideoEngine(sceneConfig.engine)
     scene.engine = engine
     scene.lora_name = normalizeLoraName(sceneConfig.lora_name, { kind: 'video', engine })
+    scene.end_frame_draw_scene_id = normalizeEndFrameDrawSceneId(sceneConfig.end_frame_draw_scene_id)
   } else {
     const scene = config.draw_scenes[sceneConfig.index]
     if (!scene) return
@@ -790,7 +835,7 @@ onMounted(() => {
 
     <a-modal
       v-model:open="sceneConfig.open"
-      title="场景模型配置"
+      title="模型与首尾帧配置"
       :footer="null"
       :width="520"
       wrap-class-name="qqcc-scene-config-modal"
@@ -802,6 +847,7 @@ onMounted(() => {
             v-model:value="sceneConfig.engine"
             data-testid="scene-engine-select"
             class="w-full"
+            :get-popup-container="getSceneSelectPopupContainer"
             @change="onSceneEngineChange"
           >
             <a-select-option
@@ -819,6 +865,7 @@ onMounted(() => {
             data-testid="scene-lora-select"
             class="w-full"
             :disabled="!activeEngineSupportsLora"
+            :get-popup-container="getSceneSelectPopupContainer"
           >
             <a-select-option
               v-for="item in activeLoraOptions"
@@ -826,6 +873,23 @@ onMounted(() => {
               :value="item.value"
             >
               {{ item.label }}
+            </a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item v-if="sceneConfig.kind === 'video'" label="尾帧来源" class="mb-4">
+          <a-select
+            v-model:value="sceneConfig.end_frame_draw_scene_id"
+            data-testid="scene-end-frame-select"
+            class="w-full"
+            :get-popup-container="getSceneSelectPopupContainer"
+          >
+            <a-select-option value="">无</a-select-option>
+            <a-select-option
+              v-for="item in activeEndFrameDrawOptions"
+              :key="item.id"
+              :value="item.id"
+            >
+              {{ item.name || item.id }}
             </a-select-option>
           </a-select>
         </a-form-item>
@@ -845,8 +909,16 @@ onMounted(() => {
 </template>
 
 <style scoped>
+:global(.qqcc-scene-config-modal) {
+  width: 100vw;
+  left: 0;
+  right: 0;
+  overflow-x: hidden;
+}
+
 :global(.qqcc-scene-config-modal .ant-modal) {
   max-width: calc(100vw - 32px);
+  margin: 0 auto;
 }
 
 :global(.qqcc-scene-config-modal .ant-modal-body) {

@@ -66,6 +66,7 @@ def test_normalize_qqcc_config_returns_default_shape_for_empty_config():
     assert config["video_scenes"][0]["duration"] == "5s"
     assert config["video_scenes"][0]["engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
     assert config["video_scenes"][0]["lora_name"] == ""
+    assert config["video_scenes"][0]["end_frame_draw_scene_id"] == ""
 
 
 def test_normalize_qqcc_config_drops_unknown_keys_and_keeps_empty_prompt_for_fallback():
@@ -202,6 +203,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
             "duration": "8s",
             "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
             "lora_name": "",
+            "end_frame_draw_scene_id": "",
         },
         {
             "id": "scene_2",
@@ -210,6 +212,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
             "duration": "10s",
             "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
             "lora_name": "",
+            "end_frame_draw_scene_id": "",
         },
         {
             "id": "scene_3",
@@ -218,6 +221,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
             "duration": "5s",
             "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
             "lora_name": "",
+            "end_frame_draw_scene_id": "",
         },
     ]
 
@@ -292,6 +296,39 @@ def test_normalize_qqcc_config_validates_scene_engines_and_loras():
     assert draw_scenes[1]["lora_name"] == ""
     assert draw_scenes[2]["engine"] == DRAW_SCENE_ENGINE_FREE_EDIT_V2
     assert draw_scenes[2]["lora_name"] == ""
+
+
+def test_normalize_qqcc_config_validates_video_end_frame_draw_scene_reference():
+    config = normalize_qqcc_config(
+        {
+            "draw_scenes": [
+                {
+                    "id": "tail_pose",
+                    "name": "尾帧姿势",
+                    "prompt": "tail pose prompt",
+                }
+            ],
+            "video_scenes": [
+                {
+                    "id": "valid_tail",
+                    "name": "有效尾帧",
+                    "prompt": "video prompt",
+                    "end_frame_draw_scene_id": "tail_pose",
+                },
+                {
+                    "id": "missing_tail",
+                    "name": "失效尾帧",
+                    "prompt": "video prompt",
+                    "end_frame_draw_scene_id": "removed_scene",
+                },
+            ],
+        }
+    )
+
+    video_scenes = get_enabled_qqcc_video_scenes(config)
+
+    assert video_scenes[0]["end_frame_draw_scene_id"] == "tail_pose"
+    assert video_scenes[1]["end_frame_draw_scene_id"] == ""
 
 
 def test_normalize_qqcc_config_keeps_only_valid_dynamic_draw_scenes():
@@ -404,6 +441,13 @@ async def test_update_qqcc_config_router_routes_to_runtime_checkpoint_service():
 async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
     db = _FakeSession()
     payload = QqccBotConfigRequest(
+        draw_scenes=[
+            {
+                "id": "tail_pose",
+                "name": "尾帧姿势",
+                "prompt": "custom tail prompt",
+            }
+        ],
         video_scenes=[
             {
                 "id": "kiss",
@@ -412,6 +456,7 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
                 "duration": "8s",
                 "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
                 "lora_name": "BreastGrow",
+                "end_frame_draw_scene_id": "tail_pose",
             },
             {
                 "id": "missionary",
@@ -421,6 +466,7 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
                 "prompt_key": "perfect_video_insert",
                 "engine": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
                 "lora_name": "BreastGrow",
+                "end_frame_draw_scene_id": "removed_tail",
             },
         ]
     )
@@ -436,6 +482,7 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
             "duration": "8s",
             "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
             "lora_name": "BreastGrow",
+            "end_frame_draw_scene_id": "tail_pose",
         },
         {
             "id": "missionary",
@@ -445,6 +492,7 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
             "prompt_key": "perfect_video_insert",
             "engine": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
             "lora_name": "",
+            "end_frame_draw_scene_id": "",
         },
     ]
 

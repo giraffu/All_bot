@@ -143,6 +143,7 @@ describe('QqccBotSettings', () => {
             duration: '8s',
             engine: 'image_to_video',
             lora_name: 'BreastGrow',
+            end_frame_draw_scene_id: '',
           },
         ],
         draw_scenes: [
@@ -226,6 +227,7 @@ describe('QqccBotSettings', () => {
         duration: '10s',
         engine: 'image_to_video',
         lora_name: 'BreastGrow',
+        end_frame_draw_scene_id: '',
       },
     ])
     expect(payload.draw_scenes).toEqual([
@@ -257,6 +259,7 @@ describe('QqccBotSettings', () => {
     expect(payload.video_scenes[0].prompt).toBe('turn around')
     expect(payload.video_scenes[0].engine).toBe('image_to_video')
     expect(payload.video_scenes[0].lora_name).toBe('')
+    expect(payload.video_scenes[0].end_frame_draw_scene_id).toBe('')
   })
 
   it('adds and removes dynamic draw scenes before saving', async () => {
@@ -283,7 +286,7 @@ describe('QqccBotSettings', () => {
     await flushPromises()
 
     await wrapper.get('[data-testid="config-video-scene-0"]').trigger('click')
-    expect(wrapper.get('[data-testid="scene-model-modal"]').text()).toContain('场景模型配置')
+    expect(wrapper.get('[data-testid="scene-model-modal"]').text()).toContain('模型与首尾帧配置')
     await wrapper.get('[data-testid="scene-engine-select"]').setValue('wan22_video_v2')
     await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
     await wrapper.findAll('button').at(1)!.trigger('click')
@@ -292,6 +295,45 @@ describe('QqccBotSettings', () => {
     const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
     expect(payload.video_scenes[0].engine).toBe('wan22_video_v2')
     expect(payload.video_scenes[0].lora_name).toBe('')
+  })
+
+  it('configures a video scene end-frame draw source in the save payload', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="config-video-scene-0"]').trigger('click')
+    expect(wrapper.find('[data-testid="scene-end-frame-select"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="scene-end-frame-select"]').setValue('soft_light')
+    await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
+    expect(payload.video_scenes[0].end_frame_draw_scene_id).toBe('soft_light')
+  })
+
+  it('does not show end-frame source on the draw scene model dialog', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="config-draw-scene-0"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="scene-end-frame-select"]').exists()).toBe(false)
+  })
+
+  it('clears a video scene end-frame source when the referenced draw scene is removed', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="config-video-scene-0"]').trigger('click')
+    await wrapper.get('[data-testid="scene-end-frame-select"]').setValue('soft_light')
+    await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
+    await wrapper.get('[data-testid="remove-draw-scene-0"]').trigger('click')
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
+    expect(payload.video_scenes[0].end_frame_draw_scene_id).toBe('')
   })
 
   it('configures a draw scene to use legacy free edit with a lora model', async () => {

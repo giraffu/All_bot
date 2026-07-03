@@ -110,6 +110,7 @@ def _default_video_scenes() -> list[dict[str, str]]:
             "duration": "5s",
             "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
             "lora_name": "",
+            "end_frame_draw_scene_id": "",
             "prompt_key": scene["prompt_key"],
         }
         for scene in LEGACY_VIDEO_SCENE_DEFINITIONS
@@ -231,11 +232,21 @@ def _normalize_scene_lora(
     return lora_name if lora_name in lora_catalog else ""
 
 
+def _normalize_end_frame_draw_scene_id(
+    raw_scene_id: Any,
+    *,
+    allowed_draw_scene_ids: frozenset[str],
+) -> str:
+    scene_id = raw_scene_id.strip() if isinstance(raw_scene_id, str) else ""
+    return scene_id if scene_id in allowed_draw_scene_ids else ""
+
+
 def _normalize_video_scene(
     raw_scene: Any,
     *,
     index: int,
     used_ids: set[str],
+    allowed_end_frame_draw_scene_ids: frozenset[str],
 ) -> dict[str, Any] | None:
     if not isinstance(raw_scene, dict):
         return None
@@ -279,19 +290,32 @@ def _normalize_video_scene(
         "duration": duration,
         "engine": engine,
         "lora_name": lora_name,
+        "end_frame_draw_scene_id": _normalize_end_frame_draw_scene_id(
+            raw_scene.get("end_frame_draw_scene_id"),
+            allowed_draw_scene_ids=allowed_end_frame_draw_scene_ids,
+        ),
     }
     if prompt_key:
         scene["prompt_key"] = prompt_key
     return scene
 
 
-def _normalize_video_scenes(raw_scenes: Any) -> list[dict[str, Any]]:
+def _normalize_video_scenes(
+    raw_scenes: Any,
+    *,
+    allowed_end_frame_draw_scene_ids: frozenset[str],
+) -> list[dict[str, Any]]:
     if not isinstance(raw_scenes, list):
         return []
     scenes: list[dict[str, str]] = []
     used_ids: set[str] = set()
     for index, raw_scene in enumerate(raw_scenes[:VIDEO_SCENE_MAX_COUNT]):
-        scene = _normalize_video_scene(raw_scene, index=index, used_ids=used_ids)
+        scene = _normalize_video_scene(
+            raw_scene,
+            index=index,
+            used_ids=used_ids,
+            allowed_end_frame_draw_scene_ids=allowed_end_frame_draw_scene_ids,
+        )
         if scene is not None:
             scenes.append(scene)
     return scenes
@@ -374,6 +398,7 @@ def _migrate_legacy_video_scenes(raw: dict[str, Any]) -> list[dict[str, Any]]:
                 "duration": "5s",
                 "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
                 "lora_name": "",
+                "end_frame_draw_scene_id": "",
                 "prompt_key": prompt_key,
             }
         )
@@ -428,11 +453,17 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
             keys=VIDEO_DURATION_KEYS,
         ),
     }
+    config["draw_scenes"] = _normalize_draw_scenes(raw.get("draw_scenes"))
+    allowed_end_frame_draw_scene_ids = frozenset(
+        str(scene.get("id") or "") for scene in config["draw_scenes"]
+    )
     if "video_scenes" in raw:
-        config["video_scenes"] = _normalize_video_scenes(raw.get("video_scenes"))
+        config["video_scenes"] = _normalize_video_scenes(
+            raw.get("video_scenes"),
+            allowed_end_frame_draw_scene_ids=allowed_end_frame_draw_scene_ids,
+        )
     else:
         config["video_scenes"] = _migrate_legacy_video_scenes(raw)
-    config["draw_scenes"] = _normalize_draw_scenes(raw.get("draw_scenes"))
 
     raw_prompts = raw.get("prompts")
     if not isinstance(raw_prompts, dict):

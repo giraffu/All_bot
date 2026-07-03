@@ -43,6 +43,8 @@ async def process_video_task_template(
     lora_strength: float | None = None,
     update: Update | None = None,
     image_path: str,
+    end_image_path: str | None = None,
+    use_end_frame: bool | None = None,
     cleanup: bool = True,
     allow_contribute: bool = True,
     source_post_id: Optional[int] = None,
@@ -109,10 +111,15 @@ async def process_video_task_template(
     if normalized_lora_name:
         extra_inputs["lora_name"] = normalized_lora_name
         extra_inputs["lora_strength"] = 1.0 if lora_strength is None else lora_strength
+    submit_images = [image_path] if image_path else []
+    if end_image_path:
+        submit_images.append(end_image_path)
+    if use_end_frame is not None:
+        extra_inputs["use_end_frame"] = bool(use_end_frame and end_image_path)
 
     inputs = build_task_inputs(
         prompt=base_prompt,
-        images=[image_path] if image_path else [],
+        images=submit_images,
         resolution=res_val,
         duration=duration,
         **extra_inputs,
@@ -157,7 +164,7 @@ async def process_video_task_template(
             billing_resolution=billing_args["billing_resolution"],
             requested_duration=billing_args["requested_duration"],
             cleanup=cleanup,
-            cleanup_paths=build_cleanup_paths([image_path]),
+            cleanup_paths=build_cleanup_paths(submit_images),
             task_label=f"{mode} task",
             failure_policy=BotTaskFailurePolicy(
                 unexpected_should_refund=lambda state: state.task_submitted
