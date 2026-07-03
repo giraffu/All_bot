@@ -8,6 +8,8 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.lora_catalog import IMAGE_LORA_MODELS, VIDEO_LORA_MODELS
+
 QQCC_LAZY_BOT_CONFIG_KEY = "qqcc_lazy_bot_config:v1"
 
 MAIN_BUTTON_KEYS = (
@@ -29,8 +31,22 @@ VIDEO_BUTTON_KEYS = (
 )
 VIDEO_RESOLUTION_KEYS = ("512p", "720p", "1024p")
 VIDEO_DURATION_KEYS = ("5s", "8s", "10s")
+VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO = "image_to_video"
+VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2 = "wan22_video_v2"
+VIDEO_SCENE_ENGINE_KEYS = (
+    VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+    VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
+)
+VIDEO_SCENE_ENGINES_WITH_LORA = frozenset({VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO})
 VIDEO_SCENE_MAX_COUNT = 20
 VIDEO_SCENE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
+DRAW_SCENE_ENGINE_FREE_EDIT = "free_edit"
+DRAW_SCENE_ENGINE_FREE_EDIT_V2 = "free_edit_v2"
+DRAW_SCENE_ENGINE_KEYS = (
+    DRAW_SCENE_ENGINE_FREE_EDIT,
+    DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+)
+DRAW_SCENE_ENGINES_WITH_LORA = frozenset({DRAW_SCENE_ENGINE_FREE_EDIT})
 DRAW_SCENE_MAX_COUNT = 20
 PROMPT_KEYS = (
     "undress",
@@ -92,6 +108,8 @@ def _default_video_scenes() -> list[dict[str, str]]:
             "name": scene["name"],
             "prompt": "",
             "duration": "5s",
+            "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+            "lora_name": "",
             "prompt_key": scene["prompt_key"],
         }
         for scene in LEGACY_VIDEO_SCENE_DEFINITIONS
@@ -190,12 +208,35 @@ def _normalize_scene_prompt_key(raw_prompt_key: Any) -> str | None:
     return prompt_key if prompt_key in VIDEO_PROMPT_KEYS else None
 
 
+def _normalize_scene_engine(
+    raw_engine: Any,
+    *,
+    allowed: tuple[str, ...],
+    default: str,
+) -> str:
+    engine = raw_engine.strip() if isinstance(raw_engine, str) else ""
+    return engine if engine in allowed else default
+
+
+def _normalize_scene_lora(
+    raw_lora_name: Any,
+    *,
+    engine: str,
+    lora_catalog: dict[str, str],
+    engines_with_lora: frozenset[str],
+) -> str:
+    if engine not in engines_with_lora:
+        return ""
+    lora_name = raw_lora_name.strip() if isinstance(raw_lora_name, str) else ""
+    return lora_name if lora_name in lora_catalog else ""
+
+
 def _normalize_video_scene(
     raw_scene: Any,
     *,
     index: int,
     used_ids: set[str],
-) -> dict[str, str] | None:
+) -> dict[str, Any] | None:
     if not isinstance(raw_scene, dict):
         return None
 
@@ -215,6 +256,18 @@ def _normalize_video_scene(
     if duration not in VIDEO_DURATION_KEYS:
         duration = "5s"
 
+    engine = _normalize_scene_engine(
+        raw_scene.get("engine"),
+        allowed=VIDEO_SCENE_ENGINE_KEYS,
+        default=VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+    )
+    lora_name = _normalize_scene_lora(
+        raw_scene.get("lora_name"),
+        engine=engine,
+        lora_catalog=VIDEO_LORA_MODELS,
+        engines_with_lora=VIDEO_SCENE_ENGINES_WITH_LORA,
+    )
+
     scene = {
         "id": _build_unique_scene_id(
             raw_scene.get("id"),
@@ -224,13 +277,15 @@ def _normalize_video_scene(
         "name": name,
         "prompt": prompt,
         "duration": duration,
+        "engine": engine,
+        "lora_name": lora_name,
     }
     if prompt_key:
         scene["prompt_key"] = prompt_key
     return scene
 
 
-def _normalize_video_scenes(raw_scenes: Any) -> list[dict[str, str]]:
+def _normalize_video_scenes(raw_scenes: Any) -> list[dict[str, Any]]:
     if not isinstance(raw_scenes, list):
         return []
     scenes: list[dict[str, str]] = []
@@ -247,7 +302,7 @@ def _normalize_draw_scene(
     *,
     index: int,
     used_ids: set[str],
-) -> dict[str, str] | None:
+) -> dict[str, Any] | None:
     if not isinstance(raw_scene, dict):
         return None
 
@@ -258,6 +313,18 @@ def _normalize_draw_scene(
     if not name or not prompt:
         return None
 
+    engine = _normalize_scene_engine(
+        raw_scene.get("engine"),
+        allowed=DRAW_SCENE_ENGINE_KEYS,
+        default=DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+    )
+    lora_name = _normalize_scene_lora(
+        raw_scene.get("lora_name"),
+        engine=engine,
+        lora_catalog=IMAGE_LORA_MODELS,
+        engines_with_lora=DRAW_SCENE_ENGINES_WITH_LORA,
+    )
+
     return {
         "id": _build_unique_scene_id(
             raw_scene.get("id"),
@@ -266,10 +333,12 @@ def _normalize_draw_scene(
         ),
         "name": name,
         "prompt": prompt,
+        "engine": engine,
+        "lora_name": lora_name,
     }
 
 
-def _normalize_draw_scenes(raw_scenes: Any) -> list[dict[str, str]]:
+def _normalize_draw_scenes(raw_scenes: Any) -> list[dict[str, Any]]:
     if not isinstance(raw_scenes, list):
         return []
     scenes: list[dict[str, str]] = []
@@ -281,7 +350,7 @@ def _normalize_draw_scenes(raw_scenes: Any) -> list[dict[str, str]]:
     return scenes
 
 
-def _migrate_legacy_video_scenes(raw: dict[str, Any]) -> list[dict[str, str]]:
+def _migrate_legacy_video_scenes(raw: dict[str, Any]) -> list[dict[str, Any]]:
     raw_buttons = raw.get("video_buttons")
     if not isinstance(raw_buttons, dict):
         raw_buttons = {}
@@ -303,6 +372,8 @@ def _migrate_legacy_video_scenes(raw: dict[str, Any]) -> list[dict[str, str]]:
                 "name": scene["name"],
                 "prompt": prompt.strip() if isinstance(prompt, str) else "",
                 "duration": "5s",
+                "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+                "lora_name": "",
                 "prompt_key": prompt_key,
             }
         )
@@ -385,7 +456,7 @@ def has_enabled_qqcc_video_settings(config: dict[str, Any]) -> bool:
     return any(settings["resolutions"].values()) and any(settings["durations"].values())
 
 
-def get_enabled_qqcc_video_scenes(config: dict[str, Any]) -> list[dict[str, str]]:
+def get_enabled_qqcc_video_scenes(config: dict[str, Any]) -> list[dict[str, Any]]:
     return normalize_qqcc_config(config).get("video_scenes", [])
 
 
@@ -396,7 +467,7 @@ def has_enabled_qqcc_video_scenes(config: dict[str, Any]) -> bool:
 def get_qqcc_video_scene(
     config: dict[str, Any],
     scene_id: str | None,
-) -> dict[str, str] | None:
+) -> dict[str, Any] | None:
     if not scene_id:
         return None
     for scene in get_enabled_qqcc_video_scenes(config):
@@ -405,7 +476,7 @@ def get_qqcc_video_scene(
     return None
 
 
-def get_enabled_qqcc_draw_scenes(config: dict[str, Any]) -> list[dict[str, str]]:
+def get_enabled_qqcc_draw_scenes(config: dict[str, Any]) -> list[dict[str, Any]]:
     return normalize_qqcc_config(config).get("draw_scenes", [])
 
 
@@ -416,7 +487,7 @@ def has_enabled_qqcc_draw_scenes(config: dict[str, Any]) -> bool:
 def get_qqcc_draw_scene(
     config: dict[str, Any],
     scene_id: str | None,
-) -> dict[str, str] | None:
+) -> dict[str, Any] | None:
     if not scene_id:
         return None
     for scene in get_enabled_qqcc_draw_scenes(config):
@@ -486,6 +557,40 @@ def resolve_qqcc_prompt(
     )
 
 
+def _build_lora_model_options(catalog: dict[str, str]) -> list[dict[str, str]]:
+    return [
+        {"value": value, "label": label}
+        for value, label in catalog.items()
+    ]
+
+
+def build_qqcc_config_options() -> dict[str, Any]:
+    return {
+        "video_engines": [
+            {
+                "value": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+                "supports_lora": True,
+            },
+            {
+                "value": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
+                "supports_lora": False,
+            },
+        ],
+        "draw_engines": [
+            {
+                "value": DRAW_SCENE_ENGINE_FREE_EDIT,
+                "supports_lora": True,
+            },
+            {
+                "value": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+                "supports_lora": False,
+            },
+        ],
+        "video_lora_models": _build_lora_model_options(VIDEO_LORA_MODELS),
+        "image_lora_models": _build_lora_model_options(IMAGE_LORA_MODELS),
+    }
+
+
 def _build_config_response(
     *,
     config: dict[str, Any],
@@ -494,6 +599,7 @@ def _build_config_response(
     return {
         "key": QQCC_LAZY_BOT_CONFIG_KEY,
         "config": normalize_qqcc_config(config),
+        "options": build_qqcc_config_options(),
         "updated_at": updated_at,
     }
 

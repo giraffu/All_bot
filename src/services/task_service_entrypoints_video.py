@@ -3,7 +3,7 @@ from typing import Optional, Tuple
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from src.constants import MODE_NAME_MAP
+from src.constants import MODE_IMAGE_TO_VIDEO, MODE_NAME_MAP
 from src.services.permission_service import permission_service
 from src.services.task_service_generation_common import resolve_internal_user_id
 from src.services.task_service_entrypoint_support import (
@@ -39,6 +39,8 @@ async def process_video_task_template(
     default_prompt_text: str,
     prompt_override: Optional[str] = None,
     display_mode_name_override: Optional[str] = None,
+    lora_name: str | None = None,
+    lora_strength: float | None = None,
     update: Update | None = None,
     image_path: str,
     cleanup: bool = True,
@@ -102,11 +104,18 @@ async def process_video_task_template(
             context, "task.status_cancelled_refunded", cost="{cost}"
         ),
     )
+    extra_inputs = {}
+    normalized_lora_name = str(lora_name or "").strip()
+    if normalized_lora_name:
+        extra_inputs["lora_name"] = normalized_lora_name
+        extra_inputs["lora_strength"] = 1.0 if lora_strength is None else lora_strength
+
     inputs = build_task_inputs(
         prompt=base_prompt,
         images=[image_path] if image_path else [],
         resolution=res_val,
         duration=duration,
+        **extra_inputs,
     )
     billing_args = resolve_video_billing_args(
         is_video=True,
@@ -129,6 +138,9 @@ async def process_video_task_template(
                 base_prompt,
                 resolution=resolution,
                 duration=duration_str,
+                lora_name=normalized_lora_name or None,
+                task_type=mode,
+                lora_task_types=(MODE_IMAGE_TO_VIDEO,),
             ),
             is_video=True,
             source_post_id=source_post_id,

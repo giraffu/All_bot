@@ -13,6 +13,8 @@ from telegram.ext import (
 
 from config import ENABLE_PUBLIC_SHARE
 from src.constants import (
+    MODE_EDIT,
+    MODE_IMG2IMG_LORA,
     MODE_I2I_DRAW,
     MODE_MASTURBATION,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
@@ -26,9 +28,11 @@ from src.handlers.fsm.quick_draw_callback_data import (
     QUICK_DRAW_SCENE_CALLBACK_PATTERN,
     parse_quick_draw_scene_callback_data,
 )
+from src.lora_catalog import get_lora_default_strength
 from src.services.task_service_generation_image import process_standard_generation_task as process_generation_task
 from src.services.permission_service import permission_service
 from src.services.qqcc_config_service import (
+    DRAW_SCENE_ENGINE_FREE_EDIT,
     get_qqcc_draw_scene,
     has_enabled_qqcc_draw_scenes,
     is_qqcc_main_button_enabled,
@@ -57,6 +61,11 @@ logger = logging.getLogger("fsm.quick_image")
 QQCC_BOT_CLIENT_TYPE = "bot:qqcc"
 QUICK_UNDRESS_LEGACY_CALLBACK = "quick_undress_legacy"
 QUICK_UNDRESS_I2I_DRAW_CALLBACK = "quick_undress_i2i_draw"
+QQCC_AI_DRAW_TASK_TYPES = (
+    MODE_EDIT,
+    MODE_IMG2IMG_LORA,
+    MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+)
 DEFAULT_I2I_DRAW_UNDRESS_PROMPT = (
     "全身广角镜头，保持面部五官、脸型、发型、表情和肤色不变，"
     "保持身体姿势不变。将衣服自然移除，生成真实皮肤质感和完整身体，"
@@ -159,6 +168,10 @@ def _is_qqcc_quick_image_mode_enabled(config: dict, mode: str) -> bool:
         return is_qqcc_main_button_enabled(
             config, "ai_draw"
         ) and has_enabled_qqcc_draw_scenes(config)
+    if mode in (MODE_EDIT, MODE_IMG2IMG_LORA):
+        return is_qqcc_main_button_enabled(
+            config, "ai_draw"
+        ) and has_enabled_qqcc_draw_scenes(config)
     return False
 
 
@@ -211,7 +224,7 @@ def _resolve_quick_image_start_message(
         return _t(context, "fsm.quick_image.random_faceswap_start", cost=cost)
     if mode == MODE_I2I_DRAW:
         return _t(context, "fsm.quick_image.undress_i2i_draw_start", cost=cost)
-    if mode == MODE_PORNMASTER_FLUX2_SINGLE_EDIT:
+    if mode in QQCC_AI_DRAW_TASK_TYPES:
         return _t(
             context,
             "fsm.quick_image.ai_draw_start",
@@ -231,6 +244,16 @@ def _resolve_image_file_id(message) -> str | None:
     return None
 
 
+def _resolve_qqcc_draw_scene_task_type(scene: dict[str, object]) -> str:
+    if scene.get("engine") == DRAW_SCENE_ENGINE_FREE_EDIT:
+        return MODE_IMG2IMG_LORA if str(scene.get("lora_name") or "").strip() else MODE_EDIT
+    return MODE_PORNMASTER_FLUX2_SINGLE_EDIT
+
+
+def _resolve_qqcc_draw_scene_cost(_mode: str) -> int:
+    return TASK_COSTS.get(MODE_EDIT, 2)
+
+
 async def _start_qqcc_draw_scene(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -245,8 +268,8 @@ async def _start_qqcc_draw_scene(
             cache_time=2,
         )
 
-    if qqcc_config is None or not _is_qqcc_quick_image_mode_enabled(
-        qqcc_config, MODE_PORNMASTER_FLUX2_SINGLE_EDIT
+    if qqcc_config is None or not is_qqcc_main_button_enabled(
+        qqcc_config, "ai_draw"
     ):
         await _reply_qqcc_feature_disabled(update, context)
         return ConversationHandler.END
@@ -256,10 +279,15 @@ async def _start_qqcc_draw_scene(
         await _reply_qqcc_feature_disabled(update, context)
         return ConversationHandler.END
 
-    cost = TASK_COSTS.get(MODE_PORNMASTER_FLUX2_SINGLE_EDIT, 2)
+    mode = _resolve_qqcc_draw_scene_task_type(scene)
+    if not _is_qqcc_quick_image_mode_enabled(qqcc_config, mode):
+        await _reply_qqcc_feature_disabled(update, context)
+        return ConversationHandler.END
+
+    cost = _resolve_qqcc_draw_scene_cost(mode)
     _initialize_quick_image_context(
         context,
-        mode=MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+        mode=mode,
         cost=cost,
     )
     context.user_data["quick_image_data"].update(
@@ -267,6 +295,8 @@ async def _start_qqcc_draw_scene(
             "scene_id": scene["id"],
             "mode_name": scene["name"],
             "prompt_override": scene["prompt"],
+            "engine": scene.get("engine"),
+            "lora_name": str(scene.get("lora_name") or ""),
         }
     )
     msg = _resolve_quick_image_start_message(
@@ -528,14 +558,24 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     mode = fsm_data["mode"]
     cost = fsm_data["cost"]
     qqcc_config = await _load_qqcc_config_for_context(context)
-    if qqcc_config is not None and mode == MODE_PORNMASTER_FLUX2_SINGLE_EDIT:
+    if qqcc_config is not None and mode in QQCC_AI_DRAW_TASK_TYPES:
         scene = get_qqcc_draw_scene(qqcc_config, fsm_data.get("scene_id"))
-        if scene is None or not _is_qqcc_quick_image_mode_enabled(qqcc_config, mode):
+        if scene is None:
             await _reply_qqcc_feature_disabled(update, context)
             _cleanup_context(context, user_id)
             return ConversationHandler.END
+        mode = _resolve_qqcc_draw_scene_task_type(scene)
+        if not _is_qqcc_quick_image_mode_enabled(qqcc_config, mode):
+            await _reply_qqcc_feature_disabled(update, context)
+            _cleanup_context(context, user_id)
+            return ConversationHandler.END
+        cost = _resolve_qqcc_draw_scene_cost(mode)
+        fsm_data["mode"] = mode
+        fsm_data["cost"] = cost
         fsm_data["mode_name"] = scene["name"]
         fsm_data["prompt_override"] = scene["prompt"]
+        fsm_data["engine"] = scene.get("engine")
+        fsm_data["lora_name"] = str(scene.get("lora_name") or "")
     elif qqcc_config is not None and not _is_qqcc_quick_image_mode_enabled(
         qqcc_config, mode
     ):
@@ -635,9 +675,9 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     else:
         # Single-image quick modes share the same task submission path.
         task_type = mode
-        if mode == MODE_PORNMASTER_FLUX2_SINGLE_EDIT:
+        if mode in QQCC_AI_DRAW_TASK_TYPES:
             prompt = fsm_data.get("prompt_override", "").strip()
-            fallback_prompt = prompt or MODE_PORNMASTER_FLUX2_SINGLE_EDIT
+            fallback_prompt = prompt or mode
             prompt = prompt or fallback_prompt
         elif mode == MODE_I2I_DRAW:
             prompt_key = "i2i_draw_quick_undress"
@@ -663,18 +703,27 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 )
             else:
                 prompt = prompts_config.get(prompt_key, fallback_prompt)
+        lora_name = (
+            str(fsm_data.get("lora_name") or "")
+            if mode == MODE_IMG2IMG_LORA
+            else ""
+        )
+        task_kwargs = {
+            "context": context,
+            "chat_id": message.chat_id,
+            "user_id": user_id,
+            "username": update.effective_user.username,
+            "prompt": prompt,
+            "images": [image_path],
+            "task_type": task_type,
+            "cleanup": True,
+        }
+        if lora_name:
+            task_kwargs["lora_name"] = lora_name
+            task_kwargs["lora_strength"] = get_lora_default_strength(lora_name)
         create_background_task(
             context,
-            process_generation_task(
-                context=context,
-                chat_id=message.chat_id,
-                user_id=user_id,
-                username=update.effective_user.username,
-                prompt=prompt,
-                images=[image_path],
-                task_type=task_type,
-                cleanup=True,
-            ),
+            process_generation_task(**task_kwargs),
         )
 
     _cleanup_context(context, user_id)

@@ -6,6 +6,10 @@ from src.database.models import RuntimeCheckpoint
 from src.services.qqcc_config_service import (
     DEFAULT_QQCC_LAZY_BOT_CONFIG,
     QQCC_LAZY_BOT_CONFIG_KEY,
+    DRAW_SCENE_ENGINE_FREE_EDIT,
+    DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+    VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+    VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
     get_enabled_qqcc_draw_scenes,
     get_enabled_qqcc_video_scenes,
     load_qqcc_config_payload,
@@ -60,6 +64,8 @@ def test_normalize_qqcc_config_returns_default_shape_for_empty_config():
         "closeup_blowjob",
     ]
     assert config["video_scenes"][0]["duration"] == "5s"
+    assert config["video_scenes"][0]["engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
+    assert config["video_scenes"][0]["lora_name"] == ""
 
 
 def test_normalize_qqcc_config_drops_unknown_keys_and_keeps_empty_prompt_for_fallback():
@@ -152,6 +158,8 @@ def test_normalize_qqcc_config_migrates_legacy_video_buttons_to_scenes():
     ]
     assert scenes[0]["prompt"] == "custom missionary prompt"
     assert scenes[0]["prompt_key"] == "perfect_video_insert"
+    assert scenes[0]["engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
+    assert scenes[0]["lora_name"] == ""
     assert scenes[-1]["prompt"] == "custom closeup prompt"
     assert scenes[-1]["duration"] == "5s"
 
@@ -192,20 +200,98 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
             "name": "亲吻",
             "prompt": "kissing prompt",
             "duration": "8s",
+            "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+            "lora_name": "",
         },
         {
             "id": "scene_2",
             "name": "重复 id",
             "prompt": "duplicate prompt",
             "duration": "10s",
+            "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+            "lora_name": "",
         },
         {
             "id": "scene_3",
             "name": "安全 id",
             "prompt": "safe id prompt",
             "duration": "5s",
+            "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+            "lora_name": "",
         },
     ]
+
+
+def test_normalize_qqcc_config_validates_scene_engines_and_loras():
+    config = normalize_qqcc_config(
+        {
+            "video_scenes": [
+                {
+                    "id": "legacy_lora",
+                    "name": "旧版模型",
+                    "prompt": "legacy prompt",
+                    "duration": "5s",
+                    "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+                    "lora_name": "BreastGrow",
+                },
+                {
+                    "id": "v2_clears_lora",
+                    "name": "新版模型",
+                    "prompt": "v2 prompt",
+                    "duration": "8s",
+                    "engine": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
+                    "lora_name": "BreastGrow",
+                },
+                {
+                    "id": "bad_lora",
+                    "name": "非法模型",
+                    "prompt": "bad prompt",
+                    "duration": "10s",
+                    "engine": "unknown",
+                    "lora_name": "not-a-model",
+                },
+            ],
+            "draw_scenes": [
+                {
+                    "id": "old_draw",
+                    "name": "旧自由P图",
+                    "prompt": "old draw prompt",
+                    "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
+                    "lora_name": "qwen/YARN_1.0.safetensors",
+                },
+                {
+                    "id": "v2_draw",
+                    "name": "新版自由P图",
+                    "prompt": "v2 draw prompt",
+                    "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+                    "lora_name": "qwen/YARN_1.0.safetensors",
+                },
+                {
+                    "id": "bad_draw",
+                    "name": "非法绘图",
+                    "prompt": "bad draw prompt",
+                    "engine": "unknown",
+                    "lora_name": "not-a-model",
+                },
+            ],
+        }
+    )
+
+    video_scenes = get_enabled_qqcc_video_scenes(config)
+    assert video_scenes[0]["engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
+    assert video_scenes[0]["lora_name"] == "BreastGrow"
+    assert video_scenes[1]["engine"] == VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2
+    assert video_scenes[1]["lora_name"] == ""
+    assert video_scenes[2]["engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
+    assert video_scenes[2]["lora_name"] == ""
+
+    draw_scenes = get_enabled_qqcc_draw_scenes(config)
+    assert draw_scenes[0]["engine"] == DRAW_SCENE_ENGINE_FREE_EDIT
+    assert draw_scenes[0]["lora_name"] == "qwen/YARN_1.0.safetensors"
+    assert draw_scenes[1]["engine"] == DRAW_SCENE_ENGINE_FREE_EDIT_V2
+    assert draw_scenes[1]["lora_name"] == ""
+    assert draw_scenes[2]["engine"] == DRAW_SCENE_ENGINE_FREE_EDIT_V2
+    assert draw_scenes[2]["lora_name"] == ""
 
 
 def test_normalize_qqcc_config_keeps_only_valid_dynamic_draw_scenes():
@@ -240,16 +326,22 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_draw_scenes():
             "id": "soft_light",
             "name": "柔光写真",
             "prompt": "make it cinematic",
+            "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+            "lora_name": "",
         },
         {
             "id": "scene_2",
             "name": "重复 id",
             "prompt": "duplicate prompt",
+            "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+            "lora_name": "",
         },
         {
             "id": "scene_3",
             "name": "安全 id",
             "prompt": "safe id prompt",
+            "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+            "lora_name": "",
         },
     ]
 
@@ -262,6 +354,16 @@ async def test_load_qqcc_config_payload_returns_defaults_when_checkpoint_missing
 
     assert response["key"] == QQCC_LAZY_BOT_CONFIG_KEY
     assert response["config"] == DEFAULT_QQCC_LAZY_BOT_CONFIG
+    assert response["options"]["video_engines"][0]["value"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
+    assert response["options"]["draw_engines"][0]["value"] == DRAW_SCENE_ENGINE_FREE_EDIT
+    assert any(
+        item["value"] == "BreastGrow"
+        for item in response["options"]["video_lora_models"]
+    )
+    assert any(
+        item["value"] == "qwen/YARN_1.0.safetensors"
+        for item in response["options"]["image_lora_models"]
+    )
     assert response["updated_at"] is None
 
 
@@ -308,6 +410,8 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
                 "name": "贴贴",
                 "prompt": "custom kiss prompt",
                 "duration": "8s",
+                "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+                "lora_name": "BreastGrow",
             },
             {
                 "id": "missionary",
@@ -315,6 +419,8 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
                 "prompt": "custom missionary prompt",
                 "duration": "10s",
                 "prompt_key": "perfect_video_insert",
+                "engine": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
+                "lora_name": "BreastGrow",
             },
         ]
     )
@@ -328,6 +434,8 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
             "name": "贴贴",
             "prompt": "custom kiss prompt",
             "duration": "8s",
+            "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+            "lora_name": "BreastGrow",
         },
         {
             "id": "missionary",
@@ -335,6 +443,8 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
             "prompt": "custom missionary prompt",
             "duration": "10s",
             "prompt_key": "perfect_video_insert",
+            "engine": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
+            "lora_name": "",
         },
     ]
 
@@ -349,11 +459,15 @@ async def test_update_qqcc_config_router_preserves_dynamic_draw_scenes():
                 "id": "soft_light",
                 "name": "柔光写真",
                 "prompt": "custom draw prompt",
+                "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
+                "lora_name": "qwen/YARN_1.0.safetensors",
             },
             {
                 "id": "anime",
                 "name": "动漫风",
                 "prompt": "anime style prompt",
+                "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+                "lora_name": "qwen/YARN_1.0.safetensors",
             },
         ],
     )
@@ -367,10 +481,14 @@ async def test_update_qqcc_config_router_preserves_dynamic_draw_scenes():
             "id": "soft_light",
             "name": "柔光写真",
             "prompt": "custom draw prompt",
+            "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
+            "lora_name": "qwen/YARN_1.0.safetensors",
         },
         {
             "id": "anime",
             "name": "动漫风",
             "prompt": "anime style prompt",
+            "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+            "lora_name": "",
         },
     ]

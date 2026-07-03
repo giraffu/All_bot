@@ -278,6 +278,7 @@ class QqccBotConfigRequest(BaseModel):
 class QqccBotConfigResponse(BaseModel):
     key: str
     config: Dict[str, Any]
+    options: Dict[str, Any] = Field(default_factory=dict)
     updated_at: Optional[datetime] = None
 
 

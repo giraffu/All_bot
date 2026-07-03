@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { DeleteOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons-vue'
+import {
+  DeleteOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  SaveOutlined,
+  SettingOutlined,
+} from '@ant-design/icons-vue'
 
 import { fetchQqccBotConfig, updateQqccBotConfig } from '../api/api'
 
@@ -11,6 +17,9 @@ type UndressMethodKey = 'legacy' | 'i2i_draw'
 type VideoButtonKey = 'missionary' | 'doggy' | 'blowjob' | 'undress_tongue' | 'closeup_blowjob'
 type ResolutionKey = '512p' | '720p' | '1024p'
 type DurationKey = '5s' | '8s' | '10s'
+type VideoSceneEngine = 'image_to_video' | 'wan22_video_v2'
+type DrawSceneEngine = 'free_edit' | 'free_edit_v2'
+type SceneConfigKind = 'video' | 'draw'
 type PromptKey =
   | 'undress'
   | 'i2i_draw_quick_undress'
@@ -27,6 +36,8 @@ interface VideoSceneConfig {
   name: string
   prompt: string
   duration: DurationKey
+  engine: VideoSceneEngine
+  lora_name: string
   prompt_key?: PromptKey
 }
 
@@ -34,6 +45,8 @@ interface DrawSceneConfig {
   id: string
   name: string
   prompt: string
+  engine: DrawSceneEngine
+  lora_name: string
 }
 
 interface QqccBotConfig {
@@ -51,11 +64,42 @@ interface QqccBotConfig {
   prompts: Record<PromptKey, string>
 }
 
+interface SceneEngineOption {
+  value: string
+  supports_lora: boolean
+}
+
+interface LoraModelOption {
+  value: string
+  label: string
+}
+
+interface QqccBotConfigOptions {
+  video_engines: SceneEngineOption[]
+  draw_engines: SceneEngineOption[]
+  video_lora_models: LoraModelOption[]
+  image_lora_models: LoraModelOption[]
+}
+
 interface QqccBotConfigResponse {
   key?: string
   updated_at?: string | null
   config?: Partial<QqccBotConfig>
+  options?: Partial<QqccBotConfigOptions>
 }
+
+const defaultOptions = (): QqccBotConfigOptions => ({
+  video_engines: [
+    { value: 'image_to_video', supports_lora: true },
+    { value: 'wan22_video_v2', supports_lora: false },
+  ],
+  draw_engines: [
+    { value: 'free_edit', supports_lora: true },
+    { value: 'free_edit_v2', supports_lora: false },
+  ],
+  video_lora_models: [{ value: '', label: '无' }],
+  image_lora_models: [{ value: '', label: '无' }],
+})
 
 const defaultConfig = (): QqccBotConfig => ({
   global_enabled: true,
@@ -100,6 +144,8 @@ const defaultConfig = (): QqccBotConfig => ({
       name: '🛌 动图传教士',
       prompt: '',
       duration: '5s',
+      engine: 'image_to_video',
+      lora_name: '',
       prompt_key: 'perfect_video_insert',
     },
     {
@@ -107,6 +153,8 @@ const defaultConfig = (): QqccBotConfig => ({
       name: '🎬 动图后入',
       prompt: '',
       duration: '5s',
+      engine: 'image_to_video',
+      lora_name: '',
       prompt_key: 'doggy_style',
     },
     {
@@ -114,6 +162,8 @@ const defaultConfig = (): QqccBotConfig => ({
       name: '🎬 口交黑人',
       prompt: '',
       duration: '5s',
+      engine: 'image_to_video',
+      lora_name: '',
       prompt_key: 'blowjob',
     },
     {
@@ -121,6 +171,8 @@ const defaultConfig = (): QqccBotConfig => ({
       name: '🎬 脱衣吐舌',
       prompt: '',
       duration: '5s',
+      engine: 'image_to_video',
+      lora_name: '',
       prompt_key: 'undress_tongue',
     },
     {
@@ -128,6 +180,8 @@ const defaultConfig = (): QqccBotConfig => ({
       name: '🎬 特写口交',
       prompt: '',
       duration: '5s',
+      engine: 'image_to_video',
+      lora_name: '',
       prompt_key: 'closeup_blowjob',
     },
   ],
@@ -175,6 +229,16 @@ const videoButtonOptions: Array<{ key: VideoButtonKey; label: string }> = [
 const resolutionOptions: ResolutionKey[] = ['512p', '720p', '1024p']
 const durationOptions: DurationKey[] = ['5s', '8s', '10s']
 
+const videoEngineLabels: Record<VideoSceneEngine, string> = {
+  image_to_video: '图生视频',
+  wan22_video_v2: '图生视频v2',
+}
+
+const drawEngineLabels: Record<DrawSceneEngine, string> = {
+  free_edit: '自由P图',
+  free_edit_v2: '自由P图v2',
+}
+
 const nonVideoPromptOptions: Array<{ key: PromptKey; label: string }> = [
   { key: 'undress', label: '快速脱衣' },
   { key: 'i2i_draw_quick_undress', label: '全身保脸重绘' },
@@ -187,11 +251,85 @@ const saving = ref(false)
 const configKey = ref('')
 const updatedAt = ref<string | null>(null)
 const config = reactive<QqccBotConfig>(defaultConfig())
+const modelOptions = reactive<QqccBotConfigOptions>(defaultOptions())
 const sceneCounter = ref(0)
 const drawSceneCounter = ref(0)
+const sceneConfig = reactive({
+  open: false,
+  kind: 'video' as SceneConfigKind,
+  index: -1,
+  engine: 'image_to_video',
+  lora_name: '',
+})
 
 const statusText = computed(() => (config.global_enabled ? '开启' : '关闭'))
 const updatedAtText = computed(() => updatedAt.value || '-')
+
+const normalizeVideoEngine = (value: unknown): VideoSceneEngine =>
+  value === 'wan22_video_v2' ? 'wan22_video_v2' : 'image_to_video'
+
+const normalizeDrawEngine = (value: unknown): DrawSceneEngine =>
+  value === 'free_edit' ? 'free_edit' : 'free_edit_v2'
+
+const engineSupportsLora = (kind: SceneConfigKind, engine: string) => {
+  const engines = kind === 'video' ? modelOptions.video_engines : modelOptions.draw_engines
+  return engines.some((item) => item.value === engine && item.supports_lora)
+}
+
+const normalizeLoraName = (
+  raw: unknown,
+  options: {
+    kind: SceneConfigKind
+    engine: string
+  },
+) => {
+  const { kind, engine } = options
+  if (!engineSupportsLora(kind, engine)) return ''
+  const loraName = typeof raw === 'string' ? raw : ''
+  const loras = kind === 'video' ? modelOptions.video_lora_models : modelOptions.image_lora_models
+  return loras.some((item) => item.value === loraName) ? loraName : ''
+}
+
+const mergeOptions = (raw?: Partial<QqccBotConfigOptions>): QqccBotConfigOptions => {
+  const merged = defaultOptions()
+  if (!raw || typeof raw !== 'object') return merged
+  if (Array.isArray(raw.video_engines) && raw.video_engines.length > 0) {
+    merged.video_engines = raw.video_engines
+      .filter((item) => typeof item?.value === 'string')
+      .map((item) => ({ value: item.value, supports_lora: item.supports_lora === true }))
+  }
+  if (Array.isArray(raw.draw_engines) && raw.draw_engines.length > 0) {
+    merged.draw_engines = raw.draw_engines
+      .filter((item) => typeof item?.value === 'string')
+      .map((item) => ({ value: item.value, supports_lora: item.supports_lora === true }))
+  }
+  if (Array.isArray(raw.video_lora_models) && raw.video_lora_models.length > 0) {
+    merged.video_lora_models = raw.video_lora_models
+      .filter((item) => typeof item?.value === 'string')
+      .map((item) => ({ value: item.value, label: typeof item.label === 'string' ? item.label : item.value }))
+  }
+  if (Array.isArray(raw.image_lora_models) && raw.image_lora_models.length > 0) {
+    merged.image_lora_models = raw.image_lora_models
+      .filter((item) => typeof item?.value === 'string')
+      .map((item) => ({ value: item.value, label: typeof item.label === 'string' ? item.label : item.value }))
+  }
+  return merged
+}
+
+const getEngineLabel = (kind: SceneConfigKind, engine: string) => {
+  if (kind === 'video') return videoEngineLabels[normalizeVideoEngine(engine)]
+  return drawEngineLabels[normalizeDrawEngine(engine)]
+}
+
+const activeEngineOptions = computed(() =>
+  sceneConfig.kind === 'video' ? modelOptions.video_engines : modelOptions.draw_engines
+)
+const activeLoraOptions = computed(() =>
+  sceneConfig.kind === 'video' ? modelOptions.video_lora_models : modelOptions.image_lora_models
+)
+const activeEngineSupportsLora = computed(() =>
+  engineSupportsLora(sceneConfig.kind, sceneConfig.engine)
+)
 
 const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
   const merged = defaultConfig()
@@ -234,11 +372,14 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
           ? (scene.duration as DurationKey)
           : '5s'
         const promptKey = typeof scene?.prompt_key === 'string' ? (scene.prompt_key as PromptKey) : undefined
+        const engine = normalizeVideoEngine(scene?.engine)
         return {
           id,
           name,
           prompt,
           duration,
+          engine,
+          lora_name: normalizeLoraName(scene?.lora_name, { kind: 'video', engine }),
           ...(promptKey ? { prompt_key: promptKey } : {}),
         }
       })
@@ -250,7 +391,14 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
         const id = typeof scene?.id === 'string' && scene.id.trim() ? scene.id.trim() : `draw_scene_${index + 1}`
         const name = typeof scene?.name === 'string' ? scene.name : ''
         const prompt = typeof scene?.prompt === 'string' ? scene.prompt : ''
-        return { id, name, prompt }
+        const engine = normalizeDrawEngine(scene?.engine)
+        return {
+          id,
+          name,
+          prompt,
+          engine,
+          lora_name: normalizeLoraName(scene?.lora_name, { kind: 'draw', engine }),
+        }
       })
       .filter((scene) => scene.name.trim() || scene.prompt.trim())
   }
@@ -273,6 +421,8 @@ const addVideoScene = () => {
     name: '',
     prompt: '',
     duration: '5s',
+    engine: 'image_to_video',
+    lora_name: '',
   })
 }
 
@@ -290,6 +440,8 @@ const addDrawScene = () => {
     id: createDrawSceneId(),
     name: '',
     prompt: '',
+    engine: 'free_edit_v2',
+    lora_name: '',
   })
 }
 
@@ -315,6 +467,8 @@ const buildPayload = (): QqccBotConfig => {
       id: scene.id.trim(),
       name: scene.name.trim(),
       prompt: scene.prompt.trim(),
+      engine: normalizeVideoEngine(scene.engine),
+      lora_name: normalizeLoraName(scene.lora_name, { kind: 'video', engine: normalizeVideoEngine(scene.engine) }),
     }))
     .filter((scene) => scene.name || scene.prompt || scene.prompt_key)
   payload.draw_scenes = payload.draw_scenes
@@ -323,15 +477,57 @@ const buildPayload = (): QqccBotConfig => {
       id: scene.id.trim(),
       name: scene.name.trim(),
       prompt: scene.prompt.trim(),
+      engine: normalizeDrawEngine(scene.engine),
+      lora_name: normalizeLoraName(scene.lora_name, { kind: 'draw', engine: normalizeDrawEngine(scene.engine) }),
     }))
     .filter((scene) => scene.name || scene.prompt)
   return payload
 }
 
 const applyResponse = (payload: QqccBotConfigResponse) => {
+  Object.assign(modelOptions, mergeOptions(payload.options))
   Object.assign(config, mergeConfig(payload.config))
   configKey.value = payload.key || ''
   updatedAt.value = payload.updated_at || null
+}
+
+const openSceneConfig = (kind: SceneConfigKind, index: number) => {
+  const scene = kind === 'video' ? config.video_scenes[index] : config.draw_scenes[index]
+  if (!scene) return
+  sceneConfig.kind = kind
+  sceneConfig.index = index
+  sceneConfig.engine = scene.engine
+  sceneConfig.lora_name = scene.lora_name || ''
+  sceneConfig.open = true
+}
+
+const closeSceneConfig = () => {
+  sceneConfig.open = false
+  sceneConfig.index = -1
+}
+
+const onSceneEngineChange = () => {
+  if (!activeEngineSupportsLora.value) {
+    sceneConfig.lora_name = ''
+  }
+}
+
+const confirmSceneConfig = () => {
+  if (sceneConfig.index < 0) return
+  if (sceneConfig.kind === 'video') {
+    const scene = config.video_scenes[sceneConfig.index]
+    if (!scene) return
+    const engine = normalizeVideoEngine(sceneConfig.engine)
+    scene.engine = engine
+    scene.lora_name = normalizeLoraName(sceneConfig.lora_name, { kind: 'video', engine })
+  } else {
+    const scene = config.draw_scenes[sceneConfig.index]
+    if (!scene) return
+    const engine = normalizeDrawEngine(sceneConfig.engine)
+    scene.engine = engine
+    scene.lora_name = normalizeLoraName(sceneConfig.lora_name, { kind: 'draw', engine })
+  }
+  closeSceneConfig()
 }
 
 const loadConfig = async () => {
@@ -475,10 +671,19 @@ onMounted(() => {
             :key="scene.id"
             class="grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[180px_minmax(360px,1fr)_120px_56px]"
           >
-            <a-input
-              v-model:value="scene.name"
-              :data-testid="`video-scene-name-${index}`"
-            />
+            <div class="grid grid-cols-[minmax(0,1fr)_36px] gap-2">
+              <a-input
+                v-model:value="scene.name"
+                :data-testid="`video-scene-name-${index}`"
+              />
+              <a-button
+                :data-testid="`config-video-scene-${index}`"
+                title="配置模型"
+                @click="openSceneConfig('video', index)"
+              >
+                <template #icon><SettingOutlined /></template>
+              </a-button>
+            </div>
             <a-textarea
               v-model:value="scene.prompt"
               :rows="3"
@@ -535,22 +740,33 @@ onMounted(() => {
           :key="scene.id"
           class="grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[180px_minmax(360px,1fr)_56px]"
         >
-          <a-input
-            v-model:value="scene.name"
-            :data-testid="`draw-scene-name-${index}`"
-          />
+          <div class="grid grid-cols-[minmax(0,1fr)_36px] gap-2">
+            <a-input
+              v-model:value="scene.name"
+              :data-testid="`draw-scene-name-${index}`"
+            />
+            <a-button
+              :data-testid="`config-draw-scene-${index}`"
+              title="配置模型"
+              @click="openSceneConfig('draw', index)"
+            >
+              <template #icon><SettingOutlined /></template>
+            </a-button>
+          </div>
           <a-textarea
             v-model:value="scene.prompt"
             :rows="3"
             :data-testid="`draw-scene-prompt-${index}`"
           />
-          <a-button
-            danger
-            :data-testid="`remove-draw-scene-${index}`"
-            @click="removeDrawScene(index)"
-          >
-            <template #icon><DeleteOutlined /></template>
-          </a-button>
+          <div class="flex justify-end md:contents">
+            <a-button
+              danger
+              :data-testid="`remove-draw-scene-${index}`"
+              @click="removeDrawScene(index)"
+            >
+              <template #icon><DeleteOutlined /></template>
+            </a-button>
+          </div>
         </div>
         <div v-if="config.draw_scenes.length === 0" class="py-6 text-center text-sm text-slate-400">
           暂无场景
@@ -571,5 +787,69 @@ onMounted(() => {
         </a-form-item>
       </div>
     </section>
+
+    <a-modal
+      v-model:open="sceneConfig.open"
+      title="场景模型配置"
+      :footer="null"
+      :width="520"
+      wrap-class-name="qqcc-scene-config-modal"
+      @cancel="closeSceneConfig"
+    >
+      <a-form layout="vertical" class="scene-config-form">
+        <a-form-item label="底层模型" class="mb-4">
+          <a-select
+            v-model:value="sceneConfig.engine"
+            data-testid="scene-engine-select"
+            class="w-full"
+            @change="onSceneEngineChange"
+          >
+            <a-select-option
+              v-for="item in activeEngineOptions"
+              :key="item.value"
+              :value="item.value"
+            >
+              {{ getEngineLabel(sceneConfig.kind, item.value) }}
+            </a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item label="附加模型" class="mb-4">
+          <a-select
+            v-model:value="sceneConfig.lora_name"
+            data-testid="scene-lora-select"
+            class="w-full"
+            :disabled="!activeEngineSupportsLora"
+          >
+            <a-select-option
+              v-for="item in activeLoraOptions"
+              :key="item.value"
+              :value="item.value"
+            >
+              {{ item.label }}
+            </a-select-option>
+          </a-select>
+        </a-form-item>
+        <div class="flex justify-end gap-2">
+          <a-button @click="closeSceneConfig">取消</a-button>
+          <a-button
+            type="primary"
+            data-testid="scene-config-confirm"
+            @click="confirmSceneConfig"
+          >
+            确定
+          </a-button>
+        </div>
+      </a-form>
+    </a-modal>
   </div>
 </template>
+
+<style scoped>
+:global(.qqcc-scene-config-modal .ant-modal) {
+  max-width: calc(100vw - 32px);
+}
+
+:global(.qqcc-scene-config-modal .ant-modal-body) {
+  padding-top: 8px;
+}
+</style>

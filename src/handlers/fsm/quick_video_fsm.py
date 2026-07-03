@@ -20,8 +20,10 @@ from src.constants import (
     MODE_CLOSEUP_BLOWJOB,
     MODE_CUSTOM_VIDEO,
     MODE_DOGGY_STYLE,
+    MODE_IMAGE_TO_VIDEO,
     MODE_PERFECT_VIDEO_INSERT,
     MODE_UNDRESS_TONGUE,
+    MODE_WAN22_VIDEO_V2,
     RESOLUTION_COST,
     RESOLUTION_PERMISSIONS,
     get_video_settings_keyboard,
@@ -45,12 +47,16 @@ from src.services.permission_service import permission_service
 from src.services.qqcc_config_service import (
     VIDEO_DURATION_KEYS,
     VIDEO_RESOLUTION_KEYS,
+    VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
     get_qqcc_video_scene,
     get_qqcc_prompt_override,
     has_enabled_qqcc_video_scenes,
     is_qqcc_main_button_enabled,
     load_runtime_qqcc_config,
     normalize_qqcc_config,
+)
+from src.services.task_service_generation_image import (
+    process_standard_generation_task as process_generation_task,
 )
 from src.services.task_service_entrypoints_video import process_video_task_template
 from src.services.fsm_temp_file_service import (
@@ -296,7 +302,7 @@ def _resolve_qqcc_scene_from_entry(
     *,
     scene_id: str | None,
     route_key: str | None,
-) -> dict[str, str] | None:
+) -> dict[str, object] | None:
     if scene_id:
         return get_qqcc_video_scene(config, scene_id)
     legacy_scene_id = QUICK_VIDEO_LEGACY_ROUTE_SCENE_IDS.get(route_key or "")
@@ -306,7 +312,7 @@ def _resolve_qqcc_scene_from_entry(
 def _resolve_qqcc_scene_from_fsm_data(
     config: dict,
     fsm_data: dict,
-) -> dict[str, str] | None:
+) -> dict[str, object] | None:
     scene = get_qqcc_video_scene(config, fsm_data.get("scene_id"))
     if scene is not None:
         return scene
@@ -314,12 +320,18 @@ def _resolve_qqcc_scene_from_fsm_data(
     return get_qqcc_video_scene(config, legacy_scene_id)
 
 
-def _resolve_qqcc_scene_default_prompt_text(scene: dict[str, str]) -> str:
+def _resolve_qqcc_scene_default_prompt_text(scene: dict[str, object]) -> str:
     return (
-        scene.get("prompt")
-        or QUICK_VIDEO_PROMPT_FALLBACKS.get(scene.get("prompt_key") or "")
+        str(scene.get("prompt") or "")
+        or QUICK_VIDEO_PROMPT_FALLBACKS.get(str(scene.get("prompt_key") or ""))
         or QUICK_VIDEO_PROMPT_FALLBACKS[MODE_CUSTOM_VIDEO]
     )
+
+
+def _resolve_qqcc_scene_task_type(scene: dict[str, object]) -> str:
+    if scene.get("engine") == VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2:
+        return MODE_WAN22_VIDEO_V2
+    return MODE_IMAGE_TO_VIDEO if str(scene.get("lora_name") or "").strip() else MODE_CUSTOM_VIDEO
 
 
 async def _build_quick_video_settings_markup(
@@ -452,10 +464,10 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         ):
             await _reply_qqcc_feature_disabled(update, context)
             return ConversationHandler.END
-        mode = MODE_CUSTOM_VIDEO
-        mode_name = scene["name"]
-        scene_prompt = scene.get("prompt", "")
-        prompt_key = scene.get("prompt_key") or MODE_CUSTOM_VIDEO
+        mode = _resolve_qqcc_scene_task_type(scene)
+        mode_name = str(scene["name"])
+        scene_prompt = str(scene.get("prompt", ""))
+        prompt_key = str(scene.get("prompt_key") or MODE_CUSTOM_VIDEO)
         quick_video_data.update(
             {
                 "mode": mode,
@@ -464,6 +476,8 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 "prompt_override": scene_prompt or None,
                 "default_prompt_key": prompt_key,
                 "default_prompt_text": _resolve_qqcc_scene_default_prompt_text(scene),
+                "engine": scene.get("engine"),
+                "lora_name": str(scene.get("lora_name") or ""),
                 "duration": scene["duration"],
             }
         )
@@ -496,6 +510,9 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             _cleanup_context(context, user_id)
             return ConversationHandler.END
         fsm_data["duration"] = qqcc_scene["duration"]
+        fsm_data["mode"] = _resolve_qqcc_scene_task_type(qqcc_scene)
+        fsm_data["engine"] = qqcc_scene.get("engine")
+        fsm_data["lora_name"] = str(qqcc_scene.get("lora_name") or "")
 
     file_id = _resolve_quick_video_file_id(message)
     if not file_id:
@@ -579,6 +596,9 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             _cleanup_context(context, user_id)
             return ConversationHandler.END
         fsm_data["duration"] = qqcc_scene["duration"]
+        fsm_data["mode"] = _resolve_qqcc_scene_task_type(qqcc_scene)
+        fsm_data["engine"] = qqcc_scene.get("engine")
+        fsm_data["lora_name"] = str(qqcc_scene.get("lora_name") or "")
 
     if data == "qvid_start_generation":
         await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
@@ -710,8 +730,11 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             _cleanup_context(context, user_id)
             return ConversationHandler.END
         fsm_data["duration"] = qqcc_scene["duration"]
+        fsm_data["mode"] = _resolve_qqcc_scene_task_type(qqcc_scene)
         fsm_data["mode_name"] = qqcc_scene["name"]
-        scene_prompt = qqcc_scene.get("prompt", "")
+        fsm_data["engine"] = qqcc_scene.get("engine")
+        fsm_data["lora_name"] = str(qqcc_scene.get("lora_name") or "")
+        scene_prompt = str(qqcc_scene.get("prompt", ""))
         fsm_data["prompt_override"] = scene_prompt or None
         fsm_data["default_prompt_key"] = qqcc_scene.get("prompt_key") or MODE_CUSTOM_VIDEO
         fsm_data["default_prompt_text"] = _resolve_qqcc_scene_default_prompt_text(
@@ -801,24 +824,45 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         default_prompt_key = fsm_data.get("default_prompt_key") or MODE_CUSTOM_VIDEO
         default_prompt_text = fsm_data.get("default_prompt_text") or "custom video"
         prompt_override = fsm_data.get("prompt_override")
-        create_background_task(
-            context,
-            process_video_task_template(
-                context=context,
-                mode=MODE_CUSTOM_VIDEO,
-                default_prompt_key=default_prompt_key,
-                default_prompt_text=default_prompt_text,
-                prompt_override=prompt_override,
-                display_mode_name_override=fsm_data.get("mode_name"),
-                image_path=image_path,
-                cleanup=True,
-                allow_contribute=True,
-                chat_id=query.message.chat_id,
-                user_id=user_id,
-                username=update.effective_user.username,
-                status_msg_id=query.message.message_id,
-            ),
-        )
+        if mode == MODE_WAN22_VIDEO_V2:
+            create_background_task(
+                context,
+                process_generation_task(
+                    context=context,
+                    chat_id=query.message.chat_id,
+                    user_id=user_id,
+                    username=update.effective_user.username,
+                    prompt=prompt_override or default_prompt_text,
+                    images=[image_path],
+                    is_video=True,
+                    task_type=MODE_WAN22_VIDEO_V2,
+                    cleanup=True,
+                    allow_contribute=True,
+                    status_msg_id=query.message.message_id,
+                    resolution=res,
+                    duration=dur,
+                ),
+            )
+        else:
+            create_background_task(
+                context,
+                process_video_task_template(
+                    context=context,
+                    mode=mode,
+                    default_prompt_key=default_prompt_key,
+                    default_prompt_text=default_prompt_text,
+                    prompt_override=prompt_override,
+                    display_mode_name_override=fsm_data.get("mode_name"),
+                    lora_name=fsm_data.get("lora_name"),
+                    image_path=image_path,
+                    cleanup=True,
+                    allow_contribute=True,
+                    chat_id=query.message.chat_id,
+                    user_id=user_id,
+                    username=update.effective_user.username,
+                    status_msg_id=query.message.message_id,
+                ),
+            )
     elif mode_submission:
         default_prompt_key, default_prompt_text = mode_submission
         prompt_override = (

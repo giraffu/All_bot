@@ -88,6 +88,8 @@ async def process_standard_generation_task(
             prompt=prompt,
             negative_prompt="",
             images=images,
+            resolution_preset=resolution,
+            duration=duration,
             use_end_frame=len(images) > 1,
             status_msg_id=status_msg_id,
             delete_status=delete_status,

@@ -490,6 +490,8 @@ async def test_qqcc_ai_draw_scene_callback_waits_for_image(monkeypatch):
         "scene_id": "soft_light",
         "mode_name": "柔光写真",
         "prompt_override": "soft light prompt",
+        "engine": "free_edit_v2",
+        "lora_name": "",
     }
     answer_mock.assert_awaited_once()
     reply_mock.assert_awaited_once()
@@ -702,6 +704,92 @@ async def test_qqcc_ai_draw_scene_submits_free_edit_v2_single_task(monkeypatch):
     assert captured["images"] == ["/tmp/draw.png"]
     assert captured["prompt"] == "soft light prompt"
     assert context.bot_data["bot_client_type"] == "bot:qqcc"
+
+
+@pytest.mark.asyncio
+async def test_qqcc_ai_draw_scene_submits_legacy_free_edit_with_lora(monkeypatch):
+    reply_mock = AsyncMock()
+    scheduled = []
+    captured = {}
+    config = normalize_qqcc_config(
+        {
+            "draw_scenes": [
+                {
+                    "id": "realistic",
+                    "name": "逼真质感",
+                    "prompt": "realistic prompt",
+                    "engine": "free_edit",
+                    "lora_name": "qwen/YARN_1.0.safetensors",
+                }
+            ]
+        }
+    )
+
+    async def fake_process_generation_task(**kwargs):
+        captured.update(kwargs)
+        return None, None
+
+    def fake_create_background_task(_context, coroutine):
+        scheduled.append(coroutine)
+
+    monkeypatch.setattr(quick_image_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "load_runtime_qqcc_config",
+        AsyncMock(return_value=config),
+    )
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "_validate_quick_image_submission",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "_download_quick_image_input",
+        AsyncMock(return_value="/tmp/draw.png"),
+    )
+    monkeypatch.setattr(
+        quick_image_fsm, "process_generation_task", fake_process_generation_task
+    )
+    monkeypatch.setattr(
+        quick_image_fsm, "create_background_task", fake_create_background_task
+    )
+    monkeypatch.setattr(quick_image_fsm, "load_prompts", lambda: {})
+
+    update = SimpleNamespace(
+        effective_user=_build_user(),
+        effective_chat=SimpleNamespace(id=10001),
+        message=SimpleNamespace(
+            document=None,
+            photo=[SimpleNamespace(file_id="photo-file-id")],
+            chat_id=10001,
+        ),
+    )
+    context = SimpleNamespace(
+        user_data={
+            "in_conversation": "QUICK_IMAGE_img2img_lora",
+            "quick_image_data": {
+                "mode": MODE_IMG2IMG_LORA,
+                "cost": 2,
+                "image_path": None,
+                "scene_id": "realistic",
+            },
+        },
+        bot=SimpleNamespace(),
+        bot_data={"bot_client_type": "bot:qqcc"},
+        lang="zh",
+    )
+
+    result = await quick_image_fsm.receive_image(update, context)
+
+    assert result == ConversationHandler.END
+    assert len(scheduled) == 1
+    await scheduled[0]
+    assert captured["task_type"] == MODE_IMG2IMG_LORA
+    assert captured["images"] == ["/tmp/draw.png"]
+    assert captured["prompt"] == "realistic prompt"
+    assert captured["lora_name"] == "qwen/YARN_1.0.safetensors"
+    assert captured["lora_strength"] == 0.3
 
 
 @pytest.mark.asyncio

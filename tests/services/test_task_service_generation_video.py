@@ -3,7 +3,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.constants import MODE_IMAGE_TO_VIDEO
+from src.constants import MODE_IMAGE_TO_VIDEO, MODE_WAN22_VIDEO_V2
+from src.services.task_service_generation_image import process_standard_generation_task
 from src.services.task_service_generation_video import (
     process_image_to_video_generation_task,
 )
@@ -66,3 +67,41 @@ async def test_process_image_to_video_task_persists_legacy_lora_context(monkeypa
         "lora_name": "BreastGrow",
         "lora_strength": 1.0,
     }
+
+
+@pytest.mark.asyncio
+async def test_standard_generation_wan22_v2_forwards_resolution_and_duration(monkeypatch):
+    captured_kwargs = {}
+
+    async def fake_process_wan22_video_v2_generation_task(**kwargs):
+        captured_kwargs.update(kwargs)
+        return (b"video-bytes", "task-wan22-v2")
+
+    monkeypatch.setattr(
+        "src.services.task_service_generation_image.resolve_internal_user_id",
+        AsyncMock(return_value=456),
+    )
+    monkeypatch.setattr(
+        "src.services.task_service_generation_image.process_wan22_video_v2_generation_task",
+        fake_process_wan22_video_v2_generation_task,
+    )
+
+    context = SimpleNamespace(user_data={}, bot=MagicMock(), t=lambda key, **kwargs: key)
+    result = await process_standard_generation_task(
+        context=context,
+        chat_id=123,
+        user_id=789,
+        username="tester",
+        prompt="positive",
+        images=["start.png"],
+        is_video=True,
+        task_type=MODE_WAN22_VIDEO_V2,
+        resolution="hd",
+        duration="10s",
+        cleanup=False,
+    )
+
+    assert result == (b"video-bytes", "task-wan22-v2")
+    assert captured_kwargs["resolution_preset"] == "hd"
+    assert captured_kwargs["duration"] == "10s"
+    assert captured_kwargs["negative_prompt"] == ""

@@ -7,7 +7,12 @@ from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler, T
 from qqcc_bot import keyboards, main as qqcc_main, prompt_handlers
 from qqcc_bot import commands as qqcc_commands
 from src.handlers.fsm import quick_image_fsm, quick_video_fsm
-from src.constants import MODE_CUSTOM_VIDEO, MODE_PERFECT_VIDEO_INSERT
+from src.constants import (
+    MODE_CUSTOM_VIDEO,
+    MODE_IMAGE_TO_VIDEO,
+    MODE_PERFECT_VIDEO_INSERT,
+    MODE_WAN22_VIDEO_V2,
+)
 from src.handlers.fsm.quick_draw_callback_data import (
     build_quick_draw_scene_callback_data,
 )
@@ -658,10 +663,19 @@ async def test_qqcc_video_prompt_override_does_not_affect_main_bot(monkeypatch):
         captured.append(kwargs)
         return "queued"
 
+    async def fake_process_generation_task(**kwargs):
+        captured.append(kwargs)
+        return None, None
+
     monkeypatch.setattr(
         quick_video_fsm,
         "process_video_task_template",
         fake_process_video_task_template,
+    )
+    monkeypatch.setattr(
+        quick_video_fsm,
+        "process_generation_task",
+        fake_process_generation_task,
     )
     monkeypatch.setattr(
         quick_video_fsm,
@@ -715,6 +729,197 @@ async def test_qqcc_video_prompt_override_does_not_affect_main_bot(monkeypatch):
     assert captured[0]["prompt_override"] == "qqcc scene prompt"
     assert captured[0]["display_mode_name_override"] == "自定义动图"
     assert captured[1]["prompt_override"] is None
+
+
+@pytest.mark.asyncio
+async def test_qqcc_video_scene_lora_submits_legacy_video_lora(monkeypatch):
+    captured = []
+
+    monkeypatch.setattr(
+        quick_video_fsm,
+        "load_runtime_qqcc_config",
+        AsyncMock(
+            return_value=normalize_qqcc_config(
+                {
+                    "video_scenes": [
+                        {
+                            "id": "lora_scene",
+                            "name": "模型动图",
+                            "prompt": "lora scene prompt",
+                            "duration": "5s",
+                            "engine": "image_to_video",
+                            "lora_name": "BreastGrow",
+                        }
+                    ]
+                }
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "src.core.user_core.get_or_create_user_by_telegram",
+        AsyncMock(return_value=(SimpleNamespace(id=7), False)),
+    )
+    monkeypatch.setattr(
+        quick_video_fsm.permission_service,
+        "get_user_group",
+        AsyncMock(return_value="金丹期"),
+    )
+    monkeypatch.setattr(
+        quick_video_fsm.permission_service,
+        "get_user_identity",
+        AsyncMock(return_value="核心弟子"),
+    )
+    monkeypatch.setattr(
+        quick_video_fsm.permission_service,
+        "check_quota",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(quick_video_fsm, "robust_edit_text", AsyncMock())
+    monkeypatch.setattr(
+        quick_video_fsm,
+        "process_video_task_template",
+        lambda **kwargs: captured.append(kwargs) or "queued",
+    )
+    monkeypatch.setattr(
+        quick_video_fsm,
+        "create_background_task",
+        lambda _context, task: task,
+    )
+
+    query = SimpleNamespace(
+        from_user=SimpleNamespace(id=123, username="tester"),
+        data="qvid_start_generation",
+        answer=AsyncMock(),
+        message=SimpleNamespace(chat_id=456, message_id=77),
+    )
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(
+            id=123,
+            username="tester",
+            full_name="Tester",
+        ),
+        effective_chat=SimpleNamespace(id=456),
+    )
+    context = SimpleNamespace(
+        bot_data={"bot_client_type": "bot:qqcc"},
+        user_data={
+            "quick_video_data": {
+                "mode": MODE_CUSTOM_VIDEO,
+                "scene_id": "lora_scene",
+                "mode_name": "模型动图",
+                "resolution": "720p",
+                "duration": "5s",
+                "image_path": "/tmp/input.png",
+            }
+        },
+        lang="zh",
+        t=lambda key, **_kwargs: key,
+    )
+
+    await quick_video_fsm.start_generation(update, context)
+
+    assert captured[0]["mode"] == MODE_IMAGE_TO_VIDEO
+    assert captured[0]["lora_name"] == "BreastGrow"
+    assert captured[0]["prompt_override"] == "lora scene prompt"
+    assert captured[0]["display_mode_name_override"] == "模型动图"
+
+
+@pytest.mark.asyncio
+async def test_qqcc_video_scene_v2_submits_wan22_v2(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(
+        quick_video_fsm,
+        "load_runtime_qqcc_config",
+        AsyncMock(
+            return_value=normalize_qqcc_config(
+                {
+                    "video_scenes": [
+                        {
+                            "id": "v2_scene",
+                            "name": "新版动图",
+                            "prompt": "v2 scene prompt",
+                            "duration": "10s",
+                            "engine": "wan22_video_v2",
+                            "lora_name": "BreastGrow",
+                        }
+                    ]
+                }
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "src.core.user_core.get_or_create_user_by_telegram",
+        AsyncMock(return_value=(SimpleNamespace(id=7), False)),
+    )
+    monkeypatch.setattr(
+        quick_video_fsm.permission_service,
+        "get_user_group",
+        AsyncMock(return_value="金丹期"),
+    )
+    monkeypatch.setattr(
+        quick_video_fsm.permission_service,
+        "get_user_identity",
+        AsyncMock(return_value="核心弟子"),
+    )
+    monkeypatch.setattr(
+        quick_video_fsm.permission_service,
+        "check_quota",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(quick_video_fsm, "robust_edit_text", AsyncMock())
+
+    monkeypatch.setattr(
+        quick_video_fsm,
+        "process_generation_task",
+        lambda **kwargs: captured.update(kwargs) or "queued",
+    )
+    monkeypatch.setattr(
+        quick_video_fsm,
+        "create_background_task",
+        lambda _context, task: task,
+    )
+
+    query = SimpleNamespace(
+        from_user=SimpleNamespace(id=123, username="tester"),
+        data="qvid_start_generation",
+        answer=AsyncMock(),
+        message=SimpleNamespace(chat_id=456, message_id=77),
+    )
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(
+            id=123,
+            username="tester",
+            full_name="Tester",
+        ),
+        effective_chat=SimpleNamespace(id=456),
+    )
+    context = SimpleNamespace(
+        bot_data={"bot_client_type": "bot:qqcc"},
+        user_data={
+            "quick_video_data": {
+                "mode": MODE_CUSTOM_VIDEO,
+                "scene_id": "v2_scene",
+                "mode_name": "新版动图",
+                "resolution": "1024p",
+                "duration": "10s",
+                "image_path": "/tmp/input.png",
+            }
+        },
+        lang="zh",
+        t=lambda key, **_kwargs: key,
+    )
+
+    await quick_video_fsm.start_generation(update, context)
+
+    assert captured["task_type"] == MODE_WAN22_VIDEO_V2
+    assert captured["prompt"] == "v2 scene prompt"
+    assert captured["images"] == ["/tmp/input.png"]
+    assert captured["resolution"] == "720p"
+    assert captured["duration"] == "10s"
+    assert "lora_name" not in captured
 
 
 @pytest.mark.asyncio
@@ -773,6 +978,8 @@ async def test_qqcc_quick_video_scene_callback_selects_dynamic_scene(monkeypatch
         "prompt_override": "kissing prompt",
         "default_prompt_key": MODE_CUSTOM_VIDEO,
         "default_prompt_text": "kissing prompt",
+        "engine": "image_to_video",
+        "lora_name": "",
         "resolution": "512p",
         "duration": "8s",
         "image_path": None,

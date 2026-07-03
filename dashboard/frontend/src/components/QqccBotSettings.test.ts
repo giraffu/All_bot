@@ -78,6 +78,14 @@ const SelectOptionStub = defineComponent({
   template: '<option :value="value"><slot /></option>',
 })
 
+const ModalStub = defineComponent({
+  name: 'ModalStub',
+  props: ['open', 'visible', 'title'],
+  emits: ['update:open', 'update:visible', 'cancel'],
+  template:
+    '<div v-if="open || visible" data-testid="scene-model-modal"><h4>{{ title }}</h4><slot /><slot name="footer" /></div>',
+})
+
 const passthroughStub = (name: string) =>
   defineComponent({
     name,
@@ -95,12 +103,15 @@ const mountSettings = () =>
         'a-textarea': TextareaStub,
         'a-select': SelectStub,
         'a-select-option': SelectOptionStub,
+        'a-modal': ModalStub,
         'a-spin': passthroughStub('SpinStub'),
+        'a-form': passthroughStub('FormStub'),
         'a-form-item': passthroughStub('FormItemStub'),
         ReloadOutlined: passthroughStub('ReloadOutlinedStub'),
         SaveOutlined: passthroughStub('SaveOutlinedStub'),
         DeleteOutlined: passthroughStub('DeleteOutlinedStub'),
         PlusOutlined: passthroughStub('PlusOutlinedStub'),
+        SettingOutlined: passthroughStub('SettingOutlinedStub'),
       },
     },
   })
@@ -130,6 +141,8 @@ describe('QqccBotSettings', () => {
             name: '亲吻',
             prompt: 'kissing prompt',
             duration: '8s',
+            engine: 'image_to_video',
+            lora_name: 'BreastGrow',
           },
         ],
         draw_scenes: [
@@ -137,7 +150,27 @@ describe('QqccBotSettings', () => {
             id: 'soft_light',
             name: '柔光写真',
             prompt: 'soft light prompt',
+            engine: 'free_edit_v2',
+            lora_name: '',
           },
+        ],
+      },
+      options: {
+        video_engines: [
+          { value: 'image_to_video', supports_lora: true },
+          { value: 'wan22_video_v2', supports_lora: false },
+        ],
+        draw_engines: [
+          { value: 'free_edit', supports_lora: true },
+          { value: 'free_edit_v2', supports_lora: false },
+        ],
+        video_lora_models: [
+          { value: '', label: '无' },
+          { value: 'BreastGrow', label: '巨乳膨胀' },
+        ],
+        image_lora_models: [
+          { value: '', label: '无' },
+          { value: 'qwen/YARN_1.0.safetensors', label: '逼真' },
         ],
       },
     })
@@ -191,6 +224,8 @@ describe('QqccBotSettings', () => {
         name: '贴贴',
         prompt: 'new scene prompt',
         duration: '10s',
+        engine: 'image_to_video',
+        lora_name: 'BreastGrow',
       },
     ])
     expect(payload.draw_scenes).toEqual([
@@ -198,6 +233,8 @@ describe('QqccBotSettings', () => {
         id: 'soft_light',
         name: '柔光大片',
         prompt: 'new draw prompt',
+        engine: 'free_edit_v2',
+        lora_name: '',
       },
     ])
     expect(antMocks.success).toHaveBeenCalledWith('懒人Bot配置已保存')
@@ -218,6 +255,8 @@ describe('QqccBotSettings', () => {
     expect(payload.video_scenes).toHaveLength(1)
     expect(payload.video_scenes[0].name).toBe('转身')
     expect(payload.video_scenes[0].prompt).toBe('turn around')
+    expect(payload.video_scenes[0].engine).toBe('image_to_video')
+    expect(payload.video_scenes[0].lora_name).toBe('')
   })
 
   it('adds and removes dynamic draw scenes before saving', async () => {
@@ -235,6 +274,40 @@ describe('QqccBotSettings', () => {
     expect(payload.draw_scenes).toHaveLength(1)
     expect(payload.draw_scenes[0].name).toBe('赛博风')
     expect(payload.draw_scenes[0].prompt).toBe('cyber style')
+    expect(payload.draw_scenes[0].engine).toBe('free_edit_v2')
+    expect(payload.draw_scenes[0].lora_name).toBe('')
+  })
+
+  it('configures a video scene model and clears lora when v2 is selected', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="config-video-scene-0"]').trigger('click')
+    expect(wrapper.get('[data-testid="scene-model-modal"]').text()).toContain('场景模型配置')
+    await wrapper.get('[data-testid="scene-engine-select"]').setValue('wan22_video_v2')
+    await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
+    expect(payload.video_scenes[0].engine).toBe('wan22_video_v2')
+    expect(payload.video_scenes[0].lora_name).toBe('')
+  })
+
+  it('configures a draw scene to use legacy free edit with a lora model', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="config-draw-scene-0"]').trigger('click')
+    await wrapper.get('[data-testid="scene-engine-select"]').setValue('free_edit')
+    await wrapper.get('[data-testid="scene-lora-select"]').setValue('qwen/YARN_1.0.safetensors')
+    await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
+    expect(payload.draw_scenes[0].engine).toBe('free_edit')
+    expect(payload.draw_scenes[0].lora_name).toBe('qwen/YARN_1.0.safetensors')
   })
 
   it('blocks saving incomplete dynamic video scenes', async () => {
