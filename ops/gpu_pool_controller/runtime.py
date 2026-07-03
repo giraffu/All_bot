@@ -21,8 +21,30 @@ LAN_AIO_DISABLE_DYNAMIC_VRAM_PROFILES = frozenset(
         "wan22_video_v2",
     }
 )
+LAN_AIO_SCAIL2_WORKFLOW_OVERRIDES = json.dumps(
+    {
+        "scail2_action_transfer": "SCAIL-2_Animation_multi-char_audio.api.json",
+        "scail2_action_transfer_long": (
+            "SCAIL-2_Animation_WAN-Context-Windows.api.json"
+        ),
+        "scail2_video_replacement": "SCAIL-2_Replacement_audio.api.json",
+        "scail2_face_swap_v2": (
+            "SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json"
+        ),
+    },
+    separators=(",", ":"),
+)
+LAN_AIO_SCAIL2_FACE_SWAP_V10_ENV = {
+    "SCAIL2_FACE_SWAP_V10_ENABLED": "true",
+    "SCAIL2_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL": "http://192.168.1.226:8188",
+    "SCAIL2_FACE_SWAP_V10_FACE_SWAP_WORKFLOW": "face_swap_v2.json",
+}
 LAN_AIO_WORKFLOW_OVERRIDES_BY_PROFILE = {
     "ltx_video": RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
+    "scail2": LAN_AIO_SCAIL2_WORKFLOW_OVERRIDES,
+}
+LAN_AIO_EXTRA_ENV_BY_PROFILE = {
+    "scail2": LAN_AIO_SCAIL2_FACE_SWAP_V10_ENV,
 }
 LAN_AIO_ENVIRONMENTS = {
     "cloud-test": {
@@ -368,6 +390,9 @@ class RuntimePlanner:
         workflow_overrides = LAN_AIO_WORKFLOW_OVERRIDES_BY_PROFILE.get(
             profile.runtime_profile
         )
+        extra_environment = LAN_AIO_EXTRA_ENV_BY_PROFILE.get(
+            profile.runtime_profile, {}
+        )
         model_target_dir = "/workspace/ComfyUI/models"
         state_root = "/workspace/allbot-state"
         compose = {
@@ -456,6 +481,7 @@ class RuntimePlanner:
                             if workflow_overrides
                             else {}
                         ),
+                        **extra_environment,
                         "POOL_NODE_ID": node.id,
                         "POOL_PROVIDER": assignment.provider,
                         "POOL_GPU_INDEX": str(

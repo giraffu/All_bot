@@ -15,33 +15,40 @@ from ops.gpu_pool_controller.lan_aio_prod import (
 from ops.gpu_pool_controller.runpod_profile_catalog import (
     RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
 )
-from ops.gpu_pool_controller.runtime import RuntimePlanner, RuntimeRenderOverrides
+from ops.gpu_pool_controller.runtime import (
+    LAN_AIO_SCAIL2_WORKFLOW_OVERRIDES,
+    RuntimePlanner,
+    RuntimeRenderOverrides,
+)
 
 
 def test_lan_aio_prod_slots_cover_next_wave_candidates():
     slots = load_lan_aio_prod_slots()
 
     assert list(slots) == [
-        "gpu-177-gpu0-image_to_video",
+        "gpu-177-gpu0-wan22_video_v2",
         "gpu-177-gpu1-ltx_video",
         "gpu-252-gpu0-pornmaster_flux2_edit",
         "gpu-252-gpu1-wan22_video_v2",
         "gpu-002-gpu0-scail2",
         "gpu-002-gpu1-pornmaster_flux2_edit",
+        "gpu-226-gpu0-image_to_video",
     ]
-    assert slots["gpu-177-gpu0-image_to_video"].legacy_worker_id == "cloud_prod_worker_02"
-    assert slots["gpu-177-gpu0-image_to_video"].target_profile_id == "image_to_video"
-    assert slots["gpu-177-gpu0-image_to_video"].target_task_types == (
-        "video_insert",
-        "video_edit",
-        "image_to_video",
+    assert slots["gpu-177-gpu0-wan22_video_v2"].legacy_worker_id == (
+        "lan_aio_prod_gpu177_gpu0_image_to_video_01"
     )
-    assert slots["gpu-177-gpu1-ltx_video"].legacy_worker_id == "cloud_prod_worker_03"
+    assert slots["gpu-177-gpu0-wan22_video_v2"].target_profile_id == "wan22_video_v2"
+    assert slots["gpu-177-gpu0-wan22_video_v2"].target_task_types == (
+        "wan22_video_v2",
+    )
+    assert slots["gpu-177-gpu1-ltx_video"].legacy_worker_id == (
+        "lan_aio_prod_gpu177_gpu1_scail2_01"
+    )
     assert slots["gpu-252-gpu0-pornmaster_flux2_edit"].agent_id == (
         "lan_aio_prod_gpu252_gpu0_pornmaster_flux2_edit_01"
     )
     assert slots["gpu-252-gpu0-pornmaster_flux2_edit"].legacy_worker_id == (
-        "lan_aio_prod_gpu252_gpu0_img2img_lora_01"
+        "lan_aio_prod_gpu252_gpu0_image_to_video_01"
     )
     assert slots["gpu-252-gpu1-wan22_video_v2"].host_port == 8191
     assert slots["gpu-002-gpu0-scail2"].agent_id == (
@@ -68,6 +75,12 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
     assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].target_task_types == (
         "pornmaster_flux2_single_edit",
         "pornmaster_flux2_multi_edit",
+    )
+    assert slots["gpu-226-gpu0-image_to_video"].agent_id == (
+        "lan_aio_prod_gpu226_gpu0_image_to_video_01"
+    )
+    assert slots["gpu-226-gpu0-image_to_video"].legacy_worker_id == (
+        "cloud_prod_worker_01"
     )
 
 
@@ -206,8 +219,8 @@ def test_lan_aio_stop_old_dry_run_omits_empty_local_agent_container():
     payload = ops.dry_run_action("stop-old", [slot])
 
     assert payload["operations"] == [
-        "set lan_aio_prod_gpu252_gpu0_img2img_lora_01=disabled",
-        "ssh allbot-gpu-252 docker stop allbot-lan-aio-gpu-252-gpu0-img2img_lora-prod",
+        "set lan_aio_prod_gpu252_gpu0_image_to_video_01=disabled",
+        "ssh allbot-gpu-252 docker stop allbot-lan-aio-gpu-252-gpu0-image_to_video-prod",
     ]
 
 
@@ -530,6 +543,48 @@ def test_lan_aio_fleet_render_supports_gpu_177_ltx_profile():
     assert "RUNPOD_MODEL_MANIFEST_KEY: ltx_video/2026-06-10/manifest.json" in rendered
     assert "MINIO_RESULT_BUCKET: user-data-prod" in rendered
     assert "host_port: 8191" in rendered
+
+
+def test_lan_aio_fleet_render_supports_scail2_v10_face_swap_env():
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+    slot = ops.slots["gpu-252-gpu0-scail2"]
+    rendered = ops.render_compose(slot)
+
+    import yaml
+
+    compose = yaml.safe_load(rendered)
+    service = compose["services"][slot.container_name]
+    environment = service["environment"]
+    workflow_overrides = json.loads(environment["TASK_TYPE_WORKFLOW_OVERRIDES"])
+
+    assert environment["TASK_TYPE_WORKFLOW_OVERRIDES"] == (
+        LAN_AIO_SCAIL2_WORKFLOW_OVERRIDES
+    )
+    assert workflow_overrides["scail2_action_transfer"] == (
+        "SCAIL-2_Animation_multi-char_audio.api.json"
+    )
+    assert workflow_overrides["scail2_action_transfer_long"] == (
+        "SCAIL-2_Animation_WAN-Context-Windows.api.json"
+    )
+    assert workflow_overrides["scail2_video_replacement"] == (
+        "SCAIL-2_Replacement_audio.api.json"
+    )
+    assert workflow_overrides["scail2_face_swap_v2"] == (
+        "SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json"
+    )
+    assert environment["SCAIL2_FACE_SWAP_V10_ENABLED"] == "true"
+    assert environment["SCAIL2_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL"] == (
+        "http://192.168.1.226:8188"
+    )
+    assert (
+        environment["SCAIL2_FACE_SWAP_V10_FACE_SWAP_WORKFLOW"]
+        == "face_swap_v2.json"
+    )
 
 
 def test_ltx_video_workflow_uses_baked_sageattention():
@@ -1201,7 +1256,7 @@ def test_lan_aio_candidate_plan_generates_stable_yaml_patch():
         "lan_aio_prod_gpu252_gpu0_img2img_lora_01"
     )
     assert payload["candidate_slot"]["old_runtime_container"] == (
-        "allbot-lan-aio-gpu-252-gpu0-pornmaster-flux2-edit-prod"
+        "allbot-lan-aio-gpu-252-gpu0-pornmaster_flux2_edit-prod"
     )
     assert payload["render_summary"]["model_manifest_key"] == (
         "img2img_lora/2026-06-10/manifest.json"
@@ -1564,7 +1619,7 @@ def test_lan_aio_recover_physical_slot_can_restore_exact_candidate():
     assert result["start"]["action"] == "start-disabled"
     assert ops.started_disabled_slots == ["gpu-252-gpu0-img2img_lora"]
     assert (
-        "docker stop 'allbot-lan-aio-gpu-252-gpu0-pornmaster-flux2-edit-prod'"
+        "docker stop 'allbot-lan-aio-gpu-252-gpu0-pornmaster_flux2_edit-prod'"
         in "\n".join(ops.ssh_commands)
     )
     assert ops.controls[0][0] == "lan_aio_prod_gpu252_gpu0_pornmaster_flux2_edit_01"
