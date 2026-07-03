@@ -1,6 +1,6 @@
 version: 1
 managed_by: allbot-lan-aio-operator
-last_verified_at: "2026-07-02T21:04:28Z"
+last_verified_at: "2026-07-03T08:31:51Z"
 sources:
   slot_catalog: ops/gpu_pool_controller/config/lan_aio_prod_slots.yml
   profile_catalog: ops/gpu_pool_controller/config/task_profiles.yml
@@ -131,16 +131,16 @@ nodes:
       - gpu_index: 0
         hardware: NVIDIA GeForce RTX 4090 48G
         current:
-          profile: pornmaster_flux2_edit
-          slot_id: gpu-252-gpu0-pornmaster_flux2_edit
-          agent_id: lan_aio_prod_gpu252_gpu0_pornmaster_flux2_edit_01
-          container_name: allbot-lan-aio-gpu-252-gpu0-pornmaster_flux2_edit-prod
+          profile: img2img_lora
+          slot_id: gpu-252-gpu0-img2img_lora
+          agent_id: lan_aio_prod_gpu252_gpu0_img2img_lora_01
+          container_name: allbot-lan-aio-gpu-252-gpu0-img2img_lora-prod
           host_port: 8192
           state: running
-          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-pornmaster-flux2-edit:20260628-pornmaster-flux2-edit-cu128-smallvae1
-          model_manifest_key: pornmaster_flux2_edit/2026-06-27/manifest.json
-          workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/pornmaster_flux2_edit/workspace
-          last_takeover_at: "2026-07-02T21:01:50Z"
+          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946
+          model_manifest_key: img2img_lora/2026-06-10/manifest.json
+          workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/img2img_lora/workspace
+          last_takeover_at: "2026-07-03T08:31:51Z"
         cached_profiles:
           - profile: pornmaster_flux2_edit
             cache_state: ready
@@ -151,11 +151,12 @@ nodes:
             cache_state: ready
             model_manifest_key: img2img_lora/2026-06-10/manifest.json
             workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/img2img_lora/workspace
+            synced_at: "2026-07-03T08:29:31.303529+00:00"
           - profile: image_to_video
             cache_state: ready
             model_manifest_key: image_to_video/2026-06-13-test/manifest.json
             workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/image_to_video/workspace
-            synced_at: "2026-07-02T20:31:32.925637+00:00"
+            synced_at: "2026-07-03T06:54:14.982639+00:00"
           - profile: scail2
             cache_state: ready
             model_manifest_key: scail2/2026-06-17-test/manifest.json
@@ -165,11 +166,14 @@ nodes:
           - slot_id: gpu-252-gpu0-image_to_video
             profile: image_to_video
             cache_state: ready
+          - slot_id: gpu-252-gpu0-pornmaster_flux2_edit
+            profile: pornmaster_flux2_edit
+            cache_state: ready
           - slot_id: gpu-252-gpu0-scail2
             profile: scail2
             cache_state: ready
         blocked_profiles: []
-        notes: Switched from image_to_video to PornMaster Flux2 edit on 2026-07-03 with scripts/lan_aio_fleet_prod_ops.py takeover --slot gpu-252-gpu0-pornmaster_flux2_edit --replace-slot gpu-252-gpu0-image_to_video --failure-policy auto_rollback. Preflight, pull-image, warm-cache, drain/wait-idle, stop-old, start-disabled, and enable-aio passed; post-switch validation showed the PornMaster container healthy on 8192, /system_stats OK, /queue empty, model cache ready, Central runtime_profile pornmaster_flux2_edit, and RunPod pornmaster_flux2_edit manual slot 01 down/deleted after drain. image_to_video and SCAIL-2 remain same-card rollback candidates.
+        notes: Switched from image_to_video to img2img_lora on 2026-07-03 with scripts/lan_aio_fleet_prod_ops.py takeover --slot gpu-252-gpu0-img2img_lora --replace-slot gpu-252-gpu0-image_to_video --failure-policy auto_rollback. Preflight, pull-image, warm-cache, drain/wait-idle, stop-old, start-disabled, and enable-aio passed; post-switch validation showed the img2img_lora container healthy on 8192, /system_stats OK, model cache ready, Central runtime_profile img2img_lora, and task types img2img,img2img_lora. Image_to_video, SCAIL-2, and PornMaster remain same-card rollback candidates.
       - gpu_index: 1
         hardware: removed RTX 4090
         current:

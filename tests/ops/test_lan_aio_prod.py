@@ -28,7 +28,7 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
     assert list(slots) == [
         "gpu-177-gpu0-wan22_video_v2",
         "gpu-177-gpu1-ltx_video",
-        "gpu-252-gpu0-pornmaster_flux2_edit",
+        "gpu-252-gpu0-img2img_lora",
         "gpu-252-gpu1-wan22_video_v2",
         "gpu-002-gpu0-scail2",
         "gpu-002-gpu1-pornmaster_flux2_edit",
@@ -44,11 +44,15 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
     assert slots["gpu-177-gpu1-ltx_video"].legacy_worker_id == (
         "lan_aio_prod_gpu177_gpu1_scail2_01"
     )
-    assert slots["gpu-252-gpu0-pornmaster_flux2_edit"].agent_id == (
-        "lan_aio_prod_gpu252_gpu0_pornmaster_flux2_edit_01"
+    assert slots["gpu-252-gpu0-img2img_lora"].agent_id == (
+        "lan_aio_prod_gpu252_gpu0_img2img_lora_01"
     )
-    assert slots["gpu-252-gpu0-pornmaster_flux2_edit"].legacy_worker_id == (
+    assert slots["gpu-252-gpu0-img2img_lora"].legacy_worker_id == (
         "lan_aio_prod_gpu252_gpu0_image_to_video_01"
+    )
+    assert slots["gpu-252-gpu0-img2img_lora"].target_task_types == (
+        "img2img",
+        "img2img_lora",
     )
     assert slots["gpu-252-gpu1-wan22_video_v2"].host_port == 8191
     assert slots["gpu-002-gpu0-scail2"].agent_id == (
@@ -89,11 +93,17 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
 
     assert slots["gpu-177-gpu1-ltx_video"].enabled is True
     assert slots["gpu-177-gpu1-ltx_video"].phase == "prod_enabled"
-    assert slots["gpu-252-gpu0-img2img_lora"].enabled is False
-    assert slots["gpu-252-gpu0-img2img_lora"].phase == (
-        "superseded_by_pornmaster_flux2_edit"
+    assert slots["gpu-252-gpu0-image_to_video"].enabled is False
+    assert slots["gpu-252-gpu0-image_to_video"].phase == (
+        "superseded_by_img2img_lora"
     )
-    assert slots["gpu-252-gpu0-img2img_lora"].retargetable is True
+    assert slots["gpu-252-gpu0-image_to_video"].retargetable is True
+    assert slots["gpu-252-gpu0-image_to_video"].legacy_worker_id == (
+        "lan_aio_prod_gpu252_gpu0_img2img_lora_01"
+    )
+    assert slots["gpu-252-gpu0-image_to_video"].old_runtime_container == (
+        "allbot-lan-aio-gpu-252-gpu0-img2img_lora-prod"
+    )
     assert slots["gpu-002-gpu1-image_to_video"].enabled is False
     assert slots["gpu-002-gpu1-image_to_video"].phase == (
         "superseded_by_pornmaster_flux2_edit"
@@ -115,7 +125,7 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
         "allbot-lan-aio-gpu-177-gpu1-ltx_video-prod"
     )
     assert slots["gpu-177-gpu1-scail2"].enabled is False
-    assert slots["gpu-177-gpu1-scail2"].phase == "candidate"
+    assert slots["gpu-177-gpu1-scail2"].phase == "superseded_by_ltx_video"
     assert slots["gpu-177-gpu1-scail2"].retargetable is True
     assert slots["gpu-177-gpu1-scail2"].target_task_types == (
         "scail2_action_transfer",
@@ -138,7 +148,9 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
 
 
 def test_lan_aio_prod_slot_omits_gpu177_retired_hot_cache_copy():
-    slot = load_lan_aio_prod_slots()["gpu-177-gpu0-image_to_video"]
+    slot = load_lan_aio_prod_slots(include_disabled=True)[
+        "gpu-177-gpu0-image_to_video"
+    ]
 
     assert slot.legacy_hot_cache_copies == ()
     assert "Legacy worker 02/comfy0 were retired" in slot.notes
@@ -219,8 +231,8 @@ def test_lan_aio_stop_old_dry_run_omits_empty_local_agent_container():
     payload = ops.dry_run_action("stop-old", [slot])
 
     assert payload["operations"] == [
-        "set lan_aio_prod_gpu252_gpu0_image_to_video_01=disabled",
-        "ssh allbot-gpu-252 docker stop allbot-lan-aio-gpu-252-gpu0-image_to_video-prod",
+        "set lan_aio_prod_gpu252_gpu0_img2img_lora_01=disabled",
+        "ssh allbot-gpu-252 docker stop allbot-lan-aio-gpu-252-gpu0-img2img_lora-prod",
     ]
 
 
@@ -280,7 +292,7 @@ def test_lan_aio_fleet_render_supports_gpu_177_gpu1_scail2_candidate():
     rendered = ops.render_compose(slot)
 
     assert slot.enabled is False
-    assert slot.phase == "candidate"
+    assert slot.phase == "superseded_by_ltx_video"
     assert slot.target_task_types == (
         "scail2_action_transfer",
         "scail2_action_transfer_long",
@@ -340,28 +352,28 @@ def test_lan_aio_retarget_candidate_uses_target_gpu_and_candidate_profile():
         include_disabled=True,
     )[0]
 
-    retargeted = ops.retarget_slot(candidate, "gpu-177-gpu0-image_to_video")
+    retargeted = ops.retarget_slot(candidate, "gpu-177-gpu1-ltx_video")
     rendered = ops.render_compose(retargeted)
 
-    assert retargeted.assignment_id == "lan-177-8188-worker-02"
+    assert retargeted.assignment_id == "lan-177-8189-worker-03"
     assert retargeted.target_profile_id == "scail2"
-    assert retargeted.host_port == 8190
-    assert retargeted.gpu_index == 0
-    assert retargeted.legacy_worker_id == "lan_aio_prod_gpu177_gpu0_image_to_video_01"
+    assert retargeted.host_port == 8191
+    assert retargeted.gpu_index == 1
+    assert retargeted.legacy_worker_id == "lan_aio_prod_gpu177_gpu1_ltx_video_01"
     assert retargeted.old_runtime_container == (
-        "allbot-lan-aio-gpu-177-gpu0-image_to_video-prod"
+        "allbot-lan-aio-gpu-177-gpu1-ltx_video-prod"
     )
     assert retargeted.container_name == (
-        "allbot-lan-aio-gpu-177-gpu0-scail2-prod"
+        "allbot-lan-aio-gpu-177-gpu1-scail2-prod"
     )
-    assert "POOL_GPU_INDEX: '0'" in rendered
-    assert "NVIDIA_VISIBLE_DEVICES: '0'" in rendered
+    assert "POOL_GPU_INDEX: '1'" in rendered
+    assert "NVIDIA_VISIBLE_DEVICES: '1'" in rendered
     assert "POOL_RUNTIME_PROFILE: scail2" in rendered
     assert (
         "SUPPORTED_TASK_TYPES: scail2_action_transfer,scail2_action_transfer_long,"
         "scail2_video_replacement,scail2_face_swap_v2"
     ) in rendered
-    assert "host_port: 8190" in rendered
+    assert "host_port: 8191" in rendered
 
 
 def test_lan_aio_retarget_preflight_allows_runner_local_image_fallback():
@@ -395,7 +407,7 @@ def test_lan_aio_retarget_preflight_allows_runner_local_image_fallback():
         "gpu-177-gpu1-scail2",
         include_disabled=True,
     )[0]
-    retargeted = ops.retarget_slot(candidate, "gpu-177-gpu0-image_to_video")
+    retargeted = ops.retarget_slot(candidate, "gpu-177-gpu1-ltx_video")
 
     payload = ops.preflight_payload([retargeted], execute=True)
 
@@ -447,7 +459,7 @@ def test_lan_aio_pull_image_loads_runner_local_image_when_remote_pull_fails():
         "gpu-177-gpu1-scail2",
         include_disabled=True,
     )[0]
-    retargeted = ops.retarget_slot(candidate, "gpu-177-gpu0-image_to_video")
+    retargeted = ops.retarget_slot(candidate, "gpu-177-gpu1-ltx_video")
 
     payload = ops.pull_image([retargeted])
 
@@ -468,7 +480,7 @@ def test_lan_aio_cli_allows_replace_slot_for_retarget_render(capsys, tmp_path):
             "--slot",
             "gpu-177-gpu1-scail2",
             "--replace-slot",
-            "gpu-177-gpu0-image_to_video",
+            "gpu-177-gpu1-ltx_video",
             "--include-disabled",
             "--prod-env-file",
             str(tmp_path / "missing-prod.env"),
@@ -481,8 +493,8 @@ def test_lan_aio_cli_allows_replace_slot_for_retarget_render(capsys, tmp_path):
 
     output = capsys.readouterr().out
     assert result == 0
-    assert "host_port: 8190" in output
-    assert "POOL_GPU_INDEX: '0'" in output
+    assert "host_port: 8191" in output
+    assert "POOL_GPU_INDEX: '1'" in output
     assert "POOL_RUNTIME_PROFILE: scail2" in output
 
 
@@ -624,7 +636,9 @@ def test_lan_aio_fleet_render_disables_dynamic_vram_for_wan22_v2():
 
 def test_lan_aio_prod_compose_assertion_rejects_test_storage():
     config = load_controller_config()
-    slot = load_lan_aio_prod_slots()["gpu-252-gpu0-pornmaster_flux2_edit"]
+    slot = load_lan_aio_prod_slots(include_disabled=True)[
+        "gpu-252-gpu0-pornmaster_flux2_edit"
+    ]
     rendered = RuntimePlanner(config).render_compose(
         slot.assignment_id,
         target_profile_id=slot.target_profile_id,
@@ -817,10 +831,16 @@ def test_lan_aio_enable_rejects_old_runtime_gpu_memory():
     ops = RecordingOps()
     slot = ops.slots["gpu-177-gpu0-image_to_video"]
 
-    with pytest.raises(RuntimeError, match="old runtime container comfy0 still has GPU"):
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "old runtime container "
+            "allbot-lan-aio-gpu-177-gpu0-wan22_video_v2-prod still has GPU"
+        ),
+    ):
         ops.enable_aio([slot])
 
-    assert ops.controls == [("cloud_prod_worker_02", "disabled")]
+    assert ops.controls == [("lan_aio_prod_gpu177_gpu0_wan22_video_v2_01", "disabled")]
 
 
 def test_lan_aio_start_disabled_force_recreates_container():
@@ -1240,28 +1260,29 @@ def test_lan_aio_candidate_plan_generates_stable_yaml_patch():
 
     payload = ops.candidate_plan(
         node_id="gpu-252",
-        profile="img2img_lora",
-        replace_slot_id="gpu-252-gpu0-pornmaster_flux2_edit",
+        profile="image_to_video",
+        replace_slot_id="gpu-252-gpu0-img2img_lora",
     )
 
     assert payload["ok"] is True
     assert payload["action"] == "candidate-plan"
-    assert payload["candidate_slot"]["id"] == "gpu-252-gpu0-img2img_lora"
+    assert payload["candidate_slot"]["id"] == "gpu-252-gpu0-image_to_video"
     assert payload["candidate_slot"]["host_port"] == 8192
     assert payload["candidate_slot"]["target_task_types"] == [
-        "img2img",
-        "img2img_lora",
+        "video_insert",
+        "video_edit",
+        "image_to_video",
     ]
     assert payload["candidate_slot"]["agent_id"] == (
-        "lan_aio_prod_gpu252_gpu0_img2img_lora_01"
+        "lan_aio_prod_gpu252_gpu0_image_to_video_01"
     )
     assert payload["candidate_slot"]["old_runtime_container"] == (
-        "allbot-lan-aio-gpu-252-gpu0-pornmaster_flux2_edit-prod"
+        "allbot-lan-aio-gpu-252-gpu0-img2img_lora-prod"
     )
     assert payload["render_summary"]["model_manifest_key"] == (
-        "img2img_lora/2026-06-10/manifest.json"
+        "image_to_video/2026-06-13-test/manifest.json"
     )
-    assert "target_profile_id: img2img_lora" in payload["yaml_patch"]
+    assert "target_profile_id: image_to_video" in payload["yaml_patch"]
     assert "enabled: false" in payload["yaml_patch"]
     assert "retargetable: true" in payload["yaml_patch"]
 
@@ -1361,16 +1382,16 @@ def test_lan_aio_warm_cache_can_prepare_root_owned_retarget_workspace():
 
     ops = RecordingOps()
     candidate = ops.slots["gpu-177-gpu1-scail2"]
-    retargeted = ops.retarget_slot(candidate, "gpu-177-gpu0-image_to_video")
+    retargeted = ops.retarget_slot(candidate, "gpu-177-gpu1-ltx_video")
 
     ops.warm_cache([retargeted])
 
     docker_command = next(command for command in ops.commands if "docker run" in command)
     assert (
-        "mkdir -p /srv/allbot/runpod-runtime/slots/gpu-177-gpu0/profiles/scail2/workspace "
+        "mkdir -p /srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/scail2/workspace "
         "|| docker run --rm -v "
-        "/srv/allbot/runpod-runtime/slots/gpu-177-gpu0/profiles/scail2:"
-        "/srv/allbot/runpod-runtime/slots/gpu-177-gpu0/profiles/scail2 "
+        "/srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/scail2:"
+        "/srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/scail2 "
     ) in docker_command
     assert (
         "192.168.1.115:5000/allbot/comfy-runpod-scail2:"
@@ -1532,7 +1553,7 @@ def test_lan_aio_preflight_retries_transient_legacy_endpoint_reset():
     ops = RecordingOps()
     slot = ops.retarget_slot(
         ops.slots["gpu-177-gpu1-scail2"],
-        "gpu-177-gpu0-image_to_video",
+        "gpu-177-gpu1-ltx_video",
     )
 
     payload = ops.preflight_payload([slot], execute=True)
@@ -1610,21 +1631,24 @@ def test_lan_aio_recover_physical_slot_can_restore_exact_candidate():
     result = ops.recover_physical_slot(
         physical_slot="gpu-252:gpu0",
         prefer="candidate",
-        selected_slot_id="gpu-252-gpu0-img2img_lora",
+        selected_slot_id="gpu-252-gpu0-image_to_video",
     )
 
     assert result["ok"] is True
     assert result["action"] == "recover"
-    assert result["selected_slot"] == "gpu-252-gpu0-img2img_lora"
+    assert result["selected_slot"] == "gpu-252-gpu0-image_to_video"
     assert result["start"]["action"] == "start-disabled"
-    assert ops.started_disabled_slots == ["gpu-252-gpu0-img2img_lora"]
+    assert ops.started_disabled_slots == ["gpu-252-gpu0-image_to_video"]
     assert (
-        "docker stop 'allbot-lan-aio-gpu-252-gpu0-pornmaster_flux2_edit-prod'"
+        "docker stop 'allbot-lan-aio-gpu-252-gpu0-img2img_lora-prod'"
         in "\n".join(ops.ssh_commands)
     )
-    assert ops.controls[0][0] == "lan_aio_prod_gpu252_gpu0_pornmaster_flux2_edit_01"
-    assert ops.controls[0][1] == "disabled"
-    assert ops.controls[-1][0] == "lan_aio_prod_gpu252_gpu0_img2img_lora_01"
+    assert any(
+        agent_id == "lan_aio_prod_gpu252_gpu0_img2img_lora_01"
+        and state == "disabled"
+        for agent_id, state, _reason, _ttl in ops.controls
+    )
+    assert ops.controls[-1][0] == "lan_aio_prod_gpu252_gpu0_image_to_video_01"
     assert ops.controls[-1][1] == "enabled"
 
 
