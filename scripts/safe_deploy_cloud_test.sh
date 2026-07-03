@@ -31,6 +31,11 @@ CLOUD_TEST_POSTGRES_PASSWORD_VALUE="${CLOUD_TEST_POSTGRES_PASSWORD:-$(read_env_v
 CLOUD_TEST_REDIS_PASSWORD_VALUE="${CLOUD_TEST_REDIS_PASSWORD:-$(read_env_value CLOUD_TEST_REDIS_PASSWORD)}"
 DASHBOARD_FRONTEND_TEST_PORT_VALUE="${DASHBOARD_FRONTEND_TEST_PORT:-$(read_env_value DASHBOARD_FRONTEND_TEST_PORT)}"
 DASHBOARD_FRONTEND_TEST_PORT_VALUE="${DASHBOARD_FRONTEND_TEST_PORT_VALUE:-8087}"
+QQCC_CONFIG_FRONTEND_TEST_PORT_VALUE="${QQCC_CONFIG_FRONTEND_TEST_PORT:-$(read_env_value QQCC_CONFIG_FRONTEND_TEST_PORT)}"
+QQCC_CONFIG_FRONTEND_TEST_PORT_VALUE="${QQCC_CONFIG_FRONTEND_TEST_PORT_VALUE:-8088}"
+QQCC_CONFIG_ADMIN_USERNAME_VALUE="${QQCC_CONFIG_ADMIN_USERNAME:-$(read_env_value QQCC_CONFIG_ADMIN_USERNAME)}"
+QQCC_CONFIG_ADMIN_PASSWORD_HASH_VALUE="${QQCC_CONFIG_ADMIN_PASSWORD_HASH:-$(read_env_value QQCC_CONFIG_ADMIN_PASSWORD_HASH)}"
+QQCC_CONFIG_SECRET_KEY_VALUE="${QQCC_CONFIG_SECRET_KEY:-$(read_env_value QQCC_CONFIG_SECRET_KEY)}"
 
 if [ -z "$CLOUD_TEST_DATABASE_URL_VALUE" ]; then
     echo "❌ 未配置 CLOUD_TEST_DATABASE_URL。"
@@ -49,6 +54,11 @@ fi
 
 if [ -z "$CLOUD_TEST_REDIS_PASSWORD_VALUE" ]; then
     echo "❌ 未配置 CLOUD_TEST_REDIS_PASSWORD。"
+    exit 1
+fi
+
+if [ -z "$QQCC_CONFIG_ADMIN_USERNAME_VALUE" ] || [ -z "$QQCC_CONFIG_ADMIN_PASSWORD_HASH_VALUE" ] || [ -z "$QQCC_CONFIG_SECRET_KEY_VALUE" ]; then
+    echo "❌ 未配置 QQCC_CONFIG_ADMIN_USERNAME、QQCC_CONFIG_ADMIN_PASSWORD_HASH 或 QQCC_CONFIG_SECRET_KEY。"
     exit 1
 fi
 
@@ -112,10 +122,14 @@ remove_test_control_containers() {
         cloud-web-api-test
         cloud-dashboard-backend-test
         cloud-dashboard-frontend-test
+        cloud-qqcc-config-backend-test
+        cloud-qqcc-config-frontend-test
         cloud-imgproxy-test
         web-api-test
         dashboard-backend-test
         dashboard-frontend-test
+        qqcc-config-backend-test
+        qqcc-config-frontend-test
     )
     local name_filter
 
@@ -212,7 +226,7 @@ wait_for_container_ready \
     3
 
 echo "3️⃣ 构建云测试控制面镜像..."
-compose build central-api-test web-api-test dashboard-backend-test dashboard-frontend-test
+compose build central-api-test web-api-test dashboard-backend-test dashboard-frontend-test qqcc-config-backend-test qqcc-config-frontend-test
 
 echo "4️⃣ 检查 Alembic head..."
 HEAD_COUNT="$(compose run --rm --no-deps web-api-test sh -lc 'alembic heads | wc -l' | tr -d '[:space:]')"
@@ -235,13 +249,15 @@ fi
 echo "6️⃣ 启动云测试控制面服务..."
 remove_test_control_containers
 compose up -d --no-deps central-api-test imgproxy-test
-compose up -d --no-deps web-api-test dashboard-backend-test dashboard-frontend-test
+compose up -d --no-deps web-api-test dashboard-backend-test dashboard-frontend-test qqcc-config-backend-test qqcc-config-frontend-test
 
 echo "7️⃣ 等待健康检查..."
 wait_for_http_ready "云测试 Central API" "http://${CLOUD_TEST_HEALTH_HOST}:8004/health" 40 5
 wait_for_http_ready "云测试 Web API" "http://${CLOUD_TEST_HEALTH_HOST}:8001/api/health" 40 5
 wait_for_http_ready "云测试 Dashboard API" "http://${CLOUD_TEST_HEALTH_HOST}:8044/api/health" 40 5
 wait_for_http_ready "云测试 Dashboard Frontend" "http://${CLOUD_TEST_HEALTH_HOST}:${DASHBOARD_FRONTEND_TEST_PORT_VALUE}/api/health" 40 5
+wait_for_http_ready "云测试 QQCC Config API" "http://${CLOUD_TEST_HEALTH_HOST}:8045/api/health" 40 5
+wait_for_http_ready "云测试 QQCC Config Frontend" "http://${CLOUD_TEST_HEALTH_HOST}:${QQCC_CONFIG_FRONTEND_TEST_PORT_VALUE}/api/health" 40 5
 
 echo "✅ 云端测试控制面部署完成。"
 echo "👉 查看服务: ${COMPOSE_CMD[*]} --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml ps"

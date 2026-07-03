@@ -613,6 +613,8 @@ if [ "$health_host" = "0.0.0.0" ]; then
 fi
 dashboard_port="${DASHBOARD_FRONTEND_TEST_PORT:-$(read_env_value DASHBOARD_FRONTEND_TEST_PORT)}"
 dashboard_port="${dashboard_port:-8087}"
+qqcc_config_port="${QQCC_CONFIG_FRONTEND_TEST_PORT:-$(read_env_value QQCC_CONFIG_FRONTEND_TEST_PORT)}"
+qqcc_config_port="${qqcc_config_port:-8088}"
 $COMPOSE_CMD --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml ps
 curl -fsS "http://${health_host}:8004/health" >/dev/null
 echo "central-api-test=healthy"
@@ -622,6 +624,14 @@ curl -fsS "http://${health_host}:8044/api/health" >/dev/null
 echo "dashboard-backend-test=healthy"
 curl -fsS "http://${health_host}:${dashboard_port}/api/health" >/dev/null
 echo "dashboard-frontend-test=healthy"
+if docker ps --format '{{.Names}}' | grep -qx cloud-qqcc-config-backend-test; then
+  curl -fsS "http://${health_host}:8045/api/health" >/dev/null
+  echo "qqcc-config-backend-test=healthy"
+fi
+if docker ps --format '{{.Names}}' | grep -qx cloud-qqcc-config-frontend-test; then
+  curl -fsS "http://${health_host}:${qqcc_config_port}/api/health" >/dev/null
+  echo "qqcc-config-frontend-test=healthy"
+fi
 curl -fsS "http://${health_host}:8004/system/workers" >/dev/null
 echo "central-workers=reachable"
 docker exec cloud-redis-test sh -lc '

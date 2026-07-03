@@ -155,6 +155,9 @@ check_env_contract() {
         DASHBOARD_ADMIN_USERNAME
         DASHBOARD_ADMIN_PASSWORD_HASH
         DASHBOARD_SECRET_KEY
+        QQCC_CONFIG_ADMIN_USERNAME
+        QQCC_CONFIG_ADMIN_PASSWORD_HASH
+        QQCC_CONFIG_SECRET_KEY
         BOT_TOKEN
         REQUIRED_CHANNEL_ID
         CHANNEL_INVITE_LINK
@@ -319,7 +322,7 @@ fi
 mkdir -p "$ROOT_DIR/logs/cloud-prod"
 
 echo "Building cloud production control-plane images..."
-compose build central-api-prod web-api-prod payment-api-prod dashboard-backend-prod dashboard-frontend-prod
+compose build central-api-prod web-api-prod payment-api-prod dashboard-backend-prod dashboard-frontend-prod qqcc-config-backend-prod qqcc-config-frontend-prod
 
 echo "Checking Alembic head count..."
 HEAD_COUNT="$(compose run --rm --no-deps web-api-prod sh -lc 'alembic heads | wc -l' | tr -d '[:space:]')"
@@ -337,7 +340,7 @@ else
 fi
 
 echo "Starting cloud production control plane without Telegram bot profile..."
-compose up -d --force-recreate central-api-prod web-api-prod payment-api-prod dashboard-backend-prod dashboard-frontend-prod imgproxy-prod
+compose up -d --force-recreate central-api-prod web-api-prod payment-api-prod dashboard-backend-prod dashboard-frontend-prod qqcc-config-backend-prod qqcc-config-frontend-prod imgproxy-prod
 
 CLOUD_PROD_HEALTH_HOST="$(read_env_value CLOUD_PROD_BIND_IP)"
 CLOUD_PROD_HEALTH_HOST="${CLOUD_PROD_HEALTH_HOST:-127.0.0.1}"
@@ -346,11 +349,15 @@ if [ "$CLOUD_PROD_HEALTH_HOST" = "0.0.0.0" ]; then
 fi
 DASHBOARD_FRONTEND_PORT="$(read_env_value DASHBOARD_FRONTEND_PORT)"
 DASHBOARD_FRONTEND_PORT="${DASHBOARD_FRONTEND_PORT:-8086}"
+QQCC_CONFIG_FRONTEND_PORT="$(read_env_value QQCC_CONFIG_FRONTEND_PORT)"
+QQCC_CONFIG_FRONTEND_PORT="${QQCC_CONFIG_FRONTEND_PORT:-8088}"
 
 wait_for_http_ready "Central API" "http://${CLOUD_PROD_HEALTH_HOST}:8003/health" 40 5
 wait_for_http_ready "Web API" "http://${CLOUD_PROD_HEALTH_HOST}:8000/api/health" 40 5
 wait_for_http_ready "Payment API" "http://${CLOUD_PROD_HEALTH_HOST}:8021/pay/result" 40 5
 wait_for_http_ready "Dashboard API" "http://${CLOUD_PROD_HEALTH_HOST}:8043/api/health" 40 5
 wait_for_http_ready "Dashboard Frontend" "http://${CLOUD_PROD_HEALTH_HOST}:${DASHBOARD_FRONTEND_PORT}/api/health" 40 5
+wait_for_http_ready "QQCC Config API" "http://${CLOUD_PROD_HEALTH_HOST}:8045/api/health" 40 5
+wait_for_http_ready "QQCC Config Frontend" "http://${CLOUD_PROD_HEALTH_HOST}:${QQCC_CONFIG_FRONTEND_PORT}/api/health" 40 5
 
 echo "Cloud production control plane is ready. Bot polling and edge routing were not changed."

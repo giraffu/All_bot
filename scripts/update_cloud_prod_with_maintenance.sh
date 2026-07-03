@@ -280,7 +280,7 @@ validate_services() {
     local service
     for service in $SERVICES; do
         case "$service" in
-            central-api-prod|web-api-prod|payment-api-prod|dashboard-backend-prod|dashboard-frontend-prod|imgproxy-prod|paid-group-guard-bot-prod|qqcc-bot-prod) ;;
+            central-api-prod|web-api-prod|payment-api-prod|dashboard-backend-prod|dashboard-frontend-prod|qqcc-config-backend-prod|qqcc-config-frontend-prod|imgproxy-prod|paid-group-guard-bot-prod|qqcc-bot-prod) ;;
             bot-prod)
                 die "do not put bot-prod in --services; use --bot-mode auto|start|stop explicitly"
                 ;;
@@ -615,6 +615,11 @@ if printf '%s\n' "$SERVICES" | grep -qw dashboard-backend-prod; then
     docker exec cloud-dashboard-frontend-prod nginx -s reload || true
   fi
 fi
+if printf '%s\n' "$SERVICES" | grep -qw qqcc-config-backend-prod; then
+  if docker ps --format '{{.Names}}' | grep -qx cloud-qqcc-config-frontend-prod; then
+    docker exec cloud-qqcc-config-frontend-prod nginx -s reload || true
+  fi
+fi
 REMOTE
 )"
 }
@@ -739,6 +744,8 @@ if [ "$health_host" = "0.0.0.0" ]; then
 fi
 dashboard_port="${DASHBOARD_FRONTEND_PORT:-$(read_env_value DASHBOARD_FRONTEND_PORT)}"
 dashboard_port="${dashboard_port:-8086}"
+qqcc_config_port="${QQCC_CONFIG_FRONTEND_PORT:-$(read_env_value QQCC_CONFIG_FRONTEND_PORT)}"
+qqcc_config_port="${qqcc_config_port:-8088}"
 
 curl --noproxy '*' -fsS "http://${health_host}:8003/health" >/dev/null
 echo "central-api-prod=healthy"
@@ -750,6 +757,14 @@ curl --noproxy '*' -fsS "http://${health_host}:8043/api/health" >/dev/null
 echo "dashboard-backend-prod=healthy"
 curl --noproxy '*' -fsS "http://${health_host}:${dashboard_port}/api/health" >/dev/null
 echo "dashboard-frontend-prod=healthy"
+if docker ps --format '{{.Names}}' | grep -qx cloud-qqcc-config-backend-prod; then
+  curl --noproxy '*' -fsS "http://${health_host}:8045/api/health" >/dev/null
+  echo "qqcc-config-backend-prod=healthy"
+fi
+if docker ps --format '{{.Names}}' | grep -qx cloud-qqcc-config-frontend-prod; then
+  curl --noproxy '*' -fsS "http://${health_host}:${qqcc_config_port}/api/health" >/dev/null
+  echo "qqcc-config-frontend-prod=healthy"
+fi
 curl --noproxy '*' -fsS "http://${health_host}:8003/system/status" >/dev/null
 echo "central-status=reachable"
 curl --noproxy '*' -fsS "http://${health_host}:8003/system/workers" >/dev/null
@@ -772,7 +787,7 @@ client = redis.Redis.from_url(url, decode_responses=True, socket_connect_timeout
 print(f"queue pending={client.zcard('comfy:queue:pending')} running={client.scard('comfy:queue:running')}")
 PY
 
-for c in cloud-central-api-prod cloud-web-api-prod cloud-payment-api-prod cloud-dashboard-backend-prod cloud-dashboard-frontend-prod cloud-imgproxy-prod cloud-paid-group-guard-bot-prod cloud-qqcc-bot-prod; do
+for c in cloud-central-api-prod cloud-web-api-prod cloud-payment-api-prod cloud-dashboard-backend-prod cloud-dashboard-frontend-prod cloud-qqcc-config-backend-prod cloud-qqcc-config-frontend-prod cloud-imgproxy-prod cloud-paid-group-guard-bot-prod cloud-qqcc-bot-prod; do
   if docker ps -a --format '{{.Names}}' | grep -qx "$c"; then
     docker inspect -f "$c restart_count={{.RestartCount}} status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}" "$c"
     errors="$(docker logs --since 5m "$c" 2>&1 | grep -Eic 'ERROR|Traceback|Exception' || true)"

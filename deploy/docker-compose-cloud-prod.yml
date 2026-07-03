@@ -272,6 +272,81 @@ services:
       retries: 12
       start_period: 20s
 
+  qqcc-config-backend-prod:
+    build:
+      context: ../
+      dockerfile: dashboard/backend/Dockerfile
+    container_name: cloud-qqcc-config-backend-prod
+    restart: always
+    env_file:
+      - ../.env.cloud.prod
+    environment:
+      BOT_TYPE: PROD
+      REDIS_PREFIX: prod_bot_
+      TZ: Asia/Shanghai
+      DATABASE_URL: ${CLOUD_PROD_DATABASE_URL:?CLOUD_PROD_DATABASE_URL is required}
+      QQCC_CONFIG_ADMIN_USERNAME: ${QQCC_CONFIG_ADMIN_USERNAME:?QQCC_CONFIG_ADMIN_USERNAME is required}
+      QQCC_CONFIG_ADMIN_PASSWORD_HASH: ${QQCC_CONFIG_ADMIN_PASSWORD_HASH:?QQCC_CONFIG_ADMIN_PASSWORD_HASH is required}
+      QQCC_CONFIG_SECRET_KEY: ${QQCC_CONFIG_SECRET_KEY:?QQCC_CONFIG_SECRET_KEY is required}
+      DB_POOL_SIZE: 2
+      DB_MAX_OVERFLOW: 2
+    volumes:
+      - ../.env.cloud.prod:/app/.env:ro
+      - ../logs/cloud-prod:/app/logs
+    ports:
+      - "${CLOUD_PROD_BIND_IP:-127.0.0.1}:8045:8045"
+    command:
+      [
+        "gunicorn",
+        "dashboard.backend.qqcc_config_main:app",
+        "-w",
+        "1",
+        "-k",
+        "uvicorn.workers.UvicornWorker",
+        "--bind",
+        "0.0.0.0:8045",
+      ]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import sys, urllib.request; sys.exit(0) if urllib.request.urlopen('http://127.0.0.1:8045/api/health', timeout=5).status == 200 else sys.exit(1)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  qqcc-config-frontend-prod:
+    build:
+      context: ../dashboard/frontend
+      dockerfile: Dockerfile.qqcc-config.cloud
+    container_name: cloud-qqcc-config-frontend-prod
+    restart: always
+    environment:
+      DASHBOARD_GATEWAY_PORT: ${QQCC_CONFIG_FRONTEND_PORT:-8088}
+      DASHBOARD_BACKEND_HOST: qqcc-config-backend-prod:8045
+      TZ: Asia/Shanghai
+    ports:
+      - "${CLOUD_PROD_BIND_IP:-127.0.0.1}:${QQCC_CONFIG_FRONTEND_PORT:-8088}:${QQCC_CONFIG_FRONTEND_PORT:-8088}"
+    depends_on:
+      qqcc-config-backend-prod:
+        condition: service_healthy
+    volumes:
+      - cloud-qqcc-config-frontend-prod-cache:/var/cache/nginx
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O /dev/null http://127.0.0.1:$${DASHBOARD_GATEWAY_PORT}/ && wget -q -O /dev/null http://127.0.0.1:$${DASHBOARD_GATEWAY_PORT}/api/health",
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
   imgproxy-prod:
     image: darthsim/imgproxy:latest
     container_name: cloud-imgproxy-prod
@@ -426,3 +501,4 @@ services:
 
 volumes:
   cloud-dashboard-frontend-prod-cache:
+  cloud-qqcc-config-frontend-prod-cache:
