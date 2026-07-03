@@ -153,6 +153,7 @@ describe('QqccBotSettings', () => {
             prompt: 'soft light prompt',
             engine: 'free_edit_v2',
             lora_name: '',
+            postprocess_draw_scene_id: '',
           },
         ],
       },
@@ -237,6 +238,7 @@ describe('QqccBotSettings', () => {
         prompt: 'new draw prompt',
         engine: 'free_edit_v2',
         lora_name: '',
+        postprocess_draw_scene_id: '',
       },
     ])
     expect(antMocks.success).toHaveBeenCalledWith('懒人Bot配置已保存')
@@ -279,6 +281,7 @@ describe('QqccBotSettings', () => {
     expect(payload.draw_scenes[0].prompt).toBe('cyber style')
     expect(payload.draw_scenes[0].engine).toBe('free_edit_v2')
     expect(payload.draw_scenes[0].lora_name).toBe('')
+    expect(payload.draw_scenes[0].postprocess_draw_scene_id).toBe('')
   })
 
   it('configures a video scene model and clears lora when v2 is selected', async () => {
@@ -312,13 +315,15 @@ describe('QqccBotSettings', () => {
     expect(payload.video_scenes[0].end_frame_draw_scene_id).toBe('soft_light')
   })
 
-  it('does not show end-frame source on the draw scene model dialog', async () => {
+  it('shows postprocess source instead of end-frame source on the draw scene model dialog', async () => {
     const wrapper = mountSettings()
     await flushPromises()
 
     await wrapper.get('[data-testid="config-draw-scene-0"]').trigger('click')
 
+    expect(wrapper.get('[data-testid="scene-model-modal"]').text()).toContain('模型与后处理配置')
     expect(wrapper.find('[data-testid="scene-end-frame-select"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="scene-postprocess-select"]').exists()).toBe(true)
   })
 
   it('clears a video scene end-frame source when the referenced draw scene is removed', async () => {
@@ -334,6 +339,152 @@ describe('QqccBotSettings', () => {
 
     const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
     expect(payload.video_scenes[0].end_frame_draw_scene_id).toBe('')
+  })
+
+  it('configures a draw scene postprocess source in the save payload', async () => {
+    apiMocks.fetchQqccBotConfig.mockResolvedValueOnce({
+      key: 'qqcc_lazy_bot_config:v1',
+      updated_at: '2026-06-26T12:00:00',
+      config: {
+        video_scenes: [
+          {
+            id: 'kiss',
+            name: '亲吻',
+            prompt: 'kissing prompt',
+            duration: '8s',
+            engine: 'image_to_video',
+            lora_name: '',
+            end_frame_draw_scene_id: '',
+          },
+        ],
+        draw_scenes: [
+          {
+            id: 'soft_light',
+            name: '柔光写真',
+            prompt: 'soft light prompt',
+            engine: 'free_edit_v2',
+            lora_name: '',
+            postprocess_draw_scene_id: '',
+          },
+          {
+            id: 'anime_finish',
+            name: '动漫后期',
+            prompt: 'anime finish prompt',
+            engine: 'free_edit_v2',
+            lora_name: '',
+            postprocess_draw_scene_id: '',
+          },
+        ],
+      },
+    })
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="config-draw-scene-0"]').trigger('click')
+    expect(wrapper.get('[data-testid="scene-postprocess-select"]').text()).toContain('动漫后期')
+    await wrapper.get('[data-testid="scene-postprocess-select"]').setValue('anime_finish')
+    await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
+    expect(payload.draw_scenes[0].postprocess_draw_scene_id).toBe('anime_finish')
+    expect(payload.draw_scenes[1].postprocess_draw_scene_id).toBe('')
+  })
+
+  it('filters postprocess choices that would create a draw scene cycle', async () => {
+    apiMocks.fetchQqccBotConfig.mockResolvedValueOnce({
+      key: 'qqcc_lazy_bot_config:v1',
+      updated_at: '2026-06-26T12:00:00',
+      config: {
+        video_scenes: [
+          {
+            id: 'kiss',
+            name: '亲吻',
+            prompt: 'kissing prompt',
+            duration: '8s',
+            engine: 'image_to_video',
+            lora_name: '',
+            end_frame_draw_scene_id: '',
+          },
+        ],
+        draw_scenes: [
+          {
+            id: 'base_draw',
+            name: '基础绘图',
+            prompt: 'base draw prompt',
+            engine: 'free_edit_v2',
+            lora_name: '',
+            postprocess_draw_scene_id: '',
+          },
+          {
+            id: 'finish_draw',
+            name: '后期绘图',
+            prompt: 'finish draw prompt',
+            engine: 'free_edit_v2',
+            lora_name: '',
+            postprocess_draw_scene_id: 'base_draw',
+          },
+        ],
+      },
+    })
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="config-draw-scene-0"]').trigger('click')
+    const optionValues = wrapper
+      .get('[data-testid="scene-postprocess-select"]')
+      .findAll('option')
+      .map((option) => (option.element as HTMLOptionElement).value)
+
+    expect(optionValues).toEqual([''])
+  })
+
+  it('clears a draw scene postprocess source when the referenced draw scene is removed', async () => {
+    apiMocks.fetchQqccBotConfig.mockResolvedValueOnce({
+      key: 'qqcc_lazy_bot_config:v1',
+      updated_at: '2026-06-26T12:00:00',
+      config: {
+        video_scenes: [
+          {
+            id: 'kiss',
+            name: '亲吻',
+            prompt: 'kissing prompt',
+            duration: '8s',
+            engine: 'image_to_video',
+            lora_name: '',
+            end_frame_draw_scene_id: '',
+          },
+        ],
+        draw_scenes: [
+          {
+            id: 'soft_light',
+            name: '柔光写真',
+            prompt: 'soft light prompt',
+            engine: 'free_edit_v2',
+            lora_name: '',
+            postprocess_draw_scene_id: 'anime_finish',
+          },
+          {
+            id: 'anime_finish',
+            name: '动漫后期',
+            prompt: 'anime finish prompt',
+            engine: 'free_edit_v2',
+            lora_name: '',
+            postprocess_draw_scene_id: '',
+          },
+        ],
+      },
+    })
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="remove-draw-scene-1"]').trigger('click')
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
+    expect(payload.draw_scenes[0].postprocess_draw_scene_id).toBe('')
   })
 
   it('configures a draw scene to use legacy free edit with a lora model', async () => {

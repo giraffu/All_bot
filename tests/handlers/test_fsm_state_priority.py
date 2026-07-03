@@ -707,6 +707,106 @@ async def test_qqcc_ai_draw_scene_submits_free_edit_v2_single_task(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_qqcc_ai_draw_scene_runs_postprocess_chain_before_final_result(monkeypatch):
+    reply_mock = AsyncMock(return_value=SimpleNamespace(message_id=77))
+    scheduled = []
+    calls = []
+    config = normalize_qqcc_config(
+        {
+            "draw_scenes": [
+                {
+                    "id": "soft_light",
+                    "name": "柔光写真",
+                    "prompt": "soft light prompt",
+                    "postprocess_draw_scene_id": "polish",
+                },
+                {
+                    "id": "polish",
+                    "name": "精修",
+                    "prompt": "polish prompt",
+                },
+            ]
+        }
+    )
+
+    async def fake_process_generation_task(**kwargs):
+        calls.append(kwargs)
+        return b"image-bytes", f"output-{len(calls)}.png"
+
+    def fake_create_background_task(_context, coroutine):
+        scheduled.append(coroutine)
+
+    validate_submission = AsyncMock(return_value=True)
+    monkeypatch.setattr(quick_image_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "load_runtime_qqcc_config",
+        AsyncMock(return_value=config),
+    )
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "_validate_quick_image_submission",
+        validate_submission,
+    )
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "_download_quick_image_input",
+        AsyncMock(return_value="/tmp/draw.png"),
+    )
+    monkeypatch.setattr(
+        quick_image_fsm, "process_generation_task", fake_process_generation_task
+    )
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "download_output_file_to_fsm_temp",
+        AsyncMock(return_value="/tmp/soft-light-output.png"),
+    )
+    monkeypatch.setattr(
+        quick_image_fsm, "create_background_task", fake_create_background_task
+    )
+    monkeypatch.setattr(quick_image_fsm, "load_prompts", lambda: {})
+
+    update = SimpleNamespace(
+        effective_user=_build_user(),
+        effective_chat=SimpleNamespace(id=10001),
+        message=SimpleNamespace(
+            document=None,
+            photo=[SimpleNamespace(file_id="photo-file-id")],
+            chat_id=10001,
+        ),
+    )
+    context = SimpleNamespace(
+        user_data={
+            "in_conversation": "QUICK_IMAGE_pornmaster_flux2_single_edit",
+            "quick_image_data": {
+                "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+                "cost": 2,
+                "image_path": None,
+                "scene_id": "soft_light",
+            },
+        },
+        bot=SimpleNamespace(),
+        bot_data={"bot_client_type": "bot:qqcc"},
+        lang="zh",
+    )
+
+    result = await quick_image_fsm.receive_image(update, context)
+
+    assert result == ConversationHandler.END
+    assert validate_submission.await_args.kwargs["cost"] == 4
+    assert len(scheduled) == 1
+    await scheduled[0]
+    assert calls[0]["prompt"] == "soft light prompt"
+    assert calls[0]["images"] == ["/tmp/draw.png"]
+    assert calls[0]["send_result"] is False
+    assert calls[0]["allow_contribute"] is False
+    assert calls[1]["prompt"] == "polish prompt"
+    assert calls[1]["images"] == ["/tmp/soft-light-output.png"]
+    assert calls[1]["send_result"] is True
+    assert calls[1]["allow_contribute"] is True
+
+
+@pytest.mark.asyncio
 async def test_qqcc_ai_draw_scene_submits_legacy_free_edit_with_lora(monkeypatch):
     reply_mock = AsyncMock()
     scheduled = []

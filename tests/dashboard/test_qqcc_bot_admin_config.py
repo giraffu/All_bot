@@ -331,6 +331,72 @@ def test_normalize_qqcc_config_validates_video_end_frame_draw_scene_reference():
     assert video_scenes[1]["end_frame_draw_scene_id"] == ""
 
 
+def test_normalize_qqcc_config_validates_draw_postprocess_reference():
+    config = normalize_qqcc_config(
+        {
+            "draw_scenes": [
+                {
+                    "id": "base",
+                    "name": "基础绘图",
+                    "prompt": "base prompt",
+                    "postprocess_draw_scene_id": "polish",
+                },
+                {
+                    "id": "polish",
+                    "name": "精修",
+                    "prompt": "polish prompt",
+                    "postprocess_draw_scene_id": "polish",
+                },
+                {
+                    "id": "missing",
+                    "name": "缺失引用",
+                    "prompt": "missing prompt",
+                    "postprocess_draw_scene_id": "removed_scene",
+                },
+            ]
+        }
+    )
+
+    scenes = get_enabled_qqcc_draw_scenes(config)
+
+    assert scenes[0]["postprocess_draw_scene_id"] == "polish"
+    assert scenes[1]["postprocess_draw_scene_id"] == ""
+    assert scenes[2]["postprocess_draw_scene_id"] == ""
+
+
+def test_normalize_qqcc_config_breaks_draw_postprocess_cycles():
+    config = normalize_qqcc_config(
+        {
+            "draw_scenes": [
+                {
+                    "id": "base",
+                    "name": "基础绘图",
+                    "prompt": "base prompt",
+                    "postprocess_draw_scene_id": "polish",
+                },
+                {
+                    "id": "polish",
+                    "name": "精修",
+                    "prompt": "polish prompt",
+                    "postprocess_draw_scene_id": "base",
+                },
+                {
+                    "id": "outer",
+                    "name": "外层引用",
+                    "prompt": "outer prompt",
+                    "postprocess_draw_scene_id": "base",
+                },
+            ]
+        }
+    )
+
+    scenes = get_enabled_qqcc_draw_scenes(config)
+
+    assert scenes[0]["postprocess_draw_scene_id"] == ""
+    assert scenes[1]["postprocess_draw_scene_id"] == ""
+    assert scenes[2]["postprocess_draw_scene_id"] == "base"
+
+
 def test_normalize_qqcc_config_keeps_only_valid_dynamic_draw_scenes():
     config = normalize_qqcc_config(
         {
@@ -365,6 +431,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_draw_scenes():
             "prompt": "make it cinematic",
             "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
             "lora_name": "",
+            "postprocess_draw_scene_id": "",
         },
         {
             "id": "scene_2",
@@ -372,6 +439,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_draw_scenes():
             "prompt": "duplicate prompt",
             "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
             "lora_name": "",
+            "postprocess_draw_scene_id": "",
         },
         {
             "id": "scene_3",
@@ -379,6 +447,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_draw_scenes():
             "prompt": "safe id prompt",
             "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
             "lora_name": "",
+            "postprocess_draw_scene_id": "",
         },
     ]
 
@@ -509,6 +578,7 @@ async def test_update_qqcc_config_router_preserves_dynamic_draw_scenes():
                 "prompt": "custom draw prompt",
                 "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
                 "lora_name": "qwen/YARN_1.0.safetensors",
+                "postprocess_draw_scene_id": "anime",
             },
             {
                 "id": "anime",
@@ -531,6 +601,7 @@ async def test_update_qqcc_config_router_preserves_dynamic_draw_scenes():
             "prompt": "custom draw prompt",
             "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
             "lora_name": "qwen/YARN_1.0.safetensors",
+            "postprocess_draw_scene_id": "anime",
         },
         {
             "id": "anime",
@@ -538,5 +609,6 @@ async def test_update_qqcc_config_router_preserves_dynamic_draw_scenes():
             "prompt": "anime style prompt",
             "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
             "lora_name": "",
+            "postprocess_draw_scene_id": "",
         },
     ]

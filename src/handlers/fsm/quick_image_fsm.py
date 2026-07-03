@@ -31,8 +31,13 @@ from src.handlers.fsm.quick_draw_callback_data import (
 from src.lora_catalog import get_lora_default_strength
 from src.services.task_service_generation_image import process_standard_generation_task as process_generation_task
 from src.services.permission_service import permission_service
+from src.services.qqcc_draw_chain_service import (
+    calculate_qqcc_draw_chain_cost,
+    execute_qqcc_draw_scene_chain,
+    resolve_qqcc_draw_scene_chain,
+    resolve_qqcc_draw_scene_task_type as _resolve_qqcc_draw_scene_task_type,
+)
 from src.services.qqcc_config_service import (
-    DRAW_SCENE_ENGINE_FREE_EDIT,
     get_qqcc_draw_scene,
     has_enabled_qqcc_draw_scenes,
     is_qqcc_main_button_enabled,
@@ -46,6 +51,7 @@ from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
     download_telegram_file_to_fsm_temp,
 )
+from src.services.wan22_video_v2_extension_service import download_output_file_to_fsm_temp
 from src.utils import (
     create_background_task,
     load_prompts,
@@ -244,16 +250,6 @@ def _resolve_image_file_id(message) -> str | None:
     return None
 
 
-def _resolve_qqcc_draw_scene_task_type(scene: dict[str, object]) -> str:
-    if scene.get("engine") == DRAW_SCENE_ENGINE_FREE_EDIT:
-        return MODE_IMG2IMG_LORA if str(scene.get("lora_name") or "").strip() else MODE_EDIT
-    return MODE_PORNMASTER_FLUX2_SINGLE_EDIT
-
-
-def _resolve_qqcc_draw_scene_cost(_mode: str) -> int:
-    return TASK_COSTS.get(MODE_EDIT, 2)
-
-
 async def _start_qqcc_draw_scene(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -279,12 +275,17 @@ async def _start_qqcc_draw_scene(
         await _reply_qqcc_feature_disabled(update, context)
         return ConversationHandler.END
 
-    mode = _resolve_qqcc_draw_scene_task_type(scene)
+    draw_chain = resolve_qqcc_draw_scene_chain(qqcc_config, scene)
+    if not draw_chain:
+        await _reply_qqcc_feature_disabled(update, context)
+        return ConversationHandler.END
+
+    mode = _resolve_qqcc_draw_scene_task_type(draw_chain[0])
     if not _is_qqcc_quick_image_mode_enabled(qqcc_config, mode):
         await _reply_qqcc_feature_disabled(update, context)
         return ConversationHandler.END
 
-    cost = _resolve_qqcc_draw_scene_cost(mode)
+    cost = calculate_qqcc_draw_chain_cost(draw_chain)
     _initialize_quick_image_context(
         context,
         mode=mode,
@@ -558,18 +559,24 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     mode = fsm_data["mode"]
     cost = fsm_data["cost"]
     qqcc_config = await _load_qqcc_config_for_context(context)
+    qqcc_draw_chain = []
     if qqcc_config is not None and mode in QQCC_AI_DRAW_TASK_TYPES:
         scene = get_qqcc_draw_scene(qqcc_config, fsm_data.get("scene_id"))
         if scene is None:
             await _reply_qqcc_feature_disabled(update, context)
             _cleanup_context(context, user_id)
             return ConversationHandler.END
-        mode = _resolve_qqcc_draw_scene_task_type(scene)
+        qqcc_draw_chain = resolve_qqcc_draw_scene_chain(qqcc_config, scene)
+        if not qqcc_draw_chain:
+            await _reply_qqcc_feature_disabled(update, context)
+            _cleanup_context(context, user_id)
+            return ConversationHandler.END
+        mode = _resolve_qqcc_draw_scene_task_type(qqcc_draw_chain[0])
         if not _is_qqcc_quick_image_mode_enabled(qqcc_config, mode):
             await _reply_qqcc_feature_disabled(update, context)
             _cleanup_context(context, user_id)
             return ConversationHandler.END
-        cost = _resolve_qqcc_draw_scene_cost(mode)
+        cost = calculate_qqcc_draw_chain_cost(qqcc_draw_chain)
         fsm_data["mode"] = mode
         fsm_data["cost"] = cost
         fsm_data["mode_name"] = scene["name"]
@@ -609,9 +616,10 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     if not image_path:
         return ConversationHandler.END  # Prevent double submit
 
-    await robust_reply_text(
+    submit_status_msg = await robust_reply_text(
         message, _t(context, "fsm.quick_image.submit", cost=cost)
     )
+    submit_status_msg_id = getattr(submit_status_msg, "message_id", None)
 
     prompts_config = load_prompts()
 
@@ -675,56 +683,75 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     else:
         # Single-image quick modes share the same task submission path.
         task_type = mode
-        if mode in QQCC_AI_DRAW_TASK_TYPES:
-            prompt = fsm_data.get("prompt_override", "").strip()
-            fallback_prompt = prompt or mode
-            prompt = prompt or fallback_prompt
-        elif mode == MODE_I2I_DRAW:
-            prompt_key = "i2i_draw_quick_undress"
-            fallback_prompt = DEFAULT_I2I_DRAW_UNDRESS_PROMPT
-            if qqcc_config is not None:
-                prompt = resolve_qqcc_prompt(
-                    qqcc_config,
-                    prompt_key,
-                    prompts_config,
-                    fallback_prompt,
-                )
-            else:
-                prompt = prompts_config.get(prompt_key, fallback_prompt)
+        if qqcc_draw_chain:
+            create_background_task(
+                context,
+                execute_qqcc_draw_scene_chain(
+                    context=context,
+                    chat_id=message.chat_id,
+                    user_id=user_id,
+                    username=update.effective_user.username,
+                    image_path=image_path,
+                    chain=qqcc_draw_chain,
+                    status_msg_id=submit_status_msg_id,
+                    process_generation_task_func=process_generation_task,
+                    download_output_file_to_fsm_temp_func=download_output_file_to_fsm_temp,
+                    final_send_result=True,
+                    final_allow_contribute=True,
+                    final_delete_status=True,
+                ),
+            )
         else:
-            prompt_key = mode
-            fallback_prompt = mode
-            if qqcc_config is not None:
-                prompt = resolve_qqcc_prompt(
-                    qqcc_config,
-                    prompt_key,
-                    prompts_config,
-                    fallback_prompt,
-                )
+            if mode in QQCC_AI_DRAW_TASK_TYPES:
+                prompt = fsm_data.get("prompt_override", "").strip()
+                fallback_prompt = prompt or mode
+                prompt = prompt or fallback_prompt
+            elif mode == MODE_I2I_DRAW:
+                prompt_key = "i2i_draw_quick_undress"
+                fallback_prompt = DEFAULT_I2I_DRAW_UNDRESS_PROMPT
+                if qqcc_config is not None:
+                    prompt = resolve_qqcc_prompt(
+                        qqcc_config,
+                        prompt_key,
+                        prompts_config,
+                        fallback_prompt,
+                    )
+                else:
+                    prompt = prompts_config.get(prompt_key, fallback_prompt)
             else:
-                prompt = prompts_config.get(prompt_key, fallback_prompt)
-        lora_name = (
-            str(fsm_data.get("lora_name") or "")
-            if mode == MODE_IMG2IMG_LORA
-            else ""
-        )
-        task_kwargs = {
-            "context": context,
-            "chat_id": message.chat_id,
-            "user_id": user_id,
-            "username": update.effective_user.username,
-            "prompt": prompt,
-            "images": [image_path],
-            "task_type": task_type,
-            "cleanup": True,
-        }
-        if lora_name:
-            task_kwargs["lora_name"] = lora_name
-            task_kwargs["lora_strength"] = get_lora_default_strength(lora_name)
-        create_background_task(
-            context,
-            process_generation_task(**task_kwargs),
-        )
+                prompt_key = mode
+                fallback_prompt = mode
+                if qqcc_config is not None:
+                    prompt = resolve_qqcc_prompt(
+                        qqcc_config,
+                        prompt_key,
+                        prompts_config,
+                        fallback_prompt,
+                    )
+                else:
+                    prompt = prompts_config.get(prompt_key, fallback_prompt)
+            lora_name = (
+                str(fsm_data.get("lora_name") or "")
+                if mode == MODE_IMG2IMG_LORA
+                else ""
+            )
+            task_kwargs = {
+                "context": context,
+                "chat_id": message.chat_id,
+                "user_id": user_id,
+                "username": update.effective_user.username,
+                "prompt": prompt,
+                "images": [image_path],
+                "task_type": task_type,
+                "cleanup": True,
+            }
+            if lora_name:
+                task_kwargs["lora_name"] = lora_name
+                task_kwargs["lora_strength"] = get_lora_default_strength(lora_name)
+            create_background_task(
+                context,
+                process_generation_task(**task_kwargs),
+            )
 
     _cleanup_context(context, user_id)
     return ConversationHandler.END

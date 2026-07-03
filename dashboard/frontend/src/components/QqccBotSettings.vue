@@ -48,6 +48,7 @@ interface DrawSceneConfig {
   prompt: string
   engine: DrawSceneEngine
   lora_name: string
+  postprocess_draw_scene_id: string
 }
 
 interface QqccBotConfig {
@@ -267,6 +268,7 @@ const sceneConfig = reactive({
   engine: 'image_to_video',
   lora_name: '',
   end_frame_draw_scene_id: '',
+  postprocess_draw_scene_id: '',
 })
 
 const statusText = computed(() => (config.global_enabled ? '开启' : '关闭'))
@@ -300,6 +302,74 @@ const normalizeLoraName = (
 const normalizeEndFrameDrawSceneId = (raw: unknown, drawScenes = config.draw_scenes) => {
   const sceneId = typeof raw === 'string' ? raw.trim() : ''
   return drawScenes.some((scene) => scene.id === sceneId) ? sceneId : ''
+}
+
+const normalizePostprocessDrawSceneId = (
+  raw: unknown,
+  sourceIndex: number,
+  drawScenes = config.draw_scenes,
+) => {
+  const sceneId = typeof raw === 'string' ? raw.trim() : ''
+  const sourceScene = drawScenes[sourceIndex]
+  if (!sceneId || !sourceScene || sceneId === sourceScene.id) return ''
+  return drawScenes.some((scene) => scene.id === sceneId) ? sceneId : ''
+}
+
+const findDrawPostprocessCycleIds = (drawScenes = config.draw_scenes) => {
+  const scenesById = new Map(drawScenes.map((scene) => [scene.id, scene]))
+  const cycleIds = new Set<string>()
+  drawScenes.forEach((scene) => {
+    const path: string[] = []
+    const pathIndex = new Map<string, number>()
+    let currentId = scene.id
+    while (currentId && scenesById.has(currentId)) {
+      const visitedIndex = pathIndex.get(currentId)
+      if (visitedIndex !== undefined) {
+        path.slice(visitedIndex).forEach((id) => cycleIds.add(id))
+        break
+      }
+      pathIndex.set(currentId, path.length)
+      path.push(currentId)
+      currentId = scenesById.get(currentId)?.postprocess_draw_scene_id || ''
+    }
+  })
+  return cycleIds
+}
+
+const hasDrawPostprocessCycle = (drawScenes = config.draw_scenes) =>
+  findDrawPostprocessCycleIds(drawScenes).size > 0
+
+const wouldCreateDrawPostprocessCycle = (
+  sourceId: string,
+  targetId: string,
+  drawScenes = config.draw_scenes,
+) => {
+  if (!sourceId || !targetId) return false
+  const scenesById = new Map(drawScenes.map((scene) => [scene.id, scene]))
+  const visited = new Set<string>()
+  let currentId = targetId
+  while (currentId && scenesById.has(currentId)) {
+    if (currentId === sourceId || visited.has(currentId)) return true
+    visited.add(currentId)
+    currentId = scenesById.get(currentId)?.postprocess_draw_scene_id || ''
+  }
+  return false
+}
+
+const normalizeDrawPostprocessRefs = (drawScenes: DrawSceneConfig[]) => {
+  drawScenes.forEach((scene, index) => {
+    scene.postprocess_draw_scene_id = normalizePostprocessDrawSceneId(
+      scene.postprocess_draw_scene_id,
+      index,
+      drawScenes,
+    )
+  })
+  const cycleIds = findDrawPostprocessCycleIds(drawScenes)
+  drawScenes.forEach((scene) => {
+    if (cycleIds.has(scene.id)) {
+      scene.postprocess_draw_scene_id = ''
+    }
+  })
 }
 
 const mergeOptions = (raw?: Partial<QqccBotConfigOptions>): QqccBotConfigOptions => {
@@ -348,6 +418,21 @@ const activeEngineSupportsLora = computed(() =>
 const activeEndFrameDrawOptions = computed(() =>
   config.draw_scenes.filter((scene) => scene.id.trim() && scene.name.trim() && scene.prompt.trim())
 )
+const activePostprocessDrawOptions = computed(() => {
+  const sourceScene = config.draw_scenes[sceneConfig.index]
+  if (sceneConfig.kind !== 'draw' || !sourceScene) return []
+  return config.draw_scenes.filter(
+    (scene) =>
+      scene.id.trim() &&
+      scene.name.trim() &&
+      scene.prompt.trim() &&
+      scene.id !== sourceScene.id &&
+      !wouldCreateDrawPostprocessCycle(sourceScene.id, scene.id),
+  )
+})
+const sceneModalTitle = computed(() =>
+  sceneConfig.kind === 'video' ? '模型与首尾帧配置' : '模型与后处理配置'
+)
 
 const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
   const merged = defaultConfig()
@@ -393,9 +478,14 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
           prompt,
           engine,
           lora_name: normalizeLoraName(scene?.lora_name, { kind: 'draw', engine }),
+          postprocess_draw_scene_id:
+            typeof scene?.postprocess_draw_scene_id === 'string'
+              ? scene.postprocess_draw_scene_id.trim()
+              : '',
         }
       })
       .filter((scene) => scene.name.trim() || scene.prompt.trim())
+    normalizeDrawPostprocessRefs(merged.draw_scenes)
   }
   if (Array.isArray(raw.video_scenes)) {
     merged.video_scenes = raw.video_scenes
@@ -465,6 +555,7 @@ const addDrawScene = () => {
     prompt: '',
     engine: 'free_edit_v2',
     lora_name: '',
+    postprocess_draw_scene_id: '',
   })
 }
 
@@ -474,6 +565,11 @@ const removeDrawScene = (index: number) => {
   config.video_scenes.forEach((scene) => {
     if (scene.end_frame_draw_scene_id === removed.id) {
       scene.end_frame_draw_scene_id = ''
+    }
+  })
+  config.draw_scenes.forEach((scene) => {
+    if (scene.postprocess_draw_scene_id === removed.id) {
+      scene.postprocess_draw_scene_id = ''
     }
   })
 }
@@ -500,9 +596,14 @@ const buildPayload = (): QqccBotConfig => {
         prompt: scene.prompt.trim(),
         engine,
         lora_name: normalizeLoraName(scene.lora_name, { kind: 'draw', engine }),
+        postprocess_draw_scene_id:
+          typeof scene.postprocess_draw_scene_id === 'string'
+            ? scene.postprocess_draw_scene_id.trim()
+            : '',
       }
     })
     .filter((scene) => scene.name || scene.prompt)
+  normalizeDrawPostprocessRefs(payload.draw_scenes)
   payload.video_scenes = payload.video_scenes
     .map((scene) => {
       const engine = normalizeVideoEngine(scene.engine)
@@ -541,6 +642,10 @@ const openSceneConfig = (kind: SceneConfigKind, index: number) => {
     kind === 'video'
       ? normalizeEndFrameDrawSceneId((scene as VideoSceneConfig).end_frame_draw_scene_id)
       : ''
+  sceneConfig.postprocess_draw_scene_id =
+    kind === 'draw'
+      ? normalizePostprocessDrawSceneId((scene as DrawSceneConfig).postprocess_draw_scene_id, index)
+      : ''
   sceneConfig.open = true
 }
 
@@ -548,6 +653,7 @@ const closeSceneConfig = () => {
   sceneConfig.open = false
   sceneConfig.index = -1
   sceneConfig.end_frame_draw_scene_id = ''
+  sceneConfig.postprocess_draw_scene_id = ''
 }
 
 const onSceneEngineChange = () => {
@@ -569,8 +675,20 @@ const confirmSceneConfig = () => {
     const scene = config.draw_scenes[sceneConfig.index]
     if (!scene) return
     const engine = normalizeDrawEngine(sceneConfig.engine)
+    const postprocessDrawSceneId = normalizePostprocessDrawSceneId(
+      sceneConfig.postprocess_draw_scene_id,
+      sceneConfig.index,
+    )
+    if (
+      postprocessDrawSceneId &&
+      wouldCreateDrawPostprocessCycle(scene.id, postprocessDrawSceneId)
+    ) {
+      message.error('AI绘图后处理配置不能形成循环')
+      return
+    }
     scene.engine = engine
     scene.lora_name = normalizeLoraName(sceneConfig.lora_name, { kind: 'draw', engine })
+    scene.postprocess_draw_scene_id = postprocessDrawSceneId
   }
   closeSceneConfig()
 }
@@ -594,6 +712,10 @@ const saveConfig = async () => {
   }
   if (!validateDrawScenes()) {
     message.error('请完善AI绘图场景的按钮名称和提示词')
+    return
+  }
+  if (hasDrawPostprocessCycle(config.draw_scenes)) {
+    message.error('AI绘图后处理配置不能形成循环')
     return
   }
   saving.value = true
@@ -704,51 +826,51 @@ onMounted(() => {
       <div>
         <div>
           <div
-            class="hidden grid-cols-[180px_minmax(360px,1fr)_120px_56px] gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid"
+            class="hidden grid-cols-[180px_minmax(360px,1fr)_88px_88px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid"
           >
             <span>按钮名称</span>
             <span>提示词</span>
-            <span>时长</span>
-            <span>操作</span>
+            <span class="text-center">时长</span>
+            <span class="text-right">操作</span>
           </div>
           <div
             v-for="(scene, index) in config.video_scenes"
             :key="scene.id"
-            class="grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[180px_minmax(360px,1fr)_120px_56px]"
+            class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[180px_minmax(360px,1fr)_88px_88px]"
           >
-            <div class="grid grid-cols-[minmax(0,1fr)_36px] gap-2">
-              <a-input
-                v-model:value="scene.name"
-                :data-testid="`video-scene-name-${index}`"
-              />
-              <a-button
-                :data-testid="`config-video-scene-${index}`"
-                title="配置模型"
-                @click="openSceneConfig('video', index)"
-              >
-                <template #icon><SettingOutlined /></template>
-              </a-button>
-            </div>
+            <a-input
+              v-model:value="scene.name"
+              :data-testid="`video-scene-name-${index}`"
+            />
             <a-textarea
               v-model:value="scene.prompt"
               :rows="3"
               :data-testid="`video-scene-prompt-${index}`"
               placeholder="留空使用 prompts.ini"
             />
-            <div
-              class="grid grid-cols-[1fr_56px] gap-3 md:contents"
-            >
+            <div class="scene-duration-cell">
               <a-select
                 v-model:value="scene.duration"
                 :data-testid="`video-scene-duration-${index}`"
-                class="w-full"
+                class="scene-duration-select"
               >
                 <a-select-option v-for="item in durationOptions" :key="item" :value="item">
                   {{ item }}
                 </a-select-option>
               </a-select>
+            </div>
+            <div class="scene-action-cell">
+              <a-button
+                class="scene-icon-button"
+                :data-testid="`config-video-scene-${index}`"
+                title="配置模型"
+                @click="openSceneConfig('video', index)"
+              >
+                <template #icon><SettingOutlined /></template>
+              </a-button>
               <a-button
                 danger
+                class="scene-icon-button"
                 :data-testid="`remove-video-scene-${index}`"
                 @click="removeVideoScene(index)"
               >
@@ -774,38 +896,38 @@ onMounted(() => {
 
       <div>
         <div
-          class="hidden grid-cols-[180px_minmax(360px,1fr)_56px] gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid"
+          class="hidden grid-cols-[180px_minmax(360px,1fr)_88px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid"
         >
           <span>按钮名称</span>
           <span>提示词</span>
-          <span>操作</span>
+          <span class="text-right">操作</span>
         </div>
         <div
           v-for="(scene, index) in config.draw_scenes"
           :key="scene.id"
-          class="grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[180px_minmax(360px,1fr)_56px]"
+          class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[180px_minmax(360px,1fr)_88px]"
         >
-          <div class="grid grid-cols-[minmax(0,1fr)_36px] gap-2">
-            <a-input
-              v-model:value="scene.name"
-              :data-testid="`draw-scene-name-${index}`"
-            />
+          <a-input
+            v-model:value="scene.name"
+            :data-testid="`draw-scene-name-${index}`"
+          />
+          <a-textarea
+            v-model:value="scene.prompt"
+            :rows="3"
+            :data-testid="`draw-scene-prompt-${index}`"
+          />
+          <div class="scene-action-cell">
             <a-button
+              class="scene-icon-button"
               :data-testid="`config-draw-scene-${index}`"
               title="配置模型"
               @click="openSceneConfig('draw', index)"
             >
               <template #icon><SettingOutlined /></template>
             </a-button>
-          </div>
-          <a-textarea
-            v-model:value="scene.prompt"
-            :rows="3"
-            :data-testid="`draw-scene-prompt-${index}`"
-          />
-          <div class="flex justify-end md:contents">
             <a-button
               danger
+              class="scene-icon-button"
               :data-testid="`remove-draw-scene-${index}`"
               @click="removeDrawScene(index)"
             >
@@ -835,7 +957,7 @@ onMounted(() => {
 
     <a-modal
       v-model:open="sceneConfig.open"
-      title="模型与首尾帧配置"
+      :title="sceneModalTitle"
       :footer="null"
       :width="520"
       wrap-class-name="qqcc-scene-config-modal"
@@ -893,6 +1015,23 @@ onMounted(() => {
             </a-select-option>
           </a-select>
         </a-form-item>
+        <a-form-item v-if="sceneConfig.kind === 'draw'" label="绘图后处理" class="mb-4">
+          <a-select
+            v-model:value="sceneConfig.postprocess_draw_scene_id"
+            data-testid="scene-postprocess-select"
+            class="w-full"
+            :get-popup-container="getSceneSelectPopupContainer"
+          >
+            <a-select-option value="">无</a-select-option>
+            <a-select-option
+              v-for="item in activePostprocessDrawOptions"
+              :key="item.id"
+              :value="item.id"
+            >
+              {{ item.name || item.id }}
+            </a-select-option>
+          </a-select>
+        </a-form-item>
         <div class="flex justify-end gap-2">
           <a-button @click="closeSceneConfig">取消</a-button>
           <a-button
@@ -923,5 +1062,52 @@ onMounted(() => {
 
 :global(.qqcc-scene-config-modal .ant-modal-body) {
   padding-top: 8px;
+}
+
+.scene-row {
+  align-items: center;
+}
+
+.scene-duration-cell,
+.scene-action-cell {
+  display: flex;
+  align-items: center;
+}
+
+.scene-duration-cell {
+  justify-content: flex-start;
+}
+
+.scene-action-cell {
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.scene-duration-select {
+  width: 88px;
+}
+
+.scene-icon-button {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+:deep(.scene-duration-select .ant-select-selector) {
+  align-items: center;
+  padding-inline-end: 28px;
+}
+
+:deep(.scene-duration-select .ant-select-selection-item) {
+  text-align: center;
+}
+
+:deep(.scene-duration-select .ant-select-arrow) {
+  top: 50%;
+  margin-top: 0;
+  transform: translateY(-50%);
 }
 </style>

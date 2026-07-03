@@ -1,6 +1,5 @@
 import logging
 import os
-from pathlib import Path
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -21,16 +20,12 @@ from src.constants import (
     MODE_CLOSEUP_BLOWJOB,
     MODE_CUSTOM_VIDEO,
     MODE_DOGGY_STYLE,
-    MODE_EDIT,
     MODE_IMAGE_TO_VIDEO,
-    MODE_IMG2IMG_LORA,
     MODE_PERFECT_VIDEO_INSERT,
-    MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_UNDRESS_TONGUE,
     MODE_WAN22_VIDEO_V2,
     RESOLUTION_COST,
     RESOLUTION_PERMISSIONS,
-    TASK_COSTS,
     get_video_settings_keyboard,
 )
 from src.domain_config.wan22_aio_video import get_wan22_video_v2_cost
@@ -49,8 +44,12 @@ from src.handlers.fsm.quick_video_callback_data import (
 )
 from src.handlers.prompt_router import GLOBAL_REVERSE_MAP
 from src.services.permission_service import permission_service
+from src.services.qqcc_draw_chain_service import (
+    calculate_qqcc_draw_chain_cost,
+    execute_qqcc_draw_scene_chain,
+    resolve_qqcc_draw_scene_chain,
+)
 from src.services.qqcc_config_service import (
-    DRAW_SCENE_ENGINE_FREE_EDIT,
     VIDEO_DURATION_KEYS,
     VIDEO_RESOLUTION_KEYS,
     VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
@@ -71,7 +70,6 @@ from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
     download_telegram_file_to_fsm_temp,
 )
-from src.lora_catalog import get_lora_default_strength
 from src.utils import (
     create_background_task,
     robust_edit_text,
@@ -355,66 +353,6 @@ def _resolve_qqcc_video_end_frame_draw_scene(
     return get_qqcc_draw_scene(config, draw_scene_id)
 
 
-def _resolve_qqcc_draw_scene_task_type(scene: dict[str, object]) -> str:
-    if scene.get("engine") == DRAW_SCENE_ENGINE_FREE_EDIT:
-        return MODE_IMG2IMG_LORA if str(scene.get("lora_name") or "").strip() else MODE_EDIT
-    return MODE_PORNMASTER_FLUX2_SINGLE_EDIT
-
-
-def _calculate_qqcc_tail_frame_cost(scene: dict[str, object] | None) -> int:
-    if scene is None:
-        return 0
-    task_type = _resolve_qqcc_draw_scene_task_type(scene)
-    if task_type in (MODE_EDIT, MODE_IMG2IMG_LORA):
-        return 2
-    return TASK_COSTS.get(task_type, 2)
-
-
-async def _generate_qqcc_video_end_frame(
-    *,
-    context: ContextTypes.DEFAULT_TYPE,
-    chat_id: int,
-    user_id: int,
-    username: str | None,
-    image_path: str,
-    draw_scene: dict[str, object],
-    status_msg_id: int | None,
-) -> str | None:
-    task_type = _resolve_qqcc_draw_scene_task_type(draw_scene)
-    lora_name = (
-        str(draw_scene.get("lora_name") or "")
-        if task_type == MODE_IMG2IMG_LORA
-        else ""
-    )
-    task_kwargs = {
-        "context": context,
-        "chat_id": chat_id,
-        "user_id": user_id,
-        "username": username,
-        "prompt": str(draw_scene.get("prompt") or ""),
-        "images": [image_path],
-        "task_type": task_type,
-        "status_msg_id": status_msg_id,
-        "delete_status": False,
-        "cleanup": False,
-        "send_result": False,
-        "allow_contribute": False,
-    }
-    if lora_name:
-        task_kwargs["lora_name"] = lora_name
-        task_kwargs["lora_strength"] = get_lora_default_strength(lora_name)
-
-    _media_bytes, output_file = await process_generation_task(**task_kwargs)
-    if not output_file:
-        return None
-    suffix = Path(str(output_file)).suffix or ".png"
-    return await download_output_file_to_fsm_temp(
-        output_file=str(output_file),
-        suffix=suffix,
-        name_hint="qqcc_video_end_frame",
-    )
-
-
 async def _process_qqcc_video_with_generated_end_frame(
     *,
     context: ContextTypes.DEFAULT_TYPE,
@@ -422,7 +360,7 @@ async def _process_qqcc_video_with_generated_end_frame(
     user_id: int,
     username: str | None,
     image_path: str,
-    draw_scene: dict[str, object],
+    draw_chain: list[dict[str, object]],
     video_task_type: str,
     prompt: str,
     default_prompt_key: str,
@@ -437,15 +375,24 @@ async def _process_qqcc_video_with_generated_end_frame(
     end_image_path = None
     video_task_started = False
     try:
-        end_image_path = await _generate_qqcc_video_end_frame(
+        chain_result = await execute_qqcc_draw_scene_chain(
             context=context,
             chat_id=chat_id,
             user_id=user_id,
             username=username,
             image_path=image_path,
-            draw_scene=draw_scene,
+            chain=draw_chain,
             status_msg_id=status_msg_id,
+            process_generation_task_func=process_generation_task,
+            download_output_file_to_fsm_temp_func=download_output_file_to_fsm_temp,
+            final_send_result=False,
+            final_allow_contribute=False,
+            final_delete_status=False,
+            keep_initial_image=True,
+            download_final_output=True,
+            name_hint="qqcc_video_end_frame",
         )
+        end_image_path = chain_result.local_output_path
         if not end_image_path:
             logger.warning(
                 "QQCC video end-frame generation returned no output; video skipped."
@@ -957,7 +904,12 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     fsm_data["resolution"] = res
     fsm_data["duration"] = dur
     cost = _calculate_quick_video_cost(res, dur)
-    total_cost = cost + _calculate_qqcc_tail_frame_cost(tail_draw_scene)
+    tail_draw_chain = (
+        resolve_qqcc_draw_scene_chain(qqcc_config, tail_draw_scene)
+        if qqcc_config is not None and tail_draw_scene is not None
+        else []
+    )
+    total_cost = cost + calculate_qqcc_draw_chain_cost(tail_draw_chain)
 
     # Keep the selected settings in context so the background task can resolve them.
     # until they are refactored to take params directly
@@ -1002,7 +954,7 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         default_prompt_key = fsm_data.get("default_prompt_key") or MODE_CUSTOM_VIDEO
         default_prompt_text = fsm_data.get("default_prompt_text") or "custom video"
         prompt_override = fsm_data.get("prompt_override")
-        if tail_draw_scene is not None:
+        if tail_draw_chain:
             create_background_task(
                 context,
                 _process_qqcc_video_with_generated_end_frame(
@@ -1011,7 +963,7 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     user_id=user_id,
                     username=update.effective_user.username,
                     image_path=image_path,
-                    draw_scene=tail_draw_scene,
+                    draw_chain=tail_draw_chain,
                     video_task_type=mode,
                     prompt=prompt_override or default_prompt_text,
                     default_prompt_key=default_prompt_key,

@@ -349,6 +349,13 @@ def _normalize_draw_scene(
         engines_with_lora=DRAW_SCENE_ENGINES_WITH_LORA,
     )
 
+    postprocess_draw_scene_id = raw_scene.get("postprocess_draw_scene_id")
+    postprocess_draw_scene_id = (
+        postprocess_draw_scene_id.strip()
+        if isinstance(postprocess_draw_scene_id, str)
+        else ""
+    )
+
     return {
         "id": _build_unique_scene_id(
             raw_scene.get("id"),
@@ -359,18 +366,51 @@ def _normalize_draw_scene(
         "prompt": prompt,
         "engine": engine,
         "lora_name": lora_name,
+        "postprocess_draw_scene_id": postprocess_draw_scene_id,
     }
+
+
+def _normalize_draw_scene_postprocess_refs(scenes: list[dict[str, Any]]) -> None:
+    allowed_scene_ids = frozenset(str(scene.get("id") or "") for scene in scenes)
+    scenes_by_id = {str(scene.get("id") or ""): scene for scene in scenes}
+    for scene in scenes:
+        scene_id = str(scene.get("id") or "")
+        ref_id = str(scene.get("postprocess_draw_scene_id") or "").strip()
+        if ref_id == scene_id or ref_id not in allowed_scene_ids:
+            scene["postprocess_draw_scene_id"] = ""
+        else:
+            scene["postprocess_draw_scene_id"] = ref_id
+
+    cycle_scene_ids: set[str] = set()
+    for scene in scenes:
+        path: list[str] = []
+        seen_at: dict[str, int] = {}
+        current_id = str(scene.get("id") or "")
+        while current_id:
+            if current_id in seen_at:
+                cycle_scene_ids.update(path[seen_at[current_id]:])
+                break
+            current_scene = scenes_by_id.get(current_id)
+            if current_scene is None:
+                break
+            seen_at[current_id] = len(path)
+            path.append(current_id)
+            current_id = str(current_scene.get("postprocess_draw_scene_id") or "")
+
+    for scene_id in cycle_scene_ids:
+        scenes_by_id[scene_id]["postprocess_draw_scene_id"] = ""
 
 
 def _normalize_draw_scenes(raw_scenes: Any) -> list[dict[str, Any]]:
     if not isinstance(raw_scenes, list):
         return []
-    scenes: list[dict[str, str]] = []
+    scenes: list[dict[str, Any]] = []
     used_ids: set[str] = set()
     for index, raw_scene in enumerate(raw_scenes[:DRAW_SCENE_MAX_COUNT]):
         scene = _normalize_draw_scene(raw_scene, index=index, used_ids=used_ids)
         if scene is not None:
             scenes.append(scene)
+    _normalize_draw_scene_postprocess_refs(scenes)
     return scenes
 
 
