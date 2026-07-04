@@ -42,12 +42,49 @@ from src.domain_config.scail2_video import (
     SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
 )
 from src.utils import async_retry
+from src.services.redis_connection import build_redis_client
 
 logger = logging.getLogger(__name__)
 
-# Circuit Breaker Instance
-circuit_breaker = CircuitBreaker(failure_threshold=15, reset_timeout=30)
+def should_count_central_api_circuit_failure(exc: Exception) -> bool:
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code >= 500
+    return isinstance(
+        exc,
+        (
+            httpx.TransportError,
+            httpx.TimeoutException,
+            CircuitBreakerOpenException,
+            ConnectionError,
+            ConnectionResetError,
+            TimeoutError,
+            OSError,
+        ),
+    )
+
+
+def _build_circuit_breaker() -> CircuitBreaker:
+    return CircuitBreaker(
+        failure_threshold=15,
+        reset_timeout=30,
+        should_record_failure=should_count_central_api_circuit_failure,
+    )
+
+
+circuit_breakers = {
+    "default": _build_circuit_breaker(),
+    "submit": _build_circuit_breaker(),
+    "status": _build_circuit_breaker(),
+    "media": _build_circuit_breaker(),
+}
+circuit_breaker = circuit_breakers["default"]
 BOT_STATUS_POLL_INTERVAL = 15.0
+
+
+def get_circuit_breaker(key: str) -> CircuitBreaker:
+    if key not in circuit_breakers:
+        circuit_breakers[key] = _build_circuit_breaker()
+    return circuit_breakers[key]
 
 
 class APIClient:
@@ -66,6 +103,7 @@ class APIClient:
         Internal request wrapper with Circuit Breaker and Tracing.
         """
         use_circuit_breaker = kwargs.pop("use_circuit_breaker", True)
+        circuit_breaker_key = kwargs.pop("circuit_breaker_key", "default")
         trace_id = correlation_id.get()
         if not trace_id:
             trace_id = str(uuid.uuid4())
@@ -84,11 +122,15 @@ class APIClient:
 
         try:
             if use_circuit_breaker:
-                return await circuit_breaker.call(_do_request)
+                breaker = get_circuit_breaker(circuit_breaker_key)
+                return await breaker.call(_do_request)
             return await _do_request()
         except CircuitBreakerOpenException:
             logger.error(
-                f"[{trace_id}] Circuit Breaker is OPEN. Request to {url} blocked."
+                "[%s] Circuit Breaker '%s' is OPEN. Request to %s blocked.",
+                trace_id,
+                circuit_breaker_key,
+                url,
             )
             raise
         except Exception as e:
@@ -121,7 +163,12 @@ class APIClient:
             "priority": priority,
         }
 
-        r = await self._request("POST", PERFECT_VIDEO_INSERT_ENDPOINT, json=data)
+        r = await self._request(
+            "POST",
+            PERFECT_VIDEO_INSERT_ENDPOINT,
+            json=data,
+            circuit_breaker_key="submit",
+        )
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
@@ -149,7 +196,12 @@ class APIClient:
             "priority": priority,
         }
 
-        r = await self._request("POST", PERFECT_VIDEO_EDIT_ENDPOINT, json=data)
+        r = await self._request(
+            "POST",
+            PERFECT_VIDEO_EDIT_ENDPOINT,
+            json=data,
+            circuit_breaker_key="submit",
+        )
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
@@ -229,7 +281,12 @@ class APIClient:
         logger.info(
             f"Submitting img2img task. Prompt: {prompt}, Negative: {negative_prompt}, Images: {len(image_paths)}, Priority: {priority}"
         )
-        r = await self._request("POST", IMG2IMG_ENDPOINT, json=data)
+        r = await self._request(
+            "POST",
+            IMG2IMG_ENDPOINT,
+            json=data,
+            circuit_breaker_key="submit",
+        )
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
@@ -270,7 +327,12 @@ class APIClient:
         logger.info(
             f"Submitting img2img_lora task. Prompt: {prompt}, LoRA: {lora_name}, Images: {len(image_paths)}, Priority: {priority}"
         )
-        r = await self._request("POST", IMG2IMG_LORA_ENDPOINT, json=data)
+        r = await self._request(
+            "POST",
+            IMG2IMG_LORA_ENDPOINT,
+            json=data,
+            circuit_breaker_key="submit",
+        )
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
@@ -318,7 +380,12 @@ class APIClient:
             expected_images,
             priority,
         )
-        r = await self._request("POST", endpoint, json=data)
+        r = await self._request(
+            "POST",
+            endpoint,
+            json=data,
+            circuit_breaker_key="submit",
+        )
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
@@ -346,7 +413,12 @@ class APIClient:
         logger.info(
             f"Submitting face_swap task. Face: {face_image_path}, Body: {body_image_path}, Priority: {priority}"
         )
-        r = await self._request("POST", FACE_SWAP_ENDPOINT, json=data)
+        r = await self._request(
+            "POST",
+            FACE_SWAP_ENDPOINT,
+            json=data,
+            circuit_breaker_key="submit",
+        )
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
@@ -378,7 +450,12 @@ class APIClient:
         logger.info(
             f"Submitting face_video task. Face: {face_image_path}, Video: {video_path}, Priority: {priority}"
         )
-        r = await self._request("POST", FACE_VIDEO_ENDPOINT, json=data)
+        r = await self._request(
+            "POST",
+            FACE_VIDEO_ENDPOINT,
+            json=data,
+            circuit_breaker_key="submit",
+        )
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
@@ -399,7 +476,12 @@ class APIClient:
         logger.info(
             f"Submitting i2i_pro task. Prompt: {prompt}, Seed: {seed}, Priority: {priority}"
         )
-        r = await self._request("POST", I2I_PRO_ENDPOINT, json=data)
+        r = await self._request(
+            "POST",
+            I2I_PRO_ENDPOINT,
+            json=data,
+            circuit_breaker_key="submit",
+        )
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
@@ -420,7 +502,12 @@ class APIClient:
         logger.info(
             f"Submitting i2i_draw task. Prompt: {prompt}, Seed: {seed}, Priority: {priority}"
         )
-        r = await self._request("POST", I2I_DRAW_ENDPOINT, json=data)
+        r = await self._request(
+            "POST",
+            I2I_DRAW_ENDPOINT,
+            json=data,
+            circuit_breaker_key="submit",
+        )
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
@@ -440,7 +527,12 @@ class APIClient:
         }
 
         logger.info(f"Submitting txt2img task. Prompt: {prompt}, Priority: {priority}")
-        r = await self._request("POST", TXT2IMG_ENDPOINT, json=data)
+        r = await self._request(
+            "POST",
+            TXT2IMG_ENDPOINT,
+            json=data,
+            circuit_breaker_key="submit",
+        )
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
@@ -480,7 +572,12 @@ class APIClient:
         logger.info(
             f"Submitting ltx_video task. Prompt: {prompt}, Priority: {priority}"
         )
-        r = await self._request("POST", LTX_VIDEO_ENDPOINT, json=data)
+        r = await self._request(
+            "POST",
+            LTX_VIDEO_ENDPOINT,
+            json=data,
+            circuit_breaker_key="submit",
+        )
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
@@ -522,7 +619,12 @@ class APIClient:
             prompt,
             priority,
         )
-        r = await self._request("POST", LTX_VIDEO_FLF2V_ENDPOINT, json=data)
+        r = await self._request(
+            "POST",
+            LTX_VIDEO_FLF2V_ENDPOINT,
+            json=data,
+            circuit_breaker_key="submit",
+        )
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
@@ -561,7 +663,12 @@ class APIClient:
             prompt,
             priority,
         )
-        r = await self._request("POST", LTX_VIDEO_V2V_AUDIO_ENDPOINT, json=data)
+        r = await self._request(
+            "POST",
+            LTX_VIDEO_V2V_AUDIO_ENDPOINT,
+            json=data,
+            circuit_breaker_key="submit",
+        )
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
@@ -635,7 +742,12 @@ class APIClient:
             length,
             priority,
         )
-        response = await self._request("POST", endpoint, json=data)
+        response = await self._request(
+            "POST",
+            endpoint,
+            json=data,
+            circuit_breaker_key="submit",
+        )
         return response.json()["task_id"]
 
     async def _submit_wan22_aio_video_task(
@@ -688,13 +800,18 @@ class APIClient:
             resolution_preset,
             priority,
         )
-        response = await self._request("POST", endpoint, json=data)
+        response = await self._request(
+            "POST",
+            endpoint,
+            json=data,
+            circuit_breaker_key="submit",
+        )
         return response.json()["task_id"]
 
     @async_retry(max_retries=3)
     async def cancel_task(self, task_id: str) -> dict:
         url = f"{API_BASE}/api/tasks/{task_id}"
-        response = await self._request("DELETE", url)
+        response = await self._request("DELETE", url, circuit_breaker_key="submit")
         return response.json()
 
     async def get_system_status(self) -> Optional[dict]:
@@ -714,7 +831,7 @@ class APIClient:
     async def download_image(self, task_id: str) -> bytes:
         url = f"{IMAGE_ENDPOINT}/{task_id}"
         try:
-            r = await self._request("GET", url)
+            r = await self._request("GET", url, circuit_breaker_key="media")
             return r.content
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
@@ -727,7 +844,7 @@ class APIClient:
     async def download_video(self, task_id: str) -> bytes:
         url = f"{VIDEO_ENDPOINT}/{task_id}"
         try:
-            r = await self._request("GET", url)
+            r = await self._request("GET", url, circuit_breaker_key="media")
             return r.content
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
@@ -735,7 +852,12 @@ class APIClient:
             raise RuntimeError(f"获取视频失败: HTTP {e.response.status_code}")
 
     async def _fetch_progress_status(self, status_url: str) -> dict[str, Any]:
-        response = await self._request("GET", status_url, timeout=10)
+        response = await self._request(
+            "GET",
+            status_url,
+            timeout=10,
+            circuit_breaker_key="status",
+        )
         return self._normalize_progress_payload(response.json())
 
     @staticmethod
@@ -757,15 +879,13 @@ class APIClient:
     async def _iter_pubsub_progress(self, *, task_id: str, status_url: str):
         import json
 
-        import redis.asyncio as redis
-
         from config import REDIS_URL
 
         redis_client = None
         pubsub = None
         channel = f"comfy:task_events:{task_id}"
         try:
-            redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+            redis_client = build_redis_client(REDIS_URL, decode_responses=True)
             pubsub = redis_client.pubsub()
             await pubsub.subscribe(channel)
             logger.info(f"Subscribed to {channel}")
@@ -873,6 +993,7 @@ class APIClient:
                 status_url,
                 timeout=10,
                 params=params,
+                circuit_breaker_key="status",
             )
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:

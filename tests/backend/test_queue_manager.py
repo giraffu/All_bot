@@ -15,11 +15,35 @@ class _FakePipeline:
         self._ops = []
 
     def hget(self, key, field):
-        self._ops.append((key, field))
+        self._ops.append(("hget", (key, field), {}))
+        return self
+
+    def hset(self, key, field=None, value=None, mapping=None):
+        self._ops.append(
+            ("hset", (key,), {"field": field, "value": value, "mapping": mapping})
+        )
+        return self
+
+    def expire(self, key, ttl):
+        self._ops.append(("expire", (key, ttl), {}))
+        return self
+
+    def zadd(self, key, mapping):
+        self._ops.append(("zadd", (key, mapping), {}))
         return self
 
     async def execute(self):
-        return [await self._redis.hget(key, field) for key, field in self._ops]
+        results = []
+        for method_name, args, kwargs in self._ops:
+            method = getattr(self._redis, method_name)
+            results.append(await method(*args, **kwargs))
+        return results
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_exc_info):
+        return False
 
 
 class _FakeRedis:
@@ -135,7 +159,8 @@ class _FakeRedis:
             return 0, []
         return 0, matched
 
-    def pipeline(self):
+    def pipeline(self, transaction=True):
+        _ = transaction
         return _FakePipeline(self)
 
 
@@ -218,6 +243,24 @@ async def test_enqueue_task_persists_trace_id_and_priority_adjusted_score():
     assert redis.sorted_sets[manager.pending_key]["task-priority"] == pytest.approx(
         float(stored["created_at"]) - 120.0
     )
+
+
+@pytest.mark.asyncio
+async def test_enqueue_task_retries_transient_pipeline_write_failure():
+    redis = _FlakyRedis({"hset": 1})
+    manager = QueueManager(redis)
+
+    task_id = await manager.enqueue_task(
+        TaskType.IMG2IMG,
+        {"prompt": "test"},
+        0,
+        "task-retry",
+    )
+
+    assert task_id == "task-retry"
+    assert redis.calls["hset"] == 2
+    assert redis.hashes[manager._task_key("task-retry")]["status"] == TaskStatus.PENDING
+    assert "task-retry" in redis.sorted_sets[manager.pending_key]
 
 
 @pytest.mark.asyncio

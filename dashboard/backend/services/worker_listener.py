@@ -4,11 +4,11 @@ import logging
 import os
 from datetime import datetime
 
-import redis.asyncio as redis
 from sqlalchemy import select
 
 from src.database.core import AsyncSessionLocal
 from src.database.models import WorkerLog
+from src.services.redis_connection import build_redis_client
 
 logger = logging.getLogger("dashboard.worker_listener")
 
@@ -58,10 +58,10 @@ async def _run_worker_listener_once(task_registry: set | None = None):
     logger.info("Starting Worker Task Listener...")
     poll_timeout_seconds = float(os.getenv("WORKER_LISTENER_POLL_TIMEOUT", "30"))
     redis_url_worker = os.getenv("WORKER_REDIS_URL", "redis://redis:6379/2")
-    r_worker = redis.from_url(redis_url_worker, decode_responses=True)
+    r_worker = build_redis_client(redis_url_worker, decode_responses=True)
 
     redis_url_bot = os.getenv("REDIS_URL", "redis://redis:6379/1")
-    r_bot = redis.from_url(redis_url_bot, decode_responses=True)
+    r_bot = build_redis_client(redis_url_bot, decode_responses=True)
 
     pubsub = r_worker.pubsub()
     background_tasks = set()

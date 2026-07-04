@@ -5,8 +5,6 @@ import os
 from copy import deepcopy
 from typing import Any, Protocol
 
-import redis.asyncio as redis
-
 
 OPERATIONS_ZSET_KEY = "dashboard:runpod:operations"
 OPERATION_KEY_PREFIX = "dashboard:runpod:operation:"
@@ -362,5 +360,7 @@ def build_default_runpod_operation_store() -> RunPodOperationStore:
     if not redis_url:
         return InMemoryRunPodOperationStore()
 
-    redis_client = redis.from_url(redis_url, decode_responses=True)
+    from src.services.redis_connection import build_redis_client
+
+    redis_client = build_redis_client(redis_url, decode_responses=True)
     return RedisRunPodOperationStore(redis_client)

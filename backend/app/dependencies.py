@@ -1,5 +1,6 @@
 from fastapi import Depends, Request
 from redis.asyncio import Redis
+from src.services.redis_connection import build_redis_client
 
 from app.config import settings
 from app.queue_manager import QueueManager
@@ -11,7 +12,7 @@ async def get_redis(request: Request):
         yield shared_redis
         return
 
-    redis = Redis.from_url(settings.redis_url)
+    redis = build_redis_client(settings.redis_url)
     try:
         yield redis
     finally:

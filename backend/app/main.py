@@ -14,6 +14,7 @@ from app.main_bootstrap import (
     build_verify_token_dependency,
     build_zombie_tasks_loop_runner,
     lifespan as lifespan_helper,
+    register_redis_transient_exception_handlers,
 )
 from app.models import (
     SystemStatusResponse,
@@ -68,6 +69,7 @@ async def lifespan(fastapi_app: FastAPI):
 
 app = FastAPI(title="ComfyUI Middleware", lifespan=lifespan)
 app.add_middleware(CorrelationIdMiddleware, header_name="X-Trace-ID")
+register_redis_transient_exception_handlers(app)
 app.include_router(agent.router)
 security = HTTPBearer()
 get_minio_client = build_request_state_getter(attr_name="minio_client")

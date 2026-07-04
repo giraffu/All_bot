@@ -3,9 +3,8 @@ import logging
 import uuid
 from typing import Any, Dict
 
-import redis.asyncio as redis
-
 from config import REDIS_PREFIX, REDIS_URL
+from src.services.redis_connection import build_redis_client
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +15,7 @@ class RedisClient:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(RedisClient, cls).__new__(cls)
-            cls._instance.redis = redis.from_url(REDIS_URL, decode_responses=True)
+            cls._instance.redis = build_redis_client(REDIS_URL, decode_responses=True)
         return cls._instance
 
     async def get_active_tasks(self) -> Dict[str, Any]:
@@ -253,7 +252,10 @@ return 0
         pattern = f"{REDIS_PREFIX}user_concurrency:*"
         concurrencies = {}
         try:
-            keys = await self.redis.keys(pattern)
+            keys = [
+                key
+                async for key in self.redis.scan_iter(match=pattern, count=500)
+            ]
             if not keys:
                 return {}
 
@@ -265,6 +267,7 @@ return 0
 
             prefix_len = len(f"{REDIS_PREFIX}user_concurrency:")
             for key, val in zip(keys, values):
+                key = key.decode() if isinstance(key, bytes) else str(key)
                 if val is not None and int(val) > 0:
                     user_id = int(key[prefix_len:])
                     concurrencies[user_id] = int(val)

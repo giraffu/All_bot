@@ -1,4 +1,5 @@
 import asyncio
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -11,6 +12,7 @@ from app.main_bootstrap import (
     check_zombie_tasks_loop,
     get_minio_client,
     lifespan,
+    redis_transient_exception_handler,
     verify_token,
 )
 
@@ -105,3 +107,17 @@ async def test_get_redis_reuses_app_state_client():
     with pytest.raises(StopAsyncIteration):
         await dependency.__anext__()
     redis.close.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_redis_transient_exception_handler_returns_retryable_503():
+    response = await redis_transient_exception_handler(
+        SimpleNamespace(url="/comfy_img2img"),
+        ConnectionResetError("Connection lost"),
+    )
+
+    assert response.status_code == 503
+    assert response.headers["Retry-After"] == "2"
+    assert json.loads(response.body) == {
+        "detail": "Central Redis temporarily unavailable; please retry shortly"
+    }

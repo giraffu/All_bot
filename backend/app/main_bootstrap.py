@@ -1,13 +1,28 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials
-from redis.asyncio import Redis
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
+from src.services.redis_connection import build_redis_client
 from src.services.storage_minio_client import (
     build_configured_bucket_names,
     build_minio_client,
 )
+
+
+REDIS_TRANSIENT_HTTP_EXCEPTIONS = (
+    RedisConnectionError,
+    RedisTimeoutError,
+    ConnectionError,
+    ConnectionResetError,
+    TimeoutError,
+)
+REDIS_TRANSIENT_RETRY_AFTER_SECONDS = "2"
+logger = logging.getLogger(__name__)
 
 
 def init_minio_client(*, settings, logger):
@@ -43,7 +58,7 @@ async def check_zombie_tasks_loop(
     queue_manager_cls,
     logger,
     sleep_func=asyncio.sleep,
-    redis_from_url=Redis.from_url,
+    redis_from_url=build_redis_client,
 ):
     while True:
         try:
@@ -94,7 +109,7 @@ async def lifespan(
     settings,
     logger,
     check_zombie_tasks_loop_func,
-    redis_from_url=Redis.from_url,
+    redis_from_url=build_redis_client,
 ):
     zombie_task = None
     shared_redis = None
@@ -117,3 +132,23 @@ async def lifespan(
                 await zombie_task
             except asyncio.CancelledError:
                 pass
+
+
+async def redis_transient_exception_handler(request: Request, exc: Exception):
+    logger.warning(
+        "Central Redis transient failure on %s: %s",
+        getattr(request.url, "path", request.url),
+        exc,
+    )
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": "Central Redis temporarily unavailable; please retry shortly"
+        },
+        headers={"Retry-After": REDIS_TRANSIENT_RETRY_AFTER_SECONDS},
+    )
+
+
+def register_redis_transient_exception_handlers(fastapi_app):
+    for exc_type in REDIS_TRANSIENT_HTTP_EXCEPTIONS:
+        fastapi_app.add_exception_handler(exc_type, redis_transient_exception_handler)

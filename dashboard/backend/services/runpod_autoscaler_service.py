@@ -12,7 +12,6 @@ from datetime import datetime, timezone
 from typing import Any, Protocol
 
 from fastapi import HTTPException
-import redis.asyncio as redis
 
 from dashboard.backend.services import runpod_admin_service
 from dashboard.backend.services.runpod_admin_operation import (
@@ -833,7 +832,9 @@ def build_default_runpod_autoscaler_state_store() -> RunPodAutoscalerStateStore:
     )
     if not redis_url:
         return DisabledRunPodAutoscalerStateStore()
-    redis_client = redis.from_url(redis_url, decode_responses=True)
+    from src.services.redis_connection import build_redis_client
+
+    redis_client = build_redis_client(redis_url, decode_responses=True)
     return RedisRunPodAutoscalerStateStore(redis_client)
 
 

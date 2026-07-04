@@ -7,7 +7,6 @@ from datetime import datetime
 from typing import Any
 
 import httpx
-import redis.asyncio as redis
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy import and_, func, select
@@ -30,6 +29,7 @@ from src.services.permission_identity_priority_service import (
     has_high_quality_referral_exemption,
 )
 from src.services.image_service import image_service
+from src.services.redis_connection import build_redis_client
 
 logger = logging.getLogger("dashboard.system")
 BACKEND_TASK_STATUS_CACHE_TTL_SECONDS = float(
@@ -464,7 +464,7 @@ async def get_pending_queue_wait_details(
     if now_func is None:
         now_func = time.time
     if redis_from_url_func is None:
-        redis_from_url_func = redis.from_url
+        redis_from_url_func = build_redis_client
     if get_low_trust_free_tier_user_ids_func is None:
         get_low_trust_free_tier_user_ids_func = get_low_trust_free_tier_user_ids
 

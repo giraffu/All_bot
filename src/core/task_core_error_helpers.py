@@ -5,8 +5,13 @@ TASK_BUSY_ERROR_KEYWORDS = (
     "Circuit is open",
     "All connection attempts failed",
     "Connection refused",
+    "Connection lost",
     "timeout",
     "ConnectError",
+    "503 Service Unavailable",
+    "Service Unavailable",
+    "Redis temporarily unavailable",
+    "Central Redis temporarily unavailable",
 )
 
 

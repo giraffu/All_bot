@@ -395,14 +395,19 @@ class QueueManager:
             priority=priority,
         )
 
-        # Save task details
-        await self.redis.hset(task_key, mapping=task_data)
-        await self.redis.expire(task_key, self.ttl)
+        async def execute_enqueue_pipeline():
+            async with self.redis.pipeline(transaction=True) as pipeline:
+                pipeline.hset(task_key, mapping=task_data)
+                pipeline.expire(task_key, self.ttl)
+                # Priority acceleration: Each priority level equals 60 seconds earlier enqueue time.
+                # This prevents starvation: a low priority task waiting >60s will beat a new high priority task.
+                pipeline.zadd(self.pending_key, {task_id: score})
+                return await pipeline.execute()
 
-        # Add to priority queue
-        # Priority acceleration: Each priority level equals 60 seconds earlier enqueue time.
-        # This prevents starvation: a low priority task waiting >60s will beat a new high priority task.
-        await self.redis.zadd(self.pending_key, {task_id: score})
+        await self._retry_redis_call(
+            "enqueue_task_pipeline",
+            execute_enqueue_pipeline,
+        )
 
         return task_id
 
