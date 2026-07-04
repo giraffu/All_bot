@@ -1,6 +1,6 @@
 version: 1
 managed_by: allbot-lan-aio-operator
-last_verified_at: "2026-07-04T10:09:33Z"
+last_verified_at: "2026-07-04T11:54:44Z"
 sources:
   slot_catalog: ops/gpu_pool_controller/config/lan_aio_prod_slots.yml
   profile_catalog: ops/gpu_pool_controller/config/task_profiles.yml
@@ -186,37 +186,50 @@ nodes:
         blocked_profiles: []
         notes: Switched from SCAIL-2 to i2i_pro on 2026-07-03 with scripts/lan_aio_fleet_prod_ops.py takeover --slot gpu-252-gpu0-i2i_pro --replace-slot gpu-252-gpu0-scail2 --failure-policy auto_rollback after SCAIL-2 was drained and idle. Render verified LAN AIO workflow overrides for t2i-pornmaster-turbo and face_swap, then preflight, pull-image, warm-cache, drain/wait-idle, stop-old, start-disabled, and enable-aio passed. On 2026-07-04 after the repaired GPU was reinstalled, host GPU indexes drifted; all gpu-252 GPU0 LAN AIO slots were pinned to healthy UUID GPU-09b7ea85-23df-a9b8-19d9-703534e47666, and restart-aio force-recreated the 8192 i2i_pro container. Post-recreate validation showed Docker DeviceIDs pinned to GPU-09b7ea85-23df-a9b8-19d9-703534e47666, container healthy, /queue reachable, model cache ready, Central control enabled, runtime_profile i2i_pro, and task types i2i_pro,t2i-pornmaster-turbo,face_swap. SCAIL-2, image_to_video, img2img_lora, and PornMaster remain same-card rollback candidates and must keep the same healthy gpu_device_id.
       - gpu_index: 1
-        hardware: repaired RTX 4090 48G, UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e, isolated for validation
+        hardware: repaired RTX 4090 48G, UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e
         current:
-          profile: none
-          slot_id: gpu-252-gpu1-wan22_video_v2
-          agent_id: lan_aio_prod_gpu252_gpu1_wan22_video_v2_01
-          container_name: allbot-lan-aio-gpu-252-gpu1-wan22_video_v2-prod
+          profile: pornmaster_flux2_edit
+          slot_id: gpu-252-gpu1-pornmaster_flux2_edit
+          agent_id: lan_aio_prod_gpu252_gpu1_pornmaster_flux2_edit_01
+          container_name: allbot-lan-aio-gpu-252-gpu1-pornmaster_flux2_edit-prod
           host_port: 8191
           gpu_device_id: GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e
           host_gpu_index_at_last_verify: 0
           pci_bus_id_at_last_verify: "00000000:01:00.0"
-          state: maintenance_disabled
+          state: prod_enabled
+          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-pornmaster-flux2-edit:20260628-pornmaster-flux2-edit-cu128-smallvae1
+          model_manifest_key: pornmaster_flux2_edit/2026-06-27/manifest.json
+          workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu1/profiles/pornmaster_flux2_edit/workspace
+          last_takeover_at: "2026-07-04T11:38:00Z"
+          last_verified_at: "2026-07-04T11:54:44Z"
         cached_profiles:
+          - profile: pornmaster_flux2_edit
+            cache_state: ready
+            model_manifest_key: pornmaster_flux2_edit/2026-06-27/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu1/profiles/pornmaster_flux2_edit/workspace
+            synced_at: "2026-07-04T11:32:46.708736+00:00"
+            note: Active lower-VRAM image-edit profile for 8191; preflight, warm-cache, disabled heartbeat, object/model validation, enable-aio, and live production pornmaster_flux2_single_edit tasks passed without new Xid/NVRM.
           - profile: wan22_video_v2
             cache_state: missing
             model_manifest_key: wan22_video_v2/2026-06-13-test/manifest.json
             workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu1/profiles/wan22_video_v2/workspace
-            note: Live fleet status on 2026-07-04 showed no ready model-cache marker after the repaired card was reinstalled; run warm-cache before any 8191 Wan22 validation.
+            note: Wan22 remains maintenance-disabled on the same repaired card; do not enable while the card is isolated for Xid 119/154 investigation.
           - profile: scail2
-            cache_state: missing
+            cache_state: ready
             model_manifest_key: scail2/2026-06-17-test/manifest.json
             workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu1/profiles/scail2/workspace
-            note: Candidate slot gpu-252-gpu1-scail2 was added after the repaired-card smoke test; model cache has not been warmed on GPU1 yet.
+            synced_at: "2026-07-04T10:37:31.096350+00:00"
         fast_switch_candidates:
-          - slot_id: gpu-252-gpu1-scail2
-            profile: scail2
-            cache_state: missing
-            note: Candidate only. Requires preflight, pull-image/image check, warm-cache, disabled heartbeat, SCAIL-2 object/model validation, and canary task before enabling intake.
+          - slot_id: gpu-252-gpu1-pornmaster_flux2_edit
+            profile: pornmaster_flux2_edit
+            cache_state: ready
+            note: Current production 8191 profile on repaired GPU1; keep as lower-VRAM workload while scail2/wan22_video_v2 remain blocked on this UUID.
         blocked_profiles:
+          - profile: scail2
+            reason: blocked_xid_119_154 after the repaired UUID passed preflight/canary but reproduced Xid 119/154 and CUDA unknown error under a real SCAIL-2 face-swap workload; 8191 AIO is disabled and the container is exited after host reboot.
           - profile: wan22_video_v2
-            reason: repaired card is visible again and passed a short CUDA smoke stress, but Wan22 remains maintenance-disabled until a profile-specific disabled heartbeat and canary validation pass. RunPod remains fallback.
-        notes: Repaired card UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e passed a short 2026-07-04 smoke stress in a one-off container pinned by UUID, touching 20.5 GiB GPU memory and running compute for about 98 seconds. Post-checks showed no Xid/NVRM in the boot kernel log window, remapped rows stayed 0, the card returned to P8/idle, and 8192 i2i_pro remained healthy on UUID GPU-09b7ea85-23df-a9b8-19d9-703534e47666. This is not a long burn-in; keep 8191 disabled until the SCAIL-2 deployment chain and canary pass.
+            reason: same repaired card is isolated after SCAIL-2 reproduced Xid 119/154; RunPod remains fallback for wan22_video_v2.
+        notes: Repaired card UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e passed an initial short 2026-07-04 smoke stress in a one-off container pinned by UUID, touching 20.5 GiB GPU memory and running compute for about 98 seconds. The SCAIL-2 deployment chain then passed preflight, image presence/pull, warm-cache, start-disabled heartbeat, /system_stats, /object_info required node and model enumeration, and direct ComfyUI canary prompt 16fe75be-c59d-4cea-8d7b-cc4157550030, which produced SCAIL-2-gpu252-canary_00001.mp4. After enable-aio opened intake on 8191, a real SCAIL-2 face-swap workload reproduced Xid 119/154 and GPU Reset Required on PCI 00000000:01:00.0; ComfyUI began returning CUDA unknown error and Docker could not stop/kill the container cleanly. The host was rebooted at 2026-07-04 19:12 Asia/Shanghai. Post-reboot validation restored 8192 i2i_pro AIO on healthy UUID GPU-09b7ea85-23df-a9b8-19d9-703534e47666 and ran an isolated 20.5 GiB plus 120 second CUDA smoke on the repaired UUID without new Xid/NVRM. The repaired UUID was then switched to lower-VRAM pornmaster_flux2_edit on host 8191: preflight, pull-image, warm-cache, start-disabled heartbeat, /system_stats, /object_info model/node validation, enable-aio, and multiple live production pornmaster_flux2_single_edit completions passed without new Xid/NVRM. Treat this as production clearance only for PornMaster Flux2 edit; scail2 and wan22_video_v2 remain blocked on this card pending workload-specific validation or vendor/driver resolution.
 
   gpu-002:
     host: allbot-gpu-002

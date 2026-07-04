@@ -159,8 +159,9 @@ slots:
     notes: Active production gpu-252 GPU0 i2i_pro LAN AIO after the 2026-07-03 explicit switch from SCAIL-2. It serves i2i_pro, t2i-pornmaster-turbo, and face_swap on host port 8192; SCAIL-2, img2img_lora, image_to_video, and PornMaster Flux2 edit remain stopped same-card rollback candidates. Central AIO control was re-enabled on 2026-07-03T17:59:47Z after the queue was confirmed empty and the enable-aio gate passed.
 
   - id: gpu-252-gpu1-wan22_video_v2
-    enabled: true
+    enabled: false
     phase: maintenance_disabled
+    retargetable: false
     assignment_id: lan-252-8189-worker-05
     target_profile_id: wan22_video_v2
     target_task_types:
@@ -170,8 +171,9 @@ slots:
     host_port: 8191
     agent_id: lan_aio_prod_gpu252_gpu1_wan22_video_v2_01
     container_name: allbot-lan-aio-gpu-252-gpu1-wan22_video_v2-prod
-    old_runtime_container: comfy1
-    old_local_agent_container: cloud-prod-comfy-agent-5
+    legacy_worker_id: lan_aio_prod_gpu252_gpu1_scail2_01
+    old_runtime_container: allbot-lan-aio-gpu-252-gpu1-scail2-prod
+    old_local_agent_container: ""
     remote_dir: /home/user/allbot-runpod-aio-prod/gpu252-gpu1-wan22-video-v2
     legacy_hot_cache_copies:
       - source_container: __host__
@@ -180,12 +182,12 @@ slots:
           - /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth
           - /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth
     rollout_order: 30
-    notes: Replaces worker 05 with a LAN AIO worker that only accepts wan22_video_v2. The faulty RTX 4090 UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e was removed on 2026-06-20 after Xid 119/154 followed the physical card across slots; no GPU1 is currently present, so production control must stay disabled and RunPod remains the wan22_video_v2 fallback.
+    notes: Maintenance-disabled Wan22 rollback candidate for repaired gpu-252 GPU1. The same UUID previously showed Xid 119/154 before repair and again reproduced Xid 119/154 under a real SCAIL-2 workload after repair, so Wan22 stays disabled; RunPod remains the wan22_video_v2 fallback until a separate maintenance window and profile-specific validation pass.
 
   - id: gpu-252-gpu1-scail2
     enabled: false
-    phase: candidate
-    retargetable: true
+    phase: maintenance_disabled
+    retargetable: false
     assignment_id: lan-252-8189-worker-05
     target_profile_id: scail2
     target_task_types:
@@ -205,7 +207,30 @@ slots:
     old_local_agent_container: ""
     remote_dir: /home/user/allbot-runpod-aio-prod/gpu252-gpu1-scail2
     rollout_order: 31
-    notes: Candidate SCAIL-2 LAN AIO for the repaired gpu-252 GPU1 card on host port 8191. The slot is pinned to repaired UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e and must stay disabled until preflight, model warm-cache, disabled heartbeat, and canary validation pass after the hardware smoke test.
+    notes: Maintenance-disabled SCAIL-2 slot for the repaired gpu-252 GPU1 card on host port 8191. The slot is pinned to repaired UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e. Preflight, image check/pull, warm-cache, disabled heartbeat, /system_stats, /object_info model enumeration, and direct SCAIL-2 canary passed on 2026-07-04, but a real SCAIL-2 face-swap workload later reproduced Xid 119/154 and left the 8191 container unhealthy until host reboot. Post-reboot isolated CUDA smoke touched about 20.5 GiB and ran compute for about 120 seconds without new Xid, but this slot must remain disabled until workload-specific burn-in or vendor/driver resolution clears it.
+
+  - id: gpu-252-gpu1-pornmaster_flux2_edit
+    enabled: true
+    phase: prod_enabled
+    retargetable: false
+    assignment_id: lan-252-8189-worker-05
+    target_profile_id: pornmaster_flux2_edit
+    target_task_types:
+      - pornmaster_flux2_single_edit
+      - pornmaster_flux2_multi_edit
+    gpu_index: 1
+    gpu_device_id: GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e
+    host_port: 8191
+    legacy_health_port: 8191
+    legacy_preflight_required: false
+    agent_id: lan_aio_prod_gpu252_gpu1_pornmaster_flux2_edit_01
+    container_name: allbot-lan-aio-gpu-252-gpu1-pornmaster_flux2_edit-prod
+    legacy_worker_id: lan_aio_prod_gpu252_gpu1_scail2_01
+    old_runtime_container: allbot-lan-aio-gpu-252-gpu1-scail2-prod
+    old_local_agent_container: ""
+    remote_dir: /home/user/allbot-runpod-aio-prod/gpu252-gpu1-pornmaster-flux2-edit
+    rollout_order: 32
+    notes: Active production PornMaster Flux2 edit LAN AIO for the repaired gpu-252 GPU1 card on host port 8191, enabled on 2026-07-04 after preflight, pull-image, warm-cache, start-disabled heartbeat, /system_stats, /object_info node/model validation, and live production pornmaster_flux2_single_edit tasks completed without new Xid/NVRM. This lower-VRAM image-editing workload is pinned to repaired UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e and replaces only the disabled SCAIL-2 8191 slot; keep scail2 and wan22_video_v2 maintenance-disabled on this card until workload-specific validation or vendor/driver resolution clears Xid 119/154.
 
   - id: gpu-002-gpu0-scail2
     enabled: true

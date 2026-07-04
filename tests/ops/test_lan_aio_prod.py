@@ -29,7 +29,7 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
         "gpu-177-gpu0-wan22_video_v2",
         "gpu-177-gpu1-ltx_video",
         "gpu-252-gpu0-i2i_pro",
-        "gpu-252-gpu1-wan22_video_v2",
+        "gpu-252-gpu1-pornmaster_flux2_edit",
         "gpu-002-gpu0-scail2",
         "gpu-002-gpu1-pornmaster_flux2_edit",
         "gpu-226-gpu0-image_to_video",
@@ -59,9 +59,18 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
         slots["gpu-252-gpu0-i2i_pro"].gpu_device_id
         == "GPU-09b7ea85-23df-a9b8-19d9-703534e47666"
     )
-    assert slots["gpu-252-gpu1-wan22_video_v2"].host_port == 8191
+    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].agent_id == (
+        "lan_aio_prod_gpu252_gpu1_pornmaster_flux2_edit_01"
+    )
+    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].legacy_worker_id == (
+        "lan_aio_prod_gpu252_gpu1_scail2_01"
+    )
+    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].target_task_types == (
+        "pornmaster_flux2_single_edit",
+        "pornmaster_flux2_multi_edit",
+    )
     assert (
-        slots["gpu-252-gpu1-wan22_video_v2"].gpu_device_id
+        slots["gpu-252-gpu1-pornmaster_flux2_edit"].gpu_device_id
         == "GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e"
     )
     assert slots["gpu-002-gpu0-scail2"].agent_id == (
@@ -112,8 +121,8 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
         "allbot-lan-aio-gpu-252-gpu0-i2i_pro-prod"
     )
     assert slots["gpu-252-gpu1-scail2"].enabled is False
-    assert slots["gpu-252-gpu1-scail2"].phase == "candidate"
-    assert slots["gpu-252-gpu1-scail2"].retargetable is True
+    assert slots["gpu-252-gpu1-scail2"].phase == "maintenance_disabled"
+    assert slots["gpu-252-gpu1-scail2"].retargetable is False
     assert slots["gpu-252-gpu1-scail2"].host_port == 8191
     assert slots["gpu-252-gpu1-scail2"].legacy_preflight_required is False
     assert slots["gpu-252-gpu1-scail2"].target_task_types == (
@@ -125,6 +134,34 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
     assert (
         slots["gpu-252-gpu1-scail2"].gpu_device_id
         == "GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e"
+    )
+    assert slots["gpu-252-gpu1-wan22_video_v2"].enabled is False
+    assert slots["gpu-252-gpu1-wan22_video_v2"].phase == "maintenance_disabled"
+    assert slots["gpu-252-gpu1-wan22_video_v2"].retargetable is False
+    assert slots["gpu-252-gpu1-wan22_video_v2"].legacy_worker_id == (
+        "lan_aio_prod_gpu252_gpu1_scail2_01"
+    )
+    assert slots["gpu-252-gpu1-wan22_video_v2"].old_runtime_container == (
+        "allbot-lan-aio-gpu-252-gpu1-scail2-prod"
+    )
+    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].enabled is True
+    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].phase == "prod_enabled"
+    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].retargetable is False
+    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].host_port == 8191
+    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].legacy_preflight_required is False
+    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].target_task_types == (
+        "pornmaster_flux2_single_edit",
+        "pornmaster_flux2_multi_edit",
+    )
+    assert (
+        slots["gpu-252-gpu1-pornmaster_flux2_edit"].gpu_device_id
+        == "GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e"
+    )
+    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].legacy_worker_id == (
+        "lan_aio_prod_gpu252_gpu1_scail2_01"
+    )
+    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].old_runtime_container == (
+        "allbot-lan-aio-gpu-252-gpu1-scail2-prod"
     )
     assert slots["gpu-002-gpu1-image_to_video"].enabled is False
     assert slots["gpu-002-gpu1-image_to_video"].phase == (
@@ -179,7 +216,9 @@ def test_lan_aio_prod_slot_omits_gpu177_retired_hot_cache_copy():
 
 
 def test_lan_aio_prod_slot_declares_gpu252_host_rife_hot_cache_copy():
-    slot = load_lan_aio_prod_slots()["gpu-252-gpu1-wan22_video_v2"]
+    slot = load_lan_aio_prod_slots(include_disabled=True)[
+        "gpu-252-gpu1-wan22_video_v2"
+    ]
 
     assert len(slot.legacy_hot_cache_copies) == 1
     hot_cache = slot.legacy_hot_cache_copies[0]
@@ -1345,7 +1384,7 @@ def test_lan_aio_candidate_plan_generates_stable_yaml_patch():
     assert "retargetable: true" in payload["yaml_patch"]
 
 
-def test_lan_aio_candidate_plan_retargets_gpu252_scail2_to_repaired_gpu1():
+def test_lan_aio_candidate_plan_rejects_disabled_gpu252_wan22_target():
     ops = LanAioProdOps(
         config_root=None,
         prod_env_file=Path(".env.cloud.prod.missing"),
@@ -1353,33 +1392,12 @@ def test_lan_aio_candidate_plan_retargets_gpu252_scail2_to_repaired_gpu1():
         model_env_file=Path(".env.lan.model-cache.missing"),
     )
 
-    payload = ops.candidate_plan(
-        node_id="gpu-252",
-        profile="scail2",
-        replace_slot_id="gpu-252-gpu1-wan22_video_v2",
-    )
-
-    assert payload["candidate_slot"]["id"] == "gpu-252-gpu1-scail2"
-    assert payload["candidate_slot"]["gpu_index"] == 1
-    assert (
-        payload["candidate_slot"]["gpu_device_id"]
-        == "GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e"
-    )
-    assert payload["candidate_slot"]["host_port"] == 8191
-    assert payload["candidate_slot"]["agent_id"] == (
-        "lan_aio_prod_gpu252_gpu1_scail2_01"
-    )
-    assert payload["candidate_slot"]["container_name"] == (
-        "allbot-lan-aio-gpu-252-gpu1-scail2-prod"
-    )
-    assert payload["candidate_slot"]["old_runtime_container"] == (
-        "allbot-lan-aio-gpu-252-gpu1-wan22_video_v2-prod"
-    )
-    assert payload["render_summary"]["physical_slot_key"] == "gpu-252:gpu1"
-    assert "id: gpu-252-gpu1-scail2" in payload["yaml_patch"]
-    assert "id: gpu-252-gpu0-scail2" not in payload["yaml_patch"]
-    assert "gpu-252-gpu0-scail2" not in payload["candidate_slot"]["notes"]
-    assert all("gpu-252-gpu1-scail2" in command for command in payload["preflight_commands"])
+    with pytest.raises(RuntimeError, match="not an enabled current slot"):
+        ops.candidate_plan(
+            node_id="gpu-252",
+            profile="scail2",
+            replace_slot_id="gpu-252-gpu1-wan22_video_v2",
+        )
 
 
 def test_lan_aio_warm_cache_runs_one_off_model_sync_without_agent_or_ports():
