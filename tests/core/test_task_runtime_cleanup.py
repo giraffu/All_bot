@@ -146,8 +146,14 @@ async def test_finalize_task_failure_refunds_builds_message_and_cleans_up(monkey
     refund_calls = []
     cleanup_calls = []
 
-    async def fake_refund(user_id: int, amount: int, task_type: str, username: str):
-        refund_calls.append((user_id, amount, task_type, username))
+    async def fake_refund(
+        user_id: int,
+        amount: int,
+        task_type: str,
+        username: str,
+        idempotency_key: str,
+    ):
+        refund_calls.append((user_id, amount, task_type, username, idempotency_key))
 
     async def fake_cleanup(*, internal_user_id: int, registry_task_id: str | None, release_lock: bool = True):
         cleanup_calls.append((internal_user_id, registry_task_id, release_lock))
@@ -168,7 +174,9 @@ async def test_finalize_task_failure_refunds_builds_message_and_cleans_up(monkey
 
     assert result.refunded is True
     assert result.user_message == "出错了：boom，已退还灵石"
-    assert refund_calls == [(10, 8, "refund", "u10")]
+    assert refund_calls == [
+        (10, 8, "refund", "u10", "task_refund:refund:task-10")
+    ]
     assert cleanup_calls == [(10, "task-10", True)]
 
 
@@ -201,6 +209,7 @@ async def test_finalize_task_failure_with_notice_uses_finalize_result_message(mo
 @pytest.mark.asyncio
 async def test_finalize_task_cancellation_refunds_and_cleans_up(monkeypatch):
     cleanup_calls = []
+    refund_cancelled = AsyncMock(return_value=True)
 
     async def fake_cleanup(*, internal_user_id: int, registry_task_id: str | None, release_lock: bool = True):
         cleanup_calls.append((internal_user_id, registry_task_id, release_lock))
@@ -209,7 +218,7 @@ async def test_finalize_task_cancellation_refunds_and_cleans_up(monkeypatch):
     monkeypatch.setattr(
         task_core_finalization,
         "refund_cancelled_task",
-        AsyncMock(return_value=True),
+        refund_cancelled,
     )
 
     result = await task_core_finalization.finalize_task_cancellation(
@@ -223,7 +232,40 @@ async def test_finalize_task_cancellation_refunds_and_cleans_up(monkeypatch):
 
     assert result.refunded is True
     assert result.user_message == "任务已撤销，预扣的 12 灵石已全额退回。"
+    refund_cancelled.assert_awaited_once_with(
+        internal_user_id=20,
+        username="u20",
+        cost=12,
+        task_submitted=True,
+        idempotency_key="task_refund:refund_user_cancel:task-20",
+    )
     assert cleanup_calls == [(20, "task-20", True)]
+
+
+@pytest.mark.asyncio
+async def test_finalize_task_cancellation_skips_duplicate_refund_message(monkeypatch):
+    monkeypatch.setattr(
+        task_core_finalization,
+        "cleanup_task_runtime_state",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(
+        task_core_finalization,
+        "refund_cancelled_task",
+        AsyncMock(return_value=False),
+    )
+
+    result = await task_core_finalization.finalize_task_cancellation(
+        internal_user_id=20,
+        username="u20",
+        cost=12,
+        task_submitted=True,
+        registry_task_id="task-20",
+        release_lock=True,
+    )
+
+    assert result.refunded is False
+    assert result.user_message is None
 
 
 @pytest.mark.asyncio
@@ -233,8 +275,16 @@ async def test_finalize_terminated_task_terminates_before_refund(monkeypatch):
     async def fake_force_terminate(registry_task_id: str, user_id: int | None = None):
         call_order.append(("terminate", registry_task_id, user_id))
 
-    async def fake_refund(user_id: int, amount: int, task_type: str, username: str):
-        call_order.append(("refund", user_id, amount, task_type, username))
+    async def fake_refund(
+        user_id: int,
+        amount: int,
+        task_type: str,
+        username: str,
+        idempotency_key: str,
+    ):
+        call_order.append(
+            ("refund", user_id, amount, task_type, username, idempotency_key)
+        )
 
     monkeypatch.setattr(task_core_finalization, "force_terminate_task", fake_force_terminate)
     monkeypatch.setattr(task_core_finalization, "refund_credits", fake_refund)
@@ -252,7 +302,14 @@ async def test_finalize_terminated_task_terminates_before_refund(monkeypatch):
     assert result.refunded is True
     assert call_order == [
         ("terminate", "task-30", 30),
-        ("refund", 30, 6, "refund_admin_force", "u30"),
+        (
+            "refund",
+            30,
+            6,
+            "refund_admin_force",
+            "u30",
+            "task_refund:refund_admin_force:task-30",
+        ),
     ]
 
 

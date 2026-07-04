@@ -17,6 +17,14 @@ from src.core.task_core_types import (
 logger = logging.getLogger(__name__)
 
 
+def build_task_refund_idempotency_key(
+    *, refund_task_type: str, registry_task_id: str | None
+) -> str | None:
+    if not registry_task_id:
+        return None
+    return f"task_refund:{refund_task_type}:{registry_task_id}"
+
+
 async def _refund_task_with_type(
     *,
     internal_user_id: int,
@@ -24,6 +32,7 @@ async def _refund_task_with_type(
     cost: int,
     should_refund: bool,
     refund_task_type: str,
+    idempotency_key: str | None = None,
     refund_credits_func=None,
 ) -> bool:
     if refund_credits_func is None:
@@ -31,15 +40,20 @@ async def _refund_task_with_type(
 
     if not should_refund or cost <= 0:
         return False
-    await asyncio.shield(
+    kwargs = {
+        "task_type": refund_task_type,
+        "username": username,
+    }
+    if idempotency_key:
+        kwargs["idempotency_key"] = idempotency_key
+    refund_result = await asyncio.shield(
         refund_credits_func(
             internal_user_id,
             cost,
-            task_type=refund_task_type,
-            username=username,
+            **kwargs,
         )
     )
-    return True
+    return refund_result is not False
 
 
 async def refund_cancelled_task(
@@ -48,6 +62,7 @@ async def refund_cancelled_task(
     username: str,
     cost: int,
     task_submitted: bool,
+    idempotency_key: str | None = None,
     refund_credits_func=None,
 ) -> bool:
     return await _refund_task_with_type(
@@ -56,6 +71,7 @@ async def refund_cancelled_task(
         cost=cost,
         should_refund=task_submitted,
         refund_task_type="refund_user_cancel",
+        idempotency_key=idempotency_key,
         refund_credits_func=refund_credits_func,
     )
 
@@ -129,6 +145,10 @@ async def _refund_terminated_task_best_effort(
             cost=cost,
             should_refund=should_refund,
             refund_task_type=refund_task_type,
+            idempotency_key=build_task_refund_idempotency_key(
+                refund_task_type=refund_task_type,
+                registry_task_id=registry_task_id,
+            ),
             refund_credits_func=refund_credits_func,
         )
     except Exception:
@@ -169,6 +189,10 @@ async def finalize_task_failure(
         cost=context.cost,
         should_refund=should_refund,
         refund_task_type=refund_task_type,
+        idempotency_key=build_task_refund_idempotency_key(
+            refund_task_type=refund_task_type,
+            registry_task_id=context.registry_task_id,
+        ),
         refund_credits_func=refund_credits_func,
     )
 
@@ -264,6 +288,10 @@ async def finalize_task_cancellation(
         username=context.username,
         cost=context.cost,
         task_submitted=task_submitted,
+        idempotency_key=build_task_refund_idempotency_key(
+            refund_task_type="refund_user_cancel",
+            registry_task_id=context.registry_task_id,
+        ),
     )
 
     await _cleanup_after_finalization(
@@ -320,6 +348,7 @@ async def refund_cancelled_task_default(
     username: str,
     cost: int,
     task_submitted: bool,
+    idempotency_key: str | None = None,
 ) -> bool:
     dependencies = build_default_task_core_finalization_dependencies(
         refund_credits_func=refund_credits,
@@ -332,6 +361,7 @@ async def refund_cancelled_task_default(
         username=username,
         cost=cost,
         task_submitted=task_submitted,
+        idempotency_key=idempotency_key,
         refund_credits_func=dependencies.refund_credits_func,
     )
 

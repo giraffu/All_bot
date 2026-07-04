@@ -231,15 +231,30 @@ async def refund_credits(
     cost: int,
     task_type: str = "refund",
     username: str = None,
+    idempotency_key: str | None = None,
     *,
     dependencies: BillingCoreDependencies | None = None,
-):
+) -> bool:
     """退还灵石"""
-    if cost > 0:
-        dependencies = dependencies or get_default_billing_core_dependencies()
-        await dependencies.add_credits_func(
-            internal_user_id, cost, username=username, task_type=task_type
-        )
+    if cost <= 0:
+        return False
+
+    dependencies = dependencies or get_default_billing_core_dependencies()
+    kwargs: dict[str, Any] = {
+        "username": username,
+        "task_type": task_type,
+    }
+    if idempotency_key:
+        kwargs["idempotency_key"] = idempotency_key
+        kwargs["extra_info"] = {"credit_idempotency_key": idempotency_key}
+
+    result = await dependencies.add_credits_func(internal_user_id, cost, **kwargs)
+    if idempotency_key:
+        old_balance = getattr(result, "old_balance", None)
+        new_balance = getattr(result, "new_balance", None)
+        if isinstance(old_balance, int) and isinstance(new_balance, int):
+            return new_balance != old_balance
+    return True
 
 
 async def get_user_priority_and_identity(

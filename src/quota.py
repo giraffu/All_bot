@@ -41,6 +41,7 @@ AuditMode = Literal["auto", "skip"]
 REFERRAL_WELCOME_BONUS_CREDITS = 6
 REFERRAL_CHANNEL_TARGET_CREDITS = 5
 REFERRAL_GENERATION_TARGET_CREDITS = 10
+CREDIT_IDEMPOTENCY_EXTRA_FIELD = "credit_idempotency_key"
 REFERRAL_REWARD_OPERATION_TYPES = (
     "referral_reward_initial",
     "referral_reward_channel",
@@ -160,6 +161,115 @@ class QuotaManager:
             username=user.username,
         )
 
+    @staticmethod
+    def _escape_like_pattern(value: str) -> str:
+        return (
+            value.replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
+        )
+
+    @classmethod
+    def _build_json_text_like_patterns(cls, field_name: str, value: str) -> list[str]:
+        field_json = json.dumps(field_name)
+        value_json = json.dumps(value)
+        return [
+            f"%{cls._escape_like_pattern(f'{field_json}: {value_json}')}%",
+            f"%{cls._escape_like_pattern(f'{field_json}:{value_json}')}%",
+        ]
+
+    async def _load_existing_credit_idempotency_log(
+        self,
+        *,
+        session: AsyncSession,
+        user_id: int,
+        task_type: str,
+        credit_change: int,
+        idempotency_key: str,
+    ) -> UserLog | None:
+        patterns = self._build_json_text_like_patterns(
+            CREDIT_IDEMPOTENCY_EXTRA_FIELD,
+            idempotency_key,
+        )
+        stmt = (
+            select(UserLog)
+            .where(
+                UserLog.user_id == user_id,
+                UserLog.operation_type == task_type,
+                UserLog.credit_change == credit_change,
+                or_(
+                    *[
+                        UserLog.extra_info.like(pattern, escape="\\")
+                        for pattern in patterns
+                    ]
+                ),
+            )
+            .order_by(UserLog.id.desc())
+            .limit(1)
+        )
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def _adjust_credits_in_session(
+        self,
+        *,
+        session: AsyncSession,
+        user_id: int,
+        credit_delta: int,
+        username: str = None,
+        task_type: str,
+        extra_info: Optional[dict[str, Any]] = None,
+        audit_mode: AuditMode = "auto",
+        idempotency_key: str | None = None,
+    ) -> CreditChangeResult:
+        user = await self._get_user_for_update(session, user_id)
+        if not user:
+            raise ValueError(f"User {user_id} not found")
+
+        if idempotency_key:
+            existing_log = await self._load_existing_credit_idempotency_log(
+                session=session,
+                user_id=user_id,
+                task_type=task_type,
+                credit_change=credit_delta,
+                idempotency_key=idempotency_key,
+            )
+            if existing_log is not None:
+                current_balance = int(user.credits or 0)
+                return CreditChangeResult(
+                    old_balance=current_balance,
+                    new_balance=current_balance,
+                    username=user.username,
+                )
+
+        old_balance = int(user.credits or 0)
+        if credit_delta < 0:
+            required_credits = -credit_delta
+            if old_balance < required_credits:
+                raise InsufficientCreditsError(
+                    current=old_balance, cost=required_credits
+                )
+
+        user.credits = old_balance + credit_delta
+        user.last_activity = datetime.now()
+        await session.flush()
+
+        result = CreditChangeResult(
+            old_balance=old_balance,
+            new_balance=int(user.credits or 0),
+            username=user.username,
+        )
+        await self._log_credit_change(
+            user_id=user_id,
+            username=username,
+            task_type=task_type,
+            result=result,
+            extra_info=extra_info,
+            session=session,
+            audit_mode=audit_mode,
+        )
+        return result
+
     async def _log_credit_change(
         self,
         *,
@@ -201,6 +311,7 @@ class QuotaManager:
         session: AsyncSession | None = None,
         extra_info: Optional[dict[str, Any]] = None,
         audit_mode: AuditMode = "auto",
+        idempotency_key: str | None = None,
     ) -> CreditChangeResult:
         """
         Atomically apply a credit delta.
@@ -209,31 +320,28 @@ class QuotaManager:
         When a session is passed, the caller owns the surrounding transaction.
         """
         if session is not None:
-            _, result = await self._apply_credit_delta(session, user_id, credit_delta)
-            await self._log_credit_change(
+            return await self._adjust_credits_in_session(
+                session=session,
                 user_id=user_id,
+                credit_delta=credit_delta,
                 username=username,
                 task_type=task_type,
-                result=result,
                 extra_info=extra_info,
-                session=session,
                 audit_mode=audit_mode,
+                idempotency_key=idempotency_key,
             )
-            return result
 
         async with AsyncSessionLocal() as managed_session:
             try:
-                _, result = await self._apply_credit_delta(
-                    managed_session, user_id, credit_delta
-                )
-                await self._log_credit_change(
+                result = await self._adjust_credits_in_session(
+                    session=managed_session,
                     user_id=user_id,
+                    credit_delta=credit_delta,
                     username=username,
                     task_type=task_type,
-                    result=result,
                     extra_info=extra_info,
-                    session=managed_session,
                     audit_mode=audit_mode,
+                    idempotency_key=idempotency_key,
                 )
                 await managed_session.commit()
             except Exception:
@@ -250,6 +358,7 @@ class QuotaManager:
         session: AsyncSession | None = None,
         extra_info: Optional[dict[str, Any]] = None,
         audit_mode: AuditMode = "auto",
+        idempotency_key: str | None = None,
     ) -> CreditChangeResult:
         """Deduct credits from user with a locked, atomic balance check."""
         if cost < 0:
@@ -263,6 +372,7 @@ class QuotaManager:
             session=session,
             extra_info=extra_info,
             audit_mode=audit_mode,
+            idempotency_key=idempotency_key,
         )
 
     async def add_credits(
@@ -274,10 +384,17 @@ class QuotaManager:
         session: AsyncSession | None = None,
         extra_info: Optional[dict[str, Any]] = None,
         audit_mode: AuditMode = "auto",
+        idempotency_key: str | None = None,
     ) -> CreditChangeResult:
         """Increase credits using the same transaction-safe primitive."""
         if credits < 0:
             raise ValueError("credits must be non-negative")
+
+        if idempotency_key:
+            extra_info = {
+                **(extra_info or {}),
+                CREDIT_IDEMPOTENCY_EXTRA_FIELD: idempotency_key,
+            }
 
         return await self.adjust_credits(
             user_id=user_id,
@@ -287,6 +404,7 @@ class QuotaManager:
             session=session,
             extra_info=extra_info,
             audit_mode=audit_mode,
+            idempotency_key=idempotency_key,
         )
 
     async def _transfer_credits_in_session(

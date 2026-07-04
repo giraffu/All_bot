@@ -368,6 +368,44 @@ async def test_refund_credits_uses_explicit_add_credits():
     )
 
 
+@pytest.mark.asyncio
+async def test_refund_credits_passes_idempotency_key_and_reports_duplicate_skip():
+    mock_add = AsyncMock(
+        return_value=SimpleNamespace(old_balance=20, new_balance=20)
+    )
+    dependencies = SimpleNamespace(
+        get_system_status_func=AsyncMock(),
+        get_user_identity_func=AsyncMock(),
+        get_user_group_func=AsyncMock(),
+        calculate_user_priority_func=AsyncMock(),
+        increment_user_concurrency_func=AsyncMock(),
+        decrement_user_concurrency_func=AsyncMock(),
+        deduct_credits_func=AsyncMock(),
+        add_credits_func=mock_add,
+    )
+
+    refunded = await billing_core.refund_credits(
+        123,
+        5,
+        task_type="refund_user_cancel",
+        username="tester",
+        idempotency_key="task_refund:refund_user_cancel:reg-1",
+        dependencies=dependencies,
+    )
+
+    assert refunded is False
+    mock_add.assert_awaited_once_with(
+        123,
+        5,
+        username="tester",
+        task_type="refund_user_cancel",
+        idempotency_key="task_refund:refund_user_cancel:reg-1",
+        extra_info={
+            "credit_idempotency_key": "task_refund:refund_user_cancel:reg-1"
+        },
+    )
+
+
 def test_calculate_membership_settlement_treats_unknown_identity_as_default():
     now = datetime(2026, 5, 20, 12, 0, 0)
 
