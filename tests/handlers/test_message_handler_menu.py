@@ -10,27 +10,55 @@ def _build_context(lang: str = "zh"):
     return SimpleNamespace(lang=lang, t=lambda key: f"translated:{key}")
 
 
-def test_build_photo_and_video_edit_payload_use_context_translation(monkeypatch):
+def test_build_photo_edit_payload_uses_context_translation(monkeypatch):
     monkeypatch.setattr(
         "src.i18n.keyboards.get_photo_edit_keyboard",
         lambda _lang: "photo-keyboard",
-    )
-    monkeypatch.setattr(
-        "src.i18n.keyboards.get_video_edit_keyboard",
-        lambda _lang: "video-keyboard",
     )
 
     photo_msg, photo_keyboard = message_handler_menu.build_photo_edit_payload(
         _build_context()
     )
-    video_msg, video_keyboard = message_handler_menu.build_video_edit_payload(
-        _build_context()
-    )
 
     assert photo_msg == "translated:system.photo_edit_hint"
     assert photo_keyboard == "photo-keyboard"
-    assert video_msg == "translated:system.video_edit_hint"
-    assert video_keyboard == "video-keyboard"
+
+
+def test_build_lazy_bot_payload_uses_telegram_url(monkeypatch):
+    monkeypatch.setenv("QQCC_LAZY_BOT_URL", "https://t.me/QQCC666_bot?start=main")
+    monkeypatch.delenv("QQCC_LAZY_BOT_USERNAME", raising=False)
+
+    message, reply_markup = message_handler_menu.build_lazy_bot_payload(
+        _build_context()
+    )
+
+    assert message == "translated:system.open_lazy_bot_hint"
+    button = reply_markup.inline_keyboard[0][0]
+    assert button.text == "translated:menu.open_lazy_bot"
+    assert button.url == "https://t.me/QQCC666_bot?start=main"
+
+
+def test_build_lazy_bot_payload_can_build_from_username(monkeypatch):
+    monkeypatch.delenv("QQCC_LAZY_BOT_URL", raising=False)
+    monkeypatch.setenv("QQCC_LAZY_BOT_USERNAME", "@QQCC666_bot")
+
+    _message, reply_markup = message_handler_menu.build_lazy_bot_payload(
+        _build_context()
+    )
+
+    assert reply_markup.inline_keyboard[0][0].url == "https://t.me/QQCC666_bot"
+
+
+def test_build_lazy_bot_payload_handles_missing_config(monkeypatch):
+    monkeypatch.delenv("QQCC_LAZY_BOT_URL", raising=False)
+    monkeypatch.delenv("QQCC_LAZY_BOT_USERNAME", raising=False)
+
+    message, reply_markup = message_handler_menu.build_lazy_bot_payload(
+        _build_context()
+    )
+
+    assert message == "translated:system.lazy_bot_link_unavailable"
+    assert reply_markup is None
 
 
 def test_build_back_main_and_recharge_payload():

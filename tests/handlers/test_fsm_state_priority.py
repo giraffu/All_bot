@@ -357,28 +357,42 @@ async def test_start_edit_image_english_lora_buttons(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_start_quick_image_uses_english_locale(monkeypatch):
+@pytest.mark.parametrize(
+    ("button_text", "route_key"),
+    [
+        ("💃 快速脱衣", "menu.photo_edit_undress"),
+        ("🥵 快速自慰", "menu.photo_edit_masturbation"),
+    ],
+)
+async def test_main_bot_stale_quick_image_entries_are_disabled(
+    monkeypatch, button_text, route_key
+):
     reply_mock = AsyncMock()
 
     monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
-    monkeypatch.setattr("src.handlers.fsm.quick_image_fsm.robust_reply_text", reply_mock)
+    monkeypatch.setattr(quick_image_fsm, "robust_reply_text", reply_mock)
 
-    from src.handlers.fsm import quick_image_fsm
-
-    update = _build_update_with_message(text="💃 Quick Undress")
-    context = SimpleNamespace(user_data={}, lang="en")
+    update = _build_update_with_message(text=button_text)
+    context = SimpleNamespace(
+        user_data={},
+        lang="zh",
+        t=lambda key, **_kwargs: {"system.feature_disabled": "功能暂未开放"}.get(
+            key, key
+        ),
+    )
 
     monkeypatch.setitem(
         __import__("src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]).GLOBAL_REVERSE_MAP,
-        "💃 Quick Undress",
-        "menu.photo_edit_undress",
+        button_text,
+        route_key,
     )
 
     result = await quick_image_fsm.start_quick_image(update, context)
 
-    assert result == quick_image_fsm.QuickImageState.WAIT_IMAGE
+    assert result == ConversationHandler.END
+    assert "quick_image_data" not in context.user_data
     reply_mock.assert_awaited_once()
-    assert "Entered Quick Undress mode" in reply_mock.await_args.args[1]
+    assert reply_mock.await_args.args[1] == "功能暂未开放"
 
 
 @pytest.mark.asyncio
@@ -2469,14 +2483,20 @@ async def test_start_custom_video_setup_keeps_lora_fixed_to_none(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_start_quick_video_uses_english_locale(monkeypatch):
+async def test_main_bot_stale_quick_video_text_entry_is_disabled(monkeypatch):
     reply_mock = AsyncMock()
 
     monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
-    monkeypatch.setattr("src.handlers.fsm.quick_video_fsm.robust_reply_text", reply_mock)
+    monkeypatch.setattr(quick_video_fsm, "robust_reply_text", reply_mock)
 
     update = _build_update_with_message(text="🛏️ GIF Missionary")
-    context = SimpleNamespace(user_data={}, lang="en")
+    context = SimpleNamespace(
+        user_data={},
+        lang="en",
+        t=lambda key, **_kwargs: {
+            "system.feature_disabled": "This feature is not available."
+        }.get(key, key),
+    )
 
     monkeypatch.setitem(
         __import__("src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]).GLOBAL_REVERSE_MAP,
@@ -2486,19 +2506,19 @@ async def test_start_quick_video_uses_english_locale(monkeypatch):
 
     result = await quick_video_fsm.start_quick_video(update, context)
 
-    assert result == quick_video_fsm.QuickVideoState.WAIT_IMAGE
+    assert result == ConversationHandler.END
+    assert "quick_video_data" not in context.user_data
     reply_mock.assert_awaited_once()
-    assert "Entered" in reply_mock.await_args.args[1]
-    assert "mode" in reply_mock.await_args.args[1]
+    assert reply_mock.await_args.args[1] == "This feature is not available."
 
 
 @pytest.mark.asyncio
-async def test_start_quick_video_callback_selects_mode(monkeypatch):
-    reply_mock = AsyncMock()
+async def test_main_bot_stale_quick_video_callback_entry_is_disabled(monkeypatch):
+    edit_mock = AsyncMock()
     answer_mock = AsyncMock()
 
     monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
-    monkeypatch.setattr("src.handlers.fsm.quick_video_fsm.robust_reply_text", reply_mock)
+    monkeypatch.setattr(quick_video_fsm, "robust_edit_text", edit_mock)
 
     user = _build_user()
     callback_message = SimpleNamespace(chat_id=10001)
@@ -2514,12 +2534,64 @@ async def test_start_quick_video_callback_selects_mode(monkeypatch):
             from_user=user,
         ),
     )
-    context = SimpleNamespace(user_data={}, lang="zh")
+    context = SimpleNamespace(
+        user_data={},
+        lang="zh",
+        t=lambda key, **_kwargs: {"system.feature_disabled": "功能暂未开放"}.get(
+            key, key
+        ),
+    )
+
+    result = await quick_video_fsm.start_quick_video(update, context)
+
+    assert result == ConversationHandler.END
+    assert "quick_video_data" not in context.user_data
+    answer_mock.assert_awaited_once()
+    edit_mock.assert_awaited_once_with(
+        callback_message,
+        "功能暂未开放",
+        parse_mode="Markdown",
+    )
+
+
+@pytest.mark.asyncio
+async def test_qqcc_legacy_quick_video_callback_selects_scene(monkeypatch):
+    reply_mock = AsyncMock()
+    answer_mock = AsyncMock()
+
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(quick_video_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(
+        quick_video_fsm,
+        "load_runtime_qqcc_config",
+        AsyncMock(return_value=normalize_qqcc_config(None)),
+    )
+
+    user = _build_user()
+    callback_message = SimpleNamespace(chat_id=10001)
+    update = SimpleNamespace(
+        effective_user=user,
+        effective_chat=SimpleNamespace(id=10001),
+        message=None,
+        edited_message=None,
+        callback_query=SimpleNamespace(
+            data="qvid_mode:menu.video_edit_doggy",
+            message=callback_message,
+            answer=answer_mock,
+            from_user=user,
+        ),
+    )
+    context = SimpleNamespace(
+        user_data={},
+        bot_data={"bot_client_type": "bot:qqcc"},
+        lang="zh",
+    )
 
     result = await quick_video_fsm.start_quick_video(update, context)
 
     assert result == quick_video_fsm.QuickVideoState.WAIT_IMAGE
-    assert context.user_data["quick_video_data"]["mode"] == quick_video_fsm.MODE_DOGGY_STYLE
+    assert context.user_data["quick_video_data"]["scene_id"] == "doggy"
+    assert context.user_data["quick_video_data"]["mode_name"] == "🎬 动图后入"
     answer_mock.assert_awaited_once()
     reply_mock.assert_awaited_once()
     assert reply_mock.await_args.args[0] is callback_message

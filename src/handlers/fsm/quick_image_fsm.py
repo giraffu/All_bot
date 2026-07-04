@@ -130,6 +130,20 @@ async def _reply_qqcc_feature_disabled(
         await robust_reply_text(message, text, parse_mode="Markdown")
 
 
+async def _reply_main_feature_disabled(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    text = _t(context, "system.feature_disabled")
+    query = update.callback_query
+    if query:
+        await robust_edit_text(query.message, text, parse_mode="Markdown")
+        return
+    message = update.message or update.edited_message
+    if message:
+        await robust_reply_text(message, text, parse_mode="Markdown")
+
+
 def _is_qqcc_quick_image_route_enabled(config: dict, route_key: str | None) -> bool:
     if route_key == "qqcc.menu.quick_faceswap":
         return is_qqcc_main_button_enabled(config, "quick_faceswap")
@@ -451,6 +465,13 @@ async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         qqcc_config, route_key
     ):
         await _reply_qqcc_feature_disabled(update, context)
+        return ConversationHandler.END
+
+    if qqcc_config is None and route_key in {
+        "menu.photo_edit_undress",
+        "menu.photo_edit_masturbation",
+    }:
+        await _reply_main_feature_disabled(update, context)
         return ConversationHandler.END
 
     if _is_qqcc_bot_context(context) and route_key == "menu.photo_edit_undress":

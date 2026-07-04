@@ -1,7 +1,7 @@
 # 子模块: QQCC 懒人 Bot (QQCC Lazy Bot)
 
 ## 1. 范围与定位
-QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位于仓库根目录 `qqcc_bot/`，正式名称为 `@QQCC666_bot`。它提供简化生成入口与 QQCC 专用轻量 `修仙市集`，用户、灵石、会员、历史、并发锁、队列、对象存储、worker 与结果回流全部复用现有生产数据和任务链路。
+QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位于仓库根目录 `qqcc_bot/`，正式名称为 `@QQCC666_bot`。它提供简化生成入口与 QQCC 专用轻量 `修仙市集`，用户、灵石、会员、历史、并发锁、队列、对象存储、worker 与结果回流全部复用现有生产数据和任务链路。主业务 Bot 底部的旧 `修仙市集` 入口已改为 `懒人bot` 跳转，目标由 `QQCC_LAZY_BOT_URL` 或 `QQCC_LAZY_BOT_USERNAME` 配置。
 
 它不是主 Bot 的完整副本，不承载充值、affiliate 菜单、主 Bot 完整 gallery 浏览、Web 登录、支付回调或高级视频/高级图像入口。
 
@@ -13,7 +13,7 @@ QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位�
 - `AI绘图`
 - `AI动图`
 
-`AI动图` 是 QQCC Bot 的专用展示文案，对应共享路由 `menu.video_edit`。不要直接修改共享 `menu.video_edit` 文案来实现 QQCC 菜单改名，否则会影响主 Bot 的正式菜单。
+`AI动图` 是 QQCC Bot 的专用展示文案，对应共享兼容路由 `menu.video_edit`。不要直接修改共享 `menu.video_edit` 文案来实现 QQCC 菜单改名，否则会影响旧按钮兼容和 QQCC 动图路由。
 
 `快速换脸` 是 QQCC Bot 的专用主菜单文案，对应 `qqcc.menu.quick_faceswap`，复用现有单图随机换脸流程，发送 1 张正脸图后自动匹配模板；它不是主 Bot 的双图 `faceswap_fsm`。
 
@@ -79,8 +79,8 @@ QQCC Config Web 使用独立后台账号，不复用 Dashboard 管理员 token�
 - `qqcc_bot/prompt_handlers.py`：只路由旧 `menu.photo_edit` 禁用提示、`qqcc.menu.ai_draw`、`menu.video_edit`、`qqcc.menu.market`、`menu.main_menu`、`menu.back_main` 与 `menu.open_main_bot`。
 - `qqcc_bot/gallery_market.py`：QQCC 专用修仙市集，负责 `qg:` callback、Gallery file_id 缓存发送、点赞/点踩和轻量一键应用 session。
 - `qqcc_bot/callback_handler.py`：只导入任务取消、结果评分、随机换脸再来一张、公开分享互动和 QQCC 市集等必要 callback 注册模块。
-- `src/handlers/fsm/quick_image_fsm.py`：在 `bot_client_type=bot:qqcc` 时承接 `qqcc.menu.quick_faceswap` 进入单图随机换脸，并承接 `qdraw_scene:<id>` 进入 AI绘图单图提交流程；按场景 engine、场景 `prompt` 与后处理链路路由到 `pornmaster_flux2_single_edit` / `edit` / `img2img_lora`，其它 Bot 仍保持原快速脱衣直达流程。
-- `src/handlers/fsm/quick_video_fsm.py`：承接 `qvid_scene:<id>`，按场景 engine 提交旧图生视频或 `wan22_video_v2`；配置 `end_frame_draw_scene_id` 时先复用对应 AI绘图场景的完整后处理链生成隐藏尾帧，再提交首尾帧视频。
+- `src/handlers/fsm/quick_image_fsm.py`：在 `bot_client_type=bot:qqcc` 时承接 `qqcc.menu.quick_faceswap` 进入单图随机换脸，并承接 `qdraw_scene:<id>` 进入 AI绘图单图提交流程；按场景 engine、场景 `prompt` 与后处理链路路由到 `pornmaster_flux2_single_edit` / `edit` / `img2img_lora`。主 Bot 的旧 `快速脱衣` / `快速自慰` 文本入口只回复功能未开放，不提交任务。
+- `src/handlers/fsm/quick_video_fsm.py`：在 `bot_client_type=bot:qqcc` 时承接 `qvid_scene:<id>`，按场景 engine 提交旧图生视频或 `wan22_video_v2`；配置 `end_frame_draw_scene_id` 时先复用对应 AI绘图场景的完整后处理链生成隐藏尾帧，再提交首尾帧视频。主 Bot 的旧 `menu.video_edit_*` 文本入口和 `qvid_*` callback 只回复功能未开放。
 - `src/services/qqcc_draw_chain_service.py`：QQCC AI绘图链共享 helper，负责解析无环链、计算链路费用、串行执行绘图并复用中间产物。
 - `src/services/qqcc_config_service.py`：QQCC 配置默认值、normalize、runtime checkpoint 读写与 QQCC prompt override 解析。
 - `src/services/qqcc_runtime_context.py`：集中维护 `bot:qqcc` 常量、QQCC Bot 上下文判断和按上下文加载运行时配置的兜底逻辑，供 quick image/video FSM 与 callback helper 复用。
@@ -131,6 +131,8 @@ token 只允许放在 ignored env 文件，例如 `.env.cloud.prod` 或 `.env.cl
 QQCC Config Web 只面向 Tailscale/受控入口或 Cloudflare Access 保护入口，不得裸露公网。
 
 QQCC 跳转主 Bot 按钮优先读取 `QQCC_MAIN_BOT_URL`，可配置为 `https://t.me/<main-bot-username>` 或带 `start` 参数的 Telegram deeplink；未配置 URL 时会尝试 `QQCC_MAIN_BOT_USERNAME` 并自动拼成 `https://t.me/<username>`。两者都未配置时，菜单仍可显示 `前往主bot`，但点击后只提示主 Bot 入口暂未配置。
+
+主业务 Bot 跳转 QQCC 懒人 Bot 使用独立反向配置：优先读取 `QQCC_LAZY_BOT_URL`，未配置时读取 `QQCC_LAZY_BOT_USERNAME` 并自动生成 `https://t.me/<username>`。两者都未配置时，主 Bot 的 `懒人bot` 菜单只提示入口暂未配置。
 
 QQCC Bot 不启动 TON 轮询，不注册支付回调，不作为充值入口。compose 中必须显式设置 `TON_PAYMENT_POLLING_ENABLED=false`。
 
@@ -202,6 +204,8 @@ pytest tests/handlers/test_fsm_state_priority.py -q
 ```
 
 QQCC 快速入口至少覆盖：
+- 主业务 Bot 主菜单展示 `懒人bot`、`图片换脸` 与 `视频生视频`，不展示旧 `修仙市集` 或 `视频创作`；点击 `懒人bot` 或旧 `修仙市集` 文本回复前往 QQCC 的 inline URL 按钮。
+- 主业务 Bot `图片换脸` 二级菜单只展示 `快速换脸`、`随机换脸` 与返回主菜单；旧 `快速脱衣`、`快速自慰`、旧动图文本入口和主 Bot 上的 `qvid_*` callback 回复功能未开放且不提交任务。
 - `/start` 主菜单默认展示 `快速换脸`、`AI绘图`、`AI动图`，不展示旧 `快速脱衣` 或 `懒人P图`。
 - `/start` 只返回简化主菜单，不额外发送跳转消息；主菜单包含非生成入口 `修仙市集` 与 `前往主bot`。
 - 配置 `QQCC_MAIN_BOT_URL` 或 `QQCC_MAIN_BOT_USERNAME` 时，点击 `前往主bot` 回复 inline URL 跳转按钮；未配置时回复入口未配置提示。

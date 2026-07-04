@@ -12,7 +12,7 @@ def get_main_menu_keyboard(lang: str) -> ReplyKeyboardMarkup:
     """
     keyboard = [
         [
-            get_text("menu.gallery", lang),
+            get_text("menu.lazy_bot", lang),
             get_text("menu.recharge", lang),
             get_text("menu.checkin", lang),
             get_text("menu.profile", lang),
@@ -24,7 +24,6 @@ def get_main_menu_keyboard(lang: str) -> ReplyKeyboardMarkup:
         ],
         [
             get_text("menu.photo_edit", lang),
-            get_text("menu.video_edit", lang),
             get_text("menu.video_to_video", lang),
         ],
         [
@@ -45,11 +44,9 @@ def get_main_menu_keyboard(lang: str) -> ReplyKeyboardMarkup:
 def get_photo_edit_keyboard(lang: str) -> ReplyKeyboardMarkup:
     keyboard = [
         [
-            get_text("menu.photo_edit_undress", lang),
             get_text("menu.photo_edit_faceswap", lang),
-            get_text("menu.photo_edit_masturbation", lang),
+            get_text("menu.photo_edit_random_faceswap", lang),
         ],
-        [get_text("menu.photo_edit_random_faceswap", lang)],
         [get_text("menu.back_main", lang)],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)

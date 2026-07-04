@@ -36,10 +36,10 @@ from src.handlers.message_handler_media_entry import (
 )
 from src.handlers.message_handler_menu import (
     build_back_to_main_payload,
-    build_gallery_payload,
+    build_disabled_payload,
+    build_lazy_bot_payload,
     build_photo_edit_payload,
     build_recharge_payload,
-    build_video_edit_payload,
     build_video_to_video_payload,
     reply_with_async_payload,
     reply_with_built_payload,
@@ -182,7 +182,7 @@ handle_photo_edit_menu = _build_built_menu_handler(
 
 handle_video_edit_menu = _build_built_menu_handler(
     handler_name="handle_video_edit_menu",
-    build_payload_ref=lambda: build_video_edit_payload,
+    build_payload_ref=lambda: build_disabled_payload,
     include_context=True,
     decorators=(prompt_route("menu.video_edit"),),
 )
@@ -194,12 +194,18 @@ handle_video_to_video_menu = _build_built_menu_handler(
     decorators=(prompt_route("menu.video_to_video"),),
 )
 
-handle_gallery_menu = _build_built_menu_handler(
-    handler_name="handle_gallery_menu",
-    build_payload_ref=lambda: build_gallery_payload,
+handle_lazy_bot_menu = _build_built_menu_handler(
+    handler_name="handle_lazy_bot_menu",
+    build_payload_ref=lambda: build_lazy_bot_payload,
     include_context=True,
-    decorators=(prompt_route("menu.gallery"),),
+    decorators=(
+        prompt_route("menu.lazy_bot"),
+        prompt_route("menu.gallery"),
+        prompt_route("qqcc.menu.market"),
+    ),
 )
+
+handle_gallery_menu = handle_lazy_bot_menu
 
 handle_back_to_main_menu = _build_built_menu_handler(
     handler_name="handle_back_to_main_menu",

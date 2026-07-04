@@ -12,7 +12,11 @@ from src.constants import (
 )
 from src.handlers import prompt_router
 from src.handlers.fsm import scail2_video_fsm
-from src.i18n.keyboards import get_main_menu_keyboard, get_video_to_video_keyboard
+from src.i18n.keyboards import (
+    get_main_menu_keyboard,
+    get_photo_edit_keyboard,
+    get_video_to_video_keyboard,
+)
 from src.i18n.translator import get_text
 
 
@@ -60,14 +64,33 @@ def _build_cancel_update():
     )
 
 
-def test_main_menu_uses_video_to_video_in_old_face_video_position():
+def test_main_menu_deduplicates_lazy_bot_and_video_creation_entries():
     keyboard = get_main_menu_keyboard("zh")
-    target_row = keyboard.keyboard[2]
+    button_texts = [
+        button.text
+        for row in keyboard.keyboard
+        for button in row
+    ]
 
-    assert _button_texts(target_row) == [
+    assert get_text("menu.lazy_bot", "zh") in button_texts
+    assert get_text("menu.gallery", "zh") not in button_texts
+    assert get_text("menu.video_edit", "zh") not in button_texts
+    assert _button_texts(keyboard.keyboard[2]) == [
         get_text("menu.photo_edit", "zh"),
-        get_text("menu.video_edit", "zh"),
         get_text("menu.video_to_video", "zh"),
+    ]
+
+
+def test_photo_edit_keyboard_only_keeps_face_swap_entries():
+    get_photo_edit_keyboard.cache_clear()
+    keyboard = get_photo_edit_keyboard("zh")
+
+    assert [_button_texts(row) for row in keyboard.keyboard] == [
+        [
+            get_text("menu.photo_edit_faceswap", "zh"),
+            get_text("menu.photo_edit_random_faceswap", "zh"),
+        ],
+        [get_text("menu.back_main", "zh")],
     ]
 
 

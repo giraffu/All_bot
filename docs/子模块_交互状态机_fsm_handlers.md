@@ -55,14 +55,19 @@ FSM 入口与过程中，当前推荐组合为：
 在任意文字输入 handler 内，应优先判断 `is_global_menu_command(...)`，决定是否强制退出当前 FSM。
 - 若多个 FSM 共享同一类取消/超时/意外输入退出逻辑，优先复用 `fsm_shared.py`，不要在各文件继续复制 `_t/cancel/timeout/unexpected_input` 样板。
 
-### 3.3 Callback 路由
+### 3.3 主 Bot 与 QQCC 重复入口收口
+主业务 Bot 底部菜单不再展示旧 `修仙市集` 和 `视频创作` 入口；旧 `修仙市集` 文案与新 `懒人bot` 菜单都只回复前往 QQCC 懒人 Bot 的 inline URL 按钮，跳转目标由 `QQCC_LAZY_BOT_URL` 或 `QQCC_LAZY_BOT_USERNAME` 提供。`图片换脸` 二级菜单只保留双图 `快速换脸` 与单图 `随机换脸`。
+
+旧 `快速脱衣`、`快速自慰`、`menu.video_edit_*` 文本入口和主 Bot 上的 `qvid_*` callback 必须回复功能未开放并结束，不得进入任务提交。QQCC Bot 仍保留 `AI绘图` / `AI动图` 动态场景入口、`qdraw_scene:*`、`qvid_scene:*` 与旧 `qvid_mode:*` 已发按钮兼容。
+
+### 3.4 Callback 路由
 当前 callback 体系依赖：
 - `@register_callback("prefix")` 前缀注册
 - 按前缀长度降序匹配
 - 主入口导入子模块以触发注册
 - 未命中时统一 `safe_answer_query(...)` 兜底
 
-### 3.4 SCAIL-2 视频生视频 FSM
+### 3.5 SCAIL-2 视频生视频 FSM
 正式 Bot 与测试 Bot 的主菜单中，原“视频换脸”位置已进入“视频生视频”二级菜单。二级菜单顺序固定为：
 - 视频换人
 - 动作迁移

@@ -45,8 +45,10 @@ def build_global_menu_filter():
         "menu.exit",  # 退出
         "menu.main_menu",  # 🏠 主菜单
         "menu.back_main",  # 🔙 返回主菜单
-        "menu.photo_edit",  # 🖼️ 懒人P图 / AI Edit
-        "menu.video_edit",  # 🎬 视频创作 / AI Video
+        "menu.lazy_bot",  # 懒人bot / Lazy Bot
+        "menu.open_lazy_bot",  # 前往懒人bot / Open Lazy Bot
+        "menu.photo_edit",  # 🖼️ 图片换脸 / Face Swap Images
+        "menu.video_edit",  # legacy 视频创作 / QQCC AI Video
         "menu.open_main_bot",  # 前往主bot / Open Main Bot
         "qqcc.menu.quick_faceswap",  # 快速换脸 / Quick Faceswap
         "qqcc.menu.ai_draw",  # AI绘图 / AI Drawing
@@ -121,6 +123,9 @@ def build_global_menu_filter():
         "AI动图": "menu.video_edit",
         "AI绘图": "qqcc.menu.ai_draw",
         "快速换脸": "qqcc.menu.quick_faceswap",
+        "懒人bot": "menu.lazy_bot",
+        "懒人Bot": "menu.lazy_bot",
+        "🖼️ 懒人P图": "menu.photo_edit",
         "🎬 自定义图生视频": "menu.custom_video",
         "自定义图生视频": "menu.custom_video",
     }

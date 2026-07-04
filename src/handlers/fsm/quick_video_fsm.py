@@ -156,6 +156,20 @@ async def _reply_qqcc_feature_disabled(
         await robust_reply_text(message, text, parse_mode="Markdown")
 
 
+async def _reply_main_feature_disabled(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    text = _t(context, "system.feature_disabled")
+    query = update.callback_query
+    if query:
+        await robust_edit_text(query.message, text, parse_mode="Markdown")
+        return
+    message = update.message or update.edited_message
+    if message:
+        await robust_reply_text(message, text, parse_mode="Markdown")
+
+
 def _is_qqcc_quick_video_mode_enabled(config: dict, mode: str | None) -> bool:
     return bool(
         mode
@@ -563,6 +577,10 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return ConversationHandler.END
 
     qqcc_config = await _load_qqcc_config_for_context(context)
+    if qqcc_config is None and (mode or route_key or scene_id):
+        await _reply_main_feature_disabled(update, context)
+        return ConversationHandler.END
+
     quick_video_data = {
         "mode": mode,
         "resolution": DEFAULT_RESOLUTION,

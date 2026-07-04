@@ -87,7 +87,7 @@ async def test_handle_prompt_uses_edited_message_for_private_fallback(monkeypatc
     ("text", "route_key", "keyboard_attr", "expected_text"),
     [
         ("主菜单", "menu.main_menu", "get_main_menu_keyboard", "system.back_to_main"),
-        ("懒人P图", "menu.photo_edit", "get_photo_edit_keyboard", "system.photo_edit_hint"),
+        ("图片换脸", "menu.photo_edit", "get_photo_edit_keyboard", "system.photo_edit_hint"),
     ],
 )
 async def test_handle_prompt_route_uses_edited_message_reply_target(
@@ -230,9 +230,8 @@ async def test_handle_checkin_replies_gate_payload_before_building_checkin(monke
 @pytest.mark.parametrize(
     ("handler_name", "build_payload_name", "text"),
     [
-        ("handle_photo_edit_menu", "build_photo_edit_payload", "懒人P图"),
-        ("handle_video_edit_menu", "build_video_edit_payload", "视频编辑"),
-        ("handle_gallery_menu", "build_gallery_payload", "画廊"),
+        ("handle_photo_edit_menu", "build_photo_edit_payload", "图片换脸"),
+        ("handle_lazy_bot_menu", "build_lazy_bot_payload", "懒人bot"),
         ("handle_back_to_main_menu", "build_back_to_main_payload", "主菜单"),
         ("handle_recharge_menu", "build_recharge_payload", "充值"),
     ],
@@ -258,13 +257,30 @@ async def test_menu_handlers_delegate_to_reply_with_built_payload(
             {"context": context}
             if build_payload_name in {
                 "build_photo_edit_payload",
-                "build_video_edit_payload",
                 "build_back_to_main_payload",
-                "build_gallery_payload",
+                "build_lazy_bot_payload",
                 "build_recharge_payload",
             }
             else {}
         ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_old_gallery_text_routes_to_lazy_bot_payload_in_main_bot(monkeypatch):
+    reply_with_payload = AsyncMock(return_value=None)
+    update = _build_private_update_with_edited_message(text="修仙市集")
+    context = _build_context()
+
+    monkeypatch.setattr(message_handler, "reply_with_built_payload", reply_with_payload)
+
+    await message_handler.handle_lazy_bot_menu(update, context, text="修仙市集")
+
+    reply_with_payload.assert_awaited_once_with(
+        update,
+        reply_text=message_handler.robust_reply_text,
+        build_payload=message_handler.build_lazy_bot_payload,
+        context=context,
     )
 
 
@@ -300,7 +316,7 @@ async def test_dispatch_built_menu_handler_rewards_user_before_reply(monkeypatch
 async def test_dispatch_built_menu_handler_short_circuits_when_reward_user_missing(monkeypatch):
     reply_with_payload = AsyncMock(return_value=None)
     ensure_reward = AsyncMock(return_value=None)
-    update = _build_private_update_with_edited_message(text="懒人P图")
+    update = _build_private_update_with_edited_message(text="图片换脸")
     update.effective_user = None
     context = _build_context()
 
