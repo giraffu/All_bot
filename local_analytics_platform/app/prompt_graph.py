@@ -17,7 +17,6 @@ import numpy as np
 from .prompt_mart import PROMPT_NORMALIZATION_VERSION
 from .prompt_vectors import (
     DEFAULT_DUPLICATE_THRESHOLD,
-    DEFAULT_SIMILAR_THRESHOLD,
     DEFAULT_VECTOR_MODEL_ID,
     DEFAULT_VECTOR_MODEL_KEY,
     embedding_from_bytes,

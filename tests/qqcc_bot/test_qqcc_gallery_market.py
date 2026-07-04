@@ -266,6 +266,57 @@ def test_gallery_apply_mode_sends_complex_templates_to_web():
 
 
 @pytest.mark.asyncio
+async def test_load_apply_context_reuses_preloaded_entities(monkeypatch):
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, _tb):
+            return None
+
+    session = FakeSession()
+    post = SimpleNamespace(id=43, is_active=True)
+    history = SimpleNamespace(type=MODE_I2I_PRO, extra_outputs={})
+    payload = SimpleNamespace(task_type=MODE_I2I_PRO, input_files=[])
+    fetch_calls = 0
+    build_calls = 0
+
+    async def fake_fetch_gallery_apply_context_entities(*, db, post_id):
+        nonlocal fetch_calls
+        fetch_calls += 1
+        assert db is session
+        assert post_id == 43
+        return post, history
+
+    async def fake_build_gallery_apply_context_payload(**kwargs):
+        nonlocal build_calls
+        build_calls += 1
+        assert kwargs["db"] is session
+        assert kwargs["post"] is post
+        assert kwargs["history"] is history
+        return payload
+
+    monkeypatch.setattr(gallery_market, "AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(
+        gallery_market,
+        "fetch_gallery_apply_context_entities",
+        fake_fetch_gallery_apply_context_entities,
+    )
+    monkeypatch.setattr(
+        gallery_market,
+        "build_gallery_apply_context_payload",
+        fake_build_gallery_apply_context_payload,
+    )
+
+    apply_context, mode = await gallery_market._load_apply_context_or_mode(43)
+
+    assert apply_context is payload
+    assert mode == "native"
+    assert fetch_calls == 1
+    assert build_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_gallery_apply_media_without_session_is_silent(monkeypatch):
     reply_text = AsyncMock()
     monkeypatch.setattr(gallery_market, "robust_reply_text", reply_text)

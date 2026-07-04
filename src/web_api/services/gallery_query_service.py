@@ -2,6 +2,14 @@ from sqlalchemy import desc, exists, func, select
 
 from src.database.models import GalleryPost, GalleryPromptUnlock, History, UserInteraction
 from src.services.gallery_feed_queries import resolve_gallery_task_type_filter_values
+from src.services.gallery_apply_context_service import fetch_gallery_apply_context_entities
+
+__all__ = [
+    "fetch_gallery_apply_context_entities",
+    "fetch_my_favorite_posts_page",
+    "fetch_my_gallery_posts_page",
+    "fetch_my_prompt_unlocked_posts_page",
+]
 
 
 def _apply_history_task_type_filter(query, task_type: str | None):
@@ -115,16 +123,3 @@ async def fetch_my_prompt_unlocked_posts_page(
     offset = (page - 1) * size
     posts = (await db.execute(query.offset(offset).limit(size))).scalars().all()
     return posts, total
-
-
-async def fetch_gallery_apply_context_entities(*, db, post_id: int):
-    post = (
-        await db.execute(select(GalleryPost).where(GalleryPost.id == post_id))
-    ).scalar_one_or_none()
-    if not post:
-        return None, None
-
-    history = (
-        await db.execute(select(History).where(History.task_id == post.task_id))
-    ).scalars().first()
-    return post, history

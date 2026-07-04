@@ -10,6 +10,7 @@ import re
 import subprocess
 import sys
 import unicodedata
+from contextlib import asynccontextmanager
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -226,7 +227,17 @@ checkin_split as (
 )
 """
 
-app = FastAPI(title="AllBot Local Analytics", version="0.1.0")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    try:
+        yield
+    finally:
+        pool = getattr(_app.state, "pool", None)
+        if pool is not None:
+            await pool.close()
+
+
+app = FastAPI(title="AllBot Local Analytics", version="0.1.0", lifespan=lifespan)
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -268,13 +279,6 @@ async def _pool() -> asyncpg.Pool:
         )
         pool = app.state.pool
     return pool
-
-
-@app.on_event("shutdown")
-async def shutdown() -> None:
-    pool = getattr(app.state, "pool", None)
-    if pool is not None:
-        await pool.close()
 
 
 async def _fetch(query: str, *args: Any) -> list[asyncpg.Record]:

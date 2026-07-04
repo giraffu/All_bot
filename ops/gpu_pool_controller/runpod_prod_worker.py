@@ -1047,9 +1047,7 @@ class RunPodProdWorkerRunner:
             return
 
         self._require_agent_token()
-        self._require_runpod_mutation_gates(
-            required_pod_limit=desired if plan["create_slots"] else 0,
-        )
+        self._require_runpod_mutation_gates()
         operations: list[dict[str, Any]] = []
         for slot in plan["create_slots"]:
             operations.append(self._scale_create_slot(slot, summary))
@@ -2186,11 +2184,7 @@ class RunPodProdWorkerRunner:
             allow_statuses=allow_statuses,
         )
 
-    def _require_runpod_mutation_gates(
-        self,
-        *,
-        required_pod_limit: int | None = None,
-    ) -> None:
+    def _require_runpod_mutation_gates(self) -> None:
         settings = self.provider.settings
         missing_gates: list[str] = []
         if settings.dry_run:

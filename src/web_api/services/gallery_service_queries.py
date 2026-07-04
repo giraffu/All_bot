@@ -7,13 +7,13 @@ from src.web_api.common.utils import (
     build_storage_input_file_url,
     release_read_transaction,
 )
-from src.web_api.services.apply_context_service import (
-    resolve_history_template_apply_disabled_reason,
+from src.services.gallery_apply_context_service import (
+    GalleryApplyContextError,
+    build_gallery_apply_context_payload,
 )
 from src.web_api.services.gallery_response_builder import build_gallery_post_responses
 from src.web_api.schemas.gallery_schema import ApplyContextResponse, PaginatedGalleryResponse
 from src.web_api.services.gallery_query_service import (
-    fetch_gallery_apply_context_entities,
     fetch_my_favorite_posts_page,
     fetch_my_gallery_posts_page,
     fetch_my_prompt_unlocked_posts_page,
@@ -272,31 +272,17 @@ async def build_apply_context_payload(
     should_return_apply_input_file,
     build_input_file_url,
 ) -> ApplyContextResponse:
-    post, history = await fetch_gallery_apply_context_entities(db=db, post_id=post_id)
-    if not post or post.is_active is False:
-        raise HTTPException(status_code=404, detail="帖子不存在或已失效")
-    if not history:
-        raise HTTPException(status_code=404, detail="未找到原任务详情")
-    disabled_reason = resolve_history_template_apply_disabled_reason(history)
-    if disabled_reason:
-        raise HTTPException(status_code=400, detail=disabled_reason)
-    await release_read_transaction(db)
-
-    return await build_history_apply_context_response_fn(
-        history=history,
-        post_id=post.id,
-        source_post_id=post.id,
-        gallery_post=post,
-        primary_media_type=post.media_type,
-        primary_width=post.width,
-        primary_height=post.height,
-        primary_duration=post.duration,
-        fallback_width=history.width,
-        fallback_height=history.height,
-        fallback_duration=history.duration,
-        include_input_file=should_return_apply_input_file(history),
-        build_input_file_url=build_input_file_url,
-    )
+    try:
+        return await build_gallery_apply_context_payload(
+            post_id=post_id,
+            db=db,
+            build_history_apply_context_response_fn=build_history_apply_context_response_fn,
+            should_return_apply_input_file=should_return_apply_input_file,
+            build_input_file_url=build_input_file_url,
+            release_read_transaction_fn=release_read_transaction,
+        )
+    except GalleryApplyContextError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 async def get_gallery_apply_context_payload(

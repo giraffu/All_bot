@@ -7,7 +7,6 @@ import re
 import time
 from dataclasses import dataclass
 
-from fastapi import HTTPException
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
@@ -47,6 +46,13 @@ from src.services.gallery_browse_service import (
     resolve_gallery_media_source,
     send_gallery_media_message,
 )
+from src.services.gallery_apply_context_service import (
+    GalleryApplyContextError,
+    build_gallery_apply_context_payload,
+    default_should_return_gallery_apply_input_file,
+    fetch_gallery_apply_context_entities,
+    resolve_history_template_apply_disabled_reason,
+)
 from src.services.ltx_video_extension_service import (
     extract_ltx_history_context,
     is_ltx_stitched_result,
@@ -66,11 +72,11 @@ from src.utils import (
     robust_send_message,
     safe_answer_query,
 )
-from src.web_api.services.apply_context_service import (
-    resolve_history_template_apply_disabled_reason,
+from src.web_api.common.utils import (
+    build_history_apply_context_response,
+    build_storage_input_file_url,
+    release_read_transaction,
 )
-from src.web_api.services.gallery_query_service import fetch_gallery_apply_context_entities
-from src.web_api.services.gallery_service_queries import get_gallery_apply_context_payload
 
 logger = logging.getLogger("qqcc_bot.gallery_market")
 
@@ -400,6 +406,28 @@ def _build_post_caption(*, post, history, translated_tags: list[str], context) -
     )
 
 
+def build_qqcc_market_apply_row(*, post, history) -> list[InlineKeyboardButton]:
+    apply_mode, _reason = resolve_qqcc_gallery_apply_mode(history)
+    if apply_mode == "native":
+        return [
+            InlineKeyboardButton("一键应用", callback_data=f"{QG_APPLY_PREFIX}{post.id}"),
+            InlineKeyboardButton("Web应用", url=build_market_web_apply_url(post.id)),
+        ]
+    if apply_mode == "web":
+        apply_row = []
+        if not _is_web_only_market_history(history):
+            apply_row.append(
+                InlineKeyboardButton("一键应用", callback_data=f"{QG_APPLY_PREFIX}{post.id}")
+            )
+        apply_row.append(
+            InlineKeyboardButton("Web应用", url=build_market_web_apply_url(post.id))
+        )
+        return apply_row
+    if apply_mode == "hidden":
+        return []
+    return [InlineKeyboardButton("不可应用", callback_data="noop")]
+
+
 def build_qqcc_market_post_markup(
     *,
     post,
@@ -409,27 +437,7 @@ def build_qqcc_market_post_markup(
     page: int,
     has_next: bool,
 ) -> InlineKeyboardMarkup:
-    apply_mode, _reason = resolve_qqcc_gallery_apply_mode(history)
-    apply_row = []
-    if apply_mode == "native":
-        apply_row.append(
-            InlineKeyboardButton("一键应用", callback_data=f"{QG_APPLY_PREFIX}{post.id}")
-        )
-        apply_row.append(
-            InlineKeyboardButton("Web应用", url=build_market_web_apply_url(post.id))
-        )
-    elif apply_mode == "web":
-        if not _is_web_only_market_history(history):
-            apply_row.append(
-                InlineKeyboardButton("一键应用", callback_data=f"{QG_APPLY_PREFIX}{post.id}")
-            )
-        apply_row.append(
-            InlineKeyboardButton("Web应用", url=build_market_web_apply_url(post.id))
-        )
-    else:
-        if apply_mode != "hidden":
-            apply_row.append(InlineKeyboardButton("不可应用", callback_data="noop"))
-
+    apply_row = build_qqcc_market_apply_row(post=post, history=history)
     rows = [
         [
             InlineKeyboardButton(
@@ -612,15 +620,24 @@ async def _load_apply_context_or_mode(post_id: int):
     async with AsyncSessionLocal() as db:
         post, history = await fetch_gallery_apply_context_entities(db=db, post_id=post_id)
         if not post or post.is_active is False:
-            raise HTTPException(status_code=404, detail="帖子不存在或已失效")
+            raise GalleryApplyContextError(status_code=404, detail="帖子不存在或已失效")
         if not history:
-            raise HTTPException(status_code=404, detail="未找到原任务详情")
+            raise GalleryApplyContextError(status_code=404, detail="未找到原任务详情")
         apply_mode, reason = resolve_qqcc_gallery_apply_mode(history)
         if apply_mode in {"disabled", "hidden"}:
-            raise HTTPException(status_code=400, detail=reason or "apply_disabled")
+            raise GalleryApplyContextError(status_code=400, detail=reason or "apply_disabled")
         if apply_mode == "web":
             return None, "web"
-        apply_context = await get_gallery_apply_context_payload(post_id=post_id, db=db)
+        apply_context = await build_gallery_apply_context_payload(
+            post_id=post_id,
+            db=db,
+            build_history_apply_context_response_fn=build_history_apply_context_response,
+            should_return_apply_input_file=default_should_return_gallery_apply_input_file,
+            build_input_file_url=build_storage_input_file_url,
+            release_read_transaction_fn=release_read_transaction,
+            post=post,
+            history=history,
+        )
         if not _is_native_apply_context(apply_context):
             return None, "web"
         return apply_context, "native"
@@ -679,7 +696,7 @@ async def handle_qqcc_market_apply_callback(update: Update, context: ContextType
             query.message.chat_id,
             _t(context, "qqcc.market.apply_loaded"),
         )
-    except HTTPException as exc:
+    except GalleryApplyContextError as exc:
         await safe_answer_query(
             query,
             text=f"{_t(context, 'qqcc.market.apply_disabled')} {exc.detail}",

@@ -4,8 +4,18 @@ from pathlib import Path
 
 import pytest
 
+from ops.gpu_pool_controller.runpod_profile_catalog import (
+    RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
+    RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
+    RUNPOD_TASK_PROFILES,
+)
+from src.workflow_mapping_validation import resolve_workflow_filename
+
 
 ROOT = Path(__file__).resolve().parents[2]
+MAIN_RUNTIME_TYPES_PATH = ROOT / "workers/comfy_agent/agent_runtime_types.py"
+REMOTE_RUNTIME_TYPES_PATH = ROOT / "remote_workers/comfy_agent/agent_runtime_types.py"
+MAIN_WORKFLOW_DIR = ROOT / "workers/comfy_agent/workflows"
 REMOTE_VALIDATION_PATH = ROOT / "remote_workers/src/workflow_mapping_validation.py"
 REMOTE_WORKFLOW_DIR = ROOT / "remote_workers/comfy_agent/workflows"
 I2I_PRO_BASELINE_MODELS = {
@@ -15,6 +25,16 @@ I2I_PRO_BASELINE_MODELS = {
     "z_image/qwen_3_4b.safetensors",
     "z_image/ae.safetensors",
     "DarkBeastZ6-BlitZ-BF16-ComfyUI.safetensors",
+}
+EXPECTED_MAIN_ONLY_WORKFLOWS = {
+    "DasiwaLTX23WorkflowsI2VFLF2V_omniforgeCLTX23V39.json",
+}
+EXPECTED_REMOTE_WORKFLOW_DRIFTS = {
+    "Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json",
+}
+PROFILE_WORKFLOW_OVERRIDES = {
+    "i2i_pro": json.loads(RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES),
+    "ltx_video": json.loads(RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES),
 }
 
 
@@ -41,6 +61,49 @@ def _workflow_model_refs(path: Path) -> set[str]:
             if isinstance(value, str) and value:
                 refs.add(value)
     return refs
+
+
+def _workflow_files(workflow_dir: Path) -> set[str]:
+    return {path.name for path in workflow_dir.glob("*.json")}
+
+
+def test_remote_task_execution_context_matches_main_worker_contract():
+    assert REMOTE_RUNTIME_TYPES_PATH.read_text(
+        encoding="utf-8"
+    ) == MAIN_RUNTIME_TYPES_PATH.read_text(encoding="utf-8")
+
+
+def test_remote_workflow_directory_only_has_documented_drift():
+    main_files = _workflow_files(MAIN_WORKFLOW_DIR)
+    remote_files = _workflow_files(REMOTE_WORKFLOW_DIR)
+
+    assert main_files - remote_files == EXPECTED_MAIN_ONLY_WORKFLOWS
+    assert remote_files - main_files == set()
+
+    changed_files = {
+        filename
+        for filename in main_files & remote_files
+        if (MAIN_WORKFLOW_DIR / filename).read_bytes()
+        != (REMOTE_WORKFLOW_DIR / filename).read_bytes()
+    }
+    assert changed_files == EXPECTED_REMOTE_WORKFLOW_DRIFTS
+
+
+def test_runpod_profile_supported_task_types_have_main_and_remote_workflow_files():
+    for profile in RUNPOD_TASK_PROFILES.values():
+        overrides = PROFILE_WORKFLOW_OVERRIDES.get(profile.runtime_profile, {})
+        for task_type in profile.supported_task_types:
+            filename = overrides.get(task_type, resolve_workflow_filename(task_type))
+            assert (MAIN_WORKFLOW_DIR / filename).exists(), (
+                profile.runtime_profile,
+                task_type,
+                filename,
+            )
+            assert (REMOTE_WORKFLOW_DIR / filename).exists(), (
+                profile.runtime_profile,
+                task_type,
+                filename,
+            )
 
 
 def test_remote_worker_resolves_i2i_pro_task_type_workflow_overrides(monkeypatch):

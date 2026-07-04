@@ -21,18 +21,36 @@ from src.services.ltx_video_extension_service import (
     extract_ltx_history_context,
     is_ltx_video_history_task_type,
 )
+from src.services.gallery_apply_context_service import (
+    TEMPLATE_APPLY_DISABLED_REASON_I2I_DRAW_DISABLED,
+    TEMPLATE_APPLY_DISABLED_REASON_MISSING_SCAIL2_MOTION_VIDEO,
+    TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED,
+    is_history_template_apply_supported,
+    resolve_history_template_apply_disabled_reason,
+    resolve_reusable_apply_input_files,
+    split_history_input_files,
+)
 from src.services.wan22_video_v2_extension_service import (
     extract_wan22_history_context,
-    is_wan22_stitched_result,
 )
 from src.web_api.schemas.gallery_schema import ApplyContextResponse
 
-TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED = "wan22_stitched"
-TEMPLATE_APPLY_DISABLED_REASON_MISSING_SCAIL2_MOTION_VIDEO = (
-    "missing_scail2_motion_video"
-)
-TEMPLATE_APPLY_DISABLED_REASON_I2I_DRAW_DISABLED = "i2i_draw_disabled"
 SCAIL2_HISTORY_CONTEXT_KEY = "scail2_context"
+
+__all__ = [
+    "TEMPLATE_APPLY_DISABLED_REASON_I2I_DRAW_DISABLED",
+    "TEMPLATE_APPLY_DISABLED_REASON_MISSING_SCAIL2_MOTION_VIDEO",
+    "TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED",
+    "build_apply_context_response",
+    "build_history_apply_context_response",
+    "is_history_template_apply_supported",
+    "probe_apply_context_media_metadata",
+    "resolve_apply_context_media_metadata",
+    "resolve_history_billing_resolution",
+    "resolve_history_template_apply_disabled_reason",
+    "resolve_reusable_apply_input_files",
+    "split_history_input_files",
+]
 
 
 def _pick_first_non_none(*values):
@@ -48,43 +66,6 @@ def _coerce_positive_int(value) -> int | None:
     except (TypeError, ValueError):
         return None
     return normalized if normalized > 0 else None
-
-
-def split_history_input_files(input_file: str | None) -> list[str]:
-    if not input_file:
-        return []
-    return [
-        item.strip()
-        for item in str(input_file).split("|")
-        if item and item.strip()
-    ]
-
-
-def resolve_reusable_apply_input_files(history: History | None) -> list[str]:
-    if history is None:
-        return []
-
-    input_files = split_history_input_files(getattr(history, "input_file", None))
-    if is_scail2_task_type(getattr(history, "type", None)):
-        return input_files[1:2]
-    return input_files
-
-
-def resolve_history_template_apply_disabled_reason(
-    history: History | None,
-) -> str | None:
-    if history and getattr(history, "type", None) == "i2i_draw":
-        return TEMPLATE_APPLY_DISABLED_REASON_I2I_DRAW_DISABLED
-    if history and is_wan22_stitched_result(getattr(history, "extra_outputs", None)):
-        return TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED
-    if history and is_scail2_task_type(getattr(history, "type", None)):
-        if not resolve_reusable_apply_input_files(history):
-            return TEMPLATE_APPLY_DISABLED_REASON_MISSING_SCAIL2_MOTION_VIDEO
-    return None
-
-
-def is_history_template_apply_supported(history: History | None) -> bool:
-    return resolve_history_template_apply_disabled_reason(history) is None
 
 
 def resolve_wan22_apply_context_metadata(history: History) -> dict[str, object]:

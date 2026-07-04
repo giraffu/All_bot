@@ -2,10 +2,11 @@ import logging
 
 from fastapi import HTTPException
 
-from src.database.models import History
-from src.domain_config.task_type_registry import (
-    apply_input_reuse_task_types,
-    gallery_display_type_configs,
+from src.domain_config.task_type_registry import gallery_display_type_configs
+from src.services.gallery_apply_context_service import (
+    APPLY_CONTEXT_ALLOW_INPUT_REUSE_TASK_TYPES,
+    default_should_return_gallery_apply_input_file,
+    should_return_gallery_apply_input_file,
 )
 from src.services.submission_ban_service import (
     SubmissionBannedError,
@@ -38,8 +39,6 @@ __all__ = [
 ]
 
 DEFAULT_GALLERY_ALLOWED_TYPE_CONFIGS = list(gallery_display_type_configs())
-
-APPLY_CONTEXT_ALLOW_INPUT_REUSE_TASK_TYPES = apply_input_reuse_task_types()
 
 
 def build_gallery_config_payload(
@@ -112,17 +111,3 @@ async def submit_gallery_post_payload(
         )
         raise HTTPException(status_code=500, detail="Internal server error") from exc
 
-
-def should_return_gallery_apply_input_file(
-    history: History,
-    *,
-    allow_input_reuse_task_types: set[str],
-) -> bool:
-    return (history.type or "") in allow_input_reuse_task_types
-
-
-def default_should_return_gallery_apply_input_file(history: History) -> bool:
-    return should_return_gallery_apply_input_file(
-        history,
-        allow_input_reuse_task_types=APPLY_CONTEXT_ALLOW_INPUT_REUSE_TASK_TYPES,
-    )
