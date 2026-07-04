@@ -26,7 +26,17 @@ DEFAULT_VECTOR_LOCK_PATH = (
 SAFE_DB_NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
 DEFAULT_MODEL_ID = "qwen3-embedding-8b"
 DEFAULT_MODEL_KEY = "text-embedding-qwen3-embedding-8b"
-LOCAL_ANALYTICS_SQL_LIKE_PATTERNS = ("analytics_prompt_%", "analytics_user_profile_%")
+LOCAL_ANALYTICS_TABLE_ALLOWLIST = (
+    "analytics_prompt_mart_state",
+    "analytics_prompt_dim",
+    "analytics_prompt_occurrence",
+    "analytics_prompt_group_stats",
+    "analytics_prompt_rollup_stats",
+    "analytics_prompt_slim_candidates",
+    "analytics_prompt_vector_state",
+    "analytics_prompt_embeddings",
+    "analytics_user_profile_daily_snapshots",
+)
 
 
 class PipelineError(RuntimeError):
@@ -116,9 +126,8 @@ def copy_local_analytics_tables_cmd(config: PipelineConfig, source_db: str) -> l
     source = shlex.quote(source_db)
     target = shlex.quote(config.shadow_db)
     user = shlex.quote(config.postgres_user)
-    table_predicate = " or ".join(
-        f"tablename like '{pattern}'" for pattern in LOCAL_ANALYTICS_SQL_LIKE_PATTERNS
-    )
+    table_names_sql = ", ".join(f"'{table_name}'" for table_name in LOCAL_ANALYTICS_TABLE_ALLOWLIST)
+    table_predicate = f"tablename in ({table_names_sql})"
     table_list_sql = (
         "select tablename from pg_tables "
         "where schemaname = 'public' "
@@ -169,60 +178,6 @@ def analytics_python_cmd(config: PipelineConfig, module: str, *args: str) -> lis
         "-m",
         module,
         *args,
-    ]
-
-
-def task_type_query_cmd(config: PipelineConfig) -> list[str]:
-    sql = (
-        "select distinct task_type "
-        "from analytics_prompt_embeddings "
-        "where model_id = 'qwen3-embedding-8b' "
-        "and normalization_version = 'v4-task-type-prefix-strip' "
-        "and status = 'embedded' "
-        "order by task_type"
-    )
-    return [
-        "docker",
-        "exec",
-        config.postgres_container,
-        "psql",
-        "-U",
-        config.postgres_user,
-        "-d",
-        config.shadow_db,
-        "-tAc",
-        sql,
-    ]
-
-
-def embedding_coverage_query_cmd(config: PipelineConfig) -> list[str]:
-    sql = (
-        "with candidate as ("
-        "  select count(*)::bigint as n "
-        "  from analytics_prompt_slim_candidates "
-        "  where quality_stage = 'candidate' "
-        "    and normalization_version = 'v4-task-type-prefix-strip'"
-        "), embedded as ("
-        "  select count(*)::bigint as n "
-        "  from analytics_prompt_embeddings "
-        "  where model_id = 'qwen3-embedding-8b' "
-        "    and normalization_version = 'v4-task-type-prefix-strip' "
-        "    and status = 'embedded'"
-        ") "
-        "select (candidate.n > 0 and candidate.n = embedded.n)::text "
-        "from candidate, embedded"
-    )
-    return [
-        "docker",
-        "exec",
-        config.postgres_container,
-        "psql",
-        "-U",
-        config.postgres_user,
-        "-d",
-        config.shadow_db,
-        "-tAc",
-        sql,
     ]
 
 
@@ -302,7 +257,7 @@ def run_pipeline(
             handle.write(json.dumps(message, sort_keys=True) + "\n")
         return message
 
-    result = {"status": "ok", "embedding": "not_requested", "scenes": "not_requested", "graph": "not_requested"}
+    result = {"status": "ok", "embedding": "not_requested"}
     try:
         wait_for_shadow_sync(config)
         if config.restore_from_db:
@@ -363,49 +318,6 @@ def run_pipeline(
             )
             result["embedding"] = "attempted"
 
-        coverage_complete = runner.capture(embedding_coverage_query_cmd(config), label="check-vector-coverage")
-        if config.execute and coverage_complete.strip().lower() != "t":
-            result["scenes"] = "skipped_embedding_incomplete"
-            result["graph"] = "skipped_embedding_incomplete"
-            with config.log_path.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps({"status": "skipped_prompt_scenes_embedding_incomplete"}, sort_keys=True) + "\n")
-            return result
-
-        runner.run(
-            analytics_python_cmd(
-                config,
-                "app.refresh_prompt_scenes",
-                "--statement-timeout-ms",
-                str(config.statement_timeout_ms),
-            ),
-            label="refresh-prompt-scenes",
-        )
-        result["scenes"] = "attempted"
-
-        raw_task_types = runner.capture(task_type_query_cmd(config), label="list-vector-task-types")
-        for task_type in [line.strip() for line in raw_task_types.splitlines() if line.strip()]:
-            runner.run(
-                analytics_python_cmd(
-                    config,
-                    "app.refresh_prompt_vectors",
-                    "--similarity-only",
-                    "--task-type",
-                    task_type,
-                    "--statement-timeout-ms",
-                    str(config.statement_timeout_ms),
-                ),
-                label=f"refresh-vector-similarity:{task_type}",
-            )
-        runner.run(
-            analytics_python_cmd(
-                config,
-                "app.refresh_prompt_graph",
-                "--statement-timeout-ms",
-                str(config.statement_timeout_ms),
-            ),
-            label="refresh-prompt-graph",
-        )
-        result["graph"] = "attempted"
         return result
     finally:
         if lock_handle is not None:

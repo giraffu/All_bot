@@ -6,14 +6,13 @@ from local_analytics_platform.app.prompt_mart import PROMPT_NORMALIZATION_VERSIO
 from local_analytics_platform.app.prompt_vectors import (
     CREATE_PROMPT_VECTOR_SCHEMA_SQL,
     DEFAULT_VECTOR_MODEL_ID,
-    EmbeddedPrompt,
     PromptVectorConfig,
-    _build_exact_edges,
+    config_from_args,
     embedding_from_bytes,
     embedding_to_bytes,
     normalize_embedding,
+    prompt_vector_arg_parser,
     refresh_prompt_embeddings,
-    refresh_prompt_similarity_clusters,
 )
 
 
@@ -23,16 +22,11 @@ def test_prompt_vector_schema_contains_persistent_tables_and_indexes():
     assert "create table if not exists analytics_prompt_embeddings" in schema_sql
     assert "embedding_f16 bytea" in schema_sql
     assert "primary key (model_id, normalization_version, prompt_hash)" in schema_sql
-    assert "create table if not exists analytics_prompt_similarity_edges" in schema_sql
-    assert "source_hash text not null" in schema_sql
-    assert "neighbor_hash text not null" in schema_sql
-    assert "band in ('duplicate', 'similar')" in schema_sql
-    assert "create table if not exists analytics_prompt_similarity_clusters" in schema_sql
-    assert "representative_hash text not null" in schema_sql
-    assert "create table if not exists analytics_prompt_similarity_members" in schema_sql
     assert "create table if not exists analytics_prompt_vector_state" in schema_sql
     assert "idx_prompt_embeddings_task" in schema_sql
-    assert "idx_prompt_similarity_clusters_task" in schema_sql
+    assert "analytics_prompt_similarity_edges" not in schema_sql
+    assert "analytics_prompt_similarity_clusters" not in schema_sql
+    assert "analytics_prompt_similarity_members" not in schema_sql
 
 
 def test_prompt_embedding_is_l2_normalized_float16_bytes():
@@ -95,180 +89,13 @@ async def test_refresh_prompt_embeddings_batches_and_stores_float16_vectors():
     assert embedding_from_bytes(rows[0][8], 3).dtype.name == "float16"
 
 
-def test_similarity_edges_are_built_inside_one_task_type_only():
-    config = PromptVectorConfig(
-        model_id=DEFAULT_VECTOR_MODEL_ID,
-        top_k=2,
-        duplicate_threshold=0.92,
-        similar_threshold=0.80,
-    )
-    prompts = [
-        EmbeddedPrompt(
-            prompt_hash="a" * 32,
-            task_type="edit",
-            prompt="portrait",
-            quality_score=10,
-            uses=5,
-            users=2,
-            last_seen=None,
-            embedding=normalize_embedding([1.0, 0.0]),
-        ),
-        EmbeddedPrompt(
-            prompt_hash="b" * 32,
-            task_type="edit",
-            prompt="portrait soft light",
-            quality_score=8,
-            uses=3,
-            users=2,
-            last_seen=None,
-            embedding=normalize_embedding([0.95, 0.05]),
-        ),
-    ]
+def test_prompt_vector_cli_keeps_embed_only_compatibility_and_rejects_similarity_modes():
+    parser = prompt_vector_arg_parser()
 
-    edges = _build_exact_edges("edit", prompts, config)
+    config = config_from_args(parser.parse_args(["--embed-only"]))
+    assert config.embed_only is True
 
-    assert edges
-    assert {edge[2] for edge in edges} == {"edit"}
-    assert {edge[3] for edge in edges} <= {"a" * 32, "b" * 32}
-    assert {edge[4] for edge in edges} <= {"a" * 32, "b" * 32}
-    assert all(edge[3] != edge[4] for edge in edges)
-    assert all(edge[7] == "duplicate" for edge in edges)
-
-
-class FakeClusterConn:
-    def __init__(self):
-        self.executed = []
-        self.executemany_calls = []
-
-    async def fetch(self, query, *args):
-        self.executed.append((query, args))
-        lower = query.lower()
-        if "from analytics_prompt_similarity_edges" in lower:
-            return [
-                {"task_type": "edit", "source_hash": "a" * 32, "neighbor_hash": "b" * 32, "similarity": 0.95},
-                {"task_type": "edit", "source_hash": "b" * 32, "neighbor_hash": "a" * 32, "similarity": 0.95},
-                {"task_type": "image", "source_hash": "c" * 32, "neighbor_hash": "d" * 32, "similarity": 0.91},
-            ]
-        if "select cluster_id" in lower:
-            return []
-        if "from analytics_prompt_slim_candidates" in lower:
-            return [
-                {
-                    "prompt_hash": "a" * 32,
-                    "prompt": "better prompt",
-                    "task_type": "edit",
-                    "quality_score": 30.0,
-                    "uses": 10,
-                    "users": 5,
-                    "last_seen": None,
-                },
-                {
-                    "prompt_hash": "b" * 32,
-                    "prompt": "similar prompt",
-                    "task_type": "edit",
-                    "quality_score": 10.0,
-                    "uses": 50,
-                    "users": 9,
-                    "last_seen": None,
-                },
-            ]
-        raise AssertionError(f"unexpected query: {query}")
-
-    async def execute(self, query, *args):
-        self.executed.append((query, args))
-        return "OK"
-
-    async def executemany(self, query, rows):
-        self.executemany_calls.append((query, rows))
-
-
-@pytest.mark.asyncio
-async def test_similarity_clusters_use_duplicate_edges_and_choose_quality_representative():
-    conn = FakeClusterConn()
-    config = PromptVectorConfig(model_id=DEFAULT_VECTOR_MODEL_ID, duplicate_threshold=0.92)
-
-    status = await refresh_prompt_similarity_clusters(conn, config)
-
-    assert status == {"cluster_count": 1, "member_count": 2}
-    cluster_query, cluster_rows = conn.executemany_calls[0]
-    member_query, member_rows = conn.executemany_calls[1]
-    assert "analytics_prompt_similarity_clusters" in cluster_query
-    assert "analytics_prompt_similarity_members" in member_query
-    assert cluster_rows[0][4] == "a" * 32
-    assert cluster_rows[0][6] == 2
-    assert cluster_rows[0][7] == 1
-    assert {row[1] for row in member_rows} == {"a" * 32, "b" * 32}
-    assert any(row[1] == "a" * 32 and row[4] is True for row in member_rows)
-
-
-class FakeChainedClusterConn:
-    def __init__(self):
-        self.executed = []
-        self.executemany_calls = []
-
-    async def fetch(self, query, *args):
-        self.executed.append((query, args))
-        lower = query.lower()
-        if "from analytics_prompt_similarity_edges" in lower:
-            return [
-                {"task_type": "edit", "source_hash": "a" * 32, "neighbor_hash": "b" * 32, "similarity": 0.95},
-                {"task_type": "edit", "source_hash": "b" * 32, "neighbor_hash": "a" * 32, "similarity": 0.95},
-                {"task_type": "edit", "source_hash": "b" * 32, "neighbor_hash": "c" * 32, "similarity": 0.95},
-                {"task_type": "edit", "source_hash": "c" * 32, "neighbor_hash": "b" * 32, "similarity": 0.95},
-            ]
-        if "select cluster_id" in lower:
-            return []
-        if "from analytics_prompt_slim_candidates" in lower:
-            return [
-                {
-                    "prompt_hash": "a" * 32,
-                    "prompt": "best prompt",
-                    "task_type": "edit",
-                    "quality_score": 30.0,
-                    "uses": 10,
-                    "users": 5,
-                    "last_seen": None,
-                },
-                {
-                    "prompt_hash": "b" * 32,
-                    "prompt": "bridge prompt",
-                    "task_type": "edit",
-                    "quality_score": 20.0,
-                    "uses": 10,
-                    "users": 5,
-                    "last_seen": None,
-                },
-                {
-                    "prompt_hash": "c" * 32,
-                    "prompt": "different prompt on the other side",
-                    "task_type": "edit",
-                    "quality_score": 10.0,
-                    "uses": 10,
-                    "users": 5,
-                    "last_seen": None,
-                },
-            ]
-        raise AssertionError(f"unexpected query: {query}")
-
-    async def execute(self, query, *args):
-        self.executed.append((query, args))
-        return "OK"
-
-    async def executemany(self, query, rows):
-        self.executemany_calls.append((query, rows))
-
-
-@pytest.mark.asyncio
-async def test_similarity_clusters_do_not_merge_chained_duplicate_edges_into_one_family():
-    conn = FakeChainedClusterConn()
-    config = PromptVectorConfig(model_id=DEFAULT_VECTOR_MODEL_ID, duplicate_threshold=0.92)
-
-    status = await refresh_prompt_similarity_clusters(conn, config)
-
-    assert status == {"cluster_count": 1, "member_count": 2}
-    _, cluster_rows = conn.executemany_calls[0]
-    _, member_rows = conn.executemany_calls[1]
-    assert cluster_rows[0][4] == "a" * 32
-    assert cluster_rows[0][6] == 2
-    assert {row[1] for row in member_rows} == {"a" * 32, "b" * 32}
-    assert "c" * 32 not in {row[1] for row in member_rows}
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--similarity-only"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--cluster-only"])

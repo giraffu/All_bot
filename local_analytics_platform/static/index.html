@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>本地数据分析平台</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/static/styles.css?v=20260701-user-visuals-v1" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260705-prompt-vectors-v1" />
   </head>
   <body>
     <div id="app" class="app-shell">
@@ -42,24 +42,8 @@
             <span class="tab-meta">候选、剔除、信号</span>
           </button>
           <button class="tab-button" type="button" data-tab="prompt-vectors">
-            <span class="tab-label">向量相似</span>
-            <span class="tab-meta">语义簇、近邻、审核</span>
-          </button>
-          <button class="tab-button" type="button" data-tab="prompt-near-representatives">
-            <span class="tab-label">近似代表</span>
-            <span class="tab-meta">阈值、代表、压缩</span>
-          </button>
-          <button class="tab-button" type="button" data-tab="prompt-near-graph">
-            <span class="tab-label">近似图</span>
-            <span class="tab-meta">族图、桥接、孤立</span>
-          </button>
-          <button class="tab-button" type="button" data-tab="prompt-scenes">
-            <span class="tab-label">语义场景</span>
-            <span class="tab-meta">场景、候选、沉淀</span>
-          </button>
-          <button class="tab-button" type="button" data-tab="prompt-graph">
-            <span class="tab-label">语义图谱</span>
-            <span class="tab-meta">图谱、长尾、桥接</span>
+            <span class="tab-label">提示词向量化</span>
+            <span class="tab-meta">覆盖、模型、续跑</span>
           </button>
           <button class="tab-button" type="button" data-tab="templates">
             <span class="tab-label">模板候选</span>
@@ -868,334 +852,15 @@
             </div>
             <button id="promptVectorResumeButton" type="button">续跑向量化</button>
           </div>
-          <div class="prompt-filter-bar prompt-vector-filter-bar">
-            <label>
-              <span>搜索</span>
-              <input id="promptVectorSearchInput" type="search" placeholder="代表提示词关键词" />
-            </label>
-            <label>
-              <span>任务类型</span>
-              <select id="promptVectorTaskTypeSelect">
-                <option value="">全部</option>
-              </select>
-            </label>
-            <label>
-              <span>最小相似度</span>
-              <select id="promptVectorMinSimilaritySelect">
-                <option value="0.92" selected>0.92</option>
-                <option value="0.94">0.94</option>
-                <option value="0.96">0.96</option>
-                <option value="0.98">0.98</option>
-                <option value="0.86">0.86</option>
-              </select>
-            </label>
-            <label>
-              <span>最小成员</span>
-              <input id="promptVectorMinSizeInput" type="number" min="2" max="1000" value="2" />
-            </label>
-            <label>
-              <span>排序</span>
-              <select id="promptVectorSortSelect">
-                <option value="member_count" selected>成员数</option>
-                <option value="quality_score">代表质量分</option>
-                <option value="total_uses">总使用</option>
-                <option value="similarity">平均相似度</option>
-                <option value="refreshed_at">最近刷新</option>
-              </select>
-            </label>
-          </div>
           <div class="distribution-grid prompt-vector-distribution-grid">
             <div class="table-shell">
               <div class="table-title">任务类型</div>
               <div id="promptVectorTaskTypeDistribution" class="distribution-bars"></div>
             </div>
             <div class="table-shell">
-              <div class="table-title">簇规模</div>
-              <div id="promptVectorSizeDistribution" class="distribution-bars"></div>
+              <div class="table-title">向量状态</div>
+              <div id="promptVectorStatusDistribution" class="distribution-bars"></div>
             </div>
-            <div class="table-shell">
-              <div class="table-title">相似边</div>
-              <div id="promptVectorBandDistribution" class="distribution-bars"></div>
-            </div>
-          </div>
-          <div class="prompt-layout prompt-vector-layout">
-            <div class="table-shell">
-              <div class="table-title prompt-table-title">
-                <span>语义相似簇</span>
-                <span id="promptVectorPageInfo" class="muted small"></span>
-              </div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>簇/相似度</th>
-                    <th>代表 Prompt</th>
-                    <th>使用信号</th>
-                    <th>成员</th>
-                    <th>刷新</th>
-                  </tr>
-                </thead>
-                <tbody id="promptVectorRows"></tbody>
-              </table>
-              <div class="prompt-pagination">
-                <button id="promptVectorPrevButton" type="button">上一页</button>
-                <button id="promptVectorNextButton" type="button">下一页</button>
-              </div>
-            </div>
-            <aside id="promptVectorDetail" class="detail-panel"></aside>
-          </div>
-        </section>
-
-        <section class="band tab-panel" data-panel="prompt-near-representatives">
-          <div id="promptNearSummary" class="metric-grid compact"></div>
-          <div class="prompt-filter-bar prompt-near-filter-bar">
-            <label>
-              <span>搜索</span>
-              <input id="promptNearSearchInput" type="search" placeholder="代表提示词关键词" />
-            </label>
-            <label>
-              <span>任务类型</span>
-              <select id="promptNearTaskTypeSelect">
-                <option value="">全部</option>
-              </select>
-            </label>
-            <label class="threshold-control">
-              <span>相似度阈值 <b id="promptNearThresholdValue">0.920</b></span>
-              <input id="promptNearThresholdRange" type="range" min="0.86" max="0.99" step="0.005" value="0.92" />
-              <input id="promptNearThresholdInput" type="number" min="0.86" max="0.99" step="0.005" value="0.92" />
-            </label>
-            <label>
-              <span>最小成员</span>
-              <input id="promptNearMinSizeInput" type="number" min="2" max="1000" value="2" />
-            </label>
-            <label>
-              <span>排序</span>
-              <select id="promptNearSortSelect">
-                <option value="member_count" selected>成员数</option>
-                <option value="quality_score">代表质量分</option>
-                <option value="total_uses">总使用</option>
-                <option value="similarity">平均相似度</option>
-              </select>
-            </label>
-          </div>
-          <div class="distribution-grid prompt-near-distribution-grid">
-            <div class="table-shell">
-              <div class="table-title">任务类型</div>
-              <div id="promptNearTaskTypeDistribution" class="distribution-bars"></div>
-            </div>
-            <div class="table-shell">
-              <div class="table-title">代表组规模</div>
-              <div id="promptNearSizeDistribution" class="distribution-bars"></div>
-            </div>
-          </div>
-          <div class="prompt-layout prompt-vector-layout">
-            <div class="table-shell">
-              <div class="table-title prompt-table-title">
-                <span>近似代表组</span>
-                <span id="promptNearPageInfo" class="muted small"></span>
-              </div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>组/相似度</th>
-                    <th>代表 Prompt</th>
-                    <th>使用信号</th>
-                    <th>成员</th>
-                    <th>最近</th>
-                  </tr>
-                </thead>
-                <tbody id="promptNearRows"></tbody>
-              </table>
-              <div class="prompt-pagination">
-                <button id="promptNearPrevButton" type="button">上一页</button>
-                <button id="promptNearNextButton" type="button">下一页</button>
-              </div>
-            </div>
-            <aside id="promptNearDetail" class="detail-panel"></aside>
-          </div>
-        </section>
-
-        <section class="band tab-panel" data-panel="prompt-near-graph">
-          <div id="promptNearGraphSummary" class="metric-grid compact"></div>
-          <div class="prompt-filter-bar prompt-near-graph-filter-bar">
-            <label>
-              <span>搜索</span>
-              <input id="promptNearGraphSearchInput" type="search" placeholder="聚类中心或族 ID 关键词" />
-            </label>
-            <label>
-              <span>任务类型</span>
-              <select id="promptNearGraphTaskTypeSelect"></select>
-            </label>
-            <label class="threshold-control">
-              <span>图阈值 <b id="promptNearGraphThresholdValue">0.950</b></span>
-              <input id="promptNearGraphThresholdRange" type="range" min="0.90" max="0.99" step="0.005" value="0.95" />
-              <input id="promptNearGraphThresholdInput" type="number" min="0.90" max="0.99" step="0.005" value="0.95" />
-            </label>
-            <label>
-              <span>最小成员</span>
-              <input id="promptNearGraphMinSizeInput" type="number" min="1" max="1000" value="1" />
-            </label>
-            <label>
-              <span>节点上限</span>
-              <input id="promptNearGraphLimitInput" type="number" min="20" max="500" value="120" />
-            </label>
-          </div>
-          <div class="distribution-grid prompt-vector-distribution-grid">
-            <div class="table-shell">
-              <div class="table-title">任务类型</div>
-              <div id="promptNearGraphTaskTypeDistribution" class="distribution-bars"></div>
-            </div>
-            <div class="table-shell">
-              <div class="table-title">族规模</div>
-              <div id="promptNearGraphSizeDistribution" class="distribution-bars"></div>
-            </div>
-            <div class="table-shell">
-              <div class="table-title">桥接度</div>
-              <div id="promptNearGraphDegreeDistribution" class="distribution-bars"></div>
-            </div>
-          </div>
-          <div class="prompt-layout prompt-graph-layout prompt-near-graph-layout">
-            <div class="chart-card prompt-graph-card">
-              <div class="chart-title">近似聚类族桥接图</div>
-              <div id="promptNearGraphChart" class="analytics-chart prompt-graph-chart"></div>
-            </div>
-            <aside id="promptNearGraphDetail" class="detail-panel"></aside>
-          </div>
-          <div class="table-shell full prompt-near-graph-isolates">
-            <div class="table-title">孤立近似族</div>
-            <div id="promptNearGraphIsolates" class="near-family-list"></div>
-          </div>
-        </section>
-
-        <section class="band tab-panel" data-panel="prompt-scenes">
-          <div id="promptSceneSummary" class="metric-grid compact"></div>
-          <div class="prompt-filter-bar prompt-vector-filter-bar">
-            <label>
-              <span>搜索</span>
-              <input id="promptSceneSearchInput" type="search" placeholder="代表提示词关键词" />
-            </label>
-            <label>
-              <span>任务类型</span>
-              <select id="promptSceneTaskTypeSelect">
-                <option value="">全部</option>
-              </select>
-            </label>
-            <label>
-              <span>置信度</span>
-              <select id="promptSceneConfidenceSelect">
-                <option value="all" selected>全部</option>
-                <option value="high">high</option>
-                <option value="medium">medium</option>
-                <option value="low">low</option>
-              </select>
-            </label>
-            <label>
-              <span>最小成员</span>
-              <input id="promptSceneMinSizeInput" type="number" min="1" max="1000000" value="1" />
-            </label>
-            <label>
-              <span>排序</span>
-              <select id="promptSceneSortSelect">
-                <option value="member_count" selected>成员数</option>
-                <option value="candidate_count">候选数</option>
-                <option value="quality_score">代表质量分</option>
-                <option value="total_uses">总使用</option>
-                <option value="similarity">平均相似度</option>
-                <option value="refreshed_at">最近刷新</option>
-              </select>
-            </label>
-          </div>
-          <div class="distribution-grid prompt-vector-distribution-grid">
-            <div class="table-shell">
-              <div class="table-title">任务类型</div>
-              <div id="promptSceneTaskTypeDistribution" class="distribution-bars"></div>
-            </div>
-            <div class="table-shell">
-              <div class="table-title">场景规模</div>
-              <div id="promptSceneSizeDistribution" class="distribution-bars"></div>
-            </div>
-            <div class="table-shell">
-              <div class="table-title">归属置信度</div>
-              <div id="promptSceneConfidenceDistribution" class="distribution-bars"></div>
-            </div>
-          </div>
-          <div class="prompt-layout prompt-vector-layout prompt-scene-layout">
-            <div class="table-shell">
-              <div class="table-title prompt-table-title">
-                <span>语义场景目录</span>
-                <span id="promptScenePageInfo" class="muted small"></span>
-              </div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>规模</th>
-                    <th>场景代表</th>
-                    <th>使用信号</th>
-                    <th>置信度</th>
-                    <th>刷新</th>
-                  </tr>
-                </thead>
-                <tbody id="promptSceneRows"></tbody>
-              </table>
-              <div class="prompt-pagination">
-                <button id="promptScenePrevButton" type="button">上一页</button>
-                <button id="promptSceneNextButton" type="button">下一页</button>
-              </div>
-            </div>
-            <aside id="promptSceneDetail" class="detail-panel"></aside>
-          </div>
-        </section>
-
-        <section class="band tab-panel" data-panel="prompt-graph">
-          <div id="promptGraphSummary" class="metric-grid compact"></div>
-          <div class="prompt-filter-bar prompt-vector-filter-bar">
-            <label>
-              <span>搜索</span>
-              <input id="promptGraphSearchInput" type="search" placeholder="社区或代表提示词关键词" />
-            </label>
-            <label>
-              <span>图层</span>
-              <select id="promptGraphLevelSelect">
-                <option value="scene" selected>自然场景</option>
-                <option value="micro">微簇</option>
-              </select>
-            </label>
-            <label>
-              <span>任务类型</span>
-              <select id="promptGraphTaskTypeSelect"></select>
-            </label>
-            <label>
-              <span>边类型</span>
-              <select id="promptGraphEdgeTypeSelect">
-                <option value="all" selected>全部</option>
-                <option value="similarity">相似边</option>
-                <option value="scene_micro">场景-微簇</option>
-              </select>
-            </label>
-            <label>
-              <span>最小成员</span>
-              <input id="promptGraphMinSizeInput" type="number" min="1" max="1000000" value="1" />
-            </label>
-          </div>
-          <div class="distribution-grid prompt-vector-distribution-grid">
-            <div class="table-shell">
-              <div class="table-title">任务类型</div>
-              <div id="promptGraphTaskTypeDistribution" class="distribution-bars"></div>
-            </div>
-            <div class="table-shell">
-              <div class="table-title">节点状态</div>
-              <div id="promptGraphNodeStatusDistribution" class="distribution-bars"></div>
-            </div>
-            <div class="table-shell">
-              <div class="table-title">社区类型</div>
-              <div id="promptGraphCommunityTypeDistribution" class="distribution-bars"></div>
-            </div>
-          </div>
-          <div class="prompt-layout prompt-vector-layout prompt-graph-layout">
-            <div class="chart-card full prompt-graph-card">
-              <div class="chart-title">语义社区图谱</div>
-              <div id="promptGraphChart" class="analytics-chart prompt-graph-chart"></div>
-            </div>
-            <aside id="promptGraphDetail" class="detail-panel"></aside>
           </div>
         </section>
 
@@ -1236,6 +901,6 @@
       <div id="userProfileDrawerContent" class="profile-drawer__content"></div>
     </aside>
     <script src="/static/vendor/echarts.min.js?v=6.0.0"></script>
-    <script src="/static/app.js?v=20260701-user-visuals-v1"></script>
+    <script src="/static/app.js?v=20260705-prompt-vectors-v1"></script>
   </body>
 </html>

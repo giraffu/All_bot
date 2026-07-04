@@ -4,7 +4,7 @@
 
 ## Scope
 
-- 用户画像、灵石收支、充值情况、生成分析、提示词洞察、提示词瘦身、向量相似、语义场景、模板候选和媒体引用核验；用户画像以固定画像看板、人群透视分析、用户宽表和单用户详情抽屉为主，用户画像 Tab 使用开始/结束日期控件精确收敛周期范围。`/api/user-analytics` 返回固定 KPI、快照趋势、状态占比、转化漏斗和充值率对比；`/api/user-analytics/groups` 继承用户宽表的日期、搜索和分层筛选后按同一套画像字段聚合人群，`/api/user-analytics/users` 支持按人群分桶下钻，`/api/user-analytics/users/{user_id}` 展示单用户画像；旧用户增长概览、旧分布图和排行榜不再作为用户画像 Tab 主入口；`/api/overview` 仅保留给侧栏状态和旧链接兼容。
+- 用户画像、灵石收支、充值情况、生成分析、提示词洞察、提示词瘦身、提示词向量化、模板候选和媒体引用核验；用户画像以固定画像看板、人群透视分析、用户宽表和单用户详情抽屉为主，用户画像 Tab 使用开始/结束日期控件精确收敛周期范围。`/api/user-analytics` 返回固定 KPI、快照趋势、状态占比、转化漏斗和充值率对比；`/api/user-analytics/groups` 继承用户宽表的日期、搜索和分层筛选后按同一套画像字段聚合人群，`/api/user-analytics/users` 支持按人群分桶下钻，`/api/user-analytics/users/{user_id}` 展示单用户画像；旧用户增长概览、旧分布图和排行榜不再作为用户画像 Tab 主入口；`/api/overview` 仅保留给侧栏状态和旧链接兼容。
 - 用户画像状态趋势使用本地派生表 `analytics_user_profile_daily_snapshots`，由 `python -m app.refresh_user_profile_snapshots` 在每日 shadow 刷新后 upsert；表缺失时页面仍展示当前汇总，只是不显示快照趋势和环比。
 - 用户画像、灵石收支、充值情况、生成分析继续使用本地静态 `ECharts 6.0.0` 呈现坐标轴、图例、tooltip、donut、漏斗、堆叠柱、累计折线、分时对比和风险散点；不复用 Dashboard Vue 构建链。
 - 灵石收支接口返回 `daily_categories[]`；充值接口返回渠道折算 USDT 日字段，并提供 `/api/finance/hourly-comparison`、`/api/finance/hourly-cumulative`；生成接口提供 `/api/generation/hourly-comparison`、`/api/generation/hourly-cumulative`、`/api/generation/type-comparison`。
@@ -59,9 +59,12 @@ docker exec allbot-local-analytics-platform \
 
 当前规则版本为 `slim-v3-task-type-prefix-strip`：剥离开头方括号元信息后少于 20 字的 prompt 以 `too_short` 自动剔除；短且一次性且无正信号、纯符号数字和明显测试/空值 prompt 也会写入 `low_quality_reasons`。
 
-## Prompt Vector Similarity
+## Prompt Vector Embeddings
 
-提示词语义相似审核使用独立持久化表，不修改 `analytics_prompt_slim_candidates`。第一版只处理 `quality_stage='candidate'` 的提示词，并且只在同一 `task_type` 内生成近邻边和审核簇。
+提示词向量化只维护 embedding 覆盖和续跑状态，不再生成相似边、审核簇、近似族、语义场景或语义图谱。它不修改 `analytics_prompt_slim_candidates`，只处理 `quality_stage='candidate'` 的提示词，并写入基础向量表：
+
+- `analytics_prompt_embeddings`
+- `analytics_prompt_vector_state`
 
 启动 LM Studio Server 并加载本地 embedding 模型：
 
@@ -77,55 +80,25 @@ docker exec allbot-local-analytics-platform \
   python -m app.refresh_prompt_vectors --limit 1000 --batch-size 8 --statement-timeout-ms 3600000
 ```
 
-确认 `/api/prompt-vectors` 和“向量相似”Tab 正常后，可用 `--embed-only` 去掉 `--limit` 全量断点写入向量；全量向量完成后，建议用 `--similarity-only --task-type <任务类型>` 按任务类型分片生成相似边和簇。刷新命令会把 L2 normalized float16 向量写入 `analytics_prompt_embeddings`，把同任务类型 top-k 近邻写入 `analytics_prompt_similarity_edges`，再按 `similarity >= 0.92` 的 duplicate 边聚成 `analytics_prompt_similarity_clusters` / `analytics_prompt_similarity_members`。`similarity >= 0.86` 的边只作为相似邻居保留。USEARCH 索引文件写入容器 `/app/data/prompt_vectors`，Compose 挂载到 `local_analytics_platform/data/`；索引丢失时可从 PostgreSQL 中的向量重建，不需要重新跑 embedding。
+确认 `/api/prompt-vectors` 和“提示词向量化”Tab 正常后，可去掉 `--limit` 全量断点写入向量。`--embed-only` 仍保留为兼容参数，但现在是 no-op；`--similarity-only` 与 `--cluster-only` 已禁用。刷新命令会把 L2 normalized float16 向量写入 `analytics_prompt_embeddings`，并把模型、维度、覆盖和刷新状态写入 `analytics_prompt_vector_state`。
 
-新增 API：
+API：
 
-- `GET /api/prompt-vectors`：返回模型状态、向量覆盖率、相似边/簇统计、任务/规模/边类型分布和分页簇列表。
-- `GET /api/prompt-vectors/clusters/{cluster_id}`：返回代表 prompt 与簇成员的相似度、使用/用户/反馈信号。
+- `GET /api/prompt-vectors`：返回 `ready`、`model`、`summary`、`distributions.task_type`、`distributions.status` 和 `resume`。
 - `POST /api/prompt-vectors/resume`：后台启动 `python -m app.refresh_prompt_vectors --embed-only` 续跑缺失 embedding；如果 `.refresh_prompt_vectors.lock` 已被占用，则只返回运行中状态，不启动第二条向量化。
 
-## Prompt Near Representatives
+## Retired Prompt Derivatives
 
-“近似代表”Tab 是阈值实验视图，不新增持久化表，也不改自动刷新链。它实时读取 `analytics_prompt_similarity_edges`，在 `0.86-0.99` 范围内按当前阈值即时重组代表组，用于观察多少阈值能稳定挑出代表 prompt。默认阈值为 `0.92`；低于 `0.86` 的实验需要先用更低 `--similar-threshold` 重建相似边。
-
-分组规则复用向量相似的守卫式近重复逻辑：每个组先按质量/使用/用户/最近出现选择代表，只纳入与代表以及组内已有成员两两达到当前阈值的未分配 prompt，避免桥接内容被误合并。
-
-新增 API：
-
-- `GET /api/prompt-near-representatives`：返回候选覆盖、阈值命中边、代表组数、合并成员、singleton、代表压缩率、任务/组规模分布和分页代表组。
-- `GET /api/prompt-near-representatives/groups/{representative_hash}`：按同一 `threshold/task_type/model_id` 返回代表组成员及相似度、使用/用户/质量信号。
-
-## Prompt Near Graph
-
-“近似图”Tab 用于查看从 embedding 生成的近似族图，不复用 top-k=20 的 `analytics_prompt_similarity_edges`，也不替代语义场景。先用离线命令按 `task_type` 从全量 `analytics_prompt_embeddings` 生成 `0.90+` 的高召回阈值边：
+“近似代表”“近似图”“语义场景”“语义图谱”四个 Tab、API 和刷新入口已下线。历史派生表不会在启动或测试中自动删除；如需清理本地 shadow 中的旧表，先 dry-run：
 
 ```bash
-docker exec allbot-local-analytics-platform \
-  python -m app.refresh_prompt_near_graph_edges --statement-timeout-ms 3600000
+python scripts/cleanup_local_analytics_prompt_derivatives.py
 ```
 
-刷新会写入 `analytics_prompt_near_graph_edges` 和 `analytics_prompt_near_graph_state`，默认 `lower_bound=0.90`、`max_neighbors=512`。这是高召回阈值边，不承诺数学精确全量两两相似度；若 `possible_truncated_count` 较高，说明部分 prompt 在第 512 个候选仍达到下限，需要提高 `--max-neighbors` 后按任务类型重刷。
-
-Tab 支持在 `0.90-0.99` 内调阈值，默认 `0.95`。节点是守卫式近似族，族内成员必须与中心及组内已有成员达到阈值；A-B、B-C 相似但 A-C 不相似时不会被并成一个族，而是在族节点之间画桥接边。无桥接的非单点近似族单独列出，孤立单点只进入 summary 统计。
-
-新增 API：
-
-- `GET /api/prompt-near-graph`：返回阈值边覆盖、近似族、桥接边、孤立族、截断诊断和 ECharts 图数据。
-- `GET /api/prompt-near-graph/families/{family_id}`：按同一 `threshold/task_type/model_id` 返回聚类中心、成员、桥接邻居和桥接 prompt pair 样例。
-
-## Prompt Semantic Scenes
-
-语义场景用于把已向量化的候选 prompt 按 `task_type` 提炼成约 1000 个可运营审核场景，独立于相似边/近重复族，不依赖 top-k 相似边：
+确认后显式执行：
 
 ```bash
-docker exec allbot-local-analytics-platform \
-  python -m app.refresh_prompt_scenes --statement-timeout-ms 3600000
+python scripts/cleanup_local_analytics_prompt_derivatives.py --execute
 ```
 
-刷新只读取 `analytics_prompt_embeddings` + `analytics_prompt_slim_candidates` 中 `quality_stage='candidate'` 且 `status='embedded'` 的数据。目标场景数按任务类型候选量的平方根分配，单类型默认最多 220 个；每个场景保留 Top 30 高价值候选 prompt，`manual_label` 预留给人工命名，稳定 `scene_id` 的人工标签会在刷新中保留。
-
-新增 API：
-
-- `GET /api/prompt-scenes`：返回场景 summary、任务/规模/置信度分布和分页场景列表，支持任务类型、关键词、最小成员数、置信度和排序筛选。
-- `GET /api/prompt-scenes/{scene_id}`：只返回该场景的 Top 候选 prompt，不拉取全部成员。
+清理脚本只处理旧派生表，不删除 Prompt Mart、`analytics_prompt_slim_candidates`、`analytics_prompt_embeddings`、`analytics_prompt_vector_state` 或 `analytics_user_profile_daily_snapshots`。

@@ -28,10 +28,6 @@ class FakeRunner:
 
     def capture(self, cmd, *, label=None):
         self.commands.append((label, list(cmd)))
-        if label == "check-vector-coverage":
-            return "t\n"
-        if label == "check-vector-coverage-incomplete":
-            return "f\n"
         return "img2img\nltx_video\n"
 
 
@@ -39,7 +35,7 @@ def rendered(fake):
     return "\n".join(" ".join(cmd) for _, cmd in fake.commands)
 
 
-def test_pipeline_restores_refreshes_embeddings_and_clusters_in_order(tmp_path):
+def test_pipeline_restores_refreshes_embeddings_in_order(tmp_path):
     fake = FakeRunner()
     config = build_config(tmp_path)
 
@@ -52,8 +48,12 @@ def test_pipeline_restores_refreshes_embeddings_and_clusters_in_order(tmp_path):
     commands = rendered(fake)
     assert result["embedding"] == "attempted"
     assert "copy-local-analytics" in [label for label, _ in fake.commands]
-    assert "analytics_prompt_%" in commands
-    assert "analytics_user_profile_%" in commands
+    assert "analytics_prompt_embeddings" in commands
+    assert "analytics_prompt_slim_candidates" in commands
+    assert "analytics_user_profile_daily_snapshots" in commands
+    assert "analytics_prompt_similarity_edges" not in commands
+    assert "analytics_prompt_semantic_scenes" not in commands
+    assert "analytics_prompt_graph_nodes" not in commands
     assert "local_analytics_tables.txt" in commands
     assert "--table=public.$table_name" in commands
     assert "python -m app.refresh_user_profile_snapshots --statement-timeout-ms" in commands
@@ -61,16 +61,12 @@ def test_pipeline_restores_refreshes_embeddings_and_clusters_in_order(tmp_path):
     assert "refresh_prompt_mart --full" not in commands
     assert "python -m app.refresh_prompt_slim_table" in commands
     assert "python -m app.refresh_prompt_vectors --embed-only --batch-size 128" in commands
-    assert "python -m app.refresh_prompt_scenes --statement-timeout-ms" in commands
-    assert "python -m app.refresh_prompt_vectors --similarity-only --task-type img2img" in commands
-    assert "python -m app.refresh_prompt_vectors --similarity-only --task-type ltx_video" in commands
-    assert "python -m app.refresh_prompt_graph --statement-timeout-ms" in commands
+    assert "refresh_prompt_scenes" not in commands
+    assert "similarity-only" not in commands
+    assert "refresh_prompt_graph" not in commands
     assert commands.index("refresh_user_profile_snapshots") < commands.index("refresh_prompt_mart")
     assert commands.index("refresh_prompt_mart") < commands.index("refresh_prompt_slim_table")
     assert commands.index("refresh_prompt_slim_table") < commands.index("refresh_prompt_vectors --embed-only")
-    assert commands.index("refresh_prompt_vectors --embed-only") < commands.index("refresh_prompt_scenes")
-    assert commands.index("refresh_prompt_scenes") < commands.index("refresh_prompt_vectors --similarity-only")
-    assert commands.index("refresh_prompt_vectors --similarity-only --task-type ltx_video") < commands.index("refresh_prompt_graph")
 
 
 def test_pipeline_skips_embedding_when_lm_studio_is_unavailable(tmp_path):
@@ -85,37 +81,12 @@ def test_pipeline_skips_embedding_when_lm_studio_is_unavailable(tmp_path):
 
     commands = rendered(fake)
     assert result["embedding"] == "skipped_lm_studio_unavailable"
-    assert result["scenes"] == "attempted"
+    assert "scenes" not in result
     assert "refresh_prompt_mart --statement-timeout-ms" in commands
     assert "refresh_user_profile_snapshots --statement-timeout-ms" in commands
     assert "refresh_prompt_mart --full" not in commands
     assert "refresh_prompt_slim_table" in commands
     assert "refresh_prompt_vectors --embed-only" not in commands
-    assert "refresh_prompt_scenes" in commands
-    assert "similarity-only" in commands
-    assert "refresh_prompt_graph" in commands
-
-
-def test_pipeline_skips_scenes_and_similarity_when_embeddings_are_incomplete(tmp_path):
-    class IncompleteRunner(FakeRunner):
-        def capture(self, cmd, *, label=None):
-            self.commands.append((label, list(cmd)))
-            if label == "check-vector-coverage":
-                return "f\n"
-            return "img2img\n"
-
-    fake = IncompleteRunner()
-    config = build_config(tmp_path, restore_from_db=None)
-
-    result = pipeline.run_pipeline(
-        config,
-        runner=fake,
-        lm_studio_checker=lambda _: False,
-    )
-
-    commands = rendered(fake)
-    assert result["embedding"] == "skipped_lm_studio_unavailable"
-    assert result["scenes"] == "skipped_embedding_incomplete"
     assert "refresh_prompt_scenes" not in commands
     assert "similarity-only" not in commands
     assert "refresh_prompt_graph" not in commands

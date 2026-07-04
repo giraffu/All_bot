@@ -10,43 +10,38 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     app_js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
 
     assert "/static/vendor/echarts.min.js" in html
-    assert "/static/styles.css?v=20260701-user-visuals-v1" in html
-    assert "/static/app.js?v=20260701-user-visuals-v1" in html
+    assert "/static/styles.css?v=20260705-prompt-vectors-v1" in html
+    assert "/static/app.js?v=20260705-prompt-vectors-v1" in html
     assert "spark-bars" not in html
     assert "hourly-bars" not in html
     assert "renderChart(id, option)" in app_js
     assert "buildLineBarOption" in app_js
     assert "buildDonutOption" in app_js
     assert "buildStackedBarOption" in app_js
-    assert 'data-tab="prompt-graph"' in html
-    assert 'data-tab="prompt-near-representatives"' in html
-    assert 'data-tab="prompt-near-graph"' in html
-    assert 'id="promptNearThresholdRange"' in html
-    assert 'id="promptNearThresholdInput"' in html
-    assert 'id="promptNearGraphThresholdRange"' in html
-    assert 'id="promptNearGraphThresholdInput"' in html
-    assert 'id="promptNearGraphChart"' in html
-    assert 'id="promptNearGraphIsolates"' in html
-    assert 'id="promptNearRows"' in html
-    assert 'id="promptNearDetail"' in html
-    assert 'id="promptGraphChart"' in html
-    assert "renderPromptGraph" in app_js
-    assert "renderPromptNearGraph" in app_js
-    assert "renderPromptNearRepresentatives" in app_js
-    assert "loadPromptNearRepresentatives" in app_js
-    assert "loadPromptNearGraph" in app_js
-    assert "resetPromptNearGraphAndLoad" in app_js
-    assert "schedulePromptNearGraphThresholdLoad" in app_js
-    assert "resetPromptNearPageAndLoad" in app_js
-    assert "schedulePromptNearThresholdLoad" in app_js
-    assert "/api/prompt-near-representatives" in app_js
-    assert "/api/prompt-near-graph" in app_js
-    assert '"prompt-near-representatives": 0' in app_js
-    assert '"prompt-near-graph": 0' in app_js
-    assert '<select id="promptGraphTaskTypeSelect"></select>' in html
+    assert 'data-tab="prompt-vectors"' in html
+    assert "提示词向量化" in html
+    for removed in [
+        'data-tab="prompt-graph"',
+        'data-tab="prompt-near-representatives"',
+        'data-tab="prompt-near-graph"',
+        'data-tab="prompt-scenes"',
+        'id="promptNearThresholdRange"',
+        'id="promptNearGraphChart"',
+        'id="promptSceneRows"',
+        'id="promptGraphChart"',
+        "/api/prompt-near-representatives",
+        "/api/prompt-near-graph",
+        "/api/prompt-scenes",
+        "/api/prompt-graph",
+        "/api/prompt-vectors/clusters",
+        "renderPromptGraph",
+        "renderPromptNearGraph",
+        "renderPromptNearRepresentatives",
+        "renderPromptScenes",
+    ]:
+        assert removed not in html
+        assert removed not in app_js
     assert 'value="centroid_bridge"' not in html
-    assert "自然场景 / 微簇" in app_js
-    assert "不跨任务连接" in app_js
 
     for mount_id in [
         "creditFlowTrendChart",
@@ -54,7 +49,6 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
         "financeHourlyChart",
         "generationTrendChart",
         "generationCompareChart",
-        "promptGraphChart",
         "userCoreTrendChart",
         "userTrustCompositionChart",
         "userConversionFunnelChart",
