@@ -21,9 +21,45 @@ export function useCreditLedger(pageSize = 20) {
     error.value = null
   }
 
+  const loadPage = async (targetPage: number) => {
+    if (loading.value || loadingMore.value) {
+      return
+    }
+
+    const boundedTargetPage = totalPages.value > 0
+      ? Math.min(Math.max(1, targetPage), totalPages.value)
+      : Math.max(1, targetPage)
+
+    error.value = null
+    loading.value = true
+
+    try {
+      const response = await getCurrentUserCreditLedger({
+        page: boundedTargetPage,
+        page_size: pageSize,
+      })
+      items.value = response.items
+      page.value = response.page
+      total.value = response.total
+      totalPages.value = response.total_pages
+    } catch (caughtError) {
+      error.value = caughtError
+      if (!items.value.length) {
+        items.value = []
+      }
+    } finally {
+      loading.value = false
+    }
+  }
+
   const loadLedger = async (options: { reset?: boolean } = {}) => {
     const shouldReset = options.reset ?? true
-    const nextPage = shouldReset ? 1 : page.value + 1
+    if (shouldReset) {
+      await loadPage(1)
+      return
+    }
+
+    const nextPage = page.value + 1
     error.value = null
 
     if (shouldReset) {
@@ -71,6 +107,7 @@ export function useCreditLedger(pageSize = 20) {
     error,
     hasMore,
     reset,
+    loadPage,
     loadLedger,
     loadMore,
   }
