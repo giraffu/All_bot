@@ -10,6 +10,11 @@ KJNODES_SOURCE="${RUNPOD_PROFILE_KJNODES_SOURCE:-}"
 NODE_SOURCE_IMAGE="${RUNPOD_PROFILE_NODE_SOURCE_IMAGE:-}"
 REUSE_BASE_CUSTOM_NODES="${RUNPOD_PROFILE_REUSE_BASE_CUSTOM_NODES:-false}"
 DOCKER_BUILD_NETWORK="${RUNPOD_PROFILE_DOCKER_BUILD_NETWORK:-}"
+XFORMERS_SOURCE_URL="${RUNPOD_PROFILE_XFORMERS_SOURCE_URL:-}"
+XFORMERS_SOURCE_REF="${RUNPOD_PROFILE_XFORMERS_SOURCE_REF:-}"
+XFORMERS_CUDA_ARCH_LIST="${RUNPOD_PROFILE_XFORMERS_CUDA_ARCH_LIST:-}"
+XFORMERS_MAX_JOBS="${RUNPOD_PROFILE_XFORMERS_MAX_JOBS:-}"
+XFORMERS_NVCC_THREADS="${RUNPOD_PROFILE_XFORMERS_NVCC_THREADS:-}"
 PUSH="false"
 SMOKE="true"
 
@@ -61,6 +66,16 @@ Options:
   --reuse-base-custom-nodes
                          Reuse custom nodes already baked into the base image and only apply final Wan22 fix layers.
   --build-network <mode> Docker build network mode, for example host when using a local proxy.
+  --xformers-source-url <url>
+                         Optional xformers Git repository URL for profiles that support source builds.
+  --xformers-source-ref <ref>
+                         Optional xformers Git ref to build into the profile image.
+  --xformers-cuda-arch-list <value>
+                         Optional TORCH_CUDA_ARCH_LIST for xformers source builds.
+  --xformers-max-jobs <n>
+                         Optional MAX_JOBS for xformers source builds.
+  --xformers-nvcc-threads <n>
+                         Optional NVCC_THREADS for xformers source builds.
   --no-smoke             Skip local smoke test after build.
   --push                 Push image after a successful build and smoke test.
   -h, --help             Show this help.
@@ -106,6 +121,26 @@ while [ "$#" -gt 0 ]; do
             ;;
         --build-network)
             DOCKER_BUILD_NETWORK="${2:?missing value for --build-network}"
+            shift 2
+            ;;
+        --xformers-source-url)
+            XFORMERS_SOURCE_URL="${2:?missing value for --xformers-source-url}"
+            shift 2
+            ;;
+        --xformers-source-ref)
+            XFORMERS_SOURCE_REF="${2:?missing value for --xformers-source-ref}"
+            shift 2
+            ;;
+        --xformers-cuda-arch-list)
+            XFORMERS_CUDA_ARCH_LIST="${2:?missing value for --xformers-cuda-arch-list}"
+            shift 2
+            ;;
+        --xformers-max-jobs)
+            XFORMERS_MAX_JOBS="${2:?missing value for --xformers-max-jobs}"
+            shift 2
+            ;;
+        --xformers-nvcc-threads)
+            XFORMERS_NVCC_THREADS="${2:?missing value for --xformers-nvcc-threads}"
             shift 2
             ;;
         --no-smoke)
@@ -185,8 +220,42 @@ if [ -n "$KJNODES_SOURCE" ]; then
     cp -a "$KJNODES_SOURCE" "${cleanup_dir}/ComfyUI-KJNodes"
     dockerfile_for_build="${cleanup_dir}/Dockerfile"
     context_for_build="$cleanup_dir"
-elif [ "$PROFILE" = "scail2" ] || [ "$PROFILE" = "ltx_video" ]; then
-    context_for_build="."
+elif [ "$PROFILE" = "scail2" ]; then
+    cleanup_dir="$(mktemp -d)"
+    trap 'rm -rf "$cleanup_dir"' EXIT
+    mkdir -p \
+        "${cleanup_dir}/remote_workers/docker/runpod_profiles/scail2" \
+        "${cleanup_dir}/remote_workers/scripts" \
+        "${cleanup_dir}/remote_workers/comfy_agent/workflows"
+    cp "$dockerfile" \
+        "${cleanup_dir}/remote_workers/docker/runpod_profiles/scail2/Dockerfile"
+    cp \
+        "remote_workers/scripts/runpod_sync_models_from_r2.py" \
+        "remote_workers/scripts/runpod_bootstrap_from_git.sh" \
+        "remote_workers/scripts/lan_scail2_comfyui_entrypoint.sh" \
+        "${cleanup_dir}/remote_workers/scripts/"
+    cp "remote_workers/comfy_agent/workflows"/SCAIL-2_*.json \
+        "${cleanup_dir}/remote_workers/comfy_agent/workflows/"
+    cp "remote_workers/requirements.txt" \
+        "${cleanup_dir}/remote_workers/requirements.txt"
+    dockerfile_for_build="${cleanup_dir}/remote_workers/docker/runpod_profiles/scail2/Dockerfile"
+    context_for_build="$cleanup_dir"
+elif [ "$PROFILE" = "ltx_video" ]; then
+    cleanup_dir="$(mktemp -d)"
+    trap 'rm -rf "$cleanup_dir"' EXIT
+    mkdir -p \
+        "${cleanup_dir}/remote_workers/docker/runpod_profiles/ltx_video" \
+        "${cleanup_dir}/remote_workers/scripts"
+    cp "$dockerfile" \
+        "${cleanup_dir}/remote_workers/docker/runpod_profiles/ltx_video/Dockerfile"
+    cp -a "${context_dir}/allbot_ltx_min_nodes" \
+        "${cleanup_dir}/remote_workers/docker/runpod_profiles/ltx_video/allbot_ltx_min_nodes"
+    cp "remote_workers/scripts/runpod_bootstrap_from_git.sh" \
+        "${cleanup_dir}/remote_workers/scripts/runpod_bootstrap_from_git.sh"
+    cp "remote_workers/requirements.txt" \
+        "${cleanup_dir}/remote_workers/requirements.txt"
+    dockerfile_for_build="${cleanup_dir}/remote_workers/docker/runpod_profiles/ltx_video/Dockerfile"
+    context_for_build="$cleanup_dir"
 elif [ "$PROFILE" = "pornmaster_flux2_edit" ]; then
     context_for_build="$context_dir"
 elif [ "$PROFILE" = "wan22_aio_video" ] || [ "$PROFILE" = "i2i_pro" ] || [ "$PROFILE" = "img2img_lora" ]; then
@@ -210,6 +279,21 @@ if [ -n "$DOCKER_BUILD_NETWORK" ]; then
 fi
 if [ -n "$NODE_SOURCE_IMAGE" ]; then
     docker_build_args+=(--build-arg "NODE_SOURCE_IMAGE=${NODE_SOURCE_IMAGE}")
+fi
+if [ -n "$XFORMERS_SOURCE_URL" ]; then
+    docker_build_args+=(--build-arg "XFORMERS_SOURCE_URL=${XFORMERS_SOURCE_URL}")
+fi
+if [ -n "$XFORMERS_SOURCE_REF" ]; then
+    docker_build_args+=(--build-arg "XFORMERS_SOURCE_REF=${XFORMERS_SOURCE_REF}")
+fi
+if [ -n "$XFORMERS_CUDA_ARCH_LIST" ]; then
+    docker_build_args+=(--build-arg "XFORMERS_CUDA_ARCH_LIST=${XFORMERS_CUDA_ARCH_LIST}")
+fi
+if [ -n "$XFORMERS_MAX_JOBS" ]; then
+    docker_build_args+=(--build-arg "XFORMERS_MAX_JOBS=${XFORMERS_MAX_JOBS}")
+fi
+if [ -n "$XFORMERS_NVCC_THREADS" ]; then
+    docker_build_args+=(--build-arg "XFORMERS_NVCC_THREADS=${XFORMERS_NVCC_THREADS}")
 fi
 for proxy_env in \
     HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY \

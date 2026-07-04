@@ -31,6 +31,9 @@ from src.web_api.services.gallery_service_queries import (
 from src.web_api.services.gallery_prompt_unlock_service import (
     unlock_gallery_prompt_payload,
 )
+from src.web_api.services.gallery_report_service import (
+    create_gallery_report_api_payload,
+)
 from src.web_api.services.users_history_service import (
     get_history_apply_context_for_current_user,
 )
@@ -45,6 +48,8 @@ from src.web_api.schemas.gallery_schema import (
     GallerySubmitRequest,
     CommentCreate,
     GalleryCommentResponse,
+    GalleryReportCreate,
+    GalleryReportSubmitResponse,
     PaginatedCommentResponse,
     PromptUnlockResponse,
 )
@@ -197,6 +202,21 @@ async def create_gallery_comment(
     return await create_gallery_comment_api_payload(
         post_id=post_id,
         comment=comment,
+        current_user=current_user,
+        db=db,
+    )
+
+
+@router.post("/posts/{post_id}/reports", response_model=GalleryReportSubmitResponse)
+async def create_gallery_report(
+    post_id: int,
+    report: GalleryReportCreate,
+    current_user: CurrentUserDep,
+    db: DbSessionDep = None,
+):
+    return await create_gallery_report_api_payload(
+        post_id=post_id,
+        report=report,
         current_user=current_user,
         db=db,
     )

@@ -14,7 +14,10 @@ from dashboard.backend.services.gallery_admin_service import (
     delete_gallery_post_payload,
     get_all_gallery_comments_payload,
     get_all_gallery_posts_payload,
+    get_all_gallery_reports_payload,
     get_gallery_comments_payload,
+    resolve_gallery_report_payload,
+    takedown_gallery_report_payload,
     update_gallery_comment_payload,
     update_gallery_post_payload,
 )
@@ -80,6 +83,53 @@ async def ban_user_submissions_and_takedown(
 async def delete_gallery_post(post_id: int, db: AsyncSession = Depends(get_db)):
     return await delete_gallery_post_payload(
         post_id=post_id,
+        db=db,
+        logger_override=logger,
+    )
+
+
+@router.get("/reports")
+async def get_all_gallery_reports(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    status: Optional[str] = Query("pending", pattern="^(pending|resolved|all)$"),
+    reason: Optional[str] = Query(
+        None,
+        pattern="^(children|gore|gross|other|all)$",
+    ),
+    post_id: Optional[int] = Query(None, ge=1),
+    db: AsyncSession = Depends(get_db),
+):
+    return await get_all_gallery_reports_payload(
+        page=page,
+        page_size=page_size,
+        status=status,
+        reason=reason,
+        post_id=post_id,
+        db=db,
+        logger_override=logger,
+    )
+
+
+@router.post("/reports/{report_id:int}/resolve")
+async def resolve_gallery_report(
+    report_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    return await resolve_gallery_report_payload(
+        report_id=report_id,
+        db=db,
+        logger_override=logger,
+    )
+
+
+@router.post("/reports/{report_id:int}/takedown")
+async def takedown_gallery_report(
+    report_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    return await takedown_gallery_report_payload(
+        report_id=report_id,
         db=db,
         logger_override=logger,
     )

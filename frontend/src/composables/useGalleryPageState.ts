@@ -2,6 +2,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import { followUser, unfollowUser } from '@/api/social'
+import { reportGalleryPost, type GalleryReportReason } from '@/api/gallery'
 import api from '@/api'
 import { useGalleryComments } from '@/composables/useGalleryComments'
 import { useGalleryConfig } from '@/composables/useGalleryConfig'
@@ -56,6 +57,9 @@ export function useGalleryPageState() {
   const userProfileVisible = ref(false)
   const activeProfileUserId = ref<number | null>(null)
   const followLoadingUserId = ref<number | null>(null)
+  const reportModalOpen = ref(false)
+  const selectedReportReason = ref<GalleryReportReason>('children')
+  const reportSubmitting = ref(false)
   const pendingDeepLinkApplyId = ref<number | null>(resolveGalleryApplyIdFromLocation())
 
   const breakpoints = {
@@ -210,6 +214,31 @@ export function useGalleryPageState() {
     t,
   })
 
+  const openReportModal = () => {
+    if (!currentPost.value) {
+      return
+    }
+    selectedReportReason.value = 'children'
+    reportModalOpen.value = true
+  }
+
+  const submitReport = async () => {
+    if (!currentPost.value) {
+      return
+    }
+
+    reportSubmitting.value = true
+    try {
+      await reportGalleryPost(Number(currentPost.value.id), selectedReportReason.value)
+      reportModalOpen.value = false
+      message.success(t('gallery.report.submit_success'))
+    } catch (error) {
+      console.error(error)
+    } finally {
+      reportSubmitting.value = false
+    }
+  }
+
   const galleryDetailStandardActions = computed(() => ({
     showDesktopReaction: true,
     showDesktopApply: true,
@@ -217,6 +246,8 @@ export function useGalleryPageState() {
     showMobileReaction: true,
     showMobileApply: true,
     showMobileCopy: false,
+    showDesktopReport: true,
+    showMobileReport: true,
     showPromptPanelCopy: currentPost.value?.prompt_unlocked === true,
     showPromptPanelUnlock: !!currentPost.value?.prompt_unlockable,
     maskPromptText: currentPost.value?.prompt_unlocked === true
@@ -231,6 +262,8 @@ export function useGalleryPageState() {
     applyDisabled: currentTemplateApplyDisabledReason.value !== null,
     applyHint: currentTemplateApplyDisabledMessage.value || t('gallery.modal.apply_hint'),
     copyLabel: t('my_posts.copy_prompt'),
+    reportLabel: t('gallery.report.button'),
+    reportLoading: reportSubmitting.value,
     unlockLabel: t('prompt_panel.unlock', {
       cost: currentPost.value?.prompt_unlock_price ?? 1,
     }),
@@ -257,6 +290,9 @@ export function useGalleryPageState() {
       if (currentPost.value) {
         copyPrompt(currentPost.value)
       }
+    },
+    onReport: () => {
+      openReportModal()
     },
     onUnlockPrompt: () => {
       void handleUnlockPrompt()
@@ -477,6 +513,9 @@ export function useGalleryPageState() {
     isMobile,
     galleryDetailModalBindings,
     galleryDetailModalListeners,
+    reportModalOpen,
+    selectedReportReason,
+    reportSubmitting,
     userProfileVisible,
     activeProfileUserId,
     followLoadingUserId,
@@ -490,6 +529,7 @@ export function useGalleryPageState() {
     openUserProfile,
     handleAuthorFollow,
     syncFollowStateForAuthor,
+    submitReport,
     handleImageError,
     handleInteract,
     handleWaterfallAfterRender,

@@ -150,3 +150,65 @@ async def test_ban_user_submissions_and_takedown_routes_to_service(monkeypatch):
         db=db,
         logger_override=gallery_router.logger,
     )
+
+
+@pytest.mark.asyncio
+async def test_get_all_gallery_reports_routes_to_service(monkeypatch):
+    expected = {"items": [], "total": 0, "page": 1, "page_size": 20}
+    service_mock = AsyncMock(return_value=expected)
+    monkeypatch.setattr(gallery_router, "get_all_gallery_reports_payload", service_mock)
+    db = object()
+
+    result = await gallery_router.get_all_gallery_reports(
+        page=1,
+        page_size=20,
+        status="pending",
+        reason="gore",
+        post_id=7,
+        db=db,
+    )
+
+    assert result == expected
+    service_mock.assert_awaited_once_with(
+        page=1,
+        page_size=20,
+        status="pending",
+        reason="gore",
+        post_id=7,
+        db=db,
+        logger_override=gallery_router.logger,
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolve_gallery_report_routes_to_service(monkeypatch):
+    expected = {"status": "ok"}
+    service_mock = AsyncMock(return_value=expected)
+    monkeypatch.setattr(gallery_router, "resolve_gallery_report_payload", service_mock)
+    db = object()
+
+    result = await gallery_router.resolve_gallery_report(10, db=db)
+
+    assert result == expected
+    service_mock.assert_awaited_once_with(
+        report_id=10,
+        db=db,
+        logger_override=gallery_router.logger,
+    )
+
+
+@pytest.mark.asyncio
+async def test_takedown_gallery_report_routes_to_service(monkeypatch):
+    expected = {"status": "ok"}
+    service_mock = AsyncMock(return_value=expected)
+    monkeypatch.setattr(gallery_router, "takedown_gallery_report_payload", service_mock)
+    db = object()
+
+    result = await gallery_router.takedown_gallery_report(10, db=db)
+
+    assert result == expected
+    service_mock.assert_awaited_once_with(
+        report_id=10,
+        db=db,
+        logger_override=gallery_router.logger,
+    )

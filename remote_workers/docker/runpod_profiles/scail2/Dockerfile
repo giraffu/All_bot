@@ -18,6 +18,11 @@ ARG HTTP_PROXY
 ARG HTTPS_PROXY
 ARG ALL_PROXY
 ARG NO_PROXY
+ARG XFORMERS_SOURCE_URL=https://github.com/facebookresearch/xformers.git
+ARG XFORMERS_SOURCE_REF=
+ARG XFORMERS_CUDA_ARCH_LIST=12.0
+ARG XFORMERS_MAX_JOBS=16
+ARG XFORMERS_NVCC_THREADS=4
 
 LABEL org.opencontainers.image.title="AllBot SCAIL-2 ComfyUI test profile"
 LABEL org.opencontainers.image.description="Test-only ComfyUI runtime for Nomadoor SCAIL-2 workflows; model files are synced from the R2/LAN manifest at startup."
@@ -28,6 +33,7 @@ LABEL allbot.runpod.business_agent="false"
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ENV PIP_NO_CACHE_DIR=1
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 RUN set -euo pipefail; \
     if command -v apt-get >/dev/null 2>&1; then \
@@ -95,6 +101,15 @@ RUN set -euo pipefail; \
     clone_node "${RGTHREE_REPO}" "${RGTHREE_REF}" "${COMFYUI_INSTALL_DIR}/custom_nodes/rgthree-comfy"; \
     clone_node "${FRAME_INTERPOLATION_REPO}" "${FRAME_INTERPOLATION_REF}" "${COMFYUI_INSTALL_DIR}/custom_nodes/ComfyUI-Frame-Interpolation"; \
     clone_node "${FILL_NODES_REPO}" "${FILL_NODES_REF}" "${COMFYUI_INSTALL_DIR}/custom_nodes/ComfyUI_Fill-Nodes"; \
+    if [ -n "${XFORMERS_SOURCE_REF}" ]; then \
+      python3 -m pip install --no-cache-dir cmake ninja packaging; \
+      TORCH_CUDA_ARCH_LIST="${XFORMERS_CUDA_ARCH_LIST}" \
+      MAX_JOBS="${XFORMERS_MAX_JOBS}" \
+      NVCC_THREADS="${XFORMERS_NVCC_THREADS}" \
+        python3 -m pip install --no-cache-dir --no-build-isolation --no-deps --force-reinstall -v \
+        "git+${XFORMERS_SOURCE_URL}@${XFORMERS_SOURCE_REF}#egg=xformers"; \
+      python3 -m xformers.info; \
+    fi; \
     python3 -m pip install --no-cache-dir minio packaging; \
     find "${COMFYUI_INSTALL_DIR}" -type d -name __pycache__ -prune -exec rm -rf {} +; \
     python3 -m pip cache purge >/dev/null 2>&1 || true; \

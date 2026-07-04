@@ -48,6 +48,9 @@ const TAB_COMPONENTS = {
   gallery_comments: markRaw(
     defineAsyncComponent(() => import('../components/GalleryCommentsTable.vue'))
   ),
+  gallery_reports: markRaw(
+    defineAsyncComponent(() => import('../components/GalleryReportsTable.vue'))
+  ),
   referrals: markRaw(defineAsyncComponent(() => import('../components/ReferralTable.vue'))),
   site_notice: markRaw(defineAsyncComponent(() => import('../components/SiteNoticeSettings.vue'))),
 } satisfies Record<string, Component>
@@ -144,6 +147,11 @@ export function useDashboardTabView(
       bindings: {
         selectedPostId: galleryComments.selectedPostId.value,
       },
+    },
+    gallery_reports: {
+      component: TAB_COMPONENTS.gallery_reports,
+      containerClass: PANEL_CONTAINER_CLASS,
+      bindings: {},
     },
     referrals: {
       component: TAB_COMPONENTS.referrals,

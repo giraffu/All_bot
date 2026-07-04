@@ -19,6 +19,14 @@ def build_dashboard_comment_item(comment) -> dict:
     }
 
 
+def _build_user_display_name(user, user_id) -> str:
+    if user:
+        return user.full_name or user.username or f"User {user_id}"
+    if user_id:
+        return f"User {user_id}"
+    return "Unknown"
+
+
 def build_gallery_media_url(
     *, output_file: str | None, task_id: str, storage_service
 ) -> str | None:
@@ -65,5 +73,42 @@ def build_gallery_post_item(*, post, storage_service) -> dict:
             task_id=post.task_id,
             storage_service=storage_service,
         ),
+        "prompt": first_history.prompt if first_history else None,
+    }
+
+
+def build_dashboard_report_item(*, report, storage_service) -> dict:
+    post = report.post
+    first_history = post.histories[0] if post and post.histories else None
+    output_file = first_history.output_file if first_history else None
+    task_id = report.post_task_id or (post.task_id if post else None)
+    return {
+        "id": report.id,
+        "post_id": report.post_id,
+        "post_task_id": task_id,
+        "post_is_active": post.is_active if post else None,
+        "post_author_user_id": report.post_author_user_id,
+        "post_author_name": _build_user_display_name(
+            report.post_author,
+            report.post_author_user_id,
+        ),
+        "reporter_user_id": report.reporter_user_id,
+        "reporter_name": _build_user_display_name(
+            report.reporter,
+            report.reporter_user_id,
+        ),
+        "reason": report.reason,
+        "status": report.status,
+        "created_at": report.created_at.isoformat() if report.created_at else None,
+        "resolved_at": report.resolved_at.isoformat() if report.resolved_at else None,
+        "resolution_action": report.resolution_action,
+        "media_type": post.media_type if post else None,
+        "media_url": build_gallery_media_url(
+            output_file=output_file,
+            task_id=task_id,
+            storage_service=storage_service,
+        )
+        if task_id
+        else None,
         "prompt": first_history.prompt if first_history else None,
     }

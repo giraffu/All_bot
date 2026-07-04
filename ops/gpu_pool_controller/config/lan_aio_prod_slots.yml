@@ -417,9 +417,9 @@ slots:
     notes: Host-service ComfyUI node; requires a separate host-process-to-container migration plan.
 
   - id: gpu-226-gpu0-image_to_video
-    enabled: true
-    phase: prod_enabled
-    retargetable: false
+    enabled: false
+    phase: superseded_by_scail2
+    retargetable: true
     assignment_id: lan-226-8190-worker-01-aio
     target_profile_id: image_to_video
     target_task_types:
@@ -428,13 +428,13 @@ slots:
       - image_to_video
     gpu_index: 0
     host_port: 8190
-    legacy_health_port: 8188
+    legacy_health_port: 8190
     legacy_preflight_required: true
     agent_id: lan_aio_prod_gpu226_gpu0_image_to_video_01
     container_name: allbot-lan-aio-gpu-226-gpu0-image_to_video-prod
-    legacy_worker_id: cloud_prod_worker_01
-    old_runtime_container: comfyui.service
-    old_local_agent_container: cloud-prod-comfy-agent-1
+    legacy_worker_id: lan_aio_prod_gpu226_gpu0_scail2_01
+    old_runtime_container: allbot-lan-aio-gpu-226-gpu0-scail2-prod
+    old_local_agent_container: ""
     remote_dir: /home/ubantu/allbot-runpod-aio-prod/gpu226-gpu0-image-to-video
     legacy_hot_cache_copies:
       - source_container: __host__
@@ -443,4 +443,27 @@ slots:
           - /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth
           - /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth
     rollout_order: 101
-    notes: Active production gpu-226 GPU0 image_to_video LAN AIO after the 2026-07-02 migration from host-service cloud_prod_worker_01. The canary task e5784a69-09e6-4d9b-be02-c8e3df9b738c and subsequent live tasks completed without OOM/137; cloud-prod-comfy-agent-1 is stopped and cloud_prod_worker_01 control remains disabled as rollback metadata.
+    notes: Image_to_video rollback candidate for gpu-226 GPU0 after the 2026-07-04 switch to SCAIL-2. It restores lan_aio_prod_gpu226_gpu0_image_to_video_01 / allbot-lan-aio-gpu-226-gpu0-image_to_video-prod on host port 8190 by replacing the active SCAIL-2 AIO when explicitly requested.
+
+  - id: gpu-226-gpu0-scail2
+    enabled: true
+    phase: prod_enabled
+    retargetable: false
+    assignment_id: lan-226-8190-worker-01-aio
+    target_profile_id: scail2
+    target_task_types:
+      - scail2_action_transfer
+      - scail2_action_transfer_long
+      - scail2_video_replacement
+      - scail2_face_swap_v2
+    gpu_index: 0
+    host_port: 8190
+    legacy_health_port: 8190
+    legacy_preflight_required: true
+    agent_id: lan_aio_prod_gpu226_gpu0_scail2_01
+    container_name: allbot-lan-aio-gpu-226-gpu0-scail2-prod
+    legacy_worker_id: lan_aio_prod_gpu226_gpu0_image_to_video_01
+    old_runtime_container: allbot-lan-aio-gpu-226-gpu0-image_to_video-prod
+    remote_dir: /home/ubantu/allbot-runpod-aio-prod/gpu226-gpu0-scail2
+    rollout_order: 102
+    notes: Active production gpu-226 GPU0 SCAIL-2 LAN AIO after the 2026-07-04 explicit switch from image_to_video. Preflight, image load, model warm-cache, drain/wait-idle, stop-old, start-disabled, disabled heartbeat, and enable-aio passed; image_to_video remains the same-card rollback candidate. This is an RTX 5090 32G card while the SCAIL-2 profile catalog records 48G preferred capacity, so monitor first production tasks for OOM/status 137.

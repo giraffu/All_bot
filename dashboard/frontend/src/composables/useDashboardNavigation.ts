@@ -14,6 +14,7 @@ import {
   PictureOutlined,
   RobotOutlined,
   UserOutlined,
+  WarningOutlined,
 } from '@ant-design/icons-vue'
 
 export function useDashboardNavigation(activeTab: { value: string[] }) {
@@ -30,6 +31,7 @@ export function useDashboardNavigation(activeTab: { value: string[] }) {
     { key: 'templates', label: '模板共建', icon: PictureOutlined },
     { key: 'gallery', label: '广场内容管理', icon: AppstoreOutlined },
     { key: 'gallery_comments', label: '评论管理', icon: MessageOutlined },
+    { key: 'gallery_reports', label: '举报管理', icon: WarningOutlined },
     { key: 'referrals', label: '邀请奖励', icon: GiftOutlined },
     { key: 'site_notice', label: '站点通知', icon: NotificationOutlined },
   ]

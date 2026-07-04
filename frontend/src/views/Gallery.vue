@@ -2,6 +2,7 @@
 import PostBrowserShell from '@/components/PostBrowserShell.vue'
 import GalleryDetailContainer from '@/components/gallery/GalleryDetailContainer.vue'
 import GalleryFiltersContainer from '@/components/gallery/GalleryFiltersContainer.vue'
+import GalleryReportModal from '@/components/GalleryReportModal.vue'
 import GalleryWaterfallContainer from '@/components/gallery/GalleryWaterfallContainer.vue'
 import { useGalleryPageState } from '@/composables/useGalleryPageState'
 
@@ -23,6 +24,9 @@ const {
   isMobile,
   galleryDetailModalBindings,
   galleryDetailModalListeners,
+  reportModalOpen,
+  selectedReportReason,
+  reportSubmitting,
   userProfileVisible,
   activeProfileUserId,
   followLoadingUserId,
@@ -36,6 +40,7 @@ const {
   openUserProfile,
   handleAuthorFollow,
   syncFollowStateForAuthor,
+  submitReport,
   handleImageError,
   handleInteract,
   handleWaterfallAfterRender,
@@ -97,6 +102,13 @@ const {
     @author-follow="handleAuthorFollow"
     @update:user-profile-visible="userProfileVisible = $event"
     @follow-updated="syncFollowStateForAuthor($event.userId, $event.isFollowing)"
+  />
+
+  <GalleryReportModal
+    v-model:open="reportModalOpen"
+    v-model:selected-reason="selectedReportReason"
+    :loading="reportSubmitting"
+    @submit="submitReport"
   />
 </template>
 

@@ -5,6 +5,7 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    CheckConstraint,
     Column,
     Date,
     DateTime,
@@ -394,6 +395,7 @@ class GalleryPost(Base):
 
     user = relationship("User", backref="gallery_posts")
     comments = relationship("GalleryComment", back_populates="post", cascade="all, delete-orphan", passive_deletes=True)
+    reports = relationship("GalleryReport", back_populates="post", passive_deletes=True)
     histories = relationship(
         "History",
         primaryjoin="foreign(GalleryPost.task_id) == History.task_id",
@@ -477,3 +479,60 @@ class GalleryComment(Base):
 
     user = relationship("User")
     post = relationship("GalleryPost", back_populates="comments")
+
+
+class GalleryReport(Base):
+    __tablename__ = "gallery_reports"
+    __table_args__ = (
+        UniqueConstraint(
+            "reporter_user_id",
+            "post_id",
+            name="uq_gallery_reports_reporter_post",
+        ),
+        CheckConstraint(
+            "reason in ('children', 'gore', 'gross', 'other')",
+            name="ck_gallery_reports_reason",
+        ),
+        CheckConstraint(
+            "status in ('pending', 'resolved')",
+            name="ck_gallery_reports_status",
+        ),
+        Index("ix_gallery_reports_status_created_at", "status", "created_at"),
+        Index("ix_gallery_reports_post_created_at", "post_id", "created_at"),
+        Index("ix_gallery_reports_reason_created_at", "reason", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    post_id = Column(
+        Integer,
+        ForeignKey("gallery_posts.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    reporter_user_id = Column(
+        BigInteger,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    post_author_user_id = Column(
+        BigInteger,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    post_task_id = Column(String(64), nullable=True, index=True)
+    reason = Column(String(20), nullable=False)
+    status = Column(
+        String(20),
+        nullable=False,
+        default="pending",
+        server_default=text("'pending'"),
+    )
+    created_at = Column(DateTime, default=datetime.now, server_default=func.now(), nullable=False)
+    resolved_at = Column(DateTime, nullable=True)
+    resolution_action = Column(String(32), nullable=True)
+
+    post = relationship("GalleryPost", back_populates="reports")
+    reporter = relationship("User", foreign_keys=[reporter_user_id])
+    post_author = relationship("User", foreign_keys=[post_author_user_id])

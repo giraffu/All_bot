@@ -282,6 +282,9 @@
       "4030": "权限不足，请确认账号状态",
       "4031": "权限不足，请先加入要求的频道",
       "4040": "资源不存在或无权访问",
+      "GALLERY_REPORT_DUPLICATE": "你已经举报过该作品",
+      "GALLERY_REPORT_POST_UNAVAILABLE": "作品不存在或已下架",
+      "GALLERY_REPORT_CREATE_FAILED": "举报提交失败，请稍后再试",
       "4220": "参数校验失败，请检查输入",
       "4290": "操作过于频繁，请稍后再试",
       "5000": "系统开小差了，请稍后再试",
@@ -371,6 +374,20 @@
       "tags": "包含元素 (TAGS)",
       "apply_btn": "一键应用此模板",
       "apply_hint": "系统将自动为您配置最佳参数，您只需上传参考图即可"
+    },
+    "report": {
+      "button": "举报",
+      "modal_title": "举报作品",
+      "reasons": {
+        "children": "儿童",
+        "gore": "血腥",
+        "gross": "恶心",
+        "other": "其他"
+      },
+      "cancel": "取消",
+      "submit": "提交举报",
+      "submitting": "提交中...",
+      "submit_success": "举报已提交"
     },
     "comments": {
       "section_title": "评论 ({count})",

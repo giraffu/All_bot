@@ -282,6 +282,9 @@
       "4030": "Permission denied. Please check your account status",
       "4031": "Permission denied. Please join the required channel first",
       "4040": "Resource not found or access denied",
+      "GALLERY_REPORT_DUPLICATE": "You have already reported this post",
+      "GALLERY_REPORT_POST_UNAVAILABLE": "This post is unavailable",
+      "GALLERY_REPORT_CREATE_FAILED": "Failed to submit the report. Please try again later",
       "4220": "Validation failed. Please check your input",
       "4290": "Too many requests. Please try again later",
       "5000": "System error, please try again later",
@@ -370,6 +373,20 @@
       "tags": "Elements (TAGS)",
       "apply_btn": "1-Click Apply Template",
       "apply_hint": "The system will automatically configure the best parameters, you just need to upload a reference image"
+    },
+    "report": {
+      "button": "Report",
+      "modal_title": "Report Post",
+      "reasons": {
+        "children": "Children",
+        "gore": "Gore",
+        "gross": "Gross",
+        "other": "Other"
+      },
+      "cancel": "Cancel",
+      "submit": "Submit Report",
+      "submitting": "Submitting...",
+      "submit_success": "Report submitted"
     },
     "comments": {
       "section_title": "Comments ({count})",

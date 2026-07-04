@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import dayjs from 'dayjs'
+import { Flag } from 'lucide-vue-next'
 import type { GalleryComment } from '@/composables/useGalleryComments'
 import DetailApplyActions from '@/components/DetailApplyActions.vue'
 import DetailReactionBar from '@/components/DetailReactionBar.vue'
@@ -21,6 +22,8 @@ interface DetailStandardActions {
   showMobileReaction?: boolean
   showMobileApply?: boolean
   showMobileCopy?: boolean
+  showDesktopReport?: boolean
+  showMobileReport?: boolean
   showPromptPanelCopy?: boolean
   showPromptPanelUnlock?: boolean
   maskPromptText?: boolean
@@ -33,6 +36,8 @@ interface DetailStandardActions {
   applyLoadingLabel?: string
   applyHint?: string
   copyLabel?: string
+  reportLabel?: string
+  reportLoading?: boolean
   unlockLabel?: string
   unlockLoading?: boolean
   onLike?: () => void
@@ -40,6 +45,7 @@ interface DetailStandardActions {
   onComment?: () => void
   onApply?: () => void
   onCopy?: () => void
+  onReport?: () => void
   onUnlockPrompt?: () => void
 }
 
@@ -213,12 +219,13 @@ const handleNewCommentInput = (event: Event) => {
           :open-comment-input="openCommentInput"
         >
           <DetailDesktopActions
-            v-if="standardActions && (standardActions.showDesktopReaction || (standardActions.showDesktopApply && standardActions.desktopApplyPlacement === 'before'))"
+            v-if="standardActions && (standardActions.showDesktopReaction || standardActions.showDesktopReport || (standardActions.showDesktopApply && standardActions.desktopApplyPlacement === 'before'))"
             top-class="space-x-2 mb-4 pt-4"
             bottom-class="mt-8"
           >
-            <template v-if="standardActions.showDesktopReaction" #top>
+            <template v-if="standardActions.showDesktopReaction || standardActions.showDesktopReport" #top>
               <DetailReactionBar
+                v-if="standardActions.showDesktopReaction"
                 :likes-count="currentPost.likes_count || 0"
                 :dislikes-count="currentPost.dislikes_count || 0"
                 :comments-count="currentPost.comments_count || 0"
@@ -228,6 +235,16 @@ const handleNewCommentInput = (event: Event) => {
                 @dislike="standardActions.onDislike?.()"
                 @comment="standardActions.onComment?.()"
               />
+              <button
+                v-if="standardActions.showDesktopReport"
+                type="button"
+                class="detail-report-action inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl transition-all"
+                :disabled="standardActions.reportLoading"
+                @click="standardActions.onReport?.()"
+              >
+                <Flag :size="18" />
+                <span class="font-medium">{{ standardActions.reportLabel || 'Report' }}</span>
+              </button>
             </template>
             <template
               v-if="standardActions.showDesktopApply && standardActions.desktopApplyPlacement === 'before'"
@@ -308,7 +325,7 @@ const handleNewCommentInput = (event: Event) => {
             :post="currentPost"
             :open-comment-input="openCommentInput"
           >
-            <template v-if="standardActions && (standardActions.showMobileReaction || (standardActions.showMobileCopy && !!currentPost.prompt?.trim()))">
+            <template v-if="standardActions && (standardActions.showMobileReaction || standardActions.showMobileReport || (standardActions.showMobileCopy && !!currentPost.prompt?.trim()))">
               <DetailReactionBar
                 v-if="standardActions.showMobileReaction"
                 compact
@@ -327,6 +344,16 @@ const handleNewCommentInput = (event: Event) => {
                 :label="standardActions.copyLabel || ''"
                 @click="standardActions.onCopy?.()"
               />
+              <button
+                v-if="standardActions.showMobileReport"
+                type="button"
+                class="detail-reaction-compact-button flex items-center gap-1.5 transition-all"
+                :aria-label="standardActions.reportLabel || 'Report'"
+                :disabled="standardActions.reportLoading"
+                @click="standardActions.onReport?.()"
+              >
+                <Flag :size="20" />
+              </button>
             </template>
           </slot>
           <slot
@@ -504,6 +531,24 @@ html[data-theme='light'] .gallery-detail-modal {
 .gallery-detail-modal .detail-modal-empty-tag,
 .gallery-detail-modal .detail-modal-meta {
   color: var(--detail-modal-text-muted);
+}
+
+.gallery-detail-modal .detail-report-action {
+  border: 1px solid var(--detail-modal-action-border);
+  background: var(--detail-modal-action-bg);
+  color: var(--detail-modal-text-secondary);
+}
+
+.gallery-detail-modal .detail-report-action:hover,
+.gallery-detail-modal .detail-report-action:focus-visible {
+  background: var(--detail-modal-action-hover-bg);
+  color: var(--detail-modal-text-primary);
+}
+
+.gallery-detail-modal .detail-report-action:disabled,
+.gallery-detail-modal .detail-reaction-compact-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .comment-modal {

@@ -1,6 +1,6 @@
 version: 1
 managed_by: allbot-lan-aio-operator
-last_verified_at: "2026-07-04T11:54:44Z"
+last_verified_at: "2026-07-04T15:00:41Z"
 sources:
   slot_catalog: ops/gpu_pool_controller/config/lan_aio_prod_slots.yml
   profile_catalog: ops/gpu_pool_controller/config/task_profiles.yml
@@ -20,27 +20,37 @@ nodes:
         hardware: NVIDIA GeForce RTX 5090 32G
         mode: lan_aio
         current:
-          profile: image_to_video
-          slot_id: gpu-226-gpu0-image_to_video
-          agent_id: lan_aio_prod_gpu226_gpu0_image_to_video_01
-          container_name: allbot-lan-aio-gpu-226-gpu0-image_to_video-prod
+          profile: scail2
+          slot_id: gpu-226-gpu0-scail2
+          agent_id: lan_aio_prod_gpu226_gpu0_scail2_01
+          container_name: allbot-lan-aio-gpu-226-gpu0-scail2-prod
           host_port: 8190
-          state: running
-          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd
-          model_manifest_key: image_to_video/2026-06-13-test/manifest.json
-          workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/image_to_video/workspace
-          last_takeover_at: "2026-07-02T12:20:00Z"
+          state: prod_enabled
+          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-scail2:20260617-scail2-cu128-a492b2b-proddeps1
+          model_manifest_key: scail2/2026-06-17-test/manifest.json
+          workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/scail2/workspace
+          last_takeover_at: "2026-07-04T15:00:41Z"
         cached_profiles:
           - profile: image_to_video
             cache_state: ready
             model_manifest_key: image_to_video/2026-06-13-test/manifest.json
             workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/image_to_video/workspace
             synced_at: "2026-07-02T12:03:30.926302+00:00"
-        fast_switch_candidates: []
+          - profile: scail2
+            cache_state: ready
+            model_manifest_key: scail2/2026-06-17-test/manifest.json
+            workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/scail2/workspace
+            synced_at: "2026-07-04T14:57:37.065851+00:00"
+            note: Active production SCAIL-2 profile after the 2026-07-04 takeover from image_to_video.
+        fast_switch_candidates:
+          - slot_id: gpu-226-gpu0-image_to_video
+            profile: image_to_video
+            cache_state: ready
+            note: Same-card rollback candidate after the 2026-07-04 SCAIL-2 takeover.
         blocked_profiles:
           - profile: face_i2i_t2i
             reason: legacy host-service cloud_prod_worker_01 is disabled and cloud-prod-comfy-agent-1 is stopped after the 2026-07-02 cutover; systemd comfyui.service remains active/idle on 8188 as manual rollback metadata.
-        notes: gpu-226 GPU0 is now the production image_to_video LAN AIO on port 8190. The disabled-heartbeat validation, model cache warmup, RIFE hot cache copy, canary task e5784a69-09e6-4d9b-be02-c8e3df9b738c, and subsequent live queue intake passed without OOM/137 keywords; legacy 8188 queue is empty while systemd comfyui.service remains active/idle due no sudo maintenance window. RTX 5090 32G capacity should still be monitored during long queue bursts.
+        notes: Switched gpu-226 GPU0 from image_to_video to SCAIL-2 on 2026-07-04 with scripts/lan_aio_fleet_prod_ops.py takeover --slot gpu-226-gpu0-scail2 --replace-slot gpu-226-gpu0-image_to_video --failure-policy auto_rollback. Preflight, image load, model warm-cache, drain/wait-idle, stop-old, start-disabled, disabled heartbeat, and enable-aio passed. Post-check showed allbot-lan-aio-gpu-226-gpu0-scail2-prod healthy on 8190, Central worker idle with scail2 task types, ComfyUI /queue empty, /system_stats OK, and model-cache-marker ready. Image_to_video remains a same-card rollback candidate. This RTX 5090 32G card is below the SCAIL-2 profile catalog preferred 48G, so monitor first production tasks for OOM/status 137.
 
   gpu-177:
     host: allbot-gpu-177
@@ -229,7 +239,7 @@ nodes:
             reason: blocked_xid_119_154 after the repaired UUID passed preflight/canary but reproduced Xid 119/154 and CUDA unknown error under a real SCAIL-2 face-swap workload; 8191 AIO is disabled and the container is exited after host reboot.
           - profile: wan22_video_v2
             reason: same repaired card is isolated after SCAIL-2 reproduced Xid 119/154; RunPod remains fallback for wan22_video_v2.
-        notes: Repaired card UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e passed an initial short 2026-07-04 smoke stress in a one-off container pinned by UUID, touching 20.5 GiB GPU memory and running compute for about 98 seconds. The SCAIL-2 deployment chain then passed preflight, image presence/pull, warm-cache, start-disabled heartbeat, /system_stats, /object_info required node and model enumeration, and direct ComfyUI canary prompt 16fe75be-c59d-4cea-8d7b-cc4157550030, which produced SCAIL-2-gpu252-canary_00001.mp4. After enable-aio opened intake on 8191, a real SCAIL-2 face-swap workload reproduced Xid 119/154 and GPU Reset Required on PCI 00000000:01:00.0; ComfyUI began returning CUDA unknown error and Docker could not stop/kill the container cleanly. The host was rebooted at 2026-07-04 19:12 Asia/Shanghai. Post-reboot validation restored 8192 i2i_pro AIO on healthy UUID GPU-09b7ea85-23df-a9b8-19d9-703534e47666 and ran an isolated 20.5 GiB plus 120 second CUDA smoke on the repaired UUID without new Xid/NVRM. The repaired UUID was then switched to lower-VRAM pornmaster_flux2_edit on host 8191: preflight, pull-image, warm-cache, start-disabled heartbeat, /system_stats, /object_info model/node validation, enable-aio, and multiple live production pornmaster_flux2_single_edit completions passed without new Xid/NVRM. Treat this as production clearance only for PornMaster Flux2 edit; scail2 and wan22_video_v2 remain blocked on this card pending workload-specific validation or vendor/driver resolution.
+        notes: Repaired card UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e passed an initial short 2026-07-04 smoke stress in a one-off container pinned by UUID, touching 20.5 GiB GPU memory and running compute for about 98 seconds. The SCAIL-2 deployment chain then passed preflight, image presence/pull, warm-cache, start-disabled heartbeat, /system_stats, /object_info required node and model enumeration, and direct ComfyUI canary prompt 16fe75be-c59d-4cea-8d7b-cc4157550030, which produced SCAIL-2-gpu252-canary_00001.mp4. After enable-aio opened intake on 8191, a real SCAIL-2 face-swap workload reproduced Xid 119/154 and GPU Reset Required on PCI 00000000:01:00.0; ComfyUI began returning CUDA unknown error and Docker could not stop/kill the container cleanly. The host was rebooted at 2026-07-04 19:12 Asia/Shanghai. Post-reboot validation restored 8192 i2i_pro AIO on healthy UUID GPU-09b7ea85-23df-a9b8-19d9-703534e47666 and ran an isolated 20.5 GiB plus 120 second CUDA smoke on the repaired UUID without new Xid/NVRM. The repaired UUID was then switched to lower-VRAM pornmaster_flux2_edit on host 8191; preflight, pull-image, warm-cache, start-disabled heartbeat, /system_stats, /object_info model/node validation, enable-aio, and multiple live production pornmaster_flux2_single_edit completions passed without new Xid/NVRM. Treat this as production clearance only for PornMaster Flux2 edit; scail2 and wan22_video_v2 remain blocked on this card pending workload-specific validation or vendor/driver resolution.
 
   gpu-002:
     host: allbot-gpu-002

@@ -10,6 +10,8 @@ export interface GalleryDetailStandardActions {
   showMobileReaction?: boolean
   showMobileApply?: boolean
   showMobileCopy?: boolean
+  showDesktopReport?: boolean
+  showMobileReport?: boolean
   showPromptPanelCopy?: boolean
   showPromptPanelUnlock?: boolean
   maskPromptText?: boolean
@@ -22,6 +24,8 @@ export interface GalleryDetailStandardActions {
   applyLoadingLabel?: string
   applyHint?: string
   copyLabel?: string
+  reportLabel?: string
+  reportLoading?: boolean
   unlockLabel?: string
   unlockLoading?: boolean
   onLike?: () => void
@@ -29,6 +33,7 @@ export interface GalleryDetailStandardActions {
   onComment?: () => void
   onApply?: () => void
   onCopy?: () => void
+  onReport?: () => void
   onUnlockPrompt?: () => void
 }
 

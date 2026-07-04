@@ -321,6 +321,15 @@ export const updateGalleryComment = async (commentId, data) =>
 
 export const deleteGalleryPost = async (postId) => del(`/api/gallery/${postId}`)
 
+export const fetchGalleryReports = async (params) =>
+  get('/api/gallery/reports', { params })
+
+export const resolveGalleryReport = async (reportId) =>
+  post(`/api/gallery/reports/${reportId}/resolve`)
+
+export const takedownGalleryReport = async (reportId) =>
+  post(`/api/gallery/reports/${reportId}/takedown`)
+
 export const fetchReferralRewards = async () => get('/api/referrals/rewards')
 
 export const fetchSiteNotices = async () => get('/api/site-notices')

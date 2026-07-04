@@ -3,16 +3,18 @@ from datetime import datetime
 
 from fastapi import HTTPException
 from sqlalchemy import delete, desc, func, select, update
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 
 from dashboard.backend.presenters.gallery_admin_presenter import (
     build_dashboard_comment_item,
+    build_dashboard_report_item,
     build_gallery_post_item,
 )
 from src.database.models import (
     GalleryComment,
     GalleryPost,
     GalleryPromptUnlock,
+    GalleryReport,
     History,
     User,
     UserInteraction,
@@ -373,6 +375,170 @@ async def get_gallery_comments_payload(
         raise
     except Exception as exc:
         active_logger.error(f"Failed to get gallery comments: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+async def get_all_gallery_reports_payload(
+    *,
+    page: int,
+    page_size: int,
+    status,
+    reason,
+    post_id,
+    db,
+    storage_service=None,
+    logger_override: logging.Logger | None = None,
+) -> dict:
+    active_logger = logger_override or logger
+    if storage_service is None:
+        storage_service = storage
+    try:
+        filters = []
+        if status and status != "all":
+            filters.append(GalleryReport.status == status)
+        if reason and reason != "all":
+            filters.append(GalleryReport.reason == reason)
+        if post_id is not None:
+            filters.append(GalleryReport.post_id == post_id)
+
+        total_stmt = select(func.count(GalleryReport.id))
+        if filters:
+            total_stmt = total_stmt.where(*filters)
+        total = await db.scalar(total_stmt) or 0
+
+        stmt = (
+            select(GalleryReport)
+            .options(
+                joinedload(GalleryReport.reporter),
+                joinedload(GalleryReport.post_author),
+                selectinload(GalleryReport.post).selectinload(GalleryPost.histories),
+            )
+            .order_by(desc(GalleryReport.created_at), desc(GalleryReport.id))
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        if filters:
+            stmt = stmt.where(*filters)
+
+        result = await db.execute(stmt)
+        reports = result.scalars().all()
+        return {
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "items": [
+                build_dashboard_report_item(
+                    report=report,
+                    storage_service=storage_service,
+                )
+                for report in reports
+            ],
+        }
+    except Exception as exc:
+        active_logger.error(f"Failed to get gallery reports: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+async def resolve_gallery_report_payload(
+    *,
+    report_id: int,
+    db,
+    resolution_action: str = "manual_resolve",
+    logger_override: logging.Logger | None = None,
+) -> dict:
+    active_logger = logger_override or logger
+    try:
+        report = await db.get(GalleryReport, report_id)
+        if not report:
+            raise HTTPException(status_code=404, detail="Report not found")
+        if report.status == "resolved":
+            return {"status": "ok", "message": "No change needed"}
+
+        report.status = "resolved"
+        report.resolved_at = datetime.now()
+        report.resolution_action = resolution_action
+        await db.commit()
+        return {"status": "ok", "resolved_reports": 1}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        await db.rollback()
+        active_logger.error(f"Failed to resolve gallery report: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+async def takedown_gallery_report_payload(
+    *,
+    report_id: int,
+    db,
+    logger_override: logging.Logger | None = None,
+) -> dict:
+    active_logger = logger_override or logger
+    try:
+        report = await db.get(GalleryReport, report_id)
+        if not report:
+            raise HTTPException(status_code=404, detail="Report not found")
+
+        post = await db.get(GalleryPost, report.post_id) if report.post_id else None
+        now = datetime.now()
+        affected_posts = 0
+        affected_histories = 0
+        resolution_action = "post_missing"
+
+        if post and post.is_active:
+            post.is_active = False
+            affected_posts = 1
+            resolution_action = "takedown"
+            if post.task_id and post.user_id:
+                history_result = await db.execute(
+                    update(History)
+                    .where(
+                        History.task_id == post.task_id,
+                        History.user_id == post.user_id,
+                        History.is_public.is_(True),
+                    )
+                    .values(is_public=False)
+                )
+                affected_histories = max(
+                    getattr(history_result, "rowcount", 0) or 0,
+                    0,
+                )
+        elif post:
+            resolution_action = "already_inactive"
+
+        if report.post_id is not None:
+            report_result = await db.execute(
+                update(GalleryReport)
+                .where(
+                    GalleryReport.post_id == report.post_id,
+                    GalleryReport.status == "pending",
+                )
+                .values(
+                    status="resolved",
+                    resolved_at=now,
+                    resolution_action=resolution_action,
+                )
+            )
+            resolved_reports = max(getattr(report_result, "rowcount", 0) or 0, 0)
+        else:
+            report.status = "resolved"
+            report.resolved_at = now
+            report.resolution_action = resolution_action
+            resolved_reports = 1
+
+        await db.commit()
+        return {
+            "status": "ok",
+            "affected_posts": affected_posts,
+            "affected_histories": affected_histories,
+            "resolved_reports": resolved_reports,
+            "resolution_action": resolution_action,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        await db.rollback()
+        active_logger.error(f"Failed to takedown gallery report: {exc}")
         raise HTTPException(status_code=500, detail=str(exc))
 
 

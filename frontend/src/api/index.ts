@@ -30,21 +30,32 @@ function asNonEmptyString(value: unknown): string | undefined {
   return normalized || undefined
 }
 
+function asPayloadObject(value: unknown): ApiErrorPayload | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  return value as ApiErrorPayload
+}
+
 function resolveApiErrorMessage(data: ApiErrorPayload | undefined, fallback: string): string {
-  const code = String(data?.code ?? '').trim()
+  const detailPayload = asPayloadObject(data?.detail)
+  const code = String(data?.code ?? detailPayload?.code ?? '').trim()
   if (code) {
     const codeKey = `api.errors.${code}`
     if (i18n.global.te(codeKey)) return i18n.global.t(codeKey)
   }
 
-  const reason = asNonEmptyString(data?.reason) || asNonEmptyString(data?.intent)
+  const reason = (
+    asNonEmptyString(data?.reason)
+    || asNonEmptyString(data?.intent)
+    || asNonEmptyString(detailPayload?.reason)
+    || asNonEmptyString(detailPayload?.intent)
+  )
   if (reason) {
     const reasonKey = `api.reasons.${reason}`
     if (i18n.global.te(reasonKey)) return i18n.global.t(reasonKey)
   }
 
-  const detailMessage = typeof data?.detail === 'object' && data.detail !== null
-    ? asNonEmptyString((data.detail as { message?: unknown }).message)
+  const detailMessage = detailPayload
+    ? asNonEmptyString(detailPayload.message) || asNonEmptyString(detailPayload.detail)
     : asNonEmptyString(data?.detail)
 
   return (
@@ -99,7 +110,13 @@ api.interceptors.response.use(
       message.error(errMsg)
     } else if (status === 503) {
       // 如果是维护模式，直接跳转到维护页面
-      if (data?.code === 5030 || data?.intent === 'MAINTENANCE') {
+      const detailPayload = asPayloadObject(data?.detail)
+      if (
+        data?.code === 5030
+        || detailPayload?.code === 5030
+        || data?.intent === 'MAINTENANCE'
+        || detailPayload?.intent === 'MAINTENANCE'
+      ) {
         if (router.currentRoute.value.path !== '/maintenance') {
           router.push('/maintenance')
         }

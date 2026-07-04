@@ -37,6 +37,13 @@ export interface PromptUnlockResponse {
   already_unlocked: boolean
 }
 
+export type GalleryReportReason = 'children' | 'gore' | 'gross' | 'other'
+
+export interface GalleryReportSubmitResponse {
+  status: string
+  report_id: number
+}
+
 export async function getRecentHistory(): Promise<RecentHistoryResponse> {
   const response = await api.get<RecentHistoryResponse>('/users/history')
   return response.data
@@ -113,6 +120,17 @@ export async function getMyLibraryPosts(
 
 export async function unlockGalleryPrompt(postId: number): Promise<PromptUnlockResponse> {
   const response = await api.post<PromptUnlockResponse>(`/gallery/posts/${postId}/prompt-unlock`)
+  return response.data
+}
+
+export async function reportGalleryPost(
+  postId: number,
+  reason: GalleryReportReason
+): Promise<GalleryReportSubmitResponse> {
+  const response = await api.post<GalleryReportSubmitResponse>(
+    `/gallery/posts/${postId}/reports`,
+    { reason }
+  )
   return response.data
 }
 

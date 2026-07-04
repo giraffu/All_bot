@@ -8,6 +8,7 @@ import Gallery from '@/views/Gallery.vue'
 
 const {
   apiGetMock,
+  apiPostMock,
   messageSuccessMock,
   messageErrorMock,
   messageWarningMock,
@@ -15,6 +16,7 @@ const {
   confirmTemplateApplyCloseMock
 } = vi.hoisted(() => ({
   apiGetMock: vi.fn(),
+  apiPostMock: vi.fn(),
   messageSuccessMock: vi.fn(),
   messageErrorMock: vi.fn(),
   messageWarningMock: vi.fn(),
@@ -28,7 +30,8 @@ const {
 
 vi.mock('@/api', () => ({
   default: {
-    get: apiGetMock
+    get: apiGetMock,
+    post: apiPostMock
   }
 }))
 
@@ -263,6 +266,7 @@ describe('Gallery template apply integration', () => {
     window.history.replaceState(null, '', '/gallery')
 
     apiGetMock.mockReset()
+    apiPostMock.mockReset()
     messageSuccessMock.mockReset()
     messageErrorMock.mockReset()
     messageWarningMock.mockReset()
@@ -275,6 +279,7 @@ describe('Gallery template apply integration', () => {
     confirmTemplateApplyCloseMock.mockReset()
 
     primeGalleryApi()
+    apiPostMock.mockResolvedValue({ data: { status: 'ok', report_id: 99 } })
   })
 
   it('hides copy actions and masks prompt in gallery detail', async () => {
@@ -308,6 +313,35 @@ describe('Gallery template apply integration', () => {
       rawContext: faceSwapContext
     })
     expect(messageSuccessMock).toHaveBeenCalledWith('已载入模板工作台')
+  })
+
+  it('submits a gallery report from the detail modal', async () => {
+    const wrapper = mountGallery()
+    await flushPromises()
+    await flushPromises()
+
+    await wrapper.get('.group.cursor-pointer').trigger('click')
+    await flushPromises()
+
+    const reportButton = wrapper.find('.detail-report-action')
+    expect(reportButton.exists()).toBe(true)
+
+    await reportButton.trigger('click')
+    await flushPromises()
+
+    const submitButton = wrapper
+      .findAll('button')
+      .find(button => button.text().includes('提交举报'))
+
+    expect(submitButton).toBeTruthy()
+
+    await submitButton!.trigger('click')
+    await flushPromises()
+
+    expect(apiPostMock).toHaveBeenCalledWith('/gallery/posts/1/reports', {
+      reason: 'children'
+    })
+    expect(messageSuccessMock).toHaveBeenCalledWith('举报已提交')
   })
 
   it('opens a gallery apply deep link from query params', async () => {

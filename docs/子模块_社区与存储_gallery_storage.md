@@ -5,6 +5,7 @@
 - 社区投稿与原创保护
 - 点赞/点踩/应用记录
 - 评论系统与评论计数
+- 举报治理与后台处理
 - 我的投稿 / 我的收藏
 - 提示词付费解锁与我的提示词模版
 - 用户公开主页、好友搜索、关注列表与粉丝列表
@@ -20,6 +21,8 @@
   - 记录 `like / dislike / apply`，通过唯一约束拦截重复互动。
 - `gallery_comments`
   - 评论表，按 `post_id + created_at` 建索引，支持活跃评论分页。
+- `gallery_reports`
+  - 举报表，保存举报人、作品作者、`post_task_id` 快照、原因与处理状态；`reporter_user_id + post_id` 唯一，作品删除后 `post_id` 可置空但举报记录保留。
 - `gallery_prompt_unlocks`
   - 提示词解锁表，`user_id + post_id` 唯一，记录买家、帖子、作者与解锁灵石成本，是提示词解锁的幂等锚点。
 - `history`
@@ -41,7 +44,7 @@ sequenceDiagram
     participant R2 as Cloudflare R2
     participant S as Storage
 
-    U->>API: 投稿 / 点赞 / 评论 / 解锁提示词 / 一键应用
+    U->>API: 投稿 / 点赞 / 评论 / 举报 / 解锁提示词 / 一键应用
     alt 投稿
         API->>Core: process_submit_to_gallery()
         Core->>PG: 校验 History 所有权与 allow_contribute
@@ -52,6 +55,9 @@ sequenceDiagram
     else 评论
         API->>PG: 插入 gallery_comments
         PG->>PG: 原子 +1 comments_count，并再次校验帖子仍 active
+    else 举报
+        API->>PG: 插入 gallery_reports，唯一约束拦截重复举报
+        API-->>U: 返回 report_id 或 409
     else 解锁提示词
         API->>PG: 插入 gallery_prompt_unlocks
         API->>PG: 同事务扣买家 1 灵石、给作者 +1 灵石、写 user_logs
@@ -84,7 +90,15 @@ sequenceDiagram
 - 评论提交有 Redis 频率锁，防止短时间刷评。
 - `comments_count` 通过数据库原子更新维护，并在提交阶段再次校验帖子没有被并发下架。
 
-### 4.4 收藏与个人视图
+### 4.4 举报治理
+- Web 修仙市集作品详情弹窗提供举报入口，提交 `POST /api/gallery/posts/{post_id}/reports`。
+- 举报原因是单选枚举：`children` 儿童、`gore` 血腥、`gross` 恶心、`other` 其他；“其他”不要求补充说明。
+- 只有登录用户可举报仍处于 `is_active=True` 的作品；同一用户对同一 `post_id` 只能举报一次，重复提交返回 `409`，不覆盖旧原因。
+- Dashboard 新增举报管理入口，`GET /api/gallery/reports` 支持 `status`、`reason`、`post_id` 筛选，并按 `created_at desc, id desc` 稳定排序。
+- Dashboard 标记处理只更新举报状态；联动下架会软下架 `GalleryPost.is_active=False`，同步同一 `task_id + user_id` 的所有 `History.is_public=False`，并把同作品其他 pending 举报一起置为 resolved。
+- 举报展示文案由 Web/Dashboard 前端 locale 控制，后端只返回原因枚举、状态与快照字段。
+
+### 4.5 收藏与个人视图
 - 已提供：
   - 广场列表 `posts`
   - 我的投稿 `my-posts`
@@ -104,14 +118,14 @@ sequenceDiagram
 - LTX 高级图生视频只保留 `ltx_video` 一个 Gallery 展示/筛选入口；历史或执行别名 `ltx_video_flf2v` 必须 canonical 到 `ltx_video`，投稿允许该别名但不新增展示 tab，筛选时同时查询两种 `History.type`。
 - Gallery 列表/详情、我的投稿、我的收藏、我的提示词模版与用户主页 recent posts 基于 `GalleryPostResponse.input_file/input_file_url/input_files/input_file_urls` 展示 `History.input_file` 的原始输入素材预览；这是展示字段，不改变投稿、收藏或模板应用语义。
 
-### 4.5 提示词付费解锁
+### 4.6 提示词付费解锁
 - Gallery 列表与详情响应新增 `prompt_unlocked`、`prompt_unlockable`、`prompt_is_masked`、`prompt_unlock_price` 字段。
 - 未解锁且非作者访问时，服务端只返回半公开的遮罩 prompt；前端不能依赖客户端遮罩来保护完整提示词。
 - 解锁入口为 `POST /api/gallery/posts/{post_id}/prompt-unlock`，固定消耗 1 灵石；扣减买家与奖励作者必须通过 `QuotaManager.transfer_credits(...)` 在同一事务内完成，并各自写入 `user_logs`。
 - 重复解锁同一帖子必须命中 `gallery_prompt_unlocks.user_id + post_id` 唯一约束或既有记录，不得重复扣费。
 - 作者查看自己的帖子视为已解锁，不创建解锁记录、不发生灵石转账。
 
-### 4.6 Apply Context 已成为 Web 主路径
+### 4.7 Apply Context 已成为 Web 主路径
 - `GET /api/gallery/posts/{post_id}/apply-context` 会返回：
   - `source_post_id`
   - `prompt`
@@ -132,7 +146,7 @@ sequenceDiagram
 - 这已经是 Web workbench 模板应用的主入口，Telegram 内的老 `gallery_apply_fsm` 只应视为兼容路径。
 - QQCC 懒人 Bot 的 `修仙市集` 是轻量 Bot 入口，不取代 Web workbench 主路径。它按 Web 当前可见分组浏览 Gallery 投稿，支持点赞/点踩；普通可应用投稿同时展示 `一键应用` 与 `Web应用`，视频换脸类模板只展示 `Web应用`，Wan22/LTX 多段拼接结果不展示任何应用入口，并把类型和 `#task.mode_*` 标签翻译成当前语言展示。安全的单图模板可在 Bot 内重新收 1 张参考图并提交，必须带 `source_post_id` 与 `allow_contribute=False`。SCAIL-2、多图、多视频、LTX 首尾帧等复杂模板的一键应用只返回 Web 深链 `/gallery?apply_source=gallery&apply_id=<post_id>`，由 Web Gallery 打开对应 apply-context。
 
-### 4.7 展示用原始输入预览
+### 4.8 展示用原始输入预览
 - `GalleryPostResponse` 现在额外暴露展示字段：`input_file`、`input_file_url`、`input_files`、`input_file_urls`。其中兼容字段指向展示列表第一个输入，数组字段保留 `History.input_file` 的原始顺序。
 - `txt2img` 没有原始输入，前端不展示输入角标或详情区。
 - 单输入任务在卡片左上角显示 1 张输入缩略图；详情中显示“原始输入”区域。
@@ -143,7 +157,7 @@ sequenceDiagram
 - 闪回瓶历史详情复用 `HistoryItem.input_file_urls` 展示原始输入。历史列表本身仍以任务输出缩略图为主，不把输入素材替代为结果图。
 - 这些输入 URL 只做短签展示，不在列表热路径增加对象存储 HEAD 探测。
 
-### 4.8 媒体 URL 策略
+### 4.9 媒体 URL 策略
 - 列表返回媒体时不在热路径对每个媒体做公网 `HEAD` 探测；R2 S3 key 命中时优先返回 R2 S3 短签 URL，避免自定义公网域名 miss 导致前端空白，预签不可用时才退回公网 URL。
 - Telegram Gallery 浏览可使用 `GalleryPost.telegram_file_id` 秒发缓存。缓存缺失或 Telegram 返回 `wrong file identifier` 时，只对当前要展示的作品走 Gallery R2/S3 URL resolver 下载媒体并刷新 file_id；测试 Bot 不持久化新 file_id。不得把旧 `storage.get_file_bytes(...)` / legacy MinIO bytes 读取恢复成 Bot 浏览主路径。
 - R2 key 候选顺序为标准历史 key、原始 object key、raw `output_file`、旧 basename。例如 `history/{task_id}/original.ext` 未命中时，会继续探测 `123/output_images/file.ext`；若历史值本身包含 `bot-data/...` 且 R2 曾按该 raw 前缀镜像，也会继续探测 raw 路径，兼容迁移期多种对象位置。
@@ -177,6 +191,7 @@ python scripts/audit_visible_hotset_r2_objects.py \
 - 未解锁提示词的完整内容不得通过 gallery 列表/详情响应泄漏；只允许返回服务端生成的遮罩 prompt。
 - 投稿封禁属于用户能力控制，不得通过篡改 `allow_contribute`、`current_identity` 或 `user_group` 去模拟。
 - 用户级批量下架必须同时更新 `GalleryPost.is_active=False` 与投稿关联的 `History.is_public=False`，避免只隐藏列表但保留旧公开资源入口。
+- 举报联动下架必须同时更新 `GalleryPost.is_active=False` 与同 `task_id + user_id` 的 `History.is_public=False`，并批量处理同作品 pending 举报；不得只改举报状态。
 - `apply-context` 必须从 `History` 取请求语义字段，不能只依赖帖子展示用的输出元数据。
 - `apply-context` 必须服务端拒绝 Wan22 stitched 拼接记录、缺少 motion video 的 SCAIL-2 记录和 Web 已关闭的 `i2i_draw` 记录，不能只靠前端隐藏按钮。
 - 对象存储异常只能降级，不能阻断广场浏览主链路。
@@ -186,6 +201,7 @@ python scripts/audit_visible_hotset_r2_objects.py \
 - 重复投稿与 `allow_contribute=False` 拦截
 - 并发点赞/点踩的一致性
 - 评论并发下架时的回滚与 404
+- 举报成功、无效原因、作品不存在/已下架、重复举报 `409`；Dashboard 举报筛选、标记处理、联动下架、同作品 pending 举报批量 resolved
 - `my-favorites` 过滤 like/apply 的正确性
 - 用户公开主页公开投稿分页的总数、页数和可见性过滤；个人主页详情提示词解锁入口与解锁后状态同步
 - 好友搜索 username/full_name 模糊匹配、排除自己和当前关注状态；我的关注/我的粉丝列表方向正确性，以及粉丝列表的回关状态

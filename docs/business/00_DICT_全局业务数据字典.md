@@ -136,6 +136,23 @@
 | `is_active` | `Boolean` | 是否仍有效。 |
 | `created_at` | `DateTime` | 评论时间。 |
 
+### 1.10 GalleryReport（广场举报）
+**职责**：保存用户对广场作品的举报快照与后台处理状态。
+
+| 字段 | 类型 | 当前语义 |
+| :--- | :--- | :--- |
+| `id` | `Integer` | 举报主键。 |
+| `post_id` | `Integer / nullable` | 关联帖子；帖子删除后可置空，举报记录保留。 |
+| `reporter_user_id` | `BigInt` | 举报人内部用户 ID。 |
+| `post_author_user_id` | `BigInt` | 被举报作品作者快照。 |
+| `post_task_id` | `String` | 被举报作品任务 ID 快照，用于后台追溯。 |
+| `reason` | `String` | `children / gore / gross / other`。 |
+| `status` | `String` | `pending / resolved`。 |
+| `resolution_action` | `String` | 后台处理动作，如 `manual_resolve / takedown / already_inactive / post_missing`。 |
+| `created_at/resolved_at` | `DateTime` | 举报创建与处理时间。 |
+
+注：`reporter_user_id + post_id` 存在联合唯一约束，用于拒绝同一用户重复举报同一作品。
+
 ## 2. 核心业务枚举
 
 ### 2.1 身份与权限

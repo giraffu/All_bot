@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -13,6 +13,18 @@ class CommentCreate(BaseModel):
         if not stripped:
             raise ValueError("评论内容不能为空")
         return stripped
+
+
+GalleryReportReason = Literal["children", "gore", "gross", "other"]
+
+
+class GalleryReportCreate(BaseModel):
+    reason: GalleryReportReason
+
+
+class GalleryReportSubmitResponse(BaseModel):
+    status: str
+    report_id: int
 
 class CommentUserResponse(BaseModel):
     id: int

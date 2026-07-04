@@ -56,6 +56,7 @@ declare module 'vue' {
     GalleryDetailModal: typeof import('./src/components/GalleryDetailModal.vue')['default']
     GalleryFiltersContainer: typeof import('./src/components/gallery/GalleryFiltersContainer.vue')['default']
     GalleryMediaCard: typeof import('./src/components/GalleryMediaCard.vue')['default']
+    GalleryReportModal: typeof import('./src/components/GalleryReportModal.vue')['default']
     GalleryWaterfallContainer: typeof import('./src/components/gallery/GalleryWaterfallContainer.vue')['default']
     GenerationActionBar: typeof import('./src/components/GenerationActionBar.vue')['default']
     GenerationUploadCard: typeof import('./src/components/GenerationUploadCard.vue')['default']

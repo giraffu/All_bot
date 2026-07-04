@@ -247,6 +247,7 @@ describe('GalleryDetailModal', () => {
     const onComment = vi.fn()
     const onCopy = vi.fn()
     const onApply = vi.fn()
+    const onReport = vi.fn()
 
     const wrapper = mountModal({
       standardActions: {
@@ -256,16 +257,20 @@ describe('GalleryDetailModal', () => {
         showMobileReaction: true,
         showMobileApply: true,
         showMobileCopy: true,
+        showDesktopReport: true,
+        showMobileReport: true,
         showPromptPanelCopy: true,
         desktopApplyPlacement: 'after',
         desktopApplyInline: true,
         applyLabel: '一键应用',
         copyLabel: '复制提示词',
+        reportLabel: '举报',
         onLike,
         onDislike,
         onComment,
         onCopy,
         onApply,
+        onReport,
       },
     })
 
@@ -274,12 +279,15 @@ describe('GalleryDetailModal', () => {
     expect(wrapper.find('.prompt-copy-button-stub').text()).toContain('复制提示词')
     expect(wrapper.find('.prompt-preview-panel-stub').text()).toContain('demo prompt')
     expect(wrapper.text()).toContain('一键应用')
+    expect(wrapper.text()).toContain('举报')
 
     const likeButtons = wrapper.findAll('.like-btn')
     const dislikeButtons = wrapper.findAll('.dislike-btn')
     const commentButtons = wrapper.findAll('.comment-btn')
     const copyButtons = wrapper.findAll('.copy-btn')
     const applyButtons = wrapper.findAll('.apply-btn')
+    const reportButtons = wrapper.findAll('.detail-report-action')
+    const compactReportButtons = wrapper.findAll('[aria-label="举报"]')
 
     await likeButtons[0].trigger('click')
     await dislikeButtons[0].trigger('click')
@@ -288,12 +296,15 @@ describe('GalleryDetailModal', () => {
     await wrapper.get('.prompt-copy-button-stub').trigger('click')
     await copyButtons[0].trigger('click')
     await applyButtons[0].trigger('click')
+    await reportButtons[0].trigger('click')
+    await compactReportButtons[0].trigger('click')
 
     expect(onLike).toHaveBeenCalledTimes(1)
     expect(onDislike).toHaveBeenCalledTimes(1)
     expect(onComment).toHaveBeenCalledTimes(1)
     expect(onCopy).toHaveBeenCalledTimes(3)
     expect(onApply).toHaveBeenCalledTimes(1)
+    expect(onReport).toHaveBeenCalledTimes(2)
   })
 
   it('keeps defaults while appending extra slots', () => {
