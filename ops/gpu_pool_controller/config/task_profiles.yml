@@ -155,7 +155,7 @@ profiles:
     workflow: workers/comfy_agent/workflows/SCAIL-2_Animation_multi-char.api.json
     min_vram_gb: 48
     image_ref: ghcr.io/giraffu/allbot-comfy-runpod-scail2:pending
-    all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-scail2:20260617-scail2-cu128-a492b2b-proddeps1
+    all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-scail2:20260704-sm120-xformers-pr1262
     model_prefix: scail2/2026-06-17-test
     model_manifest_key: scail2/2026-06-17-test/manifest.json
 

@@ -1,6 +1,6 @@
 version: 1
 managed_by: allbot-lan-aio-operator
-last_verified_at: "2026-07-04T15:00:41Z"
+last_verified_at: "2026-07-04T15:55:51Z"
 sources:
   slot_catalog: ops/gpu_pool_controller/config/lan_aio_prod_slots.yml
   profile_catalog: ops/gpu_pool_controller/config/task_profiles.yml
@@ -26,7 +26,7 @@ nodes:
           container_name: allbot-lan-aio-gpu-226-gpu0-scail2-prod
           host_port: 8190
           state: prod_enabled
-          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-scail2:20260617-scail2-cu128-a492b2b-proddeps1
+          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-scail2:20260704-sm120-xformers-pr1262
           model_manifest_key: scail2/2026-06-17-test/manifest.json
           workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/scail2/workspace
           last_takeover_at: "2026-07-04T15:00:41Z"
@@ -41,7 +41,7 @@ nodes:
             model_manifest_key: scail2/2026-06-17-test/manifest.json
             workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/scail2/workspace
             synced_at: "2026-07-04T14:57:37.065851+00:00"
-            note: Active production SCAIL-2 profile after the 2026-07-04 takeover from image_to_video.
+            note: Active production SCAIL-2 profile after the 2026-07-04 takeover from image_to_video; model cache was warmed before the sm_120 xformers runtime image restart.
         fast_switch_candidates:
           - slot_id: gpu-226-gpu0-image_to_video
             profile: image_to_video
@@ -50,7 +50,7 @@ nodes:
         blocked_profiles:
           - profile: face_i2i_t2i
             reason: legacy host-service cloud_prod_worker_01 is disabled and cloud-prod-comfy-agent-1 is stopped after the 2026-07-02 cutover; systemd comfyui.service remains active/idle on 8188 as manual rollback metadata.
-        notes: Switched gpu-226 GPU0 from image_to_video to SCAIL-2 on 2026-07-04 with scripts/lan_aio_fleet_prod_ops.py takeover --slot gpu-226-gpu0-scail2 --replace-slot gpu-226-gpu0-image_to_video --failure-policy auto_rollback. Preflight, image load, model warm-cache, drain/wait-idle, stop-old, start-disabled, disabled heartbeat, and enable-aio passed. Post-check showed allbot-lan-aio-gpu-226-gpu0-scail2-prod healthy on 8190, Central worker idle with scail2 task types, ComfyUI /queue empty, /system_stats OK, and model-cache-marker ready. Image_to_video remains a same-card rollback candidate. This RTX 5090 32G card is below the SCAIL-2 profile catalog preferred 48G, so monitor first production tasks for OOM/status 137.
+        notes: Switched gpu-226 GPU0 from image_to_video to SCAIL-2 on 2026-07-04 with scripts/lan_aio_fleet_prod_ops.py takeover --slot gpu-226-gpu0-scail2 --replace-slot gpu-226-gpu0-image_to_video --failure-policy auto_rollback. Preflight, image load, model warm-cache, drain/wait-idle, stop-old, start-disabled, disabled heartbeat, and enable-aio passed. The first live task exposed that the previous xformers wheel lacked RTX 5090 sm_120 attention kernels, so the profile image was rebuilt as 192.168.1.115:5000/allbot/comfy-runpod-scail2:20260704-sm120-xformers-pr1262 with source-built xformers 0.0.33+e70569e.d20260704 and TORCH_CUDA_ARCH_LIST 12.0, then restarted through the fleet helper. Post-restart logs show Using xformers attention and task e623a3a9-65f0-488d-917f-efc9b429781f completed/uploaded successfully without the memory_efficient_attention_forward NotImplementedError or OOM. Image_to_video remains a same-card rollback candidate. This RTX 5090 32G card is below the SCAIL-2 profile catalog preferred 48G, so continue monitoring production tasks for OOM/status 137.
 
   gpu-177:
     host: allbot-gpu-177

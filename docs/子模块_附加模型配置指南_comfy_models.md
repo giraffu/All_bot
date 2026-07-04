@@ -271,6 +271,7 @@ worker 先从驱动视频抽第一帧，调用 `192.168.1.226:8188` 的 `face_sw
 - 模型 manifest 固定为 `allbot-model-cache/scail2/2026-06-17-test/manifest.json`。
 - LoRA 相对路径必须保持 `loras/Wan2.1/Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors`，因为 workflow 的 LoRA 枚举引用带 `Wan2.1/` 子目录。
 - 镜像入口是 `remote_workers/docker/runpod_profiles/scail2/Dockerfile`。
+- 当前 LAN AIO 镜像是 `192.168.1.115:5000/allbot/comfy-runpod-scail2:20260704-sm120-xformers-pr1262`，用于 RTX 5090/Blackwell 节点时保留 xformers 并包含源码编译的 sm_120 attention kernel；不要用 `--disable-xformers` 绕过性能路径。
 - 镜像必须包含 ComfyUI SCAIL-2 core 节点、VideoHelperSuite、KJNodes、rgthree、Frame-Interpolation、Fill-Nodes、ffmpeg、bootstrap/sshd 诊断依赖和 `remote_workers/requirements.txt`。
 - 镜像不得 baked 任何 `.safetensors` 模型权重；LAN AIO 与 RunPod 都应启动时从 `allbot-model-cache` 同步模型。
 
@@ -281,7 +282,7 @@ SCAIL-2 当前有四类运行环境，桶和 worker 不得混用：
 | :--- | :--- | :--- | :--- |
 | 云测试 LAN | `http://192.168.1.2:8190` + `cloud_worker_test_08` | `user-data-test` | Web/Bot 测试 |
 | 云测试 RunPod | `runpod_test_scail2_*` | `user-data-test` | cloud-test canary / 临时验证 |
-| 云正式 LAN | `lan_aio_prod_gpu002_gpu0_scail2_01` | `user-data-prod` | 当前正式主接单路径 |
+| 云正式 LAN | `lan_aio_prod_gpu002_gpu0_scail2_01` / `lan_aio_prod_gpu226_gpu0_scail2_01` | `user-data-prod` | 当前正式 LAN 接单路径 |
 | 云正式 RunPod | `runpod_prod_scail2_manual_NN` | `user-data-prod` | 手动备用/临时扩容，不是默认常驻容量 |
 
 正式 RunPod `scail2` profile 可以通过 Dashboard 或 `scripts/runpod_prod_ops.sh` 创建、暂停、
