@@ -65,6 +65,7 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 ## 3. 核心红线
 - 严禁手写 `UPDATE users SET credits = ...` 绕过账本与既有结算逻辑。
 - 任何资产副作用前，必须先有唯一业务单、外部流水或幂等键作为锚点。
+- 任务取消退款必须带 `credit_idempotency_key` 审计字段，当前由 `task_refund:<refund_type>:<registry_task_id>` 派生，确保同一任务重复取消/重复终态收口不会重复加灵石。
 - 用户间灵石转账不得拆成两个独立事务；必须用同一幂等锚点与同一事务保证扣减、入账、审计一致。
 - 复用外部 `AsyncSession` 时，`user_logs`、affiliate 流水与会员结算审计必须保持同事务语义。
 - 标准邀请奖励不得在注册节点给邀请人加灵石；入群和首次生成必须按目标值补差额，不能简单叠加固定奖励。

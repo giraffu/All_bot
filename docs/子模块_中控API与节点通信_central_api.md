@@ -69,7 +69,8 @@ sequenceDiagram
 - `/system/workers` 会展示每个 worker 的 `control_state`、`control_reason`、`control_updated_at`；`/system/status` 会聚合 `workers_by_control_state`，用于排查“worker 健康但 pending 不被 pop”的场景。
 - `/system/status` 与 `/system/workers` 是高频观测接口，不是强一致调度入口。Central API 会对同一 Redis 连接参数与队列 key 组合的队列/worker 快照做约 10 秒短 TTL 缓存，并在刷新中返回短时 stale 快照，避免 Bot、Web 与 Dashboard 并发轮询时重复扫描 Redis 导致状态接口超时或触发 Bot 熔断。实际任务分发、Worker `pop`、状态上报与完成回流仍走实时 Redis/HTTP 路径，不依赖该观测缓存。
 - `/status/{backend_task_id}` 是单任务观测接口，也会对同一 Redis/队列 key 与 task id 做短 TTL 缓存、最大条目数限制和单飞刷新，默认约 2 秒 TTL、4 秒 stale 窗口，用于吸收 Web API 粗状态、Web SSE 兼容路径、Dashboard active task 与 Bot polling 的重复轮询。Redis Pub/Sub 只作为进度快路径；Web SSE 订阅或读取 Pub/Sub 失败时，同一连接会继续用 `/status` 补偿轮询到终态。默认用户侧展示已降级为低频粗状态：Web 通过 `/api/tasks/{registry_task_id}/status` 每约 15 秒查询，pending 保留全局 `queue_pos` 队列位置，running 不展示 progress 百分比；Bot 也默认每约 15 秒 HTTP polling，pending 队列位置变化可编辑消息，running 不按 progress 反复编辑。若调用方显式传 `include_type_position=true`，pending 响应会额外返回同任务类型内的 0-based `queue_type_pos`；当前主 Bot “排队状态/我的任务”展示会优先使用该字段，并转换成用户可见的第 N 位。它不改变 pending/running/done 的事实源，终态收口仍以 Worker `/complete`、Redis 事件和上游 monitor/history 为准。
-- Central FastAPI 生命周期内复用共享 Redis 客户端；依赖注入优先使用 `request.app.state.redis`，只有离线/测试场景缺失 app state 时才回退到临时 Redis 连接。不要把 `get_redis()` 再改回每请求新建连接的模式。
+- Central FastAPI 生命周期内复用共享 Redis 客户端；依赖注入优先使用 `request.app.state.redis`，只有离线/测试场景缺失 app state 时才回退到临时 Redis 连接。Redis client 必须通过 `src.services.redis_connection.build_redis_client(...)` 创建，默认带 `socket_connect_timeout=5`、`socket_timeout=5`、`health_check_interval=15`、`socket_keepalive=true` 与 `retry_on_timeout=true`，不要把 `get_redis()` 再改回每请求新建连接或裸 `Redis.from_url(...)` 模式。
+- Central Redis 连接瞬断重试耗尽时，执行面 API 统一返回 `503 Service Unavailable` 与 `Retry-After: 2`，语义是控制面 Redis 暂时不可用、上游可按忙碌/补偿路径处理；排障时应区别于业务参数错误和 Worker 执行失败。
 - `/api/agent/task/complete` 是结果成功回流的唯一确认点。Worker 端必须对完成回报进行有限重试，并在全部失败后显式失败，避免 Central 因未收到 `complete` 而把已生成任务误判为 heartbeat lost。
 - `/api/agent/task/status` 是运行态观测回报，Worker 端对瞬时断连或 5xx 做轻量重试；重试耗尽只记录错误，不应直接让正在生成的任务失败。status 可携带 `execution_phase`、`cancel_locked` 与 `set_current=false`，用于双槽流水线下更新阶段而不覆盖 agent 当前任务指针。
 - `/api/agent/task/pop?cancel_lock=true` 是 V2 worker 流水线的真实接单入口；它仍会从 pending 转 running 并写 task heartbeat，同时写取消锁字段。Central 仍是唯一队列事实源，worker 不得绕过 pop 直接执行 peek 结果。
@@ -111,7 +112,7 @@ sequenceDiagram
   - 上游 task core submission 是否仍在正常写入任务
 - 队列中的待执行任务通常具有可恢复性，重启执行面服务不应被表述为必然丢任务。
 - 云正式 Central 单服务热修可只重建 `central-api-prod`；短时间内 worker heartbeat/status 上报可能抖动，但 pending 队列与 worker 内正在执行的 ComfyUI 任务不因 Central 容器重建本身立即丢失。
-- Central Redis 连接偶发 reset 时，QueueManager 对安全读写和幂等更新已做有限 transient retry，覆盖 `/status/{task_id}`、agent `/task/check`、`task_heartbeat`、运行态 `status`、worker heartbeat 和 agent control 等路径；真实出队 `zpopmin` 与会改变候选任务的队列移除不做盲 retry，避免重复弹单。排障时不要把一次连接重置直接解读成队列丢失，应结合 worker 重试、task heartbeat 和队列事实判断。
+- Central Redis 连接偶发 reset 时，QueueManager 对安全读写和幂等更新已做有限 transient retry，覆盖入队事务、`/status/{task_id}`、agent `/task/check`、`task_heartbeat`、运行态 `status`、worker heartbeat 和 agent control 等路径；真实出队 `zpopmin` 与会改变候选任务的队列移除不做盲 retry，避免重复弹单。排障时不要把一次连接重置直接解读成队列丢失，应结合 worker 重试、task heartbeat 和队列事实判断。
 
 ## 8. 维护原则
 - 中控文档要以“执行面”而不是“业务主入口”来描述 Central API。

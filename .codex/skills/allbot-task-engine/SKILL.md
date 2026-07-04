@@ -33,8 +33,10 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - 扣费与入队是 Saga：扣费成功但提交失败必须补偿；提交成功但后续执行失败必须走终态与退款规则，不得静默丢状态。
 - Web 锁必须有释放路径。提交、取消、monitor 超时、finalizer 异常、用户断连都不能让同一用户永久卡住。
 - finalizer 处理终态前必须重新读取权威状态并考虑幂等。重复 complete/status、重复 Bot completion、重复 History 插入不得生成多份业务结果。
+- 用户取消退款必须使用 `registry_task_id` 派生的账本幂等键；用户取消接口、Web monitor 或恢复流程重复观察到 `cancelled` 时，只允许第一次 `refund_user_cancel` 真正增加灵石。
 - finalizer 内部异常不能阻断 runtime cleanup。清理失败要记录并暴露可恢复信息，但不要让任务永远停在 running。
 - provider/dependencies 不要在 import 时绑定运行态资源；测试优先显式注入 fake provider、fake queue、fake persistence。
+- Central/Redis transient error 应按可重试基础设施故障处理：入队等幂等安全写可有限 retry，真实出队 `zpopmin` 不做盲 retry；Central Redis retry 耗尽返回 503，Bot/Web 应映射为“当前服务器繁忙”并走补偿/收口路径。
 - 不要只改 `SIMPLE_TASK_TYPE_MAP` 就宣称新增任务类型完成。必须核对 request model、dispatcher、registry、Central route、worker mapping、SUPPORTED_TASK_TYPES、workflow 和结果持久化。
 - 不要在任务类型里继续扩大 legacy alias。用户可见类型、执行类型、Central 类型和 workflow/profile 的映射要明确记录。
 
@@ -61,6 +63,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 ## 6. 排障路由
 
 - 提交失败：查权限/余额、payload normalization、provider 选择、扣费补偿、Central response 和 `backend_task_id` 写入。
+- Central Redis 瞬断：先查 Redis 连接 factory 参数、QueueManager retry 日志、Central 503 数量和 Bot/Web breaker key；状态轮询 breaker 不应阻断提交 breaker。
 - pending 卡住：查 Central 队列、worker 在线状态、`SUPPORTED_TASK_TYPES`、profile capacity、drain/maintenance 标志和任务类型映射。
 - running 卡住：查 worker 日志、ComfyUI health、workflow patcher、result materialization、complete/status 上报和 runtime cleanup。
 - Web 卡锁：查 side-effect monitor、终态轮询、取消路径、用户锁 key、异常分支是否释放。

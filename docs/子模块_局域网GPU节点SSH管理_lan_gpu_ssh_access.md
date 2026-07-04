@@ -84,7 +84,7 @@ ssh gpu-252
 | :--- | :--- | :--- | :--- | :--- |
 | `allbot-gpu-226` | `192.168.1.226` | `ubantu` | `8188` | `cloud_prod_worker_01` |
 | `allbot-gpu-177` | `192.168.1.177` | `ubantui` | AIO `8190`、`8191`；旧 `8188`/`8189` 已退役删除 | `lan_aio_prod_gpu177_gpu0_image_to_video_01`、`lan_aio_prod_gpu177_gpu1_ltx_video_01` |
-| `allbot-gpu-252` | `192.168.1.252` | `user` | AIO `8190`；`8191` 当前无本地 GPU1/maintenance disabled；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu252_gpu0_img2img_lora_01`、RunPod 兜底 `wan22_video_v2` |
+| `allbot-gpu-252` | `192.168.1.252` | `user` | AIO `8192` 固定健康 UUID 承载 `i2i_pro`；`8191` 返修 UUID maintenance disabled；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu252_gpu0_i2i_pro_01`、RunPod 兜底 `wan22_video_v2` |
 | `allbot-gpu-002` | `192.168.1.2` | `chuzeyu` | AIO `8190`、`8191`；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu002_gpu0_scail2_01`、`lan_aio_prod_gpu002_gpu1_image_to_video_01` |
 
 当前 4 台节点均可用 key-based SSH 登录；`sudo -n true` 均不通过，表示不是免密 sudo。需要 root 级操作时，必须由人工确认远端 sudo 密码或在维护窗口内操作。
@@ -146,12 +146,12 @@ done
 | `http://192.168.1.226:8188` | `0.17.0` | `2.10.0+cu130` | `FL_RIFE` 存在，`RIFE VFI` 为空 |
 | `http://192.168.1.177:8190` | `0.21.1` | `2.11.0+cu128` | AIO `wan22_video_v2`，`--disable-dynamic-vram` |
 | `http://192.168.1.177:8191` | `0.19.5` | `2.11.0+cu128` | AIO `ltx_video` |
-| `http://192.168.1.252:8190` | `0.21.1` | `2.11.0+cu128` | AIO `img2img/img2img_lora` |
-| `http://192.168.1.252:8191` | `0.21.1` | `2.11.0+cu128` | AIO `wan22_video_v2`，当前 maintenance disabled；故障 GPU 已拆除，无本地 GPU1 |
+| `http://192.168.1.252:8192` | `0.17.0` | `2.11.0+cu128` | AIO `i2i_pro/t2i-pornmaster-turbo/face_swap`，Docker device UUID `GPU-09b7ea85-23df-a9b8-19d9-703534e47666` |
+| `http://192.168.1.252:8191` | `0.17.0` | `2.11.0+cu128` | AIO `wan22_video_v2`，当前 maintenance disabled；返修 UUID `GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e` 不计入本地容量 |
 | `http://192.168.1.2:8190` | `0.25.0` | `2.11.0+cu128` | AIO SCAIL-2 |
 | `http://192.168.1.2:8191` | `0.21.1` | `2.11.0+cu128` | AIO `image_to_video` |
 
-旧 `192.168.1.177:8188/8189` 已在 2026-06-20 随 gpu-177 旧本地回滚链路退役删除；`192.168.1.252:8188/8189` 和 `192.168.1.2:8188/8189` 仍只作为 stopped rollback baseline 或旧 runtime 口径保留。日常健康检查优先使用上表 AIO 端口。2026-06-20 `gpu-252` 已拆除故障 RTX 4090：健康卡 UUID `GPU-09b7ea85-23df-a9b8-19d9-703534e47666` 枚举为 GPU0 并恢复 `img2img/img2img_lora`，故障卡 UUID `GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e` 因 Xid 119/154 跟随实体卡跨槽位复现而不再作为可用容量。
+旧 `192.168.1.177:8188/8189` 已在 2026-06-20 随 gpu-177 旧本地回滚链路退役删除；`192.168.1.252:8188/8189` 和 `192.168.1.2:8188/8189` 仍只作为 stopped rollback baseline 或旧 runtime 口径保留。日常健康检查优先使用上表 AIO 端口。2026-07-04 `gpu-252` 返修卡回装后 host GPU index 发生漂移：生产 `8192` 必须按 `gpu_device_id` 固定健康卡 UUID `GPU-09b7ea85-23df-a9b8-19d9-703534e47666`；返修 UUID `GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e` 只作为 `8191` maintenance disabled 验收入口，不得直接接正式队列。
 
 ## 7. 权限与安全边界
 
