@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 from dataclasses import dataclass
 from typing import Any
 
@@ -75,12 +76,15 @@ class RuntimeRenderOverrides:
     environment: str | None = None
     target_task_types: tuple[str, ...] | None = None
     gpu_index: int | None = None
+    gpu_device_id: str | None = None
 
     def __post_init__(self) -> None:
         if self.host_port is not None and not 1 <= self.host_port <= 65535:
             raise ValueError("--host-port must be between 1 and 65535")
         if self.gpu_index is not None and self.gpu_index < 0:
             raise ValueError("--gpu-index must be non-negative")
+        if self.gpu_device_id is not None and not self.gpu_device_id.strip():
+            raise ValueError("--gpu-device-id must not be empty")
         if self.runtime_shape is not None and self.runtime_shape not in {
             STANDARD_RUNTIME_SHAPE,
             RUNPOD_AIO_RUNTIME_SHAPE,
@@ -111,6 +115,7 @@ class RuntimeRenderOverrides:
                 self.environment,
                 self.target_task_types,
                 self.gpu_index,
+                self.gpu_device_id,
             )
         )
 
@@ -266,7 +271,7 @@ class RuntimePlanner:
                     "environment": {
                         "TZ": "Asia/Shanghai",
                         "NVIDIA_VISIBLE_DEVICES": str(
-                            self._effective_gpu_index(comfy, overrides)
+                            self._effective_gpu_device_id(comfy, overrides)
                         ),
                         "COMFY_HOST": "0.0.0.0",
                         "COMFY_PORT": str(container_port),
@@ -308,7 +313,7 @@ class RuntimePlanner:
                         {
                             "driver": "nvidia",
                             "device_ids": [
-                                str(self._effective_gpu_index(comfy, overrides))
+                                self._effective_gpu_device_id(comfy, overrides)
                             ],
                             "capabilities": ["gpu"],
                         }
@@ -464,7 +469,7 @@ class RuntimePlanner:
                     "environment": {
                         "TZ": "Asia/Shanghai",
                         "NVIDIA_VISIBLE_DEVICES": str(
-                            self._effective_gpu_index(comfy, overrides)
+                            self._effective_gpu_device_id(comfy, overrides)
                         ),
                         "ALLBOT_RUNPOD_MANAGED": "true",
                         "RUNPOD_ENVIRONMENT": environment,
@@ -490,6 +495,10 @@ class RuntimePlanner:
                         "POOL_PROVIDER": assignment.provider,
                         "POOL_GPU_INDEX": str(
                             self._effective_gpu_index(comfy, overrides)
+                        ),
+                        "POOL_GPU_DEVICE_ID": self._effective_gpu_device_id(
+                            comfy,
+                            overrides,
                         ),
                         "POOL_RUNTIME_PROFILE": profile.runtime_profile,
                         "POOL_IMAGE_REF": image_ref,
@@ -575,7 +584,7 @@ class RuntimePlanner:
                         {
                             "driver": "nvidia",
                             "device_ids": [
-                                str(self._effective_gpu_index(comfy, overrides))
+                                self._effective_gpu_device_id(comfy, overrides)
                             ],
                             "capabilities": ["gpu"],
                         }
@@ -773,6 +782,7 @@ class RuntimePlanner:
             "POOL_PROVIDER": assignment.provider,
             "POOL_NODE_ID": node.id,
             "POOL_GPU_INDEX": str(self._effective_gpu_index(comfy, overrides)),
+            "POOL_GPU_DEVICE_ID": self._effective_gpu_device_id(comfy, overrides),
             "POOL_RUNTIME_PROFILE": profile.runtime_profile,
             "POOL_IMAGE_REF": self._target_image_ref(
                 comfy=comfy,
@@ -825,6 +835,7 @@ class RuntimePlanner:
             "container_port": comfy.container_port,
             "gpu_index": comfy.gpu_index,
             "effective_gpu_index": self._effective_gpu_index(comfy, overrides),
+            "effective_gpu_device_id": self._effective_gpu_device_id(comfy, overrides),
             "current_image": comfy.image,
             "model_dir": comfy.model_dir,
             "instance_dir": comfy.instance_dir,
@@ -911,6 +922,10 @@ class RuntimePlanner:
                 "configured_host_port": comfy.port,
                 "container_port": comfy.container_port,
                 "effective_gpu_index": self._effective_gpu_index(comfy, overrides),
+                "effective_gpu_device_id": self._effective_gpu_device_id(
+                    comfy,
+                    overrides,
+                ),
             },
             "render": {
                 "mode": self._render_mode(comfy, overrides),
@@ -1169,6 +1184,10 @@ class RuntimePlanner:
             args.append(f"--central-url {overrides.central_url}")
         if overrides.environment:
             args.append(f"--environment {overrides.environment}")
+        if overrides.gpu_index is not None:
+            args.append(f"--gpu-index {overrides.gpu_index}")
+        if overrides.gpu_device_id:
+            args.append(f"--gpu-device-id {shlex.quote(overrides.gpu_device_id)}")
         return " ".join(args)
 
     def _effective_lan_aio_environment(
@@ -1254,6 +1273,15 @@ class RuntimePlanner:
         if overrides.gpu_index is not None:
             return overrides.gpu_index
         return comfy.gpu_index if comfy.gpu_index is not None else 0
+
+    def _effective_gpu_device_id(
+        self,
+        comfy: ComfyInstance,
+        overrides: RuntimeRenderOverrides,
+    ) -> str:
+        if overrides.gpu_device_id:
+            return overrides.gpu_device_id.strip()
+        return str(self._effective_gpu_index(comfy, overrides))
 
     def _effective_api_url(
         self,

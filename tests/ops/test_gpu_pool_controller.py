@@ -21,25 +21,33 @@ def test_default_gpu_pool_config_loads_and_plans_all_local_workers():
     config = load_controller_config()
 
     assert sorted(config.nodes) == ["gpu-002", "gpu-177", "gpu-226", "gpu-252"]
-    assert len(config.assignments) == 7
+    assert len(config.assignments) == 8
 
     plan = GpuPoolPlanner(config).to_jsonable()
 
     assert len(plan) == 5
     assert {item["worker_id"] for item in plan} == {
-        "cloud_prod_worker_01",
         "cloud_prod_worker_04",
         "cloud_prod_worker_05",
         "cloud_prod_worker_06",
         "cloud_prod_worker_07",
+        "lan_aio_prod_gpu226_gpu0_image_to_video_01",
     }
     wan22 = next(item for item in plan if item["worker_id"] == "cloud_prod_worker_05")
     assert wan22["node_id"] == "gpu-252"
     assert "wan22_video_v2_baseline" in wan22["model_bundles"]
 
-    host_service = next(item for item in plan if item["worker_id"] == "cloud_prod_worker_01")
-    assert "docker pull" not in "\n".join(host_service["commands"])
-    assert any("host_service" in warning for warning in host_service["warnings"])
+    gpu226_aio = next(
+        item
+        for item in plan
+        if item["worker_id"] == "lan_aio_prod_gpu226_gpu0_image_to_video_01"
+    )
+    assert gpu226_aio["node_id"] == "gpu-226"
+    assert gpu226_aio["task_types"] == [
+        "video_insert",
+        "video_edit",
+        "image_to_video",
+    ]
 
 
 def test_runtime_schema_defaults_and_managed_pilot_flags_load():

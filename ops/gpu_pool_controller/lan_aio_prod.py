@@ -109,6 +109,7 @@ class LanAioProdSlot:
     legacy_hot_cache_copies: tuple[LegacyHotCacheCopy, ...] = ()
     retargetable: bool = False
     notes: str = ""
+    gpu_device_id: str | None = None
 
     @property
     def remote_compose_file(self) -> str:
@@ -141,6 +142,13 @@ def _dump_yaml(payload: Any) -> str:
 
 def _sanitize(value: str) -> str:
     return "".join(ch if ch.isalnum() else "_" for ch in value).strip("_")
+
+
+def _optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _agent_node_label(node_id: str) -> str:
@@ -239,6 +247,7 @@ def load_lan_aio_prod_slots(
             ),
             retargetable=bool(item.get("retargetable", False)),
             notes=str(item.get("notes") or ""),
+            gpu_device_id=_optional_str(item.get("gpu_device_id")),
         )
         if slot.enabled or include_disabled:
             slots[slot.id] = slot
@@ -263,6 +272,7 @@ def slot_to_jsonable(
         "node_id": slot.node_id,
         "comfy_id": slot.comfy_id,
         "gpu_index": slot.gpu_index,
+        "gpu_device_id": slot.gpu_device_id,
         "legacy_worker_id": slot.legacy_worker_id,
         "old_runtime_container": slot.old_runtime_container,
         "old_local_agent_container": slot.old_local_agent_container,
@@ -411,6 +421,7 @@ class LanAioProdOps:
                 environment="cloud-prod",
                 target_task_types=slot.target_task_types or None,
                 gpu_index=slot.gpu_index,
+                gpu_device_id=slot.gpu_device_id,
             ),
         )
         rendered = patch_remote_workers_mount(rendered, slot)
@@ -447,8 +458,23 @@ class LanAioProdOps:
         dir_profile_label = profile_label.replace("_", "-")
         node_dir_label = target.node_id.replace("-", "")
         remote_parent = posixpath.dirname(target.remote_dir.rstrip("/"))
+        retargeted_slot_id = (
+            f"{target.node_id}-gpu{target_gpu_index}-{candidate.target_profile_id}"
+        )
+        if candidate.id == retargeted_slot_id:
+            notes = (
+                f"Prepared {candidate.target_profile_id} candidate "
+                f"{retargeted_slot_id} replacing {target.id}. Review and commit "
+                "this YAML patch before production takeover."
+            )
+        else:
+            notes = (
+                f"Retargeted {candidate.target_profile_id} candidate from "
+                f"{candidate.id} to {retargeted_slot_id} replacing {target.id}. "
+                "Review and commit this YAML patch before production takeover."
+            )
         return LanAioProdSlot(
-            id=candidate.id,
+            id=retargeted_slot_id,
             enabled=candidate.enabled,
             phase=candidate.phase,
             assignment_id=target.assignment_id,
@@ -473,16 +499,14 @@ class LanAioProdOps:
                 f"{remote_parent}/{node_dir_label}-gpu{target_gpu_index}-"
                 f"{dir_profile_label}"
             ),
-            rollout_order=candidate.rollout_order,
+            rollout_order=target.rollout_order + 1,
             legacy_health_port=target.host_port,
             legacy_preflight_required=target.legacy_preflight_required,
             target_task_types=candidate.target_task_types,
             legacy_hot_cache_copies=candidate.legacy_hot_cache_copies,
             retargetable=candidate.retargetable,
-            notes=(
-                f"Retargeted from {candidate.id} to replace {target.id}; "
-                f"candidate notes: {candidate.notes}"
-            ),
+            gpu_device_id=target.gpu_device_id,
+            notes=notes,
         )
 
     def candidate_plan(
@@ -534,6 +558,7 @@ class LanAioProdOps:
                 "node_id": candidate.node_id,
                 "physical_slot_key": physical_slot_key(candidate),
                 "gpu_index": candidate.gpu_index,
+                "gpu_device_id": candidate.gpu_device_id,
                 "host_port": candidate.host_port,
                 "agent_id": candidate.agent_id,
                 "container_name": candidate.container_name,
@@ -577,6 +602,17 @@ class LanAioProdOps:
             and slot.id != target.id
         ]
         if candidates:
+            target_physical_slot_key = physical_slot_key(target)
+            same_physical_slot_candidates = [
+                slot
+                for slot in candidates
+                if physical_slot_key(slot) == target_physical_slot_key
+            ]
+            if same_physical_slot_candidates:
+                return sorted(
+                    same_physical_slot_candidates,
+                    key=lambda item: item.rollout_order,
+                )[0]
             return sorted(candidates, key=lambda item: item.rollout_order)[0]
 
         profile_config = self.config.profiles[profile]
@@ -604,6 +640,7 @@ class LanAioProdOps:
             node_id=target.node_id,
             comfy_id=target.comfy_id,
             gpu_index=target.gpu_index,
+            gpu_device_id=target.gpu_device_id,
             legacy_worker_id=target.agent_id,
             old_runtime_container=target.container_name,
             old_local_agent_container="",
@@ -640,6 +677,8 @@ class LanAioProdOps:
             item["target_task_types"] = list(slot.target_task_types)
         if slot.gpu_index is not None:
             item["gpu_index"] = slot.gpu_index
+        if slot.gpu_device_id is not None:
+            item["gpu_device_id"] = slot.gpu_device_id
         item.update(
             {
                 "host_port": slot.host_port,
@@ -919,7 +958,14 @@ class LanAioProdOps:
             "lan_aio_fleet_restart_disable_aio",
             ttl_seconds=CONTROL_TTL_SECONDS,
         )
-        self._remote_compose(slot, "restart")
+        self._write_remote_runtime_files(slot)
+        port_owner_check = self._host_port_owner_check(
+            slot,
+            allowed_containers={slot.container_name},
+        )
+        if not port_owner_check["ok"]:
+            raise RuntimeError(str(port_owner_check["error"]))
+        self._remote_compose(slot, "up -d --force-recreate")
         self._wait_container_health(slot)
         self._verify_disabled_heartbeat(slot)
         self._set_control(
@@ -1045,25 +1091,13 @@ class LanAioProdOps:
         if len(slots) != 1:
             raise RuntimeError("start-disabled requires exactly one --slot")
         slot = slots[0]
-        compose = self.render_compose(slot)
-        env_content = runtime_env_content(self.env_values)
         self._set_control(
             slot.agent_id,
             "disabled",
             "lan_aio_fleet_start_disabled",
             ttl_seconds=CONTROL_TTL_SECONDS,
         )
-        self._sync_remote_workers(slot)
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_dir = Path(tmp)
-            compose_file = tmp_dir / "docker-compose.yml"
-            env_file = tmp_dir / ".env.lan-aio-prod"
-            compose_file.write_text(compose, encoding="utf-8")
-            env_file.write_text(env_content, encoding="utf-8")
-            self._ssh(slot.ssh_host, f"mkdir -p '{slot.remote_dir}' && chmod 700 '{slot.remote_dir}'")
-            self._scp(compose_file, slot.ssh_host, slot.remote_compose_file)
-            self._scp(env_file, slot.ssh_host, slot.remote_env_file)
-            self._ssh(slot.ssh_host, f"chmod 600 '{slot.remote_env_file}'")
+        self._write_remote_runtime_files(slot)
         stale_target_container = self._ensure_target_container_recreate_safe(slot)
         port_owner_check = self._host_port_owner_check(slot, allowed_containers=set())
         if not port_owner_check["ok"]:
@@ -1917,6 +1951,21 @@ fi
                 }
             )
         return processes
+
+    def _write_remote_runtime_files(self, slot: LanAioProdSlot) -> None:
+        compose = self.render_compose(slot)
+        env_content = runtime_env_content(self.env_values)
+        self._sync_remote_workers(slot)
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_dir = Path(tmp)
+            compose_file = tmp_dir / "docker-compose.yml"
+            env_file = tmp_dir / ".env.lan-aio-prod"
+            compose_file.write_text(compose, encoding="utf-8")
+            env_file.write_text(env_content, encoding="utf-8")
+            self._ssh(slot.ssh_host, f"mkdir -p '{slot.remote_dir}' && chmod 700 '{slot.remote_dir}'")
+            self._scp(compose_file, slot.ssh_host, slot.remote_compose_file)
+            self._scp(env_file, slot.ssh_host, slot.remote_env_file)
+            self._ssh(slot.ssh_host, f"chmod 600 '{slot.remote_env_file}'")
 
     def _remote_compose(self, slot: LanAioProdSlot, op: str) -> None:
         command = (

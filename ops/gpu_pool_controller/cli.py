@@ -100,6 +100,8 @@ def _runtime_overrides_from_args(args) -> RuntimeRenderOverrides:
         agent_id=getattr(args, "agent_id", None),
         central_url=getattr(args, "central_url", None),
         environment=getattr(args, "environment", None),
+        gpu_index=getattr(args, "gpu_index", None),
+        gpu_device_id=getattr(args, "gpu_device_id", None),
     )
 
 
@@ -456,6 +458,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     runtime_render.add_argument("--agent-id", default=None)
     runtime_render.add_argument("--central-url", default=None)
+    runtime_render.add_argument("--gpu-index", type=int, default=None)
+    runtime_render.add_argument("--gpu-device-id", default=None)
     runtime_render.add_argument(
         "--environment",
         choices=("cloud-test", "cloud-prod"),
