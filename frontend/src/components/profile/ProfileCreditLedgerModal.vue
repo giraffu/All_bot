@@ -7,6 +7,9 @@ import { useCreditLedger } from '@/composables/useCreditLedger'
 import { useViewport } from '@/composables/useViewport'
 import type { CreditLedgerItem } from '@/types/creditLedger'
 import ProfileBackButton from '@/components/profile/ProfileBackButton.vue'
+import HeaderPaginationBar from '@/components/HeaderPaginationBar.vue'
+
+const CREDIT_LEDGER_PAGE_SIZE = 5
 
 const props = defineProps<{
   open: boolean
@@ -20,14 +23,14 @@ const { t, te } = useI18n()
 const { isMobile } = useViewport()
 const {
   items,
+  page,
+  totalPages,
   loading,
-  loadingMore,
   error,
-  hasMore,
   reset,
+  loadPage,
   loadLedger,
-  loadMore,
-} = useCreditLedger(20)
+} = useCreditLedger(CREDIT_LEDGER_PAGE_SIZE)
 
 const emptyText = computed(() =>
   error.value ? t('credit_ledger.load_failed') : t('credit_ledger.empty'),
@@ -64,7 +67,11 @@ const getContextEntries = (item: CreditLedgerItem) =>
   })
 
 const retryLoad = () => {
-  void loadLedger({ reset: true })
+  void loadPage(page.value)
+}
+
+const handlePageChange = (targetPage: number) => {
+  void loadPage(targetPage)
 }
 
 watch(
@@ -163,15 +170,15 @@ watch(
         >
           {{ t('credit_ledger.retry') }}
         </a-button>
-        <a-button
-          v-if="hasMore"
-          data-testid="credit-ledger-load-more"
-          class="profile-credit-ledger-modal__footer-btn"
-          :loading="loadingMore"
-          @click="loadMore"
-        >
-          {{ t('credit_ledger.load_more') }}
-        </a-button>
+        <HeaderPaginationBar
+          v-else-if="totalPages > 1"
+          :current-page="page"
+          :total-pages="totalPages"
+          :disabled="loading"
+          compact
+          minimal
+          @change="handlePageChange"
+        />
       </div>
     </div>
   </a-modal>

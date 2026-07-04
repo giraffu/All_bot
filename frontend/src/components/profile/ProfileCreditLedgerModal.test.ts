@@ -68,7 +68,7 @@ describe('ProfileCreditLedgerModal', () => {
     getCurrentUserCreditLedgerMock.mockReset()
   })
 
-  it('loads ledger entries and appends the next page', async () => {
+  it('loads five ledger entries per page and switches pages', async () => {
     getCurrentUserCreditLedgerMock
       .mockResolvedValueOnce({
         items: [
@@ -82,9 +82,9 @@ describe('ProfileCreditLedgerModal', () => {
             display_context: { reward: 10 },
           },
         ],
-        total: 2,
+        total: 8,
         page: 1,
-        page_size: 20,
+        page_size: 5,
         total_pages: 2,
       })
       .mockResolvedValueOnce({
@@ -99,9 +99,26 @@ describe('ProfileCreditLedgerModal', () => {
             display_context: {},
           },
         ],
-        total: 2,
+        total: 8,
         page: 2,
-        page_size: 20,
+        page_size: 5,
+        total_pages: 2,
+      })
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 1,
+            operation_type: 'checkin',
+            direction: 'income',
+            credit_change: 10,
+            current_balance: 110,
+            created_at: '2026-07-03T12:00:00',
+            display_context: { reward: 10 },
+          },
+        ],
+        total: 8,
+        page: 1,
+        page_size: 5,
         total_pages: 2,
       })
 
@@ -110,7 +127,7 @@ describe('ProfileCreditLedgerModal', () => {
 
     expect(getCurrentUserCreditLedgerMock).toHaveBeenCalledWith({
       page: 1,
-      page_size: 20,
+      page_size: 5,
     })
     expect(wrapper.text()).toContain('签到奖励')
     expect(wrapper.text()).toContain('收入')
@@ -118,18 +135,31 @@ describe('ProfileCreditLedgerModal', () => {
     expect(wrapper.text()).toContain('余额 110')
     expect(wrapper.text()).toContain('奖励 10')
     expect(wrapper.find('.profile-credit-ledger-modal__amount--income').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="credit-ledger-load-more"]').exists()).toBe(false)
 
-    await wrapper.find('[data-testid="credit-ledger-load-more"]').trigger('click')
+    await wrapper.find('button[aria-label="下一页"]').trigger('click')
     await flushPromises()
 
     expect(getCurrentUserCreditLedgerMock).toHaveBeenLastCalledWith({
       page: 2,
-      page_size: 20,
+      page_size: 5,
     })
+    expect(wrapper.find('[data-testid="credit-ledger-item-1"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="credit-ledger-item-2"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('文生图')
     expect(wrapper.text()).toContain('支出')
     expect(wrapper.text()).toContain('-2')
     expect(wrapper.find('.profile-credit-ledger-modal__amount--expense').exists()).toBe(true)
+
+    await wrapper.find('button[aria-label="上一页"]').trigger('click')
+    await flushPromises()
+
+    expect(getCurrentUserCreditLedgerMock).toHaveBeenLastCalledWith({
+      page: 1,
+      page_size: 5,
+    })
+    expect(wrapper.find('[data-testid="credit-ledger-item-1"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="credit-ledger-item-2"]').exists()).toBe(false)
   })
 
   it('renders the empty state when there are no ledger entries', async () => {
@@ -137,7 +167,7 @@ describe('ProfileCreditLedgerModal', () => {
       items: [],
       total: 0,
       page: 1,
-      page_size: 20,
+      page_size: 5,
       total_pages: 0,
     })
 
@@ -156,7 +186,7 @@ describe('ProfileCreditLedgerModal', () => {
         items: [],
         total: 0,
         page: 1,
-        page_size: 20,
+        page_size: 5,
         total_pages: 0,
       })
 
