@@ -417,9 +417,9 @@ slots:
     notes: Host-service ComfyUI node; requires a separate host-process-to-container migration plan.
 
   - id: gpu-226-gpu0-image_to_video
-    enabled: false
-    phase: superseded_by_scail2
-    retargetable: true
+    enabled: true
+    phase: prod_enabled
+    retargetable: false
     assignment_id: lan-226-8190-worker-01-aio
     target_profile_id: image_to_video
     target_task_types:
@@ -443,12 +443,12 @@ slots:
           - /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth
           - /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth
     rollout_order: 101
-    notes: Image_to_video rollback candidate for gpu-226 GPU0 after the 2026-07-04 switch to SCAIL-2. It restores lan_aio_prod_gpu226_gpu0_image_to_video_01 / allbot-lan-aio-gpu-226-gpu0-image_to_video-prod on host port 8190 by replacing the active SCAIL-2 AIO when explicitly requested.
+    notes: Active production gpu-226 GPU0 image_to_video LAN AIO after the 2026-07-05 Asia/Shanghai switchback from SCAIL-2. Preflight, image presence, warm-cache, drain/wait-idle, stop-old, start-disabled, RIFE hot-cache copy, disabled heartbeat, and enable-aio passed; SCAIL-2 remains the same-card rollback candidate.
 
   - id: gpu-226-gpu0-scail2
-    enabled: true
-    phase: prod_enabled
-    retargetable: false
+    enabled: false
+    phase: superseded_by_image_to_video
+    retargetable: true
     assignment_id: lan-226-8190-worker-01-aio
     target_profile_id: scail2
     target_task_types:
@@ -466,4 +466,4 @@ slots:
     old_runtime_container: allbot-lan-aio-gpu-226-gpu0-image_to_video-prod
     remote_dir: /home/ubantu/allbot-runpod-aio-prod/gpu226-gpu0-scail2
     rollout_order: 102
-    notes: Active production gpu-226 GPU0 SCAIL-2 LAN AIO after the 2026-07-04 explicit switch from image_to_video. Preflight, image load, model warm-cache, drain/wait-idle, stop-old, start-disabled, disabled heartbeat, and enable-aio passed. After the old xformers wheel failed on RTX 5090 sm_120 attention, the slot was restarted on 192.168.1.115:5000/allbot/comfy-runpod-scail2:20260704-sm120-xformers-pr1262 with source-built xformers 0.0.33+e70569e.d20260704; the first live scail2_video_replacement task completed/uploaded successfully and logs kept xformers enabled. Image_to_video remains the same-card rollback candidate. This is an RTX 5090 32G card while the SCAIL-2 profile catalog records 48G preferred capacity, so continue monitoring production tasks for OOM/status 137.
+    notes: Stopped same-card SCAIL-2 rollback candidate after the 2026-07-05 Asia/Shanghai switchback to image_to_video. The sm_120 xformers image 192.168.1.115:5000/allbot/comfy-runpod-scail2:20260704-sm120-xformers-pr1262 remains available; future SCAIL-2 takeover should still watch the RTX 5090 32G card for OOM/status 137 because the profile catalog records 48G preferred capacity.

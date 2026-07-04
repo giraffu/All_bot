@@ -282,7 +282,7 @@ SCAIL-2 当前有四类运行环境，桶和 worker 不得混用：
 | :--- | :--- | :--- | :--- |
 | 云测试 LAN | `http://192.168.1.2:8190` + `cloud_worker_test_08` | `user-data-test` | Web/Bot 测试 |
 | 云测试 RunPod | `runpod_test_scail2_*` | `user-data-test` | cloud-test canary / 临时验证 |
-| 云正式 LAN | `lan_aio_prod_gpu002_gpu0_scail2_01` / `lan_aio_prod_gpu226_gpu0_scail2_01` | `user-data-prod` | 当前正式 LAN 接单路径 |
+| 云正式 LAN | `lan_aio_prod_gpu002_gpu0_scail2_01` | `user-data-prod` | 当前正式 LAN 接单路径；`gpu-226-gpu0-scail2` 为同卡回切候选 |
 | 云正式 RunPod | `runpod_prod_scail2_manual_NN` | `user-data-prod` | 手动备用/临时扩容，不是默认常驻容量 |
 
 正式 RunPod `scail2` profile 可以通过 Dashboard 或 `scripts/runpod_prod_ops.sh` 创建、暂停、

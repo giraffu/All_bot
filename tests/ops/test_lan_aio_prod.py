@@ -102,7 +102,7 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
         "lan_aio_prod_gpu226_gpu0_image_to_video_01"
     )
     assert slots["gpu-226-gpu0-image_to_video"].legacy_worker_id == (
-        "cloud_prod_worker_01"
+        "lan_aio_prod_gpu226_gpu0_scail2_01"
     )
 
 
@@ -560,7 +560,7 @@ def test_lan_aio_pull_image_loads_runner_local_image_when_remote_pull_fails():
     assert ops.loaded == [
         (
             "gpu-177-gpu1-scail2",
-            "192.168.1.115:5000/allbot/comfy-runpod-scail2:20260617-scail2-cu128-a492b2b-proddeps1",
+            "192.168.1.115:5000/allbot/comfy-runpod-scail2:20260704-sm120-xformers-pr1262",
         )
     ]
 
@@ -1508,7 +1508,7 @@ def test_lan_aio_warm_cache_can_prepare_root_owned_retarget_workspace():
     ) in docker_command
     assert (
         "192.168.1.115:5000/allbot/comfy-runpod-scail2:"
-        "20260617-scail2-cu128-a492b2b-proddeps1"
+        "20260704-sm120-xformers-pr1262"
     ) in docker_command
 
 
