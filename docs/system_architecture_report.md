@@ -110,7 +110,7 @@ graph TD
   - 本地数据分析平台是独立 LAN/本地只读入口，只分析 shadow 数据，不挂载到正式 Dashboard 菜单。
 - **接入与应用层**
   - `tg-bot` 负责 Telegram 交互、FSM、结果消息与支付通知。
-  - `qqcc_bot` 是独立简化 Telegram polling 入口，只开放主菜单快速脱衣、懒人 P 图与懒人动图生成，复用同一用户、灵石、任务队列、对象存储与 worker 链路，不承载充值、affiliate、gallery 浏览或高级 FSM。
+  - `qqcc_bot` 是独立简化 Telegram polling 入口，开放 `快速换脸`、`AI绘图`、`AI动图`、QQCC 专用轻量 `修仙市集` 与 `前往主bot`，复用同一用户、灵石、任务队列、对象存储与 worker 链路，不承载充值、affiliate 或高级 FSM。主业务 Bot 的旧 `修仙市集` 底部入口已改为 `懒人bot` 跳转，用户点击后通过 inline URL 前往 QQCC 懒人 Bot。
   - `paid_group_guard_bot` 是独立 Telegram 审核 Bot，订阅付费群 `chat_join_request` 与普通 `message` update，按成功订单、后台赠送订单或筑基期及以上修为只读判断入群资格，并可对目标群执行非管理员链接/违禁词删除，不承载主业务 Bot 的菜单、生成、支付回调或文件处理。
   - `web-api` 承担认证、任务提交、任务运行态、历史、广场、用户中心、返佣兑换与站点通知读取等主能力。
   - `payment-api` 负责 RMB 回调；Stars 与 TON 各有对应履约入口。
@@ -226,7 +226,7 @@ sequenceDiagram
 - **交互状态机与回调路由**
   - Telegram FSM、全局菜单黑盒退出、callback prefix 路由、临时文件服务。
 - **本地经营与提示词分析**
-  - `local_analytics_platform` 只读连接本地 shadow 数据库，提供用户、灵石、充值、生成、Prompt Mart、提示词瘦身、向量相似和媒体引用核验，不承担线上管理后台写操作。
+  - `local_analytics_platform` 只读连接本地 shadow 数据库，提供用户、灵石、充值、生成、Prompt Mart、提示词瘦身、提示词向量化和媒体引用核验，不承担线上管理后台写操作。
 
 ---
 

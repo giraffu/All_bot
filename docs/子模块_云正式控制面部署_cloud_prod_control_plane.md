@@ -32,7 +32,7 @@
 | QQCC Config Frontend | `cloud-qqcc-config-frontend-prod` | `100.107.220.127:8088` | QQCC 懒人 Bot 独立配置 Web，同源反代 QQCC Config Backend |
 | imgproxy | `cloud-imgproxy-prod` | compose 内部端口 | 图片缩略与代理 |
 | Bot | `cloud-tg-bot-prod` | `bot` profile | 正式 Bot polling；必须保证全网单实例 |
-| QQCC Bot | `cloud-qqcc-bot-prod` | `qqcc-bot` profile | QQCC 懒人 Bot 独立 polling；只开放主菜单快速脱衣、懒人 P 图/懒人动图，必须使用独立 `QQCC_BOT_TOKEN` |
+| QQCC Bot | `cloud-qqcc-bot-prod` | `qqcc-bot` profile | QQCC 懒人 Bot 独立 polling；开放快速换脸、AI绘图、AI动图、QQCC 专用轻量市集和返回主 Bot 跳转，必须使用独立 `QQCC_BOT_TOKEN` |
 | Paid Group Guard Bot | `cloud-paid-group-guard-bot-prod` | 无对外端口 | 独立付费群审核与轻量群管理 Bot，使用独立 `PAID_GROUP_BOT_TOKEN` |
 
 云端不长期自托管正式 PostgreSQL、Valkey 或 MinIO；正式库与运行态 Redis/Valkey 使用托管服务或外部服务。
@@ -62,6 +62,7 @@ RUNPOD_MODEL_MANIFEST_KEY=img2img_lora/2026-06-10/manifest.json
 | `MINIO_*` / `R2_*` | `user-data-prod` + `https://r2.aivison.it.com` | 正式新生成对象、Web 媒体、历史/Gallery 读取与 worker 结果上传事实源 |
 | `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | `.env.cloud.prod` 真实值；RunPod Pod 内使用 `allbot_cloud_prod_r2_access_key` / `allbot_cloud_prod_r2_secret_key` secret | 只读写 `user-data-prod`，不得用于模型缓存 |
 | `QQCC_BOT_TOKEN` | `.env.cloud.prod` 真实值 | `cloud-qqcc-bot-prod` 的独立 Telegram token；不得写入仓库、docs、日志或 `docker compose config` 输出，正式上线前若已暴露应轮换 |
+| `QQCC_LAZY_BOT_URL` / `QQCC_LAZY_BOT_USERNAME` | `.env.cloud.prod` 或测试环境 env | 主业务 Bot 的 `懒人bot` 菜单跳转目标；优先使用 Telegram URL，未配置 URL 时可由合法 username 自动生成 `https://t.me/<username>` |
 | `MEMBERSHIP_SETTLEMENT_V2_ENABLED` / `AFFILIATE_MEMBERSHIP_REDEEM_ENABLED` | `true` | 正式 Web 与 Bot 的 affiliate 返佣兑身份硬开关；缺失或为 false 会让用户看到“返佣兑换身份功能未开启”，正式 preflight 必须阻断 |
 | `RUNPOD_PROD_AGENT_SECRET_TOKEN_REF` | `{{ RUNPOD_SECRET_allbot_cloud_prod_agent_secret_token }}` | 正式 RunPod Pod 访问 Central agent API 的 token 引用 |
 | `RUNPOD_PROD_R2_ACCESS_KEY_REF` / `RUNPOD_PROD_R2_SECRET_KEY_REF` | `{{ RUNPOD_SECRET_allbot_cloud_prod_r2_access_key }}` / `{{ RUNPOD_SECRET_allbot_cloud_prod_r2_secret_key }}` | 正式 RunPod Pod 读写 `user-data-prod` 的 secret 引用 |
@@ -650,7 +651,7 @@ scripts/install_cloud_prod_shadow_sync_timer.sh --execute
 运行口径：
 - 主脚本默认 dry-run；真实同步必须显式 `--execute`。
 - 数据库默认使用 `CLOUD_PROD_DB_DUMP_MODE=remote_r2`：脚本通过 SSH 让 `allbot-do-sgp1-control` 在云机读取 `.env.cloud.prod`，用 Docker 工具容器 `postgres:18`（可由 `SHADOW_SYNC_POSTGRES_IMAGE` 覆盖）执行 `pg_dump -Fc --serializable-deferrable`，把 dump/sha256 上传到 R2 临时前缀 `user-data-prod/__shadow-transfer/<timestamp>`，本地主服务器再经 HTTPS/rclone 下载到 ignored 的 `backups/cloud-prod-shadow/<timestamp>/`，校验 sha256 后恢复到 PostgreSQL 18 shadow 目标库 `bot_db_prod_shadow_next`，完成 Alembic/head 与关键表行数校验后，再把 `_next` 切成当前 `bot_db_prod_shadow`。云机临时目录和 R2 临时前缀在下载后清理。
-- `LOCAL_ANALYTICS_PRESERVE_ON_SHADOW_SYNC=true` 默认开启：每日恢复 `_next` 后、切换当前 shadow 前，会把旧 `bot_db_prod_shadow` 内本地分析平台生成的 `analytics_prompt_*` 与 `analytics_user_profile_*` 表复制到 `_next`，避免云端 dump 覆盖掉 Prompt Mart、提示词瘦身、向量相似、语义场景和用户画像快照表；无这些表时只跳过，不阻断 shadow 备份。manifest 会记录本轮保留的表名与数量。
+- `LOCAL_ANALYTICS_PRESERVE_ON_SHADOW_SYNC=true` 默认开启：每日恢复 `_next` 后、切换当前 shadow 前，会把旧 `bot_db_prod_shadow` 内本地分析平台生成的用户画像快照、Prompt Mart、提示词瘦身和 embedding/state 基础表复制到 `_next`；prompt 表使用显式白名单，避免旧相似、场景或图谱派生表被通配恢复。无这些表时只跳过，不阻断 shadow 备份。manifest 会记录本轮保留的表名与数量。
 - 本地主服务器家宽/VPN 出口不应作为长期托管服务 trusted source；`remote_r2` 模式不需要把本地主公网 IP 加到托管 PostgreSQL trusted sources。旧 `CLOUD_PROD_DB_DUMP_MODE=local_tunnel` 仅作为 fallback/专项诊断；`.env.cloud-prod-shadow-sync.local` 可保留 `CLOUD_PROD_DB_TUNNEL_SSH_HOST=allbot-do-sgp1-control`，用于 Redis/Valkey 摘要采集或 fallback 时短生命周期 `local -> cloud control -> managed service` SSH 本地转发。`CLOUD_PROD_DB_TUNNEL_LOCAL_PORT=0` 表示自动选择空闲本地端口。
 - 本地到 R2 的 dump 下载可按网络情况设置 `R2_SYNC_HTTP_PROXY` / `R2_SYNC_HTTPS_PROXY`，同时用 `R2_SYNC_NO_PROXY` 保留 `127.0.0.1,localhost,192.168.1.115` 等本地 MinIO/LAN 地址直连；默认保留 `R2_SYNC_BWLIMIT=20M`，并用 `R2_SYNC_TRANSFERS=8` / `R2_SYNC_CHECKERS=16` 改善小对象吞吐。
 - 对象同步使用 `rclone/rclone` 工具容器；`R2_BUCKET_SYNC_ENABLED=true` 时把 R2 `user-data-prod` 增量同步到本地 MinIO 纯镜像桶 `user-data-prod-shadow`，云端删除或覆盖导致的旧本地对象进入 `user-data-prod-shadow-quarantine/<timestamp>/`，不硬删。若设为 `false`，每日任务只做数据库 dump/restore 与 Redis 摘要，不执行生产媒体桶镜像；`remote_r2` 数据库 dump 仍会使用 R2 `__shadow-transfer` 临时前缀传输 dump/sha256。
@@ -658,7 +659,7 @@ scripts/install_cloud_prod_shadow_sync_timer.sh --execute
 - 若开启 `COMPLETE_MEDIA_SYNC_ENABLED=true`，每日任务会把 `user-data-prod-shadow` 非破坏式 copy 到完整合并桶 `user-data-complete-shadow`，不从 R2 下载第二遍，也不会删除完整桶内 legacy-only 对象。数据库-only timer 应同时设置 `R2_BUCKET_SYNC_ENABLED=false` 与 `COMPLETE_MEDIA_SYNC_ENABLED=false`。`bot-data` / `comfyui-temp` 等旧本地桶只用于一次性手动补齐，执行时显式追加 `--include-legacy-media-import` 或临时设置 `COMPLETE_MEDIA_IMPORT_LEGACY=true`；timer 日常运行应保持 legacy import 关闭，避免每天重复扫描历史大桶。
 - Redis/Valkey 只记录 `INFO memory` / `DBSIZE` 摘要，不恢复运行态、队列、锁或 heartbeat。
 - systemd timer 为 `allbot-cloud-prod-shadow-sync.timer`，默认每日 Asia/Shanghai 05:00，`Persistent=true`，`RandomizedDelaySec=15m`。
-- 本地分析刷新 timer 为 `allbot-local-analytics-refresh.timer`，默认每日 Asia/Shanghai 05:45，入口 `scripts/run_local_analytics_shadow_pipeline.py --execute --batch-size 128`。该链路会等待 shadow sync 锁释放，先按需恢复本地分析表并运行 `python -m app.refresh_user_profile_snapshots` upsert 当天用户画像快照；若随后检测到 `/app/data/prompt_vectors/.refresh_prompt_vectors.lock` 对应宿主锁仍被上一轮向量刷新持有，则输出 `skipped_vector_lock_held` 并跳过 Mart/slim/embedding 链，但画像快照已完成。无向量锁时按受影响 `prompt_hash` 增量刷新 Prompt Mart、刷新提示词瘦身表，LM Studio embedding 模型可用时续跑缺失向量；已有向量按 `prompt_hash` 断点续跑，不重新计算。embedding 覆盖完整后会先运行 `python -m app.refresh_prompt_scenes` 生成语义场景，再按 `task_type` 刷新相似边/近重复族；若 LM Studio 不可用但 embedding 已完整，仍允许刷新语义场景。05:00 shadow 切库造成 asyncpg 连接断开时，向量刷新会重连并从缺失 embedding 继续。仅人工重建 Mart 时才给 pipeline 追加 `--full-mart`。
+- 本地分析刷新 timer 为 `allbot-local-analytics-refresh.timer`，默认每日 Asia/Shanghai 05:45，入口 `scripts/run_local_analytics_shadow_pipeline.py --execute --batch-size 128`。该链路会等待 shadow sync 锁释放，先按需恢复本地分析白名单表并运行 `python -m app.refresh_user_profile_snapshots` upsert 当天用户画像快照；若随后检测到 `/app/data/prompt_vectors/.refresh_prompt_vectors.lock` 对应宿主锁仍被上一轮向量刷新持有，则输出 `skipped_vector_lock_held` 并跳过 Mart/slim/embedding 链，但画像快照已完成。无向量锁时按受影响 `prompt_hash` 增量刷新 Prompt Mart、刷新提示词瘦身表，LM Studio embedding 模型可用时续跑缺失向量；已有向量按 `prompt_hash` 断点续跑，不重新计算。链路不再生成语义场景、相似边、近重复族或图谱。05:00 shadow 切库造成 asyncpg 连接断开时，向量刷新会重连并从缺失 embedding 继续。仅人工重建 Mart 时才给 pipeline 追加 `--full-mart`。
 
 安全边界：
 - `.env.cloud-prod-shadow-sync.local` 只放在本地主服务器并保持 ignored；不得把 DB 密码、R2 key、Bot token、presigned URL、`.env.cloud.prod` 内容写入日志、manifest、文档或聊天。
