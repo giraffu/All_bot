@@ -44,16 +44,6 @@ def build_photo_edit_payload(context) -> tuple[str, object]:
     return context.t("system.photo_edit_hint"), get_photo_edit_keyboard(context.lang)
 
 
-def build_video_edit_payload(context) -> tuple[str, object]:
-    from src.i18n.keyboards import get_video_edit_keyboard
-
-    return context.t("system.video_edit_hint"), get_video_edit_keyboard(context.lang)
-
-
-def build_disabled_payload(context) -> tuple[str, None]:
-    return context.t("system.feature_disabled"), None
-
-
 def build_lazy_bot_payload(context) -> tuple[str, object | None]:
     lazy_bot_url = resolve_lazy_bot_url()
     if not lazy_bot_url:
@@ -68,6 +58,30 @@ def build_lazy_bot_payload(context) -> tuple[str, object | None]:
         ]
     ]
     return context.t("system.open_lazy_bot_hint"), InlineKeyboardMarkup(keyboard)
+
+
+async def reply_with_lazy_bot_payload(
+    update,
+    context,
+    *,
+    reply_text_func,
+    edit_text_func=None,
+):
+    message_text, reply_markup = build_lazy_bot_payload(context)
+    query = getattr(update, "callback_query", None)
+    if query and edit_text_func is not None:
+        return await edit_text_func(
+            query.message,
+            message_text,
+            reply_markup=reply_markup,
+        )
+
+    message = get_reply_message(update)
+    return await reply_text_func(
+        message,
+        message_text,
+        reply_markup=reply_markup,
+    )
 
 
 def build_video_to_video_payload(context) -> tuple[str, object]:

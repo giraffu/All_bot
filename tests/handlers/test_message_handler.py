@@ -284,6 +284,17 @@ async def test_old_gallery_text_routes_to_lazy_bot_payload_in_main_bot(monkeypat
     )
 
 
+def test_migrated_lazy_text_routes_point_to_lazy_bot_handler():
+    for route_key in (
+        "menu.gallery",
+        "qqcc.menu.market",
+        "menu.video_edit",
+        "qqcc.menu.ai_draw",
+        "qqcc.menu.quick_faceswap",
+    ):
+        assert message_handler.prompt_routes[route_key] is message_handler.handle_lazy_bot_menu
+
+
 @pytest.mark.asyncio
 async def test_dispatch_built_menu_handler_rewards_user_before_reply(monkeypatch):
     reply_with_payload = AsyncMock(return_value=None)

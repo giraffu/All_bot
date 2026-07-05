@@ -1052,10 +1052,6 @@
       "expired_alert": "The interaction expired or the task was submitted. Please start again."
     },
     "quick_image": {
-      "undress_choice_intro": "💃 **Quick Undress**\n\nChoose a lazy mode:\n\n**Portrait/Bust Auto Fill**: works with portraits or bust shots and auto-completes a full-body result.\n**Full-Body Face-Safe Repaint**: best with full-body photos, more realistic texture, and steadier face preservation.\n\nAfter choosing, just send one image.",
-      "undress_legacy_button": "Portrait/Bust Auto Fill",
-      "undress_i2i_draw_button": "Full-Body Face-Safe Repaint",
-      "undress_legacy_start": "💃 **Entered Portrait/Bust Auto Fill mode** (cost: {cost} credits).\n\nSend a portrait, bust shot, or person image and I will process it automatically.\n\nYou can send /cancel anytime to exit.",
       "undress_i2i_draw_start": "💃 **Entered Full-Body Face-Safe Repaint mode** (cost: {cost} credits).\n\nSend one clear full-body photo. This mode gives more realistic texture and preserves the face more steadily.\n\nYou can send /cancel anytime to exit.",
       "undress_start": "💃 **Entered Quick Undress mode** (cost: {cost} credits).\n\nSend one image containing a person and I will process it automatically.\n\nYou can send /cancel anytime to exit.",
       "masturbation_start": "🥵 **Entered Quick Masturbation mode** (cost: {cost} credits).\n\nSend one image containing a person and I will process it automatically.\n\nYou can send /cancel anytime to exit.",

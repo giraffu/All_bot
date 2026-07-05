@@ -39,7 +39,6 @@ from src.domain_config.wan22_aio_video import (
     WAN22_VIDEO_V2_RESOLUTION_PRESETS,
     get_wan22_video_v2_cost,
     get_wan22_video_v2_duration_label,
-    get_wan22_video_v2_duration_multiplier_label,
     get_wan22_video_v2_resolution_display,
     get_wan22_video_v2_resolution_label,
     normalize_wan22_video_v2_duration_seconds,
@@ -50,6 +49,16 @@ from src.services.fsm_temp_file_service import (
     download_telegram_file_to_fsm_temp,
 )
 from src.services.permission_service import permission_service
+from src.services.advanced_video_submission_service import (
+    AdvancedVideoSubmissionKind,
+    AdvancedVideoSubmissionReject,
+    build_wan22_video_v2_submission_plan,
+    create_wan22_video_v2_submission_task,
+)
+from src.services.advanced_video_settings_view_service import (
+    build_wan22_initial_setup_view,
+    build_wan22_settings_view,
+)
 from src.services.wan22_video_v2_extension_service import (
     Wan22VideoV2ExtensionError,
     build_full_chain_task_ids,
@@ -88,11 +97,7 @@ WAN22_VIDEO_V2_SETUP_ACTION_PATTERN = (
     rf")|dur_({'|'.join(str(duration) for duration in WAN22_VIDEO_V2_DURATION_SECONDS)})|confirm)$"
 )
 _t = translate_fsm_text
-
-
-def _default_negative_prompt_label(context: ContextTypes.DEFAULT_TYPE) -> str:
-    lang = getattr(context, "lang", "zh")
-    return "Default negative prompt" if lang == "en" else "默认负面提示词"
+_LEGACY_WAN22_IMAGE_TO_VIDEO_TASK_TYPES = (MODE_CUSTOM_VIDEO, MODE_IMAGE_TO_VIDEO)
 
 
 def _get_data(context: ContextTypes.DEFAULT_TYPE) -> dict | None:
@@ -123,34 +128,12 @@ def _release_context_without_files(context: ContextTypes.DEFAULT_TYPE) -> dict:
     return _pop_data(context)
 
 
-def _resolve_submit_images(data: dict[str, Any]) -> list[str]:
-    images = [str(data["start_image_path"])]
-    if data.get("use_end_frame") and data.get("end_image_path"):
-        images.append(str(data["end_image_path"]))
-    return images
-
-
-def _build_chain_result_meta(data: dict[str, Any]) -> dict[str, Any] | None:
-    if not data.get("extension_prev_task_id"):
-        return None
-    return {
-        "wan22_prev_task_id": str(data["extension_prev_task_id"]),
-        "wan22_chain_task_ids": normalize_wan22_video_v2_chain_task_ids(
-            data.get("chain_task_ids")
-        ),
-    }
-
-
-def _resolve_legacy_lora_strength(data: dict[str, Any]) -> float:
-    try:
-        return float(data.get("lora_strength"))
-    except (TypeError, ValueError):
-        return 1.0
-
-
 def _is_legacy_image_to_video_context(data: dict[str, Any] | dict[str, object]) -> bool:
     extension_task_type = str(data.get("extension_task_type") or MODE_WAN22_VIDEO_V2)
-    return extension_task_type != MODE_WAN22_VIDEO_V2
+    return (
+        extension_task_type in _LEGACY_WAN22_IMAGE_TO_VIDEO_TASK_TYPES
+        or extension_task_type != MODE_WAN22_VIDEO_V2
+    )
 
 
 def _resolve_reusable_history_prompt_and_lora(
@@ -221,67 +204,6 @@ async def _reply_callback_notice(update: Update, text: str) -> None:
         await robust_reply_text(target_message, text, parse_mode="Markdown")
 
 
-def _build_submit_generation_task(
-    *,
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    user,
-    data: dict[str, Any],
-    images: list[str],
-    resolution_preset: str,
-):
-    prompt = str(data.get("prompt") or "").strip()
-    negative_prompt = str(data.get("negative_prompt") or "").strip()
-    use_end_frame = bool(data.get("use_end_frame"))
-    extension_task_type = str(data.get("extension_task_type") or MODE_WAN22_VIDEO_V2)
-    duration_seconds = _normalize_selected_duration(data)
-
-    if extension_task_type == MODE_WAN22_VIDEO_V2:
-        return process_wan22_video_v2_task(
-            context=context,
-            chat_id=update.effective_chat.id,
-            user_id=user.id,
-            username=user.username,
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            images=images,
-            use_end_frame=use_end_frame,
-            resolution_preset=resolution_preset,
-            duration=duration_seconds,
-            result_meta=_build_chain_result_meta(data),
-            cleanup=True,
-        )
-
-    return process_image_to_video_task(
-        context=context,
-        chat_id=update.effective_chat.id,
-        user_id=user.id,
-        username=user.username,
-        prompt=prompt,
-        negative_prompt=negative_prompt,
-        images=images,
-        use_end_frame=use_end_frame,
-        resolution_preset=resolution_preset,
-        duration=duration_seconds,
-        wan22_prev_task_id=(
-            str(data["extension_prev_task_id"])
-            if data.get("extension_prev_task_id")
-            else None
-        ),
-        wan22_chain_task_ids=normalize_wan22_video_v2_chain_task_ids(
-            data.get("chain_task_ids")
-        ),
-        task_type=(
-            MODE_IMAGE_TO_VIDEO
-            if extension_task_type == MODE_IMAGE_TO_VIDEO
-            else MODE_CUSTOM_VIDEO
-        ),
-        lora_name=str(data.get("lora_name") or "").strip() or None,
-        lora_strength=_resolve_legacy_lora_strength(data),
-        cleanup=True,
-    )
-
-
 def _build_end_frame_choice_keyboard(context: ContextTypes.DEFAULT_TYPE) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
@@ -297,10 +219,6 @@ def _build_end_frame_choice_keyboard(context: ContextTypes.DEFAULT_TYPE) -> Inli
             ]
         ]
     )
-
-
-def _selected_button_label(label: str, *, selected: bool) -> str:
-    return f"✅ {label}" if selected else label
 
 
 def _get_frame_mode_label(
@@ -327,81 +245,28 @@ def _build_initial_setup_keyboard(
     context: ContextTypes.DEFAULT_TYPE,
     data: dict[str, object],
 ) -> InlineKeyboardMarkup:
-    lang = getattr(context, "lang", "zh")
-    selected_resolution = _normalize_selected_resolution(data)
-    selected_duration = _normalize_selected_duration(data)
-    use_end_frame = bool(data.get("use_end_frame"))
-    credits_text = _t(context, "app.credits")
-    resolution_row = []
-    for preset_key in WAN22_VIDEO_V2_RESOLUTION_PRESETS:
-        label = get_wan22_video_v2_resolution_label(preset_key, lang=lang)
-        cost_for_preset = get_wan22_video_v2_cost(preset_key, selected_duration)
-        resolution_row.append(
-            InlineKeyboardButton(
-                _selected_button_label(
-                    f"{label} ({cost_for_preset}{credits_text})",
-                    selected=preset_key == selected_resolution,
-                ),
-                callback_data=f"{WAN22_VIDEO_V2_SETUP_RES_PREFIX}{preset_key}",
-            )
-        )
-    duration_row = []
-    for duration_seconds in WAN22_VIDEO_V2_DURATION_SECONDS:
-        label = get_wan22_video_v2_duration_label(duration_seconds, lang=lang)
-        multiplier_label = get_wan22_video_v2_duration_multiplier_label(
-            duration_seconds
-        )
-        duration_row.append(
-            InlineKeyboardButton(
-                _selected_button_label(
-                    f"{label} ({multiplier_label})",
-                    selected=duration_seconds == selected_duration,
-                ),
-                callback_data=f"{WAN22_VIDEO_V2_SETUP_DUR_PREFIX}{duration_seconds}",
-            )
-        )
-
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
-                    _selected_button_label(
-                        _t(context, "fsm.wan22_video_v2.disable_end_frame"),
-                        selected=not use_end_frame,
-                    ),
-                    callback_data=WAN22_VIDEO_V2_SETUP_MODE_SINGLE,
-                ),
-                InlineKeyboardButton(
-                    _selected_button_label(
-                        _t(context, "fsm.wan22_video_v2.enable_end_frame"),
-                        selected=use_end_frame,
-                    ),
-                    callback_data=WAN22_VIDEO_V2_SETUP_MODE_END,
-                ),
-            ],
-            resolution_row,
-            duration_row,
-        ]
+    view = build_wan22_initial_setup_view(
+        data,
+        lang=getattr(context, "lang", "zh"),
+        translate_func=lambda key, **kwargs: _t(context, key, **kwargs),
     )
+    data["resolution_preset"] = view.resolution
+    data["duration"] = view.duration
+    return view.reply_markup
 
 
 def _build_initial_setup_message(
     context: ContextTypes.DEFAULT_TYPE,
     data: dict[str, object],
 ) -> str:
-    lang = getattr(context, "lang", "zh")
-    resolution = _normalize_selected_resolution(data)
-    duration = _normalize_selected_duration(data)
-    use_end_frame = bool(data.get("use_end_frame"))
-    return _t(
-        context,
-        "fsm.wan22_video_v2.setup_text",
-        frame_mode=_get_frame_mode_label(context, use_end_frame),
-        image_count=2 if use_end_frame else 1,
-        resolution=get_wan22_video_v2_resolution_display(resolution, lang=lang),
-        duration=get_wan22_video_v2_duration_label(duration, lang=lang),
-        cost=get_wan22_video_v2_cost(resolution, duration),
+    view = build_wan22_initial_setup_view(
+        data,
+        lang=getattr(context, "lang", "zh"),
+        translate_func=lambda key, **kwargs: _t(context, key, **kwargs),
     )
+    data["resolution_preset"] = view.resolution
+    data["duration"] = view.duration
+    return view.message_text
 
 
 def _build_start_image_request_message(
@@ -432,50 +297,15 @@ def _build_start_image_request_message(
 def _build_settings_keyboard(
     context: ContextTypes.DEFAULT_TYPE, data: dict[str, object]
 ) -> InlineKeyboardMarkup:
-    current_resolution = str(
-        data.get("resolution_preset") or WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET
+    view = build_wan22_settings_view(
+        data,
+        lang=getattr(context, "lang", "zh"),
+        translate_func=lambda key, **kwargs: _t(context, key, **kwargs),
+        is_legacy_context=_is_legacy_image_to_video_context(data),
     )
-    lang = getattr(context, "lang", "zh")
-    current_duration = _normalize_selected_duration(data)
-    resolution_buttons = []
-    for preset_key in WAN22_VIDEO_V2_RESOLUTION_PRESETS:
-        label = get_wan22_video_v2_resolution_label(preset_key, lang=lang)
-        if current_resolution == preset_key:
-            label = f"• {label}"
-        resolution_buttons.append(
-            InlineKeyboardButton(
-                label,
-                callback_data=f"wan22v2_res_{preset_key}",
-            )
-        )
-    duration_buttons = []
-    for duration_seconds in WAN22_VIDEO_V2_DURATION_SECONDS:
-        label = get_wan22_video_v2_duration_label(duration_seconds, lang=lang)
-        multiplier_label = get_wan22_video_v2_duration_multiplier_label(
-            duration_seconds
-        )
-        label = f"{label} ({multiplier_label})"
-        if current_duration == duration_seconds:
-            label = f"• {label}"
-        duration_buttons.append(
-            InlineKeyboardButton(
-                label,
-                callback_data=f"wan22v2_dur_{duration_seconds}",
-            )
-        )
-
-    return InlineKeyboardMarkup(
-        [
-            resolution_buttons,
-            duration_buttons,
-            [
-                InlineKeyboardButton(
-                    _t(context, "fsm.wan22_video_v2.submit_button"),
-                    callback_data="wan22v2_submit",
-                )
-            ],
-        ]
-    )
+    data["resolution_preset"] = view.resolution
+    data["duration"] = view.duration
+    return view.reply_markup
 
 
 def _build_skip_negative_prompt_keyboard(
@@ -511,39 +341,15 @@ def _build_use_original_prompt_keyboard(
 def _build_settings_message(
     context: ContextTypes.DEFAULT_TYPE, data: dict[str, object]
 ) -> str:
-    lang = getattr(context, "lang", "zh")
-    status_yes = _t(context, "fsm.wan22_video_v2.status_yes")
-    status_no = _t(context, "fsm.wan22_video_v2.status_no")
-    negative_prompt = str(data.get("negative_prompt") or "").strip()
-    resolution_preset = str(
-        data.get("resolution_preset") or WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET
+    view = build_wan22_settings_view(
+        data,
+        lang=getattr(context, "lang", "zh"),
+        translate_func=lambda key, **kwargs: _t(context, key, **kwargs),
+        is_legacy_context=_is_legacy_image_to_video_context(data),
     )
-    resolution_display = get_wan22_video_v2_resolution_display(
-        resolution_preset,
-        lang=lang,
-    )
-    duration = _normalize_selected_duration(data)
-    cost = get_wan22_video_v2_cost(resolution_preset, duration)
-    settings_key = (
-        "fsm.wan22_video_v2.legacy_settings_text"
-        if _is_legacy_image_to_video_context(data)
-        else "fsm.wan22_video_v2.settings_text"
-    )
-    return _t(
-        context,
-        settings_key,
-        use_end_frame=status_yes if data.get("use_end_frame") else status_no,
-        end_frame_ready=(
-            status_yes
-            if (not data.get("use_end_frame") or data.get("end_image_path"))
-            else status_no
-        ),
-        prompt=str(data.get("prompt") or "").strip() or "-",
-        negative_prompt=negative_prompt or _default_negative_prompt_label(context),
-        resolution_preset=resolution_display,
-        duration=get_wan22_video_v2_duration_label(duration, lang=lang),
-        cost=cost,
-    )
+    data["resolution_preset"] = view.resolution
+    data["duration"] = view.duration
+    return view.message_text
 
 
 async def _send_or_edit_message(
@@ -1163,11 +969,23 @@ async def submit_generation(
                 await query.answer(_t(context, "fsm.wan22_video_v2.missing_end_image"), show_alert=True)
         return Wan22VideoV2State.WAIT_END_IMAGE
 
-    resolution_preset = str(
-        data.get("resolution_preset") or WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET
+    submission_plan = build_wan22_video_v2_submission_plan(data=data)
+    if isinstance(submission_plan, AdvancedVideoSubmissionReject):
+        if query:
+            with contextlib.suppress(Exception):
+                await query.answer(
+                    _t(context, "fsm.common.missing_image_resend"),
+                    show_alert=True,
+                )
+        _cleanup_context(context)
+        return ConversationHandler.END
+
+    data["resolution_preset"] = submission_plan.resolution_preset
+    data["duration"] = submission_plan.duration
+    cost = submission_plan.cost
+    is_legacy_submission = (
+        submission_plan.kind == AdvancedVideoSubmissionKind.LEGACY_WAN22_IMAGE_TO_VIDEO
     )
-    duration = _normalize_selected_duration(data)
-    cost = get_wan22_video_v2_cost(resolution_preset, duration)
 
     try:
         await permission_service.check_quota(
@@ -1196,13 +1014,11 @@ async def submit_generation(
             return ConversationHandler.END
         raise exc
 
-    images = _resolve_submit_images(data)
-
     if query:
         with contextlib.suppress(Exception):
             submitting_key = (
                 "fsm.wan22_video_v2.submitting_legacy"
-                if _is_legacy_image_to_video_context(data)
+                if is_legacy_submission
                 else "fsm.wan22_video_v2.submitting"
             )
             await robust_edit_text(
@@ -1213,7 +1029,7 @@ async def submit_generation(
     else:
         submitting_key = (
             "fsm.wan22_video_v2.submitting_legacy"
-            if _is_legacy_image_to_video_context(data)
+            if is_legacy_submission
             else "fsm.wan22_video_v2.submitting"
         )
         target_message = getattr(update, "effective_message", None) or getattr(
@@ -1226,13 +1042,14 @@ async def submit_generation(
                 parse_mode="Markdown",
             )
 
-    task_coro = _build_submit_generation_task(
-        update=update,
+    task_coro = create_wan22_video_v2_submission_task(
+        plan=submission_plan,
         context=context,
-        user=user,
-        data=data,
-        images=images,
-        resolution_preset=resolution_preset,
+        chat_id=update.effective_chat.id,
+        user_id=user.id,
+        username=user.username,
+        process_wan22_video_v2_task_func=process_wan22_video_v2_task,
+        process_image_to_video_task_func=process_image_to_video_task,
     )
     create_background_task(context, task_coro)
     _release_context_without_files(context)

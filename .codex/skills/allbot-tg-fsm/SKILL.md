@@ -10,17 +10,23 @@ description: "处理 Telegram FSM、全局菜单黑盒退出、callback 路由�
 涉及 FSM 卡死、callback 转圈、文件下载失败或语言路由异常时，叠加 `allbot-diagnosing-bugs`；新增对话流或修复回归时，叠加 `allbot-tdd` 通过 handler / callback focused tests 锁定行为。
 
 ## 1. 模块功能描述
-- **多语言精准路由**：FSM 入口仍可使用 `I18nFilter`，但全局菜单识别已扩展为 `prompt_router + GLOBAL_REVERSE_MAP + is_global_menu_command(...)` 组合。
+- **多语言精准路由**：FSM 入口仍可使用 `I18nFilter`，但全局菜单识别已扩展为 `menu_route_registry + prompt_router + GLOBAL_REVERSE_MAP + is_global_menu_command(...)` 组合。
 - **FSM 黑盒退出机制**：在任何文字接收入口，优先用 `is_global_menu_command(...)` 判断是否应退出当前流程，而不是散落硬编码菜单判断。
 - **Callback 注册路由**：回调处理依赖 `register_callback` 前缀注册、长度降序匹配与统一 `safe_answer_query` 兜底，修改 callback 拆分时必须维护这套契约。
-- **临时文件生命周期**：常规 FSM 文件流已优先收口到 `fsm_temp_file_service.py`，负责目录创建、下载与清理；大文件 Monkey Patch 不是唯一主路径。
+- **临时文件生命周期**：常规 FSM 文件流已优先收口到 `fsm_temp_file_service.py`，负责目录创建、下载与清理；Telegram Local API / Poll 兼容 / 语言注入由 `telegram_runtime_bootstrap.py` 统一安装，避免主 Bot 与 QQCC Bot 重复补丁。
 - **语言切换同步**：语言切换不只是菜单文案变化，还涉及 DB + Redis 双缓存同步。
 - **独立付费群审核 Bot**：`paid_group_guard_bot/` 使用独立 token，订阅目标群 `chat_join_request` 与普通 `message` update；入群资格只读查订单/修为，普通消息只做轻量群管理（非管理员链接、违禁词、结构化日志），不要把它接入主业务 FSM 或复用主业务 `BOT_TOKEN`。
 - **QQCC 懒人 Bot**：`qqcc_bot/` 是独立简化 polling 服务，只注册 quick image/video FSM 和最小菜单；修改它时必须叠加 `allbot-qqcc-lazy-bot`。
+- **已迁移主 Bot 旧懒人入口**：主 Bot 不得恢复旧懒人入口任务提交；旧 `menu.video_edit` / `menu.video_edit_*`、`qqcc.menu.ai_draw`、`qqcc.menu.quick_faceswap`、`快速脱衣` / `快速自慰` 和主 Bot `qvid_*` 残留入口只能回复 QQCC 懒人 Bot inline 跳转或入口未配置提示。QQCC Bot 自身 `qdraw_scene:*`、`qvid_scene:*` 和旧 `qvid_mode:*` 兼容不受影响。
+- **Quick Image 提交 service**：`quick_image_fsm.py` 只负责 Telegram 状态流转、图片接收、额度检查、用户回复和清理；quick image 的提交计划、随机换脸模板过滤、QQCC AI绘图场景 engine 分支、后处理链与执行 payload 统一放在 `src/services/quick_image_submission_service.py`。旧 `WAIT_UNDRESS_METHOD` / 旧脱衣方式 callback 已清理，`i2i_draw` 只作为兼容 payload 保留。
+- **Quick Video 提交 seam**：`quick_video_fsm.py` 只负责 Telegram 状态流转、额度检查、用户回复和清理；quick video 的提交计划、QQCC 场景 engine 分支、尾帧绘图链与执行 payload 统一放在 `src/services/quick_video_submission_service.py`。后续改 AI动图提交逻辑应优先改该 service 并补 service focused tests。
+- **高级视频提交 service**：主 Bot `image_to_video_fsm.py`、`wan22_video_v2_fsm.py`、`ltx_video_fsm.py` 只负责 Telegram 状态流转、素材接收、额度检查、用户回复和清理；旧图生视频/Wan22 v2/LTX 的提交计划、首尾帧 payload、分辨率/时长归一、LTX LoRA 多选和扩展链上下文统一放在 `src/services/advanced_video_submission_service.py`。该 service 不新增 task type、workflow 或 QQCC 能力。
+- **高级视频设置 view service**：主 Bot 旧图生视频、Wan22 v2 与 LTX 的同屏设置面板 view-model/keyboards 统一放在 `src/services/advanced_video_settings_view_service.py`；FSM wrapper 只回写归一后的分辨率/时长并发送或编辑 Telegram 消息。修改设置按钮、费用展示、LTX 扩展直接续写提示时优先改该 service 并补 focused tests，不在 handler 里复制键盘拼装。
+- **LTX 扩展/拼接 service**：`ltx_video_fsm.py` 的扩展入口和 `handlers/callbacks/ltx_video_callbacks.py` 的完成拼接 callback 只负责 Telegram 层交互；历史归属校验、`_ltx_context` 合并、尾帧下载、扩展 FSM seed 与完整拼接链 histories 加载统一放在 `src/services/ltx_video_extension_service.py`。
 
 ## 2. 输入输出规范
 ### FSM 状态流转
-- **入口**：优先使用 `I18nFilter(...)` 或统一菜单路由，而不是硬编码中文正则。
+- **入口**：优先使用 `I18nFilter(...)` 或统一菜单路由，而不是硬编码中文正则；FSM-only 菜单 key、特殊翻译覆盖和旧键盘文案 alias 必须维护在 `src/handlers/menu_route_registry.py`。
 - **状态处理**：文字输入分支必须优先经过 `is_global_menu_command(...)` 黑盒退出判断。
 - **超时**：当前主 FSM 通常以 `300` 秒 `conversation_timeout` 为基线；若改动超时值，必须同步文档与测试。
 - **退出**：显式返回 `ConversationHandler.END`，并清理 `user_data` / 临时文件。
@@ -63,6 +69,7 @@ def build_handler() -> ConversationHandler:
 - QQCC Bot 必须和主业务 Bot token 隔离，且不能导入 `src.bot_main` 或注册主 Bot 的高级/支付/gallery handler。
 - FSM 内不得依赖硬编码菜单词做全局退出判断，必须走统一菜单路由。
 - 临时文件、下载目录和清理逻辑应优先下沉到服务层，避免各 FSM 重复拼装。
+- 主 Bot 与 QQCC Bot 共享 `src/services/telegram_runtime_bootstrap.py`，但 QQCC 仍只注册 quick image/video、QQCC market 和最小 callback；不要为了复用 bootstrap 引入主 Bot handler 集。
 - callback 路由拆分时必须确保主入口导入子模块触发注册，不能因加载顺序拿到空路由表。
 - SCAIL-2 Bot 的“视频生视频”二级菜单支持测试 Bot 与正式 Bot，但正式展示必须跟随 SCAIL-2 正式 runtime 发布闸门；`scail2_video_fsm` 收集参考图、驱动视频、可选正向提示词和 5s/8s 时长，正向提示词可通过 inline button 跳过并由 domain config 默认值补齐，负面提示词使用默认值，驱动视频上限 40MB，原“视频换脸”FSM 只移动到该二级菜单内并保持原业务逻辑。正式发布维护窗口内，Bot 生成 FSM 应尊重 `/app/GENERATION_MAINTENANCE` 或全局 `/app/MAINTENANCE`，提示维护并停止新提交。
 - 旧图生视频与图生视频 v2 的普通入口设置面板不再展示“确定/确认上传”按钮。`image_to_video_fsm.py` 在附加模型/帧模式/分辨率/时长面板直接接收起始图片，发送图片即确认设置；首尾帧模式随后收终止图片。`wan22_video_v2_fsm.py` 在单图/首尾帧、分辨率和时长面板同样直接接收起始帧图片；旧 `i2v_setup_confirm` / `wan22v2_setup_confirm` callback 仅保留兼容已发出的旧消息。

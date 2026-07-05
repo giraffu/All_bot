@@ -16,7 +16,6 @@ from telegram.ext import (
 from src.constants import (
     LTX_DURATION_MULTIPLIER,
     LTX_RESOLUTION_COST,
-    get_ltx_video_settings_keyboard,
 )
 from src.handlers.fsm.fsm_shared import (
     handle_standard_fsm_cancel,
@@ -36,13 +35,20 @@ from src.lora_catalog import (
 from src.services.task_service_entrypoints_specialized import process_ltx_video_task
 from src.services.ltx_video_extension_service import (
     LtxVideoExtensionError,
-    build_ltx_full_chain_task_ids,
-    download_ltx_last_frame_to_fsm_temp,
-    extract_ltx_history_context,
-    load_owned_ltx_history,
-    normalize_ltx_video_chain_task_ids,
+    prepare_ltx_extension_fsm_data,
 )
 from src.services.permission_service import permission_service
+from src.services.advanced_video_submission_service import (
+    AdvancedVideoSubmissionReject,
+    AdvancedVideoSubmissionRejectReason,
+    build_ltx_video_submission_plan,
+    create_ltx_video_submission_task,
+)
+from src.services.advanced_video_settings_view_service import (
+    build_ltx_initial_setup_view,
+    build_ltx_lora_summary_text,
+    build_ltx_prompt_settings_view,
+)
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
     download_telegram_file_to_fsm_temp,
@@ -80,35 +86,6 @@ _VIDEO_SUFFIXES = {".mp4", ".mov", ".webm", ".avi", ".mkv"}
 _t = translate_fsm_text
 
 
-def _build_settings_message(
-    context: ContextTypes.DEFAULT_TYPE,
-    *,
-    resolution: str,
-    duration: str,
-    cost: int,
-    lora_items: list[dict[str, Any]] | None = None,
-    english_prompt_only: bool = False,
-) -> str:
-    key = (
-        "fsm.ltx_video.settings_text_english_prompt"
-        if english_prompt_only
-        else "fsm.ltx_video.settings_text"
-    )
-    message = _t(
-        context,
-        key,
-        resolution=resolution,
-        duration=duration,
-        cost=cost,
-    )
-    lora_text = _build_lora_summary_text(
-        context,
-        lora_items or [],
-        empty_key="fsm.image_to_video.current_lora",
-    )
-    return f"{message}\n\n{lora_text}"
-
-
 def _get_ltx_video_items(fsm_data: dict[str, Any]) -> list[dict[str, Any]]:
     return normalize_ltx_video_lora_items(
         fsm_data.get("lora_items"),
@@ -122,18 +99,12 @@ def _build_lora_summary_text(
     *,
     empty_key: str | None = None,
 ) -> str:
-    lang = getattr(context, "lang", "zh")
-    if not lora_items:
-        empty_name = get_ltx_video_lora_display_name("", lang)
-        if empty_key:
-            return _t(context, empty_key, model_name=empty_name)
-        return f"当前附加模型: {empty_name}"
-
-    display_items = ", ".join(
-        f"{get_ltx_video_lora_display_name(str(item['name']), lang)}({float(item['strength']):.2f})"
-        for item in lora_items
+    return build_ltx_lora_summary_text(
+        lora_items,
+        lang=getattr(context, "lang", "zh"),
+        translate_func=lambda key, **kwargs: _t(context, key, **kwargs),
+        empty_key=empty_key,
     )
-    return f"当前附加模型: {display_items}"
 
 
 def _build_ltx_lora_selection_keyboard(
@@ -188,117 +159,34 @@ def _is_extension_flow(fsm_data: dict[str, Any]) -> bool:
     return bool(fsm_data.get("is_extension"))
 
 
-def _ltx_setup_mode_label(
-    mode: str,
-    lang: str = "zh",
-    *,
-    is_extension: bool = False,
-) -> str:
-    if not is_extension:
-        return _ltx_mode_label(mode, lang)
-    if lang == "en":
-        return {
-            LTX_MODE_FLF2V: "Add end frame",
-        }.get(mode, "Direct continuation")
-    return {
-        LTX_MODE_FLF2V: "添加终止帧",
-    }.get(mode, "直接续写")
-
-
 def _build_initial_setup_keyboard(
     context: ContextTypes.DEFAULT_TYPE,
     fsm_data: dict[str, Any],
 ) -> InlineKeyboardMarkup:
-    lang = getattr(context, "lang", "zh")
-    current_mode = str(fsm_data.get("ltx_mode") or LTX_MODE_I2V)
-    is_extension = _is_extension_flow(fsm_data)
-    i2v_label = _ltx_setup_mode_label(
-        LTX_MODE_I2V,
-        lang,
-        is_extension=is_extension,
+    view = build_ltx_initial_setup_view(
+        fsm_data,
+        lang=getattr(context, "lang", "zh"),
+        translate_func=lambda key, **kwargs: _t(context, key, **kwargs),
+        lora_items=_get_ltx_video_items(fsm_data),
     )
-    flf2v_label = _ltx_setup_mode_label(
-        LTX_MODE_FLF2V,
-        lang,
-        is_extension=is_extension,
-    )
-    mode_row = [
-        InlineKeyboardButton(
-            f"{'✅ ' if current_mode == LTX_MODE_I2V else ''}{i2v_label}",
-            callback_data="ltx_mode_i2v",
-        ),
-        InlineKeyboardButton(
-            f"{'✅ ' if current_mode == LTX_MODE_FLF2V else ''}{flf2v_label}",
-            callback_data="ltx_mode_flf2v",
-        ),
-    ]
-    settings_markup = get_ltx_video_settings_keyboard(
-        "default",
-        "外门弟子",
-        str(fsm_data.get("resolution") or "1280x704"),
-        str(fsm_data.get("duration") or "5s"),
-        lang,
-    )
-    keyboard = [mode_row]
-    keyboard.extend([list(row) for row in settings_markup.inline_keyboard])
-    return InlineKeyboardMarkup(keyboard)
+    fsm_data["resolution"] = view.resolution
+    fsm_data["duration"] = view.duration
+    return view.reply_markup
 
 
 def _build_initial_setup_message(
     context: ContextTypes.DEFAULT_TYPE,
     fsm_data: dict[str, Any],
 ) -> str:
-    lang = getattr(context, "lang", "zh")
-    res = str(fsm_data.get("resolution") or "1280x704")
-    dur = str(fsm_data.get("duration") or "5s")
-    multiplier = LTX_DURATION_MULTIPLIER.get(dur, 1.0)
-    cost = int(LTX_RESOLUTION_COST.get(res, 10) * multiplier)
-    mode = str(fsm_data.get("ltx_mode") or LTX_MODE_I2V)
-    mode_label = _ltx_setup_mode_label(
-        mode,
-        lang,
-        is_extension=_is_extension_flow(fsm_data),
+    view = build_ltx_initial_setup_view(
+        fsm_data,
+        lang=getattr(context, "lang", "zh"),
+        translate_func=lambda key, **kwargs: _t(context, key, **kwargs),
+        lora_items=_get_ltx_video_items(fsm_data),
     )
-    is_extension = _is_extension_flow(fsm_data)
-    lora_text = _build_lora_summary_text(
-        context,
-        _get_ltx_video_items(fsm_data),
-        empty_key="fsm.image_to_video.current_lora",
-    )
-    if is_extension and lang == "en":
-        setup_text = (
-            "Loaded the previous segment's last frame as the new start frame.\n"
-            "Adjust quality and duration if needed.\n"
-            f"Mode: {mode_label}\n"
-            f"Quality: {res} | Duration: {dur} | Cost: {cost}\n\n"
-            "Send a text prompt to continue directly, or send an image to use it "
-            "as this segment's end frame."
-        )
-    elif is_extension:
-        setup_text = (
-            "已载入上一段尾帧作为新的起始帧。\n"
-            "可按需调整清晰度和时长。\n"
-            f"方式：{mode_label}\n"
-            f"清晰度：{res} | 时长：{dur} | 消耗灵石：{cost}\n\n"
-            "直接发送提示词即可续写；如需添加终止帧，直接发送终止帧图片即可。"
-        )
-    elif lang == "en":
-        setup_text = (
-            "Choose mode, quality and duration first.\n"
-            f"Mode: {mode_label}\n"
-            f"Quality: {res} | Duration: {dur} | Cost: {cost}\n\n"
-            "Send the start-frame image to confirm these settings and continue.\n"
-            "In start/end mode, send the end-frame image after the start frame."
-        )
-    else:
-        setup_text = (
-            "请先选择生成模式、清晰度和时长。\n"
-            f"模式：{mode_label}\n"
-            f"清晰度：{res} | 时长：{dur} | 消耗灵石：{cost}\n\n"
-            "请直接发送起始帧图片，发送后即确认当前设置并进入下一步。\n"
-            "首尾帧模式下，收到起始帧后还会继续要求发送终止帧。"
-        )
-    return f"{lora_text}\n\n{setup_text}"
+    fsm_data["resolution"] = view.resolution
+    fsm_data["duration"] = view.duration
+    return view.message_text
 
 
 def _build_image_request_text(
@@ -444,88 +332,6 @@ def _resolve_callback_task_id(
         return task_id
     message = getattr(query, "message", None)
     return resolve_task_id_from_reply_markup(getattr(message, "reply_markup", None))
-
-
-def _duration_label_from_history(history) -> str:
-    try:
-        duration = int(getattr(history, "requested_duration", None) or 5)
-    except (TypeError, ValueError):
-        duration = 5
-    if duration not in {5, 10, 15, 20}:
-        duration = 5
-    return f"{duration}s"
-
-
-def _resolution_from_history(history) -> str:
-    resolution = str(getattr(history, "billing_resolution", None) or "").strip()
-    return resolution if resolution == "1280x704" else "1280x704"
-
-
-def _resolve_lora_items_from_meta(meta: dict[str, Any]) -> list[dict[str, Any]]:
-    lora_items = normalize_ltx_video_lora_items(
-        meta.get("lora_items"),
-        max_items=MAX_LTX_VIDEO_LORAS,
-    )
-    if lora_items:
-        return lora_items
-    fallback_lora_name = str(meta.get("lora_name") or "").strip()
-    if not fallback_lora_name:
-        return []
-    fallback_item = build_ltx_video_lora_item(
-        fallback_lora_name,
-        strength=meta.get("lora_strength"),
-    )
-    return [fallback_item] if fallback_item else []
-
-
-def _merge_history_context_into_meta(history, meta: dict[str, Any]) -> dict[str, Any]:
-    return {
-        **extract_ltx_history_context(getattr(history, "extra_outputs", None)),
-        **meta,
-    }
-
-
-async def _send_settings_message(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    *,
-    message,
-    english_prompt_only: bool = False,
-) -> int:
-    user_id = update.effective_user.id
-
-    from src.core.user_core import get_or_create_user_by_telegram
-
-    internal_user, _ = await get_or_create_user_by_telegram(user_id)
-    internal_user_id = internal_user.id
-
-    user_group = await permission_service.get_user_group(internal_user_id)
-    user_identity = await permission_service.get_user_identity(internal_user_id)
-
-    fsm_data = context.user_data[LTX_VIDEO_DATA_KEY]
-    res = fsm_data["resolution"]
-    dur = fsm_data["duration"]
-    reply_markup = get_ltx_video_settings_keyboard(
-        user_group, user_identity, res, dur, getattr(context, "lang", "zh")
-    )
-
-    base_cost = LTX_RESOLUTION_COST.get(res, 10)
-    multiplier = LTX_DURATION_MULTIPLIER.get(dur, 1.0)
-    cost = int(base_cost * multiplier)
-
-    msg_text = _build_settings_message(
-        context,
-        resolution=res,
-        duration=dur,
-        cost=cost,
-        lora_items=_get_ltx_video_items(fsm_data),
-        english_prompt_only=english_prompt_only,
-    )
-
-    await robust_reply_text(
-        message, msg_text, reply_markup=reply_markup, parse_mode="Markdown"
-    )
-    return LtxVideoState.WAIT_SETTINGS_AND_PROMPT
 
 
 async def _send_prompt_request_message(
@@ -761,12 +567,6 @@ async def _confirm_initial_setup(
     return LtxVideoState.WAIT_IMAGE
 
 
-async def handle_mode_selection(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> int:
-    return await process_initial_setup(update, context)
-
-
 async def receive_initial_setup_image(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
@@ -941,9 +741,6 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     elif data.startswith("set_ltxdur_"):
         fsm_data["duration"] = data.split("_")[2]
 
-    res = fsm_data["resolution"]
-    dur = fsm_data["duration"]
-
     from src.core.user_core import get_or_create_user_by_telegram
 
     internal_user, _ = await get_or_create_user_by_telegram(user_id)
@@ -951,26 +748,23 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     user_group = await permission_service.get_user_group(internal_user_id)
     user_identity = await permission_service.get_user_identity(internal_user_id)
-    reply_markup = get_ltx_video_settings_keyboard(
-        user_group, user_identity, res, dur, getattr(context, "lang", "zh")
-    )
-
-    base_cost = LTX_RESOLUTION_COST.get(res, 10)
-    multiplier = LTX_DURATION_MULTIPLIER.get(dur, 1.0)
-    cost = int(base_cost * multiplier)
-
-    msg_text = _build_settings_message(
-        context,
-        resolution=res,
-        duration=dur,
-        cost=cost,
+    view = build_ltx_prompt_settings_view(
+        fsm_data,
+        lang=getattr(context, "lang", "zh"),
+        translate_func=lambda key, **kwargs: _t(context, key, **kwargs),
+        user_group=user_group,
+        user_identity=user_identity,
         lora_items=_get_ltx_video_items(fsm_data),
-        english_prompt_only=True,
     )
+    fsm_data["resolution"] = view.resolution
+    fsm_data["duration"] = view.duration
 
     with contextlib.suppress(Exception):
         await robust_edit_text(
-            query.message, msg_text, reply_markup=reply_markup, parse_mode="Markdown"
+            query.message,
+            view.message_text,
+            reply_markup=view.reply_markup,
+            parse_mode="Markdown",
         )
 
     await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
@@ -1016,10 +810,14 @@ async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await query.answer(_t(context, "fsm.common.already_submitted"), show_alert=True)
         return ConversationHandler.END
 
-    res = fsm_data["resolution"]
-    dur = fsm_data["duration"]
-    ltx_mode = str(fsm_data.get("ltx_mode") or LTX_MODE_I2V)
-    if ltx_mode == LTX_MODE_V2V_AUDIO:
+    submission_plan = build_ltx_video_submission_plan(
+        fsm_data=fsm_data,
+        max_loras=MAX_LTX_VIDEO_LORAS,
+    )
+    if (
+        isinstance(submission_plan, AdvancedVideoSubmissionReject)
+        and submission_plan.reason == AdvancedVideoSubmissionRejectReason.DISABLED_MODE
+    ):
         logger.info("user=%s tried disabled LTX video audio mode from bot", user_id)
         with contextlib.suppress(Exception):
             await query.answer(LTX_V2V_AUDIO_DISABLED_MESSAGE, show_alert=True)
@@ -1028,47 +826,13 @@ async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE)
         _cleanup_context(context)
         return ConversationHandler.END
 
-    prompt = fsm_data.get("prompt", "")
-    lora_items = _get_ltx_video_items(fsm_data)
-    if not lora_items:
-        fallback_lora_name = str(fsm_data.get("lora_name") or "")
-        if fallback_lora_name:
-            fallback_item = build_ltx_video_lora_item(
-                fallback_lora_name,
-                strength=fsm_data.get("lora_strength"),
-            )
-            lora_items = [fallback_item] if fallback_item else []
-    first_lora_item = lora_items[0] if lora_items else None
-    lora_name = str(first_lora_item["name"]) if first_lora_item else ""
-    lora_strength = float(first_lora_item["strength"]) if first_lora_item else None
-
-    base_cost = LTX_RESOLUTION_COST.get(res, 10)
-    multiplier = LTX_DURATION_MULTIPLIER.get(dur, 1.0)
-    cost = int(base_cost * multiplier)
-
-    image_path = fsm_data.get("image_path")
-    end_image_path = fsm_data.get("end_image_path")
-    video_path = fsm_data.get("video_path")
-    ltx_prev_task_id = str(fsm_data.get("extension_prev_task_id") or "").strip()
-    ltx_chain_task_ids = normalize_ltx_video_chain_task_ids(
-        fsm_data.get("chain_task_ids")
-    )
-    if ltx_prev_task_id and not ltx_chain_task_ids:
-        ltx_chain_task_ids = build_ltx_full_chain_task_ids(
-            chain_task_ids=[],
-            current_task_id=ltx_prev_task_id,
-        )
-    missing_input = (
-        (ltx_mode == LTX_MODE_V2V_AUDIO and not video_path)
-        or (ltx_mode == LTX_MODE_FLF2V and (not image_path or not end_image_path))
-        or (ltx_mode == LTX_MODE_I2V and not image_path)
-    )
-    if missing_input:
-        logger.warning("user=%s missing LTX input before submit mode=%s", user_id, ltx_mode)
+    if isinstance(submission_plan, AdvancedVideoSubmissionReject):
+        logger.warning("user=%s missing LTX input before submit", user_id)
         with contextlib.suppress(Exception):
             await query.answer(_t(context, "fsm.ltx_video.missing_image_resend"), show_alert=True)
         _cleanup_context(context)
         return ConversationHandler.END
+    cost = submission_plan.cost
 
     if not update.effective_user:
         return ConversationHandler.END
@@ -1098,16 +862,19 @@ async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE)
     image_path = fsm_data.pop("image_path", None)
     end_image_path = fsm_data.pop("end_image_path", None)
     video_path = fsm_data.pop("video_path", None)
-    missing_input = (
-        (ltx_mode == LTX_MODE_V2V_AUDIO and not video_path)
-        or (ltx_mode == LTX_MODE_FLF2V and (not image_path or not end_image_path))
-        or (ltx_mode == LTX_MODE_I2V and not image_path)
+    consumed_plan = build_ltx_video_submission_plan(
+        fsm_data={
+            **fsm_data,
+            "image_path": image_path,
+            "end_image_path": end_image_path,
+            "video_path": video_path,
+        },
+        max_loras=MAX_LTX_VIDEO_LORAS,
     )
-    if missing_input:
+    if isinstance(consumed_plan, AdvancedVideoSubmissionReject):
         logger.warning(
-            "user=%s LTX inputs consumed by another request before submit mode=%s",
+            "user=%s LTX inputs consumed by another request before submit",
             user_id,
-            ltx_mode,
         )
         with contextlib.suppress(Exception):
             await query.answer(_t(context, "fsm.common.already_submitted"), show_alert=True)
@@ -1120,26 +887,17 @@ async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE)
             _t(context, "fsm.ltx_video.submit", cost=cost),
         )
 
-    context.user_data["ltx_video_resolution"] = res
-    context.user_data["ltx_video_duration"] = dur
-    context.user_data["ltx_video_mode"] = ltx_mode
+    context.user_data["ltx_video_resolution"] = consumed_plan.resolution
+    context.user_data["ltx_video_duration"] = consumed_plan.duration
+    context.user_data["ltx_video_mode"] = consumed_plan.ltx_mode
 
     create_background_task(
         context,
-        process_ltx_video_task(
+        create_ltx_video_submission_task(
+            plan=consumed_plan,
             update=update,
             context=context,
-            prompt=prompt,
-            image_path=image_path,
-            end_image_path=end_image_path,
-            video_path=video_path,
-            ltx_mode=ltx_mode,
-            ltx_prev_task_id=ltx_prev_task_id or None,
-            ltx_chain_task_ids=ltx_chain_task_ids or None,
-            lora_name=lora_name,
-            lora_strength=lora_strength,
-            lora_items=lora_items or None,
-            cleanup=True,
+            process_ltx_video_task_func=process_ltx_video_task,
         ),
     )
 
@@ -1180,13 +938,13 @@ async def start_ltx_video_extension(
         return ConversationHandler.END
 
     try:
-        history = await load_owned_ltx_history(
-            task_id=base_task_id,
+        seed = await prepare_ltx_extension_fsm_data(
+            base_task_id=base_task_id,
             telegram_user_id=update.effective_user.id,
             username=update.effective_user.username,
+            meta=meta,
+            max_loras=MAX_LTX_VIDEO_LORAS,
         )
-        meta = _merge_history_context_into_meta(history, meta)
-        start_image_path = await download_ltx_last_frame_to_fsm_temp(history=history)
     except LtxVideoExtensionError as exc:
         target_message = query.message if query else update.effective_message
         if target_message:
@@ -1203,23 +961,7 @@ async def start_ltx_video_extension(
         return ConversationHandler.END
 
     context.user_data["in_conversation"] = LTX_VIDEO_CONVERSATION_TAG
-    context.user_data[LTX_VIDEO_DATA_KEY] = {
-        "resolution": _resolution_from_history(history),
-        "duration": _duration_label_from_history(history),
-        "ltx_mode": LTX_MODE_I2V,
-        "image_path": start_image_path,
-        "end_image_path": None,
-        "video_path": None,
-        "lora_items": _resolve_lora_items_from_meta(meta),
-        "is_extension": True,
-        "extension_prev_task_id": base_task_id,
-        "chain_task_ids": build_ltx_full_chain_task_ids(
-            chain_task_ids=normalize_ltx_video_chain_task_ids(
-                meta.get("ltx_chain_task_ids")
-            ),
-            current_task_id=base_task_id,
-        ),
-    }
+    context.user_data[LTX_VIDEO_DATA_KEY] = seed.fsm_data
     target_message = query.message if query else update.effective_message
     if target_message:
         fsm_data = context.user_data[LTX_VIDEO_DATA_KEY]

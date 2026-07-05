@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from src.handlers import prompt_router
+from src.handlers import menu_route_registry
 from src.handlers.message_handler_prompt import handle_prompt_impl
 
 
@@ -105,3 +106,24 @@ def test_build_global_menu_filter_keeps_legacy_custom_video_text():
     prompt_router.build_global_menu_filter()
 
     assert prompt_router.GLOBAL_REVERSE_MAP["🎬 自定义图生视频"] == "menu.custom_video"
+
+
+def test_menu_route_registry_partitions_route_sources():
+    assert "menu.video_lora" in menu_route_registry.FSM_MENU_KEYS
+    assert "qqcc.menu.quick_faceswap" in menu_route_registry.FSM_MENU_KEYS
+    assert "menu.video_lora" in menu_route_registry.SPECIAL_TRANSLATION_ROUTE_KEYS
+    assert (
+        menu_route_registry.LEGACY_TEXT_ALIASES["🎬 自定义图生视频"]
+        == "menu.custom_video"
+    )
+    assert menu_route_registry.LEGACY_TEXT_ALIASES["AI动图"] == "menu.video_edit"
+
+
+def test_menu_route_registry_builds_all_reverse_route_keys():
+    route_keys = menu_route_registry.build_global_reverse_route_keys(
+        registered_route_keys={"menu.profile"}
+    )
+
+    assert "menu.profile" in route_keys
+    assert "menu.video_to_video_replacement" in route_keys
+    assert "qqcc.menu.market" in route_keys

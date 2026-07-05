@@ -1,14 +1,8 @@
 import asyncio
 import logging
 import os
-import uuid
-from urllib.parse import urlparse
 
-import httpx
-from asgi_correlation_id import correlation_id
-
-# ================= PATCH TELEGRAM FILE DOWNLOAD =================
-from telegram import File, Poll, Update
+from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -18,8 +12,8 @@ from telegram.ext import (
     TypeHandler,
     filters,
 )
-from telegram.request import HTTPXRequest
 
+from src.billing_core_provider_setup import ensure_billing_core_providers_registered
 from src.database.core import init_db
 from src.handlers.callback_handler import handle_callback_query
 from src.handlers.command_handler import (
@@ -37,72 +31,21 @@ from src.handlers.message_handler import (
     handle_video,
 )
 from src.logger import setup_logging
-from src.billing_core_provider_setup import ensure_billing_core_providers_registered
 from src.services.payment_validator import TonPaymentValidator
 from src.services.recovery_service import recover_active_tasks
 from src.services.task_registry import TaskRegistry
+from src.services.telegram_runtime_bootstrap import (
+    build_telegram_bot_base_url,
+    build_telegram_httpx_request,
+    inject_bot_language_context,
+    install_telegram_runtime_patches,
+    resolve_telegram_api_base_url,
+    resolve_telegram_file_base_url,
+)
 from src.task_core_provider_setup import ensure_task_core_service_providers_registered
 
 logger = logging.getLogger(__name__)
-
-original_download_to_drive = File.download_to_drive
-
-
-async def custom_download_to_drive(
-    self,
-    custom_path=None,
-    read_timeout=None,
-    write_timeout=None,
-    connect_timeout=None,
-    pool_timeout=None,
-):
-    bot = self.get_bot()
-    if bot.base_file_url and "8082" in bot.base_file_url:
-        raw_path = self.file_path
-        if raw_path.startswith("http"):
-            raw_path = urlparse(raw_path).path
-        if not raw_path.startswith("/"):
-            raw_path = "/" + raw_path
-        url = f"http://69.63.220.115:8082{raw_path}"
-
-        logger.info(f"Custom downloading file from: {url}")
-        async with httpx.AsyncClient(proxy=None) as client:
-            response = await client.get(url, timeout=120.0)
-            response.raise_for_status()
-            with open(custom_path, "wb") as f:
-                f.write(response.content)
-        return self
-    else:
-        return await original_download_to_drive(
-            self,
-            custom_path,
-            read_timeout,
-            write_timeout,
-            connect_timeout,
-            pool_timeout,
-        )
-
-
-File.download_to_drive = custom_download_to_drive
-# ================================================================
-
-# ================= PATCH TELEGRAM POLL COMPAT =================
-original_poll_de_json = Poll.de_json
-
-
-def patch_poll_members_only_default():
-    @classmethod
-    def de_json_with_members_only_default(cls, data, bot=None):
-        if isinstance(data, dict) and "members_only" not in data:
-            data = dict(data)
-            data["members_only"] = False
-        return original_poll_de_json(data, bot)
-
-    Poll.de_json = de_json_with_members_only_default
-
-
-patch_poll_members_only_default()
-# ==============================================================
+install_telegram_runtime_patches(logger=logger)
 
 
 async def clean_zombies_loop(bot=None):
@@ -118,59 +61,13 @@ async def clean_zombies_loop(bot=None):
 
 
 async def global_middleware(update: Update, context):
-    # 1. Trace ID
-    trace_id = str(uuid.uuid4())
-    correlation_id.set(trace_id)
     core_logger = logging.getLogger("bot.core")
-
-    # 2. i18n Context Injection
-    lang = None
-    tg_user = update.effective_user
-    if tg_user:
-        # Try from context user_data first
-        lang = context.user_data.get("language_code") if context.user_data else None
-
-        # Try from Redis using TG ID
-        if not lang:
-            from src.services.redis_client import redis_client
-
-            if redis_client and redis_client.redis:
-                try:
-                    cached_lang = await redis_client.redis.get(
-                        f"allbot:user_lang:tg:{tg_user.id}"
-                    )
-                    if cached_lang:
-                        if isinstance(cached_lang, bytes):
-                            cached_lang = cached_lang.decode("utf-8")
-                        lang = cached_lang
-                except Exception as e:
-                    core_logger.warning(f"Failed to get lang from redis: {e}")
-
-        # Fallback to Telegram native language code
-        if not lang and tg_user.language_code:
-            native_lang = tg_user.language_code[:2].lower()
-            if native_lang in ["zh", "en"]:
-                lang = native_lang
-
-        # Final fallback
-        if not lang:
-            lang = "zh"
-
-        if context.user_data is not None:
-            context.user_data["language_code"] = lang
-    else:
-        lang = "zh"
-
-    # Mount as transient properties on context
-    context.lang = lang
-    from src.i18n.translator import I18nTranslator
-
-    context.t = I18nTranslator(lang)
-
-    if update.callback_query:
-        core_logger.info(f"Received callback query: {update.callback_query.data}")
-    elif update.message and update.message.text:
-        pass  # Already logged in handle_prompt
+    await inject_bot_language_context(
+        update,
+        context,
+        logger=core_logger,
+        callback_log_label="Received callback query",
+    )
 
 
 async def post_init(application):
@@ -266,58 +163,24 @@ def main():
 
     core_logger.info(f"Starting bot in {bot_type} mode...")
 
-    if bot_type == "TEST":
-        # 🧪 TEST: 直连 VPS Local API Server，抛弃商业代理
-        core_logger.info(
-            "🧪 TEST模式：已启用 Local Bot API 直连 (http://69.63.220.115:8081)"
-        )
+    api_base_url = resolve_telegram_api_base_url()
+    file_base_url = resolve_telegram_file_base_url()
+    mode_label = "🧪 TEST模式" if bot_type == "TEST" else "🚀 PROD模式"
+    core_logger.info("%s：已启用 Local Bot API 直连 (%s)", mode_label, api_base_url)
 
-        request = HTTPXRequest(
-            proxy=None,  # MUST EXPLICITLY SET NO PROXY to bypass env variables!
-            connect_timeout=60.0,
-            read_timeout=120.0,
-            write_timeout=120.0,
-            connection_pool_size=500,
-        )
-
-        app = (
-            ApplicationBuilder()
-            .token(token)
-            .base_url("http://69.63.220.115:8081/bot")
-            .base_file_url("http://69.63.220.115:8082")
-            .request(request)
-            .get_updates_request(request)
-            .post_init(post_init)
-            .post_shutdown(post_shutdown)
-            .concurrent_updates(True)
-            .build()
-        )
-    else:
-        # 🚀 PROD: 直连 VPS Local API Server
-        core_logger.info(
-            "🚀 PROD模式：已启用 Local Bot API 直连 (http://69.63.220.115:8081)"
-        )
-
-        request = HTTPXRequest(
-            proxy=None,
-            connect_timeout=60.0,
-            read_timeout=120.0,
-            write_timeout=120.0,
-            connection_pool_size=500,
-        )
-
-        app = (
-            ApplicationBuilder()
-            .token(token)
-            .base_url("http://69.63.220.115:8081/bot")
-            .base_file_url("http://69.63.220.115:8082")
-            .request(request)
-            .get_updates_request(request)
-            .post_init(post_init)
-            .post_shutdown(post_shutdown)
-            .concurrent_updates(True)
-            .build()
-        )
+    request = build_telegram_httpx_request()
+    app = (
+        ApplicationBuilder()
+        .token(token)
+        .base_url(build_telegram_bot_base_url())
+        .base_file_url(file_base_url)
+        .request(request)
+        .get_updates_request(request)
+        .post_init(post_init)
+        .post_shutdown(post_shutdown)
+        .concurrent_updates(True)
+        .build()
+    )
 
     from src.handlers.fsm.affiliate_redeem_fsm import get_affiliate_redeem_fsm_handler
     from src.handlers.fsm.edit_image_fsm import get_edit_image_fsm_handler

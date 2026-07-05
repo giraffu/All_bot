@@ -36,7 +36,6 @@ from src.handlers.message_handler_media_entry import (
 )
 from src.handlers.message_handler_menu import (
     build_back_to_main_payload,
-    build_disabled_payload,
     build_lazy_bot_payload,
     build_photo_edit_payload,
     build_recharge_payload,
@@ -180,13 +179,6 @@ handle_photo_edit_menu = _build_built_menu_handler(
     decorators=(prompt_route("menu.photo_edit"), with_unified_error_handler),
 )
 
-handle_video_edit_menu = _build_built_menu_handler(
-    handler_name="handle_video_edit_menu",
-    build_payload_ref=lambda: build_disabled_payload,
-    include_context=True,
-    decorators=(prompt_route("menu.video_edit"),),
-)
-
 handle_video_to_video_menu = _build_built_menu_handler(
     handler_name="handle_video_to_video_menu",
     build_payload_ref=lambda: build_video_to_video_payload,
@@ -202,6 +194,9 @@ handle_lazy_bot_menu = _build_built_menu_handler(
         prompt_route("menu.lazy_bot"),
         prompt_route("menu.gallery"),
         prompt_route("qqcc.menu.market"),
+        prompt_route("menu.video_edit"),
+        prompt_route("qqcc.menu.ai_draw"),
+        prompt_route("qqcc.menu.quick_faceswap"),
     ),
 )
 

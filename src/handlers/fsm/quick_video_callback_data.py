@@ -9,11 +9,6 @@ QUICK_VIDEO_MODE_KEYS = (
     "menu.video_edit_closeup_blowjob",
 )
 
-QUICK_VIDEO_MODE_CALLBACK_PATTERN = (
-    r"^qvid_mode:menu\.video_edit_"
-    r"(missionary|doggy|blowjob|undress_tongue|closeup_blowjob)$"
-)
-QUICK_VIDEO_SCENE_CALLBACK_PATTERN = r"^qvid_scene:[A-Za-z0-9_-]{1,32}$"
 QUICK_VIDEO_ENTRY_CALLBACK_PATTERN = (
     r"^(?:qvid_scene:[A-Za-z0-9_-]{1,32}|"
     r"qvid_mode:menu\.video_edit_"

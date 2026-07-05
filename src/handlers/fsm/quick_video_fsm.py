@@ -1,5 +1,4 @@
 import logging
-import os
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -20,15 +19,12 @@ from src.constants import (
     MODE_CLOSEUP_BLOWJOB,
     MODE_CUSTOM_VIDEO,
     MODE_DOGGY_STYLE,
-    MODE_IMAGE_TO_VIDEO,
     MODE_PERFECT_VIDEO_INSERT,
     MODE_UNDRESS_TONGUE,
-    MODE_WAN22_VIDEO_V2,
     RESOLUTION_COST,
     RESOLUTION_PERMISSIONS,
     get_video_settings_keyboard,
 )
-from src.domain_config.wan22_aio_video import get_wan22_video_v2_cost
 from src.handlers.fsm.fsm_shared import (
     handle_standard_fsm_cancel,
     handle_standard_fsm_timeout,
@@ -42,27 +38,28 @@ from src.handlers.fsm.quick_video_callback_data import (
     parse_quick_video_mode_callback_data,
     parse_quick_video_scene_callback_data,
 )
+from src.handlers.message_handler_menu import reply_with_lazy_bot_payload
 from src.handlers.prompt_router import GLOBAL_REVERSE_MAP
 from src.services.permission_service import permission_service
-from src.services.qqcc_draw_chain_service import (
-    calculate_qqcc_draw_chain_cost,
-    execute_qqcc_draw_scene_chain,
-    resolve_qqcc_draw_chain_prompts,
-    resolve_qqcc_draw_scene_chain,
-)
 from src.services.qqcc_config_service import (
     VIDEO_DURATION_KEYS,
     VIDEO_RESOLUTION_KEYS,
-    VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
-    get_qqcc_draw_scene,
     get_qqcc_video_scene,
-    get_qqcc_prompt_override,
     has_enabled_qqcc_video_scenes,
     is_qqcc_main_button_enabled,
     load_runtime_qqcc_config,
 )
 from src.services.qqcc_runtime_context import (
     load_qqcc_config_for_context as _load_qqcc_runtime_config_for_context,
+)
+from src.services.quick_video_submission_service import (
+    QuickVideoSubmissionReject,
+    build_quick_video_submission_plan,
+    calculate_quick_video_cost,
+    normalize_qqcc_quick_video_resolution,
+    resolve_qqcc_video_scene_from_fsm_data,
+    resolve_qqcc_video_scene_task_type,
+    run_quick_video_submission_plan,
 )
 from src.services.task_service_generation_image import (
     process_standard_generation_task as process_generation_task,
@@ -111,16 +108,6 @@ QUICK_VIDEO_MODE_CONFIG_KEYS = {
     MODE_CLOSEUP_BLOWJOB: "closeup_blowjob",
 }
 
-QUICK_VIDEO_PROMPT_FALLBACKS = {
-    "perfect_video_insert": "missionary sex",
-    "doggy_style": "doggy style sex",
-    "blowjob": "undress blowjob",
-    "undress_tongue": "undress and show tongue",
-    "closeup_blowjob": "closeup blowjob sex",
-    MODE_CUSTOM_VIDEO: "custom video",
-}
-
-
 _t = translate_fsm_text
 
 
@@ -156,20 +143,6 @@ async def _reply_qqcc_feature_disabled(
         await robust_reply_text(message, text, parse_mode="Markdown")
 
 
-async def _reply_main_feature_disabled(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-) -> None:
-    text = _t(context, "system.feature_disabled")
-    query = update.callback_query
-    if query:
-        await robust_edit_text(query.message, text, parse_mode="Markdown")
-        return
-    message = update.message or update.edited_message
-    if message:
-        await robust_reply_text(message, text, parse_mode="Markdown")
-
-
 def _is_qqcc_quick_video_mode_enabled(config: dict, mode: str | None) -> bool:
     return bool(
         mode
@@ -186,20 +159,6 @@ def _resolve_quick_video_file_id(message) -> str | None:
     if message.photo:
         return message.photo[-1].file_id
     return None
-
-
-def _calculate_quick_video_cost(resolution: str, duration: str) -> int:
-    return get_wan22_video_v2_cost(resolution, duration)
-
-
-def _normalize_quick_video_selection(
-    *,
-    resolution: str,
-    duration: str,
-) -> tuple[str, str]:
-    if resolution == "1024p" and duration == "10s":
-        return "720p", "10s"
-    return resolution, duration
 
 
 async def _resolve_quick_video_allowed_settings(
@@ -231,21 +190,6 @@ async def _resolve_quick_video_allowed_settings(
     ]
 
     return allowed_resolutions, allowed_durations, user_group, user_identity
-
-
-def _normalize_qqcc_quick_video_resolution(
-    *,
-    resolution: str,
-    duration: str,
-    allowed_resolutions: list[str],
-) -> str | None:
-    if duration == "10s":
-        allowed_resolutions = [res for res in allowed_resolutions if res != "1024p"]
-    if not allowed_resolutions:
-        return None
-    if resolution not in allowed_resolutions:
-        return allowed_resolutions[0]
-    return resolution
 
 
 def _normalize_allowed_quick_video_settings(
@@ -314,27 +258,6 @@ def _resolve_qqcc_scene_from_entry(
     return get_qqcc_video_scene(config, legacy_scene_id)
 
 
-def _resolve_qqcc_scene_from_fsm_data(
-    config: dict,
-    fsm_data: dict,
-) -> dict[str, object] | None:
-    scene = get_qqcc_video_scene(config, fsm_data.get("scene_id"))
-    if scene is not None:
-        return scene
-    legacy_scene_id = QUICK_VIDEO_MODE_CONFIG_KEYS.get(fsm_data.get("mode") or "")
-    return get_qqcc_video_scene(config, legacy_scene_id)
-
-
-def _resolve_qqcc_scene_default_prompt_text(scene: dict[str, object]) -> str:
-    return str(scene.get("prompt") or "").strip()
-
-
-def _resolve_qqcc_scene_task_type(scene: dict[str, object]) -> str:
-    if scene.get("engine") == VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2:
-        return MODE_WAN22_VIDEO_V2
-    return MODE_IMAGE_TO_VIDEO if str(scene.get("lora_name") or "").strip() else MODE_CUSTOM_VIDEO
-
-
 def _sync_qqcc_scene_to_quick_video_data(
     fsm_data: dict,
     scene: dict[str, object],
@@ -342,7 +265,7 @@ def _sync_qqcc_scene_to_quick_video_data(
     include_scene_id: bool = False,
     include_prompt_details: bool = False,
 ) -> str:
-    mode = _resolve_qqcc_scene_task_type(scene)
+    mode = resolve_qqcc_video_scene_task_type(scene)
     fsm_data.update(
         {
             "mode": mode,
@@ -361,108 +284,10 @@ def _sync_qqcc_scene_to_quick_video_data(
                 "mode_name": str(scene["name"]),
                 "prompt_override": scene_prompt,
                 "default_prompt_key": MODE_CUSTOM_VIDEO,
-                "default_prompt_text": _resolve_qqcc_scene_default_prompt_text(scene),
+                "default_prompt_text": scene_prompt,
             }
         )
     return mode
-
-
-def _resolve_qqcc_video_end_frame_draw_scene(
-    config: dict,
-    scene: dict[str, object] | None,
-) -> dict[str, object] | None:
-    if not scene:
-        return None
-    draw_scene_id = str(scene.get("end_frame_draw_scene_id") or "").strip()
-    return get_qqcc_draw_scene(config, draw_scene_id)
-
-
-async def _process_qqcc_video_with_generated_end_frame(
-    *,
-    context: ContextTypes.DEFAULT_TYPE,
-    chat_id: int,
-    user_id: int,
-    username: str | None,
-    image_path: str,
-    draw_chain: list[dict[str, object]],
-    video_task_type: str,
-    prompt: str,
-    default_prompt_key: str,
-    default_prompt_text: str,
-    prompt_override: str | None,
-    display_mode_name: str | None,
-    lora_name: str | None,
-    resolution: str,
-    duration: str,
-    status_msg_id: int | None,
-) -> None:
-    end_image_path = None
-    video_task_started = False
-    try:
-        chain_result = await execute_qqcc_draw_scene_chain(
-            context=context,
-            chat_id=chat_id,
-            user_id=user_id,
-            username=username,
-            image_path=image_path,
-            chain=draw_chain,
-            status_msg_id=status_msg_id,
-            process_generation_task_func=process_generation_task,
-            download_output_file_to_fsm_temp_func=download_output_file_to_fsm_temp,
-            final_send_result=False,
-            final_allow_contribute=False,
-            final_delete_status=False,
-            keep_initial_image=True,
-            download_final_output=True,
-            name_hint="qqcc_video_end_frame",
-        )
-        end_image_path = chain_result.local_output_path
-        if not end_image_path:
-            logger.warning(
-                "QQCC video end-frame generation returned no output; video skipped."
-            )
-            return
-
-        video_task_started = True
-        if video_task_type == MODE_WAN22_VIDEO_V2:
-            await process_generation_task(
-                context=context,
-                chat_id=chat_id,
-                user_id=user_id,
-                username=username,
-                prompt=prompt,
-                images=[image_path, end_image_path],
-                is_video=True,
-                task_type=MODE_WAN22_VIDEO_V2,
-                cleanup=True,
-                allow_contribute=True,
-                status_msg_id=status_msg_id,
-                resolution=resolution,
-                duration=duration,
-            )
-            return
-
-        await process_video_task_template(
-            context=context,
-            mode=video_task_type,
-            default_prompt_key=default_prompt_key,
-            default_prompt_text=default_prompt_text,
-            prompt_override=prompt_override,
-            display_mode_name_override=display_mode_name,
-            lora_name=lora_name,
-            image_path=image_path,
-            end_image_path=end_image_path,
-            use_end_frame=True,
-            cleanup=True,
-            allow_contribute=True,
-            chat_id=chat_id,
-            user_id=user_id,
-            username=username,
-            status_msg_id=status_msg_id,
-        )
-    finally:
-        if not video_task_started:
-            cleanup_fsm_temp_files([image_path, end_image_path])
 
 
 async def _build_quick_video_settings_markup(
@@ -535,20 +360,9 @@ def _build_quick_video_settings_text(
         "fsm.quick_video.settings_text",
         resolution=resolution,
         duration=duration,
-        cost=_calculate_quick_video_cost(resolution, duration),
+        cost=calculate_quick_video_cost(resolution, duration),
         start_button=_t(context, "fsm.quick_video.start_button"),
     )
-
-
-def _resolve_quick_video_mode_submission(mode: str) -> tuple[str, str] | None:
-    video_modes = {
-        MODE_PERFECT_VIDEO_INSERT: ("perfect_video_insert", "missionary sex"),
-        MODE_DOGGY_STYLE: ("doggy_style", "doggy style sex"),
-        MODE_BLOWJOB: ("blowjob", "undress blowjob"),
-        MODE_UNDRESS_TONGUE: ("undress_tongue", "undress and show tongue"),
-        MODE_CLOSEUP_BLOWJOB: ("closeup_blowjob", "closeup blowjob sex"),
-    }
-    return video_modes.get(mode)
 
 
 async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -578,7 +392,12 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     qqcc_config = await _load_qqcc_config_for_context(context)
     if qqcc_config is None and (mode or route_key or scene_id):
-        await _reply_main_feature_disabled(update, context)
+        await reply_with_lazy_bot_payload(
+            update,
+            context,
+            reply_text_func=robust_reply_text,
+            edit_text_func=robust_edit_text,
+        )
         return ConversationHandler.END
 
     quick_video_data = {
@@ -626,7 +445,7 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     qqcc_config = await _load_qqcc_config_for_context(context)
     qqcc_scene = None
     if qqcc_config is not None:
-        qqcc_scene = _resolve_qqcc_scene_from_fsm_data(qqcc_config, fsm_data)
+        qqcc_scene = resolve_qqcc_video_scene_from_fsm_data(qqcc_config, fsm_data)
         if (
             not _is_qqcc_quick_video_mode_enabled(qqcc_config, mode)
             or qqcc_scene is None
@@ -664,7 +483,7 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 qqcc_config=qqcc_config,
             )
         )
-        res = _normalize_qqcc_quick_video_resolution(
+        res = normalize_qqcc_quick_video_resolution(
             resolution=res,
             duration=dur,
             allowed_resolutions=allowed_resolutions,
@@ -709,7 +528,7 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     qqcc_config = await _load_qqcc_config_for_context(context)
     qqcc_scene = None
     if qqcc_config is not None:
-        qqcc_scene = _resolve_qqcc_scene_from_fsm_data(qqcc_config, fsm_data)
+        qqcc_scene = resolve_qqcc_video_scene_from_fsm_data(qqcc_config, fsm_data)
         if (
             not _is_qqcc_quick_video_mode_enabled(qqcc_config, fsm_data.get("mode"))
             or qqcc_scene is None
@@ -774,7 +593,7 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     res = fsm_data["resolution"]
     dur = fsm_data["duration"]
     if allowed_resolutions is not None:
-        normalized_res = _normalize_qqcc_quick_video_resolution(
+        normalized_res = normalize_qqcc_quick_video_resolution(
             resolution=res,
             duration=dur,
             allowed_resolutions=allowed_resolutions,
@@ -831,33 +650,13 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         from src.utils import safe_answer_query
 
         await safe_answer_query(query, text=_t(context, "fsm.common.task_initializing"), cache_time=2)
+    if query is None:
+        return ConversationHandler.END
     user_id = query.from_user.id
 
     fsm_data = context.user_data.get("quick_video_data", {})
     if not fsm_data:
         return ConversationHandler.END
-
-    qqcc_config = await _load_qqcc_config_for_context(context)
-    qqcc_scene = None
-    tail_draw_scene = None
-    if qqcc_config is not None:
-        qqcc_scene = _resolve_qqcc_scene_from_fsm_data(qqcc_config, fsm_data)
-        if (
-            not _is_qqcc_quick_video_mode_enabled(qqcc_config, fsm_data.get("mode"))
-            or qqcc_scene is None
-        ):
-            await _reply_qqcc_feature_disabled(update, context)
-            _cleanup_context(context, user_id)
-            return ConversationHandler.END
-        _sync_qqcc_scene_to_quick_video_data(
-            fsm_data,
-            qqcc_scene,
-            include_prompt_details=True,
-        )
-        tail_draw_scene = _resolve_qqcc_video_end_frame_draw_scene(
-            qqcc_config,
-            qqcc_scene,
-        )
 
     image_path = fsm_data.pop("image_path", None)
     if not image_path:
@@ -869,10 +668,8 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         _cleanup_context(context, user_id)
         return ConversationHandler.END
 
-    res, dur = _normalize_quick_video_selection(
-        resolution=fsm_data["resolution"],
-        duration=fsm_data["duration"],
-    )
+    qqcc_config = await _load_qqcc_config_for_context(context)
+    allowed_resolutions: list[str] | None = None
     if qqcc_config is not None:
         allowed_resolutions, _allowed_durations, _group, _identity = (
             await _resolve_quick_video_allowed_settings(
@@ -881,42 +678,33 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 qqcc_config=qqcc_config,
             )
         )
-        res = _normalize_qqcc_quick_video_resolution(
-            resolution=res,
-            duration=dur,
-            allowed_resolutions=allowed_resolutions,
-        )
-        if res is None:
-            await _reply_qqcc_feature_disabled(update, context)
-            if image_path and os.path.exists(image_path):
-                with contextlib.suppress(OSError):
-                    os.remove(image_path)
-            _cleanup_context(context, user_id)
-            return ConversationHandler.END
 
-    mode = fsm_data["mode"]
-    fsm_data["resolution"] = res
-    fsm_data["duration"] = dur
-    cost = _calculate_quick_video_cost(res, dur)
-    tail_draw_chain = (
-        resolve_qqcc_draw_scene_chain(qqcc_config, tail_draw_scene)
-        if qqcc_config is not None and tail_draw_scene is not None
-        else []
+    plan = build_quick_video_submission_plan(
+        fsm_data=fsm_data,
+        qqcc_config=qqcc_config,
+        allowed_resolutions=allowed_resolutions,
     )
-    total_cost = cost + calculate_qqcc_draw_chain_cost(tail_draw_chain)
+    if isinstance(plan, QuickVideoSubmissionReject):
+        if qqcc_config is not None:
+            await _reply_qqcc_feature_disabled(update, context)
+        cleanup_fsm_temp_files([image_path])
+        _cleanup_context(context, user_id)
+        return ConversationHandler.END
 
     # Keep the selected settings in context so the background task can resolve them.
     # until they are refactored to take params directly
-    context.user_data["custom_video_resolution"] = res
-    context.user_data["custom_video_duration"] = dur
-    context.user_data["mode"] = mode
+    context.user_data["custom_video_resolution"] = plan.resolution
+    context.user_data["custom_video_duration"] = plan.duration
+    context.user_data["mode"] = plan.mode
 
     if not update.effective_user:
+        cleanup_fsm_temp_files([image_path])
+        _cleanup_context(context, user_id)
         return ConversationHandler.END
     user = update.effective_user
     try:
         await permission_service.check_quota(
-            user.id, user.username, user.full_name, cost=total_cost
+            user.id, user.username, user.full_name, cost=plan.total_cost
         )
     except Exception as e:
         from src.core.exceptions import InsufficientCreditsError
@@ -932,109 +720,31 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             from src.utils import robust_send_message
 
             await robust_send_message(context.bot, chat_id, msg, parse_mode="Markdown")
-            if image_path and os.path.exists(image_path):
-                with contextlib.suppress(OSError):
-                    os.remove(image_path)
+            cleanup_fsm_temp_files([image_path])
             _cleanup_context(context, user_id)
             return ConversationHandler.END
         raise e
 
     await robust_edit_text(
-        query.message, _t(context, "fsm.quick_video.submit", cost=total_cost)
+        query.message, _t(context, "fsm.quick_video.submit", cost=plan.total_cost)
     )
 
-    mode_submission = _resolve_quick_video_mode_submission(mode)
-    if qqcc_config is not None:
-        if tail_draw_chain:
-            tail_draw_chain = resolve_qqcc_draw_chain_prompts(qqcc_config, tail_draw_chain)
-        default_prompt_key = fsm_data.get("default_prompt_key") or MODE_CUSTOM_VIDEO
-        default_prompt_text = fsm_data.get("default_prompt_text") or "custom video"
-        prompt_override = fsm_data.get("prompt_override")
-        if tail_draw_chain:
-            create_background_task(
-                context,
-                _process_qqcc_video_with_generated_end_frame(
-                    context=context,
-                    chat_id=query.message.chat_id,
-                    user_id=user_id,
-                    username=update.effective_user.username,
-                    image_path=image_path,
-                    draw_chain=tail_draw_chain,
-                    video_task_type=mode,
-                    prompt=prompt_override or default_prompt_text,
-                    default_prompt_key=default_prompt_key,
-                    default_prompt_text=default_prompt_text,
-                    prompt_override=prompt_override,
-                    display_mode_name=fsm_data.get("mode_name"),
-                    lora_name=fsm_data.get("lora_name"),
-                    resolution=res,
-                    duration=dur,
-                    status_msg_id=query.message.message_id,
-                ),
-            )
-        elif mode == MODE_WAN22_VIDEO_V2:
-            create_background_task(
-                context,
-                process_generation_task(
-                    context=context,
-                    chat_id=query.message.chat_id,
-                    user_id=user_id,
-                    username=update.effective_user.username,
-                    prompt=prompt_override or default_prompt_text,
-                    images=[image_path],
-                    is_video=True,
-                    task_type=MODE_WAN22_VIDEO_V2,
-                    cleanup=True,
-                    allow_contribute=True,
-                    status_msg_id=query.message.message_id,
-                    resolution=res,
-                    duration=dur,
-                ),
-            )
-        else:
-            create_background_task(
-                context,
-                process_video_task_template(
-                    context=context,
-                    mode=mode,
-                    default_prompt_key=default_prompt_key,
-                    default_prompt_text=default_prompt_text,
-                    prompt_override=prompt_override,
-                    display_mode_name_override=fsm_data.get("mode_name"),
-                    lora_name=fsm_data.get("lora_name"),
-                    image_path=image_path,
-                    cleanup=True,
-                    allow_contribute=True,
-                    chat_id=query.message.chat_id,
-                    user_id=user_id,
-                    username=update.effective_user.username,
-                    status_msg_id=query.message.message_id,
-                ),
-            )
-    elif mode_submission:
-        default_prompt_key, default_prompt_text = mode_submission
-        prompt_override = (
-            get_qqcc_prompt_override(qqcc_config, default_prompt_key)
-            if qqcc_config is not None
-            else None
-        )
-        create_background_task(
-            context,
-            process_video_task_template(
-                context=context,
-                mode=mode,
-                default_prompt_key=default_prompt_key,
-                default_prompt_text=default_prompt_text,
-                prompt_override=prompt_override,
-                image_path=image_path,
-                cleanup=True,
-                allow_contribute=True,
-                chat_id=query.message.chat_id,
-                user_id=user_id,
-                username=update.effective_user.username,
-                status_msg_id=query.message.message_id,
-            ),
-        )
+    create_background_task(
+        context,
+        run_quick_video_submission_plan(
+            plan=plan,
+            context=context,
+            chat_id=query.message.chat_id,
+            user_id=user_id,
+            username=update.effective_user.username,
+            image_path=image_path,
+            status_msg_id=query.message.message_id,
+            process_video_task_template_func=process_video_task_template,
+            process_generation_task_func=process_generation_task,
+            download_output_file_to_fsm_temp_func=download_output_file_to_fsm_temp,
+            cleanup_temp_files_func=cleanup_fsm_temp_files,
+        ),
+    )
 
     _cleanup_context(context, user_id)
     return ConversationHandler.END

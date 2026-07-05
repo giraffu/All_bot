@@ -8,6 +8,7 @@ from telegram.warnings import PTBUserWarning
 
 from src.constants import (
     MODE_CUSTOM_VIDEO,
+    MODE_DOGGY_STYLE,
     MODE_EDIT,
     MODE_FREE_EDIT_V2,
     MODE_IMAGE_TO_VIDEO,
@@ -364,21 +365,25 @@ async def test_start_edit_image_english_lora_buttons(monkeypatch):
         ("🥵 快速自慰", "menu.photo_edit_masturbation"),
     ],
 )
-async def test_main_bot_stale_quick_image_entries_are_disabled(
+async def test_main_bot_stale_quick_image_entries_route_to_lazy_bot(
     monkeypatch, button_text, route_key
 ):
     reply_mock = AsyncMock()
 
     monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
     monkeypatch.setattr(quick_image_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.delenv("QQCC_LAZY_BOT_URL", raising=False)
+    monkeypatch.setenv("QQCC_LAZY_BOT_USERNAME", "@QQCC666_bot")
 
     update = _build_update_with_message(text=button_text)
     context = SimpleNamespace(
         user_data={},
         lang="zh",
-        t=lambda key, **_kwargs: {"system.feature_disabled": "功能暂未开放"}.get(
-            key, key
-        ),
+        t=lambda key, **_kwargs: {
+            "system.open_lazy_bot_hint": "请前往懒人bot使用该功能",
+            "menu.open_lazy_bot": "前往懒人bot",
+            "system.lazy_bot_link_unavailable": "懒人bot入口暂未配置",
+        }.get(key, key),
     )
 
     monkeypatch.setitem(
@@ -392,7 +397,10 @@ async def test_main_bot_stale_quick_image_entries_are_disabled(
     assert result == ConversationHandler.END
     assert "quick_image_data" not in context.user_data
     reply_mock.assert_awaited_once()
-    assert reply_mock.await_args.args[1] == "功能暂未开放"
+    assert reply_mock.await_args.args[1] == "请前往懒人bot使用该功能"
+    button = reply_mock.await_args.kwargs["reply_markup"].inline_keyboard[0][0]
+    assert button.text == "前往懒人bot"
+    assert button.url == "https://t.me/QQCC666_bot"
 
 
 @pytest.mark.asyncio
@@ -1663,31 +1671,35 @@ async def test_ltx_video_extension_initializes_single_start_frame_with_chain_con
     monkeypatch,
 ):
     reply_mock = AsyncMock()
-    load_history_mock = AsyncMock(
+    prepare_seed_mock = AsyncMock(
         return_value=SimpleNamespace(
-            billing_resolution="1280x704",
-            requested_duration=10,
-            extra_outputs={
-                "_ltx_context": {
-                    "ltx_chain_task_ids": ["ltx-task-1"],
-                    "lora_items": [
-                        {
-                            "name": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors",
-                            "strength": 0.8,
-                        }
-                    ],
-                },
+            base_task_id="ltx-task-2",
+            history=SimpleNamespace(task_id="ltx-task-2"),
+            fsm_data={
+                "resolution": "1280x704",
+                "duration": "10s",
+                "ltx_mode": "i2v",
+                "image_path": "/tmp/ltx-tail.png",
+                "end_image_path": None,
+                "video_path": None,
+                "lora_items": [
+                    {
+                        "name": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors",
+                        "strength": 0.8,
+                    }
+                ],
+                "is_extension": True,
+                "extension_prev_task_id": "ltx-task-2",
+                "chain_task_ids": ["ltx-task-1", "ltx-task-2"],
             },
         )
     )
-    download_mock = AsyncMock(return_value="/tmp/ltx-tail.png")
 
     monkeypatch.setattr(ltx_video_fsm, "robust_reply_text", reply_mock)
-    monkeypatch.setattr(ltx_video_fsm, "load_owned_ltx_history", load_history_mock)
     monkeypatch.setattr(
         ltx_video_fsm,
-        "download_ltx_last_frame_to_fsm_temp",
-        download_mock,
+        "prepare_ltx_extension_fsm_data",
+        prepare_seed_mock,
     )
 
     query = SimpleNamespace(
@@ -1710,6 +1722,13 @@ async def test_ltx_video_extension_initializes_single_start_frame_with_chain_con
     result = await ltx_video_fsm.start_ltx_video_extension(update, context)
 
     assert result == ltx_video_fsm.LtxVideoState.WAIT_MODE_SELECTION
+    prepare_seed_mock.assert_awaited_once_with(
+        base_task_id="ltx-task-2",
+        telegram_user_id=12345,
+        username="tester",
+        meta={},
+        max_loras=3,
+    )
     data = context.user_data["ltx_video_data"]
     assert data["ltx_mode"] == "i2v"
     assert data["image_path"] == "/tmp/ltx-tail.png"
@@ -2483,18 +2502,22 @@ async def test_start_custom_video_setup_keeps_lora_fixed_to_none(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_main_bot_stale_quick_video_text_entry_is_disabled(monkeypatch):
+async def test_main_bot_stale_quick_video_text_entry_routes_to_lazy_bot(monkeypatch):
     reply_mock = AsyncMock()
 
     monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
     monkeypatch.setattr(quick_video_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.delenv("QQCC_LAZY_BOT_URL", raising=False)
+    monkeypatch.setenv("QQCC_LAZY_BOT_USERNAME", "@QQCC666_bot")
 
     update = _build_update_with_message(text="🛏️ GIF Missionary")
     context = SimpleNamespace(
         user_data={},
         lang="en",
         t=lambda key, **_kwargs: {
-            "system.feature_disabled": "This feature is not available."
+            "system.open_lazy_bot_hint": "Please open Lazy Bot for this feature.",
+            "menu.open_lazy_bot": "Open Lazy Bot",
+            "system.lazy_bot_link_unavailable": "Lazy Bot link is not configured.",
         }.get(key, key),
     )
 
@@ -2509,16 +2532,21 @@ async def test_main_bot_stale_quick_video_text_entry_is_disabled(monkeypatch):
     assert result == ConversationHandler.END
     assert "quick_video_data" not in context.user_data
     reply_mock.assert_awaited_once()
-    assert reply_mock.await_args.args[1] == "This feature is not available."
+    assert reply_mock.await_args.args[1] == "Please open Lazy Bot for this feature."
+    button = reply_mock.await_args.kwargs["reply_markup"].inline_keyboard[0][0]
+    assert button.text == "Open Lazy Bot"
+    assert button.url == "https://t.me/QQCC666_bot"
 
 
 @pytest.mark.asyncio
-async def test_main_bot_stale_quick_video_callback_entry_is_disabled(monkeypatch):
+async def test_main_bot_stale_quick_video_callback_entry_routes_to_lazy_bot(monkeypatch):
     edit_mock = AsyncMock()
     answer_mock = AsyncMock()
 
     monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
     monkeypatch.setattr(quick_video_fsm, "robust_edit_text", edit_mock)
+    monkeypatch.delenv("QQCC_LAZY_BOT_URL", raising=False)
+    monkeypatch.setenv("QQCC_LAZY_BOT_USERNAME", "@QQCC666_bot")
 
     user = _build_user()
     callback_message = SimpleNamespace(chat_id=10001)
@@ -2537,9 +2565,11 @@ async def test_main_bot_stale_quick_video_callback_entry_is_disabled(monkeypatch
     context = SimpleNamespace(
         user_data={},
         lang="zh",
-        t=lambda key, **_kwargs: {"system.feature_disabled": "功能暂未开放"}.get(
-            key, key
-        ),
+        t=lambda key, **_kwargs: {
+            "system.open_lazy_bot_hint": "请前往懒人bot使用该功能",
+            "menu.open_lazy_bot": "前往懒人bot",
+            "system.lazy_bot_link_unavailable": "懒人bot入口暂未配置",
+        }.get(key, key),
     )
 
     result = await quick_video_fsm.start_quick_video(update, context)
@@ -2547,11 +2577,11 @@ async def test_main_bot_stale_quick_video_callback_entry_is_disabled(monkeypatch
     assert result == ConversationHandler.END
     assert "quick_video_data" not in context.user_data
     answer_mock.assert_awaited_once()
-    edit_mock.assert_awaited_once_with(
-        callback_message,
-        "功能暂未开放",
-        parse_mode="Markdown",
-    )
+    edit_mock.assert_awaited_once()
+    assert edit_mock.await_args.args == (callback_message, "请前往懒人bot使用该功能")
+    button = edit_mock.await_args.kwargs["reply_markup"].inline_keyboard[0][0]
+    assert button.text == "前往懒人bot"
+    assert button.url == "https://t.me/QQCC666_bot"
 
 
 @pytest.mark.asyncio
@@ -2768,10 +2798,10 @@ async def test_quick_video_missing_image_path_shows_alert(monkeypatch):
         bot=SimpleNamespace(),
         user_data={
             "in_conversation": "QUICK_VIDEO_test",
-            "quick_video_data": {
-                "mode": "test-mode",
-                "resolution": "512p",
-                "duration": "5s",
+                "quick_video_data": {
+                    "mode": MODE_DOGGY_STYLE,
+                    "resolution": "512p",
+                    "duration": "5s",
                 "image_path": None,
             },
         },
@@ -2792,7 +2822,7 @@ async def test_quick_video_missing_image_path_shows_alert(monkeypatch):
 async def test_quick_video_insufficient_credits_cleans_up_without_nameerror(monkeypatch):
     safe_answer_mock = AsyncMock()
     send_message_mock = AsyncMock()
-    remove_mock = Mock()
+    cleanup_mock = Mock()
     query = SimpleNamespace(
         from_user=SimpleNamespace(id=12345),
         message=SimpleNamespace(chat_id=10001, message_id=777),
@@ -2806,8 +2836,7 @@ async def test_quick_video_insufficient_credits_cleans_up_without_nameerror(monk
         "check_quota",
         AsyncMock(side_effect=InsufficientCreditsError(current=1, cost=6)),
     )
-    monkeypatch.setattr(quick_video_fsm.os.path, "exists", lambda path: True)
-    monkeypatch.setattr(quick_video_fsm.os, "remove", remove_mock)
+    monkeypatch.setattr(quick_video_fsm, "cleanup_fsm_temp_files", cleanup_mock)
 
     update = SimpleNamespace(
         callback_query=query,
@@ -2819,7 +2848,7 @@ async def test_quick_video_insufficient_credits_cleans_up_without_nameerror(monk
         user_data={
             "in_conversation": "QUICK_VIDEO_test",
             "quick_video_data": {
-                "mode": "test-mode",
+                "mode": MODE_DOGGY_STYLE,
                 "resolution": "512p",
                 "duration": "5s",
                 "image_path": "/tmp/quick-video-input.png",
@@ -2832,6 +2861,6 @@ async def test_quick_video_insufficient_credits_cleans_up_without_nameerror(monk
     assert result == ConversationHandler.END
     safe_answer_mock.assert_awaited_once()
     send_message_mock.assert_awaited_once()
-    remove_mock.assert_called_once_with("/tmp/quick-video-input.png")
+    cleanup_mock.assert_any_call(["/tmp/quick-video-input.png"])
     assert "in_conversation" not in context.user_data
     assert "quick_video_data" not in context.user_data

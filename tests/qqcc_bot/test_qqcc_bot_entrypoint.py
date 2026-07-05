@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler, TypeHandler
@@ -687,6 +687,7 @@ async def test_qqcc_video_prompt_override_does_not_affect_main_bot(monkeypatch):
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(quick_video_fsm, "robust_edit_text", AsyncMock())
+    background_tasks = []
 
     def fake_process_video_task_template(**kwargs):
         captured.append(kwargs)
@@ -709,7 +710,7 @@ async def test_qqcc_video_prompt_override_does_not_affect_main_bot(monkeypatch):
     monkeypatch.setattr(
         quick_video_fsm,
         "create_background_task",
-        lambda _context, task: task,
+        lambda _context, task: background_tasks.append(task),
     )
 
     def make_update_and_context(bot_data):
@@ -748,9 +749,11 @@ async def test_qqcc_video_prompt_override_does_not_affect_main_bot(monkeypatch):
 
     update, context = make_update_and_context({"bot_client_type": "bot:qqcc"})
     await quick_video_fsm.start_generation(update, context)
+    await background_tasks.pop(0)
 
     update, context = make_update_and_context({})
     await quick_video_fsm.start_generation(update, context)
+    await background_tasks.pop(0)
 
     assert captured[0]["mode"] == MODE_CUSTOM_VIDEO
     assert captured[0]["default_prompt_key"] == MODE_CUSTOM_VIDEO
@@ -804,6 +807,7 @@ async def test_qqcc_video_scene_lora_submits_legacy_video_lora(monkeypatch):
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(quick_video_fsm, "robust_edit_text", AsyncMock())
+    background_tasks = []
     monkeypatch.setattr(
         quick_video_fsm,
         "process_video_task_template",
@@ -812,7 +816,7 @@ async def test_qqcc_video_scene_lora_submits_legacy_video_lora(monkeypatch):
     monkeypatch.setattr(
         quick_video_fsm,
         "create_background_task",
-        lambda _context, task: task,
+        lambda _context, task: background_tasks.append(task),
     )
 
     query = SimpleNamespace(
@@ -847,6 +851,7 @@ async def test_qqcc_video_scene_lora_submits_legacy_video_lora(monkeypatch):
     )
 
     await quick_video_fsm.start_generation(update, context)
+    await background_tasks.pop(0)
 
     assert captured[0]["mode"] == MODE_IMAGE_TO_VIDEO
     assert captured[0]["lora_name"] == "BreastGrow"
@@ -898,6 +903,7 @@ async def test_qqcc_video_scene_v2_submits_wan22_v2(monkeypatch):
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(quick_video_fsm, "robust_edit_text", AsyncMock())
+    background_tasks = []
 
     monkeypatch.setattr(
         quick_video_fsm,
@@ -907,7 +913,7 @@ async def test_qqcc_video_scene_v2_submits_wan22_v2(monkeypatch):
     monkeypatch.setattr(
         quick_video_fsm,
         "create_background_task",
-        lambda _context, task: task,
+        lambda _context, task: background_tasks.append(task),
     )
 
     query = SimpleNamespace(
@@ -942,6 +948,7 @@ async def test_qqcc_video_scene_v2_submits_wan22_v2(monkeypatch):
     )
 
     await quick_video_fsm.start_generation(update, context)
+    await background_tasks.pop(0)
 
     assert captured["task_type"] == MODE_WAN22_VIDEO_V2
     assert captured["prompt"] == "v2 scene prompt"
@@ -1489,8 +1496,8 @@ async def test_qqcc_video_scene_tail_frame_precheck_uses_combined_cost(monkeypat
     check_quota = AsyncMock(side_effect=InsufficientCreditsError(current=7, cost=8))
     monkeypatch.setattr(quick_video_fsm.permission_service, "check_quota", check_quota)
     monkeypatch.setattr("src.utils.robust_send_message", AsyncMock())
-    monkeypatch.setattr(quick_video_fsm.os.path, "exists", lambda path: True)
-    monkeypatch.setattr(quick_video_fsm.os, "remove", lambda _path: None)
+    cleanup_mock = MagicMock()
+    monkeypatch.setattr(quick_video_fsm, "cleanup_fsm_temp_files", cleanup_mock)
     monkeypatch.setattr(
         quick_video_fsm,
         "create_background_task",
@@ -1533,6 +1540,7 @@ async def test_qqcc_video_scene_tail_frame_precheck_uses_combined_cost(monkeypat
 
     assert check_quota.await_args.kwargs["cost"] == 8
     assert background_tasks == []
+    cleanup_mock.assert_any_call(["/tmp/input.png"])
 
 
 @pytest.mark.asyncio

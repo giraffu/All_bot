@@ -1,7 +1,7 @@
 # 子模块: Telegram 本地 API 与文件代理 (TG Local API)
 
 ## 1. 目标与范围
-本模块致力于突破 Telegram 官方 Bot API 在云端下载 20MB、上传 50MB 的多媒体文件体积限制。通过在海外独立 VPS 部署官方提供的 `telegram-bot-api` 容器并开启 `TELEGRAM_LOCAL=1`，配合 Python HTTP 文件服务器和底层的 Monkey Patch，实现了针对高分辨率 AI 生成长视频的极速直传与下载能力。
+本模块致力于突破 Telegram 官方 Bot API 在云端下载 20MB、上传 50MB 的多媒体文件体积限制。通过在海外独立 VPS 部署官方提供的 `telegram-bot-api` 容器并开启 `TELEGRAM_LOCAL=1`，配合 Python HTTP 文件服务器和统一 Telegram runtime bootstrap，实现了针对高分辨率 AI 生成长视频的极速直传与下载能力。
 
 当前 Telegram Local API VPS 公网 IP 为 `69.63.220.115`：
 - API base：`http://69.63.220.115:8081`
@@ -32,48 +32,29 @@ sequenceDiagram
 
 ## 3. 核心代码片段
 
-### 主 Bot 文件下载补丁 (`src/bot_main.py`)
-[`src/bot_main.py`](../src/bot_main.py)
+### 共享 Telegram runtime bootstrap
+[`src/services/telegram_runtime_bootstrap.py`](../src/services/telegram_runtime_bootstrap.py)
 ```python
-import httpx
-from telegram import File
+install_telegram_runtime_patches(logger=logger)
+request = build_telegram_httpx_request()
 
-original_download_to_drive = File.download_to_drive
-
-
-async def custom_download_to_drive(
-    self,
-    custom_path=None,
-    read_timeout=None,
-    write_timeout=None,
-    connect_timeout=None,
-    pool_timeout=None,
-):
-    bot = self.get_bot()
-    if bot.base_file_url and "8082" in bot.base_file_url:
-        raw_path = self.file_path
-        # 省略 urlparse 与前导斜杠归一化
-        url = f"http://69.63.220.115:8082{raw_path}"
-
-        async with httpx.AsyncClient(proxy=None) as client:
-            response = await client.get(url, timeout=120.0)
-            response.raise_for_status()
-            with open(custom_path, "wb") as f:
-                f.write(response.content)
-        return self
-
-    return await original_download_to_drive(
-        self,
-        custom_path,
-        read_timeout,
-        write_timeout,
-        connect_timeout,
-        pool_timeout,
-    )
-
-
-File.download_to_drive = custom_download_to_drive
+application = (
+    ApplicationBuilder()
+    .token(BOT_TOKEN)
+    .base_url(build_telegram_bot_base_url())
+    .base_file_url(resolve_telegram_file_base_url())
+    .request(request)
+    .get_updates_request(request)
+    .build()
+)
 ```
+
+主 Bot `src/bot_main.py` 与 QQCC Bot `qqcc_bot/main.py` 都调用该 helper。它统一负责：
+- `TELEGRAM_API_BASE_URL` / `TELEGRAM_FILE_BASE_URL` 默认值与环境覆盖；
+- `HTTPXRequest(proxy=None, connect_timeout=60, read_timeout=120, write_timeout=120, connection_pool_size=500)`；
+- `File.download_to_drive` 本地文件代理 patch；
+- `Poll.de_json` 对旧 update 缺失 `members_only` 的兼容；
+- Bot middleware 中 correlation id、语言缓存与 `context.t` 注入。
 
 ## 4. 接口定义 (网络契约)
 本模块对外表现为 PTB 框架内的 `ApplicationBuilder` 参数配置：
@@ -82,17 +63,19 @@ File.download_to_drive = custom_download_to_drive
 application = (
     ApplicationBuilder()
     .token(BOT_TOKEN)
-    .base_url("http://69.63.220.115:8081/bot")
-    .base_file_url("http://69.63.220.115:8082") # 仅提供前缀，通过 Patch 截断
+    .base_url(build_telegram_bot_base_url())
+    .base_file_url(resolve_telegram_file_base_url())
     .build()
 )
 ```
 
+`TELEGRAM_API_BASE_URL` 默认 `http://69.63.220.115:8081`，`TELEGRAM_FILE_BASE_URL` 默认 `http://69.63.220.115:8082`。主 Bot 和 QQCC Bot 必须共用这组 helper，避免不同 polling 服务出现下载、Poll 兼容或语言注入行为漂移。
+
 ## 5. 单元与集成测试要求
-- **覆盖率基准**：不涉及业务，但 Monkey Patch 代码要求 **100%** 的集成测试通过率。
+- **覆盖率基准**：不涉及业务，但 runtime bootstrap 与 Monkey Patch 代码要求 focused tests 覆盖默认/覆盖 URL、patch 幂等和旧 Poll update 兼容。
 - **核心用例**：
   1. `test_local_api_connection`：在 Bot 启动前，测试 `http://<VPS_IP>:8081/bot<TOKEN>/getMe` 是否返回正常的 Bot 信息，而非 502。
-  2. `test_large_file_download`：用户上传一个 45MB 的视频文件，断言主 Bot `custom_download_to_drive` 能在 `read_timeout` 内无阻碍地落盘，且 HTTP 状态码为 200。
+  2. `test_large_file_download`：用户上传一个 45MB 的视频文件，断言共享 `download_to_drive` patch 能在 `read_timeout` 内无阻碍地落盘，且 HTTP 状态码为 200。
   3. `test_directory_permissions`：验证 `telegram-bot-api` 写入宿主机的文件能被 8082 端口读取，不报 403 Forbidden 错误。
 
 ## 6. 部署与回滚步骤

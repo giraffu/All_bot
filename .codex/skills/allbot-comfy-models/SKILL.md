@@ -53,6 +53,9 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 - QQCC `AI动图` 的 `end_frame_draw_scene_id` 只复用当前 AI绘图场景及其 `postprocess_draw_scene_id` 后处理链生成最终尾帧，再把首尾两图传给旧 `image_to_video` / `video_lora` 或 `wan22_video_v2`；这不是新 workflow/profile，v2 仍不支持附加 LoRA。
 - LTX 系列的用户可见 task type 与执行 profile 不完全同名。`ltx_video`、`ltx_video_flf2v`、`ltx_video_v2v_audio` 等映射必须同时核对 registry、payload builder、worker mapping 和模型 catalog。
 - LTX LoRA 多选使用 `lora_items` 结构，当前限制最多 3 个。legacy `lora_name/lora_strength` 只作兼容，不应作为新入口。
+- LTX Bot 扩展 seed 与完成拼接链路恢复由 `src/services/ltx_video_extension_service.py` 负责；这只影响 Bot 入口层 histories/last_frame/context 准备，不改变 LTX workflow、worker mapping、RunPod profile 或模型目录。
+- 主 Bot 高级视频 FSM 的提交 payload 事实源是 `src/services/advanced_video_submission_service.py`：它只做 Bot 入口层提交计划、分辨率/时长归一、首尾帧和 LTX LoRA/链路字段透传，不改变 worker workflow、RunPod profile 或模型目录。
+- 主 Bot 高级视频设置面板事实源是 `src/services/advanced_video_settings_view_service.py`：它只生成 Telegram view-model/keyboards 与费用展示，仍不改变 Wan22/LTX workflow、worker mapping、RunPod profile 或模型目录。
 - SCAIL-2 是独立视频生视频 profile，用户入口和执行 profile 要保持映射清晰。用户侧只展示 `scail2_action_transfer` 动作迁移，支持 5/8/10/15/20s；dispatcher 会把 10/15/20s 隐式送到内部执行类型 `scail2_action_transfer_long` 和 Context Windows workflow。`scail2_action_transfer_long` 不作为 Bot/Web 入口，也不进入正式 RunPod profile。涉及成本、时长、尺寸或首帧抽取时，同时检查 task registry、billing 配置和 GPU Pool 文档。
 - workflow 里的节点 ID 是高风险事实。不要凭记忆改 `node_id`，必须读取当前 JSON；文档中的 ID 只作为导航提示。
 

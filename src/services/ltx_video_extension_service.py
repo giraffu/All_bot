@@ -2,6 +2,7 @@ import asyncio
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import select
 
@@ -10,6 +11,7 @@ from src.core.media_paths import resolve_storage_object
 from src.core import user_core
 from src.database.core import AsyncSessionLocal
 from src.database.models import History
+from src.lora_catalog import build_ltx_video_lora_item, normalize_ltx_video_lora_items
 from src.services.fsm_temp_file_service import FSM_TEMP_DIR
 from src.services.storage import storage
 from src.services.wan22_video_v2_extension_service import (
@@ -42,6 +44,21 @@ class LtxVideoStitchedHistoryResult:
     allow_contribute: bool
     segment_count: int
     history: History
+
+
+@dataclass(frozen=True)
+class LtxExtensionFsmSeed:
+    fsm_data: dict[str, object]
+    history: History
+    base_task_id: str
+
+
+@dataclass(frozen=True)
+class LtxStitchPlan:
+    histories: list[History]
+    internal_user_id: int
+    source_task_id: str
+    full_task_ids: list[str]
 
 
 def is_ltx_video_history_task_type(task_type: str | None) -> bool:
@@ -179,6 +196,168 @@ def extract_ltx_history_context(extra_outputs: dict | None) -> dict[str, object]
     if not isinstance(context, dict):
         return {}
     return dict(context)
+
+
+def merge_ltx_history_context_into_meta(
+    history: History,
+    meta: dict[str, Any] | None,
+) -> dict[str, object]:
+    return {
+        **extract_ltx_history_context(getattr(history, "extra_outputs", None)),
+        **dict(meta or {}),
+    }
+
+
+def _duration_label_from_history_and_meta(history: History, meta: dict[str, object]) -> str:
+    raw_duration = (
+        meta.get("ltx_duration_seconds")
+        or meta.get("requested_duration")
+        or getattr(history, "requested_duration", None)
+        or 5
+    )
+    try:
+        duration = int(raw_duration)
+    except (TypeError, ValueError):
+        duration = 5
+    if duration not in {5, 10, 15, 20}:
+        duration = 5
+    return f"{duration}s"
+
+
+def _resolution_from_history_and_meta(history: History, meta: dict[str, object]) -> str:
+    resolution = str(getattr(history, "billing_resolution", None) or "").strip()
+    if resolution == "1280x704":
+        return resolution
+    try:
+        width = int(meta.get("ltx_width") or 0)
+        height = int(meta.get("ltx_height") or 0)
+    except (TypeError, ValueError):
+        width = height = 0
+    if width == 1280 and height == 704:
+        return "1280x704"
+    return "1280x704"
+
+
+def resolve_ltx_lora_items_from_meta(
+    meta: dict[str, Any] | None,
+    *,
+    max_items: int | None = None,
+) -> list[dict[str, Any]]:
+    meta = meta or {}
+    lora_items = normalize_ltx_video_lora_items(
+        meta.get("lora_items"),
+        max_items=max_items,
+    )
+    if lora_items:
+        return lora_items
+    fallback_lora_name = str(meta.get("lora_name") or "").strip()
+    if not fallback_lora_name:
+        return []
+    fallback_item = build_ltx_video_lora_item(
+        fallback_lora_name,
+        strength=meta.get("lora_strength"),
+    )
+    return [fallback_item] if fallback_item else []
+
+
+async def prepare_ltx_extension_fsm_data(
+    *,
+    base_task_id: str,
+    telegram_user_id: int,
+    username: str | None,
+    meta: dict[str, Any] | None,
+    max_loras: int = 3,
+    load_history_func=load_owned_ltx_history,
+    download_last_frame_func=download_ltx_last_frame_to_fsm_temp,
+) -> LtxExtensionFsmSeed:
+    normalized_base_task_id = str(base_task_id or "").strip()
+    if not normalized_base_task_id:
+        raise LtxVideoExtensionError("记录已失效，请重新生成后再试")
+
+    history = await load_history_func(
+        task_id=normalized_base_task_id,
+        telegram_user_id=telegram_user_id,
+        username=username,
+    )
+    merged_meta = merge_ltx_history_context_into_meta(history, meta)
+    start_image_path = await download_last_frame_func(history=history)
+    chain_task_ids = build_ltx_full_chain_task_ids(
+        chain_task_ids=normalize_ltx_video_chain_task_ids(
+            merged_meta.get("ltx_chain_task_ids")
+        ),
+        current_task_id=normalized_base_task_id,
+    )
+    return LtxExtensionFsmSeed(
+        fsm_data={
+            "resolution": _resolution_from_history_and_meta(history, merged_meta),
+            "duration": _duration_label_from_history_and_meta(history, merged_meta),
+            "ltx_mode": "i2v",
+            "image_path": start_image_path,
+            "end_image_path": None,
+            "video_path": None,
+            "lora_items": resolve_ltx_lora_items_from_meta(
+                merged_meta,
+                max_items=max_loras,
+            ),
+            "is_extension": True,
+            "extension_prev_task_id": normalized_base_task_id,
+            "chain_task_ids": chain_task_ids,
+        },
+        history=history,
+        base_task_id=normalized_base_task_id,
+    )
+
+
+async def build_ltx_stitch_plan(
+    *,
+    current_task_id: str,
+    telegram_user_id: int,
+    username: str | None,
+    meta: dict[str, Any] | None,
+    load_history_func=load_owned_ltx_history,
+) -> LtxStitchPlan:
+    normalized_current_task_id = str(current_task_id or "").strip()
+    if not normalized_current_task_id:
+        raise LtxVideoExtensionError("记录已失效，请重新生成后再试")
+
+    current_history = await load_history_func(
+        task_id=normalized_current_task_id,
+        telegram_user_id=telegram_user_id,
+        username=username,
+    )
+    merged_meta = merge_ltx_history_context_into_meta(current_history, meta)
+    full_task_ids = build_ltx_full_chain_task_ids(
+        chain_task_ids=normalize_ltx_video_chain_task_ids(
+            merged_meta.get("ltx_chain_task_ids")
+        ),
+        current_task_id=normalized_current_task_id,
+    )
+    if len(full_task_ids) < 2:
+        raise LtxVideoExtensionError("至少需要两段 LTX 视频才能完成拼接")
+
+    history_cache = {normalized_current_task_id: current_history}
+    histories: list[History] = []
+    for task_id in full_task_ids:
+        history = history_cache.get(task_id)
+        if history is None:
+            history = await load_history_func(
+                task_id=task_id,
+                telegram_user_id=telegram_user_id,
+                username=username,
+            )
+            history_cache[task_id] = history
+        histories.append(history)
+
+    internal_user_id = int(getattr(histories[0], "user_id", 0) or 0)
+    if not internal_user_id:
+        raise LtxVideoExtensionError("未找到用户信息，无法保存拼接结果。")
+
+    return LtxStitchPlan(
+        histories=histories,
+        internal_user_id=internal_user_id,
+        source_task_id=normalized_current_task_id,
+        full_task_ids=full_task_ids,
+    )
 
 
 def is_ltx_stitched_result(extra_outputs: dict | None) -> bool:

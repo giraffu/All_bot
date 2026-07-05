@@ -53,23 +53,6 @@ def get_photo_edit_keyboard(lang: str) -> ReplyKeyboardMarkup:
 
 
 @lru_cache(maxsize=10)
-def get_video_edit_keyboard(lang: str) -> ReplyKeyboardMarkup:
-    keyboard = [
-        [
-            get_text("menu.video_edit_missionary", lang),
-            get_text("menu.video_edit_doggy", lang),
-        ],
-        [
-            get_text("menu.video_edit_blowjob", lang),
-            get_text("menu.video_edit_undress_tongue", lang),
-            get_text("menu.video_edit_closeup_blowjob", lang),
-        ],
-        [get_text("menu.back_main", lang)],
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-
-@lru_cache(maxsize=10)
 def get_video_to_video_keyboard(lang: str) -> ReplyKeyboardMarkup:
     keyboard = [
         [
