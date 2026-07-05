@@ -372,13 +372,18 @@ function baseTooltip() {
   };
 }
 
-function buildLineBarOption({ dates, series, yAxis = [{ type: "value" }], legendBottom = true }) {
+function buildLineBarOption({ dates, series, yAxis = [{ type: "value" }], legendBottom = true, legendSelected = null }) {
   if (!dates?.length || !series?.length) return chartEmptyOption();
   return {
     color: chartPalette,
     tooltip: baseTooltip(),
-    legend: { type: "scroll", bottom: legendBottom ? 0 : undefined, top: legendBottom ? undefined : 0 },
-    grid: { left: 42, right: 34, top: legendBottom ? 24 : 44, bottom: legendBottom ? 48 : 32, containLabel: true },
+    legend: {
+      type: "scroll",
+      bottom: legendBottom ? 0 : undefined,
+      top: legendBottom ? undefined : 0,
+      selected: legendSelected || undefined,
+    },
+    grid: { left: 42, right: Array.isArray(yAxis) && yAxis.length > 1 ? 72 : 34, top: legendBottom ? 24 : 44, bottom: legendBottom ? 48 : 32, containLabel: true },
     xAxis: { type: "category", data: dates.map(dateLabel), axisTick: { alignWithLabel: true } },
     yAxis,
     series,
@@ -483,6 +488,10 @@ function buildHourlyOption(rows = [], { dateKey = "date", metric = "generations"
   });
 }
 
+function loginNextPath() {
+  return `${window.location.pathname}${window.location.search}${window.location.hash}` || "/";
+}
+
 async function fetchJson(path, params = {}, options = {}) {
   const url = new URL(path, window.location.origin);
   Object.entries(params).forEach(([key, value]) => {
@@ -492,6 +501,9 @@ async function fetchJson(path, params = {}, options = {}) {
   });
   const response = await fetch(url, options);
   if (!response.ok) {
+    if (response.status === 401) {
+      window.location.assign(`/login?next=${encodeURIComponent(loginNextPath())}`);
+    }
     let detail = response.statusText;
     try {
       const body = await response.json();
@@ -502,6 +514,14 @@ async function fetchJson(path, params = {}, options = {}) {
     throw new Error(`${response.status} ${detail}`);
   }
   return response.json();
+}
+
+async function logoutLocalAnalytics() {
+  try {
+    await fetch("/api/auth/logout", { method: "POST" });
+  } finally {
+    window.location.assign("/login");
+  }
 }
 
 function promptVectorResumeNote() {
@@ -601,6 +621,8 @@ function renderUsers() {
   }).join("") : [
     metric("总用户数", fmt(summary.total_users), `${period}新增 ${fmt(summary.new_users)}`),
     metric("周期活跃用户数", fmt(summary.active_users), "last_activity 或生成记录"),
+    metric("从未活跃用户数", fmt(summary.never_active_users), "无活跃与生成记录"),
+    metric("沉睡用户数", fmt(summary.dormant_users), "曾经活跃且周期未活跃"),
     metric("入宗门用户数", fmt(summary.channel_members), "is_channel_member"),
     metric("生成用户数", fmt(summary.generation_users), "generation_count > 0"),
     metric("真实付费用户数", fmt(summary.paying_users), "RMB / TON / Stars"),
@@ -630,15 +652,21 @@ function renderUserVisualCharts() {
     renderChart("userCoreTrendChart", buildLineBarOption({
       dates: snapshotDates,
       series: [
-        { name: "总用户", type: "line", smooth: true, data: snapshotRows.map((row) => numeric(row.total_users)) },
-        { name: "7日活跃", type: "line", smooth: true, data: snapshotRows.map((row) => numeric(row.active_users_7d)) },
-        { name: "30日活跃", type: "line", smooth: true, data: snapshotRows.map((row) => numeric(row.active_users_30d)) },
-        { name: "入宗门", type: "line", smooth: true, data: snapshotRows.map((row) => numeric(row.channel_members)) },
-        { name: "生成用户", type: "line", smooth: true, data: snapshotRows.map((row) => numeric(row.generation_users)) },
-        { name: "真实付费", type: "line", smooth: true, data: snapshotRows.map((row) => numeric(row.real_payers)) },
-        { name: "低信任", type: "line", smooth: true, data: snapshotRows.map((row) => numeric(row.low_trust_free_tier_users)) },
-        { name: "豁免低信任", type: "line", smooth: true, data: snapshotRows.map((row) => numeric(row.low_trust_exempt_users)) },
+        { name: "总用户", type: "line", yAxisIndex: 1, smooth: true, showSymbol: true, data: snapshotRows.map((row) => numeric(row.total_users)) },
+        { name: "周期活跃", type: "line", smooth: true, showSymbol: true, data: snapshotRows.map((row) => numeric(row.period_active_users)) },
+        { name: "沉睡用户", type: "line", yAxisIndex: 1, smooth: true, showSymbol: true, data: snapshotRows.map((row) => numeric(row.dormant_users)) },
+        { name: "从未活跃", type: "line", smooth: true, showSymbol: true, data: snapshotRows.map((row) => numeric(row.never_active_users)) },
+        { name: "入宗门", type: "line", smooth: true, showSymbol: true, data: snapshotRows.map((row) => numeric(row.channel_members)) },
+        { name: "生成用户", type: "line", smooth: true, showSymbol: true, data: snapshotRows.map((row) => numeric(row.generation_users)) },
+        { name: "真实付费", type: "line", smooth: true, showSymbol: true, data: snapshotRows.map((row) => numeric(row.real_payers)) },
+        { name: "低信任", type: "line", smooth: true, showSymbol: true, data: snapshotRows.map((row) => numeric(row.low_trust_free_tier_users)) },
+        { name: "豁免低信任", type: "line", smooth: true, showSymbol: true, data: snapshotRows.map((row) => numeric(row.low_trust_exempt_users)) },
       ],
+      yAxis: [
+        { type: "value", name: "人群指标", scale: true, axisLabel: { formatter: shortNumber } },
+        { type: "value", name: "总量", scale: true, axisLabel: { formatter: shortNumber }, splitLine: { show: false } },
+      ],
+      legendSelected: { "总用户": false, "从未活跃": false, "低信任": false, "豁免低信任": false },
     }));
   } else {
     renderChart("userCoreTrendChart", chartEmptyOption("暂无快照趋势"));
@@ -939,6 +967,14 @@ function renderDistribution(selector, rows = []) {
       `;
     })
     .join("");
+}
+
+function tableRows(rows = [], renderer) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+  if (!safeRows.length) {
+    return '<tr><td colspan="20"><div class="empty compact">暂无数据</div></td></tr>';
+  }
+  return safeRows.map(renderer).join("");
 }
 
 function renderHealthFlags(flags = [], selector = "#creditHealthFlags") {
@@ -1657,6 +1693,27 @@ function renderPromptDistributions() {
   renderDistribution("#promptScopeDistribution", distributions.template_scope || []);
 }
 
+function renderPromptTaskTypeOptions() {
+  const select = $("#taskTypeSelect");
+  if (!select) return;
+  const existing = select.value || "";
+  const seen = new Set([""]);
+  const options = ['<option value="">全部</option>'];
+  (state.promptTaskTypes || []).forEach((row) => {
+    const value = row.task_type || row.label || "";
+    if (!value || seen.has(value)) return;
+    seen.add(value);
+    const count = row.generations ?? row.count;
+    const label = count === undefined ? value : `${value} (${fmt(count)})`;
+    options.push(`<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`);
+  });
+  if (existing && !seen.has(existing)) {
+    options.push(`<option value="${escapeHtml(existing)}">${escapeHtml(existing)}</option>`);
+  }
+  select.innerHTML = options.join("");
+  select.value = seen.has(existing) ? existing : "";
+}
+
 function promptInteractionText(row = {}) {
   return `
     <div>赞 ${fmt(row.likes)} · 踩 ${fmt(row.dislikes)}</div>
@@ -1828,6 +1885,35 @@ function renderPromptDetail() {
   `;
   renderPromptVariantContent(item);
   $("#promptVariantButton")?.addEventListener("click", () => loadPromptVariants(item));
+}
+
+function renderTemplateCandidates(payload) {
+  const container = $("#templateCandidates");
+  if (!container) return;
+  const candidates = Array.isArray(payload?.candidates) ? payload.candidates : [];
+  const promptGroups = Array.isArray(payload?.prompt_groups) ? payload.prompt_groups : [];
+  const rows = (candidates.length ? candidates : promptGroups).slice(0, 30);
+  if (!rows.length) {
+    container.innerHTML = '<div class="empty">暂无模板候选</div>';
+    return;
+  }
+  container.innerHTML = rows.map((row) => {
+    const prompt = row.prompt_preview || row.prompt || row.raw_prompt_representative || "";
+    const score = row.prompt_score ?? row.value_score ?? row.quality_score ?? 0;
+    const taskTypes = Array.isArray(row.task_types) ? row.task_types : Object.keys(row.task_type_counts || {});
+    const taskText = taskTypes.slice(0, 3).map(escapeHtml).join(" / ");
+    return `
+      <article class="candidate-card">
+        <div class="candidate-title">
+          <span>候选 ${fmt(score)}</span>
+          <span class="muted small">${fmt(row.uses)} 次 / ${fmt(row.users)} 人</span>
+        </div>
+        <p class="candidate-prompt">${escapeHtml(prompt)}</p>
+        <div class="muted small">${taskText || "-"} · ${fmtDate(row.last_seen)}</div>
+        <div class="pill-list">${promptScopePills(row)}</div>
+      </article>
+    `;
+  }).join("");
 }
 
 const promptSlimStageLabels = {
@@ -2260,10 +2346,9 @@ async function loadGenerationTypeComparison() {
 }
 
 async function loadPrompts(days) {
-  const generation = await fetchJson("/api/generation", { days, limit: 12 });
-  state.promptTaskTypes = generation.by_type || [];
-  renderPromptTaskTypeOptions();
   state.prompts = await fetchJson("/api/prompts", getPromptParams(days));
+  state.promptTaskTypes = state.prompts?.distributions?.task_type || [];
+  renderPromptTaskTypeOptions();
   renderPrompts();
 }
 
@@ -2363,6 +2448,7 @@ function reloadCurrentTab() {
 }
 
 $("#refreshButton").addEventListener("click", reloadCurrentTab);
+$("#logoutButton")?.addEventListener("click", logoutLocalAnalytics);
 $("#daysSelect").addEventListener("change", () => {
   setCurrentDays(selectNumber("#daysSelect", 30));
   reloadCurrentTab();

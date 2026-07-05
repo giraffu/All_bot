@@ -23,7 +23,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 | R2 可见热集审计、legacy 媒体补齐 | `docs/子模块_社区与存储_gallery_storage.md`、对应 `scripts/*r2* --help` |
 | QQCC 单服务更新 | `docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md`、`allbot-qqcc-lazy-bot` |
 | 付费群审核 Bot | `docs/子模块_付费群审核Bot_paid_group_guard_bot.md`、`allbot-tg-fsm` |
-| 网络、Cloudflare、边缘节点 | `docs/子模块_网络暴露与代理穿透_network_proxy.md`、`docs/子模块_边缘节点运维指南_edge_node_ops.md` |
+| 网络、Cloudflare、边缘节点 | `allbot-cloudflare-ops`、`docs/子模块_Cloudflare公网入口与账号管理_cloudflare_ops.md`、`docs/子模块_网络暴露与代理穿透_network_proxy.md`、`docs/子模块_边缘节点运维指南_edge_node_ops.md` |
 
 若用户报告失败、慢、卡住或线上异常，叠加 `allbot-diagnosing-bugs`。若改运维脚本、preflight、helper 或回归门禁，叠加 `allbot-tdd`。若改知识库事实，叠加 `allbot-kb-auto-updater`。
 
@@ -69,7 +69,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 ### 云正式
 - 生产控制面在 `allbot-do-sgp1-control`，服务由 `deploy/docker-compose-cloud-prod.yml`、`.env.cloud.prod` 和维护脚本管理。
 - `web.aivison.it.com` 是 Cloudflare Pages 静态站；正式 API 健康检查是 `https://api.aivison.it.com/api/health`，RMB 入口是 `https://rmb.aivison.it.com/pay/result`。
-- Dashboard 默认走 Tailscale/受控入口；公网管理域名必须有 Cloudflare Access 或等价身份层保护。
+- Dashboard 默认走 Tailscale/受控入口；公网管理域名必须有 Cloudflare Access 或等价身份层保护。Cloudflare token、DNS、Tunnel、Access 或 Pages/R2 变更先加载 `allbot-cloudflare-ops`。
 
 ### cloud-prod shadow
 - 默认数据库路径是云机 `pg_dump` 后临时上传 R2 `user-data-prod/__shadow-transfer/<timestamp>`，本地校验后恢复到 `bot_db_prod_shadow`。

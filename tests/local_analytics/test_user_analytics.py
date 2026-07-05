@@ -31,6 +31,9 @@ async def test_user_analytics_returns_profile_distributions_and_leaderboards(mon
         assert "high_quality_referral_exempt_users" in query
         assert "low_trust_exempt_users as" in query
         assert "period_generation_users as" in query
+        assert "ever_generation_users as" in query
+        assert "never_active_users" in query
+        assert "dormant_users" in query
         assert "successful_invitees_count * 100 > referral_relations * 3" in query
         assert "avg(invitee_recharge_rate)" in query
         assert "else 0" in query
@@ -39,6 +42,8 @@ async def test_user_analytics_returns_profile_distributions_and_leaderboards(mon
             "total_users": 100,
             "new_users": 12,
             "active_users": 34,
+            "never_active_users": 11,
+            "dormant_users": 55,
             "channel_members": 56,
             "password_users": 7,
             "submission_banned_users": 2,
@@ -103,6 +108,19 @@ async def test_user_analytics_returns_profile_distributions_and_leaderboards(mon
         if "activity_segment" in query:
             assert args == (30, None, None)
             return [{"label": "近周期活跃", "count": 34}]
+        if "from information_schema.columns" in query:
+            assert args == (
+                [
+                    "never_active_users",
+                    "dormant_users_7d",
+                    "dormant_users_30d",
+                ],
+            )
+            return [
+                {"column_name": "never_active_users"},
+                {"column_name": "dormant_users_7d"},
+                {"column_name": "dormant_users_30d"},
+            ]
         if "from analytics_user_profile_daily_snapshots" in query:
             assert args == (30, None, None)
             return [
@@ -111,6 +129,9 @@ async def test_user_analytics_returns_profile_distributions_and_leaderboards(mon
                     "total_users": 90,
                     "active_users_7d": 20,
                     "active_users_30d": 30,
+                    "never_active_users": 9,
+                    "dormant_users_7d": 61,
+                    "dormant_users_30d": 51,
                     "channel_members": 50,
                     "generation_users": 40,
                     "real_payers": 7,
@@ -123,6 +144,9 @@ async def test_user_analytics_returns_profile_distributions_and_leaderboards(mon
                     "total_users": 100,
                     "active_users_7d": 24,
                     "active_users_30d": 34,
+                    "never_active_users": 11,
+                    "dormant_users_7d": 65,
+                    "dormant_users_30d": 55,
                     "channel_members": 56,
                     "generation_users": 45,
                     "real_payers": 8,
@@ -234,6 +258,8 @@ async def test_user_analytics_returns_profile_distributions_and_leaderboards(mon
     assert payload["days"] == 30
     assert payload["limit"] == 12
     assert payload["summary"]["total_users"] == 100
+    assert payload["summary"]["never_active_users"] == 11
+    assert payload["summary"]["dormant_users"] == 55
     assert payload["summary"]["low_trust_free_tier_users"] == 6
     assert payload["summary"]["low_trust_exempt_users"] == 3
     assert payload["summary"]["low_trust_non_low_trust_invitees_count"] == 13
@@ -253,7 +279,10 @@ async def test_user_analytics_returns_profile_distributions_and_leaderboards(mon
     assert payload["visualizations"]["metrics"][0]["key"] == "total_users"
     assert payload["visualizations"]["metrics"][0]["share_percent"] == 100
     assert payload["visualizations"]["metrics"][0]["delta"]["value"] == 10
-    assert payload["visualizations"]["metrics"][6]["key"] == "low_trust_exempt_users"
+    metric_keys = [item["key"] for item in payload["visualizations"]["metrics"]]
+    assert "never_active_users" in metric_keys
+    assert "dormant_users" in metric_keys
+    assert "low_trust_exempt_users" in metric_keys
     assert payload["visualizations"]["trust_composition"] == [
         {"label": "常规用户", "count": 91, "share_percent": 91.0},
         {"label": "低信任免费层", "count": 6, "share_percent": 6.0},
@@ -262,6 +291,9 @@ async def test_user_analytics_returns_profile_distributions_and_leaderboards(mon
     assert payload["visualizations"]["conversion_funnel"][-1] == {"label": "真实付费", "count": 8}
     assert payload["visualizations"]["recharge_rates"][0]["rate"] == 8.0
     assert payload["visualizations"]["trend"][-1]["low_trust_exempt_users"] == 3
+    assert payload["visualizations"]["trend"][-1]["period_active_users"] == 34
+    assert payload["visualizations"]["trend"][-1]["dormant_users"] == 55
+    assert payload["visualizations"]["trend"][-1]["never_active_users"] == 11
     assert payload["distributions"]["identity"][0] == {"label": "外门弟子", "count": 70}
     assert payload["leaderboards"]["generation"][0]["username"] == "maker"
     assert payload["leaderboards"]["credits"][0]["full_name"] is None
@@ -284,6 +316,7 @@ async def test_user_analytics_accepts_date_range_and_missing_snapshot_table(monk
         if "to_regclass('public.analytics_user_profile_daily_snapshots')" in query:
             return {"table_name": None}
         assert "period_generation_users as" in query
+        assert "ever_generation_users as" in query
         assert args == (
             8,
             analytics_main.RMB_TO_USDT,
@@ -296,6 +329,8 @@ async def test_user_analytics_accepts_date_range_and_missing_snapshot_table(monk
             "total_users": 20,
             "new_users": 4,
             "active_users": 9,
+            "never_active_users": 5,
+            "dormant_users": 6,
             "channel_members": 10,
             "generation_users": 11,
             "paying_users": 2,
@@ -344,6 +379,8 @@ async def test_user_analytics_accepts_date_range_and_missing_snapshot_table(monk
         {"day": "2026-06-24", "new_users": 1, "active_users": 2, "checkins": 3}
     ]
     assert payload["visualizations"]["metrics"][0]["delta"] == {"value": None, "percent": None}
+    assert payload["summary"]["never_active_users"] == 5
+    assert payload["summary"]["dormant_users"] == 6
 
 
 @pytest.mark.asyncio

@@ -13,6 +13,7 @@
 | `allbot-tg-fsm` | Telegram FSM、全局菜单黑盒退出、callback 注册路由、临时文件下载清理、语言切换同步、独立付费群审核与轻量群管理 Bot 边界 | 修改 Telegram 对话流、菜单跳转、文件交互或付费群审核 Bot 时 |
 | `allbot-qqcc-lazy-bot` | QQCC 懒人 Bot 独立 polling 服务、简化菜单、quick image/video FSM、`bot:qqcc` 来源归属、双 polling 与 token 红线 | 修改 `qqcc_bot/`、QQCC 菜单、QQCC compose/service、QQCC 部署脚本、QQCC 任务恢复或来源过滤时 |
 | `allbot-ops-deployment` | Docker Compose、Alembic、云测试控制面、云正式控制面、本地正式灾备、Dashboard 单服务热修、RunPod/LAN AIO 运维、部署排障与恢复 | 调整部署、迁移、容器、环境变量、云正式热修、测试环境、灾备切换、workflow 资产或恢复脚本时 |
+| `allbot-cloudflare-ops` | Cloudflare Account API Token、DNS、Tunnel、Access、Pages/R2、公网管理域名、本地分析平台与管理后台公网访问 | 配置或排障 Cloudflare 公网入口、Token 轮换、Access allowlist、Tunnel public hostname、Pages/R2 账号级能力时 |
 | `allbot-lan-aio-operator` | LAN AIO fleet state、slot catalog、单物理 GPU takeover/recover/restart、镜像拉取、模型热缓存、drift 检查 | 查看或切换局域网 GPU 节点 LAN AIO 当前类型、缓存候选、阻断 profile 或执行受控单卡切换时 |
 | `allbot-comfy-models` | LoRA / ControlNet / ComfyUI 工作流参数透传、动态注入、Worker/remote_workers workflow 映射校验、SCAIL-2 视频生视频模型与 workflow | 修改附加模型、工作流映射、Bot 菜单参数或 RunPod/LAN Comfy profile 时 |
 | `allbot-code-analyzer` | 全局静态分析、死代码检测、架构审查、质量评估 | 进行全盘质量分析或架构体检时 |
@@ -51,6 +52,7 @@
   - `.codex/skills/<skill>/SKILL.md`
   - `AGENTS.md` 路由表
   - 本 README 的技能清单
+  - 必要时同步对应 `docs/子模块_*.md` 专项文档和 `docs/knowledge_base_audit_matrix.md`
 - 若技能文档中的主入口文件、超时值、关键对象名或异常类型已失真，应视为知识库过期，需要优先修复。
 
 ## 5. 2026-06-27 Skill 体积审计

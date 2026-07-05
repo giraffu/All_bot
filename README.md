@@ -30,6 +30,7 @@
 - [修仙主题 AI 创作工作台 - 系统架构与业务分析报告](./docs/system_architecture_report.md)
 - [双入口职责矩阵](./docs/入口职责矩阵_entry_responsibility_matrix.md)
 - [双入口重复能力 Inventory](./docs/双入口重复能力_inventory.md)
+- [子模块: Cloudflare 公网入口与账号管理 (Cloudflare Ops)](./docs/子模块_Cloudflare公网入口与账号管理_cloudflare_ops.md)
 - [子模块: GPU 算力资源池控制器 (GPU Pool Controller)](./docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md)
 - [GitHub 分支保护与热点回归门禁](./docs/子模块_GitHub分支保护与热点回归门禁_branch_protection.md)
 - [子模块: QQCC 懒人 Bot (QQCC Lazy Bot)](./docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md)

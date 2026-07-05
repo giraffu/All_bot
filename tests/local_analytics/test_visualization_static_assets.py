@@ -10,8 +10,8 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     app_js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
 
     assert "/static/vendor/echarts.min.js" in html
-    assert "/static/styles.css?v=20260705-prompt-vectors-v1" in html
-    assert "/static/app.js?v=20260705-prompt-vectors-v1" in html
+    assert "/static/styles.css?v=20260705-auth-v1" in html
+    assert "/static/app.js?v=20260705-auth-v1" in html
     assert "spark-bars" not in html
     assert "hourly-bars" not in html
     assert "renderChart(id, option)" in app_js
@@ -42,6 +42,12 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
         assert removed not in html
         assert removed not in app_js
     assert 'value="centroid_bridge"' not in html
+    assert "renderTemplateCandidates(state.templates)" in app_js
+    assert "function renderTemplateCandidates(payload)" in app_js
+    assert "function tableRows(rows = [], renderer)" in app_js
+    assert "function renderPromptTaskTypeOptions()" in app_js
+    assert "state.promptTaskTypes = state.prompts?.distributions?.task_type || []" in app_js
+    assert "state.promptTaskTypes = generation.by_type || []" not in app_js
 
     for mount_id in [
         "creditFlowTrendChart",
@@ -75,7 +81,10 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
         assert f'id="{removed_user_mount}"' not in html
 
     assert 'id="userRechargeRates"' in html
+    assert 'id="userSummary" class="metric-grid user-metric-grid"' in html
+    assert 'id="userRechargeRates" class="metric-grid user-metric-grid user-rate-grid"' in html
     assert 'id="daysSelectControl"' in html
+    assert 'id="logoutButton"' in html
     assert 'id="userDateRangeControls"' in html
     assert 'id="userStartDateInput"' in html
     assert 'id="userEndDateInput"' in html
@@ -93,15 +102,23 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     assert 'id="userProfileSortSelect"' in html
     assert "人群透视分析" in html
     assert "人群下钻用户列表" in html
+    assert "人群规模趋势" in html
+    assert "核心规模趋势" not in html
     assert "renderUserGroups" in app_js
     assert "renderUserVisualCharts" in app_js
     assert "userCoreTrendChart" in app_js
+    assert '"从未活跃": false' in app_js
+    assert '"低信任": false' in app_js
+    assert 'name: "人群指标", scale: true' in app_js
     assert "userTrustCompositionChart" in app_js
     assert "userConversionFunnelChart" in app_js
     assert "userDailyActivityChart" in app_js
     assert "userRechargeRateChart" in app_js
     assert "selectUserGroup" in app_js
     assert "userPeriodParams" in app_js
+    assert "logoutLocalAnalytics" in app_js
+    assert "/api/auth/logout" in app_js
+    assert "/login?next=" in app_js
     assert "currentUserDateRange" in app_js
     assert "start_date" in app_js
     assert "userGroupSegmentSelect" not in app_js
@@ -115,7 +132,18 @@ def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     assert "/api/user-analytics/users" in app_js
     assert "visualizations" in app_js
     assert "low_trust_exempt_users" in app_js
+    assert "never_active_users" in app_js
+    assert "dormant_users" in app_js
     assert "recharge_rate_total_users" in app_js
     assert "avg_inviter_invitee_recharge_rate" in app_js
     assert "invitee_recharge_rate" in app_js
     assert "低信任免费层" in app_js
+
+
+def test_local_analytics_login_static_page_exists():
+    login_html = (STATIC_DIR / "login.html").read_text(encoding="utf-8")
+
+    assert "本地数据分析平台" in login_html
+    assert "/api/auth/login" in login_html
+    assert "autocomplete=\"username\"" in login_html
+    assert "autocomplete=\"current-password\"" in login_html

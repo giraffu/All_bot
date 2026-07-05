@@ -120,6 +120,7 @@ const mountSettings = (props = {}) =>
         ReloadOutlined: passthroughStub('ReloadOutlinedStub'),
         SaveOutlined: passthroughStub('SaveOutlinedStub'),
         DeleteOutlined: passthroughStub('DeleteOutlinedStub'),
+        LinkOutlined: passthroughStub('LinkOutlinedStub'),
         PlusOutlined: passthroughStub('PlusOutlinedStub'),
         SettingOutlined: passthroughStub('SettingOutlinedStub'),
       },
@@ -233,6 +234,10 @@ describe('QqccBotSettings', () => {
     expect(wrapper.find('[data-testid="non-video-prompt-undress"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="non-video-prompt-masturbation"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="non-video-prompt-face_swap"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="config-video-scene-model-0"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="config-video-scene-end-frame-0"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="config-draw-scene-model-0"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="config-draw-scene-postprocess-0"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('画质与时长')
   })
 
@@ -427,8 +432,10 @@ describe('QqccBotSettings', () => {
     const wrapper = mountSettings()
     await flushPromises()
 
-    await wrapper.get('[data-testid="config-video-scene-0"]').trigger('click')
-    expect(wrapper.get('[data-testid="scene-model-modal"]').text()).toContain('模型与首尾帧配置')
+    await wrapper.get('[data-testid="config-video-scene-model-0"]').trigger('click')
+    expect(wrapper.get('[data-testid="scene-model-modal"]').text()).toContain('模型配置')
+    expect(wrapper.find('[data-testid="scene-end-frame-select"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="scene-postprocess-select"]').exists()).toBe(false)
     await wrapper.get('[data-testid="scene-engine-select"]').setValue('wan22_video_v2')
     await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
     await wrapper.findAll('button').at(1)!.trigger('click')
@@ -443,7 +450,10 @@ describe('QqccBotSettings', () => {
     const wrapper = mountSettings()
     await flushPromises()
 
-    await wrapper.get('[data-testid="config-video-scene-0"]').trigger('click')
+    await wrapper.get('[data-testid="config-video-scene-end-frame-0"]').trigger('click')
+    expect(wrapper.get('[data-testid="scene-model-modal"]').text()).toContain('首尾帧配置')
+    expect(wrapper.find('[data-testid="scene-engine-select"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="scene-lora-select"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="scene-end-frame-select"]').exists()).toBe(true)
     await wrapper.get('[data-testid="scene-end-frame-select"]').setValue('soft_light')
     await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
@@ -458,9 +468,11 @@ describe('QqccBotSettings', () => {
     const wrapper = mountSettings()
     await flushPromises()
 
-    await wrapper.get('[data-testid="config-draw-scene-0"]').trigger('click')
+    await wrapper.get('[data-testid="config-draw-scene-postprocess-0"]').trigger('click')
 
-    expect(wrapper.get('[data-testid="scene-model-modal"]').text()).toContain('模型与后处理配置')
+    expect(wrapper.get('[data-testid="scene-model-modal"]').text()).toContain('后处理配置')
+    expect(wrapper.find('[data-testid="scene-engine-select"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="scene-lora-select"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="scene-end-frame-select"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="scene-postprocess-select"]').exists()).toBe(true)
   })
@@ -469,7 +481,7 @@ describe('QqccBotSettings', () => {
     const wrapper = mountSettings()
     await flushPromises()
 
-    await wrapper.get('[data-testid="config-video-scene-0"]').trigger('click')
+    await wrapper.get('[data-testid="config-video-scene-end-frame-0"]').trigger('click')
     await wrapper.get('[data-testid="scene-end-frame-select"]').setValue('soft_light')
     await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
     await wrapper.get('[data-testid="remove-draw-scene-2"]').trigger('click')
@@ -519,7 +531,7 @@ describe('QqccBotSettings', () => {
     const wrapper = mountSettings()
     await flushPromises()
 
-    await wrapper.get('[data-testid="config-draw-scene-0"]').trigger('click')
+    await wrapper.get('[data-testid="config-draw-scene-postprocess-0"]').trigger('click')
     expect(wrapper.get('[data-testid="scene-postprocess-select"]').text()).toContain('动漫后期')
     await wrapper.get('[data-testid="scene-postprocess-select"]').setValue('anime_finish')
     await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
@@ -572,7 +584,7 @@ describe('QqccBotSettings', () => {
     const wrapper = mountSettings()
     await flushPromises()
 
-    await wrapper.get('[data-testid="config-draw-scene-0"]').trigger('click')
+    await wrapper.get('[data-testid="config-draw-scene-postprocess-0"]').trigger('click')
     const optionValues = wrapper
       .get('[data-testid="scene-postprocess-select"]')
       .findAll('option')
@@ -635,7 +647,9 @@ describe('QqccBotSettings', () => {
     const wrapper = mountSettings()
     await flushPromises()
 
-    await wrapper.get('[data-testid="config-draw-scene-2"]').trigger('click')
+    await wrapper.get('[data-testid="config-draw-scene-model-2"]').trigger('click')
+    expect(wrapper.get('[data-testid="scene-model-modal"]').text()).toContain('模型配置')
+    expect(wrapper.find('[data-testid="scene-postprocess-select"]').exists()).toBe(false)
     await wrapper.get('[data-testid="scene-engine-select"]').setValue('free_edit')
     await wrapper.get('[data-testid="scene-lora-select"]').setValue('qwen/YARN_1.0.safetensors')
     await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')

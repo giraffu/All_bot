@@ -175,6 +175,7 @@ web-test.aivison.it.com
 ```
 
 当前 `/api/` upstream 为云测试 Tailscale Web API `http://100.82.124.91:8001`。
+测试静态站的 `index.html` 和 SPA fallback 必须设置重新校验缓存头，避免浏览器继续使用旧入口 HTML；哈希化的 `assets/*` 文件可按文件名缓存。
 
 发布静态前端：
 

@@ -264,6 +264,12 @@ button {
   cursor: pointer;
 }
 
+.secondary-button {
+  border-color: var(--line);
+  background: #ffffff;
+  color: var(--muted);
+}
+
 button:disabled {
   cursor: progress;
   opacity: 0.7;
@@ -319,6 +325,14 @@ main {
 .metric-grid.compact {
   grid-template-columns: repeat(5, minmax(0, 1fr));
   margin-bottom: 16px;
+}
+
+.metric-grid.user-metric-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.user-rate-grid {
+  margin: 2px 0 16px;
 }
 
 .metric-card {
@@ -1468,7 +1482,8 @@ tr:last-child td {
 
 @media (max-width: 1180px) {
   .metric-grid,
-  .metric-grid.compact {
+  .metric-grid.compact,
+  .metric-grid.user-metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1609,7 +1624,8 @@ tr:last-child td {
   }
 
   .metric-grid,
-  .metric-grid.compact {
+  .metric-grid.compact,
+  .metric-grid.user-metric-grid {
     grid-template-columns: 1fr;
   }
 

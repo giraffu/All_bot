@@ -4,6 +4,7 @@ import {
   GALLERY_EDIT_GROUP_TASK_TYPE,
   GALLERY_FREE_EDIT_V2_GROUP_TASK_TYPE,
   buildGalleryTaskTypeTabs,
+  filterVisibleGalleryTaskTypes,
   isGalleryGroupedTaskType,
 } from '@/utils/galleryTaskTypeFilters'
 
@@ -31,5 +32,15 @@ describe('galleryTaskTypeFilters', () => {
     ])
 
     expect(tabs.map(tab => tab.id)).toEqual(['ltx_video'])
+  })
+
+  it('hides disabled Web gallery task types from config consumers', () => {
+    const visibleTypes = filterVisibleGalleryTaskTypes([
+      { id: 'i2i_pro', name: '图片生成' },
+      { id: 'i2i_draw', name: '局部重绘' },
+      { id: 'edit', name: '自由P图' },
+    ])
+
+    expect(visibleTypes.map(type => type.id)).toEqual(['i2i_pro', 'edit'])
   })
 })

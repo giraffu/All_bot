@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import message from 'ant-design-vue/es/message'
 import {
   DeleteOutlined,
+  LinkOutlined,
   PlusOutlined,
   ReloadOutlined,
   SaveOutlined,
@@ -25,6 +26,7 @@ type DurationKey = '5s' | '8s' | '10s'
 type VideoSceneEngine = 'image_to_video' | 'wan22_video_v2'
 type DrawSceneEngine = 'free_edit' | 'free_edit_v2'
 type SceneConfigKind = 'video' | 'draw'
+type SceneConfigPanel = 'model' | 'reference'
 type PromptKey =
   | 'undress'
   | 'i2i_draw_quick_undress'
@@ -218,6 +220,7 @@ const drawSceneCounter = ref(0)
 const sceneConfig = reactive({
   open: false,
   kind: 'video' as SceneConfigKind,
+  panel: 'model' as SceneConfigPanel,
   index: -1,
   engine: 'image_to_video',
   lora_name: '',
@@ -391,9 +394,10 @@ const activePostprocessDrawOptions = computed(() => {
       !wouldCreateDrawPostprocessCycle(sourceScene.id, scene.id),
   )
 })
-const sceneModalTitle = computed(() =>
-  sceneConfig.kind === 'video' ? '模型与首尾帧配置' : '模型与后处理配置'
-)
+const sceneModalTitle = computed(() => {
+  if (sceneConfig.panel === 'model') return '模型配置'
+  return sceneConfig.kind === 'video' ? '首尾帧配置' : '后处理配置'
+})
 
 const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
   const merged = emptyConfig()
@@ -600,10 +604,15 @@ const applyResponse = (payload: QqccBotConfigResponse) => {
   updatedAt.value = payload.updated_at || null
 }
 
-const openSceneConfig = (kind: SceneConfigKind, index: number) => {
+const openSceneConfig = (
+  kind: SceneConfigKind,
+  index: number,
+  panel: SceneConfigPanel,
+) => {
   const scene = kind === 'video' ? config.video_scenes[index] : config.draw_scenes[index]
   if (!scene) return
   sceneConfig.kind = kind
+  sceneConfig.panel = panel
   sceneConfig.index = index
   sceneConfig.engine = scene.engine
   sceneConfig.lora_name = scene.lora_name || ''
@@ -620,6 +629,7 @@ const openSceneConfig = (kind: SceneConfigKind, index: number) => {
 
 const closeSceneConfig = () => {
   sceneConfig.open = false
+  sceneConfig.panel = 'model'
   sceneConfig.index = -1
   sceneConfig.end_frame_draw_scene_id = ''
   sceneConfig.postprocess_draw_scene_id = ''
@@ -636,28 +646,36 @@ const confirmSceneConfig = () => {
   if (sceneConfig.kind === 'video') {
     const scene = config.video_scenes[sceneConfig.index]
     if (!scene) return
-    const engine = normalizeVideoEngine(sceneConfig.engine)
-    scene.engine = engine
-    scene.lora_name = normalizeLoraName(sceneConfig.lora_name, { kind: 'video', engine })
-    scene.end_frame_draw_scene_id = normalizeEndFrameDrawSceneId(sceneConfig.end_frame_draw_scene_id)
+    if (sceneConfig.panel === 'model') {
+      const engine = normalizeVideoEngine(sceneConfig.engine)
+      scene.engine = engine
+      scene.lora_name = normalizeLoraName(sceneConfig.lora_name, { kind: 'video', engine })
+    } else {
+      scene.end_frame_draw_scene_id = normalizeEndFrameDrawSceneId(
+        sceneConfig.end_frame_draw_scene_id,
+      )
+    }
   } else {
     const scene = config.draw_scenes[sceneConfig.index]
     if (!scene) return
-    const engine = normalizeDrawEngine(sceneConfig.engine)
-    const postprocessDrawSceneId = normalizePostprocessDrawSceneId(
-      sceneConfig.postprocess_draw_scene_id,
-      sceneConfig.index,
-    )
-    if (
-      postprocessDrawSceneId &&
-      wouldCreateDrawPostprocessCycle(scene.id, postprocessDrawSceneId)
-    ) {
-      message.error('AI绘图后处理配置不能形成循环')
-      return
+    if (sceneConfig.panel === 'model') {
+      const engine = normalizeDrawEngine(sceneConfig.engine)
+      scene.engine = engine
+      scene.lora_name = normalizeLoraName(sceneConfig.lora_name, { kind: 'draw', engine })
+    } else {
+      const postprocessDrawSceneId = normalizePostprocessDrawSceneId(
+        sceneConfig.postprocess_draw_scene_id,
+        sceneConfig.index,
+      )
+      if (
+        postprocessDrawSceneId &&
+        wouldCreateDrawPostprocessCycle(scene.id, postprocessDrawSceneId)
+      ) {
+        message.error('AI绘图后处理配置不能形成循环')
+        return
+      }
+      scene.postprocess_draw_scene_id = postprocessDrawSceneId
     }
-    scene.engine = engine
-    scene.lora_name = normalizeLoraName(sceneConfig.lora_name, { kind: 'draw', engine })
-    scene.postprocess_draw_scene_id = postprocessDrawSceneId
   }
   closeSceneConfig()
 }
@@ -775,7 +793,7 @@ onMounted(() => {
       <div>
         <div>
           <div
-            class="hidden grid-cols-[180px_minmax(0,1fr)_96px_92px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid"
+            class="hidden grid-cols-[180px_minmax(0,1fr)_96px_132px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid"
           >
             <span>按钮名称</span>
             <span>提示词</span>
@@ -785,7 +803,7 @@ onMounted(() => {
           <div
             v-for="(scene, index) in config.video_scenes"
             :key="scene.id"
-            class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[180px_minmax(0,1fr)_96px_92px]"
+            class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[180px_minmax(0,1fr)_96px_132px]"
           >
             <a-input
               v-model:value="scene.name"
@@ -810,16 +828,28 @@ onMounted(() => {
             <div class="scene-action-cell">
               <a-button
                 class="scene-icon-button"
-                :data-testid="`config-video-scene-${index}`"
+                :data-testid="`config-video-scene-model-${index}`"
                 title="配置模型"
-                @click="openSceneConfig('video', index)"
+                aria-label="配置模型"
+                @click="openSceneConfig('video', index, 'model')"
               >
                 <template #icon><SettingOutlined /></template>
+              </a-button>
+              <a-button
+                class="scene-icon-button"
+                :data-testid="`config-video-scene-end-frame-${index}`"
+                title="配置首尾帧"
+                aria-label="配置首尾帧"
+                @click="openSceneConfig('video', index, 'reference')"
+              >
+                <template #icon><LinkOutlined /></template>
               </a-button>
               <a-button
                 danger
                 class="scene-icon-button"
                 :data-testid="`remove-video-scene-${index}`"
+                title="删除场景"
+                aria-label="删除场景"
                 @click="removeVideoScene(index)"
               >
                 <template #icon><DeleteOutlined /></template>
@@ -844,7 +874,7 @@ onMounted(() => {
 
       <div>
         <div
-          class="hidden grid-cols-[180px_minmax(0,1fr)_92px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid"
+          class="hidden grid-cols-[180px_minmax(0,1fr)_132px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid"
         >
           <span>按钮名称</span>
           <span>提示词</span>
@@ -853,7 +883,7 @@ onMounted(() => {
         <div
           v-for="(scene, index) in config.draw_scenes"
           :key="scene.id"
-          class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[180px_minmax(0,1fr)_92px]"
+          class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[180px_minmax(0,1fr)_132px]"
         >
           <a-input
             v-model:value="scene.name"
@@ -867,16 +897,28 @@ onMounted(() => {
           <div class="scene-action-cell">
             <a-button
               class="scene-icon-button"
-              :data-testid="`config-draw-scene-${index}`"
+              :data-testid="`config-draw-scene-model-${index}`"
               title="配置模型"
-              @click="openSceneConfig('draw', index)"
+              aria-label="配置模型"
+              @click="openSceneConfig('draw', index, 'model')"
             >
               <template #icon><SettingOutlined /></template>
+            </a-button>
+            <a-button
+              class="scene-icon-button"
+              :data-testid="`config-draw-scene-postprocess-${index}`"
+              title="配置后处理"
+              aria-label="配置后处理"
+              @click="openSceneConfig('draw', index, 'reference')"
+            >
+              <template #icon><LinkOutlined /></template>
             </a-button>
             <a-button
               danger
               class="scene-icon-button"
               :data-testid="`remove-draw-scene-${index}`"
+              title="删除场景"
+              aria-label="删除场景"
               @click="removeDrawScene(index)"
             >
               <template #icon><DeleteOutlined /></template>
@@ -912,7 +954,7 @@ onMounted(() => {
       @cancel="closeSceneConfig"
     >
       <a-form layout="vertical" class="scene-config-form">
-        <a-form-item label="底层模型" class="mb-4">
+        <a-form-item v-if="sceneConfig.panel === 'model'" label="底层模型" class="mb-4">
           <a-select
             v-model:value="sceneConfig.engine"
             data-testid="scene-engine-select"
@@ -929,7 +971,7 @@ onMounted(() => {
             </a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item label="附加模型" class="mb-4">
+        <a-form-item v-if="sceneConfig.panel === 'model'" label="附加模型" class="mb-4">
           <a-select
             v-model:value="sceneConfig.lora_name"
             data-testid="scene-lora-select"
@@ -946,7 +988,11 @@ onMounted(() => {
             </a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item v-if="sceneConfig.kind === 'video'" label="尾帧来源" class="mb-4">
+        <a-form-item
+          v-if="sceneConfig.panel === 'reference' && sceneConfig.kind === 'video'"
+          label="尾帧来源"
+          class="mb-4"
+        >
           <a-select
             v-model:value="sceneConfig.end_frame_draw_scene_id"
             data-testid="scene-end-frame-select"
@@ -963,7 +1009,11 @@ onMounted(() => {
             </a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item v-if="sceneConfig.kind === 'draw'" label="绘图后处理" class="mb-4">
+        <a-form-item
+          v-if="sceneConfig.panel === 'reference' && sceneConfig.kind === 'draw'"
+          label="绘图后处理"
+          class="mb-4"
+        >
           <a-select
             v-model:value="sceneConfig.postprocess_draw_scene_id"
             data-testid="scene-postprocess-select"

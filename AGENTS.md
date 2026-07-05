@@ -33,6 +33,7 @@
 | **Telegram 交互与文件** | `allbot-tg-fsm` | PTB 状态机、多语言(i18n)精准路由、菜单互斥防死锁、大文件 Monkey Patch |
 | **QQCC 懒人 Bot** | `allbot-qqcc-lazy-bot` | 独立 QQCC polling 服务、简化菜单、quick image/video FSM、`bot:qqcc` 任务来源和双 polling 红线 |
 | **部署、容器与容灾排障** | `allbot-ops-deployment` | Docker Compose 编排、Alembic 迁移、测试优先发布、云正式/云测试控制面、本地正式灾备切换、MinIO/网络故障恢复 |
+| **Cloudflare 公网入口** | `allbot-cloudflare-ops` | Cloudflare API Token、DNS、Tunnel、Access、Pages/R2、公网管理域名和本地分析平台公网访问 |
 | **局域网 LAN AIO 管理** | `allbot-lan-aio-operator` | 读取 fleet state 与 slot catalog，按单卡 helper 流程管理 LAN AIO 当前态、缓存、候选切换、takeover/recover/restart |
 | **文档维护与知识库同步** | `allbot-kb-auto-updater` | 智能监控代码变更影响，自动维护 AGENTS.md、`.codex/skills` 和 /docs/ 的逻辑一致性 |
 | **Bug 诊断闭环** | `allbot-diagnosing-bugs` | 建立可复现反馈环、排序假设、精准插桩、修复回归与收尾清理 |
@@ -57,6 +58,7 @@
 - **云测试控制面部署**：`/docs/子模块_云测试控制面部署_cloud_test_control_plane.md`（DigitalOcean 云测试控制面 compose、部署脚本、端口转发与验证命令）
 - **QQCC 懒人 Bot**：`/docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md`（独立简化 Telegram Bot、部署、token 与任务恢复归属）
 - **本地正式灾备切换**：`/docs/子模块_本地正式灾备切换_local_prod_fallback.md`（云正式整体故障时临时切回本地主服务器的操作、验证与回切）
+- **Cloudflare 公网入口与账号管理**：`/docs/子模块_Cloudflare公网入口与账号管理_cloudflare_ops.md`（Cloudflare Token、DNS、Tunnel、Access、公网管理入口与本地分析平台公网访问）
 - **生成任务全链路**：`/docs/子模块_生成任务全链路_task_full_chain.md`（前端提交、task core、执行面、worker、结果回流、扩展与排障）
 - **前端预览截图**：`/docs/子模块_前端浏览器预览截图_frontend_browser_preview.md`
 - **业务领域设计**：`/docs/business/`（包含生成、商业化、社区、用户体系的深度文档）

@@ -5,6 +5,8 @@ export const GALLERY_FREE_EDIT_V2_GROUP_TASK_TYPE = 'free_edit_v2_group'
 export const GALLERY_IMG2VIDEO_GROUP_TASK_TYPE = 'img2video_group'
 export const GALLERY_LORA_MODEL_NONE = '__none__'
 
+const WEB_DISABLED_GALLERY_TASK_TYPES = new Set(['i2i_draw'])
+
 const GALLERY_GROUPED_TASK_TYPE_ALIASES: Record<string, string> = {
   edit: GALLERY_EDIT_GROUP_TASK_TYPE,
   img2img_lora: GALLERY_EDIT_GROUP_TASK_TYPE,
@@ -22,6 +24,14 @@ export function isGalleryGroupedTaskType(taskType: string): boolean {
     || taskType === GALLERY_FREE_EDIT_V2_GROUP_TASK_TYPE
     || taskType === GALLERY_IMG2VIDEO_GROUP_TASK_TYPE
   )
+}
+
+export function filterVisibleGalleryTaskTypes(
+  allowedTypes: GalleryTaskTypeOption[]
+): GalleryTaskTypeOption[] {
+  return allowedTypes.filter((taskType) => (
+    Boolean(taskType?.id) && !WEB_DISABLED_GALLERY_TASK_TYPES.has(taskType.id)
+  ))
 }
 
 export function buildGalleryTaskTypeTabs(

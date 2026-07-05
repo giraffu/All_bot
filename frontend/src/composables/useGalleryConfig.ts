@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import api from '@/api'
+import { filterVisibleGalleryTaskTypes } from '@/utils/galleryTaskTypeFilters'
 
 export interface GalleryTaskTypeOption {
   id: string
@@ -24,7 +25,7 @@ export function useGalleryConfig(options: UseGalleryConfigOptions = {}) {
     configPromise = (async () => {
       try {
         const res = await api.get('/gallery/config')
-        allowedTypes.value = res.data.allowed_types || []
+        allowedTypes.value = filterVisibleGalleryTaskTypes(res.data.allowed_types || [])
 
         if (options.includeLoraModels) {
           videoLoraModels.value = (res.data.lora_models || []).filter(

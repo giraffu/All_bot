@@ -20,6 +20,9 @@ create table if not exists {SNAPSHOT_TABLE} (
     total_users bigint not null,
     active_users_7d bigint not null,
     active_users_30d bigint not null,
+    never_active_users bigint not null default 0,
+    dormant_users_7d bigint not null default 0,
+    dormant_users_30d bigint not null default 0,
     channel_members bigint not null,
     generation_users bigint not null,
     real_payers bigint not null,
@@ -30,6 +33,15 @@ create table if not exists {SNAPSHOT_TABLE} (
 
 create index if not exists idx_user_profile_daily_snapshots_captured_at
 on {SNAPSHOT_TABLE} (captured_at desc);
+
+alter table {SNAPSHOT_TABLE}
+    add column if not exists never_active_users bigint not null default 0;
+
+alter table {SNAPSHOT_TABLE}
+    add column if not exists dormant_users_7d bigint not null default 0;
+
+alter table {SNAPSHOT_TABLE}
+    add column if not exists dormant_users_30d bigint not null default 0;
 """
 
 SNAPSHOT_UPSERT_SQL = f"""
@@ -83,6 +95,12 @@ history_active_30d as (
       and history.created_at >= snapshot_bounds.start_30d
       and history.created_at < snapshot_bounds.end_at
 ),
+history_ever_active as (
+    select distinct history.user_id
+    from history, snapshot_bounds
+    where history.user_id is not null
+      and history.created_at < snapshot_bounds.end_at
+),
 classified_users as (
     select
         users.id,
@@ -95,7 +113,8 @@ classified_users as (
         real_success_payers.user_id is not null as is_real_payer,
         high_quality_referral_exempt_users.user_id is not null as has_low_trust_exemption,
         history_active_7d.user_id is not null as has_history_7d,
-        history_active_30d.user_id is not null as has_history_30d
+        history_active_30d.user_id is not null as has_history_30d,
+        history_ever_active.user_id is not null as has_history_ever
     from users
     cross join snapshot_bounds
     left join successful_order_users on successful_order_users.user_id = users.id
@@ -103,6 +122,7 @@ classified_users as (
     left join high_quality_referral_exempt_users on high_quality_referral_exempt_users.user_id = users.id
     left join history_active_7d on history_active_7d.user_id = users.id
     left join history_active_30d on history_active_30d.user_id = users.id
+    left join history_ever_active on history_ever_active.user_id = users.id
     where users.created_at < snapshot_bounds.end_at
 )
 insert into {SNAPSHOT_TABLE} (
@@ -111,6 +131,9 @@ insert into {SNAPSHOT_TABLE} (
     total_users,
     active_users_7d,
     active_users_30d,
+    never_active_users,
+    dormant_users_7d,
+    dormant_users_30d,
     channel_members,
     generation_users,
     real_payers,
@@ -130,6 +153,33 @@ select
         where (last_activity >= snapshot_bounds.start_30d and last_activity < snapshot_bounds.end_at)
            or has_history_30d is true
     )::bigint as active_users_30d,
+    count(*) filter (
+        where last_activity is null
+          and generation_count = 0
+          and has_history_ever is false
+    )::bigint as never_active_users,
+    count(*) filter (
+        where (
+            (last_activity is not null and last_activity < snapshot_bounds.end_at)
+            or generation_count > 0
+            or has_history_ever is true
+        )
+          and not (
+              (last_activity >= snapshot_bounds.start_7d and last_activity < snapshot_bounds.end_at)
+              or has_history_7d is true
+          )
+    )::bigint as dormant_users_7d,
+    count(*) filter (
+        where (
+            (last_activity is not null and last_activity < snapshot_bounds.end_at)
+            or generation_count > 0
+            or has_history_ever is true
+        )
+          and not (
+              (last_activity >= snapshot_bounds.start_30d and last_activity < snapshot_bounds.end_at)
+              or has_history_30d is true
+          )
+    )::bigint as dormant_users_30d,
     count(*) filter (where is_channel_member is true)::bigint as channel_members,
     count(*) filter (where generation_count > 0)::bigint as generation_users,
     count(*) filter (where is_real_payer is true)::bigint as real_payers,
@@ -151,6 +201,9 @@ on conflict (snapshot_date) do update set
     total_users = excluded.total_users,
     active_users_7d = excluded.active_users_7d,
     active_users_30d = excluded.active_users_30d,
+    never_active_users = excluded.never_active_users,
+    dormant_users_7d = excluded.dormant_users_7d,
+    dormant_users_30d = excluded.dormant_users_30d,
     channel_members = excluded.channel_members,
     generation_users = excluded.generation_users,
     real_payers = excluded.real_payers,
@@ -255,8 +308,26 @@ async def get_user_profile_snapshot_rows(
     if not table.get("table_name"):
         return []
 
-    rows = await fetch(
+    optional_columns = ["never_active_users", "dormant_users_7d", "dormant_users_30d"]
+    column_rows = await fetch(
         """
+        select column_name
+        from information_schema.columns
+        where table_schema = 'public'
+          and table_name = 'analytics_user_profile_daily_snapshots'
+          and column_name = any($1::text[])
+        """,
+        optional_columns,
+    )
+    existing_columns = {dict(row).get("column_name") for row in column_rows}
+
+    def column_expr(column: str) -> str:
+        if column in existing_columns:
+            return column
+        return f"0::bigint as {column}"
+
+    rows = await fetch(
+        f"""
         with bounds as (
             select
                 coalesce($2::date, current_date - (($1::int - 1) * interval '1 day'))::date as start_date,
@@ -268,6 +339,9 @@ async def get_user_profile_snapshot_rows(
             total_users,
             active_users_7d,
             active_users_30d,
+            {column_expr("never_active_users")},
+            {column_expr("dormant_users_7d")},
+            {column_expr("dormant_users_30d")},
             channel_members,
             generation_users,
             real_payers,
@@ -296,14 +370,34 @@ def build_user_profile_visualizations(
     total_users = _number(summary, "total_users")
     previous_snapshot = snapshots[-2] if len(snapshots) >= 2 else None
     active_snapshot_key = "active_users_7d" if days <= 7 else "active_users_30d"
+    dormant_snapshot_key = "dormant_users_7d" if days <= 7 else "dormant_users_30d"
     low_trust_users = _number(summary, "low_trust_free_tier_users")
     exempt_users = _number(summary, "low_trust_exempt_users")
     standard_users = max(total_users - low_trust_users - exempt_users, 0)
 
-    snapshot_by_day = {row.get("day"): dict(row) for row in snapshots}
-    trend_by_day = {row.get("day"): dict(row) for row in daily}
-    for day, row in snapshot_by_day.items():
-        trend_by_day.setdefault(day, {}).update(row)
+    snapshots_sorted = sorted((dict(row) for row in snapshots if row.get("day")), key=lambda row: row["day"])
+    first_snapshot = snapshots_sorted[0] if snapshots_sorted else None
+    trend_by_day: dict[str, dict[str, Any]] = {}
+    latest_snapshot: dict[str, Any] | None = None
+    snapshot_index = 0
+    for daily_row in sorted((dict(row) for row in daily if row.get("day")), key=lambda row: row["day"]):
+        day = daily_row["day"]
+        while snapshot_index < len(snapshots_sorted) and snapshots_sorted[snapshot_index]["day"] <= day:
+            latest_snapshot = snapshots_sorted[snapshot_index]
+            snapshot_index += 1
+        row = dict(daily_row)
+        fill_snapshot = latest_snapshot or first_snapshot
+        if fill_snapshot:
+            row.update(fill_snapshot)
+            row["day"] = day
+        trend_by_day[day] = row
+    for snapshot_row in snapshots_sorted:
+        trend_by_day.setdefault(snapshot_row["day"], dict(snapshot_row))
+    for row in trend_by_day.values():
+        if row.get(active_snapshot_key) is not None:
+            row["period_active_users"] = row.get(active_snapshot_key)
+        if row.get(dormant_snapshot_key) is not None:
+            row["dormant_users"] = row.get(dormant_snapshot_key)
     trend = [trend_by_day[day] for day in sorted(day for day in trend_by_day if day)]
 
     return {
@@ -322,6 +416,22 @@ def build_user_profile_visualizations(
                 summary=summary,
                 total_users=total_users,
                 snapshot_key=active_snapshot_key,
+                previous_snapshot=previous_snapshot,
+            ),
+            _metric(
+                key="never_active_users",
+                label="从未活跃用户数",
+                summary=summary,
+                total_users=total_users,
+                snapshot_key="never_active_users",
+                previous_snapshot=previous_snapshot,
+            ),
+            _metric(
+                key="dormant_users",
+                label="沉睡用户数",
+                summary=summary,
+                total_users=total_users,
+                snapshot_key=dormant_snapshot_key,
                 previous_snapshot=previous_snapshot,
             ),
             _metric(
@@ -424,4 +534,3 @@ def database_url_from_env() -> str:
     if dsn.startswith("postgres://"):
         dsn = "postgresql://" + dsn.removeprefix("postgres://")
     return dsn
-

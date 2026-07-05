@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import configparser
 import fcntl
 import functools
@@ -23,6 +24,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
+from .auth import install_auth
 from .prompt_mart import PROMPT_MART_READY_SQL, PROMPT_MART_STATUS_SQL, PROMPT_NORMALIZATION_VERSION
 from .prompt_vectors import (
     DEFAULT_LM_STUDIO_BASE_URL,
@@ -181,6 +183,7 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title="AllBot Local Analytics", version="0.1.0", lifespan=lifespan)
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+install_auth(app, static_dir=STATIC_DIR)
 
 
 def _database_url() -> str:
@@ -212,10 +215,15 @@ def _masked_dsn() -> str | None:
 async def _pool() -> asyncpg.Pool:
     pool = getattr(app.state, "pool", None)
     if pool is None:
+        try:
+            max_size = int(os.getenv("LOCAL_ANALYTICS_DB_POOL_MAX_SIZE", "5"))
+        except ValueError:
+            max_size = 5
+        max_size = max(1, max_size)
         app.state.pool = await asyncpg.create_pool(
             dsn=_database_url(),
             min_size=1,
-            max_size=5,
+            max_size=max_size,
             command_timeout=60,
         )
         pool = app.state.pool
@@ -238,6 +246,16 @@ async def _fetch(query: str, *args: Any) -> list[asyncpg.Record]:
 async def _fetchrow(query: str, *args: Any) -> asyncpg.Record | None:
     rows = await _fetch(query, *args)
     return rows[0] if rows else None
+
+
+async def _gather_limited(limit: int, *coroutines: Any) -> tuple[Any, ...]:
+    semaphore = asyncio.Semaphore(max(1, limit))
+
+    async def run(coroutine: Any) -> Any:
+        async with semaphore:
+            return await coroutine
+
+    return await asyncio.gather(*(run(coroutine) for coroutine in coroutines))
 
 
 def _json_value(value: Any) -> Any:
@@ -933,6 +951,11 @@ async def user_analytics(
               and history.created_at >= bounds.start_at
               and history.created_at < bounds.end_at
         ),
+        ever_generation_users as (
+            select distinct history.user_id
+            from history
+            where history.user_id is not null
+        ),
         low_trust_free_tier_users as (
             select users.*
             from users
@@ -1021,6 +1044,22 @@ async def user_analytics(
                 where (last_activity >= bounds.start_at and last_activity < bounds.end_at)
                    or period_generation_users.user_id is not null
             )::bigint as active_users,
+            count(*) filter (
+                where last_activity is null
+                  and coalesce(generation_count, 0) = 0
+                  and ever_generation_users.user_id is null
+            )::bigint as never_active_users,
+            count(*) filter (
+                where (
+                    last_activity is not null
+                    or coalesce(generation_count, 0) > 0
+                    or ever_generation_users.user_id is not null
+                )
+                  and not (
+                      (last_activity >= bounds.start_at and last_activity < bounds.end_at)
+                      or period_generation_users.user_id is not null
+                  )
+            )::bigint as dormant_users,
             count(*) filter (where is_channel_member is true)::bigint as channel_members,
             count(*) filter (where hashed_password is not null)::bigint as password_users,
             count(*) filter (where is_submission_banned is true)::bigint as submission_banned_users,
@@ -1192,6 +1231,7 @@ async def user_analytics(
         from users
         cross join bounds
         left join period_generation_users on period_generation_users.user_id = users.id
+        left join ever_generation_users on ever_generation_users.user_id = users.id
         """,
         query_days,
         RMB_TO_USDT,
@@ -1869,7 +1909,7 @@ async def credit_flow_analytics(
     query_days = _query_days(days)
     chart_days = _chart_days(days)
     limit = _clamp(limit, 1, 50)
-    summary_row = await _fetchrow(
+    summary_task = _fetchrow(
         f"""
         with bounds as (
             select now() - ($1::int * interval '1 day') as since
@@ -1934,7 +1974,7 @@ async def credit_flow_analytics(
         query_days,
         GENERATION_OPERATION_TYPES,
     )
-    daily = await _fetch(
+    daily_task = _fetch(
         f"""
         with days as (
             select generate_series(
@@ -1988,7 +2028,7 @@ async def credit_flow_analytics(
         chart_days,
         GENERATION_OPERATION_TYPES,
     )
-    daily_categories = await _fetch(
+    daily_categories_task = _fetch(
         f"""
         with days as (
             select generate_series(
@@ -2111,7 +2151,7 @@ async def credit_flow_analytics(
         chart_days,
         GENERATION_OPERATION_TYPES,
     )
-    categories = await _fetch(
+    categories_task = _fetch(
         f"""
         with category_order(category, direction, sort_order) as (
             values
@@ -2222,7 +2262,7 @@ async def credit_flow_analytics(
         query_days,
         GENERATION_OPERATION_TYPES,
     )
-    composition_identity = await _fetch(
+    composition_identity_task = _fetch(
         """
         with bounds as (select now() - ($1::int * interval '1 day') as since),
         income_logs as (
@@ -2245,7 +2285,7 @@ async def credit_flow_analytics(
         """,
         query_days,
     )
-    composition_group = await _fetch(
+    composition_group_task = _fetch(
         """
         with bounds as (select now() - ($1::int * interval '1 day') as since),
         income_logs as (
@@ -2268,7 +2308,7 @@ async def credit_flow_analytics(
         """,
         query_days,
     )
-    composition_channel = await _fetch(
+    composition_channel_task = _fetch(
         """
         with bounds as (select now() - ($1::int * interval '1 day') as since),
         income_logs as (
@@ -2290,7 +2330,7 @@ async def credit_flow_analytics(
         """,
         query_days,
     )
-    composition_payer = await _fetch(
+    composition_payer_task = _fetch(
         """
         with bounds as (select now() - ($1::int * interval '1 day') as since),
         paid_users as (
@@ -2319,7 +2359,7 @@ async def credit_flow_analytics(
         """,
         query_days,
     )
-    health_row = await _fetchrow(
+    health_task = _fetchrow(
         f"""
         with bounds as (
             select now() - ($1::int * interval '1 day') as since
@@ -2373,7 +2413,7 @@ async def credit_flow_analytics(
         query_days,
         GENERATION_OPERATION_TYPES,
     )
-    risk_users = await _fetch(
+    risk_users_task = _fetch(
         f"""
         with bounds as (
             select now() - ($1::int * interval '1 day') as since
@@ -2478,6 +2518,30 @@ async def credit_flow_analytics(
         query_days,
         GENERATION_OPERATION_TYPES,
         limit,
+    )
+    (
+        summary_row,
+        daily,
+        daily_categories,
+        categories,
+        composition_identity,
+        composition_group,
+        composition_channel,
+        composition_payer,
+        health_row,
+        risk_users,
+    ) = await _gather_limited(
+        2,
+        summary_task,
+        daily_task,
+        daily_categories_task,
+        categories_task,
+        composition_identity_task,
+        composition_group_task,
+        composition_channel_task,
+        composition_payer_task,
+        health_task,
+        risk_users_task,
     )
     summary = _row(summary_row)
     health = _row(health_row)
@@ -3331,7 +3395,7 @@ async def generation(
     query_days = _query_days(days)
     chart_days = _chart_days(days)
     limit = _clamp(limit, 1, 50)
-    summary = await _fetchrow(
+    summary_task = _fetchrow(
         """
         with bounds as (select now() - ($1::int * interval '1 day') as since),
         recent_history as (
@@ -3435,7 +3499,7 @@ async def generation(
         query_days,
         GENERATION_OPERATION_TYPES,
     )
-    daily = await _fetch(
+    daily_task = _fetch(
         """
         with days as (
             select generate_series(
@@ -3510,7 +3574,7 @@ async def generation(
         chart_days,
         GENERATION_OPERATION_TYPES,
     )
-    by_type = await _fetch(
+    by_type_task = _fetch(
         """
         with bounds as (select now() - ($1::int * interval '1 day') as since),
         h_type as (
@@ -3604,7 +3668,7 @@ async def generation(
         query_days,
         GENERATION_OPERATION_TYPES,
     )
-    credits = await _fetch(
+    credits_task = _fetch(
         """
         with bounds as (select now() - ($1::int * interval '1 day') as since)
         select
@@ -3624,7 +3688,7 @@ async def generation(
         query_days,
         GENERATION_OPERATION_TYPES,
     )
-    hourly = await _fetch(
+    hourly_task = _fetch(
         """
         with bounds as (select now() - ($1::int * interval '1 day') as since)
         select
@@ -3639,7 +3703,7 @@ async def generation(
         """,
         query_days,
     )
-    source_mix = await _fetch(
+    source_mix_task = _fetch(
         """
         with bounds as (select now() - ($1::int * interval '1 day') as since)
         select
@@ -3659,7 +3723,7 @@ async def generation(
         """,
         query_days,
     )
-    quality_segments = await _fetch(
+    quality_segments_task = _fetch(
         """
         with bounds as (select now() - ($1::int * interval '1 day') as since),
         recent_history as (
@@ -3698,7 +3762,7 @@ async def generation(
         """,
         query_days,
     )
-    generation_leaderboard = await _fetch(
+    generation_leaderboard_task = _fetch(
         """
         with bounds as (select now() - ($1::int * interval '1 day') as since),
         user_generation as (
@@ -3734,7 +3798,7 @@ async def generation(
         query_days,
         limit,
     )
-    credit_leaderboard = await _fetch(
+    credit_leaderboard_task = _fetch(
         """
         with bounds as (select now() - ($1::int * interval '1 day') as since),
         user_credits as (
@@ -3770,7 +3834,7 @@ async def generation(
         GENERATION_OPERATION_TYPES,
         limit,
     )
-    gallery_leaderboard = await _fetch(
+    gallery_leaderboard_task = _fetch(
         """
         with bounds as (select now() - ($1::int * interval '1 day') as since),
         user_gallery as (
@@ -3810,7 +3874,7 @@ async def generation(
         query_days,
         limit,
     )
-    recent_high_signal = await _fetch(
+    recent_high_signal_task = _fetch(
         """
         with bounds as (select now() - ($1::int * interval '1 day') as since),
         recent as (
@@ -3868,6 +3932,32 @@ async def generation(
         """,
         query_days,
         limit,
+    )
+    (
+        summary,
+        daily,
+        by_type,
+        credits,
+        hourly,
+        source_mix,
+        quality_segments,
+        generation_leaderboard,
+        credit_leaderboard,
+        gallery_leaderboard,
+        recent_high_signal,
+    ) = await _gather_limited(
+        4,
+        summary_task,
+        daily_task,
+        by_type_task,
+        credits_task,
+        hourly_task,
+        source_mix_task,
+        quality_segments_task,
+        generation_leaderboard_task,
+        credit_leaderboard_task,
+        gallery_leaderboard_task,
+        recent_high_signal_task,
     )
     return {
         "days": days,
@@ -4101,9 +4191,8 @@ async def prompts(
         min_users,
         min_uses,
     )
-    summary = _row(
-        await _fetchrow(
-            f"""
+    summary_task = _fetchrow(
+        f"""
             {groups_cte}
             select
                 'prompt_summary' as row_type,
@@ -4115,13 +4204,12 @@ async def prompts(
                 coalesce(percentile_cont(0.5) within group (order by char_count), 0)::numeric as median_chars,
                 (select derived_records_excluded from excluded_counts) as derived_records_excluded,
                 (select builtin_template_records_excluded from excluded_counts) as builtin_template_records_excluded,
-                count(*) filter (where value_score >= 80 and users > 1)::bigint as high_value_prompts
+            count(*) filter (where value_score >= 80 and users > 1)::bigint as high_value_prompts
             from prompt_groups
             """,
-            *common_args,
-        )
+        *common_args,
     )
-    group_records = await _fetch(
+    group_records_task = _fetch(
         f"""
         {groups_cte}
         select
@@ -4169,7 +4257,7 @@ async def prompts(
         limit,
         offset,
     )
-    length_distribution = await _fetch(
+    length_distribution_task = _fetch(
         f"""
         {groups_cte}
         select
@@ -4199,7 +4287,7 @@ async def prompts(
         """,
         *common_args,
     )
-    task_type_distribution = await _fetch(
+    task_type_distribution_task = _fetch(
         f"""
         {groups_cte}
         select
@@ -4213,7 +4301,7 @@ async def prompts(
         """,
         *common_args,
     )
-    reuse_distribution = await _fetch(
+    reuse_distribution_task = _fetch(
         f"""
         {groups_cte}
         select
@@ -4239,7 +4327,7 @@ async def prompts(
         """,
         *common_args,
     )
-    template_scope_distribution = await _fetch(
+    template_scope_distribution_task = _fetch(
         f"""
         {groups_cte}
         select
@@ -4268,7 +4356,7 @@ async def prompts(
         *common_args,
     )
     sample_limit = max(limit * 100, 20000)
-    rows = await _fetch(
+    rows_task = _fetch(
         """
         with bounds as (select now() - ($1::int * interval '1 day') as since),
         recent_history as (
@@ -4350,6 +4438,25 @@ async def prompts(
         task_filter,
         template_scope,
     )
+    (
+        summary_record,
+        group_records,
+        length_distribution,
+        task_type_distribution,
+        reuse_distribution,
+        template_scope_distribution,
+        rows,
+    ) = await _gather_limited(
+        4,
+        summary_task,
+        group_records_task,
+        length_distribution_task,
+        task_type_distribution_task,
+        reuse_distribution_task,
+        template_scope_distribution_task,
+        rows_task,
+    )
+    summary = _row(summary_record)
     candidates = []
     for record in rows:
         item = _row(record)
@@ -4541,9 +4648,8 @@ async def prompt_slim(
         min_users,
         min_uses,
     )
-    summary = _row(
-        await _fetchrow(
-            f"""
+    summary_task = _fetchrow(
+        f"""
             {filtered_cte}
             select
                 'slim_summary' as row_type,
@@ -4564,13 +4670,12 @@ async def prompt_slim(
                 coalesce(sum(gallery_dislikes), 0)::bigint as gallery_dislikes,
                 coalesce(sum(gallery_applies), 0)::bigint as gallery_applies,
                 coalesce(sum(prompt_unlocks), 0)::bigint as prompt_unlocks,
-                max(refreshed_at) as latest_refreshed_at
+            max(refreshed_at) as latest_refreshed_at
             from filtered
             """,
-            *common_args,
-        )
+        *common_args,
     )
-    rows = await _fetch(
+    rows_task = _fetch(
         f"""
         {filtered_cte}
         select
@@ -4639,7 +4744,7 @@ async def prompt_slim(
         limit,
         offset,
     )
-    stage_distribution = await _fetch(
+    stage_distribution_task = _fetch(
         f"""
         {filtered_cte}
         select 'prompt_slim_stage_distribution' as row_type, quality_stage as label, count(*)::bigint as count
@@ -4649,7 +4754,7 @@ async def prompt_slim(
         """,
         *common_args,
     )
-    reason_distribution = await _fetch(
+    reason_distribution_task = _fetch(
         f"""
         {filtered_cte}
         select 'prompt_slim_reason_distribution' as row_type, reason_label as label, count(*)::bigint as count
@@ -4664,7 +4769,7 @@ async def prompt_slim(
         """,
         *common_args,
     )
-    task_type_distribution = await _fetch(
+    task_type_distribution_task = _fetch(
         f"""
         {filtered_cte}
         select 'prompt_slim_task_type_distribution' as row_type, task_type as label, count(*)::bigint as count
@@ -4675,7 +4780,7 @@ async def prompt_slim(
         """,
         *common_args,
     )
-    source_distribution = await _fetch(
+    source_distribution_task = _fetch(
         f"""
         {filtered_cte}
         select 'prompt_slim_source_distribution' as row_type, source_scope as label, count(*)::bigint as count
@@ -4685,7 +4790,7 @@ async def prompt_slim(
         """,
         *common_args,
     )
-    length_distribution = await _fetch(
+    length_distribution_task = _fetch(
         f"""
         {filtered_cte}
         select
@@ -4719,6 +4824,25 @@ async def prompt_slim(
         """,
         *common_args,
     )
+    (
+        summary_record,
+        rows,
+        stage_distribution,
+        reason_distribution,
+        task_type_distribution,
+        source_distribution,
+        length_distribution,
+    ) = await _gather_limited(
+        4,
+        summary_task,
+        rows_task,
+        stage_distribution_task,
+        reason_distribution_task,
+        task_type_distribution_task,
+        source_distribution_task,
+        length_distribution_task,
+    )
+    summary = _row(summary_record)
     prompt_rows = [_enrich_prompt_slim_row(record) for record in rows]
     total = int(summary.get("slim_prompts") or 0)
     return {

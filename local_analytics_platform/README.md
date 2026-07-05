@@ -4,13 +4,14 @@
 
 ## Scope
 
-- 用户画像、灵石收支、充值情况、生成分析、提示词洞察、提示词瘦身、提示词向量化、模板候选和媒体引用核验；用户画像以固定画像看板、人群透视分析、用户宽表和单用户详情抽屉为主，用户画像 Tab 使用开始/结束日期控件精确收敛周期范围。`/api/user-analytics` 返回固定 KPI、快照趋势、状态占比、转化漏斗和充值率对比；`/api/user-analytics/groups` 继承用户宽表的日期、搜索和分层筛选后按同一套画像字段聚合人群，`/api/user-analytics/users` 支持按人群分桶下钻，`/api/user-analytics/users/{user_id}` 展示单用户画像；旧用户增长概览、旧分布图和排行榜不再作为用户画像 Tab 主入口；`/api/overview` 仅保留给侧栏状态和旧链接兼容。
-- 用户画像状态趋势使用本地派生表 `analytics_user_profile_daily_snapshots`，由 `python -m app.refresh_user_profile_snapshots` 在每日 shadow 刷新后 upsert；表缺失时页面仍展示当前汇总，只是不显示快照趋势和环比。
+- 用户画像、灵石收支、充值情况、生成分析、提示词洞察、提示词瘦身、提示词向量化、模板候选和媒体引用核验；用户画像以固定画像看板、人群透视分析、用户宽表和单用户详情抽屉为主，用户画像 Tab 使用开始/结束日期控件精确收敛周期范围。`/api/user-analytics` 返回固定 KPI、快照趋势、状态占比、转化漏斗和充值率对比；固定 KPI 覆盖总用户、周期活跃、从未活跃、沉睡、入宗门、生成、真实付费、低信任、豁免低信任和投稿封禁。`/api/user-analytics/groups` 继承用户宽表的日期、搜索和分层筛选后按同一套画像字段聚合人群，`/api/user-analytics/users` 支持按人群分桶下钻，`/api/user-analytics/users/{user_id}` 展示单用户画像；旧用户增长概览、旧分布图和排行榜不再作为用户画像 Tab 主入口；`/api/overview` 仅保留给侧栏状态和旧链接兼容。
+- 用户画像人群规模趋势使用本地派生表 `analytics_user_profile_daily_snapshots`，由 `python -m app.refresh_user_profile_snapshots` 在每日 shadow 刷新后 upsert；快照记录周期活跃、从未活跃和沉睡用户等人群状态。`visualizations.trend` 会按用户画像 Tab 选择的日期范围合并每日数据与最近快照，表缺失时页面仍展示当前汇总，只是不显示快照趋势和环比。
 - 用户画像、灵石收支、充值情况、生成分析继续使用本地静态 `ECharts 6.0.0` 呈现坐标轴、图例、tooltip、donut、漏斗、堆叠柱、累计折线、分时对比和风险散点；不复用 Dashboard Vue 构建链。
 - 灵石收支接口返回 `daily_categories[]`；充值接口返回渠道折算 USDT 日字段，并提供 `/api/finance/hourly-comparison`、`/api/finance/hourly-cumulative`；生成接口提供 `/api/generation/hourly-comparison`、`/api/generation/hourly-cumulative`、`/api/generation/type-comparison`。
 - 页面顶部周期控件按当前 Tab 独立保存；用户画像 Tab 使用开始/结束日期，其他 Tab 使用统计周期下拉；切换周期或点击刷新只请求当前 Tab 对应接口，避免一次刷新扫描所有分析模块。
 - 提示词洞察页通过 Prompt Mart 读取预清洗数据，不再在页面刷新时现场扫描 `history.prompt`；支持分页搜索、任务类型、来源范围、最少用户/次数和排序筛选，并可在详情面板懒加载同组原文变体；默认排除一键应用生成的衍生记录和 `prompts.ini` 内置默认模板，同时保留原始 Gallery 模板的点赞、应用、评论和解锁信号；内置模板可通过 `builtin_template` 来源范围单独查看。
 - 数据库连接必须通过 `LOCAL_ANALYTICS_DATABASE_URL` 显式传入。
+- API 查询使用本地 asyncpg 连接池，默认 `LOCAL_ANALYTICS_DB_POOL_MAX_SIZE=5`；灵石收支、生成分析、提示词洞察和提示词瘦身会在端点内部对独立统计 SQL 做限流并发，避免刷新时串行等待所有子查询，同时不把 PostgreSQL 临时空间打满。
 - API 查询使用只读事务，不回写 shadow 业务库。
 - 媒体预览 URL 可通过 `LOCAL_ANALYTICS_MEDIA_PUBLIC_BASE_URL` 配置；未配置时只展示对象 key。
 - 内置模板识别默认读取仓库根目录 `prompts.ini`；Compose 会把该文件只读挂载到容器 `/app/prompts.ini`，也可用 `LOCAL_ANALYTICS_PROMPTS_INI` 指向其它 INI。
@@ -23,6 +24,28 @@ docker-compose -f local_analytics_platform/docker-compose.yml up -d --build
 ```
 
 默认监听 `8095`。如果需要改端口，设置 `LOCAL_ANALYTICS_PORT`。
+
+## Login Protection
+
+本地分析平台默认不启用登录，便于 LAN 内只读排障。若要公网访问，必须显式开启应用登录，并在 Cloudflare 侧再套 Access：
+
+```bash
+python -m local_analytics_platform.app.auth hash-password 'replace-with-strong-password'
+# 或在容器内:
+docker exec allbot-local-analytics-platform python -m app.auth hash-password 'replace-with-strong-password'
+```
+
+```bash
+export LOCAL_ANALYTICS_AUTH_ENABLED=true
+export LOCAL_ANALYTICS_AUTH_USERNAME='admin'
+export LOCAL_ANALYTICS_AUTH_PASSWORD_HASH='pbkdf2_sha256$...'
+export LOCAL_ANALYTICS_AUTH_SESSION_SECRET="$(openssl rand -hex 32)"
+export LOCAL_ANALYTICS_AUTH_COOKIE_SECURE=true
+```
+
+`LOCAL_ANALYTICS_AUTH_PASSWORD` 仅用于临时本地调试；公网入口应使用 `LOCAL_ANALYTICS_AUTH_PASSWORD_HASH`。登录成功后平台写入签名 HttpOnly cookie，默认有效期 12 小时，可用 `LOCAL_ANALYTICS_AUTH_SESSION_TTL_SECONDS` 调整。
+
+Cloudflare 公网入口建议使用独立 hostname，例如 `analytics.aivison.it.com`，Tunnel 回源本地主服务器 `http://127.0.0.1:8095`。Public hostname 发布前必须先创建 Cloudflare Access self-hosted app，限制管理员邮箱/身份组并启用 MFA；不要把 `8095` 或 shadow 数据库端口直接暴露到公网。
 
 ## Prompt Mart
 

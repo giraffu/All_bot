@@ -114,6 +114,8 @@ workers/comfy_agent*/input/
 
 # Environment and Secret files
 .env
+local_analytics_platform/.env
+local_analytics_platform/.env.*
 .env.cloud.*
 .env.cloud-prod-shadow-sync.local
 .env.local

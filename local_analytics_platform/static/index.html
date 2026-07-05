@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>本地数据分析平台</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/static/styles.css?v=20260705-prompt-vectors-v1" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260705-auth-v1" />
   </head>
   <body>
     <div id="app" class="app-shell">
@@ -93,6 +93,7 @@
             </label>
           </div>
           <button id="refreshButton" type="button">刷新</button>
+          <button id="logoutButton" class="secondary-button" type="button">退出</button>
         </div>
       </header>
 
@@ -100,11 +101,11 @@
         <div id="errorBanner" class="error-banner hidden"></div>
 
         <section class="band users-band tab-panel active" data-panel="users">
-          <div id="userSummary" class="metric-grid"></div>
-          <div id="userRechargeRates" class="metric-grid compact"></div>
+          <div id="userSummary" class="metric-grid user-metric-grid"></div>
+          <div id="userRechargeRates" class="metric-grid user-metric-grid user-rate-grid"></div>
           <div class="analytics-chart-grid user-fixed-charts">
             <div class="chart-card chart-card-wide">
-              <div class="chart-title">核心规模趋势</div>
+              <div class="chart-title">人群规模趋势</div>
               <div id="userCoreTrendChart" class="analytics-chart"></div>
             </div>
             <div class="chart-card">
@@ -901,6 +902,6 @@
       <div id="userProfileDrawerContent" class="profile-drawer__content"></div>
     </aside>
     <script src="/static/vendor/echarts.min.js?v=6.0.0"></script>
-    <script src="/static/app.js?v=20260705-prompt-vectors-v1"></script>
+    <script src="/static/app.js?v=20260705-auth-v1"></script>
   </body>
 </html>
