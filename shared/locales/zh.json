@@ -119,6 +119,8 @@
     "offline": "休息中",
     "total_queue": "总排队任务",
     "tasks_unit": "个",
+    "queue_free_dot_prefix": "免费",
+    "queue_paid_dot_prefix": "付费",
     "queue_free_max_wait": "免费最长等待",
     "queue_paid_max_wait": "付费最长等待",
     "queue_wait_none": "暂无",

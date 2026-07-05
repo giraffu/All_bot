@@ -6,7 +6,7 @@
 - `web-api` 等服务若未挂载源码卷，代码变更后必须 `--build` 重建镜像才会生效。
 
 ## 2. 当前推荐部署路径
-- 功能研发、联调、修复、配置调整：首选云测试维护式更新脚本 `scripts/update_cloud_test_with_maintenance.sh --execute`；远端控制面重建子步骤仍由 `scripts/safe_deploy_cloud_test.sh` 执行。旧本地隔离测试栈脚本/compose 仅作历史保留和必要人工取证材料，不再作为受支持的测试或回滚环境
+- 功能研发、联调、修复、配置调整：首选云测试快速单模块更新，只同步必要代码并重建对应 compose service，不默认进入维护或排空队列。维护式脚本 `scripts/update_cloud_test_with_maintenance.sh --execute` 仅用于整栈联动、迁移、排空验证或用户明确要求维护窗口；远端控制面重建子步骤仍由 `scripts/safe_deploy_cloud_test.sh` 执行。旧本地隔离测试栈脚本/compose 仅作历史保留和必要人工取证材料，不再作为受支持的测试或回滚环境
 - 当前云正式生产热修：按云正式文档使用 `scripts/safe_deploy_cloud_prod.sh` 或目标 cloud-prod compose 单服务重建
 - 本地正式灾备：仅在云正式整体不可用时按 `docs/子模块_本地正式灾备切换_local_prod_fallback.md` 切回本地主服务器
 - 本地正式灾备整栈启动/重建：仅在云正式整体故障、需要本地主服务器临时接管时才执行 `bash safe_deploy.sh`
@@ -31,9 +31,10 @@
 - 在用户完成测试验收前，不得把测试环境变更直接同步到正式 Bot、正式 Web、正式 Payment、正式 Central API 或正式 Dashboard。
 
 ## 2.2 云端测试控制面
-- DigitalOcean SGP1 Droplet 上的云测试维护式更新入口为 `scripts/update_cloud_test_with_maintenance.sh --execute`，compose 文件为 `deploy/docker-compose-cloud-test.yml`；`scripts/safe_deploy_cloud_test.sh` 是远端控制面重建子步骤。
+- DigitalOcean SGP1 Droplet 上的云测试日常更新按目标 service 直接 `docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml [--profile bot|qqcc-bot] build <service>` 后 `up -d --no-deps <service>`；compose 文件为 `deploy/docker-compose-cloud-test.yml`。维护式入口 `scripts/update_cloud_test_with_maintenance.sh --execute` 只用于整栈/迁移/排空场景；`scripts/safe_deploy_cloud_test.sh` 是远端控制面重建子步骤。
 - 云测试控制面默认部署同机 Postgres、同机 Redis、Central API、Web API、Dashboard Backend、Dashboard Frontend 与 imgproxy；`bot-test` 只通过 `bot` profile 手动启动，本地主服务器另行启动 GPU worker。当前对象存储事实源是 Cloudflare R2，云测试 compose 当前不包含 MinIO、Payment API 或 Web 前端 dev 容器。
-- 维护式更新脚本会先让 Web/Bot 生成入口进入维护状态，等待 Central pending/running 队列清空，再同步代码、远端重建控制面、按需重建测试 Bot，并默认发布 `web-test.aivison.it.com` 边缘静态前端；失败时维护状态保持开启。整仓同步会排除 `local_analytics_platform/`、`backups/`、`logs/`、前端构建产物和密钥文件。
+- 日常快速更新不要写 `runtime/cloud-test/GENERATION_MAINTENANCE`，也不要等待 Central pending/running 队列清空；按变更影响重建 `web-api-test`、`central-api-test`、`bot-test`、`qqcc-bot-test`、Dashboard 或 QQCC Config 对应 service。整仓同步或必要文件同步都必须排除 `local_analytics_platform/`、`backups/`、`logs/`、前端构建产物和密钥文件。
+- 维护式更新脚本会先让 Web/Bot 生成入口进入维护状态，等待 Central pending/running 队列清空，再同步代码、远端重建控制面、按需重建测试 Bot，并默认发布 `web-test.aivison.it.com` 边缘静态前端；失败时维护状态保持开启。该路径只在明确需要整栈维护语义时使用。
 - 测试 Web/Bot 使用 `runtime/cloud-test/GENERATION_MAINTENANCE` 作为跨重建生成维护标记，容器内路径为 `/app/runtime-flags/GENERATION_MAINTENANCE`，由 `GENERATION_MAINTENANCE_FILE` 注入。该目录属于运行时状态，不提交仓库。
 - 云测试 `.env.cloud.test` 已被 `.gitignore` 忽略，不能提交到仓库。
 - 云端服务端口绑定到云测试 Tailscale IP `100.82.124.91`，不直接开放公网。若临时使用 `CLOUD_TEST_BIND_IP=0.0.0.0`，必须配合源 IP 白名单，只允许边缘 VPS 与本地主服务器访问测试 API 端口，恢复后必须收回公网白名单。

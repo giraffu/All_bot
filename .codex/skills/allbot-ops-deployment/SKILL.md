@@ -29,8 +29,8 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 
 ## 2. 当前稳定入口
 
-- 云测试日常更新：`scripts/update_cloud_test_with_maintenance.sh --execute`。它是研发、联调、修复与配置调整的默认目标。
-- 云测试远端控制面重建子步骤：`scripts/safe_deploy_cloud_test.sh`。日常不要绕过维护式入口直接用它。
+- 云测试日常更新：快速为主，按变更影响只同步必要代码并重建对应 compose service / profile，不默认进入生成维护、不默认等待 Central pending/running 排空。典型命令是在云测试机 `docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml [--profile bot|qqcc-bot] build <service>` 后 `up -d --no-deps <service>`。
+- 云测试整栈/维护式更新：只有涉及迁移、跨服务契约、控制面多服务联动、边缘 Web 发布、需要排空队列，或用户明确要求维护窗口时，才使用 `scripts/update_cloud_test_with_maintenance.sh --execute`；`scripts/safe_deploy_cloud_test.sh` 仅作为远端控制面重建子步骤。
 - 云正式完整控制面更新：`scripts/update_cloud_prod_with_maintenance.sh`，默认 dry-run；真实执行必须 `--execute --confirm-prod`。
 - 云正式远端控制面重建子步骤：`scripts/safe_deploy_cloud_prod.sh`。
 - 本地正式灾备：`safe_deploy.sh` 只用于云正式整体故障时的临时接管，不是日常部署入口。
@@ -61,6 +61,8 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 
 ### 云测试
 - 使用独立测试 Droplet、测试 Postgres/Redis/Central/Web/Dashboard/imgproxy/Bot。
+- 日常研发验证默认直接重建目标模块容器；例如 Bot 展示/FSM 改动只重建 `bot-test`，Web API 改动只重建 `web-api-test`，Central 改动只重建 `central-api-test`，Dashboard/QQCC Config 改动只重建对应前后端 service。不要为了普通测试更新写维护标记或排空队列。
+- 若启动或重建 `bot-test` / `qqcc-bot-test`，先确认没有第二个同测试 token polling 实例；用 `--profile bot` / `--profile qqcc-bot` 限定目标 service。
 - cloud-test worker 由本地主服务器经 Tailscale 接入测试 Central；默认常驻只保留 test-1 与 test-8，其它测试 worker 只在 smoke/canary 窗口启用。
 - 对象存储为 R2 `user-data-test`，不得误改正式入口。
 

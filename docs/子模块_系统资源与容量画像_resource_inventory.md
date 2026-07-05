@@ -150,7 +150,7 @@
 
 重要运行约束：
 - `web-api`、Dashboard、Payment API 等 COPY 型服务改代码后必须重建镜像，不能只 `restart`。
-- 云测试研发验证优先走 `scripts/update_cloud_test_with_maintenance.sh --execute`，远端控制面重建子步骤为 `scripts/safe_deploy_cloud_test.sh`。
+- 云测试研发验证优先按变更影响快速重建对应模块容器，不默认进入维护或排空队列；`scripts/update_cloud_test_with_maintenance.sh --execute` 仅用于整栈联动、迁移、排空验证或用户明确要求维护窗口，远端控制面重建子步骤为 `scripts/safe_deploy_cloud_test.sh`。
 - 云正式生产发布优先走 `scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod`、`scripts/safe_deploy_cloud_prod.sh` 子步骤或 cloud-prod compose 单服务重建；只有云正式整体故障、本地主服务器临时接管正式服务时才使用 `safe_deploy.sh`。
 - 生产单服务重建时不得使用 `--remove-orphans` 或无 service 名的批量 compose 操作。
 - 本地云正式 worker 使用旧版 `docker-compose` 时，遇到 `ContainerConfig` 兼容错误只能清理目标 worker 容器和同 service label 残留。

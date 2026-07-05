@@ -180,6 +180,34 @@ def _build_wait_status_dot(queue_type_detail: dict | None) -> str:
     return "🔴"
 
 
+def _build_paid_wait_status_dot(queue_type_detail: dict | None) -> str:
+    queue_type_detail = queue_type_detail or {}
+    return _build_wait_status_dot(
+        {
+            "max_pending_wait_seconds": queue_type_detail.get(
+                "max_non_low_trust_pending_wait_seconds"
+            )
+        }
+    )
+
+
+def _translate_or_default(context, key: str, fallback: str) -> str:
+    try:
+        translated = context.t(key)
+    except (AttributeError, KeyError):
+        return fallback
+    return translated if translated and translated != key else fallback
+
+
+def _build_wait_status_prefix(queue_type_detail: dict | None, context) -> str:
+    free_label = _translate_or_default(context, "profile.queue_free_dot_prefix", "免费")
+    paid_label = _translate_or_default(context, "profile.queue_paid_dot_prefix", "付费")
+    return (
+        f"{free_label}{_build_wait_status_dot(queue_type_detail)} "
+        f"{paid_label}{_build_paid_wait_status_dot(queue_type_detail)}"
+    )
+
+
 def _collect_queue_status_rows(
     queue_by_type: dict,
     context,
@@ -239,9 +267,9 @@ def build_queue_status_message(
         task_type_display_names,
         queue_by_type_details,
     ):
-        status_dot = _build_wait_status_dot(row["detail"])
+        status_prefix = _build_wait_status_prefix(row["detail"], context)
         msg_lines.append(
-            f"{status_dot} {row['display_name']}：`{row['count']}` {tasks_unit}"
+            f"{status_prefix} {row['display_name']}：`{row['count']}` {tasks_unit}"
         )
 
     return "\n".join(msg_lines)

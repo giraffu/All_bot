@@ -68,4 +68,4 @@
 ## 持续集成与部署
 
 - 本项目通过 GitHub Actions 实现对 Markdown 文档的自动校验（`markdownlint`）和自动目录更新。
-- 当前研发验证首选云测试控制面，日常维护式更新入口为 `scripts/update_cloud_test_with_maintenance.sh --execute`；正式热修走云正式 compose / cloud deploy 脚本；本地 `safe_deploy.sh` 只保留为云正式整体故障时的临时本地正式灾备入口。
+- 当前研发验证首选云测试控制面，日常测试更新以快速单模块容器重建为主，不默认进入维护或排空队列；正式热修走云正式 compose / cloud deploy 脚本；本地 `safe_deploy.sh` 只保留为云正式整体故障时的临时本地正式灾备入口。

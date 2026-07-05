@@ -4,7 +4,7 @@
 
 当前主入口：
 - 云正式生产：`scripts/safe_deploy_cloud_prod.sh`、`deploy/docker-compose-cloud-prod.yml`、`workers/docker-compose-cloud-prod-worker.yml`
-- 云测试环境：`scripts/update_cloud_test_with_maintenance.sh --execute`、`scripts/safe_deploy_cloud_test.sh`、`deploy/docker-compose-cloud-test.yml`、`workers/docker-compose-cloud-worker-test.yml`
+- 云测试环境：日常快速更新按目标 service 重建 `deploy/docker-compose-cloud-test.yml` 中的对应容器；维护式整栈更新才使用 `scripts/update_cloud_test_with_maintenance.sh --execute`，远端控制面重建子步骤为 `scripts/safe_deploy_cloud_test.sh`
 - 本地正式灾备：`docs/子模块_本地正式灾备切换_local_prod_fallback.md`
 
 ## 1. `safe_deploy.sh` 的当前边界
@@ -21,7 +21,18 @@
 
 ## 2. `safe_deploy_test.sh` 的归档边界
 
-`safe_deploy_test.sh` 是旧本地隔离测试栈脚本。当前默认测试环境已经迁到独立 DigitalOcean 测试机 `allbot-do-sgp1-test-control`，旧本地测试栈不再作为受支持测试环境或回滚方案。新研发、联调和配置验证优先使用维护式更新脚本：
+`safe_deploy_test.sh` 是旧本地隔离测试栈脚本。当前默认测试环境已经迁到独立 DigitalOcean 测试机 `allbot-do-sgp1-test-control`，旧本地测试栈不再作为受支持测试环境或回滚方案。新研发、联调和配置验证优先按目标 service 快速重建云测试容器：
+
+```bash
+ssh allbot-do-sgp1-test-control
+cd /home/deploy/APP/All_bot
+docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml \
+  build <service>
+docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml \
+  up -d --no-deps <service>
+```
+
+涉及整栈联动、迁移、排空验证或用户明确要求维护窗口时，才使用维护式脚本：
 
 ```bash
 scripts/update_cloud_test_with_maintenance.sh --execute

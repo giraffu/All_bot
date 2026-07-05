@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from src.handlers import message_handler_runtime
+from src.handlers.message_handler_profile_menu import TASK_TYPE_DISPLAY_NAMES
 
 
 def test_normalize_supported_language_code_falls_back_to_zh():
@@ -82,6 +83,10 @@ async def test_toggle_user_language_persists_context_db_and_redis(monkeypatch):
 @pytest.mark.asyncio
 async def test_get_queue_status_reply_handles_success_and_unavailable(monkeypatch):
     def translate(key, **kwargs):
+        if key == "profile.queue_free_dot_prefix":
+            return "免费"
+        if key == "profile.queue_paid_dot_prefix":
+            return "付费"
         return f"T:{key}:{kwargs}" if kwargs else f"T:{key}"
 
     context = SimpleNamespace(lang="zh", t=translate)
@@ -111,18 +116,23 @@ async def test_get_queue_status_reply_handles_success_and_unavailable(monkeypatc
                     "queue_by_type_details": {
                         "img2img": {
                             "max_pending_wait_seconds": 75,
+                            "max_non_low_trust_pending_wait_seconds": 120,
                         },
                         "pornmaster_flux2_single_edit": {
                             "max_pending_wait_seconds": 100,
+                            "max_non_low_trust_pending_wait_seconds": 100,
                         },
                         "pornmaster_flux2_multi_edit": {
                             "max_pending_wait_seconds": 130,
+                            "max_non_low_trust_pending_wait_seconds": 600,
                         },
                         "scail2_action_transfer": {
                             "max_pending_wait_seconds": 620,
+                            "max_non_low_trust_pending_wait_seconds": 620,
                         },
                         "scail2_action_transfer_long": {
                             "max_pending_wait_seconds": 1800,
+                            "max_non_low_trust_pending_wait_seconds": 3600,
                         },
                     },
                 },
@@ -161,22 +171,69 @@ async def test_get_queue_status_reply_handles_success_and_unavailable(monkeypatc
     )
 
     assert "T:profile.total_queue：`16` T:profile.tasks_unit" in text
-    assert "🟢 T:task.img2img：`1` T:profile.tasks_unit" in text
-    assert "🟢 T:task.mode_video_lora：`6` T:profile.tasks_unit" in text
-    assert "🟢 T:task.mode_wan22_video_v2：`1` T:profile.tasks_unit" in text
-    assert "🟢 T:task.mode_scail2_video_replacement：`1` T:profile.tasks_unit" in text
-    assert "🟠 T:task.mode_scail2_action_transfer：`3` T:profile.tasks_unit" in text
+    assert "免费🟢 付费🟢 T:task.img2img：`1` T:profile.tasks_unit" in text
+    assert "免费🟢 付费🟢 T:task.mode_video_lora：`6` T:profile.tasks_unit" in text
+    assert (
+        "免费🟢 付费🟢 T:task.mode_wan22_video_v2：`1` "
+        "T:profile.tasks_unit"
+    ) in text
+    assert (
+        "免费🟢 付费🟢 T:task.mode_scail2_video_replacement：`1` "
+        "T:profile.tasks_unit"
+    ) in text
+    assert (
+        "免费🟠 付费🔴 T:task.mode_scail2_action_transfer：`3` "
+        "T:profile.tasks_unit"
+    ) in text
     assert text.count("T:task.mode_scail2_action_transfer") == 1
-    assert "🟢 T:task.mode_free_edit_v2：`3` T:profile.tasks_unit" in text
+    assert (
+        "免费🟢 付费🟡 T:task.mode_free_edit_v2：`3` T:profile.tasks_unit"
+    ) in text
     assert "pornmaster_flux2_single_edit" not in text
     assert "pornmaster_flux2_multi_edit" not in text
     assert "免费最长等待" not in text
     assert "付费最长等待" not in text
     assert "video_insert" not in text
-    assert "🟢 ❓ T:profile.other_types (custom\\_x)：`1` T:profile.tasks_unit" in text
+    assert (
+        "免费🟢 付费🟢 ❓ T:profile.other_types (custom\\_x)：`1` "
+        "T:profile.tasks_unit"
+    ) in text
     assert "**T:profile.my_tasks_title**" in text
     assert "1. T:task.img2img：全局排队第 2 位" in text
     assert unavailable == "T:system.queue_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_get_queue_status_reply_omits_legacy_i2i_draw_zero_row(monkeypatch):
+    context = SimpleNamespace(lang="zh", t=lambda key, **_: f"T:{key}")
+    user = SimpleNamespace(id=123)
+
+    monkeypatch.setattr(
+        message_handler_runtime.image_service,
+        "get_queue_info",
+        AsyncMock(
+            return_value={
+                "queue_size": 2,
+                "queue_by_type": {"img2img": 2, "i2i_draw": 0},
+                "queue_by_type_details": {},
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        message_handler_runtime,
+        "_build_user_queue_tasks_for_display",
+        AsyncMock(return_value=[]),
+    )
+
+    text = await message_handler_runtime.get_queue_status_reply(
+        context,
+        TASK_TYPE_DISPLAY_NAMES,
+        user=user,
+    )
+
+    assert "T:task.img2img：`2` T:profile.tasks_unit" in text
+    assert "T:task.mode_i2i_draw" not in text
+    assert "i2i_draw" not in text
 
 
 def test_normalize_queue_type_counts_for_display_merges_legacy_img2video_aliases():

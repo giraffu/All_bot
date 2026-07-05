@@ -5,7 +5,6 @@ TASK_TYPE_DISPLAY_NAMES = {
     "img2img": "task.img2img",
     "img2img_lora": "task.img2img_lora",
     "i2i_pro": "task.i2i_pro",
-    "i2i_draw": "task.mode_i2i_draw",
     "free_edit_v2": "task.mode_free_edit_v2",
     "face_swap": "task.face_swap",
     "img2video_group": "task.mode_video_lora",

@@ -9,7 +9,7 @@
 - **技能优先 (Skills First)**：遇到具体业务开发时，**必须第一时间加载对应 Skill**，以获取该模块最新的架构红线、接口契约和容灾规范。若当前 Codex 会话未自动暴露该项目 Skill，请手动读取 `.codex/skills/<skill-name>/SKILL.md`。
 - **查阅文档 (Read Docs)**：在进行系统级重构、了解历史背景或不确定业务逻辑时，请主动读取 `/docs` 目录下的相关说明。
 - **核心层隔离 (Core Isolation)**：`/src/core/` 下的代码**绝对禁止**引入任何与 Telegram `Update` 或 Web `Request` 相关的特定平台对象，必须使用内部统一的 `internal_user_id` 流转。
-- **测试优先部署 (Test First Deploy)**：功能研发、联调、缺陷修复与配置调整，默认先更新云测试控制面；日常维护式更新首选 `scripts/update_cloud_test_with_maintenance.sh --execute`，`scripts/safe_deploy_cloud_test.sh` 只是远端控制面重建子步骤。旧本地测试栈脚本仅作历史保留/人工取证，不再作为受支持的测试或回滚环境；本地主服务器只保留云正式整体故障时的临时正式灾备方案。只有在用户明确要求进入交付验证/正式发布时，才允许执行生产部署或更新正式服务。
+- **测试优先部署 (Test First Deploy)**：功能研发、联调、缺陷修复与配置调整，默认先更新云测试控制面；日常测试环境更新以快速为主，只同步必要代码并重建对应模块容器，不默认进入维护或排空队列。`scripts/update_cloud_test_with_maintenance.sh --execute` 仅用于整栈联动、迁移、排空验证或用户明确要求维护窗口时；`scripts/safe_deploy_cloud_test.sh` 只是远端控制面重建子步骤。旧本地测试栈脚本仅作历史保留/人工取证，不再作为受支持的测试或回滚环境；本地主服务器只保留云正式整体故障时的临时正式灾备方案。只有在用户明确要求进入交付验证/正式发布时，才允许执行生产部署或更新正式服务。
 
 ## 2. Codex 工作区知识布局 (Workspace Knowledge Layout)
 

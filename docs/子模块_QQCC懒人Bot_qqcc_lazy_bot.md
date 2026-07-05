@@ -141,13 +141,18 @@ QQCC Bot 不启动 TON 轮询，不注册支付回调，不作为充值入口。
 ## 6. 维护与发布
 QQCC Bot 读取同一个 `GENERATION_MAINTENANCE_FILE`。云测试和云正式维护脚本写入/清理生成维护标记时，应同时覆盖正在运行的 `cloud-qqcc-bot-test` / `cloud-qqcc-bot-prod`。
 
-云测试更新使用：
+云测试日常更新按快速单模块重建处理：
 
 ```bash
-scripts/update_cloud_test_with_maintenance.sh --execute
+ssh allbot-do-sgp1-test-control
+cd /home/deploy/APP/All_bot
+docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml \
+  --profile qqcc-bot build qqcc-bot-test
+docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml \
+  --profile qqcc-bot up -d --no-deps qqcc-bot-test
 ```
 
-默认 `--qqcc-bot-mode auto`，只在 `qqcc-bot-test` 原本运行且远端 env 配置了 `QQCC_BOT_TOKEN_TEST` 时重建启动。
+没有独立 `QQCC_BOT_TOKEN_TEST` 时，`qqcc-bot-test` 必须保持停止。只有涉及整栈联动、迁移、排空验证或明确要求维护窗口时，才改用 `scripts/update_cloud_test_with_maintenance.sh --execute`；其默认 `--qqcc-bot-mode auto`，只在 `qqcc-bot-test` 原本运行且远端 env 配置了 `QQCC_BOT_TOKEN_TEST` 时重建启动。
 
 只更新云正式 QQCC Bot 时，优先使用专用窄入口：
 

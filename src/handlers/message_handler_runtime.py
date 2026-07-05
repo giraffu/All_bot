@@ -97,12 +97,18 @@ def _normalize_queue_type_details_for_display(
             normalized_task_type,
             {
                 "max_pending_wait_seconds": None,
+                "max_non_low_trust_pending_wait_seconds": None,
             },
         )
         _merge_max_wait(
             target,
             "max_pending_wait_seconds",
             detail.get("max_pending_wait_seconds"),
+        )
+        _merge_max_wait(
+            target,
+            "max_non_low_trust_pending_wait_seconds",
+            detail.get("max_non_low_trust_pending_wait_seconds"),
         )
     return normalized_details
 

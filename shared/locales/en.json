@@ -119,6 +119,8 @@
     "offline": "Offline",
     "total_queue": "Total Queue",
     "tasks_unit": "tasks",
+    "queue_free_dot_prefix": "Free",
+    "queue_paid_dot_prefix": "Paid",
     "queue_free_max_wait": "Free max wait",
     "queue_paid_max_wait": "Paid max wait",
     "queue_wait_none": "N/A",

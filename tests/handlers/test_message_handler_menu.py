@@ -107,11 +107,11 @@ def test_build_queue_status_message_includes_known_and_unknown_types():
     )
 
     assert "👥 总排队任务：`3` 个" in text
-    assert "🟢 懒人/自由P图：`2` 个" in text
-    assert "🟢 视频编辑 (通用)：`0` 个" in text
+    assert "免费🟢 付费🟢 懒人/自由P图：`2` 个" in text
+    assert "免费🟢 付费🟢 视频编辑 (通用)：`0` 个" in text
     assert "🎨 懒人/自由P图" not in text
     assert "🎬 视频编辑 (通用)" not in text
-    assert "🟢 ❓ 其他 (custom\\_x)：`1` 个" in text
+    assert "免费🟢 付费🟢 ❓ 其他 (custom\\_x)：`1` 个" in text
 
 
 def test_build_queue_status_message_uses_wait_dot_and_merges_duplicate_labels():
@@ -148,22 +148,28 @@ def test_build_queue_status_message_uses_wait_dot_and_merges_duplicate_labels():
         {
             "green": {"max_pending_wait_seconds": 599},
             "yellow": {"max_pending_wait_seconds": 600},
-            "orange_a": {"max_pending_wait_seconds": 1200},
-            "orange_b": {"max_pending_wait_seconds": 1800},
+            "orange_a": {
+                "max_pending_wait_seconds": 1200,
+                "max_non_low_trust_pending_wait_seconds": 3600,
+            },
+            "orange_b": {
+                "max_pending_wait_seconds": 1800,
+                "max_non_low_trust_pending_wait_seconds": 1500,
+            },
             "red": {"max_pending_wait_seconds": 3600},
         },
     )
 
-    assert "🟢 绿色任务：`1` 个" in text
-    assert "🟡 黄色任务：`2` 个" in text
-    assert "🟠 动作迁移：`7` 个" in text
+    assert "免费🟢 付费🟢 绿色任务：`1` 个" in text
+    assert "免费🟡 付费🟢 黄色任务：`2` 个" in text
+    assert "免费🟠 付费🔴 动作迁移：`7` 个" in text
     assert text.count("动作迁移") == 1
-    assert "🔴 红色任务：`0` 个" in text
+    assert "免费🔴 付费🟢 红色任务：`0` 个" in text
     assert "免费最长等待" not in text
     assert "付费最长等待" not in text
 
 
-def test_build_queue_status_message_dot_uses_max_pending_wait():
+def test_build_queue_status_message_dots_use_free_and_paid_waits():
     translations = {
         "profile.queue_status_title": "排队状态",
         "profile.total_queue": "总排队任务",
@@ -181,11 +187,12 @@ def test_build_queue_status_message_dot_uses_max_pending_wait():
             "img2img_lora": {
                 "pending_count": 14,
                 "max_pending_wait_seconds": 40 * 60 + 22,
+                "max_non_low_trust_pending_wait_seconds": 11 * 60,
             },
         },
     )
 
-    assert "🟠 图生图 (附加模型)：`14` 个" in text
+    assert "免费🟠 付费🟡 图生图 (附加模型)：`14` 个" in text
 
 
 def test_build_user_queue_tasks_section_uses_display_names_and_status_text():
