@@ -1,3 +1,10 @@
+"""Wan22 AIO Bot chain helpers for legacy image-to-video and v2 histories.
+
+The module name follows the existing v2 callback namespace, but this service is
+the shared preparation layer for legacy ``custom_video`` / ``video_lora`` and
+``wan22_video_v2`` extension, regeneration, and stitching callbacks.
+"""
+
 import asyncio
 import shutil
 import subprocess
