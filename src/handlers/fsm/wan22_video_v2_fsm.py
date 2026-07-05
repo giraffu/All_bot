@@ -23,13 +23,10 @@ from src.handlers.fsm.fsm_shared import (
     translate_fsm_text,
 )
 from src.handlers.prompt_router import is_global_menu_command
-from src.lora_mapping import extract_prompt_lora_context
-from src.core.video_billing import resolve_apply_prompt_and_requested_duration
 from src.services.task_service_generation_video import (
     process_image_to_video_generation_task as process_image_to_video_task,
 )
 from src.services.task_service_generation_wan22 import (
-    normalize_wan22_video_v2_chain_task_ids,
     process_wan22_video_v2_generation_task as process_wan22_video_v2_task,
 )
 from src.domain_config.wan22_aio_video import (
@@ -61,13 +58,9 @@ from src.services.advanced_video_settings_view_service import (
 )
 from src.services.wan22_video_v2_extension_service import (
     Wan22VideoV2ExtensionError,
-    build_full_chain_task_ids,
-    download_history_input_file_to_fsm_temp,
-    download_last_frame_to_fsm_temp,
-    extract_wan22_history_context,
-    load_owned_wan22_history,
-    resolve_extension_chain_task_ids,
-    resolve_extension_resolution_preset,
+    Wan22VideoV2MissingPreviousSegmentError,
+    prepare_wan22_extension_fsm_data,
+    prepare_wan22_regeneration_fsm_data,
 )
 from src.services.tg_task_result_presentation import (
     WAN22_EXTEND_CALLBACK_PREFIX,
@@ -136,39 +129,12 @@ def _is_legacy_image_to_video_context(data: dict[str, Any] | dict[str, object]) 
     )
 
 
-def _resolve_reusable_history_prompt_and_lora(
-    history,
-    meta: dict,
-) -> tuple[str, str | None, float]:
-    prompt, _requested_duration = resolve_apply_prompt_and_requested_duration(
-        getattr(history, "type", None),
-        getattr(history, "prompt", None),
-        getattr(history, "requested_duration", None),
-    )
-    prompt, parsed_lora_name, parsed_lora_strength = extract_prompt_lora_context(prompt)
-    lora_name = str(meta.get("lora_name") or parsed_lora_name or "").strip() or None
-    lora_strength = meta.get("lora_strength")
-    try:
-        normalized_lora_strength = float(lora_strength)
-    except (TypeError, ValueError):
-        normalized_lora_strength = parsed_lora_strength or 1.0
-    return prompt, lora_name, normalized_lora_strength
-
-
 def _normalize_selected_duration(data: dict[str, object]) -> int:
     selected_duration = normalize_wan22_video_v2_duration_seconds(
         data.get("duration") or WAN22_VIDEO_V2_DEFAULT_DURATION_SECONDS
     )
     data["duration"] = selected_duration
     return selected_duration
-
-
-def _resolve_history_duration_seconds(history, meta: dict) -> int:
-    return normalize_wan22_video_v2_duration_seconds(
-        meta.get("wan22_duration_seconds")
-        or getattr(history, "requested_duration", None)
-        or getattr(history, "duration", None)
-    )
 
 
 def _resolve_callback_task_id(
@@ -188,13 +154,6 @@ def _resolve_callback_task_id(
         return task_id
     message = getattr(query, "message", None)
     return resolve_task_id_from_reply_markup(getattr(message, "reply_markup", None))
-
-
-def _merge_history_context_into_meta(history, meta: dict) -> dict[str, object]:
-    return {
-        **extract_wan22_history_context(getattr(history, "extra_outputs", None)),
-        **meta,
-    }
 
 
 async def _reply_callback_notice(update: Update, text: str) -> None:
@@ -514,13 +473,12 @@ async def start_wan22_video_v2_extension(
         await _reply_callback_notice(update, _t(context, "fsm.wan22_video_v2.expired_alert"))
         return ConversationHandler.END
     try:
-        history = await load_owned_wan22_history(
-            task_id=base_task_id,
+        seed = await prepare_wan22_extension_fsm_data(
+            base_task_id=base_task_id,
             telegram_user_id=update.effective_user.id,
             username=update.effective_user.username,
+            message_meta=meta,
         )
-        meta = _merge_history_context_into_meta(history, meta)
-        start_image_path = await download_last_frame_to_fsm_temp(history=history)
     except Wan22VideoV2ExtensionError as exc:
         target_message = query.message if query else update.effective_message
         if target_message:
@@ -539,35 +497,14 @@ async def start_wan22_video_v2_extension(
         return ConversationHandler.END
 
     context.user_data["in_conversation"] = WAN22_VIDEO_V2_CONVERSATION_TAG
-    _set_data(
-        context,
-        {
-            "start_image_path": start_image_path,
-            "end_image_path": None,
-            "use_end_frame": False,
-            "resolution_preset": resolve_extension_resolution_preset(meta),
-            "duration": _resolve_history_duration_seconds(history, meta),
-            "prompt": "",
-            "negative_prompt": "",
-            "extension_prev_task_id": base_task_id,
-            "extension_task_type": history.type,
-            "lora_name": str(meta.get("lora_name") or "").strip(),
-            "lora_strength": meta.get("lora_strength"),
-            "chain_task_ids": build_full_chain_task_ids(
-                chain_task_ids=resolve_extension_chain_task_ids(meta),
-                current_task_id=base_task_id,
-            ),
-        },
-    )
+    _set_data(context, seed.fsm_data)
     await _send_or_edit_message(
         update,
         _t(
             context,
             "fsm.wan22_video_v2.extension_start",
             resolution_preset=get_wan22_video_v2_resolution_label(
-                str(
-                    context.user_data[WAN22_VIDEO_V2_DATA_KEY]["resolution_preset"]
-                ),
+                str(seed.fsm_data["resolution_preset"]),
                 lang=getattr(context, "lang", "zh"),
             ),
         ),
@@ -604,36 +541,18 @@ async def start_wan22_video_v2_regeneration(
         return ConversationHandler.END
 
     try:
-        current_history = await load_owned_wan22_history(
-            task_id=current_task_id,
+        seed = await prepare_wan22_regeneration_fsm_data(
+            current_task_id=current_task_id,
             telegram_user_id=update.effective_user.id,
             username=update.effective_user.username,
+            message_meta=meta,
         )
-        meta = _merge_history_context_into_meta(current_history, meta)
-        prev_task_id = str(meta.get("wan22_prev_task_id") or "").strip()
-        if not prev_task_id:
-            await _reply_callback_notice(
-                update,
-                _t(context, "fsm.wan22_video_v2.expired_alert"),
-            )
-            return ConversationHandler.END
-        prev_history = await load_owned_wan22_history(
-            task_id=prev_task_id,
-            telegram_user_id=update.effective_user.id,
-            username=update.effective_user.username,
+    except Wan22VideoV2MissingPreviousSegmentError:
+        await _reply_callback_notice(
+            update,
+            _t(context, "fsm.wan22_video_v2.expired_alert"),
         )
-        start_image_path = await download_last_frame_to_fsm_temp(
-            history=prev_history,
-            name_hint="wan22_video_v2_regenerate_start",
-        )
-        use_end_frame = bool(meta.get("wan22_use_end_frame"))
-        end_image_path = None
-        if use_end_frame:
-            end_image_path = await download_history_input_file_to_fsm_temp(
-                history=current_history,
-                index=1,
-                name_hint="wan22_video_v2_regenerate_end",
-            )
+        return ConversationHandler.END
     except Wan22VideoV2ExtensionError as exc:
         target_message = query.message if query else update.effective_message
         if target_message:
@@ -651,37 +570,8 @@ async def start_wan22_video_v2_regeneration(
                 )
         return ConversationHandler.END
 
-    if current_history.type == MODE_WAN22_VIDEO_V2:
-        prompt = str(current_history.prompt or "").strip()
-        lora_name = None
-        lora_strength = None
-    else:
-        prompt, lora_name, lora_strength = _resolve_reusable_history_prompt_and_lora(
-            current_history,
-            meta,
-        )
-
     context.user_data["in_conversation"] = WAN22_VIDEO_V2_CONVERSATION_TAG
-    _set_data(
-        context,
-        {
-            "start_image_path": start_image_path,
-            "end_image_path": end_image_path,
-            "use_end_frame": use_end_frame,
-            "resolution_preset": resolve_extension_resolution_preset(meta),
-            "duration": _resolve_history_duration_seconds(current_history, meta),
-            "prompt": prompt,
-            "prefill_prompt": prompt,
-            "negative_prompt": str(meta.get("wan22_negative_prompt") or "").strip(),
-            "extension_prev_task_id": prev_task_id,
-            "extension_task_type": current_history.type,
-            "lora_name": lora_name,
-            "lora_strength": lora_strength,
-            "chain_task_ids": normalize_wan22_video_v2_chain_task_ids(
-                meta.get("wan22_chain_task_ids")
-            ),
-        },
-    )
+    _set_data(context, seed.fsm_data)
     return await _ask_for_prompt(update, context)
 
 

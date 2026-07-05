@@ -35,6 +35,10 @@ def _build_update_with_message(*, text: str = "test prompt"):
     )
 
 
+def _build_wan22_seed(fsm_data: dict):
+    return SimpleNamespace(fsm_data=fsm_data)
+
+
 def test_get_wan22_video_v2_fsm_handler_exposes_expected_entry_points():
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=PTBUserWarning)
@@ -578,19 +582,30 @@ async def test_receive_negative_prompt_submits_without_settings_confirmation(mon
 @pytest.mark.asyncio
 async def test_start_wan22_video_v2_extension_prefills_tail_frame(monkeypatch):
     edit_mock = AsyncMock()
-    load_history_mock = AsyncMock(return_value=SimpleNamespace(type="wan22_video_v2"))
-    download_last_frame_mock = AsyncMock(return_value="/tmp/tail.png")
+    prepare_seed = AsyncMock(
+        return_value=_build_wan22_seed(
+            {
+                "start_image_path": "/tmp/tail.png",
+                "end_image_path": None,
+                "use_end_frame": False,
+                "resolution_preset": "hd",
+                "duration": 5,
+                "prompt": "",
+                "negative_prompt": "",
+                "extension_prev_task_id": "task-1",
+                "extension_task_type": "wan22_video_v2",
+                "lora_name": "",
+                "lora_strength": None,
+                "chain_task_ids": ["task-1"],
+            }
+        )
+    )
 
     monkeypatch.setattr(wan22_video_v2_fsm, "robust_edit_text", edit_mock)
     monkeypatch.setattr(
         wan22_video_v2_fsm,
-        "load_owned_wan22_history",
-        load_history_mock,
-    )
-    monkeypatch.setattr(
-        wan22_video_v2_fsm,
-        "download_last_frame_to_fsm_temp",
-        download_last_frame_mock,
+        "prepare_wan22_extension_fsm_data",
+        prepare_seed,
     )
 
     query = SimpleNamespace(
@@ -628,12 +643,16 @@ async def test_start_wan22_video_v2_extension_prefills_tail_frame(monkeypatch):
     assert context.user_data["wan22_video_v2_data"]["resolution_preset"] == "hd"
     assert context.user_data["wan22_video_v2_data"]["extension_prev_task_id"] == "task-1"
     assert context.user_data["wan22_video_v2_data"]["chain_task_ids"] == ["task-1"]
-    load_history_mock.assert_awaited_once_with(
-        task_id="task-1",
+    prepare_seed.assert_awaited_once_with(
+        base_task_id="task-1",
         telegram_user_id=12345,
         username="tester",
+        message_meta={
+            "task_id": "task-1",
+            "wan22_resolution_preset": "hd",
+            "wan22_chain_task_ids": [],
+        },
     )
-    download_last_frame_mock.assert_awaited_once()
     edit_mock.assert_awaited_once_with(
         query.message,
         "fsm.wan22_video_v2.extension_start:高清",
@@ -647,26 +666,30 @@ async def test_start_wan22_video_v2_extension_recovers_context_without_bot_data(
     monkeypatch,
 ):
     edit_mock = AsyncMock()
-    history = SimpleNamespace(
-        type="wan22_video_v2",
-        extra_outputs={
-            "_wan22_context": {
-                "wan22_resolution_preset": "hd",
-                "wan22_chain_task_ids": ["task-0"],
+    prepare_seed = AsyncMock(
+        return_value=_build_wan22_seed(
+            {
+                "start_image_path": "/tmp/tail.png",
+                "end_image_path": None,
+                "use_end_frame": False,
+                "resolution_preset": "hd",
+                "duration": 5,
+                "prompt": "",
+                "negative_prompt": "",
+                "extension_prev_task_id": "task-1",
+                "extension_task_type": "wan22_video_v2",
+                "lora_name": "",
+                "lora_strength": None,
+                "chain_task_ids": ["task-0", "task-1"],
             }
-        },
+        )
     )
 
     monkeypatch.setattr(wan22_video_v2_fsm, "robust_edit_text", edit_mock)
     monkeypatch.setattr(
         wan22_video_v2_fsm,
-        "load_owned_wan22_history",
-        AsyncMock(return_value=history),
-    )
-    monkeypatch.setattr(
-        wan22_video_v2_fsm,
-        "download_last_frame_to_fsm_temp",
-        AsyncMock(return_value="/tmp/tail.png"),
+        "prepare_wan22_extension_fsm_data",
+        prepare_seed,
     )
 
     query = SimpleNamespace(
@@ -697,6 +720,12 @@ async def test_start_wan22_video_v2_extension_recovers_context_without_bot_data(
     assert data["extension_prev_task_id"] == "task-1"
     assert data["resolution_preset"] == "hd"
     assert data["chain_task_ids"] == ["task-0", "task-1"]
+    prepare_seed.assert_awaited_once_with(
+        base_task_id="task-1",
+        telegram_user_id=12345,
+        username="tester",
+        message_meta={},
+    )
     edit_mock.assert_awaited_once()
 
 
@@ -705,18 +734,30 @@ async def test_start_wan22_video_v2_extension_recovers_task_id_from_gallery_butt
     monkeypatch,
 ):
     edit_mock = AsyncMock()
-    history = SimpleNamespace(type="wan22_video_v2", extra_outputs={})
+    prepare_seed = AsyncMock(
+        return_value=_build_wan22_seed(
+            {
+                "start_image_path": "/tmp/tail.png",
+                "end_image_path": None,
+                "use_end_frame": False,
+                "resolution_preset": "standard",
+                "duration": 5,
+                "prompt": "",
+                "negative_prompt": "",
+                "extension_prev_task_id": "task-1",
+                "extension_task_type": "wan22_video_v2",
+                "lora_name": "",
+                "lora_strength": None,
+                "chain_task_ids": ["task-1"],
+            }
+        )
+    )
 
     monkeypatch.setattr(wan22_video_v2_fsm, "robust_edit_text", edit_mock)
     monkeypatch.setattr(
         wan22_video_v2_fsm,
-        "load_owned_wan22_history",
-        AsyncMock(return_value=history),
-    )
-    monkeypatch.setattr(
-        wan22_video_v2_fsm,
-        "download_last_frame_to_fsm_temp",
-        AsyncMock(return_value="/tmp/tail.png"),
+        "prepare_wan22_extension_fsm_data",
+        prepare_seed,
     )
 
     query = SimpleNamespace(
@@ -752,6 +793,12 @@ async def test_start_wan22_video_v2_extension_recovers_task_id_from_gallery_butt
 
     assert result == wan22_video_v2_fsm.Wan22VideoV2State.WAIT_END_FRAME_CHOICE
     assert context.user_data["wan22_video_v2_data"]["extension_prev_task_id"] == "task-1"
+    prepare_seed.assert_awaited_once_with(
+        base_task_id="task-1",
+        telegram_user_id=12345,
+        username="tester",
+        message_meta={},
+    )
 
 
 @pytest.mark.asyncio
@@ -788,17 +835,30 @@ async def test_start_wan22_video_v2_extension_replies_when_task_id_missing(
 async def test_start_wan22_video_v2_extension_replies_for_media_message(monkeypatch):
     edit_mock = AsyncMock()
     reply_mock = AsyncMock()
+    prepare_seed = AsyncMock(
+        return_value=_build_wan22_seed(
+            {
+                "start_image_path": "/tmp/tail.png",
+                "end_image_path": None,
+                "use_end_frame": False,
+                "resolution_preset": "hd",
+                "duration": 5,
+                "prompt": "",
+                "negative_prompt": "",
+                "extension_prev_task_id": "task-1",
+                "extension_task_type": "wan22_video_v2",
+                "lora_name": "",
+                "lora_strength": None,
+                "chain_task_ids": ["task-1"],
+            }
+        )
+    )
     monkeypatch.setattr(wan22_video_v2_fsm, "robust_edit_text", edit_mock)
     monkeypatch.setattr(wan22_video_v2_fsm, "robust_reply_text", reply_mock)
     monkeypatch.setattr(
         wan22_video_v2_fsm,
-        "load_owned_wan22_history",
-        AsyncMock(return_value=SimpleNamespace(type="wan22_video_v2")),
-    )
-    monkeypatch.setattr(
-        wan22_video_v2_fsm,
-        "download_last_frame_to_fsm_temp",
-        AsyncMock(return_value="/tmp/tail.png"),
+        "prepare_wan22_extension_fsm_data",
+        prepare_seed,
     )
 
     media_message = SimpleNamespace(text=None, caption="done")
@@ -850,7 +910,7 @@ async def test_start_wan22_video_v2_extension_surfaces_missing_tail_frame_error(
     monkeypatch.setattr(wan22_video_v2_fsm, "robust_reply_text", reply_mock)
     monkeypatch.setattr(
         wan22_video_v2_fsm,
-        "load_owned_wan22_history",
+        "prepare_wan22_extension_fsm_data",
         AsyncMock(
             side_effect=wan22_video_v2_fsm.Wan22VideoV2ExtensionError(
                 "这条记录没有可用的尾帧图片"
@@ -889,27 +949,31 @@ async def test_start_wan22_video_v2_regeneration_waits_for_editable_prompt(
     monkeypatch,
 ):
     edit_mock = AsyncMock()
-    load_history_mock = AsyncMock(
-        side_effect=[
-            SimpleNamespace(
-                prompt="[standard|5s] [模型: BreastGrow] current prompt",
-                requested_duration=5,
-                type=wan22_video_v2_fsm.MODE_IMAGE_TO_VIDEO,
-            ),
-            SimpleNamespace(type="wan22_video_v2"),
-        ]
+    prepare_seed = AsyncMock(
+        return_value=_build_wan22_seed(
+            {
+                "start_image_path": "/tmp/start.png",
+                "end_image_path": None,
+                "use_end_frame": False,
+                "resolution_preset": "standard",
+                "duration": 5,
+                "prompt": "current prompt",
+                "prefill_prompt": "current prompt",
+                "negative_prompt": "negative",
+                "extension_prev_task_id": "task-2",
+                "extension_task_type": wan22_video_v2_fsm.MODE_IMAGE_TO_VIDEO,
+                "lora_name": "BreastGrow",
+                "lora_strength": 1.0,
+                "chain_task_ids": ["task-1", "task-2"],
+            }
+        )
     )
 
     monkeypatch.setattr(wan22_video_v2_fsm, "robust_edit_text", edit_mock)
     monkeypatch.setattr(
         wan22_video_v2_fsm,
-        "load_owned_wan22_history",
-        load_history_mock,
-    )
-    monkeypatch.setattr(
-        wan22_video_v2_fsm,
-        "download_last_frame_to_fsm_temp",
-        AsyncMock(return_value="/tmp/start.png"),
+        "prepare_wan22_regeneration_fsm_data",
+        prepare_seed,
     )
 
     query = SimpleNamespace(
@@ -960,6 +1024,21 @@ async def test_start_wan22_video_v2_regeneration_waits_for_editable_prompt(
     assert data["lora_name"] == "BreastGrow"
     assert data["lora_strength"] == 1.0
     assert data["chain_task_ids"] == ["task-1", "task-2"]
+    prepare_seed.assert_awaited_once_with(
+        current_task_id="task-3",
+        telegram_user_id=12345,
+        username="tester",
+        message_meta={
+            "task_id": "task-3",
+            "wan22_prev_task_id": "task-2",
+            "wan22_chain_task_ids": ["task-1", "task-2"],
+            "wan22_negative_prompt": "negative",
+            "wan22_resolution_preset": "standard",
+            "wan22_use_end_frame": False,
+            "lora_name": "BreastGrow",
+            "lora_strength": 1.0,
+        },
+    )
     edit_mock.assert_awaited_once_with(
         query.message,
         "regen:current prompt",

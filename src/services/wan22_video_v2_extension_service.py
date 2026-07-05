@@ -5,13 +5,17 @@ import tempfile
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Awaitable, Callable
 
 from sqlalchemy import select
 
+from src.constants import MODE_WAN22_VIDEO_V2
 from src.core.media_paths import resolve_storage_object
 from src.core import user_core
+from src.core.video_billing import resolve_apply_prompt_and_requested_duration
 from src.database.core import AsyncSessionLocal
 from src.database.models import History
+from src.lora_mapping import extract_prompt_lora_context
 from src.services.fsm_temp_file_service import FSM_TEMP_DIR
 from src.services.storage import storage
 from src.domain_config.wan22_aio_video import normalize_wan22_video_v2_chain_task_ids
@@ -29,6 +33,10 @@ class Wan22VideoV2ExtensionError(Exception):
     """Raised when WAN2.2 extension or stitching prerequisites are not met."""
 
 
+class Wan22VideoV2MissingPreviousSegmentError(Wan22VideoV2ExtensionError):
+    """Raised when a regeneration callback cannot recover its previous segment."""
+
+
 class Wan22VideoV2PersistenceError(Wan22VideoV2ExtensionError):
     """Raised when a stitched WAN2.2 result cannot be persisted."""
 
@@ -44,6 +52,37 @@ class Wan22StitchedHistoryResult:
     allow_contribute: bool
     segment_count: int
     history: History
+
+
+@dataclass(frozen=True)
+class Wan22ExtensionFsmSeed:
+    fsm_data: dict[str, object]
+    history: History
+    base_task_id: str
+    merged_meta: dict[str, object]
+
+
+@dataclass(frozen=True)
+class Wan22RegenerationFsmSeed:
+    fsm_data: dict[str, object]
+    current_history: History
+    prev_history: History
+    current_task_id: str
+    prev_task_id: str
+    merged_meta: dict[str, object]
+
+
+@dataclass(frozen=True)
+class Wan22StitchPlan:
+    histories: list[History]
+    internal_user_id: int
+    source_task_id: str
+    full_task_ids: list[str]
+
+
+LoadOwnedWan22HistoryFunc = Callable[..., Awaitable[History]]
+DownloadLastFrameFunc = Callable[..., Awaitable[str]]
+DownloadHistoryInputFileFunc = Callable[..., Awaitable[str]]
 
 
 async def resolve_internal_user_id_from_telegram(
@@ -134,6 +173,227 @@ def extract_wan22_history_context(extra_outputs: dict | None) -> dict[str, objec
     if not isinstance(context, dict):
         return {}
     return dict(context)
+
+
+def merge_wan22_history_context_into_meta(
+    history: History,
+    meta: dict[str, Any] | None,
+) -> dict[str, object]:
+    return {
+        **extract_wan22_history_context(getattr(history, "extra_outputs", None)),
+        **dict(meta or {}),
+    }
+
+
+def resolve_wan22_history_duration_seconds(
+    history: History,
+    meta: dict[str, Any] | None,
+) -> int:
+    meta = meta or {}
+    raw_duration = (
+        meta.get("wan22_duration_seconds")
+        or getattr(history, "requested_duration", None)
+        or getattr(history, "duration", None)
+    )
+    try:
+        duration = int(raw_duration)
+    except (TypeError, ValueError):
+        duration = 5
+    if duration not in {5, 8, 10}:
+        duration = 5
+    return duration
+
+
+def resolve_reusable_wan22_history_prompt_and_lora(
+    history: History,
+    meta: dict[str, Any] | None,
+) -> tuple[str, str | None, float]:
+    meta = meta or {}
+    prompt, _requested_duration = resolve_apply_prompt_and_requested_duration(
+        getattr(history, "type", None),
+        getattr(history, "prompt", None),
+        getattr(history, "requested_duration", None),
+    )
+    prompt, parsed_lora_name, parsed_lora_strength = extract_prompt_lora_context(prompt)
+    lora_name = str(meta.get("lora_name") or parsed_lora_name or "").strip() or None
+    lora_strength = meta.get("lora_strength")
+    try:
+        normalized_lora_strength = float(lora_strength)
+    except (TypeError, ValueError):
+        normalized_lora_strength = parsed_lora_strength or 1.0
+    return prompt, lora_name, normalized_lora_strength
+
+
+async def prepare_wan22_extension_fsm_data(
+    *,
+    base_task_id: str,
+    telegram_user_id: int,
+    username: str | None,
+    message_meta: dict[str, Any] | None = None,
+    load_history_func: LoadOwnedWan22HistoryFunc = load_owned_wan22_history,
+    download_last_frame_func: DownloadLastFrameFunc | None = None,
+) -> Wan22ExtensionFsmSeed:
+    download_last_frame_func = download_last_frame_func or download_last_frame_to_fsm_temp
+    history = await load_history_func(
+        task_id=base_task_id,
+        telegram_user_id=telegram_user_id,
+        username=username,
+    )
+    merged_meta = merge_wan22_history_context_into_meta(history, message_meta)
+    start_image_path = await download_last_frame_func(history=history)
+    fsm_data: dict[str, object] = {
+        "start_image_path": start_image_path,
+        "end_image_path": None,
+        "use_end_frame": False,
+        "resolution_preset": resolve_extension_resolution_preset(merged_meta),
+        "duration": resolve_wan22_history_duration_seconds(history, merged_meta),
+        "prompt": "",
+        "negative_prompt": "",
+        "extension_prev_task_id": base_task_id,
+        "extension_task_type": getattr(history, "type", None),
+        "lora_name": str(merged_meta.get("lora_name") or "").strip(),
+        "lora_strength": merged_meta.get("lora_strength"),
+        "chain_task_ids": build_full_chain_task_ids(
+            chain_task_ids=resolve_extension_chain_task_ids(merged_meta),
+            current_task_id=base_task_id,
+        ),
+    }
+    return Wan22ExtensionFsmSeed(
+        fsm_data=fsm_data,
+        history=history,
+        base_task_id=base_task_id,
+        merged_meta=merged_meta,
+    )
+
+
+async def prepare_wan22_regeneration_fsm_data(
+    *,
+    current_task_id: str,
+    telegram_user_id: int,
+    username: str | None,
+    message_meta: dict[str, Any] | None = None,
+    load_history_func: LoadOwnedWan22HistoryFunc = load_owned_wan22_history,
+    download_last_frame_func: DownloadLastFrameFunc | None = None,
+    download_history_input_file_func: DownloadHistoryInputFileFunc | None = None,
+) -> Wan22RegenerationFsmSeed:
+    download_last_frame_func = download_last_frame_func or download_last_frame_to_fsm_temp
+    download_history_input_file_func = (
+        download_history_input_file_func or download_history_input_file_to_fsm_temp
+    )
+    current_history = await load_history_func(
+        task_id=current_task_id,
+        telegram_user_id=telegram_user_id,
+        username=username,
+    )
+    merged_meta = merge_wan22_history_context_into_meta(current_history, message_meta)
+    prev_task_id = str(merged_meta.get("wan22_prev_task_id") or "").strip()
+    if not prev_task_id:
+        raise Wan22VideoV2MissingPreviousSegmentError("记录已失效，请重新生成后再试")
+
+    prev_history = await load_history_func(
+        task_id=prev_task_id,
+        telegram_user_id=telegram_user_id,
+        username=username,
+    )
+    start_image_path = await download_last_frame_func(
+        history=prev_history,
+        name_hint="wan22_video_v2_regenerate_start",
+    )
+    use_end_frame = bool(merged_meta.get("wan22_use_end_frame"))
+    end_image_path = None
+    if use_end_frame:
+        end_image_path = await download_history_input_file_func(
+            history=current_history,
+            index=1,
+            name_hint="wan22_video_v2_regenerate_end",
+        )
+
+    if getattr(current_history, "type", None) == MODE_WAN22_VIDEO_V2:
+        prompt = str(getattr(current_history, "prompt", "") or "").strip()
+        lora_name = None
+        lora_strength = None
+    else:
+        prompt, lora_name, lora_strength = resolve_reusable_wan22_history_prompt_and_lora(
+            current_history,
+            merged_meta,
+        )
+
+    fsm_data: dict[str, object] = {
+        "start_image_path": start_image_path,
+        "end_image_path": end_image_path,
+        "use_end_frame": use_end_frame,
+        "resolution_preset": resolve_extension_resolution_preset(merged_meta),
+        "duration": resolve_wan22_history_duration_seconds(
+            current_history,
+            merged_meta,
+        ),
+        "prompt": prompt,
+        "prefill_prompt": prompt,
+        "negative_prompt": str(merged_meta.get("wan22_negative_prompt") or "").strip(),
+        "extension_prev_task_id": prev_task_id,
+        "extension_task_type": getattr(current_history, "type", None),
+        "lora_name": lora_name,
+        "lora_strength": lora_strength,
+        "chain_task_ids": normalize_wan22_video_v2_chain_task_ids(
+            merged_meta.get("wan22_chain_task_ids")
+        ),
+    }
+    return Wan22RegenerationFsmSeed(
+        fsm_data=fsm_data,
+        current_history=current_history,
+        prev_history=prev_history,
+        current_task_id=current_task_id,
+        prev_task_id=prev_task_id,
+        merged_meta=merged_meta,
+    )
+
+
+async def build_wan22_stitch_plan(
+    *,
+    current_task_id: str,
+    telegram_user_id: int,
+    username: str | None,
+    message_meta: dict[str, Any] | None = None,
+    load_history_func: LoadOwnedWan22HistoryFunc = load_owned_wan22_history,
+) -> Wan22StitchPlan:
+    current_history = await load_history_func(
+        task_id=current_task_id,
+        telegram_user_id=telegram_user_id,
+        username=username,
+    )
+    merged_meta = merge_wan22_history_context_into_meta(current_history, message_meta)
+    full_task_ids = build_full_chain_task_ids(
+        chain_task_ids=normalize_wan22_video_v2_chain_task_ids(
+            merged_meta.get("wan22_chain_task_ids")
+        ),
+        current_task_id=current_task_id,
+    )
+    if len(full_task_ids) < 2:
+        raise Wan22VideoV2ExtensionError("至少需要两段视频才能完成拼接")
+
+    history_cache = {current_task_id: current_history}
+    histories: list[History] = []
+    for task_id in full_task_ids:
+        history = history_cache.get(task_id)
+        if history is None:
+            history = await load_history_func(
+                task_id=task_id,
+                telegram_user_id=telegram_user_id,
+                username=username,
+            )
+            history_cache[task_id] = history
+        histories.append(history)
+
+    internal_user_id = int(getattr(histories[0], "user_id", 0) or 0)
+    if not internal_user_id:
+        raise Wan22VideoV2ExtensionError("未找到用户信息，无法保存拼接结果。")
+
+    return Wan22StitchPlan(
+        histories=histories,
+        internal_user_id=internal_user_id,
+        source_task_id=current_task_id,
+        full_task_ids=full_task_ids,
+    )
 
 
 def is_wan22_stitched_result(extra_outputs: dict | None) -> bool:

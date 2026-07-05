@@ -254,8 +254,12 @@ def create_wan22_video_v2_submission_task(
     username: str | None,
     process_wan22_video_v2_task_func: Wan22VideoV2Task = process_wan22_video_v2_task,
     process_image_to_video_task_func: ImageToVideoTask = process_image_to_video_task,
+    status_msg_id: int | None = None,
 ) -> Any:
     if plan.kind == AdvancedVideoSubmissionKind.WAN22_VIDEO_V2:
+        kwargs = {}
+        if status_msg_id is not None:
+            kwargs["status_msg_id"] = status_msg_id
         return process_wan22_video_v2_task_func(
             context=context,
             chat_id=chat_id,
@@ -269,8 +273,12 @@ def create_wan22_video_v2_submission_task(
             duration=plan.duration,
             result_meta=plan.result_meta,
             cleanup=True,
+            **kwargs,
         )
 
+    kwargs = {}
+    if status_msg_id is not None:
+        kwargs["status_msg_id"] = status_msg_id
     return process_image_to_video_task_func(
         context=context,
         chat_id=chat_id,
@@ -288,6 +296,7 @@ def create_wan22_video_v2_submission_task(
         lora_name=plan.lora_name,
         lora_strength=plan.lora_strength,
         cleanup=True,
+        **kwargs,
     )
 
 

@@ -16,6 +16,7 @@ from src.services.task_service_types import (
     BotTaskFailureContext,
 )
 from src.constants import (
+    MODE_CUSTOM_VIDEO,
     MODE_FACESWAP_STEP1,
     MODE_IMAGE_TO_VIDEO,
     MODE_LTX_VIDEO,
@@ -420,6 +421,23 @@ def test_build_result_reply_markup_supports_wan22_video_v2_gallery_button():
     assert first_row[1].callback_data == "wan22v2_extend:task-wan22"
 
 
+@pytest.mark.parametrize("task_type", [MODE_CUSTOM_VIDEO, MODE_IMAGE_TO_VIDEO])
+def test_build_result_reply_markup_supports_legacy_wan22_aio_extension_button(
+    task_type,
+):
+    final_markup = tg_runtime_helpers.build_result_reply_markup(
+        task_type=task_type,
+        task_id="task-legacy-wan22",
+        allow_contribute=True,
+        reply_markup=None,
+        result_meta={"wan22_resolution_preset": "standard"},
+    )
+
+    first_row = final_markup.inline_keyboard[0]
+    assert first_row[0].callback_data == "submit_gallery_task-legacy-wan22"
+    assert first_row[1].callback_data == "wan22v2_extend:task-legacy-wan22"
+
+
 @pytest.mark.parametrize(
     "task_type",
     [
@@ -462,6 +480,34 @@ def test_build_result_reply_markup_supports_wan22_video_v2_non_first_segment_but
         "wan22v2_extend:task-wan22-2",
     ]
     assert second_row[0].callback_data == "wan22v2_stitch_chain:task-wan22-2"
+
+
+@pytest.mark.parametrize("task_type", [MODE_CUSTOM_VIDEO, MODE_IMAGE_TO_VIDEO])
+def test_build_result_reply_markup_supports_legacy_wan22_aio_chain_buttons(
+    task_type,
+):
+    final_markup = tg_runtime_helpers.build_result_reply_markup(
+        task_type=task_type,
+        task_id="task-legacy-wan22-2",
+        allow_contribute=True,
+        reply_markup=None,
+        result_meta={
+            "wan22_resolution_preset": "standard",
+            "wan22_prev_task_id": "task-legacy-wan22-1",
+            "wan22_chain_task_ids": ["task-legacy-wan22-1"],
+        },
+    )
+
+    first_row = final_markup.inline_keyboard[0]
+    second_row = final_markup.inline_keyboard[1]
+    assert [btn.callback_data for btn in first_row] == [
+        "submit_gallery_task-legacy-wan22-2",
+        "wan22v2_regenerate:task-legacy-wan22-2",
+        "wan22v2_extend:task-legacy-wan22-2",
+    ]
+    assert second_row[0].callback_data == (
+        "wan22v2_stitch_chain:task-legacy-wan22-2"
+    )
 
 
 def test_build_result_reply_markup_supports_ltx_video_non_first_segment_buttons():

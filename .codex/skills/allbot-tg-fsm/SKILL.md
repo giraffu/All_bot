@@ -23,6 +23,7 @@ description: "处理 Telegram FSM、全局菜单黑盒退出、callback 路由�
 - **高级视频提交 service**：主 Bot `image_to_video_fsm.py`、`wan22_video_v2_fsm.py`、`ltx_video_fsm.py` 只负责 Telegram 状态流转、素材接收、额度检查、用户回复和清理；旧图生视频/Wan22 v2/LTX 的提交计划、首尾帧 payload、分辨率/时长归一、LTX LoRA 多选和扩展链上下文统一放在 `src/services/advanced_video_submission_service.py`。该 service 不新增 task type、workflow 或 QQCC 能力。
 - **高级视频设置 view service**：主 Bot 旧图生视频、Wan22 v2 与 LTX 的同屏设置面板 view-model/keyboards 统一放在 `src/services/advanced_video_settings_view_service.py`；FSM wrapper 只回写归一后的分辨率/时长并发送或编辑 Telegram 消息。修改设置按钮、费用展示、LTX 扩展直接续写提示时优先改该 service 并补 focused tests，不在 handler 里复制键盘拼装。
 - **LTX 扩展/拼接 service**：`ltx_video_fsm.py` 的扩展入口和 `handlers/callbacks/ltx_video_callbacks.py` 的完成拼接 callback 只负责 Telegram 层交互；历史归属校验、`_ltx_context` 合并、尾帧下载、扩展 FSM seed 与完整拼接链 histories 加载统一放在 `src/services/ltx_video_extension_service.py`。
+- **Wan22 AIO 链路扩展/重生成/拼接 service**：旧图生视频 `custom_video` / `video_lora` 与图生视频 v2 共用这套 Bot 链路。`wan22_video_v2_fsm.py` 的扩展/重生成入口和 `handlers/callbacks/wan22_video_v2_callbacks.py` 的重生成/完成拼接 callback 只负责 Telegram 层交互与任务启动；历史归属校验、`_wan22_context` 合并、上一段尾帧/当前段输入图下载、FSM seed 与完整拼接链 histories 加载统一放在 `src/services/wan22_video_v2_extension_service.py`。
 
 ## 2. 输入输出规范
 ### FSM 状态流转
