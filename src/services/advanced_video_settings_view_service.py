@@ -63,6 +63,48 @@ def normalize_wan22_view_settings(
     return resolution, duration
 
 
+def apply_wan22_video_settings_callback(
+    data: dict[str, object],
+    *,
+    callback_data: str,
+    resolution_prefix: str,
+    duration_prefix: str,
+    resolution_key: str,
+) -> bool:
+    if callback_data.startswith(resolution_prefix):
+        selected_preset = callback_data.removeprefix(resolution_prefix)
+        if selected_preset not in WAN22_VIDEO_V2_RESOLUTION_PRESETS:
+            return False
+        data[resolution_key] = normalize_wan22_video_v2_resolution_preset(
+            selected_preset
+        )
+        return True
+
+    if callback_data.startswith(duration_prefix):
+        data["duration"] = normalize_wan22_video_v2_duration_seconds(
+            callback_data.removeprefix(duration_prefix)
+        )
+        return True
+
+    return False
+
+
+def apply_ltx_video_settings_callback(
+    data: dict[str, object],
+    *,
+    callback_data: str,
+) -> bool:
+    if callback_data.startswith("set_ltxres_"):
+        data["resolution"] = callback_data.removeprefix("set_ltxres_")
+        return True
+
+    if callback_data.startswith("set_ltxdur_"):
+        data["duration"] = callback_data.removeprefix("set_ltxdur_")
+        return True
+
+    return False
+
+
 def _build_wan22_cost_resolution_row(
     *,
     selected_resolution: str,

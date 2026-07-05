@@ -53,6 +53,7 @@ from src.services.advanced_video_submission_service import (
     create_wan22_video_v2_submission_task,
 )
 from src.services.advanced_video_settings_view_service import (
+    apply_wan22_video_settings_callback,
     build_wan22_initial_setup_view,
     build_wan22_settings_view,
 )
@@ -163,7 +164,9 @@ async def _reply_callback_notice(update: Update, text: str) -> None:
         await robust_reply_text(target_message, text, parse_mode="Markdown")
 
 
-def _build_end_frame_choice_keyboard(context: ContextTypes.DEFAULT_TYPE) -> InlineKeyboardMarkup:
+def _build_end_frame_choice_keyboard(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
@@ -346,9 +349,7 @@ async def _send_or_edit_message(
         )
 
 
-async def _ask_for_prompt(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> int:
+async def _ask_for_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     data = _get_data(context) or {}
     original_prompt = str(data.get("prefill_prompt") or "").strip()
     if original_prompt:
@@ -410,7 +411,9 @@ async def start_wan22_video_v2(
     query = update.callback_query
     if query:
         with contextlib.suppress(Exception):
-            await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
+            await query.answer(
+                text=_t(context, "fsm.common.task_initializing"), cache_time=2
+            )
 
     from src.utils import is_maintenance_mode
 
@@ -453,7 +456,9 @@ async def start_wan22_video_v2_extension(
     query = update.callback_query
     if query:
         with contextlib.suppress(Exception):
-            await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
+            await query.answer(
+                text=_t(context, "fsm.common.task_initializing"), cache_time=2
+            )
 
     if context.user_data.get("in_conversation"):
         await _reply_callback_notice(update, _t(context, "fsm.common.conflict"))
@@ -470,7 +475,9 @@ async def start_wan22_video_v2_extension(
         callback_prefix=WAN22_EXTEND_CALLBACK_PREFIX,
     )
     if not base_task_id:
-        await _reply_callback_notice(update, _t(context, "fsm.wan22_video_v2.expired_alert"))
+        await _reply_callback_notice(
+            update, _t(context, "fsm.wan22_video_v2.expired_alert")
+        )
         return ConversationHandler.END
     try:
         seed = await prepare_wan22_extension_fsm_data(
@@ -520,7 +527,9 @@ async def start_wan22_video_v2_regeneration(
     query = update.callback_query
     if query:
         with contextlib.suppress(Exception):
-            await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
+            await query.answer(
+                text=_t(context, "fsm.common.task_initializing"), cache_time=2
+            )
 
     if context.user_data.get("in_conversation"):
         await _reply_callback_notice(update, _t(context, "fsm.common.conflict"))
@@ -537,7 +546,9 @@ async def start_wan22_video_v2_regeneration(
         callback_prefix=WAN22_REGENERATE_CALLBACK_PREFIX,
     )
     if not current_task_id:
-        await _reply_callback_notice(update, _t(context, "fsm.wan22_video_v2.expired_alert"))
+        await _reply_callback_notice(
+            update, _t(context, "fsm.wan22_video_v2.expired_alert")
+        )
         return ConversationHandler.END
 
     try:
@@ -584,7 +595,9 @@ async def handle_initial_setup_action(
     data = _get_data(context)
     if not data:
         with contextlib.suppress(Exception):
-            await query.answer(_t(context, "fsm.wan22_video_v2.expired_alert"), show_alert=True)
+            await query.answer(
+                _t(context, "fsm.wan22_video_v2.expired_alert"), show_alert=True
+            )
         return ConversationHandler.END
 
     callback_data = query.data or ""
@@ -594,14 +607,14 @@ async def handle_initial_setup_action(
     elif callback_data == WAN22_VIDEO_V2_SETUP_MODE_END:
         data["use_end_frame"] = True
         data["end_image_path"] = None
-    elif callback_data.startswith(WAN22_VIDEO_V2_SETUP_RES_PREFIX):
-        data["resolution_preset"] = normalize_wan22_video_v2_resolution_preset(
-            callback_data.removeprefix(WAN22_VIDEO_V2_SETUP_RES_PREFIX)
-        )
-    elif callback_data.startswith(WAN22_VIDEO_V2_SETUP_DUR_PREFIX):
-        data["duration"] = normalize_wan22_video_v2_duration_seconds(
-            callback_data.removeprefix(WAN22_VIDEO_V2_SETUP_DUR_PREFIX)
-        )
+    elif apply_wan22_video_settings_callback(
+        data,
+        callback_data=callback_data,
+        resolution_prefix=WAN22_VIDEO_V2_SETUP_RES_PREFIX,
+        duration_prefix=WAN22_VIDEO_V2_SETUP_DUR_PREFIX,
+        resolution_key="resolution_preset",
+    ):
+        pass
     elif callback_data == WAN22_VIDEO_V2_SETUP_CONFIRM:
         await robust_edit_text(
             query.message,
@@ -643,7 +656,9 @@ async def receive_start_image(
         )
     except Exception as exc:
         logger.error("download start image failed for wan22_video_v2: %s", exc)
-        await robust_reply_text(message, _t(context, "fsm.common.download_image_failed"))
+        await robust_reply_text(
+            message, _t(context, "fsm.common.download_image_failed")
+        )
         return Wan22VideoV2State.WAIT_START_IMAGE
 
     data["end_image_path"] = None
@@ -668,7 +683,9 @@ async def receive_initial_setup_start_image(
 ) -> int:
     data = _get_data(context)
     if not data:
-        await robust_reply_text(update.message, _t(context, "fsm.common.expired_cleaned"))
+        await robust_reply_text(
+            update.message, _t(context, "fsm.common.expired_cleaned")
+        )
         return ConversationHandler.END
     return await receive_start_image(update, context)
 
@@ -681,7 +698,9 @@ async def choose_end_frame_mode(
     data = _get_data(context)
     if not data:
         with contextlib.suppress(Exception):
-            await query.answer(_t(context, "fsm.wan22_video_v2.expired_alert"), show_alert=True)
+            await query.answer(
+                _t(context, "fsm.wan22_video_v2.expired_alert"), show_alert=True
+            )
         return ConversationHandler.END
 
     use_end_frame = query.data == "wan22v2_end_frame_yes"
@@ -704,9 +723,7 @@ async def choose_end_frame_mode(
     return await _ask_for_prompt(update, context)
 
 
-async def receive_end_image(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> int:
+async def receive_end_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     message = update.message
     data = _get_data(context)
     if not data:
@@ -726,16 +743,18 @@ async def receive_end_image(
         )
     except Exception as exc:
         logger.error("download end image failed for wan22_video_v2: %s", exc)
-        await robust_reply_text(message, _t(context, "fsm.common.download_image_failed"))
+        await robust_reply_text(
+            message, _t(context, "fsm.common.download_image_failed")
+        )
         return Wan22VideoV2State.WAIT_END_IMAGE
 
-    await robust_reply_text(message, _t(context, "fsm.wan22_video_v2.end_image_received"))
+    await robust_reply_text(
+        message, _t(context, "fsm.wan22_video_v2.end_image_received")
+    )
     return await _ask_for_prompt(update, context)
 
 
-async def receive_prompt(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> int:
+async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     message = update.message
     prompt = (message.text or "").strip()
     if is_global_menu_command(prompt):
@@ -759,12 +778,12 @@ async def use_original_prompt(
     data = _get_data(context)
     if not data:
         with contextlib.suppress(Exception):
-            await query.answer(_t(context, "fsm.wan22_video_v2.expired_alert"), show_alert=True)
+            await query.answer(
+                _t(context, "fsm.wan22_video_v2.expired_alert"), show_alert=True
+            )
         return ConversationHandler.END
 
-    data["prompt"] = str(
-        data.get("prompt") or data.get("prefill_prompt") or ""
-    ).strip()
+    data["prompt"] = str(data.get("prompt") or data.get("prefill_prompt") or "").strip()
     return await _ask_for_negative_prompt(update, context)
 
 
@@ -793,7 +812,9 @@ async def skip_negative_prompt(
     data = _get_data(context)
     if not data:
         with contextlib.suppress(Exception):
-            await query.answer(_t(context, "fsm.wan22_video_v2.expired_alert"), show_alert=True)
+            await query.answer(
+                _t(context, "fsm.wan22_video_v2.expired_alert"), show_alert=True
+            )
         return ConversationHandler.END
 
     data["negative_prompt"] = ""
@@ -808,18 +829,19 @@ async def handle_settings_action(
     data = _get_data(context)
     if not data:
         with contextlib.suppress(Exception):
-            await query.answer(_t(context, "fsm.wan22_video_v2.expired_alert"), show_alert=True)
+            await query.answer(
+                _t(context, "fsm.wan22_video_v2.expired_alert"), show_alert=True
+            )
         return ConversationHandler.END
 
     callback_data = query.data or ""
-    if callback_data.startswith("wan22v2_res_"):
-        selected_preset = callback_data.removeprefix("wan22v2_res_")
-        if selected_preset in WAN22_VIDEO_V2_RESOLUTION_PRESETS:
-            data["resolution_preset"] = selected_preset
-    elif callback_data.startswith("wan22v2_dur_"):
-        data["duration"] = normalize_wan22_video_v2_duration_seconds(
-            callback_data.removeprefix("wan22v2_dur_")
-        )
+    apply_wan22_video_settings_callback(
+        data,
+        callback_data=callback_data,
+        resolution_prefix="wan22v2_res_",
+        duration_prefix="wan22v2_dur_",
+        resolution_key="resolution_preset",
+    )
 
     if callback_data == "wan22v2_submit":
         return await submit_generation(update, context)
@@ -833,30 +855,34 @@ async def handle_settings_action(
     return Wan22VideoV2State.WAIT_SETTINGS
 
 
-async def submit_generation(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> int:
+async def submit_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     user = update.effective_user
     data = _get_data(context)
     if not data or not user:
         if query:
             with contextlib.suppress(Exception):
-                await query.answer(_t(context, "fsm.wan22_video_v2.expired_alert"), show_alert=True)
+                await query.answer(
+                    _t(context, "fsm.wan22_video_v2.expired_alert"), show_alert=True
+                )
         return ConversationHandler.END
 
     start_image_path = data.get("start_image_path")
     if not start_image_path:
         if query:
             with contextlib.suppress(Exception):
-                await query.answer(_t(context, "fsm.common.missing_image_resend"), show_alert=True)
+                await query.answer(
+                    _t(context, "fsm.common.missing_image_resend"), show_alert=True
+                )
         _cleanup_context(context)
         return ConversationHandler.END
 
     if data.get("use_end_frame") and not data.get("end_image_path"):
         if query:
             with contextlib.suppress(Exception):
-                await query.answer(_t(context, "fsm.wan22_video_v2.missing_end_image"), show_alert=True)
+                await query.answer(
+                    _t(context, "fsm.wan22_video_v2.missing_end_image"), show_alert=True
+                )
         return Wan22VideoV2State.WAIT_END_IMAGE
 
     submission_plan = build_wan22_video_v2_submission_plan(data=data)
@@ -1032,7 +1058,9 @@ def get_wan22_video_v2_fsm_handler() -> ConversationHandler:
                 ),
             ],
             Wan22VideoV2State.WAIT_END_IMAGE: [
-                MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_end_image),
+                MessageHandler(
+                    filters.PHOTO | filters.Document.IMAGE, receive_end_image
+                ),
                 MessageHandler(
                     (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
                     unexpected_input,
@@ -1047,7 +1075,9 @@ def get_wan22_video_v2_fsm_handler() -> ConversationHandler:
                     (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
                     receive_prompt,
                 ),
-                MessageHandler(filters.PHOTO | filters.Document.IMAGE, unexpected_input),
+                MessageHandler(
+                    filters.PHOTO | filters.Document.IMAGE, unexpected_input
+                ),
             ],
             Wan22VideoV2State.WAIT_NEGATIVE_PROMPT: [
                 CallbackQueryHandler(
@@ -1057,7 +1087,9 @@ def get_wan22_video_v2_fsm_handler() -> ConversationHandler:
                     (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
                     receive_negative_prompt,
                 ),
-                MessageHandler(filters.PHOTO | filters.Document.IMAGE, unexpected_input),
+                MessageHandler(
+                    filters.PHOTO | filters.Document.IMAGE, unexpected_input
+                ),
             ],
             Wan22VideoV2State.WAIT_SETTINGS: [
                 CallbackQueryHandler(
@@ -1068,7 +1100,9 @@ def get_wan22_video_v2_fsm_handler() -> ConversationHandler:
                     (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
                     unexpected_input,
                 ),
-                MessageHandler(filters.PHOTO | filters.Document.IMAGE, unexpected_input),
+                MessageHandler(
+                    filters.PHOTO | filters.Document.IMAGE, unexpected_input
+                ),
             ],
             ConversationHandler.TIMEOUT: [
                 MessageHandler(filters.ALL, timeout_conversation)

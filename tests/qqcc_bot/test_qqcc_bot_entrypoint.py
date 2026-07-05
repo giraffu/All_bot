@@ -2,7 +2,12 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler, TypeHandler
+from telegram.ext import (
+    CallbackQueryHandler,
+    CommandHandler,
+    MessageHandler,
+    TypeHandler,
+)
 
 from qqcc_bot import keyboards, main as qqcc_main, prompt_handlers
 from qqcc_bot import commands as qqcc_commands
@@ -17,7 +22,6 @@ from src.handlers.fsm.quick_draw_callback_data import (
     build_quick_draw_scene_callback_data,
 )
 from src.handlers.fsm.quick_video_callback_data import (
-    build_quick_video_mode_callback_data,
     build_quick_video_scene_callback_data,
 )
 from src.handlers import prompt_router
@@ -26,7 +30,10 @@ from src.services.qqcc_config_service import SCENE_PRESET_VERSION, normalize_qqc
 
 
 def _keyboard_texts(reply_markup):
-    return [[getattr(button, "text", button) for button in row] for row in reply_markup.keyboard]
+    return [
+        [getattr(button, "text", button) for button in row]
+        for row in reply_markup.keyboard
+    ]
 
 
 def _inline_keyboard_texts(reply_markup):
@@ -54,9 +61,7 @@ def test_qqcc_main_menu_only_contains_lazy_generation_entries():
 
 
 def test_qqcc_main_bot_link_keyboard_uses_url_button():
-    keyboard = keyboards.get_qqcc_main_bot_link_keyboard(
-        "zh", "https://t.me/main_bot"
-    )
+    keyboard = keyboards.get_qqcc_main_bot_link_keyboard("zh", "https://t.me/main_bot")
 
     button = keyboard.inline_keyboard[0][0]
     assert button.text == "前往主bot"
@@ -144,10 +149,7 @@ def test_qqcc_main_menu_shows_default_ai_draw_scenes():
 
 def test_qqcc_main_menu_keeps_ai_draw_when_draw_scenes_are_empty():
     config = normalize_qqcc_config(
-        {
-            "main_buttons": {"quick_faceswap": True},
-            "draw_scenes": []
-        }
+        {"main_buttons": {"quick_faceswap": True}, "draw_scenes": []}
     )
 
     main_rows = _keyboard_texts(keyboards.get_qqcc_main_menu_keyboard("zh", config))
@@ -235,7 +237,7 @@ def test_qqcc_video_menu_uses_dynamic_scene_config():
                     "prompt": "smile prompt",
                     "duration": "5s",
                 },
-            ]
+            ],
         }
     )
 
@@ -377,7 +379,9 @@ def test_qqcc_prompt_routes_are_limited_to_lazy_menus():
     }
 
 
-def test_qqcc_lazy_main_buttons_are_routable_without_main_bot_prompt_routes(monkeypatch):
+def test_qqcc_lazy_main_buttons_are_routable_without_main_bot_prompt_routes(
+    monkeypatch,
+):
     monkeypatch.setattr(prompt_router, "prompt_routes", {}, raising=False)
 
     prompt_router.build_global_menu_filter()
@@ -633,9 +637,7 @@ async def test_qqcc_video_settings_buttons_are_filtered(monkeypatch):
         qqcc_config=config,
     )
     callbacks = [
-        button.callback_data
-        for row in markup.inline_keyboard
-        for button in row
+        button.callback_data for row in markup.inline_keyboard for button in row
     ]
 
     assert "set_res_512p" in callbacks
@@ -733,7 +735,9 @@ async def test_qqcc_video_prompt_override_does_not_affect_main_bot(monkeypatch):
             bot_data=bot_data,
             user_data={
                 "quick_video_data": {
-                    "mode": MODE_CUSTOM_VIDEO if bot_data else MODE_PERFECT_VIDEO_INSERT,
+                    "mode": MODE_CUSTOM_VIDEO
+                    if bot_data
+                    else MODE_PERFECT_VIDEO_INSERT,
                     "scene_id": "missionary" if bot_data else None,
                     "mode_name": "自定义动图" if bot_data else None,
                     "prompt_override": "qqcc scene prompt" if bot_data else None,
@@ -1341,7 +1345,9 @@ async def test_qqcc_video_scene_generates_tail_frame_before_wan22_v2(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_qqcc_video_scene_skips_video_when_tail_frame_generation_fails(monkeypatch):
+async def test_qqcc_video_scene_skips_video_when_tail_frame_generation_fails(
+    monkeypatch,
+):
     background_tasks = []
     cleaned_paths = []
     video_task = AsyncMock()
@@ -1557,7 +1563,7 @@ async def test_qqcc_quick_video_scene_callback_selects_dynamic_scene(monkeypatch
                     "prompt": "kissing prompt",
                     "duration": "8s",
                 }
-            ]
+            ],
         }
     )
 
@@ -1612,7 +1618,9 @@ async def test_qqcc_quick_video_scene_callback_selects_dynamic_scene(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_qqcc_legacy_quick_video_callback_is_blocked_after_scene_removed(monkeypatch):
+async def test_qqcc_legacy_quick_video_callback_is_blocked_after_scene_removed(
+    monkeypatch,
+):
     edit_mock = AsyncMock()
     answer_mock = AsyncMock()
     config = normalize_qqcc_config(
@@ -1625,7 +1633,7 @@ async def test_qqcc_legacy_quick_video_callback_is_blocked_after_scene_removed(m
                     "prompt": "kissing prompt",
                     "duration": "8s",
                 }
-            ]
+            ],
         }
     )
 
@@ -1645,7 +1653,7 @@ async def test_qqcc_legacy_quick_video_callback_is_blocked_after_scene_removed(m
         message=None,
         edited_message=None,
         callback_query=SimpleNamespace(
-            data=build_quick_video_mode_callback_data("menu.video_edit_doggy"),
+            data="qvid_mode:menu.video_edit_doggy",
             message=callback_message,
             answer=answer_mock,
             from_user=user,

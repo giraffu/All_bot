@@ -16,10 +16,6 @@ QUICK_VIDEO_ENTRY_CALLBACK_PATTERN = (
 )
 
 
-def build_quick_video_mode_callback_data(route_key: str) -> str:
-    return f"{QUICK_VIDEO_MODE_CALLBACK_PREFIX}{route_key}"
-
-
 def build_quick_video_scene_callback_data(scene_id: str) -> str:
     return f"{QUICK_VIDEO_SCENE_CALLBACK_PREFIX}{scene_id}"
 

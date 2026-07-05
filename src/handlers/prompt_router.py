@@ -34,23 +34,23 @@ def prompt_route(i18n_key: str):
 
 def build_global_menu_filter():
     """在系统启动阶段构建 O(1) 的多语言反向路由字典"""
-    global GLOBAL_REVERSE_MAP
     GLOBAL_REVERSE_MAP.clear()
 
     locales = load_locales()
-    all_keys = menu_route_registry.build_global_reverse_route_keys(
-        prompt_routes.keys()
-    )
+    all_keys = menu_route_registry.build_global_reverse_route_keys(prompt_routes.keys())
 
     # 遍历所有支持的语种，将翻译结果反向映射回 key
-    for lang, translations in locales.items():
+    for translations in locales.values():
         for key in all_keys:
             curr = _get_nested_translation_value(translations, key)
             if curr and isinstance(curr, str):
                 GLOBAL_REVERSE_MAP[curr] = key
 
     for translations in locales.values():
-        for translation_key, route_key in menu_route_registry.SPECIAL_TRANSLATION_ROUTES:
+        for (
+            translation_key,
+            route_key,
+        ) in menu_route_registry.SPECIAL_TRANSLATION_ROUTES:
             text = _get_nested_translation_value(translations, translation_key)
             if text and isinstance(text, str):
                 GLOBAL_REVERSE_MAP[text] = route_key

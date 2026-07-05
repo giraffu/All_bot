@@ -1,24 +1,30 @@
 import logging
-import random
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
-from config import MINIO_TEMPLATE_BUCKET
 from src.constants import MODE_RANDOM_FACESWAP, TASK_COSTS
 from src.core.user_core import get_or_create_user_by_telegram
 from src.handlers.callback_router import register_callback
-from src.services.task_service_generation_image import process_standard_generation_task as process_generation_task
+from src.services.task_service_generation_image import (
+    process_standard_generation_task as process_generation_task,
+)
 from src.services.permission_service import permission_service
 from src.services.qqcc_config_service import (
     is_qqcc_main_button_enabled,
     load_runtime_qqcc_config,
-    resolve_qqcc_prompt,
 )
 from src.services.qqcc_runtime_context import (
     load_qqcc_config_for_context as _load_qqcc_runtime_config_for_context,
 )
-from src.services.storage import storage
+from src.services.quick_image_submission_service import (
+    QuickImageSubmissionPlan,
+    QuickImageSubmissionReject,
+    QuickImageSubmissionRejectReason,
+    build_quick_image_submission_plan,
+    list_quick_faceswap_template_files,
+    run_quick_image_submission_plan,
+)
 from src.utils import (
     create_background_task,
     is_maintenance_mode,
@@ -123,38 +129,8 @@ async def random_faceswap_again_callback(
     chat_id = query.message.chat_id
     user_id = query.from_user.id
     username = query.from_user.username
-    prompts_config = load_prompts()
 
     try:
-        template_files = storage.list_objects(
-            "quick_face/", bucket=MINIO_TEMPLATE_BUCKET
-        )
-        template_files = [
-            f
-            for f in template_files
-            if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
-        ]
-
-        if not template_files:
-            await robust_send_message(
-                context.bot, chat_id, "❌ 系统错误：未找到身体模板。"
-            )
-            return
-
-        random_template = random.choice(template_files)
-        template_path = f"template:{random_template}"
-
-        if qqcc_config is not None:
-            prompt = resolve_qqcc_prompt(
-                qqcc_config,
-                "face_swap",
-                prompts_config,
-                "face swap",
-            )
-        else:
-            prompt = prompts_config.get("face_swap", "face swap")
-        swapped_images = [template_path, face_image_path]
-
         reply_markup = InlineKeyboardMarkup(
             [
                 [
@@ -168,19 +144,39 @@ async def random_faceswap_again_callback(
                 ],
             ]
         )
+        plan = build_quick_image_submission_plan(
+            fsm_data={"mode": MODE_RANDOM_FACESWAP, "cost": cost},
+            qqcc_config=qqcc_config,
+            image_path=face_image_path,
+            prompts_config=load_prompts(),
+            template_files=list_quick_faceswap_template_files(),
+            reply_markup=reply_markup,
+        )
+        if isinstance(plan, QuickImageSubmissionReject):
+            if plan.reason == QuickImageSubmissionRejectReason.NO_TEMPLATE:
+                await robust_send_message(
+                    context.bot, chat_id, "❌ 系统错误：未找到身体模板。"
+                )
+            elif plan.reason == QuickImageSubmissionRejectReason.FEATURE_DISABLED:
+                await robust_send_message(context.bot, chat_id, "功能暂未开放")
+            else:
+                await robust_send_message(context.bot, chat_id, "❌ 当前模式不可用。")
+            return
+
+        if not isinstance(plan, QuickImageSubmissionPlan):
+            await robust_send_message(context.bot, chat_id, "❌ 当前模式不可用。")
+            return
 
         create_background_task(
             context,
-            process_generation_task(
+            run_quick_image_submission_plan(
+                plan=plan,
                 context=context,
                 chat_id=chat_id,
                 user_id=user_id,
                 username=username,
-                prompt=prompt,
-                images=swapped_images,
-                task_type="face_swap",
-                reply_markup=reply_markup,
-                cleanup=False,
+                status_msg_id=None,
+                process_generation_task_func=process_generation_task,
             ),
         )
     except Exception as e:

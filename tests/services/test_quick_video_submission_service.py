@@ -16,6 +16,9 @@ from src.services.qqcc_config_service import (
 from src.services.quick_video_submission_service import (
     QuickVideoSubmissionKind,
     QuickVideoSubmissionRejectReason,
+    QuickVideoSettingsReject,
+    QuickVideoSettingsUpdate,
+    build_quick_video_settings_update,
     build_quick_video_submission_plan,
     run_quick_video_submission_plan,
 )
@@ -41,6 +44,78 @@ def test_main_bot_legacy_mode_builds_plan_without_qqcc_prompt_override():
     assert plan.default_prompt_text == "doggy style sex"
     assert plan.prompt_override is None
     assert plan.tail_draw_chain == []
+
+
+def test_quick_video_settings_update_resolves_resolution_duration_conflict():
+    result = build_quick_video_settings_update(
+        callback_data="set_res_1024p",
+        resolution="720p",
+        duration="10s",
+        qqcc_config_present=False,
+    )
+
+    assert result == QuickVideoSettingsUpdate(
+        resolution="1024p",
+        duration="8s",
+        alert_key="fsm.quick_video.res_dur_conflict",
+    )
+
+
+def test_quick_video_settings_update_resolves_duration_resolution_conflict():
+    result = build_quick_video_settings_update(
+        callback_data="set_dur_10s",
+        resolution="1024p",
+        duration="8s",
+        qqcc_config_present=False,
+    )
+
+    assert result == QuickVideoSettingsUpdate(
+        resolution="720p",
+        duration="10s",
+        alert_key="fsm.quick_video.dur_res_conflict",
+    )
+
+
+def test_qqcc_quick_video_settings_rejects_duration_button():
+    result = build_quick_video_settings_update(
+        callback_data="set_dur_8s",
+        resolution="512p",
+        duration="5s",
+        qqcc_config_present=True,
+        allowed_resolutions=["512p", "720p"],
+    )
+
+    assert result == QuickVideoSettingsReject(
+        QuickVideoSubmissionRejectReason.FEATURE_DISABLED
+    )
+
+
+def test_qqcc_quick_video_settings_rejects_disallowed_resolution():
+    result = build_quick_video_settings_update(
+        callback_data="set_res_1024p",
+        resolution="512p",
+        duration="10s",
+        qqcc_config_present=True,
+        allowed_resolutions=["512p", "720p"],
+    )
+
+    assert result == QuickVideoSettingsReject(
+        QuickVideoSubmissionRejectReason.FEATURE_DISABLED
+    )
+
+
+def test_qqcc_quick_video_settings_rejects_empty_allowed_resolutions():
+    result = build_quick_video_settings_update(
+        callback_data="set_res_720p",
+        resolution="512p",
+        duration="10s",
+        qqcc_config_present=True,
+        allowed_resolutions=[],
+    )
+
+    assert result == QuickVideoSettingsReject(
+        QuickVideoSubmissionRejectReason.INVALID_SETTINGS
+    )
 
 
 def test_qqcc_image_to_video_lora_scene_builds_legacy_video_plan():

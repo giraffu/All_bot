@@ -1,3 +1,4 @@
+import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -8,7 +9,9 @@ from src.handlers import message_handler_media
 
 
 def test_resolve_template_upload_meta_handles_photo_video_and_document():
-    photo_message = SimpleNamespace(photo=[SimpleNamespace(file_id="photo-1")], video=None, document=None)
+    photo_message = SimpleNamespace(
+        photo=[SimpleNamespace(file_id="photo-1")], video=None, document=None
+    )
     video_message = SimpleNamespace(
         photo=None,
         video=SimpleNamespace(file_id="video-1", file_name="clip.mp4"),
@@ -38,15 +41,24 @@ def test_resolve_template_upload_meta_handles_photo_video_and_document():
 
 
 def test_resolve_template_db_file_type_matches_message_kind():
-    assert message_handler_media.resolve_template_db_file_type(
-        SimpleNamespace(video=object(), document=None)
-    ) == "video"
-    assert message_handler_media.resolve_template_db_file_type(
-        SimpleNamespace(video=None, document=object())
-    ) == "document"
-    assert message_handler_media.resolve_template_db_file_type(
-        SimpleNamespace(video=None, document=None)
-    ) == "photo"
+    assert (
+        message_handler_media.resolve_template_db_file_type(
+            SimpleNamespace(video=object(), document=None)
+        )
+        == "video"
+    )
+    assert (
+        message_handler_media.resolve_template_db_file_type(
+            SimpleNamespace(video=None, document=object())
+        )
+        == "document"
+    )
+    assert (
+        message_handler_media.resolve_template_db_file_type(
+            SimpleNamespace(video=None, document=None)
+        )
+        == "photo"
+    )
 
 
 @pytest.mark.asyncio
@@ -151,10 +163,13 @@ async def test_handle_media_entry_forwards_unsupported_message_and_handlers():
 
 
 @pytest.mark.asyncio
-async def test_handle_template_contribution_saves_upload_and_updates_counter(monkeypatch):
+async def test_handle_template_contribution_saves_upload_and_updates_counter(
+    monkeypatch,
+):
     reply_mock = AsyncMock()
     upload_mock = MagicMock()
     record_mock = AsyncMock()
+    remove_mock = MagicMock()
     logger = MagicMock()
     file_mock = SimpleNamespace(download_to_drive=AsyncMock())
     bot = SimpleNamespace(get_file=AsyncMock(return_value=file_mock))
@@ -171,6 +186,12 @@ async def test_handle_template_contribution_saves_upload_and_updates_counter(mon
 
     monkeypatch.setattr(message_handler_media, "robust_reply_text", reply_mock)
     monkeypatch.setattr(message_handler_media.storage, "upload_file", upload_mock)
+    monkeypatch.setattr(message_handler_media.os, "remove", remove_mock)
+    monkeypatch.setattr(
+        message_handler_media.uuid,
+        "uuid4",
+        lambda: SimpleNamespace(hex="abc123"),
+    )
     monkeypatch.setattr(
         message_handler_media.permission_service,
         "record_contribution",
@@ -180,8 +201,16 @@ async def test_handle_template_contribution_saves_upload_and_updates_counter(mon
     await message_handler_media.handle_template_contribution(update, context, logger)
 
     bot.get_file.assert_awaited_once_with("photo-1")
-    upload_mock.assert_called_once()
-    record_mock.assert_awaited_once()
+    expected_local_path = os.path.join(
+        message_handler_media.TEMP_TEMPLATE_DIR, "7_abc123.png"
+    )
+    upload_mock.assert_called_once_with(
+        expected_local_path,
+        "temps/7_abc123.png",
+        bucket=message_handler_media.MINIO_TEMPLATE_BUCKET,
+    )
+    record_mock.assert_awaited_once_with(7, "temps/7_abc123.png", "photo")
+    remove_mock.assert_called_once_with(expected_local_path)
     assert context.user_data["contributed_count"] == 1
     reply_mock.assert_awaited_once()
 
@@ -201,13 +230,17 @@ async def test_handle_template_contribution_blocks_submission_banned_user(monkey
         )
     )
     update = SimpleNamespace(
-        message=SimpleNamespace(photo=[SimpleNamespace(file_id="photo-1")], video=None, document=None),
+        message=SimpleNamespace(
+            photo=[SimpleNamespace(file_id="photo-1")], video=None, document=None
+        ),
         effective_user=SimpleNamespace(id=7, username="dao", full_name="Dao"),
     )
     context = SimpleNamespace(bot=SimpleNamespace(), user_data={})
 
     monkeypatch.setattr(message_handler_media, "robust_reply_text", reply_mock)
-    monkeypatch.setattr(message_handler_media, "get_or_create_user_by_telegram", get_user_mock)
+    monkeypatch.setattr(
+        message_handler_media, "get_or_create_user_by_telegram", get_user_mock
+    )
 
     await message_handler_media.handle_template_contribution(update, context, logger)
 

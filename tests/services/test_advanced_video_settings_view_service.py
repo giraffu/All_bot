@@ -57,7 +57,9 @@ def _t(key: str, **kwargs) -> str:
     if key == "fsm.image_to_video.current_lora":
         return f"当前附加模型: {kwargs['model_name']}"
     if key == "fsm.ltx_video.settings_text_english_prompt":
-        return f"ltx-settings:{kwargs['resolution']}:{kwargs['duration']}:{kwargs['cost']}"
+        return (
+            f"ltx-settings:{kwargs['resolution']}:{kwargs['duration']}:{kwargs['cost']}"
+        )
     return key
 
 
@@ -70,11 +72,7 @@ def _callback_data(view):
 
 
 def _button_texts(view):
-    return [
-        button.text
-        for row in view.reply_markup.inline_keyboard
-        for button in row
-    ]
+    return [button.text for row in view.reply_markup.inline_keyboard for button in row]
 
 
 def test_image_to_video_initial_setup_view_keeps_lora_mode_resolution_and_duration():
@@ -116,6 +114,62 @@ def test_image_to_video_settings_view_uses_generation_setting_callbacks():
     assert "set_res_hd" in _callback_data(view)
     assert "set_dur_10" in _callback_data(view)
     assert view.message_text == "i2v-settings:无:标准（约 720p）:10 秒:60"
+
+
+def test_apply_wan22_video_settings_callback_updates_selected_values():
+    data = {"resolution": "preview", "duration": 5}
+
+    handled_res = service.apply_wan22_video_settings_callback(
+        data,
+        callback_data="set_res_hd",
+        resolution_prefix="set_res_",
+        duration_prefix="set_dur_",
+        resolution_key="resolution",
+    )
+    handled_dur = service.apply_wan22_video_settings_callback(
+        data,
+        callback_data="set_dur_10",
+        resolution_prefix="set_res_",
+        duration_prefix="set_dur_",
+        resolution_key="resolution",
+    )
+
+    assert handled_res is True
+    assert handled_dur is True
+    assert data["resolution"] == "hd"
+    assert data["duration"] == 10
+
+
+def test_apply_wan22_video_settings_callback_ignores_unknown_data():
+    data = {"resolution_preset": "preview", "duration": 5}
+
+    handled = service.apply_wan22_video_settings_callback(
+        data,
+        callback_data="wan22v2_submit",
+        resolution_prefix="wan22v2_res_",
+        duration_prefix="wan22v2_dur_",
+        resolution_key="resolution_preset",
+    )
+
+    assert handled is False
+    assert data == {"resolution_preset": "preview", "duration": 5}
+
+
+def test_apply_ltx_video_settings_callback_updates_selected_values():
+    data = {"resolution": "1280x704", "duration": "5s"}
+
+    handled_res = service.apply_ltx_video_settings_callback(
+        data,
+        callback_data="set_ltxres_768x512",
+    )
+    handled_dur = service.apply_ltx_video_settings_callback(
+        data,
+        callback_data="set_ltxdur_10s",
+    )
+
+    assert handled_res is True
+    assert handled_dur is True
+    assert data == {"resolution": "768x512", "duration": "10s"}
 
 
 def test_wan22_views_keep_setup_and_legacy_settings_shapes():

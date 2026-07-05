@@ -1,3 +1,4 @@
+import contextlib
 import os
 import time
 import uuid
@@ -8,7 +9,10 @@ from config import MINIO_TEMPLATE_BUCKET
 from src.constants import MODE_NONE, MODE_TEMPLATE_CONTRIBUTE, TEMP_TEMPLATE_DIR
 from src.core.user_core import get_or_create_user_by_telegram
 from src.services.permission_service import permission_service
-from src.services.submission_ban_service import SubmissionBannedError, ensure_submission_allowed_for_user
+from src.services.submission_ban_service import (
+    SubmissionBannedError,
+    ensure_submission_allowed_for_user,
+)
 from src.services.storage import storage
 from src.utils import robust_reply_text
 
@@ -100,7 +104,9 @@ async def handle_template_contribution(update: Update, context, logger):
     user = update.effective_user
     username = user.username
 
-    internal_user, _ = await get_or_create_user_by_telegram(user.id, username, user.full_name)
+    internal_user, _ = await get_or_create_user_by_telegram(
+        user.id, username, user.full_name
+    )
     try:
         ensure_submission_allowed_for_user(internal_user)
     except SubmissionBannedError as exc:
@@ -111,6 +117,7 @@ async def handle_template_contribution(update: Update, context, logger):
     if not file_id:
         return None
 
+    local_path = None
     try:
         file = await context.bot.get_file(file_id)
         local_filename = f"{user.id}_{uuid.uuid4().hex}{file_ext}"
@@ -121,11 +128,13 @@ async def handle_template_contribution(update: Update, context, logger):
         storage.upload_file(local_path, minio_object_name, bucket=MINIO_TEMPLATE_BUCKET)
 
         file_type_db = resolve_template_db_file_type(message)
-        await permission_service.record_contribution(user.id, local_path, file_type_db)
+        await permission_service.record_contribution(
+            user.id, minio_object_name, file_type_db
+        )
 
-        context.user_data["contributed_count"] = context.user_data.get(
-            "contributed_count", 0
-        ) + 1
+        context.user_data["contributed_count"] = (
+            context.user_data.get("contributed_count", 0) + 1
+        )
         count = context.user_data["contributed_count"]
         await robust_reply_text(
             message, f"✅ 已经收到 {count} 张图片/视频，待审核收入模板库。"
@@ -136,10 +145,14 @@ async def handle_template_contribution(update: Update, context, logger):
             user.id,
             username,
             file_type_name,
-            local_path,
+            minio_object_name,
         )
         return None
     except Exception as exc:
         logger.error("Error saving template contribution: %s", exc, exc_info=True)
         await robust_reply_text(message, f"❌ 保存失败：{str(exc)}")
         return None
+    finally:
+        if local_path:
+            with contextlib.suppress(OSError):
+                os.remove(local_path)

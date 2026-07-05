@@ -15,9 +15,7 @@ DEFAULT_MODERATION_LOG_PATH = "/app/logs/paid_group_moderation.jsonl"
 TEXT_SNIPPET_LIMIT = 160
 MAX_LIST_ITEMS = 1000
 
-LINK_PATTERN = re.compile(
-    r"(?i)(?:https?://|www\.|t\.me/|telegram\.me/)[^\s<>()\"']+"
-)
+LINK_PATTERN = re.compile(r"(?i)(?:https?://|www\.|t\.me/|telegram\.me/)[^\s<>()\"']+")
 
 
 @dataclass(frozen=True)
@@ -50,20 +48,6 @@ class PaidGroupModerationLogEvent:
     text_snippet: str
     action: str
     error: str | None = None
-
-
-def moderation_config_path_from_env() -> str:
-    return os.getenv(
-        "PAID_GROUP_MODERATION_CONFIG_FILE",
-        DEFAULT_MODERATION_CONFIG_PATH,
-    )
-
-
-def moderation_log_path_from_env() -> str:
-    return os.getenv(
-        "PAID_GROUP_MODERATION_LOG_FILE",
-        DEFAULT_MODERATION_LOG_PATH,
-    )
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -192,7 +176,9 @@ def load_moderation_config(path: str | Path) -> PaidGroupModerationConfig:
     return normalize_moderation_config(payload)
 
 
-def write_moderation_config(path: str | Path, config: PaidGroupModerationConfig) -> None:
+def write_moderation_config(
+    path: str | Path, config: PaidGroupModerationConfig
+) -> None:
     config_path = Path(path)
     config_path.parent.mkdir(parents=True, exist_ok=True)
     payload = moderation_config_to_dict(config)
@@ -242,7 +228,10 @@ def is_allowed_link(candidate: str, allowed_domains: tuple[str, ...]) -> bool:
     domain = normalize_domain(candidate)
     if domain is None:
         return False
-    return any(domain == allowed or domain.endswith(f".{allowed}") for allowed in allowed_domains)
+    return any(
+        domain == allowed or domain.endswith(f".{allowed}")
+        for allowed in allowed_domains
+    )
 
 
 def evaluate_moderation_decision(

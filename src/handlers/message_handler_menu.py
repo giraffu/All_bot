@@ -87,11 +87,9 @@ async def reply_with_lazy_bot_payload(
 def build_video_to_video_payload(context) -> tuple[str, object]:
     from src.i18n.keyboards import get_video_to_video_keyboard
 
-    return context.t("system.video_to_video_hint"), get_video_to_video_keyboard(context.lang)
-
-
-def build_gallery_payload(context) -> tuple[str, None]:
-    return (context.t("system.gallery_web_hint"), None)
+    return context.t("system.video_to_video_hint"), get_video_to_video_keyboard(
+        context.lang
+    )
 
 
 def build_back_to_main_payload(context) -> tuple[str, object]:
@@ -144,6 +142,7 @@ def build_switch_lang_message(new_lang: str) -> str:
         else "🌐 Language switched to English."
     )
 
+
 def _strip_queue_display_icon(label: str) -> str:
     return re.sub(r"^[^\w\u4e00-\u9fff]+\s*", "", label)
 
@@ -184,7 +183,9 @@ def _merge_queue_wait_detail(target: dict, source: dict | None) -> None:
 
 def _build_wait_status_dot(queue_type_detail: dict | None) -> str:
     queue_type_detail = queue_type_detail or {}
-    wait_seconds = _coerce_wait_seconds(queue_type_detail.get("max_pending_wait_seconds"))
+    wait_seconds = _coerce_wait_seconds(
+        queue_type_detail.get("max_pending_wait_seconds")
+    )
     if wait_seconds is None or wait_seconds < 10 * 60:
         return "🟢"
     if wait_seconds < 30 * 60:
@@ -289,7 +290,9 @@ def build_queue_status_message(
     return "\n".join(msg_lines)
 
 
-def build_user_queue_tasks_section(user_tasks: list[dict], context, task_type_display_names: dict) -> str:
+def build_user_queue_tasks_section(
+    user_tasks: list[dict], context, task_type_display_names: dict
+) -> str:
     if not user_tasks:
         return ""
 
@@ -301,7 +304,9 @@ def build_user_queue_tasks_section(user_tasks: list[dict], context, task_type_di
         if i18n_key:
             task_name = _strip_queue_display_icon(context.t(i18n_key))
 
-        status_text = task.get("status_text") or context.t("profile.my_tasks_status_unknown")
+        status_text = task.get("status_text") or context.t(
+            "profile.my_tasks_status_unknown"
+        )
         msg_lines.append(f"{index}. {task_name}：{status_text}")
 
     return "\n".join(msg_lines)

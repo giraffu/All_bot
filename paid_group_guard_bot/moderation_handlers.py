@@ -103,7 +103,9 @@ def _build_message_context(update: Update) -> _MessageContext | None:
     )
 
 
-async def _is_admin_or_owner(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int) -> bool:
+async def _is_admin_or_owner(
+    context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int
+) -> bool:
     member = await context.bot.get_chat_member(chat_id=chat_id, user_id=user_id)
     status = str(getattr(member, "status", "")).lower()
     return status in ADMIN_STATUSES
@@ -150,6 +152,15 @@ async def handle_message_moderation(
         settings.moderation_config_file
     )
     config = provider.load()
+
+    decision = evaluate_moderation_decision(
+        config=config,
+        text=msg.text,
+        link_candidates=msg.link_candidates,
+    )
+    if not decision.should_delete:
+        return
+
     if msg.user_id in config.exempt_user_ids:
         return
 
@@ -165,14 +176,6 @@ async def handle_message_moderation(
             msg.message_id,
             exc,
         )
-        return
-
-    decision = evaluate_moderation_decision(
-        config=config,
-        text=msg.text,
-        link_candidates=msg.link_candidates,
-    )
-    if not decision.should_delete:
         return
 
     if config.dry_run:

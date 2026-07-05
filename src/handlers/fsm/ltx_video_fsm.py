@@ -45,6 +45,7 @@ from src.services.advanced_video_submission_service import (
     create_ltx_video_submission_task,
 )
 from src.services.advanced_video_settings_view_service import (
+    apply_ltx_video_settings_callback,
     build_ltx_initial_setup_view,
     build_ltx_lora_summary_text,
     build_ltx_prompt_settings_view,
@@ -310,7 +311,9 @@ def _cleanup_context(context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-def _release_context_without_files(context: ContextTypes.DEFAULT_TYPE) -> dict[str, Any]:
+def _release_context_without_files(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> dict[str, Any]:
     context.user_data.pop("in_conversation", None)
     return context.user_data.pop(LTX_VIDEO_DATA_KEY, {}) or {}
 
@@ -354,7 +357,9 @@ async def start_ltx_video(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     query = update.callback_query
     if query:
         with contextlib.suppress(Exception):
-            await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
+            await query.answer(
+                text=_t(context, "fsm.common.task_initializing"), cache_time=2
+            )
 
     from src.utils import is_maintenance_mode
 
@@ -403,7 +408,9 @@ async def handle_lora_selection(
     fsm_data = context.user_data.get(LTX_VIDEO_DATA_KEY)
     if not fsm_data:
         with contextlib.suppress(Exception):
-            await query.answer(_t(context, "fsm.ltx_video.expired_alert"), show_alert=True)
+            await query.answer(
+                _t(context, "fsm.ltx_video.expired_alert"), show_alert=True
+            )
         return ConversationHandler.END
 
     current_items = _get_ltx_video_items(fsm_data)
@@ -452,7 +459,11 @@ async def handle_lora_selection(
         return LtxVideoState.WAIT_LORA_SELECTION
 
     existing_index = next(
-        (index for index, item in enumerate(current_items) if str(item["name"]) == lora_name),
+        (
+            index
+            for index, item in enumerate(current_items)
+            if str(item["name"]) == lora_name
+        ),
         None,
     )
     if existing_index is not None:
@@ -483,7 +494,9 @@ async def process_initial_setup(
     fsm_data = context.user_data.get(LTX_VIDEO_DATA_KEY)
     if not fsm_data:
         with contextlib.suppress(Exception):
-            await query.answer(_t(context, "fsm.ltx_video.expired_alert"), show_alert=True)
+            await query.answer(
+                _t(context, "fsm.ltx_video.expired_alert"), show_alert=True
+            )
         return ConversationHandler.END
 
     data = query.data or ""
@@ -495,10 +508,8 @@ async def process_initial_setup(
         fsm_data["ltx_mode"] = LTX_MODE_FLF2V
     elif data == "ltx_mode_i2v":
         fsm_data["ltx_mode"] = LTX_MODE_I2V
-    elif data.startswith("set_ltxres_"):
-        fsm_data["resolution"] = data.split("_")[2]
-    elif data.startswith("set_ltxdur_"):
-        fsm_data["duration"] = data.split("_")[2]
+    elif apply_ltx_video_settings_callback(fsm_data, callback_data=data):
+        pass
     elif data == LTX_SETUP_CONFIRM_CALLBACK:
         return await _confirm_initial_setup(update, context)
     else:
@@ -520,7 +531,9 @@ async def _confirm_initial_setup(
     fsm_data = context.user_data.get(LTX_VIDEO_DATA_KEY)
     if not fsm_data:
         with contextlib.suppress(Exception):
-            await query.answer(_t(context, "fsm.ltx_video.expired_alert"), show_alert=True)
+            await query.answer(
+                _t(context, "fsm.ltx_video.expired_alert"), show_alert=True
+            )
         return ConversationHandler.END
 
     ltx_mode = str(fsm_data.get("ltx_mode") or LTX_MODE_I2V)
@@ -639,7 +652,9 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             update.effective_user.id if update.effective_user else "Unknown",
             e,
         )
-        await robust_reply_text(message, _t(context, "fsm.common.download_image_failed"))
+        await robust_reply_text(
+            message, _t(context, "fsm.common.download_image_failed")
+        )
         return LtxVideoState.WAIT_IMAGE
 
     if fsm_data.get("ltx_mode") == LTX_MODE_FLF2V:
@@ -675,7 +690,9 @@ async def receive_end_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             update.effective_user.id if update.effective_user else "Unknown",
             e,
         )
-        await robust_reply_text(message, _t(context, "fsm.common.download_image_failed"))
+        await robust_reply_text(
+            message, _t(context, "fsm.common.download_image_failed")
+        )
         return LtxVideoState.WAIT_END_IMAGE
 
     return await _send_prompt_request_message(update, context, message=message)
@@ -687,19 +704,25 @@ async def receive_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     file_id, suffix, file_size, is_document = _extract_video_file(update)
     if not file_id:
         if is_document:
-            await robust_reply_text(message, _t(context, "fsm.common.invalid_video_file"))
+            await robust_reply_text(
+                message, _t(context, "fsm.common.invalid_video_file")
+            )
         else:
             await robust_reply_text(message, _t(context, "fsm.common.invalid_video"))
         return LtxVideoState.WAIT_VIDEO
 
     if _is_video_too_large(file_size):
-        await robust_reply_text(message, f"视频过大，请上传 {LTX_MAX_INPUT_VIDEO_MB}MB 内的视频。")
+        await robust_reply_text(
+            message, f"视频过大，请上传 {LTX_MAX_INPUT_VIDEO_MB}MB 内的视频。"
+        )
         return LtxVideoState.WAIT_VIDEO
 
     try:
         new_file = await context.bot.get_file(file_id)
         if _is_video_too_large(getattr(new_file, "file_size", None)):
-            await robust_reply_text(message, f"视频过大，请上传 {LTX_MAX_INPUT_VIDEO_MB}MB 内的视频。")
+            await robust_reply_text(
+                message, f"视频过大，请上传 {LTX_MAX_INPUT_VIDEO_MB}MB 内的视频。"
+            )
             return LtxVideoState.WAIT_VIDEO
 
         local_path = await download_telegram_file_to_fsm_temp(
@@ -709,7 +732,9 @@ async def receive_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         )
         if _is_video_too_large(os.path.getsize(local_path)):
             cleanup_fsm_temp_files([local_path])
-            await robust_reply_text(message, f"视频过大，请上传 {LTX_MAX_INPUT_VIDEO_MB}MB 内的视频。")
+            await robust_reply_text(
+                message, f"视频过大，请上传 {LTX_MAX_INPUT_VIDEO_MB}MB 内的视频。"
+            )
             return LtxVideoState.WAIT_VIDEO
         fsm_data["video_path"] = local_path
     except Exception as e:
@@ -718,7 +743,9 @@ async def receive_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             update.effective_user.id if update.effective_user else "Unknown",
             e,
         )
-        await robust_reply_text(message, _t(context, "fsm.common.download_video_failed"))
+        await robust_reply_text(
+            message, _t(context, "fsm.common.download_video_failed")
+        )
         return LtxVideoState.WAIT_VIDEO
 
     return await _send_prompt_request_message(update, context, message=message)
@@ -733,13 +760,12 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     fsm_data = context.user_data.get(LTX_VIDEO_DATA_KEY, {})
     if not fsm_data:
         with contextlib.suppress(Exception):
-            await query.answer(_t(context, "fsm.ltx_video.expired_alert"), show_alert=True)
+            await query.answer(
+                _t(context, "fsm.ltx_video.expired_alert"), show_alert=True
+            )
         return ConversationHandler.END
 
-    if data.startswith("set_ltxres_"):
-        fsm_data["resolution"] = data.split("_")[2]
-    elif data.startswith("set_ltxdur_"):
-        fsm_data["duration"] = data.split("_")[2]
+    apply_ltx_video_settings_callback(fsm_data, callback_data=data)
 
     from src.core.user_core import get_or_create_user_by_telegram
 
@@ -786,7 +812,14 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     fsm_data["prompt"] = prompt
 
     reply_markup = InlineKeyboardMarkup(
-        [[InlineKeyboardButton(_t(context, "fsm.ltx_video.confirm_button"), callback_data="confirm_ltx_video")]]
+        [
+            [
+                InlineKeyboardButton(
+                    _t(context, "fsm.ltx_video.confirm_button"),
+                    callback_data="confirm_ltx_video",
+                )
+            ]
+        ]
     )
     msg_text = _t(context, "fsm.ltx_video.confirm_text", prompt=prompt)
 
@@ -801,13 +834,17 @@ async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if query:
         from src.utils import safe_answer_query
 
-        await safe_answer_query(query, text=_t(context, "fsm.common.task_initializing"), cache_time=2)
+        await safe_answer_query(
+            query, text=_t(context, "fsm.common.task_initializing"), cache_time=2
+        )
     user_id = query.from_user.id
 
     fsm_data = context.user_data.get(LTX_VIDEO_DATA_KEY)
     if not fsm_data:
         with contextlib.suppress(Exception):
-            await query.answer(_t(context, "fsm.common.already_submitted"), show_alert=True)
+            await query.answer(
+                _t(context, "fsm.common.already_submitted"), show_alert=True
+            )
         return ConversationHandler.END
 
     submission_plan = build_ltx_video_submission_plan(
@@ -829,7 +866,9 @@ async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if isinstance(submission_plan, AdvancedVideoSubmissionReject):
         logger.warning("user=%s missing LTX input before submit", user_id)
         with contextlib.suppress(Exception):
-            await query.answer(_t(context, "fsm.ltx_video.missing_image_resend"), show_alert=True)
+            await query.answer(
+                _t(context, "fsm.ltx_video.missing_image_resend"), show_alert=True
+            )
         _cleanup_context(context)
         return ConversationHandler.END
     cost = submission_plan.cost
@@ -877,7 +916,9 @@ async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE)
             user_id,
         )
         with contextlib.suppress(Exception):
-            await query.answer(_t(context, "fsm.common.already_submitted"), show_alert=True)
+            await query.answer(
+                _t(context, "fsm.common.already_submitted"), show_alert=True
+            )
         _cleanup_context(context)
         return ConversationHandler.END
 
@@ -913,7 +954,9 @@ async def start_ltx_video_extension(
     query = update.callback_query
     if query:
         with contextlib.suppress(Exception):
-            await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
+            await query.answer(
+                text=_t(context, "fsm.common.task_initializing"), cache_time=2
+            )
 
     if context.user_data.get("in_conversation"):
         target_message = query.message if query else update.effective_message
@@ -934,7 +977,9 @@ async def start_ltx_video_extension(
     if not base_task_id:
         target_message = query.message if query else update.effective_message
         if target_message:
-            await robust_reply_text(target_message, _t(context, "fsm.ltx_video.expired_alert"))
+            await robust_reply_text(
+                target_message, _t(context, "fsm.ltx_video.expired_alert")
+            )
         return ConversationHandler.END
 
     try:
@@ -1058,7 +1103,9 @@ def get_ltx_video_fsm_handler() -> ConversationHandler:
                 ),
             ],
             LtxVideoState.WAIT_END_IMAGE: [
-                MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_end_image),
+                MessageHandler(
+                    filters.PHOTO | filters.Document.IMAGE, receive_end_image
+                ),
                 MessageHandler(
                     (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
                     unexpected_input,
@@ -1078,7 +1125,8 @@ def get_ltx_video_fsm_handler() -> ConversationHandler:
                     receive_prompt,
                 ),
                 MessageHandler(
-                    filters.PHOTO | filters.VIDEO | filters.Document.ALL, unexpected_input
+                    filters.PHOTO | filters.VIDEO | filters.Document.ALL,
+                    unexpected_input,
                 ),
             ],
             LtxVideoState.WAIT_CONFIRMATION: [
@@ -1088,7 +1136,8 @@ def get_ltx_video_fsm_handler() -> ConversationHandler:
                     unexpected_input,
                 ),
                 MessageHandler(
-                    filters.PHOTO | filters.VIDEO | filters.Document.ALL, unexpected_input
+                    filters.PHOTO | filters.VIDEO | filters.Document.ALL,
+                    unexpected_input,
                 ),
             ],
             ConversationHandler.TIMEOUT: [

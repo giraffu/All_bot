@@ -112,6 +112,23 @@ async def test_message_moderation_keeps_admin_message(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_message_moderation_skips_admin_lookup_for_clean_message(tmp_path):
+    settings = _settings(tmp_path)
+    context = _context(status="member")
+
+    await handle_message_moderation(
+        _update(text="normal group chat"),
+        context,
+        settings=settings,
+        config_provider=_ConfigProvider(PaidGroupModerationConfig()),
+    )
+
+    context.bot.get_chat_member.assert_not_awaited()
+    context.bot.delete_message.assert_not_awaited()
+    assert _read_events(tmp_path / "moderation.jsonl") == []
+
+
+@pytest.mark.asyncio
 async def test_message_moderation_deletes_non_admin_link_and_logs(tmp_path):
     settings = _settings(tmp_path)
     context = _context(status="member")
@@ -215,7 +232,9 @@ async def test_message_moderation_dry_run_logs_without_delete(tmp_path):
 @pytest.mark.asyncio
 async def test_message_moderation_delete_failure_is_logged_without_raising(tmp_path):
     settings = _settings(tmp_path)
-    context = _context(status="member", delete_side_effect=RuntimeError("no permission"))
+    context = _context(
+        status="member", delete_side_effect=RuntimeError("no permission")
+    )
 
     await handle_message_moderation(
         _update(text="t.me/spam"),

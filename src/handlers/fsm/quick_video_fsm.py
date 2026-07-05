@@ -54,6 +54,9 @@ from src.services.qqcc_runtime_context import (
 )
 from src.services.quick_video_submission_service import (
     QuickVideoSubmissionReject,
+    QuickVideoSubmissionRejectReason,
+    QuickVideoSettingsReject,
+    build_quick_video_settings_update,
     build_quick_video_submission_plan,
     calculate_quick_video_cost,
     normalize_qqcc_quick_video_resolution,
@@ -65,7 +68,9 @@ from src.services.task_service_generation_image import (
     process_standard_generation_task as process_generation_task,
 )
 from src.services.task_service_entrypoints_video import process_video_task_template
-from src.services.wan22_video_v2_extension_service import download_output_file_to_fsm_temp
+from src.services.wan22_video_v2_extension_service import (
+    download_output_file_to_fsm_temp,
+)
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
     download_telegram_file_to_fsm_temp,
@@ -114,9 +119,7 @@ _t = translate_fsm_text
 def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, _user_id: int):
     context.user_data.pop("in_conversation", None)
     fsm_data = context.user_data.pop("quick_video_data", {})
-    cleanup_fsm_temp_files(
-        [fsm_data.get("image_path"), fsm_data.get("end_image_path")]
-    )
+    cleanup_fsm_temp_files([fsm_data.get("image_path"), fsm_data.get("end_image_path")])
 
 
 async def _load_qqcc_config_for_context(
@@ -190,32 +193,6 @@ async def _resolve_quick_video_allowed_settings(
     ]
 
     return allowed_resolutions, allowed_durations, user_group, user_identity
-
-
-def _normalize_allowed_quick_video_settings(
-    *,
-    resolution: str,
-    duration: str,
-    allowed_resolutions: list[str],
-    allowed_durations: list[str],
-) -> tuple[str | None, str | None]:
-    if not allowed_resolutions or not allowed_durations:
-        return None, None
-
-    if resolution not in allowed_resolutions:
-        resolution = allowed_resolutions[0]
-    if duration not in allowed_durations:
-        duration = allowed_durations[0]
-
-    if resolution == "1024p" and duration == "10s":
-        if "720p" in allowed_resolutions:
-            resolution = "720p"
-        elif "8s" in allowed_durations:
-            duration = "8s"
-        else:
-            resolution = allowed_resolutions[0]
-            duration = allowed_durations[0]
-    return resolution, duration
 
 
 def _strip_menu_prefix(text: str) -> str:
@@ -314,12 +291,15 @@ async def _build_quick_video_settings_markup(
         )
         keyboard = list(reply_markup.inline_keyboard)
     else:
-        allowed_resolutions, allowed_durations, _user_group, _user_identity = (
-            await _resolve_quick_video_allowed_settings(
-                context=context,
-                user_id=user_id,
-                qqcc_config=qqcc_config,
-            )
+        (
+            allowed_resolutions,
+            allowed_durations,
+            _user_group,
+            _user_identity,
+        ) = await _resolve_quick_video_allowed_settings(
+            context=context,
+            user_id=user_id,
+            qqcc_config=qqcc_config,
         )
         credits_text = _t(context, "app.credits")
         keyboard = []
@@ -412,10 +392,7 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             scene_id=scene_id,
             route_key=route_key,
         )
-        if (
-            not is_qqcc_main_button_enabled(qqcc_config, "video_edit")
-            or scene is None
-        ):
+        if not is_qqcc_main_button_enabled(qqcc_config, "video_edit") or scene is None:
             await _reply_qqcc_feature_disabled(update, context)
             return ConversationHandler.END
         mode = _sync_qqcc_scene_to_quick_video_data(
@@ -470,18 +447,23 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         fsm_data["image_path"] = local_path
     except Exception as e:
         logger.error(f"Error downloading image for FSM user {user_id}: {e}")
-        await robust_reply_text(message, _t(context, "fsm.common.download_image_failed"))
+        await robust_reply_text(
+            message, _t(context, "fsm.common.download_image_failed")
+        )
         return QuickVideoState.WAIT_IMAGE
 
     res = fsm_data["resolution"]
     dur = fsm_data["duration"]
     if qqcc_config is not None:
-        allowed_resolutions, _allowed_durations, _group, _identity = (
-            await _resolve_quick_video_allowed_settings(
-                context=context,
-                user_id=user_id,
-                qqcc_config=qqcc_config,
-            )
+        (
+            allowed_resolutions,
+            _allowed_durations,
+            _group,
+            _identity,
+        ) = await _resolve_quick_video_allowed_settings(
+            context=context,
+            user_id=user_id,
+            qqcc_config=qqcc_config,
         )
         res = normalize_qqcc_quick_video_resolution(
             resolution=res,
@@ -522,7 +504,9 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     fsm_data = context.user_data.get("quick_video_data", {})
     if not fsm_data:
         with contextlib.suppress(Exception):
-            await query.answer(_t(context, "fsm.quick_video.expired_alert"), show_alert=True)
+            await query.answer(
+                _t(context, "fsm.quick_video.expired_alert"), show_alert=True
+            )
         return ConversationHandler.END
 
     qqcc_config = await _load_qqcc_config_for_context(context)
@@ -539,18 +523,23 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         _sync_qqcc_scene_to_quick_video_data(fsm_data, qqcc_scene)
 
     if data == "qvid_start_generation":
-        await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
+        await query.answer(
+            text=_t(context, "fsm.common.task_initializing"), cache_time=2
+        )
         return await start_generation(update, context)
 
     allowed_resolutions: list[str] | None = None
     allowed_durations: list[str] | None = None
     if qqcc_config is not None:
-        allowed_resolutions, _allowed_durations, _group, _identity = (
-            await _resolve_quick_video_allowed_settings(
-                context=context,
-                user_id=user_id,
-                qqcc_config=qqcc_config,
-            )
+        (
+            allowed_resolutions,
+            _allowed_durations,
+            _group,
+            _identity,
+        ) = await _resolve_quick_video_allowed_settings(
+            context=context,
+            user_id=user_id,
+            qqcc_config=qqcc_config,
         )
         allowed_resolutions = [
             res
@@ -562,63 +551,29 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             _cleanup_context(context, user_id)
             return ConversationHandler.END
 
-    if data.startswith("set_res_"):
-        new_res = data.split("_")[2]
-        if allowed_resolutions is not None and new_res not in allowed_resolutions:
+    settings_update = build_quick_video_settings_update(
+        callback_data=data,
+        resolution=str(fsm_data.get("resolution") or ""),
+        duration=str(fsm_data.get("duration") or ""),
+        qqcc_config_present=qqcc_config is not None,
+        allowed_resolutions=allowed_resolutions,
+        allowed_durations=allowed_durations,
+    )
+    if isinstance(settings_update, QuickVideoSettingsReject):
+        if settings_update.reason == QuickVideoSubmissionRejectReason.FEATURE_DISABLED:
             await query.answer(_t(context, "qqcc.feature_disabled"), show_alert=True)
             return QuickVideoState.WAIT_SETTINGS
-        if new_res == "1024p" and fsm_data.get("duration") == "10s":
-            fsm_data["duration"] = "8s"
-            with contextlib.suppress(Exception):
-                await query.answer(
-                    _t(context, "fsm.quick_video.res_dur_conflict"), show_alert=True
-                )
-        fsm_data["resolution"] = new_res
-    elif data.startswith("set_dur_"):
-        if qqcc_config is not None:
-            await query.answer(_t(context, "qqcc.feature_disabled"), show_alert=True)
-            return QuickVideoState.WAIT_SETTINGS
-        new_dur = data.split("_")[2]
-        if allowed_durations is not None and new_dur not in allowed_durations:
-            await query.answer(_t(context, "qqcc.feature_disabled"), show_alert=True)
-            return QuickVideoState.WAIT_SETTINGS
-        if new_dur == "10s" and fsm_data.get("resolution") == "1024p":
-            fsm_data["resolution"] = "720p"
-            with contextlib.suppress(Exception):
-                await query.answer(
-                    _t(context, "fsm.quick_video.dur_res_conflict"), show_alert=True
-                )
-        fsm_data["duration"] = new_dur
+        await _reply_qqcc_feature_disabled(update, context)
+        _cleanup_context(context, user_id)
+        return ConversationHandler.END
 
-    res = fsm_data["resolution"]
-    dur = fsm_data["duration"]
-    if allowed_resolutions is not None:
-        normalized_res = normalize_qqcc_quick_video_resolution(
-            resolution=res,
-            duration=dur,
-            allowed_resolutions=allowed_resolutions,
-        )
-        if normalized_res is None:
-            await _reply_qqcc_feature_disabled(update, context)
-            _cleanup_context(context, user_id)
-            return ConversationHandler.END
-        res = normalized_res
-        fsm_data["resolution"] = res
-    elif allowed_durations is not None:
-        normalized_res, normalized_dur = _normalize_allowed_quick_video_settings(
-            resolution=res,
-            duration=dur,
-            allowed_resolutions=allowed_resolutions or [],
-            allowed_durations=allowed_durations,
-        )
-        if normalized_res is None or normalized_dur is None:
-            await _reply_qqcc_feature_disabled(update, context)
-            _cleanup_context(context, user_id)
-            return ConversationHandler.END
-        res = normalized_res
-        dur = normalized_dur
-        fsm_data["resolution"] = res
-        fsm_data["duration"] = dur
+    if settings_update.alert_key:
+        with contextlib.suppress(Exception):
+            await query.answer(_t(context, settings_update.alert_key), show_alert=True)
+    fsm_data["resolution"] = settings_update.resolution
+    fsm_data["duration"] = settings_update.duration
+    res = settings_update.resolution
+    dur = settings_update.duration
 
     reply_markup = await _build_quick_video_settings_markup(
         context=context,
@@ -649,7 +604,9 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if query:
         from src.utils import safe_answer_query
 
-        await safe_answer_query(query, text=_t(context, "fsm.common.task_initializing"), cache_time=2)
+        await safe_answer_query(
+            query, text=_t(context, "fsm.common.task_initializing"), cache_time=2
+        )
     if query is None:
         return ConversationHandler.END
     user_id = query.from_user.id
@@ -664,19 +621,24 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             f"user={user_id} image_path missing or already consumed in quick_video"
         )
         with contextlib.suppress(Exception):
-            await query.answer(_t(context, "fsm.quick_video.already_submitted"), show_alert=True)
+            await query.answer(
+                _t(context, "fsm.quick_video.already_submitted"), show_alert=True
+            )
         _cleanup_context(context, user_id)
         return ConversationHandler.END
 
     qqcc_config = await _load_qqcc_config_for_context(context)
     allowed_resolutions: list[str] | None = None
     if qqcc_config is not None:
-        allowed_resolutions, _allowed_durations, _group, _identity = (
-            await _resolve_quick_video_allowed_settings(
-                context=context,
-                user_id=user_id,
-                qqcc_config=qqcc_config,
-            )
+        (
+            allowed_resolutions,
+            _allowed_durations,
+            _group,
+            _identity,
+        ) = await _resolve_quick_video_allowed_settings(
+            context=context,
+            user_id=user_id,
+            qqcc_config=qqcc_config,
         )
 
     plan = build_quick_video_submission_plan(

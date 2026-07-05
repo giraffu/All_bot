@@ -62,7 +62,9 @@ def test_build_lazy_bot_payload_handles_missing_config(monkeypatch):
 
 
 def test_build_back_main_and_recharge_payload():
-    message, keyboard = message_handler_menu.build_back_to_main_payload(_build_context())
+    message, keyboard = message_handler_menu.build_back_to_main_payload(
+        _build_context()
+    )
     recharge_message, recharge_keyboard = message_handler_menu.build_recharge_payload(
         _build_context()
     )
@@ -76,17 +78,12 @@ def test_build_back_main_and_recharge_payload():
     )
 
 
-def test_build_switch_lang_message_and_gallery_payload():
+def test_build_switch_lang_message():
     zh_text = message_handler_menu.build_switch_lang_message("zh")
     en_text = message_handler_menu.build_switch_lang_message("en")
-    gallery_message, reply_markup = message_handler_menu.build_gallery_payload(
-        _build_context()
-    )
 
     assert "语言已切换为中文" in zh_text
     assert "Language switched to English" in en_text
-    assert gallery_message == "translated:system.gallery_web_hint"
-    assert reply_markup is None
 
 
 def test_build_queue_status_message_includes_known_and_unknown_types():
@@ -227,7 +224,9 @@ def test_build_user_queue_tasks_section_uses_display_names_and_status_text():
 async def test_reply_with_built_payload_uses_message_and_optional_reply_markup():
     reply_text = AsyncMock()
     message = SimpleNamespace()
-    update = SimpleNamespace(effective_message=message, message=None, edited_message=None)
+    update = SimpleNamespace(
+        effective_message=message, message=None, edited_message=None
+    )
 
     await message_handler_menu.reply_with_built_payload(
         update,
@@ -246,7 +245,9 @@ async def test_reply_with_built_payload_uses_message_and_optional_reply_markup()
 async def test_reply_with_built_payload_supports_context_builder_and_reply_markup():
     reply_text = AsyncMock()
     message = SimpleNamespace()
-    update = SimpleNamespace(effective_message=message, message=None, edited_message=None)
+    update = SimpleNamespace(
+        effective_message=message, message=None, edited_message=None
+    )
     context = _build_context()
 
     await message_handler_menu.reply_with_built_payload(
@@ -268,7 +269,9 @@ async def test_reply_with_built_payload_supports_context_builder_and_reply_marku
 async def test_reply_with_async_payload_supports_tuple_payload_and_no_parse_mode():
     reply_text = AsyncMock()
     message = SimpleNamespace()
-    update = SimpleNamespace(effective_message=message, message=None, edited_message=None)
+    update = SimpleNamespace(
+        effective_message=message, message=None, edited_message=None
+    )
 
     async def build_payload(*, context, user):
         return (f"{context.lang}:{user.id}", "keyboard")
@@ -293,7 +296,9 @@ async def test_reply_with_async_payload_supports_tuple_payload_and_no_parse_mode
 async def test_reply_with_async_payload_supports_plain_text_payload():
     reply_text = AsyncMock()
     message = SimpleNamespace()
-    update = SimpleNamespace(effective_message=message, message=None, edited_message=None)
+    update = SimpleNamespace(
+        effective_message=message, message=None, edited_message=None
+    )
 
     async def build_payload(*, context, task_type_display_names):
         return f"{context.lang}:{sorted(task_type_display_names)}"

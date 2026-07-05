@@ -35,7 +35,9 @@ from src.services.task_service_entrypoints_video import process_video_task_templ
 from src.services.task_service_generation_image import (
     process_standard_generation_task as process_generation_task,
 )
-from src.services.wan22_video_v2_extension_service import download_output_file_to_fsm_temp
+from src.services.wan22_video_v2_extension_service import (
+    download_output_file_to_fsm_temp,
+)
 
 logger = logging.getLogger("services.quick_video_submission")
 
@@ -70,6 +72,18 @@ class QuickVideoSubmissionPlan:
     display_mode_name: str | None = None
     lora_name: str = ""
     tail_draw_chain: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class QuickVideoSettingsReject:
+    reason: QuickVideoSubmissionRejectReason
+
+
+@dataclass(frozen=True)
+class QuickVideoSettingsUpdate:
+    resolution: str
+    duration: str
+    alert_key: str | None = None
 
 
 ProcessVideoTask = Callable[..., Awaitable[Any] | Any]
@@ -126,6 +140,77 @@ def normalize_qqcc_quick_video_resolution(
     return resolution
 
 
+def build_quick_video_settings_update(
+    *,
+    callback_data: str,
+    resolution: str,
+    duration: str,
+    qqcc_config_present: bool,
+    allowed_resolutions: list[str] | None = None,
+    allowed_durations: list[str] | None = None,
+) -> QuickVideoSettingsUpdate | QuickVideoSettingsReject:
+    alert_key: str | None = None
+    if callback_data.startswith("set_res_"):
+        new_res = callback_data.removeprefix("set_res_")
+        if allowed_resolutions is not None and not allowed_resolutions:
+            return QuickVideoSettingsReject(
+                QuickVideoSubmissionRejectReason.INVALID_SETTINGS
+            )
+        if allowed_resolutions is not None and new_res not in allowed_resolutions:
+            return QuickVideoSettingsReject(
+                QuickVideoSubmissionRejectReason.FEATURE_DISABLED
+            )
+        if new_res == "1024p" and duration == "10s":
+            duration = "8s"
+            alert_key = "fsm.quick_video.res_dur_conflict"
+        resolution = new_res
+    elif callback_data.startswith("set_dur_"):
+        if qqcc_config_present:
+            return QuickVideoSettingsReject(
+                QuickVideoSubmissionRejectReason.FEATURE_DISABLED
+            )
+        new_dur = callback_data.removeprefix("set_dur_")
+        if allowed_durations is not None and new_dur not in allowed_durations:
+            return QuickVideoSettingsReject(
+                QuickVideoSubmissionRejectReason.FEATURE_DISABLED
+            )
+        if new_dur == "10s" and resolution == "1024p":
+            resolution = "720p"
+            alert_key = "fsm.quick_video.dur_res_conflict"
+        duration = new_dur
+
+    if allowed_resolutions is not None:
+        normalized_res = normalize_qqcc_quick_video_resolution(
+            resolution=resolution,
+            duration=duration,
+            allowed_resolutions=allowed_resolutions,
+        )
+        if normalized_res is None:
+            return QuickVideoSettingsReject(
+                QuickVideoSubmissionRejectReason.INVALID_SETTINGS
+            )
+        resolution = normalized_res
+    elif allowed_durations is not None:
+        normalized_res, normalized_dur = _normalize_allowed_quick_video_settings(
+            resolution=resolution,
+            duration=duration,
+            allowed_resolutions=allowed_resolutions or [],
+            allowed_durations=allowed_durations,
+        )
+        if normalized_res is None or normalized_dur is None:
+            return QuickVideoSettingsReject(
+                QuickVideoSubmissionRejectReason.INVALID_SETTINGS
+            )
+        resolution = normalized_res
+        duration = normalized_dur
+
+    return QuickVideoSettingsUpdate(
+        resolution=resolution,
+        duration=duration,
+        alert_key=alert_key,
+    )
+
+
 def resolve_quick_video_mode_submission(mode: str) -> tuple[str, str] | None:
     return _QUICK_VIDEO_MODE_SUBMISSIONS.get(mode)
 
@@ -144,7 +229,37 @@ def resolve_qqcc_video_scene_from_fsm_data(
 def resolve_qqcc_video_scene_task_type(scene: dict[str, Any]) -> str:
     if scene.get("engine") == VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2:
         return MODE_WAN22_VIDEO_V2
-    return MODE_IMAGE_TO_VIDEO if str(scene.get("lora_name") or "").strip() else MODE_CUSTOM_VIDEO
+    return (
+        MODE_IMAGE_TO_VIDEO
+        if str(scene.get("lora_name") or "").strip()
+        else MODE_CUSTOM_VIDEO
+    )
+
+
+def _normalize_allowed_quick_video_settings(
+    *,
+    resolution: str,
+    duration: str,
+    allowed_resolutions: list[str],
+    allowed_durations: list[str],
+) -> tuple[str | None, str | None]:
+    if not allowed_resolutions or not allowed_durations:
+        return None, None
+
+    if resolution not in allowed_resolutions:
+        resolution = allowed_resolutions[0]
+    if duration not in allowed_durations:
+        duration = allowed_durations[0]
+
+    if resolution == "1024p" and duration == "10s":
+        if "720p" in allowed_resolutions:
+            resolution = "720p"
+        elif "8s" in allowed_durations:
+            duration = "8s"
+        else:
+            resolution = allowed_resolutions[0]
+            duration = allowed_durations[0]
+    return resolution, duration
 
 
 def _resolve_qqcc_video_end_frame_draw_scene(
