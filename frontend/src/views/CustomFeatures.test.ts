@@ -47,7 +47,6 @@ const baseMode = {
 
 const createWorkbench = (options?: { canStitch?: boolean }) => ({
   unifiedModes: [],
-  legacyModes: [],
   currentMode: computed(() => baseMode),
   currentModeId: ref('wan22_video_v2'),
   prompt: ref(''),
@@ -71,7 +70,6 @@ const createWorkbench = (options?: { canStitch?: boolean }) => ({
   isImageUrl: vi.fn(() => false),
   downloadResult: vi.fn(),
   selectMode: vi.fn(),
-  openLegacyMode: vi.fn(),
   beforeUpload: vi.fn(),
   beforeUploadSlot: vi.fn(),
   handleRemoveReference: vi.fn(),
@@ -173,7 +171,6 @@ const mountView = () => mount(CustomFeatures, {
     stubs: {
       LabPromptComposer: { template: '<div class="composer-stub"></div>' },
       LabAdvancedOptionsPanel: true,
-      LabLegacyModeGrid: true,
       LabModeRail: true,
       TaskResultPreviewPanel: {
         props: ['currentTask'],

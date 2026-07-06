@@ -5,7 +5,14 @@ import {
   confirmTemplateApplyClose,
   useTemplateApplyStore
 } from '@/stores/templateApply'
-import { DEFAULT_WAN22_VIDEO_V2_COST } from '@/features/generation/imageToVideo'
+
+const redirectToCustomFeatures = (type: string) => (to: { query: Record<string, unknown> }) => ({
+  name: 'CustomFeatures',
+  query: {
+    ...to.query,
+    type,
+  },
+})
 
 const routes: RouteRecordRaw[] = [
   {
@@ -50,49 +57,37 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'face-swap',
         name: 'FaceSwap',
-        component: () => import('@/views/FaceSwap.vue'),
-        meta: { generation: { taskType: 'face_swap', title: '快速换脸', cost: 2 } }
+        redirect: redirectToCustomFeatures('face_swap')
       },
       {
         path: 'video-swap',
         name: 'VideoSwap',
-        redirect: to => ({
-          name: 'CustomFeatures',
-          query: {
-            ...to.query,
-            type: 'scail2_face_swap_v2'
-          }
-        })
+        redirect: redirectToCustomFeatures('scail2_face_swap_v2')
       },
       {
         path: 'single-image',
         name: 'SingleImage',
-        component: () => import('@/views/SingleImage.vue'),
-        meta: { generation: { taskType: 'random_faceswap', title: '单图生成', cost: 1 } }
+        redirect: redirectToCustomFeatures('random_faceswap')
       },
       {
         path: 'image-prompt',
         name: 'ImageAndPrompt',
-        component: () => import('@/views/ImageAndPrompt.vue'),
-        meta: { generation: { taskType: 'i2i_pro', title: '图片生成', cost: 3 } }
+        redirect: redirectToCustomFeatures('i2i_pro')
       },
       {
         path: 'text-to-image',
         name: 'TextToImage',
-        component: () => import('@/views/TextToImage.vue'),
-        meta: { generation: { taskType: 'txt2img', title: '文生图', cost: 2 } }
+        redirect: redirectToCustomFeatures('txt2img')
       },
       {
         path: 'single-image-video',
         name: 'SingleImageToVideo',
-        component: () => import('@/views/SingleImageToVideo.vue'),
-        meta: { generation: { taskType: 'image2video', title: '动图生成', cost: 6 } }
+        redirect: redirectToCustomFeatures('custom_video')
       },
       {
         path: 'wan22-video-v2',
         name: 'Wan22VideoV2',
-        component: () => import('@/views/Wan22VideoV2.vue'),
-        meta: { generation: { taskType: 'wan22_video_v2', title: '图生视频 v2', cost: DEFAULT_WAN22_VIDEO_V2_COST } }
+        redirect: redirectToCustomFeatures('wan22_video_v2')
       },
       {
         path: 'history',

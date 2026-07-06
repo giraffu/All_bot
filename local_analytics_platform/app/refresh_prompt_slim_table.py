@@ -7,7 +7,7 @@ from typing import Any
 
 import asyncpg
 
-from .main import _database_url
+from .analytics_common import _database_url
 from .prompt_slim import refresh_prompt_slim_candidates
 
 

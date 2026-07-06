@@ -1,8 +1,4 @@
-import type {
-  TemplateApplyContext,
-  TemplateApplyTaskType,
-  TemplateTaskMeta
-} from '@/types/templateApply'
+import type { TemplateApplyTaskType, TemplateTaskMeta } from '@/types/templateApply'
 
 const TEMPLATE_TASK_TYPE_ALIASES: Record<string, TemplateApplyTaskType> = {
   faceswap: 'face_swap',
@@ -15,153 +11,87 @@ const TEMPLATE_TASK_TYPE_ALIASES: Record<string, TemplateApplyTaskType> = {
 
 const WEB_DISABLED_TEMPLATE_TASK_TYPES = new Set<string>(['i2i_draw'])
 
-const buildLegacyQuery = (
-  _ctx: TemplateApplyContext,
-  t: (key: string) => string,
-  meta: Pick<TemplateTaskMeta, 'taskType' | 'legacyTitleKey' | 'legacyCost'>
-) => ({
-  apply: 'true',
-  type: meta.taskType,
-  title: t(meta.legacyTitleKey),
-  cost: String(meta.legacyCost)
-})
-
-const createMeta = (
-  meta: Omit<TemplateTaskMeta, 'buildLegacyQuery'>
-): TemplateTaskMeta => ({
-  ...meta,
-  buildLegacyQuery: (_ctx, t) => buildLegacyQuery(_ctx, t, meta)
-})
-
 export const TEMPLATE_TASK_META_MAP: Record<TemplateApplyTaskType, TemplateTaskMeta> = {
-  i2i_pro: createMeta({
+  i2i_pro: {
     taskType: 'i2i_pro',
-    supportMode: 'workbench',
     panelKind: 'imagePrompt',
-    legacyRouteName: 'ImageAndPrompt',
-    legacyTitleKey: 'lab.cards.i2i_pro_title',
-    legacyCost: 6
-  }),
-  i2i_draw: createMeta({
+    titleKey: 'lab.cards.i2i_pro_title'
+  },
+  i2i_draw: {
     taskType: 'i2i_draw',
-    supportMode: 'workbench',
     panelKind: 'imagePrompt',
-    legacyRouteName: 'ImageAndPrompt',
-    legacyTitleKey: 'lab.cards.i2i_draw_title',
-    legacyCost: 3
-  }),
-  edit: createMeta({
+    titleKey: 'lab.cards.i2i_draw_title'
+  },
+  edit: {
     taskType: 'edit',
-    supportMode: 'workbench',
     panelKind: 'imagePrompt',
-    legacyRouteName: 'ImageAndPrompt',
-    legacyTitleKey: 'lab.cards.custom_edit_title',
-    legacyCost: 2
-  }),
-  img2img_lora: createMeta({
+    titleKey: 'lab.cards.custom_edit_title'
+  },
+  img2img_lora: {
     taskType: 'img2img_lora',
-    supportMode: 'workbench',
     panelKind: 'imagePrompt',
-    legacyRouteName: 'ImageAndPrompt',
-    legacyTitleKey: 'lab.cards.custom_edit_title',
-    legacyCost: 2
-  }),
-  pornmaster_flux2_single_edit: createMeta({
+    titleKey: 'lab.cards.custom_edit_title'
+  },
+  pornmaster_flux2_single_edit: {
     taskType: 'pornmaster_flux2_single_edit',
-    supportMode: 'workbench',
     panelKind: 'imagePrompt',
-    legacyRouteName: 'ImageAndPrompt',
-    legacyTitleKey: 'lab.cards.custom_edit_v2_title',
-    legacyCost: 2
-  }),
-  pornmaster_flux2_multi_edit: createMeta({
+    titleKey: 'lab.cards.custom_edit_v2_title'
+  },
+  pornmaster_flux2_multi_edit: {
     taskType: 'pornmaster_flux2_multi_edit',
-    supportMode: 'workbench',
     panelKind: 'imagePrompt',
-    legacyRouteName: 'ImageAndPrompt',
-    legacyTitleKey: 'lab.cards.custom_edit_v2_title',
-    legacyCost: 6
-  }),
-  face_swap: createMeta({
+    titleKey: 'lab.cards.custom_edit_v2_title'
+  },
+  face_swap: {
     taskType: 'face_swap',
-    supportMode: 'workbench',
     panelKind: 'faceSwap',
-    legacyRouteName: 'FaceSwap',
-    legacyTitleKey: 'lab.cards.fast_face_swap_title',
-    legacyCost: 1
-  }),
-  face_video: createMeta({
+    titleKey: 'lab.cards.fast_face_swap_title'
+  },
+  face_video: {
     taskType: 'face_video',
-    supportMode: 'workbench',
     panelKind: 'videoSwap',
-    legacyRouteName: 'VideoSwap',
-    legacyTitleKey: 'lab.cards.video_face_swap_title',
-    legacyCost: 18
-  }),
-  custom_video: createMeta({
+    titleKey: 'lab.cards.video_face_swap_title'
+  },
+  custom_video: {
     taskType: 'custom_video',
-    supportMode: 'workbench',
     panelKind: 'imageToVideo',
-    legacyRouteName: 'SingleImageToVideo',
-    legacyTitleKey: 'lab.cards.custom_video_title',
-    legacyCost: 6
-  }),
-  video_lora: createMeta({
+    titleKey: 'lab.cards.custom_video_title'
+  },
+  video_lora: {
     taskType: 'video_lora',
-    supportMode: 'workbench',
     panelKind: 'imageToVideo',
-    legacyRouteName: 'SingleImageToVideo',
-    legacyTitleKey: 'lab.cards.custom_video_title',
-    legacyCost: 6
-  }),
-  wan22_video_v2: createMeta({
+    titleKey: 'lab.cards.custom_video_title'
+  },
+  wan22_video_v2: {
     taskType: 'wan22_video_v2',
-    supportMode: 'workbench',
     panelKind: 'imageToVideo',
-    legacyRouteName: 'Wan22VideoV2',
-    legacyTitleKey: 'lab.cards.wan22_video_v2_title',
-    legacyCost: 6
-  }),
-  ltx_video: createMeta({
+    titleKey: 'lab.cards.wan22_video_v2_title'
+  },
+  ltx_video: {
     taskType: 'ltx_video',
-    supportMode: 'workbench',
     panelKind: 'imageToVideo',
-    legacyRouteName: 'SingleImageToVideo',
-    legacyTitleKey: 'lab.cards.high_res_video_title',
-    legacyCost: 10
-  }),
-  scail2_action_transfer: createMeta({
+    titleKey: 'lab.cards.high_res_video_title'
+  },
+  scail2_action_transfer: {
     taskType: 'scail2_action_transfer',
-    supportMode: 'workbench',
     panelKind: 'scail2Video',
-    legacyRouteName: 'CustomFeatures',
-    legacyTitleKey: 'lab.cards.scail2_action_transfer_title',
-    legacyCost: 40
-  }),
-  scail2_action_transfer_long: createMeta({
+    titleKey: 'lab.cards.scail2_action_transfer_title'
+  },
+  scail2_action_transfer_long: {
     taskType: 'scail2_action_transfer',
-    supportMode: 'workbench',
     panelKind: 'scail2Video',
-    legacyRouteName: 'CustomFeatures',
-    legacyTitleKey: 'lab.cards.scail2_action_transfer_title',
-    legacyCost: 40
-  }),
-  scail2_video_replacement: createMeta({
+    titleKey: 'lab.cards.scail2_action_transfer_title'
+  },
+  scail2_video_replacement: {
     taskType: 'scail2_video_replacement',
-    supportMode: 'workbench',
     panelKind: 'scail2Video',
-    legacyRouteName: 'CustomFeatures',
-    legacyTitleKey: 'lab.cards.scail2_video_replacement_title',
-    legacyCost: 40
-  }),
-  scail2_face_swap_v2: createMeta({
+    titleKey: 'lab.cards.scail2_video_replacement_title'
+  },
+  scail2_face_swap_v2: {
     taskType: 'scail2_face_swap_v2',
-    supportMode: 'workbench',
     panelKind: 'scail2Video',
-    legacyRouteName: 'CustomFeatures',
-    legacyTitleKey: 'lab.cards.scail2_face_swap_v2_title',
-    legacyCost: 40
-  })
+    titleKey: 'lab.cards.scail2_face_swap_v2_title'
+  }
 }
 
 export const getCanonicalTemplateTaskType = (taskType: string): TemplateApplyTaskType | null => {

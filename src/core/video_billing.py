@@ -14,7 +14,6 @@ from src.domain_config.wan22_aio_video import (
     normalize_wan22_video_v2_resolution_preset,
 )
 
-
 VIDEO_BILLING_TASK_TYPES = frozenset(VIDEO_TASK_TYPES)
 LTX_VIDEO_BILLING_TASK_TYPES = frozenset({MODE_LTX_VIDEO, MODE_LTX_VIDEO_FLF2V})
 LTX_ALLOWED_DURATIONS = (5, 10, 15, 20)
@@ -27,10 +26,6 @@ LEGACY_TIER_VIDEO_TASK_TYPES = frozenset(
 WAN22_TIER_VIDEO_TASK_TYPES = LEGACY_TIER_VIDEO_TASK_TYPES | frozenset(
     {MODE_WAN22_VIDEO_V2}
 )
-
-
-def _is_legacy_wan22_video_task_type(task_type: str | None) -> bool:
-    return task_type in LEGACY_TIER_VIDEO_TASK_TYPES
 
 
 def _is_wan22_tier_video_task_type(task_type: str | None) -> bool:

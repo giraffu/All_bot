@@ -16,12 +16,77 @@ import {
   updateUserSubmissionBan,
 } from '../api/api'
 
-export function useUserTableState(formatDate) {
+export interface DashboardUserRecord {
+  id: number
+  full_name?: string | null
+  username?: string | null
+  credits?: number
+  checkin_count?: number | null
+  current_identity?: string | null
+  identity_expire_at?: string | null
+  user_group?: string | null
+  is_channel_member?: boolean | null
+  is_submission_banned?: boolean | null
+  submission_ban_reason?: string | null
+  submission_banned_at?: string | null
+  [key: string]: unknown
+}
+
+interface DashboardPlan {
+  id: number
+  is_active?: boolean
+  [key: string]: unknown
+}
+
+interface TransferTargetOption {
+  value: number
+  label: string
+  raw: DashboardUserRecord
+}
+
+interface GiftForm {
+  plan_id: number | null
+  note: string
+}
+
+interface PaginationState {
+  current?: number
+  pageSize?: number
+}
+
+interface SorterItem {
+  field?: string
+  columnKey?: string
+  column?: {
+    key?: string
+  }
+  order?: string | null
+}
+
+type SorterState = SorterItem | SorterItem[] | null | undefined
+type SortOrder = 'asc' | 'desc'
+type FormatDateFn = (value: string | null | undefined) => string
+
+interface ApiErrorLike {
+  response?: {
+    data?: {
+      detail?: string
+    }
+  }
+  message?: string
+}
+
+const errorMessage = (err: unknown) => {
+  const apiError = err as ApiErrorLike
+  return apiError.response?.data?.detail || apiError.message || String(err)
+}
+
+export function useUserTableState(formatDate: FormatDateFn) {
   const DEFAULT_SORT_BY = 'created_at'
-  const DEFAULT_SORT_ORDER = 'desc'
-  const users = ref([])
+  const DEFAULT_SORT_ORDER: SortOrder = 'desc'
+  const users = ref<DashboardUserRecord[]>([])
   const loading = ref(false)
-  const error = ref(null)
+  const error = ref<string | null>(null)
 
   const currentPage = ref(1)
   const pageSize = ref(20)
@@ -29,59 +94,59 @@ export function useUserTableState(formatDate) {
   const searchUserId = ref('')
   const searchQuery = ref('')
   const isQueryPartial = ref(true)
-  const filterIdentity = ref(null)
-  const filterUserGroup = ref(null)
+  const filterIdentity = ref<string | null>(null)
+  const filterUserGroup = ref<string | null>(null)
   const filterSubmissionBanned = ref(false)
   const searchUsername = ref('')
   const isUsernamePartial = ref(true)
   const sortBy = ref(DEFAULT_SORT_BY)
-  const sortOrder = ref(DEFAULT_SORT_ORDER)
-  const searchTimeout = ref(null)
+  const sortOrder = ref<SortOrder>(DEFAULT_SORT_ORDER)
+  const searchTimeout = ref<ReturnType<typeof window.setTimeout> | null>(null)
   let latestUsersRequestId = 0
 
   const statsModalVisible = ref(false)
   const statsLoading = ref(false)
-  const currentUserStats = ref(null)
-  const currentUser = ref(null)
+  const currentUserStats = ref<Record<string, unknown> | null>(null)
+  const currentUser = ref<DashboardUserRecord | null>(null)
 
   const editCreditsVisible = ref(false)
-  const currentEditingUser = ref(null)
+  const currentEditingUser = ref<DashboardUserRecord | null>(null)
   const newCreditsValue = ref(0)
   const newCheckinCountValue = ref(0)
   const updatingCredits = ref(false)
 
   const giftModalVisible = ref(false)
-  const currentGiftUser = ref(null)
-  const availablePlans = ref([])
-  const giftForm = ref({
+  const currentGiftUser = ref<DashboardUserRecord | null>(null)
+  const availablePlans = ref<DashboardPlan[]>([])
+  const giftForm = ref<GiftForm>({
     plan_id: null,
     note: '后台手动赠送',
   })
   const giftingPlan = ref(false)
 
   const editIdentityVisible = ref(false)
-  const currentIdentityUser = ref(null)
+  const currentIdentityUser = ref<DashboardUserRecord | null>(null)
   const newIdentityValue = ref('外门弟子')
-  const newExpireAtValue = ref(null)
+  const newExpireAtValue = ref<string | null>(null)
   const autoConvertIdentity = ref(true)
   const updatingIdentity = ref(false)
 
   const editGroupVisible = ref(false)
   const updatingGroup = ref(false)
-  const currentGroupUser = ref(null)
+  const currentGroupUser = ref<DashboardUserRecord | null>(null)
   const newGroupValue = ref('凡人')
 
   const editChannelMemberVisible = ref(false)
   const updatingChannelMember = ref(false)
-  const currentChannelMemberUser = ref(null)
+  const currentChannelMemberUser = ref<DashboardUserRecord | null>(null)
   const newChannelMemberValue = ref(false)
   const transferModalVisible = ref(false)
   const transferringData = ref(false)
   const transferSearchLoading = ref(false)
-  const currentTransferSourceUser = ref(null)
-  const transferTargetUserId = ref(null)
+  const currentTransferSourceUser = ref<DashboardUserRecord | null>(null)
+  const transferTargetUserId = ref<number | null>(null)
   const transferTargetKeyword = ref('')
-  const transferTargetOptions = ref([])
+  const transferTargetOptions = ref<TransferTargetOption[]>([])
   const transferConfirmText = ref('')
   const transferNote = ref('后台用户数据转移')
   let latestTransferSearchId = 0
@@ -93,17 +158,17 @@ export function useUserTableState(formatDate) {
     '真传弟子',
   ]
 
-  const normalizeSorterOrder = (order) => {
+  const normalizeSorterOrder = (order: string | null | undefined): SortOrder => {
     if (order === 'ascend') return 'asc'
     if (order === 'descend') return 'desc'
     return DEFAULT_SORT_ORDER
   }
 
-  const resolveSorterField = (sorter) => {
+  const resolveSorterField = (sorter: SorterState): string => {
     if (Array.isArray(sorter)) {
       return resolveSorterField(sorter[0])
     }
-    return sorter?.field || sorter?.columnKey || sorter?.column?.key || DEFAULT_SORT_BY
+    return String(sorter?.field || sorter?.columnKey || sorter?.column?.key || DEFAULT_SORT_BY)
   }
 
   const loadUsersData = async () => {
@@ -143,29 +208,33 @@ export function useUserTableState(formatDate) {
     }
   }
 
-  const handleTableChange = (pagination, filters, sorter) => {
+  const handleTableChange = (
+    pagination: PaginationState,
+    _filters: unknown,
+    sorter: SorterState,
+  ) => {
     const nextSortBy = resolveSorterField(sorter)
     const nextSortOrder = normalizeSorterOrder(
       Array.isArray(sorter) ? sorter[0]?.order : sorter?.order
     )
     const sortChanged = nextSortBy !== sortBy.value || nextSortOrder !== sortOrder.value
 
-    currentPage.value = sortChanged ? 1 : pagination.current
-    pageSize.value = pagination.pageSize
+    currentPage.value = sortChanged ? 1 : pagination.current || 1
+    pageSize.value = pagination.pageSize || pageSize.value
     sortBy.value = nextSortBy
     sortOrder.value = nextSortOrder
     void loadUsersData()
   }
 
   const onSearchInput = () => {
-    if (searchTimeout.value) clearTimeout(searchTimeout.value)
-    searchTimeout.value = setTimeout(() => {
+    if (searchTimeout.value) window.clearTimeout(searchTimeout.value)
+    searchTimeout.value = window.setTimeout(() => {
       currentPage.value = 1
       void loadUsersData()
     }, 500)
   }
 
-  const handleViewStats = async (record) => {
+  const handleViewStats = async (record: DashboardUserRecord) => {
     currentUser.value = record
     statsModalVisible.value = true
     statsLoading.value = true
@@ -173,15 +242,15 @@ export function useUserTableState(formatDate) {
     try {
       currentUserStats.value = await fetchUserStats(record.id)
     } catch (err) {
-      message.error('获取统计数据失败: ' + (err.response?.data?.detail || err.message))
+      message.error('获取统计数据失败: ' + errorMessage(err))
     } finally {
       statsLoading.value = false
     }
   }
 
-  const handleEditCredits = (record) => {
+  const handleEditCredits = (record: DashboardUserRecord) => {
     currentEditingUser.value = record
-    newCreditsValue.value = record.credits
+    newCreditsValue.value = Number(record.credits || 0)
     newCheckinCountValue.value = record.checkin_count || 0
     editCreditsVisible.value = true
   }
@@ -200,13 +269,13 @@ export function useUserTableState(formatDate) {
       editCreditsVisible.value = false
       await loadUsersData()
     } catch (err) {
-      message.error('更新失败: ' + (err.response?.data?.detail || err.message))
+      message.error('更新失败: ' + errorMessage(err))
     } finally {
       updatingCredits.value = false
     }
   }
 
-  const handleClearHistory = (record) => {
+  const handleClearHistory = (record: DashboardUserRecord) => {
     Modal.confirm({
       title: '确认清除数据？',
       content: `这将永久删除用户 ${record.full_name || record.id} 的所有历史记录（包括图片和Prompt），但会保留灵石和邀请信息。此操作不可撤销。`,
@@ -219,13 +288,13 @@ export function useUserTableState(formatDate) {
           message.success('用户历史数据已成功清除')
           await loadUsersData()
         } catch (err) {
-          message.error('清除数据失败: ' + (err.response?.data?.detail || err.message))
+          message.error('清除数据失败: ' + errorMessage(err))
         }
       },
     })
   }
 
-  const handleDeleteUser = (record) => {
+  const handleDeleteUser = (record: DashboardUserRecord) => {
     Modal.confirm({
       title: '确认彻底删除用户？',
       content: `这将从数据库中永久移除用户 ${record.full_name || record.id} 的所有信息（包括身份组、灵石、签到记录、生成历史等）。用户重新启动机器人后将作为全新的“凡人”身份加入。此操作不可撤销！`,
@@ -238,13 +307,13 @@ export function useUserTableState(formatDate) {
           message.success('用户及其所有关联数据已成功从数据库移除')
           await loadUsersData()
         } catch (err) {
-          message.error('删除用户失败: ' + (err.response?.data?.detail || err.message))
+          message.error('删除用户失败: ' + errorMessage(err))
         }
       },
     })
   }
 
-  const handleEditIdentity = (record) => {
+  const handleEditIdentity = (record: DashboardUserRecord) => {
     currentIdentityUser.value = record
     newIdentityValue.value = record.current_identity || '外门弟子'
     newExpireAtValue.value = null
@@ -252,19 +321,19 @@ export function useUserTableState(formatDate) {
     editIdentityVisible.value = true
   }
 
-  const handleEditGroup = (record) => {
+  const handleEditGroup = (record: DashboardUserRecord) => {
     currentGroupUser.value = record
     newGroupValue.value = record.user_group || '凡人'
     editGroupVisible.value = true
   }
 
-  const handleEditChannelMember = (record) => {
+  const handleEditChannelMember = (record: DashboardUserRecord) => {
     currentChannelMemberUser.value = record
     newChannelMemberValue.value = !!record.is_channel_member
     editChannelMemberVisible.value = true
   }
 
-  const handleToggleSubmissionBan = (record) => {
+  const handleToggleSubmissionBan = (record: DashboardUserRecord) => {
     const nextStatus = !record.is_submission_banned
     const targetName = record.full_name || record.username || record.id
     Modal.confirm({
@@ -288,7 +357,7 @@ export function useUserTableState(formatDate) {
           record.submission_banned_at = res.submission_banned_at || null
           await loadUsersData()
         } catch (err) {
-          message.error('更新失败: ' + (err.response?.data?.detail || err.message))
+          message.error('更新失败: ' + errorMessage(err))
         }
       },
     })
@@ -313,8 +382,8 @@ export function useUserTableState(formatDate) {
         return
       }
       transferTargetOptions.value = (res.items || [])
-        .filter(user => user.id !== sourceUserId)
-        .map(user => ({
+        .filter((user: DashboardUserRecord) => user.id !== sourceUserId)
+        .map((user: DashboardUserRecord) => ({
           value: user.id,
           label: `${user.full_name || '未知用户'} (@${user.username || 'n/a'}) [ID:${user.id}]`,
           raw: user,
@@ -332,7 +401,7 @@ export function useUserTableState(formatDate) {
     }
   }
 
-  const handleTransferData = async (record) => {
+  const handleTransferData = async (record: DashboardUserRecord) => {
     currentTransferSourceUser.value = record
     transferTargetUserId.value = null
     transferTargetKeyword.value = ''
@@ -365,7 +434,7 @@ export function useUserTableState(formatDate) {
       transferModalVisible.value = false
       await loadUsersData()
     } catch (err) {
-      message.error('转移数据失败: ' + (err.response?.data?.detail || err.message))
+      message.error('转移数据失败: ' + errorMessage(err))
     } finally {
       transferringData.value = false
     }
@@ -387,7 +456,7 @@ export function useUserTableState(formatDate) {
       editIdentityVisible.value = false
       await loadUsersData()
     } catch (err) {
-      message.error('更新失败: ' + (err.response?.data?.detail || err.message))
+      message.error('更新失败: ' + errorMessage(err))
     } finally {
       updatingIdentity.value = false
     }
@@ -406,7 +475,7 @@ export function useUserTableState(formatDate) {
       editGroupVisible.value = false
       await loadUsersData()
     } catch (err) {
-      message.error('更新失败: ' + (err.response?.data?.detail || err.message))
+      message.error('更新失败: ' + errorMessage(err))
     } finally {
       updatingGroup.value = false
     }
@@ -417,7 +486,7 @@ export function useUserTableState(formatDate) {
 
     updatingChannelMember.value = true
     try {
-      const res = await updateUserChannelMember(
+      await updateUserChannelMember(
         currentChannelMemberUser.value.id,
         newChannelMemberValue.value
       )
@@ -425,7 +494,7 @@ export function useUserTableState(formatDate) {
       editChannelMemberVisible.value = false
       await loadUsersData()
     } catch (err) {
-      message.error('更新失败: ' + (err.response?.data?.detail || err.message))
+      message.error('更新失败: ' + errorMessage(err))
     } finally {
       updatingChannelMember.value = false
     }
@@ -434,13 +503,13 @@ export function useUserTableState(formatDate) {
   const loadPlans = async () => {
     try {
       const res = await fetchPlans()
-      availablePlans.value = res.filter(plan => plan.is_active)
+      availablePlans.value = res.filter((plan: DashboardPlan) => plan.is_active)
     } catch (err) {
       console.error('Failed to load plans:', err)
     }
   }
 
-  const handleGiftPlan = (record) => {
+  const handleGiftPlan = (record: DashboardUserRecord) => {
     currentGiftUser.value = record
     giftForm.value = {
       plan_id: availablePlans.value.length > 0 ? availablePlans.value[0].id : null,
@@ -457,12 +526,13 @@ export function useUserTableState(formatDate) {
 
     giftingPlan.value = true
     try {
+      if (!currentGiftUser.value) return
       await adminGiftPlan(currentGiftUser.value.id, giftForm.value.plan_id, giftForm.value.note)
       message.success(`成功为用户 ${currentGiftUser.value.id} 赠送套餐`)
       giftModalVisible.value = false
       await loadUsersData()
     } catch (err) {
-      message.error('赠送套餐失败: ' + (err.response?.data?.detail || err.message))
+      message.error('赠送套餐失败: ' + errorMessage(err))
     } finally {
       giftingPlan.value = false
     }

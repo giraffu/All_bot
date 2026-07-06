@@ -2,17 +2,6 @@ from unittest.mock import ANY, AsyncMock
 
 import pytest
 
-from src.core.task_dispatcher import (
-    BaseVideoStrategy,
-    DefaultImageStrategy,
-    FaceSwapStrategy,
-    LtxVideoStrategy,
-    Scail2VideoStrategy,
-    StrategyFactory,
-    Wan22AioVideoStrategy,
-    Wan22VideoV2Strategy,
-)
-from src.core.task_core_types import CoreDomainError
 from src.constants import (
     MODE_CUSTOM_VIDEO,
     MODE_I2I_PRO,
@@ -27,6 +16,18 @@ from src.constants import (
     MODE_SCAIL2_VIDEO_REPLACEMENT,
     MODE_TXT2IMG,
     MODE_WAN22_VIDEO_V2,
+)
+from src.core.task_core_types import CoreDomainError
+from src.core.task_dispatcher import (
+    BaseVideoStrategy,
+    DefaultImageStrategy,
+    FaceSwapStrategy,
+    LtxVideoStrategy,
+    Scail2VideoStrategy,
+    StrategyFactory,
+    TaskDispatcherFeatureFlags,
+    Wan22AioVideoStrategy,
+    Wan22VideoV2Strategy,
 )
 from src.domain_config.scail2_video import (
     SCAIL2_DEFAULT_NEGATIVE_PROMPT,
@@ -158,11 +159,10 @@ def test_base_video_strategy_face_video_upload_paths_accept_step_modes():
     assert file_paths == ["face.png", "target.mp4"]
 
 
-def test_wan22_strategy_inherits_default_payload_and_upload_paths():
+def test_wan22_strategy_inherits_default_upload_paths():
     strategy = Wan22VideoV2Strategy()
     inputs = {"images": ["demo/start.png", "demo/end.png"]}
 
-    assert strategy.build_payload(inputs) is inputs
     assert strategy.get_file_paths_to_upload(inputs) == [
         "demo/start.png",
         "demo/end.png",
@@ -603,15 +603,21 @@ async def test_default_image_strategy_normalizes_legacy_lora_mode_before_submit(
 
 @pytest.mark.asyncio
 async def test_pornmaster_flux2_edit_strategy_routes_single_and_multi(monkeypatch):
-    monkeypatch.setattr("config.ENABLE_FREE_EDIT_V2", True)
     submit_mock = AsyncMock(return_value="backend-task-id")
     _patch_dispatch_image_service(
         monkeypatch,
         submit_pornmaster_flux2_edit_task=submit_mock,
     )
+    feature_flags = TaskDispatcherFeatureFlags(free_edit_v2_enabled=True)
 
-    single_strategy = StrategyFactory.get_strategy(MODE_PORNMASTER_FLUX2_SINGLE_EDIT)
-    multi_strategy = StrategyFactory.get_strategy(MODE_PORNMASTER_FLUX2_MULTI_EDIT)
+    single_strategy = StrategyFactory.get_strategy(
+        MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+        feature_flags=feature_flags,
+    )
+    multi_strategy = StrategyFactory.get_strategy(
+        MODE_PORNMASTER_FLUX2_MULTI_EDIT,
+        feature_flags=feature_flags,
+    )
 
     assert single_strategy.get_cost({"images": ["a.png"]}) == 2
     assert multi_strategy.get_cost({"images": ["a.png", "b.png"]}) == 6
@@ -652,9 +658,11 @@ async def test_pornmaster_flux2_edit_strategy_routes_single_and_multi(monkeypatc
     )
 
 
-def test_pornmaster_flux2_edit_strategy_respects_feature_flag(monkeypatch):
-    monkeypatch.setattr("config.ENABLE_FREE_EDIT_V2", False)
-    strategy = StrategyFactory.get_strategy(MODE_PORNMASTER_FLUX2_SINGLE_EDIT)
+def test_pornmaster_flux2_edit_strategy_respects_feature_flag():
+    strategy = StrategyFactory.get_strategy(
+        MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+        feature_flags=TaskDispatcherFeatureFlags(free_edit_v2_enabled=False),
+    )
 
     with pytest.raises(CoreDomainError, match="自由P图 v2 当前未开放"):
         strategy.get_cost({"images": ["a.png"]})

@@ -164,14 +164,14 @@ QQCC 独立配置 Web 的 `video_scenes` / `draw_scenes` 可以为每个场景�
 - 与普通图生视频不同，`ltx_video` 当前走的是**单文件直接注入**，不再要求 `{name}_high_noise / {name}_low_noise` 双文件命名。
 
 ### 2. Bot / Web 层：模型选单
-- **文件定位**：`src/lora_catalog.py`、`src/handlers/fsm/ltx_video_fsm.py`、`frontend/src/views/SingleImageToVideo.vue`、`frontend/src/components/template-apply/TemplateImageToVideoPanel.vue`
+- **文件定位**：`src/lora_catalog.py`、`src/handlers/fsm/ltx_video_fsm.py`、`frontend/src/views/CustomFeatures.vue`、`frontend/src/components/template-apply/TemplateImageToVideoPanel.vue`
 - **实施步骤**：
   - 在 `src/lora_catalog.py` 的 `LTX_VIDEO_LORA_OPTIONS` 中新增模型条目，维护：
     - `path`：ComfyUI 可识别的相对路径
     - `label_zh` / `label_en`：前后端展示名称
     - `default_strength`：未显式传权重时的默认值
   - Telegram 高级图生视频 FSM 会先进入附加模型选择，再进入同屏设置面板合并选择模式、清晰度和时长；当前允许多选，最多 3 个，并支持逐项调强度。普通入口直接发送起始帧图片即确认当前设置，单首帧上传 1 张图片，首尾帧再继续上传终止帧；旧视频配音回调只提示暂未开放。
-  - Web `SingleImageToVideo` 与模板应用面板都支持 LTX 单首帧/首尾帧切换；一键应用上传 1 张起始帧时提交 `ltx_mode=i2v`，额外上传终止帧时提交 `ltx_mode=flf2v`、`use_end_frame=true`。练功房 LTX 至少支持上传两张参考图并自动按首尾帧提交，不再展示独立 `ltx_video_audio` 模式。模板应用面板复用同一批 LTX LoRA 选项；提交时主路径统一写入 `inputs.lora_items`，而不是单个 `inputs.lora_name`。
+  - Web 练功房 `custom_video` 与模板应用面板都支持 LTX 单首帧/首尾帧切换；一键应用上传 1 张起始帧时提交 `ltx_mode=i2v`，额外上传终止帧时提交 `ltx_mode=flf2v`、`use_end_frame=true`。练功房 LTX 至少支持上传两张参考图并自动按首尾帧提交，不再展示独立 `ltx_video_audio` 模式。模板应用面板复用同一批 LTX LoRA 选项；提交时主路径统一写入 `inputs.lora_items`，而不是单个 `inputs.lora_name`。
   - LTX 结果返回 `extra_outputs.last_frame` 后，Web 结果区/历史详情和 Bot 结果消息可执行“扩展生成”，把上一段尾帧作为下一段起始帧；Bot 扩展入口可选直接续写或添加终止帧，面板不再展示确认按钮，发送提示词即直接续写，发送图片即作为终止帧。
 
 ### 3. Backend 层：参数网关透传

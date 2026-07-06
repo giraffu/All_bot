@@ -12,17 +12,18 @@ from src.constants import (
     MODE_FACE_VIDEO_STEP2,
     MODE_FACESWAP_STEP1,
     MODE_FACESWAP_STEP2,
+    MODE_I2I_DRAW,
+    MODE_I2I_PRO,
     MODE_IMAGE_TO_VIDEO,
     MODE_IMAGE_TO_VIDEO_LITERAL,
     MODE_IMG2IMG_LORA,
-    MODE_I2I_DRAW,
-    MODE_I2I_PRO,
     MODE_LTX_VIDEO,
     MODE_LTX_VIDEO_FLF2V,
     MODE_MASTURBATION,
-    MODE_PERFECT_VIDEO_INSERT,
+    MODE_NAME_MAP,
     MODE_PENETRATION_STEP1,
     MODE_PENETRATION_STEP2,
+    MODE_PERFECT_VIDEO_INSERT,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_RANDOM_FACESWAP,
@@ -34,7 +35,6 @@ from src.constants import (
     MODE_UNDRESS,
     MODE_UNDRESS_TONGUE,
     MODE_WAN22_VIDEO_V2,
-    MODE_NAME_MAP,
 )
 
 
@@ -578,6 +578,24 @@ def get_central_task_type(task_type: str) -> str | None:
 def get_workflow_filename(task_type: str) -> str | None:
     entry = get_task_type_entry(task_type)
     return entry.workflow_filename if entry else None
+
+
+def workflow_filename_facts() -> dict[str, str]:
+    facts: dict[str, str] = {}
+    for entry in iter_task_type_entries():
+        if not entry.workflow_filename:
+            continue
+        for key in (entry.task_type, entry.execution_type, entry.central_type):
+            if not key:
+                continue
+            existing = facts.get(key)
+            if existing is not None and existing != entry.workflow_filename:
+                raise ValueError(
+                    f"conflicting workflow filename for {key}: "
+                    f"{existing!r} != {entry.workflow_filename!r}"
+                )
+            facts[key] = entry.workflow_filename
+    return facts
 
 
 def get_runpod_profile(task_type: str) -> str | None:

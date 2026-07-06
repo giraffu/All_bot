@@ -1,7 +1,4 @@
-import {
-  getCanonicalTemplateTaskType,
-  getTemplateTaskMeta
-} from '@/constants/templateTaskMeta'
+import { getCanonicalTemplateTaskType } from '@/constants/templateTaskMeta'
 import { normalizeLtxVideoLoraItems } from '@/features/generation/imageToVideo'
 import type {
   NormalizeContextOptions,
@@ -61,7 +58,6 @@ export const normalizeTemplateApplyContext = (
   }
 
   const taskType = getCanonicalTemplateTaskType(rawTaskType)
-  const meta = taskType ? getTemplateTaskMeta(taskType) : null
   const inputFiles = asStringList(rawContext.input_files)
   const inputFileUrls = asStringList(rawContext.input_file_urls)
 
@@ -94,7 +90,6 @@ export const normalizeTemplateApplyContext = (
     rawEntityId: asPositiveInteger(rawContext.post_id),
     rawTaskType,
     taskType,
-    supportMode: meta?.supportMode ?? 'unknown',
     sourcePostId: asPositiveInteger(rawContext.source_post_id),
     prompt: asNonEmptyString(rawContext.prompt),
     negativePrompt: asNonEmptyString(rawContext.negative_prompt),

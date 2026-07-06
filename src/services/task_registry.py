@@ -71,15 +71,14 @@ class TaskRegistry:
         return await redis_client.get_active_tasks()
 
     @classmethod
-    async def refund_all(cls, bot=None):
-        """
-        退款逻辑。在新的架构下，如果 bot 重启，我们不再强制执行退款，
-        因为任务可能还在 AI 后端运行。
-        这个函数可以被保留作为紧急维护时的手动调用，或者彻底改变其行为。
-        目前可以只打印日志，或者在恢复机制中如果发现任务丢失再单独调用退款。
-        """
+    async def log_restart_recovery_policy(cls, bot=None):
+        """Record startup recovery behavior without mutating running tasks."""
+        _ = bot
         logger.info(
-            "refund_all is called, but tasks are now persisted in Redis. "
+            "Task registry startup recovery check: tasks are persisted in Redis. "
             "Skipping bulk refund to allow tasks to continue on restart."
         )
-        # 如果需要实现完全的清理退款，可以读取 get_all_tasks() 并处理。
+
+    @classmethod
+    async def refund_all(cls, bot=None):
+        await cls.log_restart_recovery_policy(bot)

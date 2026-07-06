@@ -1,16 +1,18 @@
 from src.services.gallery_apply_context_presenter import (
-    build_apply_context_response,
-    build_history_apply_context_response,
+    build_storage_input_file_url as _build_storage_input_file_url,
+)
+from src.services.gallery_apply_context_presenter import (
     call_with_optional_db,
-    probe_apply_context_media_metadata,
     release_read_transaction,
-    resolve_apply_context_media_metadata,
-    resolve_history_billing_resolution,
     run_with_optional_db,
     storage,
 )
-from src.services.gallery_apply_context_presenter import (
-    build_storage_input_file_url as _build_storage_input_file_url,
+from src.web_api.services.apply_context_service import (
+    build_apply_context_response,
+    build_history_apply_context_response,
+    probe_apply_context_media_metadata,
+    resolve_apply_context_media_metadata,
+    resolve_history_billing_resolution,
 )
 
 __all__ = [

@@ -18,9 +18,6 @@ export type TemplateApplyTaskType =
   | 'scail2_video_replacement'
   | 'scail2_face_swap_v2'
 
-export type TemplateApplySupportMode = 'workbench' | 'legacy' | 'unknown'
-export type TemplateApplyPreferredMode = 'workbench' | 'legacy'
-
 export type TemplateApplyPanelKind =
   | 'imagePrompt'
   | 'imageToVideo'
@@ -62,7 +59,6 @@ export interface TemplateApplyContext {
   rawEntityId: number | null
   rawTaskType: string
   taskType: TemplateApplyTaskType | null
-  supportMode: TemplateApplySupportMode
   sourcePostId: number | null
   prompt: string | null
   negativePrompt: string | null
@@ -80,19 +76,10 @@ export interface TemplateApplyContext {
   billingResolution: string | null
 }
 
-export type LegacyQueryBuilder = (
-  ctx: TemplateApplyContext,
-  t: (key: string) => string
-) => Record<string, string>
-
 export interface TemplateTaskMeta {
   taskType: TemplateApplyTaskType
-  supportMode: Exclude<TemplateApplySupportMode, 'unknown'>
-  panelKind?: TemplateApplyPanelKind
-  legacyRouteName: string
-  legacyTitleKey: string
-  legacyCost: number
-  buildLegacyQuery: LegacyQueryBuilder
+  panelKind: TemplateApplyPanelKind
+  titleKey: string
 }
 
 export interface TemplateApplySessionMeta {
@@ -111,7 +98,6 @@ export interface OpenTemplateApplyParams {
   source: TemplateApplySource
   entryEntityId: number | string | null
   rawContext: RawApplyContextResponse
-  preferredMode?: TemplateApplyPreferredMode
 }
 
 export type CloseTrigger =
@@ -139,11 +125,9 @@ export type RequestCloseResult =
 export type OpenTemplateApplyResult =
   | { status: 'opened'; sessionId: string }
   | {
-      status: 'legacy_fallback'
-      fallbackKind: 'legacy_supported' | 'unknown_task_type'
+      status: 'unsupported'
       rawTaskType: string
-      context: TemplateApplyContext | null
-      meta: TemplateTaskMeta | null
+      context: TemplateApplyContext
     }
   | { status: 'invalid'; message: string }
   | {

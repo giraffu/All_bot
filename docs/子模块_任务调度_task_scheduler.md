@@ -19,7 +19,7 @@
 - `src/services/task_web_finalizer.py`：持久化 Web finalizer 队列与恢复循环，负责在进程重启后继续收口未完成的 Web 终态
 - `src/core/task_core_runtime.py`：双 ID 终止、best-effort cancel、并发锁与 registry 清理
 - `src/core/task_dispatcher.py`：StrategyFactory + payload/workflow 注入
-- `src/domain_config/task_type_registry.py`：任务类型只读事实表与查询 helper，记录 public type、legacy alias、execution type、Central type、workflow filename、RunPod profile、视频/Gallery/apply 与成本；当前驱动 Gallery/apply 等低风险读路径和一致性门禁，不驱动 dispatcher/Central/workflow 分发
+- `src/domain_config/task_type_registry.py`：任务类型只读事实表与查询 helper，记录 public type、legacy alias、execution type、Central type、workflow filename、RunPod profile、视频/Gallery/apply 与成本；当前驱动 Gallery/apply、Central simple task 映射、workflow filename facts 与一致性门禁，dispatcher 策略仍由 core 显式装配并分批迁移
 
 所有 Bot / Web 任务都应通过 facade + provider/dependencies 边界进入调度链，不应在上层直接 import 基础设施实现。
 

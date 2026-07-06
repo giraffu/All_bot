@@ -13,7 +13,6 @@ import { useI18n } from 'vue-i18n'
 
 import TaskResultPreviewPanel from '@/components/TaskResultPreviewPanel.vue'
 import LabAdvancedOptionsPanel from '@/components/lab/LabAdvancedOptionsPanel.vue'
-import LabLegacyModeGrid from '@/components/lab/LabLegacyModeGrid.vue'
 import LabModeRail from '@/components/lab/LabModeRail.vue'
 import LabPromptComposer from '@/components/lab/LabPromptComposer.vue'
 import { useLabWorkbench } from '@/composables/useLabWorkbench'
@@ -21,7 +20,6 @@ import { useLabWorkbench } from '@/composables/useLabWorkbench'
 const { t } = useI18n()
 const {
   unifiedModes,
-  legacyModes,
   currentMode,
   currentModeId,
   prompt,
@@ -31,7 +29,6 @@ const {
   isImageUrl,
   downloadResult,
   selectMode,
-  openLegacyMode,
   beforeUpload,
   beforeUploadSlot,
   handleAssetVideoMetadata,
@@ -109,6 +106,7 @@ const promptLockedHint = computed(() => (
         :description="t(currentMode.descriptionKey)"
         :prompt-placeholder="promptPlaceholder"
         :prompt="prompt"
+        :show-prompt-input="currentMode.supportsPromptInput !== false"
         :prompt-locked="isTemplatePromptLocked"
         :prompt-locked-hint="promptLockedHint"
         :show-structured-prompt-input="showStructuredPromptInput"
@@ -305,13 +303,6 @@ const promptLockedHint = computed(() => (
         @select="selectMode"
       />
     </div>
-
-    <LabLegacyModeGrid
-      v-if="legacyModes.length > 0"
-      :modes="legacyModes"
-      :resolve-label="t"
-      @open="openLegacyMode"
-    />
   </div>
 </template>
 

@@ -59,7 +59,7 @@ async def resolve_gallery_media_source(
     download_media_bytes_func=download_gallery_media_bytes,
 ) -> GalleryBrowseMediaSource:
     if resolve_gallery_media_urls_func is None:
-        from src.web_api.services.gallery_media_resolver import (
+        from src.services.gallery_media_resolver import (
             resolve_gallery_post_media_urls,
         )
 
@@ -155,7 +155,7 @@ async def send_gallery_media_message(
             media_url = None
             if output_file:
                 if resolve_gallery_media_urls_func is None:
-                    from src.web_api.services.gallery_media_resolver import (
+                    from src.services.gallery_media_resolver import (
                         resolve_gallery_post_media_urls,
                     )
 

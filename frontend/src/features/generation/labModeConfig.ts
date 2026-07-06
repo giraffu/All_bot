@@ -13,6 +13,7 @@ export type UnifiedLabModeId =
   | 'i2i_draw'
   | 'custom_video'
   | 'face_swap'
+  | 'random_faceswap'
   | 'face_video'
   | 'ltx_video'
   | 'wan22_video_v2'
@@ -20,9 +21,7 @@ export type UnifiedLabModeId =
   | 'scail2_video_replacement'
   | 'scail2_face_swap_v2'
 
-export type LegacyLabModeId = never
-
-export type LabModeId = UnifiedLabModeId | LegacyLabModeId
+export type LabModeId = UnifiedLabModeId
 export type LabUploadSlotId =
   | 'face_image'
   | 'target_image'
@@ -63,9 +62,9 @@ export interface LabModeConfig {
   supportsResolutionOptions?: boolean
   supportsWan22ResolutionPreset?: boolean
   supportsAdvancedOptions: boolean
+  supportsPromptInput?: boolean
   promptRequired: boolean
   unified: boolean
-  legacyRouteName?: string
   uploadSlots?: readonly LabUploadSlotConfig[]
 }
 
@@ -339,6 +338,26 @@ export const LAB_MODE_CONFIGS: LabModeConfig[] = [
     ],
   },
   {
+    id: 'random_faceswap',
+    taskType: 'random_faceswap',
+    titleKey: 'lab.cards.random_faceswap_title',
+    descriptionKey: 'lab.cards.random_faceswap_desc',
+    kindKey: 'lab.workbench.mode_kinds.image',
+    baseCost: 1,
+    promptPlaceholderKey: 'lab.workbench.prompt_placeholders.edit',
+    promptTarget: 'topLevel',
+    submitLabelKey: 'lab.workbench.submit_image',
+    referenceTitleKey: 'lab.workbench.reference_titles.portrait',
+    maxImages: 1,
+    supportsUpload: true,
+    supportsEditLora: false,
+    supportsVideoOptions: false,
+    supportsAdvancedOptions: false,
+    supportsPromptInput: false,
+    promptRequired: false,
+    unified: true,
+  },
+  {
     id: 'face_video',
     taskType: 'face_video',
     titleKey: 'lab.cards.video_face_swap_title',
@@ -562,7 +581,6 @@ export const UNIFIED_LAB_MODES = LAB_MODE_CONFIGS.filter(mode => (
   && (mode.id !== FREE_EDIT_V2_MODE_ID || FREE_EDIT_V2_ENABLED)
   && (mode.id !== 'i2i_draw' || WEB_I2I_DRAW_ENABLED)
 )) as LabModeConfig[]
-export const LEGACY_LAB_MODES = LAB_MODE_CONFIGS.filter(mode => !mode.unified) as LabModeConfig[]
 
 export const getLabModeConfig = (modeId: LabModeId): LabModeConfig =>
   LAB_MODE_CONFIG_MAP[modeId]
@@ -580,9 +598,13 @@ export const resolveLabModeIdFromTaskType = (taskType: string | null | undefined
       return WEB_I2I_DRAW_ENABLED ? 'i2i_draw' : DEFAULT_LAB_MODE_ID
     case 'custom_video':
     case 'video_lora':
+    case 'image2video':
+    case 'image_to_video':
       return 'custom_video'
     case 'face_swap':
       return 'face_swap'
+    case 'random_faceswap':
+      return 'random_faceswap'
     case 'face_video':
       return 'scail2_face_swap_v2'
     case 'ltx_video':

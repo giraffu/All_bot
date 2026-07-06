@@ -25,23 +25,35 @@ export const fetchStatsHistory = async (days = 7) =>
     appendQueryParam(params, 'days', days)
   }))
 
+/**
+ * @param {string | null} [dateStr]
+ */
 export const fetchHourlyStats = async (dateStr = null) => {
   return get(withQuery('/api/stats/hourly', params => {
     appendQueryParam(params, 'date_str', dateStr)
   }))
 }
 
+/**
+ * @param {string | null} [dateStr]
+ */
 export const fetchFinanceHourlyStats = async (dateStr = null) => {
   return get(withQuery('/api/stats/finance_hourly', params => {
     appendQueryParam(params, 'date_str', dateStr)
   }))
 }
 
+/**
+ * @param {number} [days]
+ */
 export const fetchCumulativeFinanceHourlyStats = async (days = 7) =>
   get(withQuery('/api/stats/finance_hourly/cumulative', params => {
     appendQueryParam(params, 'days', days)
   }))
 
+/**
+ * @param {string | null} [dateStr]
+ */
 export const fetchTypeDistribution = async (dateStr = null) => {
   return get(withQuery('/api/stats/type_distribution', params => {
     appendQueryParam(params, 'date_str', dateStr)
@@ -106,12 +118,23 @@ export const fetchHistoryAll = async (page = 1, pageSize = 20, type = null, rati
 
 export const deleteUser = async (userId) => del(`/api/users/${userId}`)
 
+/**
+ * @param {number} userId
+ * @param {number} credits
+ * @param {number | null} [checkin_count]
+ */
 export const updateUserCredits = async (userId, credits, checkin_count = null) => {
   const payload = { credits }
   if (checkin_count !== null) payload.checkin_count = checkin_count
   return post(`/api/users/${userId}/credits`, payload)
 }
 
+/**
+ * @param {number} userId
+ * @param {string} identity
+ * @param {string | null} [expire_at]
+ * @param {boolean} [convert]
+ */
 export const updateUserIdentity = async (userId, identity, expire_at = null, convert = true) => {
   const payload = { identity, convert }
   if (expire_at) payload.expire_at = expire_at
@@ -144,6 +167,9 @@ export const deleteTemplateContribution = async (id) =>
 
 export const fetchWorkerList = async () => get('/api/workers/list')
 
+/**
+ * @param {{ page?: number, size?: number, workerId?: string | null }} [options]
+ */
 export const fetchWorkerHistory = async ({ page = 1, size = 20, workerId = null } = {}) =>
   get(withQuery('/api/workers/history', params => {
     appendQueryParam(params, 'page', page)
@@ -238,7 +264,9 @@ export const fetchPaidGroupGuardConfig = async () => get('/api/paid-group-guard/
 export const updatePaidGroupGuardConfig = async (payload) =>
   put('/api/paid-group-guard/config', payload)
 
-
+/**
+ * @param {{ page?: number, pageSize?: number, reason?: string | null, userId?: string | null, startDate?: string | null, endDate?: string | null }} [options]
+ */
 export const fetchPaidGroupGuardLogs = async ({
   page = 1,
   pageSize = 20,
@@ -310,8 +338,6 @@ export const banGalleryUserSubmissionsAndTakedown = async (userId, reason = null
   if (reason) payload.reason = reason
   return post(`/api/gallery/users/${userId}/ban-submissions-and-takedown`, payload)
 }
-
-export const fetchGalleryComments = async (params) => get('/api/gallery/comments', { params })
 
 export const fetchAllGalleryComments = async (params) =>
   get('/api/gallery/comments/all', { params })

@@ -64,8 +64,8 @@ sequenceDiagram
 前端生成页面负责收集用户输入，然后把输入转成统一提交 payload。
 
 常见入口包括：
-- `frontend/src/views/TextToImage.vue`
-- 其他图生图、图生视频、换脸等页面
+- `frontend/src/views/CustomFeatures.vue`
+- 旧图生图、图生视频、换脸等 URL 的兼容重定向
 - 统一 payload 构造器，例如 `frontend/src/features/generation/buildGenerationTaskPayload.ts`
 
 前端提交到后端时，核心字段通常包括：
@@ -207,7 +207,7 @@ Web 统一入口在：
 ### 7.1 按任务类型选择策略
 下发前的任务类型分流主要在：
 - `src/core/task_dispatcher.py`
-- `src/domain_config/task_type_registry.py`（只读事实表、查询 helper 与一致性门禁；当前只迁移 Gallery/apply 等低风险读路径，不驱动 dispatcher/Central/workflow 分发）
+- `src/domain_config/task_type_registry.py`（只读事实表、查询 helper 与一致性门禁；当前驱动 Gallery/apply、Central simple task 映射与 workflow filename facts，dispatcher 策略仍由 core 显式装配）
 
 这里决定：
 - 用哪种策略计算价格
@@ -215,7 +215,7 @@ Web 统一入口在：
 - 如何构造 metadata / payload
 - 调用 `image_service` 的哪个提交方法
 
-`task_type_registry.py` 记录 public type、legacy alias、执行面 task type、Central type、workflow filename、RunPod profile、视频/Gallery/apply 能力与成本。它提供稳定 query helper，当前已驱动 Gallery 可投稿类型、Gallery 展示配置与 apply 输入复用白名单这类低风险读路径；dispatcher、Central map、workflow mapping 与 worker `SUPPORTED_TASK_TYPES` 仍沿用既有事实源。`tests/config/test_task_type_registry.py` 会对照 `src/constants.py`、`backend/app/main_simple_task_routes.py`、`src/workflow_mapping_validation.py`、RunPod profile、Gallery/apply 输出做一致性门禁；新增或调整任务类型时先让 registry 与现有事实一致，再考虑分批迁移调用点。
+`task_type_registry.py` 记录 public type、legacy alias、执行面 task type、Central type、workflow filename、RunPod profile、视频/Gallery/apply 能力与成本。它提供稳定 query helper，当前已驱动 Gallery 可投稿类型、Gallery 展示配置、apply 输入复用白名单、Central simple task 映射与 workflow filename facts；dispatcher 策略与 worker `SUPPORTED_TASK_TYPES` 仍沿用显式事实源。`tests/config/test_task_type_registry.py` 会对照 `src/constants.py`、`backend/app/main_simple_task_routes.py`、`src/workflow_mapping_validation.py`、RunPod profile、Gallery/apply 输出做一致性门禁；新增或调整任务类型时先让 registry 与现有事实一致，再考虑分批迁移调用点。
 
 例如：
 - `txt2img` 走 `submit_txt2img_task(...)`
@@ -517,12 +517,12 @@ Web 端当前用户侧运行态与结果查询链路分成三层：
 - 是否要走现有兼容链，还是应成为标准 simple route
 
 ### 12.3 Central API 层
-- 若走 simple route，`backend/app/main_simple_task_routes.py` 是否补了 `SIMPLE_TASK_TYPE_MAP` 和路由
+- 若走 simple route，`src/domain_config/task_type_registry.py` 是否补了 `central_type`，且 `backend/app/main_simple_task_routes.py` 是否补了 task key 和路由
 - 相关 Pydantic request / enum / handler 是否齐全
 - QueueManager 是否能识别并分发该类型
 
 ### 12.4 Worker / workflow 层
-- `src/workflow_mapping_validation.py` 是否补了 workflow 文件映射
+- `src/domain_config/task_type_registry.py` 是否补了 `workflow_filename`，且 `src/workflow_mapping_validation.py` 是否能从 registry 派生到该 workflow 文件映射
 - `workers/comfy_agent/workflows/` 是否新增 workflow JSON
 - `workers/comfy_agent/workflows/mappings.json` 是否补了参数映射
 - `workflow_patcher.py` 是否需要支持新参数

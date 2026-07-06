@@ -115,7 +115,7 @@ async def post_init(application):
 async def post_shutdown(application):
     core_logger = logging.getLogger("bot.core")
     core_logger.info("Bot is shutting down. Tasks are persisted in Redis.")
-    await TaskRegistry.refund_all(application.bot)
+    await TaskRegistry.log_restart_recovery_policy(application.bot)
     from src.services.redis_client import redis_client
 
     await redis_client.close()
@@ -181,21 +181,21 @@ def main():
         .build()
     )
 
+    from src.handlers.error_handlers import global_error_handler
     from src.handlers.fsm.affiliate_redeem_fsm import get_affiliate_redeem_fsm_handler
     from src.handlers.fsm.edit_image_fsm import get_edit_image_fsm_handler
     from src.handlers.fsm.faceswap_fsm import get_faceswap_fsm_handler
+    from src.handlers.fsm.image_to_video_fsm import get_image_to_video_fsm_handler
     from src.handlers.fsm.ltx_video_fsm import get_ltx_video_fsm_handler
     from src.handlers.fsm.quick_image_fsm import get_quick_image_fsm_handler
     from src.handlers.fsm.quick_video_fsm import get_quick_video_fsm_handler
     from src.handlers.fsm.scail2_video_fsm import get_scail2_video_fsm_handler
-    from src.handlers.fsm.image_to_video_fsm import get_image_to_video_fsm_handler
-    from src.handlers.fsm.wan22_video_v2_fsm import get_wan22_video_v2_fsm_handler
     from src.handlers.fsm.txt2img_fsm import get_txt2img_fsm_handler
+    from src.handlers.fsm.wan22_video_v2_fsm import get_wan22_video_v2_fsm_handler
     from src.handlers.payment_handler import (
         precheckout_callback,
         successful_payment_callback,
     )
-    from src.handlers.error_handlers import global_error_handler
 
     # Register FSM Handlers first (they must intercept text/callbacks before fallback handlers)
     app.add_handler(TypeHandler(Update, global_middleware), group=-1)

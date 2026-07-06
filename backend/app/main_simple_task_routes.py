@@ -1,8 +1,8 @@
 from app.models import (
     FaceSwapRequest,
     FaceVideoRequest,
-    I2IProRequest,
     I2IDrawRequest,
+    I2IProRequest,
     Img2ImgLoraRequest,
     Img2ImgRequest,
     LtxVideoFlf2VRequest,
@@ -13,34 +13,49 @@ from app.models import (
     TaskResponse,
     TaskType,
     Txt2ImgRequest,
-    Wan22VideoV2Request,
     VideoEditRequest,
     VideoInsertRequest,
     VideoLoraRequest,
+    Wan22VideoV2Request,
 )
 
+from src.domain_config.task_type_registry import get_central_task_type
+
+SIMPLE_TASK_KEYS = (
+    "img2img",
+    "img2img_lora",
+    "face_swap",
+    "video_insert",
+    "video_edit",
+    "image_to_video",
+    "video_lora",
+    "face_video",
+    "i2i_pro",
+    "i2i_draw",
+    "txt2img",
+    "ltx_video",
+    "ltx_video_flf2v",
+    "ltx_video_v2v_audio",
+    "wan22_video_v2",
+    "scail2_action_transfer",
+    "scail2_action_transfer_long",
+    "scail2_video_replacement",
+    "scail2_face_swap_v2",
+    "pornmaster_flux2_single_edit",
+    "pornmaster_flux2_multi_edit",
+)
+
+
+def _resolve_simple_task_type(task_key: str) -> TaskType:
+    central_task_type = get_central_task_type(task_key)
+    if central_task_type is None:
+        raise RuntimeError(f"missing central task type registry entry for {task_key}")
+    return TaskType(central_task_type)
+
+
 SIMPLE_TASK_TYPE_MAP = {
-    "img2img": TaskType.IMG2IMG,
-    "img2img_lora": TaskType.IMG2IMG_LORA,
-    "face_swap": TaskType.FACE_SWAP,
-    "video_insert": TaskType.IMAGE_TO_VIDEO,
-    "video_edit": TaskType.IMAGE_TO_VIDEO,
-    "image_to_video": TaskType.IMAGE_TO_VIDEO,
-    "video_lora": TaskType.IMAGE_TO_VIDEO,
-    "face_video": TaskType.FACE_VIDEO,
-    "i2i_pro": TaskType.I2I_PRO,
-    "i2i_draw": TaskType.I2I_DRAW,
-    "txt2img": TaskType.T2I_PORNMASTER_TURBO,
-    "ltx_video": TaskType.LTX_VIDEO,
-    "ltx_video_flf2v": TaskType.LTX_VIDEO_FLF2V,
-    "ltx_video_v2v_audio": TaskType.LTX_VIDEO_V2V_AUDIO,
-    "wan22_video_v2": TaskType.WAN22_VIDEO_V2,
-    "scail2_action_transfer": TaskType.SCAIL2_ACTION_TRANSFER,
-    "scail2_action_transfer_long": TaskType.SCAIL2_ACTION_TRANSFER_LONG,
-    "scail2_video_replacement": TaskType.SCAIL2_VIDEO_REPLACEMENT,
-    "scail2_face_swap_v2": TaskType.SCAIL2_FACE_SWAP_V2,
-    "pornmaster_flux2_single_edit": TaskType.PORNMASTER_FLUX2_SINGLE_EDIT,
-    "pornmaster_flux2_multi_edit": TaskType.PORNMASTER_FLUX2_MULTI_EDIT,
+    task_key: _resolve_simple_task_type(task_key)
+    for task_key in SIMPLE_TASK_KEYS
 }
 
 LEGACY_WAN22_SIMPLE_TASK_KEYS = {"video_insert", "video_edit"}

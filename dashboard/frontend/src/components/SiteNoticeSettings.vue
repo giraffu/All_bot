@@ -88,6 +88,7 @@ const selectedNotice = computed(() =>
   notices.value.find((notice) => notice.id === selectedNoticeId.value) ?? null
 )
 const audienceSummary = computed(() => describeAudience(form.value))
+const getNoticeKey = (notice: SiteNoticePayload) => notice.id ?? 'new'
 
 function describeAudience(notice: Pick<SiteNoticePayload, 'target_groups' | 'target_identities'>) {
   const parts: string[] = []
@@ -242,7 +243,7 @@ onMounted(() => {
 
           <button
             v-for="notice in notices"
-            :key="notice.id"
+            :key="getNoticeKey(notice)"
             type="button"
             class="site-notice-admin-item"
             :class="{ 'site-notice-admin-item--active': selectedNotice?.id === notice.id }"

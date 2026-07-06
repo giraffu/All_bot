@@ -14,7 +14,6 @@ import {
   EDIT_LORA_DEFAULT_STRENGTHS,
   EDIT_LORA_OPTIONS,
   FACE_VIDEO_RESOLUTION_OPTIONS,
-  LEGACY_LAB_MODES,
   LTX_VIDEO_DURATION_OPTIONS,
   LTX_VIDEO_RESOLUTION_OPTIONS,
   type LabModeConfig,
@@ -84,7 +83,6 @@ export function useLabWorkbench() {
 
   const currentMode = computed<LabModeConfig>(() => getLabModeConfig(currentModeId.value))
   const unifiedModes = UNIFIED_LAB_MODES
-  const legacyModes = LEGACY_LAB_MODES
   const editLoraOptions = EDIT_LORA_OPTIONS
   const videoLoraOptions = getVideoLoraOptions()
   const ltxLoraOptions = LTX_VIDEO_LORA_OPTIONS
@@ -359,22 +357,6 @@ export function useLabWorkbench() {
     })
   }
 
-  const openLegacyMode = async (modeId: typeof LEGACY_LAB_MODES[number]['id']) => {
-    const mode = getLabModeConfig(modeId)
-    if (!mode.legacyRouteName) {
-      return
-    }
-
-    await router.push({
-      name: mode.legacyRouteName,
-      query: {
-        type: mode.taskType,
-        title: t(mode.titleKey),
-        cost: String(mode.baseCost),
-      },
-    })
-  }
-
   const { handleSubmit } = useLabSubmitPayload({
     currentMode,
     hasStructuredUploadSlots,
@@ -413,7 +395,6 @@ export function useLabWorkbench() {
 
   return {
     unifiedModes,
-    legacyModes,
     currentMode,
     currentModeId,
     prompt,
@@ -428,7 +409,6 @@ export function useLabWorkbench() {
     isImageUrl,
     downloadResult,
     selectMode,
-    openLegacyMode,
     beforeUpload: references.beforeUpload,
     beforeUploadSlot: slots.beforeUploadSlot,
     handleAssetVideoMetadata: slots.handleAssetVideoMetadata,

@@ -395,7 +395,7 @@ export function useGalleryPageState() {
 
       if (result.status === 'opened') {
         message.success(t('template_apply.open_success'))
-      } else if (result.status === 'legacy_fallback') {
+      } else if (result.status === 'unsupported') {
         message.error(t('template_apply.open_failed'))
       } else if (result.status === 'invalid') {
         message.error(result.message)

@@ -3,7 +3,6 @@ import type {
   NormalizeContextOptions,
   RawApplyContextResponse,
   TemplateApplyContext,
-  TemplateApplyPreferredMode,
   TemplateTaskMeta
 } from '@/types/templateApply'
 import { normalizeTemplateApplyContext } from '@/utils/normalizeTemplateApplyContext'
@@ -15,11 +14,10 @@ type TemplateApplyEntryBase = {
 export type ResolvedTemplateApplyEntry =
   | ({ status: 'invalid'; context: null; meta: null })
   | ({ status: 'unknown_task_type'; meta: null } & TemplateApplyEntryBase)
-  | ({ status: 'workbench' | 'legacy_supported'; meta: TemplateTaskMeta } & TemplateApplyEntryBase)
+  | ({ status: 'workbench'; meta: TemplateTaskMeta } & TemplateApplyEntryBase)
 
 export interface ResolveTemplateApplyEntryParams extends NormalizeContextOptions {
   rawContext: RawApplyContextResponse
-  preferredMode?: TemplateApplyPreferredMode
 }
 
 export const resolveTemplateApplyEntry = (
@@ -47,11 +45,8 @@ export const resolveTemplateApplyEntry = (
     }
   }
 
-  const prefersLegacy = params.preferredMode === 'legacy'
-  const shouldUseLegacy = prefersLegacy || meta.supportMode === 'legacy' || !meta.panelKind
-
   return {
-    status: shouldUseLegacy ? 'legacy_supported' : 'workbench',
+    status: 'workbench',
     context,
     meta
   }

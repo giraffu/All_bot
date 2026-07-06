@@ -6,22 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.media_urls import build_storage_presigned_url
 from src.services.storage import storage
-from src.web_api.services.apply_context_service import (
-    build_apply_context_response,
-    build_history_apply_context_response,
-    probe_apply_context_media_metadata,
-    resolve_apply_context_media_metadata,
-    resolve_history_billing_resolution,
-)
 
 T = TypeVar("T")
 
 __all__ = [
-    "build_apply_context_response",
-    "build_history_apply_context_response",
-    "probe_apply_context_media_metadata",
-    "resolve_apply_context_media_metadata",
-    "resolve_history_billing_resolution",
     "build_storage_input_file_url",
     "run_with_optional_db",
     "call_with_optional_db",

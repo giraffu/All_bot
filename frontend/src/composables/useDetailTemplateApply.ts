@@ -73,12 +73,8 @@ export function useDetailTemplateApply<TPost extends DetailApplyTarget>(
       return true
     }
 
-    if (result.status === 'legacy_fallback') {
-      if (result.fallbackKind === 'unknown_task_type') {
-        message.warning(options.t('template_apply.unknown_task_type'))
-      } else {
-        message.error(options.t('template_apply.open_failed'))
-      }
+    if (result.status === 'unsupported') {
+      message.warning(options.t('template_apply.unknown_task_type'))
       return false
     }
 

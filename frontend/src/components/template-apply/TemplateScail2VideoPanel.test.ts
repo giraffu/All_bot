@@ -182,7 +182,6 @@ const buildContext = (overrides: Partial<TemplateApplyContext> = {}): TemplateAp
   rawEntityId: 9,
   rawTaskType: 'scail2_video_replacement',
   taskType: 'scail2_video_replacement',
-  supportMode: 'workbench',
   sourcePostId: 77,
   prompt: 'template prompt',
   negativePrompt: 'template negative',

@@ -350,7 +350,7 @@ docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.ym
 
 云测试 `bot-test` 默认设置 `TON_PAYMENT_POLLING_ENABLED=false`，避免空云测试库启动后回扫真实 TON 商户地址的历史交易并污染测试订单/用户数据。只有需要专门联调 TON 支付履约时，才在 `.env.cloud.test` 中显式设置 `CLOUD_TEST_TON_PAYMENT_POLLING_ENABLED=true`，并先确认测试库 checkpoint 与通知目标可控。
 
-GPU worker 不在云服务器运行；本地 `workers/docker-compose-cloud-worker-test.yml` 经 `CLOUD_TEST_CONTROL_HOST` 连接云端 Central API，并通过 R2 S3 endpoint 直接读写 `user-data-test`。默认常驻只保留 `cloud-comfy-agent-test-1` 与 `cloud-comfy-agent-test-8`：test-1 指向 `gpu-226:8188`，test-8 / `cloud_worker_test_08` 指向 gpu-002 SCAIL-2 LAN AIO runtime `http://192.168.1.2:8190`。`cloud-comfy-agent-test-2..7` 会复用正式 LAN AIO ComfyUI runtime，已加 compose profile 且默认停止；它们只允许在 smoke/canary 窗口按需启动，并默认 `PREFETCH_ENABLED=false`、`PIPELINE_ENABLED=false`、`PIPELINE_MAX_RUNNING_TASKS=1`，避免抢占正式生成容量。test-8 可通过 `.env.cloud.test` 的 `CLOUD_TEST_WORKER_08_TASK_TYPES` 与 `CLOUD_TEST_WORKER_08_TASK_TYPE_WORKFLOW_OVERRIDES` 做测试专用能力覆盖；当前可把动作迁移 5/8s、动作迁移 10/15/20s 隐藏执行、视频换人、视频换脸 v10 two-stage 分别指向 `SCAIL-2_Animation_multi-char_audio.api.json`、`SCAIL-2_Animation_WAN-Context-Windows.api.json`、`SCAIL-2_Replacement_audio.api.json`、`SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json`。Bot/Web 用户侧只显示一个“动作迁移”，业务提交和历史类型仍是 `scail2_action_transfer`，dispatcher 才按时长把 10/15/20s 送到 `scail2_action_transfer_long`。v10 视频换脸还通过 `CLOUD_TEST_WORKER_08_FACE_SWAP_V10_*` 打开 worker8 预处理：先调用 `192.168.1.226:8188` 的 `face_swap_v2.json` 对驱动视频第一帧做图片换脸，再提交 SCAIL-2 视频换人式 workflow。这只是测试 worker 能力，正式 SCAIL-2 worker 仍按正式发布计划单独变更。
+GPU worker 不在云服务器运行；本地 `workers/docker-compose-cloud-worker-test.yml` 经 `CLOUD_TEST_CONTROL_HOST` 连接云端 Central API，并通过 R2 S3 endpoint 直接读写 `user-data-test`。当前云测试日常可以复用正式可用的 LAN AIO ComfyUI runtime，但 worker 仍注册到云测试 Central，输入/结果仍写测试桶。2026-07-06 校准后的常用测试 worker 覆盖为：test-1 指向 `gpu-252:8192` 的 `i2i_pro`，承接 `face_swap`、`i2i_pro`、`i2i_draw`、`t2i-pornmaster-turbo`；test-2 指向 `gpu-177:8190` 的 `wan22_video_v2`；test-3 指向 `gpu-177:8191` 的 LTX；test-6 指向 `gpu-226:8188` 的 `img2img_lora` 兼容 runtime；test-7 指向 `gpu-002:8191` 的 `image_to_video`；test-8 指向 `gpu-002:8190` 的 SCAIL-2。共享 AIO worker 默认 `PREFETCH_ENABLED=false`、`PIPELINE_ENABLED=false`、`PIPELINE_MAX_RUNNING_TASKS=1`，避免测试任务并发抢占正式生成容量。test-8 可通过 `.env.cloud.test` 的 `CLOUD_TEST_WORKER_08_TASK_TYPES` 与 `CLOUD_TEST_WORKER_08_TASK_TYPE_WORKFLOW_OVERRIDES` 做测试专用能力覆盖；当前可把动作迁移 5/8s、动作迁移 10/15/20s 隐藏执行、视频换人、视频换脸 v10 two-stage 分别指向 `SCAIL-2_Animation_multi-char_audio.api.json`、`SCAIL-2_Animation_WAN-Context-Windows.api.json`、`SCAIL-2_Replacement_audio.api.json`、`SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json`。Bot/Web 用户侧只显示一个“动作迁移”，业务提交和历史类型仍是 `scail2_action_transfer`，dispatcher 才按时长把 10/15/20s 送到 `scail2_action_transfer_long`。v10 视频换脸还通过 `CLOUD_TEST_WORKER_08_FACE_SWAP_V10_*` 打开 worker8 预处理：先调用 `192.168.1.252:8192` 的 `face_swap_v2.json` 对驱动视频第一帧做图片换脸，再提交 SCAIL-2 视频换人式 workflow。这只是测试 worker 能力，正式 SCAIL-2 worker 仍按正式发布计划单独变更。
 
 2026-06-18 03:06 只读快照：云测试 Central `queue_size=0`，`active_workers=8`，`healthy_workers=5`，`error_workers=3`，`quarantined_workers=0`。该状态是瞬时运行态；执行测试验收前必须重新查 `/system/workers` 并按目标任务类型确认 worker 健康。
 
@@ -361,10 +361,10 @@ GPU worker 不在云服务器运行；本地 `workers/docker-compose-cloud-worke
 | :--- | :--- | :--- | :--- | :--- |
 | `cloud_worker_test_02` | `shared-aio-canary` | `192.168.1.177:8190` | `wan22_video_v2` | gpu-177 GPU0 AIO |
 | `cloud_worker_test_03` | `shared-aio-canary` | `192.168.1.177:8191` | `ltx_video,*` | gpu-177 GPU1 LTX AIO |
-| `cloud_worker_test_04` | `shared-aio-canary` | 默认 `192.168.1.252:8190`；PornMaster v2 测试覆盖为 `192.168.1.252:8192` | 默认 `img2img,img2img_lora`；测试覆盖为 `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit` | gpu-252 GPU0 AIO |
+| `cloud_worker_test_04` | `shared-aio-canary` | 默认 `127.0.0.1:9` 占位 | `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit` | 仅保留旧本地 AIO canary 入口；常规测试不启动 |
 | `cloud_worker_test_05` | `wan22-canary` | 无健康默认入口 | `wan22_video_v2` | 默认指向 `127.0.0.1:9` 占位，必须先换成有效 RunPod/LAN endpoint |
-| `cloud_worker_test_06` | `shared-aio-canary` | `192.168.1.252:8190` | `img2img,img2img_lora` | 备用 img2img shared AIO |
-| `cloud_worker_test_07` | `shared-aio-canary` | `192.168.1.2:8191` | `image_to_video,video_insert` | gpu-002 slot1 image_to_video AIO |
+| `cloud_worker_test_06` | `shared-aio-canary` | `192.168.1.226:8188` | `img2img,img2img_lora` | 备用 img2img shared runtime |
+| `cloud_worker_test_07` | `shared-aio-canary` | `192.168.1.2:8191` | `image_to_video,video_insert,video_edit` | gpu-002 slot1 image_to_video AIO |
 
 启动共享 AIO canary 前，先确认正式队列压力可接受，且目标端口 `/system_stats` 返回 200。真实启动只针对目标服务，不要 `up` 整个 compose：
 
@@ -375,7 +375,19 @@ COMPOSE_PROFILES=shared-aio-canary docker-compose \
   up -d --no-deps cloud-comfy-agent-test-2 cloud-comfy-agent-test-3
 ```
 
-自由P图 v2 / PornMaster Flux2 测试只允许覆盖 `cloud_worker_test_04`，并要求 `.env.cloud.test` 设定：
+自由P图 v2 / PornMaster Flux2 常规测试优先使用云测试 RunPod worker，不再为了日常测试启动本地 PornMaster LAN AIO。`.env.cloud.test` 需要配置 `RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT` 指向已发布的 GHCR 镜像、`RUNPOD_MODEL_PREFIX_PORNMASTER_FLUX2_EDIT=pornmaster_flux2_edit/2026-06-27`、`RUNPOD_MODEL_MANIFEST_KEY_PORNMASTER_FLUX2_EDIT=pornmaster_flux2_edit/2026-06-27/manifest.json`，然后用 cloud-test RunPod worker scale 入口启动：
+
+```bash
+RUNPOD_DRY_RUN=false RUNPOD_AUTOSCALER_ENABLED=true \
+python scripts/gpu_pool_controller.py runpod workers scale \
+  --profile pornmaster_flux2_edit \
+  --desired 1 \
+  --env cloud-test \
+  --env-file .env.cloud.test \
+  --execute
+```
+
+合格状态是云测试 Central `/system/workers` 出现 `runpod_test_pornmaster_flux2_edit_*`，`runtime_profile=pornmaster_flux2_edit`，types 为 `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit`，control 为 `enabled`。旧 `cloud_worker_test_04` / 本地 LAN AIO canary 只作为专项回归入口；若明确要走本地 AIO，需要覆盖 `cloud_worker_test_04` 并确认不会和当前 `i2i_pro` / 正式任务抢占同一 GPU：
 
 ```bash
 ENABLE_FREE_EDIT_V2=true

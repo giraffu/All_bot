@@ -42,7 +42,6 @@ describe('normalizeTemplateApplyContext', () => {
     expect(normalized).toMatchObject({
       rawTaskType: 'face_swap',
       taskType: 'face_swap',
-      supportMode: 'workbench',
       rawEntityId: 12,
       sourcePostId: 88,
       prompt: 'cinematic portrait',
@@ -73,7 +72,6 @@ describe('normalizeTemplateApplyContext', () => {
     expect(normalized).toMatchObject({
       rawTaskType: 'unknown_video_task',
       taskType: null,
-      supportMode: 'unknown',
       prompt: 'demo'
     })
   })
@@ -93,7 +91,6 @@ describe('normalizeTemplateApplyContext', () => {
     expect(normalized).toMatchObject({
       rawTaskType: 'i2i_draw',
       taskType: null,
-      supportMode: 'unknown',
       sourcePostId: 8,
       prompt: 'repaint local area'
     })
@@ -114,7 +111,6 @@ describe('normalizeTemplateApplyContext', () => {
     expect(normalized).toMatchObject({
       rawTaskType: 'faceswap',
       taskType: 'face_swap',
-      supportMode: 'workbench',
       sourcePostId: 18,
       inputFile: 'history/demo/original.png'
     })
@@ -139,7 +135,6 @@ describe('normalizeTemplateApplyContext', () => {
     expect(normalized).toMatchObject({
       rawTaskType: 'ltx_video_flf2v',
       taskType: 'ltx_video',
-      supportMode: 'workbench',
       sourcePostId: 20,
       inputFiles: ['history/demo/start.png', 'history/demo/end.png'],
       inputFileUrls: ['https://example.com/start.png', 'https://example.com/end.png'],
@@ -164,7 +159,6 @@ describe('normalizeTemplateApplyContext', () => {
     expect(normalized).toMatchObject({
       rawTaskType: 'pornmaster_flux2_multi_edit',
       taskType: 'pornmaster_flux2_multi_edit',
-      supportMode: 'workbench',
       sourcePostId: 19,
       prompt: 'adjust clothes and lighting'
     })
@@ -189,7 +183,6 @@ describe('normalizeTemplateApplyContext', () => {
     expect(normalized).toMatchObject({
       rawTaskType: 'scail2_action_transfer_long',
       taskType: 'scail2_action_transfer',
-      supportMode: 'workbench',
       inputFile: 'history/demo/motion.mp4',
       inputFileUrl: 'https://example.com/motion.mp4',
       inputFiles: ['history/demo/motion.mp4'],

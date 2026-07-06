@@ -1,12 +1,11 @@
 import json
 
 import pytest
-from asgi_correlation_id import correlation_id
-
 from app import queue_manager as queue_manager_module
 from app.agent_router_helpers import check_task_payload, update_status_payload
 from app.models import TaskStatus, TaskType
 from app.queue_manager import QueueManager
+from asgi_correlation_id import correlation_id
 
 
 class _FakePipeline:
@@ -207,6 +206,14 @@ class _FlakyRedis(_FakeRedis):
     async def zpopmin(self, *args, **kwargs):
         self._record_call("zpopmin")
         return await super().zpopmin(*args, **kwargs)
+
+    async def zrem(self, *args, **kwargs):
+        self._record_call("zrem")
+        return await super().zrem(*args, **kwargs)
+
+    async def sismember(self, *args, **kwargs):
+        self._record_call("sismember")
+        return await super().sismember(*args, **kwargs)
 
 
 @pytest.fixture(autouse=True)
@@ -585,6 +592,25 @@ async def test_cancel_task_cancels_pending_task_and_publishes_event():
     assert redis.hashes[task_key]["cancel_requested"] == 0
     assert redis.hashes[task_key]["cancel_requested_at"] == ""
     assert ("comfy:task_events:task-1", json.dumps({"status": "cancelled"})) in redis.published
+
+
+@pytest.mark.asyncio
+async def test_cancel_task_retries_transient_pending_zrem_failure():
+    redis = _FlakyRedis({"zrem": 1})
+    manager = QueueManager(redis)
+    task_key = f"{manager.task_prefix}task-retry-cancel"
+
+    await redis.hset(
+        task_key,
+        mapping={"status": TaskStatus.PENDING, "type": TaskType.IMG2IMG},
+    )
+    await redis.zadd(manager.pending_key, {"task-retry-cancel": 1.0})
+
+    result = await manager.cancel_task("task-retry-cancel")
+
+    assert result["state"] == "cancelled"
+    assert redis.calls["zrem"] == 2
+    assert redis.hashes[task_key]["status"] == TaskStatus.CANCELLED
 
 
 @pytest.mark.asyncio

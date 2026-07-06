@@ -9,7 +9,7 @@ from typing import Any
 
 import asyncpg
 
-from .main import _database_url
+from .analytics_common import _database_url
 from .prompt_vectors import config_from_args, prompt_vector_arg_parser, refresh_prompt_vectors
 
 

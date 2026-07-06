@@ -555,6 +555,8 @@
       "custom_edit_v2_desc": "Upload one or two reference images and edit them directly with a text instruction.",
       "fast_face_swap_title": "Fast Face Swap",
       "fast_face_swap_desc": "Rapid face replacement, suitable for standard fast processing.",
+      "random_faceswap_title": "Random Face Swap",
+      "random_faceswap_desc": "Upload one face image and let the system pick a matching template automatically.",
       "video_face_swap_title": "Video Face Swap",
       "video_face_swap_desc": "Upload a face and a video, AI will swap the face frame by frame...",
       "custom_video_title": "Img2Video",

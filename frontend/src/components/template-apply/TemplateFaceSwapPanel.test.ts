@@ -149,7 +149,6 @@ const buildContext = (overrides: Record<string, unknown> = {}): TemplateApplyCon
   rawEntityId: 1,
   rawTaskType: 'face_swap',
   taskType: 'face_swap',
-  supportMode: 'workbench',
   sourcePostId: 99,
   prompt: 'demo',
   negativePrompt: null,

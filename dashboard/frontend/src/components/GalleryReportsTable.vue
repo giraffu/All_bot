@@ -117,6 +117,8 @@ const columns = computed(() => [
   },
 ])
 
+const getReportRowKey = (record: GalleryReportItem) => record.id
+
 const getReasonLabel = (reason: GalleryReportItem['reason'] | string | null) => {
   return reasonOptions.find(option => option.value === reason)?.label || '未知'
 }
@@ -291,7 +293,7 @@ onMounted(() => {
       <a-table
         :columns="columns"
         :data-source="reports"
-        :row-key="record => record.id"
+        :row-key="getReportRowKey"
         :pagination="pagination"
         :loading="loading"
         :scroll="{ y: 'calc(100vh - 290px)', x: 1340 }"

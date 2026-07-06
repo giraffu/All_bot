@@ -1,100 +1,15 @@
-const state = {
-  users: null,
-  userGroups: null,
-  userProfiles: null,
-  userProfileDetail: null,
-  creditFlow: null,
-  overview: null,
-  finance: null,
-  generation: null,
-  prompts: null,
-  promptSlim: null,
-  promptVectors: null,
-  templates: null,
-  media: null,
-  promptTaskTypes: [],
-  promptVariantCache: {},
-  selectedPrompt: null,
-  selectedPromptSlim: null,
-  selectedUserGroup: null,
-  userDateRange: {
-    start: "",
-    end: "",
-  },
-  promptPage: 1,
-  promptSlimPage: 1,
-  userProfilePage: 1,
-  userProfileSearchTimer: null,
-  promptVectorResume: null,
-  promptVectorResumeLoading: false,
-  charts: {},
-  creditFlowMode: "daily",
-  financeMetric: "usdt_amount",
-  financeHourlyMode: "period",
-  generationCompareMode: "hourly-period",
-  activeTab: "users",
-  tabDays: {
-    users: 30,
-    "credit-flow": 30,
-    finance: 30,
-    generation: 30,
-    prompts: 30,
-    "prompt-slim": 0,
-    "prompt-vectors": 0,
-    templates: 30,
-    media: 30,
-  },
-  loadedTabs: {},
-  tabUpdatedAt: {},
-};
-
-const tabs = {
-  users: {
-    kicker: "用户画像",
-    title: "人群透视和单用户画像",
-    subtitle: "按画像字段聚合人群，并下钻到单用户画像抽屉",
-  },
-  "credit-flow": {
-    kicker: "灵石收支",
-    title: "灵石收入、支出和健康度",
-    subtitle: "来源、消耗、风险用户复核",
-  },
-  finance: {
-    kicker: "充值情况",
-    title: "订单、渠道、套餐和付费健康度",
-    subtitle: "成功订单、RMB / TON / Stars、发放灵石和复购分层",
-  },
-  generation: {
-    kicker: "生成分析",
-    title: "生成趋势、质量和消耗效率",
-    subtitle: "任务类型、来源、质量漏斗、用户排行和高信号作品",
-  },
-  prompts: {
-    kicker: "提示词洞察",
-    title: "提示词复用、任务类型和互动价值",
-    subtitle: "排除一键应用衍生记录，聚合相同提示词和高价值信号",
-  },
-  "prompt-slim": {
-    kicker: "提示词瘦身",
-    title: "提示词候选、剔除规则和信号检查",
-    subtitle: "读取持久化瘦身宽表，检查候选、低质原因和反馈信号",
-  },
-  "prompt-vectors": {
-    kicker: "提示词向量化",
-    title: "提示词 embedding 覆盖和续跑",
-    subtitle: "只保留基础宽表与向量化状态，不再生成相似簇或派生分析",
-  },
-  templates: {
-    kicker: "模板候选",
-    title: "可沉淀的场景样本",
-    subtitle: "从高分 prompt 中挑选可复用模板",
-  },
-  media: {
-    kicker: "媒体核验",
-    title: "History 输入输出对象引用",
-    subtitle: "基于数据库记录解析媒体 key",
-  },
-};
+import { state, tabs } from "./state.js";
+import { fetchJson, logoutLocalAnalytics } from "./api.js";
+import { createCreditFlowLoader } from "./creditFlow.js";
+import { createFinanceModule } from "./finance.js";
+import { createGenerationModule } from "./generation.js";
+import { createMediaLoader } from "./media.js";
+import { createPromptSlimLoader } from "./promptSlim.js";
+import { createPromptVectorsModule } from "./promptVectors.js";
+import { createPromptsLoader } from "./prompts.js";
+import { createTabController } from "./tabs.js";
+import { createTemplatesLoader } from "./templates.js";
+import { createUsersLoader } from "./users.js";
 
 const $ = (selector) => document.querySelector(selector);
 const nf = new Intl.NumberFormat("zh-CN");
@@ -488,42 +403,6 @@ function buildHourlyOption(rows = [], { dateKey = "date", metric = "generations"
   });
 }
 
-function loginNextPath() {
-  return `${window.location.pathname}${window.location.search}${window.location.hash}` || "/";
-}
-
-async function fetchJson(path, params = {}, options = {}) {
-  const url = new URL(path, window.location.origin);
-  Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== "") {
-      url.searchParams.set(key, value);
-    }
-  });
-  const response = await fetch(url, options);
-  if (!response.ok) {
-    if (response.status === 401) {
-      window.location.assign(`/login?next=${encodeURIComponent(loginNextPath())}`);
-    }
-    let detail = response.statusText;
-    try {
-      const body = await response.json();
-      detail = body.detail || detail;
-    } catch (_) {
-      detail = await response.text();
-    }
-    throw new Error(`${response.status} ${detail}`);
-  }
-  return response.json();
-}
-
-async function logoutLocalAnalytics() {
-  try {
-    await fetch("/api/auth/logout", { method: "POST" });
-  } finally {
-    window.location.assign("/login");
-  }
-}
-
 function promptVectorResumeNote() {
   const resume = state.promptVectors?.resume || state.promptVectorResume?.resume || {};
   const summary = state.promptVectors?.summary || {};
@@ -559,33 +438,6 @@ function renderSource() {
   const media = source.media_url_enabled ? "媒体 URL 已启用" : "媒体 URL 未配置";
   $("#sourceLine").textContent = `${source.database_url || "shadow database"} · ${source.media_bucket} · ${media}`;
   $("#sidebarStatus").textContent = `${state.overview?.metrics?.total_history ? fmt(state.overview.metrics.total_history) : "-"} 条 history · ${media}`;
-}
-
-function setActiveTab(tabName, syncHash = true, shouldLoad = true) {
-  const requested = tabName === "overview" ? "generation" : tabName;
-  const tab = tabs[requested] ? requested : "users";
-  const previousTab = state.activeTab;
-  if (previousTab && previousTab !== tab) {
-    disposeChartsForTab(previousTab);
-  }
-  state.activeTab = tab;
-  document.querySelectorAll(".tab-button").forEach((button) => {
-    button.classList.toggle("active", button.dataset.tab === tab);
-  });
-  document.querySelectorAll(".tab-panel").forEach((panel) => {
-    panel.classList.toggle("active", panel.dataset.panel === tab);
-  });
-  $("#activeKicker").textContent = tabs[tab].kicker;
-  $("#activeTitle").textContent = tabs[tab].title;
-  $("#activeSubtitle").textContent = tabs[tab].subtitle;
-  syncDaysControl();
-  renderLastUpdated();
-  if (syncHash || tabName === "overview") {
-    history.replaceState(null, "", `#${tab}`);
-  }
-  if (shouldLoad) {
-    loadCurrentTab();
-  }
 }
 
 function setError(error) {
@@ -2257,137 +2109,76 @@ async function loadOverviewStatus() {
   renderSource();
 }
 
-async function loadUsers(days) {
-  const period = userPeriodParams();
-  const [users, userGroups, userProfiles] = await Promise.all([
-    fetchJson("/api/user-analytics", { ...period, days: period.days || days, limit: 12 }),
-    fetchJson("/api/user-analytics/groups", getUserGroupParams()),
-    fetchJson("/api/user-analytics/users", getUserProfileParams()),
-  ]);
-  state.users = users;
-  state.userGroups = userGroups;
-  state.userProfiles = userProfiles;
-  renderUsers();
-}
-
-async function loadCreditFlow(days) {
-  state.creditFlow = await fetchJson("/api/credit-flow-analytics", { days, limit: 12 });
-  renderCreditFlow();
-}
-
-async function loadFinance(days) {
-  state.finance = await fetchJson("/api/finance", { days, limit: 12 });
-  renderFinance();
-}
-
-async function loadGeneration(days) {
-  state.generation = await fetchJson("/api/generation", { days, limit: 12 });
-  renderGeneration();
-}
-
-async function loadFinanceHourlyComparison() {
-  try {
-    setError(null);
-    const dates = getCompareDates("#financeCompareDatesInput", state.finance?.daily || []);
-    const payload = await fetchJson("/api/finance/hourly-comparison", { dates: dates.join(",") });
-    state.financeHourlyMode = "comparison";
-    renderFinanceCharts(payload.hourly || [], "日期对比");
-  } catch (error) {
-    setError(error);
-  }
-}
-
-async function loadFinanceHourlyCumulative() {
-  try {
-    setError(null);
-    const days = selectNumber("#financeHourlyRangeSelect", 30);
-    const payload = await fetchJson("/api/finance/hourly-cumulative", { days });
-    state.financeHourlyMode = "cumulative";
-    renderFinanceCharts(payload.hourly || [], `近 ${fmt(days)} 天累计`);
-  } catch (error) {
-    setError(error);
-  }
-}
-
-async function loadGenerationHourlyComparison() {
-  try {
-    setError(null);
-    const dates = getCompareDates("#generationCompareDatesInput", state.generation?.daily || []);
-    const payload = await fetchJson("/api/generation/hourly-comparison", { dates: dates.join(",") });
-    state.generationCompareMode = "hourly-comparison";
-    renderGenerationCharts(payload.hourly || [], "hourly-comparison");
-  } catch (error) {
-    setError(error);
-  }
-}
-
-async function loadGenerationHourlyCumulative() {
-  try {
-    setError(null);
-    const days = selectNumber("#generationHourlyRangeSelect", 30);
-    const payload = await fetchJson("/api/generation/hourly-cumulative", { days });
-    state.generationCompareMode = "hourly-cumulative";
-    renderGenerationCharts(payload.hourly || [], "hourly-cumulative");
-  } catch (error) {
-    setError(error);
-  }
-}
-
-async function loadGenerationTypeComparison() {
-  try {
-    setError(null);
-    const dates = getCompareDates("#generationCompareDatesInput", state.generation?.daily || []);
-    const payload = await fetchJson("/api/generation/type-comparison", { dates: dates.join(",") });
-    state.generationCompareMode = "types";
-    renderGenerationCharts(payload.types || [], "types");
-  } catch (error) {
-    setError(error);
-  }
-}
-
-async function loadPrompts(days) {
-  state.prompts = await fetchJson("/api/prompts", getPromptParams(days));
-  state.promptTaskTypes = state.prompts?.distributions?.task_type || [];
-  renderPromptTaskTypeOptions();
-  renderPrompts();
-}
-
-async function loadPromptSlim() {
-  state.promptSlim = await fetchJson("/api/prompt-slim", getPromptSlimParams());
-  renderPromptSlim();
-}
-
-async function loadPromptVectors() {
-  state.promptVectors = await fetchJson("/api/prompt-vectors", getPromptVectorParams());
-  renderPromptVectors();
-}
-
-async function resumePromptVectorEmbeddings() {
-  state.promptVectorResumeLoading = true;
-  renderPromptVectorResumeStatus();
-  setError(null);
-  try {
-    state.promptVectorResume = await fetchJson("/api/prompt-vectors/resume", {}, { method: "POST" });
-    markTabStale("prompt-vectors");
-    await loadPromptVectors();
-    markTabLoaded("prompt-vectors");
-  } catch (error) {
-    setError(error);
-  } finally {
-    state.promptVectorResumeLoading = false;
-    renderPromptVectorResumeStatus();
-  }
-}
-
-async function loadTemplates(days) {
-  state.templates = await fetchJson("/api/prompts", getTemplatePromptParams(days));
-  renderTemplateCandidates(state.templates);
-}
-
-async function loadMedia(days) {
-  state.media = await fetchJson("/api/media-audit", { days, limit: 100 });
-  renderMedia();
-}
+const loadUsers = createUsersLoader({
+  fetchJson,
+  state,
+  userPeriodParams,
+  getUserGroupParams,
+  getUserProfileParams,
+  renderUsers,
+});
+const loadCreditFlow = createCreditFlowLoader({ fetchJson, state, renderCreditFlow });
+const {
+  loadFinance,
+  loadFinanceHourlyComparison,
+  loadFinanceHourlyCumulative,
+} = createFinanceModule({
+  fetchJson,
+  state,
+  renderFinance,
+  renderFinanceCharts,
+  getCompareDates,
+  selectNumber,
+  fmt,
+  setError,
+});
+const {
+  loadGeneration,
+  loadGenerationHourlyComparison,
+  loadGenerationHourlyCumulative,
+  loadGenerationTypeComparison,
+} = createGenerationModule({
+  fetchJson,
+  state,
+  renderGeneration,
+  renderGenerationCharts,
+  getCompareDates,
+  selectNumber,
+  setError,
+});
+const loadPrompts = createPromptsLoader({
+  fetchJson,
+  state,
+  getPromptParams,
+  renderPromptTaskTypeOptions,
+  renderPrompts,
+});
+const loadPromptSlim = createPromptSlimLoader({
+  fetchJson,
+  state,
+  getPromptSlimParams,
+  renderPromptSlim,
+});
+const {
+  loadPromptVectors,
+  resumePromptVectorEmbeddings,
+} = createPromptVectorsModule({
+  fetchJson,
+  state,
+  getPromptVectorParams,
+  renderPromptVectors,
+  renderPromptVectorResumeStatus,
+  markTabStale,
+  markTabLoaded,
+  setError,
+});
+const loadTemplates = createTemplatesLoader({
+  fetchJson,
+  state,
+  getTemplatePromptParams,
+  renderTemplateCandidates,
+});
+const loadMedia = createMediaLoader({ fetchJson, state, renderMedia });
 
 const tabLoaders = {
   users: loadUsers,
@@ -2418,6 +2209,15 @@ async function loadCurrentTab({ force = false } = {}) {
     setLoading(false);
   }
 }
+
+const { setActiveTab } = createTabController({
+  state,
+  tabs,
+  disposeChartsForTab,
+  syncDaysControl,
+  renderLastUpdated,
+  loadCurrentTab,
+});
 
 function resetPromptPageAndLoad() {
   state.promptPage = 1;

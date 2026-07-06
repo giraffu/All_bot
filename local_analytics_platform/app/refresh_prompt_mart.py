@@ -7,7 +7,7 @@ from typing import Any
 
 import asyncpg
 
-from .main import _builtin_prompt_template_args, _database_url
+from .analytics_common import _builtin_prompt_template_args, _database_url
 from .prompt_mart import refresh_prompt_mart
 
 

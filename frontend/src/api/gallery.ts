@@ -4,7 +4,6 @@ import type {
   GalleryPost,
   HistoryItem,
   LibraryCollectionScope,
-  LtxHistoryChainResponse,
   PaginatedGalleryResponse,
   RecentHistoryResponse,
   Wan22HistoryChainResponse,
@@ -56,11 +55,6 @@ export async function getWan22HistoryChain(taskId: string): Promise<Wan22History
 
 export async function stitchWan22HistoryChain(taskId: string): Promise<HistoryItem> {
   const response = await api.post<HistoryItem>(`/users/history/${taskId}/wan22-chain/stitch`)
-  return response.data
-}
-
-export async function getLtxHistoryChain(taskId: string): Promise<LtxHistoryChainResponse> {
-  const response = await api.get<LtxHistoryChainResponse>(`/users/history/${taskId}/ltx-chain`)
   return response.data
 }
 

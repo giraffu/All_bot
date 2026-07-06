@@ -1,4 +1,5 @@
 import axios from 'axios'
+import type { AxiosResponse } from 'axios'
 
 import {
   clearQqccConfigAuthToken,
@@ -41,7 +42,7 @@ qqccConfigApi.interceptors.response.use(
   }
 )
 
-const unwrapData = response => response.data
+const unwrapData = (response: AxiosResponse) => response.data
 
 export const loginQqccConfig = async (username: string, password: string) => {
   const formData = new FormData()

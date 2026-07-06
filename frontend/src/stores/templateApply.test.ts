@@ -108,7 +108,7 @@ describe('templateApply store', () => {
     expect(store.context?.negativePrompt).toBe('low quality blur')
   })
 
-  it('returns legacy fallback for unknown tasks', async () => {
+  it('returns unsupported for unknown tasks', async () => {
     const store = useTemplateApplyStore()
 
     const result = await store.openFromRawContext({
@@ -121,36 +121,8 @@ describe('templateApply store', () => {
     })
 
     expect(result).toMatchObject({
-      status: 'legacy_fallback',
-      fallbackKind: 'unknown_task_type',
+      status: 'unsupported',
       rawTaskType: 'unknown_task_type'
-    })
-    expect(store.visible).toBe(false)
-  })
-
-  it('returns legacy fallback for supported tasks when legacy mode is explicitly requested', async () => {
-    const store = useTemplateApplyStore()
-
-    const result = await store.openFromRawContext({
-      source: 'gallery',
-      entryEntityId: 10,
-      preferredMode: 'legacy',
-      rawContext: {
-        post_id: 10,
-        source_post_id: 10,
-        task_type: 'face_swap',
-        input_file: 'history/demo/original.png',
-        input_file_url: 'https://example.com/demo.png'
-      }
-    })
-
-    expect(result).toMatchObject({
-      status: 'legacy_fallback',
-      fallbackKind: 'legacy_supported',
-      rawTaskType: 'face_swap',
-      meta: expect.objectContaining({
-        legacyRouteName: 'FaceSwap'
-      })
     })
     expect(store.visible).toBe(false)
   })

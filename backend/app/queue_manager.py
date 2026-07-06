@@ -6,14 +6,14 @@ from typing import Any, Dict, Optional, Tuple
 
 from app.models import TaskStatus, TaskType
 from app.queue_manager_flow_helpers import (
-    build_worker_info_flow,
-    build_enqueued_task_payload,
     build_cancel_result,
-    cancel_running_task_flow,
-    check_zombie_tasks_flow,
+    build_enqueued_task_payload,
+    build_worker_info_flow,
     cancel_pending_task_flow,
-    complete_task_flow,
+    cancel_running_task_flow,
     cancel_task_flow,
+    check_zombie_tasks_flow,
+    complete_task_flow,
     dequeue_task_flow,
     fail_task_flow,
     fail_zombie_task_if_needed_flow,
@@ -25,13 +25,12 @@ from app.queue_manager_flow_helpers import (
     iter_running_task_ids_flow,
     request_running_task_cancellation_flow,
     scan_agent_heartbeat_keys_flow,
-    update_progress_flow,
     update_agent_heartbeat_flow,
+    update_progress_flow,
 )
 from redis.asyncio import Redis
 from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import TimeoutError as RedisTimeoutError
-
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +122,17 @@ class QueueManager:
                     exc,
                 )
                 await asyncio.sleep(REDIS_TRANSIENT_RETRY_BASE_DELAY_SECONDS * attempt)
+
+    async def _single_redis_call(self, operation_name: str, redis_call, *args, **kwargs):
+        try:
+            return await redis_call(*args, **kwargs)
+        except _REDIS_TRANSIENT_ERRORS as exc:
+            logger.warning(
+                "Transient Redis error during non-retried %s: %s",
+                operation_name,
+                exc,
+            )
+            raise
 
     async def _publish_task_event(self, task_id: str, payload: Dict[str, Any]) -> None:
         await self._retry_redis_call(
@@ -220,7 +230,11 @@ class QueueManager:
         )
 
     async def _pop_next_pending_task(self) -> Optional[Tuple[str, float]]:
-        result = await self.redis.zpopmin(self.pending_key)
+        result = await self._single_redis_call(
+            "pop_next_pending_task",
+            self.redis.zpopmin,
+            self.pending_key,
+        )
         if not result:
             return None
         task_id, score = result[0]
@@ -577,13 +591,28 @@ class QueueManager:
         return await cancel_task_flow(
             task_id=task_id,
             task_key=self._task_key(task_id),
-            exists_func=self.redis.exists,
-            zrem_func=lambda task_id: self.redis.zrem(self.pending_key, task_id),
+            exists_func=lambda *args, **kwargs: self._retry_redis_call(
+                "cancel_task_exists",
+                self.redis.exists,
+                *args,
+                **kwargs,
+            ),
+            zrem_func=lambda task_id: self._retry_redis_call(
+                "cancel_task_zrem",
+                self.redis.zrem,
+                self.pending_key,
+                task_id,
+            ),
             cancel_pending_task_func=self._cancel_pending_task,
             request_running_task_cancellation_func=(
                 self._request_running_task_cancellation
             ),
-            sismember_func=lambda task_id: self.redis.sismember(self.running_key, task_id),
+            sismember_func=lambda task_id: self._retry_redis_call(
+                "cancel_task_sismember",
+                self.redis.sismember,
+                self.running_key,
+                task_id,
+            ),
             get_task_status_func=self.get_task_status,
             build_cancel_result_func=self._build_cancel_result,
             cancelled_status=TaskStatus.CANCELLED,

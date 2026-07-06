@@ -86,6 +86,76 @@ async def find_next_allowed_task_flow(
         offset += batch_size
 
 
+def _optional_float(value) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _optional_int(value) -> int | None:
+    parsed = _optional_float(value)
+    return int(parsed) if parsed is not None else None
+
+
+def _truthy_worker_flag(value) -> bool:
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _normalize_worker_info_fields(worker_info: dict[str, Any]) -> None:
+    for numeric_key in ("last_error_at", "quarantined_until"):
+        if numeric_key in worker_info:
+            worker_info[numeric_key] = _optional_float(worker_info.get(numeric_key))
+
+    if "consecutive_failures" in worker_info:
+        worker_info["consecutive_failures"] = _optional_int(
+            worker_info.get("consecutive_failures")
+        ) or 0
+
+    if "last_error" in worker_info and worker_info.get("last_error") is None:
+        worker_info["last_error"] = ""
+    if "health_reason" in worker_info and worker_info.get("health_reason") is None:
+        worker_info["health_reason"] = ""
+
+    if "gpu_index" in worker_info:
+        worker_info["gpu_index"] = _optional_int(worker_info.get("gpu_index"))
+
+    if "pool_managed" in worker_info:
+        worker_info["pool_managed"] = _truthy_worker_flag(
+            worker_info.get("pool_managed")
+        )
+
+    if "model_bundle_versions" in worker_info:
+        value = worker_info.get("model_bundle_versions")
+        if isinstance(value, str) and value:
+            try:
+                parsed = json.loads(value)
+            except (TypeError, ValueError):
+                parsed = None
+            worker_info["model_bundle_versions"] = (
+                parsed if isinstance(parsed, dict) else None
+            )
+
+
+async def _attach_current_task_info(
+    worker_info: dict[str, Any],
+    *,
+    get_task_status_func,
+) -> None:
+    current_task_id = worker_info.get("current_task_id")
+    if worker_info.get("status") != "running" or not current_task_id:
+        return
+
+    task_data = await get_task_status_func(current_task_id)
+    if not task_data:
+        return
+    worker_info["current_task_type"] = task_data.get("type")
+    worker_info["current_task_progress"] = float(task_data.get("progress", 0.0))
+    worker_info["current_task_created_at"] = float(task_data.get("created_at", 0.0))
+
+
 async def build_worker_info_flow(
     *,
     agent_id: str,
@@ -101,69 +171,11 @@ async def build_worker_info_flow(
     if not all(worker_info.get(field) for field in ("types", "status", "last_seen")):
         return None
 
-    for numeric_key in ("last_error_at", "quarantined_until"):
-        if numeric_key not in worker_info:
-            continue
-        value = worker_info.get(numeric_key)
-        if value in (None, ""):
-            worker_info[numeric_key] = None
-            continue
-        try:
-            worker_info[numeric_key] = float(value)
-        except (TypeError, ValueError):
-            worker_info[numeric_key] = None
-
-    if "consecutive_failures" in worker_info:
-        failure_count = worker_info.get("consecutive_failures")
-        if failure_count in (None, ""):
-            worker_info["consecutive_failures"] = 0
-        else:
-            try:
-                worker_info["consecutive_failures"] = int(float(failure_count))
-            except (TypeError, ValueError):
-                worker_info["consecutive_failures"] = 0
-
-    if "last_error" in worker_info and worker_info.get("last_error") is None:
-        worker_info["last_error"] = ""
-    if "health_reason" in worker_info and worker_info.get("health_reason") is None:
-        worker_info["health_reason"] = ""
-
-    if "gpu_index" in worker_info:
-        value = worker_info.get("gpu_index")
-        if value in (None, ""):
-            worker_info["gpu_index"] = None
-        else:
-            try:
-                worker_info["gpu_index"] = int(float(value))
-            except (TypeError, ValueError):
-                worker_info["gpu_index"] = None
-
-    if "pool_managed" in worker_info:
-        worker_info["pool_managed"] = (
-            str(worker_info.get("pool_managed")).strip().lower()
-            in {"1", "true", "yes", "on"}
-        )
-
-    if "model_bundle_versions" in worker_info:
-        value = worker_info.get("model_bundle_versions")
-        if isinstance(value, str) and value:
-            try:
-                parsed = json.loads(value)
-            except (TypeError, ValueError):
-                parsed = None
-            worker_info["model_bundle_versions"] = (
-                parsed if isinstance(parsed, dict) else None
-            )
-
-    current_task_id = worker_info.get("current_task_id")
-    if worker_info.get("status") == "running" and current_task_id:
-        task_data = await get_task_status_func(current_task_id)
-        if task_data:
-            worker_info["current_task_type"] = task_data.get("type")
-            worker_info["current_task_progress"] = float(task_data.get("progress", 0.0))
-            worker_info["current_task_created_at"] = float(
-                task_data.get("created_at", 0.0)
-            )
+    _normalize_worker_info_fields(worker_info)
+    await _attach_current_task_info(
+        worker_info,
+        get_task_status_func=get_task_status_func,
+    )
 
     return worker_info
 

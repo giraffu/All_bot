@@ -1,5 +1,5 @@
-<script setup>
-import { ref, watch } from 'vue'
+<script setup lang="ts">
+import { computed, ref, watch } from 'vue'
 import Login from './components/Login.vue'
 import HistoryModal from './components/HistoryModal.vue'
 import UserFavoritesModal from './components/UserFavoritesModal.vue'
@@ -13,10 +13,11 @@ import { useDashboardUserHistory } from './composables/useDashboardUserHistory'
 import { useDashboardUserFavorites } from './composables/useDashboardUserFavorites'
 import { useDashboardNavigation } from './composables/useDashboardNavigation'
 import { useDashboardTabView } from './composables/useDashboardTabView'
+import type { DashboardTabKey } from './config/dashboardTabs'
 
 const { isAuthenticated, clearAuthToken } = useDashboardAuth()
-const activeTab = ref(['home'])
-const galleryCommentsPostId = ref(undefined)
+const activeTab = ref<string[]>(['home'])
+const galleryCommentsPostId = ref<number | undefined>(undefined)
 const collapsed = ref(false)
 const {
   stats,
@@ -32,7 +33,6 @@ const {
   searchQuery,
   searchResult,
   searchModalVisible,
-  searchLoading,
   handleSearch,
   closeSearchModal,
   isImage,
@@ -62,7 +62,7 @@ const {
   changeFavoritesPage,
   closeFavoritesModal,
 } = useDashboardUserFavorites()
-const openGalleryCommentsTab = (postId) => {
+const openGalleryCommentsTab = (postId?: number) => {
   galleryCommentsPostId.value = typeof postId === 'number' ? postId : undefined
   activeTab.value = ['gallery_comments']
 }
@@ -87,6 +87,10 @@ const { currentTabView } = useDashboardTabView(
     viewHistory,
     viewFavorites,
   },
+)
+
+const isActiveTabScrollable = computed(() =>
+  scrollableTabKeys.includes(activeTab.value[0] as DashboardTabKey)
 )
 
 // Auto refresh when switching tabs
@@ -139,7 +143,7 @@ const handleLogout = () => {
       <!-- Content -->
       <a-layout-content 
         class="p-6 bg-gray-50 flex flex-col h-[calc(100vh-64px)]"
-        :class="scrollableTabKeys.includes(activeTab[0]) ? 'overflow-y-auto' : 'overflow-hidden'"
+        :class="isActiveTabScrollable ? 'overflow-y-auto' : 'overflow-hidden'"
       >
         <div class="w-full flex-1 flex flex-col">
           <div :class="currentTabView.containerClass">

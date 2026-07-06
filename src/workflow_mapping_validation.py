@@ -3,38 +3,12 @@ import os
 from pathlib import Path
 from typing import Any
 
+from src.domain_config.task_type_registry import workflow_filename_facts
 
 WORKFLOW_FILENAME_OVERRIDES_ENV = "TASK_TYPE_WORKFLOW_OVERRIDES"
 
 
-TASK_TYPE_WORKFLOW_FILENAMES = {
-    "img2img": "Qwen-Rapid-AIO.json",
-    "face_swap": "face_swap.json",
-    "video_insert": "Wan22AioV82.json",
-    "video_edit": "Wan22AioV82.json",
-    "image_to_video": "Wan22AioV82.json",
-    "face_video": "face_video.json",
-    "t2i-pornmaster-turbo": (
-        "Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json"
-    ),
-    "i2i_pro": "i2i_pro.json",
-    "i2i_draw": "I2I_draw.json",
-    "img2img_lora": "Qwen-Rapid-AIO.json",
-    "ltx_video": "LTX 2.3 I2V 6.1.json",
-    "ltx_video_flf2v": "LTX 2.3 FLF2V 6.1.json",
-    "ltx_video_v2v_audio": "LTX 2.3 V2V Audio 6.1.json",
-    "wan22_video_v2": "Wan22AioV82.json",
-    "scail2_action_transfer": "SCAIL-2_Animation_multi-char_audio.api.json",
-    "scail2_action_transfer_long": "SCAIL-2_Animation_WAN-Context-Windows.api.json",
-    "scail2_video_replacement": "SCAIL-2_Replacement_audio.api.json",
-    "scail2_face_swap_v2": "SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json",
-    "pornmaster_flux2_single_edit": (
-        "PornMaster_F2K_9B_Turbo_Single-image-editing_Automatic_V1_2026_05_27.api.json"
-    ),
-    "pornmaster_flux2_multi_edit": (
-        "PornMaster_F2K_9B_Turbo_Multiple-images-editing_Automatic_V1_2026_05_27.api.json"
-    ),
-}
+TASK_TYPE_WORKFLOW_FILENAMES = workflow_filename_facts()
 
 
 class WorkflowMappingValidationError(ValueError):

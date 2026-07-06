@@ -107,8 +107,8 @@
 - `frontend/src/components/MySubmissionsPanel.vue`
 - `frontend/src/components/PostBrowserShell.vue`
 - `frontend/src/components/ListStateBlock.vue`
-- `frontend/src/components/GenerationWorkbenchShell.vue`
 - `frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue`
+- `frontend/src/views/CustomFeatures.vue`
 - `frontend/src/composables/useDetailTemplateApply.ts`
 - `frontend/src/composables/useLabWorkbench.ts`
 - `frontend/src/composables/useMyLibraryPostBrowser.ts`
@@ -117,15 +117,15 @@
 - `frontend/src/router/index.ts`
 - `dashboard/frontend/src/App.vue`
 
-### 3.4 生成页面重复热点
+### 3.4 统一生成工作台热点
 
-- `frontend/src/views/TextToImage.vue`
-- `frontend/src/views/SingleImage.vue`
-- `frontend/src/views/ImageAndPrompt.vue`
-- `frontend/src/views/FaceSwap.vue`
-- `frontend/src/views/SingleImageToVideo.vue`
+- `frontend/src/views/CustomFeatures.vue`
+- `frontend/src/features/generation/labModeConfig.ts`
+- `frontend/src/composables/lab-workbench/useLabSubmitPayload.ts`
+- `frontend/src/features/generation/buildGenerationTaskPayload.ts`
+- `frontend/src/features/generation/buildSwapTaskPayload.ts`
 
-这些页面仍存在相似的提交、上传、结果与状态编排逻辑。新增生成能力时，优先复用 `GenerationWorkbenchShell`、payload builder 与 composable，不要继续把状态块复制回页面。
+旧独立生成页面已收口为兼容重定向，生成入口统一进入练功房。新增生成能力时，优先扩展 `labModeConfig`、payload builder 与 composable，不要恢复独立页面复制状态块。
 
 ### 3.5 workflow 资产热点
 
@@ -319,8 +319,8 @@ pytest \
 - `frontend/src/components/MySubmissionsPanel.vue`
 - `frontend/src/components/PostBrowserShell.vue`
 - `frontend/src/components/ListStateBlock.vue`
-- `frontend/src/components/GenerationWorkbenchShell.vue`
 - `frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue`
+- `frontend/src/views/CustomFeatures.vue`
 - `frontend/src/composables/useDetailTemplateApply.ts`
 - `frontend/src/composables/useLabWorkbench.ts`
 - `frontend/src/composables/useMyLibraryPostBrowser.ts`
@@ -339,8 +339,8 @@ cd frontend && pnpm vitest run \
   src/components/MySubmissionsPanelFlow.test.ts \
   src/components/PostBrowserShell.test.ts \
   src/components/ListStateBlock.test.ts \
-  src/components/GenerationWorkbenchShell.test.ts \
   src/components/template-apply/TemplateApplyWorkbenchHost.test.ts \
+  src/views/CustomFeatures.test.ts \
   src/composables/useGalleryDetailModalAdapter.test.ts \
   src/router/index.test.ts \
   src/stores/tasksRuntime.test.ts \

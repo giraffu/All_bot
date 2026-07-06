@@ -7,7 +7,33 @@ import {
   syncUserConcurrency,
 } from '../api/api'
 
-const defaultStatus = () => ({
+interface QueueTypeDetail {
+  active_count?: number | null
+  pending_count?: number | null
+  low_trust_free_tier_user_count?: number | null
+  low_trust_free_tier_task_count?: number | null
+  max_pending_wait_seconds?: number | string | null
+  max_non_low_trust_pending_wait_seconds?: number | string | null
+  oldest_pending_task_id?: string | null
+  oldest_pending_created_at?: string | null
+}
+
+interface QueueStatus {
+  queue_size: number
+  queue_by_type: Record<string, number>
+  queue_by_type_details: Record<string, QueueTypeDetail>
+  active_workers: number
+  healthy_workers: number
+  error_workers: number
+  quarantined_workers: number
+  workers_by_status: Record<string, number>
+  comfy_online: boolean
+  runpod_profile_queue_details: any[]
+  low_trust_free_tier_pending_user_count: number
+  low_trust_free_tier_pending_task_count: number
+}
+
+const defaultStatus = (): QueueStatus => ({
   queue_size: 0,
   queue_by_type: {},
   queue_by_type_details: {},

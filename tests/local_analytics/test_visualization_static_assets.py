@@ -7,11 +7,14 @@ STATIC_DIR = ROOT / "local_analytics_platform" / "static"
 
 def test_core_tabs_use_echarts_mount_points_instead_of_spark_bars():
     html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
-    app_js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    app_js = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((STATIC_DIR / "js").glob("*.js"))
+    )
 
     assert "/static/vendor/echarts.min.js" in html
     assert "/static/styles.css?v=20260705-auth-v1" in html
-    assert "/static/app.js?v=20260705-auth-v1" in html
+    assert 'type="module" src="/static/js/bootstrap.js?v=20260706-modules-v1"' in html
     assert "spark-bars" not in html
     assert "hourly-bars" not in html
     assert "renderChart(id, option)" in app_js

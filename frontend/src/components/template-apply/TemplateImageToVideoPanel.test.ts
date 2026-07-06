@@ -186,7 +186,6 @@ const buildContext = (overrides: Record<string, unknown> = {}): TemplateApplyCon
   rawEntityId: 1,
   rawTaskType: 'custom_video',
   taskType: 'custom_video',
-  supportMode: 'workbench',
   sourcePostId: 77,
   prompt: 'cinematic action shot',
   negativePrompt: null,

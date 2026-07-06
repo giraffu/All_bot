@@ -130,7 +130,7 @@ graph TD
 - Wan22 图生视频链式上下文（`wan22_prev_task_id`、`wan22_chain_task_ids`、分辨率、负面提示词、是否使用终止帧、主模型 profile、旧 LoRA 信息）现由 dispatcher metadata 写入提交，再由 Web terminal finalization 合并进历史 `extra_outputs._wan22_context`，供 Bot/Web 共用历史链恢复。适用类型包括 `wan22_video_v2`、`custom_video`、`video_lora` 与懒人动图 mode。
 
 ### 3.4 Web 练功房与历史链
-- `wan22_video_v2` 主入口已并入练功房 `frontend/src/views/CustomFeatures.vue`；独立 `frontend/src/views/Wan22VideoV2.vue` 仅作为兼容入口保留。旧 `custom_video` / `video_lora` 也复用同一套 Wan22 多段编辑能力。
+- `wan22_video_v2` 主入口已并入练功房 `frontend/src/views/CustomFeatures.vue`；旧独立 URL 仅作为兼容重定向保留并继续携带 query。旧 `custom_video` / `video_lora` 也复用同一套 Wan22 多段编辑能力。
 - 练功房结果区不再提供语义含混的“继续生成”，而是为 Wan22 图生视频显示“扩展生成 / 重新生成”；第二段及以后基于 `wan22_prev_task_id` 额外显示“拼接”。
 - 扩展生成会把当前段 `extra_outputs.last_frame` 作为锁定起始帧，清空本段正向 prompt，并提交 `wan22_prev_task_id = 当前段` 与包含当前段在内的 `wan22_chain_task_ids`。
 - 重新生成第一段只清空表单并保持 `wan22_video_v2` 模式，不自动复用原始素材或参数；第二段及以后会复用上一段尾帧、当前段 prompt/负面 prompt/分辨率和可选终止帧，且只继承当前段之前的链路上下文。

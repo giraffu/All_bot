@@ -161,7 +161,6 @@ const buildContext = (overrides: Record<string, unknown> = {}): TemplateApplyCon
   rawEntityId: 1,
   rawTaskType: 'edit',
   taskType: 'edit',
-  supportMode: 'workbench',
   sourcePostId: 91,
   prompt: 'preset prompt',
   negativePrompt: null,

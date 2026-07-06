@@ -8,20 +8,21 @@ from src.constants import (
     LTX_RESOLUTION_COST,
     MODE_EDIT,
     MODE_FACESWAP_STEP1,
-    MODE_IMG2IMG_LORA,
-    MODE_I2I_PRO,
     MODE_I2I_DRAW,
+    MODE_I2I_PRO,
+    MODE_IMG2IMG_LORA,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_SCAIL2_ACTION_TRANSFER,
     MODE_SCAIL2_ACTION_TRANSFER_LONG,
     MODE_SCAIL2_FACE_SWAP_V2,
     MODE_SCAIL2_VIDEO_REPLACEMENT,
+    MODE_TXT2IMG,
     MODE_WAN22_VIDEO_V2,
     RESOLUTION_COST,
     TASK_COSTS,
-    MODE_TXT2IMG,
 )
+from src.core.task_core_service_providers import get_task_core_image_service
 from src.core.task_core_types import CoreDomainError
 from src.domain_config.scail2_video import (
     SCAIL2_FIXED_HEIGHT,
@@ -35,7 +36,6 @@ from src.domain_config.scail2_video import (
     normalize_scail2_positive_prompt,
     resolve_scail2_execution_task_type,
 )
-from src.core.task_core_service_providers import get_task_core_image_service
 from src.domain_config.wan22_aio_video import (
     build_wan22_aio_video_result_meta,
     get_wan22_video_v2_cost,
@@ -47,7 +47,6 @@ from src.domain_config.wan22_aio_video import (
 )
 from src.lora_catalog import normalize_ltx_video_lora_items
 
-
 EDIT_LIKE_TASK_TYPES = {MODE_EDIT, MODE_IMG2IMG_LORA}
 PORNMASTER_FLUX2_EDIT_TASK_TYPES = {
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
@@ -57,6 +56,11 @@ FACE_VIDEO_TASK_TYPES = {"face_video", "face_video_step1", "face_video_step2"}
 LTX_VIDEO_MODE_I2V = "i2v"
 LTX_VIDEO_MODE_FLF2V = "flf2v"
 LTX_VIDEO_MODE_V2V_AUDIO = "v2v_audio"
+
+
+@dataclass(frozen=True)
+class TaskDispatcherFeatureFlags:
+    free_edit_v2_enabled: bool = False
 
 
 def _get_saved_input_images(inputs: Dict[str, Any]) -> list[str]:
@@ -373,9 +377,6 @@ class BaseTaskStrategy(ABC):
     def get_cost(self, inputs: Dict[str, Any]) -> int:
         pass
 
-    def build_payload(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        return inputs
-
     def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         return _append_lora_metadata(
             {"saved_inputs": _get_saved_input_images(inputs)},
@@ -460,13 +461,17 @@ class DefaultImageStrategy(BaseTaskStrategy):
 
 
 class PornmasterFlux2EditStrategy(BaseTaskStrategy):
-    def __init__(self, task_type: str):
+    def __init__(
+        self,
+        task_type: str,
+        *,
+        feature_flags: TaskDispatcherFeatureFlags | None = None,
+    ):
         self.task_type = task_type
+        self.feature_flags = feature_flags or TaskDispatcherFeatureFlags()
 
     def _ensure_enabled(self) -> None:
-        from config import ENABLE_FREE_EDIT_V2
-
-        if not ENABLE_FREE_EDIT_V2:
+        if not self.feature_flags.free_edit_v2_enabled:
             raise CoreDomainError("自由P图 v2 当前未开放。")
 
     def _expected_image_count(self) -> int:
@@ -870,27 +875,36 @@ class Scail2VideoStrategy(BaseTaskStrategy):
         )
 
 
-def _build_default_image_strategy(task_type: str) -> BaseTaskStrategy:
+def _build_default_image_strategy(
+    task_type: str,
+    _feature_flags: TaskDispatcherFeatureFlags | None = None,
+) -> BaseTaskStrategy:
     return DefaultImageStrategy(task_type)
 
 
-def _build_video_strategy(task_type: str) -> BaseTaskStrategy:
+def _build_video_strategy(
+    task_type: str,
+    _feature_flags: TaskDispatcherFeatureFlags | None = None,
+) -> BaseTaskStrategy:
     if is_legacy_wan22_image_to_video_task_type(task_type):
         return Wan22AioVideoStrategy(task_type)
     return BaseVideoStrategy(task_type)
 
 
 STRATEGY_BUILDERS: dict[str, callable] = {
-    "face_swap": lambda _task_type: FaceSwapStrategy(),
-    "ltx_video": lambda _task_type: LtxVideoStrategy(),
-    MODE_WAN22_VIDEO_V2: lambda _task_type: Wan22VideoV2Strategy(),
+    "face_swap": lambda _task_type, _feature_flags: FaceSwapStrategy(),
+    "ltx_video": lambda _task_type, _feature_flags: LtxVideoStrategy(),
+    MODE_WAN22_VIDEO_V2: lambda _task_type, _feature_flags: Wan22VideoV2Strategy(),
     **dict.fromkeys(
         SCAIL2_TASK_TYPES,
-        lambda task_type: Scail2VideoStrategy(task_type),
+        lambda task_type, _feature_flags: Scail2VideoStrategy(task_type),
     ),
     **dict.fromkeys(
         PORNMASTER_FLUX2_EDIT_TASK_TYPES,
-        lambda task_type: PornmasterFlux2EditStrategy(task_type),
+        lambda task_type, feature_flags: PornmasterFlux2EditStrategy(
+            task_type,
+            feature_flags=feature_flags,
+        ),
     ),
     MODE_I2I_PRO: _build_default_image_strategy,
     MODE_I2I_DRAW: _build_default_image_strategy,
@@ -899,20 +913,30 @@ STRATEGY_BUILDERS: dict[str, callable] = {
 
 class StrategyFactory:
     @staticmethod
-    def get_strategy(task_type: str) -> BaseTaskStrategy:
+    def get_strategy(
+        task_type: str,
+        *,
+        feature_flags: TaskDispatcherFeatureFlags | None = None,
+    ) -> BaseTaskStrategy:
         from src.constants import VIDEO_TASK_TYPES
 
+        resolved_feature_flags = feature_flags or TaskDispatcherFeatureFlags()
         builder = STRATEGY_BUILDERS.get(task_type)
         if builder is not None:
-            return builder(task_type)
+            return builder(task_type, resolved_feature_flags)
         if task_type in VIDEO_TASK_TYPES:
-            return _build_video_strategy(task_type)
-        return _build_default_image_strategy(task_type)
+            return _build_video_strategy(task_type, resolved_feature_flags)
+        return _build_default_image_strategy(task_type, resolved_feature_flags)
 
 
 async def dispatch_to_worker(
-    task_id: str, task_type: str, inputs: Dict[str, Any], priority: int
+    task_id: str,
+    task_type: str,
+    inputs: Dict[str, Any],
+    priority: int,
+    *,
+    feature_flags: TaskDispatcherFeatureFlags | None = None,
 ) -> str:
     """统一的请求发送口"""
-    strategy = StrategyFactory.get_strategy(task_type)
+    strategy = StrategyFactory.get_strategy(task_type, feature_flags=feature_flags)
     return await strategy.submit_task(task_id, inputs, priority)

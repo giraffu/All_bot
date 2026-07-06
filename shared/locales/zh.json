@@ -556,6 +556,8 @@
       "custom_edit_v2_desc": "上传图片并用文字指令直接修改画面。",
       "fast_face_swap_title": "快速换脸",
       "fast_face_swap_desc": "极速人脸替换体验，适合标准场景的快速处理。",
+      "random_faceswap_title": "随机换脸",
+      "random_faceswap_desc": "上传一张脸部图，系统自动匹配模板生成随机换脸结果。",
       "video_face_swap_title": "视频换脸",
       "video_face_swap_desc": "上传人脸和一段视频，AI 将逐帧替换视频中的人脸，生成自然流畅的换脸视...",
       "custom_video_title": "图生视频",

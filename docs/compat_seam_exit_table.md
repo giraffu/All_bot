@@ -14,7 +14,7 @@
 | `src/services/task_service_generation_entrypoints.py` | `TaskService` 到 generation entrypoints 的纯转发壳 | `bot_task_service.py` 旧 facade 调用面 | `bot_task_service.py` 改为直接导入真实 entrypoint，focused tests 改贴公开函数/flow | 已删除，生成/I2I 入口不再经过 compat-only 转发文件 |
 | `src/services/task_service_entrypoints.py` | 仅聚合导出 TG task entrypoints 的 compat 壳 | `bot_task_service.py` 旧 facade 调用面 | `bot_task_service.py` 改为直接导入分域 entrypoint 模块 | 已删除，聚合 re-export 不再保留 |
 | `src/services/task_service_entrypoints_common.py` | 仅保留 `resolve_internal_user_id(...)` 的薄包装壳 | 多个 TG generation/video entrypoint | 统一改由 `task_service_generation_common.py` 提供共享 helper | 已删除，入口共用 helper 已并回 generation common |
-| `frontend/src/composables/useLegacySwapApply.ts` | 旧 swap 页 route apply 兼容壳 | `FaceSwap.vue`、`VideoSwap.vue` | 两个页面直接内联 route apply 初始化，旧壳不再承担中转职责 | 已删除，compat 逻辑已回收到页面 setup |
+| `frontend/src/composables/useLegacySwapApply.ts` | 旧 swap 页 route apply 兼容壳 | 旧 swap 独立页面 | swap 能力统一进入练功房与模板应用链路，旧壳不再承担中转职责 | 已删除，compat 逻辑已回收到统一入口 |
 | `src/web_api/routers/utils.py` | 仅为测试 patch 路径保留的 Web router re-export 壳 | `tests/web_api/test_router_utils.py` | 测试改贴 `src.web_api.common.utils` 公开边界 | 已删除，router 不再承接工具符号 re-export |
 | `src/web_api/services/users_history_service.py:pick_history_media_urls` | 仅测试引用的历史媒体 URL 转发 helper | `tests/web_api/test_users_history_urls.py` | 相邻测试直接覆盖 `media_presenter.resolve_history_media_urls(...)` | 已删除，用户历史 service 不再保留 test-only helper |
 | `frontend/src/utils/templateApplyEntry.ts:buildLegacyTemplateRoute` | 旧模板应用 legacy route builder | 无业务调用 | 主站模板应用已统一走 workbench / store 解析链 | 已删除，入口解析文件只保留真实主链 |
@@ -35,9 +35,9 @@
 | task_core web side-effect / monitor 默认装配 | `src/core/task_core.py` | `src/services/task_web_side_effects.py`、`task_web_lifecycle_monitor.py`、`task_web_terminal_finalization.py` | 已下沉，`task_core.py` 直接绑定 application 层 monitor 实现 |
 | task_core warmup/persistence 默认 wrapper | `src/core/task_core.py` | `src/core/task_core_web_history_warmup.py`、`src/core/task_core_persistence.py` | 已下沉，web history warmup 与成功持久化默认绑定不再堆在 facade |
 | TG gallery browse 链路 | `src/handlers/callbacks/gallery_callbacks.py` | `src/handlers/callbacks/gallery_callbacks_browse.py` | 已继续收口，分类菜单、`gallery_sort_`、`gallery_page_` 已直接在 browse 子模块注册，旧壳文件已删除 |
-| 旧单图页与模板工作台 payload 组装 | 多个 `.vue` 页面内联 | `frontend/src/features/generation/buildGenerationTaskPayload.ts` | 已统一，旧单图页与 A4 工作台共用提交 payload builder |
-| swap 双文件页 payload 组装 | `FaceSwap.vue`、`VideoSwap.vue` 与模板面板内联 | `frontend/src/features/generation/buildSwapTaskPayload.ts` | 已统一，页面与模板面板共用 `face_swap/face_video` payload builder |
-| swap 双文件页提交 controller | `FaceSwap.vue`、`VideoSwap.vue` 与模板面板各自内联提交 | `frontend/src/composables/useSwapTaskSubmit.ts` | 已统一，四处入口共用校验 + payload + submit + taskId 回写主链 |
+| 旧单图页与模板工作台 payload 组装 | 多个旧生成 `.vue` 页面内联 | `frontend/src/features/generation/buildGenerationTaskPayload.ts` | 已统一，旧生成 URL 进入 `CustomFeatures.vue` 后复用同一套提交 payload builder |
+| swap 双文件页 payload 组装 | 旧 swap 独立页面与模板面板内联 | `frontend/src/features/generation/buildSwapTaskPayload.ts` | 已统一，统一工作台与模板面板共用 `face_swap/face_video` payload builder |
+| swap 双文件页提交 controller | 旧 swap 独立页面与模板面板各自内联提交 | `frontend/src/composables/useSwapTaskSubmit.ts` | 已统一，统一工作台与模板面板共用校验 + payload + submit + taskId 回写主链 |
 | `gallery_core` 默认 provider / side effects | `src/core/gallery_core.py` | `src/core/gallery_core_dependencies.py`、`src/core/gallery_submission_effects.py` | 已下沉，默认装配与投稿 side effects 不再堆在主文件顶部 |
 | `user_core` 的默认持久化绑定 | `src/core/user_core.py` | `src/core/user_core_bindings.py` | 已下沉，`user_core.py` 仅保留稳定 facade 与 binding 解析 |
 | `gallery_submission_core` / `gallery_interactions_core` 的 repository 默认绑定 | `src/core/gallery_submission_core.py`、`src/core/gallery_interactions_core.py` | `src/core/gallery_core_dependencies.py` | 已下沉，投稿/互动主链改走显式 dependencies，不再在子模块顶部直连 repository |
@@ -49,7 +49,7 @@
 | `Profile.vue` 队列状态块 | `frontend/src/views/Profile.vue` | `frontend/src/components/profile/ProfileQueueStatusPanel.vue` | 已下沉，页面继续回到区块装配层 |
 | `storage.py` MinIO bootstrap / presign 细节 | `src/services/storage.py` | `src/services/storage_minio_client.py`、`src/services/storage_presign.py` | 已下沉，bucket name/public client/bucket ensure 与 presign get/put/expiry 不再堆在主文件 |
 | `Profile.vue` 欢迎区摘要 / 快捷入口装配 | `frontend/src/views/Profile.vue` | `frontend/src/composables/useProfileWelcomeSummary.ts`、`frontend/src/composables/useProfileQuickActions.ts` | 已下沉，欢迎区与快捷入口的数据/行为编排进一步退出页面脚本 |
-| swap 双文件页结果重置 controller | `FaceSwap.vue`、`VideoSwap.vue` 页面内联 | `frontend/src/composables/useSwapResetController.ts` | 已统一，reset 会同步清上传态、taskId、分辨率与模板态/sourcePostId |
+| swap 双文件页结果重置 controller | 旧 swap 页面内联 | `frontend/src/composables/useSwapResetController.ts` | 已统一，reset 会同步清上传态、taskId、分辨率与模板态/sourcePostId |
 | `billing_core` 私有 `_build_*` 测试 seam | `tests/core/test_billing_core.py` patch 私有 builder | `BillingCoreDependencies` 显式注入 | 已迁移，公开函数支持显式 dependencies，测试不再绑定私有 builder |
 | `task_core_persistence` 模块内 materialization builder seam | `src/core/task_core_persistence.py` | `TaskSuccessPersistenceCommand` + `persist_successful_task_result_command(...)` + `task_core_persistence_flow.py` | 已收口，旧 `persist_successful_task_result(...)` 仅保留兼容包装，下载/`to_thread` 默认绑定回到公开 persistence 边界与 flow |
 | `affiliate_redeem_service` membership 账本/结算混排 | `src/services/affiliate_redeem_service.py` | `_create_membership_redeem_ledger_entry(...)`、`_apply_affiliate_membership_settlement(...)` | 已拆开，主 service 继续保留事务/幂等编排，账本与结算边界更清晰 |
@@ -86,7 +86,7 @@
 | --- | --- | --- | --- |
 | `backend/app/main_t2i_wiring.py` | 当前仍有“集中 callable 装配 + 降低 main.py 噪音”的边界价值 | `main.py` 仍需维持薄入口，且同一套 wiring 可能继续服务更多 simple task route | 若后续仅剩单入口且 helper 稳定，可评估并回 `main.py` 或更通用 wiring 层 |
 | `frontend/src/components/PostBrowserShell.vue` | 仍有列表态壳层价值，不建议删除 | 继续只承接 header/slot/list-state 壳层职责，不承接业务数据逻辑 | 若后续再出现条件分支膨胀，优先拆 slot 协议而不是内联回页面 |
-| `frontend/src/components/GenerationWorkbenchShell.vue` | 仍是合理的布局壳，不建议删除 | 保持左右面板布局与主题样式职责，不接表单提交/状态编排 | 若后续多工作台出现差异化布局，再评估是否升级为更细的布局 primitives |
+| `frontend/src/views/CustomFeatures.vue` | 统一练功房入口，承接旧生成 URL 重定向后的模式选择与提交编排 | 继续通过 `labModeConfig` / payload builder / workbench composable 分担模式配置、payload 与状态职责 | 若再出现第二套 Web 生成工作台，先扩展模式配置或抽公共 primitives，不恢复旧独立页面 |
 
 ## 删除原则
 

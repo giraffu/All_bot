@@ -41,6 +41,7 @@ const props = defineProps<{
   description: string
   promptPlaceholder: string
   prompt: string
+  showPromptInput?: boolean
   promptLocked: boolean
   promptLockedHint?: string
   showStructuredPromptInput: boolean
@@ -226,7 +227,7 @@ const compactUploadLabel = (label: string) => label
         />
       </div>
 
-      <div v-else-if="promptLocked" class="lab-composer__locked flex min-h-[160px] flex-col items-center justify-center rounded-[18px] border px-6 py-8 text-center">
+      <div v-else-if="promptLocked && showPromptInput !== false" class="lab-composer__locked flex min-h-[160px] flex-col items-center justify-center rounded-[18px] border px-6 py-8 text-center">
         <LockOutlined class="mb-4 text-2xl" />
         <div class="text-base font-semibold">{{ t('template_apply.common.prompt_locked_title') }}</div>
         <div class="mt-2 max-w-md text-sm opacity-80">
@@ -235,7 +236,7 @@ const compactUploadLabel = (label: string) => label
       </div>
 
       <a-textarea
-        v-else
+        v-else-if="showPromptInput !== false"
         :value="prompt"
         :auto-size="{ minRows: 2, maxRows: 6 }"
         :maxlength="2000"

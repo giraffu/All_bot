@@ -166,7 +166,6 @@ const buildContext = (overrides: Record<string, unknown> = {}): TemplateApplyCon
   rawEntityId: 1,
   rawTaskType: 'face_video',
   taskType: 'face_video',
-  supportMode: 'workbench',
   sourcePostId: 55,
   prompt: null,
   negativePrompt: null,

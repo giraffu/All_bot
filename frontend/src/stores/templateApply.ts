@@ -195,8 +195,7 @@ export const useTemplateApplyStore = defineStore('templateApply', () => {
       const resolvedEntry = resolveTemplateApplyEntry({
         rawContext: params.rawContext,
         source: params.source,
-        entryEntityId: params.entryEntityId,
-        preferredMode: params.preferredMode
+        entryEntityId: params.entryEntityId
       })
 
       if (resolvedEntry.status === 'invalid') {
@@ -210,33 +209,18 @@ export const useTemplateApplyStore = defineStore('templateApply', () => {
       if (resolvedEntry.status === 'unknown_task_type') {
         reset()
         return {
-          status: 'legacy_fallback',
-          fallbackKind: 'unknown_task_type',
+          status: 'unsupported',
           rawTaskType: resolvedEntry.context.rawTaskType,
-          context: resolvedEntry.context,
-          meta: null
+          context: resolvedEntry.context
         }
       }
 
-      if (resolvedEntry.status === 'legacy_supported') {
+      if (!resolvedEntry.context.taskType) {
         reset()
         return {
-          status: 'legacy_fallback',
-          fallbackKind: 'legacy_supported',
+          status: 'unsupported',
           rawTaskType: resolvedEntry.context.rawTaskType,
-          context: resolvedEntry.context,
-          meta: resolvedEntry.meta
-        }
-      }
-
-      if (!resolvedEntry.context.taskType || !resolvedEntry.meta.panelKind) {
-        reset()
-        return {
-          status: 'legacy_fallback',
-          fallbackKind: 'legacy_supported',
-          rawTaskType: resolvedEntry.context.rawTaskType,
-          context: resolvedEntry.context,
-          meta: resolvedEntry.meta
+          context: resolvedEntry.context
         }
       }
 
@@ -252,7 +236,7 @@ export const useTemplateApplyStore = defineStore('templateApply', () => {
       taskType.value = resolvedEntry.context.taskType
       panelKind.value = resolvedEntry.meta.panelKind
       context.value = resolvedEntry.context
-      featureTitleKey.value = resolvedEntry.meta.legacyTitleKey
+      featureTitleKey.value = resolvedEntry.meta.titleKey
       dirty.value = false
       hasPendingUploads.value = false
       panelController.value = null

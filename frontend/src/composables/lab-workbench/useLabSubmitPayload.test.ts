@@ -189,6 +189,22 @@ describe('useLabSubmitPayload', () => {
     expect(harness.setSubmittedTaskId).toHaveBeenCalledWith('submitted-1')
   })
 
+  it('builds random face swap payloads from one uploaded reference', async () => {
+    const harness = createHarness('random_faceswap')
+    harness.uploadedReferences.value = [refImage('face.png')]
+
+    await harness.handleSubmit()
+
+    expect(harness.submitTask).toHaveBeenCalledWith({
+      task_type: 'random_faceswap',
+      inputs: {
+        images: ['face.png'],
+      },
+      priority: 0,
+      is_template: false,
+    }, 'lab.cards.random_faceswap_title')
+  })
+
   it('normalizes edit LoRA submissions to img2img_lora', async () => {
     const harness = createHarness('edit')
     harness.uploadedReferences.value = [refImage('base.png')]

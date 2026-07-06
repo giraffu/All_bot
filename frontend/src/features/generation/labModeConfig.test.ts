@@ -30,6 +30,19 @@ describe('labModeConfig', () => {
     expect(resolveLabModeIdFromTaskType('pornmaster_flux2_multi_edit')).toBe('edit_v2')
   })
 
+  it('keeps random face swap available through the unified workbench', () => {
+    const mode = getLabModeConfig('random_faceswap')
+
+    expect(mode.taskType).toBe('random_faceswap')
+    expect(mode.maxImages).toBe(1)
+    expect(mode.baseCost).toBe(1)
+    expect(mode.supportsPromptInput).toBe(false)
+    expect(UNIFIED_LAB_MODES.map(item => item.id)).toContain('random_faceswap')
+    expect(resolveLabModeIdFromTaskType('random_faceswap')).toBe('random_faceswap')
+    expect(resolveLabModeIdFromTaskType('image2video')).toBe('custom_video')
+    expect(resolveLabModeIdFromTaskType('image_to_video')).toBe('custom_video')
+  })
+
   it('configures scail2 modes with reference image and motion video slots', () => {
     const actionTransfer = getLabModeConfig('scail2_action_transfer')
     const replacement = getLabModeConfig('scail2_video_replacement')

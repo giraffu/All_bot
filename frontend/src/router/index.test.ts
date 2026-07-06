@@ -123,4 +123,30 @@ describe('router template apply guard', () => {
     expect(confirmTemplateApplyCloseMock).not.toHaveBeenCalled()
     expect(router.currentRoute.value.path).toBe('/history')
   })
+
+  it('redirects legacy generation routes into the unified workbench with query preserved', async () => {
+    const router = await loadRouter()
+    const cases = [
+      ['/face-swap', 'face_swap'],
+      ['/single-image', 'random_faceswap'],
+      ['/image-prompt', 'i2i_pro'],
+      ['/text-to-image', 'txt2img'],
+      ['/single-image-video', 'custom_video'],
+      ['/wan22-video-v2', 'wan22_video_v2'],
+      ['/video-swap', 'scail2_face_swap_v2'],
+    ] as const
+
+    for (const [path, type] of cases) {
+      await router.push({ path, query: { apply_id: '42', keep: 'yes' } })
+      await router.isReady()
+
+      expect(router.currentRoute.value.name).toBe('CustomFeatures')
+      expect(router.currentRoute.value.path).toBe('/custom-features')
+      expect(router.currentRoute.value.query).toMatchObject({
+        apply_id: '42',
+        keep: 'yes',
+        type,
+      })
+    }
+  })
 })

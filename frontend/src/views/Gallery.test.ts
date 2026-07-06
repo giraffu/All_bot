@@ -543,19 +543,18 @@ describe('Gallery template apply integration', () => {
     }))
   })
 
-  it('keeps detail apply on the shared path when workbench fallback is returned', async () => {
+  it('keeps detail apply on the shared path when an unsupported task is returned', async () => {
     templateApplyStoreMock.openFromRawContext.mockResolvedValue({
-      status: 'legacy_fallback',
-      fallbackKind: 'legacy_supported',
+      status: 'unsupported',
       rawTaskType: 'face_swap',
-      meta: null
+      context: {} as any
     })
 
     const { applyButton } = await openDetailAndFindApplyButton()
     await applyButton.trigger('click')
     await flushPromises()
 
-    expect(messageErrorMock).toHaveBeenCalledWith('模板工作台打开失败，请稍后重试。')
+    expect(messageWarningMock).toHaveBeenCalledWith('当前模板暂不支持打开')
     expect(messageSuccessMock).not.toHaveBeenCalled()
   })
 

@@ -184,10 +184,6 @@ class LogListResponse(BaseModel):
     items: List[LogResponse]
 
 
-class OrderRefundRequest(BaseModel):
-    task_id: str
-
-
 class RefundTaskRequest(BaseModel):
     task_id: str
 
