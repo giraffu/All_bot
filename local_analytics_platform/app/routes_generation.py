@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query  # noqa: F401
+from fastapi import APIRouter, Query
 
 from .analytics_common import (
     GENERATION_OPERATION_TYPES,

@@ -79,6 +79,15 @@ class PaymentFulfillmentDependencies:
     warning_func: Callable[..., None] = logger.warning
 
 
+@dataclass(frozen=True)
+class _PaymentResolution:
+    command: PaymentFulfillmentCommand
+    order: Any | None
+    plan: Any | None
+    user: Any | None
+    early_result: PaymentFulfillmentResult | None = None
+
+
 def build_default_payment_fulfillment_dependencies() -> PaymentFulfillmentDependencies:
     return PaymentFulfillmentDependencies(
         session_factory=AsyncSessionLocal,
@@ -367,6 +376,304 @@ def _result_from_snapshot(
     )
 
 
+async def _resolve_existing_order_target(
+    *,
+    session,
+    command: PaymentFulfillmentCommand,
+    order,
+) -> _PaymentResolution:
+    if order.status == "SUCCESS":
+        logger.info(
+            "Order %s is already SUCCESS. Idempotent return.",
+            command.order_lookup or order.order_id,
+        )
+        return _PaymentResolution(
+            command=command,
+            order=order,
+            plan=None,
+            user=None,
+            early_result=_result_from_snapshot(
+                status="noop",
+                user=None,
+                order=order,
+                command=command,
+            ),
+        )
+
+    if command.channel == "XTR":
+        user = await _load_locked_user(session, order.internal_user_id)
+        if not user:
+            logger.error("User not found: %s", order.internal_user_id)
+            return _PaymentResolution(
+                command=command,
+                order=order,
+                plan=None,
+                user=None,
+                early_result=_result_from_snapshot(
+                    status="noop",
+                    user=None,
+                    order=order,
+                    command=command,
+                ),
+            )
+        plan = await _load_membership_plan(session, order.plan_id)
+        if not plan:
+            logger.error("Plan not found: %s", order.plan_id)
+            return _PaymentResolution(
+                command=command,
+                order=order,
+                plan=None,
+                user=user,
+                early_result=_result_from_snapshot(
+                    status="noop",
+                    user=user,
+                    order=order,
+                    command=command,
+                ),
+            )
+        return _PaymentResolution(command=command, order=order, plan=plan, user=user)
+
+    plan = await _load_membership_plan(session, order.plan_id)
+    if not plan:
+        logger.error("Plan not found: %s", order.plan_id)
+        return _PaymentResolution(
+            command=command,
+            order=order,
+            plan=None,
+            user=None,
+            early_result=_result_from_snapshot(
+                status="noop",
+                user=None,
+                order=order,
+                command=command,
+            ),
+        )
+    user = await _load_locked_user(session, order.internal_user_id)
+    if not user:
+        logger.error("User not found: %s", order.internal_user_id)
+        return _PaymentResolution(
+            command=command,
+            order=order,
+            plan=plan,
+            user=None,
+            early_result=_result_from_snapshot(
+                status="noop",
+                user=None,
+                plan=plan,
+                order=order,
+                command=command,
+            ),
+        )
+    return _PaymentResolution(command=command, order=order, plan=plan, user=user)
+
+
+async def _dedupe_ton_legacy_order_id(
+    *,
+    session,
+    command: PaymentFulfillmentCommand,
+) -> PaymentFulfillmentCommand:
+    if command.channel != "TON" or not command.legacy_order_id:
+        return command
+    existing_order = await session.execute(
+        select(Order).where(Order.order_id == command.legacy_order_id[:64])
+    )
+    if not existing_order.scalar_one_or_none():
+        return command
+    return replace(
+        command,
+        legacy_order_id=(
+            f"{command.legacy_order_id[:64]}_"
+            f"{_truncate_tx_hash(command.external_tx_id)[:8]}"
+        ),
+    )
+
+
+async def _resolve_legacy_payment_target(
+    *,
+    session,
+    command: PaymentFulfillmentCommand,
+) -> _PaymentResolution:
+    if command.legacy_plan_id is None:
+        logger.error("Order not found: %s", command.order_lookup)
+        return _PaymentResolution(
+            command=command,
+            order=None,
+            plan=None,
+            user=None,
+            early_result=_result_from_snapshot(
+                status="noop",
+                user=None,
+                command=command,
+            ),
+        )
+
+    command = await _dedupe_ton_legacy_order_id(session=session, command=command)
+    plan = await _load_membership_plan(session, command.legacy_plan_id)
+    if not plan:
+        logger.error("Plan not found: %s", command.legacy_plan_id)
+        return _PaymentResolution(
+            command=command,
+            order=None,
+            plan=None,
+            user=None,
+            early_result=_result_from_snapshot(
+                status="noop",
+                user=None,
+                command=command,
+            ),
+        )
+
+    user = await _load_legacy_user(session, command)
+    if not user:
+        logger.error(
+            "User not found during %s legacy payment: %s",
+            command.channel,
+            command.legacy_internal_user_id,
+        )
+        return _PaymentResolution(
+            command=command,
+            order=None,
+            plan=plan,
+            user=None,
+            early_result=_result_from_snapshot(
+                status="noop",
+                user=None,
+                plan=plan,
+                command=command,
+            ),
+        )
+
+    if getattr(user, "id", None) is not None:
+        command = replace(command, legacy_internal_user_id=int(user.id))
+    return _PaymentResolution(command=command, order=None, plan=plan, user=user)
+
+
+async def _resolve_payment_target(
+    *,
+    session,
+    command: PaymentFulfillmentCommand,
+) -> _PaymentResolution:
+    order = await _load_existing_order(session, command)
+    if order is not None:
+        return await _resolve_existing_order_target(
+            session=session,
+            command=command,
+            order=order,
+        )
+    return await _resolve_legacy_payment_target(session=session, command=command)
+
+
+async def _amount_mismatch_result_if_needed(
+    *,
+    session,
+    resolution: _PaymentResolution,
+    now: datetime,
+) -> PaymentFulfillmentResult | None:
+    command = resolution.command
+    if _amount_matches(command, order=resolution.order, plan=resolution.plan):
+        return None
+
+    logger.error(
+        "Amount mismatch for %s payment %s: paid %s",
+        command.channel,
+        command.order_lookup or command.legacy_order_id,
+        command.paid_amount,
+    )
+    order = resolution.order
+    if command.channel == "TON":
+        if order is None:
+            order = await _build_legacy_order(session, command, plan=resolution.plan)
+        if order is not None:
+            _mark_order(
+                order,
+                command=command,
+                status="FAILED",
+                paid_at=now,
+            )
+            await session.commit()
+    return _result_from_snapshot(
+        status="amount_mismatch",
+        user=resolution.user,
+        plan=resolution.plan,
+        order=order,
+        command=command,
+    )
+
+
+async def _materialize_success_order(
+    *,
+    session,
+    resolution: _PaymentResolution,
+    now: datetime,
+) -> _PaymentResolution:
+    order = resolution.order
+    command = resolution.command
+    if order is None:
+        order = await _build_legacy_order(session, command, plan=resolution.plan)
+        if order is None:
+            logger.info(
+                "Transaction %s already processed.",
+                _truncate_tx_hash(command.external_tx_id),
+            )
+            return replace(
+                resolution,
+                early_result=_result_from_snapshot(
+                    status="noop",
+                    user=resolution.user,
+                    plan=resolution.plan,
+                    command=command,
+                ),
+            )
+        return replace(resolution, order=order)
+
+    _mark_order(
+        order,
+        command=command,
+        status="SUCCESS",
+        paid_at=now,
+    )
+    return resolution
+
+
+async def _apply_successful_payment_effects(
+    *,
+    session,
+    resolution: _PaymentResolution,
+    dependencies: PaymentFulfillmentDependencies,
+    now: datetime,
+) -> tuple[Any | None, dict[str, Any]]:
+    await session.flush()
+    referral = await _record_order_affiliate_ledger(
+        session,
+        resolution.order,
+        command=resolution.command,
+        dependencies=dependencies,
+    )
+    applied_snapshot = await _settle_order_membership(
+        session=session,
+        user=resolution.user,
+        plan=resolution.plan,
+        order=resolution.order,
+        command=resolution.command,
+        dependencies=dependencies,
+        now=now,
+    )
+    return referral, applied_snapshot
+
+
+async def _run_post_commit_payment_side_effects(
+    *,
+    command: PaymentFulfillmentCommand,
+    dependencies: PaymentFulfillmentDependencies,
+    referral,
+    result: PaymentFulfillmentResult,
+) -> None:
+    if referral:
+        await dependencies.invalidate_invitation_cache_func(referral.inviter_id)
+    if command.notify:
+        await command.notify(result)
+
+
 async def fulfill_payment_command(
     command: PaymentFulfillmentCommand,
     *,
@@ -378,192 +685,56 @@ async def fulfill_payment_command(
 
     async with dependencies.session_factory() as session:
         try:
-            order = await _load_existing_order(session, command)
-            plan = None
-            user = None
-            if order is not None:
-                if order.status == "SUCCESS":
-                    logger.info(
-                        "Order %s is already SUCCESS. Idempotent return.",
-                        command.order_lookup or order.order_id,
-                    )
-                    return _result_from_snapshot(
-                        status="noop",
-                        user=None,
-                        order=order,
-                        command=command,
-                    )
-                if command.channel == "XTR":
-                    user = await _load_locked_user(session, order.internal_user_id)
-                    if not user:
-                        logger.error("User not found: %s", order.internal_user_id)
-                        return _result_from_snapshot(
-                            status="noop",
-                            user=None,
-                            order=order,
-                            command=command,
-                        )
-                    plan = await _load_membership_plan(session, order.plan_id)
-                    if not plan:
-                        logger.error("Plan not found: %s", order.plan_id)
-                        return _result_from_snapshot(
-                            status="noop",
-                            user=user,
-                            order=order,
-                            command=command,
-                        )
-                else:
-                    plan = await _load_membership_plan(session, order.plan_id)
-                    if not plan:
-                        logger.error("Plan not found: %s", order.plan_id)
-                        return _result_from_snapshot(
-                            status="noop",
-                            user=None,
-                            order=order,
-                            command=command,
-                        )
-                    user = await _load_locked_user(session, order.internal_user_id)
-                    if not user:
-                        logger.error("User not found: %s", order.internal_user_id)
-                        return _result_from_snapshot(
-                            status="noop",
-                            user=None,
-                            plan=plan,
-                            order=order,
-                            command=command,
-                        )
-            else:
-                if command.legacy_plan_id is None:
-                    logger.error("Order not found: %s", command.order_lookup)
-                    return _result_from_snapshot(
-                        status="noop",
-                        user=None,
-                        command=command,
-                    )
-                if command.channel == "TON" and command.legacy_order_id:
-                    existing_order = await session.execute(
-                        select(Order).where(
-                            Order.order_id == command.legacy_order_id[:64]
-                        )
-                    )
-                    if existing_order.scalar_one_or_none():
-                        command = replace(
-                            command,
-                            legacy_order_id=(
-                                f"{command.legacy_order_id[:64]}_"
-                                f"{_truncate_tx_hash(command.external_tx_id)[:8]}"
-                            ),
-                        )
-                plan = await _load_membership_plan(session, command.legacy_plan_id)
-                if not plan:
-                    logger.error("Plan not found: %s", command.legacy_plan_id)
-                    return _result_from_snapshot(
-                        status="noop",
-                        user=None,
-                        command=command,
-                    )
-                user = await _load_legacy_user(session, command)
-                if not user:
-                    logger.error(
-                        "User not found during %s legacy payment: %s",
-                        command.channel,
-                        command.legacy_internal_user_id,
-                    )
-                    return _result_from_snapshot(
-                        status="noop",
-                        user=None,
-                        plan=plan,
-                        command=command,
-                    )
-                if getattr(user, "id", None) is not None:
-                    command = replace(
-                        command,
-                        legacy_internal_user_id=int(user.id),
-                    )
-
-            if not _amount_matches(command, order=order, plan=plan):
-                logger.error(
-                    "Amount mismatch for %s payment %s: paid %s",
-                    command.channel,
-                    command.order_lookup or command.legacy_order_id,
-                    command.paid_amount,
-                )
-                if command.channel == "TON":
-                    if order is None:
-                        order = await _build_legacy_order(session, command, plan=plan)
-                    if order is not None:
-                        _mark_order(
-                            order,
-                            command=command,
-                            status="FAILED",
-                            paid_at=now,
-                        )
-                        await session.commit()
-                return _result_from_snapshot(
-                    status="amount_mismatch",
-                    user=user,
-                    plan=plan,
-                    order=order,
-                    command=command,
-                )
-
-            if order is None:
-                order = await _build_legacy_order(session, command, plan=plan)
-                if order is None:
-                    logger.info(
-                        "Transaction %s already processed.",
-                        _truncate_tx_hash(command.external_tx_id),
-                    )
-                    return _result_from_snapshot(
-                        status="noop",
-                        user=user,
-                        plan=plan,
-                        command=command,
-                    )
-            else:
-                _mark_order(
-                    order,
-                    command=command,
-                    status="SUCCESS",
-                    paid_at=now,
-                )
-
-            await session.flush()
-            referral = await _record_order_affiliate_ledger(
-                session,
-                order,
-                command=command,
-                dependencies=dependencies,
-            )
-            applied_snapshot = await _settle_order_membership(
+            resolution = await _resolve_payment_target(
                 session=session,
-                user=user,
-                plan=plan,
-                order=order,
                 command=command,
+            )
+            if resolution.early_result is not None:
+                return resolution.early_result
+
+            mismatch_result = await _amount_mismatch_result_if_needed(
+                session=session,
+                resolution=resolution,
+                now=now,
+            )
+            if mismatch_result is not None:
+                return mismatch_result
+
+            resolution = await _materialize_success_order(
+                session=session,
+                resolution=resolution,
+                now=now,
+            )
+            if resolution.early_result is not None:
+                return resolution.early_result
+
+            referral, applied_snapshot = await _apply_successful_payment_effects(
+                session=session,
+                resolution=resolution,
                 dependencies=dependencies,
                 now=now,
             )
-
             await session.commit()
-            if referral:
-                await dependencies.invalidate_invitation_cache_func(referral.inviter_id)
 
             result = _result_from_snapshot(
                 status="success",
-                user=user,
-                plan=plan,
-                order=order,
-                command=command,
+                user=resolution.user,
+                plan=resolution.plan,
+                order=resolution.order,
+                command=resolution.command,
                 applied_snapshot=applied_snapshot,
             )
-            if command.notify:
-                await command.notify(result)
+            await _run_post_commit_payment_side_effects(
+                command=resolution.command,
+                dependencies=dependencies,
+                referral=referral,
+                result=result,
+            )
             logger.info(
                 "%s order %s fulfilled for user %s",
-                command.channel,
-                command.order_lookup or command.legacy_order_id,
-                user.id,
+                resolution.command.channel,
+                resolution.command.order_lookup or resolution.command.legacy_order_id,
+                resolution.user.id,
             )
             return result
         except Exception:

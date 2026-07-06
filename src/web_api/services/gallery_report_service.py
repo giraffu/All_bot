@@ -10,6 +10,32 @@ def _gallery_report_error(code: str) -> dict:
     return {"code": code}
 
 
+def _gallery_report_http_error(*, status_code: int, code: str) -> HTTPException:
+    return HTTPException(
+        status_code=status_code,
+        detail=_gallery_report_error(code),
+    )
+
+
+async def _commit_gallery_report(db, report: GalleryReport) -> None:
+    try:
+        db.add(report)
+        await db.flush()
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise _gallery_report_http_error(
+            status_code=409,
+            code="GALLERY_REPORT_DUPLICATE",
+        ) from exc
+    except Exception as exc:
+        await db.rollback()
+        raise _gallery_report_http_error(
+            status_code=500,
+            code="GALLERY_REPORT_CREATE_FAILED",
+        ) from exc
+
+
 async def create_gallery_report_payload(
     *,
     post_id: int,
@@ -19,9 +45,9 @@ async def create_gallery_report_payload(
 ) -> dict:
     post = await db.get(GalleryPost, post_id)
     if not post or not post.is_active:
-        raise HTTPException(
+        raise _gallery_report_http_error(
             status_code=404,
-            detail=_gallery_report_error("GALLERY_REPORT_POST_UNAVAILABLE"),
+            code="GALLERY_REPORT_POST_UNAVAILABLE",
         )
 
     new_report = GalleryReport(
@@ -33,22 +59,7 @@ async def create_gallery_report_payload(
         status="pending",
     )
 
-    try:
-        db.add(new_report)
-        await db.flush()
-        await db.commit()
-    except IntegrityError as exc:
-        await db.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail=_gallery_report_error("GALLERY_REPORT_DUPLICATE"),
-        ) from exc
-    except Exception:
-        await db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail=_gallery_report_error("GALLERY_REPORT_CREATE_FAILED"),
-        )
+    await _commit_gallery_report(db, new_report)
 
     return {"status": "ok", "report_id": new_report.id}
 

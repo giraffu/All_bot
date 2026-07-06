@@ -78,7 +78,3 @@ class TaskRegistry:
             "Task registry startup recovery check: tasks are persisted in Redis. "
             "Skipping bulk refund to allow tasks to continue on restart."
         )
-
-    @classmethod
-    async def refund_all(cls, bot=None):
-        await cls.log_restart_recovery_policy(bot)

@@ -144,6 +144,64 @@ async def test_fulfill_order_records_affiliate_transaction_on_success(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_fulfill_order_invalidates_affiliate_cache_after_commit(monkeypatch):
+    order = _build_order(status="PENDING")
+    plan = _build_plan()
+    user = _build_user()
+    referral = SimpleNamespace(inviter_id=1001)
+    session = _FakeSession([order, plan, user])
+    events: list[str] = []
+
+    async def commit_side_effect():
+        events.append("commit")
+
+    async def invalidate_side_effect(_user_id):
+        events.append("invalidate")
+
+    session.commit.side_effect = commit_side_effect
+    calculate_mock = AsyncMock(
+        side_effect=lambda _s, current_order: setattr(
+            current_order, "commission_usdt", Decimal("1.2500")
+        )
+        or referral
+    )
+
+    monkeypatch.setattr(
+        payment_fulfillment_service, "AsyncSessionLocal", lambda: _SessionContext(session)
+    )
+    monkeypatch.setattr(
+        payment_fulfillment_service,
+        "is_membership_settlement_v2_enabled",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        payment_fulfillment_service,
+        "calculate_and_set_commission_for_paid_order",
+        calculate_mock,
+    )
+    monkeypatch.setattr(
+        payment_fulfillment_service,
+        "record_affiliate_commission_transaction",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        payment_fulfillment_service,
+        "invalidate_invitation_recharge_cache",
+        AsyncMock(side_effect=invalidate_side_effect),
+    )
+    monkeypatch.delenv("BOT_TOKEN", raising=False)
+
+    ok = await payment_fulfillment_service.fulfill_order(
+        "RMB-ORDER-1",
+        "external-tx-ordering",
+        "10.00",
+    )
+
+    assert ok is True
+    assert events == ["commit", "invalidate"]
+
+
+@pytest.mark.asyncio
 async def test_fulfill_order_accepts_string_paid_amount(monkeypatch):
     order = _build_order(status="PENDING")
     order.final_price = Decimal("0.30")

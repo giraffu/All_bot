@@ -117,37 +117,6 @@ class RunPodAdminOperationRunner:
             return None
         return normalized_stored_operation_payload(payload)
 
-    async def active_lan_aio_operation_for_slot(
-        self,
-        physical_slot_key: str,
-    ) -> dict[str, Any] | None:
-        for operation in self.operations.values():
-            if (
-                operation.active_lan_aio_slot == physical_slot_key
-                and operation.status not in FINISHED_OPERATION_STATUSES
-            ):
-                return operation_payload(operation)
-
-        active_operation_id = await self.store.get_active_lan_aio_slot(
-            physical_slot_key
-        )
-        if not active_operation_id:
-            return None
-        payload = await self.store.get_operation(active_operation_id)
-        if payload is None:
-            await self.store.release_active_lan_aio_slot(
-                physical_slot_key,
-                active_operation_id,
-            )
-            return None
-        if payload.get("status") in FINISHED_OPERATION_STATUSES:
-            await self.store.release_active_lan_aio_slot(
-                physical_slot_key,
-                active_operation_id,
-            )
-            return None
-        return normalized_stored_operation_payload(payload)
-
     def prune_operations(self) -> None:
         if self.max_operation_records <= 0:
             return

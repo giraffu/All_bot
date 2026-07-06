@@ -1,81 +1,10 @@
 from sqlalchemy import select
 
 from src.database.models import MembershipPlan
-
-CANONICAL_SUBSCRIPTION_PLAN_IDS = (1, 2, 3)
-CANONICAL_CREDIT_PLAN_IDS = (5, 6, 7)
-CANONICAL_MEMBERSHIP_PLAN_IDS = (
-    *CANONICAL_SUBSCRIPTION_PLAN_IDS,
-    *CANONICAL_CREDIT_PLAN_IDS,
-)
-
-CANONICAL_MEMBERSHIP_PLAN_ROWS = (
-    {
-        "id": 1,
-        "name": "基础月卡",
-        "identity_name": "内门弟子",
-        "price_ton": "1.99",
-        "price_stars": 200,
-        "price_rmb": "30.00",
-        "reward_credits": 400,
-        "duration_days": 30,
-        "is_active": True,
-    },
-    {
-        "id": 2,
-        "name": "高级月卡",
-        "identity_name": "核心弟子",
-        "price_ton": "4.99",
-        "price_stars": 500,
-        "price_rmb": "70.00",
-        "reward_credits": 1200,
-        "duration_days": 30,
-        "is_active": True,
-    },
-    {
-        "id": 3,
-        "name": "至尊月卡",
-        "identity_name": "真传弟子",
-        "price_ton": "9.99",
-        "price_stars": 1000,
-        "price_rmb": "120.00",
-        "reward_credits": 3000,
-        "duration_days": 30,
-        "is_active": True,
-    },
-    {
-        "id": 5,
-        "name": "200 Star 直购",
-        "identity_name": "纯灵石",
-        "price_ton": "1.99",
-        "price_stars": 200,
-        "price_rmb": "30.00",
-        "reward_credits": 600,
-        "duration_days": 0,
-        "is_active": True,
-    },
-    {
-        "id": 6,
-        "name": "500 Star 直购",
-        "identity_name": "纯灵石",
-        "price_ton": "4.99",
-        "price_stars": 500,
-        "price_rmb": "70.00",
-        "reward_credits": 1800,
-        "duration_days": 0,
-        "is_active": True,
-    },
-    {
-        "id": 7,
-        "name": "1000 Star 直购",
-        "identity_name": "纯灵石",
-        "price_ton": "9.90",
-        "price_stars": 1000,
-        "price_rmb": "120.00",
-        "reward_credits": 4000,
-        "duration_days": 0,
-        "is_active": True,
-    },
+from src.domain_config.membership_plans import (
+    CANONICAL_CREDIT_PLAN_IDS,
+    CANONICAL_MEMBERSHIP_PLAN_IDS,
+    CANONICAL_SUBSCRIPTION_PLAN_IDS,
 )
 
 

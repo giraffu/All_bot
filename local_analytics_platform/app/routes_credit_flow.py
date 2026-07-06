@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query  # noqa: F401
+from fastapi import APIRouter, Query
 
 from .analytics_common import (
     CHECKIN_SPLIT_CTES,

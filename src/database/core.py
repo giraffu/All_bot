@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from config import DATABASE_URL, DB_POOL_SIZE, DB_MAX_OVERFLOW
-from src.services.membership_plan_catalog import CANONICAL_MEMBERSHIP_PLAN_ROWS
+from src.domain_config.membership_plans import CANONICAL_MEMBERSHIP_PLAN_ROWS
 
 from .logger import setup_db_logging
 

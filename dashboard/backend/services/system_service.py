@@ -315,131 +315,157 @@ def _normalized_supported_task_types(raw_task_types: Any) -> list[str]:
     return normalized
 
 
-def build_runpod_profile_queue_details(queue_type_details: dict) -> list[dict]:
-    profile_details: list[dict] = []
+def _pending_queue_record_from_detail(
+    *,
+    raw_record: Any,
+    default_task_type: str,
+) -> dict[str, Any] | None:
+    if not isinstance(raw_record, dict):
+        return None
+    return {
+        "queue_index": _safe_optional_int(raw_record.get("queue_index")),
+        "execution_type": resolve_worker_execution_task_type(
+            raw_record.get("execution_type") or default_task_type
+        ),
+        "is_non_low_trust": raw_record.get("is_non_low_trust") is True,
+    }
 
-    for option in DASHBOARD_WORKER_PROFILE_OPTIONS:
-        supported_task_types = _normalized_supported_task_types(
-            option.get("supported_task_types")
-        )
-        active_count = 0
-        pending_count = 0
-        active_count_by_task_type: dict[str, int] = {}
-        pending_count_by_task_type: dict[str, int] = {}
-        max_pending_wait_seconds = None
-        max_non_low_trust_pending_wait_seconds = None
-        oldest_pending_task_id = None
-        oldest_pending_created_at = None
-        pending_wait_records: list[dict] = []
-        pending_queue_records: list[dict] = []
 
-        for task_type in supported_task_types:
-            detail = queue_type_details.get(task_type) or {}
-            task_active_count = _safe_int(detail.get("active_count"))
-            task_pending_count = _safe_int(detail.get("pending_count"))
-            active_count += task_active_count
-            pending_count += task_pending_count
-            if task_active_count:
-                active_count_by_task_type[task_type] = task_active_count
-            if task_pending_count:
-                pending_count_by_task_type[task_type] = task_pending_count
-            pending_wait_records.extend(detail.get("pending_wait_records") or [])
-            for record in detail.get(PENDING_QUEUE_RECORDS_DETAIL_KEY) or []:
-                if not isinstance(record, dict):
-                    continue
-                pending_queue_records.append(
-                    {
-                        "queue_index": _safe_optional_int(
-                            record.get("queue_index")
-                        ),
-                        "execution_type": resolve_worker_execution_task_type(
-                            record.get("execution_type") or task_type
-                        ),
-                        "is_non_low_trust": record.get("is_non_low_trust") is True,
-                    }
-                )
+def _last_non_low_trust_pending_queue_index(
+    records: list[dict[str, Any]],
+) -> int | None:
+    last_queue_index = None
+    for record in records:
+        if not record.get("is_non_low_trust"):
+            continue
+        queue_index = record["queue_index"]
+        if last_queue_index is None or queue_index > last_queue_index:
+            last_queue_index = queue_index
+    return last_queue_index
 
-            wait_seconds = _safe_wait_seconds(detail.get("max_pending_wait_seconds"))
-            if wait_seconds is None:
-                continue
-            if (
-                max_pending_wait_seconds is None
-                or wait_seconds > max_pending_wait_seconds
-            ):
-                max_pending_wait_seconds = wait_seconds
-                oldest_pending_task_id = detail.get("oldest_pending_task_id")
-                oldest_pending_created_at = detail.get("oldest_pending_created_at")
 
-            non_low_trust_wait_seconds = _safe_wait_seconds(
-                detail.get("max_non_low_trust_pending_wait_seconds")
+def _non_low_trust_clear_pending_count_by_task_type(
+    *,
+    records: list[dict[str, Any]],
+    last_queue_index: int | None,
+) -> dict[str, int]:
+    if last_queue_index is None:
+        return {}
+
+    counts: dict[str, int] = {}
+    for record in records:
+        if record["queue_index"] > last_queue_index:
+            continue
+        execution_type = resolve_worker_execution_task_type(record.get("execution_type"))
+        counts[execution_type] = counts.get(execution_type, 0) + 1
+    return counts
+
+
+def _build_runpod_profile_queue_detail(
+    *,
+    option: dict[str, Any],
+    queue_type_details: dict,
+) -> dict:
+    supported_task_types = _normalized_supported_task_types(
+        option.get("supported_task_types")
+    )
+    active_count = 0
+    pending_count = 0
+    active_count_by_task_type: dict[str, int] = {}
+    pending_count_by_task_type: dict[str, int] = {}
+    max_pending_wait_seconds = None
+    max_non_low_trust_pending_wait_seconds = None
+    oldest_pending_task_id = None
+    oldest_pending_created_at = None
+    pending_wait_records: list[dict] = []
+    pending_queue_records: list[dict] = []
+
+    for task_type in supported_task_types:
+        detail = queue_type_details.get(task_type) or {}
+        task_active_count = _safe_int(detail.get("active_count"))
+        task_pending_count = _safe_int(detail.get("pending_count"))
+        active_count += task_active_count
+        pending_count += task_pending_count
+        if task_active_count:
+            active_count_by_task_type[task_type] = task_active_count
+        if task_pending_count:
+            pending_count_by_task_type[task_type] = task_pending_count
+        pending_wait_records.extend(detail.get("pending_wait_records") or [])
+        for raw_record in detail.get(PENDING_QUEUE_RECORDS_DETAIL_KEY) or []:
+            record = _pending_queue_record_from_detail(
+                raw_record=raw_record,
+                default_task_type=task_type,
             )
-            if non_low_trust_wait_seconds is not None and (
-                max_non_low_trust_pending_wait_seconds is None
-                or non_low_trust_wait_seconds > max_non_low_trust_pending_wait_seconds
-            ):
-                max_non_low_trust_pending_wait_seconds = non_low_trust_wait_seconds
+            if record is not None:
+                pending_queue_records.append(record)
 
-        valid_queue_records = [
-            record
-            for record in pending_queue_records
-            if record.get("queue_index") is not None
-        ]
-        last_non_low_trust_pending_queue_index = None
-        for record in valid_queue_records:
-            if not record.get("is_non_low_trust"):
-                continue
-            queue_index = record["queue_index"]
-            if (
-                last_non_low_trust_pending_queue_index is None
-                or queue_index > last_non_low_trust_pending_queue_index
-            ):
-                last_non_low_trust_pending_queue_index = queue_index
+        wait_seconds = _safe_wait_seconds(detail.get("max_pending_wait_seconds"))
+        if wait_seconds is not None and (
+            max_pending_wait_seconds is None
+            or wait_seconds > max_pending_wait_seconds
+        ):
+            max_pending_wait_seconds = wait_seconds
+            oldest_pending_task_id = detail.get("oldest_pending_task_id")
+            oldest_pending_created_at = detail.get("oldest_pending_created_at")
 
-        non_low_trust_clear_pending_count_by_task_type: dict[str, int] = {}
-        if last_non_low_trust_pending_queue_index is not None:
-            for record in valid_queue_records:
-                if record["queue_index"] > last_non_low_trust_pending_queue_index:
-                    continue
-                execution_type = resolve_worker_execution_task_type(
-                    record.get("execution_type")
-                )
-                non_low_trust_clear_pending_count_by_task_type[execution_type] = (
-                    non_low_trust_clear_pending_count_by_task_type.get(
-                        execution_type, 0
-                    )
-                    + 1
-                )
-
-        profile_details.append(
-            {
-                "profile": option.get("profile"),
-                "label": option.get("label"),
-                "supported_task_types": supported_task_types,
-                "autoscaler_enabled": option.get("autoscaler_enabled", True) is not False,
-                "active_count": active_count,
-                "pending_count": pending_count,
-                "active_count_by_task_type": active_count_by_task_type,
-                "pending_count_by_task_type": pending_count_by_task_type,
-                "max_pending_wait_seconds": max_pending_wait_seconds,
-                "max_non_low_trust_pending_wait_seconds": (
-                    max_non_low_trust_pending_wait_seconds
-                ),
-                "non_low_trust_clear_pending_count": sum(
-                    non_low_trust_clear_pending_count_by_task_type.values()
-                ),
-                "non_low_trust_clear_pending_count_by_task_type": (
-                    non_low_trust_clear_pending_count_by_task_type
-                ),
-                "last_non_low_trust_pending_queue_index": (
-                    last_non_low_trust_pending_queue_index
-                ),
-                "oldest_pending_task_id": oldest_pending_task_id,
-                "oldest_pending_created_at": oldest_pending_created_at,
-                "pending_wait_records": pending_wait_records,
-            }
+        non_low_trust_wait_seconds = _safe_wait_seconds(
+            detail.get("max_non_low_trust_pending_wait_seconds")
         )
+        if non_low_trust_wait_seconds is not None and (
+            max_non_low_trust_pending_wait_seconds is None
+            or non_low_trust_wait_seconds > max_non_low_trust_pending_wait_seconds
+        ):
+            max_non_low_trust_pending_wait_seconds = non_low_trust_wait_seconds
 
-    return profile_details
+    valid_queue_records = [
+        record
+        for record in pending_queue_records
+        if record.get("queue_index") is not None
+    ]
+    last_non_low_trust_pending_queue_index = (
+        _last_non_low_trust_pending_queue_index(valid_queue_records)
+    )
+    non_low_trust_clear_counts = _non_low_trust_clear_pending_count_by_task_type(
+        records=valid_queue_records,
+        last_queue_index=last_non_low_trust_pending_queue_index,
+    )
+
+    return {
+        "profile": option.get("profile"),
+        "label": option.get("label"),
+        "supported_task_types": supported_task_types,
+        "autoscaler_enabled": option.get("autoscaler_enabled", True) is not False,
+        "active_count": active_count,
+        "pending_count": pending_count,
+        "active_count_by_task_type": active_count_by_task_type,
+        "pending_count_by_task_type": pending_count_by_task_type,
+        "max_pending_wait_seconds": max_pending_wait_seconds,
+        "max_non_low_trust_pending_wait_seconds": (
+            max_non_low_trust_pending_wait_seconds
+        ),
+        "non_low_trust_clear_pending_count": sum(
+            non_low_trust_clear_counts.values()
+        ),
+        "non_low_trust_clear_pending_count_by_task_type": (
+            non_low_trust_clear_counts
+        ),
+        "last_non_low_trust_pending_queue_index": (
+            last_non_low_trust_pending_queue_index
+        ),
+        "oldest_pending_task_id": oldest_pending_task_id,
+        "oldest_pending_created_at": oldest_pending_created_at,
+        "pending_wait_records": pending_wait_records,
+    }
+
+
+def build_runpod_profile_queue_details(queue_type_details: dict) -> list[dict]:
+    return [
+        _build_runpod_profile_queue_detail(
+            option=option,
+            queue_type_details=queue_type_details,
+        )
+        for option in DASHBOARD_WORKER_PROFILE_OPTIONS
+    ]
 
 
 async def _close_redis_resource(resource) -> None:
@@ -449,6 +475,160 @@ async def _close_redis_resource(resource) -> None:
     result = close()
     if asyncio.iscoroutine(result):
         await result
+
+
+def _normalize_pending_queue_records(
+    *,
+    task_ids: list[str],
+    values: list[Any],
+    now: float,
+    backend_task_user_ids: dict[str, int],
+) -> tuple[list[dict[str, Any]], set[int]]:
+    pending_records: list[dict[str, Any]] = []
+    pending_user_ids: set[int] = set()
+    for index, task_id in enumerate(task_ids):
+        task_type = _decode_redis_value(values[index * 3])
+        created_at = _decode_redis_value(values[index * 3 + 1])
+        priority = _safe_optional_int(_decode_redis_value(values[index * 3 + 2]))
+        if not task_type or created_at in (None, ""):
+            continue
+
+        try:
+            created_at_float = float(created_at)
+        except (TypeError, ValueError):
+            continue
+
+        user_id = _safe_optional_int(backend_task_user_ids.get(task_id))
+        if user_id is not None:
+            pending_user_ids.add(user_id)
+        pending_records.append(
+            {
+                "task_id": task_id,
+                "queue_index": index,
+                "execution_type": resolve_worker_execution_task_type(task_type),
+                "created_at": created_at_float,
+                "priority": priority,
+                "wait_seconds": max(0, int(now - created_at_float)),
+                "user_id": user_id,
+            }
+        )
+    return pending_records, pending_user_ids
+
+
+def _apply_pending_record_to_detail(
+    *,
+    detail: dict,
+    record: dict[str, Any],
+    low_trust_user_ids: set[int],
+    trust_lookup_succeeded: bool,
+) -> None:
+    detail["pending_count"] += 1
+    detail.setdefault("pending_wait_records", []).append(
+        {
+            "wait_seconds": record["wait_seconds"],
+            "priority": record["priority"],
+        }
+    )
+
+    user_id = record["user_id"]
+    is_non_low_trust = False
+    if user_id in low_trust_user_ids:
+        detail["low_trust_free_tier_task_count"] += 1
+        detail.setdefault(LOW_TRUST_FREE_TIER_USER_IDS_DETAIL_KEY, set()).add(
+            user_id
+        )
+    elif trust_lookup_succeeded and user_id is not None:
+        is_non_low_trust = True
+        current_non_low_trust_max = detail.get(
+            "max_non_low_trust_pending_wait_seconds"
+        )
+        if (
+            current_non_low_trust_max is None
+            or record["wait_seconds"] > current_non_low_trust_max
+        ):
+            detail["max_non_low_trust_pending_wait_seconds"] = record[
+                "wait_seconds"
+            ]
+
+    detail.setdefault(PENDING_QUEUE_RECORDS_DETAIL_KEY, []).append(
+        {
+            "queue_index": record["queue_index"],
+            "execution_type": record["execution_type"],
+            "is_non_low_trust": is_non_low_trust,
+        }
+    )
+
+    current_max = detail.get("max_pending_wait_seconds")
+    if current_max is None or record["wait_seconds"] > current_max:
+        detail["max_pending_wait_seconds"] = record["wait_seconds"]
+        detail["oldest_pending_task_id"] = record["task_id"]
+        detail["oldest_pending_created_at"] = record["created_at"]
+
+
+def _build_pending_queue_wait_details(
+    *,
+    pending_records: list[dict[str, Any]],
+    low_trust_user_ids: set[int],
+    trust_lookup_succeeded: bool,
+) -> dict[str, dict]:
+    details: dict[str, dict] = {}
+    for record in pending_records:
+        execution_type = record["execution_type"]
+        detail = details.setdefault(execution_type, _empty_queue_type_detail())
+        _apply_pending_record_to_detail(
+            detail=detail,
+            record=record,
+            low_trust_user_ids=low_trust_user_ids,
+            trust_lookup_succeeded=trust_lookup_succeeded,
+        )
+
+    for detail in details.values():
+        low_trust_user_ids_for_type = detail.get(
+            LOW_TRUST_FREE_TIER_USER_IDS_DETAIL_KEY, set()
+        )
+        detail["low_trust_free_tier_user_count"] = len(
+            low_trust_user_ids_for_type
+        )
+
+    return details
+
+
+async def _read_pending_queue_snapshot(redis_client) -> tuple[list[str], list[Any]]:
+    pending_task_ids = await redis_client.zrange(CENTRAL_PENDING_QUEUE_KEY, 0, -1)
+    if not pending_task_ids:
+        return [], []
+
+    pipeline = redis_client.pipeline(transaction=False)
+    normalized_task_ids: list[str] = []
+    for raw_task_id in pending_task_ids:
+        task_id = str(_decode_redis_value(raw_task_id))
+        normalized_task_ids.append(task_id)
+        task_key = f"{CENTRAL_TASK_KEY_PREFIX}{task_id}"
+        pipeline.hget(task_key, "type")
+        pipeline.hget(task_key, "created_at")
+        pipeline.hget(task_key, "priority")
+    return normalized_task_ids, await pipeline.execute()
+
+
+async def _resolve_pending_low_trust_user_ids(
+    *,
+    pending_user_ids: set[int],
+    get_low_trust_free_tier_user_ids_func,
+    logger_override: logging.Logger,
+) -> tuple[set[int], bool]:
+    if not pending_user_ids:
+        return set(), True
+    try:
+        low_trust_user_ids = await get_low_trust_free_tier_user_ids_func(
+            pending_user_ids
+        )
+        return set(low_trust_user_ids), True
+    except Exception as exc:
+        logger_override.warning(
+            "Could not collect low trust free tier queue details: %s",
+            exc,
+        )
+        return set(), False
 
 
 async def get_pending_queue_wait_details(
@@ -479,119 +659,31 @@ async def get_pending_queue_wait_details(
     redis_client = None
     try:
         redis_client = redis_from_url_func(resolved_redis_url, decode_responses=True)
-        pending_task_ids = await redis_client.zrange(CENTRAL_PENDING_QUEUE_KEY, 0, -1)
-        if not pending_task_ids:
+        normalized_task_ids, values = await _read_pending_queue_snapshot(redis_client)
+        if not normalized_task_ids:
             return {}
 
-        pipeline = redis_client.pipeline(transaction=False)
-        normalized_task_ids: list[str] = []
-        for raw_task_id in pending_task_ids:
-            task_id = str(_decode_redis_value(raw_task_id))
-            normalized_task_ids.append(task_id)
-            task_key = f"{CENTRAL_TASK_KEY_PREFIX}{task_id}"
-            pipeline.hget(task_key, "type")
-            pipeline.hget(task_key, "created_at")
-            pipeline.hget(task_key, "priority")
-        values = await pipeline.execute()
-
-        now = float(now_func())
-        pending_records: list[dict[str, Any]] = []
-        pending_user_ids: set[int] = set()
-        for index, task_id in enumerate(normalized_task_ids):
-            task_type = _decode_redis_value(values[index * 3])
-            created_at = _decode_redis_value(values[index * 3 + 1])
-            priority = _safe_optional_int(_decode_redis_value(values[index * 3 + 2]))
-            if not task_type or created_at in (None, ""):
-                continue
-
-            try:
-                created_at_float = float(created_at)
-            except (TypeError, ValueError):
-                continue
-
-            execution_type = resolve_worker_execution_task_type(task_type)
-            wait_seconds = max(0, int(now - created_at_float))
-            user_id = _safe_optional_int(backend_task_user_ids.get(task_id))
-            if user_id is not None:
-                pending_user_ids.add(user_id)
-            pending_records.append(
-                {
-                    "task_id": task_id,
-                    "queue_index": index,
-                    "execution_type": execution_type,
-                    "created_at": created_at_float,
-                    "priority": priority,
-                    "wait_seconds": wait_seconds,
-                    "user_id": user_id,
-                }
+        pending_records, pending_user_ids = _normalize_pending_queue_records(
+            task_ids=normalized_task_ids,
+            values=values,
+            now=float(now_func()),
+            backend_task_user_ids=backend_task_user_ids,
+        )
+        low_trust_user_ids, trust_lookup_succeeded = (
+            await _resolve_pending_low_trust_user_ids(
+                pending_user_ids=pending_user_ids,
+                get_low_trust_free_tier_user_ids_func=(
+                    get_low_trust_free_tier_user_ids_func
+                ),
+                logger_override=active_logger,
             )
+        )
 
-        low_trust_user_ids: set[int] = set()
-        trust_lookup_succeeded = True
-        if pending_user_ids:
-            try:
-                low_trust_user_ids = await get_low_trust_free_tier_user_ids_func(
-                    pending_user_ids
-                )
-            except Exception as exc:
-                trust_lookup_succeeded = False
-                active_logger.warning(
-                    "Could not collect low trust free tier queue details: %s",
-                    exc,
-                )
-
-        details: dict[str, dict] = {}
-        for record in pending_records:
-            execution_type = record["execution_type"]
-            detail = details.setdefault(execution_type, _empty_queue_type_detail())
-            detail["pending_count"] += 1
-            detail.setdefault("pending_wait_records", []).append(
-                {
-                    "wait_seconds": record["wait_seconds"],
-                    "priority": record["priority"],
-                }
-            )
-
-            user_id = record["user_id"]
-            is_non_low_trust = False
-            if user_id in low_trust_user_ids:
-                detail["low_trust_free_tier_task_count"] += 1
-                detail.setdefault(LOW_TRUST_FREE_TIER_USER_IDS_DETAIL_KEY, set()).add(
-                    user_id
-                )
-            elif trust_lookup_succeeded and user_id is not None:
-                is_non_low_trust = True
-                current_non_low_trust_max = detail.get(
-                    "max_non_low_trust_pending_wait_seconds"
-                )
-                if (
-                    current_non_low_trust_max is None
-                    or record["wait_seconds"] > current_non_low_trust_max
-                ):
-                    detail["max_non_low_trust_pending_wait_seconds"] = record[
-                        "wait_seconds"
-                    ]
-            detail.setdefault(PENDING_QUEUE_RECORDS_DETAIL_KEY, []).append(
-                {
-                    "queue_index": record["queue_index"],
-                    "execution_type": execution_type,
-                    "is_non_low_trust": is_non_low_trust,
-                }
-            )
-
-            current_max = detail.get("max_pending_wait_seconds")
-            if current_max is None or record["wait_seconds"] > current_max:
-                detail["max_pending_wait_seconds"] = record["wait_seconds"]
-                detail["oldest_pending_task_id"] = record["task_id"]
-                detail["oldest_pending_created_at"] = record["created_at"]
-
-        for detail in details.values():
-            low_trust_user_ids_for_type = detail.get(
-                LOW_TRUST_FREE_TIER_USER_IDS_DETAIL_KEY, set()
-            )
-            detail["low_trust_free_tier_user_count"] = len(low_trust_user_ids_for_type)
-
-        return details
+        return _build_pending_queue_wait_details(
+            pending_records=pending_records,
+            low_trust_user_ids=low_trust_user_ids,
+            trust_lookup_succeeded=trust_lookup_succeeded,
+        )
     except Exception as exc:
         active_logger.warning("Could not collect pending queue wait details: %s", exc)
         return {}

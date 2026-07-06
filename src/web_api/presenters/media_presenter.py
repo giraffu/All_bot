@@ -8,6 +8,7 @@ from src.core.media_paths import (
     resolve_storage_object,
 )
 from src.core.media_urls import build_r2_media_key_candidates, build_r2_thumbnail_info
+from src.services.r2_presign import build_r2_presigned_url
 from src.services.storage import storage
 from src.services.wan22_video_v2_extension_service import (
     extract_wan22_history_context,
@@ -57,28 +58,6 @@ def mark_r2_object_exists(object_key: str) -> None:
     mark_exists = getattr(storage, "mark_r2_object_exists", None)
     if callable(mark_exists):
         mark_exists(object_key)
-
-
-def build_r2_presigned_url(
-    object_key: str,
-    *,
-    expires_hours: float = 1.0,
-) -> str:
-    r2_client = getattr(storage, "r2_client", None)
-    r2_bucket = getattr(storage, "r2_bucket", None)
-    if not r2_client or not r2_bucket:
-        return ""
-    try:
-        return (
-            r2_client.generate_presigned_url(
-                "get_object",
-                Params={"Bucket": r2_bucket, "Key": object_key},
-                ExpiresIn=int(expires_hours * 3600),
-            )
-            or ""
-        )
-    except Exception:
-        return ""
 
 
 async def get_r2_url_if_exists(

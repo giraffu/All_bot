@@ -1,6 +1,7 @@
 from sqlalchemy import select
 
 from src.database.models import SiteNotice
+from src.services.site_notice_ordering import notice_sort_key
 from src.web_api.schemas.site_notice_schema import (
     SiteNoticeItemResponse,
     SiteNoticeResponse,
@@ -31,21 +32,6 @@ def _matches_notice_audience(
     return (
         (current_group in target_groups if current_group else False)
         or (current_identity in target_identities if current_identity else False)
-    )
-
-
-def _notice_sort_key(notice: SiteNotice) -> tuple[bool, float, float, int]:
-    published_at = getattr(notice, "published_at", None)
-    updated_at = getattr(notice, "updated_at", None)
-    created_at = getattr(notice, "created_at", None)
-    published_ts = published_at.timestamp() if published_at else 0.0
-    updated_source = updated_at or created_at or published_at
-    updated_ts = updated_source.timestamp() if updated_source else 0.0
-    return (
-        bool(getattr(notice, "is_pinned", False)),
-        published_ts,
-        updated_ts,
-        int(getattr(notice, "id", 0) or 0),
     )
 
 
@@ -108,7 +94,7 @@ async def get_active_site_notice_payload(
         ):
             visible_notices.append(notice)
 
-    sorted_notices = sorted(visible_notices, key=_notice_sort_key, reverse=True)
+    sorted_notices = sorted(visible_notices, key=notice_sort_key, reverse=True)
     featured_notice = next(
         (notice for notice in sorted_notices if bool(getattr(notice, "is_active", False))),
         None,

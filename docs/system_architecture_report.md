@@ -121,6 +121,7 @@ graph TD
   - 任务执行仍由 `Central API + ComfyUI Workers` 完成；正式 Central 已运行在云控制面，生产算力由本地 worker compose、LAN AIO agent、`remote_workers` 与手动 RunPod 备用池按当次运维目标共同接入。判断当前容量必须以 Central `/system/workers` 的实时快照为准，不再写死为“本地 7 个 worker”。
 - **基础设施层**
   - 正式 PostgreSQL 与 Valkey/Redis 已迁到云侧托管/外部服务，保存主数据、业务账本、队列、并发锁、登录限流、任务运行态与 worker heartbeat。
+  - 后端运行时数据库明确以 PostgreSQL 为唯一支持方言；schema、Alembic migration、seed SQL 和 shadow 同步脚本允许使用 PostgreSQL 专有能力，详见 `docs/adr/0001-postgresql-only-runtime.md`。
   - 新生成对象写入 R2 `user-data-prod`；本地 MinIO 保留为 legacy 迁移补齐、人工回滚、旧外链排障与本地热数据备份，不再是正式 Web/Dashboard 运行时 fallback。
   - Web/Nginx VPS 不再承接正式 `web.aivison.it.com` 主流量；它保留 `assets.aivison.it.com` legacy 人工回滚/旧外链入口、`web-test.aivison.it.com` 测试静态站和正式 Web 回滚副本。
 

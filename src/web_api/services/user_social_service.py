@@ -10,7 +10,7 @@ from src.web_api.schemas.user_social_schema import (
     PublicUserSummary,
 )
 from src.web_api.services.gallery_response_builder import build_gallery_post_responses
-from src.web_api.schemas.gallery_schema import PaginatedGalleryResponse
+from src.web_api.services.gallery_pagination import build_paginated_gallery_response
 
 
 def _resolve_author_name(user: User) -> str:
@@ -92,23 +92,6 @@ async def _load_followed_user_ids(
         )
     )
     return set(result.scalars().all())
-
-
-def _build_paginated_gallery_response(
-    *,
-    items,
-    total: int,
-    page: int,
-    size: int,
-) -> PaginatedGalleryResponse:
-    pages = (total + size - 1) // size
-    return PaginatedGalleryResponse(
-        items=items,
-        total=total,
-        page=page,
-        size=size,
-        pages=pages,
-    )
 
 
 async def _fetch_public_posts_page(*, db, user_id: int, page: int, size: int):
@@ -421,7 +404,7 @@ async def get_public_user_profile_payload(
             is_following=is_following,
             current_user_id=current_user.id,
         ),
-        posts=_build_paginated_gallery_response(
+        posts=build_paginated_gallery_response(
             items=post_responses,
             total=total,
             page=page,

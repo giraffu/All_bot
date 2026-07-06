@@ -27,6 +27,19 @@ def build_default_gallery_comment_dependencies() -> GalleryCommentDependencies:
     return GalleryCommentDependencies(redis_client=default_redis_client)
 
 
+async def _release_comment_lock(redis_client, user_id: int) -> None:
+    await redis_client.delete_comment_lock(user_id)
+
+
+async def _rollback_and_release_comment_lock(db, redis_client, user_id: int) -> None:
+    await db.rollback()
+    await _release_comment_lock(redis_client, user_id)
+
+
+def _comment_unavailable_error(detail: str) -> HTTPException:
+    return HTTPException(status_code=404, detail=detail)
+
+
 async def create_gallery_comment_payload(
     *,
     post_id: int,
@@ -66,9 +79,12 @@ async def create_gallery_comment_payload(
         result = await db.execute(stmt)
 
         if result.rowcount == 0:
-            await db.rollback()
-            await redis_client.delete_comment_lock(current_user.id)
-            raise HTTPException(status_code=404, detail=unavailable_comment_error)
+            await _rollback_and_release_comment_lock(
+                db,
+                redis_client,
+                current_user.id,
+            )
+            raise _comment_unavailable_error(unavailable_comment_error)
 
         response_data = GalleryCommentResponse(
             id=new_comment.id,
@@ -81,17 +97,15 @@ async def create_gallery_comment_payload(
         )
 
         await db.commit()
-        await redis_client.delete_comment_lock(current_user.id)
+        await _release_comment_lock(redis_client, current_user.id)
         return response_data
     except HTTPException:
         raise
     except IntegrityError:
-        await db.rollback()
-        await redis_client.delete_comment_lock(current_user.id)
-        raise HTTPException(status_code=404, detail=unavailable_comment_error)
+        await _rollback_and_release_comment_lock(db, redis_client, current_user.id)
+        raise _comment_unavailable_error(unavailable_comment_error)
     except Exception:
-        await db.rollback()
-        await redis_client.delete_comment_lock(current_user.id)
+        await _rollback_and_release_comment_lock(db, redis_client, current_user.id)
         raise HTTPException(status_code=500, detail="发布评论失败")
 
 

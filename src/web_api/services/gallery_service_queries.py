@@ -13,6 +13,7 @@ from src.services.gallery_apply_context_service import (
 )
 from src.web_api.services.gallery_response_builder import build_gallery_post_responses
 from src.web_api.schemas.gallery_schema import ApplyContextResponse, PaginatedGalleryResponse
+from src.web_api.services.gallery_pagination import build_paginated_gallery_response
 from src.web_api.services.gallery_query_service import (
     fetch_my_favorite_posts_page,
     fetch_my_gallery_posts_page,
@@ -21,23 +22,6 @@ from src.web_api.services.gallery_query_service import (
 from src.web_api.services.gallery_service_support import (
     default_should_return_gallery_apply_input_file,
 )
-
-
-def _build_paginated_gallery_response(
-    *,
-    items,
-    total: int,
-    page: int,
-    size: int,
-) -> PaginatedGalleryResponse:
-    pages = (total + size - 1) // size
-    return PaginatedGalleryResponse(
-        items=items,
-        total=total,
-        page=page,
-        size=size,
-        pages=pages,
-    )
 
 
 async def get_my_gallery_posts_payload(
@@ -61,7 +45,7 @@ async def get_my_gallery_posts_payload(
         posts=posts,
         current_user=current_user,
     )
-    return _build_paginated_gallery_response(
+    return build_paginated_gallery_response(
         items=response_items,
         total=total,
         page=page,
@@ -113,7 +97,7 @@ async def get_my_favorite_posts_payload(
         posts=posts,
         current_user=current_user,
     )
-    return _build_paginated_gallery_response(
+    return build_paginated_gallery_response(
         items=response_items,
         total=total,
         page=page,
@@ -165,7 +149,7 @@ async def get_my_prompt_unlocked_posts_payload(
         posts=posts,
         current_user=current_user,
     )
-    return _build_paginated_gallery_response(
+    return build_paginated_gallery_response(
         items=response_items,
         total=total,
         page=page,
@@ -227,7 +211,7 @@ async def get_gallery_posts_payload(
         posts=posts,
         current_user=current_user,
     )
-    return _build_paginated_gallery_response(
+    return build_paginated_gallery_response(
         items=response_items,
         total=total,
         page=page,

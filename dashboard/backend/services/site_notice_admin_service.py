@@ -7,6 +7,7 @@ from sqlalchemy import select
 from dashboard.backend.schemas import SiteNoticeListResponse, SiteNoticeResponse
 from src.constants import WEB_ACCESS_ALLOWED_GROUPS
 from src.database.models import SiteNotice
+from src.services.site_notice_ordering import notice_sort_key
 
 logger = logging.getLogger("dashboard.site_notice")
 ALLOWED_NOTICE_GROUPS = ["凡人", *WEB_ACCESS_ALLOWED_GROUPS]
@@ -58,21 +59,6 @@ def _serialize_notice(notice: SiteNotice) -> SiteNoticeResponse:
     )
 
 
-def _notice_sort_key(notice: SiteNotice) -> tuple[bool, float, float, int]:
-    published_at = getattr(notice, "published_at", None)
-    updated_at = getattr(notice, "updated_at", None)
-    created_at = getattr(notice, "created_at", None)
-    published_ts = published_at.timestamp() if published_at else 0.0
-    updated_source = updated_at or created_at or published_at
-    updated_ts = updated_source.timestamp() if updated_source else 0.0
-    return (
-        bool(getattr(notice, "is_pinned", False)),
-        published_ts,
-        updated_ts,
-        int(getattr(notice, "id", 0) or 0),
-    )
-
-
 async def _fetch_all_notices(db) -> list[SiteNotice]:
     result = await db.execute(select(SiteNotice).order_by(SiteNotice.id.asc()))
     scalar_result = result.scalars() if hasattr(result, "scalars") else result
@@ -87,7 +73,7 @@ def _visible_admin_notices(notices: list[SiteNotice]) -> list[SiteNotice]:
         for notice in notices
         if getattr(notice, "deleted_at", None) is None
     ]
-    return sorted(filtered, key=_notice_sort_key, reverse=True)
+    return sorted(filtered, key=notice_sort_key, reverse=True)
 
 
 def _find_notice_by_id(notices: list[SiteNotice], notice_id: int) -> SiteNotice | None:

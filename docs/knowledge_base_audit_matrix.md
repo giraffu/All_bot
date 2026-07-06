@@ -29,6 +29,7 @@
 | `docs/skills/README.md` | `.codex/skills` 清单与本轮 Skill 体积审计 | 已修正 | 增加矩阵维护约定和 Skill 正文体积维护规则；记录 `allbot-ops-deployment`、`allbot-comfy-models` 与 `allbot-task-engine` 已瘦身，`allbot-gallery-storage` 已折叠超长行；新增 `allbot-cloudflare-ops` 技能清单 |
 | `docs/domain/CONTEXT.md` | 领域文档、运维脚本、本地分析平台代码与文档、Cloudflare 只读 API 探测 | 已修正 | 补充实时知识库、归档材料、运行态快照、维护式更新、云测试快速更新、本地数据分析平台、shadow 数据库、Prompt Mart、提示词瘦身、提示词向量化、Cloudflare 公网入口与 Cloudflare 自动化令牌等术语 |
 | `docs/adr/0000-template.md` | ADR 模板 | 已核对 | 模板有效，无需新增 ADR |
+| `docs/adr/0001-postgresql-only-runtime.md` | `src/database/core.py`、`src/database/models.py`、`migrations/versions/`、云正式/云测试 PostgreSQL 运行口径 | 新增 | 明确 AllBot 后端运行时数据库为 PostgreSQL-only；`::json`、partial index、`setval(pg_get_serial_sequence(...))` 与 PostgreSQL migration 语义不再作为跨数据库兼容缺陷处理 |
 
 ## 3. 任务、Worker、Comfy 与 RunPod
 
