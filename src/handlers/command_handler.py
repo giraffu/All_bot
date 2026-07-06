@@ -16,6 +16,7 @@ from src.utils import (
     create_background_task,
 )
 from src.handlers.error_handlers import with_unified_error_handler
+from src.services.fsm_temp_file_service import cleanup_fsm_user_data
 import contextlib
 
 
@@ -47,13 +48,7 @@ async def setup_commands(app: Application):
 @with_db_logging_context
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    # Globally clear the FSM lock
-    context.user_data.pop("in_conversation", None)
-
-    # Clear all state data
-    keys_to_remove = [k for k in context.user_data.keys() if k.endswith("_data")]
-    for k in keys_to_remove:
-        context.user_data.pop(k, None)
+    cleanup_fsm_user_data(context.user_data)
 
     # Define menu keyboard
     from src.i18n.keyboards import get_main_menu_keyboard

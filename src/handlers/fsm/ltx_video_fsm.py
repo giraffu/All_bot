@@ -1,5 +1,4 @@
 import logging
-import os
 from pathlib import Path
 from typing import Any
 
@@ -40,7 +39,6 @@ from src.services.ltx_video_extension_service import (
 from src.services.permission_service import permission_service
 from src.services.advanced_video_submission_service import (
     AdvancedVideoSubmissionReject,
-    AdvancedVideoSubmissionRejectReason,
     build_ltx_video_submission_plan,
     create_ltx_video_submission_task,
 )
@@ -75,13 +73,8 @@ LTX_VIDEO_DATA_KEY = "ltx_video_data"
 LTX_VIDEO_CONVERSATION_TAG = "LTX_VIDEO"
 LTX_MODE_I2V = "i2v"
 LTX_MODE_FLF2V = "flf2v"
-LTX_MODE_V2V_AUDIO = "v2v_audio"
 LTX_SETUP_CONFIRM_CALLBACK = "ltx_setup_confirm"
-LTX_V2V_AUDIO_DISABLED_MESSAGE = "视频配音暂未开放，请选择单首帧或首尾帧。"
-LTX_MAX_INPUT_VIDEO_MB = 40
-LTX_MAX_INPUT_VIDEO_BYTES = LTX_MAX_INPUT_VIDEO_MB * 1024 * 1024
 _IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
-_VIDEO_SUFFIXES = {".mp4", ".mov", ".webm", ".avi", ".mkv"}
 
 
 _t = translate_fsm_text
@@ -148,11 +141,9 @@ def _ltx_mode_label(mode: str, lang: str = "zh") -> str:
     if lang == "en":
         return {
             LTX_MODE_FLF2V: "Start/end frames",
-            LTX_MODE_V2V_AUDIO: "Video audio",
         }.get(mode, "Single start frame")
     return {
         LTX_MODE_FLF2V: "首尾帧",
-        LTX_MODE_V2V_AUDIO: "视频配音",
     }.get(mode, "单首帧")
 
 
@@ -269,36 +260,6 @@ def _extract_image_file(update: Update) -> tuple[str | None, str]:
     return None, ".png"
 
 
-def _extract_video_file(update: Update) -> tuple[str | None, str, int | None, bool]:
-    message = update.message
-    if not message:
-        return None, ".mp4", None, False
-
-    if message.document:
-        mime_type = message.document.mime_type or ""
-        if not mime_type.startswith("video/"):
-            return None, ".mp4", None, True
-        return (
-            message.document.file_id,
-            _safe_suffix(
-                message.document.file_name,
-                default=".mp4",
-                allowed=_VIDEO_SUFFIXES,
-            ),
-            message.document.file_size,
-            True,
-        )
-
-    if message.video:
-        return message.video.file_id, ".mp4", message.video.file_size, False
-
-    return None, ".mp4", None, False
-
-
-def _is_video_too_large(size: int | None) -> bool:
-    return bool(size and size > LTX_MAX_INPUT_VIDEO_BYTES)
-
-
 def _cleanup_context(context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("in_conversation", None)
     pending_files = context.user_data.pop(LTX_VIDEO_DATA_KEY, {})
@@ -306,7 +267,6 @@ def _cleanup_context(context: ContextTypes.DEFAULT_TYPE):
         [
             pending_files.get("image_path"),
             pending_files.get("end_image_path"),
-            pending_files.get("video_path"),
         ]
     )
 
@@ -385,7 +345,6 @@ async def start_ltx_video(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         "ltx_mode": LTX_MODE_I2V,
         "image_path": None,
         "end_image_path": None,
-        "video_path": None,
         "lora_items": [],
     }
 
@@ -500,11 +459,7 @@ async def process_initial_setup(
         return ConversationHandler.END
 
     data = query.data or ""
-    if data == "ltx_mode_v2v_audio":
-        fsm_data["ltx_mode"] = LTX_MODE_I2V
-        with contextlib.suppress(Exception):
-            await query.answer(LTX_V2V_AUDIO_DISABLED_MESSAGE, show_alert=True)
-    elif data == "ltx_mode_flf2v":
+    if data == "ltx_mode_flf2v":
         fsm_data["ltx_mode"] = LTX_MODE_FLF2V
     elif data == "ltx_mode_i2v":
         fsm_data["ltx_mode"] = LTX_MODE_I2V
@@ -537,18 +492,6 @@ async def _confirm_initial_setup(
         return ConversationHandler.END
 
     ltx_mode = str(fsm_data.get("ltx_mode") or LTX_MODE_I2V)
-    if ltx_mode == LTX_MODE_V2V_AUDIO:
-        fsm_data["ltx_mode"] = LTX_MODE_I2V
-        with contextlib.suppress(Exception):
-            await query.answer(LTX_V2V_AUDIO_DISABLED_MESSAGE, show_alert=True)
-        await robust_edit_text(
-            query.message,
-            _build_initial_setup_message(context, fsm_data),
-            reply_markup=_build_initial_setup_keyboard(context, fsm_data),
-            parse_mode="Markdown",
-        )
-        return LtxVideoState.WAIT_MODE_SELECTION
-
     if ltx_mode == LTX_MODE_FLF2V:
         if _is_extension_flow(fsm_data) and fsm_data.get("image_path"):
             await robust_edit_text(
@@ -590,12 +533,6 @@ async def receive_initial_setup_image(
             _t(context, "fsm.ltx_video.expired_alert"),
         )
         return ConversationHandler.END
-
-    ltx_mode = str(fsm_data.get("ltx_mode") or LTX_MODE_I2V)
-    if ltx_mode == LTX_MODE_V2V_AUDIO:
-        fsm_data["ltx_mode"] = LTX_MODE_I2V
-        await robust_reply_text(update.message, LTX_V2V_AUDIO_DISABLED_MESSAGE)
-        return LtxVideoState.WAIT_MODE_SELECTION
 
     if _is_extension_flow(fsm_data) and fsm_data.get("image_path"):
         fsm_data["ltx_mode"] = LTX_MODE_FLF2V
@@ -694,59 +631,6 @@ async def receive_end_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             message, _t(context, "fsm.common.download_image_failed")
         )
         return LtxVideoState.WAIT_END_IMAGE
-
-    return await _send_prompt_request_message(update, context, message=message)
-
-
-async def receive_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    message = update.message
-    fsm_data = context.user_data[LTX_VIDEO_DATA_KEY]
-    file_id, suffix, file_size, is_document = _extract_video_file(update)
-    if not file_id:
-        if is_document:
-            await robust_reply_text(
-                message, _t(context, "fsm.common.invalid_video_file")
-            )
-        else:
-            await robust_reply_text(message, _t(context, "fsm.common.invalid_video"))
-        return LtxVideoState.WAIT_VIDEO
-
-    if _is_video_too_large(file_size):
-        await robust_reply_text(
-            message, f"视频过大，请上传 {LTX_MAX_INPUT_VIDEO_MB}MB 内的视频。"
-        )
-        return LtxVideoState.WAIT_VIDEO
-
-    try:
-        new_file = await context.bot.get_file(file_id)
-        if _is_video_too_large(getattr(new_file, "file_size", None)):
-            await robust_reply_text(
-                message, f"视频过大，请上传 {LTX_MAX_INPUT_VIDEO_MB}MB 内的视频。"
-            )
-            return LtxVideoState.WAIT_VIDEO
-
-        local_path = await download_telegram_file_to_fsm_temp(
-            telegram_file=new_file,
-            suffix=suffix,
-            name_hint="ltx_video_audio_input",
-        )
-        if _is_video_too_large(os.path.getsize(local_path)):
-            cleanup_fsm_temp_files([local_path])
-            await robust_reply_text(
-                message, f"视频过大，请上传 {LTX_MAX_INPUT_VIDEO_MB}MB 内的视频。"
-            )
-            return LtxVideoState.WAIT_VIDEO
-        fsm_data["video_path"] = local_path
-    except Exception as e:
-        logger.error(
-            "Error downloading input video for LTX FSM user %s: %s",
-            update.effective_user.id if update.effective_user else "Unknown",
-            e,
-        )
-        await robust_reply_text(
-            message, _t(context, "fsm.common.download_video_failed")
-        )
-        return LtxVideoState.WAIT_VIDEO
 
     return await _send_prompt_request_message(update, context, message=message)
 
@@ -851,18 +735,6 @@ async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE)
         fsm_data=fsm_data,
         max_loras=MAX_LTX_VIDEO_LORAS,
     )
-    if (
-        isinstance(submission_plan, AdvancedVideoSubmissionReject)
-        and submission_plan.reason == AdvancedVideoSubmissionRejectReason.DISABLED_MODE
-    ):
-        logger.info("user=%s tried disabled LTX video audio mode from bot", user_id)
-        with contextlib.suppress(Exception):
-            await query.answer(LTX_V2V_AUDIO_DISABLED_MESSAGE, show_alert=True)
-        with contextlib.suppress(Exception):
-            await robust_edit_text(query.message, LTX_V2V_AUDIO_DISABLED_MESSAGE)
-        _cleanup_context(context)
-        return ConversationHandler.END
-
     if isinstance(submission_plan, AdvancedVideoSubmissionReject):
         logger.warning("user=%s missing LTX input before submit", user_id)
         with contextlib.suppress(Exception):
@@ -900,13 +772,11 @@ async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     image_path = fsm_data.pop("image_path", None)
     end_image_path = fsm_data.pop("end_image_path", None)
-    video_path = fsm_data.pop("video_path", None)
     consumed_plan = build_ltx_video_submission_plan(
         fsm_data={
             **fsm_data,
             "image_path": image_path,
             "end_image_path": end_image_path,
-            "video_path": video_path,
         },
         max_loras=MAX_LTX_VIDEO_LORAS,
     )
@@ -1081,7 +951,7 @@ def get_ltx_video_fsm_handler() -> ConversationHandler:
                 CallbackQueryHandler(
                     process_initial_setup,
                     pattern=(
-                        r"^(ltx_mode_(i2v|flf2v|v2v_audio)"
+                        r"^(ltx_mode_(i2v|flf2v)"
                         r"|set_ltx(res|dur)_"
                         rf"|{LTX_SETUP_CONFIRM_CALLBACK}$)"
                     ),
@@ -1106,13 +976,6 @@ def get_ltx_video_fsm_handler() -> ConversationHandler:
                 MessageHandler(
                     filters.PHOTO | filters.Document.IMAGE, receive_end_image
                 ),
-                MessageHandler(
-                    (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
-                    unexpected_input,
-                ),
-            ],
-            LtxVideoState.WAIT_VIDEO: [
-                MessageHandler(filters.VIDEO | filters.Document.ALL, receive_video),
                 MessageHandler(
                     (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
                     unexpected_input,

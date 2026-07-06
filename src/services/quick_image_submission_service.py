@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 import random
 from dataclasses import dataclass, field
-from enum import StrEnum
+from enum import Enum
 from typing import Any, Awaitable, Callable, Iterable
 
 from src.constants import (
@@ -38,13 +38,13 @@ from src.services.wan22_video_v2_extension_service import (
 )
 
 
-class QuickImageSubmissionKind(StrEnum):
+class QuickImageSubmissionKind(str, Enum):
     SINGLE_IMAGE = "single_image"
     RANDOM_FACESWAP = "random_faceswap"
     DRAW_CHAIN = "draw_chain"
 
 
-class QuickImageSubmissionRejectReason(StrEnum):
+class QuickImageSubmissionRejectReason(str, Enum):
     FEATURE_DISABLED = "feature_disabled"
     NO_TEMPLATE = "no_template"
     UNSUPPORTED_MODE = "unsupported_mode"

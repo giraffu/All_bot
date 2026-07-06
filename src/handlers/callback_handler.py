@@ -21,6 +21,21 @@ from src.utils import safe_answer_query
 
 logger = logging.getLogger(__name__)
 
+MAIN_BOT_REQUIRED_CALLBACK_PREFIXES = (
+    "noop",
+    "recharge_stars_menu",
+    "gallery_page_",
+    "public_share",
+    "cancel_task_",
+    "ltx_stitch_chain",
+    "wan22v2_stitch_chain",
+)
+
+router.validate_callback_routes(
+    required_prefixes=MAIN_BOT_REQUIRED_CALLBACK_PREFIXES,
+    namespace="main bot",
+)
+
 
 @with_db_logging_context
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):

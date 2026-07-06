@@ -178,13 +178,11 @@ def main():
         .get_updates_request(request)
         .post_init(post_init)
         .post_shutdown(post_shutdown)
-        .concurrent_updates(True)
         .build()
     )
 
     from src.handlers.fsm.affiliate_redeem_fsm import get_affiliate_redeem_fsm_handler
     from src.handlers.fsm.edit_image_fsm import get_edit_image_fsm_handler
-    from src.handlers.fsm.face_video_fsm import get_face_video_fsm_handler
     from src.handlers.fsm.faceswap_fsm import get_faceswap_fsm_handler
     from src.handlers.fsm.ltx_video_fsm import get_ltx_video_fsm_handler
     from src.handlers.fsm.quick_image_fsm import get_quick_image_fsm_handler
@@ -202,7 +200,6 @@ def main():
     # Register FSM Handlers first (they must intercept text/callbacks before fallback handlers)
     app.add_handler(TypeHandler(Update, global_middleware), group=-1)
     app.add_handler(get_affiliate_redeem_fsm_handler())
-    app.add_handler(get_face_video_fsm_handler())
     app.add_handler(get_scail2_video_fsm_handler())
     app.add_handler(get_faceswap_fsm_handler())
     app.add_handler(get_txt2img_fsm_handler())

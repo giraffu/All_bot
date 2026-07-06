@@ -475,10 +475,13 @@ async def test_qqcc_start_returns_simplified_menu(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_qqcc_cancel_clears_gallery_apply_session(monkeypatch):
+    temp_file = "/tmp/a.png"
     monkeypatch.setattr(
         "qqcc_bot.commands.load_runtime_qqcc_config",
         AsyncMock(return_value=normalize_qqcc_config(None)),
     )
+    cleanup = MagicMock()
+    monkeypatch.setattr("qqcc_bot.commands.cleanup_fsm_user_data", cleanup)
     reply_text = AsyncMock()
     update = SimpleNamespace(
         effective_user=SimpleNamespace(id=123),
@@ -490,15 +493,14 @@ async def test_qqcc_cancel_clears_gallery_apply_session(monkeypatch):
         user_data={
             "in_conversation": True,
             "qqcc_gallery_apply": {"source_post_id": 42},
-            "quick_image_data": {"tmp": "/tmp/a.png"},
+            "quick_image_data": {"image_path": temp_file},
         },
     )
 
     await qqcc_commands.cancel(update, context)
 
     assert "qqcc_gallery_apply" not in context.user_data
-    assert "in_conversation" not in context.user_data
-    assert "quick_image_data" not in context.user_data
+    cleanup.assert_called_once_with(context.user_data)
     reply_text.assert_awaited_once()
 
 

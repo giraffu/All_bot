@@ -1,20 +1,17 @@
-from collections.abc import Awaitable, Callable
-from inspect import isawaitable
-from typing import TypeVar
-
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from src.core.media_urls import build_storage_presigned_url
-from src.services.storage import storage
-from src.web_api.services.apply_context_service import (
+from src.services.gallery_apply_context_presenter import (
     build_apply_context_response,
     build_history_apply_context_response,
+    call_with_optional_db,
     probe_apply_context_media_metadata,
+    release_read_transaction,
     resolve_apply_context_media_metadata,
     resolve_history_billing_resolution,
+    run_with_optional_db,
+    storage,
 )
-
-T = TypeVar("T")
+from src.services.gallery_apply_context_presenter import (
+    build_storage_input_file_url as _build_storage_input_file_url,
+)
 
 __all__ = [
     "build_apply_context_response",
@@ -26,62 +23,9 @@ __all__ = [
     "run_with_optional_db",
     "call_with_optional_db",
     "release_read_transaction",
+    "storage",
 ]
 
 
 def build_storage_input_file_url(file_path: str | None) -> str | None:
-    if not file_path:
-        return None
-
-    return build_storage_presigned_url(
-        file_path,
-        lambda object_name, bucket_name: storage.get_presigned_url(
-            object_name,
-            bucket=bucket_name,
-        ),
-    )
-
-
-async def run_with_optional_db(
-    *,
-    db: AsyncSession | None,
-    action: Callable[[AsyncSession], Awaitable[T]],
-    session_factory: Callable[[], AsyncSession],
-) -> T:
-    if db is not None:
-        return await action(db)
-
-    async with session_factory() as fallback_db:
-        return await action(fallback_db)
-
-
-async def call_with_optional_db(
-    *,
-    db: AsyncSession | None,
-    service_fn: Callable[..., Awaitable[T]],
-    session_factory: Callable[[], AsyncSession],
-    session_kwarg: str = "db",
-    **kwargs,
-) -> T:
-    async def _action(session: AsyncSession) -> T:
-        return await service_fn(**{session_kwarg: session, **kwargs})
-
-    return await run_with_optional_db(
-        db=db,
-        action=_action,
-        session_factory=session_factory,
-    )
-
-
-async def release_read_transaction(db: AsyncSession) -> None:
-    """Release a read-only transaction before slower non-DB work runs."""
-    in_transaction = getattr(db, "in_transaction", None)
-    if not callable(in_transaction) or not in_transaction():
-        return
-
-    commit = getattr(db, "commit", None)
-    if not callable(commit):
-        return
-    result = commit()
-    if isawaitable(result):
-        await result
+    return _build_storage_input_file_url(file_path, storage_adapter=storage)

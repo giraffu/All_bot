@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 import warnings
 
 import pytest
-from telegram.ext import ConversationHandler
+from telegram.ext import CallbackQueryHandler, ConversationHandler
 from telegram.warnings import PTBUserWarning
 
 from src.constants import (
@@ -1995,54 +1995,23 @@ async def test_ltx_video_confirm_generation_forwards_extension_chain_context(
     ]
 
 
-@pytest.mark.asyncio
-async def test_ltx_video_confirm_generation_blocks_disabled_video_audio_mode(monkeypatch):
-    safe_answer_mock = AsyncMock()
-    create_background_task_mock = MagicMock()
-    process_task_mock = MagicMock(return_value=object())
-    edit_mock = AsyncMock()
-    quota_mock = AsyncMock()
+def test_ltx_video_fsm_has_no_bot_video_audio_upload_state():
+    handler = ltx_video_fsm.get_ltx_video_fsm_handler()
+    state_names = {
+        getattr(state, "name", str(state))
+        for state in handler.states
+        if state != ConversationHandler.TIMEOUT
+    }
+    mode_patterns = [
+        getattr(callback, "pattern", None).pattern
+        for callbacks in handler.states.values()
+        for callback in callbacks
+        if isinstance(callback, CallbackQueryHandler) and getattr(callback, "pattern", None)
+    ]
 
-    monkeypatch.setattr("src.utils.safe_answer_query", safe_answer_mock)
-    monkeypatch.setattr(ltx_video_fsm, "create_background_task", create_background_task_mock)
-    monkeypatch.setattr(ltx_video_fsm, "process_ltx_video_task", process_task_mock)
-    monkeypatch.setattr(ltx_video_fsm, "robust_edit_text", edit_mock)
-    monkeypatch.setattr(ltx_video_fsm.permission_service, "check_quota", quota_mock)
-
-    query = SimpleNamespace(
-        from_user=SimpleNamespace(id=12345),
-        message=SimpleNamespace(chat_id=10001),
-        answer=AsyncMock(),
-    )
-    update = SimpleNamespace(
-        callback_query=query,
-        effective_user=_build_user(),
-        effective_chat=SimpleNamespace(id=10001),
-    )
-    context = SimpleNamespace(
-        bot=SimpleNamespace(),
-        user_data={
-            "in_conversation": "LTX_VIDEO",
-            "ltx_video_data": {
-                "resolution": "1280x704",
-                "duration": "20s",
-                "ltx_mode": "v2v_audio",
-                "prompt": "say hello clearly",
-                "video_path": "/tmp/input.mp4",
-                "lora_items": [],
-            }
-        },
-        t=lambda key, **kwargs: f"T:{key}",
-    )
-
-    result = await ltx_video_fsm.confirm_generation(update, context)
-
-    assert result == ConversationHandler.END
-    quota_mock.assert_not_awaited()
-    process_task_mock.assert_not_called()
-    create_background_task_mock.assert_not_called()
-    edit_mock.assert_awaited_once()
-    assert "ltx_video_data" not in context.user_data
+    assert "WAIT_VIDEO" not in state_names
+    assert not hasattr(ltx_video_fsm, "receive_video")
+    assert all("v2v_audio" not in pattern for pattern in mode_patterns)
 
 
 @pytest.mark.asyncio

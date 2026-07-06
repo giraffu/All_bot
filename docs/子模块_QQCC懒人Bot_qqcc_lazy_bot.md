@@ -38,9 +38,13 @@ QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位�
 
 用户点击主菜单 `修仙市集` 后，QQCC Bot 使用专用 `qqcc_bot/gallery_market.py` 入口展示当前 Web Gallery 可见类型的投稿，不复用旧主 Bot 的 gallery 分类常量。callback 前缀为 `qg:`，支持分类、分页、点赞、点踩、一键应用和 Web 应用跳转；不提供留言入口。普通可应用投稿的卡片同时展示 `一键应用` 与 `Web应用`，视频换脸类模板只展示 `Web应用`，Wan22/LTX 多段拼接结果不展示任何应用入口；Bot caption 中的类型和 `#task.mode_*` 标签走当前语言翻译，不直接暴露内部变量名。分类对齐 Web 可见 tab：`all`、`i2i_pro`、`i2i_draw`、`edit_group`、`free_edit_v2_group`、`img2video_group`、`ltx_video`、`wan22_video_v2`、`scail2_action_transfer`、`scail2_video_replacement`、`scail2_face_swap_v2`，不展示 `txt2img`。
 
+QQCC 市集代码按 Bot 层职责拆分：`qqcc_bot/gallery_market.py` 保留 `qg:` callback 注册、分页加载和兼容 facade；`qqcc_bot/gallery_market_view.py` 负责菜单/帖子按钮与 caption view；`qqcc_bot/gallery_market_interactions.py` 负责点赞/点踩 callback、计数替换和消息更新；`qqcc_bot/gallery_market_apply.py` 负责 apply session、图片下载、原生单图提交和失败清理。Web/Bot 共用 apply-context presenter seam 位于 `src/services/gallery_apply_context_presenter.py`；QQCC Bot 不再直接导入 `src.web_api.common.utils`。
+
 `修仙市集` 媒体发送优先使用 `GalleryPost.telegram_file_id`，失效或缺失时通过当前 Gallery R2/S3 URL resolver 下载当前作品并重新写回 Telegram file_id；测试 Bot 不持久化新 file_id。不得恢复旧 `storage.get_file_bytes(...)` / legacy MinIO public URL 作为浏览主路径。
 
 QQCC 市集一键应用是轻量 Bot 流程：安全的单图模板在 Bot 内提示用户重新发送 1 张参考图，并以 `source_post_id`、`allow_contribute=False`、`client_type=bot:qqcc` 提交任务；复杂模板、SCAIL-2、多图/多视频复用与首尾帧复杂链路的 `一键应用` callback 只做 Web handoff，返回 `/gallery?apply_source=gallery&apply_id=<post_id>` 深链，不在 Bot 内强行复用视频或多素材。`apply` 次数仍只能在任务成功链路记账，不能在点击按钮时预增。
+
+QQCC 市集 apply 下载的用户图片属于 FSM 临时文件；提交异常、unsupported task type、`/cancel` 或全局异常清理都必须删除已下载路径。原生 Bot apply 只支持安全单图模板，提交时必须透传 `source_post_id` 且 `allow_contribute=False`，复杂模板只 Web handoff，不预增 `applied_count`。
 
 QQCC 功能开关与 QQCC 专用提示词覆盖由独立 QQCC Config Web 维护，主 Dashboard 不再显示 `懒人Bot配置` 导航，也不挂载 `/api/qqcc/config`。配置存入 `runtime_checkpoints`，固定 key 为 `qqcc_lazy_bot_config:v1`，不新增表。独立配置后端 `dashboard.backend.qqcc_config_main:app` 暴露：
 - `GET /api/qqcc/config`：返回合并默认值后的有效配置，并附带非持久化 `options`，包含 `scene_preset_version`、默认动图/绘图 engine、engine 选项与 LoRA catalog，前端不得手写模型清单或默认场景。
@@ -77,8 +81,11 @@ QQCC Config Web 使用独立后台账号，不复用 Dashboard 管理员 token�
 - `qqcc_bot/keyboards.py`：QQCC 专用主菜单、旧 P 图兼容键盘、`AI绘图` / `AI动图` inline 场景菜单。
 - `qqcc_bot/commands.py`：QQCC `/start` 与 `/cancel`，复用用户创建和准入逻辑，返回简化菜单。
 - `qqcc_bot/prompt_handlers.py`：只路由旧 `menu.photo_edit` 禁用提示、`qqcc.menu.ai_draw`、`menu.video_edit`、`qqcc.menu.market`、`menu.main_menu`、`menu.back_main` 与 `menu.open_main_bot`。
-- `qqcc_bot/gallery_market.py`：QQCC 专用修仙市集，负责 `qg:` callback、Gallery file_id 缓存发送、点赞/点踩和轻量一键应用 session。
-- `qqcc_bot/callback_handler.py`：只导入任务取消、结果评分、随机换脸再来一张、公开分享互动和 QQCC 市集等必要 callback 注册模块。
+- `qqcc_bot/gallery_market.py`：QQCC 专用修仙市集 facade，负责 `qg:` callback 注册、分页加载、Gallery file_id 缓存发送和 Web handoff。
+- `qqcc_bot/gallery_market_view.py`：市集菜单、帖子 caption、互动/apply 按钮 view-model。
+- `qqcc_bot/gallery_market_interactions.py`：点赞/点踩 callback 与 caption 计数更新。
+- `qqcc_bot/gallery_market_apply.py`：轻量一键应用 session、图片下载、原生单图提交和失败临时文件清理。
+- `qqcc_bot/callback_handler.py`：只导入任务取消、结果评分、随机换脸再来一张、公开分享互动和 QQCC 市集等必要 callback 注册模块，并在导入后校验 QQCC 必需 callback prefix manifest。
 - `src/handlers/fsm/quick_image_fsm.py`：在 `bot_client_type=bot:qqcc` 时承接 `qqcc.menu.quick_faceswap` 进入单图随机换脸，并承接 `qdraw_scene:<id>` 进入 AI绘图单图提交流程；FSM 只负责 Telegram 状态、图片接收、额度检查和回复。主 Bot 的旧 `快速脱衣` / `快速自慰` / `快速换脸` 文本入口只回复 QQCC 懒人 Bot 跳转或入口未配置提示，不提交任务。
 - `src/handlers/fsm/quick_video_fsm.py`：在 `bot_client_type=bot:qqcc` 时承接 `qvid_scene:<id>`，按场景 engine 提交旧图生视频或 `wan22_video_v2`；配置 `end_frame_draw_scene_id` 时先复用对应 AI绘图场景的完整后处理链生成隐藏尾帧，再提交首尾帧视频。主 Bot 的旧 `menu.video_edit_*` 文本入口和 `qvid_*` callback 只回复 QQCC 懒人 Bot 跳转或入口未配置提示，不提交任务。
 - `src/services/qqcc_draw_chain_service.py`：QQCC AI绘图链共享 helper，负责解析无环链、计算链路费用、串行执行绘图并复用中间产物。
@@ -93,6 +100,7 @@ QQCC Config Web 使用独立后台账号，不复用 Dashboard 管理员 token�
 - `dashboard/frontend/src/components/QqccBotSettings.vue`：QQCC 配置页主体组件，供独立 Web 复用；通过 props 接收独立配置 API handler，只渲染后端返回的 config/options，不在组件内合成默认场景。
 
 主 Bot 入口仍是 `src/bot_main.py`。不要在 `qqcc_bot/` 中导入 `src.bot_main`，否则会把主 Bot 的完整 handler 面一起注册进来。
+QQCC Bot 注册 quick image/video ConversationHandler，`qqcc_bot/main.py` 不得启用 PTB `concurrent_updates(True)`；`/cancel` 必须调用 `cleanup_fsm_user_data(...)` 清理 `*_data` 与临时文件，再清理 `qqcc_gallery_apply` session。
 
 ## 4. 任务来源归属
 Telegram Bot 任务默认来源为 `client_type="bot"`。QQCC Bot 在 `application.bot_data["bot_client_type"]` 写入 `bot:qqcc`，`run_bot_task_application(...)` 读取该值并透传到 `process_and_submit_task(client_type=...)`。

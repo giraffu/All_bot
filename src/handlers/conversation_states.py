@@ -1,14 +1,6 @@
 from enum import IntEnum, auto
 
 
-class FaceVideoState(IntEnum):
-    """视频换脸流程的状态枚举"""
-
-    WAIT_FACE_IMAGE = auto()
-    WAIT_VIDEO = auto()
-    SELECT_RESOLUTION = auto()
-
-
 class Scail2VideoState(IntEnum):
     """SCAIL-2 视频生视频流程的状态枚举"""
 
@@ -38,7 +30,6 @@ class LtxVideoState(IntEnum):
     WAIT_MODE_SELECTION = auto()
     WAIT_IMAGE = auto()
     WAIT_END_IMAGE = auto()
-    WAIT_VIDEO = auto()
     WAIT_SETTINGS_AND_PROMPT = auto()
     WAIT_CONFIRMATION = auto()
 

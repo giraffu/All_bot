@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 import logging
 from dataclasses import dataclass, field
-from enum import StrEnum
+from enum import Enum
 from typing import Any, Awaitable, Callable
 
 from src.constants import (
@@ -42,13 +42,13 @@ from src.services.wan22_video_v2_extension_service import (
 logger = logging.getLogger("services.quick_video_submission")
 
 
-class QuickVideoSubmissionKind(StrEnum):
+class QuickVideoSubmissionKind(str, Enum):
     LEGACY_VIDEO = "legacy_video"
     WAN22_VIDEO_V2 = "wan22_video_v2"
     TAIL_FRAME_VIDEO = "tail_frame_video"
 
 
-class QuickVideoSubmissionRejectReason(StrEnum):
+class QuickVideoSubmissionRejectReason(str, Enum):
     FEATURE_DISABLED = "feature_disabled"
     INVALID_SETTINGS = "invalid_settings"
     UNSUPPORTED_MODE = "unsupported_mode"

@@ -22,3 +22,17 @@ def register_callback(prefix: str):
         return func
 
     return decorator
+
+
+def validate_callback_routes(
+    *,
+    required_prefixes: tuple[str, ...],
+    namespace: str,
+    routes: dict[str, object] | None = None,
+) -> None:
+    registered_routes = CALLBACK_ROUTES if routes is None else routes
+    missing = [prefix for prefix in required_prefixes if prefix not in registered_routes]
+    if missing:
+        raise RuntimeError(
+            f"{namespace} missing callback route prefixes: {', '.join(missing)}"
+        )

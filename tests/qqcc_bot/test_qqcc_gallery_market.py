@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from qqcc_bot import gallery_market
@@ -347,3 +347,44 @@ async def test_gallery_apply_media_expires_stale_session(monkeypatch):
     assert gallery_market.QQCC_GALLERY_APPLY_SESSION_KEY not in context.user_data
     reply_text.assert_awaited_once()
     assert reply_text.await_args.args[1] == "qqcc.market.apply_expired"
+
+
+@pytest.mark.asyncio
+async def test_gallery_apply_media_cleans_downloaded_image_when_submission_fails(
+    monkeypatch,
+):
+    reply_text = AsyncMock()
+    cleanup = MagicMock()
+    monkeypatch.setattr(gallery_market, "robust_reply_text", reply_text)
+    monkeypatch.setattr(
+        gallery_market,
+        "_download_market_apply_image",
+        AsyncMock(return_value="/tmp/qqcc-apply.png"),
+    )
+    monkeypatch.setattr(
+        gallery_market,
+        "submit_qqcc_gallery_apply_session",
+        AsyncMock(side_effect=RuntimeError("submit failed")),
+    )
+    monkeypatch.setattr(gallery_market, "cleanup_fsm_temp_files", cleanup)
+
+    update = SimpleNamespace(
+        effective_message=SimpleNamespace(),
+        effective_user=SimpleNamespace(id=99, username="tester"),
+        effective_chat=SimpleNamespace(id=123),
+    )
+    context = SimpleNamespace(
+        user_data={
+            gallery_market.QQCC_GALLERY_APPLY_SESSION_KEY: {
+                "created_at": 9999999999,
+                "task_type": MODE_I2I_PRO,
+            }
+        },
+        t=lambda key, **_kwargs: key,
+    )
+
+    await gallery_market.handle_qqcc_gallery_apply_media(update, context)
+
+    cleanup.assert_called_once_with(["/tmp/qqcc-apply.png"])
+    reply_text.assert_awaited_once()
+    assert reply_text.await_args.args[1] == "qqcc.market.apply_submit_failed"

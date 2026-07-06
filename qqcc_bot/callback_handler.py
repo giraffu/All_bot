@@ -17,6 +17,24 @@ from src.utils import safe_answer_query
 
 logger = logging.getLogger("qqcc_bot.callback")
 
+QQCC_REQUIRED_CALLBACK_PREFIXES = (
+    "noop",
+    "cancel_task_",
+    "public_share",
+    "rate_like",
+    "qvid_mode:",
+    "qg:m",
+    "qg:p:",
+    "qg:l:",
+    "qg:d:",
+    "qg:a:",
+)
+
+router.validate_callback_routes(
+    required_prefixes=QQCC_REQUIRED_CALLBACK_PREFIXES,
+    namespace="QQCC bot",
+)
+
 
 @with_db_logging_context
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):

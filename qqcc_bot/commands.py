@@ -11,6 +11,7 @@ from qqcc_bot.keyboards import get_qqcc_main_menu_keyboard
 from src.handlers.utils import with_db_logging_context
 from src.i18n.translator import get_text
 from src.services.permission_service import permission_service
+from src.services.fsm_temp_file_service import cleanup_fsm_user_data
 from src.utils import (
     create_background_task,
     get_user_channel_status,
@@ -145,11 +146,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @with_db_logging_context
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data.pop("in_conversation", None)
+    cleanup_fsm_user_data(context.user_data)
     context.user_data.pop("qqcc_gallery_apply", None)
-    keys_to_remove = [key for key in context.user_data.keys() if key.endswith("_data")]
-    for key in keys_to_remove:
-        context.user_data.pop(key, None)
 
     qqcc_config = await _load_menu_config()
     await update.message.reply_text(

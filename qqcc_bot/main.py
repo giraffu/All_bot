@@ -108,7 +108,6 @@ def build_application(token: str):
         .get_updates_request(request)
         .post_init(post_init)
         .post_shutdown(post_shutdown)
-        .concurrent_updates(True)
         .build()
     )
     register_handlers(app)

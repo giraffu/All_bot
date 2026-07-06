@@ -9,6 +9,7 @@ from src.core.exceptions import (
     DomainException,
     InsufficientCreditsError,
 )
+from src.services.fsm_temp_file_service import cleanup_fsm_user_data
 from src.utils import robust_send_message
 from src.i18n.translator import get_text
 from config import CHANNEL_INVITE_LINK
@@ -88,11 +89,7 @@ async def global_error_handler(
             logger.debug(f"Failed to answer callback query in error handler: {e}")
 
     # 安全清理可能存在的全局交互状态字典，防止幽灵死锁（仅清理业务临时数据，保留语言等偏好）
-    if context.user_data is not None:
-        context.user_data.pop("in_conversation", None)
-        keys_to_remove = [k for k in context.user_data.keys() if k.endswith("_data")]
-        for k in keys_to_remove:
-            context.user_data.pop(k, None)
+    cleanup_fsm_user_data(context.user_data)
 
     if isinstance(context.error, InsufficientCreditsError):
         if isinstance(update, Update) and update.effective_chat:

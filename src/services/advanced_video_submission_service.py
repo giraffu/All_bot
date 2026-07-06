@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import StrEnum
+from enum import Enum
 from typing import Any, Callable
 
 from src.constants import (
@@ -36,14 +36,14 @@ from src.services.task_service_generation_wan22 import (
 )
 
 
-class AdvancedVideoSubmissionKind(StrEnum):
+class AdvancedVideoSubmissionKind(str, Enum):
     IMAGE_TO_VIDEO = "image_to_video"
     WAN22_VIDEO_V2 = "wan22_video_v2"
     LEGACY_WAN22_IMAGE_TO_VIDEO = "legacy_wan22_image_to_video"
     LTX_VIDEO = "ltx_video"
 
 
-class AdvancedVideoSubmissionRejectReason(StrEnum):
+class AdvancedVideoSubmissionRejectReason(str, Enum):
     MISSING_INPUT = "missing_input"
     DISABLED_MODE = "disabled_mode"
     UNSUPPORTED_MODE = "unsupported_mode"
