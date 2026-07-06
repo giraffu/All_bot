@@ -210,12 +210,13 @@ async def dispatch_registered_task_default(
     inputs: dict,
     final_priority: int,
     dependencies=None,
+    dispatch_to_worker_func=dispatch_to_worker,
     is_task_backend_busy_error_func=is_task_backend_busy_error,
     logger_override: logging.Logger | None = None,
 ) -> str:
     dependencies = _resolve_default_task_core_submission_dependencies(
         dependencies=dependencies,
-        dispatch_to_worker_func=dispatch_to_worker,
+        dispatch_to_worker_func=dispatch_to_worker_func,
         is_task_backend_busy_error_func=is_task_backend_busy_error_func,
         logger_override=logger_override or logging.getLogger(__name__),
     )
@@ -241,12 +242,13 @@ async def execute_task_submission_saga_default(
     credits_deducted: bool = True,
     submission_context: TaskSubmissionContext,
     dependencies=None,
+    dispatch_to_worker_func=dispatch_to_worker,
     is_task_backend_busy_error_func=is_task_backend_busy_error,
     logger_override: logging.Logger | None = None,
 ) -> TaskSubmissionExecutionResult:
     dependencies = _resolve_default_task_core_submission_dependencies(
         dependencies=dependencies,
-        dispatch_to_worker_func=dispatch_to_worker,
+        dispatch_to_worker_func=dispatch_to_worker_func,
         is_task_backend_busy_error_func=is_task_backend_busy_error_func,
         logger_override=logger_override or logging.getLogger(__name__),
     )
@@ -265,6 +267,7 @@ async def execute_task_submission_saga_default(
         dispatch_registered_task_func=lambda **kwargs: dispatch_registered_task_default(
             **kwargs,
             dependencies=dependencies,
+            dispatch_to_worker_func=dispatch_to_worker_func,
             is_task_backend_busy_error_func=is_task_backend_busy_error_func,
             logger_override=logger_override,
         ),

@@ -31,7 +31,11 @@ def build_runtime_default_task_core_process_dependencies(
         execute_task_submission_saga_default,
     )
     from src.core.task_core_video_request import build_video_task_request
-    from src.core.task_dispatcher import StrategyFactory, TaskDispatcherFeatureFlags
+    from src.core.task_dispatcher import (
+        StrategyFactory,
+        TaskDispatcherFeatureFlags,
+        dispatch_to_worker,
+    )
     from src.logger import UserLogger
     from src.services.task_web_side_effects import (
         attach_submission_side_effects_default,
@@ -48,12 +52,27 @@ def build_runtime_default_task_core_process_dependencies(
         free_edit_v2_enabled=ENABLE_FREE_EDIT_V2,
     )
 
+    async def dispatch_to_worker_func(task_id, task_type, inputs, priority):
+        return await dispatch_to_worker(
+            task_id,
+            task_type,
+            inputs,
+            priority,
+            feature_flags=feature_flags,
+        )
+
+    async def execute_task_submission_saga_func(**kwargs):
+        return await execute_task_submission_saga_default(
+            **kwargs,
+            dispatch_to_worker_func=dispatch_to_worker_func,
+        )
+
     return build_default_task_core_process_dependencies(
         video_task_types=VIDEO_TASK_TYPES,
         build_video_task_request_func=build_video_task_request,
         check_concurrency_lock_func=check_concurrency_lock,
         check_and_deduct_credits_func=check_and_deduct_credits,
-        execute_task_submission_saga_func=execute_task_submission_saga_default,
+        execute_task_submission_saga_func=execute_task_submission_saga_func,
         attach_submission_side_effects_func=attach_submission_side_effects_func,
         compensate_failed_submission_func=compensate_failed_submission_default,
         release_concurrency_lock_func=release_concurrency_lock,

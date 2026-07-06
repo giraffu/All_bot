@@ -4,12 +4,16 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from src.core import task_core
+from src.constants import MODE_PORNMASTER_FLUX2_SINGLE_EDIT
+from src import task_core_process_defaults
 from src.core.task_core_dependencies import TaskCoreProcessDependencies
 from src.core.task_core_types import (
     TaskSubmissionExecutionResult,
     TaskSubmissionSideEffectPlan,
     VideoTaskRequest,
 )
+from src.core import task_core_submission
+from src.core import task_dispatcher
 from src.services import task_web_side_effects
 
 
@@ -107,3 +111,80 @@ async def test_attach_submission_side_effects_raises_domain_error_when_monitor_a
         )
 
     schedule_apply.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_runtime_default_dependencies_pass_free_edit_flag_to_dispatch(
+    monkeypatch,
+):
+    import config
+
+    captured = {}
+
+    def fake_build_default_task_core_process_dependencies(**kwargs):
+        return SimpleNamespace(**kwargs)
+
+    async def fake_execute_task_submission_saga_default(**kwargs):
+        captured["saga_kwargs"] = kwargs
+        return TaskSubmissionExecutionResult(
+            registry_task_id="registry-1",
+            backend_task_id="backend-1",
+            submission_context=SimpleNamespace(saved_inputs=[]),
+        )
+
+    async def fake_dispatch_to_worker(
+        task_id,
+        task_type,
+        inputs,
+        priority,
+        *,
+        feature_flags=None,
+    ):
+        captured["dispatch"] = {
+            "task_id": task_id,
+            "task_type": task_type,
+            "inputs": inputs,
+            "priority": priority,
+            "feature_flags": feature_flags,
+        }
+        return "backend-1"
+
+    monkeypatch.setattr(config, "ENABLE_FREE_EDIT_V2", True)
+    monkeypatch.setattr(
+        task_core_process_defaults,
+        "build_default_task_core_process_dependencies",
+        fake_build_default_task_core_process_dependencies,
+    )
+    monkeypatch.setattr(
+        task_core_submission,
+        "execute_task_submission_saga_default",
+        fake_execute_task_submission_saga_default,
+    )
+    monkeypatch.setattr(
+        task_dispatcher,
+        "dispatch_to_worker",
+        fake_dispatch_to_worker,
+    )
+
+    dependencies = (
+        task_core_process_defaults.build_runtime_default_task_core_process_dependencies()
+    )
+
+    strategy = dependencies.get_strategy_func(MODE_PORNMASTER_FLUX2_SINGLE_EDIT)
+    assert strategy.feature_flags.free_edit_v2_enabled is True
+
+    await dependencies.execute_task_submission_saga_func(
+        task_type=MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+        inputs={"saved_input_images": ["ref.png"]},
+        registry_task_id="registry-1",
+        cost=2,
+        submission_context=SimpleNamespace(),
+    )
+    await captured["saga_kwargs"]["dispatch_to_worker_func"](
+        "registry-1",
+        MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+        {"saved_input_images": ["ref.png"]},
+        9,
+    )
+
+    assert captured["dispatch"]["feature_flags"].free_edit_v2_enabled is True

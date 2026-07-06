@@ -275,3 +275,56 @@ async def test_execute_task_submission_saga_default_reuses_single_default_depend
     assert build_mock.call_count == 1
     assert result.registry_task_id == "registry-5"
     assert result.backend_task_id == "backend-5"
+
+
+@pytest.mark.asyncio
+async def test_execute_task_submission_saga_default_uses_custom_dispatch_func(
+    monkeypatch,
+):
+    submission_context = SimpleNamespace(
+        user_logger=SimpleNamespace(user_id=42, username="tester"),
+        final_priority=7,
+        task_type="pornmaster_flux2_single_edit",
+        log_prompt="prompt",
+        registry_saved_inputs=lambda: [],
+        is_video_task=False,
+        allow_contribute=True,
+        metadata={},
+        client_type="bot",
+    )
+    custom_dispatch = AsyncMock(return_value="backend-custom")
+    dependencies = SimpleNamespace(
+        add_task_func=AsyncMock(return_value="registry-custom"),
+        update_backend_task_id_func=AsyncMock(),
+        mark_task_status_func=AsyncMock(),
+        remove_task_func=AsyncMock(),
+        add_pending_refund_func=AsyncMock(),
+        dispatch_to_worker_func=custom_dispatch,
+        is_task_backend_busy_error_func=lambda _message: False,
+        logger=SimpleNamespace(error=lambda *args, **kwargs: None),
+    )
+    build_mock = MagicMock(return_value=dependencies)
+
+    monkeypatch.setattr(
+        task_core_submission,
+        "build_default_task_core_submission_dependencies",
+        build_mock,
+    )
+
+    result = await task_core_submission.execute_task_submission_saga_default(
+        task_type="pornmaster_flux2_single_edit",
+        inputs={"saved_input_images": ["ref.png"]},
+        registry_task_id="seed-id",
+        cost=2,
+        submission_context=submission_context,
+        dispatch_to_worker_func=custom_dispatch,
+    )
+
+    assert result.backend_task_id == "backend-custom"
+    assert build_mock.call_args.kwargs["dispatch_to_worker_func"] is custom_dispatch
+    custom_dispatch.assert_awaited_once_with(
+        "registry-custom",
+        "pornmaster_flux2_single_edit",
+        {"saved_input_images": ["ref.png"]},
+        7,
+    )
