@@ -21,6 +21,9 @@ FSM_TEMP_PATH_LIST_KEYS = {
     "input_paths",
     "input_files",
 }
+FSM_TOP_LEVEL_TEMP_PATH_KEYS = {
+    "last_face_image",
+}
 
 
 def _ensure_fsm_temp_dir(base_dir: str = FSM_TEMP_DIR) -> str:
@@ -91,9 +94,15 @@ def cleanup_fsm_user_data(user_data: MutableMapping | None) -> list[str]:
     temp_paths: list[str] = []
     for key in fsm_data_keys:
         temp_paths.extend(_collect_fsm_temp_paths(user_data.get(key)))
+    for key in FSM_TOP_LEVEL_TEMP_PATH_KEYS:
+        value = user_data.get(key)
+        if isinstance(value, str):
+            temp_paths.append(value)
 
     cleanup_fsm_temp_files(tuple(dict.fromkeys(temp_paths)))
     user_data.pop("in_conversation", None)
     for key in fsm_data_keys:
+        user_data.pop(key, None)
+    for key in FSM_TOP_LEVEL_TEMP_PATH_KEYS:
         user_data.pop(key, None)
     return temp_paths

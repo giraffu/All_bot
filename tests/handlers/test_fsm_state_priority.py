@@ -663,6 +663,61 @@ async def test_quick_image_i2i_draw_submits_inpaint_task(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_quick_image_cleans_downloaded_input_when_planning_rejects(
+    tmp_path, monkeypatch
+):
+    reply_mock = AsyncMock()
+    temp_root = tmp_path / "tmp"
+    temp_root.mkdir()
+    downloaded_path = temp_root / "quick-face.png"
+    downloaded_path.write_text("x")
+
+    monkeypatch.setattr(quick_image_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "_validate_quick_image_submission",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "_download_quick_image_input",
+        AsyncMock(return_value=str(downloaded_path)),
+    )
+    monkeypatch.setattr(quick_image_fsm, "load_prompts", lambda: {})
+    monkeypatch.setattr(quick_image_fsm, "list_quick_faceswap_template_files", lambda: [])
+    monkeypatch.setattr("src.services.fsm_temp_file_service.TMP_DIR", str(temp_root))
+
+    update = SimpleNamespace(
+        effective_user=_build_user(),
+        effective_chat=SimpleNamespace(id=10001),
+        message=SimpleNamespace(
+            document=None,
+            photo=[SimpleNamespace(file_id="photo-file-id")],
+            chat_id=10001,
+        ),
+    )
+    context = SimpleNamespace(
+        user_data={
+            "in_conversation": "QUICK_IMAGE_random_faceswap",
+            "quick_image_data": {
+                "mode": MODE_RANDOM_FACESWAP,
+                "cost": 1,
+                "image_path": None,
+            },
+        },
+        bot=SimpleNamespace(),
+        lang="zh",
+    )
+
+    result = await quick_image_fsm.receive_image(update, context)
+
+    assert result == ConversationHandler.END
+    assert not downloaded_path.exists()
+    assert "quick_image_data" not in context.user_data
+    assert "in_conversation" not in context.user_data
+
+
+@pytest.mark.asyncio
 async def test_qqcc_ai_draw_scene_submits_free_edit_v2_single_task(monkeypatch):
     reply_mock = AsyncMock()
     scheduled = []
@@ -1613,6 +1668,11 @@ async def test_ltx_video_confirm_generation_forwards_selected_lora(monkeypatch):
         == "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors"
     )
     assert process_task_mock.call_args.kwargs["lora_strength"] == 0.8
+    assert process_task_mock.call_args.kwargs["resolution"] == "1280x704"
+    assert process_task_mock.call_args.kwargs["duration"] == "10s"
+    assert "ltx_video_resolution" not in context.user_data
+    assert "ltx_video_duration" not in context.user_data
+    assert "ltx_video_mode" not in context.user_data
 
 
 @pytest.mark.asyncio
@@ -1662,6 +1722,8 @@ async def test_ltx_video_confirm_generation_forwards_start_end_mode(monkeypatch)
     quota_mock.assert_awaited_once()
     process_task_mock.assert_called_once()
     assert process_task_mock.call_args.kwargs["ltx_mode"] == "flf2v"
+    assert process_task_mock.call_args.kwargs["resolution"] == "1280x704"
+    assert process_task_mock.call_args.kwargs["duration"] == "15s"
     assert process_task_mock.call_args.kwargs["image_path"] == "/tmp/start.png"
     assert process_task_mock.call_args.kwargs["end_image_path"] == "/tmp/end.png"
 
@@ -2832,4 +2894,73 @@ async def test_quick_video_insufficient_credits_cleans_up_without_nameerror(monk
     send_message_mock.assert_awaited_once()
     cleanup_mock.assert_any_call(["/tmp/quick-video-input.png"])
     assert "in_conversation" not in context.user_data
+    assert "quick_video_data" not in context.user_data
+
+
+@pytest.mark.asyncio
+async def test_quick_video_submission_uses_explicit_settings_without_user_data_bridge(
+    monkeypatch,
+):
+    safe_answer_mock = AsyncMock()
+    scheduled = []
+    captured = {}
+    query = SimpleNamespace(
+        from_user=SimpleNamespace(id=12345),
+        message=SimpleNamespace(chat_id=10001, message_id=777),
+        answer=AsyncMock(),
+    )
+
+    async def fake_process_video_task_template(**kwargs):
+        captured.update(kwargs)
+        return None, None
+
+    def fake_create_background_task(_context, coroutine):
+        scheduled.append(coroutine)
+
+    monkeypatch.setattr("src.utils.safe_answer_query", safe_answer_mock)
+    monkeypatch.setattr(quick_video_fsm, "robust_edit_text", AsyncMock())
+    monkeypatch.setattr(
+        quick_video_fsm.permission_service,
+        "check_quota",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        quick_video_fsm,
+        "process_video_task_template",
+        fake_process_video_task_template,
+    )
+    monkeypatch.setattr(
+        quick_video_fsm,
+        "create_background_task",
+        fake_create_background_task,
+    )
+
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=_build_user(),
+        effective_chat=SimpleNamespace(id=10001),
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(),
+        user_data={
+            "in_conversation": "QUICK_VIDEO_test",
+            "quick_video_data": {
+                "mode": MODE_DOGGY_STYLE,
+                "resolution": "720p",
+                "duration": "8s",
+                "image_path": "/tmp/quick-video-input.png",
+            },
+        },
+    )
+
+    result = await quick_video_fsm.start_generation(update, context)
+
+    assert result == ConversationHandler.END
+    assert len(scheduled) == 1
+    await scheduled[0]
+    assert captured["resolution"] == "720p"
+    assert captured["duration"] == "8s"
+    assert "custom_video_resolution" not in context.user_data
+    assert "custom_video_duration" not in context.user_data
+    assert "mode" not in context.user_data
     assert "quick_video_data" not in context.user_data

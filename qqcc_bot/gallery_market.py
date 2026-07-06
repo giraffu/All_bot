@@ -214,15 +214,6 @@ def parse_qqcc_market_page_callback_data(data: str) -> tuple[str, str, int]:
         return "all", "new", 0
 
 
-def parse_qqcc_market_reaction_callback_data(data: str, prefix: str) -> tuple[int, str, str, int]:
-    post_id, type_code, sort_code, page = data.removeprefix(prefix).split(":", 3)
-    if type_code not in TAB_BY_CODE:
-        type_code = "all"
-    if sort_code not in SORT_CODE_TO_SORT_BY:
-        sort_code = "new"
-    return int(post_id), type_code, sort_code, max(0, int(page))
-
-
 def parse_qqcc_market_apply_callback_data(data: str) -> int:
     return int(data.removeprefix(QG_APPLY_PREFIX))
 
@@ -256,10 +247,6 @@ def _parse_tags(post) -> list[str]:
     except Exception:
         return []
     return parsed if isinstance(parsed, list) else []
-
-
-def _author_name(post) -> str:
-    return view_service.author_name(post)
 
 
 def _history_type(history) -> str | None:
@@ -455,14 +442,6 @@ async def display_qqcc_market_page(
     except Exception:
         logger.exception("Failed to display QQCC gallery market page.")
         await safe_answer_query(query, text=_t(context, "qqcc.market.load_failed"), show_alert=True)
-
-
-def _replace_caption_count(caption: str, *, likes_count: int, dislikes_count: int) -> str:
-    return interaction_service.replace_caption_count(
-        caption,
-        likes_count=likes_count,
-        dislikes_count=dislikes_count,
-    )
 
 
 async def _handle_market_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE, *, action: str):

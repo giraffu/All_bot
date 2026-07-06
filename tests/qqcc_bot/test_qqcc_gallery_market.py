@@ -214,13 +214,7 @@ async def test_submit_ltx_gallery_apply_restores_existing_user_data(monkeypatch)
     captured = {}
 
     async def fake_ltx_task(**kwargs):
-        captured.update(
-            {
-                "kwargs": kwargs,
-                "resolution": kwargs["context"].user_data["ltx_video_resolution"],
-                "duration": kwargs["context"].user_data["ltx_video_duration"],
-            }
-        )
+        captured.update({"kwargs": kwargs})
         return None, None
 
     monkeypatch.setattr(gallery_market, "process_ltx_video_task", fake_ltx_task)
@@ -251,8 +245,8 @@ async def test_submit_ltx_gallery_apply_restores_existing_user_data(monkeypatch)
         },
     )
 
-    assert captured["resolution"] == "1024x576"
-    assert captured["duration"] == "5s"
+    assert captured["kwargs"]["resolution"] == "1024x576"
+    assert captured["kwargs"]["duration"] == "5s"
     assert captured["kwargs"]["source_post_id"] == 43
     assert captured["kwargs"]["allow_contribute"] is False
     assert context.user_data["ltx_video_resolution"] == "old-res"

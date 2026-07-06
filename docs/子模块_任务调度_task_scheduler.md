@@ -30,7 +30,6 @@
 - `src/task_core_provider_setup.py`
 - `src/web_api/main.py`
 - `src/bot_main.py`
-- `src/bot_test.py` 兼容 shim
 
 这意味着：
 

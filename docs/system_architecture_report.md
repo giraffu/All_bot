@@ -254,7 +254,7 @@ sequenceDiagram
 
 ## 5. 当前架构口径与维护约束
 - 文档中的入口函数、异常类型、超时值、双 ID 语义必须与代码保持一致。
-- `src/bot_main.py` 是 Telegram Bot shared entrypoint；`src/bot_test.py` 仅保留历史兼容 shim。
+- `src/bot_main.py` 是 Telegram Bot shared entrypoint，测试/生产模式统一由 `BOT_TYPE` 选择。
 - `paid_group_guard_bot/main.py` 是付费群审核 Bot 独立入口，必须使用独立 `PAID_GROUP_BOT_TOKEN`，不能复用主业务 `BOT_TOKEN` 或接入主 Bot FSM；群管理配置和 JSONL 删除日志由 Dashboard 通过共享文件目录管理。
 - 若修改 task core facade、provider/dependencies、submission、web-monitor、runtime、Bot 五段式上下文或 stream fallback，必须同步更新知识库。
 - 若修改云正式 compose、worker compose、边缘 upstream、R2/legacy 媒体策略、Central 状态观测缓存或 Dashboard 高频监控策略，必须同步更新云正式部署文档与相关 skills。

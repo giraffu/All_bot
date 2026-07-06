@@ -368,6 +368,8 @@ def create_ltx_video_submission_task(
         image_path=plan.image_path,
         end_image_path=plan.end_image_path,
         video_path=plan.video_path,
+        resolution=plan.resolution,
+        duration=plan.duration,
         ltx_mode=plan.ltx_mode,
         ltx_prev_task_id=plan.ltx_prev_task_id,
         ltx_chain_task_ids=plan.ltx_chain_task_ids or None,

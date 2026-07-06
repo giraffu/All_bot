@@ -653,12 +653,6 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         _cleanup_context(context, user_id)
         return ConversationHandler.END
 
-    # Keep the selected settings in context so the background task can resolve them.
-    # until they are refactored to take params directly
-    context.user_data["custom_video_resolution"] = plan.resolution
-    context.user_data["custom_video_duration"] = plan.duration
-    context.user_data["mode"] = plan.mode
-
     if not update.effective_user:
         cleanup_fsm_temp_files([image_path])
         _cleanup_context(context, user_id)

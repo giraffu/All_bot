@@ -429,6 +429,8 @@ async def run_quick_video_submission_plan(
             user_id=user_id,
             username=username,
             status_msg_id=status_msg_id,
+            resolution=plan.resolution,
+            duration=plan.duration,
         )
     )
 
@@ -517,6 +519,8 @@ async def _run_tail_frame_video_plan(
                 user_id=user_id,
                 username=username,
                 status_msg_id=status_msg_id,
+                resolution=plan.resolution,
+                duration=plan.duration,
             )
         )
     finally:

@@ -179,35 +179,24 @@ async def submit_qqcc_gallery_apply_session(
             source_post_id=source_post_id,
         )
     if task_type == MODE_LTX_VIDEO:
-        sentinel = object()
-        previous_resolution = context.user_data.get("ltx_video_resolution", sentinel)
-        previous_duration = context.user_data.get("ltx_video_duration", sentinel)
-        try:
-            if session.get("width") and session.get("height"):
-                context.user_data["ltx_video_resolution"] = (
-                    f"{session['width']}x{session['height']}"
-                )
-            if requested_duration:
-                context.user_data["ltx_video_duration"] = f"{requested_duration}s"
-            return await process_ltx_video_task_func(
-                update=update,
-                context=context,
-                prompt=prompt,
-                image_path=image_path,
-                ltx_mode="i2v",
-                lora_items=session.get("lora_items"),
-                allow_contribute=False,
-                source_post_id=source_post_id,
-            )
-        finally:
-            if previous_resolution is sentinel:
-                context.user_data.pop("ltx_video_resolution", None)
-            else:
-                context.user_data["ltx_video_resolution"] = previous_resolution
-            if previous_duration is sentinel:
-                context.user_data.pop("ltx_video_duration", None)
-            else:
-                context.user_data["ltx_video_duration"] = previous_duration
+        resolution = (
+            f"{session['width']}x{session['height']}"
+            if session.get("width") and session.get("height")
+            else None
+        )
+        duration = f"{requested_duration}s" if requested_duration else None
+        return await process_ltx_video_task_func(
+            update=update,
+            context=context,
+            prompt=prompt,
+            image_path=image_path,
+            resolution=resolution,
+            duration=duration,
+            ltx_mode="i2v",
+            lora_items=session.get("lora_items"),
+            allow_contribute=False,
+            source_post_id=source_post_id,
+        )
     raise ValueError(f"Unsupported QQCC gallery apply task type: {task_type}")
 
 

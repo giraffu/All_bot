@@ -244,5 +244,7 @@ def test_create_ltx_submission_task_calls_existing_entrypoint():
 
     assert task == ("ltx-task",)
     assert process_task.call_args.kwargs["ltx_mode"] == "flf2v"
+    assert process_task.call_args.kwargs["resolution"] == "1280x704"
+    assert process_task.call_args.kwargs["duration"] == "5s"
     assert process_task.call_args.kwargs["image_path"] == "/tmp/start.png"
     assert process_task.call_args.kwargs["end_image_path"] == "/tmp/end.png"

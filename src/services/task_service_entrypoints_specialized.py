@@ -50,6 +50,8 @@ async def process_ltx_video_task(
     image_path: str | None,
     end_image_path: str | None = None,
     video_path: str | None = None,
+    resolution: str | int | None = None,
+    duration: str | int | None = None,
     ltx_mode: str = "i2v",
     ltx_prev_task_id: str | None = None,
     ltx_chain_task_ids: list[str] | None = None,
@@ -66,9 +68,9 @@ async def process_ltx_video_task(
     internal_user_id = await resolve_internal_user_id(actor.user_id, actor.username)
 
     mode = MODE_LTX_VIDEO
-    resolution = context.user_data.get("ltx_video_resolution", "1280x704")
-    duration = context.user_data.get("ltx_video_duration", "5s")
-    ltx_mode = ltx_mode or context.user_data.get("ltx_video_mode") or "i2v"
+    resolution = str(resolution or "1280x704")
+    duration = f"{duration}s" if isinstance(duration, int) else str(duration or "5s")
+    ltx_mode = ltx_mode or "i2v"
 
     runtime_state = BotTaskRuntimeState()
     notice = await get_acceleration_notice(

@@ -113,6 +113,7 @@ async def test_process_video_task_template_allows_missing_username(monkeypatch):
 @pytest.mark.asyncio
 async def test_process_video_task_template_forwards_end_frame_inputs(monkeypatch):
     captured_inputs = {}
+    resolve_settings = AsyncMock(return_value=("512p", "5s", 512, 5))
 
     monkeypatch.setattr(
         task_service_entrypoints_video,
@@ -122,7 +123,7 @@ async def test_process_video_task_template_forwards_end_frame_inputs(monkeypatch
     monkeypatch.setattr(
         task_service_entrypoints_video,
         "resolve_custom_video_settings",
-        AsyncMock(return_value=("512p", "5s", 512, 5)),
+        resolve_settings,
     )
     monkeypatch.setattr(task_service_entrypoints_video, "load_prompts", lambda: {})
     monkeypatch.setattr(
@@ -205,10 +206,14 @@ async def test_process_video_task_template_forwards_end_frame_inputs(monkeypatch
         chat_id=123,
         user_id=456,
         username="tester",
+        resolution="720p",
+        duration="8s",
     )
 
     assert captured_inputs["images"] == ["/tmp/start.png", "/tmp/end.png"]
     assert captured_inputs["use_end_frame"] is True
+    assert resolve_settings.await_args.kwargs["resolution"] == "720p"
+    assert resolve_settings.await_args.kwargs["duration"] == "8s"
 
     flow = task_service_entrypoints_video.run_bot_task_application.await_args.kwargs["flow"]
     assert flow.cleanup_policy.cleanup_paths == ["/tmp/start.png", "/tmp/end.png"]

@@ -798,10 +798,6 @@ async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE)
             _t(context, "fsm.ltx_video.submit", cost=cost),
         )
 
-    context.user_data["ltx_video_resolution"] = consumed_plan.resolution
-    context.user_data["ltx_video_duration"] = consumed_plan.duration
-    context.user_data["ltx_video_mode"] = consumed_plan.ltx_mode
-
     create_background_task(
         context,
         create_ltx_video_submission_task(

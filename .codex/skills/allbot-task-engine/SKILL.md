@@ -58,7 +58,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - Wan22 旧图生视频、`video_insert`、`video_edit` 和懒人动图的差异应尽量停留在入口 payload 或 patcher，不要复制新 workflow 或新执行类型。
 - LTX 当前用户入口主要是单首帧和首尾帧；`ltx_video_v2v_audio` 仍是历史/队列兼容执行类型。LTX 扩展链要保留 `ltx_prev_task_id`、`ltx_chain_task_ids`、`extra_outputs.last_frame` 和 stitch 语义；Bot 扩展 seed 与拼接链 histories 恢复优先改 `src/services/ltx_video_extension_service.py` 并补 focused tests。
 - Wan22 AIO Bot 扩展/重生成/拼接链覆盖旧图生视频 `custom_video` / `video_lora` 与图生视频 v2，必须保留 `wan22_prev_task_id`、`wan22_chain_task_ids`、`extra_outputs.last_frame` 和 stitch 语义；Bot 扩展/重生成 seed 与拼接链 histories 恢复优先改 `src/services/wan22_video_v2_extension_service.py` 并补 focused tests。
-- Bot 高级视频入口的提交计划事实源是 `src/services/advanced_video_submission_service.py`；`image_to_video_fsm.py`、`wan22_video_v2_fsm.py`、`ltx_video_fsm.py` 只做 Telegram 编排和额度检查。修改旧图生视频/Wan22 v2/LTX Bot payload 时优先覆盖该 service 的 focused tests，再跑 handler 回归。
+- Bot 高级视频入口的提交计划事实源是 `src/services/advanced_video_submission_service.py`；`image_to_video_fsm.py`、`wan22_video_v2_fsm.py`、`ltx_video_fsm.py` 只做 Telegram 编排和额度检查。LTX Bot payload 的分辨率、时长和模式必须显式传给 `process_ltx_video_task(...)`，不要借用 `context.user_data` 顶层键桥接后台任务参数。修改旧图生视频/Wan22 v2/LTX Bot payload 时优先覆盖该 service 的 focused tests，再跑 handler 回归。
 - SCAIL-2 用户侧任务类型包括 `scail2_action_transfer`、`scail2_video_replacement`、`scail2_face_swap_v2`；内部仍保留 `scail2_action_transfer_long` 执行类型承接动作迁移 10/15/20s。公开动作迁移允许 5/8/10/15/20s，业务/History 仍记 `scail2_action_transfer`；dispatcher 按时长选择短 workflow 或隐藏 Context Windows workflow。时长、成本、驱动视频大小、默认 prompt、History type 长度和 LAN/RunPod 承接差异都必须按文档核对。
 - `i2i_pro` 是 RunPod runtime profile，不是默认新增业务类型。它可承接 `i2i_pro`、`t2i-pornmaster-turbo`、`face_swap` 等执行映射，workflow override 要跟随 worker 配置。
 

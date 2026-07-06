@@ -503,6 +503,7 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         await robust_reply_text(
             message, _t(context, "fsm.quick_image.system_error", error_msg=str(exc))
         )
+        cleanup_fsm_temp_files([image_path])
         _cleanup_context(context, user_id)
         return ConversationHandler.END
     if isinstance(final_plan, QuickImageSubmissionReject):
@@ -510,6 +511,7 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             await robust_reply_text(message, _t(context, "fsm.quick_image.no_template"))
         else:
             await _reply_qqcc_feature_disabled(update, context)
+        cleanup_fsm_temp_files([image_path])
         _cleanup_context(context, user_id)
         return ConversationHandler.END
 

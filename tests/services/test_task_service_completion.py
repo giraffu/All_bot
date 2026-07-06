@@ -1261,10 +1261,7 @@ async def test_process_ltx_video_task_includes_lora_context_in_inputs(monkeypatc
         effective_message=SimpleNamespace(),
     )
     context = SimpleNamespace(
-        user_data={
-            "ltx_video_resolution": "1280x704",
-            "ltx_video_duration": "10s",
-        },
+        user_data={},
         bot=MagicMock(),
         t=lambda value, **_kwargs: value,
     )
@@ -1274,6 +1271,8 @@ async def test_process_ltx_video_task_includes_lora_context_in_inputs(monkeypatc
         context=context,
         prompt="prompt",
         image_path="input.png",
+        resolution="1280x704",
+        duration="10s",
         lora_name="ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors",
         lora_strength=0.8,
         cleanup=False,
@@ -1283,6 +1282,8 @@ async def test_process_ltx_video_task_includes_lora_context_in_inputs(monkeypatc
     flow = captured_flow["flow"]
     assert flow.request.inputs["lora_name"] == "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors"
     assert flow.request.inputs["lora_strength"] == 0.8
+    assert flow.request.inputs["resolution"] == "1280x704"
+    assert flow.request.inputs["duration"] == "10s"
 
 
 @pytest.mark.asyncio
@@ -1312,10 +1313,7 @@ async def test_process_ltx_video_task_includes_extension_chain_context(monkeypat
         effective_message=SimpleNamespace(),
     )
     context = SimpleNamespace(
-        user_data={
-            "ltx_video_resolution": "1280x704",
-            "ltx_video_duration": "5s",
-        },
+        user_data={},
         bot=MagicMock(),
         t=lambda value, **_kwargs: value,
     )
@@ -1325,6 +1323,8 @@ async def test_process_ltx_video_task_includes_extension_chain_context(monkeypat
         context=context,
         prompt="continue",
         image_path="tail.png",
+        resolution="1280x704",
+        duration="5s",
         ltx_prev_task_id="ltx-task-2",
         ltx_chain_task_ids=["ltx-task-1", "ltx-task-2"],
         cleanup=False,
@@ -1332,6 +1332,8 @@ async def test_process_ltx_video_task_includes_extension_chain_context(monkeypat
 
     assert result == (b"video-bytes", "task-ltx")
     flow = captured_flow["flow"]
+    assert flow.request.inputs["resolution"] == "1280x704"
+    assert flow.request.inputs["duration"] == "5s"
     assert flow.request.inputs["ltx_prev_task_id"] == "ltx-task-2"
     assert flow.request.inputs["ltx_chain_task_ids"] == ["ltx-task-1", "ltx-task-2"]
     assert flow.presentation.result_meta["ltx_prev_task_id"] == "ltx-task-2"

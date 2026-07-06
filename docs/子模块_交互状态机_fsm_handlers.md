@@ -66,11 +66,11 @@ FSM 入口与过程中，当前推荐组合为：
 
 主 Bot 和 QQCC Bot 都注册 PTB `ConversationHandler`，入口构建不得开启 `concurrent_updates(True)`；这避免同一用户的 FSM `user_data` 被并发 update 交错写入。`paid_group_guard_bot` 不注册生成 FSM，仍允许保持并发处理群审核与消息删除。
 
-Quick Video 的提交与设置归一已收口到 `src/services/quick_video_submission_service.py`：`quick_video_fsm.py` 只负责 Telegram 状态、设置面板展示、额度检查、用户回复和上下文清理；service 负责构造提交计划、QQCC 场景 engine 分支、尾帧绘图链成本、执行 payload，以及 `set_res_*` / `set_dur_*` callback 对分辨率/时长状态的归一。后续改 `AI动图` 提交或设置语义时优先覆盖 service focused tests，再保留 FSM 黑盒回归。
+Quick Video 的提交与设置归一已收口到 `src/services/quick_video_submission_service.py`：`quick_video_fsm.py` 只负责 Telegram 状态、设置面板展示、额度检查、用户回复和上下文清理；service 负责构造提交计划、QQCC 场景 engine 分支、尾帧绘图链成本、执行 payload，以及 `set_res_*` / `set_dur_*` callback 对分辨率/时长状态的归一。提交旧图生视频时，plan 会把 `resolution` / `duration` 显式传给 `process_video_task_template(...)`，不再通过 `context.user_data["custom_video_resolution"]` / `custom_video_duration` / `mode` 作为桥接状态。后续改 `AI动图` 提交或设置语义时优先覆盖 service focused tests，再保留 FSM 黑盒回归。
 
 Quick Image 的提交阶段已收口到 `src/services/quick_image_submission_service.py`：`quick_image_fsm.py` 和 `random_faceswap_again` callback 只负责 Telegram 状态/按钮、图片路径读取、额度检查、用户回复和上下文清理；service 负责构造提交计划、随机换脸模板过滤、QQCC AI绘图场景/后处理链成本与执行 payload。旧 `WAIT_UNDRESS_METHOD` 选择态和旧脱衣方式 callback 已移除，`i2i_draw` 提交 payload 仅保留 service 兼容。
 
-主 Bot 高级视频提交阶段已收口到 `src/services/advanced_video_submission_service.py`：`image_to_video_fsm.py`、`wan22_video_v2_fsm.py`、`ltx_video_fsm.py` 仍负责 Telegram 状态、素材接收、额度检查、用户回复和清理；service 负责旧图生视频/Wan22 v2/LTX 的提交计划、分辨率与时长归一、首尾帧 payload、LTX LoRA 多选与扩展链上下文。该 service 不新增 task type、workflow、RunPod profile 或 QQCC 能力；旧 setup confirm callback 仍只作为已发消息兼容。
+主 Bot 高级视频提交阶段已收口到 `src/services/advanced_video_submission_service.py`：`image_to_video_fsm.py`、`wan22_video_v2_fsm.py`、`ltx_video_fsm.py` 仍负责 Telegram 状态、素材接收、额度检查、用户回复和清理；service 负责旧图生视频/Wan22 v2/LTX 的提交计划、分辨率与时长归一、首尾帧 payload、LTX LoRA 多选与扩展链上下文。LTX 提交时，`resolution`、`duration` 和 `ltx_mode` 由 plan 显式传给 `process_ltx_video_task(...)`；主 Bot 与 QQCC 市集 apply 都不得再通过 `context.user_data` 顶层 `ltx_video_*` 键桥接后台任务参数。该 service 不新增 task type、workflow、RunPod profile 或 QQCC 能力；旧 setup confirm callback 仍只作为已发消息兼容。
 
 主 Bot 高级视频设置面板已收口到 `src/services/advanced_video_settings_view_service.py`：旧图生视频、Wan22 v2 与 LTX 的同屏设置 view-model/keyboards、费用展示、LTX 扩展直接续写/添加终止帧提示，以及对应 settings callback data 到 `fsm_data` 的解析回写都由 service 承接；FSM wrapper 只处理 callback 状态并发送或编辑 Telegram 消息。后续修改高级视频按钮布局、设置文案或设置 callback 语义时，应优先覆盖 service focused tests，再保留 handler 黑盒回归。
 
@@ -120,7 +120,7 @@ Wan22 AIO 链路扩展/重生成/拼接回调准备阶段已收口到 `src/servi
 
 ### 4.2 临时文件服务
 常规 FSM 文件下载与清理应优先复用 `fsm_temp_file_service.py`，避免各 FSM 自己拼装。
-`cleanup_fsm_user_data(user_data)` 是全局兜底清理入口：它会收集所有 `*_data` 中的 `image_path`、`end_image_path`、`video_path`、`images` 等临时路径，只删除 `TMP_DIR` 下文件，并清理 `in_conversation` 与 `*_data`，保留 `language_code` 等偏好。主 Bot `/cancel`、QQCC `/cancel` 与 `global_error_handler` 都应走该 helper；单个 FSM 的正常提交/超时仍可保留自己的局部 cleanup，但路径规则需与该 helper 一致。
+`cleanup_fsm_user_data(user_data)` 是全局兜底清理入口：它会收集所有 `*_data` 中的 `image_path`、`end_image_path`、`video_path`、`images` 等临时路径，也会收集随机换脸“再来一张”使用的顶层 `last_face_image` 临时缓存；只删除 `TMP_DIR` 下文件，并清理 `in_conversation`、`*_data` 与这些顶层临时缓存，保留 `language_code` 等偏好。主 Bot `/cancel`、QQCC `/cancel` 与 `global_error_handler` 都应走该 helper；单个 FSM 的正常提交/超时仍可保留自己的局部 cleanup，但路径规则需与该 helper 一致。
 
 ### 4.3 语言切换
 语言切换当前不只是菜单文案变更，还涉及：

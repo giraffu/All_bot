@@ -16,15 +16,6 @@ def test_import_bot_main():
         pytest.fail(f"Failed to import src.bot_main: {e}")
 
 
-def test_import_bot_test_compat_shim():
-    try:
-        from src import bot_test
-
-        assert bot_test is not None
-    except ImportError as e:
-        pytest.fail(f"Failed to import src.bot_test compat shim: {e}")
-
-
 def test_import_handlers():
     try:
         from src.handlers import callback_handler, command_handler, message_handler

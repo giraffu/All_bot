@@ -1,4 +1,4 @@
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -52,6 +52,8 @@ async def process_video_task_template(
     user_id: Optional[int] = None,
     username: Optional[str] = None,
     status_msg_id: Optional[int] = None,
+    resolution: Any = None,
+    duration: Any = None,
 ) -> Tuple[Optional[bytes], Optional[str]]:
     if update is not None:
         actor = extract_actor_from_update(update)
@@ -66,6 +68,8 @@ async def process_video_task_template(
         context,
         update=update,
         warn_invalid_combo=True,
+        resolution=resolution,
+        duration=duration,
     )
 
     prompts_config = load_prompts()
