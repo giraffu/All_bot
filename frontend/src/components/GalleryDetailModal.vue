@@ -347,7 +347,7 @@ const handleNewCommentInput = (event: Event) => {
               <button
                 v-if="standardActions.showMobileReport"
                 type="button"
-                class="detail-reaction-compact-button flex items-center gap-1.5 transition-all"
+                class="detail-report-compact-action detail-reaction-compact-button flex items-center gap-1.5 transition-all"
                 :aria-label="standardActions.reportLabel || 'Report'"
                 :disabled="standardActions.reportLoading"
                 @click="standardActions.onReport?.()"
@@ -539,9 +539,18 @@ html[data-theme='light'] .gallery-detail-modal {
   color: var(--detail-modal-text-secondary);
 }
 
+.gallery-detail-modal .detail-report-compact-action {
+  color: var(--detail-modal-text-secondary);
+}
+
 .gallery-detail-modal .detail-report-action:hover,
 .gallery-detail-modal .detail-report-action:focus-visible {
   background: var(--detail-modal-action-hover-bg);
+  color: var(--detail-modal-text-primary);
+}
+
+.gallery-detail-modal .detail-report-compact-action:hover,
+.gallery-detail-modal .detail-report-compact-action:focus-visible {
   color: var(--detail-modal-text-primary);
 }
 

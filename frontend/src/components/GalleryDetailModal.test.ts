@@ -289,6 +289,8 @@ describe('GalleryDetailModal', () => {
     const reportButtons = wrapper.findAll('.detail-report-action')
     const compactReportButtons = wrapper.findAll('[aria-label="举报"]')
 
+    expect(compactReportButtons[0].classes()).toContain('detail-report-compact-action')
+
     await likeButtons[0].trigger('click')
     await dislikeButtons[0].trigger('click')
     await commentButtons[0].trigger('click')
