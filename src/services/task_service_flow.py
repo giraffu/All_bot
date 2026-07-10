@@ -77,10 +77,25 @@ async def submit_bot_task(
         source_post_id=submission.source_post_id,
         deduct_quota=submission.deduct_quota,
         delivery_context=delivery_context,
+        cost_override=submission.cost_override,
     )
     saved_inputs = mark_task_submission_succeeded(submission.runtime_state, result)
     backend_task_id = submission.runtime_state.backend_task_id or task_id
     return task_id, backend_task_id, saved_inputs
+
+
+def select_result_saved_inputs(
+    saved_inputs: list[str],
+    result_input_image_indices: list[int] | None,
+) -> list[str]:
+    if result_input_image_indices is None:
+        return saved_inputs
+    selected = [
+        saved_inputs[index]
+        for index in result_input_image_indices
+        if 0 <= index < len(saved_inputs)
+    ]
+    return selected or saved_inputs
 
 
 async def send_initial_task_status(
@@ -332,11 +347,16 @@ async def execute_bot_task_stages(
             runtime_state=flow.runtime_state,
             internal_user_id=request.internal_user_id,
             username=request.username,
-            prompt=request.prompt,
-            task_type=request.task_type,
+            prompt=getattr(presentation, "result_prompt", None) or request.prompt,
+            task_type=(
+                getattr(presentation, "result_task_type", None) or request.task_type
+            ),
             registry_task_id=execution.registry_task_id,
             backend_task_id=execution.backend_task_id,
-            saved_inputs=execution.saved_inputs or [],
+            saved_inputs=select_result_saved_inputs(
+                execution.saved_inputs or [],
+                getattr(presentation, "result_input_image_indices", None),
+            ),
             final_info=final_info,
             is_video=request.is_video,
             message_spec=execution.message_spec or presentation.message_spec,
@@ -372,6 +392,7 @@ async def run_bot_task_application(
         source_post_id=request.source_post_id,
         deduct_quota=request.deduct_quota,
         client_type=client_type,
+        cost_override=getattr(request, "cost_override", None),
     )
 
     try:

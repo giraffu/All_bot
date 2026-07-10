@@ -26,6 +26,38 @@ def test_workflow_patcher_validates_real_worker_workflows_on_init():
 
 
 @pytest.mark.parametrize(
+    ("task_type", "node_id", "input_name"),
+    [
+        ("img2img", "4", "prompt"),
+        ("img2img_lora", "4", "prompt"),
+        ("pornmaster_flux2_single_edit", "254", "text"),
+        ("pornmaster_flux2_multi_edit", "49", "text"),
+    ],
+)
+def test_workflow_patcher_patches_real_image_edit_negative_prompts(
+    task_type,
+    node_id,
+    input_name,
+):
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
+    workflow = patcher.load_workflow(task_type)
+
+    patched = patcher.patch_workflow(
+        task_type,
+        workflow,
+        {
+            "image": "source.png",
+            "prompt": "make it cinematic",
+            "negative_prompt": "blur, low quality",
+        },
+    )
+
+    assert patched[node_id]["inputs"][input_name] == "blur, low quality"
+    if task_type.startswith("pornmaster_flux2_"):
+        assert patched[node_id]["class_type"] == "CLIPTextEncode"
+
+
+@pytest.mark.parametrize(
     ("task_type", "replacement_mode", "duration", "frame_count"),
     [
         ("scail2_action_transfer", False, 8, 129),

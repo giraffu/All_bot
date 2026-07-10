@@ -96,6 +96,7 @@ async def test_standard_generation_wan22_v2_forwards_resolution_and_duration(mon
         images=["start.png"],
         is_video=True,
         task_type=MODE_WAN22_VIDEO_V2,
+        negative_prompt="custom negative",
         resolution="hd",
         duration="10s",
         cleanup=False,
@@ -104,4 +105,4 @@ async def test_standard_generation_wan22_v2_forwards_resolution_and_duration(mon
     assert result == (b"video-bytes", "task-wan22-v2")
     assert captured_kwargs["resolution_preset"] == "hd"
     assert captured_kwargs["duration"] == "10s"
-    assert captured_kwargs["negative_prompt"] == ""
+    assert captured_kwargs["negative_prompt"] == "custom negative"

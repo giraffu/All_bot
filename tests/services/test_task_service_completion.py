@@ -1485,6 +1485,7 @@ async def test_process_generation_task_delegates_video_modes_to_image_to_video_e
         task_type=MODE_IMAGE_TO_VIDEO,
         resolution="720p",
         duration="8s",
+        negative_prompt="video negative",
         lora_name="BreastGrow",
     )
 
@@ -1498,6 +1499,7 @@ async def test_process_generation_task_delegates_video_modes_to_image_to_video_e
         images=["input.png"],
         resolution="720p",
         duration="8s",
+        negative_prompt="video negative",
         status_msg_id=None,
         delete_status=True,
         task_type=MODE_IMAGE_TO_VIDEO,

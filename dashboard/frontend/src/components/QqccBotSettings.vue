@@ -42,6 +42,7 @@ interface VideoSceneConfig {
   id: string
   name: string
   prompt: string
+  negative_prompt: string
   duration: DurationKey
   engine: VideoSceneEngine
   lora_name: string
@@ -52,9 +53,11 @@ interface DrawSceneConfig {
   id: string
   name: string
   prompt: string
+  negative_prompt: string
   engine: DrawSceneEngine
   lora_name: string
   postprocess_draw_scene_id: string
+  original_face_swap_enabled: boolean
 }
 
 interface QqccBotConfig {
@@ -226,6 +229,7 @@ const sceneConfig = reactive({
   lora_name: '',
   end_frame_draw_scene_id: '',
   postprocess_draw_scene_id: '',
+  original_face_swap_enabled: false,
 })
 
 const statusText = computed(() => (config.global_enabled ? '开启' : '关闭'))
@@ -442,17 +446,21 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
         const id = typeof scene?.id === 'string' && scene.id.trim() ? scene.id.trim() : `draw_scene_${index + 1}`
         const name = typeof scene?.name === 'string' ? scene.name : ''
         const prompt = typeof scene?.prompt === 'string' ? scene.prompt : ''
+        const negative_prompt =
+          typeof scene?.negative_prompt === 'string' ? scene.negative_prompt : ''
         const engine = normalizeDrawEngine(scene?.engine)
         return {
           id,
           name,
           prompt,
+          negative_prompt,
           engine,
           lora_name: normalizeLoraName(scene?.lora_name, { kind: 'draw', engine }),
           postprocess_draw_scene_id:
             typeof scene?.postprocess_draw_scene_id === 'string'
               ? scene.postprocess_draw_scene_id.trim()
               : '',
+          original_face_swap_enabled: scene?.original_face_swap_enabled === true,
         }
       })
       .filter((scene) => scene.name.trim() || scene.prompt.trim())
@@ -465,6 +473,8 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
         const id = typeof scene?.id === 'string' && scene.id.trim() ? scene.id.trim() : `scene_${index + 1}`
         const name = typeof scene?.name === 'string' ? scene.name : ''
         const prompt = typeof scene?.prompt === 'string' ? scene.prompt : ''
+        const negative_prompt =
+          typeof scene?.negative_prompt === 'string' ? scene.negative_prompt : ''
         const duration = durationOptions.includes(scene?.duration as DurationKey)
           ? (scene.duration as DurationKey)
           : '5s'
@@ -473,6 +483,7 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
           id,
           name,
           prompt,
+          negative_prompt,
           duration,
           engine,
           lora_name: normalizeLoraName(scene?.lora_name, { kind: 'video', engine }),
@@ -502,6 +513,7 @@ const addVideoScene = () => {
     id: createVideoSceneId(),
     name: '',
     prompt: '',
+    negative_prompt: '',
     duration: '5s',
     engine: normalizeVideoEngine(modelOptions.default_video_engine),
     lora_name: '',
@@ -523,9 +535,11 @@ const addDrawScene = () => {
     id: createDrawSceneId(),
     name: '',
     prompt: '',
+    negative_prompt: '',
     engine: normalizeDrawEngine(modelOptions.default_draw_engine),
     lora_name: '',
     postprocess_draw_scene_id: '',
+    original_face_swap_enabled: false,
   })
 }
 
@@ -566,12 +580,14 @@ const buildPayload = (): QqccBotConfig => {
         id: scene.id.trim(),
         name: scene.name.trim(),
         prompt: scene.prompt.trim(),
+        negative_prompt: scene.negative_prompt.trim(),
         engine,
         lora_name: normalizeLoraName(scene.lora_name, { kind: 'draw', engine }),
         postprocess_draw_scene_id:
           typeof scene.postprocess_draw_scene_id === 'string'
             ? scene.postprocess_draw_scene_id.trim()
             : '',
+        original_face_swap_enabled: scene.original_face_swap_enabled === true,
       }
     })
     .filter((scene) => scene.name || scene.prompt)
@@ -585,6 +601,7 @@ const buildPayload = (): QqccBotConfig => {
         id: scene.id.trim(),
         name: scene.name.trim(),
         prompt: scene.prompt.trim(),
+        negative_prompt: scene.negative_prompt.trim(),
         engine,
         lora_name: normalizeLoraName(scene.lora_name, { kind: 'video', engine }),
         end_frame_draw_scene_id: normalizeEndFrameDrawSceneId(
@@ -624,6 +641,8 @@ const openSceneConfig = (
     kind === 'draw'
       ? normalizePostprocessDrawSceneId((scene as DrawSceneConfig).postprocess_draw_scene_id, index)
       : ''
+  sceneConfig.original_face_swap_enabled =
+    kind === 'draw' ? (scene as DrawSceneConfig).original_face_swap_enabled === true : false
   sceneConfig.open = true
 }
 
@@ -633,6 +652,7 @@ const closeSceneConfig = () => {
   sceneConfig.index = -1
   sceneConfig.end_frame_draw_scene_id = ''
   sceneConfig.postprocess_draw_scene_id = ''
+  sceneConfig.original_face_swap_enabled = false
 }
 
 const onSceneEngineChange = () => {
@@ -675,6 +695,7 @@ const confirmSceneConfig = () => {
         return
       }
       scene.postprocess_draw_scene_id = postprocessDrawSceneId
+      scene.original_face_swap_enabled = sceneConfig.original_face_swap_enabled === true
     }
   }
   closeSceneConfig()
@@ -793,17 +814,18 @@ onMounted(() => {
       <div>
         <div>
           <div
-            class="hidden grid-cols-[180px_minmax(0,1fr)_96px_132px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid"
+            class="hidden grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_88px_132px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid"
           >
             <span>按钮名称</span>
             <span>提示词</span>
+            <span>负面提示词</span>
             <span class="text-center">时长</span>
             <span class="text-right">操作</span>
           </div>
           <div
             v-for="(scene, index) in config.video_scenes"
             :key="scene.id"
-            class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[180px_minmax(0,1fr)_96px_132px]"
+            class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_88px_132px]"
           >
             <a-input
               v-model:value="scene.name"
@@ -813,6 +835,11 @@ onMounted(() => {
               v-model:value="scene.prompt"
               :rows="3"
               :data-testid="`video-scene-prompt-${index}`"
+            />
+            <a-textarea
+              v-model:value="scene.negative_prompt"
+              :rows="3"
+              :data-testid="`video-scene-negative-prompt-${index}`"
             />
             <div class="scene-duration-cell">
               <a-select
@@ -874,16 +901,17 @@ onMounted(() => {
 
       <div>
         <div
-          class="hidden grid-cols-[180px_minmax(0,1fr)_132px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid"
+          class="hidden grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_132px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid"
         >
           <span>按钮名称</span>
           <span>提示词</span>
+          <span>负面提示词</span>
           <span class="text-right">操作</span>
         </div>
         <div
           v-for="(scene, index) in config.draw_scenes"
           :key="scene.id"
-          class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[180px_minmax(0,1fr)_132px]"
+          class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_132px]"
         >
           <a-input
             v-model:value="scene.name"
@@ -893,6 +921,11 @@ onMounted(() => {
             v-model:value="scene.prompt"
             :rows="3"
             :data-testid="`draw-scene-prompt-${index}`"
+          />
+          <a-textarea
+            v-model:value="scene.negative_prompt"
+            :rows="3"
+            :data-testid="`draw-scene-negative-prompt-${index}`"
           />
           <div class="scene-action-cell">
             <a-button
@@ -1029,6 +1062,16 @@ onMounted(() => {
               {{ item.name || item.id }}
             </a-select-option>
           </a-select>
+        </a-form-item>
+        <a-form-item
+          v-if="sceneConfig.panel === 'reference' && sceneConfig.kind === 'draw'"
+          label="原图换脸"
+          class="mb-4"
+        >
+          <a-switch
+            v-model:checked="sceneConfig.original_face_swap_enabled"
+            data-testid="scene-original-face-swap-switch"
+          />
         </a-form-item>
         <div class="flex justify-end gap-2">
           <a-button @click="closeSceneConfig">取消</a-button>

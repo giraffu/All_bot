@@ -158,6 +158,7 @@ async def process_and_submit_task(
     source_post_id: Optional[int] = None,
     submission_side_effect_plan: TaskSubmissionSideEffectPlan | None = None,
     delivery_context: dict[str, Any] | None = None,
+    cost_override: int | None = None,
     dependencies: TaskCoreProcessDependencies | None = None,
 ) -> dict:
     dependencies = dependencies or get_default_task_core_process_dependencies()
@@ -170,6 +171,7 @@ async def process_and_submit_task(
         task_type=task_type,
         inputs=inputs,
         dependencies=dependencies,
+        cost_override=cost_override,
     )
     await ensure_submission_concurrency_lock(
         user_id=user_id,

@@ -5,6 +5,7 @@ import pytest
 from asgi_correlation_id import correlation_id
 
 from src.services import task_service_flow
+from src.services.task_service_entrypoint_support import build_bot_task_flow_context
 from src.services.task_service_types import BotTaskMessageSpec, BotTaskSubmissionContext
 
 
@@ -60,7 +61,38 @@ async def test_submit_bot_task_sets_runtime_state_and_returns_saved_inputs(monke
     assert kwargs["client_type"] == "bot"
     assert kwargs["source_post_id"] == 9
     assert kwargs["deduct_quota"] is False
+    assert kwargs["cost_override"] is None
     assert kwargs["delivery_context"] is None
+
+
+def test_select_result_saved_inputs_uses_requested_indices_with_fallback():
+    saved_inputs = ["body.png", "original-face.png"]
+
+    assert task_service_flow.select_result_saved_inputs(saved_inputs, [1]) == [
+        "original-face.png"
+    ]
+    assert task_service_flow.select_result_saved_inputs(saved_inputs, [9]) == saved_inputs
+    assert task_service_flow.select_result_saved_inputs(saved_inputs, None) == saved_inputs
+
+
+def test_build_bot_task_flow_context_keeps_cost_override_for_internal_tasks():
+    flow = build_bot_task_flow_context(
+        context=SimpleNamespace(),
+        chat_id=100,
+        internal_user_id=200,
+        username="qqcc",
+        task_type="face_swap",
+        inputs={"images": ["body.png", "face.png"]},
+        prompt="internal face swap",
+        is_video=False,
+        message_spec=BotTaskMessageSpec(initial_status_text="提交中"),
+        task_label="QQCC internal task",
+        cleanup=False,
+        cleanup_paths=[],
+        cost_override=2,
+    )
+
+    assert flow.request.cost_override == 2
 
 
 @pytest.mark.asyncio

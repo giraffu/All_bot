@@ -11,6 +11,7 @@ from src.constants import (
     TASK_COSTS,
 )
 from src.lora_catalog import get_lora_default_strength
+from src.services.fsm_temp_file_service import cleanup_fsm_temp_files
 from src.services.qqcc_config_service import (
     DRAW_SCENE_ENGINE_FREE_EDIT,
     get_qqcc_draw_scene,
@@ -27,6 +28,14 @@ class QQCCDrawChainResult:
     local_output_path: str | None = None
 
 
+QQCC_ORIGINAL_FACE_SWAP_COST = 2
+QQCC_ORIGINAL_FACE_SWAP_PROMPT = "face swap"
+
+
+def is_qqcc_original_face_swap_enabled(scene: dict[str, object] | None) -> bool:
+    return bool(scene and scene.get("original_face_swap_enabled") is True)
+
+
 def resolve_qqcc_draw_scene_task_type(scene: dict[str, object]) -> str:
     if scene.get("engine") == DRAW_SCENE_ENGINE_FREE_EDIT:
         return MODE_IMG2IMG_LORA if str(scene.get("lora_name") or "").strip() else MODE_EDIT
@@ -37,9 +46,14 @@ def calculate_qqcc_draw_scene_cost(scene: dict[str, object] | None) -> int:
     if scene is None:
         return 0
     task_type = resolve_qqcc_draw_scene_task_type(scene)
-    if task_type in (MODE_EDIT, MODE_IMG2IMG_LORA):
-        return 2
-    return TASK_COSTS.get(task_type, 2)
+    draw_cost = (
+        2
+        if task_type in (MODE_EDIT, MODE_IMG2IMG_LORA)
+        else TASK_COSTS.get(task_type, 2)
+    )
+    if is_qqcc_original_face_swap_enabled(scene):
+        return draw_cost + QQCC_ORIGINAL_FACE_SWAP_COST
+    return draw_cost
 
 
 def resolve_qqcc_draw_scene_chain(
@@ -116,26 +130,38 @@ async def execute_qqcc_draw_scene_chain(
         return QQCCDrawChainResult()
 
     current_image_path = image_path
+    original_face_image_path = image_path
     for index, draw_scene in enumerate(chain):
         is_last = index == len(chain) - 1
+        original_face_swap_enabled = is_qqcc_original_face_swap_enabled(draw_scene)
+        original_needed_from_draw = (
+            current_image_path == original_face_image_path
+            and any(is_qqcc_original_face_swap_enabled(scene) for scene in chain[index:])
+        )
+        original_needed_after_face_swap = keep_initial_image or any(
+            is_qqcc_original_face_swap_enabled(scene) for scene in chain[index + 1 :]
+        )
         task_type = resolve_qqcc_draw_scene_task_type(draw_scene)
         lora_name = (
             str(draw_scene.get("lora_name") or "")
             if task_type == MODE_IMG2IMG_LORA
             else ""
         )
-        send_result = final_send_result and is_last
+        send_result = final_send_result and is_last and not original_face_swap_enabled
         task_kwargs: dict[str, Any] = {
             "context": context,
             "chat_id": chat_id,
             "user_id": user_id,
             "username": username,
             "prompt": str(draw_scene.get("prompt") or ""),
+            "negative_prompt": str(draw_scene.get("negative_prompt") or ""),
             "images": [current_image_path],
             "task_type": task_type,
             "status_msg_id": status_msg_id,
             "delete_status": final_delete_status if send_result else False,
-            "cleanup": not (keep_initial_image and index == 0),
+            "cleanup": not (
+                (keep_initial_image and index == 0) or original_needed_from_draw
+            ),
             "send_result": send_result,
             "allow_contribute": final_allow_contribute if send_result else False,
         }
@@ -150,7 +176,7 @@ async def execute_qqcc_draw_scene_chain(
             return QQCCDrawChainResult()
 
         output_file = str(output_file)
-        if is_last and not download_final_output:
+        if is_last and not download_final_output and not original_face_swap_enabled:
             return QQCCDrawChainResult(output_file=output_file)
 
         suffix = Path(output_file).suffix or ".png"
@@ -159,6 +185,55 @@ async def execute_qqcc_draw_scene_chain(
             suffix=suffix,
             name_hint=name_hint,
         )
+        if original_face_swap_enabled:
+            face_swap_body_path = current_image_path
+            face_swap_send_result = final_send_result and is_last
+            face_swap_kwargs: dict[str, Any] = {
+                "context": context,
+                "chat_id": chat_id,
+                "user_id": user_id,
+                "username": username,
+                "prompt": QQCC_ORIGINAL_FACE_SWAP_PROMPT,
+                "images": [current_image_path, original_face_image_path],
+                "task_type": "face_swap",
+                "status_msg_id": status_msg_id,
+                "delete_status": (
+                    final_delete_status if face_swap_send_result else False
+                ),
+                "cleanup": not original_needed_after_face_swap,
+                "send_result": face_swap_send_result,
+                "allow_contribute": (
+                    final_allow_contribute if face_swap_send_result else False
+                ),
+                "cost_override": QQCC_ORIGINAL_FACE_SWAP_COST,
+            }
+            if face_swap_send_result:
+                face_swap_kwargs["reply_markup"] = final_reply_markup
+                face_swap_kwargs["result_task_type"] = task_type
+                face_swap_kwargs["result_prompt"] = str(draw_scene.get("prompt") or "")
+                face_swap_kwargs["result_input_image_indices"] = [1]
+
+            _media_bytes, output_file = await process_generation_task_func(
+                **face_swap_kwargs
+            )
+            if (
+                original_needed_after_face_swap
+                and face_swap_body_path != original_face_image_path
+            ):
+                cleanup_fsm_temp_files([face_swap_body_path])
+            if not output_file:
+                return QQCCDrawChainResult()
+
+            output_file = str(output_file)
+            if is_last and not download_final_output:
+                return QQCCDrawChainResult(output_file=output_file)
+
+            suffix = Path(output_file).suffix or ".png"
+            current_image_path = await download_output_file_to_fsm_temp_func(
+                output_file=output_file,
+                suffix=suffix,
+                name_hint=name_hint,
+            )
         if is_last:
             return QQCCDrawChainResult(
                 output_file=output_file,

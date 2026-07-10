@@ -21,6 +21,7 @@ class BotTaskSubmissionContext:
     source_post_id: Optional[int] = None
     deduct_quota: bool = True
     client_type: str = "bot"
+    cost_override: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -75,6 +76,7 @@ class BotTaskRequestContext:
     status_msg_id: Optional[int] = None
     source_post_id: Optional[int] = None
     deduct_quota: bool = True
+    cost_override: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -86,6 +88,9 @@ class BotTaskPresentationContext:
     result_meta: dict[str, Any] | None = None
     delete_status: bool = True
     allow_contribute: bool = True
+    result_task_type: Optional[str] = None
+    result_prompt: Optional[str] = None
+    result_input_image_indices: Optional[list[int]] = None
     billing_resolution: Optional[str] = None
     prefer_edit_status: bool = False
 

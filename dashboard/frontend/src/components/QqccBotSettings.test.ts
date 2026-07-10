@@ -153,6 +153,7 @@ describe('QqccBotSettings', () => {
             id: 'kiss',
             name: '亲吻',
             prompt: 'kissing prompt',
+            negative_prompt: 'video negative',
             duration: '8s',
             engine: 'image_to_video',
             lora_name: 'BreastGrow',
@@ -164,25 +165,31 @@ describe('QqccBotSettings', () => {
             id: 'quick_masturbation',
             name: '快速自慰',
             prompt: 'preset masturbation prompt',
+            negative_prompt: 'masturbation negative',
             engine: 'free_edit',
             lora_name: '',
             postprocess_draw_scene_id: '',
+            original_face_swap_enabled: false,
           },
           {
             id: 'quick_undress',
             name: '快速脱衣',
             prompt: 'preset undress prompt',
+            negative_prompt: '',
             engine: 'free_edit',
             lora_name: '',
             postprocess_draw_scene_id: '',
+            original_face_swap_enabled: false,
           },
           {
             id: 'soft_light',
             name: '柔光写真',
             prompt: 'soft light prompt',
+            negative_prompt: 'soft light negative',
             engine: 'free_edit_v2',
             lora_name: '',
             postprocess_draw_scene_id: '',
+            original_face_swap_enabled: false,
           },
         ],
       },
@@ -228,9 +235,11 @@ describe('QqccBotSettings', () => {
     expect(wrapper.text()).not.toContain('懒人P图')
     expect(wrapper.text()).not.toContain('脱衣方式')
     expect((wrapper.get('[data-testid="video-scene-name-0"]').element as HTMLInputElement).value).toBe('亲吻')
+    expect((wrapper.get('[data-testid="video-scene-negative-prompt-0"]').element as HTMLTextAreaElement).value).toBe('video negative')
     expect((wrapper.get('[data-testid="draw-scene-name-0"]').element as HTMLInputElement).value).toBe('快速自慰')
     expect((wrapper.get('[data-testid="draw-scene-name-1"]').element as HTMLInputElement).value).toBe('快速脱衣')
     expect((wrapper.get('[data-testid="draw-scene-name-2"]').element as HTMLInputElement).value).toBe('柔光写真')
+    expect((wrapper.get('[data-testid="draw-scene-negative-prompt-2"]').element as HTMLTextAreaElement).value).toBe('soft light negative')
     expect(wrapper.find('[data-testid="non-video-prompt-undress"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="non-video-prompt-masturbation"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="non-video-prompt-face_swap"]').exists()).toBe(true)
@@ -248,9 +257,11 @@ describe('QqccBotSettings', () => {
     await wrapper.get('[data-testid="global-enabled"]').setValue(false)
     await wrapper.get('[data-testid="video-scene-name-0"]').setValue('贴贴')
     await wrapper.get('[data-testid="video-scene-prompt-0"]').setValue('new scene prompt')
+    await wrapper.get('[data-testid="video-scene-negative-prompt-0"]').setValue('  video bad hands  ')
     await wrapper.get('[data-testid="video-scene-duration-0"]').setValue('10s')
     await wrapper.get('[data-testid="draw-scene-name-2"]').setValue('柔光大片')
     await wrapper.get('[data-testid="draw-scene-prompt-2"]').setValue('new draw prompt')
+    await wrapper.get('[data-testid="draw-scene-negative-prompt-2"]').setValue('  draw blur  ')
     await wrapper.get('[data-testid="non-video-prompt-face_swap"]').setValue('new face prompt')
     await wrapper.findAll('button').at(1)!.trigger('click')
     await flushPromises()
@@ -272,6 +283,7 @@ describe('QqccBotSettings', () => {
         id: 'kiss',
         name: '贴贴',
         prompt: 'new scene prompt',
+        negative_prompt: 'video bad hands',
         duration: '10s',
         engine: 'image_to_video',
         lora_name: 'BreastGrow',
@@ -283,25 +295,31 @@ describe('QqccBotSettings', () => {
         id: 'quick_masturbation',
         name: '快速自慰',
         prompt: 'preset masturbation prompt',
+        negative_prompt: 'masturbation negative',
         engine: 'free_edit',
         lora_name: '',
         postprocess_draw_scene_id: '',
+        original_face_swap_enabled: false,
       },
       {
         id: 'quick_undress',
         name: '快速脱衣',
         prompt: 'preset undress prompt',
+        negative_prompt: '',
         engine: 'free_edit',
         lora_name: '',
         postprocess_draw_scene_id: '',
+        original_face_swap_enabled: false,
       },
       {
         id: 'soft_light',
         name: '柔光大片',
         prompt: 'new draw prompt',
+        negative_prompt: 'draw blur',
         engine: 'free_edit_v2',
         lora_name: '',
         postprocess_draw_scene_id: '',
+        original_face_swap_enabled: false,
       },
     ])
     expect(antMocks.success).toHaveBeenCalledWith('懒人Bot配置已保存')
@@ -391,8 +409,10 @@ describe('QqccBotSettings', () => {
     await flushPromises()
 
     await wrapper.get('[data-testid="add-video-scene"]').trigger('click')
+    expect((wrapper.get('[data-testid="video-scene-negative-prompt-1"]').element as HTMLTextAreaElement).value).toBe('')
     await wrapper.get('[data-testid="video-scene-name-1"]').setValue('转身')
     await wrapper.get('[data-testid="video-scene-prompt-1"]').setValue('turn around')
+    await wrapper.get('[data-testid="video-scene-negative-prompt-1"]').setValue('motion blur')
     await wrapper.get('[data-testid="remove-video-scene-0"]').trigger('click')
     await wrapper.findAll('button').at(1)!.trigger('click')
     await flushPromises()
@@ -401,6 +421,7 @@ describe('QqccBotSettings', () => {
     expect(payload.video_scenes).toHaveLength(1)
     expect(payload.video_scenes[0].name).toBe('转身')
     expect(payload.video_scenes[0].prompt).toBe('turn around')
+    expect(payload.video_scenes[0].negative_prompt).toBe('motion blur')
     expect(payload.video_scenes[0].engine).toBe('image_to_video')
     expect(payload.video_scenes[0].lora_name).toBe('')
     expect(payload.video_scenes[0].end_frame_draw_scene_id).toBe('')
@@ -411,8 +432,10 @@ describe('QqccBotSettings', () => {
     await flushPromises()
 
     await wrapper.get('[data-testid="add-draw-scene"]').trigger('click')
+    expect((wrapper.get('[data-testid="draw-scene-negative-prompt-3"]').element as HTMLTextAreaElement).value).toBe('')
     await wrapper.get('[data-testid="draw-scene-name-3"]').setValue('赛博风')
     await wrapper.get('[data-testid="draw-scene-prompt-3"]').setValue('cyber style')
+    await wrapper.get('[data-testid="draw-scene-negative-prompt-3"]').setValue('bad anatomy')
     await wrapper.get('[data-testid="remove-draw-scene-2"]').trigger('click')
     await wrapper.findAll('button').at(1)!.trigger('click')
     await flushPromises()
@@ -423,6 +446,7 @@ describe('QqccBotSettings', () => {
     expect(payload.draw_scenes[1].name).toBe('快速脱衣')
     expect(payload.draw_scenes[2].name).toBe('赛博风')
     expect(payload.draw_scenes[2].prompt).toBe('cyber style')
+    expect(payload.draw_scenes[2].negative_prompt).toBe('bad anatomy')
     expect(payload.draw_scenes[2].engine).toBe('free_edit_v2')
     expect(payload.draw_scenes[2].lora_name).toBe('')
     expect(payload.draw_scenes[2].postprocess_draw_scene_id).toBe('')
@@ -475,6 +499,7 @@ describe('QqccBotSettings', () => {
     expect(wrapper.find('[data-testid="scene-lora-select"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="scene-end-frame-select"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="scene-postprocess-select"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="scene-original-face-swap-switch"]').exists()).toBe(true)
   })
 
   it('clears a video scene end-frame source when the referenced draw scene is removed', async () => {
@@ -543,6 +568,21 @@ describe('QqccBotSettings', () => {
     const animeScene = payload.draw_scenes.find((scene: { id: string }) => scene.id === 'anime_finish')!
     expect(softLightScene.postprocess_draw_scene_id).toBe('anime_finish')
     expect(animeScene.postprocess_draw_scene_id).toBe('')
+  })
+
+  it('configures a draw scene original face swap switch in the save payload', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="config-draw-scene-postprocess-2"]').trigger('click')
+    await wrapper.get('[data-testid="scene-original-face-swap-switch"]').setValue(true)
+    await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
+    const softLightScene = payload.draw_scenes.find((scene: { id: string }) => scene.id === 'soft_light')!
+    expect(softLightScene.original_face_swap_enabled).toBe(true)
   })
 
   it('filters postprocess choices that would create a draw scene cycle', async () => {

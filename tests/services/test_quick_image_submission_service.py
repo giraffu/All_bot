@@ -31,6 +31,7 @@ def test_qqcc_free_edit_v2_scene_builds_draw_chain_plan_without_prompts_ini():
                     "id": "soft_light",
                     "name": "柔光写真",
                     "prompt": "soft light prompt",
+                    "negative_prompt": "bad hands",
                 }
             ],
         }
@@ -51,6 +52,7 @@ def test_qqcc_free_edit_v2_scene_builds_draw_chain_plan_without_prompts_ini():
     assert plan.total_cost == 2
     assert plan.images == ["/tmp/input.png"]
     assert [scene["prompt"] for scene in plan.draw_chain] == ["soft light prompt"]
+    assert [scene["negative_prompt"] for scene in plan.draw_chain] == ["bad hands"]
 
 
 @pytest.mark.asyncio
@@ -63,12 +65,14 @@ async def test_run_qqcc_draw_chain_plan_submits_intermediate_hidden_then_final_v
                     "id": "soft_light",
                     "name": "柔光写真",
                     "prompt": "soft light prompt",
+                    "negative_prompt": "bad hands",
                     "postprocess_draw_scene_id": "polish",
                 },
                 {
                     "id": "polish",
                     "name": "精修",
                     "prompt": "polish prompt",
+                    "negative_prompt": "bad anatomy",
                 },
             ],
         }
@@ -101,9 +105,11 @@ async def test_run_qqcc_draw_chain_plan_submits_intermediate_hidden_then_final_v
     )
 
     assert process_calls[0]["prompt"] == "soft light prompt"
+    assert process_calls[0]["negative_prompt"] == "bad hands"
     assert process_calls[0]["send_result"] is False
     assert process_calls[0]["allow_contribute"] is False
     assert process_calls[1]["prompt"] == "polish prompt"
+    assert process_calls[1]["negative_prompt"] == "bad anatomy"
     assert process_calls[1]["images"] == ["/tmp/intermediate.png"]
     assert process_calls[1]["send_result"] is True
     assert process_calls[1]["allow_contribute"] is True
@@ -134,6 +140,134 @@ def test_qqcc_free_edit_lora_scene_keeps_lora_payload():
     assert plan.kind == QuickImageSubmissionKind.DRAW_CHAIN
     assert plan.mode == MODE_IMG2IMG_LORA
     assert plan.draw_chain[0]["lora_name"] == "qwen/YARN_1.0.safetensors"
+
+
+@pytest.mark.asyncio
+async def test_run_qqcc_draw_chain_inserts_original_face_swap_after_enabled_step():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": [
+                {
+                    "id": "soft_light",
+                    "name": "柔光写真",
+                    "prompt": "soft light prompt",
+                    "negative_prompt": "bad hands",
+                    "original_face_swap_enabled": True,
+                    "postprocess_draw_scene_id": "polish",
+                },
+                {
+                    "id": "polish",
+                    "name": "精修",
+                    "prompt": "polish prompt",
+                    "negative_prompt": "bad anatomy",
+                },
+            ],
+        }
+    )
+    plan = build_quick_image_submission_plan(
+        fsm_data={
+            "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+            "scene_id": "soft_light",
+        },
+        qqcc_config=config,
+        image_path="/tmp/input.png",
+    )
+    process_calls = []
+    downloaded = []
+
+    async def fake_process_generation_task(**kwargs):
+        process_calls.append(kwargs)
+        return b"image-bytes", f"output-{len(process_calls)}.png"
+
+    async def fake_download_output_file_to_fsm_temp(**kwargs):
+        downloaded.append(kwargs)
+        return f"/tmp/download-{len(downloaded)}.png"
+
+    assert plan.total_cost == 6
+
+    await run_quick_image_submission_plan(
+        plan=plan,
+        context=SimpleNamespace(),
+        chat_id=456,
+        user_id=123,
+        username="tester",
+        status_msg_id=77,
+        process_generation_task_func=fake_process_generation_task,
+        download_output_file_to_fsm_temp_func=fake_download_output_file_to_fsm_temp,
+    )
+
+    assert [call["task_type"] for call in process_calls] == [
+        MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+        "face_swap",
+        MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+    ]
+    assert process_calls[0]["send_result"] is False
+    assert process_calls[0]["negative_prompt"] == "bad hands"
+    assert process_calls[1]["images"] == ["/tmp/download-1.png", "/tmp/input.png"]
+    assert "negative_prompt" not in process_calls[1]
+    assert process_calls[1]["cost_override"] == 2
+    assert process_calls[1]["send_result"] is False
+    assert process_calls[2]["images"] == ["/tmp/download-2.png"]
+    assert process_calls[2]["prompt"] == "polish prompt"
+    assert process_calls[2]["negative_prompt"] == "bad anatomy"
+    assert process_calls[2]["send_result"] is True
+
+
+@pytest.mark.asyncio
+async def test_run_qqcc_draw_chain_visible_final_face_swap_keeps_draw_result_semantics():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": [
+                {
+                    "id": "soft_light",
+                    "name": "柔光写真",
+                    "prompt": "soft light prompt",
+                    "original_face_swap_enabled": True,
+                }
+            ],
+        }
+    )
+    plan = build_quick_image_submission_plan(
+        fsm_data={
+            "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+            "scene_id": "soft_light",
+        },
+        qqcc_config=config,
+        image_path="/tmp/input.png",
+    )
+    process_calls = []
+
+    async def fake_process_generation_task(**kwargs):
+        process_calls.append(kwargs)
+        return b"image-bytes", f"output-{len(process_calls)}.png"
+
+    assert plan.total_cost == 4
+
+    await run_quick_image_submission_plan(
+        plan=plan,
+        context=SimpleNamespace(),
+        chat_id=456,
+        user_id=123,
+        username="tester",
+        status_msg_id=77,
+        process_generation_task_func=fake_process_generation_task,
+        download_output_file_to_fsm_temp_func=AsyncMock(
+            return_value="/tmp/generated.png"
+        ),
+    )
+
+    assert [call["task_type"] for call in process_calls] == [
+        MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+        "face_swap",
+    ]
+    assert process_calls[0]["send_result"] is False
+    assert process_calls[1]["send_result"] is True
+    assert process_calls[1]["result_task_type"] == MODE_PORNMASTER_FLUX2_SINGLE_EDIT
+    assert process_calls[1]["result_prompt"] == "soft light prompt"
+    assert process_calls[1]["result_input_image_indices"] == [1]
+    assert process_calls[1]["allow_contribute"] is True
 
 
 @pytest.mark.asyncio

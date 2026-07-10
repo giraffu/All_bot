@@ -133,12 +133,13 @@ def _preset_prompt(prompt_key: str, raw_prompts: dict[str, Any] | None = None) -
 
 def _default_video_scenes(
     raw_prompts: dict[str, Any] | None = None,
-) -> list[dict[str, str]]:
+) -> list[dict[str, Any]]:
     return [
         {
             "id": scene["id"],
             "name": scene["name"],
             "prompt": _preset_prompt(scene["prompt_key"], raw_prompts),
+            "negative_prompt": "",
             "duration": "5s",
             "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
             "lora_name": "",
@@ -150,23 +151,27 @@ def _default_video_scenes(
 
 def _default_draw_scenes(
     raw_prompts: dict[str, Any] | None = None,
-) -> list[dict[str, str]]:
+) -> list[dict[str, Any]]:
     return [
         {
             "id": "quick_masturbation",
             "name": "快速自慰",
             "prompt": _preset_prompt("masturbation", raw_prompts),
+            "negative_prompt": "",
             "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
             "lora_name": "",
             "postprocess_draw_scene_id": "",
+            "original_face_swap_enabled": False,
         },
         {
             "id": "quick_undress",
             "name": "快速脱衣",
             "prompt": _preset_prompt("undress", raw_prompts),
+            "negative_prompt": "",
             "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
             "lora_name": "",
             "postprocess_draw_scene_id": "",
+            "original_face_swap_enabled": False,
         },
     ]
 
@@ -297,7 +302,7 @@ def _get_legacy_prompt_override(
 def _merge_seeded_scene_presets(
     *,
     scenes: list[dict[str, Any]],
-    preset_scenes: list[dict[str, str]],
+    preset_scenes: list[dict[str, Any]],
     max_count: int,
 ) -> list[dict[str, Any]]:
     scenes_by_id = {str(scene.get("id") or ""): scene for scene in scenes}
@@ -351,6 +356,10 @@ def _normalize_scene_lora(
         return ""
     lora_name = raw_lora_name.strip() if isinstance(raw_lora_name, str) else ""
     return lora_name if lora_name in lora_catalog else ""
+
+
+def _normalize_scene_negative_prompt(raw_negative_prompt: Any) -> str:
+    return raw_negative_prompt.strip() if isinstance(raw_negative_prompt, str) else ""
 
 
 def _normalize_end_frame_draw_scene_id(
@@ -417,6 +426,9 @@ def _normalize_video_scene(
         ),
         "name": name,
         "prompt": prompt,
+        "negative_prompt": _normalize_scene_negative_prompt(
+            raw_scene.get("negative_prompt")
+        ),
         "duration": duration,
         "engine": engine,
         "lora_name": lora_name,
@@ -437,7 +449,7 @@ def _normalize_video_scenes(
 ) -> list[dict[str, Any]]:
     if not isinstance(raw_scenes, list):
         return []
-    scenes: list[dict[str, str]] = []
+    scenes: list[dict[str, Any]] = []
     used_ids: set[str] = set()
     for index, raw_scene in enumerate(raw_scenes[:VIDEO_SCENE_MAX_COUNT]):
         scene = _normalize_video_scene(
@@ -512,9 +524,14 @@ def _normalize_draw_scene(
         ),
         "name": name,
         "prompt": prompt,
+        "negative_prompt": _normalize_scene_negative_prompt(
+            raw_scene.get("negative_prompt")
+        ),
         "engine": engine,
         "lora_name": lora_name,
         "postprocess_draw_scene_id": postprocess_draw_scene_id,
+        "original_face_swap_enabled": raw_scene.get("original_face_swap_enabled")
+        is True,
     }
     return scene
 
@@ -609,6 +626,7 @@ def _migrate_legacy_video_scenes(raw: dict[str, Any]) -> list[dict[str, Any]]:
                 "id": scene["id"],
                 "name": scene["name"],
                 "prompt": prompt,
+                "negative_prompt": "",
                 "duration": "5s",
                 "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
                 "lora_name": "",

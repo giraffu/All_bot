@@ -23,8 +23,8 @@
 
 | task type | API workflow | 输入映射 |
 | :--- | :--- | :--- |
-| `pornmaster_flux2_single_edit` | `PornMaster_F2K_9B_Turbo_Single-image-editing_Automatic_V1_2026_05_27.api.json` | `image -> LoadImage 15.image`、`prompt -> CLIPTextEncode 185.text`、`seed -> RandomNoise 28.noise_seed` |
-| `pornmaster_flux2_multi_edit` | `PornMaster_F2K_9B_Turbo_Multiple-images-editing_Automatic_V1_2026_05_27.api.json` | `image -> LoadImage 17.image`、`image2 -> LoadImage 29.image`、`prompt -> CLIPTextEncode 8.text`、`seed -> RandomNoise 43.noise_seed` |
+| `pornmaster_flux2_single_edit` | `PornMaster_F2K_9B_Turbo_Single-image-editing_Automatic_V1_2026_05_27.api.json` | `image -> LoadImage 15.image`、`prompt -> CLIPTextEncode 185.text`、`negative_prompt -> CLIPTextEncode 254.text`、`seed -> RandomNoise 28.noise_seed` |
+| `pornmaster_flux2_multi_edit` | `PornMaster_F2K_9B_Turbo_Multiple-images-editing_Automatic_V1_2026_05_27.api.json` | `image -> LoadImage 17.image`、`image2 -> LoadImage 29.image`、`prompt -> CLIPTextEncode 8.text`、`negative_prompt -> CLIPTextEncode 49.text`、`seed -> RandomNoise 43.noise_seed` |
 
 这两份 workflow 已移除空的 `Lora Loader (LoraManager)` 节点，运行依赖收敛为 ComfyUI Flux2 core 节点：`UNETLoader`、`CLIPLoader`、`VAELoader`、`ReferenceLatent`、`EmptyFlux2LatentImage`、`Flux2Scheduler`、`SamplerCustomAdvanced` 等。对应文件必须同时存在于 `workers/comfy_agent/workflows/` 与 `remote_workers/comfy_agent/workflows/`，并同步 `src/workflow_mapping_validation.py` 与 `remote_workers/src/workflow_mapping_validation.py`。
 
@@ -147,12 +147,13 @@ LAN AIO 镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_
 
 QQCC 独立配置 Web 的 `video_scenes` / `draw_scenes` 可以为每个场景选择底层 engine 和附加模型。该配置仍保存在 `runtime_checkpoints.qqcc_lazy_bot_config:v1`，不会新增 workflow、RunPod profile、模型 bundle 或 Alembic 迁移。
 
-- `AI动图` 默认 engine 为旧 `image_to_video`，不选模型时提交 `custom_video`，选择 `VIDEO_LORA_MODELS` 中的模型时提交 `video_lora` 并透传 `lora_name`。底层仍走旧图生视频 profile 与 `Wan22AioV82.json`，由 `workflow_task_patchers.py` 注入高噪/低噪双 LoRA 节点。
-- `AI动图` 切到 `wan22_video_v2` 时提交 `wan22_video_v2`，使用场景提示词、后台固定时长和用户画质选择；v2 本轮不支持附加模型，配置归一化与前端弹窗都必须自动清空 `lora_name`。
-- `AI动图` 可选 `end_frame_draw_scene_id` 引用当前有效 `AI绘图` 场景生成尾帧。若该绘图场景配置了 `postprocess_draw_scene_id` 后处理链，运行时使用完整链路最终图作为尾帧。用户仍只上传起始图；QQCC Bot 先隐藏提交被引用绘图链，成功后把用户原图和最终尾帧作为两张输入提交视频。旧 `custom_video` / `video_lora` 透传两张图并写 `use_end_frame=true`，`wan22_video_v2` 透传 `images=[start,end]`；不新增 workflow、profile 或模型 bundle。
-- `AI绘图` 默认 engine 为自由P图 v2 `free_edit_v2`，提交 `pornmaster_flux2_single_edit`，不支持附加模型。
-- `AI绘图` 切到旧 `free_edit` 时，不选模型提交 `edit`，选择 `IMAGE_LORA_MODELS` 中的模型时提交 `img2img_lora`，并透传 catalog 中的默认 strength。
-- `AI绘图` 的 `postprocess_draw_scene_id` 只链式复用其它 `draw_scenes` 的既有 engine/LoRA 配置，不新增 task type、workflow、profile 或模型 bundle；链路循环必须在配置归一化时清理。
+- `AI动图` 默认 engine 为旧 `image_to_video`，不选模型时提交 `custom_video`，选择 `VIDEO_LORA_MODELS` 中的模型时提交 `video_lora` 并透传 `lora_name`。底层仍走旧图生视频 profile 与 `Wan22AioV82.json`，由 `workflow_task_patchers.py` 注入高噪/低噪双 LoRA 节点；视频场景 `negative_prompt` 透传到 Wan22 负向文本节点 `2371.value`。
+- `AI动图` 切到 `wan22_video_v2` 时提交 `wan22_video_v2`，使用视频场景提示词、负面提示词、后台固定时长和用户画质选择；负面提示词为空时保持 Wan22 现有默认负向归一。v2 本轮不支持附加模型，配置归一化与前端弹窗都必须自动清空 `lora_name`。
+- `AI动图` 可选 `end_frame_draw_scene_id` 引用当前有效 `AI绘图` 场景生成尾帧。若该绘图场景配置了 `postprocess_draw_scene_id` 后处理链或 `original_face_swap_enabled` 原图换脸，运行时使用完整链路最终图作为尾帧。用户仍只上传起始图；QQCC Bot 先隐藏提交被引用绘图链，绘图链每步使用该绘图场景自身 `negative_prompt`，成功后把用户原图和最终尾帧作为两张输入提交视频；最终视频仍只使用视频场景自身 `negative_prompt`。旧 `custom_video` / `video_lora` 透传两张图并写 `use_end_frame=true`，`wan22_video_v2` 透传 `images=[start,end]`；不新增 workflow、profile 或模型 bundle。
+- `AI绘图` 默认 engine 为自由P图 v2 `free_edit_v2`，提交 `pornmaster_flux2_single_edit`，不支持附加模型；`negative_prompt` 写入 single edit workflow 的 `254.text`。
+- `AI绘图` 切到旧 `free_edit` 时，不选模型提交 `edit`，选择 `IMAGE_LORA_MODELS` 中的模型时提交 `img2img_lora`，并透传 catalog 中的默认 strength；旧 Qwen workflow 负面提示词写入 `4.prompt`。
+- `AI绘图` 的 `postprocess_draw_scene_id` 只链式复用其它 `draw_scenes` 的既有 engine/LoRA/negative_prompt 配置，不新增 task type、workflow、profile 或模型 bundle；链路循环必须在配置归一化时清理。
+- `AI绘图` 的 `original_face_swap_enabled` 是每个 `draw_scenes[]` 的布尔开关，缺省为 `false`。开启后该步先完成自身绘图，再用用户最初上传原图做人脸来源、该步输出图做 body 调用现有 `face_swap`；内部换脸不传负面提示词，每个开启步骤额外计费 `2` 灵石。该能力只复用已有 `face_swap` 执行面和受信任 Bot 内部 `cost_override`，不新增 workflow、RunPod profile、模型 bundle 或数据库表；最终可见结果仍按原 QQCC AI绘图场景归类。
 - 独立 QQCC Config Backend 的 `GET /api/qqcc/config` 必须返回非持久化 `options`，把 engine 选项和 `src/lora_catalog.py` 中的 LoRA catalog 下发给前端；前端不得手写模型清单，避免和运行时 catalog 漂移。
 
 ---

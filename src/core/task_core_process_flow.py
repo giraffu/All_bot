@@ -27,6 +27,7 @@ def build_prepared_task_submission_request(
     task_type: str,
     inputs: dict[str, Any],
     dependencies: TaskCoreProcessDependencies,
+    cost_override: int | None = None,
 ) -> PreparedTaskSubmissionRequest:
     strategy = dependencies.get_strategy_func(task_type)
     is_video_task = task_type in dependencies.video_task_types
@@ -37,7 +38,11 @@ def build_prepared_task_submission_request(
     )
     return PreparedTaskSubmissionRequest(
         strategy=strategy,
-        cost=strategy.get_cost(inputs),
+        cost=(
+            int(cost_override)
+            if cost_override is not None
+            else strategy.get_cost(inputs)
+        ),
         is_video_task=is_video_task,
         video_request=video_request,
     )

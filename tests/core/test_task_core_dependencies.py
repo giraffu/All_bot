@@ -90,6 +90,59 @@ async def test_process_and_submit_task_uses_explicit_process_dependencies():
 
 
 @pytest.mark.asyncio
+async def test_process_and_submit_task_uses_internal_cost_override_for_deduction():
+    strategy = MagicMock()
+    strategy.get_cost.return_value = 1
+    dependencies = TaskCoreProcessDependencies(
+        get_strategy_func=MagicMock(return_value=strategy),
+        video_task_types=set(),
+        build_video_task_request_func=MagicMock(return_value=VideoTaskRequest()),
+        check_concurrency_lock_func=AsyncMock(return_value=(True, "")),
+        prepare_task_submission_payload_func=AsyncMock(
+            return_value=SimpleNamespace(
+                final_priority=7,
+                saved_inputs=["input.png"],
+                user_logger=SimpleNamespace(user_id=123, username="tester"),
+            )
+        ),
+        check_and_deduct_credits_func=AsyncMock(return_value=(True, "")),
+        execute_task_submission_saga_func=AsyncMock(
+            return_value=TaskSubmissionExecutionResult(
+                registry_task_id="registry-2",
+                backend_task_id="backend-2",
+                submission_context=SimpleNamespace(saved_inputs=["saved.png"]),
+            )
+        ),
+        attach_submission_side_effects_func=AsyncMock(),
+        compensate_failed_submission_func=AsyncMock(),
+        release_concurrency_lock_func=AsyncMock(),
+        shield_func=AsyncMock(),
+        logger=MagicMock(),
+    )
+
+    result = await task_core.process_and_submit_task(
+        user_id=123,
+        username="tester",
+        task_type="face_swap",
+        inputs={"images": ["body.png", "face.png"]},
+        task_id="registry-1",
+        cost_override=2,
+        dependencies=dependencies,
+    )
+
+    strategy.get_cost.assert_not_called()
+    dependencies.check_and_deduct_credits_func.assert_awaited_once_with(
+        123,
+        2,
+        "face_swap",
+        "tester",
+    )
+    dependencies.execute_task_submission_saga_func.assert_awaited_once()
+    assert dependencies.execute_task_submission_saga_func.await_args.kwargs["cost"] == 2
+    assert result["cost"] == 2
+
+
+@pytest.mark.asyncio
 async def test_attach_submission_side_effects_raises_domain_error_when_monitor_attach_fails():
     schedule_apply = MagicMock()
 

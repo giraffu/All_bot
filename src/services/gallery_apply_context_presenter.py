@@ -10,6 +10,7 @@ from src.services.storage import storage
 T = TypeVar("T")
 
 __all__ = [
+    "build_history_apply_context_response",
     "build_storage_input_file_url",
     "run_with_optional_db",
     "call_with_optional_db",
@@ -33,6 +34,14 @@ def build_storage_input_file_url(
             bucket=bucket_name,
         ),
     )
+
+
+async def build_history_apply_context_response(**kwargs):
+    from src.web_api.services.apply_context_service import (
+        build_history_apply_context_response as _build_history_apply_context_response,
+    )
+
+    return await _build_history_apply_context_response(**kwargs)
 
 
 async def run_with_optional_db(

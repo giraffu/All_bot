@@ -51,6 +51,11 @@ async def process_standard_generation_task(
     source_post_id: Optional[int] = None,
     resolution: Any = None,
     duration: Any = None,
+    negative_prompt: str | None = None,
+    cost_override: int | None = None,
+    result_task_type: str | None = None,
+    result_prompt: str | None = None,
+    result_input_image_indices: list[int] | None = None,
 ) -> Tuple[Optional[bytes], Optional[str]]:
     internal_user_id = await resolve_internal_user_id(user_id, username)
 
@@ -67,6 +72,7 @@ async def process_standard_generation_task(
             images=images,
             resolution=resolution,
             duration=duration,
+            negative_prompt=negative_prompt,
             status_msg_id=status_msg_id,
             delete_status=delete_status,
             task_type=task_type,
@@ -86,7 +92,7 @@ async def process_standard_generation_task(
             user_id=user_id,
             username=username,
             prompt=prompt,
-            negative_prompt="",
+            negative_prompt=negative_prompt or "",
             images=images,
             resolution_preset=resolution,
             duration=duration,
@@ -108,13 +114,18 @@ async def process_standard_generation_task(
         internal_user_id,
         quota_manager=permission_service.quota_manager,
     )
+    extra_inputs: dict[str, Any] = {
+        "lora_name": lora_name,
+        "lora_strength": lora_strength,
+    }
+    if negative_prompt is not None:
+        extra_inputs["negative_prompt"] = negative_prompt
     inputs = build_task_inputs(
         prompt=prompt,
         images=images,
         resolution=resolution,
         duration=duration,
-        lora_name=lora_name,
-        lora_strength=lora_strength,
+        **extra_inputs,
     )
     log_prompt = build_log_prompt(
         prompt,
@@ -171,6 +182,10 @@ async def process_standard_generation_task(
             reply_markup=reply_markup,
             delete_status=delete_status,
             allow_contribute=allow_contribute,
+            cost_override=cost_override,
+            result_task_type=result_task_type,
+            result_prompt=result_prompt,
+            result_input_image_indices=result_input_image_indices,
             billing_resolution=billing_args["billing_resolution"],
             requested_duration=billing_args["requested_duration"],
             images=images,

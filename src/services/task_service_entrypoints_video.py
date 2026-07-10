@@ -38,6 +38,7 @@ async def process_video_task_template(
     default_prompt_key: str,
     default_prompt_text: str,
     prompt_override: Optional[str] = None,
+    negative_prompt: str | None = None,
     display_mode_name_override: Optional[str] = None,
     lora_name: str | None = None,
     lora_strength: float | None = None,
@@ -120,6 +121,8 @@ async def process_video_task_template(
         submit_images.append(end_image_path)
     if use_end_frame is not None:
         extra_inputs["use_end_frame"] = bool(use_end_frame and end_image_path)
+    if negative_prompt is not None:
+        extra_inputs["negative_prompt"] = negative_prompt
 
     inputs = build_task_inputs(
         prompt=base_prompt,

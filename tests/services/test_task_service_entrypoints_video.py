@@ -203,6 +203,7 @@ async def test_process_video_task_template_forwards_end_frame_inputs(monkeypatch
         image_path="/tmp/start.png",
         end_image_path="/tmp/end.png",
         use_end_frame=True,
+        negative_prompt="video blur",
         chat_id=123,
         user_id=456,
         username="tester",
@@ -212,6 +213,7 @@ async def test_process_video_task_template_forwards_end_frame_inputs(monkeypatch
 
     assert captured_inputs["images"] == ["/tmp/start.png", "/tmp/end.png"]
     assert captured_inputs["use_end_frame"] is True
+    assert captured_inputs["negative_prompt"] == "video blur"
     assert resolve_settings.await_args.kwargs["resolution"] == "720p"
     assert resolve_settings.await_args.kwargs["duration"] == "8s"
 

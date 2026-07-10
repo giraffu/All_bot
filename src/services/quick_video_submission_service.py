@@ -69,6 +69,7 @@ class QuickVideoSubmissionPlan:
     default_prompt_key: str
     default_prompt_text: str
     prompt_override: str | None = None
+    negative_prompt: str = ""
     display_mode_name: str | None = None
     lora_name: str = ""
     tail_draw_chain: list[dict[str, Any]] = field(default_factory=list)
@@ -330,6 +331,7 @@ def build_quick_video_submission_plan(
         else []
     )
     prompt = str(scene.get("prompt") or "").strip()
+    negative_prompt = str(scene.get("negative_prompt") or "").strip()
     kind = (
         QuickVideoSubmissionKind.TAIL_FRAME_VIDEO
         if tail_draw_chain
@@ -349,6 +351,7 @@ def build_quick_video_submission_plan(
         default_prompt_key=MODE_CUSTOM_VIDEO,
         default_prompt_text=prompt,
         prompt_override=prompt,
+        negative_prompt=negative_prompt,
         display_mode_name=str(scene.get("name") or ""),
         lora_name=lora_name,
         tail_draw_chain=tail_draw_chain,
@@ -401,6 +404,7 @@ async def run_quick_video_submission_plan(
                 user_id=user_id,
                 username=username,
                 prompt=plan.prompt_override or plan.default_prompt_text,
+                negative_prompt=plan.negative_prompt,
                 images=[image_path],
                 is_video=True,
                 task_type=MODE_WAN22_VIDEO_V2,
@@ -420,6 +424,7 @@ async def run_quick_video_submission_plan(
             default_prompt_key=plan.default_prompt_key,
             default_prompt_text=plan.default_prompt_text,
             prompt_override=plan.prompt_override,
+            negative_prompt=plan.negative_prompt,
             display_mode_name_override=plan.display_mode_name,
             lora_name=plan.lora_name,
             image_path=image_path,
@@ -489,6 +494,7 @@ async def _run_tail_frame_video_plan(
                     user_id=user_id,
                     username=username,
                     prompt=plan.prompt_override or plan.default_prompt_text,
+                    negative_prompt=plan.negative_prompt,
                     images=[image_path, end_image_path],
                     is_video=True,
                     task_type=MODE_WAN22_VIDEO_V2,
@@ -508,6 +514,7 @@ async def _run_tail_frame_video_plan(
                 default_prompt_key=plan.default_prompt_key,
                 default_prompt_text=plan.default_prompt_text,
                 prompt_override=plan.prompt_override,
+                negative_prompt=plan.negative_prompt,
                 display_mode_name_override=plan.display_mode_name,
                 lora_name=plan.lora_name,
                 image_path=image_path,
