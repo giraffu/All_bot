@@ -40,6 +40,47 @@ async def _build_generation_payload(
     query_days = _query_days(days)
     chart_days = _chart_days(days)
     limit = _clamp(limit, 1, 50)
+    tasks = _start_generation_analytics_tasks(
+        query_days=query_days,
+        chart_days=chart_days,
+        limit=limit,
+    )
+    (
+        summary,
+        daily,
+        by_type,
+        credits,
+        hourly,
+        source_mix,
+        quality_segments,
+        generation_leaderboard,
+        credit_leaderboard,
+        gallery_leaderboard,
+        recent_high_signal,
+    ) = await _gather_limited(4, *tasks)
+    return _build_generation_response(
+        days=days,
+        limit=limit,
+        summary=summary,
+        daily=daily,
+        by_type=by_type,
+        credits=credits,
+        hourly=hourly,
+        source_mix=source_mix,
+        quality_segments=quality_segments,
+        generation_leaderboard=generation_leaderboard,
+        credit_leaderboard=credit_leaderboard,
+        gallery_leaderboard=gallery_leaderboard,
+        recent_high_signal=recent_high_signal,
+    )
+
+
+def _start_generation_analytics_tasks(
+    *,
+    query_days: int,
+    chart_days: int,
+    limit: int,
+) -> tuple[Any, ...]:
     summary_task = _fetchrow(
         """
         with bounds as (select now() - ($1::int * interval '1 day') as since),
@@ -578,20 +619,7 @@ async def _build_generation_payload(
         query_days,
         limit,
     )
-    (
-        summary,
-        daily,
-        by_type,
-        credits,
-        hourly,
-        source_mix,
-        quality_segments,
-        generation_leaderboard,
-        credit_leaderboard,
-        gallery_leaderboard,
-        recent_high_signal,
-    ) = await _gather_limited(
-        4,
+    return (
         summary_task,
         daily_task,
         by_type_task,
@@ -604,6 +632,24 @@ async def _build_generation_payload(
         gallery_leaderboard_task,
         recent_high_signal_task,
     )
+
+
+def _build_generation_response(
+    *,
+    days: int,
+    limit: int,
+    summary: Any,
+    daily: Any,
+    by_type: Any,
+    credits: Any,
+    hourly: Any,
+    source_mix: Any,
+    quality_segments: Any,
+    generation_leaderboard: Any,
+    credit_leaderboard: Any,
+    gallery_leaderboard: Any,
+    recent_high_signal: Any,
+) -> dict[str, Any]:
     return {
         "days": days,
         "limit": limit,

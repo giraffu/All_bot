@@ -247,6 +247,22 @@ async def _fetchrow(query: str, *args: Any) -> asyncpg.Record | None:
     return rows[0] if rows else None
 
 
+async def _execute(query: str, *args: Any) -> str:
+    override = _main_override("_execute", _execute)
+    if override is not None:
+        return await override(query, *args)
+    pool = await _pool()
+    try:
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute("SET LOCAL statement_timeout = '45s'")
+                return await conn.execute(query, *args)
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover - returned as API detail.
+        raise HTTPException(status_code=500, detail=f"analytics write failed: {type(exc).__name__}") from exc
+
+
 async def _gather_limited(limit: int, *coroutines: Any) -> tuple[Any, ...]:
     semaphore = asyncio.Semaphore(max(1, limit))
 

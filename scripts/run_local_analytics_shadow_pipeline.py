@@ -33,6 +33,12 @@ LOCAL_ANALYTICS_TABLE_ALLOWLIST = (
     "analytics_prompt_group_stats",
     "analytics_prompt_rollup_stats",
     "analytics_prompt_slim_candidates",
+    "analytics_prompt_token_alias_rules",
+    "analytics_prompt_token_custom_terms",
+    "analytics_prompt_token_deleted_rules",
+    "analytics_prompt_token_extract_cache",
+    "analytics_prompt_token_prompts",
+    "analytics_prompt_token_stats",
     "analytics_prompt_vector_state",
     "analytics_prompt_embeddings",
     "analytics_user_profile_daily_snapshots",
@@ -298,6 +304,16 @@ def run_pipeline(
             ),
             label="refresh-prompt-slim",
         )
+        runner.run(
+            analytics_python_cmd(
+                config,
+                "app.refresh_prompt_vectors",
+                "--tokens-only",
+                "--statement-timeout-ms",
+                str(config.statement_timeout_ms),
+            ),
+            label="refresh-prompt-tokens",
+        )
 
         lm_studio_available = lm_studio_checker(config)
         if not lm_studio_available:
@@ -309,6 +325,7 @@ def run_pipeline(
                     config,
                     "app.refresh_prompt_vectors",
                     "--embed-only",
+                    "--skip-token-refresh",
                     "--batch-size",
                     str(config.batch_size),
                     "--statement-timeout-ms",

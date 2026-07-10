@@ -10,20 +10,33 @@ export async function fetchJson(path, params = {}, options = {}) {
     }
   });
   const response = await fetch(url, options);
+  let rawBody = "";
+  try {
+    rawBody = await response.text();
+  } catch (_) {
+    rawBody = "";
+  }
   if (!response.ok) {
     if (response.status === 401) {
       window.location.assign(`/login?next=${encodeURIComponent(loginNextPath())}`);
     }
     let detail = response.statusText;
-    try {
-      const body = await response.json();
-      detail = body.detail || detail;
-    } catch (_) {
-      detail = await response.text();
+    if (rawBody) {
+      try {
+        const body = JSON.parse(rawBody);
+        detail = body.detail || rawBody || detail;
+      } catch (_) {
+        detail = rawBody;
+      }
     }
     throw new Error(`${response.status} ${detail}`);
   }
-  return response.json();
+  if (!rawBody) return {};
+  try {
+    return JSON.parse(rawBody);
+  } catch (_) {
+    return {};
+  }
 }
 
 export async function logoutLocalAnalytics() {
@@ -33,4 +46,3 @@ export async function logoutLocalAnalytics() {
     window.location.assign("/login");
   }
 }
-

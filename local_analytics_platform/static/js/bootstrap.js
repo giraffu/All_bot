@@ -1,19 +1,47 @@
-import { state, tabs } from "./state.js";
-import { fetchJson, logoutLocalAnalytics } from "./api.js";
-import { createCreditFlowLoader } from "./creditFlow.js";
-import { createFinanceModule } from "./finance.js";
-import { createGenerationModule } from "./generation.js";
-import { createMediaLoader } from "./media.js";
-import { createPromptSlimLoader } from "./promptSlim.js";
-import { createPromptVectorsModule } from "./promptVectors.js";
-import { createPromptsLoader } from "./prompts.js";
-import { createTabController } from "./tabs.js";
-import { createTemplatesLoader } from "./templates.js";
-import { createUsersLoader } from "./users.js";
+import { state, tabs } from "./state.js?v=20260710-template-review-low-quality-v1";
+import { fetchJson, logoutLocalAnalytics } from "./api.js?v=20260709-prompt-decomposition-v1";
+import { createCreditFlowLoader } from "./creditFlow.js?v=20260709-prompt-decomposition-v1";
+import { createFinanceModule } from "./finance.js?v=20260709-prompt-decomposition-v1";
+import { createGenerationModule } from "./generation.js?v=20260709-prompt-decomposition-v1";
+import { createMediaLoader } from "./media.js?v=20260709-prompt-decomposition-v1";
+import { createPromptSlimLoader } from "./promptSlim.js?v=20260709-prompt-decomposition-v1";
+import { createPromptVectorsModule } from "./promptVectors.js?v=20260709-prompt-decomposition-v1";
+import { createPromptsLoader } from "./prompts.js?v=20260709-prompt-decomposition-v1";
+import { createTabController } from "./tabs.js?v=20260709-prompt-decomposition-v1";
+import { createTemplatesLoader } from "./templates.js?v=20260709-prompt-decomposition-v1";
+import { createUsersLoader } from "./users.js?v=20260709-prompt-decomposition-v1";
 
 const $ = (selector) => document.querySelector(selector);
 const nf = new Intl.NumberFormat("zh-CN");
 const money = new Intl.NumberFormat("zh-CN", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const PROMPT_TOKEN_DEFAULT_MIN_PROMPT_COUNT = 5;
+const PROMPT_TOKEN_MAX_MIN_PROMPT_COUNT = 100000;
+const PROMPT_TOKEN_RULE_PAGE_SIZE = 25;
+const PROMPT_TOKEN_UNCATEGORIZED_CATEGORY = "__uncategorized__";
+const PROMPT_TEMPLATE_DEFAULT_MIN_PROMPTS = 20;
+const PROMPT_TEMPLATE_MAX_MIN_PROMPTS = 100000;
+const PROMPT_TEMPLATE_REVIEW_MARKS_LIMIT = 50;
+const PROMPT_DECOMPOSITION_TASK_TYPE = "edit";
+const PROMPT_DECOMPOSITION_SAVED_LIMIT = 20;
+const PROMPT_TEMPLATE_SIMILARITY_BADGE_CLASSES = {
+  "高度相似": "success",
+  "较相似": "identity",
+  "中等相似": "warn",
+  "差异较大": "danger",
+};
+const PROMPT_TEMPLATE_SLOT_LABELS = {
+  task_intent: "任务意图",
+  preserve: "保持口径",
+  subject: "主体人物",
+  body_part: "身体部分",
+  pose_action: "动作姿势",
+  adult_theme: "成人主题",
+  clothing: "服饰配件",
+  scene: "场景",
+  composition: "镜头构图",
+  style_quality: "风格质量",
+  expression: "表情情绪",
+};
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -149,7 +177,7 @@ function syncDaysControl() {
   }
   if (daysControl) daysControl.classList.remove("hidden");
   if (userDateRangeControls) userDateRangeControls.classList.add("hidden");
-  const lockedAllTimeTabs = new Set(["prompt-slim", "prompt-vectors"]);
+  const lockedAllTimeTabs = new Set(["prompt-slim", "prompt-vectors", "prompt-tokens", "prompt-decomposition", "templates"]);
   const locked = lockedAllTimeTabs.has(state.activeTab);
   select.disabled = locked;
   select.value = String(locked ? 0 : currentDays());
@@ -450,6 +478,36 @@ function setError(error) {
   }
   banner.classList.remove("hidden");
   banner.textContent = error.message || String(error);
+}
+
+async function copyTextToClipboard(text) {
+  const value = String(text || "");
+  if (!value) return;
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "readonly");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  textarea.remove();
+}
+
+function downloadTextFile(filename, content, type = "text/plain;charset=utf-8") {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 function setLoading(isLoading) {
@@ -1739,33 +1797,619 @@ function renderPromptDetail() {
   $("#promptVariantButton")?.addEventListener("click", () => loadPromptVariants(item));
 }
 
+function templateRefreshNote(summary = {}) {
+  const refresh = summary.refresh || {};
+  if (state.templateCandidateRefreshing) return "正在提交刷新";
+  if (refresh.running) {
+    return refresh.pid ? `刷新运行中 · PID ${fmt(refresh.pid)}` : "刷新运行中";
+  }
+  if (refresh.last_exit) {
+    return `上次刷新退出码 ${fmt(refresh.last_exit.returncode)}`;
+  }
+  return summary.refreshed_at ? `刷新于 ${fmtDate(summary.refreshed_at)}` : "等待首次刷新";
+}
+
+function currentTemplateMinPrompts() {
+  const raw = $("#templateMinPromptsInput")?.value;
+  const fallback = state.templateCandidateMinPrompts || PROMPT_TEMPLATE_DEFAULT_MIN_PROMPTS;
+  const numeric = Number(raw || fallback);
+  const safeValue = Number.isFinite(numeric) ? numeric : fallback;
+  const clamped = Math.min(Math.max(1, Math.trunc(safeValue)), PROMPT_TEMPLATE_MAX_MIN_PROMPTS);
+  state.templateCandidateMinPrompts = clamped;
+  return clamped;
+}
+
+function syncTemplateMinPromptsInput() {
+  const input = $("#templateMinPromptsInput");
+  if (!input) return;
+  const value = String(state.templateCandidateMinPrompts || PROMPT_TEMPLATE_DEFAULT_MIN_PROMPTS);
+  if (input.value !== value) input.value = value;
+}
+
+function renderTemplateFilterOptions() {
+  const filters = state.templates?.filters || {};
+  renderPromptTokenOptionSet(
+    "#templateTaskTypeSelect",
+    filters.tasks || [],
+    [{ value: "", label: "全部任务" }]
+  );
+  const selectedTask = $("#templateTaskTypeSelect")?.value || "";
+  const modelRows = selectedTask ? filters.models || [] : [];
+  renderPromptTokenOptionSet(
+    "#templateModelSelect",
+    modelRows,
+    [{ value: "", label: selectedTask ? "全部附加模型" : "先选择任务类型" }]
+  );
+  const modelSelect = $("#templateModelSelect");
+  if (modelSelect) {
+    modelSelect.disabled = !selectedTask || modelRows.length === 0;
+  }
+}
+
+function renderTemplateSlotGroups(tokenSlots = {}, { maxGroups = 8, maxTokensPerGroup = 8 } = {}) {
+  const slots = parseObject(tokenSlots);
+  const groups = Object.entries(slots)
+    .map(([slotKey, values]) => ({
+      slotKey,
+      label: PROMPT_TEMPLATE_SLOT_LABELS[slotKey] || slotKey,
+      values: (Array.isArray(values) ? values : []).filter(Boolean),
+    }))
+    .filter((group) => group.values.length);
+  if (!groups.length) return '<span class="muted">-</span>';
+  const visible = groups.slice(0, maxGroups).map((group) => {
+    const tokens = group.values.slice(0, maxTokensPerGroup).map((token) => (
+      `<span class="pill">${escapeHtml(token)}</span>`
+    ));
+    const hidden = Math.max(0, group.values.length - maxTokensPerGroup);
+    if (hidden) tokens.push(`<span class="pill neutral">另 ${fmt(hidden)} 个</span>`);
+    return `
+      <div class="template-slot-group">
+        <span class="template-slot-label">${escapeHtml(group.label)}</span>
+        <span class="template-slot-token-list">${tokens.join("")}</span>
+      </div>
+    `;
+  });
+  const hiddenGroups = Math.max(0, groups.length - visible.length);
+  if (hiddenGroups) {
+    visible.push(`<div class="template-slot-more muted small">另 ${fmt(hiddenGroups)} 个槽位</div>`);
+  }
+  return `<div class="template-slot-groups">${visible.join("")}</div>`;
+}
+
+function renderTemplateSimilarityBadge(row = {}) {
+  const bucket = row.similarity_bucket || "";
+  if (!bucket) return '<span class="status-badge neutral">未计算</span>';
+  const className = PROMPT_TEMPLATE_SIMILARITY_BADGE_CLASSES[bucket] || "neutral";
+  const score = row.similarity_score === null || row.similarity_score === undefined || row.similarity_score === ""
+    ? ""
+    : ` · ${fmtAmount(row.similarity_score)}`;
+  return `<span class="status-badge ${className}">${escapeHtml(bucket)}${escapeHtml(score)}</span>`;
+}
+
+function renderTemplateReviewBadges(row = {}) {
+  const badges = [];
+  const markedCount = Number(row.marked_prompt_count || 0);
+  if (row.low_quality) {
+    badges.push('<span class="status-badge danger">低质量</span>');
+  }
+  if (markedCount > 0) {
+    badges.push(`<span class="status-badge success">已暂存 · ${fmt(markedCount)}</span>`);
+  }
+  if (!row.low_quality && markedCount <= 0) {
+    badges.push('<span class="status-badge neutral">未处理</span>');
+  }
+  return badges.join("");
+}
+
+function currentTemplateFilterLabel() {
+  const parts = [];
+  const search = $("#templateSearchInput")?.value?.trim();
+  const similarity = $("#templateSimilaritySelect")?.value || "";
+  const reviewStatus = $("#templateReviewStatusSelect")?.value || "all";
+  if (search) parts.push(search);
+  if (similarity) parts.push(similarity);
+  if (reviewStatus === "processed") parts.push("已处理");
+  if (reviewStatus === "unprocessed") parts.push("未处理");
+  if (reviewStatus === "low_quality") parts.push("低质量");
+  return parts.join(" · ") || "全部模板";
+}
+
 function renderTemplateCandidates(payload) {
-  const container = $("#templateCandidates");
-  if (!container) return;
-  const candidates = Array.isArray(payload?.candidates) ? payload.candidates : [];
-  const promptGroups = Array.isArray(payload?.prompt_groups) ? payload.prompt_groups : [];
-  const rows = (candidates.length ? candidates : promptGroups).slice(0, 30);
-  if (!rows.length) {
-    container.innerHTML = '<div class="empty">暂无模板候选</div>';
+  if (!$("#templateSummary")) return;
+  const summary = payload?.summary || {};
+  const rows = payload?.rows || [];
+  const pagination = payload?.pagination || {};
+  const scope = payload?.scope || {};
+  state.templateCandidateMinPrompts = Number(payload?.min_prompts || state.templateCandidateMinPrompts || PROMPT_TEMPLATE_DEFAULT_MIN_PROMPTS);
+  syncTemplateMinPromptsInput();
+  if (payload?.filters_included !== false) {
+    renderTemplateFilterOptions();
+  }
+  $("#templateSummary").innerHTML = [
+    metric("模板候选", fmt(summary.template_count), "词元槽位组合"),
+    metric("候选提示词", fmt(summary.prompt_links), "模板明细累计"),
+    metric("当前筛选", fmt(pagination.total), currentTemplateFilterLabel()),
+    metric("最低提示词数", fmt(state.templateCandidateMinPrompts), "只读筛选阈值"),
+    metric("刷新", fmtDate(summary.refreshed_at), templateRefreshNote(summary)),
+  ].join("");
+  const status = $("#templateCandidateStatus");
+  if (status) {
+    status.textContent = payload?.ready === false
+      ? (payload.message || "模板候选尚未构建")
+      : `第 ${fmt(pagination.page || 1)} 页 · 共 ${fmt(pagination.total || 0)} 个模板 · ${scope.label || "全部任务"}`;
+  }
+  const refreshButton = $("#templateRefreshButton");
+  if (refreshButton) {
+    const running = Boolean(summary.refresh?.running || state.templateCandidateRefreshing);
+    refreshButton.disabled = running;
+    refreshButton.textContent = running ? "刷新中" : "刷新候选";
+  }
+  $("#templateCandidateRows").innerHTML = tableRows(rows, (row) => `
+    <tr>
+      <td>
+        <strong>${escapeHtml(row.template_title || "-")}</strong>
+        <div class="template-candidate-badges">
+          ${renderTemplateSimilarityBadge(row)}
+          ${renderTemplateReviewBadges(row)}
+        </div>
+        <div class="muted small mono">${escapeHtml(row.template_key || "-")}</div>
+      </td>
+      <td>${renderTemplateSlotGroups(row.token_slots)}</td>
+      <td>
+        <strong>${fmt(row.prompt_count)} 条提示词</strong>
+        <div class="muted small">使用 ${fmt(row.use_count)} 次 · ${fmt(row.user_count)} 人 · 分 ${fmtAmount(row.quality_score)}</div>
+      </td>
+      <td>
+        <strong>${escapeHtml(row.scope_label || "-")}</strong>
+        <div class="muted small">${escapeHtml(row.model_label || row.model_key || row.parent_task_type || "-")}</div>
+        <div class="muted small">${fmtDate(row.refreshed_at)}</div>
+      </td>
+      <td>
+        <div class="template-candidate-actions">
+          <label class="template-low-quality-check">
+            <input
+              type="checkbox"
+              data-template-low-quality-template="${encodeURIComponent(row.template_key || "")}"
+              ${row.low_quality ? "checked" : ""}
+              ${state.templateCandidateLowQualitySaving?.[row.template_key] ? "disabled" : ""}
+            />
+            <span>低质量</span>
+          </label>
+          <button type="button" data-template-key="${encodeURIComponent(row.template_key || "")}">查看</button>
+        </div>
+      </td>
+    </tr>
+  `);
+  renderPageControl("#templateCandidatePagination", pagination, "templateCandidatePageJumpInput");
+}
+
+function renderTemplateCandidateDrawer() {
+  const payload = state.templateCandidatePrompts || {};
+  const summary = payload.summary || state.selectedTemplateCandidate || {};
+  const rows = payload.rows || [];
+  const pagination = payload.pagination || {};
+  $("#templateCandidateDrawerTitle").textContent = summary?.template_title || "模板候选";
+  $("#templateCandidateDrawerSummary").innerHTML = [
+    metric("对应提示词", fmt(summary?.prompt_count), "模板候选明细"),
+    metric("使用次数", fmt(summary?.use_count), "候选提示词累计"),
+    metric("使用用户", fmt(summary?.user_count), "候选提示词累计"),
+    metric("质量分", fmtAmount(summary?.quality_score), summary?.scope_label || "-"),
+    metric("相似度", summary?.similarity_bucket || "未计算", `分 ${fmtAmount(summary?.similarity_score)}`),
+    metric(
+      "已暂存",
+      fmt(summary?.marked_prompt_count || 0),
+      summary?.low_quality ? "低质量" : (summary?.processed ? "已处理" : "未处理")
+    ),
+    metric("刷新", fmtDate(summary?.refreshed_at), fmtDate(summary?.latest_prompt_at)),
+  ].join("");
+  $("#templateCandidatePromptPageInfo").textContent = `第 ${fmt(pagination.page || 1)} 页 · 共 ${fmt(pagination.total || 0)} 条提示词`;
+  $("#templateCandidatePromptRows").innerHTML = tableRows(rows, (row) => `
+    <tr>
+      <td>
+        <div class="template-candidate-prompt-text">${escapeHtml(row.prompt_preview || row.prompt || "-")}</div>
+        <div class="muted small mono">${escapeHtml(row.prompt_hash || "-")}</div>
+      </td>
+      <td>
+        <strong>${(row.task_types || []).map(escapeHtml).join(" / ") || "-"}</strong>
+        <div class="muted small">${fmt(row.uses)} 次 · ${fmt(row.users)} 人 · 分 ${fmtAmount(row.quality_score)}</div>
+        <div class="muted small">${fmtDate(row.last_seen)}</div>
+      </td>
+      <td>${renderTemplateSlotGroups(row.token_slots || summary?.token_slots, { maxGroups: 10, maxTokensPerGroup: 10 })}</td>
+      <td class="template-review-cell">
+        <label class="template-review-check">
+          <input
+            type="checkbox"
+            data-template-review-prompt="${encodeURIComponent(row.prompt_hash || "")}"
+            ${row.review_checked ? "checked" : ""}
+            ${state.templateCandidateReviewSaving?.[row.prompt_hash] ? "disabled" : ""}
+          />
+          <span>暂存</span>
+        </label>
+        <div class="muted small">${row.review_checked ? fmtDate(row.review_marked_at) : ""}</div>
+      </td>
+    </tr>
+  `);
+  renderPageControl("#templateCandidatePromptPagination", pagination, "templateCandidatePromptPageJumpInput");
+}
+
+function currentTemplateReviewMarksFilterLabel(payload = state.templateReviewMarks || {}) {
+  const parts = [];
+  const scope = payload.scope || {};
+  const search = $("#templateReviewMarksSearchInput")?.value?.trim();
+  const similarity = $("#templateReviewMarksSimilaritySelect")?.value || "";
+  const processed = $("#templateReviewMarksProcessedSelect")?.value || "all";
+  if (scope.label && scope.key !== "all") parts.push(scope.label);
+  if (similarity) parts.push(similarity);
+  if (processed === "processed") parts.push("已处理");
+  if (processed === "unprocessed") parts.push("未处理");
+  if (search) parts.push(search);
+  return parts.join(" · ") || "全部暂存";
+}
+
+function templateReviewMarkPromptText(row = {}) {
+  return String(row.prompt || "").trim();
+}
+
+function templateReviewMarkRowKey(row = {}) {
+  return `${row.template_key || ""}::${row.prompt_hash || ""}`;
+}
+
+function templateReviewMarksCopyText(rows = []) {
+  return rows.map(templateReviewMarkPromptText).filter(Boolean).join("\n\n");
+}
+
+function csvCell(value) {
+  const text = String(value ?? "");
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+function templateReviewMarksCsv(rows = []) {
+  const header = ["模板", "相似度", "相似分", "处理状态", "处理时间", "质量分", "使用次数", "使用用户", "暂存时间", "Prompt"];
+  const lines = rows.map((row) => [
+    row.template_title || "",
+    row.similarity_bucket || "",
+    row.similarity_score ?? "",
+    row.review_processed ? "已处理" : "未处理",
+    row.review_processed_at || "",
+    row.quality_score ?? "",
+    row.uses ?? "",
+    row.users ?? "",
+    row.marked_at || "",
+    row.prompt || "",
+  ].map(csvCell).join(","));
+  return [`\ufeff${header.map(csvCell).join(",")}`, ...lines].join("\n");
+}
+
+function renderTemplateReviewMarksDrawer() {
+  if (!$("#templateReviewMarksDrawer")) return;
+  const payload = state.templateReviewMarks || {};
+  const summary = payload.summary || {};
+  const rows = payload.rows || [];
+  const pagination = payload.pagination || {};
+  const total = Number(pagination.total || 0);
+  const loaded = rows.length;
+  $("#templateReviewMarksSummary").innerHTML = [
+    metric("当前筛选", fmt(total), "候选审核暂存"),
+    metric("已处理", fmt(summary.processed_prompt_count || 0), "暂存提示词"),
+    metric("未处理", fmt(summary.unprocessed_prompt_count || 0), "暂存提示词"),
+    metric("筛选", currentTemplateReviewMarksFilterLabel(payload), `当前页 ${fmt(loaded)} 条`),
+  ].join("");
+  const status = $("#templateReviewMarksStatus");
+  if (status) {
+    status.textContent = state.templateReviewMarksLoading
+      ? "加载中"
+      : `第 ${fmt(pagination.page || 1)} 页 · 共 ${fmt(total)} 条暂存`;
+  }
+  const copyStatus = $("#templateReviewMarksCopyStatus");
+  if (copyStatus) copyStatus.textContent = state.templateReviewMarksCopyStatus || "";
+  const copyAllButton = $("#templateReviewMarksCopyAllButton");
+  if (copyAllButton) copyAllButton.disabled = state.templateReviewMarksLoading || rows.length === 0;
+  const exportButton = $("#templateReviewMarksExportButton");
+  if (exportButton) exportButton.disabled = state.templateReviewMarksLoading || rows.length === 0;
+  const body = $("#templateReviewMarksRows");
+  if (!body) return;
+  if (state.templateReviewMarksLoading) {
+    body.innerHTML = '<tr><td colspan="4" class="empty">加载中</td></tr>';
+    renderPageControl("#templateReviewMarksPagination", pagination, "templateReviewMarksPageJumpInput");
     return;
   }
-  container.innerHTML = rows.map((row) => {
-    const prompt = row.prompt_preview || row.prompt || row.raw_prompt_representative || "";
-    const score = row.prompt_score ?? row.value_score ?? row.quality_score ?? 0;
-    const taskTypes = Array.isArray(row.task_types) ? row.task_types : Object.keys(row.task_type_counts || {});
-    const taskText = taskTypes.slice(0, 3).map(escapeHtml).join(" / ");
-    return `
-      <article class="candidate-card">
-        <div class="candidate-title">
-          <span>候选 ${fmt(score)}</span>
-          <span class="muted small">${fmt(row.uses)} 次 / ${fmt(row.users)} 人</span>
+  body.innerHTML = tableRows(rows, (row) => `
+    <tr>
+      <td>
+        <strong>${escapeHtml(row.template_title || "-")}</strong>
+        <div class="template-candidate-badges">
+          ${renderTemplateSimilarityBadge(row)}
+          <span class="status-badge success">已暂存</span>
+          ${row.review_processed ? '<span class="status-badge identity">已处理</span>' : '<span class="status-badge warn">未处理</span>'}
         </div>
-        <p class="candidate-prompt">${escapeHtml(prompt)}</p>
-        <div class="muted small">${taskText || "-"} · ${fmtDate(row.last_seen)}</div>
-        <div class="pill-list">${promptScopePills(row)}</div>
-      </article>
+        <div class="muted small mono">${escapeHtml(row.template_key || "-")}</div>
+      </td>
+      <td>
+        <div class="template-review-mark-prompt-text">${escapeHtml(row.prompt || "-")}</div>
+        <div class="muted small mono">${escapeHtml(row.prompt_hash || "-")}</div>
+      </td>
+      <td>
+        <strong>${escapeHtml((row.task_types || []).join(" / ") || row.scope_label || "-")}</strong>
+        <div class="muted small">${fmt(row.uses)} 次 · ${fmt(row.users)} 人 · 分 ${fmtAmount(row.quality_score)}</div>
+        <div class="muted small">暂存 ${fmtDate(row.marked_at)}</div>
+      </td>
+      <td class="template-review-mark-actions">
+        <label class="template-review-check">
+          <input
+            type="checkbox"
+            data-template-review-processed-template="${encodeURIComponent(row.template_key || "")}"
+            data-template-review-processed="${encodeURIComponent(row.prompt_hash || "")}"
+            ${row.review_processed ? "checked" : ""}
+            ${state.templateReviewMarksProcessingSaving?.[templateReviewMarkRowKey(row)] ? "disabled" : ""}
+          />
+          <span>已处理</span>
+        </label>
+        <div class="muted small">${row.review_processed ? fmtDate(row.review_processed_at) : ""}</div>
+        <button
+          type="button"
+          data-template-review-copy-template="${encodeURIComponent(row.template_key || "")}"
+          data-template-review-copy="${encodeURIComponent(row.prompt_hash || "")}"
+        >复制</button>
+      </td>
+    </tr>
+  `);
+  renderPageControl("#templateReviewMarksPagination", pagination, "templateReviewMarksPageJumpInput");
+}
+
+function promptDecompositionTotalPages(pagination = state.promptDecomposition?.pagination || {}) {
+  const limit = Math.max(1, Number(pagination.limit || 1));
+  const total = Math.max(0, Number(pagination.total || 0));
+  return Math.max(1, Math.ceil(total / limit));
+}
+
+function promptDecompositionSelectedTokens() {
+  if (!Array.isArray(state.promptDecompositionSelectedTokens)) {
+    state.promptDecompositionSelectedTokens = [];
+  }
+  return state.promptDecompositionSelectedTokens;
+}
+
+function renderPromptDecompositionGroupedTokens(groups = [], { highlightTokens = [] } = {}) {
+  const normalizedGroups = Array.isArray(groups) ? groups : [];
+  if (!normalizedGroups.length) return '<span class="muted">-</span>';
+  const highlighted = new Set(Array.isArray(highlightTokens) ? highlightTokens : []);
+  return `
+    <div class="template-slot-groups">
+      ${normalizedGroups.map((group) => `
+        <div class="template-slot-group">
+          <span class="template-slot-label">${escapeHtml(group.label || "-")}</span>
+          <span class="template-slot-token-list">
+            ${(Array.isArray(group.tokens) ? group.tokens : []).map((token) => (
+              `<span class="pill ${highlighted.has(token) ? "active" : ""}">${escapeHtml(token)}</span>`
+            )).join("") || '<span class="muted small">-</span>'}
+          </span>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderPromptDecompositionSelectedTokenBar() {
+  const container = $("#promptDecompositionSelectedTokenBar");
+  if (!container) return;
+  const selected = promptDecompositionSelectedTokens();
+  if (!selected.length) {
+    container.innerHTML = '<div class="muted small">已选标签：无。当前仅展示已分类且提示词数不少于 20 的自由P图标签。</div>';
+    return;
+  }
+  container.innerHTML = `
+    <div class="prompt-decomposition-selected-wrap">
+      <div class="muted small">已选标签</div>
+      <div class="prompt-decomposition-selected-chip-list">
+        ${selected.map((token) => `
+          <button class="prompt-decomposition-selected-chip" type="button" data-remove-token="${encodeURIComponent(token)}">
+            <span>${escapeHtml(token)}</span>
+            <span aria-hidden="true">×</span>
+          </button>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderPromptDecompositionFacets() {
+  const container = $("#promptDecompositionFacetGrid");
+  if (!container) return;
+  const groups = state.promptDecomposition?.filters?.groups || [];
+  if (!groups.length) {
+    container.innerHTML = '<div class="empty">当前没有可用的自由P图标签筛选</div>';
+    return;
+  }
+  const selected = new Set(promptDecompositionSelectedTokens());
+  container.innerHTML = groups.map((group) => {
+    const subgroups = Array.isArray(group.subgroups) ? group.subgroups : [];
+    const activeKey = state.promptDecompositionActiveSubgroups?.[group.key] || subgroups[0]?.key || "";
+    const activeSubgroup = subgroups.find((item) => item.key === activeKey) || subgroups[0] || { tokens: [] };
+    state.promptDecompositionActiveSubgroups[group.key] = activeSubgroup.key || "";
+    return `
+      <section class="prompt-decomposition-facet-card" data-group-key="${escapeHtml(group.key || "")}">
+        <div class="prompt-decomposition-facet-head">
+          <div>
+            <div class="table-title">${escapeHtml(group.label || "-")}</div>
+            <div class="muted small">${escapeHtml(group.note || "")}</div>
+          </div>
+          <div class="muted small">${fmt(group.token_count || 0)} 个标签</div>
+        </div>
+        <div class="prompt-decomposition-subgroup-tabs">
+          ${subgroups.map((subgroup) => `
+            <button
+              type="button"
+              class="rule-category-tab ${subgroup.key === activeSubgroup.key ? "active" : ""}"
+              data-group-key="${escapeHtml(group.key || "")}"
+              data-subgroup-key="${escapeHtml(subgroup.key || "")}"
+            >
+              ${escapeHtml(subgroup.label || "-")}
+              <strong>${fmt(subgroup.token_count || 0)}</strong>
+            </button>
+          `).join("")}
+        </div>
+        <div class="prompt-decomposition-token-cloud">
+          ${(Array.isArray(activeSubgroup.tokens) ? activeSubgroup.tokens : []).map((item) => `
+            <button
+              type="button"
+              class="prompt-decomposition-token-pill ${selected.has(item.token) ? "active" : ""}"
+              data-toggle-token="${encodeURIComponent(item.token || "")}"
+              title="提示词 ${fmt(item.prompt_count)} 条 · 使用 ${fmt(item.use_count)} 次 · ${fmt(item.user_count)} 人"
+            >
+              <span>${escapeHtml(item.token || "-")}</span>
+              <strong>${fmt(item.prompt_count || 0)}</strong>
+            </button>
+          `).join("") || '<span class="muted small">该二级项暂无可筛词元</span>'}
+        </div>
+      </section>
     `;
   }).join("");
+}
+
+function renderPromptDecompositionRows() {
+  const payload = state.promptDecomposition || {};
+  const rows = payload.rows || [];
+  const pagination = payload.pagination || {};
+  $("#promptDecompositionPageInfo").textContent = `第 ${fmt(pagination.page || 1)} 页 · 共 ${fmt(pagination.total || 0)} 条提示词`;
+  $("#promptDecompositionRows").innerHTML = tableRows(rows, (row) => `
+    <tr class="${state.selectedPromptDecomposition?.prompt_hash === row.prompt_hash ? "selected-row" : ""}">
+      <td>
+        <div class="prompt-token-prompt-text">${escapeHtml(row.prompt_preview || row.prompt || "-")}</div>
+        <div class="muted small mono">${escapeHtml(row.prompt_hash || "-")}</div>
+      </td>
+      <td>${renderPromptDecompositionGroupedTokens(row.grouped_tokens || [], { highlightTokens: row.matched_tokens || [] })}</td>
+      <td>
+        <strong>${fmt(row.uses)} 次 · ${fmt(row.users)} 人</strong>
+        <div class="muted small">分 ${fmtAmount(row.quality_score)} · ${fmtDate(row.last_seen)}</div>
+      </td>
+      <td>
+        <button type="button" data-open-decomposition="${encodeURIComponent(row.prompt_hash || "")}" data-source="live">查看</button>
+      </td>
+    </tr>
+  `);
+  renderPageControl("#promptDecompositionPagination", pagination, "promptDecompositionPageJumpInput");
+}
+
+function renderPromptDecompositionSaved() {
+  const payload = state.promptDecompositionSaved || { rows: [], total: 0 };
+  const rows = payload.rows || [];
+  const status = $("#promptDecompositionSavedStatus");
+  if (status) {
+    status.textContent = state.promptDecompositionSavedLoading
+      ? "正在加载优秀模板沉淀"
+      : `已保存 ${fmt(payload.total || 0)} 条优秀模板，当前展示最近 ${fmt(Math.min(rows.length, PROMPT_DECOMPOSITION_SAVED_LIMIT))} 条`;
+  }
+  $("#promptDecompositionSavedRows").innerHTML = tableRows(rows, (row) => `
+    <tr class="${state.selectedPromptDecomposition?.prompt_hash === row.prompt_hash ? "selected-row" : ""}">
+      <td>
+        <strong>${escapeHtml(row.title || "-")}</strong>
+        <div class="muted small mono">${escapeHtml(row.prompt_hash || "-")}</div>
+      </td>
+      <td>${renderTokenPills(row.selected_tokens || [], { limit: 18 })}</td>
+      <td>
+        <div class="prompt-token-prompt-text">${escapeHtml(row.prompt_preview || row.prompt || "-")}</div>
+        <div class="muted small">${fmt(row.uses)} 次 · ${fmt(row.users)} 人 · 分 ${fmtAmount(row.quality_score)}</div>
+      </td>
+      <td>
+        <strong>${fmtDate(row.updated_at)}</strong>
+        <div class="muted small">${fmtDate(row.last_seen)}</div>
+      </td>
+      <td>
+        <div class="inline-actions prompt-token-row-actions">
+          <button type="button" data-open-decomposition="${encodeURIComponent(row.prompt_hash || "")}" data-source="saved">查看</button>
+          <button type="button" data-delete-saved-template="${row.id}">删除</button>
+        </div>
+      </td>
+    </tr>
+  `);
+}
+
+function renderPromptDecompositionDrawer() {
+  const row = state.selectedPromptDecomposition || {};
+  $("#promptDecompositionDrawerTitle").textContent = row.title || "自由P图提示词拆解";
+  $("#promptDecompositionDrawerSummary").innerHTML = [
+    metric("使用次数", fmt(row.uses), "该提示词累计使用"),
+    metric("使用用户", fmt(row.users), "触达用户数"),
+    metric("质量分", fmtAmount(row.quality_score), fmtDate(row.last_seen)),
+    metric("当前筛选", fmt((row.matched_tokens || []).length), (row.matched_tokens || []).join(" / ") || "无标签筛选"),
+    metric("已拆分标签", fmt((row.tokens || []).length), "基于当前规则体系"),
+  ].join("");
+  const input = $("#promptDecompositionSaveTitleInput");
+  if (input) {
+    const currentValue = state.promptDecompositionSaveTitle || row.title || "";
+    if (input.value !== currentValue) input.value = currentValue;
+    input.disabled = state.promptDecompositionSaving;
+  }
+  const saveButton = $("#promptDecompositionSaveButton");
+  if (saveButton) {
+    saveButton.disabled = !row.prompt_hash || state.promptDecompositionSaving;
+    saveButton.textContent = state.promptDecompositionSaving ? "保存中" : "保存优秀模板";
+  }
+  $("#promptDecompositionDrawerPrompt").textContent = row.prompt || row.prompt_preview || "-";
+  $("#promptDecompositionDrawerGroups").innerHTML = renderPromptDecompositionGroupedTokens(
+    row.grouped_tokens || [],
+    { highlightTokens: row.matched_tokens || [] }
+  );
+}
+
+function renderPromptDecomposition() {
+  const payload = state.promptDecomposition || {};
+  const summary = payload.summary || {};
+  $("#promptDecompositionSummary").innerHTML = [
+    metric("自由P图候选提示词", fmt(summary.candidate_count), "quality_stage = candidate"),
+    metric("当前命中", fmt(summary.matched_prompt_count), promptDecompositionSelectedTokens().length ? "多标签交集结果" : "全部自由P图"),
+    metric("已选标签", fmt(summary.token_filter_count), `仅展示词元表中 prompt_count >= ${fmt(summary.min_token_prompt_count || 20)} 的分类标签`),
+    metric("优秀模板沉淀", fmt(summary.saved_template_count), "人工保存的高质量提示词"),
+    metric("刷新", fmtDate(summary.refreshed_at), payload.scope?.label || "自由P图"),
+  ].join("");
+  const status = $("#promptDecompositionFilterStatus");
+  if (status) {
+    status.textContent = payload.ready === false
+      ? (payload.message || "提示词拆解尚未准备好")
+      : "仅展示已分类标签；未分类词元不进入该页筛选器。";
+  }
+  renderPromptDecompositionSelectedTokenBar();
+  renderPromptDecompositionFacets();
+  renderPromptDecompositionRows();
+  renderPromptDecompositionSaved();
+  if ($("#promptDecompositionDrawer")?.classList.contains("open")) {
+    renderPromptDecompositionDrawer();
+  }
+}
+
+function renderMediaRefs(refs = []) {
+  const items = Array.isArray(refs) ? refs.filter(Boolean).slice(0, 3) : [];
+  if (!items.length) return '<span class="muted">-</span>';
+  return items.map((ref) => `<div class="mono small">${escapeHtml(ref)}</div>`).join("");
+}
+
+function renderMedia() {
+  const totals = state.media?.totals || {};
+  $("#mediaSummary").innerHTML = [
+    metric("输入引用", fmt(totals.input_refs), `输出 ${fmt(totals.output_refs)}`),
+    metric("图片", fmt(totals.images), "输入输出合计"),
+    metric("视频", fmt(totals.videos), "输入输出合计"),
+    metric("有输出", fmt(totals.with_output), escapeHtml(state.media?.media_bucket || "-")),
+  ].join("");
+
+  $("#mediaRows").innerHTML = tableRows(state.media?.records, (row) => `
+    <tr>
+      <td>${fmtDate(row.created_at)}</td>
+      <td>
+        <strong class="mono">${escapeHtml(row.task_type || "-")}</strong>
+        <div class="muted small">${escapeHtml(row.source || "-")}</div>
+      </td>
+      <td>${renderMediaRefs(row.input_refs)}</td>
+      <td>
+        ${renderMediaRefs(row.output_refs)}
+        ${row.primary_output_url ? `<a class="muted small" href="${escapeHtml(row.primary_output_url)}" target="_blank" rel="noreferrer">打开输出</a>` : ""}
+      </td>
+      <td>
+        <strong>${fmt(row.width)} × ${fmt(row.height)}</strong>
+        <div class="muted small">${row.duration ? `${fmtAmount(row.duration, " 秒")}` : "-"}</div>
+      </td>
+    </tr>
+  `);
 }
 
 const promptSlimStageLabels = {
@@ -2016,7 +2660,11 @@ function renderPromptVectorSummary() {
     metric("已向量化", fmt(summary.embedded_count), `覆盖 ${fmtAmount(summary.embedding_coverage)}%`),
     metric("待向量化", fmt(summary.pending_count), `失败 ${fmt(summary.failed_count)}`),
     metric("模型", escapeHtml(model.model_id || "-"), `维度 ${fmt(model.embedding_dim)}`),
-    metric("刷新", fmtDate(summary.latest_embedded_at || model.last_success_at), model.last_error ? `错误 ${model.last_error}` : "仅保留基础向量"),
+    metric(
+      "刷新",
+      fmtDate(summary.latest_embedded_at || model.last_success_at),
+      model.last_error ? `错误 ${model.last_error}` : "仅保留基础向量",
+    ),
   ].join("");
 }
 
@@ -2030,6 +2678,1298 @@ function renderPromptVectors() {
   renderPromptVectorSummary();
   renderPromptVectorResumeStatus();
   renderPromptVectorDistributions();
+}
+
+function tokenKindLabel(kind) {
+  if (kind === "cjk") return "中文";
+  if (kind === "mixed") return "混合";
+  if (kind === "unicode") return "多语言";
+  return "英文";
+}
+
+function renderTokenPills(tokens = [], { selectedToken = "", limit = 28 } = {}) {
+  const visible = (Array.isArray(tokens) ? tokens : []).filter(Boolean).slice(0, limit);
+  if (!visible.length) return '<span class="muted">-</span>';
+  const pills = visible.map((token) => {
+    const active = token === selectedToken ? " active" : "";
+    return `<span class="pill${active}">${escapeHtml(token)}</span>`;
+  });
+  const hiddenCount = Math.max(0, (tokens || []).length - visible.length);
+  if (hiddenCount) {
+    pills.push(`<span class="pill neutral">另 ${fmt(hiddenCount)} 个</span>`);
+  }
+  return `<div class="pill-list prompt-token-pill-list">${pills.join("")}</div>`;
+}
+
+function promptTokenCustomTermRows() {
+  if (!state.promptTokenCustomTerms) {
+    state.promptTokenCustomTerms = { rows: [], status: {} };
+  }
+  if (!Array.isArray(state.promptTokenCustomTerms.rows)) {
+    state.promptTokenCustomTerms.rows = [];
+  }
+  return state.promptTokenCustomTerms.rows;
+}
+
+function promptTokenRuleCategoryLabel(row = {}) {
+  return row.category_label || row.category_key || "-";
+}
+
+function promptTokenRuleSubcategoryLabel(row = {}) {
+  return row.subcategory_label || row.subcategory_key || "-";
+}
+
+function promptTokenRuleCategoryValue(row = {}) {
+  return row.category_label || row.category_key || PROMPT_TOKEN_UNCATEGORIZED_CATEGORY;
+}
+
+function promptTokenRuleCategoryText(row = {}) {
+  return row.category_label || row.category_key || "未分类";
+}
+
+function promptTokenRuleSubcategoryValue(row = {}) {
+  return row.subcategory_label || row.subcategory_key || PROMPT_TOKEN_UNCATEGORIZED_CATEGORY;
+}
+
+function promptTokenRuleSubcategoryText(row = {}) {
+  return row.subcategory_label || row.subcategory_key || "未分类";
+}
+
+function promptTokenRuleCategories(rows = []) {
+  const categories = [];
+  const seen = new Set();
+  rows.forEach((row) => {
+    const value = promptTokenRuleCategoryValue(row);
+    const label = promptTokenRuleCategoryText(row);
+    if (!seen.has(value)) {
+      seen.add(value);
+      categories.push({
+        value,
+        label,
+        count: 0,
+        category_key: row.category_key || "",
+        category_label: row.category_label || "",
+      });
+    }
+    const item = categories.find((category) => category.value === value);
+    if (item) item.count += 1;
+  });
+  categories.sort((a, b) => {
+    if (a.value === PROMPT_TOKEN_UNCATEGORIZED_CATEGORY) return 1;
+    if (b.value === PROMPT_TOKEN_UNCATEGORIZED_CATEGORY) return -1;
+    return a.label.localeCompare(b.label, "zh-CN");
+  });
+  return [
+    { value: "", label: "全部", count: rows.length, category_key: "", category_label: "" },
+    ...categories,
+  ];
+}
+
+function promptTokenRuleSubcategories(rows = []) {
+  const subcategories = [];
+  const seen = new Set();
+  rows.forEach((row) => {
+    const value = promptTokenRuleSubcategoryValue(row);
+    const label = promptTokenRuleSubcategoryText(row);
+    if (!seen.has(value)) {
+      seen.add(value);
+      subcategories.push({
+        value,
+        label,
+        count: 0,
+        subcategory_key: row.subcategory_key || "",
+        subcategory_label: row.subcategory_label || "",
+      });
+    }
+    const item = subcategories.find((subcategory) => subcategory.value === value);
+    if (item) item.count += 1;
+  });
+  subcategories.sort((a, b) => {
+    if (a.value === PROMPT_TOKEN_UNCATEGORIZED_CATEGORY) return 1;
+    if (b.value === PROMPT_TOKEN_UNCATEGORIZED_CATEGORY) return -1;
+    return a.label.localeCompare(b.label, "zh-CN");
+  });
+  return [
+    { value: "", label: "全部子分类", count: rows.length, subcategory_key: "", subcategory_label: "" },
+    ...subcategories,
+  ];
+}
+
+function promptTokenRuleCategoryExists(rows = [], value = "") {
+  if (!value) return true;
+  return rows.some((row) => promptTokenRuleCategoryValue(row) === value);
+}
+
+function promptTokenRuleCategoryForValue(rows = [], value = "") {
+  return promptTokenRuleCategories(rows).find((category) => category.value === value) || null;
+}
+
+function promptTokenRuleSubcategoryExists(rows = [], value = "") {
+  if (!value) return true;
+  return rows.some((row) => promptTokenRuleSubcategoryValue(row) === value);
+}
+
+function promptTokenRuleSubcategoryForValue(rows = [], value = "") {
+  return promptTokenRuleSubcategories(rows).find((subcategory) => subcategory.value === value) || null;
+}
+
+function renderPromptTokenRuleCategoryTabs(selector, rows, activeValue) {
+  const container = $(selector);
+  if (!container) return "";
+  const safeActive = promptTokenRuleCategoryExists(rows, activeValue) ? activeValue : "";
+  const tabs = promptTokenRuleCategories(rows);
+  container.innerHTML = tabs.map((tab) => {
+    const active = tab.value === safeActive;
+    return `
+      <button
+        class="rule-category-tab ${active ? "active" : ""}"
+        type="button"
+        role="tab"
+        aria-selected="${active ? "true" : "false"}"
+        data-category="${escapeHtml(tab.value)}"
+        title="${escapeHtml(tab.label)}"
+      >
+        <span>${escapeHtml(tab.label)}</span>
+        <strong>${fmt(tab.count)}</strong>
+      </button>
+    `;
+  }).join("");
+  return safeActive;
+}
+
+function renderPromptTokenRuleSubcategoryTabs(selector, rows, activeValue, visible = true) {
+  const container = $(selector);
+  if (!container) return "";
+  if (!visible) {
+    container.classList.add("hidden");
+    container.innerHTML = "";
+    return "";
+  }
+  container.classList.remove("hidden");
+  const safeActive = promptTokenRuleSubcategoryExists(rows, activeValue) ? activeValue : "";
+  const tabs = promptTokenRuleSubcategories(rows);
+  container.innerHTML = tabs.map((tab) => {
+    const active = tab.value === safeActive;
+    return `
+      <button
+        class="rule-category-tab rule-subcategory-tab ${active ? "active" : ""}"
+        type="button"
+        role="tab"
+        aria-selected="${active ? "true" : "false"}"
+        data-subcategory="${escapeHtml(tab.value)}"
+        title="${escapeHtml(tab.label)}"
+      >
+        <span>${escapeHtml(tab.label)}</span>
+        <strong>${fmt(tab.count)}</strong>
+      </button>
+    `;
+  }).join("");
+  return safeActive;
+}
+
+function filteredPromptTokenCustomTermRows() {
+  const allRows = promptTokenCustomTermRows();
+  const categoryFilter = state.promptTokenCustomTermCategoryFilter || "";
+  const subcategoryFilter = state.promptTokenCustomTermSubcategoryFilter || "";
+  return allRows
+    .map((row, index) => ({ row, index }))
+    .filter((item) => promptTokenCustomTermRowMatchesSearch(item.row))
+    .filter((item) => !categoryFilter || promptTokenRuleCategoryValue(item.row) === categoryFilter)
+    .filter((item) => !subcategoryFilter || promptTokenRuleSubcategoryValue(item.row) === subcategoryFilter);
+}
+
+function filteredPromptTokenAliasRows() {
+  const allRows = promptTokenAliasRows();
+  const categoryFilter = state.promptTokenAliasCategoryFilter || "";
+  return allRows
+    .map((row, index) => ({ row, index }))
+    .filter((item) => promptTokenAliasRowMatchesSearch(item.row))
+    .filter((item) => !categoryFilter || promptTokenRuleCategoryValue(item.row) === categoryFilter);
+}
+
+function promptTokenRuleSearchTerms(value = "") {
+  return String(value || "")
+    .trim()
+    .toLocaleLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function promptTokenRuleSearchText(parts = []) {
+  return parts
+    .flatMap((part) => Array.isArray(part) ? part : [part])
+    .filter((part) => part !== null && part !== undefined)
+    .map((part) => String(part))
+    .join(" ")
+    .toLocaleLowerCase();
+}
+
+function promptTokenRuleMatchesSearch(text, query) {
+  const terms = promptTokenRuleSearchTerms(query);
+  if (!terms.length) return true;
+  return terms.every((term) => text.includes(term));
+}
+
+function promptTokenCustomTermRowMatchesSearch(row = {}) {
+  const query = state.promptTokenCustomTermSearch || "";
+  if (!promptTokenRuleSearchTerms(query).length) return true;
+  return promptTokenRuleMatchesSearch(
+    promptTokenRuleSearchText([
+      row.term,
+      row.category_label,
+      row.category_key,
+      row.subcategory_label,
+      row.subcategory_key,
+      row.notes,
+      row.source,
+      row.seed_batch,
+    ]),
+    query
+  );
+}
+
+function promptTokenCustomTermRowsMatchingSearch(rows = []) {
+  return rows.filter((row) => promptTokenCustomTermRowMatchesSearch(row));
+}
+
+function promptTokenAliasRowMatchesSearch(row = {}) {
+  const query = state.promptTokenAliasSearch || "";
+  if (!promptTokenRuleSearchTerms(query).length) return true;
+  return promptTokenRuleMatchesSearch(
+    promptTokenRuleSearchText([
+      row.representative,
+      row.aliases_text,
+      row.aliases,
+      row.category_label,
+      row.category_key,
+      row.subcategory_label,
+      row.subcategory_key,
+      row.source,
+      row.seed_batch,
+    ]),
+    query
+  );
+}
+
+function promptTokenAliasRowsMatchingSearch(rows = []) {
+  return rows.filter((row) => promptTokenAliasRowMatchesSearch(row));
+}
+
+function renderPromptTokenRuleSeedStatus() {
+  const report = state.promptTokenRuleSeedReport;
+  const statusEl = $("#promptTokenRuleSeedStatus");
+  if (!statusEl) return;
+  if (state.promptTokenRuleSeedsOverwriting) {
+    statusEl.textContent = "正在全量生成并覆盖词元规则";
+    return;
+  }
+  if (!report) {
+    statusEl.textContent = "可一键基于当前全部词元生成分类指定词元和同义映射";
+    return;
+  }
+  const coverage = report.coverage || {};
+  statusEl.textContent = `上次覆盖 ${fmt(report.custom_term_count)} 个指定词元 · ${fmt(report.alias_rule_count)} 组映射 · 拆解 ${fmt(coverage.decomposed || 0)} 个长词元 · 保留 ${fmt(coverage.retained_independent || 0)} 个独立词元`;
+}
+
+function renderPromptTokenCustomTermControls() {
+  const payload = state.promptTokenCustomTerms || {};
+  const rows = payload.rows || [];
+  const status = payload.status || {};
+  const resumeRunning = Boolean(status.resume?.running);
+  let text = "暂无指定词元";
+  const loaded = Boolean(state.promptTokenCustomTerms);
+  if (state.promptTokenCustomTermsLoading) {
+    text = "正在加载指定词元表";
+  } else if (!loaded) {
+    text = "正在准备指定词元表";
+  } else if (state.promptTokenRuleSeedsOverwriting) {
+    text = "正在覆盖规则";
+  } else if (state.promptTokenCustomTermsSaving) {
+    text = "保存中";
+  } else if (state.promptTokenCustomTermsRebuilding) {
+    text = "正在提交重建";
+  } else if (state.promptTokenCustomTermsDirty) {
+    text = "有未保存修改";
+  } else if (resumeRunning) {
+    text = "词元重建或向量化任务运行中";
+  } else if (status.pending) {
+    text = `指定词元已保存，待重建生效 · ${fmtDate(status.rules_updated_at)}`;
+  } else if (status.last_applied_at) {
+    text = `已生效 · ${fmtDate(status.last_applied_at)}`;
+  } else if (rows.length) {
+    text = "已保存，等待首次重建";
+  }
+  const statusEl = $("#promptTokenCustomTermStatus");
+  if (statusEl) statusEl.textContent = text;
+  const addButton = $("#promptTokenCustomTermAddButton");
+  if (addButton) addButton.disabled = !loaded || state.promptTokenCustomTermsLoading || state.promptTokenRuleSeedsOverwriting;
+  const saveButton = $("#promptTokenCustomTermSaveButton");
+  if (saveButton) saveButton.disabled = !loaded || state.promptTokenCustomTermsSaving || state.promptTokenRuleSeedsOverwriting;
+  const overwriteButton = $("#promptTokenRuleSeedOverwriteButton");
+  if (overwriteButton) {
+    overwriteButton.disabled = state.promptTokenRuleSeedsOverwriting || state.promptTokenCustomTermsSaving || state.promptTokenAliasesSaving || resumeRunning;
+  }
+  const rebuildButton = $("#promptTokenCustomTermRebuildButton");
+  if (rebuildButton) {
+    rebuildButton.disabled = !loaded || state.promptTokenRuleSeedsOverwriting || state.promptTokenCustomTermsSaving || state.promptTokenCustomTermsRebuilding || resumeRunning;
+  }
+  renderPromptTokenRuleSeedStatus();
+  if (resumeRunning) {
+    schedulePromptTokenCustomTermPoll();
+  }
+}
+
+function renderPromptTokenCustomTerms() {
+  if (!state.promptTokenCustomTerms) {
+    renderPromptTokenRuleCategoryTabs("#promptTokenCustomTermCategoryTabs", [], "");
+    renderPromptTokenRuleSubcategoryTabs("#promptTokenCustomTermSubcategoryTabs", [], "", false);
+    $("#promptTokenCustomTermRows").innerHTML = `
+      <tr><td colspan="3" class="empty">${state.promptTokenCustomTermsLoading ? "正在加载指定词元表" : "正在准备指定词元表"}</td></tr>
+    `;
+    renderPageControl("#promptTokenCustomTermPagination", { page: 1, limit: PROMPT_TOKEN_RULE_PAGE_SIZE, total: 0 }, "promptTokenCustomTermPageJumpInput");
+    renderPromptTokenCustomTermControls();
+    return;
+  }
+  const allRows = promptTokenCustomTermRows();
+  const searchedRows = promptTokenCustomTermRowsMatchingSearch(allRows);
+  state.promptTokenCustomTermCategoryFilter = renderPromptTokenRuleCategoryTabs(
+    "#promptTokenCustomTermCategoryTabs",
+    searchedRows,
+    state.promptTokenCustomTermCategoryFilter || ""
+  );
+  const categoryRows = state.promptTokenCustomTermCategoryFilter
+    ? searchedRows.filter((row) => promptTokenRuleCategoryValue(row) === state.promptTokenCustomTermCategoryFilter)
+    : [];
+  state.promptTokenCustomTermSubcategoryFilter = renderPromptTokenRuleSubcategoryTabs(
+    "#promptTokenCustomTermSubcategoryTabs",
+    categoryRows,
+    state.promptTokenCustomTermSubcategoryFilter || "",
+    Boolean(state.promptTokenCustomTermCategoryFilter)
+  );
+  const indexedRows = filteredPromptTokenCustomTermRows();
+  const totalPages = Math.max(1, Math.ceil(indexedRows.length / PROMPT_TOKEN_RULE_PAGE_SIZE));
+  state.promptTokenCustomTermPage = clampPage(state.promptTokenCustomTermPage || 1, totalPages);
+  const start = (state.promptTokenCustomTermPage - 1) * PROMPT_TOKEN_RULE_PAGE_SIZE;
+  const visibleRows = indexedRows.slice(start, start + PROMPT_TOKEN_RULE_PAGE_SIZE);
+  $("#promptTokenCustomTermRows").innerHTML = tableRows(visibleRows, ({ row, index }) => `
+    <tr data-index="${index}">
+      <td>
+        <input data-field="term" type="text" value="${escapeHtml(row.term || "")}" title="${escapeHtml(row.term || "")}" placeholder="高马尾，蓝紫渐变发色" />
+      </td>
+      <td>
+        <input data-field="notes" type="text" value="${escapeHtml(row.notes || "")}" title="${escapeHtml(row.notes || "")}" placeholder="${escapeHtml(row.source || "")}" />
+      </td>
+      <td>
+        <button type="button" data-action="delete-custom-term">删除</button>
+      </td>
+    </tr>
+  `);
+  renderPageControl(
+    "#promptTokenCustomTermPagination",
+    { page: state.promptTokenCustomTermPage, limit: PROMPT_TOKEN_RULE_PAGE_SIZE, total: indexedRows.length },
+    "promptTokenCustomTermPageJumpInput"
+  );
+  renderPromptTokenCustomTermControls();
+}
+
+function markPromptTokenCustomTermsDirty() {
+  state.promptTokenCustomTermsDirty = true;
+  renderPromptTokenCustomTermControls();
+}
+
+function addPromptTokenCustomTermRow() {
+  if (!state.promptTokenCustomTerms) return;
+  state.promptTokenCustomTermSearch = "";
+  const searchInput = $("#promptTokenCustomTermSearchInput");
+  if (searchInput) searchInput.value = "";
+  const category = promptTokenRuleCategoryForValue(
+    promptTokenCustomTermRows(),
+    state.promptTokenCustomTermCategoryFilter || ""
+  );
+  const subcategoryRows = category?.value
+    ? promptTokenCustomTermRows().filter((row) => promptTokenRuleCategoryValue(row) === category.value)
+    : [];
+  const subcategory = promptTokenRuleSubcategoryForValue(
+    subcategoryRows,
+    state.promptTokenCustomTermSubcategoryFilter || ""
+  );
+  promptTokenCustomTermRows().push({
+    term: "",
+    category_key: category?.value === PROMPT_TOKEN_UNCATEGORIZED_CATEGORY ? "" : category?.category_key || "",
+    category_label: category?.value === PROMPT_TOKEN_UNCATEGORIZED_CATEGORY ? "" : category?.category_label || "",
+    subcategory_key: subcategory?.value === PROMPT_TOKEN_UNCATEGORIZED_CATEGORY ? "" : subcategory?.subcategory_key || "",
+    subcategory_label: subcategory?.value === PROMPT_TOKEN_UNCATEGORIZED_CATEGORY ? "" : subcategory?.subcategory_label || "",
+    notes: "",
+    enabled: true,
+  });
+  state.promptTokenCustomTermPage = Number.MAX_SAFE_INTEGER;
+  markPromptTokenCustomTermsDirty();
+  renderPromptTokenCustomTerms();
+}
+
+async function savePromptTokenCustomTerms() {
+  if (!state.promptTokenCustomTerms) return;
+  state.promptTokenCustomTermsSaving = true;
+  renderPromptTokenCustomTermControls();
+  try {
+    const rows = promptTokenCustomTermRows().map((row, index) => ({
+      term: row.term || "",
+      category_key: row.category_key || "",
+      category_label: row.category_label || "",
+      subcategory_key: row.subcategory_key || "",
+      subcategory_label: row.subcategory_label || "",
+      source: row.source || "",
+      seed_batch: row.seed_batch || "",
+      notes: row.notes || "",
+      enabled: row.enabled !== false,
+      sort_order: index,
+    }));
+    const payload = await fetchJson(
+      "/api/prompt-token-custom-terms",
+      {},
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows }),
+      }
+    );
+    state.promptTokenCustomTerms = {
+      rows: payload.rows || rows,
+      status: payload.custom_term_status || {},
+    };
+    state.promptTokenCustomTermsDirty = false;
+    renderPromptTokenCustomTerms();
+  } finally {
+    state.promptTokenCustomTermsSaving = false;
+    renderPromptTokenCustomTermControls();
+  }
+}
+
+async function rebuildPromptTokenCustomTerms() {
+  if (!state.promptTokenCustomTerms) return;
+  state.promptTokenCustomTermsRebuilding = true;
+  renderPromptTokenCustomTermControls();
+  try {
+    const payload = await fetchJson("/api/prompt-token-custom-terms/rebuild", {}, { method: "POST" });
+    state.promptTokenCustomTerms = {
+      ...(state.promptTokenCustomTerms || { rows: [] }),
+      status: payload.custom_term_status || state.promptTokenCustomTerms?.status || {},
+    };
+    state.promptTokenAliases = {
+      ...(state.promptTokenAliases || { rows: [] }),
+      status: payload.alias_status || state.promptTokenAliases?.status || {},
+    };
+    renderPromptTokenCustomTermControls();
+    renderPromptTokenAliasControls();
+    schedulePromptTokenCustomTermPoll();
+  } finally {
+    state.promptTokenCustomTermsRebuilding = false;
+    renderPromptTokenCustomTermControls();
+  }
+}
+
+function mergePromptTokenCustomTermPayload(payload) {
+  if (!payload) return;
+  if (state.promptTokenCustomTermsDirty) {
+    state.promptTokenCustomTerms = {
+      ...(state.promptTokenCustomTerms || { rows: [] }),
+      status: payload.status || state.promptTokenCustomTerms?.status || {},
+    };
+    return;
+  }
+  state.promptTokenCustomTerms = payload;
+}
+
+async function pollPromptTokenCustomTermStatus() {
+  state.promptTokenCustomTermPollTimer = null;
+  const wasRunning = Boolean(state.promptTokenCustomTerms?.status?.resume?.running);
+  const payload = await fetchJson("/api/prompt-token-custom-terms");
+  mergePromptTokenCustomTermPayload(payload);
+  state.promptTokenCustomTermsRebuilding = false;
+  renderPromptTokenCustomTerms();
+  const isRunning = Boolean(state.promptTokenCustomTerms?.status?.resume?.running);
+  if (isRunning) {
+    schedulePromptTokenCustomTermPoll();
+    return;
+  }
+  if (wasRunning && state.activeTab === "prompt-tokens") {
+    state.promptTokenPage = 1;
+    await loadPromptTokens();
+  }
+}
+
+async function loadPromptTokenCustomTerms() {
+  if (state.promptTokenCustomTermsDirty) return;
+  state.promptTokenCustomTermsLoading = true;
+  renderPromptTokenCustomTerms();
+  renderPromptTokenCustomTermControls();
+  try {
+    state.promptTokenCustomTerms = await fetchJson("/api/prompt-token-custom-terms");
+    state.promptTokenCustomTermPage = 1;
+    renderPromptTokenCustomTerms();
+  } finally {
+    state.promptTokenCustomTermsLoading = false;
+    renderPromptTokenCustomTermControls();
+  }
+}
+
+function schedulePromptTokenCustomTermPoll() {
+  if (state.promptTokenCustomTermPollTimer) return;
+  state.promptTokenCustomTermPollTimer = window.setTimeout(() => {
+    pollPromptTokenCustomTermStatus().catch(setError);
+  }, 5000);
+}
+
+function promptTokenAliasRows() {
+  if (!state.promptTokenAliases) {
+    state.promptTokenAliases = { rows: [], status: {} };
+  }
+  if (!Array.isArray(state.promptTokenAliases.rows)) {
+    state.promptTokenAliases.rows = [];
+  }
+  return state.promptTokenAliases.rows;
+}
+
+function renderPromptTokenAliasControls() {
+  const payload = state.promptTokenAliases || {};
+  const rows = payload.rows || [];
+  const status = payload.status || {};
+  const resumeRunning = Boolean(status.resume?.running);
+  let text = "暂无映射";
+  const loaded = Boolean(state.promptTokenAliases);
+  if (state.promptTokenAliasesLoading) {
+    text = "正在加载词元映射表";
+  } else if (!loaded) {
+    text = "正在准备词元映射表";
+  } else if (state.promptTokenRuleSeedsOverwriting) {
+    text = "正在覆盖规则";
+  } else if (state.promptTokenAliasesSaving) {
+    text = "保存中";
+  } else if (state.promptTokenAliasesRebuilding) {
+    text = "正在提交重建";
+  } else if (state.promptTokenAliasesDirty) {
+    text = "有未保存修改";
+  } else if (resumeRunning) {
+    text = "词元重建或向量化任务运行中";
+  } else if (status.pending) {
+    text = `映射已保存，待重建生效 · ${fmtDate(status.rules_updated_at)}`;
+  } else if (status.last_applied_at) {
+    text = `已生效 · ${fmtDate(status.last_applied_at)}`;
+  } else if (rows.length) {
+    text = "已保存，等待首次重建";
+  }
+  const statusEl = $("#promptTokenAliasStatus");
+  if (statusEl) statusEl.textContent = text;
+  const addButton = $("#promptTokenAliasAddButton");
+  if (addButton) addButton.disabled = !loaded || state.promptTokenAliasesLoading || state.promptTokenRuleSeedsOverwriting;
+  const saveButton = $("#promptTokenAliasSaveButton");
+  if (saveButton) saveButton.disabled = !loaded || state.promptTokenAliasesSaving || state.promptTokenRuleSeedsOverwriting;
+  const rebuildButton = $("#promptTokenAliasRebuildButton");
+  if (rebuildButton) rebuildButton.disabled = !loaded || state.promptTokenRuleSeedsOverwriting || state.promptTokenAliasesSaving || state.promptTokenAliasesRebuilding || resumeRunning;
+  if (resumeRunning) {
+    schedulePromptTokenAliasPoll();
+  }
+}
+
+function renderPromptTokenAliases() {
+  if (!state.promptTokenAliases) {
+    renderPromptTokenRuleCategoryTabs("#promptTokenAliasCategoryTabs", [], "");
+    $("#promptTokenAliasRows").innerHTML = `
+      <tr><td colspan="5" class="empty">${state.promptTokenAliasesLoading ? "正在加载词元映射表" : "正在准备词元映射表"}</td></tr>
+    `;
+    renderPageControl("#promptTokenAliasPagination", { page: 1, limit: PROMPT_TOKEN_RULE_PAGE_SIZE, total: 0 }, "promptTokenAliasPageJumpInput");
+    renderPromptTokenAliasControls();
+    return;
+  }
+  const rows = promptTokenAliasRows();
+  const searchedRows = promptTokenAliasRowsMatchingSearch(rows);
+  state.promptTokenAliasCategoryFilter = renderPromptTokenRuleCategoryTabs(
+    "#promptTokenAliasCategoryTabs",
+    searchedRows,
+    state.promptTokenAliasCategoryFilter || ""
+  );
+  const indexedRows = filteredPromptTokenAliasRows();
+  const totalPages = Math.max(1, Math.ceil(indexedRows.length / PROMPT_TOKEN_RULE_PAGE_SIZE));
+  state.promptTokenAliasPage = clampPage(state.promptTokenAliasPage || 1, totalPages);
+  const start = (state.promptTokenAliasPage - 1) * PROMPT_TOKEN_RULE_PAGE_SIZE;
+  const visibleRows = indexedRows.slice(start, start + PROMPT_TOKEN_RULE_PAGE_SIZE);
+  $("#promptTokenAliasRows").innerHTML = tableRows(visibleRows, ({ row, index }) => `
+    <tr data-index="${index}">
+      <td>
+        <input data-field="representative" type="text" value="${escapeHtml(row.representative || "")}" title="${escapeHtml(row.representative || "")}" placeholder="面部" />
+      </td>
+      <td>
+        <textarea data-field="aliases_text" data-autoresize="true" rows="1" title="${escapeHtml(row.aliases_text || (row.aliases || []).join("，"))}" placeholder="脸部，面容">${escapeHtml(row.aliases_text || (row.aliases || []).join("，"))}</textarea>
+      </td>
+      <td>
+        <input data-field="category_label" type="text" value="${escapeHtml(row.category_label || "")}" title="${escapeHtml(row.category_label || "")}" placeholder="身体部分" />
+        <input data-field="category_key" type="hidden" value="${escapeHtml(row.category_key || "")}" />
+      </td>
+      <td>
+        <input data-field="subcategory_label" type="text" value="${escapeHtml(row.subcategory_label || "")}" title="${escapeHtml(row.subcategory_label || "")}" placeholder="面部" />
+        <input data-field="subcategory_key" type="hidden" value="${escapeHtml(row.subcategory_key || "")}" />
+      </td>
+      <td>
+        <button type="button" data-action="delete-alias">删除</button>
+      </td>
+    </tr>
+  `);
+  resizePromptTokenAliasTextareas();
+  renderPageControl(
+    "#promptTokenAliasPagination",
+    { page: state.promptTokenAliasPage, limit: PROMPT_TOKEN_RULE_PAGE_SIZE, total: indexedRows.length },
+    "promptTokenAliasPageJumpInput"
+  );
+  renderPromptTokenAliasControls();
+}
+
+function resizePromptTokenAliasTextareas(root = document) {
+  root.querySelectorAll(".prompt-token-alias-table textarea[data-autoresize]").forEach((textarea) => {
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.max(38, textarea.scrollHeight)}px`;
+  });
+}
+
+function renderPromptTokenDeletions() {
+  if (!state.promptTokenDeletions) {
+    const status = $("#promptTokenDeletionStatus");
+    if (status) status.textContent = state.promptTokenDeletionsLoading ? "正在加载词元删除表" : "正在准备词元删除表";
+    $("#promptTokenDeletionRows").innerHTML = `
+      <tr><td colspan="4" class="empty">${state.promptTokenDeletionsLoading ? "正在加载词元删除表" : "正在准备词元删除表"}</td></tr>
+    `;
+    renderPageControl("#promptTokenDeletionPagination", { page: 1, limit: PROMPT_TOKEN_RULE_PAGE_SIZE, total: 0 }, "promptTokenDeletionPageJumpInput");
+    return;
+  }
+  const rows = state.promptTokenDeletions?.rows || [];
+  const status = $("#promptTokenDeletionStatus");
+  if (status) {
+    status.textContent = rows.length
+      ? `已隐藏 ${fmt(rows.length)} 个词元，点击恢复后立即回到词元表`
+      : "删除后立即从词元表和详情其它词元隐藏";
+  }
+  const totalPages = Math.max(1, Math.ceil(rows.length / PROMPT_TOKEN_RULE_PAGE_SIZE));
+  state.promptTokenDeletionPage = clampPage(state.promptTokenDeletionPage || 1, totalPages);
+  const start = (state.promptTokenDeletionPage - 1) * PROMPT_TOKEN_RULE_PAGE_SIZE;
+  const visibleRows = rows.slice(start, start + PROMPT_TOKEN_RULE_PAGE_SIZE);
+  $("#promptTokenDeletionRows").innerHTML = tableRows(visibleRows, (row) => `
+    <tr>
+      <td>
+        <strong>${escapeHtml(row.token || "-")}</strong>
+        <div class="muted small">${tokenKindLabel(row.token_kind)}</div>
+      </td>
+      <td>
+        <strong>${fmt(row.prompt_count)} 条提示词</strong>
+        <div class="muted small">使用 ${fmt(row.use_count)} 次 · ${fmt(row.user_count)} 人</div>
+      </td>
+      <td>
+        <strong>${fmtDate(row.deleted_at)}</strong>
+        <div class="muted small">更新 ${fmtDate(row.updated_at)}</div>
+      </td>
+      <td>
+        <button type="button" data-restore-token="${encodeURIComponent(row.token || "")}">恢复</button>
+      </td>
+    </tr>
+  `);
+  renderPageControl(
+    "#promptTokenDeletionPagination",
+    { page: state.promptTokenDeletionPage, limit: PROMPT_TOKEN_RULE_PAGE_SIZE, total: rows.length },
+    "promptTokenDeletionPageJumpInput"
+  );
+}
+
+function markPromptTokenAliasesDirty() {
+  state.promptTokenAliasesDirty = true;
+  renderPromptTokenAliasControls();
+}
+
+function addPromptTokenAliasRow() {
+  if (!state.promptTokenAliases) return;
+  state.promptTokenAliasSearch = "";
+  const searchInput = $("#promptTokenAliasSearchInput");
+  if (searchInput) searchInput.value = "";
+  const category = promptTokenRuleCategoryForValue(
+    promptTokenAliasRows(),
+    state.promptTokenAliasCategoryFilter || ""
+  );
+  promptTokenAliasRows().push({
+    representative: "",
+    aliases_text: "",
+    category_key: category?.value === PROMPT_TOKEN_UNCATEGORIZED_CATEGORY ? "" : category?.category_key || "",
+    category_label: category?.value === PROMPT_TOKEN_UNCATEGORIZED_CATEGORY ? "" : category?.category_label || "",
+    subcategory_key: "",
+    subcategory_label: "",
+    enabled: true,
+  });
+  state.promptTokenAliasPage = Number.MAX_SAFE_INTEGER;
+  markPromptTokenAliasesDirty();
+  renderPromptTokenAliases();
+}
+
+async function savePromptTokenAliases() {
+  if (!state.promptTokenAliases) return;
+  state.promptTokenAliasesSaving = true;
+  renderPromptTokenAliasControls();
+  try {
+    const rows = promptTokenAliasRows().map((row, index) => ({
+      representative: row.representative || "",
+      aliases_text: row.aliases_text || (row.aliases || []).join("，"),
+      category_key: row.category_key || "",
+      category_label: row.category_label || "",
+      subcategory_key: row.subcategory_key || "",
+      subcategory_label: row.subcategory_label || "",
+      source: row.source || "",
+      seed_batch: row.seed_batch || "",
+      enabled: row.enabled !== false,
+      sort_order: index,
+    }));
+    const payload = await fetchJson(
+      "/api/prompt-token-aliases",
+      {},
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows }),
+      }
+    );
+    state.promptTokenAliases = {
+      rows: payload.rows || rows,
+      status: payload.alias_status || {},
+    };
+    state.promptTokenAliasesDirty = false;
+    renderPromptTokenAliases();
+  } finally {
+    state.promptTokenAliasesSaving = false;
+    renderPromptTokenAliasControls();
+  }
+}
+
+async function rebuildPromptTokenAliases() {
+  if (!state.promptTokenAliases) return;
+  state.promptTokenAliasesRebuilding = true;
+  renderPromptTokenAliasControls();
+  try {
+    const payload = await fetchJson("/api/prompt-token-aliases/rebuild", {}, { method: "POST" });
+    state.promptTokenAliases = {
+      ...(state.promptTokenAliases || { rows: [] }),
+      status: payload.alias_status || state.promptTokenAliases?.status || {},
+    };
+    renderPromptTokenAliasControls();
+    schedulePromptTokenAliasPoll();
+  } finally {
+    state.promptTokenAliasesRebuilding = false;
+    renderPromptTokenAliasControls();
+  }
+}
+
+async function overwritePromptTokenGeneratedRules() {
+  state.promptTokenRuleSeedsOverwriting = true;
+  renderPromptTokenCustomTermControls();
+  renderPromptTokenAliasControls();
+  try {
+    const payload = await fetchJson("/api/prompt-token-rules/overwrite-generated", {}, { method: "POST" });
+    state.promptTokenRuleSeedReport = payload.report || null;
+    state.promptTokenCustomTerms = payload.custom_terms || { rows: [], status: {} };
+    state.promptTokenAliases = payload.aliases || { rows: [], status: {} };
+    state.promptTokenDeletions = payload.deletions || { rows: [], total: 0 };
+    state.promptTokenCustomTermsDirty = false;
+    state.promptTokenAliasesDirty = false;
+    state.promptTokenCustomTermCategoryFilter = "";
+    state.promptTokenCustomTermSubcategoryFilter = "";
+    state.promptTokenAliasCategoryFilter = "";
+    state.promptTokenCustomTermPage = 1;
+    state.promptTokenAliasPage = 1;
+    state.promptTokenDeletionPage = 1;
+    renderPromptTokenCustomTerms();
+    renderPromptTokenAliases();
+    renderPromptTokenDeletions();
+  } finally {
+    state.promptTokenRuleSeedsOverwriting = false;
+    renderPromptTokenCustomTermControls();
+    renderPromptTokenAliasControls();
+  }
+}
+
+function mergePromptTokenAliasPayload(payload) {
+  if (!payload) return;
+  if (state.promptTokenAliasesDirty) {
+    state.promptTokenAliases = {
+      ...(state.promptTokenAliases || { rows: [] }),
+      status: payload.status || state.promptTokenAliases?.status || {},
+    };
+    return;
+  }
+  state.promptTokenAliases = payload;
+}
+
+async function pollPromptTokenAliasStatus() {
+  state.promptTokenAliasPollTimer = null;
+  const wasRunning = Boolean(state.promptTokenAliases?.status?.resume?.running);
+  const payload = await fetchJson("/api/prompt-token-aliases");
+  mergePromptTokenAliasPayload(payload);
+  state.promptTokenAliasesRebuilding = false;
+  renderPromptTokenAliases();
+  const isRunning = Boolean(state.promptTokenAliases?.status?.resume?.running);
+  if (isRunning) {
+    schedulePromptTokenAliasPoll();
+    return;
+  }
+  if (wasRunning && state.activeTab === "prompt-tokens") {
+    state.promptTokenPage = 1;
+    await loadPromptTokens();
+  }
+}
+
+async function loadPromptTokenAliases() {
+  if (state.promptTokenAliasesDirty) return;
+  state.promptTokenAliasesLoading = true;
+  renderPromptTokenAliases();
+  renderPromptTokenAliasControls();
+  try {
+    state.promptTokenAliases = await fetchJson("/api/prompt-token-aliases");
+    state.promptTokenAliasPage = 1;
+    renderPromptTokenAliases();
+  } finally {
+    state.promptTokenAliasesLoading = false;
+    renderPromptTokenAliasControls();
+  }
+}
+
+function schedulePromptTokenAliasPoll() {
+  if (state.promptTokenAliasPollTimer) return;
+  state.promptTokenAliasPollTimer = window.setTimeout(() => {
+    pollPromptTokenAliasStatus().catch(setError);
+  }, 5000);
+}
+
+function clampPage(page, totalPages = 1) {
+  const parsed = Number(page);
+  if (!Number.isFinite(parsed)) return 1;
+  return Math.min(Math.max(1, Math.trunc(parsed)), Math.max(1, Number(totalPages) || 1));
+}
+
+function promptTokenTotalPages(pagination = state.promptTokens?.pagination || {}) {
+  const limit = Math.max(1, Number(pagination.limit || 1));
+  const total = Math.max(0, Number(pagination.total || 0));
+  return Math.max(1, Math.ceil(total / limit));
+}
+
+function currentPromptTokenMinPromptCount() {
+  const raw = $("#promptTokenMinPromptCountInput")?.value;
+  const fallback = state.promptTokenMinPromptCount || PROMPT_TOKEN_DEFAULT_MIN_PROMPT_COUNT;
+  const numeric = Number(raw || fallback);
+  const safeValue = Number.isFinite(numeric) ? numeric : fallback;
+  const clamped = Math.min(
+    Math.max(1, Math.trunc(safeValue)),
+    PROMPT_TOKEN_MAX_MIN_PROMPT_COUNT
+  );
+  state.promptTokenMinPromptCount = clamped;
+  return clamped;
+}
+
+function syncPromptTokenMinPromptCountInput() {
+  const input = $("#promptTokenMinPromptCountInput");
+  if (!input) return;
+  const value = String(state.promptTokenMinPromptCount || PROMPT_TOKEN_DEFAULT_MIN_PROMPT_COUNT);
+  if (input.value !== value) input.value = value;
+}
+
+function paginationPages(currentPage, totalPages) {
+  const current = clampPage(currentPage, totalPages);
+  const total = Math.max(1, Number(totalPages) || 1);
+  if (total <= 7) return Array.from({ length: total }, (_, index) => index + 1);
+  if (current <= 4) return [1, 2, 3, 4, 5, "gap-end", total];
+  if (current >= total - 3) return [1, "gap-start", total - 4, total - 3, total - 2, total - 1, total];
+  return [1, "gap-start", current - 1, current, current + 1, "gap-end", total];
+}
+
+function renderPageControl(selector, pagination = {}, jumpInputId) {
+  const container = $(selector);
+  if (!container) return;
+  const limit = Math.max(1, Number(pagination.limit || 1));
+  const totalRows = Math.max(0, Number(pagination.total || 0));
+  const totalPages = Math.max(1, Math.ceil(totalRows / limit));
+  const current = clampPage(pagination.page || 1, totalPages);
+  const pageButtons = paginationPages(current, totalPages).map((page) => {
+    if (typeof page === "string") return '<span class="page-gap">...</span>';
+    const active = page === current;
+    return `
+      <button class="page-button ${active ? "active" : ""}" type="button" data-page="${page}" ${active ? 'aria-current="page"' : ""}>
+        ${fmt(page)}
+      </button>
+    `;
+  }).join("");
+  container.innerHTML = `
+    <div class="page-button-list">${pageButtons}</div>
+    <form class="page-jump-form">
+      <label for="${jumpInputId}">跳至</label>
+      <input id="${jumpInputId}" type="number" min="1" max="${totalPages}" value="${current}" inputmode="numeric" />
+      <span>/ ${fmt(totalPages)}</span>
+      <button type="submit">跳转</button>
+    </form>
+  `;
+}
+
+function renderPromptTokenOptionSet(selector, rows = [], staticOptions = []) {
+  const select = $(selector);
+  if (!select) return;
+  const existing = select.value || "";
+  const seen = new Set();
+  const options = [];
+  staticOptions.concat(rows).forEach((option) => {
+    const value = option.value ?? "";
+    const label = option.label ?? value;
+    if (seen.has(value)) return;
+    seen.add(value);
+    options.push(`<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`);
+  });
+  if (existing && !seen.has(existing)) {
+    options.push(`<option value="${escapeHtml(existing)}">${escapeHtml(existing)}</option>`);
+  }
+  select.innerHTML = options.join("");
+  select.value = seen.has(existing) ? existing : staticOptions[0]?.value || "";
+}
+
+function renderPromptTokenFilterOptions() {
+  const filters = state.promptTokens?.filters || {};
+  renderPromptTokenOptionSet(
+    "#promptTokenTaskTypeSelect",
+    filters.tasks || [],
+    [{ value: "", label: "全部任务" }]
+  );
+  const selectedTask = $("#promptTokenTaskTypeSelect")?.value || "";
+  const modelRows = selectedTask ? filters.models || [] : [];
+  renderPromptTokenOptionSet(
+    "#promptTokenModelSelect",
+    modelRows,
+    [{ value: "", label: selectedTask ? "全部附加模型" : "先选择任务类型" }]
+  );
+  const modelSelect = $("#promptTokenModelSelect");
+  if (modelSelect) {
+    modelSelect.disabled = !selectedTask || modelRows.length === 0;
+  }
+}
+
+function renderPromptTokens() {
+  const summary = state.promptTokens?.summary || {};
+  const rows = state.promptTokens?.rows || [];
+  const pagination = state.promptTokens?.pagination || {};
+  const scope = state.promptTokens?.scope || {};
+  state.promptTokenMinPromptCount = Number(state.promptTokens?.min_prompt_count || state.promptTokenMinPromptCount || PROMPT_TOKEN_DEFAULT_MIN_PROMPT_COUNT);
+  syncPromptTokenMinPromptCountInput();
+  if (state.promptTokens?.filters_included !== false) {
+    renderPromptTokenFilterOptions();
+  }
+  $("#promptTokenSummary").innerHTML = [
+    metric("候选提示词", fmt(summary.candidate_count), "quality_stage = candidate"),
+    metric("词元总数", fmt(summary.token_count), scope.label || "全部词元"),
+    metric("当前筛选", fmt(pagination.total), $("#promptTokenSearchInput")?.value?.trim() || "全部词元"),
+    metric("低频阈值", fmt(state.promptTokenMinPromptCount), `过滤后 ${fmt(summary.filtered_token_count ?? pagination.total)} 个词元`),
+    metric("当前分类", scope.label || "全部词元", scope.model_key ? "二级附加模型" : scope.task_type ? "一级任务类型" : "全局"),
+    metric("刷新", fmtDate(summary.refreshed_at), "来自 tokens-only 刷新"),
+  ].join("");
+  $("#promptTokenPageInfo").textContent = `第 ${fmt(pagination.page || 1)} 页 · 共 ${fmt(pagination.total || 0)} 个词元`;
+  $("#promptTokenRows").innerHTML = tableRows(rows, (row) => `
+    <tr>
+      <td>
+        <strong>${escapeHtml(row.token)}</strong>
+        <div class="muted small">${tokenKindLabel(row.token_kind)}</div>
+      </td>
+      <td>
+        <strong>${fmtAmount(row.prompt_share)}%</strong>
+        <div class="muted small">${fmt(row.prompt_count)} / ${fmt(summary.candidate_count)}</div>
+      </td>
+      <td>
+        <strong>${fmt(row.prompt_count)} 条提示词</strong>
+        <div class="muted small">使用 ${fmt(row.use_count)} 次 · ${fmt(row.user_count)} 人</div>
+      </td>
+      <td>
+        <strong>${tokenKindLabel(row.token_kind)}</strong>
+        <div class="muted small">${fmtDate(row.refreshed_at)}</div>
+      </td>
+      <td>
+        <div class="inline-actions prompt-token-row-actions">
+          <button type="button" data-token="${encodeURIComponent(row.token)}">查看</button>
+          <button type="button" data-delete-token="${encodeURIComponent(row.token)}">删除</button>
+        </div>
+      </td>
+    </tr>
+  `);
+  renderPageControl("#promptTokenPagination", pagination, "promptTokenPageJumpInput");
+}
+
+function renderPromptTokenPromptDrawer() {
+  const payload = state.promptTokenPrompts || {};
+  const summary = payload.summary || {};
+  const rows = payload.rows || [];
+  const pagination = payload.pagination || {};
+  const scope = payload.scope || state.promptTokens?.scope || {};
+  const selected = state.selectedPromptToken || payload.token || summary.token || "";
+  state.promptTokenMinPromptCount = Number(payload.min_prompt_count || state.promptTokenMinPromptCount || PROMPT_TOKEN_DEFAULT_MIN_PROMPT_COUNT);
+  syncPromptTokenMinPromptCountInput();
+  $("#promptTokenDrawerTitle").textContent = `词元：${selected || "-"}`;
+  $("#promptTokenDrawerSummary").innerHTML = [
+    metric("对应提示词", fmt(summary.prompt_count), "包含该词元"),
+    metric("使用次数", fmt(summary.use_count), "候选提示词累计"),
+    metric("使用用户", fmt(summary.user_count), "候选提示词累计"),
+    metric("分类", scope.label || "全部词元", scope.model_key ? "附加模型" : scope.task_type ? "任务类型" : "全局"),
+    metric("类型", tokenKindLabel(summary.token_kind), fmtDate(summary.refreshed_at)),
+  ].join("");
+  $("#promptTokenPromptPageInfo").textContent = `第 ${fmt(pagination.page || 1)} 页 · 共 ${fmt(pagination.total || 0)} 条提示词`;
+  $("#promptTokenPromptRows").innerHTML = tableRows(rows, (row) => `
+    <tr>
+      <td>
+        <div class="prompt-token-prompt-text">${escapeHtml(row.prompt_preview || row.prompt || "-")}</div>
+        <div class="muted small mono">${escapeHtml(row.prompt_hash || "-")}</div>
+      </td>
+      <td>
+        <strong>${(row.task_types || []).map(escapeHtml).join(" / ") || "-"}</strong>
+        <div class="muted small">${fmt(row.uses)} 次 · ${fmt(row.users)} 人 · 分 ${fmtAmount(row.quality_score)}</div>
+        <div class="muted small">${fmtDate(row.last_seen)}</div>
+      </td>
+      <td>${renderTokenPills(row.other_tokens || [], { selectedToken: selected })}</td>
+    </tr>
+  `);
+  renderPageControl("#promptTokenPromptPagination", pagination, "promptTokenPromptPageJumpInput");
+}
+
+async function loadPromptTokens() {
+  state.promptTokens = await fetchJson("/api/prompt-tokens", getPromptTokenParams({ includeFilters: true }));
+  renderPromptTokens();
+  renderPromptTokenCustomTerms();
+  renderPromptTokenAliases();
+  renderPromptTokenDeletions();
+  ensurePromptTokenRuleTablesLoaded();
+}
+
+async function loadPromptTokenDeletions() {
+  state.promptTokenDeletionsLoading = true;
+  renderPromptTokenDeletions();
+  try {
+    state.promptTokenDeletions = await fetchJson("/api/prompt-token-deletions");
+    state.promptTokenDeletionPage = 1;
+    renderPromptTokenDeletions();
+  } finally {
+    state.promptTokenDeletionsLoading = false;
+    renderPromptTokenDeletions();
+  }
+}
+
+function ensurePromptTokenRuleTablesLoaded() {
+  if (!state.promptTokenCustomTerms && !state.promptTokenCustomTermsLoading) {
+    loadPromptTokenCustomTerms().catch(setError);
+  }
+  if (!state.promptTokenAliases && !state.promptTokenAliasesLoading) {
+    loadPromptTokenAliases().catch(setError);
+  }
+  if (!state.promptTokenDeletions && !state.promptTokenDeletionsLoading) {
+    loadPromptTokenDeletions().catch(setError);
+  }
+}
+
+async function loadPromptTokenTableOnly({ includeFilters = false } = {}) {
+  state.promptTokens = await fetchJson("/api/prompt-tokens", getPromptTokenParams({ includeFilters }));
+  renderPromptTokens();
+}
+
+async function loadPromptTokenPrompts() {
+  if (!state.selectedPromptToken) return;
+  state.promptTokenPrompts = await fetchJson("/api/prompt-token-prompts", getPromptTokenPromptParams());
+  renderPromptTokenPromptDrawer();
+}
+
+async function reloadPromptTokensPreservingPage() {
+  const requestedPage = Math.max(1, Number(state.promptTokenPage || 1));
+  state.promptTokenPage = requestedPage;
+  await loadPromptTokenTableOnly({ includeFilters: false });
+  const adjustedPage = clampPage(requestedPage, promptTokenTotalPages());
+  if (adjustedPage !== requestedPage) {
+    state.promptTokenPage = adjustedPage;
+    await loadPromptTokenTableOnly({ includeFilters: false });
+  }
+  state.promptTokenDeletions = await fetchJson("/api/prompt-token-deletions");
+  renderPromptTokenDeletions();
+}
+
+async function openPromptTokenDrawer(token) {
+  state.selectedPromptToken = token;
+  state.promptTokenPromptPage = 1;
+  state.promptTokenPrompts = null;
+  $("#promptTokenDrawerBackdrop")?.classList.remove("hidden");
+  $("#promptTokenDrawer")?.classList.add("open");
+  $("#promptTokenDrawer")?.setAttribute("aria-hidden", "false");
+  $("#promptTokenPromptRows").innerHTML = '<tr><td colspan="3" class="empty">加载中</td></tr>';
+  try {
+    await loadPromptTokenPrompts();
+  } catch (error) {
+    setError(error);
+  }
+}
+
+function closePromptTokenDrawer() {
+  $("#promptTokenDrawerBackdrop")?.classList.add("hidden");
+  $("#promptTokenDrawer")?.classList.remove("open");
+  $("#promptTokenDrawer")?.setAttribute("aria-hidden", "true");
+}
+
+async function deletePromptToken(token) {
+  const normalized = String(token || "").trim();
+  if (!normalized) return;
+  await fetchJson(
+    "/api/prompt-token-deletions",
+    {},
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: normalized }),
+    }
+  );
+  if (state.selectedPromptToken === normalized) {
+    state.selectedPromptToken = null;
+    state.promptTokenPrompts = null;
+    closePromptTokenDrawer();
+  }
+  await reloadPromptTokensPreservingPage();
+}
+
+async function restorePromptToken(token) {
+  const normalized = String(token || "").trim();
+  if (!normalized) return;
+  await fetchJson(
+    "/api/prompt-token-deletions/restore",
+    {},
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: normalized }),
+    }
+  );
+  await reloadPromptTokensPreservingPage();
+}
+
+function getPromptDecompositionParams({ includeFilters = true } = {}) {
+  return {
+    task_type: PROMPT_DECOMPOSITION_TASK_TYPE,
+    q: $("#promptDecompositionSearchInput")?.value?.trim() || "",
+    selected_tokens: promptDecompositionSelectedTokens().join(","),
+    page: state.promptDecompositionPage || 1,
+    limit: 20,
+    include_filters: includeFilters ? "true" : "false",
+  };
+}
+
+async function loadPromptDecompositionSaved() {
+  state.promptDecompositionSavedLoading = true;
+  renderPromptDecompositionSaved();
+  try {
+    state.promptDecompositionSaved = await fetchJson("/api/prompt-decomposition/saved", {
+      task_type: PROMPT_DECOMPOSITION_TASK_TYPE,
+      limit: PROMPT_DECOMPOSITION_SAVED_LIMIT,
+    });
+    if (state.promptDecomposition) {
+      state.promptDecomposition.summary = {
+        ...(state.promptDecomposition.summary || {}),
+        saved_template_count: state.promptDecompositionSaved?.total || 0,
+      };
+    }
+    renderPromptDecomposition();
+    renderPromptDecompositionSaved();
+  } finally {
+    state.promptDecompositionSavedLoading = false;
+    renderPromptDecompositionSaved();
+  }
+}
+
+async function loadPromptDecomposition() {
+  state.promptDecomposition = await fetchJson("/api/prompt-decomposition", getPromptDecompositionParams({ includeFilters: true }));
+  state.promptDecompositionSelectedTokens = state.promptDecomposition?.selected_tokens || promptDecompositionSelectedTokens();
+  renderPromptDecomposition();
+  if (!state.promptDecompositionSaved && !state.promptDecompositionSavedLoading) {
+    loadPromptDecompositionSaved().catch(setError);
+  }
+}
+
+async function loadPromptDecompositionTableOnly({ includeFilters = false } = {}) {
+  const existingFilters = state.promptDecomposition?.filters || { groups: [] };
+  state.promptDecomposition = await fetchJson("/api/prompt-decomposition", getPromptDecompositionParams({ includeFilters }));
+  if (state.promptDecomposition?.filters_included === false) {
+    state.promptDecomposition.filters = existingFilters;
+  }
+  state.promptDecompositionSelectedTokens = state.promptDecomposition?.selected_tokens || promptDecompositionSelectedTokens();
+  renderPromptDecomposition();
+}
+
+function openPromptDecompositionDrawer(promptHash, source = "live") {
+  const normalized = decodeURIComponent(promptHash || "");
+  const sourceRows = source === "saved"
+    ? (state.promptDecompositionSaved?.rows || [])
+    : (state.promptDecomposition?.rows || []);
+  const row = sourceRows.find((item) => item.prompt_hash === normalized);
+  if (!row) return;
+  state.selectedPromptDecomposition = row;
+  state.promptDecompositionSaveTitle = row.title || "";
+  $("#promptDecompositionDrawerBackdrop")?.classList.remove("hidden");
+  $("#promptDecompositionDrawer")?.classList.add("open");
+  $("#promptDecompositionDrawer")?.setAttribute("aria-hidden", "false");
+  renderPromptDecomposition();
+}
+
+function closePromptDecompositionDrawer() {
+  $("#promptDecompositionDrawerBackdrop")?.classList.add("hidden");
+  $("#promptDecompositionDrawer")?.classList.remove("open");
+  $("#promptDecompositionDrawer")?.setAttribute("aria-hidden", "true");
+}
+
+async function savePromptDecompositionTemplate() {
+  const row = state.selectedPromptDecomposition;
+  if (!row?.prompt_hash) return;
+  const title = $("#promptDecompositionSaveTitleInput")?.value?.trim() || "";
+  if (!title) {
+    throw new Error("请先填写模板标题");
+  }
+  state.promptDecompositionSaving = true;
+  renderPromptDecompositionDrawer();
+  try {
+    await fetchJson(
+      "/api/prompt-decomposition/saved",
+      {},
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          task_type: PROMPT_DECOMPOSITION_TASK_TYPE,
+          prompt_hash: row.prompt_hash,
+          title,
+          selected_tokens: promptDecompositionSelectedTokens(),
+        }),
+      }
+    );
+    state.promptDecompositionSaveTitle = title;
+    await loadPromptDecompositionSaved();
+    if (state.promptDecomposition) {
+      state.promptDecomposition.summary = {
+        ...(state.promptDecomposition.summary || {}),
+        saved_template_count: state.promptDecompositionSaved?.total || 0,
+      };
+      renderPromptDecomposition();
+    }
+  } finally {
+    state.promptDecompositionSaving = false;
+    renderPromptDecompositionDrawer();
+  }
+}
+
+async function deletePromptDecompositionTemplate(savedId) {
+  const normalized = Number(savedId);
+  if (!Number.isFinite(normalized)) return;
+  await fetchJson(`/api/prompt-decomposition/saved/${normalized}`, {}, { method: "DELETE" });
+  await loadPromptDecompositionSaved();
+  if (state.promptDecomposition) {
+    state.promptDecomposition.summary = {
+      ...(state.promptDecomposition.summary || {}),
+      saved_template_count: state.promptDecompositionSaved?.total || 0,
+    };
+    renderPromptDecomposition();
+  }
 }
 
 function getPromptParams(days = currentDays()) {
@@ -2065,6 +4005,30 @@ function getPromptVectorParams() {
   return {};
 }
 
+function getPromptTokenParams({ includeFilters = true } = {}) {
+  return {
+    q: $("#promptTokenSearchInput")?.value?.trim() || "",
+    task_type: $("#promptTokenTaskTypeSelect")?.value || "",
+    model_key: $("#promptTokenModelSelect")?.value || "",
+    sort: $("#promptTokenSortSelect")?.value || "prompt_count",
+    min_prompt_count: currentPromptTokenMinPromptCount(),
+    page: state.promptTokenPage,
+    limit: 15,
+    include_filters: includeFilters,
+  };
+}
+
+function getPromptTokenPromptParams() {
+  return {
+    token: state.selectedPromptToken || "",
+    task_type: $("#promptTokenTaskTypeSelect")?.value || "",
+    model_key: $("#promptTokenModelSelect")?.value || "",
+    min_prompt_count: currentPromptTokenMinPromptCount(),
+    page: state.promptTokenPromptPage,
+    limit: 8,
+  };
+}
+
 function getUserProfileParams() {
   const selectedGroup = state.selectedUserGroup;
   return {
@@ -2090,18 +4054,300 @@ function getUserGroupParams() {
   };
 }
 
-function getTemplatePromptParams(days = currentDays()) {
+function getTemplateCandidateParams({ includeFilters = false } = {}) {
   return {
-    days,
-    task_type: "",
-    template_scope: "natural",
-    q: "",
-    min_users: 1,
-    min_uses: 1,
-    sort: "value_score",
-    page: 1,
-    limit: 40,
+    task_type: $("#templateTaskTypeSelect")?.value || "",
+    model_key: $("#templateModelSelect")?.value || "",
+    q: $("#templateSearchInput")?.value?.trim() || "",
+    min_prompts: currentTemplateMinPrompts(),
+    similarity_bucket: $("#templateSimilaritySelect")?.value || "",
+    review_status: $("#templateReviewStatusSelect")?.value || "all",
+    sort: $("#templateSortSelect")?.value || "score",
+    page: state.templateCandidatePage || 1,
+    limit: 20,
+    include_filters: includeFilters ? "true" : "false",
   };
+}
+
+function templateCandidateTotalPages(pagination = state.templates?.pagination || {}) {
+  const limit = Math.max(1, Number(pagination.limit || 1));
+  const total = Math.max(0, Number(pagination.total || 0));
+  return Math.max(1, Math.ceil(total / limit));
+}
+
+async function loadTemplateCandidateTableOnly({ includeFilters = false } = {}) {
+  state.templates = await fetchJson("/api/prompt-template-candidates", getTemplateCandidateParams({ includeFilters }));
+  renderTemplateCandidates(state.templates);
+}
+
+function getTemplateReviewMarksParams() {
+  return {
+    task_type: $("#templateTaskTypeSelect")?.value || "",
+    model_key: $("#templateModelSelect")?.value || "",
+    q: $("#templateReviewMarksSearchInput")?.value?.trim() || "",
+    similarity_bucket: $("#templateReviewMarksSimilaritySelect")?.value || "",
+    processed_status: $("#templateReviewMarksProcessedSelect")?.value || "all",
+    page: state.templateReviewMarksPage || 1,
+    limit: PROMPT_TEMPLATE_REVIEW_MARKS_LIMIT,
+  };
+}
+
+async function loadTemplateReviewMarks() {
+  state.templateReviewMarksLoading = true;
+  state.templateReviewMarksCopyStatus = "";
+  renderTemplateReviewMarksDrawer();
+  try {
+    state.templateReviewMarks = await fetchJson(
+      "/api/prompt-template-candidates/review-marks",
+      getTemplateReviewMarksParams()
+    );
+  } finally {
+    state.templateReviewMarksLoading = false;
+    renderTemplateReviewMarksDrawer();
+  }
+}
+
+function resetTemplateReviewMarksPageAndLoad() {
+  state.templateReviewMarksPage = 1;
+  return loadTemplateReviewMarks();
+}
+
+async function loadTemplateCandidatePrompts() {
+  const key = state.selectedTemplateCandidate?.template_key;
+  if (!key) return;
+  state.templateCandidatePrompts = await fetchJson(
+    `/api/prompt-template-candidates/${encodeURIComponent(key)}/prompts`,
+    {
+      page: state.templateCandidatePromptPage || 1,
+      limit: 20,
+    }
+  );
+  renderTemplateCandidateDrawer();
+}
+
+async function toggleTemplateReviewMarkProcessed(templateKey, promptHash, processed) {
+  if (!templateKey || !promptHash) return;
+  const rowKey = `${templateKey}::${promptHash}`;
+  state.templateReviewMarksProcessingSaving = {
+    ...(state.templateReviewMarksProcessingSaving || {}),
+    [rowKey]: true,
+  };
+  renderTemplateReviewMarksDrawer();
+  try {
+    await fetchJson(
+      "/api/prompt-template-candidates/review-marks/processed",
+      {},
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          template_key: templateKey,
+          prompt_hash: promptHash,
+          processed,
+        }),
+      }
+    );
+    await loadTemplateReviewMarks();
+  } finally {
+    delete state.templateReviewMarksProcessingSaving[rowKey];
+    renderTemplateReviewMarksDrawer();
+  }
+}
+
+async function toggleTemplateCandidateReviewMark(promptHash, checked) {
+  const templateKey = state.selectedTemplateCandidate?.template_key;
+  if (!templateKey || !promptHash) return;
+  state.templateCandidateReviewSaving = {
+    ...(state.templateCandidateReviewSaving || {}),
+    [promptHash]: true,
+  };
+  renderTemplateCandidateDrawer();
+  try {
+    const payload = await fetchJson(
+      "/api/prompt-template-candidates/review-marks",
+      {},
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          template_key: templateKey,
+          prompt_hash: promptHash,
+          checked,
+        }),
+      }
+    );
+    const rows = state.templateCandidatePrompts?.rows || [];
+    const row = rows.find((item) => item.prompt_hash === promptHash);
+    if (row) {
+      row.review_checked = Boolean(payload.review_checked);
+      row.review_marked_at = payload.review_checked ? (payload.review_marked_at || new Date().toISOString()) : null;
+    }
+    const markedCount = Number(payload.marked_prompt_count || 0);
+    const processed = Boolean(payload.processed);
+    if (state.templateCandidatePrompts?.summary) {
+      state.templateCandidatePrompts.summary.marked_prompt_count = markedCount;
+      state.templateCandidatePrompts.summary.processed = processed;
+    }
+    if (state.selectedTemplateCandidate) {
+      state.selectedTemplateCandidate.marked_prompt_count = markedCount;
+      state.selectedTemplateCandidate.processed = processed;
+    }
+    const tableRow = (state.templates?.rows || []).find((item) => item.template_key === templateKey);
+    if (tableRow) {
+      tableRow.marked_prompt_count = markedCount;
+      tableRow.processed = processed;
+    }
+    renderTemplateCandidateDrawer();
+    renderTemplateCandidates(state.templates || {});
+    await loadTemplateCandidateTableOnly({ includeFilters: false });
+    if ($("#templateReviewMarksDrawer")?.classList.contains("open")) {
+      await loadTemplateReviewMarks();
+    }
+  } finally {
+    delete state.templateCandidateReviewSaving[promptHash];
+    renderTemplateCandidateDrawer();
+  }
+}
+
+async function toggleTemplateCandidateLowQuality(templateKey, lowQuality) {
+  if (!templateKey) return;
+  state.templateCandidateLowQualitySaving = {
+    ...(state.templateCandidateLowQualitySaving || {}),
+    [templateKey]: true,
+  };
+  renderTemplateCandidates(state.templates || {});
+  try {
+    const payload = await fetchJson(
+      "/api/prompt-template-candidates/template-review-marks",
+      {},
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          template_key: templateKey,
+          low_quality: lowQuality,
+        }),
+      }
+    );
+    const tableRow = (state.templates?.rows || []).find((item) => item.template_key === templateKey);
+    if (tableRow) {
+      tableRow.low_quality = Boolean(payload.low_quality);
+      tableRow.low_quality_marked_at = payload.low_quality_marked_at || null;
+      tableRow.marked_prompt_count = Number(payload.marked_prompt_count || 0);
+      tableRow.processed = Boolean(payload.processed);
+    }
+    if (state.selectedTemplateCandidate?.template_key === templateKey) {
+      state.selectedTemplateCandidate.low_quality = Boolean(payload.low_quality);
+      state.selectedTemplateCandidate.low_quality_marked_at = payload.low_quality_marked_at || null;
+      state.selectedTemplateCandidate.marked_prompt_count = Number(payload.marked_prompt_count || 0);
+      state.selectedTemplateCandidate.processed = Boolean(payload.processed);
+    }
+    if (state.templateCandidatePrompts?.summary?.template_key === templateKey) {
+      state.templateCandidatePrompts.summary.low_quality = Boolean(payload.low_quality);
+      state.templateCandidatePrompts.summary.low_quality_marked_at = payload.low_quality_marked_at || null;
+      state.templateCandidatePrompts.summary.marked_prompt_count = Number(payload.marked_prompt_count || 0);
+      state.templateCandidatePrompts.summary.processed = Boolean(payload.processed);
+    }
+    renderTemplateCandidates(state.templates || {});
+    renderTemplateCandidateDrawer();
+    await loadTemplateCandidateTableOnly({ includeFilters: false });
+  } finally {
+    delete state.templateCandidateLowQualitySaving[templateKey];
+    renderTemplateCandidates(state.templates || {});
+  }
+}
+
+async function openTemplateReviewMarksDrawer() {
+  const searchInput = $("#templateReviewMarksSearchInput");
+  const similaritySelect = $("#templateReviewMarksSimilaritySelect");
+  const processedSelect = $("#templateReviewMarksProcessedSelect");
+  if (searchInput) searchInput.value = $("#templateSearchInput")?.value?.trim() || "";
+  if (similaritySelect) similaritySelect.value = $("#templateSimilaritySelect")?.value || "";
+  if (processedSelect) processedSelect.value = "all";
+  state.templateReviewMarks = null;
+  state.templateReviewMarksCopyStatus = "";
+  state.templateReviewMarksPage = 1;
+  $("#templateReviewMarksDrawerBackdrop")?.classList.remove("hidden");
+  $("#templateReviewMarksDrawer")?.classList.add("open");
+  $("#templateReviewMarksDrawer")?.setAttribute("aria-hidden", "false");
+  await loadTemplateReviewMarks();
+}
+
+function closeTemplateReviewMarksDrawer() {
+  $("#templateReviewMarksDrawerBackdrop")?.classList.add("hidden");
+  $("#templateReviewMarksDrawer")?.classList.remove("open");
+  $("#templateReviewMarksDrawer")?.setAttribute("aria-hidden", "true");
+}
+
+async function copyTemplateReviewMarkPrompt(templateKey, promptHash) {
+  const row = (state.templateReviewMarks?.rows || []).find(
+    (item) => item.template_key === templateKey && item.prompt_hash === promptHash
+  );
+  await copyTextToClipboard(templateReviewMarkPromptText(row));
+  state.templateReviewMarksCopyStatus = "已复制 1 条";
+  renderTemplateReviewMarksDrawer();
+}
+
+async function copyTemplateReviewMarksAll() {
+  const rows = state.templateReviewMarks?.rows || [];
+  await copyTextToClipboard(templateReviewMarksCopyText(rows));
+  state.templateReviewMarksCopyStatus = `已复制当前页 ${fmt(rows.length)} 条`;
+  renderTemplateReviewMarksDrawer();
+}
+
+function exportTemplateReviewMarksCsv() {
+  const rows = state.templateReviewMarks?.rows || [];
+  const stamp = new Date().toISOString().slice(0, 19).replaceAll(":", "").replace("T", "-");
+  downloadTextFile(
+    `template-review-marks-${stamp}.csv`,
+    templateReviewMarksCsv(rows),
+    "text/csv;charset=utf-8"
+  );
+  state.templateReviewMarksCopyStatus = `已导出当前页 ${fmt(rows.length)} 条`;
+  renderTemplateReviewMarksDrawer();
+}
+
+async function openTemplateCandidateDrawer(templateKey) {
+  const rows = state.templates?.rows || [];
+  state.selectedTemplateCandidate = rows.find((row) => row.template_key === templateKey) || { template_key: templateKey };
+  state.templateCandidatePromptPage = 1;
+  state.templateCandidatePrompts = null;
+  $("#templateCandidateDrawerBackdrop")?.classList.remove("hidden");
+  $("#templateCandidateDrawer")?.classList.add("open");
+  $("#templateCandidateDrawer")?.setAttribute("aria-hidden", "false");
+  $("#templateCandidatePromptRows").innerHTML = '<tr><td colspan="4" class="empty">加载中</td></tr>';
+  renderTemplateCandidateDrawer();
+  try {
+    await loadTemplateCandidatePrompts();
+  } catch (error) {
+    setError(error);
+  }
+}
+
+function closeTemplateCandidateDrawer() {
+  $("#templateCandidateDrawerBackdrop")?.classList.add("hidden");
+  $("#templateCandidateDrawer")?.classList.remove("open");
+  $("#templateCandidateDrawer")?.setAttribute("aria-hidden", "true");
+}
+
+async function refreshTemplateCandidates() {
+  state.templateCandidateRefreshing = true;
+  renderTemplateCandidates(state.templates || {});
+  try {
+    const payload = await fetchJson("/api/prompt-template-candidates/refresh", {}, { method: "POST" });
+    state.templates = {
+      ...(state.templates || {}),
+      summary: {
+        ...(state.templates?.summary || {}),
+        refresh: payload.refresh || state.templates?.summary?.refresh || {},
+      },
+      refresh_message: payload.message || "",
+    };
+    renderTemplateCandidates(state.templates);
+  } finally {
+    state.templateCandidateRefreshing = false;
+    renderTemplateCandidates(state.templates || {});
+  }
 }
 
 async function loadOverviewStatus() {
@@ -2175,7 +4421,7 @@ const {
 const loadTemplates = createTemplatesLoader({
   fetchJson,
   state,
-  getTemplatePromptParams,
+  getTemplateCandidateParams,
   renderTemplateCandidates,
 });
 const loadMedia = createMediaLoader({ fetchJson, state, renderMedia });
@@ -2188,6 +4434,8 @@ const tabLoaders = {
   prompts: loadPrompts,
   "prompt-slim": loadPromptSlim,
   "prompt-vectors": loadPromptVectors,
+  "prompt-tokens": loadPromptTokens,
+  "prompt-decomposition": loadPromptDecomposition,
   templates: loadTemplates,
   media: loadMedia,
 };
@@ -2242,6 +4490,32 @@ function reloadCurrentTab() {
   if (state.activeTab === "prompt-slim") {
     state.promptSlimPage = 1;
     state.selectedPromptSlim = null;
+  }
+  if (state.activeTab === "prompt-tokens") {
+    state.promptTokenPage = 1;
+    state.selectedPromptToken = null;
+    if (!state.promptTokenCustomTermsDirty) {
+      state.promptTokenCustomTerms = null;
+      state.promptTokenCustomTermPage = 1;
+    }
+    if (!state.promptTokenAliasesDirty) {
+      state.promptTokenAliases = null;
+      state.promptTokenAliasPage = 1;
+    }
+    state.promptTokenDeletions = null;
+    state.promptTokenDeletionPage = 1;
+  }
+  if (state.activeTab === "prompt-decomposition") {
+    state.promptDecompositionPage = 1;
+    state.selectedPromptDecomposition = null;
+    state.promptDecompositionSaveTitle = "";
+    state.promptDecompositionSaved = null;
+  }
+  if (state.activeTab === "templates") {
+    state.templateCandidatePage = 1;
+    state.templateCandidatePromptPage = 1;
+    state.selectedTemplateCandidate = null;
+    state.templateCandidatePrompts = null;
   }
   markTabStale(state.activeTab);
   loadCurrentTab({ force: true });
@@ -2311,6 +4585,12 @@ $("#userProfileDrawerBackdrop")?.addEventListener("click", closeUserProfileDrawe
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && $("#userProfileDrawer")?.classList.contains("open")) {
     closeUserProfileDrawer();
+  }
+  if (event.key === "Escape" && $("#promptTokenDrawer")?.classList.contains("open")) {
+    closePromptTokenDrawer();
+  }
+  if (event.key === "Escape" && $("#promptDecompositionDrawer")?.classList.contains("open")) {
+    closePromptDecompositionDrawer();
   }
 });
 document.querySelectorAll("[data-credit-mode]").forEach((button) => {
@@ -2393,6 +4673,470 @@ $("#promptSlimNextButton").addEventListener("click", () => {
   loadCurrentTab({ force: true });
 });
 $("#promptVectorResumeButton").addEventListener("click", resumePromptVectorEmbeddings);
+function resetPromptTokenPageAndLoad({ includeFilters = false } = {}) {
+  state.promptTokenPage = 1;
+  if (state.activeTab === "prompt-tokens") {
+    loadPromptTokenTableOnly({ includeFilters }).catch(setError);
+    return;
+  }
+  markTabStale("prompt-tokens");
+}
+
+function resetPromptTokenThresholdAndLoad() {
+  currentPromptTokenMinPromptCount();
+  syncPromptTokenMinPromptCountInput();
+  state.promptTokenPage = 1;
+  state.promptTokenPromptPage = 1;
+  if (state.activeTab === "prompt-tokens") {
+    loadPromptTokenTableOnly({ includeFilters: false }).then(() => {
+      if (state.selectedPromptToken && $("#promptTokenDrawer")?.classList.contains("open")) {
+        loadPromptTokenPrompts().catch(setError);
+      }
+    });
+    return;
+  }
+  markTabStale("prompt-tokens");
+}
+$("#promptTokenSearchButton")?.addEventListener("click", resetPromptTokenPageAndLoad);
+$("#promptTokenSortSelect")?.addEventListener("change", resetPromptTokenPageAndLoad);
+$("#promptTokenTaskTypeSelect")?.addEventListener("change", () => {
+  const modelSelect = $("#promptTokenModelSelect");
+  if (modelSelect) modelSelect.value = "";
+  resetPromptTokenPageAndLoad({ includeFilters: true });
+});
+$("#promptTokenModelSelect")?.addEventListener("change", resetPromptTokenPageAndLoad);
+$("#promptTokenSearchInput")?.addEventListener("input", () => {
+  window.clearTimeout(state.promptTokenSearchTimer);
+  state.promptTokenSearchTimer = window.setTimeout(resetPromptTokenPageAndLoad, 300);
+});
+$("#promptTokenMinPromptCountInput")?.addEventListener("input", () => {
+  window.clearTimeout(state.promptTokenMinPromptCountTimer);
+  if (!$("#promptTokenMinPromptCountInput")?.value) return;
+  state.promptTokenMinPromptCountTimer = window.setTimeout(resetPromptTokenThresholdAndLoad, 350);
+});
+$("#promptTokenMinPromptCountInput")?.addEventListener("change", resetPromptTokenThresholdAndLoad);
+$("#promptTokenCustomTermAddButton")?.addEventListener("click", addPromptTokenCustomTermRow);
+$("#promptTokenCustomTermSaveButton")?.addEventListener("click", () => {
+  savePromptTokenCustomTerms().catch(setError);
+});
+$("#promptTokenCustomTermRebuildButton")?.addEventListener("click", () => {
+  rebuildPromptTokenCustomTerms().catch(setError);
+});
+$("#promptTokenRuleSeedOverwriteButton")?.addEventListener("click", () => {
+  overwritePromptTokenGeneratedRules().catch(setError);
+});
+$("#promptTokenCustomTermSearchInput")?.addEventListener("input", (event) => {
+  state.promptTokenCustomTermSearch = event.target.value || "";
+  state.promptTokenCustomTermPage = 1;
+  renderPromptTokenCustomTerms();
+});
+$("#promptTokenCustomTermCategoryTabs")?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-category]");
+  if (!button) return;
+  state.promptTokenCustomTermCategoryFilter = button.dataset.category || "";
+  state.promptTokenCustomTermSubcategoryFilter = "";
+  state.promptTokenCustomTermPage = 1;
+  renderPromptTokenCustomTerms();
+});
+$("#promptTokenCustomTermSubcategoryTabs")?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-subcategory]");
+  if (!button) return;
+  state.promptTokenCustomTermSubcategoryFilter = button.dataset.subcategory || "";
+  state.promptTokenCustomTermPage = 1;
+  renderPromptTokenCustomTerms();
+});
+$("#promptTokenCustomTermPagination")?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-page]");
+  if (!button) return;
+  if (!state.promptTokenCustomTerms) return;
+  state.promptTokenCustomTermPage = clampPage(
+    button.dataset.page,
+    Math.ceil((filteredPromptTokenCustomTermRows().length || 0) / PROMPT_TOKEN_RULE_PAGE_SIZE)
+  );
+  renderPromptTokenCustomTerms();
+});
+$("#promptTokenCustomTermPagination")?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (!state.promptTokenCustomTerms) return;
+  const input = event.target.querySelector("input[type='number']");
+  state.promptTokenCustomTermPage = clampPage(
+    input?.value,
+    Math.ceil((filteredPromptTokenCustomTermRows().length || 0) / PROMPT_TOKEN_RULE_PAGE_SIZE)
+  );
+  renderPromptTokenCustomTerms();
+});
+$("#promptTokenCustomTermRows")?.addEventListener("input", (event) => {
+  const input = event.target.closest("input[data-field]");
+  if (!input) return;
+  const row = input.closest("tr[data-index]");
+  const index = Number(row?.dataset.index);
+  if (!Number.isInteger(index)) return;
+  const rows = promptTokenCustomTermRows();
+  if (!rows[index]) return;
+  rows[index][input.dataset.field] = input.value;
+  input.title = input.value;
+  markPromptTokenCustomTermsDirty();
+});
+$("#promptTokenCustomTermRows")?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-action='delete-custom-term']");
+  if (!button) return;
+  const row = button.closest("tr[data-index]");
+  const index = Number(row?.dataset.index);
+  if (!Number.isInteger(index)) return;
+  promptTokenCustomTermRows().splice(index, 1);
+  markPromptTokenCustomTermsDirty();
+  renderPromptTokenCustomTerms();
+});
+$("#promptTokenAliasAddButton")?.addEventListener("click", addPromptTokenAliasRow);
+$("#promptTokenAliasSaveButton")?.addEventListener("click", () => {
+  savePromptTokenAliases().catch(setError);
+});
+$("#promptTokenAliasRebuildButton")?.addEventListener("click", () => {
+  rebuildPromptTokenAliases().catch(setError);
+});
+$("#promptTokenAliasSearchInput")?.addEventListener("input", (event) => {
+  state.promptTokenAliasSearch = event.target.value || "";
+  state.promptTokenAliasPage = 1;
+  renderPromptTokenAliases();
+});
+$("#promptTokenAliasCategoryTabs")?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-category]");
+  if (!button) return;
+  state.promptTokenAliasCategoryFilter = button.dataset.category || "";
+  state.promptTokenAliasPage = 1;
+  renderPromptTokenAliases();
+});
+$("#promptTokenAliasRows")?.addEventListener("input", (event) => {
+  const input = event.target.closest("input[data-field], textarea[data-field]");
+  if (!input) return;
+  const row = input.closest("tr[data-index]");
+  const index = Number(row?.dataset.index);
+  if (!Number.isInteger(index)) return;
+  const rows = promptTokenAliasRows();
+  if (!rows[index]) return;
+  rows[index][input.dataset.field] = input.value;
+  input.title = input.value;
+  if (input.matches("textarea[data-autoresize]")) {
+    resizePromptTokenAliasTextareas(row);
+  }
+  markPromptTokenAliasesDirty();
+});
+$("#promptTokenAliasRows")?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-action='delete-alias']");
+  if (!button) return;
+  const row = button.closest("tr[data-index]");
+  const index = Number(row?.dataset.index);
+  if (!Number.isInteger(index)) return;
+  promptTokenAliasRows().splice(index, 1);
+  markPromptTokenAliasesDirty();
+  renderPromptTokenAliases();
+});
+$("#promptTokenAliasPagination")?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-page]");
+  if (!button) return;
+  if (!state.promptTokenAliases) return;
+  state.promptTokenAliasPage = clampPage(
+    button.dataset.page,
+    Math.ceil((filteredPromptTokenAliasRows().length || 0) / PROMPT_TOKEN_RULE_PAGE_SIZE)
+  );
+  renderPromptTokenAliases();
+});
+$("#promptTokenAliasPagination")?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (!state.promptTokenAliases) return;
+  const input = event.target.querySelector("input[type='number']");
+  state.promptTokenAliasPage = clampPage(
+    input?.value,
+    Math.ceil((filteredPromptTokenAliasRows().length || 0) / PROMPT_TOKEN_RULE_PAGE_SIZE)
+  );
+  renderPromptTokenAliases();
+});
+$("#promptTokenRows")?.addEventListener("click", (event) => {
+  const deleteButton = event.target.closest("button[data-delete-token]");
+  if (deleteButton) {
+    deletePromptToken(decodeURIComponent(deleteButton.dataset.deleteToken || "")).catch(setError);
+    return;
+  }
+  const button = event.target.closest("button[data-token]");
+  if (!button) return;
+  openPromptTokenDrawer(decodeURIComponent(button.dataset.token || ""));
+});
+$("#promptTokenDeletionRows")?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-restore-token]");
+  if (!button) return;
+  restorePromptToken(decodeURIComponent(button.dataset.restoreToken || "")).catch(setError);
+});
+$("#promptTokenDeletionPagination")?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-page]");
+  if (!button) return;
+  if (!state.promptTokenDeletions) return;
+  state.promptTokenDeletionPage = clampPage(
+    button.dataset.page,
+    Math.ceil(((state.promptTokenDeletions?.rows || []).length || 0) / PROMPT_TOKEN_RULE_PAGE_SIZE)
+  );
+  renderPromptTokenDeletions();
+});
+$("#promptTokenDeletionPagination")?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (!state.promptTokenDeletions) return;
+  const input = event.target.querySelector("input[type='number']");
+  state.promptTokenDeletionPage = clampPage(
+    input?.value,
+    Math.ceil(((state.promptTokenDeletions?.rows || []).length || 0) / PROMPT_TOKEN_RULE_PAGE_SIZE)
+  );
+  renderPromptTokenDeletions();
+});
+$("#promptTokenPagination")?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-page]");
+  if (!button) return;
+  state.promptTokenPage = clampPage(button.dataset.page, Math.ceil((state.promptTokens?.pagination?.total || 0) / (state.promptTokens?.pagination?.limit || 1)));
+  loadPromptTokenTableOnly({ includeFilters: false }).catch(setError);
+});
+$("#promptTokenPagination")?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const totalPages = Math.ceil((state.promptTokens?.pagination?.total || 0) / (state.promptTokens?.pagination?.limit || 1));
+  state.promptTokenPage = clampPage($("#promptTokenPageJumpInput")?.value, totalPages);
+  loadPromptTokenTableOnly({ includeFilters: false }).catch(setError);
+});
+$("#promptTokenDrawerClose")?.addEventListener("click", closePromptTokenDrawer);
+$("#promptTokenDrawerBackdrop")?.addEventListener("click", closePromptTokenDrawer);
+$("#promptTokenPromptPagination")?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-page]");
+  if (!button) return;
+  const pagination = state.promptTokenPrompts?.pagination || {};
+  state.promptTokenPromptPage = clampPage(button.dataset.page, Math.ceil((pagination.total || 0) / (pagination.limit || 1)));
+  loadPromptTokenPrompts().catch(setError);
+});
+$("#promptTokenPromptPagination")?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const pagination = state.promptTokenPrompts?.pagination || {};
+  state.promptTokenPromptPage = clampPage($("#promptTokenPromptPageJumpInput")?.value, Math.ceil((pagination.total || 0) / (pagination.limit || 1)));
+  loadPromptTokenPrompts().catch(setError);
+});
+function resetPromptDecompositionPageAndLoad({ includeFilters = false } = {}) {
+  state.promptDecompositionPage = 1;
+  if (state.activeTab === "prompt-decomposition") {
+    loadPromptDecompositionTableOnly({ includeFilters }).catch(setError);
+    return;
+  }
+  markTabStale("prompt-decomposition");
+}
+$("#promptDecompositionSearchButton")?.addEventListener("click", () => {
+  resetPromptDecompositionPageAndLoad({ includeFilters: false });
+});
+$("#promptDecompositionSearchInput")?.addEventListener("input", () => {
+  window.clearTimeout(state.promptDecompositionSearchTimer);
+  state.promptDecompositionSearchTimer = window.setTimeout(() => {
+    resetPromptDecompositionPageAndLoad({ includeFilters: false });
+  }, 300);
+});
+$("#promptDecompositionClearButton")?.addEventListener("click", () => {
+  state.promptDecompositionSelectedTokens = [];
+  state.selectedPromptDecomposition = null;
+  resetPromptDecompositionPageAndLoad({ includeFilters: false });
+});
+$("#promptDecompositionSelectedTokenBar")?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-remove-token]");
+  if (!button) return;
+  const normalized = decodeURIComponent(button.dataset.removeToken || "");
+  state.promptDecompositionSelectedTokens = promptDecompositionSelectedTokens().filter((token) => token !== normalized);
+  resetPromptDecompositionPageAndLoad({ includeFilters: false });
+});
+$("#promptDecompositionFacetGrid")?.addEventListener("click", (event) => {
+  const subgroupButton = event.target.closest("button[data-subgroup-key]");
+  if (subgroupButton) {
+    state.promptDecompositionActiveSubgroups[subgroupButton.dataset.groupKey || ""] = subgroupButton.dataset.subgroupKey || "";
+    renderPromptDecompositionFacets();
+    return;
+  }
+  const tokenButton = event.target.closest("button[data-toggle-token]");
+  if (!tokenButton) return;
+  const normalized = decodeURIComponent(tokenButton.dataset.toggleToken || "");
+  if (!normalized) return;
+  const current = promptDecompositionSelectedTokens();
+  if (current.includes(normalized)) {
+    state.promptDecompositionSelectedTokens = current.filter((token) => token !== normalized);
+  } else {
+    state.promptDecompositionSelectedTokens = current.concat(normalized);
+  }
+  resetPromptDecompositionPageAndLoad({ includeFilters: false });
+});
+$("#promptDecompositionRows")?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-open-decomposition]");
+  if (!button) return;
+  openPromptDecompositionDrawer(button.dataset.openDecomposition || "", button.dataset.source || "live");
+});
+$("#promptDecompositionSavedRows")?.addEventListener("click", (event) => {
+  const deleteButton = event.target.closest("button[data-delete-saved-template]");
+  if (deleteButton) {
+    deletePromptDecompositionTemplate(deleteButton.dataset.deleteSavedTemplate).catch(setError);
+    return;
+  }
+  const button = event.target.closest("button[data-open-decomposition]");
+  if (!button) return;
+  openPromptDecompositionDrawer(button.dataset.openDecomposition || "", button.dataset.source || "saved");
+});
+$("#promptDecompositionPagination")?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-page]");
+  if (!button) return;
+  state.promptDecompositionPage = clampPage(button.dataset.page, promptDecompositionTotalPages());
+  loadPromptDecompositionTableOnly({ includeFilters: false }).catch(setError);
+});
+$("#promptDecompositionPagination")?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  state.promptDecompositionPage = clampPage($("#promptDecompositionPageJumpInput")?.value, promptDecompositionTotalPages());
+  loadPromptDecompositionTableOnly({ includeFilters: false }).catch(setError);
+});
+$("#promptDecompositionDrawerClose")?.addEventListener("click", closePromptDecompositionDrawer);
+$("#promptDecompositionDrawerBackdrop")?.addEventListener("click", closePromptDecompositionDrawer);
+$("#promptDecompositionSaveTitleInput")?.addEventListener("input", (event) => {
+  state.promptDecompositionSaveTitle = event.target.value || "";
+});
+$("#promptDecompositionSaveButton")?.addEventListener("click", () => {
+  savePromptDecompositionTemplate().catch(setError);
+});
+function resetTemplateCandidatePageAndLoad({ includeFilters = false } = {}) {
+  state.templateCandidatePage = 1;
+  state.selectedTemplateCandidate = null;
+  state.templateCandidatePrompts = null;
+  markTabStale("templates");
+  if (state.activeTab === "templates") {
+    loadTemplateCandidateTableOnly({ includeFilters }).then(() => markTabLoaded("templates")).catch(setError);
+  }
+}
+$("#templateTaskTypeSelect")?.addEventListener("change", () => {
+  const modelSelect = $("#templateModelSelect");
+  if (modelSelect) modelSelect.value = "";
+  resetTemplateCandidatePageAndLoad({ includeFilters: true });
+});
+$("#templateModelSelect")?.addEventListener("change", resetTemplateCandidatePageAndLoad);
+$("#templateSortSelect")?.addEventListener("change", resetTemplateCandidatePageAndLoad);
+$("#templateSimilaritySelect")?.addEventListener("change", resetTemplateCandidatePageAndLoad);
+$("#templateReviewStatusSelect")?.addEventListener("change", resetTemplateCandidatePageAndLoad);
+$("#templateMinPromptsInput")?.addEventListener("input", () => {
+  window.clearTimeout(state.templateCandidateSearchTimer);
+  if (!$("#templateMinPromptsInput")?.value) return;
+  state.templateCandidateSearchTimer = window.setTimeout(resetTemplateCandidatePageAndLoad, 350);
+});
+$("#templateMinPromptsInput")?.addEventListener("change", resetTemplateCandidatePageAndLoad);
+$("#templateSearchInput")?.addEventListener("input", () => {
+  window.clearTimeout(state.templateCandidateSearchTimer);
+  state.templateCandidateSearchTimer = window.setTimeout(resetTemplateCandidatePageAndLoad, 300);
+});
+$("#templateRefreshButton")?.addEventListener("click", () => {
+  refreshTemplateCandidates().catch(setError);
+});
+$("#templateReviewMarksButton")?.addEventListener("click", () => {
+  openTemplateReviewMarksDrawer().catch(setError);
+});
+$("#templateCandidateRows")?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-template-key]");
+  if (!button) return;
+  openTemplateCandidateDrawer(decodeURIComponent(button.dataset.templateKey || "")).catch(setError);
+});
+$("#templateCandidateRows")?.addEventListener("change", (event) => {
+  const input = event.target.closest("input[data-template-low-quality-template]");
+  if (!input) return;
+  const checked = input.checked;
+  toggleTemplateCandidateLowQuality(
+    decodeURIComponent(input.dataset.templateLowQualityTemplate || ""),
+    checked
+  ).catch((error) => {
+    input.checked = !checked;
+    setError(error);
+  });
+});
+$("#templateCandidatePagination")?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-page]");
+  if (!button) return;
+  state.templateCandidatePage = clampPage(button.dataset.page, templateCandidateTotalPages());
+  loadTemplateCandidateTableOnly({ includeFilters: false }).catch(setError);
+});
+$("#templateCandidatePagination")?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  state.templateCandidatePage = clampPage($("#templateCandidatePageJumpInput")?.value, templateCandidateTotalPages());
+  loadTemplateCandidateTableOnly({ includeFilters: false }).catch(setError);
+});
+$("#templateCandidateDrawerClose")?.addEventListener("click", closeTemplateCandidateDrawer);
+$("#templateCandidateDrawerBackdrop")?.addEventListener("click", closeTemplateCandidateDrawer);
+$("#templateReviewMarksDrawerClose")?.addEventListener("click", closeTemplateReviewMarksDrawer);
+$("#templateReviewMarksDrawerBackdrop")?.addEventListener("click", closeTemplateReviewMarksDrawer);
+$("#templateReviewMarksSearchInput")?.addEventListener("input", () => {
+  window.clearTimeout(state.templateReviewMarksSearchTimer);
+  state.templateReviewMarksSearchTimer = window.setTimeout(() => {
+    resetTemplateReviewMarksPageAndLoad().catch(setError);
+  }, 300);
+});
+$("#templateReviewMarksSimilaritySelect")?.addEventListener("change", () => {
+  resetTemplateReviewMarksPageAndLoad().catch(setError);
+});
+$("#templateReviewMarksProcessedSelect")?.addEventListener("change", () => {
+  resetTemplateReviewMarksPageAndLoad().catch(setError);
+});
+$("#templateReviewMarksPagination")?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-page]");
+  if (!button) return;
+  const pagination = state.templateReviewMarks?.pagination || {};
+  const totalPages = Math.max(1, Math.ceil(Number(pagination.total || 0) / Math.max(1, Number(pagination.limit || 1))));
+  state.templateReviewMarksPage = clampPage(button.dataset.page, totalPages);
+  loadTemplateReviewMarks().catch(setError);
+});
+$("#templateReviewMarksPagination")?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const pagination = state.templateReviewMarks?.pagination || {};
+  const totalPages = Math.max(1, Math.ceil(Number(pagination.total || 0) / Math.max(1, Number(pagination.limit || 1))));
+  state.templateReviewMarksPage = clampPage($("#templateReviewMarksPageJumpInput")?.value, totalPages);
+  loadTemplateReviewMarks().catch(setError);
+});
+$("#templateReviewMarksCopyAllButton")?.addEventListener("click", () => {
+  copyTemplateReviewMarksAll().catch(setError);
+});
+$("#templateReviewMarksExportButton")?.addEventListener("click", exportTemplateReviewMarksCsv);
+$("#templateReviewMarksRows")?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-template-review-copy]");
+  if (!button) return;
+  copyTemplateReviewMarkPrompt(
+    decodeURIComponent(button.dataset.templateReviewCopyTemplate || ""),
+    decodeURIComponent(button.dataset.templateReviewCopy || "")
+  ).catch(setError);
+});
+$("#templateReviewMarksRows")?.addEventListener("change", (event) => {
+  const input = event.target.closest("input[data-template-review-processed]");
+  if (!input) return;
+  const checked = input.checked;
+  toggleTemplateReviewMarkProcessed(
+    decodeURIComponent(input.dataset.templateReviewProcessedTemplate || ""),
+    decodeURIComponent(input.dataset.templateReviewProcessed || ""),
+    checked
+  ).catch((error) => {
+    input.checked = !checked;
+    setError(error);
+  });
+});
+$("#templateCandidatePromptRows")?.addEventListener("change", (event) => {
+  const input = event.target.closest("input[data-template-review-prompt]");
+  if (!input) return;
+  toggleTemplateCandidateReviewMark(
+    decodeURIComponent(input.dataset.templateReviewPrompt || ""),
+    input.checked
+  ).catch((error) => {
+    input.checked = !input.checked;
+    setError(error);
+  });
+});
+$("#templateCandidatePromptPagination")?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-page]");
+  if (!button) return;
+  const pagination = state.templateCandidatePrompts?.pagination || {};
+  state.templateCandidatePromptPage = clampPage(button.dataset.page, Math.ceil((pagination.total || 0) / (pagination.limit || 1)));
+  loadTemplateCandidatePrompts().catch(setError);
+});
+$("#templateCandidatePromptPagination")?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const pagination = state.templateCandidatePrompts?.pagination || {};
+  state.templateCandidatePromptPage = clampPage($("#templateCandidatePromptPageJumpInput")?.value, Math.ceil((pagination.total || 0) / (pagination.limit || 1)));
+  loadTemplateCandidatePrompts().catch(setError);
+});
 document.querySelectorAll(".tab-button").forEach((button) => {
   button.addEventListener("click", () => setActiveTab(button.dataset.tab));
 });

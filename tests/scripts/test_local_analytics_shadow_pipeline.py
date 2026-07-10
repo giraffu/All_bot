@@ -50,6 +50,12 @@ def test_pipeline_restores_refreshes_embeddings_in_order(tmp_path):
     assert "copy-local-analytics" in [label for label, _ in fake.commands]
     assert "analytics_prompt_embeddings" in commands
     assert "analytics_prompt_slim_candidates" in commands
+    assert "analytics_prompt_token_alias_rules" in commands
+    assert "analytics_prompt_token_custom_terms" in commands
+    assert "analytics_prompt_token_deleted_rules" in commands
+    assert "analytics_prompt_token_extract_cache" in commands
+    assert "analytics_prompt_token_prompts" in commands
+    assert "analytics_prompt_token_stats" in commands
     assert "analytics_user_profile_daily_snapshots" in commands
     assert "analytics_prompt_similarity_edges" not in commands
     assert "analytics_prompt_semantic_scenes" not in commands
@@ -60,13 +66,15 @@ def test_pipeline_restores_refreshes_embeddings_in_order(tmp_path):
     assert "python -m app.refresh_prompt_mart --statement-timeout-ms" in commands
     assert "refresh_prompt_mart --full" not in commands
     assert "python -m app.refresh_prompt_slim_table" in commands
-    assert "python -m app.refresh_prompt_vectors --embed-only --batch-size 128" in commands
+    assert "python -m app.refresh_prompt_vectors --tokens-only --statement-timeout-ms" in commands
+    assert "python -m app.refresh_prompt_vectors --embed-only --skip-token-refresh --batch-size 128" in commands
     assert "refresh_prompt_scenes" not in commands
     assert "similarity-only" not in commands
     assert "refresh_prompt_graph" not in commands
     assert commands.index("refresh_user_profile_snapshots") < commands.index("refresh_prompt_mart")
     assert commands.index("refresh_prompt_mart") < commands.index("refresh_prompt_slim_table")
-    assert commands.index("refresh_prompt_slim_table") < commands.index("refresh_prompt_vectors --embed-only")
+    assert commands.index("refresh_prompt_slim_table") < commands.index("refresh_prompt_vectors --tokens-only")
+    assert commands.index("refresh_prompt_vectors --tokens-only") < commands.index("refresh_prompt_vectors --embed-only")
 
 
 def test_pipeline_skips_embedding_when_lm_studio_is_unavailable(tmp_path):
@@ -86,6 +94,7 @@ def test_pipeline_skips_embedding_when_lm_studio_is_unavailable(tmp_path):
     assert "refresh_user_profile_snapshots --statement-timeout-ms" in commands
     assert "refresh_prompt_mart --full" not in commands
     assert "refresh_prompt_slim_table" in commands
+    assert "refresh_prompt_vectors --tokens-only" in commands
     assert "refresh_prompt_vectors --embed-only" not in commands
     assert "refresh_prompt_scenes" not in commands
     assert "similarity-only" not in commands

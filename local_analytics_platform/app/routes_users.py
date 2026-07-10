@@ -61,6 +61,30 @@ async def _build_user_analytics_payload(
     days, query_days, start_date, end_date = _resolve_user_profile_period(days, start_date, end_date)
     chart_days = _chart_days(days)
     limit = _clamp(limit, 1, 50)
+    sections = await _fetch_user_analytics_sections(
+        query_days=query_days,
+        chart_days=chart_days,
+        start_date=start_date,
+        end_date=end_date,
+        limit=limit,
+    )
+    return _build_user_analytics_response(
+        days=days,
+        limit=limit,
+        start_date=start_date,
+        end_date=end_date,
+        **sections,
+    )
+
+
+async def _fetch_user_analytics_sections(
+    *,
+    query_days: int,
+    chart_days: int,
+    start_date: date | None,
+    end_date: date | None,
+    limit: int,
+) -> dict[str, Any]:
     summary = await _fetchrow(
         """
         with bounds as (
@@ -932,6 +956,43 @@ async def _build_user_analytics_payload(
         start_date=start_date,
         end_date=end_date,
     )
+    return {
+        "summary_row": summary_row,
+        "daily_rows": daily_rows,
+        "snapshot_rows": snapshot_rows,
+        "identity": identity,
+        "user_group": user_group,
+        "credit_holding": credit_holding,
+        "generation_count": generation_count,
+        "activity_segments": activity_segments,
+        "generation_rank": generation_rank,
+        "credits_rank": credits_rank,
+        "referrals_rank": referrals_rank,
+        "low_trust_rank": low_trust_rank,
+        "recent_active_rank": recent_active_rank,
+    }
+
+
+def _build_user_analytics_response(
+    *,
+    days: int,
+    limit: int,
+    start_date: date | None,
+    end_date: date | None,
+    summary_row: dict[str, Any],
+    daily_rows: list[dict[str, Any]],
+    snapshot_rows: list[dict[str, Any]],
+    identity: Any,
+    user_group: Any,
+    credit_holding: Any,
+    generation_count: Any,
+    activity_segments: Any,
+    generation_rank: Any,
+    credits_rank: Any,
+    referrals_rank: Any,
+    low_trust_rank: Any,
+    recent_active_rank: Any,
+) -> dict[str, Any]:
     return {
         "days": days,
         "limit": limit,

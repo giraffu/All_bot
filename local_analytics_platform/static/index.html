@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>本地数据分析平台</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/static/styles.css?v=20260705-auth-v1" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260710-template-review-low-quality-v1" />
   </head>
   <body>
     <div id="app" class="app-shell">
@@ -44,6 +44,14 @@
           <button class="tab-button" type="button" data-tab="prompt-vectors">
             <span class="tab-label">提示词向量化</span>
             <span class="tab-meta">覆盖、模型、续跑</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="prompt-tokens">
+            <span class="tab-label">提示词词元</span>
+            <span class="tab-meta">搜索、占比、下钻</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="prompt-decomposition">
+            <span class="tab-label">自由P图拆解</span>
+            <span class="tab-meta">筛选、沉淀</span>
           </button>
           <button class="tab-button" type="button" data-tab="templates">
             <span class="tab-label">模板候选</span>
@@ -865,8 +873,302 @@
           </div>
         </section>
 
+        <section class="band tab-panel" data-panel="prompt-tokens">
+          <div id="promptTokenSummary" class="metric-grid compact"></div>
+          <div class="prompt-filter-bar prompt-token-filter-bar">
+            <label>
+              <span>搜索词元</span>
+              <input id="promptTokenSearchInput" type="search" placeholder="输入词元关键词" />
+            </label>
+            <label>
+              <span>任务类型</span>
+              <select id="promptTokenTaskTypeSelect">
+                <option value="">全部任务</option>
+              </select>
+            </label>
+            <label>
+              <span>附加模型</span>
+              <select id="promptTokenModelSelect" disabled>
+                <option value="">先选择任务类型</option>
+              </select>
+            </label>
+            <label>
+              <span>排序</span>
+              <select id="promptTokenSortSelect">
+                <option value="prompt_count">提示词数</option>
+                <option value="use_count">使用次数</option>
+                <option value="user_count">使用用户</option>
+                <option value="token">词元 A-Z</option>
+              </select>
+            </label>
+            <label>
+              <span>最低提示词数</span>
+              <input id="promptTokenMinPromptCountInput" type="number" min="1" max="100000" value="5" inputmode="numeric" />
+            </label>
+            <button id="promptTokenSearchButton" type="button">搜索</button>
+          </div>
+          <div class="table-shell full prompt-token-custom-term-shell">
+            <div class="table-title-row">
+              <div>
+                <div class="table-title">指定词元表</div>
+                <div id="promptTokenCustomTermStatus" class="muted small"></div>
+                <div id="promptTokenRuleSeedStatus" class="muted small"></div>
+              </div>
+              <div class="inline-actions">
+                <button id="promptTokenCustomTermAddButton" type="button">添加词元</button>
+                <button id="promptTokenCustomTermSaveButton" type="button">保存词元</button>
+                <button id="promptTokenRuleSeedOverwriteButton" type="button">一键覆盖词元规则</button>
+                <button id="promptTokenCustomTermRebuildButton" type="button">重建词元统计</button>
+              </div>
+            </div>
+            <div class="rule-table-search-bar" role="search">
+              <label for="promptTokenCustomTermSearchInput">
+                <span>搜索指定词元</span>
+                <input id="promptTokenCustomTermSearchInput" type="search" placeholder="词元 / 备注 / 来源 / 批次" autocomplete="off" />
+              </label>
+            </div>
+            <div id="promptTokenCustomTermCategoryTabs" class="rule-category-tabs" role="tablist" aria-label="指定词元分类"></div>
+            <div id="promptTokenCustomTermSubcategoryTabs" class="rule-category-tabs rule-subcategory-tabs hidden" role="tablist" aria-label="指定词元子分类"></div>
+            <div class="table-scroll prompt-token-custom-term-scroll">
+              <table class="prompt-token-custom-term-table">
+                <thead>
+                  <tr>
+                    <th>指定词元</th>
+                    <th>备注</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="promptTokenCustomTermRows"></tbody>
+              </table>
+            </div>
+            <div id="promptTokenCustomTermPagination" class="prompt-pagination page-control rule-pagination"></div>
+          </div>
+          <div class="table-shell full prompt-token-alias-shell">
+            <div class="table-title-row">
+              <div>
+                <div class="table-title">词元映射表</div>
+                <div id="promptTokenAliasStatus" class="muted small"></div>
+              </div>
+              <div class="inline-actions">
+                <button id="promptTokenAliasAddButton" type="button">添加映射</button>
+                <button id="promptTokenAliasSaveButton" type="button">保存映射</button>
+                <button id="promptTokenAliasRebuildButton" type="button">重建词元统计</button>
+              </div>
+            </div>
+            <div class="rule-table-search-bar" role="search">
+              <label for="promptTokenAliasSearchInput">
+                <span>搜索映射</span>
+                <input id="promptTokenAliasSearchInput" type="search" placeholder="代表词元 / 同义词元 / 分类 / 子分类" autocomplete="off" />
+              </label>
+            </div>
+            <div id="promptTokenAliasCategoryTabs" class="rule-category-tabs" role="tablist" aria-label="词元映射分类"></div>
+            <div class="table-scroll prompt-token-alias-scroll">
+              <table class="prompt-token-alias-table">
+                <thead>
+                  <tr>
+                    <th>代表词元</th>
+                    <th>同义词元</th>
+                    <th>分类</th>
+                    <th>子分类</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="promptTokenAliasRows"></tbody>
+              </table>
+            </div>
+            <div id="promptTokenAliasPagination" class="prompt-pagination page-control rule-pagination"></div>
+          </div>
+          <div class="table-shell full prompt-token-deletion-shell">
+            <div class="table-title-row">
+              <div>
+                <div class="table-title">词元删除表</div>
+                <div id="promptTokenDeletionStatus" class="muted small">删除后立即从词元表和详情其它词元隐藏</div>
+              </div>
+            </div>
+            <div class="table-scroll prompt-token-deletion-scroll">
+              <table class="prompt-token-deletion-table">
+                <thead>
+                  <tr>
+                    <th>词元</th>
+                    <th>提示词数据</th>
+                    <th>删除时间</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="promptTokenDeletionRows"></tbody>
+              </table>
+            </div>
+            <div id="promptTokenDeletionPagination" class="prompt-pagination page-control rule-pagination"></div>
+          </div>
+          <div class="table-shell full">
+            <div class="table-title-row">
+              <div>
+                <div class="table-title">词元表</div>
+                <div id="promptTokenPageInfo" class="muted small"></div>
+              </div>
+            </div>
+            <div class="table-scroll prompt-token-table-scroll">
+              <table class="prompt-token-table">
+                <thead>
+                  <tr>
+                    <th>词元</th>
+                    <th>占比</th>
+                    <th>提示词数据</th>
+                    <th>类型/刷新</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="promptTokenRows"></tbody>
+              </table>
+            </div>
+            <div id="promptTokenPagination" class="prompt-pagination page-control"></div>
+          </div>
+        </section>
+
         <section class="band tab-panel" data-panel="templates">
-          <div id="templateCandidates" class="candidate-grid"></div>
+          <div id="templateSummary" class="metric-grid compact"></div>
+          <div class="prompt-filter-bar template-filter-bar">
+            <label>
+              <span>任务类别</span>
+              <select id="templateTaskTypeSelect">
+                <option value="">全部任务</option>
+              </select>
+            </label>
+            <label>
+              <span>附加模型</span>
+              <select id="templateModelSelect">
+                <option value="">先选择任务类型</option>
+              </select>
+            </label>
+            <label>
+              <span>搜索模板</span>
+              <input id="templateSearchInput" type="search" placeholder="输入槽位词元或标题" />
+            </label>
+            <label>
+              <span>最低提示词数</span>
+              <input id="templateMinPromptsInput" type="number" min="1" max="100000" value="20" inputmode="numeric" />
+            </label>
+            <label>
+              <span>相似度</span>
+              <select id="templateSimilaritySelect">
+                <option value="">全部相似度</option>
+                <option value="高度相似">高度相似</option>
+                <option value="较相似">较相似</option>
+                <option value="中等相似">中等相似</option>
+                <option value="差异较大">差异较大</option>
+              </select>
+            </label>
+            <label>
+              <span>处理状态</span>
+              <select id="templateReviewStatusSelect">
+                <option value="all">全部</option>
+                <option value="processed">已处理</option>
+                <option value="unprocessed">未处理</option>
+                <option value="low_quality">低质量</option>
+              </select>
+            </label>
+            <label>
+              <span>排序</span>
+              <select id="templateSortSelect">
+                <option value="score">综合评分</option>
+                <option value="prompt_count">提示词数</option>
+                <option value="use_count">使用次数</option>
+                <option value="user_count">使用用户</option>
+                <option value="latest">最近提示词</option>
+              </select>
+            </label>
+            <button id="templateRefreshButton" type="button">刷新候选</button>
+            <button id="templateReviewMarksButton" class="secondary-button" type="button">暂存汇总</button>
+          </div>
+          <div class="table-shell full">
+            <div class="table-title-row">
+              <div>
+                <div class="table-title">模板候选</div>
+                <div id="templateCandidateStatus" class="muted small"></div>
+              </div>
+            </div>
+            <div class="table-scroll template-candidate-table-scroll">
+              <table class="template-candidate-table">
+                <thead>
+                  <tr>
+                    <th>模板</th>
+                    <th>槽位词元</th>
+                    <th>提示词数据</th>
+                    <th>分类/刷新</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="templateCandidateRows"></tbody>
+              </table>
+            </div>
+            <div id="templateCandidatePagination" class="prompt-pagination page-control"></div>
+          </div>
+        </section>
+
+        <section class="band tab-panel" data-panel="prompt-decomposition">
+          <div id="promptDecompositionSummary" class="metric-grid compact"></div>
+          <div class="prompt-filter-bar prompt-decomposition-filter-bar">
+            <label>
+              <span>搜索提示词</span>
+              <input id="promptDecompositionSearchInput" type="search" placeholder="输入关键词筛优秀自由P图提示词" />
+            </label>
+            <button id="promptDecompositionSearchButton" type="button">搜索</button>
+            <button id="promptDecompositionClearButton" class="secondary-button" type="button">清空标签</button>
+          </div>
+          <div class="table-shell full prompt-decomposition-filter-shell">
+            <div class="table-title-row">
+              <div>
+                <div class="table-title">标签筛选</div>
+                <div id="promptDecompositionFilterStatus" class="muted small"></div>
+              </div>
+            </div>
+            <div id="promptDecompositionSelectedTokenBar" class="prompt-decomposition-selected-bar"></div>
+            <div id="promptDecompositionFacetGrid" class="prompt-decomposition-facet-grid"></div>
+          </div>
+          <div class="table-shell full">
+            <div class="table-title-row">
+              <div>
+                <div class="table-title">自由P图候选提示词</div>
+                <div id="promptDecompositionPageInfo" class="muted small"></div>
+              </div>
+            </div>
+            <div class="table-scroll prompt-decomposition-table-scroll">
+              <table class="prompt-decomposition-table">
+                <thead>
+                  <tr>
+                    <th>Prompt</th>
+                    <th>标签拆解</th>
+                    <th>提示词数据</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="promptDecompositionRows"></tbody>
+              </table>
+            </div>
+            <div id="promptDecompositionPagination" class="prompt-pagination page-control"></div>
+          </div>
+          <div class="table-shell full">
+            <div class="table-title-row">
+              <div>
+                <div class="table-title">优秀模板沉淀</div>
+                <div id="promptDecompositionSavedStatus" class="muted small"></div>
+              </div>
+            </div>
+            <div class="table-scroll prompt-decomposition-saved-scroll">
+              <table class="prompt-decomposition-saved-table">
+                <thead>
+                  <tr>
+                    <th>模板标题</th>
+                    <th>筛选标签</th>
+                    <th>Prompt</th>
+                    <th>更新时间</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="promptDecompositionSavedRows"></tbody>
+              </table>
+            </div>
+          </div>
         </section>
 
         <section class="band media-band tab-panel" data-panel="media">
@@ -901,7 +1203,166 @@
       </div>
       <div id="userProfileDrawerContent" class="profile-drawer__content"></div>
     </aside>
+    <div id="promptTokenDrawerBackdrop" class="profile-drawer-backdrop hidden"></div>
+    <aside id="promptTokenDrawer" class="profile-drawer prompt-token-drawer" aria-hidden="true">
+      <div class="profile-drawer__header">
+        <div>
+          <div class="eyebrow">词元对应提示词</div>
+          <h3 id="promptTokenDrawerTitle">提示词词元</h3>
+        </div>
+        <button id="promptTokenDrawerClose" class="profile-drawer__close" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="profile-drawer__content">
+        <div id="promptTokenDrawerSummary" class="metric-grid compact prompt-token-drawer-summary"></div>
+        <div class="table-shell full">
+          <div class="table-title-row">
+            <div>
+              <div class="table-title">对应提示词</div>
+              <div id="promptTokenPromptPageInfo" class="muted small"></div>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="prompt-token-prompt-table">
+              <thead>
+                <tr>
+                  <th>Prompt</th>
+                  <th>任务/使用</th>
+                  <th>其它词元</th>
+                </tr>
+              </thead>
+              <tbody id="promptTokenPromptRows"></tbody>
+            </table>
+          </div>
+          <div id="promptTokenPromptPagination" class="prompt-pagination page-control"></div>
+        </div>
+      </div>
+    </aside>
+    <div id="templateCandidateDrawerBackdrop" class="profile-drawer-backdrop hidden"></div>
+    <aside id="templateCandidateDrawer" class="profile-drawer template-candidate-drawer" aria-hidden="true">
+      <div class="profile-drawer__header">
+        <div>
+          <div class="eyebrow">模板候选提示词</div>
+          <h3 id="templateCandidateDrawerTitle">模板候选</h3>
+        </div>
+        <button id="templateCandidateDrawerClose" class="profile-drawer__close" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="profile-drawer__content">
+        <div id="templateCandidateDrawerSummary" class="metric-grid compact template-candidate-drawer-summary"></div>
+        <div class="table-shell full">
+          <div class="table-title-row">
+            <div>
+              <div class="table-title">候选提示词</div>
+              <div id="templateCandidatePromptPageInfo" class="muted small"></div>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="template-candidate-prompt-table">
+              <thead>
+                <tr>
+                  <th>Prompt</th>
+                  <th>任务/使用</th>
+                  <th>词元槽位</th>
+                  <th>暂存</th>
+                </tr>
+              </thead>
+              <tbody id="templateCandidatePromptRows"></tbody>
+            </table>
+          </div>
+          <div id="templateCandidatePromptPagination" class="prompt-pagination page-control"></div>
+        </div>
+      </div>
+    </aside>
+    <div id="templateReviewMarksDrawerBackdrop" class="profile-drawer-backdrop hidden"></div>
+    <aside id="templateReviewMarksDrawer" class="profile-drawer template-review-marks-drawer" aria-hidden="true">
+      <div class="profile-drawer__header">
+        <div>
+          <div class="eyebrow">模板候选暂存</div>
+          <h3>暂存提示词汇总</h3>
+        </div>
+        <button id="templateReviewMarksDrawerClose" class="profile-drawer__close" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="profile-drawer__content">
+        <div id="templateReviewMarksSummary" class="metric-grid compact template-review-marks-summary"></div>
+        <div class="prompt-filter-bar template-review-marks-toolbar">
+          <label>
+            <span>搜索暂存</span>
+            <input id="templateReviewMarksSearchInput" type="search" placeholder="输入模板、提示词或 hash" />
+          </label>
+          <label>
+            <span>相似度</span>
+            <select id="templateReviewMarksSimilaritySelect">
+              <option value="">全部相似度</option>
+              <option value="高度相似">高度相似</option>
+              <option value="较相似">较相似</option>
+              <option value="中等相似">中等相似</option>
+              <option value="差异较大">差异较大</option>
+            </select>
+          </label>
+          <label>
+            <span>处理状态</span>
+            <select id="templateReviewMarksProcessedSelect">
+              <option value="all">全部</option>
+              <option value="processed">已处理</option>
+              <option value="unprocessed">未处理</option>
+            </select>
+          </label>
+          <button id="templateReviewMarksCopyAllButton" type="button">复制当前页</button>
+          <button id="templateReviewMarksExportButton" class="secondary-button" type="button">导出当前页 CSV</button>
+        </div>
+        <div class="table-shell full">
+          <div class="table-title-row">
+            <div>
+              <div class="table-title">已暂存提示词</div>
+              <div id="templateReviewMarksStatus" class="muted small"></div>
+            </div>
+            <div id="templateReviewMarksCopyStatus" class="muted small"></div>
+          </div>
+          <div class="table-scroll template-review-marks-scroll">
+            <table class="template-review-marks-table">
+              <thead>
+                <tr>
+                  <th>模板</th>
+                  <th>Prompt</th>
+                  <th>数据</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="templateReviewMarksRows"></tbody>
+            </table>
+          </div>
+          <div id="templateReviewMarksPagination" class="prompt-pagination page-control"></div>
+        </div>
+      </div>
+    </aside>
+    <div id="promptDecompositionDrawerBackdrop" class="profile-drawer-backdrop hidden"></div>
+    <aside id="promptDecompositionDrawer" class="profile-drawer prompt-decomposition-drawer" aria-hidden="true">
+      <div class="profile-drawer__header">
+        <div>
+          <div class="eyebrow">自由P图提示词拆解</div>
+          <h3 id="promptDecompositionDrawerTitle">优秀模板沉淀</h3>
+        </div>
+        <button id="promptDecompositionDrawerClose" class="profile-drawer__close" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="profile-drawer__content">
+        <div id="promptDecompositionDrawerSummary" class="metric-grid compact prompt-decomposition-drawer-summary"></div>
+        <div class="prompt-decomposition-save-bar">
+          <label>
+            <span>模板标题</span>
+            <input id="promptDecompositionSaveTitleInput" type="text" placeholder="输入优秀模板标题后保存" />
+          </label>
+          <button id="promptDecompositionSaveButton" type="button">保存优秀模板</button>
+        </div>
+        <div class="table-shell full">
+          <div class="table-title">完整 Prompt</div>
+          <div id="promptDecompositionDrawerPrompt" class="prompt-decomposition-full-prompt mono"></div>
+        </div>
+        <div class="table-shell full">
+          <div class="table-title">标签拆解</div>
+          <div id="promptDecompositionDrawerGroups" class="template-slot-groups prompt-decomposition-drawer-groups"></div>
+        </div>
+      </div>
+    </aside>
     <script src="/static/vendor/echarts.min.js?v=6.0.0"></script>
-    <script type="module" src="/static/js/bootstrap.js?v=20260706-modules-v1"></script>
+  <script type="module" src="/static/js/bootstrap.js?v=20260710-template-review-low-quality-v1"></script>
   </body>
 </html>

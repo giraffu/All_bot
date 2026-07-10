@@ -41,6 +41,45 @@ async def _build_credit_flow_analytics(
     query_days = _query_days(days)
     chart_days = _chart_days(days)
     limit = _clamp(limit, 1, 50)
+    tasks = _start_credit_flow_analytics_tasks(
+        query_days=query_days,
+        chart_days=chart_days,
+        limit=limit,
+    )
+    (
+        summary_row,
+        daily,
+        daily_categories,
+        categories,
+        composition_identity,
+        composition_group,
+        composition_channel,
+        composition_payer,
+        health_row,
+        risk_users,
+    ) = await _gather_limited(2, *tasks)
+    return _build_credit_flow_response(
+        days=days,
+        limit=limit,
+        summary_row=summary_row,
+        daily=daily,
+        daily_categories=daily_categories,
+        categories=categories,
+        composition_identity=composition_identity,
+        composition_group=composition_group,
+        composition_channel=composition_channel,
+        composition_payer=composition_payer,
+        health_row=health_row,
+        risk_users=risk_users,
+    )
+
+
+def _start_credit_flow_analytics_tasks(
+    *,
+    query_days: int,
+    chart_days: int,
+    limit: int,
+) -> tuple[Any, ...]:
     summary_task = _fetchrow(
         f"""
         with bounds as (
@@ -651,19 +690,7 @@ async def _build_credit_flow_analytics(
         GENERATION_OPERATION_TYPES,
         limit,
     )
-    (
-        summary_row,
-        daily,
-        daily_categories,
-        categories,
-        composition_identity,
-        composition_group,
-        composition_channel,
-        composition_payer,
-        health_row,
-        risk_users,
-    ) = await _gather_limited(
-        2,
+    return (
         summary_task,
         daily_task,
         daily_categories_task,
@@ -675,6 +702,23 @@ async def _build_credit_flow_analytics(
         health_task,
         risk_users_task,
     )
+
+
+def _build_credit_flow_response(
+    *,
+    days: int,
+    limit: int,
+    summary_row: Any,
+    daily: Any,
+    daily_categories: Any,
+    categories: Any,
+    composition_identity: Any,
+    composition_group: Any,
+    composition_channel: Any,
+    composition_payer: Any,
+    health_row: Any,
+    risk_users: Any,
+) -> dict[str, Any]:
     summary = _row(summary_row)
     health = _row(health_row)
     health["flags"] = _credit_health_flags(summary, health)

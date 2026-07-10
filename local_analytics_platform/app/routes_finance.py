@@ -42,6 +42,20 @@ async def _build_finance_payload(
     query_days = _query_days(days)
     chart_days = _chart_days(days)
     limit = _clamp(limit, 1, 50)
+    sections = await _fetch_finance_payload_sections(
+        query_days=query_days,
+        chart_days=chart_days,
+        limit=limit,
+    )
+    return _build_finance_response(days=days, limit=limit, **sections)
+
+
+async def _fetch_finance_payload_sections(
+    *,
+    query_days: int,
+    chart_days: int,
+    limit: int,
+) -> dict[str, Any]:
     summary = await _fetchrow(
         f"""
         with bounds as (select now() - ($1::int * interval '1 day') as since),
@@ -607,6 +621,37 @@ async def _build_finance_payload(
     )
     health = _row(health_row)
     health["flags"] = _finance_health_flags(health)
+    return {
+        "summary": summary,
+        "daily": daily,
+        "hourly": hourly,
+        "channels": channels,
+        "plans": plans,
+        "first_purchase": first_purchase,
+        "segments": segments,
+        "invitation": invitation,
+        "health": health,
+        "top_payers": top_payers,
+        "recent_orders": recent_orders,
+    }
+
+
+def _build_finance_response(
+    *,
+    days: int,
+    limit: int,
+    summary: Any,
+    daily: Any,
+    hourly: Any,
+    channels: Any,
+    plans: Any,
+    first_purchase: Any,
+    segments: Any,
+    invitation: Any,
+    health: dict[str, Any],
+    top_payers: Any,
+    recent_orders: Any,
+) -> dict[str, Any]:
     return {
         "days": days,
         "limit": limit,

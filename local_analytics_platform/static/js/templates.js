@@ -1,11 +1,14 @@
 export function createTemplatesLoader({
   fetchJson,
   state,
-  getTemplatePromptParams,
+  getTemplateCandidateParams,
   renderTemplateCandidates,
 }) {
-  return async function loadTemplates(days) {
-    state.templates = await fetchJson("/api/prompts", getTemplatePromptParams(days));
+  return async function loadTemplates() {
+    state.templates = await fetchJson(
+      "/api/prompt-template-candidates",
+      getTemplateCandidateParams({ includeFilters: true })
+    );
     renderTemplateCandidates(state.templates);
   };
 }
