@@ -207,11 +207,15 @@
   },
   "254": {
     "inputs": {
-      "conditioning": [
-        "185",
+      "text": "",
+      "clip": [
+        "1",
         0
       ]
     },
-    "class_type": "ConditioningZeroOut"
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Negative Prompt"
+    }
   }
 }

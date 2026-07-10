@@ -276,11 +276,15 @@
   },
   "49": {
     "inputs": {
-      "conditioning": [
-        "8",
+      "text": "",
+      "clip": [
+        "10",
         0
       ]
     },
-    "class_type": "ConditioningZeroOut"
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Negative Prompt"
+    }
   }
 }
