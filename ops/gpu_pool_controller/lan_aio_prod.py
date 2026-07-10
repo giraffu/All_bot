@@ -2333,107 +2333,172 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
-    ops = LanAioProdOps(
+def _print_json_payload(payload: Any) -> None:
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+def _build_ops_from_args(args: argparse.Namespace) -> LanAioProdOps:
+    return LanAioProdOps(
         config_root=args.config_root,
         prod_env_file=args.prod_env_file,
         aio_env_file=args.aio_env_file,
         model_env_file=args.model_env_file,
         remote_workers_source_dir=args.remote_workers_source_dir,
     )
+
+
+def _handle_candidate_plan(args: argparse.Namespace, ops: LanAioProdOps) -> int:
+    if not args.node_id or not args.profile or not args.replace_slot:
+        raise SystemExit(
+            "candidate-plan requires --node-id, --profile and --replace-slot"
+        )
+    _print_json_payload(
+        ops.candidate_plan(
+            node_id=args.node_id,
+            profile=args.profile,
+            replace_slot_id=args.replace_slot,
+        )
+    )
+    return 0
+
+
+def _resolve_recover_target(
+    args: argparse.Namespace,
+    ops: LanAioProdOps,
+) -> tuple[str, str | None]:
+    selected_slot_id = None
+    physical_slot = args.physical_slot
+    if args.slot:
+        selected_slot = ops.select_slots(args.slot, include_disabled=True)[0]
+        selected_slot_id = selected_slot.id
+        selected_physical_slot = physical_slot_key(selected_slot)
+        if physical_slot and physical_slot != selected_physical_slot:
+            raise SystemExit(
+                "--slot does not belong to --physical-slot: "
+                f"{selected_slot_id} -> {selected_physical_slot}, got {physical_slot}"
+            )
+        physical_slot = selected_physical_slot
+    if args.operation_id and not physical_slot:
+        raise SystemExit(
+            "recover --operation-id is accepted for audit logs, but this CLI "
+            "currently requires --physical-slot to avoid broad recovery"
+        )
+    if not physical_slot:
+        raise SystemExit("recover requires --physical-slot")
+    return physical_slot, selected_slot_id
+
+
+def _recover_dry_run_payload(
+    *,
+    args: argparse.Namespace,
+    physical_slot: str,
+    selected_slot_id: str | None,
+) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "dry_run": True,
+        "action": "recover",
+        "physical_slot": physical_slot,
+        "prefer": args.prefer,
+        "selected_slot": selected_slot_id,
+        "operations": [
+            (
+                "disable sibling LAN AIO agents on "
+                f"{physical_slot}"
+            ),
+            (
+                "start selected "
+                f"{args.prefer} container on {physical_slot}"
+            ),
+            (
+                "enable selected LAN AIO agent on "
+                f"{physical_slot}"
+            ),
+        ],
+    }
+
+
+def _handle_recover(args: argparse.Namespace, ops: LanAioProdOps) -> int:
+    physical_slot, selected_slot_id = _resolve_recover_target(args, ops)
+    if not args.execute:
+        _print_json_payload(
+            _recover_dry_run_payload(
+                args=args,
+                physical_slot=physical_slot,
+                selected_slot_id=selected_slot_id,
+            )
+        )
+        return 0
+    _print_json_payload(
+        ops.recover_physical_slot(
+            physical_slot=physical_slot,
+            prefer=args.prefer,
+            selected_slot_id=selected_slot_id,
+        )
+    )
+    return 0
+
+
+def _select_action_slots(
+    args: argparse.Namespace,
+    ops: LanAioProdOps,
+) -> list[LanAioProdSlot]:
+    slots = ops.select_slots(args.slot, include_disabled=args.include_disabled)
+    if not args.replace_slot:
+        return slots
+    if args.action not in RETARGETABLE_REPLACE_SLOT_ACTIONS:
+        allowed = ", ".join(sorted(RETARGETABLE_REPLACE_SLOT_ACTIONS))
+        raise SystemExit(f"--replace-slot is only supported for: {allowed}")
+    if len(slots) != 1:
+        raise SystemExit("--replace-slot requires exactly one --slot")
+    return [ops.retarget_slot(slots[0], args.replace_slot)]
+
+
+def _run_execute_action(
+    args: argparse.Namespace,
+    ops: LanAioProdOps,
+    slots: list[LanAioProdSlot],
+) -> dict[str, Any]:
+    if args.action == "configure-registry":
+        return ops.configure_registry(slots)
+    if args.action == "pull-image":
+        return ops.pull_image(slots)
+    if args.action == "warm-cache":
+        return ops.warm_cache(slots)
+    if args.action == "drain-legacy":
+        return ops.drain_legacy(slots)
+    if args.action == "wait-idle":
+        return ops.wait_idle(slots)
+    if args.action == "takeover":
+        return ops.takeover(slots, failure_policy=args.failure_policy)
+    if args.action == "start-disabled":
+        return ops.start_disabled(slots)
+    if args.action == "enable-aio":
+        return ops.enable_aio(slots)
+    if args.action == "drain-aio":
+        return ops.drain_aio(slots)
+    if args.action == "disable-aio":
+        return ops.disable_aio(slots)
+    if args.action == "restart-aio":
+        return ops.restart_aio(slots)
+    if args.action == "rollback":
+        return ops.rollback(slots)
+    if args.action == "stop-old":
+        return ops.stop_old(slots)
+    raise SystemExit(f"unsupported action: {args.action}")
+
+
+def _run_lan_aio_prod_action(args: argparse.Namespace, ops: LanAioProdOps) -> int:
     if args.action == "list":
-        print(json.dumps(ops.list_payload(include_disabled=args.include_disabled), ensure_ascii=False, indent=2))
+        _print_json_payload(ops.list_payload(include_disabled=args.include_disabled))
         return 0
     if args.action == "candidate-plan":
-        if not args.node_id or not args.profile or not args.replace_slot:
-            raise SystemExit(
-                "candidate-plan requires --node-id, --profile and --replace-slot"
-            )
-        print(
-            json.dumps(
-                ops.candidate_plan(
-                    node_id=args.node_id,
-                    profile=args.profile,
-                    replace_slot_id=args.replace_slot,
-                ),
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
-        return 0
+        return _handle_candidate_plan(args, ops)
     if args.action == "recover":
-        selected_slot_id = None
-        physical_slot = args.physical_slot
-        if args.slot:
-            selected_slot = ops.select_slots(args.slot, include_disabled=True)[0]
-            selected_slot_id = selected_slot.id
-            selected_physical_slot = physical_slot_key(selected_slot)
-            if physical_slot and physical_slot != selected_physical_slot:
-                raise SystemExit(
-                    "--slot does not belong to --physical-slot: "
-                    f"{selected_slot_id} -> {selected_physical_slot}, got {physical_slot}"
-                )
-            physical_slot = selected_physical_slot
-        if args.operation_id and not physical_slot:
-            raise SystemExit(
-                "recover --operation-id is accepted for audit logs, but this CLI "
-                "currently requires --physical-slot to avoid broad recovery"
-            )
-        if not physical_slot:
-            raise SystemExit("recover requires --physical-slot")
-        if not args.execute:
-            print(
-                json.dumps(
-                    {
-                        "ok": True,
-                        "dry_run": True,
-                        "action": "recover",
-                        "physical_slot": physical_slot,
-                        "prefer": args.prefer,
-                        "selected_slot": selected_slot_id,
-                        "operations": [
-                            (
-                                "disable sibling LAN AIO agents on "
-                                f"{physical_slot}"
-                            ),
-                            (
-                                "start selected "
-                                f"{args.prefer} container on {physical_slot}"
-                            ),
-                            (
-                                "enable selected LAN AIO agent on "
-                                f"{physical_slot}"
-                            ),
-                        ],
-                    },
-                    ensure_ascii=False,
-                    indent=2,
-                )
-            )
-            return 0
-        print(
-            json.dumps(
-                ops.recover_physical_slot(
-                    physical_slot=physical_slot,
-                    prefer=args.prefer,
-                    selected_slot_id=selected_slot_id,
-                ),
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
-        return 0
-    slots = ops.select_slots(args.slot, include_disabled=args.include_disabled)
-    if args.replace_slot:
-        if args.action not in RETARGETABLE_REPLACE_SLOT_ACTIONS:
-            allowed = ", ".join(sorted(RETARGETABLE_REPLACE_SLOT_ACTIONS))
-            raise SystemExit(f"--replace-slot is only supported for: {allowed}")
-        if len(slots) != 1:
-            raise SystemExit("--replace-slot requires exactly one --slot")
-        slots = [ops.retarget_slot(slots[0], args.replace_slot)]
+        return _handle_recover(args, ops)
+    slots = _select_action_slots(args, ops)
     if args.action == "status":
-        print(json.dumps(ops.status_payload(slots), ensure_ascii=False, indent=2))
+        _print_json_payload(ops.status_payload(slots))
         return 0
     if args.action == "render":
         if len(slots) != 1:
@@ -2441,52 +2506,25 @@ def main(argv: list[str] | None = None) -> int:
         rendered = ops.render_compose(slots[0])
         if args.compose_out:
             args.compose_out.write_text(rendered, encoding="utf-8")
-            print(json.dumps({"ok": True, "compose_out": str(args.compose_out)}, indent=2))
+            _print_json_payload({"ok": True, "compose_out": str(args.compose_out)})
         else:
             print(rendered)
         return 0
     if args.action == "preflight":
-        print(
-            json.dumps(
-                ops.preflight_payload(slots, execute=args.execute),
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
+        _print_json_payload(ops.preflight_payload(slots, execute=args.execute))
         return 0
     if not args.execute:
-        print(json.dumps(ops.dry_run_action(args.action, slots), ensure_ascii=False, indent=2))
+        _print_json_payload(ops.dry_run_action(args.action, slots))
         return 0
-    if args.action == "configure-registry":
-        payload = ops.configure_registry(slots)
-    elif args.action == "pull-image":
-        payload = ops.pull_image(slots)
-    elif args.action == "warm-cache":
-        payload = ops.warm_cache(slots)
-    elif args.action == "drain-legacy":
-        payload = ops.drain_legacy(slots)
-    elif args.action == "wait-idle":
-        payload = ops.wait_idle(slots)
-    elif args.action == "takeover":
-        payload = ops.takeover(slots, failure_policy=args.failure_policy)
-    elif args.action == "start-disabled":
-        payload = ops.start_disabled(slots)
-    elif args.action == "enable-aio":
-        payload = ops.enable_aio(slots)
-    elif args.action == "drain-aio":
-        payload = ops.drain_aio(slots)
-    elif args.action == "disable-aio":
-        payload = ops.disable_aio(slots)
-    elif args.action == "restart-aio":
-        payload = ops.restart_aio(slots)
-    elif args.action == "rollback":
-        payload = ops.rollback(slots)
-    elif args.action == "stop-old":
-        payload = ops.stop_old(slots)
-    else:  # pragma: no cover - argparse choices keep this unreachable
-        raise SystemExit(f"unsupported action: {args.action}")
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    payload = _run_execute_action(args, ops, slots)
+    _print_json_payload(payload)
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    ops = _build_ops_from_args(args)
+    return _run_lan_aio_prod_action(args, ops)
 
 
 if __name__ == "__main__":  # pragma: no cover

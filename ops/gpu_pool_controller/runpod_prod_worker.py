@@ -1612,6 +1612,55 @@ class RunPodProdWorkerRunner:
                 failures.append("imageName must be the verified GHCR baked image")
         elif not image_name.startswith(str(spec["image_prefix"])):
             failures.append(f"imageName must start with {spec['image_prefix']}")
+        expected_env = self._expected_prod_render_env(
+            spec=spec,
+            target_agent_id=target_agent_id,
+            target_settings=target_settings,
+        )
+        for key, expected in expected_env.items():
+            if str(env.get(key) or "") != expected:
+                failures.append(f"{key} must be {expected}")
+        workflow_overrides = str(spec.get("workflow_overrides") or "")
+        if (
+            workflow_overrides
+            and str(env.get("TASK_TYPE_WORKFLOW_OVERRIDES") or "") != workflow_overrides
+        ):
+            failures.append(
+                "TASK_TYPE_WORKFLOW_OVERRIDES must match the verified profile override"
+            )
+        expected_gpu_type_ids = self._expected_prod_gpu_type_ids(
+            spec=spec,
+            target_settings=target_settings,
+        )
+        if list(body.get("gpuTypeIds") or []) != list(expected_gpu_type_ids):
+            failures.append(
+                "gpuTypeIds must be "
+                + ",".join(expected_gpu_type_ids)
+                + " for prod-worker"
+            )
+        self._validate_profile_container_disk(
+            body=body,
+            spec=spec,
+            target_settings=target_settings,
+            failures=failures,
+        )
+        self._validate_prod_secret_refs(
+            env=env,
+            target_settings=target_settings,
+            failures=failures,
+        )
+        if failures:
+            raise RunPodProdWorkerError(
+                "prod render sanity check failed: " + "; ".join(failures)
+            )
+
+    def _expected_prod_render_env(
+        self,
+        *,
+        spec: dict[str, Any],
+        target_agent_id: str,
+        target_settings: Any,
+    ) -> dict[str, str]:
         expected_env = {
             "ENVIRONMENT": "prod",
             "RUNPOD_ENVIRONMENT": PROD_ENVIRONMENT,
@@ -1656,36 +1705,31 @@ class RunPodProdWorkerRunner:
                 "wan22_video_v2_comfy_extra_args",
                 RUNPOD_WAN22_VIDEO_V2_COMFY_EXTRA_ARGS,
             )
-        for key, expected in expected_env.items():
-            if str(env.get(key) or "") != expected:
-                failures.append(f"{key} must be {expected}")
-        workflow_overrides = str(spec.get("workflow_overrides") or "")
-        if (
-            workflow_overrides
-            and str(env.get("TASK_TYPE_WORKFLOW_OVERRIDES") or "") != workflow_overrides
-        ):
-            failures.append(
-                "TASK_TYPE_WORKFLOW_OVERRIDES must match the verified profile override"
-            )
-        expected_gpu_type_ids = (
-            target_settings.gpu_type_ids_ltx_video
-            if spec["runpod_task_type"] == PROD_LTX_VIDEO_TASK_TYPE
-            else target_settings.gpu_type_ids_pornmaster_flux2_edit
-            if spec["runpod_task_type"] == PROD_PORNMASTER_FLUX2_EDIT_TASK_TYPE
-            else target_settings.prod_gpu_type_ids
-        )
-        if list(body.get("gpuTypeIds") or []) != list(expected_gpu_type_ids):
-            failures.append(
-                "gpuTypeIds must be "
-                + ",".join(expected_gpu_type_ids)
-                + " for prod-worker"
-            )
+        return expected_env
+
+    def _expected_prod_gpu_type_ids(
+        self,
+        *,
+        spec: dict[str, Any],
+        target_settings: Any,
+    ) -> tuple[str, ...]:
+        if spec["runpod_task_type"] == PROD_LTX_VIDEO_TASK_TYPE:
+            return target_settings.gpu_type_ids_ltx_video
+        if spec["runpod_task_type"] == PROD_PORNMASTER_FLUX2_EDIT_TASK_TYPE:
+            return target_settings.gpu_type_ids_pornmaster_flux2_edit
+        return target_settings.prod_gpu_type_ids
+
+    def _validate_profile_container_disk(
+        self,
+        *,
+        body: dict[str, Any],
+        spec: dict[str, Any],
+        target_settings: Any,
+        failures: list[str],
+    ) -> None:
         if spec["runpod_task_type"] == PROD_LTX_VIDEO_TASK_TYPE:
             min_disk = int(getattr(target_settings, "container_disk_gb_ltx_video", 0))
-            try:
-                rendered_disk = int(body.get("containerDiskInGb") or 0)
-            except (TypeError, ValueError):
-                rendered_disk = 0
+            rendered_disk = self._rendered_container_disk(body)
             if rendered_disk < min_disk:
                 failures.append(
                     f"containerDiskInGb must be at least {min_disk} for ltx_video"
@@ -1698,15 +1742,26 @@ class RunPodProdWorkerRunner:
                     RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB,
                 )
             )
-            try:
-                rendered_disk = int(body.get("containerDiskInGb") or 0)
-            except (TypeError, ValueError):
-                rendered_disk = 0
+            rendered_disk = self._rendered_container_disk(body)
             if rendered_disk < min_disk:
                 failures.append(
                     "containerDiskInGb must be at least "
                     f"{min_disk} for pornmaster_flux2_edit"
                 )
+
+    def _rendered_container_disk(self, body: dict[str, Any]) -> int:
+        try:
+            return int(body.get("containerDiskInGb") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _validate_prod_secret_refs(
+        self,
+        *,
+        env: dict[str, Any],
+        target_settings: Any,
+        failures: list[str],
+    ) -> None:
         expected_refs = {
             "AGENT_SECRET_TOKEN": target_settings.prod_agent_secret_token_ref,
             "MINIO_ACCESS_KEY": target_settings.prod_minio_access_key_ref,
@@ -1720,10 +1775,6 @@ class RunPodProdWorkerRunner:
                 failures.append(f"{key} must use prod RunPod secret reference")
             if not value.startswith("{{ RUNPOD_SECRET_"):
                 failures.append(f"{key} must not contain an inline secret")
-        if failures:
-            raise RunPodProdWorkerError(
-                "prod render sanity check failed: " + "; ".join(failures)
-            )
 
     def _render_summary(self, render: dict[str, Any]) -> dict[str, Any]:
         body = render.get("json") or {}
