@@ -22,6 +22,7 @@ async def process_image_to_video_generation_task(
     wan22_prev_task_id: str | None = None,
     wan22_chain_task_ids: Any = None,
     result_meta: dict[str, Any] | None = None,
+    display_mode_name_override: str | None = None,
     status_msg_id: int = None,
     delete_status: bool = True,
     task_type: str = MODE_IMAGE_TO_VIDEO,
@@ -33,6 +34,9 @@ async def process_image_to_video_generation_task(
     lora_strength: float = 1.0,
     allow_contribute: bool = True,
     source_post_id: Optional[int] = None,
+    base_priority: int = 0,
+    allow_cancel: bool = True,
+    user_cancel_allowed: bool = True,
 ) -> Tuple[Optional[bytes], Optional[str]]:
     return await process_legacy_image_to_video_generation_task(
         context=context,
@@ -49,6 +53,7 @@ async def process_image_to_video_generation_task(
         wan22_prev_task_id=wan22_prev_task_id,
         wan22_chain_task_ids=wan22_chain_task_ids,
         result_meta=result_meta,
+        display_mode_name_override=display_mode_name_override,
         status_msg_id=status_msg_id,
         delete_status=delete_status,
         task_type=task_type,
@@ -60,4 +65,7 @@ async def process_image_to_video_generation_task(
         lora_strength=lora_strength,
         allow_contribute=allow_contribute,
         source_post_id=source_post_id,
+        base_priority=base_priority,
+        allow_cancel=allow_cancel,
+        user_cancel_allowed=user_cancel_allowed,
     )

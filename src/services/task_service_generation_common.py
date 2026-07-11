@@ -81,11 +81,13 @@ def resolve_generation_display_mode_name(
 def build_generation_completion_caption(
     context: Any,
     task_type: str,
+    display_mode_name_override: str | None = None,
 ) -> str:
     return translate_context_text(
         context,
         "task.status_completion_mode",
-        mode_name=resolve_generation_display_mode_name(context, task_type),
+        mode_name=display_mode_name_override
+        or resolve_generation_display_mode_name(context, task_type),
     )
 
 
@@ -120,6 +122,9 @@ def build_generation_flow_context(
     source_post_id: Optional[int],
     deduct_quota: bool,
     cost_override: Optional[int] = None,
+    base_priority: int = 0,
+    allow_cancel: bool = True,
+    user_cancel_allowed: bool = True,
     message_spec: Any,
     submitted_status_builder: Any,
     send_result: bool,
@@ -153,6 +158,8 @@ def build_generation_flow_context(
         source_post_id=source_post_id,
         deduct_quota=deduct_quota,
         cost_override=cost_override,
+        base_priority=base_priority,
+        user_cancel_allowed=user_cancel_allowed,
         message_spec=message_spec,
         submitted_status_builder=submitted_status_builder,
         send_result=send_result,
@@ -160,6 +167,7 @@ def build_generation_flow_context(
         result_meta=result_meta,
         delete_status=delete_status,
         allow_contribute=allow_contribute,
+        allow_cancel=allow_cancel,
         result_task_type=result_task_type,
         result_prompt=result_prompt,
         result_input_image_indices=result_input_image_indices,

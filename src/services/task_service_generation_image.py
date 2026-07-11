@@ -53,9 +53,14 @@ async def process_standard_generation_task(
     duration: Any = None,
     negative_prompt: str | None = None,
     cost_override: int | None = None,
+    base_priority: int = 0,
+    allow_cancel: bool = True,
+    user_cancel_allowed: bool = True,
     result_task_type: str | None = None,
     result_prompt: str | None = None,
     result_input_image_indices: list[int] | None = None,
+    display_mode_name_override: str | None = None,
+    result_meta: dict[str, Any] | None = None,
 ) -> Tuple[Optional[bytes], Optional[str]]:
     internal_user_id = await resolve_internal_user_id(user_id, username)
 
@@ -63,50 +68,66 @@ async def process_standard_generation_task(
         task_type = "video" if is_video else "image"
 
     if is_video and task_type in [MODE_CUSTOM_VIDEO, MODE_IMAGE_TO_VIDEO]:
-        return await process_image_to_video_generation_task(
-            context=context,
-            chat_id=chat_id,
-            user_id=user_id,
-            username=username,
-            prompt=prompt,
-            images=images,
-            resolution=resolution,
-            duration=duration,
-            negative_prompt=negative_prompt,
-            status_msg_id=status_msg_id,
-            delete_status=delete_status,
-            task_type=task_type,
-            cleanup=cleanup,
-            send_result=send_result,
-            deduct_quota=deduct_quota,
-            reply_markup=reply_markup,
-            lora_name=lora_name,
-            lora_strength=lora_strength,
-            allow_contribute=allow_contribute,
-            source_post_id=source_post_id,
-        )
+        video_kwargs = {
+            "context": context,
+            "chat_id": chat_id,
+            "user_id": user_id,
+            "username": username,
+            "prompt": prompt,
+            "images": images,
+            "resolution": resolution,
+            "duration": duration,
+            "negative_prompt": negative_prompt,
+            "status_msg_id": status_msg_id,
+            "delete_status": delete_status,
+            "task_type": task_type,
+            "cleanup": cleanup,
+            "send_result": send_result,
+            "deduct_quota": deduct_quota,
+            "reply_markup": reply_markup,
+            "lora_name": lora_name,
+            "lora_strength": lora_strength,
+            "allow_contribute": allow_contribute,
+            "source_post_id": source_post_id,
+            "base_priority": base_priority,
+            "allow_cancel": allow_cancel,
+            "user_cancel_allowed": user_cancel_allowed,
+        }
+        if display_mode_name_override is not None:
+            video_kwargs["display_mode_name_override"] = display_mode_name_override
+        if result_meta is not None:
+            video_kwargs["result_meta"] = result_meta
+        return await process_image_to_video_generation_task(**video_kwargs)
     if is_video and task_type == MODE_WAN22_VIDEO_V2:
-        return await process_wan22_video_v2_generation_task(
-            context=context,
-            chat_id=chat_id,
-            user_id=user_id,
-            username=username,
-            prompt=prompt,
-            negative_prompt=negative_prompt or "",
-            images=images,
-            resolution_preset=resolution,
-            duration=duration,
-            use_end_frame=len(images) > 1,
-            status_msg_id=status_msg_id,
-            delete_status=delete_status,
-            task_type=task_type,
-            cleanup=cleanup,
-            send_result=send_result,
-            deduct_quota=deduct_quota,
-            reply_markup=reply_markup,
-            allow_contribute=allow_contribute,
-            source_post_id=source_post_id,
-        )
+        wan22_kwargs = {
+            "context": context,
+            "chat_id": chat_id,
+            "user_id": user_id,
+            "username": username,
+            "prompt": prompt,
+            "negative_prompt": negative_prompt or "",
+            "images": images,
+            "resolution_preset": resolution,
+            "duration": duration,
+            "use_end_frame": len(images) > 1,
+            "status_msg_id": status_msg_id,
+            "delete_status": delete_status,
+            "task_type": task_type,
+            "cleanup": cleanup,
+            "send_result": send_result,
+            "deduct_quota": deduct_quota,
+            "reply_markup": reply_markup,
+            "allow_contribute": allow_contribute,
+            "source_post_id": source_post_id,
+            "base_priority": base_priority,
+            "allow_cancel": allow_cancel,
+            "user_cancel_allowed": user_cancel_allowed,
+        }
+        if display_mode_name_override is not None:
+            wan22_kwargs["display_mode_name_override"] = display_mode_name_override
+        if result_meta is not None:
+            wan22_kwargs["result_meta"] = result_meta
+        return await process_wan22_video_v2_generation_task(**wan22_kwargs)
 
     resolution = 512
     duration = 5
@@ -146,6 +167,7 @@ async def process_standard_generation_task(
         completion_caption=build_generation_completion_caption(
             context,
             task_type,
+            display_mode_name_override=display_mode_name_override,
         ),
     )
     billing_args = resolve_generation_billing_args(
@@ -180,9 +202,13 @@ async def process_standard_generation_task(
             ),
             send_result=send_result,
             reply_markup=reply_markup,
+            result_meta=result_meta,
             delete_status=delete_status,
             allow_contribute=allow_contribute,
             cost_override=cost_override,
+            base_priority=base_priority,
+            allow_cancel=allow_cancel,
+            user_cancel_allowed=user_cancel_allowed,
             result_task_type=result_task_type,
             result_prompt=result_prompt,
             result_input_image_indices=result_input_image_indices,

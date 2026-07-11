@@ -159,6 +159,7 @@ async def process_and_submit_task(
     submission_side_effect_plan: TaskSubmissionSideEffectPlan | None = None,
     delivery_context: dict[str, Any] | None = None,
     cost_override: int | None = None,
+    user_cancel_allowed: bool = True,
     dependencies: TaskCoreProcessDependencies | None = None,
 ) -> dict:
     dependencies = dependencies or get_default_task_core_process_dependencies()
@@ -195,6 +196,7 @@ async def process_and_submit_task(
             dependencies=dependencies,
         )
         submission_context.client_type = client_type
+        submission_context.user_cancel_allowed = user_cancel_allowed
         if delivery_context:
             submission_context.delivery_context.update(
                 {

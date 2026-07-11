@@ -43,6 +43,7 @@ async def register_task_submission(
         allow_contribute=submission_context.allow_contribute,
         client_type=submission_context.client_type,
         credits_deducted=credits_deducted,
+        user_cancel_allowed=getattr(submission_context, "user_cancel_allowed", True),
         metadata=submission_context.metadata,
     )
 

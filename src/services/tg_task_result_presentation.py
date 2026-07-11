@@ -22,6 +22,10 @@ from src.domain_config.scail2_video import (
     SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE,
 )
 from src.domain_config.wan22_aio_video import is_wan22_chain_history_task_type
+from src.services.qqcc_regenerate_metadata import (
+    QQCC_REGENERATE_CALLBACK_PREFIX,
+    has_qqcc_regenerate_context,
+)
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 WAN22_EXTEND_CALLBACK_PREFIX = "wan22v2_extend"
@@ -30,6 +34,11 @@ WAN22_STITCH_CALLBACK_PREFIX = "wan22v2_stitch_chain"
 LTX_EXTEND_CALLBACK_PREFIX = "ltx_extend"
 LTX_STITCH_CALLBACK_PREFIX = "ltx_stitch_chain"
 GALLERY_SUBMIT_CALLBACK_PREFIX = "submit_gallery_"
+PUBLIC_SHARE_CALLBACK_PREFIX = "public_share"
+PUBLISH_CALLBACK_PREFIXES = (
+    GALLERY_SUBMIT_CALLBACK_PREFIX,
+    PUBLIC_SHARE_CALLBACK_PREFIX,
+)
 
 
 def build_task_bound_callback_data(prefix: str, task_id: str) -> str:
@@ -166,6 +175,16 @@ def _build_wan22_regenerate_button(task_id: str) -> InlineKeyboardButton:
     )
 
 
+def _build_qqcc_regenerate_button(task_id: str) -> InlineKeyboardButton:
+    return InlineKeyboardButton(
+        "🔁 重新生成",
+        callback_data=build_task_bound_callback_data(
+            QQCC_REGENERATE_CALLBACK_PREFIX,
+            task_id,
+        ),
+    )
+
+
 def _build_wan22_stitch_button(task_id: str) -> InlineKeyboardButton:
     return InlineKeyboardButton(
         "🔗 完成拼接",
@@ -187,6 +206,8 @@ def _build_result_action_rows(
     primary_row: list[InlineKeyboardButton] = []
     if _supports_gallery_submission(task_type, allow_contribute):
         primary_row.extend(_build_gallery_button_row(task_id))
+    if has_qqcc_regenerate_context(result_meta):
+        primary_row.append(_build_qqcc_regenerate_button(task_id))
     if _supports_wan22_regenerate(task_type, result_meta):
         primary_row.append(_build_wan22_regenerate_button(task_id))
     if _supports_wan22_extension(task_type, result_meta):
@@ -207,19 +228,47 @@ def _build_result_action_rows(
     return rows
 
 
-def _build_default_result_keyboard() -> list[list[InlineKeyboardButton]]:
+def _build_default_result_keyboard(
+    *,
+    allow_contribute: bool,
+) -> list[list[InlineKeyboardButton]]:
     keyboard = [
         [
             InlineKeyboardButton("👍", callback_data="rate_like"),
             InlineKeyboardButton("👎", callback_data="rate_dislike"),
         ]
     ]
-    if ENABLE_PUBLIC_SHARE:
+    if ENABLE_PUBLIC_SHARE and allow_contribute:
         keyboard.insert(
             0,
             [InlineKeyboardButton("公开", callback_data="public_share_request")],
         )
     return keyboard
+
+
+def _is_publish_callback(callback_data: str | None) -> bool:
+    normalized_data = str(callback_data or "").strip()
+    return any(
+        normalized_data.startswith(prefix)
+        for prefix in PUBLISH_CALLBACK_PREFIXES
+    )
+
+
+def _strip_publish_buttons(
+    reply_markup: InlineKeyboardMarkup,
+) -> InlineKeyboardMarkup:
+    keyboard = []
+    for row in reply_markup.inline_keyboard:
+        filtered_row = [
+            button
+            for button in row
+            if not _is_publish_callback(getattr(button, "callback_data", None))
+        ]
+        if filtered_row:
+            keyboard.append(filtered_row)
+    if not keyboard:
+        keyboard = _build_default_result_keyboard(allow_contribute=False)
+    return InlineKeyboardMarkup(keyboard)
 
 
 def _ensure_gallery_button(
@@ -230,6 +279,9 @@ def _ensure_gallery_button(
     allow_contribute: bool,
     result_meta: dict | None,
 ) -> InlineKeyboardMarkup:
+    if not allow_contribute:
+        reply_markup = _strip_publish_buttons(reply_markup)
+
     expected_rows = _build_result_action_rows(
         task_type=task_type,
         task_id=task_id,
@@ -273,7 +325,7 @@ def build_result_reply_markup(
             result_meta=result_meta,
         )
 
-    keyboard = _build_default_result_keyboard()
+    keyboard = _build_default_result_keyboard(allow_contribute=allow_contribute)
     action_rows = _build_result_action_rows(
         task_type=task_type,
         task_id=task_id,

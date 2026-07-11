@@ -92,6 +92,7 @@ async def test_register_task_submission_persists_client_type():
         final_priority=3,
         allow_contribute=False,
         client_type="bot:qqcc",
+        user_cancel_allowed=False,
         metadata={"mode": "random_faceswap"},
     )
 
@@ -108,6 +109,7 @@ async def test_register_task_submission_persists_client_type():
     add_task.assert_awaited_once()
     kwargs = add_task.await_args.kwargs
     assert kwargs["client_type"] == "bot:qqcc"
+    assert kwargs["user_cancel_allowed"] is False
     assert kwargs["credits_deducted"] is True
     assert kwargs["metadata"] == {"mode": "random_faceswap"}
 

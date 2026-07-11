@@ -30,6 +30,7 @@ from src.services import task_service_finalize as support
 from src.services import task_service_entrypoints_video as video_entrypoints
 from src.services import tg_task_progress_presentation as tg_progress_helpers
 from src.services import tg_task_runtime as tg_runtime_helpers
+from src.services.task_service_generation_common import build_generation_completion_caption
 from src.services.task_service_entrypoints_specialized import (
     process_face_video_task,
     process_ltx_video_task,
@@ -300,6 +301,71 @@ async def test_handle_task_completion_merges_wan22_result_meta_into_extra_output
 
 
 @pytest.mark.asyncio
+async def test_handle_task_completion_merges_qqcc_regenerate_meta_into_extra_outputs(
+    monkeypatch,
+):
+    download_output = AsyncMock(
+        return_value=TaskSuccessPersistenceResult(
+            media_bytes=b"image-bytes",
+            output_file="saved-output.png",
+            width=512,
+            height=512,
+            duration=None,
+        )
+    )
+    send_result_media = AsyncMock()
+    cleanup_status = AsyncMock()
+    monkeypatch.setattr(
+        "src.services.task_service_completion.download_and_log_task_output",
+        download_output,
+    )
+    monkeypatch.setattr(
+        "src.services.task_service_completion.send_result_media",
+        send_result_media,
+    )
+    monkeypatch.setattr(
+        "src.services.task_service_completion.cleanup_completion_status_message",
+        cleanup_status,
+    )
+
+    qqcc_meta = {
+        "_qqcc_regenerate": {
+            "kind": "quick_image",
+            "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+            "scene_id": "soft_light",
+            "display_mode_name": "柔光写真",
+        }
+    }
+
+    await completion_helpers.handle_task_completion(
+        context=SimpleNamespace(bot=MagicMock(), bot_data={}),
+        chat_id=123,
+        internal_user_id=456,
+        prompt="prompt",
+        task_type=MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+        registry_task_id="registry-qqcc",
+        backend_task_id="backend-qqcc",
+        saved_input_images=["input.png"],
+        user_logger=SimpleNamespace(username="tester"),
+        is_video=False,
+        send_result=True,
+        reply_markup=None,
+        status_msg=MagicMock(),
+        delete_status=True,
+        caption="done",
+        allow_contribute=False,
+        result_meta=qqcc_meta,
+        extra_outputs={"existing": True},
+    )
+
+    assert download_output.await_args.kwargs["extra_outputs"] == {
+        "existing": True,
+        **qqcc_meta,
+    }
+    send_result_media.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_download_and_log_task_output_handles_image_branch(monkeypatch):
     persist_mock = AsyncMock(
         return_value=TaskSuccessPersistenceResult(
@@ -405,6 +471,93 @@ def test_build_result_reply_markup_hides_free_edit_v2_gallery_button_when_blocke
         if button.callback_data
     ]
     assert "submit_gallery_task-free-edit-v2" not in callbacks
+    assert "public_share_request" not in callbacks
+
+
+def test_build_result_reply_markup_strips_publish_buttons_from_custom_markup_when_blocked():
+    custom_markup = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "🚀 一键投稿至广场",
+                    callback_data="submit_gallery_task-3",
+                ),
+                InlineKeyboardButton("公开", callback_data="public_share_request"),
+            ],
+            [
+                InlineKeyboardButton("自定义", callback_data="custom_action"),
+                InlineKeyboardButton("👍", callback_data="rate_like"),
+            ],
+        ]
+    )
+
+    final_markup = tg_runtime_helpers.build_result_reply_markup(
+        task_type="custom_video",
+        task_id="task-3",
+        allow_contribute=False,
+        reply_markup=custom_markup,
+    )
+
+    callbacks = [
+        button.callback_data
+        for row in final_markup.inline_keyboard
+        for button in row
+        if button.callback_data
+    ]
+    assert "submit_gallery_task-3" not in callbacks
+    assert "public_share_request" not in callbacks
+    assert "custom_action" in callbacks
+    assert "rate_like" in callbacks
+
+
+def test_build_result_reply_markup_keeps_non_publish_actions_when_blocked():
+    custom_markup = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("公开", callback_data="public_share_request")]]
+    )
+
+    final_markup = tg_runtime_helpers.build_result_reply_markup(
+        task_type=MODE_WAN22_VIDEO_V2,
+        task_id="task-wan22",
+        allow_contribute=False,
+        reply_markup=custom_markup,
+        result_meta={"wan22_resolution_preset": "hd"},
+    )
+
+    callbacks = [
+        button.callback_data
+        for row in final_markup.inline_keyboard
+        for button in row
+        if button.callback_data
+    ]
+    assert "public_share_request" not in callbacks
+    assert "wan22v2_extend:task-wan22" in callbacks
+
+
+def test_build_result_reply_markup_adds_qqcc_regenerate_button_when_context_present():
+    final_markup = tg_runtime_helpers.build_result_reply_markup(
+        task_type=MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+        task_id="task-qqcc",
+        allow_contribute=False,
+        reply_markup=None,
+        result_meta={
+            "_qqcc_regenerate": {
+                "kind": "quick_image",
+                "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+                "scene_id": "soft_light",
+                "display_mode_name": "柔光写真",
+            }
+        },
+    )
+
+    callbacks = [
+        button.callback_data
+        for row in final_markup.inline_keyboard
+        for button in row
+        if button.callback_data
+    ]
+    assert callbacks[0] == "qqcc_regenerate:task-qqcc"
+    assert "submit_gallery_task-qqcc" not in callbacks
+    assert "public_share_request" not in callbacks
 
 
 def test_build_result_reply_markup_supports_wan22_video_v2_gallery_button():
@@ -570,6 +723,16 @@ def test_record_result_message_meta_merges_result_meta():
     assert context.bot_data["msg_meta_77"]["wan22_prev_task_id"] == "task-1"
 
 
+def test_generation_completion_caption_uses_display_mode_override():
+    caption = build_generation_completion_caption(
+        SimpleNamespace(lang="zh"),
+        MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+        display_mode_name_override="柔光写真",
+    )
+
+    assert caption == "✅ 柔光写真生成完成"
+
+
 def test_build_pending_status_text_uses_queue_remaining_fallback():
     text = tg_progress_helpers.build_pending_status_text(
         info={"status": "pending", "queue_remaining": 3},
@@ -676,6 +839,7 @@ async def test_monitor_submitted_bot_task_uses_helper_monitor_seam(monkeypatch):
         user_group="金丹期",
         edit_status_text_func=edit_status_text,
         lang="zh",
+        allow_cancel=True,
     )
 
 
@@ -707,6 +871,32 @@ async def test_monitor_bot_task_progress_shows_cancel_button_only_while_pending(
     )
     assert second_call.args == ("status-msg", "⏳ 正在生成，请耐心等待...")
     assert second_call.kwargs["reply_markup"] is None
+
+
+@pytest.mark.asyncio
+async def test_monitor_bot_task_progress_hides_cancel_button_when_disallowed():
+    edit_status_text = AsyncMock()
+
+    async def monitor_func(*_args, **_kwargs):
+        yield {"status": "pending", "queue_pos": 0}
+        yield {"status": "done", "progress": 100}
+
+    result = await tg_runtime_helpers.monitor_task_progress(
+        task_id="task-locked",
+        status_msg="status-msg",
+        is_video=False,
+        monitor_func=monitor_func,
+        edit_status_text_func=edit_status_text,
+        allow_cancel=False,
+    )
+
+    assert result == {"status": "done", "progress": 100}
+    edit_status_text.assert_awaited_once()
+    assert edit_status_text.await_args.args == (
+        "status-msg",
+        "⏳ 排队中... (第 1 位)",
+    )
+    assert edit_status_text.await_args.kwargs["reply_markup"] is None
 
 
 @pytest.mark.asyncio
@@ -1511,6 +1701,9 @@ async def test_process_generation_task_delegates_video_modes_to_image_to_video_e
         lora_strength=1.0,
         allow_contribute=True,
         source_post_id=None,
+        base_priority=0,
+        allow_cancel=True,
+        user_cancel_allowed=True,
     )
 
 

@@ -19,6 +19,9 @@ from src.services.ltx_video_extension_service import (
 from src.services.wan22_video_v2_extension_service import (
     merge_wan22_history_context_into_extra_outputs,
 )
+from src.services.qqcc_regenerate_metadata import (
+    merge_qqcc_regenerate_context_into_extra_outputs,
+)
 
 
 async def monitor_submitted_bot_task(
@@ -32,6 +35,7 @@ async def monitor_submitted_bot_task(
     monitor_bot_task_progress_func=None,
     edit_status_text_func=None,
     lang: str = "zh",
+    allow_cancel: bool = True,
 ):
     from src.core.billing_core import get_user_priority_and_identity
 
@@ -53,6 +57,7 @@ async def monitor_submitted_bot_task(
         user_group=user_group,
         edit_status_text_func=edit_status_text_func,
         lang=lang,
+        allow_cancel=allow_cancel,
     )
 
 
@@ -65,6 +70,7 @@ async def monitor_bot_task_progress(
     user_group=None,
     edit_status_text_func=None,
     lang: str = "zh",
+    allow_cancel: bool = True,
 ):
     def _raise_cancelled():
         raise BotTaskCancelled()
@@ -79,6 +85,7 @@ async def monitor_bot_task_progress(
         lang=lang,
         on_cancelled=_raise_cancelled,
         edit_status_text_func=edit_status_text_func,
+        allow_cancel=allow_cancel,
     )
     if final_info is None:
         raise BotTaskCancelled()
@@ -249,6 +256,10 @@ async def handle_task_completion(
     )
     persisted_extra_outputs = merge_ltx_history_context_into_extra_outputs(
         task_type=task_type,
+        extra_outputs=persisted_extra_outputs,
+        metadata=result_meta,
+    )
+    persisted_extra_outputs = merge_qqcc_regenerate_context_into_extra_outputs(
         extra_outputs=persisted_extra_outputs,
         metadata=result_meta,
     )

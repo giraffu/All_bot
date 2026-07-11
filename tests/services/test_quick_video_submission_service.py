@@ -42,6 +42,7 @@ def test_main_bot_legacy_mode_builds_plan_without_qqcc_prompt_override():
     assert plan.total_cost == 60
     assert plan.default_prompt_key == "doggy_style"
     assert plan.default_prompt_text == "doggy style sex"
+    assert plan.allow_contribute is True
     assert plan.prompt_override is None
     assert plan.tail_draw_chain == []
 
@@ -155,6 +156,15 @@ def test_qqcc_image_to_video_lora_scene_builds_legacy_video_plan():
     assert plan.negative_prompt == "video bad hands"
     assert plan.display_mode_name == "模型动图"
     assert plan.lora_name == "BreastGrow"
+    assert plan.allow_contribute is False
+    assert plan.result_meta == {
+        "_qqcc_regenerate": {
+            "kind": "quick_video",
+            "mode": MODE_IMAGE_TO_VIDEO,
+            "scene_id": "lora_scene",
+            "display_mode_name": "模型动图",
+        }
+    }
 
 
 def test_qqcc_wan22_v2_scene_builds_v2_plan_and_normalizes_resolution():
@@ -192,7 +202,17 @@ def test_qqcc_wan22_v2_scene_builds_v2_plan_and_normalizes_resolution():
     assert plan.duration == "10s"
     assert plan.prompt_override == "v2 scene prompt"
     assert plan.negative_prompt == "v2 blur"
+    assert plan.display_mode_name == "新版动图"
     assert plan.lora_name == ""
+    assert plan.allow_contribute is False
+    assert plan.result_meta == {
+        "_qqcc_regenerate": {
+            "kind": "quick_video",
+            "mode": MODE_WAN22_VIDEO_V2,
+            "scene_id": "v2_scene",
+            "display_mode_name": "新版动图",
+        }
+    }
 
 
 def test_qqcc_tail_frame_scene_adds_draw_chain_cost():
@@ -249,6 +269,15 @@ def test_qqcc_tail_frame_scene_adds_draw_chain_cost():
     assert plan.tail_draw_chain[0]["negative_prompt"] == "tail bad anatomy"
     assert plan.negative_prompt == "video blur"
     assert plan.total_cost == 12
+    assert plan.allow_contribute is False
+    assert plan.result_meta == {
+        "_qqcc_regenerate": {
+            "kind": "quick_video",
+            "mode": MODE_CUSTOM_VIDEO,
+            "scene_id": "tail_video",
+            "display_mode_name": "首尾动图",
+        }
+    }
 
 
 @pytest.mark.asyncio
@@ -292,6 +321,12 @@ async def test_run_qqcc_legacy_video_plan_passes_scene_negative_prompt():
     )
 
     assert video_task.await_args.kwargs["negative_prompt"] == "video bad hands"
+    assert video_task.await_args.kwargs["allow_contribute"] is False
+    assert "allow_cancel" not in video_task.await_args.kwargs
+    assert "user_cancel_allowed" not in video_task.await_args.kwargs
+    assert "base_priority" not in video_task.await_args.kwargs
+    assert video_task.await_args.kwargs["display_mode_name_override"] == "模型动图"
+    assert video_task.await_args.kwargs["result_meta"] == plan.result_meta
 
 
 @pytest.mark.asyncio
@@ -334,6 +369,12 @@ async def test_run_qqcc_wan22_v2_video_plan_passes_scene_negative_prompt():
     )
 
     assert generation_task.await_args.kwargs["negative_prompt"] == "v2 blur"
+    assert generation_task.await_args.kwargs["allow_contribute"] is False
+    assert "allow_cancel" not in generation_task.await_args.kwargs
+    assert "user_cancel_allowed" not in generation_task.await_args.kwargs
+    assert "base_priority" not in generation_task.await_args.kwargs
+    assert generation_task.await_args.kwargs["display_mode_name_override"] == "新版动图"
+    assert generation_task.await_args.kwargs["result_meta"] == plan.result_meta
 
 
 @pytest.mark.parametrize(
@@ -511,3 +552,70 @@ async def test_run_tail_frame_plan_keeps_tail_draw_and_video_negative_prompts_se
 
     assert draw_chains[0][0]["negative_prompt"] == "tail blur"
     assert video_task.await_args.kwargs["negative_prompt"] == "video blur"
+    assert video_task.await_args.kwargs["allow_contribute"] is False
+    assert video_task.await_args.kwargs["allow_cancel"] is False
+    assert video_task.await_args.kwargs["user_cancel_allowed"] is False
+    assert video_task.await_args.kwargs["base_priority"] == 100
+    assert video_task.await_args.kwargs["display_mode_name_override"] == "首尾动图"
+    assert video_task.await_args.kwargs["result_meta"] == plan.result_meta
+
+
+@pytest.mark.asyncio
+async def test_run_tail_frame_wan22_v2_final_video_is_locked_continuation():
+    plan = build_quick_video_submission_plan(
+        fsm_data={
+            "mode": MODE_CUSTOM_VIDEO,
+            "scene_id": "tail_v2_video",
+            "resolution": "720p",
+            "duration": "5s",
+        },
+        qqcc_config=normalize_qqcc_config(
+            {
+                "scene_preset_version": SCENE_PRESET_VERSION,
+                "draw_scenes": [
+                    {
+                        "id": "tail_pose",
+                        "name": "尾帧姿势",
+                        "prompt": "tail prompt",
+                    }
+                ],
+                "video_scenes": [
+                    {
+                        "id": "tail_v2_video",
+                        "name": "首尾新版动图",
+                        "prompt": "video prompt",
+                        "negative_prompt": "video blur",
+                        "duration": "5s",
+                        "engine": "wan22_video_v2",
+                        "end_frame_draw_scene_id": "tail_pose",
+                    }
+                ],
+            }
+        ),
+        allowed_resolutions=["720p"],
+    )
+    generation_task = AsyncMock()
+
+    async def fake_draw_chain(**_kwargs):
+        return SimpleNamespace(local_output_path="/tmp/end.png")
+
+    await run_quick_video_submission_plan(
+        plan=plan,
+        context=SimpleNamespace(),
+        chat_id=456,
+        user_id=123,
+        username="tester",
+        image_path="/tmp/input.png",
+        status_msg_id=77,
+        process_generation_task_func=generation_task,
+        execute_draw_chain_func=fake_draw_chain,
+    )
+
+    assert generation_task.await_args.kwargs["task_type"] == MODE_WAN22_VIDEO_V2
+    assert generation_task.await_args.kwargs["images"] == [
+        "/tmp/input.png",
+        "/tmp/end.png",
+    ]
+    assert generation_task.await_args.kwargs["allow_cancel"] is False
+    assert generation_task.await_args.kwargs["user_cancel_allowed"] is False
+    assert generation_task.await_args.kwargs["base_priority"] == 100

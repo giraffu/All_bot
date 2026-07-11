@@ -63,6 +63,8 @@ async def test_submit_bot_task_sets_runtime_state_and_returns_saved_inputs(monke
     assert kwargs["deduct_quota"] is False
     assert kwargs["cost_override"] is None
     assert kwargs["delivery_context"] is None
+    assert kwargs["base_priority"] == 0
+    assert kwargs["user_cancel_allowed"] is True
 
 
 def test_select_result_saved_inputs_uses_requested_indices_with_fallback():
@@ -90,9 +92,15 @@ def test_build_bot_task_flow_context_keeps_cost_override_for_internal_tasks():
         cleanup=False,
         cleanup_paths=[],
         cost_override=2,
+        base_priority=100,
+        allow_cancel=False,
+        user_cancel_allowed=False,
     )
 
     assert flow.request.cost_override == 2
+    assert flow.request.base_priority == 100
+    assert flow.request.user_cancel_allowed is False
+    assert flow.presentation.allow_cancel is False
 
 
 @pytest.mark.asyncio
@@ -124,6 +132,39 @@ async def test_submit_bot_task_uses_submission_client_type(monkeypatch):
     )
 
     assert process_submit.await_args.kwargs["client_type"] == "bot:qqcc"
+
+
+@pytest.mark.asyncio
+async def test_submit_bot_task_passes_priority_and_user_cancel_lock(monkeypatch):
+    process_submit = AsyncMock(
+        return_value={
+            "cost": 6,
+            "registry_task_id": "registry-locked",
+            "backend_task_id": "backend-locked",
+            "saved_inputs": [],
+        }
+    )
+    monkeypatch.setattr(task_service_flow, "process_and_submit_task", process_submit)
+
+    await task_service_flow.submit_bot_task(
+        submission=BotTaskSubmissionContext(
+            runtime_state=SimpleNamespace(
+                task_submitted=False,
+                actual_cost=0,
+                registry_task_id=None,
+                backend_task_id=None,
+            ),
+            internal_user_id=789,
+            username="qqcc",
+            task_type="quick_image",
+            inputs={"prompt": "lazy"},
+            base_priority=100,
+            user_cancel_allowed=False,
+        ),
+    )
+
+    assert process_submit.await_args.kwargs["base_priority"] == 100
+    assert process_submit.await_args.kwargs["user_cancel_allowed"] is False
 
 
 @pytest.mark.asyncio
@@ -176,6 +217,37 @@ async def test_update_submitted_task_status_prefers_submitted_text(monkeypatch):
         status_msg,
         "已提交",
         reply_markup=cancel_markup,
+    )
+
+
+@pytest.mark.asyncio
+async def test_update_submitted_task_status_skips_cancel_markup_when_disallowed(
+    monkeypatch,
+):
+    edit_text = AsyncMock()
+    build_cancel_markup = Mock()
+    monkeypatch.setattr(task_service_flow, "robust_edit_text", edit_text)
+    monkeypatch.setattr(
+        task_service_flow,
+        "build_cancel_task_markup",
+        build_cancel_markup,
+    )
+
+    await task_service_flow.update_submitted_task_status(
+        status_msg="status-msg",
+        message_spec=BotTaskMessageSpec(
+            initial_status_text="正在提交",
+            submitted_status_text="已提交",
+        ),
+        registry_task_id="registry-locked",
+        allow_cancel=False,
+    )
+
+    build_cancel_markup.assert_not_called()
+    edit_text.assert_awaited_once_with(
+        "status-msg",
+        "已提交",
+        reply_markup=None,
     )
 
 
@@ -235,6 +307,7 @@ async def test_prepare_and_submit_bot_task_updates_status_through_helpers(monkey
         status_msg="status-msg",
         message_spec=spec,
         registry_task_id="registry-1",
+        allow_cancel=True,
     )
 
 

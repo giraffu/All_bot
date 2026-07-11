@@ -203,6 +203,15 @@ Web 统一入口在：
 - 前端和 Web API 对外接口大多围绕 `registry_task_id`
 - 执行面、队列和 Worker 更多围绕 `backend_task_id`
 
+### 6.4 Bot 取消与优先级控制
+Bot task flow 允许入口层在不改变数据库结构和 worker workflow 的前提下，向 `process_and_submit_task(...)` 透传两个任务控制语义：
+- `base_priority`: 默认 `0`，透传到现有 Central 队列优先级计算；QQCC 链式 continuation 子任务使用 `100` 表达“排在第一”。
+- `user_cancel_allowed`: 默认 `true`，写入 active task registry；`false` 时用户取消入口直接返回 `not_cancellable`，不调用 Central cancel，也不触发退款。
+
+Telegram 展示层还有对应的 `allow_cancel`，用于控制 pending/submitted 状态是否展示 `cancel_task_*` 按钮。隐藏按钮只是用户体验层，权威边界仍在 `cancel_user_task(...)` 读取 active registry 的 `user_cancel_allowed`。
+
+QQCC 懒人 Bot 的链式 AI绘图/AI动图复用这一通用语义：第一个真实子任务普通排队且 pending 可取消；后续后处理绘图、内部原图换脸、尾帧链后续步骤和最终首尾帧视频作为同一链路 continuation，高优先级入队且不可用户取消。主 Bot、Web、普通单任务 QQCC 功能和 worker 执行协议不因此改变。
+
 ## 7. dispatcher 到 backend 执行面的下发
 ### 7.1 按任务类型选择策略
 下发前的任务类型分流主要在：

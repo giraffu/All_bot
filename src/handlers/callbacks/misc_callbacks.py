@@ -131,18 +131,22 @@ async def random_faceswap_again_callback(
     username = query.from_user.username
 
     try:
-        reply_markup = InlineKeyboardMarkup(
-            [
+        reply_markup = (
+            InlineKeyboardMarkup(
                 [
-                    InlineKeyboardButton(
-                        "🔄 再来一张", callback_data="random_faceswap_again"
-                    )
-                ],
-                [
-                    InlineKeyboardButton("👍", callback_data="rate_like"),
-                    InlineKeyboardButton("👎", callback_data="rate_dislike"),
-                ],
-            ]
+                    [
+                        InlineKeyboardButton(
+                            "🔄 再来一张", callback_data="random_faceswap_again"
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton("👍", callback_data="rate_like"),
+                        InlineKeyboardButton("👎", callback_data="rate_dislike"),
+                    ],
+                ]
+            )
+            if qqcc_config is None
+            else None
         )
         plan = build_quick_image_submission_plan(
             fsm_data={"mode": MODE_RANDOM_FACESWAP, "cost": cost},

@@ -78,6 +78,8 @@ async def submit_bot_task(
         deduct_quota=submission.deduct_quota,
         delivery_context=delivery_context,
         cost_override=submission.cost_override,
+        base_priority=submission.base_priority,
+        user_cancel_allowed=submission.user_cancel_allowed,
     )
     saved_inputs = mark_task_submission_succeeded(submission.runtime_state, result)
     backend_task_id = submission.runtime_state.backend_task_id or task_id
@@ -121,9 +123,12 @@ async def update_submitted_task_status(
     status_msg,
     message_spec: BotTaskMessageSpec,
     registry_task_id: Optional[str] = None,
+    allow_cancel: bool = True,
 ):
     reply_markup = (
-        build_cancel_task_markup(registry_task_id) if registry_task_id else None
+        build_cancel_task_markup(registry_task_id)
+        if allow_cancel and registry_task_id
+        else None
     )
     if message_spec.submitted_status_text:
         await robust_edit_text(
@@ -148,6 +153,7 @@ async def prepare_and_submit_bot_task(
     message_spec: BotTaskMessageSpec,
     submitted_status_builder: Optional[Callable[[int], str]] = None,
     submission: BotTaskSubmissionContext,
+    allow_cancel: bool = True,
 ):
     status_msg = await send_initial_task_status(
         context=context,
@@ -177,6 +183,7 @@ async def prepare_and_submit_bot_task(
         status_msg=status_msg,
         message_spec=message_spec,
         registry_task_id=registry_task_id,
+        allow_cancel=allow_cancel,
     )
     return status_msg, registry_task_id, backend_task_id, saved_inputs, message_spec
 
@@ -190,6 +197,7 @@ async def run_bot_task_submission_stage(
     message_spec: BotTaskMessageSpec,
     submitted_status_builder: Optional[Callable[[int], str]],
     submission: BotTaskSubmissionContext,
+    allow_cancel: bool = True,
 ):
     return await prepare_and_submit_bot_task(
         context=context,
@@ -199,6 +207,7 @@ async def run_bot_task_submission_stage(
         message_spec=message_spec,
         submitted_status_builder=submitted_status_builder,
         submission=submission,
+        allow_cancel=allow_cancel,
     )
 
 
@@ -209,6 +218,7 @@ async def run_bot_task_monitor_stage(
     is_video: bool,
     internal_user_id: int,
     lang: str = "zh",
+    allow_cancel: bool = True,
 ):
     return await task_service_completion_helpers.monitor_submitted_bot_task(
         task_id=backend_task_id,
@@ -221,6 +231,7 @@ async def run_bot_task_monitor_stage(
             task_service_completion_helpers.monitor_bot_task_progress
         ),
         lang=lang,
+        allow_cancel=allow_cancel,
     )
 
 
@@ -316,6 +327,7 @@ async def execute_bot_task_stages(
     request = flow.request
     presentation = flow.presentation
     billing = flow.billing
+    allow_cancel = getattr(presentation, "allow_cancel", True)
     (
         execution.status_msg,
         execution.registry_task_id,
@@ -330,6 +342,7 @@ async def execute_bot_task_stages(
         message_spec=presentation.message_spec,
         submitted_status_builder=presentation.submitted_status_builder,
         submission=submission,
+        allow_cancel=allow_cancel,
     )
 
     return await run_monitored_task_lifecycle(
@@ -339,6 +352,7 @@ async def execute_bot_task_stages(
             is_video=request.is_video,
             internal_user_id=request.internal_user_id,
             lang=resolve_context_lang(request.context),
+            allow_cancel=allow_cancel,
         ),
         route_terminal_result_func=lambda final_info: run_bot_task_completion_stage(
             context=request.context,
@@ -393,6 +407,8 @@ async def run_bot_task_application(
         deduct_quota=request.deduct_quota,
         client_type=client_type,
         cost_override=getattr(request, "cost_override", None),
+        base_priority=getattr(request, "base_priority", 0),
+        user_cancel_allowed=getattr(request, "user_cancel_allowed", True),
     )
 
     try:

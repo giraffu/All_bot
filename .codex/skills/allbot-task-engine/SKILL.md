@@ -21,6 +21,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 ## 2. 稳定入口与术语
 
 - `process_and_submit_task(...)` 是任务提交 facade。它负责鉴权/额度入口、输入归一、provider/capability 选择、扣费、持久化、提交队列和失败补偿的编排。
+- `process_and_submit_task(base_priority=..., user_cancel_allowed=...)` 可承接入口层任务控制语义：`base_priority` 只影响 Central 队列优先级，`user_cancel_allowed=false` 写入 active task registry 并让用户取消入口直接返回 `not_cancellable`，不调用 backend cancel、不退款；默认值保持普通任务行为。
 - `task_core` 只能依赖内部类型、协议和显式 provider/dependencies。不要在 `src/core/` 引入 Telegram `Update`、FastAPI `Request/APIRouter`、SQLAlchemy session 全局对象或 Worker HTTP 细节。
 - “双 ID”必须区分：`task_id` 是 AllBot 业务 ID，`backend_task_id` 是 Central/Worker 执行 ID。运行时锁、状态轮询、历史落库和退款日志必须写清使用哪一个。
 - `cleanup_task_runtime_state(...)` 是运行态收口入口。取消、失败、成功、恢复脚本和 finalizer 都应走同一类清理语义，不要复制散落删除 Redis/DB 状态。
@@ -34,6 +35,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - Web 锁必须有释放路径。提交、取消、monitor 超时、finalizer 异常、用户断连都不能让同一用户永久卡住。
 - finalizer 处理终态前必须重新读取权威状态并考虑幂等。重复 complete/status、重复 Bot completion、重复 History 插入不得生成多份业务结果。
 - 用户取消退款必须使用 `registry_task_id` 派生的账本幂等键；用户取消接口、Web monitor 或恢复流程重复观察到 `cancelled` 时，只允许第一次 `refund_user_cancel` 真正增加灵石。
+- 用户取消入口必须先尊重 active task registry 的 `user_cancel_allowed`。入口层可隐藏取消按钮，但权威拒绝必须在 core runtime，避免旧 Telegram/Web 按钮绕过。
 - finalizer 内部异常不能阻断 runtime cleanup。清理失败要记录并暴露可恢复信息，但不要让任务永远停在 running。
 - provider/dependencies 不要在 import 时绑定运行态资源；测试优先显式注入 fake provider、fake queue、fake persistence。
 - Central/Redis transient error 应按可重试基础设施故障处理：入队等幂等安全写可有限 retry，真实出队 `zpopmin` 不做盲 retry；Central Redis retry 耗尽返回 503，Bot/Web 应映射为“当前服务器繁忙”并走补偿/收口路径。

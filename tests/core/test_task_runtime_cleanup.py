@@ -602,6 +602,41 @@ async def test_cancel_user_task_does_not_finalize_running_cancel_request():
 
 
 @pytest.mark.asyncio
+async def test_cancel_user_task_rejects_user_locked_task_without_backend_cancel():
+    finalize_cancellation = AsyncMock()
+    runtime_dependencies = SimpleNamespace(
+        get_task_func=AsyncMock(
+            return_value={
+                "user_id": 42,
+                "username": "daoist",
+                "cost": 12,
+                "credits_deducted": True,
+                "backend_task_id": "backend-locked",
+                "user_cancel_allowed": False,
+            }
+        ),
+        find_task_by_backend_task_id_func=AsyncMock(),
+        cancel_task_func=AsyncMock(),
+    )
+
+    result = await task_core_runtime.cancel_user_task(
+        "registry-locked",
+        42,
+        runtime_dependencies=runtime_dependencies,
+        finalize_task_cancellation_func=finalize_cancellation,
+    )
+
+    assert result == {
+        "state": "not_cancellable",
+        "task_id": "registry-locked",
+        "message": "任务已进入连续生成阶段，无法再取消",
+        "reason": "user_cancel_locked",
+    }
+    runtime_dependencies.cancel_task_func.assert_not_awaited()
+    finalize_cancellation.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_cancel_user_task_skips_refund_for_non_deducted_pending_task():
     finalize_cancellation = AsyncMock(return_value=SimpleNamespace(user_message=None))
     runtime_dependencies = SimpleNamespace(

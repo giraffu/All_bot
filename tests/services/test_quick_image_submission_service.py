@@ -51,8 +51,63 @@ def test_qqcc_free_edit_v2_scene_builds_draw_chain_plan_without_prompts_ini():
     assert plan.task_type == MODE_PORNMASTER_FLUX2_SINGLE_EDIT
     assert plan.total_cost == 2
     assert plan.images == ["/tmp/input.png"]
+    assert plan.display_mode_name == "柔光写真"
+    assert plan.result_meta == {
+        "_qqcc_regenerate": {
+            "kind": "quick_image",
+            "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+            "scene_id": "soft_light",
+            "display_mode_name": "柔光写真",
+        }
+    }
     assert [scene["prompt"] for scene in plan.draw_chain] == ["soft light prompt"]
     assert [scene["negative_prompt"] for scene in plan.draw_chain] == ["bad hands"]
+
+
+@pytest.mark.asyncio
+async def test_run_qqcc_single_step_draw_chain_stays_cancellable_with_normal_priority():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": [
+                {
+                    "id": "soft_light",
+                    "name": "柔光写真",
+                    "prompt": "soft light prompt",
+                    "negative_prompt": "bad hands",
+                }
+            ],
+        }
+    )
+    plan = build_quick_image_submission_plan(
+        fsm_data={
+            "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+            "scene_id": "soft_light",
+        },
+        qqcc_config=config,
+        image_path="/tmp/input.png",
+    )
+    process_calls = []
+
+    async def fake_process_generation_task(**kwargs):
+        process_calls.append(kwargs)
+        return b"image-bytes", "output.png"
+
+    await run_quick_image_submission_plan(
+        plan=plan,
+        context=SimpleNamespace(),
+        chat_id=456,
+        user_id=123,
+        username="tester",
+        status_msg_id=77,
+        process_generation_task_func=fake_process_generation_task,
+    )
+
+    assert len(process_calls) == 1
+    assert process_calls[0]["send_result"] is True
+    assert process_calls[0]["allow_cancel"] is True
+    assert process_calls[0]["user_cancel_allowed"] is True
+    assert process_calls[0]["base_priority"] == 0
 
 
 @pytest.mark.asyncio
@@ -108,11 +163,19 @@ async def test_run_qqcc_draw_chain_plan_submits_intermediate_hidden_then_final_v
     assert process_calls[0]["negative_prompt"] == "bad hands"
     assert process_calls[0]["send_result"] is False
     assert process_calls[0]["allow_contribute"] is False
+    assert process_calls[0]["allow_cancel"] is True
+    assert process_calls[0]["user_cancel_allowed"] is True
+    assert process_calls[0]["base_priority"] == 0
     assert process_calls[1]["prompt"] == "polish prompt"
     assert process_calls[1]["negative_prompt"] == "bad anatomy"
     assert process_calls[1]["images"] == ["/tmp/intermediate.png"]
     assert process_calls[1]["send_result"] is True
-    assert process_calls[1]["allow_contribute"] is True
+    assert process_calls[1]["allow_contribute"] is False
+    assert process_calls[1]["allow_cancel"] is False
+    assert process_calls[1]["user_cancel_allowed"] is False
+    assert process_calls[1]["base_priority"] == 100
+    assert process_calls[1]["display_mode_name_override"] == "柔光写真"
+    assert process_calls[1]["result_meta"] == plan.result_meta
 
 
 def test_qqcc_free_edit_lora_scene_keeps_lora_payload():
@@ -202,6 +265,17 @@ async def test_run_qqcc_draw_chain_inserts_original_face_swap_after_enabled_step
         "face_swap",
         MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     ]
+    assert [call["allow_cancel"] for call in process_calls] == [
+        True,
+        False,
+        False,
+    ]
+    assert [call["user_cancel_allowed"] for call in process_calls] == [
+        True,
+        False,
+        False,
+    ]
+    assert [call["base_priority"] for call in process_calls] == [0, 100, 100]
     assert process_calls[0]["send_result"] is False
     assert process_calls[0]["negative_prompt"] == "bad hands"
     assert process_calls[1]["images"] == ["/tmp/download-1.png", "/tmp/input.png"]
@@ -263,11 +337,19 @@ async def test_run_qqcc_draw_chain_visible_final_face_swap_keeps_draw_result_sem
         "face_swap",
     ]
     assert process_calls[0]["send_result"] is False
+    assert process_calls[0]["allow_cancel"] is True
+    assert process_calls[0]["user_cancel_allowed"] is True
+    assert process_calls[0]["base_priority"] == 0
     assert process_calls[1]["send_result"] is True
+    assert process_calls[1]["allow_cancel"] is False
+    assert process_calls[1]["user_cancel_allowed"] is False
+    assert process_calls[1]["base_priority"] == 100
     assert process_calls[1]["result_task_type"] == MODE_PORNMASTER_FLUX2_SINGLE_EDIT
     assert process_calls[1]["result_prompt"] == "soft light prompt"
     assert process_calls[1]["result_input_image_indices"] == [1]
-    assert process_calls[1]["allow_contribute"] is True
+    assert process_calls[1]["allow_contribute"] is False
+    assert process_calls[1]["display_mode_name_override"] == "柔光写真"
+    assert process_calls[1]["result_meta"] == plan.result_meta
 
 
 @pytest.mark.asyncio
@@ -297,6 +379,10 @@ async def test_run_lora_single_image_plan_adds_default_strength():
     assert kwargs["task_type"] == MODE_IMG2IMG_LORA
     assert kwargs["lora_name"] == "qwen/YARN_1.0.safetensors"
     assert kwargs["lora_strength"] == 0.3
+    assert kwargs["allow_contribute"] is True
+    assert "allow_cancel" not in kwargs
+    assert "user_cancel_allowed" not in kwargs
+    assert "base_priority" not in kwargs
 
 
 def test_random_faceswap_filters_templates_and_builds_swap_images():
@@ -321,6 +407,48 @@ def test_random_faceswap_filters_templates_and_builds_swap_images():
     assert plan.cleanup is False
     assert plan.preserve_input_for_again is True
     assert plan.reply_markup == "markup"
+    assert plan.allow_contribute is True
+    assert plan.display_mode_name is None
+    assert plan.result_meta is None
+
+
+@pytest.mark.asyncio
+async def test_qqcc_random_faceswap_result_cannot_be_contributed():
+    plan = build_quick_image_submission_plan(
+        fsm_data={"mode": MODE_RANDOM_FACESWAP, "cost": 1},
+        qqcc_config=normalize_qqcc_config(None),
+        image_path="/tmp/face.png",
+        prompts_config={"face_swap": "swap prompt"},
+        template_files=["quick_face/a.png"],
+        reply_markup="markup",
+    )
+    process_task = AsyncMock(return_value=(None, None))
+
+    await run_quick_image_submission_plan(
+        plan=plan,
+        context=SimpleNamespace(),
+        chat_id=456,
+        user_id=123,
+        username="tester",
+        status_msg_id=None,
+        process_generation_task_func=process_task,
+    )
+
+    assert plan.allow_contribute is False
+    assert plan.display_mode_name == "快速换脸"
+    assert plan.result_meta == {
+        "_qqcc_regenerate": {
+            "kind": "quick_image",
+            "mode": MODE_RANDOM_FACESWAP,
+            "display_mode_name": "快速换脸",
+        }
+    }
+    assert process_task.await_args.kwargs["allow_contribute"] is False
+    assert "allow_cancel" not in process_task.await_args.kwargs
+    assert "user_cancel_allowed" not in process_task.await_args.kwargs
+    assert "base_priority" not in process_task.await_args.kwargs
+    assert process_task.await_args.kwargs["display_mode_name_override"] == "快速换脸"
+    assert process_task.await_args.kwargs["result_meta"] == plan.result_meta
 
 
 def test_random_faceswap_returns_no_template_reject_for_empty_template_set():

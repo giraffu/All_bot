@@ -105,6 +105,10 @@ async def process_wan22_aio_video_generation_task(
     lora_strength: float | None = None,
     allow_contribute: bool = True,
     source_post_id: Optional[int] = None,
+    display_mode_name_override: str | None = None,
+    base_priority: int = 0,
+    allow_cancel: bool = True,
+    user_cancel_allowed: bool = True,
 ) -> Tuple[Optional[bytes], Optional[str]]:
     profile = resolve_wan22_aio_video_profile(profile_name)
     public_task_type = task_type or profile.public_task_types[0]
@@ -141,7 +145,10 @@ async def process_wan22_aio_video_generation_task(
         internal_user_id,
         quota_manager=permission_service.quota_manager,
     )
-    display_mode_name = resolve_generation_display_mode_name(context, public_task_type)
+    display_mode_name = display_mode_name_override or resolve_generation_display_mode_name(
+        context,
+        public_task_type,
+    )
     inputs = _build_wan22_aio_inputs(
         profile=profile,
         prompt=prompt,
@@ -211,6 +218,7 @@ async def process_wan22_aio_video_generation_task(
         completion_caption=build_generation_completion_caption(
             context,
             public_task_type,
+            display_mode_name_override=display_mode_name,
         ),
     )
     billing_args = resolve_generation_billing_args(
@@ -247,6 +255,9 @@ async def process_wan22_aio_video_generation_task(
             result_meta=final_result_meta,
             delete_status=delete_status,
             allow_contribute=allow_contribute,
+            base_priority=base_priority,
+            allow_cancel=allow_cancel,
+            user_cancel_allowed=user_cancel_allowed,
             billing_resolution=billing_args["billing_resolution"],
             requested_duration=normalized_duration_seconds,
             images=images,

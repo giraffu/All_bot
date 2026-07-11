@@ -30,6 +30,16 @@ class QQCCDrawChainResult:
 
 QQCC_ORIGINAL_FACE_SWAP_COST = 2
 QQCC_ORIGINAL_FACE_SWAP_PROMPT = "face swap"
+QQCC_CHAIN_CONTINUATION_BASE_PRIORITY = 100
+
+
+def build_qqcc_chain_task_controls(subtask_index: int) -> dict[str, object]:
+    is_first = subtask_index == 0
+    return {
+        "base_priority": 0 if is_first else QQCC_CHAIN_CONTINUATION_BASE_PRIORITY,
+        "allow_cancel": is_first,
+        "user_cancel_allowed": is_first,
+    }
 
 
 def is_qqcc_original_face_swap_enabled(scene: dict[str, object] | None) -> bool:
@@ -122,6 +132,8 @@ async def execute_qqcc_draw_scene_chain(
     final_allow_contribute: bool,
     final_delete_status: bool = True,
     final_reply_markup: Any = None,
+    final_display_mode_name: str | None = None,
+    final_result_meta: dict[str, Any] | None = None,
     keep_initial_image: bool = False,
     download_final_output: bool = False,
     name_hint: str = "qqcc_draw_chain",
@@ -131,6 +143,7 @@ async def execute_qqcc_draw_scene_chain(
 
     current_image_path = image_path
     original_face_image_path = image_path
+    submitted_subtask_index = 0
     for index, draw_scene in enumerate(chain):
         is_last = index == len(chain) - 1
         original_face_swap_enabled = is_qqcc_original_face_swap_enabled(draw_scene)
@@ -165,13 +178,19 @@ async def execute_qqcc_draw_scene_chain(
             "send_result": send_result,
             "allow_contribute": final_allow_contribute if send_result else False,
         }
+        task_kwargs.update(build_qqcc_chain_task_controls(submitted_subtask_index))
         if send_result:
             task_kwargs["reply_markup"] = final_reply_markup
+            if final_display_mode_name:
+                task_kwargs["display_mode_name_override"] = final_display_mode_name
+            if final_result_meta is not None:
+                task_kwargs["result_meta"] = final_result_meta
         if lora_name:
             task_kwargs["lora_name"] = lora_name
             task_kwargs["lora_strength"] = get_lora_default_strength(lora_name)
 
         _media_bytes, output_file = await process_generation_task_func(**task_kwargs)
+        submitted_subtask_index += 1
         if not output_file:
             return QQCCDrawChainResult()
 
@@ -207,15 +226,23 @@ async def execute_qqcc_draw_scene_chain(
                 ),
                 "cost_override": QQCC_ORIGINAL_FACE_SWAP_COST,
             }
+            face_swap_kwargs.update(
+                build_qqcc_chain_task_controls(submitted_subtask_index)
+            )
             if face_swap_send_result:
                 face_swap_kwargs["reply_markup"] = final_reply_markup
                 face_swap_kwargs["result_task_type"] = task_type
                 face_swap_kwargs["result_prompt"] = str(draw_scene.get("prompt") or "")
                 face_swap_kwargs["result_input_image_indices"] = [1]
+                if final_display_mode_name:
+                    face_swap_kwargs["display_mode_name_override"] = final_display_mode_name
+                if final_result_meta is not None:
+                    face_swap_kwargs["result_meta"] = final_result_meta
 
             _media_bytes, output_file = await process_generation_task_func(
                 **face_swap_kwargs
             )
+            submitted_subtask_index += 1
             if (
                 original_needed_after_face_swap
                 and face_swap_body_path != original_face_image_path

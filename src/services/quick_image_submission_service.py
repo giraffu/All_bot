@@ -30,6 +30,10 @@ from src.services.qqcc_draw_chain_service import (
     resolve_qqcc_draw_scene_chain,
     resolve_qqcc_draw_scene_task_type,
 )
+from src.services.qqcc_regenerate_metadata import (
+    QQCC_REGENERATE_KIND_QUICK_IMAGE,
+    build_qqcc_regenerate_result_meta,
+)
 from src.services.task_service_generation_image import (
     process_standard_generation_task as process_generation_task,
 )
@@ -61,6 +65,7 @@ class QuickImageSubmissionPlan:
     mode: str
     task_type: str
     total_cost: int
+    allow_contribute: bool = True
     prompt: str = ""
     images: list[str] = field(default_factory=list)
     draw_chain: list[dict[str, Any]] = field(default_factory=list)
@@ -69,6 +74,8 @@ class QuickImageSubmissionPlan:
     cleanup: bool = True
     preserve_input_for_again: bool = False
     reply_markup: Any = None
+    display_mode_name: str | None = None
+    result_meta: dict[str, Any] | None = None
 
 
 ProcessGenerationTask = Callable[..., Awaitable[Any] | Any]
@@ -212,8 +219,10 @@ async def run_quick_image_submission_plan(
                 process_generation_task_func=process_generation_task_func,
                 download_output_file_to_fsm_temp_func=download_output_file_to_fsm_temp_func,
                 final_send_result=True,
-                final_allow_contribute=True,
+                final_allow_contribute=plan.allow_contribute,
                 final_delete_status=True,
+                final_display_mode_name=plan.display_mode_name,
+                final_result_meta=plan.result_meta,
             )
         )
         return
@@ -227,7 +236,12 @@ async def run_quick_image_submission_plan(
         "images": plan.images,
         "task_type": plan.task_type,
         "cleanup": plan.cleanup,
+        "allow_contribute": plan.allow_contribute,
     }
+    if plan.display_mode_name:
+        task_kwargs["display_mode_name_override"] = plan.display_mode_name
+    if plan.result_meta is not None:
+        task_kwargs["result_meta"] = plan.result_meta
     if plan.reply_markup is not None:
         task_kwargs["reply_markup"] = plan.reply_markup
     if plan.lora_name:
@@ -263,14 +277,24 @@ def _build_qqcc_draw_chain_plan(
 
     draw_chain = resolve_qqcc_draw_chain_prompts(qqcc_config, draw_chain)
     images = [image_path] if image_path else []
+    scene_id = str(scene.get("id") or "").strip()
+    display_mode_name = str(scene.get("name") or "").strip()
     return QuickImageSubmissionPlan(
         kind=QuickImageSubmissionKind.DRAW_CHAIN,
         mode=mode,
         task_type=mode,
         total_cost=calculate_qqcc_draw_chain_cost(draw_chain),
+        allow_contribute=False,
         prompt=str(draw_chain[0].get("prompt") or ""),
         images=images,
         draw_chain=draw_chain,
+        display_mode_name=display_mode_name or None,
+        result_meta=build_qqcc_regenerate_result_meta(
+            kind=QQCC_REGENERATE_KIND_QUICK_IMAGE,
+            mode=mode,
+            scene_id=scene_id,
+            display_mode_name=display_mode_name,
+        ),
     )
 
 
@@ -303,16 +327,29 @@ def _build_random_faceswap_plan(
     elif image_path:
         images = [image_path]
 
+    is_qqcc = qqcc_config is not None
+    display_mode_name = "快速换脸" if is_qqcc else None
     return QuickImageSubmissionPlan(
         kind=QuickImageSubmissionKind.RANDOM_FACESWAP,
         mode=mode,
         task_type="face_swap",
         total_cost=total_cost,
+        allow_contribute=not is_qqcc,
         prompt=prompt,
         images=images,
         cleanup=False,
         preserve_input_for_again=True,
         reply_markup=reply_markup,
+        display_mode_name=display_mode_name,
+        result_meta=(
+            build_qqcc_regenerate_result_meta(
+                kind=QQCC_REGENERATE_KIND_QUICK_IMAGE,
+                mode=mode,
+                display_mode_name=display_mode_name or "",
+            )
+            if is_qqcc
+            else None
+        ),
     )
 
 
@@ -338,6 +375,7 @@ def _build_single_image_plan(
         mode=mode,
         task_type=mode,
         total_cost=total_cost,
+        allow_contribute=qqcc_config is None,
         prompt=prompt,
         images=[image_path] if image_path else [],
         lora_name=lora_name,

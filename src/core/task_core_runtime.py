@@ -231,6 +231,14 @@ async def cancel_user_task(
     if task.get("user_id") != user_id:
         raise CoreDomainError("无权撤销该任务")
 
+    if task.get("user_cancel_allowed") is False:
+        return {
+            "state": "not_cancellable",
+            "task_id": registry_task_id,
+            "message": "任务已进入连续生成阶段，无法再取消",
+            "reason": "user_cancel_locked",
+        }
+
     backend_task_id = task.get("backend_task_id") or registry_task_id
     try:
         cancel_task_func = cancel_task_func or runtime_dependencies.cancel_task_func

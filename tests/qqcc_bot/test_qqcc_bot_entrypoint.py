@@ -9,8 +9,9 @@ from telegram.ext import (
     TypeHandler,
 )
 
-from qqcc_bot import keyboards, main as qqcc_main, prompt_handlers
+from qqcc_bot import callback_handler, keyboards, main as qqcc_main, prompt_handlers
 from qqcc_bot import commands as qqcc_commands
+from qqcc_bot import regeneration_callback
 from src.handlers.fsm import quick_image_fsm, quick_video_fsm
 from src.constants import (
     MODE_CUSTOM_VIDEO,
@@ -27,6 +28,7 @@ from src.handlers.fsm.quick_video_callback_data import (
 from src.handlers import prompt_router
 from src.i18n.translator import get_text
 from src.services.qqcc_config_service import SCENE_PRESET_VERSION, normalize_qqcc_config
+from src.services.qqcc_regeneration_service import QQCCRegenerationSubmission
 
 
 def _keyboard_texts(reply_markup):
@@ -420,6 +422,122 @@ def test_register_handlers_only_registers_qqcc_surface(monkeypatch):
     assert sum(isinstance(handler, CallbackQueryHandler) for handler in handlers) == 1
     assert sum(isinstance(handler, MessageHandler) for handler in handlers) == 2
     assert len(error_handlers) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("callback_data", ["submit_gallery_task-1", "public_share"])
+async def test_qqcc_publish_callbacks_are_blocked_before_shared_handlers(
+    monkeypatch,
+    callback_data,
+):
+    safe_answer = AsyncMock()
+    ensure_user = AsyncMock()
+    monkeypatch.setattr(callback_handler, "safe_answer_query", safe_answer)
+    monkeypatch.setattr(
+        callback_handler.permission_service,
+        "ensure_user",
+        ensure_user,
+    )
+
+    query = SimpleNamespace(
+        data=callback_data,
+        from_user=SimpleNamespace(id=123),
+    )
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(
+            id=123,
+            username="tester",
+            full_name="Tester",
+            language_code="zh",
+        ),
+    )
+    context = SimpleNamespace()
+
+    await callback_handler.handle_callback_query(update, context)
+
+    safe_answer.assert_awaited_once_with(
+        query,
+        text="功能暂未开放",
+        show_alert=True,
+    )
+    ensure_user.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_qqcc_regenerate_callback_routes_and_starts_background_task(monkeypatch):
+    ensure_user = AsyncMock()
+    check_quota = AsyncMock()
+    answer = AsyncMock()
+    send_message = AsyncMock(return_value=SimpleNamespace(message_id=55))
+    scheduled = []
+
+    def fake_create_background_task(context, coroutine):
+        scheduled.append((context, coroutine))
+        coroutine.close()
+
+    submission = QQCCRegenerationSubmission(
+        kind="quick_image",
+        display_mode_name="柔光写真",
+        image_path="/tmp/input.png",
+        plan=SimpleNamespace(total_cost=2),
+    )
+    prepare = AsyncMock(return_value=submission)
+
+    monkeypatch.setattr(callback_handler.permission_service, "ensure_user", ensure_user)
+    monkeypatch.setattr(regeneration_callback.permission_service, "check_quota", check_quota)
+    monkeypatch.setattr(regeneration_callback, "safe_answer_query", answer)
+    monkeypatch.setattr(regeneration_callback, "robust_send_message", send_message)
+    monkeypatch.setattr(regeneration_callback, "create_background_task", fake_create_background_task)
+    monkeypatch.setattr(
+        regeneration_callback,
+        "prepare_qqcc_regeneration_submission",
+        prepare,
+    )
+
+    query = SimpleNamespace(
+        data="qqcc_regenerate:task-1",
+        from_user=SimpleNamespace(id=123),
+        message=SimpleNamespace(message_id=99),
+    )
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(
+            id=123,
+            username="tester",
+            full_name="Tester",
+            language_code="zh",
+        ),
+        effective_chat=SimpleNamespace(id=456),
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(),
+        bot_data={
+            "msg_meta_99": {
+                "_qqcc_regenerate": {
+                    "kind": "quick_image",
+                    "mode": "pornmaster_flux2_single_edit",
+                    "scene_id": "soft_light",
+                    "display_mode_name": "柔光写真",
+                }
+            }
+        },
+    )
+
+    await callback_handler.handle_callback_query(update, context)
+
+    ensure_user.assert_awaited_once()
+    answer.assert_awaited_once_with(query, text="🔁 正在重新生成...", cache_time=1)
+    prepare.assert_awaited_once()
+    assert prepare.await_args.kwargs["task_id"] == "task-1"
+    assert prepare.await_args.kwargs["message_meta"] == context.bot_data["msg_meta_99"]
+    check_quota.assert_awaited_once_with(123, "tester", "Tester", cost=2)
+    send_message.assert_awaited_once_with(
+        context.bot,
+        456,
+        "🔁 正在重新生成柔光写真，请耐心等待...",
+    )
+    assert scheduled and scheduled[0][0] is context
 
 
 @pytest.mark.asyncio
@@ -1090,6 +1208,7 @@ async def test_qqcc_video_scene_generates_tail_frame_before_legacy_video(monkeyp
     assert video_calls[0]["end_image_path"] == "/tmp/generated-tail.png"
     assert video_calls[0]["use_end_frame"] is True
     assert video_calls[0]["lora_name"] == "BreastGrow"
+    assert video_calls[0]["allow_contribute"] is False
 
 
 @pytest.mark.asyncio
@@ -1223,6 +1342,7 @@ async def test_qqcc_video_scene_uses_postprocessed_tail_frame(monkeypatch):
     assert generation_calls[1]["send_result"] is False
     assert generation_calls[1]["allow_contribute"] is False
     assert video_calls[0]["end_image_path"] == "/tmp/tail-polish.png"
+    assert video_calls[0]["allow_contribute"] is False
 
 
 @pytest.mark.asyncio

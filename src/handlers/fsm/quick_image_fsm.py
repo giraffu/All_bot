@@ -353,7 +353,8 @@ def _build_ready_quick_image_submission_plan(
         prompts_config = load_prompts()
     if draft_plan.kind == QuickImageSubmissionKind.RANDOM_FACESWAP:
         template_files = list_quick_faceswap_template_files()
-        reply_markup = _build_random_faceswap_reply_markup(context)
+        if qqcc_config is None:
+            reply_markup = _build_random_faceswap_reply_markup(context)
 
     return build_quick_image_submission_plan(
         fsm_data=fsm_data,

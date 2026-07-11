@@ -26,10 +26,15 @@ from src.services.qqcc_config_service import (
     is_qqcc_main_button_enabled,
 )
 from src.services.qqcc_draw_chain_service import (
+    QQCC_CHAIN_CONTINUATION_BASE_PRIORITY,
     calculate_qqcc_draw_chain_cost,
     execute_qqcc_draw_scene_chain,
     resolve_qqcc_draw_chain_prompts,
     resolve_qqcc_draw_scene_chain,
+)
+from src.services.qqcc_regenerate_metadata import (
+    QQCC_REGENERATE_KIND_QUICK_VIDEO,
+    build_qqcc_regenerate_result_meta,
 )
 from src.services.task_service_entrypoints_video import process_video_task_template
 from src.services.task_service_generation_image import (
@@ -68,9 +73,11 @@ class QuickVideoSubmissionPlan:
     total_cost: int
     default_prompt_key: str
     default_prompt_text: str
+    allow_contribute: bool = True
     prompt_override: str | None = None
     negative_prompt: str = ""
     display_mode_name: str | None = None
+    result_meta: dict[str, Any] | None = None
     lora_name: str = ""
     tail_draw_chain: list[dict[str, Any]] = field(default_factory=list)
 
@@ -340,6 +347,8 @@ def build_quick_video_submission_plan(
         else QuickVideoSubmissionKind.LEGACY_VIDEO
     )
     lora_name = "" if mode == MODE_WAN22_VIDEO_V2 else str(scene.get("lora_name") or "")
+    scene_id = str(scene.get("id") or "").strip()
+    display_mode_name = str(scene.get("name") or "")
 
     return QuickVideoSubmissionPlan(
         kind=kind,
@@ -350,9 +359,16 @@ def build_quick_video_submission_plan(
         + calculate_qqcc_draw_chain_cost(tail_draw_chain),
         default_prompt_key=MODE_CUSTOM_VIDEO,
         default_prompt_text=prompt,
+        allow_contribute=False,
         prompt_override=prompt,
         negative_prompt=negative_prompt,
-        display_mode_name=str(scene.get("name") or ""),
+        display_mode_name=display_mode_name,
+        result_meta=build_qqcc_regenerate_result_meta(
+            kind=QQCC_REGENERATE_KIND_QUICK_VIDEO,
+            mode=mode,
+            scene_id=scene_id,
+            display_mode_name=display_mode_name,
+        ),
         lora_name=lora_name,
         tail_draw_chain=tail_draw_chain,
     )
@@ -409,7 +425,9 @@ async def run_quick_video_submission_plan(
                 is_video=True,
                 task_type=MODE_WAN22_VIDEO_V2,
                 cleanup=True,
-                allow_contribute=True,
+                allow_contribute=plan.allow_contribute,
+                display_mode_name_override=plan.display_mode_name,
+                result_meta=plan.result_meta,
                 status_msg_id=status_msg_id,
                 resolution=plan.resolution,
                 duration=plan.duration,
@@ -426,10 +444,11 @@ async def run_quick_video_submission_plan(
             prompt_override=plan.prompt_override,
             negative_prompt=plan.negative_prompt,
             display_mode_name_override=plan.display_mode_name,
+            result_meta=plan.result_meta,
             lora_name=plan.lora_name,
             image_path=image_path,
             cleanup=True,
-            allow_contribute=True,
+            allow_contribute=plan.allow_contribute,
             chat_id=chat_id,
             user_id=user_id,
             username=username,
@@ -499,10 +518,15 @@ async def _run_tail_frame_video_plan(
                     is_video=True,
                     task_type=MODE_WAN22_VIDEO_V2,
                     cleanup=True,
-                    allow_contribute=True,
+                    allow_contribute=plan.allow_contribute,
+                    display_mode_name_override=plan.display_mode_name,
+                    result_meta=plan.result_meta,
                     status_msg_id=status_msg_id,
                     resolution=plan.resolution,
                     duration=plan.duration,
+                    base_priority=QQCC_CHAIN_CONTINUATION_BASE_PRIORITY,
+                    allow_cancel=False,
+                    user_cancel_allowed=False,
                 )
             )
             return
@@ -516,18 +540,22 @@ async def _run_tail_frame_video_plan(
                 prompt_override=plan.prompt_override,
                 negative_prompt=plan.negative_prompt,
                 display_mode_name_override=plan.display_mode_name,
+                result_meta=plan.result_meta,
                 lora_name=plan.lora_name,
                 image_path=image_path,
                 end_image_path=end_image_path,
                 use_end_frame=True,
                 cleanup=True,
-                allow_contribute=True,
+                allow_contribute=plan.allow_contribute,
                 chat_id=chat_id,
                 user_id=user_id,
                 username=username,
                 status_msg_id=status_msg_id,
                 resolution=plan.resolution,
                 duration=plan.duration,
+                base_priority=QQCC_CHAIN_CONTINUATION_BASE_PRIORITY,
+                allow_cancel=False,
+                user_cancel_allowed=False,
             )
         )
     finally:

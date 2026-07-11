@@ -27,6 +27,7 @@ class TaskSubmissionContext:
     video_request: VideoTaskRequest = field(default_factory=VideoTaskRequest)
     client_type: str = "web"
     delivery_context: dict[str, Any] = field(default_factory=dict)
+    user_cancel_allowed: bool = True
 
     @property
     def log_prompt(self) -> str:

@@ -40,6 +40,7 @@ async def process_video_task_template(
     prompt_override: Optional[str] = None,
     negative_prompt: str | None = None,
     display_mode_name_override: Optional[str] = None,
+    result_meta: dict[str, Any] | None = None,
     lora_name: str | None = None,
     lora_strength: float | None = None,
     update: Update | None = None,
@@ -55,6 +56,9 @@ async def process_video_task_template(
     status_msg_id: Optional[int] = None,
     resolution: Any = None,
     duration: Any = None,
+    base_priority: int = 0,
+    allow_cancel: bool = True,
+    user_cancel_allowed: bool = True,
 ) -> Tuple[Optional[bytes], Optional[str]]:
     if update is not None:
         actor = extract_actor_from_update(update)
@@ -158,6 +162,9 @@ async def process_video_task_template(
             ),
             is_video=True,
             source_post_id=source_post_id,
+            base_priority=base_priority,
+            allow_cancel=allow_cancel,
+            user_cancel_allowed=user_cancel_allowed,
             message_spec=message_spec,
             submitted_status_builder=build_translated_cost_status_builder(
                 context,
@@ -167,6 +174,7 @@ async def process_video_task_template(
                 resolution=resolution,
                 duration=duration_str,
             ),
+            result_meta=result_meta,
             allow_contribute=allow_contribute,
             billing_resolution=billing_args["billing_resolution"],
             requested_duration=billing_args["requested_duration"],

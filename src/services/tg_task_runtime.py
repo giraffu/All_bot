@@ -252,19 +252,22 @@ async def monitor_task_progress(
     lang: str = "zh",
     on_cancelled: Callable[[], Awaitable[None] | None] | None = None,
     edit_status_text_func=None,
+    allow_cancel: bool = True,
 ):
     edit_status_text_func = edit_status_text_func or robust_edit_text
     last_progress = 0
     last_status = None
     last_queue_pos = None
     final_info = None
-    cancel_markup = build_cancel_task_markup(task_id, lang=lang)
+    cancel_markup = build_cancel_task_markup(task_id, lang=lang) if allow_cancel else None
 
     async def update_status_message(text, *, show_cancel_button=False, **kwargs):
         if not status_msg:
             return False
         try:
-            kwargs["reply_markup"] = cancel_markup if show_cancel_button else None
+            kwargs["reply_markup"] = (
+                cancel_markup if show_cancel_button and allow_cancel else None
+            )
             await edit_status_text_func(status_msg, text, **kwargs)
             return True
         except Exception as exc:
