@@ -15,6 +15,7 @@ type MainButtonKey =
   | 'quick_faceswap'
   | 'photo_edit'
   | 'ai_draw'
+  | 'ai_filter'
   | 'video_edit'
   | 'market'
   | 'main_bot_link'
@@ -25,7 +26,7 @@ type ResolutionKey = '512p' | '720p' | '1024p'
 type DurationKey = '5s' | '8s' | '10s'
 type VideoSceneEngine = 'image_to_video' | 'wan22_video_v2'
 type DrawSceneEngine = 'free_edit' | 'free_edit_v2'
-type SceneConfigKind = 'video' | 'draw'
+type SceneConfigKind = 'video' | 'draw' | 'filter'
 type SceneConfigPanel = 'model' | 'reference'
 type PromptKey =
   | 'undress'
@@ -57,6 +58,17 @@ interface DrawSceneConfig {
   engine: DrawSceneEngine
   lora_name: string
   postprocess_draw_scene_id: string
+  postprocess_filter_scene_id: string
+  original_face_swap_enabled: boolean
+}
+
+interface FilterSceneConfig {
+  id: string
+  name: string
+  prompt: string
+  negative_prompt: string
+  engine: DrawSceneEngine
+  lora_name: string
   original_face_swap_enabled: boolean
 }
 
@@ -73,6 +85,7 @@ interface QqccBotConfig {
   }
   video_scenes: VideoSceneConfig[]
   draw_scenes: DrawSceneConfig[]
+  filter_scenes: FilterSceneConfig[]
   prompts: Record<PromptKey, string>
 }
 
@@ -128,6 +141,7 @@ const emptyConfig = (): QqccBotConfig => ({
     quick_faceswap: false,
     photo_edit: false,
     ai_draw: false,
+    ai_filter: false,
     video_edit: false,
     market: false,
     main_bot_link: false,
@@ -161,6 +175,7 @@ const emptyConfig = (): QqccBotConfig => ({
   },
   video_scenes: [],
   draw_scenes: [],
+  filter_scenes: [],
   prompts: {
     undress: '',
     i2i_draw_quick_undress: '',
@@ -177,6 +192,7 @@ const emptyConfig = (): QqccBotConfig => ({
 const mainButtonOptions: Array<{ key: MainButtonKey; label: string }> = [
   { key: 'quick_faceswap', label: '快速换脸' },
   { key: 'ai_draw', label: 'AI绘图' },
+  { key: 'ai_filter', label: 'AI滤镜' },
   { key: 'video_edit', label: 'AI动图' },
   { key: 'market', label: '修仙市集' },
   { key: 'main_bot_link', label: '前往主bot' },
@@ -220,6 +236,7 @@ const config = reactive<QqccBotConfig>(emptyConfig())
 const modelOptions = reactive<QqccBotConfigOptions>(emptyOptions())
 const sceneCounter = ref(0)
 const drawSceneCounter = ref(0)
+const filterSceneCounter = ref(0)
 const sceneConfig = reactive({
   open: false,
   kind: 'video' as SceneConfigKind,
@@ -229,6 +246,7 @@ const sceneConfig = reactive({
   lora_name: '',
   end_frame_draw_scene_id: '',
   postprocess_draw_scene_id: '',
+  postprocess_filter_scene_id: '',
   original_face_swap_enabled: false,
 })
 
@@ -276,6 +294,14 @@ const normalizePostprocessDrawSceneId = (
   return drawScenes.some((scene) => scene.id === sceneId) ? sceneId : ''
 }
 
+const normalizePostprocessFilterSceneId = (
+  raw: unknown,
+  filterScenes = config.filter_scenes,
+) => {
+  const sceneId = typeof raw === 'string' ? raw.trim() : ''
+  return filterScenes.some((scene) => scene.id === sceneId) ? sceneId : ''
+}
+
 const findDrawPostprocessCycleIds = (drawScenes = config.draw_scenes) => {
   const scenesById = new Map(drawScenes.map((scene) => [scene.id, scene]))
   const cycleIds = new Set<string>()
@@ -317,13 +343,24 @@ const wouldCreateDrawPostprocessCycle = (
   return false
 }
 
-const normalizeDrawPostprocessRefs = (drawScenes: DrawSceneConfig[]) => {
+const normalizeDrawPostprocessRefs = (
+  drawScenes: DrawSceneConfig[],
+  filterScenes = config.filter_scenes,
+) => {
   drawScenes.forEach((scene, index) => {
     scene.postprocess_draw_scene_id = normalizePostprocessDrawSceneId(
       scene.postprocess_draw_scene_id,
       index,
       drawScenes,
     )
+    if (scene.postprocess_draw_scene_id) {
+      scene.postprocess_filter_scene_id = ''
+    } else {
+      scene.postprocess_filter_scene_id = normalizePostprocessFilterSceneId(
+        scene.postprocess_filter_scene_id,
+        filterScenes,
+      )
+    }
   })
   const cycleIds = findDrawPostprocessCycleIds(drawScenes)
   drawScenes.forEach((scene) => {
@@ -398,6 +435,11 @@ const activePostprocessDrawOptions = computed(() => {
       !wouldCreateDrawPostprocessCycle(sourceScene.id, scene.id),
   )
 })
+const activePostprocessFilterOptions = computed(() =>
+  config.filter_scenes.filter(
+    (scene) => scene.id.trim() && scene.name.trim() && scene.prompt.trim(),
+  )
+)
 const sceneModalTitle = computed(() => {
   if (sceneConfig.panel === 'model') return '模型配置'
   return sceneConfig.kind === 'video' ? '首尾帧配置' : '后处理配置'
@@ -440,6 +482,27 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
     const value = raw.video_settings?.durations?.[key]
     if (typeof value === 'boolean') merged.video_settings.durations[key] = value
   })
+  if (Array.isArray(raw.filter_scenes)) {
+    merged.filter_scenes = raw.filter_scenes
+      .map((scene, index) => {
+        const id = typeof scene?.id === 'string' && scene.id.trim() ? scene.id.trim() : `filter_scene_${index + 1}`
+        const name = typeof scene?.name === 'string' ? scene.name : ''
+        const prompt = typeof scene?.prompt === 'string' ? scene.prompt : ''
+        const negative_prompt =
+          typeof scene?.negative_prompt === 'string' ? scene.negative_prompt : ''
+        const engine = normalizeDrawEngine(scene?.engine)
+        return {
+          id,
+          name,
+          prompt,
+          negative_prompt,
+          engine,
+          lora_name: normalizeLoraName(scene?.lora_name, { kind: 'filter', engine }),
+          original_face_swap_enabled: scene?.original_face_swap_enabled === true,
+        }
+      })
+      .filter((scene) => scene.name.trim() || scene.prompt.trim())
+  }
   if (Array.isArray(raw.draw_scenes)) {
     const normalizedDrawScenes = raw.draw_scenes
       .map((scene, index) => {
@@ -460,11 +523,15 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
             typeof scene?.postprocess_draw_scene_id === 'string'
               ? scene.postprocess_draw_scene_id.trim()
               : '',
+          postprocess_filter_scene_id:
+            typeof scene?.postprocess_filter_scene_id === 'string'
+              ? scene.postprocess_filter_scene_id.trim()
+              : '',
           original_face_swap_enabled: scene?.original_face_swap_enabled === true,
         }
       })
       .filter((scene) => scene.name.trim() || scene.prompt.trim())
-    normalizeDrawPostprocessRefs(normalizedDrawScenes)
+    normalizeDrawPostprocessRefs(normalizedDrawScenes, merged.filter_scenes)
     merged.draw_scenes = normalizedDrawScenes
   }
   if (Array.isArray(raw.video_scenes)) {
@@ -530,6 +597,11 @@ const createDrawSceneId = () => {
   return `draw_${Date.now().toString(36)}_${drawSceneCounter.value}`
 }
 
+const createFilterSceneId = () => {
+  filterSceneCounter.value += 1
+  return `filter_${Date.now().toString(36)}_${filterSceneCounter.value}`
+}
+
 const addDrawScene = () => {
   config.draw_scenes.push({
     id: createDrawSceneId(),
@@ -539,6 +611,19 @@ const addDrawScene = () => {
     engine: normalizeDrawEngine(modelOptions.default_draw_engine),
     lora_name: '',
     postprocess_draw_scene_id: '',
+    postprocess_filter_scene_id: '',
+    original_face_swap_enabled: false,
+  })
+}
+
+const addFilterScene = () => {
+  config.filter_scenes.push({
+    id: createFilterSceneId(),
+    name: '',
+    prompt: '',
+    negative_prompt: '',
+    engine: normalizeDrawEngine(modelOptions.default_draw_engine),
+    lora_name: '',
     original_face_swap_enabled: false,
   })
 }
@@ -558,11 +643,26 @@ const removeDrawScene = (index: number) => {
   })
 }
 
+const removeFilterScene = (index: number) => {
+  const [removed] = config.filter_scenes.splice(index, 1)
+  if (!removed) return
+  config.draw_scenes.forEach((scene) => {
+    if (scene.postprocess_filter_scene_id === removed.id) {
+      scene.postprocess_filter_scene_id = ''
+    }
+  })
+}
+
 const validateVideoScenes = () =>
   config.video_scenes.every((scene) => Boolean(scene.name.trim()) && Boolean(scene.prompt.trim()))
 
 const validateDrawScenes = () =>
   config.draw_scenes.every(
+    (scene) => Boolean(scene.name.trim()) && Boolean(scene.prompt.trim()),
+  )
+
+const validateFilterScenes = () =>
+  config.filter_scenes.every(
     (scene) => Boolean(scene.name.trim()) && Boolean(scene.prompt.trim()),
   )
 
@@ -572,6 +672,22 @@ const buildPayload = (): QqccBotConfig => {
   legacyMainButtonKeys.forEach((key) => {
     payload.main_buttons[key] = false
   })
+  payload.filter_scenes = payload.filter_scenes
+    .map((scene) => {
+      const engine = normalizeDrawEngine(scene.engine)
+      return {
+        ...scene,
+        id: scene.id.trim(),
+        name: scene.name.trim(),
+        prompt: scene.prompt.trim(),
+        negative_prompt: scene.negative_prompt.trim(),
+        engine,
+        lora_name: normalizeLoraName(scene.lora_name, { kind: 'filter', engine }),
+        original_face_swap_enabled: scene.original_face_swap_enabled === true,
+      }
+    })
+    .filter((scene) => scene.name || scene.prompt)
+    .slice(0, drawSceneMaxCount)
   const normalizedDrawScenes = payload.draw_scenes
     .map((scene) => {
       const engine = normalizeDrawEngine(scene.engine)
@@ -587,11 +703,15 @@ const buildPayload = (): QqccBotConfig => {
           typeof scene.postprocess_draw_scene_id === 'string'
             ? scene.postprocess_draw_scene_id.trim()
             : '',
+        postprocess_filter_scene_id:
+          typeof scene.postprocess_filter_scene_id === 'string'
+            ? scene.postprocess_filter_scene_id.trim()
+            : '',
         original_face_swap_enabled: scene.original_face_swap_enabled === true,
       }
     })
     .filter((scene) => scene.name || scene.prompt)
-  normalizeDrawPostprocessRefs(normalizedDrawScenes)
+  normalizeDrawPostprocessRefs(normalizedDrawScenes, payload.filter_scenes)
   payload.draw_scenes = normalizedDrawScenes.slice(0, drawSceneMaxCount)
   payload.video_scenes = payload.video_scenes
     .map((scene) => {
@@ -626,7 +746,12 @@ const openSceneConfig = (
   index: number,
   panel: SceneConfigPanel,
 ) => {
-  const scene = kind === 'video' ? config.video_scenes[index] : config.draw_scenes[index]
+  const scene =
+    kind === 'video'
+      ? config.video_scenes[index]
+      : kind === 'filter'
+        ? config.filter_scenes[index]
+        : config.draw_scenes[index]
   if (!scene) return
   sceneConfig.kind = kind
   sceneConfig.panel = panel
@@ -641,8 +766,12 @@ const openSceneConfig = (
     kind === 'draw'
       ? normalizePostprocessDrawSceneId((scene as DrawSceneConfig).postprocess_draw_scene_id, index)
       : ''
+  sceneConfig.postprocess_filter_scene_id =
+    kind === 'draw'
+      ? normalizePostprocessFilterSceneId((scene as DrawSceneConfig).postprocess_filter_scene_id)
+      : ''
   sceneConfig.original_face_swap_enabled =
-    kind === 'draw' ? (scene as DrawSceneConfig).original_face_swap_enabled === true : false
+    kind !== 'video' ? (scene as DrawSceneConfig | FilterSceneConfig).original_face_swap_enabled === true : false
   sceneConfig.open = true
 }
 
@@ -652,6 +781,7 @@ const closeSceneConfig = () => {
   sceneConfig.index = -1
   sceneConfig.end_frame_draw_scene_id = ''
   sceneConfig.postprocess_draw_scene_id = ''
+  sceneConfig.postprocess_filter_scene_id = ''
   sceneConfig.original_face_swap_enabled = false
 }
 
@@ -675,7 +805,7 @@ const confirmSceneConfig = () => {
         sceneConfig.end_frame_draw_scene_id,
       )
     }
-  } else {
+  } else if (sceneConfig.kind === 'draw') {
     const scene = config.draw_scenes[sceneConfig.index]
     if (!scene) return
     if (sceneConfig.panel === 'model') {
@@ -695,8 +825,18 @@ const confirmSceneConfig = () => {
         return
       }
       scene.postprocess_draw_scene_id = postprocessDrawSceneId
+      scene.postprocess_filter_scene_id = postprocessDrawSceneId
+        ? ''
+        : normalizePostprocessFilterSceneId(sceneConfig.postprocess_filter_scene_id)
       scene.original_face_swap_enabled = sceneConfig.original_face_swap_enabled === true
     }
+  } else {
+    const scene = config.filter_scenes[sceneConfig.index]
+    if (!scene) return
+    const engine = normalizeDrawEngine(sceneConfig.engine)
+    scene.engine = engine
+    scene.lora_name = normalizeLoraName(sceneConfig.lora_name, { kind: 'filter', engine })
+    scene.original_face_swap_enabled = sceneConfig.original_face_swap_enabled === true
   }
   closeSceneConfig()
 }
@@ -720,6 +860,10 @@ const saveConfig = async () => {
   }
   if (!validateDrawScenes()) {
     message.error('请完善AI绘图场景的按钮名称和提示词')
+    return
+  }
+  if (!validateFilterScenes()) {
+    message.error('请完善AI滤镜场景的按钮名称和提示词')
     return
   }
   if (hasDrawPostprocessCycle(config.draw_scenes)) {
@@ -965,6 +1109,71 @@ onMounted(() => {
     </section>
 
     <section class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h3 class="text-base font-semibold text-slate-900">AI滤镜场景</h3>
+        <a-button data-testid="add-filter-scene" @click="addFilterScene">
+          <template #icon><PlusOutlined /></template>
+          添加
+        </a-button>
+      </div>
+
+      <div>
+        <div
+          class="hidden grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_96px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid"
+        >
+          <span>按钮名称</span>
+          <span>提示词</span>
+          <span>负面提示词</span>
+          <span class="text-right">操作</span>
+        </div>
+        <div
+          v-for="(scene, index) in config.filter_scenes"
+          :key="scene.id"
+          class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_96px]"
+        >
+          <a-input
+            v-model:value="scene.name"
+            :data-testid="`filter-scene-name-${index}`"
+          />
+          <a-textarea
+            v-model:value="scene.prompt"
+            :rows="3"
+            :data-testid="`filter-scene-prompt-${index}`"
+          />
+          <a-textarea
+            v-model:value="scene.negative_prompt"
+            :rows="3"
+            :data-testid="`filter-scene-negative-prompt-${index}`"
+          />
+          <div class="scene-action-cell">
+            <a-button
+              class="scene-icon-button"
+              :data-testid="`config-filter-scene-model-${index}`"
+              title="配置模型"
+              aria-label="配置模型"
+              @click="openSceneConfig('filter', index, 'model')"
+            >
+              <template #icon><SettingOutlined /></template>
+            </a-button>
+            <a-button
+              danger
+              class="scene-icon-button"
+              :data-testid="`remove-filter-scene-${index}`"
+              title="删除场景"
+              aria-label="删除场景"
+              @click="removeFilterScene(index)"
+            >
+              <template #icon><DeleteOutlined /></template>
+            </a-button>
+          </div>
+        </div>
+        <div v-if="config.filter_scenes.length === 0" class="py-6 text-center text-sm text-slate-400">
+          暂无场景
+        </div>
+      </div>
+    </section>
+
+    <section class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <h3 class="mb-4 text-base font-semibold text-slate-900">提示词覆盖</h3>
       <div class="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         <a-form-item v-for="item in nonVideoPromptOptions" :key="item.key" :label="item.label">
@@ -1022,6 +1231,16 @@ onMounted(() => {
           </a-select>
         </a-form-item>
         <a-form-item
+          v-if="sceneConfig.panel === 'model' && sceneConfig.kind === 'filter'"
+          label="原图换脸"
+          class="mb-4"
+        >
+          <a-switch
+            v-model:checked="sceneConfig.original_face_swap_enabled"
+            data-testid="filter-scene-original-face-swap-switch"
+          />
+        </a-form-item>
+        <a-form-item
           v-if="sceneConfig.panel === 'reference' && sceneConfig.kind === 'video'"
           label="尾帧来源"
           class="mb-4"
@@ -1056,6 +1275,27 @@ onMounted(() => {
             <a-select-option value="">无</a-select-option>
             <a-select-option
               v-for="item in activePostprocessDrawOptions"
+              :key="item.id"
+              :value="item.id"
+            >
+              {{ item.name || item.id }}
+            </a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item
+          v-if="sceneConfig.panel === 'reference' && sceneConfig.kind === 'draw'"
+          label="滤镜后处理"
+          class="mb-4"
+        >
+          <a-select
+            v-model:value="sceneConfig.postprocess_filter_scene_id"
+            data-testid="scene-postprocess-filter-select"
+            class="w-full"
+            :get-popup-container="getSceneSelectPopupContainer"
+          >
+            <a-select-option value="">无</a-select-option>
+            <a-select-option
+              v-for="item in activePostprocessFilterOptions"
               :key="item.id"
               :value="item.id"
             >

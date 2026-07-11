@@ -14,6 +14,7 @@ FSM_MENU_KEYS = (
     "menu.open_main_bot",
     "qqcc.menu.quick_faceswap",
     "qqcc.menu.ai_draw",
+    "qqcc.menu.ai_filter",
     "qqcc.menu.market",
     "menu.face_video",
     "menu.video_to_video",
@@ -42,6 +43,7 @@ SPECIAL_TRANSLATION_ROUTES = (
     ("menu.video_lora", "menu.video_lora"),
     ("qqcc.menu.video_edit", "menu.video_edit"),
     ("qqcc.menu.ai_draw", "qqcc.menu.ai_draw"),
+    ("qqcc.menu.ai_filter", "qqcc.menu.ai_filter"),
     ("qqcc.menu.quick_faceswap", "qqcc.menu.quick_faceswap"),
     ("qqcc.menu.market", "qqcc.menu.market"),
 )
@@ -56,6 +58,7 @@ LEGACY_TEXT_ALIASES = {
     "🎬 懒人动图": "menu.video_edit",
     "AI动图": "menu.video_edit",
     "AI绘图": "qqcc.menu.ai_draw",
+    "AI滤镜": "qqcc.menu.ai_filter",
     "快速换脸": "qqcc.menu.quick_faceswap",
     "懒人bot": "menu.lazy_bot",
     "懒人Bot": "menu.lazy_bot",

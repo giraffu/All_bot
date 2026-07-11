@@ -15,6 +15,7 @@ from src.services.fsm_temp_file_service import cleanup_fsm_temp_files
 from src.services.qqcc_config_service import (
     DRAW_SCENE_ENGINE_FREE_EDIT,
     get_qqcc_draw_scene,
+    get_qqcc_filter_scene,
 )
 
 
@@ -31,6 +32,9 @@ class QQCCDrawChainResult:
 QQCC_ORIGINAL_FACE_SWAP_COST = 2
 QQCC_ORIGINAL_FACE_SWAP_PROMPT = "face swap"
 QQCC_CHAIN_CONTINUATION_BASE_PRIORITY = 100
+QQCC_SCENE_KIND_DRAW = "draw"
+QQCC_SCENE_KIND_FILTER = "filter"
+QQCC_SCENE_KIND_KEY = "_qqcc_scene_kind"
 
 
 def build_qqcc_chain_task_controls(subtask_index: int) -> dict[str, object]:
@@ -66,23 +70,44 @@ def calculate_qqcc_draw_scene_cost(scene: dict[str, object] | None) -> int:
     return draw_cost
 
 
+def _with_scene_kind(scene: dict[str, Any], scene_kind: str) -> dict[str, Any]:
+    return {**scene, QQCC_SCENE_KIND_KEY: scene_kind}
+
+
 def resolve_qqcc_draw_scene_chain(
     config: dict[str, Any],
     scene_or_id: dict[str, object] | str | None,
+    *,
+    scene_kind: str = QQCC_SCENE_KIND_DRAW,
 ) -> list[dict[str, Any]]:
     scene_id = (
         str(scene_or_id.get("id") or "").strip()
         if isinstance(scene_or_id, dict)
         else str(scene_or_id or "").strip()
     )
+    if isinstance(scene_or_id, dict):
+        raw_scene_kind = str(scene_or_id.get(QQCC_SCENE_KIND_KEY) or "").strip()
+        if raw_scene_kind:
+            scene_kind = raw_scene_kind
+
+    if scene_kind == QQCC_SCENE_KIND_FILTER:
+        scene = get_qqcc_filter_scene(config, scene_id)
+        return [_with_scene_kind(scene, QQCC_SCENE_KIND_FILTER)] if scene else []
+
     chain: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     while scene_id and scene_id not in seen_ids:
         scene = get_qqcc_draw_scene(config, scene_id)
         if scene is None:
             break
-        chain.append(scene)
+        chain.append(_with_scene_kind(scene, QQCC_SCENE_KIND_DRAW))
         seen_ids.add(scene_id)
+        filter_scene_id = str(scene.get("postprocess_filter_scene_id") or "").strip()
+        if filter_scene_id:
+            filter_scene = get_qqcc_filter_scene(config, filter_scene_id)
+            if filter_scene is not None:
+                chain.append(_with_scene_kind(filter_scene, QQCC_SCENE_KIND_FILTER))
+            break
         scene_id = str(scene.get("postprocess_draw_scene_id") or "").strip()
     return chain
 

@@ -290,6 +290,7 @@ def test_migrated_lazy_text_routes_point_to_lazy_bot_handler():
         "qqcc.menu.market",
         "menu.video_edit",
         "qqcc.menu.ai_draw",
+        "qqcc.menu.ai_filter",
         "qqcc.menu.quick_faceswap",
     ):
         assert message_handler.prompt_routes[route_key] is message_handler.handle_lazy_bot_menu

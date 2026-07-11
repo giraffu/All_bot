@@ -5,6 +5,7 @@ from telegram.ext import ContextTypes
 
 from qqcc_bot.keyboards import (
     get_qqcc_draw_edit_inline_keyboard,
+    get_qqcc_filter_edit_inline_keyboard,
     get_qqcc_main_bot_link_keyboard,
     get_qqcc_main_menu_keyboard,
     get_qqcc_video_edit_inline_keyboard,
@@ -21,6 +22,7 @@ from src.handlers.message_handler_common import (
 from src.handlers.message_handler_prompt import handle_prompt_impl
 from src.services.qqcc_config_service import (
     has_enabled_qqcc_draw_scenes,
+    has_enabled_qqcc_filter_scenes,
     has_enabled_qqcc_video_scenes,
     is_qqcc_global_enabled,
     is_qqcc_main_bot_link_enabled,
@@ -70,6 +72,14 @@ def _can_open_ai_draw_menu(config: dict) -> bool:
     )
 
 
+def _can_open_ai_filter_menu(config: dict) -> bool:
+    return (
+        is_qqcc_global_enabled(config)
+        and is_qqcc_main_button_enabled(config, "ai_filter")
+        and has_enabled_qqcc_filter_scenes(config)
+    )
+
+
 def _can_open_market(config: dict) -> bool:
     return (
         is_qqcc_global_enabled(config)
@@ -115,6 +125,18 @@ async def handle_ai_draw_menu(update, context, text: str = None):
     )
 
 
+async def handle_ai_filter_menu(update, context, text: str = None):
+    config = await _load_menu_config()
+    if not _can_open_ai_filter_menu(config):
+        return await _reply_feature_disabled(update, context, config)
+    return await _reply_payload(
+        update,
+        context,
+        context.t("system.ai_filter_hint"),
+        get_qqcc_filter_edit_inline_keyboard(context.lang, config),
+    )
+
+
 async def handle_back_to_main_menu(update, context, text: str = None):
     context.user_data.pop("qqcc_gallery_apply", None)
     config = await _load_menu_config()
@@ -156,6 +178,7 @@ async def handle_open_main_bot(update, context, text: str = None):
 QQCC_PROMPT_ROUTES = {
     "menu.photo_edit": handle_photo_edit_menu,
     "qqcc.menu.ai_draw": handle_ai_draw_menu,
+    "qqcc.menu.ai_filter": handle_ai_filter_menu,
     "menu.video_edit": handle_video_edit_menu,
     "menu.main_menu": handle_back_to_main_menu,
     "menu.back_main": handle_back_to_main_menu,

@@ -11,6 +11,7 @@ _ALLOWED_CONTEXT_KEYS = {
     "kind",
     "mode",
     "scene_id",
+    "scene_kind",
     "display_mode_name",
 }
 
@@ -37,6 +38,7 @@ def build_qqcc_regenerate_result_meta(
     mode: str,
     display_mode_name: str,
     scene_id: str | None = None,
+    scene_kind: str | None = None,
 ) -> dict[str, Any]:
     context: dict[str, Any] = {
         "kind": kind,
@@ -45,6 +47,8 @@ def build_qqcc_regenerate_result_meta(
     }
     if scene_id:
         context["scene_id"] = scene_id
+    if scene_kind:
+        context["scene_kind"] = scene_kind
     return {QQCC_REGENERATE_CONTEXT_KEY: normalize_qqcc_regenerate_context(context)}
 
 

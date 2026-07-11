@@ -52,6 +52,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 - Wan22 AIO 是当前 `image_to_video`、`video_insert`、`video_edit` 的主执行面。常见关键节点包括 LoRA loader、正负 prompt、首尾图、RIFE、视频保存和尺寸节点；节点 ID 以文档为准，修改前必须重新打开 workflow JSON 核对。
 - QQCC 场景负面提示词只走已有 workflow 参数映射：Qwen 自由P图 `img2img`/`img2img_lora` 写 `4.prompt`；PornMaster Flux2 single/multiple edit 写 `254.text` / `49.text`；Wan22 视频写 `2371.value`。空值保持既有空负向或 Wan22 默认负向归一，不新增 task type、profile 或模型目录。
 - QQCC `AI动图` 的 `end_frame_draw_scene_id` 只复用当前 AI绘图场景及其 `postprocess_draw_scene_id` 后处理链生成最终尾帧，再把首尾两图传给旧 `image_to_video` / `video_lora` 或 `wan22_video_v2`；视频任务使用视频场景自身 `negative_prompt`，尾帧绘图链使用被引用绘图场景自身 `negative_prompt`，两者不能串用。这不是新 workflow/profile，v2 仍不支持附加 LoRA。
+- QQCC `AI滤镜` 使用独立 `filter_scenes`，但 engine、LoRA、`negative_prompt` 与 `original_face_swap_enabled` 规则复用 AI绘图；滤镜场景自身不支持后处理链，只能作为直接单步入口或 `draw_scenes[].postprocess_filter_scene_id` 的终止模板。关闭 `main_buttons.ai_filter` 只隐藏直接入口，不影响有效滤镜模板被 AI绘图引用；不要新增 workflow、RunPod profile、模型 bundle 或数据库表。
 - LTX 系列的用户可见 task type 与执行 profile 不完全同名。`ltx_video`、`ltx_video_flf2v`、`ltx_video_v2v_audio` 等映射必须同时核对 registry、payload builder、worker mapping 和模型 catalog。
 - LTX LoRA 多选使用 `lora_items` 结构，当前限制最多 3 个。legacy `lora_name/lora_strength` 只作兼容，不应作为新入口。
 - LTX Bot 扩展 seed 与完成拼接链路恢复由 `src/services/ltx_video_extension_service.py` 负责；这只影响 Bot 入口层 histories/last_frame/context 准备，不改变 LTX workflow、worker mapping、RunPod profile 或模型目录。

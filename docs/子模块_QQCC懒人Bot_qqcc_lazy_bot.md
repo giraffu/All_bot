@@ -11,13 +11,16 @@ QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位�
 主菜单业务入口只包含：
 - `快速换脸`
 - `AI绘图`
+- `AI滤镜`
 - `AI动图`
 
 `AI动图` 是 QQCC Bot 的专用展示文案，对应共享兼容路由 `menu.video_edit`。不要直接修改共享 `menu.video_edit` 文案来实现 QQCC 菜单改名，否则会影响旧按钮兼容和 QQCC 动图路由。
 
 `快速换脸` 是 QQCC Bot 的专用主菜单文案，对应 `qqcc.menu.quick_faceswap`，复用现有单图随机换脸流程，发送 1 张正脸图后自动匹配模板；它不是主 Bot 的双图 `faceswap_fsm`。
 
-`AI绘图` 是 QQCC Bot 的专用展示文案，对应 `qqcc.menu.ai_draw` 专用路由。旧配置首次归一化时会通过 `scene_preset_version=1` 一次性种子化两个预设 `draw_scenes`：`快速自慰` 与 `快速脱衣`；种子化后它们和自定义场景没有结构差异，可编辑、删除、调整模型和后处理。关闭直接入口通过 `main_buttons.ai_draw=false`；管理员也可以清空 `draw_scenes` 删除所有直接 AI绘图场景。默认功能行按 `AI绘图 / AI动图` 排列。
+`AI绘图` 是 QQCC Bot 的专用展示文案，对应 `qqcc.menu.ai_draw` 专用路由。旧配置首次归一化时会通过 `scene_preset_version=1` 一次性种子化两个预设 `draw_scenes`：`快速自慰` 与 `快速脱衣`；种子化后它们和自定义场景没有结构差异，可编辑、删除、调整模型、绘图后处理、滤镜终止后处理和原图换脸。关闭直接入口通过 `main_buttons.ai_draw=false`；管理员也可以清空 `draw_scenes` 删除所有直接 AI绘图场景。配置有效滤镜场景后，默认功能行按 `AI绘图 / AI滤镜 / AI动图` 排列；无滤镜场景时不展示 `AI滤镜`。
+
+`AI滤镜` 是 QQCC Bot 的专用展示文案，对应 `qqcc.menu.ai_filter` 专用路由。它使用独立 `filter_scenes` 场景池，默认配置不种子化场景；`main_buttons.ai_filter=true` 只是允许直接入口，仍需要至少一个有效滤镜场景才在主菜单展示。滤镜场景复用 AI绘图的提示词、负面提示词、engine、LoRA 与 `original_face_swap_enabled` 配置规则，但自身不支持继续配置后处理链。
 
 主菜单非生成入口：
 - `修仙市集`
@@ -32,9 +35,11 @@ QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位�
 - 脱衣吐舌
 - 近景口交
 
-后台可增删场景、调整按钮名称、提示词、负面提示词、固定时长、底层模型和可选尾帧来源。旧五个默认动图也只是一次性种子化的普通预设，保存后与自定义场景一致。默认 engine 是旧 `image_to_video`，可选视频 LoRA；切到 `wan22_video_v2` 时不支持附加模型并自动清空 `lora_name`。尾帧来源通过 `end_frame_draw_scene_id` 引用当前有效 `draw_scenes[].id`，空字符串表示保持单首帧旧行为；引用不存在、绘图场景被删除或非法时自动清空。运行时被引用绘图场景会使用完整链路最终图作为视频尾帧，链内 `postprocess_draw_scene_id` 和 `original_face_swap_enabled` 都会继承执行。用户点击主菜单 `AI动图` 后，QQCC Bot 回复 `system.video_edit_hint`，并把当前有效场景作为 inline button 挂在该回复消息下方展示；按钮按三个一行排布，callback 使用 `qvid_scene:<scene_id>`，由 `get_quick_video_fsm_handler()` 直接进入发送图片步骤。旧 `qvid_mode:<menu.video_edit_*>` callback 只作为已发消息兼容，若后台已删除对应场景必须回复 `功能暂未开放`。不要再把这些场景塞回 Telegram 底部 reply keyboard。
+后台可增删场景、调整按钮名称、提示词、负面提示词、固定时长、底层模型和可选尾帧来源。旧五个默认动图也只是一次性种子化的普通预设，保存后与自定义场景一致。默认 engine 是旧 `image_to_video`，可选视频 LoRA；切到 `wan22_video_v2` 时不支持附加模型并自动清空 `lora_name`。尾帧来源通过 `end_frame_draw_scene_id` 引用当前有效 `draw_scenes[].id`，空字符串表示保持单首帧旧行为；引用不存在、绘图场景被删除或非法时自动清空。运行时被引用绘图场景会使用完整链路最终图作为视频尾帧，链内 `postprocess_draw_scene_id`、终止 `postprocess_filter_scene_id` 和 `original_face_swap_enabled` 都会继承执行。用户点击主菜单 `AI动图` 后，QQCC Bot 回复 `system.video_edit_hint`，并把当前有效场景作为 inline button 挂在该回复消息下方展示；按钮按三个一行排布，callback 使用 `qvid_scene:<scene_id>`，由 `get_quick_video_fsm_handler()` 直接进入发送图片步骤。旧 `qvid_mode:<menu.video_edit_*>` callback 只作为已发消息兼容，若后台已删除对应场景必须回复 `功能暂未开放`。不要再把这些场景塞回 Telegram 底部 reply keyboard。
 
-`AI绘图` 场景由管理后台 `draw_scenes` 动态配置，`快速自慰` 与 `快速脱衣` 两个默认项是一次性种子化的普通预设，底层 engine 均为旧 `free_edit`。每个场景包含按钮名称、提示词、负面提示词、底层模型、可选 `postprocess_draw_scene_id` 绘图后处理和 `original_face_swap_enabled` 原图换脸，`id` 使用短安全 callback 字符串；所有场景都必须有非空按钮名称和提示词，`negative_prompt` 可选，缺省或非法归一为空字符串，QQCC 运行时只读取场景自身 `prompt` 与 `negative_prompt`，不再通过 `prompt_key` 或 `prompts.ini` 回退。新增自定义场景默认 engine 是自由P图 v2 `free_edit_v2`，不支持附加模型；切到旧 `free_edit` 时才可选图片 LoRA。后处理只能选择其它有效绘图场景；保存时后端清空非法引用、自引用和循环引用，前端也过滤会形成循环的选项。`original_face_swap_enabled` 只接受布尔 `true`，缺省或非法值归一为 `false`；开启后该步骤按“场景绘图 -> 使用用户最初上传原图做人脸来源换脸 -> 后处理链下一步”执行，每个开启步骤额外计费 `2` 灵石，内部换脸不传负面提示词。用户点击主菜单 `AI绘图` 后，QQCC Bot 回复 `system.ai_draw_hint`，并按三个一行展示 inline 场景按钮，callback 使用 `qdraw_scene:<scene_id>`。该 callback 由 `get_quick_image_fsm_handler()` 承接，进入发送 1 张图片步骤；收到图片后按 `scene_id -> postprocess_draw_scene_id -> ...` 串行提交绘图/原图换脸，每步绘图使用自身负面提示词，只把最终图发给用户。若最终可见输出来自内部原图换脸，历史、结果展示和完成文案仍按原 AI绘图场景归类，不暴露成 `快速换脸`。QQCC 生成结果不可投稿、不可公开。旧消息中的已删除场景 callback 必须回复 `功能暂未开放`，不提交任务。本次默认场景只复用现有 `free_edit`/`img2img` 和 `face_swap` 执行面，不新增 workflow、RunPod profile 或数据库表。
+`AI绘图` 场景由管理后台 `draw_scenes` 动态配置，`快速自慰` 与 `快速脱衣` 两个默认项是一次性种子化的普通预设，底层 engine 均为旧 `free_edit`。每个场景包含按钮名称、提示词、负面提示词、底层模型、可选 `postprocess_draw_scene_id` 绘图后处理、可选 `postprocess_filter_scene_id` 滤镜终止后处理和 `original_face_swap_enabled` 原图换脸，`id` 使用短安全 callback 字符串；所有场景都必须有非空按钮名称和提示词，`negative_prompt` 可选，缺省或非法归一为空字符串，QQCC 运行时只读取场景自身 `prompt` 与 `negative_prompt`，不再通过 `prompt_key` 或 `prompts.ini` 回退。新增自定义场景默认 engine 是自由P图 v2 `free_edit_v2`，不支持附加模型；切到旧 `free_edit` 时才可选图片 LoRA。绘图后处理只能选择其它有效绘图场景；滤镜后处理只能选择有效滤镜场景并作为终止步骤。`postprocess_draw_scene_id` 与 `postprocess_filter_scene_id` 互斥，若两者都有效则保存时保留绘图后处理并清空滤镜引用；后端还会清空非法引用、自引用和绘图循环引用，前端也过滤会形成循环的选项。`original_face_swap_enabled` 只接受布尔 `true`，缺省或非法值归一为 `false`；开启后该步骤按“场景绘图/滤镜 -> 使用用户最初上传原图做人脸来源换脸 -> 后处理链下一步”执行，每个开启步骤额外计费 `2` 灵石，内部换脸不传负面提示词。用户点击主菜单 `AI绘图` 后，QQCC Bot 回复 `system.ai_draw_hint`，并按三个一行展示 inline 场景按钮，callback 使用 `qdraw_scene:<scene_id>`。该 callback 由 `get_quick_image_fsm_handler()` 承接，进入发送 1 张图片步骤；收到图片后按 `draw -> draw...` 或 `draw -> filter` 串行提交绘图/滤镜/原图换脸，每步使用自身负面提示词，只把最终图发给用户。若最终可见输出来自内部原图换脸，历史、结果展示和完成文案仍按原 AI绘图场景归类，不暴露成 `快速换脸`。QQCC 生成结果不可投稿、不可公开。旧消息中的已删除场景 callback 必须回复 `功能暂未开放`，不提交任务。本次默认场景只复用现有 `free_edit`/`img2img` 和 `face_swap` 执行面，不新增 workflow、RunPod profile 或数据库表。
+
+`AI滤镜` 场景由管理后台 `filter_scenes` 动态配置。每个场景包含按钮名称、提示词、负面提示词、底层模型、可选图片 LoRA 和 `original_face_swap_enabled`，最多 20 个；所有归一化规则与 AI绘图一致，但不提供后处理选择。用户点击主菜单 `AI滤镜` 后，QQCC Bot 回复 `system.ai_filter_hint`，并按三个一行展示 inline 场景按钮，callback 使用 `qfilter_scene:<scene_id>`。该 callback 同样由 `get_quick_image_fsm_handler()` 承接，收到 1 张图片后按单步滤镜场景提交；直接滤镜结果展示滤镜场景名。关闭 `main_buttons.ai_filter` 只隐藏直接入口和拒绝旧 `qfilter_scene:*`，不影响 AI绘图通过有效 `postprocess_filter_scene_id` 引用滤镜模板。
 
 用户点击主菜单 `修仙市集` 后，QQCC Bot 使用专用 `qqcc_bot/gallery_market.py` 入口展示当前 Web Gallery 可见类型的投稿，不复用旧主 Bot 的 gallery 分类常量。callback 前缀为 `qg:`，支持分类、分页、点赞、点踩、一键应用和 Web 应用跳转；不提供留言入口。普通可应用投稿的卡片同时展示 `一键应用` 与 `Web应用`，视频换脸类模板只展示 `Web应用`，Wan22/LTX 多段拼接结果不展示任何应用入口；Bot caption 中的类型和 `#task.mode_*` 标签走当前语言翻译，不直接暴露内部变量名。分类对齐 Web 可见 tab：`all`、`i2i_pro`、`i2i_draw`、`edit_group`、`free_edit_v2_group`、`img2video_group`、`ltx_video`、`wan22_video_v2`、`scail2_action_transfer`、`scail2_video_replacement`、`scail2_face_swap_v2`，不展示 `txt2img`。
 
@@ -60,15 +65,16 @@ QQCC Config Web 使用独立后台账号，不复用 Dashboard 管理员 token�
 配置结构固定包含：
 - `scene_preset_version`: 当前为 `1`；缺失或小于 `1` 视为旧配置，保存时一次性补齐 QQCC 绘图/动图预设并迁移旧 prompt override；已有 `scene_preset_version>=1` 时尊重管理员删除后的空 `draw_scenes` / `video_scenes`
 - `global_enabled`
-- `main_buttons`: `quick_undress`, `quick_faceswap`, `photo_edit`, `ai_draw`, `video_edit`, `market`, `main_bot_link`；`quick_undress` 与 `photo_edit` 仅保留旧配置兼容，QQCC 主菜单不再渲染
+- `main_buttons`: `quick_undress`, `quick_faceswap`, `photo_edit`, `ai_draw`, `ai_filter`, `video_edit`, `market`, `main_bot_link`；`quick_undress` 与 `photo_edit` 仅保留旧配置兼容，QQCC 主菜单不再渲染
 - `photo_buttons`: `masturbation`, `random_faceswap`；仅保留旧配置兼容
 - `undress_methods`: `legacy`, `i2i_draw`；仅保留旧配置兼容
 - `video_scenes`: `[{ id, name, prompt, negative_prompt, duration, engine, lora_name, end_frame_draw_scene_id }]`；所有场景 `prompt` 必填，`negative_prompt` 可选，缺失或非字符串归一为空，字符串保存前 trim；`engine` 只能是 `image_to_video` 或 `wan22_video_v2`，缺省 `image_to_video`；`lora_name` 只允许在 `image_to_video` 下来自 `VIDEO_LORA_MODELS`，v2 自动清空；`end_frame_draw_scene_id` 只能引用归一化后的 `draw_scenes[].id`，缺省 `""`；`duration` 只能是 `5s`、`8s`、`10s`，`id` 只能用于短安全 callback
-- `draw_scenes`: `[{ id, name, prompt, negative_prompt, engine, lora_name, postprocess_draw_scene_id, original_face_swap_enabled }]`；所有场景 `prompt` 必填，`negative_prompt` 可选，缺失或非字符串归一为空，字符串保存前 trim；最多 20 个，`engine` 只能是 `free_edit` 或 `free_edit_v2`，缺省 `free_edit_v2`；`lora_name` 只允许在 `free_edit` 下来自 `IMAGE_LORA_MODELS`，v2 自动清空；`postprocess_draw_scene_id` 缺省 `""`，只能引用其它有效绘图场景，非法、自引用和循环引用必须清空；`original_face_swap_enabled` 只能为布尔 `true`，缺省或非法值归一为 `false`；`id` 只能用于短安全 callback
+- `draw_scenes`: `[{ id, name, prompt, negative_prompt, engine, lora_name, postprocess_draw_scene_id, postprocess_filter_scene_id, original_face_swap_enabled }]`；所有场景 `prompt` 必填，`negative_prompt` 可选，缺失或非字符串归一为空，字符串保存前 trim；最多 20 个，`engine` 只能是 `free_edit` 或 `free_edit_v2`，缺省 `free_edit_v2`；`lora_name` 只允许在 `free_edit` 下来自 `IMAGE_LORA_MODELS`，v2 自动清空；`postprocess_draw_scene_id` 缺省 `""`，只能引用其它有效绘图场景，非法、自引用和循环引用必须清空；`postprocess_filter_scene_id` 缺省 `""`，只能引用有效 `filter_scenes[].id` 并作为终止后处理，若绘图和滤镜后处理同时有效则保留绘图后处理；`original_face_swap_enabled` 只能为布尔 `true`，缺省或非法值归一为 `false`；`id` 只能用于短安全 callback
+- `filter_scenes`: `[{ id, name, prompt, negative_prompt, engine, lora_name, original_face_swap_enabled }]`；所有场景 `prompt` 必填，`negative_prompt` 可选，最多 20 个，engine/LoRA/原图换脸归一规则与 AI绘图一致；自身不支持后处理链，默认配置不种子化任何滤镜场景
 - `video_buttons` 与 `video_settings` 仅保留旧配置兼容；管理后台不再编辑 AI 动图画质或全局时长
 - `prompts`: `undress`, `i2i_draw_quick_undress`, `masturbation`, `face_swap`, `perfect_video_insert`, `doggy_style`, `blowjob`, `undress_tongue`, `closeup_blowjob`
 
-关闭功能后，QQCC Bot 会隐藏新菜单按钮，并在旧 reply keyboard / 旧 callback 入口回复 `功能暂未开放`，不提交新任务。`quick_faceswap` 关闭后，旧 `random_faceswap_again` 也必须拒绝继续提交。AI 动图每个场景的时长由后台固定，用户在 Bot 中只选择画质；画质只受用户权限过滤，仍保持 `1024p` 与 `10s` 不能同时选择。QQCC draw/video 场景正负提示词只来自场景自身 `prompt` / `negative_prompt`，只作用于 QQCC Bot，主 Bot 不受影响。无尾帧来源时，动图 `image_to_video` 无模型提交 `custom_video`，带模型提交 `video_lora` 并透传 `lora_name`；动图 `wan22_video_v2` 提交 `wan22_video_v2`，使用视频场景提示词、负面提示词、固定时长和用户画质，负面提示词为空时保持 Wan22 现有默认负向归一。配置尾帧来源时，用户仍只发送 1 张图；Bot 会先按被引用 AI绘图场景的完整后处理链串行提交隐藏绘图任务，每步绘图使用该绘图场景自己的 `negative_prompt`，链内每个开启 `original_face_swap_enabled` 的步骤都会在本步绘图后插入内部原图换脸，成功后下载最终图作为尾帧，再以用户原图和生成尾帧提交首尾帧视频；最终视频仍只使用视频场景自己的 `negative_prompt`。旧 `custom_video` / `video_lora` 传两张图并写入 `use_end_frame=true`；`wan22_video_v2` 传 `images=[start,end]`。提交前按“绘图链 + 每步原图换脸 + 视频”做合计额度预检，尾帧链任一步绘图/换脸失败都不提交视频，视频失败只按视频任务现有退款策略处理，已成功生成的前置隐藏任务历史不回滚且不可投稿。QQCC 链式生成只把第一个真实子任务按普通 Central 队列规则提交并允许 pending 取消；第 2 个及以后子任务都是同一链路的 continuation，统一以 `base_priority=100` 入队，不展示取消按钮，active task registry 写入 `user_cancel_allowed=false`。用户点旧消息上的取消按钮时，`cancel_user_task(...)` 会返回 `not_cancellable`，不调用 Central cancel，也不触发退款。单任务快速换脸、无尾帧 AI动图和单步 AI绘图保持普通 pending 可取消。`free_edit_v2` 提交 `pornmaster_flux2_single_edit`，旧 `free_edit` 无模型提交 `edit`，带模型提交 `img2img_lora` 并透传 catalog 默认强度；绘图任务透传每步自身 `negative_prompt`，为空时保持空负向。QQCC 直接生成链路中，快速换脸、AI绘图和 AI动图最终可见结果都提交 `allow_contribute=false`，结果按钮不展示投稿或公开入口；旧消息上的 `submit_gallery_*` / `public_share*` 在 QQCC callback 入口回复 `功能暂未开放`。最终可见结果的完成文案使用 QQCC 实际功能名或场景名，避免显示嵌套链路最后一个底层任务；结果 metadata 通过 `_qqcc_regenerate` 写入 History `extra_outputs`，展示层据此追加 `qqcc_regenerate:<task_id>` 的 `重新生成` 按钮。QQCC 重生成 callback 会校验本人历史、下载原始用户输入、按当前配置重建 quick image/video 提交计划并重新做额度检查；场景禁用/删除或历史缺少原图时只回复失败，不进入 worker。中间绘图、原图换脸和视频尾帧链路也均隐藏且不可投稿。新增配置仍复用 `runtime_checkpoints` 的 `qqcc_lazy_bot_config:v1`，不新增 workflow、RunPod profile 或数据库表。
+关闭功能后，QQCC Bot 会隐藏新菜单按钮，并在旧 reply keyboard / 旧 callback 入口回复 `功能暂未开放`，不提交新任务。`quick_faceswap` 关闭后，旧 `random_faceswap_again` 也必须拒绝继续提交。AI 动图每个场景的时长由后台固定，用户在 Bot 中只选择画质；画质只受用户权限过滤，仍保持 `1024p` 与 `10s` 不能同时选择。QQCC draw/filter/video 场景正负提示词只来自场景自身 `prompt` / `negative_prompt`，只作用于 QQCC Bot，主 Bot 不受影响。无尾帧来源时，动图 `image_to_video` 无模型提交 `custom_video`，带模型提交 `video_lora` 并透传 `lora_name`；动图 `wan22_video_v2` 提交 `wan22_video_v2`，使用视频场景提示词、负面提示词、固定时长和用户画质，负面提示词为空时保持 Wan22 现有默认负向归一。配置尾帧来源时，用户仍只发送 1 张图；Bot 会先按被引用 AI绘图场景的完整后处理链串行提交隐藏绘图或滤镜任务，每步使用该场景自己的 `negative_prompt`，链内每个开启 `original_face_swap_enabled` 的步骤都会在本步生成后插入内部原图换脸，成功后下载最终图作为尾帧，再以用户原图和生成尾帧提交首尾帧视频；最终视频仍只使用视频场景自己的 `negative_prompt`。旧 `custom_video` / `video_lora` 传两张图并写入 `use_end_frame=true`；`wan22_video_v2` 传 `images=[start,end]`。提交前按“绘图/滤镜链 + 每步原图换脸 + 视频”做合计额度预检，尾帧链任一步生成/换脸失败都不提交视频，视频失败只按视频任务现有退款策略处理，已成功生成的前置隐藏任务历史不回滚且不可投稿。QQCC 链式生成只把第一个真实子任务按普通 Central 队列规则提交并允许 pending 取消；第 2 个及以后子任务都是同一链路的 continuation，统一以 `base_priority=100` 入队，不展示取消按钮，active task registry 写入 `user_cancel_allowed=false`。用户点旧消息上的取消按钮时，`cancel_user_task(...)` 会返回 `not_cancellable`，不调用 Central cancel，也不触发退款。单任务快速换脸、无尾帧 AI动图、单步 AI绘图和单步 AI滤镜保持普通 pending 可取消。`free_edit_v2` 提交 `pornmaster_flux2_single_edit`，旧 `free_edit` 无模型提交 `edit`，带模型提交 `img2img_lora` 并透传 catalog 默认强度；绘图/滤镜任务透传每步自身 `negative_prompt`，为空时保持空负向。QQCC 直接生成链路中，快速换脸、AI绘图、AI滤镜和 AI动图最终可见结果都提交 `allow_contribute=false`，结果按钮不展示投稿或公开入口；旧消息上的 `submit_gallery_*` / `public_share*` 在 QQCC callback 入口回复 `功能暂未开放`。最终可见结果的完成文案使用 QQCC 实际功能名或场景名，避免显示嵌套链路最后一个底层任务；直接 AI滤镜显示滤镜场景名，AI绘图套滤镜后处理仍显示原 AI绘图场景名。结果 metadata 通过 `_qqcc_regenerate` 写入 History `extra_outputs`，展示层据此追加 `qqcc_regenerate:<task_id>` 的 `重新生成` 按钮；metadata 新增 `scene_kind=draw|filter`，旧历史缺失时按 `draw` 兼容。QQCC 重生成 callback 会校验本人历史、下载原始用户输入、按当前配置重建 quick image/video 提交计划并重新做额度检查；场景禁用/删除或历史缺少原图时只回复失败，不进入 worker。中间绘图、原图换脸和视频尾帧链路也均隐藏且不可投稿。新增配置仍复用 `runtime_checkpoints` 的 `qqcc_lazy_bot_config:v1`，不新增 workflow、RunPod profile 或数据库表。
 
 注册的 FSM 只允许：
 - `get_quick_image_fsm_handler()`
@@ -78,19 +84,19 @@ QQCC Config Web 使用独立后台账号，不复用 Dashboard 管理员 token�
 
 ## 3. 代码入口
 - `qqcc_bot/main.py`：独立启动入口，读取 `QQCC_BOT_TOKEN` 或 `QQCC_BOT_TOKEN_TEST`，设置 `bot_client_type=bot:qqcc`，注册最小 handler 集。
-- `qqcc_bot/keyboards.py`：QQCC 专用主菜单、旧 P 图兼容键盘、`AI绘图` / `AI动图` inline 场景菜单。
+- `qqcc_bot/keyboards.py`：QQCC 专用主菜单、旧 P 图兼容键盘、`AI绘图` / `AI滤镜` / `AI动图` inline 场景菜单。
 - `qqcc_bot/commands.py`：QQCC `/start` 与 `/cancel`，复用用户创建和准入逻辑，返回简化菜单。
-- `qqcc_bot/prompt_handlers.py`：只路由旧 `menu.photo_edit` 禁用提示、`qqcc.menu.ai_draw`、`menu.video_edit`、`qqcc.menu.market`、`menu.main_menu`、`menu.back_main` 与 `menu.open_main_bot`。
+- `qqcc_bot/prompt_handlers.py`：只路由旧 `menu.photo_edit` 禁用提示、`qqcc.menu.ai_draw`、`qqcc.menu.ai_filter`、`menu.video_edit`、`qqcc.menu.market`、`menu.main_menu`、`menu.back_main` 与 `menu.open_main_bot`。
 - `qqcc_bot/gallery_market.py`：QQCC 专用修仙市集 facade，负责 `qg:` callback 注册、分页加载、Gallery file_id 缓存发送和 Web handoff。
 - `qqcc_bot/gallery_market_view.py`：市集菜单、帖子 caption、互动/apply 按钮 view-model。
 - `qqcc_bot/gallery_market_interactions.py`：点赞/点踩 callback 与 caption 计数更新。
 - `qqcc_bot/gallery_market_apply.py`：轻量一键应用 session、图片下载、原生单图提交和失败临时文件清理。
 - `qqcc_bot/regeneration_callback.py`：QQCC `qqcc_regenerate:<task_id>` callback，负责从本人 History 准备同功能重生成、额度检查、后台启动和失败临时文件清理；不要把重生成逻辑写回 FSM。
 - `qqcc_bot/callback_handler.py`：只导入任务取消、结果评分、随机换脸再来一张、QQCC 市集等必要 callback 注册模块，并在导入后校验 QQCC 必需 callback prefix manifest；旧投稿/公开分享 callback 在这里直接拒绝，不进入共享 Gallery 投稿或公开处理。
-- `src/handlers/fsm/quick_image_fsm.py`：在 `bot_client_type=bot:qqcc` 时承接 `qqcc.menu.quick_faceswap` 进入单图随机换脸，并承接 `qdraw_scene:<id>` 进入 AI绘图单图提交流程；FSM 只负责 Telegram 状态、图片接收、额度检查和回复。主 Bot 的旧 `快速脱衣` / `快速自慰` / `快速换脸` 文本入口只回复 QQCC 懒人 Bot 跳转或入口未配置提示，不提交任务。
+- `src/handlers/fsm/quick_image_fsm.py`：在 `bot_client_type=bot:qqcc` 时承接 `qqcc.menu.quick_faceswap` 进入单图随机换脸，并承接 `qdraw_scene:<id>` / `qfilter_scene:<id>` 进入 AI绘图或 AI滤镜单图提交流程；FSM 只负责 Telegram 状态、图片接收、额度检查和回复。主 Bot 的旧 `快速脱衣` / `快速自慰` / `快速换脸` / `AI滤镜` 文本入口只回复 QQCC 懒人 Bot 跳转或入口未配置提示，不提交任务。
 - `src/handlers/fsm/quick_video_fsm.py`：在 `bot_client_type=bot:qqcc` 时承接 `qvid_scene:<id>`，按场景 engine 提交旧图生视频或 `wan22_video_v2`；配置 `end_frame_draw_scene_id` 时先复用对应 AI绘图场景的完整后处理链生成隐藏尾帧，再提交首尾帧视频。主 Bot 的旧 `menu.video_edit_*` 文本入口和 `qvid_*` callback 只回复 QQCC 懒人 Bot 跳转或入口未配置提示，不提交任务。
-- `src/services/qqcc_draw_chain_service.py`：QQCC AI绘图链共享 helper，负责解析无环链、计算链路费用、串行执行绘图/原图换脸并复用中间产物；直接 AI绘图和 AI动图尾帧共用这里的 `original_face_swap_enabled` 语义，并在真实子任务维度标记首任务可取消、后续 continuation 不可取消且 `base_priority=100`。
-- `src/services/quick_image_submission_service.py`：Quick Image / QQCC AI绘图提交计划事实源，负责随机换脸模板过滤、QQCC draw scene engine 分支、后处理链成本合计和最终 image payload；旧 `WAIT_UNDRESS_METHOD` 选择态已清理，`i2i_draw` payload 仅保留兼容。
+- `src/services/qqcc_draw_chain_service.py`：QQCC AI绘图/AI滤镜链共享 helper，负责解析 `draw -> draw...`、`draw -> filter` 和直接 `filter` 链、计算链路费用、串行执行绘图/滤镜/原图换脸并复用中间产物；直接 AI绘图、直接 AI滤镜和 AI动图尾帧共用这里的 `original_face_swap_enabled` 语义，并在真实子任务维度标记首任务可取消、后续 continuation 不可取消且 `base_priority=100`。
+- `src/services/quick_image_submission_service.py`：Quick Image / QQCC AI绘图/AI滤镜提交计划事实源，负责随机换脸模板过滤、QQCC draw/filter scene engine 分支、后处理链成本合计、`scene_kind` metadata 和最终 image payload；旧 `WAIT_UNDRESS_METHOD` 选择态已清理，`i2i_draw` payload 仅保留兼容。
 - `src/services/quick_video_submission_service.py`：Quick Video / QQCC AI动图提交计划事实源，负责 QQCC video scene engine 分支、尾帧绘图链成本合计和最终 video payload；FSM 只保留 Telegram 状态和额度/回复 orchestration。
 - `src/services/qqcc_regenerate_metadata.py`：QQCC 结果重生成 metadata 与 callback prefix 事实源，统一 `_qqcc_regenerate` 结构，供 History 持久化和结果按钮展示层共用。
 - `src/services/qqcc_regeneration_service.py`：QQCC 结果重生成准备 service，负责校验本人 History、下载原始用户输入、按当前 QQCC 配置重建 quick image/video 提交计划和复用原结果展示名。
@@ -223,19 +229,20 @@ pytest tests/handlers/test_fsm_state_priority.py -q
 
 QQCC 快速入口至少覆盖：
 - 主业务 Bot 主菜单展示 `懒人bot`、`图片换脸` 与 `视频生视频`，不展示旧 `修仙市集` 或 `视频创作`；点击 `懒人bot` 或旧 `修仙市集` 文本回复前往 QQCC 的 inline URL 按钮。
-- 主业务 Bot `图片换脸` 二级菜单只展示 `快速换脸`、`随机换脸` 与返回主菜单；旧 `快速脱衣`、`快速自慰`、旧 `AI绘图` / `AI动图` / `快速换脸` 文本入口、旧动图文本入口和主 Bot 上的 `qvid_*` callback 回复 QQCC 懒人 Bot inline 跳转或入口未配置提示，且不提交任务。
-- `/start` 主菜单默认展示 `快速换脸`、`AI绘图`、`AI动图`，不展示旧 `快速脱衣` 或 `懒人P图`。
+- 主业务 Bot `图片换脸` 二级菜单只展示 `快速换脸`、`随机换脸` 与返回主菜单；旧 `快速脱衣`、`快速自慰`、旧 `AI绘图` / `AI滤镜` / `AI动图` / `快速换脸` 文本入口、旧动图文本入口和主 Bot 上的 `qvid_*` callback 回复 QQCC 懒人 Bot inline 跳转或入口未配置提示，且不提交任务。
+- `/start` 主菜单默认展示 `快速换脸`、`AI绘图`、`AI动图`，不展示旧 `快速脱衣`、`懒人P图` 或空场景 `AI滤镜`；配置有效 `filter_scenes` 后展示 `AI滤镜`，功能行顺序为 `AI绘图 / AI滤镜 / AI动图`。
 - `/start` 只返回简化主菜单，不额外发送跳转消息；主菜单包含非生成入口 `修仙市集` 与 `前往主bot`。
 - 配置 `QQCC_MAIN_BOT_URL` 或 `QQCC_MAIN_BOT_USERNAME` 时，点击 `前往主bot` 回复 inline URL 跳转按钮；未配置时回复入口未配置提示。
 - 点击主菜单 `快速换脸` 直接进入 quick image 单图随机换脸流程，发 1 张正脸图后自动匹配模板；不注册 `faceswap_fsm`。
-- 旧配置迁移后默认带 `快速自慰` 和 `快速脱衣` 两个普通预设，主菜单展示 `AI绘图`；点击后按三个一行展示 inline 场景按钮，点击 `qdraw_scene:<id>` 进入 quick image 发送图片步骤并按场景 engine、场景 `prompt` / `negative_prompt` 与后处理链提交 `pornmaster_flux2_single_edit` / `edit` / `img2img_lora`，只发送最终图；场景删除后旧 callback 回复 `功能暂未开放` 且不提交任务。
+- 旧配置迁移后默认带 `快速自慰` 和 `快速脱衣` 两个普通预设，主菜单展示 `AI绘图`；点击后按三个一行展示 inline 场景按钮，点击 `qdraw_scene:<id>` 进入 quick image 发送图片步骤并按场景 engine、场景 `prompt` / `negative_prompt`、绘图后处理或终止滤镜后处理链提交 `pornmaster_flux2_single_edit` / `edit` / `img2img_lora`，只发送最终图；场景删除后旧 callback 回复 `功能暂未开放` 且不提交任务。
+- `AI滤镜` 默认无场景不展示；配置有效 `filter_scenes` 后点击主菜单回复滤镜 inline 场景按钮，点击 `qfilter_scene:<id>` 进入 quick image 发送图片步骤并按单步滤镜场景提交。场景删除、禁用或主开关关闭后旧 callback 回复 `功能暂未开放` 且不提交任务。
 - 点击主菜单 `AI动图` 后，Bot 回复下方展示当前后台配置的 inline 场景按钮，默认第一行 3 个、第二行 2 个；点击 `qvid_scene:<id>` 进入 quick video 发送图片步骤。旧 `qvid_mode:*` 已发按钮兼容到对应场景，场景删除后回复 `功能暂未开放` 且不提交任务。
 - 点击主菜单 `修仙市集` 后展示 QQCC 专用类型菜单；浏览投稿时支持点赞、点踩、上一条/下一条、分类返回、一键应用或 Web 应用，不展示留言入口。
 - `修仙市集` 二次查看已缓存作品时优先用 Telegram file_id，file_id 失效后从当前 R2/S3 URL resolver 刷新；不能回退旧 legacy MinIO bytes 主路径。
 - Bot 原生应用必须传 `source_post_id` 且 `allow_contribute=False`，复杂模板必须跳 Web 深链，点击应用不直接增加 `applied_count`。
-- QQCC 自己生成的快速换脸、AI绘图和 AI动图结果不可投稿、不可公开；新结果不展示 `submit_gallery_*` / `public_share_request`，旧结果按钮也必须在 QQCC callback 入口拒绝。结果完成文案必须显示 `快速换脸` 或选中的 QQCC 绘图/动图场景名，结果按钮必须展示 `重新生成` 并能从本人历史重建同一功能提交。
+- QQCC 自己生成的快速换脸、AI绘图、AI滤镜和 AI动图结果不可投稿、不可公开；新结果不展示 `submit_gallery_*` / `public_share_request`，旧结果按钮也必须在 QQCC callback 入口拒绝。结果完成文案必须显示 `快速换脸` 或选中的 QQCC 绘图/滤镜/动图场景名，结果按钮必须展示 `重新生成` 并能从本人历史重建同一功能提交。
 - 旧 `快速脱衣`、旧 `懒人P图` 与旧 P 图子按钮回复 `功能暂未开放`，不提交任务。
 - 关闭任一 QQCC 配置开关后，新菜单隐藏对应按钮，旧按钮/旧 callback 回复 `功能暂未开放` 且不提交任务。
 - QQCC 动态场景 prompt、按钮名、固定时长、engine、LoRA 与尾帧来源配置生效时不影响主 Bot；Bot 发图后动图只展示画质选项和开始按钮，v2 系列不展示也不透传附加模型。
-- AI动图配置尾帧来源后，用户仍只发 1 张图片；额度预检使用绘图链加视频合计费用，尾帧绘图链隐藏执行且不可投稿，任一步失败都不提交视频，最终视频使用首尾帧提交。关闭主菜单 `AI绘图` 只影响直接入口，不影响已被动图场景引用的有效 `draw_scenes`。
-- 链式 AI绘图/AI动图只允许第一个真实子任务 pending 取消；后续 continuation 不展示取消按钮，用户取消入口返回不可取消，提交时使用 `base_priority=100`。
+- AI动图配置尾帧来源后，用户仍只发 1 张图片；额度预检使用绘图/滤镜链加视频合计费用，尾帧链隐藏执行且不可投稿，任一步失败都不提交视频，最终视频使用首尾帧提交。关闭主菜单 `AI绘图` 只影响直接入口，不影响已被动图场景引用的有效 `draw_scenes`；关闭 `AI滤镜` 只影响直接滤镜入口，不影响有效滤镜模板被 AI绘图后处理引用。
+- 链式 AI绘图/AI滤镜/AI动图只允许第一个真实子任务 pending 取消；后续 continuation 不展示取消按钮，用户取消入口返回不可取消，提交时使用 `base_priority=100`。

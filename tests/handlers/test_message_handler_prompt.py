@@ -111,12 +111,15 @@ def test_build_global_menu_filter_keeps_legacy_custom_video_text():
 def test_menu_route_registry_partitions_route_sources():
     assert "menu.video_lora" in menu_route_registry.FSM_MENU_KEYS
     assert "qqcc.menu.quick_faceswap" in menu_route_registry.FSM_MENU_KEYS
+    assert "qqcc.menu.ai_filter" in menu_route_registry.FSM_MENU_KEYS
     assert "menu.video_lora" in menu_route_registry.SPECIAL_TRANSLATION_ROUTE_KEYS
+    assert "qqcc.menu.ai_filter" in menu_route_registry.SPECIAL_TRANSLATION_ROUTE_KEYS
     assert (
         menu_route_registry.LEGACY_TEXT_ALIASES["🎬 自定义图生视频"]
         == "menu.custom_video"
     )
     assert menu_route_registry.LEGACY_TEXT_ALIASES["AI动图"] == "menu.video_edit"
+    assert menu_route_registry.LEGACY_TEXT_ALIASES["AI滤镜"] == "qqcc.menu.ai_filter"
 
 
 def test_menu_route_registry_builds_all_reverse_route_keys():
@@ -127,3 +130,4 @@ def test_menu_route_registry_builds_all_reverse_route_keys():
     assert "menu.profile" in route_keys
     assert "menu.video_to_video_replacement" in route_keys
     assert "qqcc.menu.market" in route_keys
+    assert "qqcc.menu.ai_filter" in route_keys

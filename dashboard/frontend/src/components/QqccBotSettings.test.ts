@@ -141,6 +141,7 @@ describe('QqccBotSettings', () => {
           quick_faceswap: true,
           photo_edit: true,
           ai_draw: true,
+          ai_filter: true,
           video_edit: false,
           market: true,
           main_bot_link: true,
@@ -169,6 +170,7 @@ describe('QqccBotSettings', () => {
             engine: 'free_edit',
             lora_name: '',
             postprocess_draw_scene_id: '',
+            postprocess_filter_scene_id: '',
             original_face_swap_enabled: false,
           },
           {
@@ -179,6 +181,7 @@ describe('QqccBotSettings', () => {
             engine: 'free_edit',
             lora_name: '',
             postprocess_draw_scene_id: '',
+            postprocess_filter_scene_id: '',
             original_face_swap_enabled: false,
           },
           {
@@ -189,6 +192,18 @@ describe('QqccBotSettings', () => {
             engine: 'free_edit_v2',
             lora_name: '',
             postprocess_draw_scene_id: '',
+            postprocess_filter_scene_id: '',
+            original_face_swap_enabled: false,
+          },
+        ],
+        filter_scenes: [
+          {
+            id: 'real_skin',
+            name: '真实质感',
+            prompt: 'real skin prompt',
+            negative_prompt: 'plastic skin',
+            engine: 'free_edit_v2',
+            lora_name: '',
             original_face_swap_enabled: false,
           },
         ],
@@ -229,9 +244,11 @@ describe('QqccBotSettings', () => {
     expect(wrapper.text()).toContain('懒人Bot配置')
     expect(wrapper.text()).toContain('状态：开启')
     expect(wrapper.text()).toContain('快速换脸')
+    expect(wrapper.text()).toContain('AI滤镜')
     expect(wrapper.text()).toContain('修仙市集')
     expect(wrapper.text()).toContain('AI动图场景')
     expect(wrapper.text()).toContain('AI绘图场景')
+    expect(wrapper.text()).toContain('AI滤镜场景')
     expect(wrapper.text()).not.toContain('懒人P图')
     expect(wrapper.text()).not.toContain('脱衣方式')
     expect((wrapper.get('[data-testid="video-scene-name-0"]').element as HTMLInputElement).value).toBe('亲吻')
@@ -240,6 +257,8 @@ describe('QqccBotSettings', () => {
     expect((wrapper.get('[data-testid="draw-scene-name-1"]').element as HTMLInputElement).value).toBe('快速脱衣')
     expect((wrapper.get('[data-testid="draw-scene-name-2"]').element as HTMLInputElement).value).toBe('柔光写真')
     expect((wrapper.get('[data-testid="draw-scene-negative-prompt-2"]').element as HTMLTextAreaElement).value).toBe('soft light negative')
+    expect((wrapper.get('[data-testid="filter-scene-name-0"]').element as HTMLInputElement).value).toBe('真实质感')
+    expect((wrapper.get('[data-testid="filter-scene-negative-prompt-0"]').element as HTMLTextAreaElement).value).toBe('plastic skin')
     expect(wrapper.find('[data-testid="non-video-prompt-undress"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="non-video-prompt-masturbation"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="non-video-prompt-face_swap"]').exists()).toBe(true)
@@ -247,6 +266,7 @@ describe('QqccBotSettings', () => {
     expect(wrapper.find('[data-testid="config-video-scene-end-frame-0"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="config-draw-scene-model-0"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="config-draw-scene-postprocess-0"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="config-filter-scene-model-0"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('画质与时长')
   })
 
@@ -262,6 +282,9 @@ describe('QqccBotSettings', () => {
     await wrapper.get('[data-testid="draw-scene-name-2"]').setValue('柔光大片')
     await wrapper.get('[data-testid="draw-scene-prompt-2"]').setValue('new draw prompt')
     await wrapper.get('[data-testid="draw-scene-negative-prompt-2"]').setValue('  draw blur  ')
+    await wrapper.get('[data-testid="filter-scene-name-0"]').setValue('真实滤镜')
+    await wrapper.get('[data-testid="filter-scene-prompt-0"]').setValue('new filter prompt')
+    await wrapper.get('[data-testid="filter-scene-negative-prompt-0"]').setValue('  filter blur  ')
     await wrapper.get('[data-testid="non-video-prompt-face_swap"]').setValue('new face prompt')
     await wrapper.findAll('button').at(1)!.trigger('click')
     await flushPromises()
@@ -274,6 +297,7 @@ describe('QqccBotSettings', () => {
     expect(payload.prompts.undress).toBe('old prompt')
     expect(payload.prompts.face_swap).toBe('new face prompt')
     expect(payload.main_buttons.quick_faceswap).toBe(true)
+    expect(payload.main_buttons.ai_filter).toBe(true)
     expect(payload.main_buttons.quick_undress).toBe(false)
     expect(payload.main_buttons.photo_edit).toBe(false)
     expect(payload.main_buttons.video_edit).toBe(false)
@@ -299,6 +323,7 @@ describe('QqccBotSettings', () => {
         engine: 'free_edit',
         lora_name: '',
         postprocess_draw_scene_id: '',
+        postprocess_filter_scene_id: '',
         original_face_swap_enabled: false,
       },
       {
@@ -309,6 +334,7 @@ describe('QqccBotSettings', () => {
         engine: 'free_edit',
         lora_name: '',
         postprocess_draw_scene_id: '',
+        postprocess_filter_scene_id: '',
         original_face_swap_enabled: false,
       },
       {
@@ -319,6 +345,18 @@ describe('QqccBotSettings', () => {
         engine: 'free_edit_v2',
         lora_name: '',
         postprocess_draw_scene_id: '',
+        postprocess_filter_scene_id: '',
+        original_face_swap_enabled: false,
+      },
+    ])
+    expect(payload.filter_scenes).toEqual([
+      {
+        id: 'real_skin',
+        name: '真实滤镜',
+        prompt: 'new filter prompt',
+        negative_prompt: 'filter blur',
+        engine: 'free_edit_v2',
+        lora_name: '',
         original_face_swap_enabled: false,
       },
     ])
@@ -450,6 +488,29 @@ describe('QqccBotSettings', () => {
     expect(payload.draw_scenes[2].engine).toBe('free_edit_v2')
     expect(payload.draw_scenes[2].lora_name).toBe('')
     expect(payload.draw_scenes[2].postprocess_draw_scene_id).toBe('')
+    expect(payload.draw_scenes[2].postprocess_filter_scene_id).toBe('')
+  })
+
+  it('adds and removes dynamic filter scenes before saving', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="add-filter-scene"]').trigger('click')
+    expect((wrapper.get('[data-testid="filter-scene-negative-prompt-1"]').element as HTMLTextAreaElement).value).toBe('')
+    await wrapper.get('[data-testid="filter-scene-name-1"]').setValue('清晰增强')
+    await wrapper.get('[data-testid="filter-scene-prompt-1"]').setValue('sharp detail')
+    await wrapper.get('[data-testid="filter-scene-negative-prompt-1"]').setValue('waxy skin')
+    await wrapper.get('[data-testid="remove-filter-scene-0"]').trigger('click')
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
+    expect(payload.filter_scenes).toHaveLength(1)
+    expect(payload.filter_scenes[0].name).toBe('清晰增强')
+    expect(payload.filter_scenes[0].prompt).toBe('sharp detail')
+    expect(payload.filter_scenes[0].negative_prompt).toBe('waxy skin')
+    expect(payload.filter_scenes[0].engine).toBe('free_edit_v2')
+    expect(payload.filter_scenes[0].lora_name).toBe('')
   })
 
   it('configures a video scene model and clears lora when v2 is selected', async () => {
@@ -499,6 +560,7 @@ describe('QqccBotSettings', () => {
     expect(wrapper.find('[data-testid="scene-lora-select"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="scene-end-frame-select"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="scene-postprocess-select"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="scene-postprocess-filter-select"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="scene-original-face-swap-switch"]').exists()).toBe(true)
   })
 
@@ -567,7 +629,25 @@ describe('QqccBotSettings', () => {
     const softLightScene = payload.draw_scenes.find((scene: { id: string }) => scene.id === 'soft_light')!
     const animeScene = payload.draw_scenes.find((scene: { id: string }) => scene.id === 'anime_finish')!
     expect(softLightScene.postprocess_draw_scene_id).toBe('anime_finish')
+    expect(softLightScene.postprocess_filter_scene_id).toBe('')
     expect(animeScene.postprocess_draw_scene_id).toBe('')
+  })
+
+  it('configures a draw scene to use a filter scene as postprocess template', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="config-draw-scene-postprocess-2"]').trigger('click')
+    expect(wrapper.get('[data-testid="scene-postprocess-filter-select"]').text()).toContain('真实质感')
+    await wrapper.get('[data-testid="scene-postprocess-filter-select"]').setValue('real_skin')
+    await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
+    const softLightScene = payload.draw_scenes.find((scene: { id: string }) => scene.id === 'soft_light')!
+    expect(softLightScene.postprocess_draw_scene_id).toBe('')
+    expect(softLightScene.postprocess_filter_scene_id).toBe('real_skin')
   })
 
   it('configures a draw scene original face swap switch in the save payload', async () => {
@@ -683,6 +763,55 @@ describe('QqccBotSettings', () => {
     expect(softLightScene.postprocess_draw_scene_id).toBe('')
   })
 
+  it('clears a draw scene filter postprocess source when the referenced filter scene is removed', async () => {
+    apiMocks.fetchQqccBotConfig.mockResolvedValueOnce({
+      key: 'qqcc_lazy_bot_config:v1',
+      updated_at: '2026-06-26T12:00:00',
+      config: {
+        video_scenes: [
+          {
+            id: 'kiss',
+            name: '亲吻',
+            prompt: 'kissing prompt',
+            duration: '8s',
+            engine: 'image_to_video',
+            lora_name: '',
+            end_frame_draw_scene_id: '',
+          },
+        ],
+        draw_scenes: [
+          {
+            id: 'soft_light',
+            name: '柔光写真',
+            prompt: 'soft light prompt',
+            engine: 'free_edit_v2',
+            lora_name: '',
+            postprocess_draw_scene_id: '',
+            postprocess_filter_scene_id: 'real_skin',
+          },
+        ],
+        filter_scenes: [
+          {
+            id: 'real_skin',
+            name: '真实质感',
+            prompt: 'real skin prompt',
+            engine: 'free_edit_v2',
+            lora_name: '',
+          },
+        ],
+      },
+    })
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="remove-filter-scene-0"]').trigger('click')
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
+    expect(payload.draw_scenes[0].postprocess_filter_scene_id).toBe('')
+  })
+
   it('configures a draw scene to use legacy free edit with a lora model', async () => {
     const wrapper = mountSettings()
     await flushPromises()
@@ -700,6 +829,26 @@ describe('QqccBotSettings', () => {
     const softLightScene = payload.draw_scenes.find((scene: { id: string }) => scene.id === 'soft_light')!
     expect(softLightScene.engine).toBe('free_edit')
     expect(softLightScene.lora_name).toBe('qwen/YARN_1.0.safetensors')
+  })
+
+  it('configures a filter scene model and original face swap switch', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="config-filter-scene-model-0"]').trigger('click')
+    expect(wrapper.get('[data-testid="scene-model-modal"]').text()).toContain('模型配置')
+    expect(wrapper.find('[data-testid="scene-postprocess-select"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="scene-engine-select"]').setValue('free_edit')
+    await wrapper.get('[data-testid="scene-lora-select"]').setValue('qwen/YARN_1.0.safetensors')
+    await wrapper.get('[data-testid="filter-scene-original-face-swap-switch"]').setValue(true)
+    await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
+    expect(payload.filter_scenes[0].engine).toBe('free_edit')
+    expect(payload.filter_scenes[0].lora_name).toBe('qwen/YARN_1.0.safetensors')
+    expect(payload.filter_scenes[0].original_face_swap_enabled).toBe(true)
   })
 
   it('blocks saving incomplete dynamic video scenes', async () => {
@@ -724,5 +873,17 @@ describe('QqccBotSettings', () => {
 
     expect(apiMocks.updateQqccBotConfig).not.toHaveBeenCalled()
     expect(antMocks.error).toHaveBeenCalledWith('请完善AI绘图场景的按钮名称和提示词')
+  })
+
+  it('blocks saving incomplete dynamic filter scenes', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="filter-scene-prompt-0"]').setValue('')
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.updateQqccBotConfig).not.toHaveBeenCalled()
+    expect(antMocks.error).toHaveBeenCalledWith('请完善AI滤镜场景的按钮名称和提示词')
   })
 })

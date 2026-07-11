@@ -3,7 +3,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.constants import MODE_IMAGE_TO_VIDEO, MODE_RANDOM_FACESWAP
+from src.constants import (
+    MODE_IMAGE_TO_VIDEO,
+    MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+    MODE_RANDOM_FACESWAP,
+)
 from src.services.qqcc_config_service import SCENE_PRESET_VERSION, normalize_qqcc_config
 from src.services.qqcc_regeneration_service import (
     QQCCRegenerationError,
@@ -126,6 +130,55 @@ async def test_prepare_qqcc_regeneration_rebuilds_quick_video_scene(monkeypatch)
         index=0,
         name_hint="qqcc_regenerate_video",
     )
+
+
+@pytest.mark.asyncio
+async def test_prepare_qqcc_regeneration_rebuilds_quick_image_filter_scene(monkeypatch):
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "filter_scenes": [
+                {
+                    "id": "real_skin",
+                    "name": "真实质感",
+                    "prompt": "filter prompt",
+                    "negative_prompt": "plastic skin",
+                }
+            ],
+        }
+    )
+    history = SimpleNamespace(
+        type=MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+        input_file="history/original.png",
+        extra_outputs={
+            "_qqcc_regenerate": {
+                "kind": "quick_image",
+                "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+                "scene_id": "real_skin",
+                "scene_kind": "filter",
+                "display_mode_name": "真实质感",
+            }
+        },
+    )
+    download_input = AsyncMock(return_value="/tmp/original.png")
+    monkeypatch.setattr(
+        "src.services.qqcc_regeneration_service.download_history_input_file_to_fsm_temp",
+        download_input,
+    )
+
+    submission = await prepare_qqcc_regeneration_submission(
+        task_id="task-filter",
+        telegram_user_id=123,
+        username="tester",
+        load_history_func=AsyncMock(return_value=history),
+        load_config_func=AsyncMock(return_value=config),
+    )
+
+    assert submission.kind == "quick_image"
+    assert submission.display_mode_name == "真实质感"
+    assert submission.plan.kind == QuickImageSubmissionKind.DRAW_CHAIN
+    assert submission.plan.draw_chain[0]["id"] == "real_skin"
+    assert submission.plan.result_meta == history.extra_outputs
 
 
 @pytest.mark.asyncio

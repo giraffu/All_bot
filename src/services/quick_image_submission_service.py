@@ -19,11 +19,15 @@ from src.constants import (
 from src.lora_catalog import get_lora_default_strength
 from src.services.qqcc_config_service import (
     get_qqcc_draw_scene,
+    get_qqcc_filter_scene,
     has_enabled_qqcc_draw_scenes,
+    has_enabled_qqcc_filter_scenes,
     is_qqcc_main_button_enabled,
     resolve_qqcc_prompt,
 )
 from src.services.qqcc_draw_chain_service import (
+    QQCC_SCENE_KIND_DRAW,
+    QQCC_SCENE_KIND_FILTER,
     calculate_qqcc_draw_chain_cost,
     execute_qqcc_draw_scene_chain,
     resolve_qqcc_draw_chain_prompts,
@@ -119,6 +123,14 @@ def is_qqcc_quick_image_mode_enabled(config: dict[str, Any], mode: str) -> bool:
             config, "ai_draw"
         ) and has_enabled_qqcc_draw_scenes(config)
     return False
+
+
+def is_qqcc_quick_filter_mode_enabled(config: dict[str, Any], mode: str) -> bool:
+    return (
+        mode in QQCC_AI_DRAW_TASK_TYPES
+        and is_qqcc_main_button_enabled(config, "ai_filter")
+        and has_enabled_qqcc_filter_scenes(config)
+    )
 
 
 def list_quick_faceswap_template_files(
@@ -257,20 +269,33 @@ def _build_qqcc_draw_chain_plan(
     qqcc_config: dict[str, Any],
     image_path: str | None,
 ) -> QuickImageSubmissionPlan | QuickImageSubmissionReject:
-    scene = get_qqcc_draw_scene(qqcc_config, fsm_data.get("scene_id"))
+    scene_kind = str(fsm_data.get("scene_kind") or QQCC_SCENE_KIND_DRAW).strip()
+    if scene_kind == QQCC_SCENE_KIND_FILTER:
+        scene = get_qqcc_filter_scene(qqcc_config, fsm_data.get("scene_id"))
+    else:
+        scene_kind = QQCC_SCENE_KIND_DRAW
+        scene = get_qqcc_draw_scene(qqcc_config, fsm_data.get("scene_id"))
     if scene is None:
         return QuickImageSubmissionReject(
             QuickImageSubmissionRejectReason.FEATURE_DISABLED
         )
 
-    draw_chain = resolve_qqcc_draw_scene_chain(qqcc_config, scene)
+    draw_chain = resolve_qqcc_draw_scene_chain(
+        qqcc_config,
+        scene,
+        scene_kind=scene_kind,
+    )
     if not draw_chain:
         return QuickImageSubmissionReject(
             QuickImageSubmissionRejectReason.FEATURE_DISABLED
         )
 
     mode = resolve_qqcc_draw_scene_task_type(draw_chain[0])
-    if not is_qqcc_quick_image_mode_enabled(qqcc_config, mode):
+    if scene_kind == QQCC_SCENE_KIND_FILTER:
+        enabled = is_qqcc_quick_filter_mode_enabled(qqcc_config, mode)
+    else:
+        enabled = is_qqcc_quick_image_mode_enabled(qqcc_config, mode)
+    if not enabled:
         return QuickImageSubmissionReject(
             QuickImageSubmissionRejectReason.FEATURE_DISABLED
         )
@@ -293,6 +318,7 @@ def _build_qqcc_draw_chain_plan(
             kind=QQCC_REGENERATE_KIND_QUICK_IMAGE,
             mode=mode,
             scene_id=scene_id,
+            scene_kind=scene_kind,
             display_mode_name=display_mode_name,
         ),
     )

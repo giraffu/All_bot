@@ -5,6 +5,7 @@
     "refresh": "Refresh Status",
     "photo_edit_hint": "🖼️ **Image Face Swap**\nPlease select a feature:",
     "ai_draw_hint": "🎨 **AI Drawing**\nPlease select a drawing scenario:",
+    "ai_filter_hint": "🪄 **AI Filter**\nPlease select a filter scenario:",
     "video_edit_hint": "🎬 **AI GIF Mode**\nPlease select a scenario:",
     "video_to_video_hint": "🎬 **Video-to-Video**\nPlease select a feature:",
     "gallery_hint": "🏆 **Gallery**\n\nPlease select a category:",
@@ -80,6 +81,7 @@
     "menu": {
       "quick_faceswap": "Quick Faceswap",
       "ai_draw": "AI Drawing",
+      "ai_filter": "AI Filter",
       "video_edit": "AI GIF",
       "market": "Cultivation Market"
     },

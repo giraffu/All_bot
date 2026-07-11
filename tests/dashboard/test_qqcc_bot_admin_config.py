@@ -13,6 +13,7 @@ from src.services.qqcc_config_service import (
     VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
     VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
     get_enabled_qqcc_draw_scenes,
+    get_enabled_qqcc_filter_scenes,
     get_enabled_qqcc_video_scenes,
     load_qqcc_config_payload,
     normalize_qqcc_config,
@@ -60,6 +61,8 @@ def test_normalize_qqcc_config_returns_default_shape_for_empty_config():
     assert config["main_buttons"]["quick_faceswap"] is True
     assert config["main_buttons"]["photo_edit"] is False
     assert config["main_buttons"]["ai_draw"] is True
+    assert config["main_buttons"]["ai_filter"] is True
+    assert config["filter_scenes"] == []
     assert config["draw_scenes"] == [
         {
             "id": "quick_masturbation",
@@ -69,6 +72,7 @@ def test_normalize_qqcc_config_returns_default_shape_for_empty_config():
             "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
             "lora_name": "",
             "postprocess_draw_scene_id": "",
+            "postprocess_filter_scene_id": "",
             "original_face_swap_enabled": False,
         },
         {
@@ -79,6 +83,7 @@ def test_normalize_qqcc_config_returns_default_shape_for_empty_config():
             "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
             "lora_name": "",
             "postprocess_draw_scene_id": "",
+            "postprocess_filter_scene_id": "",
             "original_face_swap_enabled": False,
         },
     ]
@@ -152,6 +157,7 @@ def test_normalize_qqcc_config_drops_unknown_keys_and_keeps_empty_prompt_for_fal
         "quick_faceswap": True,
         "photo_edit": False,
         "ai_draw": True,
+        "ai_filter": True,
         "video_edit": True,
         "market": True,
         "main_bot_link": True,
@@ -437,6 +443,81 @@ def test_normalize_qqcc_config_validates_draw_postprocess_reference():
     assert scenes_by_id["missing"]["postprocess_draw_scene_id"] == ""
 
 
+def test_normalize_qqcc_config_validates_filter_scenes_and_draw_filter_reference():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "filter_scenes": [
+                {
+                    "id": "real_skin",
+                    "name": "真实质感",
+                    "prompt": "  keep identity, improve skin texture  ",
+                    "negative_prompt": "  waxy skin  ",
+                    "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
+                    "lora_name": "qwen/YARN_1.0.safetensors",
+                    "original_face_swap_enabled": True,
+                },
+                {
+                    "id": "v2_filter",
+                    "name": "清晰增强",
+                    "prompt": "sharp detail",
+                    "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+                    "lora_name": "qwen/YARN_1.0.safetensors",
+                },
+                {"id": "empty_prompt", "name": "空提示", "prompt": ""},
+            ],
+            "draw_scenes": [
+                {
+                    "id": "base",
+                    "name": "基础绘图",
+                    "prompt": "base prompt",
+                    "postprocess_filter_scene_id": "real_skin",
+                },
+                {
+                    "id": "missing",
+                    "name": "缺失滤镜",
+                    "prompt": "missing prompt",
+                    "postprocess_filter_scene_id": "removed_filter",
+                },
+                {
+                    "id": "draw_wins",
+                    "name": "绘图优先",
+                    "prompt": "draw wins prompt",
+                    "postprocess_draw_scene_id": "base",
+                    "postprocess_filter_scene_id": "real_skin",
+                },
+            ],
+        }
+    )
+
+    filters = get_enabled_qqcc_filter_scenes(config)
+    assert filters == [
+        {
+            "id": "real_skin",
+            "name": "真实质感",
+            "prompt": "keep identity, improve skin texture",
+            "negative_prompt": "waxy skin",
+            "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
+            "lora_name": "qwen/YARN_1.0.safetensors",
+            "original_face_swap_enabled": True,
+        },
+        {
+            "id": "v2_filter",
+            "name": "清晰增强",
+            "prompt": "sharp detail",
+            "negative_prompt": "",
+            "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+            "lora_name": "",
+            "original_face_swap_enabled": False,
+        },
+    ]
+    scenes_by_id = {scene["id"]: scene for scene in get_enabled_qqcc_draw_scenes(config)}
+    assert scenes_by_id["base"]["postprocess_filter_scene_id"] == "real_skin"
+    assert scenes_by_id["missing"]["postprocess_filter_scene_id"] == ""
+    assert scenes_by_id["draw_wins"]["postprocess_draw_scene_id"] == "base"
+    assert scenes_by_id["draw_wins"]["postprocess_filter_scene_id"] == ""
+
+
 def test_normalize_qqcc_config_breaks_draw_postprocess_cycles():
     config = normalize_qqcc_config(
         {
@@ -518,6 +599,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_draw_scenes():
             "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
             "lora_name": "",
             "postprocess_draw_scene_id": "",
+            "postprocess_filter_scene_id": "",
             "original_face_swap_enabled": False,
         },
         {
@@ -528,6 +610,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_draw_scenes():
             "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
             "lora_name": "",
             "postprocess_draw_scene_id": "",
+            "postprocess_filter_scene_id": "",
             "original_face_swap_enabled": False,
         },
         {
@@ -538,6 +621,7 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_draw_scenes():
             "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
             "lora_name": "",
             "postprocess_draw_scene_id": "",
+            "postprocess_filter_scene_id": "",
             "original_face_swap_enabled": False,
         },
     ]
@@ -768,6 +852,7 @@ async def test_update_qqcc_config_router_preserves_dynamic_draw_scenes():
             "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
             "lora_name": "qwen/YARN_1.0.safetensors",
             "postprocess_draw_scene_id": "anime",
+            "postprocess_filter_scene_id": "",
             "original_face_swap_enabled": True,
         },
         {
@@ -778,6 +863,52 @@ async def test_update_qqcc_config_router_preserves_dynamic_draw_scenes():
             "engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
             "lora_name": "",
             "postprocess_draw_scene_id": "",
+            "postprocess_filter_scene_id": "",
             "original_face_swap_enabled": False,
         },
     ]
+
+
+@pytest.mark.asyncio
+async def test_update_qqcc_config_router_preserves_filter_scenes_and_draw_filter_reference():
+    db = _FakeSession()
+    payload = QqccBotConfigRequest(
+        scene_preset_version=SCENE_PRESET_VERSION,
+        main_buttons={"ai_filter": True},
+        filter_scenes=[
+            {
+                "id": "real_skin",
+                "name": "真实质感",
+                "prompt": "filter prompt",
+                "negative_prompt": "plastic skin",
+                "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
+                "lora_name": "qwen/YARN_1.0.safetensors",
+                "original_face_swap_enabled": True,
+            }
+        ],
+        draw_scenes=[
+            {
+                "id": "soft_light",
+                "name": "柔光写真",
+                "prompt": "custom draw prompt",
+                "postprocess_filter_scene_id": "real_skin",
+            }
+        ],
+    )
+
+    response = await router_module.update_qqcc_config(payload, db=db)
+
+    assert db.committed is True
+    assert response["config"]["main_buttons"]["ai_filter"] is True
+    assert response["config"]["filter_scenes"] == [
+        {
+            "id": "real_skin",
+            "name": "真实质感",
+            "prompt": "filter prompt",
+            "negative_prompt": "plastic skin",
+            "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
+            "lora_name": "qwen/YARN_1.0.safetensors",
+            "original_face_swap_enabled": True,
+        }
+    ]
+    assert response["config"]["draw_scenes"][0]["postprocess_filter_scene_id"] == "real_skin"

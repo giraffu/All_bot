@@ -27,7 +27,10 @@ from src.handlers.fsm import (
     quick_image_fsm,
     quick_video_fsm,
 )
-from src.handlers.fsm.quick_draw_callback_data import build_quick_draw_scene_callback_data
+from src.handlers.fsm.quick_draw_callback_data import (
+    build_quick_draw_scene_callback_data,
+    build_quick_filter_scene_callback_data,
+)
 from src.services.qqcc_config_service import (
     QQCC_SCENE_PRESET_PROMPTS,
     normalize_qqcc_config,
@@ -527,6 +530,7 @@ async def test_qqcc_ai_draw_scene_callback_waits_for_image(monkeypatch):
         "cost": 2,
         "image_path": None,
         "scene_id": "soft_light",
+        "scene_kind": "draw",
         "mode_name": "柔光写真",
         "prompt_override": "soft light prompt",
         "engine": "free_edit_v2",
@@ -535,6 +539,62 @@ async def test_qqcc_ai_draw_scene_callback_waits_for_image(monkeypatch):
     answer_mock.assert_awaited_once()
     reply_mock.assert_awaited_once()
     assert "柔光写真" in reply_mock.await_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_qqcc_ai_filter_scene_callback_waits_for_image(monkeypatch):
+    reply_mock = AsyncMock()
+    answer_mock = AsyncMock()
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": 1,
+            "filter_scenes": [
+                {
+                    "id": "real_skin",
+                    "name": "真实质感",
+                    "prompt": "real skin prompt",
+                }
+            ],
+        }
+    )
+
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(quick_image_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "load_runtime_qqcc_config",
+        AsyncMock(return_value=config),
+    )
+
+    user = _build_user()
+    callback_message = SimpleNamespace(chat_id=10001)
+    update = SimpleNamespace(
+        effective_user=user,
+        effective_chat=SimpleNamespace(id=10001),
+        message=None,
+        edited_message=None,
+        callback_query=SimpleNamespace(
+            data=build_quick_filter_scene_callback_data("real_skin"),
+            message=callback_message,
+            answer=answer_mock,
+            from_user=user,
+        ),
+    )
+    context = SimpleNamespace(
+        user_data={},
+        bot_data={"bot_client_type": "bot:qqcc"},
+        lang="zh",
+    )
+
+    result = await quick_image_fsm.start_quick_image(update, context)
+
+    assert result == quick_image_fsm.QuickImageState.WAIT_IMAGE
+    assert context.user_data["quick_image_data"]["scene_id"] == "real_skin"
+    assert context.user_data["quick_image_data"]["scene_kind"] == "filter"
+    assert context.user_data["quick_image_data"]["mode_name"] == "真实质感"
+    answer_mock.assert_awaited_once()
+    reply_mock.assert_awaited_once()
+    assert "真实质感" in reply_mock.await_args.args[1]
 
 
 @pytest.mark.asyncio
@@ -971,7 +1031,7 @@ async def test_qqcc_ai_draw_scene_runs_postprocess_chain_before_final_result(mon
     assert calls[1]["prompt"] == "polish prompt"
     assert calls[1]["images"] == ["/tmp/soft-light-output.png"]
     assert calls[1]["send_result"] is True
-    assert calls[1]["allow_contribute"] is True
+    assert calls[1]["allow_contribute"] is False
 
 
 @pytest.mark.asyncio

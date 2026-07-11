@@ -23,18 +23,23 @@ from src.handlers.conversation_states import QuickImageState
 from src.handlers.prompt_router import GLOBAL_REVERSE_MAP, is_global_menu_command
 from src.handlers.fsm.quick_draw_callback_data import (
     QUICK_DRAW_SCENE_CALLBACK_PATTERN,
+    QUICK_FILTER_SCENE_CALLBACK_PATTERN,
     parse_quick_draw_scene_callback_data,
+    parse_quick_filter_scene_callback_data,
 )
 from src.handlers.message_handler_menu import reply_with_lazy_bot_payload
 from src.services.task_service_generation_image import process_standard_generation_task as process_generation_task
 from src.services.permission_service import permission_service
 from src.services.qqcc_draw_chain_service import (
+    QQCC_SCENE_KIND_DRAW,
+    QQCC_SCENE_KIND_FILTER,
     calculate_qqcc_draw_chain_cost,
     resolve_qqcc_draw_scene_chain,
     resolve_qqcc_draw_scene_task_type as _resolve_qqcc_draw_scene_task_type,
 )
 from src.services.qqcc_config_service import (
     get_qqcc_draw_scene,
+    get_qqcc_filter_scene,
     is_qqcc_main_button_enabled,
     load_runtime_qqcc_config,
 )
@@ -53,6 +58,7 @@ from src.services.quick_image_submission_service import (
     QuickImageSubmissionReject,
     QuickImageSubmissionRejectReason,
     build_quick_image_submission_plan,
+    is_qqcc_quick_filter_mode_enabled,
     is_qqcc_quick_image_mode_enabled,
     list_quick_faceswap_template_files,
     run_quick_image_submission_plan,
@@ -174,12 +180,13 @@ def _resolve_image_file_id(message) -> str | None:
     return None
 
 
-async def _start_qqcc_draw_scene(
+async def _start_qqcc_image_scene(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     *,
     qqcc_config: dict | None,
     scene_id: str | None,
+    scene_kind: str,
 ) -> int:
     query = update.callback_query
     if query:
@@ -188,24 +195,38 @@ async def _start_qqcc_draw_scene(
             cache_time=2,
         )
 
+    main_button_key = "ai_filter" if scene_kind == QQCC_SCENE_KIND_FILTER else "ai_draw"
     if qqcc_config is None or not is_qqcc_main_button_enabled(
-        qqcc_config, "ai_draw"
+        qqcc_config, main_button_key
     ):
         await _reply_qqcc_feature_disabled(update, context)
         return ConversationHandler.END
 
-    scene = get_qqcc_draw_scene(qqcc_config, scene_id)
+    scene = (
+        get_qqcc_filter_scene(qqcc_config, scene_id)
+        if scene_kind == QQCC_SCENE_KIND_FILTER
+        else get_qqcc_draw_scene(qqcc_config, scene_id)
+    )
     if scene is None:
         await _reply_qqcc_feature_disabled(update, context)
         return ConversationHandler.END
 
-    draw_chain = resolve_qqcc_draw_scene_chain(qqcc_config, scene)
+    draw_chain = resolve_qqcc_draw_scene_chain(
+        qqcc_config,
+        scene,
+        scene_kind=scene_kind,
+    )
     if not draw_chain:
         await _reply_qqcc_feature_disabled(update, context)
         return ConversationHandler.END
 
     mode = _resolve_qqcc_draw_scene_task_type(draw_chain[0])
-    if not is_qqcc_quick_image_mode_enabled(qqcc_config, mode):
+    enabled = (
+        is_qqcc_quick_filter_mode_enabled(qqcc_config, mode)
+        if scene_kind == QQCC_SCENE_KIND_FILTER
+        else is_qqcc_quick_image_mode_enabled(qqcc_config, mode)
+    )
+    if not enabled:
         await _reply_qqcc_feature_disabled(update, context)
         return ConversationHandler.END
 
@@ -218,6 +239,7 @@ async def _start_qqcc_draw_scene(
     context.user_data["quick_image_data"].update(
         {
             "scene_id": scene["id"],
+            "scene_kind": scene_kind,
             "mode_name": scene["name"],
             "prompt_override": scene["prompt"],
             "engine": scene.get("engine"),
@@ -374,6 +396,9 @@ async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     draw_scene_id = parse_quick_draw_scene_callback_data(
         query.data if query else None
     )
+    filter_scene_id = parse_quick_filter_scene_callback_data(
+        query.data if query else None
+    )
     text = message.text.strip() if message and message.text else ""
     logger.info(
         f"start_quick_image triggered by user {user_id}, text: {text.encode('utf-8')}"
@@ -403,11 +428,20 @@ async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     route_key = GLOBAL_REVERSE_MAP.get(text)
     qqcc_config = await _load_qqcc_config_for_context(context)
     if draw_scene_id:
-        return await _start_qqcc_draw_scene(
+        return await _start_qqcc_image_scene(
             update,
             context,
             qqcc_config=qqcc_config,
             scene_id=draw_scene_id,
+            scene_kind=QQCC_SCENE_KIND_DRAW,
+        )
+    if filter_scene_id:
+        return await _start_qqcc_image_scene(
+            update,
+            context,
+            qqcc_config=qqcc_config,
+            scene_id=filter_scene_id,
+            scene_kind=QQCC_SCENE_KIND_FILTER,
         )
     if qqcc_config is not None and not _is_qqcc_quick_image_route_enabled(
         qqcc_config, route_key
@@ -600,6 +634,10 @@ def get_quick_image_fsm_handler() -> ConversationHandler:
             CallbackQueryHandler(
                 start_quick_image,
                 pattern=QUICK_DRAW_SCENE_CALLBACK_PATTERN,
+            ),
+            CallbackQueryHandler(
+                start_quick_image,
+                pattern=QUICK_FILTER_SCENE_CALLBACK_PATTERN,
             ),
         ],
         states={

@@ -196,6 +196,7 @@ handle_lazy_bot_menu = _build_built_menu_handler(
         prompt_route("qqcc.menu.market"),
         prompt_route("menu.video_edit"),
         prompt_route("qqcc.menu.ai_draw"),
+        prompt_route("qqcc.menu.ai_filter"),
         prompt_route("qqcc.menu.quick_faceswap"),
     ),
 )

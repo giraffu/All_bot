@@ -20,6 +20,7 @@ from src.constants import (
     MODE_WAN22_VIDEO_V2,
 )
 from src.handlers.fsm.quick_draw_callback_data import (
+    build_quick_filter_scene_callback_data,
     build_quick_draw_scene_callback_data,
 )
 from src.handlers.fsm.quick_video_callback_data import (
@@ -162,6 +163,34 @@ def test_qqcc_main_menu_keeps_ai_draw_when_draw_scenes_are_empty():
         ["修仙市集"],
         ["前往主bot"],
     ]
+
+
+def test_qqcc_main_menu_shows_ai_filter_when_filter_scenes_are_configured():
+    config = normalize_qqcc_config(
+        {
+            "filter_scenes": [
+                {
+                    "id": "real_skin",
+                    "name": "真实质感",
+                    "prompt": "real skin prompt",
+                }
+            ],
+        }
+    )
+
+    main_rows = _keyboard_texts(keyboards.get_qqcc_main_menu_keyboard("zh", config))
+    reply_markup = keyboards.get_qqcc_filter_edit_inline_keyboard("zh", config)
+
+    assert main_rows == [
+        ["快速换脸"],
+        ["AI绘图", "AI滤镜", "AI动图"],
+        ["修仙市集"],
+        ["前往主bot"],
+    ]
+    assert _inline_keyboard_texts(reply_markup) == [["真实质感"]]
+    assert reply_markup.inline_keyboard[0][0].callback_data == (
+        build_quick_filter_scene_callback_data("real_skin")
+    )
 
 
 def test_qqcc_video_menu_contains_lazy_video_scenes():
@@ -340,6 +369,52 @@ async def test_qqcc_ai_draw_menu_route_replies_with_inline_scene_buttons(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_qqcc_ai_filter_menu_route_replies_with_inline_scene_buttons(monkeypatch):
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "filter_scenes": [
+                {
+                    "id": "real_skin",
+                    "name": "真实质感",
+                    "prompt": "real skin prompt",
+                },
+                {
+                    "id": "clear_detail",
+                    "name": "清晰增强",
+                    "prompt": "clear detail prompt",
+                },
+            ],
+        }
+    )
+    monkeypatch.setattr(
+        prompt_handlers,
+        "load_runtime_qqcc_config",
+        AsyncMock(return_value=config),
+    )
+    reply_text = AsyncMock()
+    message = SimpleNamespace(reply_text=reply_text)
+    update = SimpleNamespace(
+        effective_message=message,
+        message=None,
+        edited_message=None,
+    )
+    context = SimpleNamespace(
+        lang="zh",
+        t=lambda key: f"translated:{key}",
+    )
+
+    await prompt_handlers.handle_ai_filter_menu(update, context)
+
+    reply_text.assert_awaited_once()
+    kwargs = reply_text.await_args.kwargs
+    assert kwargs["text"] == "translated:system.ai_filter_hint"
+    assert _inline_keyboard_texts(kwargs["reply_markup"]) == [
+        ["真实质感", "清晰增强"],
+    ]
+
+
+@pytest.mark.asyncio
 async def test_qqcc_stale_photo_menu_button_is_blocked(monkeypatch):
     config = normalize_qqcc_config({"main_buttons": {"photo_edit": False}})
     monkeypatch.setattr(
@@ -373,6 +448,7 @@ def test_qqcc_prompt_routes_are_limited_to_lazy_menus():
     assert set(prompt_handlers.QQCC_PROMPT_ROUTES) == {
         "menu.photo_edit",
         "qqcc.menu.ai_draw",
+        "qqcc.menu.ai_filter",
         "menu.video_edit",
         "menu.main_menu",
         "menu.back_main",
@@ -392,6 +468,7 @@ def test_qqcc_lazy_main_buttons_are_routable_without_main_bot_prompt_routes(
     assert prompt_router.GLOBAL_REVERSE_MAP["快速换脸"] == "qqcc.menu.quick_faceswap"
     assert prompt_router.GLOBAL_REVERSE_MAP["🖼️ 懒人P图"] == "menu.photo_edit"
     assert prompt_router.GLOBAL_REVERSE_MAP["AI绘图"] == "qqcc.menu.ai_draw"
+    assert prompt_router.GLOBAL_REVERSE_MAP["AI滤镜"] == "qqcc.menu.ai_filter"
     assert prompt_router.GLOBAL_REVERSE_MAP["AI动图"] == "menu.video_edit"
     assert prompt_router.GLOBAL_REVERSE_MAP["🎬 视频创作"] == "menu.video_edit"
     assert prompt_router.GLOBAL_REVERSE_MAP["修仙市集"] == "qqcc.menu.market"

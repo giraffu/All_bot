@@ -213,6 +213,7 @@ async def prepare_qqcc_regeneration_submission(
                 fsm_data={
                     "mode": mode,
                     "scene_id": meta.get("scene_id"),
+                    "scene_kind": meta.get("scene_kind"),
                 },
                 qqcc_config=qqcc_config,
                 image_path=image_path,

@@ -18,6 +18,7 @@ MAIN_BUTTON_KEYS = (
     "quick_faceswap",
     "photo_edit",
     "ai_draw",
+    "ai_filter",
     "video_edit",
     "market",
     "main_bot_link",
@@ -50,6 +51,7 @@ DRAW_SCENE_ENGINE_KEYS = (
 )
 DRAW_SCENE_ENGINES_WITH_LORA = frozenset({DRAW_SCENE_ENGINE_FREE_EDIT})
 DRAW_SCENE_MAX_COUNT = 20
+FILTER_SCENE_MAX_COUNT = 20
 PROMPT_KEYS = (
     "undress",
     "i2i_draw_quick_undress",
@@ -161,6 +163,7 @@ def _default_draw_scenes(
             "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
             "lora_name": "",
             "postprocess_draw_scene_id": "",
+            "postprocess_filter_scene_id": "",
             "original_face_swap_enabled": False,
         },
         {
@@ -171,6 +174,7 @@ def _default_draw_scenes(
             "engine": DRAW_SCENE_ENGINE_FREE_EDIT,
             "lora_name": "",
             "postprocess_draw_scene_id": "",
+            "postprocess_filter_scene_id": "",
             "original_face_swap_enabled": False,
         },
     ]
@@ -184,6 +188,7 @@ DEFAULT_QQCC_LAZY_BOT_CONFIG: dict[str, Any] = {
         "quick_faceswap": True,
         "photo_edit": False,
         "ai_draw": True,
+        "ai_filter": True,
         "video_edit": True,
         "market": True,
         "main_bot_link": True,
@@ -217,6 +222,7 @@ DEFAULT_QQCC_LAZY_BOT_CONFIG: dict[str, Any] = {
     },
     "video_scenes": _default_video_scenes(),
     "draw_scenes": _default_draw_scenes(),
+    "filter_scenes": [],
     "prompts": {
         "undress": "",
         "i2i_draw_quick_undress": "",
@@ -515,6 +521,12 @@ def _normalize_draw_scene(
         if isinstance(postprocess_draw_scene_id, str)
         else ""
     )
+    postprocess_filter_scene_id = raw_scene.get("postprocess_filter_scene_id")
+    postprocess_filter_scene_id = (
+        postprocess_filter_scene_id.strip()
+        if isinstance(postprocess_filter_scene_id, str)
+        else ""
+    )
 
     scene = {
         "id": _build_unique_scene_id(
@@ -530,13 +542,79 @@ def _normalize_draw_scene(
         "engine": engine,
         "lora_name": lora_name,
         "postprocess_draw_scene_id": postprocess_draw_scene_id,
+        "postprocess_filter_scene_id": postprocess_filter_scene_id,
         "original_face_swap_enabled": raw_scene.get("original_face_swap_enabled")
         is True,
     }
     return scene
 
 
-def _normalize_draw_scene_postprocess_refs(scenes: list[dict[str, Any]]) -> None:
+def _normalize_filter_scene(
+    raw_scene: Any,
+    *,
+    index: int,
+    used_ids: set[str],
+) -> dict[str, Any] | None:
+    if not isinstance(raw_scene, dict):
+        return None
+
+    name = raw_scene.get("name")
+    name = name.strip() if isinstance(name, str) else ""
+    prompt = raw_scene.get("prompt")
+    prompt = prompt.strip() if isinstance(prompt, str) else ""
+    if not name or not prompt:
+        return None
+
+    engine = _normalize_scene_engine(
+        raw_scene.get("engine"),
+        allowed=DRAW_SCENE_ENGINE_KEYS,
+        default=DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+    )
+    lora_name = _normalize_scene_lora(
+        raw_scene.get("lora_name"),
+        engine=engine,
+        lora_catalog=IMAGE_LORA_MODELS,
+        engines_with_lora=DRAW_SCENE_ENGINES_WITH_LORA,
+    )
+
+    return {
+        "id": _build_unique_scene_id(
+            raw_scene.get("id"),
+            index=index,
+            used_ids=used_ids,
+        ),
+        "name": name,
+        "prompt": prompt,
+        "negative_prompt": _normalize_scene_negative_prompt(
+            raw_scene.get("negative_prompt")
+        ),
+        "engine": engine,
+        "lora_name": lora_name,
+        "original_face_swap_enabled": raw_scene.get("original_face_swap_enabled")
+        is True,
+    }
+
+
+def _normalize_filter_scenes(raw_scenes: Any) -> list[dict[str, Any]]:
+    raw_scene_list = raw_scenes if isinstance(raw_scenes, list) else []
+    scenes: list[dict[str, Any]] = []
+    used_ids: set[str] = set()
+    for index, raw_scene in enumerate(raw_scene_list[:FILTER_SCENE_MAX_COUNT]):
+        scene = _normalize_filter_scene(
+            raw_scene,
+            index=index,
+            used_ids=used_ids,
+        )
+        if scene is not None:
+            scenes.append(scene)
+    return scenes
+
+
+def _normalize_draw_scene_postprocess_refs(
+    scenes: list[dict[str, Any]],
+    *,
+    allowed_filter_scene_ids: frozenset[str],
+) -> None:
     allowed_scene_ids = frozenset(str(scene.get("id") or "") for scene in scenes)
     scenes_by_id = {str(scene.get("id") or ""): scene for scene in scenes}
     for scene in scenes:
@@ -546,6 +624,13 @@ def _normalize_draw_scene_postprocess_refs(scenes: list[dict[str, Any]]) -> None
             scene["postprocess_draw_scene_id"] = ""
         else:
             scene["postprocess_draw_scene_id"] = ref_id
+            scene["postprocess_filter_scene_id"] = ""
+            continue
+
+        filter_ref_id = str(scene.get("postprocess_filter_scene_id") or "").strip()
+        scene["postprocess_filter_scene_id"] = (
+            filter_ref_id if filter_ref_id in allowed_filter_scene_ids else ""
+        )
 
     cycle_scene_ids: set[str] = set()
     for scene in scenes:
@@ -572,6 +657,7 @@ def _normalize_draw_scenes(
     *,
     raw_prompts: dict[str, Any],
     seed_presets: bool,
+    allowed_filter_scene_ids: frozenset[str],
 ) -> list[dict[str, Any]]:
     raw_scene_list = raw_scenes if isinstance(raw_scenes, list) else []
     normalized_raw_scenes: list[dict[str, Any]] = []
@@ -596,7 +682,10 @@ def _normalize_draw_scenes(
         else normalized_raw_scenes
     )
 
-    _normalize_draw_scene_postprocess_refs(scenes)
+    _normalize_draw_scene_postprocess_refs(
+        scenes,
+        allowed_filter_scene_ids=allowed_filter_scene_ids,
+    )
     return scenes
 
 
@@ -694,16 +783,25 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
             keys=VIDEO_DURATION_KEYS,
         ),
     }
+    config["filter_scenes"] = _normalize_filter_scenes(raw.get("filter_scenes"))
+    allowed_filter_scene_ids = frozenset(
+        str(scene.get("id") or "") for scene in config["filter_scenes"]
+    )
     if "draw_scenes" in raw:
         config["draw_scenes"] = _normalize_draw_scenes(
             raw.get("draw_scenes"),
             raw_prompts=raw_prompts,
             seed_presets=seed_scene_presets,
+            allowed_filter_scene_ids=allowed_filter_scene_ids,
         )
     elif seed_scene_presets:
         config["draw_scenes"] = _default_draw_scenes(raw_prompts)
     elif not seed_scene_presets:
         config["draw_scenes"] = []
+    _normalize_draw_scene_postprocess_refs(
+        config["draw_scenes"],
+        allowed_filter_scene_ids=allowed_filter_scene_ids,
+    )
     allowed_end_frame_draw_scene_ids = frozenset(
         str(scene.get("id") or "") for scene in config["draw_scenes"]
     )
@@ -754,6 +852,14 @@ def has_enabled_qqcc_draw_scenes(config: dict[str, Any]) -> bool:
     return bool(get_enabled_qqcc_draw_scenes(config))
 
 
+def get_enabled_qqcc_filter_scenes(config: dict[str, Any]) -> list[dict[str, Any]]:
+    return normalize_qqcc_config(config).get("filter_scenes", [])
+
+
+def has_enabled_qqcc_filter_scenes(config: dict[str, Any]) -> bool:
+    return bool(get_enabled_qqcc_filter_scenes(config))
+
+
 def get_qqcc_draw_scene(
     config: dict[str, Any],
     scene_id: str | None,
@@ -761,6 +867,18 @@ def get_qqcc_draw_scene(
     if not scene_id:
         return None
     for scene in get_enabled_qqcc_draw_scenes(config):
+        if scene.get("id") == scene_id:
+            return scene
+    return None
+
+
+def get_qqcc_filter_scene(
+    config: dict[str, Any],
+    scene_id: str | None,
+) -> dict[str, Any] | None:
+    if not scene_id:
+        return None
+    for scene in get_enabled_qqcc_filter_scenes(config):
         if scene.get("id") == scene_id:
             return scene
     return None

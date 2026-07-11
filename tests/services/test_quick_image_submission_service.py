@@ -57,6 +57,7 @@ def test_qqcc_free_edit_v2_scene_builds_draw_chain_plan_without_prompts_ini():
             "kind": "quick_image",
             "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
             "scene_id": "soft_light",
+            "scene_kind": "draw",
             "display_mode_name": "柔光写真",
         }
     }
@@ -203,6 +204,110 @@ def test_qqcc_free_edit_lora_scene_keeps_lora_payload():
     assert plan.kind == QuickImageSubmissionKind.DRAW_CHAIN
     assert plan.mode == MODE_IMG2IMG_LORA
     assert plan.draw_chain[0]["lora_name"] == "qwen/YARN_1.0.safetensors"
+
+
+def test_qqcc_filter_scene_builds_draw_chain_plan_with_filter_scene_kind():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "filter_scenes": [
+                {
+                    "id": "real_skin",
+                    "name": "真实质感",
+                    "prompt": "real skin prompt",
+                    "negative_prompt": "plastic skin",
+                }
+            ],
+        }
+    )
+
+    plan = build_quick_image_submission_plan(
+        fsm_data={
+            "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+            "scene_id": "real_skin",
+            "scene_kind": "filter",
+        },
+        qqcc_config=config,
+        image_path="/tmp/input.png",
+    )
+
+    assert plan.kind == QuickImageSubmissionKind.DRAW_CHAIN
+    assert plan.total_cost == 2
+    assert plan.display_mode_name == "真实质感"
+    assert plan.draw_chain[0]["prompt"] == "real skin prompt"
+    assert plan.draw_chain[0]["negative_prompt"] == "plastic skin"
+    assert plan.result_meta == {
+        "_qqcc_regenerate": {
+            "kind": "quick_image",
+            "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+            "scene_id": "real_skin",
+            "scene_kind": "filter",
+            "display_mode_name": "真实质感",
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_run_qqcc_draw_scene_can_postprocess_with_filter_template():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "filter_scenes": [
+                {
+                    "id": "real_skin",
+                    "name": "真实质感",
+                    "prompt": "real skin prompt",
+                    "negative_prompt": "plastic skin",
+                }
+            ],
+            "draw_scenes": [
+                {
+                    "id": "soft_light",
+                    "name": "柔光写真",
+                    "prompt": "soft light prompt",
+                    "negative_prompt": "bad hands",
+                    "postprocess_filter_scene_id": "real_skin",
+                }
+            ],
+        }
+    )
+    plan = build_quick_image_submission_plan(
+        fsm_data={
+            "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+            "scene_id": "soft_light",
+        },
+        qqcc_config=config,
+        image_path="/tmp/input.png",
+    )
+    process_calls = []
+
+    async def fake_process_generation_task(**kwargs):
+        process_calls.append(kwargs)
+        return b"image-bytes", f"output-{len(process_calls)}.png"
+
+    await run_quick_image_submission_plan(
+        plan=plan,
+        context=SimpleNamespace(),
+        chat_id=456,
+        user_id=123,
+        username="tester",
+        status_msg_id=77,
+        process_generation_task_func=fake_process_generation_task,
+        download_output_file_to_fsm_temp_func=AsyncMock(
+            return_value="/tmp/intermediate.png"
+        ),
+    )
+
+    assert [scene["id"] for scene in plan.draw_chain] == ["soft_light", "real_skin"]
+    assert plan.total_cost == 4
+    assert plan.display_mode_name == "柔光写真"
+    assert plan.result_meta["_qqcc_regenerate"]["scene_kind"] == "draw"
+    assert process_calls[0]["prompt"] == "soft light prompt"
+    assert process_calls[0]["send_result"] is False
+    assert process_calls[1]["prompt"] == "real skin prompt"
+    assert process_calls[1]["negative_prompt"] == "plastic skin"
+    assert process_calls[1]["send_result"] is True
+    assert process_calls[1]["display_mode_name_override"] == "柔光写真"
 
 
 @pytest.mark.asyncio
@@ -488,6 +593,24 @@ def test_i2i_draw_compatibility_plan_uses_prompt_fallback():
         (
             {"draw_scenes": []},
             {"mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT, "scene_id": "missing"},
+            QuickImageSubmissionRejectReason.FEATURE_DISABLED,
+        ),
+        (
+            {
+                "main_buttons": {"ai_filter": False},
+                "filter_scenes": [
+                    {
+                        "id": "real_skin",
+                        "name": "真实质感",
+                        "prompt": "real skin prompt",
+                    }
+                ],
+            },
+            {
+                "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+                "scene_id": "real_skin",
+                "scene_kind": "filter",
+            },
             QuickImageSubmissionRejectReason.FEATURE_DISABLED,
         ),
         (
