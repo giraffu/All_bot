@@ -59,6 +59,10 @@ SCAIL2_TO_VIDEO_NODE_ID = "101"
 SCAIL2_COLORED_MASK_NODE_ID = "107"
 SCAIL2_VIDEO_COMBINE_NODE_ID = "49"
 SCAIL2_CONTEXT_WINDOWS_NODE_ID = "124"
+PORNMASTER_FLUX2_UNET_NODE_ID = "100"
+PORNMASTER_FLUX2_BF16_UNET_NAME = (
+    "flux2/PornMaster_flux2_klein_9b_turbo_bf16_V4.safetensors"
+)
 
 
 def _normalize_wan22_video_v2_precision_preset(value: Any) -> str:
@@ -182,6 +186,20 @@ def patch_img2img_workflow(
 def patch_i2i_draw_workflow(workflow: dict[str, Any], **_: Any) -> None:
     if "109" in workflow and "inputs" in workflow["109"]:
         workflow["109"]["inputs"]["text"] = " "
+
+
+def patch_pornmaster_flux2_edit_bf16_workflow(
+    workflow: dict[str, Any],
+    *,
+    set_node_input: Callable[..., None],
+    **_: Any,
+) -> None:
+    set_node_input(
+        workflow,
+        node_id=PORNMASTER_FLUX2_UNET_NODE_ID,
+        input_name="unet_name",
+        value=PORNMASTER_FLUX2_BF16_UNET_NAME,
+    )
 
 
 def _patch_ltx_video_lora(
@@ -732,6 +750,7 @@ TASK_SPECIFIC_PATCHERS = {
     "img2img": patch_img2img_workflow,
     "img2img_lora": patch_img2img_workflow,
     "i2i_draw": patch_i2i_draw_workflow,
+    "pornmaster_flux2_edit_bf16": patch_pornmaster_flux2_edit_bf16_workflow,
     "ltx_video": patch_ltx_video_workflow,
     "ltx_video_flf2v": patch_ltx_video_flf2v_workflow,
     "ltx_video_v2v_audio": patch_ltx_video_v2v_audio_workflow,
