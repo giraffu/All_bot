@@ -836,3 +836,13 @@ def test_config_impact_recreates_consumers_and_unknown_keys_fail_wide():
 
     assert {"bot", "qqcc-bot", "qqcc-private-bot-worker"} <= known
     assert unknown == set(module.load_structured_file(POLICY_PATH)["all_services"])
+
+
+def test_release_cli_defaults_to_allbot_cloudflare_account():
+    module = _load_module()
+
+    args = module.build_parser().parse_args(
+        ["plan", "--env", "test", "--sha", "0" * 40]
+    )
+
+    assert args.cloudflare_account_id == "c7220eb751acc6f7ab8255b4a0394ef3"

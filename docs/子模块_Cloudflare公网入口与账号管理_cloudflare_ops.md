@@ -94,7 +94,7 @@ curl -fsS -H "Authorization: Bearer ${CF_API_TOKEN}" \
 unset CF_API_TOKEN
 ```
 
-Account-owned token 不一定能通过 `/user/tokens/verify` 体现真实能力；本项目以目标 API 只读探测成功作为有效性判断。若某个 API 返回 403，应先判断 token 权限是否覆盖该产品，不要把 403 误判为 Cloudflare 服务异常。
+`cfat_` Account-owned token 应使用 `/accounts/${CF_ACCOUNT_ID}/tokens/verify` 验证；不要使用 `/user/tokens/verify`，后者会把有效的账户级 token 报成 `Invalid API Token`。本项目还必须以目标 API 只读探测成功确认实际权限。若某个 API 返回 403，应先核对 account ID 与 token 权限是否覆盖该产品，不要把 403 误判为 Cloudflare 服务异常。
 
 ## 6. 新增受保护公网入口 SOP
 
