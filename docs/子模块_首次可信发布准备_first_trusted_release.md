@@ -4,7 +4,7 @@
 
 仓库侧 stabilization 已按“完整 Git SHA + CI 不可变产物 + 同 digest 晋级”合入主线。`a2a44beba88055fcb72291ca39953a7b41868985` 的分片 Python、PostgreSQL、Web、Dashboard 与 release workflow 全绿，Web SHA256、五个自有镜像 digest/tag/OCI revision 已独立核验。2026-07-14 首次测试执行在新项目绑定旧 Dashboard 端口时 fail closed，暴露 legacy 控制面尚未进入首次交接闭包；该 SHA 未写部署成功状态，也未切 Web/Worker，失败尝试产生的新项目容器已清理，旧测试控制面恢复单实例运行。
 
-进一步核对发现旧测试 Postgres/Redis 数据卷属于 `deploy_cloud-*-data`，而新项目默认会使用另一组空卷；旧服务名还承担 `postgres-test`/`redis-test` DNS，旧 env 只提供 `CLOUD_TEST_POSTGRES_*`。修正后的首次交接会显式复用旧卷和网络别名、补运行时变量映射，把 Postgres/Redis 纳入初始服务集合，并在停旧容器前完成 pull/digest 校验和 legacy Central 队列排空；失败会移除新目标容器并重启本轮记录的旧容器。候选必须以这些修正合入 `main` 后的新完整 SHA/bundle 为准，`a2a44...` 只保留为失败演练证据。
+进一步核对发现旧测试 Postgres/Redis 数据卷属于 `deploy_cloud-*-data`，而新项目默认会使用另一组空卷；旧服务名还承担 `postgres-test`/`redis-test` DNS，旧 env 只提供 `CLOUD_TEST_POSTGRES_*`。修正后的首次交接会显式复用旧卷和网络别名、补运行时变量映射，把 Postgres/Redis 纳入初始服务集合，并在停旧容器前完成 pull/digest 校验和 legacy Central 队列排空；失败会移除新目标容器并重启本轮记录的旧容器。执行前运行态核对还确认测试 env 未启用 QQCC/私有 QQCC Bot，因此发布器必须从实际 cloud 启动集合中过滤这两个明确禁用的可选 runtime，并在 plan 中显示 `disabled_cloud_services`，不能把整栈依赖分析误解为强制开启未配置 Bot。候选必须以这些修正合入 `main` 后的新完整 SHA/bundle 为准，`a2a44...` 和中间候选只保留为演练证据。
 
 用户已授权仅测试环境首次切换；生产部署和正式 Pages mutation 仍未授权。新的 SHA bundle 通过门禁并完成真实 Compose dry-run 前不得重试测试切换。
 
