@@ -1,0 +1,8 @@
+ARG BASE_IMAGE=192.168.1.115:5000/allbot/comfy-runpod-scail2:20260617-scail2-cu128-a492b2b
+FROM ${BASE_IMAGE}
+
+COPY remote_workers/requirements.txt /opt/allbot/remote_workers/requirements.txt
+
+RUN set -euo pipefail; \
+    python3 -m pip install --no-cache-dir -r /opt/allbot/remote_workers/requirements.txt; \
+    python3 -c 'import fastapi, minio, uvicorn, websockets'

@@ -1,0 +1,10 @@
+httpx
+websockets
+minio
+boto3
+python-dotenv
+asgi-correlation-id
+pydantic
+Pillow
+fastapi
+uvicorn

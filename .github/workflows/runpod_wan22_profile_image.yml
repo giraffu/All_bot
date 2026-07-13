@@ -8,13 +8,22 @@ on:
         required: false
         default: ""
       base_image:
-        description: "Base ComfyUI image."
+        description: "Base image. Default matches the proven LAN ComfyUI cu128 runtime."
         required: false
         default: "yanwk/comfyui-boot:cu128-slim"
+      comfyui_ref:
+        description: "ComfyUI git ref used when the base image does not include ComfyUI."
+        required: false
+        default: "master"
       kjnodes_ref:
         description: "ComfyUI-KJNodes git ref baked into the image."
         required: false
         default: "7967a946c296a74901606e6a8d1195aa2b6f9215"
+      reuse_base_custom_nodes:
+        description: "Reuse custom nodes already baked into the base image and only apply final Wan22 fix layers."
+        required: true
+        type: boolean
+        default: false
       push_image:
         description: "Push the image to GHCR after build and smoke test."
         required: true
@@ -79,8 +88,12 @@ jobs:
             --profile wan22_aio_video
             --image-ref "${{ steps.meta.outputs.image_ref }}"
             --base-image "${{ inputs.base_image }}"
+            --comfyui-ref "${{ inputs.comfyui_ref }}"
             --kjnodes-ref "${{ inputs.kjnodes_ref }}"
           )
+          if [[ "${{ inputs.reuse_base_custom_nodes }}" == "true" ]]; then
+            args+=(--reuse-base-custom-nodes)
+          fi
           if [[ "${{ inputs.push_image }}" == "true" ]]; then
             args+=(--push)
           fi
@@ -114,6 +127,8 @@ jobs:
             echo ""
             echo "- Image: \`${{ steps.meta.outputs.image_ref }}\`"
             echo "- Base image: \`${{ inputs.base_image }}\`"
+            echo "- Reuse base custom nodes: \`${{ inputs.reuse_base_custom_nodes }}\`"
+            echo "- ComfyUI ref: \`${{ inputs.comfyui_ref }}\`"
             echo "- KJNodes ref: \`${{ inputs.kjnodes_ref }}\`"
             echo "- Pushed: \`${{ inputs.push_image }}\`"
             echo "- Anonymous manifest verified: \`${{ inputs.verify_public_pull }}\`"

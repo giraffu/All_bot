@@ -1,0 +1,207 @@
+{
+    "img2img": {
+        "image": "8",
+        "image2": "20",
+        "image3": "30",
+        "prompt": "3",
+        "prompt_input": "prompt",
+        "negative_prompt": "4",
+        "negative_prompt_input": "prompt",
+        "width": "9",
+        "width_input": "width",
+        "height": "9",
+        "height_input": "height"
+    },
+    "face_swap": {
+        "face_image": "2",
+        "body_image": "3"
+    },
+    "video_insert": {
+        "image": "23",
+        "image_input": "image",
+        "end_image": "24",
+        "end_image_input": "image",
+        "prompt": "2368",
+        "prompt_input": "value",
+        "negative_prompt": "2371",
+        "negative_prompt_input": "value"
+    },
+    "video_edit": {
+        "image": "23",
+        "image_input": "image",
+        "end_image": "24",
+        "end_image_input": "image",
+        "prompt": "2368",
+        "prompt_input": "value",
+        "negative_prompt": "2371",
+        "negative_prompt_input": "value"
+    },
+    "image_to_video": {
+        "image": "23",
+        "image_input": "image",
+        "end_image": "24",
+        "end_image_input": "image",
+        "prompt": "2368",
+        "prompt_input": "value",
+        "negative_prompt": "2371",
+        "negative_prompt_input": "value"
+    },
+    "t2i-pornmaster-turbo": {
+        "prompt": "90",
+        "prompt_input": "text"
+    },
+    "face_video": {
+        "face_image": "269",
+        "video": "345",
+        "video_input": "video",
+        "resolution": "362",
+        "resolution_input": "value",
+        "duration": "903",
+        "duration_input": "value"
+    },
+    "i2i_pro": {
+        "image": "20",
+        "prompt": "28",
+        "prompt_input": "text",
+        "seed": "60",
+        "seed_input": "value"
+    },
+    "i2i_draw": {
+        "image": "167",
+        "prompt": "108",
+        "prompt_input": "text",
+        "seed": "138",
+        "seed_input": "seed"
+    },
+    "ltx_video": {
+        "image": "15",
+        "prompt": "28",
+        "prompt_input": "text",
+        "length": "18",
+        "length_input": "Xi",
+        "width": "19",
+        "width_input": "Xi",
+        "height": "181",
+        "height_input": "Xi"
+    },
+    "ltx_video_flf2v": {
+        "image": "15",
+        "end_image": "16",
+        "end_image_input": "image",
+        "prompt": "28",
+        "prompt_input": "text",
+        "length": "18",
+        "length_input": "Xi",
+        "width": "19",
+        "width_input": "Xi",
+        "height": "181",
+        "height_input": "Xi"
+    },
+    "ltx_video_v2v_audio": {
+        "video": "900",
+        "video_input": "video",
+        "prompt": "28",
+        "prompt_input": "text",
+        "length": "18",
+        "length_input": "Xi",
+        "width": "19",
+        "width_input": "Xi",
+        "height": "181",
+        "height_input": "Xi"
+    },
+    "wan22_video_v2": {
+        "image": "23",
+        "image_input": "image",
+        "end_image": "24",
+        "end_image_input": "image",
+        "prompt": "2368",
+        "prompt_input": "value",
+        "negative_prompt": "2371",
+        "negative_prompt_input": "value"
+    },
+    "scail2_action_transfer": {
+        "image": "58",
+        "image_input": "image",
+        "video": "113",
+        "video_input": "video",
+        "prompt": "6",
+        "prompt_input": "text",
+        "negative_prompt": "7",
+        "negative_prompt_input": "text"
+    },
+    "scail2_action_transfer_long": {
+        "image": "58",
+        "image_input": "image",
+        "video": "113",
+        "video_input": "video",
+        "prompt": "6",
+        "prompt_input": "text",
+        "negative_prompt": "7",
+        "negative_prompt_input": "text"
+    },
+    "scail2_video_replacement": {
+        "image": "58",
+        "image_input": "image",
+        "video": "113",
+        "video_input": "video",
+        "prompt": "6",
+        "prompt_input": "text",
+        "negative_prompt": "7",
+        "negative_prompt_input": "text"
+    },
+    "scail2_face_swap_v2": {
+        "image": "58",
+        "image_input": "image",
+        "video": "113",
+        "video_input": "video",
+        "prompt": "6",
+        "prompt_input": "text",
+        "negative_prompt": "7",
+        "negative_prompt_input": "text"
+    },
+    "pornmaster_flux2_single_edit": {
+        "image": "15",
+        "image_input": "image",
+        "prompt": "185",
+        "prompt_input": "text",
+        "negative_prompt": "254",
+        "negative_prompt_input": "text",
+        "seed": "28",
+        "seed_input": "noise_seed"
+    },
+    "pornmaster_flux2_edit_bf16": {
+        "image": "15",
+        "image_input": "image",
+        "prompt": "185",
+        "prompt_input": "text",
+        "negative_prompt": "254",
+        "negative_prompt_input": "text",
+        "seed": "28",
+        "seed_input": "noise_seed"
+    },
+    "pornmaster_flux2_multi_edit": {
+        "image": "17",
+        "image_input": "image",
+        "image2": "29",
+        "image2_input": "image",
+        "prompt": "8",
+        "prompt_input": "text",
+        "negative_prompt": "49",
+        "negative_prompt_input": "text",
+        "seed": "43",
+        "seed_input": "noise_seed"
+    },
+    "img2img_lora": {
+        "image": "8",
+        "image2": "20",
+        "image3": "30",
+        "prompt": "3",
+        "prompt_input": "prompt",
+        "negative_prompt": "4",
+        "negative_prompt_input": "prompt",
+        "width": "9",
+        "width_input": "width",
+        "height": "9",
+        "height_input": "height"
+    }
+}

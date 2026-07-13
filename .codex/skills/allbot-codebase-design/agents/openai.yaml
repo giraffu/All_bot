@@ -1,0 +1,4 @@
+interface:
+  display_name: "AllBot Codebase Design"
+  short_description: "Use shared architecture vocabulary for AllBot seams."
+  default_prompt: "Review this AllBot design using module/interface/seam/adapter/depth/leverage/locality, and recommend the smallest interface that improves locality and testability."

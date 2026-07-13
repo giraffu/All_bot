@@ -1,0 +1,91 @@
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
+
+from src.handlers.callbacks import billing_callbacks
+
+
+@pytest.mark.asyncio
+async def test_recharge_rmb_menu_callback_translates_membership_option_labels(
+    monkeypatch,
+):
+    plans = [
+        SimpleNamespace(
+            id=1,
+            name="基础月卡",
+            identity_name="内门弟子",
+            price_rmb="30.00",
+        )
+    ]
+    message = SimpleNamespace(edit_reply_markup=AsyncMock())
+    query = SimpleNamespace(message=message)
+    update = SimpleNamespace(callback_query=query)
+    context = SimpleNamespace(lang="en")
+
+    monkeypatch.setattr(
+        billing_callbacks,
+        "list_visible_membership_plans",
+        AsyncMock(return_value=plans),
+    )
+    monkeypatch.setattr(billing_callbacks, "safe_answer_query", AsyncMock())
+
+    await billing_callbacks.recharge_rmb_menu_callback(update, context)
+
+    reply_markup = message.edit_reply_markup.await_args.kwargs["reply_markup"]
+    assert (
+        reply_markup.inline_keyboard[0][0].text
+        == "¥ 30.00 - Basic Monthly Plan (Inner Disciple)"
+    )
+    assert reply_markup.inline_keyboard[1][0].text == "🔙 Back to payment methods"
+
+
+@pytest.mark.asyncio
+async def test_buy_star_plan_callback_creates_pending_order_with_order_v2_payload(
+    monkeypatch,
+):
+    plan = SimpleNamespace(
+        id=1,
+        name="Stars Plan",
+        identity_name="内门弟子",
+        duration_days=30,
+        reward_credits=100,
+        price_stars=100,
+    )
+    query = SimpleNamespace(
+        data="buy_star_plan_1",
+        from_user=SimpleNamespace(id=12345),
+        message=SimpleNamespace(chat_id=12345),
+    )
+    update = SimpleNamespace(callback_query=query)
+    context = SimpleNamespace(bot=SimpleNamespace(send_invoice=AsyncMock()))
+
+    monkeypatch.setattr(
+        billing_callbacks, "get_visible_membership_plan", AsyncMock(return_value=plan)
+    )
+    monkeypatch.setattr(
+        billing_callbacks, "safe_answer_query", AsyncMock()
+    )
+    monkeypatch.setattr(
+        billing_callbacks, "get_or_create_user_by_telegram", AsyncMock(return_value=(SimpleNamespace(id=2002), False))
+    )
+    monkeypatch.setattr(
+        billing_callbacks, "is_order_v2_enabled", lambda: True
+    )
+    monkeypatch.setattr(
+        billing_callbacks,
+        "create_stars_pending_order",
+        AsyncMock(return_value="bo_stars_1"),
+    )
+
+    context.lang = "en"
+    await billing_callbacks.buy_star_plan_callback(update, context)
+
+    context.bot.send_invoice.assert_awaited_once()
+    assert (
+        context.bot.send_invoice.await_args.kwargs["payload"] == "ORDER_V2:bo_stars_1"
+    )
+    assert (
+        context.bot.send_invoice.await_args.kwargs["title"]
+        == "💎 Sect Treasury - Stars Plan (Inner Disciple)"
+    )

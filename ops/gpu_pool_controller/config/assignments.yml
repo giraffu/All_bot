@@ -1,0 +1,112 @@
+assignments:
+  - id: lan-226-8188-worker-01
+    enabled: false
+    provider: lan_ssh
+    node_id: gpu-226
+    comfy_id: comfy-8188
+    worker_id: cloud_prod_worker_01
+    profile_id: face_i2i_t2i
+    task_types:
+      - face_swap
+      - i2i_pro
+      - i2i_draw
+      - face_video
+      - video_edit
+      - image_to_video
+      - t2i-pornmaster-turbo
+    max_parallel_tasks: 2
+    notes: Retired on 2026-07-02 when gpu-226 GPU0 moved from host-service cloud_prod_worker_01 to the image_to_video LAN AIO on port 8190. Keep as rollback metadata only; the local agent container is stopped and Central control is disabled.
+
+  - id: lan-226-8190-worker-01-aio
+    enabled: true
+    provider: lan_ssh
+    node_id: gpu-226
+    comfy_id: aio-gpu0
+    worker_id: lan_aio_prod_gpu226_gpu0_image_to_video_01
+    profile_id: image_to_video
+    task_types:
+      - video_insert
+      - video_edit
+      - image_to_video
+    max_parallel_tasks: 1
+    notes: Active production Docker LAN AIO for gpu-226 GPU0 image_to_video capacity after the 2026-07-02 migration from host-service cloud_prod_worker_01.
+
+  - id: lan-177-8188-worker-02
+    enabled: false
+    provider: lan_ssh
+    node_id: gpu-177
+    comfy_id: comfy0
+    worker_id: cloud_prod_worker_02
+    profile_id: video_basic
+    task_types:
+      - video_insert
+      - video_edit
+      - image_to_video
+    max_parallel_tasks: 2
+    notes: Retired on 2026-06-20 after gpu-177 AIO-only cleanup; local agent/container and /data/comfy legacy runtime were removed.
+
+  - id: lan-177-8189-worker-03
+    enabled: false
+    provider: lan_ssh
+    node_id: gpu-177
+    comfy_id: comfy1
+    worker_id: cloud_prod_worker_03
+    profile_id: ltx_video
+    task_types:
+      - ltx_video
+      - ltx_video_flf2v
+      - ltx_video_v2v_audio
+      - image_to_video
+    max_parallel_tasks: 2
+    notes: Retired on 2026-06-20 after gpu-177 AIO-only cleanup; local agent/container and /data/comfy legacy runtime were removed.
+
+  - id: lan-252-8188-worker-04
+    enabled: true
+    provider: lan_ssh
+    node_id: gpu-252
+    comfy_id: comfy0
+    worker_id: cloud_prod_worker_04
+    profile_id: img2img_lora
+    task_types:
+      - img2img
+      - img2img_lora
+    max_parallel_tasks: 2
+
+  - id: lan-252-8189-worker-05
+    enabled: true
+    provider: lan_ssh
+    node_id: gpu-252
+    comfy_id: comfy1
+    worker_id: cloud_prod_worker_05
+    profile_id: wan22_video_v2
+    task_types:
+      - wan22_video_v2
+      - video_edit
+      - image_to_video
+    max_parallel_tasks: 2
+    notes: Wan22 v2 baseline models are currently known-good here.
+
+  - id: lan-002-8188-worker-06
+    enabled: true
+    provider: lan_ssh
+    node_id: gpu-002
+    comfy_id: comfy0
+    worker_id: cloud_prod_worker_06
+    profile_id: img2img_lora
+    task_types:
+      - img2img
+      - img2img_lora
+    max_parallel_tasks: 2
+
+  - id: lan-002-8189-worker-07
+    enabled: true
+    provider: lan_ssh
+    node_id: gpu-002
+    comfy_id: comfy1
+    worker_id: cloud_prod_worker_07
+    profile_id: video_basic
+    task_types:
+      - video_insert
+      - video_edit
+      - image_to_video
+    max_parallel_tasks: 2

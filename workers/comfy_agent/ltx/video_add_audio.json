@@ -1,0 +1,68 @@
+{
+  "1": {
+    "inputs": {
+      "video": "placeholder.mp4",
+      "force_rate": 0,
+      "custom_width": 0,
+      "custom_height": 0,
+      "frame_load_cap": 0,
+      "start_time": 0,
+      "format": "Wan"
+    },
+    "class_type": "VHS_LoadVideoFFmpeg",
+    "_meta": {
+      "title": "Load Input Video"
+    }
+  },
+  "2": {
+    "inputs": {
+      "video_info": [
+        "1",
+        3
+      ]
+    },
+    "class_type": "VHS_VideoInfo",
+    "_meta": {
+      "title": "Read Input Video FPS"
+    }
+  },
+  "3": {
+    "inputs": {
+      "audio": "placeholder.mp3",
+      "audioUI": "/api/view?filename=placeholder.mp3&type=input&subfolder=&rand=0"
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "Load Audio"
+    }
+  },
+  "4": {
+    "inputs": {
+      "frame_rate": [
+        "2",
+        5
+      ],
+      "loop_count": 0,
+      "filename_prefix": "video_add_audio",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true,
+      "images": [
+        "1",
+        0
+      ],
+      "audio": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Add Audio To Video"
+    }
+  }
+}

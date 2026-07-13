@@ -1,0 +1,12 @@
+services:
+  allbot-local-registry:
+    image: registry:2
+    container_name: allbot-local-registry
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5000:5000"
+      - "192.168.1.115:5000:5000"
+    environment:
+      REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
+    volumes:
+      - /srv/allbot/docker-registry:/var/lib/registry

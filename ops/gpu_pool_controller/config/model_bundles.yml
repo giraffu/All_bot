@@ -1,0 +1,135 @@
+bundles:
+  face_i2i_t2i_baseline:
+    version: 2026-06-10
+    profiles:
+      - face_i2i_t2i
+    source:
+      node_id: gpu-226
+      comfy_id: comfy-8188
+      model_dir: /home/ubantu/comfyui/models
+      discovered_size_gb: 325
+      import_status: planned
+      notes: Known-good gpu-226 mixed production model set. Registry import now treats face_swap and t2i-pornmaster-turbo through the runtime overrides face_swap_v2.json and txt2img_from_i2i_pro.json; legacy default workflow-only models are not required for those two execution paths.
+    files: []
+
+  video_basic_baseline:
+    version: 2026-06-10
+    profiles:
+      - video_basic
+    source:
+      node_id: gpu-177
+      comfy_id: comfy0
+      model_dir: /data/comfy/models
+      discovered_size_gb: 444
+      import_status: source_retired
+      notes: Original gpu-177 /data/comfy source was removed on 2026-06-20 after AIO-only cleanup. Use LAN model cache manifests for image_to_video/video_basic restoration instead of this deleted source.
+    files: []
+
+  ltx_video_baseline:
+    version: 2026-06-10
+    profiles:
+      - ltx_video
+    source:
+      node_id: gpu-177
+      comfy_id: comfy1
+      model_dir: /data/comfy/models
+      discovered_size_gb: 444
+      import_status: source_retired
+      notes: Original gpu-177 /data/comfy source was removed on 2026-06-20 after AIO-only cleanup. Use the ltx_video LAN model cache manifest for restoration instead of this deleted source.
+    files: []
+
+  img2img_lora_baseline:
+    version: 2026-06-10
+    profiles:
+      - img2img_lora
+    source:
+      node_id: gpu-252
+      comfy_id: comfy0
+      model_dir: /home/user/APP/data/models
+      discovered_size_gb: 121
+      import_status: planned
+      notes: Known-good img2img/img2img_lora set. gpu-002 has a smaller compatible mirror.
+    files: []
+
+  i2i_pro_baseline:
+    version: 2026-06-14-test
+    profiles:
+      - i2i_pro
+    source:
+      node_id: gpu-226
+      comfy_id: comfy-8188
+      model_dir: /home/ubantu/comfyui/models
+      discovered_size_gb: 36.11
+      import_status: planned
+    notes: Dedicated Flux2/Z-Image model set shared by i2i_pro, t2i-pornmaster-turbo via txt2img_from_i2i_pro.json, and face_swap via face_swap_v2.json.
+    files: []
+
+  pornmaster_flux2_edit_baseline:
+    version: 2026-06-27
+    profiles:
+      - pornmaster_flux2_edit
+    source:
+      node_id: local-model-downloads
+      comfy_id: local-registry
+      model_dir: /srv/allbot/model-downloads/pornmaster_flux2_image_edit/2026-06-27
+      discovered_size_gb: 17.5
+      import_status: cached
+      notes: Cached local registry bundle for the PornMaster Flux2 9B Turbo single/multiple automatic image-editing workflows. qwen_3_8b_fp8mixed is reused from i2i_pro_baseline, full_encoder_small_decoder is downloaded locally, and the PornMaster 9B fp8 UNET is imported from the authorized local download without recording the token.
+    files:
+      - relative_path: diffusion_models/flux2/PornMaster_flux2_klein_9b_turbo_fp8_V4.safetensors
+        sha256: e90eeb50140a10806341b7521c340214c6f76cec2f8f8dae7a443c5806072df7
+        size_bytes: 9433104872
+      - relative_path: text_encoders/flux2/qwen_3_8b_fp8mixed.safetensors
+        sha256: abad16806e0cbabc54e0325d6565847443fe396d5f0be38bb3cd3fe75a1201d6
+        size_bytes: 8664848742
+      - relative_path: vae/flux2/full_encoder_small_decoder.safetensors
+        sha256: ea4273f02d1fafbf8e1d1c2cf6018ed8748652eb0bf34f2dd91171f16f15ab62
+        size_bytes: 249519092
+
+  pornmaster_flux2_edit_bf16_baseline:
+    version: 2026-07-12
+    profiles:
+      - pornmaster_flux2_edit_bf16
+    source:
+      node_id: local-model-downloads
+      comfy_id: local-registry
+      model_dir: /srv/allbot/model-downloads/pornmaster_flux2_image_edit/2026-07-12
+      discovered_size_gb: 25.2
+      import_status: cached
+      notes: Isolated BF16 cache candidate for gpu-226 GPU0. It reuses the existing fp8 Qwen text encoder and small decoder VAE, but replaces the PornMaster V4 turbo UNET with the Civitai BF16 artifact. It is not enabled for production runtime or canary.
+    files:
+      - relative_path: diffusion_models/flux2/PornMaster_flux2_klein_9b_turbo_bf16_V4.safetensors
+        sha256: 5085c05fa34b2455245a75f393885780b41e80a7517265b4b53da2e5044b004e
+        size_bytes: 18157213600
+      - relative_path: text_encoders/flux2/qwen_3_8b_fp8mixed.safetensors
+        sha256: abad16806e0cbabc54e0325d6565847443fe396d5f0be38bb3cd3fe75a1201d6
+        size_bytes: 8664848742
+      - relative_path: vae/flux2/full_encoder_small_decoder.safetensors
+        sha256: ea4273f02d1fafbf8e1d1c2cf6018ed8748652eb0bf34f2dd91171f16f15ab62
+        size_bytes: 249519092
+
+  scail2_baseline:
+    version: 2026-06-17-test
+    profiles:
+      - scail2
+    source:
+      node_id: gpu-002
+      comfy_id: comfy0
+      model_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu0/profiles/scail2/workspace/ComfyUI/models
+      discovered_size_gb: 36
+      import_status: cached
+      notes: SCAIL-2 model set cached in LAN model cache under scail2/2026-06-17-test for action transfer and video replacement.
+    files: []
+
+  wan22_video_v2_baseline:
+    version: 2026-06-10
+    profiles:
+      - wan22_video_v2
+    source:
+      node_id: gpu-252
+      comfy_id: comfy1
+      model_dir: /home/user/APP/data/models
+      discovered_size_gb: 121
+      import_status: planned
+      notes: Wan22 v2 Dasiwa high/low model files are currently tied to gpu-252.
+    files: []

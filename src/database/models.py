@@ -1,22 +1,76 @@
-from sqlalchemy import Column, Integer, String, BigInteger, DateTime, Boolean, ForeignKey, Text, Date, func
-from sqlalchemy.orm import declarative_base, relationship
 from datetime import datetime
+
+from sqlalchemy import (
+    DECIMAL,
+    JSON,
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
+)
+from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 
+
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        Index(
+            "idx_users_lower_username",
+            func.lower(Column("username", String(100))),
+            unique=True,
+        ),
+        Index("ix_users_created_at_id", "created_at", "id"),
+        Index("ix_users_credits_id", "credits", "id"),
+        Index("ix_users_checkin_count_id", "checkin_count", "id"),
+        Index("ix_users_referral_count_id", "referral_count", "id"),
+        Index("ix_users_generation_count_id", "generation_count", "id"),
+        Index("ix_users_last_activity_id", "last_activity", "id"),
+    )
 
-    id = Column(BigInteger, primary_key=True)  # Telegram User ID
+    id = Column(
+        BigInteger, primary_key=True, autoincrement=True
+    )  # Internal System ID (was Telegram User ID)
+
+    # New Multi-platform login fields
+    telegram_id = Column(
+        BigInteger, unique=True, index=True, nullable=True
+    )  # Real TG ID
+    google_id = Column(String(255), unique=True, index=True, nullable=True)
+    email = Column(String(255), unique=True, index=True, nullable=True)
+    hashed_password = Column(String(255), nullable=True)
+    password_version = Column(Integer, default=1, nullable=False)
+
     username = Column(String(100), nullable=True)
     full_name = Column(String(200), nullable=True)
-    credits = Column(Integer, default=20)
+    language_code = Column(String(20), nullable=True)  # i18n support
+    credits = Column(Integer, default=6)
     last_checkin = Column(Date, nullable=True)
     is_channel_member = Column(Boolean, default=False)
-    user_group = Column(String(20), default="凡人") # 凡人, 练气期, 筑基期
-    total_contributions = Column(Integer, default=0) # 累计贡献次数
-    approved_contributions = Column(Integer, default=0) # 累计被采纳次数
-    
+    is_submission_banned = Column(Boolean, default=False, nullable=False, server_default=text("false"))
+    submission_banned_at = Column(DateTime, nullable=True)
+    submission_ban_reason = Column(String(255), nullable=True)
+    user_group = Column(
+        String(20), default="凡人"
+    )  # 凡人, 练气期, 筑基期, 金丹期, 元婴期
+    current_identity = Column(
+        String(20), default="外门弟子"
+    )  # 外门弟子, 内门弟子, 核心弟子, 真传弟子
+    identity_expire_at = Column(DateTime, nullable=True)
+    total_contributions = Column(Integer, default=0)  # 累计贡献次数
+    approved_contributions = Column(Integer, default=0)  # 累计被采纳次数
+
     # Denormalized counts for performance
     referral_count = Column(Integer, default=0)
     generation_count = Column(Integer, default=0)
@@ -28,43 +82,336 @@ class User(Base):
 
     # Relationships
     inviter_user = relationship("User", remote_side=[id], backref="invited_users")
-    referrals_made = relationship("Referral", foreign_keys="Referral.inviter_id", back_populates="inviter")
-    referred_by = relationship("Referral", foreign_keys="Referral.invitee_id", back_populates="invitee")
+    referrals_made = relationship(
+        "Referral", foreign_keys="Referral.inviter_id", back_populates="inviter"
+    )
+    referred_by = relationship(
+        "Referral", foreign_keys="Referral.invitee_id", back_populates="invitee"
+    )
     history = relationship("History", back_populates="user")
+    private_qqcc_bot = relationship(
+        "PrivateQqccBot",
+        back_populates="owner",
+        uselist=False,
+        passive_deletes=True,
+    )
+
+
+class PrivateQqccBot(Base):
+    __tablename__ = "private_qqcc_bots"
+    __table_args__ = (
+        CheckConstraint(
+            "runtime_status in ('provisioning', 'active', 'paused', 'disabled', 'error')",
+            name="ck_private_qqcc_bots_runtime_status",
+        ),
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    owner_user_id = Column(
+        BigInteger,
+        ForeignKey("users.id"),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+    telegram_bot_id = Column(
+        BigInteger,
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+    telegram_username = Column(String(64), nullable=True)
+    telegram_display_name = Column(String(255), nullable=True)
+    token_ciphertext = Column(Text, nullable=False)
+    token_key_version = Column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default=text("1"),
+    )
+    token_fingerprint = Column(String(64), unique=True, nullable=False)
+    webhook_public_id = Column(String(64), unique=True, nullable=False)
+    webhook_secret_hash = Column(String(64), nullable=True)
+    config = Column(
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::json"),
+    )
+    config_version = Column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default=text("1"),
+    )
+    owner_enabled = Column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    admin_enabled = Column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    runtime_status = Column(
+        String(32),
+        nullable=False,
+        default="provisioning",
+        server_default=text("'provisioning'"),
+    )
+    last_error_code = Column(String(64), nullable=True)
+    last_error_message = Column(String(500), nullable=True)
+    last_webhook_at = Column(DateTime, nullable=True)
+    last_update_at = Column(DateTime, nullable=True)
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.now,
+        server_default=func.now(),
+    )
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.now,
+        onupdate=datetime.now,
+        server_default=func.now(),
+    )
+
+    owner = relationship("User", back_populates="private_qqcc_bot")
+    audit_logs = relationship(
+        "PrivateQqccBotAuditLog",
+        back_populates="private_bot",
+        passive_deletes="all",
+    )
+
+
+class PrivateQqccBotAuditLog(Base):
+    __tablename__ = "private_qqcc_bot_audit_logs"
+    __table_args__ = (
+        CheckConstraint(
+            "actor_type in ('owner', 'admin', 'system')",
+            name="ck_private_qqcc_bot_audit_logs_actor_type",
+        ),
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    private_bot_id = Column(
+        BigInteger,
+        ForeignKey("private_qqcc_bots.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    owner_user_id = Column(BigInteger, nullable=False, index=True)
+    telegram_bot_id = Column(BigInteger, nullable=False, index=True)
+    actor_type = Column(String(32), nullable=False)
+    actor_identifier = Column(String(128), nullable=True)
+    action = Column(String(64), nullable=False)
+    before_status = Column(String(32), nullable=True)
+    after_status = Column(String(32), nullable=True)
+    details = Column(
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::json"),
+    )
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.now,
+        server_default=func.now(),
+    )
+
+    private_bot = relationship("PrivateQqccBot", back_populates="audit_logs")
+
+
+class PrivateBotTaskSubmission(Base):
+    """Durable idempotency outcome for one task spawned by a private Bot update."""
+
+    __tablename__ = "private_bot_task_submissions"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('reserved', 'dispatching', 'submitted', 'failed')",
+            name="ck_private_bot_task_submissions_status",
+        ),
+        CheckConstraint(
+            "compensation_status in ('not_required', 'pending', 'processing', 'completed')",
+            name="ck_private_bot_task_submissions_compensation_status",
+        ),
+        UniqueConstraint(
+            "submission_key",
+            name="uq_private_bot_task_submissions_submission_key",
+        ),
+        UniqueConstraint(
+            "registry_task_id",
+            name="uq_private_bot_task_submissions_registry_task_id",
+        ),
+        Index(
+            "ix_private_bot_task_submissions_reconcile_due",
+            "status",
+            "reconcile_not_before_at",
+            "id",
+        ),
+        Index(
+            "ix_private_bot_task_submissions_compensation_due",
+            "compensation_status",
+            "compensation_lease_until",
+            "id",
+        ),
+        Index(
+            "ix_private_bot_task_submissions_retention",
+            "status",
+            "compensation_status",
+            "updated_at",
+            "id",
+        ),
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    submission_key = Column(String(128), nullable=False)
+    private_bot_id = Column(BigInteger, nullable=False, index=True)
+    update_id = Column(BigInteger, nullable=False)
+    submission_sequence = Column(Integer, nullable=False)
+    internal_user_id = Column(BigInteger, nullable=False, index=True)
+    client_type = Column(String(128), nullable=False)
+    task_type = Column(String(64), nullable=False)
+    request_sha256 = Column(String(64), nullable=False)
+    registry_task_id = Column(String(64), nullable=False)
+    dispatch_task_id = Column(String(64), nullable=False)
+    dispatch_started_at = Column(DateTime, nullable=True)
+    submission_owner_token = Column(String(64), nullable=True)
+    submission_owner_deadline_at = Column(DateTime, nullable=True)
+    reconcile_not_before_at = Column(DateTime, nullable=True)
+    submission_owner_fence = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    backend_task_id = Column(String(128), nullable=True)
+    status = Column(
+        String(32),
+        nullable=False,
+        default="reserved",
+        server_default=text("'reserved'"),
+    )
+    actual_cost = Column(Integer, nullable=True)
+    debit_confirmed_at = Column(DateTime, nullable=True)
+    saved_inputs = Column(
+        JSON,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'::json"),
+    )
+    error_code = Column(String(64), nullable=True)
+    error_message = Column(String(500), nullable=True)
+    compensation_status = Column(
+        String(32),
+        nullable=False,
+        default="not_required",
+        server_default=text("'not_required'"),
+    )
+    compensation_lease_token = Column(String(64), nullable=True)
+    compensation_lease_until = Column(DateTime, nullable=True)
+    compensation_attempts = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    compensation_last_error = Column(String(500), nullable=True)
+    compensation_completed_at = Column(DateTime, nullable=True)
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.now,
+        server_default=func.now(),
+    )
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.now,
+        onupdate=datetime.now,
+        server_default=func.now(),
+    )
+
 
 class Referral(Base):
     __tablename__ = "referrals"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    inviter_id = Column(BigInteger, ForeignKey("users.id"))
+    inviter_id = Column(BigInteger, ForeignKey("users.id"), index=True)
     invitee_id = Column(BigInteger, ForeignKey("users.id"), unique=True)
     channel_reward_claimed = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.now)
 
-    inviter = relationship("User", foreign_keys=[inviter_id], back_populates="referrals_made")
-    invitee = relationship("User", foreign_keys=[invitee_id], back_populates="referred_by")
+    inviter = relationship(
+        "User", foreign_keys=[inviter_id], back_populates="referrals_made"
+    )
+    invitee = relationship(
+        "User", foreign_keys=[invitee_id], back_populates="referred_by"
+    )
 
-class Permission(Base):
-    __tablename__ = "permissions"
+
+class UserFollow(Base):
+    __tablename__ = "user_follows"
+    __table_args__ = (
+        UniqueConstraint(
+            "follower_id", "followee_id", name="uq_user_follows_follower_followee"
+        ),
+        Index("ix_user_follows_follower_created_at", "follower_id", "created_at"),
+        Index("ix_user_follows_followee_created_at", "followee_id", "created_at"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    entity_id = Column(BigInteger, unique=True, nullable=False) # User ID or Group ID
-    type = Column(String(20), nullable=False) # 'whitelist_user', 'whitelist_group'
-    created_at = Column(DateTime, default=datetime.now)
+    follower_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    followee_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    follower = relationship(
+        "User", foreign_keys=[follower_id], backref="following_links"
+    )
+    followee = relationship("User", foreign_keys=[followee_id], backref="follower_links")
+
 
 class History(Base):
     __tablename__ = "history"
+    __table_args__ = (
+        Index("idx_history_user_favorite", "user_id", "is_favorited"),
+        Index("ix_history_created_at", "created_at"),
+        Index("ix_history_created_at_type", "created_at", "type"),
+        Index("ix_history_created_at_user_id", "created_at", "user_id"),
+        Index("ix_history_source_created_at_user_id", "source", "created_at", "user_id"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id"))
     task_id = Column(String(64), nullable=True)
-    type = Column(String(20), nullable=True) # 'image', 'video', 'video_pro', 'face_swap', etc.
+    type = Column(
+        String(64), nullable=True
+    )  # generation task type, e.g. image/video/scail2_action_transfer
     prompt = Column(Text, nullable=True)
-    input_file = Column(String(255), nullable=True)
-    output_file = Column(String(255), nullable=True)
+    input_file = Column(Text, nullable=True)
+    output_file = Column(Text, nullable=True)
+    extra_outputs = Column(JSON, nullable=True)
+    billing_resolution = Column(String(32), nullable=True)
+    width = Column(Integer, nullable=True)
+    height = Column(Integer, nullable=True)
+    duration = Column(Integer, nullable=True)
+    requested_duration = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
+    is_public = Column(Boolean, default=False)
+    is_visible = Column(Boolean, default=True, server_default=text("true"))
+    is_favorited = Column(Boolean, default=False)
+    rating = Column(Integer, default=0)
+    allow_contribute = Column(Boolean, default=True)
+    source = Column(String(20), server_default="bot", nullable=False)
+
     user = relationship("User", back_populates="history")
+
 
 class TemplateContribution(Base):
     __tablename__ = "template_contributions"
@@ -72,14 +419,16 @@ class TemplateContribution(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id"), index=True)
     file_path = Column(String(255), nullable=False)
-    file_type = Column(String(20), nullable=True) # 'photo', 'video', 'document'
+    file_type = Column(String(20), nullable=True)  # 'photo', 'video', 'document'
     is_reviewed = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.now)
 
     user = relationship("User", backref="contributions")
 
+
 class CheckinHistory(Base):
     __tablename__ = "checkin_history"
+    __table_args__ = (Index("ix_checkin_history_checkin_date", "checkin_date"),)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id"), index=True)
@@ -88,16 +437,349 @@ class CheckinHistory(Base):
 
     user = relationship("User", backref="checkin_history")
 
+
 class UserLog(Base):
     __tablename__ = "user_logs"
+    __table_args__ = (
+        Index("ix_user_logs_user_created_at_id", "user_id", "created_at", "id"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
     username = Column(String(100), nullable=True)
-    operation_type = Column(String(50), nullable=False, index=True)  # checkin, generate, invite, etc.
+    operation_type = Column(
+        String(50), nullable=False, index=True
+    )  # checkin, generate, invite, etc.
     credit_change = Column(Integer, nullable=False, default=0)
-    current_balance = Column(Integer, nullable=False)  # Snapshot of balance after operation
+    current_balance = Column(
+        Integer, nullable=False
+    )  # Snapshot of balance after operation
     created_at = Column(DateTime, default=datetime.now, index=True)
     extra_info = Column(Text, nullable=True)  # Stored as JSON string for compatibility
 
     user = relationship("User", backref="logs")
+
+
+class MembershipPlan(Base):
+    __tablename__ = "membership_plans"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(50), nullable=False)
+    identity_name = Column(String(50), nullable=False)
+    price_ton = Column(DECIMAL(10, 2), nullable=False)
+    price_stars = Column(Integer, nullable=False, default=0)
+    price_rmb = Column(DECIMAL(10, 2), nullable=False, default=0.00)
+    reward_credits = Column(Integer, nullable=False)
+    duration_days = Column(Integer, default=30)
+    is_active = Column(Boolean, default=True)
+
+
+class SiteNotice(Base):
+    __tablename__ = "site_notices"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    title = Column(String(255), nullable=False, default="", server_default=text("''"))
+    content = Column(Text, nullable=False, default="")
+    is_active = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    is_pinned = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    target_groups = Column(JSON, nullable=False, default=list, server_default=text("'[]'::json"))
+    target_identities = Column(JSON, nullable=False, default=list, server_default=text("'[]'::json"))
+    published_at = Column(DateTime, nullable=True)
+    deleted_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class Order(Base):
+    __tablename__ = "orders"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_id = Column(String(64), index=True)  # Unique payload for TON transaction
+    business_order_id = Column(String(64), nullable=True, unique=True, index=True)
+    internal_user_id = Column(
+        BigInteger,
+        ForeignKey("users.id"),
+        nullable=False,
+        index=True,
+    )
+    plan_id = Column(Integer, ForeignKey("membership_plans.id"), nullable=False)
+    original_price = Column(DECIMAL(10, 2), nullable=False)
+    final_price = Column(DECIMAL(10, 2), nullable=False)
+    settlement_schema_version = Column(String(32), nullable=True)
+    settlement_snapshot = Column(JSON, nullable=True)
+    status = Column(String(20), default="PENDING")  # PENDING, SUCCESS, FAILED
+    tx_hash = Column(String(100), nullable=True, unique=True)
+    commission_usdt = Column(
+        DECIMAL(10, 4), nullable=False, default=0, server_default=text("0")
+    )
+    payment_channel = Column(String(20), nullable=True, index=True)
+    paid_at = Column(DateTime, nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    user = relationship("User", backref="orders")
+    plan = relationship("MembershipPlan")
+
+
+class AffiliateTransaction(Base):
+    __tablename__ = "affiliate_transactions"
+    __table_args__ = (
+        UniqueConstraint(
+            "idempotency_key", name="uq_affiliate_transactions_idempotency_key"
+        ),
+        Index(
+            "ix_affiliate_transactions_user_status_direction",
+            "user_id",
+            "status",
+            "direction",
+        ),
+        Index(
+            "ix_affiliate_transactions_reference_type_reference_id",
+            "reference_type",
+            "reference_id",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    amount_usdt = Column(DECIMAL(10, 4), nullable=False)
+    transaction_type = Column(String(50), nullable=False)
+    direction = Column(String(10), nullable=False)
+    reference_type = Column(String(50), nullable=False)
+    reference_id = Column(String(64), nullable=False)
+    idempotency_key = Column(String(128), nullable=False)
+    status = Column(String(20), default="PENDING")
+    details = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    user = relationship("User", backref="affiliate_transactions")
+
+
+class AffiliateRedeem(Base):
+    __tablename__ = "affiliate_redeems"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "idempotency_key",
+            name="uq_affiliate_redeems_user_idempotency_key",
+        ),
+        Index("ix_affiliate_redeems_user_created_at", "user_id", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    redeem_type = Column(String(50), nullable=False)
+    redeem_option_key = Column(String(64), nullable=False)
+    requested_amount_usdt = Column(DECIMAL(10, 4), nullable=False)
+    amount_usdt = Column(DECIMAL(10, 4), nullable=False)
+    credits_granted = Column(Integer, nullable=False)
+    target_plan_id = Column(Integer, nullable=True)
+    target_identity = Column(String(50), nullable=True)
+    duration_days = Column(Integer, nullable=True)
+    grant_reward_credits = Column(Boolean, nullable=True)
+    settlement_reason = Column(String(50), nullable=True)
+    exchange_rate_snapshot = Column(String(64), nullable=True)
+    rounding_mode = Column(String(32), nullable=True)
+    status = Column(String(20), nullable=False, default="SUCCESS")
+    idempotency_key = Column(String(128), nullable=False)
+    details = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    user = relationship("User", backref="affiliate_redeems")
+
+
+class RuntimeCheckpoint(Base):
+    __tablename__ = "runtime_checkpoints"
+
+    key = Column(String(128), primary_key=True)
+    value = Column(JSON, nullable=False, default=dict, server_default=text("'{}'::json"))
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+
+class WorkerLog(Base):
+    __tablename__ = "worker_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    worker_id = Column(String(100), nullable=False, index=True)
+    task_id = Column(String(64), nullable=False, index=True)
+    task_type = Column(String(50), nullable=True)
+    status = Column(String(20), nullable=False)  # 'success', 'failed'
+    start_time = Column(DateTime, nullable=False)
+    end_time = Column(DateTime, nullable=False)
+    duration = Column(Integer, nullable=False)  # in seconds
+    error_message = Column(Text, nullable=True)
+
+
+class GalleryPost(Base):
+    __tablename__ = "gallery_posts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    task_id = Column(String(64), index=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), index=True)  # internal_user_id
+
+    # 元数据
+    media_type = Column(String(20))  # 'image' 或 'video'
+    width = Column(Integer, nullable=True)
+    height = Column(Integer, nullable=True)
+    duration = Column(Integer, nullable=True)  # 视频时长(秒)
+
+    # 标签 (JSON 格式存储列表)
+    tags = Column(Text, default="[]")
+
+    # 统计数据
+    likes_count = Column(Integer, default=0)
+    dislikes_count = Column(Integer, default=0)
+    applied_count = Column(Integer, default=0)
+    comments_count = Column(Integer, default=0, server_default="0", nullable=False)
+
+    # Telegram File ID 缓存（用于秒发零流量）
+    telegram_file_id = Column(String(255), nullable=True)
+
+    is_active = Column(Boolean, default=True)  # 审核/下架控制
+    created_at = Column(DateTime, default=datetime.now)
+
+    user = relationship("User", backref="gallery_posts")
+    comments = relationship("GalleryComment", back_populates="post", cascade="all, delete-orphan", passive_deletes=True)
+    reports = relationship("GalleryReport", back_populates="post", passive_deletes=True)
+    histories = relationship(
+        "History",
+        primaryjoin="foreign(GalleryPost.task_id) == History.task_id",
+        uselist=True,
+        backref="gallery_post",
+    )
+
+
+class UserInteraction(Base):
+    __tablename__ = "user_interactions"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "post_id", "action_type", name="uix_user_post_action"
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), index=True)
+    post_id = Column(Integer, ForeignKey("gallery_posts.id"), index=True)
+    action_type = Column(String(20))  # 'like', 'dislike', 'apply'
+    created_at = Column(DateTime, default=datetime.now)
+
+    user = relationship("User", backref="interactions")
+    post = relationship("GalleryPost", backref="interactions")
+
+
+class GalleryPromptUnlock(Base):
+    __tablename__ = "gallery_prompt_unlocks"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "post_id",
+            name="uq_gallery_prompt_unlocks_user_post",
+        ),
+        Index(
+            "ix_gallery_prompt_unlocks_user_created_at",
+            "user_id",
+            "created_at",
+        ),
+        Index(
+            "ix_gallery_prompt_unlocks_post_created_at",
+            "post_id",
+            "created_at",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    post_id = Column(Integer, ForeignKey("gallery_posts.id"), nullable=False, index=True)
+    author_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    cost_credits = Column(Integer, nullable=False, default=1, server_default=text("1"))
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    user = relationship("User", foreign_keys=[user_id], backref="prompt_unlocks")
+    author = relationship(
+        "User",
+        foreign_keys=[author_id],
+        backref="prompt_unlock_sales",
+    )
+    post = relationship("GalleryPost", backref="prompt_unlocks")
+
+
+class GalleryComment(Base):
+    __tablename__ = "gallery_comments"
+    __table_args__ = (
+        Index("ix_gallery_comments_post_created_at", "post_id", "created_at"),
+        Index(
+            "ix_gallery_comments_active_post_created_at",
+            "post_id",
+            "created_at",
+            postgresql_where=text("is_active = true"),
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    post_id = Column(Integer, ForeignKey("gallery_posts.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(BigInteger, ForeignKey("users.id"), index=True, nullable=False)
+    content = Column(String(500), nullable=False)  # 限制评论长度
+    is_active = Column(Boolean, default=True, server_default=text("true"), nullable=False)  # 软删除与审核控制
+    created_at = Column(DateTime, default=datetime.now, server_default=func.now(), nullable=False)
+
+    user = relationship("User")
+    post = relationship("GalleryPost", back_populates="comments")
+
+
+class GalleryReport(Base):
+    __tablename__ = "gallery_reports"
+    __table_args__ = (
+        UniqueConstraint(
+            "reporter_user_id",
+            "post_id",
+            name="uq_gallery_reports_reporter_post",
+        ),
+        CheckConstraint(
+            "reason in ('children', 'gore', 'gross', 'other')",
+            name="ck_gallery_reports_reason",
+        ),
+        CheckConstraint(
+            "status in ('pending', 'resolved')",
+            name="ck_gallery_reports_status",
+        ),
+        Index("ix_gallery_reports_status_created_at", "status", "created_at"),
+        Index("ix_gallery_reports_post_created_at", "post_id", "created_at"),
+        Index("ix_gallery_reports_reason_created_at", "reason", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    post_id = Column(
+        Integer,
+        ForeignKey("gallery_posts.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    reporter_user_id = Column(
+        BigInteger,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    post_author_user_id = Column(
+        BigInteger,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    post_task_id = Column(String(64), nullable=True, index=True)
+    reason = Column(String(20), nullable=False)
+    status = Column(
+        String(20),
+        nullable=False,
+        default="pending",
+        server_default=text("'pending'"),
+    )
+    created_at = Column(DateTime, default=datetime.now, server_default=func.now(), nullable=False)
+    resolved_at = Column(DateTime, nullable=True)
+    resolution_action = Column(String(32), nullable=True)
+
+    post = relationship("GalleryPost", back_populates="reports")
+    reporter = relationship("User", foreign_keys=[reporter_user_id])
+    post_author = relationship("User", foreign_keys=[post_author_user_id])

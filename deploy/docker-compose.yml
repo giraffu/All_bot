@@ -1,0 +1,99 @@
+version: '3.8'
+
+services:
+  bot:
+    build: 
+      context: ../
+      dockerfile: Dockerfile
+    container_name: tg-bot
+    restart: always
+    env_file:
+      - ../.env
+    environment:
+      - TZ=Asia/Shanghai
+      - BOT_TYPE=PROD
+      - REDIS_PREFIX=prod_bot_
+      - ENABLE_PUBLIC_SHARE=false
+      - API_BASE=http://127.0.0.1:8003
+    volumes:
+      - ../logs:/app/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    network_mode: "host"
+
+  payment-api:
+    build: 
+      context: ../
+      dockerfile: Dockerfile
+    container_name: payment-api
+    restart: always
+    env_file:
+      - ../.env
+    environment:
+      - TZ=Asia/Shanghai
+      - BOT_TYPE=PROD
+      - REDIS_PREFIX=prod_bot_
+    volumes:
+      - ../logs:/app/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    network_mode: "host"
+    command: ["python", "src/payment_api_server.py"]
+
+  web-api:
+    build: 
+      context: ../
+      dockerfile: Dockerfile
+    container_name: web-api
+    restart: always
+    env_file:
+      - ../.env
+    environment:
+      - TZ=Asia/Shanghai
+      - BOT_TYPE=PROD
+      - REDIS_PREFIX=prod_bot_
+      - DB_POOL_SIZE=15
+      - DB_MAX_OVERFLOW=10
+    volumes:
+      - ../logs:/app/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    network_mode: "host"
+    command: ["uvicorn", "src.web_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import sys, urllib.request; sys.exit(0) if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5).status == 200 else sys.exit(1)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+  imgproxy:
+    image: darthsim/imgproxy:latest
+    container_name: imgproxy
+    restart: always
+    environment:
+      - IMGPROXY_BIND=:8084
+      - IMGPROXY_ENFORCE_WEBP=true
+      - IMGPROXY_MAX_SRC_RESOLUTION=50
+      - IMGPROXY_MAX_ANIMATION_FRAMES=1
+      - IMGPROXY_DOWNLOAD_TIMEOUT=5
+      - IMGPROXY_CONCURRENCY=8
+    network_mode: "host"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "sh",
+          "-c",
+          "[ \"$$(ps -o comm= 1)\" = \"imgproxy\" ]",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s

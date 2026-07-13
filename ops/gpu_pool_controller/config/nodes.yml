@@ -1,0 +1,299 @@
+nodes:
+  gpu-226:
+    provider: lan_ssh
+    host: allbot-gpu-226
+    ssh_alias: allbot-gpu-226
+    ip: 192.168.1.226
+    runtime: host_process
+    model_dir: /home/ubantu/comfyui/models
+    notes: Single RTX 5090 node. ComfyUI is a host process, not Docker.
+    gpus:
+      - index: 0
+        name: NVIDIA GeForce RTX 5090
+        vram_gb: 32
+    comfy:
+      - id: comfy-8188
+        port: 8188
+        gpu_index: 0
+        worker_id: cloud_prod_worker_01
+        api_url: http://192.168.1.226:8188
+        ws_url: ws://192.168.1.226:8188/ws
+        model_dir: /home/ubantu/comfyui/models
+        runtime: host_process
+        instance_dir: /home/ubantu/comfyui
+        custom_nodes_dir: /home/ubantu/comfyui/custom_nodes
+        workflows_dir: /home/ubantu/comfyui/user/default/workflows
+        input_dir: /home/ubantu/comfyui/input
+        output_dir: /home/ubantu/comfyui/output
+        temp_dir: /home/ubantu/comfyui/temp
+        comfy_runtime_kind: host_service
+        comfy_runtime_managed: false
+        container_port: 8188
+        compose_template: host_service_observation_only
+        rollback_state: {}
+        supported_task_types:
+          - face_swap
+          - i2i_pro
+          - i2i_draw
+          - face_video
+          - video_edit
+          - image_to_video
+          - t2i-pornmaster-turbo
+      - id: aio-gpu0
+        port: 8190
+        gpu_index: 0
+        worker_id: lan_aio_prod_gpu226_gpu0_image_to_video_01
+        api_url: http://192.168.1.226:8190
+        ws_url: ws://192.168.1.226:8190/ws
+        model_dir: /home/ubantu/allbot-runpod-runtime/shared/models
+        runtime: docker
+        image: yanwk/comfyui-boot:cu130-slim
+        instance_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/legacy
+        custom_nodes_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/legacy/custom_nodes
+        workflows_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/legacy/workflows
+        input_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/legacy/input
+        output_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/legacy/output
+        temp_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/legacy/temp
+        comfy_runtime_kind: docker_container
+        comfy_runtime_managed: true
+        container_name: allbot-lan-aio-gpu-226-gpu0-image_to_video-prod
+        container_port: 8188
+        compose_template: standard_comfy_runtime_v1
+        runtime_shape: standard_comfy_runtime
+        slot_id: gpu-226-gpu0
+        runtime_root: /home/ubantu/allbot-runpod-runtime
+        model_cache_endpoint: http://192.168.1.115:9010
+        image_registry: 192.168.1.115:5000
+        rollback_state:
+          host_service: comfyui.service
+          local_agent_container: cloud-prod-comfy-agent-1
+          task_types: face_swap,i2i_pro,i2i_draw,face_video,video_edit,image_to_video,t2i-pornmaster-turbo
+          runtime_profile: face_i2i_t2i
+        supported_task_types:
+          - video_insert
+          - video_edit
+          - image_to_video
+
+  gpu-177:
+    provider: lan_ssh
+    host: allbot-gpu-177
+    ssh_alias: allbot-gpu-177
+    ip: 192.168.1.177
+    runtime: docker
+    model_dir: /data/comfy/models
+    notes: Dual RTX 5090 node. Production runs only LAN AIO on 8190/8191; legacy comfy0/comfy1, local agents 2/3, and /data/comfy were removed on 2026-06-20. Legacy paths below are historical mapping data, not a local rollback target.
+    gpus:
+      - index: 0
+        name: NVIDIA GeForce RTX 5090
+        vram_gb: 32
+      - index: 1
+        name: NVIDIA GeForce RTX 5090
+        vram_gb: 32
+    comfy:
+      - id: comfy0
+        port: 8188
+        gpu_index: 0
+        worker_id: cloud_prod_worker_02
+        api_url: http://192.168.1.177:8188
+        ws_url: ws://192.168.1.177:8188/ws
+        model_dir: /data/comfy/models
+        runtime: docker
+        image: yanwk/comfyui-boot:cu130-slim
+        instance_dir: /data/comfy/inst0
+        custom_nodes_dir: /data/comfy/inst0/custom_nodes
+        workflows_dir: /data/comfy/inst0/workflows
+        input_dir: /data/comfy/inst0/input
+        output_dir: /data/comfy/inst0/output
+        temp_dir: /data/comfy/inst0/temp
+        comfy_runtime_kind: docker_container
+        comfy_runtime_managed: false
+        container_name: allbot-comfy-gpu0
+        container_port: 8188
+        compose_template: standard_comfy_runtime_v1
+        rollback_state:
+          retired: true
+          retired_at: "2026-06-20"
+          reason: gpu-177 AIO-only cleanup removed comfy0, cloud-prod-comfy-agent-2, and /data/comfy.
+        supported_task_types:
+          - video_insert
+          - video_edit
+          - image_to_video
+      - id: comfy1
+        port: 8189
+        gpu_index: 1
+        worker_id: cloud_prod_worker_03
+        api_url: http://192.168.1.177:8189
+        ws_url: ws://192.168.1.177:8189/ws
+        model_dir: /data/comfy/models
+        runtime: docker
+        image: yanwk/comfyui-boot:cu130-slim
+        instance_dir: /data/comfy/inst1
+        custom_nodes_dir: /data/comfy/inst1/custom_nodes
+        workflows_dir: /data/comfy/inst1/workflows
+        input_dir: /data/comfy/inst1/input
+        output_dir: /data/comfy/inst1/output
+        temp_dir: /data/comfy/inst1/temp
+        comfy_runtime_kind: docker_container
+        comfy_runtime_managed: false
+        container_name: allbot-comfy-gpu1
+        container_port: 8188
+        compose_template: standard_comfy_runtime_v1
+        rollback_state:
+          retired: true
+          retired_at: "2026-06-20"
+          reason: gpu-177 AIO-only cleanup removed comfy1, cloud-prod-comfy-agent-3, and /data/comfy.
+        supported_task_types:
+          - ltx_video
+          - ltx_video_flf2v
+          - ltx_video_v2v_audio
+          - image_to_video
+
+  gpu-252:
+    provider: lan_ssh
+    host: allbot-gpu-252
+    ssh_alias: allbot-gpu-252
+    ip: 192.168.1.252
+    runtime: docker
+    model_dir: /home/user/APP/data/models
+    notes: Dual RTX 4090 48GB node. swap pressure has been observed.
+    gpus:
+      - index: 0
+        name: NVIDIA GeForce RTX 4090
+        vram_gb: 48
+      - index: 1
+        name: NVIDIA GeForce RTX 4090
+        vram_gb: 48
+    comfy:
+      - id: comfy0
+        port: 8188
+        gpu_index: 0
+        worker_id: cloud_prod_worker_04
+        api_url: http://192.168.1.252:8188
+        ws_url: ws://192.168.1.252:8188/ws
+        model_dir: /home/user/APP/data/models
+        runtime: docker
+        image: yanwk/comfyui-boot:cu128-slim
+        instance_dir: /home/user/APP/data/inst0
+        custom_nodes_dir: /home/user/APP/data/inst0/custom_nodes
+        workflows_dir: /home/user/APP/data/inst0/workflows
+        input_dir: /home/user/APP/data/inst0/input
+        output_dir: /home/user/APP/data/inst0/output
+        temp_dir: /home/user/APP/data/inst0/temp
+        comfy_runtime_kind: docker_container
+        comfy_runtime_managed: false
+        container_name: allbot-comfy-gpu0
+        container_port: 8188
+        compose_template: standard_comfy_runtime_v1
+        rollback_state: {}
+        supported_task_types:
+          - img2img
+          - img2img_lora
+      - id: comfy1
+        port: 8189
+        gpu_index: 1
+        worker_id: cloud_prod_worker_05
+        api_url: http://192.168.1.252:8189
+        ws_url: ws://192.168.1.252:8189/ws
+        model_dir: /home/user/APP/data/models
+        runtime: docker
+        image: yanwk/comfyui-boot:cu128-slim
+        instance_dir: /home/user/APP/data/inst1
+        custom_nodes_dir: /home/user/APP/data/inst1/custom_nodes
+        workflows_dir: /home/user/APP/data/inst1/workflows
+        input_dir: /home/user/APP/data/inst1/input
+        output_dir: /home/user/APP/data/inst1/output
+        temp_dir: /home/user/APP/data/inst1/temp
+        comfy_runtime_kind: docker_container
+        comfy_runtime_managed: false
+        container_name: allbot-comfy-gpu1
+        container_port: 8189
+        compose_template: standard_comfy_runtime_v1
+        rollback_state: {}
+        supported_task_types:
+          - wan22_video_v2
+          - video_edit
+          - image_to_video
+
+  gpu-002:
+    provider: lan_ssh
+    host: allbot-gpu-002
+    ssh_alias: allbot-gpu-002
+    ip: 192.168.1.2
+    runtime: docker
+    model_dir: /data/comfy/models
+    notes: Dual RTX 4090 48GB node.
+    gpus:
+      - index: 0
+        name: NVIDIA GeForce RTX 4090
+        vram_gb: 48
+      - index: 1
+        name: NVIDIA GeForce RTX 4090
+        vram_gb: 48
+    comfy:
+      - id: comfy0
+        port: 8188
+        gpu_index: 0
+        worker_id: cloud_prod_worker_06
+        api_url: http://192.168.1.2:8188
+        ws_url: ws://192.168.1.2:8188/ws
+        model_dir: /data/comfy/models
+        runtime: docker
+        image: yanwk/comfyui-boot:cu128-slim
+        instance_dir: /data/comfy/inst0
+        custom_nodes_dir: /data/comfy/inst0/custom_nodes
+        workflows_dir: /data/comfy/inst0/workflows
+        input_dir: /data/comfy/inst0/input
+        output_dir: /data/comfy/inst0/output
+        temp_dir: /data/comfy/inst0/temp
+        comfy_runtime_kind: docker_container
+        comfy_runtime_managed: true
+        container_name: allbot-comfy-gpu0
+        container_port: 8188
+        compose_template: standard_comfy_runtime_v1
+        runtime_shape: standard_comfy_runtime
+        slot_id: gpu-002-gpu0
+        runtime_root: /srv/allbot/runpod-runtime
+        model_cache_endpoint: http://192.168.1.115:9010
+        image_registry: 192.168.1.115:5000
+        rollback_state:
+          image_ref: yanwk/comfyui-boot:cu128-slim
+          task_types: img2img,img2img_lora
+          runtime_profile: img2img_lora
+          container_name: comfy0
+        supported_task_types:
+          - img2img
+          - img2img_lora
+      - id: comfy1
+        port: 8189
+        gpu_index: 1
+        worker_id: cloud_prod_worker_07
+        api_url: http://192.168.1.2:8189
+        ws_url: ws://192.168.1.2:8189/ws
+        model_dir: /data/comfy/models
+        runtime: docker
+        image: yanwk/comfyui-boot:cu128-slim
+        instance_dir: /data/comfy/inst1
+        custom_nodes_dir: /data/comfy/inst1/custom_nodes
+        workflows_dir: /data/comfy/inst1/workflows
+        input_dir: /data/comfy/inst1/input
+        output_dir: /data/comfy/inst1/output
+        temp_dir: /data/comfy/inst1/temp
+        comfy_runtime_kind: docker_container
+        comfy_runtime_managed: true
+        container_name: allbot-comfy-gpu1
+        container_port: 8188
+        compose_template: standard_comfy_runtime_v1
+        runtime_shape: standard_comfy_runtime
+        slot_id: gpu-002-gpu1
+        runtime_root: /srv/allbot/runpod-runtime
+        model_cache_endpoint: http://192.168.1.115:9010
+        image_registry: 192.168.1.115:5000
+        rollback_state:
+          image_ref: yanwk/comfyui-boot:cu128-slim
+          task_types: video_insert,video_edit,image_to_video
+          runtime_profile: video_basic
+          container_name: comfy1
+        supported_task_types:
+          - video_insert
+          - video_edit
+          - image_to_video

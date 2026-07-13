@@ -1,0 +1,221 @@
+{
+  "1": {
+    "inputs": {
+      "clip_name": "flux2/qwen_3_8b_fp8mixed.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader"
+  },
+  "3": {
+    "inputs": {
+      "conditioning": [
+        "185",
+        0
+      ],
+      "latent": [
+        "235",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent"
+  },
+  "4": {
+    "inputs": {
+      "conditioning": [
+        "254",
+        0
+      ],
+      "latent": [
+        "235",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent"
+  },
+  "7": {
+    "inputs": {
+      "width": [
+        "13",
+        0
+      ],
+      "height": [
+        "13",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage"
+  },
+  "8": {
+    "inputs": {
+      "steps": 4,
+      "width": [
+        "13",
+        0
+      ],
+      "height": [
+        "13",
+        1
+      ]
+    },
+    "class_type": "Flux2Scheduler"
+  },
+  "9": {
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect"
+  },
+  "11": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1.5,
+      "resolution_steps": 1,
+      "image": [
+        "15",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels"
+  },
+  "13": {
+    "inputs": {
+      "image": [
+        "11",
+        0
+      ]
+    },
+    "class_type": "GetImageSize"
+  },
+  "15": {
+    "inputs": {
+      "image": "input_image.png"
+    },
+    "class_type": "LoadImage"
+  },
+  "16": {
+    "inputs": {
+      "cfg": 1,
+      "model": [
+        "100",
+        0
+      ],
+      "positive": [
+        "3",
+        0
+      ],
+      "negative": [
+        "4",
+        0
+      ]
+    },
+    "class_type": "CFGGuider"
+  },
+  "20": {
+    "inputs": {
+      "noise": [
+        "28",
+        0
+      ],
+      "guider": [
+        "16",
+        0
+      ],
+      "sampler": [
+        "9",
+        0
+      ],
+      "sigmas": [
+        "8",
+        0
+      ],
+      "latent_image": [
+        "7",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced"
+  },
+  "28": {
+    "inputs": {
+      "noise_seed": 1059593401564876
+    },
+    "class_type": "RandomNoise"
+  },
+  "100": {
+    "inputs": {
+      "unet_name": "flux2/PornMaster_flux2_klein_9b_turbo_fp8_V4.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader"
+  },
+  "179": {
+    "inputs": {
+      "samples": [
+        "20",
+        0
+      ],
+      "vae": [
+        "180",
+        0
+      ]
+    },
+    "class_type": "VAEDecode"
+  },
+  "180": {
+    "inputs": {
+      "vae_name": "flux2/full_encoder_small_decoder.safetensors"
+    },
+    "class_type": "VAELoader"
+  },
+  "185": {
+    "inputs": {
+      "text": "Describe the requested edit.",
+      "clip": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "201": {
+    "inputs": {
+      "filename_prefix": "pornmaster_flux2_single_auto",
+      "images": [
+        "179",
+        0
+      ]
+    },
+    "class_type": "SaveImage"
+  },
+  "235": {
+    "inputs": {
+      "pixels": [
+        "11",
+        0
+      ],
+      "vae": [
+        "180",
+        0
+      ]
+    },
+    "class_type": "VAEEncode"
+  },
+  "254": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Negative Prompt"
+    }
+  }
+}

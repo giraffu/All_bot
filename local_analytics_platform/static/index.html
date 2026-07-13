@@ -1,0 +1,1368 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>本地数据分析平台</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/static/styles.css?v=20260710-template-review-low-quality-v1" />
+  </head>
+  <body>
+    <div id="app" class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar-brand">
+          <div class="eyebrow">AllBot Shadow Analytics</div>
+          <h1>本地数据分析平台</h1>
+          <div id="sourceLine" class="source-line">连接中</div>
+        </div>
+
+        <nav class="side-tabs" aria-label="本地分析模块">
+          <button class="tab-button active" type="button" data-tab="users">
+            <span class="tab-label">用户画像</span>
+            <span class="tab-meta">增长、活跃、分层</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="credit-flow">
+            <span class="tab-label">灵石收支</span>
+            <span class="tab-meta">来源、消耗、风险</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="finance">
+            <span class="tab-label">充值情况</span>
+            <span class="tab-meta">订单、渠道、套餐</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="generation">
+            <span class="tab-label">生成分析</span>
+            <span class="tab-meta">趋势、质量、效率</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="prompts">
+            <span class="tab-label">提示词洞察</span>
+            <span class="tab-meta">复用、字数、互动</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="prompt-slim">
+            <span class="tab-label">提示词瘦身</span>
+            <span class="tab-meta">候选、剔除、信号</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="prompt-vectors">
+            <span class="tab-label">提示词向量化</span>
+            <span class="tab-meta">覆盖、模型、续跑</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="prompt-tokens">
+            <span class="tab-label">提示词词元</span>
+            <span class="tab-meta">搜索、占比、下钻</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="prompt-decomposition">
+            <span class="tab-label">自由P图拆解</span>
+            <span class="tab-meta">筛选、沉淀</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="templates">
+            <span class="tab-label">模板候选</span>
+            <span class="tab-meta">场景样本沉淀</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="media">
+            <span class="tab-label">媒体核验</span>
+            <span class="tab-meta">输入输出引用</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-status">
+          <div class="status-label">Shadow 状态</div>
+          <div id="sidebarStatus" class="status-value">等待刷新</div>
+        </div>
+      </aside>
+
+      <div class="workspace">
+        <header class="topbar">
+          <div class="title-block">
+            <div id="activeKicker" class="eyebrow">用户画像</div>
+            <h2 id="activeTitle">用户增长、活跃和分层</h2>
+            <div id="activeSubtitle" class="source-line">本地 shadow 数据分析</div>
+            <div id="lastUpdated" class="timestamp"></div>
+          </div>
+        <div class="controls">
+          <label id="daysSelectControl">
+            <span>统计周期</span>
+            <select id="daysSelect">
+              <option value="0">所有</option>
+              <option value="360">360 天</option>
+              <option value="240">240 天</option>
+              <option value="180">180 天</option>
+              <option value="90">90 天</option>
+              <option value="30" selected>30 天</option>
+              <option value="7">7 天</option>
+            </select>
+          </label>
+          <div id="userDateRangeControls" class="date-range-controls hidden" aria-label="用户画像日期范围">
+            <label>
+              <span>开始日期</span>
+              <input id="userStartDateInput" type="date" />
+            </label>
+            <label>
+              <span>结束日期</span>
+              <input id="userEndDateInput" type="date" />
+            </label>
+          </div>
+          <button id="refreshButton" type="button">刷新</button>
+          <button id="logoutButton" class="secondary-button" type="button">退出</button>
+        </div>
+      </header>
+
+      <main>
+        <div id="errorBanner" class="error-banner hidden"></div>
+
+        <section class="band users-band tab-panel active" data-panel="users">
+          <div id="userSummary" class="metric-grid user-metric-grid"></div>
+          <div id="userRechargeRates" class="metric-grid user-metric-grid user-rate-grid"></div>
+          <div class="analytics-chart-grid user-fixed-charts">
+            <div class="chart-card chart-card-wide">
+              <div class="chart-title">人群规模趋势</div>
+              <div id="userCoreTrendChart" class="analytics-chart"></div>
+            </div>
+            <div class="chart-card">
+              <div class="chart-title">用户状态占比</div>
+              <div id="userTrustCompositionChart" class="analytics-chart compact-chart"></div>
+            </div>
+            <div class="chart-card">
+              <div class="chart-title">转化漏斗</div>
+              <div id="userConversionFunnelChart" class="analytics-chart compact-chart"></div>
+            </div>
+            <div class="chart-card chart-card-wide">
+              <div class="chart-title">每日新增与活跃</div>
+              <div id="userDailyActivityChart" class="analytics-chart"></div>
+            </div>
+            <div class="chart-card">
+              <div class="chart-title">充值率对比</div>
+              <div id="userRechargeRateChart" class="analytics-chart compact-chart"></div>
+            </div>
+          </div>
+          <div class="table-shell user-group-panel">
+            <div class="table-title-row">
+              <div>
+                <div class="table-title">人群透视分析</div>
+                <div id="userGroupStatus" class="muted small">按同一套用户画像字段聚合</div>
+              </div>
+            </div>
+            <div class="profile-filter-bar group-filter-bar">
+              <label>
+                <span>维度</span>
+                <select id="userGroupDimensionSelect">
+                  <option value="payer">付费层</option>
+                  <option value="channel_member">入宗门</option>
+                  <option value="trust">信任层</option>
+                  <option value="identity">身份</option>
+                  <option value="user_group">修为</option>
+                  <option value="generation_band">历史生成次数</option>
+                  <option value="credit_band">灵石余额</option>
+                  <option value="checkin_band">历史签到</option>
+                  <option value="invitation">邀请</option>
+                  <option value="community">投稿社区</option>
+                  <option value="prompt_unlock">提示词解锁</option>
+                  <option value="social">关注关系</option>
+                  <option value="submission">投稿权限</option>
+                </select>
+              </label>
+              <label>
+                <span>排序</span>
+                <select id="userGroupSortSelect">
+                  <option value="users">用户数</option>
+                  <option value="active_rate">活跃率</option>
+                  <option value="paying_rate">付费率</option>
+                  <option value="recharge_usdt">充值金额</option>
+                  <option value="generation_count">生成次数</option>
+                  <option value="credit_net_change">灵石净变化</option>
+                  <option value="gallery_signal">投稿信号</option>
+                  <option value="prompt_unlocks">提示词解锁</option>
+                  <option value="followers">粉丝数</option>
+                  <option value="checkins">签到数</option>
+                </select>
+              </label>
+              <label>
+                <span>展示分组数</span>
+                <select id="userGroupLimitSelect">
+                  <option value="10">10</option>
+                  <option value="20" selected>20</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                </select>
+              </label>
+              <button id="userGroupRefreshButton" type="button">分析</button>
+            </div>
+            <div class="table-scroll">
+              <table class="group-table">
+                <thead>
+                  <tr>
+                    <th>人群</th>
+                    <th>用户 / 占比</th>
+                    <th>活跃 / 入宗门</th>
+                    <th>充值</th>
+                    <th>生成 / 签到</th>
+                    <th>灵石</th>
+                    <th>邀请 / 社区</th>
+                    <th>解锁 / 社交</th>
+                  </tr>
+                </thead>
+                <tbody id="userGroupRows"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="table-shell user-profile-panel">
+            <div class="table-title-row">
+              <div>
+                <div class="table-title">人群下钻用户列表</div>
+                <div id="userGroupSelectionLabel" class="muted small">全部人群</div>
+              </div>
+              <div class="table-title-actions">
+                <button id="userGroupClearButton" type="button">清除人群</button>
+                <div id="userProfilePagination" class="pagination-status"></div>
+              </div>
+            </div>
+            <div class="profile-filter-bar">
+              <label>
+                <span>搜索</span>
+                <input id="userProfileSearchInput" type="search" placeholder="ID / username / 昵称" />
+              </label>
+              <label>
+                <span>分层</span>
+                <select id="userProfileSegmentSelect">
+                  <option value="all">全部用户</option>
+                  <option value="active">近周期活跃</option>
+                  <option value="low_trust_free_tier">低信任免费层</option>
+                  <option value="real_payer">真实付费</option>
+                  <option value="non_payer_generator">未付费生成用户</option>
+                  <option value="has_invites">有邀请</option>
+                  <option value="has_gallery_posts">有投稿</option>
+                  <option value="has_prompt_unlocks">有提示词解锁</option>
+                  <option value="has_followers">有粉丝</option>
+                  <option value="submission_banned">投稿封禁</option>
+                </select>
+              </label>
+              <label>
+                <span>排序</span>
+                <select id="userProfileSortSelect">
+                  <option value="last_activity">最近活跃</option>
+                  <option value="generation_count">生成次数</option>
+                  <option value="credits">灵石余额</option>
+                  <option value="recharge_usdt">充值金额</option>
+                  <option value="credit_income">灵石收入</option>
+                  <option value="credit_expense">灵石支出</option>
+                  <option value="referral_count">邀请数</option>
+                  <option value="gallery_signal">投稿信号</option>
+                  <option value="followers">粉丝数</option>
+                  <option value="prompt_unlocks">提示词解锁</option>
+                  <option value="checkins">签到数</option>
+                </select>
+              </label>
+              <button id="userProfileRefreshButton" type="button">查询</button>
+            </div>
+            <div class="table-scroll">
+              <table class="profile-table">
+                <thead>
+                  <tr>
+                    <th>用户</th>
+                    <th>状态</th>
+                    <th>生成 / 签到</th>
+                    <th>灵石 / 收支</th>
+                    <th>充值</th>
+                    <th>邀请 / 社区</th>
+                    <th>社交 / 解锁</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="userProfileRows"></tbody>
+              </table>
+            </div>
+            <div class="profile-pagination">
+              <button id="userProfilePrevButton" type="button">上一页</button>
+              <button id="userProfileNextButton" type="button">下一页</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="band credit-flow-band tab-panel" data-panel="credit-flow">
+          <div id="creditFlowSummary" class="metric-grid compact"></div>
+          <div class="analytics-chart-grid credit-flow-charts">
+            <div class="chart-card chart-card-wide">
+              <div class="chart-title">每日收入、支出与净变化</div>
+              <div class="chart-mode-row">
+                <button class="chart-toggle active" type="button" data-credit-mode="daily">每日</button>
+                <button class="chart-toggle" type="button" data-credit-mode="cumulative">累计</button>
+              </div>
+              <div id="creditFlowTrendChart" class="analytics-chart"></div>
+            </div>
+            <div class="chart-card chart-card-wide">
+              <div class="chart-title">每日来源与去向堆叠</div>
+              <div id="creditDailyCategoryChart" class="analytics-chart"></div>
+            </div>
+          </div>
+          <div class="analytics-chart-grid credit-flow-grid">
+            <div class="chart-card">
+              <div class="table-title">收入类别</div>
+              <div id="creditIncomeCategoryChart" class="analytics-chart compact-chart"></div>
+            </div>
+            <div class="chart-card">
+              <div class="table-title">支出类别</div>
+              <div id="creditExpenseCategoryChart" class="analytics-chart compact-chart"></div>
+            </div>
+            <div class="chart-card">
+              <div class="table-title">来源身份组</div>
+              <div id="creditCompositionIdentityChart" class="analytics-chart compact-chart"></div>
+            </div>
+            <div class="chart-card">
+              <div class="table-title">来源修为</div>
+              <div id="creditCompositionGroupChart" class="analytics-chart compact-chart"></div>
+            </div>
+            <div class="chart-card">
+              <div class="table-title">宗门组成</div>
+              <div id="creditCompositionChannelChart" class="analytics-chart compact-chart"></div>
+            </div>
+            <div class="chart-card">
+              <div class="table-title">付费组成</div>
+              <div id="creditCompositionPayerChart" class="analytics-chart compact-chart"></div>
+            </div>
+          </div>
+          <div class="table-shell full">
+            <div class="table-title">健康风险标记</div>
+            <div id="creditHealthFlags" class="health-flags"></div>
+          </div>
+          <div class="chart-card full">
+            <div class="chart-title">可疑用户收入 / 支出 / 余额散点</div>
+            <div id="creditRiskScatterChart" class="analytics-chart"></div>
+          </div>
+          <div class="table-shell full">
+            <div class="table-title">可疑用户复核</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>用户</th>
+                  <th>风险</th>
+                  <th>收入 / 支出</th>
+                  <th>来源组成</th>
+                  <th>余额</th>
+                </tr>
+              </thead>
+              <tbody id="creditRiskUsers"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="band finance-band tab-panel" data-panel="finance">
+          <div id="financeSummary" class="metric-grid compact"></div>
+          <div class="analytics-chart-grid finance-chart-grid">
+            <div class="chart-card chart-card-wide">
+              <div class="chart-title">充值趋势与累计</div>
+              <div class="chart-control-row">
+                <label>
+                  <span>指标</span>
+                  <select id="financeMetricSelect">
+                    <option value="usdt_amount" selected>USDT</option>
+                    <option value="plan_reward_credits">发放灵石</option>
+                    <option value="success_orders">成功订单</option>
+                    <option value="payers">付费人数</option>
+                  </select>
+                </label>
+              </div>
+              <div id="financeTrendChart" class="analytics-chart"></div>
+            </div>
+            <div class="chart-card">
+              <div class="chart-title">订单状态漏斗</div>
+              <div id="financeStatusChart" class="analytics-chart"></div>
+            </div>
+          </div>
+          <div class="chart-card full">
+            <div class="table-title">分时充值对比</div>
+            <div class="chart-control-row">
+              <label>
+                <span>对比日期</span>
+                <input id="financeCompareDatesInput" type="text" placeholder="YYYY-MM-DD,YYYY-MM-DD" />
+              </label>
+              <label>
+                <span>累计周期</span>
+                <select id="financeHourlyRangeSelect">
+                  <option value="7">7 天</option>
+                  <option value="30" selected>30 天</option>
+                  <option value="90">90 天</option>
+                  <option value="180">180 天</option>
+                  <option value="360">360 天</option>
+                </select>
+              </label>
+              <button id="financeHourlyCompareButton" type="button">对比</button>
+              <button id="financeHourlyCumulativeButton" type="button">累计</button>
+            </div>
+            <div id="financeHourlyChart" class="analytics-chart"></div>
+          </div>
+          <div class="analytics-chart-grid finance-grid">
+            <div class="chart-card">
+              <div class="table-title">渠道收入组成</div>
+              <div id="financeChannelChart" class="analytics-chart compact-chart"></div>
+            </div>
+            <div class="chart-card">
+              <div class="table-title">套餐收入组成</div>
+              <div id="financePlanChart" class="analytics-chart compact-chart"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">受邀充值</div>
+              <div id="financeInvitationSummary" class="finance-stat-list"></div>
+            </div>
+            <div class="table-shell full-span">
+              <div class="table-title">充值健康标记</div>
+              <div id="financeHealthFlags" class="health-flags"></div>
+            </div>
+          </div>
+          <div class="leaderboard-grid finance-tables">
+            <div class="table-shell">
+              <div class="table-title">渠道表现</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>渠道</th>
+                    <th>成功/处理中/失败</th>
+                    <th>付费人数</th>
+                    <th>金额</th>
+                    <th>USDT</th>
+                    <th>均单</th>
+                    <th>发放灵石</th>
+                  </tr>
+                </thead>
+                <tbody id="financeChannels"></tbody>
+              </table>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">套餐表现</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>套餐</th>
+                    <th>身份</th>
+                    <th>成功/总订单</th>
+                    <th>付费人数</th>
+                    <th>USDT</th>
+                    <th>灵石</th>
+                    <th>成功率</th>
+                  </tr>
+                </thead>
+                <tbody id="financePlans"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="split-grid finance-wide">
+            <div class="table-shell">
+              <div class="table-title">付费分层</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>分层</th>
+                    <th>人数</th>
+                    <th>订单</th>
+                    <th>USDT</th>
+                    <th>人均 USDT</th>
+                    <th>最近付款</th>
+                  </tr>
+                </thead>
+                <tbody id="financeSegments"></tbody>
+              </table>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">Top 付费用户</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>用户</th>
+                    <th>订单</th>
+                    <th>USDT</th>
+                    <th>渠道金额</th>
+                    <th>灵石</th>
+                    <th>最近</th>
+                  </tr>
+                </thead>
+                <tbody id="financeTopPayers"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="table-shell full">
+            <div class="table-title">最近充值订单</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>订单</th>
+                  <th>用户</th>
+                  <th>套餐</th>
+                  <th>渠道/状态</th>
+                  <th>金额</th>
+                  <th>时间</th>
+                </tr>
+              </thead>
+              <tbody id="financeRecentOrders"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="band generation-band tab-panel" data-panel="generation">
+          <div id="generationSummary" class="metric-grid compact"></div>
+          <div class="analytics-chart-grid generation-chart-grid">
+            <div class="chart-card chart-card-wide">
+              <div class="chart-title">每日生成、创作者与来源</div>
+              <div id="generationTrendChart" class="analytics-chart"></div>
+            </div>
+            <div class="chart-card">
+              <div class="chart-title">质量漏斗</div>
+              <div id="generationQualityFunnelChart" class="analytics-chart"></div>
+            </div>
+          </div>
+          <div class="analytics-chart-grid generation-grid">
+            <div class="chart-card">
+              <div class="table-title">来源组成</div>
+              <div id="generationSourceMixChart" class="analytics-chart compact-chart"></div>
+            </div>
+            <div class="chart-card">
+              <div class="table-title">Worker 成功 / 失败</div>
+              <div id="generationWorkerChart" class="analytics-chart compact-chart"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">生成健康标记</div>
+              <div id="generationHealthFlags" class="health-flags"></div>
+            </div>
+          </div>
+          <div class="analytics-chart-grid generation-chart-grid">
+            <div class="chart-card chart-card-wide">
+              <div class="chart-title">任务类型效率气泡</div>
+              <div id="generationTypeBubbleChart" class="analytics-chart"></div>
+            </div>
+            <div class="chart-card chart-card-wide">
+              <div class="chart-title">分时生成与类型对比</div>
+              <div class="chart-control-row">
+                <label>
+                  <span>对比日期</span>
+                  <input id="generationCompareDatesInput" type="text" placeholder="YYYY-MM-DD,YYYY-MM-DD" />
+                </label>
+                <label>
+                  <span>累计周期</span>
+                  <select id="generationHourlyRangeSelect">
+                    <option value="7">7 天</option>
+                    <option value="30" selected>30 天</option>
+                    <option value="90">90 天</option>
+                    <option value="180">180 天</option>
+                    <option value="360">360 天</option>
+                  </select>
+                </label>
+                <button id="generationHourlyCompareButton" type="button">小时对比</button>
+                <button id="generationHourlyCumulativeButton" type="button">小时累计</button>
+                <button id="generationTypeCompareButton" type="button">类型对比</button>
+              </div>
+              <div id="generationCompareChart" class="analytics-chart"></div>
+            </div>
+          </div>
+          <div class="leaderboard-grid generation-tables">
+            <div class="table-shell">
+              <div class="table-title">任务类型表现</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>类型</th>
+                    <th>生成 / 用户</th>
+                    <th>输出 / 输入</th>
+                    <th>Gallery / 互动</th>
+                    <th>灵石</th>
+                    <th>失败 / 耗时</th>
+                  </tr>
+                </thead>
+                <tbody id="generationTypes"></tbody>
+              </table>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">灵石消耗</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>类型</th>
+                    <th>扣费次数</th>
+                    <th>消耗</th>
+                    <th>均次</th>
+                  </tr>
+                </thead>
+                <tbody id="generationCredits"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="leaderboard-grid generation-tables">
+            <div class="table-shell">
+              <div class="table-title">生成用户排行</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>用户</th>
+                    <th>生成</th>
+                    <th>结果</th>
+                    <th>Gallery</th>
+                    <th>最近</th>
+                  </tr>
+                </thead>
+                <tbody id="generationUserLeaderboard"></tbody>
+              </table>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">灵石消耗用户</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>用户</th>
+                    <th>消耗</th>
+                    <th>扣费</th>
+                    <th>均次</th>
+                    <th>余额</th>
+                  </tr>
+                </thead>
+                <tbody id="generationCreditLeaderboard"></tbody>
+              </table>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">Gallery 表现用户</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>用户</th>
+                    <th>作品</th>
+                    <th>互动</th>
+                    <th>评分</th>
+                    <th>最近</th>
+                  </tr>
+                </thead>
+                <tbody id="generationGalleryLeaderboard"></tbody>
+              </table>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">近期高信号作品</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>任务</th>
+                    <th>用户</th>
+                    <th>互动</th>
+                    <th>信号</th>
+                    <th>时间</th>
+                  </tr>
+                </thead>
+                <tbody id="generationRecentHighSignal"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="band tab-panel" data-panel="prompts">
+          <div id="promptSummary" class="metric-grid compact"></div>
+          <div class="prompt-filter-bar">
+            <label>
+              <span>搜索</span>
+              <input id="promptSearchInput" type="search" placeholder="提示词关键词" />
+            </label>
+            <label>
+              <span>来源范围</span>
+              <select id="promptScopeSelect">
+                <option value="natural" selected>自然输入</option>
+                <option value="builtin_template">内置模板</option>
+                <option value="source_template">源模板</option>
+                <option value="derived">一键应用衍生</option>
+                <option value="all">全部</option>
+              </select>
+            </label>
+            <label>
+              <span>任务类型</span>
+              <select id="taskTypeSelect">
+                <option value="">全部</option>
+              </select>
+            </label>
+            <label>
+              <span>排序</span>
+              <select id="promptSortSelect">
+                <option value="value_score" selected>价值分</option>
+                <option value="users">使用用户</option>
+                <option value="uses">使用次数</option>
+                <option value="last_seen">最近使用</option>
+                <option value="likes">点赞</option>
+                <option value="applies">应用</option>
+                <option value="prompt_unlocks">解锁</option>
+                <option value="char_count">字数</option>
+              </select>
+            </label>
+            <label>
+              <span>最少用户</span>
+              <input id="promptMinUsersInput" type="number" min="1" max="100000" value="1" />
+            </label>
+            <label>
+              <span>最少次数</span>
+              <input id="promptMinUsesInput" type="number" min="1" max="100000" value="1" />
+            </label>
+          </div>
+          <div class="distribution-grid prompt-distribution-grid">
+            <div class="table-shell">
+              <div class="table-title">字数分布</div>
+              <div id="promptLengthDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">复用分层</div>
+              <div id="promptReuseDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">任务类型</div>
+              <div id="promptTaskTypeDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">来源组成</div>
+              <div id="promptScopeDistribution" class="distribution-bars"></div>
+            </div>
+          </div>
+          <div class="prompt-layout">
+            <div class="table-shell">
+              <div class="table-title prompt-table-title">
+                <span>提示词库</span>
+                <span id="promptPageInfo" class="muted small"></span>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>价值</th>
+                    <th>Prompt</th>
+                    <th>复用</th>
+                    <th>互动</th>
+                    <th>来源</th>
+                    <th>最近</th>
+                  </tr>
+                </thead>
+                <tbody id="promptRows"></tbody>
+              </table>
+              <div class="prompt-pagination">
+                <button id="promptPrevButton" type="button">上一页</button>
+                <button id="promptNextButton" type="button">下一页</button>
+              </div>
+            </div>
+            <aside id="promptDetail" class="detail-panel"></aside>
+          </div>
+        </section>
+
+        <section class="band tab-panel" data-panel="prompt-slim">
+          <div id="promptSlimSummary" class="metric-grid compact"></div>
+          <div class="prompt-filter-bar prompt-slim-filter-bar">
+            <label>
+              <span>搜索</span>
+              <input id="promptSlimSearchInput" type="search" placeholder="提示词关键词" />
+            </label>
+            <label>
+              <span>阶段</span>
+              <select id="promptSlimStageSelect">
+                <option value="all" selected>全部</option>
+                <option value="candidate">候选</option>
+                <option value="auto_rejected">自动剔除</option>
+                <option value="manual_keep">人工保留</option>
+                <option value="manual_reject">人工剔除</option>
+                <option value="excellent">优秀</option>
+                <option value="archived">归档</option>
+              </select>
+            </label>
+            <label>
+              <span>来源</span>
+              <select id="promptSlimSourceSelect">
+                <option value="all" selected>全部</option>
+                <option value="natural">自然输入</option>
+                <option value="source_template">源模板</option>
+              </select>
+            </label>
+            <label>
+              <span>规则原因</span>
+              <select id="promptSlimReasonSelect">
+                <option value="all" selected>全部</option>
+                <option value="too_short">too_short</option>
+                <option value="short_oneoff">short_oneoff</option>
+                <option value="symbol_or_digit_only">symbol_or_digit_only</option>
+                <option value="known_junk">known_junk</option>
+              </select>
+            </label>
+            <label>
+              <span>任务类型</span>
+              <select id="promptSlimTaskTypeSelect">
+                <option value="">全部</option>
+              </select>
+            </label>
+            <label>
+              <span>排序</span>
+              <select id="promptSlimSortSelect">
+                <option value="quality_score" selected>质量分</option>
+                <option value="uses">使用次数</option>
+                <option value="users">使用用户</option>
+                <option value="last_seen">最近使用</option>
+                <option value="result_likes">结果点赞</option>
+                <option value="result_dislikes">结果点踩</option>
+                <option value="gallery_applies">Gallery 应用</option>
+                <option value="prompt_unlocks">解锁</option>
+                <option value="char_count">字数</option>
+              </select>
+            </label>
+            <label>
+              <span>最少用户</span>
+              <input id="promptSlimMinUsersInput" type="number" min="1" max="100000" value="1" />
+            </label>
+            <label>
+              <span>最少次数</span>
+              <input id="promptSlimMinUsesInput" type="number" min="1" max="100000" value="1" />
+            </label>
+          </div>
+          <div class="distribution-grid prompt-slim-distribution-grid">
+            <div class="table-shell">
+              <div class="table-title">阶段分布</div>
+              <div id="promptSlimStageDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">剔除原因</div>
+              <div id="promptSlimReasonDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">任务类型</div>
+              <div id="promptSlimTaskTypeDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">来源组成</div>
+              <div id="promptSlimSourceDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">字数分布</div>
+              <div id="promptSlimLengthDistribution" class="distribution-bars"></div>
+            </div>
+          </div>
+          <div class="prompt-layout prompt-slim-layout">
+            <div class="table-shell">
+              <div class="table-title prompt-table-title">
+                <span>瘦身提示词表</span>
+                <span id="promptSlimPageInfo" class="muted small"></span>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>阶段/评分</th>
+                    <th>Prompt</th>
+                    <th>使用</th>
+                    <th>结果反馈</th>
+                    <th>Gallery</th>
+                    <th>规则/最近</th>
+                  </tr>
+                </thead>
+                <tbody id="promptSlimRows"></tbody>
+              </table>
+              <div class="prompt-pagination">
+                <button id="promptSlimPrevButton" type="button">上一页</button>
+                <button id="promptSlimNextButton" type="button">下一页</button>
+              </div>
+            </div>
+            <aside id="promptSlimDetail" class="detail-panel"></aside>
+          </div>
+        </section>
+
+        <section class="band tab-panel" data-panel="prompt-vectors">
+          <div id="promptVectorSummary" class="metric-grid compact"></div>
+          <div class="prompt-vector-action-bar">
+            <div class="prompt-vector-action-copy">
+              <strong>向量化续跑</strong>
+              <span id="promptVectorResumeStatus">等待状态</span>
+            </div>
+            <button id="promptVectorResumeButton" type="button">续跑向量化</button>
+          </div>
+          <div class="distribution-grid prompt-vector-distribution-grid">
+            <div class="table-shell">
+              <div class="table-title">任务类型</div>
+              <div id="promptVectorTaskTypeDistribution" class="distribution-bars"></div>
+            </div>
+            <div class="table-shell">
+              <div class="table-title">向量状态</div>
+              <div id="promptVectorStatusDistribution" class="distribution-bars"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="band tab-panel" data-panel="prompt-tokens">
+          <div id="promptTokenSummary" class="metric-grid compact"></div>
+          <div class="prompt-filter-bar prompt-token-filter-bar">
+            <label>
+              <span>搜索词元</span>
+              <input id="promptTokenSearchInput" type="search" placeholder="输入词元关键词" />
+            </label>
+            <label>
+              <span>任务类型</span>
+              <select id="promptTokenTaskTypeSelect">
+                <option value="">全部任务</option>
+              </select>
+            </label>
+            <label>
+              <span>附加模型</span>
+              <select id="promptTokenModelSelect" disabled>
+                <option value="">先选择任务类型</option>
+              </select>
+            </label>
+            <label>
+              <span>排序</span>
+              <select id="promptTokenSortSelect">
+                <option value="prompt_count">提示词数</option>
+                <option value="use_count">使用次数</option>
+                <option value="user_count">使用用户</option>
+                <option value="token">词元 A-Z</option>
+              </select>
+            </label>
+            <label>
+              <span>最低提示词数</span>
+              <input id="promptTokenMinPromptCountInput" type="number" min="1" max="100000" value="5" inputmode="numeric" />
+            </label>
+            <button id="promptTokenSearchButton" type="button">搜索</button>
+          </div>
+          <div class="table-shell full prompt-token-custom-term-shell">
+            <div class="table-title-row">
+              <div>
+                <div class="table-title">指定词元表</div>
+                <div id="promptTokenCustomTermStatus" class="muted small"></div>
+                <div id="promptTokenRuleSeedStatus" class="muted small"></div>
+              </div>
+              <div class="inline-actions">
+                <button id="promptTokenCustomTermAddButton" type="button">添加词元</button>
+                <button id="promptTokenCustomTermSaveButton" type="button">保存词元</button>
+                <button id="promptTokenRuleSeedOverwriteButton" type="button">一键覆盖词元规则</button>
+                <button id="promptTokenCustomTermRebuildButton" type="button">重建词元统计</button>
+              </div>
+            </div>
+            <div class="rule-table-search-bar" role="search">
+              <label for="promptTokenCustomTermSearchInput">
+                <span>搜索指定词元</span>
+                <input id="promptTokenCustomTermSearchInput" type="search" placeholder="词元 / 备注 / 来源 / 批次" autocomplete="off" />
+              </label>
+            </div>
+            <div id="promptTokenCustomTermCategoryTabs" class="rule-category-tabs" role="tablist" aria-label="指定词元分类"></div>
+            <div id="promptTokenCustomTermSubcategoryTabs" class="rule-category-tabs rule-subcategory-tabs hidden" role="tablist" aria-label="指定词元子分类"></div>
+            <div class="table-scroll prompt-token-custom-term-scroll">
+              <table class="prompt-token-custom-term-table">
+                <thead>
+                  <tr>
+                    <th>指定词元</th>
+                    <th>备注</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="promptTokenCustomTermRows"></tbody>
+              </table>
+            </div>
+            <div id="promptTokenCustomTermPagination" class="prompt-pagination page-control rule-pagination"></div>
+          </div>
+          <div class="table-shell full prompt-token-alias-shell">
+            <div class="table-title-row">
+              <div>
+                <div class="table-title">词元映射表</div>
+                <div id="promptTokenAliasStatus" class="muted small"></div>
+              </div>
+              <div class="inline-actions">
+                <button id="promptTokenAliasAddButton" type="button">添加映射</button>
+                <button id="promptTokenAliasSaveButton" type="button">保存映射</button>
+                <button id="promptTokenAliasRebuildButton" type="button">重建词元统计</button>
+              </div>
+            </div>
+            <div class="rule-table-search-bar" role="search">
+              <label for="promptTokenAliasSearchInput">
+                <span>搜索映射</span>
+                <input id="promptTokenAliasSearchInput" type="search" placeholder="代表词元 / 同义词元 / 分类 / 子分类" autocomplete="off" />
+              </label>
+            </div>
+            <div id="promptTokenAliasCategoryTabs" class="rule-category-tabs" role="tablist" aria-label="词元映射分类"></div>
+            <div class="table-scroll prompt-token-alias-scroll">
+              <table class="prompt-token-alias-table">
+                <thead>
+                  <tr>
+                    <th>代表词元</th>
+                    <th>同义词元</th>
+                    <th>分类</th>
+                    <th>子分类</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="promptTokenAliasRows"></tbody>
+              </table>
+            </div>
+            <div id="promptTokenAliasPagination" class="prompt-pagination page-control rule-pagination"></div>
+          </div>
+          <div class="table-shell full prompt-token-deletion-shell">
+            <div class="table-title-row">
+              <div>
+                <div class="table-title">词元删除表</div>
+                <div id="promptTokenDeletionStatus" class="muted small">删除后立即从词元表和详情其它词元隐藏</div>
+              </div>
+            </div>
+            <div class="table-scroll prompt-token-deletion-scroll">
+              <table class="prompt-token-deletion-table">
+                <thead>
+                  <tr>
+                    <th>词元</th>
+                    <th>提示词数据</th>
+                    <th>删除时间</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="promptTokenDeletionRows"></tbody>
+              </table>
+            </div>
+            <div id="promptTokenDeletionPagination" class="prompt-pagination page-control rule-pagination"></div>
+          </div>
+          <div class="table-shell full">
+            <div class="table-title-row">
+              <div>
+                <div class="table-title">词元表</div>
+                <div id="promptTokenPageInfo" class="muted small"></div>
+              </div>
+            </div>
+            <div class="table-scroll prompt-token-table-scroll">
+              <table class="prompt-token-table">
+                <thead>
+                  <tr>
+                    <th>词元</th>
+                    <th>占比</th>
+                    <th>提示词数据</th>
+                    <th>类型/刷新</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="promptTokenRows"></tbody>
+              </table>
+            </div>
+            <div id="promptTokenPagination" class="prompt-pagination page-control"></div>
+          </div>
+        </section>
+
+        <section class="band tab-panel" data-panel="templates">
+          <div id="templateSummary" class="metric-grid compact"></div>
+          <div class="prompt-filter-bar template-filter-bar">
+            <label>
+              <span>任务类别</span>
+              <select id="templateTaskTypeSelect">
+                <option value="">全部任务</option>
+              </select>
+            </label>
+            <label>
+              <span>附加模型</span>
+              <select id="templateModelSelect">
+                <option value="">先选择任务类型</option>
+              </select>
+            </label>
+            <label>
+              <span>搜索模板</span>
+              <input id="templateSearchInput" type="search" placeholder="输入槽位词元或标题" />
+            </label>
+            <label>
+              <span>最低提示词数</span>
+              <input id="templateMinPromptsInput" type="number" min="1" max="100000" value="20" inputmode="numeric" />
+            </label>
+            <label>
+              <span>相似度</span>
+              <select id="templateSimilaritySelect">
+                <option value="">全部相似度</option>
+                <option value="高度相似">高度相似</option>
+                <option value="较相似">较相似</option>
+                <option value="中等相似">中等相似</option>
+                <option value="差异较大">差异较大</option>
+              </select>
+            </label>
+            <label>
+              <span>处理状态</span>
+              <select id="templateReviewStatusSelect">
+                <option value="all">全部</option>
+                <option value="processed">已处理</option>
+                <option value="unprocessed">未处理</option>
+                <option value="low_quality">低质量</option>
+              </select>
+            </label>
+            <label>
+              <span>排序</span>
+              <select id="templateSortSelect">
+                <option value="score">综合评分</option>
+                <option value="prompt_count">提示词数</option>
+                <option value="use_count">使用次数</option>
+                <option value="user_count">使用用户</option>
+                <option value="latest">最近提示词</option>
+              </select>
+            </label>
+            <button id="templateRefreshButton" type="button">刷新候选</button>
+            <button id="templateReviewMarksButton" class="secondary-button" type="button">暂存汇总</button>
+          </div>
+          <div class="table-shell full">
+            <div class="table-title-row">
+              <div>
+                <div class="table-title">模板候选</div>
+                <div id="templateCandidateStatus" class="muted small"></div>
+              </div>
+            </div>
+            <div class="table-scroll template-candidate-table-scroll">
+              <table class="template-candidate-table">
+                <thead>
+                  <tr>
+                    <th>模板</th>
+                    <th>槽位词元</th>
+                    <th>提示词数据</th>
+                    <th>分类/刷新</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="templateCandidateRows"></tbody>
+              </table>
+            </div>
+            <div id="templateCandidatePagination" class="prompt-pagination page-control"></div>
+          </div>
+        </section>
+
+        <section class="band tab-panel" data-panel="prompt-decomposition">
+          <div id="promptDecompositionSummary" class="metric-grid compact"></div>
+          <div class="prompt-filter-bar prompt-decomposition-filter-bar">
+            <label>
+              <span>搜索提示词</span>
+              <input id="promptDecompositionSearchInput" type="search" placeholder="输入关键词筛优秀自由P图提示词" />
+            </label>
+            <button id="promptDecompositionSearchButton" type="button">搜索</button>
+            <button id="promptDecompositionClearButton" class="secondary-button" type="button">清空标签</button>
+          </div>
+          <div class="table-shell full prompt-decomposition-filter-shell">
+            <div class="table-title-row">
+              <div>
+                <div class="table-title">标签筛选</div>
+                <div id="promptDecompositionFilterStatus" class="muted small"></div>
+              </div>
+            </div>
+            <div id="promptDecompositionSelectedTokenBar" class="prompt-decomposition-selected-bar"></div>
+            <div id="promptDecompositionFacetGrid" class="prompt-decomposition-facet-grid"></div>
+          </div>
+          <div class="table-shell full">
+            <div class="table-title-row">
+              <div>
+                <div class="table-title">自由P图候选提示词</div>
+                <div id="promptDecompositionPageInfo" class="muted small"></div>
+              </div>
+            </div>
+            <div class="table-scroll prompt-decomposition-table-scroll">
+              <table class="prompt-decomposition-table">
+                <thead>
+                  <tr>
+                    <th>Prompt</th>
+                    <th>标签拆解</th>
+                    <th>提示词数据</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="promptDecompositionRows"></tbody>
+              </table>
+            </div>
+            <div id="promptDecompositionPagination" class="prompt-pagination page-control"></div>
+          </div>
+          <div class="table-shell full">
+            <div class="table-title-row">
+              <div>
+                <div class="table-title">优秀模板沉淀</div>
+                <div id="promptDecompositionSavedStatus" class="muted small"></div>
+              </div>
+            </div>
+            <div class="table-scroll prompt-decomposition-saved-scroll">
+              <table class="prompt-decomposition-saved-table">
+                <thead>
+                  <tr>
+                    <th>模板标题</th>
+                    <th>筛选标签</th>
+                    <th>Prompt</th>
+                    <th>更新时间</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="promptDecompositionSavedRows"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="band media-band tab-panel" data-panel="media">
+          <div id="mediaSummary" class="metric-grid compact"></div>
+          <div class="table-shell full">
+            <div class="table-title">最近媒体记录</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>类型</th>
+                  <th>输入</th>
+                  <th>输出</th>
+                  <th>尺寸/时长</th>
+                </tr>
+              </thead>
+              <tbody id="mediaRows"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+      </div>
+    </div>
+    <div id="userProfileDrawerBackdrop" class="profile-drawer-backdrop hidden"></div>
+    <aside id="userProfileDrawer" class="profile-drawer" aria-hidden="true">
+      <div class="profile-drawer__header">
+        <div>
+          <div class="eyebrow">用户画像详情</div>
+          <h3 id="userProfileDrawerTitle">用户画像</h3>
+        </div>
+        <button id="userProfileDrawerClose" class="profile-drawer__close" type="button" aria-label="关闭">×</button>
+      </div>
+      <div id="userProfileDrawerContent" class="profile-drawer__content"></div>
+    </aside>
+    <div id="promptTokenDrawerBackdrop" class="profile-drawer-backdrop hidden"></div>
+    <aside id="promptTokenDrawer" class="profile-drawer prompt-token-drawer" aria-hidden="true">
+      <div class="profile-drawer__header">
+        <div>
+          <div class="eyebrow">词元对应提示词</div>
+          <h3 id="promptTokenDrawerTitle">提示词词元</h3>
+        </div>
+        <button id="promptTokenDrawerClose" class="profile-drawer__close" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="profile-drawer__content">
+        <div id="promptTokenDrawerSummary" class="metric-grid compact prompt-token-drawer-summary"></div>
+        <div class="table-shell full">
+          <div class="table-title-row">
+            <div>
+              <div class="table-title">对应提示词</div>
+              <div id="promptTokenPromptPageInfo" class="muted small"></div>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="prompt-token-prompt-table">
+              <thead>
+                <tr>
+                  <th>Prompt</th>
+                  <th>任务/使用</th>
+                  <th>其它词元</th>
+                </tr>
+              </thead>
+              <tbody id="promptTokenPromptRows"></tbody>
+            </table>
+          </div>
+          <div id="promptTokenPromptPagination" class="prompt-pagination page-control"></div>
+        </div>
+      </div>
+    </aside>
+    <div id="templateCandidateDrawerBackdrop" class="profile-drawer-backdrop hidden"></div>
+    <aside id="templateCandidateDrawer" class="profile-drawer template-candidate-drawer" aria-hidden="true">
+      <div class="profile-drawer__header">
+        <div>
+          <div class="eyebrow">模板候选提示词</div>
+          <h3 id="templateCandidateDrawerTitle">模板候选</h3>
+        </div>
+        <button id="templateCandidateDrawerClose" class="profile-drawer__close" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="profile-drawer__content">
+        <div id="templateCandidateDrawerSummary" class="metric-grid compact template-candidate-drawer-summary"></div>
+        <div class="table-shell full">
+          <div class="table-title-row">
+            <div>
+              <div class="table-title">候选提示词</div>
+              <div id="templateCandidatePromptPageInfo" class="muted small"></div>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="template-candidate-prompt-table">
+              <thead>
+                <tr>
+                  <th>Prompt</th>
+                  <th>任务/使用</th>
+                  <th>词元槽位</th>
+                  <th>暂存</th>
+                </tr>
+              </thead>
+              <tbody id="templateCandidatePromptRows"></tbody>
+            </table>
+          </div>
+          <div id="templateCandidatePromptPagination" class="prompt-pagination page-control"></div>
+        </div>
+      </div>
+    </aside>
+    <div id="templateReviewMarksDrawerBackdrop" class="profile-drawer-backdrop hidden"></div>
+    <aside id="templateReviewMarksDrawer" class="profile-drawer template-review-marks-drawer" aria-hidden="true">
+      <div class="profile-drawer__header">
+        <div>
+          <div class="eyebrow">模板候选暂存</div>
+          <h3>暂存提示词汇总</h3>
+        </div>
+        <button id="templateReviewMarksDrawerClose" class="profile-drawer__close" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="profile-drawer__content">
+        <div id="templateReviewMarksSummary" class="metric-grid compact template-review-marks-summary"></div>
+        <div class="prompt-filter-bar template-review-marks-toolbar">
+          <label>
+            <span>搜索暂存</span>
+            <input id="templateReviewMarksSearchInput" type="search" placeholder="输入模板、提示词或 hash" />
+          </label>
+          <label>
+            <span>相似度</span>
+            <select id="templateReviewMarksSimilaritySelect">
+              <option value="">全部相似度</option>
+              <option value="高度相似">高度相似</option>
+              <option value="较相似">较相似</option>
+              <option value="中等相似">中等相似</option>
+              <option value="差异较大">差异较大</option>
+            </select>
+          </label>
+          <label>
+            <span>处理状态</span>
+            <select id="templateReviewMarksProcessedSelect">
+              <option value="all">全部</option>
+              <option value="processed">已处理</option>
+              <option value="unprocessed">未处理</option>
+            </select>
+          </label>
+          <button id="templateReviewMarksCopyAllButton" type="button">复制当前页</button>
+          <button id="templateReviewMarksExportButton" class="secondary-button" type="button">导出当前页 CSV</button>
+        </div>
+        <div class="table-shell full">
+          <div class="table-title-row">
+            <div>
+              <div class="table-title">已暂存提示词</div>
+              <div id="templateReviewMarksStatus" class="muted small"></div>
+            </div>
+            <div id="templateReviewMarksCopyStatus" class="muted small"></div>
+          </div>
+          <div class="table-scroll template-review-marks-scroll">
+            <table class="template-review-marks-table">
+              <thead>
+                <tr>
+                  <th>模板</th>
+                  <th>Prompt</th>
+                  <th>数据</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="templateReviewMarksRows"></tbody>
+            </table>
+          </div>
+          <div id="templateReviewMarksPagination" class="prompt-pagination page-control"></div>
+        </div>
+      </div>
+    </aside>
+    <div id="promptDecompositionDrawerBackdrop" class="profile-drawer-backdrop hidden"></div>
+    <aside id="promptDecompositionDrawer" class="profile-drawer prompt-decomposition-drawer" aria-hidden="true">
+      <div class="profile-drawer__header">
+        <div>
+          <div class="eyebrow">自由P图提示词拆解</div>
+          <h3 id="promptDecompositionDrawerTitle">优秀模板沉淀</h3>
+        </div>
+        <button id="promptDecompositionDrawerClose" class="profile-drawer__close" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="profile-drawer__content">
+        <div id="promptDecompositionDrawerSummary" class="metric-grid compact prompt-decomposition-drawer-summary"></div>
+        <div class="prompt-decomposition-save-bar">
+          <label>
+            <span>模板标题</span>
+            <input id="promptDecompositionSaveTitleInput" type="text" placeholder="输入优秀模板标题后保存" />
+          </label>
+          <button id="promptDecompositionSaveButton" type="button">保存优秀模板</button>
+        </div>
+        <div class="table-shell full">
+          <div class="table-title">完整 Prompt</div>
+          <div id="promptDecompositionDrawerPrompt" class="prompt-decomposition-full-prompt mono"></div>
+        </div>
+        <div class="table-shell full">
+          <div class="table-title">标签拆解</div>
+          <div id="promptDecompositionDrawerGroups" class="template-slot-groups prompt-decomposition-drawer-groups"></div>
+        </div>
+      </div>
+    </aside>
+    <script src="/static/vendor/echarts.min.js?v=6.0.0"></script>
+  <script type="module" src="/static/js/bootstrap.js?v=20260710-template-review-low-quality-v1"></script>
+  </body>
+</html>

@@ -1,0 +1,290 @@
+{
+  "4": {
+    "inputs": {
+      "vae_name": "flux2/full_encoder_small_decoder.safetensors"
+    },
+    "class_type": "VAELoader"
+  },
+  "5": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1.5,
+      "resolution_steps": 1,
+      "image": [
+        "17",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels"
+  },
+  "8": {
+    "inputs": {
+      "text": "Describe the requested edit.",
+      "clip": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "9": {
+    "inputs": {
+      "unet_name": "flux2/PornMaster_flux2_klein_9b_turbo_fp8_V4.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader"
+  },
+  "10": {
+    "inputs": {
+      "clip_name": "flux2/qwen_3_8b_fp8mixed.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader"
+  },
+  "16": {
+    "inputs": {
+      "samples": [
+        "44",
+        0
+      ],
+      "vae": [
+        "4",
+        0
+      ]
+    },
+    "class_type": "VAEDecode"
+  },
+  "17": {
+    "inputs": {
+      "image": "input_image_1.png"
+    },
+    "class_type": "LoadImage"
+  },
+  "18": {
+    "inputs": {
+      "filename_prefix": "pornmaster_flux2_multiple_auto",
+      "images": [
+        "16",
+        0
+      ]
+    },
+    "class_type": "SaveImage"
+  },
+  "29": {
+    "inputs": {
+      "image": "input_image_2.png"
+    },
+    "class_type": "LoadImage"
+  },
+  "30": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1.5,
+      "resolution_steps": 1,
+      "image": [
+        "29",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels"
+  },
+  "31": {
+    "inputs": {
+      "conditioning": [
+        "46",
+        0
+      ],
+      "latent": [
+        "33",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "Negative Reference Latent Image 2"
+    }
+  },
+  "32": {
+    "inputs": {
+      "conditioning": [
+        "47",
+        0
+      ],
+      "latent": [
+        "33",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "Positive Reference Latent Image 2"
+    }
+  },
+  "33": {
+    "inputs": {
+      "pixels": [
+        "30",
+        0
+      ],
+      "vae": [
+        "4",
+        0
+      ]
+    },
+    "class_type": "VAEEncode"
+  },
+  "38": {
+    "inputs": {
+      "image": [
+        "5",
+        0
+      ]
+    },
+    "class_type": "GetImageSize"
+  },
+  "39": {
+    "inputs": {
+      "width": [
+        "38",
+        0
+      ],
+      "height": [
+        "38",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage"
+  },
+  "40": {
+    "inputs": {
+      "steps": 4,
+      "width": [
+        "38",
+        0
+      ],
+      "height": [
+        "38",
+        1
+      ]
+    },
+    "class_type": "Flux2Scheduler"
+  },
+  "41": {
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect"
+  },
+  "42": {
+    "inputs": {
+      "cfg": 1,
+      "model": [
+        "9",
+        0
+      ],
+      "positive": [
+        "32",
+        0
+      ],
+      "negative": [
+        "31",
+        0
+      ]
+    },
+    "class_type": "CFGGuider"
+  },
+  "43": {
+    "inputs": {
+      "noise_seed": 376486568946326
+    },
+    "class_type": "RandomNoise"
+  },
+  "44": {
+    "inputs": {
+      "noise": [
+        "43",
+        0
+      ],
+      "guider": [
+        "42",
+        0
+      ],
+      "sampler": [
+        "41",
+        0
+      ],
+      "sigmas": [
+        "40",
+        0
+      ],
+      "latent_image": [
+        "39",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced"
+  },
+  "46": {
+    "inputs": {
+      "conditioning": [
+        "49",
+        0
+      ],
+      "latent": [
+        "48",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "Negative Reference Latent Image 1"
+    }
+  },
+  "47": {
+    "inputs": {
+      "conditioning": [
+        "8",
+        0
+      ],
+      "latent": [
+        "48",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "Positive Reference Latent Image 1"
+    }
+  },
+  "48": {
+    "inputs": {
+      "pixels": [
+        "5",
+        0
+      ],
+      "vae": [
+        "4",
+        0
+      ]
+    },
+    "class_type": "VAEEncode"
+  },
+  "49": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Negative Prompt"
+    }
+  }
+}

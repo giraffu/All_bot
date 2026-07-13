@@ -1,120 +1,72 @@
-# 项目概览与开发指南 (AGENTS.md)
+# AI 编程助手参考指南 (AGENTS.md)
 
-这份文档旨在为AI Agent提供关于该Telegram Bot项目的全面上下文，包括核心功能、架构设计、业务逻辑以及开发规范。可以直接用于Trae或其他AI辅助开发环境。
+本文档是 AI 编程助手参与“修仙主题 Telegram 图像与视频机器人”项目时的全局路由指引。
+当前项目以 **VS Code + Codex** 为主要 AI 编程入口，`.codex/skills/` 是 Codex 的项目级技能主目录。
+为了避免全局上下文过载并保持规范的实时更新，**详细的架构规范与业务红线已全部下沉至独立的 Skills（技能）和 `/docs` 目录中**。
 
-## 1. 项目概览
+## 1. 核心开发原则 (Core Principles)
 
-这是一个基于 `python-telegram-bot` 构建的高级Telegram机器人，专注于AI图像和视频生成服务（如AI换脸、特定场景视频生成等）。项目采用了前后端分离的架构：
-- **后端 (Bot)**: 基于异步架构处理Telegram交互、任务调度和ComfyUI接口通信。
-- **管理后台 (Dashboard)**: FastAPI 后端 + Vue 3 (Vite + Tailwind) 前端，提供实时统计、用户管理、历史记录查询及模板审核功能。
+- **技能优先 (Skills First)**：遇到具体业务开发时，**必须第一时间加载对应 Skill**，以获取该模块最新的架构红线、接口契约和容灾规范。若当前 Codex 会话未自动暴露该项目 Skill，请手动读取 `.codex/skills/<skill-name>/SKILL.md`。
+- **查阅文档 (Read Docs)**：在进行系统级重构、了解历史背景或不确定业务逻辑时，请主动读取 `/docs` 目录下的相关说明。
+- **核心层隔离 (Core Isolation)**：`/src/core/` 下的代码**绝对禁止**引入任何与 Telegram `Update` 或 Web `Request` 相关的特定平台对象，必须使用内部统一的 `internal_user_id` 流转。
+- **测试优先、不可变发布 (Test First, Immutable Release)**：代码发布只接受受保护 `main` 可达的完整 Git SHA、成功 CI 生成的 `release.json` 和 digest-pinned 镜像；统一入口为 `scripts/release.py plan|deploy|rollback`。云端禁止代码/env rsync、现场 build、源码 bind mount和 `latest`。功能研发默认先发云测试，同一 SHA/digest 完成代表性任务与 24 小时观察并记录验收后才能晋级正式；正式执行仍须用户明确确认。本地主服务器仅保留云正式整体故障时的临时灾备。
 
-## 2. 核心功能与历史任务总结
+## 2. Codex 工作区知识布局 (Workspace Knowledge Layout)
 
-以下是项目开发至今已完成的主要任务和功能模块总结：
+- `AGENTS.md`：全局路由与高压红线，只保留入口级规则，避免塞入长篇业务细节。
+- `.codex/skills/<skill-name>/SKILL.md`：Codex 项目级技能主入口，按需加载；修改业务边界时优先更新这里。
+- `docs/skills/README.md`：技能目录清单与维护约定。
+- `docs/knowledge_base_audit_matrix.md`：实时知识库逐项核对台账；记录每篇文档/Skill 的事实源、状态和本轮处理结果。
+- `docs/domain/CONTEXT.md`：项目共享领域词汇表，只记录术语含义，不写实现细节。
+- `docs/adr/`：架构决策记录；仅在决策难逆、非显然且存在真实取舍时新增。
+- `/docs`：系统设计、业务规范、排障手册与历史背景；系统级重构或不确定业务逻辑时主动查阅。
 
-### 2.1 用户、权限与等级体系 (修仙主题)
-项目引入了修仙主题的等级体系和积分系统：
+## 3. AI 技能路由索引 (Skills Router)
 
-- **积分系统 (Credits/灵石)**：
-  - **定价**：图像生成消耗 **2 灵石**，视频生成消耗 **6 灵石**。
-  - **获取方式**：
-    - **每日签到**：每日一次，奖励 **20 灵石**。
-    - **邀请奖励**：被邀请者加入频道后，邀请人获得 **20 灵石**。
-    - **模板贡献**：用户提交图片/视频作为模板，审核通过后奖励 **10-20 灵石**。
+在执行不同模块的修改时，请主动触发以下技能（Skill）：
 
-- **用户等级 (User Groups / Cultivation Levels)**：
-  - **凡人 (Mortal)**：初始状态。无法签到或邀请。
-  - **练气期 (Qi Refining)**：加入指定频道后晋升。解锁签到和邀请功能。
-  - **筑基期 (Foundation)**：邀请 > 1, 签到 > 3, 生成次数 > 10。
-  - **金丹期 (Golden Core)**：邀请 > 10, 签到 > 30, 生成次数 > 100。
+| 领域 / 业务场景 | 对应 Skill 名称 | 核心管控边界 |
+| :--- | :--- | :--- |
+| **并发、排队与任务调度** | `allbot-task-engine` | Redis 队列调度、并发锁防刷、中控分发、僵尸任务双向剔除 |
+| **计费、鉴权与会员体系** | `allbot-billing-auth` | 灵石账本 (credits)、JWT 无状态鉴权、支付回调幂等、身份折算 |
+| **对象存储与画廊社区** | `allbot-gallery-storage` | MinIO 直传/容灾、R2 边缘分发、社区防并发点赞、一键克隆限制 |
+| **Telegram 交互与文件** | `allbot-tg-fsm` | PTB 状态机、多语言(i18n)精准路由、菜单互斥防死锁、大文件 Monkey Patch |
+| **QQCC 懒人 Bot / 用户私有 Bot** | `allbot-qqcc-lazy-bot` | 官方 QQCC polling、私有 Bot 申请 FSM/webhook worker、租户配置、`client_type` 恢复隔离和 token 红线 |
+| **部署、容器与容灾排障** | `allbot-ops-deployment` | Docker Compose 编排、Alembic 迁移、测试优先发布、云正式/云测试控制面、本地正式灾备切换、MinIO/网络故障恢复 |
+| **Cloudflare 公网入口** | `allbot-cloudflare-ops` | Cloudflare API Token、DNS、Tunnel、Access、Pages/R2、公网管理域名和本地分析平台公网访问 |
+| **本地分析提示词词义治理** | `allbot-local-analytics-prompt-semantics` | 提示词词元分类、指定词元、同义映射、删除表、tokens-only 物化、模板候选槽位口径 |
+| **局域网 LAN AIO 管理** | `allbot-lan-aio-operator` | 读取 fleet state 与 slot catalog，按单卡 helper 流程管理 LAN AIO 当前态、缓存、候选切换、takeover/recover/restart |
+| **文档维护与知识库同步** | `allbot-kb-auto-updater` | 智能监控代码变更影响，自动维护 AGENTS.md、`.codex/skills` 和 /docs/ 的逻辑一致性 |
+| **Bug 诊断闭环** | `allbot-diagnosing-bugs` | 建立可复现反馈环、排序假设、精准插桩、修复回归与收尾清理 |
+| **测试驱动研发** | `allbot-tdd` | 通过 public facade / API / FSM / provider dependencies seam 做行为测试，一次一个 vertical slice |
+| **代码库架构设计** | `allbot-codebase-design` | 使用 module/interface/seam/adapter/depth/leverage/locality 词汇审查模块深度、职责移动与可测试性 |
+| **后端代码审查与规范** | `backend-code-review` | 针对 FastAPI/Python 后端接口及核心层代码的架构规则审查、依赖注入和数据库模式检查 |
+| **附加模型与工作流配置** | `allbot-comfy-models` | 处理图生图/图生视频的附加模型(LoRA/ControlNet)配置、参数透传与工作流注入 |
+| **前端代码审查与规范** | `vue-best-practices` | 针对 Vue3 / SPA 前端（如 Dashboard 或 Web 工作台）的开发规范，推荐 Composition API 与 TypeScript |
+| **前端预览与截图验收** | `frontend-browser-preview` | 使用 Playwright Chromium 在本服务器生成桌面/移动端截图，规避系统 Chrome headless 本地 HTTP 卡住问题 |
+| **系统日志监控与排障** | `ops-log-monitor` | 自动采集多环境日志，进行链路追踪与异常分析，并生成排障报告，期间保持静默与无痕清理 |
+| **全局代码静态分析** | `allbot-code-analyzer` | 执行全盘死代码检测、质量评估、架构审查及注释清理，静默输出无痕分析报告 |
 
-- **权限控制**：
-  - **频道订阅验证**：用户必须订阅指定频道才能使用Bot（主要鉴权方式）。
-  - **白名单/群组回退**：若未配置频道或验证失败，回退检查白名单或允许的群组。
-  - **数据一致性**：确保前端展示的用户状态与后端数据库保持一致，特别是布尔值字段的默认处理。
+## 4. 文档体系导览 (Documentation Guide)
 
-### 2.2 核心业务功能 (生成模式)
-支持多种生成模式（定义在 `src/constants.py`），包括但不限于：
+如果技能提示词不足以覆盖你的需求，请前往 `/docs` 目录查阅详尽的系统设计：
+- **系统全景图**：`/docs/system_architecture_report.md`
+- **知识库核对矩阵**：`/docs/knowledge_base_audit_matrix.md`（实时 docs / skills 核对台账、事实源和归档边界）
+- **系统资源与容量画像**：`/docs/子模块_系统资源与容量画像_resource_inventory.md`（主服务器、本地 GPU、网络、数据存储与运行负载快照）
+- **云控制面 SSH 密钥管理**：`/docs/子模块_云控制面SSH密钥管理_cloud_ssh_access.md`（DigitalOcean SSH key、登录入口、安全基线与轮换策略）
+- **局域网 GPU 节点 SSH 管理**：`/docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md`（本地 GPU 节点 SSH key、Host 别名、权限边界与验证命令）
+- **局域网 GPU 节点资源与运维**：`/docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md`（GPU 节点硬件、ComfyUI 容器、模型挂载与单容器安全操作边界）
+- **云测试控制面部署**：`/docs/子模块_云测试控制面部署_cloud_test_control_plane.md`（DigitalOcean 云测试控制面 compose、部署脚本、端口转发与验证命令）
+- **Git 不可变发布**：`/docs/子模块_Git不可变发布_git_immutable_release.md`（完整 SHA、GHCR digest、公共 Compose、配置契约、测试验收、生产晋级与回滚）
+- **首次可信发布准备**：`/docs/子模块_首次可信发布准备_first_trusted_release.md`（本地 stabilization 验证结果、Git 血缘和外部待办）
+- **QQCC 懒人 Bot**：`/docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md`（独立简化 Telegram Bot、部署、token 与任务恢复归属）
+- **QQCC 用户私有 Bot 平台**：`/docs/子模块_QQCC用户私有Bot平台_qqcc_private_bot_platform.md`（一人一 Bot、加密凭据、Webhook 多租户 worker、Owner WebApp、管理员治理与发布门禁）
+- **本地正式灾备切换**：`/docs/子模块_本地正式灾备切换_local_prod_fallback.md`（云正式整体故障时临时切回本地主服务器的操作、验证与回切）
+- **Cloudflare 公网入口与账号管理**：`/docs/子模块_Cloudflare公网入口与账号管理_cloudflare_ops.md`（Cloudflare Token、DNS、Tunnel、Access、公网管理入口与本地分析平台公网访问）
+- **生成任务全链路**：`/docs/子模块_生成任务全链路_task_full_chain.md`（前端提交、task core、执行面、worker、结果回流、扩展与排障）
+- **前端预览截图**：`/docs/子模块_前端浏览器预览截图_frontend_browser_preview.md`
+- **业务领域设计**：`/docs/business/`（包含生成、商业化、社区、用户体系的深度文档）
+- **技术子模块规范**：`/docs/子模块_*.md`（针对网络穿透、FSM、任务调度等的专项说明）
 
-- **基础图像处理**：
-  - 自由P图 (`edit`)
-  - 快速脱衣 (`undress`)
-  - 快速自慰 (`masturbation`)
-  - 快速换脸 (`face_swap`)
-
-- **视频生成**：
-  - **特定场景视频**：
-    - 动图传教士 (`perfect_video_insert`)
-    - 动图后入 (`doggy_style`)
-    - 口交黑人 (`blowjob`)
-    - 脱衣吐舌 (`undress_tongue`)
-    - 特写口交 (`closeup_blowjob`)
-  - **自定义视频**：图生视频功能，支持用户输入Prompt (`custom_video`)。
-
-- **模板贡献 (Template Contribution)**：
-  - 用户可提交图片/视频作为Bot模板。
-  - 管理员在Dashboard审核通过后，素材存入系统库并自动发放奖励。
-
-### 2.3 任务处理与并发
-- **并发机制**：启用了 `ApplicationBuilder(concurrent_updates=True)`，允许Bot同时处理多个更新，防止耗时生成任务阻塞其他用户交互（如查询状态）。
-- **队列管理**：
-  - **进度监控**：实时获取 ComfyUI 队列位置并反馈给用户 ("排队中... 第 X 位")。
-  - **批量处理**：任务队列有序处理，并带有进度提示。
-- **会话管理**：
-  - `SessionManager` 负责管理用户对话上下文。
-  - 支持自动清理过期消息。
-
-### 2.4 系统稳定性与运维
-- **网络鲁棒性**：实现了 `async_retry` 装饰器和 `robust_send_*` 封装，增强网络请求的重试机制。
-- **日志系统**：
-  - `UserLogger` 记录所有用户交互（菜单点击、命令）。
-  - 错误日志包含完整堆栈信息，并记录绝对路径以便IDE直接点击跳转。
-- **闲置状态管理**：引入 `MODE_NONE`（闲置状态），当用户未选择模式时忽略图片并提示，包含防刷屏冷却。
-
-### 2.5 Web Dashboard
-- **架构**：FastAPI (Backend) + Vue 3 (Frontend, Vite + Tailwind).
-- **功能**：
-  - **实时统计**：展示总用户、今日活跃、灵石消耗、任务类型分布、24小时活跃趋势等。
-  - **用户管理**：查看用户等级、积分、邀请关系，支持手动修改积分或封禁。
-  - **模板审核**：可视化审核用户提交的模板，一键完成文件转移及积分发放。
-  - **队列监控**：实时显示 ComfyUI 后端的任务堆积情况。
-
-## 3. 技术架构
-
-### 目录结构
-- `src/`: 核心代码
-  - `handlers/`: 消息、命令、回调处理器 (Controller层)。
-    - `message_handler.py`: 处理文本和图片消息。
-    - `callback_handler.py`: 处理按钮点击。
-    - `command_handler.py`: 处理 /start, /help 等命令。
-  - `services/`: 业务逻辑 (Service层)。
-    - `task_service.py`: 封装了通用的生成任务模版，处理排队、监控及结果分发。
-    - `permission_service.py`: 处理等级晋升、积分检查及订阅验证。
-    - `image_service.py`: 与 ComfyUI API 通信。
-  - `database/`: 数据库模型 (`models.py`) 和核心操作 (`core.py`)。
-    - 包含 `User`, `History`, `Referral`, `TemplateContribution` 等模型。
-  - `bot.py`: 程序入口，负责初始化Application。
-- `dashboard/`: Web管理后台代码。
-  - `backend/`: FastAPI 接口。
-  - `frontend/`: Vue 3 + Vite 现代化前端。
-- `user_data/`: 用户历史数据 (JSONL格式，作为备份或日志)。
-- `scripts/`: 数据迁移和运维脚本。
-
-### 关键依赖
-- **Python**: `python-telegram-bot` (Bot API), `sqlalchemy` (ORM, Async), `fastapi` (Dashboard Backend).
-- **Frontend**: `Vue.js 3`, `Vite`, `Tailwind CSS`.
-
-## 4. 开发规范 (Development Guidelines)
-
-1.  **异步优先**：
-    - 所有 IO 操作（DB, 网络请求, 文件处理）必须使用 `async/await`。
-2.  **错误处理**：
-    - 所有关键路径必须包含 try-except 块，并使用 `logger.error(..., exc_info=True)` 记录堆栈。
-3.  **等级/积分同步**：
-    - 修改用户数据后，需调用 `permission_service.refresh_user_group` 确保等级即时更新。
-4.  **文件路径**：
-    - 始终使用绝对路径 (`Path.resolve()`)，方便日志点击跳转。
-5.  **前端数据同步**：
-    - 后端修改 `User` 或 `History` 模型时，务必检查 Dashboard 后端接口是否需要同步更新字段映射，防止UI状态异常。
-6.  **并发安全**：
-    - 积分扣除应在任务开始前通过 `check_quota` 验证，并配合事务确保数据一致性。
+👨‍💻 **To AI Assistant**: 
+本文件已极简改造。你不再需要从这里读取繁杂的业务红线。**在接下来的所有对话中，请严格遵循“按需加载 `.codex/skills` Skill，再按需查阅 `/docs`”的原则开展工作。**

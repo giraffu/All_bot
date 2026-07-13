@@ -1,0 +1,199 @@
+x-worker-cloud-prod-env: &worker-cloud-prod-env
+  TZ: Asia/Shanghai
+  MASTER_API_URL: http://127.0.0.1:${CLOUD_PROD_LOCAL_RELAY_PORT:-8013}
+  AGENT_SECRET_TOKEN: ${AGENT_SECRET_TOKEN:?AGENT_SECRET_TOKEN is required}
+  MINIO_ENDPOINT: ${MINIO_ENDPOINT:?MINIO_ENDPOINT is required}
+  MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY is required}
+  MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY is required}
+  MINIO_BUCKET: ${MINIO_BUCKET:-user-data-prod}
+  MINIO_INPUT_BUCKET: ${MINIO_INPUT_BUCKET:-user-data-prod}
+  MINIO_RESULT_BUCKET: ${MINIO_RESULT_BUCKET:-user-data-prod}
+  MINIO_TEMPLATE_BUCKET: ${MINIO_TEMPLATE_BUCKET:-user-data-prod}
+  MINIO_SECURE: ${MINIO_SECURE:-true}
+  UPLOAD_SIDECAR_URL: http://127.0.0.1:${CLOUD_PROD_LOCAL_RELAY_PORT:-8013}
+  RESULT_SPOOL_DIR: /app/spool
+  PREFETCH_ENABLED: ${PREFETCH_ENABLED:-true}
+  PREFETCH_DEPTH: ${PREFETCH_DEPTH:-1}
+  PREFETCH_TASK_TYPES: ${PREFETCH_TASK_TYPES:-img2img,img2img_lora,face_swap,i2i_draw,i2i_pro}
+  PREFETCH_CACHE_DIR: /app/prefetch-cache
+  PIPELINE_ENABLED: ${PIPELINE_ENABLED:-true}
+  PIPELINE_MAX_RUNNING_TASKS: ${PIPELINE_MAX_RUNNING_TASKS:-2}
+  PIPELINE_TASK_TYPES: ${PIPELINE_TASK_TYPES:-all}
+  CANCEL_LOCK_ON_POP: ${CANCEL_LOCK_ON_POP:-true}
+
+x-worker-base-cloud-prod: &worker-base-cloud-prod
+  build:
+    context: ./
+    dockerfile: Dockerfile
+  restart: always
+  depends_on:
+    - cloud-prod-worker-relay
+  env_file:
+    - ../.env.cloud.prod
+  network_mode: "host"
+  volumes:
+    - ../logs/workers-cloud-prod:/app/logs
+    - ../logs/worker-spool-cloud-prod:/app/spool
+    - ./comfy_agent/workflows:/app/worker/workflows
+    - ../src:/app/src
+
+services:
+  cloud-prod-worker-relay:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    container_name: cloud-prod-worker-relay
+    restart: always
+    env_file:
+      - ../.env.cloud.prod
+    network_mode: "host"
+    command: ["python", "/app/local_relay/relay_main.py"]
+    environment:
+      <<: *worker-cloud-prod-env
+      CENTRAL_API_URL: http://${CLOUD_PROD_TAILSCALE_IP:?CLOUD_PROD_TAILSCALE_IP is required}:8003
+      LOCAL_RELAY_HOST: 127.0.0.1
+      LOCAL_RELAY_PORT: ${CLOUD_PROD_LOCAL_RELAY_PORT:-8013}
+      RESULT_SPOOL_DIR: /app/spool
+    volumes:
+      - ../logs/workers-cloud-prod:/app/logs
+      - ../logs/worker-spool-cloud-prod:/app/spool
+
+  cloud-prod-comfy-agent-1:
+    <<: *worker-base-cloud-prod
+    container_name: cloud-prod-comfy-agent-1
+    environment:
+      <<: *worker-cloud-prod-env
+      AGENT_ID: cloud_prod_worker_01
+      POOL_MANAGED: "true"
+      POOL_PROVIDER: lan_ssh
+      POOL_NODE_ID: gpu-226
+      POOL_GPU_INDEX: "0"
+      POOL_RUNTIME_PROFILE: face_i2i_t2i
+      POOL_IMAGE_REF: 192.168.1.115:5000/allbot/comfy-cu130-face-i2i:baseline
+      POOL_MODEL_BUNDLE_VERSIONS: '{"face_i2i_t2i_baseline":"2026-06-10","video_basic_baseline":"2026-06-10"}'
+      SUPPORTED_TASK_TYPES: face_swap,i2i_pro,i2i_draw,face_video,video_edit,image_to_video,t2i-pornmaster-turbo,ltx_video,ltx_video_flf2v,ltx_video_v2v_audio
+      TASK_TYPE_WORKFLOW_OVERRIDES: '{"face_swap":"face_swap_v2.json","t2i-pornmaster-turbo":"txt2img_from_i2i_pro.json"}'
+      COMFY_API_URL: http://192.168.1.226:8188
+      COMFY_WS_URL: ws://192.168.1.226:8188/ws
+      COMFY_INPUT_DIR: /tmp/input
+      COMFY_OUTPUT_DIR: /tmp/output
+
+  cloud-prod-comfy-agent-2:
+    <<: *worker-base-cloud-prod
+    container_name: cloud-prod-comfy-agent-2
+    environment:
+      <<: *worker-cloud-prod-env
+      AGENT_ID: cloud_prod_worker_02
+      POOL_MANAGED: "true"
+      POOL_PROVIDER: lan_ssh
+      POOL_NODE_ID: gpu-177
+      POOL_GPU_INDEX: "0"
+      POOL_RUNTIME_PROFILE: video_basic
+      POOL_IMAGE_REF: 192.168.1.115:5000/allbot/comfy-cu130-video-basic:baseline
+      POOL_MODEL_BUNDLE_VERSIONS: '{"video_basic_baseline":"2026-06-10"}'
+      SUPPORTED_TASK_TYPES: video_insert,video_edit,image_to_video
+      COMFY_API_URL: http://192.168.1.177:8188
+      COMFY_WS_URL: ws://192.168.1.177:8188/ws
+      COMFY_INPUT_DIR: /tmp/input
+      COMFY_OUTPUT_DIR: /tmp/output
+
+  cloud-prod-comfy-agent-3:
+    <<: *worker-base-cloud-prod
+    container_name: cloud-prod-comfy-agent-3
+    environment:
+      <<: *worker-cloud-prod-env
+      AGENT_ID: cloud_prod_worker_03
+      POOL_MANAGED: "true"
+      POOL_PROVIDER: lan_ssh
+      POOL_NODE_ID: gpu-177
+      POOL_GPU_INDEX: "1"
+      POOL_RUNTIME_PROFILE: ltx_video
+      POOL_IMAGE_REF: 192.168.1.115:5000/allbot/comfy-cu130-ltx:baseline
+      POOL_MODEL_BUNDLE_VERSIONS: '{"ltx_video_baseline":"2026-06-10"}'
+      SUPPORTED_TASK_TYPES: ltx_video,ltx_video_flf2v,ltx_video_v2v_audio,image_to_video
+      COMFY_API_URL: http://192.168.1.177:8189
+      COMFY_WS_URL: ws://192.168.1.177:8189/ws
+      COMFY_INPUT_DIR: /tmp/input
+      COMFY_OUTPUT_DIR: /tmp/output
+
+  cloud-prod-comfy-agent-4:
+    <<: *worker-base-cloud-prod
+    container_name: cloud-prod-comfy-agent-4
+    environment:
+      <<: *worker-cloud-prod-env
+      AGENT_ID: cloud_prod_worker_04
+      POOL_MANAGED: "true"
+      POOL_PROVIDER: lan_ssh
+      POOL_NODE_ID: gpu-252
+      POOL_GPU_INDEX: "0"
+      POOL_RUNTIME_PROFILE: img2img_lora
+      POOL_IMAGE_REF: 192.168.1.115:5000/allbot/comfy-cu128-img2img:baseline
+      POOL_MODEL_BUNDLE_VERSIONS: '{"img2img_lora_baseline":"2026-06-10"}'
+      SUPPORTED_TASK_TYPES: img2img,img2img_lora
+      COMFY_API_URL: http://192.168.1.252:8188
+      COMFY_WS_URL: ws://192.168.1.252:8188/ws
+      COMFY_INPUT_DIR: /tmp/input
+      COMFY_OUTPUT_DIR: /tmp/output
+      PIPELINE_MAX_RUNNING_TASKS: "1"
+      COMFY_HEALTH_FAILURE_THRESHOLD: "30"
+      COMFY_WS_LOST_PROBE_FAILURE_THRESHOLD: "90"
+
+  cloud-prod-comfy-agent-5:
+    <<: *worker-base-cloud-prod
+    container_name: cloud-prod-comfy-agent-5
+    environment:
+      <<: *worker-cloud-prod-env
+      AGENT_ID: cloud_prod_worker_05
+      POOL_MANAGED: "true"
+      POOL_PROVIDER: lan_ssh
+      POOL_NODE_ID: gpu-252
+      POOL_GPU_INDEX: "0"
+      POOL_RUNTIME_PROFILE: wan22_video_v2
+      POOL_IMAGE_REF: 192.168.1.115:5000/allbot/comfy-cu128-wan22:baseline
+      POOL_MODEL_BUNDLE_VERSIONS: '{"wan22_video_v2_baseline":"2026-06-10","video_basic_baseline":"2026-06-10"}'
+      SUPPORTED_TASK_TYPES: wan22_video_v2,video_edit,image_to_video
+      COMFY_API_URL: http://192.168.1.252:8189
+      COMFY_WS_URL: ws://192.168.1.252:8189/ws
+      COMFY_INPUT_DIR: /tmp/input
+      COMFY_OUTPUT_DIR: /tmp/output
+      PIPELINE_MAX_RUNNING_TASKS: "1"
+      COMFY_HEALTH_FAILURE_THRESHOLD: "30"
+      COMFY_WS_LOST_PROBE_FAILURE_THRESHOLD: "90"
+
+  cloud-prod-comfy-agent-6:
+    <<: *worker-base-cloud-prod
+    container_name: cloud-prod-comfy-agent-6
+    environment:
+      <<: *worker-cloud-prod-env
+      AGENT_ID: cloud_prod_worker_06
+      POOL_MANAGED: "true"
+      POOL_PROVIDER: lan_ssh
+      POOL_NODE_ID: gpu-002
+      POOL_GPU_INDEX: "0"
+      POOL_RUNTIME_PROFILE: img2img_lora
+      POOL_IMAGE_REF: 192.168.1.115:5000/allbot/comfy-cu128-img2img:baseline
+      POOL_MODEL_BUNDLE_VERSIONS: '{"img2img_lora_baseline":"2026-06-10"}'
+      SUPPORTED_TASK_TYPES: img2img,img2img_lora
+      COMFY_API_URL: http://192.168.1.2:8188
+      COMFY_WS_URL: ws://192.168.1.2:8188/ws
+      COMFY_INPUT_DIR: /tmp/input
+      COMFY_OUTPUT_DIR: /tmp/output
+
+  cloud-prod-comfy-agent-7:
+    <<: *worker-base-cloud-prod
+    container_name: cloud-prod-comfy-agent-7
+    environment:
+      <<: *worker-cloud-prod-env
+      AGENT_ID: cloud_prod_worker_07
+      POOL_MANAGED: "true"
+      POOL_PROVIDER: lan_ssh
+      POOL_NODE_ID: gpu-002
+      POOL_GPU_INDEX: "1"
+      POOL_RUNTIME_PROFILE: video_basic
+      POOL_IMAGE_REF: 192.168.1.115:5000/allbot/comfy-cu128-video-basic:baseline
+      POOL_MODEL_BUNDLE_VERSIONS: '{"video_basic_baseline":"2026-06-10"}'
+      SUPPORTED_TASK_TYPES: video_insert,video_edit,image_to_video
+      COMFY_API_URL: http://192.168.1.2:8189
+      COMFY_WS_URL: ws://192.168.1.2:8189/ws
+      COMFY_INPUT_DIR: /tmp/input
+      COMFY_OUTPUT_DIR: /tmp/output

@@ -1,13 +1,18 @@
 <template>
-  <div class="chart-wrapper">
-    <v-chart class="chart" :option="option" autoresize />
+  <div class="chart-wrapper flex flex-col">
+    <div v-if="$slots.header" class="mb-4">
+      <slot name="header"></slot>
+    </div>
+    <div class="flex-1 min-h-0">
+      <v-chart class="chart" :option="option" autoresize />
+    </div>
   </div>
 </template>
 
 <script setup>
 import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
-import { LineChart } from 'echarts/charts';
+import { LineChart, BarChart } from 'echarts/charts';
 import {
   TitleComponent,
   TooltipComponent,
@@ -21,6 +26,7 @@ import { computed } from 'vue';
 use([
   CanvasRenderer,
   LineChart,
+  BarChart,
   TitleComponent,
   TooltipComponent,
   LegendComponent,
@@ -61,6 +67,33 @@ const option = computed(() => {
       }
     },
     {
+      id: 'cumulative_en_users',
+      name: '累计英文用户',
+      type: 'line',
+      yAxisIndex: 0,
+      data: props.data.map(item => item.cumulative_en_users),
+      color: '#1890ff',
+      smooth: true
+    },
+    {
+      id: 'cumulative_zh_users',
+      name: '累计中文用户',
+      type: 'line',
+      yAxisIndex: 0,
+      data: props.data.map(item => item.cumulative_zh_users),
+      color: '#faad14',
+      smooth: true
+    },
+    {
+      id: 'cumulative_pwd_users',
+      name: '累计密码注册用户',
+      type: 'line',
+      yAxisIndex: 0,
+      data: props.data.map(item => item.cumulative_pwd_users || 0),
+      color: '#13c2c2',
+      smooth: true
+    },
+    {
       id: 'new_users',
       name: '新增用户',
       type: 'line',
@@ -71,6 +104,33 @@ const option = computed(() => {
         color: '#1890ff',
         opacity: 0.1
       }
+    },
+    {
+      id: 'new_en_users',
+      name: '新增英文用户',
+      type: 'line',
+      yAxisIndex: 0,
+      data: props.data.map(item => item.new_en_users),
+      color: '#52c41a',
+      smooth: true
+    },
+    {
+      id: 'new_zh_users',
+      name: '新增中文用户',
+      type: 'line',
+      yAxisIndex: 0,
+      data: props.data.map(item => item.new_zh_users),
+      color: '#faad14',
+      smooth: true
+    },
+    {
+      id: 'new_pwd_users',
+      name: '每日密码注册',
+      type: 'bar',
+      yAxisIndex: 1,
+      data: props.data.map(item => item.new_pwd_users || 0),
+      color: '#36cfc9',
+      barMaxWidth: 30
     },
     {
       id: 'new_users_all',
@@ -144,6 +204,18 @@ const option = computed(() => {
       }
     },
     {
+      id: 'web_active_users',
+      name: 'Web活跃用户',
+      type: 'line',
+      yAxisIndex: 0,
+      data: props.data.map(item => item.web_active_users || 0),
+      color: '#ff7a45',
+      areaStyle: {
+        color: '#ff7a45',
+        opacity: 0.1
+      }
+    },
+    {
       id: 'checkins',
       name: '签到人数',
       type: 'line',
@@ -166,6 +238,179 @@ const option = computed(() => {
         color: '#eb2f96',
         opacity: 0.1
       }
+    },
+    {
+      id: 'ton_recharge',
+      name: '每日充值 (TON)',
+      type: 'bar',
+      yAxisIndex: 0, 
+      data: props.data.map(item => item.ton_recharge || 0),
+      color: '#1890ff', 
+      itemStyle: {
+        borderRadius: [4, 4, 0, 0]
+      }
+    },
+    {
+      id: 'cumulative_ton',
+      name: '累计充值 (TON)',
+      type: 'line',
+      yAxisIndex: 1, 
+      data: props.data.map(item => item.cumulative_ton || 0),
+      color: '#096dd9', 
+      smooth: true,
+      lineStyle: {
+        width: 3
+      },
+      symbol: 'none',
+      areaStyle: {
+        color: '#1890ff',
+        opacity: 0.05
+      }
+    },
+    {
+      id: 'stars_recharge',
+      name: '每日充值 (Stars)',
+      type: 'bar',
+      yAxisIndex: 0, 
+      data: props.data.map(item => item.stars_recharge || 0),
+      color: '#faad14', 
+      itemStyle: {
+        borderRadius: [4, 4, 0, 0]
+      }
+    },
+    {
+      id: 'cumulative_stars',
+      name: '累计充值 (Stars)',
+      type: 'line',
+      yAxisIndex: 1, 
+      data: props.data.map(item => item.cumulative_stars || 0),
+      color: '#d48806', 
+      smooth: true,
+      lineStyle: {
+        width: 3
+      },
+      symbol: 'none',
+      areaStyle: {
+        color: '#faad14',
+        opacity: 0.05
+      }
+    },
+    {
+      id: 'rmb_recharge',
+      name: '每日充值 (RMB)',
+      type: 'bar',
+      yAxisIndex: 0, 
+      data: props.data.map(item => item.rmb_recharge || 0),
+      color: '#f5222d', 
+      itemStyle: {
+        borderRadius: [4, 4, 0, 0]
+      }
+    },
+    {
+      id: 'cumulative_rmb',
+      name: '累计充值 (RMB)',
+      type: 'line',
+      yAxisIndex: 1, 
+      data: props.data.map(item => item.cumulative_rmb || 0),
+      color: '#cf1322', 
+      smooth: true,
+      lineStyle: {
+        width: 3
+      },
+      symbol: 'none',
+      areaStyle: {
+        color: '#f5222d',
+        opacity: 0.05
+      }
+    },
+    {
+      id: 'usdt_recharge',
+      name: '每日充值 (USDT)',
+      type: 'bar',
+      yAxisIndex: 0, 
+      data: props.data.map(item => item.usdt_recharge || 0),
+      color: '#52c41a', 
+      itemStyle: {
+        borderRadius: [4, 4, 0, 0]
+      }
+    },
+    {
+      id: 'cumulative_usdt',
+      name: '累计充值 (USDT)',
+      type: 'line',
+      yAxisIndex: 1, 
+      data: props.data.map(item => item.cumulative_usdt || 0),
+      color: '#389e0d', 
+      smooth: true,
+      lineStyle: {
+        width: 3
+      },
+      symbol: 'none',
+      areaStyle: {
+        color: '#52c41a',
+        opacity: 0.05
+      }
+    },
+    {
+      id: 'inner_disciples',
+      name: '每日增加内门',
+      type: 'bar',
+      yAxisIndex: 0,
+      data: props.data.map(item => item.inner_disciples || 0),
+      color: '#1890ff',
+      itemStyle: {
+        borderRadius: [4, 4, 0, 0]
+      }
+    },
+    {
+      id: 'core_disciples',
+      name: '每日增加核心',
+      type: 'bar',
+      yAxisIndex: 0,
+      data: props.data.map(item => item.core_disciples || 0),
+      color: '#722ed1',
+      itemStyle: {
+        borderRadius: [4, 4, 0, 0]
+      }
+    },
+    {
+      id: 'true_disciples',
+      name: '每日增加真传',
+      type: 'bar',
+      yAxisIndex: 0,
+      data: props.data.map(item => item.true_disciples || 0),
+      color: '#eb2f96',
+      itemStyle: {
+        borderRadius: [4, 4, 0, 0]
+      }
+    },
+    {
+      id: 'recharged_credits',
+      name: '每日新增直充灵石',
+      type: 'bar',
+      yAxisIndex: 0,
+      data: props.data.map(item => item.recharged_credits || 0),
+      color: '#13c2c2',
+      itemStyle: {
+        borderRadius: [4, 4, 0, 0]
+      }
+    },
+    {
+      id: 'cumulative_recharged_credits',
+      name: '累计直充灵石',
+      type: 'line',
+      yAxisIndex: 1,
+      data: props.data.map(item => item.cumulative_recharged_credits || 0),
+      color: '#08979c',
+      smooth: true,
+      lineStyle: {
+        width: 3
+      },
+      symbol: 'none',
+      areaStyle: {
+        color: '#13c2c2',
+        opacity: 0.05
+      }
     }
   ];
 
@@ -178,15 +423,30 @@ const option = computed(() => {
   const yAxis = [];
   if (hasAxis0 && hasAxis1) {
     yAxis.push(
-      { type: 'value', name: '人数', position: 'left' },
-      { type: 'value', name: '数量', position: 'right', splitLine: { show: false } }
+      { type: 'value', name: '', position: 'left' },
+      { 
+        type: 'value', 
+        name: '', 
+        position: 'right', 
+        splitLine: { show: false },
+        axisLabel: {
+          formatter: (value) => {
+            if (value >= 1000000) {
+              return (value / 1000000).toFixed(1) + 'M';
+            } else if (value >= 1000) {
+              return (value / 1000).toFixed(1) + 'k';
+            }
+            return value;
+          }
+        }
+      }
     );
   } else if (hasAxis0) {
-    yAxis.push({ type: 'value', name: '人数', position: 'left' });
+    yAxis.push({ type: 'value', name: '', position: 'left' });
     // Update yAxisIndex for all series to 0
     visibleSeries.forEach(s => s.yAxisIndex = 0);
   } else if (hasAxis1) {
-    yAxis.push({ type: 'value', name: '数量', position: 'left' });
+    yAxis.push({ type: 'value', name: '', position: 'left' });
     // Update yAxisIndex for all series to 0
     visibleSeries.forEach(s => s.yAxisIndex = 0);
   }
@@ -215,7 +475,7 @@ const option = computed(() => {
     },
     xAxis: {
       type: 'category',
-      boundaryGap: false,
+      boundaryGap: visibleSeries.some(s => s.type === 'bar'),
       data: dates
     },
     yAxis: yAxis,

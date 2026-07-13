@@ -16,6 +16,7 @@ const pagination = reactive({
 
 const filters = reactive({
   userId: '',
+  username: '',
   operationType: undefined,
   dateRange: []
 })
@@ -63,9 +64,11 @@ const columns = [
 const operationTypes = [
   { label: '签到 (Checkin)', value: 'checkin' },
   { label: '生成消耗 (Generation)', value: 'generation' },
+  { label: '充值成功 (Recharge)', value: 'recharge' },
   { label: '邀请奖励 (Referral)', value: 'referral_reward_initial' },
   { label: '新人奖励 (Welcome)', value: 'welcome_bonus' },
   { label: '入群奖励 (Channel)', value: 'referral_reward_channel' },
+  { label: '生成邀请奖励 (Generation Referral)', value: 'referral_reward_generation' },
   { label: '模板贡献 (Template)', value: 'template_submission' }
 ]
 
@@ -76,6 +79,7 @@ const loadLogs = async () => {
       page: pagination.current,
       pageSize: pagination.pageSize,
       userId: filters.userId || null,
+      username: filters.username || null,
       operationType: filters.operationType || null,
       startDate: filters.dateRange?.[0] ? dayjs(filters.dateRange[0]).format('YYYY-MM-DD') : null,
       endDate: filters.dateRange?.[1] ? dayjs(filters.dateRange[1]).format('YYYY-MM-DD') : null
@@ -104,6 +108,7 @@ const onSearch = () => {
 
 const resetFilters = () => {
   filters.userId = ''
+  filters.username = ''
   filters.operationType = undefined
   filters.dateRange = []
   onSearch()
@@ -138,6 +143,16 @@ onMounted(() => {
           v-model:value="filters.userId" 
           placeholder="用户 ID" 
           style="width: 150px" 
+          allow-clear
+          @pressEnter="onSearch"
+        >
+          <template #prefix><search-outlined class="text-gray-400" /></template>
+        </a-input>
+
+        <a-input 
+          v-model:value="filters.username" 
+          placeholder="用户名" 
+          style="width: 160px" 
           allow-clear
           @pressEnter="onSearch"
         >
@@ -195,6 +210,7 @@ onMounted(() => {
           <template v-else-if="column.dataIndex === 'operation_type'">
             <a-tag :color="record.operation_type === 'checkin' ? 'green' : 
                           record.operation_type === 'generation' ? 'blue' : 
+                          record.operation_type === 'recharge' ? 'purple' :
                           record.operation_type.includes('reward') ? 'gold' : 'default'">
               {{ record.operation_type }}
             </a-tag>

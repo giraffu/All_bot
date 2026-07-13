@@ -1,241 +1,174 @@
-from telegram import Update
-from telegram.ext import ContextTypes
-from config import REQUIRED_CHANNEL_ID, CHANNEL_INVITE_LINK
 from src.quota import QuotaManager
-from src.database.core import AsyncSessionLocal
-from src.utils import robust_send_message
+from src.services.permission_access_service import PermissionAccessService
+from src.services.permission_growth_channel_service import (
+    PermissionGrowthChannelService,
+)
+from src.services.permission_identity_priority_service import (
+    PermissionIdentityPriorityService,
+)
+from src.services.permission_quota_service import PermissionQuotaService
+
 
 class PermissionService:
     def __init__(self):
         self.quota_manager = QuotaManager()
-
-    async def check_access(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-        """
-        Check if the user has access to the bot.
-        Priority: Channel Subscription > Credits
-        """
-        user = update.effective_user
-        if not user:
-            return False
-
-        # Ensure user exists in DB whenever they interact
-        await self.quota_manager.ensure_user(user.id, username=user.username, full_name=user.full_name)
-        
-        # 1. Check Channel Subscription (If configured, this acts as the primary gatekeeper)
-        is_member = False
-        if REQUIRED_CHANNEL_ID:
-            try:
-                # chat_id can be string (if username) or int
-                channel_id = int(REQUIRED_CHANNEL_ID) if REQUIRED_CHANNEL_ID.lstrip('-').isdigit() else REQUIRED_CHANNEL_ID
-                member = await context.bot.get_chat_member(chat_id=channel_id, user_id=user.id)
-                
-                # If subscribed, allow access!
-                if member.status not in ['left', 'kicked', 'banned']:
-                    is_member = True
-                    await self.check_channel_reward(user, context)
-                    # Ensure is_channel_member is updated in DB
-                    await self.quota_manager.process_channel_reward(user.id)
-                    await self.refresh_user_group(user.id, is_member=True)
-                    return True
-                else:
-                    # Sync "left" status to DB if it was previously True
-                    stats = await self.quota_manager.get_user_stats(user.id)
-                    if stats.get("is_channel_member"):
-                        await self.quota_manager.update_channel_membership(user.id, False)
-                        await self.refresh_user_group(user.id, is_member=False)
-                
-            except Exception as e:
-                print(f"⚠️ Channel check failed: {e}")
-                # If check fails, fall through to credits check
-                pass
-
-        # 2. Check if user has credits (Mortal check)
-        # If user has credits, they can use features even if not in channel
-        credits = await self.quota_manager.get_credits(user.id)
-        if credits > 0:
-            return True
-
-        # Default: Access Denied (Must join channel or get credits)
-        invite_link = CHANNEL_INVITE_LINK or "https://t.me/AiVisionAV"
-        msg = (
-            "⛩️ **尚未拜入宗门**\n\n"
-            "欲求长生，必先寻得仙缘。您需要先加入我们的 **官方宗门** 才能开始修炼。\n\n"
-            f"👉 [点击即刻拜入宗门]({invite_link})"
+        self.quota = PermissionQuotaService(self.quota_manager)
+        self.identity_priority = PermissionIdentityPriorityService(self.quota_manager)
+        self.growth_channel = PermissionGrowthChannelService(
+            self.quota_manager,
+            refresh_user_group_func=self.identity_priority.refresh_user_group,
+            get_user_group_func=self.identity_priority.get_user_group,
+            get_user_identity_func=self.identity_priority.get_user_identity,
+            get_user_credits_func=self.quota.get_user_credits,
         )
-        await robust_send_message(context.bot, update.effective_chat.id, msg, parse_mode="Markdown")
-        return False
+        self.access = PermissionAccessService(
+            self.quota_manager,
+            check_channel_reward_func=self.growth_channel.check_channel_reward,
+            refresh_user_group_func=self.identity_priority.refresh_user_group,
+            check_web_access_func=self.identity_priority.check_web_access,
+        )
 
-    async def check_channel_reward(self, user, context: ContextTypes.DEFAULT_TYPE):
-        """Check and award channel join reward (20 credits)"""
-        try:
-            inviter_id = await self.quota_manager.process_channel_reward(user.id)
-            if inviter_id:
-                try:
-                    await robust_send_message(
-                        context.bot,
-                        chat_id=inviter_id,
-                        text=f"🎉 **宗门进阶奖励！**\n\n道友 {user.full_name} 已成功拜入宗门。\n获得额外奖励：`20` 灵石。",
-                        parse_mode="Markdown"
-                    )
-                except Exception as e:
-                    print(f"Failed to notify inviter {inviter_id}: {e}")
-        except Exception as e:
-            print(f"Failed to check channel reward: {e}")
+    async def _build_user_detailed_stats(self, internal_user_id: int) -> dict:
+        stats = await self.quota_manager.get_user_stats(internal_user_id)
+        group = await self.identity_priority.get_user_group(internal_user_id)
+        identity = await self.identity_priority.get_user_identity(internal_user_id)
+        priority = await self.identity_priority.calculate_user_priority(internal_user_id)
+        credits = await self.quota_manager.get_credits(internal_user_id)
 
-    async def check_quota(self, update: Update, context: ContextTypes.DEFAULT_TYPE, cost: int = 1) -> bool:
-        """
-        Check if user has sufficient credits.
-        Returns True if credits are available.
-        """
-        user = update.effective_user
-        user_id = user.id
-        
-        if not await self.quota_manager.check_credits(user_id, cost):
-            current = await self.quota_manager.get_credits(user_id, username=user.username, full_name=user.full_name)
-            msg = f"🚫 **灵石不足**\n\n道友当前余额: `{current}` 灵石\n本次修炼需要: `{cost}` 灵石\n请联系管理员获取更多灵石。"
-            await robust_send_message(context.bot, update.effective_chat.id, msg, parse_mode="Markdown")
-            return False
-            
-        return True
+        invitation_recharge_stats = await self.growth_channel.get_invitation_recharge_stats(
+            internal_user_id,
+        )
 
-    async def increment_quota(self, user_id: int, cost: int = 1, username: str = None, task_type: str = "generation"):
-        """Deduct credits from user"""
-        await self.quota_manager.deduct_credits(user_id, cost, username=username, task_type=task_type)
-        # We'll refresh the group separately after the task is logged to ensure counts are accurate.
-
-    async def is_user_exists(self, user_id: int) -> bool:
-        """Check if user exists"""
-        return await self.quota_manager.is_user_exists(user_id)
-
-    async def ensure_user(self, update: Update):
-        """Ensure user info is up to date in DB"""
-        user = update.effective_user
-        if user:
-            await self.quota_manager.ensure_user(user.id, username=user.username, full_name=user.full_name)
-            await self.refresh_user_group(user.id)
-
-    async def refresh_user_group(self, user_id: int, is_member: bool = None) -> str:
-        """
-        Calculate and update user group based on stats.
-        Tiers:
-        - 金丹期 (Golden Core): Invited > 10, Checked in > 30, Total generations > 100
-        - 筑基期 (Foundation): Invited > 1, Checked in > 3, Total generations > 10
-        - 练气期 (Qi Refining): Joined channel
-        - 凡人 (Mortal): Started bot, not joined channel
-        """
-        stats = await self.quota_manager.get_user_stats(user_id)
-        
-        # Use provided is_member or fall back to DB value
-        is_channel_member = is_member if is_member is not None else stats.get("is_channel_member", False)
-        
-        group = "凡人"
-        
-        # Check for Golden Core criteria
-        if (stats["invitation_count"] > 10 and 
-            stats["checkin_count"] > 30 and 
-            stats["generation_count"] > 100):
-            group = "金丹期"
-        # Check for Foundation criteria
-        elif (stats["invitation_count"] > 1 and 
-            stats["checkin_count"] > 3 and 
-            stats["generation_count"] > 10):
-            group = "筑基期"
-        elif is_channel_member:
-            group = "练气期"
-        
-        await self.quota_manager.update_user_group(user_id, group)
-        return group
-
-    async def get_user_detailed_stats(self, user_id: int) -> dict:
-        """Get comprehensive stats for a user profile"""
-        stats = await self.quota_manager.get_user_stats(user_id)
-        group = await self.get_user_group(user_id)
-        credits = await self.quota_manager.get_credits(user_id)
-        
         return {
             "group": group,
+            "identity": identity,
+            "identity_expire_at": stats.get("identity_expire_at"),
+            "priority": priority,
             "credits": credits,
             "invitations": stats.get("invitation_count", 0),
             "checkins": stats.get("checkin_count", 0),
             "generations": stats.get("generation_count", 0),
+            "today_generations": stats.get("today_generation_count", 0),
             "total_contributions": stats.get("total_contributions", 0),
-            "approved_contributions": stats.get("approved_contributions", 0)
+            "approved_contributions": stats.get("approved_contributions", 0),
+            "invitation_recharge": invitation_recharge_stats,
         }
 
-    async def get_user_credits(self, update: Update) -> int:
-        """Get current credits for a user"""
-        user = update.effective_user
-        return await self.quota_manager.get_credits(user.id, username=user.username, full_name=user.full_name)
+    async def calculate_user_priority(self, user_id: int) -> int:
+        return await self.identity_priority.calculate_user_priority(user_id)
+
+    async def is_low_trust_free_tier_user(self, user_id: int) -> bool:
+        return await self.identity_priority.is_low_trust_free_tier_user(user_id)
+
+    async def check_access(
+        self, tg_id: int, username: str, full_name: str, is_member: bool = None
+    ) -> int:
+        return await self.access.check_access(tg_id, username, full_name, is_member)
+
+    async def check_channel_reward(
+        self, tg_id: int, username: str, full_name: str, internal_user_id: int = None
+    ) -> int:
+        return await self.growth_channel.check_channel_reward(
+            tg_id, username, full_name, internal_user_id
+        )
+
+    async def check_quota(
+        self, tg_id: int, username: str, full_name: str, cost: int = 1
+    ) -> bool:
+        return await self.quota.check_quota(tg_id, username, full_name, cost)
+
+    async def increment_quota(
+        self,
+        user_id: int,
+        credits: int = 1,
+        username: str = None,
+        task_type: str = "generation",
+    ):
+        await self.quota.increment_quota(
+            user_id=user_id,
+            credits=credits,
+            username=username,
+            task_type=task_type,
+        )
+
+    async def refund_quota(
+        self,
+        user_id: int,
+        credits: int,
+        username: str = None,
+        task_type: str = "refund",
+    ):
+        await self.quota.refund_quota(
+            user_id=user_id,
+            credits=credits,
+            username=username,
+            task_type=task_type,
+        )
+
+    async def is_user_exists(self, user_id: int) -> bool:
+        return await self.quota.is_user_exists(user_id)
+
+    async def sync_channel_status(
+        self, tg_id: int, username: str, full_name: str, is_member: bool
+    ) -> int:
+        return await self.growth_channel.sync_channel_status(
+            tg_id, username, full_name, is_member
+        )
+
+    async def ensure_user(
+        self, tg_id: int, username: str, full_name: str, language_code: str = None
+    ) -> bool:
+        return await self.access.ensure_user(
+            tg_id, username, full_name, language_code
+        )
+
+    async def refresh_user_group(self, user_id: int, is_member: bool = None) -> str:
+        return await self.identity_priority.refresh_user_group(user_id, is_member)
+
+    async def get_user_detailed_stats(self, tg_id: int) -> dict:
+        """Get comprehensive stats for a user profile"""
+        from src.core.user_core import get_or_create_user_by_telegram
+
+        internal_user, _ = await get_or_create_user_by_telegram(tg_id)
+        return await self._build_user_detailed_stats(internal_user.id)
+
+    async def get_user_detailed_stats_by_user_id(self, user_id: int) -> dict:
+        """Get comprehensive stats for a user profile by internal user id."""
+        return await self._build_user_detailed_stats(user_id)
+
+    async def get_invitation_recharge_stats(self, user_id: int) -> dict:
+        return await self.growth_channel.get_invitation_recharge_stats(user_id)
+
+    async def get_user_credits(self, tg_id: int, username: str, full_name: str) -> int:
+        return await self.quota.get_user_credits(tg_id, username, full_name)
 
     async def get_user_group(self, user_id: int) -> str:
-        """Get user group from DB"""
-        async with AsyncSessionLocal() as session:
-            from src.database.models import User
-            from sqlalchemy import select
-            stmt = select(User.user_group).where(User.id == user_id)
-            result = await session.execute(stmt)
-            group = result.scalar() or "凡人"
-            # Migration: map old names to new names if they exist in DB
-            mapping = {
-                "游客": "凡人",
-                "青铜用户": "练气期",
-                "白银用户": "筑基期"
-            }
-            return mapping.get(group, group)
-        
-    async def perform_checkin(self, update: Update) -> tuple[bool, int, str, int]:
-        """
-        Perform daily check-in for user.
-        Returns (success, current_credits, error_message, total_checkins)
-        """
-        user = update.effective_user
-        
-        # Check if user is a Mortal
-        user_group = await self.get_user_group(user.id)
-        if user_group == "凡人":
-            invite_link = CHANNEL_INVITE_LINK or "https://t.me/AiVisionAV"
-            msg = (
-                "🚫 **凡人无法签到**\n\n"
-                "道友目前尚处于凡人境界，请先 **拜入宗门** 踏入 **练气期** 即可解锁每日签到功能！\n\n"
-                f"👉 [点击即刻拜入宗门]({invite_link})"
-            )
-            return False, 0, msg, 0
+        return await self.identity_priority.get_user_group(user_id)
 
-        success = await self.quota_manager.checkin(user.id, username=user.username, full_name=user.full_name, reward=20)
-        if success:
-            await self.refresh_user_group(user.id)
-        
-        current_credits = await self.get_user_credits(update)
-        stats = await self.quota_manager.get_user_stats(user.id)
-        total_checkins = stats.get("checkin_count", 0)
-        
-        return success, current_credits, "", total_checkins
+    async def get_user_identity(self, user_id: int) -> str:
+        return await self.identity_priority.get_user_identity(user_id)
 
-    async def process_referral(self, update: Update, inviter_id: int) -> tuple[bool, str]:
-        """
-        Process referral reward.
-        Returns (success, message)
-        """
-        user = update.effective_user
-        
-        # Check if inviter is a Mortal
-        inviter_group = await self.get_user_group(inviter_id)
-        if inviter_group == "凡人":
-            return False, "visitor_limit"
+    async def perform_checkin(
+        self, tg_id: int, username: str, full_name: str
+    ) -> tuple[bool, int, str, int, int]:
+        return await self.growth_channel.perform_checkin(tg_id, username, full_name)
 
-        success = await self.quota_manager.process_referral(inviter_id, user.id, new_username=user.username, new_full_name=user.full_name)
-        if success:
-            await self.refresh_user_group(inviter_id)
-            return True, "success"
-        return False, "already_invited"
+    async def process_referral(
+        self, tg_id: int, username: str, full_name: str, inviter_tg_id: int
+    ) -> tuple[bool, str]:
+        return await self.growth_channel.process_referral(
+            tg_id, username, full_name, inviter_tg_id
+        )
 
     async def get_referral_count(self, user_id: int) -> int:
-        """Get referral count"""
-        return await self.quota_manager.get_referral_count(user_id)
+        return await self.growth_channel.get_referral_count(user_id)
 
-    async def record_contribution(self, user_id: int, file_path: str, file_type: str):
-        """Record template contribution in DB"""
-        await self.quota_manager.add_template_contribution(user_id, file_path, file_type)
+    async def record_contribution(self, tg_id: int, file_path: str, file_type: str):
+        await self.growth_channel.record_contribution(tg_id, file_path, file_type)
+
+    async def check_web_access(self, user_id: int) -> bool:
+        return await self.access.check_web_access(user_id)
+
 
 # Singleton instance
 permission_service = PermissionService()

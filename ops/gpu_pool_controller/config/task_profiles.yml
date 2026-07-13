@@ -1,0 +1,221 @@
+profiles:
+  face_i2i_t2i:
+    runtime_profile: face_i2i_t2i
+    task_types:
+      - face_swap
+      - i2i_pro
+      - i2i_draw
+      - face_video
+      - video_edit
+      - image_to_video
+      - t2i-pornmaster-turbo
+    model_bundles:
+      - face_i2i_t2i_baseline
+      - video_basic_baseline
+    required_nodes:
+      - FL_RIFE
+      - VHS_VideoCombine
+    min_vram_gb: 32
+    image_ref: 192.168.1.115:5000/allbot/comfy-cu130-face-i2i:baseline
+    model_prefix: face_i2i_t2i/2026-06-10
+    model_manifest_key: face_i2i_t2i/2026-06-10/manifest.json
+
+  image_to_video:
+    runtime_profile: image_to_video
+    task_types:
+      - video_insert
+      - video_edit
+      - image_to_video
+    model_bundles:
+      - video_basic_baseline
+    required_nodes:
+      - FL_RIFE
+      - UNETLoader
+      - VHS_VideoCombine
+    workflow: workers/comfy_agent/workflows/Wan22AioV82.json
+    min_vram_gb: 32
+    image_ref: 192.168.1.115:5000/allbot/comfy-cu130-video-basic:baseline
+    all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd
+    model_prefix: image_to_video/2026-06-13-test
+    model_manifest_key: image_to_video/2026-06-13-test/manifest.json
+
+  video_basic:
+    runtime_profile: video_basic
+    task_types:
+      - video_insert
+      - video_edit
+      - image_to_video
+    model_bundles:
+      - video_basic_baseline
+    required_nodes:
+      - FL_RIFE
+      - UNETLoader
+      - VHS_VideoCombine
+    workflow: workers/comfy_agent/workflows/Wan22AioV82.json
+    min_vram_gb: 32
+    image_ref: 192.168.1.115:5000/allbot/comfy-cu130-video-basic:baseline
+    all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd
+    model_prefix: image_to_video/2026-06-13-test
+    model_manifest_key: image_to_video/2026-06-13-test/manifest.json
+
+  ltx_video:
+    runtime_profile: ltx_video
+    task_types:
+      - ltx_video
+      - ltx_video_flf2v
+      - ltx_video_v2v_audio
+    model_bundles:
+      - ltx_video_baseline
+    required_nodes:
+      - Power Lora Loader (rgthree)
+      - VHS_VideoCombine
+    workflow: workers/comfy_agent/workflows/LTX 2.3 I2V 6.1.json
+    min_vram_gb: 32
+    image_ref: 192.168.1.115:5000/allbot/comfy-cu130-ltx:baseline
+    all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-ltx-video:20260618-ltx-min-cu128-sageattn1
+    model_prefix: ltx_video/2026-06-10
+    model_manifest_key: ltx_video/2026-06-10/manifest.json
+
+  img2img_lora:
+    runtime_profile: img2img_lora
+    task_types:
+      - img2img
+      - img2img_lora
+    model_bundles:
+      - img2img_lora_baseline
+    required_nodes:
+      - UNETLoader
+    workflow: workers/comfy_agent/workflows/Qwen-Rapid-AIO.json
+    min_vram_gb: 32
+    image_ref: 192.168.1.115:5000/allbot/comfy-cu128-img2img:baseline
+    all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946
+    model_prefix: img2img_lora/2026-06-10
+    model_manifest_key: img2img_lora/2026-06-10/manifest.json
+
+  i2i_pro:
+    runtime_profile: i2i_pro
+    task_types:
+      - i2i_pro
+      - t2i-pornmaster-turbo
+      - face_swap
+    model_bundles:
+      - i2i_pro_baseline
+    required_nodes:
+      - UNETLoader
+      - CLIPLoader
+      - VAELoader
+      - ReferenceLatent
+      - EmptyFlux2LatentImage
+      - Flux2Scheduler
+      - SamplerCustomAdvanced
+    workflow: workers/comfy_agent/workflows/i2i_pro.json
+    min_vram_gb: 32
+    image_ref: ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:pending
+    all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh
+    model_prefix: i2i_pro/2026-06-14-test
+    model_manifest_key: i2i_pro/2026-06-14-test/manifest.json
+
+  pornmaster_flux2_edit:
+    runtime_profile: pornmaster_flux2_edit
+    task_types:
+      - pornmaster_flux2_single_edit
+      - pornmaster_flux2_multi_edit
+    model_bundles:
+      - pornmaster_flux2_edit_baseline
+    required_nodes:
+      - UNETLoader
+      - CLIPLoader
+      - VAELoader
+      - ReferenceLatent
+      - EmptyFlux2LatentImage
+      - Flux2Scheduler
+      - SamplerCustomAdvanced
+    workflow: workers/comfy_agent/workflows/PornMaster_F2K_9B_Turbo_Single-image-editing_Automatic_V1_2026_05_27.api.json
+    min_vram_gb: 24
+    image_ref: 192.168.1.115:5000/allbot/comfy-runpod-pornmaster-flux2-edit:20260628-pornmaster-flux2-edit-cu128-smallvae1
+    all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-pornmaster-flux2-edit:20260628-pornmaster-flux2-edit-cu128-smallvae1
+    model_prefix: pornmaster_flux2_edit/2026-06-27
+    model_manifest_key: pornmaster_flux2_edit/2026-06-27/manifest.json
+
+  pornmaster_flux2_edit_bf16:
+    runtime_profile: pornmaster_flux2_edit
+    task_types:
+      - pornmaster_flux2_edit_bf16
+    model_bundles:
+      - pornmaster_flux2_edit_bf16_baseline
+    required_nodes:
+      - UNETLoader
+      - CLIPLoader
+      - VAELoader
+      - ReferenceLatent
+      - EmptyFlux2LatentImage
+      - Flux2Scheduler
+      - SamplerCustomAdvanced
+    workflow: workers/comfy_agent/workflows/PornMaster_F2K_9B_Turbo_Single-image-editing_Automatic_V1_2026_05_27.api.json
+    min_vram_gb: 48
+    image_ref: 192.168.1.115:5000/allbot/comfy-runpod-pornmaster-flux2-edit:20260628-pornmaster-flux2-edit-cu128-smallvae1
+    all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-pornmaster-flux2-edit:20260628-pornmaster-flux2-edit-cu128-smallvae1
+    model_prefix: pornmaster_flux2_edit_bf16/2026-07-12
+    model_manifest_key: pornmaster_flux2_edit_bf16/2026-07-12/manifest.json
+
+  scail2:
+    runtime_profile: scail2
+    task_types:
+      - scail2_action_transfer
+      - scail2_action_transfer_long
+      - scail2_video_replacement
+      - scail2_face_swap_v2
+    model_bundles:
+      - scail2_baseline
+    required_nodes:
+      - WanSCAILToVideo
+      - SCAIL2ColoredMask
+      - SAM3_VideoTrack
+      - VHS_LoadVideo
+      - VHS_VideoCombine
+    workflow: workers/comfy_agent/workflows/SCAIL-2_Animation_multi-char.api.json
+    min_vram_gb: 48
+    image_ref: ghcr.io/giraffu/allbot-comfy-runpod-scail2:pending
+    all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-scail2:20260704-sm120-xformers-pr1262
+    model_prefix: scail2/2026-06-17-test
+    model_manifest_key: scail2/2026-06-17-test/manifest.json
+
+  wan22_video_v2:
+    runtime_profile: wan22_video_v2
+    task_types:
+      - wan22_video_v2
+      - video_edit
+      - image_to_video
+    model_bundles:
+      - wan22_video_v2_baseline
+      - video_basic_baseline
+    required_nodes:
+      - FL_RIFE
+      - UNETLoader
+      - VHS_VideoCombine
+    workflow: workers/comfy_agent/workflows/Wan22AioV82.json
+    min_vram_gb: 48
+    image_ref: 192.168.1.115:5000/allbot/comfy-cu128-wan22:baseline
+    all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd
+    model_prefix: wan22_video_v2/2026-06-13-test
+    model_manifest_key: wan22_video_v2/2026-06-13-test/manifest.json
+
+  wan22_aio_video:
+    runtime_profile: wan22_aio_video
+    task_types:
+      - image_to_video
+      - wan22_video_v2
+    model_bundles:
+      - video_basic_baseline
+      - wan22_video_v2_baseline
+    required_nodes:
+      - FL_RIFE
+      - UNETLoader
+      - VHS_VideoCombine
+      - Power Lora Loader (rgthree)
+    workflow: workers/comfy_agent/workflows/Wan22AioV82.json
+    min_vram_gb: 48
+    image_ref: ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd
+    all_in_one_image_ref: 192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd
+    model_prefix: wan22_aio_video/2026-06-12-test
+    model_manifest_key: wan22_aio_video/2026-06-12-test/manifest.json

@@ -1,0 +1,19 @@
+FROM python:3.10-slim
+
+ARG ALLBOT_GIT_SHA
+ARG ALLBOT_SOURCE=https://github.com/giraffu/All_bot
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
+      org.opencontainers.image.source=$ALLBOT_SOURCE
+
+WORKDIR /app
+COPY requirements.txt /tmp/root-requirements.txt
+COPY backend/requirements.txt /tmp/backend-requirements.txt
+RUN pip install --no-cache-dir -r /tmp/root-requirements.txt -r /tmp/backend-requirements.txt
+COPY backend/app /app/app
+COPY src /app/src
+COPY shared /app/shared
+COPY deploy/docker/python-release-entrypoint.sh /usr/local/bin/allbot-release-entrypoint
+RUN chmod 755 /usr/local/bin/allbot-release-entrypoint
+ENV PYTHONPATH=/app PYTHONUNBUFFERED=1
+ENTRYPOINT ["/usr/local/bin/allbot-release-entrypoint"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8003"]

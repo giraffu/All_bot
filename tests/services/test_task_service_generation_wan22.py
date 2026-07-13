@@ -1,0 +1,113 @@
+from src.services.task_service_generation_wan22 import (
+    DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT,
+    WAN22_VIDEO_V2_DEFAULT_DURATION_SECONDS,
+    WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET,
+    get_wan22_video_v2_cost,
+    get_wan22_video_v2_duration_multiplier_label,
+    get_wan22_video_v2_frame_count,
+    get_wan22_video_v2_resolution_display,
+    get_wan22_video_v2_resolution_label,
+    normalize_wan22_video_v2_duration_seconds,
+    normalize_wan22_video_v2_negative_prompt,
+    normalize_wan22_video_v2_resolution_preset,
+)
+
+
+def test_normalize_wan22_video_v2_negative_prompt_falls_back_to_default():
+    assert (
+        normalize_wan22_video_v2_negative_prompt("   ")
+        == DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT
+    )
+
+
+def test_normalize_wan22_video_v2_negative_prompt_keeps_custom_value():
+    assert (
+        normalize_wan22_video_v2_negative_prompt(" custom negative ")
+        == "custom negative"
+    )
+
+
+def test_normalize_wan22_video_v2_resolution_preset_falls_back_to_default():
+    assert (
+        normalize_wan22_video_v2_resolution_preset("not-valid")
+        == WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET
+    )
+
+
+def test_normalize_wan22_video_v2_resolution_preset_accepts_precision_value():
+    assert (
+        normalize_wan22_video_v2_resolution_preset("0.26 MP - Preview")
+        == "preview"
+    )
+    assert (
+        normalize_wan22_video_v2_resolution_preset("0.36 mp - small")
+        == "small"
+    )
+    assert (
+        normalize_wan22_video_v2_resolution_preset("0.65 MP - Balanced") == "hd"
+    )
+
+
+def test_normalize_wan22_video_v2_resolution_preset_maps_legacy_fast_to_preview():
+    assert normalize_wan22_video_v2_resolution_preset("fast") == "preview"
+    assert normalize_wan22_video_v2_resolution_preset(512) == "preview"
+    assert normalize_wan22_video_v2_resolution_preset(600) == "small"
+    assert normalize_wan22_video_v2_resolution_preset("600p") == "small"
+
+
+def test_get_wan22_video_v2_resolution_label_uses_language():
+    assert get_wan22_video_v2_resolution_label("preview", lang="zh") == "极速"
+    assert get_wan22_video_v2_resolution_label("preview", lang="en") == "Fast"
+    assert get_wan22_video_v2_resolution_label("small", lang="zh") == "清晰"
+    assert get_wan22_video_v2_resolution_label("small", lang="en") == "Small"
+    assert get_wan22_video_v2_resolution_label("fast", lang="zh") == "极速"
+    assert get_wan22_video_v2_resolution_label("fast", lang="en") == "Fast"
+
+
+def test_get_wan22_video_v2_resolution_display_includes_approx_resolution():
+    assert (
+        get_wan22_video_v2_resolution_display("preview", lang="zh")
+        == "极速（约 512p）"
+    )
+    assert (
+        get_wan22_video_v2_resolution_display("standard", lang="zh")
+        == "标准（约 720p）"
+    )
+    assert (
+        get_wan22_video_v2_resolution_display("small", lang="zh")
+        == "清晰（约 600p）"
+    )
+    assert (
+        get_wan22_video_v2_resolution_display("hd", lang="zh")
+        == "高清（约 810p）"
+    )
+    assert (
+        get_wan22_video_v2_resolution_display("preview", lang="en")
+        == "Fast (approx. 512p)"
+    )
+
+
+def test_get_wan22_video_v2_cost_uses_resolution_preset():
+    assert get_wan22_video_v2_cost("preview") == 6
+    assert get_wan22_video_v2_cost("fast") == 6
+    assert get_wan22_video_v2_cost(512) == 6
+    assert get_wan22_video_v2_cost("small") == 12
+    assert get_wan22_video_v2_cost("standard") == 20
+    assert get_wan22_video_v2_cost("hd") == 30
+    assert get_wan22_video_v2_cost("not-valid") == 6
+
+
+def test_wan22_video_v2_duration_options_drive_cost_and_frames():
+    assert normalize_wan22_video_v2_duration_seconds("8s") == 8
+    assert normalize_wan22_video_v2_duration_seconds(10) == 10
+    assert normalize_wan22_video_v2_duration_seconds("oops") == (
+        WAN22_VIDEO_V2_DEFAULT_DURATION_SECONDS
+    )
+    assert get_wan22_video_v2_cost("standard", 8) == 40
+    assert get_wan22_video_v2_cost("hd", "10s") == 90
+    assert get_wan22_video_v2_duration_multiplier_label(5) == "*1"
+    assert get_wan22_video_v2_duration_multiplier_label("8s") == "*2"
+    assert get_wan22_video_v2_duration_multiplier_label(10) == "*3"
+    assert get_wan22_video_v2_frame_count(5) == 81
+    assert get_wan22_video_v2_frame_count(8) == 129
+    assert get_wan22_video_v2_frame_count(10) == 161

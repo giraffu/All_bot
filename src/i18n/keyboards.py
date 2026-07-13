@@ -1,0 +1,69 @@
+from functools import lru_cache
+
+from telegram import ReplyKeyboardMarkup
+
+from src.i18n.translator import get_text
+from src.services.lazy_bot_entry_service import is_lazy_bot_entry_enabled
+
+
+@lru_cache(maxsize=10)
+def get_main_menu_keyboard(lang: str) -> ReplyKeyboardMarkup:
+    """
+    动态生成并缓存多语言主菜单键盘。
+    """
+    account_row = [
+        get_text("menu.recharge", lang),
+        get_text("menu.checkin", lang),
+        get_text("menu.profile", lang),
+    ]
+    if is_lazy_bot_entry_enabled():
+        account_row.insert(0, get_text("menu.lazy_bot", lang))
+
+    keyboard = [
+        account_row,
+        [
+            get_text("menu.share", lang),
+            get_text("menu.queue", lang),
+            get_text("menu.switch_lang", lang),
+        ],
+        [
+            get_text("menu.photo_edit", lang),
+            get_text("menu.video_to_video", lang),
+        ],
+        [
+            get_text("menu.txt2img", lang),
+            get_text("menu.i2i_pro", lang),
+            get_text("menu.free_edit", lang),
+        ],
+        [
+            get_text("menu.video_lora", lang),
+            get_text("menu.ltx_video", lang),
+            get_text("menu.wan22_video_v2", lang),
+        ],
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+
+@lru_cache(maxsize=10)
+def get_photo_edit_keyboard(lang: str) -> ReplyKeyboardMarkup:
+    keyboard = [
+        [
+            get_text("menu.photo_edit_faceswap", lang),
+            get_text("menu.photo_edit_random_faceswap", lang),
+        ],
+        [get_text("menu.back_main", lang)],
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+
+@lru_cache(maxsize=10)
+def get_video_to_video_keyboard(lang: str) -> ReplyKeyboardMarkup:
+    keyboard = [
+        [
+            get_text("menu.video_to_video_replacement", lang),
+            get_text("menu.video_to_video_action_transfer", lang),
+        ],
+        [get_text("menu.face_video", lang)],
+        [get_text("menu.back_main", lang)],
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)

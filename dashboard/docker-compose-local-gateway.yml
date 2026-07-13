@@ -1,0 +1,55 @@
+version: "3.8"
+
+x-dashboard-local-gateway: &dashboard-local-gateway
+  image: nginx:1.27-alpine
+  restart: unless-stopped
+  network_mode: "host"
+  environment:
+    DASHBOARD_BACKEND_HOST: "${DASHBOARD_BACKEND_HOST:-100.107.220.127:8043}"
+    TZ: Asia/Shanghai
+  volumes:
+    - ./frontend/dist:/usr/share/nginx/html:ro
+    - ./frontend/nginx.local-gateway.conf.template:/etc/nginx/templates/default.conf.template:ro
+    - dashboard-local-gateway-cache:/var/cache/nginx
+
+services:
+  dashboard-local-gateway-8086:
+    <<: *dashboard-local-gateway
+    container_name: dashboard-local-gateway-8086
+    environment:
+      DASHBOARD_GATEWAY_PORT: "8086"
+      DASHBOARD_BACKEND_HOST: "${DASHBOARD_BACKEND_HOST:-100.107.220.127:8043}"
+      TZ: Asia/Shanghai
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O /dev/null http://127.0.0.1:8086/ && wget -q -O /dev/null http://127.0.0.1:8086/api/health",
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  dashboard-local-gateway-8085:
+    <<: *dashboard-local-gateway
+    container_name: dashboard-local-gateway-8085
+    profiles:
+      - canary
+    environment:
+      DASHBOARD_GATEWAY_PORT: "8085"
+      DASHBOARD_BACKEND_HOST: "${DASHBOARD_BACKEND_HOST:-100.107.220.127:8043}"
+      TZ: Asia/Shanghai
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O /dev/null http://127.0.0.1:8085/ && wget -q -O /dev/null http://127.0.0.1:8085/api/health",
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+volumes:
+  dashboard-local-gateway-cache:

@@ -1,0 +1,775 @@
+{
+  "269": {
+    "inputs": {
+      "image": "226.jpeg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Face Reference"
+    }
+  },
+  "276": {
+    "inputs": {
+      "audio": "ltx_23_audio.mp3",
+      "audioUI": "/api/view?filename=ltx_23_audio.mp3&type=input&subfolder=&rand=0.12587055851119378"
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "Load Custom Audio"
+    }
+  },
+  "341": {
+    "inputs": {
+      "filename_prefix": "video/LTX_2.3_ia2v",
+      "format": "auto",
+      "codec": "auto",
+      "video-preview": "",
+      "video": [
+        "408",
+        0
+      ]
+    },
+    "class_type": "SaveVideo",
+    "_meta": {
+      "title": "Result"
+    }
+  },
+  "345": {
+    "inputs": {
+      "video": "1063396442_input_images_0a476dee-a366-42de-ad2f-e82315c73ce3.mp4",
+      "force_rate": [
+        "358",
+        0
+      ],
+      "custom_width": 0,
+      "custom_height": 0,
+      "frame_load_cap": 0,
+      "skip_first_frames": 0,
+      "select_every_nth": 1,
+      "format": "AnimateDiff"
+    },
+    "class_type": "VHS_LoadVideo",
+    "_meta": {
+      "title": "Body Reference"
+    }
+  },
+  "352": {
+    "inputs": {
+      "expression": "floor(((a * b) / 8)) * 8 + 1",
+      "variables.a": [
+        "427",
+        0
+      ],
+      "variables.b": [
+        "358",
+        0
+      ]
+    },
+    "class_type": "SimpleCalculatorKJ",
+    "_meta": {
+      "title": "Total Frames"
+    }
+  },
+  "358": {
+    "inputs": {
+      "value": 24
+    },
+    "class_type": "PrimitiveFloat",
+    "_meta": {
+      "title": "FPS"
+    }
+  },
+  "360": {
+    "inputs": {
+      "region_position": "left",
+      "region_size_px": 256,
+      "face_distribution": "all_faces_every_frame",
+      "interval_frames": 12,
+      "overflow_mode": "loop",
+      "stack_direction": "auto",
+      "face_scale_pct": 100,
+      "face_padding_px": 12,
+      "face_gap_px": 12,
+      "face_align_main": "center",
+      "face_align_cross": "center",
+      "chroma_r": 0,
+      "chroma_g": 255,
+      "chroma_b": 0,
+      "frames": [
+        "361",
+        0
+      ],
+      "face_images": [
+        "269",
+        0
+      ]
+    },
+    "class_type": "ReservedRegionFrameComposer",
+    "_meta": {
+      "title": "Reserved Region Frame Composer"
+    }
+  },
+  "361": {
+    "inputs": {
+      "width": [
+        "362",
+        0
+      ],
+      "height": [
+        "362",
+        0
+      ],
+      "upscale_method": "lanczos",
+      "keep_proportion": "resize",
+      "pad_color": "0, 0, 0",
+      "crop_position": "center",
+      "divisible_by": 32,
+      "device": "cpu",
+      "image": [
+        "901",
+        0
+      ]
+    },
+    "class_type": "ImageResizeKJv2",
+    "_meta": {
+      "title": "Resize Image v2"
+    }
+  },
+  "362": {
+    "inputs": {
+      "value": 720
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "Base Resolution (Largest Size)"
+    }
+  },
+  "377": {
+    "inputs": {
+      "noise_seed": 264817163008511
+    },
+    "class_type": "RandomNoise",
+    "_meta": {
+      "title": "随机噪波"
+    }
+  },
+  "382": {
+    "inputs": {
+      "noise": [
+        "377",
+        0
+      ],
+      "guider": [
+        "396",
+        0
+      ],
+      "sampler": [
+        "386",
+        0
+      ],
+      "sigmas": [
+        "575",
+        0
+      ],
+      "latent_image": [
+        "416",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {
+      "title": "自定义采样器（高级）"
+    }
+  },
+  "383": {
+    "inputs": {
+      "positive": [
+        "440",
+        0
+      ],
+      "negative": [
+        "440",
+        1
+      ],
+      "latent": [
+        "392",
+        0
+      ]
+    },
+    "class_type": "LTXVCropGuides",
+    "_meta": {
+      "title": "LTXV裁剪指导"
+    }
+  },
+  "386": {
+    "inputs": {
+      "sampler_name": "euler_ancestral_cfg_pp"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "K采样器选择"
+    }
+  },
+  "389": {
+    "inputs": {
+      "text": [
+        "498",
+        0
+      ],
+      "clip": [
+        "477",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Manual Prompt"
+    }
+  },
+  "390": {
+    "inputs": {
+      "frame_rate": [
+        "358",
+        0
+      ],
+      "positive": [
+        "481",
+        0
+      ],
+      "negative": [
+        "395",
+        0
+      ]
+    },
+    "class_type": "LTXVConditioning",
+    "_meta": {
+      "title": "LTXV条件"
+    }
+  },
+  "391": {
+    "inputs": {
+      "sigmas": "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0"
+    },
+    "class_type": "ManualSigmas",
+    "_meta": {
+      "title": "自定义Sigmas"
+    }
+  },
+  "392": {
+    "inputs": {
+      "av_latent": [
+        "382",
+        0
+      ]
+    },
+    "class_type": "LTXVSeparateAVLatent",
+    "_meta": {
+      "title": "LTXV分离音视频潜空间"
+    }
+  },
+  "395": {
+    "inputs": {
+      "text": "pc game, console game, video game, cartoon, childish, ugly, artifacts, low resolution, blurry, jagged edges",
+      "clip": [
+        "477",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP文本编码"
+    }
+  },
+  "396": {
+    "inputs": {
+      "cfg": 1,
+      "model": [
+        "573",
+        0
+      ],
+      "positive": [
+        "440",
+        0
+      ],
+      "negative": [
+        "440",
+        1
+      ]
+    },
+    "class_type": "CFGGuider",
+    "_meta": {
+      "title": "CFG引导器"
+    }
+  },
+  "400": {
+    "inputs": {
+      "value": 0,
+      "width": [
+        "471",
+        0
+      ],
+      "height": [
+        "471",
+        1
+      ]
+    },
+    "class_type": "SolidMask",
+    "_meta": {
+      "title": "纯块遮罩"
+    }
+  },
+  "408": {
+    "inputs": {
+      "fps": [
+        "358",
+        0
+      ],
+      "images": [
+        "545",
+        0
+      ],
+      "audio": [
+        "618",
+        0
+      ]
+    },
+    "class_type": "CreateVideo",
+    "_meta": {
+      "title": "创建视频"
+    }
+  },
+  "414": {
+    "inputs": {
+      "start_index": 0,
+      "duration": [
+        "902",
+        0
+      ],
+      "audio": [
+        "618",
+        0
+      ]
+    },
+    "class_type": "TrimAudioDuration",
+    "_meta": {
+      "title": "修剪音频时长"
+    }
+  },
+  "415": {
+    "inputs": {
+      "audio": [
+        "414",
+        0
+      ],
+      "audio_vae": [
+        "480",
+        0
+      ]
+    },
+    "class_type": "LTXVAudioVAEEncode",
+    "_meta": {
+      "title": "LTXV音频VAE编码"
+    }
+  },
+  "416": {
+    "inputs": {
+      "video_latent": [
+        "440",
+        2
+      ],
+      "audio_latent": [
+        "417",
+        0
+      ]
+    },
+    "class_type": "LTXVConcatAVLatent",
+    "_meta": {
+      "title": "LTXVConcatAVLatent"
+    }
+  },
+  "417": {
+    "inputs": {
+      "samples": [
+        "415",
+        0
+      ],
+      "mask": [
+        "400",
+        0
+      ]
+    },
+    "class_type": "SetLatentNoiseMask",
+    "_meta": {
+      "title": "设置Latent噪波遮罩"
+    }
+  },
+  "418": {
+    "inputs": {
+      "model_name": "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"
+    },
+    "class_type": "LatentUpscaleModelLoader",
+    "_meta": {
+      "title": "加载Latent放大模型"
+    }
+  },
+  "426": {
+    "inputs": {
+      "preview_markdown": "<comfy.sd.CLIP object at 0x7d552638e850>",
+      "preview_text": "<comfy.sd.CLIP object at 0x7d552638e850>",
+      "previewMode": null,
+      "source": [
+        "477",
+        0
+      ]
+    },
+    "class_type": "PreviewAny",
+    "_meta": {
+      "title": "Enhance Prompt Preview"
+    }
+  },
+  "427": {
+    "inputs": {
+      "value": 5
+    },
+    "class_type": "PrimitiveFloat",
+    "_meta": {
+      "title": "Duration (Seconds)"
+    }
+  },
+  "440": {
+    "inputs": {
+      "num_guides": "1",
+      "num_guides.frame_idx_1": 0,
+      "num_guides.strength_1": 1,
+      "positive": [
+        "390",
+        0
+      ],
+      "negative": [
+        "390",
+        1
+      ],
+      "vae": [
+        "479",
+        0
+      ],
+      "latent": [
+        "443",
+        0
+      ],
+      "num_guides.image_1": [
+        "360",
+        0
+      ]
+    },
+    "class_type": "LTXVAddGuideMulti",
+    "_meta": {
+      "title": "LTXVAddGuideMulti"
+    }
+  },
+  "443": {
+    "inputs": {
+      "pixels": [
+        "360",
+        0
+      ],
+      "vae": [
+        "479",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE编码"
+    }
+  },
+  "471": {
+    "inputs": {
+      "image": [
+        "360",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "获取图像尺寸"
+    }
+  },
+  "477": {
+    "inputs": {
+      "clip_name1": "gemma_3_12B_it_fp8_scaled.safetensors",
+      "clip_name2": "ltx-2.3_text_projection_bf16.safetensors",
+      "type": "ltxv",
+      "device": "default"
+    },
+    "class_type": "DualCLIPLoader",
+    "_meta": {
+      "title": "双CLIP加载器"
+    }
+  },
+  "478": {
+    "inputs": {
+      "unet_name": "ltx-2.3-22b-distilled_transformer_only_fp8_input_scaled_v3.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNet加载器"
+    }
+  },
+  "479": {
+    "inputs": {
+      "vae_name": "LTX23_video_vae_bf16.safetensors",
+      "device": "main_device",
+      "weight_dtype": "bf16"
+    },
+    "class_type": "VAELoaderKJ",
+    "_meta": {
+      "title": "VAELoader KJ"
+    }
+  },
+  "480": {
+    "inputs": {
+      "vae_name": "LTX23_audio_vae_bf16.safetensors",
+      "device": "main_device",
+      "weight_dtype": "bf16"
+    },
+    "class_type": "VAELoaderKJ",
+    "_meta": {
+      "title": "VAELoader KJ"
+    }
+  },
+  "481": {
+    "inputs": {
+      "text": [
+        "516",
+        0
+      ],
+      "clip": [
+        "477",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Automatic Prompt"
+    }
+  },
+  "493": {
+    "inputs": {
+      "switch": true,
+      "on_false": [
+        "498",
+        0
+      ],
+      "on_true": [
+        "586",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Automatic Prompt?"
+    }
+  },
+  "498": {
+    "inputs": {
+      "value": ""
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "507": {
+    "inputs": {
+      "preview_markdown": "head_swap:\n\nFACE:\nFemale, fair skin, approximately 20-30 years old, oval head shape, short straight black hair styled in a bob, dark eyes, no facial hair, smooth skin, and small metallic hoop earrings.\n\nACTION:\nA person stands facing the camera indoors against a plain wall, wearing no clothing. They shift their weight slightly and move their hands in front of their torso, gesturing with open palms and fingers spread. The framing captures the full body from the thighs up.",
+      "preview_text": "head_swap:\n\nFACE:\nFemale, fair skin, approximately 20-30 years old, oval head shape, short straight black hair styled in a bob, dark eyes, no facial hair, smooth skin, and small metallic hoop earrings.\n\nACTION:\nA person stands facing the camera indoors against a plain wall, wearing no clothing. They shift their weight slightly and move their hands in front of their torso, gesturing with open palms and fingers spread. The framing captures the full body from the thighs up.",
+      "previewMode": null,
+      "source": [
+        "493",
+        0
+      ]
+    },
+    "class_type": "PreviewAny",
+    "_meta": {
+      "title": "Prompt Result"
+    }
+  },
+  "516": {
+    "inputs": {
+      "switch": false,
+      "on_false": [
+        "493",
+        0
+      ],
+      "on_true": [
+        "493",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "切换"
+    }
+  },
+  "545": {
+    "inputs": {
+      "samples": [
+        "383",
+        2
+      ],
+      "vae": [
+        "479",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  },
+  "572": {
+    "inputs": {
+      "preview_markdown": "head_swap:\n\nFACE:\nFemale, fair skin, approximately 20-30 years old, oval head shape, short straight black hair styled in a bob, dark eyes, no facial hair, smooth skin, and small metallic hoop earrings.\n\nACTION:\nA person stands facing the camera indoors against a plain wall, wearing no clothing. They shift their weight slightly and move their hands in front of their torso, gesturing with open palms and fingers spread. The framing captures the full body from the thighs up.",
+      "preview_text": "head_swap:\n\nFACE:\nFemale, fair skin, approximately 20-30 years old, oval head shape, short straight black hair styled in a bob, dark eyes, no facial hair, smooth skin, and small metallic hoop earrings.\n\nACTION:\nA person stands facing the camera indoors against a plain wall, wearing no clothing. They shift their weight slightly and move their hands in front of their torso, gesturing with open palms and fingers spread. The framing captures the full body from the thighs up.",
+      "previewMode": null,
+      "source": [
+        "516",
+        0
+      ]
+    },
+    "class_type": "PreviewAny",
+    "_meta": {
+      "title": "Final Prompt Preview"
+    }
+  },
+  "573": {
+    "inputs": {
+      "lora_name": "head_swap_v3_rank_adaptive_fro_098 (1).safetensors",
+      "strength_model": 1,
+      "model": [
+        "478",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoRA加载器（仅模型）"
+    }
+  },
+  "575": {
+    "inputs": {
+      "scheduler": "sgm_uniform",
+      "steps": 8,
+      "denoise": 1,
+      "model": [
+        "573",
+        0
+      ]
+    },
+    "class_type": "BasicScheduler",
+    "_meta": {
+      "title": "基本调度器"
+    }
+  },
+  "586": {
+    "inputs": {
+      "model": "qwen3.5:9b (6.6GB)",
+      "custom_model": "",
+      "api_host": "http://127.0.0.1:11434",
+      "timeout": 300,
+      "temperature": 0.7,
+      "top_k": 40,
+      "top_p": 0.9,
+      "repeat_penalty": 1.1,
+      "seed_number": 42,
+      "num_ctx": 4096,
+      "max_tokens": 4097,
+      "keep_model_alive": 0,
+      "frame_skip": 5,
+      "max_frames": 16,
+      "system_context": "You are a helpful AI assistant specialized in analyzing a sequence of video frames and generating a detailed and accurate textual description of the events. Describe the actions, people, objects, and how the scene evolves across the frames.",
+      "prompt": "Analyze this composite video.\n\nThe video contains:\n1. a side chroma-key panel with a reference face image\n2. a main performance video showing the body, clothing, movement, hand actions, objects, framing, and environment\n\nYour task is to extract:\n- the target face identity from the side panel\n- the performance/action from the main video\n\nCritical rules:\n- The side-panel face is the only valid source for identity traits and head-level accessories.\n- Ignore the visible face and head appearance in the main video completely.\n- Do not describe any face, hair, hairstyle, hair color, eye color, makeup, facial features, facial expression, attractiveness, headwear, hood, hat, or accessories from the main video.\n- In the ACTION section, describe the performer only as \"a person\" and focus only on body movement, clothing, hand actions, objects, framing, and environment.\n- Do not mention the chroma panel, green background, split layout, or editing structure.\n- Be factual and non-creative.\n- Do not guess uncertain details. If a detail is not clearly visible, omit it.\n\nReturn exactly in this format:\nhead_swap:\n\nFACE:\nA brief but detailed objective identity description from the side-panel face only. Include, when clearly visible: apparent gender, apparent ethnicity, skin tone or complexion, approximate age range, head shape, hair or baldness pattern, hair color, eye color, facial hair, visible skin details, headwear or head covering, visible facial accessories, and any especially distinctive facial trait. Prioritize the eyes when they are a strong defining feature.\n\nACTION:\nA concise performance description from the main video. Include only: visible clothing, body position, movement, hand actions, objects being shown or handled, camera-facing behavior, framing, and environment. Do not include any face or head appearance from the main video.\n\nGood example:\nFACE:\nFemale, fair skin, approximately 20-30 years old, oval head shape, long wavy vivid blue-violet hair, bright golden-amber eyes with dark defined pupils, no facial hair, smooth skin, and pink flower hair accessories as a distinctive head adornment.\n\nACTION:\nA person in a dark top faces the camera indoors, holds a package of false eyelashes close to the lens, peels one lash from the backing, brings it near the eye area, and examines it while making small hand movements.\n\nBad example:\nACTION:\nA person with long curly blonde braids holds a pair of false eyelashes...",
+      "video_frames": [
+        "360",
+        0
+      ]
+    },
+    "class_type": "OllamaVideoDescriber",
+    "_meta": {
+      "title": "🦙 Ollama Video Describer 🦙"
+    }
+  },
+  "618": {
+    "inputs": {
+      "duration": 5,
+      "sample_rate": 44100,
+      "channels": 2
+    },
+    "class_type": "EmptyAudio",
+    "_meta": {
+      "title": "Empty Audio"
+    }
+  },
+  "900": {
+    "inputs": {
+      "expression": "max(1, min(floor((b - 1) / 8) * 8 + 1, floor((a - 1) / 8) * 8 + 1))",
+      "variables.a": [
+        "345",
+        1
+      ],
+      "variables.b": [
+        "903",
+        0
+      ]
+    },
+    "class_type": "SimpleCalculatorKJ",
+    "_meta": {
+      "title": "Legal Frames Calculator"
+    }
+  },
+  "901": {
+    "inputs": {
+      "batch_index": 0,
+      "length": [
+        "900",
+        1
+      ],
+      "image": [
+        "345",
+        0
+      ]
+    },
+    "class_type": "ImageFromBatch",
+    "_meta": {
+      "title": "Slice Video Frames"
+    }
+  },
+  "902": {
+    "inputs": {
+      "expression": "a / b",
+      "variables.a": [
+        "900",
+        1
+      ],
+      "variables.b": [
+        "358",
+        0
+      ]
+    },
+    "class_type": "SimpleCalculatorKJ",
+    "_meta": {
+      "title": "Actual Duration Calculator"
+    }
+  },
+  "903": {
+    "inputs": {
+      "value": 121
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "Max Frame Threshold"
+    }
+  }
+}

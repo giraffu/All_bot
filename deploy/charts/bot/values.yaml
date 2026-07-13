@@ -1,0 +1,50 @@
+replicaCount: 1
+
+image:
+  repository: my-bot-repo/tg-bot
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext: {}
+
+securityContext: {}
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+env:
+  API_BASE: "http://api-service:8003"
+  MINIO_ENDPOINT: "minio-service:9000"
+  DATABASE_URL: "postgresql+asyncpg://user:pass@postgres-service:5432/db"
+  # Add other env vars here or use secret
+
+secret:
+  create: true
+  data:
+    BOT_TOKEN: "base64-encoded-token"
+    API_TOKEN: "base64-encoded-token"
+    MINIO_ACCESS_KEY: "chuzeyu"
+    MINIO_SECRET_KEY: "@Cv1347968277"

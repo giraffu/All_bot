@@ -1,0 +1,4 @@
+interface:
+  display_name: "Local Analytics Prompt Semantics"
+  short_description: "提示词词义分析、词元分类、映射、删除和模板候选治理口径。"
+  default_prompt: "按本地数据分析平台提示词词义分析口径，审查并治理词元规则。"

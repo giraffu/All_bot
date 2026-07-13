@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily AllBot cloud production shadow sync at 05:00 Asia/Shanghai
+
+[Timer]
+OnCalendar=*-*-* 05:00:00 Asia/Shanghai
+Persistent=true
+RandomizedDelaySec=15m
+Unit=allbot-cloud-prod-shadow-sync.service
+
+[Install]
+WantedBy=timers.target

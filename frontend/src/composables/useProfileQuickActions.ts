@@ -1,0 +1,97 @@
+import { computed, type ComputedRef } from 'vue'
+
+type ProfileUser = {
+  username?: string | null
+}
+
+type Translate = (key: string) => string
+
+type RouterLike = {
+  push: (...args: any[]) => unknown
+}
+
+export function useProfileQuickActions(options: {
+  user: ComputedRef<ProfileUser | null | undefined>
+  t: Translate
+  router: RouterLike
+  openRedeemCreditsModal: () => void
+  openRedeemMembershipModal: () => void
+  handleBindPasswordModalOpen: () => void
+  openFollowingModal: () => void
+  openFollowersModal: () => void
+  openSearchModal: () => void
+  openCreditLedgerModal: () => void
+  icons: {
+    Wallet: unknown
+    Award: unknown
+    Lock: unknown
+    Users: unknown
+    Search: unknown
+    ReceiptText: unknown
+  }
+}) {
+  const quickActions = computed(() => [
+    {
+      key: 'billing',
+      label: options.t('menu.recharge'),
+      className: 'quick-action-btn--amber',
+      icon: options.icons.Wallet,
+      onClick: () => options.router.push('/billing'),
+    },
+    {
+      key: 'redeem-credits',
+      label: options.t('profile.redeem_credits'),
+      className: 'quick-action-btn--emerald',
+      icon: options.icons.Wallet,
+      onClick: options.openRedeemCreditsModal,
+    },
+    {
+      key: 'redeem-membership',
+      label: options.t('profile.redeem_membership'),
+      className: 'quick-action-btn--violet',
+      icon: options.icons.Award,
+      onClick: options.openRedeemMembershipModal,
+    },
+    {
+      key: 'following',
+      label: options.t('social.my_following'),
+      className: 'quick-action-btn--sky',
+      icon: options.icons.Users,
+      onClick: options.openFollowingModal,
+    },
+    {
+      key: 'followers',
+      label: options.t('social.my_followers'),
+      className: 'quick-action-btn--sky',
+      icon: options.icons.Users,
+      onClick: options.openFollowersModal,
+    },
+    {
+      key: 'find-friends',
+      label: options.t('social.find_friends'),
+      className: 'quick-action-btn--cyan',
+      icon: options.icons.Search,
+      onClick: options.openSearchModal,
+    },
+    {
+      key: 'credit-ledger',
+      label: options.t('credit_ledger.title'),
+      className: 'quick-action-btn--rose',
+      icon: options.icons.ReceiptText,
+      onClick: options.openCreditLedgerModal,
+    },
+    {
+      key: 'password',
+      label: options.user.value?.username
+        ? options.t('profile.change_password')
+        : options.t('profile.set_password'),
+      className: 'quick-action-btn--indigo',
+      icon: options.icons.Lock,
+      onClick: options.handleBindPasswordModalOpen,
+    },
+  ])
+
+  return {
+    quickActions,
+  }
+}

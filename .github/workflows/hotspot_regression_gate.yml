@@ -1,0 +1,516 @@
+name: Hotspot Regression Gate
+
+concurrency:
+  group: hotspot-regression-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+    paths:
+      - 'src/services/task_service*.py'
+      - 'backend/app/main.py'
+      - 'backend/app/main_bootstrap.py'
+      - 'backend/app/main_t2i_wiring.py'
+      - 'backend/app/dependencies.py'
+      - 'backend/app/routers/agent.py'
+      - 'backend/app/queue_manager.py'
+      - 'src/core/task_core*.py'
+      - 'src/core/user_core_bindings.py'
+      - 'src/core/gallery_core_dependencies.py'
+      - 'src/services/task_core_process_defaults.py'
+      - 'src/web_api/__init__.py'
+      - 'src/web_api/main.py'
+      - 'src/web_api/dependencies.py'
+      - 'src/web_api/routers/tasks.py'
+      - 'src/web_api/services/task_*api_service.py'
+      - 'src/web_api/services/task_submission_service.py'
+      - 'src/web_api/services/task_result_service.py'
+      - 'src/web_api/routers/users.py'
+      - 'src/web_api/services/users_history*.py'
+      - 'src/web_api/services/user_profile_service.py'
+      - 'src/web_api/routers/gallery.py'
+      - 'src/web_api/services/gallery_service_*.py'
+      - 'src/handlers/message_handler*.py'
+      - 'frontend/src/views/Gallery.vue'
+      - 'frontend/src/views/Gallery.test.ts'
+      - 'frontend/src/views/GalleryWorkbenchFlow.test.ts'
+      - 'frontend/src/views/MyFavorites.vue'
+      - 'frontend/src/views/MyFavoritesFlow.test.ts'
+      - 'frontend/src/components/GalleryDetailModal.vue'
+      - 'frontend/src/components/GalleryDetailModal.test.ts'
+      - 'frontend/src/components/DetailModalShell.vue'
+      - 'frontend/src/components/DetailModalShell.test.ts'
+      - 'frontend/src/components/MySubmissionsPanel.vue'
+      - 'frontend/src/components/MySubmissionsPanelFlow.test.ts'
+      - 'frontend/src/components/PostBrowserShell.vue'
+      - 'frontend/src/components/PostBrowserShell.test.ts'
+      - 'frontend/src/components/ListStateBlock.vue'
+      - 'frontend/src/components/ListStateBlock.test.ts'
+      - 'frontend/src/components/GenerationWorkbenchShell.vue'
+      - 'frontend/src/components/GenerationWorkbenchShell.test.ts'
+      - 'frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue'
+      - 'frontend/src/components/template-apply/TemplateApplyWorkbenchHost.test.ts'
+      - 'frontend/src/composables/useDetailTemplateApply.ts'
+      - 'frontend/src/composables/useMyLibraryPostBrowser.ts'
+      - 'frontend/src/composables/useTemplateApplyCloseProtocol.ts'
+      - 'frontend/src/composables/useGalleryDetailModalAdapter.ts'
+      - 'frontend/src/composables/useGalleryDetailModalAdapter.test.ts'
+      - 'frontend/src/router/index.ts'
+      - 'frontend/src/router/index.test.ts'
+      - 'frontend/src/stores/tasksRuntime.test.ts'
+      - 'frontend/src/stores/taskResultState.test.ts'
+      - 'frontend/src/stores/templateApply.test.ts'
+      - 'frontend/src/composables/useTemplateApplyUpload.test.ts'
+      - 'frontend/src/utils/normalizeTemplateApplyContext.test.ts'
+      - 'dashboard/frontend/src/App.vue'
+      - 'dashboard/frontend/src/App.test.js'
+      - 'dashboard/frontend/package.json'
+      - 'dashboard/frontend/vitest.config.js'
+      - 'tests/backend/test_main_helpers.py'
+      - 'tests/backend/test_queue_manager.py'
+      - 'tests/integration/test_saga_and_queue.py'
+      - 'tests/services/test_task_service*.py'
+      - 'tests/web_api/test_tasks*.py'
+      - 'tests/web_api/test_task_runtime_api_service.py'
+      - 'tests/web_api/test_users*.py'
+      - 'tests/web_api/test_gallery*.py'
+      - 'tests/handlers/test_message_handler*.py'
+      - 'src/tests/test_task_service_refactored.py'
+      - 'src/tests/test_queue_logic.py'
+      - 'scripts/run_hotspot_regression.sh'
+      - 'scripts/check_compat_registry.sh'
+      - '.github/workflows/hotspot_regression_gate.yml'
+      - 'docs/子模块_热点文件门禁与回归触发规则_hotspot_guardrails.md'
+      - 'docs/compat_seam_exit_table.md'
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/services/task_service*.py'
+      - 'backend/app/main.py'
+      - 'backend/app/main_bootstrap.py'
+      - 'backend/app/main_t2i_wiring.py'
+      - 'backend/app/dependencies.py'
+      - 'backend/app/routers/agent.py'
+      - 'backend/app/queue_manager.py'
+      - 'src/core/task_core*.py'
+      - 'src/core/user_core_bindings.py'
+      - 'src/core/gallery_core_dependencies.py'
+      - 'src/services/task_core_process_defaults.py'
+      - 'src/web_api/__init__.py'
+      - 'src/web_api/main.py'
+      - 'src/web_api/dependencies.py'
+      - 'src/web_api/routers/tasks.py'
+      - 'src/web_api/services/task_*api_service.py'
+      - 'src/web_api/services/task_submission_service.py'
+      - 'src/web_api/services/task_result_service.py'
+      - 'src/web_api/routers/users.py'
+      - 'src/web_api/services/users_history*.py'
+      - 'src/web_api/services/user_profile_service.py'
+      - 'src/web_api/routers/gallery.py'
+      - 'src/web_api/services/gallery_service_*.py'
+      - 'src/handlers/message_handler*.py'
+      - 'frontend/src/views/Gallery.vue'
+      - 'frontend/src/views/Gallery.test.ts'
+      - 'frontend/src/views/GalleryWorkbenchFlow.test.ts'
+      - 'frontend/src/views/MyFavorites.vue'
+      - 'frontend/src/views/MyFavoritesFlow.test.ts'
+      - 'frontend/src/components/GalleryDetailModal.vue'
+      - 'frontend/src/components/GalleryDetailModal.test.ts'
+      - 'frontend/src/components/DetailModalShell.vue'
+      - 'frontend/src/components/DetailModalShell.test.ts'
+      - 'frontend/src/components/MySubmissionsPanel.vue'
+      - 'frontend/src/components/MySubmissionsPanelFlow.test.ts'
+      - 'frontend/src/components/PostBrowserShell.vue'
+      - 'frontend/src/components/PostBrowserShell.test.ts'
+      - 'frontend/src/components/ListStateBlock.vue'
+      - 'frontend/src/components/ListStateBlock.test.ts'
+      - 'frontend/src/components/GenerationWorkbenchShell.vue'
+      - 'frontend/src/components/GenerationWorkbenchShell.test.ts'
+      - 'frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue'
+      - 'frontend/src/components/template-apply/TemplateApplyWorkbenchHost.test.ts'
+      - 'frontend/src/composables/useDetailTemplateApply.ts'
+      - 'frontend/src/composables/useMyLibraryPostBrowser.ts'
+      - 'frontend/src/composables/useTemplateApplyCloseProtocol.ts'
+      - 'frontend/src/composables/useGalleryDetailModalAdapter.ts'
+      - 'frontend/src/composables/useGalleryDetailModalAdapter.test.ts'
+      - 'frontend/src/router/index.ts'
+      - 'frontend/src/router/index.test.ts'
+      - 'frontend/src/stores/tasksRuntime.test.ts'
+      - 'frontend/src/stores/taskResultState.test.ts'
+      - 'frontend/src/stores/templateApply.test.ts'
+      - 'frontend/src/composables/useTemplateApplyUpload.test.ts'
+      - 'frontend/src/utils/normalizeTemplateApplyContext.test.ts'
+      - 'dashboard/frontend/src/App.vue'
+      - 'dashboard/frontend/src/App.test.js'
+      - 'dashboard/frontend/package.json'
+      - 'dashboard/frontend/vitest.config.js'
+      - 'tests/backend/test_main_helpers.py'
+      - 'tests/backend/test_queue_manager.py'
+      - 'tests/integration/test_saga_and_queue.py'
+      - 'tests/services/test_task_service*.py'
+      - 'tests/web_api/test_tasks*.py'
+      - 'tests/web_api/test_task_runtime_api_service.py'
+      - 'tests/web_api/test_users*.py'
+      - 'tests/web_api/test_gallery*.py'
+      - 'tests/handlers/test_message_handler*.py'
+      - 'src/tests/test_task_service_refactored.py'
+      - 'src/tests/test_queue_logic.py'
+      - 'scripts/run_hotspot_regression.sh'
+      - 'scripts/check_compat_registry.sh'
+      - '.github/workflows/hotspot_regression_gate.yml'
+      - 'docs/子模块_热点文件门禁与回归触发规则_hotspot_guardrails.md'
+      - 'docs/compat_seam_exit_table.md'
+  workflow_dispatch:
+    inputs:
+      groups:
+        description: '空格分隔的热点回归分组，如: task-min frontend-shared dashboard-frontend'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  detect-groups:
+    name: Detect Hotspot Groups
+    runs-on: ubuntu-latest
+    outputs:
+      python_groups: ${{ steps.detect.outputs.python_groups }}
+      frontend_groups: ${{ steps.detect.outputs.frontend_groups }}
+      dashboard_groups: ${{ steps.detect.outputs.dashboard_groups }}
+      has_groups: ${{ steps.detect.outputs.has_groups }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Enforce compat registry updates
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+          PUSH_BEFORE_SHA: ${{ github.event.before || '' }}
+          PUSH_AFTER_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then
+            DIFF_RANGE="${PR_BASE_SHA}..${PR_HEAD_SHA}"
+          elif [[ "${EVENT_NAME}" == "push" && -n "${PUSH_BEFORE_SHA}" && "${PUSH_BEFORE_SHA}" != "0000000000000000000000000000000000000000" ]]; then
+            DIFF_RANGE="${PUSH_BEFORE_SHA}..${PUSH_AFTER_SHA}"
+          else
+            DIFF_RANGE=""
+          fi
+
+          if [[ -n "${DIFF_RANGE}" ]]; then
+            chmod +x scripts/check_compat_registry.sh
+            ./scripts/check_compat_registry.sh "${DIFF_RANGE}"
+          else
+            echo "Compat registry gate skipped: no diff range."
+          fi
+
+      - name: Detect regression groups
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_GROUPS: ${{ github.event.inputs.groups || '' }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+          PUSH_BEFORE_SHA: ${{ github.event.before || '' }}
+          PUSH_AFTER_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          declare -a PYTHON_GROUPS=()
+          declare -a FRONTEND_GROUPS=()
+          declare -a DASHBOARD_GROUPS=()
+          declare -A SEEN_GROUPS=()
+
+          add_group() {
+            local kind="$1"
+            local group="$2"
+            local key="${kind}:${group}"
+            if [[ -n "${SEEN_GROUPS[$key]+x}" ]]; then
+              return
+            fi
+            SEEN_GROUPS["$key"]=1
+            if [[ "$kind" == "python" ]]; then
+              PYTHON_GROUPS+=("$group")
+            elif [[ "$kind" == "dashboard" ]]; then
+              DASHBOARD_GROUPS+=("$group")
+            else
+              FRONTEND_GROUPS+=("$group")
+            fi
+          }
+
+          add_manual_group() {
+            case "$1" in
+              task-facade|task-min|task-full|tasks-web|users-web|gallery-web|message-handler)
+                add_group "python" "$1"
+                ;;
+              frontend-shared)
+                add_group "frontend" "$1"
+                ;;
+              dashboard-frontend)
+                add_group "dashboard" "$1"
+                ;;
+              *)
+                echo "::error::Unknown hotspot regression group: $1"
+                exit 1
+                ;;
+            esac
+          }
+
+          contains_python_group() {
+            local target="$1"
+            for group in "${PYTHON_GROUPS[@]}"; do
+              if [[ "$group" == "$target" ]]; then
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          if [[ -n "${INPUT_GROUPS}" ]]; then
+            for group in ${INPUT_GROUPS}; do
+              add_manual_group "$group"
+            done
+          else
+            if [[ "${EVENT_NAME}" == "pull_request" ]]; then
+              DIFF_RANGE="${PR_BASE_SHA}..${PR_HEAD_SHA}"
+            elif [[ "${EVENT_NAME}" == "push" && -n "${PUSH_BEFORE_SHA}" && "${PUSH_BEFORE_SHA}" != "0000000000000000000000000000000000000000" ]]; then
+              DIFF_RANGE="${PUSH_BEFORE_SHA}..${PUSH_AFTER_SHA}"
+            else
+              DIFF_RANGE=""
+            fi
+
+            if [[ -z "${DIFF_RANGE}" ]]; then
+              echo "::warning::No diff range available; no hotspot groups detected."
+            else
+              while IFS= read -r file; do
+                [[ -z "${file}" ]] && continue
+                case "${file}" in
+                  backend/app/main.py|backend/app/main_bootstrap.py|backend/app/main_t2i_wiring.py|backend/app/dependencies.py|backend/app/routers/agent.py|backend/app/queue_manager.py|src/core/task_core.py|src/core/task_core_*.py|src/services/task_core_process_defaults.py|tests/core/test_task_core_submission.py|src/web_api/__init__.py|src/web_api/main.py|src/web_api/dependencies.py|tests/backend/test_main_helpers.py|tests/backend/test_queue_manager.py|tests/integration/test_saga_and_queue.py)
+                    add_group "python" "task-full"
+                    ;;
+                  src/services/task_service.py|src/services/task_service_*.py|tests/services/test_task_service*.py|src/tests/test_task_service_refactored.py|src/tests/test_queue_logic.py)
+                    add_group "python" "task-facade"
+                    add_group "python" "task-min"
+                    ;;
+                  src/web_api/routers/tasks.py|src/web_api/services/task_stream_api_service.py|src/web_api/services/task_action_api_service.py|src/web_api/services/task_runtime_api_service.py|src/web_api/services/task_submission_service.py|src/web_api/services/task_result_service.py|tests/web_api/test_tasks*.py|tests/web_api/test_task_runtime_api_service.py)
+                    add_group "python" "tasks-web"
+                    ;;
+                  src/web_api/routers/users.py|src/web_api/services/users_history*.py|src/web_api/services/user_profile_service.py|src/services/user_persistence_service.py|src/core/user_core_bindings.py|tests/services/test_user_persistence_service.py|tests/core/test_user_core.py|tests/web_api/test_users*.py)
+                    add_group "python" "users-web"
+                    ;;
+                  src/web_api/routers/gallery.py|src/web_api/services/gallery_service_queries.py|src/web_api/services/gallery_service_mutations.py|src/web_api/services/gallery_service_comments.py|src/web_api/services/gallery_service_support.py|src/core/gallery_core.py|src/core/gallery_core_dependencies.py|src/core/gallery_feed_queries.py|src/core/gallery_submission_core.py|src/core/gallery_interactions_core.py|src/services/gallery_repository.py|tests/core/test_gallery_submission_and_interactions_core.py|tests/handlers/callbacks/test_gallery_callbacks_interactions.py|tests/web_api/test_gallery*.py)
+                    add_group "python" "gallery-web"
+                    ;;
+                  src/handlers/message_handler.py|src/handlers/message_handler_common.py|src/handlers/message_handler_profile.py|src/handlers/message_handler_media.py|src/handlers/message_handler_menu.py|tests/handlers/test_message_handler*.py)
+                    add_group "python" "message-handler"
+                    ;;
+                  frontend/src/views/Gallery.vue|frontend/src/views/Gallery.test.ts|frontend/src/views/GalleryWorkbenchFlow.test.ts|frontend/src/views/MyFavorites.vue|frontend/src/views/MyFavoritesFlow.test.ts|frontend/src/components/GalleryDetailModal.vue|frontend/src/components/GalleryDetailModal.test.ts|frontend/src/components/DetailModalShell.vue|frontend/src/components/DetailModalShell.test.ts|frontend/src/components/MySubmissionsPanel.vue|frontend/src/components/MySubmissionsPanelFlow.test.ts|frontend/src/components/PostBrowserShell.vue|frontend/src/components/PostBrowserShell.test.ts|frontend/src/components/ListStateBlock.vue|frontend/src/components/ListStateBlock.test.ts|frontend/src/components/GenerationWorkbenchShell.vue|frontend/src/components/GenerationWorkbenchShell.test.ts|frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue|frontend/src/components/template-apply/TemplateApplyWorkbenchHost.test.ts|frontend/src/composables/useDetailTemplateApply.ts|frontend/src/composables/useMyLibraryPostBrowser.ts|frontend/src/composables/useTemplateApplyCloseProtocol.ts|frontend/src/composables/useGalleryDetailModalAdapter.ts|frontend/src/composables/useGalleryDetailModalAdapter.test.ts|frontend/src/router/index.ts|frontend/src/router/index.test.ts|frontend/src/stores/tasksRuntime.test.ts|frontend/src/stores/taskResultState.test.ts|frontend/src/stores/templateApply.test.ts|frontend/src/composables/useTemplateApplyUpload.test.ts|frontend/src/utils/normalizeTemplateApplyContext.test.ts)
+                    add_group "frontend" "frontend-shared"
+                    ;;
+                  dashboard/frontend/src/App.vue|dashboard/frontend/src/App.test.js|dashboard/frontend/package.json|dashboard/frontend/vitest.config.js)
+                    add_group "dashboard" "dashboard-frontend"
+                    ;;
+                  scripts/run_hotspot_regression.sh|scripts/check_compat_registry.sh|.github/workflows/hotspot_regression_gate.yml|docs/compat_seam_exit_table.md)
+                    add_group "python" "task-min"
+                    add_group "frontend" "frontend-shared"
+                    add_group "dashboard" "dashboard-frontend"
+                    ;;
+                esac
+              done < <(git diff --name-only "${DIFF_RANGE}")
+            fi
+          fi
+
+          if contains_python_group "task-full"; then
+            declare -a FILTERED_PYTHON_GROUPS=()
+            for group in "${PYTHON_GROUPS[@]}"; do
+              case "${group}" in
+                task-facade|task-min|tasks-web)
+                  continue
+                  ;;
+                *)
+                  FILTERED_PYTHON_GROUPS+=("${group}")
+                  ;;
+              esac
+            done
+            PYTHON_GROUPS=("${FILTERED_PYTHON_GROUPS[@]}")
+          fi
+
+          PYTHON_GROUPS_STR="${PYTHON_GROUPS[*]}"
+          FRONTEND_GROUPS_STR="${FRONTEND_GROUPS[*]}"
+          DASHBOARD_GROUPS_STR="${DASHBOARD_GROUPS[*]}"
+
+          if [[ -n "${PYTHON_GROUPS_STR}" || -n "${FRONTEND_GROUPS_STR}" || -n "${DASHBOARD_GROUPS_STR}" ]]; then
+            HAS_GROUPS="true"
+          else
+            HAS_GROUPS="false"
+          fi
+
+          {
+            echo "python_groups=${PYTHON_GROUPS_STR}"
+            echo "frontend_groups=${FRONTEND_GROUPS_STR}"
+            echo "dashboard_groups=${DASHBOARD_GROUPS_STR}"
+            echo "has_groups=${HAS_GROUPS}"
+          } >> "${GITHUB_OUTPUT}"
+
+          {
+            echo "## Hotspot Regression Groups"
+            echo ""
+            echo "- Python: \`${PYTHON_GROUPS_STR:-<none>}\`"
+            echo "- Frontend: \`${FRONTEND_GROUPS_STR:-<none>}\`"
+            echo "- Dashboard: \`${DASHBOARD_GROUPS_STR:-<none>}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  no-op:
+    name: No Hotspot Groups
+    needs: detect-groups
+    if: needs.detect-groups.outputs.has_groups == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip gate
+        run: echo "No hotspot regression groups detected."
+
+  python-hotspot-gate:
+    name: Python Hotspot Gate
+    needs: detect-groups
+    if: needs.detect-groups.outputs.python_groups != ''
+    runs-on: ubuntu-latest
+    env:
+      JWT_SECRET_KEY: ci-test-only-not-for-runtime
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r backend/requirements.txt pytest pytest-asyncio
+
+      - name: Run Python hotspot regressions
+        run: |
+          chmod +x scripts/run_hotspot_regression.sh
+          ./scripts/run_hotspot_regression.sh ${{ needs.detect-groups.outputs.python_groups }}
+
+  frontend-hotspot-gate:
+    name: Frontend Hotspot Gate
+    needs: detect-groups
+    if: needs.detect-groups.outputs.frontend_groups != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm install --no-fund --no-audit
+
+      - name: Run frontend hotspot regressions
+        run: |
+          chmod +x scripts/run_hotspot_regression.sh
+          ./scripts/run_hotspot_regression.sh ${{ needs.detect-groups.outputs.frontend_groups }}
+
+  dashboard-hotspot-gate:
+    name: Dashboard Hotspot Gate
+    needs: detect-groups
+    if: needs.detect-groups.outputs.dashboard_groups != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: dashboard/frontend/package.json
+
+      - name: Install dashboard frontend dependencies
+        working-directory: dashboard/frontend
+        run: npm install --no-fund --no-audit
+
+      - name: Run dashboard hotspot regressions
+        run: |
+          chmod +x scripts/run_hotspot_regression.sh
+          ./scripts/run_hotspot_regression.sh ${{ needs.detect-groups.outputs.dashboard_groups }}
+
+  gate-result:
+    name: Hotspot Gate Result
+    needs:
+      - detect-groups
+      - no-op
+      - python-hotspot-gate
+      - frontend-hotspot-gate
+      - dashboard-hotspot-gate
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summarize gate result
+        env:
+          HAS_GROUPS: ${{ needs.detect-groups.outputs.has_groups }}
+          PYTHON_GROUPS: ${{ needs.detect-groups.outputs.python_groups }}
+          FRONTEND_GROUPS: ${{ needs.detect-groups.outputs.frontend_groups }}
+          DASHBOARD_GROUPS: ${{ needs.detect-groups.outputs.dashboard_groups }}
+          NO_OP_RESULT: ${{ needs.no-op.result }}
+          PYTHON_RESULT: ${{ needs.python-hotspot-gate.result }}
+          FRONTEND_RESULT: ${{ needs.frontend-hotspot-gate.result }}
+          DASHBOARD_RESULT: ${{ needs.dashboard-hotspot-gate.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          {
+            echo "## Hotspot Gate Result"
+            echo ""
+            echo "- Has groups: \`${HAS_GROUPS}\`"
+            echo "- Python groups: \`${PYTHON_GROUPS:-<none>}\`"
+            echo "- Frontend groups: \`${FRONTEND_GROUPS:-<none>}\`"
+            echo "- Dashboard groups: \`${DASHBOARD_GROUPS:-<none>}\`"
+            echo "- No-op job: \`${NO_OP_RESULT}\`"
+            echo "- Python gate: \`${PYTHON_RESULT}\`"
+            echo "- Frontend gate: \`${FRONTEND_RESULT}\`"
+            echo "- Dashboard gate: \`${DASHBOARD_RESULT}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          if [[ "${PYTHON_RESULT}" == "failure" || "${PYTHON_RESULT}" == "cancelled" ]]; then
+            echo "::error::Python hotspot gate did not pass."
+            exit 1
+          fi
+
+          if [[ "${FRONTEND_RESULT}" == "failure" || "${FRONTEND_RESULT}" == "cancelled" ]]; then
+            echo "::error::Frontend hotspot gate did not pass."
+            exit 1
+          fi
+
+          if [[ "${DASHBOARD_RESULT}" == "failure" || "${DASHBOARD_RESULT}" == "cancelled" ]]; then
+            echo "::error::Dashboard hotspot gate did not pass."
+            exit 1
+          fi
+
+          if [[ "${NO_OP_RESULT}" == "failure" || "${NO_OP_RESULT}" == "cancelled" ]]; then
+            echo "::error::No-op hotspot gate did not complete successfully."
+            exit 1
+          fi
+
+          echo "Hotspot gate passed."

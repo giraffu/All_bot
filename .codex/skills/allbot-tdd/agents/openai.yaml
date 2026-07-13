@@ -1,0 +1,4 @@
+interface:
+  display_name: "AllBot TDD"
+  short_description: "Drive AllBot changes through behavior tests."
+  default_prompt: "Use AllBot test-driven development: choose the public seam, write one failing behavior test, implement the smallest vertical slice, then repeat."

@@ -1,98 +1,90 @@
 <script setup>
-import { ref, computed } from 'vue'
-import { EyeOutlined, EditOutlined, DeleteOutlined, UserDeleteOutlined } from '@ant-design/icons-vue'
+import { computed } from 'vue'
 import { formatDate } from '../utils/helpers'
-import { updateUserCredits, clearUserHistory, deleteUser } from '../api/api'
-import { message, Modal } from 'ant-design-vue'
+import { useUserTableState } from '../composables/useUserTableState'
+import UserTableToolbar from './UserTableToolbar.vue'
+import UserTableRowActions from './UserTableRowActions.vue'
+import UserTableDialogs from './UserTableDialogs.vue'
+import UserTransferDialog from './UserTransferDialog.vue'
 
-const props = defineProps({
-  users: {
-    type: Array,
-    required: true
-  },
-  loading: {
-    type: Boolean,
-    default: false
-  },
-  error: {
-    type: String,
-    default: null
-  }
-})
+const emit = defineEmits(['viewHistory', 'viewFavorites'])
+const {
+  users,
+  loading,
+  error,
+  currentPage,
+  pageSize,
+  totalUsers,
+  searchUserId,
+  searchQuery,
+  isQueryPartial,
+  filterIdentity,
+  filterUserGroup,
+  filterSubmissionBanned,
+  searchUsername,
+  isUsernamePartial,
+  sortBy,
+  sortOrder,
+  statsModalVisible,
+  statsLoading,
+  currentUserStats,
+  currentUser,
+  editCreditsVisible,
+  currentEditingUser,
+  newCreditsValue,
+  newCheckinCountValue,
+  updatingCredits,
+  giftModalVisible,
+  currentGiftUser,
+  availablePlans,
+  giftForm,
+  giftingPlan,
+  editIdentityVisible,
+  currentIdentityUser,
+  newIdentityValue,
+  newExpireAtValue,
+  autoConvertIdentity,
+  updatingIdentity,
+  editGroupVisible,
+  updatingGroup,
+  currentGroupUser,
+  newGroupValue,
+  editChannelMemberVisible,
+  updatingChannelMember,
+  currentChannelMemberUser,
+  newChannelMemberValue,
+  transferModalVisible,
+  transferringData,
+  transferSearchLoading,
+  currentTransferSourceUser,
+  transferTargetUserId,
+  transferTargetKeyword,
+  transferTargetOptions,
+  transferConfirmText,
+  transferNote,
+  allIdentities,
+  handleTableChange,
+  onSearchInput,
+  handleViewStats,
+  handleEditCredits,
+  saveCredits,
+  handleClearHistory,
+  handleDeleteUser,
+  handleEditIdentity,
+  handleEditGroup,
+  handleEditChannelMember,
+  handleToggleSubmissionBan,
+  saveIdentity,
+  saveGroup,
+  saveChannelMember,
+  searchTransferTargets,
+  handleTransferData,
+  submitTransfer,
+  handleGiftPlan,
+  submitGift,
+} = useUserTableState(formatDate)
 
-const filteredUsers = computed(() => {
-  return props.users || []
-})
-
-const emit = defineEmits(['viewHistory', 'refresh'])
-
-// Credits editing state
-const editCreditsVisible = ref(false)
-const currentEditingUser = ref(null)
-const newCreditsValue = ref(0)
-const updatingCredits = ref(false)
-
-const handleEditCredits = (record) => {
-  currentEditingUser.value = record
-  newCreditsValue.value = record.credits
-  editCreditsVisible.value = true
-}
-
-const saveCredits = async () => {
-  if (!currentEditingUser.value) return
-  
-  updatingCredits.value = true
-  try {
-    await updateUserCredits(currentEditingUser.value.id, newCreditsValue.value)
-    message.success(`用户 ${currentEditingUser.value.id} 灵石已更新为 ${newCreditsValue.value}`)
-    editCreditsVisible.value = false
-    emit('refresh')
-  } catch (err) {
-    message.error('更新灵石失败: ' + (err.response?.data?.detail || err.message))
-  } finally {
-    updatingCredits.value = false
-  }
-}
-
-const handleClearHistory = (record) => {
-  Modal.confirm({
-    title: '确认清除数据？',
-    content: `这将永久删除用户 ${record.full_name || record.id} 的所有历史记录（包括图片和Prompt），但会保留灵石和邀请信息。此操作不可撤销。`,
-    okText: '确认清除',
-    okType: 'danger',
-    cancelText: '取消',
-    async onOk() {
-      try {
-        await clearUserHistory(record.id)
-        message.success('用户历史数据已成功清除')
-        emit('refresh')
-      } catch (err) {
-        message.error('清除数据失败: ' + (err.response?.data?.detail || err.message))
-      }
-    }
-  })
-}
-
-const handleDeleteUser = (record) => {
-  Modal.confirm({
-    title: '确认彻底删除用户？',
-    content: `这将从数据库中永久移除用户 ${record.full_name || record.id} 的所有信息（包括身份组、灵石、签到记录、生成历史等）。用户重新启动机器人后将作为全新的“凡人”身份加入。此操作不可撤销！`,
-    okText: '确认彻底删除',
-    okType: 'danger',
-    cancelText: '取消',
-    async onOk() {
-      try {
-        await deleteUser(record.id)
-        message.success('用户及其所有关联数据已成功从数据库移除')
-        emit('refresh')
-      } catch (err) {
-        message.error('删除用户失败: ' + (err.response?.data?.detail || err.message))
-      }
-    }
-  })
-}
-
-const columns = [
+const baseColumns = [
   {
     title: '#',
     key: 'index',
@@ -104,6 +96,7 @@ const columns = [
     dataIndex: 'id',
     key: 'id',
     width: 100,
+    sorter: true,
   },
   {
     title: '用户信息',
@@ -118,6 +111,20 @@ const columns = [
     align: 'center',
   },
   {
+    title: '身份组',
+    dataIndex: 'current_identity',
+    key: 'current_identity',
+    width: 100,
+    align: 'center',
+  },
+  {
+    title: '身份到期时间',
+    dataIndex: 'identity_expire_at',
+    key: 'identity_expire_at',
+    width: 160,
+    align: 'center',
+  },
+  {
     title: '邀请人',
     key: 'inviter',
     width: 150,
@@ -127,21 +134,28 @@ const columns = [
     dataIndex: 'credits',
     key: 'credits',
     width: 100,
-    sorter: (a, b) => a.credits - b.credits,
+    sorter: true,
   },
   {
     title: '累计签到',
     dataIndex: 'checkin_count',
     key: 'checkin_count',
     width: 100,
-    sorter: (a, b) => a.checkin_count - b.checkin_count,
+    sorter: true,
   },
   {
     title: '邀请人数',
     dataIndex: 'referral_count',
     key: 'referral_count',
     width: 100,
-    sorter: (a, b) => a.referral_count - b.referral_count,
+    sorter: true,
+  },
+  {
+    title: '邀请折合(USDT)',
+    dataIndex: 'invited_total_usdt',
+    key: 'invited_total_usdt',
+    width: 140,
+    align: 'center',
   },
   {
     title: '已入宗门',
@@ -154,39 +168,21 @@ const columns = [
     dataIndex: 'generation_count',
     key: 'generation_count',
     width: 100,
-    sorter: (a, b) => a.generation_count - b.generation_count,
-  },
-  {
-    title: '累计贡献',
-    dataIndex: 'total_contributions',
-    key: 'total_contributions',
-    width: 100,
-    sorter: (a, b) => (a.total_contributions || 0) - (b.total_contributions || 0),
-  },
-  {
-    title: '采纳次数',
-    dataIndex: 'approved_contributions',
-    key: 'approved_contributions',
-    width: 100,
-    sorter: (a, b) => (a.approved_contributions || 0) - (b.approved_contributions || 0),
+    sorter: true,
   },
   {
     title: '注册时间',
     dataIndex: 'created_at',
     key: 'created_at',
     width: 180,
-    sorter: (a, b) => new Date(a.created_at) - new Date(b.created_at),
+    sorter: true,
   },
   {
     title: '最新操作时间',
     dataIndex: 'last_activity',
     key: 'last_activity',
     width: 180,
-    sorter: (a, b) => {
-      const dateA = a.last_activity ? new Date(a.last_activity) : new Date(0);
-      const dateB = b.last_activity ? new Date(b.last_activity) : new Date(0);
-      return dateA - dateB;
-    },
+    sorter: true,
   },
   {
     title: '操作',
@@ -195,12 +191,49 @@ const columns = [
     width: 320,
   },
 ]
+
+const sortableColumnKeys = new Set([
+  'id',
+  'credits',
+  'checkin_count',
+  'referral_count',
+  'generation_count',
+  'created_at',
+  'last_activity',
+])
+
+const columns = computed(() =>
+  baseColumns.map(column => {
+    if (!sortableColumnKeys.has(column.key)) {
+      return column
+    }
+    const activeSortOrder =
+      sortBy.value === column.key
+        ? (sortOrder.value === 'asc' ? 'ascend' : 'descend')
+        : null
+    return {
+      ...column,
+      sortOrder: activeSortOrder,
+    }
+  })
+)
 </script>
 
 <template>
   <a-card title="用户列表" :bordered="false" class="shadow-sm rounded-xl h-full flex flex-col">
     <template #extra>
-      <a-tag color="blue">总计: {{ filteredUsers.length }}</a-tag>
+      <user-table-toolbar
+        v-model:filter-identity="filterIdentity"
+        v-model:filter-user-group="filterUserGroup"
+        v-model:filter-submission-banned="filterSubmissionBanned"
+        v-model:search-user-id="searchUserId"
+        v-model:search-username="searchUsername"
+        v-model:is-username-partial="isUsernamePartial"
+        v-model:search-query="searchQuery"
+        v-model:is-query-partial="isQueryPartial"
+        :total-users="totalUsers"
+        @search="onSearchInput"
+      />
     </template>
     
     <a-alert
@@ -214,17 +247,20 @@ const columns = [
     <div class="flex-1 overflow-hidden relative min-h-0">
       <a-table 
         :columns="columns" 
-        :data-source="filteredUsers" 
+        :data-source="users" 
         :loading="loading"
         :row-key="record => record.id"
         :pagination="{ 
-          pageSize: 20,
+          current: currentPage,
+          pageSize: pageSize,
+          total: totalUsers,
           showSizeChanger: true,
           showTotal: (total) => `共 ${total} 条`,
           size: 'small'
         }"
+        @change="handleTableChange"
         size="middle"
-        :scroll="{ y: 'calc(100vh - 350px)', x: 1400 }"
+        :scroll="{ y: 'calc(100vh - 350px)', x: 1540 }"
         class="ant-table-striped"
       >
       <template #bodyCell="{ column, record, index }">
@@ -236,6 +272,9 @@ const columns = [
           <div class="flex flex-col">
             <span class="font-medium text-gray-800">{{ record.full_name || '未知用户' }}</span>
             <span class="text-xs text-blue-500">@{{ record.username || 'n/a' }}</span>
+            <a-tag v-if="record.is_submission_banned" color="red" class="mt-1 w-fit">
+              投稿封禁
+            </a-tag>
           </div>
         </template>
         
@@ -244,7 +283,22 @@ const columns = [
             {{ record.user_group || '凡人' }}
           </a-tag>
         </template>
-        
+
+        <template v-else-if="column.key === 'current_identity'">
+          <a-tag :color="record.current_identity === '真传弟子' ? 'red' : record.current_identity === '核心弟子' ? 'orange' : record.current_identity === '内门弟子' ? 'cyan' : 'default'">
+            {{ record.current_identity || '外门弟子' }}
+          </a-tag>
+        </template>
+
+        <template v-else-if="column.key === 'identity_expire_at'">
+          <span v-if="record.current_identity && record.current_identity !== '外门弟子' && record.identity_expire_at" 
+                class="text-sm" 
+                :class="new Date(record.identity_expire_at) < new Date() ? 'text-red-500' : 'text-green-600'">
+            {{ formatDate(record.identity_expire_at) }}
+          </span>
+          <span v-else class="text-gray-400 text-sm">-</span>
+        </template>
+
         <template v-else-if="column.key === 'inviter'">
           <div class="flex flex-col" v-if="record.inviter_info">
             <span class="font-medium text-gray-800">{{ record.inviter_info.full_name || record.inviter_info.id }}</span>
@@ -271,27 +325,21 @@ const columns = [
           </a-tag>
         </template>
 
+        <template v-else-if="column.key === 'invited_total_usdt'">
+          <span class="font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded border border-emerald-100">
+            $ {{ Number(record.invited_total_usdt || 0).toFixed(2) }}
+          </span>
+        </template>
+
         <template v-else-if="column.key === 'channel_joined'">
-          <a-tag :color="record.channel_joined ? 'green' : 'red'">
-            {{ record.channel_joined ? '是' : '否' }}
+          <a-tag :color="record.is_channel_member ? 'green' : 'red'">
+            {{ record.is_channel_member ? '是' : '否' }}
           </a-tag>
         </template>
 
         <template v-else-if="column.key === 'generation_count'">
           <a-tag color="purple" class="font-bold">
             {{ record.generation_count }}
-          </a-tag>
-        </template>
-
-        <template v-else-if="column.key === 'total_contributions'">
-          <a-tag :color="(record.total_contributions || 0) > 0 ? 'blue' : 'default'">
-            {{ record.total_contributions || 0 }}
-          </a-tag>
-        </template>
-
-        <template v-else-if="column.key === 'approved_contributions'">
-          <a-tag :color="(record.approved_contributions || 0) > 0 ? 'gold' : 'default'">
-            {{ record.approved_contributions || 0 }}
           </a-tag>
         </template>
 
@@ -314,68 +362,77 @@ const columns = [
         </template>
 
         <template v-else-if="column.key === 'action'">
-          <div class="flex gap-2">
-            <a-button 
-              type="link" 
-              size="small"
-              @click="$emit('viewHistory', record)"
-            >
-              <template #icon><eye-outlined /></template>
-              历史
-            </a-button>
-
-            <a-button 
-              type="link" 
-              size="small"
-              @click="handleEditCredits(record)"
-            >
-              <template #icon><edit-outlined /></template>
-              修改灵石
-            </a-button>
-
-            <a-button 
-              type="link" 
-              size="small"
-              danger
-              @click="handleClearHistory(record)"
-            >
-              <template #icon><delete-outlined /></template>
-              清除数据
-            </a-button>
-
-            <a-button 
-              type="link" 
-              size="small"
-              danger
-              @click="handleDeleteUser(record)"
-            >
-              <template #icon><user-delete-outlined /></template>
-              彻底删除
-            </a-button>
-          </div>
+          <user-table-row-actions
+            :record="record"
+            @view-stats="handleViewStats"
+            @gift-plan="handleGiftPlan"
+            @view-history="$emit('viewHistory', $event)"
+            @view-favorites="$emit('viewFavorites', $event)"
+            @edit-identity="handleEditIdentity"
+            @edit-group="handleEditGroup"
+            @edit-channel-member="handleEditChannelMember"
+            @toggle-submission-ban="handleToggleSubmissionBan"
+            @edit-credits="handleEditCredits"
+            @transfer-data="handleTransferData"
+            @clear-history="handleClearHistory"
+            @delete-user="handleDeleteUser"
+          />
         </template>
       </template>
     </a-table>
     </div>
 
-    <!-- Edit Credits Modal -->
-    <a-modal
-      v-model:visible="editCreditsVisible"
-      title="修改用户灵石"
-      @ok="saveCredits"
-      :confirmLoading="updatingCredits"
-      okText="保存"
-      cancelText="取消"
-    >
-      <div class="py-4">
-        <p class="mb-2 text-gray-500">正在为用户 <span class="font-bold text-gray-800">{{ currentEditingUser?.full_name || currentEditingUser?.id }}</span> 修改灵石</p>
-        <div class="flex items-center gap-4">
-          <span class="shrink-0">灵石数值:</span>
-          <a-input-number v-model:value="newCreditsValue" :min="0" class="w-full" />
-        </div>
-        <p class="mt-4 text-xs text-amber-500 italic">* 增加灵石直接输入更大数值，减少灵石输入较小数值即可。</p>
-      </div>
-    </a-modal>
+    <user-table-dialogs
+      :format-date="formatDate"
+      :all-identities="allIdentities"
+      v-model:edit-identity-visible="editIdentityVisible"
+      v-model:new-identity-value="newIdentityValue"
+      v-model:new-expire-at-value="newExpireAtValue"
+      v-model:auto-convert-identity="autoConvertIdentity"
+      :updating-identity="updatingIdentity"
+      :current-identity-user="currentIdentityUser"
+      @save-identity="saveIdentity"
+      v-model:edit-group-visible="editGroupVisible"
+      v-model:new-group-value="newGroupValue"
+      :updating-group="updatingGroup"
+      :current-group-user="currentGroupUser"
+      @save-group="saveGroup"
+      v-model:edit-channel-member-visible="editChannelMemberVisible"
+      v-model:new-channel-member-value="newChannelMemberValue"
+      :updating-channel-member="updatingChannelMember"
+      :current-channel-member-user="currentChannelMemberUser"
+      @save-channel-member="saveChannelMember"
+      v-model:edit-credits-visible="editCreditsVisible"
+      v-model:new-credits-value="newCreditsValue"
+      v-model:new-checkin-count-value="newCheckinCountValue"
+      :updating-credits="updatingCredits"
+      :current-editing-user="currentEditingUser"
+      @save-credits="saveCredits"
+      v-model:gift-modal-visible="giftModalVisible"
+      :gifting-plan="giftingPlan"
+      :current-gift-user="currentGiftUser"
+      :available-plans="availablePlans"
+      :gift-form="giftForm"
+      @update:gift-form="giftForm = $event"
+      @submit-gift="submitGift"
+      v-model:stats-modal-visible="statsModalVisible"
+      :stats-loading="statsLoading"
+      :current-user-stats="currentUserStats"
+      :current-user="currentUser"
+    />
+
+    <user-transfer-dialog
+      v-model:visible="transferModalVisible"
+      v-model:target-user-id="transferTargetUserId"
+      v-model:confirm-text="transferConfirmText"
+      v-model:note="transferNote"
+      :loading="transferringData"
+      :search-loading="transferSearchLoading"
+      :source-user="currentTransferSourceUser"
+      :target-options="transferTargetOptions"
+      @search-targets="searchTransferTargets"
+      @submit="submitTransfer"
+    />
   </a-card>
 </template>
 

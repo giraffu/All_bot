@@ -1,0 +1,525 @@
+{
+  "1": {
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "K采样器选择"
+    }
+  },
+  "2": {
+    "inputs": {
+      "cfg": 1,
+      "model": [
+        "18",
+        0
+      ],
+      "positive": [
+        "22:9:77",
+        0
+      ],
+      "negative": [
+        "22:9:76",
+        0
+      ]
+    },
+    "class_type": "CFGGuider",
+    "_meta": {
+      "title": "CFG引导器"
+    }
+  },
+  "3": {
+    "inputs": {
+      "samples": [
+        "14",
+        0
+      ],
+      "vae": [
+        "6",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  },
+  "4": {
+    "inputs": {
+      "clip_name": "qwen_3_8b_fp8mixed.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "加载CLIP"
+    }
+  },
+  "5": {
+    "inputs": {
+      "text": "Replace the woman's face and hair in Image1 with the woman's face and hair in Image2, without changing the clothing. Man roles and other places remain completely unchanged.Maintain consistent color tones for better integration of characters into the environment.",
+      "clip": [
+        "4",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Positive Prompt)"
+    }
+  },
+  "6": {
+    "inputs": {
+      "vae_name": "flux2-vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "加载VAE"
+    }
+  },
+  "10": {
+    "inputs": {
+      "conditioning": [
+        "5",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "条件零化"
+    }
+  },
+  "14": {
+    "inputs": {
+      "noise": [
+        "17",
+        0
+      ],
+      "guider": [
+        "2",
+        0
+      ],
+      "sampler": [
+        "1",
+        0
+      ],
+      "sigmas": [
+        "15",
+        0
+      ],
+      "latent_image": [
+        "22:11",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {
+      "title": "自定义采样器（高级）"
+    }
+  },
+  "15": {
+    "inputs": {
+      "steps": 5,
+      "width": [
+        "22:12",
+        0
+      ],
+      "height": [
+        "22:12",
+        1
+      ]
+    },
+    "class_type": "Flux2Scheduler",
+    "_meta": {
+      "title": "Flux2调度器"
+    }
+  },
+  "17": {
+    "inputs": {
+      "noise_seed": [
+        "60",
+        0
+      ]
+    },
+    "class_type": "RandomNoise",
+    "_meta": {
+      "title": "随机噪波"
+    }
+  },
+  "18": {
+    "inputs": {
+      "unet_name": "DarkBeast-Klein9b-V2-BFS-FP8-ComfyUI.safetensors",
+      "weight_dtype": "fp8_e4m3fn"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNet加载器"
+    }
+  },
+  "20": {
+    "inputs": {
+      "image": "mmexport1726361677642_副本.jpeg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "23": {
+    "inputs": {
+      "filename_prefix": "Klein-BFS",
+      "images": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "保存图像"
+    }
+  },
+  "27": {
+    "inputs": {
+      "seed": [
+        "60",
+        0
+      ],
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "67",
+        0
+      ],
+      "positive": [
+        "28",
+        0
+      ],
+      "negative": [
+        "29",
+        0
+      ],
+      "latent_image": [
+        "30",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "K采样器"
+    }
+  },
+  "28": {
+    "inputs": {
+      "text": "从极低角度仰拍的真实照片，传统日式和室，榻榻米、木梁、柔和晨光透过障子纸窗洒落朦胧光影。18岁绝美日本裸体少女，全身光溜溜，没有内裤，跪坐在榻榻米上，双腿完全分开。她带着坏坏的自信笑容，凝视镜头，两只手把一只画面外伸进来的男性阴茎放入口中。细密水珠附着在柔软阴毛上，晶莹滚动，顺着卷曲的毛发缓缓滑落，汇成小股透明细流，沿着敏感肌肤向下淌过，滴落在榻榻米上形成微小水洼。超锐利焦点锁定在湿润的阴毛、水珠折射光点、肌肤细腻纹理与水流轨迹上，真实物理感的水光反射、轻微颤动与凉意起的鸡皮疙瘩。面部柔焦梦幻，眼神挑衅而玩味。她占据画面绝大部分，湿润小阴唇和小穴口与滴水置于画面下中央主导位置。氛围青春叛逆、强烈挑逗、少女的隐秘支配力。电影级柔和侧光与高光，超写实，8K极致细节。",
+      "clip": [
+        "65",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Positive Prompt)"
+    }
+  },
+  "29": {
+    "inputs": {
+      "conditioning": [
+        "28",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "条件零化"
+    }
+  },
+  "30": {
+    "inputs": {
+      "width": 576,
+      "height": 1088,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "空Latent图像"
+    }
+  },
+  "31": {
+    "inputs": {
+      "samples": [
+        "27",
+        0
+      ],
+      "vae": [
+        "64",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  },
+  "35": {
+    "inputs": {
+      "seed": [
+        "60",
+        0
+      ],
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 0.5,
+      "model": [
+        "67",
+        0
+      ],
+      "positive": [
+        "28",
+        0
+      ],
+      "negative": [
+        "29",
+        0
+      ],
+      "latent_image": [
+        "36",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "K采样器"
+    }
+  },
+  "36": {
+    "inputs": {
+      "upscale_method": "bicubic",
+      "scale_by": 1.25,
+      "samples": [
+        "27",
+        0
+      ]
+    },
+    "class_type": "LatentUpscaleBy",
+    "_meta": {
+      "title": "缩放Latent（比例）"
+    }
+  },
+  "37": {
+    "inputs": {
+      "samples": [
+        "35",
+        0
+      ],
+      "vae": [
+        "64",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  },
+  "60": {
+    "inputs": {
+      "value": 622136782347098
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "global seed"
+    }
+  },
+  "64": {
+    "inputs": {
+      "vae_name": "z_image/ae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "加载VAE"
+    }
+  },
+  "65": {
+    "inputs": {
+      "clip_name": "z_image/qwen_3_4b.safetensors",
+      "type": "lumina2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "加载CLIP"
+    }
+  },
+  "67": {
+    "inputs": {
+      "unet_name": "DarkBeastZ6-BlitZ-BF16-ComfyUI.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNet加载器"
+    }
+  },
+  "22:11": {
+    "inputs": {
+      "width": [
+        "22:12",
+        0
+      ],
+      "height": [
+        "22:12",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage",
+    "_meta": {
+      "title": "空Latent图像（Flux2）"
+    }
+  },
+  "22:12": {
+    "inputs": {
+      "image": [
+        "22:82",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "获取图像尺寸"
+    }
+  },
+  "22:9:76": {
+    "inputs": {
+      "conditioning": [
+        "22:13:79",
+        0
+      ],
+      "latent": [
+        "22:9:78",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "参考Latent"
+    }
+  },
+  "22:9:78": {
+    "inputs": {
+      "pixels": [
+        "22:8",
+        0
+      ],
+      "vae": [
+        "6",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE编码"
+    }
+  },
+  "22:9:77": {
+    "inputs": {
+      "conditioning": [
+        "22:13:81",
+        0
+      ],
+      "latent": [
+        "22:9:78",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "参考Latent"
+    }
+  },
+  "22:13:79": {
+    "inputs": {
+      "conditioning": [
+        "10",
+        0
+      ],
+      "latent": [
+        "22:13:80",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "参考Latent"
+    }
+  },
+  "22:13:80": {
+    "inputs": {
+      "pixels": [
+        "22:82",
+        0
+      ],
+      "vae": [
+        "6",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE编码"
+    }
+  },
+  "22:13:81": {
+    "inputs": {
+      "conditioning": [
+        "5",
+        0
+      ],
+      "latent": [
+        "22:13:80",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "参考Latent"
+    }
+  },
+  "22:82": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "width": 864,
+      "height": 1632,
+      "crop": "center",
+      "image": [
+        "37",
+        0
+      ]
+    },
+    "class_type": "ImageScale",
+    "_meta": {
+      "title": "缩放图像"
+    }
+  },
+  "22:8": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "20",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "缩放图像（像素）"
+    }
+  }
+}

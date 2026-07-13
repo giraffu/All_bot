@@ -1,0 +1,280 @@
+from __future__ import annotations
+
+import asyncio
+import os
+import random
+from typing import Any, Awaitable, Callable
+
+from agent_runtime_types import TaskExecutionContext
+from agent_workflow_execution import TaskExecutionTimeoutError
+
+
+class AgentFinalizer:
+    def __init__(self, *, agent: Any, logger) -> None:
+        self.agent = agent
+        self.logger = logger
+
+    def reset_execution_for_retry(
+        self,
+        execution: TaskExecutionContext,
+        *,
+        seed: int,
+    ) -> dict[str, Any]:
+        if execution.prompt_id:
+            self.agent._prompt_executions.pop(execution.prompt_id, None)
+        execution.prompt_id = None
+        execution.task_result = None
+        execution.task_result_priority = -1
+        execution.task_error = None
+        execution.completed_event = asyncio.Event()
+        retry_params = dict(execution.params)
+        retry_params["seed"] = seed
+        execution.params = retry_params
+        return retry_params
+
+    async def retry_execution_after_quality_issue(
+        self,
+        execution: TaskExecutionContext,
+        *,
+        issue_reason: str,
+        retry_number: int,
+        quality_retry_attempts: int,
+        agent_id: str,
+        submit_task_workflow_func: Callable[..., Awaitable[Any]],
+        wait_for_task_completion_func: Callable[..., Awaitable[bool]],
+    ) -> bool:
+        task_id = execution.task_id
+        task_type = execution.task_type
+        retry_seed = random.randint(1, 1125899906842624)
+        retry_params = self.reset_execution_for_retry(execution, seed=retry_seed)
+        self.logger.warning(
+            "Retrying i2i_pro task %s after output quality issue (%s), attempt %s/%s",
+            task_id,
+            issue_reason,
+            retry_number,
+            quality_retry_attempts,
+        )
+        await submit_task_workflow_func(
+            task_id=task_id,
+            task_type=task_type,
+            params=retry_params,
+            execution=execution,
+            patcher=self.agent.patcher,
+            comfy_client=self.agent.comfy_client,
+            wait_for_comfy_ready_func=self.agent._wait_for_comfy_ready,
+            report_status_func=self.agent.report_status,
+            agent_id=agent_id,
+            logger=self.logger,
+        )
+        execution.params = dict(retry_params)
+        self.agent._register_prompt_execution(execution)
+        execution.phase = "queued"
+        await self.agent.report_status(task_id, "running", execution_phase="queued")
+        return await wait_for_task_completion_func(
+            task_id=task_id,
+            execution=execution,
+            check_task_cancelled_func=self.agent.check_task_cancelled,
+            logger=self.logger,
+            comfy_client=self.agent.comfy_client,
+            task_type=task_type,
+            timeout_seconds=self.agent._completion_timeout_seconds_for_task(task_type),
+        )
+
+    async def materialize_outputs_with_quality_retry(
+        self,
+        *,
+        execution: TaskExecutionContext,
+        task_type: str,
+        quality_retry_attempts: int,
+        agent_id: str,
+        submit_task_workflow_func: Callable[..., Awaitable[Any]],
+        wait_for_task_completion_func: Callable[..., Awaitable[bool]],
+        resolve_execution_result_from_history_func: Callable[..., Awaitable[Any]],
+        materialize_task_outputs_func: Callable[..., Awaitable[Any]],
+        assess_materialized_output_quality_func: Callable[..., Awaitable[Any]],
+    ):
+        quality_retry_count = 0
+        while True:
+            await resolve_execution_result_from_history_func(
+                comfy_client=self.agent.comfy_client,
+                execution=execution,
+                task_type=task_type,
+                logger=self.logger,
+            )
+
+            if not execution.task_result:
+                raise Exception("Task completed but no result path found")
+
+            materialized_outputs = await materialize_task_outputs_func(
+                comfy_client=self.agent.comfy_client,
+                execution=execution,
+                task_type=task_type,
+                logger=self.logger,
+            )
+            issue = await assess_materialized_output_quality_func(
+                task_type=task_type,
+                params=execution.params,
+                outputs=materialized_outputs,
+                comfy_client=self.agent.comfy_client,
+                logger=self.logger,
+            )
+            if issue is None:
+                return materialized_outputs
+
+            if quality_retry_count >= quality_retry_attempts:
+                raise RuntimeError(
+                    "i2i_pro output quality check failed after retry: "
+                    f"{issue.reason} metric={issue.metric:.2f} "
+                    f"threshold={issue.threshold:.2f}"
+                )
+
+            quality_retry_count += 1
+            task_completed = await self.retry_execution_after_quality_issue(
+                execution,
+                issue_reason=issue.reason,
+                retry_number=quality_retry_count,
+                quality_retry_attempts=quality_retry_attempts,
+                agent_id=agent_id,
+                submit_task_workflow_func=submit_task_workflow_func,
+                wait_for_task_completion_func=wait_for_task_completion_func,
+            )
+            if not task_completed:
+                return None
+
+    async def finalize_execution(
+        self,
+        execution: TaskExecutionContext,
+        *,
+        cancel_lock_on_pop: bool,
+        upload_sidecar_url: str,
+        result_spool_dir: str,
+        result_bucket: str,
+        wan22_timeout_exit_code: int,
+        quality_retry_attempts: int,
+        agent_id: str,
+        submit_task_workflow_func: Callable[..., Awaitable[Any]],
+        wait_for_task_completion_func: Callable[..., Awaitable[bool]],
+        resolve_execution_result_from_history_func: Callable[..., Awaitable[Any]],
+        materialize_task_outputs_func: Callable[..., Awaitable[Any]],
+        assess_materialized_output_quality_func: Callable[..., Awaitable[Any]],
+        spool_materialized_outputs_func: Callable[..., Awaitable[Any]],
+        upload_spooled_outputs_via_sidecar_func: Callable[..., Awaitable[Any]],
+        upload_materialized_outputs_func: Callable[..., Awaitable[Any]],
+        report_materialized_outputs_func: Callable[..., Awaitable[Any]],
+    ) -> None:
+        task_id = execution.task_id
+        task_type = execution.task_type
+        exit_after_timeout = False
+        try:
+            task_completed = await wait_for_task_completion_func(
+                task_id=task_id,
+                execution=execution,
+                check_task_cancelled_func=self.agent.check_task_cancelled,
+                logger=self.logger,
+                comfy_client=self.agent.comfy_client,
+                task_type=task_type,
+                timeout_seconds=self.agent._completion_timeout_seconds_for_task(
+                    task_type
+                ),
+            )
+            if not task_completed:
+                await self.agent.report_cancelled(task_id)
+                return
+
+            execution.phase = "finalizing"
+            await self.agent.report_status(
+                task_id,
+                "running",
+                execution_phase="finalizing",
+                set_current=False,
+            )
+
+            if not cancel_lock_on_pop and await self.agent.check_task_cancelled(task_id):
+                self.logger.info(
+                    "Task %s was cancelled during execution, skipping upload.",
+                    task_id,
+                )
+                await self.agent.report_cancelled(task_id)
+                return
+
+            try:
+                materialized_outputs = (
+                    await self.materialize_outputs_with_quality_retry(
+                        execution=execution,
+                        task_type=task_type,
+                        quality_retry_attempts=quality_retry_attempts,
+                        agent_id=agent_id,
+                        submit_task_workflow_func=submit_task_workflow_func,
+                        wait_for_task_completion_func=wait_for_task_completion_func,
+                        resolve_execution_result_from_history_func=(
+                            resolve_execution_result_from_history_func
+                        ),
+                        materialize_task_outputs_func=materialize_task_outputs_func,
+                        assess_materialized_output_quality_func=(
+                            assess_materialized_output_quality_func
+                        ),
+                    )
+                )
+                if materialized_outputs is None:
+                    await self.agent.report_cancelled(task_id)
+                    return
+                if upload_sidecar_url:
+                    spooled_outputs = await spool_materialized_outputs_func(
+                        outputs=materialized_outputs,
+                        spool_dir=result_spool_dir,
+                        task_id=task_id,
+                        logger=self.logger,
+                    )
+                    extra_outputs_payload = (
+                        await upload_spooled_outputs_via_sidecar_func(
+                            sidecar_url=upload_sidecar_url,
+                            result_bucket=result_bucket,
+                            task_id=task_id,
+                            spooled_outputs=spooled_outputs,
+                            logger=self.logger,
+                        )
+                    )
+                else:
+                    extra_outputs_payload = await upload_materialized_outputs_func(
+                        minio_client=self.agent.minio_client,
+                        result_bucket=result_bucket,
+                        outputs=materialized_outputs,
+                        logger=self.logger,
+                    )
+            except Exception as exc:
+                self.logger.error(
+                    "Failed to fetch from ComfyUI or upload result: %s",
+                    exc,
+                )
+                raise Exception(f"Result processing failed: {exc}") from exc
+
+            await report_materialized_outputs_func(
+                report_complete_func=self.agent.report_complete,
+                task_id=task_id,
+                result_path=execution.task_result,
+                extra_outputs_payload=extra_outputs_payload,
+            )
+            self.agent._record_task_success_for_health()
+            self.logger.info("Task %s completed successfully", task_id)
+
+        except Exception as exc:
+            self.logger.error("Task %s failed: %s", task_id, exc)
+            if (
+                isinstance(exc, TaskExecutionTimeoutError)
+                and task_type == "wan22_video_v2"
+            ):
+                await self.agent._interrupt_comfy_for_wan22_timeout(execution)
+                exit_after_timeout = self.agent._should_self_restart_after_timeout(
+                    execution,
+                    exc,
+                )
+            self.agent._record_task_failure_for_health(exc)
+            await self.agent.report_status(task_id, "failed", error=str(exc))
+        finally:
+            self.agent._clear_task_execution(execution)
+            self.agent._cleanup_input_paths(execution.downloaded_input_paths)
+        if exit_after_timeout:
+            self.logger.error(
+                "Exiting agent after wan22_video_v2 timeout so the supervisor can restart a clean ComfyUI runtime"
+            )
+            os._exit(wan22_timeout_exit_code)

@@ -1,0 +1,331 @@
+version: 1
+managed_by: allbot-lan-aio-operator
+last_verified_at: "2026-07-13T09:49:54Z"
+sources:
+  slot_catalog: ops/gpu_pool_controller/config/lan_aio_prod_slots.yml
+  profile_catalog: ops/gpu_pool_controller/config/task_profiles.yml
+  live_status_command: python scripts/lan_aio_fleet_prod_ops.py status --include-disabled
+  gpu_probe: ssh <gpu-host> nvidia-smi --query-gpu=index,name,memory.total,memory.used,utilization.gpu,temperature.gpu --format=csv,noheader,nounits
+rules:
+  - Live status is authoritative when it conflicts with this file.
+  - Update this file after every operator-managed LAN AIO takeover, recover, restart, or cache warmup.
+  - Store only non-sensitive facts: image refs, manifest keys, workspace paths, cache state, blockers, and timestamps.
+  - Do not store env values, tokens, presigned URLs, secrets, or long task histories.
+
+nodes:
+  gpu-226:
+    host: allbot-gpu-226
+    physical_gpus:
+      - gpu_index: 0
+        hardware: NVIDIA GeForce RTX 5090 32G
+        mode: lan_aio
+        current:
+          profile: pornmaster_flux2_edit_bf16
+          slot_id: gpu-226-gpu0-pornmaster_flux2_edit_bf16
+          agent_id: lan_aio_prod_gpu226_gpu0_pornmaster_flux2_edit_bf16_01
+          container_name: allbot-lan-aio-gpu-226-gpu0-pornmaster_flux2_edit_bf16-prod
+          host_port: 8190
+          state: running
+          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-pornmaster-flux2-edit:20260628-pornmaster-flux2-edit-cu128-smallvae1
+          model_manifest_key: pornmaster_flux2_edit_bf16/2026-07-12/manifest.json
+          workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/pornmaster_flux2_edit/workspace
+          last_takeover_at: "2026-07-13T09:47:21Z"
+        cached_profiles:
+          - profile: image_to_video
+            cache_state: ready
+            model_manifest_key: image_to_video/2026-06-13-test/manifest.json
+            workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/image_to_video/workspace
+            synced_at: "2026-07-13T08:11:25.336197+00:00"
+            note: Stopped same-card image_to_video rollback candidate after the 2026-07-13 17:47 Asia/Shanghai switch to PornMaster Flux2 BF16; it was drained and waited idle before stop-old.
+          - profile: ltx_video
+            cache_state: ready
+            model_manifest_key: ltx_video/2026-06-10/manifest.json
+            workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/ltx_video/workspace
+            synced_at: "2026-07-09T19:45:16.718566+00:00"
+            note: Stopped same-card rollback candidate after the 2026-07-12 Asia/Shanghai switch to image_to_video.
+          - profile: scail2
+            cache_state: ready
+            model_manifest_key: scail2/2026-06-17-test/manifest.json
+            workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/scail2/workspace
+            synced_at: "2026-07-12T15:58:37.723553+00:00"
+            note: Stopped same-card rollback candidate after the 2026-07-13 16:11 Asia/Shanghai switch to image_to_video; warm-cache had previously skipped all six already-present model files.
+          - profile: wan22_video_v2
+            cache_state: ready
+            model_manifest_key: wan22_video_v2/2026-06-13-test/manifest.json
+            workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/wan22_video_v2/workspace
+            synced_at: "2026-07-09T18:41:34.983633+00:00"
+            note: Stopped same-card canary candidate after the 2026-07-12 Asia/Shanghai switch to image_to_video; future Wan22 use remains canary-only on this 32G card.
+          - profile: pornmaster_flux2_edit_bf16
+            cache_state: ready
+            model_manifest_key: pornmaster_flux2_edit_bf16/2026-07-12/manifest.json
+            workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/pornmaster_flux2_edit/workspace
+            synced_at: "2026-07-13T09:46:12.441803+00:00"
+            note: Current production PornMaster Flux2 V4 turbo BF16 runtime after the 2026-07-13 17:47 Asia/Shanghai switch from image_to_video; warm-cache skipped all three already-present model files.
+        fast_switch_candidates:
+          - slot_id: gpu-226-gpu0-image_to_video
+            profile: image_to_video
+            cache_state: ready
+            note: Same-card rollback candidate after the 2026-07-13 17:47 Asia/Shanghai switch to PornMaster Flux2 BF16.
+          - slot_id: gpu-226-gpu0-scail2
+            profile: scail2
+            cache_state: ready
+            note: Same-card rollback candidate after the 2026-07-13 17:47 Asia/Shanghai switch to PornMaster Flux2 BF16; watch RTX 5090 32G for OOM/status 137 if restored.
+          - slot_id: gpu-226-gpu0-ltx_video
+            profile: ltx_video
+            cache_state: ready
+            note: Same-card rollback candidate after the 2026-07-13 17:47 Asia/Shanghai switch to PornMaster Flux2 BF16.
+          - slot_id: gpu-226-gpu0-wan22_video_v2
+            profile: wan22_video_v2
+            cache_state: ready
+            note: Same-card canary candidate after the 2026-07-13 17:47 Asia/Shanghai switch to PornMaster Flux2 BF16; not proven steady 32G capacity.
+        blocked_profiles:
+          - profile: face_i2i_t2i
+            reason: legacy host-service cloud_prod_worker_01 is disabled and cloud-prod-comfy-agent-1 is stopped after the 2026-07-02 cutover; systemd comfyui.service remains active/idle on 8188 as manual rollback metadata.
+        notes: Switched gpu-226 GPU0 from image_to_video to PornMaster Flux2 V4 turbo BF16 on 2026-07-13 17:47 Asia/Shanghai through scripts/lan_aio_fleet_prod_ops.py takeover with auto_rollback. The first takeover attempt failed during drain-legacy because Central returned a TLS EOF before stop-old, so image_to_video remained healthy and kept serving. The operator then set image_to_video to draining, waited for the active image_to_video task to finish naturally, and reran takeover. Preflight, image presence, warm-cache, drain/wait-idle, stop-old, start-disabled, Docker health, disabled heartbeat, old-process cleanup, and enable gates passed. Post-check showed the BF16 container healthy on 8190, Central worker idle with task type pornmaster_flux2_edit_bf16, ComfyUI queue 0/0, and GPU 27.3 GiB used at idle. This RTX 5090 32G card is below the profile 48G preferred capacity, so monitor real BF16 jobs for OOM/status 137.
+
+  gpu-177:
+    host: allbot-gpu-177
+    physical_gpus:
+      - gpu_index: 0
+        hardware: NVIDIA GeForce RTX 5090 32G
+        current:
+          profile: wan22_video_v2
+          slot_id: gpu-177-gpu0-wan22_video_v2
+          agent_id: lan_aio_prod_gpu177_gpu0_wan22_video_v2_01
+          container_name: allbot-lan-aio-gpu-177-gpu0-wan22_video_v2-prod
+          host_port: 8190
+          state: running
+          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd
+          model_manifest_key: wan22_video_v2/2026-06-13-test/manifest.json
+          workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-177-gpu0/profiles/wan22_video_v2/workspace
+        cached_profiles:
+          - profile: wan22_video_v2
+            cache_state: ready
+            model_manifest_key: wan22_video_v2/2026-06-13-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-177-gpu0/profiles/wan22_video_v2/workspace
+            synced_at: "2026-07-01T08:47:56.077092+00:00"
+          - profile: image_to_video
+            cache_state: ready_unmarked
+            model_manifest_key: image_to_video/2026-06-13-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-177-gpu0/profiles/image_to_video/workspace
+            note: Workspace exists from previous production runtime, but helper marker is missing; run warm-cache before rollback takeover.
+          - profile: scail2
+            cache_state: partial
+            model_manifest_key: scail2/2026-06-17-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-177-gpu0/profiles/scail2/workspace
+        fast_switch_candidates:
+          - slot_id: gpu-177-gpu0-image_to_video
+            profile: image_to_video
+            cache_state: ready_unmarked
+            note: Run warm-cache to refresh model-cache-marker.json before rollback takeover.
+        blocked_profiles: []
+        notes: Reconciled on 2026-07-02 from live 8190 Wan22 runtime; image_to_video remains the same-card rollback candidate.
+      - gpu_index: 1
+        hardware: NVIDIA GeForce RTX 5090 32G
+        current:
+          profile: ltx_video
+          slot_id: gpu-177-gpu1-ltx_video
+          agent_id: lan_aio_prod_gpu177_gpu1_ltx_video_01
+          container_name: allbot-lan-aio-gpu-177-gpu1-ltx_video-prod
+          host_port: 8191
+          state: running
+          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-ltx-video:20260618-ltx-min-cu128-sageattn1
+          model_manifest_key: ltx_video/2026-06-10/manifest.json
+          workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/ltx_video/workspace
+          last_takeover_at: "2026-07-02T09:12:54Z"
+        cached_profiles:
+          - profile: ltx_video
+            cache_state: ready
+            model_manifest_key: ltx_video/2026-06-10/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/ltx_video/workspace
+            synced_at: "2026-07-02T09:12:54.977184+00:00"
+          - profile: image_to_video
+            cache_state: ready_blocked
+            model_manifest_key: image_to_video/2026-06-13-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/image_to_video/workspace
+            synced_at: "2026-07-02T08:13:04.737800+00:00"
+            note: Cache marker is ready, but runtime is blocked after repeated ComfyUI status 137 restarts on RTX 5090 32G.
+          - profile: wan22_video_v2
+            cache_state: ready
+            model_manifest_key: wan22_video_v2/2026-06-13-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/wan22_video_v2/workspace
+            synced_at: "2026-07-01T15:01:39.659450+00:00"
+          - profile: scail2
+            cache_state: ready
+            model_manifest_key: scail2/2026-06-17-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/scail2/workspace
+            synced_at: "2026-07-02T08:58:02.181921+00:00"
+        fast_switch_candidates:
+          - slot_id: gpu-177-gpu1-scail2
+            profile: scail2
+            cache_state: ready
+        blocked_profiles:
+          - profile: image_to_video
+            reason: blocked_oom_32gb after 2026-07-02 takeover; real tasks repeatedly killed ComfyUI with status 137/restart on RTX 5090 32G, then the slot was rolled back to LTX.
+          - profile: wan22_video_v2
+            reason: blocked_oom_32gb after 2026-07-01 production task OOM on RTX 5090 32G.
+        notes: Switched back from SCAIL-2 to LTX on 2026-07-02 with scripts/lan_aio_fleet_prod_ops.py takeover while SCAIL-2 was idle. Startup validation showed Docker healthy, /system_stats OK, LTX cache marker ready, Central runtime_profile ltx_video, and the worker resumed ltx_video intake.
+
+  gpu-252:
+    host: allbot-gpu-252
+    physical_gpus:
+      - gpu_index: 0
+        hardware: NVIDIA GeForce RTX 4090 48G, healthy UUID GPU-09b7ea85-23df-a9b8-19d9-703534e47666
+        current:
+          profile: i2i_pro
+          slot_id: gpu-252-gpu0-i2i_pro
+          agent_id: lan_aio_prod_gpu252_gpu0_i2i_pro_01
+          container_name: allbot-lan-aio-gpu-252-gpu0-i2i_pro-prod
+          host_port: 8192
+          gpu_device_id: GPU-09b7ea85-23df-a9b8-19d9-703534e47666
+          host_gpu_index_at_last_verify: 1
+          pci_bus_id_at_last_verify: "00000000:03:00.0"
+          state: running
+          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh
+          model_manifest_key: i2i_pro/2026-06-14-test/manifest.json
+          workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/i2i_pro/workspace
+          last_takeover_at: "2026-07-03T17:17:30Z"
+        cached_profiles:
+          - profile: pornmaster_flux2_edit
+            cache_state: ready
+            model_manifest_key: pornmaster_flux2_edit/2026-06-27/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/pornmaster_flux2_edit/workspace
+            synced_at: "2026-07-02T21:00:41.622571+00:00"
+          - profile: img2img_lora
+            cache_state: ready
+            model_manifest_key: img2img_lora/2026-06-10/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/img2img_lora/workspace
+            synced_at: "2026-07-03T08:29:31.303529+00:00"
+          - profile: image_to_video
+            cache_state: ready
+            model_manifest_key: image_to_video/2026-06-13-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/image_to_video/workspace
+            synced_at: "2026-07-03T06:54:14.982639+00:00"
+          - profile: scail2
+            cache_state: ready
+            model_manifest_key: scail2/2026-06-17-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/scail2/workspace
+            synced_at: "2026-07-03T15:38:21.778128+00:00"
+          - profile: i2i_pro
+            cache_state: ready
+            model_manifest_key: i2i_pro/2026-06-14-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu0/profiles/i2i_pro/workspace
+            synced_at: "2026-07-03T17:16:17.154078+00:00"
+        fast_switch_candidates:
+          - slot_id: gpu-252-gpu0-scail2
+            profile: scail2
+            cache_state: ready
+          - slot_id: gpu-252-gpu0-image_to_video
+            profile: image_to_video
+            cache_state: ready
+          - slot_id: gpu-252-gpu0-pornmaster_flux2_edit
+            profile: pornmaster_flux2_edit
+            cache_state: ready
+          - slot_id: gpu-252-gpu0-img2img_lora
+            profile: img2img_lora
+            cache_state: ready
+        blocked_profiles: []
+        notes: Switched from SCAIL-2 to i2i_pro on 2026-07-03 with scripts/lan_aio_fleet_prod_ops.py takeover --slot gpu-252-gpu0-i2i_pro --replace-slot gpu-252-gpu0-scail2 --failure-policy auto_rollback after SCAIL-2 was drained and idle. Render verified LAN AIO workflow overrides for t2i-pornmaster-turbo and face_swap, then preflight, pull-image, warm-cache, drain/wait-idle, stop-old, start-disabled, and enable-aio passed. On 2026-07-04 after the repaired GPU was reinstalled, host GPU indexes drifted; all gpu-252 GPU0 LAN AIO slots were pinned to healthy UUID GPU-09b7ea85-23df-a9b8-19d9-703534e47666, and restart-aio force-recreated the 8192 i2i_pro container. Post-recreate validation showed Docker DeviceIDs pinned to GPU-09b7ea85-23df-a9b8-19d9-703534e47666, container healthy, /queue reachable, model cache ready, Central control enabled, runtime_profile i2i_pro, and task types i2i_pro,t2i-pornmaster-turbo,face_swap. SCAIL-2, image_to_video, img2img_lora, and PornMaster remain same-card rollback candidates and must keep the same healthy gpu_device_id.
+      - gpu_index: 1
+        hardware: repaired RTX 4090 48G, UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e
+        current:
+          profile: pornmaster_flux2_edit
+          slot_id: gpu-252-gpu1-pornmaster_flux2_edit
+          agent_id: lan_aio_prod_gpu252_gpu1_pornmaster_flux2_edit_01
+          container_name: allbot-lan-aio-gpu-252-gpu1-pornmaster_flux2_edit-prod
+          host_port: 8191
+          gpu_device_id: GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e
+          host_gpu_index_at_last_verify: 0
+          pci_bus_id_at_last_verify: "00000000:01:00.0"
+          state: maintenance_disabled
+          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-pornmaster-flux2-edit:20260628-pornmaster-flux2-edit-cu128-smallvae1
+          model_manifest_key: pornmaster_flux2_edit/2026-06-27/manifest.json
+          workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu1/profiles/pornmaster_flux2_edit/workspace
+          last_takeover_at: "2026-07-04T11:38:00Z"
+          last_verified_at: "2026-07-06T07:13:25Z"
+        cached_profiles:
+          - profile: pornmaster_flux2_edit
+            cache_state: ready
+            model_manifest_key: pornmaster_flux2_edit/2026-06-27/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu1/profiles/pornmaster_flux2_edit/workspace
+            synced_at: "2026-07-04T11:32:46.708736+00:00"
+            note: Active lower-VRAM image-edit profile for 8191; preflight, warm-cache, disabled heartbeat, object/model validation, enable-aio, and live production pornmaster_flux2_single_edit tasks passed without new Xid/NVRM.
+          - profile: wan22_video_v2
+            cache_state: missing
+            model_manifest_key: wan22_video_v2/2026-06-13-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu1/profiles/wan22_video_v2/workspace
+            note: Wan22 remains maintenance-disabled on the same repaired card; do not enable while the card is isolated for Xid 119/154 investigation.
+          - profile: scail2
+            cache_state: ready
+            model_manifest_key: scail2/2026-06-17-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu1/profiles/scail2/workspace
+            synced_at: "2026-07-04T10:37:31.096350+00:00"
+        fast_switch_candidates:
+          - slot_id: gpu-252-gpu1-pornmaster_flux2_edit
+            profile: pornmaster_flux2_edit
+            cache_state: ready
+            note: Maintenance-disabled while UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e is removed for RMA; do not re-enable until the card is physically present and revalidated.
+        blocked_profiles:
+          - profile: scail2
+            reason: blocked_xid_119_154 after the repaired UUID passed preflight/canary but reproduced Xid 119/154 and CUDA unknown error under a real SCAIL-2 face-swap workload; 8191 AIO is disabled and the container is exited after host reboot.
+          - profile: wan22_video_v2
+            reason: same repaired card is isolated after SCAIL-2 reproduced Xid 119/154; RunPod remains fallback for wan22_video_v2.
+        notes: Repaired card UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e passed an initial short 2026-07-04 smoke stress in a one-off container pinned by UUID, touching 20.5 GiB GPU memory and running compute for about 98 seconds. The SCAIL-2 deployment chain then passed preflight, image presence/pull, warm-cache, start-disabled heartbeat, /system_stats, /object_info required node and model enumeration, and direct ComfyUI canary prompt 16fe75be-c59d-4cea-8d7b-cc4157550030, which produced SCAIL-2-gpu252-canary_00001.mp4. After enable-aio opened intake on 8191, a real SCAIL-2 face-swap workload reproduced Xid 119/154 and GPU Reset Required on PCI 00000000:01:00.0; ComfyUI began returning CUDA unknown error and Docker could not stop/kill the container cleanly. The host was rebooted at 2026-07-04 19:12 Asia/Shanghai. Post-reboot validation restored 8192 i2i_pro AIO on healthy UUID GPU-09b7ea85-23df-a9b8-19d9-703534e47666 and ran an isolated 20.5 GiB plus 120 second CUDA smoke on the repaired UUID without new Xid/NVRM. The repaired UUID was then switched to lower-VRAM pornmaster_flux2_edit on host 8191; preflight, pull-image, warm-cache, start-disabled heartbeat, /system_stats, /object_info model/node validation, enable-aio, and multiple live production pornmaster_flux2_single_edit completions passed without new Xid/NVRM. On 2026-07-06 Asia/Shanghai, the operator disabled AIO intake for gpu-252-gpu1-pornmaster_flux2_edit, confirmed Central worker idle and ComfyUI 8191 queue empty, stopped allbot-lan-aio-gpu-252-gpu1-pornmaster_flux2_edit-prod, set the GPU1 LAN AIO containers to Docker restart policy no, and marked the slot maintenance-disabled so UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e can be removed for RMA. Treat any future re-enable as requiring the card to be physically present plus workload-specific validation; scail2 and wan22_video_v2 remain blocked on this card pending vendor/driver resolution.
+
+  gpu-002:
+    host: allbot-gpu-002
+    physical_gpus:
+      - gpu_index: 0
+        hardware: NVIDIA GeForce RTX 4090 48G
+        current:
+          profile: scail2
+          slot_id: gpu-002-gpu0-scail2
+          agent_id: lan_aio_prod_gpu002_gpu0_scail2_01
+          container_name: allbot-lan-aio-gpu-002-gpu0-scail2-prod
+          host_port: 8190
+          state: running
+          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-scail2:20260617-scail2-cu128-a492b2b-proddeps1
+          model_manifest_key: scail2/2026-06-17-test/manifest.json
+          workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu0/profiles/scail2/workspace
+          remote_workers_host_dir: /home/chuzeyu/allbot-scail2-aio-prod/gpu002-slot0/remote_workers
+          last_restart_at: "2026-07-02T20:07:00Z"
+        cached_profiles:
+          - profile: scail2
+            cache_state: ready
+            model_manifest_key: scail2/2026-06-17-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu0/profiles/scail2/workspace
+            synced_at: "2026-07-02T20:06:12.416598+00:00"
+          - profile: img2img_lora
+            cache_state: ready
+            model_manifest_key: img2img_lora/2026-06-10/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu0/profiles/img2img_lora/workspace
+        fast_switch_candidates: []
+        blocked_profiles: []
+        notes: SCAIL-2 slot0 remote_workers bundle refreshed on 2026-07-03 to restore freenoise=true for scail2_action_transfer_long. The slot catalog remote_dir now points at the live compose/remote_workers host path under /home/chuzeyu/allbot-scail2-aio-prod/gpu002-slot0; post-restart verification saw the container healthy, Central enabled, cache marker ready, and the mounted workflow/patcher both reporting freenoise=true.
+      - gpu_index: 1
+        hardware: NVIDIA GeForce RTX 4090 48G
+        current:
+          profile: image_to_video
+          slot_id: gpu-002-gpu1-image_to_video
+          agent_id: lan_aio_prod_gpu002_gpu1_image_to_video_01
+          container_name: allbot-lan-aio-gpu-002-gpu1-image_to_video-prod
+          host_port: 8191
+          state: running
+          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd
+          model_manifest_key: image_to_video/2026-06-13-test/manifest.json
+          workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu1/profiles/image_to_video/workspace
+        cached_profiles:
+          - profile: image_to_video
+            cache_state: ready
+            model_manifest_key: image_to_video/2026-06-13-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu1/profiles/image_to_video/workspace
+          - profile: pornmaster_flux2_edit
+            cache_state: ready
+            model_manifest_key: pornmaster_flux2_edit/2026-06-27/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu1/profiles/pornmaster_flux2_edit/workspace
+        fast_switch_candidates:
+          - slot_id: gpu-002-gpu1-pornmaster_flux2_edit
+            profile: pornmaster_flux2_edit
+            cache_state: ready
+        blocked_profiles: []
+        notes: Live runtime is image_to_video as of this verification; reconcile slot phase before operating this GPU.

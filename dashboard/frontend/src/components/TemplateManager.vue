@@ -2,7 +2,8 @@
 import { ref, onMounted } from 'vue'
 import { fetchTemplateContributions, approveTemplateContribution, deleteTemplateContribution, apiBaseUrl } from '../api/api'
 import { CheckOutlined, DeleteOutlined, UserOutlined, ClockCircleOutlined, FileImageOutlined, EyeOutlined } from '@ant-design/icons-vue'
-import { message, Modal } from 'ant-design-vue'
+import message from 'ant-design-vue/es/message'
+import Modal from 'ant-design-vue/es/modal'
 
 const contributions = ref([])
 const loading = ref(false)
@@ -70,6 +71,8 @@ const formatDate = (dateStr) => {
 
 const getFullImageUrl = (url) => {
   if (!url) return ''
+  // Presigned URLs from MinIO are already absolute URLs starting with http:// or https://
+  if (url.startsWith('http')) return url
   return `${apiBaseUrl}${url}`
 }
 

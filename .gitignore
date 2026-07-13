@@ -4,9 +4,13 @@ Desktop.ini
 .DS_Store
 
 # IDE and Editor files
-.vscode/
+**/.vscode/*
+!**/.vscode/settings.json
+!**/.vscode/extensions.json
 .idea/
-.trae/
+.cursor/
+.cursorrules
+.zed/
 *.swp
 *.swo
 
@@ -18,7 +22,10 @@ __pycache__/
 venv/
 ENV/
 env/
+!remote_workers/env/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .coverage
 htmlcov/
 build/
@@ -65,6 +72,7 @@ yarn-error.log*
 *.webp
 *.svg
 *.ico
+!frontend/public/tonconnect-icon.png
 *.mp4
 *.mov
 *.avi
@@ -85,17 +93,48 @@ yarn-error.log*
 
 # Logs and temporary files
 *.log
+*.tmp
+*.temp
+*.bak
+*.backup
+*.orig
 logs/
+runtime/
 tmp/
 temp/
+local_analytics_platform/data/
+.dbg/
+*.diff
+*.patch
+*_progress.json
+project_analysis.json
+project_tree.txt
+**/debug_patched_*.json
+workers/comfy_agent*/input/
 
 # Environment and Secret files
 .env
+local_analytics_platform/.env
+local_analytics_platform/.env.*
+.env.cloud.*
+.env.cloud-prod-shadow-sync.local
 .env.local
+.env.backup.local
 .env.development.local
+.env.test
 .env.test.local
 .env.production.local
-! .env.example
+.env.paid-group.local
+.env.lan.*
+.env.lan-*
+!.env.example
+!.env.cloud.prod.example
+!.env.cloud-prod-shadow-sync.example
+!.env.paid-group.local.example
+!.env.lan.model-cache.example
+!.env.lan-aio-test.example
+!.env.lan-aio-prod.example
+!remote_workers/env/*.env.example
 
 # Project specific (重要：忽略用户数据和临时生成内容)
 backups/

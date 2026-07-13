@@ -76,10 +76,10 @@ defineEmits(['close'])
                 <div class="flex flex-wrap gap-2">
                   <template v-if="item.input_file">
                     <MediaItem 
-                      v-for="file in item.input_file.split('|')" 
-                      :key="file"
-                      :file="file"
-                      :url="getFileUrl(item.user_id, 'input_images', file)"
+                      v-for="(url, index) in (item.input_file_url || '').split('|')" 
+                      :key="index"
+                      :file="item.input_file.split('|')[index]"
+                      :url="url"
                     />
                   </template>
                   <div v-else class="w-32 h-32 flex items-center justify-center bg-gray-100 rounded-lg text-[10px] text-gray-400 border border-dashed border-gray-300">无输入</div>
@@ -93,7 +93,7 @@ defineEmits(['close'])
                   <template v-if="item.output_file">
                     <MediaItem 
                       :file="item.output_file"
-                      :url="getFileUrl(item.user_id, 'output_images', item.output_file)"
+                      :url="item.output_file_url"
                     />
                   </template>
                   <div v-else class="w-32 h-32 flex items-center justify-center bg-gray-100 rounded-lg text-[10px] text-gray-400 border border-dashed border-gray-300">未完成</div>
@@ -103,8 +103,13 @@ defineEmits(['close'])
 
             <div class="mt-4 pt-3 border-t border-gray-100">
               <p class="text-[10px] text-gray-500 font-bold uppercase m-0 mb-1">提示词</p>
-              <div class="text-xs text-gray-600 bg-gray-50 p-2 rounded border border-gray-100 italic">
-                {{ item.prompt || '无提示词' }}
+              <div class="text-xs text-gray-600 bg-gray-50 p-2 rounded border border-gray-100 italic flex flex-col gap-2">
+                <div v-if="item.prompt && item.prompt.match(/^\[(.*?)\]/)" class="flex flex-wrap gap-1">
+                  <a-tag color="blue" class="text-[10px] m-0 px-1.5 py-0 border-blue-200 bg-blue-50/50">
+                    {{ item.prompt.match(/^\[(.*?)\]/)[1] }}
+                  </a-tag>
+                </div>
+                <div>{{ item.prompt ? item.prompt.replace(/^\[.*?\]\s*/, '') : '无提示词' }}</div>
               </div>
             </div>
           </a-card>

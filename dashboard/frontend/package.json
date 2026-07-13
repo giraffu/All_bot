@@ -5,22 +5,32 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "typecheck": "vue-tsc --noEmit -p tsconfig.app.json",
+    "build": "npm run typecheck && vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
   },
   "dependencies": {
     "@ant-design/icons-vue": "^7.0.1",
     "ant-design-vue": "^4.2.6",
     "axios": "^1.13.6",
+    "dayjs": "^1.11.19",
     "echarts": "^6.0.0",
     "vue": "^3.5.24",
     "vue-echarts": "^8.0.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.0",
     "@vitejs/plugin-vue": "^6.0.1",
+    "@vue/test-utils": "^2.4.10",
+    "@vue/tsconfig": "^0.9.1",
     "autoprefixer": "^10.4.24",
+    "jsdom": "^29.1.1",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
-    "vite": "^7.2.4"
+    "typescript": "^6.0.3",
+    "vite": "^7.2.4",
+    "vitest": "^4.1.6",
+    "vue-tsc": "^3.3.3"
   }
 }

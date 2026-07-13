@@ -1,7 +1,8 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { fetchHistoryAll } from '../api/api'
+import { fetchHistoryAll, fetchWorkerList } from '../api/api'
 import { getFileUrl, formatDate } from '../utils/helpers'
+import { getTaskTypeLabel, TASK_TYPE_OPTIONS } from '../constants/taskTypes'
 import MediaItem from './MediaItem.vue'
 import { 
   UserOutlined,
@@ -15,64 +16,33 @@ const history = ref([])
 const total = ref(0)
 const currentPage = ref(1)
 const pageSize = ref(20)
-const selectedType = ref('all')
+const selectedTypes = ref([])
+const selectedRating = ref(null)
+const selectedPublic = ref(null)
+const selectedWorker = ref(null)
+const workerOptions = ref([{ label: '全部节点', value: null }])
 
-const typeMapping = {
-  'undress': '快速脱衣',
-  'video_undress': '视频脱衣',
-  'face_swap': '快速换脸',
-  'faceswap_step1': '快速换脸',
-  'faceswap_step2': '快速换脸',
-  'random_faceswap': '随机换脸',
-  'face_show': '动图露奶',
-  'face_tongue': '动图吐舌',
-  'fuck': '动图做爱',
-  'penetration': '快速抽插',
-  'penetration_step1': '快速抽插',
-  'penetration_step2': '快速抽插',
-  'perfect_video_insert': '动图传教士',
-  'doggy_style': '动图后入',
-  'blowjob': '脱衣口交',
-  'masturbation': '快速自慰',
-  'image': '自由P图',
-  'edit': '自由P图',
-  'video': '视频生成',
-  'video_pro': '专业视频',
-  'custom_video': '自定义视频',
-  'template_contribute': '模板共建',
-  'undress_tongue': '脱衣吐舌',
-  'closeup_blowjob': '特写口交',
-  'unknown': '未知类型'
-};
+const typeOptions = TASK_TYPE_OPTIONS
 
-const typeOptions = [
-  { label: '全部类型', value: 'all' },
-  { label: '快速脱衣', value: 'undress' },
-  { label: '视频脱衣', value: 'video_undress' },
-  { label: '快速换脸', value: 'face_swap' },
-  { label: '随机换脸', value: 'random_faceswap' },
-  { label: '动图露奶', value: 'face_show' },
-  { label: '动图吐舌', value: 'face_tongue' },
-  { label: '动图做爱', value: 'fuck' },
-  { label: '快速抽插', value: 'penetration' },
-  { label: '动图传教士', value: 'perfect_video_insert' },
-  { label: '动图后入', value: 'doggy_style' },
-  { label: '脱衣口交', value: 'blowjob' },
-  { label: '特写口交', value: 'closeup_blowjob' },
-  { label: '脱衣吐舌', value: 'undress_tongue' },
-  { label: '快速自慰', value: 'masturbation' },
-  { label: '自由P图', value: 'image' },
-  { label: '视频生成', value: 'video' },
-  { label: '专业视频', value: 'video_pro' },
-  { label: '自定义视频', value: 'custom_video' },
-  { label: '模板共建', value: 'template_contribute' }
+const ratingOptions = [
+  { label: '全部评价', value: null },
+  { label: '👍 已点赞', value: 1 },
+  { label: '👎 已点踩', value: -1 },
+  { label: '⏳ 未评价', value: 0 }
+];
+
+const publicOptions = [
+  { label: '全部状态', value: null },
+  { label: '🌐 已公开', value: true },
+  { label: '🔒 私有', value: false }
 ];
 
 // Data fetching
 const loadData = async (page = 1) => {
   loading.value = true
   try {
-    const data = await fetchHistoryAll(page, pageSize.value, selectedType.value)
+    const typeParam = selectedTypes.value.length > 0 ? selectedTypes.value.join(',') : null
+    const data = await fetchHistoryAll(page, pageSize.value, typeParam, selectedRating.value, selectedPublic.value, selectedWorker.value)
     history.value = data.items
     total.value = data.total
     currentPage.value = page
@@ -83,7 +53,27 @@ const loadData = async (page = 1) => {
   }
 }
 
-const handleTypeChange = () => {
+const loadWorkers = async () => {
+  try {
+    const data = await fetchWorkerList()
+    if (data && data.workers && data.workers.length > 0) {
+      const options = data.workers.map(w => ({ label: w, value: w }))
+      workerOptions.value = [{ label: '全部节点', value: null }, ...options]
+    }
+  } catch (err) {
+    console.error('Failed to load workers:', err)
+  }
+}
+
+const handleFilterChange = () => {
+  loadData(1)
+}
+
+const resetFilters = () => {
+  selectedTypes.value = []
+  selectedRating.value = null
+  selectedPublic.value = null
+  selectedWorker.value = null
   loadData(1)
 }
 
@@ -105,6 +95,18 @@ const columns = [
     title: '类型',
     dataIndex: 'type',
     key: 'type',
+    width: 120,
+  },
+  {
+    title: '来源',
+    dataIndex: 'source',
+    key: 'source',
+    width: 80,
+  },
+  {
+    title: '生成节点',
+    dataIndex: 'worker_id',
+    key: 'worker_id',
     width: 120,
   },
   {
@@ -136,46 +138,109 @@ const refreshData = () => {
 
 onMounted(() => {
   loadData()
+  loadWorkers()
 })
 </script>
 
 <template>
   <div class="h-full flex flex-col bg-white rounded-xl shadow-sm border p-6">
-    <div class="mb-4 flex items-center justify-between">
-      <div class="flex items-center gap-4">
-        <h2 class="text-xl font-bold text-gray-800 m-0">历史生成记录</h2>
-        <div class="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
-          <span class="text-gray-500 text-xs font-medium">筛选类型:</span>
-          <a-select
-            v-model:value="selectedType"
-            style="width: 160px"
-            placeholder="请选择类型"
-            @change="handleTypeChange"
-            :options="typeOptions"
-            size="small"
-            show-search
-            option-filter-prop="label"
-            class="custom-select"
-          >
-            <template #suffixIcon>
-              <SearchOutlined v-if="selectedType === 'all'" class="text-gray-400" />
-              <close-circle-filled v-else @click.stop="selectedType = 'all'; handleTypeChange()" class="text-gray-400 hover:text-red-400 cursor-pointer" />
-            </template>
-          </a-select>
+    <div class="mb-4 flex flex-col gap-4">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-4">
+          <h2 class="text-xl font-bold text-gray-800 m-0">历史生成记录</h2>
           
-          <div v-if="selectedType !== 'all'" class="h-4 w-[1px] bg-gray-200 mx-1"></div>
-          
-          <a-tag v-if="selectedType !== 'all'" closable @close="selectedType = 'all'; handleTypeChange()" color="blue" class="m-0 border-none bg-blue-50 text-blue-600">
-            {{ typeMapping[selectedType] }}
-          </a-tag>
-        </div>
-      </div>
+          <!-- Filters Group -->
+          <div class="flex items-center gap-3 bg-gray-50 px-3 py-2 rounded-xl border border-gray-100 shadow-sm">
+            <!-- Multiple Type Filter -->
+            <div class="flex items-center gap-2">
+              <span class="text-gray-500 text-xs font-medium">类型:</span>
+              <a-select
+                v-model:value="selectedTypes"
+                mode="multiple"
+                style="min-width: 180px; max-width: 300px"
+                placeholder="全部类型"
+                @change="handleFilterChange"
+                :options="typeOptions"
+                size="small"
+                show-search
+                allow-clear
+                option-filter-prop="label"
+                max-tag-count="responsive"
+                class="custom-select"
+              />
+            </div>
 
-      <div class="flex items-center gap-2">
-        <a-button @click="refreshData" :loading="loading" type="text" class="flex items-center gap-1 text-gray-500 hover:text-blue-600">
-          <template #icon><reload-outlined /></template>
-          刷新
-        </a-button>
+            <div class="h-4 w-[1px] bg-gray-200 mx-1"></div>
+
+            <!-- Rating Filter -->
+            <div class="flex items-center gap-2">
+              <span class="text-gray-500 text-xs font-medium">评价:</span>
+              <a-select
+                v-model:value="selectedRating"
+                style="width: 110px"
+                placeholder="全部"
+                @change="handleFilterChange"
+                :options="ratingOptions"
+                size="small"
+                class="custom-select"
+              />
+            </div>
+
+            <div class="h-4 w-[1px] bg-gray-200 mx-1"></div>
+
+            <!-- Public Filter -->
+            <div class="flex items-center gap-2">
+              <span class="text-gray-500 text-xs font-medium">状态:</span>
+              <a-select
+                v-model:value="selectedPublic"
+                style="width: 110px"
+                placeholder="全部"
+                @change="handleFilterChange"
+                :options="publicOptions"
+                size="small"
+                class="custom-select"
+              />
+            </div>
+
+            <div class="h-4 w-[1px] bg-gray-200 mx-1"></div>
+
+            <!-- Worker Filter -->
+            <div class="flex items-center gap-2">
+              <span class="text-gray-500 text-xs font-medium">节点:</span>
+              <a-select
+                v-model:value="selectedWorker"
+                style="width: 120px"
+                placeholder="全部节点"
+                @change="handleFilterChange"
+                :options="workerOptions"
+                size="small"
+                show-search
+                allow-clear
+                option-filter-prop="label"
+                class="custom-select"
+              />
+            </div>
+
+            <a-button 
+              v-if="selectedTypes.length > 0 || selectedRating !== null || selectedPublic !== null || selectedWorker !== null"
+              size="small" 
+              type="text" 
+              danger 
+              class="flex items-center gap-1 ml-1 hover:bg-red-50"
+              @click="resetFilters"
+            >
+              <template #icon><close-circle-filled /></template>
+              重置
+            </a-button>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <a-button @click="refreshData" :loading="loading" type="text" class="flex items-center gap-1 text-gray-500 hover:text-blue-600">
+            <template #icon><reload-outlined /></template>
+            刷新
+          </a-button>
+        </div>
       </div>
     </div>
 
@@ -219,8 +284,23 @@ onMounted(() => {
         <!-- Type -->
         <template v-else-if="column.key === 'type'">
           <a-tag :color="record.type === 'image' ? 'blue' : 'orange'">
-            {{ typeMapping[record.type] || record.type }}
+            {{ getTaskTypeLabel(record.type) }}
           </a-tag>
+        </template>
+
+        <!-- Source -->
+        <template v-else-if="column.key === 'source'">
+          <a-tag :color="record.source === 'web' ? 'green' : 'orange'" class="text-xs w-14 text-center">
+            {{ record.source === 'web' ? 'Web' : 'Bot' }}
+          </a-tag>
+        </template>
+
+        <!-- Worker ID -->
+        <template v-else-if="column.key === 'worker_id'">
+          <a-tag v-if="record.worker_id" color="purple" class="text-xs">
+            {{ record.worker_id }}
+          </a-tag>
+          <span v-else class="text-xs text-gray-400">-</span>
         </template>
 
         <!-- Input -->
@@ -228,10 +308,10 @@ onMounted(() => {
           <div class="flex flex-wrap gap-2 py-1">
              <template v-if="record.input_file">
                 <MediaItem 
-                  v-for="file in record.input_file.split('|')" 
-                  :key="file"
-                  :file="file"
-                  :url="getFileUrl(record.user_id, 'input_images', file)"
+                  v-for="(url, index) in (record.input_file_url || '').split('|')" 
+                  :key="index"
+                  :file="record.input_file.split('|')[index]"
+                  :url="url"
                   size="w-16 h-16"
                 />
              </template>
@@ -245,7 +325,7 @@ onMounted(() => {
             <template v-if="record.output_file">
               <MediaItem 
                 :file="record.output_file"
-                :url="getFileUrl(record.user_id, 'output_images', record.output_file)"
+                :url="record.output_file_url"
                 size="w-16 h-16"
               />
             </template>
@@ -255,11 +335,20 @@ onMounted(() => {
 
         <!-- Prompt -->
         <template v-else-if="column.key === 'prompt'">
-          <a-tooltip v-if="record.prompt" :title="record.prompt" placement="topLeft" overlayClassName="max-w-md">
-             <div class="truncate max-w-xs text-xs text-gray-600 cursor-pointer hover:text-blue-600 transition-colors">
-               {{ record.prompt }}
-             </div>
-          </a-tooltip>
+          <template v-if="record.prompt">
+            <div class="flex flex-col gap-1">
+              <div v-if="record.prompt.startsWith('[')" class="flex flex-wrap gap-1">
+                <a-tag v-if="record.prompt.match(/^\[(.*?)\]/)" color="blue" class="text-[10px] m-0 px-1.5 py-0 border-blue-200 bg-blue-50/50">
+                  {{ record.prompt.match(/^\[(.*?)\]/)[1] }}
+                </a-tag>
+              </div>
+              <a-tooltip :title="record.prompt.replace(/^\[.*?\]\s*/, '')" placement="topLeft" overlayClassName="max-w-md">
+                <div class="truncate max-w-xs text-xs text-gray-600 cursor-pointer hover:text-blue-600 transition-colors">
+                  {{ record.prompt.replace(/^\[.*?\]\s*/, '') }}
+                </div>
+              </a-tooltip>
+            </div>
+          </template>
           <span v-else class="text-xs text-gray-400">无</span>
         </template>
       </template>

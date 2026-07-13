@@ -1,0 +1,183 @@
+version: '3.8'
+
+services:
+  bot-test:
+    build: 
+      context: ../
+      dockerfile: Dockerfile
+    container_name: tg-bot-test
+    restart: always
+    env_file:
+      - ../.env.test
+    environment:
+      - BOT_TYPE=TEST
+      - REDIS_PREFIX=test_bot_
+      - ENABLE_PUBLIC_SHARE=false
+      - API_BASE=http://host.docker.internal:8004
+      - TZ=Asia/Shanghai
+    volumes:
+      - ../logs:/app/logs
+      - ../src:/app/src
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    network_mode: "host" # Use host network to easily access 192.168.1.115 services
+
+  payment-api-test:
+    build: 
+      context: ../
+      dockerfile: Dockerfile
+    container_name: payment-api-test
+    restart: always
+    env_file:
+      - ../.env.test
+    environment:
+      - BOT_TYPE=TEST
+      - REDIS_PREFIX=test_bot_
+      - PAYMENT_API_PORT=8022
+      - TZ=Asia/Shanghai
+    volumes:
+      - ../logs:/app/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    network_mode: "host"
+    command: ["python", "src/payment_api_server.py"]
+
+  web-api-test:
+    build: 
+      context: ../
+      dockerfile: Dockerfile
+    container_name: web-api-test
+    restart: always
+    env_file:
+      - ../.env.test
+    environment:
+      - BOT_TYPE=TEST
+      - REDIS_PREFIX=test_bot_
+      - TZ=Asia/Shanghai
+      - DB_POOL_SIZE=15
+      - DB_MAX_OVERFLOW=10
+    volumes:
+      - ../logs:/app/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    network_mode: "host"
+    command: ["uvicorn", "src.web_api.main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "4"]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import sys, urllib.request; sys.exit(0) if urllib.request.urlopen('http://127.0.0.1:8001/api/health', timeout=5).status == 200 else sys.exit(1)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+  web-frontend-test:
+    image: node:22-alpine
+    container_name: web-frontend-test
+    restart: always
+    working_dir: /app/frontend
+    environment:
+      - TZ=Asia/Shanghai
+      - CHOKIDAR_USEPOLLING=true
+    volumes:
+      - ../frontend:/app/frontend
+      - ../shared:/app/shared:ro
+      - frontend-test-node-modules:/app/frontend/node_modules
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    network_mode: "host"
+    command:
+      [
+        "sh",
+        "-c",
+        "npm config set registry https://registry.npmmirror.com && npm install --no-fund --no-audit && npm run dev:test -- --host 0.0.0.0 --port 5173 --strictPort",
+      ]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:5173 || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  dashboard-backend-test:
+    build:
+      context: ../
+      dockerfile: dashboard/backend/Dockerfile
+    container_name: dashboard-backend-test
+    restart: always
+    env_file:
+      - ../.env.test
+    environment:
+      - BOT_TYPE=TEST
+      - REDIS_PREFIX=test_bot_
+      - TZ=Asia/Shanghai
+      - DASHBOARD_ADMIN_USERNAME=chuzeyu
+      - DASHBOARD_ADMIN_PASSWORD_HASH=$$2b$$12$$YIySnXRqN4W6uLKgKUzSKe/V4g4JJEghmIdOcaW0UO21Fda5H05aa
+      - DASHBOARD_SECRET_KEY=${DASHBOARD_SECRET_KEY:-super-secret-jwt-key}
+    volumes:
+      - ../.env.test:/app/.env:ro
+      - ../logs:/app/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    network_mode: "host"
+    command:
+      [
+        "gunicorn",
+        "dashboard.backend.main:app",
+        "-w",
+        "4",
+        "-k",
+        "uvicorn.workers.UvicornWorker",
+        "--bind",
+        "0.0.0.0:8044",
+      ]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import sys, urllib.request; sys.exit(0) if urllib.request.urlopen('http://127.0.0.1:8044/api/health', timeout=5).status == 200 else sys.exit(1)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+  dashboard-frontend-test:
+    image: node:22-alpine
+    container_name: dashboard-frontend-test
+    restart: always
+    working_dir: /app/dashboard/frontend
+    environment:
+      - TZ=Asia/Shanghai
+      - CHOKIDAR_USEPOLLING=true
+      - VITE_DASHBOARD_API_PORT=8044
+    volumes:
+      - ../dashboard/frontend:/app/dashboard/frontend
+      - dashboard-frontend-test-node-modules:/app/dashboard/frontend/node_modules
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    network_mode: "host"
+    depends_on:
+      - dashboard-backend-test
+    command:
+      [
+        "sh",
+        "-c",
+        "chmod +x ./scripts/start-dev-test.sh && ./scripts/start-dev-test.sh",
+      ]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:5174 || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  frontend-test-node-modules:
+  dashboard-frontend-test-node-modules:

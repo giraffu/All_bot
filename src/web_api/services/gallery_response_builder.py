@@ -1,0 +1,575 @@
+import asyncio
+import json
+import logging
+from dataclasses import dataclass
+
+from sqlalchemy import select
+
+from src.database.models import (
+    GalleryPromptUnlock,
+    History,
+    User,
+    UserFollow,
+    UserInteraction,
+)
+from src.lora_mapping import translate_tags
+from src.services.wan22_video_v2_extension_service import (
+    extract_wan22_history_context,
+    is_wan22_stitched_result,
+    resolve_wan22_segment_index,
+    resolve_wan22_stitched_segment_count,
+)
+from src.services.ltx_video_extension_service import (
+    extract_ltx_history_context,
+    is_ltx_video_history_task_type,
+    is_ltx_stitched_result,
+    resolve_ltx_segment_index,
+    resolve_ltx_stitched_segment_count,
+)
+from src.domain_config.wan22_aio_video import is_wan22_chain_history_task_type
+from src.web_api.common.utils import (
+    release_read_transaction,
+    resolve_history_billing_resolution,
+)
+from src.web_api.presenters.media_presenter import extract_history_result_meta
+from src.web_api.schemas.gallery_schema import GalleryPostResponse
+from src.web_api.services.apply_context_service import (
+    resolve_history_template_apply_disabled_reason,
+)
+from src.web_api.services.gallery_media_resolver import resolve_gallery_post_media_urls
+from src.web_api.services.history_input_presenter import (
+    build_history_input_file_payload,
+)
+
+logger = logging.getLogger(__name__)
+PROMPT_UNLOCK_PRICE_CREDITS = 1
+
+
+def mask_gallery_prompt_for_public(
+    prompt: str | None,
+    *,
+    visible_ratio: float = 0.5,
+) -> str | None:
+    if prompt is None:
+        return None
+
+    normalized_prompt = prompt.strip()
+    if not normalized_prompt:
+        return None
+
+    safe_ratio = min(1.0, max(0.0, visible_ratio))
+    visible_chars = sum(1 for char in normalized_prompt if not char.isspace())
+    visible_target = int((visible_chars * safe_ratio) + 0.999999)
+    visible_count = 0
+    masked_chars: list[str] = []
+
+    for char in normalized_prompt:
+        if char.isspace():
+            masked_chars.append(char)
+            continue
+        if visible_count < visible_target:
+            visible_count += 1
+            masked_chars.append(char)
+        else:
+            masked_chars.append("*")
+    return "".join(masked_chars)
+
+
+def resolve_gallery_prompt_visibility(
+    *,
+    prompt: str | None,
+    post,
+    current_user,
+    unlocked_prompt_post_ids: set[int],
+) -> dict:
+    normalized_prompt = prompt.strip() if isinstance(prompt, str) else ""
+    if not normalized_prompt:
+        return {
+            "prompt": None,
+            "prompt_unlocked": False,
+            "prompt_unlockable": False,
+            "prompt_is_masked": False,
+            "prompt_unlock_price": PROMPT_UNLOCK_PRICE_CREDITS,
+        }
+
+    is_owner = bool(current_user and post.user_id == current_user.id)
+    prompt_unlocked = is_owner or post.id in unlocked_prompt_post_ids
+    prompt_unlockable = bool(
+        current_user
+        and post.user_id
+        and post.user_id != current_user.id
+        and not prompt_unlocked
+    )
+
+    if prompt_unlocked:
+        return {
+            "prompt": normalized_prompt,
+            "prompt_unlocked": True,
+            "prompt_unlockable": False,
+            "prompt_is_masked": False,
+            "prompt_unlock_price": PROMPT_UNLOCK_PRICE_CREDITS,
+        }
+
+    return {
+        "prompt": mask_gallery_prompt_for_public(normalized_prompt),
+        "prompt_unlocked": False,
+        "prompt_unlockable": prompt_unlockable,
+        "prompt_is_masked": True,
+        "prompt_unlock_price": PROMPT_UNLOCK_PRICE_CREDITS,
+    }
+
+
+def _append_history_mode_tags(
+    *,
+    tags: list[str],
+    history: History | None,
+) -> list[str]:
+    if not history:
+        return tags
+    if is_ltx_video_history_task_type(history.type):
+        return _append_ltx_history_mode_tags(tags=tags, history=history)
+    if not is_wan22_chain_history_task_type(history.type):
+        return tags
+    if is_wan22_stitched_result(getattr(history, "extra_outputs", None)):
+        segment_count = resolve_wan22_stitched_segment_count(
+            getattr(history, "extra_outputs", None)
+        )
+        if segment_count:
+            stitched_tag = f"task.wan22_stitched_video:{segment_count}"
+            if stitched_tag not in tags:
+                return [*tags, stitched_tag]
+        return tags
+
+    result_meta = extract_wan22_history_context(getattr(history, "extra_outputs", None))
+    mode_tag = (
+        "task.wan22_start_end_frame"
+        if bool(result_meta.get("wan22_use_end_frame"))
+        else "task.wan22_start_frame"
+    )
+    next_tags = tags if mode_tag in tags else [*tags, mode_tag]
+    segment_index = resolve_wan22_segment_index(getattr(history, "extra_outputs", None))
+    if segment_index:
+        segment_tag = f"task.wan22_segment:{segment_index}"
+        if segment_tag not in next_tags:
+            next_tags = [*next_tags, segment_tag]
+    return next_tags
+
+
+def _append_ltx_history_mode_tags(
+    *,
+    tags: list[str],
+    history: History,
+) -> list[str]:
+    extra_outputs = getattr(history, "extra_outputs", None)
+    if is_ltx_stitched_result(extra_outputs):
+        segment_count = resolve_ltx_stitched_segment_count(extra_outputs)
+        if segment_count:
+            stitched_tag = f"task.ltx_stitched_video:{segment_count}"
+            if stitched_tag not in tags:
+                return [*tags, stitched_tag]
+        return tags
+
+    result_meta = extract_ltx_history_context(extra_outputs)
+    mode_tag = (
+        "task.ltx_start_end_frame"
+        if bool(result_meta.get("ltx_use_end_frame"))
+        or str(result_meta.get("ltx_mode") or "").strip() == "flf2v"
+        else "task.ltx_start_frame"
+    )
+    next_tags = tags if mode_tag in tags else [*tags, mode_tag]
+    segment_index = resolve_ltx_segment_index(extra_outputs)
+    if segment_index:
+        segment_tag = f"task.ltx_segment:{segment_index}"
+        if segment_tag not in next_tags:
+            next_tags = [*next_tags, segment_tag]
+    return next_tags
+
+
+def resolve_gallery_author_name(
+    user: User | None,
+    fallback_user_id: int | None = None,
+) -> str:
+    if user:
+        return user.full_name or user.username or f"User {user.id}"
+    if fallback_user_id is not None:
+        return f"User {fallback_user_id}"
+    return "匿名修士"
+
+
+@dataclass(frozen=True)
+class GalleryPostBulkContext:
+    user_likes: set[int]
+    user_dislikes: set[int]
+    history_map: dict
+    user_map: dict
+    following_user_ids: set[int]
+    unlocked_prompt_post_ids: set[int]
+    urls_results: list
+
+
+async def load_gallery_post_bulk_context(
+    *,
+    session,
+    posts,
+    current_user,
+    pick_gallery_media_urls_func,
+) -> GalleryPostBulkContext:
+    post_ids = [p.id for p in posts]
+    task_ids = [p.task_id for p in posts if p.task_id]
+    user_likes, user_dislikes = await _load_user_reactions(
+        session=session,
+        current_user=current_user,
+        post_ids=post_ids,
+    )
+    history_map = await _load_history_map(session=session, task_ids=task_ids)
+    user_ids = list({p.user_id for p in posts if p.user_id})
+    user_map = await _load_user_map(session=session, user_ids=user_ids)
+    following_user_ids = await _load_following_user_ids(
+        session=session,
+        current_user=current_user,
+        user_ids=user_ids,
+    )
+    unlocked_prompt_post_ids = await _load_unlocked_prompt_post_ids(
+        session=session,
+        current_user=current_user,
+        post_ids=post_ids,
+    )
+    await release_read_transaction(session)
+    tasks = _build_gallery_media_url_tasks(
+        posts=posts,
+        history_map=history_map,
+        pick_gallery_media_urls_func=pick_gallery_media_urls_func,
+    )
+    urls_results = await asyncio.gather(*tasks, return_exceptions=True)
+    return GalleryPostBulkContext(
+        user_likes=user_likes,
+        user_dislikes=user_dislikes,
+        history_map=history_map,
+        user_map=user_map,
+        following_user_ids=following_user_ids,
+        unlocked_prompt_post_ids=unlocked_prompt_post_ids,
+        urls_results=list(urls_results),
+    )
+
+
+async def build_post_responses(
+    *,
+    session,
+    posts,
+    current_user,
+    translate_tags_func,
+    resolve_history_billing_resolution_func,
+    resolve_author_name,
+    pick_gallery_media_urls_func,
+    logger_override,
+    gallery_post_response_cls,
+) -> list:
+    if not posts:
+        return []
+
+    bulk_context = await load_gallery_post_bulk_context(
+        session=session,
+        posts=posts,
+        current_user=current_user,
+        pick_gallery_media_urls_func=pick_gallery_media_urls_func,
+    )
+
+    response_items = []
+    for index, post in enumerate(posts):
+        history = bulk_context.history_map.get(post.task_id)
+        response_items.append(
+            _build_single_post_response(
+                post=post,
+                history=history,
+                url_result=bulk_context.urls_results[index],
+                current_user=current_user,
+                unlocked_prompt_post_ids=bulk_context.unlocked_prompt_post_ids,
+                user_likes=bulk_context.user_likes,
+                user_dislikes=bulk_context.user_dislikes,
+                user_map=bulk_context.user_map,
+                following_user_ids=bulk_context.following_user_ids,
+                translate_tags_func=translate_tags_func,
+                resolve_history_billing_resolution_func=(
+                    resolve_history_billing_resolution_func
+                ),
+                resolve_author_name=resolve_author_name,
+                logger_override=logger_override,
+                gallery_post_response_cls=gallery_post_response_cls,
+            )
+        )
+    return response_items
+
+
+def _build_gallery_media_url_tasks(
+    *,
+    posts,
+    history_map,
+    pick_gallery_media_urls_func,
+) -> list:
+    tasks = []
+    for post in posts:
+        history = history_map.get(post.task_id)
+        output_file = history.output_file if history else None
+        tasks.append(
+            pick_gallery_media_urls_func(
+                task_id=post.task_id,
+                output_file=output_file,
+                media_type=post.media_type,
+            )
+        )
+    return tasks
+
+
+def _parse_gallery_post_tags(raw_tags: str | None) -> list[str]:
+    try:
+        tags = json.loads(raw_tags) if raw_tags else []
+    except Exception:
+        return []
+    return tags if isinstance(tags, list) else []
+
+
+def _resolve_gallery_media_urls(
+    *,
+    url_result,
+    post,
+    history,
+    logger_override,
+) -> tuple[str, str]:
+    if not isinstance(url_result, Exception):
+        return url_result
+
+    logger_override.warning(
+        "Failed to build gallery media URLs for post_id=%s task_id=%s: %s",
+        post.id,
+        post.task_id,
+        url_result,
+        exc_info=url_result,
+    )
+    media_url = history.output_file if history and history.output_file else ""
+    return media_url, ""
+
+
+def _resolve_gallery_billing_resolution(
+    *,
+    post,
+    history,
+    resolve_history_billing_resolution_func,
+):
+    if not history:
+        return None
+    return resolve_history_billing_resolution_func(
+        history,
+        width=post.width if post.width is not None else history.width,
+        height=post.height if post.height is not None else history.height,
+        gallery_post=post,
+    )
+
+
+def _build_single_post_response(
+    *,
+    post,
+    history,
+    url_result,
+    current_user,
+    unlocked_prompt_post_ids,
+    user_likes,
+    user_dislikes,
+    user_map,
+    following_user_ids,
+    translate_tags_func,
+    resolve_history_billing_resolution_func,
+    resolve_author_name,
+    logger_override,
+    gallery_post_response_cls,
+):
+    tags = _append_history_mode_tags(
+        tags=_parse_gallery_post_tags(post.tags),
+        history=history,
+    )
+    translated_tags = translate_tags_func(tags)
+    prompt_visibility = resolve_gallery_prompt_visibility(
+        prompt=history.prompt if history else None,
+        post=post,
+        current_user=current_user,
+        unlocked_prompt_post_ids=unlocked_prompt_post_ids,
+    )
+    task_type_from_history = history.type if history else None
+    result_meta = extract_history_result_meta(
+        task_type=task_type_from_history,
+        extra_outputs=getattr(history, "extra_outputs", None),
+    )
+    template_apply_disabled_reason = resolve_history_template_apply_disabled_reason(
+        history
+    )
+    media_url, thumbnail_url = _resolve_gallery_media_urls(
+        url_result=url_result,
+        post=post,
+        history=history,
+        logger_override=logger_override,
+    )
+    billing_resolution = _resolve_gallery_billing_resolution(
+        post=post,
+        history=history,
+        resolve_history_billing_resolution_func=(
+            resolve_history_billing_resolution_func
+        ),
+    )
+    author = user_map.get(post.user_id) if post.user_id else None
+    input_payload = build_history_input_file_payload(
+        getattr(history, "input_file", None)
+    )
+
+    return gallery_post_response_cls(
+        id=post.id,
+        task_id=post.task_id,
+        media_type=post.media_type,
+        billing_resolution=billing_resolution,
+        width=post.width,
+        height=post.height,
+        duration=post.duration,
+        tags=translated_tags,
+        likes_count=post.likes_count,
+        dislikes_count=post.dislikes_count,
+        applied_count=post.applied_count,
+        comments_count=post.comments_count or 0,
+        thumbnail_url=thumbnail_url,
+        media_url=media_url,
+        created_at=post.created_at,
+        is_active=post.is_active,
+        prompt=prompt_visibility["prompt"],
+        prompt_unlocked=prompt_visibility["prompt_unlocked"],
+        prompt_unlockable=prompt_visibility["prompt_unlockable"],
+        prompt_is_masked=prompt_visibility["prompt_is_masked"],
+        prompt_unlock_price=prompt_visibility["prompt_unlock_price"],
+        task_type=task_type_from_history,
+        result_meta=result_meta,
+        **input_payload,
+        template_apply_supported=template_apply_disabled_reason is None,
+        template_apply_disabled_reason=template_apply_disabled_reason,
+        has_liked=post.id in user_likes,
+        has_disliked=post.id in user_dislikes,
+        author_id=post.user_id,
+        author_name=(
+            resolve_author_name(author, post.user_id)
+            if post.user_id
+            else resolve_author_name(None)
+        ),
+        author_username=author.username if author else None,
+        is_following_author=(
+            post.user_id in following_user_ids if post.user_id else False
+        ),
+    )
+
+
+async def _load_user_reactions(*, session, current_user, post_ids: list[int]) -> tuple[set[int], set[int]]:
+    user_likes: set[int] = set()
+    user_dislikes: set[int] = set()
+    if not current_user or not post_ids:
+        return user_likes, user_dislikes
+
+    interactions = (
+        (
+            await session.execute(
+                select(UserInteraction)
+                .where(UserInteraction.user_id == current_user.id)
+                .where(UserInteraction.post_id.in_(post_ids))
+                .where(UserInteraction.action_type.in_(["like", "dislike"]))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for interaction in interactions:
+        if interaction.action_type == "like":
+            user_likes.add(interaction.post_id)
+        elif interaction.action_type == "dislike":
+            user_dislikes.add(interaction.post_id)
+    return user_likes, user_dislikes
+
+
+async def _load_history_map(*, session, task_ids: list[str]) -> dict[str, History]:
+    if not task_ids:
+        return {}
+    histories = (
+        (await session.execute(select(History).where(History.task_id.in_(task_ids))))
+        .scalars()
+        .all()
+    )
+    return {history.task_id: history for history in histories}
+
+
+async def _load_user_map(*, session, user_ids: list[int]) -> dict[int, User]:
+    if not user_ids:
+        return {}
+    users = (
+        (await session.execute(select(User).where(User.id.in_(user_ids))))
+        .scalars()
+        .all()
+    )
+    return {user.id: user for user in users}
+
+
+async def _load_following_user_ids(
+    *,
+    session,
+    current_user,
+    user_ids: list[int],
+) -> set[int]:
+    if not current_user or not user_ids:
+        return set()
+    follow_links = (
+        (
+            await session.execute(
+                select(UserFollow.followee_id).where(
+                    UserFollow.follower_id == current_user.id,
+                    UserFollow.followee_id.in_(user_ids),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return set(follow_links)
+
+
+async def _load_unlocked_prompt_post_ids(
+    *,
+    session,
+    current_user,
+    post_ids: list[int],
+) -> set[int]:
+    if not current_user or not post_ids:
+        return set()
+    unlocks = (
+        (
+            await session.execute(
+                select(GalleryPromptUnlock.post_id)
+                .where(GalleryPromptUnlock.user_id == current_user.id)
+                .where(GalleryPromptUnlock.post_id.in_(post_ids))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return set(unlocks)
+
+
+async def build_gallery_post_responses(
+    *,
+    session,
+    posts,
+    current_user,
+    gallery_post_response_cls=GalleryPostResponse,
+    pick_gallery_media_urls=resolve_gallery_post_media_urls,
+) -> list:
+    return await build_post_responses(
+        session=session,
+        posts=posts,
+        current_user=current_user,
+        translate_tags_func=translate_tags,
+        resolve_history_billing_resolution_func=resolve_history_billing_resolution,
+        resolve_author_name=resolve_gallery_author_name,
+        pick_gallery_media_urls_func=pick_gallery_media_urls,
+        logger_override=logger,
+        gallery_post_response_cls=gallery_post_response_cls,
+    )

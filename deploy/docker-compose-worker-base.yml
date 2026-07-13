@@ -1,0 +1,98 @@
+x-worker-environment: &worker-environment
+  ALLBOT_RELEASE_SHA: ${ALLBOT_RELEASE_SHA:?ALLBOT_RELEASE_SHA is required}
+  ALLBOT_CONFIG_REVISION: ${ALLBOT_CONFIG_REVISION:?ALLBOT_CONFIG_REVISION is required}
+  AGENT_SECRET_TOKEN: ${AGENT_SECRET_TOKEN:?AGENT_SECRET_TOKEN is required}
+  MASTER_API_URL: http://127.0.0.1:${ALLBOT_WORKER_RELAY_PORT:?ALLBOT_WORKER_RELAY_PORT is required}
+  UPLOAD_SIDECAR_URL: http://127.0.0.1:${ALLBOT_WORKER_RELAY_PORT:?ALLBOT_WORKER_RELAY_PORT is required}
+  RESULT_SPOOL_DIR: /app/spool
+  PREFETCH_ENABLED: ${PREFETCH_ENABLED:-true}
+  PREFETCH_DEPTH: ${PREFETCH_DEPTH:-1}
+  PIPELINE_ENABLED: ${PIPELINE_ENABLED:-true}
+  PIPELINE_MAX_RUNNING_TASKS: ${PIPELINE_MAX_RUNNING_TASKS:-2}
+  TZ: Asia/Shanghai
+
+x-worker-base: &worker-base
+  image: ${ALLBOT_WORKER_IMAGE:?release.env must pin ALLBOT_WORKER_IMAGE by digest}
+  restart: always
+  network_mode: host
+  env_file:
+    - ${ALLBOT_ENV_FILE:?ALLBOT_ENV_FILE is required}
+  volumes:
+    - ${ALLBOT_WORKER_STATE_ROOT:?ALLBOT_WORKER_STATE_ROOT is required}/logs:/app/logs
+    - ${ALLBOT_WORKER_STATE_ROOT:?ALLBOT_WORKER_STATE_ROOT is required}/spool:/app/spool
+    - ${ALLBOT_WORKER_STATE_ROOT:?ALLBOT_WORKER_STATE_ROOT is required}/prefetch-cache:/app/prefetch-cache
+  depends_on: [worker-relay]
+
+services:
+  worker-relay:
+    image: ${ALLBOT_WORKER_IMAGE:?release.env must pin ALLBOT_WORKER_IMAGE by digest}
+    restart: always
+    network_mode: host
+    env_file:
+      - ${ALLBOT_ENV_FILE:?ALLBOT_ENV_FILE is required}
+    command: ["python", "/app/local_relay/relay_main.py"]
+    environment:
+      <<: *worker-environment
+      CENTRAL_API_URL: ${ALLBOT_WORKER_CENTRAL_API_URL:?ALLBOT_WORKER_CENTRAL_API_URL is required}
+      LOCAL_RELAY_HOST: 127.0.0.1
+      LOCAL_RELAY_PORT: ${ALLBOT_WORKER_RELAY_PORT:?ALLBOT_WORKER_RELAY_PORT is required}
+    volumes:
+      - ${ALLBOT_WORKER_STATE_ROOT:?ALLBOT_WORKER_STATE_ROOT is required}/logs:/app/logs
+      - ${ALLBOT_WORKER_STATE_ROOT:?ALLBOT_WORKER_STATE_ROOT is required}/spool:/app/spool
+
+  worker-01:
+    <<: *worker-base
+    environment:
+      <<: *worker-environment
+      AGENT_ID: ${ALLBOT_WORKER_01_AGENT_ID:-disabled_worker_01}
+      COMFY_API_URL: ${ALLBOT_WORKER_01_COMFY_API_URL:-http://127.0.0.1:9}
+      COMFY_WS_URL: ${ALLBOT_WORKER_01_COMFY_WS_URL:-ws://127.0.0.1:9/ws}
+      SUPPORTED_TASK_TYPES: ${ALLBOT_WORKER_01_TASK_TYPES:-disabled}
+  worker-02:
+    <<: *worker-base
+    environment:
+      <<: *worker-environment
+      AGENT_ID: ${ALLBOT_WORKER_02_AGENT_ID:-disabled_worker_02}
+      COMFY_API_URL: ${ALLBOT_WORKER_02_COMFY_API_URL:-http://127.0.0.1:9}
+      COMFY_WS_URL: ${ALLBOT_WORKER_02_COMFY_WS_URL:-ws://127.0.0.1:9/ws}
+      SUPPORTED_TASK_TYPES: ${ALLBOT_WORKER_02_TASK_TYPES:-disabled}
+  worker-03:
+    <<: *worker-base
+    environment:
+      <<: *worker-environment
+      AGENT_ID: ${ALLBOT_WORKER_03_AGENT_ID:-disabled_worker_03}
+      COMFY_API_URL: ${ALLBOT_WORKER_03_COMFY_API_URL:-http://127.0.0.1:9}
+      COMFY_WS_URL: ${ALLBOT_WORKER_03_COMFY_WS_URL:-ws://127.0.0.1:9/ws}
+      SUPPORTED_TASK_TYPES: ${ALLBOT_WORKER_03_TASK_TYPES:-disabled}
+  worker-04:
+    <<: *worker-base
+    environment:
+      <<: *worker-environment
+      AGENT_ID: ${ALLBOT_WORKER_04_AGENT_ID:-disabled_worker_04}
+      COMFY_API_URL: ${ALLBOT_WORKER_04_COMFY_API_URL:-http://127.0.0.1:9}
+      COMFY_WS_URL: ${ALLBOT_WORKER_04_COMFY_WS_URL:-ws://127.0.0.1:9/ws}
+      SUPPORTED_TASK_TYPES: ${ALLBOT_WORKER_04_TASK_TYPES:-disabled}
+  worker-05:
+    <<: *worker-base
+    environment:
+      <<: *worker-environment
+      AGENT_ID: ${ALLBOT_WORKER_05_AGENT_ID:-disabled_worker_05}
+      COMFY_API_URL: ${ALLBOT_WORKER_05_COMFY_API_URL:-http://127.0.0.1:9}
+      COMFY_WS_URL: ${ALLBOT_WORKER_05_COMFY_WS_URL:-ws://127.0.0.1:9/ws}
+      SUPPORTED_TASK_TYPES: ${ALLBOT_WORKER_05_TASK_TYPES:-disabled}
+  worker-06:
+    <<: *worker-base
+    environment:
+      <<: *worker-environment
+      AGENT_ID: ${ALLBOT_WORKER_06_AGENT_ID:-disabled_worker_06}
+      COMFY_API_URL: ${ALLBOT_WORKER_06_COMFY_API_URL:-http://127.0.0.1:9}
+      COMFY_WS_URL: ${ALLBOT_WORKER_06_COMFY_WS_URL:-ws://127.0.0.1:9/ws}
+      SUPPORTED_TASK_TYPES: ${ALLBOT_WORKER_06_TASK_TYPES:-disabled}
+  worker-07:
+    <<: *worker-base
+    environment:
+      <<: *worker-environment
+      AGENT_ID: ${ALLBOT_WORKER_07_AGENT_ID:-disabled_worker_07}
+      COMFY_API_URL: ${ALLBOT_WORKER_07_COMFY_API_URL:-http://127.0.0.1:9}
+      COMFY_WS_URL: ${ALLBOT_WORKER_07_COMFY_WS_URL:-ws://127.0.0.1:9/ws}
+      SUPPORTED_TASK_TYPES: ${ALLBOT_WORKER_07_TASK_TYPES:-disabled}
