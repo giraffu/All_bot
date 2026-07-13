@@ -65,9 +65,9 @@ jobs:
           fi
           rm temp_index.md
 
-      - name: Commit and Push changes
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "docs: Auto-sync submodule index in README [skip ci]"
-          file_pattern: 'README.md'
+      - name: Verify generated index is committed
+        run: |
+          if ! git diff --exit-code -- README.md; then
+            echo "README documentation index is stale; run the Docs CI index sync locally and commit it."
+            exit 1
+          fi
