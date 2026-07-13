@@ -82,6 +82,8 @@ scripts/release.py deploy --env prod --sha <40-char-sha> --execute --confirm-pro
 
 release workflow 生成 manifest 后会运行一次不接触运行态秘密的自检 plan，并显式使用 `--skip-env-checks`。该参数只允许 `plan`，输出 `config_validation=skipped`，用于 CI 校验 SHA/manifest/影响规则；`deploy`/`rollback` 一律拒绝它。操作者的测试/生产 plan 默认仍读取并校验真实 env，不能用 CI 例外替代部署前配置门禁。
 
+当本地主服务器兼任测试 Worker host 时，测试配置的本地受限副本固定为 `/home/hfy/.config/allbot/test.env`（`600 hfy:hfy`），内容与云测试 `/etc/allbot/test.env` 保持同一 config revision。调用 plan/deploy 时显式传 `--env-file /home/hfy/.config/allbot/test.env`；Worker compose 的 `ALLBOT_ENV_FILE` 由发布器绑定到该实参，不能误用 env 文件内面向云主机的 `/etc/allbot/test.env` 路径。该副本只用于测试 Worker和本机发布前校验，不得包含生产 env。
+
 ## 6. Web、Worker 与回滚
 
 - 测试与正式 Web 都先校验同一 tar SHA256，再从精确 SHA checkout 读取 `frontend/runtime-config.yml` 的公开环境段，生成 `allbot-runtime-config.js` 和独立 revision，最后调用同一 Wrangler Pages 发布器。测试目标为 `allbot-web-cf-test/test`，正式目标为 `allbot-web-prod/main`。
