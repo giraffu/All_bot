@@ -151,6 +151,32 @@ def test_backend_httpx_pin_is_compatible_with_telegram_runtime():
     assert "httpx==0.26.0" not in backend_requirements
 
 
+def test_dashboard_backend_bcrypt_pin_matches_root_image_dependencies():
+    root_requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+    dashboard_requirements = (ROOT / "dashboard/backend/requirements.txt").read_text(
+        encoding="utf-8"
+    )
+
+    assert "bcrypt==4.1.2" in root_requirements
+    assert "bcrypt==4.1.2" in dashboard_requirements
+
+
+def test_python_310_container_bases_match_pinned_runtime_version_and_digest():
+    expected = (
+        "FROM python:3.10.20-slim-bookworm@sha256:"
+        "ff7161e2b8e2a56fc6a62a6099ff8feb72f1a6dbae9860cdcb9a6c65cf4c6be9"
+    )
+    python_310_dockerfiles = []
+
+    for path in ROOT.rglob("Dockerfile*"):
+        first_line = path.read_text(encoding="utf-8").splitlines()[0]
+        if first_line.startswith("FROM python:3.10"):
+            python_310_dockerfiles.append(path)
+            assert first_line == expected, f"{path} has a mutable or mismatched Python base"
+
+    assert python_310_dockerfiles
+
+
 def test_hotspot_regression_script_references_existing_python_tests():
     script = (ROOT / "scripts/run_hotspot_regression.sh").read_text(
         encoding="utf-8"

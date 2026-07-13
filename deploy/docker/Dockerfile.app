@@ -1,4 +1,4 @@
-FROM python:3.10-slim
+FROM python:3.10.20-slim-bookworm@sha256:ff7161e2b8e2a56fc6a62a6099ff8feb72f1a6dbae9860cdcb9a6c65cf4c6be9
 
 ARG ALLBOT_GIT_SHA
 ARG ALLBOT_SOURCE=https://github.com/giraffu/All_bot
