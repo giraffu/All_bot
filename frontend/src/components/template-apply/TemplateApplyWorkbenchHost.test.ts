@@ -110,19 +110,15 @@ vi.mock('@/components/template-apply/TemplateVideoSwapPanel.vue', async () => {
   }
 })
 
-vi.mock('@/components/template-apply/TemplateScail2VideoPanel.vue', async () => {
-  const { defineComponent } = await vi.importActual<typeof import('vue')>('vue')
-  const component = defineComponent({
+vi.mock('@/components/template-apply/TemplateScail2VideoPanel.vue', () => ({
+  __esModule: true,
+  __isTeleport: false,
+  default: {
     name: 'TemplateScail2VideoPanelStub',
     props: ['sessionId', 'context'],
     template: '<div class="panel scail2-video">scail2-video</div>'
-  })
-  return {
-    __esModule: true,
-    __isTeleport: false,
-    default: component
   }
-})
+}))
 
 const ModalStub = defineComponent({
   name: 'AModalStub',
@@ -258,10 +254,10 @@ describe('TemplateApplyWorkbenchHost', () => {
     }
 
     const wrapper = mountHost()
+    await flushPromises()
+    await nextTick()
 
-    await vi.waitFor(() => {
-      expect(wrapper.find('.scail2-video').exists()).toBe(true)
-    })
+    expect(wrapper.find('.scail2-video').exists()).toBe(true)
   })
 
   it('renders the workbench title from i18n in english', () => {
