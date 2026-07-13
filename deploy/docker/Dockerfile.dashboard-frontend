@@ -17,5 +17,6 @@ COPY --from=build /build/dist /opt/allbot-spa
 COPY dashboard/frontend/nginx.cloud-gateway.conf.template /opt/allbot-nginx/qqcc.conf.template
 COPY deploy/docker/nginx.dashboard.conf.template /opt/allbot-nginx/dashboard.conf.template
 COPY deploy/docker/select-dashboard-spa.sh /docker-entrypoint.d/05-select-dashboard-spa.sh
-RUN chmod 755 /docker-entrypoint.d/05-select-dashboard-spa.sh
+RUN mkdir -p /etc/nginx/templates \
+    && chmod 755 /docker-entrypoint.d/05-select-dashboard-spa.sh
 EXPOSE 8086
