@@ -20,6 +20,28 @@ env:
 jobs:
   python-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: services
+            paths: tests/services
+          - name: ops-scripts
+            paths: tests/ops tests/scripts
+          - name: core-backend
+            paths: >-
+              tests/backend tests/config tests/core tests/database tests/integration
+          - name: bots
+            paths: >-
+              tests/handlers tests/paid_group_guard_bot tests/qqcc_bot
+              tests/qqcc_private_bot
+          - name: dashboard-analytics
+            paths: tests/dashboard tests/local_analytics
+          - name: web-workers-misc
+            paths: >-
+              tests/web_api tests/workers tests/remote_workers tests/smoke tests/utils
+              tests/test_*.py
     env:
       JWT_SECRET_KEY: ci-test-only-not-for-runtime
     steps:
@@ -30,7 +52,10 @@ jobs:
           python-version: "3.10"
           cache: pip
       - run: pip install -r requirements.txt -r backend/requirements.txt PyYAML numpy==2.2.1
-      - run: python -m pytest -q
+      - name: Run Python shard (${{ matrix.name }})
+        run: >-
+          python -m pytest -vv --maxfail=1 --durations=20
+          ${{ matrix.paths }}
 
   web-tests:
     runs-on: ubuntu-latest
