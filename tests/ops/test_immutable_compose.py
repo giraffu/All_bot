@@ -83,6 +83,25 @@ def test_python_ci_workflows_install_backend_dependencies_and_use_test_jwt():
     assert "numpy==2.2.1" in release_workflow
 
 
+def test_release_python_gate_shards_every_test_directory_with_timeouts():
+    workflow = (ROOT / ".github/workflows/control-plane-release.yml").read_text(
+        encoding="utf-8"
+    )
+    test_directories = sorted(
+        path.name
+        for path in (ROOT / "tests").iterdir()
+        if path.is_dir() and path.name != "__pycache__"
+    )
+
+    assert "timeout-minutes: 20" in workflow
+    assert "fail-fast: false" in workflow
+    assert "python -m pytest -vv --maxfail=1 --durations=20" in workflow
+    assert "${{ matrix.paths }}" in workflow
+    assert "tests/test_*.py" in workflow
+    for directory in test_directories:
+        assert f"tests/{directory}" in workflow
+
+
 def test_bootstrap_sends_remote_script_over_stdin_and_archives_source_only():
     bootstrap = (ROOT / "scripts/bootstrap_release_host.sh").read_text(
         encoding="utf-8"
