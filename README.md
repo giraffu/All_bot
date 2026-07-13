@@ -26,7 +26,9 @@
 ## 核心与次要子模块技术索引
 
 <!-- DOCS_INDEX_START -->
-- [All_Bot 本地旧部署脚本归档说明](./docs/SAFE_DEPLOY_GUIDE.md)
+## 系统子模块架构文档索引
+
+- [AllBot 发布入口](./docs/SAFE_DEPLOY_GUIDE.md)
 - [Compat / Seam 退出表](./docs/compat_seam_exit_table.md)
 - [AllBot Knowledge Base Audit Matrix](./docs/knowledge_base_audit_matrix.md)
 - [修仙主题 AI 创作工作台 - 系统架构与业务分析报告](./docs/system_architecture_report.md)
@@ -35,6 +37,7 @@
 - [子模块: Cloudflare 公网入口与账号管理 (Cloudflare Ops)](./docs/子模块_Cloudflare公网入口与账号管理_cloudflare_ops.md)
 - [子模块: GPU 算力资源池控制器 (GPU Pool Controller)](./docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md)
 - [GitHub 分支保护与热点回归门禁](./docs/子模块_GitHub分支保护与热点回归门禁_branch_protection.md)
+- [Git + 不可变镜像发布](./docs/子模块_Git不可变发布_git_immutable_release.md)
 - [子模块: QQCC 懒人 Bot (QQCC Lazy Bot)](./docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md)
 - [子模块: QQCC 用户私有 Bot 平台 (QQCC Private Bot Platform)](./docs/子模块_QQCC用户私有Bot平台_qqcc_private_bot_platform.md)
 - [子模块: Telegram 本地 API 与文件代理 (TG Local API)](./docs/子模块_Telegram本地API与文件代理_tg_local_api.md)
@@ -42,8 +45,6 @@
 - [子模块: 云控制面 SSH 密钥管理 (Cloud SSH Access)](./docs/子模块_云控制面SSH密钥管理_cloud_ssh_access.md)
 - [子模块: 云正式控制面部署 (Cloud Prod Control Plane)](./docs/子模块_云正式控制面部署_cloud_prod_control_plane.md)
 - [子模块: 云测试控制面部署 (Cloud Test Control Plane)](./docs/子模块_云测试控制面部署_cloud_test_control_plane.md)
-- [子模块: Git + 不可变镜像发布](./docs/子模块_Git不可变发布_git_immutable_release.md)
-- [子模块: 首次可信 Release 准备](./docs/子模块_首次可信发布准备_first_trusted_release.md)
 - [子模块: 交互状态机与回调路由 (FSM & Callback Handlers)](./docs/子模块_交互状态机_fsm_handlers.md)
 - [子模块: 付费群审核 Bot (Paid Group Guard Bot)](./docs/子模块_付费群审核Bot_paid_group_guard_bot.md)
 - [子模块: 代码静态分析与质量评估规范 (Code Quality & Static Analysis)](./docs/子模块_代码静态分析与质量评估规范_code_quality.md)
@@ -55,6 +56,7 @@
 - [子模块: 局域网 GPU 节点 SSH 管理 (LAN GPU SSH Access)](./docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md)
 - [子模块: 局域网 GPU 节点资源与运维 (LAN GPU Resource Ops)](./docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md)
 - [子模块: 本地数据分析平台 (Local Analytics Platform)](./docs/子模块_本地数据分析平台_local_analytics_platform.md)
+- [本地数据分析平台提示词词义分析指南](./docs/子模块_本地数据分析平台提示词词义分析_prompt_semantics.md)
 - [子模块: 本地正式灾备切换 (Local Prod Fallback)](./docs/子模块_本地正式灾备切换_local_prod_fallback.md)
 - [热点文件门禁与回归触发规则](./docs/子模块_热点文件门禁与回归触发规则_hotspot_guardrails.md)
 - [子模块: 生成任务全链路 (Task Full Chain)](./docs/子模块_生成任务全链路_task_full_chain.md)
@@ -66,6 +68,7 @@
 - [子模块: 边缘节点资源与运维 (Edge Node Ops)](./docs/子模块_边缘节点运维指南_edge_node_ops.md)
 - [子模块: 运维指南与容器管理 (Ops & Deployment)](./docs/子模块_运维指南与容器管理_ops_deployment.md)
 - [子模块: 附加模型部署与配置指南 (ComfyUI Add-on Models)](./docs/子模块_附加模型配置指南_comfy_models.md)
+- [首次可信 Release 准备记录](./docs/子模块_首次可信发布准备_first_trusted_release.md)
 - [测试与入口命名约定](./docs/测试与入口命名约定.md)
 <!-- DOCS_INDEX_END -->
 
