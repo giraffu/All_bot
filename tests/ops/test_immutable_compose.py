@@ -51,6 +51,33 @@ def test_central_and_worker_images_contain_their_dependency_closure():
     assert "COPY src /app/src" in worker
 
 
+def test_worker_compose_covers_all_test_slots_and_runtime_contracts():
+    services = _compose(WORKER_BASE)["services"]
+
+    for slot in range(1, 9):
+        name = f"worker-{slot:02d}"
+        assert name in services
+        environment = services[name]["environment"]
+        for key in (
+            "AGENT_ID",
+            "COMFY_API_URL",
+            "COMFY_WS_URL",
+            "SUPPORTED_TASK_TYPES",
+            "POOL_NODE_ID",
+            "POOL_GPU_INDEX",
+            "POOL_RUNTIME_PROFILE",
+            "PREFETCH_ENABLED",
+            "PIPELINE_ENABLED",
+            "PIPELINE_MAX_RUNNING_TASKS",
+        ):
+            assert key in environment, f"{name} is missing {key}"
+
+    worker_08 = services["worker-08"]["environment"]
+    assert "TASK_TYPE_WORKFLOW_OVERRIDES" in worker_08
+    assert "SCAIL2_FACE_SWAP_V10_ENABLED" in worker_08
+    assert "SCAIL2_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL" in worker_08
+
+
 def test_release_workflow_builds_all_images_and_never_uses_latest():
     workflow = (ROOT / ".github/workflows/control-plane-release.yml").read_text(
         encoding="utf-8"
