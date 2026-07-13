@@ -3,9 +3,10 @@ import { useAuthStore } from '@/stores/auth'
 import router from '@/router'
 import { message } from 'ant-design-vue'
 import i18n from '@/i18n'
+import { getRuntimeConfig } from '@/config/runtime'
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
+  baseURL: getRuntimeConfig('api_base_url', '/api'),
   timeout: 30000
 })
 

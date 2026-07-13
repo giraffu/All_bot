@@ -7,10 +7,11 @@
     "dev": "vite",
     "dev:test": "vite --mode test",
     "build": "vue-tsc -b && vite build",
+    "build:release": "vue-tsc -b && vite build --mode release",
     "build:cf-prod": "vue-tsc -b && vite build --mode cf-prod",
     "build:cf-test": "vue-tsc -b && vite build --mode cf-test",
     "build:edge-test": "vue-tsc -b && vite build --mode edge-test",
-    "test": "vitest run",
+    "test": "vitest run --maxWorkers=2",
     "test:watch": "vitest",
     "preview": "vite preview",
     "deploy": "npm run deploy:edge-prod",
@@ -46,6 +47,7 @@
     "vite-plugin-node-polyfills": "^0.26.0",
     "vitest": "^4.1.6",
     "vue-tsc": "^3.2.6",
-    "vue-waterfall-plugin-next": "^3.0.1"
+    "vue-waterfall-plugin-next": "^3.0.1",
+    "wrangler": "4.110.0"
   }
 }

@@ -36,7 +36,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 - Dashboard Backend 镜像 smoke 必须真实 import `dashboard.backend.main` 和 `dashboard.backend.qqcc_config_main`；镜像依赖闭包至少包含根 `config.py`、`src`、`shared`、`paid_group_guard_bot` 和 Dashboard 运维路由依赖的 `ops`，禁止用单个文件存在检查代替导入闭包。
 - Compose `environment` 必须胜过旧 env 中的入口别名：`BOT_TYPE=TEST` 时 `config._get_env_value()` 优先读取 `API_BASE_TEST`，因此 test overlay 必须同时钉死 `API_BASE`/`API_BASE_TEST=http://central-api:8003`；prod overlay 必须为所有 Python 消费者钉死 `API_BASE`。发布成功前必须在目标容器 import `config` 校验解析后的值，只检查原始 env 或 HTTP health 不足以通过。
 - 通过 `ssh ... bash -s` 执行远端发布脚本时，脚本内所有 `docker compose exec/run` 都必须显式使用 `</dev/null`；仅 `-T` 仍可能读取并吞掉后续脚本。远端脚本必须最后输出绑定目标 SHA 的完成标记，发布器还要逐服务核对容器 `.Config.Image` digest 与自有镜像 OCI revision，三者全部通过后才能写 `current.json`。
-- 测试 Web SSH 必须使用 BatchMode 和有界 connect timeout；`--skip-web` 只允许完成控制面/Worker 恢复，状态清单必须记录 `health.web=skipped`，禁止写成 checksum passed，且正式晋级仍须等同一 bundle 的 Web 验收。
+- 测试与正式 Web 必须校验同一 Web tar 后走统一 Wrangler Pages 发布器；环境差异只能来自版本化公开 runtime config，状态记录 Pages project/branch/deployment URL 与 config revision。`--skip-web` 只允许恢复控制面/Worker，必须记录 `health.web=skipped`，且不得晋级正式。
 - 影响 planner 的全栈集合不代表开启未配置的可选 Bot。`release.py plan` 必须基于已校验 env 输出 `cloud_services`/`disabled_cloud_services`；仅允许按 QQCC token、`PRIVATE_QQCC_BOT_ENABLED`、付费群 Bot token 过滤对应三个可选 runtime，禁止用配置过滤核心 API、Postgres/Redis、主 Bot 或其它自动依赖。
 - `--skip-env-checks` 仅供无运行态秘密的 release CI 执行非 mutation `plan` 自检；`deploy`/`rollback` 必须拒绝。实际 test/prod plan 与执行仍须校验对应受限 env，禁止把 CI 的 `config_validation=skipped` 当作部署配置通过。
 - 测试验收：图片、视频、Bot、并发锁、locale、Web、Worker heartbeat、回滚演练及至少 24 小时观察写入验收 JSON，再执行 `scripts/release.py verify-test ... --execute`；缺少 verified 状态不能晋级。

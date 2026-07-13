@@ -4,6 +4,7 @@ import { message } from 'ant-design-vue'
 import { useRoute } from 'vue-router'
 import api from '@/api'
 import { useAuthStore } from '@/stores/auth'
+import { getRuntimeConfig } from '@/config/runtime'
 
 type PayMethod = 'alipay' | 'wxpay' | 'ton'
 type OrderStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'TIMEOUT'
@@ -19,12 +20,12 @@ type TelegramPaymentWindow = Window & {
 const DEFAULT_TON_RECEIVER = 'UQC2q_W2d061mO_g3zB-hK12v0p2u44-nI5z9F82L1j88g7b'
 const MAX_POLL_COUNT = 100
 const TONCONNECT_MANIFEST_URL =
-  import.meta.env.VITE_TONCONNECT_MANIFEST_URL ||
+  getRuntimeConfig('tonconnect_manifest_url', '') ||
   `${window.location.origin}/tonconnect-manifest.json`
 const TONCONNECT_TWA_RETURN_URL =
-  import.meta.env.VITE_TONCONNECT_TWA_RETURN_URL ||
-  (import.meta.env.VITE_TELEGRAM_BOT_USERNAME
-    ? `https://t.me/${import.meta.env.VITE_TELEGRAM_BOT_USERNAME}`
+  getRuntimeConfig('tonconnect_twa_return_url', '') ||
+  (getRuntimeConfig('telegram_bot_username', '')
+    ? `https://t.me/${getRuntimeConfig('telegram_bot_username', '')}`
     : undefined)
 
 export const getTelegramPaymentWebApp = (): TelegramPaymentWebApp | undefined =>

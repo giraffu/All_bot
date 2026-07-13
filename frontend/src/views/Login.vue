@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { getRuntimeConfig } from '@/config/runtime'
 import { nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore, checkWebAccess } from '@/stores/auth'
@@ -216,7 +217,7 @@ const renderTelegramWidget = () => {
   script.src = 'https://telegram.org/js/telegram-widget.js?22'
   
   // 从环境变量读取 Bot 用户名，或者直接在这里写死（注意：不带 @ 符号）
-  const botUsername = import.meta.env.VITE_TELEGRAM_BOT_USERNAME
+  const botUsername = getRuntimeConfig('telegram_bot_username', '')
   if (!botUsername) {
     if (!telegramAuthHint.value || telegramAuthHint.value === TELEGRAM_AUTH_LOADING_HINT) {
       telegramAuthHint.value = 'Telegram 授权配置缺失，请使用已绑定的道号与密咒登录。'

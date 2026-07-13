@@ -138,7 +138,7 @@ jobs:
           node-version: 22.14.0
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: npm install --global npm@10.9.2 && npm ci && npm test && npm run build
+      - run: npm install --global npm@10.9.2 && npm ci && npm test && npm run build:release
         working-directory: frontend
 
   dashboard-tests:
@@ -183,7 +183,7 @@ jobs:
           node-version: 22.14.0
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: npm install --global npm@10.9.2 && npm ci && npm run build
+      - run: npm install --global npm@10.9.2 && npm ci && npm run build:release
         working-directory: frontend
       - run: tar -czf web-dist.tgz -C frontend dist
       - name: Build app image

@@ -19,6 +19,7 @@ import re
 import shlex
 import subprocess
 import sys
+import tarfile
 import tempfile
 from datetime import datetime, timezone
 from typing import Any, Iterable, Mapping, Sequence
@@ -27,6 +28,7 @@ from typing import Any, Iterable, Mapping, Sequence
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_POLICY = ROOT / "deploy" / "release-policy.yml"
 DEFAULT_SCHEMA = ROOT / "deploy" / "env.schema.yml"
+DEFAULT_WEB_RUNTIME_CONFIG = ROOT / "frontend" / "runtime-config.yml"
 FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_IMAGE_RE = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
 REQUIRED_IMAGES = {
@@ -91,6 +93,21 @@ ENVIRONMENT = {
     },
 }
 
+WEB_PAGES_TARGETS = {
+    "test": {"project": "allbot-web-cf-test", "branch": "test"},
+    "prod": {"project": "allbot-web-prod", "branch": "main"},
+}
+PUBLIC_WEB_RUNTIME_FIELDS = {
+    "api_base_url",
+    "storage_url",
+    "imgproxy_url",
+    "telegram_bot_username",
+    "tonconnect_manifest_url",
+    "tonconnect_twa_return_url",
+    "enable_free_edit_v2",
+    "enable_scail2_long_action_transfer",
+}
+
 
 class ReleaseError(RuntimeError):
     """A safe, redacted release contract failure."""
@@ -142,7 +159,9 @@ def _matches(path: str, patterns: Sequence[str]) -> bool:
     return any(fnmatch.fnmatchcase(normalized, pattern) for pattern in patterns)
 
 
-def plan_changed_paths(policy: Mapping[str, Any], paths: Iterable[str]) -> ReleaseImpact:
+def plan_changed_paths(
+    policy: Mapping[str, Any], paths: Iterable[str]
+) -> ReleaseImpact:
     levels = list(policy.get("level_order", []))
     if not levels:
         raise ReleaseError("release policy has no level_order")
@@ -181,7 +200,9 @@ def plan_changed_paths(policy: Mapping[str, Any], paths: Iterable[str]) -> Relea
     if unknown_paths:
         fallback = policy.get("unknown", {})
         fallback_services = fallback.get("services", "all")
-        services.update(all_services if fallback_services == "all" else fallback_services)
+        services.update(
+            all_services if fallback_services == "all" else fallback_services
+        )
         fallback_level = str(fallback.get("level", "maintenance"))
         if level_index[fallback_level] > level_index[highest_level]:
             highest_level = fallback_level
@@ -220,18 +241,27 @@ def validate_release_manifest(manifest: Mapping[str, Any], expected_sha: str) ->
     images = manifest.get("images")
     if not isinstance(images, Mapping) or not REQUIRED_IMAGES <= set(images):
         missing = sorted(REQUIRED_IMAGES - set(images or {}))
-        raise ReleaseError("release manifest is missing image entries: " + ", ".join(missing))
+        raise ReleaseError(
+            "release manifest is missing image entries: " + ", ".join(missing)
+        )
     mutable = sorted(
-        name for name in REQUIRED_IMAGES if not DIGEST_IMAGE_RE.fullmatch(str(images[name]))
+        name
+        for name in REQUIRED_IMAGES
+        if not DIGEST_IMAGE_RE.fullmatch(str(images[name]))
     )
     if mutable:
         raise ReleaseError(
-            "release images must be digest-pinned (digest-pinned): " + ", ".join(mutable)
+            "release images must be digest-pinned (digest-pinned): "
+            + ", ".join(mutable)
         )
     vendor_images = manifest.get("vendor_images")
-    if not isinstance(vendor_images, Mapping) or not REQUIRED_VENDOR_IMAGES <= set(vendor_images):
+    if not isinstance(vendor_images, Mapping) or not REQUIRED_VENDOR_IMAGES <= set(
+        vendor_images
+    ):
         missing = sorted(REQUIRED_VENDOR_IMAGES - set(vendor_images or {}))
-        raise ReleaseError("release manifest is missing vendor image entries: " + ", ".join(missing))
+        raise ReleaseError(
+            "release manifest is missing vendor image entries: " + ", ".join(missing)
+        )
     mutable_vendor = sorted(
         name
         for name in REQUIRED_VENDOR_IMAGES
@@ -246,7 +276,9 @@ def validate_release_manifest(manifest: Mapping[str, Any], expected_sha: str) ->
     if not re.fullmatch(r"[0-9a-f]{64}", web_hash):
         raise ReleaseError("release manifest web_artifact_sha256 is invalid")
     if not str(manifest.get("ci_run", "")).startswith("https://github.com/"):
-        raise ReleaseError("release manifest ci_run must identify the successful CI run")
+        raise ReleaseError(
+            "release manifest ci_run must identify the successful CI run"
+        )
 
 
 def parse_env_file(path: Path) -> dict[str, str]:
@@ -288,7 +320,9 @@ def validate_environment(
     missing = sorted(key for key in required if not values.get(key, "").strip())
     if missing:
         errors.append("missing required keys: " + ", ".join(missing))
-    forbidden_values = {str(item).lower() for item in common.get("forbidden_values", [])}
+    forbidden_values = {
+        str(item).lower() for item in common.get("forbidden_values", [])
+    }
     unsafe = sorted(
         key
         for key in required
@@ -385,7 +419,10 @@ def _run(
         check=False,
     )
     if check and result.returncode != 0:
-        detail = result.stderr.strip().splitlines()[-1:] or result.stdout.strip().splitlines()[-1:]
+        detail = (
+            result.stderr.strip().splitlines()[-1:]
+            or result.stdout.strip().splitlines()[-1:]
+        )
         raise ReleaseError("command failed: " + (detail[0] if detail else args[0]))
     return result
 
@@ -407,8 +444,12 @@ def verify_operator_worktree_clean() -> None:
     if _run(["git", "status", "--porcelain"]).stdout.strip():
         raise ReleaseError("execute mode refuses an uncommitted operator worktree")
     head = _run(["git", "rev-parse", "HEAD"]).stdout.strip()
-    if _run(["git", "merge-base", "--is-ancestor", head, "origin/main"], check=False).returncode:
-        raise ReleaseError("operator checkout must be a clean origin/main release checkout")
+    if _run(
+        ["git", "merge-base", "--is-ancestor", head, "origin/main"], check=False
+    ).returncode:
+        raise ReleaseError(
+            "operator checkout must be a clean origin/main release checkout"
+        )
 
 
 def verify_release_ci(manifest: Mapping[str, Any], sha: str) -> None:
@@ -420,8 +461,14 @@ def verify_release_ci(manifest: Mapping[str, Any], sha: str) -> None:
         raise ReleaseError("release manifest CI run URL is not trusted")
     result = _run(
         [
-            "gh", "run", "view", match.group(1), "--repo", "giraffu/All_bot",
-            "--json", "conclusion,headSha,status",
+            "gh",
+            "run",
+            "view",
+            match.group(1),
+            "--repo",
+            "giraffu/All_bot",
+            "--json",
+            "conclusion,headSha,status",
         ],
         check=False,
     )
@@ -468,9 +515,7 @@ def legacy_worker_containers(selected: Iterable[str]) -> list[str]:
     ]
 
 
-def cloud_services_for_release(
-    environment: str, impact: ReleaseImpact
-) -> set[str]:
+def cloud_services_for_release(environment: str, impact: ReleaseImpact) -> set[str]:
     selected = set(impact.services) & set(
         ENVIRONMENT[environment]["available_services"]
     )
@@ -497,13 +542,11 @@ def filter_enabled_cloud_services(
                 "",
             ).strip()
         ),
-        "qqcc-private-bot-worker": values.get(
-            "PRIVATE_QQCC_BOT_ENABLED", "false"
-        ).strip().lower()
+        "qqcc-private-bot-worker": values.get("PRIVATE_QQCC_BOT_ENABLED", "false")
+        .strip()
+        .lower()
         in {"1", "true", "yes", "on"},
-        "paid-group-guard-bot": bool(
-            values.get("PAID_GROUP_BOT_TOKEN", "").strip()
-        ),
+        "paid-group-guard-bot": bool(values.get("PAID_GROUP_BOT_TOKEN", "").strip()),
     }
     disabled = {
         service
@@ -513,9 +556,7 @@ def filter_enabled_cloud_services(
     return chosen - disabled, disabled
 
 
-def legacy_cloud_containers(
-    environment: str, selected: Iterable[str]
-) -> list[str]:
+def legacy_cloud_containers(environment: str, selected: Iterable[str]) -> list[str]:
     suffix = "test" if environment == "test" else "prod"
     names = {
         "postgres": f"cloud-postgres-{suffix}",
@@ -623,7 +664,9 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
     requested = _split_services(args.services)
     unknown_services = requested - set(policy["all_services"])
     if unknown_services:
-        raise ReleaseError("unknown requested services: " + ", ".join(sorted(unknown_services)))
+        raise ReleaseError(
+            "unknown requested services: " + ", ".join(sorted(unknown_services))
+        )
     impact.services = merge_requested_services(
         computed=impact.services,
         requested=requested,
@@ -764,7 +807,7 @@ def _deploy_cloud(
         )
         if service in custom_image_services:
             resolved_image_checks += (
-                "actual_revision=\"$(docker inspect --format "
+                'actual_revision="$(docker inspect --format '
                 "'{{ index .Config.Labels \"org.opencontainers.image.revision\" }}' "
                 '"$container_id")"\n'
                 f'test "$actual_revision" = {shlex.quote(sha)}\n'
@@ -779,7 +822,9 @@ def _deploy_cloud(
     legacy_commit = ""
     if initial_cutover:
         if args.execute and not args.confirm_legacy_cutover:
-            raise ReleaseError("initial immutable cutover requires --confirm-legacy-cutover")
+            raise ReleaseError(
+                "initial immutable cutover requires --confirm-legacy-cutover"
+            )
         legacy_handoff = f"""for name in {legacy_names}; do
   docker ps --format '{{{{.Names}}}}' | grep -Fxq "$name" && printf '%s\\n' "$name" >> "$legacy_running_file"
 done
@@ -797,8 +842,8 @@ fi
         drain_condition = f"{compose} ps -q central-api | grep -q ."
         drain_counts = (
             f"{compose} exec -T central-api python -c "
-            "'import os,redis; c=redis.Redis.from_url(os.environ.get(\"WORKER_REDIS_URL\") or os.environ[\"REDIS_URL\"]); "
-            "print(c.zcard(\"comfy:queue:pending\"),c.scard(\"comfy:queue:running\"))' "
+            '\'import os,redis; c=redis.Redis.from_url(os.environ.get("WORKER_REDIS_URL") or os.environ["REDIS_URL"]); '
+            'print(c.zcard("comfy:queue:pending"),c.scard("comfy:queue:running"))\' '
             "</dev/null"
         )
         if initial_cutover and "central-api" in cloud_services:
@@ -809,8 +854,8 @@ fi
             )
             drain_counts = (
                 f"docker exec {shlex.quote(legacy_central)} python -c "
-                "'import os,redis; c=redis.Redis.from_url(os.environ.get(\"WORKER_REDIS_URL\") or os.environ[\"REDIS_URL\"]); "
-                "print(c.zcard(\"comfy:queue:pending\"),c.scard(\"comfy:queue:running\"))'"
+                '\'import os,redis; c=redis.Redis.from_url(os.environ.get("WORKER_REDIS_URL") or os.environ["REDIS_URL"]); '
+                'print(c.zcard("comfy:queue:pending"),c.scard("comfy:queue:running"))\''
             )
         legacy_setup = ""
         legacy_restore = ""
@@ -826,7 +871,7 @@ legacy_running_file={release_dir}/legacy-cloud-running.txt
   done < "$legacy_running_file"
 fi
 """
-        maintenance_prefix = f"""install -d -m 755 {environment['state_root']}/runtime
+        maintenance_prefix = f"""install -d -m 755 {environment["state_root"]}/runtime
 touch {maintenance_file}
 {legacy_setup}cleanup_maintenance() {{
   status=$?
@@ -848,8 +893,7 @@ fi
 """
         if hold_maintenance:
             maintenance_suffix = (
-                "trap - EXIT\n"
-                "echo 'generation maintenance held for worker cutover'\n"
+                "trap - EXIT\necho 'generation maintenance held for worker cutover'\n"
             )
         else:
             maintenance_suffix = f"rm -f {maintenance_file}\ntrap - EXIT\n"
@@ -869,7 +913,7 @@ test "$(stat -c %a {shlex.quote(env_file)})" = 600
 {compose} config -q
 start_snapshot=/tmp/allbot-nontarget-{sha}.txt
 target_names="$({compose} ps --format '{{{{.Name}}}}' {services} 2>/dev/null || true)"
-for name in {legacy_names or ':'}; do
+for name in {legacy_names or ":"}; do
   target_names="${{target_names}}
 ${{name}}"
 done
@@ -930,7 +974,9 @@ test "$heads" = 1
             input_text=release_env,
         )
     else:
-        print(f"[dry-run] install non-secret release.env on {host}:{release_dir}/release.env")
+        print(
+            f"[dry-run] install non-secret release.env on {host}:{release_dir}/release.env"
+        )
     remote_output = _remote_shell(host, script, execute=args.execute)
     if args.execute and completion_marker not in remote_output.splitlines():
         raise ReleaseError("cloud release completion marker is missing")
@@ -944,12 +990,80 @@ def _verify_web_artifact(path: Path, expected_hash: str) -> None:
         raise ReleaseError("web artifact checksum does not match release manifest")
 
 
+def load_web_runtime_config(
+    path: Path,
+    environment: str,
+) -> tuple[dict[str, Any], str]:
+    document = load_structured_file(path)
+    if document.get("schema_version") != 1:
+        raise ReleaseError("unsupported Web runtime config schema_version")
+    raw_values = document.get(environment)
+    if not isinstance(raw_values, dict):
+        raise ReleaseError(f"Web runtime config has no {environment!r} mapping")
+    unknown = sorted(set(raw_values) - PUBLIC_WEB_RUNTIME_FIELDS)
+    if unknown:
+        raise ReleaseError(
+            "unsupported public Web runtime fields: " + ", ".join(unknown)
+        )
+    values: dict[str, Any] = {}
+    for key, value in raw_values.items():
+        if not isinstance(value, (str, bool)):
+            raise ReleaseError(f"Web runtime field {key} must be a string or boolean")
+        if isinstance(value, str) and not value.strip():
+            raise ReleaseError(f"Web runtime field {key} cannot be empty")
+        values[key] = value.strip() if isinstance(value, str) else value
+    if "api_base_url" not in values:
+        raise ReleaseError("Web runtime config requires api_base_url")
+    canonical = json.dumps(
+        values, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    revision = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return values, revision
+
+
+def render_web_runtime_config_script(
+    values: Mapping[str, Any],
+    *,
+    git_sha: str,
+    config_revision: str,
+) -> str:
+    payload = {
+        **values,
+        "release_sha": git_sha,
+        "runtime_config_revision": config_revision,
+    }
+    return (
+        "window.__ALLBOT_CONFIG__ = Object.freeze("
+        + json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + ");\n"
+    )
+
+
+def _extract_web_artifact(artifact: Path, destination: Path) -> Path:
+    destination_root = destination.resolve()
+    with tarfile.open(artifact, "r:gz") as archive:
+        for member in archive.getmembers():
+            target = (destination / member.name).resolve()
+            if target != destination_root and destination_root not in target.parents:
+                raise ReleaseError("Web artifact contains an unsafe path")
+        archive.extractall(destination, filter="data")
+    dist = destination / "dist"
+    if not (dist / "index.html").is_file():
+        raise ReleaseError("Web artifact does not contain dist/index.html")
+    return dist
+
+
+def _pages_deployment_url(output: str) -> str:
+    matches = re.findall(r"https://[a-zA-Z0-9.-]+\.pages\.dev", output)
+    return matches[-1] if matches else ""
+
+
 def _deploy_web(
     args: argparse.Namespace,
     manifest: Mapping[str, Any],
-) -> None:
+) -> dict[str, str] | None:
     if args.skip_web:
-        return
+        return None
     artifact = Path(args.web_artifact)
     if not artifact.is_file() and args.web_artifact == "web-dist.tgz":
         cache = Path(args.bundle_cache).expanduser() / str(manifest["git_sha"])
@@ -959,56 +1073,54 @@ def _deploy_web(
                 break
     _verify_web_artifact(artifact, str(manifest["web_artifact_sha256"]))
     sha = str(manifest["git_sha"])
-    if args.env == "test":
-        remote_dir = f"/root/allbot-web-releases/{sha}"
-        if not args.execute:
-            print(f"[dry-run] upload {artifact} to web edge {remote_dir} and switch /root/dist-test")
-            return
-        key_path = Path(args.test_web_ssh_key)
-        if not key_path.is_file():
-            raise ReleaseError(f"test Web SSH key is unavailable: {key_path}")
-        key = str(key_path)
-        target = "root@100.88.57.122"
-        ssh_options = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]
-        _run(["ssh", *ssh_options, "-i", key, target, f"install -d -m 755 {remote_dir}"])
-        _run(["scp", *ssh_options, "-i", key, str(artifact), f"{target}:{remote_dir}/web-dist.tgz"])
-        _run(
-            [
-                "ssh",
-                *ssh_options,
-                "-i",
-                key,
-                target,
-                (
-                    f"set -e; tar -xzf {remote_dir}/web-dist.tgz -C {remote_dir}; "
-                    f"ln -sfn {remote_dir}/dist /root/dist-test.next; "
-                    "mv -Tf /root/dist-test.next /root/dist-test"
-                ),
-            ]
-        )
-        return
+    target = WEB_PAGES_TARGETS[args.env]
+    runtime_values, runtime_revision = load_web_runtime_config(
+        Path(args.web_runtime_config),
+        args.env,
+    )
     token_file = Path(args.cloudflare_token_file)
     if not token_file.is_file():
         raise ReleaseError(f"Cloudflare Pages token file is unavailable: {token_file}")
+    if token_file.stat().st_mode & 0o077:
+        raise ReleaseError("Cloudflare Pages token file permissions must be 600")
     if not args.execute:
-        print("[dry-run] extract verified Web artifact and deploy it to Pages project allbot-web-prod")
-        return
+        print(
+            "[dry-run] extract verified Web artifact and deploy it to Pages project "
+            f"{target['project']} ({target['branch']})"
+        )
+        return {
+            "project": target["project"],
+            "branch": target["branch"],
+            "runtime_config_revision": runtime_revision,
+            "deployment_url": "",
+        }
     with tempfile.TemporaryDirectory(prefix="allbot-web-release-") as temp_dir:
-        _run(["tar", "-xzf", str(artifact), "-C", temp_dir])
+        dist = _extract_web_artifact(artifact, Path(temp_dir))
+        (dist / "allbot-runtime-config.js").write_text(
+            render_web_runtime_config_script(
+                runtime_values,
+                git_sha=sha,
+                config_revision=runtime_revision,
+            ),
+            encoding="utf-8",
+        )
         env = os.environ.copy()
         env["CLOUDFLARE_API_TOKEN"] = token_file.read_text(encoding="utf-8").strip()
+        if not env["CLOUDFLARE_API_TOKEN"]:
+            raise ReleaseError("Cloudflare Pages token file is empty")
         env["CLOUDFLARE_ACCOUNT_ID"] = args.cloudflare_account_id
         result = subprocess.run(
             [
                 "npx",
+                "--no-install",
                 "wrangler",
                 "pages",
                 "deploy",
-                str(Path(temp_dir) / "dist"),
+                str(dist),
                 "--project-name",
-                "allbot-web-prod",
+                target["project"],
                 "--branch",
-                "main",
+                target["branch"],
                 "--commit-hash",
                 sha,
             ],
@@ -1020,6 +1132,15 @@ def _deploy_web(
         )
         if result.returncode != 0:
             raise ReleaseError("Cloudflare Pages deployment failed")
+        deployment_url = _pages_deployment_url(result.stdout + "\n" + result.stderr)
+        if not deployment_url:
+            raise ReleaseError("Cloudflare Pages deployment URL is missing")
+        return {
+            "project": target["project"],
+            "branch": target["branch"],
+            "runtime_config_revision": runtime_revision,
+            "deployment_url": deployment_url,
+        }
 
 
 def _deploy_worker(
@@ -1029,20 +1150,18 @@ def _deploy_worker(
     release_env: str,
     environment_values: Mapping[str, str],
 ) -> None:
-    selected = _split_services(
-        [environment_values.get("ALLBOT_WORKER_SERVICES", "")]
-    )
+    selected = _split_services([environment_values.get("ALLBOT_WORKER_SERVICES", "")])
     if not selected:
         raise ReleaseError(
             "worker release requires ALLBOT_WORKER_SERVICES in the target env"
         )
     invalid = sorted(
-        service
-        for service in selected
-        if not re.fullmatch(r"worker-(0[1-8])", service)
+        service for service in selected if not re.fullmatch(r"worker-(0[1-8])", service)
     )
     if invalid:
-        raise ReleaseError("invalid ALLBOT_WORKER_SERVICES entries: " + ", ".join(invalid))
+        raise ReleaseError(
+            "invalid ALLBOT_WORKER_SERVICES entries: " + ", ".join(invalid)
+        )
 
     sha = str(manifest["git_sha"])
     root = Path(args.worker_checkout_root)
@@ -1078,7 +1197,9 @@ def _deploy_worker(
                 + " ".join(legacy_worker_containers(selected))
             )
         if hold_maintenance_for_worker_cutover(args.env, impact):
-            print("[dry-run] clear cloud-test generation maintenance after worker health")
+            print(
+                "[dry-run] clear cloud-test generation maintenance after worker health"
+            )
         return
     if not (repo / ".git").is_dir():
         raise ReleaseError(
@@ -1088,7 +1209,9 @@ def _deploy_worker(
     _run(["git", "-C", str(repo), "merge-base", "--is-ancestor", sha, "origin/main"])
     checkout.parent.mkdir(parents=True, exist_ok=True)
     if not checkout.exists():
-        _run(["git", "-C", str(repo), "worktree", "add", "--detach", str(checkout), sha])
+        _run(
+            ["git", "-C", str(repo), "worktree", "add", "--detach", str(checkout), sha]
+        )
     if _run(["git", "-C", str(checkout), "rev-parse", "HEAD"]).stdout.strip() != sha:
         raise ReleaseError("worker release checkout SHA mismatch")
     release_dir.mkdir(parents=True, exist_ok=True)
@@ -1101,7 +1224,10 @@ def _deploy_worker(
     worker_ref = str(manifest["images"]["worker"])
     revision = _run(
         [
-            "docker", "image", "inspect", "--format",
+            "docker",
+            "image",
+            "inspect",
+            "--format",
             '{{ index .Config.Labels "org.opencontainers.image.revision" }}',
             worker_ref,
         ]
@@ -1119,7 +1245,18 @@ def _deploy_worker(
     # The impact planner has already elevated worker changes to drain level.
     # Recreate only the explicit slot allowlist; dormant canary slots stay off.
     _run([*compose, "stop", *sorted(selected)])
-    _run([*compose, "up", "-d", "--no-deps", "--wait", "--wait-timeout", "180", *service_args])
+    _run(
+        [
+            *compose,
+            "up",
+            "-d",
+            "--no-deps",
+            "--wait",
+            "--wait-timeout",
+            "180",
+            *service_args,
+        ]
+    )
     _run([*compose, "ps", *service_args])
     if hold_maintenance_for_worker_cutover(args.env, impact):
         environment = ENVIRONMENT[args.env]
@@ -1137,7 +1274,9 @@ def _promotion_check(args: argparse.Namespace, manifest: Mapping[str, Any]) -> N
         return
     host = args.test_state_host
     if args.command == "rollback":
-        state_path = f"/var/lib/allbot/deployments/test/history/{manifest['git_sha']}.json"
+        state_path = (
+            f"/var/lib/allbot/deployments/test/history/{manifest['git_sha']}.json"
+        )
     else:
         state_path = "/var/lib/allbot/deployments/test/current.json"
     result = _run(
@@ -1202,7 +1341,9 @@ def validate_test_acceptance(
         raise ReleaseError("test acceptance image digests do not match the release")
     if evidence.get("vendor_images") != manifest.get("vendor_images"):
         raise ReleaseError("test acceptance vendor digests do not match the release")
-    started = _parse_utc_timestamp(evidence.get("observation_started_at"), "observation_started_at")
+    started = _parse_utc_timestamp(
+        evidence.get("observation_started_at"), "observation_started_at"
+    )
     completed = _parse_utc_timestamp(evidence.get("completed_at"), "completed_at")
     if (completed - started).total_seconds() < 24 * 60 * 60:
         raise ReleaseError("test acceptance requires at least 24 hours of observation")
@@ -1215,7 +1356,9 @@ def validate_test_acceptance(
         if not isinstance(checks, Mapping) or checks.get(key) is not True
     )
     if missing:
-        raise ReleaseError("test acceptance checks are incomplete: " + ", ".join(missing))
+        raise ReleaseError(
+            "test acceptance checks are incomplete: " + ", ".join(missing)
+        )
     if not str(evidence.get("approved_by", "")).strip():
         raise ReleaseError("test acceptance approved_by is required")
 
@@ -1225,7 +1368,9 @@ def validate_test_runtime_for_acceptance(state: Mapping[str, Any]) -> None:
     if not isinstance(health, Mapping):
         raise ReleaseError("cloud-test deployment health is unavailable")
     if health.get("web") != "artifact-checksum-passed":
-        raise ReleaseError("cloud-test Web artifact has not passed deployment verification")
+        raise ReleaseError(
+            "cloud-test Web artifact has not passed deployment verification"
+        )
 
 
 def _mark_test_verified(args: argparse.Namespace) -> None:
@@ -1252,7 +1397,9 @@ def _mark_test_verified(args: argparse.Namespace) -> None:
         or state.get("vendor_images") != manifest.get("vendor_images")
         or state.get("web_artifact_sha256") != manifest.get("web_artifact_sha256")
     ):
-        raise ReleaseError("cloud-test runtime state does not match acceptance evidence")
+        raise ReleaseError(
+            "cloud-test runtime state does not match acceptance evidence"
+        )
     validate_test_runtime_for_acceptance(state)
     state["status"] = "verified"
     state["acceptance"] = {
@@ -1267,7 +1414,10 @@ def _mark_test_verified(args: argparse.Namespace) -> None:
     acceptance_path = f"/var/lib/allbot/deployments/test/acceptance/{sha}.json"
     _run(
         [
-            "ssh", "-o", "BatchMode=yes", host,
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            host,
             (
                 "set -e; install -d -m 755 /var/lib/allbot/deployments/test/acceptance; "
                 f"cat > {acceptance_path}.tmp; mv -f {acceptance_path}.tmp {acceptance_path}"
@@ -1277,7 +1427,10 @@ def _mark_test_verified(args: argparse.Namespace) -> None:
     )
     _run(
         [
-            "ssh", "-o", "BatchMode=yes", host,
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            host,
             f"set -e; cat > {state_path}.tmp; mv -f {state_path}.tmp {state_path}",
         ],
         input_text=payload,
@@ -1285,7 +1438,10 @@ def _mark_test_verified(args: argparse.Namespace) -> None:
     history_path = f"/var/lib/allbot/deployments/test/history/{sha}.json"
     _run(
         [
-            "ssh", "-o", "BatchMode=yes", host,
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            host,
             f"set -e; cat > {history_path}.tmp; mv -f {history_path}.tmp {history_path}",
         ],
         input_text=payload,
@@ -1297,6 +1453,7 @@ def _write_state(
     impact: ReleaseImpact,
     manifest: Mapping[str, Any],
     config_revision: str,
+    web_deployment: Mapping[str, str] | None = None,
 ) -> None:
     environment = ENVIRONMENT[args.env]
     host = args.remote_host or environment["host"]
@@ -1317,7 +1474,9 @@ def _write_state(
         "deployed_at": datetime.now(timezone.utc).isoformat(),
         "health": {
             "cloud": "compose-ps-passed",
-            "worker": "compose-ps-passed" if "worker" in impact.services else "not-targeted",
+            "worker": "compose-ps-passed"
+            if "worker" in impact.services
+            else "not-targeted",
             "web": (
                 "skipped"
                 if args.skip_web and "web-static" in impact.services
@@ -1327,12 +1486,16 @@ def _write_state(
             ),
         },
     }
+    if web_deployment:
+        state["web_deployment"] = dict(web_deployment)
     payload = json.dumps(state, sort_keys=True, indent=2) + "\n"
     path = f"/var/lib/allbot/deployments/{args.env}/current.json"
     if not args.execute:
         print(f"[dry-run] write deployment state {host}:{path}")
         return
-    history = f"/var/lib/allbot/deployments/{args.env}/history/{manifest['git_sha']}.json"
+    history = (
+        f"/var/lib/allbot/deployments/{args.env}/history/{manifest['git_sha']}.json"
+    )
     command = (
         f"set -e; install -d -m 755 {shlex.quote(str(Path(path).parent))} "
         f"{shlex.quote(str(Path(history).parent))}; "
@@ -1366,6 +1529,10 @@ def _add_release_arguments(parser: argparse.ArgumentParser) -> None:
         default="~/.cache/allbot/releases",
     )
     parser.add_argument("--web-artifact", default="web-dist.tgz")
+    parser.add_argument(
+        "--web-runtime-config",
+        default=str(DEFAULT_WEB_RUNTIME_CONFIG),
+    )
     parser.add_argument("--services", action="append", default=[])
     parser.add_argument("--policy", default=str(DEFAULT_POLICY))
     parser.add_argument("--schema", default=str(DEFAULT_SCHEMA))
@@ -1394,10 +1561,6 @@ def _add_release_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--worker-checkout-root",
         default="/home/deploy/APP/All_bot-release",
-    )
-    parser.add_argument(
-        "--test-web-ssh-key",
-        default="/home/deploy/.ssh/allbot_test_edge_ed25519",
     )
     parser.add_argument(
         "--cloudflare-token-file",
@@ -1491,11 +1654,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             release_env,
             environment_values,
         )
+        web_deployment = None
         if "web-static" in impact.services:
-            _deploy_web(args, manifest)
+            web_deployment = _deploy_web(args, manifest)
         if "worker" in impact.services:
             _deploy_worker(args, impact, manifest, release_env, environment_values)
-        _write_state(args, impact, manifest, config_revision)
+        _write_state(
+            args,
+            impact,
+            manifest,
+            config_revision,
+            web_deployment=web_deployment,
+        )
         return 0
     except ReleaseError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
