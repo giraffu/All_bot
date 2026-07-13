@@ -89,6 +89,30 @@ def test_worker_compose_covers_all_test_slots_and_runtime_contracts():
         assert ":-" in dormant_worker[key], f"dormant worker must default {key}"
 
 
+def test_test_stateful_services_reuse_legacy_volumes_and_runtime_names():
+    overlay = _compose(OVERLAYS[0])
+    services = overlay["services"]
+    volumes = overlay["volumes"]
+
+    assert volumes["cloud-postgres-test-data"] == {
+        "external": True,
+        "name": "deploy_cloud-postgres-test-data",
+    }
+    assert volumes["cloud-redis-test-data"] == {
+        "external": True,
+        "name": "deploy_cloud-redis-test-data",
+    }
+    assert services["postgres"]["environment"] == {
+        "POSTGRES_DB": "${CLOUD_TEST_POSTGRES_DB:-bot_db_test}",
+        "POSTGRES_USER": "${CLOUD_TEST_POSTGRES_USER:-postgres}",
+        "POSTGRES_PASSWORD": "${CLOUD_TEST_POSTGRES_PASSWORD:?CLOUD_TEST_POSTGRES_PASSWORD is required}",
+    }
+    assert services["postgres"]["networks"]["default"]["aliases"] == [
+        "postgres-test"
+    ]
+    assert services["redis"]["networks"]["default"]["aliases"] == ["redis-test"]
+
+
 def test_release_workflow_builds_all_images_and_never_uses_latest():
     workflow = (ROOT / ".github/workflows/control-plane-release.yml").read_text(
         encoding="utf-8"
