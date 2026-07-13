@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "all_services": [
+    "central-api",
+    "web-api",
+    "payment-api",
+    "dashboard-backend",
+    "dashboard-frontend",
+    "qqcc-config-backend",
+    "qqcc-config-frontend",
+    "bot",
+    "qqcc-bot",
+    "qqcc-private-bot-worker",
+    "paid-group-guard-bot",
+    "imgproxy",
+    "worker",
+    "web-static"
+  ],
+  "level_order": ["none", "rolling", "drain", "maintenance"],
+  "unknown": {
+    "level": "maintenance",
+    "services": "all"
+  },
+  "rules": [
+    {
+      "name": "shared-python-runtime",
+      "patterns": [
+        "src/**",
+        "shared/**",
+        "config.py",
+        "requirements.txt",
+        "Dockerfile",
+        "Dockerfile.qqcc"
+      ],
+      "level": "rolling",
+      "services": [
+        "central-api",
+        "web-api",
+        "payment-api",
+        "dashboard-backend",
+        "qqcc-config-backend",
+        "bot",
+        "qqcc-bot",
+        "qqcc-private-bot-worker",
+        "paid-group-guard-bot",
+        "worker"
+      ]
+    },
+    {
+      "name": "central-api",
+      "patterns": ["backend/**"],
+      "level": "rolling",
+      "services": ["central-api"]
+    },
+    {
+      "name": "dashboard-backends",
+      "patterns": ["dashboard/backend/**"],
+      "level": "rolling",
+      "services": ["dashboard-backend", "qqcc-config-backend"]
+    },
+    {
+      "name": "dashboard-frontends",
+      "patterns": ["dashboard/frontend/**"],
+      "level": "rolling",
+      "services": ["dashboard-frontend", "qqcc-config-frontend"]
+    },
+    {
+      "name": "public-web",
+      "patterns": ["frontend/**"],
+      "level": "rolling",
+      "services": ["web-static"]
+    },
+    {
+      "name": "qqcc-runtimes",
+      "patterns": ["qqcc_bot/**", "qqcc_private_bot/**"],
+      "level": "rolling",
+      "services": [
+        "qqcc-bot",
+        "qqcc-private-bot-worker",
+        "qqcc-config-backend",
+        "qqcc-config-frontend"
+      ]
+    },
+    {
+      "name": "local-workers",
+      "patterns": ["workers/**"],
+      "level": "drain",
+      "services": ["worker"]
+    },
+    {
+      "name": "database-migrations",
+      "patterns": ["migrations/**", "alembic.ini"],
+      "level": "maintenance",
+      "services": "all",
+      "requires_db_upgrade": true
+    },
+    {
+      "name": "deployment-contract",
+      "patterns": [
+        "deploy/**",
+        "scripts/release.py",
+        "scripts/bootstrap_release_host.sh",
+        "scripts/validate_deploy_env.py",
+        ".dockerignore"
+      ],
+      "level": "maintenance",
+      "services": "all"
+    },
+    {
+      "name": "gpu-runtime",
+      "patterns": [
+        "remote_workers/**",
+        "ops/gpu_pool_controller/**",
+        "scripts/runpod_*.sh",
+        "scripts/lan_aio_*.py",
+        "scripts/lan_*_aio_*.sh"
+      ],
+      "level": "maintenance",
+      "services": [],
+      "blockers": ["gpu-runtime-release-required"]
+    },
+    {
+      "name": "non-runtime",
+      "patterns": [
+        "docs/**",
+        "tests/**",
+        ".codex/**",
+        ".github/**",
+        "README.md",
+        "AGENTS.md",
+        ".gitignore",
+        ".markdownlint.yaml"
+      ],
+      "level": "none",
+      "services": []
+    }
+  ]
+}

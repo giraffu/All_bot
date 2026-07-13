@@ -42,6 +42,7 @@ from src.services.telegram_runtime_bootstrap import (
     resolve_telegram_api_base_url,
     resolve_telegram_file_base_url,
 )
+from src.services.telegram_update_processor import build_main_bot_update_processor
 from src.task_core_provider_setup import ensure_task_core_service_providers_registered
 
 logger = logging.getLogger(__name__)
@@ -54,7 +55,7 @@ async def clean_zombies_loop(bot=None):
     core_logger = logging.getLogger("bot.core")
     while True:
         try:
-            await clean_zombies(bot)
+            await clean_zombies(bot, client_type="bot", include_legacy=True)
         except Exception as e:
             core_logger.error(f"Error in clean_zombies_loop: {e}")
         await asyncio.sleep(600)  # Check every 10 minutes
@@ -178,6 +179,7 @@ def main():
         .get_updates_request(request)
         .post_init(post_init)
         .post_shutdown(post_shutdown)
+        .concurrent_updates(build_main_bot_update_processor())
         .build()
     )
 
@@ -235,7 +237,7 @@ def main():
     import signal
 
     app.run_polling(
-        poll_interval=2.0,
+        poll_interval=0.0,
         timeout=30,
         stop_signals=(signal.SIGINT, signal.SIGTERM, signal.SIGABRT),
     )

@@ -38,6 +38,7 @@ def _args(**overrides):
         "keepalive_on_complete": False,
         "civitai_token_secret_ref": "{{ RUNPOD_SECRET_allbot_civitai_api_token }}",
         "pornmaster_flux2_edit": False,
+        "pornmaster_flux2_edit_bf16": False,
         "confirm_model_transfer": False,
     }
     values.update(overrides)
@@ -113,6 +114,31 @@ def test_pornmaster_flux2_edit_batch_uses_cloud_model_prefix_and_token_secret(mo
     assert "huggingface.co" not in rendered
     assert redacted["env"]["CIVITAI_API_TOKEN"] == "<redacted>"
     assert rendered.count("<source-url>") >= 3
+
+
+def test_pornmaster_flux2_edit_bf16_batch_streams_exact_cloud_artifacts(monkeypatch):
+    module = _load_module()
+    monkeypatch.setenv("RUNPOD_MODEL_ENDPOINT", "https://r2.example.test")
+
+    args = _args(pornmaster_flux2_edit_bf16=True)
+    items = module._load_transfer_items(args)
+    body = module._create_body(args, items)
+    rendered = json.dumps(module._redacted_body(body), ensure_ascii=False)
+
+    assert len(items) == 3
+    assert items[0]["source_url"].endswith("/3025484")
+    assert items[0]["sha256"] == (
+        "5085c05fa34b2455245a75f393885780b41e80a7517265b4b53da2e5044b004e"
+    )
+    assert all(
+        item["key"].startswith("pornmaster_flux2_edit_bf16/2026-07-12/models/")
+        for item in items
+    )
+    assert body["env"]["CIVITAI_API_TOKEN"] == (
+        "{{ RUNPOD_SECRET_allbot_civitai_api_token }}"
+    )
+    assert "3025484" not in rendered
+    assert "huggingface.co" not in rendered
 
 
 def test_single_transfer_mode_stays_compatible():

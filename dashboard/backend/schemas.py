@@ -271,6 +271,7 @@ class QqccBotConfigRequest(BaseModel):
     draw_scenes: List[Dict[str, Any]] = Field(default_factory=list)
     filter_scenes: List[Dict[str, Any]] = Field(default_factory=list)
     prompts: Dict[str, Any] = Field(default_factory=dict)
+    copywriting: Dict[str, Any] = Field(default_factory=dict)
 
 
 class QqccBotConfigResponse(BaseModel):

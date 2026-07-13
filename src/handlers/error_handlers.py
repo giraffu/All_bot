@@ -10,6 +10,7 @@ from src.core.exceptions import (
     InsufficientCreditsError,
 )
 from src.services.fsm_temp_file_service import cleanup_fsm_user_data
+from src.services.private_bot_update_admission import mark_private_bot_update_failed
 from src.utils import robust_send_message
 from src.i18n.translator import get_text
 from config import CHANNEL_INVITE_LINK
@@ -73,7 +74,7 @@ def with_unified_error_handler(func):
     return wrapper
 
 
-async def global_error_handler(
+async def _handle_global_error(
     update: object, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     """
@@ -121,8 +122,33 @@ async def global_error_handler(
             )
 
     else:
+        mark_private_bot_update_failed()
         logger.error(
             f"Exception while handling an update: {context.error}",
             exc_info=context.error,
         )
         return
+
+
+async def global_error_handler(
+    update: object, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Run the global handler and fail private webhook admission if it fails.
+
+    PTB reports exceptions raised by an error handler separately and does not
+    reliably propagate them back through ``Application.process_update``. Mark
+    the active private-Bot scope first so the stream worker leaves the update
+    pending instead of ACKing an update whose user-facing error was never sent.
+    """
+
+    try:
+        await _handle_global_error(update, context)
+    except Exception as exc:
+        mark_private_bot_update_failed()
+        logger.error(
+            "Global update error handler failed error_type=%s "
+            "original_error_type=%s",
+            type(exc).__name__,
+            type(getattr(context, "error", None)).__name__,
+        )
+        raise

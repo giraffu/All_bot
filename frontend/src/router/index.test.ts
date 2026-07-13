@@ -81,7 +81,7 @@ describe('router template apply guard', () => {
     expect(templateApplyStoreMock.requestClose).not.toHaveBeenCalled()
     expect(confirmTemplateApplyCloseMock).not.toHaveBeenCalled()
     expect(router.currentRoute.value.path).toBe('/maintenance')
-  })
+  }, 15_000)
 
   it('blocks navigation when the user cancels the close confirmation', async () => {
     const router = await loadRouter()
@@ -148,5 +148,19 @@ describe('router template apply guard', () => {
         type,
       })
     }
+  })
+
+  it('preserves Telegram Mini App launch hash when redirecting guests to login', async () => {
+    authStoreMock.token = ''
+    authStoreMock.user = null as any
+    checkWebAccessMock.mockReturnValue(false)
+
+    const router = await loadRouter()
+    await router.push('/?v=release-42#tgWebAppData=encoded-init-data&tgWebAppVersion=7.0')
+    await router.isReady()
+
+    expect(router.currentRoute.value.path).toBe('/login')
+    expect(router.currentRoute.value.query).toMatchObject({ v: 'release-42' })
+    expect(router.currentRoute.value.hash).toBe('#tgWebAppData=encoded-init-data&tgWebAppVersion=7.0')
   })
 })

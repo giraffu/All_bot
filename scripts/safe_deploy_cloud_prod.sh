@@ -158,6 +158,7 @@ check_env_contract() {
         QQCC_CONFIG_ADMIN_USERNAME
         QQCC_CONFIG_ADMIN_PASSWORD_HASH
         QQCC_CONFIG_SECRET_KEY
+        QQCC_CONFIG_ADMIN_HOST
         BOT_TOKEN
         REQUIRED_CHANNEL_ID
         CHANNEL_INVITE_LINK
@@ -206,6 +207,13 @@ check_env_contract() {
         echo "MINIO_SECURE must be true for R2."
         exit 1
     fi
+}
+
+check_private_bot_security_contract() {
+    python3 "$ROOT_DIR/scripts/validate_private_qqcc_bot_env.py" \
+        --env-file "$ENV_FILE" \
+        --bot-type PROD \
+        --allow-disabled
 }
 
 check_r2_access() {
@@ -280,11 +288,13 @@ wait_for_http_ready() {
     local url=$2
     local max_retries=${3:-40}
     local sleep_seconds=${4:-5}
+    local host_header=${5:-}
     local attempt=1
 
     echo "Waiting for ${service_name}: ${url}"
     while [ "$attempt" -le "$max_retries" ]; do
-        if curl --noproxy '*' -fsS "$url" >/dev/null 2>&1; then
+        if { [ -n "$host_header" ] && curl --noproxy '*' -fsS -H "Host: ${host_header}" "$url" >/dev/null 2>&1; } ||
+           { [ -z "$host_header" ] && curl --noproxy '*' -fsS "$url" >/dev/null 2>&1; }; then
             echo "${service_name} is ready."
             return 0
         fi
@@ -301,9 +311,10 @@ echo "Cloud prod control-plane mode: ${MODE}"
 echo "Using env file: ${ENV_FILE}"
 
 check_env_contract
+check_private_bot_security_contract
 
 echo "Rendering cloud production compose config..."
-compose config >/dev/null
+compose config -q
 
 if [ "$SKIP_NETWORK_CHECKS" != "true" ]; then
     echo "Checking R2/S3 access..."
@@ -333,6 +344,10 @@ if [ "$HEAD_COUNT" != "1" ]; then
 fi
 
 if [ "$WITH_DB_UPGRADE" = "true" ]; then
+    if docker ps --format '{{.Names}}' | grep -qx cloud-qqcc-private-bot-worker-prod; then
+        echo "Refusing DB upgrade while cloud-qqcc-private-bot-worker-prod is running; stop/drain it explicitly first."
+        exit 1
+    fi
     echo "Running Alembic upgrade head on the configured cloud production database..."
     compose run --rm --no-deps web-api-prod alembic upgrade head
 else
@@ -351,6 +366,7 @@ DASHBOARD_FRONTEND_PORT="$(read_env_value DASHBOARD_FRONTEND_PORT)"
 DASHBOARD_FRONTEND_PORT="${DASHBOARD_FRONTEND_PORT:-8086}"
 QQCC_CONFIG_FRONTEND_PORT="$(read_env_value QQCC_CONFIG_FRONTEND_PORT)"
 QQCC_CONFIG_FRONTEND_PORT="${QQCC_CONFIG_FRONTEND_PORT:-8088}"
+QQCC_CONFIG_ADMIN_HOST="$(read_env_value QQCC_CONFIG_ADMIN_HOST)"
 
 wait_for_http_ready "Central API" "http://${CLOUD_PROD_HEALTH_HOST}:8003/health" 40 5
 wait_for_http_ready "Web API" "http://${CLOUD_PROD_HEALTH_HOST}:8000/api/health" 40 5
@@ -358,6 +374,6 @@ wait_for_http_ready "Payment API" "http://${CLOUD_PROD_HEALTH_HOST}:8021/pay/res
 wait_for_http_ready "Dashboard API" "http://${CLOUD_PROD_HEALTH_HOST}:8043/api/health" 40 5
 wait_for_http_ready "Dashboard Frontend" "http://${CLOUD_PROD_HEALTH_HOST}:${DASHBOARD_FRONTEND_PORT}/api/health" 40 5
 wait_for_http_ready "QQCC Config API" "http://${CLOUD_PROD_HEALTH_HOST}:8045/api/health" 40 5
-wait_for_http_ready "QQCC Config Frontend" "http://${CLOUD_PROD_HEALTH_HOST}:${QQCC_CONFIG_FRONTEND_PORT}/api/health" 40 5
+wait_for_http_ready "QQCC Config Frontend" "http://${CLOUD_PROD_HEALTH_HOST}:${QQCC_CONFIG_FRONTEND_PORT}/api/health" 40 5 "$QQCC_CONFIG_ADMIN_HOST"
 
 echo "Cloud production control plane is ready. Bot polling and edge routing were not changed."

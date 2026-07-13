@@ -20,9 +20,10 @@ logger = logging.getLogger(__name__)
 def build_task_refund_idempotency_key(
     *, refund_task_type: str, registry_task_id: str | None
 ) -> str | None:
+    _ = refund_task_type
     if not registry_task_id:
         return None
-    return f"task_refund:{refund_task_type}:{registry_task_id}"
+    return f"task_refund:task:{registry_task_id}"
 
 
 async def _refund_task_with_type(

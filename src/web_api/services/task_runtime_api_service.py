@@ -79,7 +79,10 @@ async def get_task_status_payload_for_user(
         if owned_active_task and owned_active_task.get("backend_task_id")
         else task_id
     )
-    status_data = await get_task_status_func(runtime_task_id)
+    status_data = await get_task_status_func(
+        runtime_task_id,
+        include_type_position=True,
+    )
     if not status_data:
         if owned_history:
             return build_history_task_status_payload(owned_history, task_id)

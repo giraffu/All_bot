@@ -11,6 +11,7 @@ from src.constants import (
     MODE_I2I_DRAW,
     MODE_I2I_PRO,
     MODE_IMG2IMG_LORA,
+    MODE_PORNMASTER_FLUX2_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_SCAIL2_ACTION_TRANSFER,
@@ -51,6 +52,7 @@ EDIT_LIKE_TASK_TYPES = {MODE_EDIT, MODE_IMG2IMG_LORA}
 PORNMASTER_FLUX2_EDIT_TASK_TYPES = {
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
+    MODE_PORNMASTER_FLUX2_EDIT_BF16,
 }
 FACE_VIDEO_TASK_TYPES = {"face_video", "face_video_step1", "face_video_step2"}
 LTX_VIDEO_MODE_I2V = "i2v"
@@ -475,7 +477,7 @@ class PornmasterFlux2EditStrategy(BaseTaskStrategy):
             raise CoreDomainError("自由P图 v2 当前未开放。")
 
     def _expected_image_count(self) -> int:
-        return 1 if self.task_type == MODE_PORNMASTER_FLUX2_SINGLE_EDIT else 2
+        return 2 if self.task_type == MODE_PORNMASTER_FLUX2_MULTI_EDIT else 1
 
     def get_cost(self, inputs: Dict[str, Any]) -> int:
         self._ensure_enabled()

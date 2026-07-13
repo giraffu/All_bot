@@ -93,7 +93,7 @@ async def reply_private_prompt_fallback(message, *, lang: str, reply_text):
 
 
 async def ensure_user_access_reward(context, user):
-    is_member = await get_user_channel_status(context.bot, user.id)
+    is_member = await get_user_channel_status(context, user.id)
     inviter_id = await permission_service.check_access(
         user.id,
         user.username,

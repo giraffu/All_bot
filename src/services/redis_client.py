@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 import uuid
 from typing import Any, Dict
 
@@ -7,6 +8,57 @@ from config import REDIS_PREFIX, REDIS_URL
 from src.services.redis_connection import build_redis_client
 
 logger = logging.getLogger(__name__)
+
+_DECREMENT_USER_CONCURRENCY_ONCE_SCRIPT = """
+local removed = redis.call('ZREM', KEYS[2], ARGV[1])
+local legacy_removed = redis.call('SREM', KEYS[3], ARGV[1])
+local current = tonumber(redis.call('GET', KEYS[1]) or '0')
+local marker_count = tonumber(redis.call('ZCARD', KEYS[2]) or '0')
+local updated = current
+if removed == 1 or legacy_removed == 1 then
+    updated = math.max(0, current - 1)
+end
+updated = math.max(updated, marker_count)
+if updated <= 0 then
+    redis.call('DEL', KEYS[1])
+    if marker_count == 0 then
+        redis.call('DEL', KEYS[2])
+    end
+    return 0
+end
+redis.call('SET', KEYS[1], updated)
+if marker_count == 0 then
+    redis.call('EXPIRE', KEYS[1], tonumber(ARGV[2]))
+end
+return updated
+"""
+_INCREMENT_USER_CONCURRENCY_ONCE_SCRIPT = """
+local legacy_owned = redis.call('SISMEMBER', KEYS[3], ARGV[1])
+local existed = redis.call('ZSCORE', KEYS[2], ARGV[1])
+local added = 0
+if not existed then
+    redis.call('ZADD', KEYS[2], tonumber(ARGV[2]), ARGV[1])
+    added = 1
+end
+if legacy_owned == 1 then
+    redis.call('SREM', KEYS[3], ARGV[1])
+end
+local current = tonumber(redis.call('GET', KEYS[1]) or '0')
+local marker_count = tonumber(redis.call('ZCARD', KEYS[2]) or '0')
+local updated = math.max(current, marker_count)
+local acquired_new = added
+if added == 1 and legacy_owned == 0 and current >= marker_count then
+    updated = current + 1
+end
+if legacy_owned == 1 then
+    acquired_new = 0
+end
+redis.call('SET', KEYS[1], updated)
+return {updated, acquired_new}
+"""
+_ROLLBACK_USER_CONCURRENCY_ACQUIRE_SCRIPT = (
+    _DECREMENT_USER_CONCURRENCY_ONCE_SCRIPT
+)
 
 
 class RedisClient:
@@ -18,36 +70,70 @@ class RedisClient:
             cls._instance.redis = build_redis_client(REDIS_URL, decode_responses=True)
         return cls._instance
 
+    async def get_active_tasks_strict(self) -> Dict[str, Any]:
+        """Read the active registry without converting outages into an empty set."""
+
+        key = f"{REDIS_PREFIX}active_tasks"
+        tasks_raw = await self.redis.hgetall(key)
+        return {k: json.loads(v) for k, v in tasks_raw.items()}
+
     async def get_active_tasks(self) -> Dict[str, Any]:
         """获取所有运行中的任务"""
-        key = f"{REDIS_PREFIX}active_tasks"
         try:
-            tasks_raw = await self.redis.hgetall(key)
-            return {k: json.loads(v) for k, v in tasks_raw.items()}
+            return await self.get_active_tasks_strict()
         except Exception as e:
             logger.error(f"Failed to get active tasks from Redis: {e}")
             return {}
 
+    async def add_active_task_strict(
+        self,
+        task_id: str,
+        task_data: Dict[str, Any],
+    ) -> None:
+        key = f"{REDIS_PREFIX}active_tasks"
+        await self.redis.hset(key, task_id, json.dumps(task_data))
+
     async def add_active_task(self, task_id: str, task_data: Dict[str, Any]) -> None:
         """添加或更新任务"""
-        key = f"{REDIS_PREFIX}active_tasks"
         try:
-            await self.redis.hset(key, task_id, json.dumps(task_data))
+            await self.add_active_task_strict(task_id, task_data)
         except Exception as e:
             logger.error(f"Failed to add active task to Redis: {e}")
 
+    async def remove_active_task_strict(self, task_id: str) -> None:
+        key = f"{REDIS_PREFIX}active_tasks"
+        await self.redis.hdel(key, task_id)
+
     async def remove_active_task(self, task_id: str) -> None:
         """移除任务"""
-        key = f"{REDIS_PREFIX}active_tasks"
         try:
-            await self.redis.hdel(key, task_id)
+            await self.remove_active_task_strict(task_id)
         except Exception as e:
             logger.error(f"Failed to remove active task from Redis: {e}")
 
-    async def increment_user_concurrency(self, user_id: int) -> int:
+    async def increment_user_concurrency(
+        self,
+        user_id: int,
+        idempotency_key: str | None = None,
+    ) -> int | tuple[int, bool]:
         """增加用户并发数"""
         key = f"{REDIS_PREFIX}user_concurrency:{user_id}"
         try:
+            if idempotency_key:
+                marker_key = (
+                    f"{REDIS_PREFIX}acquired_task_concurrency:{user_id}"
+                )
+                legacy_marker_key = f"{REDIS_PREFIX}acquired_task_concurrency"
+                result = await self.redis.eval(
+                    _INCREMENT_USER_CONCURRENCY_ONCE_SCRIPT,
+                    3,
+                    key,
+                    marker_key,
+                    legacy_marker_key,
+                    idempotency_key,
+                    str(time.time()),
+                )
+                return int(result[0]), bool(int(result[1]))
             # 使用事务保证自增和设置过期时间的原子性，防止死锁
             async with self.redis.pipeline(transaction=True) as pipe:
                 pipe.incr(key)
@@ -57,12 +143,55 @@ class RedisClient:
                 return results[0]
         except Exception as e:
             logger.error(f"Failed to increment user concurrency: {e}")
+            if idempotency_key:
+                raise
             return 0
 
-    async def decrement_user_concurrency(self, user_id: int) -> int:
+    async def rollback_user_concurrency_acquire(
+        self,
+        user_id: int,
+        *,
+        idempotency_key: str,
+    ) -> int:
+        key = f"{REDIS_PREFIX}user_concurrency:{user_id}"
+        marker_key = f"{REDIS_PREFIX}acquired_task_concurrency:{user_id}"
+        legacy_marker_key = f"{REDIS_PREFIX}acquired_task_concurrency"
+        return int(
+            await self.redis.eval(
+                _ROLLBACK_USER_CONCURRENCY_ACQUIRE_SCRIPT,
+                3,
+                key,
+                marker_key,
+                legacy_marker_key,
+                idempotency_key,
+                "3600",
+            )
+        )
+
+    async def decrement_user_concurrency(
+        self,
+        user_id: int,
+        idempotency_key: str | None = None,
+    ) -> int:
         """减少用户并发数"""
         key = f"{REDIS_PREFIX}user_concurrency:{user_id}"
         try:
+            if idempotency_key:
+                marker_key = (
+                    f"{REDIS_PREFIX}acquired_task_concurrency:{user_id}"
+                )
+                legacy_marker_key = f"{REDIS_PREFIX}acquired_task_concurrency"
+                return int(
+                    await self.redis.eval(
+                        _DECREMENT_USER_CONCURRENCY_ONCE_SCRIPT,
+                        3,
+                        key,
+                        marker_key,
+                        legacy_marker_key,
+                        idempotency_key,
+                        "3600",
+                    )
+                )
             val = await self.redis.decr(key)
             if val < 0:
                 await self.redis.set(key, 0)
@@ -70,7 +199,53 @@ class RedisClient:
             return val
         except Exception as e:
             logger.error(f"Failed to decrement user concurrency: {e}")
+            if idempotency_key:
+                raise
             return 0
+
+    async def repair_stale_user_concurrency_acquisitions(
+        self,
+        *,
+        active_registry_task_ids: set[str],
+        stale_before_timestamp: float,
+    ) -> int:
+        """Remove only aged task markers that have no active registry owner."""
+
+        pattern = f"{REDIS_PREFIX}acquired_task_concurrency:*"
+        prefix = f"{REDIS_PREFIX}acquired_task_concurrency:"
+        removed_count = 0
+        async for raw_key in self.redis.scan_iter(match=pattern, count=500):
+            marker_key = (
+                raw_key.decode() if isinstance(raw_key, bytes) else str(raw_key)
+            )
+            try:
+                user_id = int(marker_key[len(prefix) :])
+            except (TypeError, ValueError):
+                continue
+            identities = await self.redis.zrangebyscore(
+                marker_key,
+                "-inf",
+                float(stale_before_timestamp),
+            )
+            for raw_identity in identities:
+                identity = (
+                    raw_identity.decode()
+                    if isinstance(raw_identity, bytes)
+                    else str(raw_identity)
+                )
+                task_id = (
+                    identity.removeprefix("task_concurrency:")
+                    if identity.startswith("task_concurrency:")
+                    else None
+                )
+                if task_id is None or task_id in active_registry_task_ids:
+                    continue
+                await self.decrement_user_concurrency(
+                    user_id,
+                    idempotency_key=identity,
+                )
+                removed_count += 1
+        return removed_count
 
     async def increment_gallery_submit(self, user_id: int) -> int:
         """增加每日投稿次数，并返回增加后的次数"""

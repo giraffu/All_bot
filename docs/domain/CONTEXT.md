@@ -5,6 +5,8 @@
 ## 用户与身份
 - **internal_user_id**：AllBot 内部统一用户标识。核心层只使用该标识流转，不直接依赖 Telegram、Web 或第三方平台对象。
 - **Telegram user id**：Telegram 平台用户标识，只在 Bot 表示层、登录验签、付费群审核等适配层出现。
+- **QQCC 私有 Bot owner**：拥有一条 QQCC 私有 Telegram Bot 绑定的 AllBot 用户；owner 身份不等于私有 Bot 的每个访客，也不替访客承担生成费用。
+- **QQCC 私有 Bot**：用户自备 Telegram Bot token、复用 QQCC 能力但拥有独立配置和运行状态的多租户实例；每个 owner 同时只能有一条绑定。
 - **password_version**：用户密码会话版本。改密后用于让旧 token 失效。
 - **会员身份**：用户权益状态，由支付履约、后台赠送或 affiliate 兑换等结算路径改变。
 
@@ -16,6 +18,7 @@
 
 ## 生成任务
 - **registry_task_id**：AllBot 运行态注册表中的任务 ID，面向 Web/Bot 查询、取消、历史和权限语义。
+- **private Bot client_type**：`bot:qqcc-private:<private_bot_id>`，用于把私有 Bot 的提交、运行态恢复和结果投递严格归属到单一租户实例。
 - **backend_task_id**：执行面任务 ID，面向 Central API、QueueManager、worker pop/status/complete/cancel 等执行语义。
 - **生成任务主链**：从 Web/Bot 提交，经 task core、Central、worker、ComfyUI、结果回流、历史持久化和媒体可见化形成的一条业务链。
 - **Web side-effect monitor**：Web 提交成功后的异步收口者，负责成功历史、失败退款、取消退款和 runtime cleanup。
@@ -50,8 +53,8 @@
 - **RunPod 手动池**：云正式备用或临时扩容的 GPU worker 池，可由人工操作，也可由 Dashboard autoscaler 在门禁满足时提交 `add` / `down`。
 - **Dashboard RunPod autoscaler**：由 Dashboard backend 根据队列等待、worker 健康、profile 阈值和 RunPod operation store 自动提交 RunPod `add` / `down` 的管理循环。
 - **云测试控制面**：研发、联调、缺陷修复和配置验证的默认发布目标。
-- **维护式更新**：先进入生成维护、等待队列、同步代码/env、执行目标环境重建子步骤、再恢复入口的部署方式；当前云测试日常更新不默认使用该路径，仅在整栈联动、迁移、排空验证或用户明确要求维护窗口时使用。
-- **云测试快速更新**：云测试日常研发验证的默认部署方式，只同步必要代码并重建对应模块容器，不默认进入维护或排空队列。
+- **维护发布**：影响 planner 因 migration、未知路径或跨栈变更提升的发布等级；发布器负责维护/drain、备份、单 Alembic head 与显式 upgrade，不同步代码或 env。
+- **云测试不可变发布**：将受保护 `main` 可达的完整 SHA 对应 release bundle 部署到云测试；服务范围由依赖影响自动计算，应用代码只来自 digest-pinned 镜像。
 - **云正式控制面**：生产控制面，任何正式发布、重建或生产 RunPod mutation 都需要用户明确确认。
 - **Cloudflare 自动化令牌**：用于 AllBot Cloudflare 账号自动化的高权限 API token，只允许保存在宿主机受限权限文件中；聊天、文档、Git 和日志只记录路径、用途和权限边界，不记录明文。
 - **本地正式灾备**：云正式整体不可用时，由本地主服务器临时接管正式入口的应急形态。

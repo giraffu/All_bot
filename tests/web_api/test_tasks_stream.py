@@ -123,6 +123,10 @@ class _FakeStatusResponse:
         return self._payload
 
 
+class _StatusCallRecorder(list):
+    record_params = True
+
+
 class _FakeAsyncClient:
     def __init__(self, responses, calls):
         self._responses = responses
@@ -134,8 +138,11 @@ class _FakeAsyncClient:
     async def __aexit__(self, exc_type, exc, tb):
         return False
 
-    async def get(self, url, timeout):
-        self._calls.append((url, timeout))
+    async def get(self, url, timeout, params=None):
+        if getattr(self._calls, "record_params", False):
+            self._calls.append((url, timeout, params))
+        else:
+            self._calls.append((url, timeout))
         if not self._responses:
             raise AssertionError("unexpected extra status poll")
         next_response = self._responses.pop(0)
@@ -218,14 +225,17 @@ async def test_build_not_found_progress_payload_returns_success_when_history_exi
 
 
 @pytest.mark.asyncio
-async def test_get_task_status_payload_returns_pending_queue_without_progress():
+async def test_get_task_status_payload_returns_pending_type_queue_without_progress():
     captured_task_ids = []
+    captured_kwargs = []
 
-    async def fake_get_task_status(task_id):
+    async def fake_get_task_status(task_id, **kwargs):
         captured_task_ids.append(task_id)
+        captured_kwargs.append(kwargs)
         return {
             "status": "pending",
-            "queue_pos": 2,
+            "queue_pos": 9,
+            "queue_type_pos": 2,
             "progress": 0.4,
             "task_type": "txt2img",
         }
@@ -244,6 +254,7 @@ async def test_get_task_status_payload_returns_pending_queue_without_progress():
     )
 
     assert captured_task_ids == ["backend-1"]
+    assert captured_kwargs == [{"include_type_position": True}]
     assert payload == {
         "status": "pending",
         "task_id": "registry-1",
@@ -252,6 +263,33 @@ async def test_get_task_status_payload_returns_pending_queue_without_progress():
         "queue_pos": 2,
     }
     assert "progress" not in payload
+
+
+@pytest.mark.asyncio
+async def test_get_task_status_payload_falls_back_to_global_queue_when_type_queue_missing():
+    async def fake_get_task_status(_task_id, **kwargs):
+        assert kwargs == {"include_type_position": True}
+        return {
+            "status": "pending",
+            "queue_pos": 4,
+            "progress": 0.4,
+            "task_type": "txt2img",
+        }
+
+    payload = await task_runtime_api_service.get_task_status_payload_for_user(
+        task_id="registry-1",
+        user_id=123,
+        session_factory=_session_factory(None),
+        get_owned_active_task_func=AsyncMock(
+            return_value={
+                "user_id": 123,
+                "backend_task_id": "backend-1",
+            }
+        ),
+        get_task_status_func=fake_get_task_status,
+    )
+
+    assert payload["queue_pos"] == 4
 
 
 @pytest.mark.asyncio
@@ -567,7 +605,7 @@ async def test_task_status_stream_emits_history_success_without_status_poll_when
 
 @pytest.mark.asyncio
 async def test_fetch_task_status_full_uses_short_shared_cache(monkeypatch):
-    status_calls = []
+    status_calls = _StatusCallRecorder()
     status_responses = [
         _FakeStatusResponse(200, {"status": "pending", "queue_pos": 3})
     ]
@@ -595,7 +633,13 @@ async def test_fetch_task_status_full_uses_short_shared_cache(monkeypatch):
 
     assert first == {"status": "pending", "queue_pos": 3}
     assert second == {"status": "pending", "queue_pos": 3}
-    assert status_calls == [("http://127.0.0.1:8003/status/backend-1", 2.0)]
+    assert status_calls == [
+        (
+            "http://127.0.0.1:8003/status/backend-1",
+            2.0,
+            {"include_type_position": "true"},
+        )
+    ]
 
 
 @pytest.mark.asyncio
@@ -692,19 +736,20 @@ def test_task_stream_status_poll_interval_backs_off_to_configured_cap(monkeypatc
     assert reset_interval == 5.0
 
 
-def test_task_stream_status_poll_signature_tracks_status_and_progress_fields():
+def test_task_stream_status_poll_signature_tracks_type_queue_position():
     base = task_stream_service._build_task_stream_status_poll_signature(
-        {"status": "pending", "queue_pos": 3, "debug": "ignored"}
+        {"status": "pending", "queue_pos": 9, "queue_type_pos": 3, "debug": "ignored"}
     )
     same = task_stream_service._build_task_stream_status_poll_signature(
-        {"status": "pending", "queue_pos": 3, "debug": "changed"}
+        {"status": "pending", "queue_pos": 9, "queue_type_pos": 3, "debug": "changed"}
     )
     changed = task_stream_service._build_task_stream_status_poll_signature(
-        {"status": "pending", "queue_pos": 2, "debug": "ignored"}
+        {"status": "pending", "queue_pos": 9, "queue_type_pos": 2, "debug": "ignored"}
     )
 
     assert same == base
     assert changed != base
+    assert base[:3] == ("pending", 9, 3)
 
 
 @pytest.mark.asyncio
@@ -1147,14 +1192,20 @@ async def test_task_status_stream_does_not_emit_not_found_terminal_event_for_tra
     [
         (
             [
-                _FakeStatusResponse(200, {"status": "pending", "queue_pos": 3}),
+                _FakeStatusResponse(
+                    200,
+                    {"status": "pending", "queue_pos": 3, "queue_type_pos": 1},
+                ),
                 _FakeStatusResponse(500),
             ],
             "5xx",
         ),
         (
             [
-                _FakeStatusResponse(200, {"status": "pending", "queue_pos": 3}),
+                _FakeStatusResponse(
+                    200,
+                    {"status": "pending", "queue_pos": 3, "queue_type_pos": 1},
+                ),
                 httpx.ReadTimeout("backend timeout"),
             ],
             "timeout",
@@ -1210,7 +1261,7 @@ async def test_task_status_stream_does_not_emit_terminal_event_when_queue_poll_h
         },
         {
             "event": "progress",
-            "data": json.dumps({"status": "pending", "queue_pos": 3}),
+            "data": json.dumps({"status": "pending", "queue_pos": 1}),
         },
     ]
     assert all(

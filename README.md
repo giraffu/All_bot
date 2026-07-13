@@ -34,11 +34,14 @@
 - [子模块: GPU 算力资源池控制器 (GPU Pool Controller)](./docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md)
 - [GitHub 分支保护与热点回归门禁](./docs/子模块_GitHub分支保护与热点回归门禁_branch_protection.md)
 - [子模块: QQCC 懒人 Bot (QQCC Lazy Bot)](./docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md)
+- [子模块: QQCC 用户私有 Bot 平台 (QQCC Private Bot Platform)](./docs/子模块_QQCC用户私有Bot平台_qqcc_private_bot_platform.md)
 - [子模块: Telegram 本地 API 与文件代理 (TG Local API)](./docs/子模块_Telegram本地API与文件代理_tg_local_api.md)
 - [子模块: 中控 API 与节点通信 (Central API & Worker Communication)](./docs/子模块_中控API与节点通信_central_api.md)
 - [子模块: 云控制面 SSH 密钥管理 (Cloud SSH Access)](./docs/子模块_云控制面SSH密钥管理_cloud_ssh_access.md)
 - [子模块: 云正式控制面部署 (Cloud Prod Control Plane)](./docs/子模块_云正式控制面部署_cloud_prod_control_plane.md)
 - [子模块: 云测试控制面部署 (Cloud Test Control Plane)](./docs/子模块_云测试控制面部署_cloud_test_control_plane.md)
+- [子模块: Git + 不可变镜像发布](./docs/子模块_Git不可变发布_git_immutable_release.md)
+- [子模块: 首次可信 Release 准备](./docs/子模块_首次可信发布准备_first_trusted_release.md)
 - [子模块: 交互状态机与回调路由 (FSM & Callback Handlers)](./docs/子模块_交互状态机_fsm_handlers.md)
 - [子模块: 付费群审核 Bot (Paid Group Guard Bot)](./docs/子模块_付费群审核Bot_paid_group_guard_bot.md)
 - [子模块: 代码静态分析与质量评估规范 (Code Quality & Static Analysis)](./docs/子模块_代码静态分析与质量评估规范_code_quality.md)
@@ -69,4 +72,4 @@
 ## 持续集成与部署
 
 - 本项目通过 GitHub Actions 实现对 Markdown 文档的自动校验（`markdownlint`）和自动目录更新。
-- 当前研发验证首选云测试控制面，日常测试更新以快速单模块容器重建为主，不默认进入维护或排空队列；正式热修走云正式 compose / cloud deploy 脚本；本地 `safe_deploy.sh` 只保留为云正式整体故障时的临时本地正式灾备入口。
+- 代码发布统一走 `scripts/release.py`：受保护 main 的完整 SHA 经 CI 构建 digest-pinned 镜像，先部署/验收云测试，再把同 SHA、同 digest 晋级正式；禁止代码/env rsync、云端现场 build 和源码挂载。本地 `safe_deploy.sh` 只保留为云正式整体故障时的临时灾备入口。

@@ -1,7 +1,9 @@
 import importlib.util
 import json
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -160,11 +162,27 @@ def test_user_log_model_declares_credit_ledger_index():
 def test_credit_ledger_migration_creates_user_created_at_id_index(monkeypatch):
     module = _load_migration_module()
     created_indexes = []
+    autocommit_entries = []
+
+    @contextmanager
+    def autocommit_block():
+        autocommit_entries.append("entered")
+        yield
 
     monkeypatch.setattr(
         module.op,
         "create_index",
         lambda *args, **kwargs: created_indexes.append((args, kwargs)),
+    )
+    monkeypatch.setattr(
+        module.op,
+        "get_bind",
+        lambda: SimpleNamespace(dialect=SimpleNamespace(name="postgresql")),
+    )
+    monkeypatch.setattr(
+        module.op,
+        "get_context",
+        lambda: SimpleNamespace(autocommit_block=autocommit_block),
     )
 
     module.upgrade()
@@ -176,6 +194,7 @@ def test_credit_ledger_migration_creates_user_created_at_id_index(monkeypatch):
                 "user_logs",
                 ["user_id", "created_at", "id"],
             ),
-            {"unique": False},
+            {"unique": False, "postgresql_concurrently": True},
         )
     ]
+    assert autocommit_entries == ["entered"]

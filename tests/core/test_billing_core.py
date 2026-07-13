@@ -217,6 +217,76 @@ async def test_get_user_priority_and_identity_uses_explicit_dependencies():
     get_group.assert_awaited_once_with(123)
 
 
+@pytest.mark.asyncio
+async def test_release_concurrency_lock_forwards_task_idempotency_key():
+    decrement = AsyncMock()
+    dependencies = SimpleNamespace(decrement_user_concurrency_func=decrement)
+
+    await billing_core.release_concurrency_lock(
+        123,
+        idempotency_key="task_release:task-a",
+        dependencies=dependencies,
+    )
+
+    decrement.assert_awaited_once_with(
+        123,
+        idempotency_key="task_release:task-a",
+    )
+
+
+@pytest.mark.asyncio
+async def test_task_keyed_concurrency_replay_does_not_increment_or_reject_again():
+    increment = AsyncMock(return_value=(2, False))
+    rollback = AsyncMock()
+    dependencies = SimpleNamespace(
+        get_user_identity_func=AsyncMock(return_value="外门弟子"),
+        get_user_group_func=AsyncMock(return_value="筑基期"),
+        get_system_status_func=AsyncMock(return_value={"queue_size": 0}),
+        increment_user_concurrency_func=increment,
+        decrement_user_concurrency_func=AsyncMock(),
+        rollback_user_concurrency_acquire_func=rollback,
+    )
+
+    allowed, message = await billing_core.check_concurrency_lock(
+        123,
+        idempotency_key="task_concurrency:deterministic-task",
+        dependencies=dependencies,
+    )
+
+    assert allowed is True
+    assert message == ""
+    increment.assert_awaited_once_with(
+        123,
+        idempotency_key="task_concurrency:deterministic-task",
+    )
+    rollback.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_new_task_keyed_concurrency_over_limit_rolls_back_acquire_marker():
+    rollback = AsyncMock()
+    dependencies = SimpleNamespace(
+        get_user_identity_func=AsyncMock(return_value="外门弟子"),
+        get_user_group_func=AsyncMock(return_value="筑基期"),
+        get_system_status_func=AsyncMock(return_value={"queue_size": 0}),
+        increment_user_concurrency_func=AsyncMock(return_value=(4, True)),
+        decrement_user_concurrency_func=AsyncMock(),
+        rollback_user_concurrency_acquire_func=rollback,
+    )
+
+    allowed, _message = await billing_core.check_concurrency_lock(
+        123,
+        idempotency_key="task_concurrency:new-task",
+        dependencies=dependencies,
+    )
+
+    assert allowed is False
+    rollback.assert_awaited_once_with(
+        123,
+        idempotency_key="task_concurrency:new-task",
+    )
+
+
 def test_get_default_billing_core_dependencies_resolves_runtime_providers():
     permission_service = SimpleNamespace(
         get_user_identity=AsyncMock(),
@@ -226,6 +296,7 @@ def test_get_default_billing_core_dependencies_resolves_runtime_providers():
     redis_client = SimpleNamespace(
         increment_user_concurrency=AsyncMock(),
         decrement_user_concurrency=AsyncMock(),
+        rollback_user_concurrency_acquire=AsyncMock(),
     )
     quota_manager = SimpleNamespace(
         deduct_credits=AsyncMock(),
@@ -258,6 +329,10 @@ def test_get_default_billing_core_dependencies_resolves_runtime_providers():
     assert (
         dependencies.decrement_user_concurrency_func
         is redis_client.decrement_user_concurrency
+    )
+    assert (
+        dependencies.rollback_user_concurrency_acquire_func
+        is redis_client.rollback_user_concurrency_acquire
     )
     assert dependencies.deduct_credits_func is quota_manager.deduct_credits
     assert dependencies.add_credits_func is quota_manager.add_credits

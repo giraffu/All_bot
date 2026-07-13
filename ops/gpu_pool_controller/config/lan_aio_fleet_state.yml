@@ -1,6 +1,6 @@
 version: 1
 managed_by: allbot-lan-aio-operator
-last_verified_at: "2026-07-09T20:07:55Z"
+last_verified_at: "2026-07-13T09:49:54Z"
 sources:
   slot_catalog: ops/gpu_pool_controller/config/lan_aio_prod_slots.yml
   profile_catalog: ops/gpu_pool_controller/config/task_profiles.yml
@@ -20,58 +20,68 @@ nodes:
         hardware: NVIDIA GeForce RTX 5090 32G
         mode: lan_aio
         current:
-          profile: image_to_video
-          slot_id: gpu-226-gpu0-image_to_video
-          agent_id: lan_aio_prod_gpu226_gpu0_image_to_video_01
-          container_name: allbot-lan-aio-gpu-226-gpu0-image_to_video-prod
+          profile: pornmaster_flux2_edit_bf16
+          slot_id: gpu-226-gpu0-pornmaster_flux2_edit_bf16
+          agent_id: lan_aio_prod_gpu226_gpu0_pornmaster_flux2_edit_bf16_01
+          container_name: allbot-lan-aio-gpu-226-gpu0-pornmaster_flux2_edit_bf16-prod
           host_port: 8190
-          state: prod_enabled
-          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd
-          model_manifest_key: image_to_video/2026-06-13-test/manifest.json
-          workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/image_to_video/workspace
-          last_takeover_at: "2026-07-09T20:06:07Z"
+          state: running
+          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-pornmaster-flux2-edit:20260628-pornmaster-flux2-edit-cu128-smallvae1
+          model_manifest_key: pornmaster_flux2_edit_bf16/2026-07-12/manifest.json
+          workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/pornmaster_flux2_edit/workspace
+          last_takeover_at: "2026-07-13T09:47:21Z"
         cached_profiles:
           - profile: image_to_video
             cache_state: ready
             model_manifest_key: image_to_video/2026-06-13-test/manifest.json
             workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/image_to_video/workspace
-            synced_at: "2026-07-09T20:04:33.254433+00:00"
-            note: Current runtime after the 2026-07-10 Asia/Shanghai switch from LTX to image_to_video.
+            synced_at: "2026-07-13T08:11:25.336197+00:00"
+            note: Stopped same-card image_to_video rollback candidate after the 2026-07-13 17:47 Asia/Shanghai switch to PornMaster Flux2 BF16; it was drained and waited idle before stop-old.
           - profile: ltx_video
             cache_state: ready
             model_manifest_key: ltx_video/2026-06-10/manifest.json
             workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/ltx_video/workspace
             synced_at: "2026-07-09T19:45:16.718566+00:00"
-            note: Stopped same-card rollback candidate after the 2026-07-10 Asia/Shanghai switch to image_to_video.
+            note: Stopped same-card rollback candidate after the 2026-07-12 Asia/Shanghai switch to image_to_video.
           - profile: scail2
             cache_state: ready
             model_manifest_key: scail2/2026-06-17-test/manifest.json
             workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/scail2/workspace
-            synced_at: "2026-07-08T18:03:17.262112+00:00"
-            note: Stopped same-card rollback candidate after the 2026-07-10 Asia/Shanghai switch to image_to_video; sm_120 xformers runtime image remains cached.
+            synced_at: "2026-07-12T15:58:37.723553+00:00"
+            note: Stopped same-card rollback candidate after the 2026-07-13 16:11 Asia/Shanghai switch to image_to_video; warm-cache had previously skipped all six already-present model files.
           - profile: wan22_video_v2
             cache_state: ready
             model_manifest_key: wan22_video_v2/2026-06-13-test/manifest.json
             workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/wan22_video_v2/workspace
             synced_at: "2026-07-09T18:41:34.983633+00:00"
-            note: Stopped same-card canary candidate after the 2026-07-10 Asia/Shanghai switch to image_to_video; future Wan22 use remains canary-only on this 32G card.
-        fast_switch_candidates:
-          - slot_id: gpu-226-gpu0-ltx_video
-            profile: ltx_video
+            note: Stopped same-card canary candidate after the 2026-07-12 Asia/Shanghai switch to image_to_video; future Wan22 use remains canary-only on this 32G card.
+          - profile: pornmaster_flux2_edit_bf16
             cache_state: ready
-            note: Same-card rollback candidate after the 2026-07-10 Asia/Shanghai switch to image_to_video.
+            model_manifest_key: pornmaster_flux2_edit_bf16/2026-07-12/manifest.json
+            workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/pornmaster_flux2_edit/workspace
+            synced_at: "2026-07-13T09:46:12.441803+00:00"
+            note: Current production PornMaster Flux2 V4 turbo BF16 runtime after the 2026-07-13 17:47 Asia/Shanghai switch from image_to_video; warm-cache skipped all three already-present model files.
+        fast_switch_candidates:
+          - slot_id: gpu-226-gpu0-image_to_video
+            profile: image_to_video
+            cache_state: ready
+            note: Same-card rollback candidate after the 2026-07-13 17:47 Asia/Shanghai switch to PornMaster Flux2 BF16.
           - slot_id: gpu-226-gpu0-scail2
             profile: scail2
             cache_state: ready
-            note: Same-card rollback candidate after the 2026-07-10 Asia/Shanghai switch to image_to_video.
+            note: Same-card rollback candidate after the 2026-07-13 17:47 Asia/Shanghai switch to PornMaster Flux2 BF16; watch RTX 5090 32G for OOM/status 137 if restored.
+          - slot_id: gpu-226-gpu0-ltx_video
+            profile: ltx_video
+            cache_state: ready
+            note: Same-card rollback candidate after the 2026-07-13 17:47 Asia/Shanghai switch to PornMaster Flux2 BF16.
           - slot_id: gpu-226-gpu0-wan22_video_v2
             profile: wan22_video_v2
             cache_state: ready
-            note: Same-card canary rollback candidate after the 2026-07-10 Asia/Shanghai switch to image_to_video; not proven steady 32G capacity.
+            note: Same-card canary candidate after the 2026-07-13 17:47 Asia/Shanghai switch to PornMaster Flux2 BF16; not proven steady 32G capacity.
         blocked_profiles:
           - profile: face_i2i_t2i
             reason: legacy host-service cloud_prod_worker_01 is disabled and cloud-prod-comfy-agent-1 is stopped after the 2026-07-02 cutover; systemd comfyui.service remains active/idle on 8188 as manual rollback metadata.
-        notes: Switched gpu-226 GPU0 from LTX to image_to_video on 2026-07-10 Asia/Shanghai with scripts/lan_aio_fleet_prod_ops.py takeover --slot gpu-226-gpu0-image_to_video --replace-slot gpu-226-gpu0-ltx_video --include-disabled --failure-policy auto_rollback --execute. Preflight, image presence, warm-cache, drain/wait-idle, stop-old, start-disabled, disabled heartbeat, and enable-aio passed. Post-check showed allbot-lan-aio-gpu-226-gpu0-image_to_video-prod healthy on 8190, runtime_profile image_to_video, task types video_insert,video_edit,image_to_video, model cache ready, and LTX exited cleanly with no old-runtime GPU processes. LTX, Wan22 v2, and SCAIL-2 remain same-card rollback/canary candidates; Wan22 is not proven steady 32G capacity.
+        notes: Switched gpu-226 GPU0 from image_to_video to PornMaster Flux2 V4 turbo BF16 on 2026-07-13 17:47 Asia/Shanghai through scripts/lan_aio_fleet_prod_ops.py takeover with auto_rollback. The first takeover attempt failed during drain-legacy because Central returned a TLS EOF before stop-old, so image_to_video remained healthy and kept serving. The operator then set image_to_video to draining, waited for the active image_to_video task to finish naturally, and reran takeover. Preflight, image presence, warm-cache, drain/wait-idle, stop-old, start-disabled, Docker health, disabled heartbeat, old-process cleanup, and enable gates passed. Post-check showed the BF16 container healthy on 8190, Central worker idle with task type pornmaster_flux2_edit_bf16, ComfyUI queue 0/0, and GPU 27.3 GiB used at idle. This RTX 5090 32G card is below the profile 48G preferred capacity, so monitor real BF16 jobs for OOM/status 137.
 
   gpu-177:
     host: allbot-gpu-177

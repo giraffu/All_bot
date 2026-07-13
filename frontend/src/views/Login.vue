@@ -23,6 +23,14 @@ const pwdFormState = reactive({
 })
 
 const TELEGRAM_AUTH_LOADING_HINT = '正在加载 Telegram 授权...'
+const TELEGRAM_WEBAPP_DATA_PARAM = 'tgWebAppData'
+const TELEGRAM_WEBAPP_OUTER_PARAM_BOUNDARY = /&tgWebApp(?:Version|Platform|ThemeParams|StartParam)=/
+
+type TelegramWebAppLike = {
+  initData?: string
+  platform?: string
+  expand?: () => void
+}
 
 const resolveAuthErrorMessage = (error: any, fallback: string) => {
   const data = error?.response?.data
@@ -34,6 +42,51 @@ const resolveAuthErrorMessage = (error: any, fallback: string) => {
   }
   return fallback
 }
+
+const extractTelegramInitDataFromParamSource = (source: string) => {
+  const normalized = source.replace(/^[?#]/, '')
+  if (!normalized) return ''
+
+  const parsedValue = new URLSearchParams(normalized).get(TELEGRAM_WEBAPP_DATA_PARAM)
+  if (parsedValue?.includes('auth_date=') && parsedValue.includes('hash=')) {
+    return parsedValue
+  }
+
+  const marker = `${TELEGRAM_WEBAPP_DATA_PARAM}=`
+  const markerIndex = normalized.indexOf(marker)
+  if (markerIndex < 0) return ''
+
+  const valueWithRest = normalized.slice(markerIndex + marker.length)
+  const boundaryIndex = valueWithRest.search(TELEGRAM_WEBAPP_OUTER_PARAM_BOUNDARY)
+  const rawValue = boundaryIndex >= 0
+    ? valueWithRest.slice(0, boundaryIndex)
+    : valueWithRest
+
+  if (!rawValue) return ''
+  if (!/%(?:26|3D)/i.test(rawValue)) return rawValue
+
+  try {
+    return decodeURIComponent(rawValue)
+  } catch {
+    return rawValue
+  }
+}
+
+const readTelegramLaunchInitData = () => (
+  extractTelegramInitDataFromParamSource(window.location.hash)
+  || extractTelegramInitDataFromParamSource(window.location.search)
+)
+
+const resolveTelegramInitData = (webApp?: TelegramWebAppLike) => {
+  const sdkInitData = webApp?.initData?.trim()
+  return sdkInitData || readTelegramLaunchInitData()
+}
+
+const hasTelegramLaunchContext = (webApp?: TelegramWebAppLike) => (
+  Boolean(webApp?.platform && webApp.platform !== 'unknown')
+  || window.location.hash.includes('tgWebApp')
+  || window.location.search.includes('tgWebApp')
+)
 
 const shouldPreferPasswordLogin = () =>
   route.query.mode === 'password'
@@ -104,11 +157,11 @@ const handleTelegramAuth = async (user: any) => {
 
 const checkWebAppLogin = async () => {
   // Check if we are running inside Telegram Mini App
-  const tg = (window as any).Telegram
-  if (tg && tg.WebApp && tg.WebApp.initData) {
+  const webApp = (window as any).Telegram?.WebApp as TelegramWebAppLike | undefined
+  const initData = resolveTelegramInitData(webApp)
+  if (initData) {
     loading.value = true
     try {
-      const initData = tg.WebApp.initData
       // Send initData to backend for verification
       const response = await api.post('/auth/telegram', { initData })
       
@@ -125,9 +178,7 @@ const checkWebAppLogin = async () => {
         message.success('Mini App 自动登录成功！')
         
         // Expand WebApp to full height if possible
-        if (tg.WebApp.expand) {
-          tg.WebApp.expand()
-        }
+        webApp?.expand?.()
         
         router.push('/profile')
         return true // Successfully logged in via WebApp
@@ -143,7 +194,7 @@ const checkWebAppLogin = async () => {
     } finally {
       loading.value = false
     }
-  } else if (tg?.WebApp?.platform && tg.WebApp.platform !== 'unknown') {
+  } else if (hasTelegramLaunchContext(webApp)) {
     telegramAuthHint.value = '当前入口缺少 Telegram 授权信息，请从 Bot 个人中心点击 Mini App 自动登录。'
   }
   return false // Not in WebApp or failed

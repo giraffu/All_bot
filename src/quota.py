@@ -16,6 +16,7 @@ from .database.models import (
     TemplateContribution,
     User,
     UserLog,
+    PrivateBotTaskSubmission,
 )
 from .services.log_service import LogService
 from src.core.exceptions import InsufficientCreditsError
@@ -195,8 +196,6 @@ class QuotaManager:
             select(UserLog)
             .where(
                 UserLog.user_id == user_id,
-                UserLog.operation_type == task_type,
-                UserLog.credit_change == credit_change,
                 or_(
                     *[
                         UserLog.extra_info.like(pattern, escape="\\")
@@ -209,6 +208,83 @@ class QuotaManager:
         )
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def _load_legacy_task_refund_log(
+        self,
+        *,
+        session: AsyncSession,
+        user_id: int,
+        canonical_idempotency_key: str,
+    ) -> UserLog | None:
+        prefix = "task_refund:task:"
+        if not canonical_idempotency_key.startswith(prefix):
+            return None
+        registry_task_id = canonical_idempotency_key.removeprefix(prefix)
+        if not registry_task_id:
+            return None
+
+        field_json = json.dumps(CREDIT_IDEMPOTENCY_EXTRA_FIELD)
+        suffix = self._escape_like_pattern(f':{registry_task_id}"')
+        spaced_prefix = self._escape_like_pattern(
+            field_json + ': "task_refund:'
+        )
+        compact_prefix = self._escape_like_pattern(
+            field_json + ':"task_refund:'
+        )
+        patterns = [
+            f"%{spaced_prefix}%{suffix}%",
+            f"%{compact_prefix}%{suffix}%",
+        ]
+        result = await session.execute(
+            select(UserLog)
+            .where(
+                UserLog.user_id == int(user_id),
+                or_(
+                    *[
+                        UserLog.extra_info.like(pattern, escape="\\")
+                        for pattern in patterns
+                    ]
+                ),
+            )
+            .order_by(UserLog.id.desc())
+        )
+        for candidate in result.scalars().all():
+            try:
+                extra_info = json.loads(candidate.extra_info or "{}")
+            except (TypeError, ValueError):
+                continue
+            legacy_key = extra_info.get(CREDIT_IDEMPOTENCY_EXTRA_FIELD)
+            if (
+                isinstance(legacy_key, str)
+                and legacy_key.startswith("task_refund:")
+                and legacy_key != canonical_idempotency_key
+                and legacy_key.endswith(f":{registry_task_id}")
+            ):
+                return candidate
+        return None
+
+    async def has_credit_idempotency_entry(
+        self,
+        *,
+        user_id: int,
+        idempotency_key: str,
+        expected_credit_change: int,
+    ) -> bool:
+        async with AsyncSessionLocal() as session:
+            existing = await self._load_existing_credit_idempotency_log(
+                session=session,
+                user_id=int(user_id),
+                task_type="",
+                credit_change=int(expected_credit_change),
+                idempotency_key=idempotency_key,
+            )
+            if existing is None:
+                return False
+            if int(existing.credit_change or 0) != int(expected_credit_change):
+                raise ValueError(
+                    "credit idempotency key was reused with a different amount"
+                )
+            return True
 
     async def _adjust_credits_in_session(
         self,
@@ -227,6 +303,10 @@ class QuotaManager:
             raise ValueError(f"User {user_id} not found")
 
         if idempotency_key:
+            extra_info = {
+                **(extra_info or {}),
+                CREDIT_IDEMPOTENCY_EXTRA_FIELD: idempotency_key,
+            }
             existing_log = await self._load_existing_credit_idempotency_log(
                 session=session,
                 user_id=user_id,
@@ -234,7 +314,23 @@ class QuotaManager:
                 credit_change=credit_delta,
                 idempotency_key=idempotency_key,
             )
+            if existing_log is None:
+                existing_log = await self._load_legacy_task_refund_log(
+                    session=session,
+                    user_id=user_id,
+                    canonical_idempotency_key=idempotency_key,
+                )
             if existing_log is not None:
+                if int(existing_log.credit_change or 0) != int(credit_delta):
+                    raise ValueError(
+                        "credit idempotency key was reused with a different amount"
+                    )
+                await self._confirm_private_submission_debit_in_session(
+                    session=session,
+                    user_id=user_id,
+                    credit_delta=credit_delta,
+                    idempotency_key=idempotency_key,
+                )
                 current_balance = int(user.credits or 0)
                 return CreditChangeResult(
                     old_balance=current_balance,
@@ -268,7 +364,57 @@ class QuotaManager:
             session=session,
             audit_mode=audit_mode,
         )
+        await self._confirm_private_submission_debit_in_session(
+            session=session,
+            user_id=user_id,
+            credit_delta=credit_delta,
+            idempotency_key=idempotency_key,
+        )
         return result
+
+    async def _confirm_private_submission_debit_in_session(
+        self,
+        *,
+        session: AsyncSession,
+        user_id: int,
+        credit_delta: int,
+        idempotency_key: str | None,
+    ) -> None:
+        prefix = "task_debit:private_bot_update:"
+        if credit_delta >= 0 or not idempotency_key or not idempotency_key.startswith(prefix):
+            return
+
+        submission_key = idempotency_key.removeprefix("task_debit:")
+        result = await session.execute(
+            update(PrivateBotTaskSubmission)
+            .where(
+                PrivateBotTaskSubmission.submission_key == submission_key,
+                PrivateBotTaskSubmission.internal_user_id == int(user_id),
+                PrivateBotTaskSubmission.actual_cost == -int(credit_delta),
+                or_(
+                    PrivateBotTaskSubmission.debit_confirmed_at.is_not(None),
+                    (
+                        PrivateBotTaskSubmission.status.in_(
+                            ("reserved", "dispatching")
+                        )
+                    )
+                    & (
+                        PrivateBotTaskSubmission.compensation_status
+                        != "completed"
+                    ),
+                ),
+            )
+            .values(
+                debit_confirmed_at=func.coalesce(
+                    PrivateBotTaskSubmission.debit_confirmed_at,
+                    datetime.now(),
+                )
+            )
+        )
+        if int(result.rowcount or 0) != 1:
+            raise RuntimeError(
+                "private Bot submission no longer accepts this debit"
+            )
 
     async def _log_credit_change(
         self,

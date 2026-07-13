@@ -79,7 +79,10 @@ async def test_saga_compensation_refunds_credits_and_releases_lock():
         task_type="refund_saga_failed",
         username=username,
     )
-    mock_release.assert_awaited_once_with(user_id)
+    mock_release.assert_awaited_once_with(
+        user_id,
+        idempotency_key="task_concurrency:test_task_id",
+    )
 
 
 @pytest.mark.asyncio

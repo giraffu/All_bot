@@ -54,6 +54,8 @@ def _can_show_market(config: dict) -> bool:
 def get_qqcc_main_menu_keyboard(
     lang: str,
     config: dict | None = None,
+    *,
+    include_private_bot_entry: bool = True,
 ) -> ReplyKeyboardMarkup:
     config = normalize_qqcc_config(config)
     keyboard = []
@@ -72,6 +74,9 @@ def get_qqcc_main_menu_keyboard(
 
     if is_qqcc_global_enabled(config) and _can_show_market(config):
         keyboard.append([get_text("qqcc.menu.market", lang)])
+
+    if include_private_bot_entry:
+        keyboard.append([get_text("qqcc.menu.private_bot", lang)])
 
     if is_qqcc_main_bot_link_enabled(config):
         keyboard.append([get_text("menu.open_main_bot", lang)])

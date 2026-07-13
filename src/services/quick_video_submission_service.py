@@ -36,6 +36,16 @@ from src.services.qqcc_regenerate_metadata import (
     QQCC_REGENERATE_KIND_QUICK_VIDEO,
     build_qqcc_regenerate_result_meta,
 )
+from src.services.private_qqcc_continuation_service import (
+    PrivateQqccContinuationStore,
+    StageExecutor,
+    build_private_qqcc_draw_continuation_stages,
+    create_private_qqcc_continuation,
+    execute_private_qqcc_continuation_stage_default,
+    persist_private_qqcc_continuation_input,
+    resume_private_qqcc_continuation,
+)
+from src.services.qqcc_runtime_context import is_private_qqcc_bot_context
 from src.services.task_service_entrypoints_video import process_video_task_template
 from src.services.task_service_generation_image import (
     process_standard_generation_task as process_generation_task,
@@ -380,6 +390,10 @@ async def _maybe_await(value: Awaitable[Any] | Any) -> Any:
     return value
 
 
+def quick_video_plan_requires_continuation(plan: QuickVideoSubmissionPlan) -> bool:
+    return plan.kind == QuickVideoSubmissionKind.TAIL_FRAME_VIDEO
+
+
 async def run_quick_video_submission_plan(
     *,
     plan: QuickVideoSubmissionPlan,
@@ -394,7 +408,117 @@ async def run_quick_video_submission_plan(
     execute_draw_chain_func: ExecuteDrawChain = execute_qqcc_draw_scene_chain,
     download_output_file_to_fsm_temp_func: DownloadOutputFile = download_output_file_to_fsm_temp,
     cleanup_temp_files_func: CleanupTempFiles = cleanup_fsm_temp_files,
+    private_continuation_store: PrivateQqccContinuationStore | None = None,
+    private_continuation_execute_stage_func: StageExecutor | None = None,
 ) -> None:
+    if is_private_qqcc_bot_context(context) and quick_video_plan_requires_continuation(
+        plan
+    ):
+        stages = build_private_qqcc_draw_continuation_stages(
+            chain=resolve_qqcc_draw_chain_prompts({}, plan.tail_draw_chain),
+            final_send_result=False,
+            final_allow_contribute=False,
+            final_delete_status=False,
+        )
+        continuation_controls = {
+            "base_priority": QQCC_CHAIN_CONTINUATION_BASE_PRIORITY,
+            "allow_cancel": False,
+            "user_cancel_allowed": False,
+        }
+        if plan.mode == MODE_WAN22_VIDEO_V2:
+            stages.append(
+                {
+                    "executor": "generation",
+                    "input_mode": "original_current",
+                    "delivery_required": True,
+                    "task_kwargs": {
+                        "prompt": plan.prompt_override or plan.default_prompt_text,
+                        "negative_prompt": plan.negative_prompt,
+                        "is_video": True,
+                        "task_type": MODE_WAN22_VIDEO_V2,
+                        "cleanup": True,
+                        "send_result": True,
+                        "delete_status": True,
+                        "allow_contribute": plan.allow_contribute,
+                        "display_mode_name_override": plan.display_mode_name,
+                        "result_meta": plan.result_meta,
+                        "resolution": plan.resolution,
+                        "duration": plan.duration,
+                        **continuation_controls,
+                    },
+                }
+            )
+        else:
+            stages.append(
+                {
+                    "executor": "legacy_video",
+                    "input_mode": "original_current",
+                    "delivery_required": True,
+                    "task_kwargs": {
+                        "mode": plan.mode,
+                        "default_prompt_key": plan.default_prompt_key,
+                        "default_prompt_text": plan.default_prompt_text,
+                        "prompt_override": plan.prompt_override,
+                        "negative_prompt": plan.negative_prompt,
+                        "display_mode_name_override": plan.display_mode_name,
+                        "result_meta": plan.result_meta,
+                        "lora_name": plan.lora_name,
+                        "use_end_frame": True,
+                        "cleanup": True,
+                        "send_result": True,
+                        "delete_status": True,
+                        "allow_contribute": plan.allow_contribute,
+                        "resolution": plan.resolution,
+                        "duration": plan.duration,
+                        **continuation_controls,
+                    },
+                }
+            )
+        try:
+            durable_input_ref = await persist_private_qqcc_continuation_input(
+                input_ref=image_path,
+                telegram_user_id=user_id,
+                username=username,
+            )
+            checkpoint = await create_private_qqcc_continuation(
+                stages=stages,
+                original_input_ref=durable_input_ref,
+                original_input_durable=True,
+                context=context,
+                chat_id=chat_id,
+                telegram_user_id=user_id,
+                username=username,
+                status_message_id=status_msg_id,
+                store=private_continuation_store,
+            )
+        finally:
+            cleanup_temp_files_func([image_path])
+
+        async def execute_stage(checkpoint_value, stage, ref, runtime_context):
+            if private_continuation_execute_stage_func is not None:
+                return await private_continuation_execute_stage_func(
+                    checkpoint_value,
+                    stage,
+                    ref,
+                    runtime_context,
+                )
+            return await execute_private_qqcc_continuation_stage_default(
+                checkpoint_value,
+                stage,
+                ref,
+                runtime_context,
+                process_generation_task_func=process_generation_task_func,
+                process_video_task_template_func=process_video_task_template_func,
+            )
+
+        await resume_private_qqcc_continuation(
+            chain_id=checkpoint.chain_id,
+            context=context,
+            store=private_continuation_store,
+            execute_stage_func=execute_stage,
+        )
+        return
+
     if plan.kind == QuickVideoSubmissionKind.TAIL_FRAME_VIDEO:
         await _run_tail_frame_video_plan(
             plan=plan,

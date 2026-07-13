@@ -72,18 +72,26 @@ async def test_runpod_profiles_payload_lists_supported_prod_profiles():
         "scail2",
         "ltx_video",
         "pornmaster_flux2_edit",
+        "pornmaster_flux2_edit_bf16",
     ]
     assert payload["profiles"][0]["supported_task_types"] == [
         "img2img",
         "img2img_lora",
     ]
-    pornmaster = payload["profiles"][-1]
+    pornmaster = payload["profiles"][-2]
     assert pornmaster["label"] == "pornmaster_flux2 / 自由P图 v2"
     assert pornmaster["supported_task_types"] == [
         "pornmaster_flux2_single_edit",
         "pornmaster_flux2_multi_edit",
     ]
     assert pornmaster.get("autoscaler_enabled", True) is True
+
+    pornmaster_bf16 = payload["profiles"][-1]
+    assert pornmaster_bf16["label"] == "pornmaster_flux2 BF16 / 自由P图 v3"
+    assert pornmaster_bf16["supported_task_types"] == [
+        "pornmaster_flux2_edit_bf16",
+    ]
+    assert pornmaster_bf16["autoscaler_enabled"] is False
 
 @pytest.mark.asyncio
 async def test_start_runpod_scale_payload_creates_retrying_operations():

@@ -61,6 +61,18 @@ def test_build_lazy_bot_payload_handles_missing_config(monkeypatch):
     assert reply_markup is None
 
 
+def test_build_lazy_bot_payload_honors_disabled_entry_flag(monkeypatch):
+    monkeypatch.setenv("QQCC_LAZY_BOT_ENABLED", "false")
+    monkeypatch.setenv("QQCC_LAZY_BOT_URL", "https://t.me/QQCC666_bot?start=main")
+
+    message, reply_markup = message_handler_menu.build_lazy_bot_payload(
+        _build_context()
+    )
+
+    assert message == "translated:system.lazy_bot_link_unavailable"
+    assert reply_markup is None
+
+
 def test_build_back_main_and_recharge_payload():
     message, keyboard = message_handler_menu.build_back_to_main_payload(
         _build_context()

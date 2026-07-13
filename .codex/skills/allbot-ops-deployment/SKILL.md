@@ -29,14 +29,14 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 
 ## 2. 当前稳定入口
 
-- 云测试日常更新：快速为主，按变更影响只同步必要代码并重建对应 compose service / profile，不默认进入生成维护、不默认等待 Central pending/running 排空。典型命令是在云测试机 `docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml [--profile bot|qqcc-bot] build <service>` 后 `up -d --no-deps <service>`。
-- 云测试整栈/维护式更新：只有涉及迁移、跨服务契约、控制面多服务联动、边缘 Web 发布、需要排空队列，或用户明确要求维护窗口时，才使用 `scripts/update_cloud_test_with_maintenance.sh --execute`；`scripts/safe_deploy_cloud_test.sh` 仅作为远端控制面重建子步骤。
-- 云正式完整控制面更新：`scripts/update_cloud_prod_with_maintenance.sh`，默认 dry-run；真实执行必须 `--execute --confirm-prod`。
-- 云正式远端控制面重建子步骤：`scripts/safe_deploy_cloud_prod.sh`。
+- 唯一代码发布入口是 `scripts/release.py plan|deploy|rollback`。目标必须是可从 `origin/main` 到达的完整 40 位 SHA，并使用 CI 生成的 `release.json`、Web checksum 和 digest-pinned 镜像；云端不 build、不挂载源码、不接收代码/env rsync。
+- 云测试：先执行 `scripts/release.py plan --env test --sha <sha>`，再以同一 SHA 执行 `deploy --env test --sha <sha> --execute`。影响集合由 `deploy/release-policy.yml` 计算，`--services` 只能扩大，不能缩小。
+- 测试验收：图片、视频、Bot、并发锁、locale、Web、Worker heartbeat、回滚演练及至少 24 小时观察写入验收 JSON，再执行 `scripts/release.py verify-test ... --execute`；缺少 verified 状态不能晋级。
+- 云正式：只能把已验收测试环境中的相同 SHA、业务镜像 digest、第三方镜像 digest 和 Web checksum 晋级，命令必须带 `--execute --confirm-prod`。任何不一致都 fail closed。
 - 本地正式灾备：`safe_deploy.sh` 只用于云正式整体故障时的临时接管，不是日常部署入口。
-- QQCC 正式单服务更新：`scripts/update_cloud_prod_qqcc_bot.sh --execute --confirm-prod --confirm-single-polling`。用户明确要求 QQCC 单服务更新时，可视为当次正式与单 polling 操作确认；若目标容器、token、env、实例数量或脚本路径异常，必须停下追问。
-- Dashboard/服务窄更新：优先用 `scripts/update_cloud_prod_with_maintenance.sh --scope services --services "..."`，只重建目标服务。
-- 云测试/云正式/QQCC 这三条整仓 rsync 更新入口必须排除 `local_analytics_platform/`、`backups/`、`logs/`、前端构建产物和密钥文件；本地分析平台数据不属于远端运行代码包。
+- QQCC、Dashboard 等窄更新仍通过 `release.py --services ...` 表达，但机器计算的共享依赖闭包优先；禁止退回单文件、三服务源码同步或现场 `--build`。
+- QQCC 私有 Bot worker：test/prod service 分别为 `qqcc-private-bot-worker-test/prod`，profile `qqcc-private-bots`，入口 `python -m qqcc_private_bot.worker`。它涉及 Alembic、shared secret、Web API webhook、QQCC Config、官方 QQCC membership checker 与公网 Host，不属于 QQCC 三服务快速更新；当前生产 `PRIVATE_QQCC_BOT_ENABLED=false`，正式 migration/profile/webhook/owner Host 未部署，未经明确确认不得启动。
+- `scripts/update_cloud_test_with_maintenance.sh`、`scripts/update_cloud_prod_with_maintenance.sh`、`scripts/update_cloud_prod_qqcc_bot.sh` 已是 fail-closed 兼容壳，任何参数都不会再同步或构建。
 - cloud-prod shadow 同步：`scripts/sync_cloud_prod_to_local_shadow.py` 默认 dry-run，真实执行必须 `--execute`。
 - RunPod 正式手动池：日常入口优先 `scripts/runpod_prod_ops.sh status|up|add|enable|disable|restart|down|scale|canary|rollback`。
 - GPU/LAN AIO fleet：具体状态查看、缓存预热、候选切换、单卡 takeover/recover/restart 优先加载 `allbot-lan-aio-operator`，并通过 `scripts/lan_aio_fleet_prod_ops.py`、`lan_aio_prod_slots.yml` 与 `lan_aio_fleet_state.yml` 操作；gpu-002 SCAIL-2 正式 slot0 也必须先声明在 fleet 配置里让 operator 可见，`scripts/lan_scail2_aio_prod.sh` 仅作为 SCAIL-2 低层启动/重建/回滚工具。
@@ -46,8 +46,10 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 - 未经用户明确要求，不进入正式发布、生产 compose 重建、生产 RunPod mutation、生产 GPU 节点维护或本地正式灾备接管。
 - 功能研发、联调、缺陷修复与配置调整默认先上云测试控制面。
 - 生产 Bot、QQCC Bot、付费群审核 Bot 必须使用各自独立 token。重建或启动 polling 服务前必须确认没有第二个同 token polling 实例。
+- QQCC 私有 Bot token 只能加密存数据库，不写 compose/env；compose 只保存 AES keyring、active key version、独立 fingerprint key、显式 `PRIVATE_QQCC_BOT_FORBIDDEN_BOT_IDS`、owner JWT key 和 URL/Host 契约。AES/fingerprint/owner JWT 均必须是分别生成的 32-byte Base64URL key，owner JWT 还不得复用 QQCC/主 JWT/Dashboard secret，发布前用 `scripts/validate_private_qqcc_bot_env.py` 校验。forbidden IDs 必须列全官方/测试/付费群 Bot，不能把官方 token 传给管理后端替代。私有 Bot API/file base 必须为独立 HTTPS，禁止继承公网 HTTP Local API；owner/admin Host 显式区分且 unknown Host 404。owner Host 必须允许 Telegram WebView CSP 且不发送 XFO，admin/unknown 仍须 `DENY`/`frame-ancestors 'none'`。禁止输出完整 `docker compose config`；校验使用安全 dummy env + `config -q`。
+- private worker 必须注入环境对应的 `QQCC_BOT_TOKEN` / `QQCC_BOT_TOKEN_TEST`，但只用于官方频道会员查询，不能启动 polling。safe deploy 以 validator `--allow-disabled` 做条件门禁：gate 缺失/`false` 时 inactive profile 的 activation secrets 非必填；gate=`true` 时严格校验全部密钥、R2/HTTPS/Host 契约和对应官方 QQCC token。直接 validator 不加该参数是启用前严格模式；worker 在 gate 非真时拒绝启动。
 - 不输出 `.env.cloud.prod`、`.env.cloud.test`、RunPod API key、Bot token、agent token、JWT secret、R2 key、presigned URL、`docker compose config` 敏感展开或真实数据库 URL。
-- 不把 `docker restart` 当代码发布方式；COPY 型服务必须 build/up 目标 service。
+- 不把 `docker restart`、现场 `docker compose build` 或代码 bind mount 当发布方式；只允许拉取 `release.json` 中的 digest 并 recreate 目标 service。
 - 单服务生产重建禁止 `--remove-orphans`、无 service 名 compose 命令、全组 `docker rm` 过滤器；只清目标 service 容器和同 service label 残留。
 - `env_file` 只传给容器，不参与 compose 文件 `${...}` 插值；涉及默认值时必须渲染并核对容器内实际 env。
 - Alembic multiple heads 必须先中止处理；迁移通过后显式执行 `alembic upgrade head`，不要写“容器下次启动会自动应用迁移”。
@@ -61,13 +63,13 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 
 ### 云测试
 - 使用独立测试 Droplet、测试 Postgres/Redis/Central/Web/Dashboard/imgproxy/Bot。
-- 日常研发验证默认直接重建目标模块容器；例如 Bot 展示/FSM 改动只重建 `bot-test`，Web API 改动只重建 `web-api-test`，Central 改动只重建 `central-api-test`，Dashboard/QQCC Config 改动只重建对应前后端 service。不要为了普通测试更新写维护标记或排空队列。
-- 若启动或重建 `bot-test` / `qqcc-bot-test`，先确认没有第二个同测试 token polling 实例；用 `--profile bot` / `--profile qqcc-bot` 限定目标 service。
+- 日常研发验证也先形成完整 Git SHA 和 CI release；发布器可只 recreate 自动影响到的模块，但代码、shared、locale 与 Worker 依赖始终来自同一 release。
+- 若发布器选中 `bot` / `qqcc-bot`，仍须确认没有第二个同测试 token polling 实例。
 - cloud-test worker 由本地主服务器经 Tailscale 接入测试 Central；默认常驻只保留 test-1 与 test-8，其它测试 worker 只在 smoke/canary 窗口启用。
 - 对象存储为 R2 `user-data-test`，不得误改正式入口。
 
 ### 云正式
-- 生产控制面在 `allbot-do-sgp1-control`，服务由 `deploy/docker-compose-cloud-prod.yml`、`.env.cloud.prod` 和维护脚本管理。
+- 生产控制面在 `allbot-do-sgp1-control`，新发布契约由 `deploy/docker-compose-cloud-base.yml`、prod overlay、`/etc/allbot/prod.env` 和非敏感 `release.env` 管理；旧 compose 仅供首次切换归档/legacy 回滚取证。
 - `web.aivison.it.com` 是 Cloudflare Pages 静态站；正式 API 健康检查是 `https://api.aivison.it.com/api/health`，RMB 入口是 `https://rmb.aivison.it.com/pay/result`。
 - Dashboard 默认走 Tailscale/受控入口；公网管理域名必须有 Cloudflare Access 或等价身份层保护。Cloudflare token、DNS、Tunnel、Access 或 Pages/R2 变更先加载 `allbot-cloudflare-ops`。
 
@@ -88,18 +90,19 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 - LAN AIO 真实接管按单 slot 执行：preflight -> registry/镜像准备 -> pull-image -> warm-cache -> drain-legacy -> wait-idle -> stop-old -> start-disabled -> 验证 disabled heartbeat -> enable-aio；`stop-old` 保护窗口后失败应自动回滚旧服务，优先恢复产能。
 - 低频镜像 tag、RIFE 缓存、SCAIL-2/LTX profile、gpu-177/gpu-252/gpu-002 细节只在需要时读取 `references/runpod-lan-runtime.md` 和 GPU Pool 文档。
 
-## 5. 生产单服务重建
+## 5. 生产单服务发布
 
 1. 确认用户确实要求正式发布或生产热修。
 2. 确认目标 service 存在，并确定是否涉及 Alembic、shared env、worker workflow 或跨服务契约。
-3. 能走维护式脚本时，优先用 `scripts/update_cloud_prod_with_maintenance.sh --scope services --services "..."`。
-4. 若目标是 QQCC Bot，优先走 `scripts/update_cloud_prod_qqcc_bot.sh`。
-5. 手工 compose 只作为脚本不适用或紧急抢修路径；必须限定 service 名，禁止 orphan 清理。
-6. 结束后验证目标容器、日志、健康检查、非敏感 env 和未触碰服务启动时间。
+3. 对精确 SHA 运行 `release.py plan --env prod`，检查自动影响集合、维护等级、migration 与 GPU blocker。
+4. 只有同一 SHA 已在 test 标记 verified，才运行 `release.py deploy --env prod ... --execute --confirm-prod`；`--services` 只能扩大自动集合。
+5. 手工 compose、旧 QQCC 快速脚本、rsync 和现场 build 均不是紧急旁路；无法通过发布器时停下修复发布契约。
+6. 结束后核对容器 digest、OCI revision、current.json、健康检查和未触碰服务启动时间。
 
 ## 6. 验证矩阵
 
 - 基础代码/迁移：`python -m alembic heads`，必要时 `alembic upgrade head`。
+- 私有 Bot 门禁：未启用基线用 `python scripts/validate_private_qqcc_bot_env.py --env-file <ignored-env> --allow-disabled`；启用前去掉 `--allow-disabled` 做严格校验，并确认生产发布授权后才执行 migration/profile/webhook/Cloudflare mutation。
 - 文档：`python scripts/doc_quality_checker.py`。
 - shell 脚本：`bash -n <script>`，再跑对应 dry-run / `--help`。
 - 云测试：cloud-test compose `ps`、`8004/health`、`8001/api/health`、`8044/api/health`、`8087/api/health`、Central `/system/workers`、本地 relay `/ready`。

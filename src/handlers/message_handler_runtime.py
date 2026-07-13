@@ -2,6 +2,8 @@ from src.constants import (
     MODE_FACE_VIDEO_STEP1,
     MODE_FACE_VIDEO_STEP2,
     MODE_FREE_EDIT_V2,
+    MODE_FREE_EDIT_V3,
+    MODE_PORNMASTER_FLUX2_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_TXT2IMG,
@@ -42,6 +44,8 @@ def _normalize_queue_task_type_for_display(task_type: str | None) -> str:
         MODE_PORNMASTER_FLUX2_MULTI_EDIT,
     }:
         return MODE_FREE_EDIT_V2
+    if raw_task_type == MODE_PORNMASTER_FLUX2_EDIT_BF16:
+        return MODE_FREE_EDIT_V3
     if raw_task_type in {"face_video", MODE_FACE_VIDEO_STEP1, MODE_FACE_VIDEO_STEP2}:
         return "face_video"
     if raw_task_type == MODE_TXT2IMG:
@@ -269,7 +273,7 @@ async def build_checkin_reply(update, context) -> str:
     internal_user, _ = await get_or_create_user_by_telegram(user.id)
     internal_user_id = internal_user.id
 
-    is_member = await get_user_channel_status(context.bot, user.id)
+    is_member = await get_user_channel_status(context, user.id)
     if is_member is not None:
         inviter_id_reward = await permission_service.sync_channel_status(
             user.id, user.username, user.full_name, is_member
@@ -316,7 +320,7 @@ async def build_personal_center_reply(
     invite_link: str,
     web_url: str,
 ) -> tuple[str, object]:
-    is_member = await get_user_channel_status(context.bot, user.id)
+    is_member = await get_user_channel_status(context, user.id)
     if is_member is not None:
         await permission_service.sync_channel_status(
             user.id, user.username, user.full_name, is_member

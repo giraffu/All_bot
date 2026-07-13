@@ -50,6 +50,16 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 4. Worker 根据 `SUPPORTED_TASK_TYPES` 拉取任务，下载输入，选择 workflow/runtime profile，调用 ComfyUI，materialize 结果并上报 complete/status。
 5. Web monitor、Bot completion 或恢复流程观察终态，持久化 History/extra outputs、释放锁、退款或清理运行态。
 
+QQCC 私有 Bot 不改变这条生成主链。访客按自己的 `internal_user_id` 计费；租户仅通过 `client_type=bot:qqcc-private:<private_bot_id>` 标记。恢复必须 exact match private ID，经 Application resolver 交回对应 Bot；`bot`、`bot:qqcc` 和其它 private ID 都不能串恢复。owner/admin 暂停或禁用只阻止新任务，已扣费任务继续进入既有终态/退款语义。
+
+私有 Bot 提交必须使用 `private_bot_task_submissions` 持久账本。owner fence 要在并发占位前落盘，扣费日志与 `debit_confirmed_at` 必须同事务，扣费/退款/并发释放都要用 registry task 派生的稳定 key。TaskRegistry 持久 `concurrency_acquisition_key`；终态按字段存在/缺失自动区分新 keyed release 与升级前 unkeyed 任务的一次 legacy DECR，不要求人工 drain。retention 只能有界删除超期、无 active registry 引用且补偿已完成的安全终态；最少保留 30 天，不得删除可恢复/可退款行。
+
+私有 Bot 的任务必须把 Bot presentation contract 写入 active registry，恢复时按原始 `send_result`、结果类型/prompt、输入索引和结果 metadata 处理。多阶段 QQCC continuation 由 `private_qqcc_continuation_service.py` 在 Redis 持久化原始输入、JSON stage plan、阶段序号、确定性 registry ID、当前输出和 `ready|running|delivery_pending|completed|failed` 状态；每阶段必须先 CAS 写入结果再清理 registry，中间阶段才可进入下一步。`failed` 只能由匹配 stage/registry/executor token 的当前 `running` 阶段 CAS 写入，严禁覆盖已 advance 的 `ready`、`delivery_pending` 或 `completed`。最终可见阶段先进入 `delivery_pending`，由持有续跑租约的 delivery owner 发送 Telegram，成功后再 CAS 标记 delivered；checkpoint 写失败时必须保留 active registry/用户锁且不得先发送。恢复扫描即使 TaskRegistry 为空也要继续扫描 ready/delivery checkpoint；running 且无 active registry 的阶段只能在旧续跑锁失效后 rewind。owner/admin 暂停或禁用只挡新 update，已接纳 continuation 可绕过新任务状态门禁继续，但永久解绑后必须停止。
+
+私有 webhook stream 的消费同样属于任务入口可靠性边界：worker 的全局 inflight、单 Bot prefetch、deferred message ID 必须有界（当前默认 `64/8/1024`），body 保留在 Redis stream/PEL；启动要完整 `XAUTOCLAIM` 前任 PEL，并在 catch-up 完成前禁止读取新 `>` update，避免同租户消息越序。容量耗尽应停止读取并让 Redis 背压，不能创建无界内存队列或丢弃已接纳 update。管理员 metrics 应同时观察 stream backlog/pending、inflight/deferred、处理/DLQ/恢复失败。
+
+私有 update 的全局 error handler 自身失败时必须标记 admission failed，禁止 worker 误 ACK。generic/manual `clean_zombies()` 无论是否传 `client_type` 都必须跳过 `bot:qqcc-private:<id>`；私有任务只能走 `clean_private_qqcc_zombies()` 的 ledger + monitor lease + tenant Application 收口。owner/admin 暂停后的 Application 若仍有已扣费 `bg_tasks`，不得因随后到达的 inactive update 被 stop/shutdown，待后台投递完成后再 idle 回收。
+
 分层职责必须保持：入口层负责体验和平台适配；core 负责业务编排；Central 负责队列和执行状态；Worker 负责运行时素材、workflow 和结果上报。
 
 ## 5. 任务类型变更清单
@@ -79,6 +89,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - core 改动：用 provider/dependencies seam 测提交、补偿、异常、幂等和 runtime cleanup。
 - Web 改动：测 API 提交、side-effect monitor、取消/超时、结果轮询和锁释放。
 - Worker/Central 改动：测 queue pop、complete/status、workflow mapping validation、unsupported task type 和重复上报。
+- 私有 webhook worker 改动：测有界 inflight/prefetch/deferred、同 Bot 顺序、startup PEL catch-up 不被新消息超越、重复 claim 不重复处理及 metrics freshness。
 - 新任务类型：至少补 registry 一致性测试、payload builder/入口测试、worker mapping/patcher 测试和一条端到端黄金路径。
 - 部署前：测试优先更新云测试控制面；正式发布必须用户明确确认，并说明 pending/running 处理策略。
 

@@ -21,6 +21,7 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 - **QQCC 修仙市集**：QQCC Bot 可提供轻量 Gallery 浏览入口，分类对齐 Web 可见分组且隐藏 `txt2img`；支持点赞/点踩，普通可应用投稿同时展示 `一键应用` 与 Web 深链 `/gallery?apply_source=gallery&apply_id=<post_id>`，视频换脸类模板只展示 Web 深链，Wan22/LTX 多段拼接结果不展示应用入口。安全单图模板可走 Bot 原生应用，必须带 `source_post_id`、`allow_contribute=False` 和 `client_type=bot:qqcc`；复杂多图/视频/SCAIL-2 等模板的一键应用 callback 只做 Web handoff。Bot caption 的类型与 `#task.mode_*` 标签必须使用当前语言翻译，不得直接显示内部 task type key。点击应用不得预增 `applied_count`。
 - **Feed 查询边界**：Gallery feed SQL 查询拼装位于 `src/services/gallery_feed_queries.py`；旧 `src/core/gallery_feed_queries.py` 兼容 re-export 已删除，新增查询条件不要回写到 core。LTX 高级图生视频只展示一个 `ltx_video` 入口，投稿/筛选兼容 `ltx_video_flf2v` 历史/执行别名。
 - **媒体 URL 策略**：
+  - QQCC 场景示范媒体使用 R2 确定性 key `qqcc/demo/<scene_kind>/<scene_id>/<slot>` 覆盖写，配置保存内容哈希与按 Bot ID 划分的 Telegram file_id 缓存；替换文件时内容哈希变化必须让旧 file_id 失效。配置 Web 预览 URL 只能按需短签生成，不能持久化过期 URL。
   - R2 key 候选顺序为标准 `history/{task_id}/original.ext`、原始 object key、raw `output_file`（兼容 `bot-data/...` 前缀镜像）、旧 basename。
   - 正式 Web/Dashboard 运行时已退出 legacy MinIO 回源：默认 `LEGACY_MINIO_READ_FALLBACK_ENABLED=false`，R2 miss 后只能返回当前 R2/S3 短签、空值或 `pending_result`，不得生成 `assets.aivison.it.com` URL。
   - legacy MinIO 只保留给迁移脚本、人工回滚和旧外链排障；新数据仍写 R2，worker 不得写 legacy MinIO。

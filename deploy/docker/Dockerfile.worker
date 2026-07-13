@@ -1,0 +1,21 @@
+FROM python:3.10-slim
+
+ARG ALLBOT_GIT_SHA
+ARG ALLBOT_SOURCE=https://github.com/giraffu/All_bot
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
+      org.opencontainers.image.source=$ALLBOT_SOURCE
+
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+COPY requirements.txt /tmp/root-requirements.txt
+COPY workers/worker_requirements.txt /tmp/worker-requirements.txt
+RUN pip install --no-cache-dir -r /tmp/root-requirements.txt -r /tmp/worker-requirements.txt
+COPY workers/comfy_agent /app/worker
+COPY workers/local_relay /app/local_relay
+COPY src /app/src
+COPY shared /app/shared
+COPY deploy/docker/python-release-entrypoint.sh /usr/local/bin/allbot-release-entrypoint
+RUN chmod 755 /usr/local/bin/allbot-release-entrypoint
+ENV PYTHONPATH=/app PYTHONUNBUFFERED=1
+ENTRYPOINT ["/usr/local/bin/allbot-release-entrypoint"]
+CMD ["python", "/app/worker/agent_main.py"]

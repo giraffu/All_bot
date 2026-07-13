@@ -16,10 +16,14 @@ async def cleanup_task_runtime_state(
     internal_user_id: int,
     registry_task_id: str | None,
     release_lock: bool = True,
+    release_idempotency_key: str | None = None,
+    raise_on_error: bool = False,
     release_concurrency_lock_func=None,
     remove_task_func=None,
     runtime_dependencies=None,
 ):
+    errors: list[Exception] = []
+    get_task_func = None
     if release_concurrency_lock_func is None or remove_task_func is None:
         runtime_dependencies = runtime_dependencies or build_default_task_core_runtime_dependencies(
             release_concurrency_lock_func=release_concurrency_lock
@@ -30,20 +34,54 @@ async def cleanup_task_runtime_state(
             )
         if remove_task_func is None:
             remove_task_func = runtime_dependencies.remove_task_func
+        get_task_func = runtime_dependencies.get_task_func
+    elif runtime_dependencies is not None:
+        get_task_func = runtime_dependencies.get_task_func
 
     if release_lock:
         try:
-            await release_concurrency_lock_func(internal_user_id)
+            effective_release_idempotency_key = release_idempotency_key
+            if (
+                effective_release_idempotency_key is None
+                and registry_task_id
+                and get_task_func is not None
+            ):
+                task_data = await get_task_func(registry_task_id)
+                if isinstance(task_data, dict):
+                    # Records created before task-keyed acquisition have no
+                    # marker field and must receive one legacy DECR.
+                    effective_release_idempotency_key = task_data.get(
+                        "concurrency_acquisition_key"
+                    )
+                else:
+                    effective_release_idempotency_key = (
+                        f"task_concurrency:{registry_task_id}"
+                    )
+            elif effective_release_idempotency_key is None and registry_task_id:
+                effective_release_idempotency_key = (
+                    f"task_concurrency:{registry_task_id}"
+                )
+            kwargs = (
+                {"idempotency_key": effective_release_idempotency_key}
+                if effective_release_idempotency_key
+                else {}
+            )
+            await release_concurrency_lock_func(internal_user_id, **kwargs)
         except Exception as e:
             logger.error(
                 f"Failed to release concurrency lock for {internal_user_id}: {e}"
             )
+            errors.append(e)
 
     if registry_task_id:
         try:
             await remove_task_func(registry_task_id)
         except Exception as e:
             logger.error(f"Failed to remove registry task {registry_task_id}: {e}")
+            errors.append(e)
+
+    if errors and raise_on_error:
+        raise errors[0]
 
 
 async def get_system_task_stats(
@@ -177,6 +215,7 @@ async def sync_user_concurrency(
     from config import REDIS_PREFIX
 
     key = f"{REDIS_PREFIX}user_concurrency:{user_id}"
+    ownership_key = f"{REDIS_PREFIX}acquired_task_concurrency:{user_id}"
 
     if submission_outbox is not None:
         redis_client = submission_outbox
@@ -184,7 +223,7 @@ async def sync_user_concurrency(
             await redis_client.redis.set(key, actual_count)
             await redis_client.redis.expire(key, 3600)
         else:
-            await redis_client.redis.delete(key)
+            await redis_client.redis.delete(key, ownership_key)
         return
 
     runtime_dependencies = runtime_dependencies or build_default_task_core_runtime_dependencies(
@@ -195,6 +234,7 @@ async def sync_user_concurrency(
         await runtime_dependencies.expire_runtime_value_func(key, 3600)
     else:
         await runtime_dependencies.delete_runtime_value_func(key)
+        await runtime_dependencies.delete_runtime_value_func(ownership_key)
 
 
 async def cancel_user_task(

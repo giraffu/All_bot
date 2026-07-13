@@ -19,17 +19,42 @@ from src.utils import (
     robust_send_message,
 )
 from src.services.qqcc_config_service import load_runtime_qqcc_config, normalize_qqcc_config
+from src.services.qqcc_runtime_context import (
+    is_private_qqcc_bot_context,
+    load_qqcc_config_for_context,
+)
 
 logger = logging.getLogger("qqcc_bot.command")
 _BOT_USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_]{5,32}$")
 
 
-async def _load_menu_config() -> dict:
+async def _load_menu_config(context=None) -> dict:
     try:
+        if context is not None and is_private_qqcc_bot_context(context):
+            return await load_qqcc_config_for_context(context)
         return await load_runtime_qqcc_config()
     except Exception:
+        if context is not None and is_private_qqcc_bot_context(context):
+            logger.error("Private QQCC Bot config is unavailable; failing closed.")
+            raise
         logger.exception("Failed to load QQCC lazy bot config; using defaults.")
         return normalize_qqcc_config(None)
+
+
+def _main_menu_keyboard(context, config):
+    bot_data = getattr(context, "bot_data", {}) or {}
+    private_entry_enabled = bot_data.get(
+        "private_bot_provisioning_enabled",
+        True,
+    )
+    return get_qqcc_main_menu_keyboard(
+        context.lang,
+        config,
+        include_private_bot_entry=(
+            bool(private_entry_enabled)
+            and not is_private_qqcc_bot_context(context)
+        ),
+    )
 
 
 async def setup_commands(app: Application):
@@ -113,7 +138,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             pass
 
-    is_member = await get_user_channel_status(context.bot, user.id)
+    is_member = await get_user_channel_status(context, user.id)
     inviter_id_reward = await permission_service.check_access(
         user.id, user.username, user.full_name, is_member
     )
@@ -136,10 +161,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info("QQCC user started: %s (@%s)", user.id, user.username or "N/A")
 
     context.user_data["mode"] = "none"
-    qqcc_config = await _load_menu_config()
+    qqcc_config = await _load_menu_config(context)
     await update.message.reply_text(
         context.t("command.start_intro"),
-        reply_markup=get_qqcc_main_menu_keyboard(context.lang, qqcc_config),
+        reply_markup=_main_menu_keyboard(context, qqcc_config),
         parse_mode="Markdown",
     )
 
@@ -149,9 +174,9 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cleanup_fsm_user_data(context.user_data)
     context.user_data.pop("qqcc_gallery_apply", None)
 
-    qqcc_config = await _load_menu_config()
+    qqcc_config = await _load_menu_config(context)
     await update.message.reply_text(
         context.t("command.force_cancel"),
-        reply_markup=get_qqcc_main_menu_keyboard(context.lang, qqcc_config),
+        reply_markup=_main_menu_keyboard(context, qqcc_config),
         parse_mode="Markdown",
     )

@@ -37,7 +37,9 @@ async def test_cancel_task_callback_shows_non_blocking_message_when_pending_canc
 
     await task_callbacks.cancel_task_callback(update, context=SimpleNamespace())
 
-    query.answer.assert_awaited_once_with("任务已从排队队列移除", show_alert=False)
+    query.answer.assert_awaited_once_with(
+        text="任务已从排队队列移除", show_alert=False
+    )
 
 
 @pytest.mark.asyncio
@@ -69,4 +71,6 @@ async def test_cancel_task_callback_shows_alert_when_task_already_running(monkey
 
     await task_callbacks.cancel_task_callback(update, context=SimpleNamespace())
 
-    query.answer.assert_awaited_once_with("任务已进入生成，撤销失败", show_alert=True)
+    query.answer.assert_awaited_once_with(
+        text="任务已进入生成，撤销失败", show_alert=True
+    )

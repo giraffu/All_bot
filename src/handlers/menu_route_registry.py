@@ -16,6 +16,7 @@ FSM_MENU_KEYS = (
     "qqcc.menu.ai_draw",
     "qqcc.menu.ai_filter",
     "qqcc.menu.market",
+    "qqcc.menu.private_bot",
     "menu.face_video",
     "menu.video_to_video",
     "menu.video_to_video_replacement",
@@ -46,6 +47,7 @@ SPECIAL_TRANSLATION_ROUTES = (
     ("qqcc.menu.ai_filter", "qqcc.menu.ai_filter"),
     ("qqcc.menu.quick_faceswap", "qqcc.menu.quick_faceswap"),
     ("qqcc.menu.market", "qqcc.menu.market"),
+    ("qqcc.menu.private_bot", "qqcc.menu.private_bot"),
 )
 SPECIAL_TRANSLATION_ROUTE_KEYS = tuple(
     route_key for _translation_key, route_key in SPECIAL_TRANSLATION_ROUTES
@@ -62,9 +64,15 @@ LEGACY_TEXT_ALIASES = {
     "快速换脸": "qqcc.menu.quick_faceswap",
     "懒人bot": "menu.lazy_bot",
     "懒人Bot": "menu.lazy_bot",
+    "私有bot": "qqcc.menu.private_bot",
+    "私有Bot": "qqcc.menu.private_bot",
     "🖼️ 懒人P图": "menu.photo_edit",
     "🎬 自定义图生视频": "menu.custom_video",
     "自定义图生视频": "menu.custom_video",
+    "🎨 自由P图 v2": "menu.free_edit_v2",
+    "自由P图 v2": "menu.free_edit_v2",
+    "🎨 Free Edit v2": "menu.free_edit_v2",
+    "Free Edit v2": "menu.free_edit_v2",
 }
 
 

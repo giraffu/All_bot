@@ -27,6 +27,12 @@ from .providers.runpod import (
     RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY,
     RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX,
     RUNPOD_PORNMASTER_FLUX2_EDIT_SUPPORTED_TASK_TYPES,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_CONTAINER_DISK_GB,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_COMFY_EXTRA_ARGS,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_GPU_TYPE_IDS,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_MODEL_MANIFEST_KEY,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_MODEL_PREFIX,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_SUPPORTED_TASK_TYPES,
     RUNPOD_PROD_AGENT_ID,
     RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
@@ -83,6 +89,7 @@ PROD_I2I_PRO_TASK_TYPE = "i2i_pro"
 PROD_SCAIL2_TASK_TYPE = "scail2"
 PROD_LTX_VIDEO_TASK_TYPE = "ltx_video"
 PROD_PORNMASTER_FLUX2_EDIT_TASK_TYPE = "pornmaster_flux2_edit"
+PROD_PORNMASTER_FLUX2_EDIT_BF16_TASK_TYPE = "pornmaster_flux2_edit_bf16"
 PROD_WORKER_DEFAULT_HEARTBEAT_TIMEOUT_SECONDS = 3600.0
 HEALTHY_WORKER_STATUSES = {"idle", "running"}
 
@@ -867,6 +874,14 @@ class RunPodProdWorkerRunner:
                 task_results = [
                     self._run_pornmaster_flux2_edit_task_case(task_case, summary)
                     for task_case in self._pornmaster_flux2_edit_task_cases(
+                        image_object_key
+                    )
+                ]
+            elif self.options.profile == "pornmaster_flux2_edit_bf16":
+                image_object_key = self._resolve_canary_image(summary)
+                task_results = [
+                    self._run_pornmaster_flux2_edit_task_case(task_case, summary)
+                    for task_case in self._pornmaster_flux2_edit_bf16_task_cases(
                         image_object_key
                     )
                 ]
@@ -1705,6 +1720,10 @@ class RunPodProdWorkerRunner:
                 "wan22_video_v2_comfy_extra_args",
                 RUNPOD_WAN22_VIDEO_V2_COMFY_EXTRA_ARGS,
             )
+        if spec["runpod_task_type"] == PROD_PORNMASTER_FLUX2_EDIT_BF16_TASK_TYPE:
+            expected_env["COMFY_EXTRA_ARGS"] = (
+                RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_COMFY_EXTRA_ARGS
+            )
         return expected_env
 
     def _expected_prod_gpu_type_ids(
@@ -1717,6 +1736,8 @@ class RunPodProdWorkerRunner:
             return target_settings.gpu_type_ids_ltx_video
         if spec["runpod_task_type"] == PROD_PORNMASTER_FLUX2_EDIT_TASK_TYPE:
             return target_settings.gpu_type_ids_pornmaster_flux2_edit
+        if spec["runpod_task_type"] == PROD_PORNMASTER_FLUX2_EDIT_BF16_TASK_TYPE:
+            return RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_GPU_TYPE_IDS
         return target_settings.prod_gpu_type_ids
 
     def _validate_profile_container_disk(
@@ -1747,6 +1768,14 @@ class RunPodProdWorkerRunner:
                 failures.append(
                     "containerDiskInGb must be at least "
                     f"{min_disk} for pornmaster_flux2_edit"
+                )
+        if spec["runpod_task_type"] == PROD_PORNMASTER_FLUX2_EDIT_BF16_TASK_TYPE:
+            rendered_disk = self._rendered_container_disk(body)
+            if rendered_disk < RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_CONTAINER_DISK_GB:
+                failures.append(
+                    "containerDiskInGb must be at least "
+                    f"{RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_CONTAINER_DISK_GB} "
+                    "for pornmaster_flux2_edit_bf16"
                 )
 
     def _rendered_container_disk(self, body: dict[str, Any]) -> int:
@@ -2038,6 +2067,14 @@ class RunPodProdWorkerRunner:
         image_object_key: str,
     ) -> list[dict[str, Any]]:
         return self._canary_cases().pornmaster_flux2_edit_task_cases(
+            image_object_key
+        )
+
+    def _pornmaster_flux2_edit_bf16_task_cases(
+        self,
+        image_object_key: str,
+    ) -> list[dict[str, Any]]:
+        return self._canary_cases().pornmaster_flux2_edit_bf16_task_cases(
             image_object_key
         )
 
@@ -2340,6 +2377,8 @@ def _prod_task_type_for_profile(profile: str) -> str:
         return PROD_LTX_VIDEO_TASK_TYPE
     if profile_key == "pornmaster_flux2_edit":
         return PROD_PORNMASTER_FLUX2_EDIT_TASK_TYPE
+    if profile_key == "pornmaster_flux2_edit_bf16":
+        return PROD_PORNMASTER_FLUX2_EDIT_BF16_TASK_TYPE
     return PROD_TASK_TYPE
 
 
@@ -2439,6 +2478,21 @@ def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
             "model_manifest_key": (
                 settings.model_manifest_key_pornmaster_flux2_edit
                 or RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY
+            ),
+            "image_exact": "",
+            "image_prefix": RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX,
+            "workflow_overrides": "",
+        }
+    if profile_key == "pornmaster_flux2_edit_bf16":
+        return {
+            "runpod_task_type": PROD_PORNMASTER_FLUX2_EDIT_BF16_TASK_TYPE,
+            "runtime_profile": "pornmaster_flux2_edit",
+            "supported_task_types": (
+                RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_SUPPORTED_TASK_TYPES
+            ),
+            "model_prefix": RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_MODEL_PREFIX,
+            "model_manifest_key": (
+                RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_MODEL_MANIFEST_KEY
             ),
             "image_exact": "",
             "image_prefix": RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX,

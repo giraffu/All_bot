@@ -168,7 +168,7 @@ test('restoreTasksFromStorage preserves existing updatedAt when rerouting a rest
   assert.equal(pollCalls, 1)
 })
 
-test('pollTaskStatus preserves pending queue position and schedules low-frequency retry', async () => {
+test('pollTaskStatus preserves pending type queue position and schedules low-frequency retry', async () => {
   const activeTasks: RuntimeTaskLike[] = [createTask()]
   let scheduledDelay: number | null = null
 

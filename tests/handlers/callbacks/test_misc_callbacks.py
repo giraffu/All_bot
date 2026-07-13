@@ -89,6 +89,7 @@ async def test_random_faceswap_again_uses_quick_image_submission_plan(monkeypatc
             "images": ["template:quick_face/body.png", "/tmp/face.png"],
             "task_type": "face_swap",
             "cleanup": False,
+            "allow_contribute": True,
             "reply_markup": process_calls[0]["reply_markup"],
         }
     ]

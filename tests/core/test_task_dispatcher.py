@@ -8,6 +8,7 @@ from src.constants import (
     MODE_IMAGE_TO_VIDEO,
     MODE_IMAGE_TO_VIDEO_LITERAL,
     MODE_IMG2IMG_LORA,
+    MODE_PORNMASTER_FLUX2_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_SCAIL2_ACTION_TRANSFER,
@@ -655,6 +656,38 @@ async def test_pornmaster_flux2_edit_strategy_routes_single_and_multi(monkeypatc
         image_paths=["demo/a.png", "demo/b.png"],
         negative_prompt=" ",
         priority=3,
+    )
+
+
+@pytest.mark.asyncio
+async def test_pornmaster_flux2_bf16_strategy_requires_one_image_and_costs_six(monkeypatch):
+    submit_mock = AsyncMock(return_value="backend-task-id")
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_pornmaster_flux2_edit_task=submit_mock,
+    )
+    strategy = StrategyFactory.get_strategy(
+        MODE_PORNMASTER_FLUX2_EDIT_BF16,
+        feature_flags=TaskDispatcherFeatureFlags(free_edit_v2_enabled=True),
+    )
+
+    assert strategy.get_cost({"images": ["a.png"]}) == 6
+    await strategy.submit_task(
+        "task-bf16",
+        {
+            "prompt": "high precision edit",
+            "saved_input_images": ["demo/input.png"],
+        },
+        priority=4,
+    )
+
+    submit_mock.assert_awaited_once_with(
+        "task-bf16",
+        execution_task_type=MODE_PORNMASTER_FLUX2_EDIT_BF16,
+        prompt="high precision edit",
+        image_paths=["demo/input.png"],
+        negative_prompt=" ",
+        priority=4,
     )
 
 

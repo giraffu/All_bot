@@ -14,10 +14,51 @@ from config import REQUIRED_CHANNEL_ID
 logger = logging.getLogger(__name__)
 
 
-async def get_user_channel_status(bot: Bot, tg_id: int) -> Optional[bool]:
-    """Check if the user is in the required channel. Returns None if check fails or not required."""
+async def get_user_channel_status(bot: Bot | Any, tg_id: int) -> Optional[bool]:
+    """Resolve required-channel membership without using a private tenant token.
+
+    A Telegram ``Bot`` keeps the historical direct behavior. A private QQCC
+    ``CallbackContext`` must carry a worker-injected central checker; when that
+    checker is unavailable we return ``None`` so the existing permission service
+    can use the visitor's own persisted membership/credit state.
+    """
     if not REQUIRED_CHANNEL_ID:
         return None
+
+    context = None
+    if hasattr(bot, "bot") and not callable(getattr(bot, "get_chat_member", None)):
+        context = bot
+        bot = context.bot
+
+    if context is not None:
+        from src.services.qqcc_channel_membership_service import (
+            QQCC_CHANNEL_MEMBERSHIP_CHECKER_KEY,
+        )
+        from src.services.qqcc_runtime_context import (
+            get_qqcc_bot_data,
+            is_private_qqcc_bot_context,
+        )
+
+        if is_private_qqcc_bot_context(context):
+            checker = get_qqcc_bot_data(context).get(
+                QQCC_CHANNEL_MEMBERSHIP_CHECKER_KEY
+            )
+            if not callable(checker):
+                logger.warning(
+                    "Private QQCC channel membership checker is unavailable; "
+                    "using persisted user status"
+                )
+                return None
+            try:
+                status = await checker(int(tg_id))
+            except Exception as exc:
+                logger.warning(
+                    "Private QQCC central membership check failed error_type=%s",
+                    type(exc).__name__,
+                )
+                return None
+            return status if isinstance(status, bool) else None
+
     try:
         channel_id = (
             int(REQUIRED_CHANNEL_ID)
@@ -27,7 +68,10 @@ async def get_user_channel_status(bot: Bot, tg_id: int) -> Optional[bool]:
         member = await bot.get_chat_member(chat_id=channel_id, user_id=tg_id)
         return member.status not in ["left", "kicked", "banned"]
     except Exception as e:
-        logger.warning(f"Channel check failed for user {tg_id}: {e}")
+        logger.warning(
+            "Channel membership check failed error_type=%s",
+            type(e).__name__,
+        )
         return None
 
 
@@ -235,8 +279,24 @@ def create_background_task(context, coro):
     in context.bot_data['bg_tasks'] to prevent Python's garbage collector
     from destroying the task mid-execution.
     """
+    from src.services.private_bot_update_admission import (
+        track_private_bot_background,
+    )
+
     app = getattr(context, "application", context)
-    task = app.create_task(coro)
+    source_coro = coro
+    coro, admission = track_private_bot_background(coro)
+    try:
+        task = app.create_task(coro)
+    except BaseException:
+        coro.close()
+        if coro is not source_coro:
+            source_coro.close()
+        if admission is not None:
+            admission.settle()
+        raise
+    if admission is not None:
+        admission.task = task
     if "bg_tasks" not in app.bot_data:
         app.bot_data["bg_tasks"] = set()
     app.bot_data["bg_tasks"].add(task)

@@ -367,6 +367,10 @@ def test_simple_task_type_map_keeps_image_to_video_and_video_lora_compatibility(
         main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["pornmaster_flux2_multi_edit"]
         == TaskType.PORNMASTER_FLUX2_MULTI_EDIT
     )
+    assert (
+        main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["pornmaster_flux2_edit_bf16"]
+        == TaskType.PORNMASTER_FLUX2_EDIT_BF16
+    )
     assert main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["img2img"] == TaskType.IMG2IMG
     assert (
         main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["txt2img"]
@@ -432,6 +436,10 @@ def test_simple_task_route_specs_cover_expected_paths_and_handlers():
     assert specs_by_path["/api/v1/pornmaster_flux2_multi_edit"][1:] == (
         "pornmaster_flux2_multi_edit",
         "create_pornmaster_flux2_multi_edit_task",
+    )
+    assert specs_by_path["/api/v1/pornmaster_flux2_edit_bf16"][1:] == (
+        "pornmaster_flux2_edit_bf16",
+        "create_pornmaster_flux2_edit_bf16_task",
     )
 
 

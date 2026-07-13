@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call
 
 import httpx
 import pytest
@@ -14,8 +14,8 @@ from src.core import task_core_runtime
 async def test_cleanup_task_runtime_state_releases_lock_and_removes_registry():
     calls = []
 
-    async def fake_release(user_id: int):
-        calls.append(("release", user_id))
+    async def fake_release(user_id: int, *, idempotency_key: str):
+        calls.append(("release", user_id, idempotency_key))
 
     async def fake_remove(task_id: str):
         calls.append(("remove", task_id))
@@ -27,7 +27,10 @@ async def test_cleanup_task_runtime_state_releases_lock_and_removes_registry():
         remove_task_func=fake_remove,
     )
 
-    assert calls == [("release", 123), ("remove", "task-1")]
+    assert calls == [
+        ("release", 123, "task_concurrency:task-1"),
+        ("remove", "task-1"),
+    ]
 
 
 @pytest.mark.asyncio
@@ -49,6 +52,65 @@ async def test_cleanup_task_runtime_state_can_skip_lock_release():
     )
 
     assert calls == [("remove", "task-2")]
+
+
+@pytest.mark.asyncio
+async def test_cleanup_task_runtime_state_forwards_task_idempotent_release_key():
+    release = AsyncMock()
+    remove = AsyncMock()
+
+    await task_core_runtime.cleanup_task_runtime_state(
+        internal_user_id=456,
+        registry_task_id="task-a",
+        release_idempotency_key="task_release:task-a",
+        release_concurrency_lock_func=release,
+        remove_task_func=remove,
+    )
+
+    release.assert_awaited_once_with(
+        456,
+        idempotency_key="task_release:task-a",
+    )
+    remove.assert_awaited_once_with("task-a")
+
+
+@pytest.mark.asyncio
+async def test_cleanup_uses_registry_acquisition_mode_during_keyed_rollout():
+    release = AsyncMock()
+    remove = AsyncMock()
+    get_task = AsyncMock(
+        side_effect=[
+            {"user_id": 456},
+            {
+                "user_id": 456,
+                "concurrency_acquisition_key": "task_concurrency:new-task",
+            },
+        ]
+    )
+    runtime_dependencies = SimpleNamespace(get_task_func=get_task)
+
+    await task_core_runtime.cleanup_task_runtime_state(
+        internal_user_id=456,
+        registry_task_id="legacy-task",
+        release_concurrency_lock_func=release,
+        remove_task_func=remove,
+        runtime_dependencies=runtime_dependencies,
+    )
+    await task_core_runtime.cleanup_task_runtime_state(
+        internal_user_id=456,
+        registry_task_id="new-task",
+        release_concurrency_lock_func=release,
+        remove_task_func=remove,
+        runtime_dependencies=runtime_dependencies,
+    )
+
+    assert release.await_args_list == [
+        call(456),
+        call(
+            456,
+            idempotency_key="task_concurrency:new-task",
+        ),
+    ]
 
 
 @pytest.mark.asyncio
@@ -175,7 +237,7 @@ async def test_finalize_task_failure_refunds_builds_message_and_cleans_up(monkey
     assert result.refunded is True
     assert result.user_message == "出错了：boom，已退还灵石"
     assert refund_calls == [
-        (10, 8, "refund", "u10", "task_refund:refund:task-10")
+        (10, 8, "refund", "u10", "task_refund:task:task-10")
     ]
     assert cleanup_calls == [(10, "task-10", True)]
 
@@ -237,7 +299,7 @@ async def test_finalize_task_cancellation_refunds_and_cleans_up(monkeypatch):
         username="u20",
         cost=12,
         task_submitted=True,
-        idempotency_key="task_refund:refund_user_cancel:task-20",
+        idempotency_key="task_refund:task:task-20",
     )
     assert cleanup_calls == [(20, "task-20", True)]
 
@@ -308,7 +370,7 @@ async def test_finalize_terminated_task_terminates_before_refund(monkeypatch):
             6,
             "refund_admin_force",
             "u30",
-            "task_refund:refund_admin_force:task-30",
+            "task_refund:task:task-30",
         ),
     ]
 
@@ -384,7 +446,10 @@ async def test_cleanup_task_runtime_state_uses_runtime_default_bindings():
         remove_task_func=remove_task,
     )
 
-    release_lock.assert_awaited_once_with(9)
+    release_lock.assert_awaited_once_with(
+        9,
+        idempotency_key="task_concurrency:registry-9",
+    )
     remove_task.assert_awaited_once_with("registry-9")
 
 
@@ -514,9 +579,10 @@ async def test_sync_user_concurrency_uses_runtime_redis_provider():
     await task_core.sync_user_concurrency(123, 0, submission_outbox=redis_client)
 
     key = f"{REDIS_PREFIX}user_concurrency:123"
+    ownership_key = f"{REDIS_PREFIX}acquired_task_concurrency:123"
     redis.set.assert_awaited_once_with(key, 2)
     redis.expire.assert_awaited_once_with(key, 3600)
-    redis.delete.assert_awaited_once_with(key)
+    redis.delete.assert_awaited_once_with(key, ownership_key)
 
 
 @pytest.mark.asyncio

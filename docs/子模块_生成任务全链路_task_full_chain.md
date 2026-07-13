@@ -212,6 +212,14 @@ Telegram 展示层还有对应的 `allow_cancel`，用于控制 pending/submitte
 
 QQCC 懒人 Bot 的链式 AI绘图/AI动图复用这一通用语义：第一个真实子任务普通排队且 pending 可取消；后续后处理绘图、内部原图换脸、尾帧链后续步骤和最终首尾帧视频作为同一链路 continuation，高优先级入队且不可用户取消。主 Bot、Web、普通单任务 QQCC 功能和 worker 执行协议不因此改变。
 
+### 6.5 QQCC 私有 Bot 的租户归属
+
+私有 Bot 复用同一 `process_and_submit_task(...)`、用户表、余额、会员和 Central/worker 执行链。发起任务的 Telegram 访客先解析为自己的 `internal_user_id`，扣费和权限不归 owner；租户身份只通过 `client_type=bot:qqcc-private:<private_bot_id>` 区分配置、active task recovery 与 Telegram 结果投递。
+
+Webhook update 先由 Web API 校验后写 `${REDIS_PREFIX}private_qqcc_bot:webhook:updates`。private worker 对同一 Bot 顺序处理、不同 Bot 并行处理；启动恢复只解析 exact private client type 并把任务交回相应 Application。官方 `bot:qqcc` 与不同 private ID 不能相互恢复。暂停/禁用只停止新任务，已扣费任务继续沿原实例 client type 完成，账本与退款规则不变。
+
+私有 active registry 额外保存 `_bot_task_recovery` presentation contract，恢复时还原 `send_result`、用户可见 task type/prompt、输入索引、结果 metadata、完成文案和语言。私有旧记录缺 contract 时 fail closed，隐藏中间输出也不得被恢复器当最终结果发送。QQCC 私有多阶段 continuation 使用 Redis checkpoint 持久化原始输入、stage plan、确定性 submission sequence/registry ID、当前输出与状态；active registry 内 `_private_qqcc_continuation` 关联 chain/stage/executor fence。中间阶段结果必须先 CAS 推进 checkpoint 再 cleanup；最终阶段先记录 `delivery_pending`，delivery owner 发送 Telegram 成功后再 CAS delivered。checkpoint 不可用时保留 paid registry/用户锁，不先发送；worker 启动及周期扫描在 TaskRegistry 为空时仍续跑 ready/delivery checkpoint，租约丢失取消旧 owner，running orphan 在旧锁失效后 rewind。私有多步绘图、内部原图换脸和尾帧视频链因此与官方 `bot:qqcc` 保持同等功能，但仍使用 exact tenant `client_type`。
+
 ## 7. dispatcher 到 backend 执行面的下发
 ### 7.1 按任务类型选择策略
 下发前的任务类型分流主要在：
@@ -231,6 +239,7 @@ QQCC 懒人 Bot 的链式 AI绘图/AI动图复用这一通用语义：第一个�
 - `i2i_pro` 和 `i2i_draw` 有独立提交方法；注意这是 dispatcher/Bot/执行面能力说明，Web API 当前会在 `task_submission_service` 入口拒绝 `i2i_draw`
 - `img2img_lora` 会带 `lora_name` 和 `lora_strength`
 - 自由P图 v2 公开入口使用 `free_edit_v2`/`edit_v2`，执行面按参考图数量精确提交：1 张图为 `pornmaster_flux2_single_edit`、2 张图为 `pornmaster_flux2_multi_edit`，费用分别为 2/6，不传 `lora_name` 或 `lora_strength`
+- QQCC 自由P图 v3 使用配置 engine `free_edit_v3`，单图提交独立执行类型 `pornmaster_flux2_edit_bf16`，固定费用 6；Central 正式入口 `/api/v1/pornmaster_flux2_edit_bf16` 已于 2026-07-12 通过单服务 force-recreate 生效，任务可进入同名队列并由 gpu-226 BF16 worker 承接。
 - 视频类会根据分辨率、时长转成底层所需尺寸和帧长
 
 ### 7.2 image_service / api_client
@@ -313,6 +322,7 @@ QueueManager 负责执行面排队与 Worker 选择，关键职责包括：
 - 按可用类型给 Worker 分配任务
 - 维护 worker heartbeat 与 task heartbeat
 - 支持取消、dequeue、zombie 扫描和状态迁移；locked running 任务不可取消，legacy 未锁 running 任务仍保留 `cancel_requested` 兼容语义
+- 通用/手工 `clean_zombies()` 必须无条件跳过 `bot:qqcc-private:<id>`；私有任务只能由 submission ledger、monitor lease 与租户 Application 感知的 `clean_private_qqcc_zombies()` 收口，避免重复退款或串租户投递
 - 支持 `peek_pending_tasks(...)` 只读扫描 pending 队列，供预取流水线观察“下一单候选”，但不做 reservation
 
 从系统语义上看：
@@ -475,7 +485,7 @@ Web 端当前用户侧运行态与结果查询链路分成三层：
 - 用户侧粗状态：
   - `GET /api/tasks/{task_id}/status`
   - service 入口：`src/web_api/services/task_runtime_api_service.py`
-  - 默认由前端每 15 秒低频轮询；pending 可返回全局 `queue_pos` 展示队列位置，running 不返回/不展示生成百分比，success 后转入 result 轮询
+  - 默认由前端每 15 秒低频轮询；pending 对外仍返回 `queue_pos` 字段，但该字段是用户展示用的同任务类型队列位置（0-based），running 不返回/不展示生成百分比，success 后转入 result 轮询
 
 - 兼容实时流：
   - `GET /api/tasks/{task_id}/stream`
@@ -494,8 +504,8 @@ Web 端当前用户侧运行态与结果查询链路分成三层：
 - 用户侧不展示生成百分比；Central 和 Worker 内部仍可写入完整 progress/status/heartbeat，供 monitor、排障和终态收口使用
 - 若运行态已消失但历史已存在，SSE 应返回可终止的 fallback 语义，而不是无限轮询
 - SSE 不能只依赖 Redis Pub/Sub 事件。Pub/Sub 是进度快路径；Web API 订阅、读取或关闭 Pub/Sub 失败时不得让 SSE 冒 ASGI Exception，同一连接应继续通过 Central `/status/{backend_task_id}` 补偿轮询到终态。任务进入 `running` 后仍需周期性查询 Central `/status/{backend_task_id}`，用于补偿终态事件丢失、Web 连接断开重连或 worker 回报路径异常时的前端收口。Web API 会对同一 `api_base + backend_task_id` 的 status 拉取做约 2 秒共享缓存，避免多个浏览器连接重复打 Central；同一任务状态/队列位置/进度连续不变时，Web SSE 补偿轮询会从 pending 约 5 秒、running 约 10 秒逐步退避到默认最多约 20 秒，状态变化后恢复初始间隔。
-- Central `/status/{backend_task_id}` 是单任务观测接口，默认约 2 秒 TTL、4 秒 stale 窗口，并有最大条目数上限；过期刷新期间可短暂返回旧快照，真实任务分发、Worker 上报、完成回流和 cancel 仍走实时路径。默认 pending 响应里的 `queue_pos` 是全局队列位置；调用方传 `include_type_position=true` 时会额外返回同任务类型内的 `queue_type_pos`，当前用于主 Bot “排队状态/我的任务”展示，不影响 Web 粗状态默认口径。排查时若看到前端状态晚几秒进入终态，应结合 Redis 事件、Central `complete` 日志和 Web monitor 落库判断。可用 `TASK_STATUS_CACHE_TTL_SECONDS`、`TASK_STATUS_CACHE_STALE_SECONDS`、`TASK_STATUS_CACHE_MAX_ENTRIES` 调整。
-- Central `/system/status` 与 `/system/workers` 是 Dashboard/Bot 的观测接口，使用短 TTL/stale 快照缓存；它们不参与真实任务分发和终态收口。Dashboard 对 active task 的 backend status 聚合默认再做约 5 秒缓存；Bot 用户侧任务进度默认不再订阅 Pub/Sub，而是每 15 秒 HTTP polling 粗状态，pending 队列位置变化可编辑消息，running 不按 progress 百分比反复编辑。
+- Central `/status/{backend_task_id}` 是单任务观测接口，默认约 2 秒 TTL、4 秒 stale 窗口，并有最大条目数上限；过期刷新期间可短暂返回旧快照，真实任务分发、Worker 上报、完成回流和 cancel 仍走实时路径。Central 原始 pending 响应里的 `queue_pos` 是全局队列位置；调用方传 `include_type_position=true` 时会额外返回同任务类型内的 `queue_type_pos`。当前 Bot 任务进度、Web 粗状态和 Web SSE fallback 都请求 `include_type_position=true`，用户态展示优先使用 `queue_type_pos`，缺失时回退全局 `queue_pos`；Web 对外字段名仍保持 `queue_pos` 以兼容前端。排查时若看到前端状态晚几秒进入终态，应结合 Redis 事件、Central `complete` 日志和 Web monitor 落库判断。可用 `TASK_STATUS_CACHE_TTL_SECONDS`、`TASK_STATUS_CACHE_STALE_SECONDS`、`TASK_STATUS_CACHE_MAX_ENTRIES` 调整。
+- Central `/system/status` 与 `/system/workers` 是 Dashboard/Bot 的观测接口，使用短 TTL/stale 快照缓存；它们不参与真实任务分发和终态收口。Dashboard 对 active task 的 backend status 聚合默认再做约 5 秒缓存；Bot 用户侧任务进度默认不再订阅 Pub/Sub，而是每 15 秒 HTTP polling 粗状态，pending 同任务类型队列位置变化可编辑消息，running 不按 progress 百分比反复编辑。
 - `result` 对 Web 历史优先取 R2 公网结果地址；延迟敏感路径必须用 R2 公网 HEAD 快探测并在查对象存储前释放 DB 只读事务，不能用慢 S3 API HEAD 阻塞请求。R2 warmup 未就绪时，图片可对任务本人返回短有效期 MinIO presigned fallback；视频不走 MinIO 代理 fallback，应返回 `pending_result` 等下一轮轮询拿 R2。前端结果轮询窗口必须覆盖分钟级 R2 warmup，避免 `awaitingResult` / “保存结果中” 阶段被视频拉流、R2 HEAD 阻塞或短轮询窗口拖成网络失败/不返回结果。
 
 ## 11. 历史、收藏、投稿与结果可见性

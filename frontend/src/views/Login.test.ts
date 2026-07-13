@@ -55,6 +55,8 @@ describe('Login Mini App auth', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     sessionStorage.clear()
+    window.history.replaceState(null, '', '/login')
+    checkWebAccessMock.mockReturnValue(true)
     ;(window as any).Telegram = {
       WebApp: {
         initData: 'tg-init-data',
@@ -92,5 +94,44 @@ describe('Login Mini App auth', () => {
     })
     expect(wrapper.text()).toContain(denialMessage)
     expect(messageErrorMock).toHaveBeenCalledWith(denialMessage)
-  })
+  }, 10000)
+
+  it('uses Telegram launch init data when the WebApp SDK object is unavailable', async () => {
+    const initData = 'query_id=abc&user=%7B%22id%22%3A123456%2C%22first_name%22%3A%22AAaa%22%7D&auth_date=1760000000&hash=deadbeef'
+    ;(window as any).Telegram = undefined
+    window.history.replaceState(
+      null,
+      '',
+      `/login#tgWebAppData=${encodeURIComponent(initData)}&tgWebAppVersion=7.0&tgWebAppPlatform=android`
+    )
+    apiPostMock.mockResolvedValueOnce({
+      data: {
+        access_token: 'token',
+        user: { id: 1, telegram_id: 123456, user_group: '练气期', current_identity: '外门弟子' },
+      },
+    })
+
+    const { default: Login } = await import('./Login.vue')
+    mount(Login, {
+      global: {
+        stubs: {
+          'a-button': { template: '<button><slot /></button>' },
+          'a-input': { template: '<input />' },
+          'a-input-password': { template: '<input />' },
+          'a-spin': { template: '<div><slot /></div>' },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(apiPostMock).toHaveBeenCalledWith('/auth/telegram', { initData })
+    expect(setAuthMock).toHaveBeenCalledWith('token', {
+      id: 1,
+      telegram_id: 123456,
+      user_group: '练气期',
+      current_identity: '外门弟子',
+    })
+    expect(routerPushMock).toHaveBeenCalledWith('/profile')
+  }, 10000)
 })

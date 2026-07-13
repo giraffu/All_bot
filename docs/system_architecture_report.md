@@ -36,6 +36,7 @@ graph TD
     subgraph Gateway[云正式接入与应用层]
         BOT[cloud-tg-bot-prod]
         QQCC[cloud-qqcc-bot-prod]
+        QPWORKER[cloud-qqcc-private-bot-worker-prod / profile]
         PGBOT[paid-group-guard-bot]
         API[cloud-web-api-prod / FastAPI]
         PAYAPI[cloud-payment-api-prod]
@@ -69,6 +70,7 @@ graph TD
 
     TG --> TGAPI --> BOT
     TGAPI --> QQCC
+    TG -.私有 Bot webhook.-> CFTUNNEL --> API
     WEB --> CFPAGES
     WEB --> CFTUNNEL --> API
     DASH --> VLAN --> DFRONT --> DBACK
@@ -79,6 +81,9 @@ graph TD
     BOT --> TASK
     QQCC --> AUTH
     QQCC --> TASK
+    API --> REDIS --> QPWORKER
+    QPWORKER --> AUTH
+    QPWORKER --> TASK
     PGBOT --> PG
     API --> AUTH
     API --> TASK
@@ -100,6 +105,7 @@ graph TD
     API --> PG
     BOT --> PG
     QQCC --> PG
+    QPWORKER --> PG
 ```
 
 ### 1.2 当前分层说明
@@ -111,6 +117,7 @@ graph TD
 - **接入与应用层**
   - `tg-bot` 负责 Telegram 交互、FSM、结果消息与支付通知。
   - `qqcc_bot` 是独立简化 Telegram polling 入口，开放 `快速换脸`、`AI绘图`、`AI动图`、QQCC 专用轻量 `修仙市集` 与 `前往主bot`，复用同一用户、灵石、任务队列、对象存储与 worker 链路，不承载充值、affiliate 或高级 FSM。主业务 Bot 的旧 `修仙市集` 底部入口已改为 `懒人bot` 跳转，用户点击后通过 inline URL 前往 QQCC 懒人 Bot。
+  - QQCC 用户私有 Bot 通过官方 QQCC 的申请 FSM 建立“一 owner 一 Telegram Bot”绑定。私有 Bot 不常驻 polling：Web API 校验 Telegram webhook 并写 Redis stream，独立 `qqcc_private_bot.worker` 按租户装配 QQCC Application，使用 `bot:qqcc-private:<id>` 隔离配置、任务与恢复；访客仍按自己的 AllBot 账户扣费。
   - `paid_group_guard_bot` 是独立 Telegram 审核 Bot，订阅付费群 `chat_join_request` 与普通 `message` update，按成功订单、后台赠送订单或筑基期及以上修为只读判断入群资格，并可对目标群执行非管理员链接/违禁词删除，不承载主业务 Bot 的菜单、生成、支付回调或文件处理。
   - `web-api` 承担认证、任务提交、任务运行态、历史、广场、用户中心、返佣兑换与站点通知读取等主能力。
   - `payment-api` 负责 RMB 回调；Stars 与 TON 各有对应履约入口。
@@ -127,13 +134,13 @@ graph TD
 
 ### 1.3 云正式生产口径
 2026-06-07 晚间正式生产已经切到“云控制面 + 托管 PostgreSQL/Valkey + R2 + 本地 GPU worker / LAN AIO / remote_workers / 手动 RunPod 备用池”：
-- 云端 Droplet `allbot-do-sgp1-control` 承载 `cloud-central-api-prod`、`cloud-web-api-prod`、`cloud-payment-api-prod`、`cloud-dashboard-backend-prod`、`cloud-dashboard-frontend-prod`、`cloud-qqcc-config-backend-prod`、`cloud-qqcc-config-frontend-prod`、`cloud-imgproxy-prod` 与 `cloud-tg-bot-prod`；`cloud-qqcc-bot-prod` 是独立 `qqcc-bot` profile 服务，正式启动需单独确认。
+- 云端 Droplet `allbot-do-sgp1-control` 承载 `cloud-central-api-prod`、`cloud-web-api-prod`、`cloud-payment-api-prod`、`cloud-dashboard-backend-prod`、`cloud-dashboard-frontend-prod`、`cloud-qqcc-config-backend-prod`、`cloud-qqcc-config-frontend-prod`、`cloud-imgproxy-prod` 与 `cloud-tg-bot-prod`；`cloud-qqcc-bot-prod` 是独立 `qqcc-bot` profile 服务。2026-07-12 已执行 QQCC 私有 Bot migration 并显式启动 `cloud-qqcc-private-bot-worker-prod`（`qqcc-private-bots` profile），生产 webhook 复用 `api.aivison.it.com`，owner WebApp 使用公开 `private-bot.aivison.it.com`；后续默认 compose 操作仍须显式保留该 profile。
 - `workers/docker-compose-cloud-prod-worker.yml` 仍声明本地 `cloud-prod-comfy-agent-1..7` 与 `cloud-prod-worker-relay`；线上实际可用 worker 还可能包含 LAN AIO、`remote_workers` 与手动 RunPod。2026-06-18 03:06 快照为 13 个 healthy active workers，属于运行态快照，不作为固定容量承诺。
 - `web.aivison.it.com` 已由 Cloudflare Pages 承接静态前端；正式 Web API 独立走 `api.aivison.it.com` Cloudflare Tunnel 回源云 Web API；`rmb.aivison.it.com` 回源云 Payment API；`assets.aivison.it.com` 保留本地 legacy MinIO 只读代理，但正式应用不再生成该域名 URL。
 - 长期运维细节见 `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`。
 
 ### 1.4 云测试与本地灾备口径
-- 云测试控制面运行在独立 DigitalOcean Droplet `allbot-do-sgp1-test-control`，Tailscale IP `100.82.124.91`。同机容器承载测试 PostgreSQL、Redis、Central API、Web API、Dashboard Backend、Dashboard Frontend、QQCC Config Backend/Frontend、imgproxy 与测试 Bot；`cloud-qqcc-bot-test` 仅在配置独立 `QQCC_BOT_TOKEN_TEST` 且显式/原运行状态需要时启动。本地主服务器的 `workers/docker-compose-cloud-worker-test.yml` 声明 `cloud-comfy-agent-test-1..8`，默认常驻只保留 test-1 与 test-8，其余测试 worker 只在 smoke/canary 窗口按需启用；`cloud_worker_test_08` 指向 gpu-002 SCAIL-2 LAN AIO runtime。
+- 云测试控制面运行在独立 DigitalOcean Droplet `allbot-do-sgp1-test-control`，Tailscale IP `100.82.124.91`。同机容器承载测试 PostgreSQL、Redis、Central API、Web API、Dashboard Backend、Dashboard Frontend、QQCC Config Backend/Frontend、imgproxy 与测试 Bot；`cloud-qqcc-bot-test` 仅在配置独立 `QQCC_BOT_TOKEN_TEST` 且显式/原运行状态需要时启动，私有 Bot worker 也必须通过 `qqcc-private-bots` profile 显式启动。本地主服务器的 `workers/docker-compose-cloud-worker-test.yml` 声明 `cloud-comfy-agent-test-1..8`，默认常驻只保留 test-1 与 test-8，其余测试 worker 只在 smoke/canary 窗口按需启用；`cloud_worker_test_08` 指向 gpu-002 SCAIL-2 LAN AIO runtime。
 - 云测试 Web 公网入口是 `web-test.aivison.it.com`，由 Web/Nginx VPS 提供 `/root/dist-test` 静态站，`/api/` 回源云测试 Web API `100.82.124.91:8001`。云测试端口绑定 Tailscale IP，公网 eth0 端口由测试机防火墙 drop。
 - 本地主服务器不再保留一套日常正式入口；只保留云正式整体故障时的临时本地正式灾备方案。操作手册见 `docs/子模块_本地正式灾备切换_local_prod_fallback.md`。
 
@@ -233,9 +240,10 @@ sequenceDiagram
 
 ## 4. 关键设计决策
 
-### 4.1 Core 只消费 capability/provider
-- `core` 目录禁止直接 import 基础设施实现。
-- facade 层只暴露稳定语义，真实逻辑优先下沉到 provider/dependencies、submission、monitor、runtime 子模块。
+### 4.1 Core 的目标边界与当前差距
+- 已落地的硬边界是：`src/core/` 不接收或导入 Telegram `Update`、FastAPI `Request/APIRouter` 等平台入口对象，入口层先转换为内部 ID/request/context。
+- 目标边界仍是 core 只消费内部协议、domain config、provider/capability 或显式 dependencies；facade 维持小 interface，复杂输入准备、billing、submission、side effect 与 runtime cleanup 下沉到实现层或 builder。
+- 该目标尚未完全实现：当前 core 仍存在对 `config`、SQLAlchemy、HTTPX、PIL/subprocess 以及默认 provider 装配的直接依赖。它们是待迁移到 adapter/composition root 的架构债务，不能用“未发现平台对象 import”推导为“基础设施隔离已经完成”。
 
 ### 4.2 双 ID 运行态模型
 - 本地注册与历史链路使用 `registry_task_id`。
@@ -266,8 +274,8 @@ sequenceDiagram
 - `src/task_core_process_defaults.py` 是 task core process 默认装配的真实入口。
 - RunPod Provider v0 的稳定边界是云测试 `img2img/img2img_lora` canary、云测试 split video profile (`image_to_video` / `wan22_video_v2`) canary、云测试 `i2i_pro` 三任务 canary、云测试 `scail2` 两任务 canary、云测试 `ltx_video` I2V canary，以及云正式手动备用 worker。`prod-worker --profile i2i_pro` 支持 `i2i_pro`、Web 文生图执行类型 `t2i-pornmaster-turbo` 与 `face_swap`；`prod-worker --profile scail2` 支持 `scail2_action_transfer` 与 `scail2_video_replacement`；`prod-worker --profile ltx_video` 支持 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio` 并默认使用 10Eros v1.2 workflow override。Dashboard 已提供正式 RunPod 新增/暂停/删除入口和 autoscaler；autoscaler 通过现有 operation store、Redis leader lease、profile 清空阈值、静态 task duration、预计清空时间和 RunPod 门禁调用 `add` / `down`，不直接操作本地 worker，也不代表线上固定常驻容量。
 - `wan22_aio_video` 只保留为兼容/回滚 profile；新视频测试、扩容和正式备用 worker 都应使用 split profile。
-- 2026-06-27 轻量复核：`src/core` 未发现直接依赖 Telegram `Update` 或 FastAPI `Request/APIRouter` 等平台对象；Alembic 为单 head `7f3a9c1d2e4b`；`pytest --collect-only -q` 可收集 `1778` 个测试；`ruff check --statistics` 剩余 `7` 个可自动修复问题，集中在本地分析平台、RunPod 请求模块、MinIO 导入脚本和测试文件；`python scripts/doc_quality_checker.py` 通过。
-- 当前主要风险集中在长期维护成本：Worker `agent_main.py::process_task`、Dashboard RunPod 管理/自动扩缩服务、任务提交 provider/dependencies 装配、Bot 进度监控、练功房主 composable 与前端生成页重复逻辑。
+- 2026-07-11 全仓静态复核：Alembic 单 head 为 `2d8b6f1a9c03`；`pytest --collect-only -q` 收集 2240 个测试；Ruff 零告警；文档结构检查通过。Radon 扫描 5335 个 Python block，平均圈复杂度 3.49，其中 41 个 block 复杂度不低于 21；Symilar 对非测试 Python 的 8 行窗口估计重复率为 4.45%，主要来自 `workers/` 与 `remote_workers/` 双 bundle；未确认高置信死代码。
+- 当前主要风险集中在长期维护成本：`local_analytics_platform/app/prompt_vectors.py::_refresh_prompt_token_stats_unindexed`、`src/services/qqcc_draw_chain_service.py::execute_qqcc_draw_scene_chain`、本地分析 prompt 大路由、Dashboard RunPod 自动扩缩服务、双 worker bundle 漂移，以及 core 基础设施依赖尚未完全移出。
 - workflow 资产已收口到 `workers/comfy_agent/workflows`；Central API 不再维护 backend 副本，也不再执行 workflow 启动校验。
 - `TaskCoreServiceProviders` 与主要 capability 已补强 `Protocol` / 精确 `Callable` 契约；新增 provider/capability 时继续沿用显式类型与 dependencies seam。
-- 详细质量基线见 `docs/子模块_代码静态分析与质量评估规范_code_quality.md` 与 `logs/code_analysis_report_20260618_0306.md`。
+- 详细质量基线见 `docs/子模块_代码静态分析与质量评估规范_code_quality.md` 与 `logs/code_analysis_report_20260711_2140.md`。

@@ -106,7 +106,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             pass
 
-    is_member = await get_user_channel_status(context.bot, user.id)
+    is_member = await get_user_channel_status(context, user.id)
     inviter_id_reward = await permission_service.check_access(
         user.id, user.username, user.full_name, is_member
     )

@@ -47,6 +47,11 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         f"handle_callback_query received: {query.data}, SORTED_ROUTES count: {len(router.SORTED_ROUTES)}"
     )
 
+    # Stop the Telegram client spinner before identity/cache synchronization or
+    # route-specific I/O. Routed handlers may still call the helper with their
+    # contextual response; an old/invalid duplicate never aborts the action.
+    await safe_answer_query(query)
+
     # 身份强同步保留
     if not update.effective_user:
         return

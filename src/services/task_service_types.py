@@ -24,6 +24,7 @@ class BotTaskSubmissionContext:
     cost_override: Optional[int] = None
     base_priority: int = 0
     user_cancel_allowed: bool = True
+    recovery_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

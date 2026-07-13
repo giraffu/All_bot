@@ -30,24 +30,25 @@ class TaskRegistry:
             "created_at": time.time(),  # Added to track queue duration
             **kwargs,
         }
-        await redis_client.add_active_task(task_id, task_data)
+        await redis_client.add_active_task_strict(task_id, task_data)
         return task_id
 
     @classmethod
     async def update_backend_task_id(cls, registry_task_id: str, backend_task_id: str):
-        tasks = await redis_client.get_active_tasks()
-        if registry_task_id in tasks:
-            task_data = tasks[registry_task_id]
-            task_data["backend_task_id"] = backend_task_id
-            await redis_client.add_active_task(registry_task_id, task_data)
+        tasks = await redis_client.get_active_tasks_strict()
+        if registry_task_id not in tasks:
+            raise LookupError("Task registry entry disappeared before backend binding")
+        task_data = tasks[registry_task_id]
+        task_data["backend_task_id"] = backend_task_id
+        await redis_client.add_active_task_strict(registry_task_id, task_data)
 
     @classmethod
     async def mark_task_status(cls, registry_task_id: str, status: str):
-        tasks = await redis_client.get_active_tasks()
+        tasks = await redis_client.get_active_tasks_strict()
         if registry_task_id in tasks:
             task_data = tasks[registry_task_id]
             task_data["status"] = status
-            await redis_client.add_active_task(registry_task_id, task_data)
+            await redis_client.add_active_task_strict(registry_task_id, task_data)
 
     @classmethod
     async def get_task(cls, registry_task_id: str):
@@ -64,11 +65,20 @@ class TaskRegistry:
 
     @classmethod
     async def remove_task(cls, task_id: str):
-        await redis_client.remove_active_task(task_id)
+        await redis_client.remove_active_task_strict(task_id)
 
     @classmethod
     async def get_all_tasks(cls):
         return await redis_client.get_active_tasks()
+
+    @classmethod
+    async def get_task_strict(cls, registry_task_id: str):
+        tasks = await redis_client.get_active_tasks_strict()
+        return tasks.get(registry_task_id)
+
+    @classmethod
+    async def get_all_tasks_strict(cls):
+        return await redis_client.get_active_tasks_strict()
 
     @classmethod
     async def log_restart_recovery_policy(cls, bot=None):

@@ -54,6 +54,7 @@ class BillingCoreDependencies:
     calculate_user_priority_func: Callable[[int], Awaitable[int]]
     increment_user_concurrency_func: Callable[[int], Awaitable[int]]
     decrement_user_concurrency_func: Callable[[int], Awaitable[int]]
+    rollback_user_concurrency_acquire_func: Callable[..., Awaitable[int]]
     deduct_credits_func: Callable[..., Awaitable[Any]]
     add_credits_func: Callable[..., Awaitable[Any]]
 
@@ -126,6 +127,9 @@ def build_default_billing_core_dependencies(
         calculate_user_priority_func=permission_service_impl.calculate_user_priority,
         increment_user_concurrency_func=redis_client_impl.increment_user_concurrency,
         decrement_user_concurrency_func=redis_client_impl.decrement_user_concurrency,
+        rollback_user_concurrency_acquire_func=(
+            redis_client_impl.rollback_user_concurrency_acquire
+        ),
         deduct_credits_func=quota_manager_impl.deduct_credits,
         add_credits_func=quota_manager_impl.add_credits,
     )
@@ -141,6 +145,7 @@ def get_concurrent_task_limit_for_identity(identity: str | None) -> int:
 
 async def check_concurrency_lock(
     internal_user_id: int,
+    idempotency_key: str | None = None,
     *,
     dependencies: BillingCoreDependencies | None = None,
 ) -> Tuple[bool, str]:
@@ -175,9 +180,27 @@ async def check_concurrency_lock(
                 )
 
     # 2. 原有并发锁检查
-    active_tasks = await dependencies.increment_user_concurrency_func(internal_user_id)
+    increment_kwargs = (
+        {"idempotency_key": idempotency_key} if idempotency_key else {}
+    )
+    increment_result = await dependencies.increment_user_concurrency_func(
+        internal_user_id,
+        **increment_kwargs,
+    )
+    if isinstance(increment_result, tuple):
+        active_tasks, acquired_new = increment_result
+    else:
+        active_tasks, acquired_new = increment_result, True
+    if idempotency_key and not acquired_new:
+        return True, ""
     if active_tasks > concurrent_task_limit:
-        await dependencies.decrement_user_concurrency_func(internal_user_id)
+        if idempotency_key:
+            await dependencies.rollback_user_concurrency_acquire_func(
+                internal_user_id,
+                idempotency_key=idempotency_key,
+            )
+        else:
+            await dependencies.decrement_user_concurrency_func(internal_user_id)
         return (
             False,
             f"您当前已有 {concurrent_task_limit} 个任务正在处理中，请等待其中一个完成后再试！",
@@ -187,12 +210,14 @@ async def check_concurrency_lock(
 
 async def release_concurrency_lock(
     internal_user_id: int,
+    idempotency_key: str | None = None,
     *,
     dependencies: BillingCoreDependencies | None = None,
 ):
     """释放用户并发锁"""
     dependencies = dependencies or get_default_billing_core_dependencies()
-    await dependencies.decrement_user_concurrency_func(internal_user_id)
+    kwargs = {"idempotency_key": idempotency_key} if idempotency_key else {}
+    await dependencies.decrement_user_concurrency_func(internal_user_id, **kwargs)
 
 
 async def check_and_deduct_credits(
@@ -200,6 +225,7 @@ async def check_and_deduct_credits(
     cost: int,
     task_type: str,
     username: str = None,
+    idempotency_key: str | None = None,
     *,
     dependencies: BillingCoreDependencies | None = None,
 ) -> Tuple[bool, str]:
@@ -212,8 +238,13 @@ async def check_and_deduct_credits(
 
     dependencies = dependencies or get_default_billing_core_dependencies()
     try:
+        kwargs = {"idempotency_key": idempotency_key} if idempotency_key else {}
         await dependencies.deduct_credits_func(
-            internal_user_id, cost, username=username, task_type=task_type
+            internal_user_id,
+            cost,
+            username=username,
+            task_type=task_type,
+            **kwargs,
         )
         return True, ""
     except InsufficientCreditsError as e:

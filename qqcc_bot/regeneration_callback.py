@@ -19,6 +19,7 @@ from src.services.qqcc_regeneration_service import (
     QQCCRegenerationSubmission,
     prepare_qqcc_regeneration_submission,
 )
+from src.services.qqcc_runtime_context import load_qqcc_config_for_context
 from src.services.quick_image_submission_service import run_quick_image_submission_plan
 from src.services.quick_video_submission_service import run_quick_video_submission_plan
 from src.services.tg_task_result_presentation import resolve_task_id_from_callback_data
@@ -94,6 +95,10 @@ async def regenerate_qqcc_result_callback(
             telegram_user_id=user.id,
             username=user.username,
             message_meta=_resolve_result_message_meta(context, query),
+            load_config_func=lambda: load_qqcc_config_for_context(
+                context,
+                logger=logger,
+            ),
         )
         await permission_service.check_quota(
             user.id,

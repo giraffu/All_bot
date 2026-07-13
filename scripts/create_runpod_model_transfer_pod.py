@@ -68,6 +68,50 @@ PORNMASTER_FLUX2_EDIT_TRANSFERS = (
         "size_bytes": 249519092,
     },
 )
+PORNMASTER_FLUX2_EDIT_BF16_PREFIX = "pornmaster_flux2_edit_bf16/2026-07-12"
+PORNMASTER_FLUX2_EDIT_BF16_TRANSFERS = (
+    {
+        "source_url": "https://civitai.com/api/download/models/3025484",
+        "key": (
+            f"{PORNMASTER_FLUX2_EDIT_BF16_PREFIX}/models/diffusion_models/flux2/"
+            "PornMaster_flux2_klein_9b_turbo_bf16_V4.safetensors"
+        ),
+        "relative_path": (
+            "diffusion_models/flux2/"
+            "PornMaster_flux2_klein_9b_turbo_bf16_V4.safetensors"
+        ),
+        "sha256": "5085c05fa34b2455245a75f393885780b41e80a7517265b4b53da2e5044b004e",
+        "size_bytes": 18157213600,
+        "source_token_env": "CIVITAI_API_TOKEN",
+        "source_token_query_param": "token",
+    },
+    {
+        "source_url": (
+            "https://huggingface.co/Comfy-Org/flux2-klein-9B/resolve/main/"
+            "split_files/text_encoders/qwen_3_8b_fp8mixed.safetensors"
+        ),
+        "key": (
+            f"{PORNMASTER_FLUX2_EDIT_BF16_PREFIX}/models/text_encoders/flux2/"
+            "qwen_3_8b_fp8mixed.safetensors"
+        ),
+        "relative_path": "text_encoders/flux2/qwen_3_8b_fp8mixed.safetensors",
+        "sha256": "abad16806e0cbabc54e0325d6565847443fe396d5f0be38bb3cd3fe75a1201d6",
+        "size_bytes": 8664848742,
+    },
+    {
+        "source_url": (
+            "https://huggingface.co/black-forest-labs/"
+            "FLUX.2-small-decoder/resolve/main/full_encoder_small_decoder.safetensors"
+        ),
+        "key": (
+            f"{PORNMASTER_FLUX2_EDIT_BF16_PREFIX}/models/vae/flux2/"
+            "full_encoder_small_decoder.safetensors"
+        ),
+        "relative_path": "vae/flux2/full_encoder_small_decoder.safetensors",
+        "sha256": "ea4273f02d1fafbf8e1d1c2cf6018ed8748652eb0bf34f2dd91171f16f15ab62",
+        "size_bytes": 249519092,
+    },
+)
 
 
 def _normalise_transfer_item(raw_item: dict[str, Any]) -> dict[str, Any]:
@@ -114,6 +158,20 @@ def _normalise_transfer_item(raw_item: dict[str, Any]) -> dict[str, Any]:
 
 
 def _load_transfer_items(args: argparse.Namespace) -> list[dict[str, Any]]:
+    if getattr(args, "pornmaster_flux2_edit_bf16", False):
+        if getattr(args, "batch_file", None):
+            raise ValueError(
+                "--pornmaster-flux2-edit-bf16 cannot be combined with --batch-file"
+            )
+        if getattr(args, "pornmaster_flux2_edit", False):
+            raise ValueError(
+                "--pornmaster-flux2-edit-bf16 cannot be combined with "
+                "--pornmaster-flux2-edit"
+            )
+        return [
+            _normalise_transfer_item(item)
+            for item in PORNMASTER_FLUX2_EDIT_BF16_TRANSFERS
+        ]
     if getattr(args, "pornmaster_flux2_edit", False):
         if getattr(args, "batch_file", None):
             raise ValueError("--pornmaster-flux2-edit cannot be combined with --batch-file")
@@ -240,7 +298,29 @@ def _transfer_start_script() -> str:
     return r"""set -eu
 LOG_FILE="${RUNPOD_TRANSFER_LOG_FILE:-/tmp/allbot-model-transfer.log}"
 exec > "$LOG_FILE" 2>&1
+keepalive_on_failure() {
+    status="$?"
+    echo "[model-transfer] failed with exit status ${status}" >&2
+    if [ "${RUNPOD_MODEL_TRANSFER_EXIT_ON_COMPLETE:-true}" = "false" ]; then
+        echo "[model-transfer] keeping failed container alive for diagnostics" >&2
+        tail -f /dev/null
+    fi
+    exit "$status"
+}
+trap keepalive_on_failure ERR
 echo "[model-transfer] boot $(date -Is)"
+if command -v apt-get >/dev/null 2>&1; then
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends openssh-server
+    rm -rf /var/lib/apt/lists/*
+    mkdir -p /root/.ssh /run/sshd
+    printf '%s\n' "${PUBLIC_KEY:-}" | awk '/^ssh-/' > /root/.ssh/authorized_keys
+    chmod 700 /root/.ssh
+    chmod 600 /root/.ssh/authorized_keys
+    ssh-keygen -A >/dev/null 2>&1 || true
+    /usr/sbin/sshd
+    echo "[model-transfer] sshd started"
+fi
 python3 -m pip install --no-cache-dir boto3
 python3 - <<'PY'
 import hashlib
@@ -492,6 +572,14 @@ def main() -> int:
         "--pornmaster-flux2-edit",
         action="store_true",
         help="Use the built-in PornMaster Flux2 edit three-file transfer batch.",
+    )
+    parser.add_argument(
+        "--pornmaster-flux2-edit-bf16",
+        action="store_true",
+        help=(
+            "Use the built-in PornMaster Flux2 V4 turbo BF16 three-file "
+            "direct-to-R2 transfer batch."
+        ),
     )
     parser.add_argument("--source-url", default=DEFAULT_SOURCE_URL)
     parser.add_argument("--bucket", default="allbot-model-cache")

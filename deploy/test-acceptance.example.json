@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "git_sha": "<full-sha>",
+  "images": {
+    "app": "ghcr.io/giraffu/allbot-app@sha256:<digest>",
+    "central": "ghcr.io/giraffu/allbot-central-api@sha256:<digest>",
+    "dashboard_backend": "ghcr.io/giraffu/allbot-dashboard-backend@sha256:<digest>",
+    "dashboard_frontend": "ghcr.io/giraffu/allbot-dashboard-frontend@sha256:<digest>",
+    "worker": "ghcr.io/giraffu/allbot-worker@sha256:<digest>"
+  },
+  "vendor_images": {
+    "imgproxy": "docker.io/darthsim/imgproxy@sha256:<digest>",
+    "postgres": "docker.io/library/postgres@sha256:<digest>",
+    "redis": "docker.io/library/redis@sha256:<digest>"
+  },
+  "observation_started_at": "2026-07-01T00:00:00Z",
+  "completed_at": "2026-07-02T00:00:00Z",
+  "approved_by": "operator-name",
+  "checks": {
+    "health": true,
+    "bot_interaction": true,
+    "image_task": true,
+    "video_task": true,
+    "concurrency_lock": true,
+    "locale": true,
+    "web_static": true,
+    "worker_heartbeat": true,
+    "rollback_drill": true
+  }
+}

@@ -14,9 +14,12 @@
 | `analytics.aivison.it.com` | 本地主服务器用户级 Cloudflare Tunnel `allbot-local-analytics` | 回源本地只读分析平台 `http://127.0.0.1:8095`；Cloudflare Access 邮箱 allowlist + 应用层登录双层保护 |
 | `assets.aivison.it.com` | Web/Nginx VPS `100.88.57.122` | 回源本地 legacy MinIO `http://100.99.254.53:9000`；仅用于人工回滚、旧外链和迁移排障，正式应用不再生成该域名 URL |
 | `web-test.aivison.it.com` | Web/Nginx VPS `100.88.57.122` | `/root/dist-test` 静态站，`/api/` 回源云测试 Web API `http://100.82.124.91:8001` |
+| `private-bot.aivison.it.com` | Cloudflare Tunnel `allbot-admin-dashboard-prod` -> QQCC Config Frontend `100.107.220.127:8088` | 只允许 owner WebApp 与 owner API；公开且不套 Access，依赖 ticket/JWT 与双层 Host 隔离 |
 | Telegram Local API | VPS `69.63.220.115` | `8081` Bot API，`8082` 文件服务 |
 
 Web/Nginx VPS 的 `web.aivison.it.com` Nginx 配置只作为正式 Web 回滚副本，不是当前正式主路径。正式 Web 健康检查使用 `https://web.aivison.it.com`；正式 API 健康检查使用 `https://api.aivison.it.com/api/health`。
+
+私有 Bot Telegram webhook 复用正式 API Tunnel：`api.aivison.it.com/api/private-bots/webhook/{public_id}` 回源 `cloud-web-api-prod`。该机器入口不能启用浏览器型 Cloudflare Access；Web API 还会校验 Telegram secret header、Bot 状态和 update 结构。Owner WebApp 是另一 Host，回源 QQCC Config Frontend，并由 Nginx 按 Host 拒绝管理员路径。两者不能混成同一个“全部 API 可访问”的公开网关。
 
 ## 3. 网络流向
 
@@ -70,13 +73,13 @@ sequenceDiagram
 | `100.107.220.127:8043` | 云正式 Dashboard Backend | 本地 Dashboard 网关使用 |
 | `100.107.220.127:8086` | 云正式 Dashboard Frontend | 仅 Tailscale/Cloudflare Access 受控入口；同源反代 Dashboard Backend |
 | `100.107.220.127:8045` | 云正式 QQCC Config Backend | QQCC 懒人 Bot 独立配置 API |
-| `100.107.220.127:8088` | 云正式 QQCC Config Frontend | 仅 Tailscale/Cloudflare Access 受控入口；同源反代 QQCC Config Backend |
+| `100.107.220.127:8088` | 云正式 QQCC Config Frontend origin | 按 `QQCC_CONFIG_ADMIN_HOST` / `PRIVATE_QQCC_BOT_OWNER_HOST` 分流；未知 Host 404，公网管理员 Host 仍需 Cloudflare Access |
 | `100.82.124.91:8001` | 云测试 Web API | Web/Nginx VPS `web-test` upstream |
 | `100.82.124.91:8004` | 云测试 Central API | 本地云测试 worker 使用 |
 | `100.82.124.91:8044` | 云测试 Dashboard Backend | 测试管理入口 |
 | `100.82.124.91:8087` | 云测试 Dashboard Frontend | 测试管理前端，仅 Tailscale/受控来源访问 |
 | `100.82.124.91:8045` | 云测试 QQCC Config Backend | 测试 QQCC 配置 API |
-| `100.82.124.91:8088` | 云测试 QQCC Config Frontend | 测试 QQCC 配置前端，仅 Tailscale/受控来源访问 |
+| `100.82.124.91:8088` | 云测试 QQCC Config Frontend origin | 只接受显式 test admin/owner Host；未知 IP/localhost Host 404 |
 | `100.99.254.53:9000` | 本地 legacy MinIO | 只做 `assets.aivison.it.com` 人工回滚、旧外链和迁移排障入口 |
 | `127.0.0.1:8095` | 本地数据分析平台 | 只读 cloud-prod shadow 数据；公网入口为 `analytics.aivison.it.com`，必须 Cloudflare Access + 应用登录双层保护，不得裸露端口 |
 | `69.63.220.115:8081/8082` | Telegram Local API / 文件服务 | Bot 大文件能力依赖 |

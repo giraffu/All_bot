@@ -11,6 +11,7 @@ from src.constants import (
     MODE_I2I_DRAW,
     MODE_IMG2IMG_LORA,
     MODE_MASTURBATION,
+    MODE_PORNMASTER_FLUX2_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_RANDOM_FACESWAP,
     MODE_UNDRESS,
@@ -30,10 +31,21 @@ from src.services.qqcc_draw_chain_service import (
     QQCC_SCENE_KIND_FILTER,
     calculate_qqcc_draw_chain_cost,
     execute_qqcc_draw_scene_chain,
+    is_qqcc_original_face_swap_enabled,
     resolve_qqcc_draw_chain_prompts,
     resolve_qqcc_draw_scene_chain,
     resolve_qqcc_draw_scene_task_type,
 )
+from src.services.private_qqcc_continuation_service import (
+    PrivateQqccContinuationStore,
+    StageExecutor,
+    build_private_qqcc_draw_continuation_stages,
+    create_private_qqcc_continuation,
+    execute_private_qqcc_continuation_stage_default,
+    persist_private_qqcc_continuation_input,
+    resume_private_qqcc_continuation,
+)
+from src.services.fsm_temp_file_service import cleanup_fsm_temp_files
 from src.services.qqcc_regenerate_metadata import (
     QQCC_REGENERATE_KIND_QUICK_IMAGE,
     build_qqcc_regenerate_result_meta,
@@ -41,6 +53,7 @@ from src.services.qqcc_regenerate_metadata import (
 from src.services.task_service_generation_image import (
     process_standard_generation_task as process_generation_task,
 )
+from src.services.qqcc_runtime_context import is_private_qqcc_bot_context
 from src.services.wan22_video_v2_extension_service import (
     download_output_file_to_fsm_temp,
 )
@@ -93,6 +106,7 @@ QQCC_AI_DRAW_TASK_TYPES = (
     MODE_EDIT,
     MODE_IMG2IMG_LORA,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+    MODE_PORNMASTER_FLUX2_EDIT_BF16,
 )
 DEFAULT_I2I_DRAW_UNDRESS_PROMPT = (
     "全身广角镜头，保持面部五官、脸型、发型、表情和肤色不变，"
@@ -206,6 +220,15 @@ async def _maybe_await(value: Awaitable[Any] | Any) -> Any:
     return value
 
 
+def quick_image_plan_requires_continuation(plan: QuickImageSubmissionPlan) -> bool:
+    if plan.kind != QuickImageSubmissionKind.DRAW_CHAIN:
+        return False
+    subtask_count = len(plan.draw_chain) + sum(
+        1 for scene in plan.draw_chain if is_qqcc_original_face_swap_enabled(scene)
+    )
+    return subtask_count > 1
+
+
 async def run_quick_image_submission_plan(
     *,
     plan: QuickImageSubmissionPlan,
@@ -217,7 +240,65 @@ async def run_quick_image_submission_plan(
     process_generation_task_func: ProcessGenerationTask = process_generation_task,
     execute_draw_chain_func: ExecuteDrawChain = execute_qqcc_draw_scene_chain,
     download_output_file_to_fsm_temp_func: DownloadOutputFile = download_output_file_to_fsm_temp,
+    private_continuation_store: PrivateQqccContinuationStore | None = None,
+    private_continuation_execute_stage_func: StageExecutor | None = None,
 ) -> None:
+    if is_private_qqcc_bot_context(context) and quick_image_plan_requires_continuation(
+        plan
+    ):
+        stages = build_private_qqcc_draw_continuation_stages(
+            chain=plan.draw_chain,
+            final_send_result=True,
+            final_allow_contribute=plan.allow_contribute,
+            final_delete_status=True,
+            final_display_mode_name=plan.display_mode_name,
+            final_result_meta=plan.result_meta,
+        )
+        local_input_ref = _require_first_image(plan)
+        try:
+            durable_input_ref = await persist_private_qqcc_continuation_input(
+                input_ref=local_input_ref,
+                telegram_user_id=user_id,
+                username=username,
+            )
+            checkpoint = await create_private_qqcc_continuation(
+                stages=stages,
+                original_input_ref=durable_input_ref,
+                original_input_durable=True,
+                context=context,
+                chat_id=chat_id,
+                telegram_user_id=user_id,
+                username=username,
+                status_message_id=status_msg_id,
+                store=private_continuation_store,
+            )
+        finally:
+            cleanup_fsm_temp_files([local_input_ref])
+
+        async def execute_stage(checkpoint_value, stage, ref, runtime_context):
+            if private_continuation_execute_stage_func is not None:
+                return await private_continuation_execute_stage_func(
+                    checkpoint_value,
+                    stage,
+                    ref,
+                    runtime_context,
+                )
+            return await execute_private_qqcc_continuation_stage_default(
+                checkpoint_value,
+                stage,
+                ref,
+                runtime_context,
+                process_generation_task_func=process_generation_task_func,
+            )
+
+        await resume_private_qqcc_continuation(
+            chain_id=checkpoint.chain_id,
+            context=context,
+            store=private_continuation_store,
+            execute_stage_func=execute_stage,
+        )
+        return
+
     if plan.kind == QuickImageSubmissionKind.DRAW_CHAIN:
         await _maybe_await(
             execute_draw_chain_func(

@@ -101,3 +101,19 @@
 - `pytest --collect-only -q` 可收集 `1778` 个测试，用时约 118 秒；未执行完整测试套件。
 - `ruff check --statistics` 剩余 `7` 个可自动修复问题：`local_analytics_platform/app/main.py` 1 个 `F541`，`local_analytics_platform/app/prompt_vectors.py`、`ops/gpu_pool_controller/runpod_pod_request.py`、`scripts/import_minio_bucket_normalized.py`、`tests/local_analytics/test_prompt_vectors_refresh.py` 与 `tests/scripts/test_cloud_prod_shadow_sync.py` 合计 6 个 `F401`。
 - 文档结构检查 `python scripts/doc_quality_checker.py` 通过。
+
+## 8. 2026-07-11 全仓静态复核
+
+本轮覆盖 `src/`、`backend/`、`dashboard/backend/`、`workers/`、`remote_workers/`、`ops/`、`local_analytics_platform/`、`paid_group_guard_bot/`、`qqcc_bot/`、`scripts/`、前端源码、测试、compose、Skills 与实时文档；未执行远端 SSH、线上 API、Docker、Redis/PostgreSQL 或 Cloudflare 运行态探测，也未运行完整测试套件。完整报告位于 `logs/code_analysis_report_20260711_2140.md`。
+
+当前结果：
+
+- 1513 个 tracked 文件；769 个 Python 文件；Python/TypeScript/TSX/Vue/JavaScript/Shell 合计约 291,440 行，包含测试、生成/供应商静态资源与双 worker bundle。
+- Alembic 为单 head `2d8b6f1a9c03`；`pytest --collect-only -q` 收集 2240 个测试，用时约 76 秒。
+- `ruff check . --statistics` 零告警；`python scripts/doc_quality_checker.py` 通过。
+- Radon 扫描 5335 个 Python block，平均圈复杂度 3.49；A/B/C/D/E/F 分别为 4391/683/220/32/7/2，41 个 block 复杂度不低于 21。最高两个热点是 `_refresh_prompt_token_stats_unindexed`（48）与 `execute_qqcc_draw_scene_chain`（41）。
+- Symilar 对非测试 Python 使用 8 行窗口估算重复率为 4.45%；主要重复是 `workers/comfy_agent` 与 `remote_workers/comfy_agent` 的部署 bundle 镜像。该重复有部署目的，但需要自动同步/漂移门禁，不能视为普通可删除复制。
+- Vulture 90% 置信度报告 2 个不可达候选；人工核对后均为包含显式 `break` 的异步分页循环误报，本轮未确认高置信死代码。死代码比例记为“0 个已确认候选 / 769 个 Python 文件”，不把工具误报换算成虚假百分比。
+- Core 平台对象隔离仍成立：未发现 Telegram `Update`、FastAPI `Request/APIRouter` import；但基础设施隔离只部分完成，core 仍直接依赖 `config`、SQLAlchemy、HTTPX、PIL/subprocess 与默认 provider。后续应通过 composition root 和 capability adapter 迁移，不应继续把“无平台对象”写成“core 只消费 capability/provider 已完成”。
+
+本轮未发现 Critical 级阻断。High/Medium 整改优先级依次为：收窄 core 基础设施 interface、拆分两个 F 级编排热点、为双 worker bundle 建立单事实源生成/同步门禁、继续拆分 1000 行以上高变更模块。知识库更新不授权直接执行这些业务重构。

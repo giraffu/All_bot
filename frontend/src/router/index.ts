@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import type { RouteRecordRaw } from 'vue-router'
+import type { LocationQueryRaw, RouteLocationNormalized, RouteLocationRaw, RouteRecordRaw } from 'vue-router'
 import { useAuthStore, checkWebAccess } from '@/stores/auth'
 import {
   confirmTemplateApplyClose,
@@ -130,6 +130,22 @@ const router = createRouter({
   routes
 })
 
+type RouteLaunchParams = Pick<RouteLocationNormalized, 'hash' | 'query'>
+
+const hasTelegramLaunchParams = (to: RouteLaunchParams) => (
+  to.hash.includes('tgWebApp')
+  || Object.keys(to.query).some((key) => key.startsWith('tgWebApp'))
+)
+
+const buildGuestLoginRedirect = (to: RouteLaunchParams): RouteLocationRaw => {
+  if (!hasTelegramLaunchParams(to)) return '/login'
+  return {
+    path: '/login',
+    query: to.query as LocationQueryRaw,
+    hash: to.hash
+  }
+}
+
 router.beforeEach(async (to) => {
   const authStore = useAuthStore()
   const templateApplyStore = useTemplateApplyStore()
@@ -163,7 +179,7 @@ router.beforeEach(async (to) => {
       })
       authStore.logout()
     }
-    return '/login'
+    return buildGuestLoginRedirect(to)
   }
 
   if (to.path === '/login' && isAuthenticated && hasPermission) {

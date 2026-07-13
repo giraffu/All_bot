@@ -18,6 +18,8 @@ from app.models import (
     VideoLoraRequest,
     Wan22VideoV2Request,
 )
+from app.queue_manager import TaskAdmissionConflictError
+from fastapi import HTTPException
 
 from src.domain_config.task_type_registry import get_central_task_type
 
@@ -43,6 +45,7 @@ SIMPLE_TASK_KEYS = (
     "scail2_face_swap_v2",
     "pornmaster_flux2_single_edit",
     "pornmaster_flux2_multi_edit",
+    "pornmaster_flux2_edit_bf16",
 )
 
 
@@ -222,6 +225,12 @@ SIMPLE_TASK_ROUTE_SPECS = (
         "pornmaster_flux2_multi_edit",
         "create_pornmaster_flux2_multi_edit_task",
     ),
+    (
+        "/api/v1/pornmaster_flux2_edit_bf16",
+        Img2ImgRequest,
+        "pornmaster_flux2_edit_bf16",
+        "create_pornmaster_flux2_edit_bf16_task",
+    ),
 )
 
 
@@ -239,7 +248,10 @@ async def enqueue_task_from_request(
     queue_manager,
 ) -> TaskResponse:
     task_id, priority, params = split_task_request(request_model)
-    await queue_manager.enqueue_task(task_type, params, priority, task_id)
+    try:
+        await queue_manager.enqueue_task(task_type, params, priority, task_id)
+    except TaskAdmissionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return TaskResponse(task_id=task_id)
 
 

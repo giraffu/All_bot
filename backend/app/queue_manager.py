@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import logging
 import time
@@ -44,6 +45,31 @@ _REDIS_TRANSIENT_ERRORS = (
     TimeoutError,
     OSError,
 )
+
+_CREATE_TASK_IF_ABSENT_SCRIPT = """
+local existing_fingerprint = redis.call('HGET', KEYS[1], 'request_fingerprint')
+if existing_fingerprint then
+    if existing_fingerprint == ARGV[1] then
+        return 0
+    end
+    return -1
+end
+if redis.call('EXISTS', KEYS[1]) == 1 then
+    return -1
+end
+
+local task_data = cjson.decode(ARGV[2])
+for field, value in pairs(task_data) do
+    redis.call('HSET', KEYS[1], field, tostring(value))
+end
+redis.call('EXPIRE', KEYS[1], tonumber(ARGV[3]))
+redis.call('ZADD', KEYS[2], tonumber(ARGV[4]), ARGV[5])
+return 1
+"""
+
+
+class TaskAdmissionConflictError(RuntimeError):
+    pass
 
 
 class QueueManager:
@@ -396,32 +422,66 @@ class QueueManager:
     def _calculate_enqueue_score(self, *, current_time: float, priority: int) -> float:
         return current_time - (priority * 60)
 
+    @staticmethod
+    def _request_fingerprint(
+        *,
+        task_type: TaskType,
+        params: Dict[str, Any],
+        priority: int,
+    ) -> str:
+        canonical_params = {
+            key: value
+            for key, value in params.items()
+            if key != "trace_id"
+        }
+        encoded = json.dumps(
+            {
+                "task_type": task_type.value,
+                "priority": int(priority),
+                "params": canonical_params,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
     async def enqueue_task(
         self, task_type: TaskType, params: Dict[str, Any], priority: int, task_id: str
     ) -> str:
         task_key = self._task_key(task_id)
-        task_data, score = build_enqueued_task_payload(
+        request_fingerprint = self._request_fingerprint(
+            task_type=task_type,
             params=params,
+            priority=priority,
+        )
+        task_data, score = build_enqueued_task_payload(
+            params=dict(params),
             build_enqueued_task_data_func=self._build_enqueued_task_data,
             calculate_enqueue_score_func=self._calculate_enqueue_score,
             task_id=task_id,
             task_type=task_type,
             priority=priority,
         )
-
-        async def execute_enqueue_pipeline():
-            async with self.redis.pipeline(transaction=True) as pipeline:
-                pipeline.hset(task_key, mapping=task_data)
-                pipeline.expire(task_key, self.ttl)
-                # Priority acceleration: Each priority level equals 60 seconds earlier enqueue time.
-                # This prevents starvation: a low priority task waiting >60s will beat a new high priority task.
-                pipeline.zadd(self.pending_key, {task_id: score})
-                return await pipeline.execute()
-
-        await self._retry_redis_call(
-            "enqueue_task_pipeline",
-            execute_enqueue_pipeline,
+        task_data["request_fingerprint"] = request_fingerprint
+        admission_result = await self._retry_redis_call(
+            "enqueue_task_create_if_absent",
+            self.redis.eval,
+            _CREATE_TASK_IF_ABSENT_SCRIPT,
+            2,
+            task_key,
+            self.pending_key,
+            request_fingerprint,
+            json.dumps(task_data, default=str),
+            str(self.ttl),
+            str(score),
+            task_id,
         )
+        if admission_result == -1:
+            raise TaskAdmissionConflictError(
+                f"task_id {task_id} already exists with different parameters"
+            )
 
         return task_id
 

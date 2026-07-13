@@ -86,6 +86,28 @@ bundles:
         sha256: ea4273f02d1fafbf8e1d1c2cf6018ed8748652eb0bf34f2dd91171f16f15ab62
         size_bytes: 249519092
 
+  pornmaster_flux2_edit_bf16_baseline:
+    version: 2026-07-12
+    profiles:
+      - pornmaster_flux2_edit_bf16
+    source:
+      node_id: local-model-downloads
+      comfy_id: local-registry
+      model_dir: /srv/allbot/model-downloads/pornmaster_flux2_image_edit/2026-07-12
+      discovered_size_gb: 25.2
+      import_status: cached
+      notes: Isolated BF16 cache candidate for gpu-226 GPU0. It reuses the existing fp8 Qwen text encoder and small decoder VAE, but replaces the PornMaster V4 turbo UNET with the Civitai BF16 artifact. It is not enabled for production runtime or canary.
+    files:
+      - relative_path: diffusion_models/flux2/PornMaster_flux2_klein_9b_turbo_bf16_V4.safetensors
+        sha256: 5085c05fa34b2455245a75f393885780b41e80a7517265b4b53da2e5044b004e
+        size_bytes: 18157213600
+      - relative_path: text_encoders/flux2/qwen_3_8b_fp8mixed.safetensors
+        sha256: abad16806e0cbabc54e0325d6565847443fe396d5f0be38bb3cd3fe75a1201d6
+        size_bytes: 8664848742
+      - relative_path: vae/flux2/full_encoder_small_decoder.safetensors
+        sha256: ea4273f02d1fafbf8e1d1c2cf6018ed8748652eb0bf34f2dd91171f16f15ab62
+        size_bytes: 249519092
+
   scail2_baseline:
     version: 2026-06-17-test
     profiles:

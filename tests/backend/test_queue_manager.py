@@ -52,6 +52,31 @@ class _FakeRedis:
         self.sets = {}
         self.values = {}
         self.published = []
+        self.task_create_count = 0
+
+    async def eval(
+        self,
+        _script,
+        _numkeys,
+        task_key,
+        pending_key,
+        request_fingerprint,
+        task_data_json,
+        _ttl,
+        score,
+        task_id,
+    ):
+        existing = self.hashes.get(task_key)
+        if existing is not None:
+            return (
+                0
+                if existing.get("request_fingerprint") == request_fingerprint
+                else -1
+            )
+        self.hashes[task_key] = json.loads(task_data_json)
+        self.sorted_sets.setdefault(pending_key, {})[task_id] = float(score)
+        self.task_create_count += 1
+        return 1
 
     async def hset(self, key, field=None, value=None, mapping=None):
         bucket = self.hashes.setdefault(key, {})
@@ -179,6 +204,10 @@ class _FlakyRedis(_FakeRedis):
         self._record_call("hset")
         return await super().hset(*args, **kwargs)
 
+    async def eval(self, *args, **kwargs):
+        self._record_call("eval")
+        return await super().eval(*args, **kwargs)
+
     async def hget(self, *args, **kwargs):
         self._record_call("hget")
         return await super().hget(*args, **kwargs)
@@ -254,7 +283,7 @@ async def test_enqueue_task_persists_trace_id_and_priority_adjusted_score():
 
 @pytest.mark.asyncio
 async def test_enqueue_task_retries_transient_pipeline_write_failure():
-    redis = _FlakyRedis({"hset": 1})
+    redis = _FlakyRedis({"eval": 1})
     manager = QueueManager(redis)
 
     task_id = await manager.enqueue_task(
@@ -265,9 +294,70 @@ async def test_enqueue_task_retries_transient_pipeline_write_failure():
     )
 
     assert task_id == "task-retry"
-    assert redis.calls["hset"] == 2
+    assert redis.calls["eval"] == 2
+    assert redis.task_create_count == 1
     assert redis.hashes[manager._task_key("task-retry")]["status"] == TaskStatus.PENDING
     assert "task-retry" in redis.sorted_sets[manager.pending_key]
+
+
+@pytest.mark.asyncio
+async def test_enqueue_task_retry_after_accepted_timeout_does_not_reset_or_duplicate():
+    class AcceptedThenTimeoutRedis(_FakeRedis):
+        def __init__(self):
+            super().__init__()
+            self.eval_calls = 0
+
+        async def eval(self, *args, **kwargs):
+            self.eval_calls += 1
+            result = await super().eval(*args, **kwargs)
+            if self.eval_calls == 1:
+                task_key = args[2]
+                self.hashes[task_key]["status"] = TaskStatus.RUNNING
+                raise ConnectionResetError("reply lost after commit")
+            return result
+
+    redis = AcceptedThenTimeoutRedis()
+    manager = QueueManager(redis)
+
+    result = await manager.enqueue_task(
+        TaskType.IMG2IMG,
+        {"prompt": "same request"},
+        0,
+        "deterministic-task",
+    )
+
+    assert result == "deterministic-task"
+    assert redis.eval_calls == 2
+    assert redis.task_create_count == 1
+    stored = redis.hashes[manager._task_key("deterministic-task")]
+    assert stored["status"] == TaskStatus.RUNNING
+    assert list(redis.sorted_sets[manager.pending_key]) == ["deterministic-task"]
+
+
+@pytest.mark.asyncio
+async def test_enqueue_task_same_id_conflicting_request_is_rejected_without_mutation():
+    from app.queue_manager import TaskAdmissionConflictError
+
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+    await manager.enqueue_task(
+        TaskType.IMG2IMG,
+        {"prompt": "original"},
+        0,
+        "deterministic-task",
+    )
+    original = dict(redis.hashes[manager._task_key("deterministic-task")])
+
+    with pytest.raises(TaskAdmissionConflictError):
+        await manager.enqueue_task(
+            TaskType.IMG2IMG,
+            {"prompt": "changed"},
+            0,
+            "deterministic-task",
+        )
+
+    assert redis.hashes[manager._task_key("deterministic-task")] == original
+    assert redis.task_create_count == 1
 
 
 @pytest.mark.asyncio

@@ -3,9 +3,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from src.services import quick_image_submission_service as quick_image_service
 from src.constants import (
     MODE_I2I_DRAW,
     MODE_IMG2IMG_LORA,
+    MODE_PORNMASTER_FLUX2_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_RANDOM_FACESWAP,
 )
@@ -18,6 +20,7 @@ from src.services.quick_image_submission_service import (
     QuickImageSubmissionKind,
     QuickImageSubmissionRejectReason,
     build_quick_image_submission_plan,
+    quick_image_plan_requires_continuation,
     run_quick_image_submission_plan,
 )
 
@@ -65,6 +68,35 @@ def test_qqcc_free_edit_v2_scene_builds_draw_chain_plan_without_prompts_ini():
     assert [scene["negative_prompt"] for scene in plan.draw_chain] == ["bad hands"]
 
 
+def test_qqcc_free_edit_v3_scene_builds_bf16_plan_with_six_credit_cost():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": [
+                {
+                    "id": "bf16_portrait",
+                    "name": "自由P图 v3",
+                    "prompt": "high precision portrait",
+                    "engine": "free_edit_v3",
+                }
+            ],
+        }
+    )
+
+    plan = build_quick_image_submission_plan(
+        fsm_data={
+            "mode": MODE_PORNMASTER_FLUX2_EDIT_BF16,
+            "scene_id": "bf16_portrait",
+        },
+        qqcc_config=config,
+        image_path="/tmp/input.png",
+    )
+
+    assert plan.task_type == MODE_PORNMASTER_FLUX2_EDIT_BF16
+    assert plan.total_cost == 6
+    assert plan.images == ["/tmp/input.png"]
+
+
 @pytest.mark.asyncio
 async def test_run_qqcc_single_step_draw_chain_stays_cancellable_with_normal_priority():
     config = normalize_qqcc_config(
@@ -96,7 +128,12 @@ async def test_run_qqcc_single_step_draw_chain_stays_cancellable_with_normal_pri
 
     await run_quick_image_submission_plan(
         plan=plan,
-        context=SimpleNamespace(),
+        context=SimpleNamespace(
+            bot_data={
+                "bot_client_type": "bot:qqcc-private:7",
+                "private_qqcc_bot_id": 7,
+            }
+        ),
         chat_id=456,
         user_id=123,
         username="tester",
@@ -177,6 +214,120 @@ async def test_run_qqcc_draw_chain_plan_submits_intermediate_hidden_then_final_v
     assert process_calls[1]["base_priority"] == 100
     assert process_calls[1]["display_mode_name_override"] == "柔光写真"
     assert process_calls[1]["result_meta"] == plan.result_meta
+
+
+@pytest.mark.asyncio
+async def test_private_qqcc_draw_chain_uses_durable_continuation_before_dispatch(
+    monkeypatch,
+):
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": [
+                {
+                    "id": "first",
+                    "name": "第一步",
+                    "prompt": "first prompt",
+                    "postprocess_draw_scene_id": "second",
+                },
+                {
+                    "id": "second",
+                    "name": "第二步",
+                    "prompt": "second prompt",
+                },
+            ],
+        }
+    )
+    plan = build_quick_image_submission_plan(
+        fsm_data={
+            "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+            "scene_id": "first",
+        },
+        qqcc_config=config,
+        image_path="/tmp/input.png",
+    )
+    process_task = AsyncMock()
+    create_checkpoint = AsyncMock(
+        return_value=SimpleNamespace(chain_id="chain-image-1")
+    )
+    resume_checkpoint = AsyncMock()
+    persist_input = AsyncMock(return_value="inputs/original.png")
+    monkeypatch.setattr(
+        quick_image_service,
+        "create_private_qqcc_continuation",
+        create_checkpoint,
+    )
+    monkeypatch.setattr(
+        quick_image_service,
+        "resume_private_qqcc_continuation",
+        resume_checkpoint,
+    )
+    monkeypatch.setattr(
+        quick_image_service,
+        "persist_private_qqcc_continuation_input",
+        persist_input,
+    )
+
+    assert quick_image_plan_requires_continuation(plan) is True
+    context = SimpleNamespace(
+        bot_data={
+            "bot_client_type": "bot:qqcc-private:7",
+            "private_qqcc_bot_id": 7,
+        }
+    )
+    await run_quick_image_submission_plan(
+        plan=plan,
+        context=context,
+        chat_id=456,
+        user_id=123,
+        username="tester",
+        status_msg_id=77,
+        process_generation_task_func=process_task,
+    )
+
+    process_task.assert_not_awaited()
+    stages = create_checkpoint.await_args.kwargs["stages"]
+    assert create_checkpoint.await_args.kwargs["original_input_ref"] == (
+        "inputs/original.png"
+    )
+    assert create_checkpoint.await_args.kwargs["original_input_durable"] is True
+    assert len(stages) == 2
+    assert stages[0]["task_kwargs"]["send_result"] is False
+    assert stages[0]["task_kwargs"]["user_cancel_allowed"] is True
+    assert stages[1]["task_kwargs"]["send_result"] is True
+    assert stages[1]["task_kwargs"]["user_cancel_allowed"] is False
+    resume_checkpoint.assert_awaited_once()
+    resume_kwargs = resume_checkpoint.await_args.kwargs
+    assert resume_kwargs["chain_id"] == "chain-image-1"
+    assert resume_kwargs["context"] is context
+    assert resume_kwargs["store"] is None
+    assert callable(resume_kwargs["execute_stage_func"])
+
+
+def test_private_qqcc_original_face_swap_step_requires_continuation():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": [
+                {
+                    "id": "face_restore",
+                    "name": "保留原脸",
+                    "prompt": "draw prompt",
+                    "original_face_swap_enabled": True,
+                }
+            ],
+        }
+    )
+    plan = build_quick_image_submission_plan(
+        fsm_data={
+            "mode": MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+            "scene_id": "face_restore",
+        },
+        qqcc_config=config,
+        image_path="/tmp/input.png",
+    )
+
+    assert quick_image_plan_requires_continuation(plan) is True
 
 
 def test_qqcc_free_edit_lora_scene_keeps_lora_payload():

@@ -1,0 +1,199 @@
+name: Immutable control-plane release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: immutable-release-${{ github.sha }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}
+
+jobs:
+  python-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+      - run: pip install -r requirements.txt PyYAML
+      - run: python -m pytest -q
+
+  web-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm install --global npm@10.9.2 && npm ci && npm test && npm run build
+        working-directory: frontend
+
+  dashboard-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          cache: npm
+          cache-dependency-path: dashboard/frontend/package-lock.json
+      - run: npm install --global npm@10.9.2 && npm ci && npm test && npm run build
+        working-directory: dashboard/frontend
+
+  release:
+    needs: [python-tests, web-tests, dashboard-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: oras-project/setup-oras@v1
+      - name: Refuse mutable SHA tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in allbot-app allbot-central-api allbot-dashboard-backend allbot-dashboard-frontend allbot-worker allbot-release; do
+            if oras manifest fetch "${IMAGE_PREFIX}/${name}:${GITHUB_SHA}" >/dev/null 2>&1; then
+              echo "immutable tag already exists: ${name}:${GITHUB_SHA}" >&2
+              exit 1
+            fi
+          done
+      - name: Build public Web artifact once
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm install --global npm@10.9.2 && npm ci && npm run build
+        working-directory: frontend
+      - run: tar -czf web-dist.tgz -C frontend dist
+      - name: Build app image
+        id: app
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.app
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/allbot-app:${{ github.sha }}
+          build-args: |
+            ALLBOT_GIT_SHA=${{ github.sha }}
+      - name: Build Central image
+        id: central
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.central
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/allbot-central-api:${{ github.sha }}
+          build-args: ALLBOT_GIT_SHA=${{ github.sha }}
+      - name: Build dashboard backend image
+        id: dashboard_backend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.dashboard-backend
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/allbot-dashboard-backend:${{ github.sha }}
+          build-args: ALLBOT_GIT_SHA=${{ github.sha }}
+      - name: Build dashboard frontend image
+        id: dashboard_frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.dashboard-frontend
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/allbot-dashboard-frontend:${{ github.sha }}
+          build-args: ALLBOT_GIT_SHA=${{ github.sha }}
+      - name: Build Worker image
+        id: worker
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.worker
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/allbot-worker:${{ github.sha }}
+          build-args: ALLBOT_GIT_SHA=${{ github.sha }}
+      - name: Smoke immutable image dependency closure
+        env:
+          APP_REF: ${{ env.IMAGE_PREFIX }}/allbot-app@${{ steps.app.outputs.digest }}
+          CENTRAL_REF: ${{ env.IMAGE_PREFIX }}/allbot-central-api@${{ steps.central.outputs.digest }}
+          DASHBOARD_BACKEND_REF: ${{ env.IMAGE_PREFIX }}/allbot-dashboard-backend@${{ steps.dashboard_backend.outputs.digest }}
+          DASHBOARD_FRONTEND_REF: ${{ env.IMAGE_PREFIX }}/allbot-dashboard-frontend@${{ steps.dashboard_frontend.outputs.digest }}
+          WORKER_REF: ${{ env.IMAGE_PREFIX }}/allbot-worker@${{ steps.worker.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for ref in "$APP_REF" "$CENTRAL_REF" "$DASHBOARD_BACKEND_REF" "$DASHBOARD_FRONTEND_REF" "$WORKER_REF"; do
+            docker pull "$ref"
+            test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$ref")" = "$GITHUB_SHA"
+          done
+          docker run --rm "$APP_REF" python -c "from pathlib import Path; assert Path('/app/src/core/task_core.py').is_file(); assert Path('/app/shared/locales/zh.json').is_file()"
+          docker run --rm "$CENTRAL_REF" python -c "from pathlib import Path; assert Path('/app/app/main.py').is_file(); assert Path('/app/src/core/task_core.py').is_file()"
+          docker run --rm "$DASHBOARD_BACKEND_REF" python -c "from pathlib import Path; assert Path('/app/dashboard/backend/main.py').is_file(); assert Path('/app/src').is_dir()"
+          docker run --rm --entrypoint sh "$DASHBOARD_FRONTEND_REF" -c "test -f /opt/allbot-spa/index.html && test -f /opt/allbot-spa/index.qqcc-config.html && test -f /opt/allbot-spa/index.private-bot.html"
+          docker run --rm "$WORKER_REF" python -c "from pathlib import Path; assert Path('/app/worker/agent_main.py').is_file(); assert Path('/app/worker/workflows').is_dir(); assert Path('/app/src').is_dir()"
+      - name: Resolve vendor digests and write release manifest
+        env:
+          APP_DIGEST: ${{ steps.app.outputs.digest }}
+          CENTRAL_DIGEST: ${{ steps.central.outputs.digest }}
+          DASHBOARD_BACKEND_DIGEST: ${{ steps.dashboard_backend.outputs.digest }}
+          DASHBOARD_FRONTEND_DIGEST: ${{ steps.dashboard_frontend.outputs.digest }}
+          WORKER_DIGEST: ${{ steps.worker.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest() { docker buildx imagetools inspect "$1" --format '{{.Manifest.Digest}}'; }
+          IMGPROXY_DIGEST="$(digest darthsim/imgproxy:v3.30.1)"
+          POSTGRES_DIGEST="$(digest postgres:15.13-bookworm)"
+          REDIS_DIGEST="$(digest redis:7.4.5-alpine)"
+          WEB_SHA256="$(sha256sum web-dist.tgz | awk '{print $1}')"
+          jq -n \
+            --arg sha "$GITHUB_SHA" \
+            --arg ci "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --arg app "${IMAGE_PREFIX}/allbot-app@${APP_DIGEST}" \
+            --arg central "${IMAGE_PREFIX}/allbot-central-api@${CENTRAL_DIGEST}" \
+            --arg dashboard_backend "${IMAGE_PREFIX}/allbot-dashboard-backend@${DASHBOARD_BACKEND_DIGEST}" \
+            --arg dashboard_frontend "${IMAGE_PREFIX}/allbot-dashboard-frontend@${DASHBOARD_FRONTEND_DIGEST}" \
+            --arg worker "${IMAGE_PREFIX}/allbot-worker@${WORKER_DIGEST}" \
+            --arg imgproxy "docker.io/darthsim/imgproxy@${IMGPROXY_DIGEST}" \
+            --arg postgres "docker.io/library/postgres@${POSTGRES_DIGEST}" \
+            --arg redis "docker.io/library/redis@${REDIS_DIGEST}" \
+            --arg web "$WEB_SHA256" \
+            '{schema_version:1,git_sha:$sha,images:{app:$app,central:$central,dashboard_backend:$dashboard_backend,dashboard_frontend:$dashboard_frontend,worker:$worker},vendor_images:{imgproxy:$imgproxy,postgres:$postgres,redis:$redis},web_artifact_sha256:$web,ci_run:$ci}' \
+            > release.json
+          python scripts/release.py plan --env test --sha "$GITHUB_SHA" --manifest release.json --from-sha "$GITHUB_SHA" --skip-ci-checks
+      - name: Publish immutable release bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          oras push "${IMAGE_PREFIX}/allbot-release:${GITHUB_SHA}" \
+            --artifact-type application/vnd.allbot.release.v1 \
+            release.json:application/vnd.allbot.release.manifest.v1+json \
+            web-dist.tgz:application/vnd.allbot.web-dist.v1+gzip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ github.sha }}
+          path: |
+            release.json
+            web-dist.tgz
+          if-no-files-found: error
+          retention-days: 90

@@ -1,0 +1,21 @@
+FROM python:3.10-slim
+
+ARG ALLBOT_GIT_SHA
+ARG ALLBOT_SOURCE=https://github.com/giraffu/All_bot
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
+      org.opencontainers.image.source=$ALLBOT_SOURCE
+
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libpq-dev openssh-client && rm -rf /var/lib/apt/lists/*
+COPY requirements.txt /tmp/root-requirements.txt
+COPY dashboard/backend/requirements.txt /tmp/dashboard-requirements.txt
+RUN pip install --no-cache-dir -r /tmp/root-requirements.txt -r /tmp/dashboard-requirements.txt
+COPY dashboard /app/dashboard
+COPY src /app/src
+COPY shared /app/shared
+COPY alembic.ini /app/alembic.ini
+COPY deploy/docker/python-release-entrypoint.sh /usr/local/bin/allbot-release-entrypoint
+RUN chmod 755 /usr/local/bin/allbot-release-entrypoint
+ENV PYTHONPATH=/app PYTHONUNBUFFERED=1
+ENTRYPOINT ["/usr/local/bin/allbot-release-entrypoint"]
+CMD ["gunicorn", "dashboard.backend.main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8043"]

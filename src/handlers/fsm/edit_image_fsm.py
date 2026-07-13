@@ -14,10 +14,9 @@ from config import ENABLE_FREE_EDIT_V2
 from src.constants import (
     MODE_EDIT,
     MODE_FREE_EDIT_V2,
+    MODE_FREE_EDIT_V3,
     MODE_I2I_PRO,
     MODE_IMG2IMG_LORA,
-    MODE_PORNMASTER_FLUX2_MULTI_EDIT,
-    MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     TASK_COSTS,
 )
 from src.handlers.conversation_states import EditImageState
@@ -29,12 +28,21 @@ from src.lora_catalog import (
 )
 from src.services.task_service_entrypoints_generation import process_i2i_pro_task
 from src.services.task_service_generation_image import process_standard_generation_task as process_generation_task
+from src.services.free_edit_v3_submission_service import (
+    FREE_EDIT_V3_COST,
+    process_free_edit_v3_task,
+)
 from src.services.permission_service import permission_service
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
     download_telegram_file_to_fsm_temp,
 )
-from src.utils import create_background_task, robust_edit_text, robust_reply_text
+from src.utils import (
+    create_background_task,
+    robust_edit_text,
+    robust_reply_text,
+    safe_answer_query,
+)
 
 from src.filters.i18n_filter import I18nFilter
 from src.i18n.translator import get_text
@@ -69,7 +77,7 @@ def _resolve_edit_image_mode(text: str) -> str:
     if route_key == "menu.free_edit":
         return MODE_EDIT
     if route_key == "menu.free_edit_v2" and ENABLE_FREE_EDIT_V2:
-        return MODE_FREE_EDIT_V2
+        return MODE_FREE_EDIT_V3
     return MODE_I2I_PRO
 
 
@@ -106,7 +114,7 @@ def _build_edit_image_start_message(
         from src.i18n.translator import get_text
 
         return (get_text("fsm.edit_image.start_i2i_pro", lang, cost=cost), None)
-    if mode == MODE_FREE_EDIT_V2:
+    if mode == MODE_FREE_EDIT_V3:
         from src.i18n.translator import get_text
 
         return (get_text("fsm.edit_image.start_free_edit_v2", lang, cost=cost), None)
@@ -138,7 +146,7 @@ def _build_reference_image_received_message(
         return get_text("fsm.edit_image.reference_received_i2i", lang)
 
     num_images = len(fsm_data["images"])
-    is_free_edit_v2 = fsm_data["mode"] == MODE_FREE_EDIT_V2
+    is_free_edit_v2 = fsm_data["mode"] == MODE_FREE_EDIT_V3
     if num_images == 1:
         from src.i18n.translator import get_text
 
@@ -149,7 +157,8 @@ def _build_reference_image_received_message(
         )
         return get_text(key, lang)
 
-    fsm_data["cost"] = 6
+    if not is_free_edit_v2:
+        fsm_data["cost"] = 6
     from src.i18n.translator import get_text
 
     key = (
@@ -194,24 +203,17 @@ def _submit_edit_image_task(
         )
         return
 
-    if mode == MODE_FREE_EDIT_V2:
-        task_type = (
-            MODE_PORNMASTER_FLUX2_MULTI_EDIT
-            if len(images) >= 2
-            else MODE_PORNMASTER_FLUX2_SINGLE_EDIT
-        )
+    if mode == MODE_FREE_EDIT_V3:
         create_background_task(
             context,
-            process_generation_task(
+            process_free_edit_v3_task(
                 context=context,
                 chat_id=chat_id,
                 user_id=user_id,
                 username=username,
                 prompt=prompt,
-                images=images[:2],
-                is_video=False,
-                task_type=task_type,
-                cleanup=True,
+                image_path=images[0],
+                process_generation_task_func=process_generation_task,
             ),
         )
         return
@@ -257,7 +259,7 @@ async def start_edit_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return ConversationHandler.END
 
     mode = _resolve_edit_image_mode(text)
-    cost = TASK_COSTS.get(mode, 2)
+    cost = FREE_EDIT_V3_COST if mode == MODE_FREE_EDIT_V3 else TASK_COSTS.get(mode, 2)
     _initialize_edit_image_context(context, mode=mode, cost=cost)
     msg, reply_markup = _build_edit_image_start_message(
         mode, cost, lang=getattr(context, "lang", "zh")
@@ -267,7 +269,7 @@ async def start_edit_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     )
     return (
         EditImageState.WAIT_REFERENCE_IMAGES
-        if mode in (MODE_I2I_PRO, MODE_FREE_EDIT_V2)
+        if mode in (MODE_I2I_PRO, MODE_FREE_EDIT_V3)
         else EditImageState.WAIT_LORA_SELECTION
     )
 
@@ -276,7 +278,9 @@ async def handle_lora_selection(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     query = update.callback_query
-    await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
+    await safe_answer_query(
+        query, text=_t(context, "fsm.common.task_initializing"), cache_time=2
+    )
     data = query.data
 
     if data == EDIT_LORA_FREE_EDIT_V2_CALLBACK:
@@ -285,8 +289,8 @@ async def handle_lora_selection(
             await query.edit_message_text(_t(context, "fsm.face_video.expired_alert"))
             return ConversationHandler.END
 
-        fsm_data["mode"] = MODE_FREE_EDIT_V2
-        fsm_data["cost"] = TASK_COSTS.get(MODE_PORNMASTER_FLUX2_SINGLE_EDIT, 2)
+        fsm_data["mode"] = MODE_FREE_EDIT_V3
+        fsm_data["cost"] = FREE_EDIT_V3_COST
         fsm_data.pop("lora_name", None)
         fsm_data.pop("lora_strength", None)
 
@@ -373,7 +377,7 @@ async def receive_additional_image(
         return EditImageState.WAIT_PROMPT
 
     if (
-        fsm_data["mode"] in (MODE_EDIT, MODE_IMG2IMG_LORA, MODE_FREE_EDIT_V2)
+        fsm_data["mode"] in (MODE_EDIT, MODE_IMG2IMG_LORA)
         and len(fsm_data["images"]) >= 2
     ):
         await robust_reply_text(
@@ -403,6 +407,13 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     cost = fsm_data["cost"]
     mode = fsm_data["mode"]
+    if mode == MODE_FREE_EDIT_V2:
+        # A Bot restart can resume a pre-upgrade FSM payload.  Route it through
+        # the replacement rather than submitting the retired v2 task type.
+        mode = MODE_FREE_EDIT_V3
+        cost = FREE_EDIT_V3_COST
+        fsm_data["mode"] = mode
+        fsm_data["cost"] = cost
     lora_name = fsm_data.get("lora_name", "")
     prompt = _normalize_edit_prompt(prompt, lora_name)
 

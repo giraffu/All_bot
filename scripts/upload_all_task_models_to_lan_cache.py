@@ -59,6 +59,12 @@ DEFAULT_BASE_TARGETS: tuple[TargetSpec, ...] = (
         bundle_versions=(("i2i_pro_baseline", "2026-06-14-test"),),
     ),
     TargetSpec(
+        name="pornmaster_flux2_edit_bf16",
+        prefix="pornmaster_flux2_edit_bf16/2026-07-12",
+        manifest_key="pornmaster_flux2_edit_bf16/2026-07-12/manifest.json",
+        bundle_versions=(("pornmaster_flux2_edit_bf16_baseline", "2026-07-12"),),
+    ),
+    TargetSpec(
         name="ltx_video",
         prefix="ltx_video/2026-06-10",
         manifest_key="ltx_video/2026-06-10/manifest.json",

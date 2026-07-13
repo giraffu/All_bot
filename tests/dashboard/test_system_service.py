@@ -737,6 +737,7 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
         "scail2",
         "ltx_video",
         "pornmaster_flux2_edit",
+        "pornmaster_flux2_edit_bf16",
     ]
     assert profiles["i2i_pro"] == {
         "profile": "i2i_pro",
@@ -793,6 +794,15 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
         ]
         == 1000
     )
+    assert profiles["pornmaster_flux2_edit_bf16"]["label"] == (
+        "pornmaster_flux2 BF16 / 自由P图 v3"
+    )
+    assert profiles["pornmaster_flux2_edit_bf16"]["supported_task_types"] == [
+        "pornmaster_flux2_edit_bf16"
+    ]
+    assert profiles["pornmaster_flux2_edit_bf16"]["autoscaler_enabled"] is False
+    assert profiles["pornmaster_flux2_edit_bf16"]["active_count"] == 0
+    assert profiles["pornmaster_flux2_edit_bf16"]["pending_count"] == 0
 
 
 @pytest.mark.asyncio

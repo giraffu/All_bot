@@ -7,6 +7,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const apiMocks = vi.hoisted(() => ({
   fetchQqccBotConfig: vi.fn(),
   updateQqccBotConfig: vi.fn(),
+  uploadQqccDemoMedia: vi.fn(),
+  generateQqccDemoMedia: vi.fn(),
+  getQqccDemoGeneration: vi.fn(),
 }))
 
 const antMocks = vi.hoisted(() => ({
@@ -32,9 +35,9 @@ import QqccBotSettings from './QqccBotSettings.vue'
 
 const ButtonStub = defineComponent({
   name: 'ButtonStub',
-  props: ['loading', 'type'],
+  props: ['disabled', 'loading', 'type'],
   emits: ['click'],
-  template: '<button type="button" @click="$emit(\'click\')"><slot name="icon" /><slot /></button>',
+  template: '<button type="button" :disabled="disabled" @click="$emit(\'click\')"><slot name="icon" /><slot /></button>',
 })
 
 const SwitchStub = defineComponent({
@@ -91,6 +94,49 @@ const ModalStub = defineComponent({
     '<div v-if="open || visible" data-testid="scene-model-modal"><h4>{{ title }}</h4><slot /><slot name="footer" /></div>',
 })
 
+const TabsStub = defineComponent({
+  name: 'TabsStub',
+  props: ['activeKey'],
+  emits: ['update:activeKey'],
+  template: `
+    <div>
+      <div>
+        <button type="button" data-testid="scene-tab-control-video" @click="$emit('update:activeKey', 'video')">AI动图</button>
+        <button type="button" data-testid="scene-tab-control-draw" @click="$emit('update:activeKey', 'draw')">AI绘图</button>
+        <button type="button" data-testid="scene-tab-control-filter" @click="$emit('update:activeKey', 'filter')">AI滤镜</button>
+      </div>
+      <slot />
+    </div>
+  `,
+})
+
+const TabPaneStub = defineComponent({
+  name: 'TabPaneStub',
+  props: ['tab'],
+  template: '<div><slot name="tab" /><slot /></div>',
+})
+
+const PaginationStub = defineComponent({
+  name: 'PaginationStub',
+  props: ['current', 'pageSize', 'total'],
+  emits: ['update:current', 'change'],
+  template: `
+    <div>
+      <button
+        type="button"
+        data-testid="pagination-next"
+        @click="$emit('update:current', current + 1); $emit('change', current + 1)"
+      >下一页</button>
+    </div>
+  `,
+})
+
+const UploadStub = defineComponent({
+  name: 'UploadStub',
+  props: ['beforeUpload', 'accept', 'showUploadList'],
+  template: '<div><slot /></div>',
+})
+
 const passthroughStub = (name: string) =>
   defineComponent({
     name,
@@ -102,6 +148,9 @@ const mountSettings = (props = {}) =>
     props: {
       fetchConfig: apiMocks.fetchQqccBotConfig,
       updateConfig: apiMocks.updateQqccBotConfig,
+      uploadDemoMedia: apiMocks.uploadQqccDemoMedia,
+      generateDemoMedia: apiMocks.generateQqccDemoMedia,
+      getDemoGeneration: apiMocks.getQqccDemoGeneration,
       ...props,
     },
     global: {
@@ -114,22 +163,64 @@ const mountSettings = (props = {}) =>
         'a-select': SelectStub,
         'a-select-option': SelectOptionStub,
         'a-modal': ModalStub,
+        'a-tabs': TabsStub,
+        'a-tab-pane': TabPaneStub,
+        'a-pagination': PaginationStub,
+        'a-upload': UploadStub,
         'a-spin': passthroughStub('SpinStub'),
         'a-form': passthroughStub('FormStub'),
         'a-form-item': passthroughStub('FormItemStub'),
         ReloadOutlined: passthroughStub('ReloadOutlinedStub'),
         SaveOutlined: passthroughStub('SaveOutlinedStub'),
         DeleteOutlined: passthroughStub('DeleteOutlinedStub'),
+        DownOutlined: passthroughStub('DownOutlinedStub'),
         LinkOutlined: passthroughStub('LinkOutlinedStub'),
         PlusOutlined: passthroughStub('PlusOutlinedStub'),
+        PlayCircleOutlined: passthroughStub('PlayCircleOutlinedStub'),
         SettingOutlined: passthroughStub('SettingOutlinedStub'),
+        UpOutlined: passthroughStub('UpOutlinedStub'),
+        UploadOutlined: passthroughStub('UploadOutlinedStub'),
       },
     },
   })
 
+const getButtonByTestId = (wrapper: ReturnType<typeof mountSettings>, testId: string) => {
+  const button = wrapper
+    .findAllComponents(ButtonStub)
+    .find(component => component.attributes('data-testid') === testId)
+  if (!button) throw new Error(`Missing button: ${testId}`)
+  return button
+}
+
 describe('QqccBotSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    apiMocks.uploadQqccDemoMedia.mockResolvedValue({
+      media: {
+        object_key: 'qqcc/demo/draw/quick_masturbation/input',
+        media_type: 'image',
+        mime_type: 'image/png',
+        file_name: 'before.png',
+        telegram_file_ids: {},
+      },
+      preview_url: 'https://preview.example/before.png',
+    })
+    apiMocks.generateQqccDemoMedia.mockResolvedValue({
+      generation_id: 'task-1',
+      status: 'pending',
+    })
+    apiMocks.getQqccDemoGeneration.mockResolvedValue({
+      generation_id: 'task-1',
+      status: 'done',
+      media: {
+        object_key: 'qqcc/demo/draw/quick_masturbation/output',
+        media_type: 'image',
+        mime_type: 'image/png',
+        file_name: 'generated.png',
+        telegram_file_ids: {},
+      },
+      preview_url: 'https://preview.example/generated.png',
+    })
     apiMocks.fetchQqccBotConfig.mockResolvedValue({
       key: 'qqcc_lazy_bot_config:v1',
       updated_at: '2026-06-26T12:00:00',
@@ -148,6 +239,9 @@ describe('QqccBotSettings', () => {
         },
         prompts: {
           undress: 'old prompt',
+        },
+        copywriting: {
+          ai_draw_scene_start: '已切换到【{butten}】模式，请发送一张图片。',
         },
         video_scenes: [
           {
@@ -216,6 +310,7 @@ describe('QqccBotSettings', () => {
         draw_engines: [
           { value: 'free_edit', supports_lora: true },
           { value: 'free_edit_v2', supports_lora: false },
+          { value: 'free_edit_v3', supports_lora: false },
         ],
         video_lora_models: [
           { value: '', label: '无' },
@@ -236,6 +331,209 @@ describe('QqccBotSettings', () => {
     )
   })
 
+  it('uploads and previews input demo media on the matching scene row', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    const uploads = wrapper.findAllComponents(UploadStub)
+    const drawInputUpload = uploads[2]
+    expect(drawInputUpload).toBeTruthy()
+    const file = new File(['demo'], 'before.png', { type: 'image/png' })
+
+    await drawInputUpload!.props('beforeUpload')(file)
+    await flushPromises()
+
+    expect(apiMocks.uploadQqccDemoMedia).toHaveBeenCalledWith(
+      'draw',
+      'quick_masturbation',
+      'input',
+      file,
+    )
+    expect(
+      wrapper.get('[data-testid="draw-demo-input-preview-0"]').attributes('src'),
+    ).toBe('https://preview.example/before.png')
+    expect(
+      wrapper.get('[data-testid="draw-demo-input-preview-0"]').attributes('width'),
+    ).toBe('60')
+    expect(
+      wrapper.get('[data-testid="draw-demo-input-preview-0"]').element.closest('.scene-action-cell'),
+    ).not.toBeNull()
+  })
+
+  it('keeps every concurrent demo upload and generation button in its own loading state', async () => {
+    const uploads = [] as Array<(value: { media: Record<string, unknown>; preview_url: string }) => void>
+    const generations = [] as Array<(value: Record<string, unknown>) => void>
+    apiMocks.uploadQqccDemoMedia.mockImplementation(
+      () => new Promise(resolve => uploads.push(resolve)),
+    )
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    const uploadControls = wrapper.findAllComponents(UploadStub)
+    const firstUpload = uploadControls[2]!.props('beforeUpload')
+    const secondUpload = uploadControls[4]!.props('beforeUpload')
+    const file = new File(['demo'], 'before.png', { type: 'image/png' })
+    const firstUploadPromise = firstUpload(file)
+    const secondUploadPromise = secondUpload(file)
+    await flushPromises()
+
+    expect(getButtonByTestId(wrapper, 'upload-draw-demo-input-0').props('loading')).toBe(true)
+    expect(getButtonByTestId(wrapper, 'upload-draw-demo-input-1').props('loading')).toBe(true)
+
+    uploads[0]!({ media: { object_key: 'first', media_type: 'image', mime_type: 'image/png', file_name: 'first.png' }, preview_url: 'https://preview.example/first.png' })
+    uploads[1]!({ media: { object_key: 'second', media_type: 'image', mime_type: 'image/png', file_name: 'second.png' }, preview_url: 'https://preview.example/second.png' })
+    await Promise.all([firstUploadPromise, secondUploadPromise])
+
+    apiMocks.generateQqccDemoMedia.mockImplementation(
+      () => new Promise(resolve => generations.push(resolve)),
+    )
+    await wrapper.get('[data-testid="generate-draw-demo-0"]').trigger('click')
+    await wrapper.get('[data-testid="generate-draw-demo-1"]').trigger('click')
+    await flushPromises()
+
+    expect(getButtonByTestId(wrapper, 'generate-draw-demo-0').props('loading')).toBe(true)
+    expect(getButtonByTestId(wrapper, 'generate-draw-demo-1').props('loading')).toBe(true)
+
+    generations[0]!({ generation_id: 'generation-1', status: 'done', media: { object_key: 'output-1' }, preview_url: 'https://preview.example/output-1.png' })
+    generations[1]!({ generation_id: 'generation-2', status: 'done', media: { object_key: 'output-2' }, preview_url: 'https://preview.example/output-2.png' })
+    await flushPromises()
+  })
+
+  it('generates an output demo from the uploaded input without saving the config', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+    const file = new File(['demo'], 'before.png', { type: 'image/png' })
+    await wrapper.findAllComponents(UploadStub)[2]!.props('beforeUpload')(file)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="generate-draw-demo-0"]').trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.generateQqccDemoMedia).toHaveBeenCalledWith(
+      'draw',
+      expect.objectContaining({
+        id: 'quick_masturbation',
+        prompt: 'preset masturbation prompt',
+        demo_input_media: expect.objectContaining({
+          object_key: 'qqcc/demo/draw/quick_masturbation/input',
+        }),
+      }),
+    )
+    expect(apiMocks.getQqccDemoGeneration).toHaveBeenCalledWith(
+      'draw',
+      'quick_masturbation',
+      'task-1',
+    )
+    expect(apiMocks.updateQqccBotConfig).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="draw-demo-output-preview-0"]').attributes('src')).toBe(
+      'https://preview.example/generated.png',
+    )
+    expect(antMocks.success).toHaveBeenCalledWith('输出示范已生成，请检查后保存配置')
+  })
+
+  it('shows the backend reason when demo media upload is rejected', async () => {
+    apiMocks.uploadQqccDemoMedia.mockRejectedValueOnce({
+      response: {
+        status: 400,
+        data: { detail: 'Demo file content does not match its type' },
+      },
+    })
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    const uploads = wrapper.findAllComponents(UploadStub)
+    const drawInputUpload = uploads[2]
+    const file = new File(['not-a-png'], 'before.png', { type: 'image/png' })
+
+    await drawInputUpload!.props('beforeUpload')(file)
+    await flushPromises()
+
+    expect(antMocks.error).toHaveBeenCalledWith(
+      '示范文件上传失败：文件内容与声明格式不一致',
+    )
+  })
+
+  it('reports a Cloudflare edge rejection instead of an expired session for 403', async () => {
+    apiMocks.uploadQqccDemoMedia.mockRejectedValueOnce({
+      response: { status: 403 },
+    })
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    const file = new File(['demo'], 'before.png', { type: 'image/png' })
+    await wrapper.findAllComponents(UploadStub)[2]!.props('beforeUpload')(file)
+    await flushPromises()
+
+    expect(antMocks.error).toHaveBeenCalledWith(
+      '示范文件上传失败：Cloudflare 安全规则拦截了上传请求',
+    )
+  })
+
+  it('explains when the edge returns HTML instead of upload data', async () => {
+    apiMocks.uploadQqccDemoMedia.mockResolvedValueOnce('<!doctype html>Access login')
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    const uploads = wrapper.findAllComponents(UploadStub)
+    const drawInputUpload = uploads[2]
+    const file = new File(['demo'], 'before.png', { type: 'image/png' })
+
+    await drawInputUpload!.props('beforeUpload')(file)
+    await flushPromises()
+
+    expect(antMocks.error).toHaveBeenCalledWith(
+      '示范文件上传失败：公网安全层返回了非预期响应',
+    )
+  })
+
+  it('keeps tenant-scoped demo media when the owner editor reloads config', async () => {
+    apiMocks.fetchQqccBotConfig.mockResolvedValueOnce({
+      key: 'qqcc_private_bot_config:7',
+      updated_at: '2026-07-12T12:00:00',
+      config: {
+        video_scenes: [],
+        filter_scenes: [],
+        draw_scenes: [
+          {
+            id: 'tenant_draw',
+            name: '租户绘图',
+            prompt: 'tenant prompt',
+            engine: 'free_edit_v2',
+            demo_input_media: {
+              object_key: 'qqcc/private/7/demo/draw/tenant_draw/input',
+              media_type: 'image',
+              mime_type: 'image/png',
+              file_name: 'tenant.png',
+              preview_url: 'https://preview.example/tenant.png',
+            },
+          },
+        ],
+      },
+    })
+    const wrapper = mountSettings({
+      demoMediaObjectPrefixes: ['qqcc/demo', 'qqcc/private/7/demo'],
+    })
+    await flushPromises()
+
+    expect(
+      wrapper.get('[data-testid="draw-demo-input-preview-0"]').attributes('src'),
+    ).toBe('https://preview.example/tenant.png')
+  })
+
+  it('uses image demos for drawing and filters but mp4 for video output', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    const uploads = wrapper.findAllComponents(UploadStub)
+    expect(uploads).toHaveLength(10)
+    expect(uploads[0]!.props('accept')).toContain('image/png')
+    expect(uploads[1]!.props('accept')).toContain('video/mp4')
+    expect(uploads[2]!.props('accept')).toContain('image/png')
+    expect(uploads[3]!.props('accept')).toContain('image/png')
+    expect(uploads[8]!.props('accept')).toContain('image/png')
+    expect(uploads[9]!.props('accept')).toContain('image/png')
+  })
+
   it('loads the config and renders the settings tab content', async () => {
     const wrapper = mountSettings()
     await flushPromises()
@@ -246,9 +544,10 @@ describe('QqccBotSettings', () => {
     expect(wrapper.text()).toContain('快速换脸')
     expect(wrapper.text()).toContain('AI滤镜')
     expect(wrapper.text()).toContain('修仙市集')
-    expect(wrapper.text()).toContain('AI动图场景')
-    expect(wrapper.text()).toContain('AI绘图场景')
-    expect(wrapper.text()).toContain('AI滤镜场景')
+    expect(wrapper.text()).toContain('AI场景配置')
+    expect(wrapper.get('[data-testid="scene-tab-video"]').text()).toContain('AI动图')
+    expect(wrapper.get('[data-testid="scene-tab-draw"]').text()).toContain('AI绘图')
+    expect(wrapper.get('[data-testid="scene-tab-filter"]').text()).toContain('AI滤镜')
     expect(wrapper.text()).not.toContain('懒人P图')
     expect(wrapper.text()).not.toContain('脱衣方式')
     expect((wrapper.get('[data-testid="video-scene-name-0"]').element as HTMLInputElement).value).toBe('亲吻')
@@ -262,12 +561,35 @@ describe('QqccBotSettings', () => {
     expect(wrapper.find('[data-testid="non-video-prompt-undress"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="non-video-prompt-masturbation"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="non-video-prompt-face_swap"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="copywriting-ai_draw_scene_start"]').exists()).toBe(true)
+    expect((wrapper.get('[data-testid="copywriting-ai_draw_scene_start"]').element as HTMLTextAreaElement).value).toBe(
+      '已切换到【{butten}】模式，请发送一张图片。',
+    )
+    expect(wrapper.get('[data-testid="copywriting-ai_filter_scene_start"]').attributes('placeholder')).toContain(
+      '已切换到【{butten}】模式',
+    )
     expect(wrapper.find('[data-testid="config-video-scene-model-0"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="config-video-scene-end-frame-0"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="config-draw-scene-model-0"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="config-draw-scene-postprocess-0"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="config-filter-scene-model-0"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('画质与时长')
+  })
+
+  it('renders taller prompt editors for every scene kind', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    for (const testId of [
+      'video-scene-prompt-0',
+      'video-scene-negative-prompt-0',
+      'draw-scene-prompt-0',
+      'draw-scene-negative-prompt-0',
+      'filter-scene-prompt-0',
+      'filter-scene-negative-prompt-0',
+    ]) {
+      expect(wrapper.get(`[data-testid="${testId}"]`).attributes('rows')).toBe('5')
+    }
   })
 
   it('saves switch, prompt, dynamic video scene, and draw scene changes in the payload', async () => {
@@ -286,6 +608,7 @@ describe('QqccBotSettings', () => {
     await wrapper.get('[data-testid="filter-scene-prompt-0"]').setValue('new filter prompt')
     await wrapper.get('[data-testid="filter-scene-negative-prompt-0"]').setValue('  filter blur  ')
     await wrapper.get('[data-testid="non-video-prompt-face_swap"]').setValue('new face prompt')
+    await wrapper.get('[data-testid="copywriting-ai_draw_scene_start"]').setValue('请发送【{butten}】的原图。')
     await wrapper.findAll('button').at(1)!.trigger('click')
     await flushPromises()
 
@@ -296,6 +619,7 @@ describe('QqccBotSettings', () => {
     expect(payload.global_enabled).toBe(false)
     expect(payload.prompts.undress).toBe('old prompt')
     expect(payload.prompts.face_swap).toBe('new face prompt')
+    expect(payload.copywriting.ai_draw_scene_start).toBe('请发送【{butten}】的原图。')
     expect(payload.main_buttons.quick_faceswap).toBe(true)
     expect(payload.main_buttons.ai_filter).toBe(true)
     expect(payload.main_buttons.quick_undress).toBe(false)
@@ -491,6 +815,35 @@ describe('QqccBotSettings', () => {
     expect(payload.draw_scenes[2].postprocess_filter_scene_id).toBe('')
   })
 
+  it('saves every AI drawing scene without a count limit', async () => {
+    apiMocks.fetchQqccBotConfig.mockResolvedValueOnce({
+      key: 'qqcc_lazy_bot_config:v1',
+      updated_at: null,
+      config: {
+        video_scenes: [],
+        filter_scenes: [],
+        draw_scenes: Array.from({ length: 20 }, (_, index) => ({
+          id: `draw_${index + 1}`,
+          name: `绘图 ${index + 1}`,
+          prompt: `prompt ${index + 1}`,
+          engine: 'free_edit_v2',
+        })),
+      },
+    })
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="add-draw-scene"]').trigger('click')
+    await wrapper.get('[data-testid="draw-scene-name-20"]').setValue('绘图 21')
+    await wrapper.get('[data-testid="draw-scene-prompt-20"]').setValue('prompt 21')
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
+    expect(payload.draw_scenes).toHaveLength(21)
+    expect(payload.draw_scenes[20].name).toBe('绘图 21')
+  })
+
   it('adds and removes dynamic filter scenes before saving', async () => {
     const wrapper = mountSettings()
     await flushPromises()
@@ -511,6 +864,100 @@ describe('QqccBotSettings', () => {
     expect(payload.filter_scenes[0].negative_prompt).toBe('waxy skin')
     expect(payload.filter_scenes[0].engine).toBe('free_edit_v2')
     expect(payload.filter_scenes[0].lora_name).toBe('')
+  })
+
+  it('moves video, draw, and filter scenes and saves their new order', async () => {
+    apiMocks.fetchQqccBotConfig.mockResolvedValueOnce({
+      key: 'qqcc_lazy_bot_config:v1',
+      updated_at: '2026-06-26T12:00:00',
+      config: {
+        video_scenes: [
+          { id: 'video_a', name: '动图 A', prompt: 'video a', duration: '5s' },
+          { id: 'video_b', name: '动图 B', prompt: 'video b', duration: '5s' },
+        ],
+        draw_scenes: [
+          { id: 'draw_a', name: '绘图 A', prompt: 'draw a' },
+          { id: 'draw_b', name: '绘图 B', prompt: 'draw b' },
+        ],
+        filter_scenes: [
+          { id: 'filter_a', name: '滤镜 A', prompt: 'filter a' },
+          { id: 'filter_b', name: '滤镜 B', prompt: 'filter b' },
+        ],
+      },
+    })
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="move-video-scene-up-0"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="move-video-scene-down-1"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="move-draw-scene-up-0"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="move-filter-scene-down-1"]').attributes('disabled')).toBeDefined()
+
+    await wrapper.get('[data-testid="move-video-scene-down-0"]').trigger('click')
+    await wrapper.get('[data-testid="move-draw-scene-up-1"]').trigger('click')
+    await wrapper.get('[data-testid="move-filter-scene-down-0"]').trigger('click')
+
+    expect((wrapper.get('[data-testid="video-scene-name-0"]').element as HTMLInputElement).value).toBe('动图 B')
+    expect((wrapper.get('[data-testid="draw-scene-name-0"]').element as HTMLInputElement).value).toBe('绘图 B')
+    expect((wrapper.get('[data-testid="filter-scene-name-0"]').element as HTMLInputElement).value).toBe('滤镜 B')
+
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
+    expect(payload.video_scenes.map((scene: { id: string }) => scene.id)).toEqual(['video_b', 'video_a'])
+    expect(payload.draw_scenes.map((scene: { id: string }) => scene.id)).toEqual(['draw_b', 'draw_a'])
+    expect(payload.filter_scenes.map((scene: { id: string }) => scene.id)).toEqual(['filter_b', 'filter_a'])
+  })
+
+  it('groups scene tables into tabs and paginates each scene kind independently', async () => {
+    const makeScenes = (prefix: string, count: number) =>
+      Array.from({ length: count }, (_, index) => ({
+        id: `${prefix}_${index + 1}`,
+        name: `${prefix.toUpperCase()} ${index + 1}`,
+        prompt: `${prefix} prompt ${index + 1}`,
+        duration: '5s',
+      }))
+    apiMocks.fetchQqccBotConfig.mockResolvedValueOnce({
+      key: 'qqcc_lazy_bot_config:v1',
+      updated_at: '2026-07-11T20:00:00',
+      config: {
+        video_scenes: makeScenes('video', 7),
+        draw_scenes: makeScenes('draw', 6),
+        filter_scenes: makeScenes('filter', 6),
+      },
+    })
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="scene-tab-video"]').text()).toContain('AI动图')
+    expect(wrapper.get('[data-testid="scene-tab-draw"]').text()).toContain('AI绘图')
+    expect(wrapper.get('[data-testid="scene-tab-filter"]').text()).toContain('AI滤镜')
+    expect(wrapper.find('[data-testid="video-scene-name-0"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="video-scene-name-4"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="video-scene-name-5"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="video-scenes-pagination"]').get('[data-testid="pagination-next"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="video-scene-name-0"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="video-scene-name-5"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="video-scene-name-6"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="draw-scene-name-0"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="filter-scene-name-0"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="move-video-scene-up-5"]').trigger('click')
+    expect(wrapper.find('[data-testid="video-scene-name-5"]').exists()).toBe(false)
+    expect((wrapper.get('[data-testid="video-scene-name-4"]').element as HTMLInputElement).value).toBe('VIDEO 6')
+
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
+    expect(payload.video_scenes.map((scene: { id: string }) => scene.id)).toEqual([
+      'video_1', 'video_2', 'video_3', 'video_4', 'video_6', 'video_5', 'video_7',
+    ])
+    expect(payload.draw_scenes).toHaveLength(6)
+    expect(payload.filter_scenes).toHaveLength(6)
   })
 
   it('configures a video scene model and clears lora when v2 is selected', async () => {
@@ -829,6 +1276,27 @@ describe('QqccBotSettings', () => {
     const softLightScene = payload.draw_scenes.find((scene: { id: string }) => scene.id === 'soft_light')!
     expect(softLightScene.engine).toBe('free_edit')
     expect(softLightScene.lora_name).toBe('qwen/YARN_1.0.safetensors')
+  })
+
+  it('configures draw and filter scenes to use free edit v3 without lora', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="config-draw-scene-model-2"]').trigger('click')
+    expect(wrapper.get('[data-testid="scene-model-modal"]').text()).toContain('自由P图v3')
+    await wrapper.get('[data-testid="scene-engine-select"]').setValue('free_edit_v3')
+    await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
+
+    await wrapper.get('[data-testid="config-filter-scene-model-0"]').trigger('click')
+    await wrapper.get('[data-testid="scene-engine-select"]').setValue('free_edit_v3')
+    await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
+    expect(payload.draw_scenes.find((scene: { id: string }) => scene.id === 'soft_light').engine).toBe('free_edit_v3')
+    expect(payload.filter_scenes[0].engine).toBe('free_edit_v3')
+    expect(payload.filter_scenes[0].lora_name).toBe('')
   })
 
   it('configures a filter scene model and original face swap switch', async () => {

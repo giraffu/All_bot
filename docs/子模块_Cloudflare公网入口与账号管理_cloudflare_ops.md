@@ -1,5 +1,7 @@
 # 子模块: Cloudflare 公网入口与账号管理 (Cloudflare Ops)
 
+> 不可变发布约束（2026-07-13）：正式 Web 必须由本地主服务器发布 CLI 使用最小 Pages token 上传测试验收过的同一 Web tar；关闭 Pages Git 自动生产构建属于单独的 Cloudflare mutation，必须明确授权。本轮仅实现仓库发布能力，没有修改 Pages、Token、DNS 或 Tunnel。
+
 ## 1. 目标与范围
 
 本文档记录 AllBot 在 Cloudflare 上的账号级自动化、DNS、Tunnel、Access、Pages/R2 与公网管理入口的操作边界。它承接原网络文档中的 Cloudflare 细节；网络拓扑仍见 `docs/子模块_网络暴露与代理穿透_network_proxy.md`。
@@ -32,9 +34,14 @@
 | `worker-central.aivison.it.com` | Cloudflare Tunnel | 远程 worker / RunPod 专用 Central | 不启用 Access 登录页；依赖 agent secret 与 WAF/rate limit |
 | `worker-central-test.aivison.it.com` | Cloudflare Tunnel | 云测试 worker 专用 Central | 不启用 Access 登录页；依赖测试 agent secret |
 | `qqcc-admin.aivison.it.com` | Tunnel `allbot-admin-dashboard-prod` / `68599b55-d7f9-4e0c-9613-3d5fa396cb28` + Access app `qqcc-admin` / `7fbb3a9a-7156-46b5-857c-1b7e5d97c7fe` | QQCC 懒人 Bot 管理后台公网入口 | Access policy `qqcc` allow `cv1347968277@gmail.com` |
+| `private-bot.aivison.it.com` | Tunnel `allbot-admin-dashboard-prod` / `68599b55-d7f9-4e0c-9613-3d5fa396cb28`，DNS record `69c4e68bf442dea05fefa71db28791b5` | QQCC 私有 Bot owner WebApp，回源 `http://100.107.220.127:8088` | 面向 owner 公开，不创建 Access app；应用层 ticket/JWT + 双层 Host 隔离 |
 | `analytics.aivison.it.com` | Tunnel `allbot-local-analytics` / `79d456a9-6448-4677-8a1f-c128ffb256dd` + Access app `local-analytics` / `b05ae46f-fcdb-43d9-ac4e-50ab91daabac` | 本地主服务器只读分析平台 `http://127.0.0.1:8095` | Access policy `local-analytics-admin` allow `cv1347968277@gmail.com` + 应用层登录 |
 | `assets.aivison.it.com` | Web/Nginx VPS | legacy MinIO 人工回滚、旧外链、迁移排障 | 不作为新生成媒体主路径 |
 | `web-test.aivison.it.com` | Web/Nginx VPS | 云测试静态站 + `/api/` 反代云测试 Web API | 测试环境，不指向正式 API |
+
+QQCC 私有 Bot owner WebApp Host 由 `PRIVATE_QQCC_BOT_OWNER_HOST` / `PRIVATE_QQCC_BOT_OWNER_WEBAPP_URL` 提供。2026-07-12 已在现有 `allbot-admin-dashboard-prod` Tunnel 的 catch-all 404 前新增 `private-bot.aivison.it.com -> http://100.107.220.127:8088`，并创建 proxied CNAME；该 Host 明确没有 Access app。上线后已验证 owner 首页 200、未认证 owner API 401、owner Host 上管理员 API与 `/api/health` 404，原 `qqcc-admin` 公网入口仍返回 Access 302。
+
+该 owner Host 面向普通 owner 公开，不能套用只允许管理员邮箱的 QQCC Admin Access policy，否则 Telegram WebApp 用户无法兑换 ticket。应用层使用 5 分钟单次 ticket + 12 小时 owner JWT；Nginx 通过 `PRIVATE_QQCC_BOT_OWNER_HOST` 只允许 owner 页面和 `/api/private-bots/owner/**`，管理员及其它 API 返回 404，backend 还会再次按 owner/admin Host 对跨 Host API 返回 404。owner 页不发送 `X-Frame-Options`，CSP 的 `connect-src` 只允许 `'self'`，仅以 `frame-ancestors 'self' https://*.telegram.org https://telegram.org` 允许 Telegram WebView 嵌入；admin/unknown Host 继续 `DENY` + `frame-ancestors 'none'`。ticket exchange 使用独立 `50r/s`、`burst=500`、`nodelay` limiter，以适应 cloudflared 汇聚的 origin 地址，不复用 admin login 的 `2r/s`、`burst=5` 窄桶。管理员入口由独立 `QQCC_CONFIG_ADMIN_HOST` 匹配，`qqcc-admin.aivison.it.com` 必须继续由现有 Access allowlist 保护；未知 Host 的 default server 直接 404。Tunnel 常从 localhost 回源，因此 Host/应用鉴权是权威边界，源 IP allowlist 只能作为附加防护。Telegram webhook 复用 `api.aivison.it.com/api/private-bots/webhook/<public_id>`，不启用 Access 登录页，依赖不可预测 public ID、Telegram secret header、状态校验、Redis 去重和边缘限流。
 
 `analytics.aivison.it.com` 的本机配置：
 
@@ -54,6 +61,7 @@
 - 不打印 `systemctl status cloudflared*` 的完整输出；该输出可能包含 token 或 credentials 路径上下文。排障时用 `is-active`、`journalctl` 精准 grep 非敏感错误。
 - 管理/分析入口必须启用 Cloudflare Access 或等价身份层；涉及 shadow 数据、本地分析或管理后台时，还必须保留应用层登录。
 - worker 专用 hostname 不启用 Access 登录页，否则会拦截机器请求；应依赖 agent secret、WAF/rate limit 和最小可见 API。
+- QQCC owner public Host 与 admin Host 必须按 Host 分离：公开 Host 不得反代 `/api/private-bots/admin/**`、`/api/qqcc/**` 或通用管理员 API；管理员 Host 不得因为 owner WebApp 上线而移除 Access。
 - Cloudflare mutation 前必须先读当前 DNS、Access app/policy、Tunnel 和 origin 健康状态；不要直接覆盖。
 - Token 轮换先验证新 token，再禁用旧 token；聊天中出现过的 token 一律视为泄露。
 

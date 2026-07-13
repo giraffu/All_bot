@@ -44,6 +44,11 @@ async def register_task_submission(
         client_type=submission_context.client_type,
         credits_deducted=credits_deducted,
         user_cancel_allowed=getattr(submission_context, "user_cancel_allowed", True),
+        concurrency_acquisition_key=getattr(
+            submission_context,
+            "concurrency_acquisition_key",
+            None,
+        ),
         metadata=submission_context.metadata,
     )
 
@@ -93,6 +98,7 @@ async def execute_task_submission_saga(
     submission_context: TaskSubmissionContext,
     register_task_submission_func: Callable[..., Awaitable[str]],
     dispatch_registered_task_func: Callable[..., Awaitable[str]],
+    before_dispatch_func: Callable[..., Awaitable[None]] | None = None,
 ) -> TaskSubmissionExecutionResult:
     registry_task_id = await register_task_submission_func(
         registry_task_id=registry_task_id,
@@ -102,6 +108,13 @@ async def execute_task_submission_saga(
         credits_deducted=credits_deducted,
         submission_context=submission_context,
     )
+    if before_dispatch_func is not None:
+        await before_dispatch_func(
+            registry_task_id=registry_task_id,
+            task_type=task_type,
+            cost=cost,
+            saved_inputs=submission_context.registry_saved_inputs(),
+        )
     backend_task_id = await dispatch_registered_task_func(
         registry_task_id=registry_task_id,
         task_type=task_type,
@@ -128,20 +141,21 @@ async def compensate_failed_submission(
     remove_task_func: Callable[..., Awaitable[None]],
     logger: logging.Logger,
     shield_func=None,
+    refund_idempotency_key: str | None = None,
+    refund_task_type: str = "refund_saga_failed",
 ):
     if shield_func is None:
         shield_func = asyncio.shield
 
     if credits_deducted:
         try:
-            await shield_func(
-                refund_credits_func(
-                    user_id,
-                    cost,
-                    task_type="refund_saga_failed",
-                    username=username,
-                )
-            )
+            refund_kwargs = {
+                "task_type": refund_task_type,
+                "username": username,
+            }
+            if refund_idempotency_key:
+                refund_kwargs["idempotency_key"] = refund_idempotency_key
+            await shield_func(refund_credits_func(user_id, cost, **refund_kwargs))
         except Exception as refund_err:
             logger.critical(
                 "REFUND FAILED! Log to Outbox. User: %s, Amount: %s, Error: %s",
@@ -246,6 +260,7 @@ async def execute_task_submission_saga_default(
     dispatch_to_worker_func=dispatch_to_worker,
     is_task_backend_busy_error_func=is_task_backend_busy_error,
     logger_override: logging.Logger | None = None,
+    before_dispatch_func: Callable[..., Awaitable[None]] | None = None,
 ) -> TaskSubmissionExecutionResult:
     dependencies = _resolve_default_task_core_submission_dependencies(
         dependencies=dependencies,
@@ -260,6 +275,7 @@ async def execute_task_submission_saga_default(
         cost=cost,
         credits_deducted=credits_deducted,
         submission_context=submission_context,
+        before_dispatch_func=before_dispatch_func,
         register_task_submission_func=lambda **kwargs: register_task_submission_default(
             **kwargs,
             dependencies=dependencies,
@@ -283,6 +299,8 @@ async def compensate_failed_submission_default(
     error: Exception,
     credits_deducted: bool,
     registry_task_id: str,
+    refund_idempotency_key: str | None = None,
+    refund_task_type: str = "refund_saga_failed",
     dependencies=None,
     logger_override: logging.Logger | None = None,
 ):
@@ -299,6 +317,8 @@ async def compensate_failed_submission_default(
         error=error,
         credits_deducted=credits_deducted,
         registry_task_id=registry_task_id,
+        refund_idempotency_key=refund_idempotency_key,
+        refund_task_type=refund_task_type,
         refund_credits_func=refund_credits,
         add_pending_refund_func=dependencies.add_pending_refund_func,
         remove_task_func=dependencies.remove_task_func,

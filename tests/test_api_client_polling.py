@@ -1,8 +1,12 @@
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
 import httpx
 import pytest
 
 from src import api_client as api_client_module
 from src.circuit_breaker import CircuitBreakerOpenException
+from src.services import image_service as image_service_module
 
 
 @pytest.mark.asyncio
@@ -18,7 +22,7 @@ async def test_iter_poll_progress_uses_fixed_low_frequency_interval(monkeypatch)
     )
     sleeps = []
 
-    async def fake_fetch_progress_status(_status_url):
+    async def fake_fetch_progress_status(_status_url, **_kwargs):
         return next(payloads)
 
     async def fake_sleep(seconds):
@@ -91,7 +95,7 @@ async def test_listen_for_progress_uses_polling_without_pubsub(
             {"status": "done", "progress": 1.0, "queue_pos": None},
         ]
     )
-    async def fake_fetch_progress_status(_status_url):
+    async def fake_fetch_progress_status(_status_url, **_kwargs):
         return next(payloads)
 
     async def fail_pubsub(*_args, **_kwargs):
@@ -111,12 +115,66 @@ async def test_listen_for_progress_uses_polling_without_pubsub(
 
 
 @pytest.mark.asyncio
+async def test_listen_for_progress_requests_type_queue_position_when_enabled(monkeypatch):
+    client = api_client_module.APIClient.__new__(api_client_module.APIClient)
+    captured = []
+
+    async def fake_fetch_progress_status(_status_url, **kwargs):
+        captured.append(kwargs)
+        return {"status": "done", "progress": 1.0}
+
+    monkeypatch.setattr(client, "_fetch_progress_status", fake_fetch_progress_status)
+    monkeypatch.setattr(
+        client,
+        "_is_terminal_progress_payload",
+        lambda payload: payload.get("status") == "done",
+    )
+
+    events = [
+        event
+        async for event in client.listen_for_progress(
+            "task-1",
+            include_type_position=True,
+        )
+    ]
+
+    assert events == [{"status": "done", "progress": 1.0}]
+    assert captured == [{"include_type_position": True}]
+
+
+@pytest.mark.asyncio
+async def test_image_service_monitor_progress_requests_type_queue_position_by_default(
+    monkeypatch,
+):
+    captured = []
+
+    async def fake_listen_for_progress(task_id, is_video=False, **kwargs):
+        captured.append((task_id, is_video, kwargs))
+        yield {"status": "done"}
+
+    monkeypatch.setattr(
+        image_service_module,
+        "api_client",
+        SimpleNamespace(listen_for_progress=fake_listen_for_progress),
+    )
+
+    service = image_service_module.ImageService()
+    events = [
+        event async for event in service.monitor_progress("task-1", is_video=True)
+    ]
+
+    assert events == [{"status": "done"}]
+    assert captured == [
+        ("task-1", True, {"include_type_position": True}),
+    ]
+
+@pytest.mark.asyncio
 async def test_listen_for_progress_keeps_404_cancelled_semantics(monkeypatch):
     client = api_client_module.APIClient.__new__(api_client_module.APIClient)
     request = httpx.Request("GET", "http://central/status/task-missing")
     response = httpx.Response(404, request=request)
 
-    async def fake_fetch_progress_status(_status_url):
+    async def fake_fetch_progress_status(_status_url, **_kwargs):
         raise httpx.HTTPStatusError(
             "missing",
             request=request,
@@ -243,3 +301,28 @@ def test_central_api_circuit_failure_classifier_counts_5xx_not_4xx():
         )
         is True
     )
+
+
+@pytest.mark.asyncio
+async def test_submit_pornmaster_flux2_bf16_uses_dedicated_single_image_endpoint(monkeypatch):
+    client = api_client_module.APIClient.__new__(api_client_module.APIClient)
+    request = AsyncMock(
+        return_value=httpx.Response(200, json={"task_id": "backend-task-id"})
+    )
+    monkeypatch.setattr(client, "_request", request)
+
+    result = await client.submit_pornmaster_flux2_edit(
+        "task-bf16",
+        execution_task_type="pornmaster_flux2_edit_bf16",
+        prompt="high precision edit",
+        image_paths=["/tmp/input.png"],
+        priority=3,
+    )
+
+    assert result == "backend-task-id"
+    request.assert_awaited_once()
+    assert request.await_args.args[:2] == (
+        "POST",
+        api_client_module.PORNMASTER_FLUX2_EDIT_BF16_ENDPOINT,
+    )
+    assert request.await_args.kwargs["json"]["images"] == ["/tmp/input.png"]

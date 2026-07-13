@@ -112,4 +112,5 @@ export function installAntDesign(app: App) {
   registerAsyncComponent(app, 'a-tab-pane', () => import('ant-design-vue/es/tabs'), namedExport('TabPane'))
   registerAsyncComponent(app, 'a-tag', () => import('ant-design-vue/es/tag'))
   registerAsyncComponent(app, 'a-tooltip', () => import('ant-design-vue/es/tooltip'))
+  registerAsyncComponent(app, 'a-upload', () => import('ant-design-vue/es/upload'))
 }

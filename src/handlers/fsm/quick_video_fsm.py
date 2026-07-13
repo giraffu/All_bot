@@ -44,12 +44,16 @@ from src.services.permission_service import permission_service
 from src.services.qqcc_config_service import (
     VIDEO_DURATION_KEYS,
     VIDEO_RESOLUTION_KEYS,
+    get_qqcc_copywriting_override,
     get_qqcc_video_scene,
     has_enabled_qqcc_video_scenes,
     is_qqcc_main_button_enabled,
     load_runtime_qqcc_config,
+    render_qqcc_copywriting,
 )
+from src.services.qqcc_demo_media_service import send_qqcc_scene_demo_media
 from src.services.qqcc_runtime_context import (
+    get_private_qqcc_bot_id,
     load_qqcc_config_for_context as _load_qqcc_runtime_config_for_context,
 )
 from src.services.quick_video_submission_service import (
@@ -380,6 +384,7 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
         return ConversationHandler.END
 
+    scene = None
     quick_video_data = {
         "mode": mode,
         "resolution": DEFAULT_RESOLUTION,
@@ -410,6 +415,21 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     context.user_data["quick_video_data"] = quick_video_data
 
     msg = _t(context, "fsm.quick_video.start", mode_name=mode_name)
+    if scene is not None and qqcc_config is not None:
+        msg = render_qqcc_copywriting(
+            get_qqcc_copywriting_override(qqcc_config, "video_scene_start"),
+            str(scene.get("name") or mode_name),
+        ) or msg
+    if scene is not None:
+        private_bot_id = get_private_qqcc_bot_id(context)
+        demo_kwargs = {"private_bot_id": private_bot_id} if private_bot_id else {}
+        await send_qqcc_scene_demo_media(
+            message=reply_message,
+            bot=context.bot,
+            scene_kind="video",
+            scene=scene,
+            **demo_kwargs,
+        )
     await robust_reply_text(reply_message, msg, parse_mode="Markdown")
     return QuickVideoState.WAIT_IMAGE
 
@@ -652,6 +672,7 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         cleanup_fsm_temp_files([image_path])
         _cleanup_context(context, user_id)
         return ConversationHandler.END
+
 
     if not update.effective_user:
         cleanup_fsm_temp_files([image_path])

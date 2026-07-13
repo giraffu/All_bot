@@ -28,6 +28,7 @@ description: "处理 AllBot Cloudflare 账号自动化、API Token、DNS、Tunne
 - 当前 zone 为 `aivison.it.com`；账号、zone、Access、Tunnel 的非敏感 ID 记录在 Cloudflare 专项文档中。
 - `analytics.aivison.it.com` 当前通过本地主服务器用户级 `cloudflared-local-analytics.service` 回源 `http://127.0.0.1:8095`，并由 Cloudflare Access + 本地应用登录双层保护。
 - `qqcc-admin.aivison.it.com` 是现有受保护管理入口参考基线：Cloudflare Access allow policy 只允许 `cv1347968277@gmail.com`。
+- `private-bot.aivison.it.com` 已于 2026-07-12 通过 `allbot-admin-dashboard-prod` Tunnel 正式上线，公开回源 QQCC Config Frontend `100.107.220.127:8088`；它不创建 Access app，依赖 owner ticket/JWT 与 origin/backend 双层 Host 隔离。`qqcc-admin.aivison.it.com` 仍由原 Access app 独立保护。
 - Cloudflare Account-owned token 不适合用 `/user/tokens/verify` 作为唯一验证；以 DNS、Zero Trust Access、Tunnel、Pages/R2 目标 API 的只读探测结果为准。
 
 ## 3. 操作红线
@@ -38,6 +39,7 @@ description: "处理 AllBot Cloudflare 账号自动化、API Token、DNS、Tunne
 - Cloudflare Access 策略默认用管理员邮箱 allowlist；扩大到组织/域名/所有人前必须向用户确认风险。
 - worker / RunPod 专用 Central hostname 不启用会拦截机器请求的 Access 登录页；它们依赖 agent secret 和 WAF/rate limit。
 - 用户级 cloudflared service 受登录会话和 linger 影响；没有 sudo 或未启用 linger 时，不声称已经具备系统级开机自启韧性。
+- QQCC owner Host 面向普通 owner，不套管理员邮箱 Access allowlist；它依赖应用层单次 ticket/JWT，且 origin Nginx 只能放行 owner 页面/API，backend 还要再次按 Host 对跨域 owner/admin API 返回 404。owner 不发送 XFO，CSP 的 `connect-src` 只能 `'self'`，仅 `frame-ancestors 'self' https://*.telegram.org https://telegram.org` 允许 Telegram WebView。admin Host 必须显式独立、继续 Access 保护，admin/unknown 保持 `DENY` + `frame-ancestors 'none'`，unknown Host 必须在 origin 404；Tunnel localhost 回源不能让 source IP allowlist 成为唯一隔离。Owner ticket exchange 使用独立 `50r/s`、`burst=500` limiter，不能复用 admin login 的 `2r/s`、`burst=5` 窄桶。Owner API body limit 要按路径保持 4KiB ticket/credentials、1MiB config、55MiB demo-media，不能全局放大。Telegram webhook API Host 也不能启用浏览器登录页。
 
 ## 4. 标准流程
 

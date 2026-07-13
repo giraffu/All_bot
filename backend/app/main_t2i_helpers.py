@@ -3,6 +3,7 @@ import json
 from contextlib import asynccontextmanager
 
 from fastapi import HTTPException
+from app.queue_manager import TaskAdmissionConflictError
 
 
 def build_task_event_channel(task_id: str) -> str:
@@ -154,6 +155,9 @@ async def enqueue_t2i_task(
     try:
         await queue_manager.enqueue_task(task_type, params, priority, task_id)
         logger.info(f"[{request_id}] Task enqueued: {task_id} with priority {priority}")
+    except TaskAdmissionConflictError as exc:
+        logger.warning(f"[{request_id}] Conflicting task admission: {task_id}")
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:
         logger.error(f"[{request_id}] Failed to enqueue task: {exc}")
         raise HTTPException(status_code=500, detail="Internal server error") from exc

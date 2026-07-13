@@ -36,6 +36,7 @@ QQCC_CONFIG_FRONTEND_TEST_PORT_VALUE="${QQCC_CONFIG_FRONTEND_TEST_PORT_VALUE:-80
 QQCC_CONFIG_ADMIN_USERNAME_VALUE="${QQCC_CONFIG_ADMIN_USERNAME:-$(read_env_value QQCC_CONFIG_ADMIN_USERNAME)}"
 QQCC_CONFIG_ADMIN_PASSWORD_HASH_VALUE="${QQCC_CONFIG_ADMIN_PASSWORD_HASH:-$(read_env_value QQCC_CONFIG_ADMIN_PASSWORD_HASH)}"
 QQCC_CONFIG_SECRET_KEY_VALUE="${QQCC_CONFIG_SECRET_KEY:-$(read_env_value QQCC_CONFIG_SECRET_KEY)}"
+QQCC_CONFIG_ADMIN_HOST_VALUE="${QQCC_CONFIG_ADMIN_HOST:-$(read_env_value QQCC_CONFIG_ADMIN_HOST)}"
 
 if [ -z "$CLOUD_TEST_DATABASE_URL_VALUE" ]; then
     echo "❌ 未配置 CLOUD_TEST_DATABASE_URL。"
@@ -62,6 +63,11 @@ if [ -z "$QQCC_CONFIG_ADMIN_USERNAME_VALUE" ] || [ -z "$QQCC_CONFIG_ADMIN_PASSWO
     exit 1
 fi
 
+python3 "$ROOT_DIR/scripts/validate_private_qqcc_bot_env.py" \
+    --env-file "$ENV_FILE" \
+    --bot-type TEST \
+    --allow-disabled
+
 if docker compose version >/dev/null 2>&1; then
     COMPOSE_CMD=(docker compose)
 else
@@ -77,11 +83,13 @@ wait_for_http_ready() {
     local url=$2
     local max_retries=${3:-40}
     local sleep_seconds=${4:-5}
+    local host_header=${5:-}
     local attempt=1
 
     echo "   👉 等待 ${service_name} 就绪: ${url}"
     while [ "$attempt" -le "$max_retries" ]; do
-        if curl -fsS "$url" >/dev/null 2>&1; then
+        if { [ -n "$host_header" ] && curl -fsS -H "Host: ${host_header}" "$url" >/dev/null 2>&1; } ||
+           { [ -z "$host_header" ] && curl -fsS "$url" >/dev/null 2>&1; }; then
             echo "   ✅ ${service_name} 已就绪。"
             return 0
         fi
@@ -124,6 +132,7 @@ remove_test_control_containers() {
         cloud-dashboard-frontend-test
         cloud-qqcc-config-backend-test
         cloud-qqcc-config-frontend-test
+        cloud-qqcc-private-bot-worker-test
         cloud-imgproxy-test
         web-api-test
         dashboard-backend-test
@@ -203,6 +212,7 @@ PY
 
 echo "🚀 开始部署云端测试控制面..."
 echo "ℹ️ 默认不启动 Telegram test bot、不启动 GPU worker，避免与本地测试环境争抢 token/GPU。"
+echo "ℹ️ 默认也不启动 QQCC private Bot webhook worker；迁移后须经 private Bot 测试清单显式启动 profile。"
 echo "ℹ️ 云测试服务绑定地址: ${CLOUD_TEST_HEALTH_HOST}"
 echo "ℹ️ 云测试数据库和缓存使用本测试机内的 cloud-postgres-test/cloud-redis-test。"
 
@@ -257,10 +267,11 @@ wait_for_http_ready "云测试 Web API" "http://${CLOUD_TEST_HEALTH_HOST}:8001/a
 wait_for_http_ready "云测试 Dashboard API" "http://${CLOUD_TEST_HEALTH_HOST}:8044/api/health" 40 5
 wait_for_http_ready "云测试 Dashboard Frontend" "http://${CLOUD_TEST_HEALTH_HOST}:${DASHBOARD_FRONTEND_TEST_PORT_VALUE}/api/health" 40 5
 wait_for_http_ready "云测试 QQCC Config API" "http://${CLOUD_TEST_HEALTH_HOST}:8045/api/health" 40 5
-wait_for_http_ready "云测试 QQCC Config Frontend" "http://${CLOUD_TEST_HEALTH_HOST}:${QQCC_CONFIG_FRONTEND_TEST_PORT_VALUE}/api/health" 40 5
+wait_for_http_ready "云测试 QQCC Config Frontend" "http://${CLOUD_TEST_HEALTH_HOST}:${QQCC_CONFIG_FRONTEND_TEST_PORT_VALUE}/api/health" 40 5 "$QQCC_CONFIG_ADMIN_HOST_VALUE"
 
 echo "✅ 云端测试控制面部署完成。"
 echo "👉 查看服务: ${COMPOSE_CMD[*]} --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml ps"
 echo "👉 Dashboard 测试前端: http://${CLOUD_TEST_HEALTH_HOST}:${DASHBOARD_FRONTEND_TEST_PORT_VALUE}/ （仅限 Tailscale/受控来源访问）。"
+echo "👉 QQCC Config 测试前端需使用 Host: ${QQCC_CONFIG_ADMIN_HOST_VALUE}；未知 Host 会返回 404。"
 echo "👉 公网测试 Web 已迁移到 web-test.aivison.it.com 的边缘 VPS；Web 前端 dev 容器默认不启动。"
 echo "👉 不要启动 bot-test，除非你已经停止本地 tg-bot-test。"

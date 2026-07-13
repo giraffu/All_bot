@@ -1,9 +1,11 @@
 # 子模块: 云正式控制面部署 (Cloud Prod Control Plane)
 
+> 2026-07-13 发布入口变更：新生产发布只允许把云测试已标记 verified 的同一 Git SHA、镜像 digest 与 Web checksum 晋级，入口为 `scripts/release.py deploy --env prod ... --execute --confirm-prod`。禁止 rsync、现场 build、源码挂载和 Pages 自动生产构建。本文后续旧 compose/目录/热修命令是首次切换前 legacy 事实，不是新发布入口；见 `docs/子模块_Git不可变发布_git_immutable_release.md`。本轮未执行生产或 Pages mutation。
+
 ## 1. 当前生产架构事实
 截至 2026-06-18，正式生产已经切到“云控制面 + 托管 PostgreSQL/Valkey + R2 + 本地 GPU worker / 手动 RunPod 备用池”的运行口径。
 
-当前长期事实：
+当前 legacy 运行事实与目标切换边界：
 - 云控制面 Droplet：`allbot-do-sgp1-control`，运行目录 `/home/deploy/APP/All_bot`。
 - 云控制面规格：DigitalOcean SGP1 Basic Regular `$96/mo`，8 vCPU / 16GB RAM / 320GB SSD。
 - 云端 compose：`deploy/docker-compose-cloud-prod.yml`。
@@ -33,9 +35,14 @@
 | imgproxy | `cloud-imgproxy-prod` | compose 内部端口 | 图片缩略与代理 |
 | Bot | `cloud-tg-bot-prod` | `bot` profile | 正式 Bot polling；必须保证全网单实例 |
 | QQCC Bot | `cloud-qqcc-bot-prod` | `qqcc-bot` profile | QQCC 懒人 Bot 独立 polling；开放快速换脸、AI绘图、AI动图、QQCC 专用轻量市集和返回主 Bot 跳转，必须使用独立 `QQCC_BOT_TOKEN` |
+| QQCC Private Bot Worker | `cloud-qqcc-private-bot-worker-prod` | `qqcc-private-bots` profile | 用户私有 Bot webhook stream worker；2026-07-12 已显式启动，后续默认 `up` 仍须带 profile |
 | Paid Group Guard Bot | `cloud-paid-group-guard-bot-prod` | 无对外端口 | 独立付费群审核与轻量群管理 Bot，使用独立 `PAID_GROUP_BOT_TOKEN` |
 
 云端不长期自托管正式 PostgreSQL、Valkey 或 MinIO；正式库与运行态 Redis/Valkey 使用托管服务或外部服务。
+
+QQCC 私有 Bot 正式启用不是 QQCC 单 polling 热修：它涉及 Alembic、新共享 secret、Web API webhook、QQCC Config Backend/Frontend、官方 QQCC 申请入口、独立 worker 和公网 owner Host。必须走完整生产确认与迁移门禁，不能套用只替换 `qqcc-bot-prod` 的单服务脚本。生产顺序、env contract 和回滚见 `docs/子模块_QQCC用户私有Bot平台_qqcc_private_bot_platform.md`。2026-07-12 已执行 migration、设置 `PRIVATE_QQCC_BOT_ENABLED=true`、启动 private profile、启用生产 webhook，并将 `private-bot.aivison.it.com` 接入现有 Tunnel；严格 validator、Host 隔离、owner/admin 公网行为和 worker heartbeat 已验证。safe deploy 的 `--allow-disabled` 仍只适用于 gate 关闭的未启用环境，不能替代启用态严格校验。
+
+QQCC Config Frontend 现在要求显式 `QQCC_CONFIG_ADMIN_HOST` 与 `PRIVATE_QQCC_BOT_OWNER_HOST`。生产管理员浏览器应使用受 Access 保护的 admin hostname；直接以 `100.107.220.127:8088` 或 localhost Host 访问会由 unknown default server 返回 404，除非该值被明确配置为 admin Host。Cloudflare Tunnel 回源必须保留原始 Host。
 
 正式核心 R2 / RunPod 变量口径：
 
@@ -213,7 +220,9 @@ GPU 节点上的 ComfyUI 服务不在本 compose 内。`cloud-prod-comfy-agent-*
 - `assets.aivison.it.com` 出现 `upstream prematurely closed connection` / `upstream timed out`：只影响人工回滚、旧外链或迁移排障链路；优先查边缘 cache/log 磁盘、Tailscale 到本地 MinIO、真实 object URL，同时确认正式 Web/Dashboard 响应没有返回 `assets` URL。
 - `cloud-dashboard-backend-prod` 高频 `Circuit Breaker is OPEN`：管理后台观测或外部余额接口降级，不代表 Central 任务调度一定失败。
 
-## 4. 部署 SOP
+## 4. Legacy 部署 SOP（归档，禁止执行）
+
+本节保留首次不可变切换前的生产运行事实，只用于归档与一次性 legacy 回滚设计。当前生产发布只允许将云测试 verified 的同一 SHA/digest 通过 `scripts/release.py deploy --env prod ... --execute --confirm-prod` 晋级；不得复制执行本节的 rsync、现场 build 或旧热修命令。
 
 ### 4.1 云控制面安全部署
 首选从本地主服务器执行更保守的维护式更新脚本，默认 dry-run，真实 mutation 必须同时传 `--execute --confirm-prod`：
@@ -303,6 +312,8 @@ curl -fsS http://100.107.220.127:8088/api/health
 ```
 
 该路径不重建 `cloud-dashboard-backend-prod` / `cloud-dashboard-frontend-prod`，也不触碰 `cloud-qqcc-bot-prod` polling。
+
+QQCC Bot 与 QQCC Config Web 同轮纯代码更新可走快速联合路径：只同步变更清单内的必要文件，通过 safe preflight、生产确认和 single-polling 检查后，用一条 `docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.yml --profile qqcc-bot up -d --no-deps --build qqcc-bot-prod qqcc-config-backend-prod qqcc-config-frontend-prod` 复用构建缓存并替换三个目标服务。COPY 型服务禁止省略 `--build` 后只 recreate；该路径不进入维护、不 drain 队列、不触碰其它控制面服务，并必须核对非目标容器启动时间不变。
 Dashboard RunPod 管理入口当前支持 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、
 `scail2 / 视频生视频` 与 `ltx_video / 高级图生视频`；它只提交正式 RunPod 池新增/暂停/删除操作，不直接启停其它正式服务。
 Dashboard 后端 RunPod autoscaler 默认随正式 `dashboard-backend-prod` 启动，只有拿到 Redis leader
@@ -349,7 +360,7 @@ scripts/update_cloud_prod_qqcc_bot.sh
 scripts/update_cloud_prod_qqcc_bot.sh --execute --confirm-prod --confirm-single-polling
 ```
 
-该路径只触碰 `qqcc-bot-prod` / `cloud-qqcc-bot-prod`：默认 dry-run，真实执行必须传 `--execute --confirm-prod --confirm-single-polling`。用户明确要求“QQCC 单服务更新/走单服务更新/单独更新 QQCC Bot”时，可视为当次正式与单 polling 操作确认，不需要额外逐字追问；若发现目标容器状态异常、疑似多实例、token/远端 env 异常、不是专用脚本路径，或要启动一个当前停止的新正式 QQCC 实例，必须停下确认。脚本同步代码、可选同步 `.env.cloud.prod`、执行只读 preflight、按 `qqcc-bot` profile build/up `qqcc-bot-prod`，并检查容器 running、非敏感 env 合同与近 3 分钟错误日志；整仓 rsync 同样排除 `local_analytics_platform/`、`backups/`、`logs/`、前端构建产物和密钥文件。它不写 `GENERATION_MAINTENANCE`、不等待或清理 Central 队列、不重建 Central/Web/Payment/Dashboard/主 Bot/Worker/RunPod，也不操作 Cloudflare Pages/DNS/边缘路由。
+该路径只触碰 `qqcc-bot-prod` / `cloud-qqcc-bot-prod`：默认 dry-run，真实执行必须传 `--execute --confirm-prod --confirm-single-polling`。用户明确要求“QQCC 单服务更新/走单服务更新/单独更新 QQCC Bot”时，可视为当次正式与单 polling 操作确认，不需要额外逐字追问；若发现目标容器状态异常、疑似多实例、token/远端 env 异常、不是专用脚本路径，或要启动一个当前停止的新正式 QQCC 实例，必须停下确认。脚本同步代码、可选同步 `.env.cloud.prod`、执行只读 preflight，并用单条 `up -d --no-deps --build qqcc-bot-prod` 复用构建缓存和替换目标容器；随后检查容器 running、非敏感 env 合同与近 3 分钟错误日志。整仓 rsync 同样排除 `local_analytics_platform/`、`backups/`、`logs/`、前端构建产物和密钥文件。它不写 `GENERATION_MAINTENANCE`、不等待或清理 Central 队列、不重建 Central/Web/Payment/Dashboard/主 Bot/Worker/RunPod，也不操作 Cloudflare Pages/DNS/边缘路由。
 
 付费群审核 Bot 与 Dashboard 管理页单独上线时，只触碰三个服务：
 

@@ -27,6 +27,7 @@ PROD_LTX_VIDEO_TASK_TYPE = "ltx_video"
 PROD_I2I_PRO_TASK_TYPE = "i2i_pro"
 PROD_PORNMASTER_FLUX2_SINGLE_EDIT_TASK_TYPE = "pornmaster_flux2_single_edit"
 PROD_PORNMASTER_FLUX2_MULTI_EDIT_TASK_TYPE = "pornmaster_flux2_multi_edit"
+PROD_PORNMASTER_FLUX2_EDIT_BF16_TASK_TYPE = "pornmaster_flux2_edit_bf16"
 PROD_SCAIL2_ACTION_TRANSFER_TASK_TYPE = "scail2_action_transfer"
 PROD_SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE = "scail2_video_replacement"
 PROD_TXT2IMG_PUBLIC_TASK_TYPE = "txt2img"
@@ -80,6 +81,8 @@ class RunPodProdWorkerCanaryCaseBuilder:
                 "submit prod Web pornmaster_flux2_single_edit and "
                 "pornmaster_flux2_multi_edit tasks serially"
             )
+        elif self.config.profile == "pornmaster_flux2_edit_bf16":
+            task_summary = "submit one prod Web pornmaster_flux2_edit_bf16 task"
         else:
             task_summary = (
                 f"submit one prod Web {self.config.task_type} task "
@@ -233,6 +236,32 @@ class RunPodProdWorkerCanaryCaseBuilder:
                 },
                 "result_kind": "image",
             },
+        ]
+
+    def pornmaster_flux2_edit_bf16_task_cases(
+        self,
+        image_object_key: str,
+    ) -> list[dict[str, Any]]:
+        return [
+            {
+                "label": "prod_pornmaster_flux2_edit_bf16_canary",
+                "expected_central_task_type": (
+                    PROD_PORNMASTER_FLUX2_EDIT_BF16_TASK_TYPE
+                ),
+                "payload": {
+                    "task_type": PROD_PORNMASTER_FLUX2_EDIT_BF16_TASK_TYPE,
+                    "inputs": {
+                        "images": [image_object_key],
+                        "image": image_object_key,
+                        "seed": 20260712,
+                    },
+                    "prompt": self.config.prompt
+                    or "precise natural image edit, high quality",
+                    "negative_prompt": self.config.negative_prompt,
+                    "priority": 0,
+                },
+                "result_kind": "image",
+            }
         ]
 
     def img2img_task_case(self, image_object_key: str) -> dict[str, Any]:

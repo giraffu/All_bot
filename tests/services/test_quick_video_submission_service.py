@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from src.services import quick_video_submission_service as quick_video_service
 from src.constants import (
     MODE_CUSTOM_VIDEO,
     MODE_DOGGY_STYLE,
@@ -20,6 +21,7 @@ from src.services.quick_video_submission_service import (
     QuickVideoSettingsUpdate,
     build_quick_video_settings_update,
     build_quick_video_submission_plan,
+    quick_video_plan_requires_continuation,
     run_quick_video_submission_plan,
 )
 
@@ -281,6 +283,112 @@ def test_qqcc_tail_frame_scene_adds_draw_chain_cost():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("video_engine", "expected_executor"),
+    [
+        ("image_to_video", "legacy_video"),
+        ("wan22_video_v2", "generation"),
+    ],
+)
+async def test_private_qqcc_tail_frame_video_uses_durable_continuation(
+    monkeypatch,
+    video_engine,
+    expected_executor,
+):
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": [
+                {
+                    "id": "tail_pose",
+                    "name": "尾帧姿势",
+                    "prompt": "tail prompt",
+                }
+            ],
+            "video_scenes": [
+                {
+                    "id": "tail_video",
+                    "name": "首尾动图",
+                    "prompt": "video prompt",
+                    "duration": "5s",
+                    "engine": video_engine,
+                    "end_frame_draw_scene_id": "tail_pose",
+                }
+            ],
+        }
+    )
+    plan = build_quick_video_submission_plan(
+        fsm_data={
+            "mode": MODE_CUSTOM_VIDEO,
+            "scene_id": "tail_video",
+            "resolution": "512p",
+            "duration": "5s",
+        },
+        qqcc_config=config,
+        allowed_resolutions=["512p"],
+    )
+    image_task = AsyncMock()
+    video_task = AsyncMock()
+    create_checkpoint = AsyncMock(
+        return_value=SimpleNamespace(chain_id="chain-video-1")
+    )
+    resume_checkpoint = AsyncMock()
+    persist_input = AsyncMock(return_value="inputs/original.png")
+    monkeypatch.setattr(
+        quick_video_service,
+        "create_private_qqcc_continuation",
+        create_checkpoint,
+    )
+    monkeypatch.setattr(
+        quick_video_service,
+        "resume_private_qqcc_continuation",
+        resume_checkpoint,
+    )
+    monkeypatch.setattr(
+        quick_video_service,
+        "persist_private_qqcc_continuation_input",
+        persist_input,
+    )
+
+    assert quick_video_plan_requires_continuation(plan) is True
+    context = SimpleNamespace(
+        bot_data={
+            "bot_client_type": "bot:qqcc-private:7",
+            "private_qqcc_bot_id": 7,
+        }
+    )
+    await run_quick_video_submission_plan(
+        plan=plan,
+        context=context,
+        chat_id=456,
+        user_id=123,
+        username="tester",
+        image_path="/tmp/input.png",
+        status_msg_id=77,
+        process_generation_task_func=image_task,
+        process_video_task_template_func=video_task,
+    )
+
+    image_task.assert_not_awaited()
+    video_task.assert_not_awaited()
+    stages = create_checkpoint.await_args.kwargs["stages"]
+    assert create_checkpoint.await_args.kwargs["original_input_ref"] == (
+        "inputs/original.png"
+    )
+    assert create_checkpoint.await_args.kwargs["original_input_durable"] is True
+    assert len(stages) == 2
+    assert stages[0]["task_kwargs"]["send_result"] is False
+    assert stages[1]["executor"] == expected_executor
+    assert stages[1]["delivery_required"] is True
+    assert stages[1]["task_kwargs"]["send_result"] is True
+    assert stages[1]["task_kwargs"]["delete_status"] is True
+    assert stages[1]["task_kwargs"]["user_cancel_allowed"] is False
+    resume_checkpoint.assert_awaited_once()
+    assert resume_checkpoint.await_args.kwargs["chain_id"] == "chain-video-1"
+    assert callable(resume_checkpoint.await_args.kwargs["execute_stage_func"])
+
+
+@pytest.mark.asyncio
 async def test_run_qqcc_legacy_video_plan_passes_scene_negative_prompt():
     plan = build_quick_video_submission_plan(
         fsm_data={
@@ -311,7 +419,12 @@ async def test_run_qqcc_legacy_video_plan_passes_scene_negative_prompt():
 
     await run_quick_video_submission_plan(
         plan=plan,
-        context=SimpleNamespace(),
+        context=SimpleNamespace(
+            bot_data={
+                "bot_client_type": "bot:qqcc-private:7",
+                "private_qqcc_bot_id": 7,
+            }
+        ),
         chat_id=456,
         user_id=123,
         username="tester",

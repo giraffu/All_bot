@@ -19,7 +19,7 @@ RETRY_INTERVAL_SECONDS="90"
 READINESS_TIMEOUT_SECONDS=""
 WORKER_TIMEOUT_SECONDS=""
 
-STATUS_PROFILES=(img2img image_to_video wan22_video_v2 i2i_pro scail2 ltx_video pornmaster_flux2_edit)
+STATUS_PROFILES=(img2img image_to_video wan22_video_v2 i2i_pro scail2 ltx_video pornmaster_flux2_edit pornmaster_flux2_edit_bf16)
 
 usage() {
   cat <<'USAGE'
@@ -41,7 +41,8 @@ Actions:
 Options:
   --profile <name>            Required for mutations. One of img2img,
                               image_to_video, wan22_video_v2, i2i_pro,
-                              scail2, ltx_video, pornmaster_flux2_edit.
+                              scail2, ltx_video, pornmaster_flux2_edit,
+                              pornmaster_flux2_edit_bf16.
   --slot <NN>                 Optional manual worker slot, for example 01.
   --count <N>                 Required for add.
   --desired <N>               Required for scale.
@@ -62,7 +63,7 @@ USAGE
 
 is_valid_profile() {
   case "$1" in
-    img2img|image_to_video|wan22_video_v2|i2i_pro|scail2|ltx_video|pornmaster_flux2_edit) return 0 ;;
+    img2img|image_to_video|wan22_video_v2|i2i_pro|scail2|ltx_video|pornmaster_flux2_edit|pornmaster_flux2_edit_bf16) return 0 ;;
     *) return 1 ;;
   esac
 }

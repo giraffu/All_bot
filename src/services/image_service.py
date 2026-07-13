@@ -386,10 +386,18 @@ class ImageService:
         )
 
     async def monitor_progress(
-        self, task_id: str, is_video: bool = False
+        self,
+        task_id: str,
+        is_video: bool = False,
+        *,
+        include_type_position: bool = True,
     ) -> AsyncGenerator[dict, None]:
         """Monitor task progress"""
-        async for info in api_client.listen_for_progress(task_id, is_video):
+        async for info in api_client.listen_for_progress(
+            task_id,
+            is_video,
+            include_type_position=include_type_position,
+        ):
             yield info
 
     async def download_result(self, task_id: str) -> bytes:

@@ -24,6 +24,7 @@ from config import (
     PERFECT_VIDEO_EDIT_ENDPOINT,
     PERFECT_VIDEO_INSERT_ENDPOINT,
     PORNMASTER_FLUX2_MULTI_EDIT_ENDPOINT,
+    PORNMASTER_FLUX2_EDIT_BF16_ENDPOINT,
     PORNMASTER_FLUX2_SINGLE_EDIT_ENDPOINT,
     SCAIL2_ACTION_TRANSFER_LONG_ENDPOINT,
     SCAIL2_ACTION_TRANSFER_ENDPOINT,
@@ -348,6 +349,9 @@ class APIClient:
     ) -> str:
         if execution_task_type == "pornmaster_flux2_single_edit":
             endpoint = PORNMASTER_FLUX2_SINGLE_EDIT_ENDPOINT
+            expected_images = 1
+        elif execution_task_type == "pornmaster_flux2_edit_bf16":
+            endpoint = PORNMASTER_FLUX2_EDIT_BF16_ENDPOINT
             expected_images = 1
         elif execution_task_type == "pornmaster_flux2_multi_edit":
             endpoint = PORNMASTER_FLUX2_MULTI_EDIT_ENDPOINT
@@ -851,11 +855,18 @@ class APIClient:
                 raise RuntimeError("后端未找到生成的视频文件。")
             raise RuntimeError(f"获取视频失败: HTTP {e.response.status_code}")
 
-    async def _fetch_progress_status(self, status_url: str) -> dict[str, Any]:
+    async def _fetch_progress_status(
+        self,
+        status_url: str,
+        *,
+        include_type_position: bool = False,
+    ) -> dict[str, Any]:
+        params = {"include_type_position": "true"} if include_type_position else None
         response = await self._request(
             "GET",
             status_url,
             timeout=10,
+            params=params,
             circuit_breaker_key="status",
         )
         return self._normalize_progress_payload(response.json())
@@ -944,10 +955,19 @@ class APIClient:
                         exc,
                     )
 
-    async def _iter_poll_progress(self, *, task_id: str, status_url: str):
+    async def _iter_poll_progress(
+        self,
+        *,
+        task_id: str,
+        status_url: str,
+        include_type_position: bool = False,
+    ):
         while True:
             try:
-                info = await self._fetch_progress_status(status_url)
+                info = await self._fetch_progress_status(
+                    status_url,
+                    include_type_position=include_type_position,
+                )
                 yield info
                 if self._is_terminal_progress_payload(info):
                     break
@@ -966,7 +986,13 @@ class APIClient:
                 logger.warning(f"Poll status failed for {task_id}: {inner_e}")
                 await asyncio.sleep(BOT_STATUS_POLL_INTERVAL)
 
-    async def listen_for_progress(self, task_id: str, is_video: bool = False):
+    async def listen_for_progress(
+        self,
+        task_id: str,
+        is_video: bool = False,
+        *,
+        include_type_position: bool = False,
+    ):
         """
         Async generator for task progress using low-frequency HTTP polling.
         """
@@ -975,6 +1001,7 @@ class APIClient:
         async for info in self._iter_poll_progress(
             task_id=task_id,
             status_url=status_url,
+            include_type_position=include_type_position,
         ):
             yield info
 

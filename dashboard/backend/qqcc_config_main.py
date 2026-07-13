@@ -11,6 +11,7 @@ os.chdir(str(PROJECT_ROOT))
 
 import fastapi.responses
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from jose import JWTError
 
@@ -18,8 +19,9 @@ from dashboard.backend.qqcc_config_auth import (
     auth_router,
     get_current_qqcc_config_user,
 )
-from dashboard.backend.routers import qqcc
+from dashboard.backend.routers import private_bots, qqcc
 from src.database.core import init_db
+from src.services.private_qqcc_bot_management import PRIVATE_BOT_CONFIG_MAX_BYTES
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("qqcc_config")
@@ -88,6 +90,7 @@ app.state.qqcc_config_health = _initial_health()
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(qqcc.router)
+app.include_router(private_bots.router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -96,6 +99,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def sanitized_validation_error_handler(_request: Request, _exc):
+    return fastapi.responses.JSONResponse(
+        status_code=422,
+        content={"detail": "Invalid request payload"},
+    )
 
 
 def _build_auth_error_response(request: Request, detail: str):
@@ -113,12 +124,79 @@ def _build_auth_error_response(request: Request, detail: str):
 
 @app.middleware("http")
 async def check_auth_header(request: Request, call_next):
+    request_path = request.url.path
+    request_host = str(request.url.hostname or "").lower().rstrip(".")
+    owner_host = (
+        os.getenv("PRIVATE_QQCC_BOT_OWNER_HOST", "")
+        .strip()
+        .lower()
+        .rstrip(".")
+    )
+    admin_host = os.getenv("QQCC_CONFIG_ADMIN_HOST", "").strip().lower().rstrip(".")
+    if request_path.startswith("/api/private-bots/owner/"):
+        if owner_host and request_host != owner_host:
+            return fastapi.responses.JSONResponse(
+                status_code=404,
+                content={"detail": "Not found"},
+            )
+    elif request_path.startswith("/api/private-bots/admin"):
+        if (owner_host and request_host == owner_host) or (
+            admin_host and request_host != admin_host
+        ):
+            return fastapi.responses.JSONResponse(
+                status_code=404,
+                content={"detail": "Not found"},
+            )
+
+    if request_path.startswith("/api/private-bots") and os.getenv(
+        "PRIVATE_QQCC_BOT_ENABLED",
+        "false",
+    ).strip().lower() not in {"1", "true", "yes", "on"}:
+        return fastapi.responses.JSONResponse(
+            status_code=404,
+            content={"detail": "Not found"},
+        )
+
     if request.method == "OPTIONS":
         return await call_next(request)
 
-    if request.url.path.startswith("/api/"):
-        public_paths = {"/api/auth/login", "/api/health"}
-        if request.url.path not in public_paths:
+    if (
+        request.method == "PUT"
+        and request_path == "/api/private-bots/owner/config"
+    ):
+        try:
+            content_length = int(request.headers.get("content-length") or 0)
+        except ValueError:
+            content_length = PRIVATE_BOT_CONFIG_MAX_BYTES + 1
+        if content_length > PRIVATE_BOT_CONFIG_MAX_BYTES + 64 * 1024:
+            return fastapi.responses.JSONResponse(
+                status_code=413,
+                content={"detail": "Private Bot config payload is too large"},
+            )
+
+    sensitive_owner_paths = {
+        ("POST", "/api/private-bots/owner/auth/exchange"),
+        ("PUT", "/api/private-bots/owner/credentials"),
+    }
+    if (request.method, request_path) in sensitive_owner_paths:
+        try:
+            content_length = int(request.headers.get("content-length") or 0)
+        except ValueError:
+            content_length = 2049
+        if content_length > 2048:
+            return fastapi.responses.JSONResponse(
+                status_code=413,
+                content={"detail": "Sensitive request payload is too large"},
+            )
+
+    if request_path.startswith("/api/"):
+        public_paths = {
+            "/api/auth/login",
+            "/api/health",
+            "/api/private-bots/owner/auth/exchange",
+        }
+        owner_path = request_path.startswith("/api/private-bots/owner/")
+        if request_path not in public_paths and not owner_path:
             try:
                 auth_header = request.headers.get("Authorization")
                 if not auth_header or not auth_header.startswith("Bearer "):
@@ -138,7 +216,7 @@ async def check_auth_header(request: Request, call_next):
             except Exception:
                 logger.exception(
                     "Unexpected QQCC config auth middleware failure for path=%s",
-                    request.url.path,
+                    request_path,
                 )
                 return _build_auth_error_response(
                     request,

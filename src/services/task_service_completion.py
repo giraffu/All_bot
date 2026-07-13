@@ -277,6 +277,25 @@ async def handle_task_completion(
         billing_resolution=billing_resolution,
         requested_duration=requested_duration,
     )
+    # A private QQCC continuation owns final presentation through its durable
+    # checkpoint. Persist the stage output before Telegram delivery so a
+    # checkpoint outage cannot turn recovery into an unconditional resend.
+    from src.services.private_qqcc_continuation_service import (
+        build_private_qqcc_continuation_registry_metadata,
+        get_private_qqcc_continuation_task_ref,
+        record_private_qqcc_continuation_task_result,
+    )
+
+    continuation_ref = get_private_qqcc_continuation_task_ref()
+    if continuation_ref is not None:
+        await record_private_qqcc_continuation_task_result(
+            registry_metadata=build_private_qqcc_continuation_registry_metadata(),
+            registry_task_id=registry_task_id,
+            saved_inputs=list(saved_input_images or []),
+            output_file=persistence_result.output_file,
+        )
+        if send_result:
+            return persistence_result.media_bytes, persistence_result.output_file
     return await present_completed_task_result(
         context=context,
         chat_id=chat_id,

@@ -57,6 +57,26 @@ def test_workflow_patcher_patches_real_image_edit_negative_prompts(
         assert patched[node_id]["class_type"] == "CLIPTextEncode"
 
 
+def test_pornmaster_bf16_task_uses_isolated_model_weight():
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
+    workflow = patcher.load_workflow("pornmaster_flux2_edit_bf16")
+
+    patched = patcher.patch_workflow(
+        "pornmaster_flux2_edit_bf16",
+        workflow,
+        {
+            "image": "source.png",
+            "prompt": "make it cinematic",
+            "negative_prompt": "blur, low quality",
+        },
+    )
+
+    assert patched["100"]["inputs"]["unet_name"] == (
+        "flux2/PornMaster_flux2_klein_9b_turbo_bf16_V4.safetensors"
+    )
+    assert patched["254"]["inputs"]["text"] == "blur, low quality"
+
+
 @pytest.mark.parametrize(
     ("task_type", "replacement_mode", "duration", "frame_count"),
     [

@@ -6,7 +6,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm config set registry https://registry.npmmirror.com && npm ci
 
-COPY index.html index.qqcc-config.html postcss.config.js tailwind.config.js tsconfig*.json vite.config.js vitest.config.js ./
+COPY index.html index.qqcc-config.html index.private-bot.html postcss.config.js tailwind.config.js tsconfig*.json vite.config.js vitest.config.js ./
 COPY public ./public
 COPY src ./src
 RUN npm run build
@@ -16,6 +16,8 @@ FROM nginx:1.27-alpine
 
 ENV DASHBOARD_GATEWAY_PORT=8088
 ENV DASHBOARD_BACKEND_HOST=qqcc-config-backend-prod:8045
+ENV PRIVATE_QQCC_BOT_OWNER_HOST=private-bot.aivison.it.com
+ENV QQCC_CONFIG_ADMIN_HOST=qqcc-admin.aivison.it.com
 
 COPY --from=build /app/dist /usr/share/nginx/html
 RUN cp /usr/share/nginx/html/index.qqcc-config.html /usr/share/nginx/html/index.html

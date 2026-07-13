@@ -58,9 +58,25 @@ def test_qqcc_main_menu_only_contains_lazy_generation_entries():
         ["快速换脸"],
         ["AI绘图", "AI动图"],
         ["修仙市集"],
+        ["私有bot"],
         ["前往主bot"],
     ]
     assert get_text("menu.video_edit", "zh") == "🎬 视频创作"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("loader", [qqcc_commands._load_menu_config, prompt_handlers._load_menu_config])
+async def test_private_bot_menu_config_failure_does_not_fall_back_to_defaults(loader):
+    context = SimpleNamespace(
+        bot_data={
+            "bot_client_type": "bot:qqcc-private:7",
+            "private_qqcc_bot_id": 7,
+            "qqcc_config_loader": AsyncMock(side_effect=RuntimeError("db down")),
+        }
+    )
+
+    with pytest.raises(RuntimeError, match="db down"):
+        await loader(context)
 
 
 def test_qqcc_main_bot_link_keyboard_uses_url_button():
@@ -131,7 +147,7 @@ def test_qqcc_config_hides_closed_main_and_submenu_buttons():
 
     main_rows = _keyboard_texts(keyboards.get_qqcc_main_menu_keyboard("zh", config))
 
-    assert main_rows == [["AI绘图"], ["前往主bot"]]
+    assert main_rows == [["AI绘图"], ["私有bot"], ["前往主bot"]]
 
 
 def test_qqcc_main_menu_shows_default_ai_draw_scenes():
@@ -142,6 +158,7 @@ def test_qqcc_main_menu_shows_default_ai_draw_scenes():
         ["快速换脸"],
         ["AI绘图", "AI动图"],
         ["修仙市集"],
+        ["私有bot"],
         ["前往主bot"],
     ]
     assert _inline_keyboard_texts(reply_markup) == [["快速自慰", "快速脱衣"]]
@@ -161,6 +178,7 @@ def test_qqcc_main_menu_keeps_ai_draw_when_draw_scenes_are_empty():
         ["快速换脸"],
         ["AI绘图", "AI动图"],
         ["修仙市集"],
+        ["私有bot"],
         ["前往主bot"],
     ]
 
@@ -185,6 +203,7 @@ def test_qqcc_main_menu_shows_ai_filter_when_filter_scenes_are_configured():
         ["快速换脸"],
         ["AI绘图", "AI滤镜", "AI动图"],
         ["修仙市集"],
+        ["私有bot"],
         ["前往主bot"],
     ]
     assert _inline_keyboard_texts(reply_markup) == [["真实质感"]]
@@ -326,6 +345,9 @@ def test_qqcc_draw_menu_uses_dynamic_scene_config():
 async def test_qqcc_ai_draw_menu_route_replies_with_inline_scene_buttons(monkeypatch):
     config = normalize_qqcc_config(
         {
+            "copywriting": {
+                "ai_draw_menu": "请选择你要使用的绘图场景。",
+            },
             "draw_scenes": [
                 {
                     "id": "soft_light",
@@ -361,7 +383,7 @@ async def test_qqcc_ai_draw_menu_route_replies_with_inline_scene_buttons(monkeyp
 
     reply_text.assert_awaited_once()
     kwargs = reply_text.await_args.kwargs
-    assert kwargs["text"] == "translated:system.ai_draw_hint"
+    assert kwargs["text"] == "请选择你要使用的绘图场景。"
     assert _inline_keyboard_texts(kwargs["reply_markup"]) == [
         ["快速自慰", "快速脱衣", "柔光写真"],
         ["动漫风"],
@@ -587,9 +609,14 @@ async def test_qqcc_regenerate_callback_routes_and_starts_background_task(monkey
         ),
         effective_chat=SimpleNamespace(id=456),
     )
+    tenant_config = {"global_enabled": False, "draw_scenes": []}
+    config_loader = AsyncMock(return_value=tenant_config)
     context = SimpleNamespace(
         bot=SimpleNamespace(),
         bot_data={
+            "bot_client_type": "bot:qqcc-private:7",
+            "private_qqcc_bot_id": 7,
+            "qqcc_config_loader": config_loader,
             "msg_meta_99": {
                 "_qqcc_regenerate": {
                     "kind": "quick_image",
@@ -608,6 +635,8 @@ async def test_qqcc_regenerate_callback_routes_and_starts_background_task(monkey
     prepare.assert_awaited_once()
     assert prepare.await_args.kwargs["task_id"] == "task-1"
     assert prepare.await_args.kwargs["message_meta"] == context.bot_data["msg_meta_99"]
+    assert await prepare.await_args.kwargs["load_config_func"]() == tenant_config
+    config_loader.assert_awaited_once()
     check_quota.assert_awaited_once_with(123, "tester", "Tester", cost=2)
     send_message.assert_awaited_once_with(
         context.bot,
@@ -664,6 +693,7 @@ async def test_qqcc_start_returns_simplified_menu(monkeypatch):
         ["快速换脸"],
         ["AI绘图", "AI动图"],
         ["修仙市集"],
+        ["私有bot"],
         ["前往主bot"],
     ]
 
@@ -748,6 +778,7 @@ async def test_qqcc_start_keeps_main_bot_jump_in_menu_when_configured(monkeypatc
         ["快速换脸"],
         ["AI绘图", "AI动图"],
         ["修仙市集"],
+        ["私有bot"],
         ["前往主bot"],
     ]
 
@@ -786,6 +817,205 @@ async def test_qqcc_quick_image_old_button_is_blocked(monkeypatch):
     assert result == -1
     reply_text.assert_awaited_once()
     assert reply_text.await_args.args[1] == "功能暂未开放"
+
+
+@pytest.mark.asyncio
+async def test_qqcc_draw_scene_sends_demo_album_before_upload_hint(monkeypatch):
+    events = []
+    demo_sender = AsyncMock(side_effect=lambda **_kwargs: events.append("demo"))
+    reply_text = AsyncMock(side_effect=lambda *_args, **_kwargs: events.append("text"))
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "copywriting": {
+                "ai_draw_scene_start": "已选择【{butten}】，请发送原图。",
+            },
+            "draw_scenes": [
+                {
+                    "id": "portrait",
+                    "name": "人像",
+                    "prompt": "portrait prompt",
+                    "demo_input_media": {
+                        "object_key": "qqcc/demo/draw/portrait/input",
+                        "media_type": "image",
+                        "mime_type": "image/png",
+                        "file_name": "before.png",
+                    },
+                    "demo_output_media": {
+                        "object_key": "qqcc/demo/draw/portrait/output",
+                        "media_type": "image",
+                        "mime_type": "image/png",
+                        "file_name": "after.png",
+                    },
+                }
+            ],
+        }
+    )
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(quick_image_fsm, "robust_reply_text", reply_text)
+    monkeypatch.setattr(quick_image_fsm, "send_qqcc_scene_demo_media", demo_sender)
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "load_runtime_qqcc_config",
+        AsyncMock(return_value=config),
+    )
+    callback_message = SimpleNamespace(chat_id=456)
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=123),
+        callback_query=SimpleNamespace(
+            data=build_quick_draw_scene_callback_data("portrait"),
+            message=callback_message,
+            answer=AsyncMock(),
+        ),
+        message=None,
+        edited_message=None,
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(id=999),
+        bot_data={"bot_client_type": "bot:qqcc"},
+        user_data={},
+        lang="zh",
+        t=lambda key, **_kwargs: key,
+    )
+
+    result = await quick_image_fsm.start_quick_image(update, context)
+
+    assert result == quick_image_fsm.QuickImageState.WAIT_IMAGE
+    assert events == ["demo", "text"]
+    demo_sender.assert_awaited_once_with(
+        message=callback_message,
+        bot=context.bot,
+        scene_kind="draw",
+        scene=config["draw_scenes"][0],
+    )
+    assert reply_text.await_args.args[1] == "已选择【人像】，请发送原图。"
+
+
+@pytest.mark.asyncio
+async def test_private_qqcc_scene_passes_trusted_tenant_id_to_demo_cache(monkeypatch):
+    demo_sender = AsyncMock()
+    monkeypatch.setattr(quick_image_fsm, "send_qqcc_scene_demo_media", demo_sender)
+    monkeypatch.setattr(quick_image_fsm, "robust_reply_text", AsyncMock())
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": [
+                {
+                    "id": "portrait",
+                    "name": "人像",
+                    "prompt": "portrait prompt",
+                    "demo_input_media": {
+                        "object_key": "qqcc/private/7/demo/draw/portrait/input",
+                        "media_type": "image",
+                        "mime_type": "image/png",
+                        "file_name": "before.png",
+                    },
+                }
+            ],
+        }
+    )
+    callback_message = SimpleNamespace(chat_id=456)
+    update = SimpleNamespace(
+        callback_query=SimpleNamespace(
+            data=build_quick_draw_scene_callback_data("portrait"),
+            message=callback_message,
+            answer=AsyncMock(),
+        ),
+        message=None,
+        edited_message=None,
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(id=999),
+        bot_data={
+            "bot_client_type": "bot:qqcc-private:7",
+            "private_qqcc_bot_id": 7,
+        },
+        user_data={},
+        lang="zh",
+        t=lambda key, **_kwargs: key,
+    )
+
+    result = await quick_image_fsm._start_qqcc_image_scene(
+        update,
+        context,
+        qqcc_config=config,
+        scene_id="portrait",
+        scene_kind="draw",
+    )
+
+    assert result == quick_image_fsm.QuickImageState.WAIT_IMAGE
+    demo_sender.assert_awaited_once_with(
+        message=callback_message,
+        bot=context.bot,
+        scene_kind="draw",
+        scene=config["draw_scenes"][0],
+        private_bot_id=7,
+    )
+
+
+@pytest.mark.asyncio
+async def test_qqcc_filter_scene_sends_input_output_demo_images(monkeypatch):
+    demo_sender = AsyncMock()
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "filter_scenes": [
+                {
+                    "id": "cinema",
+                    "name": "电影感",
+                    "prompt": "cinema prompt",
+                    "demo_input_media": {
+                        "object_key": "qqcc/demo/filter/cinema/input",
+                        "media_type": "image",
+                        "mime_type": "image/jpeg",
+                        "file_name": "before.jpg",
+                    },
+                    "demo_output_media": {
+                        "object_key": "qqcc/demo/filter/cinema/output",
+                        "media_type": "image",
+                        "mime_type": "image/jpeg",
+                        "file_name": "after.jpg",
+                    },
+                }
+            ],
+        }
+    )
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(quick_image_fsm, "robust_reply_text", AsyncMock())
+    monkeypatch.setattr(quick_image_fsm, "send_qqcc_scene_demo_media", demo_sender)
+    monkeypatch.setattr(
+        quick_image_fsm,
+        "load_runtime_qqcc_config",
+        AsyncMock(return_value=config),
+    )
+    callback_message = SimpleNamespace(chat_id=456)
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=123),
+        callback_query=SimpleNamespace(
+            data=build_quick_filter_scene_callback_data("cinema"),
+            message=callback_message,
+            answer=AsyncMock(),
+        ),
+        message=None,
+        edited_message=None,
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(id=999),
+        bot_data={"bot_client_type": "bot:qqcc"},
+        user_data={},
+        lang="zh",
+        t=lambda key, **_kwargs: key,
+    )
+
+    result = await quick_image_fsm.start_quick_image(update, context)
+
+    assert result == quick_image_fsm.QuickImageState.WAIT_IMAGE
+    demo_sender.assert_awaited_once_with(
+        message=callback_message,
+        bot=context.bot,
+        scene_kind="filter",
+        scene=config["filter_scenes"][0],
+    )
 
 
 @pytest.mark.asyncio
@@ -1750,17 +1980,34 @@ async def test_qqcc_video_scene_tail_frame_precheck_uses_combined_cost(monkeypat
 
 @pytest.mark.asyncio
 async def test_qqcc_quick_video_scene_callback_selects_dynamic_scene(monkeypatch):
-    reply_mock = AsyncMock()
+    events = []
+    reply_mock = AsyncMock(side_effect=lambda *_args, **_kwargs: events.append("text"))
+    demo_sender = AsyncMock(side_effect=lambda **_kwargs: events.append("demo"))
     answer_mock = AsyncMock()
     config = normalize_qqcc_config(
         {
             "scene_preset_version": SCENE_PRESET_VERSION,
+            "copywriting": {
+                "video_scene_start": "已选择【{butten}】，请发送原图。",
+            },
             "video_scenes": [
                 {
                     "id": "kiss",
                     "name": "亲吻",
                     "prompt": "kissing prompt",
                     "duration": "8s",
+                    "demo_input_media": {
+                        "object_key": "qqcc/demo/video/kiss/input",
+                        "media_type": "image",
+                        "mime_type": "image/png",
+                        "file_name": "before.png",
+                    },
+                    "demo_output_media": {
+                        "object_key": "qqcc/demo/video/kiss/output",
+                        "media_type": "video",
+                        "mime_type": "video/mp4",
+                        "file_name": "after.mp4",
+                    },
                 }
             ],
         }
@@ -1768,6 +2015,7 @@ async def test_qqcc_quick_video_scene_callback_selects_dynamic_scene(monkeypatch
 
     monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
     monkeypatch.setattr(quick_video_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(quick_video_fsm, "send_qqcc_scene_demo_media", demo_sender)
     monkeypatch.setattr(
         quick_video_fsm,
         "load_runtime_qqcc_config",
@@ -1789,6 +2037,7 @@ async def test_qqcc_quick_video_scene_callback_selects_dynamic_scene(monkeypatch
         ),
     )
     context = SimpleNamespace(
+        bot=SimpleNamespace(id=999),
         bot_data={"bot_client_type": "bot:qqcc"},
         user_data={},
         lang="zh",
@@ -1813,7 +2062,15 @@ async def test_qqcc_quick_video_scene_callback_selects_dynamic_scene(monkeypatch
         "image_path": None,
     }
     answer_mock.assert_awaited_once()
+    assert events == ["demo", "text"]
+    demo_sender.assert_awaited_once_with(
+        message=callback_message,
+        bot=context.bot,
+        scene_kind="video",
+        scene=config["video_scenes"][0],
+    )
     reply_mock.assert_awaited_once()
+    assert reply_mock.await_args.args[1] == "已选择【亲吻】，请发送原图。"
 
 
 @pytest.mark.asyncio

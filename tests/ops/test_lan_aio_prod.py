@@ -29,10 +29,9 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
         "gpu-177-gpu0-wan22_video_v2",
         "gpu-177-gpu1-ltx_video",
         "gpu-252-gpu0-i2i_pro",
-        "gpu-252-gpu1-pornmaster_flux2_edit",
         "gpu-002-gpu0-scail2",
         "gpu-002-gpu1-pornmaster_flux2_edit",
-        "gpu-226-gpu0-image_to_video",
+        "gpu-226-gpu0-pornmaster_flux2_edit_bf16",
     ]
     assert slots["gpu-177-gpu0-wan22_video_v2"].legacy_worker_id == (
         "lan_aio_prod_gpu177_gpu0_image_to_video_01"
@@ -59,20 +58,6 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
         slots["gpu-252-gpu0-i2i_pro"].gpu_device_id
         == "GPU-09b7ea85-23df-a9b8-19d9-703534e47666"
     )
-    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].agent_id == (
-        "lan_aio_prod_gpu252_gpu1_pornmaster_flux2_edit_01"
-    )
-    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].legacy_worker_id == (
-        "lan_aio_prod_gpu252_gpu1_scail2_01"
-    )
-    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].target_task_types == (
-        "pornmaster_flux2_single_edit",
-        "pornmaster_flux2_multi_edit",
-    )
-    assert (
-        slots["gpu-252-gpu1-pornmaster_flux2_edit"].gpu_device_id
-        == "GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e"
-    )
     assert slots["gpu-002-gpu0-scail2"].agent_id == (
         "lan_aio_prod_gpu002_gpu0_scail2_01"
     )
@@ -98,11 +83,11 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
         "pornmaster_flux2_single_edit",
         "pornmaster_flux2_multi_edit",
     )
-    assert slots["gpu-226-gpu0-image_to_video"].agent_id == (
-        "lan_aio_prod_gpu226_gpu0_image_to_video_01"
+    assert slots["gpu-226-gpu0-pornmaster_flux2_edit_bf16"].agent_id == (
+        "lan_aio_prod_gpu226_gpu0_pornmaster_flux2_edit_bf16_01"
     )
-    assert slots["gpu-226-gpu0-image_to_video"].legacy_worker_id == (
-        "lan_aio_prod_gpu226_gpu0_scail2_01"
+    assert slots["gpu-226-gpu0-pornmaster_flux2_edit_bf16"].legacy_worker_id == (
+        "lan_aio_prod_gpu226_gpu0_image_to_video_01"
     )
 
 
@@ -144,8 +129,8 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
     assert slots["gpu-252-gpu1-wan22_video_v2"].old_runtime_container == (
         "allbot-lan-aio-gpu-252-gpu1-scail2-prod"
     )
-    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].enabled is True
-    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].phase == "prod_enabled"
+    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].enabled is False
+    assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].phase == "maintenance_disabled"
     assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].retargetable is False
     assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].host_port == 8191
     assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].legacy_preflight_required is False
@@ -162,6 +147,20 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
     )
     assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].old_runtime_container == (
         "allbot-lan-aio-gpu-252-gpu1-scail2-prod"
+    )
+    assert slots["gpu-226-gpu0-image_to_video"].enabled is False
+    assert slots["gpu-226-gpu0-image_to_video"].phase == (
+        "superseded_by_pornmaster_flux2_edit_bf16"
+    )
+    assert slots["gpu-226-gpu0-image_to_video"].retargetable is True
+    assert slots["gpu-226-gpu0-image_to_video"].legacy_worker_id == (
+        "lan_aio_prod_gpu226_gpu0_pornmaster_flux2_edit_bf16_01"
+    )
+    assert slots["gpu-226-gpu0-pornmaster_flux2_edit_bf16"].enabled is True
+    assert slots["gpu-226-gpu0-pornmaster_flux2_edit_bf16"].phase == "prod_enabled"
+    assert slots["gpu-226-gpu0-pornmaster_flux2_edit_bf16"].retargetable is False
+    assert slots["gpu-226-gpu0-pornmaster_flux2_edit_bf16"].legacy_worker_id == (
+        "lan_aio_prod_gpu226_gpu0_image_to_video_01"
     )
     assert slots["gpu-002-gpu1-image_to_video"].enabled is False
     assert slots["gpu-002-gpu1-image_to_video"].phase == (
@@ -1382,6 +1381,62 @@ def test_lan_aio_candidate_plan_generates_stable_yaml_patch():
     assert "target_profile_id: image_to_video" in payload["yaml_patch"]
     assert "enabled: false" in payload["yaml_patch"]
     assert "retargetable: true" in payload["yaml_patch"]
+
+
+def test_gpu226_active_pornmaster_bf16_slot_uses_isolated_manifest():
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+
+    slot = load_lan_aio_prod_slots(include_disabled=True)[
+        "gpu-226-gpu0-pornmaster_flux2_edit_bf16"
+    ]
+    profile = ops.config.profiles[slot.target_profile_id]
+
+    assert slot.enabled is True
+    assert slot.phase == "prod_enabled"
+    assert slot.retargetable is False
+    assert slot.target_task_types == ("pornmaster_flux2_edit_bf16",)
+    assert profile.image_ref.endswith(
+        "comfy-runpod-pornmaster-flux2-edit:"
+        "20260628-pornmaster-flux2-edit-cu128-smallvae1"
+    )
+    assert profile.model_manifest_key == (
+        "pornmaster_flux2_edit_bf16/2026-07-12/manifest.json"
+    )
+
+
+def test_disabled_heartbeat_accepts_declared_runtime_profile_for_bf16_candidate(monkeypatch):
+    ops = LanAioProdOps(
+        config_root=None,
+        prod_env_file=Path(".env.cloud.prod.missing"),
+        aio_env_file=Path(".env.lan-aio-prod.missing"),
+        model_env_file=Path(".env.lan.model-cache.missing"),
+    )
+    slot = load_lan_aio_prod_slots(include_disabled=True)[
+        "gpu-226-gpu0-pornmaster_flux2_edit_bf16"
+    ]
+    monkeypatch.setattr(ops, "_control_state", lambda _agent_id: "disabled")
+    monkeypatch.setattr(
+        ops,
+        "_system_workers",
+        lambda: [
+            {
+                "agent_id": slot.agent_id,
+                "status": "idle",
+                "current_task_type": None,
+                "node_id": "gpu-226",
+                "provider": "lan_ssh",
+                "runtime_profile": "pornmaster_flux2_edit",
+                "pool_managed": True,
+            }
+        ],
+    )
+
+    ops._verify_disabled_heartbeat(slot)
 
 
 def test_lan_aio_candidate_plan_rejects_disabled_gpu252_wan22_target():

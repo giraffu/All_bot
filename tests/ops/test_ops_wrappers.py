@@ -41,51 +41,55 @@ def test_cloud_prod_qqcc_update_shell_syntax():
     assert result.returncode == 0, result.stderr
 
 
-@pytest.mark.parametrize("script", WHOLE_REPO_RSYNC_SCRIPTS)
-def test_whole_repo_cloud_update_scripts_exclude_local_analytics_platform(script: str):
-    script_text = (ROOT / script).read_text()
+def test_private_bot_env_validation_uses_the_target_environment_bot_type():
+    prod_script = (ROOT / "scripts/safe_deploy_cloud_prod.sh").read_text()
+    test_script = (ROOT / "scripts/safe_deploy_cloud_test.sh").read_text()
 
-    assert 'run_local rsync "${rsync_args[@]}" ./' in script_text
-    assert "--exclude=local_analytics_platform/" in script_text
-
-
-def test_cloud_test_cleanup_removes_stale_local_analytics_platform():
-    script_text = (ROOT / "scripts/update_cloud_test_with_maintenance.sh").read_text()
-
-    assert "cleanup_remote_sync_artifacts" in script_text
-    assert "local_analytics_platform \\" in script_text
+    assert "--bot-type PROD" in prod_script
+    assert "--bot-type TEST" in test_script
 
 
-def test_cloud_prod_qqcc_update_dry_run_is_single_service():
+def test_root_docker_context_excludes_runtime_backups():
+    patterns = {
+        line.strip()
+        for line in (ROOT / ".dockerignore").read_text().splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+
+    assert {"backups/", "runtime/"} <= patterns
+
+
+def test_quota_module_parses_on_the_production_python_version():
+    image = "python:3.10-slim"
+    if run_script("docker", "image", "inspect", image).returncode != 0:
+        pytest.skip("the production Python image is unavailable")
+
     result = run_script(
-        "bash",
-        "scripts/update_cloud_prod_qqcc_bot.sh",
-        "--skip-sync",
-        "--skip-safe-preflight",
+        "docker",
+        "run",
+        "--rm",
+        "-v",
+        f"{ROOT}:/workspace:ro",
+        image,
+        "python",
+        "-c",
+        (
+            "path='/workspace/src/quota.py';"
+            "compile(open(path,encoding='utf-8').read(),path,'exec')"
+        ),
     )
 
     assert result.returncode == 0, result.stderr
-    output = result.stdout
-    assert "QQCC single-service cloud-prod update" in output
-    assert "No generation maintenance, queue drain, control-plane deploy" in output
-    assert "--profile qqcc-bot build qqcc-bot-prod" in output
-    assert "--profile qqcc-bot up -d --no-deps qqcc-bot-prod" in output
-    assert "cloud-tg-bot-prod" not in output
-    assert "--start-control-plane" not in output
 
 
-def test_cloud_prod_qqcc_update_execute_requires_single_polling_confirmation():
-    result = run_script(
-        "bash",
-        "scripts/update_cloud_prod_qqcc_bot.sh",
-        "--execute",
-        "--confirm-prod",
-        "--skip-sync",
-        "--skip-safe-preflight",
-    )
+@pytest.mark.parametrize("script", WHOLE_REPO_RSYNC_SCRIPTS)
+def test_legacy_sync_entrypoints_are_fail_closed(script: str):
+    script_text = (ROOT / script).read_text()
+    result = run_script("bash", script)
 
     assert result.returncode == 2
-    assert "--confirm-single-polling" in result.stderr
+    assert "scripts/release.py" in result.stderr
+    assert "rsync " not in script_text
 
 
 def test_lan_aio_enable_dry_run_shows_safe_order():
@@ -198,6 +202,23 @@ def test_runpod_scail2_canary_dry_run_delegates_to_prod_worker():
     output = result.stdout
     assert "runpod prod-worker canary" in output
     assert "--profile scail2" in output
+    assert "--execute" in output
+
+
+def test_runpod_bf16_canary_dry_run_uses_isolated_profile():
+    result = run_script(
+        "bash",
+        "scripts/runpod_prod_ops.sh",
+        "canary",
+        "--profile",
+        "pornmaster_flux2_edit_bf16",
+        "--dry-run",
+    )
+
+    assert result.returncode == 0, result.stderr
+    output = result.stdout
+    assert "runpod prod-worker canary" in output
+    assert "--profile pornmaster_flux2_edit_bf16" in output
     assert "--execute" in output
 
 

@@ -1,4 +1,5 @@
 from src.i18n.translator import get_text
+from src.services.task_queue_position_display import select_display_queue_position
 
 
 def _translate(lang: str, key: str, **kwargs) -> str:
@@ -6,7 +7,7 @@ def _translate(lang: str, key: str, **kwargs) -> str:
 
 
 def normalize_pending_queue_position(info: dict) -> int | str | None:
-    raw_pos = info.get("queue_pos")
+    raw_pos = select_display_queue_position(info)
     if raw_pos is not None:
         try:
             return int(raw_pos) + 1

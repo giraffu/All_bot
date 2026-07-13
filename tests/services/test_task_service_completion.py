@@ -39,6 +39,124 @@ from src.services.task_service_generation_image import process_standard_generati
 from src.services.task_service_generation_wan22 import (
     process_wan22_video_v2_generation_task as process_wan22_video_v2_task,
 )
+from src.services.private_qqcc_continuation_service import (
+    PrivateQqccContinuationTaskRef,
+    PrivateQqccContinuationUnavailable,
+    activate_private_qqcc_continuation_task,
+)
+
+
+@pytest.mark.asyncio
+async def test_private_continuation_persists_result_before_delivery_owner_sends(
+    monkeypatch,
+):
+    persistence_result = TaskSuccessPersistenceResult(
+        media_bytes=b"final-image",
+        output_file="outputs/final.png",
+        width=512,
+        height=512,
+        duration=None,
+    )
+    monkeypatch.setattr(
+        completion_helpers,
+        "download_and_log_task_output",
+        AsyncMock(return_value=persistence_result),
+    )
+    checkpoint = AsyncMock()
+    monkeypatch.setattr(
+        "src.services.private_qqcc_continuation_service.record_private_qqcc_continuation_task_result",
+        checkpoint,
+    )
+    send_result = AsyncMock()
+    monkeypatch.setattr(completion_helpers, "send_result_media", send_result)
+    ref = PrivateQqccContinuationTaskRef(
+        chain_id="chain-1",
+        stage_index=1,
+        submission_sequence=1,
+        registry_task_id="registry-final",
+        executor_token="executor-1",
+    )
+
+    with activate_private_qqcc_continuation_task(ref):
+        result = await completion_helpers.handle_task_completion(
+            context=SimpleNamespace(bot=MagicMock(), bot_data={}),
+            chat_id=123,
+            internal_user_id=456,
+            prompt="visible prompt",
+            task_type="edit",
+            registry_task_id="registry-final",
+            backend_task_id="backend-final",
+            saved_input_images=["input.png"],
+            user_logger=SimpleNamespace(username="visitor"),
+            is_video=False,
+            send_result=True,
+            reply_markup=None,
+            status_msg=MagicMock(),
+            delete_status=True,
+            caption="done",
+            allow_contribute=False,
+        )
+
+    assert result == (b"final-image", "outputs/final.png")
+    checkpoint.assert_awaited_once()
+    send_result.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_private_continuation_checkpoint_outage_prevents_telegram_delivery(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        completion_helpers,
+        "download_and_log_task_output",
+        AsyncMock(
+            return_value=TaskSuccessPersistenceResult(
+                media_bytes=b"final-image",
+                output_file="outputs/final.png",
+                width=512,
+                height=512,
+                duration=None,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "src.services.private_qqcc_continuation_service.record_private_qqcc_continuation_task_result",
+        AsyncMock(
+            side_effect=PrivateQqccContinuationUnavailable("redis unavailable")
+        ),
+    )
+    send_result = AsyncMock()
+    monkeypatch.setattr(completion_helpers, "send_result_media", send_result)
+    ref = PrivateQqccContinuationTaskRef(
+        chain_id="chain-1",
+        stage_index=1,
+        submission_sequence=1,
+        registry_task_id="registry-final",
+        executor_token="executor-1",
+    )
+
+    with activate_private_qqcc_continuation_task(ref):
+        with pytest.raises(PrivateQqccContinuationUnavailable):
+            await completion_helpers.handle_task_completion(
+                context=SimpleNamespace(bot=MagicMock(), bot_data={}),
+                chat_id=123,
+                internal_user_id=456,
+                prompt="visible prompt",
+                task_type="edit",
+                registry_task_id="registry-final",
+                backend_task_id="backend-final",
+                saved_input_images=["input.png"],
+                user_logger=SimpleNamespace(username="visitor"),
+                is_video=False,
+                send_result=True,
+                reply_markup=None,
+                status_msg=MagicMock(),
+                delete_status=True,
+                caption="done",
+                allow_contribute=False,
+            )
+
+    send_result.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -871,6 +989,29 @@ async def test_monitor_bot_task_progress_shows_cancel_button_only_while_pending(
     )
     assert second_call.args == ("status-msg", "⏳ 正在生成，请耐心等待...")
     assert second_call.kwargs["reply_markup"] is None
+
+
+@pytest.mark.asyncio
+async def test_monitor_bot_task_progress_prefers_type_queue_position():
+    edit_status_text = AsyncMock()
+
+    async def monitor_func(*_args, **_kwargs):
+        yield {"status": "pending", "queue_pos": 9, "queue_type_pos": 3}
+        yield {"status": "done", "progress": 100}
+
+    result = await tg_runtime_helpers.monitor_task_progress(
+        task_id="task-type-queue",
+        status_msg="status-msg",
+        is_video=False,
+        monitor_func=monitor_func,
+        edit_status_text_func=edit_status_text,
+    )
+
+    assert result == {"status": "done", "progress": 100}
+    assert edit_status_text.await_args.args == (
+        "status-msg",
+        "⏳ 排队中... (第 4 位)",
+    )
 
 
 @pytest.mark.asyncio

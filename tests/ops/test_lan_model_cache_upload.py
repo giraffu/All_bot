@@ -103,7 +103,7 @@ def _touch_blob(registry: ModelRegistry, sha256: str) -> None:
 
 
 def _seed_default_bundle_manifests(registry: ModelRegistry) -> dict[str, str]:
-    shas = {name: str(index) * 64 for index, name in enumerate("abcdefghi", start=1)}
+    shas = {name: str(index) * 64 for index, name in enumerate("abcdefghij", start=1)}
     _write_manifest(
         registry,
         "img2img_lora_baseline",
@@ -165,6 +165,21 @@ def _seed_default_bundle_manifests(registry: ModelRegistry) -> dict[str, str]:
             {"relative_path": "vae/wan_2.1_vae.safetensors", "sha256": shas["h"], "size_bytes": 80},
         ],
     )
+    _write_manifest(
+        registry,
+        "pornmaster_flux2_edit_bf16_baseline",
+        "2026-07-12",
+        [
+            {
+                "relative_path": (
+                    "diffusion_models/flux2/"
+                    "PornMaster_flux2_klein_9b_turbo_bf16_V4.safetensors"
+                ),
+                "sha256": shas["j"],
+                "size_bytes": 100,
+            }
+        ],
+    )
     for sha in shas.values():
         _touch_blob(registry, sha)
     return shas
@@ -189,9 +204,16 @@ def test_all_task_lan_cache_manifests_use_canonical_video_keys(tmp_path):
     assert "image_to_video/2026-06-13-test/manifest.json" in manifests
     assert "wan22_video_v2/2026-06-13-test/manifest.json" in manifests
     assert "wan22_aio_video/2026-06-12-test/manifest.json" in manifests
+    assert "pornmaster_flux2_edit_bf16/2026-07-12/manifest.json" in manifests
+    assert manifests["pornmaster_flux2_edit_bf16/2026-07-12/manifest.json"][
+        "models"
+    ] == [
+        "diffusion_models/flux2/"
+        "PornMaster_flux2_klein_9b_turbo_bf16_V4.safetensors"
+    ]
     assert manifests["image_to_video/2026-06-13-test/manifest.json"]["file_count"] == 5
     assert manifests["wan22_video_v2/2026-06-13-test/manifest.json"]["file_count"] == 4
-    assert payload["target_unique_model_count"] == 9
+    assert payload["target_unique_model_count"] == 10
 
 
 def test_all_task_lan_cache_reuses_existing_manifest_object_key(tmp_path):
@@ -232,7 +254,7 @@ def test_all_task_lan_cache_reuses_existing_manifest_object_key(tmp_path):
 
     assert payload["existing_cached_unique_model_count"] == 1
     assert payload["skipped_existing_count"] == 1
-    assert payload["upload_count"] == 8
+    assert payload["upload_count"] == 9
     assert payload["target_manifests"]["img2img_lora/2026-06-10/manifest.json"]["models"] == [
         "checkpoints/qwen.safetensors"
     ]

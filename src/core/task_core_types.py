@@ -28,6 +28,7 @@ class TaskSubmissionContext:
     client_type: str = "web"
     delivery_context: dict[str, Any] = field(default_factory=dict)
     user_cancel_allowed: bool = True
+    concurrency_acquisition_key: str | None = None
 
     @property
     def log_prompt(self) -> str:

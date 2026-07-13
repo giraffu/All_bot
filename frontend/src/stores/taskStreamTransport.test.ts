@@ -13,7 +13,7 @@ const createTask = (overrides: Partial<Task> = {}): Task => ({
 })
 
 describe('handleTaskProgressPayload', () => {
-  it('keeps pending status and queue position visible for pending payloads with progress', () => {
+  it('keeps pending status and type queue position visible for pending payloads with progress', () => {
     const task = createTask()
 
     handleTaskProgressPayload(

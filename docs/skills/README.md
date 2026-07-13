@@ -11,7 +11,7 @@
 | `allbot-billing-auth` | Web 鉴权、JWT claim、password_version、支付履约、affiliate 账本、affiliate 兑换灵石/会员、membership settlement | 修改充值、登录、身份、流水、返佣、支付回调时 |
 | `allbot-gallery-storage` | MinIO/R2、广场投稿、评论、收藏、apply-context、对象存储生命周期 | 修改社区分享、互动、防刷、模板应用上下文、媒体 URL 策略时 |
 | `allbot-tg-fsm` | Telegram FSM、全局菜单黑盒退出、callback 注册路由、临时文件下载清理、语言切换同步、独立付费群审核与轻量群管理 Bot 边界 | 修改 Telegram 对话流、菜单跳转、文件交互或付费群审核 Bot 时 |
-| `allbot-qqcc-lazy-bot` | QQCC 懒人 Bot 独立 polling 服务、简化菜单、quick image/video FSM、`bot:qqcc` 来源归属、双 polling 与 token 红线 | 修改 `qqcc_bot/`、QQCC 菜单、QQCC compose/service、QQCC 部署脚本、QQCC 任务恢复或来源过滤时 |
+| `allbot-qqcc-lazy-bot` | 官方 QQCC polling、用户私有 Bot 申请/配置、webhook worker、租户 `client_type` 隔离及 polling/webhook token 红线 | 修改 `qqcc_bot/`、`qqcc_private_bot/`、QQCC 菜单、私有 Bot API/worker、compose、恢复或来源过滤时 |
 | `allbot-ops-deployment` | Docker Compose、Alembic、云测试控制面、云正式控制面、本地正式灾备、Dashboard 单服务热修、RunPod/LAN AIO 运维、部署排障与恢复 | 调整部署、迁移、容器、环境变量、云正式热修、测试环境、灾备切换、workflow 资产或恢复脚本时 |
 | `allbot-cloudflare-ops` | Cloudflare Account API Token、DNS、Tunnel、Access、Pages/R2、公网管理域名、本地分析平台与管理后台公网访问 | 配置或排障 Cloudflare 公网入口、Token 轮换、Access allowlist、Tunnel public hostname、Pages/R2 账号级能力时 |
 | `allbot-local-analytics-prompt-semantics` | 本地数据分析平台提示词词义分析、词元分类、指定词元、同义映射、删除表、自由P图拆解、tokens-only 物化与模板候选槽位口径 | 审查/治理提示词词元、处理高频未覆盖词元、合并映射、软删除无效词、年龄人群发现标签、自由P图拆解筛选或模板候选语义槽位时 |
@@ -66,3 +66,13 @@
 | `allbot-comfy-models` | 约 7.4KB，最大单行 167 字符 | 已从约 36KB 瘦身为模型/workflow 路由入口，节点级和运行态细节改由 Comfy 子模块文档与 runtime reference 按需加载 |
 | `allbot-task-engine` | 约 8.4KB，最大单行 212 字符 | 已从约 23KB 瘦身为任务生命周期路由入口，长链路、新任务类型 checklist 与排障细节改由任务调度/全链路文档按需加载 |
 | `allbot-gallery-storage` | 约 13KB，最大单行 757 字符 | 正文体量可接受；本轮已折叠超长媒体 URL 策略行，暂不需要拆分 |
+
+## 6. 2026-07-11 Skill 体积复核
+
+本轮重新量化所有项目级 Skill。大多数入口仍低于 20KB；以下三项已越过或接近“短入口”维护阈值，应在后续触达对应业务时按“稳定红线留在 Skill、低频流程移到 references/docs”拆分，本轮只更新知识库，不机械改写业务规则。
+
+| Skill | 当前大小 | 结论 |
+| :--- | :--- | :--- |
+| `allbot-qqcc-lazy-bot` | 约 26.5KB，最大单行约 2151 字符 | 已超过短入口阈值，且单行聚合过多链路语义；下一次 QQCC 业务改动前优先拆分配置、生成链和部署 reference |
+| `allbot-gallery-storage` | 约 17.9KB，最大单行约 824 字符 | 接近阈值并重新出现超长行；后续把媒体 URL/迁移细节继续下沉到 Gallery 专项文档 |
+| `allbot-tg-fsm` | 约 13.1KB，最大单行约 951 字符 | 总体积尚可，但存在超长规则行；后续按主 Bot FSM、付费群 Bot 与 runtime bootstrap 边界拆行/分 reference |

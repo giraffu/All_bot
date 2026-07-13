@@ -17,6 +17,9 @@ const qqccAuthMocks = vi.hoisted<{
 const apiMocks = vi.hoisted(() => ({
   fetchQqccConfig: vi.fn(),
   updateQqccConfig: vi.fn(),
+  uploadQqccDemoMedia: vi.fn(),
+  generateQqccDemoMedia: vi.fn(),
+  getQqccDemoGeneration: vi.fn(),
 }))
 
 const componentStubs = vi.hoisted(() => ({
@@ -26,8 +29,12 @@ const componentStubs = vi.hoisted(() => ({
   },
   SettingsStub: {
     name: 'QqccBotSettingsStub',
-    props: ['fetchConfig', 'updateConfig'],
+    props: ['fetchConfig', 'updateConfig', 'uploadDemoMedia', 'generateDemoMedia', 'getDemoGeneration'],
     template: '<div class="qqcc-settings-stub">settings</div>',
+  },
+  PrivateBotAdminStub: {
+    name: 'PrivateBotAdminManagerStub',
+    template: '<div class="private-bot-admin-stub">private bots</div>',
   },
 }))
 
@@ -37,6 +44,10 @@ vi.mock('./components/QqccConfigLogin.vue', () => ({
 
 vi.mock('./components/QqccBotSettings.vue', () => ({
   default: componentStubs.SettingsStub,
+}))
+
+vi.mock('./components/PrivateBotAdminManager.vue', () => ({
+  default: componentStubs.PrivateBotAdminStub,
 }))
 
 vi.mock('./api/qqccConfigApi', () => apiMocks)
@@ -66,6 +77,17 @@ const mountApp = () =>
           template:
             '<button type="button" class="logout-button" @click="$emit(\'click\')"><slot /></button>',
         }),
+        'a-radio-group': defineComponent({
+          props: ['value'],
+          emits: ['update:value'],
+          template: `
+            <div>
+              <button class="private-bot-view-button" type="button" @click="$emit('update:value', 'private-bots')">私有Bot管理</button>
+              <slot />
+            </div>
+          `,
+        }),
+        'a-radio-button': defineComponent({ template: '<span><slot /></span>' }),
       },
     },
   })
@@ -91,9 +113,23 @@ describe('QqccConfigApp', () => {
     expect(settings.exists()).toBe(true)
     expect(settings.props('fetchConfig')).toBe(apiMocks.fetchQqccConfig)
     expect(settings.props('updateConfig')).toBe(apiMocks.updateQqccConfig)
+    expect(settings.props('uploadDemoMedia')).toBe(apiMocks.uploadQqccDemoMedia)
 
     await wrapper.find('.logout-button').trigger('click')
 
     expect(qqccAuthMocks.clearAuthToken).toHaveBeenCalledOnce()
+  })
+
+  it('switches from the official config to private Bot management', async () => {
+    qqccAuthMocks.isAuthenticatedRef = ref(true)
+    const wrapper = mountApp()
+
+    expect(wrapper.find('.qqcc-settings-stub').exists()).toBe(true)
+    expect(wrapper.find('.private-bot-admin-stub').exists()).toBe(false)
+
+    await wrapper.get('.private-bot-view-button').trigger('click')
+
+    expect(wrapper.find('.qqcc-settings-stub').exists()).toBe(false)
+    expect(wrapper.find('.private-bot-admin-stub').exists()).toBe(true)
   })
 })

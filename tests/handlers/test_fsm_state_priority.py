@@ -16,6 +16,7 @@ from src.constants import (
     MODE_IMG2IMG_LORA,
     MODE_RANDOM_FACESWAP,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
+    MODE_PORNMASTER_FLUX2_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
 )
 from src.core.exceptions import InsufficientCreditsError
@@ -248,7 +249,7 @@ async def test_start_edit_image_routes_free_edit_to_lora_selection(monkeypatch):
         for button in row
     ]
     assert any(
-        button.text == "🎨 自由P图 v2"
+        button.text == "🎨 自由P图 v3"
         and button.callback_data == edit_image_fsm.EDIT_LORA_FREE_EDIT_V2_CALLBACK
         for button in inline_buttons
     )
@@ -274,15 +275,15 @@ async def test_start_edit_image_v2_skips_lora_selection(monkeypatch):
     result = await edit_image_fsm.start_edit_image(update, context)
 
     assert result == edit_image_fsm.EditImageState.WAIT_REFERENCE_IMAGES
-    assert context.user_data["edit_image_data"]["mode"] == MODE_FREE_EDIT_V2
-    assert context.user_data["edit_image_data"]["cost"] == 2
+    assert context.user_data["edit_image_data"]["mode"] == "free_edit_v3"
+    assert context.user_data["edit_image_data"]["cost"] == 5
     reply_mock.assert_awaited_once()
-    assert "自由P图 v2" in reply_mock.await_args.args[1]
+    assert "自由P图 v3" in reply_mock.await_args.args[1]
     assert reply_mock.await_args.kwargs["reply_markup"] is None
 
 
 @pytest.mark.asyncio
-async def test_edit_image_v2_submit_selects_single_or_multi_task_type(monkeypatch):
+async def test_edit_image_v2_submit_upgrades_to_v3_chain(monkeypatch):
     reply_mock = AsyncMock()
     scheduled = []
     captured = []
@@ -307,7 +308,7 @@ async def test_edit_image_v2_submit_selects_single_or_multi_task_type(monkeypatc
             "in_conversation": "EDIT_IMAGE",
             "edit_image_data": {
                 "mode": MODE_FREE_EDIT_V2,
-                "cost": 2,
+                "cost": 5,
                 "images": ["/tmp/single.png"],
             },
         },
@@ -316,24 +317,9 @@ async def test_edit_image_v2_submit_selects_single_or_multi_task_type(monkeypatc
     result = await edit_image_fsm.receive_prompt(update, context)
     assert result == ConversationHandler.END
     await scheduled.pop()
-    assert captured[-1]["task_type"] == MODE_PORNMASTER_FLUX2_SINGLE_EDIT
-    assert "lora_name" not in captured[-1]
-    assert "lora_strength" not in captured[-1]
-
-    context.user_data = {
-        "in_conversation": "EDIT_IMAGE",
-        "edit_image_data": {
-            "mode": MODE_FREE_EDIT_V2,
-            "cost": 6,
-            "images": ["/tmp/a.png", "/tmp/b.png"],
-        },
-    }
-
-    result = await edit_image_fsm.receive_prompt(update, context)
-    assert result == ConversationHandler.END
-    await scheduled.pop()
-    assert captured[-1]["task_type"] == MODE_PORNMASTER_FLUX2_MULTI_EDIT
-    assert captured[-1]["images"] == ["/tmp/a.png", "/tmp/b.png"]
+    assert captured[-1]["task_type"] == MODE_PORNMASTER_FLUX2_EDIT_BF16
+    assert captured[-1]["cost_override"] == 5
+    assert captured[-1]["images"] == ["/tmp/single.png"]
 
 
 @pytest.mark.asyncio
@@ -427,6 +413,7 @@ async def test_qqcc_stale_quick_undress_entry_is_blocked(monkeypatch):
 
     update = _build_update_with_message(text="💃 快速脱衣")
     context = SimpleNamespace(
+        bot=SimpleNamespace(id=100),
         user_data={},
         bot_data={"bot_client_type": "bot:qqcc"},
         lang="zh",
@@ -464,6 +451,7 @@ async def test_qqcc_quick_faceswap_entry_waits_for_image(monkeypatch):
 
     update = _build_update_with_message(text="快速换脸")
     context = SimpleNamespace(
+        bot=SimpleNamespace(id=100),
         user_data={},
         bot_data={"bot_client_type": "bot:qqcc"},
         lang="zh",
@@ -517,6 +505,7 @@ async def test_qqcc_ai_draw_scene_callback_waits_for_image(monkeypatch):
         ),
     )
     context = SimpleNamespace(
+        bot=SimpleNamespace(id=100),
         user_data={},
         bot_data={"bot_client_type": "bot:qqcc"},
         lang="zh",
@@ -581,6 +570,7 @@ async def test_qqcc_ai_filter_scene_callback_waits_for_image(monkeypatch):
         ),
     )
     context = SimpleNamespace(
+        bot=SimpleNamespace(id=100),
         user_data={},
         bot_data={"bot_client_type": "bot:qqcc"},
         lang="zh",
@@ -1200,12 +1190,12 @@ async def test_edit_image_lora_selection_can_switch_to_free_edit_v2(monkeypatch)
     assert result == edit_image_fsm.EditImageState.WAIT_REFERENCE_IMAGES
     query.answer.assert_awaited_once()
     fsm_data = context.user_data["edit_image_data"]
-    assert fsm_data["mode"] == MODE_FREE_EDIT_V2
-    assert fsm_data["cost"] == 2
+    assert fsm_data["mode"] == "free_edit_v3"
+    assert fsm_data["cost"] == 5
     assert "lora_name" not in fsm_data
     assert "lora_strength" not in fsm_data
     edit_mock.assert_awaited_once()
-    assert "自由P图 v2" in edit_mock.await_args.args[1]
+    assert "自由P图 v3" in edit_mock.await_args.args[1]
 
 
 @pytest.mark.asyncio
@@ -2703,6 +2693,7 @@ async def test_qqcc_legacy_quick_video_callback_selects_scene(monkeypatch):
         ),
     )
     context = SimpleNamespace(
+        bot=SimpleNamespace(id=100),
         user_data={},
         bot_data={"bot_client_type": "bot:qqcc"},
         lang="zh",

@@ -82,6 +82,46 @@ async def test_execute_task_submission_saga_returns_composed_result():
 
 
 @pytest.mark.asyncio
+async def test_submission_ledger_hook_is_durable_before_external_dispatch():
+    events = []
+    submission_context = SimpleNamespace(
+        user_logger=SimpleNamespace(user_id=42, username="tester"),
+        final_priority=7,
+        registry_saved_inputs=lambda: ["saved.png"],
+    )
+
+    async def register(**_kwargs):
+        events.append("registered")
+        return "deterministic-task"
+
+    async def before_dispatch(**kwargs):
+        events.append("ledger_dispatching")
+        assert kwargs == {
+            "registry_task_id": "deterministic-task",
+            "task_type": "face_swap",
+            "cost": 10,
+            "saved_inputs": ["saved.png"],
+        }
+
+    async def dispatch(**_kwargs):
+        events.append("external_dispatch")
+        return "deterministic-task"
+
+    await execute_task_submission_saga(
+        task_type="face_swap",
+        inputs={"foo": "bar"},
+        registry_task_id="deterministic-task",
+        cost=10,
+        submission_context=submission_context,
+        register_task_submission_func=register,
+        dispatch_registered_task_func=dispatch,
+        before_dispatch_func=before_dispatch,
+    )
+
+    assert events == ["registered", "ledger_dispatching", "external_dispatch"]
+
+
+@pytest.mark.asyncio
 async def test_register_task_submission_persists_client_type():
     add_task = AsyncMock(return_value="registry-qqcc")
     submission_context = SimpleNamespace(
@@ -93,6 +133,7 @@ async def test_register_task_submission_persists_client_type():
         allow_contribute=False,
         client_type="bot:qqcc",
         user_cancel_allowed=False,
+        concurrency_acquisition_key="task_concurrency:registry-qqcc",
         metadata={"mode": "random_faceswap"},
     )
 
@@ -111,6 +152,9 @@ async def test_register_task_submission_persists_client_type():
     assert kwargs["client_type"] == "bot:qqcc"
     assert kwargs["user_cancel_allowed"] is False
     assert kwargs["credits_deducted"] is True
+    assert kwargs["concurrency_acquisition_key"] == (
+        "task_concurrency:registry-qqcc"
+    )
     assert kwargs["metadata"] == {"mode": "random_faceswap"}
 
 
@@ -196,6 +240,35 @@ async def test_compensate_failed_submission_logs_pending_refund_when_refund_fail
         "tester",
     )
     remove_task.assert_awaited_once_with("registry-3")
+
+
+@pytest.mark.asyncio
+async def test_private_submission_failure_refund_uses_deterministic_idempotency_key():
+    refund_credits = AsyncMock()
+
+    await compensate_failed_submission(
+        user_id=123,
+        username="tester",
+        cost=20,
+        error=RuntimeError("dispatch boom"),
+        credits_deducted=True,
+        registry_task_id="deterministic-task",
+        refund_credits_func=refund_credits,
+        add_pending_refund_func=AsyncMock(),
+        remove_task_func=AsyncMock(),
+        logger=SimpleNamespace(critical=lambda *args, **kwargs: None),
+        refund_idempotency_key=(
+            "task_refund:submission_failed:deterministic-task"
+        ),
+    )
+
+    refund_credits.assert_awaited_once_with(
+        123,
+        20,
+        task_type="refund_saga_failed",
+        username="tester",
+        idempotency_key="task_refund:submission_failed:deterministic-task",
+    )
 
 
 @pytest.mark.asyncio

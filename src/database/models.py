@@ -89,6 +89,253 @@ class User(Base):
         "Referral", foreign_keys="Referral.invitee_id", back_populates="invitee"
     )
     history = relationship("History", back_populates="user")
+    private_qqcc_bot = relationship(
+        "PrivateQqccBot",
+        back_populates="owner",
+        uselist=False,
+        passive_deletes=True,
+    )
+
+
+class PrivateQqccBot(Base):
+    __tablename__ = "private_qqcc_bots"
+    __table_args__ = (
+        CheckConstraint(
+            "runtime_status in ('provisioning', 'active', 'paused', 'disabled', 'error')",
+            name="ck_private_qqcc_bots_runtime_status",
+        ),
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    owner_user_id = Column(
+        BigInteger,
+        ForeignKey("users.id"),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+    telegram_bot_id = Column(
+        BigInteger,
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+    telegram_username = Column(String(64), nullable=True)
+    telegram_display_name = Column(String(255), nullable=True)
+    token_ciphertext = Column(Text, nullable=False)
+    token_key_version = Column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default=text("1"),
+    )
+    token_fingerprint = Column(String(64), unique=True, nullable=False)
+    webhook_public_id = Column(String(64), unique=True, nullable=False)
+    webhook_secret_hash = Column(String(64), nullable=True)
+    config = Column(
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::json"),
+    )
+    config_version = Column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default=text("1"),
+    )
+    owner_enabled = Column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    admin_enabled = Column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    runtime_status = Column(
+        String(32),
+        nullable=False,
+        default="provisioning",
+        server_default=text("'provisioning'"),
+    )
+    last_error_code = Column(String(64), nullable=True)
+    last_error_message = Column(String(500), nullable=True)
+    last_webhook_at = Column(DateTime, nullable=True)
+    last_update_at = Column(DateTime, nullable=True)
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.now,
+        server_default=func.now(),
+    )
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.now,
+        onupdate=datetime.now,
+        server_default=func.now(),
+    )
+
+    owner = relationship("User", back_populates="private_qqcc_bot")
+    audit_logs = relationship(
+        "PrivateQqccBotAuditLog",
+        back_populates="private_bot",
+        passive_deletes="all",
+    )
+
+
+class PrivateQqccBotAuditLog(Base):
+    __tablename__ = "private_qqcc_bot_audit_logs"
+    __table_args__ = (
+        CheckConstraint(
+            "actor_type in ('owner', 'admin', 'system')",
+            name="ck_private_qqcc_bot_audit_logs_actor_type",
+        ),
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    private_bot_id = Column(
+        BigInteger,
+        ForeignKey("private_qqcc_bots.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    owner_user_id = Column(BigInteger, nullable=False, index=True)
+    telegram_bot_id = Column(BigInteger, nullable=False, index=True)
+    actor_type = Column(String(32), nullable=False)
+    actor_identifier = Column(String(128), nullable=True)
+    action = Column(String(64), nullable=False)
+    before_status = Column(String(32), nullable=True)
+    after_status = Column(String(32), nullable=True)
+    details = Column(
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::json"),
+    )
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.now,
+        server_default=func.now(),
+    )
+
+    private_bot = relationship("PrivateQqccBot", back_populates="audit_logs")
+
+
+class PrivateBotTaskSubmission(Base):
+    """Durable idempotency outcome for one task spawned by a private Bot update."""
+
+    __tablename__ = "private_bot_task_submissions"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('reserved', 'dispatching', 'submitted', 'failed')",
+            name="ck_private_bot_task_submissions_status",
+        ),
+        CheckConstraint(
+            "compensation_status in ('not_required', 'pending', 'processing', 'completed')",
+            name="ck_private_bot_task_submissions_compensation_status",
+        ),
+        UniqueConstraint(
+            "submission_key",
+            name="uq_private_bot_task_submissions_submission_key",
+        ),
+        UniqueConstraint(
+            "registry_task_id",
+            name="uq_private_bot_task_submissions_registry_task_id",
+        ),
+        Index(
+            "ix_private_bot_task_submissions_reconcile_due",
+            "status",
+            "reconcile_not_before_at",
+            "id",
+        ),
+        Index(
+            "ix_private_bot_task_submissions_compensation_due",
+            "compensation_status",
+            "compensation_lease_until",
+            "id",
+        ),
+        Index(
+            "ix_private_bot_task_submissions_retention",
+            "status",
+            "compensation_status",
+            "updated_at",
+            "id",
+        ),
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    submission_key = Column(String(128), nullable=False)
+    private_bot_id = Column(BigInteger, nullable=False, index=True)
+    update_id = Column(BigInteger, nullable=False)
+    submission_sequence = Column(Integer, nullable=False)
+    internal_user_id = Column(BigInteger, nullable=False, index=True)
+    client_type = Column(String(128), nullable=False)
+    task_type = Column(String(64), nullable=False)
+    request_sha256 = Column(String(64), nullable=False)
+    registry_task_id = Column(String(64), nullable=False)
+    dispatch_task_id = Column(String(64), nullable=False)
+    dispatch_started_at = Column(DateTime, nullable=True)
+    submission_owner_token = Column(String(64), nullable=True)
+    submission_owner_deadline_at = Column(DateTime, nullable=True)
+    reconcile_not_before_at = Column(DateTime, nullable=True)
+    submission_owner_fence = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    backend_task_id = Column(String(128), nullable=True)
+    status = Column(
+        String(32),
+        nullable=False,
+        default="reserved",
+        server_default=text("'reserved'"),
+    )
+    actual_cost = Column(Integer, nullable=True)
+    debit_confirmed_at = Column(DateTime, nullable=True)
+    saved_inputs = Column(
+        JSON,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'::json"),
+    )
+    error_code = Column(String(64), nullable=True)
+    error_message = Column(String(500), nullable=True)
+    compensation_status = Column(
+        String(32),
+        nullable=False,
+        default="not_required",
+        server_default=text("'not_required'"),
+    )
+    compensation_lease_token = Column(String(64), nullable=True)
+    compensation_lease_until = Column(DateTime, nullable=True)
+    compensation_attempts = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    compensation_last_error = Column(String(500), nullable=True)
+    compensation_completed_at = Column(DateTime, nullable=True)
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.now,
+        server_default=func.now(),
+    )
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.now,
+        onupdate=datetime.now,
+        server_default=func.now(),
+    )
 
 
 class Referral(Base):

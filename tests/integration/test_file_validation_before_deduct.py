@@ -277,7 +277,10 @@ async def test_concurrency_lock_released_when_file_missing():
 
     deduct_credits.assert_not_called()
     compensate_failed.assert_not_called()
-    release_lock.assert_awaited_once_with(user_id)
+    release_lock.assert_awaited_once_with(
+        user_id,
+        idempotency_key=f"task_concurrency:{task_id}",
+    )
 
 
 @pytest.mark.asyncio
@@ -315,7 +318,10 @@ async def test_file_validation_before_credit_deduction_order():
     ) = _patch_process_dependencies(
         prepare_payload=prepare_payload,
     )
-    check_lock.side_effect = lambda _uid: call_sequence.append("check_concurrency_lock") or (True, "")
+    check_lock.side_effect = (
+        lambda _uid, **_kwargs: call_sequence.append("check_concurrency_lock")
+        or (True, "")
+    )
     deduct_credits.side_effect = record_deduct
 
     with pytest.raises(CoreDomainError):

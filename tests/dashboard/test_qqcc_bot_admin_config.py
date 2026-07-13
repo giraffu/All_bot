@@ -1,8 +1,11 @@
 import pytest
+import base64
+from unittest.mock import AsyncMock
 
 from dashboard.backend.routers import qqcc as router_module
 from dashboard.backend.schemas import QqccBotConfigRequest
-from src.database.models import RuntimeCheckpoint
+from src.database.models import PrivateQqccBot, RuntimeCheckpoint
+from src.services import qqcc_config_service as config_service_module
 from src.services.qqcc_config_service import (
     DEFAULT_QQCC_LAZY_BOT_CONFIG,
     QQCC_LAZY_BOT_CONFIG_KEY,
@@ -10,13 +13,17 @@ from src.services.qqcc_config_service import (
     SCENE_PRESET_VERSION,
     DRAW_SCENE_ENGINE_FREE_EDIT,
     DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+    DRAW_SCENE_ENGINE_FREE_EDIT_V3,
     VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
     VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
     get_enabled_qqcc_draw_scenes,
     get_enabled_qqcc_filter_scenes,
     get_enabled_qqcc_video_scenes,
+    cache_qqcc_demo_telegram_file_ids,
+    get_qqcc_copywriting_override,
     load_qqcc_config_payload,
     normalize_qqcc_config,
+    render_qqcc_copywriting,
     resolve_qqcc_prompt,
     save_qqcc_config_payload,
 )
@@ -100,6 +107,107 @@ def test_normalize_qqcc_config_returns_default_shape_for_empty_config():
     assert config["video_scenes"][0]["lora_name"] == ""
     assert config["video_scenes"][0]["end_frame_draw_scene_id"] == ""
     assert config["video_scenes"][0]["negative_prompt"] == ""
+
+
+def test_normalize_config_keeps_generated_output_draft_only_after_save_payload():
+    config = normalize_qqcc_config({
+        "scene_preset_version": 1,
+        "video_scenes": [],
+        "filter_scenes": [],
+        "draw_scenes": [{
+            "id": "portrait",
+            "name": "Portrait",
+            "prompt": "portrait prompt",
+            "engine": "free_edit_v2",
+            "demo_output_media": {
+                "object_key": "qqcc/demo/draw/portrait/generated/qqcc-demo-task-1/output",
+                "media_type": "image",
+                "mime_type": "image/png",
+                "file_name": "generated.png",
+            },
+        }],
+    })
+
+    assert config["draw_scenes"][0]["demo_output_media"]["object_key"].endswith(
+        "/generated/qqcc-demo-task-1/output"
+    )
+
+
+def test_demo_media_upload_route_supports_put_and_legacy_post():
+    methods = {
+        method
+        for route in router_module.router.routes
+        if route.path == "/api/qqcc/demo-media/{scene_kind}/{scene_id}/{slot}"
+        for method in route.methods
+    }
+
+    assert methods == {"POST", "PUT"}
+
+
+@pytest.mark.asyncio
+async def test_demo_generation_routes_submit_and_poll_without_saving_config(monkeypatch):
+    submit = AsyncMock(return_value={"generation_id": "task-1", "status": "pending"})
+    poll = AsyncMock(return_value={"generation_id": "task-1", "status": "done", "media": {}})
+    monkeypatch.setattr(router_module, "submit_qqcc_demo_generation", submit)
+    monkeypatch.setattr(router_module, "get_qqcc_demo_generation", poll)
+    scene = {
+        "id": "portrait",
+        "prompt": "portrait prompt",
+        "engine": "free_edit_v2",
+        "demo_input_media": {
+            "object_key": "qqcc/demo/draw/portrait/input",
+            "mime_type": "image/png",
+        },
+    }
+
+    submitted = await router_module.submit_qqcc_scene_demo_generation(
+        "draw", router_module.QqccDemoGenerationRequest(scene=scene)
+    )
+    completed = await router_module.get_qqcc_scene_demo_generation(
+        "draw", "portrait", "task-1"
+    )
+
+    assert submitted["status"] == "pending"
+    assert completed["status"] == "done"
+    submit.assert_awaited_once_with(scene_kind="draw", scene=scene)
+    poll.assert_awaited_once_with(
+        scene_kind="draw", scene_id="portrait", generation_id="task-1"
+    )
+
+
+@pytest.mark.asyncio
+async def test_json_demo_media_upload_decodes_file_and_uses_existing_validation(monkeypatch):
+    uploaded = {
+        "object_key": "qqcc/demo/draw/portrait/input",
+        "media_type": "image",
+        "mime_type": "image/png",
+        "file_name": "before.png",
+        "telegram_file_ids": {},
+    }
+    upload_media = AsyncMock(return_value=uploaded)
+    monkeypatch.setattr(router_module, "upload_qqcc_demo_media", upload_media)
+    monkeypatch.setattr(
+        router_module,
+        "build_qqcc_demo_preview_url",
+        lambda media: f"https://preview.example/{media['object_key']}",
+    )
+
+    response = await router_module.put_qqcc_scene_demo_media_json(
+        scene_kind="draw",
+        scene_id="portrait",
+        slot="input",
+        payload=router_module.QqccDemoMediaJsonRequest(
+            file_name="before.png",
+            mime_type="image/png",
+            content_base64=base64.b64encode(b"\x89PNG\r\n\x1a\nbody").decode(),
+        ),
+    )
+
+    upload = upload_media.await_args.kwargs["upload"]
+    assert upload.content_type == "image/png"
+    assert upload.filename == "before.png"
+    assert await upload.read() == b"\x89PNG\r\n\x1a\nbody"
+    assert response["media"] == uploaded
 
 
 def test_normalize_qqcc_config_migrates_legacy_config_with_scene_presets():
@@ -189,6 +297,29 @@ def test_normalize_qqcc_config_drops_unknown_keys_and_keeps_empty_prompt_for_fal
         {"face_swap": "prompts ini fallback"},
         "default fallback",
     ) == "prompts ini fallback"
+
+
+def test_normalize_qqcc_config_keeps_supported_copywriting_and_renders_scene_button():
+    config = normalize_qqcc_config(
+        {
+            "copywriting": {
+                "ai_draw_menu": "  请选择绘图模式  ",
+                "ai_draw_scene_start": "已切换到【{butten}】模式，请发送图片。",
+                "unknown": "drop me",
+            }
+        }
+    )
+
+    assert config["copywriting"]["ai_draw_menu"] == "请选择绘图模式"
+    assert config["copywriting"]["ai_draw_scene_start"] == (
+        "已切换到【{butten}】模式，请发送图片。"
+    )
+    assert "unknown" not in config["copywriting"]
+    assert get_qqcc_copywriting_override(config, "ai_filter_menu") is None
+    assert render_qqcc_copywriting(
+        get_qqcc_copywriting_override(config, "ai_draw_scene_start"),
+        "柔光写真",
+    ) == "已切换到【柔光写真】模式，请发送图片。"
 
 
 def test_normalize_qqcc_config_migrates_legacy_video_buttons_to_scenes():
@@ -627,6 +758,73 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_draw_scenes():
     ]
 
 
+def test_normalize_qqcc_config_keeps_all_valid_draw_scenes_without_a_count_limit():
+    raw_scenes = [
+        {
+            "id": f"draw_{index}",
+            "name": f"绘图 {index}",
+            "prompt": f"prompt {index}",
+        }
+        for index in range(1, 26)
+    ]
+
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": raw_scenes,
+        }
+    )
+
+    scenes = get_enabled_qqcc_draw_scenes(config)
+    assert len(scenes) == 25
+    assert scenes[-1]["id"] == "draw_25"
+    assert scenes[-1]["name"] == "绘图 25"
+
+
+def test_normalize_qqcc_config_preserves_scene_demo_media_and_bot_file_id_cache():
+    media = {
+        "object_key": "qqcc/demo/draw/portrait/input",
+        "media_type": "image",
+        "mime_type": "image/png",
+        "file_name": "before.png",
+        "telegram_file_ids": {
+            "123456": "telegram-photo-file-id",
+            "invalid-bot": "must-be-dropped",
+        },
+        "preview_url": "https://expired.example/should-not-persist",
+    }
+
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": [
+                {
+                    "id": "portrait",
+                    "name": "人像",
+                    "prompt": "portrait prompt",
+                    "demo_input_media": media,
+                    "demo_output_media": {
+                        **media,
+                        "object_key": "qqcc/demo/draw/portrait/output",
+                        "file_name": "after.png",
+                    },
+                }
+            ],
+        }
+    )
+
+    scene = config["draw_scenes"][0]
+    assert scene["demo_input_media"] == {
+        "object_key": "qqcc/demo/draw/portrait/input",
+        "media_type": "image",
+        "mime_type": "image/png",
+        "file_name": "before.png",
+        "telegram_file_ids": {"123456": "telegram-photo-file-id"},
+    }
+    assert scene["demo_output_media"]["object_key"].endswith("/output")
+    assert "preview_url" not in scene["demo_input_media"]
+
+
 def test_normalize_qqcc_config_migrates_legacy_draw_prompt_keys_to_scene_prompts():
     config = normalize_qqcc_config(
         {
@@ -703,6 +901,10 @@ async def test_load_qqcc_config_payload_returns_defaults_when_checkpoint_missing
     assert response["options"]["scene_preset_version"] == SCENE_PRESET_VERSION
     assert response["options"]["default_video_engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
     assert response["options"]["default_draw_engine"] == DRAW_SCENE_ENGINE_FREE_EDIT_V2
+    assert response["options"]["draw_engines"][-1] == {
+        "value": DRAW_SCENE_ENGINE_FREE_EDIT_V3,
+        "supports_lora": False,
+    }
     assert any(
         item["value"] == "BreastGrow"
         for item in response["options"]["video_lora_models"]
@@ -712,6 +914,67 @@ async def test_load_qqcc_config_payload_returns_defaults_when_checkpoint_missing
         for item in response["options"]["image_lora_models"]
     )
     assert response["updated_at"] is None
+
+
+def test_normalize_qqcc_config_preserves_free_edit_v3_for_draw_and_filter_scenes():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": [
+                {"id": "draw_v3", "name": "绘图 v3", "prompt": "draw", "engine": "free_edit_v3"}
+            ],
+            "filter_scenes": [
+                {"id": "filter_v3", "name": "滤镜 v3", "prompt": "filter", "engine": "free_edit_v3"}
+            ],
+        }
+    )
+
+    assert config["draw_scenes"][0]["engine"] == DRAW_SCENE_ENGINE_FREE_EDIT_V3
+    assert config["filter_scenes"][0]["engine"] == DRAW_SCENE_ENGINE_FREE_EDIT_V3
+    assert config["draw_scenes"][0]["lora_name"] == ""
+    assert config["filter_scenes"][0]["lora_name"] == ""
+
+
+@pytest.mark.asyncio
+async def test_load_qqcc_config_payload_adds_fresh_demo_preview_urls(monkeypatch):
+    checkpoint = RuntimeCheckpoint(
+        key=QQCC_LAZY_BOT_CONFIG_KEY,
+        value={
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": [
+                {
+                    "id": "portrait",
+                    "name": "人像",
+                    "prompt": "portrait prompt",
+                    "demo_input_media": {
+                        "object_key": "qqcc/demo/draw/portrait/input",
+                        "media_type": "image",
+                        "mime_type": "image/png",
+                        "file_name": "before.png",
+                    },
+                    "demo_output_media": {
+                        "object_key": "qqcc/demo/draw/portrait/generated/qqcc-demo-task-1/output",
+                        "media_type": "image",
+                        "mime_type": "image/png",
+                        "file_name": "generated.png",
+                        "content_sha256": "a" * 64,
+                    },
+                }
+            ],
+        },
+    )
+    db = _FakeSession(checkpoint)
+    monkeypatch.setattr(
+        config_service_module,
+        "build_qqcc_demo_preview_url",
+        lambda media: f"https://preview.example/{media['object_key']}",
+    )
+
+    response = await load_qqcc_config_payload(db)
+
+    media = response["config"]["draw_scenes"][0]["demo_input_media"]
+    assert media["preview_url"].endswith("qqcc/demo/draw/portrait/input")
+    assert "preview_url" not in checkpoint.value["draw_scenes"][0]["demo_input_media"]
 
 
 @pytest.mark.asyncio
@@ -737,6 +1000,249 @@ async def test_save_qqcc_config_payload_writes_runtime_checkpoint():
 
 
 @pytest.mark.asyncio
+async def test_cache_qqcc_demo_telegram_file_ids_updates_matching_media_only():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": [
+                {
+                    "id": "portrait",
+                    "name": "人像",
+                    "prompt": "portrait prompt",
+                    "demo_input_media": {
+                        "object_key": "qqcc/demo/draw/portrait/input",
+                        "media_type": "image",
+                        "mime_type": "image/png",
+                        "file_name": "before.png",
+                    },
+                    "demo_output_media": {
+                        "object_key": "qqcc/demo/draw/portrait/generated/qqcc-demo-task-1/output",
+                        "media_type": "image",
+                        "mime_type": "image/png",
+                        "file_name": "generated.png",
+                        "content_sha256": "a" * 64,
+                    },
+                }
+            ],
+        }
+    )
+    checkpoint = RuntimeCheckpoint(key=QQCC_LAZY_BOT_CONFIG_KEY, value=config)
+    db = _FakeSession(checkpoint)
+
+    updated = await cache_qqcc_demo_telegram_file_ids(
+        scene_kind="draw",
+        scene_id="portrait",
+        bot_id="123",
+        updates=[
+            {
+                "slot": "input",
+                "object_key": "qqcc/demo/draw/portrait/input",
+                "file_id": "photo-file-id",
+            },
+            {
+                "slot": "output",
+                "object_key": "wrong-key",
+                "file_id": "must-not-be-written",
+            },
+        ],
+        db=db,
+    )
+
+    assert updated == 1
+    assert db.committed is True
+    media = checkpoint.value["draw_scenes"][0]["demo_input_media"]
+    assert media["telegram_file_ids"] == {"123": "photo-file-id"}
+    output = checkpoint.value["draw_scenes"][0]["demo_output_media"]
+    assert output["object_key"].endswith("/generated/qqcc-demo-task-1/output")
+    assert output["content_sha256"] == "a" * 64
+
+
+@pytest.mark.asyncio
+async def test_cache_private_bot_demo_file_id_updates_tenant_config():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": [
+                {
+                    "id": "portrait",
+                    "name": "人像",
+                    "prompt": "portrait prompt",
+                    "demo_input_media": {
+                        "object_key": "qqcc/private/7/demo/draw/portrait/input",
+                        "media_type": "image",
+                        "mime_type": "image/png",
+                        "file_name": "before.png",
+                    },
+                }
+            ],
+        }
+    )
+    private_bot = PrivateQqccBot(id=7, config=config)
+    db = _FakeSession(private_bot)
+
+    updated = await cache_qqcc_demo_telegram_file_ids(
+        scene_kind="draw",
+        scene_id="portrait",
+        bot_id="456",
+        private_bot_id=7,
+        updates=[
+            {
+                "slot": "input",
+                "object_key": "qqcc/private/7/demo/draw/portrait/input",
+                "file_id": "tenant-photo-file-id",
+            }
+        ],
+        db=db,
+    )
+
+    assert updated == 1
+    media = private_bot.config["draw_scenes"][0]["demo_input_media"]
+    assert media["telegram_file_ids"] == {"456": "tenant-photo-file-id"}
+
+
+@pytest.mark.asyncio
+async def test_private_demo_cache_never_selects_tenant_from_mutable_object_key():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": [
+                {
+                    "id": "portrait",
+                    "name": "人像",
+                    "prompt": "portrait prompt",
+                    "demo_input_media": {
+                        "object_key": "qqcc/private/7/demo/draw/portrait/input",
+                        "media_type": "image",
+                        "mime_type": "image/png",
+                        "file_name": "before.png",
+                    },
+                }
+            ],
+        }
+    )
+    private_bot = PrivateQqccBot(id=7, config=config)
+    db = _FakeSession(private_bot)
+
+    updated = await cache_qqcc_demo_telegram_file_ids(
+        scene_kind="draw",
+        scene_id="portrait",
+        bot_id="456",
+        updates=[
+            {
+                "slot": "input",
+                "object_key": "qqcc/private/7/demo/draw/portrait/input",
+                "file_id": "must-not-be-written",
+            }
+        ],
+        db=db,
+    )
+
+    assert updated == 0
+    assert db.committed is False
+
+
+@pytest.mark.asyncio
+async def test_save_qqcc_config_preserves_newer_telegram_demo_cache():
+    base_scene = {
+        "id": "portrait",
+        "name": "人像",
+        "prompt": "old prompt",
+        "demo_input_media": {
+            "object_key": "qqcc/demo/draw/portrait/input",
+            "media_type": "image",
+            "mime_type": "image/png",
+            "file_name": "before.png",
+            "content_sha256": "a" * 64,
+            "telegram_file_ids": {"123": "cached-photo"},
+        },
+    }
+    checkpoint = RuntimeCheckpoint(
+        key=QQCC_LAZY_BOT_CONFIG_KEY,
+        value=normalize_qqcc_config(
+            {
+                "scene_preset_version": SCENE_PRESET_VERSION,
+                "draw_scenes": [base_scene],
+            }
+        ),
+    )
+    db = _FakeSession(checkpoint)
+    stale_payload_scene = {
+        **base_scene,
+        "prompt": "updated prompt",
+        "demo_input_media": {
+            **base_scene["demo_input_media"],
+            "telegram_file_ids": {},
+        },
+    }
+
+    await save_qqcc_config_payload(
+        db,
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": [stale_payload_scene],
+        },
+    )
+
+    scene = checkpoint.value["draw_scenes"][0]
+    assert scene["prompt"] == "updated prompt"
+    assert scene["demo_input_media"]["telegram_file_ids"] == {
+        "123": "cached-photo"
+    }
+
+
+@pytest.mark.asyncio
+async def test_save_qqcc_config_drops_telegram_cache_when_demo_content_changes():
+    old_media = {
+        "object_key": "qqcc/demo/draw/portrait/input",
+        "media_type": "image",
+        "mime_type": "image/png",
+        "file_name": "before.png",
+        "content_sha256": "a" * 64,
+        "telegram_file_ids": {"123": "old-photo"},
+    }
+    checkpoint = RuntimeCheckpoint(
+        key=QQCC_LAZY_BOT_CONFIG_KEY,
+        value=normalize_qqcc_config(
+            {
+                "scene_preset_version": SCENE_PRESET_VERSION,
+                "draw_scenes": [
+                    {
+                        "id": "portrait",
+                        "name": "人像",
+                        "prompt": "prompt",
+                        "demo_input_media": old_media,
+                    }
+                ],
+            }
+        ),
+    )
+    db = _FakeSession(checkpoint)
+
+    await save_qqcc_config_payload(
+        db,
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": [
+                {
+                    "id": "portrait",
+                    "name": "人像",
+                    "prompt": "prompt",
+                    "demo_input_media": {
+                        **old_media,
+                        "content_sha256": "b" * 64,
+                        "telegram_file_ids": {},
+                    },
+                }
+            ],
+        },
+    )
+
+    media = checkpoint.value["draw_scenes"][0]["demo_input_media"]
+    assert media["content_sha256"] == "b" * 64
+    assert media["telegram_file_ids"] == {}
+
+
+@pytest.mark.asyncio
 async def test_update_qqcc_config_router_routes_to_runtime_checkpoint_service():
     db = _FakeSession()
     payload = QqccBotConfigRequest(main_buttons={"video_edit": False})
@@ -745,6 +1251,41 @@ async def test_update_qqcc_config_router_routes_to_runtime_checkpoint_service():
 
     assert db.committed is True
     assert response["config"]["main_buttons"]["video_edit"] is False
+
+
+@pytest.mark.asyncio
+async def test_upload_qqcc_demo_media_router_returns_uploaded_descriptor(monkeypatch):
+    uploaded = {
+        "object_key": "qqcc/demo/video/kiss/output",
+        "media_type": "video",
+        "mime_type": "video/mp4",
+        "file_name": "result.mp4",
+        "telegram_file_ids": {},
+    }
+    upload = object()
+    upload_media = AsyncMock(return_value=uploaded)
+    monkeypatch.setattr(router_module, "upload_qqcc_demo_media", upload_media)
+    monkeypatch.setattr(
+        router_module,
+        "build_qqcc_demo_preview_url",
+        lambda media: f"https://preview.example/{media['object_key']}",
+    )
+
+    response = await router_module.upload_qqcc_scene_demo_media(
+        scene_kind="video",
+        scene_id="kiss",
+        slot="output",
+        file=upload,
+    )
+
+    upload_media.assert_awaited_once_with(
+        scene_kind="video",
+        scene_id="kiss",
+        slot="output",
+        upload=upload,
+    )
+    assert response["media"] == uploaded
+    assert response["preview_url"].endswith("qqcc/demo/video/kiss/output")
 
 
 @pytest.mark.asyncio

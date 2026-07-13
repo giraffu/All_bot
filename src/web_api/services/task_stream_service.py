@@ -8,6 +8,7 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 from sse_starlette.sse import EventSourceResponse
 from src.core.task_status_mapper import is_backend_terminal_status
+from src.services.task_queue_position_display import select_display_queue_position
 
 TASK_STREAM_STATUS_CACHE_TTL_SECONDS = float(
     os.getenv("TASK_STREAM_STATUS_CACHE_TTL_SECONDS", "2.0")
@@ -34,6 +35,7 @@ TASK_STREAM_STATUS_POLL_BACKOFF_MULTIPLIER = float(
 _TASK_STREAM_POLL_SIGNATURE_FIELDS = (
     "status",
     "queue_pos",
+    "queue_type_pos",
     "progress",
     "progress_percent",
     "progress_percentage",
@@ -194,7 +196,11 @@ async def _fetch_task_status_uncached(
 ) -> dict[str, Any] | None:
     try:
         async with httpx_async_client_factory() as client:
-            resp = await client.get(f"{api_base}/status/{task_id}", timeout=2.0)
+            resp = await client.get(
+                f"{api_base}/status/{task_id}",
+                timeout=2.0,
+                params={"include_type_position": "true"},
+            )
             if resp.status_code == 404:
                 return {"not_found": True}
             resp.raise_for_status()
@@ -463,7 +469,7 @@ async def _build_queue_poll_transition(
     if should_stop:
         return events, became_running, True, status_signature
 
-    queue_pos = status_data.get("queue_pos")
+    queue_pos = select_display_queue_position(status_data)
     if queue_pos is not None:
         events.append(
             _build_progress_event({"status": "pending", "queue_pos": queue_pos})

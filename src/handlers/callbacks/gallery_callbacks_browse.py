@@ -150,7 +150,7 @@ async def display_gallery_sort_page(
 ):
     query = update.callback_query
     with contextlib.suppress(Exception):
-        await query.answer()
+        await safe_answer_query(query)
 
     sort_type, category, page = parse_gallery_browse_callback_data(query.data)
     internal_user_id = await _resolve_gallery_viewer_id(update, sort_type)

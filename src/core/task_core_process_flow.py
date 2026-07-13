@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 from dataclasses import dataclass
 from typing import Any
@@ -20,6 +21,27 @@ class PreparedTaskSubmissionRequest:
     cost: int
     is_video_task: bool
     video_request: VideoTaskRequest
+
+
+def _supports_keyword_argument(func: Any, argument_name: str) -> bool:
+    """Return whether a dependency seam accepts a named keyword argument.
+
+    Core deployments can temporarily run against an older runtime dependency
+    during a narrow Bot-only rollout.  Keep the facade compatible with that
+    dependency while preserving idempotency whenever the dependency supports
+    it.
+    """
+    try:
+        parameters = inspect.signature(func).parameters.values()
+    except (TypeError, ValueError):
+        # Builtins and wrapped callables may not expose a signature.  Prefer
+        # the modern contract in that case rather than silently dropping it.
+        return True
+    return any(
+        parameter.name == argument_name
+        or parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters
+    )
 
 
 def build_prepared_task_submission_request(
@@ -53,10 +75,23 @@ async def ensure_submission_concurrency_lock(
     user_id: int,
     check_lock: bool,
     dependencies: TaskCoreProcessDependencies,
+    idempotency_key: str | None = None,
 ) -> None:
     if not check_lock:
         return
-    can_run, err = await dependencies.check_concurrency_lock_func(user_id)
+    kwargs = (
+        {"idempotency_key": idempotency_key}
+        if idempotency_key
+        and _supports_keyword_argument(
+            dependencies.check_concurrency_lock_func,
+            "idempotency_key",
+        )
+        else {}
+    )
+    can_run, err = await dependencies.check_concurrency_lock_func(
+        user_id,
+        **kwargs,
+    )
     if not can_run:
         raise ConcurrencyLimitError(err)
 
@@ -93,14 +128,25 @@ async def maybe_deduct_submission_credits(
     cost: int,
     deduct_quota: bool,
     dependencies: TaskCoreProcessDependencies,
+    idempotency_key: str | None = None,
 ) -> bool:
     if not deduct_quota:
         return False
+    kwargs = (
+        {"idempotency_key": idempotency_key}
+        if idempotency_key
+        and _supports_keyword_argument(
+            dependencies.check_and_deduct_credits_func,
+            "idempotency_key",
+        )
+        else {}
+    )
     success, err = await dependencies.check_and_deduct_credits_func(
         user_id,
         cost,
         task_type,
         username,
+        **kwargs,
     )
     if not success:
         raise InsufficientCreditsError(err)
@@ -119,8 +165,10 @@ async def execute_task_submission_attempt(
     submission_context: TaskSubmissionContext,
     submission_side_effect_plan: TaskSubmissionSideEffectPlan | None,
     dependencies: TaskCoreProcessDependencies,
+    submission_before_dispatch_func=None,
+    submission_dispatch_timeout_seconds: float | None = None,
 ) -> TaskSubmissionExecutionResult:
-    execution_result = await dependencies.execute_task_submission_saga_func(
+    saga_kwargs = dict(
         task_type=task_type,
         inputs=inputs,
         registry_task_id=registry_task_id,
@@ -128,6 +176,17 @@ async def execute_task_submission_attempt(
         credits_deducted=deduct_quota,
         submission_context=submission_context,
     )
+    if submission_before_dispatch_func is not None:
+        saga_kwargs["before_dispatch_func"] = submission_before_dispatch_func
+    if submission_dispatch_timeout_seconds is None:
+        execution_result = await dependencies.execute_task_submission_saga_func(
+            **saga_kwargs
+        )
+    else:
+        async with asyncio.timeout(float(submission_dispatch_timeout_seconds)):
+            execution_result = await dependencies.execute_task_submission_saga_func(
+                **saga_kwargs
+            )
     maybe_awaitable = dependencies.attach_submission_side_effects_func(
         backend_task_id=execution_result.backend_task_id,
         internal_user_id=user_id,
@@ -151,16 +210,22 @@ async def compensate_failed_task_submission(
     credits_deducted: bool,
     registry_task_id: str,
     dependencies: TaskCoreProcessDependencies,
+    refund_idempotency_key: str | None = None,
+    refund_task_type: str = "refund_saga_failed",
 ) -> None:
     dependencies.logger.error("Saga Execute Failed: %s", error)
-    await dependencies.compensate_failed_submission_func(
+    kwargs = dict(
         user_id=user_id,
         username=username,
         cost=cost,
         error=error,
         credits_deducted=credits_deducted,
         registry_task_id=registry_task_id,
+        refund_task_type=refund_task_type,
     )
+    if refund_idempotency_key:
+        kwargs["refund_idempotency_key"] = refund_idempotency_key
+    await dependencies.compensate_failed_submission_func(**kwargs)
 
 
 def build_successful_submission_response(
@@ -183,10 +248,22 @@ async def release_submission_lock_if_needed(
     check_lock: bool,
     task_submitted_successfully: bool,
     dependencies: TaskCoreProcessDependencies,
+    release_idempotency_key: str | None = None,
 ) -> None:
     if not check_lock or task_submitted_successfully:
         return
-    await dependencies.shield_func(dependencies.release_concurrency_lock_func(user_id))
+    kwargs = (
+        {"idempotency_key": release_idempotency_key}
+        if release_idempotency_key
+        and _supports_keyword_argument(
+            dependencies.release_concurrency_lock_func,
+            "idempotency_key",
+        )
+        else {}
+    )
+    await dependencies.shield_func(
+        dependencies.release_concurrency_lock_func(user_id, **kwargs)
+    )
 
 
 def build_submission_failure_error(error: Exception) -> CoreDomainError:

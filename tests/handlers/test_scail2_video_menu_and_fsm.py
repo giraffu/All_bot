@@ -81,6 +81,27 @@ def test_main_menu_deduplicates_lazy_bot_and_video_creation_entries():
     ]
 
 
+def test_main_menu_hides_lazy_bot_entry_when_disabled(monkeypatch):
+    monkeypatch.setenv("QQCC_LAZY_BOT_ENABLED", "false")
+    get_main_menu_keyboard.cache_clear()
+    try:
+        keyboard = get_main_menu_keyboard("zh")
+        button_texts = [
+            button.text
+            for row in keyboard.keyboard
+            for button in row
+        ]
+
+        assert get_text("menu.lazy_bot", "zh") not in button_texts
+        assert _button_texts(keyboard.keyboard[0]) == [
+            get_text("menu.recharge", "zh"),
+            get_text("menu.checkin", "zh"),
+            get_text("menu.profile", "zh"),
+        ]
+    finally:
+        get_main_menu_keyboard.cache_clear()
+
+
 def test_photo_edit_keyboard_only_keeps_face_swap_entries():
     get_photo_edit_keyboard.cache_clear()
     keyboard = get_photo_edit_keyboard("zh")

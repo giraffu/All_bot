@@ -2163,7 +2163,9 @@ docker exec "{slot.container_name}" bash -lc "curl -fsS http://127.0.0.1:8013/re
             expected = {
                 "node_id": slot.node_id,
                 "provider": "lan_ssh",
-                "runtime_profile": slot.target_profile_id,
+                "runtime_profile": self.config.profiles[
+                    slot.target_profile_id
+                ].runtime_profile,
             }
             errors = [
                 f"{key}={worker.get(key)!r}"

@@ -1,13 +1,13 @@
 # 子模块: 运维指南与容器管理 (Ops & Deployment)
 
-## 1. 目标与范围
-本模块记录当前仓库真实生效的部署顺序、迁移策略与常见故障恢复方式。最重要的事实更新有两点：
-- 旧本地正式脚本的数据库迁移由 `safe_deploy.sh` 在宿主机上主动执行，不再依赖“容器下次启动自动迁移”；云正式/云测试分别以 cloud deploy 脚本和目标环境 Alembic 口径为准。
-- `web-api` 等服务若未挂载源码卷，代码变更后必须 `--build` 重建镜像才会生效。
+> 2026-07-13 起，代码发布的唯一支持入口为 `scripts/release.py plan|deploy|rollback`，产物为 CI 构建的 digest-pinned 镜像和校验过的 Web tar。旧 rsync、`safe_deploy_cloud_*`、现场 `--build` 与源码挂载段落仅保留作首次切换/故障取证，不得执行。新 SOP 见 `docs/子模块_Git不可变发布_git_immutable_release.md`；实际云端切换不在本轮授权范围内。
 
-## 2. 当前推荐部署路径
-- 功能研发、联调、修复、配置调整：首选云测试快速单模块更新，只同步必要代码并重建对应 compose service，不默认进入维护或排空队列。维护式脚本 `scripts/update_cloud_test_with_maintenance.sh --execute` 仅用于整栈联动、迁移、排空验证或用户明确要求维护窗口；远端控制面重建子步骤仍由 `scripts/safe_deploy_cloud_test.sh` 执行。旧本地隔离测试栈脚本/compose 仅作历史保留和必要人工取证材料，不再作为受支持的测试或回滚环境
-- 当前云正式生产热修：按云正式文档使用 `scripts/safe_deploy_cloud_prod.sh` 或目标 cloud-prod compose 单服务重建
+## 1. 目标与范围
+本模块记录当前仓库真实生效的发布、迁移与故障恢复边界。新发布只消费 CI 生成的不可变镜像 digest，不在目标机 build，也不从云端源码目录加载应用代码。migration 由发布器识别并进入显式维护、备份、单 Alembic head 与 upgrade 流程。
+
+## 2. Legacy 部署路径（禁止用于新代码发布）
+- 旧云测试同步、现场 build、单 service 手工重建只作首次切换前取证，不是可执行的新发布方案。
+- 旧云正式热修、QQCC 窄同步与旧 cloud compose 只作 legacy 回滚材料，不是可执行的新发布方案。
 - 本地正式灾备：仅在云正式整体不可用时按 `docs/子模块_本地正式灾备切换_local_prod_fallback.md` 切回本地主服务器
 - 本地正式灾备整栈启动/重建：仅在云正式整体故障、需要本地主服务器临时接管时才执行 `bash safe_deploy.sh`
 - 原因：脚本已经把以下步骤串成标准顺序：
@@ -27,14 +27,14 @@
 ## 2.1 当前默认发布策略
 - AI 在功能研发期间默认只能更新隔离测试环境，不得主动执行生产部署。
 - “帮我改功能”“帮我修 Bug”“帮我联调”“帮我验证配置”这类请求，默认理解为测试环境操作。
-- 只有在用户明确表达“上线”“发布”“部署正式环境”“交付生产”后，才允许切换到云正式脚本或生产 compose；`safe_deploy.sh` 只用于云正式整体故障时的本地正式灾备。
+- 只有在用户明确表达“上线”“发布”“部署正式环境”“交付生产”后，才允许执行 `scripts/release.py deploy --env prod ... --execute --confirm-prod`；`safe_deploy.sh` 只用于云正式整体故障时的本地正式灾备。
 - 在用户完成测试验收前，不得把测试环境变更直接同步到正式 Bot、正式 Web、正式 Payment、正式 Central API 或正式 Dashboard。
 
 ## 2.2 云端测试控制面
-- DigitalOcean SGP1 Droplet 上的云测试日常更新按目标 service 直接 `docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml [--profile bot|qqcc-bot] build <service>` 后 `up -d --no-deps <service>`；compose 文件为 `deploy/docker-compose-cloud-test.yml`。维护式入口 `scripts/update_cloud_test_with_maintenance.sh --execute` 只用于整栈/迁移/排空场景；`scripts/safe_deploy_cloud_test.sh` 是远端控制面重建子步骤。
+- DigitalOcean SGP1 Droplet 上的云测试只接受 `scripts/release.py plan|deploy --env test --sha <full-sha>`；目标 service 集合由 `deploy/release-policy.yml` 计算，应用镜像由 release manifest 提供。
 - 云测试控制面默认部署同机 Postgres、同机 Redis、Central API、Web API、Dashboard Backend、Dashboard Frontend 与 imgproxy；`bot-test` 只通过 `bot` profile 手动启动，本地主服务器另行启动 GPU worker。当前对象存储事实源是 Cloudflare R2，云测试 compose 当前不包含 MinIO、Payment API 或 Web 前端 dev 容器。
-- 日常快速更新不要写 `runtime/cloud-test/GENERATION_MAINTENANCE`，也不要等待 Central pending/running 队列清空；按变更影响重建 `web-api-test`、`central-api-test`、`bot-test`、`qqcc-bot-test`、Dashboard 或 QQCC Config 对应 service。整仓同步或必要文件同步都必须排除 `local_analytics_platform/`、`backups/`、`logs/`、前端构建产物和密钥文件。
-- 维护式更新脚本会先让 Web/Bot 生成入口进入维护状态，等待 Central pending/running 队列清空，再同步代码、远端重建控制面、按需重建测试 Bot，并默认发布 `web-test.aivison.it.com` 边缘静态前端；失败时维护状态保持开启。该路径只在明确需要整栈维护语义时使用。
+- rolling/worker-drain/maintenance 等级由发布计划决定；用户指定 service 只能扩大范围，不能缩小机器计算出的消费者集合。
+- 测试 Web 使用 CI 的同一静态产物上传到 SHA 版本目录并原子切换 symlink，不覆盖式同步 dist。
 - 测试 Web/Bot 使用 `runtime/cloud-test/GENERATION_MAINTENANCE` 作为跨重建生成维护标记，容器内路径为 `/app/runtime-flags/GENERATION_MAINTENANCE`，由 `GENERATION_MAINTENANCE_FILE` 注入。该目录属于运行时状态，不提交仓库。
 - 云测试 `.env.cloud.test` 已被 `.gitignore` 忽略，不能提交到仓库。
 - 云端服务端口绑定到云测试 Tailscale IP `100.82.124.91`，不直接开放公网。若临时使用 `CLOUD_TEST_BIND_IP=0.0.0.0`，必须配合源 IP 白名单，只允许边缘 VPS 与本地主服务器访问测试 API 端口，恢复后必须收回公网白名单。
@@ -47,11 +47,11 @@
 - 详细说明见 `/docs/子模块_云测试控制面部署_cloud_test_control_plane.md`。
 
 ## 2.3 云正式控制面
-- 2026-06-07 晚间正式生产已切到云控制面。当前长期运维入口为 `deploy/docker-compose-cloud-prod.yml`、`workers/docker-compose-cloud-prod-worker.yml`、`scripts/safe_deploy_cloud_prod.sh`、`all_bot_nginx_cloud_prod.conf` 和 `all_bot_nginx_cloud_prod_rmb.conf`。
+- 2026-06-07 晚间正式生产已切到云控制面；首次不可变发布切换前的旧 compose 和脚本仍保留作归档/legacy rollback。新长期入口是公共 cloud/worker compose、release manifest 和 `scripts/release.py`。
 - `.env.cloud.prod` 是本机私有文件，已被 `.gitignore` 忽略；`.env.cloud.prod.example` 只提供变量契约和占位值。`.dockerignore` 必须忽略 `.env.*`，避免 root Docker build 把真实云正式变量 COPY 进镜像。
 - 云正式 Web API 需要 `JWT_SECRET_KEY`，且不能使用默认占位值；该 key 已纳入 `.env.cloud.prod.example` 和 `scripts/safe_deploy_cloud_prod.sh` preflight 必填检查。
 - 云测试环境退役入口为 `scripts/cleanup_cloud_test_for_prod.sh`。脚本默认 dry-run，真实清理必须传 `--execute`；它不得删除 R2 `user-data-test`，不得误改正式服务或 `web.aivison.it.com`。
-- 云正式控制面包含 Central API、Web API、Payment API、Dashboard Backend、Dashboard Frontend、QQCC Config Backend/Frontend、imgproxy、正式 Bot 和可选 QQCC 懒人 Bot；`cloud-tg-bot-prod` 使用 `bot` profile，`cloud-qqcc-bot-prod` 使用 `qqcc-bot` profile，重建前必须确认对应 token 全网只有一个生产 polling 实例。只单独更新正式 QQCC Bot 时使用 `scripts/update_cloud_prod_qqcc_bot.sh --execute --confirm-prod --confirm-single-polling`，该路径不重建其它正式服务；正式总更新和 QQCC 专用脚本的整仓 rsync 都必须排除 `local_analytics_platform/`。
+- 云正式控制面包含 Central API、Web API、Payment API、Dashboard Backend、Dashboard Frontend、QQCC Config Backend/Frontend、imgproxy、正式 Bot 和可选 QQCC 懒人 Bot；生产晋级必须保持测试已验收的同一 SHA/digest，并继续校验 Bot 单 polling。QQCC 单模块发布仍可用，但范围由影响 planner 计算，禁止恢复专用文件同步脚本。
 - 云正式本地 worker compose 声明 `cloud-prod-worker-relay` 与 `cloud-prod-comfy-agent-1..7`；线上实际容量还可能包含 LAN AIO agent、`remote_workers` 与手动 RunPod worker。启动或重建后必须在云 Central `/system/workers` 验证当次目标 worker 集合的 heartbeat、control state 与任务类型，状态不能是 `error` 或 `quarantined`；不要把固定 7 个 heartbeat 当成所有场景的唯一验收标准。
 - 云正式 R2 在线口径为 `user-data-prod` 单桶，`MINIO_*` 兼容变量和 `R2_*` 都指向正式 R2；`MINIO_PUBLIC_URL` 保持空，结果公开读取依赖 `R2_PUBLIC_DOMAIN=https://r2.aivison.it.com`。
 - 正式 Web API / Dashboard 运行时不再通过 `LEGACY_MINIO_*` 回源本地 MinIO；云正式 compose 对 Web/Dashboard 应设置 `LEGACY_MINIO_READ_FALLBACK_ENABLED=false` 并清空 legacy endpoint/key/public URL。R2 miss 后只允许当前 R2/S3 短签、空值或 `pending_result`，worker 仍只写 R2，不得把 legacy MinIO 配进 worker 写路径。
@@ -85,8 +85,8 @@
 - “部署完新容器后再手动进容器跑 upgrade head 才是标准流程”
 
 ## 4. 服务重建注意事项
-- `web-api`、`payment-api`、Dashboard 等通过镜像 `COPY` 代码的服务，修改代码后都要重建镜像，单纯 `restart` 不会拿到新代码。
-- 只更新管理后台时，操作范围应收窄到 `dashboard-backend-prod` / `dashboard-frontend-prod`：同步相关文件后只 build/up 这两个 service 或其中一个，不重启 Central/Web/Bot/Payment/imgproxy/worker/RunPod。云正式 Dashboard 健康检查优先用 `http://100.107.220.127:8043/api/health` 与 `http://100.107.220.127:8086/api/health`；确认其它正式服务容器启动时间未变化。只更新 QQCC 配置 Web 时，收窄到 `qqcc-config-backend-prod qqcc-config-frontend-prod`，健康检查为 `http://100.107.220.127:8045/api/health` 与 `http://100.107.220.127:8088/api/health`，不触碰主 Dashboard 或 `cloud-qqcc-bot-prod` polling。
+- 所有自有服务只运行 release manifest 中的 digest-pinned 镜像；目标机不得现场 build。
+- Dashboard、QQCC Config 或 Bot 的单模块发布由影响 planner 选择完整消费者，并在发布后核对目标健康与非目标容器启动时间不变。
 - `workers` 更新环境变量时，应使用 `docker-compose up -d` 触发重新创建，而不是只做 `restart`。
 - 当前受支持的测试环境是云测试控制面；旧本地测试脚本仍可能留在仓库内作为历史迁移/取证材料，但不应被当成回滚目标。
 - 若人工取证确需短时启动旧本地隔离测试栈，应使用独立的 `.env.test`、`backend/docker-compose-test.yml` 与 `workers/docker-compose-test.yml`，并让测试入口服务指向独立的 Central API 端口与独立 Redis 队列；否则可能与正式或云测试环境共用任务调度面。

@@ -10,6 +10,13 @@ from .runpod_profile_catalog import (
     RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB,
     RUNPOD_PORNMASTER_FLUX2_EDIT_DOCKER_START_CMD,
     RUNPOD_PORNMASTER_FLUX2_EDIT_SUPPORTED_TASK_TYPES,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_CONTAINER_DISK_GB,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_COMFY_EXTRA_ARGS,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_DOCKER_START_CMD,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_GPU_TYPE_IDS,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_MODEL_MANIFEST_KEY,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_MODEL_PREFIX,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_SUPPORTED_TASK_TYPES,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
     RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE,
     RUNPOD_SCAIL2_CONTAINER_DISK_GB,
@@ -148,11 +155,13 @@ class RunPodPodRequestBuilder:
             "scail2",
             "ltx_video",
             "pornmaster_flux2_edit",
+            "pornmaster_flux2_edit_bf16",
         }:
             raise ValueError(
                 "RunPodProvider v0 cloud-prod only supports "
                 "img2img/img2img_lora, image_to_video, wan22_video_v2, "
-                "i2i_pro, scail2, ltx_video, and pornmaster_flux2_edit profiles"
+                "i2i_pro, scail2, ltx_video, pornmaster_flux2_edit, and "
+                "pornmaster_flux2_edit_bf16 profiles"
             )
         gpu_type_ids = self.gpu_type_ids_for(profile)
         if environment == "cloud-prod":
@@ -177,6 +186,7 @@ class RunPodPodRequestBuilder:
                 "scail2",
                 "ltx_video",
                 "pornmaster_flux2_edit",
+                "pornmaster_flux2_edit_bf16",
             }
             and not image_name
         ):
@@ -259,6 +269,11 @@ class RunPodPodRequestBuilder:
                 self.settings.container_disk_gb,
                 self.settings.container_disk_gb_pornmaster_flux2_edit,
                 RUNPOD_PORNMASTER_FLUX2_EDIT_CONTAINER_DISK_GB,
+            )
+        if profile.task_type == "pornmaster_flux2_edit_bf16":
+            return max(
+                self.settings.container_disk_gb,
+                RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_CONTAINER_DISK_GB,
             )
         return self.settings.container_disk_gb
 
@@ -353,6 +368,10 @@ class RunPodPodRequestBuilder:
             )
             if self.settings.wan22_video_v2_comfy_extra_args:
                 env["COMFY_EXTRA_ARGS"] = self.settings.wan22_video_v2_comfy_extra_args
+        if profile.task_type == "pornmaster_flux2_edit_bf16":
+            env["COMFY_EXTRA_ARGS"] = (
+                RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_COMFY_EXTRA_ARGS
+            )
         workflow_overrides = self.workflow_overrides_for(profile)
         if workflow_overrides:
             env["TASK_TYPE_WORKFLOW_OVERRIDES"] = workflow_overrides
@@ -493,7 +512,7 @@ class RunPodPodRequestBuilder:
                 "RunPodProvider v0 only supports "
                 "img2img_lora/img2img/wan22_aio_video/image_to_video/"
                 "wan22_video_v2/i2i_pro/scail2/ltx_video/"
-                "pornmaster_flux2_edit profiles"
+                "pornmaster_flux2_edit/pornmaster_flux2_edit_bf16 profiles"
             ) from exc
 
     def gpu_type_ids_for(self, profile: RunPodTaskProfile) -> tuple[str, ...]:
@@ -513,6 +532,8 @@ class RunPodPodRequestBuilder:
             return self.settings.gpu_type_ids_ltx_video
         if profile.gpu_type_env_key == "RUNPOD_GPU_TYPE_IDS_PORNMASTER_FLUX2_EDIT":
             return self.settings.gpu_type_ids_pornmaster_flux2_edit
+        if profile.gpu_type_env_key == "RUNPOD_GPU_TYPE_IDS_PORNMASTER_FLUX2_EDIT_BF16":
+            return RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_GPU_TYPE_IDS
         raise ValueError(f"unsupported RunPod task profile: {profile.task_type}")
 
     def prod_gpu_type_ids_for(self, profile: RunPodTaskProfile) -> tuple[str, ...]:
@@ -520,6 +541,8 @@ class RunPodPodRequestBuilder:
             return self.settings.gpu_type_ids_ltx_video
         if profile.task_type == "pornmaster_flux2_edit":
             return self.settings.gpu_type_ids_pornmaster_flux2_edit
+        if profile.task_type == "pornmaster_flux2_edit_bf16":
+            return RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_GPU_TYPE_IDS
         return self.settings.prod_gpu_type_ids
 
     def template_id_for(self, profile: RunPodTaskProfile) -> str:
@@ -594,6 +617,8 @@ class RunPodPodRequestBuilder:
             return "allbot/comfy-runpod-ltx-video:pending"
         if profile.task_type == "pornmaster_flux2_edit":
             return "allbot/comfy-runpod-pornmaster-flux2-edit:pending"
+        if profile.task_type == "pornmaster_flux2_edit_bf16":
+            return "allbot/comfy-runpod-pornmaster-flux2-edit:pending"
         return "allbot/comfy-runpod-img2img:pending"
 
     def docker_start_cmd_for(self, profile: RunPodTaskProfile) -> tuple[str, ...]:
@@ -619,6 +644,8 @@ class RunPodPodRequestBuilder:
                 self.settings.docker_start_cmd_pornmaster_flux2_edit
                 or RUNPOD_PORNMASTER_FLUX2_EDIT_DOCKER_START_CMD
             )
+        if profile.task_type == "pornmaster_flux2_edit_bf16":
+            return RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_DOCKER_START_CMD
         return ()
 
     def workflow_overrides_for(self, profile: RunPodTaskProfile) -> str:
@@ -664,6 +691,8 @@ class RunPodPodRequestBuilder:
             return self.settings.model_prefix_ltx_video
         if profile.task_type == "pornmaster_flux2_edit":
             return self.settings.model_prefix_pornmaster_flux2_edit
+        if profile.task_type == "pornmaster_flux2_edit_bf16":
+            return RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_MODEL_PREFIX
         return self.settings.model_prefix
 
     def model_manifest_key_for(self, profile: RunPodTaskProfile) -> str:
@@ -681,6 +710,8 @@ class RunPodPodRequestBuilder:
             return self.settings.model_manifest_key_ltx_video
         if profile.task_type == "pornmaster_flux2_edit":
             return self.settings.model_manifest_key_pornmaster_flux2_edit
+        if profile.task_type == "pornmaster_flux2_edit_bf16":
+            return RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_MODEL_MANIFEST_KEY
         return self.settings.model_manifest_key
 
     def prod_supported_task_types_for(
@@ -701,6 +732,8 @@ class RunPodPodRequestBuilder:
             return profile.supported_task_types
         if profile.task_type == "pornmaster_flux2_edit":
             return RUNPOD_PORNMASTER_FLUX2_EDIT_SUPPORTED_TASK_TYPES
+        if profile.task_type == "pornmaster_flux2_edit_bf16":
+            return RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_SUPPORTED_TASK_TYPES
         raise ValueError(
             f"unsupported cloud-prod RunPod task profile: {profile.task_type}"
         )

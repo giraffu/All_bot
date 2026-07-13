@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.lora_catalog import IMAGE_LORA_MODELS, VIDEO_LORA_MODELS
+from src.services.qqcc_demo_media_service import build_qqcc_demo_preview_url
 
 QQCC_LAZY_BOT_CONFIG_KEY = "qqcc_lazy_bot_config:v1"
 SCENE_PRESET_VERSION = 1
@@ -45,12 +46,13 @@ VIDEO_SCENE_MAX_COUNT = 20
 VIDEO_SCENE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 DRAW_SCENE_ENGINE_FREE_EDIT = "free_edit"
 DRAW_SCENE_ENGINE_FREE_EDIT_V2 = "free_edit_v2"
+DRAW_SCENE_ENGINE_FREE_EDIT_V3 = "free_edit_v3"
 DRAW_SCENE_ENGINE_KEYS = (
     DRAW_SCENE_ENGINE_FREE_EDIT,
     DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+    DRAW_SCENE_ENGINE_FREE_EDIT_V3,
 )
 DRAW_SCENE_ENGINES_WITH_LORA = frozenset({DRAW_SCENE_ENGINE_FREE_EDIT})
-DRAW_SCENE_MAX_COUNT = 20
 FILTER_SCENE_MAX_COUNT = 20
 PROMPT_KEYS = (
     "undress",
@@ -63,6 +65,16 @@ PROMPT_KEYS = (
     "undress_tongue",
     "closeup_blowjob",
 )
+COPYWRITING_KEYS = (
+    "quick_faceswap_start",
+    "ai_draw_menu",
+    "ai_filter_menu",
+    "video_menu",
+    "ai_draw_scene_start",
+    "ai_filter_scene_start",
+    "video_scene_start",
+)
+COPYWRITING_MAX_LENGTH = 4000
 VIDEO_PROMPT_KEYS = (
     "perfect_video_insert",
     "doggy_style",
@@ -234,6 +246,15 @@ DEFAULT_QQCC_LAZY_BOT_CONFIG: dict[str, Any] = {
         "undress_tongue": "",
         "closeup_blowjob": "",
     },
+    "copywriting": {
+        "quick_faceswap_start": "",
+        "ai_draw_menu": "",
+        "ai_filter_menu": "",
+        "video_menu": "",
+        "ai_draw_scene_start": "",
+        "ai_filter_scene_start": "",
+        "video_scene_start": "",
+    },
 }
 
 
@@ -309,7 +330,7 @@ def _merge_seeded_scene_presets(
     *,
     scenes: list[dict[str, Any]],
     preset_scenes: list[dict[str, Any]],
-    max_count: int,
+    max_count: int | None,
 ) -> list[dict[str, Any]]:
     scenes_by_id = {str(scene.get("id") or ""): scene for scene in scenes}
     merged_scenes: list[dict[str, Any]] = []
@@ -334,7 +355,7 @@ def _merge_seeded_scene_presets(
         scene_id = str(scene.get("id") or "")
         if scene_id in included_ids:
             continue
-        if len(merged_scenes) >= max_count:
+        if max_count is not None and len(merged_scenes) >= max_count:
             break
         merged_scenes.append(scene)
         included_ids.add(scene_id)
@@ -366,6 +387,91 @@ def _normalize_scene_lora(
 
 def _normalize_scene_negative_prompt(raw_negative_prompt: Any) -> str:
     return raw_negative_prompt.strip() if isinstance(raw_negative_prompt, str) else ""
+
+
+def _normalize_scene_demo_media(
+    raw_media: Any,
+    *,
+    scene_kind: str,
+    scene_id: str,
+    slot: str,
+    media_type: str,
+) -> dict[str, Any] | None:
+    if not isinstance(raw_media, dict):
+        return None
+    expected_object_key = f"qqcc/demo/{scene_kind}/{scene_id}/{slot}"
+    private_object_key_pattern = re.compile(
+        rf"^qqcc/private/[1-9][0-9]*/demo/{re.escape(scene_kind)}/"
+        rf"{re.escape(scene_id)}/{re.escape(slot)}$"
+    )
+    generated_object_key_pattern = re.compile(
+        rf"^(?:qqcc/demo|qqcc/private/[1-9][0-9]*/demo)/{re.escape(scene_kind)}/"
+        rf"{re.escape(scene_id)}/generated/[A-Za-z0-9][A-Za-z0-9_-]{{0,127}}/"
+        rf"{re.escape(slot)}$"
+    )
+    object_key = str(raw_media.get("object_key") or "").strip()
+    normalized_media_type = str(raw_media.get("media_type") or "").strip()
+    mime_type = str(raw_media.get("mime_type") or "").strip().lower()
+    allowed_mime_types = (
+        {"image/jpeg", "image/png"}
+        if media_type == "image"
+        else {"video/mp4"}
+    )
+    if (
+        (
+            object_key != expected_object_key
+            and private_object_key_pattern.fullmatch(object_key) is None
+            and generated_object_key_pattern.fullmatch(object_key) is None
+        )
+        or normalized_media_type != media_type
+        or mime_type not in allowed_mime_types
+    ):
+        return None
+
+    file_name = str(raw_media.get("file_name") or "").strip()[:255]
+    content_sha256 = str(raw_media.get("content_sha256") or "").strip().lower()
+    raw_file_ids = raw_media.get("telegram_file_ids")
+    telegram_file_ids: dict[str, str] = {}
+    if isinstance(raw_file_ids, dict):
+        for raw_bot_id, raw_file_id in raw_file_ids.items():
+            bot_id = str(raw_bot_id).strip()
+            file_id = str(raw_file_id).strip() if isinstance(raw_file_id, str) else ""
+            if bot_id.isdigit() and file_id:
+                telegram_file_ids[bot_id] = file_id[:512]
+            if len(telegram_file_ids) >= 4:
+                break
+
+    media = {
+        "object_key": object_key,
+        "media_type": media_type,
+        "mime_type": mime_type,
+        "file_name": file_name,
+        "telegram_file_ids": telegram_file_ids,
+    }
+    if re.fullmatch(r"[0-9a-f]{64}", content_sha256):
+        media["content_sha256"] = content_sha256
+    return media
+
+
+def _attach_scene_demo_media(
+    scene: dict[str, Any],
+    raw_scene: dict[str, Any],
+    *,
+    scene_kind: str,
+    output_media_type: str,
+) -> None:
+    scene_id = str(scene["id"])
+    for slot, media_type in (("input", "image"), ("output", output_media_type)):
+        field = f"demo_{slot}_media"
+        media = _normalize_scene_demo_media(
+            raw_scene.get(field),
+            scene_kind=scene_kind,
+            scene_id=scene_id,
+            slot=slot,
+            media_type=media_type,
+        )
+        if media is not None:
+            scene[field] = media
 
 
 def _normalize_end_frame_draw_scene_id(
@@ -443,6 +549,12 @@ def _normalize_video_scene(
             allowed_draw_scene_ids=allowed_end_frame_draw_scene_ids,
         ),
     }
+    _attach_scene_demo_media(
+        scene,
+        raw_scene,
+        scene_kind="video",
+        output_media_type="video",
+    )
     return scene
 
 
@@ -546,6 +658,12 @@ def _normalize_draw_scene(
         "original_face_swap_enabled": raw_scene.get("original_face_swap_enabled")
         is True,
     }
+    _attach_scene_demo_media(
+        scene,
+        raw_scene,
+        scene_kind="draw",
+        output_media_type="image",
+    )
     return scene
 
 
@@ -577,7 +695,7 @@ def _normalize_filter_scene(
         engines_with_lora=DRAW_SCENE_ENGINES_WITH_LORA,
     )
 
-    return {
+    scene = {
         "id": _build_unique_scene_id(
             raw_scene.get("id"),
             index=index,
@@ -593,6 +711,13 @@ def _normalize_filter_scene(
         "original_face_swap_enabled": raw_scene.get("original_face_swap_enabled")
         is True,
     }
+    _attach_scene_demo_media(
+        scene,
+        raw_scene,
+        scene_kind="filter",
+        output_media_type="image",
+    )
+    return scene
 
 
 def _normalize_filter_scenes(raw_scenes: Any) -> list[dict[str, Any]]:
@@ -662,7 +787,7 @@ def _normalize_draw_scenes(
     raw_scene_list = raw_scenes if isinstance(raw_scenes, list) else []
     normalized_raw_scenes: list[dict[str, Any]] = []
     used_ids: set[str] = set()
-    for index, raw_scene in enumerate(raw_scene_list[:DRAW_SCENE_MAX_COUNT]):
+    for index, raw_scene in enumerate(raw_scene_list):
         scene = _normalize_draw_scene(
             raw_scene,
             index=index,
@@ -676,7 +801,7 @@ def _normalize_draw_scenes(
         _merge_seeded_scene_presets(
             scenes=normalized_raw_scenes,
             preset_scenes=_default_draw_scenes(raw_prompts),
-            max_count=DRAW_SCENE_MAX_COUNT,
+            max_count=None,
         )
         if seed_presets
         else normalized_raw_scenes
@@ -742,6 +867,9 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
     raw_prompts = raw.get("prompts")
     if not isinstance(raw_prompts, dict):
         raw_prompts = {}
+    raw_copywriting = raw.get("copywriting")
+    if not isinstance(raw_copywriting, dict):
+        raw_copywriting = {}
 
     global_enabled = raw.get("global_enabled", defaults["global_enabled"])
     config["global_enabled"] = (
@@ -820,6 +948,12 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
     config["prompts"] = {
         key: raw_prompts[key].strip() if isinstance(raw_prompts.get(key), str) else ""
         for key in PROMPT_KEYS
+    }
+    config["copywriting"] = {
+        key: raw_copywriting[key].strip()[:COPYWRITING_MAX_LENGTH]
+        if isinstance(raw_copywriting.get(key), str)
+        else ""
+        for key in COPYWRITING_KEYS
     }
     return config
 
@@ -928,6 +1062,23 @@ def get_qqcc_prompt_override(config: dict[str, Any], prompt_key: str) -> str | N
     return prompt or None
 
 
+def get_qqcc_copywriting_override(config: dict[str, Any], key: str) -> str | None:
+    """Return a configured QQCC interaction message, if one is set."""
+
+    copywriting = normalize_qqcc_config(config)["copywriting"]
+    text = copywriting.get(key, "").strip()
+    return text or None
+
+
+def render_qqcc_copywriting(template: str | None, button_name: str) -> str | None:
+    """Render the documented scene-name placeholder in a configured message."""
+
+    if not template:
+        return None
+    name = str(button_name or "")
+    return template.replace("{butten}", name).replace("{button}", name)
+
+
 def resolve_qqcc_prompt(
     config: dict[str, Any],
     prompt_key: str,
@@ -972,6 +1123,10 @@ def build_qqcc_config_options() -> dict[str, Any]:
                 "value": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
                 "supports_lora": False,
             },
+            {
+                "value": DRAW_SCENE_ENGINE_FREE_EDIT_V3,
+                "supports_lora": False,
+            },
         ],
         "video_lora_models": _build_lora_model_options(VIDEO_LORA_MODELS),
         "image_lora_models": _build_lora_model_options(IMAGE_LORA_MODELS),
@@ -982,16 +1137,32 @@ def _build_config_response(
     *,
     config: dict[str, Any],
     updated_at: datetime | None,
+    include_preview_urls: bool = True,
 ) -> dict[str, Any]:
+    normalized_config = normalize_qqcc_config(config)
+    if include_preview_urls:
+        for section in ("video_scenes", "draw_scenes", "filter_scenes"):
+            for scene in normalized_config[section]:
+                for field in ("demo_input_media", "demo_output_media"):
+                    media = scene.get(field)
+                    if not isinstance(media, dict):
+                        continue
+                    preview_url = build_qqcc_demo_preview_url(media)
+                    if preview_url:
+                        media["preview_url"] = preview_url
     return {
         "key": QQCC_LAZY_BOT_CONFIG_KEY,
-        "config": normalize_qqcc_config(config),
+        "config": normalized_config,
         "options": build_qqcc_config_options(),
         "updated_at": updated_at,
     }
 
 
-async def load_qqcc_config_payload(db: AsyncSession) -> dict[str, Any]:
+async def load_qqcc_config_payload(
+    db: AsyncSession,
+    *,
+    include_preview_urls: bool = True,
+) -> dict[str, Any]:
     from src.database.models import RuntimeCheckpoint
 
     result = await db.execute(
@@ -1001,11 +1172,45 @@ async def load_qqcc_config_payload(db: AsyncSession) -> dict[str, Any]:
     )
     checkpoint = result.scalar_one_or_none()
     if not checkpoint:
-        return _build_config_response(config={}, updated_at=None)
+        return _build_config_response(
+            config={},
+            updated_at=None,
+            include_preview_urls=include_preview_urls,
+        )
     return _build_config_response(
         config=checkpoint.value or {},
         updated_at=checkpoint.updated_at,
+        include_preview_urls=include_preview_urls,
     )
+
+
+def _merge_qqcc_demo_telegram_caches(
+    config: dict[str, Any],
+    existing_config: dict[str, Any],
+) -> None:
+    for section in ("video_scenes", "draw_scenes", "filter_scenes"):
+        existing_by_id = {
+            str(scene.get("id") or ""): scene
+            for scene in existing_config.get(section, [])
+        }
+        for scene in config.get(section, []):
+            existing_scene = existing_by_id.get(str(scene.get("id") or ""))
+            if not isinstance(existing_scene, dict):
+                continue
+            for field in ("demo_input_media", "demo_output_media"):
+                media = scene.get(field)
+                existing_media = existing_scene.get(field)
+                if (
+                    not isinstance(media, dict)
+                    or not isinstance(existing_media, dict)
+                    or media.get("object_key") != existing_media.get("object_key")
+                    or media.get("content_sha256")
+                    != existing_media.get("content_sha256")
+                ):
+                    continue
+                existing_file_ids = existing_media.get("telegram_file_ids")
+                if isinstance(existing_file_ids, dict):
+                    media["telegram_file_ids"] = dict(existing_file_ids)
 
 
 async def save_qqcc_config_payload(
@@ -1016,9 +1221,9 @@ async def save_qqcc_config_payload(
 
     config = normalize_qqcc_config(payload)
     result = await db.execute(
-        select(RuntimeCheckpoint).where(
-            RuntimeCheckpoint.key == QQCC_LAZY_BOT_CONFIG_KEY
-        )
+        select(RuntimeCheckpoint)
+        .where(RuntimeCheckpoint.key == QQCC_LAZY_BOT_CONFIG_KEY)
+        .with_for_update()
     )
     checkpoint = result.scalar_one_or_none()
     if checkpoint is None:
@@ -1028,6 +1233,10 @@ async def save_qqcc_config_payload(
         )
         db.add(checkpoint)
     else:
+        _merge_qqcc_demo_telegram_caches(
+            config,
+            normalize_qqcc_config(checkpoint.value or {}),
+        )
         checkpoint.value = config
     await db.commit()
     await db.refresh(checkpoint)
@@ -1037,9 +1246,112 @@ async def save_qqcc_config_payload(
     )
 
 
+async def cache_qqcc_demo_telegram_file_ids(
+    *,
+    scene_kind: str,
+    scene_id: str,
+    bot_id: str,
+    updates: list[dict[str, str]],
+    private_bot_id: int | None = None,
+    db: AsyncSession | None = None,
+) -> int:
+    from src.database.models import PrivateQqccBot, RuntimeCheckpoint
+
+    if private_bot_id is not None and int(private_bot_id) <= 0:
+        return 0
+    private_prefix = (
+        f"qqcc/private/{int(private_bot_id)}/demo/"
+        if private_bot_id is not None
+        else None
+    )
+    update_keys = [str(item.get("object_key") or "") for item in updates]
+    if private_prefix is not None:
+        if any(not key.startswith(private_prefix) for key in update_keys):
+            return 0
+    elif any(key.startswith("qqcc/private/") for key in update_keys):
+        # Tenant selection must come from the trusted Application context rather
+        # than from an object key supplied inside mutable configuration JSON.
+        return 0
+
+    def _apply_updates(config: dict[str, Any]) -> int:
+        section = {
+            "video": "video_scenes",
+            "draw": "draw_scenes",
+            "filter": "filter_scenes",
+        }.get(scene_kind)
+        if section is None or not str(bot_id).isdigit():
+            return 0
+        scene = next(
+            (item for item in config[section] if item.get("id") == scene_id),
+            None,
+        )
+        if scene is None:
+            return 0
+
+        updated = 0
+        for item in updates:
+            slot = str(item.get("slot") or "")
+            object_key = str(item.get("object_key") or "")
+            content_sha256 = str(item.get("content_sha256") or "")
+            file_id = str(item.get("file_id") or "").strip()[:512]
+            media = scene.get(f"demo_{slot}_media")
+            if (
+                slot not in {"input", "output"}
+                or not isinstance(media, dict)
+                or media.get("object_key") != object_key
+                or str(media.get("content_sha256") or "") != content_sha256
+                or not file_id
+            ):
+                continue
+            file_ids = media.setdefault("telegram_file_ids", {})
+            file_ids[str(bot_id)] = file_id
+            updated += 1
+        return updated
+
+    async def _update(session: AsyncSession) -> int:
+        if private_bot_id is not None:
+            result = await session.execute(
+                select(PrivateQqccBot)
+                .where(PrivateQqccBot.id == private_bot_id)
+                .with_for_update()
+            )
+            private_bot = result.scalar_one_or_none()
+            if private_bot is None:
+                return 0
+            config = normalize_qqcc_config(private_bot.config or {})
+            updated = _apply_updates(config)
+            if updated:
+                private_bot.config = config
+                await session.commit()
+            return updated
+
+        result = await session.execute(
+            select(RuntimeCheckpoint)
+            .where(RuntimeCheckpoint.key == QQCC_LAZY_BOT_CONFIG_KEY)
+            .with_for_update()
+        )
+        checkpoint = result.scalar_one_or_none()
+        if checkpoint is None:
+            return 0
+        config = normalize_qqcc_config(checkpoint.value or {})
+        updated = _apply_updates(config)
+        if updated:
+            checkpoint.value = config
+            await session.commit()
+        return updated
+
+    if db is not None:
+        return await _update(db)
+
+    from src.database.core import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session:
+        return await _update(session)
+
+
 async def load_runtime_qqcc_config() -> dict[str, Any]:
     from src.database.core import AsyncSessionLocal
 
     async with AsyncSessionLocal() as db:
-        payload = await load_qqcc_config_payload(db)
+        payload = await load_qqcc_config_payload(db, include_preview_urls=False)
         return payload["config"]

@@ -21,6 +21,12 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_MANIFEST_KEY,
     RUNPOD_PORNMASTER_FLUX2_EDIT_MODEL_PREFIX,
     RUNPOD_PORNMASTER_FLUX2_EDIT_SUPPORTED_TASK_TYPES,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_CONTAINER_DISK_GB,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_COMFY_EXTRA_ARGS,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_GPU_TYPE_IDS,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_MODEL_MANIFEST_KEY,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_MODEL_PREFIX,
+    RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_SUPPORTED_TASK_TYPES,
     RUNPOD_PROD_AGENT_ID,
     RUNPOD_PROD_GPU_TYPE_IDS,
     RUNPOD_PROD_SUPPORTED_TASK_TYPES,
@@ -736,6 +742,72 @@ def test_prod_worker_render_pornmaster_flux2_edit_uses_profile_defaults():
     assert payload["render"]["sshd_enabled"] == "false"
     assert provider.create_calls == 0
     assert provider.delete_calls == 0
+
+
+def test_prod_worker_render_pornmaster_flux2_edit_bf16_isolated_on_4090():
+    agent_id = prod_agent_id_from_slot("01", profile="pornmaster_flux2_edit_bf16")
+    provider = FakeRunPodProvider(
+        _settings(
+            prod_agent_id=agent_id,
+            image_name_pornmaster_flux2_edit=PUBLIC_PORNMASTER_FLUX2_EDIT_GHCR_IMAGE,
+            model_bucket="allbot-model-cache",
+        )
+    )
+    options = RunPodProdWorkerOptions(
+        action="render",
+        profile="pornmaster_flux2_edit_bf16",
+        task_type="pornmaster_flux2_edit_bf16",
+        agent_id=agent_id,
+        quiet=True,
+    )
+
+    payload = RunPodProdWorkerRunner(provider, options).run()
+
+    assert payload["ok"] is True
+    assert payload["profile"] == "pornmaster_flux2_edit_bf16"
+    assert payload["render"]["pod_name"] == (
+        "allbot-runpod-prod-pornmaster-flux2-edit-bf16-manual-01"
+    )
+    assert payload["render"]["gpu_type_ids"] == list(
+        RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_GPU_TYPE_IDS
+    )
+    assert payload["render"]["supported_task_types"] == ",".join(
+        RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_SUPPORTED_TASK_TYPES
+    )
+    assert payload["render"]["pool_runtime_profile"] == "pornmaster_flux2_edit"
+    assert payload["render"]["model_prefix"] == (
+        RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_MODEL_PREFIX
+    )
+    assert payload["render"]["model_manifest_key"] == (
+        RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_MODEL_MANIFEST_KEY
+    )
+    assert payload["render"]["container_disk_gb"] == (
+        RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_CONTAINER_DISK_GB
+    )
+    assert payload["render"]["comfy_extra_args"] == (
+        RUNPOD_PORNMASTER_FLUX2_EDIT_BF16_COMFY_EXTRA_ARGS
+    )
+
+
+def test_prod_worker_bf16_canary_uses_single_isolated_task_type():
+    agent_id = prod_agent_id_from_slot("01", profile="pornmaster_flux2_edit_bf16")
+    runner = RunPodProdWorkerRunner(
+        FakeRunPodProvider(_settings(prod_agent_id=agent_id)),
+        RunPodProdWorkerOptions(
+            action="canary",
+            profile="pornmaster_flux2_edit_bf16",
+            task_type="pornmaster_flux2_edit_bf16",
+            agent_id=agent_id,
+            quiet=True,
+        ),
+    )
+
+    cases = runner._pornmaster_flux2_edit_bf16_task_cases("canary/input.png")
+
+    assert len(cases) == 1
+    assert cases[0]["expected_central_task_type"] == "pornmaster_flux2_edit_bf16"
+    assert cases[0]["payload"]["task_type"] == "pornmaster_flux2_edit_bf16"
+    assert cases[0]["payload"]["inputs"]["images"] == ["canary/input.png"]
 
 
 def test_prod_worker_scail2_canary_cases_use_reference_then_motion_video():
@@ -1891,6 +1963,27 @@ def test_cli_parses_runpod_prod_worker_pornmaster_flux2_profile_command():
     assert args.runpod_command == "prod-worker"
     assert args.prod_worker_command == "render"
     assert args.profile == "pornmaster_flux2_edit"
+    assert args.slot == "01"
+    assert args.quiet is True
+
+
+def test_cli_parses_runpod_prod_worker_pornmaster_flux2_bf16_profile_command():
+    args = build_parser().parse_args(
+        [
+            "runpod",
+            "prod-worker",
+            "render",
+            "--profile",
+            "pornmaster_flux2_edit_bf16",
+            "--slot",
+            "01",
+            "--quiet",
+        ]
+    )
+
+    assert args.runpod_command == "prod-worker"
+    assert args.prod_worker_command == "render"
+    assert args.profile == "pornmaster_flux2_edit_bf16"
     assert args.slot == "01"
     assert args.quiet is True
 

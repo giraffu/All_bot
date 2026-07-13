@@ -14,6 +14,7 @@ from src.core.task_status_mapper import (
 )
 from src.database.models import History
 from src.services.redis_client import redis_client
+from src.services.task_queue_position_display import select_display_queue_position
 from src.web_api.services.task_stream_service import build_task_status_stream_response
 
 
@@ -77,7 +78,7 @@ def build_coarse_task_status_payload(
     }
 
     if status == "pending":
-        queue_pos = status_data.get("queue_pos")
+        queue_pos = select_display_queue_position(status_data)
         if queue_pos is not None:
             base_payload["queue_pos"] = queue_pos
         return _compact_optional_payload(base_payload)

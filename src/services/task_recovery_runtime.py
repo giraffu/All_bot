@@ -1,3 +1,4 @@
+import contextlib
 import logging
 
 from src.constants import MODE_NAME_MAP
@@ -16,6 +17,15 @@ from src.services.task_service_types import (
     BotTaskMessageSpec,
     BotTaskRuntimeState,
 )
+from src.services.private_qqcc_bot_service import parse_private_bot_client_type
+from src.services.task_recovery_contract import (
+    normalize_bot_task_recovery_contract,
+)
+from src.services.private_qqcc_continuation_service import (
+    activate_private_qqcc_continuation_task,
+    normalize_private_qqcc_continuation_task_ref,
+    record_private_qqcc_continuation_task_result,
+)
 from src.services.tg_task_runtime import (
     TelegramBotContextAdapter,
     TelegramMessageAdapter,
@@ -27,11 +37,13 @@ logger = logging.getLogger(__name__)
 
 def _resolve_recovered_task_language(task_data: dict) -> str:
     metadata = task_data.get("metadata") or {}
+    recovery_contract = normalize_bot_task_recovery_contract(metadata) or {}
     return (
         task_data.get("language_code")
         or task_data.get("lang")
         or metadata.get("language_code")
         or metadata.get("lang")
+        or recovery_contract.get("language_code")
         or "zh"
     )
 
@@ -99,6 +111,7 @@ def _build_recovered_completion_context(
     billing_resolution,
     requested_duration,
     caption=None,
+    result_meta=None,
     final_info,
 ):
     task_runtime = BotTaskRuntimeState(
@@ -129,6 +142,7 @@ def _build_recovered_completion_context(
         delete_status=delete_status,
         caption=caption,
         allow_contribute=allow_contribute,
+        result_meta=result_meta,
         billing_resolution=billing_resolution,
         requested_duration=requested_duration,
     )
@@ -151,6 +165,9 @@ async def run_recovered_task(*, registry_task_id: str, task_data: dict, applicat
     is_video = task_data.get("is_video", False)
     allow_contribute = task_data.get("allow_contribute", True)
     metadata = task_data.get("metadata") or {}
+    recovery_contract = normalize_bot_task_recovery_contract(metadata)
+    continuation_ref = normalize_private_qqcc_continuation_task_ref(metadata)
+    private_bot_id = parse_private_bot_client_type(task_data.get("client_type"))
     billing_resolution = task_data.get("billing_resolution") or metadata.get(
         "billing_resolution"
     )
@@ -182,25 +199,90 @@ async def run_recovered_task(*, registry_task_id: str, task_data: dict, applicat
     if not final_info:
         return False
 
+    if private_bot_id is not None and (
+        recovery_contract is None
+        or (
+            recovery_contract.get("requires_continuation") is True
+            and continuation_ref is None
+        )
+    ):
+        logger.error(
+            "Private QQCC task %s for tenant %s has no durable final-result "
+            "recovery contract; refusing to expose an intermediate output.",
+            registry_task_id,
+            private_bot_id,
+        )
+        return False
+
+    recovered_task_type = task_type
+    recovered_prompt = prompt
+    recovered_saved_inputs = list(saved_input_images or [])
+    send_result = bool(chat_id)
+    delete_status = bool(status_msg)
+    result_meta = None
+    caption = None
+    if recovery_contract is not None:
+        recovered_task_type = recovery_contract.get("result_task_type") or task_type
+        recovered_prompt = recovery_contract.get("result_prompt") or prompt
+        input_indices = recovery_contract.get("result_input_image_indices")
+        if isinstance(input_indices, list):
+            selected_inputs = [
+                recovered_saved_inputs[index]
+                for index in input_indices
+                if isinstance(index, int)
+                and 0 <= index < len(recovered_saved_inputs)
+            ]
+            if selected_inputs:
+                recovered_saved_inputs = selected_inputs
+        send_result = bool(recovery_contract.get("send_result")) and bool(chat_id)
+        delete_status = bool(recovery_contract.get("delete_status")) and bool(
+            status_msg
+        )
+        allow_contribute = bool(recovery_contract.get("allow_contribute"))
+        result_meta = recovery_contract.get("result_meta")
+        caption = recovery_contract.get("completion_caption")
+
     completion = _build_recovered_completion_context(
         context=runtime_context,
         chat_id=chat_id,
         internal_user_id=user_id,
         username=username,
-        prompt=prompt,
-        task_type=task_type,
+        prompt=recovered_prompt,
+        task_type=recovered_task_type,
         registry_task_id=registry_task_id,
         backend_task_id=backend_task_id,
-        saved_input_images=saved_input_images,
+        saved_input_images=recovered_saved_inputs,
         is_video=is_video,
-        send_result=bool(chat_id),
+        send_result=send_result,
         reply_markup=None,
         status_msg=status_msg,
-        delete_status=bool(status_msg),
+        delete_status=delete_status,
         allow_contribute=allow_contribute,
         billing_resolution=billing_resolution,
         requested_duration=requested_duration,
+        caption=caption,
+        result_meta=result_meta,
         final_info=final_info,
     )
-    await _handle_recovered_task_completion(completion=completion)
+    continuation_scope = (
+        activate_private_qqcc_continuation_task(continuation_ref)
+        if continuation_ref is not None
+        else contextlib.nullcontext()
+    )
+    with continuation_scope:
+        completion_result = await _handle_recovered_task_completion(
+            completion=completion
+        )
+    if continuation_ref is not None:
+        output_file = (
+            completion_result[1]
+            if isinstance(completion_result, tuple) and len(completion_result) > 1
+            else None
+        )
+        await record_private_qqcc_continuation_task_result(
+            registry_metadata=metadata,
+            registry_task_id=registry_task_id,
+            saved_inputs=recovered_saved_inputs,
+            output_file=output_file,
+        )
     return True

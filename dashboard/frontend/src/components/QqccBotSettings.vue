@@ -3,11 +3,15 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import message from 'ant-design-vue/es/message'
 import {
   DeleteOutlined,
+  DownOutlined,
   LinkOutlined,
   PlusOutlined,
+  PlayCircleOutlined,
   ReloadOutlined,
   SaveOutlined,
   SettingOutlined,
+  UploadOutlined,
+  UpOutlined,
 } from '@ant-design/icons-vue'
 
 type MainButtonKey =
@@ -25,9 +29,11 @@ type VideoButtonKey = 'missionary' | 'doggy' | 'blowjob' | 'undress_tongue' | 'c
 type ResolutionKey = '512p' | '720p' | '1024p'
 type DurationKey = '5s' | '8s' | '10s'
 type VideoSceneEngine = 'image_to_video' | 'wan22_video_v2'
-type DrawSceneEngine = 'free_edit' | 'free_edit_v2'
+type DrawSceneEngine = 'free_edit' | 'free_edit_v2' | 'free_edit_v3'
 type SceneConfigKind = 'video' | 'draw' | 'filter'
 type SceneConfigPanel = 'model' | 'reference'
+type DemoMediaSlot = 'input' | 'output'
+type DemoUploadFile = File & { originFileObj?: File }
 type PromptKey =
   | 'undress'
   | 'i2i_draw_quick_undress'
@@ -38,8 +44,31 @@ type PromptKey =
   | 'blowjob'
   | 'undress_tongue'
   | 'closeup_blowjob'
+type CopywritingKey =
+  | 'quick_faceswap_start'
+  | 'ai_draw_menu'
+  | 'ai_filter_menu'
+  | 'video_menu'
+  | 'ai_draw_scene_start'
+  | 'ai_filter_scene_start'
+  | 'video_scene_start'
 
-interface VideoSceneConfig {
+interface SceneDemoMedia {
+  object_key: string
+  media_type: 'image' | 'video'
+  mime_type: string
+  file_name: string
+  content_sha256?: string
+  telegram_file_ids?: Record<string, string>
+  preview_url?: string
+}
+
+interface SceneDemoFields {
+  demo_input_media?: SceneDemoMedia
+  demo_output_media?: SceneDemoMedia
+}
+
+interface VideoSceneConfig extends SceneDemoFields {
   id: string
   name: string
   prompt: string
@@ -50,7 +79,7 @@ interface VideoSceneConfig {
   end_frame_draw_scene_id: string
 }
 
-interface DrawSceneConfig {
+interface DrawSceneConfig extends SceneDemoFields {
   id: string
   name: string
   prompt: string
@@ -62,7 +91,7 @@ interface DrawSceneConfig {
   original_face_swap_enabled: boolean
 }
 
-interface FilterSceneConfig {
+interface FilterSceneConfig extends SceneDemoFields {
   id: string
   name: string
   prompt: string
@@ -87,6 +116,7 @@ interface QqccBotConfig {
   draw_scenes: DrawSceneConfig[]
   filter_scenes: FilterSceneConfig[]
   prompts: Record<PromptKey, string>
+  copywriting: Record<CopywritingKey, string>
 }
 
 interface SceneEngineOption {
@@ -116,9 +146,38 @@ interface QqccBotConfigResponse {
   options?: Partial<QqccBotConfigOptions>
 }
 
+interface QqccDemoMediaUploadResponse {
+  media: SceneDemoMedia
+  preview_url: string
+}
+
+interface QqccDemoGenerationResponse extends Partial<QqccDemoMediaUploadResponse> {
+  generation_id: string
+  status: string
+  error?: string
+}
+
+type SceneConfig = VideoSceneConfig | DrawSceneConfig | FilterSceneConfig
+
 const props = defineProps<{
   fetchConfig: () => Promise<QqccBotConfigResponse>
   updateConfig: (payload: QqccBotConfig) => Promise<QqccBotConfigResponse>
+  uploadDemoMedia: (
+    sceneKind: SceneConfigKind,
+    sceneId: string,
+    slot: DemoMediaSlot,
+    file: File,
+  ) => Promise<QqccDemoMediaUploadResponse>
+  generateDemoMedia: (
+    sceneKind: SceneConfigKind,
+    scene: SceneConfig,
+  ) => Promise<QqccDemoGenerationResponse>
+  getDemoGeneration: (
+    sceneKind: SceneConfigKind,
+    sceneId: string,
+    generationId: string,
+  ) => Promise<QqccDemoGenerationResponse>
+  demoMediaObjectPrefixes?: string[]
 }>()
 
 const emptyOptions = (): QqccBotConfigOptions => ({
@@ -131,7 +190,7 @@ const emptyOptions = (): QqccBotConfigOptions => ({
   image_lora_models: [],
 })
 
-const drawSceneMaxCount = 20
+const filterSceneMaxCount = 20
 
 const emptyConfig = (): QqccBotConfig => ({
   scene_preset_version: 1,
@@ -187,6 +246,15 @@ const emptyConfig = (): QqccBotConfig => ({
     undress_tongue: '',
     closeup_blowjob: '',
   },
+  copywriting: {
+    quick_faceswap_start: '',
+    ai_draw_menu: '',
+    ai_filter_menu: '',
+    video_menu: '',
+    ai_draw_scene_start: '',
+    ai_filter_scene_start: '',
+    video_scene_start: '',
+  },
 })
 
 const mainButtonOptions: Array<{ key: MainButtonKey; label: string }> = [
@@ -213,6 +281,7 @@ const videoButtonOptions: Array<{ key: VideoButtonKey; label: string }> = [
 
 const resolutionOptions: ResolutionKey[] = ['512p', '720p', '1024p']
 const durationOptions: DurationKey[] = ['5s', '8s', '10s']
+const demoSlots: DemoMediaSlot[] = ['input', 'output']
 
 const videoEngineLabels: Record<VideoSceneEngine, string> = {
   image_to_video: '图生视频',
@@ -222,18 +291,74 @@ const videoEngineLabels: Record<VideoSceneEngine, string> = {
 const drawEngineLabels: Record<DrawSceneEngine, string> = {
   free_edit: '自由P图',
   free_edit_v2: '自由P图v2',
+  free_edit_v3: '自由P图v3',
 }
 
 const nonVideoPromptOptions: Array<{ key: PromptKey; label: string }> = [
   { key: 'face_swap', label: '快速换脸' },
 ]
 
+const copywritingOptions: Array<{
+  key: CopywritingKey
+  label: string
+  defaultText: string
+  sceneButton?: boolean
+}> = [
+  {
+    key: 'quick_faceswap_start',
+    label: '快速换脸：点击后的文案',
+    defaultText: '🎭 **已切换到【快速换脸】模式** (消耗 {cost} 灵石)。\n\n请发送一张【正脸】图片，我将自动匹配模板处理。\n\n随时可以发送 /cancel 退出流程。',
+  },
+  {
+    key: 'ai_draw_menu',
+    label: 'AI绘图：主菜单点击后的文案',
+    defaultText: '🎨 **AI绘图**\n请选择绘图场景：',
+  },
+  {
+    key: 'ai_filter_menu',
+    label: 'AI滤镜：主菜单点击后的文案',
+    defaultText: '🪄 **AI滤镜**\n请选择滤镜场景：',
+  },
+  {
+    key: 'video_menu',
+    label: 'AI动图：主菜单点击后的文案',
+    defaultText: '🎬 **懒人动图**\n请选择演武场景：',
+  },
+  {
+    key: 'ai_draw_scene_start',
+    label: 'AI绘图：二级场景点击后的文案',
+    defaultText: '🎨 **已切换到【{butten}】模式** (消耗 {cost} 灵石)。\n\n请发送一张图片，我将按照该场景提示词处理。\n\n随时可以发送 /cancel 退出流程。',
+    sceneButton: true,
+  },
+  {
+    key: 'ai_filter_scene_start',
+    label: 'AI滤镜：二级场景点击后的文案',
+    defaultText: '🎨 **已切换到【{butten}】模式** (消耗 {cost} 灵石)。\n\n请发送一张图片，我将按照该场景提示词处理。\n\n随时可以发送 /cancel 退出流程。',
+    sceneButton: true,
+  },
+  {
+    key: 'video_scene_start',
+    label: 'AI动图：二级场景点击后的文案',
+    defaultText: '🎬 **已切换到【{butten}】模式**。\n\n请发送一张【正面清晰图片】，我将自动处理。\n\n随时可以发送 /cancel 退出流程。',
+    sceneButton: true,
+  },
+]
+
 const loading = ref(false)
 const saving = ref(false)
+const uploadingDemoKeys = ref<ReadonlySet<string>>(new Set())
+const generatingDemoKeys = ref<ReadonlySet<string>>(new Set())
 const configKey = ref('')
 const updatedAt = ref<string | null>(null)
 const config = reactive<QqccBotConfig>(emptyConfig())
 const modelOptions = reactive<QqccBotConfigOptions>(emptyOptions())
+const scenePageSize = 5
+const activeSceneTab = ref<SceneConfigKind>('video')
+const scenePages = reactive<Record<SceneConfigKind, number>>({
+  video: 1,
+  draw: 1,
+  filter: 1,
+})
 const sceneCounter = ref(0)
 const drawSceneCounter = ref(0)
 const filterSceneCounter = ref(0)
@@ -253,11 +378,95 @@ const sceneConfig = reactive({
 const statusText = computed(() => (config.global_enabled ? '开启' : '关闭'))
 const updatedAtText = computed(() => updatedAt.value || '-')
 
+function paginateScenes<T>(scenes: T[], page: number) {
+  const start = (page - 1) * scenePageSize
+  return scenes.slice(start, start + scenePageSize).map((scene, offset) => ({
+    scene,
+    index: start + offset,
+  }))
+}
+
+const paginatedVideoScenes = computed(() =>
+  paginateScenes(config.video_scenes, scenePages.video),
+)
+const paginatedDrawScenes = computed(() =>
+  paginateScenes(config.draw_scenes, scenePages.draw),
+)
+const paginatedFilterScenes = computed(() =>
+  paginateScenes(config.filter_scenes, scenePages.filter),
+)
+
+const getSceneCount = (kind: SceneConfigKind) => {
+  if (kind === 'video') return config.video_scenes.length
+  if (kind === 'draw') return config.draw_scenes.length
+  return config.filter_scenes.length
+}
+
+const normalizeScenePage = (kind: SceneConfigKind) => {
+  const lastPage = Math.max(1, Math.ceil(getSceneCount(kind) / scenePageSize))
+  scenePages[kind] = Math.min(Math.max(scenePages[kind], 1), lastPage)
+}
+
+const showScenePageContaining = (kind: SceneConfigKind, index: number) => {
+  scenePages[kind] = Math.floor(index / scenePageSize) + 1
+}
+
 const normalizeVideoEngine = (value: unknown): VideoSceneEngine =>
   value === 'wan22_video_v2' ? 'wan22_video_v2' : 'image_to_video'
 
 const normalizeDrawEngine = (value: unknown): DrawSceneEngine =>
-  value === 'free_edit' ? 'free_edit' : 'free_edit_v2'
+  value === 'free_edit' || value === 'free_edit_v3' ? value : 'free_edit_v2'
+
+const normalizeDemoMedia = (
+  raw: unknown,
+  options: {
+    kind: SceneConfigKind
+    sceneId: string
+    slot: DemoMediaSlot
+  },
+): SceneDemoMedia | undefined => {
+  const { kind, sceneId, slot } = options
+  if (!raw || typeof raw !== 'object') return undefined
+  const media = raw as Partial<SceneDemoMedia>
+  const expectedMediaType = kind === 'video' && slot === 'output' ? 'video' : 'image'
+  const allowedPrefixes = (props.demoMediaObjectPrefixes?.length
+    ? props.demoMediaObjectPrefixes
+    : ['qqcc/demo'])
+    .map(prefix => prefix.replace(/\/+$/, ''))
+  const hasAllowedObjectKey = allowedPrefixes.some(
+    prefix => {
+      const deterministicKey = `${prefix}/${kind}/${sceneId}/${slot}`
+      const generatedPrefix = `${prefix}/${kind}/${sceneId}/generated/`
+      return media.object_key === deterministicKey || (
+        slot === 'output' &&
+        typeof media.object_key === 'string' &&
+        media.object_key.startsWith(generatedPrefix) &&
+        media.object_key.endsWith('/output')
+      )
+    },
+  )
+  if (
+    typeof media.object_key !== 'string' ||
+    !hasAllowedObjectKey ||
+    media.media_type !== expectedMediaType ||
+    typeof media.mime_type !== 'string'
+  ) {
+    return undefined
+  }
+  return {
+    object_key: media.object_key,
+    media_type: expectedMediaType,
+    mime_type: media.mime_type,
+    file_name: typeof media.file_name === 'string' ? media.file_name : '',
+    content_sha256:
+      typeof media.content_sha256 === 'string' ? media.content_sha256 : undefined,
+    telegram_file_ids:
+      media.telegram_file_ids && typeof media.telegram_file_ids === 'object'
+        ? { ...media.telegram_file_ids }
+        : {},
+    preview_url: typeof media.preview_url === 'string' ? media.preview_url : '',
+  }
+}
 
 const engineSupportsLora = (kind: SceneConfigKind, engine: string) => {
   const engines = kind === 'video' ? modelOptions.video_engines : modelOptions.draw_engines
@@ -499,6 +708,12 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
           engine,
           lora_name: normalizeLoraName(scene?.lora_name, { kind: 'filter', engine }),
           original_face_swap_enabled: scene?.original_face_swap_enabled === true,
+          demo_input_media: normalizeDemoMedia(scene?.demo_input_media, {
+            kind: 'filter', sceneId: id, slot: 'input',
+          }),
+          demo_output_media: normalizeDemoMedia(scene?.demo_output_media, {
+            kind: 'filter', sceneId: id, slot: 'output',
+          }),
         }
       })
       .filter((scene) => scene.name.trim() || scene.prompt.trim())
@@ -528,6 +743,12 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
               ? scene.postprocess_filter_scene_id.trim()
               : '',
           original_face_swap_enabled: scene?.original_face_swap_enabled === true,
+          demo_input_media: normalizeDemoMedia(scene?.demo_input_media, {
+            kind: 'draw', sceneId: id, slot: 'input',
+          }),
+          demo_output_media: normalizeDemoMedia(scene?.demo_output_media, {
+            kind: 'draw', sceneId: id, slot: 'output',
+          }),
         }
       })
       .filter((scene) => scene.name.trim() || scene.prompt.trim())
@@ -558,6 +779,12 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
             scene?.end_frame_draw_scene_id,
             merged.draw_scenes,
           ),
+          demo_input_media: normalizeDemoMedia(scene?.demo_input_media, {
+            kind: 'video', sceneId: id, slot: 'input',
+          }),
+          demo_output_media: normalizeDemoMedia(scene?.demo_output_media, {
+            kind: 'video', sceneId: id, slot: 'output',
+          }),
         }
       })
       .filter((scene) => scene.name.trim() || scene.prompt.trim())
@@ -566,6 +793,11 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
     const promptKey = key as PromptKey
     const value = raw.prompts?.[promptKey]
     if (typeof value === 'string') merged.prompts[promptKey] = value
+  })
+  Object.keys(merged.copywriting).forEach((key) => {
+    const copywritingKey = key as CopywritingKey
+    const value = raw.copywriting?.[copywritingKey]
+    if (typeof value === 'string') merged.copywriting[copywritingKey] = value
   })
   return merged
 }
@@ -586,10 +818,29 @@ const addVideoScene = () => {
     lora_name: '',
     end_frame_draw_scene_id: '',
   })
+  showScenePageContaining('video', config.video_scenes.length - 1)
 }
 
 const removeVideoScene = (index: number) => {
   config.video_scenes.splice(index, 1)
+  normalizeScenePage('video')
+}
+
+const moveScene = (
+  kind: SceneConfigKind,
+  scenes: Array<{ id: string }>,
+  index: number,
+  offset: -1 | 1,
+) => {
+  const targetIndex = index + offset
+  if (index < 0 || index >= scenes.length || targetIndex < 0 || targetIndex >= scenes.length) {
+    return
+  }
+  const [scene] = scenes.splice(index, 1)
+  if (scene) {
+    scenes.splice(targetIndex, 0, scene)
+    showScenePageContaining(kind, targetIndex)
+  }
 }
 
 const createDrawSceneId = () => {
@@ -614,6 +865,7 @@ const addDrawScene = () => {
     postprocess_filter_scene_id: '',
     original_face_swap_enabled: false,
   })
+  showScenePageContaining('draw', config.draw_scenes.length - 1)
 }
 
 const addFilterScene = () => {
@@ -626,6 +878,7 @@ const addFilterScene = () => {
     lora_name: '',
     original_face_swap_enabled: false,
   })
+  showScenePageContaining('filter', config.filter_scenes.length - 1)
 }
 
 const removeDrawScene = (index: number) => {
@@ -641,6 +894,7 @@ const removeDrawScene = (index: number) => {
       scene.postprocess_draw_scene_id = ''
     }
   })
+  normalizeScenePage('draw')
 }
 
 const removeFilterScene = (index: number) => {
@@ -651,6 +905,157 @@ const removeFilterScene = (index: number) => {
       scene.postprocess_filter_scene_id = ''
     }
   })
+  normalizeScenePage('filter')
+}
+
+const getSceneByKind = (kind: SceneConfigKind, index: number) => {
+  if (kind === 'video') return config.video_scenes[index]
+  if (kind === 'draw') return config.draw_scenes[index]
+  return config.filter_scenes[index]
+}
+
+const getDemoMediaAccept = (kind: SceneConfigKind, slot: DemoMediaSlot) =>
+  kind === 'video' && slot === 'output'
+    ? 'video/mp4,.mp4'
+    : 'image/png,image/jpeg,.png,.jpg,.jpeg'
+
+const demoUploadErrorLabels: Record<string, string> = {
+  'Input/output demo file type does not match the scene': '文件格式与当前示范槽位不匹配',
+  'Demo file is empty or too large': '文件为空或超过大小限制',
+  'Demo file content does not match its type': '文件内容与声明格式不一致',
+  'Demo media storage unavailable': '媒体存储暂时不可用',
+}
+
+const resolveDemoUploadError = (error: unknown) => {
+  const candidate = error as {
+    message?: unknown
+    response?: { status?: unknown; data?: { detail?: unknown } }
+  }
+  const detail = candidate.response?.data?.detail
+  if (typeof detail === 'string' && detail.trim()) {
+    return demoUploadErrorLabels[detail] || detail
+  }
+  if (candidate.message === 'Network Error') {
+    return '网络或公网入口拒绝了上传请求'
+  }
+  if (candidate.message === 'QQCC_DEMO_UPLOAD_AUTH_REDIRECT') {
+    return '公网安全层返回了非预期响应'
+  }
+  const status = candidate.response?.status
+  if (status === 413) return '文件超过公网入口允许的大小'
+  if (status === 401) return '登录已失效，请重新登录后上传'
+  if (status === 403) return 'Cloudflare 安全规则拦截了上传请求'
+  return '未知错误，请稍后重试'
+}
+
+const validateDemoUploadFile = (
+  kind: SceneConfigKind,
+  slot: DemoMediaSlot,
+  file: File,
+) => {
+  const isVideo = kind === 'video' && slot === 'output'
+  const allowedTypes = isVideo ? ['video/mp4'] : ['image/png', 'image/jpeg']
+  const maxBytes = (isVideo ? 50 : 10) * 1024 * 1024
+  if (!allowedTypes.includes(file.type)) {
+    return isVideo ? '仅支持 MP4 视频' : '仅支持 JPEG 或 PNG 图片'
+  }
+  if (!file.size) return '文件内容为空'
+  if (file.size > maxBytes) return `文件不能超过 ${isVideo ? 50 : 10}MB`
+  return ''
+}
+
+const setDemoOperationLoading = (
+  keys: typeof uploadingDemoKeys,
+  key: string,
+  isLoading: boolean,
+) => {
+  const next = new Set(keys.value)
+  if (isLoading) next.add(key)
+  else next.delete(key)
+  keys.value = next
+}
+
+const isDemoUploadLoading = (key: string) => uploadingDemoKeys.value.has(key)
+const isDemoGenerationLoading = (key: string) => generatingDemoKeys.value.has(key)
+
+const uploadSceneDemo = async (
+  kind: SceneConfigKind,
+  index: number,
+  slot: DemoMediaSlot,
+  uploadFile: DemoUploadFile,
+) => {
+  const scene = getSceneByKind(kind, index)
+  if (!scene?.id) return false
+  const file = uploadFile.originFileObj instanceof File
+    ? uploadFile.originFileObj
+    : uploadFile
+  const validationError = validateDemoUploadFile(kind, slot, file)
+  if (validationError) {
+    message.error(`示范文件上传失败：${validationError}`)
+    return false
+  }
+  const uploadKey = `${kind}:${scene.id}:${slot}`
+  setDemoOperationLoading(uploadingDemoKeys, uploadKey, true)
+  try {
+    const uploaded = await props.uploadDemoMedia(kind, scene.id, slot, file)
+    if (!uploaded || typeof uploaded !== 'object' || !uploaded.media) {
+      throw new Error('QQCC_DEMO_UPLOAD_AUTH_REDIRECT')
+    }
+    scene[`demo_${slot}_media`] = {
+      ...uploaded.media,
+      preview_url: uploaded.preview_url,
+    }
+    message.success(`${slot === 'input' ? '输入' : '输出'}示范文件已上传，请保存配置`)
+  } catch (error: unknown) {
+    message.error(`示范文件上传失败：${resolveDemoUploadError(error)}`)
+  } finally {
+    setDemoOperationLoading(uploadingDemoKeys, uploadKey, false)
+  }
+  return false
+}
+
+const waitForDemoGeneration = async (
+  kind: SceneConfigKind,
+  sceneId: string,
+  generationId: string,
+) => {
+  const deadline = Date.now() + 15 * 60 * 1000
+  while (Date.now() < deadline) {
+    const result = await props.getDemoGeneration(kind, sceneId, generationId)
+    if (result.status === 'done') return result
+    if (result.status === 'failed') throw new Error(result.error || '示范生成失败')
+    await new Promise(resolve => window.setTimeout(resolve, 2000))
+  }
+  throw new Error('示范生成超时，请稍后重试')
+}
+
+const generateSceneDemo = async (kind: SceneConfigKind, index: number) => {
+  const scene = getSceneByKind(kind, index)
+  if (!scene?.demo_input_media) {
+    message.error('请先上传输入示范图片')
+    return
+  }
+  if (!scene.prompt.trim()) {
+    message.error('请先填写场景提示词')
+    return
+  }
+  const generationKey = `${kind}:${scene.id}`
+  setDemoOperationLoading(generatingDemoKeys, generationKey, true)
+  try {
+    const submitted = await props.generateDemoMedia(kind, JSON.parse(JSON.stringify(scene)))
+    const generated = submitted.status === 'done'
+      ? submitted
+      : await waitForDemoGeneration(kind, scene.id, submitted.generation_id)
+    if (!generated?.media) throw new Error('QQCC_DEMO_GENERATION_INVALID_RESPONSE')
+    scene.demo_output_media = { ...generated.media, preview_url: generated.preview_url }
+    message.success('输出示范已生成，请检查后保存配置')
+  } catch (error: unknown) {
+    const candidate = error as { response?: { data?: { detail?: unknown } } }
+    const detail = candidate.response?.data?.detail
+    message.error(`示范生成失败：${typeof detail === 'string' ? detail : '请稍后重试'}`)
+  } finally {
+    setDemoOperationLoading(generatingDemoKeys, generationKey, false)
+  }
 }
 
 const validateVideoScenes = () =>
@@ -672,6 +1077,10 @@ const buildPayload = (): QqccBotConfig => {
   legacyMainButtonKeys.forEach((key) => {
     payload.main_buttons[key] = false
   })
+  Object.keys(payload.copywriting).forEach((key) => {
+    const copywritingKey = key as CopywritingKey
+    payload.copywriting[copywritingKey] = payload.copywriting[copywritingKey].trim()
+  })
   payload.filter_scenes = payload.filter_scenes
     .map((scene) => {
       const engine = normalizeDrawEngine(scene.engine)
@@ -687,7 +1096,7 @@ const buildPayload = (): QqccBotConfig => {
       }
     })
     .filter((scene) => scene.name || scene.prompt)
-    .slice(0, drawSceneMaxCount)
+    .slice(0, filterSceneMaxCount)
   const normalizedDrawScenes = payload.draw_scenes
     .map((scene) => {
       const engine = normalizeDrawEngine(scene.engine)
@@ -712,7 +1121,7 @@ const buildPayload = (): QqccBotConfig => {
     })
     .filter((scene) => scene.name || scene.prompt)
   normalizeDrawPostprocessRefs(normalizedDrawScenes, payload.filter_scenes)
-  payload.draw_scenes = normalizedDrawScenes.slice(0, drawSceneMaxCount)
+  payload.draw_scenes = normalizedDrawScenes
   payload.video_scenes = payload.video_scenes
     .map((scene) => {
       const engine = normalizeVideoEngine(scene.engine)
@@ -737,6 +1146,9 @@ const buildPayload = (): QqccBotConfig => {
 const applyResponse = (payload: QqccBotConfigResponse) => {
   Object.assign(modelOptions, mergeOptions(payload.options))
   Object.assign(config, mergeConfig(payload.config))
+  normalizeScenePage('video')
+  normalizeScenePage('draw')
+  normalizeScenePage('filter')
   configKey.value = payload.key || ''
   updatedAt.value = payload.updated_at || null
 }
@@ -947,230 +1359,209 @@ onMounted(() => {
     </section>
 
     <section class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h3 class="text-base font-semibold text-slate-900">AI动图场景</h3>
-        <a-button data-testid="add-video-scene" @click="addVideoScene">
-          <template #icon><PlusOutlined /></template>
-          添加
-        </a-button>
-      </div>
-
-      <div>
-        <div>
-          <div
-            class="hidden grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_88px_132px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid"
-          >
-            <span>按钮名称</span>
-            <span>提示词</span>
-            <span>负面提示词</span>
-            <span class="text-center">时长</span>
-            <span class="text-right">操作</span>
-          </div>
-          <div
-            v-for="(scene, index) in config.video_scenes"
-            :key="scene.id"
-            class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_88px_132px]"
-          >
-            <a-input
-              v-model:value="scene.name"
-              :data-testid="`video-scene-name-${index}`"
-            />
-            <a-textarea
-              v-model:value="scene.prompt"
-              :rows="3"
-              :data-testid="`video-scene-prompt-${index}`"
-            />
-            <a-textarea
-              v-model:value="scene.negative_prompt"
-              :rows="3"
-              :data-testid="`video-scene-negative-prompt-${index}`"
-            />
-            <div class="scene-duration-cell">
-              <a-select
-                v-model:value="scene.duration"
-                :data-testid="`video-scene-duration-${index}`"
-                class="scene-duration-select"
-              >
-                <a-select-option v-for="item in durationOptions" :key="item" :value="item">
-                  {{ item }}
-                </a-select-option>
-              </a-select>
-            </div>
-            <div class="scene-action-cell">
-              <a-button
-                class="scene-icon-button"
-                :data-testid="`config-video-scene-model-${index}`"
-                title="配置模型"
-                aria-label="配置模型"
-                @click="openSceneConfig('video', index, 'model')"
-              >
-                <template #icon><SettingOutlined /></template>
-              </a-button>
-              <a-button
-                class="scene-icon-button"
-                :data-testid="`config-video-scene-end-frame-${index}`"
-                title="配置首尾帧"
-                aria-label="配置首尾帧"
-                @click="openSceneConfig('video', index, 'reference')"
-              >
-                <template #icon><LinkOutlined /></template>
-              </a-button>
-              <a-button
-                danger
-                class="scene-icon-button"
-                :data-testid="`remove-video-scene-${index}`"
-                title="删除场景"
-                aria-label="删除场景"
-                @click="removeVideoScene(index)"
-              >
-                <template #icon><DeleteOutlined /></template>
-              </a-button>
-            </div>
-          </div>
-          <div v-if="config.video_scenes.length === 0" class="py-6 text-center text-sm text-slate-400">
-            暂无场景
-          </div>
-        </div>
+      <h3 class="mb-1 text-base font-semibold text-slate-900">交互文案</h3>
+      <p class="mb-4 text-sm text-slate-500">
+        输入框直接展示当前系统默认文案；留空时仍使用它。二级场景文案可使用 <code>{butten}</code>，发送时会自动替换为用户点击的按钮名称。
+      </p>
+      <div class="grid gap-4 lg:grid-cols-2">
+        <a-form-item v-for="item in copywritingOptions" :key="item.key" :label="item.label">
+          <a-textarea
+            v-model:value="config.copywriting[item.key]"
+            :rows="item.sceneButton ? 4 : 3"
+            :maxlength="4000"
+            :data-testid="`copywriting-${item.key}`"
+            :placeholder="item.defaultText"
+          />
+        </a-form-item>
       </div>
     </section>
 
     <section class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h3 class="text-base font-semibold text-slate-900">AI绘图场景</h3>
-        <a-button data-testid="add-draw-scene" @click="addDrawScene">
-          <template #icon><PlusOutlined /></template>
-          添加
-        </a-button>
+      <div class="mb-1">
+        <h3 class="text-base font-semibold text-slate-900">AI场景配置</h3>
+        <p class="mt-1 text-sm text-slate-500">切换场景类型进行编辑，每页显示 5 条。</p>
       </div>
 
-      <div>
-        <div
-          class="hidden grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_132px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid"
-        >
-          <span>按钮名称</span>
-          <span>提示词</span>
-          <span>负面提示词</span>
-          <span class="text-right">操作</span>
-        </div>
-        <div
-          v-for="(scene, index) in config.draw_scenes"
-          :key="scene.id"
-          class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_132px]"
-        >
-          <a-input
-            v-model:value="scene.name"
-            :data-testid="`draw-scene-name-${index}`"
-          />
-          <a-textarea
-            v-model:value="scene.prompt"
-            :rows="3"
-            :data-testid="`draw-scene-prompt-${index}`"
-          />
-          <a-textarea
-            v-model:value="scene.negative_prompt"
-            :rows="3"
-            :data-testid="`draw-scene-negative-prompt-${index}`"
-          />
-          <div class="scene-action-cell">
-            <a-button
-              class="scene-icon-button"
-              :data-testid="`config-draw-scene-model-${index}`"
-              title="配置模型"
-              aria-label="配置模型"
-              @click="openSceneConfig('draw', index, 'model')"
+      <a-tabs v-model:active-key="activeSceneTab" class="scene-tabs">
+        <a-tab-pane key="video">
+          <template #tab>
+            <span data-testid="scene-tab-video">AI动图 <span class="scene-tab-count">{{ config.video_scenes.length }}</span></span>
+          </template>
+          <div class="scene-pane">
+            <div class="scene-pane-toolbar">
+              <span class="text-sm text-slate-500">管理动图按钮、提示词、时长、模型和尾帧来源</span>
+              <a-button data-testid="add-video-scene" @click="addVideoScene">
+                <template #icon><PlusOutlined /></template>
+                添加场景
+              </a-button>
+            </div>
+            <div class="hidden grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_88px_286px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid">
+              <span>按钮名称</span><span>提示词</span><span>负面提示词</span><span class="text-center">时长</span><span class="text-right">操作</span>
+            </div>
+            <div
+              v-for="{ scene, index } in paginatedVideoScenes"
+              :key="scene.id"
+              class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_88px_286px]"
             >
-              <template #icon><SettingOutlined /></template>
-            </a-button>
-            <a-button
-              class="scene-icon-button"
-              :data-testid="`config-draw-scene-postprocess-${index}`"
-              title="配置后处理"
-              aria-label="配置后处理"
-              @click="openSceneConfig('draw', index, 'reference')"
-            >
-              <template #icon><LinkOutlined /></template>
-            </a-button>
-            <a-button
-              danger
-              class="scene-icon-button"
-              :data-testid="`remove-draw-scene-${index}`"
-              title="删除场景"
-              aria-label="删除场景"
-              @click="removeDrawScene(index)"
-            >
-              <template #icon><DeleteOutlined /></template>
-            </a-button>
+              <a-input v-model:value="scene.name" :data-testid="`video-scene-name-${index}`" />
+              <a-textarea v-model:value="scene.prompt" :rows="5" :data-testid="`video-scene-prompt-${index}`" />
+              <a-textarea v-model:value="scene.negative_prompt" :rows="5" :data-testid="`video-scene-negative-prompt-${index}`" />
+              <div class="scene-duration-cell">
+                <a-select v-model:value="scene.duration" :data-testid="`video-scene-duration-${index}`" class="scene-duration-select">
+                  <a-select-option v-for="item in durationOptions" :key="item" :value="item">{{ item }}</a-select-option>
+                </a-select>
+              </div>
+              <div class="scene-action-cell">
+                <div class="scene-management-actions">
+                  <a-button class="scene-icon-button" :disabled="index === 0" :data-testid="`move-video-scene-up-${index}`" title="上移场景" aria-label="上移场景" @click="moveScene('video', config.video_scenes, index, -1)"><template #icon><UpOutlined /></template></a-button>
+                  <a-button class="scene-icon-button" :disabled="index === config.video_scenes.length - 1" :data-testid="`move-video-scene-down-${index}`" title="下移场景" aria-label="下移场景" @click="moveScene('video', config.video_scenes, index, 1)"><template #icon><DownOutlined /></template></a-button>
+                  <a-button class="scene-icon-button" :data-testid="`config-video-scene-model-${index}`" title="配置模型" aria-label="配置模型" @click="openSceneConfig('video', index, 'model')"><template #icon><SettingOutlined /></template></a-button>
+                  <a-button class="scene-icon-button" :data-testid="`config-video-scene-end-frame-${index}`" title="配置首尾帧" aria-label="配置首尾帧" @click="openSceneConfig('video', index, 'reference')"><template #icon><LinkOutlined /></template></a-button>
+                  <a-button danger class="scene-icon-button" :data-testid="`remove-video-scene-${index}`" title="删除场景" aria-label="删除场景" @click="removeVideoScene(index)"><template #icon><DeleteOutlined /></template></a-button>
+                </div>
+                <div class="scene-demo-actions">
+                  <span class="scene-demo-action-label">示范素材</span>
+                  <div class="scene-demo-button-group">
+                  <a-upload :show-upload-list="false" :accept="getDemoMediaAccept('video', 'input')" :before-upload="(file: File) => uploadSceneDemo('video', index, 'input', file)">
+                    <a-button size="small" :loading="isDemoUploadLoading(`video:${scene.id}:input`)" :data-testid="`upload-video-demo-input-${index}`"><template #icon><UploadOutlined /></template>输入示范</a-button>
+                  </a-upload>
+                  <a-upload :show-upload-list="false" :accept="getDemoMediaAccept('video', 'output')" :before-upload="(file: File) => uploadSceneDemo('video', index, 'output', file)">
+                    <a-button size="small" :loading="isDemoUploadLoading(`video:${scene.id}:output`)" :data-testid="`upload-video-demo-output-${index}`"><template #icon><UploadOutlined /></template>输出示范</a-button>
+                  </a-upload>
+                  <a-button type="primary" size="small" :disabled="!scene.demo_input_media" :loading="isDemoGenerationLoading(`video:${scene.id}`)" :data-testid="`generate-video-demo-${index}`" @click="generateSceneDemo('video', index)"><template #icon><PlayCircleOutlined /></template>生成</a-button>
+                  </div>
+                </div>
+                <div v-if="scene.demo_input_media || scene.demo_output_media" class="scene-demo-preview-strip">
+                  <div v-for="slot in demoSlots" :key="slot" class="scene-demo-preview-card" :title="slot === 'input' ? '输入示范' : '输出示范'">
+                  <span class="scene-demo-preview-label">{{ slot === 'input' ? '输入' : '输出' }}</span>
+                  <a-image v-if="scene[`demo_${slot}_media`]?.media_type === 'image' && scene[`demo_${slot}_media`]?.preview_url" :src="scene[`demo_${slot}_media`]?.preview_url" :width="60" :height="60" :data-testid="`video-demo-${slot}-preview-${index}`" alt="示范图片" />
+                  <video v-else-if="scene[`demo_${slot}_media`]?.media_type === 'video' && scene[`demo_${slot}_media`]?.preview_url" :src="scene[`demo_${slot}_media`]?.preview_url" :data-testid="`video-demo-${slot}-preview-${index}`" controls preload="metadata" />
+                  <span v-else class="scene-demo-preview-empty">未上传</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-if="config.video_scenes.length === 0" class="py-8 text-center text-sm text-slate-400">暂无场景</div>
+            <div v-else class="scene-pagination-bar">
+              <span>共 {{ config.video_scenes.length }} 个场景</span>
+              <a-pagination v-model:current="scenePages.video" :total="config.video_scenes.length" :page-size="scenePageSize" :show-size-changer="false" :hide-on-single-page="true" show-less-items data-testid="video-scenes-pagination" />
+            </div>
           </div>
-        </div>
-        <div v-if="config.draw_scenes.length === 0" class="py-6 text-center text-sm text-slate-400">
-          暂无场景
-        </div>
-      </div>
-    </section>
+        </a-tab-pane>
 
-    <section class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h3 class="text-base font-semibold text-slate-900">AI滤镜场景</h3>
-        <a-button data-testid="add-filter-scene" @click="addFilterScene">
-          <template #icon><PlusOutlined /></template>
-          添加
-        </a-button>
-      </div>
-
-      <div>
-        <div
-          class="hidden grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_96px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid"
-        >
-          <span>按钮名称</span>
-          <span>提示词</span>
-          <span>负面提示词</span>
-          <span class="text-right">操作</span>
-        </div>
-        <div
-          v-for="(scene, index) in config.filter_scenes"
-          :key="scene.id"
-          class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_96px]"
-        >
-          <a-input
-            v-model:value="scene.name"
-            :data-testid="`filter-scene-name-${index}`"
-          />
-          <a-textarea
-            v-model:value="scene.prompt"
-            :rows="3"
-            :data-testid="`filter-scene-prompt-${index}`"
-          />
-          <a-textarea
-            v-model:value="scene.negative_prompt"
-            :rows="3"
-            :data-testid="`filter-scene-negative-prompt-${index}`"
-          />
-          <div class="scene-action-cell">
-            <a-button
-              class="scene-icon-button"
-              :data-testid="`config-filter-scene-model-${index}`"
-              title="配置模型"
-              aria-label="配置模型"
-              @click="openSceneConfig('filter', index, 'model')"
+        <a-tab-pane key="draw">
+          <template #tab>
+            <span data-testid="scene-tab-draw">AI绘图 <span class="scene-tab-count">{{ config.draw_scenes.length }}</span></span>
+          </template>
+          <div class="scene-pane">
+            <div class="scene-pane-toolbar">
+              <span class="text-sm text-slate-500">管理绘图按钮、提示词、模型和后处理链</span>
+              <a-button data-testid="add-draw-scene" @click="addDrawScene"><template #icon><PlusOutlined /></template>添加场景</a-button>
+            </div>
+            <div class="hidden grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_286px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid">
+              <span>按钮名称</span><span>提示词</span><span>负面提示词</span><span class="text-right">操作</span>
+            </div>
+            <div
+              v-for="{ scene, index } in paginatedDrawScenes"
+              :key="scene.id"
+              class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_286px]"
             >
-              <template #icon><SettingOutlined /></template>
-            </a-button>
-            <a-button
-              danger
-              class="scene-icon-button"
-              :data-testid="`remove-filter-scene-${index}`"
-              title="删除场景"
-              aria-label="删除场景"
-              @click="removeFilterScene(index)"
-            >
-              <template #icon><DeleteOutlined /></template>
-            </a-button>
+              <a-input v-model:value="scene.name" :data-testid="`draw-scene-name-${index}`" />
+              <a-textarea v-model:value="scene.prompt" :rows="5" :data-testid="`draw-scene-prompt-${index}`" />
+              <a-textarea v-model:value="scene.negative_prompt" :rows="5" :data-testid="`draw-scene-negative-prompt-${index}`" />
+              <div class="scene-action-cell">
+                <div class="scene-management-actions">
+                  <a-button class="scene-icon-button" :disabled="index === 0" :data-testid="`move-draw-scene-up-${index}`" title="上移场景" aria-label="上移场景" @click="moveScene('draw', config.draw_scenes, index, -1)"><template #icon><UpOutlined /></template></a-button>
+                  <a-button class="scene-icon-button" :disabled="index === config.draw_scenes.length - 1" :data-testid="`move-draw-scene-down-${index}`" title="下移场景" aria-label="下移场景" @click="moveScene('draw', config.draw_scenes, index, 1)"><template #icon><DownOutlined /></template></a-button>
+                  <a-button class="scene-icon-button" :data-testid="`config-draw-scene-model-${index}`" title="配置模型" aria-label="配置模型" @click="openSceneConfig('draw', index, 'model')"><template #icon><SettingOutlined /></template></a-button>
+                  <a-button class="scene-icon-button" :data-testid="`config-draw-scene-postprocess-${index}`" title="配置后处理" aria-label="配置后处理" @click="openSceneConfig('draw', index, 'reference')"><template #icon><LinkOutlined /></template></a-button>
+                  <a-button danger class="scene-icon-button" :data-testid="`remove-draw-scene-${index}`" title="删除场景" aria-label="删除场景" @click="removeDrawScene(index)"><template #icon><DeleteOutlined /></template></a-button>
+                </div>
+                <div class="scene-demo-actions">
+                  <span class="scene-demo-action-label">示范素材</span>
+                  <div class="scene-demo-button-group">
+                  <a-upload :show-upload-list="false" :accept="getDemoMediaAccept('draw', 'input')" :before-upload="(file: File) => uploadSceneDemo('draw', index, 'input', file)">
+                    <a-button size="small" :loading="isDemoUploadLoading(`draw:${scene.id}:input`)" :data-testid="`upload-draw-demo-input-${index}`"><template #icon><UploadOutlined /></template>输入示范</a-button>
+                  </a-upload>
+                  <a-upload :show-upload-list="false" :accept="getDemoMediaAccept('draw', 'output')" :before-upload="(file: File) => uploadSceneDemo('draw', index, 'output', file)">
+                    <a-button size="small" :loading="isDemoUploadLoading(`draw:${scene.id}:output`)" :data-testid="`upload-draw-demo-output-${index}`"><template #icon><UploadOutlined /></template>输出示范</a-button>
+                  </a-upload>
+                  <a-button type="primary" size="small" :disabled="!scene.demo_input_media" :loading="isDemoGenerationLoading(`draw:${scene.id}`)" :data-testid="`generate-draw-demo-${index}`" @click="generateSceneDemo('draw', index)"><template #icon><PlayCircleOutlined /></template>生成</a-button>
+                  </div>
+                </div>
+                <div v-if="scene.demo_input_media || scene.demo_output_media" class="scene-demo-preview-strip">
+                  <div v-for="slot in demoSlots" :key="slot" class="scene-demo-preview-card" :title="slot === 'input' ? '输入示范' : '输出示范'">
+                  <span class="scene-demo-preview-label">{{ slot === 'input' ? '输入' : '输出' }}</span>
+                  <a-image v-if="scene[`demo_${slot}_media`]?.preview_url" :src="scene[`demo_${slot}_media`]?.preview_url" :width="60" :height="60" :data-testid="`draw-demo-${slot}-preview-${index}`" alt="示范图片" />
+                  <span v-else class="scene-demo-preview-empty">未上传</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-if="config.draw_scenes.length === 0" class="py-8 text-center text-sm text-slate-400">暂无场景</div>
+            <div v-else class="scene-pagination-bar">
+              <span>共 {{ config.draw_scenes.length }} 个场景</span>
+              <a-pagination v-model:current="scenePages.draw" :total="config.draw_scenes.length" :page-size="scenePageSize" :show-size-changer="false" :hide-on-single-page="true" show-less-items data-testid="draw-scenes-pagination" />
+            </div>
           </div>
-        </div>
-        <div v-if="config.filter_scenes.length === 0" class="py-6 text-center text-sm text-slate-400">
-          暂无场景
-        </div>
-      </div>
+        </a-tab-pane>
+
+        <a-tab-pane key="filter">
+          <template #tab>
+            <span data-testid="scene-tab-filter">AI滤镜 <span class="scene-tab-count">{{ config.filter_scenes.length }}</span></span>
+          </template>
+          <div class="scene-pane">
+            <div class="scene-pane-toolbar">
+              <span class="text-sm text-slate-500">管理滤镜按钮、提示词和底层模型</span>
+              <a-button data-testid="add-filter-scene" @click="addFilterScene"><template #icon><PlusOutlined /></template>添加场景</a-button>
+            </div>
+            <div class="hidden grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_286px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid">
+              <span>按钮名称</span><span>提示词</span><span>负面提示词</span><span class="text-right">操作</span>
+            </div>
+            <div
+              v-for="{ scene, index } in paginatedFilterScenes"
+              :key="scene.id"
+              class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_286px]"
+            >
+              <a-input v-model:value="scene.name" :data-testid="`filter-scene-name-${index}`" />
+              <a-textarea v-model:value="scene.prompt" :rows="5" :data-testid="`filter-scene-prompt-${index}`" />
+              <a-textarea v-model:value="scene.negative_prompt" :rows="5" :data-testid="`filter-scene-negative-prompt-${index}`" />
+              <div class="scene-action-cell">
+                <div class="scene-management-actions">
+                  <a-button class="scene-icon-button" :disabled="index === 0" :data-testid="`move-filter-scene-up-${index}`" title="上移场景" aria-label="上移场景" @click="moveScene('filter', config.filter_scenes, index, -1)"><template #icon><UpOutlined /></template></a-button>
+                  <a-button class="scene-icon-button" :disabled="index === config.filter_scenes.length - 1" :data-testid="`move-filter-scene-down-${index}`" title="下移场景" aria-label="下移场景" @click="moveScene('filter', config.filter_scenes, index, 1)"><template #icon><DownOutlined /></template></a-button>
+                  <a-button class="scene-icon-button" :data-testid="`config-filter-scene-model-${index}`" title="配置模型" aria-label="配置模型" @click="openSceneConfig('filter', index, 'model')"><template #icon><SettingOutlined /></template></a-button>
+                  <a-button danger class="scene-icon-button" :data-testid="`remove-filter-scene-${index}`" title="删除场景" aria-label="删除场景" @click="removeFilterScene(index)"><template #icon><DeleteOutlined /></template></a-button>
+                </div>
+                <div class="scene-demo-actions">
+                  <span class="scene-demo-action-label">示范素材</span>
+                  <div class="scene-demo-button-group">
+                    <a-upload :show-upload-list="false" :accept="getDemoMediaAccept('filter', 'input')" :before-upload="(file: File) => uploadSceneDemo('filter', index, 'input', file)">
+                      <a-button size="small" :loading="isDemoUploadLoading(`filter:${scene.id}:input`)" :data-testid="`upload-filter-demo-input-${index}`"><template #icon><UploadOutlined /></template>输入示范</a-button>
+                    </a-upload>
+                    <a-upload :show-upload-list="false" :accept="getDemoMediaAccept('filter', 'output')" :before-upload="(file: File) => uploadSceneDemo('filter', index, 'output', file)">
+                      <a-button size="small" :loading="isDemoUploadLoading(`filter:${scene.id}:output`)" :data-testid="`upload-filter-demo-output-${index}`"><template #icon><UploadOutlined /></template>输出示范</a-button>
+                    </a-upload>
+                    <a-button type="primary" size="small" :disabled="!scene.demo_input_media" :loading="isDemoGenerationLoading(`filter:${scene.id}`)" :data-testid="`generate-filter-demo-${index}`" @click="generateSceneDemo('filter', index)"><template #icon><PlayCircleOutlined /></template>生成</a-button>
+                  </div>
+                </div>
+                <div v-if="scene.demo_input_media || scene.demo_output_media" class="scene-demo-preview-strip">
+                  <div v-for="slot in demoSlots" :key="slot" class="scene-demo-preview-card" :title="slot === 'input' ? '输入示范' : '输出示范'">
+                  <span class="scene-demo-preview-label">{{ slot === 'input' ? '输入' : '输出' }}</span>
+                  <a-image v-if="scene[`demo_${slot}_media`]?.preview_url" :src="scene[`demo_${slot}_media`]?.preview_url" :width="60" :height="60" :data-testid="`filter-demo-${slot}-preview-${index}`" alt="示范图片" />
+                  <span v-else class="scene-demo-preview-empty">未上传</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-if="config.filter_scenes.length === 0" class="py-8 text-center text-sm text-slate-400">暂无场景</div>
+            <div v-else class="scene-pagination-bar">
+              <span>共 {{ config.filter_scenes.length }} 个场景</span>
+              <a-pagination v-model:current="scenePages.filter" :total="config.filter_scenes.length" :page-size="scenePageSize" :show-size-changer="false" :hide-on-single-page="true" show-less-items data-testid="filter-scenes-pagination" />
+            </div>
+          </div>
+        </a-tab-pane>
+      </a-tabs>
     </section>
 
     <section class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -1355,6 +1746,55 @@ onMounted(() => {
   min-width: 0;
 }
 
+.scene-tabs {
+  margin-top: 8px;
+}
+
+.scene-tabs :deep(.ant-tabs-nav) {
+  margin-bottom: 14px;
+}
+
+.scene-tab-count {
+  display: inline-flex;
+  min-width: 22px;
+  height: 20px;
+  margin-left: 6px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0 7px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.scene-pane {
+  min-width: 0;
+}
+
+.scene-pane-toolbar,
+.scene-pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.scene-pane-toolbar {
+  min-height: 40px;
+  margin-bottom: 12px;
+}
+
+.scene-pagination-bar {
+  min-height: 44px;
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid #f1f5f9;
+  color: #64748b;
+  font-size: 13px;
+}
+
 .scene-duration-cell,
 .scene-action-cell {
   display: flex;
@@ -1366,8 +1806,86 @@ onMounted(() => {
 }
 
 .scene-action-cell {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.scene-management-actions {
+  display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.scene-demo-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.scene-demo-action-label {
+  flex: 0 0 auto;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.scene-demo-button-group {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.scene-demo-preview-strip {
+  display: flex;
+  width: 100%;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.scene-demo-preview-card {
+  width: 68px;
+  min-width: 68px;
+  padding: 3px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #f8fafc;
+  text-align: center;
+}
+
+.scene-demo-preview-card :deep(.ant-image-img),
+.scene-demo-preview-card video {
+  display: block;
+  width: 60px;
+  height: 60px;
+  border-radius: 4px;
+  background: #0f172a;
+  object-fit: cover;
+}
+
+.scene-demo-preview-label,
+.scene-demo-preview-empty {
+  display: block;
+  margin-bottom: 2px;
+  color: #64748b;
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.scene-demo-preview-empty {
+  height: 60px;
+  margin-bottom: 0;
+  align-content: center;
+  text-align: center;
+  word-break: keep-all;
 }
 
 .scene-duration-select {
@@ -1419,6 +1937,27 @@ onMounted(() => {
   .scene-duration-cell,
   .scene-action-cell {
     justify-content: flex-start;
+  }
+
+  .scene-management-actions,
+  .scene-demo-button-group,
+  .scene-demo-preview-strip {
+    justify-content: start;
+  }
+
+  .scene-demo-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .scene-pane-toolbar,
+  .scene-pagination-bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .scene-pane-toolbar :deep(.ant-btn) {
+    width: 100%;
   }
 }
 </style>

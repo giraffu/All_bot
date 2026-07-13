@@ -183,4 +183,8 @@ async def test_ensure_user_access_reward_triggers_inviter_notification(monkeypat
     inviter_id = await message_handler_common.ensure_user_access_reward(context, user)
 
     assert inviter_id == 456
+    message_handler_common.get_user_channel_status.assert_awaited_once_with(
+        context,
+        user.id,
+    )
     background_task_mock.assert_called_once_with(context, reward_coro)

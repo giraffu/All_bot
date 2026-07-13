@@ -45,7 +45,7 @@
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | 主服务器 `hfy-FAEX9` | 本机 | Ryzen AI MAX+ 395，16C/32T | 62GiB | 无独立推理 GPU | `/` 3.6T，已用 1.6T，可用 1.9T | worker/relay、spool、legacy 数据、开发运维 |
 | 云控制面 `allbot-do-sgp1-control-01` | `allbot-do-sgp1-control` | DO-Regular，8 vCPU | 约 15GiB | 无 | `/` 309G，已用 125G，可用 185G | 正式控制面 |
-| `192.168.1.226` | `allbot-gpu-226` | Ryzen 9 9950X，16C/32T | 60GiB | 1 x RTX 5090 32G | `/` 1.8T，已用 738G，可用 1001G | image_to_video LAN AIO `8190`；SCAIL-2 为同卡回切候选；旧宿主机 ComfyUI `8188` / worker 01 为 stopped rollback 元数据 |
+| `192.168.1.226` | `allbot-gpu-226` | Ryzen 9 9950X，16C/32T | 60GiB | 1 x RTX 5090 32G | `/` 1.8T，已用约 918G，可用约 821G | PornMaster Flux2 BF16 LAN AIO `8190`；image_to_video/SCAIL-2 为同卡回切候选；旧宿主机 ComfyUI `8188` / worker 01 为 stopped rollback 元数据 |
 | `192.168.1.177` | `allbot-gpu-177` | Ryzen 7 9700X，8C/16T | 60GiB | 2 x RTX 5090 32G | `/` 915G，已用 190G，可用 680G | LAN AIO `8190/8191` only；legacy 02/03 已退役 |
 | `192.168.1.252` | `allbot-gpu-252` | Ryzen 7 9700X，8C/16T | 60GiB | 2 x RTX 4090 48G visible，2 x production active for scoped workloads | `/` 937G，已用 477G，可用 413G | 健康卡 UUID `GPU-09b7ea85-23df-a9b8-19d9-703534e47666` 由 LAN AIO `8192` 承载 `i2i_pro,t2i-pornmaster-turbo,face_swap`；返修卡 UUID `GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e` 由 LAN AIO `8191` 承载低负载 `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit`；该卡的 SCAIL-2/Wan22 因真实 workload 复现 Xid 119/154 仍保持 maintenance-disabled |
 | `192.168.1.2` | `allbot-gpu-002` | Ryzen 7 9700X，8C/16T | 60GiB | 2 x RTX 4090 48G | `/` 936G，已用 455G，可用 442G | slot0 SCAIL-2 LAN AIO `8190`，slot1 PornMaster Flux2 edit LAN AIO `8191`；image_to_video AIO stopped rollback |
@@ -107,6 +107,10 @@ LAN AIO 当前态、候选和缓存状态不再在本文维护静态 slot 表。
 
 2026-06-27 新增 PornMaster Flux2 single/multiple image-edit profile：workflow API 文件同步在 `workers/comfy_agent/workflows/` 与 `remote_workers/comfy_agent/workflows/`，task type 为 `pornmaster_flux2_single_edit` / `pornmaster_flux2_multi_edit`，运行时镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_edit/Dockerfile`。本地主服务器已使用 `192.168.1.115:5000/allbot/comfy-runpod-pornmaster-flux2-edit:20260628-pornmaster-flux2-edit-cu128-smallvae1`，该镜像不包含模型权重，但包含 FLUX.2 `full_encoder_small_decoder` 非对称 decoder 兼容补丁；模型 bundle 已导入并上传到 `allbot-model-cache/pornmaster_flux2_edit/2026-06-27/manifest.json`。当前正式 LAN 接单 fleet slot 包含 `gpu-002-gpu1-pornmaster_flux2_edit`（agent `lan_aio_prod_gpu002_gpu1_pornmaster_flux2_edit_01`，host `8191`）和 `gpu-252-gpu1-pornmaster_flux2_edit`（agent `lan_aio_prod_gpu252_gpu1_pornmaster_flux2_edit_01`，host `8191`，固定返修 UUID，只用于低负载图片编辑）。`gpu-252-gpu0-pornmaster_flux2_edit` 保留为同卡回切候选；`gpu-002-gpu1-image_to_video` 当前只保留为同卡回切候选。cloud-test 专项验证仍可用 `scripts/lan_pornmaster_flux2_edit_aio_test.sh`。
 
+2026-07-12 gpu-226 GPU0 已准备不启用的 `gpu-226-gpu0-pornmaster_flux2_edit_bf16` cache-only slot。fleet helper 已把 PornMaster LAN 镜像加载到 gpu-226，并把 `pornmaster_flux2_edit_bf16/2026-07-12/manifest.json` 的 V4 turbo BF16 UNet、Qwen fp8 text encoder 与 small-decoder VAE 同步到独立 PornMaster workspace；marker 为 ready。slot 的唯一 `SUPPORTED_TASK_TYPES` 是 `pornmaster_flux2_edit_bf16`，worker patcher 复用单图 workflow 并切换 BF16 UNet，因而不会抢现有 fp8 自由P图 v2 的 single/multi 队列。未执行 `start-disabled`、takeover 或 canary，当前 `image_to_video` 容器和接单状态保持不变；32GB 显存验证必须另开明确窗口。
+
+同日 14:10 Asia/Shanghai 已执行获批 takeover：在途 `image_to_video` 任务自然结束后，BF16 容器通过 health 与 disabled heartbeat gate 并启用；当前容器为 `allbot-lan-aio-gpu-226-gpu0-pornmaster_flux2_edit_bf16-prod`，host `8190`，唯一队列类型 `pornmaster_flux2_edit_bf16`。第一次接管因 heartbeat gate 错把 slot profile id 当 runtime profile 而自动回滚，修复门禁并补回归测试后第二次成功。未运行生成 canary，`image_to_video` 保留为同卡 rollback candidate。
+
 2026-06-18 `gpu-252-gpu1-wan22_video_v2` 已替换 `cloud_prod_worker_05`：AIO agent `lan_aio_prod_gpu252_gpu1_wan22_video_v2_01` 监听 host `8191`，只接 `wan22_video_v2`。2026-06-20 交叉换槽确认 Xid 119/154 跟随实体卡 `GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e`，该卡随后拆除返修；2026-07-04 回装后 host index 漂移为 GPU0 / PCI `00000000:01:00.0`，只允许用稳定 UUID 绑定。返修卡先通过短 CUDA smoke、SCAIL-2 preflight、镜像确认/拉取、warm-cache、start-disabled、`/system_stats`、`/object_info` 模型枚举、direct canary 与 `enable-aio`，但真实 SCAIL-2 face-swap workload 随后复现 Xid 119/154 / GPU Reset Required，ComfyUI 返回 CUDA unknown error，容器无法正常 stop/kill；主机 2026-07-04 19:12 Asia/Shanghai 重启后，隔离 CUDA smoke 触碰约 20.5 GiB 显存并计算约 120 秒未见新 Xid/NVRM。该结果只说明重启后普通 CUDA 路径可用，不等于生产 SCAIL-2 cleared。随后该卡切到低负载 `gpu-252-gpu1-pornmaster_flux2_edit`，完成模型缓存、disabled heartbeat、节点/模型枚举和多笔正式 `pornmaster_flux2_single_edit` 任务且未见新 Xid/NVRM；`gpu-252-gpu1-scail2` 和 `gpu-252-gpu1-wan22_video_v2` 仍保持 maintenance disabled，RunPod 和其它 SCAIL-2 容量继续兜底。
 
 2026-06-20 `gpu-252-gpu0-img2img_lora` 在拆除故障卡后恢复 LAN AIO：健康卡 `GPU-09b7ea85-23df-a9b8-19d9-703534e47666` 最初枚举为 GPU0，新 AIO agent 为 `lan_aio_prod_gpu252_gpu0_img2img_lora_01`，容器 `allbot-lan-aio-gpu-252-gpu0-img2img_lora-prod` 最初监听 host `8190`，按 `img2img_lora` profile 承接 `img2img` 与 `img2img_lora`。2026-06-28 起 GPU0 曾切到 `gpu-252-gpu0-pornmaster_flux2_edit`，2026-07-03 按 fleet 单卡 takeover 切到 `gpu-252-gpu0-i2i_pro` 并改用 host `8192`；2026-07-04 返修卡回装导致 host index 漂移后，所有 GPU0 slot 都已固定健康 UUID `GPU-09b7ea85-23df-a9b8-19d9-703534e47666`。当前 `gpu-252-gpu0-i2i_pro` 接 `i2i_pro,t2i-pornmaster-turbo,face_swap`；`img2img_lora`、`image_to_video`、PornMaster Flux2 edit 与 SCAIL-2 只保留为同卡回切候选/回滚目标，不计入当前容量。旧 `comfy0` 和本地主 `cloud-prod-comfy-agent-4` 已停止保留为回滚基线，不应再与 AIO 同时运行或 enabled。
@@ -123,14 +127,15 @@ LAN AIO 当前态、候选和缓存状态不再在本文维护静态 slot 表。
 - Docker 29.1.3，Compose 2.37.1
 
 容器：
-- `allbot-lan-aio-gpu-226-gpu0-image_to_video-prod`：当前正式 AIO，GPU0，host `8190`，接 `image_to_video` / `video_insert` / `video_edit`
+- `allbot-lan-aio-gpu-226-gpu0-pornmaster_flux2_edit_bf16-prod`：当前正式 AIO，GPU0，host `8190`，只接 `pornmaster_flux2_edit_bf16`
+- `allbot-lan-aio-gpu-226-gpu0-image_to_video-prod`：同卡回滚候选，恢复后接 `image_to_video` / `video_insert` / `video_edit`
 - `allbot-lan-aio-gpu-226-gpu0-scail2-prod`：同卡回切候选，host `8190`，接 SCAIL-2 四任务
 - `portainer_agent`
 - `dcgm_exporter`
 - `monitor_node_exporter`
 
 ComfyUI：
-- 当前接单 runtime 是 Docker LAN AIO `allbot-lan-aio-gpu-226-gpu0-image_to_video-prod`，host `8190`
+- 当前接单 runtime 是 Docker LAN AIO `allbot-lan-aio-gpu-226-gpu0-pornmaster_flux2_edit_bf16-prod`，host `8190`
 - 旧宿主机进程不是 Docker Comfy 容器，当前 systemd service 仍 active/idle 且只保留为回滚元数据
 - 旧端口：`8188`
 - 进程 cwd：`/home/ubantu/comfyui`

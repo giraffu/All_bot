@@ -18,6 +18,18 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    create_kwargs = {}
+    if op.get_bind().dialect.name == "postgresql":
+        create_kwargs["postgresql_concurrently"] = True
+        with op.get_context().autocommit_block():
+            op.create_index(
+                "ix_user_logs_user_created_at_id",
+                "user_logs",
+                ["user_id", "created_at", "id"],
+                unique=False,
+                **create_kwargs,
+            )
+        return
     op.create_index(
         "ix_user_logs_user_created_at_id",
         "user_logs",
@@ -27,4 +39,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    if op.get_bind().dialect.name == "postgresql":
+        with op.get_context().autocommit_block():
+            op.drop_index(
+                "ix_user_logs_user_created_at_id",
+                table_name="user_logs",
+                postgresql_concurrently=True,
+            )
+        return
     op.drop_index("ix_user_logs_user_created_at_id", table_name="user_logs")

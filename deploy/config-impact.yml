@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "unknown_services": "all",
+  "rules": [
+    {"patterns": ["BOT_*", "QQCC_*", "PRIVATE_QQCC_BOT_*", "TELEGRAM_*"], "services": ["bot", "qqcc-bot", "qqcc-private-bot-worker", "qqcc-config-backend", "qqcc-config-frontend"]},
+    {"patterns": ["DATABASE_*", "CLOUD_*_DATABASE_*", "REDIS_*", "CLOUD_*_REDIS_*", "JWT_*"], "services": ["central-api", "web-api", "payment-api", "dashboard-backend", "qqcc-config-backend", "bot", "qqcc-bot", "qqcc-private-bot-worker", "paid-group-guard-bot"]},
+    {"patterns": ["MINIO_*", "R2_*"], "services": ["central-api", "web-api", "dashboard-backend", "bot", "qqcc-bot", "qqcc-private-bot-worker", "worker"]},
+    {"patterns": ["DASHBOARD_*"], "services": ["dashboard-backend", "dashboard-frontend"]},
+    {"patterns": ["ALLBOT_WORKER_*", "AGENT_SECRET_TOKEN", "PREFETCH_*", "PIPELINE_*"], "services": ["worker"]},
+    {"patterns": ["PAID_GROUP_*"], "services": ["paid-group-guard-bot"]},
+    {"patterns": ["CLOUDFLARE_*"], "services": ["web-static"]}
+  ]
+}

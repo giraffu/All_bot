@@ -1,0 +1,162 @@
+x-app-base: &app-base
+  image: ${ALLBOT_APP_IMAGE:?release.env must pin ALLBOT_APP_IMAGE by digest}
+  restart: always
+  env_file:
+    - ${ALLBOT_ENV_FILE:?ALLBOT_ENV_FILE is required}
+  environment:
+    ALLBOT_RELEASE_SHA: ${ALLBOT_RELEASE_SHA:?ALLBOT_RELEASE_SHA is required}
+    ALLBOT_CONFIG_REVISION: ${ALLBOT_CONFIG_REVISION:?ALLBOT_CONFIG_REVISION is required}
+    PYTHONUNBUFFERED: "1"
+    TZ: Asia/Shanghai
+
+x-python-health: &python-health
+  interval: 15s
+  timeout: 5s
+  retries: 12
+  start_period: 30s
+
+services:
+  central-api:
+    image: ${ALLBOT_CENTRAL_IMAGE:?release.env must pin ALLBOT_CENTRAL_IMAGE by digest}
+    restart: always
+    env_file:
+      - ${ALLBOT_ENV_FILE:?ALLBOT_ENV_FILE is required}
+    environment:
+      ALLBOT_RELEASE_SHA: ${ALLBOT_RELEASE_SHA:?ALLBOT_RELEASE_SHA is required}
+      ALLBOT_CONFIG_REVISION: ${ALLBOT_CONFIG_REVISION:?ALLBOT_CONFIG_REVISION is required}
+      TZ: Asia/Shanghai
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8003"]
+    healthcheck:
+      <<: *python-health
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8003/health', timeout=5)"]
+
+  web-api:
+    <<: *app-base
+    command: ["uvicorn", "src.web_api.main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "2"]
+    volumes:
+      - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
+      - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/runtime:/app/runtime-flags
+    healthcheck:
+      <<: *python-health
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/api/health', timeout=5)"]
+
+  payment-api:
+    <<: *app-base
+    command: ["python", "src/payment_api_server.py"]
+    volumes:
+      - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
+
+  dashboard-backend:
+    image: ${ALLBOT_DASHBOARD_BACKEND_IMAGE:?release.env must pin dashboard backend by digest}
+    restart: always
+    env_file:
+      - ${ALLBOT_ENV_FILE:?ALLBOT_ENV_FILE is required}
+    environment:
+      ALLBOT_RELEASE_SHA: ${ALLBOT_RELEASE_SHA:?ALLBOT_RELEASE_SHA is required}
+      ALLBOT_CONFIG_REVISION: ${ALLBOT_CONFIG_REVISION:?ALLBOT_CONFIG_REVISION is required}
+      TZ: Asia/Shanghai
+    command: ["gunicorn", "dashboard.backend.main:app", "-w", "2", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8043"]
+    volumes:
+      - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
+    healthcheck:
+      <<: *python-health
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8043/api/health', timeout=5)"]
+
+  dashboard-frontend:
+    image: ${ALLBOT_DASHBOARD_FRONTEND_IMAGE:?release.env must pin dashboard frontend by digest}
+    restart: always
+    environment:
+      ALLBOT_RELEASE_SHA: ${ALLBOT_RELEASE_SHA:?ALLBOT_RELEASE_SHA is required}
+      ALLBOT_CONFIG_REVISION: ${ALLBOT_CONFIG_REVISION:?ALLBOT_CONFIG_REVISION is required}
+      DASHBOARD_GATEWAY_PORT: "8086"
+      DASHBOARD_BACKEND_HOST: dashboard-backend:8043
+      DASHBOARD_FRONTEND_MODE: dashboard
+    healthcheck:
+      interval: 20s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8086/ && wget -q -O /dev/null http://127.0.0.1:8086/api/health"]
+
+  qqcc-config-backend:
+    image: ${ALLBOT_DASHBOARD_BACKEND_IMAGE:?release.env must pin dashboard backend by digest}
+    restart: always
+    env_file:
+      - ${ALLBOT_ENV_FILE:?ALLBOT_ENV_FILE is required}
+    environment:
+      ALLBOT_RELEASE_SHA: ${ALLBOT_RELEASE_SHA:?ALLBOT_RELEASE_SHA is required}
+      ALLBOT_CONFIG_REVISION: ${ALLBOT_CONFIG_REVISION:?ALLBOT_CONFIG_REVISION is required}
+      TZ: Asia/Shanghai
+    command: ["gunicorn", "dashboard.backend.qqcc_config_main:app", "-w", "1", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8045"]
+    volumes:
+      - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
+    healthcheck:
+      <<: *python-health
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8045/api/health', timeout=5)"]
+
+  qqcc-config-frontend:
+    image: ${ALLBOT_DASHBOARD_FRONTEND_IMAGE:?release.env must pin dashboard frontend by digest}
+    restart: always
+    environment:
+      ALLBOT_RELEASE_SHA: ${ALLBOT_RELEASE_SHA:?ALLBOT_RELEASE_SHA is required}
+      ALLBOT_CONFIG_REVISION: ${ALLBOT_CONFIG_REVISION:?ALLBOT_CONFIG_REVISION is required}
+      DASHBOARD_GATEWAY_PORT: "8088"
+      DASHBOARD_BACKEND_HOST: qqcc-config-backend:8045
+      DASHBOARD_FRONTEND_MODE: qqcc
+      PRIVATE_QQCC_BOT_OWNER_HOST: ${PRIVATE_QQCC_BOT_OWNER_HOST:-private-bot-disabled.invalid}
+      QQCC_CONFIG_ADMIN_HOST: ${QQCC_CONFIG_ADMIN_HOST:?QQCC_CONFIG_ADMIN_HOST is required}
+    healthcheck:
+      interval: 20s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+      test: ["CMD-SHELL", "wget -q --header='Host: '$${QQCC_CONFIG_ADMIN_HOST} -O /dev/null http://127.0.0.1:8088/api/health"]
+
+  imgproxy:
+    image: ${ALLBOT_IMGPROXY_IMAGE:?release.env must pin imgproxy by digest}
+    restart: always
+    environment:
+      IMGPROXY_BIND: :8084
+      IMGPROXY_ENFORCE_WEBP: "true"
+      IMGPROXY_MAX_SRC_RESOLUTION: "50"
+      IMGPROXY_MAX_ANIMATION_FRAMES: "1"
+      IMGPROXY_DOWNLOAD_TIMEOUT: "5"
+      IMGPROXY_CONCURRENCY: "4"
+    healthcheck:
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+      test: ["CMD", "sh", "-c", "[ \"$$(ps -o comm= 1)\" = \"imgproxy\" ]"]
+
+  bot:
+    <<: *app-base
+    profiles: ["bot"]
+    command: ["python", "src/bot_main.py"]
+    volumes:
+      - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
+      - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/runtime:/app/runtime-flags
+
+  qqcc-bot:
+    <<: *app-base
+    profiles: ["qqcc-bot"]
+    command: ["python", "-m", "qqcc_bot.main"]
+    volumes:
+      - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
+      - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/runtime:/app/runtime-flags
+
+  qqcc-private-bot-worker:
+    <<: *app-base
+    profiles: ["qqcc-private-bots"]
+    command: ["python", "-m", "qqcc_private_bot.worker"]
+    volumes:
+      - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
+      - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/runtime:/app/runtime-flags
+
+  paid-group-guard-bot:
+    <<: *app-base
+    profiles: ["paid-group"]
+    command: ["python", "-m", "paid_group_guard_bot"]
+    volumes:
+      - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
+      - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/runtime/paid-group-guard:/app/runtime/paid-group-guard

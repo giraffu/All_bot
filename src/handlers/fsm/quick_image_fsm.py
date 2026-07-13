@@ -37,13 +37,17 @@ from src.services.qqcc_draw_chain_service import (
     resolve_qqcc_draw_scene_chain,
     resolve_qqcc_draw_scene_task_type as _resolve_qqcc_draw_scene_task_type,
 )
+from src.services.qqcc_demo_media_service import send_qqcc_scene_demo_media
 from src.services.qqcc_config_service import (
+    get_qqcc_copywriting_override,
     get_qqcc_draw_scene,
     get_qqcc_filter_scene,
     is_qqcc_main_button_enabled,
     load_runtime_qqcc_config,
+    render_qqcc_copywriting,
 )
 from src.services.qqcc_runtime_context import (
+    get_private_qqcc_bot_id,
     load_qqcc_config_for_context as _load_qqcc_runtime_config_for_context,
 )
 from src.services.fsm_temp_file_service import (
@@ -252,8 +256,26 @@ async def _start_qqcc_image_scene(
         cost=cost,
         mode_name=scene["name"],
     )
+    copywriting_key = (
+        "ai_filter_scene_start"
+        if scene_kind == QQCC_SCENE_KIND_FILTER
+        else "ai_draw_scene_start"
+    )
+    msg = render_qqcc_copywriting(
+        get_qqcc_copywriting_override(qqcc_config, copywriting_key),
+        scene["name"],
+    ) or msg
 
     if query and query.message:
+        private_bot_id = get_private_qqcc_bot_id(context)
+        demo_kwargs = {"private_bot_id": private_bot_id} if private_bot_id else {}
+        await send_qqcc_scene_demo_media(
+            message=query.message,
+            bot=context.bot,
+            scene_kind=scene_kind,
+            scene=scene,
+            **demo_kwargs,
+        )
         await robust_reply_text(query.message, msg, parse_mode="Markdown")
     else:
         message = update.message or update.edited_message
@@ -470,7 +492,11 @@ async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     cost = TASK_COSTS.get(mode, 2)
     _initialize_quick_image_context(context, mode=mode, cost=cost)
     msg = (
-        _t(context, "fsm.quick_image.quick_faceswap_start", cost=cost)
+        render_qqcc_copywriting(
+            get_qqcc_copywriting_override(qqcc_config, "quick_faceswap_start"),
+            _t(context, "qqcc.menu.quick_faceswap"),
+        )
+        or _t(context, "fsm.quick_image.quick_faceswap_start", cost=cost)
         if qqcc_config is not None and route_key == "qqcc.menu.quick_faceswap"
         else _resolve_quick_image_start_message(context, mode=mode, cost=cost)
     )

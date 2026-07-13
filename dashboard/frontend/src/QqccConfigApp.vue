@@ -1,15 +1,21 @@
 <script setup lang="ts">
 import { LogoutOutlined } from '@ant-design/icons-vue'
+import { ref } from 'vue'
 
 import QqccBotSettings from './components/QqccBotSettings.vue'
 import QqccConfigLogin from './components/QqccConfigLogin.vue'
+import PrivateBotAdminManager from './components/PrivateBotAdminManager.vue'
 import {
   fetchQqccConfig,
+  generateQqccDemoMedia,
+  getQqccDemoGeneration,
+  uploadQqccDemoMedia,
   updateQqccConfig,
 } from './api/qqccConfigApi'
 import { useQqccConfigAuth } from './composables/useQqccConfigAuth'
 
 const { isAuthenticated, clearAuthToken } = useQqccConfigAuth()
+const activeView = ref<'official' | 'private-bots'>('official')
 
 const handleLogout = () => {
   clearAuthToken()
@@ -27,17 +33,28 @@ const handleLogout = () => {
           <div class="qqcc-config-title">懒人Bot配置</div>
         </div>
       </div>
-      <a-button class="qqcc-config-logout" @click="handleLogout">
-        <template #icon><LogoutOutlined /></template>
-        退出
-      </a-button>
+      <div class="qqcc-config-header-actions">
+        <a-radio-group v-model:value="activeView" button-style="solid" class="qqcc-config-view-switch">
+          <a-radio-button value="official">官方配置</a-radio-button>
+          <a-radio-button value="private-bots">私有Bot管理</a-radio-button>
+        </a-radio-group>
+        <a-button class="qqcc-config-logout" @click="handleLogout">
+          <template #icon><LogoutOutlined /></template>
+          退出
+        </a-button>
+      </div>
     </a-layout-header>
     <a-layout-content class="qqcc-config-content">
       <div class="qqcc-config-inner">
         <qqcc-bot-settings
+          v-if="activeView === 'official'"
           :fetch-config="fetchQqccConfig"
           :update-config="updateQqccConfig"
+          :upload-demo-media="uploadQqccDemoMedia"
+          :generate-demo-media="generateQqccDemoMedia"
+          :get-demo-generation="getQqccDemoGeneration"
         />
+        <private-bot-admin-manager v-else />
       </div>
     </a-layout-content>
   </a-layout>
@@ -117,6 +134,13 @@ const handleLogout = () => {
   gap: 6px;
 }
 
+.qqcc-config-header-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
 .qqcc-config-content {
   flex: 1;
   min-height: 0;
@@ -150,8 +174,36 @@ const handleLogout = () => {
     display: none;
   }
 
+  .qqcc-config-header-actions {
+    gap: 6px;
+  }
+
+  .qqcc-config-view-switch :deep(.ant-radio-button-wrapper) {
+    padding-inline: 9px;
+    font-size: 12px;
+  }
+
+  .qqcc-config-logout {
+    width: 34px;
+    padding: 0;
+    overflow: hidden;
+    gap: 0;
+    color: transparent;
+  }
+
+  .qqcc-config-logout :deep(.anticon) {
+    color: #334155;
+  }
+
   .qqcc-config-content {
     padding: 12px;
+  }
+}
+
+@media (max-width: 520px) {
+  .qqcc-config-logo,
+  .qqcc-config-title {
+    display: none;
   }
 }
 </style>

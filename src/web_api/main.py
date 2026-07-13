@@ -19,7 +19,16 @@ from src.task_core_provider_setup import ensure_task_core_service_providers_regi
 from src.services.task_web_finalizer import run_pending_web_finalizer_loop
 
 from src.database.core import engine
-from src.web_api.routers import auth, gallery, payment, site_notice, storage, tasks, users
+from src.web_api.routers import (
+    auth,
+    gallery,
+    payment,
+    private_bots,
+    site_notice,
+    storage,
+    tasks,
+    users,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -41,6 +50,16 @@ class MaintenanceMiddleware(BaseHTTPMiddleware):
                     "intent": "MAINTENANCE",
                 },
             )
+        return await call_next(request)
+
+
+class PrivateBotFeatureGateMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        if request.url.path.startswith("/api/private-bots/") and os.getenv(
+            "PRIVATE_QQCC_BOT_ENABLED",
+            "false",
+        ).strip().lower() not in {"1", "true", "yes", "on"}:
+            return JSONResponse(status_code=404, content={"detail": "Not found"})
         return await call_next(request)
 
 
@@ -73,6 +92,7 @@ app = FastAPI(
 )
 
 app.add_middleware(MaintenanceMiddleware)
+app.add_middleware(PrivateBotFeatureGateMiddleware)
 
 # CORS configuration
 app.add_middleware(
@@ -191,6 +211,11 @@ app.include_router(tasks.router, prefix="/api/tasks", tags=["Tasks"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(gallery.router, prefix="/api/gallery", tags=["Gallery"])
 app.include_router(payment.router, prefix="/api/payment", tags=["Payment"])
+app.include_router(
+    private_bots.router,
+    prefix="/api/private-bots",
+    tags=["Private Bots"],
+)
 app.include_router(site_notice.router)
 
 

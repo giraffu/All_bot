@@ -1,4 +1,7 @@
+import asyncio
+import inspect
 import logging
+from collections.abc import Awaitable, Callable
 from typing import Any, Optional
 
 from src.core.task_core_error_helpers import (
@@ -160,9 +163,31 @@ async def process_and_submit_task(
     delivery_context: dict[str, Any] | None = None,
     cost_override: int | None = None,
     user_cancel_allowed: bool = True,
+    submission_concurrency_idempotency_key: str | None = None,
+    submission_idempotency_key: str | None = None,
+    registry_metadata: dict[str, Any] | None = None,
+    submission_prepare_timeout_seconds: float | None = None,
+    submission_before_debit_func: Callable[..., Awaitable[Any]] | None = None,
+    submission_after_debit_func: Callable[..., Awaitable[Any]] | None = None,
+    submission_debit_timeout_seconds: float | None = None,
+    submission_before_dispatch_func: Callable[..., Awaitable[Any]] | None = None,
+    submission_dispatch_timeout_seconds: float | None = None,
+    submission_should_compensate_func: Callable[..., Any] | None = None,
+    submission_refund_idempotency_key: str | None = None,
+    submission_refund_task_type: str | None = None,
+    submission_release_idempotency_key: str | None = None,
+    submission_before_compensation_func: Callable[..., Awaitable[Any]] | None = None,
     dependencies: TaskCoreProcessDependencies | None = None,
 ) -> dict:
     dependencies = dependencies or get_default_task_core_process_dependencies()
+    concurrency_idempotency_key = (
+        submission_concurrency_idempotency_key
+        or f"task_concurrency:{task_id}"
+    )
+    release_idempotency_key = (
+        submission_release_idempotency_key
+        or concurrency_idempotency_key
+    )
     submission_side_effect_plan = normalize_task_submission_side_effect_plan(
         submission_side_effect_plan=submission_side_effect_plan,
         client_type=client_type,
@@ -178,6 +203,7 @@ async def process_and_submit_task(
         user_id=user_id,
         check_lock=check_lock,
         dependencies=dependencies,
+        idempotency_key=concurrency_idempotency_key,
     )
 
     task_submitted_successfully = False
@@ -185,7 +211,7 @@ async def process_and_submit_task(
     registry_task_id = task_id
 
     try:
-        submission_context = await prepare_task_submission_context(
+        prepare_kwargs = dict(
             user_id=user_id,
             username=username,
             task_type=task_type,
@@ -195,8 +221,22 @@ async def process_and_submit_task(
             request=request,
             dependencies=dependencies,
         )
+        if submission_prepare_timeout_seconds is None:
+            submission_context = await prepare_task_submission_context(
+                **prepare_kwargs
+            )
+        else:
+            async with asyncio.timeout(float(submission_prepare_timeout_seconds)):
+                submission_context = await prepare_task_submission_context(
+                    **prepare_kwargs
+                )
+        if registry_metadata:
+            submission_context.metadata.update(registry_metadata)
         submission_context.client_type = client_type
         submission_context.user_cancel_allowed = user_cancel_allowed
+        submission_context.concurrency_acquisition_key = (
+            concurrency_idempotency_key
+        )
         if delivery_context:
             submission_context.delivery_context.update(
                 {
@@ -206,14 +246,34 @@ async def process_and_submit_task(
                 }
             )
 
-        credits_deducted = await maybe_deduct_submission_credits(
+        if submission_before_debit_func is not None:
+            await submission_before_debit_func(
+                cost=request.cost,
+                registry_task_id=registry_task_id,
+            )
+
+        debit_kwargs = dict(
             user_id=user_id,
             username=username,
             task_type=task_type,
             cost=request.cost,
             deduct_quota=deduct_quota,
             dependencies=dependencies,
+            idempotency_key=submission_idempotency_key,
         )
+        if submission_debit_timeout_seconds is None:
+            credits_deducted = await maybe_deduct_submission_credits(**debit_kwargs)
+        else:
+            async with asyncio.timeout(float(submission_debit_timeout_seconds)):
+                credits_deducted = await maybe_deduct_submission_credits(
+                    **debit_kwargs
+                )
+        if submission_after_debit_func is not None:
+            await submission_after_debit_func(
+                cost=request.cost,
+                registry_task_id=registry_task_id,
+                credits_deducted=credits_deducted,
+            )
 
         try:
             execution_result = await execute_task_submission_attempt(
@@ -227,6 +287,10 @@ async def process_and_submit_task(
                 submission_context=submission_context,
                 submission_side_effect_plan=submission_side_effect_plan,
                 dependencies=dependencies,
+                submission_before_dispatch_func=submission_before_dispatch_func,
+                submission_dispatch_timeout_seconds=(
+                    submission_dispatch_timeout_seconds
+                ),
             )
             registry_task_id = execution_result.registry_task_id
             task_submitted_successfully = True
@@ -236,16 +300,40 @@ async def process_and_submit_task(
             )
 
         except Exception as e:
-            await compensate_failed_task_submission(
-                user_id=user_id,
-                username=username,
-                cost=request.cost,
-                error=e,
-                credits_deducted=credits_deducted,
-                registry_task_id=registry_task_id,
-                dependencies=dependencies,
-            )
-            raise build_submission_failure_error(e)
+            should_compensate = True
+            if submission_should_compensate_func is not None:
+                decision = submission_should_compensate_func(e)
+                should_compensate = bool(
+                    await decision if inspect.isawaitable(decision) else decision
+                )
+            if should_compensate:
+                if submission_before_compensation_func is not None:
+                    await submission_before_compensation_func(
+                        error=e,
+                        cost=request.cost,
+                        registry_task_id=registry_task_id,
+                        credits_deducted=credits_deducted,
+                    )
+                await compensate_failed_task_submission(
+                    user_id=user_id,
+                    username=username,
+                    cost=request.cost,
+                    error=e,
+                    credits_deducted=credits_deducted,
+                    registry_task_id=registry_task_id,
+                    dependencies=dependencies,
+                    refund_idempotency_key=submission_refund_idempotency_key,
+                    refund_task_type=(
+                        submission_refund_task_type or "refund_saga_failed"
+                    ),
+                )
+                raise build_submission_failure_error(e)
+            # The deterministic dispatch may exist. Its registry owner must
+            # retain concurrency until reconciliation or terminal recovery.
+            task_submitted_successfully = True
+            raise CoreDomainError(
+                "任务已进入派发确认阶段，系统不会重复派发或自动退款，请稍后重试"
+            ) from e
 
     finally:
         await release_submission_lock_if_needed(
@@ -253,4 +341,5 @@ async def process_and_submit_task(
             check_lock=check_lock,
             task_submitted_successfully=task_submitted_successfully,
             dependencies=dependencies,
+            release_idempotency_key=release_idempotency_key,
         )

@@ -1,11 +1,17 @@
 # 子模块: 云测试控制面部署 (Cloud Test Control Plane)
 
+> 2026-07-13 发布入口变更：新发布只走 `scripts/release.py`、公共 immutable compose 与 `/etc/allbot/test.env`；禁止代码/env rsync、云端 build 和源码 bind mount。本文后续出现的 `.env.cloud.test`、旧 compose、`safe_deploy`/`update_cloud` 命令仅是首次切换前的 legacy 运行态说明，不再是支持入口。完整 SOP 见 `docs/子模块_Git不可变发布_git_immutable_release.md`。仓库契约已完成，但实际云测试 bootstrap/切换尚未在本轮执行。
+
 ## 1. 目标与边界
 本模块记录 DigitalOcean SGP1 独立测试 Droplet `allbot-do-sgp1-test-control` 上的云端测试控制面部署方式。当前云端测试栈用于验证 Web API、Central API、Dashboard Backend、Dashboard Frontend、QQCC Config Backend、QQCC Config Frontend、同机测试 PostgreSQL、同机测试 Redis、R2 对象存储、imgproxy 与测试 Bot。
 
 当前推荐形态是云端运行测试控制面、测试数据库、测试缓存与测试 Bot，本地主服务器运行 8 个 cloud-worker 测试容器并继续使用武汉局域网内的 ComfyUI/GPU 节点。云端与本地主服务器之间使用 Tailscale 私有网络互联；SSH 端口转发只作为应急方案。
 
-## 2. 真实入口
+## 2. Legacy 入口与新事实源
+- 新控制面：`deploy/docker-compose-cloud-base.yml` + `deploy/docker-compose-cloud-test.overlay.yml`
+- 私密配置：`/etc/allbot/test.env`；非敏感镜像/SHA：release 目录的 `release.env`
+- 计划/发布：`scripts/release.py plan|deploy --env test --sha <full-sha>`
+- 下列路径只描述首次切换前的 legacy 运行态：
 - 远程主机别名：`allbot-do-sgp1-test-control`
 - 远程代码目录：`/home/deploy/APP/All_bot`
 - Compose 文件：`deploy/docker-compose-cloud-test.yml`
@@ -45,6 +51,18 @@ QQCC_CONFIG_FRONTEND_TEST_PORT=8088
 QQCC_CONFIG_ADMIN_USERNAME=<qqcc-config-admin-user>
 QQCC_CONFIG_ADMIN_PASSWORD_HASH=<bcrypt-password-hash>
 QQCC_CONFIG_SECRET_KEY=<qqcc-config-jwt-secret>
+QQCC_CONFIG_ADMIN_HOST=qqcc-admin-test.aivison.it.com
+PRIVATE_QQCC_BOT_OWNER_HOST=private-bot-test.aivison.it.com
+PRIVATE_QQCC_BOT_OWNER_WEBAPP_URL=https://private-bot-test.aivison.it.com/
+PRIVATE_QQCC_BOT_OWNER_JWT_SECRET=<urlsafe-base64-32-byte-owner-jwt-key>
+PRIVATE_QQCC_BOT_WEBHOOK_BASE_URL=https://api-test.aivison.it.com/api/private-bots/webhook
+PRIVATE_QQCC_BOT_TOKEN_KEYRING='{"1":"<urlsafe-base64-32-byte-aes-key>"}'
+PRIVATE_QQCC_BOT_TOKEN_ACTIVE_KEY_VERSION=1
+PRIVATE_QQCC_BOT_TOKEN_FINGERPRINT_KEY=<urlsafe-base64-32-byte-hmac-key>
+PRIVATE_QQCC_BOT_FORBIDDEN_BOT_IDS=<all-official-and-test-bot-numeric-ids>
+PRIVATE_QQCC_BOT_TELEGRAM_API_BASE_URL=https://api.telegram.org
+PRIVATE_QQCC_BOT_TELEGRAM_FILE_BASE_URL=https://api.telegram.org/file/bot
+PRIVATE_QQCC_BOT_TELEGRAM_TRUSTED_HOSTS=
 ```
 
 `CLOUD_TEST_BIND_IP` 用于云端服务端口绑定；当前绑定云测试 Tailscale IP `100.82.124.91`，不直接开放公网。`CLOUD_TEST_CONTROL_HOST` 用于本地 GPU worker 访问云端 Central API，也应填 `100.82.124.91`。当前云测试对象存储直接使用 Cloudflare R2 S3 兼容接口，`MINIO_*` 是项目内兼容变量名但值指向 R2；`MINIO_PUBLIC_URL` 继续留空，`R2_PUBLIC_DOMAIN` 使用已验证的新对象公网域名。Web owner 视频结果接口只在 R2 公网 URL 可解析时返回成功，若临时清空 `R2_PUBLIC_DOMAIN`，视频任务可能在 99% / `pending_result` 等待结果 URL。
@@ -87,8 +105,11 @@ Web 前端上传参考图/视频时会先调用云端 Web API 获取预签名地
 ]
 ```
 
-## 3. 部署命令
-常规测试环境更新以快速为主：只同步本轮必要代码，直接重建对应模块容器，不默认进入生成维护，也不默认等待 Central pending/running 队列排空。典型流程：
+## 3. Legacy 部署命令（归档，禁止执行）
+
+本节保留首次不可变切换前的现场事实，只用于归档与一次性 legacy 回滚设计。当前云测试发布必须执行 `scripts/release.py plan --env test --sha <full-sha>`，确认机器计算的依赖集合后再执行对应 `deploy`；不得复制执行下列 rsync/build 命令。
+
+以下是旧流程原文：常规测试环境更新以快速为主，只同步本轮必要代码并重建对应模块容器。
 
 1. 按改动影响确认目标 service。Bot 展示/FSM 改动重建 `bot-test`；Web API 改动重建 `web-api-test`；Central/队列 API 改动重建 `central-api-test`；Dashboard 或 QQCC Config 改动重建对应前后端 service；QQCC Bot 改动重建 `qqcc-bot-test`。
 2. 用 `rsync` 同步必要文件，或按既有排除规则做整仓同步；不要同步 `.env.*`、`logs/`、`runtime/`、`backups/`、`local_analytics_platform/`、前端构建产物、密钥文件。
@@ -218,7 +239,10 @@ VPS Nginx 配置文件为 `/etc/nginx/sites-available/web-test.aivison.it.com`�
 | Dashboard Frontend | `cloud-dashboard-frontend-test` | `8087` | Dashboard 云端 Nginx 前端，仅 Tailscale/受控来源访问 |
 | QQCC Config Backend | `cloud-qqcc-config-backend-test` | `8045` | QQCC 懒人 Bot 独立配置 API |
 | QQCC Config Frontend | `cloud-qqcc-config-frontend-test` | `8088` | QQCC 懒人 Bot 独立配置 Web，仅 Tailscale/受控来源访问 |
+| QQCC Private Bot Worker | `cloud-qqcc-private-bot-worker-test` | 无 | `qqcc-private-bots` profile；消费 Telegram webhook stream，默认不启动 |
 | imgproxy | `cloud-imgproxy-test` | `8084` | 图片代理 |
+
+QQCC Config Frontend 启用严格 Host 路由后，直接访问 `http://100.82.124.91:8088` 只有在 `QQCC_CONFIG_ADMIN_HOST=100.82.124.91` 时才会命中管理员站点；也可以配置独立测试 hostname 并让浏览器/测试 DNS 解析到该 Tailscale IP。localhost 端口转发或未知 Host 默认返回 404，curl 验证必须显式带 `Host: ${QQCC_CONFIG_ADMIN_HOST}`。Owner Host 必须另配 HTTPS 测试域名，不能和 admin Host 相同。
 
 测试机 systemd 服务 `allbot-cloud-test-firewall.service` 管理公网保护规则，脚本路径为 `/usr/local/sbin/allbot-cloud-test-firewall.sh`，规则写入 Docker `DOCKER-USER` 链。当前公网 eth0 上的 `8001/8004/8044/8045/8084/8087/8088` 全部 drop；Tailscale `tailscale0` 不受该规则影响。
 
@@ -268,6 +292,19 @@ curl -fsS http://100.82.124.91:8088/api/health
 docker stats --no-stream
 df -h /
 ```
+
+QQCC 私有 Bot 联调属于跨 Web API、QQCC Config、官方 QQCC、Redis stream、Alembic 与 private worker 的整栈变更。未启用时 safe deploy 以 validator `--allow-disabled` 接受 gate 缺失/`false`，不要求 inactive profile 的 activation secrets；准备联调时必须显式设置 `PRIVATE_QQCC_BOT_ENABLED=true`，配置独立测试 keyring/JWT/fingerprint、测试 HTTPS webhook base、owner Host/URL 和 `QQCC_BOT_TOKEN_TEST`，再经严格 validator、显式 migration 后按变更面重建服务。private worker 只通过精确 profile 启动；它读取测试官方 token 仅用于频道会员查询，不启动 polling：
+
+```bash
+docker compose --env-file .env.cloud.test \
+  -f deploy/docker-compose-cloud-test.yml \
+  --profile qqcc-private-bots build qqcc-private-bot-worker-test
+docker compose --env-file .env.cloud.test \
+  -f deploy/docker-compose-cloud-test.yml \
+  --profile qqcc-private-bots up -d --no-deps qqcc-private-bot-worker-test
+```
+
+执行前还必须确认测试 webhook hostname 已实际路由到 `web-api-test`、owner public Host 只暴露 owner API、worker startup PEL catch-up/有界背压与 admin metrics 可观测，以及 `QQCC_BOT_TOKEN_TEST` 没有第二个 polling 实例。本文只记录契约，不代表本轮已部署云测试。
 
 2026-06-09 独立测试 Droplet 首次部署验证结果：
 - Central API、Web API、Dashboard API 健康检查通过。
@@ -375,19 +412,19 @@ COMPOSE_PROFILES=shared-aio-canary docker-compose \
   up -d --no-deps cloud-comfy-agent-test-2 cloud-comfy-agent-test-3
 ```
 
-自由P图 v2 / PornMaster Flux2 常规测试优先使用云测试 RunPod worker，不再为了日常测试启动本地 PornMaster LAN AIO。`.env.cloud.test` 需要配置 `RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT` 指向已发布的 GHCR 镜像、`RUNPOD_MODEL_PREFIX_PORNMASTER_FLUX2_EDIT=pornmaster_flux2_edit/2026-06-27`、`RUNPOD_MODEL_MANIFEST_KEY_PORNMASTER_FLUX2_EDIT=pornmaster_flux2_edit/2026-06-27/manifest.json`，然后用 cloud-test RunPod worker scale 入口启动：
+主 Bot 的旧“自由P图 v2”按钮已升级为自由P图 v3：单图先提交 `pornmaster_flux2_edit_bf16`，再以原图为人脸来源提交内部 `face_swap`；整个用户操作统一扣 5 灵石，换脸续接任务不得二次扣费。云测试须同时具备 BF16 和 `face_swap` worker。BF16 常规测试优先使用云测试 RunPod worker，不再为了日常测试启动本地 PornMaster LAN AIO：
 
 ```bash
 RUNPOD_DRY_RUN=false RUNPOD_AUTOSCALER_ENABLED=true \
 python scripts/gpu_pool_controller.py runpod workers scale \
-  --profile pornmaster_flux2_edit \
+  --profile pornmaster_flux2_edit_bf16 \
   --desired 1 \
   --env cloud-test \
   --env-file .env.cloud.test \
   --execute
 ```
 
-合格状态是云测试 Central `/system/workers` 出现 `runpod_test_pornmaster_flux2_edit_*`，`runtime_profile=pornmaster_flux2_edit`，types 为 `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit`，control 为 `enabled`。旧 `cloud_worker_test_04` / 本地 LAN AIO canary 只作为专项回归入口；若明确要走本地 AIO，需要覆盖 `cloud_worker_test_04` 并确认不会和当前 `i2i_pro` / 正式任务抢占同一 GPU：
+合格状态是云测试 Central `/system/workers` 出现 `runpod_test_pornmaster_flux2_edit_bf16_*`，`runtime_profile=pornmaster_flux2_edit`，types 为 `pornmaster_flux2_edit_bf16`，control 为 `enabled`；另有健康的 `face_swap` worker。旧 `cloud_worker_test_04` / 本地 LAN AIO canary 只作为专项回归入口；若明确要走本地 AIO，需要覆盖 `cloud_worker_test_04` 并确认不会和当前 `i2i_pro` / 正式任务抢占同一 GPU：
 
 ```bash
 ENABLE_FREE_EDIT_V2=true

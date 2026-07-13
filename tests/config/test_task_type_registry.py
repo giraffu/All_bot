@@ -133,6 +133,11 @@ def test_registry_records_known_legacy_aliases_and_execution_profiles():
             "pornmaster_flux2_multi_edit",
             "PornMaster_F2K_9B_Turbo_Multiple-images-editing_Automatic_V1_2026_05_27.api.json",
         ),
+        "pornmaster_flux2_edit_bf16": (
+            "pornmaster_flux2_edit_bf16",
+            "pornmaster_flux2_edit_bf16",
+            "PornMaster_F2K_9B_Turbo_Single-image-editing_Automatic_V1_2026_05_27.api.json",
+        ),
     }
 
     for task_type, (public_type, execution_type, workflow_filename) in expected.items():

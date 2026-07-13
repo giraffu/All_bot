@@ -12,6 +12,7 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, 'index.html'),
         qqccConfig: resolve(__dirname, 'index.qqcc-config.html'),
+        privateBot: resolve(__dirname, 'index.private-bot.html'),
       },
       output: {
         manualChunks(id) {
