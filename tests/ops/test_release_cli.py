@@ -779,6 +779,7 @@ def test_test_and_prod_web_use_same_pages_deployer(
     ).hexdigest()
     token_file = tmp_path / "pages.token"
     token_file.write_text("test-token\n", encoding="utf-8")
+    token_file.chmod(0o600)
     runtime_path = tmp_path / "web-runtime-config.yml"
     runtime_path.write_text(
         json.dumps(
