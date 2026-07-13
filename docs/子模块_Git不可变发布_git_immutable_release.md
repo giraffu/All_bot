@@ -75,6 +75,8 @@ scripts/release.py deploy --env prod --sha <40-char-sha> --execute --confirm-pro
 
 生产发布器会读取云测试 `current.json`，要求状态为 `verified` 且 SHA、自有/第三方 digest 完全相同。验收模板见 `deploy/test-acceptance.example.json`，观察窗口不足 24 小时或任何 smoke 为 false 都不能标记 verified。
 
+release workflow 生成 manifest 后会运行一次不接触运行态秘密的自检 plan，并显式使用 `--skip-env-checks`。该参数只允许 `plan`，输出 `config_validation=skipped`，用于 CI 校验 SHA/manifest/影响规则；`deploy`/`rollback` 一律拒绝它。操作者的测试/生产 plan 默认仍读取并校验真实 env，不能用 CI 例外替代部署前配置门禁。
+
 ## 6. Web、Worker 与回滚
 
 - 测试 Web 校验 tar SHA256，使用 deploy 账号受限 SSH key（默认 `/home/deploy/.ssh/allbot_test_edge_ed25519`）上传到 SHA 版本目录后原子切换 `/root/dist-test` symlink，不从源码 checkout 读取密钥，也不覆盖现有目录。
