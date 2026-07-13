@@ -289,6 +289,43 @@ def test_initial_cloud_cutover_includes_stateful_dependencies_and_legacy_names()
     ]
 
 
+def test_optional_cloud_bots_are_filtered_only_by_validated_runtime_config():
+    module = _load_module()
+    selected = {
+        "central-api",
+        "bot",
+        "qqcc-bot",
+        "qqcc-private-bot-worker",
+        "paid-group-guard-bot",
+    }
+
+    test_enabled, test_disabled = module.filter_enabled_cloud_services(
+        "test",
+        selected,
+        _valid_test_environment(),
+    )
+
+    assert test_enabled == {"central-api", "bot"}
+    assert test_disabled == {
+        "qqcc-bot",
+        "qqcc-private-bot-worker",
+        "paid-group-guard-bot",
+    }
+
+    enabled_values = dict(
+        _valid_test_environment(),
+        QQCC_BOT_TOKEN_TEST="test-qqcc-token",
+        PRIVATE_QQCC_BOT_ENABLED="true",
+        PAID_GROUP_BOT_TOKEN="test-paid-group-token",
+    )
+    enabled, disabled = module.filter_enabled_cloud_services(
+        "test", selected, enabled_values
+    )
+
+    assert enabled == selected
+    assert disabled == set()
+
+
 def test_initial_cloud_cutover_pulls_before_stopping_legacy_and_restores_on_failure(
     tmp_path, monkeypatch
 ):
@@ -323,7 +360,13 @@ def test_initial_cloud_cutover_pulls_before_stopping_legacy_and_restores_on_fail
         lambda host, script, *, execute: remote_calls.append((host, script, execute)),
     )
 
-    module._deploy_cloud(args, impact, _manifest(), "ALLBOT_RELEASE_SHA=x\n")
+    module._deploy_cloud(
+        args,
+        impact,
+        _manifest(),
+        "ALLBOT_RELEASE_SHA=x\n",
+        _valid_test_environment(),
+    )
 
     assert len(remote_calls) == 1
     host, script, execute = remote_calls[0]

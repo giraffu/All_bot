@@ -482,6 +482,37 @@ def cloud_services_for_release(
     return selected
 
 
+def filter_enabled_cloud_services(
+    environment: str,
+    selected: Iterable[str],
+    values: Mapping[str, str],
+) -> tuple[set[str], set[str]]:
+    """Remove only optional runtimes that the validated env leaves disabled."""
+
+    chosen = set(selected)
+    optional_enabled = {
+        "qqcc-bot": bool(
+            values.get(
+                "QQCC_BOT_TOKEN_TEST" if environment == "test" else "QQCC_BOT_TOKEN",
+                "",
+            ).strip()
+        ),
+        "qqcc-private-bot-worker": values.get(
+            "PRIVATE_QQCC_BOT_ENABLED", "false"
+        ).strip().lower()
+        in {"1", "true", "yes", "on"},
+        "paid-group-guard-bot": bool(
+            values.get("PAID_GROUP_BOT_TOKEN", "").strip()
+        ),
+    }
+    disabled = {
+        service
+        for service, enabled in optional_enabled.items()
+        if service in chosen and not enabled
+    }
+    return chosen - disabled, disabled
+
+
 def legacy_cloud_containers(
     environment: str, selected: Iterable[str]
 ) -> list[str]:
@@ -605,14 +636,21 @@ def _plan_document(
     impact: ReleaseImpact,
     manifest: Mapping[str, Any],
     previous_sha: str,
+    environment_values: Mapping[str, str],
 ) -> dict[str, Any]:
+    cloud_services, disabled_cloud_services = filter_enabled_cloud_services(
+        args.env,
+        cloud_services_for_release(args.env, impact),
+        environment_values,
+    )
     return {
         "environment": args.env,
         "git_sha": manifest["git_sha"],
         "previous_sha": previous_sha or None,
         "level": impact.level,
         "services": sorted(impact.services),
-        "cloud_services": sorted(cloud_services_for_release(args.env, impact)),
+        "cloud_services": sorted(cloud_services),
+        "disabled_cloud_services": sorted(disabled_cloud_services),
         "worker": "worker" in impact.services,
         "web_static": "web-static" in impact.services,
         "requires_db_upgrade": impact.requires_db_upgrade,
@@ -637,10 +675,15 @@ def _deploy_cloud(
     impact: ReleaseImpact,
     manifest: Mapping[str, Any],
     release_env: str,
+    environment_values: Mapping[str, str],
 ) -> None:
     environment = ENVIRONMENT[args.env]
     host = args.remote_host or environment["host"]
-    selected_cloud_services = cloud_services_for_release(args.env, impact)
+    selected_cloud_services, _ = filter_enabled_cloud_services(
+        args.env,
+        cloud_services_for_release(args.env, impact),
+        environment_values,
+    )
     cloud_services = sorted(
         selected_cloud_services,
         key=lambda service: (service not in {"postgres", "redis"}, service),
@@ -1327,7 +1370,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.execute:
             verify_operator_worktree_clean()
         impact, manifest, previous_sha = build_plan(args)
-        document = _plan_document(args, impact, manifest, previous_sha)
+        environment_values, config_revision = _validate_local_env(args)
+        document = _plan_document(
+            args,
+            impact,
+            manifest,
+            previous_sha,
+            environment_values,
+        )
         print(json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True))
         if args.command == "plan":
             return 0
@@ -1337,13 +1387,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         if args.command == "rollback":
             impact.level = "maintenance"
-        environment_values, config_revision = _validate_local_env(args)
         release_env = render_release_env(manifest, config_revision)
         if args.env == "prod":
             _promotion_check(args, manifest)
         else:
             _test_rollback_check(args, manifest)
-        _deploy_cloud(args, impact, manifest, release_env)
+        _deploy_cloud(
+            args,
+            impact,
+            manifest,
+            release_env,
+            environment_values,
+        )
         if "web-static" in impact.services:
             _deploy_web(args, manifest)
         if "worker" in impact.services:
