@@ -122,6 +122,15 @@ def test_release_postgres_integration_gate_uses_isolated_migrated_database():
     assert "needs: [python-tests, postgres-integration-tests" in workflow
 
 
+def test_release_workflow_gates_pull_requests_without_publishing_images():
+    workflow = (ROOT / ".github/workflows/control-plane-release.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "  pull_request:\n" in workflow
+    assert "if: github.event_name == 'push' && github.ref == 'refs/heads/main'" in workflow
+
+
 def test_bootstrap_sends_remote_script_over_stdin_and_archives_source_only():
     bootstrap = (ROOT / "scripts/bootstrap_release_host.sh").read_text(
         encoding="utf-8"
