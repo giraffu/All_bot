@@ -120,7 +120,7 @@ for group in "$@"; do
       run_pytest_group "gallery-web" \
         tests/core/test_gallery_submission_and_interactions_core.py \
         tests/handlers/callbacks/test_gallery_callbacks_interactions.py \
-        tests/web_api/test_gallery_router_passthrough.py \
+        tests/web_api/test_gallery_router_passthrough_web.py \
         tests/web_api/test_gallery_apply_context.py \
         tests/web_api/test_gallery_media_urls.py \
         tests/web_api/test_gallery_comments.py \

@@ -98,3 +98,17 @@ def test_backend_httpx_pin_is_compatible_with_telegram_runtime():
 
     assert "httpx==0.28.1" in backend_requirements
     assert "httpx==0.26.0" not in backend_requirements
+
+
+def test_hotspot_regression_script_references_existing_python_tests():
+    script = (ROOT / "scripts/run_hotspot_regression.sh").read_text(
+        encoding="utf-8"
+    )
+    referenced_tests = set()
+    for line in script.splitlines():
+        token = line.strip().rstrip(" \\")
+        if token.startswith(("tests/", "src/tests/")) and token.endswith(".py"):
+            referenced_tests.add(token)
+
+    missing = sorted(path for path in referenced_tests if not (ROOT / path).is_file())
+    assert missing == []
