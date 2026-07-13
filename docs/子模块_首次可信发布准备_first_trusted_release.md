@@ -31,7 +31,7 @@
 
 1. 将 Worker 切换闭包 PR 合入受保护 `main`，以合并后的完整 40 位 SHA 触发新的 release workflow；旧候选 bundle 不部署。
 2. 核对新 CI 成功、OCI revision、所有镜像 digest、Web SHA256 与不可覆盖的 release bundle。
-3. 用 test-only 迁移器生成 `/etc/allbot/test.env` 候选并完成 schema/Compose dry-run，任何输出不得含秘密值。
+3. 用云测试当前 env 作为控制面事实源、本机旧 env 作为 Worker 参数源，经 test-only 迁移器生成 `/etc/allbot/test.env` 候选并完成 schema/cloud/worker Compose dry-run，任何输出不得含秘密值；未选 dormant 槽位只允许使用 disabled 安全默认值，allowlist 内槽位仍必须显式满足 schema。
 4. 在目标机完成只读 deploy key、GHCR `read:packages` 凭据和 release host bootstrap；密钥不进入仓库、源码 checkout 或 CI。
 5. 使用 test-only env 迁移器生成候选并校验 `/etc/allbot/test.env`，原子安装为 `600 deploy:deploy`；先部署云测试与测试 Web，再在同一维护窗口停止 allowlist 对应 legacy Worker、启动同 digest 本地测试 Worker，健康后才解除维护。
 6. 完成 health、Bot、任务提交、Redis 锁、locale、Web、Worker heartbeat、图片/视频代表任务和回滚演练，并观察至少 24 小时。

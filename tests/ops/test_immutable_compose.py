@@ -77,6 +77,17 @@ def test_worker_compose_covers_all_test_slots_and_runtime_contracts():
     assert "SCAIL2_FACE_SWAP_V10_ENABLED" in worker_08
     assert "SCAIL2_FACE_SWAP_V10_FACE_SWAP_COMFY_API_URL" in worker_08
 
+    dormant_worker = services["worker-05"]["environment"]
+    for key in (
+        "POOL_NODE_ID",
+        "POOL_GPU_INDEX",
+        "POOL_RUNTIME_PROFILE",
+        "PREFETCH_ENABLED",
+        "PIPELINE_ENABLED",
+        "PIPELINE_MAX_RUNNING_TASKS",
+    ):
+        assert ":-" in dormant_worker[key], f"dormant worker must default {key}"
+
 
 def test_release_workflow_builds_all_images_and_never_uses_latest():
     workflow = (ROOT / ".github/workflows/control-plane-release.yml").read_text(
