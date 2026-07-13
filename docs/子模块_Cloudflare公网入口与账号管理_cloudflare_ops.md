@@ -20,9 +20,10 @@
 | 当前管理员 allowlist | `cv1347968277@gmail.com` |
 | 自动化 token 主文件 | `/home/hfy/.cloudflare/allbot-cloudflare-admin.token` |
 | 本地分析兼容 token 路径 | `/home/hfy/.cloudflare/allbot-local-analytics.token`，指向主文件的 symlink |
+| Pages 发布 token | `/home/hfy/.config/allbot/cloudflare-pages.token`，仅 Pages Read/Write |
 | token 文件权限 | 目录 `700`，文件 `600` |
 
-2026-07-05 已将聊天中暴露过的旧 `allbot-local-analytics` token 禁用；本机主文件已轮换为新的 Cloudflare 自动化 token。2026-07-14 实测该 Account Token 可访问 DNS/Tunnel，但 Pages projects 和 token-management API 返回 403；它不能用于 Web 发布。Pages CLI 凭据必须另存为 `600` 的最小 Pages Write token并先只读探测。
+2026-07-05 已将聊天中暴露过的旧 `allbot-local-analytics` token 禁用；本机主文件已轮换为新的 Cloudflare 自动化 token。2026-07-14 实测该 Account Token 可访问 DNS/Tunnel，但 Pages projects 和 token-management API 返回 403；它不能用于 Web 发布。独立 Pages token 已按 `600` 保存并通过 projects API 200 验证。任何出现在聊天中的 token 仍必须撤销，不能写入知识库或凭据文件。
 
 ## 3. 当前公网入口
 
@@ -40,6 +41,8 @@
 | `analytics.aivison.it.com` | Tunnel `allbot-local-analytics` / `79d456a9-6448-4677-8a1f-c128ffb256dd` + Access app `local-analytics` / `b05ae46f-fcdb-43d9-ac4e-50ab91daabac` | 本地主服务器只读分析平台 `http://127.0.0.1:8095` | Access policy `local-analytics-admin` allow `cv1347968277@gmail.com` + 应用层登录 |
 | `assets.aivison.it.com` | Web/Nginx VPS | legacy MinIO 人工回滚、旧外链、迁移排障 | 不作为新生成媒体主路径 |
 | `web-test.aivison.it.com` | Web/Nginx VPS | legacy 测试静态站/回滚入口；VPS 离线时不可作为发布成功依据 | 不再接收逐文件发布 |
+
+2026-07-14 已关闭 `allbot-web-cf-test` Git integration 的 production 自动部署，并把 preview branch control 设置为 `none`；当前内容保持不变，后续只接受 release CLI 校验同一 tar 后的 Wrangler 上传。`allbot-web-prod` 未在本轮修改。
 
 QQCC 私有 Bot owner WebApp Host 由 `PRIVATE_QQCC_BOT_OWNER_HOST` / `PRIVATE_QQCC_BOT_OWNER_WEBAPP_URL` 提供。2026-07-12 已在现有 `allbot-admin-dashboard-prod` Tunnel 的 catch-all 404 前新增 `private-bot.aivison.it.com -> http://100.107.220.127:8088`，并创建 proxied CNAME；该 Host 明确没有 Access app。上线后已验证 owner 首页 200、未认证 owner API 401、owner Host 上管理员 API与 `/api/health` 404，原 `qqcc-admin` 公网入口仍返回 Access 302。
 

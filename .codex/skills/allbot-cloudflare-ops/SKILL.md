@@ -31,6 +31,7 @@ description: "处理 AllBot Cloudflare 账号自动化、API Token、DNS、Tunne
 - `private-bot.aivison.it.com` 已于 2026-07-12 通过 `allbot-admin-dashboard-prod` Tunnel 正式上线，公开回源 QQCC Config Frontend `100.107.220.127:8088`；它不创建 Access app，依赖 owner ticket/JWT 与 origin/backend 双层 Host 隔离。`qqcc-admin.aivison.it.com` 仍由原 Access app 独立保护。
 - Cloudflare Account-owned token 不适合用 `/user/tokens/verify` 作为唯一验证；以 DNS、Zero Trust Access、Tunnel、Pages/R2 目标 API 的只读探测结果为准。
 - 当前 `/home/hfy/.cloudflare/allbot-cloudflare-admin.token` 已验证可访问 DNS/Tunnel，但 Pages projects API 为 403；Pages 发布必须另用 `600` 的最小 Pages Write token，不能因名称含 admin 就推定权限。
+- 专用 Pages token 路径为 `/home/hfy/.config/allbot/cloudflare-pages.token`；只记录路径、权限与 API 探测结果，不记录值。测试项目已关闭 production/preview Git 自动部署，正式项目仍须单独授权后处理。
 
 ## 3. 操作红线
 
