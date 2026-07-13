@@ -29,7 +29,7 @@ jobs:
         with:
           python-version: "3.10"
           cache: pip
-      - run: pip install -r requirements.txt -r backend/requirements.txt PyYAML
+      - run: pip install -r requirements.txt -r backend/requirements.txt PyYAML numpy==2.2.1
       - run: python -m pytest -q
 
   web-tests:

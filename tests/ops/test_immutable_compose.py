@@ -79,6 +79,9 @@ def test_python_ci_workflows_install_backend_dependencies_and_use_test_jwt():
         assert "-r requirements.txt -r backend/requirements.txt" in workflow
         assert "JWT_SECRET_KEY: ci-test-only-not-for-runtime" in workflow
 
+    release_workflow = workflows[0].read_text(encoding="utf-8")
+    assert "numpy==2.2.1" in release_workflow
+
 
 def test_bootstrap_sends_remote_script_over_stdin_and_archives_source_only():
     bootstrap = (ROOT / "scripts/bootstrap_release_host.sh").read_text(
