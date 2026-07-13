@@ -5,6 +5,7 @@
 ## 系统核心架构
 
 系统采用 BFF 架构和多服务编排：
+
 - **Web API**: FastAPI 提供用户 REST/SSE、JWT 鉴权、历史与社区工作台接口
 - **Central API**: FastAPI 承接执行面任务队列、worker heartbeat、状态/result 与系统视图
 - **TG Bot / QQCC Bot / Paid Group Bot**: 多个独立 Telegram polling 入口，各自使用独立 token 与职责边界
@@ -14,6 +15,7 @@
 ## 业务板块与产品规范
 
 为帮助产品经理、运营和研发团队快速了解系统的商业逻辑与操作流程，所有业务文档收敛于 `docs/business/` 目录：
+
 - [00_INDEX_业务板块分类与规范总览](./docs/business/00_INDEX_业务板块分类与规范总览.md)
 - [00_DICT_全局业务数据字典](./docs/business/00_DICT_全局业务数据字典.md)
 - [01_BIZ_AI创作与生成板块](./docs/business/01_BIZ_AI创作与生成板块.md)

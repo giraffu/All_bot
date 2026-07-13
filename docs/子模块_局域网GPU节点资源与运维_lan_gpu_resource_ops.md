@@ -51,6 +51,7 @@
 | `192.168.1.2` | `allbot-gpu-002` | Ryzen 7 9700X，8C/16T | 60GiB | 2 x RTX 4090 48G | `/` 936G，已用 455G，可用 442G | slot0 SCAIL-2 LAN AIO `8190`，slot1 PornMaster Flux2 edit LAN AIO `8191`；image_to_video AIO stopped rollback |
 
 容量警戒：
+
 - 2026-06-08 已清理各 GPU 节点 ComfyUI 旧素材，`192.168.1.177` 从高风险的约 `14G` 可用恢复；2026-06-18 快照可用约 `243G`，已回升到约 73% 使用率，模型下载和大视频压测前应重点复查。
 - ComfyUI `input/output/temp` 仍会随视频任务快速增长；每次模型下载、Docker pull/build 或大视频压测前都要重新检查 `df -h`。
 - `192.168.1.226` 与 `192.168.1.252` 曾观察到 swap 使用较高，排查慢响应时要同时看内存压力、ComfyUI 任务和 Docker stats。
@@ -77,6 +78,7 @@
 SCAIL-2 动作迁移 / 视频换人 / 视频换脸 v10 有测试与正式链路，不能混用桶和 worker。云测试链路由 `cloud_worker_test_08` 指向 LAN AIO SCAIL-2 runtime `http://192.168.1.2:8190`，可声明 `scail2_action_transfer,scail2_action_transfer_long,scail2_video_replacement,scail2_face_swap_v2` 并通过测试 env 覆盖到 audio/context-window/v10 workflow；视频换脸会先调用 `192.168.1.226:8188` 的 `face_swap_v2.json` 对驱动视频第一帧做图片换脸。测试 runtime 容器 `allbot-lan-aio-gpu-002-gpu0-scail2-test` 本身只跑 ComfyUI、模型同步与 workflow 资产，不注册 Central worker。云正式 SCAIL-2 LAN worker 当前以 `gpu-002-gpu0-scail2` 为主；`gpu-226-gpu0-scail2` 在 2026-07-05 回切到 image_to_video 后保留为同卡候选，使用源码编译 xformers sm_120 的镜像 `192.168.1.115:5000/allbot/comfy-runpod-scail2:20260704-sm120-xformers-pr1262`，但该 RTX 5090 32G 低于 profile catalog 的 48G 偏好容量，未来再启用仍需观察 OOM/status 137。`gpu-252-gpu1-scail2` 固定返修 UUID `GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e` 与 host `8191`，2026-07-04 虽通过 preflight、warm-cache、disabled heartbeat、`/system_stats`、`/object_info` 模型枚举、direct canary 和短 CUDA smoke，但真实 SCAIL-2 face-swap workload 复现 Xid 119/154，当前保持 maintenance-disabled，不计入 SCAIL-2 正式容量。该返修卡同日改承接低负载 `pornmaster_flux2_edit`，不代表 SCAIL-2/Wan22 解封。`gpu-177-gpu1-scail2` 已验证可启动并保留为同卡候选，但 2026-07-02 又切回 LTX 当前态；`gpu-252-gpu0-scail2` 在 2026-07-04 切到 i2i_pro 后保留为同卡回滚候选。正式 LAN SCAIL-2 worker 必须写正式 Central 与 `user-data-prod`，不要把它误判为测试 `cloud_worker_test_08` 能力；正式 RunPod `scail2` 仍保持两任务声明。
 
 所有 worker 挂载：
+
 - `/home/hfy/APP/All_bot/workers/comfy_agent/workflows -> /app/worker/workflows`
 - `/home/hfy/APP/All_bot/src -> /app/src`
 - `/home/hfy/APP/All_bot/logs/workers-cloud-prod -> /app/logs`
@@ -120,6 +122,7 @@ LAN AIO 当前态、候选和缓存状态不再在本文维护静态 slot 表。
 ### 5.1 `allbot-gpu-226` / `192.168.1.226`
 
 硬件与系统：
+
 - Ubuntu 24.04.4 LTS，kernel `6.17.0-20-generic`
 - Ryzen 9 9950X，16C/32T
 - 内存 60GiB
@@ -127,6 +130,7 @@ LAN AIO 当前态、候选和缓存状态不再在本文维护静态 slot 表。
 - Docker 29.1.3，Compose 2.37.1
 
 容器：
+
 - `allbot-lan-aio-gpu-226-gpu0-pornmaster_flux2_edit_bf16-prod`：当前正式 AIO，GPU0，host `8190`，只接 `pornmaster_flux2_edit_bf16`
 - `allbot-lan-aio-gpu-226-gpu0-image_to_video-prod`：同卡回滚候选，恢复后接 `image_to_video` / `video_insert` / `video_edit`
 - `allbot-lan-aio-gpu-226-gpu0-scail2-prod`：同卡回切候选，host `8190`，接 SCAIL-2 四任务
@@ -135,6 +139,7 @@ LAN AIO 当前态、候选和缓存状态不再在本文维护静态 slot 表。
 - `monitor_node_exporter`
 
 ComfyUI：
+
 - 当前接单 runtime 是 Docker LAN AIO `allbot-lan-aio-gpu-226-gpu0-pornmaster_flux2_edit_bf16-prod`，host `8190`
 - 旧宿主机进程不是 Docker Comfy 容器，当前 systemd service 仍 active/idle 且只保留为回滚元数据
 - 旧端口：`8188`
@@ -145,6 +150,7 @@ ComfyUI：
 - 旧对应 worker：`cloud-prod-comfy-agent-1` / `cloud_prod_worker_01`，当前 stopped + Central disabled
 
 2026-07-04 SCAIL-2 LAN AIO 接管与 xformers sm_120 镜像（现为同卡回切候选）：
+
 - 候选 agent：`lan_aio_prod_gpu226_gpu0_scail2_01`
 - 候选容器：`allbot-lan-aio-gpu-226-gpu0-scail2-prod`
 - 端口：host `8190` -> container `8188`
@@ -154,6 +160,7 @@ ComfyUI：
 - 切换验证：fleet `preflight`、镜像加载、warm-cache、drain/wait-idle、stop-old、start-disabled、disabled heartbeat、enable-aio 与 helper restart 均通过。旧 xformers wheel 在真实任务中触发 `memory_efficient_attention_forward` NotImplementedError 后，已改为新镜像而非关闭 xformers；首笔真实 `scail2_video_replacement` 任务 `e623a3a9-65f0-488d-917f-efc9b429781f` 完成并上传，日志显示 `Using xformers attention`，未复现 NotImplementedError/OOM。RTX 5090 32G 仍低于 profile catalog 的 48G 偏好容量，长队列期间继续观察显存峰值和 status 137。
 
 2026-07-02 image_to_video LAN AIO 接管；2026-07-05 回切为当前态：
+
 - 当前 agent：`lan_aio_prod_gpu226_gpu0_image_to_video_01`
 - 当前容器：`allbot-lan-aio-gpu-226-gpu0-image_to_video-prod`
 - 端口：host `8190` -> container `8188`
@@ -162,20 +169,24 @@ ComfyUI：
 - 切换验证：2026-07-02 disabled heartbeat、Comfy `/system_stats`、队列、RIFE 热缓存、5s canary、Web result/last_frame 和后续真实队列任务均通过；2026-07-05 从 SCAIL-2 回切时，fleet `preflight`、镜像存在、warm-cache、drain/wait-idle、stop-old、start-disabled、RIFE 热缓存复制、disabled heartbeat 与 enable-aio 均通过，切后容器 healthy 且 `/queue` 已接受真实 image_to_video prompt。RTX 5090 32G 仍需在长队列期间持续观察显存峰值。
 
 2026-06-15 LTX 补齐：
+
 - 已安装 `ComfyLiterals`，使 `LTX 2.3 I2V 6.1.json` 所需的 `Float` 节点可用。
 - 已补齐 `models/diffusion_models/LTX 2.3/ltx2310eros_v1.safetensors`，与当前 LTX workflow 主模型节点匹配。
 - `cloud-prod-comfy-agent-1` 在原有任务类型基础上追加 `ltx_video`，用于补充 LTX 产能；不要改成只支持 `ltx_video`，否则会移走 worker 01 原有 face/i2i/t2i 能力。
 - `ubantu` 用户级 `comfyui.service` 也存在但已停止，避免与系统级 service 抢占 `8188`；如需统一为 `--enable-manager` 口径，需要具备系统级 service 的 sudo 操作窗口。
 
 2026-06-18 LTX LAN AIO 镜像：
+
 - 已构建并推送 LTX 专用最小 AIO 镜像 `192.168.1.115:5000/allbot/comfy-runpod-ltx-video:20260618-ltx-min-cu128-sageattn1`；镜像只面向 `LTX 2.3 I2V 6.1.json`，baked `sageattention==1.0.6`，不 baked 模型权重，模型仍同步 `allbot-model-cache/ltx_video/2026-06-10/manifest.json`。
 - `gpu-177-gpu1-ltx_video` 使用 LTX 最小 AIO 镜像 `192.168.1.115:5000/allbot/comfy-runpod-ltx-video:20260618-ltx-min-cu128-sageattn1`；它只面向 `LTX 2.3 I2V 6.1.json`，保持 workflow `sage_attention=auto`，不 baked 模型权重，模型仍同步 `allbot-model-cache/ltx_video/2026-06-10/manifest.json`。
 
 2026-06-22 LTX 10Eros v1.2 canary 模型：
+
 - `gpu-177-gpu1-ltx_video` 的 AIO `/workspace` 挂载来自宿主机 `/srv/allbot/runpod-runtime/slots/gpu-177-gpu1/profiles/ltx_video/workspace`，模型应落在容器内 `/workspace/ComfyUI/models/diffusion_models/LTX 2.3/`。
 - 10Eros v1.2 canary workflow 期望模型文件 `10Eros_v1.2_fp8mixed_learned.safetensors`。该模型仍不应 baked 到镜像；云端 R2 `allbot-model-cache/ltx_video/2026-06-10/manifest.json` 当前为 v1.2-only，正式 RunPod 不再依赖旧 v1 回退。AIO 重建应从目标 model-cache 恢复 v1.2 权重，而不是依赖运行中容器的临时文件。
 
 运维边界：
+
 - 不要对 `comfy0/comfy1` 执行 Docker 操作；本机没有这类 Comfy 容器。
 - `gpu-226-gpu0-image_to_video` 的日常启停/重启只走 `scripts/lan_aio_fleet_prod_ops.py` 或 Dashboard LAN AIO worker 卡片；`gpu-226-gpu0-scail2` 只作为同卡回切候选处理。
 - 旧 `8188` 宿主机 ComfyUI 如需回滚，先确认 `cloud-prod-comfy-agent-1`、Central control 和 systemd sudo 维护窗口；不要用 AIO helper 对 systemd 服务做 Docker 操作。
@@ -183,6 +194,7 @@ ComfyUI：
 ### 5.2 `allbot-gpu-177` / `192.168.1.177`
 
 硬件与系统：
+
 - Ubuntu 24.04.4 LTS，kernel `6.17.0-29-generic`
 - Ryzen 7 9700X，8C/16T
 - 内存 60GiB
@@ -191,6 +203,7 @@ ComfyUI：
 - 2026-06-20 清理后根分区 `/` 可用约 `680G`，使用率约 22%；外置盘需操作前重新采集
 
 容器：
+
 - `allbot-lan-aio-gpu-177-gpu0-wan22_video_v2-prod`：正式 AIO，GPU0，host `8190`，live profile `wan22_video_v2`
 - `allbot-lan-aio-gpu-177-gpu0-image_to_video-prod`：GPU0 stopped rollback candidate，host `8190`
 - `allbot-lan-aio-gpu-177-gpu1-ltx_video-prod`：正式 AIO，GPU1，host `8191`，live profile `ltx_video`
@@ -216,11 +229,13 @@ ComfyUI 实例：
 旧 `/data/comfy/models`、`/data/comfy/inst0`、`/data/comfy/inst1` 已在 2026-06-20 删除；配置中的旧路径只保留为历史映射，不是可用运行目录。
 
 旧回滚基线退役记录：
+
 - `cloud_prod_worker_02/03`：Central control 已置为 `disabled`。
 - `cloud-prod-comfy-agent-2/3`：本地主服务器容器已删除。
 - `comfy0/comfy1`、`yanwk/comfyui-boot:cu130-slim`、旧 LTX 一次性 tag 和 `/data/comfy`：已从 `allbot-gpu-177` 删除。
 
 运维边界：
+
 - 日常先读 `ops/gpu_pool_controller/config/lan_aio_fleet_state.yml`，再跑 `python scripts/lan_aio_fleet_prod_ops.py status --include-disabled` 仲裁当前态；不要只凭本文容器表判断哪张卡当前接单。
 - 当前态、回切候选、缓存 marker 与 blocked 原因由 `lan_aio_fleet_state.yml` 维护；2026-07-02 校准后 GPU0 当前为 `wan22_video_v2`，GPU1 当前为 `ltx_video`，SCAIL-2 是同卡回切候选，GPU1 `image_to_video` 与 `wan22_video_v2` 都因 32GB status 137 标为 blocked。
 - 日常只通过 `scripts/lan_aio_fleet_prod_ops.py` 操作目标 slot；旧 `comfy0/comfy1` 和 `cloud-prod-comfy-agent-2/3` 不再存在，不得按旧回滚链路操作。
@@ -231,6 +246,7 @@ ComfyUI 实例：
 ### 5.3 `allbot-gpu-252` / `192.168.1.252`
 
 硬件与系统：
+
 - Ubuntu 24.04.3 LTS，kernel `6.17.0-29-generic`
 - Ryzen 7 9700X，8C/16T
 - 内存 60GiB
@@ -239,6 +255,7 @@ ComfyUI 实例：
 - 2026-06-18 根分区 `/` 可用约 `647G`；外置盘需操作前重新采集
 
 容器：
+
 - `comfy0`：旧回滚基线，停止保留，原端口 `8188`
 - `allbot-lan-aio-gpu-252-gpu0-i2i_pro-prod`：当前正式 AIO，host `8192`，固定健康 UUID `GPU-09b7ea85-23df-a9b8-19d9-703534e47666`，接 `i2i_pro/t2i-pornmaster-turbo/face_swap`
 - `allbot-lan-aio-gpu-252-gpu0-img2img_lora-prod`：同卡回切候选，host `8192`，接 `img2img/img2img_lora`
@@ -270,6 +287,7 @@ ComfyUI 实例：
 共享模型目录：`/home/user/APP/data/models`，约 `121G`。
 
 运行备注：
+
 - `comfy0` CLI 包含 `--fp8_e4m3fn-text-enc`。
 - `comfy0`/旧 `comfy1` 的模型目录共享，实例目录分离。
 - `gpu-252-gpu0-i2i_pro` 正式 AIO 使用 LAN registry 镜像 `192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh`，模型从 `allbot-model-cache/i2i_pro/2026-06-14-test/manifest.json` 同步；`gpu_device_id` 固定健康 UUID，禁止回退到易漂移 host index。
@@ -282,6 +300,7 @@ ComfyUI 实例：
 - 目标用户无免密 sudo 时，镜像可由本地主服务器 `docker save ... | ssh allbot-gpu-252 docker load` 预置，避免为了配置 insecure registry 重启整台 Docker daemon。
 
 运维边界：
+
 - 只处理当前 `img2img/img2img_lora` 相关问题时，优先定位 `allbot-lan-aio-gpu-252-gpu0-img2img_lora-prod` 与 `lan_aio_prod_gpu252_gpu0_img2img_lora_01`；旧 `comfy0` / `cloud-prod-comfy-agent-4` 只用于更早的 legacy 回滚。
 - 只处理 `pornmaster_flux2_single_edit/pornmaster_flux2_multi_edit` 正式接单时，当前定位 `allbot-lan-aio-gpu-252-gpu1-pornmaster_flux2_edit-prod` 与 `lan_aio_prod_gpu252_gpu1_pornmaster_flux2_edit_01`；GPU0 的 PornMaster slot 只作为 8192 同卡回切候选，不应与当前 i2i_pro 同时启用。
 - 只处理 `wan22_video_v2` 相关问题时，当前优先定位 RunPod `runpod_prod_wan22_video_v2_manual_01`；`allbot-lan-aio-gpu-252-gpu1-wan22_video_v2-prod` 只用于重新安装健康 GPU 后的 disabled 验收，旧 `comfy1` / `cloud-prod-comfy-agent-5` 只用于回滚。普通 `image_to_video` 和 `video_edit` 不应路由到该 AIO。
@@ -291,6 +310,7 @@ ComfyUI 实例：
 ### 5.4 `allbot-gpu-002` / `192.168.1.2`
 
 硬件与系统：
+
 - Ubuntu 24.04.4 LTS，kernel `6.8.0-124-generic`
 - Ryzen 7 9700X，8C/16T
 - 内存 60GiB
@@ -299,6 +319,7 @@ ComfyUI 实例：
 - 2026-06-18 根分区 `/` 可用约 `442G`
 
 容器：
+
 - `allbot-lan-aio-gpu-002-gpu0-scail2-prod`：正式 SCAIL-2 AIO，GPU0，host `8190`
 - `allbot-lan-aio-gpu-002-gpu1-pornmaster-flux2-edit-prod`：正式 PornMaster Flux2 edit AIO，GPU1，host `8191`
 - `allbot-lan-aio-gpu-002-gpu1-image_to_video-canary`：image_to_video 回切候选，GPU1，host `8191`，stopped rollback
@@ -319,11 +340,13 @@ ComfyUI 实例：
 共享模型目录：`/data/comfy/models`，约 `85G`。
 
 运维边界：
+
 - gpu-002 GPU0 当前由 fleet 配置 `gpu-002-gpu0-scail2` 纳入 fleet/operator 管理，`scripts/lan_scail2_aio_prod.sh` 只保留 SCAIL-2 低层启动/重建/回滚入口；GPU1 当前由 fleet 配置 `gpu-002-gpu1-pornmaster_flux2_edit` 作为当前可操作 AIO slot 展示，`gpu-002-gpu1-image_to_video` 是同卡回切候选。
 - `cloud_prod_worker_07` 保持 disabled；`lan_aio_prod_gpu002_gpu1_image_to_video_01` 只在回切窗口启用，不应与 PornMaster AIO 同时 enabled 或同卡占用显存。
 - 可只重启目标 AIO/Comfy 容器；不要因为一个容器异常而重启整台 GPU 节点。
 
 LAN RunPod 化一体容器试点：
+
 - 第一轮只允许 slot0 / `img2img_lora`，临时 agent 为 `lan_aio_test_gpu002_gpu0_img2img_lora_01`。
 - canary 宿主机端口固定 `8190:8188`，不得占用或替换原 `8188` 的 `comfy0`。
 - runtime root 固定 `/srv/allbot/runpod-runtime`；slot0 workspace 为 `/srv/allbot/runpod-runtime/slots/gpu-002-gpu0/profiles/img2img_lora/workspace`。
@@ -361,6 +384,7 @@ gpu-002 AIO 正式日常入口为 `scripts/lan_aio_prod_ops.sh`，底层 `script
 双卡 GPU 服务器的两个 ComfyUI 服务是独立容器，但不是完全隔离：
 
 独立部分：
+
 - Docker 容器：`comfy0` / `comfy1`
 - GPU：`DeviceIDs ["0"]` / `DeviceIDs ["1"]`
 - Host 端口：通常 `8188` / `8189`
@@ -371,6 +395,7 @@ gpu-002 AIO 正式日常入口为 `scripts/lan_aio_prod_ops.sh`，底层 `script
 - workflow 目录：`inst0/workflows` / `inst1/workflows`
 
 共享部分：
+
 - 模型目录：`models`
 - 模型 cache：`cache`
 - Docker daemon
@@ -378,6 +403,7 @@ gpu-002 AIO 正式日常入口为 `scripts/lan_aio_prod_ops.sh`，底层 `script
 - DCGM/node exporter 监控容器
 
 因此：
+
 - 处理单个 worker/Comfy 问题时，只重启对应 `cloud-prod-comfy-agent-N` 或对应 GPU 节点上的 `comfy0/comfy1`。
 - 不要执行整机 reboot、`docker compose down`、无 service 名 `docker compose up -d` 或批量 `docker rm`。
 - 修改共享模型目录前，要确认另一张卡没有正在使用同一模型文件。
@@ -397,6 +423,7 @@ gpu-002 AIO 正式日常入口为 `scripts/lan_aio_prod_ops.sh`，底层 `script
 | `input` | 删除 24 小时以前文件 | 已 pop/已 queue 的 ComfyUI prompt 仍可能引用输入文件，不能简单只保留 1 小时 |
 
 不要清理：
+
 - `models`
 - `custom_nodes`
 - `workflows`
@@ -413,6 +440,7 @@ scripts/cleanup_lan_comfy_artifacts.sh --execute
 ```
 
 脚本默认：
+
 - 不带 `--execute` 只扫描不删除。
 - `output/temp` 删除 60 分钟以前文件。
 - `input` 删除 24 小时以前文件。
@@ -448,6 +476,7 @@ curl -fsS http://100.107.220.127:8003/system/status
 | `allbot-gpu-002` | `/` 936G，已用 171G，可用 726G | `inst0 temp/input`、`inst1 output/input` 等旧文件约 276G |
 
 2026-06-20 gpu-177 追加清理结果：
+
 - 先执行安全素材清理，删除旧 `inst0/inst1` output 60 分钟前文件约 `85.54GiB`、input 24 小时前文件约 `41.09GiB`，根分区可用从 `89G` 增至 `216G`。
 - 用户确认不再保留本地旧链路回滚后，删除旧 `comfy0/comfy1`、本地主 `cloud-prod-comfy-agent-2/3`、旧 `/data/comfy`、`yanwk/comfyui-boot:cu130-slim`、旧 LTX 一次性 tag 和孤儿卷；根分区最终约 `190G` 已用、`680G` 可用。
 
@@ -477,6 +506,7 @@ scripts/watch_cloud_worker_recovery.sh --env cloud-prod --mode dry-run
 ```
 
 安全边界：
+
 - 云测试可在故障注入时显式使用 `--mode execute` 精确恢复 `cloud-worker-relay-test` 或单个 `cloud-comfy-agent-test-*`。
 - 云正式默认只运行 dry-run；真实 execute 必须另行确认。
 - watchdog 只恢复本地主服务器上的 relay/agent 容器，不重启 GPU 节点、不重启 `comfy0/comfy1` 或 `allbot-gpu-226` 宿主机 ComfyUI、不执行全量 compose。
@@ -497,6 +527,7 @@ curl -fsS http://127.0.0.1:8188/system_stats
 ```
 
 注意：
+
 - 上例只适合仍保留传统容器的节点，例如 `192.168.1.252:8188` / `comfy0`；`gpu-177` 已是 AIO only，不能再按 `comfy0/comfy1` 回滚或重启。
 - 如果该 ComfyUI 正在执行任务，重启会中断当前任务。
 - 如果 Central 中对应 worker 仍健康，优先等任务自然完成；紧急恢复时再中断。
@@ -558,6 +589,7 @@ done
 ```
 
 ComfyUI 队列判读：
+
 - 7 个 ComfyUI `/queue` 都能毫秒级返回，且 Central heartbeat TTL 正常：节点未挂死。
 - 某个 ComfyUI `running=1` 且 GPU 利用率持续 100%：该卡正在满载推理。
 - 某个 ComfyUI `running=1` 但 GPU 利用率接近 0、显存高：先看 worker 日志是否处于上传、history 补偿、模型加载或等待阶段，再考虑单容器排障。
@@ -574,6 +606,7 @@ ssh allbot-gpu-002 'docker inspect comfy0 comfy1 --format "{{.Name}} {{range .Mo
 ## 12. 文档维护规则
 
 以下事件发生后应更新本文档和 `docs/子模块_系统资源与容量画像_resource_inventory.md`：
+
 - GPU 节点新增、下线、换卡或换 IP。
 - ComfyUI 端口、容器名、模型目录或实例目录变化。
 - worker `SUPPORTED_TASK_TYPES` 或 `COMFY_API_URL` 调整。

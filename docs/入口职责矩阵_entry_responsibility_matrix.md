@@ -3,9 +3,11 @@
 更新时间: 2026-06-10
 
 ## 1. 目的
+
 本文档用于明确 `backend/app` 与 `src/web_api` 的长期职责边界，作为 P0-1 的独立交付物。目标不是重复系统总览，而是提供后续评审可以直接引用的模块级职责矩阵。
 
 ## 2. 判定原则
+
 - `src/web_api` 是主 Web/BFF 入口：承接用户侧认证、任务提交、历史、广场、用户中心、支付展示面接口。
 - `backend/app` 是执行面 / 中控入口：承接 QueueManager、Worker 通信、backend 执行态、系统任务视图与中控专用接口。
 - 新增 Web/BFF 用户能力默认进入 `src/web_api`；只有确属中控执行面或 worker 协议的能力才进入 `backend/app`。
@@ -36,31 +38,38 @@
 | `src/web_api/services/gallery_*` | 广场查询、变更、评论、媒体解析、响应拼装 | 是 | `src/web_api` | 是 |
 
 ## 4. 入口边界说明
+
 ### 4.1 `backend/app` 应继续承接的能力
+
 - Worker/Agent 协议与认证
 - QueueManager、worker 视图、系统状态
 - backend 执行态状态/结果口
 - 中控侧 workflow 专用创建口与相关 wiring
 
 ### 4.2 `src/web_api` 应继续承接的能力
+
 - 用户登录、JWT、会话与安全通知
 - Web 用户发起的任务提交、取消、历史、结果、runtime stream
 - 广场、收藏、评论、模板应用上下文
 - 用户资料、偏好、账单、affiliate 兑换、支付展示面
 
 ### 4.3 明确不应继续扩张的方向
+
 - 不要在 `backend/app` 新增普通 Web/BFF 用户功能。
 - 不要让 `src/web_api` 直接承担 worker 协议、QueueManager 内部状态机或 backend 执行面职责。
 - 不要让两个入口都定义同一用户功能的长期主路径；如确有兼容残留，必须写入 inventory。
 
 ### 4.4 跨入口 provider 注册补充
+
 - provider 注册由应用入口负责，core 模块不在 import 时自动装配。
 - `src/web_api/main.py`、`src/bot_main.py`、`src/payment_api_server.py` 和 `dashboard/backend/main.py` 只要会调用 billing core，都必须调用 `ensure_billing_core_providers_registered()`。
 - Dashboard Backend 的退款、强制终止、资产调整等管理接口会进入 billing core；不能只注册 task core provider。
 - `paid_group_guard_bot/main.py` 只读查询 `users` / `orders` 做付费群入群资格判断，并通过共享文件读取群管理配置、写入删除日志；不调用 billing core 履约或资产变更逻辑，因此不需要 billing provider 注册。
 
 ## 5. 冻结规则建议
+
 在 P0-2 完成前，评审时可先采用以下临时规则：
+
 - 新增用户面 API 默认进入 `src/web_api`。
 - `backend/app` 只允许：
   - 修复中控执行面问题
@@ -69,5 +78,6 @@
 - 若需要在 `backend/app` 新增接口，必须先说明它为什么不属于 `src/web_api`。
 
 ## 6. 后续动作
+
 - 与《双入口重复能力 inventory》配套使用。
 - 后续若补 `backend/app` 冻结区规则，可直接引用本矩阵的“目标归属”列。

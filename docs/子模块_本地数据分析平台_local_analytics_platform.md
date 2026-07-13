@@ -5,6 +5,7 @@
 本模块是项目根目录下的独立本地分析服务，代码位于 `local_analytics_platform/`。它不挂载到现有 Dashboard 菜单，不导入 `dashboard/backend` 或 `dashboard/frontend` 模块，也不承担线上管理后台的用户、任务、RunPod 或系统管理功能。
 
 当前入口:
+
 - 前端页面: `local_analytics_platform/static/index.html`
 - 后端 API: `local_analytics_platform/app/main.py`
 - 容器编排: `local_analytics_platform/docker-compose.yml`

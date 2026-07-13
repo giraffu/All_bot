@@ -1,12 +1,15 @@
 # 03_BIZ_社区广场与社交互动板块
 
 ## 1. 业务需求说明书 (BRD)
+
 **目标定位**：构建系统的 UGC 社区。通过 Gallery 展示高质量作品，为新手提供可直接一键应用的灵感库。
 
 **商业价值**：通过点赞、收藏、排行榜、提示词解锁与模板应用，提升用户粘性与任务提交量；提示词解锁可把 1 灵石收益直接分配给作者，同时借助 R2 边缘分发优化公开内容加载体验。
 
 ## 2. 功能规格说明书 (FSD)
+
 本板块包含以下核心能力：
+
 - **作品发布**：用户可将个人历史中的作品推送到公共广场。
 - **原创保护**：若作品是基于他人模板衍生且 `allow_contribute=False`，系统强制拦截再次发布。
 - **投稿封禁**：管理员可对用户开启 `is_submission_banned`，统一禁止 Bot/Web 端投稿、公开分享与重新上架。
@@ -57,6 +60,7 @@ sequenceDiagram
 ```
 
 ## 4. 当前接口与数据契约
+
 - 发布入口基于历史记录与 gallery post 关联，不再把社区流程叙述成直接耦合旧单体 core。
 - 一键应用当前主路径是 Web apply-context / workbench，不应再把 Telegram compat 流程写成唯一主入口。
 - 市集筛选中自由P图 v2 是独立分组，不与旧自由P图共用 tab；旧自由P图分组保留 `edit` / `quick_image` / `img2img_lora`，v2 分组只收 `pornmaster_flux2_single_edit` / `pornmaster_flux2_multi_edit`。
@@ -75,7 +79,9 @@ sequenceDiagram
 - Dashboard 举报管理入口为 `GET /api/gallery/reports?page=&page_size=&status=&reason=&post_id=`，可用 `POST /api/gallery/reports/{report_id}/resolve` 标记处理，或用 `POST /api/gallery/reports/{report_id}/takedown` 软下架作品；下架会同步 `GalleryPost.is_active=false`、同 `task_id + user_id` 的 `History.is_public=false`，并处理同作品其他 pending 举报。
 
 ## 5. 用户操作手册
+
 ### 5.1 浏览与一键同款
+
 1. 在 Web 端进入社区广场查看作品。
 2. 卡片左上角可查看原始输入缩略图；多输入任务会显示叠层和剩余数量。
 3. 点击卡片查看详情、原始输入列表、模型标签与生成参数。
@@ -84,10 +90,12 @@ sequenceDiagram
 6. 点击一键同款后进入模板应用链路。
 
 ### 5.2 发布作品
+
 1. 在历史记录或结果详情中选择满意作品。
 2. 点击发布到广场。
 3. 若作品满足原创保护条件且账号未被投稿封禁，系统将完成投稿并同步公开资源。
 
 ## 6. 维护原则
+
 - 若修改 gallery submit、apply-context、详情弹层、举报治理或模板应用工作台，需要同步更新本业务文档。
 - 若涉及任务触发链路，优先使用 `task core facade / generation entrypoint` 口径，而不是旧的泛化“Task Core 单体”。

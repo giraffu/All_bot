@@ -1,6 +1,7 @@
 # LAN AIO Production Canary Record - 2026-06-16
 
 ## Scope
+
 - Environment: cloud-prod
 - Node: `gpu-002`
 - Slot: slot1 / GPU 1
@@ -23,6 +24,7 @@ presigned URLs and env values are intentionally omitted from this record.
 | `video_edit` | `image_to_video` | `4449333d-a8c9-465f-9dc5-75250d52b523` | yes | `done` | `success` | MP4 and `last_frame` download OK |
 
 ## Fixes Applied
+
 - The LAN AIO entrypoint now installs `remote_workers/requirements.txt` before
   LAN model cache sync. This prevents missing runtime modules such as `minio`
   or `uvicorn` during model sync and relay startup.
@@ -31,12 +33,14 @@ presigned URLs and env values are intentionally omitted from this record.
   no longer blocks drain/restore logic.
 
 ## Restore State
+
 - Temporary AIO agent was disabled after canary.
 - The slot1 AIO container was stopped.
 - `cloud_prod_worker_07` was restored to production service.
 - gpu-002 original `comfy1` on `8189` remained the production baseline.
 
 ## Follow-Up
+
 - 2026-06-16 later update: gpu-002 slot0 and slot1 were converted from
   one-off canary use to production AIO intake.
 - First steady-state production scope:

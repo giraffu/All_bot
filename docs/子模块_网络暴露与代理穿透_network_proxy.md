@@ -1,6 +1,7 @@
 # 子模块: 网络暴露与代理穿透 (Network & Proxy)
 
 ## 1. 目标与范围
+
 本文档记录 AllBot 当前公网入口、Cloudflare、Tailscale、Web/Nginx VPS 与本地主服务器之间的真实网络契约。当前正式生产已经迁到云控制面；本地主服务器主要承担 GPU worker、legacy MinIO 和本地灾备，不再是正式 Web/API 主入口。
 
 ## 2. 当前入口总览
@@ -135,6 +136,7 @@ curl -sS http://127.0.0.1:8095/api/auth/session
 ## 7. 本地正式灾备网络切换
 
 云正式整体不可用时，按 `docs/子模块_本地正式灾备切换_local_prod_fallback.md` 操作。网络层只允许选择一条切换路径：
+
 - 修改 `api.aivison.it.com` Cloudflare Tunnel 回源到本地 Web API。
 - 或回滚 `web.aivison.it.com` 到 Web/Nginx VPS `/root/dist` 并让 `/api/` 回源本地主服务器。
 
@@ -157,6 +159,7 @@ ssh allbot-do-sgp1-test-control 'curl -fsS http://100.82.124.91:8001/api/health'
 ```
 
 ## 9. 红线
+
 - 不要把 `web.aivison.it.com/api/health` 当作正式 API 健康检查；它会返回 Pages SPA HTML 或前端路由结果。
 - 不要让 Web/Nginx VPS 的 `web-test.aivison.it.com` upstream 指向正式 Web API。
 - 不要复用本地主服务器 RMB Tunnel 来承接正式 `api.aivison.it.com`。
@@ -166,7 +169,9 @@ ssh allbot-do-sgp1-test-control 'curl -fsS http://100.82.124.91:8001/api/health'
 - 不要在 `assets.aivison.it.com` 的 MinIO proxy_pass 后追加 URI 或尾部斜杠。
 
 ## 10. 文档维护
+
 以下变化发生时必须同步更新本文档、边缘节点文档、资源画像和运维 skill：
+
 - Cloudflare Pages 项目、Tunnel connector、Access app/policy、API token 或 public hostname 变化；此类变更必须同步 Cloudflare Ops 专项文档。
 - `api.aivison.it.com`、`rmb.aivison.it.com`、管理后台公网域名、`web-test.aivison.it.com`、`assets.aivison.it.com` 回源变化。
 - 云正式或云测试 Tailscale IP 变化。

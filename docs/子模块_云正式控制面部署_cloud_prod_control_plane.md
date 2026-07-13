@@ -3,9 +3,11 @@
 > 2026-07-13 发布入口变更：新生产发布只允许把云测试已标记 verified 的同一 Git SHA、镜像 digest 与 Web checksum 晋级，入口为 `scripts/release.py deploy --env prod ... --execute --confirm-prod`。禁止 rsync、现场 build、源码挂载和 Pages 自动生产构建。本文后续旧 compose/目录/热修命令是首次切换前 legacy 事实，不是新发布入口；见 `docs/子模块_Git不可变发布_git_immutable_release.md`。本轮未执行生产或 Pages mutation。
 
 ## 1. 当前生产架构事实
+
 截至 2026-06-18，正式生产已经切到“云控制面 + 托管 PostgreSQL/Valkey + R2 + 本地 GPU worker / 手动 RunPod 备用池”的运行口径。
 
 当前 legacy 运行事实与目标切换边界：
+
 - 云控制面 Droplet：`allbot-do-sgp1-control`，运行目录 `/home/deploy/APP/All_bot`。
 - 云控制面规格：DigitalOcean SGP1 Basic Regular `$96/mo`，8 vCPU / 16GB RAM / 320GB SSD。
 - 云端 compose：`deploy/docker-compose-cloud-prod.yml`。
@@ -21,6 +23,7 @@
 ## 2. 服务分布
 
 ### 2.1 云端控制面
+
 云端 `deploy/docker-compose-cloud-prod.yml` 承载：
 
 | 服务 | 容器 | 端口口径 | 说明 |
@@ -123,6 +126,7 @@ Central control 和创建 Pod 前中止。最终验收以 `reconcile.managed_cou
 “手动云正式备用 worker”。
 
 ### 2.2 本地执行面
+
 本地主服务器保留云正式本地 worker compose 和一个本地 worker relay/上传 sidecar。compose 声明 `cloud-prod-comfy-agent-1..7`，但线上实际启停可以按任务容量、LAN AIO 接管、`remote_workers` 和手动 RunPod 状态调整；容量验收应以 `/system/workers` 的目标 worker 集合为准。
 
 | 容器 | 说明 |
@@ -162,6 +166,7 @@ worker 写入 R2 `user-data-prod`，不得配置 legacy MinIO 写路径。启用
 GPU 节点上的 ComfyUI 服务不在本 compose 内。`cloud-prod-comfy-agent-*` 只替换本地主服务器上的 worker 容器，不会自动重启 GPU 节点上的 `comfy0/comfy1` 或宿主机 ComfyUI。GPU 节点硬件、容器、模型挂载和单容器运维边界见 `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md`。
 
 ### 2.3 边缘入口
+
 - `web.aivison.it.com`：静态前端由 Cloudflare Pages 项目 `allbot-web-prod` 承接，生产前端调用 `https://api.aivison.it.com/api`。
 - `api.aivison.it.com`：Cloudflare Tunnel 连接器运行在 `allbot-do-sgp1-control`，回源 `http://100.107.220.127:8000`。
 - `worker-central.aivison.it.com`：远程 worker / RunPod worker 专用 Central 入口，回源 `http://100.107.220.127:8003`；不得用于 Web API，也不得启用会拦截 worker 请求的 Cloudflare Access 登录页。RunPod-Prod 独立 tunnel 若使用新 hostname，需在 Cloudflare Public Hostname 中绑定到 `cloudflared-runpod-prod.service` 对应 tunnel。
@@ -174,6 +179,7 @@ GPU 节点上的 ComfyUI 服务不在本 compose 内。`cloud-prod-comfy-agent-*
 ## 3. 运行态与性能口径
 
 ### 3.1 Central 状态观测
+
 - Central 真实任务分发、worker `pop`、状态上报、完成回流仍走实时 Redis/HTTP。
 - `/system/status` 与 `/system/workers` 是高频观测接口，不是强一致调度入口。
 - Central 在应用生命周期内复用共享 Redis 客户端，避免每个请求新建连接。
@@ -181,6 +187,7 @@ GPU 节点上的 ComfyUI 服务不在本 compose 内。`cloud-prod-comfy-agent-*
 - Dashboard worker 监控应以 `healthy_workers`、`error_workers`、`quarantined_workers` 与 `workers_by_status` 判断容量，不要只看 `active_workers`。
 
 ### 3.1.1 PostgreSQL / Valkey 容量与连接池口径
+
 - 托管 PostgreSQL 当前按 `max_connections=100`、`superuser_reserved_connections=3` 估算，可用业务连接约 `97`。
 - 2026-06-16 云控制面扩到 8C16G 后，生产连接池采用“增强但不贴顶”的预算，目标峰值约 `73/97`：Web API `4 * (6+6) = 48`，Dashboard Backend `6+4 = 10`，Payment API `4+3 = 7`，Bot `4+4 = 8`。
 - 本轮只提升 DB 连接池，不同时提高 `uvicorn --workers` 或 Dashboard `gunicorn -w`，避免进程数和连接池同时放大。
@@ -189,12 +196,14 @@ GPU 节点上的 ComfyUI 服务不在本 compose 内。`cloud-prod-comfy-agent-*
 - 若后续确认 PostgreSQL CPU、IO、锁等待和 idle-in-transaction 长期很轻，可单独评估把峰值预算升至 `80-85`，不要和 Web worker 数调整混在同一个短维护窗口。
 
 ### 3.2 Dashboard 统计
+
 - Dashboard 大盘 stats 是重查询路径，后端使用进程内短缓存与 single-flight，避免多人刷新时重复扫大表。
 - 前端对 stats 类接口不得强制加 `_t` 缓存击穿参数。
 - 队列/worker 轮询保持秒级即可，当前前端监控默认约 2 秒轮询，不应再改成更高频刷新。
 - 单独重建 `cloud-dashboard-backend-prod` 后，`cloud-dashboard-frontend-prod` 的 Nginx 可能仍持有旧 backend 容器 IP，表现为 `/api/*` 502 且日志里 upstream 指向旧 `172.*` 地址；优先执行 `docker exec cloud-dashboard-frontend-prod nginx -s reload`，再复查 `http://100.107.220.127:8086/api/health`。
 
 ### 3.3 Worker 状态回报
+
 - 本地 `cloud-prod-worker-relay` 透明代理 worker 的 `pop/check/peek/complete/heartbeat/task_heartbeat` 到云 Central。非终态 `running` status 可在本地快速 ACK 并合并转发，终态 `complete/failed/cancelled` 必须同步转发成功。
 - Worker `complete` 回报是任务成功收口硬依赖，必须保留有限重试；全部失败后进入失败路径。
 - Worker 运行态 `status` 上报也有轻量重试，用于减少云网络瞬断导致的监控漏报；status 上报失败不会直接判定生成任务失败。
@@ -215,6 +224,7 @@ GPU 节点上的 ComfyUI 服务不在本 compose 内。`cloud-prod-comfy-agent-*
 参考基线：云内通常 5-40ms，Cloudflare Tunnel API 公网约 0.3-0.7s；管理后台云端前端可省掉本地主服务器静态资源和本地网关到云端的额外链路。若云内正常但公网慢，优先查 Cloudflare Tunnel/Access、运营商链路、前端串行请求和 R2 公开域名/短签，而不是先重建 Web API。历史边缘 VPS 到云约 0.5s 的基线只适用于回滚或 `web-test`/`assets` 排障。
 
 常见日志信号：
+
 - `cloud-web-api-prod` 高频 `Timed out resolving web result R2 URL`：结果页或历史详情可能卡在 R2 URL 探测，应优先做短超时、缓存或 `pending_result` 快速返回。
 - Web 边缘 499 高频集中在 `/api/tasks/{id}/result`、`/api/gallery/posts`、`/api/gallery/my-favorites`、`/api/users/history`：通常是用户端等待过久主动断开。
 - `assets.aivison.it.com` 出现 `upstream prematurely closed connection` / `upstream timed out`：只影响人工回滚、旧外链或迁移排障链路；优先查边缘 cache/log 磁盘、Tailscale 到本地 MinIO、真实 object URL，同时确认正式 Web/Dashboard 响应没有返回 `assets` URL。
@@ -225,6 +235,7 @@ GPU 节点上的 ComfyUI 服务不在本 compose 内。`cloud-prod-comfy-agent-*
 本节保留首次不可变切换前的生产运行事实，只用于归档与一次性 legacy 回滚设计。当前生产发布只允许将云测试 verified 的同一 SHA/digest 通过 `scripts/release.py deploy --env prod ... --execute --confirm-prod` 晋级；不得复制执行本节的 rsync、现场 build 或旧热修命令。
 
 ### 4.1 云控制面安全部署
+
 首选从本地主服务器执行更保守的维护式更新脚本，默认 dry-run，真实 mutation 必须同时传 `--execute --confirm-prod`：
 
 ```bash
@@ -234,6 +245,7 @@ scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod --with-db
 ```
 
 该脚本默认流程：
+
 1. 在远端写 `runtime/cloud-prod/GENERATION_MAINTENANCE`，并在正在运行的 `cloud-web-api-prod` / `cloud-tg-bot-prod` / `cloud-qqcc-bot-prod` 内写 `/app/GENERATION_MAINTENANCE`，只阻止新生成任务提交。
 2. 等待 Central `comfy:queue:pending` 与 `comfy:queue:running` 同时清空；不取消任务、不退款、不清 Redis。
 3. `rsync` 同步本地代码到 `allbot-do-sgp1-control:/home/deploy/APP/All_bot`，默认不使用 `--delete`，并排除 `.env*`、`logs/`、`runtime/`、`backups/`、`local_analytics_platform/`、`node_modules/`、`bin/cloudflared`、临时素材等本地数据目录。
@@ -244,6 +256,7 @@ scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod --with-db
 8. 验证云内健康检查、公网正式入口、本地 worker relay、Central queue/status/workers、目标容器 restart count 与最近错误日志，成功后解除生成维护；失败时维护保持开启。
 
 常用参数：
+
 - `--scope control-plane`：默认，使用 `scripts/safe_deploy_cloud_prod.sh --start-control-plane` 更新 Central/Web/Payment/Dashboard/imgproxy。
 - `--scope services --services "web-api-prod dashboard-backend-prod"`：只重建指定云端服务；禁止把 `bot-prod` 放入 `--services`。QQCC 配置 Web 单独更新使用 `--services "qqcc-config-backend-prod qqcc-config-frontend-prod"`。
 - `--qqcc-bot-mode start|stop|auto|skip`：默认 `skip`。`start` 会重建并启动 `qqcc-bot-prod`，要求远端 `.env.cloud.prod` 已配置 `QQCC_BOT_TOKEN`；`auto` 只在 `cloud-qqcc-bot-prod` 原本运行时重建并启动。
@@ -265,6 +278,7 @@ scripts/safe_deploy_cloud_prod.sh --start-control-plane --with-db-upgrade
 ```
 
 要求：
+
 - `.env.cloud.prod` 只在服务器本地保存，不得提交、不贴日志。
 - `docker compose config` 输出会展开密钥，只能本机查看。
 - 有 Alembic 变更时必须确认单 head，并显式执行 `alembic upgrade head`；不要写“容器启动自动迁移”。
@@ -272,6 +286,7 @@ scripts/safe_deploy_cloud_prod.sh --start-control-plane --with-db-upgrade
 - `cloud-web-api-prod`、`cloud-tg-bot-prod` 与 `cloud-qqcc-bot-prod` 挂载 `../runtime/cloud-prod:/app/runtime-flags`，并通过 `GENERATION_MAINTENANCE_FILE=/app/runtime-flags/GENERATION_MAINTENANCE` 读取持久生成维护标记；这保证控制面重建后新容器仍保持维护，直到脚本最后解除。
 
 ### 4.2 云端单服务热修
+
 只改云端某个 COPY 型服务代码时，可以只重建目标服务：
 
 ```bash
@@ -384,6 +399,7 @@ scripts/update_cloud_prod_with_maintenance.sh \
 SCAIL-2 的正式上线起始边界是“只更新云正式主控制面 + 正式 Web/Bot 入口 + gpu-002 slot0 SCAIL-2 AIO runtime/agent”。这条低影响路径不重建 `cloud-prod-comfy-agent-1..7`，不执行 `scripts/start_cloud_prod_worker.sh --start`，不修改 gpu-002 slot1/`8191` 或其它 GPU 节点。后续需要增加正式视频生视频容量时，可以使用手动正式 RunPod `scail2` profile 作为并行 worker；它不替代 slot0 LAN runtime，canary 通过后可与 `lan_aio_prod_gpu002_gpu0_scail2_01` 同时 enabled 接单。
 
 正式 task type：
+
 - `scail2_action_transfer`：动作迁移，用户侧开放 5s/8s/10s/15s/20s，计费 40/80/120/180/260 灵石；10s/15s/20s 在执行面路由为隐藏类型 `scail2_action_transfer_long`
 - `scail2_video_replacement`：视频换人，5s/8s，40/80 灵石
 - `scail2_face_swap_v2`：视频换脸 v10 two-stage，5s/8s，40/80 灵石；仅由 gpu-002 LAN SCAIL-2 正式 worker 承接，正式 RunPod `scail2` 仍保持动作迁移/视频换人两任务。
@@ -412,6 +428,7 @@ scripts/lan_scail2_aio_prod.sh enable --execute
 已在运行的 SCAIL-2 正式 AIO 更新 worker bundle 或任务类型时，使用 `restart-disabled --execute` 代替 `start-disabled --execute`：它只 drain/recreate `lan_aio_prod_gpu002_gpu0_scail2_01`，不会恢复旧 slot0 AIO。
 
 `scripts/lan_scail2_aio_prod.sh` 只操作 gpu-002 slot0/`8190`：
+
 - 新 agent：`lan_aio_prod_gpu002_gpu0_scail2_01`
 - 新容器：`allbot-lan-aio-gpu-002-gpu0-scail2-prod`
 - 旧 slot0 AIO agent：`lan_aio_prod_gpu002_gpu0_img2img_lora_01`
@@ -505,6 +522,7 @@ scripts/runpod_prod_ops.sh enable --profile pornmaster_flux2_edit --slot 01 --ex
 2. 本地主服务器正式 worker 镜像：让 `cloud-prod-comfy-agent-*` 在真实 `/pop` query 中携带 `agent_id=cloud_prod_worker_*`。如果只更新 Central、不重建 worker，control 接口存在但实际 worker 仍不受 drain 控制。
 
 测试环境踩坑记录：
+
 - 远端 `/home/deploy/APP/All_bot` 不应假设是 Git 工作区；生产热修前先备份文件，再用 `rsync -R` 保留相对路径同步。
 - `backend/app/queue_manager.py` 与 `backend/app/queue_manager_flow_helpers.py` 必须一起同步；只同步前者会导致 heartbeat metadata 参数不兼容。
 - 云正式 compose 中 `central-api-prod` 挂载 `../backend/app:/app/app:ro`，同步 Python 文件后重启 `central-api-prod` 即可生效；如同时更新依赖或镜像内文件，再执行 build。
@@ -568,6 +586,7 @@ ssh allbot-do-sgp1-control '
 ```
 
 期望结果：
+
 - `/control/cloud_prod_worker_06` 初始返回 `state=enabled`。
 - 设置 `disabled` 后，带 `agent_id=cloud_prod_worker_06` 的 `/pop` 返回 `task: null`，并说明该 worker 不接新任务。
 - 验证结束必须恢复 `enabled`。
@@ -590,6 +609,7 @@ docker-compose -f docker-compose-cloud-prod-worker.yml up -d --no-deps $services
 首次上正式时注意：旧生产 worker 尚未携带 `agent_id` 前，不能依赖 Central drain 来保护 worker 重建；应选择队列低峰、确认目标 worker 无当前任务，或按单 worker 逐个更新并接受该 worker 当前任务可能中断。完成更新后，从云 Central 日志确认真实 `/pop` URL 已出现 `agent_id=cloud_prod_worker_*`。
 
 最终验收：
+
 - `curl http://100.107.220.127:8003/health` 正常。
 - `/system/workers` 看到当次目标 worker 集合的 heartbeat。若本轮只更新本地 compose worker，至少验证目标 `cloud_prod_worker_*`；若本轮包含 LAN AIO、`remote_workers` 或 RunPod，还要验证对应 agent id、任务类型和 control state。
 - 目标 worker control 状态符合发布计划；需要接正式队列的 worker 为 `enabled`，备用/未验收 worker 保持 `disabled`。
@@ -597,10 +617,12 @@ docker-compose -f docker-compose-cloud-prod-worker.yml up -d --no-deps $services
 - 本地 relay `127.0.0.1:8013/ready` 正常，worker 日志无 `relay_forward_failed`、`sidecar_upload_failed`。
 
 回滚：
+
 - Central 异常时，恢复备份目录中的 `backend/app/*.py` 与 `backend/app/routers/agent.py`，只重启 `central-api-prod`。
 - Worker 异常时，只回滚或重建对应 `cloud-prod-comfy-agent-N`；不得对 `workers` project 使用 `--remove-orphans`，不得清理测试 worker。
 
 ### 4.4 Cloudflare Pages/API Tunnel 维护
+
 正式 Web/API 已完成切换。日常维护只需要确认 Pages 项目、Tunnel connector 和 CORS allowlist 仍与正式域名一致。
 
 Cloudflare Pages 正式 Web 发布细节以 `docs/子模块_边缘节点运维指南_edge_node_ops.md` 的“发布与回滚”小节为准。当前 Pages 构建会使用 Node 24 / npm 10（2026-06-28 实测 `npm@10.9.2`），前端 lockfile 变更发布前必须用 `npx -y npm@10.9.2 ci --progress=false` 和 `npx -y npm@10.9.2 run build:cf-prod` 验证；若 Pages 报 `Missing: @emnapi/runtime@1.11.1 from lock file`，用同版本 npm 执行 `install --package-lock-only` 刷新 `frontend/package-lock.json` 后再提交。
@@ -618,6 +640,7 @@ bash scripts/check_cloudflare_canary.sh
 2026-06-08 晚间已将正式 `api.aivison.it.com` 切到云机 Cloudflare Tunnel，并将 `web.aivison.it.com` 绑定到 Cloudflare Pages 项目 `allbot-web-prod`。`assets.aivison.it.com` 继续留在 Web/Nginx VPS，作为人工回滚、旧外链和 legacy 迁移排障入口。
 
 ### 4.5 本地云正式 worker 更新
+
 worker 镜像 COPY 代码，修改 `workers/comfy_agent` 后必须重建镜像并重建容器。
 
 ```bash
@@ -648,6 +671,7 @@ docker-compose -f docker-compose-cloud-prod-worker.yml up -d --no-deps $services
 worker 正在处理任务时重建会中断该 worker 当前单任务。常规正式 worker/relay 更新应先开启 Web/Bot 维护或等价门禁，阻止新生成任务进入，等待 pending/running 或至少目标 worker 当前任务自然归零，再重建 relay/worker，最后关闭维护并验收。紧急抢修可以按目标 worker 直接处理，但必须明确接受该 worker 当前任务可能中断。
 
 ### 4.6 本地 shadow 同步
+
 本地主服务器保留每日低影响 shadow 同步，用于灾备预热和后续只读数据分析。入口是：
 
 ```bash
@@ -660,6 +684,7 @@ scripts/install_cloud_prod_shadow_sync_timer.sh --execute
 ```
 
 运行口径：
+
 - 主脚本默认 dry-run；真实同步必须显式 `--execute`。
 - 数据库默认使用 `CLOUD_PROD_DB_DUMP_MODE=remote_r2`：脚本通过 SSH 让 `allbot-do-sgp1-control` 在云机读取 `.env.cloud.prod`，用 Docker 工具容器 `postgres:18`（可由 `SHADOW_SYNC_POSTGRES_IMAGE` 覆盖）执行 `pg_dump -Fc --serializable-deferrable`，把 dump/sha256 上传到 R2 临时前缀 `user-data-prod/__shadow-transfer/<timestamp>`，本地主服务器再经 HTTPS/rclone 下载到 ignored 的 `backups/cloud-prod-shadow/<timestamp>/`，校验 sha256 后恢复到 PostgreSQL 18 shadow 目标库 `bot_db_prod_shadow_next`，完成 Alembic/head 与关键表行数校验后，再把 `_next` 切成当前 `bot_db_prod_shadow`。云机临时目录和 R2 临时前缀在下载后清理。
 - `LOCAL_ANALYTICS_PRESERVE_ON_SHADOW_SYNC=true` 默认开启：每日恢复 `_next` 后、切换当前 shadow 前，会把旧 `bot_db_prod_shadow` 内本地分析平台生成的用户画像快照、Prompt Mart、提示词瘦身和 embedding/state 基础表复制到 `_next`；prompt 表使用显式白名单，避免旧相似、场景或图谱派生表被通配恢复。无这些表时只跳过，不阻断 shadow 备份。manifest 会记录本轮保留的表名与数量。
@@ -673,6 +698,7 @@ scripts/install_cloud_prod_shadow_sync_timer.sh --execute
 - 本地分析刷新 timer 为 `allbot-local-analytics-refresh.timer`，默认每日 Asia/Shanghai 05:45，入口 `scripts/run_local_analytics_shadow_pipeline.py --execute --batch-size 128`。该链路会等待 shadow sync 锁释放，先按需恢复本地分析白名单表并运行 `python -m app.refresh_user_profile_snapshots` upsert 当天用户画像快照；若随后检测到 `/app/data/prompt_vectors/.refresh_prompt_vectors.lock` 对应宿主锁仍被上一轮向量刷新持有，则输出 `skipped_vector_lock_held` 并跳过 Mart/slim/embedding 链，但画像快照已完成。无向量锁时按受影响 `prompt_hash` 增量刷新 Prompt Mart、刷新提示词瘦身表，LM Studio embedding 模型可用时续跑缺失向量；已有向量按 `prompt_hash` 断点续跑，不重新计算。链路不再生成语义场景、相似边、近重复族或图谱。05:00 shadow 切库造成 asyncpg 连接断开时，向量刷新会重连并从缺失 embedding 继续。仅人工重建 Mart 时才给 pipeline 追加 `--full-mart`。
 
 安全边界：
+
 - `.env.cloud-prod-shadow-sync.local` 只放在本地主服务器并保持 ignored；不得把 DB 密码、R2 key、Bot token、presigned URL、`.env.cloud.prod` 内容写入日志、manifest、文档或聊天。
 - 目标库禁止使用本地正式 `bot_db` 或云正式 `bot_db_prod`；脚本还会拒绝源/目标 DB host 相同、R2 目标指回云端、R2 bucket 与本地 shadow bucket 同名，以及完整合并桶与 shadow/quarantine/legacy 源桶重名。`remote_r2` / SSH tunnel 只改变 PostgreSQL/Redis 读取与传输路径，不改变 shadow 数据库和本地对象桶目标。
 - 脚本执行时会持有 `backups/cloud-prod-shadow/.shadow-sync.lock`；手动长跑与 systemd timer 不应并发覆盖同一 shadow 目标。
@@ -682,6 +708,7 @@ scripts/install_cloud_prod_shadow_sync_timer.sh --execute
 ## 5. 验证 Checklist
 
 ### 5.1 云控制面
+
 ```bash
 ssh allbot-do-sgp1-control
 CENTRAL=http://100.107.220.127:8003
@@ -692,6 +719,7 @@ docker inspect cloud-central-api-prod --format 'restart={{.RestartCount}} health
 ```
 
 Web、Payment、Dashboard、QQCC Config 验证：
+
 - `https://web.aivison.it.com` Pages 静态站 200，且 JS bundle 指向 `https://api.aivison.it.com/api`
 - `https://api.aivison.it.com/api/health`
 - `https://api-cf-test.aivison.it.com/api/health` 仅在 canary tunnel 已配置时验证；若未配置，不得把 502 当作云 Web API 故障。
@@ -706,6 +734,7 @@ Web、Payment、Dashboard、QQCC Config 验证：
 - Web 卡顿专项需额外记录云内、边缘到云、公网三段延迟，并统计边缘 499、Web R2 result timeout、Dashboard circuit breaker；若响应仍出现 `assets.aivison.it.com`，按 legacy 退出回归缺陷处理。
 
 ### 5.2 Worker
+
 ```bash
 docker ps --format '{{.Names}}\t{{.Status}}' | rg '^cloud-prod-(worker-relay|comfy-agent-)'
 curl -fsS http://127.0.0.1:8013/health
@@ -713,6 +742,7 @@ docker logs --since 2m --tail 100 cloud-prod-comfy-agent-1
 ```
 
 云 Central 应看到：
+
 - `active_workers` / `healthy_workers` 与当次预期容量一致；2026-06-18 03:06 快照为 13 个 active/healthy workers，但 LAN AIO、`remote_workers` 与手动 RunPod 数量都是运行态，不是固定长期容量
 - `error_workers=0`
 - `quarantined_workers=0`
@@ -720,6 +750,7 @@ docker logs --since 2m --tail 100 cloud-prod-comfy-agent-1
 - `cloud-prod-worker-relay` 最近日志无 `relay_forward_failed`、`sidecar_upload_failed`
 
 ### 5.3 数据与媒体
+
 - Alembic 当前 head 应与仓库 migration head 一致。
 - Gallery/History 热路径索引必须存在，尤其是 `ix_gallery_posts_active_created_at_id`、`ix_history_task_id`、`ix_history_user_id_id_desc`、`ix_user_interactions_user_action_post`。
 - 新生成对象写入 R2 `user-data-prod`。
@@ -727,6 +758,7 @@ docker logs --since 2m --tail 100 cloud-prod-comfy-agent-1
 - 本地 shadow 验收只读检查 `bot_db_prod_shadow`、`backups/cloud-prod-shadow/<timestamp>/manifest.json`、MinIO `user-data-prod-shadow` 抽样对象；若启用完整合并桶，还要抽查 `user-data-complete-shadow` 中 R2 新对象和 legacy 旧对象是否都可读。不要把 shadow 验收当作云正式服务已经切到本地。
 
 ## 6. 回滚与事故处理
+
 - 只重建 Central/Web/Dashboard 代码后，若服务异常，优先回滚目标容器代码或恢复热修前备份文件，再只重建目标服务。
 - worker 更新后如果单节点异常，可只重建对应 `cloud-prod-comfy-agent-N`；不要全量清理 `workers` project。
 - 已经启动云 Bot 并产生新写入后，不做简单整站回滚；走数据核对与定向修复。

@@ -1,6 +1,7 @@
 # 子模块: QQCC 懒人 Bot (QQCC Lazy Bot)
 
 ## 1. 范围与定位
+
 QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位于仓库根目录 `qqcc_bot/`，正式名称为 `@QQCC666_bot`。它提供简化生成入口与 QQCC 专用轻量 `修仙市集`，用户、灵石、会员、历史、并发锁、队列、对象存储、worker 与结果回流全部复用现有生产数据和任务链路。主业务 Bot 底部的旧 `修仙市集` 入口已改为 `懒人bot`；`QQCC_LAZY_BOT_ENABLED` 控制入口显示/解析，跳转目标由 `QQCC_LAZY_BOT_URL` 或 `QQCC_LAZY_BOT_USERNAME` 配置。
 
 它不是主 Bot 的完整副本，不承载充值、affiliate 菜单、主 Bot 完整 gallery 浏览、Web 登录、支付回调或高级视频/高级图像入口。
@@ -8,9 +9,11 @@ QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位�
 主菜单可额外展示非生成入口：`修仙市集`、`前往主bot`，以及仅官方 QQCC 展示的 `私有bot`。`修仙市集` 是 QQCC 专用轻量 Gallery 浏览/应用入口；`前往主bot` 用于把用户引回完整主 Bot；`私有bot` 进入 owner token 申请/管理流程。Telegram 底部菜单按钮不能直接承载 URL，因此用户点击 `前往主bot` 后，QQCC Bot 会回复一条带 inline URL 的跳转按钮。私有 Bot Application 不展示 `私有bot`，避免嵌套申请。
 
 ## 2. 功能边界
+
 自由P图 v3 的配置 engine 为 `free_edit_v3`，AI绘图和 AI滤镜均可选择；它不支持 LoRA，单图映射到独立执行类型 `pornmaster_flux2_edit_bf16`，固定计费 6 灵石。新增场景默认 engine 仍为 `free_edit_v2`，已有 v2 配置保持不变。Central 正式 BF16 路由已于 2026-07-12 通过单服务 force-recreate 生效，后台配置、Bot 提交和 gpu-226 BF16 worker 队列现已贯通。
 
 主菜单业务入口只包含：
+
 - `快速换脸`
 - `AI绘图`
 - `AI滤镜`
@@ -25,6 +28,7 @@ QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位�
 `AI滤镜` 是 QQCC Bot 的专用展示文案，对应 `qqcc.menu.ai_filter` 专用路由。它使用独立 `filter_scenes` 场景池，默认配置不种子化场景；`main_buttons.ai_filter=true` 只是允许直接入口，仍需要至少一个有效滤镜场景才在主菜单展示。滤镜场景复用 AI绘图的提示词、负面提示词、engine、LoRA 与 `original_face_swap_enabled` 配置规则，但自身不支持继续配置后处理链。
 
 主菜单非生成入口：
+
 - `修仙市集`
 - `前往主bot`
 - `私有bot`（仅官方 QQCC；私有实例隐藏）
@@ -32,6 +36,7 @@ QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位�
 旧 `快速脱衣` 主菜单、旧 `懒人P图` 主菜单、旧 P 图子按钮和旧快速脱衣二级方式均不再作为 QQCC 用户入口。用户点到旧 reply keyboard 或旧 callback 时必须回复 `功能暂未开放`，不得提交任务。
 
 `AI动图` 场景由管理后台动态配置。默认配置兼容旧五个懒人动图场景：
+
 - 传教士
 - 后入
 - 口交
@@ -59,6 +64,7 @@ QQCC 市集一键应用是轻量 Bot 流程：安全的单图模板在 Bot 内�
 QQCC 市集 apply 下载的用户图片属于 FSM 临时文件；提交异常、unsupported task type、`/cancel` 或全局异常清理都必须删除已下载路径。原生 Bot apply 只支持安全单图模板，提交时必须透传 `source_post_id` 且 `allow_contribute=False`，复杂模板只 Web handoff，不预增 `applied_count`。
 
 QQCC 功能开关与 QQCC 专用提示词覆盖由独立 QQCC Config Web 维护，主 Dashboard 不再显示 `懒人Bot配置` 导航，也不挂载 `/api/qqcc/config`。配置存入 `runtime_checkpoints`，固定 key 为 `qqcc_lazy_bot_config:v1`，不新增表。独立配置后端 `dashboard.backend.qqcc_config_main:app` 暴露：
+
 - `GET /api/qqcc/config`：返回合并默认值后的有效配置，并附带非持久化 `options`，包含 `scene_preset_version`、默认动图/绘图 engine、engine 选项与 LoRA catalog，前端不得手写模型清单或默认场景。
 - `PUT /api/qqcc/config`：规范化并保存配置，只保留已知 key。
 
@@ -67,11 +73,13 @@ QQCC 功能开关与 QQCC 专用提示词覆盖由独立 QQCC Config Web 维护�
 独立配置页还提供“交互文案”覆盖。`quick_faceswap_start`、`ai_draw_menu`、`ai_filter_menu`、`video_menu` 分别覆盖快速换脸与 AI绘图/AI滤镜/AI动图主菜单点击后的提示；`ai_draw_scene_start`、`ai_filter_scene_start`、`video_scene_start` 覆盖三类二级场景点击后的上传提示。输入框的 placeholder 直接展示当前中文系统默认文案，便于对照，但不会写入配置；所有字段留空时仍使用现有 i18n 默认文案。二级场景模板中的 `{butten}` 会在 Bot 发送前替换成实际点击的场景按钮名称（同时兼容 `{button}`），配置值最长 4000 字符。该配置只影响 QQCC 官方和私有 Bot，主 Bot 不受影响。
 
 QQCC Config Web 使用独立后台账号，不复用 Dashboard 管理员 token：
+
 - `QQCC_CONFIG_ADMIN_USERNAME`
 - `QQCC_CONFIG_ADMIN_PASSWORD_HASH`
 - `QQCC_CONFIG_SECRET_KEY`
 
 配置结构固定包含：
+
 - `scene_preset_version`: 当前为 `1`；缺失或小于 `1` 视为旧配置，保存时一次性补齐 QQCC 绘图/动图预设并迁移旧 prompt override；已有 `scene_preset_version>=1` 时尊重管理员删除后的空 `draw_scenes` / `video_scenes`
 - `global_enabled`
 - `main_buttons`: `quick_undress`, `quick_faceswap`, `photo_edit`, `ai_draw`, `ai_filter`, `video_edit`, `market`, `main_bot_link`；`quick_undress` 与 `photo_edit` 仅保留旧配置兼容，QQCC 主菜单不再渲染
@@ -98,12 +106,14 @@ QQCC Config Web 使用独立后台账号，不复用 Dashboard 管理员 token�
 私有 `bot:qqcc-private:<id>` 的多步绘图、原图换脸插入链和尾帧视频链通过 Redis durable continuation checkpoint 跨进程续跑。quick image/video service 必须先持久化用户原图和完整 stage plan，再派发第一阶段；每个中间结果先 CAS 推进 checkpoint 再清理 registry，不对用户发送。最终可见结果先进入 `delivery_pending`，续跑租约 owner 发送成功后再标记 delivered。`_bot_task_recovery` 仍还原展示语义，`_private_qqcc_continuation` 将 active task 精确关联到阶段 checkpoint；缺少有效关联的隐藏中间输出不得作为最终结果发送。
 
 注册的 FSM 只允许：
+
 - `get_quick_image_fsm_handler()`
 - `get_quick_video_fsm_handler()`
 
 不得注册 `faceswap_fsm`、`txt2img_fsm`、`edit_image_fsm`、`image_to_video_fsm`、`wan22_video_v2_fsm`、`ltx_video_fsm`、`scail2_video_fsm`、充值、affiliate redeem 或主 Bot 完整 gallery 菜单入口。`修仙市集` 只能通过 QQCC 专用 handler 与 `qg:` callback 实现轻量浏览/应用。
 
 ## 3. 代码入口
+
 - `qqcc_bot/main.py`：独立启动入口，读取 `QQCC_BOT_TOKEN` 或 `QQCC_BOT_TOKEN_TEST`，设置 `bot_client_type=bot:qqcc`，注册最小 handler 集。
 - `qqcc_bot/keyboards.py`：QQCC 专用主菜单、旧 P 图兼容键盘、`AI绘图` / `AI滤镜` / `AI动图` inline 场景菜单。
 - `qqcc_bot/commands.py`：QQCC `/start` 与 `/cancel`，复用用户创建和准入逻辑，返回简化菜单。
@@ -134,10 +144,12 @@ QQCC Config Web 使用独立后台账号，不复用 Dashboard 管理员 token�
 QQCC Bot 注册 quick image/video ConversationHandler，`qqcc_bot/main.py` 不得启用 PTB `concurrent_updates(True)`；`/cancel` 必须调用 `cleanup_fsm_user_data(...)` 清理 `*_data` 与临时文件，再清理 `qqcc_gallery_apply` session。
 
 ## 4. 任务来源归属
+
 Telegram Bot 任务默认来源为 `client_type="bot"`。QQCC Bot 在 `application.bot_data["bot_client_type"]` 写入 `bot:qqcc`，`run_bot_task_application(...)` 读取该值并透传到 `process_and_submit_task(client_type=...)`。
 `bot:qqcc` 常量与上下文判断统一来自 `src/services/qqcc_runtime_context.py`，避免 QQCC main、quick image/video FSM 和 callback 侧各自复制来源判断。
 
 active task registry 必须持久化 `client_type`：
+
 - 主 Bot 恢复 `client_type=bot` 与缺失 `client_type` 的 legacy 任务。
 - QQCC Bot 只恢复 `client_type=bot:qqcc` 的任务。
 
@@ -156,7 +168,9 @@ owner 轮换凭据时只允许同一 `telegram_bot_id`；即使仍有已扣费/a
 webhook worker 使用全局 inflight、单 Bot prefetch 和 deferred ID 三层有界背压（默认 `64/8/1024`）；启动必须先完整 `XAUTOCLAIM` 旧 PEL，catch-up 完成前不读新 `>` update，避免同一 Bot 新消息越过旧 pending。管理员 `/api/private-bots/admin/metrics` 汇总 stream backlog/pending、webhook enqueue/duplicate/error counters 与 worker active Application、inflight/deferred、处理/DLQ/恢复失败 heartbeat。
 
 ## 5. 部署与 token 红线
+
 云正式 compose service：
+
 - service: `qqcc-bot-prod`
 - container: `cloud-qqcc-bot-prod`
 - profile: `qqcc-bot`
@@ -165,6 +179,7 @@ webhook worker 使用全局 inflight、单 Bot prefetch 和 deferred ID 三层�
 - optional main Bot jump: `QQCC_MAIN_BOT_URL` 或 `QQCC_MAIN_BOT_USERNAME`
 
 云测试 compose service：
+
 - service: `qqcc-bot-test`
 - container: `cloud-qqcc-bot-test`
 - profile: `qqcc-bot`
@@ -174,10 +189,12 @@ webhook worker 使用全局 inflight、单 Bot prefetch 和 deferred ID 三层�
 token 只允许放在 ignored env 文件，例如 `.env.cloud.prod` 或 `.env.cloud.test`。不得写入仓库、docs、日志、工单、`docker compose config` 输出或聊天记录。若 token 曾暴露，应在正式上线前轮换。
 
 独立 QQCC Config Web 云正式 service：
+
 - backend service/container: `qqcc-config-backend-prod` / `cloud-qqcc-config-backend-prod`，默认端口 `8045`
 - frontend service/container: `qqcc-config-frontend-prod` / `cloud-qqcc-config-frontend-prod`，默认端口 `8088`
 
 独立 QQCC Config Web 云测试 service：
+
 - backend service/container: `qqcc-config-backend-test` / `cloud-qqcc-config-backend-test`，默认端口 `8045`
 - frontend service/container: `qqcc-config-frontend-test` / `cloud-qqcc-config-frontend-test`，默认端口 `8088`
 
@@ -258,6 +275,7 @@ scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod --qqcc-bo
 正式启动新实例前必须确认全网没有第二个 `@QQCC666_bot` polling 实例，并确认生产 token 已在远端 `.env.cloud.prod` 配置。日常对正在运行的 `cloud-qqcc-bot-prod` 走专用单服务脚本更新时，不再要求用户每次逐字确认单 polling；用户明确要求该单服务更新即可。
 
 ## 7. 最小验证
+
 代码变更至少跑：
 
 ```bash
@@ -287,6 +305,7 @@ pytest tests/handlers/test_fsm_state_priority.py -q
 ```
 
 QQCC 快速入口至少覆盖：
+
 - 主业务 Bot 主菜单展示 `懒人bot`、`图片换脸` 与 `视频生视频`，不展示旧 `修仙市集` 或 `视频创作`；点击 `懒人bot` 或旧 `修仙市集` 文本回复前往 QQCC 的 inline URL 按钮。
 - 主业务 Bot `图片换脸` 二级菜单只展示 `快速换脸`、`随机换脸` 与返回主菜单；旧 `快速脱衣`、`快速自慰`、旧 `AI绘图` / `AI滤镜` / `AI动图` / `快速换脸` 文本入口、旧动图文本入口和主 Bot 上的 `qvid_*` callback 回复 QQCC 懒人 Bot inline 跳转或入口未配置提示，且不提交任务。
 - `/start` 主菜单默认展示 `快速换脸`、`AI绘图`、`AI动图`，不展示旧 `快速脱衣`、`懒人P图` 或空场景 `AI滤镜`；配置有效 `filter_scenes` 后展示 `AI滤镜`，功能行顺序为 `AI绘图 / AI滤镜 / AI动图`。

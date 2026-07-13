@@ -29,6 +29,7 @@
 这两份 workflow 已移除空的 `Lora Loader (LoraManager)` 节点，运行依赖收敛为 ComfyUI Flux2 core 节点：`UNETLoader`、`CLIPLoader`、`VAELoader`、`ReferenceLatent`、`EmptyFlux2LatentImage`、`Flux2Scheduler`、`SamplerCustomAdvanced` 等。对应文件必须同时存在于 `workers/comfy_agent/workflows/` 与 `remote_workers/comfy_agent/workflows/`，并同步 `src/workflow_mapping_validation.py` 与 `remote_workers/src/workflow_mapping_validation.py`。
 
 模型 bundle 口径为 `pornmaster_flux2_edit_baseline/2026-06-27`，LAN cache prefix 为 `pornmaster_flux2_edit/2026-06-27`。需要的模型相对路径为：
+
 - `diffusion_models/flux2/PornMaster_flux2_klein_9b_turbo_fp8_V4.safetensors`
 - `text_encoders/flux2/qwen_3_8b_fp8mixed.safetensors`
 - `vae/flux2/full_encoder_small_decoder.safetensors`
@@ -46,10 +47,12 @@ LAN AIO 镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_
 ## 一、 新增图生图附加模型（LoRA/ControlNet）实施方案
 
 ### 1. 模型文件部署 (Deployment)
+
 - 将新模型的 `.safetensors` 或 `.pt` 文件放置到 ComfyUI 宿主机映射的对应模型目录中（例如 `models/loras/` 或 `models/controlnet/`）。
 - 确保文件名拼写正确且全系统唯一，因为后续的路由完全依赖此文件路径。
 
 ### 2. Bot 层：更新用户交互菜单 (UI & FSM)
+
 - **文件定位**：`src/handlers/fsm/edit_image_fsm.py`（或相关的状态机配置）。
 - **实施步骤**：
   - 找到存储模型映射的常量字典（如 `LORA_MODELS`）。
@@ -58,6 +61,7 @@ LAN AIO 镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_
   - 若引入的是全新类别（如增加 ControlNet 专属选单），需在状态机流转中插入一个新的等待节点（State）以收集该参数。
 
 ### 3. Backend 层：参数网关透传 (API Routing)
+
 - **文件定位**：`backend/app/models.py` 和 `backend/app/main.py`。
 - **实施步骤**：
   - 检查用于验证图生图请求的 Pydantic 模型（如 `Img2ImgLoraRequest`）。
@@ -65,6 +69,7 @@ LAN AIO 镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_
   - 如果新增了独立维度的参数（如 `controlnet_image` 或 `controlnet_weight`），需在对应模型中声明这些可选字段，确保后端 API 能将参数安全写入 Redis 队列。
 
 ### 4. Worker 层：工作流映射与动态注入 (Workflow Patcher)
+
 - **文件定位**：`workers/comfy_agent/workflows/mappings.json`、`workers/comfy_agent/workflows/Qwen-Rapid-AIO.json` 及 `workers/comfy_agent/workflow_patcher.py`。
 - **实施步骤**：
   - **更新模板**：在 ComfyUI 本地调试好包含新节点的工作流，导出 API 格式的 JSON（非 UI 格式）覆盖现有模板。记录新附加模型节点（如 `Load LoRA`）的节点 ID。
@@ -75,6 +80,7 @@ LAN AIO 镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_
     > 💡 **格式排障**：如果在导出 JSON 时误导出了 UI 格式（包含 `"nodes"` 数组），Agent 的日志会输出 `Workflow xxx.json seems to be in UI format` 警告。请确保使用 ComfyUI 的 `Save (API Format)` 按钮导出。
 
 ### 5. 验证与发布 (Testing & Restart)
+
 - 遵循部署规范，通过 `docker-compose up -d comfy-agent-1` 等指令平滑重载对应的 Agent 容器以读取新 JSON，并重启 Bot 进程。
 - 在 Telegram 中唤起图生图菜单，验证新按钮渲染、参数透传是否成功，并在后台观察 ComfyUI 是否成功加载该 `.safetensors` 文件。
 
@@ -87,6 +93,7 @@ LAN AIO 镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_
 目前系统主要支持 LTX-2.3 和 Wan2.2/Wan2.1 视频生成工作流。关于 LTX-2.3 工作流的具体 LoRA 使用与提示词规范，请参考项目根目录的 `LTX_LoRA_Guide.md`。
 
 ### 0. 当前支持概览
+
 - **普通图生视频 / 自定义图生视频 / 懒人动图**：上游类型仍可保留 `custom_video` / `video_lora` / Web 字面量 `image_to_video` / 懒人动图 mode，执行面统一入队 `TaskType.IMAGE_TO_VIDEO`，底层 workflow 为 `Wan22AioV82.json`。
 - **Wan22 AIO profile 口径**：旧图生视频 `custom_video` / `video_lora` / 懒人动图 mode / legacy `video_insert`、`video_edit` -> execution `image_to_video` -> `legacy_image_to_video` profile；图生视频 v2 `wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。两者共享 worker workflow，但不是同一个用户功能。
 - **旧 LoRA 图生视频 (`video_lora`)**：继续接收 `lora_name` 前缀，由 `workflow_task_patchers.py` 按高噪/低噪双节点动态补入。`custom_video` 不带 LoRA 时会清空 LoRA 槽；`wan22_video_v2` 始终清空额外 LoRA 槽。
@@ -99,6 +106,7 @@ LAN AIO 镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_
 - **Bot 设置面板事实源**：主 Bot 高级视频的同屏设置 view-model/keyboards 已收口到 `src/services/advanced_video_settings_view_service.py`。该 service 只生成旧图生视频/Wan22 v2/LTX 的 Telegram 按钮、费用展示与 LTX 扩展提示文案；不改变 task type、workflow、RunPod profile 或模型目录。
 
 ### 1. 模型文件部署 (Deployment)
+
 - **文件命名规范**：根据现有的探针逻辑，图生视频的 LoRA 模型在生成阶段分为高噪和低噪两个环节。新模型**必须**包含两个文件，并严格按照以下格式命名：
   - `{lora_name}_high_noise.safetensors`
   - `{lora_name}_low_noise.safetensors`
@@ -106,6 +114,7 @@ LAN AIO 镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_
 - 将上述两个文件放置到 ComfyUI 宿主机映射的对应 LoRA 模型目录中（如 `models/loras/`）。
 
 ### 2. Bot 层：更新用户交互菜单 (UI & FSM)
+
 - **文件定位**：`src/handlers/fsm/image_to_video_fsm.py`
 - **实施步骤**：
   - 找到存储模型映射的常量字典 `VIDEO_LORA_MODELS`（定义在 `src/lora_catalog.py`，由 `image_to_video_fsm.py` 渲染）。
@@ -115,6 +124,7 @@ LAN AIO 镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_
   - 旧入口提供 `5s/8s/10s` 三档时长；菜单与 Web 投稿应用都应展示 v2 四档分辨率和三档时长。`/custom_video` 兼容入口应保持无 LoRA，避免把带 LoRA 的任务写成 `custom_video` 历史类型。
 
 ### 3. Backend 层：参数网关透传 (API Routing)
+
 - **文件定位**：`backend/app/models.py` 和 `backend/app/main_simple_task_routes.py`。
 - **实施状态**：**无需修改**。
   - 后端网关已经定义了 `VideoLoraRequest`。
@@ -122,6 +132,7 @@ LAN AIO 镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_
   - `/perfect_video_insert` 与 `/perfect_video_edit` 只作为旧 endpoint 兼容入口保留，会把旧 width/height/frame length 归一为 Wan22 的 `resolution_preset` 与秒数，并入队 `TaskType.IMAGE_TO_VIDEO`。懒人动图差异只体现在 FSM 内置 prompt 和历史 mode，不再对应独立 workflow。
 
 ### 4. Worker 层：工作流动态注入 (Workflow Patcher)
+
 - **文件定位**：`workers/comfy_agent/workflow_task_patchers.py` 和 `workers/comfy_agent/workflows/Wan22AioV82.json`。
 - **实施状态**：**通常无需修改**，但需注意**硬编码防爆红线**。
   - `image_to_video`、legacy `video_insert` / `video_edit` 都必须复用 `patch_image_to_video_workflow`，不要再绑定 `perfect_video_insert.json`、`perfect_video_edit.json` 或任务专属模型。
@@ -136,6 +147,7 @@ LAN AIO 镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_
   - > ⚠️ **节点硬编码警告**：如果后续重导 `Wan22AioV82.json`，必须复核 `2616`、`2617`、`26`、`18`、`2612`、`23`、`24`、`2368`、`2371`、`2578`、`2603`、`265`、`2575`、`2607` 是否仍满足当前补丁与 mappings 逻辑，否则主模型、LoRA、分辨率、首尾帧输入、时长、RIFE 插帧或尾帧输出会失效。
 
 ### 5. 验证与发布 (Testing & Restart)
+
 - 上传好 `.safetensors` 模型文件后，重启 Bot 进程（以重载 `VIDEO_LORA_MODELS` 字典）。
 - 在 Telegram 中唤起【图生视频】菜单，确认新添加的动作按钮出现在首个设置区；选择模型、帧模式和分辨率后直接发送起始图。
 - 观察 Worker (Agent) 的控制台日志，确认 `workflow_task_patchers.py` 成功将 `{lora_name}_high_noise.safetensors` 和 `{lora_name}_low_noise.safetensors` 注入到了 `26` 和 `18` 节点中，且 ComfyUI 能够正常加载文件并启动推理。
@@ -162,10 +174,12 @@ QQCC 独立配置 Web 的 `video_scenes` / `draw_scenes` / `filter_scenes` 可�
 ## 三、 高级图生视频 (`ltx_video`) 附加模型实施方案
 
 ### 1. 模型文件部署 (Deployment)
+
 - 将 LTX-2.3 LoRA 文件直接放到 ComfyUI LoRA 目录，并保持与工作流节点中一致的**相对路径**，例如 `ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors`。
 - 与普通图生视频不同，`ltx_video` 当前走的是**单文件直接注入**，不再要求 `{name}_high_noise / {name}_low_noise` 双文件命名。
 
 ### 2. Bot / Web 层：模型选单
+
 - **文件定位**：`src/lora_catalog.py`、`src/handlers/fsm/ltx_video_fsm.py`、`frontend/src/views/CustomFeatures.vue`、`frontend/src/components/template-apply/TemplateImageToVideoPanel.vue`
 - **实施步骤**：
   - 在 `src/lora_catalog.py` 的 `LTX_VIDEO_LORA_OPTIONS` 中新增模型条目，维护：
@@ -177,6 +191,7 @@ QQCC 独立配置 Web 的 `video_scenes` / `draw_scenes` / `filter_scenes` 可�
   - LTX 结果返回 `extra_outputs.last_frame` 后，Web 结果区/历史详情和 Bot 结果消息可执行“扩展生成”，把上一段尾帧作为下一段起始帧；Bot 扩展入口可选直接续写或添加终止帧，面板不再展示确认按钮，发送提示词即直接续写，发送图片即作为终止帧。
 
 ### 3. Backend 层：参数网关透传
+
 - **文件定位**：`backend/app/models.py`、`backend/app/main_simple_task_routes.py`、`src/core/task_dispatcher.py`
 - **实施状态**：当前 `LtxVideoRequest` 已同时支持：
   - `lora_items: list[{name, strength}]`
@@ -184,6 +199,7 @@ QQCC 独立配置 Web 的 `video_scenes` / `draw_scenes` / `filter_scenes` 可�
 - **说明**：`LtxVideoFlf2VRequest` / `LtxVideoV2VAudioRequest` 对应执行面 `/api/v1/ltx_video_flf2v` 与 `/api/v1/ltx_video_v2v_audio`；当前上游 Web/Bot 用户入口只提交开放的单首帧/首尾帧，public dispatcher 对 `inputs.ltx_mode=v2v_audio` 直接拒绝，底层 simple route/worker 仍保留兼容能力。新增 LTX LoRA 时通常无需新增 task type；重点是保持请求模型、前端提交协议与 worker patcher 的节点约定一致。
 
 ### 4. Worker 层：工作流动态注入
+
 - **文件定位**：`workers/comfy_agent/workflow_task_patchers.py`、`workers/comfy_agent/workflows/LTX 2.3 I2V 6.1.json`、`workers/comfy_agent/workflows/LTX 2.3 FLF2V 6.1.json`、`workers/comfy_agent/workflows/LTX 2.3 V2V Audio 6.1.json`
 - **当前约定**：
   - 可选 LoRA 注入节点固定为 `256`（`Power Lora Loader (rgthree)`）。
@@ -200,6 +216,7 @@ QQCC 独立配置 Web 的 `video_scenes` / `draw_scenes` / `filter_scenes` 可�
 - > ⚠️ **节点硬编码警告**：若你重导出了任一 LTX workflow，必须同步检查 `256`、`191`、`189`、`8`、`15`、`16`、`26:297`、`26:312`、`900`、`902` 这些节点 ID 是否仍满足当前补丁逻辑；否则需要同步修改 `workflow_task_patchers.py`。
 
 ### 5. 验证建议
+
 - Telegram：进入【高级图生视频】后应先看到附加模型选择，完成后看到同屏设置面板；直接发送起始帧即确认普通入口设置，单首帧继续要求提示词，首尾帧再要求上传终止帧。
 - Web：`ltx_video` 页面和模板应用面板都应能提交 `inputs.lora_items`，并正确回显每个模型的当前强度。
 - Worker：分别验证“多选 LoRA / 单个兼容字段 / 不选 LoRA”三种场景，确认多项注入成功、旧字段仍兼容、无 LoRA 时节点被裁剪后仍能正常出图出视频。
@@ -230,6 +247,7 @@ Nomadoor 的四个 UI workflow 仍保存在 `workers/comfy_agent/workflows/` 与
 只动态改生成帧数和 `VHS_LoadVideo.frame_load_cap`，不表示支持无限长输入。
 
 ### 1. 用户参数与计费
+
 - Web payload 使用 `inputs.images=[reference_image_key, motion_video_key]`，第一个 input 是参考图，第二个 input 是驱动视频。
 - Bot 入口位于“视频生视频”二级菜单，默认顺序为“视频换人 / 动作迁移 / 视频换脸 / 返回主菜单”；不再有独立长时长动作迁移入口。Bot 的“视频换脸”入口走 `scail2_face_swap_v2`，旧 `face_video` FSM 仅保留兼容入口。
 - Bot 的 SCAIL-2 流程收参考图片、驱动视频、可选正向提示词和时长；Bot 可点击跳过正向提示词，Web 可留空，空值由 `normalize_scail2_positive_prompt(...)` 按 task type 补默认提示词；负面词固定使用 `SCAIL2_DEFAULT_NEGATIVE_PROMPT`。
@@ -238,6 +256,7 @@ Nomadoor 的四个 UI workflow 仍保存在 `workers/comfy_agent/workflows/` 与
 - 固定输出规格为 `512x896`。长时间模式的硬上限是 20s，不开放无限长度，也不新增长时间视频换人/换脸。
 
 ### 2. Worker patcher 约定
+
 SCAIL-2 workflow 的硬编码节点必须与 `workflow_task_patchers.py` 和测试保持一致：
 
 | 参数 | 节点/输入 |
@@ -273,6 +292,7 @@ worker 先从驱动视频抽第一帧，调用 `192.168.1.226:8188` 的 `face_sw
 目标是让参考图只提供脸部身份，让衣服、身体、背景和构图主要来自驱动视频首帧与驱动视频本身。
 
 ### 3. 模型与镜像
+
 - 模型 manifest 固定为 `allbot-model-cache/scail2/2026-06-17-test/manifest.json`。
 - LoRA 相对路径必须保持 `loras/Wan2.1/Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors`，因为 workflow 的 LoRA 枚举引用带 `Wan2.1/` 子目录。
 - 镜像入口是 `remote_workers/docker/runpod_profiles/scail2/Dockerfile`。
@@ -281,6 +301,7 @@ worker 先从驱动视频抽第一帧，调用 `192.168.1.226:8188` 的 `face_sw
 - 镜像不得 baked 任何 `.safetensors` 模型权重；LAN AIO 与 RunPod 都应启动时从 `allbot-model-cache` 同步模型。
 
 ### 4. 运行环境边界
+
 SCAIL-2 当前有四类运行环境，桶和 worker 不得混用：
 
 | 环境 | runtime/agent | 用户数据桶 | 用途 |

@@ -1,9 +1,11 @@
 # 子模块: 后台监控与清理 (Dashboard & Monitoring)
 
 ## 1. 目标与范围
+
 本模块包含面向管理员的 Dashboard 视图与显式管理动作，用于查看系统任务统计、Worker/Queue 运行态、用户与内容大盘，并在异常情况下通过统一 core/runtime 入口执行任务终止与清理。
 
 当前知识口径下，Dashboard 不是“僵尸任务主处理器”；真正的任务运行态治理已收口到：
+
 - `task_core` facade
 - `task_core_runtime.py`
 - `QueueManager`
@@ -36,7 +38,9 @@ sequenceDiagram
 ```
 
 ## 3. 当前职责边界
+
 ### 3.1 Dashboard 负责什么
+
 - 系统大盘与管理视图
 - task stats、worker/queue 状态聚合
 - 管理员显式触发的终止、清理与只读查询
@@ -44,12 +48,15 @@ sequenceDiagram
 - 管理接口鉴权与审计
 
 ### 3.2 Dashboard 不负责什么
+
 - 不定义任务补偿主链
 - 不直接把 Redis 手工删键当作标准治理方式
 - 不以 `zombie_cleaner_service`、`active_tasks` 哈希、固定 10 分钟阈值作为主文档口径
 
 ## 4. 推荐接口语义
+
 ### 4.1 系统统计
+
 - 读取聚合后的系统任务统计
 - 补充 worker / queue 视图
 - 不把旧字段名固定成唯一契约
@@ -68,16 +75,19 @@ sequenceDiagram
 - Worker listener 应作为受监督后台循环运行；异常后由外层循环重试，不递归 `create_task`，并且每轮退出都显式关闭 pubsub / Redis client。
 
 ### 4.2 强制终止
+
 - Dashboard 应优先调用 core 暴露的系统任务管理入口，如 `force_terminate_task(...)`
 - 退款、锁释放、runtime cleanup 与双 ID 清理由 core/runtime 统一完成
 
 ### 4.3 用户转移
+
 - 用户列表入口的查询条件应先归一化为 `UserListQuery`，再进入查询与 presenter，保持路由参数和响应字段兼容。
 - 用户转移先计算 `UserTransferPlan`，再执行真实迁移；`dry_run=true` 时只返回 before/after、预计 moved_counts 与合并决策，不写库、不写审计日志。
 - 真实转移会把历史、模板共建、签到、账本日志、订单、affiliate 流水、广场投稿/评论/互动、提示词解锁、关注关系与邀请关系并入目标用户；`gallery_prompt_unlocks.user_id + post_id`、`user_follows.follower_id + followee_id` 等唯一锚点在迁移前必须先去重，避免删除源用户时触发非空外键或唯一约束错误。
 - 真实转移的 `extra_info` 必须包含 before/after 快照、moved_counts，以及 membership / ban / stats 的合并决策，便于后续追溯。
 
 ### 4.4 RunPod 管理
+
 - 系统监控页顶部的 `RunPod 管理` 是云正式手动 RunPod 池的 Web 日常入口；后端 API 位于 `dashboard/backend/routers/runpod.py`，执行层收口到 `dashboard/backend/services/runpod_admin_service.py`。
 - Dashboard 不直接实现 RunPod 创建/删除逻辑，只异步调用 `scripts/runpod_prod_ops.sh`，继承 CLI 的门禁、无库存重试、disabled heartbeat、自动 enable、drain/delete 语义。
 - `POST /api/runpod/scale` 接收多 profile 新增数量，后台拆成 profile 级 `add --count N` operation。旧字段 `desired_count` 只作兼容输入并按新增数量解释，不再代表目标总数；同一请求中同一 profile 不允许重复。
@@ -93,6 +103,7 @@ sequenceDiagram
 - API 响应和 operation log 只保留脱敏命令、状态、pid、退出码与日志尾部，不输出 `.env.*` 内容、RunPod API key、agent token、JWT、R2 key 或 presigned URL。
 
 ## 5. 测试要求
+
 - 覆盖 Dashboard 鉴权中间件
 - 覆盖系统统计接口的基础返回
 - 覆盖 `queue_by_type_details` 的 active/pending 分离、最长 pending 等待按 `created_at` 而不是 zset score 计算、low trust free tier pending 用户/任务数聚合，以及 Worker Redis / 低信任统计失败时的降级返回。
@@ -110,6 +121,7 @@ sequenceDiagram
 - 覆盖用户列表筛选/排序、用户转移 dry-run 无副作用、真实转移审计快照，以及提示词解锁/关注关系迁移去重
 
 ## 6. 部署与运维
+
 - Dashboard 随部署脚本更新，但不应被文档描述为“僵尸任务自动自愈中心”。
 - 若出现 stuck task，应优先通过 Dashboard 管理动作或 core 暴露的终止入口处理。
 - Redis 手工删键只作为极端故障兜底，不作为标准 SOP。
@@ -122,6 +134,7 @@ sequenceDiagram
 - 旧的 `0.0.0.0:8043` SSH 转发只作为临时兼容入口；长期应移除或收紧到 `127.0.0.1`，避免绕过受控网关直连云后端。
 
 ## 7. 告警建议
+
 - 任务终态异常率
 - runtime cleanup 失败率
 - worker 存活率与 queue 堆积

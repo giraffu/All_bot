@@ -1,6 +1,7 @@
 # 子模块: 任务调度 (Task Scheduler)
 
 ## 1. 目标与范围
+
 本模块负责统一提交、排队、监控、取消与清理图片/视频生成任务。当前架构下，任务调度不是单一 `task_core.py` 单体，而是由以下几层组成：
 
 - `src/core/task_core.py`：公开 facade，暴露稳定入口，如 `process_and_submit_task(...)`、`persist_successful_task_result(...)`
@@ -24,7 +25,9 @@
 所有 Bot / Web 任务都应通过 facade + provider/dependencies 边界进入调度链，不应在上层直接 import 基础设施实现。
 
 ## 2. 启动与装配
+
 ### 2.1 Provider 注册
+
 `task_core` 相关 provider 必须在应用入口注册，而不是在 core 模块导入时自动完成。当前注册路径为：
 
 - `src/task_core_provider_setup.py`
@@ -38,6 +41,7 @@
 - `src/core` 不能直接 import Web/Bot 请求对象或 `src.logger.UserLogger` 等基础设施实现；需要日志或持久化能力时，通过 protocol/dependency 从 runtime 默认装配注入。
 
 ### 2.2 双 ID 语义
+
 任务链路中同时存在两个 ID：
 
 - `registry_task_id`：本地任务注册表 ID，贯穿 Web/Bot、历史、清理、恢复、SSE 与前台展示
@@ -46,6 +50,7 @@
 取消、恢复、僵尸清理和 side-effect monitor 都必须显式区分这两个 ID，不能混用。
 
 ## 3. 架构图与调用链
+
 ```mermaid
 sequenceDiagram
     autonumber
@@ -68,6 +73,7 @@ sequenceDiagram
 ```
 
 执行面补充口径：
+
 - Central API / QueueManager 仍是唯一队列事实源。worker 真实接单只能通过 `/api/agent/task/pop`，该接口会把任务从 pending 转 running 并写 task heartbeat。
 - V2 worker 可用 `/api/agent/task/pop?cancel_lock=true` 真实接单并立即写 `cancel_locked=1`、`execution_phase=preparing`；pending 仍可取消，locked running 任务应返回不可取消，不再写 `cancel_requested`。legacy 未锁 running 任务保留旧 request-cancel 兼容语义。
 - `/api/agent/task/peek?types=...&limit=1` 只用于 worker 输入预取，只读扫描 pending 候选任务；不得移除 pending、不得写 running、不得更新任务状态或 heartbeat。取消、僵尸检测和终态收口不能依赖 peek。
@@ -76,7 +82,9 @@ sequenceDiagram
 - 开启 `PIPELINE_ENABLED` 时，每个 worker 默认最多持有 2 个 Central running 任务：一个 ComfyUI active/queued，一个 finalizing。上一单 GPU 完成后进入后台 finalizer 上传并 complete，下一单可提前完成输入准备和 `queue_prompt`。Worker 必须按 `prompt_id` 路由 WS 事件，并对所有本地 running/finalizing task 发送 task heartbeat，防止 zombie 误杀。
 
 ## 4. 公开入口与职责
+
 ### 4.1 任务提交门面
+
 当前统一提交入口：
 
 - `src/core/task_core.py::process_and_submit_task(...)`
@@ -93,6 +101,7 @@ sequenceDiagram
 默认 process dependencies 已按 input、billing、submission、side-effect 四组 builder 拆分。新增装配能力时应优先落在对应 builder，保持 `build_default_task_core_process_dependencies(...)` 作为聚合入口，而不是重新把基础设施解析堆回 facade。
 
 ### 4.2 Web 监控门面
+
 当前 Web 异步收尾入口：
 
 - `src/services/task_web_lifecycle_monitor.py::monitor_task_and_release_lock_default(...)`
@@ -106,6 +115,7 @@ sequenceDiagram
 - `task_web_finalizer.py` 负责恢复上次进程未完成的 pending finalizer
 
 补充约束：
+
 - Web API 可多 worker 运行，每个 worker 都可能启动 finalizer loop；`task_web_finalizer.py` 在获取 Redis lock 后必须重新读取单条 pending record，不能继续使用 `hgetall` 快照里的旧 record，避免 stale snapshot 重复收口。
 - 成功历史落库必须对 `user_id + task_id + source` 做幂等保护；重复收口时只能更新/跳过已有 `History`，不能再次插入，也不能重复触发 Web history R2 warmup。
 - 取消退款同样必须幂等。`finalize_task_cancellation(...)` 会用 `registry_task_id` 派生 `task_refund:refund_user_cancel:<registry_task_id>`，账本层把它写入 `user_logs.extra_info.credit_idempotency_key` 并在用户行锁内检查；用户取消接口、Web monitor 或恢复流程重复看到 `cancelled` 时，只能第一次真正增加灵石。
@@ -115,6 +125,7 @@ sequenceDiagram
 成功历史持久化的对象入口为 `persist_successful_task_result_command(TaskSuccessPersistenceCommand(...))`；旧 `persist_successful_task_result(...)` 签名保留为兼容层。新增代码和测试优先构造 command 与 `TaskCorePersistenceDependencies`，不要扩大模块级 monkeypatch。
 
 ### 4.3 Bot 主链路
+
 Bot 不再走字符串取消协议，也不再依赖厚重 compat wrapper。当前主链为：
 
 - FSM / handler
@@ -145,6 +156,7 @@ Bot 前台 `monitor_task_progress(...)` 已进一步拆出纯状态渲染 `rende
 Bot 提交到 `task_core.process_and_submit_task(...)` 时必须携带纯数据 `delivery_context`（当前包括 `chat_id` 与可选 `message_id`），由 registry 持久化为 active task 顶层字段；这样 Bot 进程重启后 `recover_active_tasks(..., client_type="bot")` 才能重新监控 backend task 并把结果发回原 Telegram 会话。`core` 仍不得接收 Telegram `Update`、`Message` 或 `Context` 对象。
 
 ## 5. API 口径
+
 当前 Web 任务入口以 `/api/tasks/generate` 为主，body 口径为：
 
 - `task_type`
@@ -158,7 +170,9 @@ Bot 提交到 `task_core.process_and_submit_task(...)` 时必须携带纯数据 
 不应再使用旧文档中的 `/api/tasks/generation + params` 表述。
 
 ## 6. 运行态与恢复策略
+
 ### 6.1 Web
+
 Web 端已形成两条路径：
 
 - 运行态：`/api/tasks/{task_id}/stream`
@@ -167,6 +181,7 @@ Web 端已形成两条路径：
 SSE 侧当前已把运行态 not-found 收口为明确终止 / fallback 语义，不再稳定制造无效轮询。
 
 ### 6.2 僵尸任务与强制终止
+
 当前僵尸任务清理与强制终止会联合处理：
 
 - backend cancel best-effort
@@ -177,7 +192,9 @@ SSE 侧当前已把运行态 not-found 收口为明确终止 / fallback 语义�
 当前清理阈值以服务实现为准，文档不再固化旧的“10 分钟”口径。
 
 ## 7. 测试要求
+
 ### 7.1 最小必测面
+
 至少覆盖：
 
 - facade 提交成功 / 失败 / 补偿
@@ -191,6 +208,7 @@ SSE 侧当前已把运行态 not-found 收口为明确终止 / fallback 语义�
 - task type registry 一致性：`src/constants.py`、Central simple map、workflow filename、RunPod profile supported task types、Gallery/apply helper 输出
 
 ### 7.2 推荐测试文件
+
 - `tests/core/test_task_core_dependencies.py`
 - `tests/core/test_task_core_persistence.py`
 - `tests/core/test_task_core_r2_warmup.py`
@@ -202,7 +220,9 @@ SSE 侧当前已把运行态 not-found 收口为明确终止 / fallback 语义�
 - `tests/backend/test_main_helpers.py`
 
 ## 8. 部署与回滚
+
 ### 8.1 部署
+
 默认遵循“测试优先部署”：
 
 - 测试环境：默认云测试控制面，日常更新以快速重建对应模块容器为主，不默认进入维护或排空队列；`scripts/update_cloud_test_with_maintenance.sh --execute` 仅用于整栈联动、迁移、排空验证或用户明确要求维护窗口，`scripts/safe_deploy_cloud_test.sh` 是远端控制面重建子步骤。旧本地测试栈不再作为受支持测试或回滚路径，仅作为历史取证材料保留。
@@ -216,12 +236,14 @@ SSE 侧当前已把运行态 not-found 收口为明确终止 / fallback 语义�
 - V2 pipeline 可用 `PIPELINE_ENABLED=false` 按 worker 回退到旧串行路径；生产灰度优先替换单个图生图 worker，观察 GPU 空档、`relay_forward_failed`、`sidecar_upload_failed`、`complete` 失败和 Central zombie 增长。
 
 ### 8.2 回滚
+
 若本轮改动涉及 provider/dependencies 边界，回滚时除了代码版本，还应确认：
 
 - 应用入口的 provider 注册逻辑是否与目标版本一致
 - 相关 focused tests / 主干回归是否重新通过
 
 ## 9. 收口原则
+
 - core 只消费 capability/provider，不直接 import 基础设施实现
 - facade 保留稳定符号；真实逻辑优先下沉到 dependency builder / flow / runtime / monitor 模块
 - 测试优先走显式依赖注入，不依赖旧的模块级 patch seam

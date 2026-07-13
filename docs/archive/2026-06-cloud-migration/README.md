@@ -3,6 +3,7 @@
 本目录保存 2026-06 正式控制面迁云、Cloudflare Pages/API Tunnel canary、R2 历史链路调整和问题复盘的历史材料。它们是证据和背景，不再是当前活跃 SOP。
 
 当前活跃运维入口请以这些文档为准：
+
 - `docs/system_architecture_report.md`
 - `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`
 - `docs/子模块_云测试控制面部署_cloud_test_control_plane.md`

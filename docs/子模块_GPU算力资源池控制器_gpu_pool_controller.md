@@ -1,9 +1,11 @@
 # 子模块: GPU 算力资源池控制器 (GPU Pool Controller)
 
 ## 1. 目标与范围
+
 本模块记录 AllBot 第一阶段 GPU 算力资源池方案。当前不是 K8s/K3s，也不是自动生产弹性伸缩系统；它是一个以声明式配置、dry-run 计划、canary 和受控 RunPod provider 为主的运维控制器。
 
 当前实现入口：
+
 - 控制器包：`ops/gpu_pool_controller/`
 - CLI：`scripts/gpu_pool_controller.py`
 - 默认配置：`ops/gpu_pool_controller/config/`
@@ -34,12 +36,14 @@
 - RunPod bootstrap/model sync：`remote_workers/scripts/runpod_bootstrap_from_git.sh`、`remote_workers/scripts/runpod_sync_models_from_r2.py`
 
 默认边界：
+
 - 本地 GPU 资源池只纳入可 SSH 管理的局域网 GPU 节点。
 - RunPod 不属于局域网 SSH 资源池，不会出现在 `LanSshProvider.inventory_from_config()` 中。
 - Controller v1 默认只做盘点、计划、渲染和 canary；不自动重启 GPU 节点、不自动替换 ComfyUI、不自动按生产队列扩容。
 - 所有真实 RunPod create/start/stop/delete/scale 都必须同时满足门禁环境变量和 `--execute`。
 
 ## 2. 当前资源池口径
+
 可 SSH 管理的局域网 GPU 节点：
 
 | 节点 | Host alias / IP | GPU | ComfyUI 口径 |
@@ -59,7 +63,9 @@
 `POOL_IMAGE_REF` 只是期望 profile/镜像声明，不能当作底层 ComfyUI runtime 的实际镜像事实。
 
 ## 3. 声明式配置与本地命令
+
 主要配置文件：
+
 - `nodes.yml`：节点、GPU、Comfy 实例、模型目录、worker 对应关系
 - `task_profiles.yml`：任务类型、模型 bundle、workflow、custom node、最低显存、镜像引用
 - `assignments.yml`：worker/节点支持哪些任务
@@ -92,6 +98,7 @@ worker 通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 替换实际执行 workflow，
 `i2i_pro_baseline` 的六个 Flux2/Z-Image 模型。
 
 Runtime dry-run 说明：
+
 - `runtime-plan` 输出 runtime/image/model/worker-env diff，不连接远端、不修改 worker。
 - `runtime-render` 渲染标准 ComfyUI runtime compose；只适用于 `docker_container`。
 - `runtime-plan` / `runtime-render` 支持 `--host-port`、`--container-name`、`--api-url`、`--ws-url` 做备用端口 canary 覆盖。
@@ -105,6 +112,7 @@ Runtime dry-run 说明：
 第一轮只允许 `gpu-002` slot0 / `img2img_lora`，临时 agent 固定为 `lan_aio_test_gpu002_gpu0_img2img_lora_01`，canary host port 固定为 `8190`。该路径服务于云测试闭环，不接管旧生产 agent，不修改用户侧 task type，不创建 RunPod Pod。
 
 运行态形态：
+
 - `runtime_shape=runpod_all_in_one`
 - runtime root：`/srv/allbot/runpod-runtime`
 - workspace mount：`/workspace`
@@ -122,6 +130,7 @@ python scripts/upload_all_task_models_to_lan_cache.py --env-file .env.lan.model-
 ```
 
 LAN registry 缓存已验证 GHCR RunPod 镜像，也保存 SCAIL-2 这类本地构建的测试 profile 镜像；不要把未验证的一次性本地构建 tag 当作长期事实源。当前 LAN AIO 镜像关系：
+
 - `ghcr.io/giraffu/allbot-comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946` -> `192.168.1.115:5000/allbot/comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946`
 - `ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh` -> `192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh`
 - `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd` -> `192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd`
@@ -158,6 +167,7 @@ python scripts/gpu_pool_controller.py runtime-render \
 ```
 
 验收时必须看到：
+
 - `x-allbot-runtime.production_port_unchanged=true`
 - `host_port=8190`、`container_port=8188`
 - `runtime_shape=runpod_all_in_one`
@@ -288,6 +298,7 @@ LAN AIO compose 固定带 `restart: unless-stopped`。AIO bootstrap/entrypoint �
 2026-06-28 `gpu-002-gpu1-pornmaster_flux2_edit` 曾通过 fleet 入口替换旧 slot1 `image_to_video` AIO。2026-06-29 曾按单 slot 回切到 image_to_video；同日 23:17 Asia/Shanghai 后又通过当时的 fleet Web 入口切回 `gpu-002-gpu1-pornmaster_flux2_edit`。当前 `lan_aio_prod_gpu002_gpu1_pornmaster_flux2_edit_01` 在 host `8191` 接 `pornmaster_flux2_single_edit` / `pornmaster_flux2_multi_edit`，`gpu-002-gpu1-image_to_video` 作为同卡回切候选，回切时应 drain/stop PornMaster agent/container 后再启动 `allbot-lan-aio-gpu-002-gpu1-image_to_video-canary` 并补齐 RIFE 热缓存。fleet 当前标签只认 live heartbeat / running container；无 live signal 的 `prod_enabled`、`maintenance_disabled`、`candidate`、`blocked_*`、`superseded_*` 都不得被标成 `runtime_current`。不得让两个 8191 容器或两个 GPU1 agent 同时 enabled。
 
 后续优化方向：
+
 - 配置阶段应区分 `prod_enabled`、`canary_ready`、`blocked_host_service_runtime`，避免已正式接管的 slot 仍被误读为 canary。
 - `wan22_video_v2` 在 `gpu-252` GPU1 slot 和历史 `gpu-177` GPU1 blocked slot 都通过 slot-level `target_task_types` 收窄为只接 `wan22_video_v2`；后续新增共享镜像 slot 时也应优先显式声明目标 task type，避免 profile 默认 alias 误接单。`gpu-177` GPU0 当前配置、state 与 live runtime 都按 `wan22_video_v2` 判断；`gpu-177-gpu1-wan22_video_v2` 的 32GB OOM blocked 状态解除前不得作为候选容量。
 - `preflight` / `switch-plan` 仍需继续强化 workflow 文件、remote_workers 挂载、模型 manifest、对象桶和 image digest 检查，减少“容器健康但工作流资产缺失”的误启用。
@@ -328,6 +339,7 @@ scripts/lan_scail2_aio_prod.sh rollback --execute
 `run-sample` 只自动提交 `SCAIL-2_Animation.json`，使用 Nomadoor reference image 和 motion video；另外三个 workflow 只做 `/object_info` 节点、模型枚举与 API prompt 转换 dry-run。生成后的最新 `SCAIL-2*.mp4` 复制到 `gpu-002:/root/scail2-test-results/<timestamp>/`。测试容器默认保留运行，方便继续在 `http://192.168.1.2:8190/` 手工切换 workflow；恢复图生图 slot0 时执行 `restore --execute`，它会停测试容器、启动原 slot0 AIO 并将 `lan_aio_prod_gpu002_gpu0_img2img_lora_01` 恢复为 `enabled`。
 
 密钥边界：
+
 - 真实密钥只放在 ignored env 文件，例如 `.env.lan.model-cache`、`.env.lan-aio-test` 和 `.env.lan-aio-prod`；生产 helper 也可用 allowlist 从 `.env.cloud.prod` 与 `.env.lan.model-cache` 读取必要变量，不直接 `source`。
 - compose 模板只允许出现 `${LAN_AIO_*:?}` / `${LAN_MODEL_CACHE_*:?}` 占位符。
 - 不要直接 `source .env.cloud.test`；RunPod dry-run 继续只使用 controller 的 `--env-file` loader。
@@ -338,6 +350,7 @@ scripts/lan_scail2_aio_prod.sh rollback --execute
 - 单 bundle 通用入口仍为 `scripts/upload_model_bundle_to_r2.py`，通过 `.env.lan.model-cache` 映射 `LAN_MODEL_CACHE_*` 到 `RUNPOD_MODEL_*` 后写入 LAN cache；脚本按对象 size 与 sha256 metadata 跳过已有对象，metadata key 需大小写不敏感处理以兼容 MinIO。
 
 ## 4. RunPod Provider v0
+
 RunPod provider 当前覆盖五类路径：
 
 | 路径 | 用途 | 当前状态 |
@@ -368,6 +381,7 @@ python scripts/gpu_pool_controller.py runpod prod-worker canary --profile scail2
 `render-create` 不需要 `RUNPOD_API_KEY`；`create-pod` 默认 dry-run。
 
 ## 5. RunPod Profile 矩阵
+
 云测试 profile：
 
 | Profile | `SUPPORTED_TASK_TYPES` | `POOL_RUNTIME_PROFILE` | Agent prefix | 模型 manifest |
@@ -399,6 +413,7 @@ python scripts/gpu_pool_controller.py runpod prod-worker canary --profile scail2
 正式 `image_to_video` / `wan22_video_v2` RunPod 镜像必须精确使用 `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd`；`i2i_pro` 镜像必须以 `ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:` 开头；`scail2` 镜像必须以 `ghcr.io/giraffu/allbot-comfy-runpod-scail2:` 开头；`ltx_video` 镜像必须以 `ghcr.io/giraffu/allbot-comfy-runpod-ltx-video:` 开头；`img2img` 使用已验证 public GHCR 图生图镜像。所有 cloud-prod 手动 RunPod profile 都必须在 create payload 显式带 `dockerStartCmd=["bash","-lc","exec bash /opt/allbot/runpod_bootstrap_from_git.sh"]`；若 RunPod API 显示目标 Pod 的 `dockerStartCmd=null`，说明它没有走 bootstrap/model sync/最新 remote_workers bundle，不能通过原地 restart 修复，需先 disable 并确认无当前任务后删除重建。
 
 ## 6. 真实执行门禁
+
 任意真实 RunPod mutation 都必须显式满足：
 
 ```dotenv
@@ -414,12 +429,14 @@ slot 命名空间由 `RUNPOD_PROD_MAX_MANUAL_SLOTS` 控制，默认 `100`，只�
 `manual_01..manual_100` agent/pod 名称。
 
 云测试 split video canary：
+
 - 默认同时测 `image_to_video` 与 `wan22_video_v2`，完成后必须恢复 worker control 并删除 Pod。
 - 传 `--profile image_to_video` 或 `--profile wan22_video_v2` 时只创建 1 个 Pod。
 - 若只允许 4090，可临时覆盖 `RUNPOD_GPU_TYPE_IDS_WAN22_VIDEO_V2='NVIDIA GeForce RTX 4090'`。
 - 失败或中断后必须恢复 worker control、删除 Pod，并用 `list-pods` / `reconcile-managed-pods` 确认 managed count 为 0。
 
 ## 7. 云测试 canary
+
 云测试 canary runner 仍有自己的单次测试安全门禁；这不适用于 Dashboard / cloud-prod
 `prod-worker add`。图生图默认 canary：
 
@@ -478,6 +495,7 @@ MP4/PNG/last-frame 下载校验已收口到 `runpod_http.py`、`runpod_control.p
 做集成回归，避免重新把 HTTP/control/下载逻辑写回 runner。
 
 `i2i_pro` cloud-test canary 必须通过 Web API 创建真实任务，而不是只做 worker 直测。当前 canary 会串行提交 `i2i_pro`、Web `txt2img` 和 `face_swap` 三单。验收口径：
+
 - RunPod worker heartbeat 出现为 `runpod_test_i2i_pro_*`。
 - Central 任务类型分别为 `i2i_pro`、`t2i-pornmaster-turbo`、`face_swap`，每单 `pop_evidence.agent_id` 都匹配该 RunPod worker。
 - 三单 Web result 均为 `success`，最终状态均为 `done`，图片结果可下载。
@@ -503,6 +521,7 @@ openSUSE Tumbleweed 基线，镜像内必须安装 `openssh`，否则 RunPod pro
 direct TCP `root@<public-ip> -p <mapped-port>` 会因容器内无 `sshd` 而拒绝连接。
 
 ## 8. 手动云正式备用 worker
+
 正式 RunPod worker 只作为手动备用，不自动按生产队列扩容。
 
 日常入口优先使用 `scripts/runpod_prod_ops.sh`。它不改变底层 `prod-worker` 语义，只把正式手动备用池的常见动作收窄成固定 SOP；所有 mutation 默认 dry-run，真实执行必须显式 `--execute`，且必须指定 `--profile`。
@@ -540,8 +559,8 @@ Dashboard 系统监控页也提供正式手动 RunPod 池的日常 Web 入口：
 | Dashboard 动作 | 后端 API | 底层命令语义 |
 | :--- | :--- | :--- |
 | `RunPod 管理` 提交多 profile 新增数量 | `POST /api/runpod/scale` | 拆成 profile 级 `scripts/runpod_prod_ops.sh add --count N --retry-unavailable --execute` operation |
-| Worker 卡片 `暂停/开启` (RunPod) | `POST /api/runpod/workers/{agent_id}/pause` / `POST /api/runpod/workers/{agent_id}/enable` | `disable|enable --slot NN --execute`，只切换 Central control，不创建/删除 Pod |
-| Worker 卡片 `暂停/开启` (LAN AIO) | `POST /api/runpod/lan-aio/workers/{agent_id}/pause` / `POST /api/runpod/lan-aio/workers/{agent_id}/enable` | `lan_aio_fleet_prod_ops.py disable-aio|enable-aio --slot ... --execute`，只切换目标 AIO agent 是否接新单；enable 仍执行 AIO gate 校验 |
+| Worker 卡片 `暂停/开启` (RunPod) | `POST /api/runpod/workers/{agent_id}/pause` / `POST /api/runpod/workers/{agent_id}/enable` | `disable\|enable --slot NN --execute`，只切换 Central control，不创建/删除 Pod |
+| Worker 卡片 `暂停/开启` (LAN AIO) | `POST /api/runpod/lan-aio/workers/{agent_id}/pause` / `POST /api/runpod/lan-aio/workers/{agent_id}/enable` | `lan_aio_fleet_prod_ops.py disable-aio\|enable-aio --slot ... --execute`，只切换目标 AIO agent 是否接新单；enable 仍执行 AIO gate 校验 |
 | Worker 卡片 `重启` (RunPod) | `POST /api/runpod/workers/{agent_id}/restart` | `restart --slot NN --execute`，先 disabled，调用 RunPod 原生 restart，等待 heartbeat 后 enable；若底层等待阶段失败但目标已健康 idle，会安全恢复 enabled；禁止用 stop/start 模拟重启 |
 | Worker 卡片 `重启` (LAN AIO) | `POST /api/runpod/lan-aio/workers/{agent_id}/restart` | `lan_aio_fleet_prod_ops.py restart-aio --slot ... --execute`，只重启目标 AIO 容器，等待健康/heartbeat 后 enable |
 | Worker 卡片 `删除` | `DELETE /api/runpod/workers/{agent_id}` | `down --slot NN --execute`，先停接并等待当前任务结束，再删除 Pod |
@@ -818,6 +837,7 @@ python scripts/gpu_pool_controller.py runpod prod-worker up \
 ```
 
 正式流程红线：
+
 - `up --execute` 固定为预检 -> 写目标 agent control `disabled` -> 创建 Pod -> 等 readiness -> 等 Central heartbeat；ready 后默认不抢正式订单。`prod-worker` 的 worker heartbeat 等待默认 `3600s`，用于覆盖 `i2i_pro` / `scail2` 首次同步大模型的启动窗口。
 - `enable --execute` 才允许目标 worker 接单。
 - `down --execute` 必须确认无 `current_task_id`，忙碌 worker 不提供隐式 force；删除已有 Pod 不渲染 create pod request，也不应因缺少某个 profile 的 `RUNPOD_IMAGE_NAME_*` 创建配置而失败。
@@ -828,6 +848,7 @@ python scripts/gpu_pool_controller.py runpod prod-worker up \
 - 生产真实创建、启用、删除或 canary 任务必须由用户明确确认。
 
 ## 9. R2 / RunPod 变量分层
+
 | 变量族 | 语义 | cloud-test | cloud-prod |
 | :--- | :--- | :--- | :--- |
 | `MINIO_*` / `R2_*` | 用户数据桶，包含用户上传、生成结果、历史/Gallery 媒体 | `user-data-test`、`https://r2-test.aivison.it.com` | `user-data-prod`、`https://r2.aivison.it.com` |
@@ -864,6 +885,7 @@ RUNPOD_MODEL_SECRET_KEY={{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}
 `RUNPOD_API_KEY` 只用于 RunPod REST API。GitHub/GHCR token 只用于 Docker CLI login、GHCR push 或 package 管理。Cloudflare `cfat_...` API token 不用于 S3 客户端、RunPod Pod env 或模型同步，不应写入 `.env.cloud.*`、日志或知识库。
 
 ## 10. 镜像、模型与 workflow 口径
+
 - `workers/comfy_agent/workflows` 是 workflow 运行时事实源；Central API 不维护 workflow 副本。
 - Wan22 共享 RunPod 镜像构建入口仍在 `remote_workers/docker/runpod_profiles/wan22_aio_video/`，这是镜像目录名，不表示运行时继续使用 AIO profile。
 - 当前 split video profile 复用 Wan22 GHCR image，但 profile-specific env、agent prefix、`SUPPORTED_TASK_TYPES`、runtime profile 和模型 manifest 必须分开渲染。`image_to_video` / `wan22_video_v2` 不再继承 legacy `RUNPOD_IMAGE_NAME_WAN22_AIO_VIDEO` 或 `RUNPOD_USE_TEMPLATE_WAN22_AIO_VIDEO`；默认直接渲染带 RIFE 的 `imageName`，cloud-prod `prod-worker` 会拒绝旧 tag 或 template。
@@ -891,12 +913,15 @@ RUNPOD_MODEL_SECRET_KEY={{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}
 - `img2img_lora` public GHCR 镜像已经通过真实任务 canary；新 profile 不能继承这个结论，必须单独准备模型 manifest、custom nodes、系统依赖和真实 Web canary。
 
 ## 11. Central / Worker 控制协议
+
 新版 worker 在 `/api/agent/task/pop` 携带 `agent_id`。Central 通过 agent control 键控制单个 worker 是否接新单：
+
 - `enabled`：可正常 pop。
 - `draining`：不再 pop 新任务，等待当前任务自然结束。
 - `disabled`：禁止接新任务。
 
 接口：
+
 - `POST /api/agent/task/control/{agent_id}`
 - `GET /api/agent/task/control/{agent_id}`
 
@@ -905,6 +930,7 @@ RUNPOD_MODEL_SECRET_KEY={{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}
 切换任务能力、同步模型或做单点 canary 前，先把目标 worker 置为 `draining` 或 `disabled`；不要用强制重启代替 drain。
 
 ## 12. 运维红线
+
 - Controller v1 不默认重启 worker、ComfyUI 或 GPU 节点。
 - RunPod provider 不得触发本地 GPU SSH/Docker 操作。
 - RunPod SSH 只用于云测试/失败现场短时诊断，需人工从 RunPod UI 提供当次 proxy SSH 信息；生产路径不依赖 SSH，也不得要求生产 Pod 暴露永久 SSH。

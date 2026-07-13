@@ -1,25 +1,30 @@
 # 子模块: 生成任务全链路 (Task Full Chain)
 
 ## 1. 目标与适用场景
+
 本文档用于说明当前系统中“生成任务”从前端发起，到 Web API 提交，到 `task_core` 派发，再到底层 Central API / Queue / Worker / ComfyUI 执行，以及状态回流、结果持久化、历史查询的完整链路。
 
 适用场景：
+
 - 新增一种新的生成任务类型
 - 运维排查任务卡住、堆积、结果丢失、状态异常
 - 排查 Web 端提交成功但 SSE / 结果 / 历史表现不一致
 - 理解 `registry_task_id` 与 `backend_task_id` 的分工
 
 本文档是对以下文档的补充而不是替代：
+
 - `docs/子模块_任务调度_task_scheduler.md`
 - `docs/子模块_中控API与节点通信_central_api.md`
 - `docs/system_architecture_report.md`
 
 ## 2. 一句话主链
+
 当前系统中更准确的生成任务主链是：
 
 `Frontend Page/Form -> /api/tasks/generate -> task_submission_service -> task_core.process_and_submit_task(...) -> task_core_submission / task_dispatcher / image_service / api_client -> Central API / QueueManager -> comfy_agent（可经本地 relay/sidecar）-> ComfyUI -> status/complete 回流 -> Web monitor / history / coarse status / result`
 
 要点：
+
 - Web 主入口是 `POST /api/tasks/generate`，不是旧的 generation params 风格接口
 - `task_core` 是统一门面，负责业务编排，不是 Central API
 - Central API 是执行面，不负责上游计费、并发锁和历史持久化
@@ -60,15 +65,19 @@ sequenceDiagram
 ```
 
 ## 4. 前端入口链路
+
 ### 4.1 表单与 payload 构造
+
 前端生成页面负责收集用户输入，然后把输入转成统一提交 payload。
 
 常见入口包括：
+
 - `frontend/src/views/CustomFeatures.vue`
 - 旧图生图、图生视频、换脸等 URL 的兼容重定向
 - 统一 payload 构造器，例如 `frontend/src/features/generation/buildGenerationTaskPayload.ts`
 
 前端提交到后端时，核心字段通常包括：
+
 - `task_type`
 - `inputs`
 - `prompt`
@@ -78,12 +87,15 @@ sequenceDiagram
 - `source_post_id`
 
 约束：
+
 - 若是 Web 一等任务类型，前端必须提供稳定的 `task_type`
 - 输入图片、LoRA、分辨率、时长等应统一收口到 `inputs`
 - 新任务类型若要在主站展示为独立能力，前端页面、卡片入口、i18n 和历史/投稿/收藏相关展示也要一并补齐
 
 ### 4.2 任务提交与前端运行态
+
 前端通常通过以下链路提交：
+
 - `frontend/src/composables/useTaskStream.ts`
 - `frontend/src/stores/tasks.ts`
 - `frontend/src/stores/taskSessionState.ts`
@@ -91,6 +103,7 @@ sequenceDiagram
 - `frontend/src/stores/tasksRuntime.ts`
 
 提交后会发生：
+
 1. `useTaskStream.submitTask(...)` 调用 `POST /tasks/generate`
 2. 后端返回 `task_id` 后，前端把该任务写入 `tasksStore`
 3. `tasksStore.startStatusPolling(...)` 默认每 15 秒查询 `/tasks/{task_id}/status` 粗状态；pending 可显示队列位置，running 不显示生成百分比
@@ -99,6 +112,7 @@ sequenceDiagram
 6. pending 悬浮任务的关闭按钮按用户撤销处理，调用 `/tasks/cancel/{registry_task_id}`；非 pending 关闭按钮仅收起本地悬浮任务，不代表后端取消
 
 前端当前的状态语义重点：
+
 - `pending`: 已提交但还在排队
 - `running`: Worker 已开始执行，用户侧只展示“生成中”，不展示百分比
 - `success`: 粗状态终态成功，前端随后去拿结果 URL
@@ -106,22 +120,29 @@ sequenceDiagram
 - `cancelled`: 用户取消或执行面确认取消
 
 ## 5. Web API 提交链路
+
 ### 5.1 主入口
+
 Web 统一入口在：
+
 - `src/web_api/routers/tasks.py`
 - `POST /api/tasks/generate`
 
 这个入口本身应保持薄壳，主要负责：
+
 - 接收 `TaskGenerateRequest`
 - 注入当前用户
 - 转发到 service
 - 把领域异常映射为 HTTP 状态码
 
 ### 5.2 提交 service
+
 真正的 Web 提交 service 在：
+
 - `src/web_api/services/task_submission_service.py`
 
 当前职责：
+
 - 先执行 Web 入口级禁用任务检查；`i2i_draw` 局部重绘当前在 Web 端关闭，会在生成 `task_id`、扣费和入队前返回领域错误
 - 把 `prompt` 补入 `req.inputs`
 - 生成 Web 侧 `task_id`
@@ -131,6 +152,7 @@ Web 统一入口在：
 - 返回给前端 `pending` 初态和余额变化
 
 这意味着 Web 成功返回给前端时，任务通常已经：
+
 - 完成了计费检查
 - 完成了并发锁检查
 - 完成了 registry 注册
@@ -138,12 +160,16 @@ Web 统一入口在：
 - 挂好了 Web monitor side effect
 
 ## 6. task_core 业务编排链路
+
 ### 6.1 统一门面
+
 统一主门面是：
+
 - `src/core/task_core.py`
 - `process_and_submit_task(...)`
 
 它不是简单转发，而是负责编排整个业务提交过程：
+
 - 取策略 `StrategyFactory.get_strategy(task_type)`
 - 计算任务成本
 - 检查并发锁
@@ -154,6 +180,7 @@ Web 统一入口在：
 - 在失败时退款并释放锁
 
 当前 `process_and_submit_task(...)` 内部已继续拆成稳定步骤：
+
 - `task_core_process_flow.build_prepared_task_submission_request(...)`
 - `task_core_process_flow.prepare_task_submission_context(...)`
 - `task_core_process_flow.maybe_deduct_submission_credits(...)`
@@ -161,7 +188,9 @@ Web 统一入口在：
 - `task_core_process_flow.release_submission_lock_if_needed(...)`
 
 ### 6.2 provider / dependency 边界
+
 当前 `task_core` 采用 facade + provider/dependencies 结构：
+
 - `src/core/task_core.py`
 - `src/core/task_lifecycle_contract.py`
 - `src/core/task_core_default_dependencies.py`
@@ -176,6 +205,7 @@ Web 统一入口在：
 - `src/core/task_core_runtime.py`
 
 关键规则：
+
 - `core` 内不应重新直连基础设施实现
 - `task_core_default_dependencies.py` 只保留纯 builder；runtime-specific billing / strategy / Web side effect 装配已下沉到 `src/task_core_process_defaults.py`
 - Bot / Web / stream 对 backend `done/error/cancelled` 终态判断应共享 `task_lifecycle_contract.py`
@@ -187,6 +217,7 @@ Web 统一入口在：
 - provider 运行时注册仍依赖模块级全局状态，测试和离线路径应优先显式传入 dependencies，避免把模块级 patch 当成主测试策略
 
 ### 6.3 双 ID 语义
+
 当前链路中始终同时存在两个 ID：
 
 - `registry_task_id`
@@ -199,12 +230,15 @@ Web 统一入口在：
   - 用于 Central API / Queue / Worker / backend cancel
 
 排障红线：
+
 - 任何运行态查询、取消、强制终止、僵尸清理都必须先确认当前用的是哪个 ID
 - 前端和 Web API 对外接口大多围绕 `registry_task_id`
 - 执行面、队列和 Worker 更多围绕 `backend_task_id`
 
 ### 6.4 Bot 取消与优先级控制
+
 Bot task flow 允许入口层在不改变数据库结构和 worker workflow 的前提下，向 `process_and_submit_task(...)` 透传两个任务控制语义：
+
 - `base_priority`: 默认 `0`，透传到现有 Central 队列优先级计算；QQCC 链式 continuation 子任务使用 `100` 表达“排在第一”。
 - `user_cancel_allowed`: 默认 `true`，写入 active task registry；`false` 时用户取消入口直接返回 `not_cancellable`，不调用 Central cancel，也不触发退款。
 
@@ -221,12 +255,16 @@ Webhook update 先由 Web API 校验后写 `${REDIS_PREFIX}private_qqcc_bot:webh
 私有 active registry 额外保存 `_bot_task_recovery` presentation contract，恢复时还原 `send_result`、用户可见 task type/prompt、输入索引、结果 metadata、完成文案和语言。私有旧记录缺 contract 时 fail closed，隐藏中间输出也不得被恢复器当最终结果发送。QQCC 私有多阶段 continuation 使用 Redis checkpoint 持久化原始输入、stage plan、确定性 submission sequence/registry ID、当前输出与状态；active registry 内 `_private_qqcc_continuation` 关联 chain/stage/executor fence。中间阶段结果必须先 CAS 推进 checkpoint 再 cleanup；最终阶段先记录 `delivery_pending`，delivery owner 发送 Telegram 成功后再 CAS delivered。checkpoint 不可用时保留 paid registry/用户锁，不先发送；worker 启动及周期扫描在 TaskRegistry 为空时仍续跑 ready/delivery checkpoint，租约丢失取消旧 owner，running orphan 在旧锁失效后 rewind。私有多步绘图、内部原图换脸和尾帧视频链因此与官方 `bot:qqcc` 保持同等功能，但仍使用 exact tenant `client_type`。
 
 ## 7. dispatcher 到 backend 执行面的下发
+
 ### 7.1 按任务类型选择策略
+
 下发前的任务类型分流主要在：
+
 - `src/core/task_dispatcher.py`
 - `src/domain_config/task_type_registry.py`（只读事实表、查询 helper 与一致性门禁；当前驱动 Gallery/apply、Central simple task 映射与 workflow filename facts，dispatcher 策略仍由 core 显式装配）
 
 这里决定：
+
 - 用哪种策略计算价格
 - 哪些输入文件需要先上传到存储
 - 如何构造 metadata / payload
@@ -235,6 +273,7 @@ Webhook update 先由 Web API 校验后写 `${REDIS_PREFIX}private_qqcc_bot:webh
 `task_type_registry.py` 记录 public type、legacy alias、执行面 task type、Central type、workflow filename、RunPod profile、视频/Gallery/apply 能力与成本。它提供稳定 query helper，当前已驱动 Gallery 可投稿类型、Gallery 展示配置、apply 输入复用白名单、Central simple task 映射与 workflow filename facts；dispatcher 策略与 worker `SUPPORTED_TASK_TYPES` 仍沿用显式事实源。`tests/config/test_task_type_registry.py` 会对照 `src/constants.py`、`backend/app/main_simple_task_routes.py`、`src/workflow_mapping_validation.py`、RunPod profile、Gallery/apply 输出做一致性门禁；新增或调整任务类型时先让 registry 与现有事实一致，再考虑分批迁移调用点。
 
 例如：
+
 - `txt2img` 走 `submit_txt2img_task(...)`
 - `i2i_pro` 和 `i2i_draw` 有独立提交方法；注意这是 dispatcher/Bot/执行面能力说明，Web API 当前会在 `task_submission_service` 入口拒绝 `i2i_draw`
 - `img2img_lora` 会带 `lora_name` 和 `lora_strength`
@@ -243,16 +282,20 @@ Webhook update 先由 Web API 校验后写 `${REDIS_PREFIX}private_qqcc_bot:webh
 - 视频类会根据分辨率、时长转成底层所需尺寸和帧长
 
 ### 7.2 image_service / api_client
+
 dispatcher 下游通常会继续经过：
+
 - `src/services/image_service.py`
 - `src/api_client.py`
 
 职责划分：
+
 - `task_dispatcher.py` 负责选择策略和高层任务语义
 - `image_service.py` 负责按任务类型封装后端提交调用
 - `api_client.py` 负责实际 HTTP 请求到底层执行面
 
 注意：
+
 - 当前 simple route 仍可能映射到 legacy `TaskType`，但 `txt2img` 已和其他任务一样通过标准 simple route 提交，并显式携带上游 `task_id`
 - `image_service.py` / `api_client.py` 只负责把统一语义下沉到 Central API，不再由 `txt2img` 单独生成 backend task id
 - `api_client.py` 的 HTTP circuit breaker 按请求类别隔离：任务提交走 `submit`，状态轮询走 `status`，媒体下载走 `media`，系统状态检查继续跳过 breaker。HTTP 4xx 不计入 breaker 失败，网络错误、超时和 5xx 才计入；Central Redis transient 503 会被上游忙碌识别处理，不应让状态轮询拖垮提交链路。
@@ -260,11 +303,14 @@ dispatcher 下游通常会继续经过：
 - `custom_video` / `video_lora`、Telegram 懒人动图 mode 与 `wan22_video_v2` 是不同用户功能入口，但底层由 `Wan22AioVideoStrategy` 与共享 submit helper 收口：公开类型继续写历史和展示，执行面类型用于 Central API / Worker 路由。
 
 ## 8. Central API / QueueManager 执行面
+
 ### 8.1 角色定位
+
 Central API 是执行面，不是业务主入口。
 云正式当前运行在 `cloud-central-api-prod`，本地 `cloud-prod-comfy-agent-*` 通过 Tailscale 从云 Central 拉取任务。
 
 核心文件包括：
+
 - `backend/app/main.py`
 - `backend/app/main_simple_task_routes.py`
 - `backend/app/queue_manager.py`
@@ -272,6 +318,7 @@ Central API 是执行面，不是业务主入口。
 - `backend/app/routers/agent.py`
 
 执行面负责：
+
 - 接收 backend 任务
 - 在 `comfy:task_events:{backend_task_id}` 发布运行态与终态事件；其中 `done/error` 终态事件应附带 `task_type`，并优先带上 `worker_id`、`created_at` 等最小详情，供 Dashboard / stream 消费端在上游 runtime cleanup 已发生时仍能完成观测落库
 - 写入 pending 队列
@@ -285,12 +332,15 @@ Central API 是执行面，不是业务主入口。
 - 使用统一 Redis 连接工厂创建共享 Redis 客户端，默认开启短超时、健康检查、TCP keepalive 和 timeout retry；Redis transient retry 耗尽时返回 503 + `Retry-After: 2`，上游按“当前服务器繁忙”路径补偿或重试
 
 ### 8.2 simple task route 与特例
+
 常规 simple task route 在：
+
 - `backend/app/main_simple_task_routes.py`
 
 这里把上游任务 key 映射到 Central API 的 `TaskType`。
 
 当前稳定业务/执行类型至少包括：
+
 - `img2img`
 - `img2img_lora`
 - `face_swap`
@@ -316,7 +366,9 @@ SCAIL-2 长动作迁移的 Context Windows workflow 保持 81/29 窗口与 `stan
 调度，`freenoise=true`。这会恢复较快生成路径，但长动作迁移仍可能出现后续窗口复用前段噪声导致的动作循环。
 
 ### 8.3 QueueManager 的职责
+
 QueueManager 负责执行面排队与 Worker 选择，关键职责包括：
+
 - `enqueue_task`
 - 维护 pending / running 任务
 - 按可用类型给 Worker 分配任务
@@ -326,23 +378,29 @@ QueueManager 负责执行面排队与 Worker 选择，关键职责包括：
 - 支持 `peek_pending_tasks(...)` 只读扫描 pending 队列，供预取流水线观察“下一单候选”，但不做 reservation
 
 从系统语义上看：
+
 - Web/Bot 提交成功不代表 Worker 已接单
 - Worker 接单前，任务仍可能只停留在 pending 队列
 - 没有匹配 `SUPPORTED_TASK_TYPES` 的 Worker 时，任务会持续排队
 - `enqueue_task` 使用 Redis transaction pipeline 写入 task hash、TTL 和 pending zset，并对连接瞬断做有限 retry；`zpopmin` 真实出队不做盲 retry，避免连接未知态下重复弹单
 
 ## 9. Worker / ComfyUI 执行链路
+
 ### 9.1 Worker 主循环
+
 当前底层 Worker 主循环主要在：
+
 - `workers/comfy_agent/agent_main.py`
 - `remote_workers/comfy_agent/agent_main.py` 是给非 Tailscale 远程 Windows 节点 sparse-checkout 使用的同源 bundled 副本
 
 启动后主要做三件事：
+
 - `poll_loop()`: 向 Central API 拉取可执行任务
 - `heartbeat_loop()`: 上报节点和任务心跳
 - `ws_listener_loop()`: 监听 ComfyUI WebSocket 获取进度和终态
 
 关键环境变量：
+
 - `AGENT_ID`
 - `SUPPORTED_TASK_TYPES`
 - `MASTER_API_URL`
@@ -360,6 +418,7 @@ QueueManager 负责执行面排队与 Worker 选择，关键职责包括：
 - `RESULT_SPOOL_DIR`
 
 运维含义：
+
 - 某任务长时间 pending 时，要先看是否有 Worker 声明支持该任务类型
 - Worker 存活但 `SUPPORTED_TASK_TYPES` 不匹配，任务依然不会被接单
 - RunPod `i2i_pro` worker 必须声明 `SUPPORTED_TASK_TYPES=i2i_pro,t2i-pornmaster-turbo,face_swap` 与 `POOL_RUNTIME_PROFILE=i2i_pro`，并设置 `TASK_TYPE_WORKFLOW_OVERRIDES={"t2i-pornmaster-turbo":"txt2img_from_i2i_pro.json","face_swap":"face_swap_v2.json"}`；cloud-test canary 会临时禁用同环境中支持这些执行类型的非 RunPod worker，结束后必须恢复。
@@ -369,7 +428,9 @@ QueueManager 负责执行面排队与 Worker 选择，关键职责包括：
 - LTX 高级图生视频 worker 仍建议同时声明 `SUPPORTED_TASK_TYPES=ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`，其中 `ltx_video_v2v_audio` 仅作历史/队列兼容；当前 Web/Bot 用户入口只会提交单首帧或首尾帧。
 
 ### 9.2 输入准备
+
 Worker 拉到任务后会先处理输入：
+
 - 从 MinIO 下载输入图片或视频
 - 把输入通过 ComfyUI API 上传到 ComfyUI input 区
 - 补全 `image` / `image2` / `image3` / `face_image` / `body_image` / `video` 等参数
@@ -381,12 +442,15 @@ Worker 拉到任务后会先处理输入：
 无输入的任务类型也必须确认 workflow patcher 对纯文本场景兼容，例如 `txt2img`。
 
 ### 9.3 workflow 选择与 patch
+
 底层 workflow 选择依赖：
+
 - `src/workflow_mapping_validation.py`
 - `workers/comfy_agent/workflows/mappings.json`
 - `workers/comfy_agent/workflow_patcher.py`
 
 关键点：
+
 - `TASK_TYPE_WORKFLOW_FILENAMES` 决定任务类型默认绑定哪个 workflow JSON
 - `TASK_TYPE_WORKFLOW_OVERRIDES` 可在单个 Worker 环境变量中覆盖某个 task type 的 workflow JSON，用于云测试/canary；未设置时仍走默认绑定，override 文件名必须留在 workflow 目录内
 - RunPod 使用 `remote_workers/` bundle；当 `i2i_pro` profile 需要同时接 `i2i_pro/t2i-pornmaster-turbo/face_swap` 时，`remote_workers/src/workflow_mapping_validation.py` 必须支持 `TASK_TYPE_WORKFLOW_OVERRIDES`，且 `remote_workers/comfy_agent/workflows/` 必须包含 `txt2img_from_i2i_pro.json` 与 `face_swap_v2.json`。SCAIL-2 默认映射读取 `remote_workers/comfy_agent/workflows/SCAIL-2_Replacement_audio.api.json`、`SCAIL-2_Animation_multi-char_audio.api.json`、`SCAIL-2_Animation_WAN-Context-Windows.api.json` 与 `SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json`；只更新本地主 `workers/` 会让新建 RunPod Pod 或 remote worker 继续读取旧默认 workflow。
@@ -403,12 +467,15 @@ Worker 拉到任务后会先处理输入：
 - SCAIL-2 长动作迁移的 Context Windows 节点当前保持 `freenoise=true`；`workflow_task_patchers.py` 会对 `scail2_action_transfer_long` 再次写入该值，避免 workflow 重导出后把 FreeNoise 关闭。该选择优先减少长时长生成耗时，代价是动作循环类伪影风险可能回归。
 
 如果出现以下错误，优先看这三层：
+
 - Worker 报 `Workflow for xxx not found`
 - patch 后 ComfyUI 报节点输入缺失
 - 某参数前端传了但底层 workflow 实际没吃到
 
 ### 9.4 执行与结果上传
+
 Worker 执行流程：
+
 1. 真实 `/pop` 后进入输入准备；若使用 `cancel_lock=true`，该阶段起用户取消不再受理
 2. 向 ComfyUI 提交 patched workflow，拿到 `prompt_id`
 3. 通过 WebSocket 监听 `execution_start` / `progress` / `execution_success` / `execution_error`
@@ -423,9 +490,11 @@ Worker 执行流程：
 11. 向 Central API 调 `/api/agent/task/status` 的运行态上报也会做轻量重试；status 上报重试耗尽只记录错误，不应直接让当前生成任务失败。Dashboard 上看到的短暂状态缺口要和真正的任务终态失败区分开。
 
 执行失败则走：
+
 - `/api/agent/task/status` 上报 `failed`
 
 维护口径：
+
 - `workers/comfy_agent/agent_main.py` 继续作为启动、shutdown、loop orchestration 和依赖组装 shell；健康/隔离与控制面恢复已下沉到 `agent_health.py`，Central 上报和 retry 下沉到 `agent_reporting_client.py`，预取生命周期下沉到 `agent_prefetch_manager.py`，双槽 pop/prepare/submit 与后台 finalizer 调度下沉到 `agent_pipeline_coordinator.py`，等待完成、quality retry、结果物化、sidecar/R2 上传、complete/fail/cancel 回报和 timeout interrupt 下沉到 `agent_finalizer.py`。旧 `_record_*`、`report_*`、`_prefetch_*`、`_launch_pipeline_task(...)`、`_prepare_and_submit_task(...)`、`_finalize_execution(...)` 方法名保留为薄委托。
 - 输入准备、workflow 执行、结果物化、结果上报等底层 helper 已拆出；旧 `process_task(...)` 仍保留串行兼容路径，串行路径通过 coordinator prepare/submit 后同步调用 finalizer，双槽主链通过 coordinator 启动后台 finalizer。
 - `workers/local_relay/relay_main.py` 是本地 worker relay 与上传 sidecar；非终态 status 可本地 ACK 后合并转发，`pop/check/complete/failed/cancelled` 必须同步转发。`/health` 只表示进程存活，`/ready` 检查 Central 与上传 client，供宿主机 watchdog 判定是否精确恢复 relay；`/ready` 404 是旧运行版本信号，watchdog 只记录不重启。sidecar 上传失败时当前任务应走 failed/status 路径，不得提前 complete。
@@ -433,8 +502,11 @@ Worker 执行流程：
 - `_route_ws_event(...)` 仍承担多种 ComfyUI WebSocket 事件分发；新增事件类型时优先拆 handler map 或独立 handler，避免继续扩大单函数条件分支。
 
 ## 10. 状态回流与结果落地
+
 ### 10.1 Worker 到执行面
+
 Worker 上报的关键回调包括：
+
 - `/api/agent/task/status`
 - `/api/agent/task/complete`
 - `/api/agent/task/heartbeat`
@@ -443,19 +515,23 @@ Worker 上报的关键回调包括：
 - `/api/agent/task/pop?cancel_lock=true`（真实接单并进入取消锁）
 
 执行面据此更新：
+
 - 任务状态
 - 运行中进度
 - 节点当前负载
 - 完成结果路径
 
 ### 10.2 Web side-effect finalizer
+
 Web 任务提交成功后，真正负责“收尾”的是：
+
 - `src/services/task_web_side_effects.py`
 - `src/services/task_web_lifecycle_monitor.py`
 - `src/services/task_web_terminal_finalization.py`
 - `src/services/task_web_finalizer.py`
 
 当前口径是“持久化 finalizer + 恢复循环”：
+
 - 提交成功时先由 `task_web_side_effects.py` 把收尾上下文写入 Redis `pending_web_finalizers`
 - Web API 启动后持续运行 finalizer loop，按 `backend_task_id` 轮询终态
 - 即使 Web 进程重启，只要任务已成功提交，后续仍可恢复成功持久化 / 退款 / cleanup
@@ -467,6 +543,7 @@ Web 任务提交成功后，真正负责“收尾”的是：
 - 历史主动发送必须用统一媒体类型判断（`get_media_type_from_history` / `VIDEO_TASK_TYPES`），不能只靠 `"video" in history.type`；`scail2_action_transfer` 和 `scail2_face_swap_v2` 都必须按 `sendVideo` 发送。
 
 它负责把 backend 终态转为 Web 可消费的最终语义：
+
 - `task_web_lifecycle_monitor.py` 负责构造 terminal snapshot
 - `task_web_terminal_finalization.py` 成功时持久化历史
 - 必要时进行 R2 warmup
@@ -475,11 +552,13 @@ Web 任务提交成功后，真正负责“收尾”的是：
 - 最后释放并发锁并清理 registry 运行态
 
 这也是为什么：
+
 - router 不应该自己做历史落库
 - 前端不应该自己做终态补偿
 - 结果是否最终可见，不只取决于 Worker 是否执行成功，还取决于 finalizer/persistence 是否收口完成
 
 ### 10.3 粗状态、SSE 与结果查询
+
 Web 端当前用户侧运行态与结果查询链路分成三层：
 
 - 用户侧粗状态：
@@ -497,6 +576,7 @@ Web 端当前用户侧运行态与结果查询链路分成三层：
   - service 入口：`src/web_api/services/task_result_service.py`
 
 重要语义：
+
 - `status` / `stream` / `result` 对外接收的都是 `registry_task_id`
 - service 内部会尽量解析出真正的 `runtime_task_id` / `backend_task_id`
 - 用户侧取消入口对外接收 `registry_task_id`；core 会解析 active registry 中的 `backend_task_id` 发给 Central。active registry 同时记录 `credits_deducted`，confirmed cancel 退款必须按该字段判断，不能只看 `cost`。Central 返回 `state=cancelled` 时表示 pending 已确认取消，Web/Bot 侧必须立即走 `finalize_task_cancellation`，完成退款、并发锁释放和 active registry 清理；若仅返回 `cancellation_requested`，说明运行中任务只进入等待执行端确认阶段，不得提前退款或清理 active registry
@@ -509,7 +589,9 @@ Web 端当前用户侧运行态与结果查询链路分成三层：
 - `result` 对 Web 历史优先取 R2 公网结果地址；延迟敏感路径必须用 R2 公网 HEAD 快探测并在查对象存储前释放 DB 只读事务，不能用慢 S3 API HEAD 阻塞请求。R2 warmup 未就绪时，图片可对任务本人返回短有效期 MinIO presigned fallback；视频不走 MinIO 代理 fallback，应返回 `pending_result` 等下一轮轮询拿 R2。前端结果轮询窗口必须覆盖分钟级 R2 warmup，避免 `awaitingResult` / “保存结果中” 阶段被视频拉流、R2 HEAD 阻塞或短轮询窗口拖成网络失败/不返回结果。
 
 ## 11. 历史、收藏、投稿与结果可见性
+
 对于 Web 一等任务类型，只打通底层执行链路通常还不够，还要看是否要进入这些链：
+
 - `History` 落库
 - 最近历史列表
 - 收藏
@@ -521,26 +603,31 @@ Web 端当前用户侧运行态与结果查询链路分成三层：
 如果一个任务“能生成但前端看不见”，常见不是 worker 问题，而是这些展示链没补齐。
 
 ## 12. 新任务类型添加清单
+
 新增生成任务类型时，按下面顺序检查最稳妥。
 
 ### 12.1 前端层
+
 - 是否需要新的页面、卡片入口、路由
 - 是否补了 `task_type` 常量与文案
 - 是否补了表单到 `inputs` 的 payload 构造
 - 是否需要进入历史、收藏、投稿、详情、筛选 tabs
 
 ### 12.2 业务编排层
+
 - `src/constants.py` 是否补了 mode、成本、名称映射
 - `src/core/task_dispatcher.py` 是否为该类型接入正确策略
 - `image_service.py` / `api_client.py` 是否新增对应提交方法
 - 是否要走现有兼容链，还是应成为标准 simple route
 
 ### 12.3 Central API 层
+
 - 若走 simple route，`src/domain_config/task_type_registry.py` 是否补了 `central_type`，且 `backend/app/main_simple_task_routes.py` 是否补了 task key 和路由
 - 相关 Pydantic request / enum / handler 是否齐全
 - QueueManager 是否能识别并分发该类型
 
 ### 12.4 Worker / workflow 层
+
 - `src/domain_config/task_type_registry.py` 是否补了 `workflow_filename`，且 `src/workflow_mapping_validation.py` 是否能从 registry 派生到该 workflow 文件映射
 - `workers/comfy_agent/workflows/` 是否新增 workflow JSON
 - `workers/comfy_agent/workflows/mappings.json` 是否补了参数映射
@@ -548,26 +635,33 @@ Web 端当前用户侧运行态与结果查询链路分成三层：
 - 对应环境中的 Worker `SUPPORTED_TASK_TYPES` 是否包含该类型
 
 ### 12.5 Registry 门禁
+
 - `src/domain_config/task_type_registry.py` 是否补了 public type、alias、execution type、Central type、workflow filename、RunPod profile、Gallery/apply 与成本字段
 - `tests/config/test_task_type_registry.py` 是否覆盖该任务类型与相关 alias
 - registry 与 `src/constants.py`、`SIMPLE_TASK_TYPE_MAP`、`TASK_TYPE_WORKFLOW_FILENAMES`、RunPod profile 支持类型是否一致
 
 ### 12.6 收尾与展示层
+
 - `task_result_service.py` 是否能正确返回公网可访问结果
 - 历史、收藏、投稿、Gallery 筛选是否要纳入该类型
 - 中英文 locale 是否补齐
 - focused tests 和黄金路径回归是否补齐
 
 ## 13. 运维排障清单
+
 ### 13.1 前端提交直接失败
+
 优先检查：
+
 - `/api/tasks/generate` 返回码
 - 是否触发 402 灵石不足
 - 是否触发 429 并发锁限制
 - `task_submission_service.py` 是否把必要字段写入了 `inputs`
 
 ### 13.2 一直 pending，不进入 running
+
 优先检查：
+
 - Central API 是否收到 backend 任务
 - `/system/status` 是否只是观测缓存滞后；真实判断应结合 worker 日志、Central `pop/status/complete` 访问日志与队列指标
 - Queue 是否持续堆积
@@ -577,7 +671,9 @@ Web 端当前用户侧运行态与结果查询链路分成三层：
 - 若 Queue 已归零、目标 worker 显示 `running` 且 `execution_phase=preparing`，但 ComfyUI `/queue` 为空，这不是“没有接单”，而是卡在输入准备阶段。优先查 worker 对象存储下载日志、`/tmp/input/*.part.minio` 临时文件增长情况、R2/MinIO 读延迟和 `MINIO_DOWNLOAD_*` 超时配置。
 
 ### 13.3 running 后卡死或长时间 1%
+
 优先检查：
+
 - Worker 日志
 - ComfyUI WebSocket 是否正常
 - ComfyUI workflow 是否真的开始执行
@@ -585,27 +681,34 @@ Web 端当前用户侧运行态与结果查询链路分成三层：
 - 是否有取消请求未被 Worker 轮询到
 
 ### 13.4 SSE 提示“任务不存在或无权限”
+
 优先检查：
+
 - 当前查询的是 `registry_task_id` 还是 `backend_task_id`
 - active task 中是否还保留该任务
 - 历史是否已落库
 - `task_stream_api_service.py` 是否正确把 `backend_task_id` 作为 runtime 查询 ID
 
 ### 13.5 历史有记录，但结果预览空白
+
 优先检查：
+
 - `History.output_file` 是否已写入
 - Web 结果地址是否能通过 R2 或 owner-only MinIO 短签解析
 - R2 公网地址是否已准备完成；R2 未 ready 时 `/result` 图片可返回 MinIO fallback，视频应继续 `pending_result`，同时检查 R2 公网 HEAD 快探测是否被短超时保护
 - `/api/tasks/{task_id}/result` 当前返回的是 `success` 还是 `pending_result`
 
 ### 13.6 新任务类型在某环境不接单
+
 优先检查：
+
 - 该环境的 compose / env 里是否声明了该类型
 - workflow JSON 是否已部署到对应 Worker
 - `mappings.json` 是否同步到该环境
 - 该类型是不是仍走 legacy 别名，而 Worker 只声明了新名字或反过来
 
 ## 14. 当前稳定结论
+
 - Web 主入口是 `POST /api/tasks/generate`
 - `task_core.process_and_submit_task(...)` 是统一业务提交门面
 - `registry_task_id` 与 `backend_task_id` 必须显式区分
@@ -616,6 +719,7 @@ Web 端当前用户侧运行态与结果查询链路分成三层：
 - Web 最终可见性不仅取决于 Worker 执行成功，还取决于 monitor、history、result 公网地址和前端展示链是否完整
 
 ## 15. 推荐联读文件
+
 - `frontend/src/composables/useTaskStream.ts`
 - `frontend/src/stores/tasks.ts`
 - `src/web_api/routers/tasks.py`

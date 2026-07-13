@@ -1,7 +1,9 @@
 # 子模块: 社区广场与分级存储 (Gallery & Storage)
 
 ## 1. 目标与范围
+
 本模块负责 Gallery 社区、对象存储访问、R2 边缘分发以及模板一键应用上下文。当前实现已经不是“投稿 + 点赞 + R2 转存”三件套，而是完整的社区工作台：
+
 - 社区投稿与原创保护
 - 点赞/点踩/应用记录
 - 评论系统与评论计数
@@ -15,6 +17,7 @@
 - Dashboard 投稿用户展示、用户名/提示词筛选、投稿封禁与用户级批量下架
 
 ## 2. 当前数据模型
+
 - `gallery_posts`
   - 核心帖子实体，保存媒体类型、宽高、时长、互动计数、`comments_count`、上下架状态。
 - `user_interactions`
@@ -72,6 +75,7 @@ sequenceDiagram
 ## 4. 已落地实现事实
 
 ### 4.1 投稿与原创保护
+
 - 投稿仍要求内容源自自己的 `History`。
 - `allow_contribute=False` 的模板衍生作品不能再次投稿，防止套娃搬运。
 - 用户级 `is_submission_banned=True` 时，Bot 端广场投稿、公开分享、模板共建，以及 Web 端一键投稿/重新上架都会被统一拦截，并提示“违禁被封，请联系管理员解封”。
@@ -80,17 +84,20 @@ sequenceDiagram
 - 删除帖子采用软删除/下架思路，不是简单硬删所有内容暴力清空。
 
 ### 4.2 互动系统
+
 - `POST /api/gallery/posts/{post_id}/interact` 当前只接受 `like|dislike`。
 - `apply` 统计不是在点击时立即加一，而是要等真正进入任务链路后再记 `UserInteraction(action_type='apply')`。
 - 这一点是广场统计真实性的核心红线，不能为了前端方便在 UI 点击时预增计数。
 
 ### 4.3 评论系统
+
 - 已提供创建评论与分页查询接口。
 - 评论前会校验帖子仍处于 `is_active=True`。
 - 评论提交有 Redis 频率锁，防止短时间刷评。
 - `comments_count` 通过数据库原子更新维护，并在提交阶段再次校验帖子没有被并发下架。
 
 ### 4.4 举报治理
+
 - Web 修仙市集作品详情弹窗提供举报入口，提交 `POST /api/gallery/posts/{post_id}/reports`。
 - 举报原因是单选枚举：`children` 儿童、`gore` 血腥、`gross` 恶心、`other` 其他；“其他”不要求补充说明。
 - 只有登录用户可举报仍处于 `is_active=True` 的作品；同一用户对同一 `post_id` 只能举报一次，重复提交返回 `409`，不覆盖旧原因。
@@ -99,6 +106,7 @@ sequenceDiagram
 - 举报展示文案由 Web/Dashboard 前端 locale 控制，后端只返回原因枚举、状态与快照字段。
 
 ### 4.5 收藏与个人视图
+
 - 已提供：
   - 广场列表 `posts`
   - 我的投稿 `my-posts`
@@ -119,6 +127,7 @@ sequenceDiagram
 - Gallery 列表/详情、我的投稿、我的收藏、我的提示词模版与用户主页 recent posts 基于 `GalleryPostResponse.input_file/input_file_url/input_files/input_file_urls` 展示 `History.input_file` 的原始输入素材预览；这是展示字段，不改变投稿、收藏或模板应用语义。
 
 ### 4.6 提示词付费解锁
+
 - Gallery 列表与详情响应新增 `prompt_unlocked`、`prompt_unlockable`、`prompt_is_masked`、`prompt_unlock_price` 字段。
 - 未解锁且非作者访问时，服务端只返回半公开的遮罩 prompt；前端不能依赖客户端遮罩来保护完整提示词。
 - 解锁入口为 `POST /api/gallery/posts/{post_id}/prompt-unlock`，固定消耗 1 灵石；扣减买家与奖励作者必须通过 `QuotaManager.transfer_credits(...)` 在同一事务内完成，并各自写入 `user_logs`。
@@ -126,6 +135,7 @@ sequenceDiagram
 - 作者查看自己的帖子视为已解锁，不创建解锁记录、不发生灵石转账。
 
 ### 4.7 Apply Context 已成为 Web 主路径
+
 - `GET /api/gallery/posts/{post_id}/apply-context` 会返回：
   - `source_post_id`
   - `prompt`
@@ -149,6 +159,7 @@ sequenceDiagram
 - QQCC 原生 apply 下载的参考图必须走 FSM 临时目录；提交异常、unsupported task type、`/cancel` 或全局异常兜底都必须删除已下载路径。点击 `一键应用` 本身不得预增 `applied_count`，只有任务成功链路才能记 `UserInteraction(action_type='apply')`。
 
 ### 4.8 展示用原始输入预览
+
 - `GalleryPostResponse` 现在额外暴露展示字段：`input_file`、`input_file_url`、`input_files`、`input_file_urls`。其中兼容字段指向展示列表第一个输入，数组字段保留 `History.input_file` 的原始顺序。
 - `txt2img` 没有原始输入，前端不展示输入角标或详情区。
 - 单输入任务在卡片左上角显示 1 张输入缩略图；详情中显示“原始输入”区域。
@@ -160,6 +171,7 @@ sequenceDiagram
 - 这些输入 URL 只做短签展示，不在列表热路径增加对象存储 HEAD 探测。
 
 ### 4.9 媒体 URL 策略
+
 - 列表返回媒体时不在热路径对每个媒体做公网 `HEAD` 探测；R2 S3 key 命中时优先返回 R2 S3 短签 URL，避免自定义公网域名 miss 导致前端空白，预签不可用时才退回公网 URL。
 - Telegram Gallery 浏览可使用 `GalleryPost.telegram_file_id` 秒发缓存。缓存缺失或 Telegram 返回 `wrong file identifier` 时，只对当前要展示的作品走 Gallery R2/S3 URL resolver 下载媒体并刷新 file_id；测试 Bot 不持久化新 file_id。不得把旧 `storage.get_file_bytes(...)` / legacy MinIO bytes 读取恢复成 Bot 浏览主路径。
 - R2 key 候选顺序为标准历史 key、原始 object key、raw `output_file`、旧 basename。例如 `history/{task_id}/original.ext` 未命中时，会继续探测 `123/output_images/file.ext`；若历史值本身包含 `bot-data/...` 且 R2 曾按该 raw 前缀镜像，也会继续探测 raw 路径，兼容迁移期多种对象位置。
@@ -183,10 +195,12 @@ python scripts/audit_visible_hotset_r2_objects.py \
 ```
 
   运行后会在 `logs/` 生成三类文件：`r2_visible_hotset_audit_*.json`（机器可读全量报告，含 `missing_records`）、`r2_visible_hotset_audit_*.md`（概要报告）与 `r2_visible_hotset_audit_*_missing_appendix.csv`（缺失附录，记录 history、task、媒体类型、来源标签、缺失对象类型、R2 key 与候选 key）。如果只审计社区强可见集合、不含每用户最近 8 条，可追加 `--skip-per-user-recent-history`；如果不需要 apply-context 输入图，可追加 `--skip-input-files`。`--db-batch-size` 默认 1000，用于分批读取 History 详情，避免全量生产审计生成超大 SQL；`--concurrency` 同时控制 R2 HEAD semaphore 与线程池 worker，`--progress-interval` 默认每 1000 条输出进度。脚本只执行 DB 只读查询和 R2 `HEAD`，不上传、不删除、不改 cursor、不重建容器。
+
 - 用 AI 生成排查报告时，优先喂入 Markdown 概要和 JSON 的 `summary`；需要列举具体缺失对象时再引用 CSV 附录。不要把 `.env.cloud.prod`、R2 presigned URL、访问密钥或完整生产 compose 渲染输出放入报告。
 - 云正式已为 Gallery/History 热路径补充并发索引：活跃帖子按创建时间翻页、`history.task_id`、用户历史倒序、用户可见收藏、`task_id + user_id` 与 `user_interactions(user_id, action_type, post_id)`。新增列表查询条件时，应优先确认是否命中现有索引。
 
 ## 5. 核心红线
+
 - 捕获互动类 `IntegrityError` 前，必须先 `flush()`，避免 `autoflush` 提前把异常抛出到错误层级。
 - 点赞、点踩、评论计数都必须用数据库原子更新，不能先读后写覆盖。
 - 提示词解锁必须先有 `gallery_prompt_unlocks` 唯一记录作为幂等锚点，灵石扣减与作者入账必须同事务完成。
@@ -200,6 +214,7 @@ python scripts/audit_visible_hotset_r2_objects.py \
 - 广场列表热路径不得恢复为“每条媒体公网 HEAD 探测 + 持有 DB 只读事务等待对象存储”的模式。
 
 ## 6. 测试关注面
+
 - 重复投稿与 `allow_contribute=False` 拦截
 - 并发点赞/点踩的一致性
 - 评论并发下架时的回滚与 404
@@ -216,5 +231,6 @@ python scripts/audit_visible_hotset_r2_objects.py \
 - Telegram file_id 缓存需要覆盖已缓存不下载、file_id 失效后从当前 Gallery R2/S3 URL 刷新、测试 Bot 不写回缓存。
 
 ## 7. 文档维护口径
+
 - 广场文档必须把“评论、收藏、apply-context、R2 优先 URL”视作现有能力，而不是扩展项。
 - 不要再把 Telegram 端一键应用写成主流程，当前主入口是 Web workbench。

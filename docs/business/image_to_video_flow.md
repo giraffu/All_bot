@@ -27,6 +27,7 @@ sequenceDiagram
 ```
 
 ### 当前关键事实
+
 - FSM 不再直接长轮询 `task_core`；真实主链是 `entrypoint -> run_bot_task_application(...) -> task_core facade`。
 - Bot 视频主链的取消态当前通过 `BotTaskCancelled` 收口，而不是字符串 sentinel。
 - `quick_video_fsm.py` 已不再通过构造假的 `Update/Message` 适配旧接口。
@@ -103,13 +104,16 @@ graph TD
 ```
 
 ## 三、 分层说明
+
 ### 3.1 交互层
+
 - `ltx_video_fsm.py`、`wan22_video_v2_fsm.py`、`image_to_video_fsm.py`、`quick_video_fsm.py` 等负责收集图片、提示词与参数；其中高级图生视频会在 LoRA 后用同屏设置面板收集 LTX 模式、清晰度和时长，旧图生视频会在上传图片前用同屏设置面板收集附加模型、帧模式、分辨率和时长，`wan22_video_v2` 主入口会先同屏选择单图/首尾帧、分辨率和时长，再按所选模式收 1 张或 2 张图片。
 - 全局菜单打断通过 `is_global_menu_command(...)` 统一识别。
 - 当前主 FSM 普遍使用 `conversation_timeout=300`。
 - `wan22_video_v2_fsm.py` 现已收口为“启动设置面板 + 起始帧 + 可选终止帧 + prompt/negative prompt”输入；主入口先选择单图或首尾帧、分辨率档位和时长，用户直接发送起始帧图片即确认当前设置并根据帧模式决定收 1 张或 2 张图片。填写或跳过负面提示词后直接提交任务，不再展示后置设置确认页；`wan22v2_setup_confirm` 与 `WAIT_SETTINGS` 仅保留用于兼容已发出的旧确认消息。续写入口仍会预载上一段尾帧，再沿用兼容的单图/首尾帧选择。尾帧提取固定开启且仅作存储，不再开放 `color_match`、`perfect_loop`、`upscale`、`extract_last_frame` 给用户。
 
 ### 3.2 Bot 任务流层
+
 - 视频任务入口主要位于：
   - `task_service_entrypoints_video.py`
   - `task_service_entrypoints_specialized.py`
@@ -124,12 +128,14 @@ graph TD
 - `process_wan22_video_v2_task(...)` 位于 generation entrypoints，`process_ltx_video_task(...)` 位于 specialized entrypoints；两者都已走统一提交与前台监控主链。
 
 ### 3.3 Core 提交与监控层
+
 - `task_core.py` 负责统一提交语义。
 - `task_dispatcher.py` 基于 strategy 生成 workflow / payload。
 - Web 任务完成后由 `src/services/task_web_side_effects.py`、`task_web_lifecycle_monitor.py`、`task_web_terminal_finalization.py` 协同承接 side effect 与终态收口；Bot 则由 `run_bot_task_application(...)` 负责前台监控与展示。
 - Wan22 图生视频链式上下文（`wan22_prev_task_id`、`wan22_chain_task_ids`、分辨率、负面提示词、是否使用终止帧、主模型 profile、旧 LoRA 信息）现由 dispatcher metadata 写入提交，再由 Web terminal finalization 合并进历史 `extra_outputs._wan22_context`，供 Bot/Web 共用历史链恢复。适用类型包括 `wan22_video_v2`、`custom_video`、`video_lora` 与懒人动图 mode。
 
 ### 3.4 Web 练功房与历史链
+
 - `wan22_video_v2` 主入口已并入练功房 `frontend/src/views/CustomFeatures.vue`；旧独立 URL 仅作为兼容重定向保留并继续携带 query。旧 `custom_video` / `video_lora` 也复用同一套 Wan22 多段编辑能力。
 - 练功房结果区不再提供语义含混的“继续生成”，而是为 Wan22 图生视频显示“扩展生成 / 重新生成”；第二段及以后基于 `wan22_prev_task_id` 额外显示“拼接”。
 - 扩展生成会把当前段 `extra_outputs.last_frame` 作为锁定起始帧，清空本段正向 prompt，并提交 `wan22_prev_task_id = 当前段` 与包含当前段在内的 `wan22_chain_task_ids`。
@@ -141,6 +147,7 @@ graph TD
 - Telegram Bot 点击“完成拼接”后也会把拼接 MP4 上传存储并新增一条 `source=bot` 的历史记录；结果消息使用新 `task_id` 注入“投稿至广场”按钮，继续复用 `submit_gallery_<task_id>` 投稿链路。
 
 ## 四、 计费与资源约束
+
 - 视频任务计费是动态的，通常由分辨率与时长组合决定。
 - Wan22 AIO 视频的分辨率档位统一维护在 `src.domain_config.wan22_aio_video`，Bot / Web / dispatcher / worker patcher 共享同一语义；分辨率基数为 `preview` = 极速 / 约 512p / `0.26 MP - Preview` / 6 灵石（默认且最低价），`small` = 清晰 / 约 600p / `0.36 MP - Small` / 12 灵石，`standard` = 标准 / 约 720p / `0.52 MP - SD` / 20 灵石，`hd` = 高清 / 约 810p / `0.65 MP - Balanced` / 30 灵石。旧 `fast` 仅作为兼容别名归一到 `preview`。Worker 会把档位同时写入 `Wan22AioV82.json` 的 `DaSiWa_ResolutionScaleCalculator` 节点 `2612.inputs.precision_presets` 与 `2612.inputs.resolution_preset`，并补齐该节点当前版本要求的非图片宽高兜底输入。
 - Wan22 AIO 视频的时长统一为 `5s/8s/10s`，对应 `81/129/161` 帧，计费倍率为 `1x/2x/3x`；worker patcher 会把秒数写入 `Wan22AioV82.json` 的 `2578.inputs.value`。`custom_video` / `video_lora` 现在完全对齐上述 v2 计费口径；投稿一键应用恢复旧 `1024p` 时应自动选择 `hd`，并按历史 canonical duration 计算灵石。
@@ -148,6 +155,7 @@ graph TD
 - 任何取消/失败路径都必须与并发锁释放和必要退款一并考虑。
 
 ## 五、 结果发送与清理
+
 - Bot 完成后会发送 MP4、caption、reply markup 与后续交互入口。
 - `wan22_video_v2` 与执行面 `image_to_video` 都会额外保存 `extra_outputs.last_frame` 对应的尾帧图片，用于扩展生成、分段重生成和整链拼接。V82 下 `2607` 会从 RIFE 后的 `265` 帧序列抽取尾帧，`ImageFromBatch.batch_index` 需保持 `4095` 以满足当前节点上限；Worker 优先读取 Comfy `2503` 尾帧输出。如果某个 Comfy 实例只返回主 MP4，`agent_result_materialization.py` 会用 `ffmpeg/ffprobe` 从主视频补抽最后一帧，因此 worker 镜像必须保留 ffmpeg 依赖。
 - `ltx_video` / `ltx_video_flf2v` / 历史兼容的 `ltx_video_v2v_audio` 也属于尾帧扩展任务。FLF2V 与 V2V Audio workflow 的 `SaveImage 902` 保存尾帧；若只返回主 MP4，同一套 ffmpeg 兜底会补抽 `last_frame`。Bot/Web 的“扩展生成”会把该尾帧作为下一段 LTX 起始帧，续段提交携带 `ltx_prev_task_id` / `ltx_chain_task_ids` 并落库到 `extra_outputs._ltx_context`，供历史详情和拼接 API 识别链路。Bot 扩展入口会先显示“直接续写 / 添加终止帧”设置面板且不再展示确认按钮；用户发送提示词即直接续写，发送图片即作为终止帧，无需重新上传起始帧，终止帧路径按 `ltx_mode=flf2v` 提交。
@@ -158,6 +166,7 @@ graph TD
   - 必要的锁与终态消息
 
 ## 六、 测试要求
+
 - 覆盖参数收集、菜单打断、超时退出。
 - 覆盖视频 entrypoint 到 `run_bot_task_application(...)` 的上下文装配。
 - 覆盖取消、失败、成功三条主分支。

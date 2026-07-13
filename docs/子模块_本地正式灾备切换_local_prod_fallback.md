@@ -1,11 +1,13 @@
 # 子模块: 本地正式灾备切换 (Local Prod Fallback)
 
 ## 1. 目标与触发条件
+
 本文档是本地主服务器保留的唯一“临时替代正式服务”方案。它只在云正式控制面整体不可用、且短时间无法恢复 `allbot-do-sgp1-control`、Cloudflare Tunnel 或托管数据库/Valkey 时使用。
 
 正常研发、联调、缺陷修复和配置验证不得使用本文档；默认目标仍是云测试控制面。正常生产热修也不得使用本地旧 `safe_deploy.sh`，应走云正式 compose 或 `scripts/safe_deploy_cloud_prod.sh`。
 
 触发前必须确认：
+
 - 云正式 Web API、Central API、Payment API 或 Bot 已经无法满足生产入口。
 - 已决定接受本地灾备的 RPO/RTO 风险：本地 `bot_db_prod_shadow`、MinIO `user-data-prod-shadow` 与可选完整合并桶 `user-data-complete-shadow` 是每日 shadow/备份副本，不是实时同步；Redis/Valkey 只保留摘要，不恢复运行态。
 - 有权限切换 Cloudflare Tunnel、Pages/DNS 或边缘 Nginx。
@@ -28,6 +30,7 @@
 ## 3. 切换前检查
 
 ### 3.1 确认云端故障范围
+
 ```bash
 ssh allbot-do-sgp1-control 'hostname && docker ps --format "{{.Names}}\t{{.Status}}"'
 curl -fsS --max-time 8 https://api.aivison.it.com/api/health
@@ -47,6 +50,7 @@ ssh allbot-do-sgp1-control '
 若云端不可登录，切本地 Bot 前必须通过 Telegram 侧症状、云端健康检查和容器状态残缺程度共同确认云 Bot 已不可用或需要被替代。
 
 ### 3.2 数据口径确认
+
 本地 `.env` 必须是生产口径，且不得把测试库、测试 Redis 或测试桶混进本地正式栈。
 
 ```bash
@@ -78,6 +82,7 @@ scripts/sync_cloud_prod_to_local_shadow.py --execute --seed-r2-shadow-with-copy 
 云端完全不可用时，优先核对最近一次 `backups/cloud-prod-shadow/<timestamp>/manifest.json`、`bot_db_prod_shadow` 可连接性、Alembic 版本、关键表行数，以及 `user-data-complete-shadow` 抽样对象，再决定是否把 `bot_db_prod_shadow` 作为本地灾备写入基线。旧本地 compose 如果仍硬编码或默认指向 `bot_db`，必须先备份现有 `bot_db`，再由人工明确把 `bot_db_prod_shadow` 复制/提升为本地写库；不要在未备份的情况下直接覆盖本地正式库。后续必须对订单、余额、任务历史和用户写入做人工对账。
 
 ### 3.3 停止会抢资源的本地 cloud worker
+
 若本地旧正式 worker 将接管本地 Central，先停云正式 worker，释放 GPU 容量：
 
 ```bash
@@ -133,6 +138,7 @@ docker-compose -f deploy/docker-compose.yml up -d --build bot
 ## 5. 切换公网入口
 
 ### 5.1 Web API
+
 当前正式前端 `web.aivison.it.com` 是 Cloudflare Pages，生产包默认调用 `https://api.aivison.it.com/api`。灾备时有两种方式，优先选一种执行，不要同时改多处。
 
 方式 A：在 Cloudflare Zero Trust 将 `api.aivison.it.com` public hostname 回源改到本地主服务器可达地址，例如本机 cloudflared 或 Tailscale/边缘可达的本地 Web API。适合本地主服务器仍有可用 Tunnel 的场景。
@@ -147,6 +153,7 @@ curl -fsS https://web.aivison.it.com
 ```
 
 ### 5.2 RMB 支付入口
+
 本地主服务器已有 RMB Tunnel 回滚脚本，默认 dry-run，真实切换必须显式 `--execute`：
 
 ```bash
@@ -157,11 +164,13 @@ curl -fsS https://rmb.aivison.it.com/pay/result
 ```
 
 ### 5.3 assets 与历史媒体
+
 `assets.aivison.it.com` 继续走 Web/Nginx VPS 到本地 MinIO，但只作为旧外链、人工回滚和迁移补漏入口。不要在灾备切换时清理 MinIO、Nginx cache 或 R2 对象。历史媒体验收应优先确认正式应用响应走 R2/当前短签；若验收 `assets` 链路，必须测试真实 object URL，不能只看根路径 403/200。
 
 ## 6. 验证 Checklist
 
 本地：
+
 ```bash
 docker ps --format '{{.Names}}\t{{.Status}}' | rg '^(api|web-api|payment-api|tg-bot|dashboard-|comfy-agent-)'
 curl -fsS http://127.0.0.1:8003/health
@@ -172,6 +181,7 @@ curl -fsS http://127.0.0.1:8003/system/workers
 ```
 
 公网：
+
 ```bash
 curl -fsS https://api.aivison.it.com/api/health
 curl -fsS https://web.aivison.it.com
@@ -179,6 +189,7 @@ curl -fsS https://rmb.aivison.it.com/pay/result
 ```
 
 业务：
+
 - Telegram Bot 能响应 `/start` 或核心菜单。
 - Web 登录、历史页、提交小图任务、结果页可走通。
 - RMB 支付结果页可打开，回调日志无高频失败。
@@ -191,6 +202,7 @@ curl -fsS https://rmb.aivison.it.com/pay/result
 云端恢复后不要直接“把流量切回去就结束”。先冻结本地新增写入或进入维护模式，导出本地灾备期间的订单、用户资产、任务历史和必要日志，评估是否需要补数据到云正式库。
 
 回切顺序：
+
 1. 云端 `scripts/safe_deploy_cloud_prod.sh --preflight-only`。
 2. 云端 Web/Central/Payment/Dashboard 健康检查。
 3. 停止本地 `tg-bot`，确认全网无第二个生产 Bot polling。
@@ -206,6 +218,7 @@ scripts/stop_local_prod_entry_preserve.sh --execute --include-workers
 回切后验证清单以 `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md` 为准。
 
 ## 8. 禁止事项
+
 - 禁止把本地灾备当成日常测试环境。
 - 禁止本地 Bot 与云 Bot 同时使用同一个生产 token polling。
 - 禁止在未确认数据口径时启动本地写入口。

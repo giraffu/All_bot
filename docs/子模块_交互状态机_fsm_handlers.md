@@ -1,9 +1,11 @@
 # 子模块: 交互状态机与回调路由 (FSM & Callback Handlers)
 
 ## 1. 目标与范围
+
 本模块包含所有通过 Python-Telegram-Bot (PTB) 实现的有限状态机逻辑，以及基于装饰器注册的 callback 路由体系。
 
 当前职责边界：
+
 - FSM 负责分步收集图片、视频设置、提示词与确认信息。
 - 全局菜单打断依赖统一黑盒路由，而不是散落的硬编码菜单判断。
 - callback 路由负责把充值、广场、杂项等回调拆分到独立模块。
@@ -28,8 +30,11 @@ stateDiagram-v2
 ```
 
 ## 3. 当前主链路
+
 ### 3.1 FSM 到 Bot 任务流
+
 当前主链为：
+
 - FSM / message handler
 - 分域 entrypoints
 - `task_service_entrypoints_generation.py`
@@ -38,6 +43,7 @@ stateDiagram-v2
 - `run_bot_task_application(...)`
 
 Bot flow 当前采用五段式上下文：
+
 - `request`
 - `presentation`
 - `billing`
@@ -47,17 +53,21 @@ Bot flow 当前采用五段式上下文：
 取消态使用 `BotTaskCancelled`，不再使用字符串 sentinel。
 
 ### 3.2 全局菜单黑盒退出
+
 FSM 入口与过程中，当前推荐组合为：
+
 - `I18nFilter(...)`
 - `menu_route_registry.py`
 - `GLOBAL_REVERSE_MAP`
 - `is_global_menu_command(...)`
 
 在任意文字输入 handler 内，应优先判断 `is_global_menu_command(...)`，决定是否强制退出当前 FSM。
+
 - 若多个 FSM 共享同一类取消/超时/意外输入退出逻辑，优先复用 `fsm_shared.py`，不要在各文件继续复制 `_t/cancel/timeout/unexpected_input` 样板。
 - `menu_route_registry.py` 是反向菜单路由事实源：FSM-only menu keys、QQCC 特殊翻译覆盖、`menu.video_lora` 优先级和旧键盘文案 alias 都在这里分区维护；`prompt_router.build_global_menu_filter()` 只负责把这些 key 翻译成 `GLOBAL_REVERSE_MAP`。
 
 ### 3.3 主 Bot 与 QQCC 重复入口收口
+
 主业务 Bot 底部菜单不再展示旧 `修仙市集` 和 `视频创作` 入口；旧 `修仙市集` 文案与新 `懒人bot` 菜单都只回复前往 QQCC 懒人 Bot 的 inline URL 按钮，跳转目标由 `QQCC_LAZY_BOT_URL` 或 `QQCC_LAZY_BOT_USERNAME` 提供。`图片换脸` 二级菜单只保留双图 `快速换脸` 与单图 `随机换脸`。
 
 旧 `快速脱衣`、`快速自慰`、`menu.video_edit_*`、旧 `AI绘图` / `AI滤镜` / `AI动图` / `快速换脸` 文本入口和主 Bot 上的 `qvid_*` callback 必须回复前往 QQCC 懒人 Bot 的 inline URL 按钮或入口未配置提示，不得进入任务提交。QQCC Bot 仍保留 `AI绘图` / `AI滤镜` / `AI动图` 动态场景入口、`qdraw_scene:*`、`qfilter_scene:*`、`qvid_scene:*` 与旧 `qvid_mode:*` 已发按钮兼容。
@@ -89,7 +99,9 @@ LTX 扩展/拼接回调准备阶段已收口到 `src/services/ltx_video_extensio
 Wan22 AIO 链路扩展/重生成/拼接回调准备阶段已收口到 `src/services/wan22_video_v2_extension_service.py`，覆盖旧图生视频 `custom_video` / `video_lora` 与图生视频 v2：`wan22_video_v2_fsm.py` 的扩展/重生成入口只负责解析 callback task id、会话冲突、写入 seed 后继续 FSM；`wan22_video_v2_callbacks.py` 的重生成 callback 只负责发送提交中提示并调用提交 service，完成拼接 callback 只负责进度提示、调用 stitch、发送结果、记录 message meta 和置灰原按钮。历史归属校验、`_wan22_context` 合并、上一段尾帧下载、当前段输入图复用、FSM seed 和完整链路 histories 加载都由该 service 负责。
 
 ### 3.4 Callback 路由
+
 当前 callback 体系依赖：
+
 - `@register_callback("prefix")` 前缀注册
 - 按前缀长度降序匹配
 - 主入口导入子模块以触发注册
@@ -97,7 +109,9 @@ Wan22 AIO 链路扩展/重生成/拼接回调准备阶段已收口到 `src/servi
 - 未命中时统一 `safe_answer_query(...)` 兜底
 
 ### 3.5 SCAIL-2 视频生视频 FSM
+
 正式 Bot 与测试 Bot 的主菜单中，原“视频换脸”位置已进入“视频生视频”二级菜单。二级菜单顺序固定为：
+
 - 视频换人
 - 动作迁移
 - 视频换脸
@@ -105,6 +119,7 @@ Wan22 AIO 链路扩展/重生成/拼接回调准备阶段已收口到 `src/servi
 
 `视频换人`、`动作迁移` 和 SCAIL-2 `视频换脸` 由
 `src/handlers/fsm/scail2_video_fsm.py` 处理，状态流为：
+
 - `WAIT_REFERENCE_IMAGE`：只接收参考图片
 - `WAIT_MOTION_VIDEO`：接收 Telegram video 或 video document，驱动视频上限 40MB
 - `WAIT_PROMPT`：接收正向提示词，或通过 inline button 跳过并使用 task type 默认提示词；空文本会提示用户点击跳过
@@ -117,26 +132,34 @@ Wan22 AIO 链路扩展/重生成/拼接回调准备阶段已收口到 `src/servi
 都必须清理临时文件和 `user_data["scail2_video_data"]`。旧 `src/handlers/fsm/face_video_fsm.py` 已从 Bot 层删除，`FaceVideoState` 也不再保留；“视频换脸”菜单与 `/video_swap` 现在都由 SCAIL-2 视频生视频 FSM 接管。非 Bot 层的 `face_video` 历史任务类型、Gallery 历史展示与 worker/workflow 兼容仍按历史数据保留。
 
 ## 4. 关键实现约束
+
 ### 4.1 FSM 超时
+
 当前主 FSM 普遍采用：
+
 - `conversation_timeout=300`
 
 若后续调整超时值，必须同步更新：
+
 - FSM 文档
 - 相关 focused tests
 - 若有对应 skill 文档，也需同步更新
 
 ### 4.2 临时文件服务
+
 常规 FSM 文件下载与清理应优先复用 `fsm_temp_file_service.py`，避免各 FSM 自己拼装。
 `cleanup_fsm_user_data(user_data)` 是全局兜底清理入口：它会收集所有 `*_data` 中的 `image_path`、`end_image_path`、`video_path`、`images` 等临时路径，也会收集随机换脸“再来一张”使用的顶层 `last_face_image` 临时缓存；只删除 `TMP_DIR` 下文件，并清理 `in_conversation`、`*_data` 与这些顶层临时缓存，保留 `language_code` 等偏好。主 Bot `/cancel`、QQCC `/cancel` 与 `global_error_handler` 都应走该 helper；单个 FSM 的正常提交/超时仍可保留自己的局部 cleanup，但路径规则需与该 helper 一致。
 
 ### 4.3 语言切换
+
 语言切换当前不只是菜单文案变更，还涉及：
+
 - 数据库语言字段更新
 - Redis 缓存同步
 - translator 运行时状态刷新
 
 ## 5. 测试要求
+
 - 覆盖 FSM 超时与主菜单打断
 - 覆盖完整参数收集后进入对应 Bot entrypoint 或 `run_bot_task_application(...)`
 - 覆盖 callback prefix 路由与统一兜底

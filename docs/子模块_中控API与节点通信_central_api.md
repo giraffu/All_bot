@@ -1,9 +1,11 @@
 # 子模块: 中控 API 与节点通信 (Central API & Worker Communication)
 
 ## 1. 目标与范围
+
 本模块是系统底层执行面的一部分，负责承接已经由上游 `task core facade` 派发完成的 backend 任务，把 workflow/payload 分发给可用 Worker，并支持运行态取消与节点视图维护。
 
 当前知识口径下，Central API 不是“客户端直接主入口”；主业务流入口在：
+
 - Telegram Bot / FSM / Bot entrypoints
 - Web API / tasks generate
 - `task_core.py` facade
@@ -31,29 +33,37 @@ sequenceDiagram
 ```
 
 ## 3. 当前职责边界
+
 ### 3.1 Central API 负责什么
+
 - 接收待执行任务并选择合适 Worker
 - 承接运行态下发与取消语义
 - 维护节点心跳、基础 worker 视图与执行面状态同步
 - 在终止场景下执行 backend 侧 best-effort cancel
 
 ### 3.2 Central API 不负责什么
+
 - 不作为 Web/Bot 的主业务入口文档口径
 - 不承担上游计费、并发锁、历史持久化或 Bot 展示语义
 - 不把“Redis DB2 + Pub/Sub 等待结果”描述成全站唯一主链
 
 ## 4. 与 task core 的关系
+
 当前更准确的任务主链应表述为：
+
 - `Entry(Bot/Web) -> task core facade -> provider/dependencies -> submission/dispatcher -> Central API -> Worker`
 
 这意味着：
+
 - 上游生成 `registry_task_id`
 - 提交阶段派发 `backend_task_id`
 - Central API 主要围绕 backend 执行态工作
 - 取消、恢复与清理时需显式区分 `registry_task_id` 与 `backend_task_id`
 
 ## 5. 接口语义
+
 ### 5.1 任务取消
+
 - `DELETE /api/tasks/{task_id}` 仍可视为 backend 执行面的终止入口。
 - pending 任务可直接从队列移除并进入取消退款链路。
 - Worker 可在真实 `/api/agent/task/pop?cancel_lock=true` 时把任务标记为 `cancel_locked=1`、`execution_phase=preparing`；这表示任务已进入输入准备或执行流水线，用户取消接口应返回 `not_cancellable` / `reason=cancel_locked`，不再写 `cancel_requested`。
@@ -61,6 +71,7 @@ sequenceDiagram
 - 上游仍需自行完成 registry cleanup、锁释放、退款与终态收口。
 
 ### 5.2 节点通信
+
 - Worker 心跳、可用性与执行中状态是 Central API / Queue 视图的一部分
 - Worker heartbeat 状态约定为 `idle`、`running`、`error`、`quarantined`；其中 `error` 表示 ComfyUI 探活持续失败，`quarantined` 表示连续基础设施类任务失败后的冷却隔离。Agent 到 relay/Central 的控制面请求连续失败默认达到 12 次且持续 300 秒时会以退出码 75 退出，让 Docker `restart: always` 接管；这只处理控制面半断，不替代 Central task heartbeat 的 zombie 清理。
 - heartbeat 可携带 `health_reason`、`last_error`、`last_error_at`、`consecutive_failures`、`quarantined_until`，用于 Dashboard 节点卡片展示和排障
@@ -88,6 +99,7 @@ sequenceDiagram
 - 文档不再固化 Redis DB 编号与具体低层队列命名为稳定架构事实
 
 ## 6. 测试要求
+
 - 覆盖任务成功下发到可用 Worker
 - 覆盖无可用 Worker 时的重试或回退语义
 - 覆盖 `DELETE /api/tasks/{task_id}` 的 best-effort cancel
@@ -101,6 +113,7 @@ sequenceDiagram
 - 覆盖本地 relay 对终态同步转发、非终态 status 合并转发、sidecar 上传成功后才允许 worker complete
 
 ## 7. 部署与回滚
+
 - Central API 是独立部署的 backend 执行面服务。
 - 若分发逻辑异常导致任务堆积，应先检查：
   - worker 是否仍有 heartbeat，`healthy_workers` 是否大于 0，以及 `accepting_workers` 是否大于 0
@@ -116,6 +129,7 @@ sequenceDiagram
 - Central Redis 连接偶发 reset 时，QueueManager 对安全读写和幂等更新已做有限 transient retry，覆盖入队事务、`/status/{task_id}`、agent `/task/check`、`task_heartbeat`、运行态 `status`、worker heartbeat 和 agent control 等路径；真实出队 `zpopmin` 与会改变候选任务的队列移除不做盲 retry，避免重复弹单。排障时不要把一次连接重置直接解读成队列丢失，应结合 worker 重试、task heartbeat 和队列事实判断。
 
 ## 8. 维护原则
+
 - 中控文档要以“执行面”而不是“业务主入口”来描述 Central API。
 - 不再把客户端直连中控、Redis DB2、固定 Pub/Sub 同步等待写成全局主叙事。
 - 不要把 Dashboard/状态观测缓存误认为调度缓存；修改调度、取消、完成回流时仍需按实时 Redis/HTTP 主链测试。

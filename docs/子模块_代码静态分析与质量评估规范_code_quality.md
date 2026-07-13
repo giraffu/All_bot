@@ -1,6 +1,7 @@
 # 子模块: 代码静态分析与质量评估规范 (Code Quality & Static Analysis)
 
 ## 1. 目标与范围
+
 为了确保修仙主题 AI 创作工作台 (All_Bot) 在持续迭代中保持高内聚、低耦合的架构，系统必须定期进行全局静态代码分析与质量评估。本规范定义了在执行全面审查时的统一标准、关键检查维度以及自动化排查的静默与无痕输出要求。
 
 ## 2. 静态分析核心维度
@@ -21,16 +22,19 @@
 当需要对系统代码进行全面静态分析时，请严格按照以下标准化步骤操作。此规范已封装为 `allbot-code-analyzer` AI 技能。
 
 ### 3.1 静态代码分析（静默执行）
+
 - **分析范围**：对项目所有核心代码进行全局扫描与评估。
 - **执行要求**：分析过程中仅做代码读取、逻辑解析与记录，**绝对禁止修改任何现有代码或功能**。
 - **无痕记录**：采集到的所有代码切片与诊断结果必须暂存到专用的临时文件或内存变量中，不要在控制台或对话窗口打印长篇的原始代码或中间检测结果。
 
 ### 3.2 质量评估与重构建议
+
 - **问题分级 (Triage)**：所有发现的问题必须按严重程度分为四级：Critical（致命违规）、High（高风险）、Medium（中等）、Low（建议优化）。
 - **量化指标 (Metrics)**：评估并输出项目的宏观健康度指标，例如：代码重复率估值、死代码比例、平均圈复杂度等。
 - **架构级建议**：针对检测出的“架构违规”，需提供明确、可落地的重构方向与思路。
 
 ### 3.3 报告生成与清理规范（核心要求）
+
 - **生成报告**：输出一份结构清晰的 Markdown 分析报告，必须包含：
   - 分析时间范围与涵盖的核心目录。
   - 全局质量量化指标总览。
@@ -45,11 +49,13 @@
 2026-06-03 历史全局评估报告位于 `logs/code_analysis_report_20260603_2332.md`，评估范围覆盖 `src/`、`backend/app/`、`workers/comfy_agent/`、`frontend/src/`、`tests/` 与核心部署脚本，并按当次要求降权或排除了 Dashboard、支付/订单/会员/affiliate 业务模块。
 
 ### 4.1 当前总体结论
+
 - 系统整体已经稳定演进为“Bot/Web 双入口 + task core facade + Central API + Worker + Web side-effect monitor”的分层形态。
 - `src/core` 未发现直接依赖 Telegram `Update` 或 FastAPI `Request/APIRouter` 等平台对象，Core Isolation 当前成立。
 - 未发现 Critical 级架构阻断；后续重点是控制热点函数、测试耦合、workflow 资产漂移与 compat 壳残留。
 
 ### 4.2 关键量化指标
+
 - 主代码规模约 75,857 行，测试规模约 33,634 行。
 - Python 复杂度块 1,832 个，平均圈复杂度约 2.94，整体为 A。
 - A 级复杂度约 86.8%，D 级复杂度 5 个。
@@ -60,6 +66,7 @@
 - 主站前端 `vue-tsc --noEmit -p tsconfig.app.json` 通过；Dashboard 前端也已启用 `typescript` / `vue-tsc` / `@vue/tsconfig`，`npm run build` 会先执行类型检查。
 
 ### 4.3 当前 P1/P2 整改队列
+
 - **workflow 资产事实源**：workflow 已收口到 `workers/comfy_agent/workflows`，Central API 不再维护 backend 副本或执行 workflow 启动校验。新增或修改 workflow 时仍需复核 Worker 映射、patcher 和 `SUPPORTED_TASK_TYPES`。
 - **task core provider 契约**：`TaskCoreServiceProviders` 与主要 capability 已引入 `Protocol` / 精确 `Callable` 类型。后续新增 provider/capability 应继续保持显式类型，并让测试走 dependencies seam，而不是扩大模块级 patch。
 - **高复杂编排热点**：`workers/comfy_agent/agent_main.py::process_task`、`src/web_api/services/wan22_history_chain_service.py::stitch_wan22_history_chain_response` 与 `frontend/src/composables/useLabWorkbench.ts` 仍是后续拆分优先级；`src/web_api/services/gallery_response_builder.py::build_post_responses` 已先拆出 bulk loader，`src/services/tg_task_runtime.py::monitor_task_progress` 已拆出纯状态渲染。
@@ -67,6 +74,7 @@
 - **compat / 冗余清理**：`src/core/gallery_feed_queries.py`、`src/services/wan22_video_v2_config.py`、`src/services/wan22_video_v2_context.py` 与未引用的 `src/context.py:trace_id_ctx` 已删除；调用方已迁到真实 service/domain_config 或 `asgi_correlation_id.correlation_id` 入口。
 
 ### 4.4 知识库同步要求
+
 - 代码质量报告写入 `logs/`，不作为长期入口文档；重要结论应同步到本文件、热点门禁、compat 退出表以及相关 Skill。
 - 若报告发现的事实与 Skill 主张冲突，应先修 Skill，再继续开发。例如 Worker 虽已拆出多个 helper，但 `agent_main.py::process_task` 仍是当前执行链路热点，不能只写成“已完全薄壳化”。
 - 若后续清理 compat 壳或迁移测试 seam，必须同步 `docs/compat_seam_exit_table.md` 与 `scripts/check_compat_registry.sh` 覆盖口径。
@@ -76,6 +84,7 @@
 最近一次完整复核报告位于 `logs/code_analysis_report_20260618_0306.md`。该轮覆盖 `src/`、`backend/app/`、`dashboard/backend/`、`workers/comfy_agent/`、`remote_workers/`、`ops/`、`scripts/` 与 `tests/`，并同步抽查知识库、部署 compose、云正式/云测试控制面和运行态资源。
 
 当前结论：
+
 - 未发现 Critical / High 级架构阻断。
 - `src/core` 未发现 Telegram `Update`、FastAPI `Request/APIRouter` 等平台对象 import，Core Isolation 成立。
 - Alembic 当前为单 head `7f3a9c1d2e4b`。
@@ -86,6 +95,7 @@
 本轮不是完整全局代码质量报告，只用于校准实时知识库中的可验证事实。
 
 当前结果：
+
 - Alembic 当前为单 head `7f3a9c1d2e4b`。
 - `pytest --collect-only -q` 可收集 `1678` 个测试，用时约 74 秒；未执行完整测试套件。
 - `ruff check --statistics` 剩余 `2` 个 `F401`，均为 `ops/gpu_pool_controller/runpod_pod_request.py` 中未使用的 RunPod LTX import。
@@ -96,6 +106,7 @@
 本轮基于 `deploy` 分支 `2bd2866` 重新校准实时知识库，不做远端 SSH、线上 curl、Docker 运行态探测或完整测试执行。
 
 当前结果：
+
 - `src/core` 未发现 Telegram `Update`、FastAPI `Request/APIRouter` 等平台对象 import，Core Isolation 当前成立。
 - Alembic 当前为单 head `7f3a9c1d2e4b`。
 - `pytest --collect-only -q` 可收集 `1778` 个测试，用时约 118 秒；未执行完整测试套件。

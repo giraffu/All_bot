@@ -3,9 +3,11 @@
 > 2026-07-13 起，代码发布的唯一支持入口为 `scripts/release.py plan|deploy|rollback`，产物为 CI 构建的 digest-pinned 镜像和校验过的 Web tar。旧 rsync、`safe_deploy_cloud_*`、现场 `--build` 与源码挂载段落仅保留作首次切换/故障取证，不得执行。新 SOP 见 `docs/子模块_Git不可变发布_git_immutable_release.md`；实际云端切换不在本轮授权范围内。
 
 ## 1. 目标与范围
+
 本模块记录当前仓库真实生效的发布、迁移与故障恢复边界。新发布只消费 CI 生成的不可变镜像 digest，不在目标机 build，也不从云端源码目录加载应用代码。migration 由发布器识别并进入显式维护、备份、单 Alembic head 与 upgrade 流程。
 
 ## 2. Legacy 部署路径（禁止用于新代码发布）
+
 - 旧云测试同步、现场 build、单 service 手工重建只作首次切换前取证，不是可执行的新发布方案。
 - 旧云正式热修、QQCC 窄同步与旧 cloud compose 只作 legacy 回滚材料，不是可执行的新发布方案。
 - 本地正式灾备：仅在云正式整体不可用时按 `docs/子模块_本地正式灾备切换_local_prod_fallback.md` 切回本地主服务器
@@ -25,12 +27,14 @@
 - `safe_deploy_test.sh` 不再作为推荐入口。若历史排障必须短时恢复旧本地隔离测试栈，应另起临时计划，先确认它不会抢占测试 Bot token、GPU、Redis 队列、对象桶或边缘测试站；完成后立即停止并保留数据。
 
 ## 2.1 当前默认发布策略
+
 - AI 在功能研发期间默认只能更新隔离测试环境，不得主动执行生产部署。
 - “帮我改功能”“帮我修 Bug”“帮我联调”“帮我验证配置”这类请求，默认理解为测试环境操作。
 - 只有在用户明确表达“上线”“发布”“部署正式环境”“交付生产”后，才允许执行 `scripts/release.py deploy --env prod ... --execute --confirm-prod`；`safe_deploy.sh` 只用于云正式整体故障时的本地正式灾备。
 - 在用户完成测试验收前，不得把测试环境变更直接同步到正式 Bot、正式 Web、正式 Payment、正式 Central API 或正式 Dashboard。
 
 ## 2.2 云端测试控制面
+
 - DigitalOcean SGP1 Droplet 上的云测试只接受 `scripts/release.py plan|deploy --env test --sha <full-sha>`；目标 service 集合由 `deploy/release-policy.yml` 计算，应用镜像由 release manifest 提供。
 - 云测试控制面默认部署同机 Postgres、同机 Redis、Central API、Web API、Dashboard Backend、Dashboard Frontend 与 imgproxy；`bot-test` 只通过 `bot` profile 手动启动，本地主服务器另行启动 GPU worker。当前对象存储事实源是 Cloudflare R2，云测试 compose 当前不包含 MinIO、Payment API 或 Web 前端 dev 容器。
 - rolling/worker-drain/maintenance 等级由发布计划决定；用户指定 service 只能扩大范围，不能缩小机器计算出的消费者集合。
@@ -47,6 +51,7 @@
 - 详细说明见 `/docs/子模块_云测试控制面部署_cloud_test_control_plane.md`。
 
 ## 2.3 云正式控制面
+
 - 2026-06-07 晚间正式生产已切到云控制面；首次不可变发布切换前的旧 compose 和脚本仍保留作归档/legacy rollback。新长期入口是公共 cloud/worker compose、release manifest 和 `scripts/release.py`。
 - `.env.cloud.prod` 是本机私有文件，已被 `.gitignore` 忽略；`.env.cloud.prod.example` 只提供变量契约和占位值。`.dockerignore` 必须忽略 `.env.*`，避免 root Docker build 把真实云正式变量 COPY 进镜像。
 - 云正式 Web API 需要 `JWT_SECRET_KEY`，且不能使用默认占位值；该 key 已纳入 `.env.cloud.prod.example` 和 `scripts/safe_deploy_cloud_prod.sh` preflight 必填检查。
@@ -65,6 +70,7 @@
 - 云正式最新长期 SOP 见 `/docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`；本地正式灾备 SOP 见 `/docs/子模块_本地正式灾备切换_local_prod_fallback.md`；历史迁云证据已归档到 `/docs/archive/2026-06-cloud-migration/`。
 
 ## 2.4 本地正式灾备
+
 - 本地主服务器只保留一套临时本地正式接管方案，不再保留日常正式入口。
 - 触发条件是云正式控制面、Tunnel 或云侧数据面整体不可用，且短时间无法恢复。
 - 切换前必须确认 `cloud-tg-bot-prod` 已停止或不可用；若 QQCC 懒人 Bot 也切换到本地灾备，还必须确认 `cloud-qqcc-bot-prod` 已停止或不可用，避免任一生产 Bot token 双实例 polling。
@@ -74,6 +80,7 @@
 - 回切云端时必须先冻结本地新增写入并导出灾备期间的订单、用户资产、任务历史和必要日志，再恢复云端入口。
 
 ## 3. 旧本地脚本迁移口径
+
 - 旧本地正式脚本的迁移入口在 `safe_deploy.sh` 第 4 步。
 - 脚本会先寻找可用的 Alembic 可执行文件，再检查 `heads` 数量。
 - 一旦发现多个 head，脚本会直接中止，要求先合并 migration，而不是带病部署。
@@ -81,10 +88,12 @@
 - 生产脚本在加载 `.env` 后显式导出 `BOT_TYPE=PROD`，避免 `config.py` 的默认 TEST 语义影响生产迁移环境选择。
 
 这意味着知识库里以下旧说法都应删除：
+
 - “等容器启动时自动迁移”
 - “部署完新容器后再手动进容器跑 upgrade head 才是标准流程”
 
 ## 4. 服务重建注意事项
+
 - 所有自有服务只运行 release manifest 中的 digest-pinned 镜像；目标机不得现场 build。
 - Dashboard、QQCC Config 或 Bot 的单模块发布由影响 planner 选择完整消费者，并在发布后核对目标健康与非目标容器启动时间不变。
 - `workers` 更新环境变量时，应使用 `docker-compose up -d` 触发重新创建，而不是只做 `restart`。
@@ -95,12 +104,14 @@
 - 常规云正式 worker/relay 更新优先进入维护或等价门禁，阻止新生成任务进入，等待 pending/running 或至少目标 worker 当前任务归零后再重建；worker 正在处理任务时重建会中断该 worker 当前单任务。紧急抢修可按目标 worker 直接处理，但必须明确接受该 worker 当前任务可能中断。
 
 ## 4.1 workflow 资产事实源
+
 - `workers/comfy_agent/workflows` 是唯一 workflow 运行时事实源；`backend/workflows` 已退出，Central API 不再挂载、COPY 或启动校验 workflow 目录。
 - 修改 workflow JSON、`mappings.json` 或 workflow patcher 时，只更新 Worker 目录，并重建或重启会执行该 task type 的 Worker。
 - Worker 初始化 `WorkflowPatcher` 时仍会校验 `workers/comfy_agent/workflows/mappings.json`，确保映射节点和输入名存在；Central API 只负责请求参数与队列，不再以 workflow 文件作为启动门禁。
 - 若只重建 Central API 而未重建 Worker，workflow 变更不会生效；新增 task type 还必须同步 `TASK_TYPE_WORKFLOW_FILENAMES`、`mappings.json` 和目标 Worker 的 `SUPPORTED_TASK_TYPES`。
 
 ## 4.2 局域网 GPU 节点操作边界
+
 - 局域网 GPU 节点的 SSH、硬件、ComfyUI 容器、模型挂载和安全操作边界分别见：
   - `/docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md`
   - `/docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md`
@@ -112,6 +123,7 @@
 - 2026-06-08 已清理一次旧素材，但 `input/output/temp` 会持续增长；模型下载、Docker pull/build 或大视频输出前必须重新检查 `df -hT`。
 
 ## 5. 常见问题与恢复约束
+
 - MinIO 503 / 上传假死
   - 现象：Web 请求超时，甚至非上传接口也被拖慢。
   - 根因：Region 探测阻塞事件循环。
@@ -145,6 +157,7 @@
   - 处理：在正式生成维护开启且队列为空时，只对 `gpu-177-gpu1-ltx_video` 执行 `scripts/lan_aio_fleet_prod_ops.py start-disabled --slot gpu-177-gpu1-ltx_video --execute`，确认 disabled heartbeat、AIO `/object_info`、v1.2 workflow 文件和模型文件后再 `enable-aio`。不要批量重启 GPU 节点，不要通过 RunPod 脚本修 LAN AIO。
 
 ## 6. 文档维护口径
+
 - 涉及本地正式灾备 compose 的文档必须和 `safe_deploy.sh` 的真实顺序保持一致；云正式和云测试文档必须分别以对应 cloud compose / cloud deploy 脚本为准。
 - 若云测试流程、旧本地测试栈退役口径、`safe_deploy_cloud_test.sh` 或“测试优先发布”策略发生变化，必须同步更新运维技能、`AGENTS.md` 与本子模块文档。
 - 若云正式、本地灾备、Cloudflare Tunnel、Pages 或边缘 upstream 发生变化，必须同步更新云正式、网络、边缘、资源画像和本地灾备文档。

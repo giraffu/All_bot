@@ -1,6 +1,7 @@
 # 修仙主题 AI 创作工作台 - 系统架构与业务分析报告
 
 ## 目录
+
 1. [系统架构总览](#1-系统架构总览)
 2. [关键数据流与核心闭环](#2-关键数据流与核心闭环)
 3. [业务板块划分](#3-业务板块划分)
@@ -109,6 +110,7 @@ graph TD
 ```
 
 ### 1.2 当前分层说明
+
 - **客户端与外部系统**
   - Telegram 仍是核心入口之一。
   - Web 工作台已成为生成、历史管理、广场浏览与模板应用的主路径。
@@ -133,13 +135,16 @@ graph TD
   - Web/Nginx VPS 不再承接正式 `web.aivison.it.com` 主流量；它保留 `assets.aivison.it.com` legacy 人工回滚/旧外链入口、`web-test.aivison.it.com` 测试静态站和正式 Web 回滚副本。
 
 ### 1.3 云正式生产口径
+
 2026-06-07 晚间正式生产已经切到“云控制面 + 托管 PostgreSQL/Valkey + R2 + 本地 GPU worker / LAN AIO / remote_workers / 手动 RunPod 备用池”：
+
 - 云端 Droplet `allbot-do-sgp1-control` 承载 `cloud-central-api-prod`、`cloud-web-api-prod`、`cloud-payment-api-prod`、`cloud-dashboard-backend-prod`、`cloud-dashboard-frontend-prod`、`cloud-qqcc-config-backend-prod`、`cloud-qqcc-config-frontend-prod`、`cloud-imgproxy-prod` 与 `cloud-tg-bot-prod`；`cloud-qqcc-bot-prod` 是独立 `qqcc-bot` profile 服务。2026-07-12 已执行 QQCC 私有 Bot migration 并显式启动 `cloud-qqcc-private-bot-worker-prod`（`qqcc-private-bots` profile），生产 webhook 复用 `api.aivison.it.com`，owner WebApp 使用公开 `private-bot.aivison.it.com`；后续默认 compose 操作仍须显式保留该 profile。
 - `workers/docker-compose-cloud-prod-worker.yml` 仍声明本地 `cloud-prod-comfy-agent-1..7` 与 `cloud-prod-worker-relay`；线上实际可用 worker 还可能包含 LAN AIO、`remote_workers` 与手动 RunPod。2026-06-18 03:06 快照为 13 个 healthy active workers，属于运行态快照，不作为固定容量承诺。
 - `web.aivison.it.com` 已由 Cloudflare Pages 承接静态前端；正式 Web API 独立走 `api.aivison.it.com` Cloudflare Tunnel 回源云 Web API；`rmb.aivison.it.com` 回源云 Payment API；`assets.aivison.it.com` 保留本地 legacy MinIO 只读代理，但正式应用不再生成该域名 URL。
 - 长期运维细节见 `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`。
 
 ### 1.4 云测试与本地灾备口径
+
 - 云测试控制面运行在独立 DigitalOcean Droplet `allbot-do-sgp1-test-control`，Tailscale IP `100.82.124.91`。同机容器承载测试 PostgreSQL、Redis、Central API、Web API、Dashboard Backend、Dashboard Frontend、QQCC Config Backend/Frontend、imgproxy 与测试 Bot；`cloud-qqcc-bot-test` 仅在配置独立 `QQCC_BOT_TOKEN_TEST` 且显式/原运行状态需要时启动，私有 Bot worker 也必须通过 `qqcc-private-bots` profile 显式启动。本地主服务器的 `workers/docker-compose-cloud-worker-test.yml` 声明 `cloud-comfy-agent-test-1..8`，默认常驻只保留 test-1 与 test-8，其余测试 worker 只在 smoke/canary 窗口按需启用；`cloud_worker_test_08` 指向 gpu-002 SCAIL-2 LAN AIO runtime。
 - 云测试 Web 公网入口是 `web-test.aivison.it.com`，由 Web/Nginx VPS 提供 `/root/dist-test` 静态站，`/api/` 回源云测试 Web API `100.82.124.91:8001`。云测试端口绑定 Tailscale IP，公网 eth0 端口由测试机防火墙 drop。
 - 本地主服务器不再保留一套日常正式入口；只保留云正式整体故障时的临时本地正式灾备方案。操作手册见 `docs/子模块_本地正式灾备切换_local_prod_fallback.md`。
@@ -181,33 +186,39 @@ sequenceDiagram
 ```
 
 当前关键事实：
+
 - Web 主入口是 `/api/tasks/generate`，请求体以 `inputs` 为主。
 - 任务链路显式区分 `registry_task_id` 与 `backend_task_id`。
 - Web 运行态依赖 `src/services/task_web_side_effects.py`、`task_web_lifecycle_monitor.py` 与 `task_web_terminal_finalization.py`；Bot 则由 `run_bot_task_application(...)` 前台监控。
 - 任务结果除了运行态 stream 外，还有 history fallback 与结果查询兜底。
 
 延伸阅读：
+
 - 生成任务全链路专题文档：`/docs/子模块_生成任务全链路_task_full_chain.md`
 - 任务调度专题文档：`/docs/子模块_任务调度_task_scheduler.md`
 - 执行面与节点通信专题文档：`/docs/子模块_中控API与节点通信_central_api.md`
 
 ### 2.2 认证与会话闭环
+
 - Web 认证当前是双入口：Telegram 验签登录 + 用户名密码登录。
 - JWT 以 `SECRET_KEY` 签发，并携带 `pwd_ver` / `channel` 等语义 claim。
 - 改密会导致旧 token 失效；权限变化会触发动态复核。
 - Telegram Bot 个人中心打开 Web/Mini App 时，当前通过 `build_versioned_mini_app_url()` 在 `MINI_APP_URL` 上追加 `v` 参数，借此主动击穿 Telegram 旧 WebView 快照。
 
 ### 2.3 支付、返佣与资产闭环
+
 - 支付域已经从单一充值升级为“支付履约 + 返佣入账 + affiliate 兑换灵石/会员”的复合域。
 - RMB 履约当前走 membership settlement 主路径，并保留 legacy fallback。
 - affiliate 已不仅是返佣台账，还承担兑换与审计语义。
 
 ### 2.4 社区广场闭环
+
 - 广场当前包含投稿、点赞、评论、收藏、我的投稿、我的收藏与 Web apply-context。
 - `apply-context` 已成为 Web workbench 主路径。
 - Telegram 端 `gallery_apply_fsm` 仅应视作兼容链路，不再是主产品路径。
 
 ### 2.5 站点通知闭环
+
 - Dashboard 当前可维护全站站点通知，支持标题、正文、启用状态、置顶、目标修为与目标身份。
 - Web 侧通过 `/api/app/site-notice` 与 `/api/app/site-notices` 读取通知。
 - 通知可见性按用户当前 `group` / `identity` 做“任一命中即显示”过滤；两项都为空表示所有 Web 用户可见。
@@ -217,6 +228,7 @@ sequenceDiagram
 ## 3. 业务板块划分
 
 ### 3.1 主营板块
+
 - **01 AI 创作与生成**
   - 负责多模态生成、任务提交、排队、结果回传与模板应用。
 - **02 商业化与会员资产**
@@ -227,6 +239,7 @@ sequenceDiagram
   - 负责境界、身份、Web 准入、动态权限复核与任务优先级。
 
 ### 3.2 支撑板块
+
 - **任务调度与节点通信**
   - task core facade、provider/capability、Web monitor、runtime cleanup、QueueManager、Central API、Workers。
 - **对象存储与媒体交付**
@@ -241,27 +254,32 @@ sequenceDiagram
 ## 4. 关键设计决策
 
 ### 4.1 Core 的目标边界与当前差距
+
 - 已落地的硬边界是：`src/core/` 不接收或导入 Telegram `Update`、FastAPI `Request/APIRouter` 等平台入口对象，入口层先转换为内部 ID/request/context。
 - 目标边界仍是 core 只消费内部协议、domain config、provider/capability 或显式 dependencies；facade 维持小 interface，复杂输入准备、billing、submission、side effect 与 runtime cleanup 下沉到实现层或 builder。
 - 该目标尚未完全实现：当前 core 仍存在对 `config`、SQLAlchemy、HTTPX、PIL/subprocess 以及默认 provider 装配的直接依赖。它们是待迁移到 adapter/composition root 的架构债务，不能用“未发现平台对象 import”推导为“基础设施隔离已经完成”。
 
 ### 4.2 双 ID 运行态模型
+
 - 本地注册与历史链路使用 `registry_task_id`。
 - 后端执行与 best-effort cancel 使用 `backend_task_id`。
 - 取消、恢复、僵尸清理、强制终止都必须显式区分两者。
 
 ### 4.3 Web 与 Bot 监控分流
+
 - Web 提交成功后异步挂载 side-effect monitor。
 - Bot 进入 `run_bot_task_application(...)` 前台监控与展示链路。
 - 两条路径共享 task core，但不共享同一表示层职责。
 
 ### 4.4 测试 seam 前移
+
 - 新测试优先通过 `dependencies` / `*_func` seam 注入能力。
 - 不再鼓励依赖旧的模块级 patch 点。
 
 ---
 
 ## 5. 当前架构口径与维护约束
+
 - 文档中的入口函数、异常类型、超时值、双 ID 语义必须与代码保持一致。
 - `src/bot_main.py` 是 Telegram Bot shared entrypoint，测试/生产模式统一由 `BOT_TYPE` 选择。
 - `paid_group_guard_bot/main.py` 是付费群审核 Bot 独立入口，必须使用独立 `PAID_GROUP_BOT_TOKEN`，不能复用主业务 `BOT_TOKEN` 或接入主 Bot FSM；群管理配置和 JSONL 删除日志由 Dashboard 通过共享文件目录管理。
@@ -270,6 +288,7 @@ sequenceDiagram
 - 若技能文档与代码入口冲突，应先更新 skill / docs，再继续开发。
 
 ### 5.1 维护基线与知识库口径
+
 - 2026-06-27 知识库维护口径：`AGENTS.md` 只保留全局路由，细节以 `.codex/skills/*/SKILL.md`、`/docs` 与 `docs/knowledge_base_audit_matrix.md` 为准；技能正文应记录稳定边界和入口，不沉淀一次性 Pod ID、任务 ID、失败尝试流水账或真实密钥值。一次性 canary、迁移证据和模型上传流水应进入 `docs/archive/` 或 `logs/`。
 - `src/task_core_process_defaults.py` 是 task core process 默认装配的真实入口。
 - RunPod Provider v0 的稳定边界是云测试 `img2img/img2img_lora` canary、云测试 split video profile (`image_to_video` / `wan22_video_v2`) canary、云测试 `i2i_pro` 三任务 canary、云测试 `scail2` 两任务 canary、云测试 `ltx_video` I2V canary，以及云正式手动备用 worker。`prod-worker --profile i2i_pro` 支持 `i2i_pro`、Web 文生图执行类型 `t2i-pornmaster-turbo` 与 `face_swap`；`prod-worker --profile scail2` 支持 `scail2_action_transfer` 与 `scail2_video_replacement`；`prod-worker --profile ltx_video` 支持 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio` 并默认使用 10Eros v1.2 workflow override。Dashboard 已提供正式 RunPod 新增/暂停/删除入口和 autoscaler；autoscaler 通过现有 operation store、Redis leader lease、profile 清空阈值、静态 task duration、预计清空时间和 RunPod 门禁调用 `add` / `down`，不直接操作本地 worker，也不代表线上固定常驻容量。

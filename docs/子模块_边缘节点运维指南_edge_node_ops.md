@@ -38,6 +38,7 @@
 | 静态目录 | `/root/dist` 为正式 Web 回滚副本，`/root/dist-test` 为测试 Web 静态站，各约 2.6M |
 
 容量风险：
+
 - 2026-06-16 清理前根盘一度达到 `97%`，主要来自未轮转 Nginx 日志与较大的 `minio_cache`。
 - `/var/cache/nginx` 约 `26G`，主要是 `minio_cache`；当前 `proxy_cache_path max_size=25g` 对 40G 根盘仍偏高。
 - `/var/log/nginx` 在 2026-06-16 受控轮转并压缩后约 `359M`；当时 `access.log` 从约 `4.8G` 压缩为 `access.log.1.gz` 约 `371M`。
@@ -45,12 +46,14 @@
 - 若根盘再次低于 10% 可用，优先检查 `logrotate.timer`、`/var/log/nginx` 增长和 `minio_cache` 命中/占用，再考虑缩小 cache 或扩盘。
 
 2026-06-08 17:10 Web 卡顿巡检补充：
+
 - Web 边缘到云 Web API `100.107.220.127:8000` 约 `0.51-0.55s`，该基线主要用于回滚、`web-test` 与 `assets` 排障；当前正式 API 公网入口是 `api.aivison.it.com`。
 - 最近 30 分钟窗口曾观测到约 `202` 次 499，集中在 `/api/tasks/{id}/result`、`/api/gallery/posts`、`/api/gallery/my-favorites`、`/api/users/history` 等等待型接口。
 - `assets.aivison.it.com` legacy 回源曾在 30 分钟内出现约 `37` 次 upstream 异常；其中大量为 `upstream prematurely closed connection`，少量为 `upstream timed out`。
 - `/minio/health/live` 返回 200 只能证明本地 MinIO 基础健康，不代表具体旧外链/人工回滚对象读取链路稳定；验收该链路必须测真实对象 URL 或至少统计 `assets` error.log。
 
 2026-06-16 容量治理补充：
+
 - 已安装并启用 `logrotate.timer`，备份原 `/etc/logrotate.d/nginx` 后移除 `delaycompress`，执行 `logrotate -f /etc/logrotate.d/nginx` 轮转并压缩现有 Nginx 日志。
 - 同步执行 `journalctl --vacuum-size=100M` 和 `apt-get clean`；根盘从约 `37G used / 1.5G free / 97%` 降至约 `32G used / 6.3G free / 84%`。
 - `web-test.aivison.it.com` 验证返回 200；`assets.aivison.it.com` 根路径返回 403 属预期，不代表具体旧外链/人工回滚对象不可读。
@@ -87,11 +90,13 @@
 ### 3.3 Nginx 配置红线
 
 配置入口：
+
 - `/etc/nginx/sites-enabled/all_bot`
 - `/etc/nginx/sites-enabled/web-test.aivison.it.com`
 - 仓库模板：`all_bot_nginx_cloud_prod.conf`、`all_bot_nginx_web_test.conf`
 
 对象存储代理红线：
+
 - `assets.aivison.it.com` 代理 MinIO/S3 预签名 URL 时，`proxy_pass` 不得包含 URI 或尾部斜杠。
 - 必须保持 `proxy_request_buffering off;`，避免大文件上传被 Nginx 缓冲到边缘磁盘。
 - 下载缓存可保留 `proxy_cache minio_cache`，但当前 `max_size=25g` 已把 40G 根盘推到高风险状态；后续应缩小 cache、迁移 cache 目录或扩盘。
@@ -99,6 +104,7 @@
 - `client_max_body_size 50m;` 必须保留。
 
 Web API/SSE 红线：
+
 - 正式 `web.aivison.it.com` 不再通过 VPS `/api/` 反代；前端生产包必须使用 `VITE_API_BASE_URL=https://api.aivison.it.com/api`。
 - 若回滚到 VPS `/root/dist`，`/api/` 才需要 `proxy_buffering off; proxy_cache off; chunked_transfer_encoding off;`，避免 SSE 和任务状态流被缓存或分块延迟。
 - 测试 Web `/api/` 当前应回源云测试 Tailscale Web API `100.82.124.91:8001`。不要误指正式 `8000`。
@@ -153,6 +159,7 @@ nginx -s reload
 ```
 
 操作边界：
+
 - 改 `all_bot` 会影响 `assets.aivison.it.com` legacy 人工回滚/旧外链入口和正式 Web 回滚副本；当前正式 `web.aivison.it.com` 主流量不经过该 Nginx server。
 - 改 `web-test.aivison.it.com` 只影响测试静态站和测试 `/api/`。
 - 不要用 `systemctl restart nginx` 作为常规动作；优先 `nginx -t && nginx -s reload`。
@@ -210,6 +217,7 @@ tail -n 300 /var/log/nginx/error.log | grep -Ei "assets.aivison.it.com|upstream|
 | 资源快照 | 因 SSH key 未打通，本轮未采集 CPU/内存/磁盘/Docker 细节 |
 
 生产配置契约：
+
 - `.env.cloud.prod.example` 中默认 `TELEGRAM_API_BASE_URL=http://69.63.220.115:8081`
 - `.env.cloud.prod.example` 中默认 `TELEGRAM_FILE_API_BASE_URL=http://69.63.220.115:8082`
 - `scripts/safe_deploy_cloud_prod.sh` preflight 会检查 Telegram Local API base URL。
@@ -217,6 +225,7 @@ tail -n 300 /var/log/nginx/error.log | grep -Ei "assets.aivison.it.com|upstream|
 ### 4.2 预期服务形态
 
 Telegram Local API 节点预期运行：
+
 - `telegram-bot-api` 容器或同等服务，监听 `8081`。
 - HTTP 文件服务，监听 `8082`，只读暴露 `telegram-bot-api` 写入的本地文件目录。
 - 共享目录通常为 `/var/lib/telegram-bot-api`。
@@ -269,6 +278,7 @@ curl -sS -o /dev/null -w "%{http_code} %{time_total}\n" --max-time 10 http://69.
 ## 6. 文档维护规则
 
 以下事件发生后必须更新本文档、`docs/子模块_系统资源与容量画像_resource_inventory.md` 和相关 skills：
+
 - 边缘 VPS 新增、下线、换 IP、换 SSH key。
 - `web.aivison.it.com`、`web-test.aivison.it.com`、`assets.aivison.it.com` upstream 变化。
 - Telegram Local API `8081/8082` 节点迁移或容器名、挂载目录变化。
