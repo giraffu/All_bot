@@ -269,6 +269,79 @@ def test_initial_worker_cutover_maps_legacy_slots_and_holds_maintenance():
     assert module.hold_maintenance_for_worker_cutover("prod", impact) is False
 
 
+def test_initial_cloud_cutover_includes_stateful_dependencies_and_legacy_names():
+    module = _load_module()
+    impact = module.ReleaseImpact(
+        services={"central-api", "web-api", "bot"},
+        level="maintenance",
+        matched_rules=["initial-release"],
+    )
+
+    selected = module.cloud_services_for_release("test", impact)
+
+    assert selected == {"postgres", "redis", "central-api", "web-api", "bot"}
+    assert module.legacy_cloud_containers("test", selected) == [
+        "cloud-postgres-test",
+        "cloud-redis-test",
+        "cloud-central-api-test",
+        "cloud-web-api-test",
+        "cloud-tg-bot-test",
+    ]
+
+
+def test_initial_cloud_cutover_pulls_before_stopping_legacy_and_restores_on_failure(
+    tmp_path, monkeypatch
+):
+    module = _load_module()
+    impact = module.ReleaseImpact(
+        services={"central-api", "web-api", "bot", "worker"},
+        level="maintenance",
+        matched_rules=["initial-release"],
+    )
+    args = SimpleNamespace(
+        execute=True,
+        env="test",
+        remote_host="cloud-test",
+        remote_checkout_root="/release-root",
+        remote_env_file="/etc/allbot/test.env",
+        confirm_legacy_cutover=True,
+        drain_timeout_seconds=30,
+        drain_interval_seconds=1,
+    )
+    remote_calls = []
+
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda command, **kwargs: subprocess.CompletedProcess(
+            command, 0, stdout="", stderr=""
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "_remote_shell",
+        lambda host, script, *, execute: remote_calls.append((host, script, execute)),
+    )
+
+    module._deploy_cloud(args, impact, _manifest(), "ALLBOT_RELEASE_SHA=x\n")
+
+    assert len(remote_calls) == 1
+    host, script, execute = remote_calls[0]
+    assert host == "cloud-test"
+    assert execute is True
+    pull = script.index(" pull postgres redis bot central-api web-api")
+    stop = script.index('docker stop $legacy_running')
+    start = script.index(" up -d --no-deps --wait --wait-timeout 180 postgres redis bot central-api web-api")
+    assert pull < stop < start
+    assert "cloud-postgres-test" in script
+    assert "cloud-redis-test" in script
+    assert "cloud-tg-bot-test" in script
+    assert "docker exec cloud-central-api-test python -c" in script
+    assert " rm -sf postgres redis bot central-api web-api" in script
+    assert 'docker start "$name"' in script
+    assert "legacy_cutover_committed=1" in script
+
+
 def test_initial_worker_cutover_stops_legacy_before_start_and_clears_maintenance(
     tmp_path, monkeypatch
 ):

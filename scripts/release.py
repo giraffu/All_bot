@@ -468,6 +468,44 @@ def legacy_worker_containers(selected: Iterable[str]) -> list[str]:
     ]
 
 
+def cloud_services_for_release(
+    environment: str, impact: ReleaseImpact
+) -> set[str]:
+    selected = set(impact.services) & set(
+        ENVIRONMENT[environment]["available_services"]
+    )
+    if environment == "test" and "initial-release" in impact.matched_rules:
+        # The legacy test stack owns PostgreSQL and Redis.  They must join the
+        # first immutable handoff so the new project can reuse the existing
+        # data volumes instead of starting against an empty network/volume.
+        selected.update({"postgres", "redis"})
+    return selected
+
+
+def legacy_cloud_containers(
+    environment: str, selected: Iterable[str]
+) -> list[str]:
+    suffix = "test" if environment == "test" else "prod"
+    names = {
+        "postgres": f"cloud-postgres-{suffix}",
+        "redis": f"cloud-redis-{suffix}",
+        "central-api": f"cloud-central-api-{suffix}",
+        "web-api": f"cloud-web-api-{suffix}",
+        "payment-api": f"cloud-payment-api-{suffix}",
+        "dashboard-backend": f"cloud-dashboard-backend-{suffix}",
+        "dashboard-frontend": f"cloud-dashboard-frontend-{suffix}",
+        "qqcc-config-backend": f"cloud-qqcc-config-backend-{suffix}",
+        "qqcc-config-frontend": f"cloud-qqcc-config-frontend-{suffix}",
+        "imgproxy": f"cloud-imgproxy-{suffix}",
+        "bot": f"cloud-tg-bot-{suffix}",
+        "qqcc-bot": f"cloud-qqcc-bot-{suffix}",
+        "qqcc-private-bot-worker": f"cloud-qqcc-private-bot-worker-{suffix}",
+        "paid-group-guard-bot": f"cloud-paid-group-guard-bot-{suffix}",
+    }
+    chosen = set(selected)
+    return [name for service, name in names.items() if service in chosen]
+
+
 def hold_maintenance_for_worker_cutover(
     environment: str, impact: ReleaseImpact
 ) -> bool:
@@ -568,16 +606,13 @@ def _plan_document(
     manifest: Mapping[str, Any],
     previous_sha: str,
 ) -> dict[str, Any]:
-    environment = ENVIRONMENT[args.env]
     return {
         "environment": args.env,
         "git_sha": manifest["git_sha"],
         "previous_sha": previous_sha or None,
         "level": impact.level,
         "services": sorted(impact.services),
-        "cloud_services": sorted(
-            impact.services & environment["available_services"]
-        ),
+        "cloud_services": sorted(cloud_services_for_release(args.env, impact)),
         "worker": "worker" in impact.services,
         "web_static": "web-static" in impact.services,
         "requires_db_upgrade": impact.requires_db_upgrade,
@@ -605,7 +640,11 @@ def _deploy_cloud(
 ) -> None:
     environment = ENVIRONMENT[args.env]
     host = args.remote_host or environment["host"]
-    cloud_services = sorted(impact.services & environment["available_services"])
+    selected_cloud_services = cloud_services_for_release(args.env, impact)
+    cloud_services = sorted(
+        selected_cloud_services,
+        key=lambda service: (service not in {"postgres", "redis"}, service),
+    )
     if not cloud_services:
         return
     sha = manifest["git_sha"]
@@ -623,7 +662,12 @@ def _deploy_cloud(
         "--profile bot --profile qqcc-bot --profile qqcc-private-bots"
     )
     services = " ".join(shlex.quote(service) for service in cloud_services)
-    if "initial-release" in impact.matched_rules and impact.level == "maintenance":
+    initial_cutover = (
+        "initial-release" in impact.matched_rules and impact.level == "maintenance"
+    )
+    legacy_containers = legacy_cloud_containers(args.env, cloud_services)
+    legacy_names = " ".join(shlex.quote(name) for name in legacy_containers)
+    if initial_cutover:
         if args.execute and not args.confirm_legacy_cutover:
             raise ReleaseError("initial immutable cutover requires --confirm-legacy-cutover")
     maintenance_prefix = ""
@@ -631,14 +675,50 @@ def _deploy_cloud(
     hold_maintenance = hold_maintenance_for_worker_cutover(args.env, impact)
     if impact.level == "maintenance":
         maintenance_file = f"{environment['state_root']}/runtime/GENERATION_MAINTENANCE"
+        drain_condition = f"{compose} ps -q central-api | grep -q ."
+        drain_counts = (
+            f"{compose} exec -T central-api python -c "
+            "'import os,redis; c=redis.Redis.from_url(os.environ.get(\"WORKER_REDIS_URL\") or os.environ[\"REDIS_URL\"]); "
+            "print(c.zcard(\"comfy:queue:pending\"),c.scard(\"comfy:queue:running\"))'"
+        )
+        if initial_cutover and "central-api" in cloud_services:
+            legacy_central = legacy_cloud_containers(args.env, {"central-api"})[0]
+            drain_condition = (
+                "docker ps --format '{{.Names}}' | "
+                f"grep -Fxq {shlex.quote(legacy_central)}"
+            )
+            drain_counts = (
+                f"docker exec {shlex.quote(legacy_central)} python -c "
+                "'import os,redis; c=redis.Redis.from_url(os.environ.get(\"WORKER_REDIS_URL\") or os.environ[\"REDIS_URL\"]); "
+                "print(c.zcard(\"comfy:queue:pending\"),c.scard(\"comfy:queue:running\"))'"
+            )
+        legacy_setup = ""
+        legacy_restore = ""
+        if initial_cutover:
+            legacy_setup = f"""legacy_cutover_committed=0
+legacy_running_file={release_dir}/legacy-cloud-running.txt
+: > "$legacy_running_file"
+"""
+            legacy_restore = f"""if [ "$legacy_cutover_committed" != 1 ]; then
+  {compose} rm -sf {services} >/dev/null 2>&1 || true
+  while read -r name; do
+    [ -n "$name" ] && docker start "$name" >/dev/null 2>&1 || true
+  done < "$legacy_running_file"
+fi
+"""
         maintenance_prefix = f"""install -d -m 755 {environment['state_root']}/runtime
 touch {maintenance_file}
-cleanup_maintenance() {{ rm -f {maintenance_file}; }}
+{legacy_setup}cleanup_maintenance() {{
+  status=$?
+  set +e
+  {legacy_restore}rm -f {maintenance_file}
+  return "$status"
+}}
 trap cleanup_maintenance EXIT
-if {compose} ps -q central-api | grep -q .; then
+if {drain_condition}; then
   deadline=$(( $(date +%s) + {args.drain_timeout_seconds} ))
   while true; do
-    counts="$({compose} exec -T central-api python -c 'import os,redis; c=redis.Redis.from_url(os.environ.get("WORKER_REDIS_URL") or os.environ["REDIS_URL"]); print(c.zcard("comfy:queue:pending"),c.scard("comfy:queue:running"))')"
+    counts="$({drain_counts})"
     set -- $counts
     [ "$1" = 0 ] && [ "$2" = 0 ] && break
     [ "$(date +%s)" -lt "$deadline" ] || {{ echo 'queue drain timed out' >&2; exit 2; }}
@@ -669,6 +749,10 @@ test "$(stat -c %a {shlex.quote(env_file)})" = 600
 {compose} config -q
 start_snapshot=/tmp/allbot-nontarget-{sha}.txt
 target_names="$({compose} ps --format '{{{{.Name}}}}' {services} 2>/dev/null || true)"
+for name in {legacy_names or ':'}; do
+  target_names="${{target_names}}
+${{name}}"
+done
 : > "$start_snapshot"
 for name in $(docker ps --format '{{{{.Names}}}}'); do
   printf '%s\n' "$target_names" | grep -Fxq "$name" && continue
@@ -680,13 +764,21 @@ for ref in "$ALLBOT_APP_IMAGE" "$ALLBOT_CENTRAL_IMAGE" "$ALLBOT_DASHBOARD_BACKEN
   docker image inspect "$ref" >/dev/null
   test "$(docker image inspect --format '{{{{ index .Config.Labels \"org.opencontainers.image.revision\" }}}}' "$ref")" = {sha}
 done
-{compose} up -d --no-deps --wait --wait-timeout 180 {services}
+{f'''for name in {legacy_names}; do
+  docker ps --format '{{{{.Names}}}}' | grep -Fxq "$name" && printf '%s\\n' "$name" >> "$legacy_running_file"
+done
+legacy_running="$(tr '\\n' ' ' < "$legacy_running_file")"
+if [ -n "$legacy_running" ]; then
+  docker stop $legacy_running
+fi
+''' if initial_cutover else ''}{compose} up -d --no-deps --wait --wait-timeout 180 {services}
 {compose} ps {services}
 while read -r name started_at; do
   name="${{name#/}}"
   test "$(docker inspect --format '{{{{.State.StartedAt}}}}' "$name")" = "$started_at"
 done < "$start_snapshot"
 rm -f "$start_snapshot"
+{'legacy_cutover_committed=1' if initial_cutover else ''}
 {maintenance_suffix}
 """
     if impact.requires_db_upgrade:
