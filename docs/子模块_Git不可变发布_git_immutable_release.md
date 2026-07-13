@@ -2,7 +2,7 @@
 
 ## 1. 状态与边界
 
-截至 2026-07-13，仓库侧发布契约已经建立，首次切换权限仅覆盖测试环境；生产部署与正式 Cloudflare Pages mutation 仍未获授权。首次切换必须先运行 bootstrap dry-run，并以最终合入 `main` 后重新生成的 SHA/digest 为准。
+截至 2026-07-14，仓库侧发布契约已经建立，测试控制面与本地 Worker 已进入不可变发布链路。测试/正式 Web 统一使用 Wrangler Pages 发布；本轮只授权测试 Pages mutation，生产部署与正式 Pages mutation仍未获授权。
 
 旧 `update_cloud_*` 脚本已经 fail closed。它们不再包含 rsync 或 build 能力。旧 compose、云端混合源码和容器 image ID 只用于首次切换归档与一次性 legacy 回滚，不是可信 release 基线。
 
@@ -13,6 +13,7 @@
 | CI 构建 | `.github/workflows/control-plane-release.yml` |
 | 影响分析 | `deploy/release-policy.yml` |
 | 配置契约 | `deploy/env.schema.yml` |
+| Web 公开运行时配置 | `frontend/runtime-config.yml` |
 | 公共控制面 | `deploy/docker-compose-cloud-base.yml` + test/prod overlay |
 | 公共 Worker | `deploy/docker-compose-worker-base.yml` |
 | 发布接口 | `scripts/release.py` |
@@ -22,7 +23,7 @@
 
 ## 3. 构建契约
 
-受保护 `main` 的 CI 构建 `allbot-app`、`allbot-central-api`、Dashboard backend/frontend、Worker 和 Web tar。所有自有镜像以完整 SHA 为 tag并写 OCI revision/source；release bundle 也以完整 SHA 发布。workflow 在推送前检查同 SHA tag 不存在，避免正常流水线覆盖。
+受保护 `main` 的 CI 构建 `allbot-app`、`allbot-central-api`、Dashboard backend/frontend、Worker 和环境无关的 Web tar。Web 使用锁定 Node/npm/Wrangler 版本运行 `build:release`，不把 test/prod URL 烘焙成不同产物。所有自有镜像以完整 SHA 为 tag并写 OCI revision/source；release bundle 也以完整 SHA 发布。workflow 在推送前检查同 SHA tag 不存在，避免正常流水线覆盖。
 
 `release.json` 同时记录自有镜像 digest、imgproxy/Postgres/Redis digest、Web SHA256 和 CI run。部署器拒绝短 SHA、`latest`/普通 tag、缺少 digest、manifest SHA 不一致和未推送/不可从 `origin/main` 到达的提交。
 
@@ -83,8 +84,9 @@ release workflow 生成 manifest 后会运行一次不接触运行态秘密的�
 
 ## 6. Web、Worker 与回滚
 
-- 测试 Web 校验 tar SHA256，使用 deploy 账号受限 SSH key（默认 `/home/deploy/.ssh/allbot_test_edge_ed25519`）上传到 SHA 版本目录后原子切换 `/root/dist-test` symlink，不从源码 checkout 读取密钥，也不覆盖现有目录。
-- 正式 Web 用 `deploy` 账号下的独立最小权限 token（默认 `/home/deploy/.config/allbot/cloudflare-pages.token`）通过 Wrangler 上传同一 tar；仓库 CI 不保存 Cloudflare 管理凭据。首次切换前须人工关闭 Pages 自动生产构建。
+- 测试与正式 Web 都先校验同一 tar SHA256，再从精确 SHA checkout 读取 `frontend/runtime-config.yml` 的公开环境段，生成 `allbot-runtime-config.js` 和独立 revision，最后调用同一 Wrangler Pages 发布器。测试目标为 `allbot-web-cf-test/test`，正式目标为 `allbot-web-prod/main`。
+- Pages Token 默认读取 `/home/deploy/.config/allbot/cloudflare-pages.token`，必须是 `600` 且具备目标项目 Pages Write；DNS/Tunnel 权限不能替代 Pages 权限。仓库 CI 不保存 Cloudflare 管理凭据。正式项目的 Git 自动生产构建必须在首次正式切换前人工关闭。
+- 状态清单同时记录 Web artifact SHA256、Pages project/branch、deployment URL 与 runtime config revision。`--skip-web` 只用于故障恢复并写 `health.web=skipped`，不能通过测试验收或生产晋级。
 - 普通 Worker 使用 release 中同一 Worker digest；源码、workflow、relay、`src` 全在镜像内。发布器只处理本地常规 Worker；RunPod/LAN AIO 仍走专用 operator。
 - 测试环境维护发布如果同时包含本地 Worker，云控制面的 `GENERATION_MAINTENANCE` 会一直保持到 Worker digest/OCI revision 校验、旧同 Agent ID 容器停止、新 Worker health 通过；任一步失败都保留维护标志并停止写入部署成功状态。首次切换只停止 allowlist 对应的 legacy worker 与 relay，避免旧/新 Agent 并存。
 - 回滚命令读取旧 release manifest/Web tar，不重建。部署状态 history 长期保留；运行主机不得全局 `docker system prune`。数据库 migration 只向前兼容，应用回滚不自动 Alembic downgrade。
@@ -100,4 +102,4 @@ scripts/release.py rollback --env prod --to <old-sha> --manifest <old-release.js
 
 测试控制面首次切换不是普通 rolling recreate。发布器会把 Postgres/Redis 与应用服务一起纳入初始依赖闭包，测试 overlay 通过显式 external volume 名复用 `deploy_cloud-postgres-test-data` 和 `deploy_cloud-redis-test-data`，并保留 `postgres-test`/`redis-test` 网络别名及旧 `CLOUD_TEST_*` 到运行时变量的映射。流程必须先拉取并校验全部 digest，再从 legacy Central 排空队列、记录实际运行的 legacy 容器、停止这些容器并启动新项目；如果新项目健康或非目标启动时间门禁失败，EXIT trap 会移除新目标容器并重启记录中的旧容器。成功后旧容器保持 stopped，作为一次性 legacy 回滚入口，不得删除旧数据卷。
 
-归档 `origin/main`/`origin/deploy` tag、stabilization PR、GHCR 权限、主机 bootstrap、env 原子迁移、测试回滚演练、Pages 自动构建关闭和首次生产切换均是外部 mutation，必须分别确认。仓库代码完成不等于这些运行态动作已经发生。
+归档 `origin/main`/`origin/deploy` tag、stabilization PR、GHCR 权限、主机 bootstrap、env 原子迁移、测试回滚演练、Pages 自动构建关闭和首次生产切换均是外部 mutation，必须分别确认。测试 Pages 已于 2026-07-14 使用独立最小 Pages token 关闭 production/preview 自动部署；正式 Pages 仍未修改。本机 DNS/Tunnel Account Token 对 Pages API 返回 403，不能冒充 Pages 发布凭据。

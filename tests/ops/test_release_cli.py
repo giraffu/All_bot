@@ -2,6 +2,7 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import tarfile
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -25,7 +26,9 @@ def _load_module():
 
 
 def _load_config_updater():
-    spec = importlib.util.spec_from_file_location("allbot_config_updater", CONFIG_UPDATER_PATH)
+    spec = importlib.util.spec_from_file_location(
+        "allbot_config_updater", CONFIG_UPDATER_PATH
+    )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -40,8 +43,10 @@ def _manifest(sha: str = FULL_SHA) -> dict:
         "images": {
             "app": "ghcr.io/giraffu/allbot-app@sha256:" + "1" * 64,
             "central": "ghcr.io/giraffu/allbot-central-api@sha256:" + "2" * 64,
-            "dashboard_backend": "ghcr.io/giraffu/allbot-dashboard-backend@sha256:" + "3" * 64,
-            "dashboard_frontend": "ghcr.io/giraffu/allbot-dashboard-frontend@sha256:" + "4" * 64,
+            "dashboard_backend": "ghcr.io/giraffu/allbot-dashboard-backend@sha256:"
+            + "3" * 64,
+            "dashboard_frontend": "ghcr.io/giraffu/allbot-dashboard-frontend@sha256:"
+            + "4" * 64,
             "worker": "ghcr.io/giraffu/allbot-worker@sha256:" + "5" * 64,
         },
         "vendor_images": {
@@ -296,11 +301,53 @@ def test_state_marks_web_skipped_instead_of_claiming_checksum_passed(monkeypatch
     assert state["health"]["web"] == "skipped"
 
 
-def test_test_web_ssh_uses_batch_mode_and_connect_timeout():
+def test_state_records_pages_deployment_metadata(monkeypatch):
+    module = _load_module()
+    captured = {}
+
+    def capture_run(*_args, **kwargs):
+        captured["payload"] = kwargs["input_text"]
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(module, "_run", capture_run)
+    args = SimpleNamespace(
+        env="test",
+        remote_host="test-control",
+        execute=True,
+        command="deploy",
+        skip_web=False,
+    )
+    impact = module.ReleaseImpact(services={"web-static"}, level="rolling")
+    web_deployment = {
+        "project": "allbot-web-cf-test",
+        "branch": "test",
+        "deployment_url": "https://abc.allbot-web-cf-test.pages.dev",
+        "runtime_config_revision": "f" * 64,
+    }
+
+    module._write_state(
+        args,
+        impact,
+        _manifest(),
+        "config-revision",
+        web_deployment=web_deployment,
+    )
+
+    state = json.loads(captured["payload"])
+    assert state["health"]["web"] == "artifact-checksum-passed"
+    assert state["web_deployment"] == web_deployment
+
+
+def test_test_web_no_longer_uses_edge_ssh_or_scp():
     source = MODULE_PATH.read_text(encoding="utf-8")
 
-    assert '"BatchMode=yes"' in source
-    assert '"ConnectTimeout=10"' in source
+    web_section = source[
+        source.index("def _deploy_web(") : source.index("def _deploy_worker(")
+    ]
+    assert '"ssh"' not in web_section
+    assert '"scp"' not in web_section
+    assert '"allbot-web-cf-test"' in source
+    assert '"allbot-web-prod"' in source
 
 
 def test_initial_cloud_cutover_includes_stateful_dependencies_and_legacy_names():
@@ -432,6 +479,7 @@ def test_initial_cloud_cutover_pulls_before_stopping_legacy_and_restores_on_fail
             command, 0, stdout="", stderr=""
         ),
     )
+
     def fake_remote(host, script, *, execute):
         remote_calls.append((host, script, execute))
         return f"ALLBOT_CLOUD_RELEASE_VERIFIED:{FULL_SHA}\n"
@@ -451,8 +499,10 @@ def test_initial_cloud_cutover_pulls_before_stopping_legacy_and_restores_on_fail
     assert host == "cloud-test"
     assert execute is True
     pull = script.index(" pull postgres redis bot central-api web-api")
-    stop = script.index('docker stop $legacy_running')
-    start = script.index(" up -d --no-deps --wait --wait-timeout 180 postgres redis bot central-api web-api")
+    stop = script.index("docker stop $legacy_running")
+    start = script.index(
+        " up -d --no-deps --wait --wait-timeout 180 postgres redis bot central-api web-api"
+    )
     assert pull < stop < start
     assert "cloud-postgres-test" in script
     assert "cloud-redis-test" in script
@@ -469,7 +519,7 @@ def test_initial_cloud_cutover_pulls_before_stopping_legacy_and_restores_on_fail
     ) in script
     assert "docker inspect --format '{{.Config.Image}}'" in script
     assert 'test "$actual_image" = "$ALLBOT_APP_IMAGE"' in script
-    assert 'org.opencontainers.image.revision' in script
+    assert "org.opencontainers.image.revision" in script
     assert f"ALLBOT_CLOUD_RELEASE_VERIFIED:{FULL_SHA}" in script
     assert " rm -sf postgres redis bot central-api web-api" in script
     assert 'docker start "$name"' in script
@@ -647,6 +697,135 @@ def test_test_acceptance_rejects_runtime_when_web_was_skipped():
     module.validate_test_runtime_for_acceptance(state)
 
 
+def test_web_runtime_config_is_public_versioned_and_environment_specific(tmp_path):
+    module = _load_module()
+    config_path = tmp_path / "web-runtime-config.yml"
+    config_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "test": {
+                    "api_base_url": "https://api-test.example.com/api",
+                    "telegram_bot_username": "test_bot",
+                },
+                "prod": {
+                    "api_base_url": "https://api.example.com/api",
+                    "telegram_bot_username": "prod_bot",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    values, revision = module.load_web_runtime_config(config_path, "test")
+    script = module.render_web_runtime_config_script(
+        values,
+        git_sha=FULL_SHA,
+        config_revision=revision,
+    )
+
+    assert values["api_base_url"] == "https://api-test.example.com/api"
+    assert values["telegram_bot_username"] == "test_bot"
+    assert len(revision) == 64
+    assert "api-test.example.com" in script
+    assert FULL_SHA in script
+    assert "prod_bot" not in script
+
+
+def test_web_runtime_config_rejects_unknown_or_secret_fields(tmp_path):
+    module = _load_module()
+    config_path = tmp_path / "web-runtime-config.yml"
+    config_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "test": {"api_base_url": "/api", "api_token": "secret"},
+                "prod": {"api_base_url": "/api"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        module.ReleaseError, match="unsupported public Web runtime fields"
+    ):
+        module.load_web_runtime_config(config_path, "test")
+
+
+@pytest.mark.parametrize(
+    ("environment", "expected_project", "expected_branch"),
+    [
+        ("test", "allbot-web-cf-test", "test"),
+        ("prod", "allbot-web-prod", "main"),
+    ],
+)
+def test_test_and_prod_web_use_same_pages_deployer(
+    tmp_path,
+    monkeypatch,
+    environment,
+    expected_project,
+    expected_branch,
+):
+    module = _load_module()
+    artifact = tmp_path / "web-dist.tgz"
+    source = tmp_path / "source" / "dist"
+    source.mkdir(parents=True)
+    (source / "index.html").write_text("ok", encoding="utf-8")
+    with tarfile.open(artifact, "w:gz") as archive:
+        archive.add(source, arcname="dist")
+    manifest = _manifest()
+    manifest["web_artifact_sha256"] = module.hashlib.sha256(
+        artifact.read_bytes()
+    ).hexdigest()
+    token_file = tmp_path / "pages.token"
+    token_file.write_text("test-token\n", encoding="utf-8")
+    token_file.chmod(0o600)
+    runtime_path = tmp_path / "web-runtime-config.yml"
+    runtime_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "test": {"api_base_url": "https://api-test.example.com/api"},
+                "prod": {"api_base_url": "https://api.example.com/api"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="Deployment complete! https://abc.allbot-web-cf-test.pages.dev\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+    args = SimpleNamespace(
+        skip_web=False,
+        web_artifact=str(artifact),
+        bundle_cache=str(tmp_path),
+        execute=True,
+        env=environment,
+        cloudflare_token_file=str(token_file),
+        cloudflare_account_id="account-id",
+        web_runtime_config=str(runtime_path),
+    )
+
+    result = module._deploy_web(args, manifest)
+
+    command = calls[-1][0]
+    assert command[:5] == ["npx", "--no-install", "wrangler", "pages", "deploy"]
+    assert command[command.index("--project-name") + 1] == expected_project
+    assert command[command.index("--branch") + 1] == expected_branch
+    assert result["project"] == expected_project
+    assert result["deployment_url"].endswith(".pages.dev")
+    assert len(result["runtime_config_revision"]) == 64
+    assert not any(command[0] in {"ssh", "scp"} for command, _ in calls)
+
+
 def test_config_impact_recreates_consumers_and_unknown_keys_fail_wide():
     module = _load_module()
     updater = _load_config_updater()
@@ -657,3 +836,13 @@ def test_config_impact_recreates_consumers_and_unknown_keys_fail_wide():
 
     assert {"bot", "qqcc-bot", "qqcc-private-bot-worker"} <= known
     assert unknown == set(module.load_structured_file(POLICY_PATH)["all_services"])
+
+
+def test_release_cli_defaults_to_allbot_cloudflare_account():
+    module = _load_module()
+
+    args = module.build_parser().parse_args(
+        ["plan", "--env", "test", "--sha", "0" * 40]
+    )
+
+    assert args.cloudflare_account_id == "c7220eb751acc6f7ab8255b4a0394ef3"

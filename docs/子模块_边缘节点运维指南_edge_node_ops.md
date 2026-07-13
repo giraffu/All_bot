@@ -2,7 +2,7 @@
 
 ## 1. 目标与范围
 
-本文档记录 AllBot 当前两台海外 VPS 边缘节点的职责范围、资源配置、服务入口、运维红线和排障流程。边缘节点不是业务事实源；它们负责 legacy 媒体人工回滚/旧外链/迁移排障、测试静态站、历史回滚入口和 Telegram 大文件本地 API。2026-06-08 晚间起，正式 `web.aivison.it.com` 已切到 Cloudflare Pages，正式 Web API 独立走 `api.aivison.it.com` Cloudflare Tunnel；正式应用不再生成 `assets.aivison.it.com` legacy URL，排障时不要到 VPS Nginx 查正式 Web 静态站、正式 `/api/`、`web-cf-test.aivison.it.com` 或 `api-cf-test.aivison.it.com`。
+本文档记录 AllBot 当前两台海外 VPS 边缘节点的职责范围、资源配置、服务入口、运维红线和排障流程。边缘节点不是业务事实源；它们只负责 legacy 媒体人工回滚/旧外链/迁移排障、历史静态回滚入口和 Telegram 大文件本地 API。2026-07-14 起测试与正式 Web 都进入 Cloudflare Pages 不可变发布链路，VPS `/root/dist-test` 不再接收逐文件或 tar 发布；排障时不要到 VPS Nginx 查 Pages 主站、正式/测试 Pages API 配置。
 
 本文档不是实时监控面板。CPU、内存、磁盘、公网状态和服务端口都是采集时快照；做切流、清理、扩容或证书变更前必须重新采集。
 
@@ -12,7 +12,7 @@
 
 | 节点 | 入口 | 主要职责 | 当前状态 |
 | :--- | :--- | :--- | :--- |
-| Web/Nginx 边缘 VPS | Tailscale `100.88.57.122`，公网 `154.17.30.113`，SSH `root@100.88.57.122` 使用 `frontend/ssh_key/id_rsa.pem` | `assets.aivison.it.com` legacy MinIO 代理（人工回滚/旧外链/迁移排障）、`web-test.aivison.it.com` 测试静态站、正式 Web 回滚用 `/root/dist` | SSH 可用，Nginx/Tailscale active；2026-06-16 受控轮转日志后根盘约 84%；不再承接正式 `web.aivison.it.com` 主流量 |
+| Web/Nginx 边缘 VPS | Tailscale `100.88.57.122`，公网 `154.17.30.113`，SSH `root@100.88.57.122` 使用 `frontend/ssh_key/id_rsa.pem` | `assets.aivison.it.com` legacy MinIO 代理（人工回滚/旧外链/迁移排障）、历史 `/root/dist*` 静态回滚副本 | 2026-07-14 探测离线；不再承接 test/prod Web 主发布 |
 | Telegram Local API VPS | 公网 `69.63.220.115` | Telegram Local Bot API `8081`，文件 HTTP 服务 `8082`，支撑大文件下载/上传绕过官方 Bot API 限制 | 8081/8082/22 公网端口可达；当前主服务器未配置可用 SSH key，资源需补采 |
 
 ## 3. Web/Nginx 边缘 VPS
@@ -64,17 +64,17 @@
 | 域名 | 边缘职责 | 当前 upstream |
 | :--- | :--- | :--- |
 | `web.aivison.it.com` | 已由 Cloudflare Pages `allbot-web-prod` 承接；VPS 只保留回滚副本 | 不经过 VPS；前端调用 `https://api.aivison.it.com/api` |
-| `web-test.aivison.it.com` | 测试 Web 静态站；`/api/` 反代云测试 Web API | `http://100.82.124.91:8001` |
+| `web-test.aivison.it.com` | legacy 测试回滚入口；不再接收常规发布 | 历史配置为 `http://100.82.124.91:8001` |
 | `assets.aivison.it.com` | legacy MinIO 只读/兼容回源，仅用于人工回滚、旧外链和迁移排障；正式应用不再生成该域名 URL | `http://100.99.254.53:9000` |
 
 不在 Web VPS 上的历史 Cloudflare canary 入口：
 
 | 域名 | 承接方 | 说明 |
 | :--- | :--- | :--- |
-| `web.aivison.it.com` | Cloudflare Pages | 正式静态站，项目 `allbot-web-prod`，构建模式 `frontend npm run build:cf-prod` |
+| `web.aivison.it.com` | Cloudflare Pages | 正式静态站，项目 `allbot-web-prod`；只接收 release CLI 的已验收 tar |
 | `api.aivison.it.com` | Cloudflare Tunnel on `allbot-do-sgp1-control` | 正式 Web API 入口，回源 `http://100.107.220.127:8000` |
-| `web-cf-test.aivison.it.com` | Cloudflare Pages | 历史 canary 静态站；如未配置，不作为当前测试入口 |
-| `api-cf-test.aivison.it.com` | Cloudflare Tunnel on `allbot-do-sgp1-control` | 历史 canary API；如未配置，不作为当前测试入口 |
+| `web-cf-test.aivison.it.com` | Cloudflare Pages | 测试静态站，项目 `allbot-web-cf-test`；与正式使用同一 tar 和 Wrangler 流程 |
+| `api-cf-test.aivison.it.com` | Cloudflare Tunnel `allbot-cloud-web-api-canary` | 测试 Web API，2026-07-14 已核对回源 `http://100.82.124.91:8001` |
 
 公网快照：
 
@@ -111,21 +111,21 @@ Web API/SSE 红线：
 
 ### 3.4 发布与回滚
 
-正式 Web 静态站当前通过 Cloudflare Pages 发布：
+测试与正式 Web 静态站统一通过不可变发布 CLI 发布，禁止直接在 VPS `scp` 或让 Pages 从 Git 重建不同产物：
 
 ```bash
-cd /home/hfy/APP/All_bot/frontend
-npm run build:cf-prod
+scripts/release.py deploy --env test --sha <full-sha> --execute
+scripts/release.py deploy --env prod --sha <same-full-sha> --execute --confirm-prod
 ```
 
-Cloudflare Pages 项目 `allbot-web-prod` 使用 Git 集成，生产分支 `deploy`，构建命令 `npm ci && npm run build:cf-prod`。VPS `/root/dist` 仅作为紧急回滚副本；需要回滚到 VPS 时才使用：
+CI 只构建一次 `build:release` tar。发布器校验 SHA256，按 `frontend/runtime-config.yml` 注入测试或正式公开配置，再使用锁定 Wrangler 发布到 `allbot-web-cf-test/test` 或 `allbot-web-prod/main`。VPS `/root/dist`、`/root/dist-test` 仅作为 legacy 紧急回滚证据，不是新链路的发布目标。
 
-Cloudflare Pages 当前构建环境会按项目检测结果使用 Node 24 / npm 10（2026-06-28 实测为 `nodejs@24.13.1`、`npm@10.9.2`）。涉及 `frontend/package-lock.json`、Vite、Tailwind、optional/peer dependency 的前端发布，不能只用本机默认 npm 验证；推送 `deploy` 前先用 Pages 同款 npm 复现依赖安装和构建：
+Node/npm 版本由 GitHub Actions 锁定；Pages 不再现场安装依赖或构建。涉及 `frontend/package-lock.json`、Vite、Tailwind、optional/peer dependency 的变更，必须先用 release workflow 同款版本复现：
 
 ```bash
 cd /home/hfy/APP/All_bot/frontend
 npx -y npm@10.9.2 ci --progress=false
-npx -y npm@10.9.2 run build:cf-prod
+npx -y npm@10.9.2 run build:release
 ```
 
 若 Pages 日志在 `npm clean-install --progress=false` 阶段报 `npm ci can only install packages when your package.json and package-lock.json or npm-shrinkwrap.json are in sync`，并出现类似 `Missing: @emnapi/runtime@1.11.1 from lock file`，说明 lockfile 对 npm 10 不完整。使用同版本 npm 只刷新 lockfile 后提交：
@@ -134,14 +134,10 @@ npx -y npm@10.9.2 run build:cf-prod
 cd /home/hfy/APP/All_bot/frontend
 npx -y npm@10.9.2 install --package-lock-only --progress=false
 npx -y npm@10.9.2 ci --progress=false
-npx -y npm@10.9.2 run build:cf-prod
+npx -y npm@10.9.2 run build:release
 ```
 
-```bash
-cd /home/hfy/APP/All_bot/frontend
-npm run build
-scp -i ssh_key/id_rsa.pem -r dist/* root@100.88.57.122:/root/dist/
-```
+任何 `scp dist/*`、覆盖 `/root/dist-test` 或 Pages Git 自动生产构建都不是受支持的常规发布方式。
 
 测试 Web 静态站：
 

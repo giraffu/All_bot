@@ -1,3 +1,5 @@
+import { getRuntimeConfig } from '@/config/runtime'
+
 export const buildStorageFileUrl = (path: string): string => {
   if (!path) {
     return ''
@@ -7,7 +9,7 @@ export const buildStorageFileUrl = (path: string): string => {
     return path
   }
 
-  const storageUrl = import.meta.env.VITE_STORAGE_URL || ''
+  const storageUrl = getRuntimeConfig('storage_url', '')
   const base = storageUrl.endsWith('/') ? storageUrl.slice(0, -1) : storageUrl
 
   if (!path.startsWith('bot-data/') && !path.startsWith('comfyui-temp/')) {

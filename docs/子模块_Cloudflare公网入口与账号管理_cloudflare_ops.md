@@ -1,6 +1,6 @@
 # 子模块: Cloudflare 公网入口与账号管理 (Cloudflare Ops)
 
-> 不可变发布约束（2026-07-13）：正式 Web 必须由本地主服务器发布 CLI 使用最小 Pages token 上传测试验收过的同一 Web tar；关闭 Pages Git 自动生产构建属于单独的 Cloudflare mutation，必须明确授权。本轮仅实现仓库发布能力，没有修改 Pages、Token、DNS 或 Tunnel。
+> 不可变发布约束（2026-07-14）：测试与正式 Web 必须由本地主服务器发布 CLI 使用最小 Pages token 上传同一 Web tar，仅在发布时注入版本化公开 runtime config。本轮已获测试 Pages mutation 授权；正式 Pages 发布、custom domain 和关闭 Git 自动生产构建仍需单独确认。
 
 ## 1. 目标与范围
 
@@ -20,15 +20,18 @@
 | 当前管理员 allowlist | `cv1347968277@gmail.com` |
 | 自动化 token 主文件 | `/home/hfy/.cloudflare/allbot-cloudflare-admin.token` |
 | 本地分析兼容 token 路径 | `/home/hfy/.cloudflare/allbot-local-analytics.token`，指向主文件的 symlink |
+| Pages 发布 token | `/home/hfy/.config/allbot/cloudflare-pages.token`，仅 Pages Read/Write |
 | token 文件权限 | 目录 `700`，文件 `600` |
 
-2026-07-05 已将聊天中暴露过的旧 `allbot-local-analytics` token 禁用；本机主文件已轮换为新的 Cloudflare 自动化 token。当前 token 的可用性以 DNS、Access、Tunnel 等目标 API 的只读探测为准；若未来需要管理 API Token 本身，必须先单独验证 token-management API 权限，不要假设所有账号能力都已覆盖。
+2026-07-05 已将聊天中暴露过的旧 `allbot-local-analytics` token 禁用；本机主文件已轮换为新的 Cloudflare 自动化 token。2026-07-14 实测该 Account Token 可访问 DNS/Tunnel，但 Pages projects 和 token-management API 返回 403；它不能用于 Web 发布。独立 Pages token 已按 `600` 保存并通过 projects API 200 验证。任何出现在聊天中的 token 仍必须撤销，不能写入知识库或凭据文件。
 
 ## 3. 当前公网入口
 
 | 域名 | Cloudflare 承接 | 当前回源/用途 | 保护要求 |
 | :--- | :--- | :--- | :--- |
 | `web.aivison.it.com` | Pages `allbot-web-prod` | 正式 Web 静态站 | Pages/Git 发布门禁 |
+| `web-cf-test.aivison.it.com` | Pages `allbot-web-cf-test` | 不可变发布测试 Web；运行时配置指向测试 API/Bot/R2 | Pages 发布门禁，不指向正式 API |
+| `api-cf-test.aivison.it.com` | Tunnel `allbot-cloud-web-api-canary` / `6d129e6e-8f4a-4003-b0bc-60565910b2b9` | 云测试 Web API `http://100.82.124.91:8001` | 2026-07-14 已从错误的正式回源修正为测试回源 |
 | `api.aivison.it.com` | Tunnel `allbot-cloud-web-api` / `07da3d9e-c610-41c8-ac71-71da8753a46e` | 云正式 Web API `http://100.107.220.127:8000` | Web API 自身鉴权，不启用 Access 登录页 |
 | `rmb.aivison.it.com` | Cloudflare Tunnel | 云正式 Payment API `http://100.107.220.127:8021` | 支付回调/结果页语义，切换走 RMB 脚本 |
 | `worker-central.aivison.it.com` | Cloudflare Tunnel | 远程 worker / RunPod 专用 Central | 不启用 Access 登录页；依赖 agent secret 与 WAF/rate limit |
@@ -37,7 +40,9 @@
 | `private-bot.aivison.it.com` | Tunnel `allbot-admin-dashboard-prod` / `68599b55-d7f9-4e0c-9613-3d5fa396cb28`，DNS record `69c4e68bf442dea05fefa71db28791b5` | QQCC 私有 Bot owner WebApp，回源 `http://100.107.220.127:8088` | 面向 owner 公开，不创建 Access app；应用层 ticket/JWT + 双层 Host 隔离 |
 | `analytics.aivison.it.com` | Tunnel `allbot-local-analytics` / `79d456a9-6448-4677-8a1f-c128ffb256dd` + Access app `local-analytics` / `b05ae46f-fcdb-43d9-ac4e-50ab91daabac` | 本地主服务器只读分析平台 `http://127.0.0.1:8095` | Access policy `local-analytics-admin` allow `cv1347968277@gmail.com` + 应用层登录 |
 | `assets.aivison.it.com` | Web/Nginx VPS | legacy MinIO 人工回滚、旧外链、迁移排障 | 不作为新生成媒体主路径 |
-| `web-test.aivison.it.com` | Web/Nginx VPS | 云测试静态站 + `/api/` 反代云测试 Web API | 测试环境，不指向正式 API |
+| `web-test.aivison.it.com` | Web/Nginx VPS | legacy 测试静态站/回滚入口；VPS 离线时不可作为发布成功依据 | 不再接收逐文件发布 |
+
+2026-07-14 已关闭 `allbot-web-cf-test` Git integration 的 production 自动部署，并把 preview branch control 设置为 `none`；当前内容保持不变，后续只接受 release CLI 校验同一 tar 后的 Wrangler 上传。`allbot-web-prod` 未在本轮修改。
 
 QQCC 私有 Bot owner WebApp Host 由 `PRIVATE_QQCC_BOT_OWNER_HOST` / `PRIVATE_QQCC_BOT_OWNER_WEBAPP_URL` 提供。2026-07-12 已在现有 `allbot-admin-dashboard-prod` Tunnel 的 catch-all 404 前新增 `private-bot.aivison.it.com -> http://100.107.220.127:8088`，并创建 proxied CNAME；该 Host 明确没有 Access app。上线后已验证 owner 首页 200、未认证 owner API 401、owner Host 上管理员 API与 `/api/health` 404，原 `qqcc-admin` 公网入口仍返回 Access 302。
 
@@ -89,7 +94,7 @@ curl -fsS -H "Authorization: Bearer ${CF_API_TOKEN}" \
 unset CF_API_TOKEN
 ```
 
-Account-owned token 不一定能通过 `/user/tokens/verify` 体现真实能力；本项目以目标 API 只读探测成功作为有效性判断。若某个 API 返回 403，应先判断 token 权限是否覆盖该产品，不要把 403 误判为 Cloudflare 服务异常。
+`cfat_` Account-owned token 应使用 `/accounts/${CF_ACCOUNT_ID}/tokens/verify` 验证；不要使用 `/user/tokens/verify`，后者会把有效的账户级 token 报成 `Invalid API Token`。本项目还必须以目标 API 只读探测成功确认实际权限。若某个 API 返回 403，应先核对 account ID 与 token 权限是否覆盖该产品，不要把 403 误判为 Cloudflare 服务异常。
 
 ## 6. 新增受保护公网入口 SOP
 

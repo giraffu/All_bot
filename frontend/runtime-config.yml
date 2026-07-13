@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "test": {
+    "api_base_url": "https://api-cf-test.aivison.it.com/api",
+    "storage_url": "https://r2-test.aivison.it.com",
+    "imgproxy_url": "https://imgproxy.aivison.it.com",
+    "telegram_bot_username": "testAIvison_bot",
+    "tonconnect_manifest_url": "https://web-cf-test.aivison.it.com/tonconnect-manifest-test.json",
+    "tonconnect_twa_return_url": "https://t.me/testAIvison_bot",
+    "enable_free_edit_v2": true,
+    "enable_scail2_long_action_transfer": true
+  },
+  "prod": {
+    "api_base_url": "https://api.aivison.it.com/api",
+    "storage_url": "https://assets.aivison.it.com",
+    "imgproxy_url": "https://imgproxy.aivison.it.com",
+    "telegram_bot_username": "AIVision1111_bot",
+    "tonconnect_manifest_url": "https://web.aivison.it.com/tonconnect-manifest.json",
+    "tonconnect_twa_return_url": "https://t.me/AIVision1111_bot",
+    "enable_free_edit_v2": true,
+    "enable_scail2_long_action_transfer": true
+  }
+}
