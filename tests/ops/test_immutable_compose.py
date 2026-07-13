@@ -89,3 +89,12 @@ def test_bootstrap_sends_remote_script_over_stdin_and_archives_source_only():
     assert 'bash -ceu "$SCRIPT"' not in bootstrap
     assert "--exclude='__pycache__'" in bootstrap
     assert "--exclude='*.pyc'" in bootstrap
+
+
+def test_backend_httpx_pin_is_compatible_with_telegram_runtime():
+    backend_requirements = (ROOT / "backend/requirements.txt").read_text(
+        encoding="utf-8"
+    )
+
+    assert "httpx==0.28.1" in backend_requirements
+    assert "httpx==0.26.0" not in backend_requirements
