@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import subprocess
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -50,6 +51,56 @@ def _manifest(sha: str = FULL_SHA) -> dict:
         },
         "web_artifact_sha256": "6" * 64,
     }
+
+
+def _valid_test_environment(*, worker_slots: tuple[str, ...] = ()) -> dict[str, str]:
+    values = {
+        "ALLBOT_ENV": "test",
+        "ALLBOT_ENV_FILE": "/etc/allbot/test.env",
+        "ALLBOT_STATE_ROOT": "/var/lib/allbot/test",
+        "DATABASE_URL": "postgresql+asyncpg://test-db",
+        "REDIS_URL": "redis://test-control/0",
+        "WORKER_REDIS_URL": "redis://test-worker/0",
+        "AGENT_SECRET_TOKEN": "test-agent-secret",
+        "API_TOKEN": "test-api-token",
+        "MINIO_ENDPOINT": "test-minio",
+        "MINIO_ACCESS_KEY": "test-access-key",
+        "MINIO_SECRET_KEY": "test-secret-key",
+        "MINIO_SECURE": "false",
+        "BOT_TOKEN_TEST": "test-bot-token",
+        "CLOUD_TEST_BIND_IP": "127.0.0.1",
+        "CLOUD_TEST_CONTROL_HOST": "test-control",
+        "CLOUD_TEST_DATABASE_URL": "postgresql+asyncpg://test-db",
+        "CLOUD_TEST_REDIS_URL": "redis://test-control/0",
+        "CLOUD_TEST_WORKER_REDIS_URL": "redis://test-worker/0",
+    }
+    if worker_slots:
+        values.update(
+            {
+                "ALLBOT_WORKER_SERVICES": ",".join(
+                    f"worker-{slot}" for slot in worker_slots
+                ),
+                "ALLBOT_WORKER_STATE_ROOT": "/var/lib/allbot/test-worker",
+                "ALLBOT_WORKER_CENTRAL_API_URL": "http://test-control:8004",
+                "ALLBOT_WORKER_RELAY_PORT": "8014",
+            }
+        )
+    for slot in worker_slots:
+        values.update(
+            {
+                f"ALLBOT_WORKER_{slot}_AGENT_ID": f"cloud_worker_test_{slot}",
+                f"ALLBOT_WORKER_{slot}_COMFY_API_URL": "http://gpu:8188",
+                f"ALLBOT_WORKER_{slot}_COMFY_WS_URL": "ws://gpu:8188/ws",
+                f"ALLBOT_WORKER_{slot}_TASK_TYPES": "image_to_video",
+                f"ALLBOT_WORKER_{slot}_NODE_ID": "gpu-test",
+                f"ALLBOT_WORKER_{slot}_GPU_INDEX": "0",
+                f"ALLBOT_WORKER_{slot}_RUNTIME_PROFILE": "test-profile",
+                f"ALLBOT_WORKER_{slot}_PREFETCH_ENABLED": "false",
+                f"ALLBOT_WORKER_{slot}_PIPELINE_ENABLED": "false",
+                f"ALLBOT_WORKER_{slot}_PIPELINE_MAX_RUNNING_TASKS": "1",
+            }
+        )
+    return values
 
 
 def test_shared_runtime_changes_expand_to_every_python_consumer():
@@ -184,6 +235,111 @@ def test_environment_validation_reports_names_without_secret_values():
     message = str(exc_info.value)
     assert "super-secret-token" not in message
     assert "BOT_TOKEN" in message
+
+
+def test_environment_contract_accepts_worker_08_and_rejects_unknown_slots():
+    module = _load_module()
+    schema = module.load_structured_file(SCHEMA_PATH)
+    values = _valid_test_environment(worker_slots=("01", "08"))
+
+    revision = module.validate_environment(schema, "test", values)
+
+    assert len(revision) == 64
+    invalid = dict(values, ALLBOT_WORKER_SERVICES="worker-09")
+    with pytest.raises(module.ReleaseError, match="invalid worker slot"):
+        module.validate_environment(schema, "test", invalid)
+
+
+def test_initial_worker_cutover_maps_legacy_slots_and_holds_maintenance():
+    module = _load_module()
+    impact = module.ReleaseImpact(
+        services={"central-api", "worker", "web-static"},
+        level="maintenance",
+        matched_rules=["initial-release"],
+    )
+
+    assert module.legacy_worker_containers({"worker-01", "worker-08"}) == [
+        "cloud-comfy-agent-test-1",
+        "cloud-comfy-agent-test-8",
+        "cloud-worker-relay-test",
+    ]
+    assert module.hold_maintenance_for_worker_cutover("test", impact) is True
+    assert module.hold_maintenance_for_worker_cutover("prod", impact) is False
+
+
+def test_initial_worker_cutover_stops_legacy_before_start_and_clears_maintenance(
+    tmp_path, monkeypatch
+):
+    module = _load_module()
+    root = tmp_path / "release-root"
+    (root / "repo" / ".git").mkdir(parents=True)
+    env_file = tmp_path / "test.env"
+    env_file.write_text("ALLBOT_ENV=test\n", encoding="utf-8")
+    impact = module.ReleaseImpact(
+        services={"central-api", "worker", "web-static"},
+        level="maintenance",
+        matched_rules=["initial-release"],
+    )
+    args = SimpleNamespace(
+        execute=True,
+        env="test",
+        env_file=str(env_file),
+        worker_checkout_root=str(root),
+        remote_host="cloud-test",
+    )
+    commands = []
+    remote_calls = []
+
+    def fake_run(command, **kwargs):
+        commands.append(command)
+        stdout = ""
+        if command[:4] == ["git", "-C", str(root / "releases" / FULL_SHA), "rev-parse"]:
+            stdout = FULL_SHA + "\n"
+        elif command[:4] == ["docker", "image", "inspect", "--format"]:
+            stdout = FULL_SHA + "\n"
+        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+    def fake_remote(host, script, *, execute):
+        remote_calls.append((host, script, execute, len(commands)))
+
+    monkeypatch.setattr(module, "_run", fake_run)
+    monkeypatch.setattr(module, "_remote_shell", fake_remote)
+
+    module._deploy_worker(
+        args,
+        impact,
+        _manifest(),
+        "ALLBOT_WORKER_IMAGE=example@sha256:" + "5" * 64 + "\n",
+        {"ALLBOT_WORKER_SERVICES": "worker-01,worker-08"},
+    )
+
+    legacy_stop = next(
+        index
+        for index, command in enumerate(commands)
+        if command[:2] == ["docker", "stop"]
+    )
+    immutable_start = next(
+        index
+        for index, command in enumerate(commands)
+        if command[:2] == ["docker", "compose"] and "up" in command
+    )
+    assert commands[legacy_stop] == [
+        "docker",
+        "stop",
+        "cloud-comfy-agent-test-1",
+        "cloud-comfy-agent-test-8",
+        "cloud-worker-relay-test",
+    ]
+    assert legacy_stop < immutable_start
+    assert remote_calls == [
+        (
+            "cloud-test",
+            "set -euo pipefail\n"
+            "rm -f /var/lib/allbot/test/runtime/GENERATION_MAINTENANCE\n",
+            True,
+            len(commands),
+        )
+    ]
 
 
 def test_prod_execute_requires_explicit_confirmation_before_other_checks(tmp_path):

@@ -2,7 +2,7 @@
 
 ## 1. 状态与边界
 
-截至 2026-07-13，仓库侧发布契约已经建立；本轮没有执行生产部署、Cloudflare Pages mutation、Git push/tag、deploy key 或 GHCR token 创建。首次云测试/生产切换必须另行授权，并先运行 bootstrap dry-run。
+截至 2026-07-13，仓库侧发布契约已经建立，首次切换权限仅覆盖测试环境；生产部署与正式 Cloudflare Pages mutation 仍未获授权。首次切换必须先运行 bootstrap dry-run，并以最终合入 `main` 后重新生成的 SHA/digest 为准。
 
 旧 `update_cloud_*` 脚本已经 fail closed。它们不再包含 rsync 或 build 能力。旧 compose、云端混合源码和容器 image ID 只用于首次切换归档与一次性 legacy 回滚，不是可信 release 基线。
 
@@ -47,9 +47,9 @@ python scripts/update_deploy_config.py --env prod --source /secure/new-prod.env 
 
 影响映射在 `deploy/config-impact.yml`。脚本备份旧 env、通过 SSH stdin 写 `600 deploy:deploy` 临时文件、原子 rename，并在 compose 校验或 recreate 失败时恢复旧 env；输出只含变更变量名、revision 和服务名。
 
-错误只输出变量名，不输出值。Worker 槽位由 `ALLBOT_WORKER_SERVICES=worker-01,...` allowlist 决定；发布器只重建该列表，未启用 canary 不会被顺带启动。每个选中槽位必须提供对应 `ALLBOT_WORKER_XX_*` 契约。
+错误只输出变量名，不输出值。Worker 槽位由 `ALLBOT_WORKER_SERVICES=worker-01,...` allowlist 决定；当前支持 `worker-01` 至 `worker-08`，发布器只重建该列表，未启用 canary 不会被顺带启动。每个选中槽位必须提供对应 `ALLBOT_WORKER_XX_*` 的 endpoint、任务类型、node/GPU/runtime profile 与 prefetch/pipeline 契约；08 号槽位另外保留 SCAIL-2 workflow/face-swap 配置。
 
-首次 env 迁移必须人工完成：在目标机本地备份、写临时文件、校验、`chmod 600`/`chown deploy:deploy`、原子 rename，并记录新 config revision。不要通过 Git、CI、rsync 或命令输出传输秘密。
+测试环境首次迁移使用 `scripts/migrate_legacy_test_env.py` 将本机 `.env.cloud.test` 转成候选文件；脚本默认 dry-run、丢弃 malformed legacy 行、最后一个合法同名变量生效，且只输出计数不输出值。候选必须再经 `scripts/release.py validate-env`，随后备份旧 env、`chmod 600`/`chown deploy:deploy`、原子 rename，并记录新 config revision。不要通过 Git、CI、rsync 或命令输出传输秘密。该迁移器是 test-only，不能用于生产 env。
 
 ## 5. 标准流程
 
@@ -75,9 +75,10 @@ scripts/release.py deploy --env prod --sha <40-char-sha> --execute --confirm-pro
 
 ## 6. Web、Worker 与回滚
 
-- 测试 Web 校验 tar SHA256，上传到 SHA 版本目录后原子切换 `/root/dist-test` symlink，不覆盖现有目录。
+- 测试 Web 校验 tar SHA256，使用 deploy 账号受限 SSH key（默认 `/home/deploy/.ssh/allbot_test_edge_ed25519`）上传到 SHA 版本目录后原子切换 `/root/dist-test` symlink，不从源码 checkout 读取密钥，也不覆盖现有目录。
 - 正式 Web 用 `deploy` 账号下的独立最小权限 token（默认 `/home/deploy/.config/allbot/cloudflare-pages.token`）通过 Wrangler 上传同一 tar；仓库 CI 不保存 Cloudflare 管理凭据。首次切换前须人工关闭 Pages 自动生产构建。
 - 普通 Worker 使用 release 中同一 Worker digest；源码、workflow、relay、`src` 全在镜像内。发布器只处理本地常规 Worker；RunPod/LAN AIO 仍走专用 operator。
+- 测试环境维护发布如果同时包含本地 Worker，云控制面的 `GENERATION_MAINTENANCE` 会一直保持到 Worker digest/OCI revision 校验、旧同 Agent ID 容器停止、新 Worker health 通过；任一步失败都保留维护标志并停止写入部署成功状态。首次切换只停止 allowlist 对应的 legacy worker 与 relay，避免旧/新 Agent 并存。
 - 回滚命令读取旧 release manifest/Web tar，不重建。部署状态 history 长期保留；运行主机不得全局 `docker system prune`。数据库 migration 只向前兼容，应用回滚不自动 Alembic downgrade。
 
 ```bash

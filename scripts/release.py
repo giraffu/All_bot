@@ -321,14 +321,23 @@ def validate_environment(
     if worker_services:
         worker_required = list(worker_schema.get("required_when_selected", []))
         for service in sorted(worker_services):
-            match = re.fullmatch(r"worker-(0[1-7])", service)
+            match = re.fullmatch(r"worker-(0[1-8])", service)
             if not match:
                 errors.append(f"{selection_key} contains an invalid worker slot")
                 continue
+            slot = match.group(1)
             worker_required.extend(
-                str(template).format(slot=match.group(1))
+                str(template).format(slot=slot)
                 for template in worker_schema.get("per_slot_required_templates", [])
             )
+            for template in worker_schema.get("per_slot_boolean_templates", []):
+                key = str(template).format(slot=slot)
+                if key in values and values[key].strip().lower() not in boolean_values:
+                    errors.append(f"{key} must be a boolean")
+            for template in worker_schema.get("per_slot_integer_templates", []):
+                key = str(template).format(slot=slot)
+                if key in values and not re.fullmatch(r"[0-9]+", values[key].strip()):
+                    errors.append(f"{key} must be a non-negative integer")
         missing_worker = sorted(
             key for key in worker_required if not values.get(key, "").strip()
         )
@@ -445,6 +454,28 @@ def _split_services(values: Sequence[str]) -> set[str]:
     for value in values:
         selected.update(item for item in re.split(r"[\s,]+", value) if item)
     return selected
+
+
+def legacy_worker_containers(selected: Iterable[str]) -> list[str]:
+    slots = sorted(
+        int(match.group(1))
+        for service in selected
+        if (match := re.fullmatch(r"worker-(0[1-8])", service))
+    )
+    return [
+        *(f"cloud-comfy-agent-test-{slot}" for slot in slots),
+        "cloud-worker-relay-test",
+    ]
+
+
+def hold_maintenance_for_worker_cutover(
+    environment: str, impact: ReleaseImpact
+) -> bool:
+    return (
+        environment == "test"
+        and impact.level == "maintenance"
+        and "worker" in impact.services
+    )
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -597,6 +628,7 @@ def _deploy_cloud(
             raise ReleaseError("initial immutable cutover requires --confirm-legacy-cutover")
     maintenance_prefix = ""
     maintenance_suffix = ""
+    hold_maintenance = hold_maintenance_for_worker_cutover(args.env, impact)
     if impact.level == "maintenance":
         maintenance_file = f"{environment['state_root']}/runtime/GENERATION_MAINTENANCE"
         maintenance_prefix = f"""install -d -m 755 {environment['state_root']}/runtime
@@ -614,7 +646,13 @@ if {compose} ps -q central-api | grep -q .; then
   done
 fi
 """
-        maintenance_suffix = f"rm -f {maintenance_file}\ntrap - EXIT\n"
+        if hold_maintenance:
+            maintenance_suffix = (
+                "trap - EXIT\n"
+                "echo 'generation maintenance held for worker cutover'\n"
+            )
+        else:
+            maintenance_suffix = f"rm -f {maintenance_file}\ntrap - EXIT\n"
     script = f"""set -euo pipefail
 test -d {shlex.quote(repo)}/.git || {{ echo 'release host is not bootstrapped; run scripts/bootstrap_release_host.sh' >&2; exit 3; }}
 git -C {shlex.quote(repo)} fetch --prune origin main
@@ -718,7 +756,10 @@ def _deploy_web(
         if not args.execute:
             print(f"[dry-run] upload {artifact} to web edge {remote_dir} and switch /root/dist-test")
             return
-        key = str(ROOT / "frontend" / "ssh_key" / "id_rsa.pem")
+        key_path = Path(args.test_web_ssh_key)
+        if not key_path.is_file():
+            raise ReleaseError(f"test Web SSH key is unavailable: {key_path}")
+        key = str(key_path)
         target = "root@100.88.57.122"
         _run(["ssh", "-i", key, target, f"install -d -m 755 {remote_dir}"])
         _run(["scp", "-i", key, str(artifact), f"{target}:{remote_dir}/web-dist.tgz"])
@@ -773,6 +814,7 @@ def _deploy_web(
 
 def _deploy_worker(
     args: argparse.Namespace,
+    impact: ReleaseImpact,
     manifest: Mapping[str, Any],
     release_env: str,
     environment_values: Mapping[str, str],
@@ -787,7 +829,7 @@ def _deploy_worker(
     invalid = sorted(
         service
         for service in selected
-        if not re.fullmatch(r"worker-(0[1-7])", service)
+        if not re.fullmatch(r"worker-(0[1-8])", service)
     )
     if invalid:
         raise ReleaseError("invalid ALLBOT_WORKER_SERVICES entries: " + ", ".join(invalid))
@@ -820,6 +862,13 @@ def _deploy_worker(
             "[dry-run] worker drain/recreate from digest-pinned image: "
             + " ".join(service_args)
         )
+        if "initial-release" in impact.matched_rules:
+            print(
+                "[dry-run] stop matching legacy test worker containers: "
+                + " ".join(legacy_worker_containers(selected))
+            )
+        if hold_maintenance_for_worker_cutover(args.env, impact):
+            print("[dry-run] clear cloud-test generation maintenance after worker health")
         return
     if not (repo / ".git").is_dir():
         raise ReleaseError(
@@ -849,11 +898,28 @@ def _deploy_worker(
     ).stdout.strip()
     if revision != sha:
         raise ReleaseError("worker OCI revision does not match release SHA")
+    if "initial-release" in impact.matched_rules:
+        existing = [
+            name
+            for name in legacy_worker_containers(selected)
+            if _run(["docker", "inspect", name], check=False).returncode == 0
+        ]
+        if existing:
+            _run(["docker", "stop", *existing])
     # The impact planner has already elevated worker changes to drain level.
     # Recreate only the explicit slot allowlist; dormant canary slots stay off.
     _run([*compose, "stop", *sorted(selected)])
     _run([*compose, "up", "-d", "--no-deps", "--wait", "--wait-timeout", "180", *service_args])
     _run([*compose, "ps", *service_args])
+    if hold_maintenance_for_worker_cutover(args.env, impact):
+        environment = ENVIRONMENT[args.env]
+        host = args.remote_host or environment["host"]
+        maintenance_file = f"{environment['state_root']}/runtime/GENERATION_MAINTENANCE"
+        _remote_shell(
+            host,
+            f"set -euo pipefail\nrm -f {shlex.quote(maintenance_file)}\n",
+            execute=True,
+        )
 
 
 def _promotion_check(args: argparse.Namespace, manifest: Mapping[str, Any]) -> None:
@@ -1104,6 +1170,10 @@ def _add_release_arguments(parser: argparse.ArgumentParser) -> None:
         default="/home/deploy/APP/All_bot-release",
     )
     parser.add_argument(
+        "--test-web-ssh-key",
+        default="/home/deploy/.ssh/allbot_test_edge_ed25519",
+    )
+    parser.add_argument(
         "--cloudflare-token-file",
         default="/home/deploy/.config/allbot/cloudflare-pages.token",
     )
@@ -1181,7 +1251,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if "web-static" in impact.services:
             _deploy_web(args, manifest)
         if "worker" in impact.services:
-            _deploy_worker(args, manifest, release_env, environment_values)
+            _deploy_worker(args, impact, manifest, release_env, environment_values)
         _write_state(args, impact, manifest, config_revision)
         return 0
     except ReleaseError as exc:
