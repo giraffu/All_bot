@@ -42,6 +42,8 @@ async def test_send_history_record_to_telegram_requires_bound_telegram():
 
 @pytest.mark.asyncio
 async def test_send_history_record_to_telegram_delegates_delivery_pipeline(monkeypatch):
+    monkeypatch.setenv("BOT_TYPE", "PROD")
+    monkeypatch.setattr(history_delivery_service, "BOT_TOKEN", "test-token")
     acquire_rate_limit = AsyncMock()
     load_history = AsyncMock(
         return_value=SimpleNamespace(

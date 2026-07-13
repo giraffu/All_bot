@@ -183,10 +183,10 @@ async def execute_task_submission_attempt(
             **saga_kwargs
         )
     else:
-        async with asyncio.timeout(float(submission_dispatch_timeout_seconds)):
-            execution_result = await dependencies.execute_task_submission_saga_func(
-                **saga_kwargs
-            )
+        execution_result = await asyncio.wait_for(
+            dependencies.execute_task_submission_saga_func(**saga_kwargs),
+            timeout=float(submission_dispatch_timeout_seconds),
+        )
     maybe_awaitable = dependencies.attach_submission_side_effects_func(
         backend_task_id=execution_result.backend_task_id,
         internal_user_id=user_id,

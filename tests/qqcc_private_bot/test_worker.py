@@ -422,9 +422,10 @@ async def test_inactive_update_keeps_application_alive_for_paid_background_deliv
     assert delivery_task.done() is False
     assert [item[2] for item in redis.ack_calls] == ["7-0", "7-1"]
 
+    consumer_task = worker._bot_tasks[7]
     release_delivery.set()
     await delivery_task
-    await asyncio.sleep(0.1)
+    await asyncio.wait_for(consumer_task, timeout=1)
     assert application.stop_calls == 1
     assert application.shutdown_calls == 1
     assert 7 not in worker._applications
