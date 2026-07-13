@@ -43,10 +43,16 @@ def test_every_runtime_image_is_supplied_by_release_env():
 
 def test_central_and_worker_images_contain_their_dependency_closure():
     central = (ROOT / "deploy/docker/Dockerfile.central").read_text(encoding="utf-8")
+    dashboard = (
+        ROOT / "deploy/docker/Dockerfile.dashboard-backend"
+    ).read_text(encoding="utf-8")
     worker = (ROOT / "deploy/docker/Dockerfile.worker").read_text(encoding="utf-8")
 
     assert "COPY backend/app /app/app" in central
     assert "COPY src /app/src" in central
+    assert "COPY config.py /app/config.py" in dashboard
+    assert "COPY ops /app/ops" in dashboard
+    assert "COPY paid_group_guard_bot /app/paid_group_guard_bot" in dashboard
     assert "COPY workers/comfy_agent /app/worker" in worker
     assert "COPY src /app/src" in worker
 
@@ -139,6 +145,10 @@ def test_release_workflow_builds_all_images_and_never_uses_latest():
     assert (
         '05-select-dashboard-spa.sh && test -f '
         '/etc/nginx/templates/default.conf.template'
+    ) in workflow
+    assert (
+        'import dashboard.backend.main; '
+        'import dashboard.backend.qqcc_config_main'
     ) in workflow
     assert "DASHBOARD_FRONTEND_MODE=qqcc" in workflow
 

@@ -6,7 +6,7 @@
 
 进一步核对发现旧测试 Postgres/Redis 数据卷属于 `deploy_cloud-*-data`，而新项目默认会使用另一组空卷；旧服务名还承担 `postgres-test`/`redis-test` DNS，旧 env 只提供 `CLOUD_TEST_POSTGRES_*`。修正后的首次交接会显式复用旧卷和网络别名、补运行时变量映射，把 Postgres/Redis 纳入初始服务集合，并在停旧容器前完成 pull/digest 校验和 legacy Central 队列排空；失败会移除新目标容器并重启本轮记录的旧容器。执行前运行态核对还确认测试 env 未启用 QQCC/私有 QQCC Bot，因此发布器必须从实际 cloud 启动集合中过滤这两个明确禁用的可选 runtime，并在 plan 中显示 `disabled_cloud_services`，不能把整栈依赖分析误解为强制开启未配置 Bot。候选必须以这些修正合入 `main` 后的新完整 SHA/bundle 为准，`a2a44...` 和中间候选只保留为演练证据。
 
-用户已授权仅测试环境首次切换；生产部署和正式 Pages mutation 仍未授权。2026-07-14 对 `587d6651688a1f979afa31d9ee5ae19866a61749` 的首次切换在 Dashboard Frontend 启动门禁 fail closed：镜像未创建 `/etc/nginx/templates`，入口脚本无法安装 Nginx 模板。EXIT trap 已清理新项目并恢复 legacy 控制面，未切 Web/Worker，未写成功状态。修正后的 CI 必须真实执行 dashboard/QQCC 两种 frontend 入口模式，而不只检查静态文件存在；只能用修正合入后的新 SHA/digest 重试。
+用户已授权仅测试环境首次切换；生产部署和正式 Pages mutation 仍未授权。2026-07-14 对 `587d6651688a1f979afa31d9ee5ae19866a61749` 的首次切换在 Dashboard Frontend 启动门禁 fail closed：镜像未创建 `/etc/nginx/templates`，入口脚本无法安装 Nginx 模板。EXIT trap 已清理新项目并恢复 legacy 控制面，未切 Web/Worker，未写成功状态。修正后的 CI 必须真实执行 dashboard/QQCC 两种 frontend 入口模式，而不只检查静态文件存在。`074109e719f00a7484414979f93d9236f703bea6` 重试进一步暴露 Dashboard Backend 镜像漏了根 `config.py`、`paid_group_guard_bot` 和 `ops` 导入闭包，健康门禁再次触发自动回滚。后续 CI 必须真实 import Dashboard 与 QQCC 两个 ASGI app；只能用修正合入后的新 SHA/digest 重试。
 
 ## 2. 已完成的仓库门禁
 

@@ -11,8 +11,11 @@ COPY requirements.txt /tmp/root-requirements.txt
 COPY dashboard/backend/requirements.txt /tmp/dashboard-requirements.txt
 RUN pip install --no-cache-dir -r /tmp/root-requirements.txt -r /tmp/dashboard-requirements.txt
 COPY dashboard /app/dashboard
+COPY ops /app/ops
+COPY paid_group_guard_bot /app/paid_group_guard_bot
 COPY src /app/src
 COPY shared /app/shared
+COPY config.py /app/config.py
 COPY alembic.ini /app/alembic.ini
 COPY deploy/docker/python-release-entrypoint.sh /usr/local/bin/allbot-release-entrypoint
 RUN chmod 755 /usr/local/bin/allbot-release-entrypoint
