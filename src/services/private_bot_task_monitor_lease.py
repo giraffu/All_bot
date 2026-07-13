@@ -81,7 +81,7 @@ async def private_bot_task_monitor_lease(
                     timeout=max(0.1, float(renew_seconds)),
                 )
                 return
-            except TimeoutError:
+            except asyncio.TimeoutError:
                 pass
             try:
                 renewed = await redis.eval(
