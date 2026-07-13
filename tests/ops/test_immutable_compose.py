@@ -107,6 +107,21 @@ def test_release_python_gate_shards_every_test_directory_with_timeouts():
         assert f"tests/{directory}" in workflow
 
 
+def test_release_postgres_integration_gate_uses_isolated_migrated_database():
+    workflow = (ROOT / ".github/workflows/control-plane-release.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "postgres-integration-tests:" in workflow
+    assert "image: postgres:15.13-bookworm" in workflow
+    assert "POSTGRES_DB: bot_db" in workflow
+    assert "Base.metadata.create_all" in workflow
+    assert 'command.stamp(alembic_cfg, "head")' in workflow
+    assert "await init_db()" in workflow
+    assert "python -m pytest -vv --maxfail=1 --durations=20 tests/integration" in workflow
+    assert "needs: [python-tests, postgres-integration-tests" in workflow
+
+
 def test_bootstrap_sends_remote_script_over_stdin_and_archives_source_only():
     bootstrap = (ROOT / "scripts/bootstrap_release_host.sh").read_text(
         encoding="utf-8"

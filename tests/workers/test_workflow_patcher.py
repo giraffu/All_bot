@@ -11,7 +11,9 @@ from src.workflow_mapping_validation import WorkflowMappingValidationError
 from workers.comfy_agent.workflow_patcher import WorkflowPatcher
 
 
-WORKER_WORKFLOW_DIR = "/home/hfy/APP/All_bot/workers/comfy_agent/workflows"
+WORKER_WORKFLOW_DIR = str(
+    Path(__file__).resolve().parents[2] / "workers" / "comfy_agent" / "workflows"
+)
 
 
 def _write_json(path: Path, payload) -> None:

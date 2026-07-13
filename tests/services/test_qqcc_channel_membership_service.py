@@ -111,6 +111,7 @@ async def test_central_checker_populates_shared_cache_from_official_bot(monkeypa
         "src.services.qqcc_channel_membership_service.REQUIRED_CHANNEL_ID",
         "-100123",
     )
+    monkeypatch.setattr("src.utils.REQUIRED_CHANNEL_ID", "-100123")
     redis = FakeRedis()
     official_bot = SimpleNamespace(
         get_chat_member=AsyncMock(return_value=SimpleNamespace(status="left"))
@@ -175,6 +176,7 @@ async def test_central_checker_coalesces_concurrent_cross_tenant_cache_misses(
         "src.services.qqcc_channel_membership_service.REQUIRED_CHANNEL_ID",
         "-100123",
     )
+    monkeypatch.setattr("src.utils.REQUIRED_CHANNEL_ID", "-100123")
     redis = FakeRedis()
     release = asyncio.Event()
     started = asyncio.Event()

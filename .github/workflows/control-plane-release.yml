@@ -37,7 +37,7 @@ jobs:
             paths: tests/ops tests/scripts
           - name: core-backend
             paths: >-
-              tests/backend tests/config tests/core tests/database tests/integration
+              tests/backend tests/config tests/core tests/database
           - name: bots
             paths: >-
               tests/handlers tests/paid_group_guard_bot tests/qqcc_bot
@@ -65,6 +65,69 @@ jobs:
           python -m pytest -vv --maxfail=1 --durations=20
           ${{ matrix.paths }}
 
+  postgres-integration-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:15.13-bookworm
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: bot_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d bot_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/bot_db
+      JWT_SECRET_KEY: ci-test-only-not-for-runtime
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10.20"
+          cache: pip
+      - run: pip install -r requirements.txt -r backend/requirements.txt PyYAML numpy==2.2.1
+      - name: Bootstrap isolated PostgreSQL schema
+        run: |
+          test "$(alembic heads | wc -l | tr -d '[:space:]')" = "1"
+          python - <<'PY'
+          import asyncio
+
+          from alembic import command
+          from alembic.config import Config
+
+          from src.database.core import engine, init_db
+          from src.database.models import Base
+
+
+          def stamp_head() -> None:
+              alembic_cfg = Config("alembic.ini")
+              alembic_cfg.set_main_option("script_location", "migrations")
+              command.stamp(alembic_cfg, "head")
+
+
+          async def main() -> None:
+              async with engine.begin() as connection:
+                  await connection.run_sync(Base.metadata.create_all)
+              await asyncio.to_thread(stamp_head)
+              await init_db()
+              await engine.dispose()
+
+
+          asyncio.run(main())
+          PY
+      - name: Run PostgreSQL integration gate
+        run: >-
+          timeout --signal=INT --kill-after=30s 10m
+          python -m pytest -vv --maxfail=1 --durations=20 tests/integration
+
   web-tests:
     runs-on: ubuntu-latest
     steps:
@@ -90,7 +153,7 @@ jobs:
         working-directory: dashboard/frontend
 
   release:
-    needs: [python-tests, web-tests, dashboard-tests]
+    needs: [python-tests, postgres-integration-tests, web-tests, dashboard-tests]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
