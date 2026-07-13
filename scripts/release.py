@@ -638,11 +638,16 @@ def _plan_document(
     previous_sha: str,
     environment_values: Mapping[str, str],
 ) -> dict[str, Any]:
-    cloud_services, disabled_cloud_services = filter_enabled_cloud_services(
-        args.env,
-        cloud_services_for_release(args.env, impact),
-        environment_values,
-    )
+    computed_cloud_services = cloud_services_for_release(args.env, impact)
+    if args.skip_env_checks:
+        cloud_services = computed_cloud_services
+        disabled_cloud_services: set[str] = set()
+    else:
+        cloud_services, disabled_cloud_services = filter_enabled_cloud_services(
+            args.env,
+            computed_cloud_services,
+            environment_values,
+        )
     return {
         "environment": args.env,
         "git_sha": manifest["git_sha"],
@@ -651,6 +656,7 @@ def _plan_document(
         "services": sorted(impact.services),
         "cloud_services": sorted(cloud_services),
         "disabled_cloud_services": sorted(disabled_cloud_services),
+        "config_validation": "skipped" if args.skip_env_checks else "passed",
         "worker": "worker" in impact.services,
         "web_static": "web-static" in impact.services,
         "requires_db_upgrade": impact.requires_db_upgrade,
@@ -1287,6 +1293,7 @@ def _add_release_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--state-file")
     parser.add_argument("--skip-git-checks", action="store_true")
     parser.add_argument("--skip-ci-checks", action="store_true")
+    parser.add_argument("--skip-env-checks", action="store_true")
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--confirm-prod", action="store_true")
     parser.add_argument("--confirm-db-upgrade", action="store_true")
@@ -1367,10 +1374,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise ReleaseError("production execute requires --confirm-prod")
         if args.execute and args.skip_ci_checks:
             raise ReleaseError("execute mode cannot skip release CI verification")
+        if args.skip_env_checks and args.command != "plan":
+            raise ReleaseError("--skip-env-checks is only available for plan")
         if args.execute:
             verify_operator_worktree_clean()
         impact, manifest, previous_sha = build_plan(args)
-        environment_values, config_revision = _validate_local_env(args)
+        if args.skip_env_checks:
+            environment_values, config_revision = {}, ""
+        else:
+            environment_values, config_revision = _validate_local_env(args)
         document = _plan_document(
             args,
             impact,

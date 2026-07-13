@@ -326,6 +326,50 @@ def test_optional_cloud_bots_are_filtered_only_by_validated_runtime_config():
     assert disabled == set()
 
 
+def test_ci_plan_can_skip_runtime_env_but_deploy_cannot(tmp_path):
+    head_sha = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+    ).strip()
+    manifest = tmp_path / "release.json"
+    manifest.write_text(json.dumps(_manifest(head_sha)), encoding="utf-8")
+    missing_env = tmp_path / "missing.env"
+    common = [
+        "--env",
+        "test",
+        "--sha",
+        head_sha,
+        "--manifest",
+        str(manifest),
+        "--from-sha",
+        head_sha,
+        "--env-file",
+        str(missing_env),
+        "--skip-git-checks",
+        "--skip-ci-checks",
+        "--skip-env-checks",
+    ]
+
+    plan = subprocess.run(
+        ["python", str(MODULE_PATH), "plan", *common],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    deploy = subprocess.run(
+        ["python", str(MODULE_PATH), "deploy", *common],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert plan.returncode == 0, plan.stderr
+    assert json.loads(plan.stdout)["config_validation"] == "skipped"
+    assert deploy.returncode == 2
+    assert "only available for plan" in deploy.stderr
+
+
 def test_initial_cloud_cutover_pulls_before_stopping_legacy_and_restores_on_failure(
     tmp_path, monkeypatch
 ):
