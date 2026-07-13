@@ -432,11 +432,11 @@ def test_initial_cloud_cutover_pulls_before_stopping_legacy_and_restores_on_fail
             command, 0, stdout="", stderr=""
         ),
     )
-    monkeypatch.setattr(
-        module,
-        "_remote_shell",
-        lambda host, script, *, execute: remote_calls.append((host, script, execute)),
-    )
+    def fake_remote(host, script, *, execute):
+        remote_calls.append((host, script, execute))
+        return f"ALLBOT_CLOUD_RELEASE_VERIFIED:{FULL_SHA}\n"
+
+    monkeypatch.setattr(module, "_remote_shell", fake_remote)
 
     module._deploy_cloud(
         args,
@@ -458,6 +458,7 @@ def test_initial_cloud_cutover_pulls_before_stopping_legacy_and_restores_on_fail
     assert "cloud-redis-test" in script
     assert "cloud-tg-bot-test" in script
     assert "docker exec cloud-central-api-test python -c" in script
+    assert "</dev/null" in script
     assert (
         "exec -T bot python -c 'import config; "
         'assert config.API_BASE == "http://central-api:8003"\''
@@ -466,9 +467,50 @@ def test_initial_cloud_cutover_pulls_before_stopping_legacy_and_restores_on_fail
         "exec -T web-api python -c 'import config; "
         'assert config.API_BASE == "http://central-api:8003"\''
     ) in script
+    assert "docker inspect --format '{{.Config.Image}}'" in script
+    assert 'test "$actual_image" = "$ALLBOT_APP_IMAGE"' in script
+    assert 'org.opencontainers.image.revision' in script
+    assert f"ALLBOT_CLOUD_RELEASE_VERIFIED:{FULL_SHA}" in script
     assert " rm -sf postgres redis bot central-api web-api" in script
     assert 'docker start "$name"' in script
     assert "legacy_cutover_committed=1" in script
+
+
+def test_cloud_deploy_rejects_missing_remote_completion_marker(monkeypatch):
+    module = _load_module()
+    impact = module.ReleaseImpact(services={"central-api"}, level="restart")
+    args = SimpleNamespace(
+        execute=True,
+        env="test",
+        remote_host="cloud-test",
+        remote_checkout_root="/release-root",
+        remote_env_file="/etc/allbot/test.env",
+        confirm_legacy_cutover=False,
+        drain_timeout_seconds=30,
+        drain_interval_seconds=1,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda command, **kwargs: subprocess.CompletedProcess(
+            command, 0, stdout="", stderr=""
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "_remote_shell",
+        lambda host, script, *, execute: "",
+    )
+
+    with pytest.raises(module.ReleaseError, match="completion marker"):
+        module._deploy_cloud(
+            args,
+            impact,
+            _manifest(),
+            "ALLBOT_RELEASE_SHA=x\n",
+            _valid_test_environment(),
+        )
 
 
 def test_initial_worker_cutover_stops_legacy_before_start_and_clears_maintenance(

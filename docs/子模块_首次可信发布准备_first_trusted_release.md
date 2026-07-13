@@ -12,6 +12,8 @@
 
 03:06 和 03:15 两次 Bot 图片任务均在派发前失败，账本 Saga 均完成全额退款。根因不是 Docker DNS 随机抖动，而是 legacy `/etc/allbot/test.env` 中的 `API_BASE_TEST=central-api-test` 被 `BOT_TYPE=TEST` 优先读取，绕过了 overlay 的新 `API_BASE=central-api`。修正 release 必须同时钉死两个变量并在容器内校验解析后的 `config.API_BASE`；重新部署、成功代表任务与新 24 小时窗口完成前，`92fcdd...` 不是可晋级的可信验收版本。
 
+`c6d473fb668210bc5b7b1fccb1adbb538208f45a` 的 CI/bundle 全绿，但首次执行时进一步暴露发布器 SSH stdin 缺口：远端队列检查使用 `docker compose exec -T`，它吞掉同一 stdin 中后续 pull/up/校验脚本并返回 0，导致 Worker/状态清单先于云容器变化。测试控制面已用同一 SHA/digest 受控恢复，实际容器、OCI revision 与解析后的 `config.API_BASE` 已对齐，Postgres/Redis 未重启；但 `c6d473...` 自带的发布器仍不允许用于生产。必须等待加入 `</dev/null`、SHA 完成标记和实际容器 digest/revision 门禁的新 main SHA/bundle，再以新发布器重跑测试并重新开始验收窗口。
+
 ## 2. 已完成的仓库门禁
 
 - stabilization 基线 Python：`2563 passed`；后续 release CI 已改为 Python 3.10 分片门禁并成功完成。

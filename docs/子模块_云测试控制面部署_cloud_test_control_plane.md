@@ -69,6 +69,8 @@ PRIVATE_QQCC_BOT_TELEGRAM_TRUSTED_HOSTS=
 
 2026-07-14 首次真实 Bot 任务回归发现 legacy env 仍有 `API_BASE_TEST=http://central-api-test:8003`。由于 `BOT_TYPE=TEST` 会让 `config.py` 优先读取 `*_TEST`，只在 overlay 设置 `API_BASE=http://central-api:8003` 不足以覆盖，表现为任务派发阶段 `Errno -3` 且 Saga 退款。当前 immutable test overlay 必须对所有 Python 消费者同时设置 `API_BASE`/`API_BASE_TEST=http://central-api:8003`，发布器在写状态前进入容器校验 `config.API_BASE`。验收不得再用未经 `config.py` 解析的原始 env 作为 DNS 反馈环。
 
+同轮恢复还暴露 SSH stdin 脚本截断：远端 `docker compose exec -T central-api ...` 会继续读取 stdin，把后续 pull/up/门禁命令吞掉，外层 SSH 仍可能返回 0。所有远端 Compose exec/run 必须追加 `</dev/null`，且发布成功必须同时看到 SHA 完成标记、实际容器 digest 与 OCI revision；只看到 release plan 或 `current.json` 更新不算部署成功。
+
 `CLOUD_TEST_BIND_IP` 用于云端服务端口绑定；当前绑定云测试 Tailscale IP `100.82.124.91`，不直接开放公网。`CLOUD_TEST_CONTROL_HOST` 用于本地 GPU worker 访问云端 Central API，也应填 `100.82.124.91`。当前云测试对象存储直接使用 Cloudflare R2 S3 兼容接口，`MINIO_*` 是项目内兼容变量名但值指向 R2；`MINIO_PUBLIC_URL` 继续留空，`R2_PUBLIC_DOMAIN` 使用已验证的新对象公网域名。Web owner 视频结果接口只在 R2 公网 URL 可解析时返回成功，若临时清空 `R2_PUBLIC_DOMAIN`，视频任务可能在 99% / `pending_result` 等待结果 URL。
 
 云测试 R2 变量分层：
