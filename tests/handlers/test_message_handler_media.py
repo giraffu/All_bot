@@ -169,6 +169,12 @@ async def test_handle_template_contribution_saves_upload_and_updates_counter(
     reply_mock = AsyncMock()
     upload_mock = MagicMock()
     record_mock = AsyncMock()
+    get_user_mock = AsyncMock(
+        return_value=(
+            SimpleNamespace(id=7, is_submission_banned=False),
+            False,
+        )
+    )
     remove_mock = MagicMock()
     logger = MagicMock()
     file_mock = SimpleNamespace(download_to_drive=AsyncMock())
@@ -185,6 +191,9 @@ async def test_handle_template_contribution_saves_upload_and_updates_counter(
     context = SimpleNamespace(bot=bot, user_data={})
 
     monkeypatch.setattr(message_handler_media, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(
+        message_handler_media, "get_or_create_user_by_telegram", get_user_mock
+    )
     monkeypatch.setattr(message_handler_media.storage, "upload_file", upload_mock)
     monkeypatch.setattr(message_handler_media.os, "remove", remove_mock)
     monkeypatch.setattr(
@@ -200,6 +209,7 @@ async def test_handle_template_contribution_saves_upload_and_updates_counter(
 
     await message_handler_media.handle_template_contribution(update, context, logger)
 
+    get_user_mock.assert_awaited_once_with(7, "dao", "Dao User")
     bot.get_file.assert_awaited_once_with("photo-1")
     expected_local_path = os.path.join(
         message_handler_media.TEMP_TEMPLATE_DIR, "7_abc123.png"
