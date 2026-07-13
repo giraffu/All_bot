@@ -226,10 +226,10 @@ async def process_and_submit_task(
                 **prepare_kwargs
             )
         else:
-            async with asyncio.timeout(float(submission_prepare_timeout_seconds)):
-                submission_context = await prepare_task_submission_context(
-                    **prepare_kwargs
-                )
+            submission_context = await asyncio.wait_for(
+                prepare_task_submission_context(**prepare_kwargs),
+                timeout=float(submission_prepare_timeout_seconds),
+            )
         if registry_metadata:
             submission_context.metadata.update(registry_metadata)
         submission_context.client_type = client_type
@@ -264,10 +264,10 @@ async def process_and_submit_task(
         if submission_debit_timeout_seconds is None:
             credits_deducted = await maybe_deduct_submission_credits(**debit_kwargs)
         else:
-            async with asyncio.timeout(float(submission_debit_timeout_seconds)):
-                credits_deducted = await maybe_deduct_submission_credits(
-                    **debit_kwargs
-                )
+            credits_deducted = await asyncio.wait_for(
+                maybe_deduct_submission_credits(**debit_kwargs),
+                timeout=float(submission_debit_timeout_seconds),
+            )
         if submission_after_debit_func is not None:
             await submission_after_debit_func(
                 cost=request.cost,

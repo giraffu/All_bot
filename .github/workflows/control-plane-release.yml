@@ -25,8 +25,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: services
-            paths: tests/services
+          - name: services-a-o
+            paths: tests/services/test_[a-o]*.py
+          - name: services-p
+            paths: tests/services/test_p*.py
+          - name: services-q-s
+            paths: tests/services/test_[q-s]*.py
+          - name: services-t-z
+            paths: tests/services/test_[t-z]*.py
           - name: ops-scripts
             paths: tests/ops tests/scripts
           - name: core-backend
@@ -44,16 +50,18 @@ jobs:
               tests/test_*.py
     env:
       JWT_SECRET_KEY: ci-test-only-not-for-runtime
+      PYTHONUNBUFFERED: "1"
     steps:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0}
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.10.20"
           cache: pip
       - run: pip install -r requirements.txt -r backend/requirements.txt PyYAML numpy==2.2.1
       - name: Run Python shard (${{ matrix.name }})
         run: >-
+          timeout --signal=INT --kill-after=30s 10m
           python -m pytest -vv --maxfail=1 --durations=20
           ${{ matrix.paths }}
 

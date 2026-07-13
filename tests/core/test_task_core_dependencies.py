@@ -126,7 +126,7 @@ async def test_prepare_timeout_releases_the_exact_task_concurrency_owner():
         logger=MagicMock(),
     )
 
-    with pytest.raises(TimeoutError):
+    with pytest.raises(asyncio.TimeoutError):
         await task_core.process_and_submit_task(
             user_id=123,
             username="tester",

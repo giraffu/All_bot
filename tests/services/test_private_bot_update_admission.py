@@ -54,7 +54,7 @@ async def test_admission_timeout_fails_without_cancelling_submission_saga():
         assert admission is not None
         admission.task = task
 
-    with pytest.raises(TimeoutError):
+    with pytest.raises(asyncio.TimeoutError):
         await scope.wait_until_durable(timeout_seconds=0.01)
 
     assert cancelled.is_set() is False

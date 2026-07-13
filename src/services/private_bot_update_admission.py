@@ -67,7 +67,7 @@ class PrivateBotUpdateAdmissionScope:
     async def wait_until_durable(self, *, timeout_seconds: float) -> None:
         try:
             await asyncio.wait_for(self._event.wait(), timeout=timeout_seconds)
-        except TimeoutError:
+        except asyncio.TimeoutError:
             self.mark_failed()
             raise
 

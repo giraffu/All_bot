@@ -69,6 +69,7 @@ def test_release_workflow_builds_all_images_and_never_uses_latest():
 
 
 def test_python_ci_workflows_install_backend_dependencies_and_use_test_jwt():
+    runtime_version = (ROOT / ".python-version").read_text(encoding="utf-8").strip()
     workflows = (
         ROOT / ".github/workflows/control-plane-release.yml",
         ROOT / ".github/workflows/hotspot_regression_gate.yml",
@@ -78,6 +79,9 @@ def test_python_ci_workflows_install_backend_dependencies_and_use_test_jwt():
         workflow = path.read_text(encoding="utf-8")
         assert "-r requirements.txt -r backend/requirements.txt" in workflow
         assert "JWT_SECRET_KEY: ci-test-only-not-for-runtime" in workflow
+        assert f"python-version: '{runtime_version}'" in workflow or (
+            f'python-version: "{runtime_version}"' in workflow
+        )
 
     release_workflow = workflows[0].read_text(encoding="utf-8")
     assert "numpy==2.2.1" in release_workflow
@@ -94,6 +98,7 @@ def test_release_python_gate_shards_every_test_directory_with_timeouts():
     )
 
     assert "timeout-minutes: 20" in workflow
+    assert "timeout --signal=INT --kill-after=30s 10m" in workflow
     assert "fail-fast: false" in workflow
     assert "python -m pytest -vv --maxfail=1 --durations=20" in workflow
     assert "${{ matrix.paths }}" in workflow
