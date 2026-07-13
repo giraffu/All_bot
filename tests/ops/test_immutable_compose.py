@@ -51,6 +51,14 @@ def test_central_and_worker_images_contain_their_dependency_closure():
     assert "COPY src /app/src" in worker
 
 
+def test_dashboard_frontend_image_prepares_nginx_template_directory():
+    dockerfile = (
+        ROOT / "deploy/docker/Dockerfile.dashboard-frontend"
+    ).read_text(encoding="utf-8")
+
+    assert "mkdir -p /etc/nginx/templates" in dockerfile
+
+
 def test_worker_compose_covers_all_test_slots_and_runtime_contracts():
     services = _compose(WORKER_BASE)["services"]
 
@@ -128,6 +136,11 @@ def test_release_workflow_builds_all_images_and_never_uses_latest():
     ):
         assert image in workflow
     assert ":latest" not in workflow
+    assert (
+        '05-select-dashboard-spa.sh && test -f '
+        '/etc/nginx/templates/default.conf.template'
+    ) in workflow
+    assert "DASHBOARD_FRONTEND_MODE=qqcc" in workflow
 
 
 def test_python_ci_workflows_install_backend_dependencies_and_use_test_jwt():

@@ -249,7 +249,8 @@ jobs:
           docker run --rm "$APP_REF" python -c "from pathlib import Path; assert Path('/app/src/core/task_core.py').is_file(); assert Path('/app/shared/locales/zh.json').is_file()"
           docker run --rm "$CENTRAL_REF" python -c "from pathlib import Path; assert Path('/app/app/main.py').is_file(); assert Path('/app/src/core/task_core.py').is_file()"
           docker run --rm "$DASHBOARD_BACKEND_REF" python -c "from pathlib import Path; assert Path('/app/dashboard/backend/main.py').is_file(); assert Path('/app/src').is_dir()"
-          docker run --rm --entrypoint sh "$DASHBOARD_FRONTEND_REF" -c "test -f /opt/allbot-spa/index.html && test -f /opt/allbot-spa/index.qqcc-config.html && test -f /opt/allbot-spa/index.private-bot.html"
+          docker run --rm --entrypoint sh "$DASHBOARD_FRONTEND_REF" -c "/docker-entrypoint.d/05-select-dashboard-spa.sh && test -f /etc/nginx/templates/default.conf.template && test -f /usr/share/nginx/html/index.html"
+          docker run --rm --entrypoint sh -e DASHBOARD_FRONTEND_MODE=qqcc "$DASHBOARD_FRONTEND_REF" -c "/docker-entrypoint.d/05-select-dashboard-spa.sh && test -f /etc/nginx/templates/default.conf.template && cmp -s /usr/share/nginx/html/index.html /opt/allbot-spa/index.qqcc-config.html"
           docker run --rm "$WORKER_REF" python -c "from pathlib import Path; assert Path('/app/worker/agent_main.py').is_file(); assert Path('/app/worker/workflows').is_dir(); assert Path('/app/src').is_dir()"
       - name: Resolve vendor digests and write release manifest
         env:

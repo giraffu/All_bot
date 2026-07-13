@@ -32,6 +32,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 - 唯一代码发布入口是 `scripts/release.py plan|deploy|rollback`。目标必须是可从 `origin/main` 到达的完整 40 位 SHA，并使用 CI 生成的 `release.json`、Web checksum 和 digest-pinned 镜像；云端不 build、不挂载源码、不接收代码/env rsync。
 - 云测试：先执行 `scripts/release.py plan --env test --sha <sha>`，再以同一 SHA 执行 `deploy --env test --sha <sha> --execute`。影响集合由 `deploy/release-policy.yml` 计算，`--services` 只能扩大，不能缩小。
 - 首次测试 immutable 切换必须使用 `--confirm-legacy-cutover`，并把 Postgres/Redis 纳入初始依赖闭包；test overlay 必须复用已确认的 `deploy_cloud-postgres-test-data`/`deploy_cloud-redis-test-data`，保留 `postgres-test`/`redis-test` 网络别名。全部 digest pull/OCI 校验和 legacy Central 队列排空完成后才能停止本轮实际运行的 legacy 控制面容器；新项目失败必须先移除目标容器再重启记录中的旧容器，禁止把普通 `compose up` 当作首次交接。
+- Frontend 镜像 smoke 必须真实执行 `/docker-entrypoint.d/05-select-dashboard-spa.sh`，分别验证 dashboard 和 QQCC 模式生成 `/etc/nginx/templates/default.conf.template`；只检查 SPA 文件存在不足以通过发布门禁。
 - 影响 planner 的全栈集合不代表开启未配置的可选 Bot。`release.py plan` 必须基于已校验 env 输出 `cloud_services`/`disabled_cloud_services`；仅允许按 QQCC token、`PRIVATE_QQCC_BOT_ENABLED`、付费群 Bot token 过滤对应三个可选 runtime，禁止用配置过滤核心 API、Postgres/Redis、主 Bot 或其它自动依赖。
 - `--skip-env-checks` 仅供无运行态秘密的 release CI 执行非 mutation `plan` 自检；`deploy`/`rollback` 必须拒绝。实际 test/prod plan 与执行仍须校验对应受限 env，禁止把 CI 的 `config_validation=skipped` 当作部署配置通过。
 - 测试验收：图片、视频、Bot、并发锁、locale、Web、Worker heartbeat、回滚演练及至少 24 小时观察写入验收 JSON，再执行 `scripts/release.py verify-test ... --execute`；缺少 verified 状态不能晋级。
