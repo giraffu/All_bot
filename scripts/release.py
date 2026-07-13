@@ -668,12 +668,15 @@ def _plan_document(
     }
 
 
-def _remote_shell(host: str, script: str, *, execute: bool) -> None:
+def _remote_shell(host: str, script: str, *, execute: bool) -> str:
     if not execute:
         print(f"[dry-run] ssh {host} bash -s")
         print(script.rstrip())
-        return
-    _run(["ssh", "-o", "BatchMode=yes", host, "bash -s"], input_text=script)
+        return ""
+    return _run(
+        ["ssh", "-o", "BatchMode=yes", host, "bash -s"],
+        input_text=script,
+    ).stdout
 
 
 def _deploy_cloud(
@@ -713,7 +716,8 @@ def _deploy_cloud(
     services = " ".join(shlex.quote(service) for service in cloud_services)
     resolved_api_base_checks = "".join(
         f"{compose} exec -T {shlex.quote(service)} python -c "
-        "'import config; assert config.API_BASE == \"http://central-api:8003\"'\n"
+        "'import config; assert config.API_BASE == \"http://central-api:8003\"' "
+        "</dev/null\n"
         for service in cloud_services
         if service
         in {
@@ -727,6 +731,45 @@ def _deploy_cloud(
             "paid-group-guard-bot",
         }
     )
+    expected_image_variables = {
+        "bot": "ALLBOT_APP_IMAGE",
+        "central-api": "ALLBOT_CENTRAL_IMAGE",
+        "dashboard-backend": "ALLBOT_DASHBOARD_BACKEND_IMAGE",
+        "dashboard-frontend": "ALLBOT_DASHBOARD_FRONTEND_IMAGE",
+        "imgproxy": "ALLBOT_IMGPROXY_IMAGE",
+        "paid-group-guard-bot": "ALLBOT_APP_IMAGE",
+        "payment-api": "ALLBOT_APP_IMAGE",
+        "postgres": "ALLBOT_POSTGRES_IMAGE",
+        "qqcc-bot": "ALLBOT_APP_IMAGE",
+        "qqcc-config-backend": "ALLBOT_DASHBOARD_BACKEND_IMAGE",
+        "qqcc-config-frontend": "ALLBOT_DASHBOARD_FRONTEND_IMAGE",
+        "qqcc-private-bot-worker": "ALLBOT_APP_IMAGE",
+        "redis": "ALLBOT_REDIS_IMAGE",
+        "web-api": "ALLBOT_APP_IMAGE",
+    }
+    custom_image_services = {
+        service
+        for service in expected_image_variables
+        if service not in {"imgproxy", "postgres", "redis"}
+    }
+    resolved_image_checks = ""
+    for service in cloud_services:
+        variable = expected_image_variables[service]
+        resolved_image_checks += (
+            f'container_id="$({compose} ps -q {shlex.quote(service)})"\n'
+            'test -n "$container_id"\n'
+            "actual_image=\"$(docker inspect --format '{{.Config.Image}}' "
+            '"$container_id")"\n'
+            f'test "$actual_image" = "${variable}"\n'
+        )
+        if service in custom_image_services:
+            resolved_image_checks += (
+                "actual_revision=\"$(docker inspect --format "
+                "'{{ index .Config.Labels \"org.opencontainers.image.revision\" }}' "
+                '"$container_id")"\n'
+                f'test "$actual_revision" = {shlex.quote(sha)}\n'
+            )
+    completion_marker = f"ALLBOT_CLOUD_RELEASE_VERIFIED:{sha}"
     initial_cutover = (
         "initial-release" in impact.matched_rules and impact.level == "maintenance"
     )
@@ -755,7 +798,8 @@ fi
         drain_counts = (
             f"{compose} exec -T central-api python -c "
             "'import os,redis; c=redis.Redis.from_url(os.environ.get(\"WORKER_REDIS_URL\") or os.environ[\"REDIS_URL\"]); "
-            "print(c.zcard(\"comfy:queue:pending\"),c.scard(\"comfy:queue:running\"))'"
+            "print(c.zcard(\"comfy:queue:pending\"),c.scard(\"comfy:queue:running\"))' "
+            "</dev/null"
         )
         if initial_cutover and "central-api" in cloud_services:
             legacy_central = legacy_cloud_containers(args.env, {"central-api"})[0]
@@ -842,13 +886,14 @@ for ref in "$ALLBOT_APP_IMAGE" "$ALLBOT_CENTRAL_IMAGE" "$ALLBOT_DASHBOARD_BACKEN
 done
 {legacy_handoff}{compose} up -d --no-deps --wait --wait-timeout 180 {services}
 {compose} ps {services}
-{resolved_api_base_checks}while read -r name started_at; do
+{resolved_api_base_checks}{resolved_image_checks}while read -r name started_at; do
   name="${{name#/}}"
   test "$(docker inspect --format '{{{{.State.StartedAt}}}}' "$name")" = "$started_at"
 done < "$start_snapshot"
 rm -f "$start_snapshot"
 {legacy_commit}
 {maintenance_suffix}
+printf '%s\n' {shlex.quote(completion_marker)}
 """
     if impact.requires_db_upgrade:
         if not args.confirm_db_upgrade:
@@ -857,11 +902,11 @@ rm -f "$start_snapshot"
         migration = f"""install -d -m 700 {backup_dir}
 backup_file={backup_dir}/pre-{sha}-$(date -u +%Y%m%dT%H%M%SZ).sql.gz
 umask 077
-{compose} run --rm -T web-api sh -lc 'url="${{DATABASE_URL/postgresql+asyncpg:/postgresql:}}"; exec pg_dump "$url"' | gzip -c > "$backup_file"
+{compose} run --rm -T web-api sh -lc 'url="${{DATABASE_URL/postgresql+asyncpg:/postgresql:}}"; exec pg_dump "$url"' </dev/null | gzip -c > "$backup_file"
 test -s "$backup_file"
-heads="$({compose} run --rm web-api alembic heads | grep -c ' (head)$')"
+heads="$({compose} run --rm -T web-api alembic heads </dev/null | grep -c ' (head)$')"
 test "$heads" = 1
-{compose} run --rm web-api alembic upgrade head
+{compose} run --rm -T web-api alembic upgrade head </dev/null
 """
         script = script.replace(
             f"{compose} pull {services}\n",
@@ -886,7 +931,9 @@ test "$heads" = 1
         )
     else:
         print(f"[dry-run] install non-secret release.env on {host}:{release_dir}/release.env")
-    _remote_shell(host, script, execute=args.execute)
+    remote_output = _remote_shell(host, script, execute=args.execute)
+    if args.execute and completion_marker not in remote_output.splitlines():
+        raise ReleaseError("cloud release completion marker is missing")
 
 
 def _verify_web_artifact(path: Path, expected_hash: str) -> None:
