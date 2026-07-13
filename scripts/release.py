@@ -711,6 +711,22 @@ def _deploy_cloud(
         "--profile bot --profile qqcc-bot --profile qqcc-private-bots"
     )
     services = " ".join(shlex.quote(service) for service in cloud_services)
+    resolved_api_base_checks = "".join(
+        f"{compose} exec -T {shlex.quote(service)} python -c "
+        "'import config; assert config.API_BASE == \"http://central-api:8003\"'\n"
+        for service in cloud_services
+        if service
+        in {
+            "web-api",
+            "payment-api",
+            "dashboard-backend",
+            "qqcc-config-backend",
+            "bot",
+            "qqcc-bot",
+            "qqcc-private-bot-worker",
+            "paid-group-guard-bot",
+        }
+    )
     initial_cutover = (
         "initial-release" in impact.matched_rules and impact.level == "maintenance"
     )
@@ -826,7 +842,7 @@ for ref in "$ALLBOT_APP_IMAGE" "$ALLBOT_CENTRAL_IMAGE" "$ALLBOT_DASHBOARD_BACKEN
 done
 {legacy_handoff}{compose} up -d --no-deps --wait --wait-timeout 180 {services}
 {compose} ps {services}
-while read -r name started_at; do
+{resolved_api_base_checks}while read -r name started_at; do
   name="${{name#/}}"
   test "$(docker inspect --format '{{{{.State.StartedAt}}}}' "$name")" = "$started_at"
 done < "$start_snapshot"

@@ -1,5 +1,6 @@
 # AllBot Knowledge Base Audit Matrix
 
+> 2026-07-14：不可变测试切换后的两次 Bot 任务均因 `Errno -3` 派发失败并完成 Saga 退款。根因是 legacy test env 的 `API_BASE_TEST=central-api-test` 在 `BOT_TYPE=TEST` 下优先于 overlay 的 `API_BASE=central-api`，而原健康探针误测了未解析原始 env。修正候选同时钉死 test `API_BASE`/`API_BASE_TEST`，补全 prod 所有 Python 消费者的 `API_BASE`，并在 release 写状态前进入容器 import `config` 校验解析值；须待新 main SHA/digest 仅部署测试并完成真实任务回归，生产 mutation 仍未授权。
 > 2026-07-14：首次切换执行前的运行态核对确认测试 env 未配置 QQCC Bot token、私有 QQCC rollout gate 也未开启；依赖 planner 的全栈集合不能等同于强制启动可选 Bot。发布器现用已校验 env 仅过滤 `qqcc-bot`、`qqcc-private-bot-worker`、`paid-group-guard-bot` 三个明确禁用 runtime，plan 显示 `disabled_cloud_services`；API、Postgres、Redis、主 Bot 等核心依赖仍不能通过配置缩小。
 > 2026-07-14：`587d665...` 首次测试切换在 Dashboard Frontend 健康门禁 fail closed，原因是镜像未创建 `/etc/nginx/templates`；自动回滚已移除新容器、清理维护标志并恢复 legacy 控制面，Web/Worker/成功状态未切换。修正同时把 frontend image smoke 升级为真实执行 dashboard/QQCC 两种入口模式，须等新主线 SHA/digest 才能重试；生产 mutation 仍未授权。
 > 2026-07-14：`074109e...` 重试在 Dashboard/QQCC Backend 健康门禁 fail closed，镜像缺少根 `config.py`、`paid_group_guard_bot` 和 `ops` 导入闭包；自动回滚再次恢复 legacy 控制面，队列为空，Web/Worker/成功状态仍未切换。修正将 Dashboard image smoke 升级为真实 import Dashboard 和 QQCC 两个 ASGI app，须等新主线 SHA/digest 才能重试；生产 mutation 仍未授权。

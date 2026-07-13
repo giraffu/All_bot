@@ -127,6 +127,47 @@ def test_test_stateful_services_reuse_legacy_volumes_and_runtime_names():
     assert services["redis"]["networks"]["default"]["aliases"] == ["redis-test"]
 
 
+def test_test_runtime_overrides_legacy_api_base_test_for_every_consumer():
+    services = _compose(OVERLAYS[0])["services"]
+    expected_api_base = "http://central-api:8003"
+
+    for name in (
+        "central-api",
+        "web-api",
+        "dashboard-backend",
+        "qqcc-config-backend",
+        "bot",
+        "qqcc-bot",
+        "qqcc-private-bot-worker",
+    ):
+        environment = services[name]["environment"]
+        assert environment["BOT_TYPE"] == "TEST"
+        assert environment["API_BASE"] == expected_api_base
+        assert environment["API_BASE_TEST"] == expected_api_base, (
+            f"{name} would let legacy env override the immutable Central alias"
+        )
+
+
+def test_prod_runtime_pins_internal_api_base_for_every_python_consumer():
+    services = _compose(OVERLAYS[1])["services"]
+    expected_api_base = "http://central-api:8003"
+
+    for name in (
+        "central-api",
+        "web-api",
+        "payment-api",
+        "dashboard-backend",
+        "qqcc-config-backend",
+        "bot",
+        "qqcc-bot",
+        "qqcc-private-bot-worker",
+        "paid-group-guard-bot",
+    ):
+        environment = services[name]["environment"]
+        assert environment["BOT_TYPE"] == "PROD"
+        assert environment["API_BASE"] == expected_api_base
+
+
 def test_release_workflow_builds_all_images_and_never_uses_latest():
     workflow = (ROOT / ".github/workflows/control-plane-release.yml").read_text(
         encoding="utf-8"
