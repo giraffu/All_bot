@@ -73,6 +73,8 @@ def _valid_test_environment(*, worker_slots: tuple[str, ...] = ()) -> dict[str, 
         "CLOUD_TEST_DATABASE_URL": "postgresql+asyncpg://test-db",
         "CLOUD_TEST_REDIS_URL": "redis://test-control/0",
         "CLOUD_TEST_WORKER_REDIS_URL": "redis://test-worker/0",
+        "QQCC_CONFIG_ADMIN_HOST": "qqcc-admin-test.example.com",
+        "PRIVATE_QQCC_BOT_OWNER_HOST": "private-bot-test.example.com",
     }
     if worker_slots:
         values.update(

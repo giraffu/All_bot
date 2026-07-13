@@ -118,11 +118,15 @@ def _legacy(values: Mapping[str, str], slot: str, suffix: str) -> str:
 
 
 def migrate_values(
-    legacy: Mapping[str, str], slots: Sequence[str] = DEFAULT_SLOTS
+    legacy: Mapping[str, str],
+    slots: Sequence[str] = DEFAULT_SLOTS,
+    *,
+    worker_legacy: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
     unknown = sorted(set(slots) - set(SLOT_DEFAULTS))
     if unknown:
         raise MigrationError("unsupported worker slots: " + ", ".join(unknown))
+    worker_values = worker_legacy or legacy
     values = dict(legacy)
     values.update(
         {
@@ -135,46 +139,65 @@ def migrate_values(
                 f"http://{legacy.get('CLOUD_TEST_CONTROL_HOST', '')}:8004"
             ),
             "ALLBOT_WORKER_RELAY_PORT": legacy.get(
-                "CLOUD_TEST_LOCAL_RELAY_PORT", "8014"
+                "CLOUD_TEST_LOCAL_RELAY_PORT",
+                worker_values.get("CLOUD_TEST_LOCAL_RELAY_PORT", "8014"),
+            ),
+            "QQCC_CONFIG_ADMIN_HOST": legacy.get(
+                "QQCC_CONFIG_ADMIN_HOST", "qqcc-admin-test.aivison.it.com"
+            ),
+            "PRIVATE_QQCC_BOT_OWNER_HOST": legacy.get(
+                "PRIVATE_QQCC_BOT_OWNER_HOST", "private-bot-test.aivison.it.com"
             ),
         }
     )
-    shared_prefetch = legacy.get("CLOUD_TEST_SHARED_AIO_PREFETCH_ENABLED", "false")
-    shared_pipeline = legacy.get("CLOUD_TEST_SHARED_AIO_PIPELINE_ENABLED", "false")
-    shared_max = legacy.get("CLOUD_TEST_SHARED_AIO_PIPELINE_MAX_RUNNING_TASKS", "1")
+    shared_prefetch = worker_values.get(
+        "CLOUD_TEST_SHARED_AIO_PREFETCH_ENABLED", "false"
+    )
+    shared_pipeline = worker_values.get(
+        "CLOUD_TEST_SHARED_AIO_PIPELINE_ENABLED", "false"
+    )
+    shared_max = worker_values.get(
+        "CLOUD_TEST_SHARED_AIO_PIPELINE_MAX_RUNNING_TASKS", "1"
+    )
     for slot in slots:
         prefix = f"ALLBOT_WORKER_{slot}_"
         values.update(
             {
                 prefix + "AGENT_ID": f"cloud_worker_test_{slot}",
-                prefix + "COMFY_API_URL": _legacy(legacy, slot, "COMFY_API_URL"),
-                prefix + "COMFY_WS_URL": _legacy(legacy, slot, "COMFY_WS_URL"),
-                prefix + "TASK_TYPES": _legacy(legacy, slot, "TASK_TYPES"),
-                prefix + "NODE_ID": _legacy(legacy, slot, "NODE_ID"),
-                prefix + "GPU_INDEX": _legacy(legacy, slot, "GPU_INDEX"),
+                prefix + "COMFY_API_URL": _legacy(
+                    worker_values, slot, "COMFY_API_URL"
+                ),
+                prefix + "COMFY_WS_URL": _legacy(
+                    worker_values, slot, "COMFY_WS_URL"
+                ),
+                prefix + "TASK_TYPES": _legacy(worker_values, slot, "TASK_TYPES"),
+                prefix + "NODE_ID": _legacy(worker_values, slot, "NODE_ID"),
+                prefix + "GPU_INDEX": _legacy(worker_values, slot, "GPU_INDEX"),
                 prefix + "RUNTIME_PROFILE": _legacy(
-                    legacy, slot, "RUNTIME_PROFILE"
+                    worker_values, slot, "RUNTIME_PROFILE"
                 ),
                 prefix + "PREFETCH_ENABLED": (
-                    legacy.get("PREFETCH_ENABLED", "true")
+                    worker_values.get("PREFETCH_ENABLED", "true")
                     if slot == "01"
                     else shared_prefetch
                 ),
                 prefix + "PIPELINE_ENABLED": (
-                    legacy.get("PIPELINE_ENABLED", "true")
+                    worker_values.get("PIPELINE_ENABLED", "true")
                     if slot == "01"
                     else shared_pipeline
                 ),
                 prefix + "PIPELINE_MAX_RUNNING_TASKS": (
-                    legacy.get("PIPELINE_MAX_RUNNING_TASKS", "2")
+                    worker_values.get("PIPELINE_MAX_RUNNING_TASKS", "2")
                     if slot == "01"
                     else shared_max
                 ),
             }
         )
         workflow_key = f"CLOUD_TEST_WORKER_{slot}_TASK_TYPE_WORKFLOW_OVERRIDES"
-        if workflow_key in legacy:
-            values[prefix + "TASK_TYPE_WORKFLOW_OVERRIDES"] = legacy[workflow_key]
+        if workflow_key in worker_values:
+            values[prefix + "TASK_TYPE_WORKFLOW_OVERRIDES"] = worker_values[
+                workflow_key
+            ]
     if "08" in slots:
         for suffix in (
             "FACE_SWAP_V10_ENABLED",
@@ -182,8 +205,8 @@ def migrate_values(
             "FACE_SWAP_V10_FACE_SWAP_WORKFLOW",
         ):
             source = f"CLOUD_TEST_WORKER_08_{suffix}"
-            if source in legacy:
-                values[f"ALLBOT_WORKER_08_{suffix}"] = legacy[source]
+            if source in worker_values:
+                values[f"ALLBOT_WORKER_08_{suffix}"] = worker_values[source]
     return values
 
 
@@ -194,6 +217,10 @@ def render_env(values: Mapping[str, str]) -> str:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", default=".env.cloud.test")
+    parser.add_argument(
+        "--worker-source",
+        help="optional legacy local Worker env; control-plane values remain from --source",
+    )
     parser.add_argument("--output", required=True)
     parser.add_argument(
         "--worker-services",
@@ -214,7 +241,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             if item.strip()
         )
         legacy, ignored = parse_legacy(source.read_text(encoding="utf-8").splitlines())
-        migrated = migrate_values(legacy, slots)
+        worker_legacy = None
+        if args.worker_source:
+            worker_legacy, worker_ignored = parse_legacy(
+                Path(args.worker_source).read_text(encoding="utf-8").splitlines()
+            )
+            ignored.extend(worker_ignored)
+        migrated = migrate_values(legacy, slots, worker_legacy=worker_legacy)
         if not migrated.get("ALLBOT_WORKER_CENTRAL_API_URL", "").removeprefix(
             "http://"
         ).removesuffix(":8004"):

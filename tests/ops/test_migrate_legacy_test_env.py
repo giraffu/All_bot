@@ -20,13 +20,16 @@ def test_migration_maps_active_slots_and_preserves_runtime_overrides():
     module = _load_module()
     legacy = {
         "CLOUD_TEST_CONTROL_HOST": "test-control",
+        "CONTROL_SECRET": "cloud-authoritative",
+    }
+    worker_legacy = {
         "CLOUD_TEST_WORKER_04_NODE_ID": "gpu-226",
         "CLOUD_TEST_WORKER_08_TASK_TYPE_WORKFLOW_OVERRIDES": '{"scail2":"x.json"}',
         "CLOUD_TEST_WORKER_08_FACE_SWAP_V10_ENABLED": "true",
-        "SECRET_VALUE": "do-not-log-this",
+        "CONTROL_SECRET": "stale-local-value",
     }
 
-    values = module.migrate_values(legacy)
+    values = module.migrate_values(legacy, worker_legacy=worker_legacy)
 
     assert values["ALLBOT_ENV"] == "test"
     assert values["ALLBOT_WORKER_SERVICES"] == (
@@ -38,7 +41,11 @@ def test_migration_maps_active_slots_and_preserves_runtime_overrides():
         '{"scail2":"x.json"}'
     )
     assert values["ALLBOT_WORKER_08_FACE_SWAP_V10_ENABLED"] == "true"
-    assert values["SECRET_VALUE"] == "do-not-log-this"
+    assert values["CONTROL_SECRET"] == "cloud-authoritative"
+    assert values["QQCC_CONFIG_ADMIN_HOST"] == "qqcc-admin-test.aivison.it.com"
+    assert values["PRIVATE_QQCC_BOT_OWNER_HOST"] == (
+        "private-bot-test.aivison.it.com"
+    )
 
 
 def test_migration_cli_never_prints_values(tmp_path, capsys):
@@ -47,20 +54,35 @@ def test_migration_cli_never_prints_values(tmp_path, capsys):
     target = tmp_path / "test.env"
     source.write_text(
         "CLOUD_TEST_CONTROL_HOST=test-control\n"
-        "SECRET_VALUE=do-not-log-this\n"
+        "SECRET_VALUE=cloud-do-not-log-this\n"
         "invalid-secret-line\n",
         encoding="utf-8",
     )
+    worker_source = tmp_path / "legacy-worker.env"
+    worker_source.write_text(
+        "CLOUD_TEST_WORKER_04_NODE_ID=gpu-226\n"
+        "SECRET_VALUE=worker-do-not-log-this\n",
+        encoding="utf-8",
+    )
 
-    assert module.main(["--source", str(source), "--output", str(target)]) == 0
+    base_args = [
+        "--source",
+        str(source),
+        "--worker-source",
+        str(worker_source),
+        "--output",
+        str(target),
+    ]
+    assert module.main(base_args) == 0
     dry_run_output = capsys.readouterr().out
-    assert "do-not-log-this" not in dry_run_output
+    assert "cloud-do-not-log-this" not in dry_run_output
+    assert "worker-do-not-log-this" not in dry_run_output
     assert not target.exists()
 
-    assert module.main(
-        ["--source", str(source), "--output", str(target), "--execute"]
-    ) == 0
+    assert module.main([*base_args, "--execute"]) == 0
     execute_output = capsys.readouterr().out
-    assert "do-not-log-this" not in execute_output
+    assert "cloud-do-not-log-this" not in execute_output
+    assert "worker-do-not-log-this" not in execute_output
     assert target.stat().st_mode & 0o777 == 0o600
-    assert "SECRET_VALUE=do-not-log-this" in target.read_text(encoding="utf-8")
+    assert "SECRET_VALUE=cloud-do-not-log-this" in target.read_text(encoding="utf-8")
+    assert "ALLBOT_WORKER_04_NODE_ID=gpu-226" in target.read_text(encoding="utf-8")
