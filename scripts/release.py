@@ -408,12 +408,18 @@ def _run(
     *,
     cwd: Path = ROOT,
     input_text: str | None = None,
+    env: Mapping[str, str] | None = None,
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
+    process_env = None
+    if env is not None:
+        process_env = os.environ.copy()
+        process_env.update(env)
     result = subprocess.run(
         list(args),
         cwd=cwd,
         input=input_text,
+        env=process_env,
         text=True,
         capture_output=True,
         check=False,
@@ -1186,6 +1192,7 @@ def _deploy_worker(
         "-f",
         str(checkout / "deploy/docker-compose-worker-base.yml"),
     ]
+    compose_env = {"ALLBOT_ENV_FILE": str(env_file)}
     if not args.execute:
         print(
             "[dry-run] worker drain/recreate from digest-pinned image: "
@@ -1219,8 +1226,8 @@ def _deploy_worker(
     temp_path.write_text(release_env, encoding="utf-8")
     temp_path.chmod(0o644)
     temp_path.replace(release_path)
-    _run([*compose, "config", "-q"])
-    _run([*compose, "pull", *service_args])
+    _run([*compose, "config", "-q"], env=compose_env)
+    _run([*compose, "pull", *service_args], env=compose_env)
     worker_ref = str(manifest["images"]["worker"])
     revision = _run(
         [
@@ -1244,7 +1251,7 @@ def _deploy_worker(
             _run(["docker", "stop", *existing])
     # The impact planner has already elevated worker changes to drain level.
     # Recreate only the explicit slot allowlist; dormant canary slots stay off.
-    _run([*compose, "stop", *sorted(selected)])
+    _run([*compose, "stop", *sorted(selected)], env=compose_env)
     _run(
         [
             *compose,
@@ -1255,9 +1262,10 @@ def _deploy_worker(
             "--wait-timeout",
             "180",
             *service_args,
-        ]
+        ],
+        env=compose_env,
     )
-    _run([*compose, "ps", *service_args])
+    _run([*compose, "ps", *service_args], env=compose_env)
     if hold_maintenance_for_worker_cutover(args.env, impact):
         environment = ENVIRONMENT[args.env]
         host = args.remote_host or environment["host"]

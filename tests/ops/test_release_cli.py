@@ -584,10 +584,12 @@ def test_initial_worker_cutover_stops_legacy_before_start_and_clears_maintenance
         remote_host="cloud-test",
     )
     commands = []
+    command_options = []
     remote_calls = []
 
     def fake_run(command, **kwargs):
         commands.append(command)
+        command_options.append(kwargs)
         stdout = ""
         if command[:4] == ["git", "-C", str(root / "releases" / FULL_SHA), "rev-parse"]:
             stdout = FULL_SHA + "\n"
@@ -627,6 +629,16 @@ def test_initial_worker_cutover_stops_legacy_before_start_and_clears_maintenance
         "cloud-worker-relay-test",
     ]
     assert legacy_stop < immutable_start
+    compose_calls = [
+        options
+        for command, options in zip(commands, command_options, strict=True)
+        if command[:2] == ["docker", "compose"]
+    ]
+    assert compose_calls
+    assert all(
+        options["env"]["ALLBOT_ENV_FILE"] == str(env_file)
+        for options in compose_calls
+    )
     assert remote_calls == [
         (
             "cloud-test",
