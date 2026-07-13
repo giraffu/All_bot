@@ -66,3 +66,15 @@ def test_release_workflow_builds_all_images_and_never_uses_latest():
     ):
         assert image in workflow
     assert ":latest" not in workflow
+
+
+def test_python_ci_workflows_install_backend_dependencies_and_use_test_jwt():
+    workflows = (
+        ROOT / ".github/workflows/control-plane-release.yml",
+        ROOT / ".github/workflows/hotspot_regression_gate.yml",
+    )
+
+    for path in workflows:
+        workflow = path.read_text(encoding="utf-8")
+        assert "-r requirements.txt -r backend/requirements.txt" in workflow
+        assert "JWT_SECRET_KEY: ci-test-only-not-for-runtime" in workflow
