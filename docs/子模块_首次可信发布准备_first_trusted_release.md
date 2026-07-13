@@ -8,6 +8,8 @@
 
 用户已授权仅测试环境首次切换；生产部署和正式 Pages mutation 仍未授权。2026-07-14 对 `587d6651688a1f979afa31d9ee5ae19866a61749` 的首次切换在 Dashboard Frontend 启动门禁 fail closed：镜像未创建 `/etc/nginx/templates`，入口脚本无法安装 Nginx 模板。EXIT trap 已清理新项目并恢复 legacy 控制面，未切 Web/Worker，未写成功状态。修正后的 CI 必须真实执行 dashboard/QQCC 两种 frontend 入口模式，而不只检查静态文件存在。`074109e719f00a7484414979f93d9236f703bea6` 重试进一步暴露 Dashboard Backend 镜像漏了根 `config.py`、`paid_group_guard_bot` 和 `ops` 导入闭包，健康门禁再次触发自动回滚。后续 CI 必须真实 import Dashboard 与 QQCC 两个 ASGI app；只能用修正合入后的新 SHA/digest 重试。
 
+`92fcdd34d91d3f9c827ca9c8740fe0e030aacd13` 的云测试控制面与本地测试 Worker 已完成首次不可变切换，所有自有容器的 digest、OCI revision 和 Python 3.10.20 一致，原问题链路中的并发锁参数与 locale 文件也已在镜像内核对。测试 Web 边缘机在切换时已离线 18 小时，因此该次以 `--skip-web` 恢复控制面和 Worker，运行状态必须记录 `health.web=skipped`。在同一 bundle 完成 Web 原子切换、代表性图片/视频/Bot 任务、回滚演练和 24 小时观察前，不得写入 verified 验收或晋级生产。
+
 ## 2. 已完成的仓库门禁
 
 - stabilization 基线 Python：`2563 passed`；后续 release CI 已改为 Python 3.10 分片门禁并成功完成。

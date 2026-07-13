@@ -269,6 +269,40 @@ def test_initial_worker_cutover_maps_legacy_slots_and_holds_maintenance():
     assert module.hold_maintenance_for_worker_cutover("prod", impact) is False
 
 
+def test_state_marks_web_skipped_instead_of_claiming_checksum_passed(monkeypatch):
+    module = _load_module()
+    captured = {}
+
+    def capture_run(*_args, **kwargs):
+        captured["payload"] = kwargs["input_text"]
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(module, "_run", capture_run)
+    args = SimpleNamespace(
+        env="test",
+        remote_host="test-control",
+        execute=True,
+        command="deploy",
+        skip_web=True,
+    )
+    impact = module.ReleaseImpact(
+        services={"central-api", "web-static"},
+        level="maintenance",
+    )
+
+    module._write_state(args, impact, _manifest(), "config-revision")
+
+    state = json.loads(captured["payload"])
+    assert state["health"]["web"] == "skipped"
+
+
+def test_test_web_ssh_uses_batch_mode_and_connect_timeout():
+    source = MODULE_PATH.read_text(encoding="utf-8")
+
+    assert '"BatchMode=yes"' in source
+    assert '"ConnectTimeout=10"' in source
+
+
 def test_initial_cloud_cutover_includes_stateful_dependencies_and_legacy_names():
     module = _load_module()
     impact = module.ReleaseImpact(
@@ -550,6 +584,17 @@ def test_test_acceptance_requires_same_digest_and_24_hour_observation():
     evidence["completed_at"] = (completed - timedelta(hours=1)).isoformat()
     with pytest.raises(module.ReleaseError, match="24 hours"):
         module.validate_test_acceptance(evidence, manifest)
+
+
+def test_test_acceptance_rejects_runtime_when_web_was_skipped():
+    module = _load_module()
+    state = {"health": {"web": "skipped"}}
+
+    with pytest.raises(module.ReleaseError, match="Web artifact"):
+        module.validate_test_runtime_for_acceptance(state)
+
+    state["health"]["web"] = "artifact-checksum-passed"
+    module.validate_test_runtime_for_acceptance(state)
 
 
 def test_config_impact_recreates_consumers_and_unknown_keys_fail_wide():

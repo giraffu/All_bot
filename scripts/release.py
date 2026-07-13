@@ -906,11 +906,13 @@ def _deploy_web(
             raise ReleaseError(f"test Web SSH key is unavailable: {key_path}")
         key = str(key_path)
         target = "root@100.88.57.122"
-        _run(["ssh", "-i", key, target, f"install -d -m 755 {remote_dir}"])
-        _run(["scp", "-i", key, str(artifact), f"{target}:{remote_dir}/web-dist.tgz"])
+        ssh_options = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]
+        _run(["ssh", *ssh_options, "-i", key, target, f"install -d -m 755 {remote_dir}"])
+        _run(["scp", *ssh_options, "-i", key, str(artifact), f"{target}:{remote_dir}/web-dist.tgz"])
         _run(
             [
                 "ssh",
+                *ssh_options,
                 "-i",
                 key,
                 target,
@@ -1155,6 +1157,14 @@ def validate_test_acceptance(
         raise ReleaseError("test acceptance approved_by is required")
 
 
+def validate_test_runtime_for_acceptance(state: Mapping[str, Any]) -> None:
+    health = state.get("health")
+    if not isinstance(health, Mapping):
+        raise ReleaseError("cloud-test deployment health is unavailable")
+    if health.get("web") != "artifact-checksum-passed":
+        raise ReleaseError("cloud-test Web artifact has not passed deployment verification")
+
+
 def _mark_test_verified(args: argparse.Namespace) -> None:
     sha = validate_full_sha(args.sha)
     manifest = _read_json(Path(args.manifest))
@@ -1180,6 +1190,7 @@ def _mark_test_verified(args: argparse.Namespace) -> None:
         or state.get("web_artifact_sha256") != manifest.get("web_artifact_sha256")
     ):
         raise ReleaseError("cloud-test runtime state does not match acceptance evidence")
+    validate_test_runtime_for_acceptance(state)
     state["status"] = "verified"
     state["acceptance"] = {
         "approved_by": evidence["approved_by"],
@@ -1244,7 +1255,13 @@ def _write_state(
         "health": {
             "cloud": "compose-ps-passed",
             "worker": "compose-ps-passed" if "worker" in impact.services else "not-targeted",
-            "web": "artifact-checksum-passed" if "web-static" in impact.services else "not-targeted",
+            "web": (
+                "skipped"
+                if args.skip_web and "web-static" in impact.services
+                else "artifact-checksum-passed"
+                if "web-static" in impact.services
+                else "not-targeted"
+            ),
         },
     }
     payload = json.dumps(state, sort_keys=True, indent=2) + "\n"
