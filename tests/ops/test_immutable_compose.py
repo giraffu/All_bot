@@ -78,3 +78,14 @@ def test_python_ci_workflows_install_backend_dependencies_and_use_test_jwt():
         workflow = path.read_text(encoding="utf-8")
         assert "-r requirements.txt -r backend/requirements.txt" in workflow
         assert "JWT_SECRET_KEY: ci-test-only-not-for-runtime" in workflow
+
+
+def test_bootstrap_sends_remote_script_over_stdin_and_archives_source_only():
+    bootstrap = (ROOT / "scripts/bootstrap_release_host.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'bash -seu <<< "$SCRIPT"' in bootstrap
+    assert 'bash -ceu "$SCRIPT"' not in bootstrap
+    assert "--exclude='__pycache__'" in bootstrap
+    assert "--exclude='*.pyc'" in bootstrap

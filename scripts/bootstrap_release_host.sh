@@ -54,7 +54,7 @@ if [ -d ${LEGACY_ROOT@Q} ]; then
   install -d -m 700 "\$archive"
   cp ${LEGACY_ROOT@Q}/deploy/docker-compose-cloud-${ENVIRONMENT}.yml "\$archive/" 2>/dev/null || true
   docker ps --no-trunc --format '{{.Names}} {{.Image}} {{.ID}}' > "\$archive/container-images.txt"
-  tar --exclude='.git' --exclude='.env*' --exclude='logs' --exclude='runtime' --exclude='backups' -czf "\$archive/mixed-source.tgz" -C ${LEGACY_ROOT@Q} .
+  tar --exclude='.git' --exclude='.env*' --exclude='logs' --exclude='runtime' --exclude='backups' --exclude='__pycache__' --exclude='*.pyc' -czf "\$archive/mixed-source.tgz" -C ${LEGACY_ROOT@Q} .
 fi
 echo 'release host bootstrap complete; no environment file or credential was copied'
 EOF
@@ -67,7 +67,7 @@ if [ "$EXECUTE" -ne 1 ]; then
 fi
 
 if [ "$TARGET" = local ]; then
-  bash -ceu "$SCRIPT"
+  bash -seu <<< "$SCRIPT"
 else
-  ssh -o BatchMode=yes "$TARGET" bash -ceu "$SCRIPT"
+  ssh -o BatchMode=yes "$TARGET" bash -seu <<< "$SCRIPT"
 fi
