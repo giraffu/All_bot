@@ -56,7 +56,7 @@ jobs:
         with: {fetch-depth: 0}
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.10.20"
           cache: pip
       - run: pip install -r requirements.txt -r backend/requirements.txt PyYAML numpy==2.2.1
       - name: Run Python shard (${{ matrix.name }})
