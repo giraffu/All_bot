@@ -667,9 +667,20 @@ def _deploy_cloud(
     )
     legacy_containers = legacy_cloud_containers(args.env, cloud_services)
     legacy_names = " ".join(shlex.quote(name) for name in legacy_containers)
+    legacy_handoff = ""
+    legacy_commit = ""
     if initial_cutover:
         if args.execute and not args.confirm_legacy_cutover:
             raise ReleaseError("initial immutable cutover requires --confirm-legacy-cutover")
+        legacy_handoff = f"""for name in {legacy_names}; do
+  docker ps --format '{{{{.Names}}}}' | grep -Fxq "$name" && printf '%s\\n' "$name" >> "$legacy_running_file"
+done
+legacy_running="$(tr '\\n' ' ' < "$legacy_running_file")"
+if [ -n "$legacy_running" ]; then
+  docker stop $legacy_running
+fi
+"""
+        legacy_commit = "legacy_cutover_committed=1"
     maintenance_prefix = ""
     maintenance_suffix = ""
     hold_maintenance = hold_maintenance_for_worker_cutover(args.env, impact)
@@ -764,21 +775,14 @@ for ref in "$ALLBOT_APP_IMAGE" "$ALLBOT_CENTRAL_IMAGE" "$ALLBOT_DASHBOARD_BACKEN
   docker image inspect "$ref" >/dev/null
   test "$(docker image inspect --format '{{{{ index .Config.Labels \"org.opencontainers.image.revision\" }}}}' "$ref")" = {sha}
 done
-{f'''for name in {legacy_names}; do
-  docker ps --format '{{{{.Names}}}}' | grep -Fxq "$name" && printf '%s\\n' "$name" >> "$legacy_running_file"
-done
-legacy_running="$(tr '\\n' ' ' < "$legacy_running_file")"
-if [ -n "$legacy_running" ]; then
-  docker stop $legacy_running
-fi
-''' if initial_cutover else ''}{compose} up -d --no-deps --wait --wait-timeout 180 {services}
+{legacy_handoff}{compose} up -d --no-deps --wait --wait-timeout 180 {services}
 {compose} ps {services}
 while read -r name started_at; do
   name="${{name#/}}"
   test "$(docker inspect --format '{{{{.State.StartedAt}}}}' "$name")" = "$started_at"
 done < "$start_snapshot"
 rm -f "$start_snapshot"
-{'legacy_cutover_committed=1' if initial_cutover else ''}
+{legacy_commit}
 {maintenance_suffix}
 """
     if impact.requires_db_upgrade:
