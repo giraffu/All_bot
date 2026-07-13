@@ -458,6 +458,14 @@ def test_initial_cloud_cutover_pulls_before_stopping_legacy_and_restores_on_fail
     assert "cloud-redis-test" in script
     assert "cloud-tg-bot-test" in script
     assert "docker exec cloud-central-api-test python -c" in script
+    assert (
+        "exec -T bot python -c 'import config; "
+        'assert config.API_BASE == "http://central-api:8003"\''
+    ) in script
+    assert (
+        "exec -T web-api python -c 'import config; "
+        'assert config.API_BASE == "http://central-api:8003"\''
+    ) in script
     assert " rm -sf postgres redis bot central-api web-api" in script
     assert 'docker start "$name"' in script
     assert "legacy_cutover_committed=1" in script

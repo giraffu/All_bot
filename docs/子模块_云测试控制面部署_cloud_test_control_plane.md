@@ -1,6 +1,6 @@
 # 子模块: 云测试控制面部署 (Cloud Test Control Plane)
 
-> 2026-07-13 发布入口变更：新发布只走 `scripts/release.py`、公共 immutable compose 与 `/etc/allbot/test.env`；禁止代码/env rsync、云端 build 和源码 bind mount。本文后续出现的 `.env.cloud.test`、旧 compose、`safe_deploy`/`update_cloud` 命令仅是首次切换前的 legacy 运行态说明，不再是支持入口。完整 SOP 见 `docs/子模块_Git不可变发布_git_immutable_release.md`。仓库契约已完成，但实际云测试 bootstrap/切换尚未在本轮执行。
+> 2026-07-14 运行态：云测试已切入 Git SHA + digest 不可变控制面；新发布只走 `scripts/release.py`、公共 immutable compose 与 `/etc/allbot/test.env`，禁止代码/env rsync、云端 build 和源码 bind mount。本文后续出现的 `.env.cloud.test`、旧 compose、`safe_deploy`/`update_cloud` 命令仅作 legacy 归档，不再是支持入口。完整 SOP 见 `docs/子模块_Git不可变发布_git_immutable_release.md`。
 
 ## 1. 目标与边界
 
@@ -66,6 +66,8 @@ PRIVATE_QQCC_BOT_TELEGRAM_API_BASE_URL=https://api.telegram.org
 PRIVATE_QQCC_BOT_TELEGRAM_FILE_BASE_URL=https://api.telegram.org/file/bot
 PRIVATE_QQCC_BOT_TELEGRAM_TRUSTED_HOSTS=
 ```
+
+2026-07-14 首次真实 Bot 任务回归发现 legacy env 仍有 `API_BASE_TEST=http://central-api-test:8003`。由于 `BOT_TYPE=TEST` 会让 `config.py` 优先读取 `*_TEST`，只在 overlay 设置 `API_BASE=http://central-api:8003` 不足以覆盖，表现为任务派发阶段 `Errno -3` 且 Saga 退款。当前 immutable test overlay 必须对所有 Python 消费者同时设置 `API_BASE`/`API_BASE_TEST=http://central-api:8003`，发布器在写状态前进入容器校验 `config.API_BASE`。验收不得再用未经 `config.py` 解析的原始 env 作为 DNS 反馈环。
 
 `CLOUD_TEST_BIND_IP` 用于云端服务端口绑定；当前绑定云测试 Tailscale IP `100.82.124.91`，不直接开放公网。`CLOUD_TEST_CONTROL_HOST` 用于本地 GPU worker 访问云端 Central API，也应填 `100.82.124.91`。当前云测试对象存储直接使用 Cloudflare R2 S3 兼容接口，`MINIO_*` 是项目内兼容变量名但值指向 R2；`MINIO_PUBLIC_URL` 继续留空，`R2_PUBLIC_DOMAIN` 使用已验证的新对象公网域名。Web owner 视频结果接口只在 R2 公网 URL 可解析时返回成功，若临时清空 `R2_PUBLIC_DOMAIN`，视频任务可能在 99% / `pending_result` 等待结果 URL。
 

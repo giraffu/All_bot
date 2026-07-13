@@ -39,33 +39,52 @@ services:
     environment:
       BOT_TYPE: TEST
       API_BASE: http://central-api:8003
+      API_BASE_TEST: http://central-api:8003
     depends_on:
       redis: {condition: service_healthy}
   web-api:
     ports: ["${CLOUD_TEST_BIND_IP:-127.0.0.1}:8001:8001"]
-    environment: {BOT_TYPE: TEST, API_BASE: "http://central-api:8003"}
+    environment:
+      BOT_TYPE: TEST
+      API_BASE: http://central-api:8003
+      API_BASE_TEST: http://central-api:8003
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
       central-api: {condition: service_healthy}
   dashboard-backend:
     ports: ["${CLOUD_TEST_BIND_IP:-127.0.0.1}:8044:8043"]
-    environment: {BOT_TYPE: TEST}
+    environment:
+      BOT_TYPE: TEST
+      API_BASE: http://central-api:8003
+      API_BASE_TEST: http://central-api:8003
   dashboard-frontend:
     ports: ["${CLOUD_TEST_BIND_IP:-127.0.0.1}:8087:8086"]
   qqcc-config-backend:
     ports: ["${CLOUD_TEST_BIND_IP:-127.0.0.1}:8045:8045"]
-    environment: {BOT_TYPE: TEST}
+    environment:
+      BOT_TYPE: TEST
+      API_BASE: http://central-api:8003
+      API_BASE_TEST: http://central-api:8003
   qqcc-config-frontend:
     ports: ["${CLOUD_TEST_BIND_IP:-127.0.0.1}:8088:8088"]
   imgproxy:
     ports: ["${CLOUD_TEST_BIND_IP:-127.0.0.1}:8084:8084"]
   bot:
-    environment: {BOT_TYPE: TEST, API_BASE: "http://central-api:8003"}
+    environment:
+      BOT_TYPE: TEST
+      API_BASE: http://central-api:8003
+      API_BASE_TEST: http://central-api:8003
   qqcc-bot:
-    environment: {BOT_TYPE: TEST, API_BASE: "http://central-api:8003"}
+    environment:
+      BOT_TYPE: TEST
+      API_BASE: http://central-api:8003
+      API_BASE_TEST: http://central-api:8003
   qqcc-private-bot-worker:
-    environment: {BOT_TYPE: TEST, API_BASE: "http://central-api:8003"}
+    environment:
+      BOT_TYPE: TEST
+      API_BASE: http://central-api:8003
+      API_BASE_TEST: http://central-api:8003
 
 volumes:
   cloud-postgres-test-data:
