@@ -96,6 +96,7 @@ release workflow 生成 manifest 后会运行一次不接触运行态秘密的�
 
 ## 6. Web、Worker 与回滚
 
+- 正式 Payment 的不可变端口契约固定为 host/container `8021:8021`，overlay 同时钉住 `PAYMENT_API_PORT=8021`；公共 cloud compose 对 `/pay/result` 配置 healthcheck。发布器的 `docker compose up --wait` 必须在监听端口或映射漂移时 fail closed，不能只凭容器 `running` 写成功状态。
 - 测试与正式 Web 都先校验同一 tar SHA256，再从精确 SHA checkout 读取 `frontend/runtime-config.yml` 的公开环境段，生成 `allbot-runtime-config.js` 和独立 revision，最后调用同一 Wrangler Pages 发布器。测试目标为 `allbot-web-cf-test/test`，正式目标为 `allbot-web-prod/main`。
 - Pages Token 默认读取 `~/.config/allbot/cloudflare-pages.token`，必须是 `600` 且具备目标项目 Pages Read/Write；DNS/Tunnel 权限不能替代 Pages 权限。仓库 CI 不保存 Cloudflare 管理凭据。
 - Pages preflight 要求目标项目 production branch 与发布 branch 一致、`production_deployments_enabled=false`、`preview_deployment_setting=none`，并存在 active canonical custom domain；不满足只阻断，不自动修 Cloudflare。Wrangler 返回后必须由 Pages API 找到 `environment=production`、branch/SHA 正确、stage success 的 deployment ID，确认 `canonical_deployment.id` 已切换，再从正式 custom domain 以 cache-busting 请求校验 JavaScript 内的 `release_sha` 与 `runtime_config_revision`。
