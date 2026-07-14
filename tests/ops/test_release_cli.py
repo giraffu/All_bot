@@ -736,6 +736,160 @@ def test_test_acceptance_requires_same_digest_and_24_hour_observation():
         module.validate_test_acceptance(evidence, manifest)
 
 
+def _short_observation_evidence(module, manifest, *, completed=None):
+    completed = completed or datetime.now(timezone.utc) - timedelta(minutes=1)
+    return {
+        "git_sha": FULL_SHA,
+        "images": manifest["images"],
+        "vendor_images": manifest["vendor_images"],
+        "observation_started_at": (completed - timedelta(hours=2)).isoformat(),
+        "completed_at": completed.isoformat(),
+        "approved_by": "ops",
+        "checks": {key: True for key in module.REQUIRED_ACCEPTANCE_CHECKS},
+    }
+
+
+def test_short_observation_requires_cli_confirmation_evidence_flag_and_reason():
+    module = _load_module()
+    manifest = _manifest()
+    evidence = _short_observation_evidence(module, manifest)
+
+    with pytest.raises(module.ReleaseError, match="24 hours"):
+        module.validate_test_acceptance(evidence, manifest)
+
+    with pytest.raises(module.ReleaseError, match="evidence flag"):
+        module.validate_test_acceptance(
+            evidence,
+            manifest,
+            confirm_short_observation=True,
+        )
+
+    evidence["short_observation_override"] = True
+    evidence["override_reason"] = ""
+    with pytest.raises(module.ReleaseError, match="override_reason"):
+        module.validate_test_acceptance(
+            evidence,
+            manifest,
+            confirm_short_observation=True,
+        )
+
+    evidence["override_reason"] = "User approved promotion after representative smoke"
+    with pytest.raises(module.ReleaseError, match="explicit CLI confirmation"):
+        module.validate_test_acceptance(evidence, manifest)
+
+
+def test_short_observation_override_keeps_time_and_smoke_guards():
+    module = _load_module()
+    manifest = _manifest()
+    evidence = _short_observation_evidence(module, manifest)
+    evidence.update(
+        short_observation_override=True,
+        override_reason="User approved promotion after representative smoke",
+    )
+
+    evidence["observation_started_at"] = evidence["completed_at"]
+    with pytest.raises(module.ReleaseError, match="after observation_started_at"):
+        module.validate_test_acceptance(
+            evidence,
+            manifest,
+            confirm_short_observation=True,
+        )
+
+    future = datetime.now(timezone.utc) + timedelta(minutes=5)
+    evidence["observation_started_at"] = (future - timedelta(hours=1)).isoformat()
+    evidence["completed_at"] = future.isoformat()
+    with pytest.raises(module.ReleaseError, match="cannot be in the future"):
+        module.validate_test_acceptance(
+            evidence,
+            manifest,
+            confirm_short_observation=True,
+        )
+
+    evidence = _short_observation_evidence(module, manifest)
+    evidence.update(
+        short_observation_override=True,
+        override_reason="User approved promotion after representative smoke",
+    )
+    evidence["checks"]["video_task"] = False
+    with pytest.raises(module.ReleaseError, match="video_task"):
+        module.validate_test_acceptance(
+            evidence,
+            manifest,
+            confirm_short_observation=True,
+        )
+
+
+def test_short_observation_override_returns_auditable_acceptance():
+    module = _load_module()
+    manifest = _manifest()
+    evidence = _short_observation_evidence(module, manifest)
+    evidence.update(
+        short_observation_override=True,
+        override_reason="User approved promotion after representative smoke",
+    )
+
+    acceptance = module.validate_test_acceptance(
+        evidence,
+        manifest,
+        confirm_short_observation=True,
+    )
+
+    assert acceptance == {
+        "approved_by": "ops",
+        "completed_at": evidence["completed_at"],
+        "observation_started_at": evidence["observation_started_at"],
+        "observation_duration_seconds": 7200,
+        "short_observation_override": True,
+        "override_reason": "User approved promotion after representative smoke",
+    }
+
+
+def test_mark_test_verified_persists_short_observation_audit(monkeypatch, tmp_path):
+    module = _load_module()
+    manifest = _manifest()
+    evidence = _short_observation_evidence(module, manifest)
+    evidence.update(
+        short_observation_override=True,
+        override_reason="User approved promotion after representative smoke",
+    )
+    manifest_path = tmp_path / "release.json"
+    evidence_path = tmp_path / "acceptance.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+    state = {
+        "git_sha": FULL_SHA,
+        "images": manifest["images"],
+        "vendor_images": manifest["vendor_images"],
+        "web_artifact_sha256": manifest["web_artifact_sha256"],
+        "health": {"web": "canonical-runtime-verified"},
+    }
+    writes = []
+
+    def fake_run(args, **kwargs):
+        if args[-1].startswith("cat /var/lib/allbot/deployments/test/current.json"):
+            return SimpleNamespace(returncode=0, stdout=json.dumps(state))
+        writes.append(kwargs.get("input_text"))
+        return SimpleNamespace(returncode=0, stdout="")
+
+    monkeypatch.setattr(module, "_run", fake_run)
+    args = SimpleNamespace(
+        sha=FULL_SHA,
+        manifest=str(manifest_path),
+        evidence=str(evidence_path),
+        remote_host="test-host",
+        execute=True,
+        confirm_short_observation=True,
+    )
+
+    module._mark_test_verified(args)
+
+    persisted_state = json.loads(writes[1])
+    assert persisted_state["status"] == "verified"
+    assert persisted_state["acceptance"]["short_observation_override"] is True
+    assert persisted_state["acceptance"]["observation_duration_seconds"] == 7200
+    assert persisted_state["acceptance"]["override_reason"].startswith("User approved")
+
+
 def test_test_acceptance_rejects_runtime_when_web_was_skipped():
     module = _load_module()
     state = {"health": {"web": "skipped"}}

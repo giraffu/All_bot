@@ -2,7 +2,7 @@
 
 ## 1. 状态与边界
 
-截至 2026-07-14，仓库侧发布契约已经建立，测试控制面与本地 Worker 已进入不可变发布链路。生产加固候选增加全量只读 preflight、跨系统事务和逆序恢复；它必须先合入受保护 `main`、由 CI 生成新 release，再只发布云测试并重新开始 24 小时观察。测试/正式 Web 统一使用 Wrangler Pages 发布；本轮只授权后续测试 Pages mutation，生产部署、正式机 bootstrap 与正式 Pages mutation 均未获授权。
+截至 2026-07-14，仓库侧发布契约已经建立，测试控制面与本地 Worker 已进入不可变发布链路。生产加固候选增加全量只读 preflight、跨系统事务和逆序恢复；它必须先合入受保护 `main`、由 CI 生成新 release，再先发布云测试并完成全部验收。测试/正式 Web 统一使用 Wrangler Pages 发布；用户现已明确授权在测试服务确认无问题、短观察审计与其它门禁全部通过后执行首次生产 bootstrap、正式部署和正式 Pages mutation。
 
 旧 `update_cloud_*` 脚本已经 fail closed。它们不再包含 rsync 或 build 能力。旧 compose、云端混合源码和容器 image ID 只用于首次切换归档与一次性 legacy 回滚，不是可信 release 基线。
 
@@ -73,6 +73,14 @@ scripts/release.py verify-test \
   --evidence test-acceptance.json \
   --execute
 
+# 仅在用户明确批准提前晋级、且全部 smoke 已完成时使用
+scripts/release.py verify-test \
+  --sha <40-char-sha> \
+  --manifest release.json \
+  --evidence test-acceptance.json \
+  --confirm-short-observation \
+  --execute
+
 scripts/release.py plan --env prod --sha <40-char-sha>
 scripts/release.py preflight --env prod --sha <40-char-sha>
 scripts/release.py deploy --env prod --sha <40-char-sha> --execute --confirm-prod
@@ -80,7 +88,7 @@ scripts/release.py deploy --env prod --sha <40-char-sha> --execute --confirm-pro
 
 `--services` 只扩大自动集合。`src/**`/`shared/**` 会覆盖所有 Python 消费者；Worker 变化为 drain；migration 是 maintenance 且执行需 `--confirm-db-upgrade`；未知路径整栈维护；`remote_workers/**`、GPU profile/model manifest 触发 `gpu-runtime-release-required` blocker。
 
-生产发布器会读取云测试 `current.json`，要求状态为 `verified` 且 SHA、自有/第三方 digest 完全相同。验收模板见 `deploy/test-acceptance.example.json`，观察窗口不足 24 小时或任何 smoke 为 false 都不能标记 verified。
+生产发布器会读取云测试 `current.json`，要求状态为 `verified` 且 SHA、自有/第三方 digest 完全相同。验收模板见 `deploy/test-acceptance.example.json`；默认观察窗口不足 24 小时或任何 smoke 为 false 都不能标记 verified。用户明确确认测试服务无问题并授权提前晋级时，短观察 evidence 必须同时包含 `short_observation_override=true`、非空 `override_reason`、`approved_by` 和真实起止时间，并在 CLI 显式传 `--confirm-short-observation`。该例外不允许时间倒置/未来完成时间，也不放宽任何 smoke、SHA/digest、Web checksum 或测试运行态检查；verified current/history 会记录实际观察秒数、例外原因与批准者，禁止伪造 24 小时时间或直接编辑状态文件。
 
 release workflow 生成 manifest 后会运行一次不接触运行态秘密的自检 plan，并显式使用 `--skip-env-checks`。该参数只允许 `plan`，输出 `config_validation=skipped`，用于 CI 校验 SHA/manifest/影响规则；`deploy`/`rollback` 一律拒绝它。操作者的测试/生产 plan 默认仍读取并校验真实 env，不能用 CI 例外替代部署前配置门禁。
 
