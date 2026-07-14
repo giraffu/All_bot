@@ -2,6 +2,10 @@
 
 ## 1. 当前结论
 
+2026-07-14 正式链路复核确认首次生产切换仍有 P0 blocker：云测试 release 尚未完成新一轮 verified/24 小时观察，正式机缺 bootstrap/env/GHCR 材料，legacy 正式维护路径与新 state root 不一致，旧发布器误用测试 Worker 名称且未安全交接 8013 relay，正式 Pages production branch/自动部署/canonical 语义未满足。直接生产执行仍会在 mutation 前被门禁拒绝，本轮没有进入生产维护、修改生产容器、正式机文件或正式 Pages 配置。
+
+加固候选在独立 `codex/harden-prod-release` 分支实现：`preflight` 聚合 Git/CI、环境、云/Worker bootstrap、8013 owner、Pages 设置和回滚材料；首次正式切换写新旧双维护路径；事务按云控制面 → Worker → Pages → 状态暂存执行，失败按 Pages → Worker → 云控制面逆序恢复；`recover --transaction` 只能幂等恢复旧栈。该结论只是仓库候选状态，必须合入受保护 `main` 并由新 CI release 自证后才可用于云测试。
+
 仓库侧 stabilization 已按“完整 Git SHA + CI 不可变产物 + 同 digest 晋级”合入主线。`a2a44beba88055fcb72291ca39953a7b41868985` 的分片 Python、PostgreSQL、Web、Dashboard 与 release workflow 全绿，Web SHA256、五个自有镜像 digest/tag/OCI revision 已独立核验。2026-07-14 首次测试执行在新项目绑定旧 Dashboard 端口时 fail closed，暴露 legacy 控制面尚未进入首次交接闭包；该 SHA 未写部署成功状态，也未切 Web/Worker，失败尝试产生的新项目容器已清理，旧测试控制面恢复单实例运行。
 
 进一步核对发现旧测试 Postgres/Redis 数据卷属于 `deploy_cloud-*-data`，而新项目默认会使用另一组空卷；旧服务名还承担 `postgres-test`/`redis-test` DNS，旧 env 只提供 `CLOUD_TEST_POSTGRES_*`。修正后的首次交接会显式复用旧卷和网络别名、补运行时变量映射，把 Postgres/Redis 纳入初始服务集合，并在停旧容器前完成 pull/digest 校验和 legacy Central 队列排空；失败会移除新目标容器并重启本轮记录的旧容器。执行前运行态核对还确认测试 env 未启用 QQCC/私有 QQCC Bot，因此发布器必须从实际 cloud 启动集合中过滤这两个明确禁用的可选 runtime，并在 plan 中显示 `disabled_cloud_services`，不能把整栈依赖分析误解为强制开启未配置 Bot。候选必须以这些修正合入 `main` 后的新完整 SHA/bundle 为准，`a2a44...` 和中间候选只保留为演练证据。
@@ -37,11 +41,11 @@
 
 ## 4. 送审与首次发布待办
 
-1. 将首次 legacy 控制面/数据卷交接修正 PR 合入受保护 `main`，以合并后的完整 40 位 SHA 触发新的 release workflow；`a2a44...` 旧候选不再部署。
+1. 将生产发布加固 PR 合入受保护 `main`，以合并后的完整 40 位 SHA 触发新的 release workflow；所有旧候选不再用于生产。
 2. 核对新 CI 成功、OCI revision、所有镜像 digest、Web SHA256 与不可覆盖的 release bundle。
 3. 用云测试当前 env 作为控制面事实源、本机旧 env 作为 Worker 参数源，经 test-only 迁移器生成 `/etc/allbot/test.env` 候选并完成 schema/cloud/worker Compose dry-run，任何输出不得含秘密值；未选 dormant 槽位只允许使用 disabled 安全默认值，allowlist 内槽位仍必须显式满足 schema。
-4. 在目标机完成只读 deploy key、GHCR `read:packages` 凭据和 release host bootstrap；密钥不进入仓库、源码 checkout 或 CI。
-5. 使用 test-only env 迁移器生成候选并校验 `/etc/allbot/test.env`，原子安装为 `600 deploy:deploy`；控制面先复用旧 Postgres/Redis 数据卷完成原子 legacy 交接，再切测试 Web，并在同一维护窗口停止 allowlist 对应 legacy Worker、启动同 digest 本地测试 Worker，全部健康后才解除维护。
-6. 完成 health、Bot、任务提交、Redis 锁、locale、Web、Worker heartbeat、图片/视频代表任务和回滚演练，并观察至少 24 小时。
+4. 仅在代码/CI/云测试验收完成且取得独立授权后执行主机准备：云控制面用 `bootstrap_release_host.sh --role cloud-control`，本地 Worker host 用 `--role local-worker-host`；完成只读 deploy key、GHCR `read:packages` 凭据与受限 env，密钥不进入仓库、源码 checkout 或 CI。
+5. 使用 test-only env 迁移器生成候选并校验 `/etc/allbot/test.env`，原子安装为 `600 deploy:deploy`；只更新云测试，按新事务顺序完成控制面、测试 Worker、测试 Pages、canonical runtime SHA 与回滚演练，全部健康后才提交测试状态。
+6. 从新测试部署完成时间重新计算观察窗口；完成 health、Bot、任务提交、Redis 锁、locale、Web canonical runtime、Worker digest/OCI revision/heartbeat、图片/视频代表任务和回滚演练，并连续观察至少 24 小时。窗口结束前状态保持 `deployed`，不得提前写 `verified`。
 7. 写入 verified 验收记录后，才允许以同一 SHA/digest 申请生产确认。
-8. 首次生产切换前归档 legacy compose、容器 image ID、混合源码与 env；生产部署和 Pages 变更仍需明确确认。
+8. 首次生产切换前另行只读运行正式 `preflight`，确认双维护路径、正式 Worker 映射/8013 owner、legacy 与 immutable 回滚材料、正式 Pages `main`/自动部署关闭/canonical ID。正式机 bootstrap、正式 Pages 配置变更和生产 deploy 必须分别取得明确确认。

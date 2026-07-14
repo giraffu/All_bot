@@ -2,18 +2,20 @@
 set -euo pipefail
 
 ENVIRONMENT=""
+ROLE=""
 TARGET="local"
 EXECUTE=0
 REPOSITORY_URL="git@github.com:giraffu/All_bot.git"
-DEPLOY_KEY="/home/deploy/.ssh/allbot_release_ed25519"
+DEPLOY_KEY=""
 
 usage() {
-  echo "Usage: $0 --env test|prod [--target local|SSH_HOST] [--deploy-key PATH] [--execute]"
+  echo "Usage: $0 --env test|prod --role cloud-control|local-worker-host [--target local|SSH_HOST] [--deploy-key PATH] [--execute]"
 }
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --env) ENVIRONMENT="${2:-}"; shift 2 ;;
+    --role) ROLE="${2:-}"; shift 2 ;;
     --target) TARGET="${2:-}"; shift 2 ;;
     --deploy-key) DEPLOY_KEY="${2:-}"; shift 2 ;;
     --execute) EXECUTE=1; shift ;;
@@ -23,26 +25,39 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$ENVIRONMENT" in test|prod) ;; *) echo "--env test|prod is required" >&2; exit 2 ;; esac
+case "$ROLE" in
+  cloud-control)
+    EXPECTED_USER="deploy"
+    CHECKOUT_ROOT="/home/deploy/APP/All_bot-release"
+    LEGACY_ROOT="/home/deploy/APP/All_bot"
+    DEPLOY_KEY="${DEPLOY_KEY:-/home/deploy/.ssh/allbot_release_ed25519}"
+    ;;
+  local-worker-host)
+    [ "$TARGET" = local ] || { echo "local-worker-host only supports --target local" >&2; exit 2; }
+    EXPECTED_USER="$(id -un)"
+    CHECKOUT_ROOT="${HOME}/APP/All_bot-release"
+    LEGACY_ROOT="${HOME}/APP/All_bot"
+    DEPLOY_KEY="${DEPLOY_KEY:-${HOME}/.ssh/allbot_release_ed25519}"
+    ;;
+  *) echo "--role cloud-control|local-worker-host is required" >&2; exit 2 ;;
+esac
 
-CHECKOUT_ROOT="/home/deploy/APP/All_bot-release"
-LEGACY_ROOT="/home/deploy/APP/All_bot"
-if [ "$TARGET" = local ]; then
-  CHECKOUT_ROOT="/home/deploy/APP/All_bot-release"
-  LEGACY_ROOT="/home/hfy/APP/All_bot"
+ROLE_SETUP=""
+if [ "$ROLE" = cloud-control ]; then
+  ROLE_SETUP="sudo -n install -d -m 755 -o deploy -g deploy /var/lib/allbot /var/lib/allbot/releases /var/lib/allbot/deployments
+sudo -n install -d -m 700 -o deploy -g deploy /etc/allbot /etc/allbot/backups"
 fi
 
 read -r -d '' SCRIPT <<EOF || true
 set -euo pipefail
-test "\$(id -un)" = deploy || { echo 'bootstrap execute must run as the deploy account' >&2; exit 2; }
+test "\$(id -un)" = ${EXPECTED_USER@Q} || { echo 'bootstrap execute account does not match the selected role' >&2; exit 2; }
 test -f ${DEPLOY_KEY@Q}
 test "\$(stat -c %a ${DEPLOY_KEY@Q})" = 600
 command -v git >/dev/null
-command -v gh >/dev/null
-command -v oras >/dev/null
 docker compose version >/dev/null
+test -f "\$HOME/.docker/config.json"
 install -d -m 755 ${CHECKOUT_ROOT@Q} ${CHECKOUT_ROOT@Q}/releases ${CHECKOUT_ROOT@Q}/release-env
-sudo -n install -d -m 755 -o deploy -g deploy /var/lib/allbot /var/lib/allbot/releases /var/lib/allbot/deployments
-sudo -n install -d -m 700 -o deploy -g deploy /etc/allbot /etc/allbot/backups
+${ROLE_SETUP}
 if [ ! -d ${CHECKOUT_ROOT@Q}/repo/.git ]; then
   GIT_SSH_COMMAND='ssh -i ${DEPLOY_KEY} -o IdentitiesOnly=yes' git clone --filter=blob:none ${REPOSITORY_URL@Q} ${CHECKOUT_ROOT@Q}/repo
 fi
@@ -60,7 +75,7 @@ echo 'release host bootstrap complete; no environment file or credential was cop
 EOF
 
 if [ "$EXECUTE" -ne 1 ]; then
-  echo "[dry-run] bootstrap immutable release checkout on ${TARGET}"
+  echo "[dry-run] bootstrap ${ROLE} immutable release checkout on ${TARGET}:${CHECKOUT_ROOT}"
   echo "[dry-run] require existing read-only deploy key: ${DEPLOY_KEY}"
   echo "[dry-run] archive legacy compose/image IDs/source without env or secrets"
   exit 0

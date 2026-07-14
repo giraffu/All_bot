@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Plan and execute AllBot immutable releases.
 
-The public seam is intentionally small: ``plan``, ``deploy``, ``rollback`` and
-``validate-env``.  Application code is delivered only through digest-pinned
-images from a CI-produced release manifest.  Git checkouts on runtime hosts are
-used solely for the matching deployment contract (compose, policy and helpers).
+The public seam is intentionally small: ``plan``, ``preflight``, ``deploy``,
+``rollback``, ``recover`` and ``validate-env``. Application code is delivered
+only through digest-pinned images from a CI-produced release manifest. Git
+checkouts on runtime hosts are used solely for the matching deployment contract
+(compose, policy and helpers).
 """
 
 from __future__ import annotations
@@ -21,8 +22,12 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 from datetime import datetime, timezone
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
+import urllib.error
+import urllib.parse
+import urllib.request
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -94,8 +99,16 @@ ENVIRONMENT = {
 }
 
 WEB_PAGES_TARGETS = {
-    "test": {"project": "allbot-web-cf-test", "branch": "test"},
-    "prod": {"project": "allbot-web-prod", "branch": "main"},
+    "test": {
+        "project": "allbot-web-cf-test",
+        "branch": "test",
+        "canonical_url": "https://web-cf-test.aivison.it.com",
+    },
+    "prod": {
+        "project": "allbot-web-prod",
+        "branch": "main",
+        "canonical_url": "https://web.aivison.it.com",
+    },
 }
 PUBLIC_WEB_RUNTIME_FIELDS = {
     "api_base_url",
@@ -140,6 +153,379 @@ class ReleaseImpact:
             "unknown_paths": self.unknown_paths,
             "matched_rules": self.matched_rules,
         }
+
+
+PreflightCheck = Callable[
+    [argparse.Namespace, "ReleaseImpact", Mapping[str, Any], Mapping[str, str]],
+    list[str],
+]
+
+
+class PreflightDependencies:
+    """Read-only adapters used by the release safety gate."""
+
+    def __init__(
+        self,
+        *,
+        operator: PreflightCheck,
+        cloud: PreflightCheck,
+        worker: PreflightCheck,
+        pages: PreflightCheck,
+        rollback: PreflightCheck,
+    ) -> None:
+        self.operator = operator
+        self.cloud = cloud
+        self.worker = worker
+        self.pages = pages
+        self.rollback = rollback
+
+
+TransactionAction = Callable[[], Any]
+TransactionJournalWriter = Callable[[Mapping[str, Any]], None]
+
+
+class ReleaseTransactionDependencies:
+    """Mutation and compensation adapters for one release transaction."""
+
+    def __init__(
+        self,
+        *,
+        cloud: TransactionAction,
+        worker: TransactionAction,
+        pages: TransactionAction,
+        state: TransactionAction,
+        rollback_pages: TransactionAction,
+        rollback_worker: TransactionAction,
+        rollback_cloud: TransactionAction,
+        validate_recovery: TransactionAction,
+        clear_maintenance: TransactionAction,
+        journal: TransactionJournalWriter,
+        enable_maintenance: TransactionAction | None = None,
+    ) -> None:
+        self.cloud = cloud
+        self.worker = worker
+        self.pages = pages
+        self.state = state
+        self.rollback_pages = rollback_pages
+        self.rollback_worker = rollback_worker
+        self.rollback_cloud = rollback_cloud
+        self.validate_recovery = validate_recovery
+        self.clear_maintenance = clear_maintenance
+        self.journal = journal
+        self.enable_maintenance = enable_maintenance or (lambda: None)
+
+
+def new_release_transaction(
+    *,
+    environment: str,
+    target_sha: str,
+    previous_sha: str | None,
+    previous_kind: str,
+    previous_pages_deployment_id: str | None,
+) -> dict[str, Any]:
+    if environment not in ENVIRONMENT:
+        raise ReleaseError(f"unsupported transaction environment: {environment}")
+    if previous_kind not in {"legacy", "immutable"}:
+        raise ReleaseError("transaction previous_kind must be legacy or immutable")
+    return {
+        "schema_version": 1,
+        "transaction_id": target_sha,
+        "environment": environment,
+        "target_sha": target_sha,
+        "previous": {
+            "kind": previous_kind,
+            "git_sha": previous_sha,
+            "pages_deployment_id": previous_pages_deployment_id,
+        },
+        "phase": "preflight_passed",
+        "status": "in_progress",
+        "attempted_stages": [],
+        "completed_stages": [],
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _journal_transition(
+    transaction: dict[str, Any],
+    writer: TransactionJournalWriter,
+    *,
+    phase: str,
+    status: str | None = None,
+) -> None:
+    transaction["phase"] = phase
+    if status is not None:
+        transaction["status"] = status
+    transaction["updated_at"] = datetime.now(timezone.utc).isoformat()
+    writer(transaction)
+
+
+def execute_release_transaction(
+    transaction: dict[str, Any],
+    dependencies: ReleaseTransactionDependencies,
+) -> Mapping[str, Any] | None:
+    """Execute cloud -> worker -> Pages -> state with reverse compensation."""
+
+    attempted: list[str] = transaction["attempted_stages"]
+    completed: list[str] = transaction["completed_stages"]
+    _journal_transition(
+        transaction,
+        dependencies.journal,
+        phase="preflight_passed",
+        status="in_progress",
+    )
+    pages_result: Mapping[str, Any] | None = None
+    stages = (
+        ("cloud", dependencies.cloud),
+        ("worker", dependencies.worker),
+        ("pages", dependencies.pages),
+        ("state", dependencies.state),
+    )
+    try:
+        for name, action in stages:
+            attempted.append(name)
+            _journal_transition(
+                transaction, dependencies.journal, phase=f"{name}_started"
+            )
+            value = action()
+            if name == "pages" and isinstance(value, Mapping):
+                pages_result = value
+                transaction["pages_deployment"] = dict(value)
+            completed.append(name)
+            _journal_transition(
+                transaction, dependencies.journal, phase=f"{name}_completed"
+            )
+        dependencies.clear_maintenance()
+        _journal_transition(
+            transaction,
+            dependencies.journal,
+            phase="maintenance_released",
+            status="committed",
+        )
+        return pages_result
+    except Exception as exc:
+        failed_stage = attempted[-1] if attempted else "transaction"
+        transaction["failed_stage"] = failed_stage
+        transaction["failure_type"] = type(exc).__name__
+        rollback_failures: list[str] = []
+        try:
+            dependencies.enable_maintenance()
+        except Exception:
+            rollback_failures.append("maintenance_enable")
+        try:
+            _journal_transition(
+                transaction,
+                dependencies.journal,
+                phase="rolling_back",
+                status="rolling_back",
+            )
+        except Exception:
+            rollback_failures.append("journal")
+        compensation = {
+            "pages": dependencies.rollback_pages,
+            "worker": dependencies.rollback_worker,
+            "cloud": dependencies.rollback_cloud,
+        }
+        for name in ("pages", "worker", "cloud"):
+            if name not in attempted:
+                continue
+            try:
+                compensation[name]()
+            except Exception:
+                rollback_failures.append(name)
+        if rollback_failures:
+            transaction["rollback_failures"] = rollback_failures
+            _journal_transition(
+                transaction,
+                dependencies.journal,
+                phase="rollback_failed",
+                status="rollback_failed",
+            )
+            raise ReleaseError(
+                "release failed and rollback incomplete; maintenance remains enabled"
+            ) from exc
+        try:
+            dependencies.validate_recovery()
+            _journal_transition(
+                transaction,
+                dependencies.journal,
+                phase="recovery_verified_maintenance_held",
+                status="rolling_back",
+            )
+            dependencies.clear_maintenance()
+        except Exception as recovery_exc:
+            transaction["rollback_failures"] = ["recovery_validation"]
+            _journal_transition(
+                transaction,
+                dependencies.journal,
+                phase="rollback_failed",
+                status="rollback_failed",
+            )
+            raise ReleaseError(
+                "release failed and rollback incomplete; maintenance remains enabled"
+            ) from recovery_exc
+        _journal_transition(
+            transaction,
+            dependencies.journal,
+            phase="recovery_verified",
+            status="rolled_back",
+        )
+        raise ReleaseError("release failed and was recovered to the previous stack") from exc
+
+
+def recover_release_transaction(
+    transaction: dict[str, Any],
+    dependencies: ReleaseTransactionDependencies,
+) -> None:
+    """Idempotently compensate a persisted transaction; never resume it forward."""
+
+    if transaction.get("status") == "committed":
+        raise ReleaseError("a committed transaction cannot be recovered forward or backward")
+    if transaction.get("status") == "rolled_back":
+        try:
+            dependencies.validate_recovery()
+            dependencies.clear_maintenance()
+        except Exception as exc:
+            _journal_transition(
+                transaction,
+                dependencies.journal,
+                phase="rollback_failed",
+                status="rollback_failed",
+            )
+            raise ReleaseError(
+                "recovered transaction validation failed; maintenance remains enabled"
+            ) from exc
+        _journal_transition(
+            transaction,
+            dependencies.journal,
+            phase="recovery_verified",
+            status="rolled_back",
+        )
+        return
+
+    attempted = transaction.get("attempted_stages")
+    if not isinstance(attempted, list):
+        raise ReleaseError("transaction attempted_stages is invalid")
+    compensation = {
+        "pages": dependencies.rollback_pages,
+        "worker": dependencies.rollback_worker,
+        "cloud": dependencies.rollback_cloud,
+    }
+    try:
+        dependencies.enable_maintenance()
+    except Exception as exc:
+        transaction["rollback_failures"] = ["maintenance_enable"]
+        _journal_transition(
+            transaction,
+            dependencies.journal,
+            phase="rollback_failed",
+            status="rollback_failed",
+        )
+        raise ReleaseError("rollback incomplete; maintenance remains enabled") from exc
+    _journal_transition(
+        transaction,
+        dependencies.journal,
+        phase="rolling_back",
+        status="rolling_back",
+    )
+    failures: list[str] = []
+    for name in ("pages", "worker", "cloud"):
+        if name not in attempted:
+            continue
+        try:
+            compensation[name]()
+        except Exception:
+            failures.append(name)
+    if not failures:
+        try:
+            dependencies.validate_recovery()
+            _journal_transition(
+                transaction,
+                dependencies.journal,
+                phase="recovery_verified_maintenance_held",
+                status="rolling_back",
+            )
+            dependencies.clear_maintenance()
+        except Exception:
+            failures.append("recovery_validation")
+    if failures:
+        transaction["rollback_failures"] = failures
+        _journal_transition(
+            transaction,
+            dependencies.journal,
+            phase="rollback_failed",
+            status="rollback_failed",
+        )
+        raise ReleaseError("rollback incomplete; maintenance remains enabled")
+    _journal_transition(
+        transaction,
+        dependencies.journal,
+        phase="recovery_verified",
+        status="rolled_back",
+    )
+
+
+def _transaction_path(environment: str, transaction_id: str) -> str:
+    validate_full_sha(transaction_id)
+    return (
+        f"/var/lib/allbot/deployments/{environment}/transactions/"
+        f"{transaction_id}.json"
+    )
+
+
+def _assert_secret_free_transaction(value: Any, *, path: str = "transaction") -> None:
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            normalized = str(key).lower()
+            if any(marker in normalized for marker in ("token", "secret", "password", "env_values")):
+                raise ReleaseError(f"transaction journal contains forbidden field: {path}.{key}")
+            _assert_secret_free_transaction(child, path=f"{path}.{key}")
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            _assert_secret_free_transaction(child, path=f"{path}[{index}]")
+    elif value is not None and not isinstance(value, (str, int, float, bool)):
+        raise ReleaseError(f"transaction journal contains unsupported value at {path}")
+
+
+def _write_transaction_journal(
+    args: argparse.Namespace, transaction: Mapping[str, Any]
+) -> None:
+    _assert_secret_free_transaction(transaction)
+    transaction_id = str(transaction.get("transaction_id", ""))
+    path = _transaction_path(args.env, transaction_id)
+    payload = json.dumps(transaction, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    host = args.remote_host or ENVIRONMENT[args.env]["host"]
+    command = (
+        f"set -e; install -d -m 755 {shlex.quote(str(Path(path).parent))}; "
+        f"cat > {shlex.quote(path + '.tmp')}; "
+        f"mv -f {shlex.quote(path + '.tmp')} {shlex.quote(path)}"
+    )
+    _run(["ssh", "-o", "BatchMode=yes", host, command], input_text=payload)
+
+
+def _read_transaction_journal(
+    args: argparse.Namespace, transaction_id: str
+) -> dict[str, Any]:
+    path = _transaction_path(args.env, transaction_id)
+    host = args.remote_host or ENVIRONMENT[args.env]["host"]
+    result = _run(
+        ["ssh", "-o", "BatchMode=yes", host, f"cat {shlex.quote(path)}"],
+        check=False,
+    )
+    if result.returncode != 0:
+        raise ReleaseError("release transaction journal is unavailable")
+    try:
+        transaction = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise ReleaseError("release transaction journal is invalid") from exc
+    if (
+        not isinstance(transaction, dict)
+        or transaction.get("schema_version") != 1
+        or transaction.get("environment") != args.env
+        or transaction.get("transaction_id") != transaction_id
+    ):
+        raise ReleaseError("release transaction journal identity is invalid")
+    _assert_secret_free_transaction(transaction)
+    return transaction
 
 
 def load_structured_file(path: Path) -> dict[str, Any]:
@@ -509,15 +895,25 @@ def _split_services(values: Sequence[str]) -> set[str]:
     return selected
 
 
-def legacy_worker_containers(selected: Iterable[str]) -> list[str]:
+def legacy_worker_containers(
+    environment: str, selected: Iterable[str]
+) -> list[str]:
+    if environment not in ENVIRONMENT:
+        raise ReleaseError(f"unsupported worker environment: {environment}")
     slots = sorted(
         int(match.group(1))
         for service in selected
         if (match := re.fullmatch(r"worker-(0[1-8])", service))
     )
+    if environment == "test":
+        agent_prefix = "cloud-comfy-agent-test-"
+        relay = "cloud-worker-relay-test"
+    else:
+        agent_prefix = "cloud-prod-comfy-agent-"
+        relay = "cloud-prod-worker-relay"
     return [
-        *(f"cloud-comfy-agent-test-{slot}" for slot in slots),
-        "cloud-worker-relay-test",
+        *(f"{agent_prefix}{slot}" for slot in slots),
+        relay,
     ]
 
 
@@ -588,10 +984,406 @@ def hold_maintenance_for_worker_cutover(
     environment: str, impact: ReleaseImpact
 ) -> bool:
     return (
-        environment == "test"
+        environment in ENVIRONMENT
         and impact.level == "maintenance"
         and "worker" in impact.services
     )
+
+
+def maintenance_files(environment: str, *, initial_cutover: bool) -> list[str]:
+    if environment not in ENVIRONMENT:
+        raise ReleaseError(f"unsupported maintenance environment: {environment}")
+    paths = [
+        f"{ENVIRONMENT[environment]['state_root']}/runtime/GENERATION_MAINTENANCE"
+    ]
+    if environment == "prod" and initial_cutover:
+        paths.append(
+            "/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE"
+        )
+    return paths
+
+
+def local_env_file(args: argparse.Namespace) -> Path:
+    if args.env_file:
+        return Path(args.env_file).expanduser()
+    return Path.home() / ".config" / "allbot" / f"{args.env}.env"
+
+
+def _token_file(path_value: str) -> Path:
+    path = Path(path_value).expanduser()
+    if not path.is_file():
+        raise ReleaseError(f"Cloudflare Pages token file is unavailable: {path}")
+    if path.stat().st_mode & 0o077:
+        raise ReleaseError("Cloudflare Pages token file permissions must be 600")
+    if not path.read_text(encoding="utf-8").strip():
+        raise ReleaseError("Cloudflare Pages token file is empty")
+    return path
+
+
+def _pages_api_request(
+    args: argparse.Namespace,
+    method: str,
+    path: str,
+    *,
+    payload: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    token_path = _token_file(args.cloudflare_token_file)
+    token = token_path.read_text(encoding="utf-8").strip()
+    url = (
+        "https://api.cloudflare.com/client/v4/accounts/"
+        f"{args.cloudflare_account_id}/{path.lstrip('/')}"
+    )
+    data = None
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    if payload is not None:
+        data = json.dumps(dict(payload), sort_keys=True).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(url, method=method, data=data, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            document = json.loads(response.read().decode("utf-8"))
+    except (OSError, urllib.error.HTTPError, json.JSONDecodeError) as exc:
+        raise ReleaseError("Cloudflare Pages API request failed") from exc
+    if not isinstance(document, dict) or document.get("success") is not True:
+        raise ReleaseError("Cloudflare Pages API response was unsuccessful")
+    return document
+
+
+def _operator_preflight(
+    args: argparse.Namespace,
+    impact: ReleaseImpact,
+    manifest: Mapping[str, Any],
+    _environment_values: Mapping[str, str],
+) -> list[str]:
+    blockers: list[str] = []
+    env_path = local_env_file(args)
+    if not env_path.is_file():
+        blockers.append("operator-env-file-unavailable")
+    elif env_path.stat().st_mode & 0o077:
+        blockers.append("operator-env-file-permissions-not-600")
+    if getattr(args, "local_env_error", False):
+        blockers.append("operator-env-contract-invalid")
+    if not args.skip_ci_checks:
+        try:
+            verify_release_ci(manifest, str(manifest["git_sha"]))
+        except ReleaseError:
+            blockers.append("operator-release-ci-unavailable")
+    try:
+        if args.env == "prod":
+            _promotion_check(args, manifest)
+        else:
+            _test_rollback_check(args, manifest)
+    except ReleaseError as exc:
+        message = str(exc)
+        if "marked verified" in message:
+            blockers.append("promotion-test-release-not-verified")
+        else:
+            blockers.append("promotion-release-state-invalid")
+    if "web-static" in impact.services and not args.skip_web:
+        try:
+            _token_file(args.cloudflare_token_file)
+        except ReleaseError:
+            blockers.append("operator-pages-token-invalid")
+        artifact = _resolved_web_artifact(args, manifest)
+        try:
+            _verify_web_artifact(artifact, str(manifest["web_artifact_sha256"]))
+        except ReleaseError:
+            blockers.append("operator-web-artifact-invalid")
+    return blockers
+
+
+def _cloud_preflight(
+    args: argparse.Namespace,
+    impact: ReleaseImpact,
+    manifest: Mapping[str, Any],
+    _environment_values: Mapping[str, str],
+) -> list[str]:
+    environment = ENVIRONMENT[args.env]
+    host = args.remote_host or environment["host"]
+    root = args.remote_checkout_root
+    env_file = args.remote_env_file or environment["env_file"]
+    initial = "initial-release" in impact.matched_rules
+    transaction_path = _transaction_path(args.env, str(manifest["git_sha"]))
+    script = f"""set -u
+test -d {shlex.quote(root)}/repo/.git || echo cloud-release-host-not-bootstrapped
+if test -d {shlex.quote(root)}/repo/.git; then git -C {shlex.quote(root)}/repo cat-file -e {shlex.quote(str(manifest['git_sha']) + '^\u007bcommit\u007d')} 2>/dev/null || echo cloud-release-sha-unavailable; fi
+test -f {shlex.quote(env_file)} || echo cloud-env-file-unavailable
+if test -f {shlex.quote(env_file)}; then test "$(stat -c %a {shlex.quote(env_file)})" = 600 || echo cloud-env-file-permissions-not-600; fi
+command -v git >/dev/null || echo cloud-git-unavailable
+command -v docker >/dev/null || echo cloud-docker-unavailable
+docker compose version >/dev/null 2>&1 || echo cloud-compose-v2-unavailable
+test -f /home/deploy/.ssh/allbot_release_ed25519 || echo cloud-readonly-deploy-key-unavailable
+test -f /home/deploy/.docker/config.json || echo cloud-ghcr-credentials-unavailable
+if test -f {shlex.quote(transaction_path)} && ! grep -Eq '\"status\"[[:space:]]*:[[:space:]]*\"(committed|rolled_back)\"' {shlex.quote(transaction_path)}; then echo cloud-unfinished-release-transaction; fi
+"""
+    if args.env == "prod" and initial:
+        script += (
+            f"compgen -G {shlex.quote(root + '/legacy-prod-*')} >/dev/null "
+            "|| echo cloud-legacy-archive-unavailable\n"
+        )
+    previous_sha = str(getattr(args, "previous_sha", "") or "")
+    if not initial and FULL_SHA_RE.fullmatch(previous_sha):
+        script += (
+            f"test -d {shlex.quote(root + '/releases/' + previous_sha)} "
+            "|| echo cloud-rollback-checkout-unavailable\n"
+            f"test -f {shlex.quote('/var/lib/allbot/releases/' + previous_sha + '/release.env')} "
+            "|| echo cloud-rollback-release-env-unavailable\n"
+        )
+    result = _run(
+        ["ssh", "-o", "BatchMode=yes", host, "bash -s"],
+        input_text=script,
+        check=False,
+    )
+    if result.returncode != 0:
+        return ["cloud-readonly-preflight-unavailable"]
+    allowed = {
+        "cloud-release-host-not-bootstrapped",
+        "cloud-release-sha-unavailable",
+        "cloud-env-file-unavailable",
+        "cloud-env-file-permissions-not-600",
+        "cloud-git-unavailable",
+        "cloud-docker-unavailable",
+        "cloud-compose-v2-unavailable",
+        "cloud-readonly-deploy-key-unavailable",
+        "cloud-ghcr-credentials-unavailable",
+        "cloud-legacy-archive-unavailable",
+        "cloud-unfinished-release-transaction",
+        "cloud-rollback-checkout-unavailable",
+        "cloud-rollback-release-env-unavailable",
+    }
+    return sorted({line.strip() for line in result.stdout.splitlines()} & allowed)
+
+
+def _relay_container_owns_port(container: str, port: str) -> bool:
+    probe = """import glob,os
+port=int(os.environ['PORT'])
+inodes=set()
+for table in ('/proc/net/tcp','/proc/net/tcp6'):
+    try:
+        rows=open(table,encoding='ascii').read().splitlines()[1:]
+    except OSError:
+        continue
+    for row in rows:
+        fields=row.split()
+        if int(fields[1].rsplit(':',1)[1],16)==port and fields[3]=='0A':
+            inodes.add(fields[9])
+owned=False
+for fd in glob.glob('/proc/[0-9]*/fd/*'):
+    try:
+        target=os.readlink(fd)
+    except OSError:
+        continue
+    if target.startswith('socket:[') and target[8:-1] in inodes:
+        owned=True
+        break
+raise SystemExit(0 if owned else 1)
+"""
+    return (
+        _run(
+            ["docker", "exec", "-e", f"PORT={port}", container, "python", "-c", probe],
+            check=False,
+        ).returncode
+        == 0
+    )
+
+
+def _worker_preflight(
+    args: argparse.Namespace,
+    impact: ReleaseImpact,
+    _manifest: Mapping[str, Any],
+    environment_values: Mapping[str, str],
+) -> list[str]:
+    if "worker" not in impact.services:
+        return []
+    blockers: list[str] = []
+    root = Path(args.worker_checkout_root).expanduser()
+    if not (root / "repo" / ".git").is_dir():
+        blockers.append("worker-release-host-not-bootstrapped")
+    env_path = local_env_file(args)
+    if not env_path.is_file():
+        blockers.append("worker-env-file-unavailable")
+    selected = _split_services(
+        [environment_values.get("ALLBOT_WORKER_SERVICES", "")]
+    )
+    if not selected:
+        blockers.append("worker-service-allowlist-unavailable")
+        return blockers
+    initial = "initial-release" in impact.matched_rules
+    expected_relay = ""
+    if initial:
+        expected_relay = legacy_worker_containers(args.env, selected)[-1]
+        if _run(["docker", "inspect", expected_relay], check=False).returncode != 0:
+            blockers.append("worker-legacy-relay-unavailable")
+    else:
+        result = _run(
+            [
+                "docker",
+                "ps",
+                "-q",
+                "--filter",
+                f"label=com.docker.compose.project=allbot-worker-{args.env}",
+                "--filter",
+                "label=com.docker.compose.service=worker-relay",
+            ],
+            check=False,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            blockers.append("worker-immutable-relay-unavailable")
+        elif result.stdout.splitlines():
+            expected_relay = result.stdout.splitlines()[0].strip()
+        previous_sha = str(getattr(args, "previous_sha", "") or "")
+        if FULL_SHA_RE.fullmatch(previous_sha):
+            if not (root / "releases" / previous_sha).is_dir():
+                blockers.append("worker-rollback-checkout-unavailable")
+            if not (root / "release-env" / previous_sha / "release.env").is_file():
+                blockers.append("worker-rollback-release-env-unavailable")
+    port = environment_values.get("ALLBOT_WORKER_RELAY_PORT", "").strip()
+    if not port.isdigit():
+        blockers.append("worker-relay-port-invalid")
+    else:
+        if not expected_relay or not _relay_container_owns_port(expected_relay, port):
+            blockers.append("worker-relay-owner-mismatch")
+        probe = _run(
+            [
+                "curl",
+                "-fsS",
+                "--max-time",
+                "5",
+                f"http://127.0.0.1:{port}/health",
+            ],
+            check=False,
+        )
+        if probe.returncode != 0 and "worker-relay-owner-mismatch" not in blockers:
+            blockers.append("worker-relay-owner-mismatch")
+    return blockers
+
+
+def _pages_preflight(
+    args: argparse.Namespace,
+    impact: ReleaseImpact,
+    _manifest: Mapping[str, Any],
+    _environment_values: Mapping[str, str],
+) -> list[str]:
+    if "web-static" not in impact.services or args.skip_web:
+        return []
+    target = WEB_PAGES_TARGETS[args.env]
+    project_path = f"pages/projects/{target['project']}"
+    try:
+        project = _pages_api_request(args, "GET", project_path).get("result")
+        domains = _pages_api_request(args, "GET", project_path + "/domains").get(
+            "result"
+        )
+    except ReleaseError:
+        return ["pages-readonly-preflight-unavailable"]
+    if not isinstance(project, Mapping):
+        return ["pages-project-invalid"]
+    blockers: list[str] = []
+    source = project.get("source")
+    config = source.get("config") if isinstance(source, Mapping) else None
+    if project.get("production_branch") != target["branch"]:
+        blockers.append("pages-production-branch-mismatch")
+    if not isinstance(config, Mapping):
+        blockers.append("pages-source-config-unavailable")
+    else:
+        if config.get("production_deployments_enabled") is not False:
+            blockers.append("pages-automatic-production-enabled")
+        if config.get("preview_deployment_setting") != "none":
+            blockers.append("pages-automatic-preview-enabled")
+    canonical = project.get("canonical_deployment")
+    if not isinstance(canonical, Mapping) or not canonical.get("id"):
+        blockers.append("pages-canonical-deployment-unavailable")
+    expected_domain = urllib.parse.urlparse(target["canonical_url"]).hostname
+    active_domains = {
+        str(item.get("name"))
+        for item in domains or []
+        if isinstance(item, Mapping) and item.get("status") == "active"
+    }
+    if expected_domain not in active_domains:
+        blockers.append("pages-canonical-domain-inactive")
+    return blockers
+
+
+def _rollback_preflight(
+    args: argparse.Namespace,
+    impact: ReleaseImpact,
+    _manifest: Mapping[str, Any],
+    _environment_values: Mapping[str, str],
+) -> list[str]:
+    if args.env != "prod":
+        return []
+    previous_sha = str(getattr(args, "previous_sha", "") or "")
+    if "initial-release" in impact.matched_rules:
+        return []
+    if not FULL_SHA_RE.fullmatch(previous_sha):
+        return ["rollback-previous-release-state-unavailable"]
+    cache = Path(args.bundle_cache).expanduser() / previous_sha
+    manifest_available = any(
+        path.is_file()
+        for path in (cache / "release.json", cache / "release" / "release.json")
+    )
+    web_available = any(
+        path.is_file()
+        for path in (cache / "web-dist.tgz", cache / "release" / "web-dist.tgz")
+    )
+    blockers = []
+    if not manifest_available:
+        blockers.append("rollback-previous-manifest-unavailable")
+    if "web-static" in impact.services and not web_available:
+        blockers.append("rollback-previous-web-artifact-unavailable")
+    return blockers
+
+
+def _default_preflight_dependencies() -> PreflightDependencies:
+    return PreflightDependencies(
+        operator=_operator_preflight,
+        cloud=_cloud_preflight,
+        worker=_worker_preflight,
+        pages=_pages_preflight,
+        rollback=_rollback_preflight,
+    )
+
+
+def preflight_release(
+    args: argparse.Namespace,
+    impact: ReleaseImpact,
+    manifest: Mapping[str, Any],
+    environment_values: Mapping[str, str],
+    *,
+    dependencies: PreflightDependencies | None = None,
+) -> dict[str, Any]:
+    dependencies = dependencies or _default_preflight_dependencies()
+    impact_blockers = sorted(set(impact.blockers))
+    checks: dict[str, dict[str, Any]] = {
+        "impact": {
+            "status": "blocked" if impact_blockers else "passed",
+            "blockers": impact_blockers,
+        }
+    }
+    blockers: list[str] = list(impact_blockers)
+    for name in ("operator", "cloud", "worker", "pages", "rollback"):
+        check = getattr(dependencies, name)
+        stage_blockers = sorted(set(check(args, impact, manifest, environment_values)))
+        checks[name] = {
+            "status": "blocked" if stage_blockers else "passed",
+            "blockers": stage_blockers,
+        }
+        blockers.extend(stage_blockers)
+    blockers = sorted(set(blockers))
+    return {
+        "schema_version": 1,
+        "environment": args.env,
+        "git_sha": manifest["git_sha"],
+        "status": "blocked" if blockers else "passed",
+        "mutation_allowed": not blockers,
+        "checks": checks,
+        "blockers": blockers,
+    }
+
+
+def require_preflight(report: Mapping[str, Any]) -> None:
+    blockers = report.get("blockers")
+    if blockers:
+        raise ReleaseError("preflight blocked: " + ", ".join(map(str, blockers)))
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -604,7 +1396,9 @@ def _read_json(path: Path) -> dict[str, Any]:
     return value
 
 
-def _resolve_manifest_path(args: argparse.Namespace) -> Path:
+def _resolve_manifest_path(
+    args: argparse.Namespace, *, allow_fetch: bool = False
+) -> Path:
     if args.manifest:
         return Path(args.manifest)
     cache = Path(args.bundle_cache).expanduser() / args.sha
@@ -612,6 +1406,11 @@ def _resolve_manifest_path(args: argparse.Namespace) -> Path:
     for candidate in candidates:
         if candidate.is_file():
             return candidate
+    if not allow_fetch:
+        raise ReleaseError(
+            "release manifest is unavailable in the local bundle cache; "
+            "preflight and deploy never pull release materials"
+        )
     cache.mkdir(parents=True, exist_ok=True)
     reference = f"{args.bundle_repository}:{args.sha}"
     result = _run(["oras", "pull", reference, "-o", str(cache)], check=False)
@@ -625,16 +1424,13 @@ def _resolve_manifest_path(args: argparse.Namespace) -> Path:
     raise ReleaseError("release bundle does not contain release.json")
 
 
-def _resolve_previous_sha(args: argparse.Namespace) -> str | None:
-    if args.from_sha:
-        return validate_full_sha(args.from_sha)
+def _read_current_state(args: argparse.Namespace) -> dict[str, Any] | None:
     if args.state_file:
-        value = _read_json(Path(args.state_file)).get("git_sha")
-        return validate_full_sha(str(value))
+        return _read_json(Path(args.state_file))
     state_path = f"/var/lib/allbot/deployments/{args.env}/current.json"
     local_state = Path(state_path)
     if local_state.exists():
-        return validate_full_sha(str(_read_json(local_state).get("git_sha")))
+        return _read_json(local_state)
     host = args.remote_host or ENVIRONMENT[args.env]["host"]
     result = _run(
         ["ssh", "-o", "BatchMode=yes", host, f"cat {state_path}"],
@@ -645,6 +1441,18 @@ def _resolve_previous_sha(args: argparse.Namespace) -> str | None:
             state = json.loads(result.stdout)
         except json.JSONDecodeError as exc:
             raise ReleaseError("remote deployment state is invalid") from exc
+        if not isinstance(state, dict):
+            raise ReleaseError("remote deployment state is invalid")
+        return state
+    return None
+
+
+def _resolve_previous_sha(args: argparse.Namespace) -> str | None:
+    state = _read_current_state(args)
+    args.previous_state = state
+    if args.from_sha:
+        return validate_full_sha(args.from_sha)
+    if state:
         return validate_full_sha(str(state.get("git_sha", "")))
     return None
 
@@ -653,9 +1461,11 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
     sha = validate_full_sha(args.sha)
     if not args.skip_git_checks:
         verify_git_release(sha)
-    manifest = _read_json(_resolve_manifest_path(args))
+    manifest = _read_json(
+        _resolve_manifest_path(args, allow_fetch=args.command == "plan")
+    )
     validate_release_manifest(manifest, sha)
-    if not args.skip_ci_checks:
+    if args.command == "plan" and not args.skip_ci_checks:
         verify_release_ci(manifest, sha)
     policy = load_structured_file(Path(args.policy))
     previous_sha = _resolve_previous_sha(args)
@@ -842,9 +1652,21 @@ fi
         legacy_commit = "legacy_cutover_committed=1"
     maintenance_prefix = ""
     maintenance_suffix = ""
-    hold_maintenance = hold_maintenance_for_worker_cutover(args.env, impact)
+    # The transaction owner clears maintenance only after cloud, Worker, Pages,
+    # state persistence and their health checks have all committed.
+    hold_maintenance = impact.level == "maintenance"
     if impact.level == "maintenance":
-        maintenance_file = f"{environment['state_root']}/runtime/GENERATION_MAINTENANCE"
+        maintenance_paths = maintenance_files(
+            args.env, initial_cutover=initial_cutover
+        )
+        maintenance_setup = "".join(
+            f"install -d -m 755 {shlex.quote(str(Path(path).parent))}\n"
+            f"touch {shlex.quote(path)}\n"
+            for path in maintenance_paths
+        )
+        maintenance_clear = "".join(
+            f"rm -f {shlex.quote(path)}\n" for path in maintenance_paths
+        )
         drain_condition = f"{compose} ps -q central-api | grep -q ."
         drain_counts = (
             f"{compose} exec -T central-api python -c "
@@ -877,12 +1699,10 @@ legacy_running_file={release_dir}/legacy-cloud-running.txt
   done < "$legacy_running_file"
 fi
 """
-        maintenance_prefix = f"""install -d -m 755 {environment["state_root"]}/runtime
-touch {maintenance_file}
-{legacy_setup}cleanup_maintenance() {{
+        maintenance_prefix = f"""{maintenance_setup}{legacy_setup}cleanup_maintenance() {{
   status=$?
   set +e
-  {legacy_restore}rm -f {maintenance_file}
+  {legacy_restore}
   return "$status"
 }}
 trap cleanup_maintenance EXIT
@@ -902,7 +1722,7 @@ fi
                 "trap - EXIT\necho 'generation maintenance held for worker cutover'\n"
             )
         else:
-            maintenance_suffix = f"rm -f {maintenance_file}\ntrap - EXIT\n"
+            maintenance_suffix = f"{maintenance_clear}trap - EXIT\n"
     script = f"""set -euo pipefail
 test -d {shlex.quote(repo)}/.git || {{ echo 'release host is not bootstrapped; run scripts/bootstrap_release_host.sh' >&2; exit 3; }}
 git -C {shlex.quote(repo)} fetch --prune origin main
@@ -996,6 +1816,19 @@ def _verify_web_artifact(path: Path, expected_hash: str) -> None:
         raise ReleaseError("web artifact checksum does not match release manifest")
 
 
+def _resolved_web_artifact(
+    args: argparse.Namespace, manifest: Mapping[str, Any]
+) -> Path:
+    artifact = Path(args.web_artifact).expanduser()
+    if artifact.is_file() or args.web_artifact != "web-dist.tgz":
+        return artifact
+    cache = Path(args.bundle_cache).expanduser() / str(manifest["git_sha"])
+    for candidate in (cache / "web-dist.tgz", cache / "release" / "web-dist.tgz"):
+        if candidate.is_file():
+            return candidate
+    return artifact
+
+
 def load_web_runtime_config(
     path: Path,
     environment: str,
@@ -1064,19 +1897,151 @@ def _pages_deployment_url(output: str) -> str:
     return matches[-1] if matches else ""
 
 
+def _pages_runtime_payload(script: str) -> Mapping[str, Any]:
+    prefix = "window.__ALLBOT_CONFIG__ = Object.freeze("
+    suffix = ");"
+    stripped = script.strip()
+    if not stripped.startswith(prefix) or not stripped.endswith(suffix):
+        raise ReleaseError("canonical runtime config is not the expected JavaScript")
+    try:
+        payload = json.loads(stripped[len(prefix) : -len(suffix)])
+    except json.JSONDecodeError as exc:
+        raise ReleaseError("canonical runtime config JavaScript is invalid") from exc
+    if not isinstance(payload, Mapping):
+        raise ReleaseError("canonical runtime config payload is invalid")
+    return payload
+
+
+def _verify_canonical_pages_runtime(
+    args: argparse.Namespace, sha: str, runtime_revision: str
+) -> None:
+    target = WEB_PAGES_TARGETS[args.env]
+    runtime_url = (
+        f"{target['canonical_url'].rstrip('/')}/allbot-runtime-config.js"
+        f"?release_sha={urllib.parse.quote(sha)}"
+    )
+    request = urllib.request.Request(
+        runtime_url,
+        headers={"Accept": "application/javascript", "Cache-Control": "no-cache"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            content_type = str(response.headers.get("Content-Type", ""))
+            body = response.read().decode("utf-8")
+    except (OSError, urllib.error.HTTPError, UnicodeDecodeError) as exc:
+        raise ReleaseError("canonical Pages runtime config request failed") from exc
+    if "javascript" not in content_type.lower():
+        raise ReleaseError("canonical Pages runtime config is not JavaScript")
+    payload = _pages_runtime_payload(body)
+    if payload.get("release_sha") != sha:
+        raise ReleaseError("canonical Pages runtime release SHA does not match")
+    if payload.get("runtime_config_revision") != runtime_revision:
+        raise ReleaseError("canonical Pages runtime config revision does not match")
+
+
+def verify_pages_canonical_deployment(
+    args: argparse.Namespace,
+    sha: str,
+    runtime_revision: str,
+) -> dict[str, Any]:
+    """Verify the API identity and public canonical content of a Pages release."""
+
+    target = WEB_PAGES_TARGETS[args.env]
+    project_path = f"pages/projects/{target['project']}"
+    deployments = _pages_api_request(
+        args, "GET", project_path + "/deployments?env=production"
+    ).get("result")
+    if not isinstance(deployments, list):
+        raise ReleaseError("Pages production deployment list is invalid")
+    deployment: Mapping[str, Any] | None = None
+    for candidate in deployments:
+        if not isinstance(candidate, Mapping):
+            continue
+        trigger = candidate.get("deployment_trigger")
+        metadata = trigger.get("metadata") if isinstance(trigger, Mapping) else None
+        stage = candidate.get("latest_stage")
+        if (
+            candidate.get("environment") == "production"
+            and isinstance(metadata, Mapping)
+            and metadata.get("branch") == target["branch"]
+            and metadata.get("commit_hash") == sha
+            and isinstance(stage, Mapping)
+            and stage.get("status") == "success"
+        ):
+            deployment = candidate
+            break
+    if deployment is None or not deployment.get("id"):
+        raise ReleaseError("matching successful Pages production deployment is missing")
+    deployment_id = str(deployment["id"])
+    project = _pages_api_request(args, "GET", project_path).get("result")
+    canonical = project.get("canonical_deployment") if isinstance(project, Mapping) else None
+    if not isinstance(canonical, Mapping) or str(canonical.get("id")) != deployment_id:
+        raise ReleaseError("Pages canonical deployment does not match the new release")
+
+    _verify_canonical_pages_runtime(args, sha, runtime_revision)
+    return {
+        "deployment_id": deployment_id,
+        "environment": "production",
+        "canonical_url": target["canonical_url"],
+        "canonical_verified": True,
+    }
+
+
+def _current_pages_deployment_id(args: argparse.Namespace) -> str:
+    target = WEB_PAGES_TARGETS[args.env]
+    project = _pages_api_request(
+        args, "GET", f"pages/projects/{target['project']}"
+    ).get("result")
+    canonical = project.get("canonical_deployment") if isinstance(project, Mapping) else None
+    if not isinstance(canonical, Mapping) or not canonical.get("id"):
+        raise ReleaseError("Pages canonical deployment is unavailable")
+    return str(canonical["id"])
+
+
+def _rollback_pages(
+    args: argparse.Namespace, transaction: Mapping[str, Any]
+) -> None:
+    previous = transaction.get("previous")
+    deployment_id = (
+        previous.get("pages_deployment_id") if isinstance(previous, Mapping) else None
+    )
+    if not deployment_id:
+        raise ReleaseError("previous Pages production deployment is unavailable")
+    target = WEB_PAGES_TARGETS[args.env]
+    project_path = f"pages/projects/{target['project']}"
+    current = _current_pages_deployment_id(args)
+    if current == str(deployment_id):
+        return
+    _pages_api_request(
+        args,
+        "POST",
+        f"{project_path}/deployments/{deployment_id}/rollback",
+        payload={},
+    )
+    deadline = time.monotonic() + getattr(args, "pages_verify_timeout_seconds", 180)
+    while True:
+        project = _pages_api_request(args, "GET", project_path).get("result")
+        canonical = (
+            project.get("canonical_deployment") if isinstance(project, Mapping) else None
+        )
+        if isinstance(canonical, Mapping) and str(canonical.get("id")) == str(
+            deployment_id
+        ):
+            break
+        if time.monotonic() >= deadline:
+            raise ReleaseError(
+                "Pages rollback did not restore the previous canonical deployment"
+            )
+        time.sleep(getattr(args, "pages_verify_interval_seconds", 5))
+
+
 def _deploy_web(
     args: argparse.Namespace,
     manifest: Mapping[str, Any],
-) -> dict[str, str] | None:
+) -> dict[str, Any] | None:
     if args.skip_web:
         return None
-    artifact = Path(args.web_artifact)
-    if not artifact.is_file() and args.web_artifact == "web-dist.tgz":
-        cache = Path(args.bundle_cache).expanduser() / str(manifest["git_sha"])
-        for candidate in (cache / "web-dist.tgz", cache / "release/web-dist.tgz"):
-            if candidate.is_file():
-                artifact = candidate
-                break
+    artifact = _resolved_web_artifact(args, manifest)
     _verify_web_artifact(artifact, str(manifest["web_artifact_sha256"]))
     sha = str(manifest["git_sha"])
     target = WEB_PAGES_TARGETS[args.env]
@@ -1084,11 +2049,7 @@ def _deploy_web(
         Path(args.web_runtime_config),
         args.env,
     )
-    token_file = Path(args.cloudflare_token_file)
-    if not token_file.is_file():
-        raise ReleaseError(f"Cloudflare Pages token file is unavailable: {token_file}")
-    if token_file.stat().st_mode & 0o077:
-        raise ReleaseError("Cloudflare Pages token file permissions must be 600")
+    token_file = _token_file(args.cloudflare_token_file)
     if not args.execute:
         print(
             "[dry-run] extract verified Web artifact and deploy it to Pages project "
@@ -1138,14 +2099,22 @@ def _deploy_web(
         )
         if result.returncode != 0:
             raise ReleaseError("Cloudflare Pages deployment failed")
-        deployment_url = _pages_deployment_url(result.stdout + "\n" + result.stderr)
-        if not deployment_url:
-            raise ReleaseError("Cloudflare Pages deployment URL is missing")
+        deadline = time.monotonic() + getattr(args, "pages_verify_timeout_seconds", 180)
+        while True:
+            try:
+                verified = verify_pages_canonical_deployment(
+                    args, sha, runtime_revision
+                )
+                break
+            except ReleaseError:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(getattr(args, "pages_verify_interval_seconds", 5))
         return {
             "project": target["project"],
             "branch": target["branch"],
             "runtime_config_revision": runtime_revision,
-            "deployment_url": deployment_url,
+            **verified,
         }
 
 
@@ -1175,7 +2144,7 @@ def _deploy_worker(
     checkout = root / "releases" / sha
     release_dir = root / "release-env" / sha
     release_path = release_dir / "release.env"
-    env_file = Path(args.env_file or ENVIRONMENT[args.env]["env_file"])
+    env_file = local_env_file(args)
     project = f"allbot-worker-{args.env}"
     service_args = ["worker-relay", *sorted(selected)]
     compose = [
@@ -1200,13 +2169,11 @@ def _deploy_worker(
         )
         if "initial-release" in impact.matched_rules:
             print(
-                "[dry-run] stop matching legacy test worker containers: "
-                + " ".join(legacy_worker_containers(selected))
+                f"[dry-run] record and stop matching legacy {args.env} worker containers: "
+                + " ".join(legacy_worker_containers(args.env, selected))
             )
         if hold_maintenance_for_worker_cutover(args.env, impact):
-            print(
-                "[dry-run] clear cloud-test generation maintenance after worker health"
-            )
+            print("[dry-run] hold generation maintenance for transaction commit")
         return
     if not (repo / ".git").is_dir():
         raise ReleaseError(
@@ -1244,9 +2211,19 @@ def _deploy_worker(
     if "initial-release" in impact.matched_rules:
         existing = [
             name
-            for name in legacy_worker_containers(selected)
-            if _run(["docker", "inspect", name], check=False).returncode == 0
+            for name in legacy_worker_containers(args.env, selected)
+            if _run(
+                ["docker", "inspect", "--format", "{{.State.Running}}", name],
+                check=False,
+            ).stdout.strip()
+            == "true"
         ]
+        snapshot = release_dir / "legacy-worker-running.txt"
+        snapshot_temp = snapshot.with_suffix(".tmp")
+        snapshot_temp.write_text(
+            "".join(f"{name}\n" for name in existing), encoding="utf-8"
+        )
+        snapshot_temp.replace(snapshot)
         if existing:
             _run(["docker", "stop", *existing])
     # The impact planner has already elevated worker changes to drain level.
@@ -1266,15 +2243,512 @@ def _deploy_worker(
         env=compose_env,
     )
     _run([*compose, "ps", *service_args], env=compose_env)
-    if hold_maintenance_for_worker_cutover(args.env, impact):
+
+
+def _worker_compose_command(
+    args: argparse.Namespace,
+    sha: str,
+) -> tuple[list[str], dict[str, str]]:
+    root = Path(args.worker_checkout_root).expanduser()
+    checkout = root / "releases" / sha
+    release_path = root / "release-env" / sha / "release.env"
+    env_file = local_env_file(args)
+    return (
+        [
+            "docker",
+            "compose",
+            "--project-name",
+            f"allbot-worker-{args.env}",
+            "--env-file",
+            str(checkout / "deploy/env.defaults"),
+            "--env-file",
+            str(env_file),
+            "--env-file",
+            str(release_path),
+            "-f",
+            str(checkout / "deploy/docker-compose-worker-base.yml"),
+        ],
+        {"ALLBOT_ENV_FILE": str(env_file)},
+    )
+
+
+def _rollback_worker_stack(
+    args: argparse.Namespace,
+    transaction: Mapping[str, Any],
+    environment_values: Mapping[str, str],
+) -> None:
+    selected = _split_services(
+        [environment_values.get("ALLBOT_WORKER_SERVICES", "")]
+    )
+    if not selected:
+        return
+    service_args = ["worker-relay", *sorted(selected)]
+    previous = transaction.get("previous")
+    if not isinstance(previous, Mapping):
+        raise ReleaseError("transaction previous stack is invalid")
+    previous_kind = previous.get("kind")
+    target_sha = str(transaction["target_sha"])
+    if previous_kind == "legacy":
+        project = f"allbot-worker-{args.env}"
+        for service in service_args:
+            result = _run(
+                [
+                    "docker",
+                    "ps",
+                    "-aq",
+                    "--filter",
+                    f"label=com.docker.compose.project={project}",
+                    "--filter",
+                    f"label=com.docker.compose.service={service}",
+                ],
+                check=False,
+            )
+            ids = result.stdout.split()
+            if ids:
+                _run(["docker", "rm", "-f", *ids], check=False)
+        snapshot = (
+            Path(args.worker_checkout_root).expanduser()
+            / "release-env"
+            / target_sha
+            / "legacy-worker-running.txt"
+        )
+        expected = legacy_worker_containers(args.env, selected)
+        names = (
+            [line.strip() for line in snapshot.read_text().splitlines() if line.strip()]
+            if snapshot.is_file()
+            else [
+                name
+                for name in expected
+                if _run(
+                    ["docker", "inspect", "--format", "{{.State.Running}}", name],
+                    check=False,
+                ).stdout.strip()
+                == "true"
+            ]
+        )
+        if not names:
+            raise ReleaseError("legacy Worker recovery snapshot is unavailable")
+        _run(["docker", "start", *names])
+        for name in names:
+            running = _run(
+                ["docker", "inspect", "--format", "{{.State.Running}}", name]
+            ).stdout.strip()
+            if running != "true":
+                raise ReleaseError("legacy Worker container recovery failed")
+    elif previous_kind == "immutable":
+        previous_sha = validate_full_sha(str(previous.get("git_sha", "")))
+        compose, compose_env = _worker_compose_command(args, previous_sha)
+        _run([*compose, "config", "-q"], env=compose_env)
+        _run(
+            [
+                *compose,
+                "up",
+                "-d",
+                "--no-deps",
+                "--wait",
+                "--wait-timeout",
+                "180",
+                *service_args,
+            ],
+            env=compose_env,
+        )
+    else:
+        raise ReleaseError("transaction previous Worker kind is invalid")
+    port = environment_values.get("ALLBOT_WORKER_RELAY_PORT", "").strip()
+    if not port.isdigit() or _run(
+        ["curl", "-fsS", "--max-time", "10", f"http://127.0.0.1:{port}/health"],
+        check=False,
+    ).returncode:
+        raise ReleaseError("recovered Worker relay health check failed")
+
+
+def _cloud_compose_command(
+    args: argparse.Namespace,
+    sha: str,
+) -> str:
+    environment = ENVIRONMENT[args.env]
+    checkout = f"{args.remote_checkout_root}/releases/{sha}"
+    env_file = args.remote_env_file or environment["env_file"]
+    release_dir = f"/var/lib/allbot/releases/{sha}"
+    return (
+        f"docker compose --project-name {shlex.quote(environment['project'])} "
+        f"--env-file {shlex.quote(checkout + '/deploy/env.defaults')} "
+        f"--env-file {shlex.quote(env_file)} "
+        f"--env-file {shlex.quote(release_dir + '/release.env')} "
+        f"-f {shlex.quote(checkout + '/deploy/docker-compose-cloud-base.yml')} "
+        f"-f {shlex.quote(checkout + '/' + environment['overlay'])} "
+        "--profile bot --profile qqcc-bot --profile qqcc-private-bots"
+    )
+
+
+def _rollback_cloud_stack(
+    args: argparse.Namespace,
+    impact: ReleaseImpact,
+    transaction: Mapping[str, Any],
+    environment_values: Mapping[str, str],
+) -> None:
+    environment = ENVIRONMENT[args.env]
+    host = args.remote_host or environment["host"]
+    selected, _ = filter_enabled_cloud_services(
+        args.env,
+        cloud_services_for_release(args.env, impact),
+        environment_values,
+    )
+    services = sorted(selected)
+    if not services:
+        return
+    service_words = " ".join(shlex.quote(service) for service in services)
+    previous = transaction.get("previous")
+    if not isinstance(previous, Mapping):
+        raise ReleaseError("transaction previous stack is invalid")
+    previous_kind = previous.get("kind")
+    if previous_kind == "legacy":
+        target_sha = str(transaction["target_sha"])
+        snapshot = f"/var/lib/allbot/releases/{target_sha}/legacy-cloud-running.txt"
+        project = environment["project"]
+        removal = ""
+        for service in services:
+            removal += (
+                "ids=\"$(docker ps -aq "
+                f"--filter label=com.docker.compose.project={shlex.quote(project)} "
+                f"--filter label=com.docker.compose.service={shlex.quote(service)})\"\n"
+                '[ -z "$ids" ] || docker rm -f $ids\n'
+            )
+        expected_legacy = " ".join(
+            shlex.quote(name) for name in legacy_cloud_containers(args.env, services)
+        )
+        script = f"""set -euo pipefail
+{removal}if [ -s {shlex.quote(snapshot)} ]; then
+  while read -r name; do [ -z "$name" ] || docker start "$name" >/dev/null; done < {shlex.quote(snapshot)}
+else
+  for name in {expected_legacy}; do
+    test "$(docker inspect --format '{{{{.State.Running}}}}' "$name" 2>/dev/null)" = true && printf '%s\\n' "$name"
+  done > {shlex.quote(snapshot + '.recovered')}
+  test -s {shlex.quote(snapshot + '.recovered')}
+fi
+source_file={shlex.quote(snapshot)}
+[ -s "$source_file" ] || source_file={shlex.quote(snapshot + '.recovered')}
+while read -r name; do
+  [ -z "$name" ] && continue
+  test "$(docker inspect --format '{{{{.State.Running}}}}' "$name")" = true
+  deadline=$(( $(date +%s) + 180 ))
+  while true; do
+    health="$(docker inspect --format '{{{{if .State.Health}}}}{{{{.State.Health.Status}}}}{{{{else}}}}none{{{{end}}}}' "$name")"
+    [ "$health" = healthy ] || [ "$health" = none ] && break
+    [ "$(date +%s)" -lt "$deadline" ] || exit 1
+    sleep 2
+  done
+done < "$source_file"
+"""
+    elif previous_kind == "immutable":
+        previous_sha = validate_full_sha(str(previous.get("git_sha", "")))
+        compose = _cloud_compose_command(args, previous_sha)
+        script = f"""set -euo pipefail
+test -d {shlex.quote(args.remote_checkout_root + '/releases/' + previous_sha)}
+test -f {shlex.quote('/var/lib/allbot/releases/' + previous_sha + '/release.env')}
+{compose} config -q
+{compose} up -d --no-deps --wait --wait-timeout 180 {service_words}
+{compose} ps {service_words}
+"""
+    else:
+        raise ReleaseError("transaction previous cloud kind is invalid")
+    _remote_shell(host, script, execute=True)
+
+
+def _clear_transaction_maintenance(
+    args: argparse.Namespace, transaction: Mapping[str, Any]
+) -> None:
+    previous = transaction.get("previous")
+    initial = isinstance(previous, Mapping) and previous.get("kind") == "legacy"
+    paths = maintenance_files(args.env, initial_cutover=initial)
+    transaction_id = str(transaction["transaction_id"])
+    staged = (
+        f"/var/lib/allbot/deployments/{args.env}/transactions/"
+        f"{transaction_id}.state.json"
+    )
+    current = f"/var/lib/allbot/deployments/{args.env}/current.json"
+    history = (
+        f"/var/lib/allbot/deployments/{args.env}/history/{transaction_id}.json"
+    )
+    forward_commit = transaction.get("phase") == "state_completed"
+    state_action = f"rm -f {shlex.quote(staged)}\n"
+    if forward_commit:
+        state_action = (
+            f"test -s {shlex.quote(staged)}\n"
+            f"install -d -m 755 {shlex.quote(str(Path(history).parent))}\n"
+            f"cp {shlex.quote(staged)} {shlex.quote(history + '.tmp')}\n"
+            f"mv -f {shlex.quote(history + '.tmp')} {shlex.quote(history)}\n"
+            f"mv -f {shlex.quote(staged)} {shlex.quote(current)}\n"
+        )
+    elif args.execute:
+        previous_state = previous.get("state") if isinstance(previous, Mapping) else None
+        host = args.remote_host or ENVIRONMENT[args.env]["host"]
+        if isinstance(previous_state, Mapping):
+            payload = (
+                json.dumps(previous_state, ensure_ascii=False, indent=2, sort_keys=True)
+                + "\n"
+            )
+            restore = (
+                f"set -e; cat > {shlex.quote(current + '.restore')}; "
+                f"mv -f {shlex.quote(current + '.restore')} {shlex.quote(current)}"
+            )
+            _run(
+                ["ssh", "-o", "BatchMode=yes", host, restore],
+                input_text=payload,
+            )
+        else:
+            remove_target = (
+                f"if test -f {shlex.quote(current)} && "
+                f"grep -Fq {shlex.quote(str(transaction['target_sha']))} "
+                f"{shlex.quote(current)}; then rm -f {shlex.quote(current)}; fi"
+            )
+            _remote_shell(host, remove_target, execute=True)
+    script = "set -euo pipefail\n" + state_action + "".join(
+        f"rm -f {shlex.quote(path)}\n" for path in paths
+    )
+    host = args.remote_host or ENVIRONMENT[args.env]["host"]
+    _remote_shell(host, script, execute=args.execute)
+
+
+def _enable_transaction_maintenance(
+    args: argparse.Namespace, transaction: Mapping[str, Any]
+) -> None:
+    previous = transaction.get("previous")
+    initial = isinstance(previous, Mapping) and previous.get("kind") == "legacy"
+    script = "set -euo pipefail\n" + "".join(
+        f"install -d -m 755 {shlex.quote(str(Path(path).parent))}\n"
+        f"touch {shlex.quote(path)}\n"
+        for path in maintenance_files(args.env, initial_cutover=initial)
+    )
+    host = args.remote_host or ENVIRONMENT[args.env]["host"]
+    _remote_shell(host, script, execute=args.execute)
+
+
+def _validate_recovered_stack(
+    args: argparse.Namespace,
+    impact: ReleaseImpact,
+    transaction: Mapping[str, Any],
+    environment_values: Mapping[str, str],
+) -> None:
+    previous = transaction.get("previous")
+    if not isinstance(previous, Mapping):
+        raise ReleaseError("transaction previous stack is invalid")
+    selected_cloud, _ = filter_enabled_cloud_services(
+        args.env,
+        cloud_services_for_release(args.env, impact),
+        environment_values,
+    )
+    if selected_cloud:
         environment = ENVIRONMENT[args.env]
         host = args.remote_host or environment["host"]
-        maintenance_file = f"{environment['state_root']}/runtime/GENERATION_MAINTENANCE"
-        _remote_shell(
-            host,
-            f"set -euo pipefail\nrm -f {shlex.quote(maintenance_file)}\n",
-            execute=True,
+        if previous.get("kind") == "legacy":
+            snapshot = (
+                f"/var/lib/allbot/releases/{transaction['target_sha']}/"
+                "legacy-cloud-running.txt"
+            )
+            script = f"""set -euo pipefail
+source_file={shlex.quote(snapshot)}
+[ -s "$source_file" ] || source_file={shlex.quote(snapshot + '.recovered')}
+test -s "$source_file"
+while read -r name; do
+  [ -z "$name" ] && continue
+  test "$(docker inspect --format '{{{{.State.Running}}}}' "$name")" = true
+  health="$(docker inspect --format '{{{{if .State.Health}}}}{{{{.State.Health.Status}}}}{{{{else}}}}none{{{{end}}}}' "$name")"
+  [ "$health" = healthy ] || [ "$health" = none ]
+done < "$source_file"
+"""
+        else:
+            previous_sha = validate_full_sha(str(previous.get("git_sha", "")))
+            compose = _cloud_compose_command(args, previous_sha)
+            services = " ".join(shlex.quote(item) for item in sorted(selected_cloud))
+            script = f"""set -euo pipefail
+for service in {services}; do
+  container_id="$({compose} ps -q "$service")"
+  test -n "$container_id"
+  test "$(docker inspect --format '{{{{.State.Running}}}}' "$container_id")" = true
+  health="$(docker inspect --format '{{{{if .State.Health}}}}{{{{.State.Health.Status}}}}{{{{else}}}}none{{{{end}}}}' "$container_id")"
+  [ "$health" = healthy ] || [ "$health" = none ]
+done
+"""
+        _remote_shell(host, script, execute=True)
+    if "worker" in impact.services:
+        port = environment_values.get("ALLBOT_WORKER_RELAY_PORT", "").strip()
+        if not port.isdigit() or _run(
+            [
+                "curl",
+                "-fsS",
+                "--max-time",
+                "10",
+                f"http://127.0.0.1:{port}/health",
+            ],
+            check=False,
+        ).returncode:
+            raise ReleaseError("recovered Worker relay is unhealthy")
+        selected = _split_services(
+            [environment_values.get("ALLBOT_WORKER_SERVICES", "")]
         )
+        expected_agents = {
+            environment_values.get(
+                f"ALLBOT_WORKER_{service.removeprefix('worker-')}_AGENT_ID", ""
+            ).strip()
+            for service in selected
+        }
+        expected_agents.discard("")
+        central = environment_values.get("ALLBOT_WORKER_CENTRAL_API_URL", "").rstrip(
+            "/"
+        )
+        deadline = time.monotonic() + 180
+        while True:
+            response = _run(
+                ["curl", "-fsS", "--max-time", "10", f"{central}/system/workers"],
+                check=False,
+            )
+            observed: set[str] = set()
+            if response.returncode == 0:
+                try:
+                    document = json.loads(response.stdout)
+                except json.JSONDecodeError:
+                    document = {}
+                workers = document.get("workers") if isinstance(document, Mapping) else None
+                if isinstance(workers, list):
+                    observed = {
+                        str(item.get("agent_id"))
+                        for item in workers
+                        if isinstance(item, Mapping)
+                        and item.get("agent_id")
+                        and item.get("status") not in {"error", "quarantined"}
+                    }
+            if expected_agents and expected_agents <= observed:
+                break
+            if time.monotonic() >= deadline:
+                raise ReleaseError("recovered Worker heartbeat verification failed")
+            time.sleep(5)
+    if "web-static" in impact.services:
+        expected = previous.get("pages_deployment_id")
+        if not expected or _current_pages_deployment_id(args) != str(expected):
+            raise ReleaseError("recovered Pages canonical deployment is incorrect")
+        previous_state = previous.get("state")
+        web = (
+            previous_state.get("web_deployment")
+            if isinstance(previous_state, Mapping)
+            else None
+        )
+        if isinstance(web, Mapping) and web.get("runtime_config_revision"):
+            previous_sha = validate_full_sha(str(previous_state.get("git_sha", "")))
+            _verify_canonical_pages_runtime(
+                args, previous_sha, str(web["runtime_config_revision"])
+            )
+
+
+def _transaction_dependencies(
+    args: argparse.Namespace,
+    impact: ReleaseImpact,
+    manifest: Mapping[str, Any],
+    release_env: str,
+    environment_values: Mapping[str, str],
+    config_revision: str,
+    transaction: dict[str, Any],
+) -> ReleaseTransactionDependencies:
+    web_result: dict[str, Mapping[str, Any] | None] = {"value": None}
+
+    def deploy_pages() -> Mapping[str, Any] | None:
+        if "web-static" not in impact.services:
+            return None
+        value = _deploy_web(args, manifest)
+        web_result["value"] = value
+        return value
+
+    def stage_state() -> None:
+        state_transaction = dict(transaction)
+        state_transaction["completed_stages"] = [
+            *transaction.get("completed_stages", []),
+            "state",
+        ]
+        _write_state(
+            args,
+            impact,
+            manifest,
+            config_revision,
+            web_deployment=web_result["value"],
+            transaction=state_transaction,
+            stage_only=True,
+        )
+
+    def persist(value: Mapping[str, Any]) -> None:
+        if args.execute:
+            _write_transaction_journal(args, value)
+        else:
+            print(
+                "[dry-run] persist transaction journal "
+                f"{value.get('transaction_id')} phase={value.get('phase')}"
+            )
+
+    return ReleaseTransactionDependencies(
+        cloud=lambda: _deploy_cloud(
+            args, impact, manifest, release_env, environment_values
+        ),
+        worker=(
+            (lambda: _deploy_worker(
+                args, impact, manifest, release_env, environment_values
+            ))
+            if "worker" in impact.services
+            else (lambda: None)
+        ),
+        pages=deploy_pages,
+        state=stage_state,
+        rollback_pages=(
+            (lambda: _rollback_pages(args, transaction))
+            if "web-static" in impact.services and not args.skip_web
+            else (lambda: None)
+        ),
+        rollback_worker=(
+            (lambda: _rollback_worker_stack(args, transaction, environment_values))
+            if "worker" in impact.services
+            else (lambda: None)
+        ),
+        rollback_cloud=lambda: _rollback_cloud_stack(
+            args, impact, transaction, environment_values
+        ),
+        validate_recovery=lambda: _validate_recovered_stack(
+            args, impact, transaction, environment_values
+        ),
+        clear_maintenance=lambda: _clear_transaction_maintenance(args, transaction),
+        journal=persist,
+        enable_maintenance=lambda: _enable_transaction_maintenance(args, transaction),
+    )
+
+
+def _recovery_dependencies(
+    args: argparse.Namespace,
+    impact: ReleaseImpact,
+    transaction: dict[str, Any],
+    environment_values: Mapping[str, str],
+) -> ReleaseTransactionDependencies:
+    return ReleaseTransactionDependencies(
+        cloud=lambda: None,
+        worker=lambda: None,
+        pages=lambda: None,
+        state=lambda: None,
+        rollback_pages=(
+            (lambda: _rollback_pages(args, transaction))
+            if "web-static" in impact.services
+            else (lambda: None)
+        ),
+        rollback_worker=(
+            (lambda: _rollback_worker_stack(args, transaction, environment_values))
+            if "worker" in impact.services
+            else (lambda: None)
+        ),
+        rollback_cloud=lambda: _rollback_cloud_stack(
+            args, impact, transaction, environment_values
+        ),
+        validate_recovery=lambda: _validate_recovered_stack(
+            args, impact, transaction, environment_values
+        ),
+        clear_maintenance=lambda: _clear_transaction_maintenance(args, transaction),
+        journal=lambda value: _write_transaction_journal(args, value),
+        enable_maintenance=lambda: _enable_transaction_maintenance(args, transaction),
+    )
 
 
 def _promotion_check(args: argparse.Namespace, manifest: Mapping[str, Any]) -> None:
@@ -1375,7 +2849,10 @@ def validate_test_runtime_for_acceptance(state: Mapping[str, Any]) -> None:
     health = state.get("health")
     if not isinstance(health, Mapping):
         raise ReleaseError("cloud-test deployment health is unavailable")
-    if health.get("web") != "artifact-checksum-passed":
+    if health.get("web") not in {
+        "artifact-checksum-passed",  # schema v1 compatibility
+        "canonical-runtime-verified",
+    }:
         raise ReleaseError(
             "cloud-test Web artifact has not passed deployment verification"
         )
@@ -1461,12 +2938,14 @@ def _write_state(
     impact: ReleaseImpact,
     manifest: Mapping[str, Any],
     config_revision: str,
-    web_deployment: Mapping[str, str] | None = None,
+    web_deployment: Mapping[str, Any] | None = None,
+    transaction: Mapping[str, Any] | None = None,
+    stage_only: bool = False,
 ) -> None:
     environment = ENVIRONMENT[args.env]
     host = args.remote_host or environment["host"]
     state = {
-        "schema_version": 1,
+        "schema_version": 2,
         "environment": args.env,
         "git_sha": manifest["git_sha"],
         "images": manifest["images"],
@@ -1496,10 +2975,33 @@ def _write_state(
     }
     if web_deployment:
         state["web_deployment"] = dict(web_deployment)
+        if web_deployment.get("canonical_verified") is True:
+            state["health"]["web"] = "canonical-runtime-verified"
+    if transaction:
+        state["transaction"] = {
+            "id": transaction.get("transaction_id"),
+            "status": "committed",
+            "completed_stages": list(transaction.get("completed_stages", [])),
+        }
     payload = json.dumps(state, sort_keys=True, indent=2) + "\n"
     path = f"/var/lib/allbot/deployments/{args.env}/current.json"
+    if stage_only:
+        if not transaction:
+            raise ReleaseError("staged deployment state requires a transaction")
+        path = (
+            f"/var/lib/allbot/deployments/{args.env}/transactions/"
+            f"{transaction['transaction_id']}.state.json"
+        )
     if not args.execute:
         print(f"[dry-run] write deployment state {host}:{path}")
+        return
+    if stage_only:
+        command = (
+            f"set -e; install -d -m 755 {shlex.quote(str(Path(path).parent))}; "
+            f"cat > {shlex.quote(path + '.tmp')}; "
+            f"mv -f {shlex.quote(path + '.tmp')} {shlex.quote(path)}"
+        )
+        _run(["ssh", "-o", "BatchMode=yes", host, command], input_text=payload)
         return
     history = (
         f"/var/lib/allbot/deployments/{args.env}/history/{manifest['git_sha']}.json"
@@ -1515,7 +3017,7 @@ def _write_state(
 
 
 def _validate_local_env(args: argparse.Namespace) -> tuple[dict[str, str], str]:
-    path = Path(args.env_file or ENVIRONMENT[args.env]["env_file"])
+    path = local_env_file(args)
     values = parse_env_file(path)
     schema = load_structured_file(Path(args.schema))
     revision = validate_environment(schema, args.env, values)
@@ -1526,6 +3028,7 @@ def _add_release_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--env", choices=("test", "prod"), required=True)
     parser.add_argument("--sha")
     parser.add_argument("--to", help="rollback target SHA (alias for --sha)")
+    parser.add_argument("--transaction", help="persisted release transaction SHA")
     parser.add_argument("--from-sha")
     parser.add_argument("--manifest")
     parser.add_argument(
@@ -1555,6 +3058,8 @@ def _add_release_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--confirm-legacy-cutover", action="store_true")
     parser.add_argument("--drain-timeout-seconds", type=int, default=7200)
     parser.add_argument("--drain-interval-seconds", type=int, default=15)
+    parser.add_argument("--pages-verify-timeout-seconds", type=int, default=180)
+    parser.add_argument("--pages-verify-interval-seconds", type=int, default=5)
     parser.add_argument("--skip-web", action="store_true")
     parser.add_argument("--remote-host")
     parser.add_argument("--remote-env-file")
@@ -1568,11 +3073,11 @@ def _add_release_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--worker-checkout-root",
-        default="/home/deploy/APP/All_bot-release",
+        default=str(Path.home() / "APP" / "All_bot-release"),
     )
     parser.add_argument(
         "--cloudflare-token-file",
-        default="/home/deploy/.config/allbot/cloudflare-pages.token",
+        default=str(Path.home() / ".config" / "allbot" / "cloudflare-pages.token"),
     )
     parser.add_argument(
         "--cloudflare-account-id",
@@ -1583,7 +3088,7 @@ def _add_release_arguments(parser: argparse.ArgumentParser) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for command in ("plan", "deploy", "rollback"):
+    for command in ("plan", "preflight", "deploy", "rollback", "recover"):
         child = subparsers.add_parser(command)
         _add_release_arguments(child)
     validate = subparsers.add_parser("validate-env")
@@ -1615,6 +3120,39 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "verify-test":
             _mark_test_verified(args)
             return 0
+        if args.command == "recover":
+            if not args.transaction:
+                raise ReleaseError("recover requires --transaction")
+            transaction_id = validate_full_sha(args.transaction)
+            if not args.execute:
+                raise ReleaseError("recover requires --execute")
+            if args.env == "prod" and not args.confirm_prod:
+                raise ReleaseError("production recover requires --confirm-prod")
+            environment_values, _ = _validate_local_env(args)
+            transaction = _read_transaction_journal(args, transaction_id)
+            services = transaction.get("services")
+            if not isinstance(services, list):
+                raise ReleaseError("transaction services are invalid")
+            impact = ReleaseImpact(
+                services=services,
+                level=str(transaction.get("level", "maintenance")),
+                matched_rules=["transaction-recovery"],
+            )
+            dependencies = _recovery_dependencies(
+                args, impact, transaction, environment_values
+            )
+            recover_release_transaction(transaction, dependencies)
+            print(
+                json.dumps(
+                    {
+                        "transaction_id": transaction_id,
+                        "status": transaction["status"],
+                        "phase": transaction["phase"],
+                    },
+                    sort_keys=True,
+                )
+            )
+            return 0
         if args.command == "rollback" and args.to:
             if args.sha and args.sha != args.to:
                 raise ReleaseError("rollback --sha and --to must identify the same SHA")
@@ -1623,6 +3161,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise ReleaseError(f"{args.command} requires --sha")
         if args.env == "prod" and args.execute and not args.confirm_prod:
             raise ReleaseError("production execute requires --confirm-prod")
+        if args.command == "preflight" and args.execute:
+            raise ReleaseError("preflight is read-only and does not accept --execute")
         if args.execute and args.skip_ci_checks:
             raise ReleaseError("execute mode cannot skip release CI verification")
         if args.skip_env_checks and args.command != "plan":
@@ -1630,10 +3170,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.execute:
             verify_operator_worktree_clean()
         impact, manifest, previous_sha = build_plan(args)
+        args.previous_sha = previous_sha
+        if args.command == "rollback":
+            impact.level = "maintenance"
         if args.skip_env_checks:
             environment_values, config_revision = {}, ""
-        else:
+        elif args.command == "plan":
             environment_values, config_revision = _validate_local_env(args)
+        else:
+            try:
+                environment_values, config_revision = _validate_local_env(args)
+                args.local_env_error = False
+            except ReleaseError:
+                environment_values, config_revision = {}, ""
+                args.local_env_error = True
         document = _plan_document(
             args,
             impact,
@@ -1644,36 +3194,55 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True))
         if args.command == "plan":
             return 0
-        if impact.blockers:
-            raise ReleaseError(
-                "release is blocked: " + ", ".join(sorted(impact.blockers))
+        preflight = preflight_release(args, impact, manifest, environment_values)
+        print(
+            json.dumps(
+                {"preflight": preflight},
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
             )
-        if args.command == "rollback":
-            impact.level = "maintenance"
+        )
+        require_preflight(preflight)
+        if args.command == "preflight":
+            return 0
         release_env = render_release_env(manifest, config_revision)
-        if args.env == "prod":
-            _promotion_check(args, manifest)
-        else:
-            _test_rollback_check(args, manifest)
-        _deploy_cloud(
+        previous_pages_id = None
+        if "web-static" in impact.services and not args.skip_web:
+            previous_pages_id = _current_pages_deployment_id(args)
+        transaction = new_release_transaction(
+            environment=args.env,
+            target_sha=str(manifest["git_sha"]),
+            previous_sha=previous_sha or None,
+            previous_kind="immutable" if previous_sha else "legacy",
+            previous_pages_deployment_id=previous_pages_id,
+        )
+        if isinstance(getattr(args, "previous_state", None), Mapping):
+            transaction["previous"]["state"] = dict(args.previous_state)
+        transaction["services"] = sorted(impact.services)
+        transaction["level"] = impact.level
+        transaction["snapshots"] = {
+            "cloud_legacy_running": (
+                f"/var/lib/allbot/releases/{manifest['git_sha']}/"
+                "legacy-cloud-running.txt"
+            ),
+            "worker_legacy_running": str(
+                Path(args.worker_checkout_root).expanduser()
+                / "release-env"
+                / str(manifest["git_sha"])
+                / "legacy-worker-running.txt"
+            ),
+        }
+        dependencies = _transaction_dependencies(
             args,
             impact,
             manifest,
             release_env,
             environment_values,
-        )
-        web_deployment = None
-        if "web-static" in impact.services:
-            web_deployment = _deploy_web(args, manifest)
-        if "worker" in impact.services:
-            _deploy_worker(args, impact, manifest, release_env, environment_values)
-        _write_state(
-            args,
-            impact,
-            manifest,
             config_revision,
-            web_deployment=web_deployment,
+            transaction,
         )
+        execute_release_transaction(transaction, dependencies)
         return 0
     except ReleaseError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

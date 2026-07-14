@@ -266,6 +266,10 @@ def test_bootstrap_sends_remote_script_over_stdin_and_archives_source_only():
     assert 'bash -ceu "$SCRIPT"' not in bootstrap
     assert "--exclude='__pycache__'" in bootstrap
     assert "--exclude='*.pyc'" in bootstrap
+    assert "--role cloud-control|local-worker-host" in bootstrap
+    assert 'CHECKOUT_ROOT="${HOME}/APP/All_bot-release"' in bootstrap
+    assert 'CHECKOUT_ROOT="/home/deploy/APP/All_bot-release"' in bootstrap
+    assert "local-worker-host only supports --target local" in bootstrap
 
 
 def test_backend_httpx_pin_is_compatible_with_telegram_runtime():

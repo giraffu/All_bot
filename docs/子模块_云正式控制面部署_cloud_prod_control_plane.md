@@ -1,6 +1,8 @@
 # 子模块: 云正式控制面部署 (Cloud Prod Control Plane)
 
-> 2026-07-13 发布入口变更：新生产发布只允许把云测试已标记 verified 的同一 Git SHA、镜像 digest 与 Web checksum 晋级，入口为 `scripts/release.py deploy --env prod ... --execute --confirm-prod`。禁止 rsync、现场 build、源码挂载和 Pages 自动生产构建。本文后续旧 compose/目录/热修命令是首次切换前 legacy 事实，不是新发布入口；见 `docs/子模块_Git不可变发布_git_immutable_release.md`。本轮未执行生产或 Pages mutation。
+> 2026-07-14 发布入口加固：新生产发布只允许把云测试已标记 verified 的同一 Git SHA、镜像 digest 与 Web checksum 晋级。执行前必须先通过 `scripts/release.py preflight --env prod --sha <sha>`；正式事务顺序为云控制面 → 本地 Worker → Pages → 状态提交，失败按 Pages → Worker → 云控制面逆序恢复，人工恢复入口为 `recover --transaction`。禁止 rsync、现场 build、源码挂载和 Pages 自动生产构建。本文后续旧 compose/目录/热修命令是首次切换前 legacy 事实，不是新发布入口；见 `docs/子模块_Git不可变发布_git_immutable_release.md`。加固候选尚未合入/完成云测试 24 小时验收，本轮未进入生产维护，也未执行生产容器、正式机或正式 Pages mutation。
+
+首次正式切换的硬门禁包括：同时维护 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`；只停止实际记录到的 `cloud-prod-comfy-agent-*` 和 `cloud-prod-worker-relay`，不得触碰测试 Worker；8013 listener 必须属于预期正式 relay；正式 Pages 必须为 production branch `main`、Git production disabled、preview `none`，并具备可验证/可回滚的 canonical production deployment ID。不满足只报告 blocker，不自动修正式环境。
 
 ## 1. 当前生产架构事实
 

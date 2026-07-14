@@ -265,13 +265,26 @@ def test_initial_worker_cutover_maps_legacy_slots_and_holds_maintenance():
         matched_rules=["initial-release"],
     )
 
-    assert module.legacy_worker_containers({"worker-01", "worker-08"}) == [
+    assert module.legacy_worker_containers(
+        "test", {"worker-01", "worker-08"}
+    ) == [
         "cloud-comfy-agent-test-1",
         "cloud-comfy-agent-test-8",
         "cloud-worker-relay-test",
     ]
+    assert module.legacy_worker_containers(
+        "prod", {"worker-01", "worker-08"}
+    ) == [
+        "cloud-prod-comfy-agent-1",
+        "cloud-prod-comfy-agent-8",
+        "cloud-prod-worker-relay",
+    ]
     assert module.hold_maintenance_for_worker_cutover("test", impact) is True
-    assert module.hold_maintenance_for_worker_cutover("prod", impact) is False
+    assert module.hold_maintenance_for_worker_cutover("prod", impact) is True
+    assert module.maintenance_files("prod", initial_cutover=True) == [
+        "/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE",
+        "/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE",
+    ]
 
 
 def test_state_marks_web_skipped_instead_of_claiming_checksum_passed(monkeypatch):
@@ -321,7 +334,10 @@ def test_state_records_pages_deployment_metadata(monkeypatch):
     web_deployment = {
         "project": "allbot-web-cf-test",
         "branch": "test",
-        "deployment_url": "https://abc.allbot-web-cf-test.pages.dev",
+        "deployment_id": "production-deployment-id",
+        "environment": "production",
+        "canonical_url": "https://web-cf-test.aivison.it.com",
+        "canonical_verified": True,
         "runtime_config_revision": "f" * 64,
     }
 
@@ -334,7 +350,8 @@ def test_state_records_pages_deployment_metadata(monkeypatch):
     )
 
     state = json.loads(captured["payload"])
-    assert state["health"]["web"] == "artifact-checksum-passed"
+    assert state["schema_version"] == 2
+    assert state["health"]["web"] == "canonical-runtime-verified"
     assert state["web_deployment"] == web_deployment
 
 
@@ -563,7 +580,7 @@ def test_cloud_deploy_rejects_missing_remote_completion_marker(monkeypatch):
         )
 
 
-def test_initial_worker_cutover_stops_legacy_before_start_and_clears_maintenance(
+def test_initial_worker_cutover_snapshots_and_stops_legacy_before_start(
     tmp_path, monkeypatch
 ):
     module = _load_module()
@@ -595,6 +612,8 @@ def test_initial_worker_cutover_stops_legacy_before_start_and_clears_maintenance
             stdout = FULL_SHA + "\n"
         elif command[:4] == ["docker", "image", "inspect", "--format"]:
             stdout = FULL_SHA + "\n"
+        elif command[:3] == ["docker", "inspect", "--format"]:
+            stdout = "true\n"
         return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
 
     def fake_remote(host, script, *, execute):
@@ -639,14 +658,13 @@ def test_initial_worker_cutover_stops_legacy_before_start_and_clears_maintenance
         options["env"]["ALLBOT_ENV_FILE"] == str(env_file)
         for options in compose_calls
     )
-    assert remote_calls == [
-        (
-            "cloud-test",
-            "set -euo pipefail\n"
-            "rm -f /var/lib/allbot/test/runtime/GENERATION_MAINTENANCE\n",
-            True,
-            len(commands),
-        )
+    assert remote_calls == []
+    assert (
+        root / "release-env" / FULL_SHA / "legacy-worker-running.txt"
+    ).read_text(encoding="utf-8").splitlines() == [
+        "cloud-comfy-agent-test-1",
+        "cloud-comfy-agent-test-8",
+        "cloud-worker-relay-test",
     ]
 
 
@@ -815,6 +833,17 @@ def test_test_and_prod_web_use_same_pages_deployer(
         )
 
     monkeypatch.setattr(module.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        module,
+        "verify_pages_canonical_deployment",
+        lambda *_args, **_kwargs: {
+            "deployment_id": "deployment-id",
+            "environment": "production",
+            "canonical_url": module.WEB_PAGES_TARGETS[environment]["canonical_url"],
+            "canonical_verified": True,
+        },
+        raising=False,
+    )
     args = SimpleNamespace(
         skip_web=False,
         web_artifact=str(artifact),
@@ -833,7 +862,8 @@ def test_test_and_prod_web_use_same_pages_deployer(
     assert command[command.index("--project-name") + 1] == expected_project
     assert command[command.index("--branch") + 1] == expected_branch
     assert result["project"] == expected_project
-    assert result["deployment_url"].endswith(".pages.dev")
+    assert result["deployment_id"] == "deployment-id"
+    assert result["canonical_verified"] is True
     assert len(result["runtime_config_revision"]) == 64
     assert not any(command[0] in {"ssh", "scp"} for command, _ in calls)
 
@@ -858,3 +888,486 @@ def test_release_cli_defaults_to_allbot_cloudflare_account():
     )
 
     assert args.cloudflare_account_id == "c7220eb751acc6f7ab8255b4a0394ef3"
+
+
+def test_release_cli_uses_operator_home_for_local_release_inputs():
+    module = _load_module()
+    args = module.build_parser().parse_args(
+        ["plan", "--env", "prod", "--sha", "0" * 40]
+    )
+
+    assert module.local_env_file(args) == Path.home() / ".config/allbot/prod.env"
+    assert args.worker_checkout_root == str(Path.home() / "APP/All_bot-release")
+    assert args.cloudflare_token_file == str(
+        Path.home() / ".config/allbot/cloudflare-pages.token"
+    )
+
+
+def test_preflight_collects_every_read_only_blocker_before_refusing_release():
+    module = _load_module()
+    calls = []
+
+    def check(name, blockers):
+        def run(*_args, **_kwargs):
+            calls.append(name)
+            return blockers
+
+        return run
+
+    dependencies = module.PreflightDependencies(
+        operator=check("operator", ["operator-gh-auth-unavailable"]),
+        cloud=check("cloud", ["cloud-release-host-not-bootstrapped"]),
+        worker=check("worker", ["worker-relay-owner-mismatch"]),
+        pages=check("pages", ["pages-production-branch-mismatch"]),
+        rollback=check("rollback", ["rollback-materials-unavailable"]),
+    )
+    args = SimpleNamespace(env="prod")
+    impact = module.ReleaseImpact(
+        services={"central-api", "worker", "web-static"},
+        level="maintenance",
+        matched_rules=["initial-release"],
+    )
+
+    report = module.preflight_release(
+        args,
+        impact,
+        _manifest(),
+        {"ALLBOT_WORKER_SERVICES": "worker-01"},
+        dependencies=dependencies,
+    )
+
+    assert calls == ["operator", "cloud", "worker", "pages", "rollback"]
+    assert report["status"] == "blocked"
+    assert report["mutation_allowed"] is False
+    assert report["blockers"] == [
+        "cloud-release-host-not-bootstrapped",
+        "operator-gh-auth-unavailable",
+        "pages-production-branch-mismatch",
+        "rollback-materials-unavailable",
+        "worker-relay-owner-mismatch",
+    ]
+    with pytest.raises(module.ReleaseError, match="preflight blocked"):
+        module.require_preflight(report)
+
+
+def test_release_cli_exposes_read_only_preflight_command():
+    module = _load_module()
+
+    args = module.build_parser().parse_args(
+        ["preflight", "--env", "prod", "--sha", "0" * 40]
+    )
+
+    assert args.command == "preflight"
+    assert args.execute is False
+
+
+def test_pages_release_requires_matching_production_canonical_and_runtime_sha(
+    monkeypatch,
+):
+    module = _load_module()
+    sha = "b" * 40
+    revision = "c" * 64
+    deployment = {
+        "id": "new-production-id",
+        "environment": "production",
+        "deployment_trigger": {
+            "metadata": {"branch": "main", "commit_hash": sha}
+        },
+        "latest_stage": {"status": "success"},
+    }
+
+    def fake_api(_args, _method, path, **_kwargs):
+        if path.endswith("/deployments?env=production"):
+            return {"success": True, "result": [deployment]}
+        return {
+            "success": True,
+            "result": {"canonical_deployment": {"id": "new-production-id"}},
+        }
+
+    class FakeResponse:
+        headers = {"Content-Type": "application/javascript; charset=UTF-8"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return module.render_web_runtime_config_script(
+                {"api_base_url": "https://api.example.test"},
+                git_sha=sha,
+                config_revision=revision,
+            ).encode()
+
+    monkeypatch.setattr(module, "_pages_api_request", fake_api)
+    monkeypatch.setattr(module.urllib.request, "urlopen", lambda *_args, **_kwargs: FakeResponse())
+    args = SimpleNamespace(env="prod")
+
+    result = module.verify_pages_canonical_deployment(args, sha, revision)
+
+    assert result == {
+        "deployment_id": "new-production-id",
+        "environment": "production",
+        "canonical_url": "https://web.aivison.it.com",
+        "canonical_verified": True,
+    }
+
+
+@pytest.mark.parametrize(
+    ("canonical_id", "content_type", "runtime_sha", "message"),
+    [
+        ("old-id", "application/javascript", "b" * 40, "canonical deployment"),
+        (
+            "new-production-id",
+            "text/html",
+            "b" * 40,
+            "JavaScript",
+        ),
+        (
+            "new-production-id",
+            "application/javascript",
+            "d" * 40,
+            "release SHA",
+        ),
+    ],
+)
+def test_pages_canonical_verification_rejects_stale_or_html_runtime(
+    monkeypatch, canonical_id, content_type, runtime_sha, message
+):
+    module = _load_module()
+    sha = "b" * 40
+    revision = "c" * 64
+    deployment = {
+        "id": "new-production-id",
+        "environment": "production",
+        "deployment_trigger": {
+            "metadata": {"branch": "main", "commit_hash": sha}
+        },
+        "latest_stage": {"status": "success"},
+    }
+
+    def fake_api(_args, _method, path, **_kwargs):
+        result = [deployment] if "deployments?" in path else {
+            "canonical_deployment": {"id": canonical_id}
+        }
+        return {"success": True, "result": result}
+
+    class FakeResponse:
+        headers = {"Content-Type": content_type}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return module.render_web_runtime_config_script(
+                {"api_base_url": "https://api.example.test"},
+                git_sha=runtime_sha,
+                config_revision=revision,
+            ).encode()
+
+    monkeypatch.setattr(module, "_pages_api_request", fake_api)
+    monkeypatch.setattr(module.urllib.request, "urlopen", lambda *_args, **_kwargs: FakeResponse())
+
+    with pytest.raises(module.ReleaseError, match=message):
+        module.verify_pages_canonical_deployment(
+            SimpleNamespace(env="prod"), sha, revision
+        )
+
+
+def test_transaction_compensates_attempted_stages_in_reverse_and_then_clears_maintenance():
+    module = _load_module()
+    calls = []
+    journals = []
+
+    def action(name, result=None, error=None):
+        def run():
+            calls.append(name)
+            if error:
+                raise module.ReleaseError(error)
+            return result
+
+        return run
+
+    dependencies = module.ReleaseTransactionDependencies(
+        cloud=action("cloud"),
+        worker=action("worker"),
+        pages=action("pages", error="canonical remained stale"),
+        state=action("state"),
+        rollback_pages=action("rollback-pages"),
+        rollback_worker=action("rollback-worker"),
+        rollback_cloud=action("rollback-cloud"),
+        validate_recovery=action("validate-recovery"),
+        clear_maintenance=action("clear-maintenance"),
+        journal=lambda value: journals.append(dict(value)),
+    )
+    transaction = module.new_release_transaction(
+        environment="prod",
+        target_sha="a" * 40,
+        previous_sha="b" * 40,
+        previous_kind="immutable",
+        previous_pages_deployment_id="old-pages-id",
+    )
+
+    with pytest.raises(module.ReleaseError, match="release failed and was recovered"):
+        module.execute_release_transaction(transaction, dependencies)
+
+    assert calls == [
+        "cloud",
+        "worker",
+        "pages",
+        "rollback-pages",
+        "rollback-worker",
+        "rollback-cloud",
+        "validate-recovery",
+        "clear-maintenance",
+    ]
+    assert "state" not in calls
+    assert transaction["status"] == "rolled_back"
+    assert transaction["phase"] == "recovery_verified"
+    assert journals[-1]["status"] == "rolled_back"
+
+
+def test_transaction_keeps_maintenance_when_compensation_is_incomplete():
+    module = _load_module()
+    calls = []
+
+    def action(name, error=None):
+        def run():
+            calls.append(name)
+            if error:
+                raise module.ReleaseError(error)
+
+        return run
+
+    dependencies = module.ReleaseTransactionDependencies(
+        cloud=action("cloud"),
+        worker=action("worker", error="worker failed"),
+        pages=action("pages"),
+        state=action("state"),
+        rollback_pages=action("rollback-pages"),
+        rollback_worker=action("rollback-worker", error="old relay unavailable"),
+        rollback_cloud=action("rollback-cloud"),
+        validate_recovery=action("validate-recovery"),
+        clear_maintenance=action("clear-maintenance"),
+        journal=lambda _value: None,
+    )
+    transaction = module.new_release_transaction(
+        environment="prod",
+        target_sha="a" * 40,
+        previous_sha=None,
+        previous_kind="legacy",
+        previous_pages_deployment_id="old-pages-id",
+    )
+
+    with pytest.raises(module.ReleaseError, match="rollback incomplete"):
+        module.execute_release_transaction(transaction, dependencies)
+
+    assert calls == ["cloud", "worker", "rollback-worker", "rollback-cloud"]
+    assert transaction["status"] == "rollback_failed"
+    assert "clear-maintenance" not in calls
+
+
+def test_transaction_commits_state_before_releasing_maintenance():
+    module = _load_module()
+    calls = []
+
+    def action(name, result=None):
+        def run():
+            calls.append(name)
+            return result
+
+        return run
+
+    dependencies = module.ReleaseTransactionDependencies(
+        cloud=action("cloud"),
+        worker=action("worker"),
+        pages=action("pages", {"deployment_id": "new-pages-id"}),
+        state=action("state"),
+        rollback_pages=action("rollback-pages"),
+        rollback_worker=action("rollback-worker"),
+        rollback_cloud=action("rollback-cloud"),
+        validate_recovery=action("validate-recovery"),
+        clear_maintenance=action("clear-maintenance"),
+        journal=lambda _value: None,
+    )
+    transaction = module.new_release_transaction(
+        environment="prod",
+        target_sha="a" * 40,
+        previous_sha="b" * 40,
+        previous_kind="immutable",
+        previous_pages_deployment_id="old-pages-id",
+    )
+
+    result = module.execute_release_transaction(transaction, dependencies)
+
+    assert result == {"deployment_id": "new-pages-id"}
+    assert calls == ["cloud", "worker", "pages", "state", "clear-maintenance"]
+    assert transaction["status"] == "committed"
+    assert transaction["phase"] == "maintenance_released"
+
+
+def test_recover_is_idempotent_for_an_already_recovered_transaction():
+    module = _load_module()
+    calls = []
+
+    def action(name):
+        def run():
+            calls.append(name)
+
+        return run
+
+    dependencies = module.ReleaseTransactionDependencies(
+        cloud=action("cloud"),
+        worker=action("worker"),
+        pages=action("pages"),
+        state=action("state"),
+        rollback_pages=action("rollback-pages"),
+        rollback_worker=action("rollback-worker"),
+        rollback_cloud=action("rollback-cloud"),
+        validate_recovery=action("validate-recovery"),
+        clear_maintenance=action("clear-maintenance"),
+        journal=lambda _value: None,
+    )
+    transaction = module.new_release_transaction(
+        environment="prod",
+        target_sha="a" * 40,
+        previous_sha="b" * 40,
+        previous_kind="immutable",
+        previous_pages_deployment_id="old-pages-id",
+    )
+    transaction.update(
+        status="rolled_back",
+        phase="recovery_verified",
+        attempted_stages=["cloud", "worker", "pages"],
+    )
+
+    module.recover_release_transaction(transaction, dependencies)
+
+    assert calls == ["validate-recovery", "clear-maintenance"]
+    assert transaction["status"] == "rolled_back"
+
+
+def test_release_cli_exposes_confirmed_recover_command():
+    module = _load_module()
+
+    args = module.build_parser().parse_args(
+        [
+            "recover",
+            "--env",
+            "prod",
+            "--transaction",
+            "a" * 40,
+            "--execute",
+            "--confirm-prod",
+        ]
+    )
+
+    assert args.command == "recover"
+    assert args.transaction == "a" * 40
+    assert args.execute is True
+
+
+def test_pages_rollback_uses_previous_production_id_and_verifies_canonical(
+    monkeypatch,
+):
+    module = _load_module()
+    calls = []
+
+    def fake_api(_args, method, path, **kwargs):
+        calls.append((method, path, kwargs))
+        canonical = "new-id" if len(calls) == 1 else "old-id"
+        return {
+            "success": True,
+            "result": {"canonical_deployment": {"id": canonical}},
+        }
+
+    monkeypatch.setattr(module, "_pages_api_request", fake_api)
+    transaction = module.new_release_transaction(
+        environment="prod",
+        target_sha="a" * 40,
+        previous_sha="b" * 40,
+        previous_kind="immutable",
+        previous_pages_deployment_id="old-id",
+    )
+
+    module._rollback_pages(SimpleNamespace(env="prod"), transaction)
+
+    assert calls[1] == (
+        "POST",
+        "pages/projects/allbot-web-prod/deployments/old-id/rollback",
+        {"payload": {}},
+    )
+    assert calls[2][0:2] == ("GET", "pages/projects/allbot-web-prod")
+
+
+def test_transaction_journal_rejects_secret_fields_before_remote_write(monkeypatch):
+    module = _load_module()
+    writes = []
+    monkeypatch.setattr(module, "_run", lambda *args, **kwargs: writes.append((args, kwargs)))
+    transaction = module.new_release_transaction(
+        environment="prod",
+        target_sha="a" * 40,
+        previous_sha=None,
+        previous_kind="legacy",
+        previous_pages_deployment_id="old-id",
+    )
+    transaction["api_token"] = "must-not-be-written"
+
+    with pytest.raises(module.ReleaseError, match="forbidden field"):
+        module._write_transaction_journal(
+            SimpleNamespace(env="prod", remote_host="prod-control"), transaction
+        )
+
+    assert writes == []
+
+
+def test_transaction_commit_moves_staged_state_before_clearing_dual_maintenance(
+    monkeypatch,
+):
+    module = _load_module()
+    calls = []
+    monkeypatch.setattr(
+        module,
+        "_remote_shell",
+        lambda host, script, *, execute: calls.append((host, script, execute)),
+    )
+    args = SimpleNamespace(env="prod", remote_host="prod-control", execute=False)
+    transaction = module.new_release_transaction(
+        environment="prod",
+        target_sha="a" * 40,
+        previous_sha=None,
+        previous_kind="legacy",
+        previous_pages_deployment_id="old-id",
+    )
+    transaction["phase"] = "state_completed"
+
+    module._clear_transaction_maintenance(args, transaction)
+
+    script = calls[0][1]
+    assert script.index("mv -f") < script.index(
+        "rm -f /var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE"
+    )
+    assert "/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE" in script
+
+
+def test_preflight_manifest_resolution_never_pulls_or_creates_cache(tmp_path, monkeypatch):
+    module = _load_module()
+    cache = tmp_path / "missing-cache"
+    calls = []
+    monkeypatch.setattr(module, "_run", lambda *args, **kwargs: calls.append((args, kwargs)))
+    args = SimpleNamespace(
+        manifest=None,
+        bundle_cache=str(cache),
+        sha="a" * 40,
+        bundle_repository="ghcr.io/example/release",
+    )
+
+    with pytest.raises(module.ReleaseError, match="never pull"):
+        module._resolve_manifest_path(args, allow_fetch=False)
+
+    assert not cache.exists()
+    assert calls == []

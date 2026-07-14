@@ -32,6 +32,8 @@ description: "处理 AllBot Cloudflare 账号自动化、API Token、DNS、Tunne
 - `cfat_` Cloudflare Account-owned token 必须用 `/accounts/<account_id>/tokens/verify` 验证；不要用 `/user/tokens/verify`，后者会把有效的账户级 token 报成 `Invalid API Token`。随后仍需以 DNS、Zero Trust Access、Tunnel、Pages/R2 目标 API 的只读探测结果确认实际权限。
 - 当前 `/home/hfy/.cloudflare/allbot-cloudflare-admin.token` 已验证可访问 DNS/Tunnel，但 Pages projects API 为 403；Pages 发布必须另用 `600` 的最小 Pages Write token，不能因名称含 admin 就推定权限。
 - 专用 Pages token 路径为 `/home/hfy/.config/allbot/cloudflare-pages.token`；只记录路径、权限与 API 探测结果，不记录值。测试项目已关闭 production/preview Git 自动部署，正式项目仍须单独授权后处理。
+- 正式 Pages 的发布前契约为 production branch `main`、`production_deployments_enabled=false`、`preview_deployment_setting=none`、active custom domain 和可读取的 canonical production deployment ID。`release.py preflight` 只读验证这些条件，不自动 PATCH 项目。
+- Wrangler 输出的 `pages.dev` URL 不是成功证据。必须由 Pages API确认 production deployment 的 branch/完整 SHA/latest stage 与 `canonical_deployment.id`，再从正式 custom domain cache-busting 请求验证 runtime JavaScript 的 `release_sha`/revision。事务失败使用官方 production deployment rollback API 恢复旧 canonical ID；验证失败时保持维护。
 
 ## 3. 操作红线
 
