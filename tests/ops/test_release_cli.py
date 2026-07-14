@@ -270,6 +270,8 @@ def test_dashboard_fast_track_skips_test_promotion_but_keeps_ci_preflight(
     module = _load_module()
     env_file = tmp_path / "prod.env"
     env_file.write_text("ALLBOT_ENV=prod\n", encoding="utf-8")
+    # CI runners may use a permissive umask; production preflight requires 0600.
+    env_file.chmod(0o600)
     args = SimpleNamespace(
         env="prod",
         dashboard_fast_track=True,
