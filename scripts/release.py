@@ -984,7 +984,7 @@ def hold_maintenance_for_worker_cutover(
     environment: str, impact: ReleaseImpact
 ) -> bool:
     return (
-        environment in ENVIRONMENT
+        environment == "test"
         and impact.level == "maintenance"
         and "worker" in impact.services
     )
@@ -1362,6 +1362,9 @@ def preflight_release(
     }
     blockers: list[str] = list(impact_blockers)
     for name in ("operator", "cloud", "worker", "pages", "rollback"):
+        if name == "worker" and args.env == "prod":
+            checks[name] = {"status": "skipped", "blockers": []}
+            continue
         check = getattr(dependencies, name)
         stage_blockers = sorted(set(check(args, impact, manifest, environment_values)))
         checks[name] = {
@@ -1488,7 +1491,25 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
         computed=impact.services,
         requested=requested,
     )
+    scope_release_impact(args.env, impact, requested=requested)
     return impact, manifest, previous_sha or ""
+
+
+def scope_release_impact(
+    environment: str,
+    impact: ReleaseImpact,
+    *,
+    requested: set[str],
+) -> None:
+    if environment not in ENVIRONMENT:
+        raise ReleaseError(f"unsupported release environment: {environment}")
+    if environment != "prod":
+        return
+    if "worker" in requested:
+        raise ReleaseError(
+            "production GPU Worker releases must run independently on GPU hosts"
+        )
+    impact.services.discard("worker")
 
 
 def _plan_document(
@@ -2126,6 +2147,10 @@ def _deploy_worker(
     release_env: str,
     environment_values: Mapping[str, str],
 ) -> None:
+    if args.env != "test":
+        raise ReleaseError(
+            "production GPU Worker releases must run independently on GPU hosts"
+        )
     selected = _split_services([environment_values.get("ALLBOT_WORKER_SERVICES", "")])
     if not selected:
         raise ReleaseError(
@@ -2278,6 +2303,10 @@ def _rollback_worker_stack(
     transaction: Mapping[str, Any],
     environment_values: Mapping[str, str],
 ) -> None:
+    if args.env != "test":
+        raise ReleaseError(
+            "production GPU Worker recovery must run independently on GPU hosts"
+        )
     selected = _split_services(
         [environment_values.get("ALLBOT_WORKER_SERVICES", "")]
     )
@@ -2534,12 +2563,19 @@ def _validate_recovered_stack(
     previous = transaction.get("previous")
     if not isinstance(previous, Mapping):
         raise ReleaseError("transaction previous stack is invalid")
+    attempted_value = transaction.get("attempted_stages")
+    if not isinstance(attempted_value, list) or any(
+        stage not in {"cloud", "worker", "pages", "state"}
+        for stage in attempted_value
+    ):
+        raise ReleaseError("transaction attempted_stages is invalid")
+    attempted = set(attempted_value)
     selected_cloud, _ = filter_enabled_cloud_services(
         args.env,
         cloud_services_for_release(args.env, impact),
         environment_values,
     )
-    if selected_cloud:
+    if "cloud" in attempted and selected_cloud:
         environment = ENVIRONMENT[args.env]
         host = args.remote_host or environment["host"]
         if previous.get("kind") == "legacy":
@@ -2572,7 +2608,7 @@ for service in {services}; do
 done
 """
         _remote_shell(host, script, execute=True)
-    if "worker" in impact.services:
+    if args.env == "test" and "worker" in attempted and "worker" in impact.services:
         port = environment_values.get("ALLBOT_WORKER_RELAY_PORT", "").strip()
         if not port.isdigit() or _run(
             [
@@ -2624,7 +2660,7 @@ done
             if time.monotonic() >= deadline:
                 raise ReleaseError("recovered Worker heartbeat verification failed")
             time.sleep(5)
-    if "web-static" in impact.services:
+    if "pages" in attempted and "web-static" in impact.services:
         expected = previous.get("pages_deployment_id")
         if not expected or _current_pages_deployment_id(args) != str(expected):
             raise ReleaseError("recovered Pages canonical deployment is incorrect")
@@ -2692,7 +2728,7 @@ def _transaction_dependencies(
             (lambda: _deploy_worker(
                 args, impact, manifest, release_env, environment_values
             ))
-            if "worker" in impact.services
+            if args.env == "test" and "worker" in impact.services
             else (lambda: None)
         ),
         pages=deploy_pages,
@@ -2704,7 +2740,7 @@ def _transaction_dependencies(
         ),
         rollback_worker=(
             (lambda: _rollback_worker_stack(args, transaction, environment_values))
-            if "worker" in impact.services
+            if args.env == "test" and "worker" in impact.services
             else (lambda: None)
         ),
         rollback_cloud=lambda: _rollback_cloud_stack(
@@ -2737,7 +2773,7 @@ def _recovery_dependencies(
         ),
         rollback_worker=(
             (lambda: _rollback_worker_stack(args, transaction, environment_values))
-            if "worker" in impact.services
+            if args.env == "test" and "worker" in impact.services
             else (lambda: None)
         ),
         rollback_cloud=lambda: _rollback_cloud_stack(

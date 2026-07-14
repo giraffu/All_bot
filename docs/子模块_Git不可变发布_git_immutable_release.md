@@ -84,7 +84,7 @@ scripts/release.py deploy --env prod --sha <40-char-sha> --execute --confirm-pro
 
 release workflow 生成 manifest 后会运行一次不接触运行态秘密的自检 plan，并显式使用 `--skip-env-checks`。该参数只允许 `plan`，输出 `config_validation=skipped`，用于 CI 校验 SHA/manifest/影响规则；`deploy`/`rollback` 一律拒绝它。操作者的测试/生产 plan 默认仍读取并校验真实 env，不能用 CI 例外替代部署前配置门禁。
 
-本地主服务器的默认受限配置为 `~/.config/allbot/<env>.env`（`600`），release checkout 默认 `~/APP/All_bot-release`，Pages token 默认 `~/.config/allbot/cloudflare-pages.token`；云控制面仍使用 `/home/deploy/APP/All_bot-release` 与 `/etc/allbot/<env>.env`。Worker compose 的 `ALLBOT_ENV_FILE` 绑定本地主机配置实参，不能误用 env 文件内面向云主机的 `/etc/allbot/<env>.env` 路径。
+本地主服务器的默认受限配置为 `~/.config/allbot/<env>.env`（`600`），release checkout 默认 `~/APP/All_bot-release`，Pages token 默认 `~/.config/allbot/cloudflare-pages.token`；云控制面仍使用 `/home/deploy/APP/All_bot-release` 与 `/etc/allbot/<env>.env`。云测试 Worker compose 的 `ALLBOT_ENV_FILE` 绑定本地主机测试配置实参，不能误用 env 文件内面向云主机的 `/etc/allbot/test.env` 路径。正式 GPU Worker 由各 GPU host 独立发布，不进入 `release.py --env prod`。
 
 ## 6. Web、Worker 与回滚
 
@@ -92,9 +92,9 @@ release workflow 生成 manifest 后会运行一次不接触运行态秘密的�
 - Pages Token 默认读取 `~/.config/allbot/cloudflare-pages.token`，必须是 `600` 且具备目标项目 Pages Read/Write；DNS/Tunnel 权限不能替代 Pages 权限。仓库 CI 不保存 Cloudflare 管理凭据。
 - Pages preflight 要求目标项目 production branch 与发布 branch 一致、`production_deployments_enabled=false`、`preview_deployment_setting=none`，并存在 active canonical custom domain；不满足只阻断，不自动修 Cloudflare。Wrangler 返回后必须由 Pages API 找到 `environment=production`、branch/SHA 正确、stage success 的 deployment ID，确认 `canonical_deployment.id` 已切换，再从正式 custom domain 以 cache-busting 请求校验 JavaScript 内的 `release_sha` 与 `runtime_config_revision`。
 - 状态 schema v2 记录事务 ID、阶段健康、Pages deployment ID/environment/canonical 验证与 runtime config revision，同时继续兼容读取 v1 的 `git_sha`。`--skip-web` 只用于故障恢复并写 `health.web=skipped`，不能通过测试验收或生产晋级。
-- 普通 Worker 使用 release 中同一 Worker digest；源码、workflow、relay、`src` 全在镜像内。发布器只处理本地常规 Worker；RunPod/LAN AIO 仍走专用 operator。
-- 维护发布按“云控制面 → 本地 Worker → Pages → 暂存状态 → 原子提交 current/history 并解除维护”执行。首次正式切换同时写 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`。正式 legacy Worker 映射只允许 `cloud-prod-comfy-agent-*` 与 `cloud-prod-worker-relay`，测试映射保持 `cloud-comfy-agent-test-*` 与 `cloud-worker-relay-test`；8013 listener PID 必须属于预期 relay。
-- 无秘密事务 journal 在每阶段通过远端临时文件原子 rename。任一阶段失败都按 Pages → Worker → 云控制面逆序恢复；首次切换恢复记录到的 legacy 容器，后续发布从旧 `current.json` 对应 checkout/release env 重建。只有旧 API/Central、Worker relay/heartbeat 与 Pages canonical 恢复验证全部通过才解除维护；否则记录 `rollback_failed` 并保持维护。
+- CI 继续生成同 SHA 的 Worker digest；源码、workflow、relay、`src` 全在镜像内。`release.py --env test` 部署并验收测试 Worker；生产 GPU Worker 由 GPU host 专用 operator 独立拉取/切换，`release.py --env prod` 拒绝显式 `--services worker`，不检查 heartbeat/relay，也不停止、重建或恢复 Worker。RunPod/LAN AIO 继续走各自 operator。
+- 云测试维护发布按“云控制面 → 测试 Worker → Pages → 暂存状态 → 原子提交 current/history 并解除维护”执行。正式发布按“云控制面 → Pages → 状态提交”执行；首次正式切换仍同时写 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`，但不操作任何 GPU Worker 容器。
+- 无秘密事务 journal 在每阶段通过远端临时文件原子 rename。失败只逆序补偿本事务实际尝试过的阶段，并只验证这些可能被改变的阶段；例如 cloud 阶段失败时，不得因本来 stopped 的测试 Worker 没有 heartbeat 而误报恢复失败。云测试最大补偿顺序为 Pages → Worker → 云控制面，正式为 Pages → 云控制面。验证失败时记录 `rollback_failed` 并保持维护。
 - 回滚命令读取旧 release manifest/Web tar，不重建。部署状态 history 长期保留；运行主机不得全局 `docker system prune`。数据库 migration 只向前兼容，应用回滚不自动 Alembic downgrade。
 
 ```bash
@@ -107,7 +107,7 @@ scripts/release.py recover --env prod --transaction <failed-target-sha> --execut
 
 ## 7. 首次切换
 
-`scripts/bootstrap_release_host.sh` 默认 dry-run，并要求显式角色：云控制面使用 `--role cloud-control`，固定 `/home/deploy/...` 且由 `deploy` 账号执行；本地 Worker host 使用 `--role local-worker-host`，固定当前用户的 `~/APP/...` 与 `~/.config/allbot/...` 边界。`--execute` 只在已有只读 deploy key、Docker Compose v2、受限 GHCR read 凭据和明确授权时使用。脚本不会创建密钥或复制 env；它建立干净 release checkout、禁用 origin push，并归档 legacy compose、容器 image ID 和排除 env/日志/runtime 的混合源码。
+`scripts/bootstrap_release_host.sh` 默认 dry-run，并要求显式角色：云控制面使用 `--role cloud-control`，固定 `/home/deploy/...` 且由 `deploy` 账号执行；云测试 Worker host 使用 `--role local-worker-host`，固定当前用户的 `~/APP/...` 与 `~/.config/allbot/...` 边界。正式 GPU host 的独立发布准备遵循对应 GPU/LAN/RunPod operator，不由 prod release bootstrap 代办。`--execute` 只在已有只读 deploy key、Docker Compose v2、受限 GHCR read 凭据和明确授权时使用。脚本不会创建密钥或复制 env；它建立干净 release checkout、禁用 origin push，并归档 legacy compose、容器 image ID 和排除 env/日志/runtime 的混合源码。
 
 测试控制面首次切换不是普通 rolling recreate。发布器会把 Postgres/Redis 与应用服务一起纳入初始依赖闭包，测试 overlay 通过显式 external volume 名复用 `deploy_cloud-postgres-test-data` 和 `deploy_cloud-redis-test-data`，并保留 `postgres-test`/`redis-test` 网络别名及旧 `CLOUD_TEST_*` 到运行时变量的映射。流程必须先拉取并校验全部 digest，再从 legacy Central 排空队列、记录实际运行的 legacy 容器、停止这些容器并启动新项目；如果新项目健康或非目标启动时间门禁失败，EXIT trap 会移除新目标容器并重启记录中的旧容器。成功后旧容器保持 stopped，作为一次性 legacy 回滚入口，不得删除旧数据卷。
 

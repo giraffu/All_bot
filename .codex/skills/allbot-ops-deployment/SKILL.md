@@ -38,12 +38,12 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 - Compose `environment` 必须胜过旧 env 中的入口别名：`BOT_TYPE=TEST` 时 `config._get_env_value()` 优先读取 `API_BASE_TEST`，因此 test overlay 必须同时钉死 `API_BASE`/`API_BASE_TEST=http://central-api:8003`；prod overlay 必须为所有 Python 消费者钉死 `API_BASE`。发布成功前必须在目标容器 import `config` 校验解析后的值，只检查原始 env 或 HTTP health 不足以通过。
 - 通过 `ssh ... bash -s` 执行远端发布脚本时，脚本内所有 `docker compose exec/run` 都必须显式使用 `</dev/null`；仅 `-T` 仍可能读取并吞掉后续脚本。远端脚本必须最后输出绑定目标 SHA 的完成标记，发布器还要逐服务核对容器 `.Config.Image` digest 与自有镜像 OCI revision，三者全部通过后才能写 `current.json`。
 - 测试与正式 Web 必须校验同一 Web tar 后走统一 Wrangler Pages 发布器；环境差异只能来自版本化公开 runtime config。发布成功必须同时满足 production deployment branch/SHA/stage、`canonical_deployment.id` 和 custom domain runtime `release_sha`/revision；不能以 `pages.dev` URL 代替 canonical 验证。`--skip-web` 只允许恢复控制面/Worker，必须记录 `health.web=skipped`，且不得晋级正式。
-- `deploy` 在任何 mutation 前强制复用全量只读 preflight。维护事务顺序固定为云控制面 → Worker → Pages → staged state/current-history commit；失败按 Pages → Worker → 云控制面逆序恢复。恢复验证不完整时保持双维护标志并写 `rollback_failed`；`recover --transaction ... --execute` 只能逆向恢复，禁止续跑失败阶段。
+- `deploy` 在任何 mutation 前强制复用全量只读 preflight。云测试事务顺序为云控制面 → 测试 Worker → Pages → staged state/current-history commit，失败按 Pages → 测试 Worker → 云控制面逆序恢复；正式事务只包含云控制面 → Pages → 状态提交，生产 GPU Worker 由各 GPU host 的专用 operator 独立发布，prod preflight/deploy/recover 不检查 heartbeat/relay，也不停止、重建或恢复 Worker。恢复验证只覆盖本事务实际尝试过的阶段；不完整时保持维护并写 `rollback_failed`。`recover --transaction ... --execute` 只能逆向恢复，禁止续跑失败阶段。
 - 本地主机默认 release checkout/env/Pages token 为 `~/APP/All_bot-release`、`~/.config/allbot/<env>.env`、`~/.config/allbot/cloudflare-pages.token`；云控制面保持 `/home/deploy/APP/All_bot-release` 与 `/etc/allbot/<env>.env`。bootstrap 必须显式选择 `cloud-control` 或 `local-worker-host` 角色。
 - 影响 planner 的全栈集合不代表开启未配置的可选 Bot。`release.py plan` 必须基于已校验 env 输出 `cloud_services`/`disabled_cloud_services`；仅允许按 QQCC token、`PRIVATE_QQCC_BOT_ENABLED`、付费群 Bot token 过滤对应三个可选 runtime，禁止用配置过滤核心 API、Postgres/Redis、主 Bot 或其它自动依赖。
 - `--skip-env-checks` 仅供无运行态秘密的 release CI 执行非 mutation `plan` 自检；`deploy`/`rollback` 必须拒绝。实际 test/prod plan 与执行仍须校验对应受限 env，禁止把 CI 的 `config_validation=skipped` 当作部署配置通过。
 - 测试验收：图片、视频、Bot、并发锁、locale、Web、Worker heartbeat、回滚演练及至少 24 小时观察写入验收 JSON，再执行 `scripts/release.py verify-test ... --execute`；缺少 verified 状态不能晋级。
-- 云正式：只能把已验收测试环境中的相同 SHA、业务镜像 digest、第三方镜像 digest 和 Web checksum 晋级，命令必须带 `--execute --confirm-prod`。任何不一致都 fail closed。
+- 云正式：只能把已验收测试环境中的相同 SHA、控制面镜像 digest、第三方镜像 digest 和 Web checksum 晋级，命令必须带 `--execute --confirm-prod`。任何不一致都 fail closed。Worker 镜像仍由 CI 产出并在云测试验收，但生产 Worker 发布不属于 `release.py --env prod` 事务。
 - 本地正式灾备：`safe_deploy.sh` 只用于云正式整体故障时的临时接管，不是日常部署入口。
 - QQCC、Dashboard 等窄更新仍通过 `release.py --services ...` 表达，但机器计算的共享依赖闭包优先；禁止退回单文件、三服务源码同步或现场 `--build`。
 - QQCC 私有 Bot worker：test/prod service 分别为 `qqcc-private-bot-worker-test/prod`，profile `qqcc-private-bots`，入口 `python -m qqcc_private_bot.worker`。它涉及 Alembic、shared secret、Web API webhook、QQCC Config、官方 QQCC membership checker 与公网 Host，不属于 QQCC 三服务快速更新；当前生产 `PRIVATE_QQCC_BOT_ENABLED=false`，正式 migration/profile/webhook/owner Host 未部署，未经明确确认不得启动。
@@ -105,7 +105,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 
 1. 确认用户确实要求正式发布或生产热修。
 2. 确认目标 service 存在，并确定是否涉及 Alembic、shared env、worker workflow 或跨服务契约。
-3. 对精确 SHA 运行 `release.py plan --env prod`，再运行只读 `release.py preflight --env prod`，检查自动影响集合、维护等级、migration、正式 Worker/8013、Pages canonical/自动部署和全部回滚材料。
+3. 对精确 SHA 运行 `release.py plan --env prod`，再运行只读 `release.py preflight --env prod`，检查自动影响集合、维护等级、migration、Pages canonical/自动部署和控制面/Web 回滚材料；prod 报告中的 Worker 检查必须是 `skipped`。
 4. 只有同一 SHA 已在 test 标记 verified 且 preflight 全绿，才运行 `release.py deploy --env prod ... --execute --confirm-prod`；`--services` 只能扩大自动集合。
 5. 手工 compose、旧 QQCC 快速脚本、rsync 和现场 build 均不是紧急旁路；无法通过发布器时停下修复发布契约。
 6. 结束后核对容器 digest、OCI revision、current.json、健康检查和未触碰服务启动时间。
@@ -117,7 +117,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 - 文档：`python scripts/doc_quality_checker.py`。
 - shell 脚本：`bash -n <script>`，再跑对应 dry-run / `--help`。
 - 云测试：cloud-test compose `ps`、`8004/health`、`8001/api/health`、`8044/api/health`、`8087/api/health`、Central `/system/workers`、本地 relay `/ready`。
-- 云正式：云内 `8003/health`、`8000/api/health`、`8021/pay/result`、`8043/api/health`、`8086/api/health`，公网 `https://api.aivison.it.com/api/health`、`https://rmb.aivison.it.com/pay/result`，本机 relay `127.0.0.1:8013/health`，Central `/system/status` 与 `/system/workers`。
+- 云正式发布事务：云内 `8003/health`、`8000/api/health`、`8021/pay/result`、`8043/api/health`、`8086/api/health`，公网 `https://api.aivison.it.com/api/health`、`https://rmb.aivison.it.com/pay/result`。本机 relay 与 Central `/system/workers` 只在独立 GPU Worker 运维任务中验证，不作为控制面/Pages 发布提交条件。
 - worker 更新：确认 Central heartbeat、ComfyUI WebSocket、R2 上传成功后才 `/complete`，并观察 `relay_forward_failed`、`sidecar_upload_failed`、`error/quarantined`。
 - GPU 单容器：确认目标 ComfyUI `/system_stats`、`/queue`、目标 worker heartbeat，以及另一 ComfyUI 端口未受影响。
 
