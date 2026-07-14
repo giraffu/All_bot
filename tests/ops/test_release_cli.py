@@ -757,6 +757,7 @@ def test_web_runtime_config_is_public_versioned_and_environment_specific(tmp_pat
                 "test": {
                     "api_base_url": "https://api-test.example.com/api",
                     "telegram_bot_username": "test_bot",
+                    "enable_free_edit_v3": True,
                 },
                 "prod": {
                     "api_base_url": "https://api.example.com/api",
@@ -776,6 +777,7 @@ def test_web_runtime_config_is_public_versioned_and_environment_specific(tmp_pat
 
     assert values["api_base_url"] == "https://api-test.example.com/api"
     assert values["telegram_bot_username"] == "test_bot"
+    assert values["enable_free_edit_v3"] is True
     assert len(revision) == 64
     assert "api-test.example.com" in script
     assert FULL_SHA in script
@@ -1057,8 +1059,14 @@ def test_pages_release_requires_matching_production_canonical_and_runtime_sha(
                 config_revision=revision,
             ).encode()
 
+    requests = []
+
+    def fake_urlopen(request, **_kwargs):
+        requests.append(request)
+        return FakeResponse()
+
     monkeypatch.setattr(module, "_pages_api_request", fake_api)
-    monkeypatch.setattr(module.urllib.request, "urlopen", lambda *_args, **_kwargs: FakeResponse())
+    monkeypatch.setattr(module.urllib.request, "urlopen", fake_urlopen)
     args = SimpleNamespace(env="prod")
 
     result = module.verify_pages_canonical_deployment(args, sha, revision)
@@ -1069,6 +1077,7 @@ def test_pages_release_requires_matching_production_canonical_and_runtime_sha(
         "canonical_url": "https://web.aivison.it.com",
         "canonical_verified": True,
     }
+    assert requests[0].get_header("User-agent") == "AllBotReleaseVerifier/1.0"
 
 
 @pytest.mark.parametrize(
