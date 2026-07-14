@@ -23,12 +23,16 @@ ARG XFORMERS_SOURCE_REF=
 ARG XFORMERS_CUDA_ARCH_LIST=12.0
 ARG XFORMERS_MAX_JOBS=16
 ARG XFORMERS_NVCC_THREADS=4
+ARG ALLBOT_GIT_SHA
 
 LABEL org.opencontainers.image.title="AllBot SCAIL-2 ComfyUI test profile"
 LABEL org.opencontainers.image.description="Test-only ComfyUI runtime for Nomadoor SCAIL-2 workflows; model files are synced from the R2/LAN manifest at startup."
 LABEL allbot.runpod.profile="scail2"
 LABEL allbot.runpod.models="external-r2-manifest"
 LABEL allbot.runpod.business_agent="false"
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
+      io.allbot.runpod.agent-revision=$ALLBOT_GIT_SHA \
+      io.allbot.runpod.workflow-revision=$ALLBOT_GIT_SHA
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -117,13 +121,15 @@ RUN set -euo pipefail; \
     echo "${COMFYUI_INSTALL_DIR}" > /opt/allbot-comfyui-dir
 
 COPY remote_workers/scripts/runpod_sync_models_from_r2.py /opt/allbot/remote_workers/scripts/runpod_sync_models_from_r2.py
+COPY remote_workers /opt/allbot/runtime/remote_workers
 COPY remote_workers/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
+COPY remote_workers/scripts/runpod_baked_runtime_entrypoint.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh
 COPY remote_workers/scripts/lan_scail2_comfyui_entrypoint.sh /opt/allbot/lan_scail2_comfyui_entrypoint.sh
 COPY remote_workers/comfy_agent/workflows/SCAIL-2_*.json /opt/allbot/scail2-workflows/
 COPY remote_workers/requirements.txt /opt/allbot/remote_workers/requirements.txt
 
 RUN set -euo pipefail; \
-    chmod +x /opt/allbot/runpod_bootstrap_from_git.sh; \
+    chmod +x /opt/allbot/runpod_bootstrap_from_git.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh; \
     chmod +x /opt/allbot/lan_scail2_comfyui_entrypoint.sh; \
     python3 -m pip install --no-cache-dir -r /opt/allbot/remote_workers/requirements.txt; \
     python3 -c 'import fastapi, minio, uvicorn, websockets'; \
@@ -145,4 +151,6 @@ RUN set -euo pipefail; \
       exit 1; \
     fi
 
-CMD ["bash", "/opt/allbot/lan_scail2_comfyui_entrypoint.sh"]
+ENV ALLBOT_RUNPOD_REPO_DIR=/opt/allbot/runtime \
+    ALLBOT_RUNPOD_REMOTE_WORKERS_DIR=/opt/allbot/runtime/remote_workers
+CMD ["bash", "/opt/allbot/runpod_baked_runtime_entrypoint.sh"]

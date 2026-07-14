@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ALLBOT_GIT_SHA="${ALLBOT_GIT_SHA:-$(git rev-parse HEAD)}"
+
 PROFILE="img2img_lora"
 IMAGE_REF="${RUNPOD_PROFILE_IMAGE_REF:-}"
 BASE_IMAGE="${RUNPOD_PROFILE_BASE_IMAGE:-}"
@@ -216,6 +218,7 @@ if [ -n "$KJNODES_SOURCE" ]; then
     fi
     cleanup_dir="$(mktemp -d)"
     trap 'rm -rf "$cleanup_dir"' EXIT
+    cp -a remote_workers "${cleanup_dir}/remote_workers"
     cp "$local_dockerfile" "${cleanup_dir}/Dockerfile"
     cp -a "$KJNODES_SOURCE" "${cleanup_dir}/ComfyUI-KJNodes"
     dockerfile_for_build="${cleanup_dir}/Dockerfile"
@@ -223,51 +226,25 @@ if [ -n "$KJNODES_SOURCE" ]; then
 elif [ "$PROFILE" = "scail2" ]; then
     cleanup_dir="$(mktemp -d)"
     trap 'rm -rf "$cleanup_dir"' EXIT
-    mkdir -p \
-        "${cleanup_dir}/remote_workers/docker/runpod_profiles/scail2" \
-        "${cleanup_dir}/remote_workers/scripts" \
-        "${cleanup_dir}/remote_workers/comfy_agent/workflows"
-    cp "$dockerfile" \
-        "${cleanup_dir}/remote_workers/docker/runpod_profiles/scail2/Dockerfile"
-    cp \
-        "remote_workers/scripts/runpod_sync_models_from_r2.py" \
-        "remote_workers/scripts/runpod_bootstrap_from_git.sh" \
-        "remote_workers/scripts/lan_scail2_comfyui_entrypoint.sh" \
-        "${cleanup_dir}/remote_workers/scripts/"
-    cp "remote_workers/comfy_agent/workflows"/SCAIL-2_*.json \
-        "${cleanup_dir}/remote_workers/comfy_agent/workflows/"
-    cp "remote_workers/requirements.txt" \
-        "${cleanup_dir}/remote_workers/requirements.txt"
+    cp -a remote_workers "${cleanup_dir}/remote_workers"
     dockerfile_for_build="${cleanup_dir}/remote_workers/docker/runpod_profiles/scail2/Dockerfile"
     context_for_build="$cleanup_dir"
 elif [ "$PROFILE" = "ltx_video" ]; then
     cleanup_dir="$(mktemp -d)"
     trap 'rm -rf "$cleanup_dir"' EXIT
-    mkdir -p \
-        "${cleanup_dir}/remote_workers/docker/runpod_profiles/ltx_video" \
-        "${cleanup_dir}/remote_workers/scripts"
-    cp "$dockerfile" \
-        "${cleanup_dir}/remote_workers/docker/runpod_profiles/ltx_video/Dockerfile"
-    cp -a "${context_dir}/allbot_ltx_min_nodes" \
-        "${cleanup_dir}/remote_workers/docker/runpod_profiles/ltx_video/allbot_ltx_min_nodes"
-    cp "remote_workers/scripts/runpod_bootstrap_from_git.sh" \
-        "${cleanup_dir}/remote_workers/scripts/runpod_bootstrap_from_git.sh"
-    cp "remote_workers/requirements.txt" \
-        "${cleanup_dir}/remote_workers/requirements.txt"
+    cp -a remote_workers "${cleanup_dir}/remote_workers"
     dockerfile_for_build="${cleanup_dir}/remote_workers/docker/runpod_profiles/ltx_video/Dockerfile"
     context_for_build="$cleanup_dir"
 elif [ "$PROFILE" = "pornmaster_flux2_edit" ]; then
-    context_for_build="$context_dir"
+    cleanup_dir="$(mktemp -d)"
+    trap 'rm -rf "$cleanup_dir"' EXIT
+    cp -a remote_workers "${cleanup_dir}/remote_workers"
+    dockerfile_for_build="${cleanup_dir}/remote_workers/docker/runpod_profiles/pornmaster_flux2_edit/Dockerfile"
+    context_for_build="$cleanup_dir"
 elif [ "$PROFILE" = "wan22_aio_video" ] || [ "$PROFILE" = "i2i_pro" ] || [ "$PROFILE" = "img2img_lora" ]; then
     cleanup_dir="$(mktemp -d)"
     trap 'rm -rf "$cleanup_dir"' EXIT
-    mkdir -p \
-        "${cleanup_dir}/remote_workers/docker/runpod_profiles/${PROFILE}" \
-        "${cleanup_dir}/remote_workers/scripts"
-    cp "$dockerfile" \
-        "${cleanup_dir}/remote_workers/docker/runpod_profiles/${PROFILE}/Dockerfile"
-    cp "remote_workers/scripts/runpod_bootstrap_from_git.sh" \
-        "${cleanup_dir}/remote_workers/scripts/runpod_bootstrap_from_git.sh"
+    cp -a remote_workers "${cleanup_dir}/remote_workers"
     dockerfile_for_build="${cleanup_dir}/remote_workers/docker/runpod_profiles/${PROFILE}/Dockerfile"
     context_for_build="$cleanup_dir"
 fi
@@ -309,6 +286,10 @@ docker build \
     --build-arg "COMFYUI_REF=${COMFYUI_REF}" \
     --build-arg "KJNODES_REF=${KJNODES_REF}" \
     --build-arg "REUSE_BASE_CUSTOM_NODES=${REUSE_BASE_CUSTOM_NODES}" \
+    --build-arg "ALLBOT_GIT_SHA=${ALLBOT_GIT_SHA}" \
+    --label "org.opencontainers.image.revision=${ALLBOT_GIT_SHA}" \
+    --label "io.allbot.runpod.agent-revision=${ALLBOT_GIT_SHA}" \
+    --label "io.allbot.runpod.workflow-revision=${ALLBOT_GIT_SHA}" \
     --label "allbot.runpod.profile=${PROFILE}" \
     --label "allbot.runpod.model_sync=external-r2-manifest" \
     -t "$IMAGE_REF" \
@@ -335,6 +316,9 @@ test -f "${comfyui_dir}/main.py"
 test -d "${comfyui_dir}/custom_nodes/ComfyUI-KJNodes"
 test -f "${comfyui_dir}/custom_nodes/ComfyUI-KJNodes/requirements.txt"
 test -x /opt/allbot/runpod_bootstrap_from_git.sh
+test -x /opt/allbot/runpod_baked_runtime_entrypoint.sh
+test -f /opt/allbot/runtime/remote_workers/comfy_agent/agent_main.py
+test -d /opt/allbot/runtime/remote_workers/comfy_agent/workflows
 if find "${comfyui_dir}/models" -type f \( -name "Qwen-Rapid-AIO-NSFW-v23.safetensors" -o -path "*/loras/qwen/*.safetensors" \) -print -quit | grep -q .; then
   echo "Business model files must stay out of the profile image" >&2
   exit 1
@@ -366,6 +350,8 @@ test -d "${comfyui_dir}/custom_nodes/ComfyUI_Fill-Nodes"
 test -s "${comfyui_dir}/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth"
 test -s "${comfyui_dir}/custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth"
 test -x /opt/allbot/runpod_bootstrap_from_git.sh
+test -x /opt/allbot/runpod_baked_runtime_entrypoint.sh
+test -f /opt/allbot/runtime/remote_workers/comfy_agent/agent_main.py
 test -d "${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo"
 LTXVIDEO_NODE_DIR="${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo" PYTHONPATH="${comfyui_dir}:${PYTHONPATH:-}" python3 -c '"'"'import importlib.util, os, sys; from pathlib import Path; node_dir = Path(os.environ["LTXVIDEO_NODE_DIR"]); spec = importlib.util.spec_from_file_location("allbot_ltxvideo_smoke", node_dir / "__init__.py", submodule_search_locations=[str(node_dir)]); module = importlib.util.module_from_spec(spec); assert spec.loader is not None; sys.modules[spec.name] = module; spec.loader.exec_module(module); assert "LTXVSpatioTemporalTiledVAEDecode" in module.NODE_CLASS_MAPPINGS'"'"'
 test -d "${comfyui_dir}/custom_nodes/ComfyUI-GGUF"
@@ -398,6 +384,8 @@ test -d "${comfyui_dir}/custom_nodes/rgthree-comfy"
 test -d "${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo"
 test -d "${comfyui_dir}/custom_nodes/allbot_ltx_min_nodes"
 test -x /opt/allbot/runpod_bootstrap_from_git.sh
+test -x /opt/allbot/runpod_baked_runtime_entrypoint.sh
+test -f /opt/allbot/runtime/remote_workers/comfy_agent/agent_main.py
 python3 -c '"'"'import fastapi, minio, uvicorn, websockets'"'"'
 python3 -c '"'"'from sageattention import sageattn; assert callable(sageattn)'"'"'
 COMFYUI_DIR="${comfyui_dir}" LTXVIDEO_NODE_DIR="${comfyui_dir}/custom_nodes/ComfyUI-LTXVideo" PYTHONPATH="${comfyui_dir}:${PYTHONPATH:-}" python3 -c '"'"'import importlib.util, os, sys; from pathlib import Path; root = Path(os.environ["COMFYUI_DIR"]); node_dir = Path(os.environ["LTXVIDEO_NODE_DIR"]); spec = importlib.util.spec_from_file_location("allbot_ltxvideo_smoke", node_dir / "__init__.py", submodule_search_locations=[str(node_dir)]); module = importlib.util.module_from_spec(spec); assert spec.loader is not None; sys.modules[spec.name] = module; spec.loader.exec_module(module); assert "LTXVSpatioTemporalTiledVAEDecode" in module.NODE_CLASS_MAPPINGS; core_text = (root / "comfy_extras" / "nodes_lt.py").read_text(encoding="utf-8"); assert "LTXVScheduler" in core_text and "LTXVConditioning" in core_text; kj_text = (root / "custom_nodes" / "ComfyUI-KJNodes" / "__init__.py").read_text(encoding="utf-8"); assert "LTXVImgToVideoInplaceKJ" in kj_text'"'"'
@@ -425,6 +413,8 @@ test -d "${comfyui_dir}/custom_nodes/rgthree-comfy"
 test -d "${comfyui_dir}/custom_nodes/ComfyUI-Frame-Interpolation"
 test -d "${comfyui_dir}/custom_nodes/ComfyUI_Fill-Nodes"
 test -x /opt/allbot/runpod_bootstrap_from_git.sh
+test -x /opt/allbot/runpod_baked_runtime_entrypoint.sh
+test -f /opt/allbot/runtime/remote_workers/comfy_agent/agent_main.py
 test -x /opt/allbot/lan_scail2_comfyui_entrypoint.sh
 test -f /opt/allbot/scail2-workflows/SCAIL-2_Animation.json
 python3 -c '"'"'import fastapi, minio, uvicorn, websockets'"'"'

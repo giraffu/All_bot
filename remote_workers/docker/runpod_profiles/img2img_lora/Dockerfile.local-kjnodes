@@ -41,3 +41,15 @@ RUN set -euo pipefail; \
     find "${comfyui_dir}/models" -type f \( -name 'Qwen-Rapid-AIO-NSFW-v23.safetensors' -o -path '*/loras/qwen/*.safetensors' \) -print -quit | \
       awk 'NF { print "Business model file unexpectedly present in image: " $0; exit 1 }'; \
     echo "${comfyui_dir}" > /opt/allbot-comfyui-dir
+
+ARG ALLBOT_GIT_SHA
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
+      io.allbot.runpod.agent-revision=$ALLBOT_GIT_SHA \
+      io.allbot.runpod.workflow-revision=$ALLBOT_GIT_SHA
+COPY remote_workers /opt/allbot/runtime/remote_workers
+COPY remote_workers/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
+COPY remote_workers/scripts/runpod_baked_runtime_entrypoint.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh
+RUN chmod +x /opt/allbot/runpod_bootstrap_from_git.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh
+ENV ALLBOT_RUNPOD_REPO_DIR=/opt/allbot/runtime \
+    ALLBOT_RUNPOD_REMOTE_WORKERS_DIR=/opt/allbot/runtime/remote_workers
+CMD ["bash", "/opt/allbot/runpod_baked_runtime_entrypoint.sh"]

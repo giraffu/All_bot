@@ -290,8 +290,6 @@ class RunPodPodRequestBuilder:
             "ALLBOT_RUNPOD_MANAGED": "true",
             "RUNPOD_ENVIRONMENT": environment,
             "RUNPOD_TASK_TYPE": profile.task_type,
-            "ALLBOT_RUNPOD_GIT_URL": self.settings.bootstrap_git_url,
-            "ALLBOT_RUNPOD_GIT_BRANCH": self.settings.bootstrap_git_branch,
             "AGENT_ID_PREFIX": profile.agent_id_prefix,
             "AGENT_ID": f"{profile.agent_id_prefix}_${{RUNPOD_POD_ID:-pending}}",
             "ALLBOT_RUNPOD_ROOT": f"{self.settings.volume_mount_path.rstrip('/')}/allbot",

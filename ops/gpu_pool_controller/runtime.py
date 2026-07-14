@@ -420,9 +420,8 @@ class RuntimePlanner:
                         "-lc",
                         (
                             "remote_root=\"$${RUNPOD_REMOTE_WORKER_ROOT:-/opt/allbot/remote_workers}\"; "
-                            "if [ \"$${remote_root}\" = \"/opt/allbot/remote_workers\" ] "
-                            "&& [ -x /opt/allbot/runpod_bootstrap_from_git.sh ]; then "
-                            "exec bash /opt/allbot/runpod_bootstrap_from_git.sh; "
+                            "if [ -x /opt/allbot/runpod_baked_runtime_entrypoint.sh ]; then "
+                            "exec bash /opt/allbot/runpod_baked_runtime_entrypoint.sh; "
                             "fi; "
                             "model_target=\"$${RUNPOD_MODEL_TARGET_DIR:-/workspace/ComfyUI/models}\"; "
                             "mkdir -p \"$${model_target}\"; "

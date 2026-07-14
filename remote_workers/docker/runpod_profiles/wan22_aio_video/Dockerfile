@@ -28,6 +28,10 @@ LABEL org.opencontainers.image.title="AllBot RunPod wan22_aio_video ComfyUI prof
 LABEL org.opencontainers.image.description="ComfyUI runtime profile with Wan22 AIO custom nodes baked in; model files are synced from R2 at Pod startup."
 LABEL allbot.runpod.profile="wan22_aio_video"
 LABEL allbot.runpod.models="external-r2-manifest"
+ARG ALLBOT_GIT_SHA
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
+      io.allbot.runpod.agent-revision=$ALLBOT_GIT_SHA \
+      io.allbot.runpod.workflow-revision=$ALLBOT_GIT_SHA
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -258,9 +262,13 @@ RUN set -euo pipefail; \
     python3 -m pip cache purge >/dev/null 2>&1 || true; \
     rm -rf /root/.cache/pip /tmp/* /var/tmp/*
 
+COPY remote_workers /opt/allbot/runtime/remote_workers
 COPY remote_workers/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
+COPY remote_workers/scripts/runpod_baked_runtime_entrypoint.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh
 
 RUN set -euo pipefail; \
-    chmod +x /opt/allbot/runpod_bootstrap_from_git.sh
+    chmod +x /opt/allbot/runpod_bootstrap_from_git.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh
 
-CMD ["bash", "/opt/allbot/runpod_bootstrap_from_git.sh"]
+ENV ALLBOT_RUNPOD_REPO_DIR=/opt/allbot/runtime \
+    ALLBOT_RUNPOD_REMOTE_WORKERS_DIR=/opt/allbot/runtime/remote_workers
+CMD ["bash", "/opt/allbot/runpod_baked_runtime_entrypoint.sh"]

@@ -14,6 +14,10 @@ LABEL org.opencontainers.image.description="Minimal LTX-only all-in-one ComfyUI 
 LABEL allbot.runpod.profile="ltx_video"
 LABEL allbot.runpod.models="external-r2-manifest"
 LABEL allbot.runpod.scope="ltx-video-only"
+ARG ALLBOT_GIT_SHA
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
+      io.allbot.runpod.agent-revision=$ALLBOT_GIT_SHA \
+      io.allbot.runpod.workflow-revision=$ALLBOT_GIT_SHA
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -69,7 +73,9 @@ COPY --from=node_source /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI-Vid
 COPY --from=node_source /default-comfyui-bundle/ComfyUI/custom_nodes/rgthree-comfy /opt/allbot/node_source/rgthree-comfy
 COPY --from=node_source /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI-LTXVideo /opt/allbot/node_source/ComfyUI-LTXVideo
 COPY remote_workers/docker/runpod_profiles/ltx_video/allbot_ltx_min_nodes /opt/allbot/allbot_ltx_min_nodes
+COPY remote_workers /opt/allbot/runtime/remote_workers
 COPY remote_workers/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
+COPY remote_workers/scripts/runpod_baked_runtime_entrypoint.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh
 COPY remote_workers/requirements.txt /opt/allbot/remote_workers/requirements.txt
 
 RUN set -euo pipefail; \
@@ -103,7 +109,7 @@ RUN set -euo pipefail; \
       > "${ltxvideo_dir}/__init__.py"; \
     COMFYUI_DIR="${comfyui_dir}" LTXVIDEO_NODE_DIR="${ltxvideo_dir}" PYTHONPATH="${comfyui_dir}:${PYTHONPATH:-}" python3 -c 'import importlib.util, os, sys; from pathlib import Path; root = Path(os.environ["COMFYUI_DIR"]); node_dir = Path(os.environ["LTXVIDEO_NODE_DIR"]); spec = importlib.util.spec_from_file_location("allbot_ltxvideo_smoke", node_dir / "__init__.py", submodule_search_locations=[str(node_dir)]); module = importlib.util.module_from_spec(spec); assert spec.loader is not None; sys.modules[spec.name] = module; spec.loader.exec_module(module); assert "LTXVSpatioTemporalTiledVAEDecode" in module.NODE_CLASS_MAPPINGS; core_text = (root / "comfy_extras" / "nodes_lt.py").read_text(encoding="utf-8"); assert "LTXVScheduler" in core_text and "LTXVConditioning" in core_text; kj_text = (root / "custom_nodes" / "ComfyUI-KJNodes" / "__init__.py").read_text(encoding="utf-8"); assert "LTXVImgToVideoInplaceKJ" in kj_text'; \
     LTX_MIN_NODE_DIR="${comfyui_dir}/custom_nodes/allbot_ltx_min_nodes" python3 -c 'import importlib.util, os; from pathlib import Path; spec = importlib.util.spec_from_file_location("allbot_ltx_min_nodes_smoke", Path(os.environ["LTX_MIN_NODE_DIR"]) / "__init__.py"); module = importlib.util.module_from_spec(spec); assert spec.loader is not None; spec.loader.exec_module(module); expected = {"ImpactDummyInput", "TwoWaySwitch", "easy int", "mxSlider", "RAMCleanup", "VRAMCleanup", "Float", "IntToFloat", "Sigmas Sigmoid", "MathExpression|pysssss"}; assert expected <= set(module.NODE_CLASS_MAPPINGS)'; \
-    chmod +x /opt/allbot/runpod_bootstrap_from_git.sh; \
+    chmod +x /opt/allbot/runpod_bootstrap_from_git.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh; \
     python3 -m pip install --no-cache-dir -r /opt/allbot/remote_workers/requirements.txt; \
     python3 -m pip install --no-cache-dir minio packaging "sageattention==${SAGEATTENTION_VERSION}"; \
     python3 -c 'import fastapi, minio, uvicorn, websockets; from sageattention import sageattn; assert callable(sageattn)'; \
@@ -115,4 +121,6 @@ RUN set -euo pipefail; \
     python3 -m pip cache purge >/dev/null 2>&1 || true; \
     rm -rf /root/.cache/pip /tmp/* /var/tmp/*
 
-CMD ["bash", "/opt/allbot/runpod_bootstrap_from_git.sh"]
+ENV ALLBOT_RUNPOD_REPO_DIR=/opt/allbot/runtime \
+    ALLBOT_RUNPOD_REMOTE_WORKERS_DIR=/opt/allbot/runtime/remote_workers
+CMD ["bash", "/opt/allbot/runpod_baked_runtime_entrypoint.sh"]
