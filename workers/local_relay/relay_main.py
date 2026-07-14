@@ -386,6 +386,15 @@ async def _upload_asset_with_retry(*, bucket: str, asset: UploadAsset) -> None:
             return
         except Exception as exc:
             last_error = exc
+            logger.warning(
+                "upload_asset_attempt_failed object_name=%s attempt=%s/%s "
+                "error_type=%s error=%s",
+                asset.object_name,
+                attempt,
+                max(1, UPLOAD_RETRY_ATTEMPTS),
+                type(exc).__name__,
+                exc,
+            )
             if attempt >= max(1, UPLOAD_RETRY_ATTEMPTS):
                 break
             delay = min(UPLOAD_RETRY_BASE_SECONDS * (2 ** (attempt - 1)), 5)
