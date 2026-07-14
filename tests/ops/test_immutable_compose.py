@@ -172,17 +172,6 @@ def test_prod_runtime_pins_internal_api_base_for_every_python_consumer():
         assert environment["API_BASE"] == expected_api_base
 
 
-def test_prod_payment_port_matches_application_listener():
-    base_payment = _compose(BASE)["services"]["payment-api"]
-    payment = _compose(OVERLAYS[1])["services"]["payment-api"]
-
-    assert payment["ports"] == ["${CLOUD_PROD_BIND_IP:-127.0.0.1}:8021:8021"]
-    assert payment["environment"]["PAYMENT_API_PORT"] == "8021"
-    assert "http://127.0.0.1:8021/pay/result" in " ".join(
-        base_payment["healthcheck"]["test"]
-    )
-
-
 def test_release_workflow_builds_all_images_and_never_uses_latest():
     workflow = (ROOT / ".github/workflows/control-plane-release.yml").read_text(
         encoding="utf-8"

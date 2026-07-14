@@ -6,8 +6,8 @@ services:
     ports: ["${CLOUD_PROD_BIND_IP:-127.0.0.1}:8000:8001"]
     environment: {BOT_TYPE: PROD, API_BASE: "http://central-api:8003"}
   payment-api:
-    ports: ["${CLOUD_PROD_BIND_IP:-127.0.0.1}:8021:8021"]
-    environment: {BOT_TYPE: PROD, API_BASE: "http://central-api:8003", PAYMENT_API_PORT: "8021"}
+    ports: ["${CLOUD_PROD_BIND_IP:-127.0.0.1}:8002:8002"]
+    environment: {BOT_TYPE: PROD, API_BASE: "http://central-api:8003"}
   dashboard-backend:
     ports: ["${CLOUD_PROD_BIND_IP:-127.0.0.1}:8043:8043"]
     environment: {BOT_TYPE: PROD, API_BASE: "http://central-api:8003"}
