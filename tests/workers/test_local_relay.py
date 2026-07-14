@@ -207,3 +207,23 @@ async def test_upload_result_puts_all_assets_and_cleans_spool_files(tmp_path):
     ]
     assert not primary_path.exists()
     assert not extra_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_upload_retry_logs_the_underlying_spool_error(monkeypatch, tmp_path, caplog):
+    missing_path = tmp_path / "missing.png"
+    relay.state.minio_client = object()
+    monkeypatch.setattr(relay, "UPLOAD_RETRY_ATTEMPTS", 1)
+    asset = relay.UploadAsset(
+        file_path=str(missing_path),
+        object_name="result.png",
+        content_type="image/png",
+    )
+
+    with caplog.at_level("WARNING", logger="local_relay"):
+        with pytest.raises(RuntimeError, match="R2 upload failed"):
+            await relay._upload_asset_with_retry(bucket="user-data-test", asset=asset)
+
+    assert "upload_asset_attempt_failed" in caplog.text
+    assert "FileNotFoundError" in caplog.text
+    assert "spool file not found" in caplog.text

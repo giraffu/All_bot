@@ -32,7 +32,7 @@ x-worker-base-cloud-test: &worker-base-cloud-test
   network_mode: "host"
   volumes:
     - ../logs/workers-cloud-test:/app/logs
-    - ../logs/worker-spool-cloud-test:/app/spool
+    - ${CLOUD_TEST_WORKER_SPOOL_HOST_DIR:-/var/lib/allbot/test-worker/spool}:/app/spool
     - ./comfy_agent/workflows:/app/worker/workflows
     - ../src:/app/src
 
@@ -55,7 +55,7 @@ services:
       RESULT_SPOOL_DIR: /app/spool
     volumes:
       - ../logs/workers-cloud-test:/app/logs
-      - ../logs/worker-spool-cloud-test:/app/spool
+      - ${CLOUD_TEST_WORKER_SPOOL_HOST_DIR:-/var/lib/allbot/test-worker/spool}:/app/spool
 
   cloud-comfy-agent-test-1:
     <<: *worker-base-cloud-test
