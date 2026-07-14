@@ -31,6 +31,7 @@
 | :--- | :--- | :--- | :--- |
 | `web.aivison.it.com` | Pages `allbot-web-prod` | 正式 Web 静态站 | Pages/Git 发布门禁 |
 | `web-cf-test.aivison.it.com` | Pages `allbot-web-cf-test` | 不可变发布测试 Web；运行时配置指向测试 API/Bot/R2 | Pages 发布门禁，不指向正式 API |
+| `r2-test.aivison.it.com` | R2 custom domain / `user-data-test` | 云测试结果公开读路径；浏览器上传仍使用 R2 S3 预签名 URL | 桶 CORS 必须覆盖当前测试 Pages Origin |
 | `api-cf-test.aivison.it.com` | Tunnel `allbot-cloud-web-api-canary` / `6d129e6e-8f4a-4003-b0bc-60565910b2b9` | 云测试 Web API `http://100.82.124.91:8001` | 2026-07-14 已从错误的正式回源修正为测试回源 |
 | `api.aivison.it.com` | Tunnel `allbot-cloud-web-api` / `07da3d9e-c610-41c8-ac71-71da8753a46e` | 云正式 Web API `http://100.107.220.127:8000` | Web API 自身鉴权，不启用 Access 登录页 |
 | `rmb.aivison.it.com` | Cloudflare Tunnel | 云正式 Payment API `http://100.107.220.127:8021` | 支付回调/结果页语义，切换走 RMB 脚本 |
@@ -43,6 +44,8 @@
 | `web-test.aivison.it.com` | Web/Nginx VPS | legacy 测试静态站/回滚入口；VPS 离线时不可作为发布成功依据 | 不再接收逐文件发布 |
 
 2026-07-14 已关闭 `allbot-web-cf-test` Git integration 的 production 自动部署，并把 preview branch control 设置为 `none`；当前内容保持不变，后续只接受 release CLI 校验同一 tar 后的 Wrangler 上传。`allbot-web-prod` 未在本轮修改。
+
+同日已为 `user-data-test` 桶补齐不可变 Pages 测试站直传 CORS。当前允许的 Origin 为 `https://web-test.aivison.it.com`、`https://web.aivison.it.com`、`https://web-cf-test.aivison.it.com`、`https://allbot-web-cf-test.pages.dev`，方法为 `GET/PUT/HEAD`，允许任意请求头并暴露 `ETag`。四个 Origin 的预检均返回 204，`web-cf-test` Origin 的真实预签名 PUT/HEAD 均返回 200。桶 CORS 变更需要具备 R2 Storage Write 管理权限；对象读写 key 即使能上传，也可能无权读取或修改桶 CORS，必须按目标 API/操作实测能力，且不得回显凭据。
 
 正式 Pages 发布前必须由 `scripts/release.py preflight --env prod --sha <sha>` 只读确认：production branch 为 `main`、`production_deployments_enabled=false`、`preview_deployment_setting=none`、正式 custom domain active、当前 canonical production deployment ID 可作为回滚材料。任何一项不满足都只报告 blocker，不允许发布器自动 PATCH 项目设置。
 
