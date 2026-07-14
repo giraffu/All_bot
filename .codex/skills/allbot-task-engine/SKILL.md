@@ -28,6 +28,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - `cleanup_task_runtime_state(...)` 是运行态收口入口。取消、失败、成功、恢复脚本和 finalizer 都应走同一类清理语义，不要复制散落删除 Redis/DB 状态。
 - Web side-effect monitor 默认入口是 `monitor_task_and_release_lock_default(...)`。Web 提交成功后的锁释放、终态观测和异常收口应通过 monitor，而不是让 request handler 长时间持有业务逻辑。
 - 成功结果持久化使用 `TaskSuccessPersistenceCommand` 语义收口。新增结果字段时，同时检查 History、Gallery/apply、LTX/SCAIL-2 extra context 和 Bot completion。
+- Bot 多阶段任务用 presentation `record_history` 区分公开结果与内部阶段，默认 `true`；内部阶段设为 `false` 时仍物化输出并完成运行态收口，但不写 History、生成次数或 warmup。该字段必须持久化进恢复契约；`send_result=false` 只表示不向 Telegram 投递，不能替代历史语义。
 
 ## 3. 高压红线
 
@@ -42,6 +43,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - Central/Redis transient error 应按可重试基础设施故障处理：入队等幂等安全写可有限 retry，真实出队 `zpopmin` 不做盲 retry；Central Redis retry 耗尽返回 503，Bot/Web 应映射为“当前服务器繁忙”并走补偿/收口路径。
 - 不要只改 `SIMPLE_TASK_TYPE_MAP` 就宣称新增任务类型完成。必须核对 request model、dispatcher、registry、Central route、worker mapping、SUPPORTED_TASK_TYPES、workflow 和结果持久化。
 - 不要在任务类型里继续扩大 legacy alias。用户可见类型、执行类型、Central 类型和 workflow/profile 的映射要明确记录。
+- 正式 LAN AIO Worker 以及由统一 create request 新建的 RunPod Worker 默认只允许深度 1 的原子预接：当前任务进入 ComfyUI 后用既有 `/api/agent/task/pop?cancel_lock=true` 接走同类型下一单，本地预备输入并在下一轮优先消费。`PREFETCH_TASK_TYPES` 必须跟随 `SUPPORTED_TASK_TYPES`，预接任务等待期间用 `set_current=false` 续 heartbeat，不能覆盖当前任务或扩成无界本地队列。RunPod 只对后续新建 Pod 注入该环境契约，不原地修改存量 Pod。
 
 ## 4. 当前任务链
 

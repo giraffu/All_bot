@@ -148,6 +148,12 @@ Bot flow 已拆成五段式上下文：
 - `failure`
 - `cleanup`
 
+Bot presentation 通过 `record_history` 区分用户可见结果与内部链路阶段，默认值为
+`true`。内部阶段仍须完成结果物化、终态清理和必要的后续编排，但可显式设置
+`record_history=false` 跳过 History、生成次数与 Web history warmup；该字段必须进入
+Bot 任务恢复契约，避免进程恢复时补写内部阶段。`send_result=false` 只控制 Telegram
+投递，不能隐式代表不记录历史。
+
 当前 `task_service_flow.py` 已直接内聚提交、monitor、terminal 与 cleanup 四段 helper，不再额外拆出仅单文件消费的 stage 壳。
 
 取消态改为专用异常 `BotTaskCancelled`，不再依赖字符串 sentinel `"cancelled"`。
