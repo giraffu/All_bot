@@ -122,6 +122,17 @@ jobs:
             --from-sha "$SOURCE_SHA" --manifest release-v2/release-index.json \
             --skip-git-checks --skip-ci-checks
 
+      - name: Smoke thin frontend entrypoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          dashboard_ref="$(jq -r '.artifacts["dashboard-frontend"].ref' release-v2/control-plane-manifest.json)"
+          qqcc_ref="$(jq -r '.artifacts["qqcc-config-frontend"].ref' release-v2/control-plane-manifest.json)"
+          backend_ref="$(jq -r '.artifacts["dashboard-backend"].ref' release-v2/control-plane-manifest.json)"
+          docker run --rm --entrypoint sh "$dashboard_ref" -c '/docker-entrypoint.d/05-select-dashboard-spa.sh && test -f /etc/nginx/templates/default.conf.template'
+          docker run --rm --entrypoint sh -e DASHBOARD_FRONTEND_MODE=qqcc "$qqcc_ref" -c '/docker-entrypoint.d/05-select-dashboard-spa.sh && test -f /etc/nginx/templates/default.conf.template'
+          docker run --rm --entrypoint python "$backend_ref" -c 'import dashboard.backend.main; import dashboard.backend.qqcc_config_main'
+
       - name: Publish immutable v2 bundle
         shell: bash
         env:
