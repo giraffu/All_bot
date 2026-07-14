@@ -100,23 +100,24 @@ async def persist_successful_task_result_flow(
     )
     media_kind = "video" if is_video else "image"
 
-    await postprocess_successful_task_persistence_func(
-        user_logger=user_logger,
-        persistence_result=persistence_result,
-        registry_task_id=registry_task_id,
-        internal_user_id=internal_user_id,
-        prompt=prompt,
-        task_type=task_type,
-        input_images=input_images,
-        allow_contribute=allow_contribute,
-        source=postprocess_plan.source,
-        billing_resolution=billing_resolution,
-        requested_duration=requested_duration,
-        media_type=media_kind,
-        refresh_user_group_after_log=postprocess_plan.refresh_user_group_after_log,
-        warmup_web_history=postprocess_plan.warmup_web_history,
-        refresh_user_group_func=refresh_user_group_func,
-        schedule_web_history_r2_warmup_func=schedule_web_history_r2_warmup_func,
-    )
+    if postprocess_plan.record_history:
+        await postprocess_successful_task_persistence_func(
+            user_logger=user_logger,
+            persistence_result=persistence_result,
+            registry_task_id=registry_task_id,
+            internal_user_id=internal_user_id,
+            prompt=prompt,
+            task_type=task_type,
+            input_images=input_images,
+            allow_contribute=allow_contribute,
+            source=postprocess_plan.source,
+            billing_resolution=billing_resolution,
+            requested_duration=requested_duration,
+            media_type=media_kind,
+            refresh_user_group_after_log=postprocess_plan.refresh_user_group_after_log,
+            warmup_web_history=postprocess_plan.warmup_web_history,
+            refresh_user_group_func=refresh_user_group_func,
+            schedule_web_history_r2_warmup_func=schedule_web_history_r2_warmup_func,
+        )
 
     return persistence_result

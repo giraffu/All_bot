@@ -36,6 +36,7 @@ def build_bot_task_recovery_contract(
     send_result: bool,
     delete_status: bool,
     allow_contribute: bool,
+    record_history: bool = True,
     result_task_type: Any = None,
     result_prompt: Any = None,
     result_input_image_indices: Any = None,
@@ -53,6 +54,8 @@ def build_bot_task_recovery_contract(
         "delete_status": bool(delete_status),
         "allow_contribute": bool(allow_contribute),
     }
+    if not record_history:
+        contract["record_history"] = False
     optional_text = {
         "result_task_type": _clean_optional_text(result_task_type, max_length=128),
         "result_prompt": _clean_optional_text(result_prompt, max_length=16_000),
@@ -97,6 +100,7 @@ def normalize_bot_task_recovery_contract(
         send_result=raw["send_result"],
         delete_status=raw.get("delete_status") is True,
         allow_contribute=raw.get("allow_contribute") is True,
+        record_history=raw.get("record_history") is not False,
         result_task_type=raw.get("result_task_type"),
         result_prompt=raw.get("result_prompt"),
         result_input_image_indices=raw.get("result_input_image_indices"),

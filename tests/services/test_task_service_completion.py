@@ -21,6 +21,7 @@ from src.constants import (
     MODE_IMAGE_TO_VIDEO,
     MODE_LTX_VIDEO,
     MODE_NAME_MAP,
+    MODE_PORNMASTER_FLUX2_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_WAN22_VIDEO_V2,
@@ -512,6 +513,7 @@ async def test_download_and_log_task_output_handles_image_branch(monkeypatch):
         extra_outputs={"last_frame": {"path": "last.png"}},
         billing_resolution="1024",
         requested_duration=None,
+        record_history=False,
     )
     assert result.media_bytes == b"image-bytes"
     assert result.output_file == "saved-output.png"
@@ -526,6 +528,7 @@ async def test_download_and_log_task_output_handles_image_branch(monkeypatch):
     assert kwargs["extra_outputs"] == {"last_frame": {"path": "last.png"}}
     assert kwargs["postprocess_plan"] == TaskPersistencePostprocessPlan(
         source="bot",
+        record_history=False,
         refresh_user_group_after_log=True,
     )
 
@@ -849,6 +852,37 @@ def test_generation_completion_caption_uses_display_mode_override():
     )
 
     assert caption == "✅ 柔光写真生成完成"
+
+
+@pytest.mark.asyncio
+async def test_generation_completion_caption_uses_public_result_task_type(monkeypatch):
+    run_bot_task_application = AsyncMock(return_value=(b"image", "outputs/final.png"))
+    monkeypatch.setattr(
+        "src.core.user_core.get_or_create_user_by_telegram",
+        AsyncMock(return_value=(SimpleNamespace(id=456), False)),
+    )
+    monkeypatch.setattr(
+        "src.services.task_service_generation_image.get_acceleration_notice",
+        AsyncMock(return_value=""),
+    )
+    monkeypatch.setattr(
+        "src.services.task_service_generation_image.run_bot_task_application",
+        run_bot_task_application,
+    )
+
+    await process_generation_task(
+        context=SimpleNamespace(user_data={"language_code": "zh"}),
+        chat_id=123,
+        user_id=789,
+        username="tester",
+        prompt="face swap",
+        images=["edited.png", "source.png"],
+        task_type="face_swap",
+        result_task_type=MODE_PORNMASTER_FLUX2_EDIT_BF16,
+    )
+
+    flow = run_bot_task_application.await_args.kwargs["flow"]
+    assert flow.presentation.message_spec.completion_caption == "✅ 自由P图 v3生成完成"
 
 
 def test_build_pending_status_text_uses_queue_remaining_fallback():

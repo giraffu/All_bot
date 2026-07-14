@@ -200,6 +200,7 @@ def test_build_private_task_recovery_metadata_serializes_presentation_contract()
             send_result=True,
             delete_status=True,
             allow_contribute=False,
+            record_history=False,
             result_task_type="edit",
             result_prompt="visible prompt",
             result_input_image_indices=[1],
@@ -219,6 +220,7 @@ def test_build_private_task_recovery_metadata_serializes_presentation_contract()
             "requires_continuation": False,
             "delete_status": True,
             "allow_contribute": False,
+            "record_history": False,
             "result_task_type": "edit",
             "result_prompt": "visible prompt",
             "result_input_image_indices": [1],
@@ -235,6 +237,35 @@ def test_build_private_task_recovery_metadata_serializes_presentation_contract()
         )
         == {}
     )
+
+
+def test_build_main_bot_recovery_metadata_preserves_hidden_history_policy():
+    flow = SimpleNamespace(
+        request=SimpleNamespace(
+            context=SimpleNamespace(lang="zh"),
+            prompt="internal prompt",
+            task_type="pornmaster_flux2_edit_bf16",
+        ),
+        presentation=SimpleNamespace(
+            message_spec=BotTaskMessageSpec(initial_status_text="处理中"),
+            send_result=False,
+            delete_status=False,
+            allow_contribute=False,
+            record_history=False,
+            result_task_type=None,
+            result_prompt=None,
+            result_input_image_indices=None,
+            result_meta=None,
+        ),
+    )
+
+    metadata = task_service_flow.build_bot_task_recovery_metadata(
+        flow=flow,
+        client_type="bot",
+    )
+
+    assert metadata["_bot_task_recovery"]["send_result"] is False
+    assert metadata["_bot_task_recovery"]["record_history"] is False
 
 
 def test_build_private_task_recovery_metadata_includes_durable_continuation_ref():

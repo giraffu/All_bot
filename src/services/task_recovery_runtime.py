@@ -113,6 +113,7 @@ def _build_recovered_completion_context(
     caption=None,
     result_meta=None,
     final_info,
+    record_history=True,
 ):
     task_runtime = BotTaskRuntimeState(
         registry_task_id=registry_task_id,
@@ -142,6 +143,7 @@ def _build_recovered_completion_context(
         delete_status=delete_status,
         caption=caption,
         allow_contribute=allow_contribute,
+        record_history=record_history,
         result_meta=result_meta,
         billing_resolution=billing_resolution,
         requested_duration=requested_duration,
@@ -220,6 +222,7 @@ async def run_recovered_task(*, registry_task_id: str, task_data: dict, applicat
     send_result = bool(chat_id)
     delete_status = bool(status_msg)
     result_meta = None
+    record_history = True
     caption = None
     if recovery_contract is not None:
         recovered_task_type = recovery_contract.get("result_task_type") or task_type
@@ -239,6 +242,7 @@ async def run_recovered_task(*, registry_task_id: str, task_data: dict, applicat
             status_msg
         )
         allow_contribute = bool(recovery_contract.get("allow_contribute"))
+        record_history = recovery_contract.get("record_history") is not False
         result_meta = recovery_contract.get("result_meta")
         caption = recovery_contract.get("completion_caption")
 
@@ -258,6 +262,7 @@ async def run_recovered_task(*, registry_task_id: str, task_data: dict, applicat
         status_msg=status_msg,
         delete_status=delete_status,
         allow_contribute=allow_contribute,
+        record_history=record_history,
         billing_resolution=billing_resolution,
         requested_duration=requested_duration,
         caption=caption,

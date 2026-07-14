@@ -40,6 +40,7 @@ async def process_free_edit_v3_task(
         task_type=MODE_PORNMASTER_FLUX2_EDIT_BF16,
         cleanup=False,
         send_result=False,
+        record_history=False,
         allow_contribute=False,
         cost_override=FREE_EDIT_V3_COST,
         base_priority=0,

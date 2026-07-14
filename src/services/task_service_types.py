@@ -59,6 +59,7 @@ class BotTaskCompletionContext:
     delete_status: bool = True
     caption: Optional[str] = None
     allow_contribute: bool = True
+    record_history: bool = True
     result_meta: dict[str, Any] | None = None
     billing_resolution: Optional[str] = None
     requested_duration: Optional[int] = None
@@ -93,6 +94,7 @@ class BotTaskPresentationContext:
     result_meta: dict[str, Any] | None = None
     delete_status: bool = True
     allow_contribute: bool = True
+    record_history: bool = True
     result_task_type: Optional[str] = None
     result_prompt: Optional[str] = None
     result_input_image_indices: Optional[list[int]] = None
