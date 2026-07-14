@@ -1,6 +1,6 @@
 # 子模块: Cloudflare 公网入口与账号管理 (Cloudflare Ops)
 
-> 不可变发布约束（2026-07-14）：测试与正式 Web 必须由本地主服务器发布 CLI 使用最小 Pages token 上传同一 Web tar，仅在发布时注入版本化公开 runtime config。生产加固候选只读检查正式项目，不自动修改设置；本轮已获后续测试 Pages mutation 授权，正式 Pages 发布、custom domain 和关闭 Git 自动部署仍需单独确认。
+> 不可变发布约束（2026-07-14）：测试与正式 Web 必须由本地主服务器发布 CLI 使用最小 Pages token 上传同一 Web tar，仅在发布时注入版本化公开 runtime config。测试与正式 Pages 项目均已关闭 Git production/preview 自动部署；正式项目固定 production branch `main`，后续发布器只读核对项目设置并通过 Wrangler 上传已验证产物，不自动 PATCH 项目设置。
 
 ## 1. 目标与范围
 
@@ -43,7 +43,7 @@
 | `assets.aivison.it.com` | Web/Nginx VPS | legacy MinIO 人工回滚、旧外链、迁移排障 | 不作为新生成媒体主路径 |
 | `web-test.aivison.it.com` | Web/Nginx VPS | legacy 测试静态站/回滚入口；VPS 离线时不可作为发布成功依据 | 不再接收逐文件发布 |
 
-2026-07-14 已关闭 `allbot-web-cf-test` Git integration 的 production 自动部署，并把 preview branch control 设置为 `none`；当前内容保持不变，后续只接受 release CLI 校验同一 tar 后的 Wrangler 上传。`allbot-web-prod` 未在本轮修改。
+2026-07-14 已关闭 `allbot-web-cf-test` 和 `allbot-web-prod` Git integration 的 production 自动部署，并把 preview branch control 设置为 `none`；正式项目 production branch 同时校正为 `main`。项目域名和既有 canonical 内容在设置变更时保持不变，后续只接受 release CLI 校验同一 tar 后的 Wrangler 上传，并由发布器验证新的 canonical deployment 与 runtime SHA。
 
 同日已为 `user-data-test` 桶补齐不可变 Pages 测试站直传 CORS。当前允许的 Origin 为 `https://web-test.aivison.it.com`、`https://web.aivison.it.com`、`https://web-cf-test.aivison.it.com`、`https://allbot-web-cf-test.pages.dev`，方法为 `GET/PUT/HEAD`，允许任意请求头并暴露 `ETag`。四个 Origin 的预检均返回 204，`web-cf-test` Origin 的真实预签名 PUT/HEAD 均返回 200。桶 CORS 变更需要具备 R2 Storage Write 管理权限；对象读写 key 即使能上传，也可能无权读取或修改桶 CORS，必须按目标 API/操作实测能力，且不得回显凭据。
 
