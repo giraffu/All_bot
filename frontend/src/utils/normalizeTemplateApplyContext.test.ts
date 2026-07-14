@@ -144,7 +144,7 @@ describe('normalizeTemplateApplyContext', () => {
     })
   })
 
-  it('normalizes free edit v2 task types as workbench templates', () => {
+  it('canonicalizes historical free edit task types to v3 templates', () => {
     const normalized = normalizeTemplateApplyContext(
       {
         post_id: 19,
@@ -158,7 +158,7 @@ describe('normalizeTemplateApplyContext', () => {
     expect(normalized).not.toBeNull()
     expect(normalized).toMatchObject({
       rawTaskType: 'pornmaster_flux2_multi_edit',
-      taskType: 'pornmaster_flux2_multi_edit',
+      taskType: 'pornmaster_flux2_edit_bf16',
       sourcePostId: 19,
       prompt: 'adjust clothes and lighting'
     })

@@ -85,6 +85,7 @@ const resolveInputLabelKey = (
     'edit',
     'pornmaster_flux2_single_edit',
     'pornmaster_flux2_multi_edit',
+    'pornmaster_flux2_edit_bf16',
   ].includes(taskType)) {
     return total === 1 ? 'reference_image' : 'input_n'
   }

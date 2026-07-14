@@ -30,6 +30,34 @@ def _build_record(
     }
 
 
+def _build_free_edit_v3_record(*, stage: str = "bf16") -> dict:
+    record = _build_record(
+        registry_task_id="logical-v3",
+        backend_task_id=("stage1-v3" if stage == "bf16" else "stage2-v3"),
+        cost=5,
+    )
+    record["submission_context"].update(
+        {
+            "task_type": "pornmaster_flux2_edit_bf16",
+            "prompt": "preserve composition",
+            "saved_inputs": ["123/input_images/original.png"],
+            "metadata": {"_web_free_edit_v3": {"kind": "free_edit_v3"}},
+        }
+    )
+    record["continuation"] = {
+        "version": 1,
+        "kind": "free_edit_v3",
+        "stage": stage,
+        "stage2_backend_task_id": "stage2-v3",
+        "original_image": "123/input_images/original.png",
+        "stage1_result_path": (
+            "123/output_images/stage1.png" if stage != "bf16" else None
+        ),
+        "final_allow_contribute": True,
+    }
+    return record
+
+
 def _mock_finalizer_lock(monkeypatch, token: str | None = "lock-token"):
     acquire_mock = AsyncMock(return_value=token)
     release_mock = AsyncMock()
@@ -414,3 +442,137 @@ async def test_process_pending_web_finalizer_skips_stale_snapshot_after_lock(
     get_pending_mock.assert_awaited_once_with("registry-1")
     get_status_mock.assert_not_awaited()
     release_mock.assert_awaited_once_with("registry-1", "lock-token")
+
+
+@pytest.mark.asyncio
+async def test_free_edit_v3_stage1_success_dispatches_face_swap_once(monkeypatch):
+    record = _build_free_edit_v3_record()
+    _mock_finalizer_lock(monkeypatch)
+    _mock_pending_record(monkeypatch, record)
+    add_record = AsyncMock()
+    transition_registry = AsyncMock()
+    submit_face_swap = AsyncMock(return_value="stage2-v3")
+
+    monkeypatch.setattr(
+        task_web_finalizer.image_service,
+        "get_task_status",
+        AsyncMock(
+            side_effect=[
+                {
+                    "status": "done",
+                    "result_path": "123/output_images/stage1.png",
+                },
+                None,
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        task_web_finalizer.image_service,
+        "submit_face_swap_task",
+        submit_face_swap,
+    )
+    monkeypatch.setattr(
+        task_web_finalizer.redis_client,
+        "add_pending_web_finalizer",
+        add_record,
+    )
+    monkeypatch.setattr(
+        task_web_finalizer.TaskRegistry,
+        "transition_backend_task",
+        transition_registry,
+    )
+
+    finalized = await task_web_finalizer.process_pending_web_finalizer("logical-v3")
+
+    assert finalized is True
+    submit_face_swap.assert_awaited_once_with(
+        "stage2-v3",
+        face_image_path="123/input_images/original.png",
+        body_image_path="123/output_images/stage1.png",
+        priority=100,
+    )
+    transition_registry.assert_awaited_once_with(
+        "logical-v3",
+        backend_task_id="stage2-v3",
+        task_type="pornmaster_flux2_edit_bf16",
+        saved_input_images=["123/input_images/original.png"],
+        allow_contribute=True,
+        user_cancel_allowed=False,
+        status="pending",
+    )
+    persisted = add_record.await_args_list[-1].args[1]
+    assert persisted["backend_task_id"] == "stage2-v3"
+    assert persisted["continuation"]["stage"] == "face_swap"
+    assert persisted["submission_context"]["allow_contribute"] is True
+    assert "_web_free_edit_v3" not in persisted["submission_context"]["metadata"]
+
+
+@pytest.mark.asyncio
+async def test_free_edit_v3_dispatching_recovery_reuses_existing_stage2(monkeypatch):
+    record = _build_free_edit_v3_record(stage="face_swap_dispatching")
+    _mock_finalizer_lock(monkeypatch)
+    _mock_pending_record(monkeypatch, record)
+    add_record = AsyncMock()
+    submit_face_swap = AsyncMock()
+
+    monkeypatch.setattr(
+        task_web_finalizer.image_service,
+        "get_task_status",
+        AsyncMock(return_value={"status": "running"}),
+    )
+    monkeypatch.setattr(
+        task_web_finalizer.image_service,
+        "submit_face_swap_task",
+        submit_face_swap,
+    )
+    monkeypatch.setattr(
+        task_web_finalizer.redis_client,
+        "add_pending_web_finalizer",
+        add_record,
+    )
+    monkeypatch.setattr(
+        task_web_finalizer.TaskRegistry,
+        "transition_backend_task",
+        AsyncMock(),
+    )
+
+    finalized = await task_web_finalizer.process_pending_web_finalizer("logical-v3")
+
+    assert finalized is True
+    submit_face_swap.assert_not_awaited()
+    assert add_record.await_args.args[1]["continuation"]["stage"] == "face_swap"
+
+
+@pytest.mark.asyncio
+async def test_free_edit_v3_stage1_without_result_refunds_root_task(monkeypatch):
+    record = _build_free_edit_v3_record()
+    _mock_finalizer_lock(monkeypatch)
+    _mock_pending_record(monkeypatch, record)
+    failure = AsyncMock()
+    remove = AsyncMock()
+    monkeypatch.setattr(
+        task_web_finalizer.image_service,
+        "get_task_status",
+        AsyncMock(return_value={"status": "done", "result_path": None}),
+    )
+    monkeypatch.setattr(
+        task_web_finalizer,
+        "finalize_monitored_web_task_failure_default",
+        failure,
+    )
+    monkeypatch.setattr(
+        task_web_finalizer.redis_client,
+        "remove_pending_web_finalizer",
+        remove,
+    )
+
+    assert await task_web_finalizer.process_pending_web_finalizer("logical-v3") is True
+    failure.assert_awaited_once_with(
+        internal_user_id=123,
+        username="tester",
+        cost=5,
+        registry_task_id="logical-v3",
+        final_status="error",
+        logger_override=task_web_finalizer.logger,
+    )
+    remove.assert_awaited_once_with("logical-v3")

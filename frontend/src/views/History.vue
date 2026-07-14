@@ -147,7 +147,7 @@ const {
               </div>
               
               <!-- 投稿状态 -->
-              <span v-if="['txt2img', 'i2i_pro', 'i2i_draw', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'pornmaster_flux2_single_edit', 'pornmaster_flux2_multi_edit', 'ltx_video', 'ltx_video_flf2v', 'scail2_action_transfer', 'scail2_action_transfer_long', 'scail2_video_replacement', 'scail2_face_swap_v2'].includes(record.type || '') && record.allow_contribute !== false"
+              <span v-if="['txt2img', 'i2i_pro', 'i2i_draw', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'pornmaster_flux2_edit_bf16', 'pornmaster_flux2_single_edit', 'pornmaster_flux2_multi_edit', 'ltx_video', 'ltx_video_flf2v', 'scail2_action_transfer', 'scail2_action_transfer_long', 'scail2_video_replacement', 'scail2_face_swap_v2'].includes(record.type || '') && record.allow_contribute !== false"
                     class="text-[10px] px-2 py-0.5 rounded-full backdrop-blur-md border border-white/20 shadow-sm whitespace-nowrap ml-1"
                     :class="record.is_public ? 'bg-indigo-500/40 text-indigo-100' : 'bg-slate-500/40 text-slate-200'">
                 {{ record.is_public ? '已投稿' : '未投稿' }}

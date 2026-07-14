@@ -10,6 +10,7 @@ from src.constants import (
     MODE_LTX_VIDEO,
     MODE_LTX_VIDEO_FLF2V,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
+    MODE_PORNMASTER_FLUX2_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
 )
 from src.database.models import GalleryPost, History, User
@@ -25,7 +26,13 @@ GALLERY_GROUPED_TASK_TYPE_FAMILIES = {
         "quick_image",
         "img2img_lora",
     ),
+    "free_edit_v3_group": (
+        MODE_PORNMASTER_FLUX2_EDIT_BF16,
+        MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
+        MODE_PORNMASTER_FLUX2_MULTI_EDIT,
+    ),
     "free_edit_v2_group": (
+        MODE_PORNMASTER_FLUX2_EDIT_BF16,
         MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
         MODE_PORNMASTER_FLUX2_MULTI_EDIT,
     ),

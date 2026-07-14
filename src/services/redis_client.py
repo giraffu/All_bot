@@ -297,6 +297,7 @@ class RedisClient:
             logger.error(
                 f"Failed to persist pending web finalizer for {registry_task_id}: {e}"
             )
+            raise
 
     async def get_pending_web_finalizer(
         self,

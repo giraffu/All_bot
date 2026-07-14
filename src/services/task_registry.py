@@ -51,6 +51,40 @@ class TaskRegistry:
             await redis_client.add_active_task_strict(registry_task_id, task_data)
 
     @classmethod
+    async def transition_backend_task(
+        cls,
+        registry_task_id: str,
+        *,
+        backend_task_id: str,
+        task_type: str,
+        saved_input_images: list[str],
+        allow_contribute: bool,
+        user_cancel_allowed: bool,
+        status: str,
+    ) -> None:
+        """Persist a logical task's move to a non-cancellable backend stage."""
+        tasks = await redis_client.get_active_tasks_strict()
+        if registry_task_id not in tasks:
+            raise LookupError("Task registry entry disappeared before stage transition")
+        task_data = tasks[registry_task_id]
+        task_data.update(
+            {
+                "backend_task_id": backend_task_id,
+                "task_type": task_type,
+                "saved_input_images": list(saved_input_images),
+                "allow_contribute": bool(allow_contribute),
+                "user_cancel_allowed": bool(user_cancel_allowed),
+                "status": status,
+            }
+        )
+        metadata = task_data.get("metadata")
+        if isinstance(metadata, dict):
+            metadata = dict(metadata)
+            metadata.pop("_web_free_edit_v3", None)
+            task_data["metadata"] = metadata
+        await redis_client.add_active_task_strict(registry_task_id, task_data)
+
+    @classmethod
     async def get_task(cls, registry_task_id: str):
         tasks = await redis_client.get_active_tasks()
         return tasks.get(registry_task_id)

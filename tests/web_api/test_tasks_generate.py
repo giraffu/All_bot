@@ -315,6 +315,90 @@ async def test_web_generate_rejects_i2i_draw_without_submitting(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_web_generate_submits_free_edit_v3_as_one_five_credit_logical_task(
+    monkeypatch,
+):
+    process_task = AsyncMock(
+        return_value={"task_id": "logical-task-1", "cost": 5}
+    )
+    monkeypatch.setattr(
+        task_submission_service,
+        "process_and_submit_task",
+        process_task,
+    )
+    monkeypatch.setattr(
+        tasks_router.quota_manager,
+        "get_credits",
+        AsyncMock(return_value=95),
+    )
+
+    response = await tasks_router.create_generation_task(
+        TaskGenerateRequest(
+            task_type="pornmaster_flux2_edit_bf16",
+            inputs={"images": ["123/input_images/original.png"]},
+            prompt="keep the pose",
+        ),
+        current_user=_build_current_user(),
+    )
+
+    assert response.task_id == "logical-task-1"
+    assert response.cost == 5
+    submit_kwargs = process_task.await_args.kwargs
+    assert submit_kwargs["cost_override"] == 5
+    assert submit_kwargs["user_cancel_allowed"] is True
+    assert submit_kwargs["registry_metadata"]["_web_free_edit_v3"] == {
+        "version": 1,
+        "kind": "free_edit_v3",
+        "stage": "bf16",
+        "original_image": "123/input_images/original.png",
+        "final_allow_contribute": True,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "task_type,images",
+    [
+        ("pornmaster_flux2_edit_bf16", []),
+        (
+            "pornmaster_flux2_edit_bf16",
+            ["123/input_images/one.png", "123/input_images/two.png"],
+        ),
+        ("pornmaster_flux2_single_edit", ["123/input_images/one.png"]),
+        (
+            "pornmaster_flux2_multi_edit",
+            ["123/input_images/one.png", "123/input_images/two.png"],
+        ),
+    ],
+)
+async def test_web_generate_rejects_invalid_or_legacy_free_edit_requests(
+    monkeypatch,
+    task_type,
+    images,
+):
+    process_task = AsyncMock()
+    monkeypatch.setattr(
+        task_submission_service,
+        "process_and_submit_task",
+        process_task,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await tasks_router.create_generation_task(
+            TaskGenerateRequest(
+                task_type=task_type,
+                inputs={"images": images},
+                prompt="edit prompt",
+            ),
+            current_user=_build_current_user(),
+        )
+
+    assert exc_info.value.status_code == 400
+    assert "v3" in str(exc_info.value.detail)
+    process_task.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_web_generate_rejects_during_maintenance(monkeypatch):
     monkeypatch.setattr(task_submission_service, "is_maintenance_mode", lambda: True)
 

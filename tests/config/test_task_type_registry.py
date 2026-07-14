@@ -341,6 +341,7 @@ def test_registry_gallery_helpers_preserve_existing_lists_and_order():
         "scail2_face_swap_v2",
         "edit",
         "img2img_lora",
+        "pornmaster_flux2_edit_bf16",
         "pornmaster_flux2_single_edit",
         "pornmaster_flux2_multi_edit",
     ]
@@ -352,6 +353,7 @@ def test_registry_gallery_helpers_preserve_existing_lists_and_order():
         ("i2i_draw", "task.mode_i2i_draw"),
         ("edit", "task.mode_edit"),
         ("img2img_lora", "task.mode_img2img_lora"),
+        ("pornmaster_flux2_edit_bf16", "task.mode_free_edit_v3"),
         ("pornmaster_flux2_single_edit", "task.mode_free_edit_v2"),
         ("pornmaster_flux2_multi_edit", "task.mode_free_edit_v2"),
         ("custom_video", "task.mode_custom_video"),

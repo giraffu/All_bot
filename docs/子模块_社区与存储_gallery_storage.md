@@ -122,7 +122,7 @@ sequenceDiagram
 - 用户公开主页响应以 `posts: { items,total,page,size,pages }` 作为公开投稿分页主字段，`recent_posts` 仅保留为当前页 items 的兼容字段；公开投稿统计和分页必须使用同一组可见性条件，避免统计数大于实际可翻页内容。
 - 用户公开主页里的作品详情必须复用 Gallery 详情的提示词解锁逻辑，不能因为入口来自个人主页而隐藏 `prompt_unlockable` 的解锁入口。
 - Gallery feed 查询拼装已从 `src/core` 迁到 `src/services/gallery_feed_queries.py`，旧 `src/core/gallery_feed_queries.py` 兼容 re-export 已删除；新增列表查询条件应继续放在 service 层，避免 core 重新直连 SQL 细节。
-- Gallery 前端分组中，旧自由P图使用 `edit_group`，只包含 `edit` / `quick_image` / `img2img_lora`；自由P图 v2 使用独立 `free_edit_v2_group`，只包含 `pornmaster_flux2_single_edit` / `pornmaster_flux2_multi_edit`，不得混入旧自由P图 tab。
+- Gallery 前端分组中，旧自由P图使用 `edit_group`，只包含 `edit` / `quick_image` / `img2img_lora`；规范自由P图分组为 `free_edit_v3_group`，包含新 `pornmaster_flux2_edit_bf16` 以及历史 `pornmaster_flux2_single_edit` / `pornmaster_flux2_multi_edit`。`free_edit_v2_group` 仅作为旧客户端查询别名解析到同一集合，Web 统一显示“自由P图 v3”。
 - LTX 高级图生视频只保留 `ltx_video` 一个 Gallery 展示/筛选入口；历史或执行别名 `ltx_video_flf2v` 必须 canonical 到 `ltx_video`，投稿允许该别名但不新增展示 tab，筛选时同时查询两种 `History.type`。
 - Gallery 列表/详情、我的投稿、我的收藏、我的提示词模版与用户主页 recent posts 基于 `GalleryPostResponse.input_file/input_file_url/input_files/input_file_urls` 展示 `History.input_file` 的原始输入素材预览；这是展示字段，不改变投稿、收藏或模板应用语义。
 
@@ -147,7 +147,7 @@ sequenceDiagram
   - `billing_resolution`
   - 宽高与媒体元数据
 - 旧图生视频 `custom_video` / `video_lora` 投稿应用时会把旧 `512p/720p/1024p` 归一为 Wan22 v2 档位 `preview/standard/hd`，把 `0.36 MP - Small` 归一为 `small`，并恢复 canonical `5s/8s/10s` 时长，缺失或非 canonical 时回退 5 秒；`video_lora` 还会从历史 prompt 中的 `[模型: xxx]` 兼容解析 `lora_name`。
-- 自由P图 v2 投稿支持 Web 一键应用：模板应用会复用并锁定原 prompt、记录 `source_post_id`，但用户需要重新上传 1/2 张参考图；面板不展示 LoRA/附加模型，提交时按上传图数选择 `pornmaster_flux2_single_edit` 或 `pornmaster_flux2_multi_edit`。
+- 新 v3 与历史 v2 自由P图投稿均支持 Web 一键应用：模板应用复用并锁定原 prompt、记录 `source_post_id`，要求用户重新上传恰好 1 张原图；面板不展示 LoRA/附加模型，统一提交 `pornmaster_flux2_edit_bf16` 并固定显示 5 灵石。普通 v3 结果可投稿，模板应用生成结果必须保存为 `allow_contribute=false`，避免模板递归投稿。
 - `i2i_draw` 局部重绘当前已在 Web 一键应用关闭：作品仍可展示，但列表/详情必须返回 `template_apply_supported=false` 与 `template_apply_disabled_reason="i2i_draw_disabled"`，apply-context 入口必须返回 400 防绕过。
 - `wan22_video_v2` 单段投稿支持一键应用，回填正向提示词、`_wan22_context.wan22_negative_prompt`、`_wan22_context.wan22_resolution_preset` 和 `_wan22_context.wan22_duration_seconds`，不复刻首尾帧或链式上下文。
 - `ltx_video` 单首帧/首尾帧投稿支持一键应用，保留两张原始输入图顺序，并从 `_ltx_context` 回填 `lora_items`、`ltx_width`、`ltx_height`、`ltx_duration_seconds`；执行别名 `ltx_video_flf2v` 仍按 `ltx_video` 模板入口处理。

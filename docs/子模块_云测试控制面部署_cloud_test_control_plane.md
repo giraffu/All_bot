@@ -12,7 +12,8 @@
 
 - 新控制面：`deploy/docker-compose-cloud-base.yml` + `deploy/docker-compose-cloud-test.overlay.yml`
 - 私密配置：`/etc/allbot/test.env`；非敏感镜像/SHA：release 目录的 `release.env`
-- 计划/发布：`scripts/release.py plan|deploy --env test --sha <full-sha>`
+- 计划/发布：按顺序执行 `scripts/release.py plan --env test --sha <full-sha>`、`preflight --env test --sha <full-sha>`、`deploy --env test --sha <full-sha> --execute`；不得用 `--services` 人工缩小机器计算的依赖闭包。
+- Web 自由P图 v3 发布验收：运行时公开开关为 `enable_free_edit_v3`。发布前后必须同时确认 enabled 的 `pornmaster_flux2_edit_bf16` 与 `face_swap` Worker；真实测试账号完成“单图 v3 生成 → 投稿 → 一键应用 → 再生成”，并确认模板结果不可再投稿。未完成 24 小时观察时只记录 smoke，不执行 `verify-test`。
 - 下列路径只描述首次切换前的 legacy 运行态：
 - 远程主机别名：`allbot-do-sgp1-test-control`
 - 远程代码目录：`/home/deploy/APP/All_bot`

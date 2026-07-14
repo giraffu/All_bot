@@ -7,7 +7,7 @@
     "telegram_bot_username": "testAIvison_bot",
     "tonconnect_manifest_url": "https://web-cf-test.aivison.it.com/tonconnect-manifest-test.json",
     "tonconnect_twa_return_url": "https://t.me/testAIvison_bot",
-    "enable_free_edit_v2": true,
+    "enable_free_edit_v3": true,
     "enable_scail2_long_action_transfer": true
   },
   "prod": {
@@ -17,7 +17,7 @@
     "telegram_bot_username": "AIVision1111_bot",
     "tonconnect_manifest_url": "https://web.aivison.it.com/tonconnect-manifest.json",
     "tonconnect_twa_return_url": "https://t.me/AIVision1111_bot",
-    "enable_free_edit_v2": true,
+    "enable_free_edit_v3": true,
     "enable_scail2_long_action_transfer": true
   }
 }
