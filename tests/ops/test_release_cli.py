@@ -167,6 +167,28 @@ def test_gpu_runtime_change_blocks_the_normal_release_path():
     assert impact.blockers == {"gpu-runtime-release-required"}
 
 
+def test_dashboard_admin_runtime_changes_stay_dashboard_backend_only():
+    module = _load_module()
+    policy = module.load_structured_file(POLICY_PATH)
+
+    impact = module.plan_changed_paths(
+        policy,
+        [
+            "dashboard/backend/services/system_service.py",
+            "dashboard/backend/services/runpod_admin_commands.py",
+            "deploy/docker/Dockerfile.dashboard-backend",
+            "deploy/release-policy.yml",
+            "tests/dashboard/test_system_service.py",
+            "tests/ops/test_release_cli.py",
+        ],
+    )
+
+    assert impact.level == "rolling"
+    assert impact.services == {"dashboard-backend"}
+    assert impact.blockers == set()
+    assert impact.unknown_paths == []
+
+
 def test_explicit_services_can_only_widen_the_computed_set():
     module = _load_module()
 

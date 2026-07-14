@@ -333,6 +333,15 @@ curl -fsS http://100.107.220.127:8088/api/health
 QQCC Bot 与 QQCC Config Web 同轮纯代码更新可走快速联合路径：只同步变更清单内的必要文件，通过 safe preflight、生产确认和 single-polling 检查后，用一条 `docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.yml --profile qqcc-bot up -d --no-deps --build qqcc-bot-prod qqcc-config-backend-prod qqcc-config-frontend-prod` 复用构建缓存并替换三个目标服务。COPY 型服务禁止省略 `--build` 后只 recreate；该路径不进入维护、不 drain 队列、不触碰其它控制面服务，并必须核对非目标容器启动时间不变。
 Dashboard RunPod 管理入口当前支持 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、
 `scail2 / 视频生视频` 与 `ltx_video / 高级图生视频`；它只提交正式 RunPod 池新增/暂停/删除操作，不直接启停其它正式服务。
+不可变 `allbot-dashboard-backend` 镜像必须内置 `/app/scripts/runpod_prod_ops.sh`、
+`/app/scripts/gpu_pool_controller.py` 与 `/app/ops`，否则这些 Dashboard operation 会以
+`bash: /app/scripts/runpod_prod_ops.sh: No such file or directory` / exit 127 失败。
+`deploy/release-policy.yml` 将 `deploy/docker/Dockerfile.dashboard-backend`、`dashboard/backend/services/system_service.py`
+与 `dashboard/backend/services/runpod_admin_*.py` 归为 `dashboard-backend` rolling 影响面；这类修复可以通过不可变发布只重建正式 `dashboard-backend`，
+不得顺手重启 Central/Web/Bot/Payment/imgproxy/Worker 或 QQCC Config。
+Dashboard `/api/system/status` 的 pending 详情默认优先读 `WORKER_REDIS_URL`，若该分库没有 `comfy:queue:pending`
+快照，再按 `DASHBOARD_PENDING_QUEUE_FALLBACK_REDIS_URL`、`REDIS_URL` 兜底读取。这只修正管理后台展示和 autoscaler 估算，
+不改变 Central 的入队 Redis 契约；若 Central 误写通用 Redis，仍应另行排查 Central 配置。
 Dashboard 后端 RunPod autoscaler 默认随正式 `dashboard-backend-prod` 启动，只有拿到 Redis leader
 lease 后才会自动执行：有已知非低信任 pending 且预计非低信任用户清空时间超过该 profile 清空阈值时，提交至多一次
 `add --count 1 --retry-unavailable --worker-timeout 2400`；有非低信任 backlog 但没有健康 enabled 可接单 worker 时也允许扩容。

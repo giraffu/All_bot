@@ -53,6 +53,10 @@ def test_central_and_worker_images_contain_their_dependency_closure():
     assert "COPY config.py /app/config.py" in dashboard
     assert "COPY ops /app/ops" in dashboard
     assert "COPY paid_group_guard_bot /app/paid_group_guard_bot" in dashboard
+    assert "COPY scripts/runpod_prod_ops.sh /app/scripts/runpod_prod_ops.sh" in dashboard
+    assert "COPY scripts/gpu_pool_controller.py /app/scripts/gpu_pool_controller.py" in dashboard
+    chmod_lines = [line for line in dashboard.splitlines() if "chmod 755" in line]
+    assert any("/app/scripts/runpod_prod_ops.sh" in line for line in chmod_lines)
     assert "COPY workers/comfy_agent /app/worker" in worker
     assert "COPY src /app/src" in worker
 

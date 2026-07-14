@@ -16,9 +16,12 @@ COPY paid_group_guard_bot /app/paid_group_guard_bot
 COPY src /app/src
 COPY shared /app/shared
 COPY config.py /app/config.py
+RUN mkdir -p /app/scripts
+COPY scripts/runpod_prod_ops.sh /app/scripts/runpod_prod_ops.sh
+COPY scripts/gpu_pool_controller.py /app/scripts/gpu_pool_controller.py
 COPY alembic.ini /app/alembic.ini
 COPY deploy/docker/python-release-entrypoint.sh /usr/local/bin/allbot-release-entrypoint
-RUN chmod 755 /usr/local/bin/allbot-release-entrypoint
+RUN chmod 755 /usr/local/bin/allbot-release-entrypoint /app/scripts/runpod_prod_ops.sh
 ENV PYTHONPATH=/app PYTHONUNBUFFERED=1
 ENTRYPOINT ["/usr/local/bin/allbot-release-entrypoint"]
 CMD ["gunicorn", "dashboard.backend.main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8043"]
