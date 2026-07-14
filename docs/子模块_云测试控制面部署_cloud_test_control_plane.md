@@ -13,7 +13,7 @@
 - 新控制面：`deploy/docker-compose-cloud-base.yml` + `deploy/docker-compose-cloud-test.overlay.yml`
 - 私密配置：`/etc/allbot/test.env`；非敏感镜像/SHA：release 目录的 `release.env`
 - 计划/发布：按顺序执行 `scripts/release.py plan --env test --sha <full-sha>`、`preflight --env test --sha <full-sha>`、`deploy --env test --sha <full-sha> --execute`；不得用 `--services` 人工缩小机器计算的依赖闭包。
-- Web 自由P图 v3 发布验收：运行时公开开关为 `enable_free_edit_v3`。发布前后必须同时确认 enabled 的 `pornmaster_flux2_edit_bf16` 与 `face_swap` Worker；真实测试账号完成“单图 v3 生成 → 投稿 → 一键应用 → 再生成”，并确认模板结果不可再投稿。未完成 24 小时观察时只记录 smoke，不执行 `verify-test`。
+- Web 自由P图 v3 发布验收：运行时公开开关为 `enable_free_edit_v3`。云测试发布不以全部 Worker 或 `pornmaster_flux2_edit_bf16` Worker 可用为前置条件；先验收页面、单图/5 灵石/无 LoRA 展示、预签名上传、投稿与一键应用入口。只有目标链路 Worker 当时可用时才执行“单图 v3 生成 → 投稿 → 一键应用 → 再生成”黄金路径；不可用时记录为独立 Worker 待办，不阻塞测试 Web 更新，也不得把未执行写成通过。未完成 24 小时观察时只记录 smoke，不执行 `verify-test`。
 - 下列路径只描述首次切换前的 legacy 运行态：
 - 远程主机别名：`allbot-do-sgp1-test-control`
 - 远程代码目录：`/home/deploy/APP/All_bot`
@@ -102,7 +102,9 @@ Web 前端上传参考图/视频时会先调用云端 Web API 获取预签名地
   {
     "AllowedOrigins": [
       "https://web-test.aivison.it.com",
-      "https://web.aivison.it.com"
+      "https://web.aivison.it.com",
+      "https://web-cf-test.aivison.it.com",
+      "https://allbot-web-cf-test.pages.dev"
     ],
     "AllowedMethods": ["GET", "PUT", "HEAD"],
     "AllowedHeaders": ["*"],
@@ -378,7 +380,7 @@ docker compose --env-file .env.cloud.test \
 - 云端 Web API 容器实际生效：`MINIO_ENDPOINT=<R2 endpoint host>`、`MINIO_BUCKET=user-data-test`、`MINIO_SECURE=true`、`MINIO_PUBLIC_URL=`、`R2_PUBLIC_DOMAIN=https://r2-test.aivison.it.com`。
 - 云端 Web API 使用 R2 预签名 URL 读写烟测通过，预签名 host 为 R2 S3 endpoint，读取状态 200。
 - `https://r2-test.aivison.it.com` 已验证可读取新写入 Web 视频结果，例如 `history/<task_id>/original.mp4` 返回 200；云测试 Web owner 视频结果依赖该公网域名完成 `/api/tasks/{task_id}/result` 成功态返回。
-- R2 `user-data-test` 已配置 Web 直传 CORS，允许 `https://web-test.aivison.it.com` 与 `https://web.aivison.it.com` 执行 `GET/PUT/HEAD`；`OPTIONS` 预检返回 204，实际预签名 `PUT` 上传与 `HEAD` 验证均返回 200。
+- R2 `user-data-test` 已配置 Web 直传 CORS。2026-07-14 为不可变 Pages 测试站补齐 `https://web-cf-test.aivison.it.com` 与 `https://allbot-web-cf-test.pages.dev`，并继续保留 `https://web-test.aivison.it.com`、`https://web.aivison.it.com`；四个 Origin 的 `OPTIONS` 预检均返回 204。以 `https://web-cf-test.aivison.it.com` Origin 执行的真实预签名 `PUT` 与后续 `HEAD` 均返回 200、响应回显精确 `Access-Control-Allow-Origin`，烟测对象随后已删除。更新桶策略时必须保留这四个 Origin 及 `GET/PUT/HEAD`、`AllowedHeaders=["*"]`、`ExposeHeaders=["ETag"]`、`MaxAgeSeconds=3600`，避免前端再次出现 `Network error during upload`。
 
 2026-06-09 边缘测试 Web 切换结果：
 
@@ -439,7 +441,7 @@ COMPOSE_PROFILES=shared-aio-canary docker-compose \
   up -d --no-deps cloud-comfy-agent-test-2 cloud-comfy-agent-test-3
 ```
 
-主 Bot 的旧“自由P图 v2”按钮已升级为自由P图 v3：单图先提交 `pornmaster_flux2_edit_bf16`，再以原图为人脸来源提交内部 `face_swap`；整个用户操作统一扣 5 灵石，换脸续接任务不得二次扣费。云测试须同时具备 BF16 和 `face_swap` worker。BF16 常规测试优先使用云测试 RunPod worker，不再为了日常测试启动本地 PornMaster LAN AIO：
+主 Bot 的旧“自由P图 v2”按钮已升级为自由P图 v3：单图先提交 `pornmaster_flux2_edit_bf16`，再以原图为人脸来源提交内部 `face_swap`；整个用户操作统一扣 5 灵石，换脸续接任务不得二次扣费。云测试 Web 发布不负责保证 BF16 或全部 Worker 在线，也不为日常页面验收启动本地 PornMaster LAN AIO；需要专项验证真实生成时，可另行启动云测试 RunPod worker：
 
 ```bash
 RUNPOD_DRY_RUN=false RUNPOD_AUTOSCALER_ENABLED=true \
@@ -451,7 +453,7 @@ python scripts/gpu_pool_controller.py runpod workers scale \
   --execute
 ```
 
-合格状态是云测试 Central `/system/workers` 出现 `runpod_test_pornmaster_flux2_edit_bf16_*`，`runtime_profile=pornmaster_flux2_edit`，types 为 `pornmaster_flux2_edit_bf16`，control 为 `enabled`；另有健康的 `face_swap` worker。旧 `cloud_worker_test_04` / 本地 LAN AIO canary 只作为专项回归入口；若明确要走本地 AIO，需要覆盖 `cloud_worker_test_04` 并确认不会和当前 `i2i_pro` / 正式任务抢占同一 GPU：
+专项生成验收时，预期云测试 Central `/system/workers` 出现 `runpod_test_pornmaster_flux2_edit_bf16_*`，`runtime_profile=pornmaster_flux2_edit`，types 为 `pornmaster_flux2_edit_bf16`，control 为 `enabled`，且另有健康的 `face_swap` worker；这不是测试 Web 发布门禁。旧 `cloud_worker_test_04` / 本地 LAN AIO canary 只作为专项回归入口；若明确要走本地 AIO，需要覆盖 `cloud_worker_test_04` 并确认不会和当前 `i2i_pro` / 正式任务抢占同一 GPU：
 
 ```bash
 ENABLE_FREE_EDIT_V2=true
