@@ -12,6 +12,41 @@ from src.core.task_core_types import (
 
 
 @pytest.mark.asyncio
+async def test_internal_stage_materializes_output_without_recording_history():
+    persistence_result = TaskSuccessPersistenceResult(
+        media_bytes=b"internal-image",
+        output_file="outputs/internal.png",
+        width=1024,
+        height=1024,
+        duration=None,
+    )
+    materialize = AsyncMock(return_value=persistence_result)
+    postprocess = AsyncMock()
+
+    result = await task_core_persistence_flow.persist_successful_task_result_flow(
+        backend_task_id="backend-internal",
+        registry_task_id="registry-internal",
+        internal_user_id=123,
+        username="tester",
+        prompt="internal stage",
+        task_type="image",
+        input_images=["input.png"],
+        allow_contribute=False,
+        is_video=False,
+        billing_resolution=None,
+        requested_duration=None,
+        postprocess_plan=TaskPersistencePostprocessPlan(record_history=False),
+        user_logger_factory=Mock(),
+        materialize_successful_task_output_func=materialize,
+        postprocess_successful_task_persistence_func=postprocess,
+    )
+
+    assert result is persistence_result
+    materialize.assert_awaited_once()
+    postprocess.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_persist_successful_task_result_routes_through_flow(monkeypatch):
     download_result = AsyncMock()
     download_video_result = AsyncMock()

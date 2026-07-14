@@ -347,7 +347,7 @@ Dashboard RunPod 管理入口当前支持 `img2img`、`image_to_video`、`wan22_
 Dashboard `/api/system/status` 的 pending 详情默认优先读 `WORKER_REDIS_URL`，若该分库没有 `comfy:queue:pending`
 快照，再按 `DASHBOARD_PENDING_QUEUE_FALLBACK_REDIS_URL`、`REDIS_URL` 兜底读取。这只修正管理后台展示和 autoscaler 估算，
 不改变 Central 的入队 Redis 契约；若 Central 误写通用 Redis，仍应另行排查 Central 配置。
-Dashboard 后端 RunPod autoscaler 默认随正式 `dashboard-backend-prod` 启动，只有拿到 Redis leader
+Dashboard 后端 RunPod autoscaler 默认随正式 `dashboard-backend-prod` 启动；真实不可变容器通过环境注入继承正式 RunPod 配置，`DASHBOARD_RUNPOD_ENV_FILE` / `DASHBOARD_RUNPOD_PROD_ENV_FILE` 默认使用存在但为空的 `/dev/null` 满足 CLI 路径契约，不挂载或生成含密钥的 `/app/.env`。只有拿到 Redis leader
 lease 后才会自动执行：有已知非低信任 pending 且预计非低信任用户清空时间超过该 profile 清空阈值时，提交至多一次
 `add --count 1 --retry-unavailable --worker-timeout 2400`；有非低信任 backlog 但没有健康 enabled 可接单 worker 时也允许扩容。
 预计非低信任用户清空时间按 `non_low_trust_clear_pending_count_by_task_type` 对应的

@@ -99,7 +99,7 @@ sequenceDiagram
 - `终止` 只允许当前 Dashboard 进程仍能安全控制的 add operation。若 operation 来自旧进程或重启后已 detached，API 返回 409，不按 Redis 里的旧 pid 盲杀进程，避免 PID 复用误杀。
 - 默认保留最近 100 条 operation；完成态 Redis JSON TTL 为 24 小时，运行态不主动过期，避免长操作丢失追踪。
 - Dashboard RunPod mutation 只打开显式执行门禁：`RUNPOD_DRY_RUN=false`、`RUNPOD_AUTOSCALER_ENABLED=true`。全局 Pod 数、单类型 Pod 数、小时成本上限不再由 Dashboard/API/provider 校验；`RUNPOD_PROD_MAX_MANUAL_SLOTS` 默认按 `100` 作为 manual slot 命名空间。
-- Dashboard 容器默认可通过 `DASHBOARD_RUNPOD_ENV_FILE`、`DASHBOARD_RUNPOD_PROD_ENV_FILE`、`DASHBOARD_RUNPOD_OPS_SCRIPT` 覆盖脚本和 env 路径；云正式容器中未存在 `.env.cloud.prod` 文件名时，默认可使用挂载的 `/app/.env`。
+- Dashboard 容器默认可通过 `DASHBOARD_RUNPOD_ENV_FILE`、`DASHBOARD_RUNPOD_PROD_ENV_FILE`、`DASHBOARD_RUNPOD_OPS_SCRIPT` 覆盖脚本和 env 路径；不可变云正式容器默认使用 `/dev/null` 作为两个 env-file 参数，让 operation 子进程继承容器已注入的环境变量，不依赖或挂载 `/app/.env`。镜像必须内置 `/app/scripts/runpod_prod_ops.sh`、`/app/scripts/gpu_pool_controller.py` 与 `/app/ops`。
 - API 响应和 operation log 只保留脱敏命令、状态、pid、退出码与日志尾部，不输出 `.env.*` 内容、RunPod API key、agent token、JWT、R2 key 或 presigned URL。
 
 ## 5. 测试要求
@@ -107,7 +107,7 @@ sequenceDiagram
 - 覆盖 Dashboard 鉴权中间件
 - 覆盖系统统计接口的基础返回
 - 覆盖 `queue_by_type_details` 的 active/pending 分离、pending 采样从 Worker Redis 空队列兜底到通用 Redis、最长 pending 等待按 `created_at` 而不是 zset score 计算、low trust free tier pending 用户/任务数聚合，以及 Redis / 低信任统计失败时的降级返回。
-- 覆盖 `runpod_profile_queue_details` 的 7 类正式手动 RunPod profile 固定返回、`i2i_pro` 三执行类型汇总、`pornmaster_flux2_single_edit/pornmaster_flux2_multi_edit` 汇总、`scail2_face_swap_v2` 不计入正式 RunPod `scail2`、最长等待与非低信任最长等待取 profile 内最大 pending 等待，以及 `autoscaler_enabled=false` profile 只允许手动操作、不进入自动扩缩容。
+- 覆盖 `runpod_profile_queue_details` 的 8 类正式 RunPod profile 固定返回、`i2i_pro` 三执行类型汇总、`pornmaster_flux2_single_edit/pornmaster_flux2_multi_edit` 汇总、`pornmaster_flux2_edit_bf16` 自动 add/down、`scail2_face_swap_v2` 不计入正式 RunPod `scail2`，以及最长等待与非低信任最长等待取 profile 内最大 pending 等待。
 - 覆盖 `healthy_workers`、`accepting_workers`、`error_workers`、`quarantined_workers`、`workers_by_status` 与 `workers_by_control_state` 聚合
 - 覆盖 Dashboard 对 `error/quarantined` Worker 的红色/隔离态展示
 - 覆盖系统监控页 Worker 历史弹窗的点击后懒加载、分页、失败提示，以及点击 RunPod 操作区不触发弹窗。

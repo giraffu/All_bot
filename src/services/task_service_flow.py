@@ -475,18 +475,21 @@ async def submit_bot_task(
 
 
 def build_bot_task_recovery_metadata(*, flow, client_type: str) -> dict:
-    """Serialize the private Bot presentation contract into TaskRegistry data."""
+    """Serialize presentation state needed for safe task recovery."""
 
-    if parse_private_bot_client_type(client_type) is None:
+    presentation = flow.presentation
+    record_history = getattr(presentation, "record_history", True)
+    is_private_bot = parse_private_bot_client_type(client_type) is not None
+    if not is_private_bot and not (client_type == "bot" and not record_history):
         return {}
 
     request = flow.request
-    presentation = flow.presentation
     message_spec = presentation.message_spec
     metadata = build_bot_task_recovery_contract(
         send_result=getattr(presentation, "send_result", True),
         delete_status=getattr(presentation, "delete_status", True),
         allow_contribute=getattr(presentation, "allow_contribute", True),
+        record_history=record_history,
         result_task_type=getattr(presentation, "result_task_type", None),
         result_prompt=getattr(presentation, "result_prompt", None),
         result_input_image_indices=getattr(
@@ -498,7 +501,8 @@ def build_bot_task_recovery_metadata(*, flow, client_type: str) -> dict:
         completion_caption=getattr(message_spec, "completion_caption", None),
         language_code=resolve_context_lang(request.context),
     )
-    metadata.update(build_private_qqcc_continuation_registry_metadata())
+    if is_private_bot:
+        metadata.update(build_private_qqcc_continuation_registry_metadata())
     return metadata
 
 
@@ -679,6 +683,7 @@ async def run_bot_task_completion_stage(
     result_meta: dict | None,
     delete_status: bool,
     allow_contribute: bool,
+    record_history: bool,
     billing_resolution: Optional[str],
     requested_duration: Optional[int],
     missing_output_should_refund: bool,
@@ -705,6 +710,7 @@ async def run_bot_task_completion_stage(
             result_meta=result_meta,
             delete_status=delete_status,
             allow_contribute=allow_contribute,
+            record_history=record_history,
             billing_resolution=billing_resolution,
             requested_duration=requested_duration,
             missing_output_should_refund=missing_output_should_refund,
@@ -806,6 +812,7 @@ async def execute_bot_task_stages(
                 result_meta=presentation.result_meta,
                 delete_status=presentation.delete_status,
                 allow_contribute=presentation.allow_contribute,
+                record_history=getattr(presentation, "record_history", True),
                 billing_resolution=billing.billing_resolution,
                 requested_duration=billing.requested_duration,
                 missing_output_should_refund=billing.missing_output_should_refund,

@@ -48,6 +48,7 @@ async def process_standard_generation_task(
     lora_name: str = None,
     lora_strength: float = 1.0,
     allow_contribute: bool = True,
+    record_history: bool = True,
     source_post_id: Optional[int] = None,
     resolution: Any = None,
     duration: Any = None,
@@ -166,7 +167,7 @@ async def process_standard_generation_task(
         ),
         completion_caption=build_generation_completion_caption(
             context,
-            task_type,
+            result_task_type or task_type,
             display_mode_name_override=display_mode_name_override,
         ),
     )
@@ -205,6 +206,7 @@ async def process_standard_generation_task(
             result_meta=result_meta,
             delete_status=delete_status,
             allow_contribute=allow_contribute,
+            record_history=record_history,
             cost_override=cost_override,
             base_priority=base_priority,
             allow_cancel=allow_cancel,

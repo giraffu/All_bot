@@ -958,6 +958,7 @@ class LanAioProdOps:
             "lan_aio_fleet_restart_disable_aio",
             ttl_seconds=CONTROL_TTL_SECONDS,
         )
+        self._wait_worker_ids_idle({slot.agent_id})
         self._write_remote_runtime_files(slot)
         port_owner_check = self._host_port_owner_check(
             slot,
@@ -1013,7 +1014,13 @@ class LanAioProdOps:
                 )
                 continue
             try:
-                self._ssh(slot.ssh_host, f"docker pull '{image_ref}'", capture=True)
+                pull_pattern = re.escape(f"docker pull {image_ref}")
+                self._ssh(
+                    slot.ssh_host,
+                    f"pkill -f '^{pull_pattern}$' || true; "
+                    f"timeout 300 docker pull '{image_ref}'",
+                    capture=True,
+                )
             except subprocess.CalledProcessError as exc:
                 if not self._local_image_present(image_ref):
                     error = (exc.stderr or exc.stdout or "").strip()
@@ -1067,8 +1074,7 @@ class LanAioProdOps:
         self._write_cache_marker(slot, marker)
         return {"ok": True, "action": "warm-cache", "slot": slot.id, "model_cache": marker}
 
-    def wait_idle(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
-        targets = {slot.legacy_worker_id for slot in slots}
+    def _wait_worker_ids_idle(self, targets: set[str]) -> None:
         deadline = time.time() + 7200
         while time.time() < deadline:
             workers = {item.get("agent_id"): item for item in self._system_workers()}
@@ -1082,10 +1088,15 @@ class LanAioProdOps:
                         "current_task_type"
                     )
             if not busy:
-                return {"ok": True, "action": "wait-idle", "targets": sorted(targets)}
-            print("Waiting for legacy workers:", ", ".join(sorted(busy)), file=sys.stderr)
+                return
+            print("Waiting for workers:", ", ".join(sorted(busy)), file=sys.stderr)
             time.sleep(15)
         raise TimeoutError("timed out waiting for legacy workers to become idle")
+
+    def wait_idle(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
+        targets = {slot.legacy_worker_id for slot in slots}
+        self._wait_worker_ids_idle(targets)
+        return {"ok": True, "action": "wait-idle", "targets": sorted(targets)}
 
     def start_disabled(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
         if len(slots) != 1:

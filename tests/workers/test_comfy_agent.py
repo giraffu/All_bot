@@ -146,6 +146,115 @@ def test_agent_main_removes_debug_side_paths():
     assert "exec(" not in content
 
 
+@pytest.mark.asyncio
+async def test_reserved_prefetch_atomically_pops_and_reuses_next_task(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    calls = []
+    task = {
+        "task_id": "task-next",
+        "type": "face_swap",
+        "params": '{"image": "remote.png"}',
+    }
+
+    async def fake_master_get(path, *, params=None):
+        calls.append((path, params))
+        return SimpleNamespace(status_code=200, json=lambda: {"task": task})
+
+    async def fake_prepare_task_inputs(*, params, downloaded_input_paths, comfy_input_dir):
+        params["image"] = "prefetched.png"
+        downloaded_input_paths.append("/tmp/prefetched.png")
+
+    agent._master_get = fake_master_get
+    agent._prepare_task_inputs = fake_prepare_task_inputs
+    agent._prefetch_task_types = {"face_swap"}
+
+    await agent._prefetch_manager.prefetch_next_task_inputs(
+        task_type_filter="face_swap",
+        prefetch_enabled=True,
+        prefetch_depth=1,
+        cache_dir="/tmp/prefetch",
+        reserve_task=True,
+    )
+
+    assert calls == [
+        (
+            "/api/agent/task/pop",
+            {
+                "agent_id": module.AGENT_ID,
+                "types": "face_swap",
+                "cancel_lock": "true",
+            },
+        )
+    ]
+    assert agent._reserved_prefetch_task == task
+    assert agent._prefetch_cache["task-next"]["params"]["image"] == "prefetched.png"
+
+    reused = await agent._pop_next_task(pipeline=True)
+
+    assert reused == task
+    assert agent._reserved_prefetch_task is None
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_reserved_prefetch_download_failure_keeps_task_for_normal_preparation(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    task = {"task_id": "task-next", "type": "face_swap", "params": "{}"}
+
+    async def fake_master_get(_path, *, params=None):
+        return SimpleNamespace(status_code=200, json=lambda: {"task": task})
+
+    async def failed_prepare(**_kwargs):
+        raise RuntimeError("temporary download failure")
+
+    agent._master_get = fake_master_get
+    agent._prepare_task_inputs = failed_prepare
+    agent._prefetch_task_types = {"face_swap"}
+
+    await agent._prefetch_manager.prefetch_next_task_inputs(
+        task_type_filter="face_swap",
+        prefetch_enabled=True,
+        prefetch_depth=1,
+        cache_dir="/tmp/prefetch",
+        reserve_task=True,
+    )
+
+    assert agent._prefetch_cache == {}
+    assert await agent._pop_next_task(pipeline=True) == task
+
+
+@pytest.mark.asyncio
+async def test_reserved_prefetch_heartbeat_does_not_replace_current_task(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    reported = []
+    agent._reserved_prefetch_task = {
+        "task_id": "task-next",
+        "type": "wan22_video_v2",
+    }
+
+    async def fake_report_status(task_id, status, **kwargs):
+        reported.append((task_id, status, kwargs))
+
+    agent.report_status = fake_report_status
+
+    await agent._heartbeat_reserved_prefetch_task()
+
+    assert reported == [
+        (
+            "task-next",
+            "running",
+            {
+                "execution_phase": "prefetching",
+                "cancel_locked": True,
+                "set_current": False,
+            },
+        )
+    ]
+
+
 def test_download_input_prefers_s3_client(monkeypatch, tmp_path):
     module = build_agent_module(monkeypatch)
     downloads = []

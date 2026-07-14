@@ -10,7 +10,13 @@ services:
     environment: {BOT_TYPE: PROD, API_BASE: "http://central-api:8003"}
   dashboard-backend:
     ports: ["${CLOUD_PROD_BIND_IP:-127.0.0.1}:8043:8043"]
-    environment: {BOT_TYPE: PROD, API_BASE: "http://central-api:8003"}
+    environment:
+      BOT_TYPE: PROD
+      API_BASE: "http://central-api:8003"
+      DASHBOARD_RUNPOD_AUTOSCALER_ENABLED: ${DASHBOARD_RUNPOD_AUTOSCALER_ENABLED:-true}
+      DASHBOARD_RUNPOD_AUTOSCALER_MODE: ${DASHBOARD_RUNPOD_AUTOSCALER_MODE:-execute}
+      DASHBOARD_RUNPOD_ENV_FILE: ${DASHBOARD_RUNPOD_ENV_FILE:-/dev/null}
+      DASHBOARD_RUNPOD_PROD_ENV_FILE: ${DASHBOARD_RUNPOD_PROD_ENV_FILE:-/dev/null}
   dashboard-frontend:
     ports: ["${CLOUD_PROD_BIND_IP:-127.0.0.1}:8086:8086"]
   qqcc-config-backend:

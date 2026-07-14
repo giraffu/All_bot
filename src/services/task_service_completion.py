@@ -117,6 +117,7 @@ async def complete_monitored_bot_task(
             delete_status=completion.delete_status,
             caption=completion.caption or completion.message_spec.completion_caption,
             allow_contribute=completion.allow_contribute,
+            record_history=completion.record_history,
             result_meta=completion.result_meta,
             extra_outputs=completion.final_info.get("extra_outputs")
             if isinstance(completion.final_info, dict)
@@ -158,6 +159,7 @@ async def download_and_log_task_output(
     extra_outputs: Optional[dict] = None,
     billing_resolution: Optional[str],
     requested_duration: Optional[int],
+    record_history: bool = True,
 ):
     from src.core.task_core import TaskPersistencePostprocessPlan
     from src.core.task_core_persistence import persist_successful_task_result
@@ -177,6 +179,7 @@ async def download_and_log_task_output(
         requested_duration=requested_duration,
         postprocess_plan=TaskPersistencePostprocessPlan(
             source="bot",
+            record_history=record_history,
             refresh_user_group_after_log=True,
         ),
     )
@@ -243,6 +246,7 @@ async def handle_task_completion(
     delete_status,
     caption=None,
     allow_contribute=True,
+    record_history: bool = True,
     result_meta: dict | None = None,
     extra_outputs: dict | None = None,
     billing_resolution: Optional[str] = None,
@@ -276,6 +280,7 @@ async def handle_task_completion(
         extra_outputs=persisted_extra_outputs,
         billing_resolution=billing_resolution,
         requested_duration=requested_duration,
+        record_history=record_history,
     )
     # A private QQCC continuation owns final presentation through its durable
     # checkpoint. Persist the stage output before Telegram delivery so a

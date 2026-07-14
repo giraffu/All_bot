@@ -41,6 +41,24 @@ def test_every_runtime_image_is_supplied_by_release_env():
         assert "latest" not in image
 
 
+def test_prod_dashboard_backend_enables_runpod_autoscaler_in_immutable_compose():
+    prod_overlay = _compose(ROOT / "deploy/docker-compose-cloud-prod.overlay.yml")
+    environment = prod_overlay["services"]["dashboard-backend"]["environment"]
+
+    assert environment["DASHBOARD_RUNPOD_AUTOSCALER_ENABLED"] == (
+        "${DASHBOARD_RUNPOD_AUTOSCALER_ENABLED:-true}"
+    )
+    assert environment["DASHBOARD_RUNPOD_AUTOSCALER_MODE"] == (
+        "${DASHBOARD_RUNPOD_AUTOSCALER_MODE:-execute}"
+    )
+    assert environment["DASHBOARD_RUNPOD_ENV_FILE"] == (
+        "${DASHBOARD_RUNPOD_ENV_FILE:-/dev/null}"
+    )
+    assert environment["DASHBOARD_RUNPOD_PROD_ENV_FILE"] == (
+        "${DASHBOARD_RUNPOD_PROD_ENV_FILE:-/dev/null}"
+    )
+
+
 def test_central_and_worker_images_contain_their_dependency_closure():
     central = (ROOT / "deploy/docker/Dockerfile.central").read_text(encoding="utf-8")
     dashboard = (
@@ -67,6 +85,18 @@ def test_dashboard_frontend_image_prepares_nginx_template_directory():
     ).read_text(encoding="utf-8")
 
     assert "mkdir -p /etc/nginx/templates" in dockerfile
+
+
+def test_dashboard_backend_image_contains_runpod_admin_runtime_dependencies():
+    dashboard = (ROOT / "deploy/docker/Dockerfile.dashboard-backend").read_text(
+        encoding="utf-8"
+    )
+
+    assert "COPY ops /app/ops" in dashboard
+    assert "COPY scripts/runpod_prod_ops.sh /app/scripts/runpod_prod_ops.sh" in dashboard
+    assert "COPY scripts/gpu_pool_controller.py /app/scripts/gpu_pool_controller.py" in dashboard
+    chmod_lines = [line for line in dashboard.splitlines() if "chmod 755" in line]
+    assert any("/app/scripts/runpod_prod_ops.sh" in line for line in chmod_lines)
 
 
 def test_worker_compose_covers_all_test_slots_and_runtime_contracts():

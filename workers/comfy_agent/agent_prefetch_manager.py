@@ -98,6 +98,7 @@ class AgentPrefetchManager:
         prefetch_enabled: bool,
         prefetch_depth: int,
         cache_dir: str,
+        reserve_task: bool = False,
     ) -> None:
         if not prefetch_enabled or prefetch_depth <= 0:
             return
@@ -113,10 +114,13 @@ class AgentPrefetchManager:
             params["types"] = prefetch_types
 
         try:
-            response = await self.agent._master_get(
-                "/api/agent/task/peek",
-                params=params,
-            )
+            endpoint = "/api/agent/task/peek"
+            if reserve_task:
+                endpoint = "/api/agent/task/pop"
+                params = self.agent._build_pop_params(pipeline=True)
+                if prefetch_types:
+                    params["types"] = prefetch_types
+            response = await self.agent._master_get(endpoint, params=params)
             if response.status_code != 200:
                 self.logger.debug("Prefetch peek returned HTTP %s", response.status_code)
                 return
@@ -126,6 +130,8 @@ class AgentPrefetchManager:
 
             task_id = str(task.get("task_id", ""))
             task_type = str(task.get("type", ""))
+            if reserve_task and task_id:
+                self.agent._reserved_prefetch_task = task
             if not task_id or not self.should_prefetch_task_type(
                 task_type,
                 prefetch_enabled=prefetch_enabled,
@@ -164,6 +170,7 @@ class AgentPrefetchManager:
         prefetch_enabled: bool,
         prefetch_depth: int,
         cache_dir: str,
+        reserve_task: bool = False,
     ) -> None:
         if not prefetch_enabled:
             return
@@ -181,5 +188,6 @@ class AgentPrefetchManager:
                 prefetch_enabled=prefetch_enabled,
                 prefetch_depth=prefetch_depth,
                 cache_dir=cache_dir,
+                reserve_task=reserve_task,
             )
         )

@@ -323,8 +323,10 @@ canary MP4，再决定是否 enable。正式用户输入和结果只允许写 `u
 workflow。canary 只提交一单 5s I2V MP4，结束后目标 worker 保持 `disabled`，确认产物后再
 手动 enable。
 
-正式 RunPod `pornmaster_flux2_edit` profile 使用 `runpod_prod_pornmaster_flux2_edit_manual_NN`、
-`user-data-prod` 和 `allbot-model-cache/pornmaster_flux2_edit/2026-06-27/manifest.json`，只承接
-`pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit`。它可通过 Dashboard 或
-`scripts/runpod_prod_ops.sh` 手动新增、pause/delete、canary 与 enable，但 `autoscaler_enabled=false`，
-不会进入自动扩缩容。canary 必须串行验证 single-edit 与 multi-edit 两单均由目标 RunPod agent 接单并返回 image。
+正式 RunPod `pornmaster_flux2_edit` 与 `pornmaster_flux2_edit_bf16` 分别使用独立 agent/pod 命名空间和
+`allbot-model-cache/pornmaster_flux2_edit/2026-06-27/manifest.json`、
+`allbot-model-cache/pornmaster_flux2_edit_bf16/2026-07-12/manifest.json`。前者只承接
+`pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit`，后者只承接 `pornmaster_flux2_edit_bf16`，固定
+RTX 4090 与 `--lowvram`。两者都可通过 Dashboard 或 `scripts/runpod_prod_ops.sh` 手动管理，也都进入
+Dashboard autoscaler；BF16 默认按单任务 30 秒、清空阈值 30 分钟复用 add/down/restart/enable、锁定跳过、
+最短生命周期和冷却规则。v2 canary 串行验证 single/multi 两单，BF16 canary 验证同名单图任务。

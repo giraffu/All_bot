@@ -149,6 +149,7 @@ class TaskSubmissionSideEffectPlan:
 @dataclass(frozen=True, slots=True)
 class TaskPersistencePostprocessPlan:
     source: str = "bot"
+    record_history: bool = True
     refresh_user_group_after_log: bool = False
     warmup_web_history: bool = False
 
