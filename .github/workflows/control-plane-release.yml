@@ -155,7 +155,9 @@ jobs:
 
   release:
     needs: [python-tests, postgres-integration-tests, web-tests, dashboard-tests]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Schema-v1 shared-image publishing is retired.  The workflow remains as
+    # the test gate consumed by modular-release-v2.yml.
+    if: ${{ false }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

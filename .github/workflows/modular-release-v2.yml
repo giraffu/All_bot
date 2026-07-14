@@ -1,0 +1,159 @@
+name: Modular immutable release v2
+
+on:
+  workflow_run:
+    workflows: ["Immutable control-plane release"]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Full main-branch SHA to package.
+        required: true
+      gpu_manifest_path:
+        description: Canary-verified GPU manifest path when GPU inputs changed.
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: modular-release-v2-${{ github.event.workflow_run.head_sha || inputs.source_sha }}
+  cancel-in-progress: false
+
+env:
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}
+
+jobs:
+  release:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - name: Resolve source SHA
+        id: source
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          sha="${EVENT_SHA:-${INPUT_SHA:-}}"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+          fetch-depth: 0
+      - name: Verify protected-main ancestry
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --prune origin main
+          git merge-base --is-ancestor "$SOURCE_SHA" origin/main
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: oras-project/setup-oras@v1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            dashboard/frontend/package-lock.json
+
+      - name: Resolve previous immutable bundle and changed paths
+        id: previous
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          previous_sha="$(git rev-parse "${SOURCE_SHA}^")"
+          git diff --name-only "$previous_sha" "$SOURCE_SHA" > changed-paths.txt
+          mkdir -p previous-release
+          if oras pull "${IMAGE_PREFIX}/allbot-release-v2:${previous_sha}" -o previous-release; then
+            test -f previous-release/release-index.json
+            echo "index=previous-release/release-index.json" >> "$GITHUB_OUTPUT"
+            echo "bundle=previous-release" >> "$GITHUB_OUTPUT"
+          else
+            rm -rf previous-release
+            echo "index=" >> "$GITHUB_OUTPUT"
+            echo "bundle=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build changed modules and assemble release index
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          PREVIOUS_INDEX: ${{ steps.previous.outputs.index }}
+          PREVIOUS_BUNDLE: ${{ steps.previous.outputs.bundle }}
+          GPU_MANIFEST: ${{ inputs.gpu_manifest_path }}
+        run: |
+          set -euo pipefail
+          args=(
+            --sha "$SOURCE_SHA"
+            --ci-run "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            --image-prefix "$IMAGE_PREFIX"
+            --changed-file changed-paths.txt
+            --output-dir release-v2
+          )
+          if [ -n "$PREVIOUS_INDEX" ]; then
+            args+=(--previous-index "$PREVIOUS_INDEX" --previous-bundle-dir "$PREVIOUS_BUNDLE")
+          fi
+          if [ -n "$GPU_MANIFEST" ]; then
+            test -f "$GPU_MANIFEST"
+            args+=(--gpu-manifest "$GPU_MANIFEST")
+          fi
+          python scripts/ci_release_v2.py "${args[@]}"
+          python scripts/release.py plan \
+            --env test --track control-plane --sha "$SOURCE_SHA" \
+            --from-sha "$SOURCE_SHA" --manifest release-v2/release-index.json \
+            --skip-git-checks --skip-ci-checks
+
+      - name: Smoke thin frontend entrypoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          dashboard_ref="$(jq -r '.artifacts["dashboard-frontend"].ref' release-v2/control-plane-manifest.json)"
+          qqcc_ref="$(jq -r '.artifacts["qqcc-config-frontend"].ref' release-v2/control-plane-manifest.json)"
+          backend_ref="$(jq -r '.artifacts["dashboard-backend"].ref' release-v2/control-plane-manifest.json)"
+          docker run --rm --entrypoint sh "$dashboard_ref" -c '/docker-entrypoint.d/05-select-dashboard-spa.sh && test -f /etc/nginx/templates/default.conf.template'
+          docker run --rm --entrypoint sh -e DASHBOARD_FRONTEND_MODE=qqcc "$qqcc_ref" -c '/docker-entrypoint.d/05-select-dashboard-spa.sh && test -f /etc/nginx/templates/default.conf.template'
+          docker run --rm --entrypoint python "$backend_ref" -c 'import dashboard.backend.main; import dashboard.backend.qqcc_config_main'
+
+      - name: Publish immutable v2 bundle
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          if oras manifest fetch "${IMAGE_PREFIX}/allbot-release-v2:${SOURCE_SHA}" >/dev/null 2>&1; then
+            echo "immutable bundle tag already exists" >&2
+            exit 1
+          fi
+          oras push "${IMAGE_PREFIX}/allbot-release-v2:${SOURCE_SHA}" \
+            --artifact-type application/vnd.allbot.release-index.v2 \
+            release-v2/release-index.json:application/vnd.allbot.release-index.v2+json \
+            release-v2/control-plane-manifest.json:application/vnd.allbot.release-manifest.v2+json \
+            release-v2/test-execution-manifest.json:application/vnd.allbot.release-manifest.v2+json \
+            release-v2/gpu-execution-manifest.json:application/vnd.allbot.release-manifest.v2+json \
+            release-v2/public-web-dist.tgz:application/vnd.allbot.public-web.v1+gzip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-v2-${{ steps.source.outputs.sha }}
+          path: release-v2
+          if-no-files-found: error
+          retention-days: 90

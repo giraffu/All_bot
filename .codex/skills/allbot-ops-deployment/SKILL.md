@@ -29,6 +29,8 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 
 ## 2. 当前稳定入口
 
+- schema v2 将不可变产物拆为 `control-plane`、`test-execution`、`gpu-execution` 三条环境无关发布链；`release-index.json` 引用三份 manifest，test/prod 只选择模块并注入配置。`--modules` 与 control-plane alias `--services` 只能扩大影响集合，状态与历史按 track 隔离。
+- 云测试分别部署 control-plane 与 test-execution；GPU 必须逐 profile 构建、canary 和记录证据。正式逐模块只晋级测试 verified 的同 digest，共享协议或 migration 可强制扩大原子集合。
 - 唯一代码发布入口是 `scripts/release.py plan|preflight|deploy|rollback|recover`。目标必须是可从 `origin/main` 到达的完整 40 位 SHA，并使用 CI 生成的 `release.json`、Web checksum 和 digest-pinned 镜像；云端不 build、不挂载源码、不接收代码/env rsync。`preflight` 与 `deploy` 不自动拉 bundle，所有材料必须预先可读。
 - 云测试：先执行 `scripts/release.py plan --env test --sha <sha>`，再以同一 SHA 执行 `deploy --env test --sha <sha> --execute`。影响集合由 `deploy/release-policy.yml` 计算，`--services` 只能扩大，不能缩小。
 - 本地主服务器兼任测试 Worker host 时，使用受限的本地测试配置（当前标准路径 `/home/hfy/.config/allbot/test.env`，`600`）并显式传 `--env-file`；发布器必须把 Worker compose 的 `ALLBOT_ENV_FILE` 绑定到这个实参，不能复用云主机 `/etc/allbot/test.env` 的路径字符串。云端事实源与本地副本内容/revision 必须一致，生产 env 不得复制到测试 Worker host。
@@ -105,8 +107,8 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 
 1. 确认用户确实要求正式发布或生产热修。
 2. 确认目标 service 存在，并确定是否涉及 Alembic、shared env、worker workflow 或跨服务契约。
-3. 对精确 SHA 运行 `release.py plan --env prod`，再运行只读 `release.py preflight --env prod`，检查自动影响集合、维护等级、migration、Pages canonical/自动部署和控制面/Web 回滚材料；prod 报告中的 Worker 检查必须是 `skipped`。
-4. 默认只有同一 SHA 已在 test 标记 verified 且 preflight 全绿，才运行 `release.py deploy --env prod ... --execute --confirm-prod`；用户明确授权 Dashboard 免测试快速更新时，改用同一 SHA 的 `plan|preflight|deploy --env prod --dashboard-fast-track`，执行仍须 `--execute --confirm-prod`，并确认计划只有 Dashboard 服务、level 为 rolling、`promotion_mode=dashboard-fast-track`。
+3. 对精确 SHA 运行 `release.py plan --env prod --track control-plane`，再运行只读 `preflight`，检查自动影响集合、维护等级、migration、Pages canonical/自动部署和控制面/Web 回滚材料；prod 报告中的 Worker 检查必须是 `skipped`。
+4. 默认只有目标模块 digest 已在 test 对应 track 标记 verified 且 preflight 全绿，才运行 `release.py deploy --env prod --track control-plane ... --execute --confirm-prod`；`--modules` 只能扩大自动集合。用户明确授权 Dashboard 免测试快速更新时，仍可改用同一 SHA 的 `plan|preflight|deploy --env prod --dashboard-fast-track`，执行仍须 `--execute --confirm-prod`，并确认计划只有 Dashboard 服务、level 为 rolling、`promotion_mode=dashboard-fast-track`。
 5. 手工 compose、旧 QQCC 快速脚本、rsync 和现场 build 均不是紧急旁路；无法通过发布器时停下修复发布契约。
 6. 结束后核对容器 digest、OCI revision、current.json、健康检查和未触碰服务启动时间。
 

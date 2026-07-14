@@ -12,7 +12,7 @@ x-worker-environment: &worker-environment
   TZ: Asia/Shanghai
 
 x-worker-base: &worker-base
-  image: ${ALLBOT_WORKER_IMAGE:?release.env must pin ALLBOT_WORKER_IMAGE by digest}
+  image: ${ALLBOT_WORKER_AGENT_IMAGE:?release.env must pin ALLBOT_WORKER_AGENT_IMAGE by digest}
   restart: always
   network_mode: host
   env_file:
@@ -32,7 +32,7 @@ x-worker-slot-environment: &worker-slot-environment
 
 services:
   worker-relay:
-    image: ${ALLBOT_WORKER_IMAGE:?release.env must pin ALLBOT_WORKER_IMAGE by digest}
+    image: ${ALLBOT_WORKER_RELAY_IMAGE:?release.env must pin ALLBOT_WORKER_RELAY_IMAGE by digest}
     restart: always
     network_mode: host
     env_file:

@@ -71,9 +71,7 @@ start_sshd_for_diagnostics() {
 start_sshd_for_diagnostics
 
 ROOT_DIR="${ALLBOT_RUNPOD_ROOT:-/workspace/allbot}"
-REPO_URL="${ALLBOT_RUNPOD_GIT_URL:-https://github.com/giraffu/All_bot.git}"
-REPO_BRANCH="${ALLBOT_RUNPOD_GIT_BRANCH:-deploy}"
-REPO_DIR="${ALLBOT_RUNPOD_REPO_DIR:-${ROOT_DIR}/repo}"
+REPO_DIR="${ALLBOT_RUNPOD_REPO_DIR:-/opt/allbot/runtime}"
 REMOTE_WORKERS_DIR="${ALLBOT_RUNPOD_REMOTE_WORKERS_DIR:-${REPO_DIR}/remote_workers}"
 WORKSPACE_DIR="${RUNPOD_WORKSPACE_DIR:-/workspace}"
 VOLUME_COMFYUI_DIR="${RUNPOD_VOLUME_COMFYUI_DIR:-${WORKSPACE_DIR}/ComfyUI}"
@@ -141,11 +139,10 @@ export PIP_CACHE_DIR
 
 mkdir -p "$ROOT_DIR"
 if [ -d "${REMOTE_WORKERS_DIR}/comfy_agent" ] && [ -f "${REMOTE_WORKERS_DIR}/requirements.txt" ]; then
-    log "using existing AllBot remote worker bundle at ${REMOTE_WORKERS_DIR}"
+    log "using baked AllBot remote worker bundle at ${REMOTE_WORKERS_DIR}"
 else
-    log "cloning AllBot remote worker bundle"
-    rm -rf "$REPO_DIR"
-    git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" "$REPO_DIR"
+    echo "baked AllBot remote worker bundle is missing: ${REMOTE_WORKERS_DIR}" >&2
+    exit 66
 fi
 
 cd "$REMOTE_WORKERS_DIR"

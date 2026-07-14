@@ -2,7 +2,7 @@
 
 ## 1. 状态与边界
 
-截至 2026-07-14，仓库侧发布契约已经建立，测试控制面与本地 Worker 已进入不可变发布链路。生产加固候选增加全量只读 preflight、跨系统事务和逆序恢复；它必须先合入受保护 `main`、由 CI 生成新 release，再先发布云测试并完成全部验收。测试/正式 Web 统一使用 Wrangler Pages 发布；用户现已明确授权在测试服务确认无问题、短观察审计与其它门禁全部通过后执行首次生产 bootstrap、正式部署和正式 Pages mutation。
+截至 2026-07-15，发布 schema 已升级为 v2，拆分为共享控制面、测试执行面和 GPU 执行面三条链。仓库实现不等于运行态已晋级：本阶段只允许部署云测试并等待人工验收，生产部署、正式 GPU mutation、legacy Relay/Worker 下线与正式 Cloudflare Pages mutation均未获授权。原有全量只读 preflight、跨系统事务、逆序恢复和 Dashboard fast-track 安全门禁继续保留。
 
 旧 `update_cloud_*` 脚本已经 fail closed。它们不再包含 rsync 或 build 能力。旧 compose、云端混合源码和容器 image ID 只用于首次切换归档与一次性 legacy 回滚，不是可信 release 基线。
 
@@ -18,12 +18,12 @@
 | 公共 Worker | `deploy/docker-compose-worker-base.yml` |
 | 发布接口 | `scripts/release.py` |
 | 主机首次准备 | `scripts/bootstrap_release_host.sh` |
-| 状态 | `/var/lib/allbot/deployments/<env>/current.json`、`history/` 与 `transactions/<sha>.json` |
+| 状态 | v2 为 `/var/lib/allbot/deployments/<env>/<track>/current.json` 与 `history/`；事务仍记录在 `transactions/<sha>.json` |
 | 私密配置 | `/etc/allbot/test.env`、`/etc/allbot/prod.env`，`600 deploy:deploy` |
 
 ## 3. 构建契约
 
-受保护 `main` 的 CI 构建 `allbot-app`、`allbot-central-api`、Dashboard backend/frontend、Worker 和环境无关的 Web tar。Web 使用锁定 Node/npm/Wrangler 版本运行 `build:release`，不把 test/prod URL 烘焙成不同产物。所有自有镜像以完整 SHA 为 tag并写 OCI revision/source；release bundle 也以完整 SHA 发布。workflow 在推送前检查同 SHA tag 不存在，避免正常流水线覆盖。
+受保护 `main` 的 CI 先构建不含业务源码的 `allbot-python-runtime-base`。测试 Agent 使用派生的 `allbot-python-worker-base`；Relay 直接继承 runtime base，不携带 workflow、ComfyUI 或 GPU 依赖。Central、Web、Payment、各 Bot、Dashboard Backend、QQCC Config Backend、Agent 和 Relay 都是独立 target/镜像。Dashboard 与 QQCC Config 分别产出 Nginx 镜像，private-bot owner SPA 归 QQCC Config Frontend；Public Web 只构建一份环境无关 `public-web-dist.tgz`。所有自有镜像以完整 SHA 为 tag 并写 OCI revision/source，workflow 禁止覆盖同 SHA tag。
 
 `release.json` 同时记录自有镜像 digest、imgproxy/Postgres/Redis digest、Web SHA256 和 CI run。部署器拒绝短 SHA、`latest`/普通 tag、缺少 digest、manifest SHA 不一致和未推送/不可从 `origin/main` 到达的提交。
 
@@ -63,9 +63,13 @@ python scripts/update_deploy_config.py --env prod --source /secure/new-prod.env 
 `plan` 可从 GHCR 拉 release bundle，需要预先 `docker login ghcr.io` 和 `oras`。`preflight`、`deploy` 不拉取任何材料，必须先把 `release.json` 与 Web tar 放入本地 bundle cache，或显式传本地 `--manifest`/`--web-artifact`，以保证门禁失败前没有 pull、worktree 或远端写入。
 
 ```bash
-scripts/release.py plan --env test --sha <40-char-sha>
-scripts/release.py preflight --env test --sha <40-char-sha>
-scripts/release.py deploy --env test --sha <40-char-sha> --execute
+scripts/release.py plan --env test --track control-plane --sha <40-char-sha>
+scripts/release.py preflight --env test --track control-plane --sha <40-char-sha>
+scripts/release.py deploy --env test --track control-plane --sha <40-char-sha> --execute
+
+scripts/release.py plan --env test --track test-execution --sha <40-char-sha>
+scripts/release.py preflight --env test --track test-execution --sha <40-char-sha>
+scripts/release.py deploy --env test --track test-execution --sha <40-char-sha> --execute
 
 scripts/release.py verify-test \
   --sha <40-char-sha> \
@@ -90,6 +94,10 @@ scripts/release.py plan --env prod --sha <40-char-sha> --dashboard-fast-track
 scripts/release.py preflight --env prod --sha <40-char-sha> --dashboard-fast-track
 scripts/release.py deploy --env prod --sha <40-char-sha> \
   --dashboard-fast-track --execute --confirm-prod
+
+# 默认正式控制面晋级入口
+scripts/release.py plan --env prod --track control-plane --sha <40-char-sha> --modules central-api
+scripts/release.py deploy --env prod --track control-plane --sha <40-char-sha> --modules central-api --execute --confirm-prod
 ```
 
 `--services` 只扩大自动集合。`src/**`/`shared/**` 会覆盖所有 Python 消费者；Worker 变化为 drain；migration 是 maintenance 且执行需 `--confirm-db-upgrade`；未知路径整栈维护；`remote_workers/**`、GPU profile/model manifest 触发 `gpu-runtime-release-required` blocker。
@@ -109,6 +117,7 @@ release workflow 生成 manifest 后会运行一次不接触运行态秘密的�
 - Pages preflight 要求目标项目 production branch 与发布 branch 一致、`production_deployments_enabled=false`、`preview_deployment_setting=none`，并存在 active canonical custom domain；不满足只阻断，不自动修 Cloudflare。Wrangler 返回后必须由 Pages API 找到 `environment=production`、branch/SHA 正确、stage success 的 deployment ID，确认 `canonical_deployment.id` 已切换，再从正式 custom domain 以 cache-busting 请求校验 JavaScript 内的 `release_sha` 与 `runtime_config_revision`。
 - 状态 schema v2 记录事务 ID、阶段健康、Pages deployment ID/environment/canonical 验证与 runtime config revision，同时继续兼容读取 v1 的 `git_sha`。`--skip-web` 只用于故障恢复并写 `health.web=skipped`，不能通过测试验收或生产晋级。
 - CI 继续生成同 SHA 的 Worker digest；源码、workflow、relay、`src` 全在镜像内。`release.py --env test` 部署并验收测试 Worker；生产 GPU Worker 由 GPU host 专用 operator 独立拉取/切换，`release.py --env prod` 拒绝显式 `--services worker`，不检查 heartbeat/relay，也不停止、重建或恢复 Worker。RunPod/LAN AIO 继续走各自 operator。
+- schema v2 中测试 Worker Agent/Relay 使用不同 digest，并作为同一 test-execution 选择集部署；正式控制面 Compose 不要求二者。RunPod/LAN profile 镜像内置 `/opt/allbot/runtime/remote_workers`、baked entrypoint 和 agent/workflow revision labels，不再 clone `deploy` 分支；模型仍由带 key/size/SHA256 的 manifest 固定。
 - 云测试维护发布按“云控制面 → 测试 Worker → Pages → 暂存状态 → 原子提交 current/history 并解除维护”执行。正式发布按“云控制面 → Pages → 状态提交”执行；首次正式切换仍同时写 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`，但不操作任何 GPU Worker 容器。
 - 无秘密事务 journal 在每阶段通过远端临时文件原子 rename。失败只逆序补偿本事务实际尝试过的阶段，并只验证这些可能被改变的阶段；例如 cloud 阶段失败时，不得因本来 stopped 的测试 Worker 没有 heartbeat 而误报恢复失败。云测试最大补偿顺序为 Pages → Worker → 云控制面，正式为 Pages → 云控制面。验证失败时记录 `rollback_failed` 并保持维护。
 - 回滚命令读取旧 release manifest/Web tar，不重建。部署状态 history 长期保留；运行主机不得全局 `docker system prune`。数据库 migration 只向前兼容，应用回滚不自动 Alembic downgrade。
@@ -119,6 +128,10 @@ scripts/release.py rollback --env prod --to <old-sha> --manifest <old-release.js
 
 # 只允许把未完成事务逆向恢复到旧完整栈，不允许续跑失败阶段
 scripts/release.py recover --env prod --transaction <failed-target-sha> --execute --confirm-prod
+
+# v2 各 track 独立回滚
+scripts/release.py rollback --env test --track control-plane --to <old-sha> --manifest <old-release-index.json> --execute
+scripts/release.py rollback --env test --track test-execution --to <old-sha> --manifest <old-release-index.json> --execute
 ```
 
 ## 7. 首次切换

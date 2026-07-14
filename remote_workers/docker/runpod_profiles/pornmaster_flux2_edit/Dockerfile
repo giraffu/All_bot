@@ -5,10 +5,14 @@ LABEL org.opencontainers.image.title="AllBot RunPod PornMaster Flux2 edit ComfyU
 LABEL org.opencontainers.image.description="ComfyUI runtime profile for PornMaster Flux2 single/multiple image editing; model files are synced from the LAN model cache at startup."
 LABEL allbot.runpod.profile="pornmaster_flux2_edit"
 LABEL allbot.runpod.models="external-lan-manifest"
+ARG ALLBOT_GIT_SHA
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
+      io.allbot.runpod.agent-revision=$ALLBOT_GIT_SHA \
+      io.allbot.runpod.workflow-revision=$ALLBOT_GIT_SHA
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-COPY patch_flux2_small_decoder.py /opt/allbot/patch_flux2_small_decoder.py
+COPY remote_workers/docker/runpod_profiles/pornmaster_flux2_edit/patch_flux2_small_decoder.py /opt/allbot/patch_flux2_small_decoder.py
 
 RUN set -euo pipefail; \
     comfyui_dir="$(cat /opt/allbot-comfyui-dir)"; \
@@ -21,3 +25,11 @@ RUN set -euo pipefail; \
       -name 'full_encoder_small_decoder.safetensors' \
       \) -print -quit | \
       awk 'NF { print "Business model file unexpectedly present in image: " $0; exit 1 }'
+
+COPY remote_workers /opt/allbot/runtime/remote_workers
+COPY remote_workers/scripts/runpod_bootstrap_from_git.sh /opt/allbot/runpod_bootstrap_from_git.sh
+COPY remote_workers/scripts/runpod_baked_runtime_entrypoint.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh
+RUN chmod +x /opt/allbot/runpod_bootstrap_from_git.sh /opt/allbot/runpod_baked_runtime_entrypoint.sh
+ENV ALLBOT_RUNPOD_REPO_DIR=/opt/allbot/runtime \
+    ALLBOT_RUNPOD_REMOTE_WORKERS_DIR=/opt/allbot/runtime/remote_workers
+CMD ["bash", "/opt/allbot/runpod_baked_runtime_entrypoint.sh"]

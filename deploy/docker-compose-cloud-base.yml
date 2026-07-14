@@ -1,5 +1,4 @@
 x-app-base: &app-base
-  image: ${ALLBOT_APP_IMAGE:?release.env must pin ALLBOT_APP_IMAGE by digest}
   restart: always
   env_file:
     - ${ALLBOT_ENV_FILE:?ALLBOT_ENV_FILE is required}
@@ -32,6 +31,7 @@ services:
 
   web-api:
     <<: *app-base
+    image: ${ALLBOT_WEB_API_IMAGE:?release.env must pin ALLBOT_WEB_API_IMAGE by digest}
     command: ["uvicorn", "src.web_api.main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "2"]
     volumes:
       - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
@@ -42,6 +42,7 @@ services:
 
   payment-api:
     <<: *app-base
+    image: ${ALLBOT_PAYMENT_API_IMAGE:?release.env must pin ALLBOT_PAYMENT_API_IMAGE by digest}
     command: ["python", "src/payment_api_server.py"]
     volumes:
       - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
@@ -79,7 +80,7 @@ services:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8086/ && wget -q -O /dev/null http://127.0.0.1:8086/api/health"]
 
   qqcc-config-backend:
-    image: ${ALLBOT_DASHBOARD_BACKEND_IMAGE:?release.env must pin dashboard backend by digest}
+    image: ${ALLBOT_QQCC_CONFIG_BACKEND_IMAGE:?release.env must pin QQCC config backend by digest}
     restart: always
     env_file:
       - ${ALLBOT_ENV_FILE:?ALLBOT_ENV_FILE is required}
@@ -95,7 +96,7 @@ services:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8045/api/health', timeout=5)"]
 
   qqcc-config-frontend:
-    image: ${ALLBOT_DASHBOARD_FRONTEND_IMAGE:?release.env must pin dashboard frontend by digest}
+    image: ${ALLBOT_QQCC_CONFIG_FRONTEND_IMAGE:?release.env must pin QQCC config frontend by digest}
     restart: always
     environment:
       ALLBOT_RELEASE_SHA: ${ALLBOT_RELEASE_SHA:?ALLBOT_RELEASE_SHA is required}
@@ -131,6 +132,7 @@ services:
 
   bot:
     <<: *app-base
+    image: ${ALLBOT_MAIN_BOT_IMAGE:?release.env must pin ALLBOT_MAIN_BOT_IMAGE by digest}
     profiles: ["bot"]
     command: ["python", "src/bot_main.py"]
     volumes:
@@ -139,6 +141,7 @@ services:
 
   qqcc-bot:
     <<: *app-base
+    image: ${ALLBOT_QQCC_BOT_IMAGE:?release.env must pin ALLBOT_QQCC_BOT_IMAGE by digest}
     profiles: ["qqcc-bot"]
     command: ["python", "-m", "qqcc_bot.main"]
     volumes:
@@ -147,6 +150,7 @@ services:
 
   qqcc-private-bot-worker:
     <<: *app-base
+    image: ${ALLBOT_PRIVATE_BOT_WORKER_IMAGE:?release.env must pin ALLBOT_PRIVATE_BOT_WORKER_IMAGE by digest}
     profiles: ["qqcc-private-bots"]
     command: ["python", "-m", "qqcc_private_bot.worker"]
     volumes:
@@ -155,6 +159,7 @@ services:
 
   paid-group-guard-bot:
     <<: *app-base
+    image: ${ALLBOT_PAID_GROUP_BOT_IMAGE:?release.env must pin ALLBOT_PAID_GROUP_BOT_IMAGE by digest}
     profiles: ["paid-group"]
     command: ["python", "-m", "paid_group_guard_bot"]
     volumes:

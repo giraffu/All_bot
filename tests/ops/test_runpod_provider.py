@@ -367,8 +367,6 @@ def test_render_create_can_use_bootstrap_image_without_template():
             use_template_img2img_lora=False,
             image_name_img2img_lora="yanwk/comfyui-boot:cu128-slim",
             docker_start_cmd_img2img_lora=("bash", "-lc", "echo bootstrap"),
-            bootstrap_git_url="https://github.com/giraffu/All_bot.git",
-            bootstrap_git_branch="deploy",
             keepalive_on_bootstrap_failure=True,
         )
     )
@@ -383,8 +381,8 @@ def test_render_create_can_use_bootstrap_image_without_template():
     assert "templateId" not in body
     assert body["imageName"] == "yanwk/comfyui-boot:cu128-slim"
     assert body["dockerStartCmd"] == ["bash", "-lc", "echo bootstrap"]
-    assert env["ALLBOT_RUNPOD_GIT_URL"] == "https://github.com/giraffu/All_bot.git"
-    assert env["ALLBOT_RUNPOD_GIT_BRANCH"] == "deploy"
+    assert "ALLBOT_RUNPOD_GIT_URL" not in env
+    assert "ALLBOT_RUNPOD_GIT_BRANCH" not in env
     assert env["RUNPOD_PREPARE_COMFYUI_ON_VOLUME"] == "false"
     assert env["RUNPOD_KEEPALIVE_ON_BOOTSTRAP_FAILURE"] == "true"
 
@@ -1155,8 +1153,8 @@ def test_render_create_cloud_prod_manual_worker_uses_prod_refs_and_bucket():
     assert body["imageName"] == RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE
     assert body["dockerStartCmd"] == list(RUNPOD_IMG2IMG_LORA_DOCKER_START_CMD)
     assert body["dockerStartCmd"][2].startswith("set -euo pipefail;")
-    assert "git clone --depth 1 --branch" in body["dockerStartCmd"][2]
-    assert "runpod_bootstrap_from_git.sh" in body["dockerStartCmd"][2]
+    assert "git clone" not in body["dockerStartCmd"][2]
+    assert "runpod_baked_runtime_entrypoint.sh" in body["dockerStartCmd"][2]
     assert body["gpuTypeIds"] == list(RUNPOD_PROD_GPU_TYPE_IDS)
     assert env["ENVIRONMENT"] == "prod"
     assert env["RUNPOD_ENVIRONMENT"] == "cloud-prod"

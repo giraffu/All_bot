@@ -5,6 +5,9 @@ import subprocess
 
 BOOTSTRAP_SCRIPT = Path("remote_workers/scripts/runpod_bootstrap_from_git.sh")
 ENTRYPOINT_SCRIPT = Path("remote_workers/scripts/runpod_entrypoint.sh")
+BAKED_ENTRYPOINT_SCRIPT = Path(
+    "remote_workers/scripts/runpod_baked_runtime_entrypoint.sh"
+)
 PROFILE_DOCKERFILE = Path("remote_workers/docker/runpod_profiles/img2img_lora/Dockerfile")
 PROFILE_LOCAL_DOCKERFILE = Path(
     "remote_workers/docker/runpod_profiles/img2img_lora/Dockerfile.local-kjnodes"
@@ -22,10 +25,19 @@ def test_runpod_bootstrap_script_has_valid_bash_syntax():
 
 
 def test_runpod_entrypoint_script_has_valid_bash_syntax():
-    subprocess.run(
-        ["bash", "-n", str(ENTRYPOINT_SCRIPT)],
-        check=True,
-    )
+    for path in (ENTRYPOINT_SCRIPT, BAKED_ENTRYPOINT_SCRIPT):
+        subprocess.run(["bash", "-n", str(path)], check=True)
+
+
+def test_runpod_runtime_requires_baked_agent_and_never_clones_allbot_at_startup():
+    bootstrap = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
+    baked_entrypoint = BAKED_ENTRYPOINT_SCRIPT.read_text(encoding="utf-8")
+
+    assert "git clone --depth 1 --branch \"$REPO_BRANCH\"" not in bootstrap
+    assert "baked AllBot remote worker bundle is missing" in bootstrap
+    assert "ALLBOT_RUNPOD_REPO_DIR:-/opt/allbot/runtime" in baked_entrypoint
+    assert "${runtime_root}/remote_workers" in baked_entrypoint
+    assert "comfy_agent/workflows" in baked_entrypoint
 
 
 def test_runpod_bootstrap_and_entrypoint_supervise_managed_processes():
@@ -168,7 +180,11 @@ def test_wan22_profile_image_bakes_video_custom_nodes_not_business_models():
         "COPY remote_workers/scripts/runpod_bootstrap_from_git.sh "
         "/opt/allbot/runpod_bootstrap_from_git.sh"
     ) in dockerfile
-    assert 'CMD ["bash", "/opt/allbot/runpod_bootstrap_from_git.sh"]' in dockerfile
+    assert "COPY remote_workers /opt/allbot/runtime/remote_workers" in dockerfile
+    assert (
+        'CMD ["bash", "/opt/allbot/runpod_baked_runtime_entrypoint.sh"]'
+        in dockerfile
+    )
     assert (
         "# Keep the FL_RIFE provider in a final small layer" in dockerfile
     )

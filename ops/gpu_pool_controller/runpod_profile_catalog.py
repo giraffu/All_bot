@@ -107,20 +107,12 @@ RUNPOD_SCAIL2_SUPPORTED_TASK_TYPES = (
 RUNPOD_BOOTSTRAP_DOCKER_START_CMD = (
     "bash",
     "-lc",
-    "exec bash /opt/allbot/runpod_bootstrap_from_git.sh",
+    "exec bash /opt/allbot/runpod_baked_runtime_entrypoint.sh",
 )
 RUNPOD_IMG2IMG_LORA_BOOTSTRAP_LOADER_SCRIPT = (
     "set -euo pipefail; "
-    'BOOTSTRAP="${RUNPOD_BOOTSTRAP_SCRIPT_PATH:-/opt/allbot/runpod_bootstrap_from_git.sh}"; '
-    'if [ ! -f "$BOOTSTRAP" ]; then '
-    'mkdir -p "$(dirname "$BOOTSTRAP")"; '
-    'TMP_DIR="${ALLBOT_BOOTSTRAP_TMP_DIR:-/tmp/allbot-bootstrap-src}"; '
-    'rm -rf "$TMP_DIR"; '
-    'git clone --depth 1 --branch "${ALLBOT_RUNPOD_GIT_BRANCH:-deploy}" '
-    '"${ALLBOT_RUNPOD_GIT_URL:-https://github.com/giraffu/All_bot.git}" "$TMP_DIR"; '
-    'cp "$TMP_DIR/remote_workers/scripts/runpod_bootstrap_from_git.sh" "$BOOTSTRAP"; '
-    'chmod +x "$BOOTSTRAP"; '
-    "fi; "
+    'BOOTSTRAP="${RUNPOD_BOOTSTRAP_SCRIPT_PATH:-/opt/allbot/runpod_baked_runtime_entrypoint.sh}"; '
+    'test -x "$BOOTSTRAP" || { echo "baked RunPod entrypoint missing" >&2; exit 66; }; '
     'exec bash "$BOOTSTRAP"'
 )
 RUNPOD_IMG2IMG_LORA_DOCKER_START_CMD = (

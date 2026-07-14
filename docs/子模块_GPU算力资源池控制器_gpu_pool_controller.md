@@ -1,5 +1,7 @@
 # 子模块: GPU 算力资源池控制器 (GPU Pool Controller)
 
+> 2026-07-15 不可变执行面契约：LAN AIO/RunPod profile 属于独立 `gpu-execution` track。镜像必须烘焙 agent/workflow、写 OCI/agent/workflow revision，并由 model manifest key + size + SHA256 固定外置模型；启动时禁止 clone AllBot。每个变化 profile 必须按 `i2i_pro`、PornMaster BF16、PornMaster FP8、SCAIL-2、Wan22/LTX、img2img 顺序独立 canary，通用 Worker smoke 不能替代。LAN registry 只允许通过 `scripts/copy_canonical_image_to_lan_registry.sh` 复制 canonical digest 并复核，不得现场重建同名产物。
+
 ## 1. 目标与范围
 
 本模块记录 AllBot 第一阶段 GPU 算力资源池方案。当前不是 K8s/K3s，也不是自动生产弹性伸缩系统；它是一个以声明式配置、dry-run 计划、canary 和受控 RunPod provider 为主的运维控制器。

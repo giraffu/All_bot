@@ -1249,6 +1249,69 @@ def test_config_impact_recreates_consumers_and_unknown_keys_fail_wide():
     assert unknown == set(module.load_structured_file(POLICY_PATH)["all_services"])
 
 
+def test_v2_promotion_and_state_are_scoped_per_track(monkeypatch, capsys):
+    module = _load_module()
+    digest = "sha256:" + "1" * 64
+    artifact = {
+        "kind": "image",
+        "ref": "ghcr.io/giraffu/central@" + digest,
+        "digest": digest,
+        "source_sha": FULL_SHA,
+        "oci_revision": FULL_SHA,
+        "dependency_closure": [],
+    }
+    manifest = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "source_sha": FULL_SHA,
+        "git_sha": FULL_SHA,
+        "artifacts": {"central-api": artifact},
+        "selected_artifacts": ["central-api"],
+    }
+    state = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "git_sha": FULL_SHA,
+        "status": "verified",
+        "artifacts": {"central-api": {"digest": digest, "status": "verified"}},
+    }
+    commands = []
+
+    def fake_run(command, **_kwargs):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(state), stderr="")
+
+    monkeypatch.setattr(module, "_run", fake_run)
+    args = SimpleNamespace(
+        env="prod",
+        command="deploy",
+        test_state_host="cloud-test",
+        execute=False,
+    )
+    module._promotion_check(args, manifest)
+    assert commands[0][-1] == (
+        "cat /var/lib/allbot/deployments/test/control-plane/current.json"
+    )
+
+    write_args = SimpleNamespace(
+        env="test",
+        command="deploy",
+        remote_host="cloud-test",
+        execute=False,
+        skip_web=False,
+    )
+    module._write_state(
+        write_args,
+        module.ReleaseImpact(services={"central-api"}),
+        manifest,
+        "f" * 64,
+    )
+    assert (
+        "/var/lib/allbot/deployments/test/control-plane/current.json"
+        in capsys.readouterr().out
+    )
+
+
 def test_release_cli_defaults_to_allbot_cloudflare_account():
     module = _load_module()
 

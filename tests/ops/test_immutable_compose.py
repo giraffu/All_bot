@@ -203,19 +203,19 @@ def test_prod_runtime_pins_internal_api_base_for_every_python_consumer():
 
 
 def test_release_workflow_builds_all_images_and_never_uses_latest():
-    workflow = (ROOT / ".github/workflows/control-plane-release.yml").read_text(
+    workflow = (ROOT / ".github/workflows/modular-release-v2.yml").read_text(
         encoding="utf-8"
     )
 
-    for image in (
-        "allbot-app",
-        "allbot-central-api",
-        "allbot-dashboard-backend",
-        "allbot-dashboard-frontend",
-        "allbot-worker",
-        "allbot-release",
+    for contract in (
+        "release-index.json",
+        "control-plane-manifest.json",
+        "test-execution-manifest.json",
+        "gpu-execution-manifest.json",
+        "allbot-release-v2",
     ):
-        assert image in workflow
+        assert contract in workflow
+    assert "scripts/ci_release_v2.py" in workflow
     assert ":latest" not in workflow
     assert (
         '05-select-dashboard-spa.sh && test -f '
@@ -226,6 +226,14 @@ def test_release_workflow_builds_all_images_and_never_uses_latest():
         'import dashboard.backend.qqcc_config_main'
     ) in workflow
     assert "DASHBOARD_FRONTEND_MODE=qqcc" in workflow
+
+
+def test_schema_v1_shared_image_release_is_retired():
+    workflow = (ROOT / ".github/workflows/control-plane-release.yml").read_text(
+        encoding="utf-8"
+    )
+    release_section = workflow.split("\n  release:\n", 1)[1]
+    assert "if: ${{ false }}" in release_section
 
 
 def test_python_ci_workflows_install_backend_dependencies_and_use_test_jwt():
@@ -286,9 +294,15 @@ def test_release_workflow_gates_pull_requests_without_publishing_images():
     workflow = (ROOT / ".github/workflows/control-plane-release.yml").read_text(
         encoding="utf-8"
     )
+    modular = (ROOT / ".github/workflows/modular-release-v2.yml").read_text(
+        encoding="utf-8"
+    )
 
     assert "  pull_request:\n" in workflow
-    assert "if: github.event_name == 'push' && github.ref == 'refs/heads/main'" in workflow
+    assert "if: ${{ false }}" in workflow
+    assert "workflow_run:" in modular
+    assert 'workflows: ["Immutable control-plane release"]' in modular
+    assert "github.event.workflow_run.conclusion == 'success'" in modular
 
 
 def test_bootstrap_sends_remote_script_over_stdin_and_archives_source_only():
@@ -336,7 +350,9 @@ def test_python_310_container_bases_match_pinned_runtime_version_and_digest():
         first_line = path.read_text(encoding="utf-8").splitlines()[0]
         if first_line.startswith("FROM python:3.10"):
             python_310_dockerfiles.append(path)
-            assert first_line == expected, f"{path} has a mutable or mismatched Python base"
+            assert first_line.removesuffix(
+                " AS python-runtime-base"
+            ) == expected, f"{path} has a mutable or mismatched Python base"
 
     assert python_310_dockerfiles
 

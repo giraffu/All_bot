@@ -456,8 +456,6 @@ class RunPodSettings:
     prod_agent_secret_token_ref: str = RUNPOD_PROD_AGENT_SECRET_TOKEN_REF
     prod_minio_access_key_ref: str = RUNPOD_PROD_R2_ACCESS_KEY_REF
     prod_minio_secret_key_ref: str = RUNPOD_PROD_R2_SECRET_KEY_REF
-    bootstrap_git_url: str = "https://github.com/giraffu/All_bot.git"
-    bootstrap_git_branch: str = "deploy"
     keepalive_on_bootstrap_failure: bool = False
     agent_secret_token: str = ""
     minio_endpoint: str = ""
@@ -809,11 +807,6 @@ class RunPodSettings:
                 "RUNPOD_PROD_R2_SECRET_KEY_REF",
                 RUNPOD_PROD_R2_SECRET_KEY_REF,
             ),
-            bootstrap_git_url=os.getenv(
-                "RUNPOD_BOOTSTRAP_GIT_URL",
-                "https://github.com/giraffu/All_bot.git",
-            ),
-            bootstrap_git_branch=os.getenv("RUNPOD_BOOTSTRAP_GIT_BRANCH", "deploy"),
             keepalive_on_bootstrap_failure=_bool_env(
                 os.getenv("RUNPOD_KEEPALIVE_ON_BOOTSTRAP_FAILURE"),
                 default=False,

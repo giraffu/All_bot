@@ -29,6 +29,31 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+try:
+    from scripts.release_artifacts_v2 import (
+        load_catalog,
+        plan_builds as plan_artifact_builds,
+    )
+    from scripts.release_manifest_v2 import (
+        ManifestV2Error,
+        TRACKS as RELEASE_TRACKS,
+        load_release_index,
+        select_artifacts,
+        validate_promotion as validate_v2_promotion,
+    )
+except ModuleNotFoundError:  # direct ``python scripts/release.py`` execution
+    from release_artifacts_v2 import (  # type: ignore[no-redef]
+        load_catalog,
+        plan_builds as plan_artifact_builds,
+    )
+    from release_manifest_v2 import (  # type: ignore[no-redef]
+        ManifestV2Error,
+        TRACKS as RELEASE_TRACKS,
+        load_release_index,
+        select_artifacts,
+        validate_promotion as validate_v2_promotion,
+    )
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_POLICY = ROOT / "deploy" / "release-policy.yml"
@@ -44,6 +69,28 @@ REQUIRED_IMAGES = {
     "worker",
 }
 REQUIRED_VENDOR_IMAGES = {"imgproxy", "postgres", "redis"}
+CONTROL_ARTIFACT_ENV = {
+    "central-api": "ALLBOT_CENTRAL_IMAGE",
+    "web-api": "ALLBOT_WEB_API_IMAGE",
+    "payment-api": "ALLBOT_PAYMENT_API_IMAGE",
+    "main-bot": "ALLBOT_MAIN_BOT_IMAGE",
+    "qqcc-bot": "ALLBOT_QQCC_BOT_IMAGE",
+    "private-bot-worker": "ALLBOT_PRIVATE_BOT_WORKER_IMAGE",
+    "paid-group-bot": "ALLBOT_PAID_GROUP_BOT_IMAGE",
+    "dashboard-backend": "ALLBOT_DASHBOARD_BACKEND_IMAGE",
+    "qqcc-config-backend": "ALLBOT_QQCC_CONFIG_BACKEND_IMAGE",
+    "dashboard-frontend": "ALLBOT_DASHBOARD_FRONTEND_IMAGE",
+    "qqcc-config-frontend": "ALLBOT_QQCC_CONFIG_FRONTEND_IMAGE",
+    "imgproxy": "ALLBOT_IMGPROXY_IMAGE",
+    "postgres": "ALLBOT_POSTGRES_IMAGE",
+    "redis": "ALLBOT_REDIS_IMAGE",
+}
+CONTROL_ARTIFACT_SERVICE = {
+    "main-bot": "bot",
+    "private-bot-worker": "qqcc-private-bot-worker",
+    "paid-group-bot": "paid-group-guard-bot",
+    "public-web": "web-static",
+}
 REQUIRED_ACCEPTANCE_CHECKS = {
     "health",
     "bot_interaction",
@@ -838,6 +885,37 @@ def render_release_env(manifest: Mapping[str, Any], config_revision: str) -> str
     )
 
 
+def render_track_release_env(
+    manifest: Mapping[str, Any], config_revision: str
+) -> str:
+    """Render only image variables owned by one schema-v2 track."""
+
+    track = str(manifest.get("track", ""))
+    artifacts = manifest.get("artifacts", {})
+    lines = [
+        f"ALLBOT_RELEASE_SHA={manifest['source_sha']}",
+        f"ALLBOT_CONFIG_REVISION={config_revision}",
+        f"ALLBOT_RELEASE_TRACK={track}",
+    ]
+    if track == "control-plane":
+        for name, variable in CONTROL_ARTIFACT_ENV.items():
+            artifact = artifacts.get(name)
+            if isinstance(artifact, Mapping) and artifact.get("kind") in {
+                "image",
+                "external-image",
+            }:
+                lines.append(f"{variable}={artifact['ref']}")
+    elif track == "test-execution":
+        for name, variable in {
+            "worker-agent": "ALLBOT_WORKER_AGENT_IMAGE",
+            "worker-relay": "ALLBOT_WORKER_RELAY_IMAGE",
+        }.items():
+            artifact = artifacts.get(name)
+            if isinstance(artifact, Mapping):
+                lines.append(f"{variable}={artifact['ref']}")
+    return "\n".join((*lines, ""))
+
+
 def _run(
     args: Sequence[str],
     *,
@@ -1144,7 +1222,7 @@ def _operator_preflight(
             blockers.append("operator-pages-token-invalid")
         artifact = _resolved_web_artifact(args, manifest)
         try:
-            _verify_web_artifact(artifact, str(manifest["web_artifact_sha256"]))
+            _verify_web_artifact(artifact, _manifest_web_checksum(manifest))
         except ReleaseError:
             blockers.append("operator-web-artifact-invalid")
     return blockers
@@ -1464,7 +1542,12 @@ def _resolve_manifest_path(
     if args.manifest:
         return Path(args.manifest)
     cache = Path(args.bundle_cache).expanduser() / args.sha
-    candidates = (cache / "release.json", cache / "release/release.json")
+    candidates = (
+        cache / "release-index.json",
+        cache / "release" / "release-index.json",
+        cache / "release.json",
+        cache / "release" / "release.json",
+    )
     for candidate in candidates:
         if candidate.is_file():
             return candidate
@@ -1483,13 +1566,36 @@ def _resolve_manifest_path(
     for candidate in candidates:
         if candidate.is_file():
             return candidate
-    raise ReleaseError("release bundle does not contain release.json")
+    raise ReleaseError("release bundle does not contain release-index.json or release.json")
 
 
-def _read_current_state(args: argparse.Namespace) -> dict[str, Any] | None:
+def _load_v2_track(
+    path: Path, *, sha: str, track: str, modules: Iterable[str]
+) -> dict[str, Any]:
+    try:
+        release = load_release_index(path, expected_sha=sha)
+        selected = select_artifacts(release, track, modules)
+    except ManifestV2Error as exc:
+        raise ReleaseError(str(exc)) from exc
+    return {
+        "schema_version": 2,
+        "source_sha": sha,
+        "git_sha": sha,
+        "ci_run": release.index["ci_run"],
+        "track": track,
+        "artifacts": release.manifests[track]["artifacts"],
+        "selected_artifacts": list(selected),
+        "release_index": str(path),
+    }
+
+
+def _read_current_state(
+    args: argparse.Namespace, *, track_scoped: bool = False
+) -> dict[str, Any] | None:
     if args.state_file:
         return _read_json(Path(args.state_file))
-    state_path = f"/var/lib/allbot/deployments/{args.env}/current.json"
+    track_segment = f"/{args.track}" if track_scoped else ""
+    state_path = f"/var/lib/allbot/deployments/{args.env}{track_segment}/current.json"
     local_state = Path(state_path)
     if local_state.exists():
         return _read_json(local_state)
@@ -1509,8 +1615,10 @@ def _read_current_state(args: argparse.Namespace) -> dict[str, Any] | None:
     return None
 
 
-def _resolve_previous_sha(args: argparse.Namespace) -> str | None:
-    state = _read_current_state(args)
+def _resolve_previous_sha(
+    args: argparse.Namespace, *, track_scoped: bool = False
+) -> str | None:
+    state = _read_current_state(args, track_scoped=track_scoped)
     args.previous_state = state
     if args.from_sha:
         return validate_full_sha(args.from_sha)
@@ -1523,9 +1631,102 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
     sha = validate_full_sha(args.sha)
     if not args.skip_git_checks:
         verify_git_release(sha)
-    manifest = _read_json(
-        _resolve_manifest_path(args, allow_fetch=args.command == "plan")
-    )
+    manifest_path = _resolve_manifest_path(args, allow_fetch=args.command == "plan")
+    manifest_document = _read_json(manifest_path)
+    if manifest_document.get("schema_version") == 2:
+        requested_modules = _split_services(args.modules)
+        requested_services = _split_services(args.services)
+        if requested_services and args.track != "control-plane":
+            raise ReleaseError("--services is only an alias for control-plane modules")
+        service_to_artifact = {
+            service: artifact for artifact, service in CONTROL_ARTIFACT_SERVICE.items()
+        }
+        service_to_artifact.update(
+            {
+                name: name
+                for name in CONTROL_ARTIFACT_ENV
+                if name not in {"imgproxy", "postgres", "redis"}
+            }
+        )
+        requested_modules.update(
+            service_to_artifact.get(name, name) for name in requested_services
+        )
+        previous_sha = _resolve_previous_sha(args, track_scoped=True)
+        planned_impact = ReleaseImpact(level="rolling")
+        changed_paths: list[str] = []
+        if previous_sha and previous_sha != sha:
+            changed_paths = git_changed_paths(previous_sha, sha)
+            planned_impact = plan_changed_paths(
+                load_structured_file(Path(args.policy)), changed_paths
+            )
+        computed_modules: set[str] = set()
+        if args.track == "control-plane":
+            computed_modules = {
+                service_to_artifact[service]
+                for service in planned_impact.services
+                if service in service_to_artifact
+            }
+        elif args.track == "test-execution" and "worker" in planned_impact.services:
+            computed_modules = {"worker-agent", "worker-relay"}
+        try:
+            release_bundle = load_release_index(manifest_path, expected_sha=sha)
+        except ManifestV2Error as exc:
+            raise ReleaseError(str(exc)) from exc
+        computed_modules.update(
+            name
+            for name, artifact in release_bundle.manifests[args.track]["artifacts"].items()
+            if artifact.get("source_sha") == sha
+            and name not in {"python-runtime-base", "python-worker-base"}
+        )
+        requested_modules.update(computed_modules)
+        manifest = _load_v2_track(
+            manifest_path,
+            sha=sha,
+            track=args.track,
+            modules=requested_modules,
+        )
+        if "gpu-runtime-release-required" in planned_impact.blockers:
+            artifact_catalog = load_catalog(ROOT / "deploy/release-artifacts-v2.json")
+            artifact_plan = plan_artifact_builds(
+                artifact_catalog, changed_paths, has_previous=True
+            )
+            required_gpu = {
+                name
+                for name in artifact_plan.build
+                if artifact_catalog[name]["track"] == "gpu-execution"
+            }
+            gpu_artifacts = release_bundle.manifests["gpu-execution"]["artifacts"]
+            if required_gpu and all(
+                gpu_artifacts.get(name, {}).get("source_sha") == sha
+                for name in required_gpu
+            ):
+                planned_impact.blockers.remove("gpu-runtime-release-required")
+        if not args.skip_ci_checks:
+            verify_release_ci(manifest, sha)
+        artifact_names = set(manifest["selected_artifacts"])
+        if args.track == "control-plane":
+            services = {
+                CONTROL_ARTIFACT_SERVICE.get(name, name)
+                for name in artifact_names
+                if name not in {"python-runtime-base", "imgproxy", "postgres", "redis"}
+            }
+        elif args.track == "test-execution":
+            services = (
+                {"worker"}
+                if artifact_names & {"worker-agent", "worker-relay"}
+                else set()
+            )
+        else:
+            services = artifact_names
+        planned_impact.services = services
+        if f"track:{args.track}" not in planned_impact.matched_rules:
+            planned_impact.matched_rules.append(f"track:{args.track}")
+        scope_release_impact(args.env, planned_impact, requested=requested_services)
+        return planned_impact, manifest, previous_sha or ""
+
+    if args.track != "control-plane" or _split_services(args.modules):
+        raise ReleaseError("release schema v1 supports only the control-plane track")
+    manifest = manifest_document
     validate_release_manifest(manifest, sha)
     if args.command == "plan" and not args.skip_ci_checks:
         verify_release_ci(manifest, sha)
@@ -1601,7 +1802,9 @@ def _plan_document(
             computed_cloud_services,
             environment_values,
         )
-    return {
+    document: dict[str, Any] = {
+        "schema_version": manifest.get("schema_version", 1),
+        "track": manifest.get("track", "control-plane"),
         "environment": args.env,
         "git_sha": manifest["git_sha"],
         "previous_sha": previous_sha or None,
@@ -1623,9 +1826,16 @@ def _plan_document(
             if args.env == "prod"
             else "test-release"
         ),
-        "images": manifest["images"],
         "mode": "execute" if args.execute else "dry-run",
     }
+    if manifest.get("schema_version") == 2:
+        document["artifacts"] = {
+            name: manifest["artifacts"][name]
+            for name in manifest["selected_artifacts"]
+        }
+    else:
+        document["images"] = manifest["images"]
+    return document
 
 
 def _remote_shell(host: str, script: str, *, execute: bool) -> str:
@@ -1691,22 +1901,55 @@ def _deploy_cloud(
             "paid-group-guard-bot",
         }
     )
-    expected_image_variables = {
-        "bot": "ALLBOT_APP_IMAGE",
-        "central-api": "ALLBOT_CENTRAL_IMAGE",
-        "dashboard-backend": "ALLBOT_DASHBOARD_BACKEND_IMAGE",
-        "dashboard-frontend": "ALLBOT_DASHBOARD_FRONTEND_IMAGE",
-        "imgproxy": "ALLBOT_IMGPROXY_IMAGE",
-        "paid-group-guard-bot": "ALLBOT_APP_IMAGE",
-        "payment-api": "ALLBOT_APP_IMAGE",
-        "postgres": "ALLBOT_POSTGRES_IMAGE",
-        "qqcc-bot": "ALLBOT_APP_IMAGE",
-        "qqcc-config-backend": "ALLBOT_DASHBOARD_BACKEND_IMAGE",
-        "qqcc-config-frontend": "ALLBOT_DASHBOARD_FRONTEND_IMAGE",
-        "qqcc-private-bot-worker": "ALLBOT_APP_IMAGE",
-        "redis": "ALLBOT_REDIS_IMAGE",
-        "web-api": "ALLBOT_APP_IMAGE",
-    }
+    if manifest.get("schema_version") == 2:
+        service_artifacts = {
+            "bot": "main-bot",
+            "central-api": "central-api",
+            "dashboard-backend": "dashboard-backend",
+            "dashboard-frontend": "dashboard-frontend",
+            "imgproxy": "imgproxy",
+            "paid-group-guard-bot": "paid-group-bot",
+            "payment-api": "payment-api",
+            "postgres": "postgres",
+            "qqcc-bot": "qqcc-bot",
+            "qqcc-config-backend": "qqcc-config-backend",
+            "qqcc-config-frontend": "qqcc-config-frontend",
+            "qqcc-private-bot-worker": "private-bot-worker",
+            "redis": "redis",
+            "web-api": "web-api",
+        }
+        expected_image_variables = {
+            service: CONTROL_ARTIFACT_ENV[artifact]
+            for service, artifact in service_artifacts.items()
+        }
+        expected_revisions = {
+            service: str(manifest["artifacts"][artifact].get("oci_revision", ""))
+            for service, artifact in service_artifacts.items()
+            if artifact in manifest["artifacts"]
+            and manifest["artifacts"][artifact].get("kind") == "image"
+        }
+    else:
+        expected_image_variables = {
+            "bot": "ALLBOT_APP_IMAGE",
+            "central-api": "ALLBOT_CENTRAL_IMAGE",
+            "dashboard-backend": "ALLBOT_DASHBOARD_BACKEND_IMAGE",
+            "dashboard-frontend": "ALLBOT_DASHBOARD_FRONTEND_IMAGE",
+            "imgproxy": "ALLBOT_IMGPROXY_IMAGE",
+            "paid-group-guard-bot": "ALLBOT_APP_IMAGE",
+            "payment-api": "ALLBOT_APP_IMAGE",
+            "postgres": "ALLBOT_POSTGRES_IMAGE",
+            "qqcc-bot": "ALLBOT_APP_IMAGE",
+            "qqcc-config-backend": "ALLBOT_DASHBOARD_BACKEND_IMAGE",
+            "qqcc-config-frontend": "ALLBOT_DASHBOARD_FRONTEND_IMAGE",
+            "qqcc-private-bot-worker": "ALLBOT_APP_IMAGE",
+            "redis": "ALLBOT_REDIS_IMAGE",
+            "web-api": "ALLBOT_APP_IMAGE",
+        }
+        expected_revisions = {
+            service: str(sha)
+            for service in expected_image_variables
+            if service not in {"imgproxy", "postgres", "redis"}
+        }
     custom_image_services = {
         service
         for service in expected_image_variables
@@ -1727,8 +1970,22 @@ def _deploy_cloud(
                 'actual_revision="$(docker inspect --format '
                 "'{{ index .Config.Labels \"org.opencontainers.image.revision\" }}' "
                 '"$container_id")"\n'
-                f'test "$actual_revision" = {shlex.quote(sha)}\n'
+                f'test "$actual_revision" = {shlex.quote(expected_revisions[service])}\n'
             )
+    revision_checks = ""
+    for service in cloud_services:
+        revision = expected_revisions.get(service)
+        if not revision:
+            continue
+        variable = expected_image_variables[service]
+        revision_checks += (
+            f'ref="${variable}"\n'
+            'docker pull "$ref" >/dev/null\n'
+            'docker image inspect "$ref" >/dev/null\n'
+            "test \"$(docker image inspect --format "
+            "'{{ index .Config.Labels \"org.opencontainers.image.revision\" }}' "
+            f'\"$ref\")\" = {shlex.quote(revision)}\n'
+        )
     completion_marker = f"ALLBOT_CLOUD_RELEASE_VERIFIED:{sha}"
     initial_cutover = (
         "initial-release" in impact.matched_rules and impact.level == "maintenance"
@@ -1850,11 +2107,7 @@ for name in $(docker ps --format '{{{{.Names}}}}'); do
   docker inspect --format '{{{{.Name}}}} {{{{.State.StartedAt}}}}' "$name" >> "$start_snapshot"
 done
 {maintenance_prefix}{compose} pull {services}
-for ref in "$ALLBOT_APP_IMAGE" "$ALLBOT_CENTRAL_IMAGE" "$ALLBOT_DASHBOARD_BACKEND_IMAGE" "$ALLBOT_DASHBOARD_FRONTEND_IMAGE"; do
-  docker pull "$ref" >/dev/null
-  docker image inspect "$ref" >/dev/null
-  test "$(docker image inspect --format '{{{{ index .Config.Labels \"org.opencontainers.image.revision\" }}}}' "$ref")" = {sha}
-done
+{revision_checks}
 {legacy_handoff}{compose} up -d --no-deps --wait --wait-timeout 180 {services}
 {compose} ps {services}
 {resolved_api_base_checks}{resolved_image_checks}while read -r name started_at; do
@@ -1917,6 +2170,15 @@ def _verify_web_artifact(path: Path, expected_hash: str) -> None:
         raise ReleaseError("web artifact checksum does not match release manifest")
 
 
+def _manifest_web_checksum(manifest: Mapping[str, Any]) -> str:
+    if manifest.get("schema_version") == 2:
+        artifact = manifest.get("artifacts", {}).get("public-web")
+        if not isinstance(artifact, Mapping) or not artifact.get("sha256"):
+            raise ReleaseError("control-plane track has no Public Web artifact")
+        return str(artifact["sha256"])
+    return str(manifest["web_artifact_sha256"])
+
+
 def _resolved_web_artifact(
     args: argparse.Namespace, manifest: Mapping[str, Any]
 ) -> Path:
@@ -1924,7 +2186,12 @@ def _resolved_web_artifact(
     if artifact.is_file() or args.web_artifact != "web-dist.tgz":
         return artifact
     cache = Path(args.bundle_cache).expanduser() / str(manifest["git_sha"])
-    for candidate in (cache / "web-dist.tgz", cache / "release" / "web-dist.tgz"):
+    for candidate in (
+        cache / "public-web-dist.tgz",
+        cache / "release" / "public-web-dist.tgz",
+        cache / "web-dist.tgz",
+        cache / "release" / "web-dist.tgz",
+    ):
         if candidate.is_file():
             return candidate
     return artifact
@@ -2147,7 +2414,7 @@ def _deploy_web(
     if args.skip_web:
         return None
     artifact = _resolved_web_artifact(args, manifest)
-    _verify_web_artifact(artifact, str(manifest["web_artifact_sha256"]))
+    _verify_web_artifact(artifact, _manifest_web_checksum(manifest))
     sha = str(manifest["git_sha"])
     target = WEB_PAGES_TARGETS[args.env]
     runtime_values, runtime_revision = load_web_runtime_config(
@@ -2251,7 +2518,11 @@ def _deploy_worker(
     root = Path(args.worker_checkout_root)
     repo = root / "repo"
     checkout = root / "releases" / sha
-    release_dir = root / "release-env" / sha
+    release_dir = (
+        root / "release-env" / str(manifest["track"]) / sha
+        if manifest.get("schema_version") == 2
+        else root / "release-env" / sha
+    )
     release_path = release_dir / "release.env"
     env_file = local_env_file(args)
     project = f"allbot-worker-{args.env}"
@@ -2304,19 +2575,30 @@ def _deploy_worker(
     temp_path.replace(release_path)
     _run([*compose, "config", "-q"], env=compose_env)
     _run([*compose, "pull", *service_args], env=compose_env)
-    worker_ref = str(manifest["images"]["worker"])
-    revision = _run(
-        [
-            "docker",
-            "image",
-            "inspect",
-            "--format",
-            '{{ index .Config.Labels "org.opencontainers.image.revision" }}',
-            worker_ref,
+    if manifest.get("schema_version") == 2:
+        worker_refs = [
+            (
+                str(manifest["artifacts"][name]["ref"]),
+                str(manifest["artifacts"][name]["oci_revision"]),
+            )
+            for name in ("worker-agent", "worker-relay")
+            if name in manifest.get("selected_artifacts", [])
         ]
-    ).stdout.strip()
-    if revision != sha:
-        raise ReleaseError("worker OCI revision does not match release SHA")
+    else:
+        worker_refs = [(str(manifest["images"]["worker"]), sha)]
+    for worker_ref, expected_revision in worker_refs:
+        revision = _run(
+            [
+                "docker",
+                "image",
+                "inspect",
+                "--format",
+                '{{ index .Config.Labels "org.opencontainers.image.revision" }}',
+                worker_ref,
+            ]
+        ).stdout.strip()
+        if revision != expected_revision:
+            raise ReleaseError("worker OCI revision does not match artifact source SHA")
     if "initial-release" in impact.matched_rules:
         existing = [
             name
@@ -2875,12 +3157,16 @@ def _promotion_check(args: argparse.Namespace, manifest: Mapping[str, Any]) -> N
     if args.env != "prod":
         return
     host = args.test_state_host
-    if args.command == "rollback":
-        state_path = (
-            f"/var/lib/allbot/deployments/test/history/{manifest['git_sha']}.json"
-        )
-    else:
-        state_path = "/var/lib/allbot/deployments/test/current.json"
+    state_root = (
+        f"/var/lib/allbot/deployments/test/{manifest['track']}"
+        if manifest.get("schema_version") == 2
+        else "/var/lib/allbot/deployments/test"
+    )
+    state_path = (
+        f"{state_root}/history/{manifest['git_sha']}.json"
+        if args.command == "rollback"
+        else f"{state_root}/current.json"
+    )
     result = _run(
         ["ssh", "-o", "BatchMode=yes", host, f"cat {state_path}"],
         check=False,
@@ -2893,6 +3179,21 @@ def _promotion_check(args: argparse.Namespace, manifest: Mapping[str, Any]) -> N
         raise ReleaseError("cloud-test release state is invalid") from exc
     if state.get("git_sha") != manifest.get("git_sha"):
         raise ReleaseError("production SHA does not match the tested SHA")
+    if manifest.get("schema_version") == 2:
+        try:
+            validate_v2_promotion(
+                str(manifest["track"]),
+                {
+                    name: manifest["artifacts"][name]
+                    for name in manifest.get("selected_artifacts", [])
+                },
+                state,
+            )
+        except ManifestV2Error as exc:
+            raise ReleaseError(str(exc)) from exc
+        if state.get("status") != "verified":
+            raise ReleaseError("cloud-test release has not been marked verified")
+        return
     if state.get("images") != manifest.get("images"):
         raise ReleaseError("production image digests do not match cloud-test")
     if state.get("vendor_images") != manifest.get("vendor_images"):
@@ -2907,7 +3208,12 @@ def _test_rollback_check(args: argparse.Namespace, manifest: Mapping[str, Any]) 
     if args.command != "rollback" or args.env != "test":
         return
     host = args.remote_host or ENVIRONMENT["test"]["host"]
-    path = f"/var/lib/allbot/deployments/test/history/{manifest['git_sha']}.json"
+    root = (
+        f"/var/lib/allbot/deployments/test/{manifest['track']}"
+        if manifest.get("schema_version") == 2
+        else "/var/lib/allbot/deployments/test"
+    )
+    path = f"{root}/history/{manifest['git_sha']}.json"
     result = _run(["ssh", "-o", "BatchMode=yes", host, f"cat {path}"], check=False)
     if result.returncode != 0:
         raise ReleaseError("rollback target has no retained successful test release")
@@ -2915,6 +3221,20 @@ def _test_rollback_check(args: argparse.Namespace, manifest: Mapping[str, Any]) 
         state = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
         raise ReleaseError("rollback target test history is invalid") from exc
+    if manifest.get("schema_version") == 2:
+        expected = {
+            name: {
+                "digest": artifact.get("digest") or artifact.get("sha256"),
+                "status": "verified",
+            }
+            for name, artifact in manifest["artifacts"].items()
+            if name in manifest.get("selected_artifacts", [])
+        }
+        if state.get("status") != "verified" or state.get("artifacts") != expected:
+            raise ReleaseError(
+                "rollback target is not the previously verified track digest set"
+            )
+        return
     if (
         state.get("status") != "verified"
         or state.get("images") != manifest.get("images")
@@ -2942,10 +3262,23 @@ def validate_test_acceptance(
 ) -> dict[str, Any]:
     if evidence.get("git_sha") != manifest.get("git_sha"):
         raise ReleaseError("test acceptance SHA does not match the release")
-    if evidence.get("images") != manifest.get("images"):
-        raise ReleaseError("test acceptance image digests do not match the release")
-    if evidence.get("vendor_images") != manifest.get("vendor_images"):
-        raise ReleaseError("test acceptance vendor digests do not match the release")
+    if manifest.get("schema_version") == 2:
+        if evidence.get("track") != manifest.get("track"):
+            raise ReleaseError("test acceptance track does not match the release")
+        expected = {
+            name: artifact.get("digest") or artifact.get("sha256")
+            for name, artifact in manifest["artifacts"].items()
+            if name in manifest.get("selected_artifacts", [])
+        }
+        if evidence.get("artifacts") != expected:
+            raise ReleaseError(
+                "test acceptance artifact digests do not match the release"
+            )
+    else:
+        if evidence.get("images") != manifest.get("images"):
+            raise ReleaseError("test acceptance image digests do not match the release")
+        if evidence.get("vendor_images") != manifest.get("vendor_images"):
+            raise ReleaseError("test acceptance vendor digests do not match the release")
     started = _parse_utc_timestamp(
         evidence.get("observation_started_at"), "observation_started_at"
     )
@@ -3015,8 +3348,24 @@ def validate_test_runtime_for_acceptance(state: Mapping[str, Any]) -> None:
 
 def _mark_test_verified(args: argparse.Namespace) -> None:
     sha = validate_full_sha(args.sha)
-    manifest = _read_json(Path(args.manifest))
-    validate_release_manifest(manifest, sha)
+    manifest_path = Path(args.manifest)
+    raw_manifest = _read_json(manifest_path)
+    if raw_manifest.get("schema_version") == 2:
+        manifest = _load_v2_track(
+            manifest_path,
+            sha=sha,
+            track=args.track,
+            modules=_split_services(args.modules),
+        )
+    else:
+        if getattr(args, "track", "control-plane") != "control-plane" or _split_services(
+            getattr(args, "modules", [])
+        ):
+            raise ReleaseError(
+                "release schema v1 supports only the control-plane track"
+            )
+        manifest = raw_manifest
+        validate_release_manifest(manifest, sha)
     evidence = _read_json(Path(args.evidence))
     acceptance = validate_test_acceptance(
         evidence,
@@ -3026,7 +3375,11 @@ def _mark_test_verified(args: argparse.Namespace) -> None:
         ),
     )
     host = args.remote_host or ENVIRONMENT["test"]["host"]
-    state_path = "/var/lib/allbot/deployments/test/current.json"
+    track_segment = (
+        f"/{manifest['track']}" if manifest.get("schema_version") == 2 else ""
+    )
+    state_root = f"/var/lib/allbot/deployments/test{track_segment}"
+    state_path = f"{state_root}/current.json"
     result = _run(
         ["ssh", "-o", "BatchMode=yes", host, f"cat {state_path}"],
         check=False,
@@ -3037,17 +3390,49 @@ def _mark_test_verified(args: argparse.Namespace) -> None:
         state = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
         raise ReleaseError("cloud-test deployment state is invalid") from exc
-    if (
-        state.get("git_sha") != sha
-        or state.get("images") != manifest.get("images")
-        or state.get("vendor_images") != manifest.get("vendor_images")
-        or state.get("web_artifact_sha256") != manifest.get("web_artifact_sha256")
-    ):
+    if state.get("git_sha") != sha:
         raise ReleaseError(
             "cloud-test runtime state does not match acceptance evidence"
         )
-    validate_test_runtime_for_acceptance(state)
+    if manifest.get("schema_version") == 2:
+        expected_artifacts = {
+            name: {
+                "digest": manifest["artifacts"][name].get("digest")
+                or manifest["artifacts"][name].get("sha256"),
+                "status": "deployed",
+            }
+            for name in manifest["selected_artifacts"]
+        }
+        if state.get("track") != manifest.get("track") or state.get(
+            "artifacts"
+        ) != expected_artifacts:
+            raise ReleaseError(
+                "cloud-test runtime state does not match acceptance evidence"
+            )
+        health = state.get("health")
+        required_health = (
+            "worker" if manifest["track"] == "test-execution" else "cloud"
+        )
+        if not isinstance(health, Mapping) or health.get(required_health) not in {
+            "compose-ps-passed",
+            "not-targeted",
+        }:
+            raise ReleaseError("cloud-test track health has not passed verification")
+    else:
+        if (
+            state.get("images") != manifest.get("images")
+            or state.get("vendor_images") != manifest.get("vendor_images")
+            or state.get("web_artifact_sha256")
+            != manifest.get("web_artifact_sha256")
+        ):
+            raise ReleaseError(
+                "cloud-test runtime state does not match acceptance evidence"
+            )
+        validate_test_runtime_for_acceptance(state)
     state["status"] = "verified"
+    if manifest.get("schema_version") == 2:
+        for artifact in state["artifacts"].values():
+            artifact["status"] = "verified"
     state["acceptance"] = acceptance
     if not args.execute:
         if acceptance["short_observation_override"]:
@@ -3059,7 +3444,7 @@ def _mark_test_verified(args: argparse.Namespace) -> None:
         return
     payload = json.dumps(state, sort_keys=True, indent=2) + "\n"
     evidence_payload = json.dumps(evidence, sort_keys=True, indent=2) + "\n"
-    acceptance_path = f"/var/lib/allbot/deployments/test/acceptance/{sha}.json"
+    acceptance_path = f"{state_root}/acceptance/{sha}.json"
     _run(
         [
             "ssh",
@@ -3067,7 +3452,7 @@ def _mark_test_verified(args: argparse.Namespace) -> None:
             "BatchMode=yes",
             host,
             (
-                "set -e; install -d -m 755 /var/lib/allbot/deployments/test/acceptance; "
+                f"set -e; install -d -m 755 {state_root}/acceptance; "
                 f"cat > {acceptance_path}.tmp; mv -f {acceptance_path}.tmp {acceptance_path}"
             ),
         ],
@@ -3083,7 +3468,7 @@ def _mark_test_verified(args: argparse.Namespace) -> None:
         ],
         input_text=payload,
     )
-    history_path = f"/var/lib/allbot/deployments/test/history/{sha}.json"
+    history_path = f"{state_root}/history/{sha}.json"
     _run(
         [
             "ssh",
@@ -3110,10 +3495,8 @@ def _write_state(
     state = {
         "schema_version": 2,
         "environment": args.env,
+        "track": manifest.get("track", "control-plane"),
         "git_sha": manifest["git_sha"],
-        "images": manifest["images"],
-        "vendor_images": manifest["vendor_images"],
-        "web_artifact_sha256": manifest["web_artifact_sha256"],
         "config_revision": config_revision,
         "services": sorted(impact.services),
         "status": (
@@ -3143,6 +3526,23 @@ def _write_state(
             ),
         },
     }
+    if manifest.get("schema_version") == 2:
+        state["artifacts"] = {
+            name: {
+                "digest": manifest["artifacts"][name].get("digest")
+                or manifest["artifacts"][name].get("sha256"),
+                "status": state["status"],
+            }
+            for name in manifest["selected_artifacts"]
+        }
+    else:
+        state.update(
+            {
+                "images": manifest["images"],
+                "vendor_images": manifest["vendor_images"],
+                "web_artifact_sha256": manifest["web_artifact_sha256"],
+            }
+        )
     if web_deployment:
         state["web_deployment"] = dict(web_deployment)
         if web_deployment.get("canonical_verified") is True:
@@ -3154,7 +3554,10 @@ def _write_state(
             "completed_stages": list(transaction.get("completed_stages", [])),
         }
     payload = json.dumps(state, sort_keys=True, indent=2) + "\n"
-    path = f"/var/lib/allbot/deployments/{args.env}/current.json"
+    track_segment = (
+        f"/{manifest['track']}" if manifest.get("schema_version") == 2 else ""
+    )
+    path = f"/var/lib/allbot/deployments/{args.env}{track_segment}/current.json"
     if stage_only:
         if not transaction:
             raise ReleaseError("staged deployment state requires a transaction")
@@ -3174,7 +3577,8 @@ def _write_state(
         _run(["ssh", "-o", "BatchMode=yes", host, command], input_text=payload)
         return
     history = (
-        f"/var/lib/allbot/deployments/{args.env}/history/{manifest['git_sha']}.json"
+        f"/var/lib/allbot/deployments/{args.env}{track_segment}/history/"
+        f"{manifest['git_sha']}.json"
     )
     command = (
         f"set -e; install -d -m 755 {shlex.quote(str(Path(path).parent))} "
@@ -3215,6 +3619,8 @@ def _add_release_arguments(parser: argparse.ArgumentParser) -> None:
         default=str(DEFAULT_WEB_RUNTIME_CONFIG),
     )
     parser.add_argument("--services", action="append", default=[])
+    parser.add_argument("--track", choices=RELEASE_TRACKS, default="control-plane")
+    parser.add_argument("--modules", action="append", default=[])
     parser.add_argument("--policy", default=str(DEFAULT_POLICY))
     parser.add_argument("--schema", default=str(DEFAULT_SCHEMA))
     parser.add_argument("--env-file")
@@ -3277,6 +3683,8 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("--sha", required=True)
     verify.add_argument("--manifest", required=True)
     verify.add_argument("--evidence", required=True)
+    verify.add_argument("--track", choices=RELEASE_TRACKS, default="control-plane")
+    verify.add_argument("--modules", action="append", default=[])
     verify.add_argument("--remote-host")
     verify.add_argument("--confirm-short-observation", action="store_true")
     verify.add_argument("--execute", action="store_true")
@@ -3385,7 +3793,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         require_preflight(preflight)
         if args.command == "preflight":
             return 0
-        release_env = render_release_env(manifest, config_revision)
+        if manifest.get("schema_version") == 2 and args.track == "gpu-execution":
+            raise ReleaseError(
+                "GPU track mutations must use the profile canary operator; "
+                "release.py records plans, verification, and rollback metadata only"
+            )
+        release_env = (
+            render_track_release_env(manifest, config_revision)
+            if manifest.get("schema_version") == 2
+            else render_release_env(manifest, config_revision)
+        )
         previous_pages_id = None
         if "web-static" in impact.services and not args.skip_web:
             previous_pages_id = _current_pages_deployment_id(args)
