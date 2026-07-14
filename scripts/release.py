@@ -118,6 +118,7 @@ PUBLIC_WEB_RUNTIME_FIELDS = {
     "tonconnect_manifest_url",
     "tonconnect_twa_return_url",
     "enable_free_edit_v2",
+    "enable_free_edit_v3",
     "enable_scail2_long_action_transfer",
 }
 
@@ -1944,7 +1945,11 @@ def _verify_canonical_pages_runtime(
     )
     request = urllib.request.Request(
         runtime_url,
-        headers={"Accept": "application/javascript", "Cache-Control": "no-cache"},
+        headers={
+            "Accept": "application/javascript",
+            "Cache-Control": "no-cache",
+            "User-Agent": "AllBotReleaseVerifier/1.0",
+        },
     )
     try:
         with urllib.request.urlopen(request, timeout=20) as response:
