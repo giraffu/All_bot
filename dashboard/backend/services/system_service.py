@@ -610,6 +610,21 @@ async def _read_pending_queue_snapshot(redis_client) -> tuple[list[str], list[An
     return normalized_task_ids, await pipeline.execute()
 
 
+def _unique_pending_queue_redis_urls(redis_url: str | None) -> list[str]:
+    if redis_url:
+        return [redis_url]
+
+    urls: list[str] = []
+    for candidate in (
+        os.getenv("WORKER_REDIS_URL", "").strip(),
+        os.getenv("DASHBOARD_PENDING_QUEUE_FALLBACK_REDIS_URL", "").strip(),
+        os.getenv("REDIS_URL", "").strip(),
+    ):
+        if candidate and candidate not in urls:
+            urls.append(candidate)
+    return urls
+
+
 async def _resolve_pending_low_trust_user_ids(
     *,
     pending_user_ids: set[int],
@@ -648,17 +663,41 @@ async def get_pending_queue_wait_details(
     if get_low_trust_free_tier_user_ids_func is None:
         get_low_trust_free_tier_user_ids_func = get_low_trust_free_tier_user_ids
 
-    resolved_redis_url = redis_url or os.getenv("WORKER_REDIS_URL")
-    if not resolved_redis_url:
-        return {}
     backend_task_user_ids = {
         str(task_id): user_id
         for task_id, user_id in (backend_task_user_ids or {}).items()
     }
 
+    redis_urls = _unique_pending_queue_redis_urls(redis_url)
+    if not redis_urls:
+        return {}
+
+    for resolved_redis_url in redis_urls:
+        details = await _get_pending_queue_wait_details_from_url(
+            redis_url=resolved_redis_url,
+            redis_from_url_func=redis_from_url_func,
+            now_func=now_func,
+            backend_task_user_ids=backend_task_user_ids,
+            get_low_trust_free_tier_user_ids_func=get_low_trust_free_tier_user_ids_func,
+            logger_override=active_logger,
+        )
+        if details:
+            return details
+    return {}
+
+
+async def _get_pending_queue_wait_details_from_url(
+    *,
+    redis_url: str,
+    redis_from_url_func,
+    now_func,
+    backend_task_user_ids: dict[str, int],
+    get_low_trust_free_tier_user_ids_func,
+    logger_override: logging.Logger,
+) -> dict[str, dict]:
     redis_client = None
     try:
-        redis_client = redis_from_url_func(resolved_redis_url, decode_responses=True)
+        redis_client = redis_from_url_func(redis_url, decode_responses=True)
         normalized_task_ids, values = await _read_pending_queue_snapshot(redis_client)
         if not normalized_task_ids:
             return {}
@@ -675,7 +714,7 @@ async def get_pending_queue_wait_details(
                 get_low_trust_free_tier_user_ids_func=(
                     get_low_trust_free_tier_user_ids_func
                 ),
-                logger_override=active_logger,
+                logger_override=logger_override,
             )
         )
 
@@ -685,7 +724,7 @@ async def get_pending_queue_wait_details(
             trust_lookup_succeeded=trust_lookup_succeeded,
         )
     except Exception as exc:
-        active_logger.warning("Could not collect pending queue wait details: %s", exc)
+        logger_override.warning("Could not collect pending queue wait details: %s", exc)
         return {}
     finally:
         if redis_client is not None:

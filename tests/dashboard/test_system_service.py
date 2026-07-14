@@ -321,6 +321,40 @@ async def test_get_pending_queue_wait_details_uses_created_at_not_priority_score
 
 
 @pytest.mark.asyncio
+async def test_get_pending_queue_wait_details_falls_back_to_bot_redis_when_worker_queue_empty(
+    monkeypatch,
+):
+    worker_redis = _FakePendingRedis()
+    bot_redis = _FakePendingRedis(
+        pending_scores={"backend-task-1": 1.0},
+        hashes={
+            "comfy:task:backend-task-1": {
+                "type": "custom_video",
+                "created_at": "1000",
+                "priority": "0",
+            },
+        },
+    )
+    clients = {
+        "redis://worker": worker_redis,
+        "redis://bot": bot_redis,
+    }
+
+    monkeypatch.setenv("WORKER_REDIS_URL", "redis://worker")
+    monkeypatch.setenv("REDIS_URL", "redis://bot")
+
+    details = await system_service.get_pending_queue_wait_details(
+        redis_from_url_func=lambda url, **_kwargs: clients[url],
+        now_func=lambda: 2000,
+    )
+
+    assert details["image_to_video"]["pending_count"] == 1
+    assert details["image_to_video"]["max_pending_wait_seconds"] == 1000
+    assert worker_redis.closed is True
+    assert bot_redis.closed is True
+
+
+@pytest.mark.asyncio
 async def test_get_pending_queue_wait_details_counts_low_trust_free_tier_users():
     redis_client = _FakePendingRedis(
         pending_scores={

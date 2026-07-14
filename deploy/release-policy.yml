@@ -53,10 +53,70 @@
       "services": ["central-api"]
     },
     {
-      "name": "dashboard-backends",
-      "patterns": ["dashboard/backend/**"],
+      "name": "dashboard-backend-image",
+      "patterns": ["deploy/docker/Dockerfile.dashboard-backend"],
       "level": "rolling",
-      "services": ["dashboard-backend", "qqcc-config-backend"]
+      "services": ["dashboard-backend"]
+    },
+    {
+      "name": "dashboard-admin-backend",
+      "patterns": [
+        "dashboard/backend/main.py",
+        "dashboard/backend/auth.py",
+        "dashboard/backend/routers/runpod.py",
+        "dashboard/backend/routers/system.py",
+        "dashboard/backend/services/runpod_admin_*.py",
+        "dashboard/backend/services/runpod_autoscaler_service.py",
+        "dashboard/backend/services/runpod_operation_store.py",
+        "dashboard/backend/services/system_service.py"
+      ],
+      "level": "rolling",
+      "services": ["dashboard-backend"]
+    },
+    {
+      "name": "dashboard-backends",
+      "patterns": [
+        "dashboard/backend/presenters/**",
+        "dashboard/backend/routers/gallery.py",
+        "dashboard/backend/routers/history.py",
+        "dashboard/backend/routers/logs.py",
+        "dashboard/backend/routers/paid_group_guard.py",
+        "dashboard/backend/routers/plans.py",
+        "dashboard/backend/routers/referrals.py",
+        "dashboard/backend/routers/site_notice.py",
+        "dashboard/backend/routers/stats.py",
+        "dashboard/backend/routers/templates.py",
+        "dashboard/backend/routers/users.py",
+        "dashboard/backend/routers/utils.py",
+        "dashboard/backend/routers/workers.py",
+        "dashboard/backend/services/balance_monitor.py",
+        "dashboard/backend/services/gallery_admin_service.py",
+        "dashboard/backend/services/history_service.py",
+        "dashboard/backend/services/log_admin_service.py",
+        "dashboard/backend/services/paid_group_guard_admin_service.py",
+        "dashboard/backend/services/plan_admin_service.py",
+        "dashboard/backend/services/referral_admin_service.py",
+        "dashboard/backend/services/site_notice_admin_service.py",
+        "dashboard/backend/services/stats_service*.py",
+        "dashboard/backend/services/template_admin_service.py",
+        "dashboard/backend/services/user_admin_service.py",
+        "dashboard/backend/services/worker_admin_service.py",
+        "dashboard/backend/services/worker_listener.py"
+      ],
+      "level": "rolling",
+      "services": ["dashboard-backend"]
+    },
+    {
+      "name": "qqcc-config-backend",
+      "patterns": [
+        "dashboard/backend/qqcc_config_main.py",
+        "dashboard/backend/qqcc_config_auth.py",
+        "dashboard/backend/private_bot_owner_auth.py",
+        "dashboard/backend/routers/qqcc.py",
+        "dashboard/backend/routers/private_bots.py"
+      ],
+      "level": "rolling",
+      "services": ["qqcc-config-backend"]
     },
     {
       "name": "dashboard-frontends",
@@ -97,7 +157,19 @@
     {
       "name": "deployment-contract",
       "patterns": [
-        "deploy/**",
+        "deploy/config-impact.yml",
+        "deploy/docker-compose*.yml",
+        "deploy/docker/Dockerfile.app",
+        "deploy/docker/Dockerfile.central",
+        "deploy/docker/Dockerfile.dashboard-frontend",
+        "deploy/docker/Dockerfile.worker",
+        "deploy/docker/nginx.dashboard.conf.template",
+        "deploy/docker/python-release-entrypoint.sh",
+        "deploy/docker/select-dashboard-spa.sh",
+        "deploy/env.defaults",
+        "deploy/env.schema.yml",
+        "deploy/systemd/**",
+        "deploy/test-acceptance.example.json",
         "scripts/release.py",
         "scripts/bootstrap_release_host.sh",
         "scripts/validate_deploy_env.py",
@@ -124,6 +196,7 @@
       "patterns": [
         "docs/**",
         "tests/**",
+        "deploy/release-policy.yml",
         ".codex/**",
         ".github/**",
         "README.md",
