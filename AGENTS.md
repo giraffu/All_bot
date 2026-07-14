@@ -9,7 +9,7 @@
 - **技能优先 (Skills First)**：遇到具体业务开发时，**必须第一时间加载对应 Skill**，以获取该模块最新的架构红线、接口契约和容灾规范。若当前 Codex 会话未自动暴露该项目 Skill，请手动读取 `.codex/skills/<skill-name>/SKILL.md`。
 - **查阅文档 (Read Docs)**：在进行系统级重构、了解历史背景或不确定业务逻辑时，请主动读取 `/docs` 目录下的相关说明。
 - **核心层隔离 (Core Isolation)**：`/src/core/` 下的代码**绝对禁止**引入任何与 Telegram `Update` 或 Web `Request` 相关的特定平台对象，必须使用内部统一的 `internal_user_id` 流转。
-- **测试优先、不可变发布 (Test First, Immutable Release)**：代码发布只接受受保护 `main` 可达的完整 Git SHA、成功 CI 生成的 `release.json` 和 digest-pinned 镜像；统一入口为 `scripts/release.py plan|deploy|rollback`。云端禁止代码/env rsync、现场 build、源码 bind mount和 `latest`。功能研发默认先发云测试，同一 SHA/digest 完成代表性任务与 24 小时观察并记录验收后才能晋级正式；正式执行仍须用户明确确认。本地主服务器仅保留云正式整体故障时的临时灾备。
+- **测试优先、不可变发布 (Test First, Immutable Release)**：代码发布只接受受保护 `main` 可达的完整 Git SHA、成功 CI 生成的 `release.json` 和 digest-pinned 镜像；统一入口为 `scripts/release.py plan|preflight|deploy|rollback|recover`。云端禁止代码/env rsync、现场 build、源码 bind mount和 `latest`。功能研发默认先发云测试，同一 SHA/digest 完成代表性任务、回滚演练与默认 24 小时观察并记录验收后才能晋级正式；仅当用户明确确认测试服务无问题并授权提前晋级时，才允许 `verify-test --confirm-short-observation` 配合验收证据中的显式开关、非空原因和批准者跳过固定等待时长，所有 smoke、SHA/digest 与运行态一致性门禁仍不可跳过。正式执行仍须用户明确确认。本地主服务器仅保留云正式整体故障时的临时灾备。
 
 ## 2. Codex 工作区知识布局 (Workspace Knowledge Layout)
 

@@ -42,7 +42,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 - 本地主机默认 release checkout/env/Pages token 为 `~/APP/All_bot-release`、`~/.config/allbot/<env>.env`、`~/.config/allbot/cloudflare-pages.token`；云控制面保持 `/home/deploy/APP/All_bot-release` 与 `/etc/allbot/<env>.env`。bootstrap 必须显式选择 `cloud-control` 或 `local-worker-host` 角色。
 - 影响 planner 的全栈集合不代表开启未配置的可选 Bot。`release.py plan` 必须基于已校验 env 输出 `cloud_services`/`disabled_cloud_services`；仅允许按 QQCC token、`PRIVATE_QQCC_BOT_ENABLED`、付费群 Bot token 过滤对应三个可选 runtime，禁止用配置过滤核心 API、Postgres/Redis、主 Bot 或其它自动依赖。
 - `--skip-env-checks` 仅供无运行态秘密的 release CI 执行非 mutation `plan` 自检；`deploy`/`rollback` 必须拒绝。实际 test/prod plan 与执行仍须校验对应受限 env，禁止把 CI 的 `config_validation=skipped` 当作部署配置通过。
-- 测试验收：图片、视频、Bot、并发锁、locale、Web、Worker heartbeat、回滚演练及至少 24 小时观察写入验收 JSON，再执行 `scripts/release.py verify-test ... --execute`；缺少 verified 状态不能晋级。
+- 测试验收：图片、视频、Bot、并发锁、locale、Web、Worker heartbeat、回滚演练及默认至少 24 小时观察写入验收 JSON，再执行 `scripts/release.py verify-test ... --execute`；缺少 verified 状态不能晋级。用户明确确认测试服务无问题并授权提前晋级时，可在 evidence 中写 `short_observation_override=true`、非空 `override_reason` 与 `approved_by`，并显式执行 `verify-test --confirm-short-observation`；该例外只跳过固定时长，不放宽任何 smoke、时间顺序、SHA/digest、Web 或 Worker 运行态检查，审计字段必须写入 current/history/acceptance 状态。
 - 云正式：只能把已验收测试环境中的相同 SHA、控制面镜像 digest、第三方镜像 digest 和 Web checksum 晋级，命令必须带 `--execute --confirm-prod`。任何不一致都 fail closed。Worker 镜像仍由 CI 产出并在云测试验收，但生产 Worker 发布不属于 `release.py --env prod` 事务。
 - 本地正式灾备：`safe_deploy.sh` 只用于云正式整体故障时的临时接管，不是日常部署入口。
 - QQCC、Dashboard 等窄更新仍通过 `release.py --services ...` 表达，但机器计算的共享依赖闭包优先；禁止退回单文件、三服务源码同步或现场 `--build`。
