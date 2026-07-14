@@ -146,6 +146,25 @@ describe('RunPodWorkerActions', () => {
     expect(apiMocks.pauseLanAioWorker).not.toHaveBeenCalled()
   })
 
+  it('shows RunPod lifecycle actions for PornMaster Flux2 BF16 workers', async () => {
+    const agentId = 'runpod_prod_pornmaster_flux2_edit_bf16_manual_01'
+    const wrapper = mountActions({
+      agent_id: agentId,
+      status: 'idle',
+    })
+
+    expect(wrapper.text()).toContain('暂停')
+    expect(wrapper.text()).toContain('重启')
+    expect(wrapper.text()).toContain('锁定')
+    expect(wrapper.text()).toContain('删除')
+
+    await wrapper.get('button').trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.pauseRunPodWorker).toHaveBeenCalledWith(agentId)
+    expect(apiMocks.pauseLanAioWorker).not.toHaveBeenCalled()
+  })
+
   it('locks RunPod workers from the card action', async () => {
     const agentId = 'runpod_prod_wan22_video_v2_manual_03'
     const wrapper = mountActions({

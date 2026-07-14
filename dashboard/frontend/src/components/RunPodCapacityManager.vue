@@ -132,6 +132,11 @@ const fallbackProfiles: RunPodProfile[] = [
       'pornmaster_flux2_multi_edit',
     ],
   },
+  {
+    profile: 'pornmaster_flux2_edit_bf16',
+    label: 'pornmaster_flux2 BF16 / 自由P图 v3',
+    supported_task_types: ['pornmaster_flux2_edit_bf16'],
+  },
 ]
 
 const open = ref(false)

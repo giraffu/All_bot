@@ -189,6 +189,175 @@ def test_dashboard_admin_runtime_changes_stay_dashboard_backend_only():
     assert impact.unknown_paths == []
 
 
+def test_dashboard_fast_track_accepts_only_dashboard_runtime_and_release_metadata():
+    module = _load_module()
+
+    impact = module.plan_dashboard_fast_track(
+        [
+            "dashboard/backend/services/runpod_autoscaler_service.py",
+            "dashboard/frontend/src/components/QueueStats.vue",
+            "deploy/docker/Dockerfile.dashboard-backend",
+            "ops/gpu_pool_controller/runpod_profile_catalog.py",
+            "scripts/release.py",
+            "deploy/release-policy.yml",
+            "tests/ops/test_release_cli.py",
+            "docs/子模块_Git不可变发布_git_immutable_release.md",
+            ".codex/skills/allbot-ops-deployment/SKILL.md",
+        ]
+    )
+
+    assert impact.level == "rolling"
+    assert impact.services == {"dashboard-backend", "dashboard-frontend"}
+    assert impact.blockers == set()
+    assert impact.unknown_paths == []
+    assert impact.matched_rules == ["dashboard-fast-track"]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "src/services/task_service_flow.py",
+        "migrations/versions/example.py",
+        "ops/gpu_pool_controller/runtime.py",
+        "deploy/docker-compose-cloud-prod.overlay.yml",
+        "unexpected/runtime.bin",
+    ],
+)
+def test_dashboard_fast_track_rejects_non_dashboard_runtime(path):
+    module = _load_module()
+
+    with pytest.raises(module.ReleaseError, match="dashboard fast-track"):
+        module.plan_dashboard_fast_track(
+            ["dashboard/frontend/src/App.vue", path]
+        )
+
+
+def test_dashboard_fast_track_requires_a_dashboard_runtime_change():
+    module = _load_module()
+
+    with pytest.raises(module.ReleaseError, match="no Dashboard runtime changes"):
+        module.plan_dashboard_fast_track(
+            ["scripts/release.py", "tests/ops/test_release_cli.py"]
+        )
+
+
+def test_git_changed_paths_preserves_unicode_and_spaces(monkeypatch):
+    module = _load_module()
+    expected = [
+        "docs/子模块_后台监控与清理_dashboard_monitoring.md",
+        "dashboard/frontend/src/a file.vue",
+    ]
+    calls = []
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="\0".join(expected) + "\0",
+            stderr="",
+        )
+
+    monkeypatch.setattr(module, "_run", fake_run)
+
+    assert module.git_changed_paths(FULL_SHA, "b" * 40) == expected
+    assert "-z" in calls[0]
+
+
+def test_dashboard_fast_track_skips_test_promotion_but_keeps_ci_preflight(
+    tmp_path, monkeypatch
+):
+    module = _load_module()
+    env_file = tmp_path / "prod.env"
+    env_file.write_text("ALLBOT_ENV=prod\n", encoding="utf-8")
+    args = SimpleNamespace(
+        env="prod",
+        dashboard_fast_track=True,
+        skip_ci_checks=False,
+        local_env_error=False,
+        skip_web=True,
+        cloudflare_token_file="unused",
+    )
+    calls = []
+
+    monkeypatch.setattr(module, "local_env_file", lambda _args: env_file)
+    monkeypatch.setattr(
+        module,
+        "verify_release_ci",
+        lambda manifest, sha: calls.append((manifest["git_sha"], sha)),
+    )
+    monkeypatch.setattr(
+        module,
+        "_promotion_check",
+        lambda *_args: pytest.fail("cloud-test promotion must be skipped"),
+    )
+
+    blockers = module._operator_preflight(
+        args,
+        module.ReleaseImpact(
+            services={"dashboard-backend", "dashboard-frontend"},
+            level="rolling",
+        ),
+        _manifest(),
+        {},
+    )
+
+    assert blockers == []
+    assert calls == [(FULL_SHA, FULL_SHA)]
+
+
+def test_dashboard_fast_track_cloud_deploy_is_rolling_and_dashboard_only(monkeypatch):
+    module = _load_module()
+    args = SimpleNamespace(
+        execute=True,
+        env="prod",
+        remote_host="cloud-prod",
+        remote_checkout_root="/release-root",
+        remote_env_file="/etc/allbot/prod.env",
+        confirm_legacy_cutover=False,
+        drain_timeout_seconds=30,
+        drain_interval_seconds=1,
+    )
+    impact = module.ReleaseImpact(
+        services={"dashboard-backend", "dashboard-frontend"},
+        level="rolling",
+        matched_rules=["dashboard-fast-track"],
+    )
+    remote_scripts = []
+
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda command, **kwargs: subprocess.CompletedProcess(
+            command, 0, stdout="", stderr=""
+        ),
+    )
+
+    def fake_remote(host, script, *, execute):
+        remote_scripts.append((host, script, execute))
+        return f"ALLBOT_CLOUD_RELEASE_VERIFIED:{FULL_SHA}\n"
+
+    monkeypatch.setattr(module, "_remote_shell", fake_remote)
+
+    module._deploy_cloud(
+        args,
+        impact,
+        _manifest(),
+        "ALLBOT_RELEASE_SHA=x\n",
+        {},
+    )
+
+    assert len(remote_scripts) == 1
+    host, script, execute = remote_scripts[0]
+    assert host == "cloud-prod"
+    assert execute is True
+    assert "GENERATION_MAINTENANCE" not in script
+    assert "pull dashboard-backend dashboard-frontend" in script
+    assert "up -d --no-deps --wait --wait-timeout 180 dashboard-backend dashboard-frontend" in script
+    assert "allbot-nontarget" in script
+    assert "central-api web-api" not in script
+
+
 def test_explicit_services_can_only_widen_the_computed_set():
     module = _load_module()
 

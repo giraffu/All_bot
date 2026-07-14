@@ -43,9 +43,9 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 - 影响 planner 的全栈集合不代表开启未配置的可选 Bot。`release.py plan` 必须基于已校验 env 输出 `cloud_services`/`disabled_cloud_services`；仅允许按 QQCC token、`PRIVATE_QQCC_BOT_ENABLED`、付费群 Bot token 过滤对应三个可选 runtime，禁止用配置过滤核心 API、Postgres/Redis、主 Bot 或其它自动依赖。
 - `--skip-env-checks` 仅供无运行态秘密的 release CI 执行非 mutation `plan` 自检；`deploy`/`rollback` 必须拒绝。实际 test/prod plan 与执行仍须校验对应受限 env，禁止把 CI 的 `config_validation=skipped` 当作部署配置通过。
 - 测试验收：图片、视频、Bot、并发锁、locale、Web、Worker heartbeat、回滚演练及默认至少 24 小时观察写入验收 JSON，再执行 `scripts/release.py verify-test ... --execute`；缺少 verified 状态不能晋级。用户明确确认测试服务无问题并授权提前晋级时，可在 evidence 中写 `short_observation_override=true`、非空 `override_reason` 与 `approved_by`，并显式执行 `verify-test --confirm-short-observation`；该例外只跳过固定时长，不放宽任何 smoke、时间顺序、SHA/digest、Web 或 Worker 运行态检查，审计字段必须写入 current/history/acceptance 状态。
-- 云正式：只能把已验收测试环境中的相同 SHA、控制面镜像 digest、第三方镜像 digest 和 Web checksum 晋级，命令必须带 `--execute --confirm-prod`。任何不一致都 fail closed。Worker 镜像仍由 CI 产出并在云测试验收，但生产 Worker 发布不属于 `release.py --env prod` 事务。
+- 云正式默认只能把已验收测试环境中的相同 SHA、控制面镜像 digest、第三方镜像 digest 和 Web checksum 晋级，命令必须带 `--execute --confirm-prod`。唯一免测试晋级例外是用户明确授权的管理后台快速更新：`release.py ... --env prod --dashboard-fast-track` 只接受 Dashboard 后端/前端、两个 Dashboard Dockerfile、BF16 RunPod profile catalog 及配套 release/docs/tests 元数据，强制 rolling 且仍要求 main 可达 SHA、成功 CI、digest 镜像、生产确认、全量只读 preflight、事务回滚和非目标容器启动时间不变；任何 migration、`src/shared`、其它 `ops`、Compose、未知路径或 `--services` 都 fail closed，不写生成维护标志。Worker 镜像仍由 CI 产出，但生产 Worker 发布不属于 `release.py --env prod` 事务。
 - 本地正式灾备：`safe_deploy.sh` 只用于云正式整体故障时的临时接管，不是日常部署入口。
-- QQCC、Dashboard 等窄更新仍通过 `release.py --services ...` 表达，但机器计算的共享依赖闭包优先；禁止退回单文件、三服务源码同步或现场 `--build`。
+- 普通窄更新仍通过影响 planner 和必要的 `--services` 扩大集合表达；Dashboard 的免测试快速路径只通过 `--dashboard-fast-track` 自动选择 `dashboard-backend` / `dashboard-frontend`，禁止同时传 `--services`，也禁止退回单文件同步、rsync 或现场 `--build`。
 - QQCC 私有 Bot worker：test/prod service 分别为 `qqcc-private-bot-worker-test/prod`，profile `qqcc-private-bots`，入口 `python -m qqcc_private_bot.worker`。它涉及 Alembic、shared secret、Web API webhook、QQCC Config、官方 QQCC membership checker 与公网 Host，不属于 QQCC 三服务快速更新；当前生产 `PRIVATE_QQCC_BOT_ENABLED=false`，正式 migration/profile/webhook/owner Host 未部署，未经明确确认不得启动。
 - `scripts/update_cloud_test_with_maintenance.sh`、`scripts/update_cloud_prod_with_maintenance.sh`、`scripts/update_cloud_prod_qqcc_bot.sh` 已是 fail-closed 兼容壳，任何参数都不会再同步或构建。
 - cloud-prod shadow 同步：`scripts/sync_cloud_prod_to_local_shadow.py` 默认 dry-run，真实执行必须 `--execute`。
@@ -106,7 +106,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 1. 确认用户确实要求正式发布或生产热修。
 2. 确认目标 service 存在，并确定是否涉及 Alembic、shared env、worker workflow 或跨服务契约。
 3. 对精确 SHA 运行 `release.py plan --env prod`，再运行只读 `release.py preflight --env prod`，检查自动影响集合、维护等级、migration、Pages canonical/自动部署和控制面/Web 回滚材料；prod 报告中的 Worker 检查必须是 `skipped`。
-4. 只有同一 SHA 已在 test 标记 verified 且 preflight 全绿，才运行 `release.py deploy --env prod ... --execute --confirm-prod`；`--services` 只能扩大自动集合。
+4. 默认只有同一 SHA 已在 test 标记 verified 且 preflight 全绿，才运行 `release.py deploy --env prod ... --execute --confirm-prod`；用户明确授权 Dashboard 免测试快速更新时，改用同一 SHA 的 `plan|preflight|deploy --env prod --dashboard-fast-track`，执行仍须 `--execute --confirm-prod`，并确认计划只有 Dashboard 服务、level 为 rolling、`promotion_mode=dashboard-fast-track`。
 5. 手工 compose、旧 QQCC 快速脚本、rsync 和现场 build 均不是紧急旁路；无法通过发布器时停下修复发布契约。
 6. 结束后核对容器 digest、OCI revision、current.json、健康检查和未触碰服务启动时间。
 

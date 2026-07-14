@@ -47,6 +47,7 @@ def _status(
         "scail2",
         "ltx_video",
         "pornmaster_flux2_edit",
+        "pornmaster_flux2_edit_bf16",
     ]
     profile_task_types = {
         "img2img": ["img2img", "img2img_lora"],
@@ -59,6 +60,7 @@ def _status(
             "pornmaster_flux2_single_edit",
             "pornmaster_flux2_multi_edit",
         ],
+        "pornmaster_flux2_edit_bf16": ["pornmaster_flux2_edit_bf16"],
     }
     return {
         "runpod_profile_queue_details": [
@@ -152,6 +154,9 @@ def _runpod_worker(
         "scail2": "runpod_prod_scail2_manual_",
         "ltx_video": "runpod_prod_ltx_video_manual_",
         "pornmaster_flux2_edit": "runpod_prod_pornmaster_flux2_edit_manual_",
+        "pornmaster_flux2_edit_bf16": (
+            "runpod_prod_pornmaster_flux2_edit_bf16_manual_"
+        ),
     }
     profile_types = {
         "img2img": "img2img,img2img_lora",
@@ -163,6 +168,7 @@ def _runpod_worker(
         "pornmaster_flux2_edit": (
             "pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit"
         ),
+        "pornmaster_flux2_edit_bf16": "pornmaster_flux2_edit_bf16",
     }
     return {
         "agent_id": f"{profile_agent[profile]}{slot}",
@@ -445,6 +451,50 @@ async def test_autoscaler_scales_pornmaster_flux2_edit_profile():
     assert decision["estimated_total_pending_work_seconds"] == 1830
     assert decision["estimated_clear_time_seconds"] == 1830
     assert calls[0]["profile"] == "pornmaster_flux2_edit"
+
+
+async def test_autoscaler_scales_pornmaster_flux2_edit_bf16_profile():
+    calls = []
+
+    async def start_add(**kwargs):
+        calls.append(kwargs)
+        return RunPodAdminOperation(
+            id="op-add-pornmaster-bf16",
+            action="add",
+            profile=kwargs["profile"],
+            command=["runpod", "add"],
+            source="autoscaler",
+            trigger_reason=kwargs["trigger_reason"],
+        )
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=InMemoryRunPodAutoscalerStateStore(),
+        status_payload=_status(
+            profile="pornmaster_flux2_edit_bf16",
+            pending=61,
+            wait=1800,
+            pending_count_by_task_type={"pornmaster_flux2_edit_bf16": 61},
+        ),
+        workers_payload=_workers(_local_worker("pornmaster_flux2_edit_bf16")),
+        operations_payload={"operations": []},
+        start_add_func=start_add,
+        now_func=lambda: 1000.0,
+    )
+
+    decision = {item["profile"]: item for item in payload["decisions"]}[
+        "pornmaster_flux2_edit_bf16"
+    ]
+    assert payload["config"]["scale_up_wait_seconds_by_profile"][
+        "pornmaster_flux2_edit_bf16"
+    ] == 30 * 60
+    assert payload["config"]["task_duration_seconds_by_type"][
+        "pornmaster_flux2_edit_bf16"
+    ] == 30
+    assert decision["action"] == "scale_up"
+    assert decision["estimated_clear_time_seconds"] == 1830
+    assert calls[0]["profile"] == "pornmaster_flux2_edit_bf16"
 
 
 async def test_autoscaler_uses_non_low_trust_clear_prefix_instead_of_total_pending():
@@ -1142,6 +1192,53 @@ async def test_autoscaler_scales_down_idle_runpod_when_local_capacity_remains():
         {
             "profile": "i2i_pro",
             "slot": "01",
+            "trigger_reason": "scale_down: no backlog and idle runpod available",
+            "spawn_task_func": None,
+        }
+    ]
+
+
+async def test_autoscaler_scales_down_idle_pornmaster_flux2_edit_bf16_runpod():
+    calls = []
+
+    async def start_delete(**kwargs):
+        calls.append(kwargs)
+        return RunPodAdminOperation(
+            id="op-delete-bf16",
+            action="delete",
+            profile=kwargs["profile"],
+            command=["runpod", "down"],
+            slot=kwargs["slot"],
+            source="autoscaler",
+            trigger_reason=kwargs["trigger_reason"],
+        )
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=InMemoryRunPodAutoscalerStateStore(),
+        status_payload=_status(
+            profile="pornmaster_flux2_edit_bf16",
+            pending=0,
+            wait=None,
+        ),
+        workers_payload=_workers(
+            _runpod_worker("pornmaster_flux2_edit_bf16", "02"),
+            _local_worker("pornmaster_flux2_edit_bf16"),
+        ),
+        operations_payload={"operations": []},
+        start_delete_func=start_delete,
+        now_func=lambda: 1000.0,
+    )
+
+    decision = {item["profile"]: item for item in payload["decisions"]}[
+        "pornmaster_flux2_edit_bf16"
+    ]
+    assert decision["action"] == "scale_down"
+    assert calls == [
+        {
+            "profile": "pornmaster_flux2_edit_bf16",
+            "slot": "02",
             "trigger_reason": "scale_down: no backlog and idle runpod available",
             "spawn_task_func": None,
         }

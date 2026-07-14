@@ -98,6 +98,27 @@ ENVIRONMENT = {
     },
 }
 
+DASHBOARD_FAST_TRACK_BACKEND_PATTERNS = (
+    "dashboard/backend/**",
+    "deploy/docker/Dockerfile.dashboard-backend",
+    "ops/gpu_pool_controller/runpod_profile_catalog.py",
+)
+DASHBOARD_FAST_TRACK_FRONTEND_PATTERNS = (
+    "dashboard/frontend/**",
+    "deploy/docker/Dockerfile.dashboard-frontend",
+    "deploy/docker/nginx.dashboard.conf.template",
+    "deploy/docker/select-dashboard-spa.sh",
+)
+DASHBOARD_FAST_TRACK_METADATA_PATTERNS = (
+    "scripts/release.py",
+    "deploy/release-policy.yml",
+    "tests/**",
+    "docs/**",
+    ".codex/**",
+    "AGENTS.md",
+    "README.md",
+)
+
 WEB_PAGES_TARGETS = {
     "test": {
         "project": "allbot-web-cf-test",
@@ -604,6 +625,33 @@ def plan_changed_paths(
     )
 
 
+def plan_dashboard_fast_track(paths: Iterable[str]) -> ReleaseImpact:
+    """Build a fail-closed production plan for Dashboard-only releases."""
+
+    services: set[str] = set()
+    rejected: list[str] = []
+    for raw_path in dict.fromkeys(str(path) for path in paths):
+        path = raw_path.removeprefix("./")
+        if _matches(path, DASHBOARD_FAST_TRACK_BACKEND_PATTERNS):
+            services.add("dashboard-backend")
+        elif _matches(path, DASHBOARD_FAST_TRACK_FRONTEND_PATTERNS):
+            services.add("dashboard-frontend")
+        elif not _matches(path, DASHBOARD_FAST_TRACK_METADATA_PATTERNS):
+            rejected.append(path)
+    if rejected:
+        raise ReleaseError(
+            "dashboard fast-track rejects non-Dashboard paths: "
+            + ", ".join(sorted(rejected))
+        )
+    if not services:
+        raise ReleaseError("dashboard fast-track has no Dashboard runtime changes")
+    return ReleaseImpact(
+        services=services,
+        level="rolling",
+        matched_rules=["dashboard-fast-track"],
+    )
+
+
 def merge_requested_services(
     *, computed: Iterable[str], requested: Iterable[str]
 ) -> set[str]:
@@ -883,9 +931,17 @@ def git_changed_paths(from_sha: str | None, target_sha: str) -> list[str]:
     if from_sha:
         validate_full_sha(from_sha)
         output = _run(
-            ["git", "diff", "--name-only", "--diff-filter=ACDMRT", from_sha, target_sha]
+            [
+                "git",
+                "diff",
+                "--name-only",
+                "-z",
+                "--diff-filter=ACDMRT",
+                from_sha,
+                target_sha,
+            ]
         ).stdout
-        return [line for line in output.splitlines() if line]
+        return [path for path in output.split("\0") if path]
     return []
 
 
@@ -1071,7 +1127,8 @@ def _operator_preflight(
             blockers.append("operator-release-ci-unavailable")
     try:
         if args.env == "prod":
-            _promotion_check(args, manifest)
+            if not getattr(args, "dashboard_fast_track", False):
+                _promotion_check(args, manifest)
         else:
             _test_rollback_check(args, manifest)
     except ReleaseError as exc:
@@ -1474,8 +1531,10 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
         verify_release_ci(manifest, sha)
     policy = load_structured_file(Path(args.policy))
     previous_sha = _resolve_previous_sha(args)
+    changed_paths: list[str] = []
     if previous_sha:
-        impact = plan_changed_paths(policy, git_changed_paths(previous_sha, sha))
+        changed_paths = git_changed_paths(previous_sha, sha)
+        impact = plan_changed_paths(policy, changed_paths)
     else:
         impact = ReleaseImpact(
             services=policy["all_services"],
@@ -1483,6 +1542,18 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
             matched_rules=["initial-release"],
         )
     requested = _split_services(args.services)
+    if getattr(args, "dashboard_fast_track", False):
+        if args.env != "prod":
+            raise ReleaseError("dashboard fast-track is only available for production")
+        if args.command not in {"plan", "preflight", "deploy", "rollback"}:
+            raise ReleaseError(
+                "dashboard fast-track is only available for plan, preflight, deploy, or rollback"
+            )
+        if not previous_sha:
+            raise ReleaseError("dashboard fast-track requires an existing production release")
+        if requested:
+            raise ReleaseError("dashboard fast-track does not accept --services")
+        impact = plan_dashboard_fast_track(changed_paths)
     unknown_services = requested - set(policy["all_services"])
     if unknown_services:
         raise ReleaseError(
@@ -1545,6 +1616,13 @@ def _plan_document(
         "blockers": sorted(impact.blockers),
         "unknown_paths": impact.unknown_paths,
         "matched_rules": impact.matched_rules,
+        "promotion_mode": (
+            "dashboard-fast-track"
+            if getattr(args, "dashboard_fast_track", False)
+            else "verified-test-promotion"
+            if args.env == "prod"
+            else "test-release"
+        ),
         "images": manifest["images"],
         "mode": "execute" if args.execute else "dry-run",
     }
@@ -3044,6 +3122,13 @@ def _write_state(
             else "deployed"
         ),
         "deployed_at": datetime.now(timezone.utc).isoformat(),
+        "promotion_mode": (
+            "dashboard-fast-track"
+            if getattr(args, "dashboard_fast_track", False)
+            else "verified-test-promotion"
+            if args.env == "prod"
+            else "test-release"
+        ),
         "health": {
             "cloud": "compose-ps-passed",
             "worker": "compose-ps-passed"
@@ -3139,6 +3224,14 @@ def _add_release_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--skip-env-checks", action="store_true")
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--confirm-prod", action="store_true")
+    parser.add_argument(
+        "--dashboard-fast-track",
+        action="store_true",
+        help=(
+            "deploy only Dashboard services to production without cloud-test "
+            "promotion; CI artifacts and production confirmation remain required"
+        ),
+    )
     parser.add_argument("--confirm-db-upgrade", action="store_true")
     parser.add_argument("--confirm-legacy-cutover", action="store_true")
     parser.add_argument("--drain-timeout-seconds", type=int, default=7200)
@@ -3257,7 +3350,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             verify_operator_worktree_clean()
         impact, manifest, previous_sha = build_plan(args)
         args.previous_sha = previous_sha
-        if args.command == "rollback":
+        if args.command == "rollback" and not args.dashboard_fast_track:
             impact.level = "maintenance"
         if args.skip_env_checks:
             environment_values, config_revision = {}, ""

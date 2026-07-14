@@ -1,6 +1,6 @@
 # 子模块: 云正式控制面部署 (Cloud Prod Control Plane)
 
-> 2026-07-14 发布入口加固：新生产发布只允许把云测试已标记 verified 的同一 Git SHA、控制面镜像 digest 与 Web checksum 晋级。执行前必须先通过 `scripts/release.py preflight --env prod --sha <sha>`；正式事务顺序为云控制面 → Pages → 状态提交，失败按 Pages → 云控制面逆序恢复，人工恢复入口为 `recover --transaction`。生产 GPU Worker 由各 GPU host 的专用 operator 独立发布，prod plan/preflight/deploy/recover 不检查 heartbeat/relay，也不停止、重建或恢复 Worker；显式 `--services worker` 会 fail closed。禁止 rsync、现场 build、源码挂载和 Pages 自动生产构建。本文后续旧 compose/目录/Worker 命令只描述 legacy 或独立 GPU 运维，不是新控制面发布入口；见 `docs/子模块_Git不可变发布_git_immutable_release.md`。当前仍未完成新一轮云测试 24 小时验收，本轮未进入生产维护，也未执行生产容器、正式机或正式 Pages mutation。
+> 2026-07-15 发布入口补充：默认生产仍只晋级云测试 verified 的同一 Git SHA/digest；唯一免测试例外是用户明确授权的管理后台快速更新，使用 `scripts/release.py ... --env prod --dashboard-fast-track`。该路径仍要求 main 可达 SHA、成功 CI、digest 镜像、生产确认与全量只读 preflight，只 rolling recreate Dashboard 后端/前端，不写生成维护标志，并拒绝 migration、共享 runtime、其它 GPU ops、Compose、未知路径与手工 `--services`。正式事务失败仍自动恢复，非目标容器启动时间必须保持不变。生产 GPU Worker 继续由各 GPU host 专用 operator 独立发布；禁止 rsync、现场 build、源码挂载和 Pages 自动生产构建。
 
 首次正式切换的硬门禁包括：同时维护 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`；控制面发布器不得触碰任何正式或测试 Worker；正式 Pages 必须为 production branch `main`、Git production disabled、preview `none`，并具备可验证/可回滚的 canonical production deployment ID。不满足只报告 blocker，不自动修正式环境。
 
@@ -332,13 +332,18 @@ curl -fsS http://100.107.220.127:8088/api/health
 
 QQCC Bot 与 QQCC Config Web 同轮纯代码更新可走快速联合路径：只同步变更清单内的必要文件，通过 safe preflight、生产确认和 single-polling 检查后，用一条 `docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.yml --profile qqcc-bot up -d --no-deps --build qqcc-bot-prod qqcc-config-backend-prod qqcc-config-frontend-prod` 复用构建缓存并替换三个目标服务。COPY 型服务禁止省略 `--build` 后只 recreate；该路径不进入维护、不 drain 队列、不触碰其它控制面服务，并必须核对非目标容器启动时间不变。
 Dashboard RunPod 管理入口当前支持 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、
-`scail2 / 视频生视频` 与 `ltx_video / 高级图生视频`；它只提交正式 RunPod 池新增/暂停/删除操作，不直接启停其它正式服务。
+`scail2 / 视频生视频`、`ltx_video / 高级图生视频`、`pornmaster_flux2 / 自由P图 v2` 与
+`pornmaster_flux2 BF16 / 自由P图 v3`。BF16 已进入同一 autoscaler 自动 add/down/restart/enable，默认单任务 30 秒、清空阈值 30 分钟；旧 v2 监控行在前端隐藏，但手动管理能力不被删除。
 不可变 `allbot-dashboard-backend` 镜像必须内置 `/app/scripts/runpod_prod_ops.sh`、
 `/app/scripts/gpu_pool_controller.py` 与 `/app/ops`，否则这些 Dashboard operation 会以
 `bash: /app/scripts/runpod_prod_ops.sh: No such file or directory` / exit 127 失败。
 `deploy/release-policy.yml` 将 `deploy/docker/Dockerfile.dashboard-backend`、`dashboard/backend/services/system_service.py`
 与 `dashboard/backend/services/runpod_admin_*.py` 归为 `dashboard-backend` rolling 影响面；这类修复可以通过不可变发布只重建正式 `dashboard-backend`，
 不得顺手重启 Central/Web/Bot/Payment/imgproxy/Worker 或 QQCC Config。
+用户明确授权免测试时，先对目标 SHA 依次执行 `plan`、`preflight`、`deploy` 并统一追加
+`--env prod --dashboard-fast-track`；真实执行再加 `--execute --confirm-prod`。计划必须显示
+`level=rolling`、`promotion_mode=dashboard-fast-track` 且服务集合只能是 Dashboard 后端/前端；发布器会拒绝
+`--services` 并核对所有非目标容器启动时间不变，因此该路径不进入维护、不 drain 生成队列，也不触碰 Pages、Worker 或 RunPod Pod。
 Dashboard `/api/system/status` 的 pending 详情默认优先读 `WORKER_REDIS_URL`，若该分库没有 `comfy:queue:pending`
 快照，再按 `DASHBOARD_PENDING_QUEUE_FALLBACK_REDIS_URL`、`REDIS_URL` 兜底读取。这只修正管理后台展示和 autoscaler 估算，
 不改变 Central 的入队 Redis 契约；若 Central 误写通用 Redis，仍应另行排查 Central 配置。

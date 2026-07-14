@@ -32,6 +32,7 @@
 - “帮我改功能”“帮我修 Bug”“帮我联调”“帮我验证配置”这类请求，默认理解为测试环境操作。
 - 只有在用户明确表达“上线”“发布”“部署正式环境”“交付生产”后，才允许执行 `scripts/release.py deploy --env prod ... --execute --confirm-prod`；`safe_deploy.sh` 只用于云正式整体故障时的本地正式灾备。
 - 在用户完成测试验收前，不得把测试环境变更直接同步到正式 Bot、正式 Web、正式 Payment、正式 Central API 或正式 Dashboard。
+- 唯一例外是用户明确授权的 Dashboard 免测试快速发布：使用 `scripts/release.py --env prod --dashboard-fast-track`，仅允许 Dashboard 范围、强制 rolling、仍要求 main/CI/digest/preflight/`--confirm-prod`，不写维护标志且不重建任何非 Dashboard 服务。
 
 ## 2.2 云端测试控制面
 
@@ -56,7 +57,7 @@
 - `.env.cloud.prod` 是本机私有文件，已被 `.gitignore` 忽略；`.env.cloud.prod.example` 只提供变量契约和占位值。`.dockerignore` 必须忽略 `.env.*`，避免 root Docker build 把真实云正式变量 COPY 进镜像。
 - 云正式 Web API 需要 `JWT_SECRET_KEY`，且不能使用默认占位值；该 key 已纳入 `.env.cloud.prod.example` 和 `scripts/safe_deploy_cloud_prod.sh` preflight 必填检查。
 - 云测试环境退役入口为 `scripts/cleanup_cloud_test_for_prod.sh`。脚本默认 dry-run，真实清理必须传 `--execute`；它不得删除 R2 `user-data-test`，不得误改正式服务或 `web.aivison.it.com`。
-- 云正式控制面包含 Central API、Web API、Payment API、Dashboard Backend、Dashboard Frontend、QQCC Config Backend/Frontend、imgproxy、正式 Bot 和可选 QQCC 懒人 Bot；生产晋级必须保持测试已验收的同一 SHA/digest，并继续校验 Bot 单 polling。QQCC 单模块发布仍可用，但范围由影响 planner 计算，禁止恢复专用文件同步脚本。
+- 云正式控制面包含 Central API、Web API、Payment API、Dashboard Backend、Dashboard Frontend、QQCC Config Backend/Frontend、imgproxy、正式 Bot 和可选 QQCC 懒人 Bot；生产默认保持测试已验收的同一 SHA/digest。明确授权的 Dashboard 快速通道只跳过测试晋级，不跳过 CI 或不可变产物，并且不能用于 QQCC、Bot、API、Payment、Worker 或 migration。
 - 云正式本地 worker compose 声明 `cloud-prod-worker-relay` 与 `cloud-prod-comfy-agent-1..7`；线上实际容量还可能包含 LAN AIO agent、`remote_workers` 与手动 RunPod worker。启动或重建后必须在云 Central `/system/workers` 验证当次目标 worker 集合的 heartbeat、control state 与任务类型，状态不能是 `error` 或 `quarantined`；不要把固定 7 个 heartbeat 当成所有场景的唯一验收标准。
 - 云正式 R2 在线口径为 `user-data-prod` 单桶，`MINIO_*` 兼容变量和 `R2_*` 都指向正式 R2；`MINIO_PUBLIC_URL` 保持空，结果公开读取依赖 `R2_PUBLIC_DOMAIN=https://r2.aivison.it.com`。
 - 正式 Web API / Dashboard 运行时不再通过 `LEGACY_MINIO_*` 回源本地 MinIO；云正式 compose 对 Web/Dashboard 应设置 `LEGACY_MINIO_READ_FALLBACK_ENABLED=false` 并清空 legacy endpoint/key/public URL。R2 miss 后只允许当前 R2/S3 短签、空值或 `pending_result`，worker 仍只写 R2，不得把 legacy MinIO 配进 worker 写路径。
