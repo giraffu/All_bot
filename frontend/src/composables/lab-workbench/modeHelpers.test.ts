@@ -41,19 +41,12 @@ describe('lab workbench mode helpers', () => {
       wan22ResolutionPreset: 'preview',
     })).toBe(6)
     expect(getLabModeCost({
-      mode: getLabModeConfig('edit_v2'),
+      mode: getLabModeConfig('edit_v3'),
       uploadedReferenceCount: 1,
       resolution: '512',
       duration: '5',
       wan22ResolutionPreset: 'preview',
-    })).toBe(2)
-    expect(getLabModeCost({
-      mode: getLabModeConfig('edit_v2'),
-      uploadedReferenceCount: 2,
-      resolution: '512',
-      duration: '5',
-      wan22ResolutionPreset: 'preview',
-    })).toBe(6)
+    })).toBe(5)
     expect(getLabModeCost({
       mode: getLabModeConfig('wan22_video_v2'),
       uploadedReferenceCount: 1,
@@ -86,7 +79,7 @@ describe('lab workbench mode helpers', () => {
 
   it('keeps cost hint keys stable', () => {
     expect(getLabCostHintKey('edit')).toBe('lab.workbench.cost_hints.edit')
-    expect(getLabCostHintKey('edit_v2')).toBe('lab.workbench.cost_hints.edit_v2')
+    expect(getLabCostHintKey('edit_v3')).toBe('lab.workbench.cost_hints.edit_v3')
     expect(getLabCostHintKey('custom_video')).toBe('lab.workbench.cost_hints.custom_video')
     expect(getLabCostHintKey('ltx_video')).toBe('lab.workbench.cost_hints.ltx_video')
     expect(getLabCostHintKey('scail2_action_transfer')).toBe('lab.workbench.cost_hints.scail2_video')

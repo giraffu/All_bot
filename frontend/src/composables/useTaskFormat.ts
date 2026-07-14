@@ -10,8 +10,9 @@ export function useTaskFormat() {
     const map: Record<string, string> = {
       'image': '自由P图',
       'edit': '自由P图',
-      'pornmaster_flux2_single_edit': '自由P图 v2',
-      'pornmaster_flux2_multi_edit': '自由P图 v2',
+      'pornmaster_flux2_edit_bf16': '自由P图 v3',
+      'pornmaster_flux2_single_edit': '自由P图 v3',
+      'pornmaster_flux2_multi_edit': '自由P图 v3',
       'i2i_pro': '幻想换脸',
       'i2i_draw': '局部重绘',
       'undress': '快速脱衣',

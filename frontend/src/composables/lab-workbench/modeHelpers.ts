@@ -3,7 +3,7 @@ import {
   DEFAULT_LTX_VIDEO_RESOLUTION,
   DEFAULT_VIDEO_DURATION,
   DEFAULT_VIDEO_RESOLUTION,
-  FREE_EDIT_V2_MODE_ID,
+  FREE_EDIT_V3_MODE_ID,
   getScail2VideoCost,
   type LabModeConfig,
   type UnifiedLabModeId,
@@ -48,8 +48,12 @@ export const getLabModeCost = ({
   duration,
   wan22ResolutionPreset,
 }: GetLabModeCostOptions) => {
-  if (mode.id === 'edit' || mode.id === FREE_EDIT_V2_MODE_ID) {
+  if (mode.id === 'edit') {
     return uploadedReferenceCount >= 2 ? 6 : 2
+  }
+
+  if (mode.id === FREE_EDIT_V3_MODE_ID) {
+    return 5
   }
 
   if (mode.id === 'custom_video' || mode.id === 'wan22_video_v2') {
@@ -80,8 +84,8 @@ export const getLabCostHintKey = (modeId: UnifiedLabModeId) => {
     return 'lab.workbench.cost_hints.edit'
   }
 
-  if (modeId === FREE_EDIT_V2_MODE_ID) {
-    return 'lab.workbench.cost_hints.edit_v2'
+  if (modeId === FREE_EDIT_V3_MODE_ID) {
+    return 'lab.workbench.cost_hints.edit_v3'
   }
 
   if (modeId === 'custom_video') {

@@ -26,23 +26,24 @@ describe('resolveGalleryTaskTypeLabel', () => {
     expect(resolveGalleryTaskTypeLabel('wan22_video_v2', t)).toBe('图生视频 v2')
   })
 
-  it('returns translated free edit v2 group label', () => {
+  it('canonicalizes the legacy free edit group to the v3 label', () => {
     const t = (key: string) => {
-      if (key === 'gallery.tabs.free_edit_v2_group') {
-        return '自由P图 v2'
+      if (key === 'gallery.tabs.free_edit_v3_group') {
+        return '自由P图 v3'
       }
       return key
     }
 
-    expect(resolveGalleryTaskTypeLabel('free_edit_v2_group', t)).toBe('自由P图 v2')
+    expect(resolveGalleryTaskTypeLabel('free_edit_v2_group', t)).toBe('自由P图 v3')
   })
 
-  it('maps raw free edit v2 task types to the shared gallery label', () => {
+  it('maps raw free edit task types to the shared v3 gallery label', () => {
     i18n.global.locale.value = 'zh'
     const t = (key: string) => String(i18n.global.t(key))
 
-    expect(resolveGalleryTaskTypeLabel('pornmaster_flux2_single_edit', t)).toBe('自由P图 v2')
-    expect(resolveGalleryTaskTypeLabel('pornmaster_flux2_multi_edit', t)).toBe('自由P图 v2')
+    expect(resolveGalleryTaskTypeLabel('pornmaster_flux2_edit_bf16', t)).toBe('自由P图 v3')
+    expect(resolveGalleryTaskTypeLabel('pornmaster_flux2_single_edit', t)).toBe('自由P图 v3')
+    expect(resolveGalleryTaskTypeLabel('pornmaster_flux2_multi_edit', t)).toBe('自由P图 v3')
   })
 
   it('returns translated scail2 labels from the shared locale', () => {

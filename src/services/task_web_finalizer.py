@@ -1,17 +1,21 @@
 import asyncio
+import copy
 import logging
+import uuid
 from typing import Any
 
 from src.core.task_lifecycle_contract import build_task_terminal_snapshot
 from src.core.task_core_types import TaskSubmissionContext, VideoTaskRequest
 from src.core.task_status_mapper import (
     BACKEND_STATUS_CANCELLED,
+    BACKEND_STATUS_DONE,
     is_backend_terminal_status,
     normalize_backend_status,
 )
 from src.logger import UserLogger
 from src.services.image_service import image_service
 from src.services.redis_client import redis_client
+from src.services.task_registry import TaskRegistry
 from src.services.task_web_terminal_finalization import (
     finalize_monitored_web_task_cancellation_default,
     finalize_monitored_web_task_failure_default,
@@ -20,6 +24,18 @@ from src.services.task_web_terminal_finalization import (
 from src.services.task_lifecycle_runner import route_backend_terminal_snapshot
 
 logger = logging.getLogger(__name__)
+
+FREE_EDIT_V3_CONTINUATION_KIND = "free_edit_v3"
+FREE_EDIT_V3_TASK_TYPE = "pornmaster_flux2_edit_bf16"
+
+
+def _free_edit_v3_stage2_task_id(registry_task_id: str) -> str:
+    return str(
+        uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"allbot:web-free-edit-v3:{registry_task_id}:face-swap",
+        )
+    )
 
 
 def _serialize_submission_context(
@@ -80,6 +96,23 @@ async def enqueue_pending_web_finalizer(
     submission_context: TaskSubmissionContext,
     cost: int,
 ) -> None:
+    serialized_context = _serialize_submission_context(submission_context)
+    continuation_marker = serialized_context["metadata"].get("_web_free_edit_v3")
+    continuation = None
+    if isinstance(continuation_marker, dict):
+        continuation = {
+            "version": int(continuation_marker.get("version", 1)),
+            "kind": FREE_EDIT_V3_CONTINUATION_KIND,
+            "stage": "bf16",
+            "stage2_backend_task_id": _free_edit_v3_stage2_task_id(
+                registry_task_id
+            ),
+            "original_image": continuation_marker.get("original_image"),
+            "stage1_result_path": None,
+            "final_allow_contribute": bool(
+                continuation_marker.get("final_allow_contribute", True)
+            ),
+        }
     await redis_client.add_pending_web_finalizer(
         registry_task_id,
         {
@@ -87,10 +120,75 @@ async def enqueue_pending_web_finalizer(
             "internal_user_id": internal_user_id,
             "username": username,
             "registry_task_id": registry_task_id,
-            "submission_context": _serialize_submission_context(submission_context),
+            "submission_context": serialized_context,
             "cost": cost,
+            **({"continuation": continuation} if continuation else {}),
         },
     )
+
+
+def _is_free_edit_v3_record(record: dict[str, Any]) -> bool:
+    continuation = record.get("continuation")
+    return bool(
+        isinstance(continuation, dict)
+        and continuation.get("version") == 1
+        and continuation.get("kind") == FREE_EDIT_V3_CONTINUATION_KIND
+    )
+
+
+async def _resume_free_edit_v3_face_swap(
+    record: dict[str, Any],
+    *,
+    stage1_result_path: str | None = None,
+) -> None:
+    next_record = copy.deepcopy(record)
+    continuation = next_record["continuation"]
+    if stage1_result_path:
+        continuation["stage1_result_path"] = stage1_result_path
+    stage1_result_path = continuation.get("stage1_result_path")
+    original_image = continuation.get("original_image")
+    if not stage1_result_path or not original_image:
+        raise ValueError("Free edit v3 continuation is missing a stage input")
+
+    registry_task_id = next_record["registry_task_id"]
+    stage2_backend_task_id = continuation["stage2_backend_task_id"]
+    final_allow_contribute = bool(
+        continuation.get("final_allow_contribute", True)
+    )
+    continuation["stage"] = "face_swap_dispatching"
+    next_record["backend_task_id"] = stage2_backend_task_id
+    submission_context = next_record["submission_context"]
+    submission_context["task_type"] = FREE_EDIT_V3_TASK_TYPE
+    submission_context["saved_inputs"] = [original_image]
+    submission_context["allow_contribute"] = final_allow_contribute
+    submission_context.setdefault("metadata", {}).pop("_web_free_edit_v3", None)
+
+    # The durable intent is written before any external dispatch. A restart can
+    # safely reconcile the deterministic second-stage ID without another debit.
+    await redis_client.add_pending_web_finalizer(registry_task_id, next_record)
+    await TaskRegistry.transition_backend_task(
+        registry_task_id,
+        backend_task_id=stage2_backend_task_id,
+        task_type=FREE_EDIT_V3_TASK_TYPE,
+        saved_input_images=[original_image],
+        allow_contribute=final_allow_contribute,
+        user_cancel_allowed=False,
+        status="pending",
+    )
+
+    existing_stage2 = await image_service.get_task_status(stage2_backend_task_id)
+    if existing_stage2 is None:
+        submitted_task_id = await image_service.submit_face_swap_task(
+            stage2_backend_task_id,
+            face_image_path=original_image,
+            body_image_path=stage1_result_path,
+            priority=100,
+        )
+        if submitted_task_id != stage2_backend_task_id:
+            raise RuntimeError("Face swap backend changed the deterministic task ID")
+
+    continuation["stage"] = "face_swap"
+    await redis_client.add_pending_web_finalizer(registry_task_id, next_record)
 
 
 async def _finalize_pending_web_success(
@@ -202,6 +300,13 @@ async def process_pending_web_finalizer(
         if not record:
             return False
 
+        if (
+            _is_free_edit_v3_record(record)
+            and record["continuation"].get("stage") == "face_swap_dispatching"
+        ):
+            await _resume_free_edit_v3_face_swap(record)
+            return True
+
         backend_task_id = record.get("backend_task_id")
         if not backend_task_id:
             return False
@@ -215,6 +320,27 @@ async def process_pending_web_finalizer(
 
         if not is_backend_terminal_status(status_data.get("status")):
             return False
+
+        if (
+            _is_free_edit_v3_record(record)
+            and record["continuation"].get("stage") == "bf16"
+            and normalize_backend_status(status_data.get("status"))
+            == BACKEND_STATUS_DONE
+        ):
+            if not status_data.get("result_path"):
+                await _finalize_terminal_record(
+                    record,
+                    {
+                        "status": "error",
+                        "error_msg": "BF16 stage completed without a result path",
+                    },
+                )
+                return True
+            await _resume_free_edit_v3_face_swap(
+                record,
+                stage1_result_path=status_data.get("result_path"),
+            )
+            return True
 
         await _finalize_terminal_record(record, status_data)
         return True

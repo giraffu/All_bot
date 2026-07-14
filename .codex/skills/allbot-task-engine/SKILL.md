@@ -24,6 +24,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - `process_and_submit_task(base_priority=..., user_cancel_allowed=...)` 可承接入口层任务控制语义：`base_priority` 只影响 Central 队列优先级，`user_cancel_allowed=false` 写入 active task registry 并让用户取消入口直接返回 `not_cancellable`，不调用 backend cancel、不退款；默认值保持普通任务行为。
 - `task_core` 只能依赖内部类型、协议和显式 provider/dependencies。不要在 `src/core/` 引入 Telegram `Update`、FastAPI `Request/APIRouter`、SQLAlchemy session 全局对象或 Worker HTTP 细节。
 - “双 ID”必须区分：`task_id` 是 AllBot 业务 ID，`backend_task_id` 是 Central/Worker 执行 ID。运行时锁、状态轮询、历史落库和退款日志必须写清使用哪一个。
+- Web 自由P图 v3 是单一逻辑任务、两段 backend 执行：根业务 `task_id` 固定，BF16 成功后 active registry 切到确定性的 `face_swap` backend ID。pending Web finalizer 必须先持久化带版本 continuation intent，再切 registry 与提交第二阶段；第二阶段不得重复扣费、不得允许取消、不得持久化中间结果，失败/取消统一使用根任务退款幂等键。
 - `cleanup_task_runtime_state(...)` 是运行态收口入口。取消、失败、成功、恢复脚本和 finalizer 都应走同一类清理语义，不要复制散落删除 Redis/DB 状态。
 - Web side-effect monitor 默认入口是 `monitor_task_and_release_lock_default(...)`。Web 提交成功后的锁释放、终态观测和异常收口应通过 monitor，而不是让 request handler 长时间持有业务逻辑。
 - 成功结果持久化使用 `TaskSuccessPersistenceCommand` 语义收口。新增结果字段时，同时检查 History、Gallery/apply、LTX/SCAIL-2 extra context 和 Bot completion。

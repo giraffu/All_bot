@@ -224,6 +224,7 @@ TASK_TYPE_REGISTRY: dict[str, TaskTypeRegistryEntry] = {
             "PornMaster_F2K_9B_Turbo_Single-image-editing_Automatic_V1_2026_05_27.api.json"
         ),
         is_generation=True,
+        gallery_supported=True,
         cost=6,
     ),
     "face_swap": _entry(
@@ -533,6 +534,7 @@ _GALLERY_SUBMIT_TASK_TYPE_ORDER = (
     MODE_SCAIL2_FACE_SWAP_V2,
     MODE_EDIT,
     MODE_IMG2IMG_LORA,
+    MODE_PORNMASTER_FLUX2_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
 )
@@ -543,6 +545,7 @@ _GALLERY_DISPLAY_TASK_TYPE_ORDER = (
     MODE_I2I_DRAW,
     MODE_EDIT,
     MODE_IMG2IMG_LORA,
+    MODE_PORNMASTER_FLUX2_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
     MODE_CUSTOM_VIDEO,

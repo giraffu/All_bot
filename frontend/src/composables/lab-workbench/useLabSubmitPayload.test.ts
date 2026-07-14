@@ -225,33 +225,20 @@ describe('useLabSubmitPayload', () => {
     }), 'lab.cards.custom_edit_title')
   })
 
-  it('maps free edit v2 submissions to single or multi PornMaster task types', async () => {
-    const harness = createHarness('edit_v2')
+  it('submits free edit v3 through the BF16 single-image task type', async () => {
+    const harness = createHarness('edit_v3')
     harness.uploadedReferences.value = [refImage('base.png')]
     harness.prompt.value = 'clean up details'
 
     await harness.handleSubmit()
 
     expect(harness.submitTask).toHaveBeenLastCalledWith(expect.objectContaining({
-      task_type: 'pornmaster_flux2_single_edit',
+      task_type: 'pornmaster_flux2_edit_bf16',
       inputs: {
         images: ['base.png'],
       },
       prompt: 'clean up details',
-    }), 'lab.cards.custom_edit_v2_title')
-
-    harness.submitTask.mockClear()
-    harness.uploadedReferences.value = [refImage('base.png'), refImage('style.png')]
-
-    await harness.handleSubmit()
-
-    expect(harness.submitTask).toHaveBeenLastCalledWith(expect.objectContaining({
-      task_type: 'pornmaster_flux2_multi_edit',
-      inputs: {
-        images: ['base.png', 'style.png'],
-      },
-      prompt: 'clean up details',
-    }), 'lab.cards.custom_edit_v2_title')
+    }), 'lab.cards.custom_edit_v3_title')
   })
 
   it('builds custom video LoRA payloads with WAN22 chain metadata', async () => {

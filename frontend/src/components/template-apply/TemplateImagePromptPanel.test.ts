@@ -237,7 +237,7 @@ describe('TemplateImagePromptPanel', () => {
     expect(wrapper.findComponent(RadioGroupStub).exists()).toBe(false)
   })
 
-  it('submits free edit v2 templates as single or multi tasks without addon model params', async () => {
+  it('applies historical free edit templates through v3 with one image and no addon model', async () => {
     const wrapper = mountPanel(buildContext({
       raw: {
         post_id: 2,
@@ -250,7 +250,7 @@ describe('TemplateImagePromptPanel', () => {
         lora_strength: 0.3
       },
       rawTaskType: 'pornmaster_flux2_single_edit',
-      taskType: 'pornmaster_flux2_single_edit',
+      taskType: 'pornmaster_flux2_edit_bf16',
       sourcePostId: 92,
       prompt: 'clean up details',
       loraName: 'qwen/YARN_1.0.safetensors',
@@ -258,7 +258,7 @@ describe('TemplateImagePromptPanel', () => {
     }))
     await nextTick()
 
-    expect(wrapper.text()).toContain('自由P图 v2')
+    expect(wrapper.text()).toContain('自由P图 v3')
     expect(wrapper.findComponent(RadioGroupStub).exists()).toBe(false)
 
     const beforeUpload = wrapper.findComponent(UploadDraggerStub).props('beforeUpload') as (file: File) => Promise<boolean>
@@ -269,9 +269,9 @@ describe('TemplateImagePromptPanel', () => {
     await wrapper.findComponent(ButtonStub).trigger('click')
     await flushPromises()
 
-    const singlePayload = submitTaskMock.mock.calls[0][0]
-    expect(singlePayload).toMatchObject({
-      task_type: 'pornmaster_flux2_single_edit',
+    const payload = submitTaskMock.mock.calls[0][0]
+    expect(payload).toMatchObject({
+      task_type: 'pornmaster_flux2_edit_bf16',
       inputs: {
         images: ['base.png'],
       },
@@ -279,28 +279,13 @@ describe('TemplateImagePromptPanel', () => {
       is_template: true,
       source_post_id: 92,
     })
-    expect(singlePayload.inputs).not.toHaveProperty('lora_name')
-    expect(singlePayload.inputs).not.toHaveProperty('lora_strength')
+    expect(payload.inputs).not.toHaveProperty('lora_name')
+    expect(payload.inputs).not.toHaveProperty('lora_strength')
 
     submitTaskMock.mockClear()
     uploadFileMock.mockResolvedValueOnce({ objectKey: 'style.png' })
     await beforeUpload(new File(['style'], 'style.png', { type: 'image/png' }))
     await nextTick()
-
-    await wrapper.findComponent(ButtonStub).trigger('click')
-    await flushPromises()
-
-    const multiPayload = submitTaskMock.mock.calls[0][0]
-    expect(multiPayload).toMatchObject({
-      task_type: 'pornmaster_flux2_multi_edit',
-      inputs: {
-        images: ['base.png', 'style.png'],
-      },
-      prompt: 'clean up details',
-      is_template: true,
-      source_post_id: 92,
-    })
-    expect(multiPayload.inputs).not.toHaveProperty('lora_name')
-    expect(multiPayload.inputs).not.toHaveProperty('lora_strength')
+    expect(uploadFileMock).toHaveBeenCalledTimes(1)
   })
 })

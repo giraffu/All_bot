@@ -6,7 +6,9 @@ const TEMPLATE_TASK_TYPE_ALIASES: Record<string, TemplateApplyTaskType> = {
   face_video_step1: 'scail2_face_swap_v2',
   face_video_step2: 'scail2_face_swap_v2',
   ltx_video_flf2v: 'ltx_video',
-  scail2_action_transfer_long: 'scail2_action_transfer'
+  scail2_action_transfer_long: 'scail2_action_transfer',
+  pornmaster_flux2_single_edit: 'pornmaster_flux2_edit_bf16',
+  pornmaster_flux2_multi_edit: 'pornmaster_flux2_edit_bf16'
 }
 
 const WEB_DISABLED_TEMPLATE_TASK_TYPES = new Set<string>(['i2i_draw'])
@@ -32,15 +34,10 @@ export const TEMPLATE_TASK_META_MAP: Record<TemplateApplyTaskType, TemplateTaskM
     panelKind: 'imagePrompt',
     titleKey: 'lab.cards.custom_edit_title'
   },
-  pornmaster_flux2_single_edit: {
-    taskType: 'pornmaster_flux2_single_edit',
+  pornmaster_flux2_edit_bf16: {
+    taskType: 'pornmaster_flux2_edit_bf16',
     panelKind: 'imagePrompt',
-    titleKey: 'lab.cards.custom_edit_v2_title'
-  },
-  pornmaster_flux2_multi_edit: {
-    taskType: 'pornmaster_flux2_multi_edit',
-    panelKind: 'imagePrompt',
-    titleKey: 'lab.cards.custom_edit_v2_title'
+    titleKey: 'lab.cards.custom_edit_v3_title'
   },
   face_swap: {
     taskType: 'face_swap',

@@ -18,16 +18,18 @@ describe('labModeConfig', () => {
     expect(getLabModeConfig('wan22_video_v2').baseCost).toBe(6)
   })
 
-  it('shows free edit v2 next to the original free edit mode', () => {
-    const mode = getLabModeConfig('edit_v2')
+  it('shows single-image free edit v3 next to the original free edit mode', () => {
+    const mode = getLabModeConfig('edit_v3')
     const modeIds = UNIFIED_LAB_MODES.map(item => item.id)
 
-    expect(mode.taskType).toBe('pornmaster_flux2_single_edit')
+    expect(mode.taskType).toBe('pornmaster_flux2_edit_bf16')
+    expect(mode.baseCost).toBe(5)
     expect(mode.supportsEditLora).toBe(false)
-    expect(mode.maxImages).toBe(2)
-    expect(modeIds.slice(0, 2)).toEqual(['edit', 'edit_v2'])
-    expect(resolveLabModeIdFromTaskType('pornmaster_flux2_single_edit')).toBe('edit_v2')
-    expect(resolveLabModeIdFromTaskType('pornmaster_flux2_multi_edit')).toBe('edit_v2')
+    expect(mode.maxImages).toBe(1)
+    expect(modeIds.slice(0, 2)).toEqual(['edit', 'edit_v3'])
+    expect(resolveLabModeIdFromTaskType('pornmaster_flux2_edit_bf16')).toBe('edit_v3')
+    expect(resolveLabModeIdFromTaskType('pornmaster_flux2_single_edit')).toBe('edit_v3')
+    expect(resolveLabModeIdFromTaskType('pornmaster_flux2_multi_edit')).toBe('edit_v3')
   })
 
   it('keeps random face swap available through the unified workbench', () => {

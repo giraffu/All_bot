@@ -8,8 +8,7 @@ import { useTaskResult } from '@/composables/useTaskResult'
 import { useTaskStream } from '@/composables/useTaskStream'
 import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
 import {
-  PORNMASTER_FLUX2_MULTI_EDIT_TASK_TYPE,
-  PORNMASTER_FLUX2_SINGLE_EDIT_TASK_TYPE,
+  PORNMASTER_FLUX2_EDIT_BF16_TASK_TYPE,
 } from '@/features/generation/labModeConfig'
 import { useTemplateApplyStore } from '@/stores/templateApply'
 import type { TemplateApplyContext } from '@/types/templateApply'
@@ -33,11 +32,14 @@ const sessionIdRef = computed(() => props.sessionId)
 const { uploadFile, uploadingSlots, progressBySlot, hasPendingUploads } = useTemplateApplyUpload(sessionIdRef)
 
 const taskType = computed(() => props.context.taskType ?? 'i2i_pro')
-const isFreeEditV2TaskType = computed(() => (
-  taskType.value === PORNMASTER_FLUX2_SINGLE_EDIT_TASK_TYPE
-  || taskType.value === PORNMASTER_FLUX2_MULTI_EDIT_TASK_TYPE
+const isFreeEditV3TaskType = computed(() => (
+  taskType.value === PORNMASTER_FLUX2_EDIT_BF16_TASK_TYPE
 ))
-const maxImages = computed(() => ['i2i_pro', 'i2i_draw'].includes(taskType.value) ? 1 : 2)
+const maxImages = computed(() => (
+  ['i2i_pro', 'i2i_draw'].includes(taskType.value) || isFreeEditV3TaskType.value
+    ? 1
+    : 2
+))
 const taskTitle = computed(() => {
   switch (taskType.value) {
     case 'i2i_pro':
@@ -48,9 +50,8 @@ const taskTitle = computed(() => {
       return t('template_apply.image_prompt.title_edit')
     case 'img2img_lora':
       return t('template_apply.image_prompt.title_img2img_lora')
-    case PORNMASTER_FLUX2_SINGLE_EDIT_TASK_TYPE:
-    case PORNMASTER_FLUX2_MULTI_EDIT_TASK_TYPE:
-      return t('lab.cards.custom_edit_v2_title')
+    case PORNMASTER_FLUX2_EDIT_BF16_TASK_TYPE:
+      return t('lab.cards.custom_edit_v3_title')
     default:
       return t('template_apply.common.start_generate')
   }
@@ -75,7 +76,7 @@ const isLoraLocked = computed(() =>
   isTemplateApplied.value && (taskType.value === 'edit' || taskType.value === 'img2img_lora')
 )
 const showLoraSection = computed(() =>
-  !isFreeEditV2TaskType.value
+  !isFreeEditV3TaskType.value
   && (taskType.value === 'edit' || taskType.value === 'img2img_lora')
   && !isLoraLocked.value
 )
@@ -102,9 +103,12 @@ const taskCost = computed(() => {
   if (
     taskType.value === 'edit'
     || taskType.value === 'img2img_lora'
-    || isFreeEditV2TaskType.value
   ) {
     return uploadedImages.value.length === 2 ? 6 : 2
+  }
+
+  if (isFreeEditV3TaskType.value) {
+    return 5
   }
 
   if (taskType.value === 'i2i_pro') {
@@ -182,7 +186,7 @@ const cleanup = async () => {
 const initializeFromContext = () => {
   prompt.value = props.context.prompt ?? ''
   templateSourcePostId.value = props.context.sourcePostId
-  selectedLora.value = isFreeEditV2TaskType.value ? '' : (props.context.loraName ?? '')
+  selectedLora.value = isFreeEditV3TaskType.value ? '' : (props.context.loraName ?? '')
   customLoraStrength.value = props.context.loraStrength
     ?? (selectedLora.value ? (LORA_DEFAULT_STRENGTHS[selectedLora.value] || 1.0) : 1.0)
   isTemplateApplied.value = true
@@ -190,15 +194,6 @@ const initializeFromContext = () => {
   initialPrompt.value = prompt.value.trim()
   initialSelectedLora.value = selectedLora.value
   initialLoraStrength.value = Number(customLoraStrength.value)
-}
-
-const resolveSubmitTaskType = () => {
-  if (!isFreeEditV2TaskType.value) {
-    return taskType.value
-  }
-  return uploadedImages.value.length >= 2
-    ? PORNMASTER_FLUX2_MULTI_EDIT_TASK_TYPE
-    : PORNMASTER_FLUX2_SINGLE_EDIT_TASK_TYPE
 }
 
 const beforeUpload = async (rawFile: File | { originFileObj?: File }) => {
@@ -251,12 +246,12 @@ const handleGenerate = async () => {
   }
 
   const payload = buildGenerationTaskPayload({
-    taskType: resolveSubmitTaskType(),
+    taskType: taskType.value,
     images: uploadedImages.value.map(item => item.key),
     prompt: prompt.value,
     promptTarget: 'topLevel',
-    loraName: !isFreeEditV2TaskType.value ? (selectedLora.value || undefined) : undefined,
-    loraStrength: !isFreeEditV2TaskType.value && selectedLora.value ? Number(customLoraStrength.value) : undefined,
+    loraName: !isFreeEditV3TaskType.value ? (selectedLora.value || undefined) : undefined,
+    loraStrength: !isFreeEditV3TaskType.value && selectedLora.value ? Number(customLoraStrength.value) : undefined,
     isTemplate: isTemplateApplied.value,
     sourcePostId: templateSourcePostId.value,
     normalizeEditLoraTask: taskType.value === 'edit',
