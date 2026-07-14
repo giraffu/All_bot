@@ -223,6 +223,7 @@ def test_release_cli_selects_track_modules_and_services_is_control_alias(tmp_pat
         "central-api",
         "--skip-git-checks",
         "--skip-ci-checks",
+        "--skip-env-checks",
     ]
 
     result = subprocess.run(command, cwd=ROOT, text=True, capture_output=True, check=False)
