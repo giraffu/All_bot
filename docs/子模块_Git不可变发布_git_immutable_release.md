@@ -2,7 +2,7 @@
 
 ## 1. 状态与边界
 
-截至 2026-07-14，仓库侧发布契约已经建立，测试控制面与本地 Worker 已进入不可变发布链路。测试/正式 Web 统一使用 Wrangler Pages 发布；本轮只授权测试 Pages mutation，生产部署与正式 Pages mutation仍未获授权。
+截至 2026-07-14，仓库侧发布契约已经建立，测试控制面与本地 Worker 已进入不可变发布链路。生产加固候选增加全量只读 preflight、跨系统事务和逆序恢复；它必须先合入受保护 `main`、由 CI 生成新 release，再只发布云测试并重新开始 24 小时观察。测试/正式 Web 统一使用 Wrangler Pages 发布；本轮只授权后续测试 Pages mutation，生产部署、正式机 bootstrap 与正式 Pages mutation 均未获授权。
 
 旧 `update_cloud_*` 脚本已经 fail closed。它们不再包含 rsync 或 build 能力。旧 compose、云端混合源码和容器 image ID 只用于首次切换归档与一次性 legacy 回滚，不是可信 release 基线。
 
@@ -18,7 +18,7 @@
 | 公共 Worker | `deploy/docker-compose-worker-base.yml` |
 | 发布接口 | `scripts/release.py` |
 | 主机首次准备 | `scripts/bootstrap_release_host.sh` |
-| 状态 | `/var/lib/allbot/deployments/<env>/current.json` 与 `history/` |
+| 状态 | `/var/lib/allbot/deployments/<env>/current.json`、`history/` 与 `transactions/<sha>.json` |
 | 私密配置 | `/etc/allbot/test.env`、`/etc/allbot/prod.env`，`600 deploy:deploy` |
 
 ## 3. 构建契约
@@ -60,10 +60,11 @@ python scripts/update_deploy_config.py --env prod --source /secure/new-prod.env 
 
 ## 5. 标准流程
 
-从 GHCR 自动拉 release bundle 需要预先 `docker login ghcr.io` 和 `oras`；也可以显式传本地 `--manifest`/`--web-artifact`。
+`plan` 可从 GHCR 拉 release bundle，需要预先 `docker login ghcr.io` 和 `oras`。`preflight`、`deploy` 不拉取任何材料，必须先把 `release.json` 与 Web tar 放入本地 bundle cache，或显式传本地 `--manifest`/`--web-artifact`，以保证门禁失败前没有 pull、worktree 或远端写入。
 
 ```bash
 scripts/release.py plan --env test --sha <40-char-sha>
+scripts/release.py preflight --env test --sha <40-char-sha>
 scripts/release.py deploy --env test --sha <40-char-sha> --execute
 
 scripts/release.py verify-test \
@@ -73,6 +74,7 @@ scripts/release.py verify-test \
   --execute
 
 scripts/release.py plan --env prod --sha <40-char-sha>
+scripts/release.py preflight --env prod --sha <40-char-sha>
 scripts/release.py deploy --env prod --sha <40-char-sha> --execute --confirm-prod
 ```
 
@@ -82,25 +84,30 @@ scripts/release.py deploy --env prod --sha <40-char-sha> --execute --confirm-pro
 
 release workflow 生成 manifest 后会运行一次不接触运行态秘密的自检 plan，并显式使用 `--skip-env-checks`。该参数只允许 `plan`，输出 `config_validation=skipped`，用于 CI 校验 SHA/manifest/影响规则；`deploy`/`rollback` 一律拒绝它。操作者的测试/生产 plan 默认仍读取并校验真实 env，不能用 CI 例外替代部署前配置门禁。
 
-当本地主服务器兼任测试 Worker host 时，测试配置的本地受限副本固定为 `/home/hfy/.config/allbot/test.env`（`600 hfy:hfy`），内容与云测试 `/etc/allbot/test.env` 保持同一 config revision。调用 plan/deploy 时显式传 `--env-file /home/hfy/.config/allbot/test.env`；Worker compose 的 `ALLBOT_ENV_FILE` 由发布器绑定到该实参，不能误用 env 文件内面向云主机的 `/etc/allbot/test.env` 路径。该副本只用于测试 Worker和本机发布前校验，不得包含生产 env。
+本地主服务器的默认受限配置为 `~/.config/allbot/<env>.env`（`600`），release checkout 默认 `~/APP/All_bot-release`，Pages token 默认 `~/.config/allbot/cloudflare-pages.token`；云控制面仍使用 `/home/deploy/APP/All_bot-release` 与 `/etc/allbot/<env>.env`。Worker compose 的 `ALLBOT_ENV_FILE` 绑定本地主机配置实参，不能误用 env 文件内面向云主机的 `/etc/allbot/<env>.env` 路径。
 
 ## 6. Web、Worker 与回滚
 
 - 测试与正式 Web 都先校验同一 tar SHA256，再从精确 SHA checkout 读取 `frontend/runtime-config.yml` 的公开环境段，生成 `allbot-runtime-config.js` 和独立 revision，最后调用同一 Wrangler Pages 发布器。测试目标为 `allbot-web-cf-test/test`，正式目标为 `allbot-web-prod/main`。
-- Pages Token 默认读取 `/home/deploy/.config/allbot/cloudflare-pages.token`，必须是 `600` 且具备目标项目 Pages Write；DNS/Tunnel 权限不能替代 Pages 权限。仓库 CI 不保存 Cloudflare 管理凭据。正式项目的 Git 自动生产构建必须在首次正式切换前人工关闭。
-- 状态清单同时记录 Web artifact SHA256、Pages project/branch、deployment URL 与 runtime config revision。`--skip-web` 只用于故障恢复并写 `health.web=skipped`，不能通过测试验收或生产晋级。
+- Pages Token 默认读取 `~/.config/allbot/cloudflare-pages.token`，必须是 `600` 且具备目标项目 Pages Read/Write；DNS/Tunnel 权限不能替代 Pages 权限。仓库 CI 不保存 Cloudflare 管理凭据。
+- Pages preflight 要求目标项目 production branch 与发布 branch 一致、`production_deployments_enabled=false`、`preview_deployment_setting=none`，并存在 active canonical custom domain；不满足只阻断，不自动修 Cloudflare。Wrangler 返回后必须由 Pages API 找到 `environment=production`、branch/SHA 正确、stage success 的 deployment ID，确认 `canonical_deployment.id` 已切换，再从正式 custom domain 以 cache-busting 请求校验 JavaScript 内的 `release_sha` 与 `runtime_config_revision`。
+- 状态 schema v2 记录事务 ID、阶段健康、Pages deployment ID/environment/canonical 验证与 runtime config revision，同时继续兼容读取 v1 的 `git_sha`。`--skip-web` 只用于故障恢复并写 `health.web=skipped`，不能通过测试验收或生产晋级。
 - 普通 Worker 使用 release 中同一 Worker digest；源码、workflow、relay、`src` 全在镜像内。发布器只处理本地常规 Worker；RunPod/LAN AIO 仍走专用 operator。
-- 测试环境维护发布如果同时包含本地 Worker，云控制面的 `GENERATION_MAINTENANCE` 会一直保持到 Worker digest/OCI revision 校验、旧同 Agent ID 容器停止、新 Worker health 通过；任一步失败都保留维护标志并停止写入部署成功状态。首次切换只停止 allowlist 对应的 legacy worker 与 relay，避免旧/新 Agent 并存。
+- 维护发布按“云控制面 → 本地 Worker → Pages → 暂存状态 → 原子提交 current/history 并解除维护”执行。首次正式切换同时写 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`。正式 legacy Worker 映射只允许 `cloud-prod-comfy-agent-*` 与 `cloud-prod-worker-relay`，测试映射保持 `cloud-comfy-agent-test-*` 与 `cloud-worker-relay-test`；8013 listener PID 必须属于预期 relay。
+- 无秘密事务 journal 在每阶段通过远端临时文件原子 rename。任一阶段失败都按 Pages → Worker → 云控制面逆序恢复；首次切换恢复记录到的 legacy 容器，后续发布从旧 `current.json` 对应 checkout/release env 重建。只有旧 API/Central、Worker relay/heartbeat 与 Pages canonical 恢复验证全部通过才解除维护；否则记录 `rollback_failed` 并保持维护。
 - 回滚命令读取旧 release manifest/Web tar，不重建。部署状态 history 长期保留；运行主机不得全局 `docker system prune`。数据库 migration 只向前兼容，应用回滚不自动 Alembic downgrade。
 
 ```bash
 scripts/release.py rollback --env test --to <old-sha> --manifest <old-release.json> --web-artifact <old-web.tgz> --execute
 scripts/release.py rollback --env prod --to <old-sha> --manifest <old-release.json> --web-artifact <old-web.tgz> --execute --confirm-prod
+
+# 只允许把未完成事务逆向恢复到旧完整栈，不允许续跑失败阶段
+scripts/release.py recover --env prod --transaction <failed-target-sha> --execute --confirm-prod
 ```
 
 ## 7. 首次切换
 
-`scripts/bootstrap_release_host.sh` 默认 dry-run。`--execute` 必须由 `deploy` 账号运行，并只在已有只读 deploy key、Docker Compose v2、受限 GHCR read 凭据和明确授权时使用；发布 CLI 也以该账号读取 `600 deploy:deploy` env。脚本不会创建密钥或复制 env。它建立干净 release checkout、禁用 origin push，并归档 legacy compose、容器 image ID 和排除 env/日志/runtime 的混合源码。
+`scripts/bootstrap_release_host.sh` 默认 dry-run，并要求显式角色：云控制面使用 `--role cloud-control`，固定 `/home/deploy/...` 且由 `deploy` 账号执行；本地 Worker host 使用 `--role local-worker-host`，固定当前用户的 `~/APP/...` 与 `~/.config/allbot/...` 边界。`--execute` 只在已有只读 deploy key、Docker Compose v2、受限 GHCR read 凭据和明确授权时使用。脚本不会创建密钥或复制 env；它建立干净 release checkout、禁用 origin push，并归档 legacy compose、容器 image ID 和排除 env/日志/runtime 的混合源码。
 
 测试控制面首次切换不是普通 rolling recreate。发布器会把 Postgres/Redis 与应用服务一起纳入初始依赖闭包，测试 overlay 通过显式 external volume 名复用 `deploy_cloud-postgres-test-data` 和 `deploy_cloud-redis-test-data`，并保留 `postgres-test`/`redis-test` 网络别名及旧 `CLOUD_TEST_*` 到运行时变量的映射。流程必须先拉取并校验全部 digest，再从 legacy Central 排空队列、记录实际运行的 legacy 容器、停止这些容器并启动新项目；如果新项目健康或非目标启动时间门禁失败，EXIT trap 会移除新目标容器并重启记录中的旧容器。成功后旧容器保持 stopped，作为一次性 legacy 回滚入口，不得删除旧数据卷。
 
