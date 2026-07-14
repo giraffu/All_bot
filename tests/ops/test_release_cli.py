@@ -280,11 +280,31 @@ def test_initial_worker_cutover_maps_legacy_slots_and_holds_maintenance():
         "cloud-prod-worker-relay",
     ]
     assert module.hold_maintenance_for_worker_cutover("test", impact) is True
-    assert module.hold_maintenance_for_worker_cutover("prod", impact) is True
+    assert module.hold_maintenance_for_worker_cutover("prod", impact) is False
     assert module.maintenance_files("prod", initial_cutover=True) == [
         "/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE",
         "/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE",
     ]
+
+
+def test_production_release_scope_excludes_gpu_workers():
+    module = _load_module()
+    prod_impact = module.ReleaseImpact(
+        services={"central-api", "worker", "web-static"},
+        level="maintenance",
+    )
+    test_impact = module.ReleaseImpact(
+        services={"central-api", "worker", "web-static"},
+        level="maintenance",
+    )
+
+    module.scope_release_impact("prod", prod_impact, requested=set())
+    module.scope_release_impact("test", test_impact, requested=set())
+
+    assert prod_impact.services == {"central-api", "web-static"}
+    assert "worker" in test_impact.services
+    with pytest.raises(module.ReleaseError, match="GPU hosts"):
+        module.scope_release_impact("prod", prod_impact, requested={"worker"})
 
 
 def test_state_marks_web_skipped_instead_of_claiming_checksum_passed(monkeypatch):
@@ -921,7 +941,7 @@ def test_preflight_collects_every_read_only_blocker_before_refusing_release():
         pages=check("pages", ["pages-production-branch-mismatch"]),
         rollback=check("rollback", ["rollback-materials-unavailable"]),
     )
-    args = SimpleNamespace(env="prod")
+    args = SimpleNamespace(env="test")
     impact = module.ReleaseImpact(
         services={"central-api", "worker", "web-static"},
         level="maintenance",
@@ -948,6 +968,43 @@ def test_preflight_collects_every_read_only_blocker_before_refusing_release():
     ]
     with pytest.raises(module.ReleaseError, match="preflight blocked"):
         module.require_preflight(report)
+
+
+def test_prod_preflight_skips_gpu_worker_checks():
+    module = _load_module()
+    calls = []
+
+    def check(name):
+        def run(*_args, **_kwargs):
+            calls.append(name)
+            return []
+
+        return run
+
+    def unexpected_worker_check(*_args, **_kwargs):
+        raise AssertionError("production release must not inspect GPU Worker runtime")
+
+    dependencies = module.PreflightDependencies(
+        operator=check("operator"),
+        cloud=check("cloud"),
+        worker=unexpected_worker_check,
+        pages=check("pages"),
+        rollback=check("rollback"),
+    )
+    report = module.preflight_release(
+        SimpleNamespace(env="prod"),
+        module.ReleaseImpact(
+            services={"central-api", "worker", "web-static"},
+            level="maintenance",
+        ),
+        _manifest(),
+        {},
+        dependencies=dependencies,
+    )
+
+    assert calls == ["operator", "cloud", "pages", "rollback"]
+    assert report["checks"]["worker"] == {"status": "skipped", "blockers": []}
+    assert report["status"] == "passed"
 
 
 def test_release_cli_exposes_read_only_preflight_command():
@@ -1129,6 +1186,60 @@ def test_transaction_compensates_attempted_stages_in_reverse_and_then_clears_mai
     assert transaction["status"] == "rolled_back"
     assert transaction["phase"] == "recovery_verified"
     assert journals[-1]["status"] == "rolled_back"
+
+
+def test_recovery_validation_checks_only_stages_the_transaction_attempted(monkeypatch):
+    module = _load_module()
+    remote_calls = []
+
+    monkeypatch.setattr(
+        module,
+        "_remote_shell",
+        lambda host, script, *, execute: remote_calls.append((host, script, execute)),
+    )
+
+    def unexpected_local_command(*_args, **_kwargs):
+        raise AssertionError("untouched Worker must not be recovery-validated")
+
+    def unexpected_pages_lookup(*_args, **_kwargs):
+        raise AssertionError("untouched Pages must not be recovery-validated")
+
+    monkeypatch.setattr(module, "_run", unexpected_local_command)
+    monkeypatch.setattr(module, "_current_pages_deployment_id", unexpected_pages_lookup)
+
+    args = SimpleNamespace(
+        env="test",
+        remote_host="cloud-test",
+        remote_checkout_root="/home/deploy/APP/All_bot-release",
+        remote_env_file=None,
+    )
+    impact = module.ReleaseImpact(
+        services={"central-api", "worker", "web-static"},
+        level="maintenance",
+    )
+    transaction = module.new_release_transaction(
+        environment="test",
+        target_sha="a" * 40,
+        previous_sha="b" * 40,
+        previous_kind="immutable",
+        previous_pages_deployment_id="old-pages-id",
+    )
+    transaction["attempted_stages"] = ["cloud"]
+
+    module._validate_recovered_stack(
+        args,
+        impact,
+        transaction,
+        {
+            "ALLBOT_WORKER_SERVICES": "worker-01",
+            "ALLBOT_WORKER_RELAY_PORT": "8014",
+            "ALLBOT_WORKER_CENTRAL_API_URL": "http://cloud-test:8004",
+            "ALLBOT_WORKER_01_AGENT_ID": "cloud_worker_test_01",
+        },
+    )
+
+    assert len(remote_calls) == 1
+    assert remote_calls[0][0] == "cloud-test"
 
 
 def test_transaction_keeps_maintenance_when_compensation_is_incomplete():

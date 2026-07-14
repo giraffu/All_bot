@@ -2,9 +2,9 @@
 
 ## 1. 当前结论
 
-2026-07-14 正式链路复核确认首次生产切换仍有 P0 blocker：云测试 release 尚未完成新一轮 verified/24 小时观察，正式机缺 bootstrap/env/GHCR 材料，legacy 正式维护路径与新 state root 不一致，旧发布器误用测试 Worker 名称且未安全交接 8013 relay，正式 Pages production branch/自动部署/canonical 语义未满足。直接生产执行仍会在 mutation 前被门禁拒绝，本轮没有进入生产维护、修改生产容器、正式机文件或正式 Pages 配置。
+2026-07-14 正式链路复核确认首次生产切换仍有 P0 blocker：云测试 release 尚未完成新一轮 verified/24 小时观察，正式机缺 bootstrap/env/GHCR 材料，legacy 正式维护路径与新 state root 不一致，正式 Pages production branch/自动部署/canonical 语义未满足。生产 GPU Worker 已明确从控制面发布事务移出，由各 GPU host 的专用 operator 独立发布；prod preflight/deploy/recover 不再检查 heartbeat/8013 或操作 Worker。直接生产执行仍会在 mutation 前被门禁拒绝，本轮没有进入生产维护、修改生产容器、正式机文件或正式 Pages 配置。
 
-加固候选在独立 `codex/harden-prod-release` 分支实现：`preflight` 聚合 Git/CI、环境、云/Worker bootstrap、8013 owner、Pages 设置和回滚材料；首次正式切换写新旧双维护路径；事务按云控制面 → Worker → Pages → 状态暂存执行，失败按 Pages → Worker → 云控制面逆序恢复；`recover --transaction` 只能幂等恢复旧栈。该结论只是仓库候选状态，必须合入受保护 `main` 并由新 CI release 自证后才可用于云测试。
+加固 PR #21 已合入 `main`，merge SHA `1e0fb87a015295cf97672fb61ccec39b6ed01b27` 的 release workflow 成功。首次云测试 deploy 在 cloud `compose pull` 前半段遇到 GHCR 拉取中断；旧控制面未被替换，但恢复验证错误地检查未触碰且原本 stopped 的测试 Worker，事务一度标记 `rollback_failed` 并保持 test 维护。修复候选改为只验证事务实际尝试过的阶段，已用 `recover` 将该事务收口为 `rolled_back/recovery_verified`、恢复旧 `dc7a126f...` 健康栈并解除 test 维护。新候选同时把正式事务收敛为云控制面 → Pages → 状态，生产 Worker 完全移出 `release.py --env prod`。
 
 仓库侧 stabilization 已按“完整 Git SHA + CI 不可变产物 + 同 digest 晋级”合入主线。`a2a44beba88055fcb72291ca39953a7b41868985` 的分片 Python、PostgreSQL、Web、Dashboard 与 release workflow 全绿，Web SHA256、五个自有镜像 digest/tag/OCI revision 已独立核验。2026-07-14 首次测试执行在新项目绑定旧 Dashboard 端口时 fail closed，暴露 legacy 控制面尚未进入首次交接闭包；该 SHA 未写部署成功状态，也未切 Web/Worker，失败尝试产生的新项目容器已清理，旧测试控制面恢复单实例运行。
 
@@ -48,4 +48,4 @@
 5. 使用 test-only env 迁移器生成候选并校验 `/etc/allbot/test.env`，原子安装为 `600 deploy:deploy`；只更新云测试，按新事务顺序完成控制面、测试 Worker、测试 Pages、canonical runtime SHA 与回滚演练，全部健康后才提交测试状态。
 6. 从新测试部署完成时间重新计算观察窗口；完成 health、Bot、任务提交、Redis 锁、locale、Web canonical runtime、Worker digest/OCI revision/heartbeat、图片/视频代表任务和回滚演练，并连续观察至少 24 小时。窗口结束前状态保持 `deployed`，不得提前写 `verified`。
 7. 写入 verified 验收记录后，才允许以同一 SHA/digest 申请生产确认。
-8. 首次生产切换前另行只读运行正式 `preflight`，确认双维护路径、正式 Worker 映射/8013 owner、legacy 与 immutable 回滚材料、正式 Pages `main`/自动部署关闭/canonical ID。正式机 bootstrap、正式 Pages 配置变更和生产 deploy 必须分别取得明确确认。
+8. 首次生产切换前另行只读运行正式 `preflight`，确认双维护路径、控制面 legacy/immutable 回滚材料、正式 Pages `main`/自动部署关闭/canonical ID，并确认 Worker 检查为 `skipped`。正式机 bootstrap、正式 Pages 配置变更和生产 deploy 必须分别取得明确确认；生产 GPU Worker 另走各 GPU host operator 和单独授权。
