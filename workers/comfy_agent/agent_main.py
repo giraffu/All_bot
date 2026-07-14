@@ -191,6 +191,12 @@ PREFETCH_CACHE_DIR = os.getenv("PREFETCH_CACHE_DIR", "/app/prefetch-cache")
 PREFETCH_CONSUME_WAIT_SECONDS = float(
     os.getenv("PREFETCH_CONSUME_WAIT_SECONDS", "0.25")
 )
+PREFETCH_RESERVE_TASK = os.getenv("PREFETCH_RESERVE_TASK", "false").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 PIPELINE_ENABLED = os.getenv("PIPELINE_ENABLED", "false").strip().lower() in {
     "1",
     "true",
@@ -408,6 +414,7 @@ class ComfyAgent:
         self.control_plane_recovery_requested = False
         self._prefetch_cache: dict[str, dict[str, Any]] = {}
         self._prefetch_task: asyncio.Task | None = None
+        self._reserved_prefetch_task: dict[str, Any] | None = None
         self._prefetch_task_types = {
             task_type.strip()
             for task_type in PREFETCH_TASK_TYPES.split(",")
@@ -841,6 +848,7 @@ class ComfyAgent:
             prefetch_enabled=PREFETCH_ENABLED,
             prefetch_depth=PREFETCH_DEPTH,
             cache_dir=PREFETCH_CACHE_DIR,
+            reserve_task=PREFETCH_RESERVE_TASK,
         )
 
     def _schedule_prefetch(self, *, current_task_type: str) -> None:
@@ -849,6 +857,7 @@ class ComfyAgent:
             prefetch_enabled=PREFETCH_ENABLED,
             prefetch_depth=PREFETCH_DEPTH,
             cache_dir=PREFETCH_CACHE_DIR,
+            reserve_task=PREFETCH_RESERVE_TASK,
         )
 
     async def report_heartbeat(self):
@@ -861,10 +870,24 @@ class ComfyAgent:
             executions=self._heartbeat_executions(),
         )
 
+    async def _heartbeat_reserved_prefetch_task(self) -> None:
+        task = self._reserved_prefetch_task
+        task_id = str((task or {}).get("task_id", ""))
+        if not task_id:
+            return
+        await self.report_status(
+            task_id,
+            "running",
+            execution_phase="prefetching",
+            cancel_locked=CANCEL_LOCK_ON_POP,
+            set_current=False,
+        )
+
     async def heartbeat_loop(self):
         logger.info(f"Agent {AGENT_ID} started heartbeat loop...")
         while getattr(self, "running", True):
             await self.report_heartbeat()
+            await self._heartbeat_reserved_prefetch_task()
             await asyncio.sleep(15)  # Send heartbeat every 15 seconds
 
     async def report_status(
@@ -1156,6 +1179,11 @@ class ComfyAgent:
         )
 
     async def _pop_next_task(self, *, pipeline: bool = False) -> dict[str, Any] | None:
+        if self._reserved_prefetch_task is not None:
+            task = self._reserved_prefetch_task
+            self._reserved_prefetch_task = None
+            logger.info("Using locally reserved prefetched task %s", task.get("task_id"))
+            return task
         return await self._pipeline_coordinator.pop_next_task(
             agent_id=AGENT_ID,
             supported_task_types=SUPPORTED_TASK_TYPES,

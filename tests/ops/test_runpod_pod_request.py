@@ -79,6 +79,7 @@ def test_pod_request_builder_matches_provider_render_for_prod_profiles():
         ("scail2", "scail2"),
         ("ltx_video", "ltx_video"),
         ("pornmaster_flux2_edit", "pornmaster_flux2_edit"),
+        ("pornmaster_flux2_edit_bf16", "pornmaster_flux2_edit_bf16"),
     ]
     for task_type, profile in cases:
         settings = _settings_for_profile(profile)
@@ -93,6 +94,35 @@ def test_pod_request_builder_matches_provider_render_for_prod_profiles():
         )["json"]
 
         assert builder_body == provider_body
+
+
+def test_future_runpod_requests_reserve_one_prefetched_task_for_every_profile():
+    cases = [
+        ("img2img", "img2img"),
+        ("image_to_video", "image_to_video"),
+        ("wan22_video_v2", "wan22_video_v2"),
+        ("i2i_pro", "i2i_pro"),
+        ("scail2", "scail2"),
+        ("ltx_video", "ltx_video"),
+        ("pornmaster_flux2_edit", "pornmaster_flux2_edit"),
+        ("pornmaster_flux2_edit_bf16", "pornmaster_flux2_edit_bf16"),
+    ]
+
+    for environment in ("cloud-test", "cloud-prod"):
+        for task_type, profile in cases:
+            body = RunPodPodRequestBuilder(
+                _settings_for_profile(profile)
+            ).create_pod_body(
+                task_type=task_type,
+                environment=environment,
+            )
+            env = body["env"]
+
+            assert env["PREFETCH_ENABLED"] == "true"
+            assert env["PREFETCH_RESERVE_TASK"] == "true"
+            assert env["PREFETCH_DEPTH"] == "1"
+            assert env["PREFETCH_TASK_TYPES"] == env["SUPPORTED_TASK_TYPES"]
+            assert env["PREFETCH_CONSUME_WAIT_SECONDS"] == "10"
 
 
 def test_pod_request_builder_keeps_profile_specific_prod_env():

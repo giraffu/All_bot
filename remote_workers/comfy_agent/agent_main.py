@@ -177,6 +177,12 @@ PREFETCH_CACHE_DIR = os.getenv("PREFETCH_CACHE_DIR", "/app/prefetch-cache")
 PREFETCH_CONSUME_WAIT_SECONDS = float(
     os.getenv("PREFETCH_CONSUME_WAIT_SECONDS", "0.25")
 )
+PREFETCH_RESERVE_TASK = os.getenv("PREFETCH_RESERVE_TASK", "false").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 PIPELINE_ENABLED = os.getenv("PIPELINE_ENABLED", "false").strip().lower() in {
     "1",
     "true",
@@ -382,6 +388,7 @@ class ComfyAgent:
         self.quarantined_until: float | None = None
         self._prefetch_cache: dict[str, dict[str, Any]] = {}
         self._prefetch_task: asyncio.Task | None = None
+        self._reserved_prefetch_task: dict[str, Any] | None = None
         self._prefetch_task_types = {
             task_type.strip()
             for task_type in PREFETCH_TASK_TYPES.split(",")
@@ -872,9 +879,13 @@ class ComfyAgent:
             params["types"] = prefetch_types
 
         try:
-            response = await self.master_client.get(
-                "/api/agent/task/peek", params=params
-            )
+            endpoint = "/api/agent/task/peek"
+            if PREFETCH_RESERVE_TASK:
+                endpoint = "/api/agent/task/pop"
+                params = self._build_pop_params(pipeline=True)
+                if prefetch_types:
+                    params["types"] = prefetch_types
+            response = await self.master_client.get(endpoint, params=params)
             if response.status_code != 200:
                 logger.debug("Prefetch peek returned HTTP %s", response.status_code)
                 return
@@ -884,6 +895,8 @@ class ComfyAgent:
 
             task_id = str(task.get("task_id", ""))
             task_type = str(task.get("type", ""))
+            if PREFETCH_RESERVE_TASK and task_id:
+                self._reserved_prefetch_task = task
             if not task_id or not self._should_prefetch_task_type(task_type):
                 return
 
@@ -941,10 +954,24 @@ class ComfyAgent:
         except Exception as e:
             logger.debug(f"Failed to report heartbeat: {e}")
 
+    async def _heartbeat_reserved_prefetch_task(self) -> None:
+        task = self._reserved_prefetch_task
+        task_id = str((task or {}).get("task_id", ""))
+        if not task_id:
+            return
+        await self.report_status(
+            task_id,
+            "running",
+            execution_phase="prefetching",
+            cancel_locked=CANCEL_LOCK_ON_POP,
+            set_current=False,
+        )
+
     async def heartbeat_loop(self):
         logger.info(f"Agent {AGENT_ID} started heartbeat loop...")
         while getattr(self, "running", True):
             await self.report_heartbeat()
+            await self._heartbeat_reserved_prefetch_task()
             await asyncio.sleep(15)  # Send heartbeat every 15 seconds
 
     async def report_status(
@@ -1317,6 +1344,11 @@ class ComfyAgent:
         return params
 
     async def _pop_next_task(self, *, pipeline: bool = False) -> dict[str, Any] | None:
+        if self._reserved_prefetch_task is not None:
+            task = self._reserved_prefetch_task
+            self._reserved_prefetch_task = None
+            logger.info("Using locally reserved prefetched task %s", task.get("task_id"))
+            return task
         response = await self.master_client.get(
             "/api/agent/task/pop",
             params=self._build_pop_params(pipeline=pipeline),

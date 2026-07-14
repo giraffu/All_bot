@@ -353,7 +353,11 @@ class RunPodPodRequestBuilder:
             "PIPELINE_ENABLED": "true",
             "PIPELINE_MAX_RUNNING_TASKS": "1",
             "CANCEL_LOCK_ON_POP": "true",
-            "PREFETCH_ENABLED": "false",
+            "PREFETCH_ENABLED": "true",
+            "PREFETCH_RESERVE_TASK": "true",
+            "PREFETCH_DEPTH": "1",
+            "PREFETCH_TASK_TYPES": ",".join(env_config["supported_task_types"]),
+            "PREFETCH_CONSUME_WAIT_SECONDS": "10",
         }
         if environment == "cloud-prod":
             env["AGENT_ID"] = env_config["agent_id"]
