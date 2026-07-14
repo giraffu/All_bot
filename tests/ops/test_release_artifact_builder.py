@@ -72,7 +72,36 @@ def test_build_matrix_contains_base_before_descendants_and_profile_metadata():
     assert next(row for row in matrix if row["name"] == "central-api")["base"] == (
         "python-runtime-base"
     )
-    assert catalog["i2i_pro"]["profile"]["task_types"] == ["i2i_pro"]
+    assert catalog["i2i_pro"]["profile"]["task_types"] == [
+        "i2i_pro",
+        "t2i-pornmaster-turbo",
+        "face_swap",
+    ]
+
+
+def test_gpu_catalog_matches_canonical_runtime_contracts():
+    module = _load_module()
+    catalog = module.load_catalog(CATALOG_PATH)
+
+    assert catalog["pornmaster_flux2_edit_bf16"]["profile"][
+        "model_manifest_key"
+    ] == "pornmaster_flux2_edit_bf16/2026-07-12/manifest.json"
+    assert catalog["pornmaster_flux2_edit"]["profile"]["task_types"] == [
+        "pornmaster_flux2_single_edit",
+        "pornmaster_flux2_multi_edit",
+    ]
+    assert catalog["scail2"]["profile"]["task_types"] == [
+        "scail2_action_transfer",
+        "scail2_video_replacement",
+    ]
+    assert catalog["ltx_video"]["profile"]["task_types"] == [
+        "ltx_video",
+        "ltx_video_flf2v",
+        "ltx_video_v2v_audio",
+    ]
+    assert catalog["img2img"]["profile"]["model_manifest_key"] == (
+        "img2img_lora/2026-06-10/manifest.json"
+    )
 
 
 def test_catalog_is_json_and_every_artifact_has_one_track():
