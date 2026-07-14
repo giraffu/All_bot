@@ -5,6 +5,8 @@ description: "本地主服务器 LAN AIO 运维操作员。管理局域网 GPU �
 
 # AllBot LAN AIO Operator
 
+GPU profile 发布产物必须先有 canonical digest；LAN registry 只通过 `scripts/copy_canonical_image_to_lan_registry.sh` 做保 digest 复制与复核。禁止为同一 release/profile 在 LAN 现场重新 build。
+
 本技能用于在本地主服务器上稳定管理 LAN AIO。它只记录操作规则和事实源路由，不把频繁变化的 GPU 当前态硬编码进技能正文。
 
 ## 1. 必读入口

@@ -1,6 +1,6 @@
 # 子模块: 云正式控制面部署 (Cloud Prod Control Plane)
 
-> 2026-07-15 发布入口补充：默认生产仍只晋级云测试 verified 的同一 Git SHA/digest；唯一免测试例外是用户明确授权的管理后台快速更新，使用 `scripts/release.py ... --env prod --dashboard-fast-track`。该路径仍要求 main 可达 SHA、成功 CI、digest 镜像、生产确认与全量只读 preflight，只 rolling recreate Dashboard 后端/前端，不写生成维护标志，并拒绝 migration、共享 runtime、其它 GPU ops、Compose、未知路径与手工 `--services`。正式事务失败仍自动恢复，非目标容器启动时间必须保持不变。生产 GPU Worker 继续由各 GPU host 专用 operator 独立发布；禁止 rsync、现场 build、源码挂载和 Pages 自动生产构建。
+> 2026-07-15 发布入口补充：schema v2 的正式控制面只从 `control-plane` track 选择模块，逐模块 digest 必须已存在于云测试 verified record；测试 Agent/Relay 不是正式控制面依赖。唯一免测试例外仍是用户明确授权的 `--dashboard-fast-track`，其 main/CI/digest/preflight/生产确认/事务回滚和非目标容器不变门禁不放宽。当前 legacy Relay/暂停容器保留 dormant 回滚态，未获授权不得下线；本轮拆分不得重建正式 Dashboard、操作现有 RunPod 或发布 Pages。禁止 rsync、现场 build 与源码挂载。
 
 首次正式切换的硬门禁包括：同时维护 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`；控制面发布器不得触碰任何正式或测试 Worker；正式 Pages 必须为 production branch `main`、Git production disabled、preview `none`，并具备可验证/可回滚的 canonical production deployment ID。不满足只报告 blocker，不自动修正式环境。
 

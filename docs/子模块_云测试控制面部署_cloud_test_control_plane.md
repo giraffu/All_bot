@@ -1,6 +1,6 @@
 # 子模块: 云测试控制面部署 (Cloud Test Control Plane)
 
-> 2026-07-14 运行态：云测试已切入 Git SHA + digest 不可变控制面；新发布只走 `scripts/release.py`、公共 immutable compose 与 `/etc/allbot/test.env`，禁止代码/env rsync、云端 build 和源码 bind mount。本文后续出现的 `.env.cloud.test`、旧 compose、`safe_deploy`/`update_cloud` 命令仅作 legacy 归档，不再是支持入口。完整 SOP 见 `docs/子模块_Git不可变发布_git_immutable_release.md`。
+> 2026-07-15 发布入口升级为 schema v2：云测试分别部署 `control-plane` 与 `test-execution` track，状态/回滚历史互相隔离；GPU profile 逐个 canary 后写入 `gpu-execution` manifest。禁止代码/env rsync、云端 build、源码 bind mount 和 RunPod 启动 clone。测试 Dashboard autoscaler 必须保持关闭；正式 overlay 的 `true/execute` 只做离线渲染回归，本阶段不重建正式服务。完整 SOP 见 `docs/子模块_Git不可变发布_git_immutable_release.md`。
 
 ## 1. 目标与边界
 
