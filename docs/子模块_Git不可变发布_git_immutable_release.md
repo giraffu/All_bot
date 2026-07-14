@@ -25,6 +25,14 @@
 
 受保护 `main` 的 CI 先构建不含业务源码的 `allbot-python-runtime-base`。测试 Agent 使用派生的 `allbot-python-worker-base`；Relay 直接继承 runtime base，不携带 workflow、ComfyUI 或 GPU 依赖。Central、Web、Payment、各 Bot、Dashboard Backend、QQCC Config Backend、Agent 和 Relay 都是独立 target/镜像。Dashboard 与 QQCC Config 分别产出 Nginx 镜像，private-bot owner SPA 归 QQCC Config Frontend；Public Web 只构建一份环境无关 `public-web-dist.tgz`。所有自有镜像以完整 SHA 为 tag 并写 OCI revision/source，workflow 禁止覆盖同 SHA tag。
 
+GPU 首次聚合按六个实际 runtime 构建、八个发布 profile 记录：`image_to_video` 与
+`wan22_video_v2` 复用同一 Wan22 镜像，`pornmaster_flux2_edit` 与
+`pornmaster_flux2_edit_bf16` 复用同一 PornMaster 镜像，但各自必须使用独立模型
+manifest 和独立 canary 证据。`img2img` 的同 SHA GHCR 构建入口为
+`.github/workflows/runpod_img2img_profile_image.yml`；其它 runtime 使用对应的
+`runpod_*_profile_image.yml`。v2 catalog 的 `task_types` 必须等于运行时真实声明，不能
+用 Dashboard profile 名替代 Central task type。
+
 `release.json` 同时记录自有镜像 digest、imgproxy/Postgres/Redis digest、Web SHA256 和 CI run。部署器拒绝短 SHA、`latest`/普通 tag、缺少 digest、manifest SHA 不一致和未推送/不可从 `origin/main` 到达的提交。
 
 ## 4. 配置
