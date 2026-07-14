@@ -1104,9 +1104,10 @@ def _cloud_preflight(
     env_file = args.remote_env_file or environment["env_file"]
     initial = "initial-release" in impact.matched_rules
     transaction_path = _transaction_path(args.env, str(manifest["git_sha"]))
+    commit_object = str(manifest["git_sha"]) + "^{commit}"
     script = f"""set -u
 test -d {shlex.quote(root)}/repo/.git || echo cloud-release-host-not-bootstrapped
-if test -d {shlex.quote(root)}/repo/.git; then git -C {shlex.quote(root)}/repo cat-file -e {shlex.quote(str(manifest['git_sha']) + '^\u007bcommit\u007d')} 2>/dev/null || echo cloud-release-sha-unavailable; fi
+if test -d {shlex.quote(root)}/repo/.git; then git -C {shlex.quote(root)}/repo cat-file -e {shlex.quote(commit_object)} 2>/dev/null || echo cloud-release-sha-unavailable; fi
 test -f {shlex.quote(env_file)} || echo cloud-env-file-unavailable
 if test -f {shlex.quote(env_file)}; then test "$(stat -c %a {shlex.quote(env_file)})" = 600 || echo cloud-env-file-permissions-not-600; fi
 command -v git >/dev/null || echo cloud-git-unavailable
