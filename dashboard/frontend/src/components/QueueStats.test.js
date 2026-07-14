@@ -557,6 +557,14 @@ describe('QueueStats worker health display', () => {
           max_pending_wait_seconds: 1000,
           max_non_low_trust_pending_wait_seconds: 880,
         },
+        {
+          profile: 'pornmaster_flux2_edit_bf16',
+          label: 'pornmaster_flux2 BF16 / 自由P图 V3',
+          supported_task_types: ['pornmaster_flux2_edit_bf16'],
+          active_count: 46,
+          pending_count: 0,
+          max_pending_wait_seconds: null,
+        },
       ],
       queue_by_type_details: {
         scail2_action_transfer: {
@@ -636,9 +644,11 @@ describe('QueueStats worker health display', () => {
     const i2iRow = wrapper
       .findAll('.runpod-profile-detail-table tbody tr')
       .find(row => row.text().includes('i2i_pro / txt2img / face_swap'))
-    const pornmasterRow = wrapper
-      .findAll('.runpod-profile-detail-table tbody tr')
-      .find(row => row.text().includes('pornmaster_flux2'))
+    const profileRows = wrapper.findAll('.runpod-profile-detail-table tbody tr')
+    const profileNames = profileRows.map(row => row.find('.runpod-profile-name').text())
+    const pornmasterBf16Row = profileRows.find(
+      row => row.find('.runpod-profile-name').text() === 'pornmaster_flux2_edit_bf16'
+    )
     const scail2Row = wrapper
       .findAll('.runpod-profile-detail-table tbody tr')
       .find(row => row.text().includes('scail2 / 视频生视频'))
@@ -652,15 +662,13 @@ describe('QueueStats worker health display', () => {
     expect(wrapper.text()).toContain(
       'scale_up: estimated non-low-trust clear time 1860s exceeds 1800s'
     )
-    expect(pornmasterRow?.exists()).toBe(true)
-    expect(pornmasterRow?.text()).toContain('pornmaster_flux2_single_edit')
-    expect(pornmasterRow?.text()).toContain('16m 40s')
-    expect(pornmasterRow?.text()).toContain('14m 40s')
-    expect(pornmasterRow?.text()).toContain('RunPod1')
-    expect(pornmasterRow?.text()).toContain('本地1')
-    expect(pornmasterRow?.text()).toContain('1m 0s')
-    expect(pornmasterRow?.text()).toContain('自动')
-    expect(pornmasterRow?.find('.profile-autoscaler-toggle').exists()).toBe(true)
+    expect(profileNames).not.toContain('pornmaster_flux2_edit')
+    expect(profileNames).toContain('pornmaster_flux2_edit_bf16')
+    expect(pornmasterBf16Row?.text()).toContain('pornmaster_flux2_edit_bf16')
+    expect(pornmasterBf16Row?.text()).toContain('自动')
+    expect(pornmasterBf16Row?.find('.profile-autoscaler-toggle').exists()).toBe(true)
+    expect(pornmasterBf16Row?.find('.task-duration-input').element.value).toBe('30')
+    expect(pornmasterBf16Row?.find('.scale-threshold-input').element.value).toBe('30')
     expect(scail2Row?.exists()).toBe(true)
     expect(scail2Row?.text()).toContain('scail2_action_transfer_long')
     expect(scail2Row?.text()).toContain('scail2_face_swap_v2')
@@ -670,7 +678,7 @@ describe('QueueStats worker health display', () => {
     expect(i2iRow?.exists()).toBe(true)
     expect(i2iRow?.text()).toContain('RunPod2')
     expect(i2iRow?.text()).toContain('本地2')
-    expect(wrapper.findAll('.runpod-profile-detail-table tbody tr')).toHaveLength(7)
+    expect(profileRows).toHaveLength(7)
     expect(wrapper.findAll('.runpod-profile-detail-table thead th').map(th => th.text())).toEqual([
       'Worker 类型',
       '服务器',

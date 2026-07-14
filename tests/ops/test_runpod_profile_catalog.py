@@ -151,7 +151,7 @@ def test_pornmaster_flux2_profile_is_available_to_autoscaler():
     assert "pornmaster_flux2_edit" in autoscaler_profiles
 
 
-def test_pornmaster_flux2_bf16_profile_is_manual_only():
+def test_pornmaster_flux2_bf16_profile_is_available_to_autoscaler():
     worker_options = {
         str(option["profile"]): option
         for option in catalog.DASHBOARD_WORKER_PROFILE_OPTIONS
@@ -168,5 +168,7 @@ def test_pornmaster_flux2_bf16_profile_is_manual_only():
     assert worker_options["pornmaster_flux2_edit_bf16"]["supported_task_types"] == [
         "pornmaster_flux2_edit_bf16"
     ]
-    assert worker_options["pornmaster_flux2_edit_bf16"]["autoscaler_enabled"] is False
-    assert "pornmaster_flux2_edit_bf16" not in autoscaler_profiles
+    assert worker_options["pornmaster_flux2_edit_bf16"].get(
+        "autoscaler_enabled", True
+    )
+    assert "pornmaster_flux2_edit_bf16" in autoscaler_profiles

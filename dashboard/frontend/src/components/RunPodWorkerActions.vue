@@ -50,7 +50,7 @@ const loading = reactive({
 })
 
 const isRunPodWorker = computed(() =>
-  /^runpod_prod_(img2img|image_to_video|wan22_video_v2|i2i_pro|scail2|ltx_video|pornmaster_flux2_edit)_manual_\d+$/.test(
+  /^runpod_prod_(img2img|image_to_video|wan22_video_v2|i2i_pro|scail2|ltx_video|pornmaster_flux2_edit|pornmaster_flux2_edit_bf16)_manual_\d+$/.test(
     props.worker.agent_id || ''
   )
 )

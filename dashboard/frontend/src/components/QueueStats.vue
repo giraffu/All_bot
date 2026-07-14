@@ -79,12 +79,15 @@ const DEFAULT_TASK_DURATION_SECONDS_BY_TYPE = {
   ltx_video_v2v_audio: 120,
   pornmaster_flux2_single_edit: 30,
   pornmaster_flux2_multi_edit: 30,
+  pornmaster_flux2_edit_bf16: 30,
   unknown: 100,
 }
 
 const WORKER_PROFILE_TASK_TYPE_EXTENSIONS = {
   scail2: ['scail2_action_transfer_long', 'scail2_face_swap_v2'],
 }
+
+const HIDDEN_WORKER_PROFILES = new Set(['pornmaster_flux2_edit'])
 
 const uniqueTaskTypes = (taskTypes) => Array.from(new Set((taskTypes || []).filter(Boolean)))
 
@@ -128,7 +131,7 @@ const lowTrustPendingTotals = computed(() => {
 })
 
 const RUNPOD_AGENT_ID_PATTERN =
-  /^runpod_prod_(img2img|image_to_video|wan22_video_v2|i2i_pro|scail2|ltx_video|pornmaster_flux2_edit)_manual_\d+$/
+  /^runpod_prod_(img2img|image_to_video|wan22_video_v2|i2i_pro|scail2|ltx_video|pornmaster_flux2_edit|pornmaster_flux2_edit_bf16)_manual_\d+$/
 
 const isTruthyFlag = (value) =>
   value === true || value === 1 || value === '1' || value === 'true' || value === 'True'
@@ -210,29 +213,31 @@ const aggregateWorkerProfileTaskStats = (profile) => {
 }
 
 const runpodProfileRows = computed(() =>
-  runpodProfileQueueDisplay.value.map((profile) => {
-    const autoscalerSupportedTaskTypes = profile.supportedTaskTypes || []
-    const supportedTaskTypes = uniqueTaskTypes([
-      ...autoscalerSupportedTaskTypes,
-      ...(WORKER_PROFILE_TASK_TYPE_EXTENSIONS[profile.profile] || []),
-    ])
-    const displayProfile = {
-      ...profile,
-      autoscalerSupportedTaskTypes,
-      supportedTaskTypes,
-    }
-    const supportingWorkers = workers.value.filter((worker) =>
-      supportsRunPodProfile(worker, displayProfile)
-    )
-    const runpodServerCount = supportingWorkers.filter(isRunPodServerWorker).length
-    const taskStats = aggregateWorkerProfileTaskStats(displayProfile)
-    return {
-      ...displayProfile,
-      ...taskStats,
-      runpodServerCount,
-      localWorkerCount: supportingWorkers.length - runpodServerCount,
-    }
-  })
+  runpodProfileQueueDisplay.value
+    .filter((profile) => !HIDDEN_WORKER_PROFILES.has(profile.profile))
+    .map((profile) => {
+      const autoscalerSupportedTaskTypes = profile.supportedTaskTypes || []
+      const supportedTaskTypes = uniqueTaskTypes([
+        ...autoscalerSupportedTaskTypes,
+        ...(WORKER_PROFILE_TASK_TYPE_EXTENSIONS[profile.profile] || []),
+      ])
+      const displayProfile = {
+        ...profile,
+        autoscalerSupportedTaskTypes,
+        supportedTaskTypes,
+      }
+      const supportingWorkers = workers.value.filter((worker) =>
+        supportsRunPodProfile(worker, displayProfile)
+      )
+      const runpodServerCount = supportingWorkers.filter(isRunPodServerWorker).length
+      const taskStats = aggregateWorkerProfileTaskStats(displayProfile)
+      return {
+        ...displayProfile,
+        ...taskStats,
+        runpodServerCount,
+        localWorkerCount: supportingWorkers.length - runpodServerCount,
+      }
+    })
 )
 
 const scaleUpThresholdSecondsByProfile = computed(() => ({

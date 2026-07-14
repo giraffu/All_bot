@@ -184,6 +184,7 @@ describe('RunPodCapacityManager', () => {
     expect(wrapper.text()).toContain('scail2 / 视频生视频')
     expect(wrapper.text()).toContain('ltx_video / 高级图生视频')
     expect(wrapper.text()).toContain('pornmaster_flux2 / 自由P图 v2')
+    expect(wrapper.text()).toContain('pornmaster_flux2 BF16 / 自由P图 v3')
   })
 
   it('renders autoscaler status and decisions', async () => {
