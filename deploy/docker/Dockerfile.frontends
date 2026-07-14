@@ -1,0 +1,35 @@
+FROM node:22.14.0-alpine AS dashboard-build
+WORKDIR /build
+COPY dashboard/frontend/package.json dashboard/frontend/package-lock.json ./
+RUN --mount=type=cache,id=dashboard-npm,target=/root/.npm npm install --global npm@10.9.2 && npm ci
+COPY dashboard/frontend/ ./
+RUN npm run build
+
+FROM nginx:1.27.5-alpine AS dashboard-frontend
+ARG ALLBOT_GIT_SHA
+ARG ALLBOT_SOURCE=https://github.com/giraffu/All_bot
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
+      org.opencontainers.image.source=$ALLBOT_SOURCE \
+      io.allbot.release.module=dashboard-frontend
+ENV DASHBOARD_GATEWAY_PORT=8086 DASHBOARD_BACKEND_HOST=dashboard-backend:8043 DASHBOARD_FRONTEND_MODE=dashboard
+COPY --from=dashboard-build /build/dist/assets /opt/allbot-spa/assets
+COPY --from=dashboard-build /build/dist/index.html /opt/allbot-spa/index.html
+COPY deploy/docker/nginx.dashboard.conf.template /opt/allbot-nginx/dashboard.conf.template
+COPY deploy/docker/select-dashboard-spa.sh /docker-entrypoint.d/05-select-dashboard-spa.sh
+RUN chmod 755 /docker-entrypoint.d/05-select-dashboard-spa.sh
+EXPOSE 8086
+
+FROM nginx:1.27.5-alpine AS qqcc-config-frontend
+ARG ALLBOT_GIT_SHA
+ARG ALLBOT_SOURCE=https://github.com/giraffu/All_bot
+LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA \
+      org.opencontainers.image.source=$ALLBOT_SOURCE \
+      io.allbot.release.module=qqcc-config-frontend
+ENV DASHBOARD_GATEWAY_PORT=8088 DASHBOARD_BACKEND_HOST=qqcc-config-backend:8045 DASHBOARD_FRONTEND_MODE=qqcc
+COPY --from=dashboard-build /build/dist/assets /opt/allbot-spa/assets
+COPY --from=dashboard-build /build/dist/index.qqcc-config.html /opt/allbot-spa/index.qqcc-config.html
+COPY --from=dashboard-build /build/dist/index.private-bot.html /opt/allbot-spa/index.private-bot.html
+COPY dashboard/frontend/nginx.cloud-gateway.conf.template /opt/allbot-nginx/qqcc.conf.template
+COPY deploy/docker/select-dashboard-spa.sh /docker-entrypoint.d/05-select-dashboard-spa.sh
+RUN chmod 755 /docker-entrypoint.d/05-select-dashboard-spa.sh
+EXPOSE 8088
