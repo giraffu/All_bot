@@ -1,6 +1,6 @@
 version: 1
 managed_by: allbot-lan-aio-operator
-last_verified_at: "2026-07-14T18:58:51Z"
+last_verified_at: "2026-07-15T04:44:38Z"
 sources:
   slot_catalog: ops/gpu_pool_controller/config/lan_aio_prod_slots.yml
   profile_catalog: ops/gpu_pool_controller/config/task_profiles.yml
@@ -20,79 +20,79 @@ nodes:
         hardware: NVIDIA GeForce RTX 5090 32G
         mode: lan_aio
         current:
-          profile: image_to_video
-          slot_id: gpu-226-gpu0-image_to_video
-          agent_id: lan_aio_prod_gpu226_gpu0_image_to_video_01
-          container_name: allbot-lan-aio-gpu-226-gpu0-image_to_video-prod
+          profile: i2i_pro
+          slot_id: gpu-226-gpu0-i2i_pro
+          agent_id: lan_aio_prod_gpu226_gpu0_i2i_pro_01
+          container_name: allbot-lan-aio-gpu-226-gpu0-i2i_pro-prod
           host_port: 8190
           state: running
-          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd
-          model_manifest_key: image_to_video/2026-06-13-test/manifest.json
-          workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/image_to_video/workspace
-          last_takeover_at: "2026-07-14T18:54:31Z"
-          last_verified_at: "2026-07-14T18:58:51Z"
+          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh
+          model_manifest_key: i2i_pro/2026-06-14-test/manifest.json
+          workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/i2i_pro/workspace
+          last_takeover_at: "2026-07-15T04:41:20Z"
+          last_verified_at: "2026-07-15T04:44:38Z"
         cached_profiles:
           - profile: image_to_video
             cache_state: ready
             model_manifest_key: image_to_video/2026-06-13-test/manifest.json
             workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/image_to_video/workspace
             synced_at: "2026-07-14T18:53:32.528408+00:00"
-            note: Current production image_to_video runtime after the 2026-07-15 02:54 Asia/Shanghai switch from i2i_pro; warm-cache skipped all 21 already-present model files and RIFE cache copy passed.
+            note: Stopped same-card rollback candidate after the 2026-07-15 12:41 Asia/Shanghai switch to i2i_pro. Model cache remains ready and RIFE cache is declared for this profile.
           - profile: ltx_video
             cache_state: ready
             model_manifest_key: ltx_video/2026-06-10/manifest.json
             workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/ltx_video/workspace
             synced_at: "2026-07-09T19:45:16.718566+00:00"
-            note: Stopped same-card rollback candidate after the 2026-07-14 21:08 Asia/Shanghai switch to PornMaster Flux2 BF16.
+            note: Stopped same-card rollback candidate after the 2026-07-15 12:41 Asia/Shanghai switch to i2i_pro.
           - profile: scail2
             cache_state: ready
             model_manifest_key: scail2/2026-06-17-test/manifest.json
             workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/scail2/workspace
             synced_at: "2026-07-12T15:58:37.723553+00:00"
-            note: Stopped same-card rollback candidate after the 2026-07-14 21:08 Asia/Shanghai switch to PornMaster Flux2 BF16; warm-cache had previously skipped all six already-present model files. This 32G card is below the profile 48G preferred capacity.
+            note: Stopped same-card rollback candidate after the 2026-07-15 12:41 Asia/Shanghai switch to i2i_pro; warm-cache had previously skipped all six already-present model files. This 32G card is below the profile 48G preferred capacity.
           - profile: wan22_video_v2
             cache_state: ready
             model_manifest_key: wan22_video_v2/2026-06-13-test/manifest.json
             workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/wan22_video_v2/workspace
             synced_at: "2026-07-09T18:41:34.983633+00:00"
-            note: Stopped same-card canary candidate after the 2026-07-14 21:08 Asia/Shanghai switch to PornMaster Flux2 BF16; future Wan22 use remains canary-only on this 32G card.
+            note: Stopped same-card canary candidate after the 2026-07-15 12:41 Asia/Shanghai switch to i2i_pro; future Wan22 use remains canary-only on this 32G card.
           - profile: pornmaster_flux2_edit_bf16
             cache_state: ready
             model_manifest_key: pornmaster_flux2_edit_bf16/2026-07-12/manifest.json
             workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/pornmaster_flux2_edit/workspace
-            synced_at: "2026-07-14T13:06:05.394064+00:00"
-            note: Stopped same-card rollback candidate after the 2026-07-15 00:08 Asia/Shanghai switch to i2i_pro; a BF16 task was interrupted under operator authorization before takeover.
+            synced_at: "2026-07-15T04:26:37.078702+00:00"
+            note: Stopped same-card rollback candidate after the 2026-07-15 12:41 Asia/Shanghai switch to i2i_pro; BF16 was idle with queue 0/0 before stop-old.
           - profile: i2i_pro
             cache_state: ready
             model_manifest_key: i2i_pro/2026-06-14-test/manifest.json
             workspace_host_dir: /home/ubantu/allbot-runpod-runtime/slots/gpu-226-gpu0/profiles/i2i_pro/workspace
-            synced_at: "2026-07-14T16:08:09.952655+00:00"
-            note: Stopped same-card rollback candidate after the 2026-07-15 02:54 Asia/Shanghai switch to image_to_video; warm-cache downloaded six model files during the earlier i2i_pro takeover.
+            synced_at: "2026-07-15T04:40:29.621743+00:00"
+            note: Current production i2i_pro runtime after the 2026-07-15 12:41 Asia/Shanghai switch from BF16; warm-cache skipped all six already-present model files.
         fast_switch_candidates:
-          - slot_id: gpu-226-gpu0-i2i_pro
-            profile: i2i_pro
+          - slot_id: gpu-226-gpu0-image_to_video
+            profile: image_to_video
             cache_state: ready
-            note: Same-card rollback candidate after the 2026-07-15 02:54 Asia/Shanghai switch to image_to_video.
-          - slot_id: gpu-226-gpu0-scail2
-            profile: scail2
-            cache_state: ready
-            note: Same-card rollback candidate after the 2026-07-15 02:54 Asia/Shanghai switch to image_to_video; watch RTX 5090 32G for OOM/status 137 if restored.
-          - slot_id: gpu-226-gpu0-ltx_video
-            profile: ltx_video
-            cache_state: ready
-            note: Same-card rollback candidate after the 2026-07-15 02:54 Asia/Shanghai switch to image_to_video.
-          - slot_id: gpu-226-gpu0-wan22_video_v2
-            profile: wan22_video_v2
-            cache_state: ready
-            note: Same-card canary candidate after the 2026-07-15 02:54 Asia/Shanghai switch to image_to_video; not proven steady 32G capacity.
+            note: Same-card rollback candidate after the 2026-07-15 12:41 Asia/Shanghai switch to i2i_pro.
           - slot_id: gpu-226-gpu0-pornmaster_flux2_edit_bf16
             profile: pornmaster_flux2_edit_bf16
             cache_state: ready
-            note: Same-card rollback candidate after the 2026-07-15 02:54 Asia/Shanghai switch to image_to_video.
+            note: Same-card rollback candidate after the 2026-07-15 12:41 Asia/Shanghai switch to i2i_pro.
+          - slot_id: gpu-226-gpu0-scail2
+            profile: scail2
+            cache_state: ready
+            note: Same-card rollback candidate after the 2026-07-15 12:41 Asia/Shanghai switch to i2i_pro; watch RTX 5090 32G for OOM/status 137 if restored.
+          - slot_id: gpu-226-gpu0-ltx_video
+            profile: ltx_video
+            cache_state: ready
+            note: Same-card rollback candidate after the 2026-07-15 12:41 Asia/Shanghai switch to i2i_pro.
+          - slot_id: gpu-226-gpu0-wan22_video_v2
+            profile: wan22_video_v2
+            cache_state: ready
+            note: Same-card canary candidate after the 2026-07-15 12:41 Asia/Shanghai switch to i2i_pro; not proven steady 32G capacity.
         blocked_profiles:
           - profile: face_i2i_t2i
             reason: legacy host-service cloud_prod_worker_01 is disabled and cloud-prod-comfy-agent-1 is stopped after the 2026-07-02 cutover; systemd comfyui.service remains active/idle on 8188 as manual rollback metadata.
-        notes: Switched gpu-226 GPU0 from i2i_pro to image_to_video on 2026-07-15 02:54 Asia/Shanghai through scripts/lan_aio_fleet_prod_ops.py takeover with auto_rollback after i2i_pro was idle and its ComfyUI queue was empty. A stale image_to_video catalog owner was first reconciled from BF16 to the current i2i_pro owner so preflight could validate host port 8190. Preflight, image presence, warm-cache, drain/wait-idle, stop-old, RIFE cache copy, start-disabled, Docker health, disabled heartbeat, old-process cleanup, and enable gates passed. Follow-up monitoring through 2026-07-15 02:58 Asia/Shanghai showed the image_to_video container healthy on 8190, Central worker idle with task types video_insert,video_edit,image_to_video, ComfyUI queue 0/0, and two consecutive production image_to_video tasks completed with sidecar uploads. i2i_pro, BF16, SCAIL-2, LTX, and Wan22 remain stopped same-card rollback candidates.
+        notes: Switched gpu-226 GPU0 from PornMaster Flux2 BF16 to i2i_pro on 2026-07-15 12:41 Asia/Shanghai through scripts/lan_aio_fleet_prod_ops.py takeover with auto_rollback after BF16 intake was disabled and BF16 was idle with ComfyUI queue 0/0. Preflight, image presence, warm-cache, drain/wait-idle, stop-old, start-disabled, Docker health, disabled heartbeat, old-process cleanup, and enable gates passed. Follow-up monitoring through 2026-07-15 12:44 Asia/Shanghai showed the i2i_pro container healthy on 8190, Central running with i2i_pro,t2i-pornmaster-turbo,face_swap intake, the ComfyUI queue reachable, and consecutive production face_swap completions with sidecar uploads. BF16, image_to_video, SCAIL-2, LTX, and Wan22 remain stopped same-card rollback candidates.
 
   gpu-177:
     host: allbot-gpu-177

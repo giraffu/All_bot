@@ -418,9 +418,9 @@ slots:
     notes: Host-service ComfyUI node; requires a separate host-process-to-container migration plan.
 
   - id: gpu-226-gpu0-image_to_video
-    enabled: true
-    phase: prod_enabled
-    retargetable: false
+    enabled: false
+    phase: superseded_by_i2i_pro
+    retargetable: true
     assignment_id: lan-226-8190-worker-01-aio
     target_profile_id: image_to_video
     target_task_types:
@@ -444,11 +444,11 @@ slots:
           - /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth
           - /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth
     rollout_order: 104
-    notes: Active production gpu-226 GPU0 image_to_video LAN AIO after the 2026-07-15 02:54 Asia/Shanghai switch from i2i_pro. Preflight, image presence, warm-cache, drain/wait-idle, stop-old, RIFE cache copy, start-disabled, Docker health, disabled heartbeat, old-process cleanup, and enable gates passed. It serves video_insert, video_edit, and image_to_video on host port 8190; follow-up monitoring through 2026-07-15 02:58 Asia/Shanghai saw two production image_to_video tasks complete with successful sidecar uploads. i2i_pro, BF16, SCAIL-2, LTX, and Wan22 remain stopped same-card rollback candidates.
+    notes: Stopped same-card image_to_video rollback candidate after the 2026-07-15 12:41 Asia/Shanghai switch to i2i_pro. It restores lan_aio_prod_gpu226_gpu0_image_to_video_01 / allbot-lan-aio-gpu-226-gpu0-image_to_video-prod on host port 8190 by replacing the current gpu-226-gpu0-i2i_pro AIO when explicitly requested. RIFE cache remains declared for this profile.
 
   - id: gpu-226-gpu0-ltx_video
     enabled: false
-    phase: superseded_by_image_to_video
+    phase: superseded_by_i2i_pro
     retargetable: true
     assignment_id: lan-226-8190-worker-01-aio
     target_profile_id: ltx_video
@@ -462,16 +462,16 @@ slots:
     legacy_preflight_required: true
     agent_id: lan_aio_prod_gpu226_gpu0_ltx_video_01
     container_name: allbot-lan-aio-gpu-226-gpu0-ltx_video-prod
-    legacy_worker_id: lan_aio_prod_gpu226_gpu0_image_to_video_01
-    old_runtime_container: allbot-lan-aio-gpu-226-gpu0-image_to_video-prod
+    legacy_worker_id: lan_aio_prod_gpu226_gpu0_i2i_pro_01
+    old_runtime_container: allbot-lan-aio-gpu-226-gpu0-i2i_pro-prod
     old_local_agent_container: ""
     remote_dir: /home/ubantu/allbot-runpod-aio-prod/gpu226-gpu0-ltx-video
     rollout_order: 102
-    notes: Stopped same-card LTX rollback candidate after the 2026-07-15 02:54 Asia/Shanghai switch to image_to_video. It restores lan_aio_prod_gpu226_gpu0_ltx_video_01 / allbot-lan-aio-gpu-226-gpu0-ltx_video-prod on host port 8190 by replacing the current gpu-226-gpu0-image_to_video AIO when explicitly requested.
+    notes: Stopped same-card LTX rollback candidate after the 2026-07-15 12:41 Asia/Shanghai switch to i2i_pro. It restores lan_aio_prod_gpu226_gpu0_ltx_video_01 / allbot-lan-aio-gpu-226-gpu0-ltx_video-prod on host port 8190 by replacing the current gpu-226-gpu0-i2i_pro AIO when explicitly requested.
 
   - id: gpu-226-gpu0-scail2
     enabled: false
-    phase: superseded_by_image_to_video
+    phase: superseded_by_i2i_pro
     retargetable: true
     assignment_id: lan-226-8190-worker-01-aio
     target_profile_id: scail2
@@ -486,15 +486,15 @@ slots:
     legacy_preflight_required: true
     agent_id: lan_aio_prod_gpu226_gpu0_scail2_01
     container_name: allbot-lan-aio-gpu-226-gpu0-scail2-prod
-    legacy_worker_id: lan_aio_prod_gpu226_gpu0_image_to_video_01
-    old_runtime_container: allbot-lan-aio-gpu-226-gpu0-image_to_video-prod
+    legacy_worker_id: lan_aio_prod_gpu226_gpu0_i2i_pro_01
+    old_runtime_container: allbot-lan-aio-gpu-226-gpu0-i2i_pro-prod
     remote_dir: /home/ubantu/allbot-runpod-aio-prod/gpu226-gpu0-scail2
     rollout_order: 103
-    notes: Stopped same-card SCAIL-2 rollback candidate after the 2026-07-15 02:54 Asia/Shanghai switch to image_to_video. It restores lan_aio_prod_gpu226_gpu0_scail2_01 / allbot-lan-aio-gpu-226-gpu0-scail2-prod on host port 8190 by replacing the current gpu-226-gpu0-image_to_video AIO when explicitly requested. Watch this RTX 5090 32G card for OOM/status 137 because the profile catalog records 48G preferred capacity.
+    notes: Stopped same-card SCAIL-2 rollback candidate after the 2026-07-15 12:41 Asia/Shanghai switch to i2i_pro. It restores lan_aio_prod_gpu226_gpu0_scail2_01 / allbot-lan-aio-gpu-226-gpu0-scail2-prod on host port 8190 by replacing the current gpu-226-gpu0-i2i_pro AIO when explicitly requested. Watch this RTX 5090 32G card for OOM/status 137 because the profile catalog records 48G preferred capacity.
 
   - id: gpu-226-gpu0-wan22_video_v2
     enabled: false
-    phase: superseded_by_image_to_video
+    phase: superseded_by_i2i_pro
     retargetable: true
     assignment_id: lan-226-8190-worker-01-aio
     target_profile_id: wan22_video_v2
@@ -506,16 +506,16 @@ slots:
     legacy_preflight_required: true
     agent_id: lan_aio_prod_gpu226_gpu0_wan22_video_v2_01
     container_name: allbot-lan-aio-gpu-226-gpu0-wan22_video_v2-prod
-    legacy_worker_id: lan_aio_prod_gpu226_gpu0_image_to_video_01
-    old_runtime_container: allbot-lan-aio-gpu-226-gpu0-image_to_video-prod
+    legacy_worker_id: lan_aio_prod_gpu226_gpu0_i2i_pro_01
+    old_runtime_container: allbot-lan-aio-gpu-226-gpu0-i2i_pro-prod
     old_local_agent_container: ""
     remote_dir: /home/ubantu/allbot-runpod-aio-prod/gpu226-gpu0-wan22-video-v2
     rollout_order: 104
-    notes: Stopped same-card Wan22 v2 canary candidate after the 2026-07-15 02:54 Asia/Shanghai switch to image_to_video. This RTX 5090 32G card is below the 48G preferred profile capacity, so future Wan22 takeover should remain an explicit canary with OOM/status 137 monitoring. The slot is restricted to wan22_video_v2 only.
+    notes: Stopped same-card Wan22 v2 canary candidate after the 2026-07-15 12:41 Asia/Shanghai switch to i2i_pro. This RTX 5090 32G card is below the 48G preferred profile capacity, so future Wan22 takeover should remain an explicit canary with OOM/status 137 monitoring. The slot is restricted to wan22_video_v2 only.
 
   - id: gpu-226-gpu0-pornmaster_flux2_edit_bf16
     enabled: false
-    phase: superseded_by_image_to_video
+    phase: superseded_by_i2i_pro
     retargetable: true
     assignment_id: lan-226-8190-worker-01-aio
     target_profile_id: pornmaster_flux2_edit_bf16
@@ -527,17 +527,17 @@ slots:
     legacy_preflight_required: true
     agent_id: lan_aio_prod_gpu226_gpu0_pornmaster_flux2_edit_bf16_01
     container_name: allbot-lan-aio-gpu-226-gpu0-pornmaster_flux2_edit_bf16-prod
-    legacy_worker_id: lan_aio_prod_gpu226_gpu0_image_to_video_01
-    old_runtime_container: allbot-lan-aio-gpu-226-gpu0-image_to_video-prod
+    legacy_worker_id: lan_aio_prod_gpu226_gpu0_i2i_pro_01
+    old_runtime_container: allbot-lan-aio-gpu-226-gpu0-i2i_pro-prod
     old_local_agent_container: ""
     remote_dir: /home/ubantu/allbot-runpod-aio-prod/gpu226-gpu0-pornmaster-flux2-edit-bf16
     rollout_order: 105
-    notes: Stopped same-card PornMaster Flux2 V4 turbo BF16 rollback candidate after the 2026-07-15 02:54 Asia/Shanghai switch to image_to_video. It restores lan_aio_prod_gpu226_gpu0_pornmaster_flux2_edit_bf16_01 / allbot-lan-aio-gpu-226-gpu0-pornmaster_flux2_edit_bf16-prod on host port 8190 by replacing the current gpu-226-gpu0-image_to_video AIO when explicitly requested.
+    notes: Stopped same-card PornMaster Flux2 V4 turbo BF16 rollback candidate after the 2026-07-15 12:41 Asia/Shanghai switch to i2i_pro. It restores lan_aio_prod_gpu226_gpu0_pornmaster_flux2_edit_bf16_01 / allbot-lan-aio-gpu-226-gpu0-pornmaster_flux2_edit_bf16-prod on host port 8190 by replacing the current gpu-226-gpu0-i2i_pro AIO when explicitly requested. BF16 was idle with queue 0/0 before stop-old.
 
   - id: gpu-226-gpu0-i2i_pro
-    enabled: false
-    phase: superseded_by_image_to_video
-    retargetable: true
+    enabled: true
+    phase: prod_enabled
+    retargetable: false
     assignment_id: lan-226-8190-worker-01-aio
     target_profile_id: i2i_pro
     target_task_types:
@@ -550,9 +550,9 @@ slots:
     legacy_preflight_required: true
     agent_id: lan_aio_prod_gpu226_gpu0_i2i_pro_01
     container_name: allbot-lan-aio-gpu-226-gpu0-i2i_pro-prod
-    legacy_worker_id: lan_aio_prod_gpu226_gpu0_image_to_video_01
-    old_runtime_container: allbot-lan-aio-gpu-226-gpu0-image_to_video-prod
+    legacy_worker_id: lan_aio_prod_gpu226_gpu0_pornmaster_flux2_edit_bf16_01
+    old_runtime_container: allbot-lan-aio-gpu-226-gpu0-pornmaster_flux2_edit_bf16-prod
     old_local_agent_container: ""
     remote_dir: /home/ubantu/allbot-runpod-aio-prod/gpu226-gpu0-i2i-pro
     rollout_order: 106
-    notes: Stopped same-card i2i_pro rollback candidate after the 2026-07-15 02:54 Asia/Shanghai switch to image_to_video. It restores lan_aio_prod_gpu226_gpu0_i2i_pro_01 / allbot-lan-aio-gpu-226-gpu0-i2i_pro-prod on host port 8190 by replacing the current gpu-226-gpu0-image_to_video AIO when explicitly requested.
+    notes: Active production gpu-226 GPU0 i2i_pro LAN AIO after the 2026-07-15 12:41 Asia/Shanghai switch from PornMaster Flux2 BF16. Preflight, image presence, warm-cache, drain/wait-idle, stop-old, start-disabled, Docker health, disabled heartbeat, old-process cleanup, and enable gates passed. It serves i2i_pro, t2i-pornmaster-turbo, and face_swap on host port 8190; follow-up monitoring through 2026-07-15 12:44 Asia/Shanghai saw consecutive production face_swap completions with successful sidecar uploads. BF16, image_to_video, SCAIL-2, LTX, and Wan22 remain stopped same-card rollback candidates.

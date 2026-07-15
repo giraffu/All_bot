@@ -198,8 +198,26 @@ async def get_runpod_profiles_payload() -> dict[str, Any]:
     return {"profiles": list(RUNPOD_PROFILE_OPTIONS)}
 
 
-async def get_runpod_operations_payload() -> dict[str, Any]:
-    return await _operation_runner.operations_payload()
+async def get_runpod_operations_payload(
+    *,
+    workers_payload: dict[str, Any] | None = None,
+    now: float | None = None,
+) -> dict[str, Any]:
+    if workers_payload is None:
+        from dashboard.backend.services.system_service import (
+            get_system_workers_proxy_payload,
+        )
+
+        async def keep_worker_payload(payload: dict[str, Any]) -> dict[str, Any]:
+            return payload
+
+        workers_payload = await get_system_workers_proxy_payload(
+            annotate_runpod_locks_func=keep_worker_payload,
+        )
+    return await _operation_runner.operations_payload(
+        workers_payload=workers_payload,
+        now=now,
+    )
 
 
 def _runpod_worker_lock_payload(

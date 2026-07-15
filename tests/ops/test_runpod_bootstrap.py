@@ -124,6 +124,18 @@ def test_runpod_profile_build_script_has_valid_bash_syntax():
     )
 
 
+def test_pornmaster_profile_smoke_requires_bf16_workflow_and_mapping():
+    build_script = PROFILE_BUILD_SCRIPT.read_text(encoding="utf-8")
+
+    assert (
+        "PornMaster_F2K_9B_Turbo_Single-image-editing_Automatic_"
+        "V1_2026_05_27.api.json" in build_script
+    )
+    assert "'pornmaster_flux2_edit_bf16' in mappings" in build_script
+    assert "'pornmaster_flux2_edit_bf16' in validation" in build_script
+    assert "BF16_WORKFLOW_AND_MAPPING_PRESENT=true" in build_script
+
+
 def test_img2img_lora_profile_image_bakes_custom_nodes_not_business_models():
     dockerfile = PROFILE_DOCKERFILE.read_text(encoding="utf-8")
     local_dockerfile = PROFILE_LOCAL_DOCKERFILE.read_text(encoding="utf-8")

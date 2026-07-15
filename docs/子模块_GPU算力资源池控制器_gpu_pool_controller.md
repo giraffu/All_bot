@@ -567,12 +567,14 @@ Dashboard 系统监控页也提供正式手动 RunPod 池的日常 Web 入口：
 | Worker 卡片 `重启` (LAN AIO) | `POST /api/runpod/lan-aio/workers/{agent_id}/restart` | `lan_aio_fleet_prod_ops.py restart-aio --slot ... --execute`，只重启目标 AIO 容器，等待健康/heartbeat 后 enable |
 | Worker 卡片 `删除` | `DELETE /api/runpod/workers/{agent_id}` | `down --slot NN --execute`，先停接并等待当前任务结束，再删除 Pod |
 | LAN AIO slot/candidate 管理 | 无 Dashboard API | `GET /api/runpod/lan-aio/profiles`、`GET /api/runpod/lan-aio/slots`、`POST /api/runpod/lan-aio/slots/{slot_id}/{action}` 已移除；候选切换、缓存预热、takeover/recover 只由本地 AI operator/CLI 通过 `scripts/lan_aio_fleet_prod_ops.py` 执行 |
-| 最近操作 | `GET /api/runpod/operations` | 只读 Dashboard 后端内存 operation 状态和脱敏日志尾部 |
+| 最近操作 | `GET /api/runpod/operations` | 读取 Redis 持久 operation 状态和脱敏日志尾部；Dashboard 多 worker 或容器重建后，会用 Central worker 快照收口已实际成功的 detached add |
 | 最近操作 `终止` | `POST /api/runpod/operations/{operation_id}/terminate` | 仅用于运行中的 `add` operation；终止 Dashboard 子进程后，按该次新增日志记录到的 slot 逐个执行 `down --slot NN --execute` 释放 Pod |
 
 Dashboard 入口不重写 RunPod provider 逻辑，只异步调用 `scripts/runpod_prod_ops.sh`。LAN AIO slot/candidate 管理已从 Dashboard 移除，不再提供 profile/slot 列表、一键切换、恢复、巡检或 warm-cache 操作；候选切换、缓存预热、takeover/recover、retarget 与本地服务巡检只由本地主 AI operator/CLI 通过 `scripts/lan_aio_fleet_prod_ops.py` 执行。Worker 卡片看到 `control_state=disabled|draining` 时显示 `暂停中`，接单控制按钮显示 `开启`；其它状态显示 `暂停`。LAN AIO Worker 卡片只保留状态、当前任务、`暂停/开启/重启`，后端只允许受限 `disable-aio|enable-aio|restart-aio`，不触碰候选切换、缓存预热、takeover/recover 或 retarget。
 
 RunPod Worker 卡片提供 `锁定/解锁`，后端 API 为 `POST /api/runpod/workers/{agent_id}/lock|unlock`、`GET /api/runpod/workers/locks`；锁记录持久化在 operation store 的 `dashboard:runpod:locked_workers`，`/api/system/workers` 会标注 `runpod_locked` 并显示 `已锁定`。锁定后 Dashboard 手动 `DELETE /api/runpod/workers/{agent_id}` 返回 409，autoscaler 缩容与 add 失败/终止 cleanup 的 `down` 都会跳过该 worker，直到再次解锁。数量字段是新增数量；旧前端若仍发送 `desired_count`，后端也按新增数量解释，不会触发 `scale --desired` 或删除既有 slot。当前 Dashboard 手动 RunPod profile 列表包含 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、`scail2 / 视频生视频`、`ltx_video / 高级图生视频` 与 `pornmaster_flux2 / 自由P图 v2`；`scail2` 对应 `scail2_action_transfer,scail2_video_replacement` 两类正式任务，`ltx_video` 对应 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`，`pornmaster_flux2_edit` 对应 `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit`。系统监控页的活跃 Worker 详情前端会基于 Dashboard `/api/system/status.runpod_profile_queue_details` 的 profile 列表和 `/api/system/status.queue_by_type_details` 的任务类型明细聚合活跃数/pending、最长 pending 等待和非低信任最长 pending 等待；其中活跃数不是 worker 数，真实 RunPod/本地 worker 数由 `/api/system/workers` 心跳另算。`scail2` 展示会额外折入 LAN 正式可承接的 `scail2_action_transfer_long` 与 `scail2_face_swap_v2`，但正式 RunPod `scail2` autoscaler、清空阈值和单任务耗时设置仍只按 `scail2_action_transfer,scail2_video_replacement` 生效，避免自动扩容误接不能承载的任务。`pornmaster_flux2_edit` 返回 `autoscaler_enabled=true` 并进入 Dashboard RunPod autoscaler 自动 add/down，默认按单任务 30 秒和 30 分钟清空阈值估算，也可手动新增/暂停/删除；`i2i_pro` 汇总 `i2i_pro,t2i-pornmaster-turbo,face_swap`。同一请求里同一 profile 只能出现一次；若同 profile 已有未结束的 `add` operation，Dashboard 后端会返回 409，禁止再次提交，避免并发新增抢到同一个 `manual_NN` slot。后台 operation 默认使用 30 秒间隔、100 次无库存重试，真实执行只打开 `RUNPOD_DRY_RUN=false` 与 `RUNPOD_AUTOSCALER_ENABLED=true`，并把 `RUNPOD_PROD_MAX_MANUAL_SLOTS` 设为 `100` 或请求指定值。运行中的新增 operation 可从最近操作点 `终止`，后端会先向该 operation 的进程组发送 SIGTERM；如果该次 operation 已记录 `runpod_create_pod_NN`，会继续提交对应 slot 的 `down` 清理；若对应 RunPod worker 已锁定则跳过 cleanup 并记录 `skipped_locked`/`partial_locked`。未记录到创建 slot 的终止只停止等待/重试进程，不推测删除其它 Pod。
+
+Dashboard operation 由 Redis 跨 Gunicorn worker 和容器重建持久化。读取“最近操作”时，后端只对 `status=running`、已从日志确认 `runpod_create_pod_NN`、且对应所有 `runpod_prod_<profile>_manual_NN` worker 在 heartbeat 新鲜窗口内为 `idle|running`、`control_state=enabled` 的 detached add 自动写回 `succeeded`、`exit_code=0` 并释放 profile active-add 锁。没有创建 slot、worker 缺失、heartbeat 过期、未启用或 unhealthy 时继续保持 `running`，不得仅因 Pod 存在就误报成功。
 
 云正式 Dashboard 后端默认优先把容器内 `/app/.env` 同时作为 `--runpod-env-file` 与 `--prod-env-file`；该文件由云正式 `.env.cloud.prod` 挂载，必须包含完整、shell-compatible 的 `RUNPOD_*` 手动池配置和可用 `RUNPOD_API_KEY`。云正式若要从 Dashboard 触发 LAN AIO worker `pause/enable/restart`，必须设置 `DASHBOARD_LAN_AIO_EXECUTION_MODE=ssh`、`DASHBOARD_LAN_AIO_RUNNER_HOST` 和 `DASHBOARD_LAN_AIO_RUNNER_PROJECT_ROOT`，让受限的 `disable-aio|enable-aio|restart-aio` 落在本地主服务器 runner 上，避免把 LAN GPU SSH key 或 `192.168.1.0/24` 私网路由放进云控制面。正式 compose 给 Dashboard 后端只读挂载 `/app/runtime/lan-aio-runner`，`DASHBOARD_LAN_AIO_RUNNER_SSH_COMMAND` 默认使用该目录的 `id_ed25519`；更换 key 或 runner 用户时只改云正式 env 和本地主 `authorized_keys`，不要改代码。远端 runner 默认读取 `<runner-root>/.env.cloud.prod`、`<runner-root>/.env.lan-aio-prod`、`<runner-root>/.env.lan.model-cache`，可用 `DASHBOARD_LAN_AIO_RUNNER_PROD_ENV_FILE`、`DASHBOARD_LAN_AIO_RUNNER_AIO_ENV_FILE`、`DASHBOARD_LAN_AIO_RUNNER_MODEL_ENV_FILE` 覆盖。若本地主交互环境依赖本地代理访问正式公网域名，云端 runner 还应配置 `DASHBOARD_LAN_AIO_RUNNER_HTTP_PROXY`、`DASHBOARD_LAN_AIO_RUNNER_HTTPS_PROXY`、`DASHBOARD_LAN_AIO_RUNNER_ALL_PROXY` 和 `DASHBOARD_LAN_AIO_RUNNER_NO_PROXY`，后端会在远端命令中同时导出大小写 proxy 变量；`NO_PROXY` 至少覆盖 LAN registry/model-cache 和目标 GPU IP。未配置 runner host 时，后端应返回可读 503，而不是在云机上直接超时。不要把本机测试专用 `RUNPOD_PUBLIC_KEY_FILE` 路径带入云正式容器；生产路径默认不依赖 RunPod SSH。必要时仍可通过 `DASHBOARD_RUNPOD_ENV_FILE` / `DASHBOARD_RUNPOD_PROD_ENV_FILE` 覆盖 env 路径；不得在 API 响应、operation 日志或文档中输出任何 env 内容或密钥。
 
@@ -624,6 +626,15 @@ restart、等待健康 heartbeat，再恢复 enabled 接单。本地 worker 只�
 `hold: profile autoscaler paused`、`hold: minimum lifetime remaining Ns` 等决策并紧急暂停/恢复。
 
 `down` 删除已有 Pod 的 preflight 只做 RunPod key、Pod 列表、reconcile 与 Central health 检查，不渲染 create pod request，因此不会因缺少 `RUNPOD_IMAGE_NAME_I2I_PRO` / `RUNPOD_IMAGE_NAME_SCAIL2` / `RUNPOD_IMAGE_NAME_LTX_VIDEO` 这类创建镜像配置而阻断删除；`up` / `add` / `render` / `canary` 仍必须具备目标 profile 的正式镜像与模型配置。
+
+不可变云正式 Dashboard overlay 必须显式注入
+`RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT`；Dashboard operation 子进程使用
+`/dev/null` env-file 时会继承该容器环境，缺失变量必须在 Compose 渲染阶段 fail closed，
+不能依赖现场进入容器补值。`pornmaster_flux2_edit_bf16` 不使用独立的
+`pornmaster_flux2_edit_bf16.json`，而是通过 mapping 复用
+`PornMaster_F2K_9B_Turbo_Single-image-editing_Automatic_V1_2026_05_27.api.json`，
+再由 BF16 patcher 切换 UNet。PornMaster profile 镜像 smoke 必须同时验证该 workflow、
+`mappings.json` 条目和 `workflow_mapping_validation.py` 解析表，避免旧镜像在创建后才暴露缺文件。
 
 底层高级命令：
 

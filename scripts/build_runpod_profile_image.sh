@@ -439,6 +439,11 @@ command -v ffmpeg >/dev/null
 command -v curl >/dev/null
 command -v git >/dev/null
 command -v ssh-keygen >/dev/null
+runtime_root=/opt/allbot/runtime/remote_workers
+bf16_workflow="${runtime_root}/comfy_agent/workflows/PornMaster_F2K_9B_Turbo_Single-image-editing_Automatic_V1_2026_05_27.api.json"
+test -f "${bf16_workflow}"
+RUNTIME_ROOT="${runtime_root}" python3 -c "import json, os; from pathlib import Path; root=Path(os.environ['RUNTIME_ROOT']); mappings=json.loads((root/'comfy_agent/workflows/mappings.json').read_text(encoding='utf-8')); assert 'pornmaster_flux2_edit_bf16' in mappings; validation=(root/'src/workflow_mapping_validation.py').read_text(encoding='utf-8'); assert 'pornmaster_flux2_edit_bf16' in validation"
+echo "BF16_WORKFLOW_AND_MAPPING_PRESENT=true"
 if ! command -v sshd >/dev/null && [ ! -x /usr/sbin/sshd ]; then
   echo "sshd must be available for RunPod direct TCP diagnostics" >&2
   exit 1
