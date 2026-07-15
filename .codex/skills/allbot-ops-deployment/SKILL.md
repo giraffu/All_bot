@@ -14,6 +14,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 | 场景 | 必读资料 |
 | :--- | :--- |
 | 云测试部署、联调、修复 | `docs/子模块_云测试控制面部署_cloud_test_control_plane.md` |
+| 并发 AI worktree、test-train 候选、共享测试站排他切换 | `allbot-concurrent-workspaces`、`docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md` |
 | 云正式发布、单服务热修、维护窗口 | `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`、`docs/子模块_运维指南与容器管理_ops_deployment.md` |
 | 云正式整体不可用、本地接管 | `docs/子模块_本地正式灾备切换_local_prod_fallback.md` |
 | RunPod、GPU worker、autoscaler | `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md`、`references/runpod-lan-runtime.md` |
@@ -30,6 +31,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 ## 2. 当前稳定入口
 
 - schema v2 将不可变产物拆为 `control-plane`、`test-execution`、`gpu-execution` 三条环境无关发布链；`release-index.json` 引用三份 manifest，test/prod 只选择模块并注入配置。`--modules` 与 control-plane alias `--services` 只能扩大影响集合，状态与历史按 track 隔离。
+- 并发研发使用精确受保护 `codex/test-train` 的独立 `test-candidate` bundle 仓库；candidate 只能由集成 AI通过 `scripts/test_train_release.py` 部署 test，禁止 `verify-test`、prod、fast-track 和正式晋级。最终 main SHA 必须重新构建、部署和验收。
 - 云测试分别部署 control-plane 与 test-execution；v2 bundle 可在不创建 RunPod 的情况下发布，缺少同 SHA canary 的 GPU profile 必须从可用 artifacts 中移除并以 `completeness=incomplete` / `missing_artifacts` 明示。GPU profile 的选择、部署和晋级仍必须逐 profile 构建、canary 和记录证据。正式逐模块只晋级测试 verified 的同 digest，共享协议或 migration 可强制扩大原子集合。
 - 唯一代码发布入口是 `scripts/release.py plan|preflight|deploy|rollback|recover`。目标必须是可从 `origin/main` 到达的完整 40 位 SHA，并使用 CI 生成的 `release.json`、Web checksum 和 digest-pinned 镜像；云端不 build、不挂载源码、不接收代码/env rsync。`preflight` 与 `deploy` 不自动拉 bundle，所有材料必须预先可读。
 - 云测试：先执行 `scripts/release.py plan --env test --sha <sha>`，再以同一 SHA 执行 `deploy --env test --sha <sha> --execute`。影响集合由 `deploy/release-policy.yml` 计算，`--services` 只能扩大，不能缩小。
@@ -76,6 +78,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 
 ### 云测试
 - 使用独立测试 Droplet、测试 Postgres/Redis/Central/Web/Dashboard/imgproxy/Bot。
+- 共享云测试站只有一个写入者。A-D 功能 AI 不得部署；集成 AI 使用 test-train 本地排他锁，按 control-plane → test-execution 顺序切换受影响 track。
 - 日常研发验证也先形成完整 Git SHA 和 CI release；发布器可只 recreate 自动影响到的模块，但代码、shared、locale 与 Worker 依赖始终来自同一 release。
 - 若发布器选中 `bot` / `qqcc-bot`，仍须确认没有第二个同测试 token polling 实例。
 - cloud-test worker 由本地主服务器经 Tailscale 接入测试 Central；默认常驻只保留 test-1 与 test-8，其它测试 worker 只在 smoke/canary 窗口启用。

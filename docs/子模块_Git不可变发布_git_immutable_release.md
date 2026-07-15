@@ -23,6 +23,8 @@
 
 ## 3. 构建契约
 
+并发开发增加独立 `test-candidate` channel。`main` bundle 位于 `ghcr.io/giraffu/allbot-release-v2:<sha>`；精确 `codex/test-train` bundle 位于 `ghcr.io/giraffu/allbot-release-v2-test-candidate:<sha>`。v2 index 显式写 `release_channel` 和 `source_ref`，旧 index 只兼容为 main。Candidate 只能部署 test，禁止 `verify-test`、prod、Dashboard fast-track 与正式晋级；最终合入 main 后必须重新构建并重新测试新的 main SHA。
+
 受保护 `main` 的 CI 先构建不含业务源码的 `allbot-python-runtime-base`。测试 Agent 使用派生的 `allbot-python-worker-base`；Relay 直接继承 runtime base，不携带 workflow、ComfyUI 或 GPU 依赖。Central、Web、Payment、各 Bot、Dashboard Backend、QQCC Config Backend、Agent 和 Relay 都是独立 target/镜像。Dashboard 与 QQCC Config 分别产出 Nginx 镜像，private-bot owner SPA 归 QQCC Config Frontend；Public Web 只构建一份环境无关 `public-web-dist.tgz`。所有自有镜像以完整 SHA 为 tag 并写 OCI revision/source，workflow 禁止覆盖同 SHA tag。
 
 GPU 首次聚合按六个实际 runtime 构建、八个发布 profile 记录：`image_to_video` 与
@@ -75,6 +77,8 @@ python scripts/update_deploy_config.py --env prod --source /secure/new-prod.env 
 测试环境首次迁移使用 `scripts/migrate_legacy_test_env.py` 生成候选文件：`--source` 必须是云测试当前 `/etc/allbot/test.env` 的受限本地副本，作为控制面配置事实源；`--worker-source` 可指向本机旧 `.env.cloud.test`，只补 Worker 槽位参数，不能用旧本机配置覆盖云端新增项。脚本默认 dry-run、丢弃 malformed legacy 行、最后一个合法同名变量生效，补齐测试 admin/owner 非敏感 Host，且只输出计数不输出值。候选必须再经 `scripts/release.py validate-env` 和 cloud/worker Compose `config -q`，随后备份旧 env、`chmod 600`/`chown deploy:deploy`、原子 rename，并记录新 config revision。不要通过 Git、CI、rsync 或命令输出传输秘密。该迁移器是 test-only，不能用于生产 env。
 
 ## 5. 标准流程
+
+并发任务的 test-train 入口为 `scripts/test_train_release.py`，A-D 功能工作区不得直接运行发布器。详细槽位与 forward-fix SOP 见 `docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md`。
 
 `plan` 可从 GHCR 拉 release bundle，需要预先 `docker login ghcr.io` 和 `oras`。`preflight`、`deploy` 不拉取任何材料，必须先把 `release.json` 与 Web tar 放入本地 bundle cache，或显式传本地 `--manifest`/`--web-artifact`，以保证门禁失败前没有 pull、worktree 或远端写入。
 

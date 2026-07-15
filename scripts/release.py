@@ -714,6 +714,40 @@ def validate_full_sha(value: str) -> str:
     return value
 
 
+def validate_release_channel(
+    manifest: Mapping[str, Any],
+    *,
+    environment: str,
+    purpose: str,
+    dashboard_fast_track: bool = False,
+) -> tuple[str, str]:
+    """Fail closed when a test-train bundle approaches a promotion seam."""
+
+    channel = str(manifest.get("release_channel", "main"))
+    source_ref = str(
+        manifest.get(
+            "source_ref",
+            "refs/heads/main" if channel == "main" else "",
+        )
+    )
+    expected = {
+        "main": "refs/heads/main",
+        "test-candidate": "refs/heads/codex/test-train",
+    }
+    if channel not in expected or source_ref != expected[channel]:
+        raise ReleaseError("release channel or source_ref is invalid")
+    if channel == "test-candidate":
+        if environment == "prod":
+            raise ReleaseError("test-candidate bundles are forbidden in production")
+        if purpose == "verify-test":
+            raise ReleaseError("test-candidate bundles cannot pass verify-test")
+        if dashboard_fast_track:
+            raise ReleaseError(
+                "test-candidate bundles cannot use Dashboard fast-track"
+            )
+    return channel, source_ref
+
+
 def validate_release_manifest(manifest: Mapping[str, Any], expected_sha: str) -> None:
     expected_sha = validate_full_sha(expected_sha)
     if manifest.get("schema_version") != 1:
@@ -946,28 +980,73 @@ def _run(
     return result
 
 
-def verify_git_release(sha: str) -> None:
+def release_remote_branch(source_ref: str) -> str:
+    prefix = "refs/heads/"
+    if not source_ref.startswith(prefix):
+        raise ReleaseError("release source_ref must identify a branch")
+    branch = source_ref.removeprefix(prefix)
+    if branch not in {"main", "codex/test-train"}:
+        raise ReleaseError("release source_ref is not trusted")
+    return branch
+
+
+def verify_git_release(
+    sha: str,
+    *,
+    release_channel: str = "main",
+    source_ref: str = "refs/heads/main",
+) -> None:
+    validate_release_channel(
+        {
+            "release_channel": release_channel,
+            "source_ref": source_ref,
+        },
+        environment="test",
+        purpose="deploy",
+    )
+    branch = release_remote_branch(source_ref)
+    remote_ref = f"origin/{branch}"
     _run(["git", "cat-file", "-e", f"{sha}^{{commit}}"])
     result = _run(
-        ["git", "merge-base", "--is-ancestor", sha, "origin/main"],
+        ["git", "merge-base", "--is-ancestor", sha, remote_ref],
         check=False,
     )
     if result.returncode != 0:
-        raise ReleaseError("release SHA is not reachable from origin/main")
+        raise ReleaseError(f"release SHA is not reachable from {remote_ref}")
     remote_refs = _run(["git", "branch", "-r", "--contains", sha]).stdout
-    if not any(line.strip().startswith("origin/") for line in remote_refs.splitlines()):
+    if remote_ref not in {line.strip() for line in remote_refs.splitlines()}:
         raise ReleaseError("release SHA has not been pushed to origin")
 
 
-def verify_operator_worktree_clean() -> None:
+def verify_operator_worktree_clean(
+    *,
+    source_ref: str = "refs/heads/main",
+    environment: str = "test",
+    command: str = "deploy",
+) -> None:
     if _run(["git", "status", "--porcelain"]).stdout.strip():
         raise ReleaseError("execute mode refuses an uncommitted operator worktree")
     head = _run(["git", "rev-parse", "HEAD"]).stdout.strip()
-    if _run(
-        ["git", "merge-base", "--is-ancestor", head, "origin/main"], check=False
-    ).returncode:
+    remote_refs = [f"origin/{release_remote_branch(source_ref)}"]
+    # The integration checkout remains on test-train. A failed first candidate
+    # may need to restore a main-channel bundle before any accepted candidate
+    # exists, so narrowly allow that test-only rollback from the train checkout.
+    if (
+        environment == "test"
+        and command == "rollback"
+        and source_ref == "refs/heads/main"
+    ):
+        remote_refs.append("origin/codex/test-train")
+    if all(
+        _run(
+            ["git", "merge-base", "--is-ancestor", head, remote_ref],
+            check=False,
+        ).returncode
+        for remote_ref in remote_refs
+    ):
         raise ReleaseError(
-            "operator checkout must be a clean origin/main release checkout"
+            "operator checkout must be clean and reachable from "
+            + " or ".join(remote_refs)
         )
 
 
@@ -987,7 +1066,7 @@ def verify_release_ci(manifest: Mapping[str, Any], sha: str) -> None:
             "--repo",
             "giraffu/All_bot",
             "--json",
-            "conclusion,headSha,status",
+            "conclusion,headBranch,headSha,status",
         ],
         check=False,
     )
@@ -1003,6 +1082,10 @@ def verify_release_ci(manifest: Mapping[str, Any], sha: str) -> None:
         or status.get("headSha") != sha
     ):
         raise ReleaseError("release CI is incomplete, unsuccessful, or for another SHA")
+    if manifest.get("release_channel") == "test-candidate" and status.get(
+        "headBranch"
+    ) != "codex/test-train":
+        raise ReleaseError("test-candidate release CI used an untrusted source branch")
 
 
 def git_changed_paths(from_sha: str | None, target_sha: str) -> list[str]:
@@ -1570,11 +1653,21 @@ def _resolve_manifest_path(
 
 
 def _load_v2_track(
-    path: Path, *, sha: str, track: str, modules: Iterable[str]
+    path: Path,
+    *,
+    sha: str,
+    track: str,
+    modules: Iterable[str],
+    select_all_when_empty: bool = True,
 ) -> dict[str, Any]:
     try:
         release = load_release_index(path, expected_sha=sha)
-        selected = select_artifacts(release, track, modules)
+        requested = list(modules)
+        selected = (
+            select_artifacts(release, track, requested)
+            if requested or select_all_when_empty
+            else {}
+        )
     except ManifestV2Error as exc:
         raise ReleaseError(str(exc)) from exc
     return {
@@ -1582,6 +1675,8 @@ def _load_v2_track(
         "source_sha": sha,
         "git_sha": sha,
         "ci_run": release.index["ci_run"],
+        "release_channel": release.index["release_channel"],
+        "source_ref": release.index["source_ref"],
         "track": track,
         "artifacts": release.manifests[track]["artifacts"],
         "selected_artifacts": list(selected),
@@ -1629,8 +1724,6 @@ def _resolve_previous_sha(
 
 def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any], str]:
     sha = validate_full_sha(args.sha)
-    if not args.skip_git_checks:
-        verify_git_release(sha)
     manifest_path = _resolve_manifest_path(args, allow_fetch=args.command == "plan")
     manifest_document = _read_json(manifest_path)
     if manifest_document.get("schema_version") == 2:
@@ -1684,7 +1777,22 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
             sha=sha,
             track=args.track,
             modules=requested_modules,
+            select_all_when_empty=not bool(previous_sha),
         )
+        validate_release_channel(
+            manifest,
+            environment=args.env,
+            purpose=args.command,
+            dashboard_fast_track=bool(
+                getattr(args, "dashboard_fast_track", False)
+            ),
+        )
+        if not args.skip_git_checks:
+            verify_git_release(
+                sha,
+                release_channel=manifest["release_channel"],
+                source_ref=manifest["source_ref"],
+            )
         if "gpu-runtime-release-required" in planned_impact.blockers:
             artifact_catalog = load_catalog(ROOT / "deploy/release-artifacts-v2.json")
             artifact_plan = plan_artifact_builds(
@@ -1728,6 +1836,8 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
         raise ReleaseError("release schema v1 supports only the control-plane track")
     manifest = manifest_document
     validate_release_manifest(manifest, sha)
+    if not args.skip_git_checks:
+        verify_git_release(sha)
     if args.command == "plan" and not args.skip_ci_checks:
         verify_release_ci(manifest, sha)
     policy = load_structured_file(Path(args.policy))
@@ -1827,6 +1937,8 @@ def _plan_document(
             else "test-release"
         ),
         "mode": "execute" if args.execute else "dry-run",
+        "release_channel": manifest.get("release_channel", "main"),
+        "source_ref": manifest.get("source_ref", "refs/heads/main"),
     }
     if manifest.get("schema_version") == 2:
         document["artifacts"] = {
@@ -2081,10 +2193,14 @@ fi
             )
         else:
             maintenance_suffix = f"{maintenance_clear}trap - EXIT\n"
+    release_branch = release_remote_branch(
+        str(manifest.get("source_ref", "refs/heads/main"))
+    )
+    remote_release_ref = f"origin/{release_branch}"
     script = f"""set -euo pipefail
 test -d {shlex.quote(repo)}/.git || {{ echo 'release host is not bootstrapped; run scripts/bootstrap_release_host.sh' >&2; exit 3; }}
-git -C {shlex.quote(repo)} fetch --prune origin main
-git -C {shlex.quote(repo)} merge-base --is-ancestor {sha} origin/main
+git -C {shlex.quote(repo)} fetch --prune origin {shlex.quote(release_branch)}
+git -C {shlex.quote(repo)} merge-base --is-ancestor {sha} {shlex.quote(remote_release_ref)}
 mkdir -p {shlex.quote(checkout_root)}/releases /var/lib/allbot/releases
 if [ ! -d {shlex.quote(checkout)} ]; then
   git -C {shlex.quote(repo)} worktree add --detach {shlex.quote(checkout)} {sha}
@@ -2559,8 +2675,16 @@ def _deploy_worker(
         raise ReleaseError(
             "worker release checkout is not bootstrapped; run scripts/bootstrap_release_host.sh"
         )
-    _run(["git", "-C", str(repo), "fetch", "--prune", "origin", "main"])
-    _run(["git", "-C", str(repo), "merge-base", "--is-ancestor", sha, "origin/main"])
+    release_branch = release_remote_branch(
+        str(manifest.get("source_ref", "refs/heads/main"))
+    )
+    remote_release_ref = f"origin/{release_branch}"
+    _run(
+        ["git", "-C", str(repo), "fetch", "--prune", "origin", release_branch]
+    )
+    _run(
+        ["git", "-C", str(repo), "merge-base", "--is-ancestor", sha, remote_release_ref]
+    )
     checkout.parent.mkdir(parents=True, exist_ok=True)
     if not checkout.exists():
         _run(
@@ -3180,6 +3304,10 @@ def _promotion_check(args: argparse.Namespace, manifest: Mapping[str, Any]) -> N
     if state.get("git_sha") != manifest.get("git_sha"):
         raise ReleaseError("production SHA does not match the tested SHA")
     if manifest.get("schema_version") == 2:
+        if state.get("release_channel", "main") != "main":
+            raise ReleaseError(
+                "production promotion requires a verified main-channel test state"
+            )
         try:
             validate_v2_promotion(
                 str(manifest["track"]),
@@ -3357,6 +3485,9 @@ def _mark_test_verified(args: argparse.Namespace) -> None:
             track=args.track,
             modules=_split_services(args.modules),
         )
+        validate_release_channel(
+            manifest, environment="test", purpose="verify-test"
+        )
     else:
         if getattr(args, "track", "control-plane") != "control-plane" or _split_services(
             getattr(args, "modules", [])
@@ -3496,6 +3627,8 @@ def _write_state(
         "schema_version": 2,
         "environment": args.env,
         "track": manifest.get("track", "control-plane"),
+        "release_channel": manifest.get("release_channel", "main"),
+        "source_ref": manifest.get("source_ref", "refs/heads/main"),
         "git_sha": manifest["git_sha"],
         "config_revision": config_revision,
         "services": sorted(impact.services),
@@ -3754,9 +3887,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise ReleaseError("execute mode cannot skip release CI verification")
         if args.skip_env_checks and args.command != "plan":
             raise ReleaseError("--skip-env-checks is only available for plan")
-        if args.execute:
-            verify_operator_worktree_clean()
         impact, manifest, previous_sha = build_plan(args)
+        if args.execute:
+            verify_operator_worktree_clean(
+                source_ref=str(manifest.get("source_ref", "refs/heads/main")),
+                environment=args.env,
+                command=args.command,
+            )
         args.previous_sha = previous_sha
         if args.command == "rollback" and not args.dashboard_fast_track:
             impact.level = "maintenance"
@@ -3813,6 +3950,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             previous_kind="immutable" if previous_sha else "legacy",
             previous_pages_deployment_id=previous_pages_id,
         )
+        transaction["release_channel"] = manifest.get("release_channel", "main")
+        transaction["source_ref"] = manifest.get("source_ref", "refs/heads/main")
         if isinstance(getattr(args, "previous_state", None), Mapping):
             transaction["previous"]["state"] = dict(args.previous_state)
         transaction["services"] = sorted(impact.services)

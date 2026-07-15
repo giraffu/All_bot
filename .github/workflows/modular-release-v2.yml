@@ -3,13 +3,19 @@ name: Modular immutable release v2
 on:
   workflow_run:
     workflows: ["Immutable control-plane release"]
-    branches: [main]
+    branches: [main, codex/test-train]
     types: [completed]
   workflow_dispatch:
     inputs:
       source_sha:
-        description: Full main-branch SHA to package.
+        description: Full trusted branch SHA to package.
         required: true
+      release_channel:
+        description: Immutable release channel.
+        required: true
+        type: choice
+        options: [main, test-candidate]
+        default: main
       gpu_manifest_path:
         description: Canary-verified GPU manifest path when GPU inputs changed.
         required: false
@@ -39,25 +45,58 @@ jobs:
         shell: bash
         env:
           EVENT_SHA: ${{ github.event.workflow_run.head_sha }}
+          EVENT_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
           INPUT_SHA: ${{ inputs.source_sha }}
+          INPUT_CHANNEL: ${{ inputs.release_channel }}
         run: |
           set -euo pipefail
           sha="${EVENT_SHA:-${INPUT_SHA:-}}"
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          branch="${EVENT_BRANCH:-}"
+          channel="${INPUT_CHANNEL:-}"
+          if [ -n "$branch" ]; then
+            case "$branch" in
+              main) channel=main ;;
+              codex/test-train) channel=test-candidate ;;
+              *) echo "untrusted workflow_run branch: $branch" >&2; exit 2 ;;
+            esac
+          else
+            case "$channel" in
+              main) branch=main ;;
+              test-candidate) branch=codex/test-train ;;
+              *) echo "invalid release channel" >&2; exit 2 ;;
+            esac
+          fi
+          if [ "$channel" = main ]; then
+            bundle_repository="${IMAGE_PREFIX}/allbot-release-v2"
+          else
+            bundle_repository="${IMAGE_PREFIX}/allbot-release-v2-test-candidate"
+          fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "source_ref=refs/heads/$branch" >> "$GITHUB_OUTPUT"
+          echo "bundle_repository=$bundle_repository" >> "$GITHUB_OUTPUT"
+          if [ -n "${EVENT_RUN_ID:-}" ]; then
+            echo "ci_run=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${EVENT_RUN_ID}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ci_run=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: actions/checkout@v4
         with:
           ref: ${{ steps.source.outputs.sha }}
           fetch-depth: 0
-      - name: Verify protected-main ancestry
+      - name: Verify trusted branch ancestry
         shell: bash
         env:
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          SOURCE_BRANCH: ${{ steps.source.outputs.branch }}
         run: |
           set -euo pipefail
-          git fetch --prune origin main
-          git merge-base --is-ancestor "$SOURCE_SHA" origin/main
+          git fetch --prune origin "$SOURCE_BRANCH"
+          git merge-base --is-ancestor "$SOURCE_SHA" "origin/$SOURCE_BRANCH"
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -78,21 +117,39 @@ jobs:
         shell: bash
         env:
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          RELEASE_CHANNEL: ${{ steps.source.outputs.channel }}
+          BUNDLE_REPOSITORY: ${{ steps.source.outputs.bundle_repository }}
         run: |
           set -euo pipefail
           comparison_sha="$(git rev-parse "${SOURCE_SHA}^")"
           previous_sha=""
-          if oras repo tags "${IMAGE_PREFIX}/allbot-release-v2" > available-release-v2-tags.txt; then
+          previous_repository=""
+          repositories=("$BUNDLE_REPOSITORY")
+          if [ "$RELEASE_CHANNEL" = test-candidate ]; then
+            repositories+=("${IMAGE_PREFIX}/allbot-release-v2")
+          fi
+          for repository in "${repositories[@]}"; do
+            tags_file="available-$(echo "$repository" | tr '/:' '--').txt"
+            oras repo tags "$repository" > "$tags_file" || continue
+            if [ "$RELEASE_CHANNEL" = test-candidate ] && \
+               [ "$repository" = "${IMAGE_PREFIX}/allbot-release-v2" ] && \
+               grep -Fxq "$SOURCE_SHA" "$tags_file"; then
+              previous_sha="$SOURCE_SHA"
+              previous_repository="$repository"
+              break
+            fi
             while IFS= read -r candidate; do
-              if grep -Fxq "$candidate" available-release-v2-tags.txt; then
+              if grep -Fxq "$candidate" "$tags_file"; then
                 previous_sha="$candidate"
+                previous_repository="$repository"
                 break
               fi
             done < <(git rev-list --first-parent "${SOURCE_SHA}^")
-          fi
+            [ -z "$previous_sha" ] || break
+          done
           if [ -n "$previous_sha" ]; then
             mkdir -p previous-release
-            oras pull "${IMAGE_PREFIX}/allbot-release-v2:${previous_sha}" -o previous-release
+            oras pull "${previous_repository}:${previous_sha}" -o previous-release
             test -f previous-release/release-index.json
             comparison_sha="$previous_sha"
             echo "index=previous-release/release-index.json" >> "$GITHUB_OUTPUT"
@@ -110,12 +167,17 @@ jobs:
           PREVIOUS_INDEX: ${{ steps.previous.outputs.index }}
           PREVIOUS_BUNDLE: ${{ steps.previous.outputs.bundle }}
           GPU_MANIFEST: ${{ inputs.gpu_manifest_path }}
+          RELEASE_CHANNEL: ${{ steps.source.outputs.channel }}
+          SOURCE_REF: ${{ steps.source.outputs.source_ref }}
+          TRUSTED_CI_RUN: ${{ steps.source.outputs.ci_run }}
         run: |
           set -euo pipefail
           args=(
             --sha "$SOURCE_SHA"
-            --ci-run "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            --ci-run "$TRUSTED_CI_RUN"
             --image-prefix "$IMAGE_PREFIX"
+            --release-channel "$RELEASE_CHANNEL"
+            --source-ref "$SOURCE_REF"
             --changed-file changed-paths.txt
             --output-dir release-v2
           )
@@ -147,13 +209,14 @@ jobs:
         shell: bash
         env:
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          BUNDLE_REPOSITORY: ${{ steps.source.outputs.bundle_repository }}
         run: |
           set -euo pipefail
-          if oras manifest fetch "${IMAGE_PREFIX}/allbot-release-v2:${SOURCE_SHA}" >/dev/null 2>&1; then
+          if oras manifest fetch "${BUNDLE_REPOSITORY}:${SOURCE_SHA}" >/dev/null 2>&1; then
             echo "immutable bundle tag already exists" >&2
             exit 1
           fi
-          oras push "${IMAGE_PREFIX}/allbot-release-v2:${SOURCE_SHA}" \
+          oras push "${BUNDLE_REPOSITORY}:${SOURCE_SHA}" \
             --artifact-type application/vnd.allbot.release-index.v2 \
             release-v2/release-index.json:application/vnd.allbot.release-index.v2+json \
             release-v2/control-plane-manifest.json:application/vnd.allbot.release-manifest.v2+json \

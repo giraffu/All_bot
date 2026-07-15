@@ -105,6 +105,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sha", required=True)
     parser.add_argument("--ci-run", required=True)
+    parser.add_argument(
+        "--release-channel", choices=("main", "test-candidate"), default="main"
+    )
+    parser.add_argument("--source-ref", default="refs/heads/main")
     parser.add_argument("--image-prefix", required=True)
     parser.add_argument("--changed-file", type=Path, required=True)
     parser.add_argument("--previous-index", type=Path)
@@ -209,6 +213,8 @@ def main() -> int:
         output_dir=output,
         source_sha=args.sha,
         ci_run=args.ci_run,
+        release_channel=args.release_channel,
+        source_ref=args.source_ref,
         previous_index=args.previous_index,
         unavailable_artifacts=unavailable_gpu,
     )

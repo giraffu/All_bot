@@ -1,0 +1,4 @@
+interface:
+  display_name: "AllBot Concurrent Workspaces"
+  short_description: "Safely coordinate four AI worktrees and test-train releases"
+  default_prompt: "Use $allbot-concurrent-workspaces to prepare an isolated task slot and hand it off through the shared test train."

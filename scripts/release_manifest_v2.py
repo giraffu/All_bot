@@ -15,6 +15,10 @@ from typing import Any, Iterable, Mapping
 
 
 TRACKS = ("control-plane", "test-execution", "gpu-execution")
+RELEASE_CHANNEL_REFS = {
+    "main": "refs/heads/main",
+    "test-candidate": "refs/heads/codex/test-train",
+}
 FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 DIGEST_REF_RE = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
@@ -194,6 +198,17 @@ def load_release_index(path: Path, *, expected_sha: str) -> LoadedRelease:
         raise ManifestV2Error("release index source_sha mismatch")
     if not str(index.get("ci_run", "")).startswith("https://github.com/"):
         raise ManifestV2Error("release index ci_run is invalid")
+    release_channel = str(index.get("release_channel", "main"))
+    source_ref = str(
+        index.get("source_ref", RELEASE_CHANNEL_REFS.get(release_channel, ""))
+    )
+    if release_channel not in RELEASE_CHANNEL_REFS:
+        raise ManifestV2Error("release index release_channel is invalid")
+    if source_ref != RELEASE_CHANNEL_REFS[release_channel]:
+        raise ManifestV2Error("release index source_ref does not match release_channel")
+    index = dict(index)
+    index["release_channel"] = release_channel
+    index["source_ref"] = source_ref
     references = index.get("manifests")
     if not isinstance(references, Mapping) or set(references) != set(TRACKS):
         raise ManifestV2Error("release index must reference exactly the three release tracks")

@@ -3,7 +3,7 @@ name: Immutable control-plane release
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, codex/test-train]
   workflow_dispatch:
 
 permissions:
