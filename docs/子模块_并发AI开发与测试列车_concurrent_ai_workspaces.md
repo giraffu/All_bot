@@ -14,7 +14,15 @@ AllBot 使用四个固定 Git worktree 并行开发，只保留一套共享云�
 | `/home/hfy/APP/All_bot-workspaces/C` | 并行功能槽位 C |
 | `/home/hfy/APP/All_bot-workspaces/D` | 并行功能槽位 D |
 
-Git worktree 只隔离工作目录和 index；它们仍共享对象库与 refs。Python `.venv`、前端 `node_modules`、临时目录必须留在各自槽位，env、发布凭据、runtime 和数据库副本不得复制进去。
+Git worktree 只隔离工作目录和 index；它们仍共享对象库与 refs。Python `.venv`、前端 `node_modules`、临时目录和其它可写缓存应留在各自槽位，避免并发写入污染。
+
+### 1.1 能力边界不是安全沙箱
+
+A-D 使用同一受信任 OS 用户，目标是隔离代码/index/依赖写入，不是限制 AI 了解真实系统。功能 AI 可以读取 worktree 或主机已有的真实 env、配置、SSH/API 凭据、日志、数据库连接信息和远端运行态，并可使用这些凭据完成只读诊断、本地测试和部署计划。已有配置或凭据出现在槽位中不构成分配失败，也不要求自动删除。
+
+高访问能力与操作授权必须分开：秘密原文不得进入对话、测试输出、日志、diff、commit 或 PR；功能任务未明确要求时不得改写、轮换或另存凭据。凭据可见也不授权功能 AI 部署共享 test、修改 prod、Cloudflare、RunPod/GPU、执行数据库 migration 或改变发布状态，这些 mutation 仍由集成 AI 和对应运维 Skill 控制。
+
+依赖目录属于并发污染面，不属于凭据访问面。新任务应优先使用槽位自己的 `.venv`、`node_modules` 与缓存；若只读审计发现运行中的任务沿用历史共享目录或符号链接，记录风险即可，不得为了修复隔离而中断任务或自动删除依赖。待任务交付、PR 稳定或槽位维护时再收口。
 
 ## 2. 槽位生命周期
 
