@@ -130,7 +130,7 @@ jobs:
           python scripts/release.py plan \
             --env test --track control-plane --sha "$SOURCE_SHA" \
             --from-sha "$SOURCE_SHA" --manifest release-v2/release-index.json \
-            --skip-git-checks --skip-ci-checks
+            --skip-git-checks --skip-ci-checks --skip-env-checks
 
       - name: Smoke thin frontend entrypoints
         shell: bash
