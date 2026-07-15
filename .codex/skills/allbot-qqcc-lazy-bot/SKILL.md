@@ -123,6 +123,8 @@ QQCC Bot 必须设置 `application.bot_data["bot_client_type"] = "bot:qqcc"`，B
 
 私有 Bot 使用 `qqcc-private-bots` profile 的独立 worker，不使用 long polling。worker 内存必须保持全局 inflight、单 Bot prefetch、deferred ID 三层有界（默认 `64/8/1024`）；启动先完整追平旧 PEL，catch-up 完成前不读新 `>` update。Webhook counters 与 worker heartbeat 通过管理员 metrics API 暴露，不得加入 token/update JSON/高基数敏感标签。
 
+`private-bot-worker` 薄镜像必须同时包含 `qqcc_private_bot/` 与 `qqcc_bot/`：worker 复用 `qqcc_bot.main.build_application` 创建租户 Application。`deploy/release-artifacts-v2.json` 的同名 artifact inputs 也必须覆盖两者，避免官方 Application factory 变化后漏建镜像。
+
 `PRIVATE_QQCC_BOT_ENABLED` 是总 gate。safe deploy 使用 validator `--allow-disabled`，gate 缺失/`false` 时 activation secrets 非必填；gate=`true` 时 validator 必须严格校验全部 activation secrets 和环境对应官方 QQCC token，worker 在 gate 非真时拒绝启动。2026-07-12 云正式已完成 migration、启用 gate、启动 private worker，并上线生产 webhook 与 owner public Host；后续关闭、迁移、密钥轮换或 Cloudflare mutation仍需明确生产确认。worker 镜像使用 Python 3.10，所有 `asyncio.wait_for(...)` 周期循环必须捕获 `asyncio.TimeoutError`，不能用裸 `TimeoutError`，否则 heartbeat/sweeper 会在首次 timeout 后退出。
 
 不得把真实 token 写入仓库、docs、日志、工单或聊天记录。QQCC Bot 不启动 TON 轮询，不注册支付回调，不作为充值入口。测试环境没有独立 token 时，`qqcc-bot-test` 必须保持停止。

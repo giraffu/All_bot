@@ -39,7 +39,8 @@ manifest 和独立 canary 证据。`img2img` 的同 SHA GHCR 构建入口为
 如果某个 GPU profile 的输入相对上一份可用 bundle 已变化、但没有同 SHA canary manifest，
 聚合器不得复用旧 digest，而是在 `gpu-execution-manifest.json` 中移除该 profile，并记录
 `completeness=incomplete` 与 `missing_artifacts`。这不会阻断 control-plane 和
-test-execution 产物发布，但后续选择、部署或晋级缺失 profile 必须 fail closed。CI 会沿
+test-execution 的产物发布、部署或晋级；各 track 只校验本次选择的 artifacts。后续选择、
+部署或晋级缺失 GPU profile 必须 fail closed。CI 会沿
 main first-parent 历史寻找最近成功的 v2 bundle 作为增量基线，失败或跳过发布的中间提交
 不会导致下一次无条件全量重建。
 
@@ -117,6 +118,14 @@ scripts/release.py preflight --env prod --sha <40-char-sha> --dashboard-fast-tra
 scripts/release.py deploy --env prod --sha <40-char-sha> \
   --dashboard-fast-track --execute --confirm-prod
 
+# 仅限已测控制面后的 private worker 镜像闭包修复
+scripts/release.py plan --env prod --track control-plane --sha <40-char-sha> \
+  --control-plane-repair-fast-track
+scripts/release.py preflight --env prod --track control-plane --sha <40-char-sha> \
+  --control-plane-repair-fast-track
+scripts/release.py deploy --env prod --track control-plane --sha <40-char-sha> \
+  --control-plane-repair-fast-track --execute --confirm-prod
+
 # 默认正式控制面晋级入口
 scripts/release.py plan --env prod --track control-plane --sha <40-char-sha> --modules central-api
 scripts/release.py deploy --env prod --track control-plane --sha <40-char-sha> --modules central-api --execute --confirm-prod
@@ -128,16 +137,18 @@ scripts/release.py deploy --env prod --track control-plane --sha <40-char-sha> -
 
 管理后台是单管理员使用的独立控制面，用户明确授权时可选 `--dashboard-fast-track` 跳过云测试部署和 verified 晋级。该选择不跳过 Git/CI/manifest/env/read-only preflight，也不允许 mutable tag、云端 build、rsync 或维护模式；路径分类器只允许 Dashboard runtime、BF16 Dashboard catalog 和配套 release/docs/tests 元数据，自动选择 Dashboard 后端/前端，拒绝 `--services`、migration、共享 Python runtime、其它 GPU ops、Compose 与未知路径。发布事务只 rolling recreate 选中的 Dashboard 服务，状态写入 `promotion_mode=dashboard-fast-track`，并逐一核对非目标容器启动时间不变。显式快速回滚也必须带同一选项，且目标差异仍须满足相同 allowlist。
 
+`--control-plane-repair-fast-track` 不是通用免测入口，只用于 verified main-channel 控制面之后修复生产启用、测试禁用的 `private-bot-worker` 镜像闭包。发布器以测试状态 SHA 为基线重新计算路径差异；只接受 `Dockerfile.control-plane`、v2 artifact catalog 与配套 release/docs/tests/skills 元数据。对其它 digest 变化模块，catalog inputs 必须无变化且对应 Docker target 文本逐字等价；private worker 必须包含 `qqcc_bot/` 与 `qqcc_private_bot/`，并对目标 digest 执行 `--network none` 导入烟测。业务代码、migration、Compose、GPU/ops、未知路径以及显式 `--modules` / `--services` / `--from-sha` 全部拒绝。通过后状态记录 tested/target SHA、等价 artifact 与实际 smoke artifact；main/CI/env/preflight/生产确认/回滚事务仍保持原门禁。
+
 release workflow 生成 manifest 后会运行一次不接触运行态秘密的自检 plan，并显式使用 `--skip-env-checks`。该参数只允许 `plan`，输出 `config_validation=skipped`，用于 CI 校验 SHA/manifest/影响规则；`deploy`/`rollback` 一律拒绝它。操作者的测试/生产 plan 默认仍读取并校验真实 env，不能用 CI 例外替代部署前配置门禁。
 
 本地主服务器的默认受限配置为 `~/.config/allbot/<env>.env`（`600`），release checkout 默认 `~/APP/All_bot-release`，Pages token 默认 `~/.config/allbot/cloudflare-pages.token`；云控制面仍使用 `/home/deploy/APP/All_bot-release` 与 `/etc/allbot/<env>.env`。云测试 Worker compose 的 `ALLBOT_ENV_FILE` 绑定本地主机测试配置实参，不能误用 env 文件内面向云主机的 `/etc/allbot/test.env` 路径。正式 GPU Worker 由各 GPU host 独立发布，不进入 `release.py --env prod`。
 
 ## 6. Web、Worker 与回滚
 
-- 测试与正式 Web 都先校验同一 tar SHA256，再从精确 SHA checkout 读取 `frontend/runtime-config.yml` 的公开环境段，生成 `allbot-runtime-config.js` 和独立 revision，最后调用同一 Wrangler Pages 发布器。测试目标为 `allbot-web-cf-test/test`，正式目标为 `allbot-web-prod/main`。
+- 测试与正式 Web 都先校验同一 tar SHA256，再从精确 SHA checkout 读取 `frontend/runtime-config.yml` 的公开环境段，生成 `allbot-runtime-config.js` 和独立 revision，最后调用同一 Wrangler Pages 发布器。测试目标为 `allbot-web-cf-test/test`，正式目标为 `allbot-web-prod/main`。release checkout 可以没有 `frontend/node_modules`；发布器交叉校验 `package.json`、lockfile 根依赖和 lockfile 已解析项中的精确 Wrangler 版本，并用 `npx --yes --package=wrangler@<exact>` 执行，版本漂移或 lockfile 不一致一律阻断。
 - Pages Token 默认读取 `~/.config/allbot/cloudflare-pages.token`，必须是 `600` 且具备目标项目 Pages Read/Write；DNS/Tunnel 权限不能替代 Pages 权限。仓库 CI 不保存 Cloudflare 管理凭据。
 - Pages preflight 要求目标项目 production branch 与发布 branch 一致、`production_deployments_enabled=false`、`preview_deployment_setting=none`，并存在 active canonical custom domain；不满足只阻断，不自动修 Cloudflare。Wrangler 返回后必须由 Pages API 找到 `environment=production`、branch/SHA 正确、stage success 的 deployment ID，确认 `canonical_deployment.id` 已切换，再从正式 custom domain 以 cache-busting 请求校验 JavaScript 内的 `release_sha` 与 `runtime_config_revision`。
-- 状态 schema v2 记录事务 ID、阶段健康、Pages deployment ID/environment/canonical 验证与 runtime config revision，同时继续兼容读取 v1 的 `git_sha`。`--skip-web` 只用于故障恢复并写 `health.web=skipped`，不能通过测试验收或生产晋级。
+- 状态 schema v2 记录事务 ID、阶段健康、Pages deployment ID/environment/canonical 验证与 runtime config revision，并在事务提交时原子移动到对应 track 的 `current/history`，同时继续兼容读取 v1 的 `git_sha`。`--skip-web` 只用于故障恢复并写 `health.web=skipped`，不能通过测试验收或生产晋级。
 - CI 继续生成同 SHA 的 Worker digest；源码、workflow、relay、`src` 全在镜像内。`release.py --env test` 部署并验收测试 Worker；生产 GPU Worker 由 GPU host 专用 operator 独立拉取/切换，`release.py --env prod` 拒绝显式 `--services worker`，不检查 heartbeat/relay，也不停止、重建或恢复 Worker。RunPod/LAN AIO 继续走各自 operator。
 - schema v2 中测试 Worker Agent/Relay 使用不同 digest，并作为同一 test-execution 选择集部署；正式控制面 Compose 不要求二者。RunPod/LAN profile 镜像内置 `/opt/allbot/runtime/remote_workers`、baked entrypoint 和 agent/workflow revision labels，不再 clone `deploy` 分支；模型仍由带 key/size/SHA256 的 manifest 固定。
 - 云测试维护发布按“云控制面 → 测试 Worker → Pages → 暂存状态 → 原子提交 current/history 并解除维护”执行。正式发布按“云控制面 → Pages → 状态提交”执行；首次正式切换仍同时写 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`，但不操作任何 GPU Worker 容器。

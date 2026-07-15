@@ -1,4 +1,4 @@
 interface:
   display_name: "AllBot 自动并发工作区"
-  short_description: "从主目录自动抢占 A-D 空闲槽位并完成安全的并发开发交接"
+  short_description: "自动抢占 A-D 槽位并分离高访问能力与外部操作授权"
   default_prompt: "Use $allbot-concurrent-workspaces to automatically claim a safe AllBot task slot and implement my request there."

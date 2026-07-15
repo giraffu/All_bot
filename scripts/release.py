@@ -166,6 +166,19 @@ DASHBOARD_FAST_TRACK_METADATA_PATTERNS = (
     "README.md",
 )
 
+CONTROL_PLANE_REPAIR_FAST_TRACK_RUNTIME_PATHS = {
+    "deploy/docker/Dockerfile.control-plane",
+    "deploy/release-artifacts-v2.json",
+}
+CONTROL_PLANE_REPAIR_FAST_TRACK_METADATA_PATTERNS = (
+    "scripts/release.py",
+    "tests/**",
+    "docs/**",
+    ".codex/**",
+    "AGENTS.md",
+    "README.md",
+)
+
 WEB_PAGES_TARGETS = {
     "test": {
         "project": "allbot-web-cf-test",
@@ -697,6 +710,200 @@ def plan_dashboard_fast_track(paths: Iterable[str]) -> ReleaseImpact:
         level="rolling",
         matched_rules=["dashboard-fast-track"],
     )
+
+
+def plan_control_plane_repair_fast_track(paths: Iterable[str]) -> ReleaseImpact:
+    """Allow only the private-worker image closure repair and release metadata."""
+
+    runtime_paths: set[str] = set()
+    rejected: list[str] = []
+    for raw_path in dict.fromkeys(str(path) for path in paths):
+        path = raw_path.removeprefix("./")
+        if path in CONTROL_PLANE_REPAIR_FAST_TRACK_RUNTIME_PATHS:
+            runtime_paths.add(path)
+        elif not _matches(path, CONTROL_PLANE_REPAIR_FAST_TRACK_METADATA_PATTERNS):
+            rejected.append(path)
+    if rejected:
+        raise ReleaseError(
+            "control-plane repair fast-track rejects paths outside the image "
+            "closure repair: " + ", ".join(sorted(rejected))
+        )
+    if runtime_paths != CONTROL_PLANE_REPAIR_FAST_TRACK_RUNTIME_PATHS:
+        raise ReleaseError(
+            "control-plane repair fast-track requires both private image closure changes"
+        )
+    return ReleaseImpact(
+        level="maintenance",
+        matched_rules=["control-plane-repair-fast-track"],
+    )
+
+
+def _dockerfile_target_section(dockerfile: str, target: str) -> str:
+    marker = re.compile(
+        rf"^FROM\s+.+\s+AS\s+{re.escape(target)}\s*$", re.MULTILINE
+    ).search(dockerfile)
+    if marker is None:
+        raise ReleaseError(f"Dockerfile target is unavailable: {target}")
+    next_stage = re.compile(r"^FROM\s+", re.MULTILINE).search(
+        dockerfile, marker.end()
+    )
+    end = next_stage.start() if next_stage else len(dockerfile)
+    return dockerfile[marker.start() : end].strip()
+
+
+def _dockerfile_global_preamble(dockerfile: str) -> str:
+    first_stage = re.compile(r"^FROM\s+", re.MULTILINE).search(dockerfile)
+    if first_stage is None:
+        raise ReleaseError("control-plane Dockerfile has no build stage")
+    return dockerfile[: first_stage.start()].strip()
+
+
+def validate_control_plane_repair_equivalence(
+    *,
+    test_state: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+    tested_artifact_catalog: Mapping[str, Mapping[str, Any]],
+    target_artifact_catalog: Mapping[str, Mapping[str, Any]],
+    changed_paths: Sequence[str],
+    tested_dockerfile: str,
+    target_dockerfile: str,
+    smoke_private_image: Callable[[str], None],
+) -> dict[str, Any]:
+    """Prove that only the private worker runtime closure changed after test."""
+
+    plan_control_plane_repair_fast_track(changed_paths)
+    if (
+        test_state.get("status") != "verified"
+        or test_state.get("release_channel", "main") != "main"
+        or test_state.get("track") != "control-plane"
+    ):
+        raise ReleaseError(
+            "control-plane repair fast-track requires a verified main-channel test state"
+        )
+    tested_sha = validate_full_sha(str(test_state.get("git_sha", "")))
+    target_sha = validate_full_sha(str(manifest.get("git_sha", "")))
+    if tested_sha == target_sha:
+        raise ReleaseError(
+            "control-plane repair fast-track is unnecessary for the tested SHA"
+        )
+    if _dockerfile_global_preamble(tested_dockerfile) != _dockerfile_global_preamble(
+        target_dockerfile
+    ):
+        raise ReleaseError(
+            "control-plane Dockerfile global preamble changed after test"
+        )
+    selected = list(manifest.get("selected_artifacts", []))
+    tested_artifacts = test_state.get("artifacts")
+    if not isinstance(tested_artifacts, Mapping) or set(selected) != set(
+        tested_artifacts
+    ):
+        raise ReleaseError(
+            "control-plane repair fast-track requires the complete verified artifact set"
+        )
+
+    equivalent: list[str] = []
+    smoked: list[str] = []
+    for name in selected:
+        tested = tested_artifacts.get(name)
+        target = manifest.get("artifacts", {}).get(name)
+        if (
+            not isinstance(tested, Mapping)
+            or tested.get("status") != "verified"
+            or not isinstance(target, Mapping)
+        ):
+            raise ReleaseError(f"verified artifact metadata is invalid: {name}")
+        target_digest = target.get("digest") or target.get("sha256")
+        if tested.get("digest") == target_digest:
+            equivalent.append(name)
+            continue
+        if name == "private-bot-worker":
+            tested_spec = tested_artifact_catalog.get(name)
+            target_spec = target_artifact_catalog.get(name)
+            if not isinstance(tested_spec, Mapping) or not isinstance(
+                target_spec, Mapping
+            ):
+                raise ReleaseError(
+                    "private-bot-worker release catalog entry is unavailable"
+                )
+            tested_without_inputs = {
+                key: value for key, value in tested_spec.items() if key != "inputs"
+            }
+            target_without_inputs = {
+                key: value for key, value in target_spec.items() if key != "inputs"
+            }
+            tested_inputs = set(tested_spec.get("inputs", []))
+            target_inputs = set(target_spec.get("inputs", []))
+            if (
+                tested_without_inputs != target_without_inputs
+                or target_inputs != tested_inputs | {"qqcc_bot/**"}
+            ):
+                raise ReleaseError(
+                    "private-bot-worker catalog change exceeds the qqcc_bot input closure"
+                )
+            tested_private_section = _dockerfile_target_section(
+                tested_dockerfile, "private-bot-worker"
+            )
+            private_section = _dockerfile_target_section(
+                target_dockerfile, "private-bot-worker"
+            )
+            runtime_copy = "COPY qqcc_bot /app/qqcc_bot"
+            if private_section.count(runtime_copy) != 1:
+                raise ReleaseError(
+                    "private-bot-worker is missing the qqcc_bot runtime copy"
+                )
+            normalized_private_section = private_section.replace(
+                runtime_copy + "\n", "", 1
+            )
+            if normalized_private_section != tested_private_section:
+                raise ReleaseError(
+                    "private-bot-worker Docker target change exceeds the qqcc_bot runtime copy"
+                )
+            ref = str(target.get("ref", ""))
+            if not DIGEST_IMAGE_RE.fullmatch(ref):
+                raise ReleaseError(
+                    "private-bot-worker fast-track image is not digest-pinned"
+                )
+            smoke_private_image(ref)
+            smoked.append(name)
+            continue
+
+        tested_spec = tested_artifact_catalog.get(name)
+        spec = target_artifact_catalog.get(name)
+        if (
+            tested_spec != spec
+            or not isinstance(spec, Mapping)
+            or spec.get("kind") != "image"
+            or spec.get("dockerfile")
+            != "deploy/docker/Dockerfile.control-plane"
+            or not str(spec.get("target", ""))
+        ):
+            raise ReleaseError(
+                f"changed artifact cannot use control-plane repair fast-track: {name}"
+            )
+        inputs = spec.get("inputs", [])
+        if any(_matches(path, inputs) for path in changed_paths):
+            raise ReleaseError(
+                f"{name} runtime inputs changed after the verified test release"
+            )
+        target_name = str(spec["target"])
+        if _dockerfile_target_section(
+            tested_dockerfile, target_name
+        ) != _dockerfile_target_section(target_dockerfile, target_name):
+            raise ReleaseError(
+                f"{name} target changed after the verified test release"
+            )
+        equivalent.append(name)
+
+    if smoked != ["private-bot-worker"]:
+        raise ReleaseError(
+            "control-plane repair fast-track requires a changed private-bot-worker"
+        )
+    return {
+        "tested_sha": tested_sha,
+        "target_sha": target_sha,
+        "equivalent_artifacts": sorted(equivalent),
+        "smoked_artifacts": smoked,
+    }
 
 
 def merge_requested_services(
@@ -1730,6 +1937,27 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
     if manifest_document.get("schema_version") == 2:
         requested_modules = _split_services(args.modules)
         requested_services = _split_services(args.services)
+        repair_fast_track = bool(
+            getattr(args, "control_plane_repair_fast_track", False)
+        )
+        if repair_fast_track:
+            if args.env != "prod" or args.track != "control-plane":
+                raise ReleaseError(
+                    "control-plane repair fast-track is only available for the production control-plane"
+                )
+            if args.command not in {"plan", "preflight", "deploy"}:
+                raise ReleaseError(
+                    "control-plane repair fast-track is only available for plan, preflight, or deploy"
+                )
+            if (
+                requested_modules
+                or requested_services
+                or args.from_sha
+                or getattr(args, "dashboard_fast_track", False)
+            ):
+                raise ReleaseError(
+                    "control-plane repair fast-track does not accept module, service, from-SHA, or other fast-track overrides"
+                )
         if requested_services and args.track != "control-plane":
             raise ReleaseError("--services is only an alias for control-plane modules")
         service_to_artifact = {
@@ -1795,21 +2023,26 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
                 source_ref=manifest["source_ref"],
             )
         if "gpu-runtime-release-required" in planned_impact.blockers:
-            artifact_catalog = load_catalog(ROOT / "deploy/release-artifacts-v2.json")
-            artifact_plan = plan_artifact_builds(
-                artifact_catalog, changed_paths, has_previous=True
-            )
-            required_gpu = {
-                name
-                for name in artifact_plan.build
-                if artifact_catalog[name]["track"] == "gpu-execution"
-            }
-            gpu_artifacts = release_bundle.manifests["gpu-execution"]["artifacts"]
-            if required_gpu and all(
-                gpu_artifacts.get(name, {}).get("source_sha") == sha
-                for name in required_gpu
-            ):
+            if args.track != "gpu-execution":
                 planned_impact.blockers.remove("gpu-runtime-release-required")
+            else:
+                artifact_catalog = load_catalog(
+                    ROOT / "deploy/release-artifacts-v2.json"
+                )
+                artifact_plan = plan_artifact_builds(
+                    artifact_catalog, changed_paths, has_previous=True
+                )
+                required_gpu = {
+                    name
+                    for name in artifact_plan.build
+                    if artifact_catalog[name]["track"] == "gpu-execution"
+                }
+                gpu_artifacts = release_bundle.manifests["gpu-execution"]["artifacts"]
+                if required_gpu and all(
+                    gpu_artifacts.get(name, {}).get("source_sha") == sha
+                    for name in required_gpu
+                ):
+                    planned_impact.blockers.remove("gpu-runtime-release-required")
         if not args.skip_ci_checks:
             verify_release_ci(manifest, sha)
         artifact_names = set(manifest["selected_artifacts"])
@@ -1828,11 +2061,25 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
         else:
             services = artifact_names
         planned_impact.services = services
+        if repair_fast_track:
+            test_state = _read_test_release_state(args, manifest)
+            tested_sha = validate_full_sha(str(test_state.get("git_sha", "")))
+            repair_impact = plan_control_plane_repair_fast_track(
+                git_changed_paths(tested_sha, sha)
+            )
+            planned_impact.level = repair_impact.level
+            planned_impact.blockers = repair_impact.blockers
+            planned_impact.unknown_paths = repair_impact.unknown_paths
+            planned_impact.matched_rules = repair_impact.matched_rules
         if f"track:{args.track}" not in planned_impact.matched_rules:
             planned_impact.matched_rules.append(f"track:{args.track}")
         scope_release_impact(args.env, planned_impact, requested=requested_services)
         return planned_impact, manifest, previous_sha or ""
 
+    if getattr(args, "control_plane_repair_fast_track", False):
+        raise ReleaseError(
+            "control-plane repair fast-track requires a schema v2 release bundle"
+        )
     if args.track != "control-plane" or _split_services(args.modules):
         raise ReleaseError("release schema v1 supports only the control-plane track")
     manifest = manifest_document
@@ -1931,7 +2178,9 @@ def _plan_document(
         "unknown_paths": impact.unknown_paths,
         "matched_rules": impact.matched_rules,
         "promotion_mode": (
-            "dashboard-fast-track"
+            "control-plane-repair-fast-track"
+            if getattr(args, "control_plane_repair_fast_track", False)
+            else "dashboard-fast-track"
             if getattr(args, "dashboard_fast_track", False)
             else "verified-test-promotion"
             if args.env == "prod"
@@ -2383,6 +2632,33 @@ def _pages_deployment_url(output: str) -> str:
     return matches[-1] if matches else ""
 
 
+def _pinned_wrangler_version() -> str:
+    package_path = ROOT / "frontend" / "package.json"
+    lock_path = ROOT / "frontend" / "package-lock.json"
+    try:
+        package = json.loads(package_path.read_text(encoding="utf-8"))
+        lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ReleaseError("pinned Wrangler package metadata is unavailable") from exc
+
+    package_version = (package.get("devDependencies") or {}).get("wrangler")
+    lock_packages = lock.get("packages") or {}
+    lock_root_version = (
+        (lock_packages.get("") or {}).get("devDependencies") or {}
+    ).get("wrangler")
+    resolved_version = (lock_packages.get("node_modules/wrangler") or {}).get(
+        "version"
+    )
+    if (
+        not isinstance(package_version, str)
+        or not re.fullmatch(r"\d+\.\d+\.\d+", package_version)
+        or package_version != lock_root_version
+        or package_version != resolved_version
+    ):
+        raise ReleaseError("Wrangler version must be exact and lockfile-matched")
+    return package_version
+
+
 def _pages_runtime_payload(script: str) -> Mapping[str, Any]:
     prefix = "window.__ALLBOT_CONFIG__ = Object.freeze("
     suffix = ");"
@@ -2569,7 +2845,8 @@ def _deploy_web(
         result = subprocess.run(
             [
                 "npx",
-                "--no-install",
+                "--yes",
+                f"--package=wrangler@{_pinned_wrangler_version()}",
                 "wrangler",
                 "pages",
                 "deploy",
@@ -2987,9 +3264,12 @@ def _clear_transaction_maintenance(
         f"/var/lib/allbot/deployments/{args.env}/transactions/"
         f"{transaction_id}.state.json"
     )
-    current = f"/var/lib/allbot/deployments/{args.env}/current.json"
+    track = transaction.get("track")
+    track_segment = f"/{track}" if track in RELEASE_TRACKS else ""
+    state_root = f"/var/lib/allbot/deployments/{args.env}{track_segment}"
+    current = f"{state_root}/current.json"
     history = (
-        f"/var/lib/allbot/deployments/{args.env}/history/{transaction_id}.json"
+        f"{state_root}/history/{transaction_id}.json"
     )
     forward_commit = transaction.get("phase") == "state_completed"
     state_action = f"rm -f {shlex.quote(staged)}\n"
@@ -3279,9 +3559,9 @@ def _recovery_dependencies(
     )
 
 
-def _promotion_check(args: argparse.Namespace, manifest: Mapping[str, Any]) -> None:
-    if args.env != "prod":
-        return
+def _read_test_release_state(
+    args: argparse.Namespace, manifest: Mapping[str, Any]
+) -> dict[str, Any]:
     host = args.test_state_host
     state_root = (
         f"/var/lib/allbot/deployments/test/{manifest['track']}"
@@ -3303,6 +3583,73 @@ def _promotion_check(args: argparse.Namespace, manifest: Mapping[str, Any]) -> N
         state = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
         raise ReleaseError("cloud-test release state is invalid") from exc
+    if not isinstance(state, dict):
+        raise ReleaseError("cloud-test release state is invalid")
+    return state
+
+
+def _git_file_at_sha(sha: str, path: str) -> str:
+    sha = validate_full_sha(sha)
+    return _run(["git", "show", f"{sha}:{path}"]).stdout
+
+
+def _artifact_catalog_at_sha(sha: str) -> Mapping[str, Mapping[str, Any]]:
+    try:
+        document = json.loads(
+            _git_file_at_sha(sha, "deploy/release-artifacts-v2.json")
+        )
+    except json.JSONDecodeError as exc:
+        raise ReleaseError("release artifact catalog is invalid") from exc
+    artifacts = document.get("artifacts") if isinstance(document, Mapping) else None
+    if not isinstance(artifacts, Mapping):
+        raise ReleaseError("release artifact catalog is invalid")
+    return artifacts
+
+
+def _smoke_private_worker_image(ref: str) -> None:
+    result = _run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--entrypoint",
+            "python",
+            ref,
+            "-c",
+            (
+                "import qqcc_bot.main; import qqcc_private_bot.worker; "
+                "print('private-worker-import-smoke=passed')"
+            ),
+        ],
+        check=False,
+    )
+    if result.returncode != 0 or "private-worker-import-smoke=passed" not in result.stdout:
+        raise ReleaseError("private-bot-worker digest import smoke failed")
+
+
+def _promotion_check(args: argparse.Namespace, manifest: Mapping[str, Any]) -> None:
+    if args.env != "prod":
+        return
+    state = _read_test_release_state(args, manifest)
+    if getattr(args, "control_plane_repair_fast_track", False):
+        tested_sha = validate_full_sha(str(state.get("git_sha", "")))
+        target_sha = validate_full_sha(str(manifest.get("git_sha", "")))
+        changed_paths = git_changed_paths(tested_sha, target_sha)
+        dockerfile_path = "deploy/docker/Dockerfile.control-plane"
+        evidence = validate_control_plane_repair_equivalence(
+            test_state=state,
+            manifest=manifest,
+            tested_artifact_catalog=_artifact_catalog_at_sha(tested_sha),
+            target_artifact_catalog=_artifact_catalog_at_sha(target_sha),
+            changed_paths=changed_paths,
+            tested_dockerfile=_git_file_at_sha(tested_sha, dockerfile_path),
+            target_dockerfile=_git_file_at_sha(target_sha, dockerfile_path),
+            smoke_private_image=_smoke_private_worker_image,
+        )
+        args.control_plane_repair_acceptance = evidence
+        return
     if state.get("git_sha") != manifest.get("git_sha"):
         raise ReleaseError("production SHA does not match the tested SHA")
     if manifest.get("schema_version") == 2:
@@ -3641,7 +3988,9 @@ def _write_state(
         ),
         "deployed_at": datetime.now(timezone.utc).isoformat(),
         "promotion_mode": (
-            "dashboard-fast-track"
+            "control-plane-repair-fast-track"
+            if getattr(args, "control_plane_repair_fast_track", False)
+            else "dashboard-fast-track"
             if getattr(args, "dashboard_fast_track", False)
             else "verified-test-promotion"
             if args.env == "prod"
@@ -3661,6 +4010,13 @@ def _write_state(
             ),
         },
     }
+    if getattr(args, "control_plane_repair_fast_track", False):
+        acceptance = getattr(args, "control_plane_repair_acceptance", None)
+        if not isinstance(acceptance, Mapping):
+            raise ReleaseError(
+                "control-plane repair fast-track acceptance is unavailable"
+            )
+        state["repair_acceptance"] = dict(acceptance)
     if manifest.get("schema_version") == 2:
         state["artifacts"] = {
             name: {
@@ -3771,6 +4127,15 @@ def _add_release_arguments(parser: argparse.ArgumentParser) -> None:
         help=(
             "deploy only Dashboard services to production without cloud-test "
             "promotion; CI artifacts and production confirmation remain required"
+        ),
+    )
+    parser.add_argument(
+        "--control-plane-repair-fast-track",
+        action="store_true",
+        help=(
+            "reuse a verified control-plane test release only when unchanged "
+            "artifact inputs/targets are equivalent and the repaired private "
+            "worker digest passes an isolated import smoke"
         ),
     )
     parser.add_argument("--confirm-db-upgrade", action="store_true")
@@ -3954,6 +4319,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         transaction["release_channel"] = manifest.get("release_channel", "main")
         transaction["source_ref"] = manifest.get("source_ref", "refs/heads/main")
+        if manifest.get("schema_version") == 2:
+            transaction["track"] = manifest["track"]
         if isinstance(getattr(args, "previous_state", None), Mapping):
             transaction["previous"]["state"] = dict(args.previous_state)
         transaction["services"] = sorted(impact.services)
