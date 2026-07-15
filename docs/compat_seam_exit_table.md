@@ -74,6 +74,8 @@
 | `src/services/wan22_video_v2_context.py` | Wan22 chain context helper 的兼容 re-export | Wan22 extension service 已迁到 `src.domain_config.wan22_aio_video` | 已删除；Wan22 链路 focused tests 已通过 | `已删除` |
 | `backend/workflows/*` 与 `workers/comfy_agent/workflows/*` 双目录 workflow 资产 | 已退出：`backend/workflows` 删除，Central API 不再挂载、COPY 或启动校验 workflow | Worker 镜像与运行时 workflow 选择链路 | 后续 workflow 只维护 `workers/comfy_agent/workflows`；新增 task type 仍需同步 `TASK_TYPE_WORKFLOW_FILENAMES`、`mappings.json` 与目标 Worker `SUPPORTED_TASK_TYPES` | `已收口` |
 | Gallery 查询类型 `free_edit_v2_group` | 旧 Web/客户端查询别名，服务端与前端均归一到 `free_edit_v3_group`，覆盖 v3 BF16 与历史 single/multi v2 投稿 | 升级前客户端可能仍发送旧 group；历史 History 类型本身不迁移 | 先观察测试/正式访问日志确认旧 group 请求清零，并确保所有受支持 Web 版本只发送 `free_edit_v3_group`；仅删除查询别名，不改历史 History 数据 | `完成客户端观察后` |
+| `free_edit_v2_5` 到 `pornmaster_flux2_edit_bf16` 的 execution alias | 对外保留独立逻辑类型、History 与 3 灵石计费，对内复用既有 BF16 Central/Worker 执行契约 | task registry、dispatcher、Worker execution type 归一化与共享 BF16 执行池 | 只有 Central/Worker 未来原生支持独立 v2.5 执行类型，且 workflow/profile 不再共享时才删除；删除前需完成队列、结果回流与退款链路迁移 | `共享执行池期间长期保留` |
+| Bot callback `editlora_free_edit_v2` | 兼容升级前已发送键盘；点击后继续进入自由P图 v3，两阶段语义不变 | Telegram 客户端中仍可点击的历史消息键盘 | 发布后经过历史键盘最大观察窗口，并确认 callback 日志不再出现旧值；新键盘只发送 `editlora_free_edit_v2_5` 或当前 v3 入口值 | `旧键盘流量清零后` |
 
 ## 冗余清理候选
 
