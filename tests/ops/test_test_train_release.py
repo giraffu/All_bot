@@ -149,6 +149,53 @@ def test_deploy_orders_tracks_and_records_candidate(tmp_path):
     assert coordinator.status()["status"] == "deployed"
 
 
+def test_deploy_can_explicitly_leave_test_execution_for_a_later_worker_window(
+    tmp_path,
+):
+    module = _load_module()
+    coordinator = module.TestTrainCoordinator(state_root=tmp_path / "state")
+    runner = _FakeReleaseRunner()
+
+    coordinator.deploy_candidate(
+        SHA,
+        pr=42,
+        slot="A",
+        runner=runner,
+        skip_test_execution=True,
+    )
+
+    mutations = [event[:2] for event in runner.events if event[0] != "plan"]
+    assert mutations == [
+        ("preflight", "control-plane"),
+        ("deploy", "control-plane"),
+    ]
+    assert coordinator.status()["tracks"] == ["control-plane"]
+
+
+def test_deploy_cli_requires_an_explicit_flag_to_defer_test_execution():
+    module = _load_module()
+
+    default_args = module.build_parser().parse_args(
+        ["deploy", "--sha", SHA, "--pr", "42", "--slot", "A", "--execute"]
+    )
+    deferred_args = module.build_parser().parse_args(
+        [
+            "deploy",
+            "--sha",
+            SHA,
+            "--pr",
+            "42",
+            "--slot",
+            "A",
+            "--execute",
+            "--skip-test-execution",
+        ]
+    )
+
+    assert default_args.skip_test_execution is False
+    assert deferred_args.skip_test_execution is True
+
+
 def test_later_track_failure_rolls_back_completed_track_in_reverse(tmp_path):
     module = _load_module()
     coordinator = module.TestTrainCoordinator(state_root=tmp_path / "state")
