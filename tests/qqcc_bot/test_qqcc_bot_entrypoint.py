@@ -212,6 +212,29 @@ def test_qqcc_main_menu_shows_ai_filter_when_filter_scenes_are_configured():
     )
 
 
+def test_qqcc_main_menu_shows_ai_video_after_ai_animation_only_with_valid_scene():
+    config = normalize_qqcc_config(
+        {
+            "main_buttons": {"ai_video": True},
+            "ai_video_scenes": [
+                {
+                    "id": "cinema",
+                    "name": "电影运镜",
+                    "prompt": "camera orbit",
+                    "duration": 10,
+                }
+            ],
+        }
+    )
+
+    rows = _keyboard_texts(keyboards.get_qqcc_main_menu_keyboard("zh", config))
+
+    assert rows[1] == ["AI绘图", "AI动图", "AI视频"]
+    ai_video_keyboard = keyboards.get_qqcc_ai_video_inline_keyboard("zh", config)
+    assert ai_video_keyboard.inline_keyboard[0][0].text == "电影运镜"
+    assert ai_video_keyboard.inline_keyboard[0][0].callback_data == "qaivid_scene:cinema"
+
+
 def test_qqcc_video_menu_contains_lazy_video_scenes():
     reply_markup = keyboards.get_qqcc_video_edit_inline_keyboard("zh")
     rows = _inline_keyboard_texts(reply_markup)
@@ -471,6 +494,7 @@ def test_qqcc_prompt_routes_are_limited_to_lazy_menus():
         "menu.photo_edit",
         "qqcc.menu.ai_draw",
         "qqcc.menu.ai_filter",
+        "qqcc.menu.ai_video",
         "menu.video_edit",
         "menu.main_menu",
         "menu.back_main",

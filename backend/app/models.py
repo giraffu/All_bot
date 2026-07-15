@@ -229,6 +229,7 @@ class LtxVideoRequest(BaseModel):
     task_id: str
     image: str
     prompt: str
+    negative_prompt: Optional[str] = None
     lora_name: Optional[str] = ""
     lora_strength: Optional[float] = None
     lora_items: Optional[list[LoraItem]] = None
@@ -248,6 +249,7 @@ class LtxVideoV2VAudioRequest(BaseModel):
     task_id: str
     video: str
     prompt: str
+    negative_prompt: Optional[str] = None
     lora_name: Optional[str] = ""
     lora_strength: Optional[float] = None
     lora_items: Optional[list[LoraItem]] = None

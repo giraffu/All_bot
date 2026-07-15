@@ -311,6 +311,37 @@ describe('useLabSubmitPayload', () => {
     }), 'lab.cards.wan22_video_v2_title')
   })
 
+  it('trims and forwards an optional LTX negative prompt', async () => {
+    const harness = createHarness('ltx_video')
+    harness.uploadedReferences.value = [refImage('start.png')]
+    harness.prompt.value = 'camera orbit'
+    harness.negativePrompt.value = '  blur, jitter  '
+    harness.resolution.value = '1280x704'
+    harness.duration.value = '10'
+
+    await harness.handleSubmit()
+
+    expect(harness.submitTask).toHaveBeenCalledWith(expect.objectContaining({
+      task_type: 'ltx_video',
+      inputs: expect.objectContaining({
+        prompt: 'camera orbit',
+        negative_prompt: 'blur, jitter',
+        ltx_mode: 'i2v',
+      }),
+    }), 'lab.cards.high_res_video_title')
+  })
+
+  it('omits a blank LTX negative prompt so the workflow default remains active', async () => {
+    const harness = createHarness('ltx_video')
+    harness.uploadedReferences.value = [refImage('start.png')]
+    harness.prompt.value = 'camera orbit'
+    harness.negativePrompt.value = '   '
+
+    await harness.handleSubmit()
+
+    expect(harness.submitTask.mock.calls[0]?.[0].inputs).not.toHaveProperty('negative_prompt')
+  })
+
   it('builds SCAIL-2 payloads from structured slots', async () => {
     const harness = createHarness('scail2_face_swap_v2')
     harness.uploadedSlotAssets.value = {

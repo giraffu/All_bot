@@ -12,6 +12,7 @@ from src.constants import (
     MODE_CUSTOM_VIDEO,
     MODE_DOGGY_STYLE,
     MODE_IMAGE_TO_VIDEO,
+    MODE_LTX_VIDEO,
     MODE_PERFECT_VIDEO_INSERT,
     MODE_UNDRESS_TONGUE,
     MODE_WAN22_VIDEO_V2,
@@ -20,9 +21,11 @@ from src.domain_config.wan22_aio_video import get_wan22_video_v2_cost
 from src.services.fsm_temp_file_service import cleanup_fsm_temp_files
 from src.services.qqcc_config_service import (
     VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
+    get_qqcc_ai_video_scene,
     get_qqcc_draw_scene,
     get_qqcc_video_scene,
     has_enabled_qqcc_video_scenes,
+    has_enabled_qqcc_ai_video_scenes,
     is_qqcc_main_button_enabled,
 )
 from src.services.qqcc_draw_chain_service import (
@@ -47,6 +50,9 @@ from src.services.private_qqcc_continuation_service import (
 )
 from src.services.qqcc_runtime_context import is_private_qqcc_bot_context
 from src.services.task_service_entrypoints_video import process_video_task_template
+from src.services.task_service_entrypoints_specialized import (
+    process_ltx_video_task_for_actor,
+)
 from src.services.task_service_generation_image import (
     process_standard_generation_task as process_generation_task,
 )
@@ -61,6 +67,8 @@ class QuickVideoSubmissionKind(str, Enum):
     LEGACY_VIDEO = "legacy_video"
     WAN22_VIDEO_V2 = "wan22_video_v2"
     TAIL_FRAME_VIDEO = "tail_frame_video"
+    LTX_VIDEO = "ltx_video"
+    LTX_TAIL_FRAME_VIDEO = "ltx_tail_frame_video"
 
 
 class QuickVideoSubmissionRejectReason(str, Enum):
@@ -89,6 +97,8 @@ class QuickVideoSubmissionPlan:
     display_mode_name: str | None = None
     result_meta: dict[str, Any] | None = None
     lora_name: str = ""
+    lora_items: list[dict[str, Any]] = field(default_factory=list)
+    scene_kind: str = "video"
     tail_draw_chain: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -106,6 +116,7 @@ class QuickVideoSettingsUpdate:
 
 ProcessVideoTask = Callable[..., Awaitable[Any] | Any]
 ProcessGenerationTask = Callable[..., Awaitable[Any] | Any]
+ProcessLtxVideoTask = Callable[..., Awaitable[Any] | Any]
 ExecuteDrawChain = Callable[..., Awaitable[Any] | Any]
 DownloadOutputFile = Callable[..., Awaitable[str] | str]
 CleanupTempFiles = Callable[[list[str | None]], None]
@@ -244,6 +255,13 @@ def resolve_qqcc_video_scene_from_fsm_data(
     return get_qqcc_video_scene(config, legacy_scene_id)
 
 
+def resolve_qqcc_ai_video_scene_from_fsm_data(
+    config: dict[str, Any],
+    fsm_data: dict[str, Any],
+) -> dict[str, Any] | None:
+    return get_qqcc_ai_video_scene(config, fsm_data.get("scene_id"))
+
+
 def resolve_qqcc_video_scene_task_type(scene: dict[str, Any]) -> str:
     if scene.get("engine") == VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2:
         return MODE_WAN22_VIDEO_V2
@@ -319,6 +337,67 @@ def build_quick_video_submission_plan(
             default_prompt_text=default_prompt_text,
         )
 
+    scene_kind = str(fsm_data.get("scene_kind") or "video")
+    if scene_kind == "ai_video":
+        scene = resolve_qqcc_ai_video_scene_from_fsm_data(qqcc_config, fsm_data)
+        if (
+            not is_qqcc_main_button_enabled(qqcc_config, "ai_video")
+            or not has_enabled_qqcc_ai_video_scenes(qqcc_config)
+            or scene is None
+        ):
+            return QuickVideoSubmissionReject(
+                QuickVideoSubmissionRejectReason.FEATURE_DISABLED
+            )
+        try:
+            duration_seconds = int(scene.get("duration") or 5)
+        except (TypeError, ValueError):
+            duration_seconds = 5
+        if duration_seconds not in {5, 10, 15, 20}:
+            duration_seconds = 5
+        duration = f"{duration_seconds}s"
+        tail_draw_scene = _resolve_qqcc_video_end_frame_draw_scene(qqcc_config, scene)
+        tail_draw_chain = (
+            resolve_qqcc_draw_scene_chain(qqcc_config, tail_draw_scene)
+            if tail_draw_scene is not None
+            else []
+        )
+        prompt = str(scene.get("prompt") or "").strip()
+        display_mode_name = str(scene.get("name") or "")
+        scene_id = str(scene.get("id") or "").strip()
+        duration_multiplier = duration_seconds // 5
+        return QuickVideoSubmissionPlan(
+            kind=(
+                QuickVideoSubmissionKind.LTX_TAIL_FRAME_VIDEO
+                if tail_draw_chain
+                else QuickVideoSubmissionKind.LTX_VIDEO
+            ),
+            mode=MODE_LTX_VIDEO,
+            resolution="1280x704",
+            duration=duration,
+            total_cost=(10 * duration_multiplier)
+            + calculate_qqcc_draw_chain_cost(tail_draw_chain),
+            default_prompt_key=MODE_LTX_VIDEO,
+            default_prompt_text=prompt,
+            allow_contribute=False,
+            prompt_override=prompt,
+            negative_prompt=str(scene.get("negative_prompt") or "").strip(),
+            display_mode_name=display_mode_name,
+            result_meta=build_qqcc_regenerate_result_meta(
+                kind=QQCC_REGENERATE_KIND_QUICK_VIDEO,
+                mode=MODE_LTX_VIDEO,
+                scene_id=scene_id,
+                scene_kind="ai_video",
+                display_mode_name=display_mode_name,
+            ),
+            lora_items=[
+                {"name": item.get("path"), "strength": item.get("strength")}
+                for item in (scene.get("lora_items") or [])
+                if isinstance(item, dict) and item.get("path")
+            ],
+            tail_draw_chain=tail_draw_chain,
+            scene_kind="ai_video",
+        )
+
     scene = resolve_qqcc_video_scene_from_fsm_data(qqcc_config, fsm_data)
     if (
         not is_qqcc_main_button_enabled(qqcc_config, "video_edit")
@@ -391,7 +470,10 @@ async def _maybe_await(value: Awaitable[Any] | Any) -> Any:
 
 
 def quick_video_plan_requires_continuation(plan: QuickVideoSubmissionPlan) -> bool:
-    return plan.kind == QuickVideoSubmissionKind.TAIL_FRAME_VIDEO
+    return plan.kind in {
+        QuickVideoSubmissionKind.TAIL_FRAME_VIDEO,
+        QuickVideoSubmissionKind.LTX_TAIL_FRAME_VIDEO,
+    }
 
 
 async def run_quick_video_submission_plan(
@@ -405,6 +487,7 @@ async def run_quick_video_submission_plan(
     status_msg_id: int | None,
     process_video_task_template_func: ProcessVideoTask = process_video_task_template,
     process_generation_task_func: ProcessGenerationTask = process_generation_task,
+    process_ltx_video_task_func: ProcessLtxVideoTask = process_ltx_video_task_for_actor,
     execute_draw_chain_func: ExecuteDrawChain = execute_qqcc_draw_scene_chain,
     download_output_file_to_fsm_temp_func: DownloadOutputFile = download_output_file_to_fsm_temp,
     cleanup_temp_files_func: CleanupTempFiles = cleanup_fsm_temp_files,
@@ -425,7 +508,30 @@ async def run_quick_video_submission_plan(
             "allow_cancel": False,
             "user_cancel_allowed": False,
         }
-        if plan.mode == MODE_WAN22_VIDEO_V2:
+        if plan.kind == QuickVideoSubmissionKind.LTX_TAIL_FRAME_VIDEO:
+            stages.append(
+                {
+                    "executor": "ltx_video",
+                    "input_mode": "original_current",
+                    "delivery_required": True,
+                    "task_kwargs": {
+                        "prompt": plan.prompt_override or plan.default_prompt_text,
+                        "negative_prompt": plan.negative_prompt,
+                        "resolution": plan.resolution,
+                        "duration": plan.duration,
+                        "ltx_mode": "flf2v",
+                        "lora_items": plan.lora_items,
+                        "cleanup": True,
+                        "send_result": True,
+                        "delete_status": True,
+                        "allow_contribute": False,
+                        "display_mode_name_override": plan.display_mode_name,
+                        "result_meta": plan.result_meta,
+                        **continuation_controls,
+                    },
+                }
+            )
+        elif plan.mode == MODE_WAN22_VIDEO_V2:
             stages.append(
                 {
                     "executor": "generation",
@@ -509,6 +615,7 @@ async def run_quick_video_submission_plan(
                 runtime_context,
                 process_generation_task_func=process_generation_task_func,
                 process_video_task_template_func=process_video_task_template_func,
+                process_ltx_video_task_func=process_ltx_video_task_func,
             )
 
         await resume_private_qqcc_continuation(
@@ -519,7 +626,10 @@ async def run_quick_video_submission_plan(
         )
         return
 
-    if plan.kind == QuickVideoSubmissionKind.TAIL_FRAME_VIDEO:
+    if plan.kind in {
+        QuickVideoSubmissionKind.TAIL_FRAME_VIDEO,
+        QuickVideoSubmissionKind.LTX_TAIL_FRAME_VIDEO,
+    }:
         await _run_tail_frame_video_plan(
             plan=plan,
             context=context,
@@ -530,9 +640,36 @@ async def run_quick_video_submission_plan(
             status_msg_id=status_msg_id,
             process_video_task_template_func=process_video_task_template_func,
             process_generation_task_func=process_generation_task_func,
+            process_ltx_video_task_func=process_ltx_video_task_func,
             execute_draw_chain_func=execute_draw_chain_func,
             download_output_file_to_fsm_temp_func=download_output_file_to_fsm_temp_func,
             cleanup_temp_files_func=cleanup_temp_files_func,
+        )
+        return
+
+    if plan.kind == QuickVideoSubmissionKind.LTX_VIDEO:
+        optional_negative = (
+            {"negative_prompt": plan.negative_prompt} if plan.negative_prompt else {}
+        )
+        await _maybe_await(
+            process_ltx_video_task_func(
+                context=context,
+                chat_id=chat_id,
+                user_id=user_id,
+                username=username,
+                prompt=plan.prompt_override or plan.default_prompt_text,
+                image_path=image_path,
+                resolution=plan.resolution,
+                duration=plan.duration,
+                ltx_mode="i2v",
+                lora_items=plan.lora_items or None,
+                cleanup=True,
+                allow_contribute=False,
+                display_mode_name_override=plan.display_mode_name,
+                result_meta=plan.result_meta,
+                status_msg_id=status_msg_id,
+                **optional_negative,
+            )
         )
         return
 
@@ -594,6 +731,7 @@ async def _run_tail_frame_video_plan(
     status_msg_id: int | None,
     process_video_task_template_func: ProcessVideoTask,
     process_generation_task_func: ProcessGenerationTask,
+    process_ltx_video_task_func: ProcessLtxVideoTask,
     execute_draw_chain_func: ExecuteDrawChain,
     download_output_file_to_fsm_temp_func: DownloadOutputFile,
     cleanup_temp_files_func: CleanupTempFiles,
@@ -629,6 +767,37 @@ async def _run_tail_frame_video_plan(
             return
 
         video_task_started = True
+        if plan.kind == QuickVideoSubmissionKind.LTX_TAIL_FRAME_VIDEO:
+            optional_negative = (
+                {"negative_prompt": plan.negative_prompt}
+                if plan.negative_prompt
+                else {}
+            )
+            await _maybe_await(
+                process_ltx_video_task_func(
+                    context=context,
+                    chat_id=chat_id,
+                    user_id=user_id,
+                    username=username,
+                    prompt=plan.prompt_override or plan.default_prompt_text,
+                    image_path=image_path,
+                    end_image_path=end_image_path,
+                    resolution=plan.resolution,
+                    duration=plan.duration,
+                    ltx_mode="flf2v",
+                    lora_items=plan.lora_items or None,
+                    cleanup=True,
+                    allow_contribute=False,
+                    display_mode_name_override=plan.display_mode_name,
+                    result_meta=plan.result_meta,
+                    status_msg_id=status_msg_id,
+                    base_priority=QQCC_CHAIN_CONTINUATION_BASE_PRIORITY,
+                    allow_cancel=False,
+                    user_cancel_allowed=False,
+                    **optional_negative,
+                )
+            )
+            return
         if plan.mode == MODE_WAN22_VIDEO_V2:
             await _maybe_await(
                 process_generation_task_func(

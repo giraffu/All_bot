@@ -42,10 +42,12 @@ from src.services.task_service_types import BotTaskFailurePolicy, BotTaskRuntime
 from src.services.ltx_video_extension_service import normalize_ltx_video_chain_task_ids
 
 
-async def process_ltx_video_task(
+async def process_ltx_video_task_for_actor(
     *,
-    update: Update,
     context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    user_id: int,
+    username: str | None,
     prompt: str,
     image_path: str | None,
     end_image_path: str | None = None,
@@ -61,16 +63,28 @@ async def process_ltx_video_task(
     cleanup: bool = True,
     allow_contribute: bool = True,
     source_post_id: Optional[int] = None,
+    negative_prompt: str | None = None,
+    display_mode_name_override: str | None = None,
+    result_meta: dict[str, Any] | None = None,
+    status_msg_id: int | None = None,
+    base_priority: int = 0,
+    user_cancel_allowed: bool = True,
+    allow_cancel: bool = True,
+    send_result: bool = True,
+    delete_status: bool = True,
+    record_history: bool = True,
 ):
     from src.constants import MODE_LTX_VIDEO
 
-    actor = extract_actor_from_update(update)
-    internal_user_id = await resolve_internal_user_id(actor.user_id, actor.username)
+    internal_user_id = await resolve_internal_user_id(user_id, username)
 
     mode = MODE_LTX_VIDEO
     resolution = str(resolution or "1280x704")
     duration = f"{duration}s" if isinstance(duration, int) else str(duration or "5s")
     ltx_mode = ltx_mode or "i2v"
+    display_mode_name = display_mode_name_override or translate_context_text(
+        context, "task.mode_ltx_video"
+    )
 
     runtime_state = BotTaskRuntimeState()
     notice = await get_acceleration_notice(
@@ -82,7 +96,7 @@ async def process_ltx_video_task(
             translate_context_text(
                 context,
                 "task.status_processing_mode_with_settings",
-                mode_name=translate_context_text(context, "task.mode_ltx_video"),
+                mode_name=display_mode_name,
                 resolution=resolution,
                 duration=duration,
             ),
@@ -94,7 +108,7 @@ async def process_ltx_video_task(
         completion_caption=translate_context_text(
             context,
             "task.status_completion_mode",
-            mode_name=translate_context_text(context, "task.mode_ltx_video"),
+            mode_name=display_mode_name,
         ),
         missing_output_message=translate_context_text(
             context, "task.status_missing_output_refunded"
@@ -113,10 +127,11 @@ async def process_ltx_video_task(
     else:
         submit_images = [image_path] if image_path else []
 
-    result_meta = {
+    task_result_meta = dict(result_meta or {})
+    task_result_meta.update({
         "ltx_mode": ltx_mode,
         "extract_last_frame": True,
-    }
+    })
     normalized_ltx_prev_task_id = str(ltx_prev_task_id or "").strip()
     normalized_ltx_chain_task_ids = normalize_ltx_video_chain_task_ids(
         ltx_chain_task_ids
@@ -124,15 +139,15 @@ async def process_ltx_video_task(
     if normalized_ltx_prev_task_id and not normalized_ltx_chain_task_ids:
         normalized_ltx_chain_task_ids = [normalized_ltx_prev_task_id]
     if normalized_ltx_prev_task_id:
-        result_meta["ltx_prev_task_id"] = normalized_ltx_prev_task_id
+        task_result_meta["ltx_prev_task_id"] = normalized_ltx_prev_task_id
     if normalized_ltx_chain_task_ids:
-        result_meta["ltx_chain_task_ids"] = normalized_ltx_chain_task_ids
+        task_result_meta["ltx_chain_task_ids"] = normalized_ltx_chain_task_ids
     if lora_items:
-        result_meta["lora_items"] = lora_items
+        task_result_meta["lora_items"] = lora_items
     elif lora_name:
-        result_meta["lora_name"] = lora_name
+        task_result_meta["lora_name"] = lora_name
         if lora_strength is not None:
-            result_meta["lora_strength"] = lora_strength
+            task_result_meta["lora_strength"] = lora_strength
 
     inputs = build_task_inputs(
         prompt=prompt,
@@ -147,6 +162,9 @@ async def process_ltx_video_task(
         lora_strength=lora_strength,
         lora_items=lora_items,
     )
+    normalized_negative_prompt = str(negative_prompt or "").strip()
+    if normalized_negative_prompt:
+        inputs["negative_prompt"] = normalized_negative_prompt
     if normalized_ltx_prev_task_id:
         inputs["ltx_prev_task_id"] = normalized_ltx_prev_task_id
     if normalized_ltx_chain_task_ids:
@@ -162,10 +180,10 @@ async def process_ltx_video_task(
     return await run_bot_task_application(
         flow=build_bot_task_flow_context(
             context=context,
-            update=update,
-            chat_id=actor.chat_id,
+            update=None,
+            chat_id=chat_id,
             internal_user_id=internal_user_id,
-            username=actor.username,
+            username=username,
             task_type=mode,
             inputs=inputs,
             prompt=prompt,
@@ -176,12 +194,19 @@ async def process_ltx_video_task(
                 context,
                 "task.status_submitted_mode_with_settings",
                 notice=notice,
-                mode_name=translate_context_text(context, "task.mode_ltx_video"),
+                mode_name=display_mode_name,
                 resolution=resolution,
                 duration=duration,
             ),
             allow_contribute=allow_contribute,
-            result_meta=result_meta,
+            result_meta=task_result_meta,
+            status_msg_id=status_msg_id,
+            base_priority=base_priority,
+            user_cancel_allowed=user_cancel_allowed,
+            allow_cancel=allow_cancel,
+            send_result=send_result,
+            delete_status=delete_status,
+            record_history=record_history,
             billing_resolution=billing_args["billing_resolution"],
             requested_duration=billing_args["requested_duration"],
             cleanup=cleanup,
@@ -197,6 +222,22 @@ async def process_ltx_video_task(
                 unexpected_error_prefix="出错了",
             ),
         )
+    )
+
+
+async def process_ltx_video_task(
+    *,
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    **kwargs: Any,
+):
+    actor = extract_actor_from_update(update)
+    return await process_ltx_video_task_for_actor(
+        context=context,
+        chat_id=actor.chat_id,
+        user_id=actor.user_id,
+        username=actor.username,
+        **kwargs,
     )
 
 

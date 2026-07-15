@@ -9,6 +9,7 @@ from qqcc_bot.keyboards import (
     get_qqcc_main_bot_link_keyboard,
     get_qqcc_main_menu_keyboard,
     get_qqcc_video_edit_inline_keyboard,
+    get_qqcc_ai_video_inline_keyboard,
 )
 from qqcc_bot.commands import resolve_main_bot_url
 from qqcc_bot.gallery_market import open_qqcc_gallery_market_menu
@@ -25,6 +26,7 @@ from src.services.qqcc_config_service import (
     has_enabled_qqcc_draw_scenes,
     has_enabled_qqcc_filter_scenes,
     has_enabled_qqcc_video_scenes,
+    has_enabled_qqcc_ai_video_scenes,
     is_qqcc_global_enabled,
     is_qqcc_main_bot_link_enabled,
     is_qqcc_main_button_enabled,
@@ -90,6 +92,14 @@ def _can_open_video_menu(config: dict) -> bool:
     )
 
 
+def _can_open_ai_video_menu(config: dict) -> bool:
+    return (
+        is_qqcc_global_enabled(config)
+        and is_qqcc_main_button_enabled(config, "ai_video")
+        and has_enabled_qqcc_ai_video_scenes(config)
+    )
+
+
 def _can_open_ai_draw_menu(config: dict) -> bool:
     return (
         is_qqcc_global_enabled(config)
@@ -137,6 +147,19 @@ async def handle_video_edit_menu(update, context, text: str = None):
         get_qqcc_copywriting_override(config, "video_menu")
         or context.t("system.video_edit_hint"),
         get_qqcc_video_edit_inline_keyboard(context.lang, config),
+    )
+
+
+async def handle_ai_video_menu(update, context, text: str = None):
+    config = await _load_menu_config(context)
+    if not _can_open_ai_video_menu(config):
+        return await _reply_feature_disabled(update, context, config)
+    return await _reply_payload(
+        update,
+        context,
+        get_qqcc_copywriting_override(config, "ai_video_menu")
+        or context.t("system.ai_video_hint"),
+        get_qqcc_ai_video_inline_keyboard(context.lang, config),
     )
 
 
@@ -209,6 +232,7 @@ QQCC_PROMPT_ROUTES = {
     "qqcc.menu.ai_draw": handle_ai_draw_menu,
     "qqcc.menu.ai_filter": handle_ai_filter_menu,
     "menu.video_edit": handle_video_edit_menu,
+    "qqcc.menu.ai_video": handle_ai_video_menu,
     "menu.main_menu": handle_back_to_main_menu,
     "menu.back_main": handle_back_to_main_menu,
     "menu.open_main_bot": handle_open_main_bot,

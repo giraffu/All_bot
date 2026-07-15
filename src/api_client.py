@@ -549,6 +549,7 @@ class APIClient:
         task_id: str,
         prompt: str,
         image_path: str,
+        negative_prompt: str | None = None,
         lora_name: str | None = None,
         lora_strength: float | None = None,
         lora_items: list[dict[str, Any]] | None = None,
@@ -576,6 +577,8 @@ class APIClient:
             data["lora_strength"] = lora_strength
         if lora_items:
             data["lora_items"] = lora_items
+        if isinstance(negative_prompt, str) and negative_prompt.strip():
+            data["negative_prompt"] = negative_prompt.strip()
 
         logger.info(
             f"Submitting ltx_video task. Prompt: {prompt}, Priority: {priority}"
@@ -595,6 +598,7 @@ class APIClient:
         prompt: str,
         image_path: str,
         end_image_path: str,
+        negative_prompt: str | None = None,
         lora_name: str | None = None,
         lora_strength: float | None = None,
         lora_items: list[dict[str, Any]] | None = None,
@@ -621,6 +625,8 @@ class APIClient:
             data["lora_strength"] = lora_strength
         if lora_items:
             data["lora_items"] = lora_items
+        if isinstance(negative_prompt, str) and negative_prompt.strip():
+            data["negative_prompt"] = negative_prompt.strip()
 
         logger.info(
             "Submitting ltx_video_flf2v task. Prompt: %s, Priority: %s",
@@ -641,6 +647,7 @@ class APIClient:
         task_id: str,
         prompt: str,
         video_path: str,
+        negative_prompt: str | None = None,
         lora_name: str | None = None,
         lora_strength: float | None = None,
         lora_items: list[dict[str, Any]] | None = None,
@@ -665,6 +672,8 @@ class APIClient:
             data["lora_strength"] = lora_strength
         if lora_items:
             data["lora_items"] = lora_items
+        if isinstance(negative_prompt, str) and negative_prompt.strip():
+            data["negative_prompt"] = negative_prompt.strip()
 
         logger.info(
             "Submitting ltx_video_v2v_audio task. Prompt: %s, Priority: %s",

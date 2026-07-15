@@ -172,6 +172,7 @@ export function useLabSubmitPayload({
       taskType: currentMode.value.taskType,
       images: uploadedReferenceKeys,
       prompt: prompt.value,
+      negativePrompt: currentMode.value.id === 'ltx_video' ? negativePrompt.value : undefined,
       promptTarget: currentMode.value.promptTarget,
       loraName: currentMode.value.id === 'edit'
         ? (selectedEditLora.value || undefined)
