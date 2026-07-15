@@ -2108,3 +2108,24 @@ def test_preflight_manifest_resolution_never_pulls_or_creates_cache(tmp_path, mo
 
     assert not cache.exists()
     assert calls == []
+
+
+def test_release_cli_accepts_nested_oras_v2_bundle_layout(tmp_path):
+    module = _load_module()
+    cache = tmp_path / "cache"
+    nested = cache / FULL_SHA / "release-v2"
+    nested.mkdir(parents=True)
+    index = nested / "release-index.json"
+    index.write_text("{}", encoding="utf-8")
+    web = nested / "public-web-dist.tgz"
+    web.write_bytes(b"web")
+    args = SimpleNamespace(
+        manifest=None,
+        bundle_cache=str(cache),
+        bundle_repository="ghcr.io/giraffu/allbot-release-v2",
+        sha=FULL_SHA,
+        web_artifact="web-dist.tgz",
+    )
+
+    assert module._resolve_manifest_path(args) == index
+    assert module._resolved_web_artifact(args, {"git_sha": FULL_SHA}) == web

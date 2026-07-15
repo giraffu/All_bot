@@ -111,6 +111,7 @@ class ReleaseCLI:
     def _manifest_path(self, sha: str) -> Path:
         candidates = (
             self.bundle_cache / sha / "release-index.json",
+            self.bundle_cache / sha / "release-v2" / "release-index.json",
             self.bundle_cache / sha / "release" / "release-index.json",
         )
         for candidate in candidates:
