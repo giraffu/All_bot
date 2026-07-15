@@ -1795,21 +1795,26 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
                 source_ref=manifest["source_ref"],
             )
         if "gpu-runtime-release-required" in planned_impact.blockers:
-            artifact_catalog = load_catalog(ROOT / "deploy/release-artifacts-v2.json")
-            artifact_plan = plan_artifact_builds(
-                artifact_catalog, changed_paths, has_previous=True
-            )
-            required_gpu = {
-                name
-                for name in artifact_plan.build
-                if artifact_catalog[name]["track"] == "gpu-execution"
-            }
-            gpu_artifacts = release_bundle.manifests["gpu-execution"]["artifacts"]
-            if required_gpu and all(
-                gpu_artifacts.get(name, {}).get("source_sha") == sha
-                for name in required_gpu
-            ):
+            if args.track != "gpu-execution":
                 planned_impact.blockers.remove("gpu-runtime-release-required")
+            else:
+                artifact_catalog = load_catalog(
+                    ROOT / "deploy/release-artifacts-v2.json"
+                )
+                artifact_plan = plan_artifact_builds(
+                    artifact_catalog, changed_paths, has_previous=True
+                )
+                required_gpu = {
+                    name
+                    for name in artifact_plan.build
+                    if artifact_catalog[name]["track"] == "gpu-execution"
+                }
+                gpu_artifacts = release_bundle.manifests["gpu-execution"]["artifacts"]
+                if required_gpu and all(
+                    gpu_artifacts.get(name, {}).get("source_sha") == sha
+                    for name in required_gpu
+                ):
+                    planned_impact.blockers.remove("gpu-runtime-release-required")
         if not args.skip_ci_checks:
             verify_release_ci(manifest, sha)
         artifact_names = set(manifest["selected_artifacts"])
@@ -2987,9 +2992,12 @@ def _clear_transaction_maintenance(
         f"/var/lib/allbot/deployments/{args.env}/transactions/"
         f"{transaction_id}.state.json"
     )
-    current = f"/var/lib/allbot/deployments/{args.env}/current.json"
+    track = transaction.get("track")
+    track_segment = f"/{track}" if track in RELEASE_TRACKS else ""
+    state_root = f"/var/lib/allbot/deployments/{args.env}{track_segment}"
+    current = f"{state_root}/current.json"
     history = (
-        f"/var/lib/allbot/deployments/{args.env}/history/{transaction_id}.json"
+        f"{state_root}/history/{transaction_id}.json"
     )
     forward_commit = transaction.get("phase") == "state_completed"
     state_action = f"rm -f {shlex.quote(staged)}\n"
@@ -3954,6 +3962,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         transaction["release_channel"] = manifest.get("release_channel", "main")
         transaction["source_ref"] = manifest.get("source_ref", "refs/heads/main")
+        if manifest.get("schema_version") == 2:
+            transaction["track"] = manifest["track"]
         if isinstance(getattr(args, "previous_state", None), Mapping):
             transaction["previous"]["state"] = dict(args.previous_state)
         transaction["services"] = sorted(impact.services)

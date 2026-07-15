@@ -199,3 +199,4 @@
 | `.codex/skills/ops-log-monitor/SKILL.md` | log/report workflow | 已核对 | 日志监控边界有效 |
 | `.codex/skills/*/references/*.md` | 对应 Skill | 已核对 | reference 文件保持作为按需深读材料 |
 | `.codex/skills/*/agents/openai.yaml` | 子代理配置 | 已核对 | 配置文件不作为长期业务知识正文 |
+> 2026-07-16：schema v2 发布门禁按 track 隔离：`control-plane` / `test-execution` 未选择 GPU profile 时，不完整 `gpu-execution` manifest 不再阻断其 plan、部署或晋级；选择缺失 GPU profile 仍 fail closed。事务暂存状态在提交时按 track 原子写入 `current/history`，避免回落到旧 flat 路径。事实源为 `scripts/release.py`、`tests/ops/test_release_cli.py`、不可变发布文档与 `allbot-ops-deployment` Skill。

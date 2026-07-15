@@ -167,6 +167,86 @@ def test_gpu_runtime_change_blocks_the_normal_release_path():
     assert impact.blockers == {"gpu-runtime-release-required"}
 
 
+def test_v2_control_plane_does_not_require_unselected_gpu_profiles(
+    monkeypatch, tmp_path
+):
+    module = _load_module()
+    previous_sha = "b" * 40
+    artifact = {
+        "kind": "image",
+        "ref": "ghcr.io/giraffu/allbot-central-api@sha256:" + "1" * 64,
+        "digest": "sha256:" + "1" * 64,
+        "source_sha": FULL_SHA,
+        "oci_revision": FULL_SHA,
+        "dependency_closure": [],
+    }
+    release = SimpleNamespace(
+        index={
+            "ci_run": "https://github.com/giraffu/All_bot/actions/runs/1",
+            "release_channel": "main",
+            "source_ref": "refs/heads/main",
+        },
+        manifests={
+            "control-plane": {"artifacts": {"central-api": artifact}},
+            "gpu-execution": {
+                "completeness": "incomplete",
+                "missing_artifacts": ["image_to_video"],
+                "artifacts": {},
+            },
+        },
+    )
+    manifest = {
+        "schema_version": 2,
+        "source_sha": FULL_SHA,
+        "git_sha": FULL_SHA,
+        "ci_run": release.index["ci_run"],
+        "release_channel": "main",
+        "source_ref": "refs/heads/main",
+        "track": "control-plane",
+        "artifacts": {"central-api": artifact},
+        "selected_artifacts": ["central-api"],
+    }
+    args = SimpleNamespace(
+        sha=FULL_SHA,
+        manifest=None,
+        bundle_cache=str(tmp_path),
+        bundle_repository="ghcr.io/giraffu/allbot-release-v2",
+        command="plan",
+        modules=[],
+        services=[],
+        track="control-plane",
+        state_file=None,
+        from_sha=None,
+        env="prod",
+        remote_host="prod-control",
+        policy=str(POLICY_PATH),
+        skip_git_checks=True,
+        skip_ci_checks=True,
+        dashboard_fast_track=False,
+    )
+
+    monkeypatch.setattr(
+        module, "_resolve_manifest_path", lambda *_args, **_kwargs: tmp_path / "index"
+    )
+    monkeypatch.setattr(module, "_read_json", lambda _path: {"schema_version": 2})
+    monkeypatch.setattr(
+        module, "_resolve_previous_sha", lambda *_args, **_kwargs: previous_sha
+    )
+    monkeypatch.setattr(
+        module,
+        "git_changed_paths",
+        lambda *_args: ["remote_workers/comfy_agent/workflow_task_patchers.py"],
+    )
+    monkeypatch.setattr(module, "load_release_index", lambda *_args, **_kwargs: release)
+    monkeypatch.setattr(module, "_load_v2_track", lambda *_args, **_kwargs: manifest)
+
+    impact, selected_manifest, resolved_previous = module.build_plan(args)
+
+    assert impact.blockers == set()
+    assert selected_manifest["track"] == "control-plane"
+    assert resolved_previous == previous_sha
+
+
 def test_dashboard_admin_runtime_changes_stay_dashboard_backend_only():
     module = _load_module()
     policy = module.load_structured_file(POLICY_PATH)
@@ -2089,6 +2169,36 @@ def test_transaction_commit_moves_staged_state_before_clearing_dual_maintenance(
         "rm -f /var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE"
     )
     assert "/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE" in script
+
+
+def test_v2_transaction_commit_moves_staged_state_to_track_paths(monkeypatch):
+    module = _load_module()
+    calls = []
+    monkeypatch.setattr(
+        module,
+        "_remote_shell",
+        lambda host, script, *, execute: calls.append((host, script, execute)),
+    )
+    args = SimpleNamespace(env="test", remote_host="test-control", execute=False)
+    transaction = module.new_release_transaction(
+        environment="test",
+        target_sha="a" * 40,
+        previous_sha="b" * 40,
+        previous_kind="immutable",
+        previous_pages_deployment_id="old-id",
+    )
+    transaction["track"] = "control-plane"
+    transaction["phase"] = "state_completed"
+
+    module._clear_transaction_maintenance(args, transaction)
+
+    script = calls[0][1]
+    assert "/var/lib/allbot/deployments/test/control-plane/current.json" in script
+    assert (
+        "/var/lib/allbot/deployments/test/control-plane/history/"
+        + "a" * 40
+        + ".json"
+    ) in script
 
 
 def test_preflight_manifest_resolution_never_pulls_or_creates_cache(tmp_path, monkeypatch):
