@@ -1627,6 +1627,7 @@ def _resolve_manifest_path(
     cache = Path(args.bundle_cache).expanduser() / args.sha
     candidates = (
         cache / "release-index.json",
+        cache / "release-v2" / "release-index.json",
         cache / "release" / "release-index.json",
         cache / "release.json",
         cache / "release" / "release.json",
@@ -2304,6 +2305,7 @@ def _resolved_web_artifact(
     cache = Path(args.bundle_cache).expanduser() / str(manifest["git_sha"])
     for candidate in (
         cache / "public-web-dist.tgz",
+        cache / "release-v2" / "public-web-dist.tgz",
         cache / "release" / "public-web-dist.tgz",
         cache / "web-dist.tgz",
         cache / "release" / "web-dist.tgz",

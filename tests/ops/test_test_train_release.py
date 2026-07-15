@@ -169,3 +169,14 @@ def test_gpu_candidate_is_planned_but_never_mutated(tmp_path):
         coordinator.deploy_candidate(SHA, pr=42, slot="A", runner=runner)
 
     assert not any(event[0] in {"preflight", "deploy"} for event in runner.events)
+
+
+def test_release_runner_finds_nested_oras_v2_manifest(tmp_path):
+    module = _load_module()
+    cache = tmp_path / "cache"
+    manifest = cache / SHA / "release-v2" / "release-index.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text("{}", encoding="utf-8")
+    runner = module.ReleaseCLI(repo=ROOT, bundle_cache=cache)
+
+    assert runner._manifest_path(SHA) == manifest
