@@ -70,6 +70,7 @@ def test_python_bases_and_thin_targets_are_explicit():
         "AS qqcc-config-backend", 1
     )[0]
     assert "COPY ops /app/ops" in dashboard_section
+    assert "COPY paid_group_guard_bot /app/paid_group_guard_bot" in dashboard_section
     assert "scripts/runpod_prod_ops.sh" in dashboard_section
     assert "scripts/gpu_pool_controller.py" in dashboard_section
     assert "AS python-worker-base" in worker

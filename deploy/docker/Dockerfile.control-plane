@@ -74,6 +74,7 @@ RUN pip install --no-cache-dir -r /tmp/dashboard-requirements.txt
 COPY dashboard/backend /app/dashboard/backend
 COPY src /app/src
 COPY shared /app/shared
+COPY paid_group_guard_bot /app/paid_group_guard_bot
 COPY ops /app/ops
 COPY alembic.ini /app/alembic.ini
 COPY migrations /app/migrations
