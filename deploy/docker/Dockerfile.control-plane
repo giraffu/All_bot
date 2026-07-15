@@ -52,6 +52,7 @@ LABEL org.opencontainers.image.revision=$ALLBOT_GIT_SHA io.allbot.release.module
 COPY config.py /app/config.py
 COPY src /app/src
 COPY shared /app/shared
+COPY qqcc_bot /app/qqcc_bot
 COPY qqcc_private_bot /app/qqcc_private_bot
 CMD ["python", "-m", "qqcc_private_bot.worker"]
 

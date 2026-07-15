@@ -200,3 +200,5 @@
 | `.codex/skills/*/references/*.md` | 对应 Skill | 已核对 | reference 文件保持作为按需深读材料 |
 | `.codex/skills/*/agents/openai.yaml` | 子代理配置 | 已核对 | 配置文件不作为长期业务知识正文 |
 > 2026-07-16：schema v2 发布门禁按 track 隔离：`control-plane` / `test-execution` 未选择 GPU profile 时，不完整 `gpu-execution` manifest 不再阻断其 plan、部署或晋级；选择缺失 GPU profile 仍 fail closed。事务暂存状态在提交时按 track 原子写入 `current/history`，避免回落到旧 flat 路径。事实源为 `scripts/release.py`、`tests/ops/test_release_cli.py`、不可变发布文档与 `allbot-ops-deployment` Skill。
+>
+> 2026-07-16：正式不可变切换在 private worker 启动门禁发现薄镜像缺少其直接导入的 `qqcc_bot.main`，事务自动回滚且未提交部分状态。`private-bot-worker` target 现同时复制 `qqcc_private_bot/` 与 `qqcc_bot/`，artifact inputs 同步覆盖两目录，并以模块闭包测试锁定；须由新的 main SHA/digest bundle 重跑同 SHA 验证后再晋级。事实源为 `deploy/docker/Dockerfile.control-plane`、`deploy/release-artifacts-v2.json`、`tests/ops/test_modular_images.py` 与 QQCC Skill。
