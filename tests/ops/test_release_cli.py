@@ -321,6 +321,251 @@ def test_dashboard_fast_track_requires_a_dashboard_runtime_change():
         )
 
 
+def test_control_plane_repair_fast_track_accepts_only_image_closure_metadata():
+    module = _load_module()
+
+    impact = module.plan_control_plane_repair_fast_track(
+        [
+            "deploy/docker/Dockerfile.control-plane",
+            "deploy/release-artifacts-v2.json",
+            "scripts/release.py",
+            "tests/ops/test_release_cli.py",
+            "tests/ops/test_modular_images.py",
+            "docs/knowledge_base_audit_matrix.md",
+            ".codex/skills/allbot-ops-deployment/SKILL.md",
+            ".codex/skills/allbot-qqcc-lazy-bot/SKILL.md",
+        ]
+    )
+
+    assert impact.level == "maintenance"
+    assert impact.blockers == set()
+    assert impact.unknown_paths == []
+    assert impact.matched_rules == ["control-plane-repair-fast-track"]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "src/services/task_service_flow.py",
+        "migrations/versions/example.py",
+        "deploy/docker-compose-cloud-prod.overlay.yml",
+        "ops/gpu_pool_controller/runtime.py",
+        "unexpected/runtime.bin",
+    ],
+)
+def test_control_plane_repair_fast_track_rejects_other_runtime_paths(path):
+    module = _load_module()
+
+    with pytest.raises(module.ReleaseError, match="control-plane repair fast-track"):
+        module.plan_control_plane_repair_fast_track(
+            ["deploy/docker/Dockerfile.control-plane", path]
+        )
+
+
+def test_control_plane_repair_fast_track_requires_private_image_closure_change():
+    module = _load_module()
+
+    with pytest.raises(module.ReleaseError, match="image closure changes"):
+        module.plan_control_plane_repair_fast_track(
+            ["scripts/release.py", "tests/ops/test_release_cli.py"]
+        )
+
+
+def _repair_equivalence_inputs():
+    tested_sha = "c" * 40
+    target_sha = "d" * 40
+    old_central = "sha256:" + "1" * 64
+    new_central = "sha256:" + "2" * 64
+    old_private = "sha256:" + "3" * 64
+    new_private = "sha256:" + "4" * 64
+    state = {
+        "status": "verified",
+        "release_channel": "main",
+        "track": "control-plane",
+        "git_sha": tested_sha,
+        "artifacts": {
+            "central-api": {"digest": old_central, "status": "verified"},
+            "private-bot-worker": {
+                "digest": old_private,
+                "status": "verified",
+            },
+            "public-web": {"digest": "web-same", "status": "verified"},
+        },
+    }
+    manifest = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "git_sha": target_sha,
+        "selected_artifacts": [
+            "central-api",
+            "private-bot-worker",
+            "public-web",
+        ],
+        "artifacts": {
+            "central-api": {
+                "digest": new_central,
+                "ref": "example/central@" + new_central,
+            },
+            "private-bot-worker": {
+                "digest": new_private,
+                "ref": "example/private@" + new_private,
+            },
+            "public-web": {"sha256": "web-same", "ref": "public-web-dist.tgz"},
+        },
+    }
+    tested_catalog = {
+        "central-api": {
+            "kind": "image",
+            "dockerfile": "deploy/docker/Dockerfile.control-plane",
+            "target": "central-api",
+            "inputs": ["src/**"],
+        },
+        "private-bot-worker": {
+            "kind": "image",
+            "dockerfile": "deploy/docker/Dockerfile.control-plane",
+            "target": "private-bot-worker",
+            "inputs": ["src/**", "qqcc_private_bot/**"],
+        },
+    }
+    target_catalog = json.loads(json.dumps(tested_catalog))
+    target_catalog["private-bot-worker"]["inputs"] = [
+        "src/**",
+        "qqcc_bot/**",
+        "qqcc_private_bot/**",
+    ]
+    old_dockerfile = """FROM runtime AS central-api
+COPY src /app/src
+FROM runtime AS private-bot-worker
+COPY qqcc_private_bot /app/qqcc_private_bot
+FROM runtime AS paid-group-bot
+"""
+    new_dockerfile = """FROM runtime AS central-api
+COPY src /app/src
+FROM runtime AS private-bot-worker
+COPY qqcc_bot /app/qqcc_bot
+COPY qqcc_private_bot /app/qqcc_private_bot
+FROM runtime AS paid-group-bot
+"""
+    changed_paths = [
+        "deploy/docker/Dockerfile.control-plane",
+        "deploy/release-artifacts-v2.json",
+        "scripts/release.py",
+        "tests/ops/test_release_cli.py",
+        "docs/knowledge_base_audit_matrix.md",
+    ]
+    return (
+        state,
+        manifest,
+        tested_catalog,
+        target_catalog,
+        old_dockerfile,
+        new_dockerfile,
+        changed_paths,
+    )
+
+
+def test_control_plane_repair_equivalence_reuses_verified_content_and_smokes_private():
+    module = _load_module()
+    state, manifest, tested_catalog, target_catalog, old_dockerfile, new_dockerfile, paths = (
+        _repair_equivalence_inputs()
+    )
+    smoked = []
+
+    evidence = module.validate_control_plane_repair_equivalence(
+        test_state=state,
+        manifest=manifest,
+        tested_artifact_catalog=tested_catalog,
+        target_artifact_catalog=target_catalog,
+        changed_paths=paths,
+        tested_dockerfile=old_dockerfile,
+        target_dockerfile=new_dockerfile,
+        smoke_private_image=smoked.append,
+    )
+
+    assert evidence["tested_sha"] == "c" * 40
+    assert evidence["equivalent_artifacts"] == ["central-api", "public-web"]
+    assert evidence["smoked_artifacts"] == ["private-bot-worker"]
+    assert smoked == ["example/private@sha256:" + "4" * 64]
+
+
+def test_control_plane_repair_equivalence_rejects_other_target_stage_changes():
+    module = _load_module()
+    state, manifest, tested_catalog, target_catalog, old_dockerfile, new_dockerfile, paths = (
+        _repair_equivalence_inputs()
+    )
+    new_dockerfile = new_dockerfile.replace(
+        "COPY src /app/src", "COPY src /app/src\nRUN touch /unexpected"
+    )
+
+    with pytest.raises(module.ReleaseError, match="central-api target changed"):
+        module.validate_control_plane_repair_equivalence(
+            test_state=state,
+            manifest=manifest,
+            tested_artifact_catalog=tested_catalog,
+            target_artifact_catalog=target_catalog,
+            changed_paths=paths,
+            tested_dockerfile=old_dockerfile,
+            target_dockerfile=new_dockerfile,
+            smoke_private_image=lambda _ref: None,
+        )
+
+
+def test_control_plane_repair_equivalence_requires_private_runtime_copy():
+    module = _load_module()
+    state, manifest, tested_catalog, target_catalog, old_dockerfile, new_dockerfile, paths = (
+        _repair_equivalence_inputs()
+    )
+    new_dockerfile = new_dockerfile.replace("COPY qqcc_bot /app/qqcc_bot\n", "")
+
+    with pytest.raises(module.ReleaseError, match="qqcc_bot runtime copy"):
+        module.validate_control_plane_repair_equivalence(
+            test_state=state,
+            manifest=manifest,
+            tested_artifact_catalog=tested_catalog,
+            target_artifact_catalog=target_catalog,
+            changed_paths=paths,
+            tested_dockerfile=old_dockerfile,
+            target_dockerfile=new_dockerfile,
+            smoke_private_image=lambda _ref: None,
+        )
+
+
+def test_control_plane_repair_promotion_uses_verified_base_and_records_evidence(
+    monkeypatch,
+):
+    module = _load_module()
+    state, manifest, tested_catalog, target_catalog, old_dockerfile, new_dockerfile, paths = (
+        _repair_equivalence_inputs()
+    )
+    args = SimpleNamespace(
+        env="prod",
+        command="deploy",
+        control_plane_repair_fast_track=True,
+        test_state_host="cloud-test",
+    )
+    smoked = []
+
+    monkeypatch.setattr(module, "_read_test_release_state", lambda *_args: state)
+    monkeypatch.setattr(module, "git_changed_paths", lambda *_args: paths)
+    monkeypatch.setattr(
+        module,
+        "_git_file_at_sha",
+        lambda sha, _path: old_dockerfile if sha == "c" * 40 else new_dockerfile,
+    )
+    monkeypatch.setattr(
+        module,
+        "_artifact_catalog_at_sha",
+        lambda sha: tested_catalog if sha == "c" * 40 else target_catalog,
+    )
+    monkeypatch.setattr(module, "_smoke_private_worker_image", smoked.append)
+
+    module._promotion_check(args, manifest)
+
+    assert args.control_plane_repair_acceptance["tested_sha"] == "c" * 40
+    assert args.control_plane_repair_acceptance["target_sha"] == "d" * 40
+    assert smoked == ["example/private@sha256:" + "4" * 64]
+
+
 def test_git_changed_paths_preserves_unicode_and_spaces(monkeypatch):
     module = _load_module()
     expected = [
