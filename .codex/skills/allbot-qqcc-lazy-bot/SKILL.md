@@ -11,7 +11,7 @@ description: "处理官方 QQCC 懒人 Bot、用户私有 Bot 申请/配置、we
 - 代码入口：`qqcc_bot/main.py`
 - 正式 service：`qqcc-bot-prod` / `cloud-qqcc-bot-prod` / profile `qqcc-bot`
 - 测试 service：`qqcc-bot-test` / `cloud-qqcc-bot-test` / profile `qqcc-bot`
-- 正式单独更新脚本：`scripts/update_cloud_prod_qqcc_bot.sh`
+- 正式发布入口：`scripts/release.py plan|preflight|deploy --env prod --track control-plane --modules qqcc-bot`
 - 配置服务：`src/services/qqcc_config_service.py`
 - 运行时上下文 helper：`src/services/qqcc_runtime_context.py`
 - 独立配置 API 入口：`dashboard/backend/qqcc_config_main.py`
@@ -133,11 +133,9 @@ QQCC Bot 必须设置 `application.bot_data["bot_client_type"] = "bot:qqcc"`，B
 
 主业务 Bot 的 `懒人bot` 菜单入口缺省显示；`QQCC_LAZY_BOT_ENABLED=false` 时隐藏新菜单并让旧文本/旧 callback fail closed。入口可用时优先读取 `QQCC_LAZY_BOT_URL`，未配置时可用 `QQCC_LAZY_BOT_USERNAME` 自动生成 `https://t.me/<username>`；两者均未配置时保留菜单但只提示“懒人bot入口暂未配置”，不得硬编码 QQCC Bot 地址。2026-07-12 正式环境按用户要求采用“菜单可见、URL/username 未配置”的不可跳转状态。主 Bot 的 `图片换脸` 二级菜单只保留 `快速换脸` 与 `随机换脸`；旧 `快速脱衣`、`快速自慰`、旧 `menu.video_edit_*`、旧 `AI绘图` / `AI滤镜` / `AI动图` / `快速换脸` 文本和主 Bot 上的 `qvid_*` callback 必须回复 QQCC 懒人 Bot inline URL 跳转或入口未配置提示，且不得提交任务。QQCC 的 `qdraw_scene:*`、`qfilter_scene:*`、`qvid_scene:*` 和旧 `qvid_mode:*` 兼容不受影响。
 
-正式启动或重建前必须有用户明确要求进入 QQCC 正式单服务更新。只单独更新正式 QQCC Bot 时优先使用 `scripts/update_cloud_prod_qqcc_bot.sh`；真实执行必须传 `--execute --confirm-prod --confirm-single-polling`，脚本使用单条 `up -d --no-deps --build qqcc-bot-prod` 复用缓存并只替换 QQCC Bot，不重建其它正式服务。脚本整仓 rsync 时必须排除 `local_analytics_platform/`、`backups/`、`logs/`、前端构建产物和密钥文件，避免把本地分析数据或运行产物同步到云正式。用户已经明确说“QQCC 单服务更新/走单服务更新/单独更新 QQCC Bot”时，可视为当次正式与单 polling 操作确认，不要再要求逐字复述“没有第二个 polling 实例”；但若发现目标容器状态异常、疑似多实例、token/远端 env 异常、不是专用脚本路径，或要启动一个当前停止的新正式 QQCC 实例，必须停下并追问确认。
+正式启动或重建前必须有用户明确要求进入 QQCC 正式发布。单独更新官方 QQCC Bot 时，对同一已验收 main SHA 依次执行 `release.py plan|preflight|deploy --env prod --track control-plane --modules qqcc-bot`，真实执行必须带 `--execute --confirm-prod`；`--modules` 只能扩大 planner 自动集合，不能强行缩成单服务。发布前核对没有第二个同 token polling 实例；若目标容器状态异常、疑似多实例、token/远端 env 异常，或要启动当前停止的新正式 QQCC 实例，必须停下确认。
 
-只更新独立 QQCC 配置 Web 时，使用 `scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod --scope services --services "qqcc-config-backend-prod qqcc-config-frontend-prod" --skip-generation-maintenance`。若同时更新 QQCC Bot 代码，Bot 仍单独使用 `scripts/update_cloud_prod_qqcc_bot.sh --execute --confirm-prod --confirm-single-polling`。全程不得开启 `GENERATION_MAINTENANCE`，不得重建 Central/Web/Payment/主 Bot/Worker/RunPod。
-
-若用户明确要求 QQCC Bot 与独立配置平台一起快速更新，且变更不涉及迁移、共享 env 或其它控制面契约，可只同步必要运行文件，然后在云正式机用一条 `docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.yml --profile qqcc-bot up -d --no-deps --build qqcc-bot-prod qqcc-config-backend-prod qqcc-config-frontend-prod` 同时构建缓存并替换三个服务。三个服务都是 COPY 型镜像，禁止去掉 `--build` 后只 recreate；执行前仍需 safe preflight、生产 token/single-polling 检查，发布后验证 8045/8088、QQCC Bot 日志和所有非目标服务启动时间。
+只更新独立 QQCC 配置 Web 时请求模块 `qqcc-config-backend qqcc-config-frontend`；同轮更新 Bot 与配置平台时请求三者。维护模式遵循 `allbot-ops-deployment`：每次发布默认开启，只有用户当次明确要求且 planner 无强制 maintenance 时才可关闭。不得使用已 fail-closed 的 `update_cloud_prod_qqcc_bot.sh` / `update_cloud_prod_with_maintenance.sh`，也不得 rsync、现场 build 或手工 compose；发布后验证 8045/8088、QQCC Bot single polling、目标 digest/revision 和所有非目标服务启动时间。
 
 ## 5. 验证要求
 至少覆盖：

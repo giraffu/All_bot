@@ -26,6 +26,7 @@ description: "管理 AllBot 多 AI 并发开发的 A-D 固定 worktree、主目�
 - 让功能 AI 只修改当前 worktree、运行本地测试、推送分支并向 `codex/test-train` 提交 PR。禁止功能 AI 部署共享 test、操作 prod、Cloudflare 或 GPU runtime。
 - 让集成 AI 独占 test-train 合入、candidate bundle、云测试切换、accept/block 与恢复。
 - 功能 AI 完成后运行测试、提交、推送并创建 base 为 `codex/test-train` 的 PR；保持槽位在任务分支上，**不执行 `park`**。这会让后来窗口自动选择其他槽位。
+- 集成 AI 在该 PR 已合入 train、精确 train SHA 的 candidate 已成功部署且执行 `accept` 后，若没有 blocked/forward-fix，必须立即 `park` 对应槽位，再推进下一个无关 PR；不等全部 train 任务完成、合入 main 或正式发布后才释放。
 
 ### 能力开放与操作授权
 
@@ -62,13 +63,15 @@ python scripts/test_train_release.py block --sha <40位SHA> --reason <原因>
 - GPU 基线无可用 artifact 时只接受 `availability: unavailable` 的读取计划；不得把它当作 GPU 验收或自动 mutation，涉及 GPU 的任务仍必须交给对应 canary/operator。
 - 默认仍按 `control-plane` → `test-execution` 部署。只有用户或集成 AI 明确把 Worker 留到匹配 GPU/ComfyUI 的独立窗口时，才可显式传 `--skip-test-execution`；状态与 acceptance evidence 只能记录实际部署的 `control-plane`，不得声称 Worker 已更新或验收。
 - 部署事务失败时逆序恢复已完成 track；部署成功但业务失败时 block train、保留现场并从原槽位做 forward-fix，不自动改写 Git 历史。
+- candidate 未 `accept`、处于 blocked 或仍需 forward-fix 时不得释放原槽位；修复 candidate 被 `accept` 后立即释放。
 
 ## 5. 交付门禁
 
 - PR 写明 slot、train base SHA、head SHA、v2 tracks/modules、测试、migration、风险和云测试步骤。
 - 只有当前 candidate accepted 后才合入下一个无关任务。
+- 当前 candidate accepted 后，集成 AI 必须先对 PR 记录的 slot 执行 `python scripts/manage_ai_workspaces.py park --slot <slot>` 并确认状态为空闲，再合入下一个无关任务。成功部署但尚未 `accept` 不算可释放。
 - train 全部通过后合入 main；对新的 main SHA 重新构建、部署和完整验收。candidate evidence 不能替代正式 24 小时/短观察授权与 `verify-test`。
-- main 合并完成后，在重新开放槽位前通过 PR 把main merge commit 血缘同步回 train，使下一次 train→main 满足 strict up-to-date；禁止直接 push/force-push。
+- main 合并完成后，在下一轮新的槽位 PR 合入 train 前通过 PR 把 main merge commit 血缘同步回 train，使下一次 train→main 满足 strict up-to-date；该血缘同步不延迟已经 accepted 的槽位释放，且禁止直接 push/force-push。
 
 ## 6. 按需读取
 

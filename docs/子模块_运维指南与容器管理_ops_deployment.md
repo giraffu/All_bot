@@ -34,6 +34,14 @@
 - 在用户完成测试验收前，不得把测试环境变更直接同步到正式 Bot、正式 Web、正式 Payment、正式 Central API 或正式 Dashboard。
 - 明确授权的 Dashboard 免测试快速发布使用 `--dashboard-fast-track`。另有严格限于 private worker 镜像闭包修复的 `--control-plane-repair-fast-track`：复用 verified 测试 SHA，只允许 Dockerfile/catalog 与发布元数据差异，对其它模块证明 inputs/target 等价并对 private digest 做无网络导入 smoke；两者都不放宽 main/CI/digest/preflight/`--confirm-prod`、事务回滚或非目标容器不变门禁。
 
+正式环境的生成维护模式是每次发布单独选择的操作参数，不是长期环境配置：
+
+- 用户当次没有说明时，默认选择“开启维护”；上一次发布的选择不自动继承。
+- 只有用户对该次发布明确要求“不进入维护”时才请求关闭，并且仅限 `plan` 判定可无维护的 `rolling`/`none` 变更。
+- migration、首次/legacy 切换、队列 drain、未知影响或发布策略要求的原子更新属于强制 maintenance，不能被“不开维护”覆盖。
+- `plan` 和 `preflight` 必须同时展示并核对用户请求/default、planner 的实际 level 与最终生效模式。请求开启但当前发布器不能实际创建并保持维护，或请求关闭但不能证明全程无维护时，必须在任何 mutation 前停止并修复发布契约；禁止手工写删 marker、调用 legacy 脚本或静默按另一模式上线。
+- 维护开启的事务若回滚/恢复不完整，继续保持维护并记录 `rollback_failed`；发布总结必须报告请求模式和实际模式。
+
 ## 2.2 云端测试控制面
 
 - DigitalOcean SGP1 Droplet 上的云测试只接受 `scripts/release.py plan|deploy --env test --sha <full-sha>`；目标 service 集合由 `deploy/release-policy.yml` 计算，应用镜像由 release manifest 提供。

@@ -48,6 +48,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 - `--skip-env-checks` 仅供无运行态秘密的 release CI 执行非 mutation `plan` 自检；`deploy`/`rollback` 必须拒绝。实际 test/prod plan 与执行仍须校验对应受限 env，禁止把 CI 的 `config_validation=skipped` 当作部署配置通过。
 - 测试验收：图片、视频、Bot、并发锁、locale、Web、Worker heartbeat、回滚演练及默认至少 24 小时观察写入验收 JSON，再执行 `scripts/release.py verify-test ... --execute`；缺少 verified 状态不能晋级。用户明确确认测试服务无问题并授权提前晋级时，可在 evidence 中写 `short_observation_override=true`、非空 `override_reason` 与 `approved_by`，并显式执行 `verify-test --confirm-short-observation`；该例外只跳过固定时长，不放宽任何 smoke、时间顺序、SHA/digest、Web 或 Worker 运行态检查，审计字段必须写入 current/history/acceptance 状态。
 - 云正式默认只能把已验收测试环境中的相同 SHA、控制面镜像 digest、第三方镜像 digest 和 Web checksum 晋级，命令必须带 `--execute --confirm-prod`。明确授权的 Dashboard 快速更新可用 `--dashboard-fast-track`。另一条严格例外 `--control-plane-repair-fast-track` 只处理“测试禁用但生产启用的 private worker 薄镜像闭包修复”：必须复用 verified main-channel 测试状态，`tested SHA → target SHA` 只能包含 control-plane Dockerfile、v2 catalog 和 release/docs/tests/skills 元数据；除 private worker 外，每个 digest 变化 artifact 的 catalog inputs 与 Docker target 必须和已测 SHA 等价，private digest 必须在无网络容器中真实导入 `qqcc_bot.main` / `qqcc_private_bot.worker`。migration、业务代码、Compose、GPU、未知路径、显式 modules/services/from-SHA 或其它 fast-track 均 fail closed；main/CI/digest、生产确认、全量 preflight、事务回滚和非目标容器不变仍不可跳过。
+- 每次正式发布必须单独确定生成维护模式，不能沿用上次选择：用户当次未指示时默认开启维护；只有用户对该次发布明确要求“不进入维护”时才可请求关闭。关闭只适用于 planner 判定可无维护的 rolling/none 变更；migration、首次/legacy 切换、队列 drain、未知影响或其它强制 maintenance 不能被人工关闭。`plan` 与 `preflight` 必须显示并一致确认请求模式、实际 maintenance level 和门禁；当前发布器若无法表达或证明所选模式，必须在 mutation 前停下修发布契约，禁止手工改 marker、静默采用另一模式或把“默认开启”写成未实际生效。
 - 本地正式灾备：`safe_deploy.sh` 只用于云正式整体故障时的临时接管，不是日常部署入口。
 - 普通窄更新仍通过影响 planner 和必要的 `--services` 扩大集合表达；两个 fast-track 均禁止同时传 `--services`，也禁止退回单文件同步、rsync 或现场 `--build`。
 - QQCC 私有 Bot worker：test/prod service 分别为 `qqcc-private-bot-worker-test/prod`，profile `qqcc-private-bots`，入口 `python -m qqcc_private_bot.worker`。它涉及 Alembic、shared secret、Web API webhook、QQCC Config、官方 QQCC membership checker 与公网 Host，不属于 QQCC 三服务快速更新；当前生产 `PRIVATE_QQCC_BOT_ENABLED=true` 且 webhook/profile/owner Host 已启用，测试环境仍禁用该 worker。
@@ -86,6 +87,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 
 ### 云正式
 - 生产控制面在 `allbot-do-sgp1-control`，新发布契约由 `deploy/docker-compose-cloud-base.yml`、prod overlay、`/etc/allbot/prod.env` 和非敏感 `release.env` 管理；旧 compose 仅供首次切换归档/legacy 回滚取证。
+- 维护选择按单次正式发布生效，默认开启；当次用户明确要求不开维护时，只有只读 plan 证明不存在强制 maintenance 条件才允许关闭。最终发布总结同时记录用户请求/default、planner 实际 level 与实际生效模式。
 - `web.aivison.it.com` 是 Cloudflare Pages 静态站；正式 API 健康检查是 `https://api.aivison.it.com/api/health`，RMB 入口是 `https://rmb.aivison.it.com/pay/result`。
 - Dashboard 默认走 Tailscale/受控入口；公网管理域名必须有 Cloudflare Access 或等价身份层保护。Cloudflare token、DNS、Tunnel、Access 或 Pages/R2 变更先加载 `allbot-cloudflare-ops`。
 
@@ -109,8 +111,8 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 ## 5. 生产单服务发布
 
 1. 确认用户确实要求正式发布或生产热修。
-2. 确认目标 service 存在，并确定是否涉及 Alembic、shared env、worker workflow 或跨服务契约。
-3. 对精确 SHA 运行 `release.py plan --env prod --track control-plane`，再运行只读 `preflight`，检查自动影响集合、维护等级、migration、Pages canonical/自动部署和控制面/Web 回滚材料；prod 报告中的 Worker 检查必须是 `skipped`。
+2. 确认目标 service 存在，并确定是否涉及 Alembic、shared env、worker workflow 或跨服务契约；同时记录本次维护意图：用户未指示则为“开启”，用户当次明确要求时才为“不开启”。
+3. 对精确 SHA 运行 `release.py plan --env prod --track control-plane`，再运行只读 `preflight`，检查自动影响集合、维护等级、migration、Pages canonical/自动部署和控制面/Web 回滚材料；prod 报告中的 Worker 检查必须是 `skipped`。planner 判定强制 maintenance 时拒绝关闭；请求开启但发布器无法实际建立/保持维护，或请求关闭但发布器无法证明不会进入维护时，都在 mutation 前停止。
 4. 默认只有目标模块 digest 已在 test 对应 track 标记 verified 且 preflight 全绿，才运行 `release.py deploy --env prod --track control-plane ... --execute --confirm-prod`；`--modules` 只能扩大自动集合。用户明确授权 Dashboard 免测试快速更新时，仍可改用同一 SHA 的 `plan|preflight|deploy --env prod --dashboard-fast-track`，执行仍须 `--execute --confirm-prod`，并确认计划只有 Dashboard 服务、level 为 rolling、`promotion_mode=dashboard-fast-track`。
 5. 手工 compose、旧 QQCC 快速脚本、rsync 和现场 build 均不是紧急旁路；无法通过发布器时停下修复发布契约。
 6. 结束后核对容器 digest、OCI revision、current.json、健康检查和未触碰服务启动时间。
@@ -129,5 +131,5 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 ## 7. 交付要求
 
 - 研发阶段默认只报告云测试验证结果，不声称已发布正式。
-- 正式发布总结必须说明：测试环境验证、用户确认、实际更新服务、迁移状态、验证命令结果和回滚入口。
+- 正式发布总结必须说明：测试环境验证、用户确认、本次维护模式请求/默认值/实际值、实际更新服务、迁移状态、验证命令结果和回滚入口。
 - 若修改部署入口、compose、worker workflow、RunPod profile、R2/legacy 媒体策略、agent control 或运维脚本，同步更新相关 docs/skills，并调用 `allbot-kb-auto-updater`。
