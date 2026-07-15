@@ -93,7 +93,19 @@ class ReleaseCLI:
         return result.stdout
 
     def plan(self, sha: str, track: str) -> dict[str, Any]:
-        output = self._run(self._base("plan", sha, track))
+        try:
+            output = self._run(self._base("plan", sha, track))
+        except TestTrainError as exc:
+            unavailable = f"{track} track has no available artifacts"
+            if track == "gpu-execution" and unavailable in str(exc):
+                return {
+                    "track": track,
+                    "artifacts": {},
+                    "services": [],
+                    "availability": "unavailable",
+                    "reason": unavailable,
+                }
+            raise
         try:
             value = json.loads(output)
         except json.JSONDecodeError as exc:
