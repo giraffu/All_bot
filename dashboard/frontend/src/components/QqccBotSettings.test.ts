@@ -236,6 +236,7 @@ describe('QqccBotSettings', () => {
           video_edit: false,
           market: true,
           main_bot_link: true,
+          private_bot: true,
         },
         prompts: {
           undress: 'old prompt',
@@ -597,6 +598,7 @@ describe('QqccBotSettings', () => {
     await flushPromises()
 
     await wrapper.get('[data-testid="global-enabled"]').setValue(false)
+    await wrapper.get('[data-testid="main-button-private_bot"]').setValue(false)
     await wrapper.get('[data-testid="video-scene-name-0"]').setValue('贴贴')
     await wrapper.get('[data-testid="video-scene-prompt-0"]').setValue('new scene prompt')
     await wrapper.get('[data-testid="video-scene-negative-prompt-0"]').setValue('  video bad hands  ')
@@ -626,6 +628,7 @@ describe('QqccBotSettings', () => {
     expect(payload.main_buttons.photo_edit).toBe(false)
     expect(payload.main_buttons.video_edit).toBe(false)
     expect(payload.main_buttons.market).toBe(true)
+    expect(payload.main_buttons.private_bot).toBe(false)
     expect(payload.video_scenes).toEqual([
       {
         id: 'kiss',

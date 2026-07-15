@@ -25,7 +25,10 @@ from src.services.private_qqcc_bot_runtime import (
     build_private_qqcc_bot_lifecycle_service,
 )
 from src.services.private_qqcc_bot_service import PrivateBotServiceError
-from src.services.qqcc_config_service import load_runtime_qqcc_config
+from src.services.qqcc_config_service import (
+    is_qqcc_private_bot_entry_enabled,
+    load_runtime_qqcc_config,
+)
 from src.services.redis_client import redis_client
 
 logger = logging.getLogger("qqcc_bot.private_bot")
@@ -106,11 +109,24 @@ async def _load_owner_bot(owner_user_id: int):
         return result.scalar_one_or_none()
 
 
+async def _private_bot_entry_enabled() -> bool:
+    try:
+        config = await load_runtime_qqcc_config()
+    except Exception:
+        logger.error("Private Bot config unavailable: code=config_load_error")
+        return False
+    return is_qqcc_private_bot_entry_enabled(config)
+
+
 async def start_private_bot_provisioning(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
     message = update.effective_message
+    if not await _private_bot_entry_enabled():
+        if message is not None:
+            await message.reply_text(_t(context, "qqcc.feature_disabled"))
+        return ConversationHandler.END
     if getattr(getattr(update, "effective_chat", None), "type", None) != "private":
         if message is not None:
             await message.reply_text(
@@ -188,6 +204,14 @@ async def receive_private_bot_token(
         await message.delete()
     except Exception:
         token_message_deleted = False
+
+    if not await _private_bot_entry_enabled():
+        context.user_data.pop(PRIVATE_BOT_OWNER_ID_KEY, None)
+        text = _t(context, "qqcc.feature_disabled")
+        if not token_message_deleted:
+            text = f"{text}\n\n{_t(context, 'qqcc.private_bot.token_delete_warning')}"
+        await message.reply_text(text)
+        return ConversationHandler.END
 
     owner_user_id = int(context.user_data.get(PRIVATE_BOT_OWNER_ID_KEY) or 0)
     if owner_user_id <= 0:
@@ -300,6 +324,11 @@ def get_private_bot_provisioning_handler() -> ConversationHandler:
 
 async def private_bot_group_redirect(update: Update, context):
     if update.effective_message:
+        if not await _private_bot_entry_enabled():
+            await update.effective_message.reply_text(
+                _t(context, "qqcc.feature_disabled")
+            )
+            return ConversationHandler.END
         await update.effective_message.reply_text(
             _t(context, "qqcc.private_bot.private_chat_only")
         )
