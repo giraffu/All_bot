@@ -6,7 +6,7 @@ QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位�
 
 它不是主 Bot 的完整副本，不承载充值、affiliate 菜单、主 Bot 完整 gallery 浏览、Web 登录、支付回调或高级视频/高级图像入口。
 
-主菜单可额外展示非生成入口：`修仙市集`、`前往主bot`，以及仅官方 QQCC 展示的 `私有bot`。`修仙市集` 是 QQCC 专用轻量 Gallery 浏览/应用入口；`前往主bot` 用于把用户引回完整主 Bot；`私有bot` 进入 owner token 申请/管理流程。Telegram 底部菜单按钮不能直接承载 URL，因此用户点击 `前往主bot` 后，QQCC Bot 会回复一条带 inline URL 的跳转按钮。私有 Bot Application 不展示 `私有bot`，避免嵌套申请。
+主菜单可额外展示非生成入口：`修仙市集`、`前往主bot`，以及仅官方 QQCC 展示的 `私有bot`。`修仙市集` 是 QQCC 专用轻量 Gallery 浏览/应用入口；`前往主bot` 用于把用户引回完整主 Bot；`私有bot` 进入 owner token 申请/管理流程。管理后台“主菜单”中的 `main_buttons.private_bot` 可独立隐藏官方入口；它默认开启、不跟随生成能力的 `global_enabled`，也不会停止 private worker 或禁用既有私有 Bot。关闭后旧 reply keyboard 点击会回复 `功能暂未开放`，已经进入 token 步骤的申请会先尽力删除 token 消息再拒绝创建。Telegram 底部菜单按钮不能直接承载 URL，因此用户点击 `前往主bot` 后，QQCC Bot 会回复一条带 inline URL 的跳转按钮。私有 Bot Application 不展示 `私有bot`，避免嵌套申请。
 
 ## 2. 功能边界
 
@@ -82,7 +82,7 @@ QQCC Config Web 使用独立后台账号，不复用 Dashboard 管理员 token�
 
 - `scene_preset_version`: 当前为 `1`；缺失或小于 `1` 视为旧配置，保存时一次性补齐 QQCC 绘图/动图预设并迁移旧 prompt override；已有 `scene_preset_version>=1` 时尊重管理员删除后的空 `draw_scenes` / `video_scenes`
 - `global_enabled`
-- `main_buttons`: `quick_undress`, `quick_faceswap`, `photo_edit`, `ai_draw`, `ai_filter`, `video_edit`, `market`, `main_bot_link`；`quick_undress` 与 `photo_edit` 仅保留旧配置兼容，QQCC 主菜单不再渲染
+- `main_buttons`: `quick_undress`, `quick_faceswap`, `photo_edit`, `ai_draw`, `ai_filter`, `video_edit`, `market`, `main_bot_link`, `private_bot`；`quick_undress` 与 `photo_edit` 仅保留旧配置兼容，QQCC 主菜单不再渲染；`private_bot` 只控制官方 QQCC 申请/管理入口，默认开启且不跟随 `global_enabled`
 - `photo_buttons`: `masturbation`, `random_faceswap`；仅保留旧配置兼容
 - `undress_methods`: `legacy`, `i2i_draw`；仅保留旧配置兼容
 - `video_scenes`: `[{ id, name, prompt, negative_prompt, duration, engine, lora_name, end_frame_draw_scene_id }]`；所有场景 `prompt` 必填，`negative_prompt` 可选，缺失或非字符串归一为空，字符串保存前 trim；`engine` 只能是 `image_to_video` 或 `wan22_video_v2`，缺省 `image_to_video`；`lora_name` 只允许在 `image_to_video` 下来自 `VIDEO_LORA_MODELS`，v2 自动清空；`end_frame_draw_scene_id` 只能引用归一化后的 `draw_scenes[].id`，缺省 `""`；`duration` 只能是 `5s`、`8s`、`10s`，`id` 只能用于短安全 callback
@@ -160,7 +160,7 @@ active task registry 必须持久化 `client_type`：
 
 ### 4.1 用户私有 Bot 来源隔离
 
-官方 QQCC 主菜单额外提供 `私有bot` 申请入口；每个已注册用户无需审核即可绑定一个全新的 Telegram Bot。私有实例使用 webhook，不参与官方 QQCC polling，也不展示再次申请入口。每个实例把 `application.bot_data["bot_client_type"]` 设为 `bot:qqcc-private:<private_bot_id>`，运行时配置从 `private_qqcc_bots.config` 加载。
+官方 QQCC 主菜单额外提供 `私有bot` 申请入口；每个已注册用户无需审核即可绑定一个全新的 Telegram Bot。该入口由官方 QQCC 配置的 `main_buttons.private_bot` 控制，并与部署总 gate `PRIVATE_QQCC_BOT_ENABLED` 叠加生效。菜单开关只暂停新入口和新申请，不影响已创建私有 Bot 的 webhook worker。私有实例使用 webhook，不参与官方 QQCC polling，也不展示再次申请入口。每个实例把 `application.bot_data["bot_client_type"]` 设为 `bot:qqcc-private:<private_bot_id>`，运行时配置从 `private_qqcc_bots.config` 加载。
 
 私有 worker 重启时只恢复 exact client type 匹配的任务。`bot:qqcc`、`bot`、legacy 和其它 private ID 都必须跳过。完整凭据、状态、Owner WebApp、管理员治理和发布契约见 `docs/子模块_QQCC用户私有Bot平台_qqcc_private_bot_platform.md`。
 

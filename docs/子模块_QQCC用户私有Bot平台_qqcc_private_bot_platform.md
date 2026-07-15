@@ -16,7 +16,7 @@ QQCC 用户私有 Bot 平台允许已注册 AllBot 用户把一个全新的 Tele
 
 ## 2. 申请、凭据与状态模型
 
-官方 QQCC 主菜单的 `私有bot` 入口注册独立 token FSM。首次进入会说明通过 `@BotFather` 执行 `/newbot` 的步骤，并要求使用未接入其它系统的新 Bot。收到 token 后先尽力删除用户原消息；禁止回显 token、把 token 写入日志、异常、审计 `details` 或监控标签。
+官方 QQCC 主菜单的 `私有bot` 入口注册独立 token FSM。管理后台“主菜单”的 `main_buttons.private_bot` 默认开启，只控制官方 QQCC 的申请/管理入口；它与 `PRIVATE_QQCC_BOT_ENABLED` 总 gate 叠加，但不会停止 private worker 或禁用既有私有 Bot。开关关闭后新菜单隐藏入口，旧键盘点击回复 `功能暂未开放`；若用户已经停留在 token 步骤，收到消息后仍先尽力删除 token，再拒绝创建并结束会话。首次进入会说明通过 `@BotFather` 执行 `/newbot` 的步骤，并要求使用未接入其它系统的新 Bot。收到 token 后先尽力删除用户原消息；禁止回显 token、把 token 写入日志、异常、审计 `details` 或监控标签。
 
 凭据与身份校验：
 

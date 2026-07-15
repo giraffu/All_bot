@@ -73,6 +73,7 @@ def test_normalize_qqcc_config_returns_default_shape_for_empty_config():
     assert config["main_buttons"]["ai_filter"] is True
     assert config["main_buttons"]["ai_video"] is True
     assert config["ai_video_scenes"] == []
+    assert config["main_buttons"]["private_bot"] is True
     assert config["filter_scenes"] == []
     assert config["draw_scenes"] == [
         {
@@ -380,6 +381,7 @@ def test_normalize_qqcc_config_drops_unknown_keys_and_keeps_empty_prompt_for_fal
         "ai_video": True,
         "market": True,
         "main_bot_link": True,
+        "private_bot": True,
     }
     assert "unknown" not in config["main_buttons"]
     assert config["video_settings"]["resolutions"] == {

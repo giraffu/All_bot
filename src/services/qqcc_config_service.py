@@ -30,6 +30,7 @@ MAIN_BUTTON_KEYS = (
     "ai_video",
     "market",
     "main_bot_link",
+    "private_bot",
 )
 PHOTO_BUTTON_KEYS = ("masturbation", "random_faceswap")
 UNDRESS_METHOD_KEYS = ("legacy", "i2i_draw")
@@ -219,6 +220,7 @@ DEFAULT_QQCC_LAZY_BOT_CONFIG: dict[str, Any] = {
         "ai_video": True,
         "market": True,
         "main_bot_link": True,
+        "private_bot": True,
     },
     "photo_buttons": {
         "masturbation": True,
@@ -1179,6 +1181,15 @@ def is_qqcc_main_bot_link_enabled(config: dict[str, Any]) -> bool:
         config,
         "main_buttons",
         "main_bot_link",
+        require_global=False,
+    )
+
+
+def is_qqcc_private_bot_entry_enabled(config: dict[str, Any]) -> bool:
+    return is_qqcc_flag_enabled(
+        config,
+        "main_buttons",
+        "private_bot",
         require_global=False,
     )
 
