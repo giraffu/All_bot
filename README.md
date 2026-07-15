@@ -70,6 +70,7 @@
 - [子模块: 运维指南与容器管理 (Ops & Deployment)](./docs/子模块_运维指南与容器管理_ops_deployment.md)
 - [子模块: 附加模型部署与配置指南 (ComfyUI Add-on Models)](./docs/子模块_附加模型配置指南_comfy_models.md)
 - [首次可信 Release 准备记录](./docs/子模块_首次可信发布准备_first_trusted_release.md)
+- [并发 AI 自动接单使用指南](./docs/并发AI自动接单使用指南_auto_workspace_claim.md)
 - [测试与入口命名约定](./docs/测试与入口命名约定.md)
 <!-- DOCS_INDEX_END -->
 
