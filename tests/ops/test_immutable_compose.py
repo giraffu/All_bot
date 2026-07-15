@@ -316,6 +316,7 @@ def test_release_workflow_gates_pull_requests_without_publishing_images():
     assert "workflow_run:" in modular
     assert 'workflows: ["Immutable control-plane release"]' in modular
     assert "github.event.workflow_run.conclusion == 'success'" in modular
+    assert "github.event.workflow_run.event == 'push'" in modular
 
 
 def test_bootstrap_sends_remote_script_over_stdin_and_archives_source_only():
