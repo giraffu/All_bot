@@ -13,8 +13,8 @@
 - 新控制面：`deploy/docker-compose-cloud-base.yml` + `deploy/docker-compose-cloud-test.overlay.yml`
 - 私密配置：`/etc/allbot/test.env`；非敏感镜像/SHA：release 目录的 `release.env`
 - 计划/发布：按顺序执行 `scripts/release.py plan --env test --sha <full-sha>`、`preflight --env test --sha <full-sha>`、`deploy --env test --sha <full-sha> --execute`；不得用 `--services` 人工缩小机器计算的依赖闭包。
-- Test-train：A-D 只提交 PR；集成 AI 执行 `scripts/test_train_release.py plan|deploy|accept|block`。包装器使用独立 candidate cache 和本地排他锁，GPU 变化只报告并转交 profile canary/operator。
-- Web 自由P图 v3 发布验收：运行时公开开关为 `enable_free_edit_v3`。云测试发布不以全部 Worker 或 `pornmaster_flux2_edit_bf16` Worker 可用为前置条件；先验收页面、单图/5 灵石/无 LoRA 展示、预签名上传、投稿与一键应用入口。只有目标链路 Worker 当时可用时才执行“单图 v3 生成 → 投稿 → 一键应用 → 再生成”黄金路径；不可用时记录为独立 Worker 待办，不阻塞测试 Web 更新，也不得把未执行写成通过。未完成 24 小时观察时只记录 smoke，不执行 `verify-test`。
+- Test-train：A-D 只提交 PR；集成 AI 执行 `scripts/test_train_release.py plan|deploy|accept|block`。包装器使用独立 candidate cache 和本地排他锁，GPU 变化只报告并转交 profile canary/operator。默认部署 control-plane 后继续 test-execution；当用户明确要求等匹配 GPU/ComfyUI 的 Worker 窗口时，deploy 可加 `--skip-test-execution`，但本轮状态/evidence 只能验收 control-plane，不能写 Worker 已更新。
+- Web 自由P图 v2.5/v3 发布验收共用运行时开关 `enable_free_edit_v3` 和 BF16 执行池。先验收两张模式卡、v2.5 单/双图 3/7 灵石、v3 单图 5 灵石、无 LoRA、预签名上传、投稿与一键应用入口；目标 Worker 可用时分别完成“v2.5 单图”“v2.5 双图”“v3 BF16→换脸”三条黄金路径，其中双图投稿应用必须重新上传两张。Worker 不可用时记录独立待办，不得把未执行写成通过；未完成 24 小时观察时只记录 smoke，不执行 `verify-test`。
 - 下列路径只描述首次切换前的 legacy 运行态：
 - 远程主机别名：`allbot-do-sgp1-test-control`
 - 远程代码目录：`/home/deploy/APP/All_bot`

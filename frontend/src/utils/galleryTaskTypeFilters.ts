@@ -2,6 +2,7 @@ import type { GalleryTaskTypeOption } from '@/composables/useGalleryConfig'
 
 export const GALLERY_EDIT_GROUP_TASK_TYPE = 'edit_group'
 export const GALLERY_FREE_EDIT_V3_GROUP_TASK_TYPE = 'free_edit_v3_group'
+export const GALLERY_FREE_EDIT_V2_5_GROUP_TASK_TYPE = 'free_edit_v2_5_group'
 export const GALLERY_FREE_EDIT_V2_GROUP_TASK_TYPE = 'free_edit_v2_group'
 export const GALLERY_IMG2VIDEO_GROUP_TASK_TYPE = 'img2video_group'
 export const GALLERY_LORA_MODEL_NONE = '__none__'
@@ -11,6 +12,7 @@ const WEB_DISABLED_GALLERY_TASK_TYPES = new Set(['i2i_draw'])
 const GALLERY_GROUPED_TASK_TYPE_ALIASES: Record<string, string> = {
   edit: GALLERY_EDIT_GROUP_TASK_TYPE,
   img2img_lora: GALLERY_EDIT_GROUP_TASK_TYPE,
+  free_edit_v2_5: GALLERY_FREE_EDIT_V2_5_GROUP_TASK_TYPE,
   pornmaster_flux2_edit_bf16: GALLERY_FREE_EDIT_V3_GROUP_TASK_TYPE,
   pornmaster_flux2_single_edit: GALLERY_FREE_EDIT_V3_GROUP_TASK_TYPE,
   pornmaster_flux2_multi_edit: GALLERY_FREE_EDIT_V3_GROUP_TASK_TYPE,
@@ -23,6 +25,7 @@ const GALLERY_GROUPED_TASK_TYPE_ALIASES: Record<string, string> = {
 export function isGalleryGroupedTaskType(taskType: string): boolean {
   return (
     taskType === GALLERY_EDIT_GROUP_TASK_TYPE
+    || taskType === GALLERY_FREE_EDIT_V2_5_GROUP_TASK_TYPE
     || taskType === GALLERY_FREE_EDIT_V3_GROUP_TASK_TYPE
     || taskType === GALLERY_FREE_EDIT_V2_GROUP_TASK_TYPE
     || taskType === GALLERY_IMG2VIDEO_GROUP_TASK_TYPE

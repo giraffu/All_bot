@@ -6,6 +6,7 @@ from sqlalchemy import desc, func, not_, or_, select
 from sqlalchemy.orm import selectinload
 
 from src.constants import (
+    MODE_FREE_EDIT_V2_5,
     MODE_IMAGE_TO_VIDEO,
     MODE_LTX_VIDEO,
     MODE_LTX_VIDEO_FLF2V,
@@ -31,6 +32,7 @@ GALLERY_GROUPED_TASK_TYPE_FAMILIES = {
         MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
         MODE_PORNMASTER_FLUX2_MULTI_EDIT,
     ),
+    "free_edit_v2_5_group": (MODE_FREE_EDIT_V2_5,),
     "free_edit_v2_group": (
         MODE_PORNMASTER_FLUX2_EDIT_BF16,
         MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
@@ -50,9 +52,7 @@ GALLERY_GROUPED_TASK_TYPE_LORA_MODELS = {
 }
 
 
-def _resolve_grouped_task_type_values(
-    *, task_type: str | None, lora_model: str | None
-):
+def _resolve_grouped_task_type_values(*, task_type: str | None, lora_model: str | None):
     _ = lora_model
     return resolve_gallery_task_type_filter_values(task_type)
 
@@ -177,10 +177,7 @@ def _apply_media_filters(
         query = query.where(GalleryPost.media_type == media_type)
 
     grouped_lora_models = GALLERY_GROUPED_TASK_TYPE_LORA_MODELS.get(task_type or "")
-    if (
-        lora_model == GALLERY_LORA_MODEL_NONE
-        and grouped_lora_models
-    ):
+    if lora_model == GALLERY_LORA_MODEL_NONE and grouped_lora_models:
         addon_tag_filters = [
             GalleryPost.tags.like(f'%"{f"#{model_name}"}"%')
             for model_name in grouped_lora_models
@@ -217,7 +214,9 @@ def _apply_time_range_filter(query, *, time_range: str):
 
 def _apply_sort(query, *, sort_by: str):
     if sort_by == "likes":
-        return query.order_by(desc(GalleryPost.likes_count), desc(GalleryPost.created_at))
+        return query.order_by(
+            desc(GalleryPost.likes_count), desc(GalleryPost.created_at)
+        )
     if sort_by == "dislikes":
         return query.order_by(
             desc(GalleryPost.dislikes_count), desc(GalleryPost.created_at)
@@ -326,9 +325,13 @@ async def fetch_gallery_feed_page(
     total = (await session.execute(total_query)).scalar()
 
     offset = (page - 1) * size if page > 0 else 0
-    paged_query = query.options(
-        selectinload(GalleryPost.user), selectinload(GalleryPost.histories)
-    ).offset(offset).limit(size)
+    paged_query = (
+        query.options(
+            selectinload(GalleryPost.user), selectinload(GalleryPost.histories)
+        )
+        .offset(offset)
+        .limit(size)
+    )
 
     result = await session.execute(paged_query)
     return result.scalars().all(), total

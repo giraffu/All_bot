@@ -13,10 +13,12 @@ WEB_DISABLED_GENERATION_TASK_TYPE_DETAILS = {
     "i2i_draw": "局部重绘已在 Web 端关闭，暂不支持提交。",
     "pornmaster_flux2_single_edit": "自由P图 v2 已升级，请刷新页面使用 v3。",
     "pornmaster_flux2_multi_edit": "自由P图 v2 已升级，请刷新页面使用 v3。",
+    "pornmaster_flux2_multi_edit_bf16": "该执行类型仅供内部调度，请刷新页面使用自由P图 v2.5。",
 }
 
 WEB_FREE_EDIT_V3_TASK_TYPE = "pornmaster_flux2_edit_bf16"
 WEB_FREE_EDIT_V3_COST = 5
+WEB_FREE_EDIT_V2_5_TASK_TYPE = "free_edit_v2_5"
 
 
 def _raise_if_web_generation_task_disabled(task_type: str) -> None:
@@ -42,6 +44,8 @@ async def submit_generation_task(
 
         inputs = dict(req.inputs)
         images = list(inputs.get("images") or [])
+        if req.task_type == WEB_FREE_EDIT_V2_5_TASK_TYPE and len(images) not in {1, 2}:
+            raise CoreDomainError("自由P图 v2.5 仅支持上传 1 或 2 张原图。")
         if req.task_type == WEB_FREE_EDIT_V3_TASK_TYPE and len(images) != 1:
             raise CoreDomainError("自由P图 v3 仅支持上传 1 张原图。")
         if req.prompt:

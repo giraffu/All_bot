@@ -65,6 +65,8 @@ python scripts/test_train_release.py deploy \
 
 包装器在本地主服务器使用 `~/.local/state/allbot/test-train.lock` 排他锁，先计划三个 track，再按 `control-plane`、`test-execution` 顺序部署受影响模块。`gpu-execution` 只报告计划；真实 GPU profile 仍走对应 canary/operator。当基线还没有任何可用 GPU artifact 时，`plan` 以 `availability: unavailable` 显式报告该 track，不影响纯控制面/测试执行面候选；该状态不会被解释为可执行 GPU mutation。
 
+测试 Worker 的 GPU/ComfyUI 类型与目标业务窗口不匹配时，用户或集成 AI 可以明确把它留到后续独立窗口：在同一命令追加 `--skip-test-execution`。该参数只从本轮 mutation 中移除 `test-execution`，不改变默认顺序，也不把 Worker 标记为已部署；test-train 状态、验收 evidence 和手工测试结论都只能列出实际完成的 `control-plane`。后续需要 Worker 时必须对当时最新的可信 candidate 重新 plan，并在匹配 GPU runtime 的窗口单独部署/验收，禁止用这次控制面结果冒充 Worker 通过。
+
 若后一个 track 部署失败，包装器按相反顺序回滚本轮已成功 track；单 track 内部继续使用 `release.py` 事务补偿。若部署成功但业务 smoke 失败：
 
 1. 执行 `block` 并暂停其它无关 PR 合入。

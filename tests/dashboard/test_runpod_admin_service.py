@@ -87,11 +87,15 @@ async def test_runpod_profiles_payload_lists_supported_prod_profiles():
     assert pornmaster.get("autoscaler_enabled", True) is True
 
     pornmaster_bf16 = payload["profiles"][-1]
-    assert pornmaster_bf16["label"] == "pornmaster_flux2 BF16 / 自由P图 v3"
+    assert pornmaster_bf16["label"] == (
+        "pornmaster_flux2 BF16 / 自由P图 v2.5 + v3 共用执行池"
+    )
     assert pornmaster_bf16["supported_task_types"] == [
         "pornmaster_flux2_edit_bf16",
+        "pornmaster_flux2_multi_edit_bf16",
     ]
     assert pornmaster_bf16.get("autoscaler_enabled", True) is True
+
 
 @pytest.mark.asyncio
 async def test_start_runpod_scale_payload_creates_retrying_operations():
@@ -233,7 +237,9 @@ async def test_runpod_operation_store_fake_create_list_update_prune_and_lock():
         "locked": True,
     }
     await store.set_locked_runpod_worker(lock_payload["agent_id"], lock_payload)
-    assert await store.get_locked_runpod_worker(lock_payload["agent_id"]) == lock_payload
+    assert (
+        await store.get_locked_runpod_worker(lock_payload["agent_id"]) == lock_payload
+    )
     assert await store.list_locked_runpod_workers() == {
         lock_payload["agent_id"]: lock_payload
     }
@@ -404,7 +410,10 @@ async def test_lock_runpod_worker_marks_payload_and_blocks_deletes():
         {
             "workers": [
                 {"agent_id": agent_id, "provider": "runpod"},
-                {"agent_id": "runpod_prod_wan22_video_v2_manual_04", "provider": "runpod"},
+                {
+                    "agent_id": "runpod_prod_wan22_video_v2_manual_04",
+                    "provider": "runpod",
+                },
             ]
         }
     )
@@ -540,7 +549,9 @@ async def test_restart_lan_aio_worker_builds_slot_scoped_operation():
     assert operation["slot"] == "gpu-177-gpu0-wan22_video_v2"
     assert command[:3] == [
         "python3",
-        str(runpod_admin_service.PROJECT_ROOT / "scripts" / "lan_aio_fleet_prod_ops.py"),
+        str(
+            runpod_admin_service.PROJECT_ROOT / "scripts" / "lan_aio_fleet_prod_ops.py"
+        ),
         "restart-aio",
     ]
     assert command[command.index("--slot") + 1] == "gpu-177-gpu0-wan22_video_v2"
@@ -570,20 +581,30 @@ async def test_pause_and_enable_lan_aio_worker_build_slot_scoped_operations():
     assert pause_operation["slot"] == "gpu-177-gpu0-wan22_video_v2"
     assert pause_command[:3] == [
         "python3",
-        str(runpod_admin_service.PROJECT_ROOT / "scripts" / "lan_aio_fleet_prod_ops.py"),
+        str(
+            runpod_admin_service.PROJECT_ROOT / "scripts" / "lan_aio_fleet_prod_ops.py"
+        ),
         "disable-aio",
     ]
-    assert pause_command[pause_command.index("--slot") + 1] == "gpu-177-gpu0-wan22_video_v2"
+    assert (
+        pause_command[pause_command.index("--slot") + 1]
+        == "gpu-177-gpu0-wan22_video_v2"
+    )
     assert "--execute" in pause_command
     assert enable_operation["action"] == "enable"
     assert enable_operation["profile"] == "wan22_video_v2"
     assert enable_operation["slot"] == "gpu-177-gpu0-wan22_video_v2"
     assert enable_command[:3] == [
         "python3",
-        str(runpod_admin_service.PROJECT_ROOT / "scripts" / "lan_aio_fleet_prod_ops.py"),
+        str(
+            runpod_admin_service.PROJECT_ROOT / "scripts" / "lan_aio_fleet_prod_ops.py"
+        ),
         "enable-aio",
     ]
-    assert enable_command[enable_command.index("--slot") + 1] == "gpu-177-gpu0-wan22_video_v2"
+    assert (
+        enable_command[enable_command.index("--slot") + 1]
+        == "gpu-177-gpu0-wan22_video_v2"
+    )
     assert "--execute" in enable_command
 
 
@@ -636,8 +657,8 @@ async def test_terminate_runpod_add_operation_marks_terminating_and_kills_group(
     )
     runpod_admin_service._operations[operation.id] = operation
 
-    runpod_admin_service._operation_runner.kill_process_group = (
-        lambda pid, sig: killed.append((pid, sig))
+    runpod_admin_service._operation_runner.kill_process_group = lambda pid, sig: (
+        killed.append((pid, sig))
     )
 
     payload = await runpod_admin_service.terminate_runpod_operation_payload(
@@ -652,8 +673,7 @@ async def test_terminate_runpod_add_operation_marks_terminating_and_kills_group(
 
 
 @pytest.mark.asyncio
-async def test_terminate_detached_runpod_operation_returns_409_and_does_not_kill(
-):
+async def test_terminate_detached_runpod_operation_returns_409_and_does_not_kill():
     store = InMemoryRunPodOperationStore()
     runpod_admin_service.set_runpod_operation_store_for_tests(store)
     await store.save_operation(
@@ -670,8 +690,8 @@ async def test_terminate_detached_runpod_operation_returns_409_and_does_not_kill
         },
         created_at=1.0,
     )
-    runpod_admin_service._operation_runner.kill_process_group = (
-        lambda *_args: pytest.fail("detached operation must not kill by PID")
+    runpod_admin_service._operation_runner.kill_process_group = lambda *_args: (
+        pytest.fail("detached operation must not kill by PID")
     )
 
     with pytest.raises(HTTPException) as exc_info:

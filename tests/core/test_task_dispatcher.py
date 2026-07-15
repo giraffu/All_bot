@@ -4,11 +4,13 @@ import pytest
 
 from src.constants import (
     MODE_CUSTOM_VIDEO,
+    MODE_FREE_EDIT_V2_5,
     MODE_I2I_PRO,
     MODE_IMAGE_TO_VIDEO,
     MODE_IMAGE_TO_VIDEO_LITERAL,
     MODE_IMG2IMG_LORA,
     MODE_PORNMASTER_FLUX2_EDIT_BF16,
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_SCAIL2_ACTION_TRANSFER,
@@ -660,7 +662,9 @@ async def test_pornmaster_flux2_edit_strategy_routes_single_and_multi(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_pornmaster_flux2_bf16_strategy_requires_one_image_and_costs_six(monkeypatch):
+async def test_pornmaster_flux2_bf16_strategy_requires_one_image_and_costs_six(
+    monkeypatch,
+):
     submit_mock = AsyncMock(return_value="backend-task-id")
     _patch_dispatch_image_service(
         monkeypatch,
@@ -691,6 +695,83 @@ async def test_pornmaster_flux2_bf16_strategy_requires_one_image_and_costs_six(m
     )
 
 
+@pytest.mark.asyncio
+async def test_free_edit_v25_costs_three_and_reuses_bf16_execution(monkeypatch):
+    submit_mock = AsyncMock(return_value="backend-task-id")
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_pornmaster_flux2_edit_task=submit_mock,
+    )
+    strategy = StrategyFactory.get_strategy(
+        MODE_FREE_EDIT_V2_5,
+        feature_flags=TaskDispatcherFeatureFlags(free_edit_v2_enabled=True),
+    )
+
+    assert strategy.get_cost({"images": ["a.png"]}) == 3
+    await strategy.submit_task(
+        "task-v25",
+        {
+            "prompt": "high precision edit without face restoration",
+            "saved_input_images": ["demo/input.png"],
+        },
+        priority=4,
+    )
+
+    submit_mock.assert_awaited_once_with(
+        "task-v25",
+        execution_task_type=MODE_PORNMASTER_FLUX2_EDIT_BF16,
+        prompt="high precision edit without face restoration",
+        image_paths=["demo/input.png"],
+        negative_prompt=" ",
+        priority=4,
+    )
+
+
+@pytest.mark.asyncio
+async def test_free_edit_v25_costs_seven_and_routes_two_images_to_bf16_multi(
+    monkeypatch,
+):
+    submit_mock = AsyncMock(return_value="backend-task-id")
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_pornmaster_flux2_edit_task=submit_mock,
+    )
+    strategy = StrategyFactory.get_strategy(
+        MODE_FREE_EDIT_V2_5,
+        feature_flags=TaskDispatcherFeatureFlags(free_edit_v2_enabled=True),
+    )
+
+    inputs = {
+        "prompt": "edit two references",
+        "saved_input_images": ["demo/a.png", "demo/b.png"],
+    }
+
+    assert strategy.get_cost(inputs) == 7
+    await strategy.submit_task("task-v25", inputs, priority=0)
+
+    submit_mock.assert_awaited_once_with(
+        "task-v25",
+        execution_task_type=MODE_PORNMASTER_FLUX2_MULTI_EDIT_BF16,
+        prompt="edit two references",
+        image_paths=["demo/a.png", "demo/b.png"],
+        negative_prompt=" ",
+        priority=0,
+    )
+
+
+@pytest.mark.parametrize("image_paths", [[], ["a.png", "b.png", "c.png"]])
+def test_free_edit_v25_rejects_invalid_image_count_before_billing(image_paths):
+    strategy = StrategyFactory.get_strategy(
+        MODE_FREE_EDIT_V2_5,
+        feature_flags=TaskDispatcherFeatureFlags(free_edit_v2_enabled=True),
+    )
+
+    with pytest.raises(
+        CoreDomainError, match="自由P图 v2.5 当前任务需要上传 1 或 2 张参考图"
+    ):
+        strategy.get_cost({"saved_input_images": image_paths})
+
+
 def test_pornmaster_flux2_edit_strategy_respects_feature_flag():
     strategy = StrategyFactory.get_strategy(
         MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
@@ -699,6 +780,13 @@ def test_pornmaster_flux2_edit_strategy_respects_feature_flag():
 
     with pytest.raises(CoreDomainError, match="自由P图 v2 当前未开放"):
         strategy.get_cost({"images": ["a.png"]})
+
+    v2_5_strategy = StrategyFactory.get_strategy(
+        MODE_FREE_EDIT_V2_5,
+        feature_flags=TaskDispatcherFeatureFlags(free_edit_v2_enabled=False),
+    )
+    with pytest.raises(CoreDomainError, match="自由P图 v2.5 当前未开放"):
+        v2_5_strategy.get_cost({"images": ["a.png"]})
 
 
 @pytest.mark.asyncio

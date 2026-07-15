@@ -79,6 +79,29 @@ def test_pornmaster_bf16_task_uses_isolated_model_weight():
     assert patched["254"]["inputs"]["text"] == "blur, low quality"
 
 
+def test_pornmaster_multi_bf16_task_injects_two_images_and_isolated_model_weight():
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
+    workflow = patcher.load_workflow("pornmaster_flux2_multi_edit_bf16")
+
+    patched = patcher.patch_workflow(
+        "pornmaster_flux2_multi_edit_bf16",
+        workflow,
+        {
+            "image": "first.png",
+            "image2": "second.png",
+            "prompt": "combine references",
+            "negative_prompt": "blur, low quality",
+        },
+    )
+
+    assert patched["9"]["inputs"]["unet_name"] == (
+        "flux2/PornMaster_flux2_klein_9b_turbo_bf16_V4.safetensors"
+    )
+    assert patched["17"]["inputs"]["image"] == "first.png"
+    assert patched["29"]["inputs"]["image"] == "second.png"
+    assert patched["49"]["inputs"]["text"] == "blur, low quality"
+
+
 @pytest.mark.parametrize(
     ("task_type", "replacement_mode", "duration", "frame_count"),
     [

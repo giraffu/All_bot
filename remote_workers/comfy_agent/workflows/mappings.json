@@ -179,6 +179,18 @@
         "seed": "28",
         "seed_input": "noise_seed"
     },
+    "pornmaster_flux2_multi_edit_bf16": {
+        "image": "17",
+        "image_input": "image",
+        "image2": "29",
+        "image2_input": "image",
+        "prompt": "8",
+        "prompt_input": "text",
+        "negative_prompt": "49",
+        "negative_prompt_input": "text",
+        "seed": "43",
+        "seed_input": "noise_seed"
+    },
     "pornmaster_flux2_multi_edit": {
         "image": "17",
         "image_input": "image",

@@ -326,3 +326,30 @@ async def test_submit_pornmaster_flux2_bf16_uses_dedicated_single_image_endpoint
         api_client_module.PORNMASTER_FLUX2_EDIT_BF16_ENDPOINT,
     )
     assert request.await_args.kwargs["json"]["images"] == ["/tmp/input.png"]
+
+
+@pytest.mark.asyncio
+async def test_submit_pornmaster_flux2_multi_bf16_uses_dedicated_two_image_endpoint(monkeypatch):
+    client = api_client_module.APIClient.__new__(api_client_module.APIClient)
+    request = AsyncMock(
+        return_value=httpx.Response(200, json={"task_id": "backend-task-id"})
+    )
+    monkeypatch.setattr(client, "_request", request)
+
+    await client.submit_pornmaster_flux2_edit(
+        "task-bf16-multi",
+        execution_task_type="pornmaster_flux2_multi_edit_bf16",
+        prompt="combine references",
+        image_paths=["/tmp/one.png", "/tmp/two.png"],
+        priority=3,
+    )
+
+    assert request.await_args.args[:2] == (
+        "POST",
+        api_client_module.PORNMASTER_FLUX2_MULTI_EDIT_BF16_ENDPOINT,
+    )
+    assert request.await_args.kwargs["json"]["images"] == [
+        "/tmp/one.png",
+        "/tmp/two.png",
+    ]
+    assert request.await_args.kwargs["json"]["image2"] == "/tmp/two.png"
