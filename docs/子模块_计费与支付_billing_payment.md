@@ -114,7 +114,7 @@ sequenceDiagram
 ### 4.5 标准邀请奖励
 
 - 标准邀请奖励与付费 affiliate 返佣是两套账：前者直接写 `users.credits` + `user_logs`，后者写 `affiliate_transactions` 并可兑换灵石。
-- 新用户通过邀请链接注册时，仅记录 `referrals`、`users.invited_by`、邀请人 `referral_count`，不再给邀请人发放注册奖励；被邀请新用户仍按默认新手资产记录 `welcome_bonus = +6`。
+- 只有 `get_or_create_user_by_telegram(...)` 在本次邀请请求中返回 `is_new=True` 的真实新用户，才可通过邀请链接记录 `referrals`、`users.invited_by`、邀请人 `referral_count`；历史用户即使尚无 `invited_by` 也不得补绑。`QuotaManager.process_referral(...)` 以必填的 `new_user_was_created=True` 再次守住该边界。注册阶段不再给邀请人发放奖励；被邀请新用户仍按默认新手资产记录 `welcome_bonus = +6`。
 - 被邀请用户首次确认入群时，邀请人奖励目标为累计 5 灵石，审计类型为 `referral_reward_channel`。
 - 被邀请用户首次成功生成内容时，邀请人奖励目标为累计 10 灵石，审计类型为 `referral_reward_generation`。
 - 奖励发放按同一邀请关系的历史 `referral_reward_initial/referral_reward_channel/referral_reward_generation` 流水补差额，`extra_info.invitee_id` 是幂等核对字段；老数据中已发过的注册 +5 会计入目标，不会因新规则重复发放。
@@ -162,7 +162,7 @@ sequenceDiagram
 - 审计闭环
   - `users.credits` 变化必须与 `user_logs` 对平。
   - Web 用户侧账本查询必须只读、仅本人可查、排除 0 变动、按 `created_at desc, id desc` 分页，且过滤敏感审计上下文。
-  - 标准邀请奖励必须覆盖注册不发邀请人、入群补到 5、首次生成补到 10、老 `referral_reward_initial` 计入目标的 focused tests。
+  - 标准邀请奖励必须覆盖历史用户不建邀请关系且无账本副作用、新用户注册不发邀请人、入群补到 5、首次生成补到 10、老 `referral_reward_initial` 计入目标的 focused tests。
   - `affiliate_transactions` IN/OUT 汇总必须能回推出当前可兑换余额。
 - Provider 启动回归
   - Dashboard Backend、Web API、Payment API、Bot 启动测试应覆盖 billing provider 已注册。

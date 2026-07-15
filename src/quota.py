@@ -879,6 +879,8 @@ class QuotaManager:
         self,
         inviter_id: int,
         new_user_id: int,
+        *,
+        new_user_was_created: bool,
         new_username: str = None,
         _new_full_name: str = None,
     ) -> bool:
@@ -886,7 +888,7 @@ class QuotaManager:
         Process a new referral.
         Returns True if successful (valid new user), False otherwise.
         """
-        if inviter_id == new_user_id:
+        if not new_user_was_created or inviter_id == new_user_id:
             return False
 
         async with AsyncSessionLocal() as session:

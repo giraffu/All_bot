@@ -140,9 +140,11 @@ class PermissionGrowthChannelService:
             return False, "invalid_inviter"
         inviter_internal_id = inviter_internal.id
 
-        new_internal, _ = await get_or_create_user_by_telegram(
+        new_internal, is_new = await get_or_create_user_by_telegram(
             tg_id, username, full_name
         )
+        if not is_new:
+            return False, "existing_user"
         new_internal_id = new_internal.id
 
         inviter_group = await self.get_user_group_func(inviter_internal_id)
@@ -152,6 +154,7 @@ class PermissionGrowthChannelService:
         success = await self.quota_manager.process_referral(
             inviter_internal_id,
             new_internal_id,
+            new_user_was_created=is_new,
             new_username=username,
             _new_full_name=full_name,
         )
