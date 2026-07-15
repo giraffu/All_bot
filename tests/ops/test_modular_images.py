@@ -65,6 +65,7 @@ def test_python_bases_and_thin_targets_are_explicit():
         section = control.split(f"AS {target}", 1)[1]
         assert "ARG ALLBOT_GIT_SHA" in section
         assert "org.opencontainers.image.revision=$ALLBOT_GIT_SHA" in section
+    assert control.count("COPY config.py /app/config.py") == 9
     dashboard_section = control.split("AS dashboard-backend", 1)[1].split(
         "AS qqcc-config-backend", 1
     )[0]
