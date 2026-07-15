@@ -59,6 +59,7 @@ python scripts/test_train_release.py block --sha <40位SHA> --reason <原因>
 - PR 写明 slot、train base SHA、head SHA、v2 tracks/modules、测试、migration、风险和云测试步骤。
 - 只有当前 candidate accepted 后才合入下一个无关任务。
 - train 全部通过后合入 main；对新的 main SHA 重新构建、部署和完整验收。candidate evidence 不能替代正式 24 小时/短观察授权与 `verify-test`。
+- main 合并完成后，在重新开放槽位前通过 PR 把main merge commit 血缘同步回 train，使下一次 train→main 满足 strict up-to-date；禁止直接 push/force-push。
 
 ## 6. 按需读取
 

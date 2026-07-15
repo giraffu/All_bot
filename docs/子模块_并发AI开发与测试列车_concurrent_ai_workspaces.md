@@ -86,6 +86,8 @@ Candidate evidence 使用 `deploy/test-train-acceptance.example.json`，只记�
 4. 默认观察 24 小时；用户明确授权时才使用现有短观察 evidence/CLI 双重确认。
 5. 执行 `verify-test`，再由用户明确确认正式发布同 SHA/digest。
 
+main 合并会产生一个新的 merge commit。重新开放槽位前，集成 AI 必须再通过 PR 把该 main 血缘同步回 `codex/test-train`，确保下一次 train→main PR 满足 strict up-to-date 保护；不得为此直接 push 或 force-push train。
+
 ## 6. GitHub 保护规则
 
 `main` 与 `codex/test-train` 都禁止 direct push、force-push 和删除，要求 PR、现有 CI checks 全绿且 head 最新。当前单人维护形态不要求 review approval；集成 AI 只能通过 PR merge 推进 train/main。
