@@ -1,6 +1,8 @@
 import importlib.util
+import json
 from pathlib import Path
 import subprocess
+import sys
 
 import pytest
 
@@ -100,3 +102,128 @@ def test_assign_requires_refresh_after_test_train_advances(tmp_path):
 
     manager.refresh("B")
     assert manager.assign("B", "new-task") == "codex/b-new-task"
+
+
+def test_claim_automatically_uses_the_next_free_slot(tmp_path):
+    module = _load_module()
+    repo, _ = _repository(tmp_path)
+    manager = module.WorkspaceManager(
+        repo=repo,
+        workspace_root=tmp_path / "workspaces",
+        lock_path=tmp_path / "workspace.lock",
+    )
+    manager.init()
+
+    first = manager.claim("billing-page")
+    second = manager.claim("gallery-search")
+
+    assert first == {
+        "slot": "A",
+        "path": str(tmp_path / "workspaces" / "A"),
+        "branch": "codex/a-billing-page",
+        "base_sha": first["base_sha"],
+    }
+    assert second["slot"] == "B"
+    assert second["branch"] == "codex/b-gallery-search"
+    assert _git("branch", "--show-current", cwd=tmp_path / "workspaces" / "A") == first["branch"]
+    assert _git("branch", "--show-current", cwd=tmp_path / "workspaces" / "B") == second["branch"]
+
+
+def test_claim_refreshes_an_idle_stale_slot_before_assignment(tmp_path):
+    module = _load_module()
+    repo, _ = _repository(tmp_path)
+    manager = module.WorkspaceManager(
+        repo=repo,
+        workspace_root=tmp_path / "workspaces",
+        lock_path=tmp_path / "workspace.lock",
+    )
+    manager.init()
+
+    (repo / "next.txt").write_text("next\n", encoding="utf-8")
+    _git("add", "next.txt", cwd=repo)
+    _git(
+        "-c",
+        "user.name=AllBot Tests",
+        "-c",
+        "user.email=tests@example.com",
+        "commit",
+        "-m",
+        "next",
+        cwd=repo,
+    )
+    _git("push", "origin", "codex/test-train", cwd=repo)
+
+    claimed = manager.claim("fresh-task")
+
+    assert claimed["slot"] == "A"
+    assert _git("rev-parse", "HEAD", cwd=tmp_path / "workspaces" / "A") == _git(
+        "rev-parse", "origin/codex/test-train", cwd=repo
+    )
+
+
+def test_claim_skips_dirty_or_occupied_slots_and_fails_when_all_are_busy(tmp_path):
+    module = _load_module()
+    repo, _ = _repository(tmp_path)
+    workspace_root = tmp_path / "workspaces"
+    manager = module.WorkspaceManager(
+        repo=repo,
+        workspace_root=workspace_root,
+        lock_path=tmp_path / "workspace.lock",
+    )
+    manager.init()
+    (workspace_root / "A" / "uncommitted.txt").write_text(
+        "reserved\n", encoding="utf-8"
+    )
+
+    assert manager.claim("second-slot")["slot"] == "B"
+    assert manager.claim("third-slot")["slot"] == "C"
+    assert manager.claim("fourth-slot")["slot"] == "D"
+
+    with pytest.raises(module.WorkspaceError, match="no available workspace slot"):
+        manager.claim("overflow-task")
+
+
+def test_concurrent_claim_commands_receive_distinct_slots(tmp_path):
+    module = _load_module()
+    repo, _ = _repository(tmp_path)
+    workspace_root = tmp_path / "workspaces"
+    lock_path = tmp_path / "workspace.lock"
+    manager = module.WorkspaceManager(
+        repo=repo,
+        workspace_root=workspace_root,
+        lock_path=lock_path,
+    )
+    manager.init()
+    common = [
+        sys.executable,
+        str(MODULE_PATH),
+        "--repo",
+        str(repo),
+        "--workspace-root",
+        str(workspace_root),
+        "--lock-path",
+        str(lock_path),
+        "claim",
+        "--task",
+    ]
+
+    first = subprocess.Popen(
+        [*common, "first-window"], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    second = subprocess.Popen(
+        [*common, "second-window"], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    first_out, first_err = first.communicate(timeout=20)
+    second_out, second_err = second.communicate(timeout=20)
+
+    assert first.returncode == 0, first_err
+    assert second.returncode == 0, second_err
+    claims = [json.loads(first_out), json.loads(second_out)]
+    assert {claim["slot"] for claim in claims} == {"A", "B"}
+    assert {claim["branch"] for claim in claims} == {
+        "codex/a-first-window",
+        "codex/b-second-window",
+    } or {claim["branch"] for claim in claims} == {
+        "codex/a-second-window",
+        "codex/b-first-window",
+    }

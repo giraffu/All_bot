@@ -21,18 +21,22 @@ Git worktree 只隔离工作目录和 index；它们仍共享对象库与 refs�
 ```bash
 python scripts/manage_ai_workspaces.py init
 python scripts/manage_ai_workspaces.py status
+python scripts/manage_ai_workspaces.py claim --task billing-ledger
 python scripts/manage_ai_workspaces.py assign --slot A --task billing-ledger
 python scripts/manage_ai_workspaces.py park --slot A
 python scripts/manage_ai_workspaces.py refresh --slot A
 ```
 
 - `init` 幂等创建 A-D；空闲槽位 detached 在最新 `origin/codex/test-train`。
+- `claim` 是新 AI 窗口的默认入口：它用 `~/.local/state/allbot/ai-workspaces.lock` 原子选择第一个空闲槽位，自动刷新过期的 clean detached 槽位，创建任务分支并返回路径。并发窗口不会获得同一槽位。
 - `assign` 创建 `codex/<slot>-<task>`，在 dirty、Git 操作未结束、槽位未 park 或 base 过期时拒绝。
 - `park` 要求工作区 clean 且 HEAD 已由同名远端分支包含；只 detach，不删除分支。
 - `refresh` 只更新已经 park 的 detached 槽位。
 - 清理旧元数据先运行 `git worktree prune --dry-run`，只对明确 prunable 的失效登记执行 prune；不得删除仍存在的旧 worktree 或用户分支。
 
 功能 AI 的 PR base 固定为 `codex/test-train`。提交前更新 train、解决冲突并重新跑 CI。PR 描述至少包含 slot、base/head SHA、影响 track/module、测试结果、migration、风险和代表性测试步骤。
+
+功能 AI 交付后保持槽位在任务分支上，不自动 `park`。只有集成 AI 在 PR 合入且确定不需要 forward-fix 后释放槽位。面向用户的最简使用方式见 `docs/并发AI自动接单使用指南_auto_workspace_claim.md`。
 
 ## 3. Candidate bundle 契约
 
@@ -81,6 +85,8 @@ Candidate evidence 使用 `deploy/test-train-acceptance.example.json`，只记�
 3. 把最终 main SHA 重新部署云测试，完成组合回归、回滚演练和人工验收。
 4. 默认观察 24 小时；用户明确授权时才使用现有短观察 evidence/CLI 双重确认。
 5. 执行 `verify-test`，再由用户明确确认正式发布同 SHA/digest。
+
+main 合并会产生一个新的 merge commit。重新开放槽位前，集成 AI 必须再通过 PR 把该 main 血缘同步回 `codex/test-train`，确保下一次 train→main PR 满足 strict up-to-date 保护；不得为此直接 push 或 force-push train。
 
 ## 6. GitHub 保护规则
 
