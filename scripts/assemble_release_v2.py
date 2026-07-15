@@ -37,6 +37,8 @@ def assemble(
     output_dir: Path,
     source_sha: str,
     ci_run: str,
+    release_channel: str = "main",
+    source_ref: str = "refs/heads/main",
     previous_index: Path | None = None,
     unavailable_artifacts: set[str] | None = None,
 ) -> Path:
@@ -137,6 +139,8 @@ def assemble(
         "schema_version": 2,
         "source_sha": source_sha,
         "ci_run": ci_run,
+        "release_channel": release_channel,
+        "source_ref": source_ref,
         "manifests": manifest_names,
     }
     index_path = output_dir / "release-index.json"
@@ -154,6 +158,10 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--source-sha", required=True)
     parser.add_argument("--ci-run", required=True)
+    parser.add_argument(
+        "--release-channel", choices=("main", "test-candidate"), default="main"
+    )
+    parser.add_argument("--source-ref", default="refs/heads/main")
     parser.add_argument("--previous-index", type=Path)
     parser.add_argument("--unavailable-artifact", action="append", default=[])
     args = parser.parse_args()
@@ -163,6 +171,8 @@ def main() -> int:
         output_dir=args.output_dir,
         source_sha=args.source_sha,
         ci_run=args.ci_run,
+        release_channel=args.release_channel,
+        source_ref=args.source_ref,
         previous_index=args.previous_index,
         unavailable_artifacts=set(args.unavailable_artifact),
     )

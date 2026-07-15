@@ -175,6 +175,7 @@
         "deploy/env.schema.yml",
         "deploy/systemd/**",
         "deploy/test-acceptance.example.json",
+        "deploy/test-train-acceptance.example.json",
         "scripts/release.py",
         "scripts/release_manifest_v2.py",
         "scripts/release_artifacts_v2.py",

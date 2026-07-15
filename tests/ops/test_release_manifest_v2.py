@@ -136,6 +136,44 @@ def test_release_index_loads_three_environment_neutral_tracks(tmp_path):
     assert release.manifests["control-plane"]["artifacts"]["central-api"][
         "base_image_digest"
     ] == "sha256:" + "1" * 64
+    assert release.index["release_channel"] == "main"
+    assert release.index["source_ref"] == "refs/heads/main"
+
+
+def test_release_index_accepts_exact_test_candidate_channel(tmp_path):
+    module = _load_module()
+    index_path = _write_release(tmp_path)
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    index.update(
+        {
+            "release_channel": "test-candidate",
+            "source_ref": "refs/heads/codex/test-train",
+        }
+    )
+    index_path.write_text(json.dumps(index), encoding="utf-8")
+
+    release = module.load_release_index(index_path, expected_sha=SHA)
+
+    assert release.index["release_channel"] == "test-candidate"
+
+
+@pytest.mark.parametrize(
+    ("channel", "source_ref"),
+    [
+        ("test-candidate", "refs/heads/codex/other"),
+        ("main", "refs/heads/codex/test-train"),
+        ("preview", "refs/heads/codex/test-train"),
+    ],
+)
+def test_release_index_rejects_untrusted_channel_or_ref(tmp_path, channel, source_ref):
+    module = _load_module()
+    index_path = _write_release(tmp_path)
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    index.update({"release_channel": channel, "source_ref": source_ref})
+    index_path.write_text(json.dumps(index), encoding="utf-8")
+
+    with pytest.raises(module.ManifestV2Error, match="channel|source_ref"):
+        module.load_release_index(index_path, expected_sha=SHA)
 
 
 @pytest.mark.parametrize("mutation", ["mutable", "environment", "bad-base"])

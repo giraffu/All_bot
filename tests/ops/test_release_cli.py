@@ -418,6 +418,56 @@ def test_release_ci_must_be_completed_successfully_for_the_same_sha(monkeypatch)
         module.verify_release_ci(_manifest(), FULL_SHA)
 
 
+def test_test_candidate_ci_must_come_from_exact_test_train_branch(monkeypatch):
+    module = _load_module()
+    candidate = {
+        "ci_run": "https://github.com/giraffu/All_bot/actions/runs/1",
+        "release_channel": "test-candidate",
+        "source_ref": "refs/heads/codex/test-train",
+    }
+
+    def run_for(branch):
+        return subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "status": "completed",
+                    "conclusion": "success",
+                    "headSha": FULL_SHA,
+                    "headBranch": branch,
+                }
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(module, "_run", lambda *_args, **_kwargs: run_for("codex/test-train"))
+    module.verify_release_ci(candidate, FULL_SHA)
+
+    monkeypatch.setattr(module, "_run", lambda *_args, **_kwargs: run_for("codex/other"))
+    with pytest.raises(module.ReleaseError, match="source branch"):
+        module.verify_release_ci(candidate, FULL_SHA)
+
+
+def test_git_release_uses_channel_specific_remote_ancestry(monkeypatch):
+    module = _load_module()
+    commands = []
+
+    def fake_run(command, **_kwargs):
+        commands.append(command)
+        stdout = "  origin/codex/test-train\n" if command[1:4] == ["branch", "-r", "--contains"] else ""
+        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(module, "_run", fake_run)
+    module.verify_git_release(
+        FULL_SHA,
+        release_channel="test-candidate",
+        source_ref="refs/heads/codex/test-train",
+    )
+
+    assert ["git", "merge-base", "--is-ancestor", FULL_SHA, "origin/codex/test-train"] in commands
+
+
 def test_environment_validation_reports_names_without_secret_values():
     module = _load_module()
     schema = module.load_structured_file(SCHEMA_PATH)
@@ -1310,6 +1360,163 @@ def test_v2_promotion_and_state_are_scoped_per_track(monkeypatch, capsys):
         "/var/lib/allbot/deployments/test/control-plane/current.json"
         in capsys.readouterr().out
     )
+
+
+def test_production_promotion_rejects_candidate_test_state(monkeypatch):
+    module = _load_module()
+    digest = "sha256:" + "1" * 64
+    manifest = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "source_sha": FULL_SHA,
+        "git_sha": FULL_SHA,
+        "release_channel": "main",
+        "source_ref": "refs/heads/main",
+        "artifacts": {
+            "central-api": {
+                "kind": "image",
+                "ref": "ghcr.io/giraffu/central@" + digest,
+                "digest": digest,
+                "source_sha": FULL_SHA,
+                "oci_revision": FULL_SHA,
+                "dependency_closure": [],
+            }
+        },
+        "selected_artifacts": ["central-api"],
+    }
+    state = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "git_sha": FULL_SHA,
+        "release_channel": "test-candidate",
+        "status": "verified",
+        "artifacts": {"central-api": {"digest": digest, "status": "verified"}},
+    }
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(
+            command, 0, stdout=json.dumps(state), stderr=""
+        ),
+    )
+
+    with pytest.raises(module.ReleaseError, match="main-channel"):
+        module._promotion_check(
+            SimpleNamespace(
+                env="prod",
+                command="deploy",
+                test_state_host="cloud-test",
+            ),
+            manifest,
+        )
+
+
+def test_test_candidate_channel_is_test_only_and_not_verifiable():
+    module = _load_module()
+    candidate = {
+        "schema_version": 2,
+        "release_channel": "test-candidate",
+        "source_ref": "refs/heads/codex/test-train",
+    }
+
+    module.validate_release_channel(candidate, environment="test", purpose="deploy")
+
+    with pytest.raises(module.ReleaseError, match="production"):
+        module.validate_release_channel(candidate, environment="prod", purpose="deploy")
+    with pytest.raises(module.ReleaseError, match="verify-test"):
+        module.validate_release_channel(candidate, environment="test", purpose="verify-test")
+    with pytest.raises(module.ReleaseError, match="fast-track"):
+        module.validate_release_channel(
+            candidate,
+            environment="test",
+            purpose="deploy",
+            dashboard_fast_track=True,
+        )
+
+
+def test_test_rollback_to_main_allows_clean_test_train_operator(monkeypatch):
+    module = _load_module()
+    commands = []
+
+    def fake_run(command, **_kwargs):
+        commands.append(command)
+        if command[:2] == ["git", "status"]:
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        if command[:3] == ["git", "rev-parse", "HEAD"]:
+            return subprocess.CompletedProcess(command, 0, stdout=FULL_SHA + "\n", stderr="")
+        if command[-1] == "origin/main":
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(module, "_run", fake_run)
+
+    module.verify_operator_worktree_clean(
+        source_ref="refs/heads/main",
+        environment="test",
+        command="rollback",
+    )
+
+    assert any(command[-1] == "origin/codex/test-train" for command in commands)
+
+
+def test_main_deploy_does_not_allow_test_train_operator(monkeypatch):
+    module = _load_module()
+
+    def fake_run(command, **_kwargs):
+        if command[:2] == ["git", "status"]:
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        if command[:3] == ["git", "rev-parse", "HEAD"]:
+            return subprocess.CompletedProcess(command, 0, stdout=FULL_SHA + "\n", stderr="")
+        return subprocess.CompletedProcess(command, 1, stdout="", stderr="")
+
+    monkeypatch.setattr(module, "_run", fake_run)
+
+    with pytest.raises(module.ReleaseError, match="origin/main"):
+        module.verify_operator_worktree_clean(
+            source_ref="refs/heads/main",
+            environment="test",
+            command="deploy",
+        )
+
+
+def test_v2_incremental_track_with_no_changed_modules_selects_nothing(monkeypatch):
+    module = _load_module()
+    release = SimpleNamespace(
+        index={
+            "ci_run": "https://github.com/giraffu/All_bot/actions/runs/1",
+            "release_channel": "test-candidate",
+            "source_ref": "refs/heads/codex/test-train",
+        },
+        manifests={"control-plane": {"artifacts": {"web-api": {}}}},
+    )
+    monkeypatch.setattr(module, "load_release_index", lambda *_args, **_kwargs: release)
+    monkeypatch.setattr(
+        module,
+        "select_artifacts",
+        lambda *_args, **_kwargs: pytest.fail("empty incremental selection must not expand"),
+    )
+
+    manifest = module._load_v2_track(
+        Path("release-index.json"),
+        sha=FULL_SHA,
+        track="control-plane",
+        modules=[],
+        select_all_when_empty=False,
+    )
+
+    assert manifest["selected_artifacts"] == []
+
+
+def test_main_channel_keeps_production_and_verify_test_compatibility():
+    module = _load_module()
+    main_release = {
+        "schema_version": 2,
+        "release_channel": "main",
+        "source_ref": "refs/heads/main",
+    }
+
+    module.validate_release_channel(main_release, environment="prod", purpose="deploy")
+    module.validate_release_channel(main_release, environment="test", purpose="verify-test")
 
 
 def test_release_cli_defaults_to_allbot_cloudflare_account():

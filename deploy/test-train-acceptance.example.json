@@ -1,0 +1,16 @@
+{
+  "sha": "0000000000000000000000000000000000000000",
+  "pr": 0,
+  "slot": "A",
+  "tested_by": "integration-ai",
+  "started_at": "2026-07-15T00:00:00+00:00",
+  "completed_at": "2026-07-15T00:10:00+00:00",
+  "tracks": ["control-plane"],
+  "modules": ["web-api"],
+  "smoke": {
+    "health": true,
+    "representative_task": true,
+    "regression": true
+  },
+  "notes": "Replace every example value with real evidence."
+}

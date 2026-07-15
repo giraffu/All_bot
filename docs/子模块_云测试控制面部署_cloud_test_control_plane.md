@@ -1,6 +1,6 @@
 # 子模块: 云测试控制面部署 (Cloud Test Control Plane)
 
-> 2026-07-15 发布入口升级为 schema v2：云测试分别部署 `control-plane` 与 `test-execution` track，状态/回滚历史互相隔离；GPU profile 逐个 canary 后写入 `gpu-execution` manifest。禁止代码/env rsync、云端 build、源码 bind mount 和 RunPod 启动 clone。测试 Dashboard autoscaler 必须保持关闭；正式 overlay 的 `true/execute` 只做离线渲染回归，本阶段不重建正式服务。完整 SOP 见 `docs/子模块_Git不可变发布_git_immutable_release.md`。
+> 2026-07-15 发布入口升级为 schema v2：云测试分别部署 `control-plane` 与 `test-execution` track，状态/回滚历史互相隔离；GPU profile 逐个 canary 后写入 `gpu-execution` manifest。并发研发只允许精确 `codex/test-train` 的可信 test-candidate，由集成 AI 排他切换，candidate 不得 verified 或晋级。禁止代码/env rsync、云端 build、源码 bind mount 和 RunPod 启动 clone。测试 Dashboard autoscaler 必须保持关闭；正式 overlay 的 `true/execute` 只做离线渲染回归，本阶段不重建正式服务。完整 SOP 见 `docs/子模块_Git不可变发布_git_immutable_release.md` 与 `docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md`。
 
 ## 1. 目标与边界
 
@@ -13,6 +13,7 @@
 - 新控制面：`deploy/docker-compose-cloud-base.yml` + `deploy/docker-compose-cloud-test.overlay.yml`
 - 私密配置：`/etc/allbot/test.env`；非敏感镜像/SHA：release 目录的 `release.env`
 - 计划/发布：按顺序执行 `scripts/release.py plan --env test --sha <full-sha>`、`preflight --env test --sha <full-sha>`、`deploy --env test --sha <full-sha> --execute`；不得用 `--services` 人工缩小机器计算的依赖闭包。
+- Test-train：A-D 只提交 PR；集成 AI 执行 `scripts/test_train_release.py plan|deploy|accept|block`。包装器使用独立 candidate cache 和本地排他锁，GPU 变化只报告并转交 profile canary/operator。
 - Web 自由P图 v3 发布验收：运行时公开开关为 `enable_free_edit_v3`。云测试发布不以全部 Worker 或 `pornmaster_flux2_edit_bf16` Worker 可用为前置条件；先验收页面、单图/5 灵石/无 LoRA 展示、预签名上传、投稿与一键应用入口。只有目标链路 Worker 当时可用时才执行“单图 v3 生成 → 投稿 → 一键应用 → 再生成”黄金路径；不可用时记录为独立 Worker 待办，不阻塞测试 Web 更新，也不得把未执行写成通过。未完成 24 小时观察时只记录 smoke，不执行 `verify-test`。
 - 下列路径只描述首次切换前的 legacy 运行态：
 - 远程主机别名：`allbot-do-sgp1-test-control`

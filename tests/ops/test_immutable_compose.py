@@ -234,6 +234,9 @@ def test_release_workflow_builds_all_images_and_never_uses_latest():
     assert "oras repo tags" in workflow
     assert 'git rev-list --first-parent "${SOURCE_SHA}^"' in workflow
     assert "--skip-git-checks --skip-ci-checks --skip-env-checks" in workflow
+    assert "allbot-release-v2-test-candidate" in workflow
+    assert "EVENT_RUN_ID: ${{ github.event.workflow_run.id }}" in workflow
+    assert '--ci-run "$TRUSTED_CI_RUN"' in workflow
 
 
 def test_schema_v1_shared_image_release_is_retired():

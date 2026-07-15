@@ -9,7 +9,7 @@
 - **技能优先 (Skills First)**：遇到具体业务开发时，**必须第一时间加载对应 Skill**，以获取该模块最新的架构红线、接口契约和容灾规范。若当前 Codex 会话未自动暴露该项目 Skill，请手动读取 `.codex/skills/<skill-name>/SKILL.md`。
 - **查阅文档 (Read Docs)**：在进行系统级重构、了解历史背景或不确定业务逻辑时，请主动读取 `/docs` 目录下的相关说明。
 - **核心层隔离 (Core Isolation)**：`/src/core/` 下的代码**绝对禁止**引入任何与 Telegram `Update` 或 Web `Request` 相关的特定平台对象，必须使用内部统一的 `internal_user_id` 流转。
-- **测试优先、不可变发布 (Test First, Immutable Release)**：代码发布只接受受保护 `main` 可达的完整 Git SHA、成功 CI 生成的 `release.json` 和 digest-pinned 镜像；统一入口为 `scripts/release.py plan|preflight|deploy|rollback|recover`。云端禁止代码/env rsync、现场 build、源码 bind mount和 `latest`。功能研发默认先发云测试，同一 SHA/digest 完成代表性任务、回滚演练与默认 24 小时观察并记录验收后才能晋级正式；仅当用户明确确认测试服务无问题并授权提前晋级时，才允许 `verify-test --confirm-short-observation` 配合验收证据中的显式开关、非空原因和批准者跳过固定等待时长，所有 smoke、SHA/digest 与运行态一致性门禁仍不可跳过。正式执行仍须用户明确确认。本地主服务器仅保留云正式整体故障时的临时灾备。
+- **测试优先、不可变发布 (Test First, Immutable Release)**：正式发布只接受受保护 `main` 可达的完整 Git SHA、成功 CI 生成的 release index 和 digest-pinned 镜像；唯一测试例外是精确受保护 `codex/test-train` 的可信 `test-candidate` bundle，它只能部署 test，禁止 `verify-test`、prod 或晋级。统一入口为 `scripts/release.py plan|preflight|deploy|rollback|recover`；共享 test-train 只由集成 AI 通过 `scripts/test_train_release.py` 操作。云端禁止代码/env rsync、现场 build、源码 bind mount和 `latest`。最终 main 的同一 SHA/digest 完成代表性任务、回滚演练与默认 24 小时观察并记录验收后才能晋级正式；仅当用户明确确认测试服务无问题并授权提前晋级时，才允许 `verify-test --confirm-short-observation` 配合验收证据中的显式开关、非空原因和批准者跳过固定等待时长，所有 smoke、SHA/digest 与运行态一致性门禁仍不可跳过。正式执行仍须用户明确确认。本地主服务器仅保留云正式整体故障时的临时灾备。
 
 ## 2. Codex 工作区知识布局 (Workspace Knowledge Layout)
 
@@ -33,6 +33,7 @@
 | **Telegram 交互与文件** | `allbot-tg-fsm` | PTB 状态机、多语言(i18n)精准路由、菜单互斥防死锁、大文件 Monkey Patch |
 | **QQCC 懒人 Bot / 用户私有 Bot** | `allbot-qqcc-lazy-bot` | 官方 QQCC polling、私有 Bot 申请 FSM/webhook worker、租户配置、`client_type` 恢复隔离和 token 红线 |
 | **部署、容器与容灾排障** | `allbot-ops-deployment` | Docker Compose 编排、Alembic 迁移、测试优先发布、云正式/云测试控制面、本地正式灾备切换、MinIO/网络故障恢复 |
+| **并发 AI 工作区与测试列车** | `allbot-concurrent-workspaces` | A-D 固定 worktree、任务分支交接、受保护 test-train、唯一云测试站排他发布和 blocked/forward-fix |
 | **Cloudflare 公网入口** | `allbot-cloudflare-ops` | Cloudflare API Token、DNS、Tunnel、Access、Pages/R2、公网管理域名和本地分析平台公网访问 |
 | **本地分析提示词词义治理** | `allbot-local-analytics-prompt-semantics` | 提示词词元分类、指定词元、同义映射、删除表、tokens-only 物化、模板候选槽位口径 |
 | **局域网 LAN AIO 管理** | `allbot-lan-aio-operator` | 读取 fleet state 与 slot catalog，按单卡 helper 流程管理 LAN AIO 当前态、缓存、候选切换、takeover/recover/restart |
@@ -58,6 +59,7 @@
 - **局域网 GPU 节点资源与运维**：`/docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md`（GPU 节点硬件、ComfyUI 容器、模型挂载与单容器安全操作边界）
 - **云测试控制面部署**：`/docs/子模块_云测试控制面部署_cloud_test_control_plane.md`（DigitalOcean 云测试控制面 compose、部署脚本、端口转发与验证命令）
 - **Git 不可变发布**：`/docs/子模块_Git不可变发布_git_immutable_release.md`（完整 SHA、GHCR digest、公共 Compose、配置契约、测试验收、生产晋级与回滚）
+- **并发 AI 开发与测试列车**：`/docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md`（A-D worktree、test-candidate、共享测试站排他合入与最终 main 晋级）
 - **首次可信发布准备**：`/docs/子模块_首次可信发布准备_first_trusted_release.md`（本地 stabilization 验证结果、Git 血缘和外部待办）
 - **QQCC 懒人 Bot**：`/docs/子模块_QQCC懒人Bot_qqcc_lazy_bot.md`（独立简化 Telegram Bot、部署、token 与任务恢复归属）
 - **QQCC 用户私有 Bot 平台**：`/docs/子模块_QQCC用户私有Bot平台_qqcc_private_bot_platform.md`（一人一 Bot、加密凭据、Webhook 多租户 worker、Owner WebApp、管理员治理与发布门禁）
