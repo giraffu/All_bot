@@ -100,11 +100,18 @@ def merge_gpu_manifest(
 ) -> dict[str, Any]:
     artifacts = dict((previous or {}).get("artifacts", {}))
     artifacts[profile] = dict(result)
+    catalog = load_catalog(ROOT / "deploy/release-artifacts-v2.json")
+    expected = {
+        name for name, metadata in catalog.items() if metadata["track"] == "gpu-execution"
+    }
+    missing = sorted(expected - set(artifacts))
     return {
         "schema_version": 2,
         "track": "gpu-execution",
         "source_sha": source_sha,
         "artifacts": artifacts,
+        "completeness": "incomplete" if missing else "complete",
+        "missing_artifacts": missing,
     }
 
 

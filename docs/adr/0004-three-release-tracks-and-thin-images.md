@@ -32,7 +32,7 @@ schema v1 将多个控制面进程装入 `allbot-app`、将 Agent/Relay 装入�
 ## Consequences
 
 - 基础镜像、模块镜像与 GPU profile 有独立构建/缓存/回滚记录，局部发布的拉取量和风险面下降。
-- 首次 v2 聚合需要三条链都有完整 artifact；GPU 输入变化会阻断控制面 bundle，直到逐 profile 构建和 canary 证据完成。
+- v2 bundle 发布与 GPU profile canary 解耦：缺少同 SHA canary 证据的 GPU profile 不复用旧 digest，`gpu-execution-manifest.json` 以 `completeness=incomplete` 和 `missing_artifacts` 明示缺口，控制面与测试执行面仍可发布。选择、部署或晋级缺失 GPU profile 继续 fail closed；补齐 profile 时仍必须使用实际 canary 证据。
 - Compose 与部署状态改为 track-scoped；旧 schema v1 状态只保留兼容读取，不再由 CI 发布。
 - GPU 镜像增大一份 agent/workflow 源码体积，但不包含业务模型权重；运行时不再依赖 GitHub/`deploy` 分支网络。
 

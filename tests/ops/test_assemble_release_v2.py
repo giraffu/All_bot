@@ -94,3 +94,71 @@ def test_assembler_writes_three_manifests_and_resolves_base_digest(tmp_path):
         (index_path.parent / "control-plane-manifest.json").read_text(encoding="utf-8")
     )
     assert control["artifacts"]["api"]["base_image_digest"] == "sha256:" + "1" * 64
+    gpu = json.loads(
+        (index_path.parent / "gpu-execution-manifest.json").read_text(encoding="utf-8")
+    )
+    assert gpu["completeness"] == "complete"
+    assert gpu["missing_artifacts"] == []
+
+
+def test_assembler_publishes_incomplete_gpu_track_without_canary_result(tmp_path):
+    module = _load_module()
+    catalog = {
+        "schema_version": 2,
+        "artifacts": {
+            "base": {
+                "track": "control-plane",
+                "kind": "image",
+                "base": None,
+                "inputs": [],
+            },
+            "worker": {
+                "track": "test-execution",
+                "kind": "image",
+                "base": "base",
+                "inputs": [],
+            },
+            "i2i": {
+                "track": "gpu-execution",
+                "kind": "gpu-image",
+                "base": None,
+                "inputs": [],
+                "profile": {
+                    "task_types": ["i2i"],
+                    "target_gpu": ["RTX 4090"],
+                    "startup_args": [],
+                },
+            },
+        },
+    }
+    catalog_path = tmp_path / "catalog.json"
+    catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
+    results = tmp_path / "results"
+    results.mkdir()
+    for name, digit in (("base", "1"), ("worker", "2")):
+        (results / f"{name}.json").write_text(
+            json.dumps(_result(name, digit)), encoding="utf-8"
+        )
+    stale_gpu = _result("i2i", "3")
+    stale_gpu["model_manifest"] = {
+        "key": "models/i2i/old-manifest.json",
+        "size": 10,
+        "sha256": "4" * 64,
+    }
+    (results / "i2i.json").write_text(json.dumps(stale_gpu), encoding="utf-8")
+
+    index_path = module.assemble(
+        catalog_path=catalog_path,
+        results_dir=results,
+        output_dir=tmp_path / "release",
+        source_sha=SHA,
+        ci_run="https://github.com/giraffu/All_bot/actions/runs/1",
+        unavailable_artifacts={"i2i"},
+    )
+
+    gpu = json.loads(
+        (index_path.parent / "gpu-execution-manifest.json").read_text(encoding="utf-8")
+    )
+    assert gpu["artifacts"] == {}
+    assert gpu["completeness"] == "incomplete"
+    assert gpu["missing_artifacts"] == ["i2i"]

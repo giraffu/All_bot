@@ -89,3 +89,6 @@ def test_gpu_manifest_merge_preserves_unselected_profiles_and_replaces_exact_one
     assert merged["source_sha"] == SHA
     assert merged["artifacts"]["scail2"] == previous["artifacts"]["scail2"]
     assert merged["artifacts"]["i2i_pro"]["digest"] == DIGEST
+    assert merged["completeness"] == "incomplete"
+    assert "i2i_pro" not in merged["missing_artifacts"]
+    assert "scail2" not in merged["missing_artifacts"]

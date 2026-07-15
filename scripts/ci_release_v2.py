@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Build changed control/test artifacts and publish one immutable v2 bundle.
 
-GPU artifacts are intentionally produced by their profile workflows.  If GPU
-inputs changed, this command stops until a canary-verified GPU manifest for the
-same source SHA is supplied as ``--gpu-manifest``.
+GPU artifacts are produced by profile workflows.  Profiles whose inputs changed
+without same-SHA canary evidence are omitted and recorded as unavailable in the
+bundle; GPU deployment remains gated by the profile-specific manifest.
 """
 
 from __future__ import annotations
@@ -119,10 +119,11 @@ def main() -> int:
     has_previous = bool(args.previous_index and args.previous_index.is_file())
     plan = plan_builds(catalog, changed, has_previous=has_previous)
     gpu_builds = sorted(name for name in plan.build if catalog[name]["track"] == "gpu-execution")
-    if gpu_builds and not args.gpu_manifest:
-        raise CIReleaseError(
-            "GPU inputs changed; build and canary these profiles before aggregation: "
-            + ", ".join(gpu_builds)
+    unavailable_gpu = set(gpu_builds) if not args.gpu_manifest else set()
+    if unavailable_gpu:
+        print(
+            "GPU profiles omitted pending profile canary evidence: "
+            + ", ".join(sorted(unavailable_gpu))
         )
 
     output = args.output_dir
@@ -152,6 +153,8 @@ def main() -> int:
     for row in build_matrix(catalog, plan):
         name = row["name"]
         if row["track"] == "gpu-execution":
+            if name in unavailable_gpu:
+                continue
             if name not in results:
                 raise CIReleaseError(f"GPU manifest does not contain rebuilt profile {name}")
             continue
@@ -207,6 +210,7 @@ def main() -> int:
         source_sha=args.sha,
         ci_run=args.ci_run,
         previous_index=args.previous_index,
+        unavailable_artifacts=unavailable_gpu,
     )
     print(index)
     return 0
