@@ -4,17 +4,20 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
+import fcntl
 import json
 from pathlib import Path
 import re
 import subprocess
-from typing import Any, Sequence
+from typing import Any, Iterator, Sequence
 
 
 SLOTS = ("A", "B", "C", "D")
 DEFAULT_REPO = Path(__file__).resolve().parents[1]
 DEFAULT_WORKSPACE_ROOT = Path("/home/hfy/APP/All_bot-workspaces")
 DEFAULT_BASE_REF = "origin/codex/test-train"
+DEFAULT_LOCK_PATH = Path.home() / ".local" / "state" / "allbot" / "ai-workspaces.lock"
 TASK_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
@@ -29,10 +32,29 @@ class WorkspaceManager:
         repo: Path = DEFAULT_REPO,
         workspace_root: Path = DEFAULT_WORKSPACE_ROOT,
         base_ref: str = DEFAULT_BASE_REF,
+        lock_path: Path = DEFAULT_LOCK_PATH,
     ) -> None:
         self.repo = repo.resolve()
         self.workspace_root = workspace_root.resolve()
         self.base_ref = base_ref
+        self.lock_path = lock_path.expanduser().resolve()
+
+    @contextmanager
+    def _workspace_lock(self) -> Iterator[None]:
+        """Serialize slot transitions across parallel AI windows."""
+
+        self.lock_path.parent.mkdir(parents=True, exist_ok=True)
+        handle = self.lock_path.open("a+", encoding="utf-8")
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            handle.seek(0)
+            handle.truncate()
+            handle.write(str(__import__("os").getpid()))
+            handle.flush()
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            handle.close()
 
     def _run(
         self,
@@ -93,18 +115,21 @@ class WorkspaceManager:
                 raise WorkspaceError(f"workspace has an unfinished Git operation: {marker}")
 
     def init(self) -> list[dict[str, Any]]:
-        self._fetch_base()
-        self.workspace_root.mkdir(parents=True, exist_ok=True)
-        registered = self._registered_worktrees()
-        for slot in SLOTS:
-            path = self._path(slot)
-            if path in registered:
-                self._require_clean(path)
-                continue
-            if path.exists():
-                raise WorkspaceError(f"slot path exists but is not a Git worktree: {path}")
-            self._git("worktree", "add", "--detach", str(path), self.base_ref)
-        return self.status()
+        with self._workspace_lock():
+            self._fetch_base()
+            self.workspace_root.mkdir(parents=True, exist_ok=True)
+            registered = self._registered_worktrees()
+            for slot in SLOTS:
+                path = self._path(slot)
+                if path in registered:
+                    self._require_clean(path)
+                    continue
+                if path.exists():
+                    raise WorkspaceError(
+                        f"slot path exists but is not a Git worktree: {path}"
+                    )
+                self._git("worktree", "add", "--detach", str(path), self.base_ref)
+            return self.status()
 
     def status(self) -> list[dict[str, Any]]:
         registered = self._registered_worktrees()
@@ -145,16 +170,22 @@ class WorkspaceManager:
             )
         return rows
 
-    def assign(self, slot: str, task: str) -> str:
-        slot = self._slot(slot)
+    @staticmethod
+    def _task(task: str) -> str:
         task = task.lower()
         if not TASK_RE.fullmatch(task):
             raise WorkspaceError("task must be a lowercase kebab-case slug")
+        return task
+
+    def _assign_unlocked(self, slot: str, task: str, *, fetch: bool = True) -> str:
+        slot = self._slot(slot)
+        task = self._task(task)
         path = self._require_initialized(slot)
         self._require_clean(path)
         if self._git("branch", "--show-current", cwd=path):
             raise WorkspaceError("slot is not parked; park it before assigning another task")
-        self._fetch_base()
+        if fetch:
+            self._fetch_base()
         head = self._git("rev-parse", "HEAD", cwd=path)
         base = self._git("rev-parse", self.base_ref)
         if head != base:
@@ -165,31 +196,81 @@ class WorkspaceManager:
         self._git("switch", "-c", branch, self.base_ref, cwd=path)
         return branch
 
+    def assign(self, slot: str, task: str) -> str:
+        with self._workspace_lock():
+            return self._assign_unlocked(slot, task)
+
+    def claim(self, task: str) -> dict[str, str]:
+        """Atomically select and assign the first safe A-D slot."""
+
+        task = self._task(task)
+        with self._workspace_lock():
+            self._fetch_base()
+            existing = self._git(
+                "for-each-ref",
+                "--format=%(refname:short)",
+                f"refs/heads/codex/*-{task}",
+            ).splitlines()
+            if existing:
+                raise WorkspaceError(
+                    f"task is already claimed by branch: {existing[0]}"
+                )
+            registered = self._registered_worktrees()
+            base_sha = self._git("rev-parse", self.base_ref)
+            for slot in SLOTS:
+                path = self._path(slot)
+                if path not in registered or not path.is_dir():
+                    continue
+                if self._git("branch", "--show-current", cwd=path):
+                    continue
+                try:
+                    self._require_clean(path)
+                except WorkspaceError:
+                    continue
+                if self._git("rev-parse", "HEAD", cwd=path) != base_sha:
+                    self._git("switch", "--detach", self.base_ref, cwd=path)
+                branch = self._assign_unlocked(slot, task, fetch=False)
+                return {
+                    "slot": slot,
+                    "path": str(path),
+                    "branch": branch,
+                    "base_sha": base_sha,
+                }
+        raise WorkspaceError(
+            "no available workspace slot; A-D are occupied, dirty, or uninitialized"
+        )
+
     def park(self, slot: str) -> None:
-        slot = self._slot(slot)
-        path = self._require_initialized(slot)
-        self._require_clean(path)
-        branch = self._git("branch", "--show-current", cwd=path)
-        if not branch:
-            return
-        head = self._git("rev-parse", "HEAD", cwd=path)
-        remote_refs = {
-            line.strip()
-            for line in self._git("branch", "-r", "--contains", head, cwd=path).splitlines()
-        }
-        if f"origin/{branch}" not in remote_refs:
-            raise WorkspaceError("task branch must be pushed before the slot can be parked")
-        self._fetch_base()
-        self._git("switch", "--detach", self.base_ref, cwd=path)
+        with self._workspace_lock():
+            slot = self._slot(slot)
+            path = self._require_initialized(slot)
+            self._require_clean(path)
+            branch = self._git("branch", "--show-current", cwd=path)
+            if not branch:
+                return
+            head = self._git("rev-parse", "HEAD", cwd=path)
+            remote_refs = {
+                line.strip()
+                for line in self._git(
+                    "branch", "-r", "--contains", head, cwd=path
+                ).splitlines()
+            }
+            if f"origin/{branch}" not in remote_refs:
+                raise WorkspaceError(
+                    "task branch must be pushed before the slot can be parked"
+                )
+            self._fetch_base()
+            self._git("switch", "--detach", self.base_ref, cwd=path)
 
     def refresh(self, slot: str) -> None:
-        slot = self._slot(slot)
-        path = self._require_initialized(slot)
-        self._require_clean(path)
-        if self._git("branch", "--show-current", cwd=path):
-            raise WorkspaceError("only a parked detached slot can be refreshed")
-        self._fetch_base()
-        self._git("switch", "--detach", self.base_ref, cwd=path)
+        with self._workspace_lock():
+            slot = self._slot(slot)
+            path = self._require_initialized(slot)
+            self._require_clean(path)
+            if self._git("branch", "--show-current", cwd=path):
+                raise WorkspaceError("only a parked detached slot can be refreshed")
+            self._fetch_base()
+            self._git("switch", "--detach", self.base_ref, cwd=path)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -197,12 +278,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repo", type=Path, default=DEFAULT_REPO)
     parser.add_argument("--workspace-root", type=Path, default=DEFAULT_WORKSPACE_ROOT)
     parser.add_argument("--base-ref", default=DEFAULT_BASE_REF)
+    parser.add_argument("--lock-path", type=Path, default=DEFAULT_LOCK_PATH)
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("init")
     subparsers.add_parser("status")
     assign = subparsers.add_parser("assign")
     assign.add_argument("--slot", required=True)
     assign.add_argument("--task", required=True)
+    claim = subparsers.add_parser("claim")
+    claim.add_argument("--task", required=True)
     for name in ("park", "refresh"):
         child = subparsers.add_parser(name)
         child.add_argument("--slot", required=True)
@@ -215,6 +299,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         repo=args.repo,
         workspace_root=args.workspace_root,
         base_ref=args.base_ref,
+        lock_path=args.lock_path,
     )
     try:
         if args.command == "init":
@@ -223,6 +308,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = manager.status()
         elif args.command == "assign":
             result = {"slot": args.slot.upper(), "branch": manager.assign(args.slot, args.task)}
+        elif args.command == "claim":
+            result = manager.claim(args.task)
         elif args.command == "park":
             manager.park(args.slot)
             result = {"slot": args.slot.upper(), "status": "parked"}
