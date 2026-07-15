@@ -241,6 +241,27 @@ describe('useLabSubmitPayload', () => {
     }), 'lab.cards.custom_edit_v3_title')
   })
 
+  it('submits free edit v2.5 with its logical type and template provenance', async () => {
+    const harness = createHarness('edit_v2_5')
+    harness.uploadedReferences.value = [refImage('replacement.png')]
+    harness.prompt.value = 'locked original prompt'
+    harness.isTemplateApplied.value = true
+    harness.isTemplatePromptLocked.value = true
+    harness.templateSourcePostId.value = 25
+
+    await harness.handleSubmit()
+
+    expect(harness.submitTask).toHaveBeenLastCalledWith(expect.objectContaining({
+      task_type: 'free_edit_v2_5',
+      inputs: {
+        images: ['replacement.png'],
+      },
+      prompt: 'locked original prompt',
+      is_template: true,
+      source_post_id: 25,
+    }), 'lab.cards.custom_edit_v2_5_title')
+  })
+
   it('builds custom video LoRA payloads with WAN22 chain metadata', async () => {
     const harness = createHarness('custom_video')
     harness.uploadedReferences.value = [refImage('start.png'), refImage('end.png')]

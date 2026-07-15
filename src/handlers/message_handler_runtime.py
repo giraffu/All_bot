@@ -2,9 +2,9 @@ from src.constants import (
     MODE_FACE_VIDEO_STEP1,
     MODE_FACE_VIDEO_STEP2,
     MODE_FREE_EDIT_V2,
-    MODE_FREE_EDIT_V3,
     MODE_PORNMASTER_FLUX2_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_TXT2IMG,
 )
@@ -32,6 +32,7 @@ from src.utils import (
     get_user_channel_status,
     notify_inviter_reward,
 )
+
 normalize_supported_language_code = _normalize_supported_language_code
 
 
@@ -44,8 +45,11 @@ def _normalize_queue_task_type_for_display(task_type: str | None) -> str:
         MODE_PORNMASTER_FLUX2_MULTI_EDIT,
     }:
         return MODE_FREE_EDIT_V2
-    if raw_task_type == MODE_PORNMASTER_FLUX2_EDIT_BF16:
-        return MODE_FREE_EDIT_V3
+    if raw_task_type in {
+        MODE_PORNMASTER_FLUX2_EDIT_BF16,
+        MODE_PORNMASTER_FLUX2_MULTI_EDIT_BF16,
+    }:
+        return "free_edit_v2_5_v3_pool"
     if raw_task_type in {"face_video", MODE_FACE_VIDEO_STEP1, MODE_FACE_VIDEO_STEP2}:
         return "face_video"
     if raw_task_type == MODE_TXT2IMG:
@@ -53,15 +57,17 @@ def _normalize_queue_task_type_for_display(task_type: str | None) -> str:
     return raw_task_type
 
 
-def _normalize_queue_type_counts_for_display(queue_by_type: dict | None) -> dict[str, int]:
+def _normalize_queue_type_counts_for_display(
+    queue_by_type: dict | None,
+) -> dict[str, int]:
     raw_counts = queue_by_type or {}
     normalized_counts: dict[str, int] = {}
 
     for task_type, count in raw_counts.items():
         normalized_task_type = _normalize_queue_task_type_for_display(task_type)
-        normalized_counts[normalized_task_type] = (
-            normalized_counts.get(normalized_task_type, 0) + int(count)
-        )
+        normalized_counts[normalized_task_type] = normalized_counts.get(
+            normalized_task_type, 0
+        ) + int(count)
 
     return normalized_counts
 
@@ -140,7 +146,9 @@ def _build_user_task_status_text(status_data: dict | None, context) -> str:
             )
         queue_pos = _format_queue_rank(status_data.get("queue_pos"))
         if queue_pos is not None:
-            return context.t("profile.my_tasks_status_pending_position", queue_pos=queue_pos)
+            return context.t(
+                "profile.my_tasks_status_pending_position", queue_pos=queue_pos
+            )
         return context.t("profile.my_tasks_status_pending")
     if state == "running":
         return context.t("profile.my_tasks_status_running")
@@ -247,7 +255,9 @@ def normalize_telegram_group_id(group_id: str | int | None) -> str | int | None:
     return group_id
 
 
-async def get_checkin_gate_reply(update, context, refuge_group_id) -> tuple[str, object] | None:
+async def get_checkin_gate_reply(
+    update, context, refuge_group_id
+) -> tuple[str, object] | None:
     if not refuge_group_id or not update.effective_user:
         return None
 

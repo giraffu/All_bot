@@ -789,7 +789,7 @@ def test_prod_worker_render_pornmaster_flux2_edit_bf16_isolated_on_4090():
     )
 
 
-def test_prod_worker_bf16_canary_uses_single_isolated_task_type():
+def test_prod_worker_bf16_canary_covers_single_and_multi_isolated_task_types():
     agent_id = prod_agent_id_from_slot("01", profile="pornmaster_flux2_edit_bf16")
     runner = RunPodProdWorkerRunner(
         FakeRunPodProvider(_settings(prod_agent_id=agent_id)),
@@ -804,10 +804,17 @@ def test_prod_worker_bf16_canary_uses_single_isolated_task_type():
 
     cases = runner._pornmaster_flux2_edit_bf16_task_cases("canary/input.png")
 
-    assert len(cases) == 1
-    assert cases[0]["expected_central_task_type"] == "pornmaster_flux2_edit_bf16"
+    assert len(cases) == 2
+    assert [case["expected_central_task_type"] for case in cases] == [
+        "pornmaster_flux2_edit_bf16",
+        "pornmaster_flux2_multi_edit_bf16",
+    ]
     assert cases[0]["payload"]["task_type"] == "pornmaster_flux2_edit_bf16"
     assert cases[0]["payload"]["inputs"]["images"] == ["canary/input.png"]
+    assert cases[1]["payload"]["inputs"]["images"] == [
+        "canary/input.png",
+        "canary/input.png",
+    ]
 
 
 def test_prod_worker_scail2_canary_cases_use_reference_then_motion_video():

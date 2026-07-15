@@ -26,10 +26,20 @@ describe('labModeConfig', () => {
     expect(mode.baseCost).toBe(5)
     expect(mode.supportsEditLora).toBe(false)
     expect(mode.maxImages).toBe(1)
-    expect(modeIds.slice(0, 2)).toEqual(['edit', 'edit_v3'])
+    expect(modeIds.slice(0, 3)).toEqual(['edit', 'edit_v2_5', 'edit_v3'])
     expect(resolveLabModeIdFromTaskType('pornmaster_flux2_edit_bf16')).toBe('edit_v3')
     expect(resolveLabModeIdFromTaskType('pornmaster_flux2_single_edit')).toBe('edit_v3')
     expect(resolveLabModeIdFromTaskType('pornmaster_flux2_multi_edit')).toBe('edit_v3')
+  })
+
+  it('shows free edit v2.5 as a one-or-two-image single-stage mode', () => {
+    const mode = getLabModeConfig('edit_v2_5')
+
+    expect(mode.taskType).toBe('free_edit_v2_5')
+    expect(mode.baseCost).toBe(3)
+    expect(mode.supportsEditLora).toBe(false)
+    expect(mode.maxImages).toBe(2)
+    expect(resolveLabModeIdFromTaskType('free_edit_v2_5')).toBe('edit_v2_5')
   })
 
   it('keeps random face swap available through the unified workbench', () => {

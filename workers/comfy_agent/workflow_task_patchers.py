@@ -202,6 +202,20 @@ def patch_pornmaster_flux2_edit_bf16_workflow(
     )
 
 
+def patch_pornmaster_flux2_multi_edit_bf16_workflow(
+    workflow: dict[str, Any],
+    *,
+    set_node_input: Callable[..., None],
+    **_: Any,
+) -> None:
+    set_node_input(
+        workflow,
+        node_id="9",
+        input_name="unet_name",
+        value=PORNMASTER_FLUX2_BF16_UNET_NAME,
+    )
+
+
 def _patch_ltx_video_lora(
     workflow: dict[str, Any],
     *,
@@ -751,6 +765,7 @@ TASK_SPECIFIC_PATCHERS = {
     "img2img_lora": patch_img2img_workflow,
     "i2i_draw": patch_i2i_draw_workflow,
     "pornmaster_flux2_edit_bf16": patch_pornmaster_flux2_edit_bf16_workflow,
+    "pornmaster_flux2_multi_edit_bf16": patch_pornmaster_flux2_multi_edit_bf16_workflow,
     "ltx_video": patch_ltx_video_workflow,
     "ltx_video_flf2v": patch_ltx_video_flf2v_workflow,
     "ltx_video_v2v_audio": patch_ltx_video_v2v_audio_workflow,

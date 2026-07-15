@@ -2,6 +2,7 @@ import pytest
 
 from src.web_api.routers import users as users_router
 from src.services.gallery_feed_queries import build_gallery_feed_query
+from src.services.gallery_feed_queries import resolve_gallery_task_type_filter_values
 from src.web_api.schemas.gallery_schema import GalleryPostResponse
 from src.web_api.services.gallery_service_queries import (
     get_gallery_posts_payload,
@@ -17,6 +18,15 @@ class _ScalarResult:
 
     def scalar(self):
         return self._value
+
+
+def test_free_edit_v2_5_gallery_group_is_distinct_from_v3_history():
+    assert resolve_gallery_task_type_filter_values("free_edit_v2_5_group") == (
+        "free_edit_v2_5",
+    )
+    assert "free_edit_v2_5" not in resolve_gallery_task_type_filter_values(
+        "free_edit_v3_group"
+    )
 
 
 class _ItemsResult:
@@ -67,7 +77,9 @@ class _NoopSession:
 def _statement_contains_task_type_filter(stmt, expected_task_type: str) -> bool:
     compiled = stmt.compile()
     sql = str(compiled)
-    return "history.type" in sql.lower() and expected_task_type in compiled.params.values()
+    return (
+        "history.type" in sql.lower() and expected_task_type in compiled.params.values()
+    )
 
 
 def _statement_contains_task_type_values(stmt, expected_task_types: set[str]) -> bool:
@@ -87,10 +99,12 @@ def _statement_contains_task_type_values(stmt, expected_task_types: set[str]) ->
 
 @pytest.mark.asyncio
 async def test_get_my_gallery_posts_applies_task_type_filter():
-    session = _AsyncSessionContext([
-        _ScalarResult(0),
-        _ItemsResult([]),
-    ])
+    session = _AsyncSessionContext(
+        [
+            _ScalarResult(0),
+            _ItemsResult([]),
+        ]
+    )
 
     response = await get_my_gallery_posts_payload(
         page=1,
@@ -109,10 +123,12 @@ async def test_get_my_gallery_posts_applies_task_type_filter():
 
 @pytest.mark.asyncio
 async def test_get_my_gallery_posts_ltx_filter_includes_execution_alias():
-    session = _AsyncSessionContext([
-        _ScalarResult(0),
-        _ItemsResult([]),
-    ])
+    session = _AsyncSessionContext(
+        [
+            _ScalarResult(0),
+            _ItemsResult([]),
+        ]
+    )
 
     response = await get_my_gallery_posts_payload(
         page=1,
@@ -134,10 +150,12 @@ async def test_get_my_gallery_posts_ltx_filter_includes_execution_alias():
 
 @pytest.mark.asyncio
 async def test_get_my_favorite_posts_applies_task_type_filter():
-    session = _AsyncSessionContext([
-        _ScalarResult(0),
-        _ItemsResult([]),
-    ])
+    session = _AsyncSessionContext(
+        [
+            _ScalarResult(0),
+            _ItemsResult([]),
+        ]
+    )
 
     response = await get_my_favorite_posts_payload(
         page=1,
@@ -157,10 +175,12 @@ async def test_get_my_favorite_posts_applies_task_type_filter():
 
 @pytest.mark.asyncio
 async def test_get_my_favorite_posts_ltx_filter_includes_execution_alias():
-    session = _AsyncSessionContext([
-        _ScalarResult(0),
-        _ItemsResult([]),
-    ])
+    session = _AsyncSessionContext(
+        [
+            _ScalarResult(0),
+            _ItemsResult([]),
+        ]
+    )
 
     response = await get_my_favorite_posts_payload(
         page=1,
@@ -183,10 +203,12 @@ async def test_get_my_favorite_posts_ltx_filter_includes_execution_alias():
 
 @pytest.mark.asyncio
 async def test_get_my_prompt_unlocked_posts_applies_task_type_filter():
-    session = _AsyncSessionContext([
-        _ScalarResult(0),
-        _ItemsResult([]),
-    ])
+    session = _AsyncSessionContext(
+        [
+            _ScalarResult(0),
+            _ItemsResult([]),
+        ]
+    )
 
     response = await get_my_prompt_unlocked_posts_payload(
         page=1,
@@ -205,10 +227,12 @@ async def test_get_my_prompt_unlocked_posts_applies_task_type_filter():
 
 @pytest.mark.asyncio
 async def test_get_my_prompt_unlocked_posts_ltx_filter_includes_execution_alias():
-    session = _AsyncSessionContext([
-        _ScalarResult(0),
-        _ItemsResult([]),
-    ])
+    session = _AsyncSessionContext(
+        [
+            _ScalarResult(0),
+            _ItemsResult([]),
+        ]
+    )
 
     response = await get_my_prompt_unlocked_posts_payload(
         page=1,
@@ -230,10 +254,12 @@ async def test_get_my_prompt_unlocked_posts_ltx_filter_includes_execution_alias(
 
 @pytest.mark.asyncio
 async def test_get_my_favorites_applies_task_type_filter():
-    db = _DbSession([
-        _ScalarResult(0),
-        _ItemsResult([]),
-    ])
+    db = _DbSession(
+        [
+            _ScalarResult(0),
+            _ItemsResult([]),
+        ]
+    )
 
     response = await users_router.get_my_favorites(
         page=1,

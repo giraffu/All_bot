@@ -1442,7 +1442,10 @@ def test_gpu226_pornmaster_bf16_rollback_slot_keeps_isolated_manifest():
     assert slot.enabled is False
     assert slot.phase == "superseded_by_i2i_pro"
     assert slot.retargetable is True
-    assert slot.target_task_types == ("pornmaster_flux2_edit_bf16",)
+    assert slot.target_task_types == (
+        "pornmaster_flux2_edit_bf16",
+        "pornmaster_flux2_multi_edit_bf16",
+    )
     assert profile.image_ref.endswith(
         "comfy-runpod-pornmaster-flux2-edit:"
         "20260628-pornmaster-flux2-edit-cu128-smallvae1"

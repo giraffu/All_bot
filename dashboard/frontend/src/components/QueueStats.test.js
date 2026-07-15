@@ -560,7 +560,10 @@ describe('QueueStats worker health display', () => {
         {
           profile: 'pornmaster_flux2_edit_bf16',
           label: 'pornmaster_flux2 BF16 / 自由P图 V3',
-          supported_task_types: ['pornmaster_flux2_edit_bf16'],
+          supported_task_types: [
+            'pornmaster_flux2_edit_bf16',
+            'pornmaster_flux2_multi_edit_bf16',
+          ],
           active_count: 46,
           pending_count: 0,
           max_pending_wait_seconds: null,

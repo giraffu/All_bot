@@ -166,6 +166,26 @@ export function useLabTemplateHydration({
       }
     }
 
+    if (
+      (modeId === 'edit_v2_5' && rawTaskType === 'free_edit_v2_5')
+      || (modeId === 'edit_v3' && [
+        'pornmaster_flux2_edit_bf16',
+        'pornmaster_flux2_single_edit',
+        'pornmaster_flux2_multi_edit',
+      ].includes(rawTaskType))
+    ) {
+      prompt.value = promptValue
+      return {
+        applied: true,
+        promptLocked: true,
+        editSettingsLocked: true,
+        videoSettingsLocked: false,
+        notice: t('template_apply.image_prompt.template_notice_image'),
+        warning: '',
+        sourcePostId,
+      }
+    }
+
     return null
   }
 

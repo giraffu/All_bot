@@ -521,6 +521,7 @@ slots:
     target_profile_id: pornmaster_flux2_edit_bf16
     target_task_types:
       - pornmaster_flux2_edit_bf16
+      - pornmaster_flux2_multi_edit_bf16
     gpu_index: 0
     host_port: 8190
     legacy_health_port: 8190
