@@ -87,3 +87,4 @@ def test_dashboard_and_qqcc_frontends_are_separate_targets():
     assert "AS qqcc-config-frontend" in dockerfile
     qqcc = dockerfile.split("AS qqcc-config-frontend", 1)[1]
     assert "index.private-bot.html" in qqcc
+    assert dockerfile.count("mkdir -p /etc/nginx/templates") == 2
