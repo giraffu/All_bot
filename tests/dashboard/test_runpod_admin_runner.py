@@ -118,6 +118,93 @@ async def test_runner_operations_payload_reads_detached_store_records(tmp_path):
     assert "detached" in operation["can_terminate_reason"]
 
 
+@pytest.mark.asyncio
+async def test_runner_operations_payload_reconciles_detached_add_when_worker_is_ready(
+    tmp_path,
+):
+    runner, store = _build_runner(tmp_path)
+    await store.save_operation(
+        {
+            "id": "detached-ready-op",
+            "action": "add",
+            "profile": "img2img",
+            "owner_id": "old-host:123:abc",
+            "status": "running",
+            "terminate_requested": False,
+            "cleanup_slots": ["02"],
+            "log_tail": ["[runpod-prod-worker] prod_worker_heartbeat: running"],
+            "command": [],
+            "created_at": "2026-07-15T03:59:30Z",
+        },
+        created_at=1.0,
+    )
+    await store.acquire_active_add("img2img", "detached-ready-op")
+
+    payload = await runner.operations_payload(
+        workers_payload={
+            "workers": [
+                {
+                    "agent_id": "runpod_prod_img2img_manual_02",
+                    "provider": "runpod",
+                    "status": "running",
+                    "control_state": "enabled",
+                    "last_seen": 995.0,
+                }
+            ]
+        },
+        now=1000.0,
+    )
+
+    operation = payload["operations"][0]
+    assert operation["status"] == "succeeded"
+    assert operation["exit_code"] == 0
+    assert operation["ended_at"] == "1970-01-01T00:16:40Z"
+    assert "reconciled detached add" in operation["log_tail"][-1]
+    assert await store.get_active_add("img2img") is None
+
+
+@pytest.mark.asyncio
+async def test_runner_operations_payload_keeps_detached_add_running_for_stale_worker(
+    tmp_path,
+):
+    runner, store = _build_runner(tmp_path)
+    await store.save_operation(
+        {
+            "id": "detached-stale-op",
+            "action": "add",
+            "profile": "img2img",
+            "owner_id": "old-host:123:abc",
+            "status": "running",
+            "terminate_requested": False,
+            "requested_count": 1,
+            "cleanup_slots": ["02"],
+            "log_tail": [],
+            "command": [],
+        },
+        created_at=1.0,
+    )
+    await store.acquire_active_add("img2img", "detached-stale-op")
+
+    payload = await runner.operations_payload(
+        workers_payload={
+            "workers": [
+                {
+                    "agent_id": "runpod_prod_img2img_manual_02",
+                    "provider": "runpod",
+                    "status": "idle",
+                    "control_state": "enabled",
+                    "last_seen": 600.0,
+                }
+            ]
+        },
+        now=1000.0,
+    )
+
+    operation = payload["operations"][0]
+    assert operation["status"] == "running"
+    assert await store.get_active_add("img2img") == "detached-stale-op"
+
+
 def test_runner_prunes_old_finished_local_operations(tmp_path):
     runner, _store = _build_runner(tmp_path)
     runner.max_operation_records = 2

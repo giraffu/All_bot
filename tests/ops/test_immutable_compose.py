@@ -57,6 +57,10 @@ def test_prod_dashboard_backend_enables_runpod_autoscaler_in_immutable_compose()
     assert environment["DASHBOARD_RUNPOD_PROD_ENV_FILE"] == (
         "${DASHBOARD_RUNPOD_PROD_ENV_FILE:-/dev/null}"
     )
+    assert environment["RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT"] == (
+        "${RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT:?"
+        "RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT is required}"
+    )
 
 
 def test_central_and_worker_images_contain_their_dependency_closure():

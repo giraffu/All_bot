@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import calendar
 import logging
 import os
 import signal
@@ -15,6 +16,7 @@ from fastapi import HTTPException
 
 from dashboard.backend.services.runpod_admin_commands import RunPodAdminCommandBuilder
 from dashboard.backend.services.runpod_admin_operation import (
+    DEFAULT_OPERATION_LOG_LINES,
     FINISHED_OPERATION_STATUSES,
     RunPodAdminOperation,
     append_operation_log,
@@ -47,6 +49,14 @@ class RunPodAdminOperationRunner:
     max_operation_records: int = field(
         default_factory=lambda: int(
             os.getenv("DASHBOARD_RUNPOD_MAX_OPERATION_RECORDS", "100")
+        )
+    )
+    detached_reconcile_heartbeat_max_age_seconds: int = field(
+        default_factory=lambda: int(
+            os.getenv(
+                "DASHBOARD_RUNPOD_AUTOSCALER_HEARTBEAT_MAX_AGE_SECONDS",
+                "300",
+            )
         )
     )
 
@@ -132,10 +142,155 @@ class RunPodAdminOperationRunner:
         for operation in finished[:overflow]:
             self.operations.pop(operation.id, None)
 
-    async def operations_payload(self) -> dict[str, Any]:
+    @staticmethod
+    def _stored_operation_created_at(
+        payload: dict[str, Any],
+        *,
+        fallback: float,
+    ) -> float:
+        raw = payload.get("created_at")
+        if isinstance(raw, (int, float)):
+            return float(raw)
+        if isinstance(raw, str) and raw:
+            try:
+                return float(
+                    calendar.timegm(time.strptime(raw, "%Y-%m-%dT%H:%M:%SZ"))
+                )
+            except ValueError:
+                pass
+        return fallback
+
+    def _detached_add_ready_agents(
+        self,
+        payload: dict[str, Any],
+        *,
+        workers_by_agent: dict[str, dict[str, Any]],
+        now: float,
+    ) -> list[str] | None:
+        operation_id = str(payload.get("id") or "")
+        if (
+            not operation_id
+            or operation_id in self.operations
+            or payload.get("action") != "add"
+            or payload.get("status") != "running"
+            or payload.get("terminate_requested")
+        ):
+            return None
+        slots = [
+            str(slot)
+            for slot in payload.get("cleanup_slots") or []
+            if str(slot)
+        ]
+        try:
+            requested_count = int(payload.get("requested_count") or len(slots))
+        except (TypeError, ValueError):
+            return None
+        if not slots or len(slots) < requested_count:
+            return None
+        profile = str(payload.get("profile") or "")
+        try:
+            agent_ids = [
+                prod_agent_id_from_slot(slot, profile=profile) for slot in slots
+            ]
+        except ValueError:
+            return None
+        for agent_id in agent_ids:
+            worker = workers_by_agent.get(agent_id)
+            if not worker:
+                return None
+            if str(worker.get("provider") or "").strip().lower() != "runpod":
+                return None
+            if str(worker.get("status") or "").strip().lower() not in {
+                "idle",
+                "running",
+            }:
+                return None
+            control_state = str(
+                worker.get("control_state") or "enabled"
+            ).strip().lower()
+            if control_state != "enabled":
+                return None
+            try:
+                last_seen = float(worker.get("last_seen"))
+            except (TypeError, ValueError):
+                return None
+            heartbeat_age = now - last_seen
+            if not (
+                0
+                <= heartbeat_age
+                <= self.detached_reconcile_heartbeat_max_age_seconds
+            ):
+                return None
+        return agent_ids
+
+    async def _reconcile_detached_add_operations(
+        self,
+        stored_payloads: list[dict[str, Any]],
+        *,
+        workers_payload: dict[str, Any],
+        now: float,
+    ) -> list[dict[str, Any]]:
+        workers_by_agent = {
+            str(worker.get("agent_id") or ""): worker
+            for worker in workers_payload.get("workers") or []
+            if isinstance(worker, dict) and worker.get("agent_id")
+        }
+        reconciled: list[dict[str, Any]] = []
+        for original in stored_payloads:
+            payload = dict(original)
+            ready_agents = self._detached_add_ready_agents(
+                payload,
+                workers_by_agent=workers_by_agent,
+                now=now,
+            )
+            if ready_agents is None:
+                reconciled.append(payload)
+                continue
+            payload["status"] = "succeeded"
+            payload["ended_at"] = time.strftime(
+                "%Y-%m-%dT%H:%M:%SZ",
+                time.gmtime(now),
+            )
+            payload["exit_code"] = 0
+            payload["error"] = None
+            log_tail = list(payload.get("log_tail") or [])
+            log_tail.append(
+                "[dashboard-runpod] reconciled detached add: expected worker is healthy"
+            )
+            payload["log_tail"] = log_tail[-DEFAULT_OPERATION_LOG_LINES:]
+            created_at = self._stored_operation_created_at(payload, fallback=now)
+            await self.store.save_operation(
+                payload,
+                created_at=created_at,
+                ttl_seconds=FINISHED_OPERATION_TTL_SECONDS,
+            )
+            await self.store.release_active_add(
+                str(payload.get("profile") or ""),
+                str(payload.get("id") or ""),
+            )
+            self.logger.info(
+                "Reconciled detached RunPod add operation %s with healthy agents %s",
+                payload.get("id"),
+                ",".join(ready_agents),
+            )
+            reconciled.append(payload)
+        return reconciled
+
+    async def operations_payload(
+        self,
+        *,
+        workers_payload: dict[str, Any] | None = None,
+        now: float | None = None,
+    ) -> dict[str, Any]:
         stored_payloads = await self.store.list_operations(
             limit=self.max_operation_records
         )
+        if workers_payload is not None:
+            stored_payloads = await self._reconcile_detached_add_operations(
+                stored_payloads,
+                workers_payload=workers_payload,
+                now=time.time() if now is None else float(now),
+            )
         operations: list[dict[str, Any]] = []
         seen_operation_ids: set[str] = set()
         for payload in stored_payloads:

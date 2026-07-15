@@ -31,7 +31,7 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
         "gpu-252-gpu0-i2i_pro",
         "gpu-002-gpu0-scail2",
         "gpu-002-gpu1-image_to_video",
-        "gpu-226-gpu0-image_to_video",
+        "gpu-226-gpu0-i2i_pro",
     ]
     assert slots["gpu-177-gpu0-wan22_video_v2"].legacy_worker_id == (
         "lan_aio_prod_gpu177_gpu0_image_to_video_01"
@@ -84,11 +84,11 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
         "video_edit",
         "image_to_video",
     )
-    assert slots["gpu-226-gpu0-image_to_video"].agent_id == (
-        "lan_aio_prod_gpu226_gpu0_image_to_video_01"
-    )
-    assert slots["gpu-226-gpu0-image_to_video"].legacy_worker_id == (
+    assert slots["gpu-226-gpu0-i2i_pro"].agent_id == (
         "lan_aio_prod_gpu226_gpu0_i2i_pro_01"
+    )
+    assert slots["gpu-226-gpu0-i2i_pro"].legacy_worker_id == (
+        "lan_aio_prod_gpu226_gpu0_pornmaster_flux2_edit_bf16_01"
     )
 
 
@@ -149,22 +149,22 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
     assert slots["gpu-252-gpu1-pornmaster_flux2_edit"].old_runtime_container == (
         "allbot-lan-aio-gpu-252-gpu1-scail2-prod"
     )
-    assert slots["gpu-226-gpu0-image_to_video"].enabled is True
-    assert slots["gpu-226-gpu0-image_to_video"].phase == "prod_enabled"
-    assert slots["gpu-226-gpu0-image_to_video"].retargetable is False
+    assert slots["gpu-226-gpu0-image_to_video"].enabled is False
+    assert slots["gpu-226-gpu0-image_to_video"].phase == "superseded_by_i2i_pro"
+    assert slots["gpu-226-gpu0-image_to_video"].retargetable is True
     assert slots["gpu-226-gpu0-image_to_video"].legacy_worker_id == (
         "lan_aio_prod_gpu226_gpu0_i2i_pro_01"
     )
     assert slots["gpu-226-gpu0-pornmaster_flux2_edit_bf16"].enabled is False
     assert slots["gpu-226-gpu0-pornmaster_flux2_edit_bf16"].phase == (
-        "superseded_by_image_to_video"
+        "superseded_by_i2i_pro"
     )
     assert slots["gpu-226-gpu0-pornmaster_flux2_edit_bf16"].retargetable is True
     assert slots["gpu-226-gpu0-pornmaster_flux2_edit_bf16"].legacy_worker_id == (
-        "lan_aio_prod_gpu226_gpu0_image_to_video_01"
+        "lan_aio_prod_gpu226_gpu0_i2i_pro_01"
     )
-    assert slots["gpu-226-gpu0-i2i_pro"].enabled is False
-    assert slots["gpu-226-gpu0-i2i_pro"].phase == "superseded_by_image_to_video"
+    assert slots["gpu-226-gpu0-i2i_pro"].enabled is True
+    assert slots["gpu-226-gpu0-i2i_pro"].phase == "prod_enabled"
     assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].enabled is False
     assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].phase == (
         "superseded_by_image_to_video"
@@ -1440,7 +1440,7 @@ def test_gpu226_pornmaster_bf16_rollback_slot_keeps_isolated_manifest():
     profile = ops.config.profiles[slot.target_profile_id]
 
     assert slot.enabled is False
-    assert slot.phase == "superseded_by_image_to_video"
+    assert slot.phase == "superseded_by_i2i_pro"
     assert slot.retargetable is True
     assert slot.target_task_types == ("pornmaster_flux2_edit_bf16",)
     assert profile.image_ref.endswith(

@@ -264,7 +264,9 @@ async def test_runpod_operations_payload_reads_persisted_store_records():
         created_at=1.0,
     )
 
-    payload = await runpod_admin_service.get_runpod_operations_payload()
+    payload = await runpod_admin_service.get_runpod_operations_payload(
+        workers_payload={"workers": []}
+    )
 
     assert payload["count"] == 1
     operation = payload["operations"][0]
@@ -273,6 +275,44 @@ async def test_runpod_operations_payload_reads_persisted_store_records():
     assert operation["attached"] is False
     assert operation["can_terminate"] is False
     assert "detached" in operation["can_terminate_reason"]
+
+
+@pytest.mark.asyncio
+async def test_runpod_operations_payload_uses_worker_snapshot_to_finish_detached_add():
+    store = InMemoryRunPodOperationStore()
+    runpod_admin_service.set_runpod_operation_store_for_tests(store)
+    await store.save_operation(
+        {
+            "id": "detached-ready-op",
+            "action": "add",
+            "profile": "img2img",
+            "owner_id": "old-host:1:abc",
+            "status": "running",
+            "terminate_requested": False,
+            "requested_count": 1,
+            "cleanup_slots": ["02"],
+            "log_tail": [],
+            "command": [],
+        },
+        created_at=1.0,
+    )
+
+    payload = await runpod_admin_service.get_runpod_operations_payload(
+        workers_payload={
+            "workers": [
+                {
+                    "agent_id": "runpod_prod_img2img_manual_02",
+                    "provider": "runpod",
+                    "status": "idle",
+                    "control_state": "enabled",
+                    "last_seen": 995.0,
+                }
+            ]
+        },
+        now=1000.0,
+    )
+
+    assert payload["operations"][0]["status"] == "succeeded"
 
 
 @pytest.mark.asyncio
