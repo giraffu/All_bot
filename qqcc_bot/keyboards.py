@@ -18,6 +18,7 @@ from src.services.qqcc_config_service import (
     is_qqcc_global_enabled,
     is_qqcc_main_bot_link_enabled,
     is_qqcc_main_button_enabled,
+    is_qqcc_private_bot_entry_enabled,
     normalize_qqcc_config,
 )
 
@@ -75,7 +76,7 @@ def get_qqcc_main_menu_keyboard(
     if is_qqcc_global_enabled(config) and _can_show_market(config):
         keyboard.append([get_text("qqcc.menu.market", lang)])
 
-    if include_private_bot_entry:
+    if include_private_bot_entry and is_qqcc_private_bot_entry_enabled(config):
         keyboard.append([get_text("qqcc.menu.private_bot", lang)])
 
     if is_qqcc_main_bot_link_enabled(config):
