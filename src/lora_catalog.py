@@ -1,3 +1,6 @@
+import math
+
+
 IMAGE_LORA_MODELS = {
     "": "无",
     "qwen/YARN_1.0.safetensors": "逼真",
@@ -175,11 +178,14 @@ def build_ltx_video_lora_item(
     normalized_name = resolve_ltx_video_lora_name(lora_name)
     if not normalized_name:
         return None
-    resolved_strength = (
-        get_ltx_video_lora_default_strength(normalized_name)
-        if strength is None
-        else float(strength)
-    )
+    default_strength = get_ltx_video_lora_default_strength(normalized_name)
+    try:
+        resolved_strength = default_strength if strength is None else float(strength)
+    except (TypeError, ValueError):
+        resolved_strength = default_strength
+    if not math.isfinite(resolved_strength):
+        resolved_strength = default_strength
+    resolved_strength = round(round(min(2.0, max(0.1, resolved_strength)) * 20) / 20, 2)
     return {
         "name": normalized_name,
         "strength": float(resolved_strength),

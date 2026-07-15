@@ -122,6 +122,7 @@ class _VideoSubmissionContext:
 @dataclass(frozen=True)
 class _LtxSubmissionContext:
     prompt: str
+    negative_prompt: str | None
     mode: str
     image_path: str
     end_image_path: str | None
@@ -201,6 +202,7 @@ def _build_ltx_submission_context(inputs: Dict[str, Any]) -> _LtxSubmissionConte
 
     return _LtxSubmissionContext(
         prompt=_get_input_prompt(inputs, "ltx video"),
+        negative_prompt=(str(inputs.get("negative_prompt") or "").strip() or None),
         mode=mode,
         image_path=image_path,
         end_image_path=end_image_path,
@@ -811,6 +813,11 @@ class LtxVideoStrategy(BaseTaskStrategy):
         if submission.mode == LTX_VIDEO_MODE_FLF2V:
             if not submission.image_path or not submission.end_image_path:
                 raise CoreDomainError("LTX 首尾帧生成需要同时上传起始帧和终止帧。")
+            optional_negative = (
+                {"negative_prompt": submission.negative_prompt}
+                if submission.negative_prompt
+                else {}
+            )
             return await image_service.submit_ltx_video_flf2v_task(
                 task_id,
                 prompt=submission.prompt,
@@ -823,10 +830,16 @@ class LtxVideoStrategy(BaseTaskStrategy):
                 height=submission.height,
                 length=submission.requested_seconds,
                 priority=priority,
+                **optional_negative,
             )
 
         if not submission.image_path:
             raise CoreDomainError("LTX 图生视频需要上传起始图片。")
+        optional_negative = (
+            {"negative_prompt": submission.negative_prompt}
+            if submission.negative_prompt
+            else {}
+        )
         return await image_service.submit_ltx_video_task(
             task_id,
             prompt=submission.prompt,
@@ -838,6 +851,7 @@ class LtxVideoStrategy(BaseTaskStrategy):
             height=submission.height,
             length=submission.requested_seconds,
             priority=priority,
+            **optional_negative,
         )
 
 

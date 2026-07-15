@@ -5,6 +5,7 @@ import pytest
 
 from src.constants import (
     MODE_IMAGE_TO_VIDEO,
+    MODE_LTX_VIDEO,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_RANDOM_FACESWAP,
 )
@@ -130,6 +131,62 @@ async def test_prepare_qqcc_regeneration_rebuilds_quick_video_scene(monkeypatch)
         index=0,
         name_hint="qqcc_regenerate_video",
     )
+
+
+@pytest.mark.asyncio
+async def test_prepare_qqcc_regeneration_reloads_latest_ai_video_scene(monkeypatch):
+    config = normalize_qqcc_config(
+        {
+            "main_buttons": {"ai_video": True},
+            "ai_video_scenes": [
+                {
+                    "id": "cinema",
+                    "name": "电影运镜新版",
+                    "prompt": "latest prompt",
+                    "negative_prompt": "latest blur",
+                    "duration": 20,
+                }
+            ],
+        }
+    )
+    history = SimpleNamespace(
+        type=MODE_LTX_VIDEO,
+        input_file="history/start.png",
+        billing_resolution="1280x704",
+        requested_duration=5,
+        duration=5,
+        extra_outputs={
+            "_qqcc_regenerate": {
+                "kind": "quick_video",
+                "mode": MODE_LTX_VIDEO,
+                "scene_id": "cinema",
+                "scene_kind": "ai_video",
+                "display_mode_name": "电影运镜旧版",
+            }
+        },
+    )
+    monkeypatch.setattr(
+        "src.services.qqcc_regeneration_service.download_history_input_file_to_fsm_temp",
+        AsyncMock(return_value="/tmp/start.png"),
+    )
+    monkeypatch.setattr(
+        "src.services.qqcc_regeneration_service.resolve_allowed_quick_video_resolutions",
+        AsyncMock(return_value=[]),
+    )
+
+    submission = await prepare_qqcc_regeneration_submission(
+        task_id="task-ltx",
+        telegram_user_id=123,
+        username="tester",
+        load_history_func=AsyncMock(return_value=history),
+        load_config_func=AsyncMock(return_value=config),
+    )
+
+    assert submission.display_mode_name == "电影运镜新版"
+    assert submission.plan.kind == QuickVideoSubmissionKind.LTX_VIDEO
+    assert submission.plan.default_prompt_text == "latest prompt"
+    assert submission.plan.negative_prompt == "latest blur"
+    assert submission.plan.duration == "20s"
 
 
 @pytest.mark.asyncio

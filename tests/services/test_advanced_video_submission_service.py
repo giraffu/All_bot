@@ -248,3 +248,4 @@ def test_create_ltx_submission_task_calls_existing_entrypoint():
     assert process_task.call_args.kwargs["duration"] == "5s"
     assert process_task.call_args.kwargs["image_path"] == "/tmp/start.png"
     assert process_task.call_args.kwargs["end_image_path"] == "/tmp/end.png"
+    assert "negative_prompt" not in process_task.call_args.kwargs

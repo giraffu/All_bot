@@ -96,7 +96,7 @@ export const updatePrivateBotOwnerCredentials = async (token: string) =>
     .then(unwrapData)
 
 export const uploadPrivateBotOwnerDemoMedia = async (
-  sceneKind: 'video' | 'draw' | 'filter',
+  sceneKind: 'video' | 'ai_video' | 'draw' | 'filter',
   sceneId: string,
   slot: 'input' | 'output',
   file: File,

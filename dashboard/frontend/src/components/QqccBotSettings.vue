@@ -21,6 +21,7 @@ type MainButtonKey =
   | 'ai_draw'
   | 'ai_filter'
   | 'video_edit'
+  | 'ai_video'
   | 'market'
   | 'main_bot_link'
 type PhotoButtonKey = 'masturbation' | 'random_faceswap'
@@ -28,9 +29,11 @@ type UndressMethodKey = 'legacy' | 'i2i_draw'
 type VideoButtonKey = 'missionary' | 'doggy' | 'blowjob' | 'undress_tongue' | 'closeup_blowjob'
 type ResolutionKey = '512p' | '720p' | '1024p'
 type DurationKey = '5s' | '8s' | '10s'
+type AiVideoDurationKey = 5 | 10 | 15 | 20
 type VideoSceneEngine = 'image_to_video' | 'wan22_video_v2'
+type AiVideoSceneEngine = 'ltx_video'
 type DrawSceneEngine = 'free_edit' | 'free_edit_v2' | 'free_edit_v3'
-type SceneConfigKind = 'video' | 'draw' | 'filter'
+type SceneConfigKind = 'video' | 'ai_video' | 'draw' | 'filter'
 type SceneConfigPanel = 'model' | 'reference'
 type DemoMediaSlot = 'input' | 'output'
 type DemoUploadFile = File & { originFileObj?: File }
@@ -49,9 +52,11 @@ type CopywritingKey =
   | 'ai_draw_menu'
   | 'ai_filter_menu'
   | 'video_menu'
+  | 'ai_video_menu'
   | 'ai_draw_scene_start'
   | 'ai_filter_scene_start'
   | 'video_scene_start'
+  | 'ai_video_scene_start'
 
 interface SceneDemoMedia {
   object_key: string
@@ -76,6 +81,22 @@ interface VideoSceneConfig extends SceneDemoFields {
   duration: DurationKey
   engine: VideoSceneEngine
   lora_name: string
+  end_frame_draw_scene_id: string
+}
+
+interface AiVideoLoraItem {
+  path: string
+  strength: number
+}
+
+interface AiVideoSceneConfig extends SceneDemoFields {
+  id: string
+  name: string
+  prompt: string
+  negative_prompt: string
+  duration: AiVideoDurationKey
+  engine: AiVideoSceneEngine
+  lora_items: AiVideoLoraItem[]
   end_frame_draw_scene_id: string
 }
 
@@ -113,6 +134,7 @@ interface QqccBotConfig {
     durations: Record<DurationKey, boolean>
   }
   video_scenes: VideoSceneConfig[]
+  ai_video_scenes: AiVideoSceneConfig[]
   draw_scenes: DrawSceneConfig[]
   filter_scenes: FilterSceneConfig[]
   prompts: Record<PromptKey, string>
@@ -127,15 +149,19 @@ interface SceneEngineOption {
 interface LoraModelOption {
   value: string
   label: string
+  default_strength?: number
 }
 
 interface QqccBotConfigOptions {
   scene_preset_version: number
   default_video_engine: VideoSceneEngine
+  default_ai_video_engine: AiVideoSceneEngine
   default_draw_engine: DrawSceneEngine
   video_engines: SceneEngineOption[]
+  ai_video_engines: SceneEngineOption[]
   draw_engines: SceneEngineOption[]
   video_lora_models: LoraModelOption[]
+  ltx_video_lora_models: LoraModelOption[]
   image_lora_models: LoraModelOption[]
 }
 
@@ -157,7 +183,7 @@ interface QqccDemoGenerationResponse extends Partial<QqccDemoMediaUploadResponse
   error?: string
 }
 
-type SceneConfig = VideoSceneConfig | DrawSceneConfig | FilterSceneConfig
+type SceneConfig = VideoSceneConfig | AiVideoSceneConfig | DrawSceneConfig | FilterSceneConfig
 
 const props = defineProps<{
   fetchConfig: () => Promise<QqccBotConfigResponse>
@@ -183,10 +209,13 @@ const props = defineProps<{
 const emptyOptions = (): QqccBotConfigOptions => ({
   scene_preset_version: 1,
   default_video_engine: 'image_to_video',
+  default_ai_video_engine: 'ltx_video',
   default_draw_engine: 'free_edit_v2',
   video_engines: [],
+  ai_video_engines: [],
   draw_engines: [],
   video_lora_models: [],
+  ltx_video_lora_models: [],
   image_lora_models: [],
 })
 
@@ -202,6 +231,7 @@ const emptyConfig = (): QqccBotConfig => ({
     ai_draw: false,
     ai_filter: false,
     video_edit: false,
+    ai_video: false,
     market: false,
     main_bot_link: false,
   },
@@ -233,6 +263,7 @@ const emptyConfig = (): QqccBotConfig => ({
     },
   },
   video_scenes: [],
+  ai_video_scenes: [],
   draw_scenes: [],
   filter_scenes: [],
   prompts: {
@@ -251,9 +282,11 @@ const emptyConfig = (): QqccBotConfig => ({
     ai_draw_menu: '',
     ai_filter_menu: '',
     video_menu: '',
+    ai_video_menu: '',
     ai_draw_scene_start: '',
     ai_filter_scene_start: '',
     video_scene_start: '',
+    ai_video_scene_start: '',
   },
 })
 
@@ -262,6 +295,7 @@ const mainButtonOptions: Array<{ key: MainButtonKey; label: string }> = [
   { key: 'ai_draw', label: 'AI绘图' },
   { key: 'ai_filter', label: 'AI滤镜' },
   { key: 'video_edit', label: 'AI动图' },
+  { key: 'ai_video', label: 'AI视频' },
   { key: 'market', label: '修仙市集' },
   { key: 'main_bot_link', label: '前往主bot' },
 ]
@@ -281,11 +315,16 @@ const videoButtonOptions: Array<{ key: VideoButtonKey; label: string }> = [
 
 const resolutionOptions: ResolutionKey[] = ['512p', '720p', '1024p']
 const durationOptions: DurationKey[] = ['5s', '8s', '10s']
+const aiVideoDurationOptions: AiVideoDurationKey[] = [5, 10, 15, 20]
 const demoSlots: DemoMediaSlot[] = ['input', 'output']
 
 const videoEngineLabels: Record<VideoSceneEngine, string> = {
   image_to_video: '图生视频',
   wan22_video_v2: '图生视频v2',
+}
+
+const aiVideoEngineLabels: Record<AiVideoSceneEngine, string> = {
+  ltx_video: '高级图生视频（LTX）',
 }
 
 const drawEngineLabels: Record<DrawSceneEngine, string> = {
@@ -325,6 +364,11 @@ const copywritingOptions: Array<{
     defaultText: '🎬 **懒人动图**\n请选择演武场景：',
   },
   {
+    key: 'ai_video_menu',
+    label: 'AI视频：主菜单点击后的文案',
+    defaultText: '🎞️ **AI视频**\n请选择视频场景：',
+  },
+  {
     key: 'ai_draw_scene_start',
     label: 'AI绘图：二级场景点击后的文案',
     defaultText: '🎨 **已切换到【{butten}】模式** (消耗 {cost} 灵石)。\n\n请发送一张图片，我将按照该场景提示词处理。\n\n随时可以发送 /cancel 退出流程。',
@@ -342,6 +386,12 @@ const copywritingOptions: Array<{
     defaultText: '🎬 **已切换到【{butten}】模式**。\n\n请发送一张【正面清晰图片】，我将自动处理。\n\n随时可以发送 /cancel 退出流程。',
     sceneButton: true,
   },
+  {
+    key: 'ai_video_scene_start',
+    label: 'AI视频：二级场景点击后的文案',
+    defaultText: '🎞️ **已切换到【{butten}】模式**。\n\n请发送一张【正面清晰图片】，我将按固定场景参数生成视频。\n\n随时可以发送 /cancel 退出流程。',
+    sceneButton: true,
+  },
 ]
 
 const loading = ref(false)
@@ -356,10 +406,12 @@ const scenePageSize = 5
 const activeSceneTab = ref<SceneConfigKind>('video')
 const scenePages = reactive<Record<SceneConfigKind, number>>({
   video: 1,
+  ai_video: 1,
   draw: 1,
   filter: 1,
 })
 const sceneCounter = ref(0)
+const aiVideoSceneCounter = ref(0)
 const drawSceneCounter = ref(0)
 const filterSceneCounter = ref(0)
 const sceneConfig = reactive({
@@ -369,6 +421,7 @@ const sceneConfig = reactive({
   index: -1,
   engine: 'image_to_video',
   lora_name: '',
+  lora_items: [] as AiVideoLoraItem[],
   end_frame_draw_scene_id: '',
   postprocess_draw_scene_id: '',
   postprocess_filter_scene_id: '',
@@ -389,6 +442,9 @@ function paginateScenes<T>(scenes: T[], page: number) {
 const paginatedVideoScenes = computed(() =>
   paginateScenes(config.video_scenes, scenePages.video),
 )
+const paginatedAiVideoScenes = computed(() =>
+  paginateScenes(config.ai_video_scenes, scenePages.ai_video),
+)
 const paginatedDrawScenes = computed(() =>
   paginateScenes(config.draw_scenes, scenePages.draw),
 )
@@ -398,6 +454,7 @@ const paginatedFilterScenes = computed(() =>
 
 const getSceneCount = (kind: SceneConfigKind) => {
   if (kind === 'video') return config.video_scenes.length
+  if (kind === 'ai_video') return config.ai_video_scenes.length
   if (kind === 'draw') return config.draw_scenes.length
   return config.filter_scenes.length
 }
@@ -414,6 +471,8 @@ const showScenePageContaining = (kind: SceneConfigKind, index: number) => {
 const normalizeVideoEngine = (value: unknown): VideoSceneEngine =>
   value === 'wan22_video_v2' ? 'wan22_video_v2' : 'image_to_video'
 
+const normalizeAiVideoEngine = (_value: unknown): AiVideoSceneEngine => 'ltx_video'
+
 const normalizeDrawEngine = (value: unknown): DrawSceneEngine =>
   value === 'free_edit' || value === 'free_edit_v3' ? value : 'free_edit_v2'
 
@@ -428,7 +487,7 @@ const normalizeDemoMedia = (
   const { kind, sceneId, slot } = options
   if (!raw || typeof raw !== 'object') return undefined
   const media = raw as Partial<SceneDemoMedia>
-  const expectedMediaType = kind === 'video' && slot === 'output' ? 'video' : 'image'
+  const expectedMediaType = (kind === 'video' || kind === 'ai_video') && slot === 'output' ? 'video' : 'image'
   const allowedPrefixes = (props.demoMediaObjectPrefixes?.length
     ? props.demoMediaObjectPrefixes
     : ['qqcc/demo'])
@@ -469,7 +528,11 @@ const normalizeDemoMedia = (
 }
 
 const engineSupportsLora = (kind: SceneConfigKind, engine: string) => {
-  const engines = kind === 'video' ? modelOptions.video_engines : modelOptions.draw_engines
+  const engines = kind === 'video'
+    ? modelOptions.video_engines
+    : kind === 'ai_video'
+      ? modelOptions.ai_video_engines
+      : modelOptions.draw_engines
   return engines.some((item) => item.value === engine && item.supports_lora)
 }
 
@@ -485,6 +548,43 @@ const normalizeLoraName = (
   const loraName = typeof raw === 'string' ? raw : ''
   const loras = kind === 'video' ? modelOptions.video_lora_models : modelOptions.image_lora_models
   return loras.some((item) => item.value === loraName) ? loraName : ''
+}
+
+const normalizeLoraStrength = (raw: unknown, fallback = 1) => {
+  const numeric = typeof raw === 'number' ? raw : Number(raw)
+  const safe = Number.isFinite(numeric) ? numeric : fallback
+  return Math.round(Math.min(2, Math.max(0.1, safe)) * 20) / 20
+}
+
+const normalizeAiVideoLoraItems = (raw: unknown): AiVideoLoraItem[] => {
+  if (!Array.isArray(raw)) return []
+  const allowed = new Map(modelOptions.ltx_video_lora_models.map(item => [item.value, item]))
+  const seen = new Set<string>()
+  const normalized: AiVideoLoraItem[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const path = typeof item.path === 'string' ? item.path.trim() : ''
+    const option = allowed.get(path)
+    if (!option || seen.has(path)) continue
+    seen.add(path)
+    normalized.push({
+      path,
+      strength: normalizeLoraStrength(item.strength, option.default_strength ?? 1),
+    })
+    if (normalized.length >= 3) break
+  }
+  return normalized
+}
+
+const updateAiVideoLoraSelection = (paths: string[]) => {
+  const current = new Map(sceneConfig.lora_items.map(item => [item.path, item.strength]))
+  sceneConfig.lora_items = paths.slice(0, 3).map(path => {
+    const option = modelOptions.ltx_video_lora_models.find(item => item.value === path)
+    return {
+      path,
+      strength: normalizeLoraStrength(current.get(path), option?.default_strength ?? 1),
+    }
+  })
 }
 
 const normalizeEndFrameDrawSceneId = (raw: unknown, drawScenes = config.draw_scenes) => {
@@ -586,9 +686,15 @@ const mergeOptions = (raw?: Partial<QqccBotConfigOptions>): QqccBotConfigOptions
     merged.scene_preset_version = raw.scene_preset_version
   }
   merged.default_video_engine = normalizeVideoEngine(raw.default_video_engine)
+  merged.default_ai_video_engine = normalizeAiVideoEngine(raw.default_ai_video_engine)
   merged.default_draw_engine = normalizeDrawEngine(raw.default_draw_engine)
   if (Array.isArray(raw.video_engines) && raw.video_engines.length > 0) {
     merged.video_engines = raw.video_engines
+      .filter((item) => typeof item?.value === 'string')
+      .map((item) => ({ value: item.value, supports_lora: item.supports_lora === true }))
+  }
+  if (Array.isArray(raw.ai_video_engines) && raw.ai_video_engines.length > 0) {
+    merged.ai_video_engines = raw.ai_video_engines
       .filter((item) => typeof item?.value === 'string')
       .map((item) => ({ value: item.value, supports_lora: item.supports_lora === true }))
   }
@@ -607,11 +713,21 @@ const mergeOptions = (raw?: Partial<QqccBotConfigOptions>): QqccBotConfigOptions
       .filter((item) => typeof item?.value === 'string')
       .map((item) => ({ value: item.value, label: typeof item.label === 'string' ? item.label : item.value }))
   }
+  if (Array.isArray(raw.ltx_video_lora_models) && raw.ltx_video_lora_models.length > 0) {
+    merged.ltx_video_lora_models = raw.ltx_video_lora_models
+      .filter((item) => typeof item?.value === 'string')
+      .map((item) => ({
+        value: item.value,
+        label: typeof item.label === 'string' ? item.label : item.value,
+        default_strength: normalizeLoraStrength(item.default_strength, 1),
+      }))
+  }
   return merged
 }
 
 const getEngineLabel = (kind: SceneConfigKind, engine: string) => {
   if (kind === 'video') return videoEngineLabels[normalizeVideoEngine(engine)]
+  if (kind === 'ai_video') return aiVideoEngineLabels[normalizeAiVideoEngine(engine)]
   return drawEngineLabels[normalizeDrawEngine(engine)]
 }
 
@@ -619,10 +735,18 @@ const getSceneSelectPopupContainer = (triggerNode: HTMLElement) =>
   triggerNode.parentElement || document.body
 
 const activeEngineOptions = computed(() =>
-  sceneConfig.kind === 'video' ? modelOptions.video_engines : modelOptions.draw_engines
+  sceneConfig.kind === 'video'
+    ? modelOptions.video_engines
+    : sceneConfig.kind === 'ai_video'
+      ? modelOptions.ai_video_engines
+      : modelOptions.draw_engines
 )
 const activeLoraOptions = computed(() =>
-  sceneConfig.kind === 'video' ? modelOptions.video_lora_models : modelOptions.image_lora_models
+  sceneConfig.kind === 'video'
+    ? modelOptions.video_lora_models
+    : sceneConfig.kind === 'ai_video'
+      ? modelOptions.ltx_video_lora_models
+      : modelOptions.image_lora_models
 )
 const activeEngineSupportsLora = computed(() =>
   engineSupportsLora(sceneConfig.kind, sceneConfig.engine)
@@ -651,7 +775,7 @@ const activePostprocessFilterOptions = computed(() =>
 )
 const sceneModalTitle = computed(() => {
   if (sceneConfig.panel === 'model') return '模型配置'
-  return sceneConfig.kind === 'video' ? '首尾帧配置' : '后处理配置'
+  return sceneConfig.kind === 'video' || sceneConfig.kind === 'ai_video' ? '首尾帧配置' : '后处理配置'
 })
 
 const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
@@ -789,6 +913,39 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
       })
       .filter((scene) => scene.name.trim() || scene.prompt.trim())
   }
+  if (Array.isArray(raw.ai_video_scenes)) {
+    merged.ai_video_scenes = raw.ai_video_scenes
+      .map((scene, index) => {
+        const id = typeof scene?.id === 'string' && scene.id.trim()
+          ? scene.id.trim()
+          : `ai_video_scene_${index + 1}`
+        const rawDuration = Number(scene?.duration)
+        const duration = aiVideoDurationOptions.includes(rawDuration as AiVideoDurationKey)
+          ? (rawDuration as AiVideoDurationKey)
+          : 5
+        return {
+          id,
+          name: typeof scene?.name === 'string' ? scene.name : '',
+          prompt: typeof scene?.prompt === 'string' ? scene.prompt : '',
+          negative_prompt: typeof scene?.negative_prompt === 'string' ? scene.negative_prompt : '',
+          duration,
+          engine: normalizeAiVideoEngine(scene?.engine),
+          lora_items: normalizeAiVideoLoraItems(scene?.lora_items),
+          end_frame_draw_scene_id: normalizeEndFrameDrawSceneId(
+            scene?.end_frame_draw_scene_id,
+            merged.draw_scenes,
+          ),
+          demo_input_media: normalizeDemoMedia(scene?.demo_input_media, {
+            kind: 'ai_video', sceneId: id, slot: 'input',
+          }),
+          demo_output_media: normalizeDemoMedia(scene?.demo_output_media, {
+            kind: 'ai_video', sceneId: id, slot: 'output',
+          }),
+        }
+      })
+      .filter((scene) => scene.name.trim() || scene.prompt.trim())
+      .slice(0, 20)
+  }
   Object.keys(merged.prompts).forEach((key) => {
     const promptKey = key as PromptKey
     const value = raw.prompts?.[promptKey]
@@ -819,6 +976,34 @@ const addVideoScene = () => {
     end_frame_draw_scene_id: '',
   })
   showScenePageContaining('video', config.video_scenes.length - 1)
+}
+
+const createAiVideoSceneId = () => {
+  aiVideoSceneCounter.value += 1
+  return `ai_video_${Date.now().toString(36)}_${aiVideoSceneCounter.value}`
+}
+
+const addAiVideoScene = () => {
+  if (config.ai_video_scenes.length >= 20) {
+    message.warning('AI视频场景最多 20 个')
+    return
+  }
+  config.ai_video_scenes.push({
+    id: createAiVideoSceneId(),
+    name: '',
+    prompt: '',
+    negative_prompt: '',
+    duration: 5,
+    engine: normalizeAiVideoEngine(modelOptions.default_ai_video_engine),
+    lora_items: [],
+    end_frame_draw_scene_id: '',
+  })
+  showScenePageContaining('ai_video', config.ai_video_scenes.length - 1)
+}
+
+const removeAiVideoScene = (index: number) => {
+  config.ai_video_scenes.splice(index, 1)
+  normalizeScenePage('ai_video')
 }
 
 const removeVideoScene = (index: number) => {
@@ -889,6 +1074,9 @@ const removeDrawScene = (index: number) => {
       scene.end_frame_draw_scene_id = ''
     }
   })
+  config.ai_video_scenes.forEach((scene) => {
+    if (scene.end_frame_draw_scene_id === removed.id) scene.end_frame_draw_scene_id = ''
+  })
   config.draw_scenes.forEach((scene) => {
     if (scene.postprocess_draw_scene_id === removed.id) {
       scene.postprocess_draw_scene_id = ''
@@ -910,12 +1098,13 @@ const removeFilterScene = (index: number) => {
 
 const getSceneByKind = (kind: SceneConfigKind, index: number) => {
   if (kind === 'video') return config.video_scenes[index]
+  if (kind === 'ai_video') return config.ai_video_scenes[index]
   if (kind === 'draw') return config.draw_scenes[index]
   return config.filter_scenes[index]
 }
 
 const getDemoMediaAccept = (kind: SceneConfigKind, slot: DemoMediaSlot) =>
-  kind === 'video' && slot === 'output'
+  (kind === 'video' || kind === 'ai_video') && slot === 'output'
     ? 'video/mp4,.mp4'
     : 'image/png,image/jpeg,.png,.jpg,.jpeg'
 
@@ -953,7 +1142,7 @@ const validateDemoUploadFile = (
   slot: DemoMediaSlot,
   file: File,
 ) => {
-  const isVideo = kind === 'video' && slot === 'output'
+  const isVideo = (kind === 'video' || kind === 'ai_video') && slot === 'output'
   const allowedTypes = isVideo ? ['video/mp4'] : ['image/png', 'image/jpeg']
   const maxBytes = (isVideo ? 50 : 10) * 1024 * 1024
   if (!allowedTypes.includes(file.type)) {
@@ -1061,6 +1250,9 @@ const generateSceneDemo = async (kind: SceneConfigKind, index: number) => {
 const validateVideoScenes = () =>
   config.video_scenes.every((scene) => Boolean(scene.name.trim()) && Boolean(scene.prompt.trim()))
 
+const validateAiVideoScenes = () =>
+  config.ai_video_scenes.every((scene) => Boolean(scene.name.trim()) && Boolean(scene.prompt.trim()))
+
 const validateDrawScenes = () =>
   config.draw_scenes.every(
     (scene) => Boolean(scene.name.trim()) && Boolean(scene.prompt.trim()),
@@ -1140,6 +1332,23 @@ const buildPayload = (): QqccBotConfig => {
       }
     })
     .filter((scene) => scene.name || scene.prompt)
+  payload.ai_video_scenes = payload.ai_video_scenes
+    .map((scene) => ({
+      ...scene,
+      id: scene.id.trim(),
+      name: scene.name.trim(),
+      prompt: scene.prompt.trim(),
+      negative_prompt: scene.negative_prompt.trim(),
+      engine: normalizeAiVideoEngine(scene.engine),
+      duration: aiVideoDurationOptions.includes(scene.duration) ? scene.duration : 5,
+      lora_items: normalizeAiVideoLoraItems(scene.lora_items),
+      end_frame_draw_scene_id: normalizeEndFrameDrawSceneId(
+        scene.end_frame_draw_scene_id,
+        payload.draw_scenes,
+      ),
+    }))
+    .filter((scene) => scene.name || scene.prompt)
+    .slice(0, 20)
   return payload
 }
 
@@ -1147,6 +1356,7 @@ const applyResponse = (payload: QqccBotConfigResponse) => {
   Object.assign(modelOptions, mergeOptions(payload.options))
   Object.assign(config, mergeConfig(payload.config))
   normalizeScenePage('video')
+  normalizeScenePage('ai_video')
   normalizeScenePage('draw')
   normalizeScenePage('filter')
   configKey.value = payload.key || ''
@@ -1161,6 +1371,8 @@ const openSceneConfig = (
   const scene =
     kind === 'video'
       ? config.video_scenes[index]
+      : kind === 'ai_video'
+        ? config.ai_video_scenes[index]
       : kind === 'filter'
         ? config.filter_scenes[index]
         : config.draw_scenes[index]
@@ -1169,10 +1381,13 @@ const openSceneConfig = (
   sceneConfig.panel = panel
   sceneConfig.index = index
   sceneConfig.engine = scene.engine
-  sceneConfig.lora_name = scene.lora_name || ''
+  sceneConfig.lora_name = 'lora_name' in scene ? scene.lora_name || '' : ''
+  sceneConfig.lora_items = kind === 'ai_video'
+    ? normalizeAiVideoLoraItems((scene as AiVideoSceneConfig).lora_items)
+    : []
   sceneConfig.end_frame_draw_scene_id =
-    kind === 'video'
-      ? normalizeEndFrameDrawSceneId((scene as VideoSceneConfig).end_frame_draw_scene_id)
+    kind === 'video' || kind === 'ai_video'
+      ? normalizeEndFrameDrawSceneId((scene as VideoSceneConfig | AiVideoSceneConfig).end_frame_draw_scene_id)
       : ''
   sceneConfig.postprocess_draw_scene_id =
     kind === 'draw'
@@ -1183,7 +1398,7 @@ const openSceneConfig = (
       ? normalizePostprocessFilterSceneId((scene as DrawSceneConfig).postprocess_filter_scene_id)
       : ''
   sceneConfig.original_face_swap_enabled =
-    kind !== 'video' ? (scene as DrawSceneConfig | FilterSceneConfig).original_face_swap_enabled === true : false
+    kind !== 'video' && kind !== 'ai_video' ? (scene as DrawSceneConfig | FilterSceneConfig).original_face_swap_enabled === true : false
   sceneConfig.open = true
 }
 
@@ -1191,6 +1406,7 @@ const closeSceneConfig = () => {
   sceneConfig.open = false
   sceneConfig.panel = 'model'
   sceneConfig.index = -1
+  sceneConfig.lora_items = []
   sceneConfig.end_frame_draw_scene_id = ''
   sceneConfig.postprocess_draw_scene_id = ''
   sceneConfig.postprocess_filter_scene_id = ''
@@ -1200,6 +1416,7 @@ const closeSceneConfig = () => {
 const onSceneEngineChange = () => {
   if (!activeEngineSupportsLora.value) {
     sceneConfig.lora_name = ''
+    sceneConfig.lora_items = []
   }
 }
 
@@ -1212,6 +1429,17 @@ const confirmSceneConfig = () => {
       const engine = normalizeVideoEngine(sceneConfig.engine)
       scene.engine = engine
       scene.lora_name = normalizeLoraName(sceneConfig.lora_name, { kind: 'video', engine })
+    } else {
+      scene.end_frame_draw_scene_id = normalizeEndFrameDrawSceneId(
+        sceneConfig.end_frame_draw_scene_id,
+      )
+    }
+  } else if (sceneConfig.kind === 'ai_video') {
+    const scene = config.ai_video_scenes[sceneConfig.index]
+    if (!scene) return
+    if (sceneConfig.panel === 'model') {
+      scene.engine = normalizeAiVideoEngine(sceneConfig.engine)
+      scene.lora_items = normalizeAiVideoLoraItems(sceneConfig.lora_items)
     } else {
       scene.end_frame_draw_scene_id = normalizeEndFrameDrawSceneId(
         sceneConfig.end_frame_draw_scene_id,
@@ -1268,6 +1496,10 @@ const loadConfig = async () => {
 const saveConfig = async () => {
   if (!validateVideoScenes()) {
     message.error('请完善AI动图场景的按钮名称和提示词')
+    return
+  }
+  if (!validateAiVideoScenes()) {
+    message.error('请完善AI视频场景的按钮名称和提示词')
     return
   }
   if (!validateDrawScenes()) {
@@ -1449,6 +1681,57 @@ onMounted(() => {
           </div>
         </a-tab-pane>
 
+        <a-tab-pane key="ai_video">
+          <template #tab>
+            <span data-testid="scene-tab-ai-video">AI视频 <span class="scene-tab-count">{{ config.ai_video_scenes.length }}</span></span>
+          </template>
+          <div class="scene-pane">
+            <div class="scene-pane-toolbar">
+              <span class="text-sm text-slate-500">管理高级图生视频按钮、正负提示词、固定时长、LTX 模型和尾帧来源</span>
+              <a-button data-testid="add-ai-video-scene" @click="addAiVideoScene"><template #icon><PlusOutlined /></template>添加场景</a-button>
+            </div>
+            <div class="hidden grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_88px_286px] items-center gap-3 border-b border-slate-100 pb-2 text-xs font-medium text-slate-500 md:grid">
+              <span>按钮名称</span><span>提示词</span><span>负面提示词</span><span class="text-center">时长</span><span class="text-right">操作</span>
+            </div>
+            <div
+              v-for="{ scene, index } in paginatedAiVideoScenes"
+              :key="scene.id"
+              class="scene-row grid gap-3 border-b border-slate-100 py-3 last:border-b-0 md:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_88px_286px]"
+            >
+              <a-input v-model:value="scene.name" :data-testid="`ai-video-scene-name-${index}`" />
+              <a-textarea v-model:value="scene.prompt" :rows="5" :data-testid="`ai-video-scene-prompt-${index}`" />
+              <a-textarea v-model:value="scene.negative_prompt" :rows="5" placeholder="留空使用 ComfyUI 工作流默认负面提示词" :data-testid="`ai-video-scene-negative-prompt-${index}`" />
+              <div class="scene-duration-cell">
+                <a-select v-model:value="scene.duration" :data-testid="`ai-video-scene-duration-${index}`" class="scene-duration-select">
+                  <a-select-option v-for="item in aiVideoDurationOptions" :key="item" :value="item">{{ item }}s</a-select-option>
+                </a-select>
+              </div>
+              <div class="scene-action-cell">
+                <div class="scene-management-actions">
+                  <a-button class="scene-icon-button" :disabled="index === 0" :data-testid="`move-ai-video-scene-up-${index}`" title="上移场景" @click="moveScene('ai_video', config.ai_video_scenes, index, -1)"><template #icon><UpOutlined /></template></a-button>
+                  <a-button class="scene-icon-button" :disabled="index === config.ai_video_scenes.length - 1" :data-testid="`move-ai-video-scene-down-${index}`" title="下移场景" @click="moveScene('ai_video', config.ai_video_scenes, index, 1)"><template #icon><DownOutlined /></template></a-button>
+                  <a-button class="scene-icon-button" :data-testid="`config-ai-video-scene-model-${index}`" title="配置模型" @click="openSceneConfig('ai_video', index, 'model')"><template #icon><SettingOutlined /></template></a-button>
+                  <a-button class="scene-icon-button" :data-testid="`config-ai-video-scene-end-frame-${index}`" title="配置首尾帧" @click="openSceneConfig('ai_video', index, 'reference')"><template #icon><LinkOutlined /></template></a-button>
+                  <a-button danger class="scene-icon-button" :data-testid="`remove-ai-video-scene-${index}`" title="删除场景" @click="removeAiVideoScene(index)"><template #icon><DeleteOutlined /></template></a-button>
+                </div>
+                <div class="scene-demo-actions">
+                  <span class="scene-demo-action-label">示范素材</span>
+                  <div class="scene-demo-button-group">
+                    <a-upload :show-upload-list="false" :accept="getDemoMediaAccept('ai_video', 'input')" :before-upload="(file: File) => uploadSceneDemo('ai_video', index, 'input', file)"><a-button size="small" :loading="isDemoUploadLoading(`ai_video:${scene.id}:input`)" :data-testid="`upload-ai-video-demo-input-${index}`"><template #icon><UploadOutlined /></template>输入示范</a-button></a-upload>
+                    <a-upload :show-upload-list="false" :accept="getDemoMediaAccept('ai_video', 'output')" :before-upload="(file: File) => uploadSceneDemo('ai_video', index, 'output', file)"><a-button size="small" :loading="isDemoUploadLoading(`ai_video:${scene.id}:output`)" :data-testid="`upload-ai-video-demo-output-${index}`"><template #icon><UploadOutlined /></template>输出示范</a-button></a-upload>
+                    <a-button type="primary" size="small" :disabled="!scene.demo_input_media" :loading="isDemoGenerationLoading(`ai_video:${scene.id}`)" :data-testid="`generate-ai-video-demo-${index}`" @click="generateSceneDemo('ai_video', index)"><template #icon><PlayCircleOutlined /></template>生成</a-button>
+                  </div>
+                </div>
+                <div v-if="scene.demo_input_media || scene.demo_output_media" class="scene-demo-preview-strip">
+                  <div v-for="slot in demoSlots" :key="slot" class="scene-demo-preview-card"><span class="scene-demo-preview-label">{{ slot === 'input' ? '输入' : '输出' }}</span><a-image v-if="scene[`demo_${slot}_media`]?.media_type === 'image' && scene[`demo_${slot}_media`]?.preview_url" :src="scene[`demo_${slot}_media`]?.preview_url" :width="60" :height="60" /><video v-else-if="scene[`demo_${slot}_media`]?.media_type === 'video' && scene[`demo_${slot}_media`]?.preview_url" :src="scene[`demo_${slot}_media`]?.preview_url" controls preload="metadata" /><span v-else class="scene-demo-preview-empty">未上传</span></div>
+                </div>
+              </div>
+            </div>
+            <div v-if="config.ai_video_scenes.length === 0" class="py-8 text-center text-sm text-slate-400">暂无场景</div>
+            <div v-else class="scene-pagination-bar"><span>共 {{ config.ai_video_scenes.length }} 个场景</span><a-pagination v-model:current="scenePages.ai_video" :total="config.ai_video_scenes.length" :page-size="scenePageSize" :show-size-changer="false" :hide-on-single-page="true" show-less-items data-testid="ai-video-scenes-pagination" /></div>
+          </div>
+        </a-tab-pane>
+
         <a-tab-pane key="draw">
           <template #tab>
             <span data-testid="scene-tab-draw">AI绘图 <span class="scene-tab-count">{{ config.draw_scenes.length }}</span></span>
@@ -1604,7 +1887,7 @@ onMounted(() => {
             </a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item v-if="sceneConfig.panel === 'model'" label="附加模型" class="mb-4">
+        <a-form-item v-if="sceneConfig.panel === 'model' && sceneConfig.kind !== 'ai_video'" label="附加模型" class="mb-4">
           <a-select
             v-model:value="sceneConfig.lora_name"
             data-testid="scene-lora-select"
@@ -1621,6 +1904,24 @@ onMounted(() => {
             </a-select-option>
           </a-select>
         </a-form-item>
+        <a-form-item v-if="sceneConfig.panel === 'model' && sceneConfig.kind === 'ai_video'" label="附加模型（最多 3 个）" class="mb-4">
+          <a-select
+            :value="sceneConfig.lora_items.map(item => item.path)"
+            mode="multiple"
+            :max-tag-count="3"
+            data-testid="scene-ai-video-lora-select"
+            class="w-full"
+            :disabled="!activeEngineSupportsLora"
+            :get-popup-container="getSceneSelectPopupContainer"
+            @change="updateAiVideoLoraSelection"
+          >
+            <a-select-option v-for="item in activeLoraOptions" :key="item.value" :value="item.value" :disabled="sceneConfig.lora_items.length >= 3 && !sceneConfig.lora_items.some(selected => selected.path === item.value)">{{ item.label }}</a-select-option>
+          </a-select>
+          <div v-for="item in sceneConfig.lora_items" :key="item.path" class="mt-3 grid grid-cols-[minmax(0,1fr)_92px] items-center gap-3">
+            <div class="min-w-0 truncate text-sm text-slate-600">{{ activeLoraOptions.find(option => option.value === item.path)?.label || item.path }}</div>
+            <a-input-number v-model:value="item.strength" :min="0.1" :max="2" :step="0.05" :precision="2" :data-testid="`scene-ai-video-lora-strength-${item.path}`" />
+          </div>
+        </a-form-item>
         <a-form-item
           v-if="sceneConfig.panel === 'model' && sceneConfig.kind === 'filter'"
           label="原图换脸"
@@ -1632,7 +1933,7 @@ onMounted(() => {
           />
         </a-form-item>
         <a-form-item
-          v-if="sceneConfig.panel === 'reference' && sceneConfig.kind === 'video'"
+          v-if="sceneConfig.panel === 'reference' && (sceneConfig.kind === 'video' || sceneConfig.kind === 'ai_video')"
           label="尾帧来源"
           class="mb-4"
         >

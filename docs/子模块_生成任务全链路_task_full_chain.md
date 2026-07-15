@@ -246,6 +246,8 @@ Telegram 展示层还有对应的 `allow_cancel`，用于控制 pending/submitte
 
 QQCC 懒人 Bot 的链式 AI绘图/AI动图复用这一通用语义：第一个真实子任务普通排队且 pending 可取消；后续后处理绘图、内部原图换脸、尾帧链后续步骤和最终首尾帧视频作为同一链路 continuation，高优先级入队且不可用户取消。主 Bot、Web、普通单任务 QQCC 功能和 worker 执行协议不因此改变。
 
+QQCC `AI视频` 也复用 quick video plan：无尾帧引用时直接由 actor 参数入口提交 LTX I2V；有引用时把最终阶段记录为 durable continuation 的 `ltx_video` executor，以原始输入和当前尾帧提交 FLF2V。提交前按尾帧链加 LTX 时长统一核费，任一中间阶段失败不创建最终视频任务；私有 Bot checkpoint 继续保存原始输入、当前输出和 delivery 状态。
+
 ### 6.5 QQCC 私有 Bot 的租户归属
 
 私有 Bot 复用同一 `process_and_submit_task(...)`、用户表、余额、会员和 Central/worker 执行链。发起任务的 Telegram 访客先解析为自己的 `internal_user_id`，扣费和权限不归 owner；租户身份只通过 `client_type=bot:qqcc-private:<private_bot_id>` 区分配置、active task recovery 与 Telegram 结果投递。
@@ -365,6 +367,8 @@ Central API 是执行面，不是业务主入口。
 PornMaster Flux2 图片编辑是测试期新增执行类型，simple route 为 `/api/v1/pornmaster_flux2_single_edit` 与 `/api/v1/pornmaster_flux2_multi_edit`，请求体复用 `Img2ImgRequest`。worker 必须声明同名 `SUPPORTED_TASK_TYPES`，避免落回旧 `img2img` / `img2img_lora` 队列。
 
 其中 `txt2img` 当前通过 `/txt2img` simple route 进入执行面，Central API 内部仍映射到 legacy `TaskType.T2I_PORNMASTER_TURBO`。旧图生视频的 `/image_to_video` 与 `/perfect_video_lora` 会入队到执行面 `TaskType.IMAGE_TO_VIDEO`，但上游历史类型仍保留 `custom_video` / `video_lora`；旧 `/perfect_video_insert` 与 `/perfect_video_edit` 只作为兼容 endpoint 保留，会把旧 width/height/frame length 归一为 Wan22 `resolution_preset` 与秒数后入队 `TaskType.IMAGE_TO_VIDEO`。Telegram 懒人动图的差异应停留在 FSM 内置 prompt 与历史 mode，不再对应独立 worker workflow。Wan22 AIO 当前明确分两档 profile：旧图生视频 `custom_video` / `video_lora` / Web 字面量 `image_to_video` / 懒人动图 mode / legacy `video_insert`、`video_edit` -> execution `image_to_video` -> `legacy_image_to_video` profile；图生视频 v2 `wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。LTX 高级图生视频用户侧历史与画廊仍归为 `ltx_video`；当前 Bot/Web 用户入口只开放单首帧和首尾帧，dispatcher 分别走 `ltx_video` 与 `ltx_video_flf2v`。底层 `ltx_video_v2v_audio` 仍作为输入视频+文本配音的历史/队列兼容执行类型保留，但 Web 练功房不再提供 `ltx_video_audio` 前端内部模式，Bot 层也不再注册旧 `ltx_mode_v2v_audio` 回调、`WAIT_VIDEO` 状态或视频上传 handler。LoRA/附加模型仍沿用 LTX 最多 3 个 `lora_items` 的既有注入规则。LTX 当前结果若带 `extra_outputs.last_frame`，练功房结果区可直接把尾帧载入下一段起始帧做扩展生成，Bot 结果消息也会进入同一续段语义。LTX 扩展提交会携带 `ltx_prev_task_id` / `ltx_chain_task_ids`，Web finalizer 或 Bot completion 持久化为 `extra_outputs._ltx_context`，结果响应暴露为 `result_meta.ltx_*`；续段结果可通过 `/users/history/{task_id}/ltx-chain/stitch` 拼接整条链，Bot 第二段起通过结果按钮 `ltx_stitch_chain:<task_id>` 触发同一整链拼接，拼接记录用 `extra_outputs.ltx_chain_stitch` 标记且不再展示扩展按钮。`i2i_pro` RunPod 是现有 ComfyUI runtime profile，不新增业务类型；它可同时声明 `SUPPORTED_TASK_TYPES=i2i_pro,t2i-pornmaster-turbo,face_swap`，其中 Web `txt2img` 通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 读取 `txt2img_from_i2i_pro.json`，`face_swap` 读取 `face_swap_v2.json`。`face_swap_v2.json` 也是 workflow 替换，不是新业务类型；上游仍提交 `face_swap`。`scail2_action_transfer_long` 现在只作为 SCAIL-2 动作迁移 10/15/20s 的隐藏执行类型，使用 simple route `/api/v1/scail2_action_transfer_long` 和 `SCAIL-2_Animation_WAN-Context-Windows.api.json`；用户侧 task type、History、Gallery 和模板应用仍归并为 `scail2_action_transfer`。新增任务类型时，不要默认假设只改 `SIMPLE_TASK_TYPE_MAP` 就够，还要确认 request model、dispatcher、worker workflow 映射与只读 task type registry 是否齐全。
+
+LTX I2V、FLF2V 和 V2V Audio 请求链都接受可选 `negative_prompt`。Web/QQCC/actor 入口先 trim，非空才进入 task inputs；API client 同样只在非空时发送。worker 的本地与远端 mapping 将它写入节点 `29.text`，字段缺省时不得修改 workflow 原值。现有 Telegram 高级 LTX FSM 不收集该字段。
 
 SCAIL-2 长动作迁移的 Context Windows workflow 保持 81/29 窗口与 `standard_static`
 调度，`freenoise=true`。这会恢复较快生成路径，但长动作迁移仍可能出现后续窗口复用前段噪声导致的动作循环。

@@ -10,7 +10,7 @@ from src.constants import (
     MODE_PORNMASTER_FLUX2_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
 )
-from src.lora_catalog import get_lora_default_strength
+from src.lora_catalog import get_lora_default_strength, normalize_ltx_video_lora_items
 from src.services.image_service import image_service
 from src.services.qqcc_config_service import (
     DRAW_SCENE_ENGINE_FREE_EDIT,
@@ -45,7 +45,7 @@ class _BytesUpload:
 def _validate_request(
     *, scene_kind: str, scene: dict[str, Any], object_prefix: str
 ) -> tuple[str, str, str]:
-    if scene_kind not in {"draw", "filter", "video"}:
+    if scene_kind not in {"draw", "filter", "video", "ai_video"}:
         raise QqccDemoGenerationError("Unsupported scene kind")
     scene_id = str(scene.get("id") or "").strip()
     prompt = str(scene.get("prompt") or "").strip()
@@ -116,6 +116,34 @@ async def _submit_scene(
             image_paths=[input_key],
             negative_prompt=negative,
             priority=0,
+        )
+
+    if scene_kind == "ai_video":
+        optional_negative = (
+            {"negative_prompt": negative.strip()} if negative.strip() else {}
+        )
+        return await image_service_instance.submit_ltx_video_task(
+            task_id,
+            prompt,
+            input_key,
+            lora_items=normalize_ltx_video_lora_items(
+                [
+                    {"name": item.get("path"), "strength": item.get("strength")}
+                    for item in (
+                        scene.get("lora_items")
+                        if isinstance(scene.get("lora_items"), list)
+                        else []
+                    )
+                    if isinstance(item, dict)
+                ],
+                max_items=3,
+            )
+            or None,
+            width=1280,
+            height=704,
+            length=int(scene.get("duration") or 5),
+            priority=0,
+            **optional_negative,
         )
 
     duration = int(str(scene.get("duration") or "5s").removesuffix("s"))
@@ -189,7 +217,7 @@ async def get_qqcc_demo_generation(
 ) -> dict[str, Any]:
     if not _GENERATION_ID_PATTERN.fullmatch(generation_id):
         raise QqccDemoGenerationError("Invalid generation id")
-    if scene_kind not in {"draw", "filter", "video"} or not VIDEO_SCENE_ID_PATTERN.fullmatch(scene_id):
+    if scene_kind not in {"draw", "filter", "video", "ai_video"} or not VIDEO_SCENE_ID_PATTERN.fullmatch(scene_id):
         raise QqccDemoGenerationError("Invalid scene")
     status = await image_service_instance.get_task_status(generation_id)
     if status is None:
@@ -201,7 +229,7 @@ async def get_qqcc_demo_generation(
     if state != "done":
         return {"generation_id": generation_id, "status": state}
 
-    is_video = scene_kind == "video"
+    is_video = scene_kind in {"video", "ai_video"}
     content = (
         await image_service_instance.download_video_result(generation_id)
         if is_video

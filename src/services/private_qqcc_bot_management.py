@@ -55,7 +55,7 @@ def build_private_bot_status_payload(bot) -> dict[str, Any]:
 
 def _with_preview_urls(config: dict[str, Any]) -> dict[str, Any]:
     result = copy.deepcopy(config)
-    for section in ("video_scenes", "draw_scenes", "filter_scenes"):
+    for section in ("video_scenes", "ai_video_scenes", "draw_scenes", "filter_scenes"):
         for scene in result.get(section, []):
             for field in ("demo_input_media", "demo_output_media"):
                 media = scene.get(field)
@@ -79,7 +79,7 @@ def build_private_bot_config_payload(bot) -> dict[str, Any]:
 
 def _validate_media_scope(config: dict[str, Any], *, private_bot_id: int) -> None:
     private_prefix = f"qqcc/private/{int(private_bot_id)}/demo/"
-    for section in ("video_scenes", "draw_scenes", "filter_scenes"):
+    for section in ("video_scenes", "ai_video_scenes", "draw_scenes", "filter_scenes"):
         for scene in config.get(section, []):
             for field in ("demo_input_media", "demo_output_media"):
                 media = scene.get(field)
@@ -134,7 +134,7 @@ def validate_private_bot_config_limits(raw_config: dict[str, Any]) -> None:
         raise PrivateBotConfigLimitError("private Bot config is too large")
 
     scene_count = 0
-    for section in ("video_scenes", "draw_scenes", "filter_scenes"):
+    for section in ("video_scenes", "ai_video_scenes", "draw_scenes", "filter_scenes"):
         raw_scenes = raw_config.get(section, [])
         if not isinstance(raw_scenes, list):
             continue
