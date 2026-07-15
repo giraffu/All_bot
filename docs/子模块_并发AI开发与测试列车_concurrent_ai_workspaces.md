@@ -59,7 +59,7 @@ python scripts/test_train_release.py deploy \
   --sha <train-sha> --pr <number> --slot A --execute
 ```
 
-包装器在本地主服务器使用 `~/.local/state/allbot/test-train.lock` 排他锁，先计划三个 track，再按 `control-plane`、`test-execution` 顺序部署受影响模块。`gpu-execution` 只报告计划；真实 GPU profile 仍走对应 canary/operator。
+包装器在本地主服务器使用 `~/.local/state/allbot/test-train.lock` 排他锁，先计划三个 track，再按 `control-plane`、`test-execution` 顺序部署受影响模块。`gpu-execution` 只报告计划；真实 GPU profile 仍走对应 canary/operator。当基线还没有任何可用 GPU artifact 时，`plan` 以 `availability: unavailable` 显式报告该 track，不影响纯控制面/测试执行面候选；该状态不会被解释为可执行 GPU mutation。
 
 若后一个 track 部署失败，包装器按相反顺序回滚本轮已成功 track；单 track 内部继续使用 `release.py` 事务补偿。若部署成功但业务 smoke 失败：
 
