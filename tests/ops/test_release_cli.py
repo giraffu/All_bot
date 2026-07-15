@@ -167,6 +167,86 @@ def test_gpu_runtime_change_blocks_the_normal_release_path():
     assert impact.blockers == {"gpu-runtime-release-required"}
 
 
+def test_v2_control_plane_does_not_require_unselected_gpu_profiles(
+    monkeypatch, tmp_path
+):
+    module = _load_module()
+    previous_sha = "b" * 40
+    artifact = {
+        "kind": "image",
+        "ref": "ghcr.io/giraffu/allbot-central-api@sha256:" + "1" * 64,
+        "digest": "sha256:" + "1" * 64,
+        "source_sha": FULL_SHA,
+        "oci_revision": FULL_SHA,
+        "dependency_closure": [],
+    }
+    release = SimpleNamespace(
+        index={
+            "ci_run": "https://github.com/giraffu/All_bot/actions/runs/1",
+            "release_channel": "main",
+            "source_ref": "refs/heads/main",
+        },
+        manifests={
+            "control-plane": {"artifacts": {"central-api": artifact}},
+            "gpu-execution": {
+                "completeness": "incomplete",
+                "missing_artifacts": ["image_to_video"],
+                "artifacts": {},
+            },
+        },
+    )
+    manifest = {
+        "schema_version": 2,
+        "source_sha": FULL_SHA,
+        "git_sha": FULL_SHA,
+        "ci_run": release.index["ci_run"],
+        "release_channel": "main",
+        "source_ref": "refs/heads/main",
+        "track": "control-plane",
+        "artifacts": {"central-api": artifact},
+        "selected_artifacts": ["central-api"],
+    }
+    args = SimpleNamespace(
+        sha=FULL_SHA,
+        manifest=None,
+        bundle_cache=str(tmp_path),
+        bundle_repository="ghcr.io/giraffu/allbot-release-v2",
+        command="plan",
+        modules=[],
+        services=[],
+        track="control-plane",
+        state_file=None,
+        from_sha=None,
+        env="prod",
+        remote_host="prod-control",
+        policy=str(POLICY_PATH),
+        skip_git_checks=True,
+        skip_ci_checks=True,
+        dashboard_fast_track=False,
+    )
+
+    monkeypatch.setattr(
+        module, "_resolve_manifest_path", lambda *_args, **_kwargs: tmp_path / "index"
+    )
+    monkeypatch.setattr(module, "_read_json", lambda _path: {"schema_version": 2})
+    monkeypatch.setattr(
+        module, "_resolve_previous_sha", lambda *_args, **_kwargs: previous_sha
+    )
+    monkeypatch.setattr(
+        module,
+        "git_changed_paths",
+        lambda *_args: ["remote_workers/comfy_agent/workflow_task_patchers.py"],
+    )
+    monkeypatch.setattr(module, "load_release_index", lambda *_args, **_kwargs: release)
+    monkeypatch.setattr(module, "_load_v2_track", lambda *_args, **_kwargs: manifest)
+
+    impact, selected_manifest, resolved_previous = module.build_plan(args)
+
+    assert impact.blockers == set()
+    assert selected_manifest["track"] == "control-plane"
+    assert resolved_previous == previous_sha
+
+
 def test_dashboard_admin_runtime_changes_stay_dashboard_backend_only():
     module = _load_module()
     policy = module.load_structured_file(POLICY_PATH)
@@ -227,9 +307,7 @@ def test_dashboard_fast_track_rejects_non_dashboard_runtime(path):
     module = _load_module()
 
     with pytest.raises(module.ReleaseError, match="dashboard fast-track"):
-        module.plan_dashboard_fast_track(
-            ["dashboard/frontend/src/App.vue", path]
-        )
+        module.plan_dashboard_fast_track(["dashboard/frontend/src/App.vue", path])
 
 
 def test_dashboard_fast_track_requires_a_dashboard_runtime_change():
@@ -355,7 +433,10 @@ def test_dashboard_fast_track_cloud_deploy_is_rolling_and_dashboard_only(monkeyp
     assert execute is True
     assert "GENERATION_MAINTENANCE" not in script
     assert "pull dashboard-backend dashboard-frontend" in script
-    assert "up -d --no-deps --wait --wait-timeout 180 dashboard-backend dashboard-frontend" in script
+    assert (
+        "up -d --no-deps --wait --wait-timeout 180 dashboard-backend dashboard-frontend"
+        in script
+    )
     assert "allbot-nontarget" in script
     assert "central-api web-api" not in script
 
@@ -441,10 +522,14 @@ def test_test_candidate_ci_must_come_from_exact_test_train_branch(monkeypatch):
             stderr="",
         )
 
-    monkeypatch.setattr(module, "_run", lambda *_args, **_kwargs: run_for("codex/test-train"))
+    monkeypatch.setattr(
+        module, "_run", lambda *_args, **_kwargs: run_for("codex/test-train")
+    )
     module.verify_release_ci(candidate, FULL_SHA)
 
-    monkeypatch.setattr(module, "_run", lambda *_args, **_kwargs: run_for("codex/other"))
+    monkeypatch.setattr(
+        module, "_run", lambda *_args, **_kwargs: run_for("codex/other")
+    )
     with pytest.raises(module.ReleaseError, match="source branch"):
         module.verify_release_ci(candidate, FULL_SHA)
 
@@ -455,7 +540,11 @@ def test_git_release_uses_channel_specific_remote_ancestry(monkeypatch):
 
     def fake_run(command, **_kwargs):
         commands.append(command)
-        stdout = "  origin/codex/test-train\n" if command[1:4] == ["branch", "-r", "--contains"] else ""
+        stdout = (
+            "  origin/codex/test-train\n"
+            if command[1:4] == ["branch", "-r", "--contains"]
+            else ""
+        )
         return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
 
     monkeypatch.setattr(module, "_run", fake_run)
@@ -465,7 +554,13 @@ def test_git_release_uses_channel_specific_remote_ancestry(monkeypatch):
         source_ref="refs/heads/codex/test-train",
     )
 
-    assert ["git", "merge-base", "--is-ancestor", FULL_SHA, "origin/codex/test-train"] in commands
+    assert [
+        "git",
+        "merge-base",
+        "--is-ancestor",
+        FULL_SHA,
+        "origin/codex/test-train",
+    ] in commands
 
 
 def test_environment_validation_reports_names_without_secret_values():
@@ -508,16 +603,12 @@ def test_initial_worker_cutover_maps_legacy_slots_and_holds_maintenance():
         matched_rules=["initial-release"],
     )
 
-    assert module.legacy_worker_containers(
-        "test", {"worker-01", "worker-08"}
-    ) == [
+    assert module.legacy_worker_containers("test", {"worker-01", "worker-08"}) == [
         "cloud-comfy-agent-test-1",
         "cloud-comfy-agent-test-8",
         "cloud-worker-relay-test",
     ]
-    assert module.legacy_worker_containers(
-        "prod", {"worker-01", "worker-08"}
-    ) == [
+    assert module.legacy_worker_containers("prod", {"worker-01", "worker-08"}) == [
         "cloud-prod-comfy-agent-1",
         "cloud-prod-comfy-agent-8",
         "cloud-prod-worker-relay",
@@ -918,13 +1009,12 @@ def test_initial_worker_cutover_snapshots_and_stops_legacy_before_start(
     ]
     assert compose_calls
     assert all(
-        options["env"]["ALLBOT_ENV_FILE"] == str(env_file)
-        for options in compose_calls
+        options["env"]["ALLBOT_ENV_FILE"] == str(env_file) for options in compose_calls
     )
     assert remote_calls == []
-    assert (
-        root / "release-env" / FULL_SHA / "legacy-worker-running.txt"
-    ).read_text(encoding="utf-8").splitlines() == [
+    assert (root / "release-env" / FULL_SHA / "legacy-worker-running.txt").read_text(
+        encoding="utf-8"
+    ).splitlines() == [
         "cloud-comfy-agent-test-1",
         "cloud-comfy-agent-test-8",
         "cloud-worker-relay-test",
@@ -1329,7 +1419,9 @@ def test_v2_promotion_and_state_are_scoped_per_track(monkeypatch, capsys):
 
     def fake_run(command, **_kwargs):
         commands.append(command)
-        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(state), stderr="")
+        return subprocess.CompletedProcess(
+            command, 0, stdout=json.dumps(state), stderr=""
+        )
 
     monkeypatch.setattr(module, "_run", fake_run)
     args = SimpleNamespace(
@@ -1424,7 +1516,9 @@ def test_test_candidate_channel_is_test_only_and_not_verifiable():
     with pytest.raises(module.ReleaseError, match="production"):
         module.validate_release_channel(candidate, environment="prod", purpose="deploy")
     with pytest.raises(module.ReleaseError, match="verify-test"):
-        module.validate_release_channel(candidate, environment="test", purpose="verify-test")
+        module.validate_release_channel(
+            candidate, environment="test", purpose="verify-test"
+        )
     with pytest.raises(module.ReleaseError, match="fast-track"):
         module.validate_release_channel(
             candidate,
@@ -1443,7 +1537,9 @@ def test_test_rollback_to_main_allows_clean_test_train_operator(monkeypatch):
         if command[:2] == ["git", "status"]:
             return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
         if command[:3] == ["git", "rev-parse", "HEAD"]:
-            return subprocess.CompletedProcess(command, 0, stdout=FULL_SHA + "\n", stderr="")
+            return subprocess.CompletedProcess(
+                command, 0, stdout=FULL_SHA + "\n", stderr=""
+            )
         if command[-1] == "origin/main":
             return subprocess.CompletedProcess(command, 1, stdout="", stderr="")
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
@@ -1466,7 +1562,9 @@ def test_main_deploy_does_not_allow_test_train_operator(monkeypatch):
         if command[:2] == ["git", "status"]:
             return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
         if command[:3] == ["git", "rev-parse", "HEAD"]:
-            return subprocess.CompletedProcess(command, 0, stdout=FULL_SHA + "\n", stderr="")
+            return subprocess.CompletedProcess(
+                command, 0, stdout=FULL_SHA + "\n", stderr=""
+            )
         return subprocess.CompletedProcess(command, 1, stdout="", stderr="")
 
     monkeypatch.setattr(module, "_run", fake_run)
@@ -1493,7 +1591,9 @@ def test_v2_incremental_track_with_no_changed_modules_selects_nothing(monkeypatc
     monkeypatch.setattr(
         module,
         "select_artifacts",
-        lambda *_args, **_kwargs: pytest.fail("empty incremental selection must not expand"),
+        lambda *_args, **_kwargs: pytest.fail(
+            "empty incremental selection must not expand"
+        ),
     )
 
     manifest = module._load_v2_track(
@@ -1516,7 +1616,9 @@ def test_main_channel_keeps_production_and_verify_test_compatibility():
     }
 
     module.validate_release_channel(main_release, environment="prod", purpose="deploy")
-    module.validate_release_channel(main_release, environment="test", purpose="verify-test")
+    module.validate_release_channel(
+        main_release, environment="test", purpose="verify-test"
+    )
 
 
 def test_release_cli_defaults_to_allbot_cloudflare_account():
@@ -1646,9 +1748,7 @@ def test_pages_release_requires_matching_production_canonical_and_runtime_sha(
     deployment = {
         "id": "new-production-id",
         "environment": "production",
-        "deployment_trigger": {
-            "metadata": {"branch": "main", "commit_hash": sha}
-        },
+        "deployment_trigger": {"metadata": {"branch": "main", "commit_hash": sha}},
         "latest_stage": {"status": "success"},
     }
 
@@ -1724,16 +1824,16 @@ def test_pages_canonical_verification_rejects_stale_or_html_runtime(
     deployment = {
         "id": "new-production-id",
         "environment": "production",
-        "deployment_trigger": {
-            "metadata": {"branch": "main", "commit_hash": sha}
-        },
+        "deployment_trigger": {"metadata": {"branch": "main", "commit_hash": sha}},
         "latest_stage": {"status": "success"},
     }
 
     def fake_api(_args, _method, path, **_kwargs):
-        result = [deployment] if "deployments?" in path else {
-            "canonical_deployment": {"id": canonical_id}
-        }
+        result = (
+            [deployment]
+            if "deployments?" in path
+            else {"canonical_deployment": {"id": canonical_id}}
+        )
         return {"success": True, "result": result}
 
     class FakeResponse:
@@ -1753,7 +1853,9 @@ def test_pages_canonical_verification_rejects_stale_or_html_runtime(
             ).encode()
 
     monkeypatch.setattr(module, "_pages_api_request", fake_api)
-    monkeypatch.setattr(module.urllib.request, "urlopen", lambda *_args, **_kwargs: FakeResponse())
+    monkeypatch.setattr(
+        module.urllib.request, "urlopen", lambda *_args, **_kwargs: FakeResponse()
+    )
 
     with pytest.raises(module.ReleaseError, match=message):
         module.verify_pages_canonical_deployment(
@@ -2044,7 +2146,9 @@ def test_pages_rollback_uses_previous_production_id_and_verifies_canonical(
 def test_transaction_journal_rejects_secret_fields_before_remote_write(monkeypatch):
     module = _load_module()
     writes = []
-    monkeypatch.setattr(module, "_run", lambda *args, **kwargs: writes.append((args, kwargs)))
+    monkeypatch.setattr(
+        module, "_run", lambda *args, **kwargs: writes.append((args, kwargs))
+    )
     transaction = module.new_release_transaction(
         environment="prod",
         target_sha="a" * 40,
@@ -2088,14 +2192,48 @@ def test_transaction_commit_moves_staged_state_before_clearing_dual_maintenance(
     assert script.index("mv -f") < script.index(
         "rm -f /var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE"
     )
-    assert "/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE" in script
+    assert (
+        "/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE" in script
+    )
 
 
-def test_preflight_manifest_resolution_never_pulls_or_creates_cache(tmp_path, monkeypatch):
+def test_v2_transaction_commit_moves_staged_state_to_track_paths(monkeypatch):
+    module = _load_module()
+    calls = []
+    monkeypatch.setattr(
+        module,
+        "_remote_shell",
+        lambda host, script, *, execute: calls.append((host, script, execute)),
+    )
+    args = SimpleNamespace(env="test", remote_host="test-control", execute=False)
+    transaction = module.new_release_transaction(
+        environment="test",
+        target_sha="a" * 40,
+        previous_sha="b" * 40,
+        previous_kind="immutable",
+        previous_pages_deployment_id="old-id",
+    )
+    transaction["track"] = "control-plane"
+    transaction["phase"] = "state_completed"
+
+    module._clear_transaction_maintenance(args, transaction)
+
+    script = calls[0][1]
+    assert "/var/lib/allbot/deployments/test/control-plane/current.json" in script
+    assert (
+        "/var/lib/allbot/deployments/test/control-plane/history/" + "a" * 40 + ".json"
+    ) in script
+
+
+def test_preflight_manifest_resolution_never_pulls_or_creates_cache(
+    tmp_path, monkeypatch
+):
     module = _load_module()
     cache = tmp_path / "missing-cache"
     calls = []
-    monkeypatch.setattr(module, "_run", lambda *args, **kwargs: calls.append((args, kwargs)))
+    monkeypatch.setattr(
+        module, "_run", lambda *args, **kwargs: calls.append((args, kwargs))
+    )
     args = SimpleNamespace(
         manifest=None,
         bundle_cache=str(cache),
