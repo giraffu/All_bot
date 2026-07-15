@@ -51,7 +51,7 @@ python scripts/manage_ai_workspaces.py refresh --slot A
 
 旧 v2 index 缺少这两个字段时只兼容解释为 `main`。candidate 必须同时满足完整 SHA、远端 train ancestry、可信成功 CI 和 digest-pinned artifact；只能部署 `env=test`，不能执行 `verify-test`、prod、Dashboard fast-track 或晋级。
 
-Candidate CI 沿 train first-parent 复用最近候选 bundle；首次没有候选时复用 main v2 bundle。main CI 永远不从 candidate 仓库复用，确保正式候选重新从 main 历史构建。
+Candidate CI 沿 train first-parent 复用最近候选 bundle；首次没有候选时复用 main v2 bundle。main CI 永远不从 candidate 仓库复用，确保正式候选重新从 main 历史构建。v2 发布只响应受保护 main/train 的 `push` CI 成功事件；PR CI 只做门禁，不发布 bundle，避免 main→train 血缘回灌 PR 重复写入同一不可变 tag。
 
 ## 4. 唯一测试站操作
 
