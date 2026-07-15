@@ -150,10 +150,18 @@ jobs:
           if [ -n "$previous_sha" ]; then
             mkdir -p previous-release
             oras pull "${previous_repository}:${previous_sha}" -o previous-release
-            test -f previous-release/release-index.json
+            previous_bundle_dir=previous-release
+            if [ -f previous-release/release-index.json ]; then
+              :
+            elif [ -f previous-release/release-v2/release-index.json ]; then
+              previous_bundle_dir=previous-release/release-v2
+            else
+              echo "previous v2 bundle has no release-index.json" >&2
+              exit 2
+            fi
             comparison_sha="$previous_sha"
-            echo "index=previous-release/release-index.json" >> "$GITHUB_OUTPUT"
-            echo "bundle=previous-release" >> "$GITHUB_OUTPUT"
+            echo "index=${previous_bundle_dir}/release-index.json" >> "$GITHUB_OUTPUT"
+            echo "bundle=${previous_bundle_dir}" >> "$GITHUB_OUTPUT"
           else
             echo "index=" >> "$GITHUB_OUTPUT"
             echo "bundle=" >> "$GITHUB_OUTPUT"

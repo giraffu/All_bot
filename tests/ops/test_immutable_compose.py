@@ -237,6 +237,8 @@ def test_release_workflow_builds_all_images_and_never_uses_latest():
     assert "allbot-release-v2-test-candidate" in workflow
     assert "EVENT_RUN_ID: ${{ github.event.workflow_run.id }}" in workflow
     assert '--ci-run "$TRUSTED_CI_RUN"' in workflow
+    assert "previous-release/release-v2/release-index.json" in workflow
+    assert 'echo "bundle=${previous_bundle_dir}"' in workflow
 
 
 def test_schema_v1_shared_image_release_is_retired():
