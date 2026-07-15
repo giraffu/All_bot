@@ -2632,6 +2632,33 @@ def _pages_deployment_url(output: str) -> str:
     return matches[-1] if matches else ""
 
 
+def _pinned_wrangler_version() -> str:
+    package_path = ROOT / "frontend" / "package.json"
+    lock_path = ROOT / "frontend" / "package-lock.json"
+    try:
+        package = json.loads(package_path.read_text(encoding="utf-8"))
+        lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ReleaseError("pinned Wrangler package metadata is unavailable") from exc
+
+    package_version = (package.get("devDependencies") or {}).get("wrangler")
+    lock_packages = lock.get("packages") or {}
+    lock_root_version = (
+        (lock_packages.get("") or {}).get("devDependencies") or {}
+    ).get("wrangler")
+    resolved_version = (lock_packages.get("node_modules/wrangler") or {}).get(
+        "version"
+    )
+    if (
+        not isinstance(package_version, str)
+        or not re.fullmatch(r"\d+\.\d+\.\d+", package_version)
+        or package_version != lock_root_version
+        or package_version != resolved_version
+    ):
+        raise ReleaseError("Wrangler version must be exact and lockfile-matched")
+    return package_version
+
+
 def _pages_runtime_payload(script: str) -> Mapping[str, Any]:
     prefix = "window.__ALLBOT_CONFIG__ = Object.freeze("
     suffix = ");"
@@ -2818,7 +2845,8 @@ def _deploy_web(
         result = subprocess.run(
             [
                 "npx",
-                "--no-install",
+                "--yes",
+                f"--package=wrangler@{_pinned_wrangler_version()}",
                 "wrangler",
                 "pages",
                 "deploy",

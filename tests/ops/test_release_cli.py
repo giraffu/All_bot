@@ -1602,7 +1602,14 @@ def test_test_and_prod_web_use_same_pages_deployer(
     result = module._deploy_web(args, manifest)
 
     command = calls[-1][0]
-    assert command[:5] == ["npx", "--no-install", "wrangler", "pages", "deploy"]
+    assert command[:6] == [
+        "npx",
+        "--yes",
+        "--package=wrangler@4.110.0",
+        "wrangler",
+        "pages",
+        "deploy",
+    ]
     assert command[command.index("--project-name") + 1] == expected_project
     assert command[command.index("--branch") + 1] == expected_branch
     assert result["project"] == expected_project
@@ -1610,6 +1617,31 @@ def test_test_and_prod_web_use_same_pages_deployer(
     assert result["canonical_verified"] is True
     assert len(result["runtime_config_revision"]) == 64
     assert not any(command[0] in {"ssh", "scp"} for command, _ in calls)
+
+
+def test_pages_deployer_rejects_unlocked_wrangler_version(tmp_path, monkeypatch):
+    module = _load_module()
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    (frontend / "package.json").write_text(
+        json.dumps({"devDependencies": {"wrangler": "^4.110.0"}}),
+        encoding="utf-8",
+    )
+    (frontend / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "packages": {
+                    "": {"devDependencies": {"wrangler": "^4.110.0"}},
+                    "node_modules/wrangler": {"version": "4.110.0"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+
+    with pytest.raises(module.ReleaseError, match="exact and lockfile-matched"):
+        module._pinned_wrangler_version()
 
 
 def test_config_impact_recreates_consumers_and_unknown_keys_fail_wide():
