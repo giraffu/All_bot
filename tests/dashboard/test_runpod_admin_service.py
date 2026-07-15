@@ -92,6 +92,7 @@ async def test_runpod_profiles_payload_lists_supported_prod_profiles():
     )
     assert pornmaster_bf16["supported_task_types"] == [
         "pornmaster_flux2_edit_bf16",
+        "pornmaster_flux2_multi_edit_bf16",
     ]
     assert pornmaster_bf16.get("autoscaler_enabled", True) is True
 

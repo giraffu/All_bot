@@ -26,7 +26,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 - Worker Agent 和 ComfyUI Runtime 是两层：Agent 选 workflow、下载素材、调用 ComfyUI API、回传结果；Runtime 只加载模型并执行 JSON 图。
 - 模型同步只能写运行时配置约定的 `ComfyUI/models/...` 子目录。不要把模型塞进 `custom_nodes`、workflow 目录或代码目录。
 - 同一个用户可见入口可能共享一个执行 workflow。修改 UI 文案或 task type 前，先核对 `src/domain_config/task_type_registry.py`、worker mapping 和 patcher。
-- `free_edit_v2_5` 是用户可见/History 逻辑类型，执行时 alias 到既有 `pornmaster_flux2_edit_bf16`。它与自由P图 v3 共用 BF16 workflow、Central route、Worker task type、模型和 RunPod/LAN profile；v2.5 单阶段直出，v3 才续接图片换脸，禁止为 v2.5 复制执行资产。
+- `free_edit_v2_5` 是用户可见/History 逻辑类型：单图 alias 到既有 `pornmaster_flux2_edit_bf16`，双图 alias 到内部 `pornmaster_flux2_multi_edit_bf16`。双图执行复用 multiple-images workflow 的节点 `17.image` / `29.image` 并把节点 `9.unet_name` 切到现有 BF16 权重；两种内部类型与自由P图 v3 共用模型和 RunPod/LAN profile。v2.5 单阶段直出，v3 才续接图片换脸，禁止复制 workflow、模型或 GPU profile。
 - `image_to_video`、`video_insert`、`video_edit` 当前共享 `Wan22AioV82.json`，依赖 `patch_image_to_video_workflow()` 按 task type 注入差异；不要为三者复制分叉 workflow。
 - `face_swap_v2` 不使用默认 `api.json`，通过 per-task override 指向 `face_swap_v2.json`。
 - `model-import-plan` 必须跟随 runtime override。不要只改本地 `ComfyUI/models`，却遗漏 RunPod / LAN profile 的模型路径和启动映射。

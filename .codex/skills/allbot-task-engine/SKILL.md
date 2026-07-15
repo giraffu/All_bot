@@ -25,7 +25,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - `task_core` 只能依赖内部类型、协议和显式 provider/dependencies。不要在 `src/core/` 引入 Telegram `Update`、FastAPI `Request/APIRouter`、SQLAlchemy session 全局对象或 Worker HTTP 细节。
 - “双 ID”必须区分：`task_id` 是 AllBot 业务 ID，`backend_task_id` 是 Central/Worker 执行 ID。运行时锁、状态轮询、历史落库和退款日志必须写清使用哪一个。
 - Web 自由P图 v3 是单一逻辑任务、两段 backend 执行：根业务 `task_id` 固定，BF16 成功后 active registry 切到确定性的 `face_swap` backend ID。pending Web finalizer 必须先持久化带版本 continuation intent，再切 registry 与提交第二阶段；第二阶段不得重复扣费、不得允许取消、不得持久化中间结果，失败/取消统一使用根任务退款幂等键。
-- 自由P图 v2.5 的公开/History 类型是 `free_edit_v2_5`，Registry/dispatcher 仅在执行提交时 alias 到 `pornmaster_flux2_edit_bf16`。它固定单图、3 灵石、标准单阶段生命周期，不写 v3 continuation、不调用 `face_swap`；失败/取消继续用根业务任务的既有幂等退款语义。
+- 自由P图 v2.5 的公开/History 类型是 `free_edit_v2_5`：1 张图扣 3 灵石并派发 `pornmaster_flux2_edit_bf16`，2 张图扣 7 灵石并派发仅内部使用的 `pornmaster_flux2_multi_edit_bf16`；其它图片数必须在扣费前拒绝。两者都走标准单阶段生命周期，不写 v3 continuation、不调用 `face_swap`；失败/取消按根业务任务实际扣费幂等退款。
 - `cleanup_task_runtime_state(...)` 是运行态收口入口。取消、失败、成功、恢复脚本和 finalizer 都应走同一类清理语义，不要复制散落删除 Redis/DB 状态。
 - Web side-effect monitor 默认入口是 `monitor_task_and_release_lock_default(...)`。Web 提交成功后的锁释放、终态观测和异常收口应通过 monitor，而不是让 request handler 长时间持有业务逻辑。
 - 成功结果持久化使用 `TaskSuccessPersistenceCommand` 语义收口。新增结果字段时，同时检查 History、Gallery/apply、LTX/SCAIL-2 extra context 和 Bot completion。

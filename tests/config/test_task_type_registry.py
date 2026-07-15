@@ -138,6 +138,11 @@ def test_registry_records_known_legacy_aliases_and_execution_profiles():
             "pornmaster_flux2_edit_bf16",
             "PornMaster_F2K_9B_Turbo_Single-image-editing_Automatic_V1_2026_05_27.api.json",
         ),
+        "pornmaster_flux2_multi_edit_bf16": (
+            "pornmaster_flux2_multi_edit_bf16",
+            "pornmaster_flux2_multi_edit_bf16",
+            "PornMaster_F2K_9B_Turbo_Multiple-images-editing_Automatic_V1_2026_05_27.api.json",
+        ),
     }
 
     for task_type, (public_type, execution_type, workflow_filename) in expected.items():
@@ -167,6 +172,12 @@ def test_free_edit_v25_registry_reuses_bf16_runtime_with_own_business_identity()
     assert resolve_worker_execution_task_type("free_edit_v2_5") == (
         "pornmaster_flux2_edit_bf16"
     )
+
+    multi_entry = TASK_TYPE_REGISTRY["pornmaster_flux2_multi_edit_bf16"]
+    assert multi_entry.runpod_profile == "pornmaster_flux2_edit_bf16"
+    assert multi_entry.cost == 7
+    assert multi_entry.is_generation is False
+    assert multi_entry.gallery_supported is False
 
 
 def test_registry_query_helpers_cover_key_task_type_relationships():

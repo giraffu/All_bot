@@ -32,13 +32,13 @@ describe('labModeConfig', () => {
     expect(resolveLabModeIdFromTaskType('pornmaster_flux2_multi_edit')).toBe('edit_v3')
   })
 
-  it('shows free edit v2.5 as a three-credit single-stage mode', () => {
+  it('shows free edit v2.5 as a one-or-two-image single-stage mode', () => {
     const mode = getLabModeConfig('edit_v2_5')
 
     expect(mode.taskType).toBe('free_edit_v2_5')
     expect(mode.baseCost).toBe(3)
     expect(mode.supportsEditLora).toBe(false)
-    expect(mode.maxImages).toBe(1)
+    expect(mode.maxImages).toBe(2)
     expect(resolveLabModeIdFromTaskType('free_edit_v2_5')).toBe('edit_v2_5')
   })
 

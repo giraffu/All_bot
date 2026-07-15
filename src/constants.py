@@ -56,6 +56,7 @@ MODE_FREE_EDIT_V3 = "free_edit_v3"
 MODE_PORNMASTER_FLUX2_SINGLE_EDIT = "pornmaster_flux2_single_edit"
 MODE_PORNMASTER_FLUX2_MULTI_EDIT = "pornmaster_flux2_multi_edit"
 MODE_PORNMASTER_FLUX2_EDIT_BF16 = "pornmaster_flux2_edit_bf16"
+MODE_PORNMASTER_FLUX2_MULTI_EDIT_BF16 = "pornmaster_flux2_multi_edit_bf16"
 MODE_TEMPLATE_CONTRIBUTE = "template_contribute"
 MODE_NONE = "none"
 
@@ -69,6 +70,7 @@ MODE_NAME_MAP = {
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT: "task.mode_free_edit_v2",
     MODE_PORNMASTER_FLUX2_MULTI_EDIT: "task.mode_free_edit_v2",
     MODE_PORNMASTER_FLUX2_EDIT_BF16: "task.mode_free_edit_v3",
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT_BF16: "task.mode_free_edit_v2_5",
     MODE_UNDRESS: "task.mode_undress",
     MODE_MASTURBATION: "task.mode_masturbation",
     MODE_FACESWAP_STEP1: "task.mode_faceswap_step1",
@@ -128,6 +130,7 @@ TASK_COSTS = {
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT: 2,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT: 6,
     MODE_PORNMASTER_FLUX2_EDIT_BF16: 6,
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT_BF16: 7,
 }
 
 # Default Video Resolutions based on User Group

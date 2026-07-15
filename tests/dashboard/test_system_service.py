@@ -828,7 +828,8 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
         "pornmaster_flux2 BF16 / 自由P图 v2.5 + v3 共用执行池"
     )
     assert profiles["pornmaster_flux2_edit_bf16"]["supported_task_types"] == [
-        "pornmaster_flux2_edit_bf16"
+        "pornmaster_flux2_edit_bf16",
+        "pornmaster_flux2_multi_edit_bf16",
     ]
     assert profiles["pornmaster_flux2_edit_bf16"]["autoscaler_enabled"] is True
     assert profiles["pornmaster_flux2_edit_bf16"]["active_count"] == 0

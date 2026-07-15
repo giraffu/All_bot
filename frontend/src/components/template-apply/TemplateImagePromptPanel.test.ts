@@ -335,4 +335,51 @@ describe('TemplateImagePromptPanel', () => {
     await beforeUpload(new File(['second'], 'second.png', { type: 'image/png' }))
     expect(uploadFileMock).toHaveBeenCalledTimes(1)
   })
+
+  it('requires two new images for a dual-image v2.5 template', async () => {
+    const wrapper = mountPanel(buildContext({
+      raw: {
+        post_id: 26,
+        source_post_id: 26,
+        task_id: 'task-template-v2-5-dual',
+        media_type: 'image',
+        task_type: 'free_edit_v2_5',
+        prompt: 'combine both references',
+        required_image_count: 2,
+      },
+      rawTaskType: 'free_edit_v2_5',
+      taskType: 'free_edit_v2_5',
+      sourcePostId: 26,
+      prompt: 'combine both references',
+      requiredImageCount: 2,
+    }))
+    await nextTick()
+
+    const beforeUpload = wrapper.findComponent(UploadDraggerStub).props('beforeUpload') as (file: File) => Promise<boolean>
+    uploadFileMock
+      .mockResolvedValueOnce({ objectKey: 'replacement-one.png' })
+      .mockResolvedValueOnce({ objectKey: 'replacement-two.png' })
+    await beforeUpload(new File(['one'], 'one.png', { type: 'image/png' }))
+    await nextTick()
+
+    await wrapper.findComponent(ButtonStub).trigger('click')
+    await flushPromises()
+    expect(submitTaskMock).not.toHaveBeenCalled()
+
+    await beforeUpload(new File(['two'], 'two.png', { type: 'image/png' }))
+    await nextTick()
+    await wrapper.findComponent(ButtonStub).trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('7')
+    expect(submitTaskMock.mock.calls[0][0]).toMatchObject({
+      task_type: 'free_edit_v2_5',
+      inputs: {
+        images: ['replacement-one.png', 'replacement-two.png'],
+      },
+      prompt: 'combine both references',
+      is_template: true,
+      source_post_id: 26,
+    })
+  })
 })

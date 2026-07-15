@@ -170,7 +170,8 @@ describe('normalizeTemplateApplyContext', () => {
         post_id: 25,
         source_post_id: 25,
         task_type: 'free_edit_v2_5',
-        prompt: 'preserve this prompt'
+        prompt: 'preserve this prompt',
+        required_image_count: 2
       },
       { source: 'gallery', entryEntityId: 25 }
     )
@@ -180,7 +181,8 @@ describe('normalizeTemplateApplyContext', () => {
       rawTaskType: 'free_edit_v2_5',
       taskType: 'free_edit_v2_5',
       sourcePostId: 25,
-      prompt: 'preserve this prompt'
+      prompt: 'preserve this prompt',
+      requiredImageCount: 2
     })
   })
 

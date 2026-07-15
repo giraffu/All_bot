@@ -4,6 +4,7 @@ from src.constants import (
     MODE_FREE_EDIT_V2,
     MODE_PORNMASTER_FLUX2_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_TXT2IMG,
 )
@@ -44,7 +45,10 @@ def _normalize_queue_task_type_for_display(task_type: str | None) -> str:
         MODE_PORNMASTER_FLUX2_MULTI_EDIT,
     }:
         return MODE_FREE_EDIT_V2
-    if raw_task_type == MODE_PORNMASTER_FLUX2_EDIT_BF16:
+    if raw_task_type in {
+        MODE_PORNMASTER_FLUX2_EDIT_BF16,
+        MODE_PORNMASTER_FLUX2_MULTI_EDIT_BF16,
+    }:
         return "free_edit_v2_5_v3_pool"
     if raw_task_type in {"face_video", MODE_FACE_VIDEO_STEP1, MODE_FACE_VIDEO_STEP2}:
         return "face_video"

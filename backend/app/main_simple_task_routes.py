@@ -46,6 +46,7 @@ SIMPLE_TASK_KEYS = (
     "pornmaster_flux2_single_edit",
     "pornmaster_flux2_multi_edit",
     "pornmaster_flux2_edit_bf16",
+    "pornmaster_flux2_multi_edit_bf16",
 )
 
 
@@ -230,6 +231,12 @@ SIMPLE_TASK_ROUTE_SPECS = (
         Img2ImgRequest,
         "pornmaster_flux2_edit_bf16",
         "create_pornmaster_flux2_edit_bf16_task",
+    ),
+    (
+        "/api/v1/pornmaster_flux2_multi_edit_bf16",
+        Img2ImgRequest,
+        "pornmaster_flux2_multi_edit_bf16",
+        "create_pornmaster_flux2_multi_edit_bf16_task",
     ),
 )
 

@@ -25,6 +25,7 @@ from config import (
     PERFECT_VIDEO_INSERT_ENDPOINT,
     PORNMASTER_FLUX2_MULTI_EDIT_ENDPOINT,
     PORNMASTER_FLUX2_EDIT_BF16_ENDPOINT,
+    PORNMASTER_FLUX2_MULTI_EDIT_BF16_ENDPOINT,
     PORNMASTER_FLUX2_SINGLE_EDIT_ENDPOINT,
     SCAIL2_ACTION_TRANSFER_LONG_ENDPOINT,
     SCAIL2_ACTION_TRANSFER_ENDPOINT,
@@ -353,6 +354,9 @@ class APIClient:
         elif execution_task_type == "pornmaster_flux2_edit_bf16":
             endpoint = PORNMASTER_FLUX2_EDIT_BF16_ENDPOINT
             expected_images = 1
+        elif execution_task_type == "pornmaster_flux2_multi_edit_bf16":
+            endpoint = PORNMASTER_FLUX2_MULTI_EDIT_BF16_ENDPOINT
+            expected_images = 2
         elif execution_task_type == "pornmaster_flux2_multi_edit":
             endpoint = PORNMASTER_FLUX2_MULTI_EDIT_ENDPOINT
             expected_images = 2

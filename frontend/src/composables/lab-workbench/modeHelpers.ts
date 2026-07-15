@@ -57,6 +57,10 @@ export const getLabModeCost = ({
     return 5
   }
 
+  if (mode.id === FREE_EDIT_V2_5_MODE_ID) {
+    return uploadedReferenceCount >= 2 ? 7 : 3
+  }
+
   if (mode.id === 'custom_video' || mode.id === 'wan22_video_v2') {
     return getWan22VideoV2Cost(wan22ResolutionPreset, duration)
   }

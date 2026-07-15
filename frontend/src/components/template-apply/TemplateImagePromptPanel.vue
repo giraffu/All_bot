@@ -39,9 +39,17 @@ const isFreeEditV3TaskType = computed(() => (
 const isFreeEditTaskType = computed(() => (
   taskType.value === FREE_EDIT_V2_5_TASK_TYPE || isFreeEditV3TaskType.value
 ))
+const requiredImageCount = computed(() => (
+  taskType.value === FREE_EDIT_V2_5_TASK_TYPE
+  && props.context.requiredImageCount === 2
+    ? 2
+    : 1
+))
 const maxImages = computed(() => (
-  ['i2i_pro', 'i2i_draw'].includes(taskType.value) || isFreeEditTaskType.value
-    ? 1
+  taskType.value === FREE_EDIT_V2_5_TASK_TYPE
+    ? requiredImageCount.value
+    : ['i2i_pro', 'i2i_draw'].includes(taskType.value) || isFreeEditTaskType.value
+      ? 1
     : 2
 ))
 const taskTitle = computed(() => {
@@ -115,6 +123,10 @@ const taskCost = computed(() => {
 
   if (isFreeEditV3TaskType.value) {
     return 5
+  }
+
+  if (taskType.value === FREE_EDIT_V2_5_TASK_TYPE) {
+    return requiredImageCount.value === 2 ? 7 : 3
   }
 
   if (taskType.value === 'i2i_pro') {
@@ -243,6 +255,16 @@ const handleRemove = (index: number) => {
 const handleGenerate = async () => {
   if (uploadedImages.value.length === 0) {
     message.warning(t('template_apply.image_prompt.upload_first'))
+    return
+  }
+
+  if (
+    taskType.value === FREE_EDIT_V2_5_TASK_TYPE
+    && uploadedImages.value.length !== requiredImageCount.value
+  ) {
+    message.warning(t('template_apply.image_prompt.required_images_warning', {
+      count: requiredImageCount.value,
+    }))
     return
   }
 

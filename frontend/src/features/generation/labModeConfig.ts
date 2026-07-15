@@ -219,7 +219,7 @@ export const LAB_MODE_CONFIGS: LabModeConfig[] = [
     promptTarget: 'topLevel',
     submitLabelKey: 'lab.workbench.submit_image',
     referenceTitleKey: 'template_apply.common.base_image',
-    maxImages: 1,
+    maxImages: 2,
     supportsUpload: true,
     supportsEditLora: false,
     supportsVideoOptions: false,

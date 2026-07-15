@@ -170,15 +170,18 @@ def _build_reference_image_received_message(
             key = "fsm.edit_image.reference_received_first"
         return get_text(key, lang)
 
-    if not is_free_edit_v3:
+    if is_free_edit_v2_5:
+        fsm_data["cost"] = 7
+    elif not is_free_edit_v3:
         fsm_data["cost"] = 6
     from src.i18n.translator import get_text
 
-    key = (
-        "fsm.edit_image.reference_received_second_v2"
-        if is_free_edit_v3
-        else "fsm.edit_image.reference_received_second"
-    )
+    if is_free_edit_v2_5:
+        key = "fsm.edit_image.reference_received_second_v2_5"
+    elif is_free_edit_v3:
+        key = "fsm.edit_image.reference_received_second_v2"
+    else:
+        key = "fsm.edit_image.reference_received_second"
     return get_text(key, lang)
 
 
@@ -396,17 +399,20 @@ async def receive_additional_image(
         await robust_reply_text(message, _t(context, "fsm.common.expired_restart"))
         return ConversationHandler.END
 
-    if fsm_data["mode"] in (
-        MODE_I2I_PRO,
-        MODE_FREE_EDIT_V2_5,
-        MODE_FREE_EDIT_V3,
-    ):
+    if fsm_data["mode"] in (MODE_I2I_PRO, MODE_FREE_EDIT_V3):
         message_key = (
             "fsm.edit_image.single_image_only"
             if fsm_data["mode"] == MODE_I2I_PRO
             else "fsm.edit_image.single_image_only_free_edit"
         )
         await robust_reply_text(message, _t(context, message_key))
+        return EditImageState.WAIT_PROMPT
+
+    if (
+        fsm_data["mode"] == MODE_FREE_EDIT_V2_5
+        and len(fsm_data["images"]) >= 2
+    ):
+        await robust_reply_text(message, _t(context, "fsm.edit_image.max_two_images"))
         return EditImageState.WAIT_PROMPT
 
     if (

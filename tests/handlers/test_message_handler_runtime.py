@@ -257,10 +257,13 @@ def test_normalize_queue_type_counts_for_display_merges_legacy_img2video_aliases
 
 def test_normalize_queue_type_counts_labels_bf16_as_shared_free_edit_pool():
     normalized = message_handler_runtime._normalize_queue_type_counts_for_display(
-        {"pornmaster_flux2_edit_bf16": 4}
+        {
+            "pornmaster_flux2_edit_bf16": 4,
+            "pornmaster_flux2_multi_edit_bf16": 3,
+        }
     )
 
-    assert normalized == {"free_edit_v2_5_v3_pool": 4}
+    assert normalized == {"free_edit_v2_5_v3_pool": 7}
 
 
 def test_build_user_task_status_text_prefers_type_queue_position():

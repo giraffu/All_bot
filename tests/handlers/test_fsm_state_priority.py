@@ -1313,12 +1313,18 @@ async def test_edit_image_v2_5_submits_single_stage_generation(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_edit_image_v2_5_rejects_additional_reference_image(monkeypatch):
+async def test_edit_image_v2_5_accepts_second_reference_and_updates_cost(monkeypatch):
     reply_mock = AsyncMock()
-    get_file_mock = AsyncMock()
+    get_file_mock = AsyncMock(return_value=SimpleNamespace())
     monkeypatch.setattr(edit_image_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(
+        edit_image_fsm,
+        "download_telegram_file_to_fsm_temp",
+        AsyncMock(return_value="/tmp/second.png"),
+    )
 
     update = SimpleNamespace(
+        effective_user=_build_user(),
         message=SimpleNamespace(
             document=None,
             photo=[SimpleNamespace(file_id="second-image")],
@@ -1338,9 +1344,43 @@ async def test_edit_image_v2_5_rejects_additional_reference_image(monkeypatch):
     result = await edit_image_fsm.receive_additional_image(update, context)
 
     assert result == edit_image_fsm.EditImageState.WAIT_PROMPT
-    get_file_mock.assert_not_awaited()
+    get_file_mock.assert_awaited_once_with("second-image")
+    assert context.user_data["edit_image_data"]["images"] == [
+        "/tmp/first.png",
+        "/tmp/second.png",
+    ]
+    assert context.user_data["edit_image_data"]["cost"] == 7
     reply_mock.assert_awaited_once()
-    assert "只需要 1 张图片" in reply_mock.await_args.args[1]
+    assert "双图编辑将消耗 7 灵石" in reply_mock.await_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_edit_image_v2_5_rejects_third_reference_before_download(monkeypatch):
+    reply_mock = AsyncMock()
+    get_file_mock = AsyncMock()
+    monkeypatch.setattr(edit_image_fsm, "robust_reply_text", reply_mock)
+    update = SimpleNamespace(
+        message=SimpleNamespace(
+            document=None,
+            photo=[SimpleNamespace(file_id="third-image")],
+        )
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(get_file=get_file_mock),
+        user_data={
+            "edit_image_data": {
+                "mode": MODE_FREE_EDIT_V2_5,
+                "cost": 7,
+                "images": ["/tmp/first.png", "/tmp/second.png"],
+            }
+        },
+    )
+
+    result = await edit_image_fsm.receive_additional_image(update, context)
+
+    assert result == edit_image_fsm.EditImageState.WAIT_PROMPT
+    get_file_mock.assert_not_awaited()
+    assert "最多只支持 2 张" in reply_mock.await_args.args[1]
 
 
 @pytest.mark.asyncio

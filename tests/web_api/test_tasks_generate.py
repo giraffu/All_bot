@@ -391,6 +391,36 @@ async def test_web_generate_submits_free_edit_v25_as_one_three_credit_stage(
 
 
 @pytest.mark.asyncio
+async def test_web_generate_submits_two_image_free_edit_v25_for_seven_credits(
+    monkeypatch,
+):
+    process_task = AsyncMock(return_value={"task_id": "logical-v25-2", "cost": 7})
+    monkeypatch.setattr(
+        task_submission_service, "process_and_submit_task", process_task
+    )
+    monkeypatch.setattr(
+        tasks_router.quota_manager,
+        "get_credits",
+        AsyncMock(return_value=93),
+    )
+
+    response = await tasks_router.create_generation_task(
+        TaskGenerateRequest(
+            task_type="free_edit_v2_5",
+            inputs={"images": ["123/input_images/one.png", "123/input_images/two.png"]},
+            prompt="combine both references",
+        ),
+        current_user=_build_current_user(),
+    )
+
+    assert response.cost == 7
+    assert process_task.await_args.kwargs["inputs"]["images"] == [
+        "123/input_images/one.png",
+        "123/input_images/two.png",
+    ]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "task_type,images",
     [
@@ -402,6 +432,10 @@ async def test_web_generate_submits_free_edit_v25_as_one_three_credit_stage(
         ("pornmaster_flux2_single_edit", ["123/input_images/one.png"]),
         (
             "pornmaster_flux2_multi_edit",
+            ["123/input_images/one.png", "123/input_images/two.png"],
+        ),
+        (
+            "pornmaster_flux2_multi_edit_bf16",
             ["123/input_images/one.png", "123/input_images/two.png"],
         ),
     ],
@@ -429,16 +463,16 @@ async def test_web_generate_rejects_invalid_or_legacy_free_edit_requests(
         )
 
     assert exc_info.value.status_code == 400
-    assert "v3" in str(exc_info.value.detail)
+    assert "v" in str(exc_info.value.detail)
     process_task.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "images",
-    [[], ["123/input_images/one.png", "123/input_images/two.png"]],
+    [[], ["a.png", "b.png", "c.png"]],
 )
-async def test_web_generate_requires_exactly_one_free_edit_v2_5_image(
+async def test_web_generate_requires_one_or_two_free_edit_v2_5_images(
     monkeypatch, images
 ):
     process_task = AsyncMock()

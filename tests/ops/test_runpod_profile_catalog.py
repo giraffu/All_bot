@@ -124,7 +124,10 @@ def test_dashboard_profile_options_are_sourced_from_catalog():
         "pornmaster_flux2_single_edit",
         "pornmaster_flux2_multi_edit",
     ]
-    assert options["pornmaster_flux2_edit_bf16"] == ["pornmaster_flux2_edit_bf16"]
+    assert options["pornmaster_flux2_edit_bf16"] == [
+        "pornmaster_flux2_edit_bf16",
+        "pornmaster_flux2_multi_edit_bf16",
+    ]
 
 
 def test_pornmaster_flux2_profile_is_available_to_autoscaler():
@@ -162,7 +165,8 @@ def test_pornmaster_flux2_bf16_profile_is_available_to_autoscaler():
         == "pornmaster_flux2 BF16 / 自由P图 v2.5 + v3 共用执行池"
     )
     assert worker_options["pornmaster_flux2_edit_bf16"]["supported_task_types"] == [
-        "pornmaster_flux2_edit_bf16"
+        "pornmaster_flux2_edit_bf16",
+        "pornmaster_flux2_multi_edit_bf16",
     ]
     assert worker_options["pornmaster_flux2_edit_bf16"].get("autoscaler_enabled", True)
     assert "pornmaster_flux2_edit_bf16" in autoscaler_profiles

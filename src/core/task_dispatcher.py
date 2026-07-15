@@ -14,6 +14,7 @@ from src.constants import (
     MODE_IMG2IMG_LORA,
     MODE_PORNMASTER_FLUX2_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_SCAIL2_ACTION_TRANSFER,
     MODE_SCAIL2_ACTION_TRANSFER_LONG,
@@ -55,6 +56,7 @@ PORNMASTER_FLUX2_EDIT_TASK_TYPES = {
     MODE_FREE_EDIT_V2_5,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_EDIT_BF16,
 }
 FACE_VIDEO_TASK_TYPES = {"face_video", "face_video_step1", "face_video_step2"}
@@ -479,12 +481,33 @@ class PornmasterFlux2EditStrategy(BaseTaskStrategy):
         if not self.feature_flags.free_edit_v2_enabled:
             raise CoreDomainError(f"{self._display_name()} 当前未开放。")
 
-    def _expected_image_count(self) -> int:
+    @staticmethod
+    def _image_paths(inputs: Dict[str, Any]) -> list[str]:
+        return _get_saved_input_images(inputs) or inputs.get("images", [])
+
+    def _expected_image_count(self, inputs: Dict[str, Any]) -> int:
+        if self.task_type == MODE_FREE_EDIT_V2_5:
+            image_count = len(self._image_paths(inputs))
+            if image_count not in {1, 2}:
+                raise CoreDomainError("自由P图 v2.5 当前任务需要上传 1 或 2 张参考图。")
+            return image_count
         return (
-            2 if self._execution_task_type() == MODE_PORNMASTER_FLUX2_MULTI_EDIT else 1
+            2
+            if self._execution_task_type(inputs)
+            in {
+                MODE_PORNMASTER_FLUX2_MULTI_EDIT,
+                MODE_PORNMASTER_FLUX2_MULTI_EDIT_BF16,
+            }
+            else 1
         )
 
-    def _execution_task_type(self) -> str:
+    def _execution_task_type(self, inputs: Dict[str, Any]) -> str:
+        if self.task_type == MODE_FREE_EDIT_V2_5:
+            return (
+                MODE_PORNMASTER_FLUX2_MULTI_EDIT_BF16
+                if self._expected_image_count(inputs) == 2
+                else MODE_PORNMASTER_FLUX2_EDIT_BF16
+            )
         return get_execution_task_type(self.task_type) or self.task_type
 
     def _display_name(self) -> str:
@@ -496,6 +519,8 @@ class PornmasterFlux2EditStrategy(BaseTaskStrategy):
 
     def get_cost(self, inputs: Dict[str, Any]) -> int:
         self._ensure_enabled()
+        if self.task_type == MODE_FREE_EDIT_V2_5:
+            return 7 if self._expected_image_count(inputs) == 2 else 3
         return TASK_COSTS.get(self.task_type, 2)
 
     def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
@@ -509,7 +534,7 @@ class PornmasterFlux2EditStrategy(BaseTaskStrategy):
             inputs,
             seed_provider=_generate_dispatch_seed,
         )
-        expected_images = self._expected_image_count()
+        expected_images = self._expected_image_count(inputs)
         if len(submission.image_paths) != expected_images:
             raise CoreDomainError(
                 f"{self._display_name()} 当前任务需要上传 {expected_images} 张参考图。"
@@ -517,7 +542,7 @@ class PornmasterFlux2EditStrategy(BaseTaskStrategy):
         image_service = _get_dispatch_image_service()
         return await image_service.submit_pornmaster_flux2_edit_task(
             task_id,
-            execution_task_type=self._execution_task_type(),
+            execution_task_type=self._execution_task_type(inputs),
             prompt=submission.prompt,
             image_paths=submission.image_paths,
             negative_prompt=submission.negative_prompt,

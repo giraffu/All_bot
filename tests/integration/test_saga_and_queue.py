@@ -91,7 +91,13 @@ async def test_saga_compensation_refunds_credits_and_releases_lock():
 
 
 @pytest.mark.asyncio
-async def test_free_edit_v2_5_submission_failure_refunds_three_credits():
+@pytest.mark.parametrize(
+    ("images", "expected_cost"),
+    [(["input.png"], 3), (["one.png", "two.png"], 7)],
+)
+async def test_free_edit_v2_5_submission_failure_refunds_actual_cost(
+    images, expected_cost
+):
     mock_deduct = AsyncMock(return_value=(True, ""))
     mock_refund = AsyncMock()
 
@@ -137,13 +143,15 @@ async def test_free_edit_v2_5_submission_failure_refunds_three_credits():
             user_id=123,
             username="tester",
             task_type="free_edit_v2_5",
-            inputs={"images": ["input.png"]},
+            inputs={"images": images},
             task_id="free-edit-v2-5-failed",
             dependencies=dependencies,
         )
 
-    mock_deduct.assert_awaited_once_with(123, 3, "free_edit_v2_5", "tester")
-    mock_refund.assert_awaited_once_with(123, 3)
+    mock_deduct.assert_awaited_once_with(
+        123, expected_cost, "free_edit_v2_5", "tester"
+    )
+    mock_refund.assert_awaited_once_with(123, expected_cost)
 
 
 @pytest.mark.asyncio

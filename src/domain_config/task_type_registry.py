@@ -27,6 +27,7 @@ from src.constants import (
     MODE_PERFECT_VIDEO_INSERT,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
     MODE_PORNMASTER_FLUX2_EDIT_BF16,
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_RANDOM_FACESWAP,
     MODE_SCAIL2_ACTION_TRANSFER,
@@ -227,6 +228,15 @@ TASK_TYPE_REGISTRY: dict[str, TaskTypeRegistryEntry] = {
         is_generation=True,
         gallery_supported=True,
         cost=6,
+    ),
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT_BF16: _entry(
+        MODE_PORNMASTER_FLUX2_MULTI_EDIT_BF16,
+        central_type=MODE_PORNMASTER_FLUX2_MULTI_EDIT_BF16,
+        workflow_filename=(
+            "PornMaster_F2K_9B_Turbo_Multiple-images-editing_Automatic_V1_2026_05_27.api.json"
+        ),
+        runpod_profile="pornmaster_flux2_edit_bf16",
+        cost=7,
     ),
     MODE_FREE_EDIT_V2_5: _entry(
         MODE_FREE_EDIT_V2_5,

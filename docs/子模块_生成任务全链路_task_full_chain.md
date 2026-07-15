@@ -277,7 +277,7 @@ Webhook update 先由 Web API 校验后写 `${REDIS_PREFIX}private_qqcc_bot:webh
 - `txt2img` 走 `submit_txt2img_task(...)`
 - `i2i_pro` 和 `i2i_draw` 有独立提交方法；注意这是 dispatcher/Bot/执行面能力说明，Web API 当前会在 `task_submission_service` 入口拒绝 `i2i_draw`
 - `img2img_lora` 会带 `lora_name` 和 `lora_strength`
-- Web 与主 Bot 的自由P图 v2.5 公开逻辑类型为 `free_edit_v2_5`，只接受 1 张原图、固定扣 3 灵石且不传 LoRA。Registry/dispatcher 仅在提交执行面时把它映射为既有 `pornmaster_flux2_edit_bf16`；任务完成后直接返回并以 `free_edit_v2_5` 写 History，不创建 `face_swap` continuation，也不新增 Central route、Worker task type、workflow 或 GPU profile。
+- Web 与主 Bot 的自由P图 v2.5 公开逻辑类型为 `free_edit_v2_5`，接受 1 或 2 张原图且不传 LoRA：单图扣 3 灵石并映射到 `pornmaster_flux2_edit_bf16`，双图扣 7 灵石并映射到仅内部使用的 `pornmaster_flux2_multi_edit_bf16`；其它数量在扣费前拒绝。内部双图类型复用既有 multiple-images workflow、BF16 模型与同一 GPU profile。任务完成后直接返回并统一以 `free_edit_v2_5` 写 History，不创建 `face_swap` continuation。
 - Web 自由P图 v3 入口使用 `edit_v3`，只接受 1 张原图并提交逻辑类型 `pornmaster_flux2_edit_bf16`，固定扣 5 灵石且不传 LoRA。Web finalizer 在同一业务 `task_id` 下先等待 BF16 编辑，再用确定性的第二阶段 backend ID 提交 `face_swap`（原图做人脸、BF16 结果做 body）；第二阶段不重复扣费且不可取消，只将最终换脸结果写入一条 `pornmaster_flux2_edit_bf16` History，输入只保留用户原图。主 Bot 的 v3 同样维持 BF16→原脸恢复两阶段语义。
 - Web finalizer 的 Redis pending 记录用 `continuation={version,kind,stage,stage2_backend_task_id,original_image,stage1_result_path}` 持久化两阶段进度。先落盘 dispatch intent、再切换 active registry backend ID、最后提交确定性第二阶段 ID；因此重启或重复扫描不会重复扣费、重复提交或重复退款。任一执行阶段终止失败均以根业务 `task_id` 的既有幂等退款键退还 5 灵石。
 - Web API 拒绝新的 `pornmaster_flux2_single_edit` / `pornmaster_flux2_multi_edit` 直接提交并提示刷新使用 v3；Bot 与 QQCC 的历史 v2 执行兼容仍保留，不得用 Web 下线规则删除 core/dispatcher/worker 能力。
