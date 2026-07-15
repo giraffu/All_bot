@@ -17,6 +17,7 @@ WEB_DISABLED_GENERATION_TASK_TYPE_DETAILS = {
 
 WEB_FREE_EDIT_V3_TASK_TYPE = "pornmaster_flux2_edit_bf16"
 WEB_FREE_EDIT_V3_COST = 5
+WEB_FREE_EDIT_V2_5_TASK_TYPE = "free_edit_v2_5"
 
 
 def _raise_if_web_generation_task_disabled(task_type: str) -> None:
@@ -42,8 +43,16 @@ async def submit_generation_task(
 
         inputs = dict(req.inputs)
         images = list(inputs.get("images") or [])
-        if req.task_type == WEB_FREE_EDIT_V3_TASK_TYPE and len(images) != 1:
-            raise CoreDomainError("自由P图 v3 仅支持上传 1 张原图。")
+        if (
+            req.task_type
+            in {
+                WEB_FREE_EDIT_V2_5_TASK_TYPE,
+                WEB_FREE_EDIT_V3_TASK_TYPE,
+            }
+            and len(images) != 1
+        ):
+            version = "v2.5" if req.task_type == WEB_FREE_EDIT_V2_5_TASK_TYPE else "v3"
+            raise CoreDomainError(f"自由P图 {version} 仅支持上传 1 张原图。")
         if req.prompt:
             inputs["prompt"] = req.prompt
 

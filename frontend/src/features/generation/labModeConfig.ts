@@ -8,6 +8,7 @@ import {
 
 export type UnifiedLabModeId =
   | 'edit'
+  | 'edit_v2_5'
   | 'edit_v3'
   | 'txt2img'
   | 'i2i_pro'
@@ -177,12 +178,15 @@ export const FACE_VIDEO_RESOLUTION_OPTIONS = [
   { value: '1024', label: '1024p' },
 ] as const
 
+export const FREE_EDIT_V2_5_MODE_ID = 'edit_v2_5' as const
 export const FREE_EDIT_V3_MODE_ID = 'edit_v3' as const
 export const FREE_EDIT_V3_ENABLED = getRuntimeFlag('enable_free_edit_v3', true)
+export const FREE_EDIT_V2_5_ENABLED = FREE_EDIT_V3_ENABLED
 export const WEB_I2I_DRAW_ENABLED = false
 export const PORNMASTER_FLUX2_SINGLE_EDIT_TASK_TYPE = 'pornmaster_flux2_single_edit'
 export const PORNMASTER_FLUX2_MULTI_EDIT_TASK_TYPE = 'pornmaster_flux2_multi_edit'
 export const PORNMASTER_FLUX2_EDIT_BF16_TASK_TYPE = 'pornmaster_flux2_edit_bf16'
+export const FREE_EDIT_V2_5_TASK_TYPE = 'free_edit_v2_5'
 
 export const LAB_MODE_CONFIGS: LabModeConfig[] = [
   {
@@ -201,6 +205,25 @@ export const LAB_MODE_CONFIGS: LabModeConfig[] = [
     supportsEditLora: true,
     supportsVideoOptions: false,
     supportsAdvancedOptions: true,
+    promptRequired: true,
+    unified: true,
+  },
+  {
+    id: FREE_EDIT_V2_5_MODE_ID,
+    taskType: FREE_EDIT_V2_5_TASK_TYPE,
+    titleKey: 'lab.cards.custom_edit_v2_5_title',
+    descriptionKey: 'lab.cards.custom_edit_v2_5_desc',
+    kindKey: 'lab.workbench.mode_kinds.image',
+    baseCost: 3,
+    promptPlaceholderKey: 'lab.workbench.prompt_placeholders.edit_v2_5',
+    promptTarget: 'topLevel',
+    submitLabelKey: 'lab.workbench.submit_image',
+    referenceTitleKey: 'template_apply.common.base_image',
+    maxImages: 1,
+    supportsUpload: true,
+    supportsEditLora: false,
+    supportsVideoOptions: false,
+    supportsAdvancedOptions: false,
     promptRequired: true,
     unified: true,
   },
@@ -580,6 +603,7 @@ export const DEFAULT_LAB_MODE_ID: UnifiedLabModeId = 'edit'
 export const UNIFIED_LAB_MODES = LAB_MODE_CONFIGS.filter(mode => (
   mode.unified
   && mode.id !== 'face_video'
+  && (mode.id !== FREE_EDIT_V2_5_MODE_ID || FREE_EDIT_V2_5_ENABLED)
   && (mode.id !== FREE_EDIT_V3_MODE_ID || FREE_EDIT_V3_ENABLED)
   && (mode.id !== 'i2i_draw' || WEB_I2I_DRAW_ENABLED)
 )) as LabModeConfig[]
@@ -591,6 +615,8 @@ export const resolveLabModeIdFromTaskType = (taskType: string | null | undefined
   switch (taskType) {
     case 'txt2img':
       return 'txt2img'
+    case FREE_EDIT_V2_5_TASK_TYPE:
+      return FREE_EDIT_V2_5_MODE_ID
     case PORNMASTER_FLUX2_EDIT_BF16_TASK_TYPE:
     case PORNMASTER_FLUX2_SINGLE_EDIT_TASK_TYPE:
     case PORNMASTER_FLUX2_MULTI_EDIT_TASK_TYPE:

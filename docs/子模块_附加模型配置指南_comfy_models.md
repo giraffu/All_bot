@@ -329,4 +329,6 @@ workflow。canary 只提交一单 5s I2V MP4，结束后目标 worker 保持 `di
 `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit`，后者只承接 `pornmaster_flux2_edit_bf16`，固定
 RTX 4090 与 `--lowvram`。两者都可通过 Dashboard 或 `scripts/runpod_prod_ops.sh` 手动管理，也都进入
 Dashboard autoscaler；BF16 默认按单任务 30 秒、清空阈值 30 分钟复用 add/down/restart/enable、锁定跳过、
-最短生命周期和冷却规则。v2 canary 串行验证 single/multi 两单，BF16 canary 验证同名单图任务。
+最短生命周期和冷却规则。用户逻辑类型 `free_edit_v2_5` 与自由P图 v3 都映射到这个 BF16 执行类型和同一
+workflow/profile；v2.5 单阶段直出，v3 再续接 `face_swap`，因此不复制 workflow、模型目录、Central route 或
+GPU profile。v2 canary 串行验证 single/multi 两单，BF16 canary 仍只验证同名单图执行任务。

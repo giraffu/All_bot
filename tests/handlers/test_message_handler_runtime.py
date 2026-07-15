@@ -66,7 +66,9 @@ async def test_toggle_user_language_persists_context_db_and_redis(monkeypatch):
         lambda lang: f"keyboard:{lang}",
     )
 
-    msg, reply_markup = await message_handler_runtime.toggle_user_language(context, user)
+    msg, reply_markup = await message_handler_runtime.toggle_user_language(
+        context, user
+    )
 
     assert msg == "🌐 Language switched to English."
     assert reply_markup == "keyboard:en"
@@ -174,29 +176,23 @@ async def test_get_queue_status_reply_handles_success_and_unavailable(monkeypatc
     assert "免费🟢 付费🟢 T:task.img2img：`1` T:profile.tasks_unit" in text
     assert "免费🟢 付费🟢 T:task.mode_video_lora：`6` T:profile.tasks_unit" in text
     assert (
-        "免费🟢 付费🟢 T:task.mode_wan22_video_v2：`1` "
-        "T:profile.tasks_unit"
+        "免费🟢 付费🟢 T:task.mode_wan22_video_v2：`1` T:profile.tasks_unit"
     ) in text
     assert (
-        "免费🟢 付费🟢 T:task.mode_scail2_video_replacement：`1` "
-        "T:profile.tasks_unit"
+        "免费🟢 付费🟢 T:task.mode_scail2_video_replacement：`1` T:profile.tasks_unit"
     ) in text
     assert (
-        "免费🟠 付费🔴 T:task.mode_scail2_action_transfer：`3` "
-        "T:profile.tasks_unit"
+        "免费🟠 付费🔴 T:task.mode_scail2_action_transfer：`3` T:profile.tasks_unit"
     ) in text
     assert text.count("T:task.mode_scail2_action_transfer") == 1
-    assert (
-        "免费🟢 付费🟡 T:task.mode_free_edit_v2：`3` T:profile.tasks_unit"
-    ) in text
+    assert ("免费🟢 付费🟡 T:task.mode_free_edit_v2：`3` T:profile.tasks_unit") in text
     assert "pornmaster_flux2_single_edit" not in text
     assert "pornmaster_flux2_multi_edit" not in text
     assert "免费最长等待" not in text
     assert "付费最长等待" not in text
     assert "video_insert" not in text
     assert (
-        "免费🟢 付费🟢 ❓ T:profile.other_types (custom\\_x)：`1` "
-        "T:profile.tasks_unit"
+        "免费🟢 付费🟢 ❓ T:profile.other_types (custom\\_x)：`1` T:profile.tasks_unit"
     ) in text
     assert "**T:profile.my_tasks_title**" in text
     assert "1. T:task.img2img：全局排队第 2 位" in text
@@ -259,6 +255,14 @@ def test_normalize_queue_type_counts_for_display_merges_legacy_img2video_aliases
     }
 
 
+def test_normalize_queue_type_counts_labels_bf16_as_shared_free_edit_pool():
+    normalized = message_handler_runtime._normalize_queue_type_counts_for_display(
+        {"pornmaster_flux2_edit_bf16": 4}
+    )
+
+    assert normalized == {"free_edit_v2_5_v3_pool": 4}
+
+
 def test_build_user_task_status_text_prefers_type_queue_position():
     context = SimpleNamespace(
         t=lambda key, **kwargs: f"T:{key}:{kwargs}" if kwargs else f"T:{key}"
@@ -272,9 +276,14 @@ def test_build_user_task_status_text_prefers_type_queue_position():
         {"status": "running"},
         context,
     )
-    submitting_text = message_handler_runtime._build_user_task_status_text(None, context)
+    submitting_text = message_handler_runtime._build_user_task_status_text(
+        None, context
+    )
 
-    assert pending_text == "T:profile.my_tasks_status_pending_type_position:{'queue_pos': 4}"
+    assert (
+        pending_text
+        == "T:profile.my_tasks_status_pending_type_position:{'queue_pos': 4}"
+    )
     assert running_text == "T:profile.my_tasks_status_running"
     assert submitting_text == "T:profile.my_tasks_status_submitting"
 
@@ -433,8 +442,12 @@ async def test_build_personal_center_reply_syncs_status_and_builds_payload(monke
 
 
 @pytest.mark.asyncio
-async def test_build_share_reply_prefers_cached_bot_username_and_builds_payload(monkeypatch):
-    context = SimpleNamespace(bot=SimpleNamespace(username="aivision666_bot"), lang="zh")
+async def test_build_share_reply_prefers_cached_bot_username_and_builds_payload(
+    monkeypatch,
+):
+    context = SimpleNamespace(
+        bot=SimpleNamespace(username="aivision666_bot"), lang="zh"
+    )
     user = SimpleNamespace(id=123, first_name="Tester")
     fake_dto = SimpleNamespace(invitations=2)
 
@@ -458,7 +471,9 @@ async def test_build_share_reply_prefers_cached_bot_username_and_builds_payload(
 
 
 @pytest.mark.asyncio
-async def test_build_share_reply_falls_back_to_get_me_when_username_missing(monkeypatch):
+async def test_build_share_reply_falls_back_to_get_me_when_username_missing(
+    monkeypatch,
+):
     context = SimpleNamespace(
         bot=SimpleNamespace(
             username=None,

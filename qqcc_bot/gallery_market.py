@@ -20,6 +20,7 @@ from config import MINI_APP_URL, build_versioned_mini_app_url
 from src.constants import (
     MODE_CUSTOM_VIDEO,
     MODE_EDIT,
+    MODE_FREE_EDIT_V2_5,
     MODE_FACE_VIDEO_STEP1,
     MODE_FACE_VIDEO_STEP2,
     MODE_I2I_DRAW,
@@ -60,8 +61,12 @@ from src.services.ltx_video_extension_service import (
 from src.services.task_service_entrypoints_generation import process_i2i_pro_task
 from src.services.task_service_entrypoints_specialized import process_ltx_video_task
 from src.services.task_service_generation_image import process_standard_generation_task
-from src.services.task_service_generation_video import process_image_to_video_generation_task
-from src.services.task_service_generation_wan22 import process_wan22_video_v2_generation_task
+from src.services.task_service_generation_video import (
+    process_image_to_video_generation_task,
+)
+from src.services.task_service_generation_wan22 import (
+    process_wan22_video_v2_generation_task,
+)
 from src.services.wan22_video_v2_extension_service import (
     extract_wan22_history_context,
     is_wan22_stitched_result,
@@ -109,13 +114,20 @@ QQCC_MARKET_TABS: tuple[MarketTab, ...] = (
     MarketTab("i2v", "img2video_group", "qqcc.market.tabs.img2video_group"),
     MarketTab("ltx", MODE_LTX_VIDEO, "qqcc.market.tabs.ltx_video"),
     MarketTab("wan22", MODE_WAN22_VIDEO_V2, "qqcc.market.tabs.wan22_video_v2"),
-    MarketTab("sca", MODE_SCAIL2_ACTION_TRANSFER, "qqcc.market.tabs.scail2_action_transfer"),
-    MarketTab("scr", MODE_SCAIL2_VIDEO_REPLACEMENT, "qqcc.market.tabs.scail2_video_replacement"),
+    MarketTab(
+        "sca", MODE_SCAIL2_ACTION_TRANSFER, "qqcc.market.tabs.scail2_action_transfer"
+    ),
+    MarketTab(
+        "scr",
+        MODE_SCAIL2_VIDEO_REPLACEMENT,
+        "qqcc.market.tabs.scail2_video_replacement",
+    ),
     MarketTab("scf", MODE_SCAIL2_FACE_SWAP_V2, "qqcc.market.tabs.scail2_face_swap_v2"),
 )
 
 TAB_BY_CODE = {tab.code: tab for tab in QQCC_MARKET_TABS}
 WEB_FALLBACK_TASK_TYPES = {
+    MODE_FREE_EDIT_V2_5,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
     MODE_LTX_VIDEO_FLF2V,
     MODE_SCAIL2_ACTION_TRANSFER,
@@ -130,6 +142,7 @@ WEB_ONLY_MARKET_TASK_TYPES = {
     MODE_SCAIL2_FACE_SWAP_V2,
 }
 TASK_TYPE_LABEL_KEYS = {
+    MODE_FREE_EDIT_V2_5: "task.mode_free_edit_v2_5",
     MODE_I2I_PRO: "qqcc.market.tabs.i2i_pro",
     MODE_I2I_DRAW: "qqcc.market.tabs.i2i_draw",
     MODE_EDIT: "qqcc.market.tabs.edit_group",
@@ -218,7 +231,9 @@ def parse_qqcc_market_apply_callback_data(data: str) -> int:
     return int(data.removeprefix(QG_APPLY_PREFIX))
 
 
-def is_qqcc_gallery_apply_session_expired(session: dict, *, now: float | None = None) -> bool:
+def is_qqcc_gallery_apply_session_expired(
+    session: dict, *, now: float | None = None
+) -> bool:
     return apply_service.is_qqcc_gallery_apply_session_expired(session, now=now)
 
 
@@ -304,7 +319,9 @@ def _is_stitched_market_history(history) -> bool:
     if history is None:
         return False
     extra_outputs = getattr(history, "extra_outputs", None)
-    return is_wan22_stitched_result(extra_outputs) or is_ltx_stitched_result(extra_outputs)
+    return is_wan22_stitched_result(extra_outputs) or is_ltx_stitched_result(
+        extra_outputs
+    )
 
 
 def _is_web_only_market_history(history) -> bool:
@@ -326,11 +343,15 @@ def resolve_qqcc_gallery_apply_mode(history) -> tuple[str, str | None]:
     if task_type in WEB_FALLBACK_TASK_TYPES:
         return "web", None
     if task_type == MODE_WAN22_VIDEO_V2:
-        wan22_context = extract_wan22_history_context(getattr(history, "extra_outputs", None))
+        wan22_context = extract_wan22_history_context(
+            getattr(history, "extra_outputs", None)
+        )
         if bool(wan22_context.get("wan22_use_end_frame")):
             return "web", None
     if task_type == MODE_LTX_VIDEO:
-        ltx_context = extract_ltx_history_context(getattr(history, "extra_outputs", None))
+        ltx_context = extract_ltx_history_context(
+            getattr(history, "extra_outputs", None)
+        )
         ltx_mode = str(ltx_context.get("ltx_mode") or "").strip()
         if ltx_mode in {"flf2v", "v2v_audio"}:
             return "web", None
@@ -405,7 +426,9 @@ async def display_qqcc_market_page(
             fetch_gallery_feed_func=fetch_gallery_feed_func,
         )
         if not posts:
-            await safe_answer_query(query, text=_t(context, "qqcc.market.empty"), show_alert=True)
+            await safe_answer_query(
+                query, text=_t(context, "qqcc.market.empty"), show_alert=True
+            )
             return
 
         post = posts[0]
@@ -441,10 +464,14 @@ async def display_qqcc_market_page(
             await robust_delete_message(query.message)
     except Exception:
         logger.exception("Failed to display QQCC gallery market page.")
-        await safe_answer_query(query, text=_t(context, "qqcc.market.load_failed"), show_alert=True)
+        await safe_answer_query(
+            query, text=_t(context, "qqcc.market.load_failed"), show_alert=True
+        )
 
 
-async def _handle_market_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE, *, action: str):
+async def _handle_market_reaction(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, *, action: str
+):
     await interaction_service.handle_market_reaction(
         update,
         context,
@@ -466,14 +493,18 @@ def _is_native_apply_context(context_payload) -> bool:
 
 async def _load_apply_context_or_mode(post_id: int):
     async with AsyncSessionLocal() as db:
-        post, history = await fetch_gallery_apply_context_entities(db=db, post_id=post_id)
+        post, history = await fetch_gallery_apply_context_entities(
+            db=db, post_id=post_id
+        )
         if not post or post.is_active is False:
             raise GalleryApplyContextError(status_code=404, detail="帖子不存在或已失效")
         if not history:
             raise GalleryApplyContextError(status_code=404, detail="未找到原任务详情")
         apply_mode, reason = resolve_qqcc_gallery_apply_mode(history)
         if apply_mode in {"disabled", "hidden"}:
-            raise GalleryApplyContextError(status_code=400, detail=reason or "apply_disabled")
+            raise GalleryApplyContextError(
+                status_code=400, detail=reason or "apply_disabled"
+            )
         if apply_mode == "web":
             return None, "web"
         apply_context = await build_gallery_apply_context_payload(
@@ -492,7 +523,9 @@ async def _load_apply_context_or_mode(post_id: int):
 
 
 @register_callback(QG_MENU_CALLBACK)
-async def handle_qqcc_market_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_qqcc_market_menu_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
     query = update.callback_query
     await safe_answer_query(query)
     await query.message.reply_text(
@@ -502,34 +535,50 @@ async def handle_qqcc_market_menu_callback(update: Update, context: ContextTypes
 
 
 @register_callback(QG_PAGE_PREFIX)
-async def handle_qqcc_market_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_qqcc_market_page_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
     await display_qqcc_market_page(update, context)
 
 
 @register_callback(QG_LIKE_PREFIX)
-async def handle_qqcc_market_like_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_qqcc_market_like_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
     await _handle_market_reaction(update, context, action="like")
 
 
 @register_callback(QG_DISLIKE_PREFIX)
-async def handle_qqcc_market_dislike_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_qqcc_market_dislike_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
     await _handle_market_reaction(update, context, action="dislike")
 
 
 @register_callback(QG_APPLY_PREFIX)
-async def handle_qqcc_market_apply_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_qqcc_market_apply_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
     query = update.callback_query
     try:
         post_id = parse_qqcc_market_apply_callback_data(query.data)
         apply_context, mode = await _load_apply_context_or_mode(post_id)
         if mode == "web":
-            await safe_answer_query(query, text=_t(context, "qqcc.market.apply_web"), show_alert=True)
+            await safe_answer_query(
+                query, text=_t(context, "qqcc.market.apply_web"), show_alert=True
+            )
             await robust_send_message(
                 context.bot,
                 query.message.chat_id,
                 _t(context, "qqcc.market.apply_web"),
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("Web应用", url=build_market_web_apply_url(post_id))]]
+                    [
+                        [
+                            InlineKeyboardButton(
+                                "Web应用", url=build_market_web_apply_url(post_id)
+                            )
+                        ]
+                    ]
                 ),
             )
             return
@@ -552,14 +601,18 @@ async def handle_qqcc_market_apply_callback(update: Update, context: ContextType
         )
     except Exception:
         logger.exception("Failed to load QQCC market apply context.")
-        await safe_answer_query(query, text=_t(context, "qqcc.market.apply_submit_failed"), show_alert=True)
+        await safe_answer_query(
+            query, text=_t(context, "qqcc.market.apply_submit_failed"), show_alert=True
+        )
 
 
 def _resolve_image_file_id(message) -> str | None:
     return apply_service.resolve_image_file_id(message)
 
 
-async def _download_market_apply_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str | None:
+async def _download_market_apply_image(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> str | None:
     return await apply_service.download_market_apply_image(update, context)
 
 
@@ -583,7 +636,9 @@ async def submit_qqcc_gallery_apply_session(
     )
 
 
-async def handle_qqcc_gallery_apply_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_qqcc_gallery_apply_media(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
     return await apply_service.handle_qqcc_gallery_apply_media(
         update,
         context,

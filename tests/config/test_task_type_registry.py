@@ -155,6 +155,20 @@ def test_registry_matches_worker_execution_aliases_for_public_task_types():
         assert entry.execution_type == resolve_worker_execution_task_type(task_type)
 
 
+def test_free_edit_v25_registry_reuses_bf16_runtime_with_own_business_identity():
+    entry = TASK_TYPE_REGISTRY["free_edit_v2_5"]
+
+    assert entry.public_type == "free_edit_v2_5"
+    assert entry.execution_type == "pornmaster_flux2_edit_bf16"
+    assert entry.central_type == "pornmaster_flux2_edit_bf16"
+    assert entry.runpod_profile == "pornmaster_flux2_edit_bf16"
+    assert entry.cost == 3
+    assert entry.gallery_supported is True
+    assert resolve_worker_execution_task_type("free_edit_v2_5") == (
+        "pornmaster_flux2_edit_bf16"
+    )
+
+
 def test_registry_query_helpers_cover_key_task_type_relationships():
     expected = {
         "video_lora": {
@@ -341,6 +355,7 @@ def test_registry_gallery_helpers_preserve_existing_lists_and_order():
         "scail2_face_swap_v2",
         "edit",
         "img2img_lora",
+        "free_edit_v2_5",
         "pornmaster_flux2_edit_bf16",
         "pornmaster_flux2_single_edit",
         "pornmaster_flux2_multi_edit",
@@ -353,6 +368,7 @@ def test_registry_gallery_helpers_preserve_existing_lists_and_order():
         ("i2i_draw", "task.mode_i2i_draw"),
         ("edit", "task.mode_edit"),
         ("img2img_lora", "task.mode_img2img_lora"),
+        ("free_edit_v2_5", "task.mode_free_edit_v2_5"),
         ("pornmaster_flux2_edit_bf16", "task.mode_free_edit_v3"),
         ("pornmaster_flux2_single_edit", "task.mode_free_edit_v2"),
         ("pornmaster_flux2_multi_edit", "task.mode_free_edit_v2"),

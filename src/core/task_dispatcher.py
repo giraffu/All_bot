@@ -7,6 +7,7 @@ from src.constants import (
     LTX_DURATION_MULTIPLIER,
     LTX_RESOLUTION_COST,
     MODE_EDIT,
+    MODE_FREE_EDIT_V2_5,
     MODE_FACESWAP_STEP1,
     MODE_I2I_DRAW,
     MODE_I2I_PRO,
@@ -37,6 +38,7 @@ from src.domain_config.scail2_video import (
     normalize_scail2_positive_prompt,
     resolve_scail2_execution_task_type,
 )
+from src.domain_config.task_type_registry import get_execution_task_type
 from src.domain_config.wan22_aio_video import (
     build_wan22_aio_video_result_meta,
     get_wan22_video_v2_cost,
@@ -50,6 +52,7 @@ from src.lora_catalog import normalize_ltx_video_lora_items
 
 EDIT_LIKE_TASK_TYPES = {MODE_EDIT, MODE_IMG2IMG_LORA}
 PORNMASTER_FLUX2_EDIT_TASK_TYPES = {
+    MODE_FREE_EDIT_V2_5,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
     MODE_PORNMASTER_FLUX2_EDIT_BF16,
@@ -165,9 +168,7 @@ def _build_video_submission_context(
     default_prompt: str = "video",
 ) -> _VideoSubmissionContext:
     duration = _get_input_duration(inputs)
-    resolution, width, height = _resolve_video_dimensions(
-        inputs.get("resolution", 512)
-    )
+    resolution, width, height = _resolve_video_dimensions(inputs.get("resolution", 512))
     saved_images = _get_saved_input_images(inputs)
     return _VideoSubmissionContext(
         prompt=_get_input_prompt(inputs, default_prompt),
@@ -323,7 +324,9 @@ def _build_default_image_submission_context(
     )
 
 
-def _append_lora_metadata(metadata: Dict[str, Any], inputs: Dict[str, Any]) -> Dict[str, Any]:
+def _append_lora_metadata(
+    metadata: Dict[str, Any], inputs: Dict[str, Any]
+) -> Dict[str, Any]:
     lora_items = inputs.get("lora_items")
     if isinstance(lora_items, list) and lora_items:
         metadata["lora_items"] = lora_items
@@ -474,10 +477,22 @@ class PornmasterFlux2EditStrategy(BaseTaskStrategy):
 
     def _ensure_enabled(self) -> None:
         if not self.feature_flags.free_edit_v2_enabled:
-            raise CoreDomainError("自由P图 v2 当前未开放。")
+            raise CoreDomainError(f"{self._display_name()} 当前未开放。")
 
     def _expected_image_count(self) -> int:
-        return 2 if self.task_type == MODE_PORNMASTER_FLUX2_MULTI_EDIT else 1
+        return (
+            2 if self._execution_task_type() == MODE_PORNMASTER_FLUX2_MULTI_EDIT else 1
+        )
+
+    def _execution_task_type(self) -> str:
+        return get_execution_task_type(self.task_type) or self.task_type
+
+    def _display_name(self) -> str:
+        if self.task_type == MODE_FREE_EDIT_V2_5:
+            return "自由P图 v2.5"
+        if self.task_type == MODE_PORNMASTER_FLUX2_EDIT_BF16:
+            return "自由P图 v3"
+        return "自由P图 v2"
 
     def get_cost(self, inputs: Dict[str, Any]) -> int:
         self._ensure_enabled()
@@ -497,12 +512,12 @@ class PornmasterFlux2EditStrategy(BaseTaskStrategy):
         expected_images = self._expected_image_count()
         if len(submission.image_paths) != expected_images:
             raise CoreDomainError(
-                f"自由P图 v2 当前任务需要上传 {expected_images} 张参考图。"
+                f"{self._display_name()} 当前任务需要上传 {expected_images} 张参考图。"
             )
         image_service = _get_dispatch_image_service()
         return await image_service.submit_pornmaster_flux2_edit_task(
             task_id,
-            execution_task_type=self.task_type,
+            execution_task_type=self._execution_task_type(),
             prompt=submission.prompt,
             image_paths=submission.image_paths,
             negative_prompt=submission.negative_prompt,
@@ -693,9 +708,7 @@ class BaseVideoStrategy(BaseTaskStrategy):
             face_img, video_path = _resolve_face_video_saved_inputs(
                 submission.saved_images
             )
-            dur_frames = (
-                161 if submission.requested_duration_seconds >= 10 else 121
-            )
+            dur_frames = 161 if submission.requested_duration_seconds >= 10 else 121
             return await image_service.submit_face_video(
                 task_id,
                 face_image_path=face_img,

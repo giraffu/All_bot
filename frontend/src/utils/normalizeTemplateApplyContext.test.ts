@@ -164,6 +164,26 @@ describe('normalizeTemplateApplyContext', () => {
     })
   })
 
+  it('preserves free edit v2.5 as an independent template type', () => {
+    const normalized = normalizeTemplateApplyContext(
+      {
+        post_id: 25,
+        source_post_id: 25,
+        task_type: 'free_edit_v2_5',
+        prompt: 'preserve this prompt'
+      },
+      { source: 'gallery', entryEntityId: 25 }
+    )
+
+    expect(normalized).not.toBeNull()
+    expect(normalized).toMatchObject({
+      rawTaskType: 'free_edit_v2_5',
+      taskType: 'free_edit_v2_5',
+      sourcePostId: 25,
+      prompt: 'preserve this prompt'
+    })
+  })
+
   it('normalizes reusable input file arrays for scail2 templates', () => {
     const normalized = normalizeTemplateApplyContext(
       {

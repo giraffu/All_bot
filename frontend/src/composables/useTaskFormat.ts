@@ -10,6 +10,7 @@ export function useTaskFormat() {
     const map: Record<string, string> = {
       'image': '自由P图',
       'edit': '自由P图',
+      'free_edit_v2_5': '自由P图 v2.5',
       'pornmaster_flux2_edit_bf16': '自由P图 v3',
       'pornmaster_flux2_single_edit': '自由P图 v3',
       'pornmaster_flux2_multi_edit': '自由P图 v3',

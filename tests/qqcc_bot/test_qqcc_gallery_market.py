@@ -4,6 +4,7 @@ import pytest
 
 from qqcc_bot import gallery_market
 from src.constants import (
+    MODE_FREE_EDIT_V2_5,
     MODE_I2I_DRAW,
     MODE_I2I_PRO,
     MODE_LTX_VIDEO,
@@ -13,7 +14,9 @@ from src.constants import (
     MODE_WAN22_VIDEO_V2,
 )
 from src.services.ltx_video_extension_service import build_ltx_stitched_extra_outputs
-from src.services.wan22_video_v2_extension_service import build_wan22_stitched_extra_outputs
+from src.services.wan22_video_v2_extension_service import (
+    build_wan22_stitched_extra_outputs,
+)
 
 
 def _button_texts(markup):
@@ -56,8 +59,14 @@ def test_market_post_markup_shows_one_click_and_web_for_applyable_posts(monkeypa
         has_next=False,
     )
     assert _button_texts(native_markup)[1] == ["一键应用", "Web应用"]
-    assert _button_callbacks(native_markup)[1] == [f"{gallery_market.QG_APPLY_PREFIX}1", None]
-    assert native_markup.inline_keyboard[1][1].url == "https://web.example/gallery?apply_id=1"
+    assert _button_callbacks(native_markup)[1] == [
+        f"{gallery_market.QG_APPLY_PREFIX}1",
+        None,
+    ]
+    assert (
+        native_markup.inline_keyboard[1][1].url
+        == "https://web.example/gallery?apply_id=1"
+    )
 
     web_post = SimpleNamespace(id=2, likes_count=0, dislikes_count=0)
     web_markup = gallery_market.build_qqcc_market_post_markup(
@@ -73,8 +82,13 @@ def test_market_post_markup_shows_one_click_and_web_for_applyable_posts(monkeypa
         has_next=False,
     )
     assert _button_texts(web_markup)[1] == ["一键应用", "Web应用"]
-    assert _button_callbacks(web_markup)[1] == [f"{gallery_market.QG_APPLY_PREFIX}2", None]
-    assert web_markup.inline_keyboard[1][1].url == "https://web.example/gallery?apply_id=2"
+    assert _button_callbacks(web_markup)[1] == [
+        f"{gallery_market.QG_APPLY_PREFIX}2",
+        None,
+    ]
+    assert (
+        web_markup.inline_keyboard[1][1].url == "https://web.example/gallery?apply_id=2"
+    )
 
     face_swap_post = SimpleNamespace(id=4, likes_count=0, dislikes_count=0)
     face_swap_markup = gallery_market.build_qqcc_market_post_markup(
@@ -91,7 +105,10 @@ def test_market_post_markup_shows_one_click_and_web_for_applyable_posts(monkeypa
     )
     assert _button_texts(face_swap_markup)[1] == ["Web应用"]
     assert _button_callbacks(face_swap_markup)[1] == [None]
-    assert face_swap_markup.inline_keyboard[1][0].url == "https://web.example/gallery?apply_id=4"
+    assert (
+        face_swap_markup.inline_keyboard[1][0].url
+        == "https://web.example/gallery?apply_id=4"
+    )
 
     disabled_post = SimpleNamespace(id=3, likes_count=0, dislikes_count=0)
     disabled_markup = gallery_market.build_qqcc_market_post_markup(
@@ -177,7 +194,9 @@ def test_market_caption_translates_task_type_and_task_tags():
 
 
 @pytest.mark.asyncio
-async def test_submit_native_gallery_apply_passes_source_post_and_blocks_recontribution(monkeypatch):
+async def test_submit_native_gallery_apply_passes_source_post_and_blocks_recontribution(
+    monkeypatch,
+):
     captured = {}
 
     async def fake_i2i_pro_task(**kwargs):
@@ -255,8 +274,42 @@ async def test_submit_ltx_gallery_apply_restores_existing_user_data(monkeypatch)
 
 def test_gallery_apply_mode_sends_complex_templates_to_web():
     assert gallery_market.resolve_qqcc_gallery_apply_mode(
+        SimpleNamespace(type=MODE_FREE_EDIT_V2_5, extra_outputs={})
+    ) == ("web", None)
+    assert gallery_market.resolve_qqcc_gallery_apply_mode(
         SimpleNamespace(type=MODE_PORNMASTER_FLUX2_MULTI_EDIT, extra_outputs={})
     ) == ("web", None)
+
+
+def test_market_caption_labels_free_edit_v2_5():
+    context = SimpleNamespace(
+        t=lambda key, **_kwargs: {
+            "qqcc.market.title": "修仙市集",
+            "task.mode_free_edit_v2_5": "自由P图 v2.5",
+        }.get(key, key)
+    )
+    post = SimpleNamespace(
+        id=25,
+        user=None,
+        user_id=None,
+        media_type="image",
+        duration=None,
+        width=512,
+        height=512,
+        likes_count=0,
+        dislikes_count=0,
+        applied_count=0,
+        task_type=MODE_FREE_EDIT_V2_5,
+    )
+
+    caption = gallery_market._build_post_caption(
+        post=post,
+        history=SimpleNamespace(type=MODE_FREE_EDIT_V2_5),
+        translated_tags=[],
+        context=context,
+    )
+
+    assert "<b>类型</b>：自由P图 v2.5" in caption
 
 
 @pytest.mark.asyncio
@@ -330,9 +383,7 @@ async def test_gallery_apply_media_expires_stale_session(monkeypatch):
 
     update = SimpleNamespace(effective_message=SimpleNamespace())
     context = SimpleNamespace(
-        user_data={
-            gallery_market.QQCC_GALLERY_APPLY_SESSION_KEY: {"created_at": 1}
-        },
+        user_data={gallery_market.QQCC_GALLERY_APPLY_SESSION_KEY: {"created_at": 1}},
         t=lambda key, **_kwargs: key,
     )
 

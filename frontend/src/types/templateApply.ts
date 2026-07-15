@@ -5,6 +5,7 @@ export type TemplateApplyTaskType =
   | 'i2i_draw'
   | 'edit'
   | 'img2img_lora'
+  | 'free_edit_v2_5'
   | 'pornmaster_flux2_edit_bf16'
   | 'face_swap'
   | 'face_video'

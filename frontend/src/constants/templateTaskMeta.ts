@@ -34,6 +34,11 @@ export const TEMPLATE_TASK_META_MAP: Record<TemplateApplyTaskType, TemplateTaskM
     panelKind: 'imagePrompt',
     titleKey: 'lab.cards.custom_edit_title'
   },
+  free_edit_v2_5: {
+    taskType: 'free_edit_v2_5',
+    panelKind: 'imagePrompt',
+    titleKey: 'lab.cards.custom_edit_v2_5_title'
+  },
   pornmaster_flux2_edit_bf16: {
     taskType: 'pornmaster_flux2_edit_bf16',
     panelKind: 'imagePrompt',

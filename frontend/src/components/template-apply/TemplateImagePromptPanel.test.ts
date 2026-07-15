@@ -288,4 +288,51 @@ describe('TemplateImagePromptPanel', () => {
     await nextTick()
     expect(uploadFileMock).toHaveBeenCalledTimes(1)
   })
+
+  it('applies free edit v2.5 templates as a three-credit single-image task', async () => {
+    const wrapper = mountPanel(buildContext({
+      raw: {
+        post_id: 25,
+        source_post_id: 25,
+        task_id: 'task-template-v2-5',
+        media_type: 'image',
+        task_type: 'free_edit_v2_5',
+        prompt: 'keep the original prompt',
+        lora_name: 'qwen/YARN_1.0.safetensors',
+      },
+      rawTaskType: 'free_edit_v2_5',
+      taskType: 'free_edit_v2_5',
+      sourcePostId: 25,
+      prompt: 'keep the original prompt',
+      loraName: 'qwen/YARN_1.0.safetensors',
+    }))
+    await nextTick()
+
+    expect(wrapper.text()).toContain('自由P图 v2.5')
+    expect(wrapper.findComponent(TextareaStub).exists()).toBe(false)
+    expect(wrapper.findComponent(RadioGroupStub).exists()).toBe(false)
+
+    const beforeUpload = wrapper.findComponent(UploadDraggerStub).props('beforeUpload') as (file: File) => Promise<boolean>
+    uploadFileMock.mockResolvedValueOnce({ objectKey: 'replacement.png' })
+    await beforeUpload(new File(['replacement'], 'replacement.png', { type: 'image/png' }))
+    await nextTick()
+
+    await wrapper.findComponent(ButtonStub).trigger('click')
+    await flushPromises()
+
+    expect(submitTaskMock.mock.calls[0][0]).toMatchObject({
+      task_type: 'free_edit_v2_5',
+      inputs: {
+        images: ['replacement.png'],
+      },
+      prompt: 'keep the original prompt',
+      is_template: true,
+      source_post_id: 25,
+    })
+    expect(submitTaskMock.mock.calls[0][0].inputs).not.toHaveProperty('lora_name')
+
+    uploadFileMock.mockResolvedValueOnce({ objectKey: 'second.png' })
+    await beforeUpload(new File(['second'], 'second.png', { type: 'image/png' }))
+    expect(uploadFileMock).toHaveBeenCalledTimes(1)
+  })
 })

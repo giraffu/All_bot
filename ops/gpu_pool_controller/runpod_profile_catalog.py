@@ -344,7 +344,7 @@ RUNPOD_ADMIN_PROFILE_OPTIONS: tuple[dict[str, object], ...] = (
     },
     {
         "profile": "pornmaster_flux2_edit_bf16",
-        "label": "pornmaster_flux2 BF16 / 自由P图 v3",
+        "label": "pornmaster_flux2 BF16 / 自由P图 v2.5 + v3 共用执行池",
         "supported_task_types": ["pornmaster_flux2_edit_bf16"],
     },
 )

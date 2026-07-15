@@ -3,6 +3,7 @@ import {
   DEFAULT_LTX_VIDEO_RESOLUTION,
   DEFAULT_VIDEO_DURATION,
   DEFAULT_VIDEO_RESOLUTION,
+  FREE_EDIT_V2_5_MODE_ID,
   FREE_EDIT_V3_MODE_ID,
   getScail2VideoCost,
   type LabModeConfig,
@@ -86,6 +87,10 @@ export const getLabCostHintKey = (modeId: UnifiedLabModeId) => {
 
   if (modeId === FREE_EDIT_V3_MODE_ID) {
     return 'lab.workbench.cost_hints.edit_v3'
+  }
+
+  if (modeId === FREE_EDIT_V2_5_MODE_ID) {
+    return 'lab.workbench.cost_hints.edit_v2_5'
   }
 
   if (modeId === 'custom_video') {

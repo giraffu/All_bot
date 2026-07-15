@@ -13,6 +13,7 @@ description: "处理 Telegram FSM、全局菜单黑盒退出、callback 路由�
 - **多语言精准路由**：FSM 入口仍可使用 `I18nFilter`，但全局菜单识别已扩展为 `menu_route_registry + prompt_router + GLOBAL_REVERSE_MAP + is_global_menu_command(...)` 组合。
 - **FSM 黑盒退出机制**：在任何文字接收入口，优先用 `is_global_menu_command(...)` 判断是否应退出当前流程，而不是散落硬编码菜单判断。
 - **Callback 注册路由**：回调处理依赖 `register_callback` 前缀注册、长度降序匹配与统一 `safe_answer_query` 兜底，修改 callback 拆分时必须维护这套契约。
+- **主 Bot 自由P图版本面板**：现有自由P图选择面板同时提供 v2.5、v3 与附加模型。v2.5 callback 进入 `free_edit_v2_5`、只收 1 张图、检查 3 灵石并走标准单阶段提交；旧 `editlora_free_edit_v2` callback 必须继续兼容并进入 v3 的 5 灵石 BF16→换脸链路。两种版本都要在额外图片时原地提示且不得下载文件。
 - **临时文件生命周期**：常规 FSM 文件流已优先收口到 `fsm_temp_file_service.py`，负责目录创建、下载与清理；`cleanup_fsm_user_data(...)` 除了清理 `*_data` 内路径，也会清理随机换脸“再来一张”使用的顶层 `last_face_image` 临时缓存；Telegram Local API / Poll 兼容 / 语言注入由 `telegram_runtime_bootstrap.py` 统一安装，避免主 Bot 与 QQCC Bot 重复补丁。
 - **语言切换同步**：语言切换不只是菜单文案变化，还涉及 DB + Redis 双缓存同步。
 - **独立付费群审核 Bot**：`paid_group_guard_bot/` 使用独立 token，订阅目标群 `chat_join_request` 与普通 `message` update；入群资格只读查订单/修为，普通消息只做轻量群管理（非管理员链接、违禁词、结构化日志），不要把它接入主业务 FSM 或复用主业务 `BOT_TOKEN`。

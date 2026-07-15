@@ -11,11 +11,11 @@ from src.constants import (
     MODE_DOGGY_STYLE,
     MODE_EDIT,
     MODE_FREE_EDIT_V2,
+    MODE_FREE_EDIT_V2_5,
     MODE_IMAGE_TO_VIDEO,
     MODE_I2I_DRAW,
     MODE_IMG2IMG_LORA,
     MODE_RANDOM_FACESWAP,
-    MODE_PORNMASTER_FLUX2_MULTI_EDIT,
     MODE_PORNMASTER_FLUX2_EDIT_BF16,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
 )
@@ -100,7 +100,9 @@ def test_custom_video_fsm_handler_reuses_unified_state_graph():
 
     assert len(custom_entry_callbacks) == 3
     assert unified_handler.name == "image_to_video_fsm"
-    assert unified_handler.fallbacks[0].callback is image_to_video_fsm.cancel_conversation
+    assert (
+        unified_handler.fallbacks[0].callback is image_to_video_fsm.cancel_conversation
+    )
 
 
 @pytest.mark.asyncio
@@ -108,9 +110,13 @@ async def test_custom_video_state_expired_before_quota_check(monkeypatch):
     reply_mock = AsyncMock()
     quota_mock = AsyncMock()
 
-    monkeypatch.setattr(image_to_video_fsm, "is_global_menu_command", lambda _text: False)
+    monkeypatch.setattr(
+        image_to_video_fsm, "is_global_menu_command", lambda _text: False
+    )
     monkeypatch.setattr(image_to_video_fsm, "robust_reply_text", reply_mock)
-    monkeypatch.setattr(image_to_video_fsm.permission_service, "check_quota", quota_mock)
+    monkeypatch.setattr(
+        image_to_video_fsm.permission_service, "check_quota", quota_mock
+    )
 
     update = SimpleNamespace(
         effective_user=_build_user(),
@@ -126,7 +132,7 @@ async def test_custom_video_state_expired_before_quota_check(monkeypatch):
                 "duration": "5s",
                 "lora_name": "",
                 "image_path": None,
-            }
+            },
         },
     )
 
@@ -164,7 +170,7 @@ async def test_edit_image_empty_images_before_quota_check(monkeypatch):
                 "cost": 2,
                 "images": [],
                 "lora_name": "",
-            }
+            },
         },
     )
 
@@ -202,7 +208,7 @@ async def test_edit_image_duplicate_prompt_during_submission_is_ignored(monkeypa
                 "images": ["/tmp/demo.png"],
                 "lora_name": "",
                 "submitting": True,
-            }
+            },
         },
     )
 
@@ -229,7 +235,9 @@ async def test_start_edit_image_routes_free_edit_to_lora_selection(monkeypatch):
     )
 
     monkeypatch.setitem(
-        __import__("src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]).GLOBAL_REVERSE_MAP,
+        __import__(
+            "src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]
+        ).GLOBAL_REVERSE_MAP,
         "自由P图",
         "menu.free_edit",
     )
@@ -243,11 +251,12 @@ async def test_start_edit_image_routes_free_edit_to_lora_selection(monkeypatch):
     assert "请选择生成方式" in reply_mock.await_args.args[1]
     reply_markup = reply_mock.await_args.kwargs["reply_markup"]
     assert reply_markup is not None
-    inline_buttons = [
-        button
-        for row in reply_markup.inline_keyboard
-        for button in row
-    ]
+    inline_buttons = [button for row in reply_markup.inline_keyboard for button in row]
+    assert any(
+        button.text == "🎨 自由P图 v2.5"
+        and button.callback_data == edit_image_fsm.EDIT_LORA_FREE_EDIT_V2_5_CALLBACK
+        for button in inline_buttons
+    )
     assert any(
         button.text == "🎨 自由P图 v3"
         and button.callback_data == edit_image_fsm.EDIT_LORA_FREE_EDIT_V2_CALLBACK
@@ -267,7 +276,9 @@ async def test_start_edit_image_v2_skips_lora_selection(monkeypatch):
     context = SimpleNamespace(user_data={})
 
     monkeypatch.setitem(
-        __import__("src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]).GLOBAL_REVERSE_MAP,
+        __import__(
+            "src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]
+        ).GLOBAL_REVERSE_MAP,
         "自由P图 v2",
         "menu.free_edit_v2",
     )
@@ -298,8 +309,12 @@ async def test_edit_image_v2_submit_upgrades_to_v3_chain(monkeypatch):
     monkeypatch.setattr(edit_image_fsm, "is_global_menu_command", lambda _text: False)
     monkeypatch.setattr(edit_image_fsm, "robust_reply_text", reply_mock)
     monkeypatch.setattr(edit_image_fsm.permission_service, "check_quota", AsyncMock())
-    monkeypatch.setattr(edit_image_fsm, "process_generation_task", fake_process_generation_task)
-    monkeypatch.setattr(edit_image_fsm, "create_background_task", fake_create_background_task)
+    monkeypatch.setattr(
+        edit_image_fsm, "process_generation_task", fake_process_generation_task
+    )
+    monkeypatch.setattr(
+        edit_image_fsm, "create_background_task", fake_create_background_task
+    )
 
     update = _build_update_with_message(text="make it cinematic")
     context = SimpleNamespace(
@@ -333,7 +348,9 @@ async def test_start_edit_image_english_lora_buttons(monkeypatch):
     context = SimpleNamespace(user_data={}, lang="en")
 
     monkeypatch.setitem(
-        __import__("src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]).GLOBAL_REVERSE_MAP,
+        __import__(
+            "src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]
+        ).GLOBAL_REVERSE_MAP,
         "🎨 Free Edit",
         "menu.free_edit",
     )
@@ -376,7 +393,9 @@ async def test_main_bot_stale_quick_image_entries_route_to_lazy_bot(
     )
 
     monkeypatch.setitem(
-        __import__("src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]).GLOBAL_REVERSE_MAP,
+        __import__(
+            "src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]
+        ).GLOBAL_REVERSE_MAP,
         button_text,
         route_key,
     )
@@ -734,7 +753,9 @@ async def test_quick_image_cleans_downloaded_input_when_planning_rejects(
         AsyncMock(return_value=str(downloaded_path)),
     )
     monkeypatch.setattr(quick_image_fsm, "load_prompts", lambda: {})
-    monkeypatch.setattr(quick_image_fsm, "list_quick_faceswap_template_files", lambda: [])
+    monkeypatch.setattr(
+        quick_image_fsm, "list_quick_faceswap_template_files", lambda: []
+    )
     monkeypatch.setattr("src.services.fsm_temp_file_service.TMP_DIR", str(temp_root))
 
     update = SimpleNamespace(
@@ -886,7 +907,9 @@ async def test_qqcc_default_ai_draw_scene_uses_scene_prompt_with_free_edit(monke
     monkeypatch.setattr(
         quick_image_fsm, "create_background_task", fake_create_background_task
     )
-    load_prompts_mock = Mock(side_effect=AssertionError("QQCC draw scenes must not read prompts.ini"))
+    load_prompts_mock = Mock(
+        side_effect=AssertionError("QQCC draw scenes must not read prompts.ini")
+    )
     monkeypatch.setattr(quick_image_fsm, "load_prompts", load_prompts_mock)
 
     update = SimpleNamespace(
@@ -925,7 +948,9 @@ async def test_qqcc_default_ai_draw_scene_uses_scene_prompt_with_free_edit(monke
 
 
 @pytest.mark.asyncio
-async def test_qqcc_ai_draw_scene_runs_postprocess_chain_before_final_result(monkeypatch):
+async def test_qqcc_ai_draw_scene_runs_postprocess_chain_before_final_result(
+    monkeypatch,
+):
     reply_mock = AsyncMock(return_value=SimpleNamespace(message_id=77))
     scheduled = []
     calls = []
@@ -1123,7 +1148,9 @@ async def test_start_edit_image_routes_i2i_pro_to_reference_image(monkeypatch):
     )
 
     monkeypatch.setitem(
-        __import__("src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]).GLOBAL_REVERSE_MAP,
+        __import__(
+            "src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]
+        ).GLOBAL_REVERSE_MAP,
         "幻想换脸",
         "menu.i2i_pro",
     )
@@ -1196,6 +1223,124 @@ async def test_edit_image_lora_selection_can_switch_to_free_edit_v2(monkeypatch)
     assert "lora_strength" not in fsm_data
     edit_mock.assert_awaited_once()
     assert "自由P图 v3" in edit_mock.await_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_edit_image_lora_selection_can_switch_to_free_edit_v2_5(monkeypatch):
+    edit_mock = AsyncMock()
+    monkeypatch.setattr(edit_image_fsm, "robust_edit_text", edit_mock)
+
+    query = SimpleNamespace(
+        data=edit_image_fsm.EDIT_LORA_FREE_EDIT_V2_5_CALLBACK,
+        answer=AsyncMock(),
+        message=SimpleNamespace(),
+    )
+    update = SimpleNamespace(callback_query=query)
+    context = SimpleNamespace(
+        user_data={
+            "edit_image_data": {
+                "mode": MODE_IMG2IMG_LORA,
+                "cost": 6,
+                "images": [],
+                "lora_name": "legacy-lora",
+                "lora_strength": 0.8,
+            }
+        }
+    )
+
+    result = await edit_image_fsm.handle_lora_selection(update, context)
+
+    assert result == edit_image_fsm.EditImageState.WAIT_REFERENCE_IMAGES
+    query.answer.assert_awaited_once()
+    fsm_data = context.user_data["edit_image_data"]
+    assert fsm_data["mode"] == MODE_FREE_EDIT_V2_5
+    assert fsm_data["cost"] == 3
+    assert "lora_name" not in fsm_data
+    assert "lora_strength" not in fsm_data
+    edit_mock.assert_awaited_once()
+    assert "自由P图 v2.5" in edit_mock.await_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_edit_image_v2_5_submits_single_stage_generation(monkeypatch):
+    scheduled = []
+    captured = []
+
+    async def fake_process_generation_task(**kwargs):
+        captured.append(kwargs)
+
+    def fake_create_background_task(_context, coroutine):
+        scheduled.append(coroutine)
+
+    v3_submit_mock = Mock()
+    monkeypatch.setattr(
+        edit_image_fsm, "process_generation_task", fake_process_generation_task
+    )
+    monkeypatch.setattr(edit_image_fsm, "process_free_edit_v3_task", v3_submit_mock)
+    monkeypatch.setattr(
+        edit_image_fsm, "create_background_task", fake_create_background_task
+    )
+
+    edit_image_fsm._submit_edit_image_task(
+        SimpleNamespace(),
+        mode=MODE_FREE_EDIT_V2_5,
+        chat_id=10001,
+        user_id=12345,
+        username="tester",
+        prompt="cinematic portrait",
+        images=["/tmp/reference.png"],
+        lora_name="",
+    )
+
+    assert len(scheduled) == 1
+    await scheduled[0]
+    assert captured == [
+        {
+            "context": SimpleNamespace(),
+            "chat_id": 10001,
+            "user_id": 12345,
+            "username": "tester",
+            "prompt": "cinematic portrait",
+            "images": ["/tmp/reference.png"],
+            "is_video": False,
+            "task_type": MODE_FREE_EDIT_V2_5,
+            "cleanup": True,
+            "lora_name": "",
+            "lora_strength": 1.0,
+        }
+    ]
+    v3_submit_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_edit_image_v2_5_rejects_additional_reference_image(monkeypatch):
+    reply_mock = AsyncMock()
+    get_file_mock = AsyncMock()
+    monkeypatch.setattr(edit_image_fsm, "robust_reply_text", reply_mock)
+
+    update = SimpleNamespace(
+        message=SimpleNamespace(
+            document=None,
+            photo=[SimpleNamespace(file_id="second-image")],
+        )
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(get_file=get_file_mock),
+        user_data={
+            "edit_image_data": {
+                "mode": MODE_FREE_EDIT_V2_5,
+                "cost": 3,
+                "images": ["/tmp/first.png"],
+            }
+        },
+    )
+
+    result = await edit_image_fsm.receive_additional_image(update, context)
+
+    assert result == edit_image_fsm.EditImageState.WAIT_PROMPT
+    get_file_mock.assert_not_awaited()
+    reply_mock.assert_awaited_once()
+    assert "只需要 1 张图片" in reply_mock.await_args.args[1]
 
 
 @pytest.mark.asyncio
@@ -1290,7 +1435,9 @@ async def test_edit_image_special_lora_normalizes_prompt_before_submit(monkeypat
     monkeypatch.setattr(edit_image_fsm, "is_global_menu_command", lambda _text: False)
     monkeypatch.setattr(edit_image_fsm, "robust_reply_text", reply_mock)
     monkeypatch.setattr(edit_image_fsm.permission_service, "check_quota", quota_mock)
-    monkeypatch.setattr(edit_image_fsm, "create_background_task", create_background_task_mock)
+    monkeypatch.setattr(
+        edit_image_fsm, "create_background_task", create_background_task_mock
+    )
     monkeypatch.setattr(
         edit_image_fsm,
         "process_generation_task",
@@ -1352,7 +1499,7 @@ async def test_ltx_video_state_expired_before_quota_check(monkeypatch):
                 "duration": "5s",
                 "prompt": "make video",
                 "image_path": None,
-            }
+            },
         },
     )
 
@@ -1390,6 +1537,7 @@ async def test_ltx_video_receive_image_after_setup_requests_prompt(monkeypatch):
         effective_chat=SimpleNamespace(id=10001),
         message=message,
     )
+
     def translate(key, **kwargs):
         if key == "fsm.ltx_video.prompt_request_text":
             return (
@@ -1439,7 +1587,9 @@ async def test_start_ltx_video_uses_english_locale(monkeypatch):
     )
 
     update = _build_update_with_message(text="🎬 Pro Video")
-    context = SimpleNamespace(user_data={}, lang="en", t=lambda key, **kwargs: f"T:{key}")
+    context = SimpleNamespace(
+        user_data={}, lang="en", t=lambda key, **kwargs: f"T:{key}"
+    )
 
     result = await ltx_video_fsm.start_ltx_video(update, context)
 
@@ -1465,7 +1615,9 @@ async def test_start_ltx_video_opens_lora_selection_first(monkeypatch):
     )
 
     update = _build_update_with_message(text="🎬 高级图生视频")
-    context = SimpleNamespace(user_data={}, lang="zh", t=lambda key, **kwargs: f"T:{key}")
+    context = SimpleNamespace(
+        user_data={}, lang="zh", t=lambda key, **kwargs: f"T:{key}"
+    )
 
     result = await ltx_video_fsm.start_ltx_video(update, context)
 
@@ -1672,7 +1824,9 @@ async def test_ltx_video_confirm_generation_forwards_selected_lora(monkeypatch):
     quota_mock = AsyncMock()
 
     monkeypatch.setattr("src.utils.safe_answer_query", safe_answer_mock)
-    monkeypatch.setattr(ltx_video_fsm, "create_background_task", create_background_task_mock)
+    monkeypatch.setattr(
+        ltx_video_fsm, "create_background_task", create_background_task_mock
+    )
     monkeypatch.setattr(ltx_video_fsm, "process_ltx_video_task", process_task_mock)
     monkeypatch.setattr(ltx_video_fsm, "robust_edit_text", edit_mock)
     monkeypatch.setattr(ltx_video_fsm.permission_service, "check_quota", quota_mock)
@@ -1702,7 +1856,7 @@ async def test_ltx_video_confirm_generation_forwards_selected_lora(monkeypatch):
                         "strength": 0.8,
                     }
                 ],
-            }
+            },
         },
         t=lambda key, **kwargs: f"T:{key}",
     )
@@ -1734,7 +1888,9 @@ async def test_ltx_video_confirm_generation_forwards_start_end_mode(monkeypatch)
     quota_mock = AsyncMock()
 
     monkeypatch.setattr("src.utils.safe_answer_query", safe_answer_mock)
-    monkeypatch.setattr(ltx_video_fsm, "create_background_task", create_background_task_mock)
+    monkeypatch.setattr(
+        ltx_video_fsm, "create_background_task", create_background_task_mock
+    )
     monkeypatch.setattr(ltx_video_fsm, "process_ltx_video_task", process_task_mock)
     monkeypatch.setattr(ltx_video_fsm, "robust_edit_text", edit_mock)
     monkeypatch.setattr(ltx_video_fsm.permission_service, "check_quota", quota_mock)
@@ -1761,7 +1917,7 @@ async def test_ltx_video_confirm_generation_forwards_start_end_mode(monkeypatch)
                 "image_path": "/tmp/start.png",
                 "end_image_path": "/tmp/end.png",
                 "lora_items": [],
-            }
+            },
         },
         t=lambda key, **kwargs: f"T:{key}",
     )
@@ -2090,7 +2246,7 @@ async def test_ltx_video_confirm_generation_forwards_extension_chain_context(
                 "extension_prev_task_id": "ltx-task-2",
                 "chain_task_ids": ["ltx-task-1", "ltx-task-2"],
                 "lora_items": [],
-            }
+            },
         },
         t=lambda key, **kwargs: f"T:{key}",
     )
@@ -2118,7 +2274,8 @@ def test_ltx_video_fsm_has_no_bot_video_audio_upload_state():
         getattr(callback, "pattern", None).pattern
         for callbacks in handler.states.values()
         for callback in callbacks
-        if isinstance(callback, CallbackQueryHandler) and getattr(callback, "pattern", None)
+        if isinstance(callback, CallbackQueryHandler)
+        and getattr(callback, "pattern", None)
     ]
 
     assert "WAIT_VIDEO" not in state_names
@@ -2135,7 +2292,9 @@ async def test_ltx_video_unexpected_input_switch_lang_exits_and_switches_immedia
     monkeypatch.setattr(ltx_video_fsm, "robust_reply_text", reply_mock)
     monkeypatch.setattr(ltx_video_fsm, "is_global_menu_command", lambda _text: True)
     monkeypatch.setitem(
-        __import__("src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]).GLOBAL_REVERSE_MAP,
+        __import__(
+            "src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]
+        ).GLOBAL_REVERSE_MAP,
         "🌐 中文",
         "menu.switch_lang",
     )
@@ -2168,9 +2327,13 @@ async def test_image_to_video_state_expired_before_quota_check(monkeypatch):
     reply_mock = AsyncMock()
     quota_mock = AsyncMock()
 
-    monkeypatch.setattr(image_to_video_fsm, "is_global_menu_command", lambda _text: False)
+    monkeypatch.setattr(
+        image_to_video_fsm, "is_global_menu_command", lambda _text: False
+    )
     monkeypatch.setattr(image_to_video_fsm, "robust_reply_text", reply_mock)
-    monkeypatch.setattr(image_to_video_fsm.permission_service, "check_quota", quota_mock)
+    monkeypatch.setattr(
+        image_to_video_fsm.permission_service, "check_quota", quota_mock
+    )
 
     update = SimpleNamespace(
         effective_user=_build_user(),
@@ -2186,7 +2349,7 @@ async def test_image_to_video_state_expired_before_quota_check(monkeypatch):
                 "duration": "5s",
                 "lora_name": "test-lora",
                 "image_path": None,
-            }
+            },
         },
     )
 
@@ -2225,7 +2388,9 @@ async def test_image_to_video_legacy_video_lora_data_no_longer_used():
 
     assert result == ConversationHandler.END
     query.answer.assert_awaited_once()
-    query.edit_message_text.assert_awaited_once_with("交互已失效或任务已提交，请重新开始")
+    query.edit_message_text.assert_awaited_once_with(
+        "交互已失效或任务已提交，请重新开始"
+    )
     assert "video_lora_data" in context.user_data
 
 
@@ -2236,9 +2401,13 @@ async def test_image_to_video_unexpected_input_switch_lang_exits_and_switches_im
     reply_mock = AsyncMock()
     toggle_mock = AsyncMock(return_value=("切到中文", "zh-keyboard"))
     monkeypatch.setattr(image_to_video_fsm, "robust_reply_text", reply_mock)
-    monkeypatch.setattr(image_to_video_fsm, "is_global_menu_command", lambda _text: True)
+    monkeypatch.setattr(
+        image_to_video_fsm, "is_global_menu_command", lambda _text: True
+    )
     monkeypatch.setitem(
-        __import__("src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]).GLOBAL_REVERSE_MAP,
+        __import__(
+            "src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]
+        ).GLOBAL_REVERSE_MAP,
         "🌐 中文",
         "menu.switch_lang",
     )
@@ -2277,7 +2446,9 @@ async def test_start_image_to_video_english_lora_buttons(monkeypatch):
     context = SimpleNamespace(user_data={}, lang="en")
 
     monkeypatch.setitem(
-        __import__("src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]).GLOBAL_REVERSE_MAP,
+        __import__(
+            "src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]
+        ).GLOBAL_REVERSE_MAP,
         "🎬 Img2Video",
         "menu.video_lora",
     )
@@ -2291,9 +2462,7 @@ async def test_start_image_to_video_english_lora_buttons(monkeypatch):
     assert len(keyboard.inline_keyboard[0]) == 4
     assert len(keyboard.inline_keyboard[1]) == 4
     assert [
-        button.callback_data
-        for row in keyboard.inline_keyboard[:2]
-        for button in row
+        button.callback_data for row in keyboard.inline_keyboard[:2] for button in row
     ] == [
         "i2v_setup_lora_",
         "i2v_setup_lora_BreastGrow",
@@ -2304,26 +2473,17 @@ async def test_start_image_to_video_english_lora_buttons(monkeypatch):
         "i2v_setup_lora_Footjob",
         "i2v_setup_lora_Insertion",
     ]
-    assert [
-        button.callback_data
-        for button in keyboard.inline_keyboard[2]
-    ] == [
+    assert [button.callback_data for button in keyboard.inline_keyboard[2]] == [
         image_to_video_fsm.I2V_SETUP_MODE_SINGLE,
         image_to_video_fsm.I2V_SETUP_MODE_END,
     ]
-    assert [
-        button.callback_data
-        for button in keyboard.inline_keyboard[3]
-    ] == [
+    assert [button.callback_data for button in keyboard.inline_keyboard[3]] == [
         "i2v_setup_res_preview",
         "i2v_setup_res_small",
         "i2v_setup_res_standard",
         "i2v_setup_res_hd",
     ]
-    assert [
-        button.callback_data
-        for button in keyboard.inline_keyboard[4]
-    ] == [
+    assert [button.callback_data for button in keyboard.inline_keyboard[4]] == [
         "i2v_setup_dur_5",
         "i2v_setup_dur_8",
         "i2v_setup_dur_10",
@@ -2334,9 +2494,7 @@ async def test_start_image_to_video_english_lora_buttons(monkeypatch):
         "10s (*3)",
     ]
     callback_data = [
-        button.callback_data
-        for row in keyboard.inline_keyboard
-        for button in row
+        button.callback_data for row in keyboard.inline_keyboard for button in row
     ]
     assert image_to_video_fsm.I2V_SETUP_CONFIRM not in callback_data
     assert "send the start image" in reply_mock.await_args.args[1]
@@ -2373,7 +2531,11 @@ async def test_image_to_video_initial_setup_updates_all_choices(monkeypatch):
 
     assert result == image_to_video_fsm.ImageToVideoState.WAIT_LORA_SELECTION
     assert context.user_data["image_to_video_data"]["use_end_frame"] is True
-    assert edit_mock.await_args.kwargs["reply_markup"].inline_keyboard[2][1].text.startswith("✅")
+    assert (
+        edit_mock.await_args.kwargs["reply_markup"]
+        .inline_keyboard[2][1]
+        .text.startswith("✅")
+    )
 
     query.data = "i2v_setup_res_hd"
     await image_to_video_fsm.handle_initial_setup_selection(update, context)
@@ -2603,7 +2765,9 @@ async def test_main_bot_stale_quick_video_text_entry_routes_to_lazy_bot(monkeypa
     )
 
     monkeypatch.setitem(
-        __import__("src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]).GLOBAL_REVERSE_MAP,
+        __import__(
+            "src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]
+        ).GLOBAL_REVERSE_MAP,
         "🛏️ GIF Missionary",
         "menu.video_edit_missionary",
     )
@@ -2620,7 +2784,9 @@ async def test_main_bot_stale_quick_video_text_entry_routes_to_lazy_bot(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_main_bot_stale_quick_video_callback_entry_routes_to_lazy_bot(monkeypatch):
+async def test_main_bot_stale_quick_video_callback_entry_routes_to_lazy_bot(
+    monkeypatch,
+):
     edit_mock = AsyncMock()
     answer_mock = AsyncMock()
 
@@ -2731,7 +2897,11 @@ async def test_start_faceswap_uses_english_locale(monkeypatch):
 @pytest.mark.parametrize(
     ("conversation_tag", "lora_name", "expected_task_type"),
     [
-        (image_to_video_fsm.IMAGE_TO_VIDEO_CONVERSATION_TAG, "BreastGrow", MODE_IMAGE_TO_VIDEO),
+        (
+            image_to_video_fsm.IMAGE_TO_VIDEO_CONVERSATION_TAG,
+            "BreastGrow",
+            MODE_IMAGE_TO_VIDEO,
+        ),
         ("CUSTOM_VIDEO", "", MODE_CUSTOM_VIDEO),
     ],
 )
@@ -2742,10 +2912,16 @@ async def test_image_to_video_receive_prompt_uses_unified_image_to_video_service
     quota_mock = AsyncMock()
     create_background_task_mock = Mock()
 
-    monkeypatch.setattr(image_to_video_fsm, "is_global_menu_command", lambda _text: False)
+    monkeypatch.setattr(
+        image_to_video_fsm, "is_global_menu_command", lambda _text: False
+    )
     monkeypatch.setattr(image_to_video_fsm, "robust_reply_text", reply_mock)
-    monkeypatch.setattr(image_to_video_fsm.permission_service, "check_quota", quota_mock)
-    monkeypatch.setattr(image_to_video_fsm, "create_background_task", create_background_task_mock)
+    monkeypatch.setattr(
+        image_to_video_fsm.permission_service, "check_quota", quota_mock
+    )
+    monkeypatch.setattr(
+        image_to_video_fsm, "create_background_task", create_background_task_mock
+    )
     monkeypatch.setattr(
         image_to_video_fsm,
         "process_image_to_video_task",
@@ -2789,10 +2965,16 @@ async def test_image_to_video_receive_prompt_submits_optional_end_frame(monkeypa
     quota_mock = AsyncMock()
     create_background_task_mock = Mock()
 
-    monkeypatch.setattr(image_to_video_fsm, "is_global_menu_command", lambda _text: False)
+    monkeypatch.setattr(
+        image_to_video_fsm, "is_global_menu_command", lambda _text: False
+    )
     monkeypatch.setattr(image_to_video_fsm, "robust_reply_text", reply_mock)
-    monkeypatch.setattr(image_to_video_fsm.permission_service, "check_quota", quota_mock)
-    monkeypatch.setattr(image_to_video_fsm, "create_background_task", create_background_task_mock)
+    monkeypatch.setattr(
+        image_to_video_fsm.permission_service, "check_quota", quota_mock
+    )
+    monkeypatch.setattr(
+        image_to_video_fsm, "create_background_task", create_background_task_mock
+    )
     monkeypatch.setattr(
         image_to_video_fsm,
         "process_image_to_video_task",
@@ -2880,10 +3062,10 @@ async def test_quick_video_missing_image_path_shows_alert(monkeypatch):
         bot=SimpleNamespace(),
         user_data={
             "in_conversation": "QUICK_VIDEO_test",
-                "quick_video_data": {
-                    "mode": MODE_DOGGY_STYLE,
-                    "resolution": "512p",
-                    "duration": "5s",
+            "quick_video_data": {
+                "mode": MODE_DOGGY_STYLE,
+                "resolution": "512p",
+                "duration": "5s",
                 "image_path": None,
             },
         },
@@ -2901,7 +3083,9 @@ async def test_quick_video_missing_image_path_shows_alert(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_quick_video_insufficient_credits_cleans_up_without_nameerror(monkeypatch):
+async def test_quick_video_insufficient_credits_cleans_up_without_nameerror(
+    monkeypatch,
+):
     safe_answer_mock = AsyncMock()
     send_message_mock = AsyncMock()
     cleanup_mock = Mock()
