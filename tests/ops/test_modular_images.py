@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import yaml
@@ -79,6 +80,22 @@ def test_python_bases_and_thin_targets_are_explicit():
     relay_section = worker.split("AS worker-relay", 1)[1]
     assert "workers/comfy_agent" not in relay_section
     assert "workflows" not in relay_section
+
+
+def test_private_bot_worker_image_contains_its_qqcc_runtime_dependency():
+    control = (ROOT / "deploy/docker/Dockerfile.control-plane").read_text(
+        encoding="utf-8"
+    )
+    private_worker = control.split("AS private-bot-worker", 1)[1].split(
+        "AS paid-group-bot", 1
+    )[0]
+    assert "COPY qqcc_private_bot /app/qqcc_private_bot" in private_worker
+    assert "COPY qqcc_bot /app/qqcc_bot" in private_worker
+
+    catalog = json.loads(
+        (ROOT / "deploy/release-artifacts-v2.json").read_text(encoding="utf-8")
+    )
+    assert "qqcc_bot/**" in catalog["artifacts"]["private-bot-worker"]["inputs"]
 
 
 def test_dashboard_and_qqcc_frontends_are_separate_targets():

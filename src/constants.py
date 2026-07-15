@@ -51,10 +51,12 @@ MODE_I2I_PRO = "i2i_pro"
 MODE_I2I_DRAW = "i2i_draw"
 MODE_IMG2IMG_LORA = "img2img_lora"
 MODE_FREE_EDIT_V2 = "free_edit_v2"
+MODE_FREE_EDIT_V2_5 = "free_edit_v2_5"
 MODE_FREE_EDIT_V3 = "free_edit_v3"
 MODE_PORNMASTER_FLUX2_SINGLE_EDIT = "pornmaster_flux2_single_edit"
 MODE_PORNMASTER_FLUX2_MULTI_EDIT = "pornmaster_flux2_multi_edit"
 MODE_PORNMASTER_FLUX2_EDIT_BF16 = "pornmaster_flux2_edit_bf16"
+MODE_PORNMASTER_FLUX2_MULTI_EDIT_BF16 = "pornmaster_flux2_multi_edit_bf16"
 MODE_TEMPLATE_CONTRIBUTE = "template_contribute"
 MODE_NONE = "none"
 
@@ -64,9 +66,11 @@ MODE_NAME_MAP = {
     MODE_I2I_PRO: "task.mode_i2i_pro",
     MODE_I2I_DRAW: "task.mode_i2i_draw",
     MODE_IMG2IMG_LORA: "task.mode_img2img_lora",
+    MODE_FREE_EDIT_V2_5: "task.mode_free_edit_v2_5",
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT: "task.mode_free_edit_v2",
     MODE_PORNMASTER_FLUX2_MULTI_EDIT: "task.mode_free_edit_v2",
     MODE_PORNMASTER_FLUX2_EDIT_BF16: "task.mode_free_edit_v3",
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT_BF16: "task.mode_free_edit_v2_5",
     MODE_UNDRESS: "task.mode_undress",
     MODE_MASTURBATION: "task.mode_masturbation",
     MODE_FACESWAP_STEP1: "task.mode_faceswap_step1",
@@ -122,9 +126,11 @@ TASK_COSTS = {
     MODE_I2I_PRO: 6,
     MODE_I2I_DRAW: 3,
     MODE_IMG2IMG_LORA: 6,
+    MODE_FREE_EDIT_V2_5: 3,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT: 2,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT: 6,
     MODE_PORNMASTER_FLUX2_EDIT_BF16: 6,
+    MODE_PORNMASTER_FLUX2_MULTI_EDIT_BF16: 7,
 }
 
 # Default Video Resolutions based on User Group
@@ -380,6 +386,7 @@ GENERATION_TASK_TYPES = [
     MODE_TXT2IMG,
     MODE_I2I_PRO,
     MODE_I2I_DRAW,
+    MODE_FREE_EDIT_V2_5,
     MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     MODE_PORNMASTER_FLUX2_MULTI_EDIT,
     MODE_PORNMASTER_FLUX2_EDIT_BF16,

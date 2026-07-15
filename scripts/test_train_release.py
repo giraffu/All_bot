@@ -244,6 +244,7 @@ class TestTrainCoordinator:
         pr: int,
         slot: str,
         runner: ReleaseRunner,
+        skip_test_execution: bool = False,
     ) -> None:
         sha = self._sha(sha)
         slot = slot.upper()
@@ -267,6 +268,8 @@ class TestTrainCoordinator:
                 for track in ("control-plane", "test-execution")
                 if plans[track].get("artifacts") or plans[track].get("services")
             ]
+            if skip_test_execution:
+                affected = [track for track in affected if track != "test-execution"]
             if not affected:
                 raise TestTrainError("candidate has no control-plane or test-execution changes")
             completed: list[str] = []
@@ -392,6 +395,11 @@ def build_parser() -> argparse.ArgumentParser:
     deploy.add_argument("--pr", type=int, required=True)
     deploy.add_argument("--slot", required=True)
     deploy.add_argument("--execute", action="store_true")
+    deploy.add_argument(
+        "--skip-test-execution",
+        action="store_true",
+        help="Deploy only the control-plane and defer test Worker mutation.",
+    )
     accept = subparsers.add_parser("accept")
     accept.add_argument("--sha", required=True)
     accept.add_argument("--evidence", type=Path, required=True)
@@ -418,7 +426,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             if not args.execute:
                 raise TestTrainError("candidate deployment requires --execute")
             coordinator.deploy_candidate(
-                args.sha, pr=args.pr, slot=args.slot, runner=runner
+                args.sha,
+                pr=args.pr,
+                slot=args.slot,
+                runner=runner,
+                skip_test_execution=args.skip_test_execution,
             )
             result = coordinator.status()
         elif args.command == "accept":

@@ -47,6 +47,7 @@ python scripts/manage_ai_workspaces.py refresh --slot A
 python scripts/test_train_release.py status
 python scripts/test_train_release.py plan --sha <40位SHA>
 python scripts/test_train_release.py deploy --sha <40位SHA> --pr <PR> --slot A --execute
+python scripts/test_train_release.py deploy --sha <40位SHA> --pr <PR> --slot A --execute --skip-test-execution
 python scripts/test_train_release.py accept --sha <40位SHA> --evidence <json>
 python scripts/test_train_release.py block --sha <40位SHA> --reason <原因>
 ```
@@ -59,6 +60,7 @@ python scripts/test_train_release.py block --sha <40位SHA> --reason <原因>
 - 只允许精确 `refs/heads/codex/test-train` 的可信 CI bundle 标记为 `test-candidate`。candidate 只能部署 test，禁止 `verify-test`、prod、fast-track 或正式晋级。
 - 不让独立功能分支横向覆盖测试站。任务必须先合入 train，后一个任务在前一个 accepted candidate 上继续累积。
 - GPU 基线无可用 artifact 时只接受 `availability: unavailable` 的读取计划；不得把它当作 GPU 验收或自动 mutation，涉及 GPU 的任务仍必须交给对应 canary/operator。
+- 默认仍按 `control-plane` → `test-execution` 部署。只有用户或集成 AI 明确把 Worker 留到匹配 GPU/ComfyUI 的独立窗口时，才可显式传 `--skip-test-execution`；状态与 acceptance evidence 只能记录实际部署的 `control-plane`，不得声称 Worker 已更新或验收。
 - 部署事务失败时逆序恢复已完成 track；部署成功但业务失败时 block train、保留现场并从原槽位做 forward-fix，不自动改写 Git 历史。
 
 ## 5. 交付门禁

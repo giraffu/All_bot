@@ -2,6 +2,7 @@ from config import ENABLE_PUBLIC_SHARE
 from src.constants import (
     MODE_CUSTOM_VIDEO,
     MODE_EDIT,
+    MODE_FREE_EDIT_V2_5,
     MODE_FACESWAP_STEP1,
     MODE_I2I_PRO,
     MODE_IMAGE_TO_VIDEO,
@@ -64,7 +65,9 @@ def resolve_task_id_from_reply_markup(reply_markup: InlineKeyboardMarkup | None)
         for button in row:
             callback_data = str(getattr(button, "callback_data", "") or "").strip()
             if callback_data.startswith(GALLERY_SUBMIT_CALLBACK_PREFIX):
-                return callback_data.removeprefix(GALLERY_SUBMIT_CALLBACK_PREFIX).strip()
+                return callback_data.removeprefix(
+                    GALLERY_SUBMIT_CALLBACK_PREFIX
+                ).strip()
     return ""
 
 
@@ -77,6 +80,7 @@ def _supports_gallery_submission(task_type: str, allow_contribute: bool) -> bool
         MODE_LTX_VIDEO,
         MODE_WAN22_VIDEO_V2,
         MODE_IMG2IMG_LORA,
+        MODE_FREE_EDIT_V2_5,
         MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
         MODE_PORNMASTER_FLUX2_MULTI_EDIT,
         MODE_PORNMASTER_FLUX2_EDIT_BF16,
@@ -251,8 +255,7 @@ def _build_default_result_keyboard(
 def _is_publish_callback(callback_data: str | None) -> bool:
     normalized_data = str(callback_data or "").strip()
     return any(
-        normalized_data.startswith(prefix)
-        for prefix in PUBLISH_CALLBACK_PREFIXES
+        normalized_data.startswith(prefix) for prefix in PUBLISH_CALLBACK_PREFIXES
     )
 
 

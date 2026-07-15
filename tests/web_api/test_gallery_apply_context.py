@@ -60,6 +60,34 @@ class _FakeSession:
         return False
 
 
+@pytest.mark.asyncio
+async def test_free_edit_v25_apply_context_requires_same_number_of_new_images():
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-v25-dual",
+        type="free_edit_v2_5",
+        prompt="combine references",
+        input_file="history/a.png|history/b.png",
+        width=1024,
+        height=1024,
+    )
+    post = GalleryPost(
+        id=25,
+        task_id="task-v25-dual",
+        media_type="image",
+        width=1024,
+        height=1024,
+    )
+    session = _FakeSession([_FakeResult(single=post), _FakeResult(many=[history])])
+
+    response = await get_gallery_apply_context_payload(post_id=25, db=session)
+
+    assert response.required_image_count == 2
+    assert response.input_files == []
+    assert response.input_file_urls == []
+
+
 def _async_r2_exists_for(existing_keys: set[str]):
     async def _exists(object_key):
         return object_key in existing_keys

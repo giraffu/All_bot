@@ -60,7 +60,10 @@ def _status(
             "pornmaster_flux2_single_edit",
             "pornmaster_flux2_multi_edit",
         ],
-        "pornmaster_flux2_edit_bf16": ["pornmaster_flux2_edit_bf16"],
+        "pornmaster_flux2_edit_bf16": [
+            "pornmaster_flux2_edit_bf16",
+            "pornmaster_flux2_multi_edit_bf16",
+        ],
     }
     return {
         "runpod_profile_queue_details": [
@@ -168,7 +171,9 @@ def _runpod_worker(
         "pornmaster_flux2_edit": (
             "pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit"
         ),
-        "pornmaster_flux2_edit_bf16": "pornmaster_flux2_edit_bf16",
+        "pornmaster_flux2_edit_bf16": (
+            "pornmaster_flux2_edit_bf16,pornmaster_flux2_multi_edit_bf16"
+        ),
     }
     return {
         "agent_id": f"{profile_agent[profile]}{slot}",
@@ -475,7 +480,10 @@ async def test_autoscaler_scales_pornmaster_flux2_edit_bf16_profile():
             profile="pornmaster_flux2_edit_bf16",
             pending=61,
             wait=1800,
-            pending_count_by_task_type={"pornmaster_flux2_edit_bf16": 61},
+            pending_count_by_task_type={
+                "pornmaster_flux2_edit_bf16": 1,
+                "pornmaster_flux2_multi_edit_bf16": 60,
+            },
         ),
         workers_payload=_workers(_local_worker("pornmaster_flux2_edit_bf16")),
         operations_payload={"operations": []},
@@ -491,6 +499,9 @@ async def test_autoscaler_scales_pornmaster_flux2_edit_bf16_profile():
     ] == 30 * 60
     assert payload["config"]["task_duration_seconds_by_type"][
         "pornmaster_flux2_edit_bf16"
+    ] == 30
+    assert payload["config"]["task_duration_seconds_by_type"][
+        "pornmaster_flux2_multi_edit_bf16"
     ] == 30
     assert decision["action"] == "scale_up"
     assert decision["estimated_clear_time_seconds"] == 1830

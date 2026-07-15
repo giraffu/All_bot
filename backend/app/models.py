@@ -43,6 +43,7 @@ class TaskType(str, Enum):
     PORNMASTER_FLUX2_SINGLE_EDIT = "pornmaster_flux2_single_edit"
     PORNMASTER_FLUX2_MULTI_EDIT = "pornmaster_flux2_multi_edit"
     PORNMASTER_FLUX2_EDIT_BF16 = "pornmaster_flux2_edit_bf16"
+    PORNMASTER_FLUX2_MULTI_EDIT_BF16 = "pornmaster_flux2_multi_edit_bf16"
 
 
 class TaskResponse(BaseModel):

@@ -5,6 +5,7 @@ export type TemplateApplyTaskType =
   | 'i2i_draw'
   | 'edit'
   | 'img2img_lora'
+  | 'free_edit_v2_5'
   | 'pornmaster_flux2_edit_bf16'
   | 'face_swap'
   | 'face_video'
@@ -29,6 +30,7 @@ export interface RawApplyContextResponse {
   source_post_id?: unknown
   billing_resolution?: unknown
   requested_duration?: unknown
+  required_image_count?: unknown
   task_id?: unknown
   media_type?: unknown
   prompt?: unknown
@@ -72,6 +74,7 @@ export interface TemplateApplyContext {
   height: number | null
   duration: number | null
   requestedDuration: number | null
+  requiredImageCount?: number | null
   billingResolution: string | null
 }
 

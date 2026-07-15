@@ -114,6 +114,7 @@ class ApplyContextResponse(BaseModel):
     source_post_id: Optional[int] = None
     billing_resolution: Optional[str] = None
     requested_duration: Optional[int] = None
+    required_image_count: Optional[int] = None
     task_id: str
     media_type: str
     prompt: Optional[str]

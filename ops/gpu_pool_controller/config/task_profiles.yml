@@ -141,6 +141,7 @@ profiles:
     runtime_profile: pornmaster_flux2_edit
     task_types:
       - pornmaster_flux2_edit_bf16
+      - pornmaster_flux2_multi_edit_bf16
     model_bundles:
       - pornmaster_flux2_edit_bf16_baseline
     required_nodes:

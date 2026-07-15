@@ -32,7 +32,7 @@
 - “帮我改功能”“帮我修 Bug”“帮我联调”“帮我验证配置”这类请求，默认理解为测试环境操作。
 - 只有在用户明确表达“上线”“发布”“部署正式环境”“交付生产”后，才允许执行 `scripts/release.py deploy --env prod ... --execute --confirm-prod`；`safe_deploy.sh` 只用于云正式整体故障时的本地正式灾备。
 - 在用户完成测试验收前，不得把测试环境变更直接同步到正式 Bot、正式 Web、正式 Payment、正式 Central API 或正式 Dashboard。
-- 唯一例外是用户明确授权的 Dashboard 免测试快速发布：使用 `scripts/release.py --env prod --dashboard-fast-track`，仅允许 Dashboard 范围、强制 rolling、仍要求 main/CI/digest/preflight/`--confirm-prod`，不写维护标志且不重建任何非 Dashboard 服务。
+- 明确授权的 Dashboard 免测试快速发布使用 `--dashboard-fast-track`。另有严格限于 private worker 镜像闭包修复的 `--control-plane-repair-fast-track`：复用 verified 测试 SHA，只允许 Dockerfile/catalog 与发布元数据差异，对其它模块证明 inputs/target 等价并对 private digest 做无网络导入 smoke；两者都不放宽 main/CI/digest/preflight/`--confirm-prod`、事务回滚或非目标容器不变门禁。
 
 ## 2.2 云端测试控制面
 
