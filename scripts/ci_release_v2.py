@@ -64,6 +64,24 @@ def _registry_ref_exists(ref: str) -> bool:
     return result.returncode == 0
 
 
+def _unavailable_gpu_artifacts(
+    catalog: dict[str, dict[str, Any]],
+    *,
+    planned_builds: set[str],
+    available_results: set[str],
+    evidence_results: set[str],
+) -> set[str]:
+    """Carry prior GPU gaps forward and invalidate changed profiles without evidence."""
+
+    gpu_artifacts = {
+        name for name, metadata in catalog.items()
+        if metadata["track"] == "gpu-execution"
+    }
+    return (gpu_artifacts - available_results) | (
+        planned_builds - evidence_results
+    )
+
+
 def _build_image(
     *,
     name: str,
@@ -122,13 +140,10 @@ def main() -> int:
     changed = args.changed_file.read_text(encoding="utf-8").splitlines()
     has_previous = bool(args.previous_index and args.previous_index.is_file())
     plan = plan_builds(catalog, changed, has_previous=has_previous)
-    gpu_builds = sorted(name for name in plan.build if catalog[name]["track"] == "gpu-execution")
-    unavailable_gpu = set(gpu_builds) if not args.gpu_manifest else set()
-    if unavailable_gpu:
-        print(
-            "GPU profiles omitted pending profile canary evidence: "
-            + ", ".join(sorted(unavailable_gpu))
-        )
+    gpu_builds = {
+        name for name in plan.build
+        if catalog[name]["track"] == "gpu-execution"
+    }
 
     output = args.output_dir
     results_dir = output / "results"
@@ -148,11 +163,25 @@ def main() -> int:
             }
         )
 
+    evidence_results: set[str] = set()
     if args.gpu_manifest:
         gpu_document = json.loads(args.gpu_manifest.read_text(encoding="utf-8"))
         for name, artifact in gpu_document["artifacts"].items():
             _write_result(results_dir / f"{name}.json", artifact)
             results[name] = artifact
+            evidence_results.add(name)
+
+    unavailable_gpu = _unavailable_gpu_artifacts(
+        catalog,
+        planned_builds=gpu_builds,
+        available_results=set(results),
+        evidence_results=evidence_results,
+    )
+    if unavailable_gpu:
+        print(
+            "GPU profiles omitted pending profile canary evidence: "
+            + ", ".join(sorted(unavailable_gpu))
+        )
 
     for row in build_matrix(catalog, plan):
         name = row["name"]
