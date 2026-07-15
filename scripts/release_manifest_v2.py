@@ -129,7 +129,28 @@ def _validate_manifest(
     if manifest.get("source_sha") != expected_sha:
         raise ManifestV2Error(f"{track} manifest source_sha mismatch")
     artifacts = manifest.get("artifacts")
-    if not isinstance(artifacts, Mapping) or not artifacts:
+    if not isinstance(artifacts, Mapping):
+        raise ManifestV2Error(f"{track} manifest has no artifacts")
+    if track == "gpu-execution":
+        completeness = manifest.get("completeness", "complete")
+        missing = manifest.get("missing_artifacts", [])
+        if completeness not in {"complete", "incomplete"}:
+            raise ManifestV2Error("gpu-execution completeness is invalid")
+        if (
+            not isinstance(missing, list)
+            or not all(isinstance(name, str) and name for name in missing)
+            or len(missing) != len(set(missing))
+        ):
+            raise ManifestV2Error("gpu-execution missing_artifacts is invalid")
+        if set(missing) & set(artifacts):
+            raise ManifestV2Error("gpu-execution available and missing artifacts overlap")
+        if completeness == "complete" and missing:
+            raise ManifestV2Error("complete gpu-execution manifest lists missing artifacts")
+        if completeness == "incomplete" and not missing:
+            raise ManifestV2Error("incomplete gpu-execution manifest must list missing artifacts")
+        if not artifacts and completeness != "incomplete":
+            raise ManifestV2Error("gpu-execution manifest has no artifacts")
+    elif not artifacts:
         raise ManifestV2Error(f"{track} manifest has no artifacts")
     for name, raw_artifact in artifacts.items():
         if not isinstance(raw_artifact, Mapping):
@@ -205,6 +226,8 @@ def select_artifacts(
     if track not in TRACKS:
         raise ManifestV2Error(f"unknown release track: {track}")
     artifacts = release.manifests[track]["artifacts"]
+    if not artifacts:
+        raise ManifestV2Error(f"{track} track has no available artifacts")
     names = list(dict.fromkeys(requested))
     if not names:
         return dict(artifacts)

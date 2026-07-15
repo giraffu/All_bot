@@ -80,18 +80,28 @@ jobs:
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
         run: |
           set -euo pipefail
-          previous_sha="$(git rev-parse "${SOURCE_SHA}^")"
-          git diff --name-only "$previous_sha" "$SOURCE_SHA" > changed-paths.txt
-          mkdir -p previous-release
-          if oras pull "${IMAGE_PREFIX}/allbot-release-v2:${previous_sha}" -o previous-release; then
+          comparison_sha="$(git rev-parse "${SOURCE_SHA}^")"
+          previous_sha=""
+          if oras repo tags "${IMAGE_PREFIX}/allbot-release-v2" > available-release-v2-tags.txt; then
+            while IFS= read -r candidate; do
+              if grep -Fxq "$candidate" available-release-v2-tags.txt; then
+                previous_sha="$candidate"
+                break
+              fi
+            done < <(git rev-list --first-parent "${SOURCE_SHA}^")
+          fi
+          if [ -n "$previous_sha" ]; then
+            mkdir -p previous-release
+            oras pull "${IMAGE_PREFIX}/allbot-release-v2:${previous_sha}" -o previous-release
             test -f previous-release/release-index.json
+            comparison_sha="$previous_sha"
             echo "index=previous-release/release-index.json" >> "$GITHUB_OUTPUT"
             echo "bundle=previous-release" >> "$GITHUB_OUTPUT"
           else
-            rm -rf previous-release
             echo "index=" >> "$GITHUB_OUTPUT"
             echo "bundle=" >> "$GITHUB_OUTPUT"
           fi
+          git diff --name-only "$comparison_sha" "$SOURCE_SHA" > changed-paths.txt
 
       - name: Build changed modules and assemble release index
         shell: bash

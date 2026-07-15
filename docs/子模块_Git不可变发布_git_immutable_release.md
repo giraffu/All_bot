@@ -33,6 +33,14 @@ manifest 和独立 canary 证据。`img2img` 的同 SHA GHCR 构建入口为
 `runpod_*_profile_image.yml`。v2 catalog 的 `task_types` 必须等于运行时真实声明，不能
 用 Dashboard profile 名替代 Central task type。
 
+发布 v2 release bundle 本身不创建 RunPod，也不要求八个 profile 同时完成 canary。
+如果某个 GPU profile 的输入相对上一份可用 bundle 已变化、但没有同 SHA canary manifest，
+聚合器不得复用旧 digest，而是在 `gpu-execution-manifest.json` 中移除该 profile，并记录
+`completeness=incomplete` 与 `missing_artifacts`。这不会阻断 control-plane 和
+test-execution 产物发布，但后续选择、部署或晋级缺失 profile 必须 fail closed。CI 会沿
+main first-parent 历史寻找最近成功的 v2 bundle 作为增量基线，失败或跳过发布的中间提交
+不会导致下一次无条件全量重建。
+
 `release.json` 同时记录自有镜像 digest、imgproxy/Postgres/Redis digest、Web SHA256 和 CI run。部署器拒绝短 SHA、`latest`/普通 tag、缺少 digest、manifest SHA 不一致和未推送/不可从 `origin/main` 到达的提交。
 
 ## 4. 配置

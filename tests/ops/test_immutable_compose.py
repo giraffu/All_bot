@@ -230,6 +230,8 @@ def test_release_workflow_builds_all_images_and_never_uses_latest():
         'import dashboard.backend.qqcc_config_main'
     ) in workflow
     assert "DASHBOARD_FRONTEND_MODE=qqcc" in workflow
+    assert "oras repo tags" in workflow
+    assert 'git rev-list --first-parent "${SOURCE_SHA}^"' in workflow
 
 
 def test_schema_v1_shared_image_release_is_retired():

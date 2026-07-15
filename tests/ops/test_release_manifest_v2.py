@@ -33,7 +33,7 @@ def _image(name: str, digit: str, *, base: str | None = None) -> dict:
     return value
 
 
-def _write_release(tmp_path: Path) -> Path:
+def _write_release(tmp_path: Path, *, incomplete_gpu: bool = False) -> Path:
     runtime = _image("allbot-python-runtime-base", "1")
     runtime.pop("base_image_digest", None)
     control = {
@@ -96,6 +96,10 @@ def _write_release(tmp_path: Path) -> Path:
             }
         },
     }
+    if incomplete_gpu:
+        gpu["artifacts"] = {}
+        gpu["completeness"] = "incomplete"
+        gpu["missing_artifacts"] = ["i2i_pro"]
     for name, payload in (
         ("control-plane-manifest.json", control),
         ("test-execution-manifest.json", test_execution),
@@ -200,6 +204,31 @@ def test_gpu_profile_requires_baked_runtime_and_model_checksum(tmp_path):
     path.write_text(json.dumps(manifest), encoding="utf-8")
 
     with pytest.raises(module.ManifestV2Error, match="baked_workflow_revision"):
+        module.load_release_index(index_path, expected_sha=SHA)
+
+
+def test_release_allows_incomplete_gpu_track_but_refuses_empty_selection(tmp_path):
+    module = _load_module()
+    release = module.load_release_index(
+        _write_release(tmp_path, incomplete_gpu=True), expected_sha=SHA
+    )
+
+    assert release.manifests["gpu-execution"]["completeness"] == "incomplete"
+    with pytest.raises(module.ManifestV2Error, match="has no available artifacts"):
+        module.select_artifacts(release, "gpu-execution", [])
+
+
+def test_only_gpu_track_can_be_incomplete(tmp_path):
+    module = _load_module()
+    index_path = _write_release(tmp_path)
+    path = tmp_path / "control-plane-manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest["artifacts"] = {}
+    manifest["completeness"] = "incomplete"
+    manifest["missing_artifacts"] = ["central-api"]
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(module.ManifestV2Error, match="control-plane manifest has no artifacts"):
         module.load_release_index(index_path, expected_sha=SHA)
 
 

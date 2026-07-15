@@ -38,8 +38,22 @@ def assemble(
     source_sha: str,
     ci_run: str,
     previous_index: Path | None = None,
+    unavailable_artifacts: set[str] | None = None,
 ) -> Path:
     catalog = load_catalog(catalog_path)
+    unavailable = set(unavailable_artifacts or ())
+    unknown_unavailable = unavailable - set(catalog)
+    if unknown_unavailable:
+        raise AssembleError(
+            "unknown unavailable artifacts: " + ", ".join(sorted(unknown_unavailable))
+        )
+    invalid_unavailable = sorted(
+        name for name in unavailable if catalog[name]["track"] != "gpu-execution"
+    )
+    if invalid_unavailable:
+        raise AssembleError(
+            "only GPU artifacts may be unavailable: " + ", ".join(invalid_unavailable)
+        )
     previous: dict[str, Mapping[str, Any]] = {}
     if previous_index:
         previous_document = _read(previous_index)
@@ -54,6 +68,8 @@ def assemble(
 
     artifacts: dict[str, dict[str, Any]] = {}
     for name, metadata in catalog.items():
+        if name in unavailable:
+            continue
         result_path = results_dir / f"{name}.json"
         if result_path.is_file():
             artifact = _read(result_path)
@@ -96,16 +112,24 @@ def assemble(
         "gpu-execution": "gpu-execution-manifest.json",
     }
     for track in TRACKS:
+        track_artifacts = {
+            name: artifacts[name]
+            for name, metadata in catalog.items()
+            if metadata["track"] == track and name in artifacts
+        }
         document = {
             "schema_version": 2,
             "track": track,
             "source_sha": source_sha,
-            "artifacts": {
-                name: artifacts[name]
-                for name, metadata in catalog.items()
-                if metadata["track"] == track
-            },
+            "artifacts": track_artifacts,
         }
+        if track == "gpu-execution":
+            expected = {
+                name for name, metadata in catalog.items() if metadata["track"] == track
+            }
+            missing = sorted(expected - set(track_artifacts))
+            document["completeness"] = "incomplete" if missing else "complete"
+            document["missing_artifacts"] = missing
         (output_dir / manifest_names[track]).write_text(
             json.dumps(document, sort_keys=True, indent=2) + "\n", encoding="utf-8"
         )
@@ -131,6 +155,7 @@ def main() -> int:
     parser.add_argument("--source-sha", required=True)
     parser.add_argument("--ci-run", required=True)
     parser.add_argument("--previous-index", type=Path)
+    parser.add_argument("--unavailable-artifact", action="append", default=[])
     args = parser.parse_args()
     path = assemble(
         catalog_path=args.catalog,
@@ -139,6 +164,7 @@ def main() -> int:
         source_sha=args.source_sha,
         ci_run=args.ci_run,
         previous_index=args.previous_index,
+        unavailable_artifacts=set(args.unavailable_artifact),
     )
     print(path)
     return 0
