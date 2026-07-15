@@ -180,3 +180,40 @@ def test_release_runner_finds_nested_oras_v2_manifest(tmp_path):
     runner = module.ReleaseCLI(repo=ROOT, bundle_cache=cache)
 
     assert runner._manifest_path(SHA) == manifest
+
+
+def test_release_runner_keeps_an_unavailable_gpu_track_as_a_read_only_plan(
+    tmp_path, monkeypatch
+):
+    module = _load_module()
+    runner = module.ReleaseCLI(repo=ROOT, bundle_cache=tmp_path / "cache")
+
+    def unavailable(_args):
+        raise module.TestTrainError(
+            "ERROR: gpu-execution track has no available artifacts"
+        )
+
+    monkeypatch.setattr(runner, "_run", unavailable)
+
+    plan = runner.plan(SHA, "gpu-execution")
+
+    assert plan == {
+        "track": "gpu-execution",
+        "artifacts": {},
+        "services": [],
+        "availability": "unavailable",
+        "reason": "gpu-execution track has no available artifacts",
+    }
+
+
+def test_release_runner_does_not_hide_other_plan_failures(tmp_path, monkeypatch):
+    module = _load_module()
+    runner = module.ReleaseCLI(repo=ROOT, bundle_cache=tmp_path / "cache")
+
+    def failed(_args):
+        raise module.TestTrainError("candidate provenance is invalid")
+
+    monkeypatch.setattr(runner, "_run", failed)
+
+    with pytest.raises(module.TestTrainError, match="provenance"):
+        runner.plan(SHA, "gpu-execution")

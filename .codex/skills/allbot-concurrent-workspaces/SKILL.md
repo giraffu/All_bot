@@ -41,6 +41,7 @@ python scripts/test_train_release.py block --sha <40位SHA> --reason <原因>
 - 不把 env、SSH key、Pages/GHCR token、runtime 或数据库副本放入 A-D。
 - 只允许精确 `refs/heads/codex/test-train` 的可信 CI bundle 标记为 `test-candidate`。candidate 只能部署 test，禁止 `verify-test`、prod、fast-track 或正式晋级。
 - 不让独立功能分支横向覆盖测试站。任务必须先合入 train，后一个任务在前一个 accepted candidate 上继续累积。
+- GPU 基线无可用 artifact 时只接受 `availability: unavailable` 的读取计划；不得把它当作 GPU 验收或自动 mutation，涉及 GPU 的任务仍必须交给对应 canary/operator。
 - 部署事务失败时逆序恢复已完成 track；部署成功但业务失败时 block train、保留现场并从原槽位做 forward-fix，不自动改写 Git 历史。
 
 ## 5. 交付门禁
