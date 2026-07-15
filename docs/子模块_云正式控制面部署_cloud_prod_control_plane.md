@@ -333,7 +333,7 @@ curl -fsS http://100.107.220.127:8088/api/health
 QQCC Bot 与 QQCC Config Web 同轮纯代码更新可走快速联合路径：只同步变更清单内的必要文件，通过 safe preflight、生产确认和 single-polling 检查后，用一条 `docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.yml --profile qqcc-bot up -d --no-deps --build qqcc-bot-prod qqcc-config-backend-prod qqcc-config-frontend-prod` 复用构建缓存并替换三个目标服务。COPY 型服务禁止省略 `--build` 后只 recreate；该路径不进入维护、不 drain 队列、不触碰其它控制面服务，并必须核对非目标容器启动时间不变。
 Dashboard RunPod 管理入口当前支持 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、
 `scail2 / 视频生视频`、`ltx_video / 高级图生视频`、`pornmaster_flux2 / 自由P图 v2` 与
-`pornmaster_flux2 BF16 / 自由P图 v3`。BF16 已进入同一 autoscaler 自动 add/down/restart/enable，默认单任务 30 秒、清空阈值 30 分钟；旧 v2 监控行在前端隐藏，但手动管理能力不被删除。
+`pornmaster_flux2 BF16 / 自由P图 v2.5 + v3 共用执行池`。BF16 已进入同一 autoscaler 自动 add/down/restart/enable，默认单任务 30 秒、清空阈值 30 分钟；旧 v2 监控行在前端隐藏，但手动管理能力不被删除。
 不可变 `allbot-dashboard-backend` 镜像必须内置 `/app/scripts/runpod_prod_ops.sh`、
 `/app/scripts/gpu_pool_controller.py` 与 `/app/ops`，否则这些 Dashboard operation 会以
 `bash: /app/scripts/runpod_prod_ops.sh: No such file or directory` / exit 127 失败。

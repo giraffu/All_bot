@@ -138,6 +138,11 @@ def test_registry_records_known_legacy_aliases_and_execution_profiles():
             "pornmaster_flux2_edit_bf16",
             "PornMaster_F2K_9B_Turbo_Single-image-editing_Automatic_V1_2026_05_27.api.json",
         ),
+        "pornmaster_flux2_multi_edit_bf16": (
+            "pornmaster_flux2_multi_edit_bf16",
+            "pornmaster_flux2_multi_edit_bf16",
+            "PornMaster_F2K_9B_Turbo_Multiple-images-editing_Automatic_V1_2026_05_27.api.json",
+        ),
     }
 
     for task_type, (public_type, execution_type, workflow_filename) in expected.items():
@@ -153,6 +158,26 @@ def test_registry_matches_worker_execution_aliases_for_public_task_types():
         if task_type in ignored_generic_types:
             continue
         assert entry.execution_type == resolve_worker_execution_task_type(task_type)
+
+
+def test_free_edit_v25_registry_reuses_bf16_runtime_with_own_business_identity():
+    entry = TASK_TYPE_REGISTRY["free_edit_v2_5"]
+
+    assert entry.public_type == "free_edit_v2_5"
+    assert entry.execution_type == "pornmaster_flux2_edit_bf16"
+    assert entry.central_type == "pornmaster_flux2_edit_bf16"
+    assert entry.runpod_profile == "pornmaster_flux2_edit_bf16"
+    assert entry.cost == 3
+    assert entry.gallery_supported is True
+    assert resolve_worker_execution_task_type("free_edit_v2_5") == (
+        "pornmaster_flux2_edit_bf16"
+    )
+
+    multi_entry = TASK_TYPE_REGISTRY["pornmaster_flux2_multi_edit_bf16"]
+    assert multi_entry.runpod_profile == "pornmaster_flux2_edit_bf16"
+    assert multi_entry.cost == 7
+    assert multi_entry.is_generation is False
+    assert multi_entry.gallery_supported is False
 
 
 def test_registry_query_helpers_cover_key_task_type_relationships():
@@ -341,6 +366,7 @@ def test_registry_gallery_helpers_preserve_existing_lists_and_order():
         "scail2_face_swap_v2",
         "edit",
         "img2img_lora",
+        "free_edit_v2_5",
         "pornmaster_flux2_edit_bf16",
         "pornmaster_flux2_single_edit",
         "pornmaster_flux2_multi_edit",
@@ -353,6 +379,7 @@ def test_registry_gallery_helpers_preserve_existing_lists_and_order():
         ("i2i_draw", "task.mode_i2i_draw"),
         ("edit", "task.mode_edit"),
         ("img2img_lora", "task.mode_img2img_lora"),
+        ("free_edit_v2_5", "task.mode_free_edit_v2_5"),
         ("pornmaster_flux2_edit_bf16", "task.mode_free_edit_v3"),
         ("pornmaster_flux2_single_edit", "task.mode_free_edit_v2"),
         ("pornmaster_flux2_multi_edit", "task.mode_free_edit_v2"),

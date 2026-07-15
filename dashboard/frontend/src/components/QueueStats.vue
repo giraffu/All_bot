@@ -80,6 +80,7 @@ const DEFAULT_TASK_DURATION_SECONDS_BY_TYPE = {
   pornmaster_flux2_single_edit: 30,
   pornmaster_flux2_multi_edit: 30,
   pornmaster_flux2_edit_bf16: 30,
+  pornmaster_flux2_multi_edit_bf16: 30,
   unknown: 100,
 }
 

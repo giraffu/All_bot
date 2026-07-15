@@ -169,6 +169,7 @@ def build_apply_context_response(
     source_post_id: int | None,
     billing_resolution: str | None,
     requested_duration: int | None,
+    required_image_count: int | None,
     task_id: str,
     media_type: str,
     prompt: str | None,
@@ -190,6 +191,7 @@ def build_apply_context_response(
         source_post_id=source_post_id,
         billing_resolution=billing_resolution,
         requested_duration=requested_duration,
+        required_image_count=required_image_count,
         task_id=task_id,
         media_type=media_type,
         prompt=prompt,
@@ -362,11 +364,18 @@ async def build_history_apply_context_response(
     ):
         duration = requested_duration
 
+    required_image_count = None
+    if history.type == "free_edit_v2_5":
+        required_image_count = (
+            2 if len(split_history_input_files(history.input_file)) >= 2 else 1
+        )
+
     return build_apply_context_response(
         post_id=post_id,
         source_post_id=source_post_id,
         billing_resolution=billing_resolution,
         requested_duration=requested_duration,
+        required_image_count=required_image_count,
         task_id=history.task_id,
         media_type=media_type,
         prompt=prompt,

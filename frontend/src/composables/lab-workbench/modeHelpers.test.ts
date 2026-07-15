@@ -41,6 +41,13 @@ describe('lab workbench mode helpers', () => {
       wan22ResolutionPreset: 'preview',
     })).toBe(6)
     expect(getLabModeCost({
+      mode: getLabModeConfig('edit_v2_5'),
+      uploadedReferenceCount: 2,
+      resolution: '512',
+      duration: '5',
+      wan22ResolutionPreset: 'preview',
+    })).toBe(7)
+    expect(getLabModeCost({
       mode: getLabModeConfig('edit_v3'),
       uploadedReferenceCount: 1,
       resolution: '512',

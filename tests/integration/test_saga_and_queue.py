@@ -6,7 +6,12 @@ import pytest
 from src.core import task_core
 from src.core.task_core import process_and_submit_task
 from src.core.task_core_dependencies import TaskCoreProcessDependencies
-from src.core.task_core_types import CoreDomainError, TaskSubmissionContext, VideoTaskRequest
+from src.core.task_core_types import (
+    CoreDomainError,
+    TaskSubmissionContext,
+    VideoTaskRequest,
+)
+from src.core.task_dispatcher import StrategyFactory, TaskDispatcherFeatureFlags
 
 
 # Dummy test for Saga Compensation to verify asyncio.shield logic
@@ -83,6 +88,70 @@ async def test_saga_compensation_refunds_credits_and_releases_lock():
         user_id,
         idempotency_key="task_concurrency:test_task_id",
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("images", "expected_cost"),
+    [(["input.png"], 3), (["one.png", "two.png"], 7)],
+)
+async def test_free_edit_v2_5_submission_failure_refunds_actual_cost(
+    images, expected_cost
+):
+    mock_deduct = AsyncMock(return_value=(True, ""))
+    mock_refund = AsyncMock()
+
+    async def prepare_payload(**kwargs):
+        return TaskSubmissionContext(
+            task_type=kwargs["task_type"],
+            is_video_task=False,
+            user_logger=SimpleNamespace(user_id=123, username="tester"),
+            prompt="edit",
+            saved_inputs=["processed.png"],
+            metadata={},
+            allow_contribute=True,
+            final_priority=0,
+            video_request=VideoTaskRequest(),
+        )
+
+    async def execute_saga(**_kwargs):
+        raise RuntimeError("provider unavailable")
+
+    async def compensate_failed_submission(**kwargs):
+        await mock_refund(kwargs["user_id"], kwargs["cost"])
+
+    dependencies = TaskCoreProcessDependencies(
+        get_strategy_func=lambda task_type: StrategyFactory.get_strategy(
+            task_type,
+            feature_flags=TaskDispatcherFeatureFlags(free_edit_v2_enabled=True),
+        ),
+        video_task_types=set(),
+        build_video_task_request_func=task_core.build_video_task_request,
+        check_concurrency_lock_func=AsyncMock(return_value=(True, "")),
+        prepare_task_submission_payload_func=prepare_payload,
+        check_and_deduct_credits_func=mock_deduct,
+        execute_task_submission_saga_func=execute_saga,
+        attach_submission_side_effects_func=lambda **_kwargs: None,
+        compensate_failed_submission_func=compensate_failed_submission,
+        release_concurrency_lock_func=AsyncMock(),
+        shield_func=lambda coro: coro,
+        logger=task_core.logger,
+    )
+
+    with pytest.raises(CoreDomainError, match="灵石已全额退还"):
+        await process_and_submit_task(
+            user_id=123,
+            username="tester",
+            task_type="free_edit_v2_5",
+            inputs={"images": images},
+            task_id="free-edit-v2-5-failed",
+            dependencies=dependencies,
+        )
+
+    mock_deduct.assert_awaited_once_with(
+        123, expected_cost, "free_edit_v2_5", "tester"
+    )
+    mock_refund.assert_awaited_once_with(123, expected_cost)
 
 
 @pytest.mark.asyncio

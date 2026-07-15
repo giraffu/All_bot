@@ -14,6 +14,7 @@ from config import ENABLE_FREE_EDIT_V2
 from src.constants import (
     MODE_EDIT,
     MODE_FREE_EDIT_V2,
+    MODE_FREE_EDIT_V2_5,
     MODE_FREE_EDIT_V3,
     MODE_I2I_PRO,
     MODE_IMG2IMG_LORA,
@@ -27,7 +28,9 @@ from src.lora_catalog import (
     get_lora_default_strength,
 )
 from src.services.task_service_entrypoints_generation import process_i2i_pro_task
-from src.services.task_service_generation_image import process_standard_generation_task as process_generation_task
+from src.services.task_service_generation_image import (
+    process_standard_generation_task as process_generation_task,
+)
 from src.services.free_edit_v3_submission_service import (
     FREE_EDIT_V3_COST,
     process_free_edit_v3_task,
@@ -50,7 +53,9 @@ from src.i18n.translator import get_text
 logger = logging.getLogger("fsm.edit_image")
 
 EDIT_LORA_SELECT_PREFIX = "editlora_select_"
+# Keep the old v3 callback value because previously sent keyboards may still be used.
 EDIT_LORA_FREE_EDIT_V2_CALLBACK = "editlora_free_edit_v2"
+EDIT_LORA_FREE_EDIT_V2_5_CALLBACK = "editlora_free_edit_v2_5"
 
 
 def _t(context: ContextTypes.DEFAULT_TYPE, key: str, **kwargs) -> str:
@@ -90,6 +95,12 @@ def _build_edit_lora_keyboard(lang: str = "zh") -> InlineKeyboardMarkup:
         for backend_name in IMAGE_LORA_MODELS.keys()
     ]
     if ENABLE_FREE_EDIT_V2:
+        buttons.append(
+            InlineKeyboardButton(
+                get_text("menu.free_edit_v2_5", lang),
+                callback_data=EDIT_LORA_FREE_EDIT_V2_5_CALLBACK,
+            )
+        )
         buttons.append(
             InlineKeyboardButton(
                 get_text("menu.free_edit_v2", lang),
@@ -146,26 +157,31 @@ def _build_reference_image_received_message(
         return get_text("fsm.edit_image.reference_received_i2i", lang)
 
     num_images = len(fsm_data["images"])
-    is_free_edit_v2 = fsm_data["mode"] == MODE_FREE_EDIT_V3
+    is_free_edit_v2_5 = fsm_data["mode"] == MODE_FREE_EDIT_V2_5
+    is_free_edit_v3 = fsm_data["mode"] == MODE_FREE_EDIT_V3
     if num_images == 1:
         from src.i18n.translator import get_text
 
-        key = (
-            "fsm.edit_image.reference_received_first_v2"
-            if is_free_edit_v2
-            else "fsm.edit_image.reference_received_first"
-        )
+        if is_free_edit_v2_5:
+            key = "fsm.edit_image.reference_received_first_v2_5"
+        elif is_free_edit_v3:
+            key = "fsm.edit_image.reference_received_first_v2"
+        else:
+            key = "fsm.edit_image.reference_received_first"
         return get_text(key, lang)
 
-    if not is_free_edit_v2:
+    if is_free_edit_v2_5:
+        fsm_data["cost"] = 7
+    elif not is_free_edit_v3:
         fsm_data["cost"] = 6
     from src.i18n.translator import get_text
 
-    key = (
-        "fsm.edit_image.reference_received_second_v2"
-        if is_free_edit_v2
-        else "fsm.edit_image.reference_received_second"
-    )
+    if is_free_edit_v2_5:
+        key = "fsm.edit_image.reference_received_second_v2_5"
+    elif is_free_edit_v3:
+        key = "fsm.edit_image.reference_received_second_v2"
+    else:
+        key = "fsm.edit_image.reference_received_second"
     return get_text(key, lang)
 
 
@@ -283,18 +299,29 @@ async def handle_lora_selection(
     )
     data = query.data
 
-    if data == EDIT_LORA_FREE_EDIT_V2_CALLBACK:
+    if data in (
+        EDIT_LORA_FREE_EDIT_V2_5_CALLBACK,
+        EDIT_LORA_FREE_EDIT_V2_CALLBACK,
+    ):
         fsm_data = context.user_data.get("edit_image_data", {})
         if not fsm_data:
             await query.edit_message_text(_t(context, "fsm.face_video.expired_alert"))
             return ConversationHandler.END
 
-        fsm_data["mode"] = MODE_FREE_EDIT_V3
-        fsm_data["cost"] = FREE_EDIT_V3_COST
+        is_v2_5 = data == EDIT_LORA_FREE_EDIT_V2_5_CALLBACK
+        fsm_data["mode"] = MODE_FREE_EDIT_V2_5 if is_v2_5 else MODE_FREE_EDIT_V3
+        fsm_data["cost"] = (
+            TASK_COSTS[MODE_FREE_EDIT_V2_5] if is_v2_5 else FREE_EDIT_V3_COST
+        )
         fsm_data.pop("lora_name", None)
         fsm_data.pop("lora_strength", None)
 
-        msg = _t(context, "fsm.edit_image.selected_free_edit_v2")
+        msg_key = (
+            "fsm.edit_image.selected_free_edit_v2_5"
+            if is_v2_5
+            else "fsm.edit_image.selected_free_edit_v2"
+        )
+        msg = _t(context, msg_key)
         await robust_edit_text(query.message, msg, parse_mode="Markdown")
         return EditImageState.WAIT_REFERENCE_IMAGES
 
@@ -348,7 +375,9 @@ async def receive_reference_image(
         fsm_data["images"].append(local_path)
     except Exception as e:
         logger.error(f"Error downloading image for FSM user {user_id}: {e}")
-        await robust_reply_text(message, _t(context, "fsm.common.download_image_failed"))
+        await robust_reply_text(
+            message, _t(context, "fsm.common.download_image_failed")
+        )
         return EditImageState.WAIT_REFERENCE_IMAGES
 
     msg = _build_reference_image_received_message(
@@ -370,10 +399,20 @@ async def receive_additional_image(
         await robust_reply_text(message, _t(context, "fsm.common.expired_restart"))
         return ConversationHandler.END
 
-    if fsm_data["mode"] == MODE_I2I_PRO:
-        await robust_reply_text(
-            message, _t(context, "fsm.edit_image.single_image_only")
+    if fsm_data["mode"] in (MODE_I2I_PRO, MODE_FREE_EDIT_V3):
+        message_key = (
+            "fsm.edit_image.single_image_only"
+            if fsm_data["mode"] == MODE_I2I_PRO
+            else "fsm.edit_image.single_image_only_free_edit"
         )
+        await robust_reply_text(message, _t(context, message_key))
+        return EditImageState.WAIT_PROMPT
+
+    if (
+        fsm_data["mode"] == MODE_FREE_EDIT_V2_5
+        and len(fsm_data["images"]) >= 2
+    ):
+        await robust_reply_text(message, _t(context, "fsm.edit_image.max_two_images"))
         return EditImageState.WAIT_PROMPT
 
     if (
@@ -420,7 +459,9 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     images = list(fsm_data["images"])
     if not images:
         logger.warning(f"user={user_id} images empty before submit in edit_image")
-        await robust_reply_text(message, _t(context, "fsm.common.missing_reference_resend"))
+        await robust_reply_text(
+            message, _t(context, "fsm.common.missing_reference_resend")
+        )
         _cleanup_context(context, user_id)
         return ConversationHandler.END
 
@@ -439,7 +480,10 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if isinstance(e, InsufficientCreditsError):
             chat_id = update.effective_chat.id
             msg = _t(
-                context, "fsm.common.insufficient_credits", current=e.current, cost=e.cost
+                context,
+                "fsm.common.insufficient_credits",
+                current=e.current,
+                cost=e.cost,
             )
             from src.utils import robust_send_message
 
@@ -523,14 +567,16 @@ def get_edit_image_fsm_handler() -> ConversationHandler:
         entry_menu_keys.insert(1, "menu.free_edit_v2")
 
     return ConversationHandler(
-        entry_points=[
-            MessageHandler(I18nFilter(entry_menu_keys), start_edit_image)
-        ],
+        entry_points=[MessageHandler(I18nFilter(entry_menu_keys), start_edit_image)],
         states={
             EditImageState.WAIT_LORA_SELECTION: [
                 CallbackQueryHandler(
                     handle_lora_selection,
-                    pattern=f"^({EDIT_LORA_SELECT_PREFIX}|{EDIT_LORA_FREE_EDIT_V2_CALLBACK}$)",
+                    pattern=(
+                        f"^({EDIT_LORA_SELECT_PREFIX}"
+                        f"|{EDIT_LORA_FREE_EDIT_V2_5_CALLBACK}$"
+                        f"|{EDIT_LORA_FREE_EDIT_V2_CALLBACK}$)"
+                    ),
                 ),
                 MessageHandler(
                     (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
