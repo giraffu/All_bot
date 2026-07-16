@@ -201,10 +201,8 @@ token 只允许放在 ignored env 文件，例如 `.env.cloud.prod` 或 `.env.cl
 - backend service/container: `qqcc-config-backend-prod` / `cloud-qqcc-config-backend-prod`，默认端口 `8045`
 - frontend service/container: `qqcc-config-frontend-prod` / `cloud-qqcc-config-frontend-prod`，默认端口 `8088`
 
-云测试不再部署 QQCC Config Web 前后端；该管理面保留本地/CI 测试并默认按 direct 策略发布正式 artifact。
-现存 `https://qqcc-admin-test.aivison.it.com` 是独立保留的测试管理入口，通过测试 Tunnel 回源
-`100.82.124.91:8088`，不属于不可变云测试发布、preflight 或验收服务清单。公网必须先通过仅允许管理员邮箱的
-Cloudflare Access，进入后仍需 QQCC Config 独立账号登录；不得把该入口的当前可达性写成 test-train 已部署管理面。
+云测试现有专属 QQCC Config Web 前后端，分别使用测试 8045/8088；对应 artifact 的 auto 策略为 standard，必须由 test-train 以不可变 digest 部署、preflight 并验收。
+`https://qqcc-admin-test.aivison.it.com` 通过测试 Tunnel 回源 `100.82.124.91:8088`，属于 test-train 管理的测试入口。公网必须先通过仅允许管理员邮箱的 Cloudflare Access，进入后仍需 QQCC Config 独立账号登录；当前可达只证明入口健康，候选验收还必须核对容器 digest/revision 与业务页面。
 
 私有 Bot webhook worker 由同一 `Dockerfile.qqcc` 构建，但使用独立 profile 和入口：
 

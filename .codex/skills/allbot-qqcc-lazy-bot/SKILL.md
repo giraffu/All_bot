@@ -138,7 +138,7 @@ QQCC Bot 必须设置 `application.bot_data["bot_client_type"] = "bot:qqcc"`，B
 
 正式启动或重建前必须有用户明确要求进入 QQCC 正式发布。单独更新官方 QQCC Bot 时，对同一已验收 main SHA 依次执行 `release.py plan|preflight|deploy --env prod --track control-plane --modules qqcc-bot`，真实执行必须带 `--execute --confirm-prod`；`--modules` 只能扩大 planner 自动集合，不能强行缩成单服务。发布前核对没有第二个同 token polling 实例；若目标容器状态异常、疑似多实例、token/远端 env 异常，或要启动当前停止的新正式 QQCC 实例，必须停下确认。
 
-只更新独立 QQCC 配置 Web 时请求模块 `qqcc-config-backend qqcc-config-frontend`；同轮更新 Bot 与配置平台时请求三者。维护模式遵循 `allbot-ops-deployment`：每次发布默认开启，只有用户当次明确要求且 planner 无强制 maintenance 时才可关闭。不得使用已 fail-closed 的 `update_cloud_prod_qqcc_bot.sh` / `update_cloud_prod_with_maintenance.sh`，也不得 rsync、现场 build 或手工 compose；发布后验证 8045/8088、QQCC Bot single polling、目标 digest/revision 和所有非目标服务启动时间。
+只更新独立 QQCC 配置 Web 时请求模块 `qqcc-config-backend qqcc-config-frontend`；同轮更新 Bot 与配置平台时请求三者。QQCC Config 已有专属云测试前后端，auto 默认 standard，必须先由 test-train 部署并验证测试 8045/8088 的目标 digest/revision 与业务页面；Dashboard-only 仍可按 owner-tools direct。维护模式遵循 `allbot-ops-deployment`：每次发布默认开启，只有用户当次明确要求且 planner 无强制 maintenance 时才可关闭。不得使用已 fail-closed 的 `update_cloud_prod_qqcc_bot.sh` / `update_cloud_prod_with_maintenance.sh`，也不得 rsync、现场 build 或手工 compose；正式发布后验证 8045/8088、QQCC Bot single polling、目标 digest/revision 和所有非目标服务启动时间。
 
 ## 5. 验证要求
 至少覆盖：

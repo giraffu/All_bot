@@ -138,6 +138,8 @@ ENVIRONMENT = {
             "web-api",
             "bot",
             "qqcc-bot",
+            "qqcc-config-backend",
+            "qqcc-config-frontend",
             "qqcc-private-bot-worker",
             "imgproxy",
         },
