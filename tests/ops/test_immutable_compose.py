@@ -172,8 +172,6 @@ def test_test_runtime_overrides_legacy_api_base_test_for_every_consumer():
     for name in (
         "central-api",
         "web-api",
-        "dashboard-backend",
-        "qqcc-config-backend",
         "bot",
         "qqcc-bot",
         "qqcc-private-bot-worker",
@@ -184,6 +182,31 @@ def test_test_runtime_overrides_legacy_api_base_test_for_every_consumer():
         assert environment["API_BASE_TEST"] == expected_api_base, (
             f"{name} would let legacy env override the immutable Central alias"
         )
+
+
+def test_owner_tools_are_profiled_and_absent_from_test_overlay():
+    base = _compose(BASE)["services"]
+    test_services = _compose(OVERLAYS[0])["services"]
+
+    for name in (
+        "dashboard-backend",
+        "dashboard-frontend",
+        "qqcc-config-backend",
+        "qqcc-config-frontend",
+    ):
+        assert base[name]["profiles"] == ["owner-tools"]
+        assert name not in test_services
+
+
+def test_legacy_cloud_test_compose_no_longer_defines_owner_tools():
+    services = _compose(ROOT / "deploy/docker-compose-cloud-test.yml")["services"]
+
+    assert not {
+        "dashboard-backend-test",
+        "dashboard-frontend-test",
+        "qqcc-config-backend-test",
+        "qqcc-config-frontend-test",
+    } & services.keys()
 
 
 def test_prod_runtime_pins_internal_api_base_for_every_python_consumer():
@@ -239,6 +262,11 @@ def test_release_workflow_builds_all_images_and_never_uses_latest():
     assert '--ci-run "$TRUSTED_CI_RUN"' in workflow
     assert "previous-release/release-v2/release-index.json" in workflow
     assert 'echo "bundle=${previous_bundle_dir}"' in workflow
+    assert "options: [build-only]" in workflow
+    assert "manual dispatch cannot claim full validation" in workflow
+    assert '--validation-mode "$VALIDATION_MODE"' in workflow
+    assert "if: steps.source.outputs.validation_mode == 'full'" in workflow
+    assert "validation_mode=full" in workflow
 
 
 def test_schema_v1_shared_image_release_is_retired():

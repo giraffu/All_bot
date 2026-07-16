@@ -2397,7 +2397,7 @@ def _prod_render_spec(profile: str, settings: Any) -> dict[str, Any]:
                 settings.model_manifest_key_image_to_video
                 or RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY
             ),
-            "image_exact": RUNPOD_PUBLIC_WAN22_AIO_VIDEO_RIFE_IMAGE,
+            "image_exact": settings.image_name_image_to_video,
             "image_prefix": RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX,
             "workflow_overrides": "",
         }
@@ -2592,6 +2592,7 @@ def _pod_minimal(pod: dict[str, Any]) -> dict[str, Any]:
         "agent_id": env.get("AGENT_ID"),
         "environment": env.get("RUNPOD_ENVIRONMENT"),
         "task_type": env.get("RUNPOD_TASK_TYPE"),
+        "image": pod.get("imageName") or pod.get("image"),
     }
 
 

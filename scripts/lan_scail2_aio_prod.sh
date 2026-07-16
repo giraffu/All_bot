@@ -27,8 +27,6 @@ OLD_AIO_CONTAINER="${SCAIL2_PROD_OLD_AIO_CONTAINER:-allbot-lan-aio-gpu-002-gpu0-
 REMOTE_DIR="${SCAIL2_PROD_REMOTE_DIR:-/home/chuzeyu/allbot-scail2-aio-prod/gpu002-slot0}"
 REMOTE_COMPOSE_FILE="${REMOTE_DIR}/docker-compose.yml"
 REMOTE_ENV_FILE="${REMOTE_DIR}/.env.lan-scail2-prod"
-REMOTE_WORKERS_SOURCE_DIR="${SCAIL2_PROD_REMOTE_WORKERS_SOURCE_DIR:-remote_workers}"
-REMOTE_WORKERS_TARGET_DIR="/workspace/allbot/remote_workers"
 SCAIL2_PROD_SUPPORTED_TASK_TYPES="${SCAIL2_PROD_SUPPORTED_TASK_TYPES:-scail2_action_transfer,scail2_action_transfer_long,scail2_video_replacement,scail2_face_swap_v2}"
 SCAIL2_PROD_TASK_TYPE_WORKFLOW_OVERRIDES="${SCAIL2_PROD_TASK_TYPE_WORKFLOW_OVERRIDES:-{\"scail2_action_transfer\":\"SCAIL-2_Animation_multi-char_audio.api.json\",\"scail2_action_transfer_long\":\"SCAIL-2_Animation_WAN-Context-Windows.api.json\",\"scail2_video_replacement\":\"SCAIL-2_Replacement_audio.api.json\",\"scail2_face_swap_v2\":\"SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json\"}}"
 SCAIL2_PROD_FACE_SWAP_V10_ENABLED="${SCAIL2_PROD_FACE_SWAP_V10_ENABLED:-true}"
@@ -202,42 +200,8 @@ compose["x-allbot-runtime"]["image_ref"] = image_ref
 path.write_text(yaml.safe_dump(compose, allow_unicode=True, sort_keys=False))
 PY
   fi
-  patch_compose_remote_workers_mount "$out"
   patch_scail2_prod_overrides "$out"
   assert_prod_compose "$out"
-}
-
-patch_compose_remote_workers_mount() {
-  local file="$1"
-  python3 - "$file" "$CONTAINER_NAME" "${REMOTE_DIR}/remote_workers" "$REMOTE_WORKERS_TARGET_DIR" <<'PY'
-from pathlib import Path
-import sys
-import yaml
-
-path = Path(sys.argv[1])
-container_name = sys.argv[2]
-source_dir = sys.argv[3]
-target_dir = sys.argv[4]
-compose = yaml.safe_load(path.read_text()) or {}
-service = compose.get("services", {}).get(container_name)
-if not isinstance(service, dict):
-    raise SystemExit(f"compose service not found: {container_name}")
-environment = service.setdefault("environment", {})
-environment["RUNPOD_REMOTE_WORKER_ROOT"] = target_dir
-environment["PYTHONPATH"] = target_dir
-environment["PYTHONDONTWRITEBYTECODE"] = "1"
-mount = f"{source_dir}:{target_dir}"
-volumes = service.setdefault("volumes", [])
-if mount not in volumes:
-    volumes.append(mount)
-runtime = compose.setdefault("x-allbot-runtime", {})
-runtime["remote_workers_bundle"] = {
-    "source": source_dir,
-    "target": target_dir,
-    "mode": "host_mount_current_bundle",
-}
-path.write_text(yaml.safe_dump(compose, allow_unicode=True, sort_keys=False))
-PY
 }
 
 patch_scail2_prod_overrides() {
@@ -336,31 +300,16 @@ assert_prod_compose() {
     echo "Refusing compose containing cloud-test/user-data-test" >&2
     exit 2
   fi
+  if grep -q "host_mount_current_bundle\\|/remote_workers:" "$file"; then
+    echo "Refusing production compose with host-mounted remote_workers" >&2
+    exit 2
+  fi
 }
 
 remote_compose() {
   local op="$1"
   ssh "$SSH_HOST" \
     "cd '${REMOTE_DIR}' && if docker compose version >/dev/null 2>&1; then docker compose --env-file '${REMOTE_ENV_FILE}' -f '${REMOTE_COMPOSE_FILE}' ${op}; else docker-compose --env-file '${REMOTE_ENV_FILE}' -f '${REMOTE_COMPOSE_FILE}' ${op}; fi"
-}
-
-sync_remote_workers_bundle() {
-  if [ ! -d "$REMOTE_WORKERS_SOURCE_DIR/comfy_agent" ] || [ ! -d "$REMOTE_WORKERS_SOURCE_DIR/remote_relay" ]; then
-    echo "remote_workers bundle source is invalid: ${REMOTE_WORKERS_SOURCE_DIR}" >&2
-    exit 2
-  fi
-  if [ "$MODE" != "execute" ]; then
-    echo "[dry-run] Would sync ${REMOTE_WORKERS_SOURCE_DIR} to ${SSH_HOST}:${REMOTE_DIR}/remote_workers"
-    return 0
-  fi
-  ssh "$SSH_HOST" "set -euo pipefail; mkdir -p '${REMOTE_DIR}'; chmod 700 '${REMOTE_DIR}'; rm -rf '${REMOTE_DIR}/remote_workers.tmp' '${REMOTE_DIR}/remote_workers'; mkdir -p '${REMOTE_DIR}/remote_workers.tmp'"
-  tar \
-    --exclude='__pycache__' \
-    --exclude='.pytest_cache' \
-    --exclude='*.pyc' \
-    --exclude='.mypy_cache' \
-    -C "$REMOTE_WORKERS_SOURCE_DIR" \
-    -czf - . | ssh "$SSH_HOST" "set -euo pipefail; tar -xzf - -C '${REMOTE_DIR}/remote_workers.tmp'; mv '${REMOTE_DIR}/remote_workers.tmp' '${REMOTE_DIR}/remote_workers'; chmod -R u+rwX,go-rwx '${REMOTE_DIR}/remote_workers'"
 }
 
 wait_agent_idle() {
@@ -621,11 +570,9 @@ run_start_disabled() {
     echo "[dry-run] Would write compose to ${SSH_HOST}:${REMOTE_COMPOSE_FILE}"
     echo "[dry-run] Would stop ${OLD_AIO_CONTAINER} and start ${CONTAINER_NAME}"
     rm -f "$tmp_compose" "$tmp_env"
-    sync_remote_workers_bundle
     return 0
   fi
   write_runtime_env_file "$tmp_env"
-  sync_remote_workers_bundle
   ssh "$SSH_HOST" "mkdir -p '${REMOTE_DIR}' && chmod 700 '${REMOTE_DIR}'"
   scp -q "$tmp_compose" "${SSH_HOST}:${REMOTE_COMPOSE_FILE}"
   scp -q "$tmp_env" "${SSH_HOST}:${REMOTE_ENV_FILE}"
@@ -645,14 +592,13 @@ run_restart_disabled() {
   tmp_env="$(mktemp)"
   render_compose_to "$tmp_compose"
   if [ "$MODE" != "execute" ]; then
-    echo "[dry-run] Would sync ${REMOTE_WORKERS_SOURCE_DIR} to ${SSH_HOST}:${REMOTE_DIR}/remote_workers"
+    echo "[dry-run] Would use the remote_workers revision baked into the profile image"
     echo "[dry-run] Would write compose to ${SSH_HOST}:${REMOTE_COMPOSE_FILE}"
     echo "[dry-run] Would recreate ${CONTAINER_NAME} and keep ${TEMP_AGENT_ID} disabled"
     rm -f "$tmp_compose" "$tmp_env"
     return 0
   fi
   write_runtime_env_file "$tmp_env"
-  sync_remote_workers_bundle
   ssh "$SSH_HOST" "mkdir -p '${REMOTE_DIR}' && chmod 700 '${REMOTE_DIR}'"
   scp -q "$tmp_compose" "${SSH_HOST}:${REMOTE_COMPOSE_FILE}"
   scp -q "$tmp_env" "${SSH_HOST}:${REMOTE_ENV_FILE}"

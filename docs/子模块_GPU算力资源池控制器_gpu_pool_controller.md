@@ -1,6 +1,6 @@
 # 子模块: GPU 算力资源池控制器 (GPU Pool Controller)
 
-> 2026-07-15 不可变执行面契约：LAN AIO/RunPod profile 属于独立 `gpu-execution` track。镜像必须烘焙 agent/workflow、写 OCI/agent/workflow revision，并由 model manifest key + size + SHA256 固定外置模型；启动时禁止 clone AllBot。每个变化 profile 必须按 `i2i_pro`、PornMaster BF16、PornMaster FP8、SCAIL-2、Wan22/LTX、img2img 顺序独立 canary，通用 Worker smoke 不能替代。LAN registry 只允许通过 `scripts/copy_canonical_image_to_lan_registry.sh` 复制 canonical digest 并复核，不得现场重建同名产物。
+> 2026-07-16 不可变执行面契约：LAN AIO/RunPod profile 属于独立 `gpu-execution` track。镜像烘焙 agent/workflow/remote_workers，写 OCI/agent/workflow revision，并由 model manifest key + size + SHA256 固定外置模型；启动时禁止 clone 或主机源码覆盖。强制 artifact attestation 与可选业务 canary 分层：direct 可用 attested artifact，standard 仍需 canary-verified。LAN registry 只允许保 digest 复制，不得现场重建。
 
 ## 1. 目标与范围
 
@@ -34,6 +34,7 @@
 - RunPod 手动正式备用 worker auth/control seam：`ops/gpu_pool_controller/runpod_prod_worker_control.py`
 - RunPod 手动正式备用 worker canary case/executor seam：`ops/gpu_pool_controller/runpod_prod_worker_canary.py`
 - RunPod 手动正式备用池日常入口：`scripts/runpod_prod_ops.sh`
+- GPU release digest/证据解析：`scripts/gpu_release_rollout.py`
 - RunPod split video manifest：`ops/gpu_pool_controller/runpod_video_manifests.py`
 - RunPod bootstrap/model sync：`remote_workers/scripts/runpod_bootstrap_from_git.sh`、`remote_workers/scripts/runpod_sync_models_from_r2.py`
 
@@ -215,9 +216,9 @@ scripts/lan_runpod_aio_prod_canary.sh --action restore --slot slot0 --dry-run
 
 生产灰度只允许 `gpu-002` 两个固定映射：slot0 `cloud_prod_worker_06 -> lan_aio_prod_gpu002_gpu0_img2img_lora_01`，端口 `8190`，profile `img2img_lora`；slot1 `cloud_prod_worker_07 -> lan_aio_prod_gpu002_gpu1_image_to_video_01`，端口 `8191`，profile `image_to_video`。生产执行必须先将目标 legacy worker 置为 `draining` 并等待当前任务自然完成；不要用强制重启代替 drain。生产 helper 会拒绝 test Central URL，并在启动前校验 compose 不含 `cloud-test` / `user-data-test`。slot1 `start-heartbeat --execute` 会从 gpu-002 宿主机旧 `inst1` 缓存预置 `rife49.pth` 到 AIO 内两个 RIFE 查找路径；缺失该热缓存时应停止放量，不让 FL_RIFE 后处理回退到 HuggingFace。
 
-`start-heartbeat --execute` 必须在 Central 看到临时 agent 的 disabled heartbeat 后才算成功：临时 agent 不得是 `running`，不得有 `current_task_type`，heartbeat 必须携带 `node_id=gpu-002`、`provider=lan_ssh`、对应 `runtime_profile` 与 `pool_managed=true`。如果镜像内 remote_workers bundle 过旧，`/pop` 未携带 `agent_id` 或 heartbeat 缺少这些 GPU pool 元数据，Central agent control 无法可靠阻止临时 agent 接单；此时必须停止灰度，重建或挂载新版 remote_workers 后再试。
+`start-heartbeat --execute` 必须在 Central 看到临时 agent 的 disabled heartbeat 后才算成功：临时 agent 不得是 `running`，不得有 `current_task_type`，heartbeat 必须携带 `node_id=gpu-002`、`provider=lan_ssh`、对应 `runtime_profile` 与 `pool_managed=true`。如果镜像内 remote_workers bundle 过旧，`/pop` 未携带 `agent_id` 或 heartbeat 缺少这些 GPU pool 元数据，必须停止灰度并从新 release index 选择重建后的 digest；生产禁止挂载宿主机源码修补。
 
-生产 helper 会把当前 repo 的 `remote_workers/` 同步到 gpu-002 并挂载为 `/workspace/allbot/remote_workers`，同时设置 `PYTHONPATH` 与 `PYTHONDONTWRITEBYTECODE=1`，避免继续使用镜像内旧 bundle。all-in-one 入口必须先安装 `remote_workers/requirements.txt`，再执行 `runpod_sync_models_from_r2.py` 把 LAN cache manifest 同步到 `/workspace/ComfyUI/models`，最后把 baked ComfyUI 的 `models` 链接到该目录，确保 ComfyUI `/object_info` 能枚举到 manifest 模型。小窗口灰度达到目标接单数后，先执行 `drain-temp --execute` 阻止临时 agent 继续 pop，等已接任务终态后再 `restore --execute`。
+旧 helper 的 repo `remote_workers` 同步/host mount 方式已废止。正式 LAN AIO compose 固定使用镜像内 `/opt/allbot/runtime/remote_workers`；模型仍由镜像内同步脚本按 manifest 写入 workspace。若 baked revision 不满足 release attestation，必须重建 canonical image，禁止用主机文件覆盖修补。
 
 Central 可能在 worker 已回到 `idle` 后保留上一单的 `current_task_id`。生产 helper 的等待空闲逻辑以 `status == running` 或存在 `current_task_type` 作为忙碌信号；单独的陈旧 `current_task_id` 不应阻断 drain/restore 后续步骤。
 
@@ -303,7 +304,7 @@ LAN AIO compose 固定带 `restart: unless-stopped`。AIO bootstrap/entrypoint �
 
 - 配置阶段应区分 `prod_enabled`、`canary_ready`、`blocked_host_service_runtime`，避免已正式接管的 slot 仍被误读为 canary。
 - `wan22_video_v2` 在 `gpu-252` GPU1 slot 和历史 `gpu-177` GPU1 blocked slot 都通过 slot-level `target_task_types` 收窄为只接 `wan22_video_v2`；后续新增共享镜像 slot 时也应优先显式声明目标 task type，避免 profile 默认 alias 误接单。`gpu-177` GPU0 当前配置、state 与 live runtime 都按 `wan22_video_v2` 判断；`gpu-177-gpu1-wan22_video_v2` 的 32GB OOM blocked 状态解除前不得作为候选容量。
-- `preflight` / `switch-plan` 仍需继续强化 workflow 文件、remote_workers 挂载、模型 manifest、对象桶和 image digest 检查，减少“容器健康但工作流资产缺失”的误启用。
+- `preflight` / release rollout 必须检查 baked workflow/agent revision、模型 manifest、对象桶和 image digest，减少“容器健康但工作流资产缺失”的误启用。
 - LAN registry 直拉仍依赖 GPU 节点 Docker insecure registry；配置会重启整机 Docker daemon。当前 fleet helper 已支持 runner 本地镜像 save/load 兜底，后续优先评估 TLS registry 或更标准的免 daemon 重启镜像分发路径。
 - Dashboard `LAN AIO 管理` slot 面板和对应 public API 已移除；后续 LAN AIO 候选/切换/恢复能力只在本地 AI operator/CLI 中强化 image digest 与失败原因结构化归因。
 
@@ -412,7 +413,7 @@ python scripts/gpu_pool_controller.py runpod prod-worker canary --profile scail2
 | `scail2` | `runpod_prod_scail2_manual_NN` | `scail2_action_transfer,scail2_video_replacement` | `scail2/2026-06-17-test/manifest.json` | `NVIDIA GeForce RTX 4090` |
 | `ltx_video` | `runpod_prod_ltx_video_manual_NN` | `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio` | `ltx_video/2026-06-10/manifest.json` | `NVIDIA GeForce RTX 5090,NVIDIA GeForce RTX 4090` |
 
-正式 `image_to_video` / `wan22_video_v2` RunPod 镜像必须精确使用 `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd`；`i2i_pro` 镜像必须以 `ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:` 开头；`scail2` 镜像必须以 `ghcr.io/giraffu/allbot-comfy-runpod-scail2:` 开头；`ltx_video` 镜像必须以 `ghcr.io/giraffu/allbot-comfy-runpod-ltx-video:` 开头；`img2img` 使用已验证 public GHCR 图生图镜像。所有 cloud-prod 手动 RunPod profile 都必须在 create payload 显式带 `dockerStartCmd=["bash","-lc","exec bash /opt/allbot/runpod_bootstrap_from_git.sh"]`；若 RunPod API 显示目标 Pod 的 `dockerStartCmd=null`，说明它没有走 bootstrap/model sync/最新 remote_workers bundle，不能通过原地 restart 修复，需先 disable 并确认无当前任务后删除重建。
+正式 RunPod 更新使用 `scripts/runpod_prod_ops.sh rollout-release --release-index <index> --sha <sha> --profile <profile> --slot <NN> --strategy direct|standard`，镜像名必须是 release index 的 digest ref。每次只处理一个 slot：旧 image 先记录，新 Pod 保持 disabled，通过实际 image/worker/heartbeat 检查后 enable；失败删除目标 Pod、恢复旧 exact image 并停止。镜像默认 CMD 为 baked runtime entrypoint，不以 `bootstrap_from_git` 或 mutable tag 作为新发布入口。
 
 ## 6. 真实执行门禁
 

@@ -47,5 +47,5 @@
 4. 仅在代码/CI/云测试验收完成且取得独立授权后执行主机准备：云控制面用 `bootstrap_release_host.sh --role cloud-control`，本地 Worker host 用 `--role local-worker-host`；完成只读 deploy key、GHCR `read:packages` 凭据与受限 env，密钥不进入仓库、源码 checkout 或 CI。
 5. 使用 test-only env 迁移器生成候选并校验 `/etc/allbot/test.env`，原子安装为 `600 deploy:deploy`；只更新云测试，按新事务顺序完成控制面、测试 Worker、测试 Pages、canonical runtime SHA 与回滚演练，全部健康后才提交测试状态。
 6. 从新测试部署完成时间重新计算观察窗口；完成 health、Bot、任务提交、Redis 锁、locale、Web canonical runtime、Worker digest/OCI revision/heartbeat、图片/视频代表任务和回滚演练，并默认连续观察至少 24 小时。用户明确授权提前晋级时，验收 evidence 必须记录真实观察起止、`short_observation_override=true`、非空原因和批准者，并通过显式 CLI 确认；不得直接编辑状态或跳过任何功能检查。
-7. 写入 verified 验收记录后，才允许以同一 SHA/digest 申请生产确认。
+7. 核心 standard 发布写入逐 artifact verified 验收记录后，才允许以同 track/name/digest 申请生产确认；低风险 direct 与核心 emergency 按 ADR 0006 的显式风险接受流程，不伪造 verified。
 8. 首次生产切换前另行只读运行正式 `preflight`，确认双维护路径、控制面 legacy/immutable 回滚材料、正式 Pages `main`/自动部署关闭/canonical ID，并确认 Worker 检查为 `skipped`。正式机 bootstrap、正式 Pages 配置变更和生产 deploy 必须分别取得明确确认；生产 GPU Worker 另走各 GPU host operator 和单独授权。

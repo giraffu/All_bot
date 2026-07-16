@@ -119,6 +119,23 @@ def _validate_gpu_profile(name: str, artifact: Mapping[str, Any]) -> None:
         raise ManifestV2Error(f"gpu-execution/{name} target_gpu is invalid")
     if not isinstance(artifact["startup_args"], list):
         raise ManifestV2Error(f"gpu-execution/{name} startup_args is invalid")
+    # Bundles produced before risk-based release gates had no explicit level;
+    # they were only publishable after the full business canary, so preserve
+    # that stronger interpretation for compatibility.
+    validation_level = str(artifact.get("validation_level", "canary-verified"))
+    attestation = str(artifact.get("artifact_attestation", "verified"))
+    canary = str(artifact.get("canary_evidence", "verified"))
+    if validation_level not in {"attested", "canary-verified"}:
+        raise ManifestV2Error(f"gpu-execution/{name} validation_level is invalid")
+    if attestation != "verified":
+        raise ManifestV2Error(
+            f"gpu-execution/{name} artifact_attestation must be verified"
+        )
+    expected_canary = "waived" if validation_level == "attested" else "verified"
+    if canary != expected_canary:
+        raise ManifestV2Error(
+            f"gpu-execution/{name} canary_evidence does not match validation_level"
+        )
 
 
 def _validate_manifest(
@@ -206,9 +223,21 @@ def load_release_index(path: Path, *, expected_sha: str) -> LoadedRelease:
         raise ManifestV2Error("release index release_channel is invalid")
     if source_ref != RELEASE_CHANNEL_REFS[release_channel]:
         raise ManifestV2Error("release index source_ref does not match release_channel")
+    validation = index.get("validation", {"mode": "full", "tests": "passed"})
+    if not isinstance(validation, Mapping):
+        raise ManifestV2Error("release index validation metadata is invalid")
+    validation_mode = str(validation.get("mode", ""))
+    validation_tests = str(validation.get("tests", ""))
+    expected_tests = {"full": "passed", "build-only": "skipped"}
+    if expected_tests.get(validation_mode) != validation_tests:
+        raise ManifestV2Error("release index validation metadata is inconsistent")
     index = dict(index)
     index["release_channel"] = release_channel
     index["source_ref"] = source_ref
+    index["validation"] = {
+        "mode": validation_mode,
+        "tests": validation_tests,
+    }
     references = index.get("manifests")
     if not isinstance(references, Mapping) or set(references) != set(TRACKS):
         raise ManifestV2Error("release index must reference exactly the three release tracks")

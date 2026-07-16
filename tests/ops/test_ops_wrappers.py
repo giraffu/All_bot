@@ -121,6 +121,20 @@ def test_runpod_enable_requires_profile():
     assert "--profile is required for enable" in result.stderr
 
 
+def test_runpod_release_rollout_requires_single_slot_release_contract():
+    result = run_script(
+        "bash",
+        "scripts/runpod_prod_ops.sh",
+        "rollout-release",
+        "--profile",
+        "i2i_pro",
+        "--dry-run",
+    )
+
+    assert result.returncode == 2
+    assert "--slot, --release-index and --sha" in result.stderr
+
+
 def test_runpod_scale_requires_desired():
     result = run_script(
         "bash",
