@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Manage the four persistent AllBot AI development worktree slots."""
+"""Manage the eight persistent AllBot AI development worktree slots."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import subprocess
 from typing import Any, Iterator, Sequence
 
 
-SLOTS = ("A", "B", "C", "D")
+SLOTS = ("A", "B", "C", "D", "E", "F", "G", "H")
 DEFAULT_REPO = Path(__file__).resolve().parents[1]
 DEFAULT_WORKSPACE_ROOT = Path("/home/hfy/APP/All_bot-workspaces")
 DEFAULT_BASE_REF = "origin/codex/test-train"
@@ -82,7 +82,7 @@ class WorkspaceManager:
     def _slot(value: str) -> str:
         slot = value.upper()
         if slot not in SLOTS:
-            raise WorkspaceError("slot must be one of A, B, C, or D")
+            raise WorkspaceError("slot must be one of A, B, C, D, E, F, G, or H")
         return slot
 
     def _path(self, slot: str) -> Path:
@@ -201,7 +201,7 @@ class WorkspaceManager:
             return self._assign_unlocked(slot, task)
 
     def claim(self, task: str) -> dict[str, str]:
-        """Atomically select and assign the first safe A-D slot."""
+        """Atomically select and assign the first safe A-H slot."""
 
         task = self._task(task)
         with self._workspace_lock():
@@ -237,7 +237,7 @@ class WorkspaceManager:
                     "base_sha": base_sha,
                 }
         raise WorkspaceError(
-            "no available workspace slot; A-D are occupied, dirty, or uninitialized"
+            "no available workspace slot; A-H are occupied, dirty, or uninitialized"
         )
 
     def park(self, slot: str) -> None:

@@ -149,6 +149,16 @@ def test_deploy_orders_tracks_and_records_candidate(tmp_path):
     assert coordinator.status()["status"] == "deployed"
 
 
+def test_expanded_workspace_slot_can_flow_through_test_train_audit(tmp_path):
+    module = _load_module()
+    coordinator = module.TestTrainCoordinator(state_root=tmp_path / "state")
+    runner = _FakeReleaseRunner()
+
+    coordinator.deploy_candidate(SHA, pr=42, slot="H", runner=runner)
+
+    assert coordinator.status()["slot"] == "H"
+
+
 def test_deploy_can_explicitly_leave_test_execution_for_a_later_worker_window(
     tmp_path,
 ):
