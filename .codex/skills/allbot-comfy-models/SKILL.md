@@ -55,6 +55,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 - QQCC `AI动图` 的 `end_frame_draw_scene_id` 只复用当前 AI绘图场景及其 `postprocess_draw_scene_id` 后处理链生成最终尾帧，再把首尾两图传给旧 `image_to_video` / `video_lora` 或 `wan22_video_v2`；视频任务使用视频场景自身 `negative_prompt`，尾帧绘图链使用被引用绘图场景自身 `negative_prompt`，两者不能串用。这不是新 workflow/profile，v2 仍不支持附加 LoRA。
 - QQCC `AI滤镜` 使用独立 `filter_scenes`，但 engine、LoRA、`negative_prompt` 与 `original_face_swap_enabled` 规则复用 AI绘图；滤镜场景自身不支持后处理链，只能作为直接单步入口或 `draw_scenes[].postprocess_filter_scene_id` 的终止模板。关闭 `main_buttons.ai_filter` 只隐藏直接入口，不影响有效滤镜模板被 AI绘图引用；不要新增 workflow、RunPod profile、模型 bundle 或数据库表。
 - LTX 系列的用户可见 task type 与执行 profile 不完全同名。`ltx_video`、`ltx_video_flf2v`、`ltx_video_v2v_audio` 等映射必须同时核对 registry、payload builder、worker mapping 和模型 catalog。
+- LTX 首尾帧 `ltx_video_flf2v` 的默认与 10Eros override workflow 必须开启时空 VAE 的 `last_frame_fix`，让末端 latent 通过临时重复帧获得完整解码上下文；`workers/` 与 `remote_workers/` 两侧必须同步，避免尾帧轻微形变或运行态漂移。
 - LTX LoRA 多选使用 `lora_items` 结构，当前限制最多 3 个。legacy `lora_name/lora_strength` 只作兼容，不应作为新入口。
 - QQCC `AI视频` 配置保存 `{path,strength}`，提交边界转换为 LTX 既有 `{name,strength}`；强度限制 `0.1..2.0`、步长 `0.05`。LTX I2V/FLF2V/V2V Audio 的非空 `negative_prompt` 映射到节点 `29.text`；空白值必须在 Web/Bot/API 边界省略，不能覆盖工作流节点的内置默认文本。主 Bot Telegram 高级 LTX 设置页仍不暴露负面提示词。
 - LTX Bot 扩展 seed 与完成拼接链路恢复由 `src/services/ltx_video_extension_service.py` 负责；这只影响 Bot 入口层 histories/last_frame/context 准备，不改变 LTX workflow、worker mapping、RunPod profile 或模型目录。
