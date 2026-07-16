@@ -1599,10 +1599,19 @@ if test -f {shlex.quote(transaction_path)} && ! grep -Eq '\"status\"[[:space:]]*
         )
     previous_sha = str(getattr(args, "previous_sha", "") or "")
     if not initial and FULL_SHA_RE.fullmatch(previous_sha):
+        previous_release_env = (
+            _cloud_release_dir(
+                previous_sha,
+                str(manifest.get("track"))
+                if manifest.get("track") in RELEASE_TRACKS
+                else None,
+            )
+            + "/release.env"
+        )
         script += (
             f"test -d {shlex.quote(root + '/releases/' + previous_sha)} "
             "|| echo cloud-rollback-checkout-unavailable\n"
-            f"test -f {shlex.quote('/var/lib/allbot/releases/' + previous_sha + '/release.env')} "
+            f"test -f {shlex.quote(previous_release_env)} "
             "|| echo cloud-rollback-release-env-unavailable\n"
         )
     result = _run(
@@ -2283,10 +2292,16 @@ def _deploy_cloud(
     if not cloud_services:
         return
     sha = manifest["git_sha"]
+    track = (
+        str(manifest["track"])
+        if manifest.get("schema_version") == 2
+        and manifest.get("track") in RELEASE_TRACKS
+        else None
+    )
     checkout_root = args.remote_checkout_root
     checkout = f"{checkout_root}/releases/{sha}"
     repo = f"{checkout_root}/repo"
-    release_dir = f"/var/lib/allbot/releases/{sha}"
+    release_dir = _cloud_release_dir(str(sha), track)
     env_file = args.remote_env_file or environment["env_file"]
     compose = (
         f"docker compose --project-name {shlex.quote(environment['project'])} "
@@ -3223,14 +3238,23 @@ def _rollback_worker_stack(
         raise ReleaseError("recovered Worker relay health check failed")
 
 
+def _cloud_release_dir(sha: str, track: str | None = None) -> str:
+    root = "/var/lib/allbot/releases"
+    if track in RELEASE_TRACKS:
+        root += f"/{track}"
+    return f"{root}/{sha}"
+
+
 def _cloud_compose_command(
     args: argparse.Namespace,
     sha: str,
+    *,
+    track: str | None = None,
 ) -> str:
     environment = ENVIRONMENT[args.env]
     checkout = f"{args.remote_checkout_root}/releases/{sha}"
     env_file = args.remote_env_file or environment["env_file"]
-    release_dir = f"/var/lib/allbot/releases/{sha}"
+    release_dir = _cloud_release_dir(sha, track)
     return (
         f"docker compose --project-name {shlex.quote(environment['project'])} "
         f"--env-file {shlex.quote(checkout + '/deploy/env.defaults')} "
@@ -3263,9 +3287,16 @@ def _rollback_cloud_stack(
     if not isinstance(previous, Mapping):
         raise ReleaseError("transaction previous stack is invalid")
     previous_kind = previous.get("kind")
+    track = (
+        str(transaction["track"])
+        if transaction.get("track") in RELEASE_TRACKS
+        else None
+    )
     if previous_kind == "legacy":
         target_sha = str(transaction["target_sha"])
-        snapshot = f"/var/lib/allbot/releases/{target_sha}/legacy-cloud-running.txt"
+        snapshot = (
+            _cloud_release_dir(target_sha, track) + "/legacy-cloud-running.txt"
+        )
         project = environment["project"]
         removal = ""
         for service in services:
@@ -3303,10 +3334,11 @@ done < "$source_file"
 """
     elif previous_kind == "immutable":
         previous_sha = validate_full_sha(str(previous.get("git_sha", "")))
-        compose = _cloud_compose_command(args, previous_sha)
+        compose = _cloud_compose_command(args, previous_sha, track=track)
+        previous_release_env = _cloud_release_dir(previous_sha, track) + "/release.env"
         script = f"""set -euo pipefail
 test -d {shlex.quote(args.remote_checkout_root + '/releases/' + previous_sha)}
-test -f {shlex.quote('/var/lib/allbot/releases/' + previous_sha + '/release.env')}
+test -f {shlex.quote(previous_release_env)}
 {compose} config -q
 {compose} up -d --no-deps --wait --wait-timeout 180 {service_words}
 {compose} ps {service_words}
@@ -3414,9 +3446,14 @@ def _validate_recovered_stack(
         environment = ENVIRONMENT[args.env]
         host = args.remote_host or environment["host"]
         if previous.get("kind") == "legacy":
+            track = (
+                str(transaction["track"])
+                if transaction.get("track") in RELEASE_TRACKS
+                else None
+            )
             snapshot = (
-                f"/var/lib/allbot/releases/{transaction['target_sha']}/"
-                "legacy-cloud-running.txt"
+                _cloud_release_dir(str(transaction["target_sha"]), track)
+                + "/legacy-cloud-running.txt"
             )
             script = f"""set -euo pipefail
 source_file={shlex.quote(snapshot)}
@@ -3431,7 +3468,12 @@ done < "$source_file"
 """
         else:
             previous_sha = validate_full_sha(str(previous.get("git_sha", "")))
-            compose = _cloud_compose_command(args, previous_sha)
+            track = (
+                str(transaction["track"])
+                if transaction.get("track") in RELEASE_TRACKS
+                else None
+            )
+            compose = _cloud_compose_command(args, previous_sha, track=track)
             services = " ".join(shlex.quote(item) for item in sorted(selected_cloud))
             script = f"""set -euo pipefail
 for service in {services}; do
@@ -4394,8 +4436,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         transaction["level"] = impact.level
         transaction["snapshots"] = {
             "cloud_legacy_running": (
-                f"/var/lib/allbot/releases/{manifest['git_sha']}/"
-                "legacy-cloud-running.txt"
+                _cloud_release_dir(
+                    str(manifest["git_sha"]),
+                    str(manifest["track"])
+                    if manifest.get("schema_version") == 2
+                    else None,
+                )
+                + "/legacy-cloud-running.txt"
             ),
             "worker_legacy_running": str(
                 Path(args.worker_checkout_root).expanduser()

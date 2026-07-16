@@ -48,7 +48,7 @@ main first-parent 历史寻找最近成功的 v2 bundle 作为增量基线，失
 
 ## 4. 配置
 
-代码发布不修改真实 env。Compose 依次读取版本化 `deploy/env.defaults`、`/etc/allbot/<env>.env` 和该 release 的非敏感 `release.env`，后者优先级最高且只包含 release SHA、config revision 与镜像 digest。
+代码发布不修改真实 env。Compose 依次读取版本化 `deploy/env.defaults`、`/etc/allbot/<env>.env` 和该 release 的非敏感 `release.env`，后者优先级最高且只包含 release SHA、config revision 与镜像 digest。schema v2 的云端合约必须写入 `/var/lib/allbot/releases/<track>/<sha>/release.env`，使同一 SHA 的 control-plane 与 test-execution 无法覆盖彼此的镜像变量；云端 legacy 快照、预检、回滚和恢复必须解析同一 track-scoped 目录。
 
 Compose 合并后的 service `environment` 必须覆盖旧 env 别名。特别是 `BOT_TYPE=TEST` 时 `config._get_env_value("API_BASE")` 会优先读取 `API_BASE_TEST`，test overlay 因此同时钉死 `API_BASE` 和 `API_BASE_TEST` 为 Compose 内部 `central-api` alias；prod overlay 为所有 Python 消费者钉死 `API_BASE`。发布器在 compose health 通过后还会进入实际容器 import `config`，解析值不是 `http://central-api:8003` 则 fail closed，不写成功状态。
 
