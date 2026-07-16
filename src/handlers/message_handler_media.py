@@ -9,6 +9,7 @@ from config import MINIO_TEMPLATE_BUCKET
 from src.constants import MODE_NONE, MODE_TEMPLATE_CONTRIBUTE, TEMP_TEMPLATE_DIR
 from src.core.user_core import get_or_create_user_by_telegram
 from src.services.permission_service import permission_service
+from src.services.main_bot_menu_runtime import get_runtime_main_menu_keyboard
 from src.services.submission_ban_service import (
     SubmissionBannedError,
     ensure_submission_allowed_for_user,
@@ -66,9 +67,7 @@ async def handle_photo_idle(update: Update, context):
     if now - last_reminder < 3.0:
         return None
 
-    from src.i18n.keyboards import get_main_menu_keyboard
-
-    reply_markup = get_main_menu_keyboard(context.lang)
+    reply_markup = await get_runtime_main_menu_keyboard(context.lang)
     await robust_reply_text(
         update.message,
         "⚠️ **请先选择功能模式**\n\n点击下方菜单选择您想要的功能 👇",
