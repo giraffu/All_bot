@@ -332,6 +332,108 @@ def test_v2_test_execution_initial_release_does_not_select_cloud_state_services(
     assert selected == set()
 
 
+def test_v2_test_data_service_repair_is_explicit_maintenance_cutover(
+    monkeypatch, tmp_path
+):
+    module = _load_module()
+    previous_sha = "b" * 40
+    artifacts = {
+        name: {
+            "kind": "external-image",
+            "ref": f"docker.io/library/{name}@sha256:" + digest * 64,
+            "digest": "sha256:" + digest * 64,
+            "source_sha": FULL_SHA,
+            "dependency_closure": [],
+        }
+        for name, digest in (("postgres", "1"), ("redis", "2"))
+    }
+    release = SimpleNamespace(
+        index={
+            "ci_run": "https://github.com/giraffu/All_bot/actions/runs/1",
+            "release_channel": "test-candidate",
+            "source_ref": "refs/heads/codex/test-train",
+        },
+        manifests={
+            "control-plane": {"artifacts": artifacts},
+            "gpu-execution": {"artifacts": {}},
+        },
+    )
+    manifest = {
+        "schema_version": 2,
+        "source_sha": FULL_SHA,
+        "git_sha": FULL_SHA,
+        "ci_run": release.index["ci_run"],
+        "release_channel": "test-candidate",
+        "source_ref": "refs/heads/codex/test-train",
+        "track": "control-plane",
+        "artifacts": artifacts,
+        "selected_artifacts": list(artifacts),
+    }
+    args = SimpleNamespace(
+        sha=FULL_SHA,
+        manifest=None,
+        bundle_cache=str(tmp_path),
+        bundle_repository="ghcr.io/giraffu/allbot-release-v2-test-candidate",
+        command="plan",
+        modules=[],
+        services=["postgres", "redis"],
+        repair_test_data_services=True,
+        track="control-plane",
+        state_file=None,
+        from_sha=None,
+        env="test",
+        remote_host="test-control",
+        policy=str(POLICY_PATH),
+        skip_git_checks=True,
+        skip_ci_checks=True,
+        dashboard_fast_track=False,
+    )
+
+    monkeypatch.setattr(
+        module, "_resolve_manifest_path", lambda *_args, **_kwargs: tmp_path / "index"
+    )
+    monkeypatch.setattr(module, "_read_json", lambda _path: {"schema_version": 2})
+    monkeypatch.setattr(
+        module, "_resolve_previous_sha", lambda *_args, **_kwargs: previous_sha
+    )
+    monkeypatch.setattr(module, "git_changed_paths", lambda *_args: [])
+    monkeypatch.setattr(module, "load_release_index", lambda *_args, **_kwargs: release)
+    monkeypatch.setattr(module, "_load_v2_track", lambda *_args, **_kwargs: manifest)
+
+    impact, selected_manifest, resolved_previous = module.build_plan(args)
+
+    assert impact.level == "maintenance"
+    assert impact.services == {"postgres", "redis"}
+    assert "initial-release" in impact.matched_rules
+    assert "test-data-service-repair" in impact.matched_rules
+    assert module.cloud_services_for_release("test", impact) == {"postgres", "redis"}
+    assert selected_manifest["selected_artifacts"] == ["postgres", "redis"]
+    assert resolved_previous == previous_sha
+
+
+def test_v2_test_data_service_repair_rejects_partial_selection(monkeypatch, tmp_path):
+    module = _load_module()
+    args = SimpleNamespace(
+        sha=FULL_SHA,
+        manifest=None,
+        bundle_cache=str(tmp_path),
+        command="plan",
+        modules=[],
+        services=["redis"],
+        repair_test_data_services=True,
+        track="control-plane",
+        env="test",
+        dashboard_fast_track=False,
+    )
+    monkeypatch.setattr(
+        module, "_resolve_manifest_path", lambda *_args, **_kwargs: tmp_path / "index"
+    )
+    monkeypatch.setattr(module, "_read_json", lambda _path: {"schema_version": 2})
+
+    with pytest.raises(module.ReleaseError, match="exactly postgres and redis"):
+        module.build_plan(args)
+
+
 def test_v2_transaction_journal_path_is_track_scoped():
     module = _load_module()
 
@@ -1300,6 +1402,101 @@ def test_cloud_deploy_rejects_missing_remote_completion_marker(monkeypatch):
             "ALLBOT_RELEASE_SHA=x\n",
             _valid_test_environment(),
         )
+
+
+def test_test_data_service_repair_requires_empty_queue_confirmation():
+    module = _load_module()
+    args = SimpleNamespace(
+        execute=True,
+        env="test",
+        remote_host="cloud-test",
+        remote_checkout_root="/release-root",
+        remote_env_file="/etc/allbot/test.env",
+        confirm_legacy_cutover=True,
+        confirm_empty_test_queue=False,
+        drain_timeout_seconds=30,
+        drain_interval_seconds=1,
+    )
+    impact = module.ReleaseImpact(
+        services={"central-api"},
+        level="maintenance",
+        matched_rules=["initial-release", "test-data-service-repair"],
+    )
+
+    with pytest.raises(module.ReleaseError, match="confirm-empty-test-queue"):
+        module._deploy_cloud(
+            args,
+            impact,
+            _manifest(),
+            "ALLBOT_RELEASE_SHA=x\n",
+            _valid_test_environment(),
+        )
+
+
+def test_test_data_service_repair_uses_confirmed_external_queue_evidence(
+    monkeypatch,
+):
+    module = _load_module()
+    artifacts = {
+        name: {
+            "kind": "external-image",
+            "ref": f"docker.io/library/{name}@sha256:" + digest * 64,
+            "digest": "sha256:" + digest * 64,
+            "source_sha": FULL_SHA,
+        }
+        for name, digest in (("postgres", "1"), ("redis", "2"))
+    }
+    manifest = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "source_sha": FULL_SHA,
+        "git_sha": FULL_SHA,
+        "source_ref": "refs/heads/codex/test-train",
+        "artifacts": artifacts,
+        "selected_artifacts": list(artifacts),
+    }
+    args = SimpleNamespace(
+        execute=True,
+        env="test",
+        remote_host="cloud-test",
+        remote_checkout_root="/release-root",
+        remote_env_file="/etc/allbot/test.env",
+        confirm_legacy_cutover=True,
+        confirm_empty_test_queue=True,
+        drain_timeout_seconds=30,
+        drain_interval_seconds=1,
+    )
+    remote_scripts = []
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda command, **kwargs: subprocess.CompletedProcess(
+            command, 0, stdout="", stderr=""
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "_remote_shell",
+        lambda host, script, *, execute: remote_scripts.append(script)
+        or f"ALLBOT_CLOUD_RELEASE_VERIFIED:{FULL_SHA}\n",
+    )
+
+    module._deploy_cloud(
+        args,
+        module.ReleaseImpact(
+            services={"postgres", "redis"},
+            level="maintenance",
+            matched_rules=["initial-release", "test-data-service-repair"],
+        ),
+        manifest,
+        "ALLBOT_RELEASE_TRACK=control-plane\n",
+        _valid_test_environment(),
+    )
+
+    script = remote_scripts[0]
+    assert "if false; then" in script
+    assert " pull postgres redis" in script
+    assert " up -d --no-deps --wait --wait-timeout 180 postgres redis" in script
 
 
 def test_v2_cloud_release_contract_is_track_scoped(monkeypatch):

@@ -1995,6 +1995,22 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
     if manifest_document.get("schema_version") == 2:
         requested_modules = _split_services(args.modules)
         requested_services = _split_services(args.services)
+        test_data_repair = bool(
+            getattr(args, "repair_test_data_services", False)
+        )
+        if test_data_repair:
+            if args.env != "test" or args.track != "control-plane":
+                raise ReleaseError(
+                    "test data service repair is only available for the test control-plane"
+                )
+            if args.command not in {"plan", "preflight", "deploy"}:
+                raise ReleaseError(
+                    "test data service repair is only available for plan, preflight, or deploy"
+                )
+            if requested_modules or requested_services != {"postgres", "redis"}:
+                raise ReleaseError(
+                    "test data service repair requires exactly postgres and redis services"
+                )
         repair_fast_track = bool(
             getattr(args, "control_plane_repair_fast_track", False)
         )
@@ -2120,6 +2136,12 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
             )
         else:
             services = artifact_names
+        if test_data_repair:
+            services.update({"postgres", "redis"})
+            planned_impact.level = "maintenance"
+            for rule in ("initial-release", "test-data-service-repair"):
+                if rule not in planned_impact.matched_rules:
+                    planned_impact.matched_rules.append(rule)
         planned_impact.services = services
         if repair_fast_track:
             test_state = _read_test_release_state(args, manifest)
@@ -2418,6 +2440,14 @@ def _deploy_cloud(
     initial_cutover = (
         "initial-release" in impact.matched_rules and impact.level == "maintenance"
     )
+    if (
+        args.execute
+        and "test-data-service-repair" in impact.matched_rules
+        and not getattr(args, "confirm_empty_test_queue", False)
+    ):
+        raise ReleaseError(
+            "test data service repair requires --confirm-empty-test-queue"
+        )
     legacy_containers = legacy_cloud_containers(args.env, cloud_services)
     legacy_names = " ".join(shlex.quote(name) for name in legacy_containers)
     legacy_handoff = ""
@@ -2460,7 +2490,13 @@ fi
             'print(c.zcard("comfy:queue:pending"),c.scard("comfy:queue:running"))\' '
             "</dev/null"
         )
-        if initial_cutover and "central-api" in cloud_services:
+        if "test-data-service-repair" in impact.matched_rules:
+            # The operator has inspected the stopped legacy Redis directly and
+            # supplied --confirm-empty-test-queue.  The current immutable
+            # Central API cannot resolve Redis until this repair starts it, so
+            # attempting the ordinary in-container drain would be circular.
+            drain_condition = "false"
+        elif initial_cutover and "central-api" in cloud_services:
             legacy_central = legacy_cloud_containers(args.env, {"central-api"})[0]
             drain_condition = (
                 "docker ps --format '{{.Names}}' | "
@@ -4249,6 +4285,19 @@ def _add_release_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--confirm-db-upgrade", action="store_true")
     parser.add_argument("--confirm-legacy-cutover", action="store_true")
+    parser.add_argument(
+        "--repair-test-data-services",
+        action="store_true",
+        help=(
+            "repair a missing test PostgreSQL/Redis immutable handoff; requires "
+            "exact --services postgres and --services redis"
+        ),
+    )
+    parser.add_argument(
+        "--confirm-empty-test-queue",
+        action="store_true",
+        help="confirm external evidence that test pending/running queues are empty",
+    )
     parser.add_argument("--drain-timeout-seconds", type=int, default=7200)
     parser.add_argument("--drain-interval-seconds", type=int, default=15)
     parser.add_argument("--pages-verify-timeout-seconds", type=int, default=180)
