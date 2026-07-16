@@ -136,6 +136,7 @@ LAN registry 缓存已验证 GHCR RunPod 镜像，也保存 SCAIL-2 这类本地
 
 - `ghcr.io/giraffu/allbot-comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946` -> `192.168.1.115:5000/allbot/comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946`
 - `ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh` -> `192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh`
+- `ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:v2-47c1219f-i2ipro` -> `192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:v2-47c1219f-i2ipro`，两端 manifest digest 均为 `sha256:a56620158da13c561e077511ebd310eb93de8821218da92c908df63f040b6495`；它是新候选/后续单槽切换的 profile catalog 默认值，不自动重启仍运行旧 digest 的槽位。
 - `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd` -> `192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd`
 - `remote_workers/docker/runpod_profiles/scail2/Dockerfile` -> `192.168.1.115:5000/allbot/comfy-runpod-scail2:20260617-scail2-cu128-a492b2b-proddeps1`
 - `remote_workers/docker/runpod_profiles/pornmaster_flux2_edit/Dockerfile` -> `192.168.1.115:5000/allbot/comfy-runpod-pornmaster-flux2-edit:20260628-pornmaster-flux2-edit-cu128-smallvae1`，该镜像只声明 PornMaster Flux2 single/multiple image-edit runtime，不 baked 模型权重；模型由 `pornmaster_flux2_edit/2026-06-27/manifest.json` 在启动时同步。

@@ -1,5 +1,6 @@
 # AllBot Knowledge Base Audit Matrix
 
+> 2026-07-17：`gpu-252` GPU1 RMA replacement 卡已登记为 disabled `i2i_pro` commissioning candidate，固定新 UUID 与 8191，但 live status 仍无 Worker/容器且 model cache 为 missing，本轮不执行生产切换。候选使用的 GHCR 与 LAN registry `v2-47c1219f-i2ipro` manifest digest 只读核对一致为 `sha256:a56620158da13c561e077511ebd310eb93de8821218da92c908df63f040b6495`；旧运行槽位不会因 profile catalog 更新而自动重启。
 > 2026-07-16：可信 bundle 的 Dashboard Backend 实际由多阶段 `Dockerfile.control-plane` 构建；只修独立 `Dockerfile.dashboard-backend` 不会改变 release image。两条构建路径现同时内置 LAN AIO rollout 的 `gpu_release_rollout.py`、`release_manifest_v2.py`、`release_strategy.py`，专项回归同时约束两份 Dockerfile，真实 ASGI import smoke 继续作为最终闭包门禁。
 > 2026-07-16：test-train 跨轨部署失败并成功逆序恢复后，包装器不再吞掉底层失败原因；最终错误在通用恢复结论后附带 `release.py` 最后一行摘要，使集成 AI 可在唯一 `test_train_release.py` 入口内定位 Worker/Pages/控制面门禁，无需绕过包装器重放 mutation。TDD 覆盖后轨失败、前轨回滚和原始错误保留；事实源为 `scripts/test_train_release.py`、专项测试、并发 Skill/SOP。
 > 2026-07-16：PornMaster FP8/BF16 RunPod 共用 runtime 改由 workflow-owned `allbot-comfy-runpod-pornmaster-flux2-edit-baked` 公共 GHCR 包发布，避免 legacy 包缺少当前仓库 Actions write access；Dashboard catalog 固定到完成 BF16 single/multiple workflow、baked entrypoint、revision 与匿名拉取 smoke 的精确 tag。模型 manifest、任务类型、GPU/`--lowvram` 与 UNet 节点隔离口径不变。

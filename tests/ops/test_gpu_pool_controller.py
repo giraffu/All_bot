@@ -147,7 +147,7 @@ def test_runpod_all_in_one_profiles_use_lan_mirrors_of_ghcr_images():
     config = load_controller_config()
 
     img2img = "192.168.1.115:5000/allbot/comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946"
-    i2i_pro = "192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh"
+    i2i_pro = "192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:v2-47c1219f-i2ipro"
     wan22 = "192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd"
     scail2 = "192.168.1.115:5000/allbot/comfy-runpod-scail2:20260704-sm120-xformers-pr1262"
 
