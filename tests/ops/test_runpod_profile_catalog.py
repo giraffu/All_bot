@@ -9,8 +9,9 @@ def test_dashboard_pinned_images_use_baked_runtime_artifacts():
     assert catalog.RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE.endswith(
         ":20260716-img2img-baked-runtime-v1"
     )
-    assert catalog.RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE.endswith(
-        ":20260716-pornmaster-flux2-edit-baked-runtime-v1"
+    assert catalog.RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE == (
+        "ghcr.io/giraffu/allbot-comfy-runpod-pornmaster-flux2-edit-baked:"
+        "20260716-pornmaster-flux2-edit-baked-runtime-v1"
     )
     assert "runpod_baked_runtime_entrypoint.sh" in (
         catalog.RUNPOD_IMG2IMG_LORA_DOCKER_START_CMD[2]
