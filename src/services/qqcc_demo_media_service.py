@@ -13,7 +13,7 @@ from telegram import InputMediaPhoto, InputMediaVideo
 
 logger = logging.getLogger(__name__)
 
-QQCC_DEMO_SCENE_KINDS = frozenset({"draw", "filter", "video"})
+QQCC_DEMO_SCENE_KINDS = frozenset({"draw", "filter", "video", "ai_video"})
 QQCC_DEMO_SLOTS = frozenset({"input", "output"})
 QQCC_DEMO_IMAGE_MIME_TYPES = frozenset({"image/jpeg", "image/png"})
 QQCC_DEMO_VIDEO_MIME_TYPES = frozenset({"video/mp4"})
@@ -41,7 +41,7 @@ async def clone_qqcc_config_demo_media_for_private_bot(
     media_to_copy: dict[str, str] = {}
     private_prefix = f"qqcc/private/{int(private_bot_id)}/demo/"
 
-    for section in ("video_scenes", "draw_scenes", "filter_scenes"):
+    for section in ("video_scenes", "ai_video_scenes", "draw_scenes", "filter_scenes"):
         for scene in cloned.get(section, []):
             for field in ("demo_input_media", "demo_output_media"):
                 media = scene.get(field)
@@ -126,7 +126,7 @@ async def delete_qqcc_private_bot_demo_media(
 def resolve_qqcc_demo_media_type(*, scene_kind: str, slot: str) -> str:
     if scene_kind not in QQCC_DEMO_SCENE_KINDS or slot not in QQCC_DEMO_SLOTS:
         raise QqccDemoMediaValidationError("Unsupported scene kind or demo slot")
-    return "video" if scene_kind == "video" and slot == "output" else "image"
+    return "video" if scene_kind in {"video", "ai_video"} and slot == "output" else "image"
 
 
 def build_qqcc_demo_object_key(

@@ -11,6 +11,7 @@ const props = defineProps<{
   isUnifiedImageToVideo: boolean
   isLtxVideo: boolean
   prompt: string
+  negativePrompt: string
   loraSelection: string
   selectedLtxLoraNames: string[]
   ltxLoraItems: LtxVideoLoraItem[]
@@ -21,6 +22,7 @@ warnIfPropsExceedBudget('TemplateApplyLoraPromptSection', Object.keys(props).len
 
 const emit = defineEmits<{
   'update:prompt': [value: string]
+  'update:negativePrompt': [value: string]
   'update:loraSelection': [value: string]
   syncLtxLoraItems: [value: string[]]
   toggleLtxLoraStrengthEditor: [name: string]
@@ -116,6 +118,14 @@ const emit = defineEmits<{
       :rows="6"
       :placeholder="isUnifiedImageToVideo ? $t('template_apply.image_to_video.prompt_placeholder_video_lora') : $t('template_apply.image_to_video.prompt_placeholder_custom')"
       @update:value="emit('update:prompt', String($event ?? ''))"
+    />
+    <a-textarea
+      v-if="isLtxVideo"
+      :value="negativePrompt"
+      :rows="4"
+      class="mt-3"
+      :placeholder="$t('lab.workbench.negative_prompt_placeholder')"
+      @update:value="emit('update:negativePrompt', String($event ?? ''))"
     />
   </div>
 </template>

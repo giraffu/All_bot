@@ -268,6 +268,7 @@ class QqccBotConfigRequest(BaseModel):
     video_buttons: Dict[str, Any] = Field(default_factory=dict)
     video_settings: Dict[str, Any] = Field(default_factory=dict)
     video_scenes: List[Dict[str, Any]] = Field(default_factory=list)
+    ai_video_scenes: List[Dict[str, Any]] = Field(default_factory=list)
     draw_scenes: List[Dict[str, Any]] = Field(default_factory=list)
     filter_scenes: List[Dict[str, Any]] = Field(default_factory=list)
     prompts: Dict[str, Any] = Field(default_factory=dict)

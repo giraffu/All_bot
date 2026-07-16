@@ -232,7 +232,7 @@ async def prepare_qqcc_regeneration_submission(
             raise QQCCRegenerationError("功能暂未开放或配置已变更。")
         return QQCCRegenerationSubmission(
             kind=kind,
-            display_mode_name=display_mode_name,
+            display_mode_name=plan.display_mode_name or display_mode_name,
             image_path=image_path,
             plan=plan,
         )
@@ -251,6 +251,7 @@ async def prepare_qqcc_regeneration_submission(
             fsm_data={
                 "mode": mode,
                 "scene_id": meta.get("scene_id"),
+                "scene_kind": meta.get("scene_kind"),
                 "resolution": getattr(history, "billing_resolution", None) or "512p",
                 "duration": _coerce_quick_video_duration(history),
             },
@@ -265,7 +266,7 @@ async def prepare_qqcc_regeneration_submission(
         raise QQCCRegenerationError("功能暂未开放或配置已变更。")
     return QQCCRegenerationSubmission(
         kind=kind,
-        display_mode_name=display_mode_name,
+        display_mode_name=plan.display_mode_name or display_mode_name,
         image_path=image_path,
         plan=plan,
     )

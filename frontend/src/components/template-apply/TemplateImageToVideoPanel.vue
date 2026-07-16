@@ -194,7 +194,7 @@ const initializeFromContext = () => {
     resolution.value = 'preview'
     duration.value = DEFAULT_WAN22_VIDEO_V2_DURATION_SECONDS
   }
-  negativePrompt.value = DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT
+  negativePrompt.value = isLtxVideo.value ? '' : DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT
 
   const templateState = resolveTemplateVideoApplyState(
     props.context.raw as any,
@@ -203,8 +203,9 @@ const initializeFromContext = () => {
 
   if (templateState) {
     if (templateState.prompt) prompt.value = templateState.prompt
-    if (isWan22VideoV2.value) {
-      negativePrompt.value = templateState.negativePrompt || DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT
+    if (isWan22VideoV2.value || isLtxVideo.value) {
+      negativePrompt.value = templateState.negativePrompt
+        || (isWan22VideoV2.value ? DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT : '')
     }
     loraSelection.value = normalizeImageToVideoLoraSelection(templateState.loraName)
     ltxLoraItems.value = normalizeLtxVideoLoraItems(templateState.loraItems)
@@ -312,7 +313,7 @@ const handleGenerate = async () => {
       ? Number(duration.value)
       : Number(normalizeWan22VideoV2DurationSeconds(duration.value)),
     prompt: (isWan22TemplateVideoTaskType(taskType.value) || isLtxVideo.value) ? prompt.value : undefined,
-    negativePrompt: isWan22VideoV2.value ? negativePrompt.value : undefined,
+    negativePrompt: (isWan22VideoV2.value || isLtxVideo.value) ? negativePrompt.value : undefined,
     promptTarget: 'inputs',
     loraName: loraName.value,
     loraStrength: loraStrength.value,
@@ -400,11 +401,13 @@ onBeforeUnmount(() => {
           :is-unified-image-to-video="isUnifiedImageToVideo"
           :is-ltx-video="isLtxVideo"
           :prompt="prompt"
+          :negative-prompt="negativePrompt"
           :lora-selection="loraSelection"
           :selected-ltx-lora-names="selectedLtxLoraNames"
           :ltx-lora-items="ltxLoraItems"
           :expanded-ltx-lora-editors="expandedLtxLoraEditors"
           @update:prompt="prompt = $event"
+          @update:negative-prompt="negativePrompt = $event"
           @update:lora-selection="loraSelection = $event"
           @sync-ltx-lora-items="syncLtxLoraItems"
           @toggle-ltx-lora-strength-editor="toggleLtxLoraStrengthEditor"

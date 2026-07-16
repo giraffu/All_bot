@@ -20,12 +20,69 @@ from src.services.private_qqcc_continuation_service import (
     activate_private_qqcc_continuation_task,
     build_private_qqcc_continuation_registry_metadata,
     create_private_qqcc_continuation,
+    execute_private_qqcc_continuation_stage_default,
     list_private_qqcc_continuations_for_recovery,
     normalize_private_qqcc_continuation_task_ref,
     persist_private_qqcc_continuation_input,
     private_bot_has_nonterminal_continuations,
     resume_private_qqcc_continuation,
 )
+
+
+@pytest.mark.asyncio
+async def test_private_continuation_ltx_executor_resumes_with_original_and_current_frame():
+    checkpoint = SimpleNamespace(
+        original_input_ref="durable/original.png",
+        current_output_ref="durable/tail.png",
+        chat_id=456,
+        telegram_user_id=123,
+        username="tester",
+        status_message_id=77,
+    )
+    stage = {
+        "executor": "ltx_video",
+        "input_mode": "original_current",
+        "task_kwargs": {
+            "prompt": "camera orbit",
+            "negative_prompt": "blur",
+            "ltx_mode": "flf2v",
+            "duration": "10s",
+            "send_result": True,
+        },
+    }
+    ref = PrivateQqccContinuationTaskRef(
+        chain_id="chain-1",
+        stage_index=1,
+        submission_sequence=2,
+        registry_task_id="task-ltx",
+        executor_token="token",
+    )
+    ltx_task = AsyncMock(return_value=(b"video", "results/video.mp4"))
+
+    context = SimpleNamespace()
+    result = await execute_private_qqcc_continuation_stage_default(
+        checkpoint,
+        stage,
+        ref,
+        context,
+        process_ltx_video_task_func=ltx_task,
+    )
+
+    assert result == (b"video", "results/video.mp4")
+    assert ltx_task.await_args.kwargs == {
+        "context": context,
+        "chat_id": 456,
+        "user_id": 123,
+        "username": "tester",
+        "image_path": "durable/original.png",
+        "end_image_path": "durable/tail.png",
+        "status_msg_id": 77,
+        "prompt": "camera orbit",
+        "negative_prompt": "blur",
+        "ltx_mode": "flf2v",
+        "duration": "10s",
+        "send_result": True,
+    }
 
 
 class MemoryContinuationStore:

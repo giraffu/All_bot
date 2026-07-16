@@ -8,7 +8,13 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.lora_catalog import IMAGE_LORA_MODELS, VIDEO_LORA_MODELS
+from src.lora_catalog import (
+    IMAGE_LORA_MODELS,
+    LTX_VIDEO_LORA_DEFAULT_STRENGTHS,
+    LTX_VIDEO_LORA_MODELS,
+    VIDEO_LORA_MODELS,
+    normalize_ltx_video_lora_items,
+)
 from src.services.qqcc_demo_media_service import build_qqcc_demo_preview_url
 
 QQCC_LAZY_BOT_CONFIG_KEY = "qqcc_lazy_bot_config:v1"
@@ -21,6 +27,7 @@ MAIN_BUTTON_KEYS = (
     "ai_draw",
     "ai_filter",
     "video_edit",
+    "ai_video",
     "market",
     "main_bot_link",
     "private_bot",
@@ -44,6 +51,11 @@ VIDEO_SCENE_ENGINE_KEYS = (
 )
 VIDEO_SCENE_ENGINES_WITH_LORA = frozenset({VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO})
 VIDEO_SCENE_MAX_COUNT = 20
+AI_VIDEO_SCENE_ENGINE_LTX_VIDEO = "ltx_video"
+AI_VIDEO_SCENE_ENGINE_KEYS = (AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,)
+AI_VIDEO_DURATION_KEYS = (5, 10, 15, 20)
+AI_VIDEO_SCENE_MAX_COUNT = 20
+AI_VIDEO_MAX_LORA_ITEMS = 3
 VIDEO_SCENE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 DRAW_SCENE_ENGINE_FREE_EDIT = "free_edit"
 DRAW_SCENE_ENGINE_FREE_EDIT_V2 = "free_edit_v2"
@@ -71,9 +83,11 @@ COPYWRITING_KEYS = (
     "ai_draw_menu",
     "ai_filter_menu",
     "video_menu",
+    "ai_video_menu",
     "ai_draw_scene_start",
     "ai_filter_scene_start",
     "video_scene_start",
+    "ai_video_scene_start",
 )
 COPYWRITING_MAX_LENGTH = 4000
 VIDEO_PROMPT_KEYS = (
@@ -203,6 +217,7 @@ DEFAULT_QQCC_LAZY_BOT_CONFIG: dict[str, Any] = {
         "ai_draw": True,
         "ai_filter": True,
         "video_edit": True,
+        "ai_video": True,
         "market": True,
         "main_bot_link": True,
         "private_bot": True,
@@ -235,6 +250,7 @@ DEFAULT_QQCC_LAZY_BOT_CONFIG: dict[str, Any] = {
         },
     },
     "video_scenes": _default_video_scenes(),
+    "ai_video_scenes": [],
     "draw_scenes": _default_draw_scenes(),
     "filter_scenes": [],
     "prompts": {
@@ -253,9 +269,11 @@ DEFAULT_QQCC_LAZY_BOT_CONFIG: dict[str, Any] = {
         "ai_draw_menu": "",
         "ai_filter_menu": "",
         "video_menu": "",
+        "ai_video_menu": "",
         "ai_draw_scene_start": "",
         "ai_filter_scene_start": "",
         "video_scene_start": "",
+        "ai_video_scene_start": "",
     },
 }
 
@@ -588,6 +606,98 @@ def _normalize_video_scenes(
             preset_scenes=_default_video_scenes(raw_prompts),
             max_count=VIDEO_SCENE_MAX_COUNT,
         )
+    return scenes
+
+
+def _normalize_ai_video_scene(
+    raw_scene: Any,
+    *,
+    index: int,
+    used_ids: set[str],
+    allowed_end_frame_draw_scene_ids: frozenset[str],
+) -> dict[str, Any] | None:
+    if not isinstance(raw_scene, dict):
+        return None
+
+    name = raw_scene.get("name")
+    name = name.strip() if isinstance(name, str) else ""
+    prompt = raw_scene.get("prompt")
+    prompt = prompt.strip() if isinstance(prompt, str) else ""
+    if not name or not prompt:
+        return None
+
+    raw_duration = raw_scene.get("duration")
+    try:
+        duration = int(str(raw_duration).strip().removesuffix("s"))
+    except (TypeError, ValueError):
+        duration = AI_VIDEO_DURATION_KEYS[0]
+    if duration not in AI_VIDEO_DURATION_KEYS:
+        duration = AI_VIDEO_DURATION_KEYS[0]
+
+    raw_lora_items = raw_scene.get("lora_items")
+    allowed_lora_items = [
+        {"name": item.get("path"), "strength": item.get("strength")}
+        for item in (raw_lora_items if isinstance(raw_lora_items, list) else [])
+        if isinstance(item, dict)
+        and isinstance(item.get("path"), str)
+        and item.get("path") in LTX_VIDEO_LORA_MODELS
+        and item.get("path")
+    ]
+    normalized_lora_items = normalize_ltx_video_lora_items(
+        allowed_lora_items,
+        max_items=AI_VIDEO_MAX_LORA_ITEMS,
+    )
+    lora_items = [
+        {"path": item["name"], "strength": item["strength"]}
+        for item in normalized_lora_items
+    ]
+
+    scene = {
+        "id": _build_unique_scene_id(
+            raw_scene.get("id"),
+            index=index,
+            used_ids=used_ids,
+        ),
+        "name": name,
+        "prompt": prompt,
+        "negative_prompt": _normalize_scene_negative_prompt(
+            raw_scene.get("negative_prompt")
+        ),
+        "duration": duration,
+        "engine": AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,
+        "lora_items": lora_items,
+        "end_frame_draw_scene_id": _normalize_end_frame_draw_scene_id(
+            raw_scene.get("end_frame_draw_scene_id"),
+            allowed_draw_scene_ids=allowed_end_frame_draw_scene_ids,
+        ),
+    }
+    _attach_scene_demo_media(
+        scene,
+        raw_scene,
+        scene_kind="ai_video",
+        output_media_type="video",
+    )
+    return scene
+
+
+def _normalize_ai_video_scenes(
+    raw_scenes: Any,
+    *,
+    allowed_end_frame_draw_scene_ids: frozenset[str],
+) -> list[dict[str, Any]]:
+    if not isinstance(raw_scenes, list):
+        return []
+    scenes: list[dict[str, Any]] = []
+    used_ids: set[str] = set()
+    for index, raw_scene in enumerate(raw_scenes[:AI_VIDEO_SCENE_MAX_COUNT]):
+        scene = _normalize_ai_video_scene(
+            raw_scene,
+            index=index,
+            used_ids=used_ids,
+            allowed_end_frame_draw_scene_ids=allowed_end_frame_draw_scene_ids,
+        )
+        if scene is not None:
+            scenes.append(scene)
     return scenes
 
 
@@ -946,6 +1056,10 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
         config["video_scenes"] = _migrate_legacy_video_scenes(raw)
     else:
         config["video_scenes"] = []
+    config["ai_video_scenes"] = _normalize_ai_video_scenes(
+        raw.get("ai_video_scenes"),
+        allowed_end_frame_draw_scene_ids=allowed_end_frame_draw_scene_ids,
+    )
 
     config["prompts"] = {
         key: raw_prompts[key].strip() if isinstance(raw_prompts.get(key), str) else ""
@@ -975,6 +1089,26 @@ def get_qqcc_video_scene(
     if not scene_id:
         return None
     for scene in get_enabled_qqcc_video_scenes(config):
+        if scene.get("id") == scene_id:
+            return scene
+    return None
+
+
+def get_enabled_qqcc_ai_video_scenes(config: dict[str, Any]) -> list[dict[str, Any]]:
+    return normalize_qqcc_config(config).get("ai_video_scenes", [])
+
+
+def has_enabled_qqcc_ai_video_scenes(config: dict[str, Any]) -> bool:
+    return bool(get_enabled_qqcc_ai_video_scenes(config))
+
+
+def get_qqcc_ai_video_scene(
+    config: dict[str, Any],
+    scene_id: str | None,
+) -> dict[str, Any] | None:
+    if not scene_id:
+        return None
+    for scene in get_enabled_qqcc_ai_video_scenes(config):
         if scene.get("id") == scene_id:
             return scene
     return None
@@ -1115,6 +1249,7 @@ def build_qqcc_config_options() -> dict[str, Any]:
         "scene_preset_version": SCENE_PRESET_VERSION,
         "default_video_engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
         "default_draw_engine": DRAW_SCENE_ENGINE_FREE_EDIT_V2,
+        "default_ai_video_engine": AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,
         "video_engines": [
             {
                 "value": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
@@ -1139,8 +1274,23 @@ def build_qqcc_config_options() -> dict[str, Any]:
                 "supports_lora": False,
             },
         ],
+        "ai_video_engines": [
+            {
+                "value": AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,
+                "supports_lora": True,
+            }
+        ],
         "video_lora_models": _build_lora_model_options(VIDEO_LORA_MODELS),
         "image_lora_models": _build_lora_model_options(IMAGE_LORA_MODELS),
+        "ltx_video_lora_models": [
+            {
+                "value": value,
+                "label": label,
+                "default_strength": LTX_VIDEO_LORA_DEFAULT_STRENGTHS.get(value, 1.0),
+            }
+            for value, label in LTX_VIDEO_LORA_MODELS.items()
+            if value
+        ],
     }
 
 
@@ -1152,7 +1302,7 @@ def _build_config_response(
 ) -> dict[str, Any]:
     normalized_config = normalize_qqcc_config(config)
     if include_preview_urls:
-        for section in ("video_scenes", "draw_scenes", "filter_scenes"):
+        for section in ("video_scenes", "ai_video_scenes", "draw_scenes", "filter_scenes"):
             for scene in normalized_config[section]:
                 for field in ("demo_input_media", "demo_output_media"):
                     media = scene.get(field)
@@ -1199,7 +1349,7 @@ def _merge_qqcc_demo_telegram_caches(
     config: dict[str, Any],
     existing_config: dict[str, Any],
 ) -> None:
-    for section in ("video_scenes", "draw_scenes", "filter_scenes"):
+    for section in ("video_scenes", "ai_video_scenes", "draw_scenes", "filter_scenes"):
         existing_by_id = {
             str(scene.get("id") or ""): scene
             for scene in existing_config.get(section, [])
@@ -1287,6 +1437,7 @@ async def cache_qqcc_demo_telegram_file_ids(
     def _apply_updates(config: dict[str, Any]) -> int:
         section = {
             "video": "video_scenes",
+            "ai_video": "ai_video_scenes",
             "draw": "draw_scenes",
             "filter": "filter_scenes",
         }.get(scene_kind)

@@ -64,6 +64,13 @@ const InputStub = defineComponent({
     '<input :value="value" @input="$emit(\'update:value\', $event.target.value)" />',
 })
 
+const InputNumberStub = defineComponent({
+  name: 'InputNumberStub',
+  props: ['value'],
+  emits: ['update:value'],
+  template: '<input type="number" :value="value" @input="$emit(\'update:value\', Number($event.target.value))" />',
+})
+
 const TextareaStub = defineComponent({
   name: 'TextareaStub',
   props: ['value', 'rows', 'placeholder'],
@@ -102,6 +109,7 @@ const TabsStub = defineComponent({
     <div>
       <div>
         <button type="button" data-testid="scene-tab-control-video" @click="$emit('update:activeKey', 'video')">AI动图</button>
+        <button type="button" data-testid="scene-tab-control-ai-video" @click="$emit('update:activeKey', 'ai_video')">AI视频</button>
         <button type="button" data-testid="scene-tab-control-draw" @click="$emit('update:activeKey', 'draw')">AI绘图</button>
         <button type="button" data-testid="scene-tab-control-filter" @click="$emit('update:activeKey', 'filter')">AI滤镜</button>
       </div>
@@ -159,6 +167,7 @@ const mountSettings = (props = {}) =>
         'a-switch': SwitchStub,
         'a-checkbox': CheckboxStub,
         'a-input': InputStub,
+        'a-input-number': InputNumberStub,
         'a-textarea': TextareaStub,
         'a-select': SelectStub,
         'a-select-option': SelectOptionStub,
@@ -979,6 +988,70 @@ describe('QqccBotSettings', () => {
     const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
     expect(payload.video_scenes[0].engine).toBe('wan22_video_v2')
     expect(payload.video_scenes[0].lora_name).toBe('')
+  })
+
+  it('saves AI video negative prompt and up to three LTX LoRAs with strengths', async () => {
+    apiMocks.fetchQqccBotConfig.mockResolvedValueOnce({
+      key: 'qqcc_lazy_bot_config:v1',
+      config: {
+        global_enabled: true,
+        main_buttons: { ai_video: true },
+        draw_scenes: [{
+          id: 'tail', name: '尾帧', prompt: 'tail prompt', negative_prompt: '',
+          engine: 'free_edit_v2', lora_name: '', postprocess_draw_scene_id: '',
+          postprocess_filter_scene_id: '', original_face_swap_enabled: false,
+        }],
+        ai_video_scenes: [{
+          id: 'cinema', name: '电影运镜', prompt: 'camera orbit', negative_prompt: '  blur  ',
+          duration: 15, engine: 'ltx_video',
+          lora_items: [{ path: 'ltx/a.safetensors', strength: 0.75 }],
+          end_frame_draw_scene_id: 'tail',
+        }],
+      },
+      options: {
+        default_ai_video_engine: 'ltx_video',
+        ai_video_engines: [{ value: 'ltx_video', supports_lora: true }],
+        ltx_video_lora_models: [
+          { value: 'ltx/a.safetensors', label: 'A', default_strength: 0.8 },
+          { value: 'ltx/b.safetensors', label: 'B', default_strength: 1.25 },
+          { value: 'ltx/c.safetensors', label: 'C', default_strength: 1 },
+          { value: 'ltx/d.safetensors', label: 'D', default_strength: 1 },
+        ],
+      },
+    })
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="scene-tab-ai-video"]').text()).toContain('1')
+    await wrapper.get('[data-testid="config-ai-video-scene-model-0"]').trigger('click')
+    const selector = wrapper.findAllComponents(SelectStub)
+      .find(component => component.attributes('data-testid') === 'scene-ai-video-lora-select')
+    if (!selector) throw new Error('Missing AI video LoRA selector')
+    selector.vm.$emit('change', [
+      'ltx/a.safetensors', 'ltx/b.safetensors', 'ltx/c.safetensors', 'ltx/d.safetensors',
+    ])
+    await flushPromises()
+    expect(wrapper.findAllComponents(InputNumberStub)).toHaveLength(3)
+    wrapper.findAllComponents(InputNumberStub)[1]!.vm.$emit('update:value', 1.55)
+    await flushPromises()
+    await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
+    expect(payload.main_buttons.ai_video).toBe(true)
+    expect(payload.ai_video_scenes[0]).toEqual(expect.objectContaining({
+      id: 'cinema',
+      negative_prompt: 'blur',
+      duration: 15,
+      engine: 'ltx_video',
+      end_frame_draw_scene_id: 'tail',
+      lora_items: [
+        { path: 'ltx/a.safetensors', strength: 0.75 },
+        { path: 'ltx/b.safetensors', strength: 1.55 },
+        { path: 'ltx/c.safetensors', strength: 1 },
+      ],
+    }))
   })
 
   it('configures a video scene end-frame draw source in the save payload', async () => {

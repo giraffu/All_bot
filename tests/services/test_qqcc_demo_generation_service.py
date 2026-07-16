@@ -142,6 +142,55 @@ async def test_submit_video_demo_uses_scene_duration_prompt_and_engine():
 
 
 @pytest.mark.asyncio
+async def test_submit_ai_video_demo_uses_ltx_without_running_tail_chain():
+    storage = FakeStorage()
+    image = Mock()
+    image.submit_ltx_video_task = AsyncMock(return_value="task-ltx")
+
+    result = await submit_qqcc_demo_generation(
+        scene_kind="ai_video",
+        scene={
+            "id": "cinema",
+            "prompt": "camera orbit",
+            "negative_prompt": "blur",
+            "duration": 15,
+            "end_frame_draw_scene_id": "tail_scene",
+            "lora_items": [
+                {
+                    "path": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors",
+                    "strength": 0.75,
+                }
+            ],
+            "demo_input_media": {
+                "object_key": "qqcc/demo/ai_video/cinema/input",
+                "mime_type": "image/png",
+            },
+        },
+        task_id="task-ltx",
+        storage_service=storage,
+        image_service_instance=image,
+    )
+
+    assert result["status"] == "pending"
+    image.submit_ltx_video_task.assert_awaited_once_with(
+        "task-ltx",
+        "camera orbit",
+        "qqcc/demo-generation/task-ltx/input.png",
+        lora_items=[
+            {
+                "name": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors",
+                "strength": 0.75,
+            }
+        ],
+        width=1280,
+        height=704,
+        length=15,
+        priority=0,
+        negative_prompt="blur",
+    )
+
+
+@pytest.mark.asyncio
 async def test_failed_generation_reports_terminal_error_and_cleans_input():
     storage = FakeStorage()
     image = Mock()

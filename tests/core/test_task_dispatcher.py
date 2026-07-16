@@ -1026,6 +1026,25 @@ async def test_ltx_video_submit_task_forwards_optional_lora_context(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_ltx_video_submit_task_only_forwards_non_empty_negative_prompt(monkeypatch):
+    strategy = StrategyFactory.get_strategy("ltx_video")
+    submit_mock = AsyncMock(return_value="backend-task-id")
+    _patch_dispatch_image_service(monkeypatch, submit_ltx_video_task=submit_mock)
+
+    await strategy.submit_task(
+        "task-1",
+        {
+            "prompt": "cinematic motion",
+            "negative_prompt": "  blur, jitter  ",
+            "saved_input_images": ["demo/input.png"],
+        },
+        priority=5,
+    )
+
+    assert submit_mock.await_args.kwargs["negative_prompt"] == "blur, jitter"
+
+
+@pytest.mark.asyncio
 async def test_ltx_video_submit_task_routes_start_end_frames_to_flf2v(monkeypatch):
     strategy = StrategyFactory.get_strategy("ltx_video")
     submit_mock = AsyncMock(return_value="backend-task-id")

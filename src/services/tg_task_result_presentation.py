@@ -27,6 +27,7 @@ from src.domain_config.wan22_aio_video import is_wan22_chain_history_task_type
 from src.services.qqcc_regenerate_metadata import (
     QQCC_REGENERATE_CALLBACK_PREFIX,
     has_qqcc_regenerate_context,
+    extract_qqcc_regenerate_context,
 )
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -116,6 +117,8 @@ def _supports_wan22_stitch(task_type: str, result_meta: dict | None) -> bool:
 
 
 def _supports_ltx_extension(task_type: str, result_meta: dict | None) -> bool:
+    if extract_qqcc_regenerate_context(result_meta).get("scene_kind") == "ai_video":
+        return False
     if isinstance(result_meta, dict) and (
         isinstance(result_meta.get("ltx_chain_stitch"), dict)
         or bool(result_meta.get("ltx_is_stitched"))
@@ -128,6 +131,8 @@ def _supports_ltx_extension(task_type: str, result_meta: dict | None) -> bool:
 
 
 def _supports_ltx_stitch(task_type: str, result_meta: dict | None) -> bool:
+    if extract_qqcc_regenerate_context(result_meta).get("scene_kind") == "ai_video":
+        return False
     return task_type == MODE_LTX_VIDEO and bool(
         isinstance(result_meta, dict) and result_meta.get("ltx_prev_task_id")
     )
