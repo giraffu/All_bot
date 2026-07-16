@@ -22,10 +22,17 @@ def _load_module():
         ("control-plane", {"central-api"}, False, "critical", "standard"),
         (
             "control-plane",
-            {"dashboard-backend", "qqcc-config-frontend"},
+            {"dashboard-backend"},
             False,
             "owner-tools",
             "direct",
+        ),
+        (
+            "control-plane",
+            {"qqcc-config-backend", "qqcc-config-frontend"},
+            False,
+            "owner-tools",
+            "standard",
         ),
         ("control-plane", {"public-web"}, False, "public-web", "standard"),
         ("test-execution", {"worker-agent"}, False, "execution", "direct"),
@@ -82,6 +89,22 @@ def test_direct_and_emergency_have_auditable_default_skips():
     assert set(emergency.skipped_gates) == expected
     assert emergency.gates["test-acceptance"] == "skipped"
     assert emergency.gates["immutable-artifact"] == "required"
+
+
+def test_qqcc_auto_strategy_handles_one_shot_artifact_iterables():
+    module = _load_module()
+
+    decision = module.decide_release_strategy(
+        track="control-plane",
+        artifacts=(name for name in ("qqcc-config-frontend",)),
+        requested="auto",
+        locked=False,
+        validation_mode="full",
+    )
+
+    assert decision.risk_class == "owner-tools"
+    assert decision.strategy == "standard"
+    assert decision.gates["test-deploy"] == "required"
 
 
 def test_core_direct_and_locked_emergency_are_forbidden():
