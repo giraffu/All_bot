@@ -291,6 +291,7 @@ ComfyUI 实例：
 - `comfy0` CLI 包含 `--fp8_e4m3fn-text-enc`。
 - `comfy0`/旧 `comfy1` 的模型目录共享，实例目录分离。
 - `gpu-252-gpu0-i2i_pro` 正式 AIO 使用 LAN registry 镜像 `192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:20260614-i2ipro-b75c6a9-cu128-min5-ssh`，模型从 `allbot-model-cache/i2i_pro/2026-06-14-test/manifest.json` 同步；`gpu_device_id` 固定健康 UUID，禁止回退到易漂移 host index。
+- `gpu-252-gpu1-i2i_pro` 是 RMA replacement 卡的 disabled commissioning candidate，固定 UUID `GPU-8153a439-e3f6-8922-039d-dc13e97da6d7`、端口 `8191` 与 LAN 镜像 `192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:v2-47c1219f-i2ipro`。当前没有 Worker/容器且 model cache 为 missing；必须继续走单槽 preflight、warm-cache、start-disabled、health/heartbeat 后才能在明确生产授权下 enable，合入配置不代表已上线。
 - `gpu-252-gpu0-img2img_lora`、`gpu-252-gpu0-image_to_video`、`gpu-252-gpu0-pornmaster_flux2_edit` 与 `gpu-252-gpu0-scail2` 当前只作为回切候选，切换前必须由 AI operator/CLI 明确指定同服务器替换目标并先 drain 当前 `i2i_pro`。
 - PornMaster Flux2 测试 AIO 使用同一 PornMaster Flux2 镜像和 manifest；它只用于 cloud-test，启动前必须 drain/disable 目标正式 GPU0 产能，结束后必须 `restore --execute` 恢复正式产能。
 - `gpu-252-gpu1-pornmaster_flux2_edit` 正式 AIO 使用 LAN registry 镜像 `192.168.1.115:5000/allbot/comfy-runpod-pornmaster-flux2-edit:20260628-pornmaster-flux2-edit-cu128-smallvae1`，模型从 `allbot-model-cache/pornmaster_flux2_edit/2026-06-27/manifest.json` 同步；2026-07-04 通过 preflight、warm-cache、disabled heartbeat、`/system_stats`、`/object_info` 节点/模型枚举后 enable-aio，并连续完成正式 `pornmaster_flux2_single_edit` 任务，未见新 Xid/NVRM。该结论只适用于 PornMaster Flux2 edit。
