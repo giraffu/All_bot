@@ -41,7 +41,7 @@ RUNPOD_PROD_BUCKET = "user-data-prod"
 RUNPOD_PROD_SUPPORTED_TASK_TYPES = ("img2img", "img2img_lora")
 RUNPOD_PROD_GPU_TYPE_IDS = ("NVIDIA GeForce RTX 4090",)
 RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE = (
-    "ghcr.io/giraffu/allbot-comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946"
+    "ghcr.io/giraffu/allbot-comfy-runpod-img2img:20260716-img2img-baked-runtime-v1"
 )
 RUNPOD_PUBLIC_WAN22_VIDEO_V2_IMAGE_PREFIX = (
     "ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:"
@@ -58,6 +58,10 @@ RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX = (
 )
 RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX = (
     "ghcr.io/giraffu/allbot-comfy-runpod-pornmaster-flux2-edit:"
+)
+RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE = (
+    RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX
+    + "20260716-pornmaster-flux2-edit-baked-runtime-v1"
 )
 RUNPOD_WAN22_AIO_VIDEO_GPU_TYPE_IDS = (
     "NVIDIA GeForce RTX 5090",
