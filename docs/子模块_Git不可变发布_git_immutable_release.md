@@ -89,7 +89,7 @@ python scripts/update_deploy_config.py --env prod --source /secure/new-prod.env 
 
 v2 transaction journal 与 staged state 使用 `/var/lib/allbot/deployments/<env>/transactions/<track>/<sha>.json|.state.json`。control-plane 与 test-execution 即使目标 SHA 相同也不得复用 journal；Worker 的 `initial-release` 只驱动 legacy Agent/Relay 切换，不能注入控制面首次迁移的 Postgres/Redis。升级前已经产生的无 track 失败 journal 仅允许由精确 `recover --track <track>` 兼容读取并收口，恢复写回新的 track-scoped journal，禁止手工删除 journal 或 maintenance marker。
 
-`plan` 可从 GHCR 拉 release bundle，需要预先 `docker login ghcr.io` 和 `oras`。`preflight`、`deploy` 不拉取任何材料，必须先把 `release.json` 与 Web tar 放入本地 bundle cache，或显式传本地 `--manifest`/`--web-artifact`，以保证门禁失败前没有 pull、worktree 或远端写入。
+`plan` 可从 GHCR 拉 release bundle，需要预先 `docker login ghcr.io` 和 `oras`。`preflight`、`deploy` 不拉取任何材料，必须先把 v1 `release.json`/Web tar 或 v2 `release-v2/release-index.json`/`public-web-dist.tgz` 放入本地 bundle cache，也可显式传本地 `--manifest`/`--web-artifact`，以保证门禁失败前没有 pull、worktree 或远端写入。生产回滚预检同时识别这两代不可变缓存布局，不能因为目标使用 v2 bundle 就退化为伪造旧 `release.json`。
 
 正式环境的生成维护模式按每次发布单独决定，默认开启。只有用户对当前 SHA 的本次发布明确要求“不进入维护”时，才可请求无维护发布；该请求不持久化，也不适用于 migration、首次/legacy 切换、队列 drain、未知影响或 planner 要求的其它强制 maintenance。正式 `plan`/`preflight` 必须同时报告用户请求/default、计算出的 maintenance level 和最终实际模式。若当前 CLI/事务实现不能表达或证明所选模式，必须在 mutation 前停止并修复发布契约，不能手工操作维护 marker、回退到 legacy 脚本或静默采用另一模式。
 
@@ -141,6 +141,12 @@ scripts/release.py deploy --env prod --track control-plane --sha <40-char-sha> -
 
 `--services` 只扩大自动集合。`src/**`/`shared/**` 会覆盖所有 Python 消费者；Worker 变化为 drain；migration 是 maintenance 且执行需 `--confirm-db-upgrade`；未知路径整栈维护；`remote_workers/**`、GPU profile/model manifest 触发 `gpu-runtime-release-required` blocker。用户选择不开维护不能缩小这些机器计算出的等级或依赖闭包；默认开启也必须由发布事务真实建立维护，不能只记录文字意图。
 
+`dashboard/backend/schemas.py` 是 Dashboard API 与 QQCC Config API 的共享契约，发布策略必须把它归类为 `rolling`，并同时滚动 `dashboard-backend` 与 `qqcc-config-backend`；它本身不触发维护模式、Worker 或 GPU runtime 发布。
+
+当用户明确要求 QQCC 控制面独立晋级且保持其它正式模块不动时，可显式传 `--policy deploy/release-policy-qqcc-control-plane.yml`。该策略只接受已审计的 QQCC AI视频闭包与 release/docs/tests 元数据，固定影响 `central-api`、`qqcc-bot`、`qqcc-config-backend`、`qqcc-config-frontend`、`qqcc-private-bot-worker`；公共 Web、主 Bot、Dashboard、支付、群管、local/remote Worker、GPU runtime、RunPod 和未知路径全部 fail closed。它不跳过 main、CI、云测试 verified、digest、preflight 或正式确认门禁，测试与正式必须选择同一模块集合和同一 digest。
+
+若唯一云测试站当前运行的是已接受但尚未整体晋级 main 的 test-train，可在测试环境用 `deploy/release-policy-qqcc-control-plane-test-reconcile.yml` 计算真实当前 SHA 到目标 main 的差异。该文件带 `environment=test`，发布器在生产显式拒绝；它只把本轮已审计、且不属于五个目标 artifact 的 test-train 路径视为非选择漂移，目标模块、digest 与正式窄策略保持一致，未知路径仍为 maintenance。测试 rollback 必须继续指向真实当前 SHA，不得用云端不存在的正式基线伪造回滚点。
+
 生产发布器会读取云测试 `current.json`，要求状态为 `verified` 且 SHA、自有/第三方 digest 完全相同。验收模板见 `deploy/test-acceptance.example.json`；默认观察窗口不足 24 小时或任何 smoke 为 false 都不能标记 verified。用户明确确认测试服务无问题并授权提前晋级时，短观察 evidence 必须同时包含 `short_observation_override=true`、非空 `override_reason`、`approved_by` 和真实起止时间，并在 CLI 显式传 `--confirm-short-observation`。该例外不允许时间倒置/未来完成时间，也不放宽任何 smoke、SHA/digest、Web checksum 或测试运行态检查；verified current/history 会记录实际观察秒数、例外原因与批准者，禁止伪造 24 小时时间或直接编辑状态文件。
 
 管理后台是单管理员使用的独立控制面，用户明确授权时可选 `--dashboard-fast-track` 跳过云测试部署和 verified 晋级。该选择不跳过 Git/CI/manifest/env/read-only preflight，也不允许 mutable tag、云端 build、rsync 或维护模式；路径分类器只允许 Dashboard runtime、BF16 Dashboard catalog 和配套 release/docs/tests 元数据，自动选择 Dashboard 后端/前端，拒绝 `--services`、migration、共享 Python runtime、其它 GPU ops、Compose 与未知路径。发布事务只 rolling recreate 选中的 Dashboard 服务，状态写入 `promotion_mode=dashboard-fast-track`，并逐一核对非目标容器启动时间不变。显式快速回滚也必须带同一选项，且目标差异仍须满足相同 allowlist。
@@ -161,7 +167,7 @@ release workflow 生成 manifest 后会运行一次不接触运行态秘密的�
 - schema v2 中测试 Worker Agent/Relay 使用不同 digest，并作为同一 test-execution 选择集部署；正式控制面 Compose 不要求二者。RunPod/LAN profile 镜像内置 `/opt/allbot/runtime/remote_workers`、baked entrypoint 和 agent/workflow revision labels，不再 clone `deploy` 分支；模型仍由带 key/size/SHA256 的 manifest 固定。
 - 云测试维护发布按“云控制面 → 测试 Worker → Pages → 暂存状态 → 原子提交 current/history 并解除维护”执行。正式发布按本次已确认的维护模式执行“云控制面 → Pages → 状态提交”：默认维护模式在 mutation 前建立生成维护并在成功提交后解除；经用户明确选择且 planner 允许的无维护模式全程不写维护 marker。首次正式切换仍强制同时写 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`，不能关闭，也不操作任何 GPU Worker 容器。
 - 无秘密事务 journal 在每阶段通过远端临时文件原子 rename。失败只逆序补偿本事务实际尝试过的阶段，并只验证这些可能被改变的阶段；例如 cloud 阶段失败时，不得因本来 stopped 的测试 Worker 没有 heartbeat 而误报恢复失败。云测试最大补偿顺序为 Pages → Worker → 云控制面，正式为 Pages → 云控制面。验证失败时记录 `rollback_failed` 并保持维护。
-- 回滚命令读取旧 release manifest/Web tar，不重建。部署状态 history 长期保留；运行主机不得全局 `docker system prune`。数据库 migration 只向前兼容，应用回滚不自动 Alembic downgrade。
+- 回滚命令读取旧 release manifest/Web tar，不重建；v2 从缓存中的 `release-v2/release-index.json` 与 `public-web-dist.tgz` 取材。部署状态 history 长期保留；运行主机不得全局 `docker system prune`。数据库 migration 只向前兼容，应用回滚不自动 Alembic downgrade。
 
 ```bash
 scripts/release.py rollback --env test --to <old-sha> --manifest <old-release.json> --web-artifact <old-web.tgz> --execute
