@@ -589,6 +589,13 @@ describe('QueueStats worker health display', () => {
           max_non_low_trust_pending_wait_seconds: 6900,
         },
       },
+      queue_pressure_by_worker_profile: {
+        i2i_pro: {
+          accepting_worker_count: 2,
+          accepting_runpod_worker_count: 1,
+          accepting_local_worker_count: 1,
+        },
+      },
     }
     queueStatsMocks.workersRef.value = [
       {
@@ -679,12 +686,12 @@ describe('QueueStats worker health display', () => {
     expect(scail2Row?.findAll('td')[3]?.text()).toBe('13')
     expect(scail2Row?.findAll('td')[4]?.text()).toBe('1h 55m')
     expect(i2iRow?.exists()).toBe(true)
-    expect(i2iRow?.text()).toContain('RunPod2')
-    expect(i2iRow?.text()).toContain('本地2')
+    expect(i2iRow?.text()).toContain('RunPod1')
+    expect(i2iRow?.text()).toContain('本地1')
     expect(profileRows).toHaveLength(7)
     expect(wrapper.findAll('.runpod-profile-detail-table thead th').map(th => th.text())).toEqual([
       'Worker 类型',
-      '服务器',
+      '可接单服务器',
       '活跃数',
       '排队数',
       '最长等待',
@@ -745,6 +752,58 @@ describe('QueueStats worker health display', () => {
       },
       reason: 'dashboard clear-time settings update',
     })
+  })
+
+  it('falls back to healthy enabled workers when central pressure is unavailable', async () => {
+    queueStatsMocks.statusRef.value = {
+      ...queueStatsMocks.statusRef.value,
+      runpod_profile_queue_details: [
+        {
+          profile: 'i2i_pro',
+          label: 'i2i_pro / txt2img / face_swap',
+          supported_task_types: ['i2i_pro', 't2i-pornmaster-turbo', 'face_swap'],
+          active_count: 0,
+          pending_count: 0,
+        },
+      ],
+    }
+    queueStatsMocks.workersRef.value = [
+      {
+        agent_id: 'runpod_prod_i2i_pro_manual_01',
+        provider: 'runpod',
+        types: 'i2i_pro',
+        status: 'idle',
+        control_state: 'enabled',
+      },
+      {
+        agent_id: 'local-i2i',
+        types: 'face_swap',
+        status: 'running',
+        control_state: 'enabled',
+      },
+      {
+        agent_id: 'local-i2i-paused',
+        types: 'i2i_pro',
+        status: 'idle',
+        control_state: 'disabled',
+      },
+      {
+        agent_id: 'runpod_prod_i2i_pro_manual_02',
+        provider: 'runpod',
+        types: 'i2i_pro',
+        status: 'error',
+        control_state: 'enabled',
+      },
+    ]
+
+    const wrapper = await mountQueueStats()
+    await flushPromises()
+    const i2iRow = wrapper
+      .findAll('.runpod-profile-detail-table tbody tr')
+      .find(row => row.text().includes('i2i_pro / txt2img / face_swap'))
+
+    expect(i2iRow?.text()).toContain('RunPod1')
+    expect(i2iRow?.text()).toContain('本地1')
   })
 
   it('toggles autoscaler management for a single runpod profile', async () => {

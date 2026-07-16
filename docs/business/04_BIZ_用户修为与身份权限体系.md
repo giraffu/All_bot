@@ -67,7 +67,7 @@
 - LTX 视频设置当前硬编码 `1280x704`，时长显示 `5s`、`10s`、`15s`、`20s`，未按修为/身份做差异化。
 - SCAIL-2 视频换脸 v10 固定 `512x896`，只开放 `5s=40` 灵石和 `8s=80` 灵石，未复用 `RESOLUTION_PERMISSIONS`。
 - 低信任免费层例外：连续免费活跃、没有自身成功订单且缺少高质量邀请转化的用户不封号、不扣灵石；系统通过给非低信任用户统一 `+40` 的方式形成队列差距，低信任用户保留原本基础优先级但不获得该加成；Gallery 提示词解锁不再按该标记拦截。
-- 高负载限制：当系统队列 `queue_size > 300` 时，`外门弟子` 且修为为 `凡人` 或 `练气期` 的用户不能提交新任务；`筑基期` 及以上或 `内门弟子` 及以上不受该限制。
+- 高负载限制：提交入口先把公开/legacy 任务归一到对应 Worker 执行池，并读取 Central `/system/status.queue_pressure_by_worker_profile`。对 `外门弟子` 且修为为 `凡人` 或 `练气期` 的用户，仅当接纳本单后的 `projected_pending > 50 × max(健康且 enabled 的可接单 Worker 数, 1)` 时拒绝；零可接单 Worker 仍按 1 台保护容量允许最多 50 个 pending。`筑基期` 及以上或 `内门弟子` 及以上不受该限制；快照缺失、请求失败或任务未映射到已管理执行池时 fail-open，只保留原有个人并发限制。
 - 并发限制：提交入口通过 `billing_core.check_concurrency_lock()` 按动态有效身份限制处理中任务数；外门/默认身份 `3` 个，内门 `5` 个，核心 `8` 个，真传 `12` 个，身份过期、未知身份或凡人低档均回落为外门 `3` 个。
 - 收藏上限当前由 `users_history_mutation_service._get_favorite_limit_for_identity()` 按 `current_user.current_identity` 字段计算，未复用 `PermissionIdentityPriorityService.get_user_identity()` 的过期回落逻辑。
 

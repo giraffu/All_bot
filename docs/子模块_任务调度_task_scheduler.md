@@ -21,6 +21,7 @@
 - `src/core/task_core_runtime.py`：双 ID 终止、best-effort cancel、并发锁与 registry 清理
 - `src/core/task_dispatcher.py`：StrategyFactory + payload/workflow 注入
 - `src/domain_config/task_type_registry.py`：任务类型只读事实表与查询 helper，记录 public type、legacy alias、execution type、Central type、workflow filename、RunPod profile、视频/Gallery/apply 与成本；当前驱动 Gallery/apply、Central simple task 映射、workflow filename facts 与一致性门禁，dispatcher 策略仍由 core 显式装配并分批迁移
+- `src/domain_config/worker_pool_registry.py`：提交准入使用的 Worker 执行池事实表，把公开/legacy 类型归一到共享容量池；不替代 RunPod autoscaler 的运维 profile 配置
 
 所有 Bot / Web 任务都应通过 facade + provider/dependencies 边界进入调度链，不应在上层直接 import 基础设施实现。
 
@@ -94,6 +95,7 @@ sequenceDiagram
 - 基于 `TaskCoreProcessDependencies` 获取策略、输入准备与计费能力
 - `task_core.py` 仅保留 facade；具体步骤继续拆到 `task_core_process_flow.py` 的 `build_prepared_task_submission_request(...)`、`prepare_task_submission_context(...)`、`execute_task_submission_attempt(...)`、`release_submission_lock_if_needed(...)`
 - 进行并发锁检查与扣费
+- 并发锁检查会把 `task_type` 传给 billing seam；低阶外门用户按目标执行池 `projected_pending > 50 × max(accepting_workers, 1)` 做扣费前准入，Central 指标缺失或任务未映射时 fail-open
 - 执行提交 Saga，写入 `registry_task_id` 并派发 `backend_task_id`
 - 提交成功后根据 `TaskSubmissionSideEffectPlan` 写入持久化 Web finalizer 或其他 side effect；默认 Web side effect 装配由 dependency 层负责，facade 不直接 import Web application 层实现
 - 提交失败时执行补偿，并在未成功提交时释放并发锁

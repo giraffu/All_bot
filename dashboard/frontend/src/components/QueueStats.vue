@@ -158,6 +158,14 @@ const supportsRunPodProfile = (worker, profile) => {
   return splitWorkerTypes(worker).some((type) => supportedTaskTypes.has(type))
 }
 
+const isAcceptingWorker = (worker) =>
+  ['idle', 'running'].includes(String(worker.status || '').toLowerCase()) &&
+  String(worker.control_state || 'enabled').toLowerCase() === 'enabled'
+
+const workerProfilePressure = computed(() =>
+  status.value.queue_pressure_by_worker_profile || {}
+)
+
 const queueByTypeLookup = computed(() =>
   queueByTypeDisplay.value.reduce((acc, item) => {
     acc[item.type] = item
@@ -227,16 +235,31 @@ const runpodProfileRows = computed(() =>
         autoscalerSupportedTaskTypes,
         supportedTaskTypes,
       }
-      const supportingWorkers = workers.value.filter((worker) =>
-        supportsRunPodProfile(worker, displayProfile)
+      const supportingWorkers = workers.value.filter(
+        (worker) =>
+          isAcceptingWorker(worker) && supportsRunPodProfile(worker, displayProfile)
       )
-      const runpodServerCount = supportingWorkers.filter(isRunPodServerWorker).length
+      const pressure = workerProfilePressure.value[profile.profile]
+      const pressureRunPodCount = Number(pressure?.accepting_runpod_worker_count)
+      const pressureLocalCount = Number(pressure?.accepting_local_worker_count)
+      const hasPressureWorkerCounts =
+        pressure !== null &&
+        pressure !== undefined &&
+        Number.isFinite(pressureRunPodCount) &&
+        Number.isFinite(pressureLocalCount)
+      const fallbackRunPodCount = supportingWorkers.filter(isRunPodServerWorker).length
+      const runpodServerCount = hasPressureWorkerCounts
+        ? pressureRunPodCount
+        : fallbackRunPodCount
+      const localWorkerCount = hasPressureWorkerCounts
+        ? pressureLocalCount
+        : supportingWorkers.length - fallbackRunPodCount
       const taskStats = aggregateWorkerProfileTaskStats(displayProfile)
       return {
         ...displayProfile,
         ...taskStats,
         runpodServerCount,
-        localWorkerCount: supportingWorkers.length - runpodServerCount,
+        localWorkerCount,
       }
     })
 )
@@ -903,7 +926,7 @@ onUnmounted(() => {
             <thead>
               <tr>
                 <th>Worker 类型</th>
-                <th>服务器</th>
+                <th>可接单服务器</th>
                 <th>活跃数</th>
                 <th>排队数</th>
                 <th>最长等待</th>

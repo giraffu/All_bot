@@ -342,7 +342,7 @@ Central API 是执行面，不是业务主入口。
 - 接收运行态状态更新
 - 接收完成上报；终态回报采用 compare-and-clear 清理 agent `current_task_id`，避免旧任务后台 complete 清掉新任务展示
 - best-effort cancel
-- 提供 `/status/{backend_task_id}`、`/system/status` 与 `/system/workers` 观测快照；这些接口使用短 TTL/stale 缓存与同 key 单飞刷新来承压高频轮询，不参与真实调度、Worker `pop`、状态上报、完成回流或终态收口；其中 `/system/status.queue_by_type_details` 只按 Central pending 队列的 `created_at` / `priority` 计算每类任务免费与付费最长等待，供 Bot/监控轻量展示使用，不查询订单或低信任身份
+- 提供 `/status/{backend_task_id}`、`/system/status` 与 `/system/workers` 短缓存快照；这些接口使用短 TTL/stale 缓存与同 key 单飞刷新来承压高频轮询，不参与真实调度、Worker `pop`、状态上报、完成回流或终态收口。`/system/status.queue_pressure_by_worker_profile` 例外地作为低阶外门用户的快照式扣费前准入信号，但不提供强一致容量预约；`queue_by_type_details` 仍只按 Central pending 队列的 `created_at` / `priority` 计算每类任务免费与付费最长等待，供 Bot/监控轻量展示使用，不查询订单或低信任身份
 - 使用统一 Redis 连接工厂创建共享 Redis 客户端，默认开启短超时、健康检查、TCP keepalive 和 timeout retry；Redis transient retry 耗尽时返回 503 + `Retry-After: 2`，上游按“当前服务器繁忙”路径补偿或重试
 
 ### 8.2 simple task route 与特例

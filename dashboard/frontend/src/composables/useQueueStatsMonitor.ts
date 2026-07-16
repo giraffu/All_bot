@@ -29,6 +29,13 @@ interface QueueStatus {
   workers_by_status: Record<string, number>
   comfy_online: boolean
   runpod_profile_queue_details: any[]
+  queue_pressure_by_worker_profile: Record<string, {
+    supported_task_types?: string[]
+    pending_count?: number | null
+    accepting_worker_count?: number | null
+    accepting_runpod_worker_count?: number | null
+    accepting_local_worker_count?: number | null
+  }>
   low_trust_free_tier_pending_user_count: number
   low_trust_free_tier_pending_task_count: number
 }
@@ -44,6 +51,7 @@ const defaultStatus = (): QueueStatus => ({
   workers_by_status: {},
   comfy_online: false,
   runpod_profile_queue_details: [],
+  queue_pressure_by_worker_profile: {},
   low_trust_free_tier_pending_user_count: 0,
   low_trust_free_tier_pending_task_count: 0,
 })

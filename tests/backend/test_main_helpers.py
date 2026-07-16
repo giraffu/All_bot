@@ -785,6 +785,90 @@ async def test_build_system_status_response_counts_accepting_workers_by_control_
 
 
 @pytest.mark.asyncio
+async def test_build_system_status_response_groups_queue_pressure_by_worker_profile():
+    class FakeQueueManager:
+        async def get_queue_size(self):
+            return 68
+
+        async def get_all_workers(self):
+            return [
+                {
+                    "agent_id": "runpod_prod_i2i_pro_manual_01",
+                    "provider": "runpod",
+                    "types": "i2i_pro,t2i-pornmaster-turbo,face_swap",
+                    "status": "idle",
+                    "control_state": "enabled",
+                },
+                {
+                    "agent_id": "local-i2i",
+                    "types": "i2i_pro,t2i-pornmaster-turbo,face_swap",
+                    "status": "running",
+                    "control_state": "enabled",
+                },
+                {
+                    "agent_id": "local-i2i-paused",
+                    "types": "i2i_pro",
+                    "status": "idle",
+                    "control_state": "disabled",
+                },
+                {
+                    "agent_id": "local-i2i-error",
+                    "types": "face_swap",
+                    "status": "error",
+                    "control_state": "enabled",
+                },
+                {
+                    "agent_id": "local-scail2",
+                    "types": "scail2_action_transfer_long,scail2_face_swap_v2",
+                    "status": "idle",
+                    "control_state": "enabled",
+                },
+            ]
+
+        async def get_queue_metrics_by_type(self):
+            return {
+                "i2i_pro": 40,
+                "txt2img": 20,
+                "face_swap": 4,
+                "scail2_action_transfer_long": 3,
+                "video_insert": 1,
+            }
+
+    response = await main_response_helpers.build_system_status_response(
+        FakeQueueManager()
+    )
+
+    assert response.queue_pressure_by_worker_profile["i2i_pro"] == {
+        "supported_task_types": [
+            "i2i_pro",
+            "t2i-pornmaster-turbo",
+            "face_swap",
+        ],
+        "pending_count": 64,
+        "accepting_worker_count": 2,
+        "accepting_runpod_worker_count": 1,
+        "accepting_local_worker_count": 1,
+    }
+    assert response.queue_pressure_by_worker_profile["scail2"]["pending_count"] == 3
+    assert (
+        response.queue_pressure_by_worker_profile["scail2"][
+            "accepting_worker_count"
+        ]
+        == 1
+    )
+    assert (
+        response.queue_pressure_by_worker_profile["image_to_video"]["pending_count"]
+        == 1
+    )
+    assert (
+        response.queue_pressure_by_worker_profile["wan22_video_v2"][
+            "accepting_worker_count"
+        ]
+        == 0
+    )
+
+
+@pytest.mark.asyncio
 async def test_build_system_workers_response_includes_control_state():
     class FakeQueueManager:
         async def get_all_workers(self):
