@@ -247,6 +247,78 @@ def test_v2_control_plane_does_not_require_unselected_gpu_profiles(
     assert resolved_previous == previous_sha
 
 
+def test_v2_test_execution_without_track_state_is_an_initial_release(
+    monkeypatch, tmp_path
+):
+    module = _load_module()
+    artifacts = {
+        name: {
+            "kind": "image",
+            "ref": f"ghcr.io/giraffu/allbot-{name}@sha256:" + digest * 64,
+            "digest": "sha256:" + digest * 64,
+            "source_sha": FULL_SHA,
+            "oci_revision": FULL_SHA,
+            "dependency_closure": [],
+        }
+        for name, digest in (("worker-agent", "1"), ("worker-relay", "2"))
+    }
+    release = SimpleNamespace(
+        index={
+            "ci_run": "https://github.com/giraffu/All_bot/actions/runs/1",
+            "release_channel": "test-candidate",
+            "source_ref": "refs/heads/codex/test-train",
+        },
+        manifests={
+            "test-execution": {"artifacts": artifacts},
+            "gpu-execution": {"artifacts": {}},
+        },
+    )
+    manifest = {
+        "schema_version": 2,
+        "source_sha": FULL_SHA,
+        "git_sha": FULL_SHA,
+        "ci_run": release.index["ci_run"],
+        "release_channel": "test-candidate",
+        "source_ref": "refs/heads/codex/test-train",
+        "track": "test-execution",
+        "artifacts": artifacts,
+        "selected_artifacts": list(artifacts),
+    }
+    args = SimpleNamespace(
+        sha=FULL_SHA,
+        manifest=None,
+        bundle_cache=str(tmp_path),
+        bundle_repository="ghcr.io/giraffu/allbot-release-v2-test-candidate",
+        command="plan",
+        modules=[],
+        services=[],
+        track="test-execution",
+        state_file=None,
+        from_sha=None,
+        env="test",
+        remote_host="test-control",
+        policy=str(POLICY_PATH),
+        skip_git_checks=True,
+        skip_ci_checks=True,
+        dashboard_fast_track=False,
+    )
+
+    monkeypatch.setattr(
+        module, "_resolve_manifest_path", lambda *_args, **_kwargs: tmp_path / "index"
+    )
+    monkeypatch.setattr(module, "_read_json", lambda _path: {"schema_version": 2})
+    monkeypatch.setattr(module, "_resolve_previous_sha", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module, "load_release_index", lambda *_args, **_kwargs: release)
+    monkeypatch.setattr(module, "_load_v2_track", lambda *_args, **_kwargs: manifest)
+
+    impact, selected_manifest, resolved_previous = module.build_plan(args)
+
+    assert "initial-release" in impact.matched_rules
+    assert impact.services == {"worker"}
+    assert selected_manifest["track"] == "test-execution"
+    assert resolved_previous == ""
+
+
 def test_dashboard_admin_runtime_changes_stay_dashboard_backend_only():
     module = _load_module()
     policy = module.load_structured_file(POLICY_PATH)
@@ -1254,6 +1326,61 @@ def test_initial_worker_cutover_snapshots_and_stops_legacy_before_start(
         "cloud-comfy-agent-test-8",
         "cloud-worker-relay-test",
     ]
+
+
+def test_v2_initial_worker_recovery_reads_track_scoped_legacy_snapshot(
+    tmp_path, monkeypatch
+):
+    module = _load_module()
+    snapshot = (
+        tmp_path
+        / "release-env"
+        / "test-execution"
+        / FULL_SHA
+        / "legacy-worker-running.txt"
+    )
+    snapshot.parent.mkdir(parents=True)
+    snapshot.write_text(
+        "cloud-comfy-agent-test-1\ncloud-worker-relay-test\n",
+        encoding="utf-8",
+    )
+    calls = []
+    started = set()
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        stdout = ""
+        if command[:2] == ["docker", "start"]:
+            started.update(command[2:])
+        if command[:3] == ["docker", "inspect", "--format"]:
+            stdout = "true\n" if command[-1] in started else "false\n"
+        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(module, "_run", fake_run)
+    transaction = module.new_release_transaction(
+        environment="test",
+        target_sha=FULL_SHA,
+        previous_sha=None,
+        previous_kind="legacy",
+        previous_pages_deployment_id=None,
+    )
+    transaction["track"] = "test-execution"
+
+    module._rollback_worker_stack(
+        SimpleNamespace(env="test", worker_checkout_root=str(tmp_path)),
+        transaction,
+        {
+            "ALLBOT_WORKER_SERVICES": "worker-01",
+            "ALLBOT_WORKER_RELAY_PORT": "8014",
+        },
+    )
+
+    assert [
+        "docker",
+        "start",
+        "cloud-comfy-agent-test-1",
+        "cloud-worker-relay-test",
+    ] in calls
 
 
 def test_prod_execute_requires_explicit_confirmation_before_other_checks(tmp_path):
