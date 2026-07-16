@@ -105,7 +105,11 @@ class RunPodAdminCommandBuilder:
         )
 
     def lan_aio_execution_mode(self) -> str:
-        mode = os.getenv("DASHBOARD_LAN_AIO_EXECUTION_MODE", "local").strip().lower()
+        configured = os.getenv("DASHBOARD_LAN_AIO_EXECUTION_MODE", "").strip()
+        environment = os.getenv("ALLBOT_ENV", "").strip().lower()
+        mode = configured.lower() if configured else (
+            "ssh" if environment == "prod" else "local"
+        )
         if mode in {"", "local"}:
             return "local"
         if mode in {"ssh", "remote-ssh", "lan-runner"}:
@@ -165,7 +169,28 @@ class RunPodAdminCommandBuilder:
 
     def lan_aio_runner_ssh_base_command(self) -> list[str]:
         configured = os.getenv("DASHBOARD_LAN_AIO_RUNNER_SSH_COMMAND", "").strip()
-        command = shlex.split(configured) if configured else ["ssh"]
+        if configured:
+            command = shlex.split(configured)
+        elif os.getenv("ALLBOT_ENV", "").strip().lower() == "prod":
+            port = os.getenv("DASHBOARD_LAN_AIO_RUNNER_SSH_PORT", "2222").strip()
+            try:
+                parsed_port = int(port)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=500,
+                    detail="DASHBOARD_LAN_AIO_RUNNER_SSH_PORT must be an integer",
+                ) from exc
+            if not 1 <= parsed_port <= 65535:
+                raise HTTPException(
+                    status_code=500,
+                    detail=(
+                        "DASHBOARD_LAN_AIO_RUNNER_SSH_PORT must be between "
+                        "1 and 65535"
+                    ),
+                )
+            command = ["ssh", "-p", str(parsed_port)]
+        else:
+            command = ["ssh"]
         command.extend(
             [
                 "-o",

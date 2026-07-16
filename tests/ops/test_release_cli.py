@@ -116,6 +116,33 @@ def _valid_test_environment(*, worker_slots: tuple[str, ...] = ()) -> dict[str, 
     return values
 
 
+def _valid_prod_environment() -> dict[str, str]:
+    return {
+        "ALLBOT_ENV": "prod",
+        "ALLBOT_ENV_FILE": "/etc/allbot/prod.env",
+        "ALLBOT_STATE_ROOT": "/var/lib/allbot/prod",
+        "DATABASE_URL": "postgresql+asyncpg://prod-db",
+        "REDIS_URL": "redis://prod-control/0",
+        "WORKER_REDIS_URL": "redis://prod-worker/0",
+        "AGENT_SECRET_TOKEN": "prod-agent-secret",
+        "API_TOKEN": "prod-api-token",
+        "MINIO_ENDPOINT": "prod-minio",
+        "MINIO_ACCESS_KEY": "prod-access-key",
+        "MINIO_SECRET_KEY": "prod-secret-key",
+        "MINIO_SECURE": "true",
+        "BOT_TOKEN": "prod-bot-token",
+        "CLOUD_PROD_BIND_IP": "127.0.0.1",
+        "CLOUD_PROD_DATABASE_URL": "postgresql+asyncpg://prod-db",
+        "CLOUD_PROD_REDIS_URL": "redis://prod-control/0",
+        "CLOUD_PROD_WORKER_REDIS_URL": "redis://prod-worker/0",
+        "JWT_SECRET_KEY": "prod-jwt-secret",
+        "QQCC_CONFIG_ADMIN_HOST": "qqcc-admin.example.com",
+        "PRIVATE_QQCC_BOT_OWNER_HOST": "private-bot.example.com",
+        "DASHBOARD_LAN_AIO_RUNNER_HOST": "runner@example.internal",
+        "DASHBOARD_LAN_AIO_RUNNER_KEY_DIR": "/secure/lan-aio-runner",
+    }
+
+
 def test_shared_runtime_changes_expand_to_every_python_consumer():
     module = _load_module()
     policy = module.load_structured_file(POLICY_PATH)
@@ -1303,6 +1330,24 @@ def test_environment_contract_accepts_worker_08_and_rejects_unknown_slots():
         module.validate_environment(schema, "test", invalid)
 
 
+def test_prod_environment_requires_lan_aio_runner_host_and_key_directory():
+    module = _load_module()
+    schema = module.load_structured_file(SCHEMA_PATH)
+    values = _valid_prod_environment()
+
+    revision = module.validate_environment(schema, "prod", values)
+
+    assert len(revision) == 64
+    for key in (
+        "DASHBOARD_LAN_AIO_RUNNER_HOST",
+        "DASHBOARD_LAN_AIO_RUNNER_KEY_DIR",
+    ):
+        invalid = dict(values)
+        invalid.pop(key)
+        with pytest.raises(module.ReleaseError, match=key):
+            module.validate_environment(schema, "prod", invalid)
+
+
 def test_initial_worker_cutover_maps_legacy_slots_and_holds_maintenance():
     module = _load_module()
     impact = module.ReleaseImpact(
@@ -1912,6 +1957,87 @@ def test_v2_cloud_preflight_accepts_legacy_rollback_contract(monkeypatch):
         "/var/lib/allbot/releases/" + previous_sha + "/release.env"
     ) in remote_scripts[0]
     assert "cloud-rollback-release-env-unavailable" in remote_scripts[0]
+
+
+def test_prod_dashboard_preflight_requires_readable_lan_aio_runner_key(monkeypatch):
+    module = _load_module()
+    remote_scripts = []
+
+    def fake_run(command, **kwargs):
+        remote_scripts.append(kwargs.get("input_text", ""))
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="cloud-lan-aio-runner-key-unavailable\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(module, "_run", fake_run)
+
+    blockers = module._cloud_preflight(
+        SimpleNamespace(
+            env="prod",
+            previous_sha="",
+            remote_host="cloud-prod",
+            remote_checkout_root="/release-root",
+            remote_env_file="/etc/allbot/prod.env",
+        ),
+        module.ReleaseImpact(
+            services={"dashboard-backend"},
+            level="rolling",
+            matched_rules=["dashboard-admin-backend"],
+        ),
+        {"schema_version": 2, "track": "control-plane", "git_sha": FULL_SHA},
+        _valid_prod_environment(),
+    )
+
+    assert blockers == ["cloud-lan-aio-runner-key-unavailable"]
+    assert (
+        "test -r /secure/lan-aio-runner/id_ed25519"
+        in remote_scripts[0]
+    )
+    assert "cloud-lan-aio-runner-key-permissions-not-600" in remote_scripts[0]
+
+
+def test_prod_dashboard_preflight_probes_dedicated_lan_aio_runner(monkeypatch):
+    module = _load_module()
+    remote_scripts = []
+
+    def fake_run(command, **kwargs):
+        remote_scripts.append(kwargs.get("input_text", ""))
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="cloud-lan-aio-runner-unreachable\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(module, "_run", fake_run)
+    values = _valid_prod_environment()
+    values["DASHBOARD_LAN_AIO_RUNNER_SSH_PORT"] = "2222"
+
+    blockers = module._cloud_preflight(
+        SimpleNamespace(
+            env="prod",
+            previous_sha="",
+            remote_host="cloud-prod",
+            remote_checkout_root="/release-root",
+            remote_env_file="/etc/allbot/prod.env",
+        ),
+        module.ReleaseImpact(
+            services={"dashboard-backend"},
+            level="rolling",
+            matched_rules=["dashboard-admin-backend"],
+        ),
+        {"schema_version": 2, "track": "control-plane", "git_sha": FULL_SHA},
+        values,
+    )
+
+    assert blockers == ["cloud-lan-aio-runner-unreachable"]
+    assert "ssh -p 2222" in remote_scripts[0]
+    assert "hfy@100.99.254.53" not in remote_scripts[0]
+    assert "runner@example.internal" in remote_scripts[0]
+    assert "test -r /home/hfy/APP/All_bot/scripts/lan_aio_fleet_prod_ops.py" in remote_scripts[0]
 
 
 def test_v2_cloud_rollback_can_use_legacy_release_contract(monkeypatch):
@@ -2574,6 +2700,27 @@ def test_config_impact_recreates_consumers_and_unknown_keys_fail_wide():
 
     assert {"bot", "qqcc-bot", "qqcc-private-bot-worker"} <= known
     assert unknown == set(module.load_structured_file(POLICY_PATH)["all_services"])
+
+
+def test_config_update_compares_current_and_candidate_env_with_same_quote_semantics(
+    tmp_path,
+):
+    module = _load_module()
+    candidate = tmp_path / "candidate.env"
+    candidate.write_text(
+        'UNCHANGED_HASH="quoted-value"\nDASHBOARD_LAN_AIO_RUNNER_HOST=runner\n',
+        encoding="utf-8",
+    )
+
+    old_values = module.parse_env_text('UNCHANGED_HASH="quoted-value"\n')
+    new_values = module.parse_env_file(candidate)
+    changed = {
+        key
+        for key in set(old_values) | set(new_values)
+        if old_values.get(key) != new_values.get(key)
+    }
+
+    assert changed == {"DASHBOARD_LAN_AIO_RUNNER_HOST"}
 
 
 def test_v2_promotion_and_state_are_scoped_per_track(monkeypatch, capsys):
