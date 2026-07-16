@@ -202,6 +202,7 @@ token 只允许放在 ignored env 文件，例如 `.env.cloud.prod` 或 `.env.cl
 
 - backend service/container: `qqcc-config-backend-test` / `cloud-qqcc-config-backend-test`，默认端口 `8045`
 - frontend service/container: `qqcc-config-frontend-test` / `cloud-qqcc-config-frontend-test`，默认端口 `8088`
+- 公网管理员入口：`https://qqcc-admin-test.aivison.it.com`，通过测试 Tunnel 回源 `100.82.124.91:8088`，Cloudflare Access 仅允许管理员邮箱，进入后仍需 QQCC Config 独立账号登录
 
 私有 Bot webhook worker 由同一 `Dockerfile.qqcc` 构建，但使用独立 profile 和入口：
 
@@ -217,6 +218,7 @@ worker 仍需注入环境对应的 `QQCC_BOT_TOKEN` / `QQCC_BOT_TOKEN_TEST`，�
 safe deploy 脚本调用 `scripts/validate_private_qqcc_bot_env.py --allow-disabled`：gate 缺失/`false` 时允许普通控制面在不填写私有 Bot activation secrets 的情况下完成 compose 校验；gate=`true` 时严格要求全部密钥、HTTPS/Host/R2 契约和环境对应的官方 QQCC token。直接运行 validator 且不加 `--allow-disabled` 是启用前严格检查，gate 非真也会失败。
 
 QQCC Config Web 只面向 Tailscale/受控入口或 Cloudflare Access 保护入口，不得裸露公网。
+测试私有 Bot gate 仍关闭时，不得仅因管理员后台上线就创建公开 Owner Host；`private-bot-test.aivison.it.com` 必须等独立测试 keyring/JWT/fingerprint、HTTPS webhook、owner URL/Host 和 private worker 严格门禁全部通过后再单独上线。
 
 QQCC 跳转主 Bot 按钮优先读取 `QQCC_MAIN_BOT_URL`，可配置为 `https://t.me/<main-bot-username>` 或带 `start` 参数的 Telegram deeplink；未配置 URL 时会尝试 `QQCC_MAIN_BOT_USERNAME` 并自动拼成 `https://t.me/<username>`。两者都未配置时，菜单仍可显示 `前往主bot`，但点击后只提示主 Bot 入口暂未配置。
 

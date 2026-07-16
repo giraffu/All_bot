@@ -260,11 +260,11 @@ VPS Nginx 配置文件为 `/etc/nginx/sites-available/web-test.aivison.it.com`�
 | Dashboard Backend | `cloud-dashboard-backend-test` | `8044` | Dashboard 后端 |
 | Dashboard Frontend | `cloud-dashboard-frontend-test` | `8087` | Dashboard 云端 Nginx 前端，仅 Tailscale/受控来源访问 |
 | QQCC Config Backend | `cloud-qqcc-config-backend-test` | `8045` | QQCC 懒人 Bot 独立配置 API |
-| QQCC Config Frontend | `cloud-qqcc-config-frontend-test` | `8088` | QQCC 懒人 Bot 独立配置 Web，仅 Tailscale/受控来源访问 |
+| QQCC Config Frontend | `cloud-qqcc-config-frontend-test` | `8088` | QQCC 懒人 Bot 独立配置 Web；Tailscale origin，公网只经 Access 保护的测试 Tunnel 访问 |
 | QQCC Private Bot Worker | `cloud-qqcc-private-bot-worker-test` | 无 | `qqcc-private-bots` profile；消费 Telegram webhook stream，默认不启动 |
 | imgproxy | `cloud-imgproxy-test` | `8084` | 图片代理 |
 
-QQCC Config Frontend 启用严格 Host 路由后，直接访问 `http://100.82.124.91:8088` 只有在 `QQCC_CONFIG_ADMIN_HOST=100.82.124.91` 时才会命中管理员站点；也可以配置独立测试 hostname 并让浏览器/测试 DNS 解析到该 Tailscale IP。localhost 端口转发或未知 Host 默认返回 404，curl 验证必须显式带 `Host: ${QQCC_CONFIG_ADMIN_HOST}`。Owner Host 必须另配 HTTPS 测试域名，不能和 admin Host 相同。
+QQCC Config Frontend 启用严格 Host 路由后，直接访问 `http://100.82.124.91:8088` 只有请求 Host 与 `QQCC_CONFIG_ADMIN_HOST` 一致时才会命中管理员站点；localhost 端口转发或未知 Host 默认返回 404，curl 验证必须显式带 `Host: ${QQCC_CONFIG_ADMIN_HOST}`。2026-07-16 已上线 `https://qqcc-admin-test.aivison.it.com`，由 `allbot-cloud-web-api-canary` Tunnel 回源该 Tailscale origin，并通过 Cloudflare Access 仅允许管理员邮箱，QQCC Config 自身登录继续作为第二层认证。测试 Owner Host 必须另配 HTTPS 域名且不能和 admin Host 相同；当前私有 Bot gate 关闭，`private-bot-test.aivison.it.com` 尚未创建。
 
 测试机 systemd 服务 `allbot-cloud-test-firewall.service` 管理公网保护规则，脚本路径为 `/usr/local/sbin/allbot-cloud-test-firewall.sh`，规则写入 Docker `DOCKER-USER` 链。当前公网 eth0 上的 `8001/8004/8044/8045/8084/8087/8088` 全部 drop；Tailscale `tailscale0` 不受该规则影响。
 
