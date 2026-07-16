@@ -56,6 +56,7 @@ async def process_standard_generation_task(
     cost_override: int | None = None,
     base_priority: int = 0,
     allow_cancel: bool = True,
+    show_queue_status: bool = True,
     user_cancel_allowed: bool = True,
     result_task_type: str | None = None,
     result_prompt: str | None = None,
@@ -92,6 +93,7 @@ async def process_standard_generation_task(
             "source_post_id": source_post_id,
             "base_priority": base_priority,
             "allow_cancel": allow_cancel,
+            "show_queue_status": show_queue_status,
             "user_cancel_allowed": user_cancel_allowed,
         }
         if display_mode_name_override is not None:
@@ -122,6 +124,7 @@ async def process_standard_generation_task(
             "source_post_id": source_post_id,
             "base_priority": base_priority,
             "allow_cancel": allow_cancel,
+            "show_queue_status": show_queue_status,
             "user_cancel_allowed": user_cancel_allowed,
         }
         if display_mode_name_override is not None:
@@ -210,6 +213,7 @@ async def process_standard_generation_task(
             cost_override=cost_override,
             base_priority=base_priority,
             allow_cancel=allow_cancel,
+            show_queue_status=show_queue_status,
             user_cancel_allowed=user_cancel_allowed,
             result_task_type=result_task_type,
             result_prompt=result_prompt,

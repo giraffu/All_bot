@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
@@ -25,6 +25,35 @@ class _FakeSession:
 
     async def execute(self, _stmt):
         return next(self._results)
+
+
+@pytest.mark.asyncio
+async def test_send_history_to_telegram_uses_clean_user_visible_prompt():
+    history = SimpleNamespace(
+        type="img2img_lora",
+        prompt="[模型: qwen/YARN_1.0.safetensors] [强度: 0.30] portrait",
+        output_file="history/task/output.png",
+        extra_outputs=None,
+    )
+    build_request = Mock(
+        return_value=("https://telegram.example", {"chat_id": "1"}, {"photo": ()})
+    )
+    dependencies = history_delivery_service.HistoryDeliveryDependencies(
+        acquire_rate_limit_func=AsyncMock(),
+        load_history_record_func=AsyncMock(return_value=history),
+        download_history_bytes_func=AsyncMock(return_value=("output.png", b"image")),
+        build_upload_request_func=build_request,
+        post_upload_func=AsyncMock(),
+    )
+
+    await history_delivery_service.send_history_record_to_telegram(
+        task_id="task",
+        current_user=SimpleNamespace(id=1, telegram_id=100),
+        db=SimpleNamespace(),
+        dependencies=dependencies,
+    )
+
+    assert build_request.call_args.kwargs["history_prompt"] == "portrait"
 
 
 @pytest.mark.asyncio

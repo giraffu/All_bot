@@ -2,7 +2,7 @@
 
 ## 1. 目标与边界
 
-AllBot 使用四个固定 Git worktree 并行开发，只保留一套共享云测试站。A-D 功能 AI 不持有发布职责；根工作区的集成 AI 把任务逐个合入 `codex/test-train`，使用 schema v2 增量 bundle 串行切换测试站。生产发布仍只接受 `main` bundle。
+AllBot 使用八个固定 Git worktree 并行开发，只保留一套共享云测试站。A-H 功能 AI 不持有发布职责；根工作区的集成 AI 把任务逐个合入 `codex/test-train`，使用 schema v2 增量 bundle 串行切换测试站。生产发布仍只接受 `main` bundle。
 
 目录和职责固定如下：
 
@@ -13,12 +13,16 @@ AllBot 使用四个固定 Git worktree 并行开发，只保留一套共享云�
 | `/home/hfy/APP/All_bot-workspaces/B` | 并行功能槽位 B |
 | `/home/hfy/APP/All_bot-workspaces/C` | 并行功能槽位 C |
 | `/home/hfy/APP/All_bot-workspaces/D` | 并行功能槽位 D |
+| `/home/hfy/APP/All_bot-workspaces/E` | 并行功能槽位 E |
+| `/home/hfy/APP/All_bot-workspaces/F` | 并行功能槽位 F |
+| `/home/hfy/APP/All_bot-workspaces/G` | 并行功能槽位 G |
+| `/home/hfy/APP/All_bot-workspaces/H` | 并行功能槽位 H |
 
 Git worktree 只隔离工作目录和 index；它们仍共享对象库与 refs。Python `.venv`、前端 `node_modules`、临时目录和其它可写缓存应留在各自槽位，避免并发写入污染。
 
 ### 1.1 能力边界不是安全沙箱
 
-A-D 使用同一受信任 OS 用户，目标是隔离代码/index/依赖写入，不是限制 AI 了解真实系统。功能 AI 可以读取 worktree 或主机已有的真实 env、配置、SSH/API 凭据、日志、数据库连接信息和远端运行态，并可使用这些凭据完成只读诊断、本地测试和部署计划。已有配置或凭据出现在槽位中不构成分配失败，也不要求自动删除。
+A-H 使用同一受信任 OS 用户，目标是隔离代码/index/依赖写入，不是限制 AI 了解真实系统。功能 AI 可以读取 worktree 或主机已有的真实 env、配置、SSH/API 凭据、日志、数据库连接信息和远端运行态，并可使用这些凭据完成只读诊断、本地测试和部署计划。已有配置或凭据出现在槽位中不构成分配失败，也不要求自动删除。
 
 高访问能力与操作授权必须分开：秘密原文不得进入对话、测试输出、日志、diff、commit 或 PR；功能任务未明确要求时不得改写、轮换或另存凭据。凭据可见也不授权功能 AI 部署共享 test、修改 prod、Cloudflare、RunPod/GPU、执行数据库 migration 或改变发布状态，这些 mutation 仍由集成 AI 和对应运维 Skill 控制。
 
@@ -35,7 +39,7 @@ python scripts/manage_ai_workspaces.py park --slot A
 python scripts/manage_ai_workspaces.py refresh --slot A
 ```
 
-- `init` 幂等创建 A-D；空闲槽位 detached 在最新 `origin/codex/test-train`。
+- `init` 幂等创建 A-H；空闲槽位 detached 在最新 `origin/codex/test-train`。
 - `claim` 是新 AI 窗口的默认入口：它用 `~/.local/state/allbot/ai-workspaces.lock` 原子选择第一个空闲槽位，自动刷新过期的 clean detached 槽位，创建任务分支并返回路径。并发窗口不会获得同一槽位。
 - `assign` 创建 `codex/<slot>-<task>`，在 dirty、Git 操作未结束、槽位未 park 或 base 过期时拒绝。
 - `park` 要求工作区 clean 且 HEAD 已由同名远端分支包含；只 detach，不删除分支。
@@ -73,13 +77,15 @@ python scripts/test_train_release.py deploy \
 
 包装器在本地主服务器使用 `~/.local/state/allbot/test-train.lock` 排他锁并计划三个 track。默认只部署确实要求测试的 control-plane/公共 Web；Dashboard/QQCC 管理面记录 `test-not-required` 且不修改共享测试站，test-execution 只有显式 `--with-test-execution` 才部署。`gpu-execution` 只报告计划，正式 GPU profile 走对应 operator。
 
-schema v2 的远端事务和发布合约都按 track 隔离：journal/staged state 使用 `transactions/<track>/<sha>`，云 Compose 的非敏感合约使用 `/var/lib/allbot/releases/<track>/<sha>/release.env`。同一 candidate 先后部署 control-plane 与 test-execution 时，后一轨不得覆盖前一轨的镜像变量或回滚输入。
+schema v2 的远端事务和发布合约都按 track 隔离：journal/staged state 使用 `transactions/<track>/<sha>`，云 Compose 的非敏感合约使用 `/var/lib/allbot/releases/<track>/<sha>/release.env`，Worker host 使用 `release-env/<track>/<sha>/release.env`。Worker preflight 从同一 track-scoped 路径读取上一版本回滚材料；若该轨没有任何 cloud service，则跳过 cloud preflight，不要求不会生成的云端合约。云端控制面回滚到 track 隔离上线前的历史 SHA 时，预检与失败恢复优先读取 track-scoped 合约，缺失后可读取同 SHA 的 legacy `/var/lib/allbot/releases/<sha>/release.env`；候选正向部署仍只写 track-scoped 路径。同一 candidate 先后部署 control-plane 与 test-execution 时，后一轨不得覆盖前一轨的镜像变量或回滚输入。
 
 测试 Worker 是按需诊断链。只有需要匹配 GPU/ComfyUI 的专项验证时，在 deploy 命令追加 `--with-test-execution`；未追加时状态记录 deferred，不把 Worker 标记为已部署。后续需要 Worker 时对最新可信 candidate 重新 plan/deploy，禁止用控制面结果冒充 Worker 通过。
 
 若 control-plane 无需要测试的 artifacts/services，包装器不调用空 preflight/deploy，记录 `ready-for-acceptance` 和 `deployment_mode=non-runtime|test-not-required`。未显式启用 Worker 时记录 `deferred_tracks=["test-execution"]`；不得写任何容器、Pages 或 Worker 已更新。
 
 若后一个 track 部署失败，包装器按相反顺序回滚本轮已成功 track；单 track 内部继续使用 `release.py` 事务补偿。若部署成功但业务 smoke 失败：
+
+跨 track 恢复成功后，`test_train_release.py` 的失败摘要必须附带底层 `release.py` 最后一行错误，供集成 AI 在唯一入口内定位具体 Worker/Pages/控制面门禁；不得只返回通用“已恢复”文本，迫使操作者绕过包装器复现 mutation。
 
 1. 执行 `block` 并暂停其它无关 PR 合入。
 2. 保留失败 candidate 供诊断；需要恢复可用性时由集成 AI 显式回滚最后 accepted candidate。

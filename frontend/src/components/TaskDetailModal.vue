@@ -15,7 +15,7 @@ import { stitchLtxHistoryChain, stitchWan22HistoryChain } from '@/api/gallery'
 import type { HistoryItem, TaskRecord } from '@/types/gallery'
 
 const { isMobile } = useViewport()
-const { t } = useI18n()
+const { t, te } = useI18n()
 const tasksStore = useTasksStore()
 const router = useRouter()
 
@@ -33,6 +33,10 @@ const detailVisible = computed({
 })
 
 const currentRecord = computed(() => tasksStore.currentDetailRecord)
+const promptModelLabel = computed(() => {
+  const key = currentRecord.value?.prompt_model?.display_key
+  return key && te(key) ? t(key) : t('generation_models.additional')
+})
 const wan22ActionLoading = ref<'stitch' | 'ltx-stitch' | null>(null)
 
 const isWan22Record = computed(() => (
@@ -255,6 +259,10 @@ const handleWan22ChainStitch = async () => {
               v-if="currentRecord.prompt?.trim()"
               :title="$t('prompt_panel.title')"
               :prompt="currentRecord.prompt"
+              :prompt-model="currentRecord.prompt_model"
+              :model-label="promptModelLabel"
+              :additional-model-label="$t('prompt_panel.additional_model')"
+              :model-strength-label="$t('prompt_panel.model_strength')"
               :expand-label="$t('prompt_panel.expand')"
               :collapse-label="$t('prompt_panel.collapse')"
               :show-copy="true"

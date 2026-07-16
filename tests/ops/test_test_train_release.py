@@ -147,6 +147,16 @@ def test_deploy_orders_tracks_and_records_candidate(tmp_path):
     assert coordinator.status()["status"] == "deployed"
 
 
+def test_expanded_workspace_slot_can_flow_through_test_train_audit(tmp_path):
+    module = _load_module()
+    coordinator = module.TestTrainCoordinator(state_root=tmp_path / "state")
+    runner = _FakeReleaseRunner()
+
+    coordinator.deploy_candidate(SHA, pr=42, slot="H", runner=runner)
+
+    assert coordinator.status()["slot"] == "H"
+
+
 def test_deploy_can_explicitly_include_test_execution_for_a_diagnostic_window(
     tmp_path,
 ):
@@ -299,6 +309,24 @@ def test_later_track_failure_rolls_back_completed_track_in_reverse(tmp_path):
         )
 
     assert runner.events[-1] == ("rollback", "control-plane", "b" * 40)
+
+
+def test_later_track_failure_preserves_original_error_after_recovery(tmp_path):
+    module = _load_module()
+    coordinator = module.TestTrainCoordinator(state_root=tmp_path / "state")
+    runner = _FakeReleaseRunner(fail_track="test-execution")
+
+    with pytest.raises(
+        module.TestTrainError,
+        match="completed tracks were recovered: deploy failed",
+    ):
+        coordinator.deploy_candidate(
+            SHA,
+            pr=42,
+            slot="D",
+            runner=runner,
+            with_test_execution=True,
+        )
 
 
 def test_gpu_candidate_is_planned_but_does_not_block_control_plane_test(tmp_path):

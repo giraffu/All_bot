@@ -36,6 +36,7 @@ async def process_image_to_video_generation_task(
     source_post_id: Optional[int] = None,
     base_priority: int = 0,
     allow_cancel: bool = True,
+    show_queue_status: bool = True,
     user_cancel_allowed: bool = True,
 ) -> Tuple[Optional[bytes], Optional[str]]:
     return await process_legacy_image_to_video_generation_task(
@@ -67,5 +68,6 @@ async def process_image_to_video_generation_task(
         source_post_id=source_post_id,
         base_priority=base_priority,
         allow_cancel=allow_cancel,
+        show_queue_status=show_queue_status,
         user_cancel_allowed=user_cancel_allowed,
     )

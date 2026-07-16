@@ -16,7 +16,7 @@ from typing import Any, Iterator, Mapping, Protocol, Sequence
 
 
 FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
-SLOTS = {"A", "B", "C", "D"}
+SLOTS = {"A", "B", "C", "D", "E", "F", "G", "H"}
 DEFAULT_STATE_ROOT = Path.home() / ".local" / "state" / "allbot" / "test-train"
 DEFAULT_BUNDLE_CACHE = (
     Path.home() / ".cache" / "allbot" / "releases" / "test-candidate"
@@ -356,7 +356,8 @@ class TestTrainCoordinator:
                         + ", ".join(rollback_failures)
                     ) from exc
                 raise TestTrainError(
-                    "candidate deployment failed and completed tracks were recovered"
+                    "candidate deployment failed and completed tracks were recovered: "
+                    + str(exc)
                 ) from exc
             self.record_deployed(sha, pr=pr, slot=slot, tracks=affected)
 

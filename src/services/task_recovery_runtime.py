@@ -80,6 +80,7 @@ async def _monitor_recovered_task_progress(
     is_video,
     identity_str=None,
     user_group=None,
+    show_queue_status=True,
 ):
     return await monitor_task_progress(
         task_id=task_id,
@@ -88,6 +89,7 @@ async def _monitor_recovered_task_progress(
         monitor_func=image_service.monitor_progress,
         identity_str=identity_str,
         user_group=user_group,
+        show_queue_status=show_queue_status,
     )
 
 
@@ -197,6 +199,11 @@ async def run_recovered_task(*, registry_task_id: str, task_data: dict, applicat
         is_video=is_video,
         identity_str=identity_str,
         user_group=user_group,
+        show_queue_status=(
+            recovery_contract.get("show_queue_status") is not False
+            if recovery_contract is not None
+            else True
+        ),
     )
     if not final_info:
         return False

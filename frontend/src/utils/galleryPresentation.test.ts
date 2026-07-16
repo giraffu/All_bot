@@ -73,6 +73,15 @@ describe('resolveGalleryTaskTypeLabel', () => {
 })
 
 describe('formatGalleryTag', () => {
+  it('localizes task type fallback keys without exposing raw values', () => {
+    const t = (key: string) => key === 'task_type.other' ? '生成任务' : key
+    expect(formatGalleryTag('#task_type.other', t)).toBe('#生成任务')
+  })
+
+  it('localizes public model keys without exposing model paths', () => {
+    const t = (key: string) => key === 'generation_models.image_realistic' ? 'Realistic' : key
+    expect(formatGalleryTag('#generation_models.image_realistic', t)).toBe('#Realistic')
+  })
   it('formats wan22 single frame tag with translation', () => {
     const t = (key: string) => (key === 'task.wan22_start_frame' ? '首图生成' : key)
 

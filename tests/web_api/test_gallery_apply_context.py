@@ -290,7 +290,7 @@ async def test_build_post_responses_masks_locked_prompt_for_non_author():
         user_id=123,
         task_id="task-locked-prompt",
         type="image",
-        prompt="abcdefghij",
+        prompt="[模型: qwen/YARN_1.0.safetensors] [强度: 0.30] abcdefghij",
         output_file="bot-data/history/task-locked-prompt/output.png",
     )
     post = GalleryPost(
@@ -330,6 +330,8 @@ async def test_build_post_responses_masks_locked_prompt_for_non_author():
     assert responses[0].prompt_unlockable is True
     assert responses[0].prompt_is_masked is True
     assert responses[0].prompt_unlock_price == 1
+    assert responses[0].prompt_model is None
+    assert "safetensors" not in responses[0].prompt
 
 
 @pytest.mark.asyncio
@@ -1003,6 +1005,11 @@ async def test_get_apply_context_restores_lora_strength_from_new_prompt_format()
     assert response.prompt == "cinematic portrait"
     assert response.lora_name == "qwen/YARN_1.0.safetensors"
     assert response.lora_strength == 0.35
+    assert response.prompt_model == {
+        "id": "image_realistic",
+        "display_key": "generation_models.image_realistic",
+        "strength": 0.35,
+    }
     session.commit.assert_not_awaited()
 
 

@@ -348,7 +348,7 @@ def build_result_reply_markup(
 
 
 def resolve_result_mode_name(task_type):
-    mode_name = MODE_NAME_MAP.get(task_type, task_type)
+    mode_name = MODE_NAME_MAP.get(task_type, "task_type.other")
     if task_type == "face_swap":
         return MODE_NAME_MAP.get(MODE_FACESWAP_STEP1)
     if task_type == "penetration":
@@ -371,10 +371,12 @@ def record_result_message_meta(
 ):
     if not sent_msg:
         return
+    from src.services.user_visible_generation_presenter import present_user_prompt
+
     meta = {
         "mode_name": resolve_result_mode_name(task_type),
         "task_type": task_type,
-        "prompt": prompt,
+        "prompt": present_user_prompt(prompt).prompt,
         "task_id": task_id,
     }
     if isinstance(result_meta, dict):

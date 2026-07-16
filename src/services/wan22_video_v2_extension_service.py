@@ -25,6 +25,7 @@ from src.database.models import History
 from src.lora_mapping import extract_prompt_lora_context
 from src.services.fsm_temp_file_service import FSM_TEMP_DIR
 from src.services.storage import storage
+from src.services.user_visible_generation_presenter import present_user_prompt
 from src.domain_config.wan22_aio_video import normalize_wan22_video_v2_chain_task_ids
 from src.domain_config.wan22_aio_video import (
     WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET,
@@ -626,7 +627,10 @@ async def stitch_histories_and_create_history(
         video_bytes=stitched_video,
         task_id=stitched_task_id,
         task_type=str(stitched_history.type or ""),
-        prompt=str(stitched_history.prompt or ""),
+        prompt=present_user_prompt(
+            stitched_history.prompt,
+            extra_outputs=getattr(stitched_history, "extra_outputs", None),
+        ).prompt,
         output_file=str(stitched_history.output_file or ""),
         extra_outputs=dict(stitched_history.extra_outputs or {}),
         allow_contribute=getattr(stitched_history, "allow_contribute", True) is not False,

@@ -50,7 +50,7 @@ def translate_context_text(context, key: str, **kwargs) -> str:
 
 
 def resolve_display_mode_name(task_type: str, *, context, mode_name_map: dict[str, str]) -> str:
-    mode_name = mode_name_map.get(task_type, task_type)
+    mode_name = mode_name_map.get(task_type, "task_type.other")
     return translate_context_text(context, mode_name)
 
 

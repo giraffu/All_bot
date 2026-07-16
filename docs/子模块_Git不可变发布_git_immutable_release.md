@@ -52,7 +52,7 @@ main first-parent 历史寻找最近成功的 v2 bundle 作为增量基线，失
 
 ## 4. 配置
 
-代码发布不修改真实 env。Compose 依次读取版本化 `deploy/env.defaults`、`/etc/allbot/<env>.env` 和该 release 的非敏感 `release.env`，后者优先级最高且只包含 release SHA、config revision 与镜像 digest。schema v2 的云端合约必须写入 `/var/lib/allbot/releases/<track>/<sha>/release.env`，使同一 SHA 的 control-plane 与 test-execution 无法覆盖彼此的镜像变量；云端 legacy 快照、预检、回滚和恢复必须解析同一 track-scoped 目录。
+代码发布不修改真实 env。Compose 依次读取版本化 `deploy/env.defaults`、`/etc/allbot/<env>.env` 和该 release 的非敏感 `release.env`，后者优先级最高且只包含 release SHA、config revision 与镜像 digest。schema v2 的云端合约必须写入 `/var/lib/allbot/releases/<track>/<sha>/release.env`，使同一 SHA 的 control-plane 与 test-execution 无法覆盖彼此的镜像变量；云端 legacy 快照、预检、回滚和恢复默认解析同一 track-scoped 目录。仅当控制面回滚目标早于 track 隔离迁移且该文件缺失时，preflight、失败恢复和恢复验证才可兼容同一 SHA 的 `/var/lib/allbot/releases/<sha>/release.env`，正向发布不得写入该兼容路径。
 
 若云测试已有 control-plane 状态、但首次切换遗留的 immutable PostgreSQL/Redis 容器缺失，普通 deploy 会在队列 drain 阶段因 `redis-test` 不可达而 fail closed。集成 AI 必须先短暂启动停止的 legacy Redis 做只读取证，并立即停止；只有 worker Redis DB 的 `comfy:queue:pending` 与 `comfy:queue:running` 都为 0，才可在精确可信 candidate 上显式运行 `--repair-test-data-services --services postgres --services redis --confirm-legacy-cutover --confirm-empty-test-queue`。该入口只修复 test/control-plane 的成对数据服务 handoff，不是通用 skip-drain。
 
@@ -97,15 +97,15 @@ python scripts/update_deploy_config.py --env prod --source /secure/new-prod.env 
 
 混合变更取最高风险。catalog 会把本次 SHA 影响的所有 artifact 自动加入选择集；`src/**`、`shared/**` 等共享代码不能通过手工缩小 `--modules` 规避核心门禁。永久门禁包括 main 血缘、可信 CI 构建、digest/checksum/OCI revision、配置契约、目标健康、事务日志/回滚材料和非目标服务不重建。preflight 分别显示 gate 的 `required/passed/skipped/forbidden`，不能只依赖单个 promotion blocker。
 
-并发任务的 test-train 入口为 `scripts/test_train_release.py`，A-D 功能工作区不得直接运行发布器。详细槽位与 forward-fix SOP 见 `docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md`。
+并发任务的 test-train 入口为 `scripts/test_train_release.py`，A-H 功能工作区不得直接运行发布器。详细槽位与 forward-fix SOP 见 `docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md`。
 
 包装器默认只部署真正要求测试的 control-plane/公共 Web。测试 Worker 改为按需步骤，专项诊断才追加 `--with-test-execution`；未启用时记录 deferred，不得写入 acceptance。Dashboard/QQCC 管理面候选记录 `test-not-required` 且不修改共享测试站。
 
-`test-execution` 尚无 `/var/lib/allbot/deployments/test/test-execution/current.json` 时是 schema v2 首次切换，不是普通 rolling。planner 必须加入 `initial-release`，用 allowlist 对应的 legacy Agent/Relay 完成端口与健康预检；切换快照写入 `~/APP/All_bot-release/release-env/test-execution/<sha>/legacy-worker-running.txt`。失败恢复和之后的 immutable 回滚均读取 track-scoped release-env，不能要求尚不存在的 `allbot-worker-test/worker-relay`，也不能回落到旧的无 track 目录。
+`test-execution` 尚无 `/var/lib/allbot/deployments/test/test-execution/current.json` 时是 schema v2 首次切换，不是普通 rolling。planner 必须加入 `initial-release`，用 allowlist 对应的 legacy Agent/Relay 完成端口与健康预检；切换快照写入 `~/APP/All_bot-release/release-env/test-execution/<sha>/legacy-worker-running.txt`。失败恢复和之后的 immutable 回滚均读取 track-scoped release-env，Worker preflight 也必须检查 `release-env/<track>/<previous_sha>/release.env`。没有 cloud service 的 test-execution 跳过 cloud preflight，不要求云端生成未参与事务的 track 合约；同时不能要求尚不存在的 `allbot-worker-test/worker-relay`，也不能回落到旧的无 track 目录。
 
 v2 transaction journal 与 staged state 使用 `/var/lib/allbot/deployments/<env>/transactions/<track>/<sha>.json|.state.json`。control-plane 与 test-execution 即使目标 SHA 相同也不得复用 journal；Worker 的 `initial-release` 只驱动 legacy Agent/Relay 切换，不能注入控制面首次迁移的 Postgres/Redis。升级前已经产生的无 track 失败 journal 仅允许由精确 `recover --track <track>` 兼容读取并收口，恢复写回新的 track-scoped journal，禁止手工删除 journal 或 maintenance marker。
 
-`plan` 可从 GHCR 拉 release bundle，需要预先 `docker login ghcr.io` 和 `oras`。`preflight`、`deploy` 不拉取任何材料，必须先把 `release.json` 与 Web tar 放入本地 bundle cache，或显式传本地 `--manifest`/`--web-artifact`，以保证门禁失败前没有 pull、worktree 或远端写入。
+`plan` 可从 GHCR 拉 release bundle，需要预先 `docker login ghcr.io` 和 `oras`。`preflight`、`deploy` 不拉取任何材料，必须先把 v1 `release.json`/Web tar 或 v2 `release-v2/release-index.json`/`public-web-dist.tgz` 放入本地 bundle cache，也可显式传本地 `--manifest`/`--web-artifact`，以保证门禁失败前没有 pull、worktree 或远端写入。生产回滚预检同时识别这两代不可变缓存布局，不能因为目标使用 v2 bundle 就退化为伪造旧 `release.json`。
 
 正式环境的生成维护模式按每次发布单独决定，默认开启。只有用户对当前 SHA 的本次发布明确要求“不进入维护”时，才可请求无维护发布；该请求不持久化，也不适用于 migration、首次/legacy 切换、队列 drain、未知影响或 planner 要求的其它强制 maintenance。正式 `plan`/`preflight` 必须同时报告用户请求/default、计算出的 maintenance level 和最终实际模式。若当前 CLI/事务实现不能表达或证明所选模式，必须在 mutation 前停止并修复发布契约，不能手工操作维护 marker、回退到 legacy 脚本或静默采用另一模式。
 
@@ -165,6 +165,14 @@ scripts/release.py deploy --env prod --track control-plane --sha <40-char-sha> -
 
 standard 生产发布器在对应 track 的 retained history 中按 artifact 名称与精确 digest 查找 main-channel verified 证据，不再要求证据与目标控制面 SHA 全局相同；低风险 direct 新 SHA 不覆盖或作废其它核心 artifact 的既有测试证据。验收模板见 `deploy/test-acceptance.example.json`。direct/emergency 分别写 `waived/attested`，不能伪装成 verified；默认观察和短观察授权只适用于 standard。
 
+`dashboard/backend/schemas.py` 是 Dashboard API 与 QQCC Config API 的共享契约，发布策略必须把它归类为 `rolling`，并同时滚动 `dashboard-backend` 与 `qqcc-config-backend`；它本身不触发维护模式、Worker 或 GPU runtime 发布。
+
+当用户明确要求 QQCC 控制面独立晋级且保持其它正式模块不动时，可显式传 `--policy deploy/release-policy-qqcc-control-plane.yml`。该策略只接受已审计的 QQCC AI视频闭包与 release/docs/tests 元数据，固定影响 `central-api`、`qqcc-bot`、`qqcc-config-backend`、`qqcc-config-frontend`、`qqcc-private-bot-worker`；公共 Web、主 Bot、Dashboard、支付、群管、local/remote Worker、GPU runtime、RunPod 和未知路径全部 fail closed。它不跳过 main、CI、云测试 verified、digest、preflight 或正式确认门禁，测试与正式必须选择同一模块集合和同一 digest。
+
+若唯一云测试站当前运行的是已接受但尚未整体晋级 main 的 test-train，可在测试环境用 `deploy/release-policy-qqcc-control-plane-test-reconcile.yml` 计算真实当前 SHA 到目标 main 的差异。该文件带 `environment=test`，发布器在生产显式拒绝；它只把本轮已审计、且不属于五个目标 artifact 的 test-train 路径视为非选择漂移，目标模块、digest 与正式窄策略保持一致，未知路径仍为 maintenance。测试 rollback 必须继续指向真实当前 SHA，不得用云端不存在的正式基线伪造回滚点。
+
+生产发布器会读取云测试 `current.json`，要求状态为 `verified` 且 SHA、自有/第三方 digest 完全相同。验收模板见 `deploy/test-acceptance.example.json`；默认观察窗口不足 24 小时或任何 smoke 为 false 都不能标记 verified。用户明确确认测试服务无问题并授权提前晋级时，短观察 evidence 必须同时包含 `short_observation_override=true`、非空 `override_reason`、`approved_by` 和真实起止时间，并在 CLI 显式传 `--confirm-short-observation`。该例外不允许时间倒置/未来完成时间，也不放宽任何 smoke、SHA/digest、Web checksum 或测试运行态检查；verified current/history 会记录实际观察秒数、例外原因与批准者，禁止伪造 24 小时时间或直接编辑状态文件。
+
 管理后台是 owner-tools，auto 默认 direct；`--dashboard-fast-track` 只作为兼容别名保留。测试 Compose 不声明 Dashboard/QQCC 管理服务，公共 base 用 `owner-tools` profile 隔离，生产仍按明确 artifact/service 启动。direct 不跳过 Git/CI artifact/env/preflight/confirm/rollback/非目标容器门禁。
 
 `--control-plane-repair-fast-track` 不是通用免测入口，只用于 verified main-channel 控制面之后修复生产启用、测试禁用的 `private-bot-worker` 镜像闭包。发布器以测试状态 SHA 为基线重新计算路径差异；只接受 `Dockerfile.control-plane`、v2 artifact catalog 与配套 release/docs/tests/skills 元数据。对其它 digest 变化模块，catalog inputs 必须无变化且对应 Docker target 文本逐字等价；private worker 必须包含 `qqcc_bot/` 与 `qqcc_private_bot/`，并对目标 digest 执行 `--network none` 导入烟测。业务代码、migration、Compose、GPU/ops、未知路径以及显式 `--modules` / `--services` / `--from-sha` 全部拒绝。通过后状态记录 tested/target SHA、等价 artifact 与实际 smoke artifact；main/CI/env/preflight/生产确认/回滚事务仍保持原门禁。
@@ -183,7 +191,7 @@ release workflow 生成 manifest 后会运行一次不接触运行态秘密的�
 - schema v2 中测试 Worker Agent/Relay 使用不同 digest，并作为同一 test-execution 选择集部署；正式控制面 Compose 不要求二者。RunPod/LAN profile 镜像内置 `/opt/allbot/runtime/remote_workers`、baked entrypoint 和 agent/workflow revision labels，不再 clone `deploy` 分支；模型仍由带 key/size/SHA256 的 manifest 固定。
 - 云测试维护发布按“云控制面 → 测试 Worker → Pages → 暂存状态 → 原子提交 current/history 并解除维护”执行。正式发布按本次已确认的维护模式执行“云控制面 → Pages → 状态提交”：默认维护模式在 mutation 前建立生成维护并在成功提交后解除；经用户明确选择且 planner 允许的无维护模式全程不写维护 marker。首次正式切换仍强制同时写 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`，不能关闭，也不操作任何 GPU Worker 容器。
 - 无秘密事务 journal 在每阶段通过远端临时文件原子 rename。失败只逆序补偿本事务实际尝试过的阶段，并只验证这些可能被改变的阶段；例如 cloud 阶段失败时，不得因本来 stopped 的测试 Worker 没有 heartbeat 而误报恢复失败。云测试最大补偿顺序为 Pages → Worker → 云控制面，正式为 Pages → 云控制面。验证失败时记录 `rollback_failed` 并保持维护。
-- 回滚命令读取旧 release manifest/Web tar，不重建。部署状态 history 长期保留；运行主机不得全局 `docker system prune`。数据库 migration 只向前兼容，应用回滚不自动 Alembic downgrade。
+- 回滚命令读取旧 release manifest/Web tar，不重建；v2 从缓存中的 `release-v2/release-index.json` 与 `public-web-dist.tgz` 取材。部署状态 history 长期保留；运行主机不得全局 `docker system prune`。数据库 migration 只向前兼容，应用回滚不自动 Alembic downgrade。
 
 ```bash
 scripts/release.py rollback --env test --to <old-sha> --manifest <old-release.json> --web-artifact <old-web.tgz> --execute

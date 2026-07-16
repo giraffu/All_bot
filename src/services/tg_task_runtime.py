@@ -190,10 +190,26 @@ def render_progress_transition(
     last_queue_pos,
     vip_suffix: str,
     lang: str,
+    show_queue_status: bool = True,
 ) -> dict | None:
     status = info.get("status")
     progress = info.get("progress", 0)
     if status == "pending":
+        if not show_queue_status:
+            if last_status == "running":
+                return None
+            return {
+                "text": build_running_status_text(
+                    is_video=is_video,
+                    progress=progress,
+                    lang=lang,
+                ),
+                "show_cancel_button": False,
+                "parse_mode": None,
+                "last_queue_pos": last_queue_pos,
+                "last_status": "running",
+                "last_progress": progress,
+            }
         queue_pos = normalize_pending_queue_position(info)
         if queue_pos is not None:
             if queue_pos == last_queue_pos and last_status == "pending":
@@ -253,6 +269,7 @@ async def monitor_task_progress(
     on_cancelled: Callable[[], Awaitable[None] | None] | None = None,
     edit_status_text_func=None,
     allow_cancel: bool = True,
+    show_queue_status: bool = True,
 ):
     edit_status_text_func = edit_status_text_func or robust_edit_text
     last_progress = 0
@@ -302,6 +319,7 @@ async def monitor_task_progress(
             last_queue_pos=last_queue_pos,
             vip_suffix=vip_suffix,
             lang=lang,
+            show_queue_status=show_queue_status,
         )
         if transition is None:
             continue

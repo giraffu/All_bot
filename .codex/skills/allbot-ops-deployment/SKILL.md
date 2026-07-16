@@ -39,7 +39,7 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 - 云测试：先执行 `scripts/release.py plan --env test --sha <sha>`，再以同一 SHA 执行 `deploy --env test --sha <sha> --execute`。影响集合由 `deploy/release-policy.yml` 计算，`--services` 只能扩大，不能缩小。
 - 本地主服务器兼任测试 Worker host 时，使用受限的本地测试配置（当前标准路径 `/home/hfy/.config/allbot/test.env`，`600`）并显式传 `--env-file`；发布器必须把 Worker compose 的 `ALLBOT_ENV_FILE` 绑定到这个实参，不能复用云主机 `/etc/allbot/test.env` 的路径字符串。云端事实源与本地副本内容/revision 必须一致，生产 env 不得复制到测试 Worker host。
 - schema v2 的 `test-execution` 尚无 track-scoped `current.json` 时属于首次发布：计划必须标记 `initial-release`，预检用 allowlist 对应的 legacy Agent/Relay 核对端口所有权，切换前把运行中容器快照写到 `release-env/test-execution/<sha>/legacy-worker-running.txt`。失败恢复和后续 immutable 回滚都必须读取同一 track-scoped release-env，禁止错误要求一个尚不存在的新式 Relay 或回落到无 track 的旧目录。
-- schema v2 的事务 journal 与 staged state 也必须按 track 隔离到 `transactions/<track>/<sha>.json|.state.json`；远端云 Compose 的非敏感发布合约同步隔离到 `/var/lib/allbot/releases/<track>/<sha>/release.env`，legacy 云快照沿用同一目录。即使目标 SHA 相同，control-plane 与 test-execution 也不得互相覆盖 journal、staged state 或 release contract。test-execution 的 `initial-release` 只表示 legacy Worker 切换，不得把控制面首次发布专属的 Postgres/Redis 闭包带入 Worker-only 事务。`recover --track <track>` 可兼容读取升级前的同 track 无目录 journal，但恢复写回必须进入 track-scoped 路径。
+- schema v2 的事务 journal 与 staged state 也必须按 track 隔离到 `transactions/<track>/<sha>.json|.state.json`；远端云 Compose 的非敏感发布合约同步隔离到 `/var/lib/allbot/releases/<track>/<sha>/release.env`，Worker host 合约为 `release-env/<track>/<sha>/release.env`，legacy 云快照沿用对应 track 目录。Worker preflight 必须按 track 读取回滚合约；计划未选择任何 cloud service 时 cloud preflight 直接跳过，不能用不存在的云端 track 合约阻断 Worker-only 发布。云端控制面的历史回滚目标若早于 track 隔离迁移，必须优先找 track-scoped 合约，仅在缺失时兼容同一 SHA 的 `/var/lib/allbot/releases/<sha>/release.env`，且 preflight、失败恢复与恢复验证使用相同选择逻辑；新发布不得写回 legacy 路径。即使目标 SHA 相同，control-plane 与 test-execution 也不得互相覆盖 journal、staged state 或 release contract。test-execution 的 `initial-release` 只表示 legacy Worker 切换，不得把控制面首次发布专属的 Postgres/Redis 闭包带入 Worker-only 事务。`recover --track <track>` 可兼容读取升级前的同 track 无目录 journal，但恢复写回必须进入 track-scoped 路径。
 - 若 test 已有 control-plane 状态但 immutable PostgreSQL/Redis 容器缺失，普通发布必须继续 fail closed，禁止手工 compose 或跳过 drain。只有先从停止的 legacy Redis 取证 worker DB 的 pending/running 均为 0，才可对可信 test-candidate 使用 `--repair-test-data-services --services postgres --services redis --confirm-legacy-cutover --confirm-empty-test-queue` 做一次维护式数据服务修复；该模式仅允许 test/control-plane 且必须成对选择 PostgreSQL/Redis。
 - 首次测试 immutable 切换必须使用 `--confirm-legacy-cutover`，并把 Postgres/Redis 纳入初始依赖闭包；test overlay 必须复用已确认的 `deploy_cloud-postgres-test-data`/`deploy_cloud-redis-test-data`，保留 `postgres-test`/`redis-test` 网络别名。全部 digest pull/OCI 校验和 legacy Central 队列排空完成后才能停止本轮实际运行的 legacy 控制面容器；新项目失败必须先移除目标容器再重启记录中的旧容器，禁止把普通 `compose up` 当作首次交接。
 - Frontend 镜像 smoke 必须真实执行 `/docker-entrypoint.d/05-select-dashboard-spa.sh`，分别验证 dashboard 和 QQCC 模式生成 `/etc/nginx/templates/default.conf.template`；只检查 SPA 文件存在不足以通过发布门禁。
@@ -84,7 +84,7 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 
 ### 云测试
 - 使用独立测试 Droplet、测试 Postgres/Redis/Central/Web/Dashboard/imgproxy/Bot。
-- 共享云测试站只有一个写入者。A-D 功能 AI 不得部署；集成 AI 使用 test-train 本地排他锁，默认只切换确实要求测试的 control-plane/公共 Web，`--with-test-execution` 仅用于专项诊断。
+- 共享云测试站只有一个写入者。A-H 功能 AI 不得部署；集成 AI 使用 test-train 本地排他锁，默认只切换确实要求测试的 control-plane/公共 Web，`--with-test-execution` 仅用于专项诊断；显式启用 Worker 时按 control-plane → test-execution 顺序切换。
 - 日常研发验证也先形成完整 Git SHA 和 CI release；发布器可只 recreate 自动影响到的模块，但代码、shared、locale 与 Worker 依赖始终来自同一 release。
 - 若发布器选中 `bot` / `qqcc-bot`，仍须确认没有第二个同测试 token polling 实例。
 - cloud-test worker 由本地主服务器经 Tailscale 接入测试 Central；默认常驻只保留 test-1 与 test-8，其它测试 worker 只在 smoke/canary 窗口启用。
@@ -105,6 +105,7 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 ### RunPod 与 LAN AIO
 - RunPod 不属于局域网 SSH GPU 池；RunPod profile、镜像、manifest、override 事实源在 `ops/gpu_pool_controller/` 与 GPU Pool 文档。
 - Dashboard RunPod 管理和 LAN AIO worker 基础控制只调用既有脚本，不重写 provider 逻辑；`desired_count` 兼容字段按“新增数量”解释，不代表目标总数。
+- Dashboard RunPod operation 必须从 profile catalog pin 已验收的 img2img/PornMaster baked 镜像并覆盖 `/app/.env` 历史 ref；目标 tag 未发布或 baked entrypoint/revision smoke 未通过时，禁止先部署引用它的 Dashboard。PornMaster FP8/BF16 共用 runtime 镜像与 single/multiple workflow，差异由 task type、模型 manifest、GPU/`--lowvram` 和 UNet 节点替换表达。
 - Dashboard autoscaler 基于预计清空时间、profile 阈值、Redis leader lease 与 operation store 做 add/down/restart/enable；不直接操作本地 worker，不绕过 RunPod 门禁；RunPod Worker 卡片的 `锁定/解锁` 会让手动删除、autoscaler down 和 add cleanup 跳过该 worker。
 - LAN AIO 的易变运行事实不写进本 skill 正文；当前每张 GPU 运行 profile、可快速切换候选、缓存 marker、阻断原因以 `ops/gpu_pool_controller/config/lan_aio_fleet_state.yml` 为 agent 维护入口，切换前仍必须用 live status 仲裁。
 - Dashboard 不再提供 LAN AIO profile/slot 列表、候选切换、`takeover`、`recover` 或 `warm-cache` API；当前态和任务显示走 `/api/system/workers`，Worker 卡片只保留 `pause/enable/restart` 基础控制。
