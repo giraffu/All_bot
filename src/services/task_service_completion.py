@@ -36,6 +36,7 @@ async def monitor_submitted_bot_task(
     edit_status_text_func=None,
     lang: str = "zh",
     allow_cancel: bool = True,
+    show_queue_status: bool = True,
 ):
     from src.core.billing_core import get_user_priority_and_identity
 
@@ -58,6 +59,7 @@ async def monitor_submitted_bot_task(
         edit_status_text_func=edit_status_text_func,
         lang=lang,
         allow_cancel=allow_cancel,
+        show_queue_status=show_queue_status,
     )
 
 
@@ -71,6 +73,7 @@ async def monitor_bot_task_progress(
     edit_status_text_func=None,
     lang: str = "zh",
     allow_cancel: bool = True,
+    show_queue_status: bool = True,
 ):
     def _raise_cancelled():
         raise BotTaskCancelled()
@@ -86,6 +89,7 @@ async def monitor_bot_task_progress(
         on_cancelled=_raise_cancelled,
         edit_status_text_func=edit_status_text_func,
         allow_cancel=allow_cancel,
+        show_queue_status=show_queue_status,
     )
     if final_info is None:
         raise BotTaskCancelled()

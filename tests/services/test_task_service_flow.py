@@ -107,12 +107,14 @@ def test_build_bot_task_flow_context_keeps_cost_override_for_internal_tasks():
         base_priority=100,
         allow_cancel=False,
         user_cancel_allowed=False,
+        show_queue_status=False,
     )
 
     assert flow.request.cost_override == 2
     assert flow.request.base_priority == 100
     assert flow.request.user_cancel_allowed is False
     assert flow.presentation.allow_cancel is False
+    assert flow.presentation.show_queue_status is False
 
 
 @pytest.mark.asyncio
@@ -266,6 +268,35 @@ def test_build_main_bot_recovery_metadata_preserves_hidden_history_policy():
 
     assert metadata["_bot_task_recovery"]["send_result"] is False
     assert metadata["_bot_task_recovery"]["record_history"] is False
+
+
+def test_build_qqcc_continuation_recovery_metadata_preserves_queue_policy():
+    flow = SimpleNamespace(
+        request=SimpleNamespace(
+            context=SimpleNamespace(lang="zh"),
+            prompt="continuation prompt",
+            task_type="face_swap",
+        ),
+        presentation=SimpleNamespace(
+            message_spec=BotTaskMessageSpec(initial_status_text="处理中"),
+            send_result=True,
+            delete_status=True,
+            allow_contribute=False,
+            record_history=True,
+            show_queue_status=False,
+            result_task_type=None,
+            result_prompt=None,
+            result_input_image_indices=None,
+            result_meta=None,
+        ),
+    )
+
+    metadata = task_service_flow.build_bot_task_recovery_metadata(
+        flow=flow,
+        client_type="bot:qqcc",
+    )
+
+    assert metadata["_bot_task_recovery"]["show_queue_status"] is False
 
 
 def test_build_private_task_recovery_metadata_includes_durable_continuation_ref():
@@ -1089,6 +1120,29 @@ async def test_send_initial_task_status_uses_reply_text_when_update_present(monk
 
 
 @pytest.mark.asyncio
+async def test_continuation_initial_status_starts_as_generating(monkeypatch):
+    reply_text = AsyncMock(return_value="sent")
+    monkeypatch.setattr(task_service_flow, "robust_reply_text", reply_text)
+
+    update = SimpleNamespace(effective_message=object())
+    result = await task_service_flow.send_initial_task_status(
+        context=object(),
+        update=update,
+        chat_id=123,
+        status_msg_id=None,
+        message_spec=BotTaskMessageSpec(initial_status_text="正在提交并排队"),
+        is_video=True,
+        show_queue_status=False,
+    )
+
+    assert result == "sent"
+    reply_text.assert_awaited_once_with(
+        update.effective_message,
+        "⏳ 正在生成视频...",
+    )
+
+
+@pytest.mark.asyncio
 async def test_update_submitted_task_status_prefers_submitted_text(monkeypatch):
     edit_text = AsyncMock()
     monkeypatch.setattr(task_service_flow, "robust_edit_text", edit_text)
@@ -1153,6 +1207,25 @@ async def test_update_submitted_task_status_skips_cancel_markup_when_disallowed(
 
 
 @pytest.mark.asyncio
+async def test_continuation_submitted_status_does_not_restore_queue_text(monkeypatch):
+    edit_text = AsyncMock()
+    monkeypatch.setattr(task_service_flow, "robust_edit_text", edit_text)
+
+    await task_service_flow.update_submitted_task_status(
+        status_msg="status-msg",
+        message_spec=BotTaskMessageSpec(
+            initial_status_text="正在提交",
+            submitted_status_text="任务已提交，正在排队",
+        ),
+        registry_task_id="registry-continuation",
+        allow_cancel=False,
+        show_queue_status=False,
+    )
+
+    edit_text.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_prepare_and_submit_bot_task_updates_status_through_helpers(monkeypatch):
     send_initial = AsyncMock(return_value="status-msg")
     submit_bot_task = AsyncMock(return_value=("registry-1", "backend-1", ["input.png"]))
@@ -1209,6 +1282,7 @@ async def test_prepare_and_submit_bot_task_updates_status_through_helpers(monkey
         message_spec=spec,
         registry_task_id="registry-1",
         allow_cancel=True,
+        show_queue_status=True,
     )
 
 
