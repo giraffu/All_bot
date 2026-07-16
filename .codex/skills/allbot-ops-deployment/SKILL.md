@@ -110,7 +110,7 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 - LAN AIO 的易变运行事实不写进本 skill 正文；当前每张 GPU 运行 profile、可快速切换候选、缓存 marker、阻断原因以 `ops/gpu_pool_controller/config/lan_aio_fleet_state.yml` 为 agent 维护入口，切换前仍必须用 live status 仲裁。
 - Dashboard 不再提供 LAN AIO profile/slot 列表、候选切换、`takeover`、`recover` 或 `warm-cache` API；当前态和任务显示走 `/api/system/workers`，Worker 卡片只保留 `pause/enable/restart` 基础控制。
 - 新增 LAN AIO 候选先走 `scripts/lan_aio_fleet_prod_ops.py candidate-plan --node-id ... --profile ... --replace-slot ...` 生成 YAML patch 和校验摘要，再由 Git/YAML 事实源合入；失败现场恢复入口只允许 `recover --physical-slot <node>:gpuN --slot <slot-id> --prefer old|candidate` 这种单物理 GPU/精确 slot 范围。
-- 云正式 Dashboard 若触发 LAN AIO worker `pause/enable/restart`，可通过 `DASHBOARD_LAN_AIO_EXECUTION_MODE=ssh` 指向本地主服务器 runner 执行受限的 `disable-aio|enable-aio|restart-aio`；slot 管理 mutation 只由本地 AI operator/CLI 执行。
+- 云正式 Dashboard 若触发 LAN AIO worker `pause/enable/restart`，不可变 prod overlay 必须固定 SSH runner，生产 env 必须提供 runner host 与 key directory，Compose 只读挂载精确私钥；本地主保留 Tailscale SSH 22 端口，已开启 linger 的用户级 systemd OpenSSH listener 默认只在 Tailscale 地址的 2222 端口为 runner 服务。发布 preflight 检查 key 可读性与 `600` 权限，并真实连接 runner 核对 helper/env 契约；任何缺项都 fail closed，禁止回退到云容器内 local helper。slot 管理 mutation 仍只由本地 AI operator/CLI 执行。
 - LAN AIO 真实接管按单 slot 执行：preflight -> registry/镜像准备 -> pull-image -> warm-cache -> drain-legacy -> wait-idle -> stop-old -> start-disabled -> 验证 disabled heartbeat -> enable-aio；`stop-old` 保护窗口后失败应自动回滚旧服务，优先恢复产能。
 - 低频镜像 tag、RIFE 缓存、SCAIL-2/LTX profile、gpu-177/gpu-252/gpu-002 细节只在需要时读取 `references/runpod-lan-runtime.md` 和 GPU Pool 文档。
 

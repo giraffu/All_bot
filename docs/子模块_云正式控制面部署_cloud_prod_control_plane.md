@@ -345,6 +345,7 @@ Dashboard RunPod 管理入口当前支持 `img2img`、`image_to_video`、`wan22_
 `deploy/release-policy.yml` 将 `deploy/docker/Dockerfile.dashboard-backend`、`dashboard/backend/services/system_service.py`
 与 `dashboard/backend/services/runpod_admin_*.py` 归为 `dashboard-backend` rolling 影响面；这类修复可以通过不可变发布只重建正式 `dashboard-backend`，
 不得顺手重启 Central/Web/Bot/Payment/imgproxy/Worker 或 QQCC Config。
+关于 LAN AIO Worker 卡片：`pause/enable/restart` 不在云容器直接执行本地 helper。不可变 prod overlay 固定 SSH runner 模式，生产配置契约强制要求 `DASHBOARD_LAN_AIO_RUNNER_HOST` 与 `DASHBOARD_LAN_AIO_RUNNER_KEY_DIR`，并把该目录的 `id_ed25519` 只读挂载到 Dashboard Backend。本地主保持 Tailscale SSH 22 端口不变，`allbot-lan-aio-dashboard-runner-sshd.service` 作为已开启 linger 的用户级服务，只在本机 Tailscale 地址的 2222 端口启动另一个禁止密码、禁止 root 的 OpenSSH listener；如需变更，同步设置 `DASHBOARD_LAN_AIO_RUNNER_SSH_PORT`。正式 preflight 会检查 key 可读且权限为 `600`，并真实登录 runner 核对 helper 与所需 env 文件可读；缺少任一项时在发布前阻断，后端在 `ALLBOT_ENV=prod` 下也不会回退到 local。首次启用或轮换只更新受限 env/key 目录和本地主 runner 的 `authorized_keys`，禁止把 key 写入 Git、release bundle 或日志。
 管理面直发时，先对目标 SHA 依次执行 `plan`、`preflight`、`deploy` 并统一追加
 `--env prod --strategy direct`；旧自动化的 `--dashboard-fast-track` 仍兼容。真实执行再加 `--execute --confirm-prod`。计划必须显示
 `risk_class=owner-tools`、`strategy=direct`、`level=rolling` 且服务集合只能是所选管理面 artifact；发布器会拒绝缩小机器计算出的依赖闭包，并核对所有非目标容器启动时间不变，因此该路径不进入维护、不 drain 生成队列，也不触碰 Pages、Worker 或 RunPod Pod。

@@ -72,11 +72,7 @@ def main() -> int:
         old_result = run(["ssh", "-o", "BatchMode=yes", host, f"cat {target}"])
         if old_result.returncode != 0:
             raise release.ReleaseError("target environment file is unavailable")
-        old_values: dict[str, str] = {}
-        for raw in old_result.stdout.splitlines():
-            line = raw.strip()
-            if line and not line.startswith("#") and "=" in line:
-                old_values[line.split("=", 1)[0].removeprefix("export ").strip()] = line.split("=", 1)[1]
+        old_values = release.parse_env_text(old_result.stdout)
         changed = {
             key for key in set(values) | set(old_values) if values.get(key) != old_values.get(key)
         }
