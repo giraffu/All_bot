@@ -269,6 +269,18 @@ def test_dashboard_admin_runtime_changes_stay_dashboard_backend_only():
     assert impact.unknown_paths == []
 
 
+def test_dashboard_shared_schemas_roll_both_dashboard_consumers():
+    module = _load_module()
+    policy = module.load_structured_file(POLICY_PATH)
+
+    impact = module.plan_changed_paths(policy, ["dashboard/backend/schemas.py"])
+
+    assert impact.level == "rolling"
+    assert impact.services == {"dashboard-backend", "qqcc-config-backend"}
+    assert impact.blockers == set()
+    assert impact.unknown_paths == []
+
+
 def test_dashboard_fast_track_accepts_only_dashboard_runtime_and_release_metadata():
     module = _load_module()
 

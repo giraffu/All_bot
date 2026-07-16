@@ -284,7 +284,7 @@ class PrivateQqccBotLifecycleService:
 
     @staticmethod
     def _config_requires_tenant_media_clone(config: dict) -> bool:
-        for section in ("video_scenes", "draw_scenes", "filter_scenes"):
+        for section in ("video_scenes", "ai_video_scenes", "draw_scenes", "filter_scenes"):
             for scene in config.get(section, []):
                 for field in ("demo_input_media", "demo_output_media"):
                     media = scene.get(field)

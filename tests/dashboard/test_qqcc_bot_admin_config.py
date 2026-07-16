@@ -7,6 +7,7 @@ from dashboard.backend.schemas import QqccBotConfigRequest
 from src.database.models import PrivateQqccBot, RuntimeCheckpoint
 from src.services import qqcc_config_service as config_service_module
 from src.services.qqcc_config_service import (
+    AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,
     DEFAULT_QQCC_LAZY_BOT_CONFIG,
     QQCC_LAZY_BOT_CONFIG_KEY,
     QQCC_SCENE_PRESET_PROMPTS,
@@ -19,6 +20,7 @@ from src.services.qqcc_config_service import (
     get_enabled_qqcc_draw_scenes,
     get_enabled_qqcc_filter_scenes,
     get_enabled_qqcc_video_scenes,
+    get_enabled_qqcc_ai_video_scenes,
     cache_qqcc_demo_telegram_file_ids,
     get_qqcc_copywriting_override,
     load_qqcc_config_payload,
@@ -69,6 +71,8 @@ def test_normalize_qqcc_config_returns_default_shape_for_empty_config():
     assert config["main_buttons"]["photo_edit"] is False
     assert config["main_buttons"]["ai_draw"] is True
     assert config["main_buttons"]["ai_filter"] is True
+    assert config["main_buttons"]["ai_video"] is True
+    assert config["ai_video_scenes"] == []
     assert config["filter_scenes"] == []
     assert config["draw_scenes"] == [
         {
@@ -107,6 +111,112 @@ def test_normalize_qqcc_config_returns_default_shape_for_empty_config():
     assert config["video_scenes"][0]["lora_name"] == ""
     assert config["video_scenes"][0]["end_frame_draw_scene_id"] == ""
     assert config["video_scenes"][0]["negative_prompt"] == ""
+
+
+def test_normalize_qqcc_config_keeps_valid_ai_video_scenes_and_ltx_options():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "draw_scenes": [
+                {
+                    "id": "tail_pose",
+                    "name": "Tail",
+                    "prompt": "make a tail frame",
+                    "engine": "free_edit_v2",
+                }
+            ],
+            "video_scenes": [],
+            "ai_video_scenes": [
+                {
+                    "id": "cinematic",
+                    "name": " Cinematic ",
+                    "prompt": " move slowly ",
+                    "negative_prompt": " blur, jitter ",
+                    "duration": 10,
+                    "engine": "ltx_video",
+                    "end_frame_draw_scene_id": "tail_pose",
+                    "lora_items": [
+                        {
+                            "path": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors",
+                            "strength": 99,
+                        },
+                        {
+                            "path": "ltx2.3/SynthPussy_01_rank32.safetensors",
+                            "strength": 0.04,
+                        },
+                        {
+                            "path": "ltx2.3/SynthPussy_01_rank32.safetensors",
+                            "strength": 1.5,
+                        },
+                        {
+                            "path": "ltx2.3/ltxdeepthroat_v01.safetensors",
+                        },
+                        {
+                            "path": "ltx2.3/sfbehind_LTX2_3_v0_1.safetensors",
+                            "strength": 1,
+                        },
+                    ],
+                },
+                {
+                    "id": "fallbacks",
+                    "name": "Fallbacks",
+                    "prompt": "prompt",
+                    "negative_prompt": "   ",
+                    "duration": "99s",
+                    "engine": "unknown",
+                    "end_frame_draw_scene_id": "missing",
+                    "lora_items": [{"path": "missing.safetensors", "strength": 1}],
+                },
+            ],
+        }
+    )
+
+    assert get_enabled_qqcc_ai_video_scenes(config) == [
+        {
+            "id": "cinematic",
+            "name": "Cinematic",
+            "prompt": "move slowly",
+            "negative_prompt": "blur, jitter",
+            "duration": 10,
+            "engine": AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,
+            "lora_items": [
+                {
+                    "path": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors",
+                    "strength": 2.0,
+                },
+                {
+                    "path": "ltx2.3/SynthPussy_01_rank32.safetensors",
+                    "strength": 0.1,
+                },
+                {
+                    "path": "ltx2.3/ltxdeepthroat_v01.safetensors",
+                    "strength": 1.0,
+                },
+            ],
+            "end_frame_draw_scene_id": "tail_pose",
+        },
+        {
+            "id": "fallbacks",
+            "name": "Fallbacks",
+            "prompt": "prompt",
+            "negative_prompt": "",
+            "duration": 5,
+            "engine": AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,
+            "lora_items": [],
+            "end_frame_draw_scene_id": "",
+        },
+    ]
+
+    options = config_service_module.build_qqcc_config_options()
+    assert options["default_ai_video_engine"] == AI_VIDEO_SCENE_ENGINE_LTX_VIDEO
+    assert options["ai_video_engines"] == [
+        {"value": AI_VIDEO_SCENE_ENGINE_LTX_VIDEO, "supports_lora": True}
+    ]
+    assert any(
+        item["value"] == "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors"
+        and item["default_strength"] == 0.8
+        for item in options["ltx_video_lora_models"]
+    )
 
 
 def test_normalize_config_keeps_generated_output_draft_only_after_save_payload():
@@ -267,6 +377,7 @@ def test_normalize_qqcc_config_drops_unknown_keys_and_keeps_empty_prompt_for_fal
         "ai_draw": True,
         "ai_filter": True,
         "video_edit": True,
+        "ai_video": True,
         "market": True,
         "main_bot_link": True,
     }

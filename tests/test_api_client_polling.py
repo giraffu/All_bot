@@ -10,6 +10,34 @@ from src.services import image_service as image_service_module
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method_name", "input_kwargs"),
+    [
+        ("submit_ltx_video", {"image_path": "start.png"}),
+        (
+            "submit_ltx_video_flf2v",
+            {"image_path": "start.png", "end_image_path": "end.png"},
+        ),
+        ("submit_ltx_video_v2v_audio", {"video_path": "input.mp4"}),
+    ],
+)
+async def test_ltx_api_client_trims_nonempty_negative_and_omits_blank(
+    monkeypatch, method_name, input_kwargs
+):
+    client = api_client_module.APIClient.__new__(api_client_module.APIClient)
+    request = AsyncMock(return_value=SimpleNamespace(json=lambda: {"task_id": "task-1"}))
+    monkeypatch.setattr(client, "_request", request)
+    method = getattr(client, method_name)
+
+    await method("task-1", "prompt", negative_prompt="  blur  ", **input_kwargs)
+    assert request.await_args.kwargs["json"]["negative_prompt"] == "blur"
+
+    request.reset_mock()
+    await method("task-2", "prompt", negative_prompt="   ", **input_kwargs)
+    assert "negative_prompt" not in request.await_args.kwargs["json"]
+
+
+@pytest.mark.asyncio
 async def test_iter_poll_progress_uses_fixed_low_frequency_interval(monkeypatch):
     client = api_client_module.APIClient.__new__(api_client_module.APIClient)
     payloads = iter(

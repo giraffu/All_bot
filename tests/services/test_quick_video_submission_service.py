@@ -8,6 +8,7 @@ from src.constants import (
     MODE_CUSTOM_VIDEO,
     MODE_DOGGY_STYLE,
     MODE_IMAGE_TO_VIDEO,
+    MODE_LTX_VIDEO,
     MODE_WAN22_VIDEO_V2,
 )
 from src.services.qqcc_config_service import (
@@ -215,6 +216,82 @@ def test_qqcc_wan22_v2_scene_builds_v2_plan_and_normalizes_resolution():
             "display_mode_name": "新版动图",
         }
     }
+
+
+def test_qqcc_ai_video_scene_builds_fixed_ltx_plan_with_negative_prompt_and_loras():
+    config = normalize_qqcc_config(
+        {
+            "main_buttons": {"ai_video": True},
+            "ai_video_scenes": [
+                {
+                    "id": "cinema",
+                    "name": "电影运镜",
+                    "prompt": "camera orbit",
+                    "negative_prompt": "  blur, jitter  ",
+                    "duration": 15,
+                    "engine": "ltx_video",
+                    "lora_items": [
+                        {"path": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors", "strength": 0.75},
+                    ],
+                }
+            ],
+        }
+    )
+
+    plan = build_quick_video_submission_plan(
+        fsm_data={"scene_kind": "ai_video", "scene_id": "cinema"},
+        qqcc_config=config,
+        allowed_resolutions=[],
+    )
+
+    assert plan.kind == QuickVideoSubmissionKind.LTX_VIDEO
+    assert plan.mode == MODE_LTX_VIDEO
+    assert plan.resolution == "1280x704"
+    assert plan.duration == "15s"
+    assert plan.total_cost == 30
+    assert plan.negative_prompt == "blur, jitter"
+    assert plan.lora_items == [
+        {"name": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors", "strength": 0.75}
+    ]
+    assert plan.result_meta["_qqcc_regenerate"]["scene_kind"] == "ai_video"
+
+
+@pytest.mark.asyncio
+async def test_run_qqcc_ai_video_uses_actor_service_and_omits_blank_negative_prompt():
+    plan = build_quick_video_submission_plan(
+        fsm_data={"scene_kind": "ai_video", "scene_id": "clean"},
+        qqcc_config=normalize_qqcc_config(
+            {
+                "main_buttons": {"ai_video": True},
+                "ai_video_scenes": [
+                    {
+                        "id": "clean",
+                        "name": "清晰运镜",
+                        "prompt": "smooth camera",
+                        "negative_prompt": "   ",
+                        "duration": 5,
+                    }
+                ],
+            }
+        ),
+        allowed_resolutions=[],
+    )
+    ltx_task = AsyncMock()
+
+    await run_quick_video_submission_plan(
+        plan=plan,
+        context=SimpleNamespace(),
+        chat_id=456,
+        user_id=123,
+        username="tester",
+        image_path="/tmp/input.png",
+        status_msg_id=77,
+        process_ltx_video_task_func=ltx_task,
+    )
+
+    assert ltx_task.await_args.kwargs["ltx_mode"] == "i2v"
+    assert ltx_task.await_args.kwargs["resolution"] == "1280x704"
+    assert "negative_prompt" not in ltx_task.await_args.kwargs
 
 
 def test_qqcc_tail_frame_scene_adds_draw_chain_cost():

@@ -809,6 +809,35 @@ def test_build_result_reply_markup_supports_ltx_video_non_first_segment_buttons(
     assert second_row[0].callback_data == "ltx_stitch_chain:ltx-task-2"
 
 
+def test_qqcc_ai_video_result_keeps_regenerate_without_ltx_extend_or_stitch():
+    final_markup = tg_runtime_helpers.build_result_reply_markup(
+        task_type=MODE_LTX_VIDEO,
+        task_id="ltx-qqcc",
+        allow_contribute=False,
+        reply_markup=None,
+        result_meta={
+            "ltx_prev_task_id": "ltx-prev",
+            "_qqcc_regenerate": {
+                "kind": "quick_video",
+                "mode": MODE_LTX_VIDEO,
+                "scene_id": "cinema",
+                "scene_kind": "ai_video",
+                "display_mode_name": "电影运镜",
+            },
+        },
+    )
+
+    callbacks = [
+        button.callback_data
+        for row in final_markup.inline_keyboard
+        for button in row
+        if button.callback_data
+    ]
+    assert callbacks[0] == "qqcc_regenerate:ltx-qqcc"
+    assert "ltx_extend:ltx-qqcc" not in callbacks
+    assert "ltx_stitch_chain:ltx-qqcc" not in callbacks
+
+
 def test_record_result_message_meta_uses_special_mode_mapping_for_face_swap():
     context = SimpleNamespace(bot_data={})
     sent_msg = SimpleNamespace(message_id=42)
@@ -1595,6 +1624,10 @@ async def test_process_ltx_video_task_uses_finalize_task_cancellation(monkeypatc
     )
     monkeypatch.setattr(
         "src.services.task_service_flow.robust_reply_text",
+        AsyncMock(return_value=msg),
+    )
+    monkeypatch.setattr(
+        "src.services.tg_task_runtime.robust_send_message",
         AsyncMock(return_value=msg),
     )
     monkeypatch.setattr(

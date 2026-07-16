@@ -150,6 +150,7 @@ QQCC Bot 必须设置 `application.bot_data["bot_client_type"] = "bot:qqcc"`，B
 - `AI绘图` 点击后，默认迁移配置会回复 `快速自慰`、`快速脱衣` 两个 inline 场景按钮，三个一行；管理员删除预设后旧 callback 回复 `功能暂未开放`。点击 `qdraw_scene:<id>` 不转圈并进入 quick image 发送图片步骤，发 1 张图片后按场景 engine、场景 `prompt` / `negative_prompt`、`postprocess_draw_scene_id` 或终止 `postprocess_filter_scene_id` 链提交 `pornmaster_flux2_single_edit` / `edit` / `img2img_lora`；中间绘图隐藏且不可投稿，最终只发送链路最后一张图。删除/禁用后的 callback 回复 `功能暂未开放` 且不提交任务。
 - `AI滤镜` 默认无场景时不展示；配置有效 `filter_scenes` 后点击主菜单会回复滤镜 inline 场景按钮。点击 `qfilter_scene:<id>` 不转圈并进入 quick image 发送图片步骤，发 1 张图片后按单步滤镜场景提交；场景删除、禁用或主开关关闭后回复 `功能暂未开放` 且不提交任务。
 - `AI动图` 点击后回复 inline 场景按钮，三个一行，默认包含兼容迁移的五个懒人动图场景；后台改为自定义场景后 Bot 展示自定义按钮名。点击 `qvid_scene:<id>` 不转圈并进入 quick video 发送图片步骤；旧 `qvid_mode:*` 已发按钮兼容到对应场景，场景删除后回复 `功能暂未开放`。
+- `AI视频` 默认场景为空且不展示；配置有效 `ai_video_scenes` 且开启 `main_buttons.ai_video` 后，入口紧随 `AI动图`。`qaivid_scene:<id>` 复用 quick video FSM，用户只上传一张图；固定以 `ltx_video`、`1280x704`、场景时长和最多 3 个 `{path,strength}` LoRA 提交。无尾帧时 I2V，有尾帧引用时完整执行绘图链后 FLF2V；空负面提示词必须省略以保留 workflow 默认。QQCC 控制面可独立复用现有 LTX GPU runtime，不能因该入口发布去重建 GPU 容器或创建 RunPod canary；非空 LTX 负面提示词在 Worker mapping 独立发布验收前不得宣称已生效。
 - `修仙市集` 点击后展示 QQCC 专用类型菜单；投稿浏览支持点赞、点踩、分页、分类返回，普通可应用投稿同时展示一键应用与 Web 应用，视频换脸仅展示 Web 应用，拼接视频不展示应用入口，且不展示留言入口。
 - `修仙市集` 已缓存媒体优先用 Telegram file_id，file_id 失效后通过当前 R2/S3 URL resolver 刷新，不走旧 legacy MinIO bytes 主路径。
 - `修仙市集` Bot 原生应用必须传 `source_post_id` 且 `allow_contribute=False`，复杂模板的一键应用必须 Web handoff，点击应用不直接增加 `applied_count`。
@@ -164,5 +165,6 @@ QQCC Bot 必须设置 `application.bot_data["bot_client_type"] = "bot:qqcc"`，B
 - gate=`false`/缺失配合 `--allow-disabled` 不要求 activation secrets且 worker 不启动；gate=`true` 必须严格校验环境对应官方 token、密钥、HTTPS 与 Host 契约。
 - 默认配置下现有菜单不变；关闭配置后按钮隐藏，旧按钮/旧 callback 回复 `功能暂未开放` 且不提交任务。
 - QQCC 动图动态场景按 engine 提交：旧 `image_to_video` 无 LoRA 为 `custom_video`、带 LoRA 为 `video_lora`，`wan22_video_v2` 为 `wan22_video_v2`；v2 不支持附加模型。配置尾帧来源时先按被引用绘图场景的完整后处理链隐藏生成尾帧，再按首尾帧提交；额度预检覆盖绘图链加视频总费用，尾帧链任一步失败都不提交视频。场景提示词和展示名只作用 QQCC，不影响主 Bot。
+- QQCC AI视频结果只展示场景名与 `重新生成`，不得展示 LTX 扩展/拼接按钮；重生成必须读取最新 `ai_video_scenes` 并重新核费。私有 Bot 尾帧链用 durable continuation 的 `ltx_video` executor 保存原图、当前尾帧和阶段状态后续跑。
 - 主 Dashboard 不再出现 `懒人Bot配置` 导航；独立 QQCC Config Web 登录、加载、开关切换和保存 payload 有前端测试。
 - compose/script 语法检查通过。

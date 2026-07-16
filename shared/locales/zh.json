@@ -7,6 +7,7 @@
     "ai_draw_hint": "🎨 **AI绘图**\n请选择绘图场景：",
     "ai_filter_hint": "🪄 **AI滤镜**\n请选择滤镜场景：",
     "video_edit_hint": "🎬 **懒人动图**\n请选择演武场景：",
+    "ai_video_hint": "🎥 **AI视频**\n请选择视频场景：",
     "video_to_video_hint": "🎬 **视频生视频**\n请选择具体功能：",
     "gallery_hint": "🏆 **修仙界广场**\n\n请选择您想查看的榜单：",
     "fsm_exit_hint": "🔄 已为您退出当前输入步骤（后台正在生成的任务不受影响）。\n👉 **请再次点击刚才的按钮**，即可开始新任务！",
@@ -84,6 +85,7 @@
       "ai_draw": "AI绘图",
       "ai_filter": "AI滤镜",
       "video_edit": "AI动图",
+      "ai_video": "AI视频",
       "market": "修仙市集",
       "private_bot": "私有bot"
     },

@@ -7,6 +7,7 @@
     "ai_draw_hint": "🎨 **AI Drawing**\nPlease select a drawing scenario:",
     "ai_filter_hint": "🪄 **AI Filter**\nPlease select a filter scenario:",
     "video_edit_hint": "🎬 **AI GIF Mode**\nPlease select a scenario:",
+    "ai_video_hint": "🎥 **AI Video**\nPlease select a video scenario:",
     "video_to_video_hint": "🎬 **Video-to-Video**\nPlease select a feature:",
     "gallery_hint": "🏆 **Gallery**\n\nPlease select a category:",
     "fsm_exit_hint": "🔄 You have exited the current input step (tasks generating in the background are not affected).\n👉 **Please click the button again** to start a new task!",
@@ -84,6 +85,7 @@
       "ai_draw": "AI Drawing",
       "ai_filter": "AI Filter",
       "video_edit": "AI GIF",
+      "ai_video": "AI Video",
       "market": "Cultivation Market",
       "private_bot": "Private Bot"
     },

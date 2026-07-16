@@ -957,6 +957,7 @@ async def execute_private_qqcc_continuation_stage_default(
     *,
     process_generation_task_func=None,
     process_video_task_template_func=None,
+    process_ltx_video_task_func=None,
 ) -> tuple[bytes | None, str | None]:
     if process_generation_task_func is None:
         from src.services.task_service_generation_image import (
@@ -970,6 +971,12 @@ async def execute_private_qqcc_continuation_stage_default(
         )
 
         process_video_task_template_func = process_video_task_template
+    if process_ltx_video_task_func is None:
+        from src.services.task_service_entrypoints_specialized import (
+            process_ltx_video_task_for_actor,
+        )
+
+        process_ltx_video_task_func = process_ltx_video_task_for_actor
 
     executor = str(stage.get("executor") or "")
     task_kwargs = dict(stage.get("task_kwargs") or {})
@@ -998,6 +1005,25 @@ async def execute_private_qqcc_continuation_stage_default(
                 chat_id=checkpoint.chat_id,
                 user_id=checkpoint.telegram_user_id,
                 username=checkpoint.username,
+                status_msg_id=checkpoint.status_message_id,
+                **task_kwargs,
+            )
+            if isinstance(result, tuple):
+                return result
+            return None, None
+        if executor == "ltx_video":
+            images = _resolve_stage_images(checkpoint, stage)
+            if len(images) != 2:
+                raise PrivateQqccContinuationConflict(
+                    "LTX tail-frame video stage requires two inputs"
+                )
+            result = await process_ltx_video_task_func(
+                context=context,
+                chat_id=checkpoint.chat_id,
+                user_id=checkpoint.telegram_user_id,
+                username=checkpoint.username,
+                image_path=images[0],
+                end_image_path=images[1],
                 status_msg_id=checkpoint.status_message_id,
                 **task_kwargs,
             )
@@ -1049,7 +1075,11 @@ async def deliver_private_qqcc_continuation_result_default(
         task_kwargs.get("result_task_type")
         or task_kwargs.get("task_type")
         or task_kwargs.get("mode")
-        or ("video" if stage.get("executor") == "legacy_video" else "image")
+        or (
+            "video"
+            if stage.get("executor") in {"legacy_video", "ltx_video"}
+            else "image"
+        )
     )
     prompt = str(
         task_kwargs.get("result_prompt")
@@ -1059,7 +1089,7 @@ async def deliver_private_qqcc_continuation_result_default(
         or ""
     )
     is_video = bool(task_kwargs.get("is_video")) or (
-        stage.get("executor") == "legacy_video"
+        stage.get("executor") in {"legacy_video", "ltx_video"}
     )
     caption = build_generation_completion_caption(
         context,
