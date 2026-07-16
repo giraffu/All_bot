@@ -85,4 +85,26 @@ describe('PromptPreviewPanel', () => {
     await wrapper.setProps({ unlockLoading: true })
     expect(unlockButton!.attributes('disabled')).toBeDefined()
   })
+
+  it('renders a localized public model label without internal model paths', () => {
+    const wrapper = mount(PromptPreviewPanel, {
+      props: {
+        title: 'Prompt',
+        prompt: 'clean prompt',
+        promptModel: {
+          id: 'image_realistic',
+          display_key: 'generation_models.image_realistic',
+          strength: 0.3,
+        },
+        modelLabel: '逼真',
+        additionalModelLabel: '附加模型',
+        modelStrengthLabel: '强度',
+        expandLabel: 'Expand',
+        collapseLabel: 'Collapse',
+      },
+    })
+
+    expect(wrapper.get('[data-testid="prompt-model-label"]').text()).toContain('逼真')
+    expect(wrapper.text()).not.toContain('safetensors')
+  })
 })

@@ -455,11 +455,13 @@ async def test_private_qqcc_tail_frame_video_uses_durable_continuation(
     assert create_checkpoint.await_args.kwargs["original_input_durable"] is True
     assert len(stages) == 2
     assert stages[0]["task_kwargs"]["send_result"] is False
+    assert stages[0]["task_kwargs"]["show_queue_status"] is True
     assert stages[1]["executor"] == expected_executor
     assert stages[1]["delivery_required"] is True
     assert stages[1]["task_kwargs"]["send_result"] is True
     assert stages[1]["task_kwargs"]["delete_status"] is True
     assert stages[1]["task_kwargs"]["user_cancel_allowed"] is False
+    assert stages[1]["task_kwargs"]["show_queue_status"] is False
     resume_checkpoint.assert_awaited_once()
     assert resume_checkpoint.await_args.kwargs["chain_id"] == "chain-video-1"
     assert callable(resume_checkpoint.await_args.kwargs["execute_stage_func"])
@@ -746,6 +748,7 @@ async def test_run_tail_frame_plan_keeps_tail_draw_and_video_negative_prompts_se
     assert video_task.await_args.kwargs["allow_cancel"] is False
     assert video_task.await_args.kwargs["user_cancel_allowed"] is False
     assert video_task.await_args.kwargs["base_priority"] == 100
+    assert video_task.await_args.kwargs["show_queue_status"] is False
     assert video_task.await_args.kwargs["display_mode_name_override"] == "首尾动图"
     assert video_task.await_args.kwargs["result_meta"] == plan.result_meta
 
@@ -809,3 +812,60 @@ async def test_run_tail_frame_wan22_v2_final_video_is_locked_continuation():
     assert generation_task.await_args.kwargs["allow_cancel"] is False
     assert generation_task.await_args.kwargs["user_cancel_allowed"] is False
     assert generation_task.await_args.kwargs["base_priority"] == 100
+    assert generation_task.await_args.kwargs["show_queue_status"] is False
+
+
+@pytest.mark.asyncio
+async def test_run_tail_frame_ltx_final_video_hides_continuation_queue_status():
+    plan = build_quick_video_submission_plan(
+        fsm_data={"scene_kind": "ai_video", "scene_id": "cinema_tail"},
+        qqcc_config=normalize_qqcc_config(
+            {
+                "main_buttons": {"ai_video": True},
+                "draw_scenes": [
+                    {
+                        "id": "tail_pose",
+                        "name": "尾帧姿势",
+                        "prompt": "tail prompt",
+                    }
+                ],
+                "ai_video_scenes": [
+                    {
+                        "id": "cinema_tail",
+                        "name": "电影首尾",
+                        "prompt": "camera orbit",
+                        "duration": 5,
+                        "engine": "ltx_video",
+                        "end_frame_draw_scene_id": "tail_pose",
+                    }
+                ],
+            }
+        ),
+        allowed_resolutions=[],
+    )
+    ltx_task = AsyncMock()
+
+    async def fake_draw_chain(**_kwargs):
+        return SimpleNamespace(local_output_path="/tmp/end.png")
+
+    assert plan.kind == QuickVideoSubmissionKind.LTX_TAIL_FRAME_VIDEO
+
+    await run_quick_video_submission_plan(
+        plan=plan,
+        context=SimpleNamespace(),
+        chat_id=456,
+        user_id=123,
+        username="tester",
+        image_path="/tmp/input.png",
+        status_msg_id=77,
+        process_ltx_video_task_func=ltx_task,
+        process_generation_task_func=AsyncMock(),
+        execute_draw_chain_func=fake_draw_chain,
+    )
+
+    assert ltx_task.await_args.kwargs["ltx_mode"] == "flf2v"
+    assert ltx_task.await_args.kwargs["end_image_path"] == "/tmp/end.png"
+    assert ltx_task.await_args.kwargs["allow_cancel"] is False
+    assert ltx_task.await_args.kwargs["user_cancel_allowed"] is False
+    assert ltx_task.await_args.kwargs["base_priority"] == 100
+    assert ltx_task.await_args.kwargs["show_queue_status"] is False

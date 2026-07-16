@@ -15,6 +15,7 @@
 | `analytics.aivison.it.com` | 本地主服务器用户级 Cloudflare Tunnel `allbot-local-analytics` | 回源本地只读分析平台 `http://127.0.0.1:8095`；Cloudflare Access 邮箱 allowlist + 应用层登录双层保护 |
 | `assets.aivison.it.com` | Web/Nginx VPS `100.88.57.122` | 回源本地 legacy MinIO `http://100.99.254.53:9000`；仅用于人工回滚、旧外链和迁移排障，正式应用不再生成该域名 URL |
 | `web-test.aivison.it.com` | Web/Nginx VPS `100.88.57.122` | `/root/dist-test` 静态站，`/api/` 回源云测试 Web API `http://100.82.124.91:8001` |
+| `qqcc-admin-test.aivison.it.com` | Cloudflare Tunnel `allbot-cloud-web-api-canary` + Access | 回源云测试 QQCC Config Frontend `http://100.82.124.91:8088`；管理员邮箱 allowlist + 应用层登录双层保护 |
 | `private-bot.aivison.it.com` | Cloudflare Tunnel `allbot-admin-dashboard-prod` -> QQCC Config Frontend `100.107.220.127:8088` | 只允许 owner WebApp 与 owner API；公开且不套 Access，依赖 ticket/JWT 与双层 Host 隔离 |
 | Telegram Local API | VPS `69.63.220.115` | `8081` Bot API，`8082` 文件服务 |
 
@@ -120,6 +121,7 @@ Cloudflare 账号、token、DNS、Tunnel、Access、Pages/R2 与公网管理入�
 | 入口 | 摘要 | 详细事实源 |
 | :--- | :--- | :--- |
 | `analytics.aivison.it.com` | 独立 Tunnel `allbot-local-analytics` 回源 `http://127.0.0.1:8095`；Cloudflare Access allow `cv1347968277@gmail.com` + 本地应用登录 | Cloudflare Ops 文档、本地数据分析平台文档 |
+| `qqcc-admin-test.aivison.it.com` | 测试 Tunnel `allbot-cloud-web-api-canary` 回源 `http://100.82.124.91:8088`；Cloudflare Access allow `cv1347968277@gmail.com` + QQCC Config 登录 | Cloudflare Ops 文档、云测试与 QQCC 文档 |
 | `qqcc-admin.aivison.it.com` | 受 Cloudflare Access 保护的 QQCC 管理后台参考基线；allow `cv1347968277@gmail.com` | Cloudflare Ops 文档、QQCC 文档 |
 | Cloudflare 自动化 token | 主文件 `/home/hfy/.cloudflare/allbot-cloudflare-admin.token`；兼容链接 `/home/hfy/.cloudflare/allbot-local-analytics.token`；只记录路径和权限，不记录明文 | Cloudflare Ops 文档 |
 

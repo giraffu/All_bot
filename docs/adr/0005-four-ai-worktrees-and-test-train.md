@@ -1,6 +1,8 @@
-# ADR 0005: 四槽位 AI Worktree 与单测试站 Test Train
+# ADR 0005: 固定 AI Worktree 与单测试站 Test Train
 
 日期：2026-07-15
+
+容量修订：2026-07-16 将固定槽位从 A-D 扩展为 A-H；单测试站与职责边界不变。
 
 ## Status
 
@@ -12,7 +14,8 @@ Accepted
 
 ## Decision
 
-- 固定 A-D 四个开发 worktree，根目录只承担集成职责。
+- 固定 A-H 八个开发 worktree，根目录只承担集成职责。
+- Worktree 用于隔离源码、index 与可写依赖，不作为权限沙箱；A-H 可读取真实配置、凭据、日志和远端状态，凭据可见与外部 mutation 授权分离。
 - 使用受保护 `codex/test-train` 累积功能 PR，由单一集成 AI 串行部署共享测试站。
 - 建立独立 `test-candidate` bundle channel；它只接受精确 train ref，只能部署 test，不能 verified 或晋级 prod。
 - 部署成功但验收失败时保留 train 历史并 forward-fix，不自动 revert；全部通过后合入 main 并重新构建、测试最终 SHA。
@@ -26,6 +29,7 @@ Accepted
 ## Consequences
 
 - 源码和依赖目录可并行隔离，共享测试站保持单写者和累积版本语义。
+- 同一受信任 OS 用户让功能 AI 具备完整诊断上下文，但也要求秘密输出脱敏和明确的 mutation 职责；发现运行中任务使用历史共享依赖时不会自动中断，改在交付后的槽位维护中收口。
 - Candidate channel 增加 CI、manifest、Git ancestry 和状态门禁；任何缺失字段或非精确 branch 都必须 fail closed。
 - 单测试站仍是串行瓶颈；v2 增量 bundle 缩短切换时间但不改变排他要求。
 - 最终 main SHA 必须再次测试，candidate evidence 不能替代正式验收。

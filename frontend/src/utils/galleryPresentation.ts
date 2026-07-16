@@ -18,6 +18,12 @@ export function formatGalleryTag(
     const key = tag.substring(1)
     return '#' + t(key)
   }
+  if (tag.startsWith('#generation_models.')) {
+    return '#' + t(tag.substring(1))
+  }
+  if (tag.startsWith('#task_type.')) {
+    return '#' + t(tag.substring(1))
+  }
   if (tag.startsWith('task.')) {
     return t(tag)
   }

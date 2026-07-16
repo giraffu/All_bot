@@ -24,6 +24,7 @@ type MainButtonKey =
   | 'ai_video'
   | 'market'
   | 'main_bot_link'
+  | 'private_bot'
 type PhotoButtonKey = 'masturbation' | 'random_faceswap'
 type UndressMethodKey = 'legacy' | 'i2i_draw'
 type VideoButtonKey = 'missionary' | 'doggy' | 'blowjob' | 'undress_tongue' | 'closeup_blowjob'
@@ -234,6 +235,7 @@ const emptyConfig = (): QqccBotConfig => ({
     ai_video: false,
     market: false,
     main_bot_link: false,
+    private_bot: false,
   },
   photo_buttons: {
     masturbation: false,
@@ -298,6 +300,7 @@ const mainButtonOptions: Array<{ key: MainButtonKey; label: string }> = [
   { key: 'ai_video', label: 'AI视频' },
   { key: 'market', label: '修仙市集' },
   { key: 'main_bot_link', label: '前往主bot' },
+  { key: 'private_bot', label: '私有bot' },
 ]
 const legacyMainButtonKeys: MainButtonKey[] = ['quick_undress', 'photo_edit']
 
@@ -1581,7 +1584,10 @@ onMounted(() => {
                   class="flex items-center justify-between gap-3"
                 >
                   <span class="text-sm text-slate-700">{{ item.label }}</span>
-                  <a-switch v-model:checked="config.main_buttons[item.key]" />
+                  <a-switch
+                    v-model:checked="config.main_buttons[item.key]"
+                    :data-testid="`main-button-${item.key}`"
+                  />
                 </div>
               </div>
             </section>

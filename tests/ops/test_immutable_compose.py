@@ -63,8 +63,54 @@ def test_prod_dashboard_backend_enables_runpod_autoscaler_in_immutable_compose()
     )
 
 
+def test_prod_dashboard_backend_uses_required_remote_lan_aio_runner_contract():
+    prod_overlay = _compose(ROOT / "deploy/docker-compose-cloud-prod.overlay.yml")
+    dashboard = prod_overlay["services"]["dashboard-backend"]
+    environment = dashboard["environment"]
+
+    assert environment["DASHBOARD_LAN_AIO_EXECUTION_MODE"] == "ssh"
+    assert environment["DASHBOARD_LAN_AIO_RUNNER_HOST"] == (
+        "${DASHBOARD_LAN_AIO_RUNNER_HOST:?"
+        "DASHBOARD_LAN_AIO_RUNNER_HOST is required}"
+    )
+    assert environment["DASHBOARD_LAN_AIO_RUNNER_PROJECT_ROOT"] == (
+        "${DASHBOARD_LAN_AIO_RUNNER_PROJECT_ROOT:-/home/hfy/APP/All_bot}"
+    )
+    assert environment["DASHBOARD_LAN_AIO_RUNNER_SSH_COMMAND"] == (
+        "ssh -p ${DASHBOARD_LAN_AIO_RUNNER_SSH_PORT:-2222} "
+        "-i /app/runtime/lan-aio-runner/id_ed25519"
+    )
+    assert (
+        "${DASHBOARD_LAN_AIO_RUNNER_KEY_DIR:?"
+        "DASHBOARD_LAN_AIO_RUNNER_KEY_DIR is required}"
+        "/id_ed25519:/app/runtime/lan-aio-runner/id_ed25519:ro"
+        in dashboard["volumes"]
+    )
+
+
+def test_lan_aio_dashboard_runner_has_dedicated_tailscale_openssh_unit():
+    unit = (
+        ROOT / "deploy/systemd/allbot-lan-aio-dashboard-runner-sshd.service"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        "EnvironmentFile=%h/.config/allbot/lan-aio-dashboard-runner.env"
+        in unit
+    )
+    assert "/usr/sbin/sshd -D -e" in unit
+    assert "HostKey=%h/.local/share/allbot/lan-aio-dashboard-runner/ssh_host_ed25519_key" in unit
+    assert 'ListenAddress=${ALLBOT_LAN_AIO_RUNNER_LISTEN_ADDRESS}' in unit
+    assert '${ALLBOT_LAN_AIO_RUNNER_PORT}' in unit
+    assert "PasswordAuthentication=no" in unit
+    assert "UsePAM=no" in unit
+    assert "PermitRootLogin=no" in unit
+
+
 def test_central_and_worker_images_contain_their_dependency_closure():
     central = (ROOT / "deploy/docker/Dockerfile.central").read_text(encoding="utf-8")
+    control_plane = (
+        ROOT / "deploy/docker/Dockerfile.control-plane"
+    ).read_text(encoding="utf-8")
     dashboard = (
         ROOT / "deploy/docker/Dockerfile.dashboard-backend"
     ).read_text(encoding="utf-8")
@@ -77,6 +123,15 @@ def test_central_and_worker_images_contain_their_dependency_closure():
     assert "COPY paid_group_guard_bot /app/paid_group_guard_bot" in dashboard
     assert "COPY scripts/runpod_prod_ops.sh /app/scripts/runpod_prod_ops.sh" in dashboard
     assert "COPY scripts/gpu_pool_controller.py /app/scripts/gpu_pool_controller.py" in dashboard
+    assert "COPY scripts/gpu_release_rollout.py /app/scripts/gpu_release_rollout.py" in dashboard
+    assert "COPY scripts/release_manifest_v2.py /app/scripts/release_manifest_v2.py" in dashboard
+    assert "COPY scripts/release_strategy.py /app/scripts/release_strategy.py" in dashboard
+    for script in (
+        "gpu_release_rollout.py",
+        "release_manifest_v2.py",
+        "release_strategy.py",
+    ):
+        assert f"COPY scripts/{script} /app/scripts/{script}" in control_plane
     chmod_lines = [line for line in dashboard.splitlines() if "chmod 755" in line]
     assert any("/app/scripts/runpod_prod_ops.sh" in line for line in chmod_lines)
     assert "COPY workers/comfy_agent /app/worker" in worker
@@ -172,8 +227,6 @@ def test_test_runtime_overrides_legacy_api_base_test_for_every_consumer():
     for name in (
         "central-api",
         "web-api",
-        "dashboard-backend",
-        "qqcc-config-backend",
         "bot",
         "qqcc-bot",
         "qqcc-private-bot-worker",
@@ -184,6 +237,31 @@ def test_test_runtime_overrides_legacy_api_base_test_for_every_consumer():
         assert environment["API_BASE_TEST"] == expected_api_base, (
             f"{name} would let legacy env override the immutable Central alias"
         )
+
+
+def test_owner_tools_are_profiled_and_absent_from_test_overlay():
+    base = _compose(BASE)["services"]
+    test_services = _compose(OVERLAYS[0])["services"]
+
+    for name in (
+        "dashboard-backend",
+        "dashboard-frontend",
+        "qqcc-config-backend",
+        "qqcc-config-frontend",
+    ):
+        assert base[name]["profiles"] == ["owner-tools"]
+        assert name not in test_services
+
+
+def test_legacy_cloud_test_compose_no_longer_defines_owner_tools():
+    services = _compose(ROOT / "deploy/docker-compose-cloud-test.yml")["services"]
+
+    assert not {
+        "dashboard-backend-test",
+        "dashboard-frontend-test",
+        "qqcc-config-backend-test",
+        "qqcc-config-frontend-test",
+    } & services.keys()
 
 
 def test_prod_runtime_pins_internal_api_base_for_every_python_consumer():
@@ -239,6 +317,11 @@ def test_release_workflow_builds_all_images_and_never_uses_latest():
     assert '--ci-run "$TRUSTED_CI_RUN"' in workflow
     assert "previous-release/release-v2/release-index.json" in workflow
     assert 'echo "bundle=${previous_bundle_dir}"' in workflow
+    assert "options: [build-only]" in workflow
+    assert "manual dispatch cannot claim full validation" in workflow
+    assert '--validation-mode "$VALIDATION_MODE"' in workflow
+    assert "if: steps.source.outputs.validation_mode == 'full'" in workflow
+    assert "validation_mode=full" in workflow
 
 
 def test_schema_v1_shared_image_release_is_retired():

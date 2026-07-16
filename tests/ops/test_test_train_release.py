@@ -143,13 +143,21 @@ def test_deploy_orders_tracks_and_records_candidate(tmp_path):
     assert mutations == [
         ("preflight", "control-plane"),
         ("deploy", "control-plane"),
-        ("preflight", "test-execution"),
-        ("deploy", "test-execution"),
     ]
     assert coordinator.status()["status"] == "deployed"
 
 
-def test_deploy_can_explicitly_leave_test_execution_for_a_later_worker_window(
+def test_expanded_workspace_slot_can_flow_through_test_train_audit(tmp_path):
+    module = _load_module()
+    coordinator = module.TestTrainCoordinator(state_root=tmp_path / "state")
+    runner = _FakeReleaseRunner()
+
+    coordinator.deploy_candidate(SHA, pr=42, slot="H", runner=runner)
+
+    assert coordinator.status()["slot"] == "H"
+
+
+def test_deploy_can_explicitly_include_test_execution_for_a_diagnostic_window(
     tmp_path,
 ):
     module = _load_module()
@@ -161,24 +169,114 @@ def test_deploy_can_explicitly_leave_test_execution_for_a_later_worker_window(
         pr=42,
         slot="A",
         runner=runner,
-        skip_test_execution=True,
+        with_test_execution=True,
     )
 
     mutations = [event[:2] for event in runner.events if event[0] != "plan"]
     assert mutations == [
         ("preflight", "control-plane"),
         ("deploy", "control-plane"),
+        ("preflight", "test-execution"),
+        ("deploy", "test-execution"),
     ]
-    assert coordinator.status()["tracks"] == ["control-plane"]
+    assert coordinator.status()["tracks"] == ["control-plane", "test-execution"]
 
 
-def test_deploy_cli_requires_an_explicit_flag_to_defer_test_execution():
+def test_owner_tools_candidate_is_ready_without_mutating_shared_test(tmp_path):
+    module = _load_module()
+    coordinator = module.TestTrainCoordinator(state_root=tmp_path / "state")
+    runner = _FakeReleaseRunner()
+    runner.plans["control-plane"] = {
+        "track": "control-plane",
+        "previous_sha": "b" * 40,
+        "level": "rolling",
+        "risk_class": "owner-tools",
+        "strategy": "direct",
+        "test_required": False,
+        "artifacts": {"dashboard-backend": {}},
+        "services": ["dashboard-backend"],
+    }
+
+    coordinator.deploy_candidate(SHA, pr=42, slot="A", runner=runner)
+
+    assert not any(
+        event[0] in {"preflight", "deploy", "rollback"} for event in runner.events
+    )
+    state = coordinator.status()
+    assert state["status"] == "ready-for-acceptance"
+    assert state["deployment_mode"] == "test-not-required"
+
+
+def test_non_runtime_control_plane_can_be_accepted_without_fake_deployment(
+    tmp_path,
+):
+    module = _load_module()
+    coordinator = module.TestTrainCoordinator(state_root=tmp_path / "state")
+    runner = _FakeReleaseRunner()
+    runner.plans["control-plane"] = {
+        "track": "control-plane",
+        "previous_sha": "b" * 40,
+        "level": "none",
+        "matched_rules": ["non-runtime", "track:control-plane"],
+        "artifacts": {},
+        "services": [],
+    }
+
+    coordinator.deploy_candidate(
+        SHA,
+        pr=42,
+        slot="A",
+        runner=runner,
+    )
+
+    assert not any(
+        event[0] in {"preflight", "deploy", "rollback"}
+        for event in runner.events
+    )
+    assert coordinator.status() == {
+        "status": "ready-for-acceptance",
+        "sha": SHA,
+        "pr": 42,
+        "slot": "A",
+        "tracks": ["control-plane"],
+        "deployment_mode": "non-runtime",
+        "deferred_tracks": ["test-execution"],
+        "updated_at": coordinator.status()["updated_at"],
+    }
+
+    evidence = tmp_path / "evidence.json"
+    evidence.write_text(
+        json.dumps(
+            {
+                "sha": SHA,
+                "pr": 42,
+                "slot": "A",
+                "tested_by": "integration-ai",
+                "started_at": "2026-07-16T10:00:00+00:00",
+                "completed_at": "2026-07-16T10:01:00+00:00",
+                "tracks": ["control-plane"],
+                "modules": [],
+                "smoke": {
+                    "candidate_bundle_published": True,
+                    "control_plane_plan_is_non_runtime": True,
+                    "test_execution_deferred": True,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    coordinator.accept(SHA, evidence)
+    assert coordinator.status()["status"] == "accepted"
+
+
+def test_deploy_cli_requires_an_explicit_flag_to_include_test_execution():
     module = _load_module()
 
     default_args = module.build_parser().parse_args(
         ["deploy", "--sha", SHA, "--pr", "42", "--slot", "A", "--execute"]
     )
-    deferred_args = module.build_parser().parse_args(
+    worker_args = module.build_parser().parse_args(
         [
             "deploy",
             "--sha",
@@ -188,12 +286,12 @@ def test_deploy_cli_requires_an_explicit_flag_to_defer_test_execution():
             "--slot",
             "A",
             "--execute",
-            "--skip-test-execution",
+            "--with-test-execution",
         ]
     )
 
-    assert default_args.skip_test_execution is False
-    assert deferred_args.skip_test_execution is True
+    assert default_args.with_test_execution is False
+    assert worker_args.with_test_execution is True
 
 
 def test_later_track_failure_rolls_back_completed_track_in_reverse(tmp_path):
@@ -202,20 +300,44 @@ def test_later_track_failure_rolls_back_completed_track_in_reverse(tmp_path):
     runner = _FakeReleaseRunner(fail_track="test-execution")
 
     with pytest.raises(module.TestTrainError, match="recovered"):
-        coordinator.deploy_candidate(SHA, pr=42, slot="D", runner=runner)
+        coordinator.deploy_candidate(
+            SHA,
+            pr=42,
+            slot="D",
+            runner=runner,
+            with_test_execution=True,
+        )
 
     assert runner.events[-1] == ("rollback", "control-plane", "b" * 40)
 
 
-def test_gpu_candidate_is_planned_but_never_mutated(tmp_path):
+def test_later_track_failure_preserves_original_error_after_recovery(tmp_path):
+    module = _load_module()
+    coordinator = module.TestTrainCoordinator(state_root=tmp_path / "state")
+    runner = _FakeReleaseRunner(fail_track="test-execution")
+
+    with pytest.raises(
+        module.TestTrainError,
+        match="completed tracks were recovered: deploy failed",
+    ):
+        coordinator.deploy_candidate(
+            SHA,
+            pr=42,
+            slot="D",
+            runner=runner,
+            with_test_execution=True,
+        )
+
+
+def test_gpu_candidate_is_planned_but_does_not_block_control_plane_test(tmp_path):
     module = _load_module()
     coordinator = module.TestTrainCoordinator(state_root=tmp_path / "state")
     runner = _FakeReleaseRunner(gpu=True)
 
-    with pytest.raises(module.TestTrainError, match="GPU"):
-        coordinator.deploy_candidate(SHA, pr=42, slot="A", runner=runner)
+    coordinator.deploy_candidate(SHA, pr=42, slot="A", runner=runner)
 
-    assert not any(event[0] in {"preflight", "deploy"} for event in runner.events)
+    mutations = [event[:2] for event in runner.events if event[0] != "plan"]
+    assert mutations == [("preflight", "control-plane"), ("deploy", "control-plane")]
 
 
 def test_release_runner_finds_nested_oras_v2_manifest(tmp_path):

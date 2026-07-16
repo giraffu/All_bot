@@ -16,6 +16,9 @@ from src.services.ltx_video_extension_service import (
 from src.services.wan22_video_v2_extension_service import (
     merge_wan22_history_context_into_extra_outputs,
 )
+from src.services.user_visible_generation_presenter import (
+    merge_generation_context_into_extra_outputs,
+)
 
 
 SCAIL2_HISTORY_CONTEXT_KEY = "scail2_context"
@@ -73,6 +76,15 @@ async def finalize_monitored_web_task_success(
             task_type=submission_context.task_type,
             extra_outputs=persisted_extra_outputs,
             metadata=submission_context.metadata,
+        )
+        generation_metadata = {
+            **submission_context.metadata,
+            "billing_resolution": submission_context.billing_resolution,
+            "requested_duration": submission_context.requested_duration,
+        }
+        persisted_extra_outputs = merge_generation_context_into_extra_outputs(
+            extra_outputs=persisted_extra_outputs,
+            metadata=generation_metadata,
         )
         await persist_successful_web_history_func(
             backend_task_id=backend_task_id,

@@ -870,6 +870,11 @@ async def test_get_favorite_apply_context_restores_lora_strength_from_new_prompt
     assert response.prompt == "cinematic portrait"
     assert response.lora_name == "qwen/YARN_1.0.safetensors"
     assert response.lora_strength == 0.35
+    assert response.prompt_model == {
+        "id": "image_realistic",
+        "display_key": "generation_models.image_realistic",
+        "strength": 0.35,
+    }
     session.commit.assert_not_awaited()
 
 

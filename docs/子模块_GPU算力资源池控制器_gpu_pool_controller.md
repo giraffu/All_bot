@@ -1,6 +1,6 @@
 # 子模块: GPU 算力资源池控制器 (GPU Pool Controller)
 
-> 2026-07-15 不可变执行面契约：LAN AIO/RunPod profile 属于独立 `gpu-execution` track。镜像必须烘焙 agent/workflow、写 OCI/agent/workflow revision，并由 model manifest key + size + SHA256 固定外置模型；启动时禁止 clone AllBot。每个变化 profile 必须按 `i2i_pro`、PornMaster BF16、PornMaster FP8、SCAIL-2、Wan22/LTX、img2img 顺序独立 canary，通用 Worker smoke 不能替代。LAN registry 只允许通过 `scripts/copy_canonical_image_to_lan_registry.sh` 复制 canonical digest 并复核，不得现场重建同名产物。
+> 2026-07-16 不可变执行面契约：LAN AIO/RunPod profile 属于独立 `gpu-execution` track。镜像烘焙 agent/workflow/remote_workers，写 OCI/agent/workflow revision，并由 model manifest key + size + SHA256 固定外置模型；启动时禁止 clone 或主机源码覆盖。强制 artifact attestation 与可选业务 canary 分层：direct 可用 attested artifact，standard 仍需 canary-verified。LAN registry 只允许保 digest 复制，不得现场重建。
 
 ## 1. 目标与范围
 
@@ -34,6 +34,7 @@
 - RunPod 手动正式备用 worker auth/control seam：`ops/gpu_pool_controller/runpod_prod_worker_control.py`
 - RunPod 手动正式备用 worker canary case/executor seam：`ops/gpu_pool_controller/runpod_prod_worker_canary.py`
 - RunPod 手动正式备用池日常入口：`scripts/runpod_prod_ops.sh`
+- GPU release digest/证据解析：`scripts/gpu_release_rollout.py`
 - RunPod split video manifest：`ops/gpu_pool_controller/runpod_video_manifests.py`
 - RunPod bootstrap/model sync：`remote_workers/scripts/runpod_bootstrap_from_git.sh`、`remote_workers/scripts/runpod_sync_models_from_r2.py`
 
@@ -215,9 +216,9 @@ scripts/lan_runpod_aio_prod_canary.sh --action restore --slot slot0 --dry-run
 
 生产灰度只允许 `gpu-002` 两个固定映射：slot0 `cloud_prod_worker_06 -> lan_aio_prod_gpu002_gpu0_img2img_lora_01`，端口 `8190`，profile `img2img_lora`；slot1 `cloud_prod_worker_07 -> lan_aio_prod_gpu002_gpu1_image_to_video_01`，端口 `8191`，profile `image_to_video`。生产执行必须先将目标 legacy worker 置为 `draining` 并等待当前任务自然完成；不要用强制重启代替 drain。生产 helper 会拒绝 test Central URL，并在启动前校验 compose 不含 `cloud-test` / `user-data-test`。slot1 `start-heartbeat --execute` 会从 gpu-002 宿主机旧 `inst1` 缓存预置 `rife49.pth` 到 AIO 内两个 RIFE 查找路径；缺失该热缓存时应停止放量，不让 FL_RIFE 后处理回退到 HuggingFace。
 
-`start-heartbeat --execute` 必须在 Central 看到临时 agent 的 disabled heartbeat 后才算成功：临时 agent 不得是 `running`，不得有 `current_task_type`，heartbeat 必须携带 `node_id=gpu-002`、`provider=lan_ssh`、对应 `runtime_profile` 与 `pool_managed=true`。如果镜像内 remote_workers bundle 过旧，`/pop` 未携带 `agent_id` 或 heartbeat 缺少这些 GPU pool 元数据，Central agent control 无法可靠阻止临时 agent 接单；此时必须停止灰度，重建或挂载新版 remote_workers 后再试。
+`start-heartbeat --execute` 必须在 Central 看到临时 agent 的 disabled heartbeat 后才算成功：临时 agent 不得是 `running`，不得有 `current_task_type`，heartbeat 必须携带 `node_id=gpu-002`、`provider=lan_ssh`、对应 `runtime_profile` 与 `pool_managed=true`。如果镜像内 remote_workers bundle 过旧，`/pop` 未携带 `agent_id` 或 heartbeat 缺少这些 GPU pool 元数据，必须停止灰度并从新 release index 选择重建后的 digest；生产禁止挂载宿主机源码修补。
 
-生产 helper 会把当前 repo 的 `remote_workers/` 同步到 gpu-002 并挂载为 `/workspace/allbot/remote_workers`，同时设置 `PYTHONPATH` 与 `PYTHONDONTWRITEBYTECODE=1`，避免继续使用镜像内旧 bundle。all-in-one 入口必须先安装 `remote_workers/requirements.txt`，再执行 `runpod_sync_models_from_r2.py` 把 LAN cache manifest 同步到 `/workspace/ComfyUI/models`，最后把 baked ComfyUI 的 `models` 链接到该目录，确保 ComfyUI `/object_info` 能枚举到 manifest 模型。小窗口灰度达到目标接单数后，先执行 `drain-temp --execute` 阻止临时 agent 继续 pop，等已接任务终态后再 `restore --execute`。
+旧 helper 的 repo `remote_workers` 同步/host mount 方式已废止。正式 LAN AIO compose 固定使用镜像内 `/opt/allbot/runtime/remote_workers`；模型仍由镜像内同步脚本按 manifest 写入 workspace。若 baked revision 不满足 release attestation，必须重建 canonical image，禁止用主机文件覆盖修补。
 
 Central 可能在 worker 已回到 `idle` 后保留上一单的 `current_task_id`。生产 helper 的等待空闲逻辑以 `status == running` 或存在 `current_task_type` 作为忙碌信号；单独的陈旧 `current_task_id` 不应阻断 drain/restore 后续步骤。
 
@@ -303,7 +304,7 @@ LAN AIO compose 固定带 `restart: unless-stopped`。AIO bootstrap/entrypoint �
 
 - 配置阶段应区分 `prod_enabled`、`canary_ready`、`blocked_host_service_runtime`，避免已正式接管的 slot 仍被误读为 canary。
 - `wan22_video_v2` 在 `gpu-252` GPU1 slot 和历史 `gpu-177` GPU1 blocked slot 都通过 slot-level `target_task_types` 收窄为只接 `wan22_video_v2`；后续新增共享镜像 slot 时也应优先显式声明目标 task type，避免 profile 默认 alias 误接单。`gpu-177` GPU0 当前配置、state 与 live runtime 都按 `wan22_video_v2` 判断；`gpu-177-gpu1-wan22_video_v2` 的 32GB OOM blocked 状态解除前不得作为候选容量。
-- `preflight` / `switch-plan` 仍需继续强化 workflow 文件、remote_workers 挂载、模型 manifest、对象桶和 image digest 检查，减少“容器健康但工作流资产缺失”的误启用。
+- `preflight` / release rollout 必须检查 baked workflow/agent revision、模型 manifest、对象桶和 image digest，减少“容器健康但工作流资产缺失”的误启用。
 - LAN registry 直拉仍依赖 GPU 节点 Docker insecure registry；配置会重启整机 Docker daemon。当前 fleet helper 已支持 runner 本地镜像 save/load 兜底，后续优先评估 TLS registry 或更标准的免 daemon 重启镜像分发路径。
 - Dashboard `LAN AIO 管理` slot 面板和对应 public API 已移除；后续 LAN AIO 候选/切换/恢复能力只在本地 AI operator/CLI 中强化 image digest 与失败原因结构化归因。
 
@@ -412,7 +413,7 @@ python scripts/gpu_pool_controller.py runpod prod-worker canary --profile scail2
 | `scail2` | `runpod_prod_scail2_manual_NN` | `scail2_action_transfer,scail2_video_replacement` | `scail2/2026-06-17-test/manifest.json` | `NVIDIA GeForce RTX 4090` |
 | `ltx_video` | `runpod_prod_ltx_video_manual_NN` | `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio` | `ltx_video/2026-06-10/manifest.json` | `NVIDIA GeForce RTX 5090,NVIDIA GeForce RTX 4090` |
 
-正式 `image_to_video` / `wan22_video_v2` RunPod 镜像必须精确使用 `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd`；`i2i_pro` 镜像必须以 `ghcr.io/giraffu/allbot-comfy-runpod-i2i-pro:` 开头；`scail2` 镜像必须以 `ghcr.io/giraffu/allbot-comfy-runpod-scail2:` 开头；`ltx_video` 镜像必须以 `ghcr.io/giraffu/allbot-comfy-runpod-ltx-video:` 开头；`img2img` 使用已验证 public GHCR 图生图镜像。所有 cloud-prod 手动 RunPod profile 都必须在 create payload 显式带 `dockerStartCmd=["bash","-lc","exec bash /opt/allbot/runpod_bootstrap_from_git.sh"]`；若 RunPod API 显示目标 Pod 的 `dockerStartCmd=null`，说明它没有走 bootstrap/model sync/最新 remote_workers bundle，不能通过原地 restart 修复，需先 disable 并确认无当前任务后删除重建。
+正式 RunPod 更新使用 `scripts/runpod_prod_ops.sh rollout-release --release-index <index> --sha <sha> --profile <profile> --slot <NN> --strategy direct|standard`，镜像名必须是 release index 的 digest ref。每次只处理一个 slot：旧 image 先记录，新 Pod 保持 disabled，通过实际 image/worker/heartbeat 检查后 enable；失败删除目标 Pod、恢复旧 exact image 并停止。镜像默认 CMD 为 baked runtime entrypoint，不以 `bootstrap_from_git` 或 mutable tag 作为新发布入口。
 
 ## 6. 真实执行门禁
 
@@ -576,7 +577,7 @@ RunPod Worker 卡片提供 `锁定/解锁`，后端 API 为 `POST /api/runpod/wo
 
 Dashboard operation 由 Redis 跨 Gunicorn worker 和容器重建持久化。读取“最近操作”时，后端只对 `status=running`、已从日志确认 `runpod_create_pod_NN`、且对应所有 `runpod_prod_<profile>_manual_NN` worker 在 heartbeat 新鲜窗口内为 `idle|running`、`control_state=enabled` 的 detached add 自动写回 `succeeded`、`exit_code=0` 并释放 profile active-add 锁。没有创建 slot、worker 缺失、heartbeat 过期、未启用或 unhealthy 时继续保持 `running`，不得仅因 Pod 存在就误报成功。
 
-云正式 Dashboard 后端默认优先把容器内 `/app/.env` 同时作为 `--runpod-env-file` 与 `--prod-env-file`；该文件由云正式 `.env.cloud.prod` 挂载，必须包含完整、shell-compatible 的 `RUNPOD_*` 手动池配置和可用 `RUNPOD_API_KEY`。云正式若要从 Dashboard 触发 LAN AIO worker `pause/enable/restart`，必须设置 `DASHBOARD_LAN_AIO_EXECUTION_MODE=ssh`、`DASHBOARD_LAN_AIO_RUNNER_HOST` 和 `DASHBOARD_LAN_AIO_RUNNER_PROJECT_ROOT`，让受限的 `disable-aio|enable-aio|restart-aio` 落在本地主服务器 runner 上，避免把 LAN GPU SSH key 或 `192.168.1.0/24` 私网路由放进云控制面。正式 compose 给 Dashboard 后端只读挂载 `/app/runtime/lan-aio-runner`，`DASHBOARD_LAN_AIO_RUNNER_SSH_COMMAND` 默认使用该目录的 `id_ed25519`；更换 key 或 runner 用户时只改云正式 env 和本地主 `authorized_keys`，不要改代码。远端 runner 默认读取 `<runner-root>/.env.cloud.prod`、`<runner-root>/.env.lan-aio-prod`、`<runner-root>/.env.lan.model-cache`，可用 `DASHBOARD_LAN_AIO_RUNNER_PROD_ENV_FILE`、`DASHBOARD_LAN_AIO_RUNNER_AIO_ENV_FILE`、`DASHBOARD_LAN_AIO_RUNNER_MODEL_ENV_FILE` 覆盖。若本地主交互环境依赖本地代理访问正式公网域名，云端 runner 还应配置 `DASHBOARD_LAN_AIO_RUNNER_HTTP_PROXY`、`DASHBOARD_LAN_AIO_RUNNER_HTTPS_PROXY`、`DASHBOARD_LAN_AIO_RUNNER_ALL_PROXY` 和 `DASHBOARD_LAN_AIO_RUNNER_NO_PROXY`，后端会在远端命令中同时导出大小写 proxy 变量；`NO_PROXY` 至少覆盖 LAN registry/model-cache 和目标 GPU IP。未配置 runner host 时，后端应返回可读 503，而不是在云机上直接超时。不要把本机测试专用 `RUNPOD_PUBLIC_KEY_FILE` 路径带入云正式容器；生产路径默认不依赖 RunPod SSH。必要时仍可通过 `DASHBOARD_RUNPOD_ENV_FILE` / `DASHBOARD_RUNPOD_PROD_ENV_FILE` 覆盖 env 路径；不得在 API 响应、operation 日志或文档中输出任何 env 内容或密钥。
+云正式 Dashboard 后端默认优先把容器内 `/app/.env` 同时作为 `--runpod-env-file` 与 `--prod-env-file`；该文件由云正式 `.env.cloud.prod` 挂载，必须包含完整、shell-compatible 的 `RUNPOD_*` 手动池配置和可用 `RUNPOD_API_KEY`。云正式 v2 Compose 固定 `DASHBOARD_LAN_AIO_EXECUTION_MODE=ssh`，并要求生产 env 提供非空 `DASHBOARD_LAN_AIO_RUNNER_HOST` 与 `DASHBOARD_LAN_AIO_RUNNER_KEY_DIR`；后者只读挂载精确 `id_ed25519` 到 `/app/runtime/lan-aio-runner/id_ed25519`。本地主保留 Tailscale SSH 的 22 端口，Dashboard runner 由用户级 `allbot-lan-aio-dashboard-runner-sshd.service` 在 Tailscale 地址上独立监听 OpenSSH 2222 端口，可用 `DASHBOARD_LAN_AIO_RUNNER_SSH_PORT` 覆盖。发布器只读 preflight 会检查宿主 key 存在、可读、权限为 `600`，并实际连接 runner 核对 helper、正式 env 与模型缓存 env 可读；缺项在 env/Compose/preflight 阶段 fail closed，禁止回退到云容器内执行不存在的 `lan_aio_fleet_prod_ops.py`。受限的 `disable-aio|enable-aio|restart-aio` 必须落在本地主服务器 runner 上，避免把 LAN GPU SSH key 或 `192.168.1.0/24` 私网路由放进云控制面；即使 overlay 漂移，后端看到 `ALLBOT_ENV=prod` 也默认选择 SSH 并在 runner host 缺失时返回可读 503。`DASHBOARD_LAN_AIO_RUNNER_PROJECT_ROOT` 默认 `/home/hfy/APP/All_bot`，远端 runner 默认读取 `<runner-root>/.env.cloud.prod`、`<runner-root>/.env.lan-aio-prod`、`<runner-root>/.env.lan.model-cache`，可用 `DASHBOARD_LAN_AIO_RUNNER_PROD_ENV_FILE`、`DASHBOARD_LAN_AIO_RUNNER_AIO_ENV_FILE`、`DASHBOARD_LAN_AIO_RUNNER_MODEL_ENV_FILE` 覆盖。若本地主交互环境依赖本地代理访问正式公网域名，云端 runner 还应配置 `DASHBOARD_LAN_AIO_RUNNER_HTTP_PROXY`、`DASHBOARD_LAN_AIO_RUNNER_HTTPS_PROXY`、`DASHBOARD_LAN_AIO_RUNNER_ALL_PROXY` 和 `DASHBOARD_LAN_AIO_RUNNER_NO_PROXY`，后端会在远端命令中同时导出大小写 proxy 变量；`NO_PROXY` 至少覆盖 LAN registry/model-cache 和目标 GPU IP。更换 key 或 runner 用户时只改受限云正式 env/key 目录和本地主 `authorized_keys`，不要改代码；不得在 API 响应、operation 日志或文档中输出任何 env 内容或密钥。
 
 Dashboard 后端的 RunPod autoscaler 只复用上述安全入口，不直接调用 RunPod API。`pornmaster_flux2_edit_bf16 / 自由P图 v3` 与其它正式 profile 一样进入 autoscaler，默认单任务耗时 30 秒、清空阈值 30 分钟，并复用自动 add/down/restart/enable、锁定跳过、最短生命周期、冷却和失败清理。正式启用时
 `DASHBOARD_RUNPOD_AUTOSCALER_ENABLED=true`，后台循环默认每 60 秒读取

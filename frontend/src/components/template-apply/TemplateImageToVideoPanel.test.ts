@@ -699,6 +699,7 @@ describe('TemplateImageToVideoPanel', () => {
         media_type: 'video',
         task_type: 'ltx_video',
         prompt: 'wide cinematic dolly shot',
+        negative_prompt: 'low quality blur',
         lora_name: 'ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors',
         width: 1280,
         height: 704,
@@ -711,6 +712,7 @@ describe('TemplateImageToVideoPanel', () => {
       taskType: 'ltx_video',
       sourcePostId: 123,
       prompt: 'wide cinematic dolly shot',
+      negativePrompt: 'low quality blur',
       loraName: 'ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors',
       width: 1280,
       height: 704,
@@ -744,6 +746,7 @@ describe('TemplateImageToVideoPanel', () => {
         resolution: '1280x704',
         duration: 10,
         prompt: 'wide cinematic dolly shot',
+        negative_prompt: 'low quality blur',
         lora_name: 'ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors',
         lora_strength: 0.8,
         lora_items: [

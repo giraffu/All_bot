@@ -6,7 +6,7 @@ QQCC 懒人 Bot 是主业务 Bot 的独立 Telegram polling 入口，代码位�
 
 它不是主 Bot 的完整副本，不承载充值、affiliate 菜单、主 Bot 完整 gallery 浏览、Web 登录、支付回调或高级视频/高级图像入口。
 
-主菜单可额外展示非生成入口：`修仙市集`、`前往主bot`，以及仅官方 QQCC 展示的 `私有bot`。`修仙市集` 是 QQCC 专用轻量 Gallery 浏览/应用入口；`前往主bot` 用于把用户引回完整主 Bot；`私有bot` 进入 owner token 申请/管理流程。Telegram 底部菜单按钮不能直接承载 URL，因此用户点击 `前往主bot` 后，QQCC Bot 会回复一条带 inline URL 的跳转按钮。私有 Bot Application 不展示 `私有bot`，避免嵌套申请。
+主菜单可额外展示非生成入口：`修仙市集`、`前往主bot`，以及仅官方 QQCC 展示的 `私有bot`。`修仙市集` 是 QQCC 专用轻量 Gallery 浏览/应用入口；`前往主bot` 用于把用户引回完整主 Bot；`私有bot` 进入 owner token 申请/管理流程。管理后台“主菜单”中的 `main_buttons.private_bot` 可独立隐藏官方入口；它默认开启、不跟随生成能力的 `global_enabled`，也不会停止 private worker 或禁用既有私有 Bot。关闭后旧 reply keyboard 点击会回复 `功能暂未开放`，已经进入 token 步骤的申请会先尽力删除 token 消息再拒绝创建。Telegram 底部菜单按钮不能直接承载 URL，因此用户点击 `前往主bot` 后，QQCC Bot 会回复一条带 inline URL 的跳转按钮。私有 Bot Application 不展示 `私有bot`，避免嵌套申请。
 
 ## 2. 功能边界
 
@@ -82,7 +82,7 @@ QQCC Config Web 使用独立后台账号，不复用 Dashboard 管理员 token�
 
 - `scene_preset_version`: 当前为 `1`；缺失或小于 `1` 视为旧配置，保存时一次性补齐 QQCC 绘图/动图预设并迁移旧 prompt override；已有 `scene_preset_version>=1` 时尊重管理员删除后的空 `draw_scenes` / `video_scenes`
 - `global_enabled`
-- `main_buttons`: `quick_undress`, `quick_faceswap`, `photo_edit`, `ai_draw`, `ai_filter`, `video_edit`, `market`, `main_bot_link`；`quick_undress` 与 `photo_edit` 仅保留旧配置兼容，QQCC 主菜单不再渲染
+- `main_buttons`: `quick_undress`, `quick_faceswap`, `photo_edit`, `ai_draw`, `ai_filter`, `video_edit`, `market`, `main_bot_link`, `private_bot`；`quick_undress` 与 `photo_edit` 仅保留旧配置兼容，QQCC 主菜单不再渲染；`private_bot` 只控制官方 QQCC 申请/管理入口，默认开启且不跟随 `global_enabled`
 - `photo_buttons`: `masturbation`, `random_faceswap`；仅保留旧配置兼容
 - `undress_methods`: `legacy`, `i2i_draw`；仅保留旧配置兼容
 - `video_scenes`: `[{ id, name, prompt, negative_prompt, duration, engine, lora_name, end_frame_draw_scene_id }]`；所有场景 `prompt` 必填，`negative_prompt` 可选，缺失或非字符串归一为空，字符串保存前 trim；`engine` 只能是 `image_to_video` 或 `wan22_video_v2`，缺省 `image_to_video`；`lora_name` 只允许在 `image_to_video` 下来自 `VIDEO_LORA_MODELS`，v2 自动清空；`end_frame_draw_scene_id` 只能引用归一化后的 `draw_scenes[].id`，缺省 `""`；`duration` 只能是 `5s`、`8s`、`10s`，`id` 只能用于短安全 callback
@@ -107,6 +107,8 @@ QQCC Config Web 使用独立后台账号，不复用 Dashboard 管理员 token�
 AI视频只有在 `main_buttons.ai_video=true` 且存在有效 `ai_video_scenes` 时才紧随 AI动图显示，callback 为 `qaivid_scene:<id>`。它复用 quick video FSM，但跳过用户分辨率/时长设置：发送一张图后，无尾帧引用提交 LTX I2V；有引用时先执行完整绘图/滤镜链，再以原图和最终尾帧提交 LTX FLF2V。额度预检为尾帧链费用加 LTX 时长费用；中间失败不提交视频。官方与私有 Bot 共用配置，演示输入只接收 JPEG/PNG、输出只接收 MP4，并分别使用 `qqcc/demo/ai_video/...` 与 `qqcc/private/<id>/demo/ai_video/...` 命名空间。私有多阶段链通过 durable continuation 的 `ltx_video` executor 保存原图、当前尾帧和阶段状态。最终结果显示当前场景名和重新生成，重新生成读取最新场景配置并重新核费；不显示 LTX 扩展或拼接按钮。QQCC 控制面发布可直接复用现有正式 LTX GPU runtime，不得因此重建 GPU 容器或创建 RunPod canary；空负面提示词保持工作流默认，非空 LTX 负面提示词只有在 Worker mapping 独立发布验收后才可宣称生效。
 
 私有 `bot:qqcc-private:<id>` 的多步绘图、原图换脸插入链和尾帧视频链通过 Redis durable continuation checkpoint 跨进程续跑。quick image/video service 必须先持久化用户原图和完整 stage plan，再派发第一阶段；每个中间结果先 CAS 推进 checkpoint 再清理 registry，不对用户发送。最终可见结果先进入 `delivery_pending`，续跑租约 owner 发送成功后再标记 delivered。`_bot_task_recovery` 仍还原展示语义，`_private_qqcc_continuation` 将 active task 精确关联到阶段 checkpoint；缺少有效关联的隐藏中间输出不得作为最终结果发送。
+
+多阶段状态展示按真实子任务序号确定：首个真实任务使用默认 `show_queue_status=true`，保留排队位置和取消按钮；后续 AI绘图后处理、内部原图换脸、AI动图/AI视频尾帧链及最终 Wan22/旧视频/LTX 使用 `show_queue_status=false`，从提交起持续显示现有图片/视频“生成中”，Central pending/队列位置变化不得触发排队回退。成功、失败、拒绝、退款及最终结果仍走原终态展示。官方 QQCC active registry 的恢复 contract 与私有 Bot durable stage plan 都持久化该策略，重启后不得重新显示后续任务排队；单任务功能继续使用默认值。该展示参数不改变 `base_priority`、`user_cancel_allowed`、计费、History、任务顺序或 Worker 调度。
 
 注册的 FSM 只允许：
 
@@ -160,7 +162,7 @@ active task registry 必须持久化 `client_type`：
 
 ### 4.1 用户私有 Bot 来源隔离
 
-官方 QQCC 主菜单额外提供 `私有bot` 申请入口；每个已注册用户无需审核即可绑定一个全新的 Telegram Bot。私有实例使用 webhook，不参与官方 QQCC polling，也不展示再次申请入口。每个实例把 `application.bot_data["bot_client_type"]` 设为 `bot:qqcc-private:<private_bot_id>`，运行时配置从 `private_qqcc_bots.config` 加载。
+官方 QQCC 主菜单额外提供 `私有bot` 申请入口；每个已注册用户无需审核即可绑定一个全新的 Telegram Bot。该入口由官方 QQCC 配置的 `main_buttons.private_bot` 控制，并与部署总 gate `PRIVATE_QQCC_BOT_ENABLED` 叠加生效。菜单开关只暂停新入口和新申请，不影响已创建私有 Bot 的 webhook worker。私有实例使用 webhook，不参与官方 QQCC polling，也不展示再次申请入口。每个实例把 `application.bot_data["bot_client_type"]` 设为 `bot:qqcc-private:<private_bot_id>`，运行时配置从 `private_qqcc_bots.config` 加载。
 
 私有 worker 重启时只恢复 exact client type 匹配的任务。`bot:qqcc`、`bot`、legacy 和其它 private ID 都必须跳过。完整凭据、状态、Owner WebApp、管理员治理和发布契约见 `docs/子模块_QQCC用户私有Bot平台_qqcc_private_bot_platform.md`。
 
@@ -196,10 +198,10 @@ token 只允许放在 ignored env 文件，例如 `.env.cloud.prod` 或 `.env.cl
 - backend service/container: `qqcc-config-backend-prod` / `cloud-qqcc-config-backend-prod`，默认端口 `8045`
 - frontend service/container: `qqcc-config-frontend-prod` / `cloud-qqcc-config-frontend-prod`，默认端口 `8088`
 
-独立 QQCC Config Web 云测试 service：
-
-- backend service/container: `qqcc-config-backend-test` / `cloud-qqcc-config-backend-test`，默认端口 `8045`
-- frontend service/container: `qqcc-config-frontend-test` / `cloud-qqcc-config-frontend-test`，默认端口 `8088`
+云测试不再部署 QQCC Config Web 前后端；该管理面保留本地/CI 测试并默认按 direct 策略发布正式 artifact。
+现存 `https://qqcc-admin-test.aivison.it.com` 是独立保留的测试管理入口，通过测试 Tunnel 回源
+`100.82.124.91:8088`，不属于不可变云测试发布、preflight 或验收服务清单。公网必须先通过仅允许管理员邮箱的
+Cloudflare Access，进入后仍需 QQCC Config 独立账号登录；不得把该入口的当前可达性写成 test-train 已部署管理面。
 
 私有 Bot webhook worker 由同一 `Dockerfile.qqcc` 构建，但使用独立 profile 和入口：
 
@@ -215,6 +217,7 @@ worker 仍需注入环境对应的 `QQCC_BOT_TOKEN` / `QQCC_BOT_TOKEN_TEST`，�
 safe deploy 脚本调用 `scripts/validate_private_qqcc_bot_env.py --allow-disabled`：gate 缺失/`false` 时允许普通控制面在不填写私有 Bot activation secrets 的情况下完成 compose 校验；gate=`true` 时严格要求全部密钥、HTTPS/Host/R2 契约和环境对应的官方 QQCC token。直接运行 validator 且不加 `--allow-disabled` 是启用前严格检查，gate 非真也会失败。
 
 QQCC Config Web 只面向 Tailscale/受控入口或 Cloudflare Access 保护入口，不得裸露公网。
+测试私有 Bot gate 仍关闭时，不得仅因管理员后台上线就创建公开 Owner Host；`private-bot-test.aivison.it.com` 必须等独立测试 keyring/JWT/fingerprint、HTTPS webhook、owner URL/Host 和 private worker 严格门禁全部通过后再单独上线。
 
 QQCC 跳转主 Bot 按钮优先读取 `QQCC_MAIN_BOT_URL`，可配置为 `https://t.me/<main-bot-username>` 或带 `start` 参数的 Telegram deeplink；未配置 URL 时会尝试 `QQCC_MAIN_BOT_USERNAME` 并自动拼成 `https://t.me/<username>`。两者都未配置时，菜单仍可显示 `前往主bot`，但点击后只提示主 Bot 入口暂未配置。
 
@@ -226,56 +229,46 @@ QQCC Bot 不启动 TON 轮询，不注册支付回调，不作为充值入口。
 
 ## 6. 维护与发布
 
-QQCC 代码发布属于统一 immutable release：使用 `scripts/release.py`，服务集合由依赖影响计算，专用 `update_cloud_prod_qqcc_bot.sh` 已 fail closed。下文保留的旧专用同步/build 命令只作首次切换前事实与 legacy 回滚取证，禁止用于新发布。
+QQCC 代码发布属于统一 immutable release：使用 `scripts/release.py`，服务集合由依赖影响计算，专用 `update_cloud_prod_qqcc_bot.sh` 已 fail closed。旧专用同步/build 命令只作首次切换前事实与 legacy 回滚取证，禁止用于新发布。
 QQCC Bot 读取同一个 `GENERATION_MAINTENANCE_FILE`。云测试和云正式维护脚本写入/清理生成维护标记时，应同时覆盖正在运行的 `cloud-qqcc-bot-test` / `cloud-qqcc-bot-prod`。
 
-云测试日常更新按快速单模块重建处理：
+云测试只部署可信 candidate/main release；请求 QQCC 模块时仍由 planner 扩大真实依赖集合：
 
 ```bash
-ssh allbot-do-sgp1-test-control
-cd /home/deploy/APP/All_bot
-docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml \
-  --profile qqcc-bot build qqcc-bot-test
-docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml \
-  --profile qqcc-bot up -d --no-deps qqcc-bot-test
+scripts/release.py plan --env test --track control-plane --sha <40-char-sha> --modules qqcc-bot
+scripts/release.py preflight --env test --track control-plane --sha <40-char-sha> --modules qqcc-bot
+scripts/release.py deploy --env test --track control-plane --sha <40-char-sha> --modules qqcc-bot --execute
 ```
 
-没有独立 `QQCC_BOT_TOKEN_TEST` 时，`qqcc-bot-test` 必须保持停止。只有涉及整栈联动、迁移、排空验证或明确要求维护窗口时，才改用 `scripts/update_cloud_test_with_maintenance.sh --execute`；其默认 `--qqcc-bot-mode auto`，只在 `qqcc-bot-test` 原本运行且远端 env 配置了 `QQCC_BOT_TOKEN_TEST` 时重建启动。
+没有独立 `QQCC_BOT_TOKEN_TEST` 时，`qqcc-bot-test` 必须保持停止；`plan` 应把它列入 `disabled_cloud_services`，不得为测试临时复用正式 token。
 
-只更新云正式 QQCC Bot 时，优先使用专用窄入口：
+只更新云正式 QQCC Bot 时，使用同一已验收 main SHA 的控制面模块入口：
 
 ```bash
-scripts/update_cloud_prod_qqcc_bot.sh
-scripts/update_cloud_prod_qqcc_bot.sh --execute --confirm-prod --confirm-single-polling
+scripts/release.py plan --env prod --track control-plane --sha <40-char-sha> --modules qqcc-bot
+scripts/release.py preflight --env prod --track control-plane --sha <40-char-sha> --modules qqcc-bot
+scripts/release.py deploy --env prod --track control-plane --sha <40-char-sha> --modules qqcc-bot --execute --confirm-prod
 ```
 
-该脚本默认 dry-run；真实执行必须传 `--execute --confirm-prod --confirm-single-polling`。当用户已经明确要求“QQCC 单服务更新/走单服务更新/单独更新 QQCC Bot”时，这句话本身可作为当次正式与单 polling 操作确认，不需要再额外逐字复述；若发现目标容器状态异常、疑似多实例、token/远端 env 异常、不是专用脚本路径，或要启动一个当前停止的新正式 QQCC 实例，必须停下并追问确认。它只同步代码、按需同步 env、执行只读 preflight，并用单条 `up -d --no-deps --build qqcc-bot-prod` 复用构建缓存和替换目标容器，然后验证 `cloud-qqcc-bot-prod` 状态；整仓 rsync 会排除 `local_analytics_platform/`、`backups/`、`logs/`、前端构建产物和密钥文件，避免把本地分析数据或运行产物同步到云正式；不写生成维护标记、不等待队列 drain、不重建 Central/Web/Payment/Dashboard/主 Bot/Worker/RunPod、不操作 Cloudflare Pages/DNS/边缘路由。
+`--modules` 只能扩大自动集合，不能绕过依赖分析强行缩成单服务。执行前确认没有第二个同 token polling 实例；正式维护模式按本次发布独立选择，默认开启，只有用户当次明确要求且 planner 允许时才关闭。
 
-只更新正式 QQCC Config Web 时，走 services scope 单服务更新：
+只更新正式 QQCC Config Web 时，请求两个配置模块：
 
 ```bash
-scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod --scope services --services "qqcc-config-backend-prod qqcc-config-frontend-prod" --skip-generation-maintenance
+scripts/release.py plan --env prod --track control-plane --sha <40-char-sha> \
+  --modules qqcc-config-backend qqcc-config-frontend
 ```
 
-该路径不得开启 `GENERATION_MAINTENANCE`，不得重建 Central/Web/Payment/主 Bot/QQCC Bot/Worker/RunPod。发布后确认 `cloud-qqcc-config-backend-prod`、`cloud-qqcc-config-frontend-prod` running/healthy，并确认非目标服务启动时间未变化。
+同一参数必须复用于 `preflight` 和带 `--execute --confirm-prod` 的 `deploy`。发布后确认 `cloud-qqcc-config-backend-prod`、`cloud-qqcc-config-frontend-prod` running/healthy，并确认非目标服务启动时间未变化。
 
-若同一轮同时修改 QQCC Bot 与 QQCC Config Web，且不涉及迁移、共享 env 或其它控制面契约，可走快速联合更新：按变更清单只同步必要运行文件，通过 safe preflight 和 single-polling 检查后，在云正式机执行：
+同轮更新 QQCC Bot 与 QQCC Config Web 时，请求三个模块：
 
 ```bash
-docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.yml \
-  --profile qqcc-bot up -d --no-deps --build \
-  qqcc-bot-prod qqcc-config-backend-prod qqcc-config-frontend-prod
+scripts/release.py plan --env prod --track control-plane --sha <40-char-sha> \
+  --modules qqcc-bot qqcc-config-backend qqcc-config-frontend
 ```
 
-该命令不需要先单独执行 `docker compose build`，会复用缓存并只替换三个目标容器。三个服务均为 COPY 型镜像，不能省略 `--build` 后只 recreate/restart，否则仍是旧代码。全程不写维护标记、不等待队列 drain；发布后验证 8045/8088、QQCC Bot 近时段日志、single polling 和非目标服务启动时间。
-
-完整云正式控制面更新仍默认不碰 QQCC Bot；若需要随控制面一起重建 QQCC Bot，必须显式传：
-
-```bash
-scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod --qqcc-bot-mode start
-```
-
-正式启动新实例前必须确认全网没有第二个 `@QQCC666_bot` polling 实例，并确认生产 token 已在远端 `.env.cloud.prod` 配置。日常对正在运行的 `cloud-qqcc-bot-prod` 走专用单服务脚本更新时，不再要求用户每次逐字确认单 polling；用户明确要求该单服务更新即可。
+同一模块参数复用于 `preflight`/`deploy`；禁止 rsync、现场 `--build`、手工 compose 或调用 fail-closed legacy shell。发布后验证 8045/8088、QQCC Bot 近时段日志、single polling、目标 digest/revision 和非目标服务启动时间。正式启动一个当前停止的新实例前仍须确认全网没有第二个同 token polling 实例，并确认生产 token 已在受限 prod env 配置。
 
 ## 7. 最小验证
 

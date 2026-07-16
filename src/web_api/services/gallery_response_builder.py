@@ -40,6 +40,7 @@ from src.web_api.services.gallery_media_resolver import resolve_gallery_post_med
 from src.web_api.services.history_input_presenter import (
     build_history_input_file_payload,
 )
+from src.services.user_visible_generation_presenter import present_user_prompt
 
 logger = logging.getLogger(__name__)
 PROMPT_UNLOCK_PRICE_CREDITS = 1
@@ -387,8 +388,12 @@ def _build_single_post_response(
         history=history,
     )
     translated_tags = translate_tags_func(tags)
+    presented_prompt = present_user_prompt(
+        history.prompt if history else None,
+        extra_outputs=getattr(history, "extra_outputs", None) if history else None,
+    )
     prompt_visibility = resolve_gallery_prompt_visibility(
-        prompt=history.prompt if history else None,
+        prompt=presented_prompt.prompt,
         post=post,
         current_user=current_user,
         unlocked_prompt_post_ids=unlocked_prompt_post_ids,
@@ -437,6 +442,11 @@ def _build_single_post_response(
         created_at=post.created_at,
         is_active=post.is_active,
         prompt=prompt_visibility["prompt"],
+        prompt_model=(
+            presented_prompt.prompt_model
+            if prompt_visibility["prompt_unlocked"]
+            else None
+        ),
         prompt_unlocked=prompt_visibility["prompt_unlocked"],
         prompt_unlockable=prompt_visibility["prompt_unlockable"],
         prompt_is_masked=prompt_visibility["prompt_is_masked"],

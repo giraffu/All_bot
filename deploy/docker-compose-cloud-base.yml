@@ -48,6 +48,7 @@ services:
       - ${ALLBOT_STATE_ROOT:?ALLBOT_STATE_ROOT is required}/logs:/app/logs
 
   dashboard-backend:
+    profiles: [owner-tools]
     image: ${ALLBOT_DASHBOARD_BACKEND_IMAGE:?release.env must pin dashboard backend by digest}
     restart: always
     env_file:
@@ -64,6 +65,7 @@ services:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8043/api/health', timeout=5)"]
 
   dashboard-frontend:
+    profiles: [owner-tools]
     image: ${ALLBOT_DASHBOARD_FRONTEND_IMAGE:?release.env must pin dashboard frontend by digest}
     restart: always
     environment:
@@ -80,6 +82,7 @@ services:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8086/ && wget -q -O /dev/null http://127.0.0.1:8086/api/health"]
 
   qqcc-config-backend:
+    profiles: [owner-tools]
     image: ${ALLBOT_QQCC_CONFIG_BACKEND_IMAGE:?release.env must pin QQCC config backend by digest}
     restart: always
     env_file:
@@ -96,6 +99,7 @@ services:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8045/api/health', timeout=5)"]
 
   qqcc-config-frontend:
+    profiles: [owner-tools]
     image: ${ALLBOT_QQCC_CONFIG_FRONTEND_IMAGE:?release.env must pin QQCC config frontend by digest}
     restart: always
     environment:

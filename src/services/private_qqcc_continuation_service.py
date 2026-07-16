@@ -776,6 +776,7 @@ def build_private_qqcc_draw_continuation_stages(
             "base_priority": 0 if not stages else 100,
             "allow_cancel": not stages,
             "user_cancel_allowed": not stages,
+            "show_queue_status": not stages,
         }
         lora_name = str(scene.get("lora_name") or "")
         if lora_name and task_type == "img2img_lora":
@@ -811,6 +812,7 @@ def build_private_qqcc_draw_continuation_stages(
             "base_priority": 100,
             "allow_cancel": False,
             "user_cancel_allowed": False,
+            "show_queue_status": False,
         }
         if face_sends_result:
             face_kwargs["result_task_type"] = task_type

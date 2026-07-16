@@ -19,6 +19,7 @@ async def test_get_current_user_credit_ledger_routes_to_service():
             CreditLedgerItem(
                 id=1,
                 operation_type="checkin",
+                display_key="credit_ledger.operation_types.checkin",
                 direction="income",
                 credit_change=10,
                 current_balance=110,

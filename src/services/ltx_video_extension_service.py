@@ -14,6 +14,7 @@ from src.database.models import History
 from src.lora_catalog import build_ltx_video_lora_item, normalize_ltx_video_lora_items
 from src.services.fsm_temp_file_service import FSM_TEMP_DIR
 from src.services.storage import storage
+from src.services.user_visible_generation_presenter import present_user_prompt
 from src.services.wan22_video_v2_extension_service import (
     build_full_chain_task_ids,
     stitch_history_videos,
@@ -572,7 +573,10 @@ async def stitch_ltx_histories_and_create_history(
         video_bytes=stitched_video,
         task_id=stitched_task_id,
         task_type=str(stitched_history.type or ""),
-        prompt=str(stitched_history.prompt or ""),
+        prompt=present_user_prompt(
+            stitched_history.prompt,
+            extra_outputs=getattr(stitched_history, "extra_outputs", None),
+        ).prompt,
         output_file=str(stitched_history.output_file or ""),
         extra_outputs=dict(stitched_history.extra_outputs or {}),
         allow_contribute=getattr(stitched_history, "allow_contribute", True) is not False,

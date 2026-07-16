@@ -5,6 +5,7 @@ export type CreditLedgerDisplayContext = Record<string, string | number | boolea
 export interface CreditLedgerItem {
   id: number
   operation_type: string
+  display_key: string
   direction: CreditLedgerDirection
   credit_change: number
   current_balance: number

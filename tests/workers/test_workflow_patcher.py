@@ -374,6 +374,26 @@ def test_workflow_patcher_patches_real_ltx_flf2v_workflow():
     assert patched["61"]["inputs"]["filename_prefix"] == "ltx_video_flf2v_123_61"
 
 
+@pytest.mark.parametrize(
+    "task_type",
+    ["ltx_video", "ltx_video_flf2v", "ltx_video_v2v_audio"],
+)
+def test_workflow_patcher_only_overrides_ltx_negative_prompt_when_provided(task_type):
+    patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
+    workflow = patcher.load_workflow(task_type)
+    original_negative = workflow["29"]["inputs"]["text"]
+
+    omitted = patcher.patch_workflow(task_type, workflow, {"seed": 123})
+    provided = patcher.patch_workflow(
+        task_type,
+        workflow,
+        {"negative_prompt": "blur, jitter", "seed": 123},
+    )
+
+    assert omitted["29"]["inputs"]["text"] == original_negative
+    assert provided["29"]["inputs"]["text"] == "blur, jitter"
+
+
 def test_workflow_patcher_patches_real_ltx_v2v_audio_workflow():
     patcher = WorkflowPatcher(WORKER_WORKFLOW_DIR)
     workflow = patcher.load_workflow("ltx_video_v2v_audio")

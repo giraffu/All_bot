@@ -198,6 +198,9 @@ export function useLabTemplateHydration({
     )
 
     currentModeId.value = nextModeId
+    negativePrompt.value = nextModeId === 'ltx_video'
+      ? ''
+      : DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT
     resolution.value = getDefaultResolutionForMode(nextModeId)
 
     if (nextModeId === 'wan22_video_v2' || nextModeId === 'custom_video') {
@@ -242,6 +245,7 @@ export function useLabTemplateHydration({
       const templateState = resolveTemplateVideoApplyState(templateContext, 'ltx_video')
       if (templateState) {
         prompt.value = templateState.prompt ?? ''
+        negativePrompt.value = templateState.negativePrompt ?? ''
         selectedVideoLora.value = normalizeImageToVideoLoraSelection(templateState.loraName)
         ltxLoraItems.value = normalizeLtxVideoLoraItems(templateState.loraItems)
         selectedLtxLoraNames.value = ltxLoraItems.value.map(item => item.name)

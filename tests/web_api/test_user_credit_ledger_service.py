@@ -133,7 +133,9 @@ async def test_credit_ledger_returns_current_user_nonzero_logs_ordered_and_pagin
         assert [item.id for item in second_page.items] == [1]
 
         assert first_page.items[0].direction == "income"
+        assert first_page.items[0].display_key == "credit_ledger.operation_types.checkin"
         assert first_page.items[1].direction == "expense"
+        assert first_page.items[1].display_key == "task_type.txt2img"
 
         recharge = second_page.items[0]
         assert recharge.display_context == {

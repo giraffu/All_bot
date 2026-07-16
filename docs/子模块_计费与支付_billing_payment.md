@@ -114,7 +114,7 @@ sequenceDiagram
 ### 4.5 标准邀请奖励
 
 - 标准邀请奖励与付费 affiliate 返佣是两套账：前者直接写 `users.credits` + `user_logs`，后者写 `affiliate_transactions` 并可兑换灵石。
-- 新用户通过邀请链接注册时，仅记录 `referrals`、`users.invited_by`、邀请人 `referral_count`，不再给邀请人发放注册奖励；被邀请新用户仍按默认新手资产记录 `welcome_bonus = +6`。
+- 只有 `get_or_create_user_by_telegram(...)` 在本次邀请请求中返回 `is_new=True` 的真实新用户，才可通过邀请链接记录 `referrals`、`users.invited_by`、邀请人 `referral_count`；历史用户即使尚无 `invited_by` 也不得补绑。`QuotaManager.process_referral(...)` 以必填的 `new_user_was_created=True` 再次守住该边界。注册阶段不再给邀请人发放奖励；被邀请新用户仍按默认新手资产记录 `welcome_bonus = +6`。
 - 被邀请用户首次确认入群时，邀请人奖励目标为累计 5 灵石，审计类型为 `referral_reward_channel`。
 - 被邀请用户首次成功生成内容时，邀请人奖励目标为累计 10 灵石，审计类型为 `referral_reward_generation`。
 - 奖励发放按同一邀请关系的历史 `referral_reward_initial/referral_reward_channel/referral_reward_generation` 流水补差额，`extra_info.invitee_id` 是幂等核对字段；老数据中已发过的注册 +5 会计入目标，不会因新规则重复发放。
@@ -145,7 +145,8 @@ sequenceDiagram
 - Affiliate 兑换灵石：位于 `users` 路由下的兑换接口，调用 `redeem_affiliate_balance_to_credits()` 完成。
 - Web 个人中心灵石账本：`GET /api/users/me/credits/ledger?page=&page_size=`
   - 只允许当前登录用户查询自己的 `user_logs` 非 0 灵石变动。
-  - 返回 `operation_type`、收入/支出方向、`credit_change`、`current_balance`、时间与白名单展示上下文。
+  - 返回 `operation_type` 兼容字段、语言无关的 `display_key`、收入/支出方向、`credit_change`、`current_balance`、时间与白名单展示上下文；Vue 只能通过共享 i18n 渲染 `display_key`，不得把原始 operation/task type 当作用户文案。
+  - 展示解析统一覆盖 task type registry 的 public type、legacy alias、执行/阶段类型，以及退款、充值、邀请、签到、Gallery 转账等 operation family；未知任务与未知流水分别回退本地化“生成任务”和“其他灵石变动”，禁止回显原始值。
   - 不直接暴露原始 `extra_info`，订单号、tx hash、内部用户 ID、unlock/task 等审计字段不得进入用户侧响应。
 
 ## 6. 必须同步维护的测试面
@@ -162,7 +163,8 @@ sequenceDiagram
 - 审计闭环
   - `users.credits` 变化必须与 `user_logs` 对平。
   - Web 用户侧账本查询必须只读、仅本人可查、排除 0 变动、按 `created_at desc, id desc` 分页，且过滤敏感审计上下文。
-  - 标准邀请奖励必须覆盖注册不发邀请人、入群补到 5、首次生成补到 10、老 `referral_reward_initial` 计入目标的 focused tests。
+  - task type registry 全量类型、legacy alias、退款前缀和未知 operation 必须解析为稳定 `display_key`，中英文 locale 必须完整覆盖且未知值不得泄漏。
+  - 标准邀请奖励必须覆盖历史用户不建邀请关系且无账本副作用、新用户注册不发邀请人、入群补到 5、首次生成补到 10、老 `referral_reward_initial` 计入目标的 focused tests。
   - `affiliate_transactions` IN/OUT 汇总必须能回推出当前可兑换余额。
 - Provider 启动回归
   - Dashboard Backend、Web API、Payment API、Bot 启动测试应覆盖 billing provider 已注册。

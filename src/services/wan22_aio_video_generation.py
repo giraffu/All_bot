@@ -108,6 +108,7 @@ async def process_wan22_aio_video_generation_task(
     display_mode_name_override: str | None = None,
     base_priority: int = 0,
     allow_cancel: bool = True,
+    show_queue_status: bool = True,
     user_cancel_allowed: bool = True,
 ) -> Tuple[Optional[bytes], Optional[str]]:
     profile = resolve_wan22_aio_video_profile(profile_name)
@@ -257,6 +258,7 @@ async def process_wan22_aio_video_generation_task(
             allow_contribute=allow_contribute,
             base_priority=base_priority,
             allow_cancel=allow_cancel,
+            show_queue_status=show_queue_status,
             user_cancel_allowed=user_cancel_allowed,
             billing_resolution=billing_args["billing_resolution"],
             requested_duration=normalized_duration_seconds,

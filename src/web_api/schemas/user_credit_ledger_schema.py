@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 class CreditLedgerItem(BaseModel):
     id: int
     operation_type: str
+    display_key: str
     direction: Literal["income", "expense"]
     credit_change: int
     current_balance: int

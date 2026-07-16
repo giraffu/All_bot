@@ -208,17 +208,17 @@ services:
       RUNPOD_MODEL_MANIFEST_KEY_PORNMASTER_FLUX2_EDIT: ${RUNPOD_MODEL_MANIFEST_KEY_PORNMASTER_FLUX2_EDIT:-pornmaster_flux2_edit/2026-06-27/manifest.json}
       RUNPOD_CONTAINER_DISK_GB_PORNMASTER_FLUX2_EDIT: ${RUNPOD_CONTAINER_DISK_GB_PORNMASTER_FLUX2_EDIT:-120}
       RUNPOD_GPU_TYPE_IDS_PORNMASTER_FLUX2_EDIT: ${RUNPOD_GPU_TYPE_IDS_PORNMASTER_FLUX2_EDIT:-NVIDIA GeForce RTX 4090,NVIDIA L40S,NVIDIA GeForce RTX 5090}
-      DASHBOARD_LAN_AIO_EXECUTION_MODE: ${DASHBOARD_LAN_AIO_EXECUTION_MODE:-local}
-      DASHBOARD_LAN_AIO_RUNNER_HOST: ${DASHBOARD_LAN_AIO_RUNNER_HOST:-}
+      DASHBOARD_LAN_AIO_EXECUTION_MODE: ssh
+      DASHBOARD_LAN_AIO_RUNNER_HOST: ${DASHBOARD_LAN_AIO_RUNNER_HOST:?DASHBOARD_LAN_AIO_RUNNER_HOST is required}
       DASHBOARD_LAN_AIO_RUNNER_PROJECT_ROOT: ${DASHBOARD_LAN_AIO_RUNNER_PROJECT_ROOT:-/home/hfy/APP/All_bot}
-      DASHBOARD_LAN_AIO_RUNNER_SSH_COMMAND: ${DASHBOARD_LAN_AIO_RUNNER_SSH_COMMAND:-ssh -i /app/runtime/lan-aio-runner/id_ed25519}
+      DASHBOARD_LAN_AIO_RUNNER_SSH_COMMAND: ssh -p ${DASHBOARD_LAN_AIO_RUNNER_SSH_PORT:-2222} -i /app/runtime/lan-aio-runner/id_ed25519
       PAID_GROUP_MODERATION_CONFIG_FILE: /app/runtime/paid-group-guard/config.json
       PAID_GROUP_MODERATION_LOG_FILE: /app/logs/paid_group_moderation.jsonl
     volumes:
       - ../.env.cloud.prod:/app/.env:ro
       - ../logs/cloud-prod:/app/logs
       - ../runtime/cloud-prod/paid-group-guard:/app/runtime/paid-group-guard
-      - ../runtime/cloud-prod/lan-aio-runner:/app/runtime/lan-aio-runner:ro
+      - ${DASHBOARD_LAN_AIO_RUNNER_KEY_DIR:?DASHBOARD_LAN_AIO_RUNNER_KEY_DIR is required}/id_ed25519:/app/runtime/lan-aio-runner/id_ed25519:ro
     ports:
       - "${CLOUD_PROD_BIND_IP:-127.0.0.1}:8043:8043"
     command:

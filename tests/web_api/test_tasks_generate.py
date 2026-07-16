@@ -247,10 +247,7 @@ async def test_web_apply_submit_cost_for_video_lora(monkeypatch):
     submission_context = monitor_calls[0]["submission_context"]
     assert submission_context.billing_resolution == "hd"
     assert submission_context.requested_duration == 5
-    assert (
-        submission_context.log_prompt
-        == "[模型: BreastGrow] [强度: 0.80] glowing neon city"
-    )
+    assert submission_context.log_prompt == "glowing neon city"
 
 
 @pytest.mark.asyncio

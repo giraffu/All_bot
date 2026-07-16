@@ -10,6 +10,9 @@ from src.web_api.schemas.user_credit_ledger_schema import (
     CreditLedgerItem,
     CreditLedgerResponse,
 )
+from src.services.user_visible_generation_presenter import (
+    resolve_credit_ledger_display_key,
+)
 
 
 SAFE_DISPLAY_CONTEXT_KEYS = (
@@ -81,6 +84,7 @@ def _to_credit_ledger_item(log: UserLog) -> CreditLedgerItem:
     return CreditLedgerItem(
         id=int(log.id),
         operation_type=log.operation_type,
+        display_key=resolve_credit_ledger_display_key(log.operation_type),
         direction="income" if credit_change > 0 else "expense",
         credit_change=credit_change,
         current_balance=int(log.current_balance or 0),

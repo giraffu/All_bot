@@ -57,6 +57,7 @@ async def test_process_referral_records_invite_without_inviter_credits(monkeypat
         success = await QuotaManager().process_referral(
             inviter_id=1,
             new_user_id=2,
+            new_user_was_created=True,
             new_username="invitee",
         )
 
@@ -77,11 +78,37 @@ async def test_process_referral_records_invite_without_inviter_credits(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_process_referral_rejects_existing_user_without_side_effects(monkeypatch):
+    engine, session_factory = await _create_session_factory(monkeypatch)
+    try:
+        await _seed_users(session_factory)
+
+        success = await QuotaManager().process_referral(
+            inviter_id=1,
+            new_user_id=2,
+            new_username="invitee",
+            new_user_was_created=False,
+        )
+
+        inviter, invitee, referral, logs = await _load_state(session_factory)
+        assert success is False
+        assert inviter.credits == 100
+        assert inviter.referral_count == 0
+        assert invitee.invited_by is None
+        assert referral is None
+        assert logs == []
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_process_channel_reward_grants_five_credits_once(monkeypatch):
     engine, session_factory = await _create_session_factory(monkeypatch)
     try:
         await _seed_users(session_factory)
-        await QuotaManager().process_referral(1, 2, new_username="invitee")
+        await QuotaManager().process_referral(
+            1, 2, new_user_was_created=True, new_username="invitee"
+        )
 
         first_result = await QuotaManager().process_channel_reward(2)
         second_result = await QuotaManager().process_channel_reward(2)
@@ -107,7 +134,9 @@ async def test_generation_reward_without_channel_grants_ten_once(monkeypatch):
     engine, session_factory = await _create_session_factory(monkeypatch)
     try:
         await _seed_users(session_factory)
-        await QuotaManager().process_referral(1, 2, new_username="invitee")
+        await QuotaManager().process_referral(
+            1, 2, new_user_was_created=True, new_username="invitee"
+        )
 
         first_result = await QuotaManager().process_generation_referral_reward(2)
         second_result = await QuotaManager().process_generation_referral_reward(2)
@@ -131,7 +160,9 @@ async def test_generation_after_channel_tops_inviter_up_to_ten(monkeypatch):
     engine, session_factory = await _create_session_factory(monkeypatch)
     try:
         await _seed_users(session_factory)
-        await QuotaManager().process_referral(1, 2, new_username="invitee")
+        await QuotaManager().process_referral(
+            1, 2, new_user_was_created=True, new_username="invitee"
+        )
         await QuotaManager().process_channel_reward(2)
 
         result = await QuotaManager().process_generation_referral_reward(2)
@@ -203,7 +234,9 @@ async def test_first_logged_generation_triggers_generation_referral_reward(monke
     engine, session_factory = await _create_session_factory(monkeypatch)
     try:
         await _seed_users(session_factory)
-        await QuotaManager().process_referral(1, 2, new_username="invitee")
+        await QuotaManager().process_referral(
+            1, 2, new_user_was_created=True, new_username="invitee"
+        )
 
         first_created = await UserLogger(2, "invitee").log_task(
             prompt="first",

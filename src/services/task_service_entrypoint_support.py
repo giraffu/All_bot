@@ -13,6 +13,10 @@ from src.services.task_service_types import (
     BotTaskRequestContext,
     BotTaskRuntimeState,
 )
+from src.services.user_visible_generation_presenter import (
+    GENERATION_CONTEXT_KEY,
+    build_generation_context,
+)
 
 
 @dataclass(frozen=True)
@@ -90,12 +94,8 @@ def build_log_prompt(
     task_type: str | None = None,
     lora_task_types: set[str] | tuple[str, ...] | None = None,
 ) -> str:
-    result = prompt
-    if lora_name and lora_task_types and task_type in lora_task_types:
-        result = f"[模型: {lora_name}] {result}"
-    if resolution is not None and duration is not None:
-        result = f"[{resolution}|{duration}] {result}"
-    return result
+    _ = (resolution, duration, lora_name, task_type, lora_task_types)
+    return str(prompt or "").strip()
 
 
 def build_cleanup_paths(paths: Iterable[str | None]) -> list[str] | None:
@@ -159,6 +159,7 @@ def build_bot_task_flow_context(
     allow_contribute: bool = True,
     record_history: bool = True,
     allow_cancel: bool = True,
+    show_queue_status: bool = True,
     result_task_type: Optional[str] = None,
     result_prompt: Optional[str] = None,
     result_input_image_indices: Optional[list[int]] = None,
@@ -176,6 +177,10 @@ def build_bot_task_flow_context(
         failure_policy = build_default_bot_task_failure_policy(task_label)
     if missing_output_should_refund is None:
         missing_output_should_refund = deduct_quota
+    generation_context = build_generation_context(inputs)
+    persisted_result_meta = dict(result_meta or {})
+    if generation_context is not None:
+        persisted_result_meta[GENERATION_CONTEXT_KEY] = generation_context
 
     return BotTaskFlowContext(
         runtime_state=runtime_state,
@@ -201,11 +206,12 @@ def build_bot_task_flow_context(
             submitted_status_builder=submitted_status_builder,
             send_result=send_result,
             reply_markup=reply_markup,
-            result_meta=result_meta,
+            result_meta=persisted_result_meta or None,
             delete_status=delete_status,
             allow_contribute=allow_contribute,
             record_history=record_history,
             allow_cancel=allow_cancel,
+            show_queue_status=show_queue_status,
             result_task_type=result_task_type,
             result_prompt=result_prompt,
             result_input_image_indices=result_input_image_indices,

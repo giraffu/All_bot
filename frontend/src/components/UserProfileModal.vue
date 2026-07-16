@@ -20,6 +20,7 @@ import { useViewport } from '@/composables/useViewport'
 import { useTemplateApplyStore } from '@/stores/templateApply'
 import type { GalleryPost as Post } from '@/types/gallery'
 import { resolveMediaCardView } from '@/utils/mediaCardView'
+import { resolveTaskTypeLabel } from '@/utils/taskTypePresentation'
 import { formatGalleryTag } from '@/utils/galleryPresentation'
 import {
   resolveGalleryTemplateApplyDisabledMessage,
@@ -37,7 +38,7 @@ const emit = defineEmits<{
   followUpdated: [{ userId: number; isFollowing: boolean }]
 }>()
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const { isMobile } = useViewport()
 const templateApplyStore = useTemplateApplyStore()
 
@@ -457,7 +458,7 @@ watch(
                 <template #overlay>
                   <div class="flex h-full items-end">
                     <div class="w-full flex items-center justify-between text-white text-xs">
-                      <span>{{ post.task_type || post.media_type }}</span>
+                      <span>{{ resolveTaskTypeLabel(post.task_type || post.media_type, t, te) }}</span>
                       <span>{{ post.likes_count || 0 }} ❤</span>
                     </div>
                   </div>

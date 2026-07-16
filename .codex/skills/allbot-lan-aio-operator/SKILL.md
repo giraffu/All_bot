@@ -7,6 +7,8 @@ description: "本地主服务器 LAN AIO 运维操作员。管理局域网 GPU �
 
 GPU profile 发布产物必须先有 canonical digest；LAN registry 只通过 `scripts/copy_canonical_image_to_lan_registry.sh` 做保 digest 复制与复核。禁止为同一 release/profile 在 LAN 现场重新 build。
 
+正式 profile 镜像已烘焙 `/opt/allbot/runtime/remote_workers`；operator 不再把仓库 `remote_workers` 打包/同步到 GPU 主机，也不得用 host bind mount 覆盖镜像内代码。
+
 本技能用于在本地主服务器上稳定管理 LAN AIO。它只记录操作规则和事实源路由，不把频繁变化的 GPU 当前态硬编码进技能正文。
 
 ## 1. 必读入口
@@ -39,6 +41,7 @@ python scripts/lan_aio_fleet_prod_ops.py warm-cache --slot <slot> --include-disa
 python scripts/lan_aio_fleet_prod_ops.py takeover --slot <slot> --replace-slot <current-slot> --include-disabled --failure-policy auto_rollback --execute
 python scripts/lan_aio_fleet_prod_ops.py recover --physical-slot <node>:gpuN --slot <slot> --prefer old|candidate --execute
 python scripts/lan_aio_fleet_prod_ops.py restart-aio --slot <slot> --execute
+python scripts/lan_aio_fleet_prod_ops.py release-rollout --slot <slot> --profile <profile> --release-index <release-index.json> --sha <full-sha> --strategy direct|standard --execute
 ```
 
 辅助只读检查：
@@ -56,6 +59,7 @@ Do not print `.env*`, compose config expansion, tokens, agent secrets, R2 keys, 
 
 - 未经用户明确要求，不执行生产 mutation。
 - 一次只操作一个 physical GPU / slot；禁止跨节点批量切换。
+- `release-rollout` 必须从 release index 解析精确 digest：先 disabled/drain，验证容器实际 image、OCI revision、进程健康和 disabled heartbeat 后才 enable；失败立即停止后续 slot 并恢复该 slot 的旧镜像，恢复无法验证时保持 disabled。
 - 不手写 Docker Compose，不自由指定镜像或 manifest，不绕过 `lan_aio_prod_slots.yml`。
 - 不调用 Dashboard `/api/runpod/lan-aio/slots*` 或 `/profiles` 管理 LAN AIO；这些 Web slot 管理 API 已废弃，候选切换、恢复和缓存预热只走本地主 AI operator/CLI。
 - 不 reboot GPU 主机，不 restart Docker daemon，除非用户明确要求维护窗口。

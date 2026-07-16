@@ -87,8 +87,8 @@
 | 实测 CPU / 内存 | 1 vCPU；约 1.9GiB RAM，当前 available 约 751MiB |
 | 实测系统盘 | 约 48G 总量；当前约 16G 已用、33G 可用，使用率约 32% |
 | SSH 日常入口 | `ssh allbot-do-sgp1-test-control`，默认 `deploy` 用户 |
-| 运行服务 | `cloud-postgres-test`、`cloud-redis-test`、`cloud-central-api-test`、`cloud-web-api-test`、`cloud-dashboard-backend-test`、`cloud-dashboard-frontend-test`、`cloud-qqcc-config-backend-test`、`cloud-qqcc-config-frontend-test`、`cloud-imgproxy-test`、`cloud-tg-bot-test`；`cloud-qqcc-bot-test` 是可选 `qqcc-bot` profile，需独立测试 token 才启动 |
-| 公网保护 | 服务端口绑定 `100.82.124.91`；`allbot-cloud-test-firewall.service` drop 公网 eth0 的 `8001/8004/8044/8045/8084/8087/8088` |
+| 运行服务 | `cloud-postgres-test`、`cloud-redis-test`、`cloud-central-api-test`、`cloud-web-api-test`、`cloud-imgproxy-test`、`cloud-tg-bot-test`；管理面已移除，`cloud-qqcc-bot-test` 是可选 `qqcc-bot` profile |
+| 公网保护 | 服务端口绑定 `100.82.124.91`；`allbot-cloud-test-firewall.service` 继续保护测试 API 端口；已移除的管理端口不再提供服务 |
 
 使用边界：
 
@@ -134,7 +134,7 @@
 云测试控制面 2026-06-18 03:06 快照：
 
 - 云测试 Droplet 为 1 vCPU / 约 1.9GiB RAM / 48G 根盘，当前约 16G 已用、33G 可用。
-- 测试控制面容器均 `Up`：`cloud-postgres-test`、`cloud-redis-test`、`cloud-central-api-test`、`cloud-web-api-test`、`cloud-dashboard-backend-test`、`cloud-dashboard-frontend-test`、`cloud-qqcc-config-backend-test`、`cloud-qqcc-config-frontend-test`、`cloud-imgproxy-test`、`cloud-tg-bot-test`。
+- 当时测试控制面容器快照曾包含 Dashboard/QQCC Config；自 2026-07-16 起这四个管理服务已从目标测试契约移除，不应再启动。当前目标集合为 Postgres、Redis、Central API、Web API、imgproxy 和按需 Bot。
 - Central 测试队列 `queue_size=0`，`active_workers=8`，`healthy_workers=5`，`error_workers=3`，`quarantined_workers=0`。`error` worker 是运行态快照，做测试验收前必须重新查 `/system/workers`，不要把它写成永久故障。
 
 ## 3. 服务与容器分布
@@ -152,7 +152,7 @@
 
 测试/辅助服务类型：
 
-- 云测试入口：`cloud-tg-bot-test`、`cloud-web-api-test`、`cloud-dashboard-backend-test`、`cloud-dashboard-frontend-test`、`cloud-qqcc-config-backend-test`、`cloud-qqcc-config-frontend-test`、`cloud-imgproxy-test`；`cloud-qqcc-bot-test` 为可选 QQCC 测试入口，必须使用独立 `QQCC_BOT_TOKEN_TEST`
+- 云测试入口：`cloud-tg-bot-test`、`cloud-web-api-test`、`cloud-imgproxy-test`；Dashboard/QQCC Config 管理面不再部署，`cloud-qqcc-bot-test` 为可选 QQCC 测试入口，必须使用独立 `QQCC_BOT_TOKEN_TEST`
 - 云测试执行面：`cloud-central-api-test`，Tailscale `100.82.124.91:8004`
 - 云测试数据面：`cloud-postgres-test`、`cloud-redis-test`，仅 Docker 内网可达
 - 本地云测试 worker：`cloud-comfy-agent-test-1` 至 `cloud-comfy-agent-test-8`，其中 `test-8` 是 SCAIL-2 测试接单层

@@ -41,7 +41,10 @@ def assemble(
     source_ref: str = "refs/heads/main",
     previous_index: Path | None = None,
     unavailable_artifacts: set[str] | None = None,
+    validation_mode: str = "full",
 ) -> Path:
+    if validation_mode not in {"full", "build-only"}:
+        raise AssembleError(f"unknown validation mode: {validation_mode}")
     catalog = load_catalog(catalog_path)
     unavailable = set(unavailable_artifacts or ())
     unknown_unavailable = unavailable - set(catalog)
@@ -141,6 +144,10 @@ def assemble(
         "ci_run": ci_run,
         "release_channel": release_channel,
         "source_ref": source_ref,
+        "validation": {
+            "mode": validation_mode,
+            "tests": "passed" if validation_mode == "full" else "skipped",
+        },
         "manifests": manifest_names,
     }
     index_path = output_dir / "release-index.json"
@@ -164,6 +171,9 @@ def main() -> int:
     parser.add_argument("--source-ref", default="refs/heads/main")
     parser.add_argument("--previous-index", type=Path)
     parser.add_argument("--unavailable-artifact", action="append", default=[])
+    parser.add_argument(
+        "--validation-mode", choices=("full", "build-only"), default="full"
+    )
     args = parser.parse_args()
     path = assemble(
         catalog_path=args.catalog,
@@ -175,6 +185,7 @@ def main() -> int:
         source_ref=args.source_ref,
         previous_index=args.previous_index,
         unavailable_artifacts=set(args.unavailable_artifact),
+        validation_mode=args.validation_mode,
     )
     print(path)
     return 0

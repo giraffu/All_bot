@@ -60,6 +60,7 @@ async def process_video_task_template(
     duration: Any = None,
     base_priority: int = 0,
     allow_cancel: bool = True,
+    show_queue_status: bool = True,
     user_cancel_allowed: bool = True,
 ) -> Tuple[Optional[bytes], Optional[str]]:
     if update is not None:
@@ -166,6 +167,7 @@ async def process_video_task_template(
             source_post_id=source_post_id,
             base_priority=base_priority,
             allow_cancel=allow_cancel,
+            show_queue_status=show_queue_status,
             user_cancel_allowed=user_cancel_allowed,
             message_spec=message_spec,
             submitted_status_builder=build_translated_cost_status_builder(

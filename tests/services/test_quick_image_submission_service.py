@@ -532,6 +532,11 @@ async def test_run_qqcc_draw_chain_inserts_original_face_swap_after_enabled_step
         False,
     ]
     assert [call["base_priority"] for call in process_calls] == [0, 100, 100]
+    assert [call["show_queue_status"] for call in process_calls] == [
+        True,
+        False,
+        False,
+    ]
     assert process_calls[0]["send_result"] is False
     assert process_calls[0]["negative_prompt"] == "bad hands"
     assert process_calls[1]["images"] == ["/tmp/download-1.png", "/tmp/input.png"]
@@ -596,10 +601,12 @@ async def test_run_qqcc_draw_chain_visible_final_face_swap_keeps_draw_result_sem
     assert process_calls[0]["allow_cancel"] is True
     assert process_calls[0]["user_cancel_allowed"] is True
     assert process_calls[0]["base_priority"] == 0
+    assert process_calls[0]["show_queue_status"] is True
     assert process_calls[1]["send_result"] is True
     assert process_calls[1]["allow_cancel"] is False
     assert process_calls[1]["user_cancel_allowed"] is False
     assert process_calls[1]["base_priority"] == 100
+    assert process_calls[1]["show_queue_status"] is False
     assert process_calls[1]["result_task_type"] == MODE_PORNMASTER_FLUX2_SINGLE_EDIT
     assert process_calls[1]["result_prompt"] == "soft light prompt"
     assert process_calls[1]["result_input_image_indices"] == [1]

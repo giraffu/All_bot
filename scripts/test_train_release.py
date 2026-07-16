@@ -16,7 +16,7 @@ from typing import Any, Iterator, Mapping, Protocol, Sequence
 
 
 FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
-SLOTS = {"A", "B", "C", "D"}
+SLOTS = {"A", "B", "C", "D", "E", "F", "G", "H"}
 DEFAULT_STATE_ROOT = Path.home() / ".local" / "state" / "allbot" / "test-train"
 DEFAULT_BUNDLE_CACHE = (
     Path.home() / ".cache" / "allbot" / "releases" / "test-candidate"
@@ -224,6 +224,38 @@ class TestTrainCoordinator:
             }
         )
 
+    def record_ready_for_acceptance(
+        self,
+        sha: str,
+        *,
+        pr: int,
+        slot: str,
+        tracks: Sequence[str],
+        deployment_mode: str,
+        deferred_tracks: Sequence[str] = (),
+    ) -> None:
+        sha = self._sha(sha)
+        slot = slot.upper()
+        if (
+            slot not in SLOTS
+            or pr <= 0
+            or not tracks
+            or deployment_mode not in {"non-runtime", "test-not-required"}
+        ):
+            raise TestTrainError("acceptance audit metadata is invalid")
+        self._write_state(
+            {
+                "status": "ready-for-acceptance",
+                "sha": sha,
+                "pr": pr,
+                "slot": slot,
+                "tracks": list(dict.fromkeys(tracks)),
+                "deployment_mode": deployment_mode,
+                "deferred_tracks": list(dict.fromkeys(deferred_tracks)),
+                "updated_at": datetime.now().astimezone().isoformat(),
+            }
+        )
+
     def _plan_candidate(self, sha: str, *, runner: ReleaseRunner) -> dict[str, Any]:
         sha = self._sha(sha)
         plans = {track: runner.plan(sha, track) for track in TRACKS}
@@ -244,7 +276,7 @@ class TestTrainCoordinator:
         pr: int,
         slot: str,
         runner: ReleaseRunner,
-        skip_test_execution: bool = False,
+        with_test_execution: bool = False,
     ) -> None:
         sha = self._sha(sha)
         slot = slot.upper()
@@ -258,20 +290,49 @@ class TestTrainCoordinator:
                 )
             document = self._plan_candidate(sha, runner=runner)
             plans = document["plans"]
-            gpu_artifacts = plans["gpu-execution"].get("artifacts")
-            if isinstance(gpu_artifacts, Mapping) and gpu_artifacts:
-                raise TestTrainError(
-                    "GPU candidate requires its profile canary/operator; shared test train will not mutate it"
-                )
-            affected = [
+            runtime_affected = [
                 track
                 for track in ("control-plane", "test-execution")
                 if plans[track].get("artifacts") or plans[track].get("services")
             ]
-            if skip_test_execution:
-                affected = [track for track in affected if track != "test-execution"]
+            control_plan = plans["control-plane"]
+            control_test_required = control_plan.get("test_required", True) is not False
+            affected = [
+                track
+                for track in runtime_affected
+                if (track == "control-plane" and control_test_required)
+                or (track == "test-execution" and with_test_execution)
+            ]
             if not affected:
-                raise TestTrainError("candidate has no control-plane or test-execution changes")
+                control_is_non_runtime = (
+                    control_plan.get("level") == "none"
+                    and not control_plan.get("artifacts")
+                    and not control_plan.get("services")
+                )
+                deferred_tracks = [
+                    track
+                    for track in runtime_affected
+                    if track == "test-execution" and not with_test_execution
+                ]
+                control_test_not_required = (
+                    bool(control_plan.get("artifacts") or control_plan.get("services"))
+                    and not control_test_required
+                )
+                if not control_is_non_runtime and not control_test_not_required:
+                    raise TestTrainError(
+                        "candidate has no selected control-plane or test-execution changes"
+                    )
+                self.record_ready_for_acceptance(
+                    sha,
+                    pr=pr,
+                    slot=slot,
+                    tracks=["control-plane"],
+                    deployment_mode=(
+                        "non-runtime" if control_is_non_runtime else "test-not-required"
+                    ),
+                    deferred_tracks=deferred_tracks,
+                )
+                return
             completed: list[str] = []
             try:
                 for track in affected:
@@ -295,7 +356,8 @@ class TestTrainCoordinator:
                         + ", ".join(rollback_failures)
                     ) from exc
                 raise TestTrainError(
-                    "candidate deployment failed and completed tracks were recovered"
+                    "candidate deployment failed and completed tracks were recovered: "
+                    + str(exc)
                 ) from exc
             self.record_deployed(sha, pr=pr, slot=slot, tracks=affected)
 
@@ -358,9 +420,10 @@ class TestTrainCoordinator:
             if current.get("sha") != sha or current.get("status") not in {
                 "deployed",
                 "blocked",
+                "ready-for-acceptance",
             }:
                 raise TestTrainError(
-                    "only the currently deployed candidate can be accepted"
+                    "only the current deployed or non-runtime-ready candidate can be accepted"
                 )
             if (
                 current.get("pr") != evidence["pr"]
@@ -372,6 +435,7 @@ class TestTrainCoordinator:
                 )
             self._write_state(
                 {
+                    **current,
                     **evidence,
                     "status": "accepted",
                     "evidence": str(evidence_path.resolve()),
@@ -396,9 +460,9 @@ def build_parser() -> argparse.ArgumentParser:
     deploy.add_argument("--slot", required=True)
     deploy.add_argument("--execute", action="store_true")
     deploy.add_argument(
-        "--skip-test-execution",
+        "--with-test-execution",
         action="store_true",
-        help="Deploy only the control-plane and defer test Worker mutation.",
+        help="Also deploy the optional test Worker diagnostics track.",
     )
     accept = subparsers.add_parser("accept")
     accept.add_argument("--sha", required=True)
@@ -430,7 +494,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 pr=args.pr,
                 slot=args.slot,
                 runner=runner,
-                skip_test_execution=args.skip_test_execution,
+                with_test_execution=args.with_test_execution,
             )
             result = coordinator.status()
         elif args.command == "accept":

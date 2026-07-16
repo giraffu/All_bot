@@ -7,10 +7,20 @@ from telegram.ext import ConversationHandler
 from qqcc_bot import commands, keyboards
 from qqcc_bot.private_bot_fsm import (
     _owner_webapp_url,
+    private_bot_group_redirect,
     receive_private_bot_token,
     start_private_bot_provisioning,
 )
 from src.services.private_qqcc_bot_service import PrivateBotProvisionResult
+from src.services.qqcc_config_service import normalize_qqcc_config
+
+
+@pytest.fixture(autouse=True)
+def _enable_private_bot_config(monkeypatch):
+    monkeypatch.setattr(
+        "qqcc_bot.private_bot_fsm.load_runtime_qqcc_config",
+        AsyncMock(return_value=normalize_qqcc_config(None)),
+    )
 
 
 def _keyboard_texts(markup):
@@ -47,6 +57,121 @@ def test_private_bot_entry_is_hidden_until_rollout_gate_is_enabled():
     texts = _keyboard_texts(commands._main_menu_keyboard(context, None))
 
     assert ["私有bot"] not in texts
+
+
+def test_private_bot_entry_is_hidden_when_admin_menu_switch_is_off():
+    config = normalize_qqcc_config({"main_buttons": {"private_bot": False}})
+
+    texts = _keyboard_texts(
+        keyboards.get_qqcc_main_menu_keyboard(
+            "zh",
+            config,
+            include_private_bot_entry=True,
+        )
+    )
+
+    assert ["私有bot"] not in texts
+
+
+@pytest.mark.asyncio
+async def test_stale_private_bot_entry_is_blocked_when_admin_switch_is_off(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "qqcc_bot.private_bot_fsm.load_runtime_qqcc_config",
+        AsyncMock(
+            return_value=normalize_qqcc_config(
+                {"main_buttons": {"private_bot": False}}
+            )
+        ),
+    )
+    resolve_owner = AsyncMock()
+    monkeypatch.setattr("qqcc_bot.private_bot_fsm._resolve_owner", resolve_owner)
+    message = SimpleNamespace(reply_text=AsyncMock())
+    update = SimpleNamespace(
+        effective_message=message,
+        effective_chat=SimpleNamespace(type="private"),
+    )
+    context = SimpleNamespace(
+        user_data={},
+        t=lambda key, **_kwargs: {
+            "qqcc.feature_disabled": "功能暂未开放",
+        }.get(key, key),
+    )
+
+    result = await start_private_bot_provisioning(update, context)
+
+    assert result == ConversationHandler.END
+    resolve_owner.assert_not_awaited()
+    message.reply_text.assert_awaited_once_with("功能暂未开放")
+
+
+@pytest.mark.asyncio
+async def test_stale_group_private_bot_entry_uses_disabled_reply_when_switch_is_off(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "qqcc_bot.private_bot_fsm.load_runtime_qqcc_config",
+        AsyncMock(
+            return_value=normalize_qqcc_config(
+                {"main_buttons": {"private_bot": False}}
+            )
+        ),
+    )
+    message = SimpleNamespace(reply_text=AsyncMock())
+    update = SimpleNamespace(effective_message=message)
+    context = SimpleNamespace(
+        t=lambda key, **_kwargs: {
+            "qqcc.feature_disabled": "功能暂未开放",
+        }.get(key, key),
+    )
+
+    result = await private_bot_group_redirect(update, context)
+
+    assert result == ConversationHandler.END
+    message.reply_text.assert_awaited_once_with("功能暂未开放")
+
+
+@pytest.mark.asyncio
+async def test_in_progress_private_bot_token_is_not_provisioned_after_switch_off(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "qqcc_bot.private_bot_fsm.load_runtime_qqcc_config",
+        AsyncMock(
+            return_value=normalize_qqcc_config(
+                {"main_buttons": {"private_bot": False}}
+            )
+        ),
+    )
+    message = SimpleNamespace(
+        text="123:super-secret-token",
+        delete=AsyncMock(),
+        reply_text=AsyncMock(),
+    )
+    update = SimpleNamespace(
+        effective_message=message,
+        effective_chat=SimpleNamespace(type="private"),
+    )
+    context = SimpleNamespace(
+        user_data={"private_bot_owner_id": 42},
+        t=lambda key, **_kwargs: {
+            "qqcc.feature_disabled": "功能暂未开放",
+        }.get(key, key),
+    )
+    provision = AsyncMock()
+
+    result = await receive_private_bot_token(
+        update,
+        context,
+        provision_func=provision,
+    )
+
+    assert result == ConversationHandler.END
+    message.delete.assert_awaited_once_with()
+    provision.assert_not_awaited()
+    assert "private_bot_owner_id" not in context.user_data
+    message.reply_text.assert_awaited_once_with("功能暂未开放")
 
 
 def test_owner_ticket_uses_browser_fragment_and_requires_expected_host(monkeypatch):

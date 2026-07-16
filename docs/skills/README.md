@@ -14,7 +14,7 @@
 | `allbot-tg-fsm` | Telegram FSM、全局菜单黑盒退出、callback 注册路由、临时文件下载清理、语言切换同步、独立付费群审核与轻量群管理 Bot 边界 | 修改 Telegram 对话流、菜单跳转、文件交互或付费群审核 Bot 时 |
 | `allbot-qqcc-lazy-bot` | 官方 QQCC polling、用户私有 Bot 申请/配置、webhook worker、租户 `client_type` 隔离及 polling/webhook token 红线 | 修改 `qqcc_bot/`、`qqcc_private_bot/`、QQCC 菜单、私有 Bot API/worker、compose、恢复或来源过滤时 |
 | `allbot-ops-deployment` | Docker Compose、Alembic、云测试控制面、云正式控制面、本地正式灾备、Dashboard 单服务热修、RunPod/LAN AIO 运维、部署排障与恢复 | 调整部署、迁移、容器、环境变量、云正式热修、测试环境、灾备切换、workflow 资产或恢复脚本时 |
-| `allbot-concurrent-workspaces` | 主目录自动原子接单、A-D worktree、任务交接、test-train/test-candidate 与共享测试站排他租约 | 用户在主目录直接提出写入需求、多 AI 并发开发、分配/停放槽位、合入 train、部署候选或处理 blocked/forward-fix 时 |
+| `allbot-concurrent-workspaces` | 主目录自动原子接单、A-H 高访问能力与凭据保密、代码/依赖隔离、外部 mutation 授权、test-train/test-candidate 和共享测试站排他租约 | 用户在主目录直接提出写入需求、多 AI 并发开发、分配/停放槽位、读取真实配置、合入 train、部署候选或处理 blocked/forward-fix 时 |
 | `allbot-cloudflare-ops` | Cloudflare Account API Token、DNS、Tunnel、Access、Pages/R2、公网管理域名、本地分析平台与管理后台公网访问 | 配置或排障 Cloudflare 公网入口、Token 轮换、Access allowlist、Tunnel public hostname、Pages/R2 账号级能力时 |
 | `allbot-local-analytics-prompt-semantics` | 本地数据分析平台提示词词义分析、词元分类、指定词元、同义映射、删除表、自由P图拆解、tokens-only 物化与模板候选槽位口径 | 审查/治理提示词词元、处理高频未覆盖词元、合并映射、软删除无效词、年龄人群发现标签、自由P图拆解筛选或模板候选语义槽位时 |
 | `allbot-lan-aio-operator` | LAN AIO fleet state、slot catalog、单物理 GPU takeover/recover/restart、镜像拉取、模型热缓存、drift 检查 | 查看或切换局域网 GPU 节点 LAN AIO 当前类型、缓存候选、阻断 profile 或执行受控单卡切换时 |

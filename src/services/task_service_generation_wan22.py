@@ -92,6 +92,7 @@ async def process_wan22_video_v2_generation_task(
     wan22_chain_task_ids: Any = None,
     base_priority: int = 0,
     allow_cancel: bool = True,
+    show_queue_status: bool = True,
     user_cancel_allowed: bool = True,
 ) -> Tuple[Optional[bytes], Optional[str]]:
     return await process_wan22_video_v2_aio_generation_task(
@@ -120,5 +121,6 @@ async def process_wan22_video_v2_generation_task(
         wan22_chain_task_ids=wan22_chain_task_ids,
         base_priority=base_priority,
         allow_cancel=allow_cancel,
+        show_queue_status=show_queue_status,
         user_cancel_allowed=user_cancel_allowed,
     )

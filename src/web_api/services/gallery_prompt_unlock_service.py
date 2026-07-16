@@ -6,6 +6,7 @@ from src.database.models import GalleryPost, GalleryPromptUnlock, History, User
 from src.quota import QuotaManager
 from src.web_api.schemas.gallery_schema import PromptUnlockResponse
 from src.web_api.services.gallery_response_builder import PROMPT_UNLOCK_PRICE_CREDITS
+from src.services.user_visible_generation_presenter import present_user_prompt
 
 
 async def _fetch_current_credits(*, db, user_id: int) -> int:
@@ -26,13 +27,16 @@ async def _fetch_prompt_unlock_entities(*, db, post_id: int):
     if not history:
         raise HTTPException(status_code=404, detail="未找到原任务详情")
 
-    prompt = history.prompt.strip() if isinstance(history.prompt, str) else ""
-    if not prompt:
+    presented_prompt = present_user_prompt(
+        history.prompt,
+        extra_outputs=getattr(history, "extra_outputs", None),
+    )
+    if not presented_prompt.prompt:
         raise HTTPException(status_code=400, detail="此投稿没有提示词")
     if not post.user_id:
         raise HTTPException(status_code=400, detail="作者信息缺失，暂时无法解锁")
 
-    return post, prompt
+    return post, presented_prompt
 
 
 async def _fetch_existing_unlock(*, db, user_id: int, post_id: int):
@@ -53,13 +57,16 @@ async def unlock_gallery_prompt_payload(
     db,
     quota_manager: QuotaManager | None = None,
 ) -> PromptUnlockResponse:
-    post, prompt = await _fetch_prompt_unlock_entities(db=db, post_id=post_id)
+    post, presented_prompt = await _fetch_prompt_unlock_entities(db=db, post_id=post_id)
+    prompt = presented_prompt.prompt
+    prompt_model = presented_prompt.prompt_model
     current_credits = await _fetch_current_credits(db=db, user_id=current_user.id)
 
     if post.user_id == current_user.id:
         return PromptUnlockResponse(
             post_id=post.id,
             prompt=prompt,
+            prompt_model=prompt_model,
             current_credits=current_credits,
             already_unlocked=True,
         )
@@ -73,6 +80,7 @@ async def unlock_gallery_prompt_payload(
         return PromptUnlockResponse(
             post_id=post.id,
             prompt=prompt,
+            prompt_model=prompt_model,
             current_credits=current_credits,
             already_unlocked=True,
         )
@@ -94,6 +102,7 @@ async def unlock_gallery_prompt_payload(
         return PromptUnlockResponse(
             post_id=resolved_post_id,
             prompt=prompt,
+            prompt_model=prompt_model,
             current_credits=current_credits,
             already_unlocked=True,
         )
@@ -125,6 +134,7 @@ async def unlock_gallery_prompt_payload(
     return PromptUnlockResponse(
         post_id=post.id,
         prompt=prompt,
+        prompt_model=prompt_model,
         current_credits=transfer_result.from_user.new_balance,
         already_unlocked=False,
     )

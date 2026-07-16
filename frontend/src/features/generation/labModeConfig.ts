@@ -565,6 +565,7 @@ export const LAB_MODE_CONFIGS: LabModeConfig[] = [
     supportsVideoOptions: true,
     supportsVideoLora: false,
     supportsLtxLoraItems: true,
+    supportsNegativePrompt: true,
     supportsAdvancedOptions: true,
     promptRequired: false,
     unified: true,

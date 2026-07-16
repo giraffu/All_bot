@@ -1,5 +1,4 @@
 import importlib.util
-import json
 from pathlib import Path
 
 import pytest
@@ -67,6 +66,28 @@ def test_profile_result_requires_full_canary_evidence(tmp_path):
             source_sha=SHA,
             image_ref="ghcr.io/giraffu/i2i@" + DIGEST,
         )
+
+
+def test_profile_can_be_published_from_artifact_attestation_without_business_canary():
+    module = _load_module()
+    evidence = _evidence()
+    evidence["checks"] = {
+        "actual_image_digest": True,
+        "baked_agent_revision": True,
+        "baked_workflow_revision": True,
+        "model_manifest_checksum": True,
+    }
+
+    result = module.validate_artifact_attestation(
+        evidence,
+        profile="i2i_pro",
+        source_sha=SHA,
+        image_ref="ghcr.io/giraffu/i2i@" + DIGEST,
+    )
+
+    assert result["validation_level"] == "attested"
+    assert result["canary_evidence"] == "waived"
+    assert result["artifact_attestation"] == "verified"
 
 
 def test_gpu_manifest_merge_preserves_unselected_profiles_and_replaces_exact_one():

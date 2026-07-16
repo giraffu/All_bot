@@ -148,10 +148,12 @@ LAN AIO 镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_
 
 ### 5. 验证与发布 (Testing & Restart)
 
+- 新任务的 `History.prompt` 只保存提示词正文；模型公共 ID、强度、分辨率和时长写入 `History.extra_outputs._generation_context`。Worker payload 仍沿用现有 `lora_name` / `lora_strength` 结构，不改变 workflow 注入、路由或计费。
+- 用户出口通过统一 presenter 优先读取结构化 generation context；旧记录仅在结构化上下文缺失时解析 `[模型: ...]`、`[强度: ...]`、`[分辨率|时长]` 前缀。未知模型不得向用户展示文件名、路径或 workflow 名。
 - 上传好 `.safetensors` 模型文件后，重启 Bot 进程（以重载 `VIDEO_LORA_MODELS` 字典）。
 - 在 Telegram 中唤起【图生视频】菜单，确认新添加的动作按钮出现在首个设置区；选择模型、帧模式和分辨率后直接发送起始图。
 - 观察 Worker (Agent) 的控制台日志，确认 `workflow_task_patchers.py` 成功将 `{lora_name}_high_noise.safetensors` 和 `{lora_name}_low_noise.safetensors` 注入到了 `26` 和 `18` 节点中，且 ComfyUI 能够正常加载文件并启动推理。
-- 同时验证旧投稿一键应用：prompt 恢复、`[模型: xxx]` 能解析为 `lora_name`、`1024p` 映射 `hd`、`5s/8s/10s` 恢复和对应灵石消耗。
+- 同时验证新旧投稿一键应用：新记录从结构化上下文恢复，旧记录的干净 prompt 与 `[模型: xxx]` 兼容解析为 `lora_name`，`1024p` 映射 `hd`、`5s/8s/10s` 恢复和对应灵石消耗均保持不变。
 
 ---
 

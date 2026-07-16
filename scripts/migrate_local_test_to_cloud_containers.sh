@@ -119,7 +119,7 @@ PY
 
 log "Stopping cloud test writers"
 docker-compose --env-file "$CLOUD_ENV" -f "${ROOT_DIR}/${WORKER_COMPOSE}" stop || true
-ssh -o BatchMode=yes "$REMOTE_HOST" "cd '${REMOTE_DIR}' && docker compose --env-file .env.cloud.test -f '${CLOUD_COMPOSE}' --profile bot stop bot-test dashboard-frontend-test web-api-test dashboard-backend-test central-api-test imgproxy-test || true"
+ssh -o BatchMode=yes "$REMOTE_HOST" "cd '${REMOTE_DIR}' && docker compose --env-file .env.cloud.test -f '${CLOUD_COMPOSE}' --profile bot stop bot-test web-api-test central-api-test imgproxy-test || true"
 
 log "Creating cloud backup directory: ${REMOTE_BACKUP_DIR}"
 ssh -o BatchMode=yes "$REMOTE_HOST" "mkdir -p '${REMOTE_BACKUP_DIR}'"

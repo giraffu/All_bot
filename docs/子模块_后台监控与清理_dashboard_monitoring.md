@@ -99,7 +99,7 @@ sequenceDiagram
 - `终止` 只允许当前 Dashboard 进程仍能安全控制的 add operation。若 operation 来自旧进程或重启后已 detached，API 返回 409，不按 Redis 里的旧 pid 盲杀进程，避免 PID 复用误杀。
 - 默认保留最近 100 条 operation；完成态 Redis JSON TTL 为 24 小时，运行态不主动过期，避免长操作丢失追踪。
 - Dashboard RunPod mutation 只打开显式执行门禁：`RUNPOD_DRY_RUN=false`、`RUNPOD_AUTOSCALER_ENABLED=true`。全局 Pod 数、单类型 Pod 数、小时成本上限不再由 Dashboard/API/provider 校验；`RUNPOD_PROD_MAX_MANUAL_SLOTS` 默认按 `100` 作为 manual slot 命名空间。
-- Dashboard 容器默认可通过 `DASHBOARD_RUNPOD_ENV_FILE`、`DASHBOARD_RUNPOD_PROD_ENV_FILE`、`DASHBOARD_RUNPOD_OPS_SCRIPT` 覆盖脚本和 env 路径；不可变云正式容器默认使用 `/dev/null` 作为两个 env-file 参数，让 operation 子进程继承容器已注入的环境变量，不依赖或挂载 `/app/.env`。镜像必须内置 `/app/scripts/runpod_prod_ops.sh`、`/app/scripts/gpu_pool_controller.py` 与 `/app/ops`。
+- Dashboard 容器默认可通过 `DASHBOARD_RUNPOD_ENV_FILE`、`DASHBOARD_RUNPOD_PROD_ENV_FILE`、`DASHBOARD_RUNPOD_OPS_SCRIPT` 覆盖脚本和 env 路径；不可变云正式容器默认使用 `/dev/null` 作为两个 env-file 参数，让 operation 子进程继承容器已注入的环境变量，不依赖或挂载 `/app/.env`。镜像必须内置 `/app/scripts/runpod_prod_ops.sh`、`/app/scripts/gpu_pool_controller.py`、LAN AIO rollout 的 `gpu_release_rollout.py` / `release_manifest_v2.py` / `release_strategy.py` 与 `/app/ops`；独立 Dockerfile 和可信 bundle 使用的 `Dockerfile.control-plane` stage 必须保持相同闭包。
 - API 响应和 operation log 只保留脱敏命令、状态、pid、退出码与日志尾部，不输出 `.env.*` 内容、RunPod API key、agent token、JWT、R2 key 或 presigned URL。
 
 ## 5. 测试要求
@@ -126,8 +126,8 @@ sequenceDiagram
 - 若出现 stuck task，应优先通过 Dashboard 管理动作或 core 暴露的终止入口处理。
 - Redis 手工删键只作为极端故障兜底，不作为标准 SOP。
 - 管理后台卡顿时先区分三类问题：Dashboard stats 重查询、Central 观测接口慢、GPU/ComfyUI 执行停顿。GPU 生成短暂停顿不等同于 Dashboard worker 监控慢。
-- 云测试 Dashboard 前端由 `deploy/docker-compose-cloud-test.yml` 的 `cloud-dashboard-frontend-test` 提供，默认 `http://100.82.124.91:8087/`，用于先验证云端前端体验。
-- 云正式 Dashboard 前端默认通过受控入口 `http://100.107.220.127:8086/` 提供。常规生产发布先经云测试；用户明确授权管理后台免测试快速更新时，可走 `release.py --env prod --dashboard-fast-track`，仍要求 main/CI/digest/preflight/生产确认，只 rolling recreate Dashboard 目标服务且不启生成维护。
+- 云测试不再部署 Dashboard 前后端；其行为测试保留在本地与 CI。
+- 云正式 Dashboard 前端默认通过受控入口 `http://100.107.220.127:8086/` 提供。Dashboard 默认使用 `release.py --strategy direct`，无需测试环境证据，但仍要求 main/CI 或 build-only manifest、digest、preflight、生产确认、事务回滚，并只重建目标服务。
 - 只更新管理后台系统时，操作范围应限于 `dashboard-backend-prod` / `dashboard-frontend-prod`；如果只改 Dashboard 后端统计、RunPod operation 入口或 Dashboard 后端镜像闭包，只重建 `dashboard-backend-prod`；如果只改前端展示或 RunPod profile 识别，只重建 `dashboard-frontend-prod`。验证使用 `http://100.107.220.127:8043/api/health` 与 `http://100.107.220.127:8086/api/health`，并确认 Central/Web/Bot/Payment/imgproxy/worker/RunPod 未被重启或重建。
 - 面向公网访问管理后台时，必须使用 Cloudflare Tunnel + Cloudflare Access 或等价身份层保护，回源到 `100.107.220.127:8086`；不要把 `8086` 或 `8043` 裸露到公网。
 - 本地管理后台入口由 `dashboard/docker-compose-local-gateway.yml` 管理，可作为局域网/回退入口。原本地上线流程是先启动 `dashboard-local-gateway-8085` canary，验证后停止旧 `8086` Vite dev 进程，再启动 `dashboard-local-gateway-8086`；该流程不需要重建云端正式 Dashboard Backend。

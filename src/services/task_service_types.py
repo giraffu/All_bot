@@ -101,6 +101,7 @@ class BotTaskPresentationContext:
     billing_resolution: Optional[str] = None
     prefer_edit_status: bool = False
     allow_cancel: bool = True
+    show_queue_status: bool = True
 
 
 @dataclass(frozen=True)
