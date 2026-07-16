@@ -89,6 +89,25 @@ def test_remote_workflow_directory_only_has_documented_drift():
     assert changed_files == EXPECTED_REMOTE_WORKFLOW_DRIFTS
 
 
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "LTX 2.3 FLF2V 6.1.json",
+        "LTX 2.3 10Eros v1.2 FLF2V 6.1.json",
+    ],
+)
+def test_ltx_flf2v_workflows_enable_last_frame_decode_fix(filename):
+    main_workflow = json.loads(
+        (MAIN_WORKFLOW_DIR / filename).read_text(encoding="utf-8")
+    )
+    remote_workflow = json.loads(
+        (REMOTE_WORKFLOW_DIR / filename).read_text(encoding="utf-8")
+    )
+
+    assert main_workflow["26:149"]["inputs"]["last_frame_fix"] is True
+    assert remote_workflow["26:149"]["inputs"]["last_frame_fix"] is True
+
+
 def test_runpod_profile_supported_task_types_have_main_and_remote_workflow_files():
     for profile in RUNPOD_TASK_PROFILES.values():
         overrides = PROFILE_WORKFLOW_OVERRIDES.get(profile.runtime_profile, {})
