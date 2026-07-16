@@ -1472,6 +1472,24 @@ def git_changed_paths(from_sha: str | None, target_sha: str) -> list[str]:
     return []
 
 
+def _target_first_parent_sha(target_sha: str) -> str:
+    target_sha = validate_full_sha(target_sha)
+    result = _run(
+        ["git", "rev-parse", "--verify", f"{target_sha}^1"],
+        check=False,
+    )
+    if result.returncode != 0:
+        raise ReleaseError(
+            "dashboard fast-track target must have a verifiable first parent"
+        )
+    try:
+        return validate_full_sha(result.stdout.strip())
+    except ReleaseError as exc:
+        raise ReleaseError(
+            "dashboard fast-track target first parent is invalid"
+        ) from exc
+
+
 def _split_services(values: Sequence[str]) -> set[str]:
     selected: set[str] = set()
     for value in values:
@@ -2243,9 +2261,25 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
                 raise ReleaseError(
                     "test data service repair requires exactly postgres and redis services"
                 )
+        dashboard_fast_track = bool(
+            getattr(args, "dashboard_fast_track", False)
+        )
         repair_fast_track = bool(
             getattr(args, "control_plane_repair_fast_track", False)
         )
+        if dashboard_fast_track:
+            if args.env != "prod" or args.track != "control-plane":
+                raise ReleaseError(
+                    "dashboard fast-track is only available for the production control-plane"
+                )
+            if args.command not in {"plan", "preflight", "deploy", "rollback"}:
+                raise ReleaseError(
+                    "dashboard fast-track is only available for plan, preflight, deploy, or rollback"
+                )
+            if requested_modules or requested_services or args.from_sha:
+                raise ReleaseError(
+                    "dashboard fast-track does not accept module, service, or from-SHA overrides"
+                )
         if repair_fast_track:
             if args.env != "prod" or args.track != "control-plane":
                 raise ReleaseError(
@@ -2287,6 +2321,15 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
         if previous_sha and previous_sha != sha:
             changed_paths = git_changed_paths(previous_sha, sha)
             planned_impact = plan_changed_paths(policy, changed_paths)
+        if dashboard_fast_track:
+            if not previous_sha:
+                raise ReleaseError(
+                    "dashboard fast-track requires an existing production release"
+                )
+            target_parent_sha = _target_first_parent_sha(sha)
+            planned_impact = plan_dashboard_fast_track(
+                git_changed_paths(target_parent_sha, sha)
+            )
         computed_modules: set[str] = set()
         if args.track == "control-plane":
             computed_modules = {
@@ -2300,12 +2343,13 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
             release_bundle = load_release_index(manifest_path, expected_sha=sha)
         except ManifestV2Error as exc:
             raise ReleaseError(str(exc)) from exc
-        computed_modules.update(
-            name
-            for name, artifact in release_bundle.manifests[args.track]["artifacts"].items()
-            if artifact.get("source_sha") == sha
-            and name not in {"python-runtime-base", "python-worker-base"}
-        )
+        if not dashboard_fast_track:
+            computed_modules.update(
+                name
+                for name, artifact in release_bundle.manifests[args.track]["artifacts"].items()
+                if artifact.get("source_sha") == sha
+                and name not in {"python-runtime-base", "python-worker-base"}
+            )
         requested_modules.update(computed_modules)
         manifest = _load_v2_track(
             manifest_path,

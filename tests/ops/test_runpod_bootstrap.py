@@ -126,6 +126,11 @@ def test_runpod_profile_build_script_has_valid_bash_syntax():
 
 def test_pornmaster_profile_smoke_requires_bf16_workflow_and_mapping():
     build_script = PROFILE_BUILD_SCRIPT.read_text(encoding="utf-8")
+    smoke_command = next(
+        line
+        for line in build_script.splitlines()
+        if line.startswith('RUNTIME_ROOT="${runtime_root}" python3 -c')
+    )
 
     assert (
         "PornMaster_F2K_9B_Turbo_Single-image-editing_Automatic_"
@@ -135,10 +140,11 @@ def test_pornmaster_profile_smoke_requires_bf16_workflow_and_mapping():
         "PornMaster_F2K_9B_Turbo_Multiple-images-editing_Automatic_"
         "V1_2026_05_27.api.json" in build_script
     )
-    assert "'pornmaster_flux2_multi_edit_bf16'} <= mappings.keys()" in build_script
-    assert "'pornmaster_flux2_edit_bf16' in validation" in build_script
-    assert "'pornmaster_flux2_multi_edit_bf16' in validation" in build_script
+    assert '\\"pornmaster_flux2_multi_edit_bf16\\"} <= mappings.keys()' in build_script
+    assert '\\"pornmaster_flux2_edit_bf16\\" in validation' in build_script
+    assert '\\"pornmaster_flux2_multi_edit_bf16\\" in validation' in build_script
     assert "BF16_WORKFLOW_AND_MAPPING_PRESENT=true" in build_script
+    assert "'" not in smoke_command
 
 
 def test_img2img_lora_profile_image_bakes_custom_nodes_not_business_models():
