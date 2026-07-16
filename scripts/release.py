@@ -1622,20 +1622,20 @@ if test -f {shlex.quote(transaction_path)} && ! grep -Eq '\"status\"[[:space:]]*
         )
     previous_sha = str(getattr(args, "previous_sha", "") or "")
     if not initial and FULL_SHA_RE.fullmatch(previous_sha):
-        previous_release_env = (
-            _cloud_release_dir(
-                previous_sha,
-                str(manifest.get("track"))
-                if manifest.get("track") in RELEASE_TRACKS
-                else None,
-            )
-            + "/release.env"
+        previous_release_envs = _cloud_release_env_candidates(
+            previous_sha,
+            str(manifest.get("track"))
+            if manifest.get("track") in RELEASE_TRACKS
+            else None,
+        )
+        missing_release_env = " && ".join(
+            f"! test -f {shlex.quote(path)}" for path in previous_release_envs
         )
         script += (
             f"test -d {shlex.quote(root + '/releases/' + previous_sha)} "
             "|| echo cloud-rollback-checkout-unavailable\n"
-            f"test -f {shlex.quote(previous_release_env)} "
-            "|| echo cloud-rollback-release-env-unavailable\n"
+            f"if {missing_release_env}; then "
+            "echo cloud-rollback-release-env-unavailable; fi\n"
         )
     result = _run(
         ["ssh", "-o", "BatchMode=yes", host, "bash -s"],
@@ -3317,21 +3317,53 @@ def _cloud_release_dir(sha: str, track: str | None = None) -> str:
     return f"{root}/{sha}"
 
 
+def _cloud_release_env_candidates(sha: str, track: str | None) -> tuple[str, ...]:
+    primary = _cloud_release_dir(sha, track) + "/release.env"
+    if track not in RELEASE_TRACKS:
+        return (primary,)
+    legacy = _cloud_release_dir(sha) + "/release.env"
+    return (primary, legacy)
+
+
+def _cloud_release_env_selection_script(
+    sha: str,
+    track: str | None,
+    *,
+    variable: str,
+) -> str:
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", variable):
+        raise ReleaseError("invalid release environment variable")
+    candidates = _cloud_release_env_candidates(sha, track)
+    lines = [f"{variable}={shlex.quote(candidates[0])}"]
+    lines.extend(
+        f'[ -f "${variable}" ] || {variable}={shlex.quote(candidate)}'
+        for candidate in candidates[1:]
+    )
+    lines.append(f'test -f "${variable}"')
+    return "\n".join(lines)
+
+
 def _cloud_compose_command(
     args: argparse.Namespace,
     sha: str,
     *,
     track: str | None = None,
+    release_env_variable: str | None = None,
 ) -> str:
     environment = ENVIRONMENT[args.env]
     checkout = f"{args.remote_checkout_root}/releases/{sha}"
     env_file = args.remote_env_file or environment["env_file"]
-    release_dir = _cloud_release_dir(sha, track)
+    if release_env_variable is None:
+        release_env = shlex.quote(_cloud_release_dir(sha, track) + "/release.env")
+    else:
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", release_env_variable):
+            raise ReleaseError("invalid release environment variable")
+        release_env = f'"${release_env_variable}"'
     return (
         f"docker compose --project-name {shlex.quote(environment['project'])} "
         f"--env-file {shlex.quote(checkout + '/deploy/env.defaults')} "
         f"--env-file {shlex.quote(env_file)} "
-        f"--env-file {shlex.quote(release_dir + '/release.env')} "
+        f"--env-file {release_env} "
         f"-f {shlex.quote(checkout + '/deploy/docker-compose-cloud-base.yml')} "
         f"-f {shlex.quote(checkout + '/' + environment['overlay'])} "
         "--profile bot --profile qqcc-bot --profile qqcc-private-bots"
@@ -3406,11 +3438,20 @@ done < "$source_file"
 """
     elif previous_kind == "immutable":
         previous_sha = validate_full_sha(str(previous.get("git_sha", "")))
-        compose = _cloud_compose_command(args, previous_sha, track=track)
-        previous_release_env = _cloud_release_dir(previous_sha, track) + "/release.env"
+        release_env_selection = _cloud_release_env_selection_script(
+            previous_sha,
+            track,
+            variable="previous_release_env",
+        )
+        compose = _cloud_compose_command(
+            args,
+            previous_sha,
+            track=track,
+            release_env_variable="previous_release_env",
+        )
         script = f"""set -euo pipefail
 test -d {shlex.quote(args.remote_checkout_root + '/releases/' + previous_sha)}
-test -f {shlex.quote(previous_release_env)}
+{release_env_selection}
 {compose} config -q
 {compose} up -d --no-deps --wait --wait-timeout 180 {service_words}
 {compose} ps {service_words}
@@ -3545,9 +3586,20 @@ done < "$source_file"
                 if transaction.get("track") in RELEASE_TRACKS
                 else None
             )
-            compose = _cloud_compose_command(args, previous_sha, track=track)
+            release_env_selection = _cloud_release_env_selection_script(
+                previous_sha,
+                track,
+                variable="previous_release_env",
+            )
+            compose = _cloud_compose_command(
+                args,
+                previous_sha,
+                track=track,
+                release_env_variable="previous_release_env",
+            )
             services = " ".join(shlex.quote(item) for item in sorted(selected_cloud))
             script = f"""set -euo pipefail
+{release_env_selection}
 for service in {services}; do
   container_id="$({compose} ps -q "$service")"
   test -n "$container_id"
