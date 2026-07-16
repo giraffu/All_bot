@@ -8,7 +8,6 @@ import re
 import shlex
 import subprocess
 import sys
-import tarfile
 import tempfile
 import time
 import urllib.error
@@ -20,6 +19,7 @@ from typing import Any
 
 from .config_loader import CONFIG_DIR, ControllerConfig, load_controller_config
 from .runtime import RuntimePlanner, RuntimeRenderOverrides
+from scripts.gpu_release_rollout import resolve_gpu_artifact, rollout_plan
 
 
 LAN_AIO_SLOTS_FILE = "lan_aio_prod_slots.yml"
@@ -27,7 +27,7 @@ DEFAULT_CENTRAL_URL = "https://worker-central.aivison.it.com"
 DEFAULT_WEB_HEALTH_URL = "https://api.aivison.it.com/api/health"
 DEFAULT_REGISTRY_HEALTH_URL = "http://192.168.1.115:5000/v2/"
 DEFAULT_MODEL_CACHE_HEALTH_URL = "http://192.168.1.115:9010/minio/health/ready"
-REMOTE_WORKERS_TARGET_DIR = "/workspace/allbot/remote_workers"
+REMOTE_WORKERS_TARGET_DIR = "/opt/allbot/runtime/remote_workers"
 CONTROL_TTL_SECONDS = 3600
 WARM_CACHE_MARKER_FILE = "model-cache-marker.json"
 TAKEOVER_STEPS = (
@@ -363,7 +363,6 @@ class LanAioProdOps:
         model_env_file: Path,
         central_url: str = DEFAULT_CENTRAL_URL,
         web_health_url: str = DEFAULT_WEB_HEALTH_URL,
-        remote_workers_source_dir: Path = Path("remote_workers"),
     ) -> None:
         self.config_root = config_root
         self.config = load_controller_config(config_root)
@@ -376,7 +375,6 @@ class LanAioProdOps:
         self.model_env_file = model_env_file
         self.central_url = central_url.rstrip("/")
         self.web_health_url = web_health_url
-        self.remote_workers_source_dir = remote_workers_source_dir
         self.env_values = load_env_allowlist(
             [self.prod_env_file, self.model_env_file, self.aio_env_file]
         )
@@ -424,7 +422,7 @@ class LanAioProdOps:
                 gpu_device_id=slot.gpu_device_id,
             ),
         )
-        rendered = patch_remote_workers_mount(rendered, slot)
+        rendered = patch_baked_remote_workers(rendered, slot)
         assert_prod_compose(rendered, slot)
         return rendered
 
@@ -836,7 +834,7 @@ class LanAioProdOps:
                 operations.extend(
                     [
                         f"render runtime metadata for {slot.id}",
-                        f"sync remote_workers to {slot.ssh_host}:{slot.remote_workers_dir}",
+                        "use remote_workers baked into the exact profile image",
                         f"copy model-cache env to {slot.ssh_host}:{slot.remote_env_file}",
                         f"docker run --rm without ports or agent for {slot.target_profile_id}",
                         f"sync {slot.target_profile_id} manifest models into the slot workspace",
@@ -847,7 +845,7 @@ class LanAioProdOps:
                 operations.extend(
                     [
                         f"render compose for {slot.id}",
-                        f"sync remote_workers to {slot.ssh_host}:{slot.remote_workers_dir}",
+                        "use remote_workers baked into the exact profile image",
                         f"copy env/compose to {slot.ssh_host}:{slot.remote_dir}",
                         f"set {slot.agent_id}=disabled",
                         f"docker compose up -d {slot.container_name}",
@@ -976,6 +974,143 @@ class LanAioProdOps:
         )
         return {"ok": True, "action": "restart-aio", "slot": slot.id}
 
+    def release_rollout(
+        self,
+        slot: LanAioProdSlot,
+        resolved: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Recreate one LAN slot from an exact release digest with local rollback."""
+
+        if slot.target_profile_id != resolved["profile"]:
+            raise RuntimeError(
+                "release profile does not match selected LAN slot: "
+                f"{resolved['profile']} != {slot.target_profile_id}"
+            )
+        old_profile = self.config.profiles[slot.target_profile_id]
+        old_ref = old_profile.all_in_one_image_ref
+        if not old_ref:
+            raise RuntimeError("selected LAN slot has no rollback image reference")
+        old_ref = self._exact_remote_image_ref(slot, old_ref)
+        rollback_profile = replace(old_profile, all_in_one_image_ref=old_ref)
+        target_profile = replace(
+            old_profile,
+            all_in_one_image_ref=str(resolved["ref"]),
+            model_manifest_key=str(
+                resolved.get("model_manifest_key") or old_profile.model_manifest_key
+            ),
+        )
+        self.config.profiles[slot.target_profile_id] = target_profile
+        try:
+            self.pull_image([slot])
+            self._set_control(
+                slot.agent_id,
+                "disabled",
+                "lan_aio_release_rollout_disable",
+                ttl_seconds=CONTROL_TTL_SECONDS,
+            )
+            self._wait_worker_ids_idle({slot.agent_id})
+            self._write_remote_runtime_files(slot)
+            self._remote_compose(slot, "up -d --force-recreate")
+            self._wait_container_health(slot)
+            self._verify_release_runtime(slot, resolved)
+            self._verify_disabled_heartbeat(slot)
+            self._set_control(
+                slot.agent_id,
+                "enabled",
+                "lan_aio_release_rollout_enable",
+            )
+        except Exception as rollout_error:
+            self.config.profiles[slot.target_profile_id] = rollback_profile
+            try:
+                self._set_control(
+                    slot.agent_id,
+                    "disabled",
+                    "lan_aio_release_rollout_rollback",
+                    ttl_seconds=CONTROL_TTL_SECONDS,
+                )
+                self._write_remote_runtime_files(slot)
+                self._remote_compose(slot, "up -d --force-recreate")
+                self._wait_container_health(slot)
+                self._verify_exact_runtime_ref(slot, old_ref)
+                self._verify_disabled_heartbeat(slot)
+                self._set_control(
+                    slot.agent_id,
+                    "enabled",
+                    "lan_aio_release_rollout_rollback_complete",
+                )
+            except Exception as rollback_error:
+                self._set_control(
+                    slot.agent_id,
+                    "disabled",
+                    "lan_aio_release_rollout_rollback_failed",
+                    ttl_seconds=CONTROL_TTL_SECONDS,
+                )
+                raise RuntimeError(
+                    f"slot rollout failed ({rollout_error}); rollback failed "
+                    f"({rollback_error}); slot remains disabled"
+                ) from rollback_error
+            raise RuntimeError(
+                f"slot rollout failed and old image was restored: {rollout_error}"
+            ) from rollout_error
+        return {
+            "ok": True,
+            "action": "release-rollout",
+            "slot": slot.id,
+            "old_ref": old_ref,
+            "target_ref": resolved["ref"],
+            "digest": resolved["digest"],
+            "oci_revision": resolved["oci_revision"],
+            "validation_level": resolved["validation_level"],
+        }
+
+    def _verify_release_runtime(
+        self, slot: LanAioProdSlot, resolved: dict[str, Any]
+    ) -> None:
+        ref = shlex.quote(str(resolved["ref"]))
+        container = shlex.quote(slot.container_name)
+        revision = shlex.quote(str(resolved["oci_revision"]))
+        command = (
+            "set -euo pipefail; "
+            f"test \"$(docker inspect -f '{{{{.Config.Image}}}}' {container})\" = {ref}; "
+            "actual_revision=$(docker image inspect "
+            f"{ref} -f '{{{{index .Config.Labels \"org.opencontainers.image.revision\"}}}}'); "
+            f"test \"$actual_revision\" = {revision}"
+        )
+        self._ssh(slot.ssh_host, command)
+
+    def _verify_exact_runtime_ref(
+        self, slot: LanAioProdSlot, image_ref: str
+    ) -> None:
+        container = shlex.quote(slot.container_name)
+        ref = shlex.quote(image_ref)
+        self._ssh(
+            slot.ssh_host,
+            (
+                "set -euo pipefail; "
+                f"test \"$(docker inspect -f '{{{{.Config.Image}}}}' {container})\" = {ref}"
+            ),
+        )
+
+    def _exact_remote_image_ref(
+        self, slot: LanAioProdSlot, image_ref: str
+    ) -> str:
+        if re.search(r"@sha256:[0-9a-f]{64}$", image_ref):
+            return image_ref
+        output = self._ssh(
+            slot.ssh_host,
+            (
+                "docker image inspect "
+                f"{shlex.quote(image_ref)} "
+                "-f '{{index .RepoDigests 0}}'"
+            ),
+            capture=True,
+        ).strip()
+        if not re.search(r"@sha256:[0-9a-f]{64}$", output):
+            raise RuntimeError(
+                "selected LAN slot has no exact digest-pinned rollback image"
+            )
+        return output
+
     def configure_registry(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
         touched_hosts: dict[str, list[LanAioProdSlot]] = {}
         for slot in slots:
@@ -1051,7 +1186,6 @@ class LanAioProdOps:
         if not image_ref:
             raise RuntimeError(f"profile {slot.target_profile_id} has no image_ref")
         env_content = runtime_env_content(self.env_values)
-        self._sync_remote_workers(slot)
         with tempfile.TemporaryDirectory() as tmp:
             env_file = Path(tmp) / ".env.lan-aio-prod"
             env_file.write_text(env_content, encoding="utf-8")
@@ -1428,8 +1562,6 @@ class LanAioProdOps:
             f"RUNPOD_REMOTE_WORKER_ROOT={REMOTE_WORKERS_TARGET_DIR}",
             "-v",
             f"{workspace_host_dir}:/workspace",
-            "-v",
-            f"{slot.remote_workers_dir}:{REMOTE_WORKERS_TARGET_DIR}:ro",
             image_ref,
             "bash",
             "-lc",
@@ -1966,7 +2098,6 @@ fi
     def _write_remote_runtime_files(self, slot: LanAioProdSlot) -> None:
         compose = self.render_compose(slot)
         env_content = runtime_env_content(self.env_values)
-        self._sync_remote_workers(slot)
         with tempfile.TemporaryDirectory() as tmp:
             tmp_dir = Path(tmp)
             compose_file = tmp_dir / "docker-compose.yml"
@@ -1988,43 +2119,6 @@ fi
             "fi"
         )
         self._ssh(slot.ssh_host, command)
-
-    def _sync_remote_workers(self, slot: LanAioProdSlot) -> None:
-        source = self.remote_workers_source_dir
-        if not (source / "comfy_agent").is_dir() or not (source / "scripts").is_dir():
-            raise RuntimeError(f"invalid remote_workers source: {source}")
-        self._ssh(
-            slot.ssh_host,
-            (
-                f"mkdir -p '{slot.remote_dir}/remote_workers.tmp' && "
-                f"rm -rf '{slot.remote_dir}/remote_workers.tmp' '{slot.remote_workers_dir}' && "
-                f"mkdir -p '{slot.remote_dir}/remote_workers.tmp'"
-            ),
-        )
-        with tempfile.NamedTemporaryFile(suffix=".tar.gz") as archive:
-            with tarfile.open(fileobj=archive, mode="w:gz") as tar:
-                for item in source.rglob("*"):
-                    if any(part in {"__pycache__", ".pytest_cache", ".mypy_cache"} for part in item.parts):
-                        continue
-                    if item.suffix == ".pyc":
-                        continue
-                    tar.add(item, arcname=item.relative_to(source))
-            archive.flush()
-            self._scp(
-                Path(archive.name),
-                slot.ssh_host,
-                f"{slot.remote_dir}/remote_workers.tar.gz",
-            )
-        self._ssh(
-            slot.ssh_host,
-            (
-                f"tar -xzf '{slot.remote_dir}/remote_workers.tar.gz' "
-                f"-C '{slot.remote_dir}/remote_workers.tmp' && "
-                f"mv '{slot.remote_dir}/remote_workers.tmp' '{slot.remote_workers_dir}' && "
-                f"rm -f '{slot.remote_dir}/remote_workers.tar.gz' && "
-                f"chmod -R u+rwX,go-rwx '{slot.remote_workers_dir}'"
-            ),
-        )
 
     def _configure_registry_on_host(self, host: str) -> None:
         sudo_password = os.environ.get("LAN_AIO_GPU_SUDO_PASSWORD", "")
@@ -2224,7 +2318,7 @@ docker exec "{slot.container_name}" bash -lc "curl -fsS http://127.0.0.1:8013/re
         return str(completed.stdout or "")
 
 
-def patch_remote_workers_mount(rendered: str, slot: LanAioProdSlot) -> str:
+def patch_baked_remote_workers(rendered: str, slot: LanAioProdSlot) -> str:
     try:
         import yaml  # type: ignore
     except Exception as exc:  # pragma: no cover
@@ -2237,15 +2331,17 @@ def patch_remote_workers_mount(rendered: str, slot: LanAioProdSlot) -> str:
     environment["RUNPOD_REMOTE_WORKER_ROOT"] = REMOTE_WORKERS_TARGET_DIR
     environment["PYTHONPATH"] = REMOTE_WORKERS_TARGET_DIR
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
-    mount = f"{slot.remote_workers_dir}:{REMOTE_WORKERS_TARGET_DIR}"
     volumes = service.setdefault("volumes", [])
-    if mount not in volumes:
-        volumes.append(mount)
+    volumes[:] = [
+        value
+        for value in volumes
+        if not str(value).startswith(f"{slot.remote_workers_dir}:")
+    ]
     runtime = compose.setdefault("x-allbot-runtime", {})
     runtime["remote_workers_bundle"] = {
-        "source": slot.remote_workers_dir,
+        "source": "image",
         "target": REMOTE_WORKERS_TARGET_DIR,
-        "mode": "host_mount_current_bundle",
+        "mode": "baked_immutable_artifact",
     }
     return _dump_yaml(compose)
 
@@ -2317,6 +2413,7 @@ def build_parser() -> argparse.ArgumentParser:
             "stop-old",
             "recover",
             "candidate-plan",
+            "release-rollout",
         ),
     )
     parser.add_argument("--slot", default=None)
@@ -2338,10 +2435,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--prod-env-file", type=Path, default=Path(".env.cloud.prod"))
     parser.add_argument("--aio-env-file", type=Path, default=Path(".env.lan-aio-prod"))
     parser.add_argument("--model-env-file", type=Path, default=Path(".env.lan.model-cache"))
+    parser.add_argument("--release-index", type=Path, default=None)
+    parser.add_argument("--sha", default=None)
     parser.add_argument(
-        "--remote-workers-source-dir",
-        type=Path,
-        default=Path("remote_workers"),
+        "--strategy", choices=("direct", "standard"), default="direct"
     )
     return parser
 
@@ -2356,7 +2453,6 @@ def _build_ops_from_args(args: argparse.Namespace) -> LanAioProdOps:
         prod_env_file=args.prod_env_file,
         aio_env_file=args.aio_env_file,
         model_env_file=args.model_env_file,
-        remote_workers_source_dir=args.remote_workers_source_dir,
     )
 
 
@@ -2509,6 +2605,25 @@ def _run_lan_aio_prod_action(args: argparse.Namespace, ops: LanAioProdOps) -> in
         return _handle_candidate_plan(args, ops)
     if args.action == "recover":
         return _handle_recover(args, ops)
+    if args.action == "release-rollout":
+        if not args.slot or not args.release_index or not args.sha or not args.profile:
+            raise SystemExit(
+                "release-rollout requires --slot, --profile, --release-index and --sha"
+            )
+        slot = ops.select_slots(args.slot, include_disabled=True)[0]
+        resolved = resolve_gpu_artifact(
+            args.release_index,
+            source_sha=args.sha,
+            profile=args.profile,
+            strategy=args.strategy,
+        )
+        if not args.execute:
+            _print_json_payload(
+                rollout_plan(resolved, slot=slot.id, operator="lan")
+            )
+            return 0
+        _print_json_payload(ops.release_rollout(slot, resolved))
+        return 0
     slots = _select_action_slots(args, ops)
     if args.action == "status":
         _print_json_payload(ops.status_payload(slots))

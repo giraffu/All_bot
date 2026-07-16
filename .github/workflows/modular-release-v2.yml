@@ -17,9 +17,15 @@ on:
         options: [main, test-candidate]
         default: main
       gpu_manifest_path:
-        description: Canary-verified GPU manifest path when GPU inputs changed.
+        description: Attested or canary-verified GPU manifest path when GPU inputs changed.
         required: false
         default: ""
+      validation_mode:
+        description: Manual dispatch only creates build-only artifacts; full is emitted by a successful upstream test workflow.
+        required: true
+        type: choice
+        options: [build-only]
+        default: build-only
 
 permissions:
   contents: read
@@ -50,6 +56,7 @@ jobs:
           EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
           INPUT_SHA: ${{ inputs.source_sha }}
           INPUT_CHANNEL: ${{ inputs.release_channel }}
+          INPUT_VALIDATION_MODE: ${{ inputs.validation_mode }}
         run: |
           set -euo pipefail
           sha="${EVENT_SHA:-${INPUT_SHA:-}}"
@@ -57,17 +64,23 @@ jobs:
           branch="${EVENT_BRANCH:-}"
           channel="${INPUT_CHANNEL:-}"
           if [ -n "$branch" ]; then
+            validation_mode=full
             case "$branch" in
               main) channel=main ;;
               codex/test-train) channel=test-candidate ;;
               *) echo "untrusted workflow_run branch: $branch" >&2; exit 2 ;;
             esac
           else
+            validation_mode="${INPUT_VALIDATION_MODE:-full}"
             case "$channel" in
               main) branch=main ;;
               test-candidate) branch=codex/test-train ;;
               *) echo "invalid release channel" >&2; exit 2 ;;
             esac
+            if [ "$validation_mode" != build-only ]; then
+              echo "manual dispatch cannot claim full validation" >&2
+              exit 2
+            fi
           fi
           if [ "$channel" = main ]; then
             bundle_repository="${IMAGE_PREFIX}/allbot-release-v2"
@@ -79,6 +92,7 @@ jobs:
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
           echo "source_ref=refs/heads/$branch" >> "$GITHUB_OUTPUT"
           echo "bundle_repository=$bundle_repository" >> "$GITHUB_OUTPUT"
+          echo "validation_mode=$validation_mode" >> "$GITHUB_OUTPUT"
           if [ -n "${EVENT_RUN_ID:-}" ]; then
             echo "ci_run=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${EVENT_RUN_ID}" >> "$GITHUB_OUTPUT"
           else
@@ -179,6 +193,7 @@ jobs:
           RELEASE_CHANNEL: ${{ steps.source.outputs.channel }}
           SOURCE_REF: ${{ steps.source.outputs.source_ref }}
           TRUSTED_CI_RUN: ${{ steps.source.outputs.ci_run }}
+          VALIDATION_MODE: ${{ steps.source.outputs.validation_mode }}
         run: |
           set -euo pipefail
           args=(
@@ -187,6 +202,7 @@ jobs:
             --image-prefix "$IMAGE_PREFIX"
             --release-channel "$RELEASE_CHANNEL"
             --source-ref "$SOURCE_REF"
+            --validation-mode "$VALIDATION_MODE"
             --changed-file changed-paths.txt
             --output-dir release-v2
           )
@@ -204,6 +220,7 @@ jobs:
             --skip-git-checks --skip-ci-checks --skip-env-checks
 
       - name: Smoke thin frontend entrypoints
+        if: steps.source.outputs.validation_mode == 'full'
         shell: bash
         run: |
           set -euo pipefail

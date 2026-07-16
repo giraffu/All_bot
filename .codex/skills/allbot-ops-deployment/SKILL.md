@@ -1,6 +1,6 @@
 ---
 name: "allbot-ops-deployment"
-description: "处理 Docker Compose 编排、云正式/云测试控制面、本地正式灾备、Alembic 迁移、RunPod/LAN AIO、Dashboard autoscaler、cloud-prod shadow 同步、R2/legacy 媒体恢复和故障恢复。研发默认先发测试环境，正式发布或生产 mutation 必须用户明确确认。"
+description: "处理 Docker Compose 编排、按模块风险分级发布、云正式/云测试控制面、本地正式灾备、Alembic 迁移、RunPod/LAN AIO、Dashboard autoscaler、cloud-prod shadow 同步、R2/legacy 媒体恢复和故障恢复。核心用户链路默认先发测试；正式发布或生产 mutation 必须用户明确确认。"
 ---
 
 # AllBot 运维指南与容器管理
@@ -32,7 +32,9 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 
 - schema v2 将不可变产物拆为 `control-plane`、`test-execution`、`gpu-execution` 三条环境无关发布链；`release-index.json` 引用三份 manifest，test/prod 只选择模块并注入配置。`--modules` 与 control-plane alias `--services` 只能扩大影响集合，状态与历史按 track 隔离。
 - 并发研发使用精确受保护 `codex/test-train` 的独立 `test-candidate` bundle 仓库；candidate 只能由集成 AI通过 `scripts/test_train_release.py` 部署 test，禁止 `verify-test`、prod、fast-track 和正式晋级。最终 main SHA 必须重新构建、部署和验收。
-- 云测试分别部署 control-plane 与 test-execution；v2 bundle 可在不创建 RunPod 的情况下发布，缺少同 SHA canary 的 GPU profile 必须从可用 artifacts 中移除并以 `completeness=incomplete` / `missing_artifacts` 明示。未选择 GPU profile 时，不完整 GPU manifest 不得阻断 control-plane/test-execution 的 plan、部署或晋级；一旦选择 GPU profile，缺失 artifact 仍必须 fail closed，并要求逐 profile 构建、canary 和证据。正式逐模块只晋级测试 verified 的同 digest，共享协议或 migration 可强制扩大原子集合。
+- 发布策略是 `--strategy auto|standard|direct|emergency`。核心用户链路默认 standard；Dashboard/QQCC 管理面与 GPU 执行面默认 direct；公共 Web 默认 standard、可显式 direct；核心只允许带 reason/approved-by 的 emergency。migration、共享部署/Compose 契约和未知路径始终 standard。混合变更取最高风险，`src/shared` 的自动 artifact 闭包不得用 `--modules` 缩小。
+- `--skip-gate` 只允许 `ci-tests|test-deploy|test-acceptance|observation|gpu-business-canary`，并受策略约束。CI `validation_mode=build-only` 仍必须从受保护 main 完整 SHA 构建 digest 产物，发布时显式跳过 `ci-tests` 且记录 reason/approved-by；任何 execute 都禁止 `--skip-ci-checks`。main 血缘、成功构建、digest/checksum/OCI revision、配置、目标健康、事务/回滚和非目标服务不重建永久保留。
+- 云测试默认只部署 standard 所需的 control-plane/公共 Web artifact；Dashboard 与 QQCC Config 四个管理服务已从测试 compose、端口、配置门禁和验收中移除。test-execution 只在专项诊断时显式 `--with-test-execution`。验收状态按 track + artifact digest 写入 history；direct/emergency 写 `waived`，GPU direct 写 `attested`，不得覆盖其它核心 artifact 的 tested 证据。
 - 唯一代码发布入口是 `scripts/release.py plan|preflight|deploy|rollback|recover`。目标必须是可从 `origin/main` 到达的完整 40 位 SHA，并使用 CI 生成的 `release.json`、Web checksum 和 digest-pinned 镜像；云端不 build、不挂载源码、不接收代码/env rsync。`preflight` 与 `deploy` 不自动拉 bundle，所有材料必须预先可读。
 - 云测试：先执行 `scripts/release.py plan --env test --sha <sha>`，再以同一 SHA 执行 `deploy --env test --sha <sha> --execute`。影响集合由 `deploy/release-policy.yml` 计算，`--services` 只能扩大，不能缩小。
 - 本地主服务器兼任测试 Worker host 时，使用受限的本地测试配置（当前标准路径 `/home/hfy/.config/allbot/test.env`，`600`）并显式传 `--env-file`；发布器必须把 Worker compose 的 `ALLBOT_ENV_FILE` 绑定到这个实参，不能复用云主机 `/etc/allbot/test.env` 的路径字符串。云端事实源与本地副本内容/revision 必须一致，生产 env 不得复制到测试 Worker host。
@@ -49,15 +51,15 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 - 本地主机默认 release checkout/env/Pages token 为 `~/APP/All_bot-release`、`~/.config/allbot/<env>.env`、`~/.config/allbot/cloudflare-pages.token`；云控制面保持 `/home/deploy/APP/All_bot-release` 与 `/etc/allbot/<env>.env`。bootstrap 必须显式选择 `cloud-control` 或 `local-worker-host` 角色。
 - 影响 planner 的全栈集合不代表开启未配置的可选 Bot。`release.py plan` 必须基于已校验 env 输出 `cloud_services`/`disabled_cloud_services`；仅允许按 QQCC token、`PRIVATE_QQCC_BOT_ENABLED`、付费群 Bot token 过滤对应三个可选 runtime，禁止用配置过滤核心 API、Postgres/Redis、主 Bot 或其它自动依赖。
 - `--skip-env-checks` 仅供无运行态秘密的 release CI 执行非 mutation `plan` 自检；`deploy`/`rollback` 必须拒绝。实际 test/prod plan 与执行仍须校验对应受限 env，禁止把 CI 的 `config_validation=skipped` 当作部署配置通过。
-- 测试验收：图片、视频、Bot、并发锁、locale、Web、Worker heartbeat、回滚演练及默认至少 24 小时观察写入验收 JSON，再执行 `scripts/release.py verify-test ... --execute`；缺少 verified 状态不能晋级。用户明确确认测试服务无问题并授权提前晋级时，可在 evidence 中写 `short_observation_override=true`、非空 `override_reason` 与 `approved_by`，并显式执行 `verify-test --confirm-short-observation`；该例外只跳过固定时长，不放宽任何 smoke、时间顺序、SHA/digest、Web 或 Worker 运行态检查，审计字段必须写入 current/history/acceptance 状态。
-- 云正式默认只能把已验收测试环境中的相同 SHA、控制面镜像 digest、第三方镜像 digest 和 Web checksum 晋级，命令必须带 `--execute --confirm-prod`。明确授权的 Dashboard 快速更新可用 `--dashboard-fast-track`。另一条严格例外 `--control-plane-repair-fast-track` 只处理“测试禁用但生产启用的 private worker 薄镜像闭包修复”：必须复用 verified main-channel 测试状态，`tested SHA → target SHA` 只能包含 control-plane Dockerfile、v2 catalog 和 release/docs/tests/skills 元数据；除 private worker 外，每个 digest 变化 artifact 的 catalog inputs 与 Docker target 必须和已测 SHA 等价，private digest 必须在无网络容器中真实导入 `qqcc_bot.main` / `qqcc_private_bot.worker`。migration、业务代码、Compose、GPU、未知路径、显式 modules/services/from-SHA 或其它 fast-track 均 fail closed；main/CI/digest、生产确认、全量 preflight、事务回滚和非目标容器不变仍不可跳过。
+- standard 测试验收只要求本次选择 artifact 对应的检查和精确 digest；公共 Web 校验 tar checksum，核心按选中服务检查，测试 Worker 仅在显式 track 中检查 heartbeat。默认观察至少 24 小时；短观察仍需 evidence 开关、原因、批准人和 `--confirm-short-observation`。
+- 正式 standard 晋级在对应 track 的 retained history 中按 artifact 名称和精确 digest 查找 main-channel tested 证据，不再由单个全局 current/目标 SHA 阻塞。direct/emergency 跳过测试晋级但仍必须 `--execute --confirm-prod`。`--dashboard-fast-track` 仅作兼容别名，新增操作使用通用 `--strategy`/`--skip-gate`/风险审计字段。
 - 每次正式发布必须单独确定生成维护模式，不能沿用上次选择：用户当次未指示时默认开启维护；只有用户对该次发布明确要求“不进入维护”时才可请求关闭。关闭只适用于 planner 判定可无维护的 rolling/none 变更；migration、首次/legacy 切换、队列 drain、未知影响或其它强制 maintenance 不能被人工关闭。`plan` 与 `preflight` 必须显示并一致确认请求模式、实际 maintenance level 和门禁；当前发布器若无法表达或证明所选模式，必须在 mutation 前停下修发布契约，禁止手工改 marker、静默采用另一模式或把“默认开启”写成未实际生效。
 - 本地正式灾备：`safe_deploy.sh` 只用于云正式整体故障时的临时接管，不是日常部署入口。
 - 普通窄更新仍通过影响 planner 和必要的 `--services` 扩大集合表达；两个 fast-track 均禁止同时传 `--services`，也禁止退回单文件同步、rsync 或现场 `--build`。
 - QQCC 私有 Bot worker：test/prod service 分别为 `qqcc-private-bot-worker-test/prod`，profile `qqcc-private-bots`，入口 `python -m qqcc_private_bot.worker`。它涉及 Alembic、shared secret、Web API webhook、QQCC Config、官方 QQCC membership checker 与公网 Host，不属于 QQCC 三服务快速更新；当前生产 `PRIVATE_QQCC_BOT_ENABLED=true` 且 webhook/profile/owner Host 已启用，测试环境仍禁用该 worker。
 - `scripts/update_cloud_test_with_maintenance.sh`、`scripts/update_cloud_prod_with_maintenance.sh`、`scripts/update_cloud_prod_qqcc_bot.sh` 已是 fail-closed 兼容壳，任何参数都不会再同步或构建。
 - cloud-prod shadow 同步：`scripts/sync_cloud_prod_to_local_shadow.py` 默认 dry-run，真实执行必须 `--execute`。
-- RunPod 正式手动池：日常入口优先 `scripts/runpod_prod_ops.sh status|up|add|enable|disable|restart|down|scale|canary|rollback`。
+- RunPod 正式手动池：日常入口优先 `scripts/runpod_prod_ops.sh status|up|add|enable|disable|restart|down|scale|canary|rollback|rollout-release`。release rollout 必须传 release index/full SHA/profile/单 slot，先 disabled 验证 exact digest/heartbeat；失败恢复旧 exact image 并停止。
 - GPU/LAN AIO fleet：具体状态查看、缓存预热、候选切换、单卡 takeover/recover/restart 优先加载 `allbot-lan-aio-operator`，并通过 `scripts/lan_aio_fleet_prod_ops.py`、`lan_aio_prod_slots.yml` 与 `lan_aio_fleet_state.yml` 操作；gpu-002 SCAIL-2 正式 slot0 也必须先声明在 fleet 配置里让 operator 可见，`scripts/lan_scail2_aio_prod.sh` 仅作为 SCAIL-2 低层启动/重建/回滚工具。
 
 ## 3. 高压红线
@@ -82,7 +84,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 
 ### 云测试
 - 使用独立测试 Droplet、测试 Postgres/Redis/Central/Web/Dashboard/imgproxy/Bot。
-- 共享云测试站只有一个写入者。A-H 功能 AI 不得部署；集成 AI 使用 test-train 本地排他锁，按 control-plane → test-execution 顺序切换受影响 track。
+- 共享云测试站只有一个写入者。A-H 功能 AI 不得部署；集成 AI 使用 test-train 本地排他锁，默认只切换确实要求测试的 control-plane/公共 Web，`--with-test-execution` 仅用于专项诊断；显式启用 Worker 时按 control-plane → test-execution 顺序切换。
 - 日常研发验证也先形成完整 Git SHA 和 CI release；发布器可只 recreate 自动影响到的模块，但代码、shared、locale 与 Worker 依赖始终来自同一 release。
 - 若发布器选中 `bot` / `qqcc-bot`，仍须确认没有第二个同测试 token polling 实例。
 - cloud-test worker 由本地主服务器经 Tailscale 接入测试 Central；默认常驻只保留 test-1 与 test-8，其它测试 worker 只在 smoke/canary 窗口启用。
@@ -117,7 +119,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 1. 确认用户确实要求正式发布或生产热修。
 2. 确认目标 service 存在，并确定是否涉及 Alembic、shared env、worker workflow 或跨服务契约；同时记录本次维护意图：用户未指示则为“开启”，用户当次明确要求时才为“不开启”。
 3. 对精确 SHA 运行 `release.py plan --env prod --track control-plane`，再运行只读 `preflight`，检查自动影响集合、维护等级、migration、Pages canonical/自动部署和控制面/Web 回滚材料；prod 报告中的 Worker 检查必须是 `skipped`。planner 判定强制 maintenance 时拒绝关闭；请求开启但发布器无法实际建立/保持维护，或请求关闭但发布器无法证明不会进入维护时，都在 mutation 前停止。
-4. 默认只有目标模块 digest 已在 test 对应 track 标记 verified 且 preflight 全绿，才运行 `release.py deploy --env prod --track control-plane ... --execute --confirm-prod`；`--modules` 只能扩大自动集合。用户明确授权 Dashboard 免测试快速更新时，仍可改用同一 SHA 的 `plan|preflight|deploy --env prod --dashboard-fast-track`，执行仍须 `--execute --confirm-prod`，并确认计划只有 Dashboard 服务、level 为 rolling、`promotion_mode=dashboard-fast-track`。
+4. 先审阅 plan/preflight 的 `risk_class/strategy/validation_mode/skipped_gates/gates`。standard 只晋级 history 中同 artifact digest 的 tested 证据；owner-tools/execution auto direct，公共 Web direct 和核心 emergency 必须显式风险接受。所有正式执行仍带 `--execute --confirm-prod`，并确认计划只重建目标服务。
 5. 手工 compose、旧 QQCC 快速脚本、rsync 和现场 build 均不是紧急旁路；无法通过发布器时停下修复发布契约。
 6. 结束后核对容器 digest、OCI revision、current.json、健康检查和未触碰服务启动时间。
 
@@ -127,7 +129,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 - 私有 Bot 门禁：未启用基线用 `python scripts/validate_private_qqcc_bot_env.py --env-file <ignored-env> --allow-disabled`；启用前去掉 `--allow-disabled` 做严格校验，并确认生产发布授权后才执行 migration/profile/webhook/Cloudflare mutation。
 - 文档：`python scripts/doc_quality_checker.py`。
 - shell 脚本：`bash -n <script>`，再跑对应 dry-run / `--help`。
-- 云测试：cloud-test compose `ps`、`8004/health`、`8001/api/health`、`8044/api/health`、`8087/api/health`、Central `/system/workers`、本地 relay `/ready`。
+- 云测试：cloud-test compose `ps`、`8004/health`、`8001/api/health`；只有显式启用 test-execution 时才检查 Central `/system/workers` 和本地 relay `/ready`。管理面端口不属于测试验收。
 - 云正式发布事务：云内 `8003/health`、`8000/api/health`、`8021/pay/result`、`8043/api/health`、`8086/api/health`，公网 `https://api.aivison.it.com/api/health`、`https://rmb.aivison.it.com/pay/result`。本机 relay 与 Central `/system/workers` 只在独立 GPU Worker 运维任务中验证，不作为控制面/Pages 发布提交条件。
 - worker 更新：确认 Central heartbeat、ComfyUI WebSocket、R2 上传成功后才 `/complete`，并观察 `relay_forward_failed`、`sidecar_upload_failed`、`error/quarantined`。
 - GPU 单容器：确认目标 ComfyUI `/system_stats`、`/queue`、目标 worker heartbeat，以及另一 ComfyUI 端口未受影响。

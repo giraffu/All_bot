@@ -1,6 +1,6 @@
 # 子模块: 云正式控制面部署 (Cloud Prod Control Plane)
 
-> 2026-07-15 发布入口补充：schema v2 的正式控制面只从 `control-plane` track 选择模块，逐模块 digest 默认必须已存在于云测试 verified record；测试 Agent/Relay 不是正式控制面依赖。明确授权的 `--dashboard-fast-track` 只服务 Dashboard。严格 `--control-plane-repair-fast-track` 只服务 verified 测试后、生产启用而测试禁用的 private worker 镜像闭包修复，并要求其它 artifact inputs/target 等价和 private digest 无网络导入 smoke；两者都不放宽 main/CI/digest/preflight/生产确认/事务回滚和非目标容器不变门禁。当前 legacy Relay/暂停容器保留 dormant 回滚态，未获授权不得下线。禁止 rsync、现场 build 与源码挂载。
+> 2026-07-16 发布入口补充：schema v2 正式控制面从 `control-plane` track 选择模块并按风险策略处理。核心默认 standard，可显式 emergency；管理面默认 direct；公共 Web 默认 standard、可显式 direct；migration/共享契约/未知路径永久 standard。standard 在 retained main-channel 测试 history 中按 track、artifact 和精确 digest 取证，测试 Agent/Relay 不是正式控制面依赖；`--dashboard-fast-track` 仅作兼容别名。严格 `--control-plane-repair-fast-track` 仍只服务测试后生产启用、测试禁用的 private worker 镜像闭包修复。所有策略都不放宽 main/CI 构建/digest/preflight/生产确认/事务回滚和非目标容器不变门禁。当前 legacy Relay/暂停容器保留 dormant 回滚态，未获授权不得下线。禁止 rsync、现场 build 与源码挂载。
 
 首次正式切换的硬门禁包括：同时维护 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`；控制面发布器不得触碰任何正式或测试 Worker；正式 Pages 必须为 production branch `main`、Git production disabled、preview `none`，并具备可验证/可回滚的 canonical production deployment ID。不满足只报告 blocker，不自动修正式环境。
 
@@ -237,7 +237,7 @@ GPU 节点上的 ComfyUI 服务不在本 compose 内。`cloud-prod-comfy-agent-*
 
 ## 4. Legacy 部署 SOP（归档，禁止执行）
 
-本节保留首次不可变切换前的生产运行事实，只用于归档与一次性 legacy 回滚设计。当前生产发布只允许将云测试 verified 的同一 SHA/digest 通过 `scripts/release.py deploy --env prod ... --execute --confirm-prod` 晋级；不得复制执行本节的 rsync、现场 build 或旧热修命令。
+本节保留首次不可变切换前的生产运行事实，只用于归档与一次性 legacy 回滚设计。当前生产发布只允许通过风险策略消费受保护 main 的不可变 release index：standard 按 track/artifact/digest 取测试证据，direct/emergency 只豁免允许的测试门禁，真实执行始终要求 `scripts/release.py deploy --env prod ... --execute --confirm-prod`。不得复制执行本节的 rsync、现场 build 或旧热修命令。
 
 ### 4.1 云控制面安全部署
 
@@ -345,10 +345,9 @@ Dashboard RunPod 管理入口当前支持 `img2img`、`image_to_video`、`wan22_
 `deploy/release-policy.yml` 将 `deploy/docker/Dockerfile.dashboard-backend`、`dashboard/backend/services/system_service.py`
 与 `dashboard/backend/services/runpod_admin_*.py` 归为 `dashboard-backend` rolling 影响面；这类修复可以通过不可变发布只重建正式 `dashboard-backend`，
 不得顺手重启 Central/Web/Bot/Payment/imgproxy/Worker 或 QQCC Config。
-用户明确授权免测试时，先对目标 SHA 依次执行 `plan`、`preflight`、`deploy` 并统一追加
-`--env prod --dashboard-fast-track`；真实执行再加 `--execute --confirm-prod`。计划必须显示
-`level=rolling`、`promotion_mode=dashboard-fast-track` 且服务集合只能是 Dashboard 后端/前端；发布器会拒绝
-`--services` 并核对所有非目标容器启动时间不变，因此该路径不进入维护、不 drain 生成队列，也不触碰 Pages、Worker 或 RunPod Pod。
+管理面直发时，先对目标 SHA 依次执行 `plan`、`preflight`、`deploy` 并统一追加
+`--env prod --strategy direct`；旧自动化的 `--dashboard-fast-track` 仍兼容。真实执行再加 `--execute --confirm-prod`。计划必须显示
+`risk_class=owner-tools`、`strategy=direct`、`level=rolling` 且服务集合只能是所选管理面 artifact；发布器会拒绝缩小机器计算出的依赖闭包，并核对所有非目标容器启动时间不变，因此该路径不进入维护、不 drain 生成队列，也不触碰 Pages、Worker 或 RunPod Pod。
 Dashboard `/api/system/status` 的 pending 详情默认优先读 `WORKER_REDIS_URL`，若该分库没有 `comfy:queue:pending`
 快照，再按 `DASHBOARD_PENDING_QUEUE_FALLBACK_REDIS_URL`、`REDIS_URL` 兜底读取。这只修正管理后台展示和 autoscaler 估算，
 不改变 Central 的入队 Redis 契约；若 Central 误写通用 Redis，仍应另行排查 Central 配置。

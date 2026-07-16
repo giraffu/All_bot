@@ -240,7 +240,7 @@ class TestTrainCoordinator:
             slot not in SLOTS
             or pr <= 0
             or not tracks
-            or deployment_mode != "non-runtime"
+            or deployment_mode not in {"non-runtime", "test-not-required"}
         ):
             raise TestTrainError("acceptance audit metadata is invalid")
         self._write_state(
@@ -276,7 +276,7 @@ class TestTrainCoordinator:
         pr: int,
         slot: str,
         runner: ReleaseRunner,
-        skip_test_execution: bool = False,
+        with_test_execution: bool = False,
     ) -> None:
         sha = self._sha(sha)
         slot = slot.upper()
@@ -290,21 +290,20 @@ class TestTrainCoordinator:
                 )
             document = self._plan_candidate(sha, runner=runner)
             plans = document["plans"]
-            gpu_artifacts = plans["gpu-execution"].get("artifacts")
-            if isinstance(gpu_artifacts, Mapping) and gpu_artifacts:
-                raise TestTrainError(
-                    "GPU candidate requires its profile canary/operator; shared test train will not mutate it"
-                )
             runtime_affected = [
                 track
                 for track in ("control-plane", "test-execution")
                 if plans[track].get("artifacts") or plans[track].get("services")
             ]
-            affected = list(runtime_affected)
-            if skip_test_execution:
-                affected = [track for track in affected if track != "test-execution"]
+            control_plan = plans["control-plane"]
+            control_test_required = control_plan.get("test_required", True) is not False
+            affected = [
+                track
+                for track in runtime_affected
+                if (track == "control-plane" and control_test_required)
+                or (track == "test-execution" and with_test_execution)
+            ]
             if not affected:
-                control_plan = plans["control-plane"]
                 control_is_non_runtime = (
                     control_plan.get("level") == "none"
                     and not control_plan.get("artifacts")
@@ -313,9 +312,13 @@ class TestTrainCoordinator:
                 deferred_tracks = [
                     track
                     for track in runtime_affected
-                    if track == "test-execution" and skip_test_execution
+                    if track == "test-execution" and not with_test_execution
                 ]
-                if not control_is_non_runtime:
+                control_test_not_required = (
+                    bool(control_plan.get("artifacts") or control_plan.get("services"))
+                    and not control_test_required
+                )
+                if not control_is_non_runtime and not control_test_not_required:
                     raise TestTrainError(
                         "candidate has no selected control-plane or test-execution changes"
                     )
@@ -324,7 +327,9 @@ class TestTrainCoordinator:
                     pr=pr,
                     slot=slot,
                     tracks=["control-plane"],
-                    deployment_mode="non-runtime",
+                    deployment_mode=(
+                        "non-runtime" if control_is_non_runtime else "test-not-required"
+                    ),
                     deferred_tracks=deferred_tracks,
                 )
                 return
@@ -455,9 +460,9 @@ def build_parser() -> argparse.ArgumentParser:
     deploy.add_argument("--slot", required=True)
     deploy.add_argument("--execute", action="store_true")
     deploy.add_argument(
-        "--skip-test-execution",
+        "--with-test-execution",
         action="store_true",
-        help="Deploy only the control-plane and defer test Worker mutation.",
+        help="Also deploy the optional test Worker diagnostics track.",
     )
     accept = subparsers.add_parser("accept")
     accept.add_argument("--sha", required=True)
@@ -489,7 +494,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 pr=args.pr,
                 slot=args.slot,
                 runner=runner,
-                skip_test_execution=args.skip_test_execution,
+                with_test_execution=args.with_test_execution,
             )
             result = coordinator.status()
         elif args.command == "accept":

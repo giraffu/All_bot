@@ -54,13 +54,16 @@
 
 - **Worker Agent**：从 Central 拉取任务、准备输入、调用 ComfyUI、上传结果并回报状态的进程。
 - **ComfyUI Runtime**：实际加载模型并执行 workflow 的运行时，可以是宿主机、LAN AIO 或 RunPod 容器。
-- **workflow 事实源**：当前运行时 workflow 资产以 `workers/comfy_agent/workflows` 和同步后的 `remote_workers/` bundle 为准。
+- **workflow 事实源**：测试执行链以 `workers/comfy_agent/workflows` 为准；正式 GPU profile 使用镜像中烘焙的 `remote_workers` bundle，不允许主机源码覆盖。
 - **LAN AIO**：局域网 GPU 上的 all-in-one runtime 形态，将 ComfyUI、relay/agent 和模型同步收在受控容器链路里。
 - **RunPod 手动池**：云正式备用或临时扩容的 GPU worker 池，可由人工操作，也可由 Dashboard autoscaler 在门禁满足时提交 `add` / `down`。
 - **Dashboard RunPod autoscaler**：由 Dashboard backend 根据队列等待、worker 健康、profile 阈值和 RunPod operation store 自动提交 RunPod `add` / `down` 的管理循环。
 - **云测试控制面**：研发、联调、缺陷修复和配置验证的默认发布目标。
 - **维护发布**：影响 planner 因 migration、未知路径或跨栈变更提升的发布等级；发布器负责维护/drain、备份、单 Alembic head 与显式 upgrade，不同步代码或 env。
 - **云测试不可变发布**：将受保护 `main` 可达的完整 SHA 对应 release bundle 部署到云测试；服务范围由依赖影响自动计算，应用代码只来自 digest-pinned 镜像。
+- **发布风险类**：根据选中 artifact 的最高影响划分为 critical、owner-tools、public-web、execution 或 locked；共享代码和混合变更不得通过缩小选择集降低风险。
+- **发布策略**：standard 要求测试部署/验收/观察，direct 用于低风险直发，emergency 用于显式接受核心业务风险的紧急直发；三者都保留不可变产物、配置、健康、回滚和生产确认。
+- **artifact assurance**：逐 artifact digest 的证据状态；tested 表示完成要求的测试，waived 表示策略明确豁免，attested 表示 GPU 不做业务 canary 但不可变产物声明已验证。
 - **云正式控制面**：生产控制面，任何正式发布、重建或生产 RunPod mutation 都需要用户明确确认。
 - **Cloudflare 自动化令牌**：用于 AllBot Cloudflare 账号自动化的高权限 API token，只允许保存在宿主机受限权限文件中；聊天、文档、Git 和日志只记录路径、用途和权限边界，不记录明文。
 - **本地正式灾备**：云正式整体不可用时，由本地主服务器临时接管正式入口的应急形态。

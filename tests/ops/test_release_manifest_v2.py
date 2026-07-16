@@ -138,6 +138,38 @@ def test_release_index_loads_three_environment_neutral_tracks(tmp_path):
     ] == "sha256:" + "1" * 64
     assert release.index["release_channel"] == "main"
     assert release.index["source_ref"] == "refs/heads/main"
+    assert release.index["validation"] == {
+        "mode": "full",
+        "tests": "passed",
+    }
+
+
+def test_release_index_records_build_only_validation_without_claiming_tests_passed(
+    tmp_path,
+):
+    module = _load_module()
+    index_path = _write_release(tmp_path)
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    index["validation"] = {"mode": "build-only", "tests": "skipped"}
+    index_path.write_text(json.dumps(index), encoding="utf-8")
+
+    release = module.load_release_index(index_path, expected_sha=SHA)
+
+    assert release.index["validation"]["mode"] == "build-only"
+    assert release.index["validation"]["tests"] == "skipped"
+
+
+def test_release_index_rejects_validation_metadata_that_claims_skipped_tests_passed(
+    tmp_path,
+):
+    module = _load_module()
+    index_path = _write_release(tmp_path)
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    index["validation"] = {"mode": "build-only", "tests": "passed"}
+    index_path.write_text(json.dumps(index), encoding="utf-8")
+
+    with pytest.raises(module.ManifestV2Error, match="validation"):
+        module.load_release_index(index_path, expected_sha=SHA)
 
 
 def test_release_index_accepts_exact_test_candidate_channel(tmp_path):
@@ -242,6 +274,28 @@ def test_gpu_profile_requires_baked_runtime_and_model_checksum(tmp_path):
     path.write_text(json.dumps(manifest), encoding="utf-8")
 
     with pytest.raises(module.ManifestV2Error, match="baked_workflow_revision"):
+        module.load_release_index(index_path, expected_sha=SHA)
+
+
+def test_gpu_attestation_only_manifest_is_valid_but_cannot_claim_canary(tmp_path):
+    module = _load_module()
+    index_path = _write_release(tmp_path)
+    path = tmp_path / "gpu-execution-manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    artifact = manifest["artifacts"]["i2i_pro"]
+    artifact.update(
+        {
+            "validation_level": "attested",
+            "artifact_attestation": "verified",
+            "canary_evidence": "waived",
+        }
+    )
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    module.load_release_index(index_path, expected_sha=SHA)
+    artifact["canary_evidence"] = "verified"
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(module.ManifestV2Error, match="canary_evidence"):
         module.load_release_index(index_path, expected_sha=SHA)
 
 

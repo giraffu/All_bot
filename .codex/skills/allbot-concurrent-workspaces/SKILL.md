@@ -48,7 +48,7 @@ python scripts/manage_ai_workspaces.py refresh --slot A
 python scripts/test_train_release.py status
 python scripts/test_train_release.py plan --sha <40位SHA>
 python scripts/test_train_release.py deploy --sha <40位SHA> --pr <PR> --slot A --execute
-python scripts/test_train_release.py deploy --sha <40位SHA> --pr <PR> --slot A --execute --skip-test-execution
+python scripts/test_train_release.py deploy --sha <40位SHA> --pr <PR> --slot A --execute --with-test-execution
 python scripts/test_train_release.py accept --sha <40位SHA> --evidence <json>
 python scripts/test_train_release.py block --sha <40位SHA> --reason <原因>
 ```
@@ -61,10 +61,10 @@ python scripts/test_train_release.py block --sha <40位SHA> --reason <原因>
 - 只允许精确 `refs/heads/codex/test-train` 的可信 CI bundle 标记为 `test-candidate`。candidate 只能部署 test，禁止 `verify-test`、prod、fast-track 或正式晋级。
 - 不让独立功能分支横向覆盖测试站。任务必须先合入 train，后一个任务在前一个 accepted candidate 上继续累积。
 - GPU 基线无可用 artifact 时只接受 `availability: unavailable` 的读取计划；不得把它当作 GPU 验收或自动 mutation，涉及 GPU 的任务仍必须交给对应 canary/operator。
-- 默认仍按 `control-plane` → `test-execution` 部署。只有用户或集成 AI 明确把 Worker 留到匹配 GPU/ComfyUI 的独立窗口时，才可显式传 `--skip-test-execution`；状态与 acceptance evidence 只能记录实际部署的 `control-plane`，不得声称 Worker 已更新或验收。
+- 默认只部署确实要求测试的 `control-plane`/公共 Web artifact；`test-execution` 不再是默认步骤，只有专项 Worker 诊断才显式传 `--with-test-execution`。状态与 acceptance evidence 只能记录实际部署的 track，不得声称未启用的 Worker 已更新或验收。
 - 若 `test-execution` 没有 track-scoped 历史状态，发布器必须把它视为受控首次切换并从 legacy Worker 快照迁移；预检不得要求尚未创建的 immutable Relay。control-plane 已完成而 Worker 首次切换预检失败时，原槽位继续负责 forward-fix，未完成两轨一致部署前不得 park 或写 accepted。
 - 同一 candidate 的 control-plane 与 test-execution journal/staged state 及非敏感 `release.env` 必须按 track 分目录；云端合约路径为 `/var/lib/allbot/releases/<track>/<sha>/release.env`，Worker host 为 `release-env/<track>/<sha>/release.env`。Worker preflight 必须从同一 track-scoped 路径读取回滚材料；当该轨没有任何 cloud service 时必须跳过 cloud preflight，不得要求不会生成的云端合约。云端控制面若回滚目标早于 track 隔离迁移，预检、失败恢复和恢复验证可在 track-scoped 文件缺失时读取同一 SHA 的 legacy `/var/lib/allbot/releases/<sha>/release.env`，新候选仍必须写入 track-scoped 路径。Worker 首次切换不得覆盖已提交的控制面 journal/合约，也不得重跑 Postgres/Redis 控制面 cutover。发现升级前无 track 的失败 journal 时，只能通过带精确 `--track` 的 `recover` 兼容收口，禁止手工删 journal 或维护标记。
-- 当 control-plane 的可信计划为 `level=none` 且无 artifacts/services 时，`deploy` 命令只把精确 candidate 记录为 `ready-for-acceptance` / `non-runtime`，不调用 release preflight/deploy；若同时用 `--skip-test-execution` 延后 Worker，状态保留 `deferred_tracks=["test-execution"]`。证据必须写 bundle/CI/non-runtime plan 和延后事实，不得写容器或 Worker 已更新。
+- 当 control-plane 的可信计划为 `level=none` 且无 artifacts/services 时，`deploy` 命令只把精确 candidate 记录为 `ready-for-acceptance` / `non-runtime`，不调用 release preflight/deploy；Dashboard/QQCC 管理面候选记录 `deployment_mode=test-not-required`，不得修改共享测试站。未显式传入 `--with-test-execution` 时，状态保留 `deferred_tracks=["test-execution"]`。证据必须写 bundle/CI/non-runtime 或 test-not-required 计划和延后事实，不得写容器或 Worker 已更新。
 - 部署事务失败时逆序恢复已完成 track，并在恢复成功后的错误中保留底层 `release.py` 最后一行摘要，便于集成 AI 定位失败轨道而不绕过包装器；部署成功但业务失败时 block train、保留现场并从原槽位做 forward-fix，不自动改写 Git 历史。
 - candidate 未 `accept`、处于 blocked 或仍需 forward-fix 时不得释放原槽位；修复 candidate 被 `accept` 后立即释放。
 
@@ -73,7 +73,7 @@ python scripts/test_train_release.py block --sha <40位SHA> --reason <原因>
 - PR 写明 slot、train base SHA、head SHA、v2 tracks/modules、测试、migration、风险和云测试步骤。
 - 只有当前 candidate accepted 后才合入下一个无关任务。
 - 当前 candidate accepted 后，集成 AI 必须先对 PR 记录的 slot 执行 `python scripts/manage_ai_workspaces.py park --slot <slot>` 并确认状态为空闲，再合入下一个无关任务。成功部署或 non-runtime `ready-for-acceptance` 但尚未 `accept` 都不算可释放。
-- train 全部通过后合入 main；对新的 main SHA 重新构建、部署和完整验收。candidate evidence 不能替代正式 24 小时/短观察授权与 `verify-test`。
+- train 通过后合入 main；新的 main SHA 重新构建。只有 `standard` artifact 继续要求测试部署、按 digest 验收和观察；`direct/emergency` 必须记录 waived/attested 与风险接受，不能伪装成 tested。
 - main 合并完成后，在下一轮新的槽位 PR 合入 train 前通过 PR 把 main merge commit 血缘同步回 train，使下一次 train→main 满足 strict up-to-date；该血缘同步不延迟已经 accepted 的槽位释放，且禁止直接 push/force-push。
 
 ## 6. 按需读取

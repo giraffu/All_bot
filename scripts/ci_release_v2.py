@@ -132,6 +132,12 @@ def main() -> int:
     parser.add_argument("--previous-index", type=Path)
     parser.add_argument("--previous-bundle-dir", type=Path)
     parser.add_argument("--gpu-manifest", type=Path)
+    parser.add_argument(
+        "--validation-mode",
+        choices=("full", "build-only"),
+        default="full",
+        help="Record whether the upstream test suite ran or was explicitly skipped.",
+    )
     parser.add_argument("--output-dir", type=Path, default=Path("release-v2"))
     args = parser.parse_args()
 
@@ -246,6 +252,7 @@ def main() -> int:
         source_ref=args.source_ref,
         previous_index=args.previous_index,
         unavailable_artifacts=unavailable_gpu,
+        validation_mode=args.validation_mode,
     )
     print(index)
     return 0

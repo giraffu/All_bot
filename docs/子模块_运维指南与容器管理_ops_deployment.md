@@ -32,7 +32,7 @@
 - “帮我改功能”“帮我修 Bug”“帮我联调”“帮我验证配置”这类请求，默认理解为测试环境操作。
 - 只有在用户明确表达“上线”“发布”“部署正式环境”“交付生产”后，才允许执行 `scripts/release.py deploy --env prod ... --execute --confirm-prod`；`safe_deploy.sh` 只用于云正式整体故障时的本地正式灾备。
 - 在用户完成测试验收前，不得把测试环境变更直接同步到正式 Bot、正式 Web、正式 Payment、正式 Central API 或正式 Dashboard。
-- 明确授权的 Dashboard 免测试快速发布使用 `--dashboard-fast-track`。另有严格限于 private worker 镜像闭包修复的 `--control-plane-repair-fast-track`：复用 verified 测试 SHA，只允许 Dockerfile/catalog 与发布元数据差异，对其它模块证明 inputs/target 等价并对 private digest 做无网络导入 smoke；两者都不放宽 main/CI/digest/preflight/`--confirm-prod`、事务回滚或非目标容器不变门禁。
+- Dashboard 与 QQCC Config 管理面默认使用通用 `--strategy direct`；`--dashboard-fast-track` 仅作旧调用兼容。另有严格限于 private worker 镜像闭包修复的 `--control-plane-repair-fast-track`：复用 tested artifact 证据，只允许 Dockerfile/catalog 与发布元数据差异，对其它模块证明 inputs/target 等价并对 private digest 做无网络导入 smoke。所有路径都不放宽 main 血缘、CI 构建、digest、配置/preflight、`--confirm-prod`、事务回滚或非目标容器不变门禁。
 
 正式环境的生成维护模式是每次发布单独选择的操作参数，不是长期环境配置：
 
@@ -45,7 +45,7 @@
 ## 2.2 云端测试控制面
 
 - DigitalOcean SGP1 Droplet 上的云测试只接受 `scripts/release.py plan|deploy --env test --sha <full-sha>`；目标 service 集合由 `deploy/release-policy.yml` 计算，应用镜像由 release manifest 提供。
-- 云测试控制面默认部署同机 Postgres、同机 Redis、Central API、Web API、Dashboard Backend、Dashboard Frontend 与 imgproxy；`bot-test` 只通过 `bot` profile 手动启动，本地主服务器另行启动 GPU worker。当前对象存储事实源是 Cloudflare R2，云测试 compose 当前不包含 MinIO、Payment API 或 Web 前端 dev 容器。
+- 云测试控制面默认部署同机 Postgres、同机 Redis、Central API、Web API 与 imgproxy；Dashboard、QQCC Config 管理前后端已完全移除。`bot-test` 只通过 `bot` profile 手动启动，测试 Worker 仅在专项诊断显式启用。当前对象存储事实源是 Cloudflare R2，云测试 compose 当前不包含 MinIO、Payment API 或 Web 前端 dev 容器。
 - rolling/worker-drain/maintenance 等级由发布计划决定；用户指定 service 只能扩大范围，不能缩小机器计算出的消费者集合。
 - 测试 Web 使用 CI 的同一静态产物上传到 SHA 版本目录并原子切换 symlink，不覆盖式同步 dist。
 - 测试 Web/Bot 使用 `runtime/cloud-test/GENERATION_MAINTENANCE` 作为跨重建生成维护标记，容器内路径为 `/app/runtime-flags/GENERATION_MAINTENANCE`，由 `GENERATION_MAINTENANCE_FILE` 注入。该目录属于运行时状态，不提交仓库。
@@ -56,7 +56,7 @@
 - 云测试 `bot-test` 默认通过 `TON_PAYMENT_POLLING_ENABLED=false` 禁用 TON 链上轮询，避免空云测试库回扫真实商户地址历史交易；仅在专门支付联调时显式开启 `CLOUD_TEST_TON_PAYMENT_POLLING_ENABLED=true`。
 - 云测试库若为空，脚本使用当前 ORM schema 初始化并 `alembic stamp head`；若已有 schema，脚本执行 `alembic upgrade head`。这是云测试控制面的特殊兼容策略，不改变生产脚本的迁移口径。
 - 云测试 `.env.cloud.test` 中 `MINIO_*` 是项目兼容变量名；R2 直连时应保持 `MINIO_SECURE=true`、`MINIO_BUCKET/MINIO_INPUT_BUCKET/MINIO_RESULT_BUCKET/MINIO_TEMPLATE_BUCKET=user-data-test`、`MINIO_PUBLIC_URL=`、`R2_PUBLIC_DOMAIN=https://r2-test.aivison.it.com`。Web owner 视频结果接口依赖 R2 公网 URL，公开域名缺失会导致视频停在 99% / `pending_result`。
-- 云测试公网 Web 使用 `web-test.aivison.it.com` 的边缘 VPS 静态站，`/api/` 反代到云端测试 Web API `http://100.82.124.91:8001`；云端不运行 Web 前端 dev 容器。Dashboard 测试前端由 `cloud-dashboard-frontend-test` 提供，默认 `http://100.82.124.91:8087/`；QQCC 懒人 Bot 独立配置 Web 由 `cloud-qqcc-config-frontend-test` 提供，默认 `http://100.82.124.91:8088/`，两者都仅限 Tailscale/受控来源访问。
+- 云测试公网 Web 使用 `web-test.aivison.it.com` 的边缘 VPS 静态站，`/api/` 反代到云端测试 Web API `http://100.82.124.91:8001`；云端不运行 Web 前端 dev 容器，也不再提供 Dashboard 或 QQCC Config 测试入口。
 - 详细说明见 `/docs/子模块_云测试控制面部署_cloud_test_control_plane.md`。
 
 ## 2.3 云正式控制面
@@ -65,7 +65,7 @@
 - `.env.cloud.prod` 是本机私有文件，已被 `.gitignore` 忽略；`.env.cloud.prod.example` 只提供变量契约和占位值。`.dockerignore` 必须忽略 `.env.*`，避免 root Docker build 把真实云正式变量 COPY 进镜像。
 - 云正式 Web API 需要 `JWT_SECRET_KEY`，且不能使用默认占位值；该 key 已纳入 `.env.cloud.prod.example` 和 `scripts/safe_deploy_cloud_prod.sh` preflight 必填检查。
 - 云测试环境退役入口为 `scripts/cleanup_cloud_test_for_prod.sh`。脚本默认 dry-run，真实清理必须传 `--execute`；它不得删除 R2 `user-data-test`，不得误改正式服务或 `web.aivison.it.com`。
-- 云正式控制面包含 Central API、Web API、Payment API、Dashboard Backend、Dashboard Frontend、QQCC Config Backend/Frontend、imgproxy、正式 Bot 和可选 QQCC 懒人 Bot；生产默认保持测试已验收的同一 SHA/digest。明确授权的 Dashboard 快速通道只跳过测试晋级，不跳过 CI 或不可变产物，并且不能用于 QQCC、Bot、API、Payment、Worker 或 migration。
+- 云正式控制面包含 Central API、Web API、Payment API、Dashboard Backend、Dashboard Frontend、QQCC Config Backend/Frontend、imgproxy、正式 Bot 和可选 QQCC 懒人 Bot。生产按 artifact digest 与风险策略晋级：管理面默认 direct，公共 Web 可显式 direct，核心链路默认 standard、显式 emergency 才旁路；migration 与部署契约始终 standard。所有策略仍保留 main 血缘、不可变产物、配置、健康、事务与回滚门禁。
 - 云正式本地 worker compose 声明 `cloud-prod-worker-relay` 与 `cloud-prod-comfy-agent-1..7`；线上实际容量还可能包含 LAN AIO agent、`remote_workers` 与手动 RunPod worker。启动或重建后必须在云 Central `/system/workers` 验证当次目标 worker 集合的 heartbeat、control state 与任务类型，状态不能是 `error` 或 `quarantined`；不要把固定 7 个 heartbeat 当成所有场景的唯一验收标准。
 - 云正式 R2 在线口径为 `user-data-prod` 单桶，`MINIO_*` 兼容变量和 `R2_*` 都指向正式 R2；`MINIO_PUBLIC_URL` 保持空，结果公开读取依赖 `R2_PUBLIC_DOMAIN=https://r2.aivison.it.com`。
 - 正式 Web API / Dashboard 运行时不再通过 `LEGACY_MINIO_*` 回源本地 MinIO；云正式 compose 对 Web/Dashboard 应设置 `LEGACY_MINIO_READ_FALLBACK_ENABLED=false` 并清空 legacy endpoint/key/public URL。R2 miss 后只允许当前 R2/S3 短签、空值或 `pending_result`，worker 仍只写 R2，不得把 legacy MinIO 配进 worker 写路径。

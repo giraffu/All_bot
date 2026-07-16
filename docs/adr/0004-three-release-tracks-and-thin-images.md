@@ -4,7 +4,7 @@
 
 ## Status
 
-Accepted；schema v2、薄镜像与 GPU baked runtime 已进入代码基线。正式晋级仍需云测试逐模块验收，本文不授权正式部署或 legacy 执行面下线。
+Accepted，部分门禁由 ADR 0006 取代；schema v2、薄镜像与 GPU baked runtime 继续有效。“所有正式 artifact 必须云测试 verified”及“每个 GPU profile 必须业务 canary”已由按风险策略、逐 artifact assurance 与强制 attestation/可选 canary 规则替代。本文不授权正式部署或 legacy 执行面下线。
 
 ## Context
 
@@ -17,10 +17,10 @@ schema v1 将多个控制面进程装入 `allbot-app`、将 Agent/Relay 装入�
 - 发布域固定为 `control-plane`、`test-execution`、`gpu-execution`。`release-index.json` 引用三份环境无关 manifest；test/prod 只选择 artifact 并注入配置。
 - Python 使用不含业务源码的 `allbot-python-runtime-base`；测试 Agent 另有 `allbot-python-worker-base`。每个控制面服务、Agent、Relay 和两套前端分别产生不可变镜像。Public Web 仍是一份带 SHA256 的 tar。
 - artifact 保存自己的 source SHA、OCI revision、digest、base digest 与依赖闭包。未变化 artifact 可复用旧 digest；base digest 变化强制重建所有后代。
-- 正式逐模块晋级只接受云测试 verified record 中同名、同 digest 的 artifact；共享协议、迁移或依赖分析可以扩大原子集合，显式选择不能缩小它。
+- 正式逐模块晋级只接受 retained main-channel 测试记录中同 track、同名、同 digest 的 artifact；证据可跨控制面 SHA 复用。共享协议、迁移或依赖分析可以扩大原子集合，显式选择不能缩小它。（证据状态与旁路策略由 ADR 0006 细化。）
 - Agent/Relay 只属于测试执行链。正式 legacy Relay 是否下线由只读运行态审计决定，不由控制面 release 隐式处理。
 - RunPod/LAN profile 镜像烘焙 `remote_workers` agent 和 workflow，并写 agent/workflow revision label；启动时不再 clone AllBot 分支。模型继续外置，但 GPU manifest 固定 object key、size 与 SHA256。
-- 每个变化的 GPU profile 必须独立 canary，证据至少包含真实镜像 digest、baked revisions、model checksum、Central task type、输入下载、输出上传、终态回流和回滚演练。
+- 每个变化的 GPU profile 必须有 artifact attestation，至少包含真实镜像 digest、baked revisions 与 model checksum；standard 仍要求独立业务 canary 覆盖 Central task type、输入下载、输出上传、终态回流和回滚演练，direct 可显式豁免业务 canary。（由 ADR 0006 取代原“全部必须 canary”的结论。）
 
 ## Alternatives Considered
 
