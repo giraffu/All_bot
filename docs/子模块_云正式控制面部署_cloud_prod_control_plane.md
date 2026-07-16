@@ -342,7 +342,8 @@ Dashboard RunPod 管理入口当前支持 `img2img`、`image_to_video`、`wan22_
 不可变 `allbot-dashboard-backend` 镜像必须内置 `/app/scripts/runpod_prod_ops.sh`、
 `/app/scripts/gpu_pool_controller.py`、`gpu_release_rollout.py`、`release_manifest_v2.py`、
 `release_strategy.py` 与 `/app/ops`，否则 Dashboard operation 会在命令执行或 ASGI import smoke 阶段以
-exit 127 / `ModuleNotFoundError` 失败。
+exit 127 / `ModuleNotFoundError` 失败。该闭包必须同时固化在独立 `Dockerfile.dashboard-backend` 和可信 bundle
+实际构建 `dashboard-backend` stage 的 `Dockerfile.control-plane`，不能只更新前者。
 `deploy/release-policy.yml` 将 `deploy/docker/Dockerfile.dashboard-backend`、`dashboard/backend/services/system_service.py`
 与 `dashboard/backend/services/runpod_admin_*.py` 归为 `dashboard-backend` rolling 影响面；这类修复可以通过不可变发布只重建正式 `dashboard-backend`，
 不得顺手重启 Central/Web/Bot/Payment/imgproxy/Worker 或 QQCC Config。
