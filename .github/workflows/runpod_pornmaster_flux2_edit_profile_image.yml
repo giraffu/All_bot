@@ -35,7 +35,10 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE_NAME: allbot-comfy-runpod-pornmaster-flux2-edit
+  # The legacy package predates this repository's Actions access grant and
+  # rejects GITHUB_TOKEN writes. A workflow-owned package inherits this public
+  # repository's visibility and keeps future publishing repository-scoped.
+  IMAGE_NAME: allbot-comfy-runpod-pornmaster-flux2-edit-baked
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:

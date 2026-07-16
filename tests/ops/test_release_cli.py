@@ -253,6 +253,105 @@ def test_v2_control_plane_does_not_require_unselected_gpu_profiles(
     assert resolved_previous == previous_sha
 
 
+def test_v2_dashboard_fast_track_selects_only_dashboard_artifacts(
+    monkeypatch, tmp_path
+):
+    module = _load_module()
+    previous_sha = "b" * 40
+    target_parent_sha = "c" * 40
+    artifacts = {
+        name: {
+            "kind": "image",
+            "ref": f"ghcr.io/giraffu/{name}@sha256:" + digest * 64,
+            "digest": "sha256:" + digest * 64,
+            "source_sha": FULL_SHA,
+            "oci_revision": FULL_SHA,
+            "dependency_closure": [],
+        }
+        for name, digest in (
+            ("central-api", "1"),
+            ("dashboard-backend", "2"),
+            ("qqcc-config-backend", "3"),
+        )
+    }
+    release = SimpleNamespace(
+        index={
+            "ci_run": "https://github.com/giraffu/All_bot/actions/runs/1",
+            "release_channel": "main",
+            "source_ref": "refs/heads/main",
+        },
+        manifests={
+            "control-plane": {"artifacts": artifacts},
+            "gpu-execution": {"artifacts": {}},
+        },
+    )
+    captured_modules = []
+
+    def fake_load_v2_track(_path, *, modules, **_kwargs):
+        captured_modules.extend(modules)
+        return {
+            "schema_version": 2,
+            "source_sha": FULL_SHA,
+            "git_sha": FULL_SHA,
+            "ci_run": release.index["ci_run"],
+            "release_channel": "main",
+            "source_ref": "refs/heads/main",
+            "track": "control-plane",
+            "artifacts": artifacts,
+            "selected_artifacts": list(modules),
+        }
+
+    args = SimpleNamespace(
+        sha=FULL_SHA,
+        manifest=None,
+        bundle_cache=str(tmp_path),
+        bundle_repository="ghcr.io/giraffu/allbot-release-v2",
+        command="plan",
+        modules=[],
+        services=[],
+        track="control-plane",
+        state_file=None,
+        from_sha=None,
+        env="prod",
+        remote_host="prod-control",
+        policy=str(POLICY_PATH),
+        skip_git_checks=True,
+        skip_ci_checks=True,
+        dashboard_fast_track=True,
+    )
+
+    monkeypatch.setattr(
+        module, "_resolve_manifest_path", lambda *_args, **_kwargs: tmp_path / "index"
+    )
+    monkeypatch.setattr(module, "_read_json", lambda _path: {"schema_version": 2})
+    monkeypatch.setattr(
+        module, "_resolve_previous_sha", lambda *_args, **_kwargs: previous_sha
+    )
+    monkeypatch.setattr(
+        module, "_target_first_parent_sha", lambda _sha: target_parent_sha
+    )
+    monkeypatch.setattr(
+        module,
+        "git_changed_paths",
+        lambda from_sha, _target_sha: (
+            ["dashboard/backend/services/runpod_admin_commands.py"]
+            if from_sha == target_parent_sha
+            else ["src/services/unrelated.py"]
+        ),
+    )
+    monkeypatch.setattr(module, "load_release_index", lambda *_args, **_kwargs: release)
+    monkeypatch.setattr(module, "_load_v2_track", fake_load_v2_track)
+
+    impact, manifest, resolved_previous = module.build_plan(args)
+
+    assert impact.level == "rolling"
+    assert impact.services == {"dashboard-backend"}
+    assert impact.matched_rules == ["dashboard-fast-track", "track:control-plane"]
+    assert captured_modules == ["dashboard-backend"]
+    assert manifest["selected_artifacts"] == ["dashboard-backend"]
+    assert resolved_previous == previous_sha
+
+
 def test_dashboard_admin_runtime_changes_stay_dashboard_backend_only():
     module = _load_module()
     policy = module.load_structured_file(POLICY_PATH)
