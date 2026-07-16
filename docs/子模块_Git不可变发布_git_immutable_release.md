@@ -135,7 +135,9 @@ scripts/release.py deploy --env prod --track control-plane --sha <40-char-sha> -
 
 `dashboard/backend/schemas.py` 是 Dashboard API 与 QQCC Config API 的共享契约，发布策略必须把它归类为 `rolling`，并同时滚动 `dashboard-backend` 与 `qqcc-config-backend`；它本身不触发维护模式、Worker 或 GPU runtime 发布。
 
-当用户明确要求 QQCC 控制面独立晋级且保持其它正式模块不动时，可显式传 `--policy deploy/release-policy-qqcc-control-plane.yml`。该策略只接受已审计的 QQCC AI视频闭包与 release/docs/tests 元数据，固定影响 `central-api`、`qqcc-bot`、`qqcc-config-backend`、`qqcc-config-frontend`、`qqcc-private-bot-worker`；公共 Web、主 Bot、Dashboard、支付、群管、local/remote Worker、GPU runtime、RunPod 和未知路径全部 fail closed。它不跳过 main、CI、云测试 verified、digest、preflight 或正式确认门禁，测试与正式必须使用同一策略和同一模块 digest。
+当用户明确要求 QQCC 控制面独立晋级且保持其它正式模块不动时，可显式传 `--policy deploy/release-policy-qqcc-control-plane.yml`。该策略只接受已审计的 QQCC AI视频闭包与 release/docs/tests 元数据，固定影响 `central-api`、`qqcc-bot`、`qqcc-config-backend`、`qqcc-config-frontend`、`qqcc-private-bot-worker`；公共 Web、主 Bot、Dashboard、支付、群管、local/remote Worker、GPU runtime、RunPod 和未知路径全部 fail closed。它不跳过 main、CI、云测试 verified、digest、preflight 或正式确认门禁，测试与正式必须选择同一模块集合和同一 digest。
+
+若唯一云测试站当前运行的是已接受但尚未整体晋级 main 的 test-train，可在测试环境用 `deploy/release-policy-qqcc-control-plane-test-reconcile.yml` 计算真实当前 SHA 到目标 main 的差异。该文件带 `environment=test`，发布器在生产显式拒绝；它只把本轮已审计、且不属于五个目标 artifact 的 test-train 路径视为非选择漂移，目标模块、digest 与正式窄策略保持一致，未知路径仍为 maintenance。测试 rollback 必须继续指向真实当前 SHA，不得用云端不存在的正式基线伪造回滚点。
 
 生产发布器会读取云测试 `current.json`，要求状态为 `verified` 且 SHA、自有/第三方 digest 完全相同。验收模板见 `deploy/test-acceptance.example.json`；默认观察窗口不足 24 小时或任何 smoke 为 false 都不能标记 verified。用户明确确认测试服务无问题并授权提前晋级时，短观察 evidence 必须同时包含 `short_observation_override=true`、非空 `override_reason`、`approved_by` 和真实起止时间，并在 CLI 显式传 `--confirm-short-observation`。该例外不允许时间倒置/未来完成时间，也不放宽任何 smoke、SHA/digest、Web checksum 或测试运行态检查；verified current/history 会记录实际观察秒数、例外原因与批准者，禁止伪造 24 小时时间或直接编辑状态文件。
 
