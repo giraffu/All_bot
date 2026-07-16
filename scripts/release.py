@@ -1975,6 +1975,8 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
         )
         previous_sha = _resolve_previous_sha(args, track_scoped=True)
         planned_impact = ReleaseImpact(level="rolling")
+        if not previous_sha and args.track == "test-execution":
+            planned_impact.matched_rules.append("initial-release")
         changed_paths: list[str] = []
         if previous_sha and previous_sha != sha:
             changed_paths = git_changed_paths(previous_sha, sha)
@@ -3042,10 +3044,15 @@ def _deploy_worker(
 def _worker_compose_command(
     args: argparse.Namespace,
     sha: str,
+    *,
+    track: str | None = None,
 ) -> tuple[list[str], dict[str, str]]:
     root = Path(args.worker_checkout_root).expanduser()
     checkout = root / "releases" / sha
-    release_path = root / "release-env" / sha / "release.env"
+    release_root = root / "release-env"
+    if track in RELEASE_TRACKS:
+        release_root /= track
+    release_path = release_root / sha / "release.env"
     env_file = local_env_file(args)
     return (
         [
@@ -3104,12 +3111,11 @@ def _rollback_worker_stack(
             ids = result.stdout.split()
             if ids:
                 _run(["docker", "rm", "-f", *ids], check=False)
-        snapshot = (
-            Path(args.worker_checkout_root).expanduser()
-            / "release-env"
-            / target_sha
-            / "legacy-worker-running.txt"
-        )
+        release_root = Path(args.worker_checkout_root).expanduser() / "release-env"
+        track = transaction.get("track")
+        if track in RELEASE_TRACKS:
+            release_root /= str(track)
+        snapshot = release_root / target_sha / "legacy-worker-running.txt"
         expected = legacy_worker_containers(args.env, selected)
         names = (
             [line.strip() for line in snapshot.read_text().splitlines() if line.strip()]
@@ -3135,7 +3141,15 @@ def _rollback_worker_stack(
                 raise ReleaseError("legacy Worker container recovery failed")
     elif previous_kind == "immutable":
         previous_sha = validate_full_sha(str(previous.get("git_sha", "")))
-        compose, compose_env = _worker_compose_command(args, previous_sha)
+        compose, compose_env = _worker_compose_command(
+            args,
+            previous_sha,
+            track=(
+                str(transaction["track"])
+                if transaction.get("track") in RELEASE_TRACKS
+                else None
+            ),
+        )
         _run([*compose, "config", "-q"], env=compose_env)
         _run(
             [

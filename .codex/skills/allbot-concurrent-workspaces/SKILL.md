@@ -62,6 +62,7 @@ python scripts/test_train_release.py block --sha <40位SHA> --reason <原因>
 - 不让独立功能分支横向覆盖测试站。任务必须先合入 train，后一个任务在前一个 accepted candidate 上继续累积。
 - GPU 基线无可用 artifact 时只接受 `availability: unavailable` 的读取计划；不得把它当作 GPU 验收或自动 mutation，涉及 GPU 的任务仍必须交给对应 canary/operator。
 - 默认仍按 `control-plane` → `test-execution` 部署。只有用户或集成 AI 明确把 Worker 留到匹配 GPU/ComfyUI 的独立窗口时，才可显式传 `--skip-test-execution`；状态与 acceptance evidence 只能记录实际部署的 `control-plane`，不得声称 Worker 已更新或验收。
+- 若 `test-execution` 没有 track-scoped 历史状态，发布器必须把它视为受控首次切换并从 legacy Worker 快照迁移；预检不得要求尚未创建的 immutable Relay。control-plane 已完成而 Worker 首次切换预检失败时，原槽位继续负责 forward-fix，未完成两轨一致部署前不得 park 或写 accepted。
 - 当 control-plane 的可信计划为 `level=none` 且无 artifacts/services 时，`deploy` 命令只把精确 candidate 记录为 `ready-for-acceptance` / `non-runtime`，不调用 release preflight/deploy；若同时用 `--skip-test-execution` 延后 Worker，状态保留 `deferred_tracks=["test-execution"]`。证据必须写 bundle/CI/non-runtime plan 和延后事实，不得写容器或 Worker 已更新。
 - 部署事务失败时逆序恢复已完成 track；部署成功但业务失败时 block train、保留现场并从原槽位做 forward-fix，不自动改写 Git 历史。
 - candidate 未 `accept`、处于 blocked 或仍需 forward-fix 时不得释放原槽位；修复 candidate 被 `accept` 后立即释放。
