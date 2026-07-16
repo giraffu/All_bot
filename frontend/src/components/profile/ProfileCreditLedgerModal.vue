@@ -47,11 +47,8 @@ const formatCreditChange = (item: CreditLedgerItem) => {
   return item.direction === 'income' ? `+${amount}` : `-${amount}`
 }
 
-const getOperationTypeLabel = (operationType: string) => {
-  const normalized = operationType.replace(/-/g, '_')
-  const key = `credit_ledger.operation_types.${normalized}`
-  return te(key) ? t(key) : operationType
-}
+const getOperationTypeLabel = (item: CreditLedgerItem) =>
+  te(item.display_key) ? t(item.display_key) : t('credit_ledger.operation_types.other')
 
 const getDirectionLabel = (item: CreditLedgerItem) =>
   t(`credit_ledger.${item.direction}`)
@@ -120,7 +117,7 @@ watch(
             <div class="profile-credit-ledger-modal__main">
               <div class="min-w-0">
                 <div class="profile-credit-ledger-modal__name truncate">
-                  {{ getOperationTypeLabel(item.operation_type) }}
+                  {{ getOperationTypeLabel(item) }}
                 </div>
                 <div class="profile-credit-ledger-modal__time">
                   {{ formatDate(item.created_at) }}

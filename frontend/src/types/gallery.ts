@@ -4,6 +4,12 @@ export interface TaskExtraOutput {
   url?: string | null
 }
 
+export interface PromptModel {
+  id: string
+  display_key: string
+  strength?: number
+}
+
 export type TaskExtraOutputs = Record<string, TaskExtraOutput>
 
 export interface Wan22ResultMeta {
@@ -51,6 +57,7 @@ export interface GalleryPost {
   author_id?: number | null
   is_active: boolean
   prompt: string | null
+  prompt_model?: PromptModel | null
   prompt_unlocked?: boolean
   prompt_unlockable?: boolean
   prompt_is_masked?: boolean
@@ -77,6 +84,7 @@ export interface HistoryItem {
   task_id: string | null
   type: string | null
   prompt: string | null
+  prompt_model?: PromptModel | null
   input_file: string | null
   input_file_urls?: string[]
   output_file: string | null

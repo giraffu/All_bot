@@ -203,7 +203,7 @@ async def test_prepare_task_submission_payload_caps_priority_at_100():
     assert result.allow_contribute is False
 
 
-def test_task_submission_context_log_prompt_embeds_lora_context_for_history():
+def test_task_submission_context_keeps_history_prompt_clean_and_runtime_lora_structured():
     submission_context = SimpleNamespace(
         user_id=9,
         username="tester",
@@ -224,7 +224,4 @@ def test_task_submission_context_log_prompt_embeds_lora_context_for_history():
         video_request=VideoTaskRequest(),
     )
 
-    assert (
-        context.log_prompt
-        == "[模型: qwen/YARN_1.0.safetensors] [强度: 0.35] cinematic portrait"
-    )
+    assert context.log_prompt == "cinematic portrait"

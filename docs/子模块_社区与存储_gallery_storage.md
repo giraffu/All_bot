@@ -130,7 +130,8 @@ sequenceDiagram
 ### 4.6 提示词付费解锁
 
 - Gallery 列表与详情响应新增 `prompt_unlocked`、`prompt_unlockable`、`prompt_is_masked`、`prompt_unlock_price` 字段。
-- 未解锁且非作者访问时，服务端只返回半公开的遮罩 prompt；前端不能依赖客户端遮罩来保护完整提示词。
+- Gallery、用户主页和提示词解锁统一先通过用户展示 presenter 清除历史 `[模型: ...]`、`[强度: ...]`、`[分辨率|时长]` 系统前缀，再执行遮罩或返回正文；前端不能依赖客户端遮罩来保护完整提示词，系统前缀也不得占用半公开比例。
+- 已解锁/作者响应可返回语言无关的 `prompt_model={id,strength}` 公共展示元数据；未知内部模型只允许映射为通用“附加模型”或省略，不得把模型文件名、路径、workflow 名写入用户文本。未解锁响应不返回模型元数据。
 - 解锁入口为 `POST /api/gallery/posts/{post_id}/prompt-unlock`，固定消耗 1 灵石；扣减买家与奖励作者必须通过 `QuotaManager.transfer_credits(...)` 在同一事务内完成，并各自写入 `user_logs`。
 - 重复解锁同一帖子必须命中 `gallery_prompt_unlocks.user_id + post_id` 唯一约束或既有记录，不得重复扣费。
 - 作者查看自己的帖子视为已解锁，不创建解锁记录、不发生灵石转账。
@@ -140,6 +141,7 @@ sequenceDiagram
 - `GET /api/gallery/posts/{post_id}/apply-context` 会返回：
   - `source_post_id`
   - `prompt`
+  - `prompt_model`（公共展示 ID 与可选强度）
   - `negative_prompt`
   - `lora_name`
   - `task_type`
@@ -147,7 +149,7 @@ sequenceDiagram
   - `requested_duration`
   - `billing_resolution`
   - 宽高与媒体元数据
-- 旧图生视频 `custom_video` / `video_lora` 投稿应用时会把旧 `512p/720p/1024p` 归一为 Wan22 v2 档位 `preview/standard/hd`，把 `0.36 MP - Small` 归一为 `small`，并恢复 canonical `5s/8s/10s` 时长，缺失或非 canonical 时回退 5 秒；`video_lora` 还会从历史 prompt 中的 `[模型: xxx]` 兼容解析 `lora_name`。
+- Apply Context 的 `prompt` 同样只返回干净正文，`prompt_model.id` 供用户展示；既有 `lora_name` 仅作为执行兼容字段保留，前端不得直接渲染。旧图生视频 `custom_video` / `video_lora` 投稿应用时会把旧 `512p/720p/1024p` 归一为 Wan22 v2 档位 `preview/standard/hd`，把 `0.36 MP - Small` 归一为 `small`，并恢复 canonical `5s/8s/10s` 时长，缺失或非 canonical 时回退 5 秒；旧记录缺少结构化上下文时仍可从历史 prompt 的 `[模型: xxx]` 兼容恢复 `lora_name`。
 - 新 v3 与历史 v2 自由P图投稿均支持 Web 一键应用：模板应用复用并锁定原 prompt、记录 `source_post_id`，要求用户重新上传恰好 1 张原图；面板不展示 LoRA/附加模型，统一提交 `pornmaster_flux2_edit_bf16` 并固定显示 5 灵石。普通 v3 结果可投稿，模板应用生成结果必须保存为 `allow_contribute=false`，避免模板递归投稿。
 - `i2i_draw` 局部重绘当前已在 Web 一键应用关闭：作品仍可展示，但列表/详情必须返回 `template_apply_supported=false` 与 `template_apply_disabled_reason="i2i_draw_disabled"`，apply-context 入口必须返回 400 防绕过。
 - `wan22_video_v2` 单段投稿支持一键应用，回填正向提示词、`_wan22_context.wan22_negative_prompt`、`_wan22_context.wan22_resolution_preset` 和 `_wan22_context.wan22_duration_seconds`，不复刻首尾帧或链式上下文。

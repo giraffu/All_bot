@@ -415,6 +415,10 @@ async def test_handle_task_completion_merges_wan22_result_meta_into_extra_output
             "wan22_negative_prompt": "neg",
             "wan22_use_end_frame": True,
         },
+        "_generation_context": {
+            "version": 1,
+            "resolution": "hd",
+        },
     }
     send_result_media.assert_awaited_once()
     cleanup_status.assert_awaited_once_with(

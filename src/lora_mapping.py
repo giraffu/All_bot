@@ -29,6 +29,11 @@ def translate_tags(tags_list: list[str]) -> list[str]:
         raw_tag = tag.strip("#")
         if raw_tag in ALL_LORA_MODELS:
             translated_tags.append(f"#{ALL_LORA_MODELS[raw_tag]}")
+        elif any(
+            marker in raw_tag.lower()
+            for marker in ("/", "\\", ".safetensors", ".ckpt", ".pt")
+        ):
+            translated_tags.append("#附加模型")
         else:
             translated_tags.append(tag)
     return translated_tags

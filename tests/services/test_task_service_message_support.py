@@ -45,14 +45,14 @@ def test_resolve_display_mode_name_uses_context_translator_when_available():
     assert display_name == "translated:task.mode_a"
 
 
-def test_resolve_display_mode_name_falls_back_to_task_type_without_translator():
+def test_resolve_display_mode_name_hides_unknown_task_type_without_translator():
     display_name = support.resolve_display_mode_name(
         "mode-b",
         context=object(),
         mode_name_map={},
     )
 
-    assert display_name == "mode-b"
+    assert display_name == "生成任务"
 
 
 def test_build_status_message_appends_notice_and_wait_text():

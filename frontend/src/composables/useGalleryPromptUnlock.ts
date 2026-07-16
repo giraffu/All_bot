@@ -41,6 +41,7 @@ export function useGalleryPromptUnlock<Post extends GalleryPost>(
       const nextCurrentPost = {
         ...post,
         prompt: result.prompt,
+        prompt_model: result.prompt_model,
         prompt_unlocked: true,
         prompt_unlockable: false,
         prompt_is_masked: false,
@@ -52,6 +53,7 @@ export function useGalleryPromptUnlock<Post extends GalleryPost>(
           ? applyUnlockedPrompt({
               ...item,
               prompt: result.prompt,
+              prompt_model: result.prompt_model,
               prompt_unlock_price: result.prompt_unlock_price,
             } as Post)
           : item,

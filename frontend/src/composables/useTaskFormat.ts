@@ -1,58 +1,16 @@
 import dayjs from 'dayjs'
+import i18n from '@/i18n'
 import { buildStorageFileUrl } from '@/utils/storageUrl'
+import { resolveTaskTypeLabel } from '@/utils/taskTypePresentation'
 
 export function useTaskFormat() {
+  const t = (key: string) => String(i18n.global.t(key))
+  const te = (key: string) => i18n.global.te(key)
   const formatDate = (dateStr: string) => {
     return dayjs(dateStr).format('YYYY-MM-DD HH:mm:ss')
   }
 
-  const getTypeLabel = (type: string) => {
-    const map: Record<string, string> = {
-      'image': '自由P图',
-      'edit': '自由P图',
-      'free_edit_v2_5': '自由P图 v2.5',
-      'pornmaster_flux2_edit_bf16': '自由P图 v3',
-      'pornmaster_flux2_single_edit': '自由P图 v3',
-      'pornmaster_flux2_multi_edit': '自由P图 v3',
-      'i2i_pro': '幻想换脸',
-      'i2i_draw': '局部重绘',
-      'undress': '快速脱衣',
-      'masturbation': '快速自慰',
-      'face_swap': '快速换脸',
-      'face_swap_step1': '快速换脸',
-      'face_swap_step2': '快速换脸',
-      'face_video': '视频换脸',
-      'face_video_step1': '视频换脸',
-      'face_video_step2': '视频换脸',
-      'random_faceswap': '随机换脸',
-      'penetration_step1': '快速抽插',
-      'penetration_step2': '快速抽插',
-      'perfect_video_insert': '动图传教士',
-      'doggy_style': '动图后入',
-      'blowjob': '口交黑人',
-      'undress_tongue': '脱衣吐舌',
-      'closeup_blowjob': '特写口交',
-      'custom_video': '图生视频',
-      'video_lora': '图生视频',
-      'image_to_video': '图生视频',
-      'video_insert': '图生视频',
-      'video_edit': '图生视频',
-      'perfect_video_edit': '图生视频',
-      'txt2video': '图生视频',
-      'img2img_lora': '图生图(附加模型)',
-      'ltx_video': '高级图生视频',
-      'ltx_video_flf2v': '高级图生视频',
-      'wan22_video_v2': '图生视频 v2',
-      'scail2_video_replacement': '视频换人',
-      'scail2_action_transfer': '动作迁移',
-      'scail2_action_transfer_long': '动作迁移',
-      'scail2_face_swap_v2': '视频换脸',
-      'template_contribute': '模板共建',
-      'txt2img': '文生图',
-      't2i-pornmaster-turbo': '文生图'
-    }
-    return map[type] || type
-  }
+  const getTypeLabel = (type: string) => resolveTaskTypeLabel(type, t, te)
 
   const getFileUrl = (path: string) => {
     return buildStorageFileUrl(path)

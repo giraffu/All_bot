@@ -75,6 +75,7 @@ describe('ProfileCreditLedgerModal', () => {
           {
             id: 1,
             operation_type: 'checkin',
+            display_key: 'credit_ledger.operation_types.checkin',
             direction: 'income',
             credit_change: 10,
             current_balance: 110,
@@ -92,6 +93,7 @@ describe('ProfileCreditLedgerModal', () => {
           {
             id: 2,
             operation_type: 'txt2img',
+            display_key: 'task_type.txt2img',
             direction: 'expense',
             credit_change: -2,
             current_balance: 108,
@@ -109,6 +111,7 @@ describe('ProfileCreditLedgerModal', () => {
           {
             id: 1,
             operation_type: 'checkin',
+            display_key: 'credit_ledger.operation_types.checkin',
             direction: 'income',
             credit_change: 10,
             current_balance: 110,

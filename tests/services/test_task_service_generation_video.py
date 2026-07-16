@@ -66,6 +66,14 @@ async def test_process_image_to_video_task_persists_legacy_lora_context(monkeypa
         "wan22_chain_task_ids": [],
         "lora_name": "BreastGrow",
         "lora_strength": 1.0,
+        "_generation_context": {
+            "version": 1,
+            "lora_name": "BreastGrow",
+            "public_model_id": "video_breast_growth",
+            "lora_strength": 1.0,
+            "resolution": "standard",
+            "duration_seconds": 8,
+        },
     }
 
 

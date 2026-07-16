@@ -1,5 +1,4 @@
 import asyncio
-import re
 
 from src.core.media_paths import get_media_type_from_history
 from src.services.wan22_video_v2_extension_service import (
@@ -34,6 +33,7 @@ from src.web_api.services.apply_context_service import (
 from src.web_api.services.history_input_presenter import (
     build_history_input_file_payload,
 )
+from src.services.user_visible_generation_presenter import present_user_prompt
 
 
 def extract_history_tags(
@@ -43,10 +43,9 @@ def extract_history_tags(
     extra_outputs: dict | None = None,
 ) -> list[str]:
     tags: list[str] = []
-    if prompt:
-        match = re.search(r"\\[模型:\\s*(.*?)\\]", prompt)
-        if match:
-            tags.append(f"#{match.group(1).strip()}")
+    presented_prompt = present_user_prompt(prompt, extra_outputs=extra_outputs)
+    if presented_prompt.prompt_model:
+        tags.append(f"#{presented_prompt.prompt_model['display_key']}")
     if is_wan22_chain_history_task_type(task_type):
         if is_wan22_stitched_result(extra_outputs):
             segment_count = resolve_wan22_stitched_segment_count(extra_outputs)
@@ -121,11 +120,16 @@ async def build_user_history_payload(
             getattr(history, "input_file", None),
             build_input_file_url=build_storage_input_file_url,
         )
+        presented_prompt = present_user_prompt(
+            history.prompt,
+            extra_outputs=getattr(history, "extra_outputs", None),
+        )
         items.append(
             HistoryItem(
                 task_id=history.task_id,
                 type=history.type,
-                prompt=history.prompt,
+                prompt=presented_prompt.prompt,
+                prompt_model=presented_prompt.prompt_model,
                 id=history.id,
                 input_file=getattr(history, "input_file", None),
                 input_file_urls=input_payload["input_file_urls"],
@@ -181,6 +185,10 @@ async def build_favorite_gallery_payload(
             getattr(history, "input_file", None),
             build_input_file_url=build_storage_input_file_url,
         )
+        presented_prompt = present_user_prompt(
+            history.prompt,
+            extra_outputs=getattr(history, "extra_outputs", None),
+        )
         items.append(
             GalleryPostResponse(
                 id=gallery_post.id if gallery_post else 0,
@@ -212,7 +220,8 @@ async def build_favorite_gallery_payload(
                 media_url=media_url,
                 created_at=history.created_at,
                 is_active=gallery_post.is_active if gallery_post else False,
-                prompt=history.prompt,
+                prompt=presented_prompt.prompt,
+                prompt_model=presented_prompt.prompt_model,
                 prompt_unlocked=True,
                 prompt_unlockable=False,
                 prompt_is_masked=False,

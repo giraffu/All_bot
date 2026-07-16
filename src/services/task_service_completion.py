@@ -22,6 +22,10 @@ from src.services.wan22_video_v2_extension_service import (
 from src.services.qqcc_regenerate_metadata import (
     merge_qqcc_regenerate_context_into_extra_outputs,
 )
+from src.services.user_visible_generation_presenter import (
+    merge_generation_context_into_extra_outputs,
+    present_user_prompt,
+)
 
 
 async def monitor_submitted_bot_task(
@@ -258,6 +262,10 @@ async def handle_task_completion(
         extra_outputs=extra_outputs,
         metadata=result_meta,
     )
+    persisted_extra_outputs = merge_generation_context_into_extra_outputs(
+        extra_outputs=persisted_extra_outputs,
+        metadata=result_meta,
+    )
     persisted_extra_outputs = merge_ltx_history_context_into_extra_outputs(
         task_type=task_type,
         extra_outputs=persisted_extra_outputs,
@@ -267,10 +275,14 @@ async def handle_task_completion(
         extra_outputs=persisted_extra_outputs,
         metadata=result_meta,
     )
+    visible_prompt = present_user_prompt(
+        prompt,
+        extra_outputs=persisted_extra_outputs,
+    ).prompt
     persistence_result = await download_and_log_task_output(
         internal_user_id=internal_user_id,
         username=user_logger.username,
-        prompt=prompt,
+        prompt=visible_prompt,
         task_type=task_type,
         registry_task_id=registry_task_id,
         backend_task_id=backend_task_id,
@@ -305,7 +317,7 @@ async def handle_task_completion(
         context=context,
         chat_id=chat_id,
         persistence_result=persistence_result,
-        prompt=prompt,
+        prompt=visible_prompt,
         task_type=task_type,
         task_id=registry_task_id,
         is_video=is_video,

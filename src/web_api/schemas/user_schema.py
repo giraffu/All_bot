@@ -11,6 +11,7 @@ class HistoryItem(BaseModel):
     task_id: Optional[str]
     type: Optional[str]
     prompt: Optional[str]
+    prompt_model: Optional[Dict[str, Any]] = None
     input_file: Optional[str]
     output_file: Optional[str]
     input_file_urls: List[str] = Field(default_factory=list)
