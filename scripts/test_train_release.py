@@ -351,7 +351,8 @@ class TestTrainCoordinator:
                         + ", ".join(rollback_failures)
                     ) from exc
                 raise TestTrainError(
-                    "candidate deployment failed and completed tracks were recovered"
+                    "candidate deployment failed and completed tracks were recovered: "
+                    + str(exc)
                 ) from exc
             self.record_deployed(sha, pr=pr, slot=slot, tracks=affected)
 

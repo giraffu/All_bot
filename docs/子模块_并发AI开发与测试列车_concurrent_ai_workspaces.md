@@ -85,6 +85,8 @@ schema v2 的远端事务和发布合约都按 track 隔离：journal/staged sta
 
 若后一个 track 部署失败，包装器按相反顺序回滚本轮已成功 track；单 track 内部继续使用 `release.py` 事务补偿。若部署成功但业务 smoke 失败：
 
+跨 track 恢复成功后，`test_train_release.py` 的失败摘要必须附带底层 `release.py` 最后一行错误，供集成 AI 在唯一入口内定位具体 Worker/Pages/控制面门禁；不得只返回通用“已恢复”文本，迫使操作者绕过包装器复现 mutation。
+
 1. 执行 `block` 并暂停其它无关 PR 合入。
 2. 保留失败 candidate 供诊断；需要恢复可用性时由集成 AI 显式回滚最后 accepted candidate。
 3. 原槽位从失败 train 创建 `codex/<slot>-<task>-fix-N`，提交新 PR 到 train。

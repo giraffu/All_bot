@@ -65,7 +65,7 @@ python scripts/test_train_release.py block --sha <40位SHA> --reason <原因>
 - 若 `test-execution` 没有 track-scoped 历史状态，发布器必须把它视为受控首次切换并从 legacy Worker 快照迁移；预检不得要求尚未创建的 immutable Relay。control-plane 已完成而 Worker 首次切换预检失败时，原槽位继续负责 forward-fix，未完成两轨一致部署前不得 park 或写 accepted。
 - 同一 candidate 的 control-plane 与 test-execution journal/staged state 及非敏感 `release.env` 必须按 track 分目录；云端合约路径为 `/var/lib/allbot/releases/<track>/<sha>/release.env`，Worker host 为 `release-env/<track>/<sha>/release.env`。Worker preflight 必须从同一 track-scoped 路径读取回滚材料；当该轨没有任何 cloud service 时必须跳过 cloud preflight，不得要求不会生成的云端合约。云端控制面若回滚目标早于 track 隔离迁移，预检、失败恢复和恢复验证可在 track-scoped 文件缺失时读取同一 SHA 的 legacy `/var/lib/allbot/releases/<sha>/release.env`，新候选仍必须写入 track-scoped 路径。Worker 首次切换不得覆盖已提交的控制面 journal/合约，也不得重跑 Postgres/Redis 控制面 cutover。发现升级前无 track 的失败 journal 时，只能通过带精确 `--track` 的 `recover` 兼容收口，禁止手工删 journal 或维护标记。
 - 当 control-plane 的可信计划为 `level=none` 且无 artifacts/services 时，`deploy` 命令只把精确 candidate 记录为 `ready-for-acceptance` / `non-runtime`，不调用 release preflight/deploy；若同时用 `--skip-test-execution` 延后 Worker，状态保留 `deferred_tracks=["test-execution"]`。证据必须写 bundle/CI/non-runtime plan 和延后事实，不得写容器或 Worker 已更新。
-- 部署事务失败时逆序恢复已完成 track；部署成功但业务失败时 block train、保留现场并从原槽位做 forward-fix，不自动改写 Git 历史。
+- 部署事务失败时逆序恢复已完成 track，并在恢复成功后的错误中保留底层 `release.py` 最后一行摘要，便于集成 AI 定位失败轨道而不绕过包装器；部署成功但业务失败时 block train、保留现场并从原槽位做 forward-fix，不自动改写 Git 历史。
 - candidate 未 `accept`、处于 blocked 或仍需 forward-fix 时不得释放原槽位；修复 candidate 被 `accept` 后立即释放。
 
 ## 5. 交付门禁
