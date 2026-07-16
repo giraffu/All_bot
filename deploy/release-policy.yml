@@ -107,6 +107,12 @@
       "services": ["dashboard-backend"]
     },
     {
+      "name": "dashboard-shared-schemas",
+      "patterns": ["dashboard/backend/schemas.py"],
+      "level": "rolling",
+      "services": ["dashboard-backend", "qqcc-config-backend"]
+    },
+    {
       "name": "qqcc-config-backend",
       "patterns": [
         "dashboard/backend/qqcc_config_main.py",

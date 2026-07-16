@@ -12,6 +12,12 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = ROOT / "scripts" / "release.py"
 POLICY_PATH = ROOT / "deploy" / "release-policy.yml"
+QQCC_CONTROL_PLANE_POLICY_PATH = (
+    ROOT / "deploy" / "release-policy-qqcc-control-plane.yml"
+)
+QQCC_TEST_RECONCILE_POLICY_PATH = (
+    ROOT / "deploy" / "release-policy-qqcc-control-plane-test-reconcile.yml"
+)
 SCHEMA_PATH = ROOT / "deploy" / "env.schema.yml"
 CONFIG_UPDATER_PATH = ROOT / "scripts" / "update_deploy_config.py"
 FULL_SHA = "a" * 40
@@ -423,6 +429,7 @@ def test_v2_test_data_service_repair_rejects_partial_selection(monkeypatch, tmp_
         repair_test_data_services=True,
         track="control-plane",
         env="test",
+        policy=POLICY_PATH,
         dashboard_fast_track=False,
     )
     monkeypatch.setattr(
@@ -502,6 +509,111 @@ def test_dashboard_admin_runtime_changes_stay_dashboard_backend_only():
     assert impact.level == "rolling"
     assert impact.services == {"dashboard-backend"}
     assert impact.blockers == set()
+    assert impact.unknown_paths == []
+
+
+def test_dashboard_shared_schemas_roll_both_dashboard_consumers():
+    module = _load_module()
+    policy = module.load_structured_file(POLICY_PATH)
+
+    impact = module.plan_changed_paths(policy, ["dashboard/backend/schemas.py"])
+
+    assert impact.level == "rolling"
+    assert impact.services == {"dashboard-backend", "qqcc-config-backend"}
+    assert impact.blockers == set()
+    assert impact.unknown_paths == []
+
+
+def test_qqcc_control_plane_policy_limits_release_to_qqcc_runtime_closure():
+    module = _load_module()
+    policy = module.load_structured_file(QQCC_CONTROL_PLANE_POLICY_PATH)
+
+    impact = module.plan_changed_paths(
+        policy,
+        [
+            "backend/app/models.py",
+            "dashboard/backend/schemas.py",
+            "dashboard/frontend/src/components/QqccBotSettings.vue",
+            "qqcc_bot/prompt_handlers.py",
+            "shared/locales/zh.json",
+            "src/core/task_dispatcher.py",
+            "src/services/qqcc_config_service.py",
+            "deploy/release-policy.yml",
+            "docs/knowledge_base_audit_matrix.md",
+            "tests/services/test_quick_video_submission_service.py",
+        ],
+    )
+
+    assert impact.level == "rolling"
+    assert impact.services == {
+        "central-api",
+        "qqcc-bot",
+        "qqcc-config-backend",
+        "qqcc-config-frontend",
+        "qqcc-private-bot-worker",
+    }
+    assert impact.blockers == set()
+    assert impact.unknown_paths == []
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "frontend/src/App.vue",
+        "workers/comfy_agent/workflows/mappings.json",
+        "remote_workers/comfy_agent/workflows/mappings.json",
+        "scripts/test_train_release.py",
+    ],
+)
+def test_qqcc_control_plane_policy_fails_closed_for_out_of_scope_paths(path):
+    module = _load_module()
+    policy = module.load_structured_file(QQCC_CONTROL_PLANE_POLICY_PATH)
+
+    impact = module.plan_changed_paths(policy, [path])
+
+    assert impact.level == "maintenance"
+    assert impact.unknown_paths == [path]
+
+
+def test_release_policy_environment_guard_rejects_test_policy_in_production():
+    module = _load_module()
+
+    with pytest.raises(module.ReleaseError, match="only valid for test"):
+        module.validate_release_policy_environment(
+            {"environment": "test"}, "prod"
+        )
+
+
+def test_qqcc_test_reconcile_policy_ignores_only_audited_test_train_drift():
+    module = _load_module()
+    policy = module.load_structured_file(QQCC_TEST_RECONCILE_POLICY_PATH)
+    module.validate_release_policy_environment(policy, "test")
+
+    impact = module.plan_changed_paths(
+        policy,
+        [
+            "dashboard/frontend/src/components/QqccBotSettings.vue",
+            "qqcc_bot/private_bot_fsm.py",
+            "src/services/qqcc_config_service.py",
+            "AGENTS.md",
+            "frontend/src/features/generation/labModeConfig.ts",
+            "remote_workers/comfy_agent/workflows/mappings.json",
+            "scripts/release.py",
+            "scripts/test_train_release.py",
+            "src/quota.py",
+            "src/services/permission_growth_channel_service.py",
+            "workers/comfy_agent/workflows/mappings.json",
+        ],
+    )
+
+    assert impact.level == "rolling"
+    assert impact.services == {
+        "central-api",
+        "qqcc-bot",
+        "qqcc-config-backend",
+        "qqcc-config-frontend",
+        "qqcc-private-bot-worker",
+    }
     assert impact.unknown_paths == []
 
 
@@ -2469,6 +2581,30 @@ def test_prod_preflight_skips_gpu_worker_checks():
     assert calls == ["operator", "cloud", "pages", "rollback"]
     assert report["checks"]["worker"] == {"status": "skipped", "blockers": []}
     assert report["status"] == "passed"
+
+
+def test_prod_rollback_preflight_accepts_cached_v2_release_index(tmp_path):
+    module = _load_module()
+    previous_sha = "1" * 40
+    release_index = tmp_path / previous_sha / "release-v2" / "release-index.json"
+    release_index.parent.mkdir(parents=True)
+    release_index.write_text("{}\n", encoding="utf-8")
+    (release_index.parent / "public-web-dist.tgz").write_bytes(b"web")
+
+    blockers = module._rollback_preflight(
+        SimpleNamespace(
+            env="prod",
+            previous_sha=previous_sha,
+            bundle_cache=str(tmp_path),
+        ),
+        module.ReleaseImpact(
+            services={"central-api", "web-static"}, level="rolling"
+        ),
+        _manifest(),
+        {},
+    )
+
+    assert blockers == []
 
 
 def test_release_cli_exposes_read_only_preflight_command():
