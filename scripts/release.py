@@ -1158,11 +1158,8 @@ def validate_release_manifest(manifest: Mapping[str, Any], expected_sha: str) ->
         )
 
 
-def parse_env_file(path: Path) -> dict[str, str]:
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError as exc:
-        raise ReleaseError(f"environment file is unavailable: {path}") from exc
+def parse_env_text(text: str) -> dict[str, str]:
+    lines = text.splitlines()
     values: dict[str, str] = {}
     for line_number, raw_line in enumerate(lines, start=1):
         line = raw_line.strip()
@@ -1181,6 +1178,14 @@ def parse_env_file(path: Path) -> dict[str, str]:
             value = value[1:-1]
         values[key] = value
     return values
+
+
+def parse_env_file(path: Path) -> dict[str, str]:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ReleaseError(f"environment file is unavailable: {path}") from exc
+    return parse_env_text(text)
 
 
 def validate_environment(
@@ -1720,6 +1725,42 @@ test -f /home/deploy/.ssh/allbot_release_ed25519 || echo cloud-readonly-deploy-k
 test -f /home/deploy/.docker/config.json || echo cloud-ghcr-credentials-unavailable
 if test -f {shlex.quote(transaction_path)} && ! grep -Eq '\"status\"[[:space:]]*:[[:space:]]*\"(committed|rolled_back)\"' {shlex.quote(transaction_path)}; then echo cloud-unfinished-release-transaction; fi
 """
+    if args.env == "prod" and "dashboard-backend" in selected_cloud_services:
+        runner_key = str(
+            Path(environment_values["DASHBOARD_LAN_AIO_RUNNER_KEY_DIR"])
+            / "id_ed25519"
+        )
+        runner_host = environment_values["DASHBOARD_LAN_AIO_RUNNER_HOST"]
+        runner_port = environment_values.get(
+            "DASHBOARD_LAN_AIO_RUNNER_SSH_PORT",
+            "2222",
+        )
+        runner_root = environment_values.get(
+            "DASHBOARD_LAN_AIO_RUNNER_PROJECT_ROOT",
+            "/home/hfy/APP/All_bot",
+        )
+        quoted_runner_key = shlex.quote(runner_key)
+        runner_contract = " && ".join(
+            f"test -r {shlex.quote(str(Path(runner_root) / path))}"
+            for path in (
+                "scripts/lan_aio_fleet_prod_ops.py",
+                ".env.cloud.prod",
+                ".env.lan.model-cache",
+            )
+        )
+        script += (
+            f"test -r {quoted_runner_key} || "
+            "echo cloud-lan-aio-runner-key-unavailable\n"
+            f"if test -f {quoted_runner_key}; then "
+            f"test \"$(stat -c %a {quoted_runner_key})\" = 600 || "
+            "echo cloud-lan-aio-runner-key-permissions-not-600; fi\n"
+            f"if test -r {quoted_runner_key}; then "
+            f"ssh -p {shlex.quote(runner_port)} -i {quoted_runner_key} "
+            "-o BatchMode=yes -o ConnectTimeout=10 "
+            "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
+            f"{shlex.quote(runner_host)} {shlex.quote(runner_contract)} </dev/null "
+            ">/dev/null 2>&1 || echo cloud-lan-aio-runner-unreachable; fi\n"
+        )
     if args.env == "prod" and initial:
         script += (
             f"compgen -G {shlex.quote(root + '/legacy-prod-*')} >/dev/null "
@@ -1763,6 +1804,9 @@ if test -f {shlex.quote(transaction_path)} && ! grep -Eq '\"status\"[[:space:]]*
         "cloud-unfinished-release-transaction",
         "cloud-rollback-checkout-unavailable",
         "cloud-rollback-release-env-unavailable",
+        "cloud-lan-aio-runner-key-unavailable",
+        "cloud-lan-aio-runner-key-permissions-not-600",
+        "cloud-lan-aio-runner-unreachable",
     }
     return sorted({line.strip() for line in result.stdout.splitlines()} & allowed)
 

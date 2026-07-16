@@ -4,6 +4,8 @@
 
 截至 2026-07-16，发布 schema v2 在三条 artifact track 之上增加按模块风险分级的策略层。仓库实现不等于任何运行态已晋级；每次正式部署、GPU mutation 或 Cloudflare Pages mutation仍需当次明确授权。不可变产物、全量只读 preflight、跨阶段事务、逆序恢复和非目标服务不重建继续保留。
 
+2026-07-16 起，正式 Dashboard 的 LAN AIO 基础控制属于不可变配置契约：prod overlay 固定 SSH runner，`deploy/env.schema.yml` 要求 runner host 与宿主 key 目录，Compose 只读挂载精确 `id_ed25519`，并默认连接本地主 Tailscale 地址上独立 OpenSSH 2222 端口，不占用 Tailscale SSH 22 端口。cloud preflight 校验 key 可读且权限为 `600`，还必须真实连接 runner 核对 helper、正式 env 和模型缓存 env 可读。缺项必须在 env/Compose/preflight 阶段阻断，生产后端也不得静默回退到容器内 local helper。相关 Compose/env/release preflight 变更不是 Dashboard fast-track allowlist，首次修复必须走普通测试与正式晋级；之后纯 Dashboard 代码更新仍可使用既有 fast-track，但不得绕过该运行时契约。
+
 旧 `update_cloud_*` 脚本已经 fail closed。它们不再包含 rsync 或 build 能力。旧 compose、云端混合源码和容器 image ID 只用于首次切换归档与一次性 legacy 回滚，不是可信 release 基线。
 
 ## 2. 事实源
