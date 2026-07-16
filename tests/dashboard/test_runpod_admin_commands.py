@@ -190,6 +190,44 @@ def test_lan_aio_action_command_requires_runner_host_for_ssh_mode(
     assert "LAN AIO runner host is not configured" in exc_info.value.detail
 
 
+def test_prod_lan_aio_action_never_falls_back_to_local_execution(
+    monkeypatch,
+    tmp_path,
+):
+    builder = RunPodAdminCommandBuilder(project_root=tmp_path)
+    monkeypatch.setenv("ALLBOT_ENV", "prod")
+    monkeypatch.delenv("DASHBOARD_LAN_AIO_EXECUTION_MODE", raising=False)
+    monkeypatch.delenv("DASHBOARD_LAN_AIO_RUNNER_HOST", raising=False)
+
+    with pytest.raises(HTTPException) as exc_info:
+        builder.lan_aio_control_command(
+            "disable-aio",
+            "gpu-252-gpu0-i2i_pro",
+        )
+
+    assert exc_info.value.status_code == 503
+    assert "LAN AIO runner host is not configured" in exc_info.value.detail
+
+
+def test_prod_lan_aio_runner_defaults_to_dedicated_openssh_port(
+    monkeypatch,
+    tmp_path,
+):
+    builder = RunPodAdminCommandBuilder(project_root=tmp_path)
+    monkeypatch.setenv("ALLBOT_ENV", "prod")
+    monkeypatch.setenv("DASHBOARD_LAN_AIO_RUNNER_HOST", "hfy@100.99.254.53")
+    monkeypatch.delenv("DASHBOARD_LAN_AIO_EXECUTION_MODE", raising=False)
+    monkeypatch.delenv("DASHBOARD_LAN_AIO_RUNNER_SSH_COMMAND", raising=False)
+    monkeypatch.delenv("DASHBOARD_LAN_AIO_RUNNER_SSH_PORT", raising=False)
+
+    command = builder.lan_aio_control_command(
+        "disable-aio",
+        "gpu-252-gpu0-i2i_pro",
+    )
+
+    assert command[:3] == ["ssh", "-p", "2222"]
+
+
 def test_lan_aio_runner_command_exports_configured_proxy_env(
     monkeypatch,
     tmp_path,

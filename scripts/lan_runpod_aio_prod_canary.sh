@@ -15,8 +15,6 @@ CENTRAL_URL="${LAN_AIO_PROD_CENTRAL_URL:-https://worker-central.aivison.it.com}"
 WEB_HEALTH_URL="${LAN_AIO_PROD_WEB_HEALTH_URL:-https://api.aivison.it.com/api/health}"
 SSH_HOST="allbot-gpu-002"
 REMOTE_BASE="${LAN_AIO_PROD_REMOTE_BASE:-/home/chuzeyu/allbot-runpod-aio-prod-canary}"
-REMOTE_WORKERS_SOURCE_DIR="${LAN_AIO_REMOTE_WORKERS_SOURCE_DIR:-remote_workers}"
-REMOTE_WORKERS_TARGET_DIR="/workspace/allbot/remote_workers"
 REGISTRY_HOST="192.168.1.115:5000"
 MODEL_CACHE_READY_URL="http://192.168.1.115:9010/minio/health/ready"
 
@@ -244,45 +242,6 @@ render_args() {
     --environment cloud-prod
 }
 
-patch_compose_remote_workers_mount() {
-  local file="$1"
-  python3 - "$file" "$CONTAINER_NAME" "${REMOTE_DIR}/remote_workers" "$REMOTE_WORKERS_TARGET_DIR" <<'PY'
-from pathlib import Path
-import sys
-
-import yaml
-
-path = Path(sys.argv[1])
-container_name = sys.argv[2]
-source_dir = sys.argv[3]
-target_dir = sys.argv[4]
-
-compose = yaml.safe_load(path.read_text()) or {}
-service = compose.get("services", {}).get(container_name)
-if not isinstance(service, dict):
-    raise SystemExit(f"compose service not found: {container_name}")
-
-environment = service.setdefault("environment", {})
-environment["RUNPOD_REMOTE_WORKER_ROOT"] = target_dir
-environment["PYTHONPATH"] = target_dir
-environment["PYTHONDONTWRITEBYTECODE"] = "1"
-
-mount = f"{source_dir}:{target_dir}"
-volumes = service.setdefault("volumes", [])
-if mount not in volumes:
-    volumes.append(mount)
-
-runtime = compose.setdefault("x-allbot-runtime", {})
-runtime["remote_workers_bundle"] = {
-    "source": source_dir,
-    "target": target_dir,
-    "mode": "host_mount_current_bundle",
-}
-
-path.write_text(yaml.safe_dump(compose, allow_unicode=True, sort_keys=False))
-PY
-}
-
 render_compose_to() {
   local out="$1"
   python scripts/gpu_pool_controller.py runtime-render \
@@ -292,7 +251,6 @@ render_compose_to() {
     --runtime-shape runpod_all_in_one \
     --agent-id "$TEMP_AGENT_ID" \
     --environment cloud-prod > "$out"
-  patch_compose_remote_workers_mount "$out"
   assert_prod_compose "$out"
 }
 
@@ -304,6 +262,10 @@ assert_prod_compose() {
   grep -q "production_port_unchanged: true" "$file"
   if grep -q "cloud-test\\|user-data-test" "$file"; then
     echo "Refusing compose containing cloud-test/user-data-test" >&2
+    exit 2
+  fi
+  if grep -q "host_mount_current_bundle\\|/remote_workers:" "$file"; then
+    echo "Refusing production compose with host-mounted remote_workers" >&2
     exit 2
   fi
 }
@@ -349,45 +311,6 @@ done
 rm -f "\$tmp"
 docker exec "\$container" sh -lc 'ls -lh /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth'
 REMOTE
-}
-
-sync_remote_workers_bundle() {
-  if [ ! -d "$REMOTE_WORKERS_SOURCE_DIR/comfy_agent" ] || [ ! -d "$REMOTE_WORKERS_SOURCE_DIR/remote_relay" ]; then
-    echo "remote_workers bundle source is invalid: ${REMOTE_WORKERS_SOURCE_DIR}" >&2
-    exit 2
-  fi
-  if [ "$MODE" != "execute" ]; then
-    echo "[dry-run] Would sync ${REMOTE_WORKERS_SOURCE_DIR} to ${SSH_HOST}:${REMOTE_DIR}/remote_workers"
-    return 0
-  fi
-  if [ -n "${LAN_AIO_GPU_SUDO_PASSWORD:-}" ]; then
-    {
-      printf '%s\n' "$LAN_AIO_GPU_SUDO_PASSWORD"
-      cat <<REMOTE
-set -euo pipefail
-sudo_cmd() {
-  if sudo -n true >/dev/null 2>&1; then
-    sudo "\$@"
-    return
-  fi
-  printf '%s\n' "\$LAN_AIO_GPU_SUDO_PASSWORD" | sudo -S -p '' "\$@"
-}
-mkdir -p '${REMOTE_DIR}'
-chmod 700 '${REMOTE_DIR}'
-rm -rf '${REMOTE_DIR}/remote_workers.tmp' '${REMOTE_DIR}/remote_workers' 2>/dev/null || sudo_cmd rm -rf '${REMOTE_DIR}/remote_workers.tmp' '${REMOTE_DIR}/remote_workers'
-mkdir -p '${REMOTE_DIR}/remote_workers.tmp'
-REMOTE
-    } | ssh "$SSH_HOST" 'IFS= read -r LAN_AIO_GPU_SUDO_PASSWORD; export LAN_AIO_GPU_SUDO_PASSWORD; bash -s'
-  else
-    ssh "$SSH_HOST" "set -euo pipefail; mkdir -p '${REMOTE_DIR}'; chmod 700 '${REMOTE_DIR}'; rm -rf '${REMOTE_DIR}/remote_workers.tmp' '${REMOTE_DIR}/remote_workers'; mkdir -p '${REMOTE_DIR}/remote_workers.tmp'"
-  fi
-  tar \
-    --exclude='__pycache__' \
-    --exclude='.pytest_cache' \
-    --exclude='*.pyc' \
-    --exclude='.mypy_cache' \
-    -C "$REMOTE_WORKERS_SOURCE_DIR" \
-    -czf - . | ssh "$SSH_HOST" "set -euo pipefail; tar -xzf - -C '${REMOTE_DIR}/remote_workers.tmp'; mv '${REMOTE_DIR}/remote_workers.tmp' '${REMOTE_DIR}/remote_workers'; chmod -R u+rwX,go-rwx '${REMOTE_DIR}/remote_workers'"
 }
 
 verify_disabled_heartbeat() {
@@ -753,7 +676,7 @@ run_start_heartbeat() {
   slot_config "$SLOT"
   if [ "$MODE" != "execute" ]; then
     echo "[dry-run] Would render prod compose and copy it to ${SSH_HOST}:${REMOTE_COMPOSE_FILE}"
-    sync_remote_workers_bundle
+    echo "[dry-run] Would use the remote_workers revision baked into the profile image"
     echo "[dry-run] Would generate a redacted runtime env file from ${PROD_ENV_FILE}, ${MODEL_ENV_FILE}, ${AIO_ENV_FILE}"
     control_agent "$TEMP_AGENT_ID" "disabled" "lan_aio_prod_heartbeat_only" "$CONTROL_TTL"
     echo "[dry-run] Would run docker compose up -d for ${CONTAINER_NAME}"
@@ -767,7 +690,6 @@ run_start_heartbeat() {
   render_compose_to "$tmp_compose"
   write_runtime_env_file "$tmp_env"
   control_agent "$TEMP_AGENT_ID" "disabled" "lan_aio_prod_heartbeat_only" "$CONTROL_TTL"
-  sync_remote_workers_bundle
   ssh "$SSH_HOST" "mkdir -p '${REMOTE_DIR}' && chmod 700 '${REMOTE_DIR}'"
   scp "$tmp_compose" "${SSH_HOST}:${REMOTE_COMPOSE_FILE}" >/dev/null
   scp "$tmp_env" "${SSH_HOST}:${REMOTE_ENV_FILE}" >/dev/null

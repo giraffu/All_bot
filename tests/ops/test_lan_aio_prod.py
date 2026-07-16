@@ -10,7 +10,7 @@ from ops.gpu_pool_controller.lan_aio_prod import (
     assert_prod_compose,
     load_lan_aio_prod_slots,
     main as lan_aio_main,
-    patch_remote_workers_mount,
+    patch_baked_remote_workers,
 )
 from ops.gpu_pool_controller.runpod_profile_catalog import (
     RUNPOD_LTX_VIDEO_WORKFLOW_OVERRIDES,
@@ -250,7 +250,7 @@ def test_lan_aio_prod_slot_declares_gpu002_image_to_video_hot_cache_copy():
     assert hot_cache.required is True
 
 
-def test_lan_aio_fleet_render_patches_remote_workers_mount_for_gpu_252():
+def test_lan_aio_fleet_render_uses_baked_remote_workers_for_gpu_252():
     ops = LanAioProdOps(
         config_root=None,
         prod_env_file=Path(".env.cloud.prod.missing"),
@@ -277,9 +277,10 @@ def test_lan_aio_fleet_render_patches_remote_workers_mount_for_gpu_252():
     assert "restart: unless-stopped" in rendered
     assert "RUNPOD_KEEPALIVE_ON_BOOTSTRAP_FAILURE: 'false'" in rendered
     assert "process_supervision: exit_container_when_agent_relay_or_comfy_exits" in rendered
-    assert f"{slot.remote_workers_dir}:/workspace/allbot/remote_workers" in rendered
-    assert "PYTHONPATH: /workspace/allbot/remote_workers" in rendered
+    assert slot.remote_workers_dir not in rendered
+    assert "PYTHONPATH: /opt/allbot/runtime/remote_workers" in rendered
     assert "remote_workers_bundle:" in rendered
+    assert "mode: baked_immutable_artifact" in rendered
 
 
 def test_lan_aio_fleet_render_uses_stable_gpu_device_id_for_gpu_252():
@@ -784,7 +785,7 @@ def test_lan_aio_prod_compose_assertion_rejects_test_storage():
             agent_id=slot.agent_id,
         ),
     )
-    patched = patch_remote_workers_mount(rendered, slot)
+    patched = patch_baked_remote_workers(rendered, slot)
 
     try:
         assert_prod_compose(patched, slot)
@@ -1037,6 +1038,74 @@ def test_lan_aio_start_disabled_force_recreates_container():
 
     assert result["ok"] is True
     assert ops.compose_ops == ["up -d --force-recreate"]
+
+
+def test_lan_release_rollout_failure_restores_only_selected_slot():
+    class RecordingOps(LanAioProdOps):
+        def __init__(self):
+            super().__init__(
+                config_root=None,
+                prod_env_file=Path(".env.cloud.prod.missing"),
+                aio_env_file=Path(".env.lan-aio-prod.missing"),
+                model_env_file=Path(".env.lan.model-cache.missing"),
+            )
+            self.compose_ops: list[str] = []
+            self.controls: list[tuple[str, str]] = []
+
+        def pull_image(self, slots):
+            return {"ok": True}
+
+        def _set_control(self, agent_id, state, reason, *, ttl_seconds=None):
+            self.controls.append((state, reason))
+
+        def _wait_worker_ids_idle(self, agent_ids):
+            return None
+
+        def _exact_remote_image_ref(self, slot, image_ref):
+            return "192.168.1.115:5000/allbot/i2i-pro@sha256:" + "9" * 64
+
+        def _write_remote_runtime_files(self, slot):
+            return None
+
+        def _remote_compose(self, slot, op):
+            self.compose_ops.append(op)
+
+        def _wait_container_health(self, slot):
+            return None
+
+        def _verify_release_runtime(self, slot, resolved):
+            raise RuntimeError("target revision mismatch")
+
+        def _verify_exact_runtime_ref(self, slot, image_ref):
+            assert image_ref.endswith("9" * 64)
+
+        def _verify_disabled_heartbeat(self, slot):
+            return None
+
+    ops = RecordingOps()
+    slot = ops.slots["gpu-252-gpu0-i2i_pro"]
+    old_ref = ops.config.profiles["i2i_pro"].all_in_one_image_ref
+    resolved = {
+        "profile": "i2i_pro",
+        "ref": "ghcr.io/giraffu/allbot-gpu-i2i-pro@sha256:" + "1" * 64,
+        "digest": "sha256:" + "1" * 64,
+        "oci_revision": "a" * 40,
+        "model_manifest_key": "i2i_pro/release/manifest.json",
+        "validation_level": "attested",
+    }
+
+    with pytest.raises(RuntimeError, match="old image was restored"):
+        ops.release_rollout(slot, resolved)
+
+    assert old_ref is not None and "@sha256:" not in old_ref
+    assert ops.config.profiles["i2i_pro"].all_in_one_image_ref == (
+        "192.168.1.115:5000/allbot/i2i-pro@sha256:" + "9" * 64
+    )
+    assert ops.compose_ops == ["up -d --force-recreate"] * 2
+    assert ops.controls[-1] == (
+        "enabled",
+        "lan_aio_release_rollout_rollback_complete",
+    )
 
 
 def test_lan_aio_start_disabled_removes_safe_exited_target_container():

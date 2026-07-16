@@ -1,0 +1,15 @@
+[Unit]
+Description=AllBot LAN AIO Dashboard runner OpenSSH listener
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=%h/.config/allbot/lan-aio-dashboard-runner.env
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/allbot/lan-aio-dashboard-runner.env
+ExecStart=/usr/sbin/sshd -D -e -f /dev/null -o HostKey=%h/.local/share/allbot/lan-aio-dashboard-runner/ssh_host_ed25519_key -p ${ALLBOT_LAN_AIO_RUNNER_PORT} -o ListenAddress=${ALLBOT_LAN_AIO_RUNNER_LISTEN_ADDRESS} -o PidFile=%t/allbot-lan-aio-dashboard-runner-sshd.pid -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no -o UsePAM=no -o PermitRootLogin=no -o PubkeyAuthentication=yes -o AllowUsers=hfy
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

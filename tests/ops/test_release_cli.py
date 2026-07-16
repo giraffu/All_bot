@@ -116,6 +116,33 @@ def _valid_test_environment(*, worker_slots: tuple[str, ...] = ()) -> dict[str, 
     return values
 
 
+def _valid_prod_environment() -> dict[str, str]:
+    return {
+        "ALLBOT_ENV": "prod",
+        "ALLBOT_ENV_FILE": "/etc/allbot/prod.env",
+        "ALLBOT_STATE_ROOT": "/var/lib/allbot/prod",
+        "DATABASE_URL": "postgresql+asyncpg://prod-db",
+        "REDIS_URL": "redis://prod-control/0",
+        "WORKER_REDIS_URL": "redis://prod-worker/0",
+        "AGENT_SECRET_TOKEN": "prod-agent-secret",
+        "API_TOKEN": "prod-api-token",
+        "MINIO_ENDPOINT": "prod-minio",
+        "MINIO_ACCESS_KEY": "prod-access-key",
+        "MINIO_SECRET_KEY": "prod-secret-key",
+        "MINIO_SECURE": "true",
+        "BOT_TOKEN": "prod-bot-token",
+        "CLOUD_PROD_BIND_IP": "127.0.0.1",
+        "CLOUD_PROD_DATABASE_URL": "postgresql+asyncpg://prod-db",
+        "CLOUD_PROD_REDIS_URL": "redis://prod-control/0",
+        "CLOUD_PROD_WORKER_REDIS_URL": "redis://prod-worker/0",
+        "JWT_SECRET_KEY": "prod-jwt-secret",
+        "QQCC_CONFIG_ADMIN_HOST": "qqcc-admin.example.com",
+        "PRIVATE_QQCC_BOT_OWNER_HOST": "private-bot.example.com",
+        "DASHBOARD_LAN_AIO_RUNNER_HOST": "runner@example.internal",
+        "DASHBOARD_LAN_AIO_RUNNER_KEY_DIR": "/secure/lan-aio-runner",
+    }
+
+
 def test_shared_runtime_changes_expand_to_every_python_consumer():
     module = _load_module()
     policy = module.load_structured_file(POLICY_PATH)
@@ -336,6 +363,89 @@ def test_v2_test_execution_initial_release_does_not_select_cloud_state_services(
     selected = module.cloud_services_for_release("test", impact)
 
     assert selected == set()
+
+
+def test_test_environment_excludes_owner_only_admin_services():
+    module = _load_module()
+
+    assert {
+        "dashboard-backend",
+        "dashboard-frontend",
+        "qqcc-config-backend",
+        "qqcc-config-frontend",
+    }.isdisjoint(module.ENVIRONMENT["test"]["available_services"])
+
+
+def test_release_cli_exposes_risk_strategy_and_audited_gate_skips():
+    module = _load_module()
+
+    args = module.build_parser().parse_args(
+        [
+            "deploy",
+            "--env",
+            "prod",
+            "--sha",
+            FULL_SHA,
+            "--strategy",
+            "emergency",
+            "--skip-gate",
+            "ci-tests",
+            "--reason",
+            "restore API",
+            "--approved-by",
+            "owner",
+        ]
+    )
+
+    assert args.strategy == "emergency"
+    assert args.skip_gate == ["ci-tests"]
+    assert args.reason == "restore API"
+    assert args.approved_by == "owner"
+
+
+def test_release_plan_reports_owner_tool_direct_strategy_and_gate_matrix():
+    module = _load_module()
+    digest = "sha256:" + "1" * 64
+    manifest = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "git_sha": FULL_SHA,
+        "source_sha": FULL_SHA,
+        "release_channel": "main",
+        "source_ref": "refs/heads/main",
+        "validation": {"mode": "full", "tests": "passed"},
+        "artifacts": {
+            "dashboard-backend": {
+                "digest": digest,
+                "ref": "ghcr.io/giraffu/dashboard@" + digest,
+            }
+        },
+        "selected_artifacts": ["dashboard-backend"],
+    }
+    impact = module.ReleaseImpact(
+        services={"dashboard-backend"},
+        level="rolling",
+        matched_rules=["dashboard-admin-backend", "track:control-plane"],
+    )
+    args = SimpleNamespace(
+        env="prod",
+        strategy="auto",
+        skip_gate=[],
+        reason="",
+        approved_by="",
+        dashboard_fast_track=False,
+        control_plane_repair_fast_track=False,
+        skip_env_checks=False,
+        skip_web=False,
+        execute=False,
+    )
+
+    document = module._plan_document(args, impact, manifest, "b" * 40, {})
+
+    assert document["risk_class"] == "owner-tools"
+    assert document["strategy"] == "direct"
+    assert document["test_required"] is False
+    assert document["gates"]["test-acceptance"] == "skipped"
 
 
 def test_v2_test_data_service_repair_is_explicit_maintenance_cutover(
@@ -981,6 +1091,53 @@ def test_dashboard_fast_track_skips_test_promotion_but_keeps_ci_preflight(
     assert calls == [(FULL_SHA, FULL_SHA)]
 
 
+def test_general_direct_strategy_skips_test_promotion_but_keeps_ci_preflight(
+    tmp_path, monkeypatch
+):
+    module = _load_module()
+    env_file = tmp_path / "prod.env"
+    env_file.write_text("ALLBOT_ENV=prod\n", encoding="utf-8")
+    env_file.chmod(0o600)
+    decision = module.decide_release_strategy(
+        track="control-plane",
+        artifacts={"qqcc-config-backend"},
+        requested="direct",
+        locked=False,
+        validation_mode="full",
+    )
+    args = SimpleNamespace(
+        env="prod",
+        release_decision=decision,
+        dashboard_fast_track=False,
+        skip_ci_checks=False,
+        local_env_error=False,
+        skip_web=True,
+        cloudflare_token_file="unused",
+    )
+    calls = []
+    monkeypatch.setattr(module, "local_env_file", lambda _args: env_file)
+    monkeypatch.setattr(
+        module,
+        "verify_release_ci",
+        lambda manifest, sha: calls.append((manifest["git_sha"], sha)),
+    )
+    monkeypatch.setattr(
+        module,
+        "_promotion_check",
+        lambda *_args: pytest.fail("direct releases must not require test promotion"),
+    )
+
+    blockers = module._operator_preflight(
+        args,
+        module.ReleaseImpact(services={"qqcc-config-backend"}, level="rolling"),
+        _manifest(),
+        {},
+    )
+
+    assert blockers == []
+    assert calls == [(FULL_SHA, FULL_SHA)]
+
+
 def test_dashboard_fast_track_cloud_deploy_is_rolling_and_dashboard_only(monkeypatch):
     module = _load_module()
     args = SimpleNamespace(
@@ -1173,6 +1330,24 @@ def test_environment_contract_accepts_worker_08_and_rejects_unknown_slots():
         module.validate_environment(schema, "test", invalid)
 
 
+def test_prod_environment_requires_lan_aio_runner_host_and_key_directory():
+    module = _load_module()
+    schema = module.load_structured_file(SCHEMA_PATH)
+    values = _valid_prod_environment()
+
+    revision = module.validate_environment(schema, "prod", values)
+
+    assert len(revision) == 64
+    for key in (
+        "DASHBOARD_LAN_AIO_RUNNER_HOST",
+        "DASHBOARD_LAN_AIO_RUNNER_KEY_DIR",
+    ):
+        invalid = dict(values)
+        invalid.pop(key)
+        with pytest.raises(module.ReleaseError, match=key):
+            module.validate_environment(schema, "prod", invalid)
+
+
 def test_initial_worker_cutover_maps_legacy_slots_and_holds_maintenance():
     module = _load_module()
     impact = module.ReleaseImpact(
@@ -1248,6 +1423,9 @@ def test_state_marks_web_skipped_instead_of_claiming_checksum_passed(monkeypatch
 
     state = json.loads(captured["payload"])
     assert state["health"]["web"] == "skipped"
+    assert state["risk_class"] == "critical"
+    assert state["strategy"] == "standard"
+    assert state["validation_mode"] == "full"
 
 
 def test_state_records_pages_deployment_metadata(monkeypatch):
@@ -1781,6 +1959,87 @@ def test_v2_cloud_preflight_accepts_legacy_rollback_contract(monkeypatch):
     assert "cloud-rollback-release-env-unavailable" in remote_scripts[0]
 
 
+def test_prod_dashboard_preflight_requires_readable_lan_aio_runner_key(monkeypatch):
+    module = _load_module()
+    remote_scripts = []
+
+    def fake_run(command, **kwargs):
+        remote_scripts.append(kwargs.get("input_text", ""))
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="cloud-lan-aio-runner-key-unavailable\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(module, "_run", fake_run)
+
+    blockers = module._cloud_preflight(
+        SimpleNamespace(
+            env="prod",
+            previous_sha="",
+            remote_host="cloud-prod",
+            remote_checkout_root="/release-root",
+            remote_env_file="/etc/allbot/prod.env",
+        ),
+        module.ReleaseImpact(
+            services={"dashboard-backend"},
+            level="rolling",
+            matched_rules=["dashboard-admin-backend"],
+        ),
+        {"schema_version": 2, "track": "control-plane", "git_sha": FULL_SHA},
+        _valid_prod_environment(),
+    )
+
+    assert blockers == ["cloud-lan-aio-runner-key-unavailable"]
+    assert (
+        "test -r /secure/lan-aio-runner/id_ed25519"
+        in remote_scripts[0]
+    )
+    assert "cloud-lan-aio-runner-key-permissions-not-600" in remote_scripts[0]
+
+
+def test_prod_dashboard_preflight_probes_dedicated_lan_aio_runner(monkeypatch):
+    module = _load_module()
+    remote_scripts = []
+
+    def fake_run(command, **kwargs):
+        remote_scripts.append(kwargs.get("input_text", ""))
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="cloud-lan-aio-runner-unreachable\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(module, "_run", fake_run)
+    values = _valid_prod_environment()
+    values["DASHBOARD_LAN_AIO_RUNNER_SSH_PORT"] = "2222"
+
+    blockers = module._cloud_preflight(
+        SimpleNamespace(
+            env="prod",
+            previous_sha="",
+            remote_host="cloud-prod",
+            remote_checkout_root="/release-root",
+            remote_env_file="/etc/allbot/prod.env",
+        ),
+        module.ReleaseImpact(
+            services={"dashboard-backend"},
+            level="rolling",
+            matched_rules=["dashboard-admin-backend"],
+        ),
+        {"schema_version": 2, "track": "control-plane", "git_sha": FULL_SHA},
+        values,
+    )
+
+    assert blockers == ["cloud-lan-aio-runner-unreachable"]
+    assert "ssh -p 2222" in remote_scripts[0]
+    assert "hfy@100.99.254.53" not in remote_scripts[0]
+    assert "runner@example.internal" in remote_scripts[0]
+    assert "test -r /home/hfy/APP/All_bot/scripts/lan_aio_fleet_prod_ops.py" in remote_scripts[0]
+
+
 def test_v2_cloud_rollback_can_use_legacy_release_contract(monkeypatch):
     module = _load_module()
     previous_sha = "b" * 40
@@ -2059,6 +2318,36 @@ def test_test_acceptance_requires_same_digest_and_24_hour_observation():
     evidence["completed_at"] = (completed - timedelta(hours=1)).isoformat()
     with pytest.raises(module.ReleaseError, match="24 hours"):
         module.validate_test_acceptance(evidence, manifest)
+
+
+def test_v2_public_web_acceptance_only_requires_its_selected_module_checks():
+    module = _load_module()
+    completed = datetime.now(timezone.utc) - timedelta(minutes=1)
+    checksum = "1" * 64
+    manifest = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "git_sha": FULL_SHA,
+        "artifacts": {
+            "public-web": {"kind": "tar", "sha256": checksum},
+        },
+        "selected_artifacts": ["public-web"],
+    }
+    evidence = {
+        "git_sha": FULL_SHA,
+        "track": "control-plane",
+        "artifacts": {"public-web": checksum},
+        "observation_started_at": (completed - timedelta(hours=24)).isoformat(),
+        "completed_at": completed.isoformat(),
+        "approved_by": "owner",
+        "checks": {
+            "health": True,
+            "web_static": True,
+            "rollback_drill": True,
+        },
+    }
+
+    module.validate_test_acceptance(evidence, manifest)
 
 
 def _short_observation_evidence(module, manifest, *, completed=None):
@@ -2413,6 +2702,27 @@ def test_config_impact_recreates_consumers_and_unknown_keys_fail_wide():
     assert unknown == set(module.load_structured_file(POLICY_PATH)["all_services"])
 
 
+def test_config_update_compares_current_and_candidate_env_with_same_quote_semantics(
+    tmp_path,
+):
+    module = _load_module()
+    candidate = tmp_path / "candidate.env"
+    candidate.write_text(
+        'UNCHANGED_HASH="quoted-value"\nDASHBOARD_LAN_AIO_RUNNER_HOST=runner\n',
+        encoding="utf-8",
+    )
+
+    old_values = module.parse_env_text('UNCHANGED_HASH="quoted-value"\n')
+    new_values = module.parse_env_file(candidate)
+    changed = {
+        key
+        for key in set(old_values) | set(new_values)
+        if old_values.get(key) != new_values.get(key)
+    }
+
+    assert changed == {"DASHBOARD_LAN_AIO_RUNNER_HOST"}
+
+
 def test_v2_promotion_and_state_are_scoped_per_track(monkeypatch, capsys):
     module = _load_module()
     digest = "sha256:" + "1" * 64
@@ -2436,7 +2746,7 @@ def test_v2_promotion_and_state_are_scoped_per_track(monkeypatch, capsys):
         "schema_version": 2,
         "track": "control-plane",
         "git_sha": FULL_SHA,
-        "status": "verified",
+        "status": "partial",
         "artifacts": {"central-api": {"digest": digest, "status": "verified"}},
     }
     commands = []
@@ -2454,7 +2764,7 @@ def test_v2_promotion_and_state_are_scoped_per_track(monkeypatch, capsys):
     )
     module._promotion_check(args, manifest)
     assert commands[0][-1] == (
-        "cat /var/lib/allbot/deployments/test/control-plane/current.json"
+        f"cat /var/lib/allbot/deployments/test/control-plane/history/{FULL_SHA}.json"
     )
 
     write_args = SimpleNamespace(
@@ -2474,6 +2784,128 @@ def test_v2_promotion_and_state_are_scoped_per_track(monkeypatch, capsys):
         "/var/lib/allbot/deployments/test/control-plane/current.json"
         in capsys.readouterr().out
     )
+
+
+def test_v2_promotion_reuses_verified_artifact_digest_across_new_sha(monkeypatch):
+    module = _load_module()
+    tested_sha = "b" * 40
+    digest = "sha256:" + "1" * 64
+    manifest = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "source_sha": FULL_SHA,
+        "git_sha": FULL_SHA,
+        "release_channel": "main",
+        "artifacts": {
+            "central-api": {
+                "kind": "image",
+                "ref": "ghcr.io/giraffu/central@" + digest,
+                "digest": digest,
+                "source_sha": tested_sha,
+                "oci_revision": tested_sha,
+                "dependency_closure": [],
+            }
+        },
+        "selected_artifacts": ["central-api"],
+    }
+    direct_only_target_state = {
+        "schema_version": 2,
+        "environment": "test",
+        "track": "control-plane",
+        "git_sha": FULL_SHA,
+        "release_channel": "main",
+        "artifacts": {
+            "dashboard-frontend": {
+                "digest": "sha256:" + "2" * 64,
+                "status": "deployed",
+                "assurance": "waived",
+            }
+        },
+    }
+    tested_state = {
+        "schema_version": 2,
+        "environment": "test",
+        "track": "control-plane",
+        "git_sha": tested_sha,
+        "release_channel": "main",
+        "artifacts": {
+            "central-api": {
+                "digest": digest,
+                "status": "verified",
+                "assurance": "tested",
+            }
+        },
+    }
+
+    def fake_run(command, **_kwargs):
+        remote = command[-1]
+        if remote.endswith(f"history/{FULL_SHA}.json"):
+            value = direct_only_target_state
+        elif remote.startswith("find "):
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=(
+                    "/var/lib/allbot/deployments/test/control-plane/history/"
+                    f"{tested_sha}.json\n"
+                ),
+                stderr="",
+            )
+        elif remote.endswith(f"history/{tested_sha}.json"):
+            value = tested_state
+        else:
+            raise AssertionError(command)
+        return subprocess.CompletedProcess(
+            command, 0, stdout=json.dumps(value), stderr=""
+        )
+
+    monkeypatch.setattr(module, "_run", fake_run)
+    args = SimpleNamespace(
+        env="prod",
+        command="deploy",
+        test_state_host="cloud-test",
+        execute=False,
+    )
+
+    module._promotion_check(args, manifest)
+
+
+def test_artifact_history_merge_preserves_other_verified_digests():
+    module = _load_module()
+    identity = {
+        "schema_version": 2,
+        "environment": "test",
+        "track": "control-plane",
+        "git_sha": FULL_SHA,
+    }
+    existing = {
+        **identity,
+        "status": "verified",
+        "artifacts": {
+            "central-api": {
+                "digest": "sha256:" + "1" * 64,
+                "status": "verified",
+                "assurance": "tested",
+            }
+        },
+    }
+    incoming = {
+        **identity,
+        "status": "deployed",
+        "artifacts": {
+            "public-web": {
+                "digest": "2" * 64,
+                "status": "deployed",
+                "assurance": "pending",
+            }
+        },
+    }
+
+    merged = module.merge_artifact_history_state(existing, incoming)
+
+    assert set(merged["artifacts"]) == {"central-api", "public-web"}
+    assert merged["artifacts"]["central-api"]["status"] == "verified"
+    assert merged["status"] == "partial"
 
 
 def test_production_promotion_rejects_candidate_test_state(monkeypatch):
@@ -2699,6 +3131,9 @@ def test_preflight_collects_every_read_only_blocker_before_refusing_release():
         "rollback-materials-unavailable",
         "worker-relay-owner-mismatch",
     ]
+    assert report["gates"]["immutable-artifact"] == "required"
+    assert report["gates"]["risk-bypass"] == "forbidden"
+    assert report["gate_requirements"]["immutable-artifact"] == "required"
     with pytest.raises(module.ReleaseError, match="preflight blocked"):
         module.require_preflight(report)
 
@@ -2738,6 +3173,8 @@ def test_prod_preflight_skips_gpu_worker_checks():
     assert calls == ["operator", "cloud", "pages", "rollback"]
     assert report["checks"]["worker"] == {"status": "skipped", "blockers": []}
     assert report["status"] == "passed"
+    assert report["gates"]["immutable-artifact"] == "passed"
+    assert report["gates"]["production-confirmation"] == "required"
 
 
 def test_prod_rollback_preflight_accepts_cached_v2_release_index(tmp_path):

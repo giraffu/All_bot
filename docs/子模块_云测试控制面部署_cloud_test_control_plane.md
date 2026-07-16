@@ -1,6 +1,6 @@
 # 子模块: 云测试控制面部署 (Cloud Test Control Plane)
 
-> 2026-07-15 发布入口升级为 schema v2：云测试分别部署 `control-plane` 与 `test-execution` track，状态/回滚历史互相隔离；GPU profile 逐个 canary 后写入 `gpu-execution` manifest。并发研发只允许精确 `codex/test-train` 的可信 test-candidate，由集成 AI 排他切换，candidate 不得 verified 或晋级。禁止代码/env rsync、云端 build、源码 bind mount 和 RunPod 启动 clone。测试 Dashboard autoscaler 必须保持关闭；正式 overlay 的 `true/execute` 只做离线渲染回归，本阶段不重建正式服务。完整 SOP 见 `docs/子模块_Git不可变发布_git_immutable_release.md` 与 `docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md`。
+> 2026-07-16 发布入口按 artifact 风险分级：云测试只保留核心 control-plane/公共 Web 的 standard 验证，Dashboard 与 QQCC Config 四个管理服务已移除；`test-execution` 改为 `--with-test-execution` 专项启用。GPU profile 的强制证据是 artifact attestation，业务 canary 不再阻塞 direct。状态/回滚历史按 track + artifact digest 隔离。禁止代码/env rsync、云端 build、源码 bind mount和 RunPod 启动 clone。
 
 ## 1. 目标与边界
 
@@ -13,7 +13,7 @@
 - 新控制面：`deploy/docker-compose-cloud-base.yml` + `deploy/docker-compose-cloud-test.overlay.yml`
 - 私密配置：`/etc/allbot/test.env`；非敏感镜像/SHA：release 目录的 `release.env`
 - 计划/发布：按顺序执行 `scripts/release.py plan --env test --sha <full-sha>`、`preflight --env test --sha <full-sha>`、`deploy --env test --sha <full-sha> --execute`；不得用 `--services` 人工缩小机器计算的依赖闭包。
-- Test-train：A-H 只提交 PR；集成 AI 执行 `scripts/test_train_release.py plan|deploy|accept|block`。包装器使用独立 candidate cache 和本地排他锁，GPU 变化只报告并转交 profile canary/operator。默认部署 control-plane 后继续 test-execution；当用户明确要求等匹配 GPU/ComfyUI 的 Worker 窗口时，deploy 可加 `--skip-test-execution`，但本轮状态/evidence 只能验收 control-plane，不能写 Worker 已更新。
+- Test-train：A-H 只提交 PR；集成 AI 执行 `scripts/test_train_release.py plan|deploy|accept|block`。包装器使用独立 candidate cache 和本地排他锁，GPU 变化只报告并转交 profile canary/operator。默认只部署需要测试的 control-plane/公共 Web；Worker 专项诊断显式加 `--with-test-execution`。管理面候选写 `test-not-required`，不修改共享测试站。未启用 Worker 时状态/evidence 只能验收实际选中的 track。
 - `test-execution` 首次没有独立 `current.json` 时，release plan 必须标记 `initial-release`，从当前 legacy `cloud-comfy-agent-test-*` / `cloud-worker-relay-test` 做 allowlist 快照和受控切换；快照、release env 与回滚材料统一位于 `~/APP/All_bot-release/release-env/test-execution/<sha>/`，后续 Worker preflight 也必须从该 track-scoped 路径读取。test-execution 未选择任何 cloud service 时跳过 cloud preflight，不要求云端存在该轨的 release.env。若 control-plane 已完成而 Worker 预检失败，保持原槽位做 forward-fix，不能把候选记为已完整部署。
 - 云端控制面回滚目标若是 track 隔离上线前的历史候选，可能只有 `/var/lib/allbot/releases/<sha>/release.env`。preflight、失败恢复和恢复验证必须先找 `/var/lib/allbot/releases/control-plane/<sha>/release.env`，缺失时才兼容同一 SHA 的 legacy 合约；正向候选仍只生成 track-scoped 合约，禁止回写或覆盖 legacy 文件。
 - v2 两轨事务分别写 `transactions/control-plane/<sha>` 与 `transactions/test-execution/<sha>`，不能因 SHA 相同覆盖彼此；test-execution 首次切换不重跑云端 Postgres/Redis。升级前的无 track Worker 失败 journal 必须用 `release.py recover --env test --track test-execution --transaction <sha> --execute` 收口，发布器兼容读取旧路径并把恢复结果写到新路径。
@@ -55,14 +55,6 @@ RUNPOD_MODEL_SECURE=true
 CLOUD_TEST_DATABASE_URL=postgresql+asyncpg://postgres:<password>@postgres-test:5432/bot_db_test
 CLOUD_TEST_REDIS_URL=redis://:<password>@redis-test:6379/3
 CLOUD_TEST_WORKER_REDIS_URL=redis://:<password>@redis-test:6379/4
-QQCC_CONFIG_FRONTEND_TEST_PORT=8088
-QQCC_CONFIG_ADMIN_USERNAME=<qqcc-config-admin-user>
-QQCC_CONFIG_ADMIN_PASSWORD_HASH=<bcrypt-password-hash>
-QQCC_CONFIG_SECRET_KEY=<qqcc-config-jwt-secret>
-QQCC_CONFIG_ADMIN_HOST=qqcc-admin-test.aivison.it.com
-PRIVATE_QQCC_BOT_OWNER_HOST=private-bot-test.aivison.it.com
-PRIVATE_QQCC_BOT_OWNER_WEBAPP_URL=https://private-bot-test.aivison.it.com/
-PRIVATE_QQCC_BOT_OWNER_JWT_SECRET=<urlsafe-base64-32-byte-owner-jwt-key>
 PRIVATE_QQCC_BOT_WEBHOOK_BASE_URL=https://api-test.aivison.it.com/api/private-bots/webhook
 PRIVATE_QQCC_BOT_TOKEN_KEYRING='{"1":"<urlsafe-base64-32-byte-aes-key>"}'
 PRIVATE_QQCC_BOT_TOKEN_ACTIVE_KEY_VERSION=1
@@ -142,7 +134,7 @@ docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.ym
 
 按目标替换上例中的 service/profile：
 
-- `web-api-test`、`central-api-test`、`dashboard-backend-test`、`dashboard-frontend-test`、`qqcc-config-backend-test`、`qqcc-config-frontend-test`、`imgproxy-test` 不需要 Bot profile。
+- `web-api-test`、`central-api-test`、`imgproxy-test` 不需要 Bot profile；Dashboard/QQCC Config 管理服务不再存在于测试 Compose。
 - `bot-test` 使用 `--profile bot`；启动前确认本地主服务器或其它位置没有同测试 token polling 实例。
 - `qqcc-bot-test` 使用 `--profile qqcc-bot`；没有独立 `QQCC_BOT_TOKEN_TEST` 时必须保持停止。
 
@@ -257,20 +249,16 @@ VPS Nginx 配置文件为 `/etc/nginx/sites-available/web-test.aivison.it.com`�
 | :--- | :--- | :--- | :--- |
 | Central API | `cloud-central-api-test` | `8004` | 任务控制面 API，本地 cloud-worker 访问 |
 | Web API | `cloud-web-api-test` | `8001` | Web BFF / 主 API |
-| Dashboard Backend | `cloud-dashboard-backend-test` | `8044` | Dashboard 后端 |
-| Dashboard Frontend | `cloud-dashboard-frontend-test` | `8087` | Dashboard 云端 Nginx 前端，仅 Tailscale/受控来源访问 |
-| QQCC Config Backend | `cloud-qqcc-config-backend-test` | `8045` | QQCC 懒人 Bot 独立配置 API |
-| QQCC Config Frontend | `cloud-qqcc-config-frontend-test` | `8088` | QQCC 懒人 Bot 独立配置 Web；Tailscale origin，公网只经 Access 保护的测试 Tunnel 访问 |
 | QQCC Private Bot Worker | `cloud-qqcc-private-bot-worker-test` | 无 | `qqcc-private-bots` profile；消费 Telegram webhook stream，默认不启动 |
 | imgproxy | `cloud-imgproxy-test` | `8084` | 图片代理 |
 
-QQCC Config Frontend 启用严格 Host 路由后，直接访问 `http://100.82.124.91:8088` 只有请求 Host 与 `QQCC_CONFIG_ADMIN_HOST` 一致时才会命中管理员站点；localhost 端口转发或未知 Host 默认返回 404，curl 验证必须显式带 `Host: ${QQCC_CONFIG_ADMIN_HOST}`。2026-07-16 已上线 `https://qqcc-admin-test.aivison.it.com`，由 `allbot-cloud-web-api-canary` Tunnel 回源该 Tailscale origin，并通过 Cloudflare Access 仅允许管理员邮箱，QQCC Config 自身登录继续作为第二层认证。测试 Owner Host 必须另配 HTTPS 域名且不能和 admin Host 相同；当前私有 Bot gate 关闭，`private-bot-test.aivison.it.com` 尚未创建。
-
-测试机 systemd 服务 `allbot-cloud-test-firewall.service` 管理公网保护规则，脚本路径为 `/usr/local/sbin/allbot-cloud-test-firewall.sh`，规则写入 Docker `DOCKER-USER` 链。当前公网 eth0 上的 `8001/8004/8044/8045/8084/8087/8088` 全部 drop；Tailscale `tailscale0` 不受该规则影响。
+Dashboard/QQCC Config 管理服务不属于云测试服务清单，不配置测试 Host/端口，也不进入 preflight/验收。测试机 firewall 只需保护仍在使用的核心端口。
+2026-07-16 只读复核确认独立保留入口 `https://qqcc-admin-test.aivison.it.com` 仍由测试 Tunnel 回源
+`100.82.124.91:8088`，未登录请求由 Cloudflare Access 拦截。该入口不是 test-train 管理的测试服务，当前可达性
+不得作为候选部署或验收证据；QQCC Config 自身登录仍是第二层认证，测试 private Bot gate 关闭，
+`private-bot-test.aivison.it.com` 未创建。
 
 云测试缓存与队列使用同机容器 `redis-test`，不复用正式 Valkey/Redis：
-
-Dashboard Backend 使用同一云测试 Redis 配置持久化 RunPod operation store；本地单测可注入 in-memory fake，但云测试/正式验证 RunPod 管理时应确认 `REDIS_URL` 或 `DASHBOARD_RUNPOD_OPERATION_REDIS_URL` 可用。
 
 ```text
 Container: cloud-redis-test
@@ -293,10 +281,6 @@ VS Code Remote 或本地 SSH 仍可通过端口转发作为应急访问：
 ```bash
 ssh -N \
   -L 8001:100.82.124.91:8001 \
-  -L 8044:100.82.124.91:8044 \
-  -L 8045:100.82.124.91:8045 \
-  -L 8087:100.82.124.91:8087 \
-  -L 8088:100.82.124.91:8088 \
   -L 8004:100.82.124.91:8004 \
   allbot-do-sgp1-test-control
 ```
@@ -308,10 +292,6 @@ cd /home/deploy/APP/All_bot
 docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml ps
 curl -fsS http://100.82.124.91:8004/health
 curl -fsS http://100.82.124.91:8001/api/health
-curl -fsS http://100.82.124.91:8044/api/health
-curl -fsS http://100.82.124.91:8087/api/health
-curl -fsS http://100.82.124.91:8045/api/health
-curl -fsS http://100.82.124.91:8088/api/health
 docker stats --no-stream
 df -h /
 ```
@@ -395,10 +375,7 @@ docker compose --env-file .env.cloud.test \
 
 2026-06-09 云端测试容器口径：
 
-- 云端核心容器：Postgres、Redis、Central API、Web API、Dashboard Backend、Dashboard Frontend、QQCC Config Backend、QQCC Config Frontend、imgproxy、bot-test。
-- 云端不运行 Web 前端 dev 容器，公网测试 Web 入口使用边缘 VPS 静态站；Dashboard 测试前端由 `cloud-dashboard-frontend-test` 提供，默认端口 `8087`，QQCC Config 测试前端由 `cloud-qqcc-config-frontend-test` 提供，默认端口 `8088`，两者只面向 Tailscale/受控来源。
-- Dashboard Backend 仅供少量管理员使用，云测试连接池显式压缩为 `DB_POOL_SIZE=1`、`DB_MAX_OVERFLOW=2`。
-- Dashboard Backend 使用项目 `config.py`，`BOT_TYPE=TEST` 时必须显式设置 `DATABASE_URL_TEST` 与 `REDIS_URL_TEST`，否则 `.env.cloud.test` 里的旧测试变量会覆盖 compose 中的 `DATABASE_URL`/`REDIS_URL`。
+- 云端核心容器：Postgres、Redis、Central API、Web API、imgproxy 和按配置启用的核心 Bot。云端不运行 Dashboard/QQCC Config，也不运行 Web 前端 dev 容器；公共测试 Web 由边缘静态站提供。
 
 ## 7. Tailscale 接入边界
 

@@ -17,11 +17,13 @@ except ModuleNotFoundError:
 
 ROOT = Path(__file__).resolve().parents[1]
 DIGEST_REF_RE = re.compile(r"^[^\s@]+@(sha256:[0-9a-f]{64})$")
-CHECKS = {
+ATTESTATION_CHECKS = {
     "actual_image_digest",
     "baked_agent_revision",
     "baked_workflow_revision",
     "model_manifest_checksum",
+}
+CANARY_CHECKS = ATTESTATION_CHECKS | {
     "central_task_type",
     "input_download",
     "output_upload",
@@ -34,12 +36,14 @@ class GPUProfileReleaseError(RuntimeError):
     pass
 
 
-def validate_canary_evidence(
+def _validate_profile_evidence(
     evidence: Mapping[str, Any],
     *,
     profile: str,
     source_sha: str,
     image_ref: str,
+    required_checks: set[str],
+    validation_level: str,
 ) -> dict[str, Any]:
     match = DIGEST_REF_RE.fullmatch(image_ref)
     if not match:
@@ -52,11 +56,13 @@ def validate_canary_evidence(
     checks = evidence.get("checks")
     missing = sorted(
         name
-        for name in CHECKS
+        for name in required_checks
         if not isinstance(checks, Mapping) or checks.get(name) is not True
     )
     if missing:
-        raise GPUProfileReleaseError("incomplete GPU canary checks: " + ", ".join(missing))
+        raise GPUProfileReleaseError(
+            f"incomplete GPU {validation_level} checks: " + ", ".join(missing)
+        )
     model = evidence.get("model_manifest")
     if (
         not isinstance(model, Mapping)
@@ -87,8 +93,46 @@ def validate_canary_evidence(
         "target_gpu": profile_contract["target_gpu"],
         "startup_args": profile_contract["startup_args"],
         "rollback_target": rollback,
-        "canary_evidence": "verified",
+        "artifact_attestation": "verified",
+        "validation_level": validation_level,
+        "canary_evidence": (
+            "verified" if validation_level == "canary-verified" else "waived"
+        ),
     }
+
+
+def validate_artifact_attestation(
+    evidence: Mapping[str, Any],
+    *,
+    profile: str,
+    source_sha: str,
+    image_ref: str,
+) -> dict[str, Any]:
+    return _validate_profile_evidence(
+        evidence,
+        profile=profile,
+        source_sha=source_sha,
+        image_ref=image_ref,
+        required_checks=ATTESTATION_CHECKS,
+        validation_level="attested",
+    )
+
+
+def validate_canary_evidence(
+    evidence: Mapping[str, Any],
+    *,
+    profile: str,
+    source_sha: str,
+    image_ref: str,
+) -> dict[str, Any]:
+    return _validate_profile_evidence(
+        evidence,
+        profile=profile,
+        source_sha=source_sha,
+        image_ref=image_ref,
+        required_checks=CANARY_CHECKS,
+        validation_level="canary-verified",
+    )
 
 
 def merge_gpu_manifest(
@@ -123,9 +167,19 @@ def main() -> int:
     parser.add_argument("--evidence", type=Path, required=True)
     parser.add_argument("--previous-manifest", type=Path)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--validation-level",
+        choices=("attested", "canary-verified"),
+        default="canary-verified",
+    )
     args = parser.parse_args()
     evidence = json.loads(args.evidence.read_text(encoding="utf-8"))
-    result = validate_canary_evidence(
+    validator = (
+        validate_artifact_attestation
+        if args.validation_level == "attested"
+        else validate_canary_evidence
+    )
+    result = validator(
         evidence,
         profile=args.profile,
         source_sha=args.source_sha,

@@ -101,6 +101,69 @@ def test_assembler_writes_three_manifests_and_resolves_base_digest(tmp_path):
     assert gpu["missing_artifacts"] == []
 
 
+def test_assembler_marks_build_only_bundles_as_tests_skipped(tmp_path):
+    module = _load_module()
+    catalog = {
+        "schema_version": 2,
+        "artifacts": {
+            "api": {
+                "track": "control-plane",
+                "kind": "image",
+                "base": None,
+                "inputs": [],
+            },
+            "worker": {
+                "track": "test-execution",
+                "kind": "image",
+                "base": None,
+                "inputs": [],
+            },
+            "gpu": {
+                "track": "gpu-execution",
+                "kind": "gpu-image",
+                "base": None,
+                "inputs": [],
+                "profile": {
+                    "task_types": ["gpu"],
+                    "target_gpu": ["RTX 4090"],
+                    "startup_args": [],
+                },
+            },
+        },
+    }
+    catalog_path = tmp_path / "catalog.json"
+    catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
+    results = tmp_path / "results"
+    results.mkdir()
+    (results / "api.json").write_text(
+        json.dumps(_result("api", "1")), encoding="utf-8"
+    )
+    (results / "worker.json").write_text(
+        json.dumps(_result("worker", "2")), encoding="utf-8"
+    )
+    gpu_result = _result("gpu", "3")
+    gpu_result["model_manifest"] = {
+        "key": "gpu/manifest.json",
+        "size": 1,
+        "sha256": "4" * 64,
+    }
+    (results / "gpu.json").write_text(
+        json.dumps(gpu_result), encoding="utf-8"
+    )
+
+    index_path = module.assemble(
+        catalog_path=catalog_path,
+        results_dir=results,
+        output_dir=tmp_path / "release",
+        source_sha=SHA,
+        ci_run="https://github.com/giraffu/All_bot/actions/runs/1",
+        validation_mode="build-only",
+    )
+
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    assert index["validation"] == {"mode": "build-only", "tests": "skipped"}
+
+
 def test_assembler_publishes_incomplete_gpu_track_without_canary_result(tmp_path):
     module = _load_module()
     catalog = {

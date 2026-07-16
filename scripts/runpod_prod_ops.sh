@@ -18,6 +18,10 @@ MAX_ATTEMPTS="20"
 RETRY_INTERVAL_SECONDS="90"
 READINESS_TIMEOUT_SECONDS=""
 WORKER_TIMEOUT_SECONDS=""
+RELEASE_INDEX=""
+RELEASE_SHA=""
+RELEASE_STRATEGY="direct"
+ROLLOUT_RESOLVER="${ROOT_DIR}/scripts/gpu_release_rollout.py"
 
 STATUS_PROFILES=(img2img image_to_video wan22_video_v2 i2i_pro scail2 ltx_video pornmaster_flux2_edit pornmaster_flux2_edit_bf16)
 
@@ -37,6 +41,10 @@ Actions:
   scale     Scale one prod manual profile to --desired N.
   canary    Run a real prod canary and leave the target worker disabled.
   rollback  Disable or delete the selected prod manual capacity.
+  rollout-release
+            Replace exactly one slot from an attested release digest. The new
+            Pod stays disabled through digest/heartbeat checks and restores the
+            old exact image if the slot update fails.
 
 Options:
   --profile <name>            Required for mutations. One of img2img,
@@ -55,6 +63,10 @@ Options:
   --retry-interval <sec>      Sleep seconds between retry attempts. Default 90.
   --readiness-timeout <sec>   Override prod-worker pod readiness timeout.
   --worker-timeout <sec>      Override prod-worker heartbeat timeout.
+  --release-index <path>      Required for rollout-release.
+  --sha <full-sha>            Required release SHA for rollout-release.
+  --strategy <direct|standard>
+                              GPU evidence policy. Default direct.
   --dry-run                   Print guarded mutation plan only. Default.
   --execute                   Execute the selected mutation.
   -h, --help                  Show this help.
@@ -163,6 +175,113 @@ require_profile_for_mutation() {
     echo "Unsupported --profile: ${PROFILE}" >&2
     exit 2
   fi
+}
+
+require_rollout_release_options() {
+  require_profile_for_mutation
+  if [ -z "$SLOT" ] || [ -z "$RELEASE_INDEX" ] || [ -z "$RELEASE_SHA" ]; then
+    echo "rollout-release requires --profile, --slot, --release-index and --sha" >&2
+    exit 2
+  fi
+  case "$RELEASE_STRATEGY" in
+    direct|standard) ;;
+    *) echo "--strategy must be direct or standard for rollout-release" >&2; exit 2 ;;
+  esac
+}
+
+resolve_rollout_field() {
+  python3 "$ROLLOUT_RESOLVER" \
+    --release-index "$RELEASE_INDEX" \
+    --sha "$RELEASE_SHA" \
+    --profile "$PROFILE" \
+    --strategy "$RELEASE_STRATEGY" \
+    --operator runpod \
+    --slot "$SLOT" \
+    --field "$1"
+}
+
+set_profile_image_ref() {
+  local env_key="$1"
+  local image_ref="$2"
+  printf -v "$env_key" '%s' "$image_ref"
+  export "$env_key"
+}
+
+rollout_release() {
+  require_rollout_release_options
+  local target_ref image_env
+  target_ref="$(resolve_rollout_field ref)"
+  image_env="$(resolve_rollout_field runpod_image_env)"
+  if [ "$MODE" != "execute" ]; then
+    python3 "$ROLLOUT_RESOLVER" \
+      --release-index "$RELEASE_INDEX" --sha "$RELEASE_SHA" \
+      --profile "$PROFILE" --strategy "$RELEASE_STRATEGY" \
+      --operator runpod --slot "$SLOT"
+    return
+  fi
+
+  command -v jq >/dev/null 2>&1 || {
+    echo "rollout-release execute requires jq" >&2
+    exit 2
+  }
+  local before_file after_file old_ref=""
+  before_file="$(mktemp)"
+  after_file="$(mktemp)"
+  trap 'rm -f "$before_file" "$after_file"' RETURN
+  run_controller status >"$before_file"
+  old_ref="$(jq -r '.prod_pods[0].image // empty' "$before_file")"
+  if ! [[ "$old_ref" =~ @sha256:[0-9a-f]{64}$ ]]; then
+    echo "rollout-release requires an exact digest-pinned rollback image" >&2
+    return 1
+  fi
+
+  set_profile_image_ref "$image_env" "$target_ref"
+  set +e
+  run_controller disable --execute && \
+    run_controller down --execute && \
+    run_controller up --execute && \
+    run_controller status >"$after_file"
+  local rollout_status=$?
+  if [ "$rollout_status" -eq 0 ]; then
+    jq -e --arg ref "$target_ref" \
+      '.prod_pod_count == 1 and .prod_pods[0].image == $ref and
+       .worker != null and .worker.image_ref == $ref and
+       (.worker.status != "error" and .worker.status != "quarantined") and
+       .control.state == "disabled"' \
+      "$after_file" >/dev/null
+    rollout_status=$?
+  fi
+  if [ "$rollout_status" -eq 0 ]; then
+    run_controller enable --execute
+    rollout_status=$?
+  fi
+  set -e
+  if [ "$rollout_status" -eq 0 ]; then
+    echo "[runpod-prod-ops] rollout-release verified ${PROFILE}/${SLOT} at ${target_ref}"
+    return
+  fi
+
+  echo "[runpod-prod-ops] rollout failed; stopping and restoring this slot" >&2
+  run_controller disable --execute >/dev/null 2>&1 || true
+  run_controller down --execute >/dev/null 2>&1 || true
+  if [ -z "$old_ref" ]; then
+    echo "old exact image is unavailable; slot remains disabled" >&2
+    return 1
+  fi
+  set_profile_image_ref "$image_env" "$old_ref"
+  if run_controller up --execute && \
+    run_controller status >"$after_file" && \
+    jq -e --arg ref "$old_ref" \
+      '.prod_pod_count == 1 and .prod_pods[0].image == $ref and
+       .worker.image_ref == $ref and .control.state == "disabled"' \
+      "$after_file" >/dev/null && \
+    run_controller enable --execute; then
+    echo "[runpod-prod-ops] restored ${PROFILE}/${SLOT} to ${old_ref}" >&2
+  else
+    run_controller disable --execute >/dev/null 2>&1 || true
+    echo "rollback verification failed; slot remains disabled" >&2
+  fi
+  return 1
 }
 
 require_desired_for_scale() {
@@ -344,7 +463,7 @@ run_mutation() {
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    status|up|add|enable|disable|restart|down|scale|canary|rollback)
+    status|up|add|enable|disable|restart|down|scale|canary|rollback|rollout-release)
       ACTION="$1"
       shift
       ;;
@@ -404,6 +523,18 @@ while [ "$#" -gt 0 ]; do
       WORKER_TIMEOUT_SECONDS="${2:?missing value for --worker-timeout}"
       shift 2
       ;;
+    --release-index)
+      RELEASE_INDEX="${2:?missing value for --release-index}"
+      shift 2
+      ;;
+    --sha)
+      RELEASE_SHA="${2:?missing value for --sha}"
+      shift 2
+      ;;
+    --strategy)
+      RELEASE_STRATEGY="${2:?missing value for --strategy}"
+      shift 2
+      ;;
     --execute)
       MODE="execute"
       shift
@@ -430,6 +561,9 @@ case "$ACTION" in
     ;;
   up|add|enable|disable|restart|down|scale|canary|rollback)
     run_mutation
+    ;;
+  rollout-release)
+    rollout_release
     ;;
   *)
     echo "Unknown action: ${ACTION}" >&2
