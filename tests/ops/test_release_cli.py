@@ -1713,6 +1713,34 @@ def test_v2_cloud_rollback_reads_track_scoped_release_contract(monkeypatch):
     ) in remote_scripts[0]
 
 
+def test_test_execution_preflight_skips_cloud_without_cloud_services(monkeypatch):
+    module = _load_module()
+
+    def unexpected_cloud_probe(*_args, **_kwargs):
+        pytest.fail("test-execution without cloud services must not probe cloud rollback")
+
+    monkeypatch.setattr(module, "_run", unexpected_cloud_probe)
+
+    blockers = module._cloud_preflight(
+        SimpleNamespace(
+            env="test",
+            previous_sha="b" * 40,
+            remote_host="cloud-test",
+            remote_checkout_root="/release-root",
+            remote_env_file="/etc/allbot/test.env",
+        ),
+        module.ReleaseImpact(
+            services={"worker"},
+            level="maintenance",
+            matched_rules=["track:test-execution"],
+        ),
+        {"schema_version": 2, "track": "test-execution", "git_sha": FULL_SHA},
+        _valid_test_environment(worker_slots=("01",)),
+    )
+
+    assert blockers == []
+
+
 def test_initial_worker_cutover_snapshots_and_stops_legacy_before_start(
     tmp_path, monkeypatch
 ):
@@ -1854,6 +1882,54 @@ def test_v2_initial_worker_recovery_reads_track_scoped_legacy_snapshot(
         "cloud-comfy-agent-test-1",
         "cloud-worker-relay-test",
     ] in calls
+
+
+def test_v2_worker_preflight_reads_track_scoped_rollback_contract(
+    tmp_path, monkeypatch
+):
+    module = _load_module()
+    previous_sha = "b" * 40
+    root = tmp_path / "release-root"
+    (root / "repo" / ".git").mkdir(parents=True)
+    (root / "releases" / previous_sha).mkdir(parents=True)
+    release_env = (
+        root
+        / "release-env"
+        / "test-execution"
+        / previous_sha
+        / "release.env"
+    )
+    release_env.parent.mkdir(parents=True)
+    release_env.write_text("ALLBOT_RELEASE_TRACK=test-execution\n", encoding="utf-8")
+    env_file = tmp_path / "test.env"
+    env_file.write_text("ALLBOT_ENV=test\n", encoding="utf-8")
+
+    def fake_run(command, **_kwargs):
+        stdout = "relay-container\n" if command[:3] == ["docker", "ps", "-q"] else ""
+        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(module, "_run", fake_run)
+
+    blockers = module._worker_preflight(
+        SimpleNamespace(
+            env="test",
+            env_file=str(env_file),
+            worker_checkout_root=str(root),
+            previous_sha=previous_sha,
+        ),
+        module.ReleaseImpact(
+            services={"worker"},
+            level="maintenance",
+            matched_rules=["track:test-execution"],
+        ),
+        {"schema_version": 2, "track": "test-execution"},
+        {
+            "ALLBOT_WORKER_SERVICES": "worker-01",
+            "ALLBOT_WORKER_RELAY_PORT": "8014",
+        },
+    )
+
+    assert "worker-rollback-release-env-unavailable" not in blockers
 
 
 def test_prod_execute_requires_explicit_confirmation_before_other_checks(tmp_path):

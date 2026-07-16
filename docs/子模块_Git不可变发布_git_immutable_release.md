@@ -85,7 +85,7 @@ python scripts/update_deploy_config.py --env prod --source /secure/new-prod.env 
 
 包装器默认顺序部署 control-plane 与 test-execution。若用户明确把测试 Worker 留到匹配 GPU/ComfyUI 类型的后续窗口，集成 AI 可在 candidate deploy 上追加 `--skip-test-execution`；这只允许先完成并记录 control-plane，不能把未部署 Worker 写入 acceptance，也不能用于正式 `verify-test` 或生产晋级的 Worker 证据。
 
-`test-execution` 尚无 `/var/lib/allbot/deployments/test/test-execution/current.json` 时是 schema v2 首次切换，不是普通 rolling。planner 必须加入 `initial-release`，用 allowlist 对应的 legacy Agent/Relay 完成端口与健康预检；切换快照写入 `~/APP/All_bot-release/release-env/test-execution/<sha>/legacy-worker-running.txt`。失败恢复和之后的 immutable 回滚均读取 track-scoped release-env，不能要求尚不存在的 `allbot-worker-test/worker-relay`，也不能回落到旧的无 track 目录。
+`test-execution` 尚无 `/var/lib/allbot/deployments/test/test-execution/current.json` 时是 schema v2 首次切换，不是普通 rolling。planner 必须加入 `initial-release`，用 allowlist 对应的 legacy Agent/Relay 完成端口与健康预检；切换快照写入 `~/APP/All_bot-release/release-env/test-execution/<sha>/legacy-worker-running.txt`。失败恢复和之后的 immutable 回滚均读取 track-scoped release-env，Worker preflight 也必须检查 `release-env/<track>/<previous_sha>/release.env`。没有 cloud service 的 test-execution 跳过 cloud preflight，不要求云端生成未参与事务的 track 合约；同时不能要求尚不存在的 `allbot-worker-test/worker-relay`，也不能回落到旧的无 track 目录。
 
 v2 transaction journal 与 staged state 使用 `/var/lib/allbot/deployments/<env>/transactions/<track>/<sha>.json|.state.json`。control-plane 与 test-execution 即使目标 SHA 相同也不得复用 journal；Worker 的 `initial-release` 只驱动 legacy Agent/Relay 切换，不能注入控制面首次迁移的 Postgres/Redis。升级前已经产生的无 track 失败 journal 仅允许由精确 `recover --track <track>` 兼容读取并收口，恢复写回新的 track-scoped journal，禁止手工删除 journal 或 maintenance marker。
 

@@ -1583,8 +1583,15 @@ def _cloud_preflight(
     args: argparse.Namespace,
     impact: ReleaseImpact,
     manifest: Mapping[str, Any],
-    _environment_values: Mapping[str, str],
+    environment_values: Mapping[str, str],
 ) -> list[str]:
+    selected_cloud_services, _ = filter_enabled_cloud_services(
+        args.env,
+        cloud_services_for_release(args.env, impact),
+        environment_values,
+    )
+    if not selected_cloud_services:
+        return []
     environment = ENVIRONMENT[args.env]
     host = args.remote_host or environment["host"]
     root = args.remote_checkout_root
@@ -1691,7 +1698,7 @@ raise SystemExit(0 if owned else 1)
 def _worker_preflight(
     args: argparse.Namespace,
     impact: ReleaseImpact,
-    _manifest: Mapping[str, Any],
+    manifest: Mapping[str, Any],
     environment_values: Mapping[str, str],
 ) -> list[str]:
     if "worker" not in impact.services:
@@ -1736,7 +1743,13 @@ def _worker_preflight(
         if FULL_SHA_RE.fullmatch(previous_sha):
             if not (root / "releases" / previous_sha).is_dir():
                 blockers.append("worker-rollback-checkout-unavailable")
-            if not (root / "release-env" / previous_sha / "release.env").is_file():
+            release_env_root = root / "release-env"
+            if (
+                manifest.get("schema_version") == 2
+                and manifest.get("track") in RELEASE_TRACKS
+            ):
+                release_env_root /= str(manifest["track"])
+            if not (release_env_root / previous_sha / "release.env").is_file():
                 blockers.append("worker-rollback-release-env-unavailable")
     port = environment_values.get("ALLBOT_WORKER_RELAY_PORT", "").strip()
     if not port.isdigit():
