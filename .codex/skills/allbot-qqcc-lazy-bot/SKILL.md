@@ -74,6 +74,7 @@ QQCC 懒人 Bot 配置已从主 Dashboard 剥离为独立 QQCC Config Web。主 
 - `scene_preset_version`: 当前为 `1`；缺失或小于 `1` 视为旧配置，保存时一次性补齐 QQCC 绘图/动图预设并迁移旧 prompt override；已有 `scene_preset_version>=1` 时尊重管理员删除后的空 `draw_scenes` / `video_scenes`
 - `global_enabled`
 - `main_buttons`: `quick_undress`, `quick_faceswap`, `photo_edit`, `ai_draw`, `ai_filter`, `video_edit`, `market`, `main_bot_link`, `private_bot`；`quick_undress` 与 `photo_edit` 仅保留旧配置兼容，QQCC 主菜单不再渲染；`private_bot` 只控制官方 QQCC 的申请/管理入口，默认开启且不跟随 `global_enabled`
+- `main_menu_layout`: `{ buttons_per_row, button_order }`；`buttons_per_row=null` 时必须原样保留旧固定分行，只接受整数 `1..4` 启用统一分行。`button_order` 只允许 `quick_faceswap` / `ai_draw` / `ai_filter` / `video_edit` / `ai_video` / `market` / `private_bot` / `main_bot_link`，未知、重复与旧兼容 key 丢弃，缺失 key 按默认顺序追加。运行时必须先按开关/gate/场景/官方与私有上下文过滤，再按顺序分行；隐藏项不占位但保留配置位置。官方 checkpoint 与每个私有 Bot JSON 独立保存，不新增表
 - `photo_buttons`: `masturbation`, `random_faceswap`；仅保留旧配置兼容
 - `undress_methods`: `legacy`, `i2i_draw`；仅保留旧配置兼容
 - `video_scenes`: `[{ id, name, prompt, negative_prompt, duration, engine, lora_name, end_frame_draw_scene_id }]`；所有场景 `prompt` 必填，`negative_prompt` 可选，缺失或非字符串归一为空，字符串保存前 trim；`engine` 只能是 `image_to_video` 或 `wan22_video_v2`，缺省 `image_to_video`；`lora_name` 只允许在 `image_to_video` 下来自 `VIDEO_LORA_MODELS`，v2 自动清空；`end_frame_draw_scene_id` 只能引用归一化后的 `draw_scenes[].id`，缺省 `""`；`duration` 只能是 `5s`、`8s`、`10s`，`id` 只能用于短安全 callback
@@ -164,6 +165,7 @@ QQCC Bot 必须设置 `application.bot_data["bot_client_type"] = "bot:qqcc"`，B
 - worker 覆盖全局 inflight/单 Bot prefetch/deferred ID 上限、单 Bot顺序、startup PEL catch-up barrier、inflight ID 防重复，以及 admin metrics 的 backlog/pending/counters/heartbeat。
 - gate=`false`/缺失配合 `--allow-disabled` 不要求 activation secrets且 worker 不启动；gate=`true` 必须严格校验环境对应官方 token、密钥、HTTPS 与 Host 契约。
 - 默认配置下现有菜单不变；关闭配置后按钮隐藏，旧按钮/旧 callback 回复 `功能暂未开放` 且不提交任务。
+- 主菜单布局覆盖无布局字段时的旧分行不变、`1..4` 统一分行、任意排序、隐藏项先过滤且重新开启恢复位置、私有 Bot 去除 `private_bot` 后无空位、生成全局关闭时仍按顺序保留独立入口，以及全部隐藏后的主菜单兜底。
 - QQCC 动图动态场景按 engine 提交：旧 `image_to_video` 无 LoRA 为 `custom_video`、带 LoRA 为 `video_lora`，`wan22_video_v2` 为 `wan22_video_v2`；v2 不支持附加模型。配置尾帧来源时先按被引用绘图场景的完整后处理链隐藏生成尾帧，再按首尾帧提交；额度预检覆盖绘图链加视频总费用，尾帧链任一步失败都不提交视频。场景提示词和展示名只作用 QQCC，不影响主 Bot。
 - QQCC AI视频结果只展示场景名与 `重新生成`，不得展示 LTX 扩展/拼接按钮；重生成必须读取最新 `ai_video_scenes` 并重新核费。私有 Bot 尾帧链用 durable continuation 的 `ltx_video` executor 保存原图、当前尾帧和阶段状态后续跑。
 - 主 Dashboard 不再出现 `懒人Bot配置` 导航；独立 QQCC Config Web 登录、加载、开关切换和保存 payload 有前端测试。

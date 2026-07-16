@@ -41,6 +41,10 @@ def test_owner_config_update_is_optimistic_and_normalizes_unknown_fields():
         raw_config={
             "global_enabled": False,
             "main_buttons": {"ai_draw": False, "unknown": True},
+            "main_menu_layout": {
+                "buttons_per_row": 4,
+                "button_order": ["main_bot_link", "ai_draw"],
+            },
             "unknown_section": {"secret": True},
         },
     )
@@ -48,6 +52,11 @@ def test_owner_config_update_is_optimistic_and_normalizes_unknown_fields():
     assert bot.config_version == 4
     assert bot.config["global_enabled"] is False
     assert bot.config["main_buttons"]["ai_draw"] is False
+    assert bot.config["main_menu_layout"]["buttons_per_row"] == 4
+    assert bot.config["main_menu_layout"]["button_order"][:2] == [
+        "main_bot_link",
+        "ai_draw",
+    ]
     assert "unknown" not in bot.config["main_buttons"]
     assert "unknown_section" not in bot.config
 
