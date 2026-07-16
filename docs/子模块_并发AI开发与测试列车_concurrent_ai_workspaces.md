@@ -44,7 +44,7 @@ python scripts/manage_ai_workspaces.py refresh --slot A
 
 功能 AI 的 PR base 固定为 `codex/test-train`。提交前更新 train、解决冲突并重新跑 CI。PR 描述至少包含 slot、base/head SHA、影响 track/module、测试结果、migration、风险和代表性测试步骤。
 
-功能 AI 交付后保持槽位在任务分支上，不自动 `park`。集成 AI 只有在该 PR 已合入 train、精确 train SHA 的 candidate 已成功部署并执行 `accept` 后，才确定本轮不需要 forward-fix，并必须立即 `park` PR 记录的槽位，再推进下一个无关 PR。槽位释放不等待其它任务完成、train 合入 main 或正式发布；candidate 只完成部署但尚未 `accept`、被 `block` 或仍需 forward-fix 时继续保留原槽位。面向用户的最简使用方式见 `docs/并发AI自动接单使用指南_auto_workspace_claim.md`。
+功能 AI 交付后保持槽位在任务分支上，不自动 `park`。集成 AI 只有在该 PR 已合入 train、精确 train SHA 的 candidate 已完成对应运行时部署并执行 `accept` 后，才确定本轮不需要 forward-fix，并必须立即 `park` PR 记录的槽位，再推进下一个无关 PR。机器计划明确为 non-runtime 的 control-plane 不伪造容器部署：包装器把精确 SHA 记录为 `ready-for-acceptance` / `deployment_mode=non-runtime`，以 bundle、CI 与 plan 证据 `accept` 后按同一规则释放。槽位释放不等待其它任务完成、train 合入 main 或正式发布；candidate 只完成部署或 non-runtime 计划但尚未 `accept`、被 `block` 或仍需 forward-fix 时继续保留原槽位。面向用户的最简使用方式见 `docs/并发AI自动接单使用指南_auto_workspace_claim.md`。
 
 ## 3. Candidate bundle 契约
 
@@ -75,6 +75,8 @@ python scripts/test_train_release.py deploy \
 
 测试 Worker 的 GPU/ComfyUI 类型与目标业务窗口不匹配时，用户或集成 AI 可以明确把它留到后续独立窗口：在同一命令追加 `--skip-test-execution`。该参数只从本轮 mutation 中移除 `test-execution`，不改变默认顺序，也不把 Worker 标记为已部署；test-train 状态、验收 evidence 和手工测试结论都只能列出实际完成的 `control-plane`。后续需要 Worker 时必须对当时最新的可信 candidate 重新 plan，并在匹配 GPU runtime 的窗口单独部署/验收，禁止用这次控制面结果冒充 Worker 通过。
 
+若 control-plane 计划同时满足 `level=none`、无 artifacts 且无 services，包装器不会为了推进状态机而调用空的 preflight/deploy。它记录 `ready-for-acceptance`、`deployment_mode=non-runtime` 和精确 SHA；若 `--skip-test-execution` 延后了 Worker，还会记录 `deferred_tracks=["test-execution"]`。验收 JSON 的 tracks 仍写 `control-plane`，modules 可为空，smoke 只证明 candidate bundle 已发布、可信 CI 成功、control-plane 为 non-runtime，以及 Worker 是否明确延后；不得写任何容器、Pages 或 Worker 已更新。
+
 若后一个 track 部署失败，包装器按相反顺序回滚本轮已成功 track；单 track 内部继续使用 `release.py` 事务补偿。若部署成功但业务 smoke 失败：
 
 1. 执行 `block` 并暂停其它无关 PR 合入。
@@ -82,7 +84,7 @@ python scripts/test_train_release.py deploy \
 3. 原槽位从失败 train 创建 `codex/<slot>-<task>-fix-N`，提交新 PR 到 train。
 4. 新 SHA CI 成功后重新 plan/deploy；不自动 revert、force-push 或改写 train 历史。
 
-若本轮 candidate 的实际部署与 smoke 均通过，集成 AI 先执行 `accept`，随后立即运行 `python scripts/manage_ai_workspaces.py park --slot <PR记录的槽位>` 并用 `status` 确认该槽位已经 detached/空闲。完成这一步后才能合入下一个无关 PR；不得把已经测试通过的槽位一直占用到整列 train 或正式发布结束。
+若本轮 candidate 的实际部署与 smoke 均通过，或 non-runtime candidate 的精确 bundle/CI/plan 证据均通过，集成 AI 先执行 `accept`，随后立即运行 `python scripts/manage_ai_workspaces.py park --slot <PR记录的槽位>` 并用 `status` 确认该槽位已经 detached/空闲。完成这一步后才能合入下一个无关 PR；不得把已经测试通过的槽位一直占用到整列 train 或正式发布结束。
 
 Migration 只允许向前兼容。失败后不得自动 Alembic downgrade；通过 forward-fix 或显式恢复发布前测试库备份收口，期间 train 保持 blocked。
 

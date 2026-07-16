@@ -172,6 +172,70 @@ def test_deploy_can_explicitly_leave_test_execution_for_a_later_worker_window(
     assert coordinator.status()["tracks"] == ["control-plane"]
 
 
+def test_non_runtime_control_plane_can_be_accepted_without_fake_deployment(
+    tmp_path,
+):
+    module = _load_module()
+    coordinator = module.TestTrainCoordinator(state_root=tmp_path / "state")
+    runner = _FakeReleaseRunner()
+    runner.plans["control-plane"] = {
+        "track": "control-plane",
+        "previous_sha": "b" * 40,
+        "level": "none",
+        "matched_rules": ["non-runtime", "track:control-plane"],
+        "artifacts": {},
+        "services": [],
+    }
+
+    coordinator.deploy_candidate(
+        SHA,
+        pr=42,
+        slot="A",
+        runner=runner,
+        skip_test_execution=True,
+    )
+
+    assert not any(
+        event[0] in {"preflight", "deploy", "rollback"}
+        for event in runner.events
+    )
+    assert coordinator.status() == {
+        "status": "ready-for-acceptance",
+        "sha": SHA,
+        "pr": 42,
+        "slot": "A",
+        "tracks": ["control-plane"],
+        "deployment_mode": "non-runtime",
+        "deferred_tracks": ["test-execution"],
+        "updated_at": coordinator.status()["updated_at"],
+    }
+
+    evidence = tmp_path / "evidence.json"
+    evidence.write_text(
+        json.dumps(
+            {
+                "sha": SHA,
+                "pr": 42,
+                "slot": "A",
+                "tested_by": "integration-ai",
+                "started_at": "2026-07-16T10:00:00+00:00",
+                "completed_at": "2026-07-16T10:01:00+00:00",
+                "tracks": ["control-plane"],
+                "modules": [],
+                "smoke": {
+                    "candidate_bundle_published": True,
+                    "control_plane_plan_is_non_runtime": True,
+                    "test_execution_deferred": True,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    coordinator.accept(SHA, evidence)
+    assert coordinator.status()["status"] == "accepted"
+
+
 def test_deploy_cli_requires_an_explicit_flag_to_defer_test_execution():
     module = _load_module()
 
