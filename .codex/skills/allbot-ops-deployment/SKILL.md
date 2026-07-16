@@ -103,6 +103,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 ### RunPod 与 LAN AIO
 - RunPod 不属于局域网 SSH GPU 池；RunPod profile、镜像、manifest、override 事实源在 `ops/gpu_pool_controller/` 与 GPU Pool 文档。
 - Dashboard RunPod 管理和 LAN AIO worker 基础控制只调用既有脚本，不重写 provider 逻辑；`desired_count` 兼容字段按“新增数量”解释，不代表目标总数。
+- Dashboard RunPod operation 必须从 profile catalog pin 已验收的 img2img/PornMaster baked 镜像并覆盖 `/app/.env` 历史 ref；目标 tag 未发布或 baked entrypoint/revision smoke 未通过时，禁止先部署引用它的 Dashboard。PornMaster FP8/BF16 共用 runtime 镜像与 single/multiple workflow，差异由 task type、模型 manifest、GPU/`--lowvram` 和 UNet 节点替换表达。
 - Dashboard autoscaler 基于预计清空时间、profile 阈值、Redis leader lease 与 operation store 做 add/down/restart/enable；不直接操作本地 worker，不绕过 RunPod 门禁；RunPod Worker 卡片的 `锁定/解锁` 会让手动删除、autoscaler down 和 add cleanup 跳过该 worker。
 - LAN AIO 的易变运行事实不写进本 skill 正文；当前每张 GPU 运行 profile、可快速切换候选、缓存 marker、阻断原因以 `ops/gpu_pool_controller/config/lan_aio_fleet_state.yml` 为 agent 维护入口，切换前仍必须用 live status 仲裁。
 - Dashboard 不再提供 LAN AIO profile/slot 列表、候选切换、`takeover`、`recover` 或 `warm-cache` API；当前态和任务显示走 `/api/system/workers`，Worker 卡片只保留 `pause/enable/restart` 基础控制。
