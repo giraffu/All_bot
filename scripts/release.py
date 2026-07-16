@@ -663,6 +663,22 @@ def load_structured_file(path: Path) -> dict[str, Any]:
     return value
 
 
+def validate_release_policy_environment(
+    policy: Mapping[str, Any], environment: str
+) -> None:
+    policy_environment = policy.get("environment")
+    if policy_environment is None:
+        return
+    if policy_environment not in ENVIRONMENT:
+        raise ReleaseError(
+            f"release policy declares unsupported environment: {policy_environment}"
+        )
+    if policy_environment != environment:
+        raise ReleaseError(
+            f"release policy is only valid for {policy_environment}, not {environment}"
+        )
+
+
 def _matches(path: str, patterns: Sequence[str]) -> bool:
     normalized = path.removeprefix("./")
     return any(fnmatch.fnmatchcase(normalized, pattern) for pattern in patterns)
@@ -1567,8 +1583,15 @@ def _cloud_preflight(
     args: argparse.Namespace,
     impact: ReleaseImpact,
     manifest: Mapping[str, Any],
-    _environment_values: Mapping[str, str],
+    environment_values: Mapping[str, str],
 ) -> list[str]:
+    selected_cloud_services, _ = filter_enabled_cloud_services(
+        args.env,
+        cloud_services_for_release(args.env, impact),
+        environment_values,
+    )
+    if not selected_cloud_services:
+        return []
     environment = ENVIRONMENT[args.env]
     host = args.remote_host or environment["host"]
     root = args.remote_checkout_root
@@ -1599,20 +1622,20 @@ if test -f {shlex.quote(transaction_path)} && ! grep -Eq '\"status\"[[:space:]]*
         )
     previous_sha = str(getattr(args, "previous_sha", "") or "")
     if not initial and FULL_SHA_RE.fullmatch(previous_sha):
-        previous_release_env = (
-            _cloud_release_dir(
-                previous_sha,
-                str(manifest.get("track"))
-                if manifest.get("track") in RELEASE_TRACKS
-                else None,
-            )
-            + "/release.env"
+        previous_release_envs = _cloud_release_env_candidates(
+            previous_sha,
+            str(manifest.get("track"))
+            if manifest.get("track") in RELEASE_TRACKS
+            else None,
+        )
+        missing_release_env = " && ".join(
+            f"! test -f {shlex.quote(path)}" for path in previous_release_envs
         )
         script += (
             f"test -d {shlex.quote(root + '/releases/' + previous_sha)} "
             "|| echo cloud-rollback-checkout-unavailable\n"
-            f"test -f {shlex.quote(previous_release_env)} "
-            "|| echo cloud-rollback-release-env-unavailable\n"
+            f"if {missing_release_env}; then "
+            "echo cloud-rollback-release-env-unavailable; fi\n"
         )
     result = _run(
         ["ssh", "-o", "BatchMode=yes", host, "bash -s"],
@@ -1675,7 +1698,7 @@ raise SystemExit(0 if owned else 1)
 def _worker_preflight(
     args: argparse.Namespace,
     impact: ReleaseImpact,
-    _manifest: Mapping[str, Any],
+    manifest: Mapping[str, Any],
     environment_values: Mapping[str, str],
 ) -> list[str]:
     if "worker" not in impact.services:
@@ -1720,7 +1743,13 @@ def _worker_preflight(
         if FULL_SHA_RE.fullmatch(previous_sha):
             if not (root / "releases" / previous_sha).is_dir():
                 blockers.append("worker-rollback-checkout-unavailable")
-            if not (root / "release-env" / previous_sha / "release.env").is_file():
+            release_env_root = root / "release-env"
+            if (
+                manifest.get("schema_version") == 2
+                and manifest.get("track") in RELEASE_TRACKS
+            ):
+                release_env_root /= str(manifest["track"])
+            if not (release_env_root / previous_sha / "release.env").is_file():
                 blockers.append("worker-rollback-release-env-unavailable")
     port = environment_values.get("ALLBOT_WORKER_RELAY_PORT", "").strip()
     if not port.isdigit():
@@ -1804,11 +1833,19 @@ def _rollback_preflight(
     cache = Path(args.bundle_cache).expanduser() / previous_sha
     manifest_available = any(
         path.is_file()
-        for path in (cache / "release.json", cache / "release" / "release.json")
+        for path in (
+            cache / "release.json",
+            cache / "release" / "release.json",
+            cache / "release-v2" / "release-index.json",
+        )
     )
     web_available = any(
         path.is_file()
-        for path in (cache / "web-dist.tgz", cache / "release" / "web-dist.tgz")
+        for path in (
+            cache / "web-dist.tgz",
+            cache / "release" / "web-dist.tgz",
+            cache / "release-v2" / "public-web-dist.tgz",
+        )
     )
     blockers = []
     if not manifest_available:
@@ -1992,6 +2029,8 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
     sha = validate_full_sha(args.sha)
     manifest_path = _resolve_manifest_path(args, allow_fetch=args.command == "plan")
     manifest_document = _read_json(manifest_path)
+    policy = load_structured_file(Path(args.policy))
+    validate_release_policy_environment(policy, args.env)
     if manifest_document.get("schema_version") == 2:
         requested_modules = _split_services(args.modules)
         requested_services = _split_services(args.services)
@@ -2054,9 +2093,7 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
         changed_paths: list[str] = []
         if previous_sha and previous_sha != sha:
             changed_paths = git_changed_paths(previous_sha, sha)
-            planned_impact = plan_changed_paths(
-                load_structured_file(Path(args.policy)), changed_paths
-            )
+            planned_impact = plan_changed_paths(policy, changed_paths)
         computed_modules: set[str] = set()
         if args.track == "control-plane":
             computed_modules = {
@@ -2170,7 +2207,6 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
         verify_git_release(sha)
     if args.command == "plan" and not args.skip_ci_checks:
         verify_release_ci(manifest, sha)
-    policy = load_structured_file(Path(args.policy))
     previous_sha = _resolve_previous_sha(args)
     changed_paths: list[str] = []
     if previous_sha:
@@ -3281,21 +3317,53 @@ def _cloud_release_dir(sha: str, track: str | None = None) -> str:
     return f"{root}/{sha}"
 
 
+def _cloud_release_env_candidates(sha: str, track: str | None) -> tuple[str, ...]:
+    primary = _cloud_release_dir(sha, track) + "/release.env"
+    if track not in RELEASE_TRACKS:
+        return (primary,)
+    legacy = _cloud_release_dir(sha) + "/release.env"
+    return (primary, legacy)
+
+
+def _cloud_release_env_selection_script(
+    sha: str,
+    track: str | None,
+    *,
+    variable: str,
+) -> str:
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", variable):
+        raise ReleaseError("invalid release environment variable")
+    candidates = _cloud_release_env_candidates(sha, track)
+    lines = [f"{variable}={shlex.quote(candidates[0])}"]
+    lines.extend(
+        f'[ -f "${variable}" ] || {variable}={shlex.quote(candidate)}'
+        for candidate in candidates[1:]
+    )
+    lines.append(f'test -f "${variable}"')
+    return "\n".join(lines)
+
+
 def _cloud_compose_command(
     args: argparse.Namespace,
     sha: str,
     *,
     track: str | None = None,
+    release_env_variable: str | None = None,
 ) -> str:
     environment = ENVIRONMENT[args.env]
     checkout = f"{args.remote_checkout_root}/releases/{sha}"
     env_file = args.remote_env_file or environment["env_file"]
-    release_dir = _cloud_release_dir(sha, track)
+    if release_env_variable is None:
+        release_env = shlex.quote(_cloud_release_dir(sha, track) + "/release.env")
+    else:
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", release_env_variable):
+            raise ReleaseError("invalid release environment variable")
+        release_env = f'"${release_env_variable}"'
     return (
         f"docker compose --project-name {shlex.quote(environment['project'])} "
         f"--env-file {shlex.quote(checkout + '/deploy/env.defaults')} "
         f"--env-file {shlex.quote(env_file)} "
-        f"--env-file {shlex.quote(release_dir + '/release.env')} "
+        f"--env-file {release_env} "
         f"-f {shlex.quote(checkout + '/deploy/docker-compose-cloud-base.yml')} "
         f"-f {shlex.quote(checkout + '/' + environment['overlay'])} "
         "--profile bot --profile qqcc-bot --profile qqcc-private-bots"
@@ -3370,11 +3438,20 @@ done < "$source_file"
 """
     elif previous_kind == "immutable":
         previous_sha = validate_full_sha(str(previous.get("git_sha", "")))
-        compose = _cloud_compose_command(args, previous_sha, track=track)
-        previous_release_env = _cloud_release_dir(previous_sha, track) + "/release.env"
+        release_env_selection = _cloud_release_env_selection_script(
+            previous_sha,
+            track,
+            variable="previous_release_env",
+        )
+        compose = _cloud_compose_command(
+            args,
+            previous_sha,
+            track=track,
+            release_env_variable="previous_release_env",
+        )
         script = f"""set -euo pipefail
 test -d {shlex.quote(args.remote_checkout_root + '/releases/' + previous_sha)}
-test -f {shlex.quote(previous_release_env)}
+{release_env_selection}
 {compose} config -q
 {compose} up -d --no-deps --wait --wait-timeout 180 {service_words}
 {compose} ps {service_words}
@@ -3509,9 +3586,20 @@ done < "$source_file"
                 if transaction.get("track") in RELEASE_TRACKS
                 else None
             )
-            compose = _cloud_compose_command(args, previous_sha, track=track)
+            release_env_selection = _cloud_release_env_selection_script(
+                previous_sha,
+                track,
+                variable="previous_release_env",
+            )
+            compose = _cloud_compose_command(
+                args,
+                previous_sha,
+                track=track,
+                release_env_variable="previous_release_env",
+            )
             services = " ".join(shlex.quote(item) for item in sorted(selected_cloud))
             script = f"""set -euo pipefail
+{release_env_selection}
 for service in {services}; do
   container_id="$({compose} ps -q "$service")"
   test -n "$container_id"

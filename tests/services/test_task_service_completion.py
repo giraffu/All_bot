@@ -1029,6 +1029,7 @@ async def test_monitor_submitted_bot_task_uses_helper_monitor_seam(monkeypatch):
         edit_status_text_func=edit_status_text,
         lang="zh",
         allow_cancel=True,
+        show_queue_status=True,
     )
 
 
@@ -1109,6 +1110,60 @@ async def test_monitor_bot_task_progress_hides_cancel_button_when_disallowed():
         "⏳ 排队中... (第 1 位)",
     )
     assert edit_status_text.await_args.kwargs["reply_markup"] is None
+
+
+@pytest.mark.asyncio
+async def test_continuation_progress_never_returns_to_queue_status():
+    edit_status_text = AsyncMock()
+
+    async def monitor_func(*_args, **_kwargs):
+        yield {"status": "pending", "queue_pos": 8}
+        yield {"status": "pending", "queue_pos": 2}
+        yield {"status": "running", "progress": 42}
+        yield {"status": "done", "progress": 100}
+
+    result = await tg_runtime_helpers.monitor_task_progress(
+        task_id="task-continuation",
+        status_msg="status-msg",
+        is_video=False,
+        monitor_func=monitor_func,
+        edit_status_text_func=edit_status_text,
+        allow_cancel=False,
+        show_queue_status=False,
+    )
+
+    assert result == {"status": "done", "progress": 100}
+    edit_status_text.assert_awaited_once()
+    assert edit_status_text.await_args.args == (
+        "status-msg",
+        "⏳ 正在生成，请耐心等待...",
+    )
+    assert edit_status_text.await_args.kwargs["reply_markup"] is None
+
+
+@pytest.mark.asyncio
+async def test_continuation_progress_preserves_failure_terminal_signal():
+    edit_status_text = AsyncMock()
+
+    async def monitor_func(*_args, **_kwargs):
+        yield {"status": "pending", "queue_pos": 3}
+        yield {"status": "failed", "error": "worker failed"}
+
+    with pytest.raises(RuntimeError, match="worker failed"):
+        await tg_runtime_helpers.monitor_task_progress(
+            task_id="task-continuation-failed",
+            status_msg="status-msg",
+            is_video=True,
+            monitor_func=monitor_func,
+            edit_status_text_func=edit_status_text,
+            allow_cancel=False,
+            show_queue_status=False,
+        )
+
+    assert edit_status_text.await_args.args == (
+        "status-msg",
+        "⏳ 正在生成视频...",
+    )
 
 
 @pytest.mark.asyncio
@@ -1963,6 +2018,7 @@ async def test_process_generation_task_delegates_video_modes_to_image_to_video_e
         source_post_id=None,
         base_priority=0,
         allow_cancel=True,
+        show_queue_status=True,
         user_cancel_allowed=True,
     )
 

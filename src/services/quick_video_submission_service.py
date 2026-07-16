@@ -507,6 +507,7 @@ async def run_quick_video_submission_plan(
             "base_priority": QQCC_CHAIN_CONTINUATION_BASE_PRIORITY,
             "allow_cancel": False,
             "user_cancel_allowed": False,
+            "show_queue_status": False,
         }
         if plan.kind == QuickVideoSubmissionKind.LTX_TAIL_FRAME_VIDEO:
             stages.append(
@@ -794,6 +795,7 @@ async def _run_tail_frame_video_plan(
                     base_priority=QQCC_CHAIN_CONTINUATION_BASE_PRIORITY,
                     allow_cancel=False,
                     user_cancel_allowed=False,
+                    show_queue_status=False,
                     **optional_negative,
                 )
             )
@@ -820,6 +822,7 @@ async def _run_tail_frame_video_plan(
                     base_priority=QQCC_CHAIN_CONTINUATION_BASE_PRIORITY,
                     allow_cancel=False,
                     user_cancel_allowed=False,
+                    show_queue_status=False,
                 )
             )
             return
@@ -849,6 +852,7 @@ async def _run_tail_frame_video_plan(
                 base_priority=QQCC_CHAIN_CONTINUATION_BASE_PRIORITY,
                 allow_cancel=False,
                 user_cancel_allowed=False,
+                show_queue_status=False,
             )
         )
     finally:

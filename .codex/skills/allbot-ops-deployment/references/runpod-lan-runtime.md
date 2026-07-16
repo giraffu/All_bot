@@ -9,6 +9,7 @@
 - 判断是否可接单必须同时看 Pod 状态、worker heartbeat、agent control 和 `current_task_id/current_task_type`。
 - RunPod profile 镜像入口可能复用已有 `remote_workers` bundle；怀疑 bundle 过旧时，先 disable，再诊断更新或重建。
 - 统一 RunPod create request 对后续 autoscaler/手动新建 Pod 注入深度 1 原子预接：`PREFETCH_ENABLED=true`、`PREFETCH_RESERVE_TASK=true`、`PREFETCH_DEPTH=1`、`PREFETCH_CONSUME_WAIT_SECONDS=10`，且 `PREFETCH_TASK_TYPES=SUPPORTED_TASK_TYPES`。该配置不回写存量 Pod；新 Pod 必须使用 `gpu-execution` track 验证过的 baked agent/workflow 镜像 digest，不能只靠环境变量让旧 Worker 获得预接实现，也不得在启动时 clone `deploy` 分支。
+- 云正式 Dashboard 的 operation 子进程必须用 catalog 中已验收的 img2img 与 PornMaster baked 镜像 ref 覆盖容器 `/app/.env` 的历史值；手动 add 与 autoscaler 共享该 pin。目标 tag 未发布、baked entrypoint 不可执行或 OCI/agent/workflow revision 不完整时，不得先部署引用它的 Dashboard。
 - BF16 profile 同时承接 `pornmaster_flux2_edit_bf16` 与 `pornmaster_flux2_multi_edit_bf16`：分别复用 PornMaster single/multiple-edit API workflow，并由 BF16 patcher 切换 UNet 节点 100/9；不可变 prod Dashboard overlay 必须注入 `RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT`，镜像 smoke 必须检查两份 workflow、mapping 与解析表同时存在。
 - `pornmaster_flux2_edit_bf16` 是 RTX 4090 profile，仅声明同名任务、固定 `--lowvram`、独立 model manifest；已纳入 Dashboard autoscaler，按同一套 add/down/restart/enable、锁定跳过、最短生命周期和冷却规则管理，默认单任务 30 秒、清空阈值 30 分钟。用临时分支验证 workflow 时要显式设置 `RUNPOD_BOOTSTRAP_GIT_BRANCH`，不是 `ALLBOT_RUNPOD_GIT_BRANCH`；创建后还必须从 RunPod Pod env 反查实际 `ALLBOT_RUNPOD_GIT_BRANCH`。
 - 模型仓库已有源下载链接时，优先在云控制机/transfer Pod 流式写 R2；已存在的公用模型对象使用 R2 server-side multipart copy，禁止先下到本地再上传。

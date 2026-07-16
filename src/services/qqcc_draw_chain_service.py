@@ -45,6 +45,7 @@ def build_qqcc_chain_task_controls(subtask_index: int) -> dict[str, object]:
         "base_priority": 0 if is_first else QQCC_CHAIN_CONTINUATION_BASE_PRIORITY,
         "allow_cancel": is_first,
         "user_cancel_allowed": is_first,
+        "show_queue_status": is_first,
     }
 
 

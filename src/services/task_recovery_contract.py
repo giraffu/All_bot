@@ -43,6 +43,7 @@ def build_bot_task_recovery_contract(
     result_meta: Any = None,
     completion_caption: Any = None,
     language_code: Any = None,
+    show_queue_status: bool = True,
 ) -> dict[str, Any]:
     contract: dict[str, Any] = {
         "version": BOT_TASK_RECOVERY_VERSION,
@@ -56,6 +57,8 @@ def build_bot_task_recovery_contract(
     }
     if not record_history:
         contract["record_history"] = False
+    if not show_queue_status:
+        contract["show_queue_status"] = False
     optional_text = {
         "result_task_type": _clean_optional_text(result_task_type, max_length=128),
         "result_prompt": _clean_optional_text(result_prompt, max_length=16_000),
@@ -107,6 +110,7 @@ def normalize_bot_task_recovery_contract(
         result_meta=raw.get("result_meta"),
         completion_caption=raw.get("completion_caption"),
         language_code=raw.get("language_code"),
+        show_queue_status=raw.get("show_queue_status") is not False,
     )[BOT_TASK_RECOVERY_METADATA_KEY]
     # Never trust a persisted flag that claims a hidden result does not need a
     # continuation; hidden private results are fail-closed by construction.

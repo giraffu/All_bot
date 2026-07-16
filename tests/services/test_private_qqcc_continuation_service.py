@@ -334,6 +334,51 @@ def test_continuation_task_ref_round_trips_through_registry_metadata():
     assert build_private_qqcc_continuation_registry_metadata() == {}
 
 
+def test_continuation_checkpoint_round_trip_preserves_queue_presentation_policy():
+    checkpoint = PrivateQqccContinuationCheckpoint(
+        version=continuation_service.PRIVATE_QQCC_CONTINUATION_VERSION,
+        chain_id="chain-presentation",
+        plan_sha256="sha256",
+        stages=(
+            {
+                "executor": "generation",
+                "input_mode": "current",
+                "task_kwargs": {"show_queue_status": True},
+            },
+            {
+                "executor": "ltx_video",
+                "input_mode": "original_current",
+                "task_kwargs": {"show_queue_status": False},
+            },
+        ),
+        original_input_ref="inputs/original.png",
+        original_input_durable=True,
+        current_output_ref=None,
+        private_bot_id=7,
+        update_id=100,
+        chat_id=200,
+        telegram_user_id=300,
+        username="visitor",
+        language_code="zh",
+        status_message_id=400,
+        status="ready",
+        next_stage_index=0,
+        next_submission_sequence=0,
+        current_stage_index=None,
+        current_submission_sequence=None,
+        current_registry_task_id=None,
+        current_executor_token=None,
+        error_code=None,
+    )
+
+    restored = continuation_service._checkpoint_from_json(
+        continuation_service._checkpoint_to_json(checkpoint)
+    )
+
+    assert restored.stages[0]["task_kwargs"]["show_queue_status"] is True
+    assert restored.stages[1]["task_kwargs"]["show_queue_status"] is False
+
+
 @pytest.mark.asyncio
 async def test_continuation_checkpoint_rejects_cross_tenant_application_context():
     store = MemoryContinuationStore()

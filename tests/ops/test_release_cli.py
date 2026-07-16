@@ -12,6 +12,12 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = ROOT / "scripts" / "release.py"
 POLICY_PATH = ROOT / "deploy" / "release-policy.yml"
+QQCC_CONTROL_PLANE_POLICY_PATH = (
+    ROOT / "deploy" / "release-policy-qqcc-control-plane.yml"
+)
+QQCC_TEST_RECONCILE_POLICY_PATH = (
+    ROOT / "deploy" / "release-policy-qqcc-control-plane-test-reconcile.yml"
+)
 SCHEMA_PATH = ROOT / "deploy" / "env.schema.yml"
 CONFIG_UPDATER_PATH = ROOT / "scripts" / "update_deploy_config.py"
 FULL_SHA = "a" * 40
@@ -423,6 +429,7 @@ def test_v2_test_data_service_repair_rejects_partial_selection(monkeypatch, tmp_
         repair_test_data_services=True,
         track="control-plane",
         env="test",
+        policy=POLICY_PATH,
         dashboard_fast_track=False,
     )
     monkeypatch.setattr(
@@ -502,6 +509,111 @@ def test_dashboard_admin_runtime_changes_stay_dashboard_backend_only():
     assert impact.level == "rolling"
     assert impact.services == {"dashboard-backend"}
     assert impact.blockers == set()
+    assert impact.unknown_paths == []
+
+
+def test_dashboard_shared_schemas_roll_both_dashboard_consumers():
+    module = _load_module()
+    policy = module.load_structured_file(POLICY_PATH)
+
+    impact = module.plan_changed_paths(policy, ["dashboard/backend/schemas.py"])
+
+    assert impact.level == "rolling"
+    assert impact.services == {"dashboard-backend", "qqcc-config-backend"}
+    assert impact.blockers == set()
+    assert impact.unknown_paths == []
+
+
+def test_qqcc_control_plane_policy_limits_release_to_qqcc_runtime_closure():
+    module = _load_module()
+    policy = module.load_structured_file(QQCC_CONTROL_PLANE_POLICY_PATH)
+
+    impact = module.plan_changed_paths(
+        policy,
+        [
+            "backend/app/models.py",
+            "dashboard/backend/schemas.py",
+            "dashboard/frontend/src/components/QqccBotSettings.vue",
+            "qqcc_bot/prompt_handlers.py",
+            "shared/locales/zh.json",
+            "src/core/task_dispatcher.py",
+            "src/services/qqcc_config_service.py",
+            "deploy/release-policy.yml",
+            "docs/knowledge_base_audit_matrix.md",
+            "tests/services/test_quick_video_submission_service.py",
+        ],
+    )
+
+    assert impact.level == "rolling"
+    assert impact.services == {
+        "central-api",
+        "qqcc-bot",
+        "qqcc-config-backend",
+        "qqcc-config-frontend",
+        "qqcc-private-bot-worker",
+    }
+    assert impact.blockers == set()
+    assert impact.unknown_paths == []
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "frontend/src/App.vue",
+        "workers/comfy_agent/workflows/mappings.json",
+        "remote_workers/comfy_agent/workflows/mappings.json",
+        "scripts/test_train_release.py",
+    ],
+)
+def test_qqcc_control_plane_policy_fails_closed_for_out_of_scope_paths(path):
+    module = _load_module()
+    policy = module.load_structured_file(QQCC_CONTROL_PLANE_POLICY_PATH)
+
+    impact = module.plan_changed_paths(policy, [path])
+
+    assert impact.level == "maintenance"
+    assert impact.unknown_paths == [path]
+
+
+def test_release_policy_environment_guard_rejects_test_policy_in_production():
+    module = _load_module()
+
+    with pytest.raises(module.ReleaseError, match="only valid for test"):
+        module.validate_release_policy_environment(
+            {"environment": "test"}, "prod"
+        )
+
+
+def test_qqcc_test_reconcile_policy_ignores_only_audited_test_train_drift():
+    module = _load_module()
+    policy = module.load_structured_file(QQCC_TEST_RECONCILE_POLICY_PATH)
+    module.validate_release_policy_environment(policy, "test")
+
+    impact = module.plan_changed_paths(
+        policy,
+        [
+            "dashboard/frontend/src/components/QqccBotSettings.vue",
+            "qqcc_bot/private_bot_fsm.py",
+            "src/services/qqcc_config_service.py",
+            "AGENTS.md",
+            "frontend/src/features/generation/labModeConfig.ts",
+            "remote_workers/comfy_agent/workflows/mappings.json",
+            "scripts/release.py",
+            "scripts/test_train_release.py",
+            "src/quota.py",
+            "src/services/permission_growth_channel_service.py",
+            "workers/comfy_agent/workflows/mappings.json",
+        ],
+    )
+
+    assert impact.level == "rolling"
+    assert impact.services == {
+        "central-api",
+        "qqcc-bot",
+        "qqcc-config-backend",
+        "qqcc-config-frontend",
+        "qqcc-private-bot-worker",
+    }
     assert impact.unknown_paths == []
 
 
@@ -1601,6 +1713,115 @@ def test_v2_cloud_rollback_reads_track_scoped_release_contract(monkeypatch):
     ) in remote_scripts[0]
 
 
+def test_test_execution_preflight_skips_cloud_without_cloud_services(monkeypatch):
+    module = _load_module()
+
+    def unexpected_cloud_probe(*_args, **_kwargs):
+        pytest.fail("test-execution without cloud services must not probe cloud rollback")
+
+    monkeypatch.setattr(module, "_run", unexpected_cloud_probe)
+
+    blockers = module._cloud_preflight(
+        SimpleNamespace(
+            env="test",
+            previous_sha="b" * 40,
+            remote_host="cloud-test",
+            remote_checkout_root="/release-root",
+            remote_env_file="/etc/allbot/test.env",
+        ),
+        module.ReleaseImpact(
+            services={"worker"},
+            level="maintenance",
+            matched_rules=["track:test-execution"],
+        ),
+        {"schema_version": 2, "track": "test-execution", "git_sha": FULL_SHA},
+        _valid_test_environment(worker_slots=("01",)),
+    )
+
+    assert blockers == []
+
+
+def test_v2_cloud_preflight_accepts_legacy_rollback_contract(monkeypatch):
+    module = _load_module()
+    previous_sha = "b" * 40
+    remote_scripts = []
+
+    def fake_run(command, **kwargs):
+        remote_scripts.append(kwargs.get("input_text", ""))
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(module, "_run", fake_run)
+
+    blockers = module._cloud_preflight(
+        SimpleNamespace(
+            env="test",
+            previous_sha=previous_sha,
+            remote_host="cloud-test",
+            remote_checkout_root="/release-root",
+            remote_env_file="/etc/allbot/test.env",
+        ),
+        module.ReleaseImpact(
+            services={"central-api"},
+            level="maintenance",
+            matched_rules=["track:control-plane"],
+        ),
+        {"schema_version": 2, "track": "control-plane", "git_sha": FULL_SHA},
+        _valid_test_environment(),
+    )
+
+    assert blockers == []
+    assert (
+        "/var/lib/allbot/releases/control-plane/"
+        + previous_sha
+        + "/release.env"
+    ) in remote_scripts[0]
+    assert (
+        "/var/lib/allbot/releases/" + previous_sha + "/release.env"
+    ) in remote_scripts[0]
+    assert "cloud-rollback-release-env-unavailable" in remote_scripts[0]
+
+
+def test_v2_cloud_rollback_can_use_legacy_release_contract(monkeypatch):
+    module = _load_module()
+    previous_sha = "b" * 40
+    remote_scripts = []
+    monkeypatch.setattr(
+        module,
+        "_remote_shell",
+        lambda host, script, *, execute: remote_scripts.append(script),
+    )
+    transaction = module.new_release_transaction(
+        environment="test",
+        target_sha=FULL_SHA,
+        previous_sha=previous_sha,
+        previous_kind="immutable",
+        previous_pages_deployment_id=None,
+    )
+    transaction["track"] = "control-plane"
+
+    module._rollback_cloud_stack(
+        SimpleNamespace(
+            env="test",
+            remote_host="cloud-test",
+            remote_checkout_root="/release-root",
+            remote_env_file="/etc/allbot/test.env",
+        ),
+        module.ReleaseImpact(services={"central-api"}, level="rolling"),
+        transaction,
+        _valid_test_environment(),
+    )
+
+    assert (
+        "/var/lib/allbot/releases/control-plane/"
+        + previous_sha
+        + "/release.env"
+    ) in remote_scripts[0]
+    assert (
+        "/var/lib/allbot/releases/" + previous_sha + "/release.env"
+    ) in remote_scripts[0]
+    assert '--env-file "$previous_release_env"' in remote_scripts[0]
+
+
 def test_initial_worker_cutover_snapshots_and_stops_legacy_before_start(
     tmp_path, monkeypatch
 ):
@@ -1742,6 +1963,54 @@ def test_v2_initial_worker_recovery_reads_track_scoped_legacy_snapshot(
         "cloud-comfy-agent-test-1",
         "cloud-worker-relay-test",
     ] in calls
+
+
+def test_v2_worker_preflight_reads_track_scoped_rollback_contract(
+    tmp_path, monkeypatch
+):
+    module = _load_module()
+    previous_sha = "b" * 40
+    root = tmp_path / "release-root"
+    (root / "repo" / ".git").mkdir(parents=True)
+    (root / "releases" / previous_sha).mkdir(parents=True)
+    release_env = (
+        root
+        / "release-env"
+        / "test-execution"
+        / previous_sha
+        / "release.env"
+    )
+    release_env.parent.mkdir(parents=True)
+    release_env.write_text("ALLBOT_RELEASE_TRACK=test-execution\n", encoding="utf-8")
+    env_file = tmp_path / "test.env"
+    env_file.write_text("ALLBOT_ENV=test\n", encoding="utf-8")
+
+    def fake_run(command, **_kwargs):
+        stdout = "relay-container\n" if command[:3] == ["docker", "ps", "-q"] else ""
+        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(module, "_run", fake_run)
+
+    blockers = module._worker_preflight(
+        SimpleNamespace(
+            env="test",
+            env_file=str(env_file),
+            worker_checkout_root=str(root),
+            previous_sha=previous_sha,
+        ),
+        module.ReleaseImpact(
+            services={"worker"},
+            level="maintenance",
+            matched_rules=["track:test-execution"],
+        ),
+        {"schema_version": 2, "track": "test-execution"},
+        {
+            "ALLBOT_WORKER_SERVICES": "worker-01",
+            "ALLBOT_WORKER_RELAY_PORT": "8014",
+        },
+    )
+
+    assert "worker-rollback-release-env-unavailable" not in blockers
 
 
 def test_prod_execute_requires_explicit_confirmation_before_other_checks(tmp_path):
@@ -2469,6 +2738,30 @@ def test_prod_preflight_skips_gpu_worker_checks():
     assert calls == ["operator", "cloud", "pages", "rollback"]
     assert report["checks"]["worker"] == {"status": "skipped", "blockers": []}
     assert report["status"] == "passed"
+
+
+def test_prod_rollback_preflight_accepts_cached_v2_release_index(tmp_path):
+    module = _load_module()
+    previous_sha = "1" * 40
+    release_index = tmp_path / previous_sha / "release-v2" / "release-index.json"
+    release_index.parent.mkdir(parents=True)
+    release_index.write_text("{}\n", encoding="utf-8")
+    (release_index.parent / "public-web-dist.tgz").write_bytes(b"web")
+
+    blockers = module._rollback_preflight(
+        SimpleNamespace(
+            env="prod",
+            previous_sha=previous_sha,
+            bundle_cache=str(tmp_path),
+        ),
+        module.ReleaseImpact(
+            services={"central-api", "web-static"}, level="rolling"
+        ),
+        _manifest(),
+        {},
+    )
+
+    assert blockers == []
 
 
 def test_release_cli_exposes_read_only_preflight_command():
