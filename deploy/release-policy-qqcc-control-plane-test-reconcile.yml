@@ -1,5 +1,6 @@
 {
   "schema_version": 1,
+  "environment": "test",
   "all_services": [
     "central-api",
     "qqcc-bot",
@@ -81,6 +82,20 @@
         "docs/**",
         "scripts/release.py",
         "tests/**"
+      ],
+      "level": "none",
+      "services": []
+    },
+    {
+      "name": "accepted-test-train-nonselected-drift",
+      "patterns": [
+        "AGENTS.md",
+        "frontend/**",
+        "remote_workers/**",
+        "scripts/test_train_release.py",
+        "src/quota.py",
+        "src/services/permission_growth_channel_service.py",
+        "workers/**"
       ],
       "level": "none",
       "services": []

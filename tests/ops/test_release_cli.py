@@ -15,6 +15,9 @@ POLICY_PATH = ROOT / "deploy" / "release-policy.yml"
 QQCC_CONTROL_PLANE_POLICY_PATH = (
     ROOT / "deploy" / "release-policy-qqcc-control-plane.yml"
 )
+QQCC_TEST_RECONCILE_POLICY_PATH = (
+    ROOT / "deploy" / "release-policy-qqcc-control-plane-test-reconcile.yml"
+)
 SCHEMA_PATH = ROOT / "deploy" / "env.schema.yml"
 CONFIG_UPDATER_PATH = ROOT / "scripts" / "update_deploy_config.py"
 FULL_SHA = "a" * 40
@@ -333,6 +336,48 @@ def test_qqcc_control_plane_policy_fails_closed_for_out_of_scope_paths(path):
 
     assert impact.level == "maintenance"
     assert impact.unknown_paths == [path]
+
+
+def test_release_policy_environment_guard_rejects_test_policy_in_production():
+    module = _load_module()
+
+    with pytest.raises(module.ReleaseError, match="only valid for test"):
+        module.validate_release_policy_environment(
+            {"environment": "test"}, "prod"
+        )
+
+
+def test_qqcc_test_reconcile_policy_ignores_only_audited_test_train_drift():
+    module = _load_module()
+    policy = module.load_structured_file(QQCC_TEST_RECONCILE_POLICY_PATH)
+    module.validate_release_policy_environment(policy, "test")
+
+    impact = module.plan_changed_paths(
+        policy,
+        [
+            "dashboard/frontend/src/components/QqccBotSettings.vue",
+            "qqcc_bot/private_bot_fsm.py",
+            "src/services/qqcc_config_service.py",
+            "AGENTS.md",
+            "frontend/src/features/generation/labModeConfig.ts",
+            "remote_workers/comfy_agent/workflows/mappings.json",
+            "scripts/release.py",
+            "scripts/test_train_release.py",
+            "src/quota.py",
+            "src/services/permission_growth_channel_service.py",
+            "workers/comfy_agent/workflows/mappings.json",
+        ],
+    )
+
+    assert impact.level == "rolling"
+    assert impact.services == {
+        "central-api",
+        "qqcc-bot",
+        "qqcc-config-backend",
+        "qqcc-config-frontend",
+        "qqcc-private-bot-worker",
+    }
+    assert impact.unknown_paths == []
 
 
 def test_dashboard_fast_track_accepts_only_dashboard_runtime_and_release_metadata():

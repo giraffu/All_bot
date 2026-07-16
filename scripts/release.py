@@ -622,6 +622,22 @@ def load_structured_file(path: Path) -> dict[str, Any]:
     return value
 
 
+def validate_release_policy_environment(
+    policy: Mapping[str, Any], environment: str
+) -> None:
+    policy_environment = policy.get("environment")
+    if policy_environment is None:
+        return
+    if policy_environment not in ENVIRONMENT:
+        raise ReleaseError(
+            f"release policy declares unsupported environment: {policy_environment}"
+        )
+    if policy_environment != environment:
+        raise ReleaseError(
+            f"release policy is only valid for {policy_environment}, not {environment}"
+        )
+
+
 def _matches(path: str, patterns: Sequence[str]) -> bool:
     normalized = path.removeprefix("./")
     return any(fnmatch.fnmatchcase(normalized, pattern) for pattern in patterns)
@@ -1934,6 +1950,8 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
     sha = validate_full_sha(args.sha)
     manifest_path = _resolve_manifest_path(args, allow_fetch=args.command == "plan")
     manifest_document = _read_json(manifest_path)
+    policy = load_structured_file(Path(args.policy))
+    validate_release_policy_environment(policy, args.env)
     if manifest_document.get("schema_version") == 2:
         requested_modules = _split_services(args.modules)
         requested_services = _split_services(args.services)
@@ -1978,9 +1996,7 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
         changed_paths: list[str] = []
         if previous_sha and previous_sha != sha:
             changed_paths = git_changed_paths(previous_sha, sha)
-            planned_impact = plan_changed_paths(
-                load_structured_file(Path(args.policy)), changed_paths
-            )
+            planned_impact = plan_changed_paths(policy, changed_paths)
         computed_modules: set[str] = set()
         if args.track == "control-plane":
             computed_modules = {
@@ -2088,7 +2104,6 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
         verify_git_release(sha)
     if args.command == "plan" and not args.skip_ci_checks:
         verify_release_ci(manifest, sha)
-    policy = load_structured_file(Path(args.policy))
     previous_sha = _resolve_previous_sha(args)
     changed_paths: list[str] = []
     if previous_sha:
