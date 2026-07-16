@@ -117,6 +117,34 @@ def test_build_bot_task_flow_context_keeps_cost_override_for_internal_tasks():
     assert flow.presentation.show_queue_status is False
 
 
+def test_build_bot_task_flow_context_keeps_generation_model_context_for_persistence():
+    flow = build_bot_task_flow_context(
+        context=SimpleNamespace(),
+        chat_id=1,
+        internal_user_id=2,
+        username="user",
+        task_type="img2img_lora",
+        inputs={
+            "prompt": "portrait",
+            "lora_name": "qwen/YARN_1.0.safetensors",
+            "lora_strength": 0.35,
+        },
+        prompt="portrait",
+        is_video=False,
+        message_spec=BotTaskMessageSpec(initial_status_text="提交中"),
+        task_label="image",
+        cleanup=False,
+        cleanup_paths=[],
+    )
+
+    assert flow.presentation.result_meta["_generation_context"] == {
+        "version": 1,
+        "lora_name": "qwen/YARN_1.0.safetensors",
+        "lora_strength": 0.35,
+        "public_model_id": "image_realistic",
+    }
+
+
 @pytest.mark.asyncio
 async def test_submit_bot_task_uses_submission_client_type(monkeypatch):
     process_submit = AsyncMock(

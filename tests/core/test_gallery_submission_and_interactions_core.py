@@ -102,13 +102,19 @@ async def test_process_submit_to_gallery_result_impl_reactivates_existing_post()
     session.commit.assert_awaited_once()
 
 
-def test_build_gallery_tags_extracts_mode_and_lora():
+def test_build_gallery_tags_keeps_mode_and_omits_unknown_internal_model_name():
     history = SimpleNamespace(
         type="i2i_pro",
         prompt="[模型: Foo Bar] A prompt body",
     )
 
-    assert _build_gallery_tags(history) == ["#task.mode_i2i_pro", "#Foo Bar"]
+    assert _build_gallery_tags(history) == ["#task.mode_i2i_pro"]
+
+
+def test_build_gallery_tags_hides_unknown_internal_task_type():
+    history = SimpleNamespace(type="secret_worker_stage", prompt="A prompt body")
+
+    assert _build_gallery_tags(history) == ["#task_type.other"]
 
 
 def test_allowed_web_submit_types_include_txt2img():

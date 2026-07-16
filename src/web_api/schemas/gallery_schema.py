@@ -68,6 +68,7 @@ class GalleryPostResponse(BaseModel):
     created_at: datetime
     is_active: bool = True
     prompt: Optional[str] = None
+    prompt_model: Optional[Dict[str, Any]] = None
     prompt_unlocked: bool = False
     prompt_unlockable: bool = False
     prompt_is_masked: bool = False
@@ -101,6 +102,7 @@ class PaginatedGalleryResponse(BaseModel):
 class PromptUnlockResponse(BaseModel):
     post_id: int
     prompt: str
+    prompt_model: Optional[Dict[str, Any]] = None
     prompt_unlocked: bool = True
     prompt_unlockable: bool = False
     prompt_is_masked: bool = False
@@ -118,6 +120,7 @@ class ApplyContextResponse(BaseModel):
     task_id: str
     media_type: str
     prompt: Optional[str]
+    prompt_model: Optional[Dict[str, Any]] = None
     negative_prompt: Optional[str] = None
     lora_name: Optional[str] = None
     lora_strength: Optional[float] = None

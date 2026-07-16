@@ -34,6 +34,7 @@ export interface RawApplyContextResponse {
   task_id?: unknown
   media_type?: unknown
   prompt?: unknown
+  prompt_model?: unknown
   negative_prompt?: unknown
   lora_name?: unknown
   lora_strength?: unknown

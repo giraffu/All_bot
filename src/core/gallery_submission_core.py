@@ -5,6 +5,7 @@ import re
 from typing import TYPE_CHECKING, Any, Callable
 
 from src.constants import MODE_NAME_MAP
+from src.lora_catalog import ALL_LORA_MODELS
 from src.domain_config.task_type_registry import gallery_supported_task_types
 from src.gallery_core_dependencies import (
     GallerySubmissionDependencies,
@@ -13,6 +14,9 @@ from src.gallery_core_dependencies import (
 )
 from src.core.gallery_core_errors import GalleryCoreError
 from src.core.gallery_submission_effects import build_gallery_submit_side_effects
+from src.services.user_visible_generation_presenter import (
+    resolve_user_task_display_key,
+)
 
 if TYPE_CHECKING:
     from src.database.models import History
@@ -30,7 +34,9 @@ def _detect_media_type(output_file: str) -> str:
 
 def _build_gallery_tags(history: History) -> list[str]:
     tags: list[str] = []
-    base_tag = MODE_NAME_MAP.get(history.type, history.type)
+    base_tag = MODE_NAME_MAP.get(history.type) or resolve_user_task_display_key(
+        history.type
+    )
     if base_tag:
         tags.append(f"#{base_tag}")
 
@@ -38,7 +44,9 @@ def _build_gallery_tags(history: History) -> list[str]:
         match = re.search(r"\[模型:\s*(.*?)\]\s*(.*)", history.prompt, re.DOTALL)
         if match:
             lora_tag = match.group(1).strip()
-            tags.append(f"#{lora_tag}")
+            display_name = ALL_LORA_MODELS.get(lora_tag)
+            if display_name:
+                tags.append(f"#{display_name}")
 
     return tags
 

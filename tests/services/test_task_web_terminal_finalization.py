@@ -69,3 +69,44 @@ def test_ltx_history_context_is_merged_into_extra_outputs():
         "ltx_chain_task_ids": ["ltx-task-1"],
         "lora_items": [{"name": "demo.safetensors", "strength": 0.8}],
     }
+
+
+@pytest.mark.asyncio
+async def test_web_success_persists_clean_prompt_and_structured_generation_context():
+    persist_mock = AsyncMock()
+    cleanup_mock = AsyncMock()
+    submission_context = TaskSubmissionContext(
+        task_type="img2img_lora",
+        is_video_task=False,
+        user_logger=None,
+        prompt="cinematic portrait",
+        saved_inputs=["ref.png"],
+        metadata={
+            "lora_name": "qwen/YARN_1.0.safetensors",
+            "lora_strength": 0.35,
+        },
+        allow_contribute=True,
+        final_priority=0,
+    )
+
+    await task_web_terminal_finalization.finalize_monitored_web_task_success(
+        backend_task_id="backend-1",
+        internal_user_id=123,
+        username="tester",
+        registry_task_id="registry-1",
+        submission_context=submission_context,
+        result_path="result.png",
+        extra_outputs={},
+        persist_successful_web_history_func=persist_mock,
+        cleanup_task_runtime_state_func=cleanup_mock,
+        logger=task_web_terminal_finalization.logging.getLogger(__name__),
+    )
+
+    kwargs = persist_mock.await_args.kwargs
+    assert kwargs["prompt"] == "cinematic portrait"
+    assert kwargs["extra_outputs"]["_generation_context"] == {
+        "version": 1,
+        "lora_name": "qwen/YARN_1.0.safetensors",
+        "lora_strength": 0.35,
+        "public_model_id": "image_realistic",
+    }

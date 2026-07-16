@@ -25,6 +25,7 @@ import { useProfileMetrics } from '@/composables/useProfileMetrics'
 import { useProfileLanguage } from '@/composables/useProfileLanguage'
 import { useProfileQuickActions } from '@/composables/useProfileQuickActions'
 import { useProfileWelcomeSummary } from '@/composables/useProfileWelcomeSummary'
+import { resolveTaskTypeLabel } from '@/utils/taskTypePresentation'
 import { useDailyCheckin } from '@/composables/useDailyCheckin'
 import ProfilePasswordOverlay from '@/components/profile/ProfilePasswordOverlay.vue'
 import ProfileMetricCards from '@/components/profile/ProfileMetricCards.vue'
@@ -86,18 +87,7 @@ const { identityExpireText, userGroupLabel, identityLabel } = useProfileWelcomeS
 })
 
 const resolveQueueTaskTypeLabel = (type: string | number) => {
-  const normalizedType = String(type).replace(/-/g, '_')
-  const taskTypeKey = `task_type.${normalizedType}`
-  if (te(taskTypeKey)) {
-    return t(taskTypeKey)
-  }
-
-  const taskKey = `task.${normalizedType}`
-  if (te(taskKey)) {
-    return t(taskKey)
-  }
-
-  return normalizedType
+  return resolveTaskTypeLabel(type, t, te)
 }
 
 const { checkinLoading, handleCheckin } = useDailyCheckin({

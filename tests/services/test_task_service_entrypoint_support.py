@@ -71,7 +71,7 @@ def test_resolve_video_billing_args_can_skip_requested_duration():
     assert args["requested_duration"] is None
 
 
-def test_build_log_prompt_supports_lora_prefix_and_resolution_duration_prefix():
+def test_build_log_prompt_keeps_user_prompt_clean_when_runtime_metadata_is_structured():
     prompt = support.build_log_prompt(
         "base prompt",
         resolution="720p",
@@ -81,7 +81,7 @@ def test_build_log_prompt_supports_lora_prefix_and_resolution_duration_prefix():
         lora_task_types=("video_lora", "img2img_lora"),
     )
 
-    assert prompt == "[720p|5s] [模型: foo] base prompt"
+    assert prompt == "base prompt"
 
 
 def test_build_cleanup_paths_filters_empty_values():

@@ -28,6 +28,7 @@ interface GalleryCommentsPage {
 export interface PromptUnlockResponse {
   post_id: number
   prompt: string
+  prompt_model?: import('@/types/gallery').PromptModel | null
   prompt_unlocked: boolean
   prompt_unlockable: boolean
   prompt_is_masked: boolean

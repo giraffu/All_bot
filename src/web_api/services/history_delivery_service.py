@@ -15,6 +15,7 @@ from src.web_api.services.history_query_service import (
     fetch_owned_histories_by_task_id,
     pick_preferred_history,
 )
+from src.services.user_visible_generation_presenter import present_user_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -176,7 +177,10 @@ async def send_history_record_to_telegram(
     url, payload, files = dependencies.build_upload_request_func(
         telegram_id=telegram_id,
         history_type=history.type,
-        history_prompt=history.prompt,
+        history_prompt=present_user_prompt(
+            history.prompt,
+            extra_outputs=getattr(history, "extra_outputs", None),
+        ).prompt,
         object_name=object_name,
         file_bytes=file_bytes,
     )

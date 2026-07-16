@@ -671,7 +671,7 @@ def gallery_supported_task_types() -> tuple[str, ...]:
 
 def gallery_display_type_configs() -> tuple[tuple[str, str], ...]:
     return tuple(
-        (task_type, MODE_NAME_MAP.get(task_type, task_type))
+        (task_type, MODE_NAME_MAP.get(task_type, "task_type.other"))
         for task_type in _GALLERY_DISPLAY_TASK_TYPE_ORDER
         if is_gallery_supported_task_type(task_type)
     )

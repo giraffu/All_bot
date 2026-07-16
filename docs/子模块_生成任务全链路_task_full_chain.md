@@ -278,6 +278,10 @@ Webhook update 先由 Web API 校验后写 `${REDIS_PREFIX}private_qqcc_bot:webh
 
 `task_type_registry.py` 记录 public type、legacy alias、执行面 task type、Central type、workflow filename、RunPod profile、视频/Gallery/apply 能力与成本。它提供稳定 query helper，当前已驱动 Gallery 可投稿类型、Gallery 展示配置、apply 输入复用白名单、Central simple task 映射与 workflow filename facts；dispatcher 策略与 worker `SUPPORTED_TASK_TYPES` 仍沿用显式事实源。`tests/config/test_task_type_registry.py` 会对照 `src/constants.py`、`backend/app/main_simple_task_routes.py`、`src/workflow_mapping_validation.py`、RunPod profile、Gallery/apply 输出做一致性门禁；新增或调整任务类型时先让 registry 与现有事实一致，再考虑分批迁移调用点。
 
+用户展示层另行把 registry 的 public type、legacy alias、执行/内部阶段类型归一为稳定 `task_type.*` 展示 key。Web 历史、队列、详情、用户主页、Gallery 卡片和 Bot 结果只渲染共享中英文 locale；未知类型统一回退“生成任务/其他任务”，不得回显原始 task type。Dashboard、日志与 Central/Worker 协议仍保留原始诊断值。
+
+新任务完成时，`History.prompt` 只保存提示词正文；模型公共 ID、强度、分辨率和时长合并写入 `extra_outputs._generation_context`，执行 payload 的 `lora_name/lora_strength`、费用和 workflow 均不变。History、Gallery、解锁/复制、一键应用、Telegram 私聊、主 Bot 与 QQCC/私有 Bot 恢复投递统一通过 presenter 输出干净 prompt 与可选 `prompt_model`。历史数据不批量迁移：读取时优先结构化上下文，缺失时兼容剥离并解析旧系统前缀。
+
 例如：
 
 - `txt2img` 走 `submit_txt2img_task(...)`

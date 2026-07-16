@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ChevronDown, ChevronUp, Copy, LockKeyhole } from 'lucide-vue-next'
+import type { PromptModel } from '@/types/gallery'
 
 const props = withDefaults(
   defineProps<{
     title: string
     prompt?: string | null
+    promptModel?: PromptModel | null
+    modelLabel?: string
+    additionalModelLabel?: string
+    modelStrengthLabel?: string
     expandLabel: string
     collapseLabel: string
     copyLabel?: string
@@ -20,6 +25,9 @@ const props = withDefaults(
   }>(),
   {
     prompt: '',
+    modelLabel: '',
+    additionalModelLabel: 'Add-on model',
+    modelStrengthLabel: 'Strength',
     copyLabel: '',
     showCopy: false,
     unlockLabel: '',
@@ -41,6 +49,7 @@ const expanded = ref(false)
 const MASK_SYMBOLS = ['*', '•', '·', '◦']
 
 const normalizedPrompt = computed(() => props.prompt?.trim() ?? '')
+const resolvedModelLabel = computed(() => props.modelLabel || props.additionalModelLabel)
 
 const maskPromptText = (prompt: string, visibleRatio: number) => {
   if (!prompt) {
@@ -90,7 +99,7 @@ watch(normalizedPrompt, () => {
 </script>
 
 <template>
-  <section v-if="normalizedPrompt" class="prompt-preview-panel rounded-2xl border p-4 lg:p-5">
+  <section v-if="normalizedPrompt || promptModel" class="prompt-preview-panel rounded-2xl border p-4 lg:p-5">
     <div class="flex items-start justify-between gap-3">
       <div>
         <div class="prompt-preview-title text-sm font-semibold">
@@ -98,6 +107,16 @@ watch(normalizedPrompt, () => {
         </div>
         <div class="prompt-preview-subtitle mt-1 text-xs">
           {{ displayPrompt.length }} chars
+        </div>
+        <div
+          v-if="promptModel"
+          class="prompt-preview-subtitle mt-1 text-xs"
+          data-testid="prompt-model-label"
+        >
+          {{ additionalModelLabel }}: {{ resolvedModelLabel }}
+          <span v-if="promptModel.strength !== undefined">
+            · {{ modelStrengthLabel }} {{ promptModel.strength }}
+          </span>
         </div>
       </div>
       <div class="prompt-preview-actions shrink-0 flex items-center gap-2">

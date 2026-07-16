@@ -15,7 +15,6 @@ from src.domain_config.scail2_video import (
     is_scail2_task_type,
 )
 from src.lora_catalog import normalize_ltx_video_lora_items
-from src.lora_mapping import extract_prompt_lora_context
 from src.domain_config.wan22_aio_video import is_wan22_chain_history_task_type
 from src.services.ltx_video_extension_service import (
     extract_ltx_history_context,
@@ -34,6 +33,10 @@ from src.services.wan22_video_v2_extension_service import (
     extract_wan22_history_context,
 )
 from src.web_api.schemas.gallery_schema import ApplyContextResponse
+from src.services.user_visible_generation_presenter import (
+    present_user_prompt,
+    resolve_prompt_generation_context,
+)
 
 SCAIL2_HISTORY_CONTEXT_KEY = "scail2_context"
 
@@ -177,6 +180,7 @@ def build_apply_context_response(
     lora_name: str | None,
     lora_strength: float | None,
     lora_items: list[dict] | None,
+    prompt_model: dict | None = None,
     input_file: str | None,
     input_file_url: str | None,
     width: int | None,
@@ -195,6 +199,7 @@ def build_apply_context_response(
         task_id=task_id,
         media_type=media_type,
         prompt=prompt,
+        prompt_model=prompt_model,
         negative_prompt=negative_prompt,
         lora_name=lora_name,
         lora_strength=lora_strength,
@@ -305,7 +310,15 @@ async def build_history_apply_context_response(
         history.prompt,
         resolve_wan22_apply_requested_duration(history),
     )
-    prompt, lora_name, lora_strength = extract_prompt_lora_context(prompt)
+    presented_prompt = present_user_prompt(
+        prompt,
+        extra_outputs=getattr(history, "extra_outputs", None),
+    )
+    prompt, lora_name, lora_strength = resolve_prompt_generation_context(
+        prompt,
+        extra_outputs=getattr(history, "extra_outputs", None),
+    )
+    prompt_model = presented_prompt.prompt_model
     negative_prompt = (
         resolve_wan22_apply_negative_prompt(history)
         or resolve_scail2_apply_negative_prompt(history)
@@ -383,6 +396,7 @@ async def build_history_apply_context_response(
         lora_name=lora_name,
         lora_strength=lora_strength,
         lora_items=lora_items,
+        prompt_model=prompt_model,
         input_file=input_file,
         input_file_url=input_file_url,
         input_files=input_files,
