@@ -37,6 +37,7 @@
 | `rmb.aivison.it.com` | Cloudflare Tunnel | 云正式 Payment API `http://100.107.220.127:8021` | 支付回调/结果页语义，切换走 RMB 脚本 |
 | `worker-central.aivison.it.com` | Cloudflare Tunnel | 远程 worker / RunPod 专用 Central | 不启用 Access 登录页；依赖 agent secret 与 WAF/rate limit |
 | `worker-central-test.aivison.it.com` | Cloudflare Tunnel | 云测试 worker 专用 Central | 不启用 Access 登录页；依赖测试 agent secret |
+| `qqcc-admin-test.aivison.it.com` | Tunnel `allbot-cloud-web-api-canary` / `6d129e6e-8f4a-4003-b0bc-60565910b2b9` + Access app `qqcc-admin-test` / `93c6a382-dcf5-498e-b702-6a21184fb753` | 云测试 QQCC Config Frontend `http://100.82.124.91:8088` | Access policy `qqcc-test-admin` / `4d1990fd-0c4f-45eb-8f2b-eeecf2b3d717` 仅允许 `cv1347968277@gmail.com` |
 | `qqcc-admin.aivison.it.com` | Tunnel `allbot-admin-dashboard-prod` / `68599b55-d7f9-4e0c-9613-3d5fa396cb28` + Access app `qqcc-admin` / `7fbb3a9a-7156-46b5-857c-1b7e5d97c7fe` | QQCC 懒人 Bot 管理后台公网入口 | Access policy `qqcc` allow `cv1347968277@gmail.com` |
 | `private-bot.aivison.it.com` | Tunnel `allbot-admin-dashboard-prod` / `68599b55-d7f9-4e0c-9613-3d5fa396cb28`，DNS record `69c4e68bf442dea05fefa71db28791b5` | QQCC 私有 Bot owner WebApp，回源 `http://100.107.220.127:8088` | 面向 owner 公开，不创建 Access app；应用层 ticket/JWT + 双层 Host 隔离 |
 | `analytics.aivison.it.com` | Tunnel `allbot-local-analytics` / `79d456a9-6448-4677-8a1f-c128ffb256dd` + Access app `local-analytics` / `b05ae46f-fcdb-43d9-ac4e-50ab91daabac` | 本地主服务器只读分析平台 `http://127.0.0.1:8095` | Access policy `local-analytics-admin` allow `cv1347968277@gmail.com` + 应用层登录 |
@@ -46,6 +47,8 @@
 2026-07-14 已关闭 `allbot-web-cf-test` Git integration 的 production 自动部署，并把 preview branch control 设置为 `none`；当前内容保持不变，后续只接受 release CLI 校验同一 tar 后的 Wrangler 上传。`allbot-web-prod` 未在本轮修改。
 
 同日已为 `user-data-test` 桶补齐不可变 Pages 测试站直传 CORS。当前允许的 Origin 为 `https://web-test.aivison.it.com`、`https://web.aivison.it.com`、`https://web-cf-test.aivison.it.com`、`https://allbot-web-cf-test.pages.dev`，方法为 `GET/PUT/HEAD`，允许任意请求头并暴露 `ETag`。四个 Origin 的预检均返回 204，`web-cf-test` Origin 的真实预签名 PUT/HEAD 均返回 200。桶 CORS 变更需要具备 R2 Storage Write 管理权限；对象读写 key 即使能上传，也可能无权读取或修改桶 CORS，必须按目标 API/操作实测能力，且不得回显凭据。
+
+2026-07-16 已为云测试 QQCC Config Web 上线 `qqcc-admin-test.aivison.it.com`。该 hostname 插入 `allbot-cloud-web-api-canary` Tunnel 的 catch-all 404 之前，回源测试 Tailscale origin `http://100.82.124.91:8088`；proxied CNAME DNS record 为 `4d257ea98980b057d8d2ef15a2063fdb`。公网未登录请求已验证返回 Cloudflare Access 302，Access allow policy 只允许 `cv1347968277@gmail.com`，应用层 QQCC Config 登录继续保留。测试私有 Bot 总 gate 仍关闭，因此本轮没有创建 `private-bot-test.aivison.it.com` DNS、Tunnel ingress 或公开 Owner WebApp。
 
 正式 Pages 发布前必须由 `scripts/release.py preflight --env prod --sha <sha>` 只读确认：production branch 为 `main`、`production_deployments_enabled=false`、`preview_deployment_setting=none`、正式 custom domain active、当前 canonical production deployment ID 可作为回滚材料。任何一项不满足都只报告 blocker，不允许发布器自动 PATCH 项目设置。
 

@@ -253,6 +253,10 @@ VPS Nginx 配置文件为 `/etc/nginx/sites-available/web-test.aivison.it.com`�
 | imgproxy | `cloud-imgproxy-test` | `8084` | 图片代理 |
 
 Dashboard/QQCC Config 管理服务不属于云测试服务清单，不配置测试 Host/端口，也不进入 preflight/验收。测试机 firewall 只需保护仍在使用的核心端口。
+2026-07-16 只读复核确认独立保留入口 `https://qqcc-admin-test.aivison.it.com` 仍由测试 Tunnel 回源
+`100.82.124.91:8088`，未登录请求由 Cloudflare Access 拦截。该入口不是 test-train 管理的测试服务，当前可达性
+不得作为候选部署或验收证据；QQCC Config 自身登录仍是第二层认证，测试 private Bot gate 关闭，
+`private-bot-test.aivison.it.com` 未创建。
 
 云测试缓存与队列使用同机容器 `redis-test`，不复用正式 Valkey/Redis：
 
