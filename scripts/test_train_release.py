@@ -16,7 +16,7 @@ from typing import Any, Iterator, Mapping, Protocol, Sequence
 
 
 FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
-SLOTS = {"A", "B", "C", "D"}
+SLOTS = {"A", "B", "C", "D", "E", "F", "G", "H"}
 DEFAULT_STATE_ROOT = Path.home() / ".local" / "state" / "allbot" / "test-train"
 DEFAULT_BUNDLE_CACHE = (
     Path.home() / ".cache" / "allbot" / "releases" / "test-candidate"

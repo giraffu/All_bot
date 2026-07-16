@@ -2,7 +2,7 @@
 
 ## 1. 目标与边界
 
-AllBot 使用四个固定 Git worktree 并行开发，只保留一套共享云测试站。A-D 功能 AI 不持有发布职责；根工作区的集成 AI 把任务逐个合入 `codex/test-train`，使用 schema v2 增量 bundle 串行切换测试站。生产发布仍只接受 `main` bundle。
+AllBot 使用八个固定 Git worktree 并行开发，只保留一套共享云测试站。A-H 功能 AI 不持有发布职责；根工作区的集成 AI 把任务逐个合入 `codex/test-train`，使用 schema v2 增量 bundle 串行切换测试站。生产发布仍只接受 `main` bundle。
 
 目录和职责固定如下：
 
@@ -13,12 +13,16 @@ AllBot 使用四个固定 Git worktree 并行开发，只保留一套共享云�
 | `/home/hfy/APP/All_bot-workspaces/B` | 并行功能槽位 B |
 | `/home/hfy/APP/All_bot-workspaces/C` | 并行功能槽位 C |
 | `/home/hfy/APP/All_bot-workspaces/D` | 并行功能槽位 D |
+| `/home/hfy/APP/All_bot-workspaces/E` | 并行功能槽位 E |
+| `/home/hfy/APP/All_bot-workspaces/F` | 并行功能槽位 F |
+| `/home/hfy/APP/All_bot-workspaces/G` | 并行功能槽位 G |
+| `/home/hfy/APP/All_bot-workspaces/H` | 并行功能槽位 H |
 
 Git worktree 只隔离工作目录和 index；它们仍共享对象库与 refs。Python `.venv`、前端 `node_modules`、临时目录和其它可写缓存应留在各自槽位，避免并发写入污染。
 
 ### 1.1 能力边界不是安全沙箱
 
-A-D 使用同一受信任 OS 用户，目标是隔离代码/index/依赖写入，不是限制 AI 了解真实系统。功能 AI 可以读取 worktree 或主机已有的真实 env、配置、SSH/API 凭据、日志、数据库连接信息和远端运行态，并可使用这些凭据完成只读诊断、本地测试和部署计划。已有配置或凭据出现在槽位中不构成分配失败，也不要求自动删除。
+A-H 使用同一受信任 OS 用户，目标是隔离代码/index/依赖写入，不是限制 AI 了解真实系统。功能 AI 可以读取 worktree 或主机已有的真实 env、配置、SSH/API 凭据、日志、数据库连接信息和远端运行态，并可使用这些凭据完成只读诊断、本地测试和部署计划。已有配置或凭据出现在槽位中不构成分配失败，也不要求自动删除。
 
 高访问能力与操作授权必须分开：秘密原文不得进入对话、测试输出、日志、diff、commit 或 PR；功能任务未明确要求时不得改写、轮换或另存凭据。凭据可见也不授权功能 AI 部署共享 test、修改 prod、Cloudflare、RunPod/GPU、执行数据库 migration 或改变发布状态，这些 mutation 仍由集成 AI 和对应运维 Skill 控制。
 
@@ -35,7 +39,7 @@ python scripts/manage_ai_workspaces.py park --slot A
 python scripts/manage_ai_workspaces.py refresh --slot A
 ```
 
-- `init` 幂等创建 A-D；空闲槽位 detached 在最新 `origin/codex/test-train`。
+- `init` 幂等创建 A-H；空闲槽位 detached 在最新 `origin/codex/test-train`。
 - `claim` 是新 AI 窗口的默认入口：它用 `~/.local/state/allbot/ai-workspaces.lock` 原子选择第一个空闲槽位，自动刷新过期的 clean detached 槽位，创建任务分支并返回路径。并发窗口不会获得同一槽位。
 - `assign` 创建 `codex/<slot>-<task>`，在 dirty、Git 操作未结束、槽位未 park 或 base 过期时拒绝。
 - `park` 要求工作区 clean 且 HEAD 已由同名远端分支包含；只 detach，不删除分支。

@@ -43,7 +43,7 @@ def _repository(tmp_path: Path) -> tuple[Path, Path]:
     return source, remote
 
 
-def test_init_creates_four_clean_detached_slots(tmp_path):
+def test_init_creates_eight_clean_detached_slots(tmp_path):
     module = _load_module()
     repo, _ = _repository(tmp_path)
     workspace_root = tmp_path / "workspaces"
@@ -53,7 +53,16 @@ def test_init_creates_four_clean_detached_slots(tmp_path):
     manager.init()
 
     rows = manager.status()
-    assert [row["slot"] for row in rows] == ["A", "B", "C", "D"]
+    assert [row["slot"] for row in rows] == [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "F",
+        "G",
+        "H",
+    ]
     assert all(row["branch"] is None for row in rows)
     assert all(row["clean"] and row["safe_to_assign"] for row in rows)
     assert all((workspace_root / row["slot"]).is_dir() for row in rows)
@@ -161,7 +170,9 @@ def test_claim_refreshes_an_idle_stale_slot_before_assignment(tmp_path):
     )
 
 
-def test_claim_skips_dirty_or_occupied_slots_and_fails_when_all_are_busy(tmp_path):
+def test_claim_skips_dirty_or_occupied_slots_and_fails_when_all_eight_are_busy(
+    tmp_path,
+):
     module = _load_module()
     repo, _ = _repository(tmp_path)
     workspace_root = tmp_path / "workspaces"
@@ -178,6 +189,10 @@ def test_claim_skips_dirty_or_occupied_slots_and_fails_when_all_are_busy(tmp_pat
     assert manager.claim("second-slot")["slot"] == "B"
     assert manager.claim("third-slot")["slot"] == "C"
     assert manager.claim("fourth-slot")["slot"] == "D"
+    assert manager.claim("fifth-slot")["slot"] == "E"
+    assert manager.claim("sixth-slot")["slot"] == "F"
+    assert manager.claim("seventh-slot")["slot"] == "G"
+    assert manager.claim("eighth-slot")["slot"] == "H"
 
     with pytest.raises(module.WorkspaceError, match="no available workspace slot"):
         manager.claim("overflow-task")

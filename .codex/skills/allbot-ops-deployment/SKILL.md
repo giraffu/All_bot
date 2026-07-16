@@ -82,7 +82,7 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 
 ### 云测试
 - 使用独立测试 Droplet、测试 Postgres/Redis/Central/Web/Dashboard/imgproxy/Bot。
-- 共享云测试站只有一个写入者。A-D 功能 AI 不得部署；集成 AI 使用 test-train 本地排他锁，按 control-plane → test-execution 顺序切换受影响 track。
+- 共享云测试站只有一个写入者。A-H 功能 AI 不得部署；集成 AI 使用 test-train 本地排他锁，按 control-plane → test-execution 顺序切换受影响 track。
 - 日常研发验证也先形成完整 Git SHA 和 CI release；发布器可只 recreate 自动影响到的模块，但代码、shared、locale 与 Worker 依赖始终来自同一 release。
 - 若发布器选中 `bot` / `qqcc-bot`，仍须确认没有第二个同测试 token polling 实例。
 - cloud-test worker 由本地主服务器经 Tailscale 接入测试 Central；默认常驻只保留 test-1 与 test-8，其它测试 worker 只在 smoke/canary 窗口启用。

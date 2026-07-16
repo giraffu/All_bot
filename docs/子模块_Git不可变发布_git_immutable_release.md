@@ -81,7 +81,7 @@ python scripts/update_deploy_config.py --env prod --source /secure/new-prod.env 
 
 ## 5. 标准流程
 
-并发任务的 test-train 入口为 `scripts/test_train_release.py`，A-D 功能工作区不得直接运行发布器。详细槽位与 forward-fix SOP 见 `docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md`。
+并发任务的 test-train 入口为 `scripts/test_train_release.py`，A-H 功能工作区不得直接运行发布器。详细槽位与 forward-fix SOP 见 `docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md`。
 
 包装器默认顺序部署 control-plane 与 test-execution。若用户明确把测试 Worker 留到匹配 GPU/ComfyUI 类型的后续窗口，集成 AI 可在 candidate deploy 上追加 `--skip-test-execution`；这只允许先完成并记录 control-plane，不能把未部署 Worker 写入 acceptance，也不能用于正式 `verify-test` 或生产晋级的 Worker 证据。
 
