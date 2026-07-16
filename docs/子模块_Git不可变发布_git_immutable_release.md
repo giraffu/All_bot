@@ -135,6 +135,8 @@ scripts/release.py deploy --env prod --track control-plane --sha <40-char-sha> -
 
 `dashboard/backend/schemas.py` 是 Dashboard API 与 QQCC Config API 的共享契约，发布策略必须把它归类为 `rolling`，并同时滚动 `dashboard-backend` 与 `qqcc-config-backend`；它本身不触发维护模式、Worker 或 GPU runtime 发布。
 
+当用户明确要求 QQCC 控制面独立晋级且保持其它正式模块不动时，可显式传 `--policy deploy/release-policy-qqcc-control-plane.yml`。该策略只接受已审计的 QQCC AI视频闭包与 release/docs/tests 元数据，固定影响 `central-api`、`qqcc-bot`、`qqcc-config-backend`、`qqcc-config-frontend`、`qqcc-private-bot-worker`；公共 Web、主 Bot、Dashboard、支付、群管、local/remote Worker、GPU runtime、RunPod 和未知路径全部 fail closed。它不跳过 main、CI、云测试 verified、digest、preflight 或正式确认门禁，测试与正式必须使用同一策略和同一模块 digest。
+
 生产发布器会读取云测试 `current.json`，要求状态为 `verified` 且 SHA、自有/第三方 digest 完全相同。验收模板见 `deploy/test-acceptance.example.json`；默认观察窗口不足 24 小时或任何 smoke 为 false 都不能标记 verified。用户明确确认测试服务无问题并授权提前晋级时，短观察 evidence 必须同时包含 `short_observation_override=true`、非空 `override_reason`、`approved_by` 和真实起止时间，并在 CLI 显式传 `--confirm-short-observation`。该例外不允许时间倒置/未来完成时间，也不放宽任何 smoke、SHA/digest、Web checksum 或测试运行态检查；verified current/history 会记录实际观察秒数、例外原因与批准者，禁止伪造 24 小时时间或直接编辑状态文件。
 
 管理后台是单管理员使用的独立控制面，用户明确授权时可选 `--dashboard-fast-track` 跳过云测试部署和 verified 晋级。该选择不跳过 Git/CI/manifest/env/read-only preflight，也不允许 mutable tag、云端 build、rsync 或维护模式；路径分类器只允许 Dashboard runtime、BF16 Dashboard catalog 和配套 release/docs/tests 元数据，自动选择 Dashboard 后端/前端，拒绝 `--services`、migration、共享 Python runtime、其它 GPU ops、Compose 与未知路径。发布事务只 rolling recreate 选中的 Dashboard 服务，状态写入 `promotion_mode=dashboard-fast-track`，并逐一核对非目标容器启动时间不变。显式快速回滚也必须带同一选项，且目标差异仍须满足相同 allowlist。

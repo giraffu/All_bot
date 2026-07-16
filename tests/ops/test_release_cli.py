@@ -12,6 +12,9 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = ROOT / "scripts" / "release.py"
 POLICY_PATH = ROOT / "deploy" / "release-policy.yml"
+QQCC_CONTROL_PLANE_POLICY_PATH = (
+    ROOT / "deploy" / "release-policy-qqcc-control-plane.yml"
+)
 SCHEMA_PATH = ROOT / "deploy" / "env.schema.yml"
 CONFIG_UPDATER_PATH = ROOT / "scripts" / "update_deploy_config.py"
 FULL_SHA = "a" * 40
@@ -279,6 +282,57 @@ def test_dashboard_shared_schemas_roll_both_dashboard_consumers():
     assert impact.services == {"dashboard-backend", "qqcc-config-backend"}
     assert impact.blockers == set()
     assert impact.unknown_paths == []
+
+
+def test_qqcc_control_plane_policy_limits_release_to_qqcc_runtime_closure():
+    module = _load_module()
+    policy = module.load_structured_file(QQCC_CONTROL_PLANE_POLICY_PATH)
+
+    impact = module.plan_changed_paths(
+        policy,
+        [
+            "backend/app/models.py",
+            "dashboard/backend/schemas.py",
+            "dashboard/frontend/src/components/QqccBotSettings.vue",
+            "qqcc_bot/prompt_handlers.py",
+            "shared/locales/zh.json",
+            "src/core/task_dispatcher.py",
+            "src/services/qqcc_config_service.py",
+            "deploy/release-policy.yml",
+            "docs/knowledge_base_audit_matrix.md",
+            "tests/services/test_quick_video_submission_service.py",
+        ],
+    )
+
+    assert impact.level == "rolling"
+    assert impact.services == {
+        "central-api",
+        "qqcc-bot",
+        "qqcc-config-backend",
+        "qqcc-config-frontend",
+        "qqcc-private-bot-worker",
+    }
+    assert impact.blockers == set()
+    assert impact.unknown_paths == []
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "frontend/src/App.vue",
+        "workers/comfy_agent/workflows/mappings.json",
+        "remote_workers/comfy_agent/workflows/mappings.json",
+        "scripts/test_train_release.py",
+    ],
+)
+def test_qqcc_control_plane_policy_fails_closed_for_out_of_scope_paths(path):
+    module = _load_module()
+    policy = module.load_structured_file(QQCC_CONTROL_PLANE_POLICY_PATH)
+
+    impact = module.plan_changed_paths(policy, [path])
+
+    assert impact.level == "maintenance"
+    assert impact.unknown_paths == [path]
 
 
 def test_dashboard_fast_track_accepts_only_dashboard_runtime_and_release_metadata():
