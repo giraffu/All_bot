@@ -4,6 +4,8 @@
 
 首次正式切换的硬门禁包括：同时维护 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`；控制面发布器不得触碰任何正式或测试 Worker；正式 Pages 必须为 production branch `main`、Git production disabled、preview `none`，并具备可验证/可回滚的 canonical production deployment ID。不满足只报告 blocker，不自动修正式环境。
 
+> 2026-07-16 维护模式选择：每次正式发布独立选择，用户当次未说明时默认开启生成维护；只有用户对该次发布明确要求不开维护，且 `release.py plan|preflight` 证明变更可按 `rolling`/`none` 无维护执行时，才允许关闭。migration、首次/legacy 切换、队列 drain、未知影响或其它强制 maintenance 不能被覆盖。当前发布器若不能表达并证明请求模式与实际模式一致，必须在 mutation 前停止并修发布契约；禁止手工写删 marker、执行本页归档脚本或静默按另一模式上线。正式总结同时记录请求/default、planner level 与实际模式。
+
 ## 1. 当前生产架构事实
 
 截至 2026-06-18，正式生产已经切到“云控制面 + 托管 PostgreSQL/Valkey + R2 + 本地 GPU worker / 手动 RunPod 备用池”的运行口径。
@@ -237,6 +239,8 @@ GPU 节点上的 ComfyUI 服务不在本 compose 内。`cloud-prod-comfy-agent-*
 本节保留首次不可变切换前的生产运行事实，只用于归档与一次性 legacy 回滚设计。当前生产发布只允许将云测试 verified 的同一 SHA/digest 通过 `scripts/release.py deploy --env prod ... --execute --confirm-prod` 晋级；不得复制执行本节的 rsync、现场 build 或旧热修命令。
 
 ### 4.1 云控制面安全部署
+
+以下参数和命令只描述 legacy 脚本退役前的历史行为，不是当前维护模式选择接口；当前正式发布只能使用 `scripts/release.py`，不得据此执行 `--skip-generation-maintenance`。
 
 首选从本地主服务器执行更保守的维护式更新脚本，默认 dry-run，真实 mutation 必须同时传 `--execute --confirm-prod`：
 

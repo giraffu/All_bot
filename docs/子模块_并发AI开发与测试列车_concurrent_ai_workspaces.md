@@ -44,7 +44,7 @@ python scripts/manage_ai_workspaces.py refresh --slot A
 
 功能 AI 的 PR base 固定为 `codex/test-train`。提交前更新 train、解决冲突并重新跑 CI。PR 描述至少包含 slot、base/head SHA、影响 track/module、测试结果、migration、风险和代表性测试步骤。
 
-功能 AI 交付后保持槽位在任务分支上，不自动 `park`。只有集成 AI 在 PR 合入且确定不需要 forward-fix 后释放槽位。面向用户的最简使用方式见 `docs/并发AI自动接单使用指南_auto_workspace_claim.md`。
+功能 AI 交付后保持槽位在任务分支上，不自动 `park`。集成 AI 只有在该 PR 已合入 train、精确 train SHA 的 candidate 已成功部署并执行 `accept` 后，才确定本轮不需要 forward-fix，并必须立即 `park` PR 记录的槽位，再推进下一个无关 PR。槽位释放不等待其它任务完成、train 合入 main 或正式发布；candidate 只完成部署但尚未 `accept`、被 `block` 或仍需 forward-fix 时继续保留原槽位。面向用户的最简使用方式见 `docs/并发AI自动接单使用指南_auto_workspace_claim.md`。
 
 ## 3. Candidate bundle 契约
 
@@ -82,6 +82,8 @@ python scripts/test_train_release.py deploy \
 3. 原槽位从失败 train 创建 `codex/<slot>-<task>-fix-N`，提交新 PR 到 train。
 4. 新 SHA CI 成功后重新 plan/deploy；不自动 revert、force-push 或改写 train 历史。
 
+若本轮 candidate 的实际部署与 smoke 均通过，集成 AI 先执行 `accept`，随后立即运行 `python scripts/manage_ai_workspaces.py park --slot <PR记录的槽位>` 并用 `status` 确认该槽位已经 detached/空闲。完成这一步后才能合入下一个无关 PR；不得把已经测试通过的槽位一直占用到整列 train 或正式发布结束。
+
 Migration 只允许向前兼容。失败后不得自动 Alembic downgrade；通过 forward-fix 或显式恢复发布前测试库备份收口，期间 train 保持 blocked。
 
 ## 5. 验收与最终晋级
@@ -96,7 +98,7 @@ Candidate evidence 使用 `deploy/test-train-acceptance.example.json`，只记�
 4. 默认观察 24 小时；用户明确授权时才使用现有短观察 evidence/CLI 双重确认。
 5. 执行 `verify-test`，再由用户明确确认正式发布同 SHA/digest。
 
-main 合并会产生一个新的 merge commit。重新开放槽位前，集成 AI 必须再通过 PR 把该 main 血缘同步回 `codex/test-train`，确保下一次 train→main PR 满足 strict up-to-date 保护；不得为此直接 push 或 force-push train。
+main 合并会产生一个新的 merge commit。下一轮新的槽位 PR 合入 train 前，集成 AI 必须再通过 PR 把该 main 血缘同步回 `codex/test-train`，确保下一次 train→main PR 满足 strict up-to-date 保护；这不延迟已经 accepted 的槽位立即释放，也不得为此直接 push 或 force-push train。
 
 ## 6. GitHub 保护规则
 
