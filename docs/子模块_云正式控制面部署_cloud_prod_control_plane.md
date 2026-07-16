@@ -340,8 +340,9 @@ Dashboard RunPod 管理入口当前支持 `img2img`、`image_to_video`、`wan22_
 `scail2 / 视频生视频`、`ltx_video / 高级图生视频`、`pornmaster_flux2 / 自由P图 v2` 与
 `pornmaster_flux2 BF16 / 自由P图 v2.5 + v3 共用执行池`。BF16 已进入同一 autoscaler 自动 add/down/restart/enable，默认单任务 30 秒、清空阈值 30 分钟；旧 v2 监控行在前端隐藏，但手动管理能力不被删除。
 不可变 `allbot-dashboard-backend` 镜像必须内置 `/app/scripts/runpod_prod_ops.sh`、
-`/app/scripts/gpu_pool_controller.py` 与 `/app/ops`，否则这些 Dashboard operation 会以
-`bash: /app/scripts/runpod_prod_ops.sh: No such file or directory` / exit 127 失败。
+`/app/scripts/gpu_pool_controller.py`、`gpu_release_rollout.py`、`release_manifest_v2.py`、
+`release_strategy.py` 与 `/app/ops`，否则 Dashboard operation 会在命令执行或 ASGI import smoke 阶段以
+exit 127 / `ModuleNotFoundError` 失败。
 `deploy/release-policy.yml` 将 `deploy/docker/Dockerfile.dashboard-backend`、`dashboard/backend/services/system_service.py`
 与 `dashboard/backend/services/runpod_admin_*.py` 归为 `dashboard-backend` rolling 影响面；这类修复可以通过不可变发布只重建正式 `dashboard-backend`，
 不得顺手重启 Central/Web/Bot/Payment/imgproxy/Worker 或 QQCC Config。
