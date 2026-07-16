@@ -1762,11 +1762,19 @@ def _rollback_preflight(
     cache = Path(args.bundle_cache).expanduser() / previous_sha
     manifest_available = any(
         path.is_file()
-        for path in (cache / "release.json", cache / "release" / "release.json")
+        for path in (
+            cache / "release.json",
+            cache / "release" / "release.json",
+            cache / "release-v2" / "release-index.json",
+        )
     )
     web_available = any(
         path.is_file()
-        for path in (cache / "web-dist.tgz", cache / "release" / "web-dist.tgz")
+        for path in (
+            cache / "web-dist.tgz",
+            cache / "release" / "web-dist.tgz",
+            cache / "release-v2" / "public-web-dist.tgz",
+        )
     )
     blockers = []
     if not manifest_available:

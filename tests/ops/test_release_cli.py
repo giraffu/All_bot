@@ -2094,6 +2094,30 @@ def test_prod_preflight_skips_gpu_worker_checks():
     assert report["status"] == "passed"
 
 
+def test_prod_rollback_preflight_accepts_cached_v2_release_index(tmp_path):
+    module = _load_module()
+    previous_sha = "1" * 40
+    release_index = tmp_path / previous_sha / "release-v2" / "release-index.json"
+    release_index.parent.mkdir(parents=True)
+    release_index.write_text("{}\n", encoding="utf-8")
+    (release_index.parent / "public-web-dist.tgz").write_bytes(b"web")
+
+    blockers = module._rollback_preflight(
+        SimpleNamespace(
+            env="prod",
+            previous_sha=previous_sha,
+            bundle_cache=str(tmp_path),
+        ),
+        module.ReleaseImpact(
+            services={"central-api", "web-static"}, level="rolling"
+        ),
+        _manifest(),
+        {},
+    )
+
+    assert blockers == []
+
+
 def test_release_cli_exposes_read_only_preflight_command():
     module = _load_module()
 
