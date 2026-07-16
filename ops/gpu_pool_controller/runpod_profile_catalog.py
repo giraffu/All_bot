@@ -57,7 +57,7 @@ RUNPOD_PUBLIC_LTX_VIDEO_IMAGE_PREFIX = (
     "ghcr.io/giraffu/allbot-comfy-runpod-ltx-video:"
 )
 RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX = (
-    "ghcr.io/giraffu/allbot-comfy-runpod-pornmaster-flux2-edit:"
+    "ghcr.io/giraffu/allbot-comfy-runpod-pornmaster-flux2-edit-baked:"
 )
 RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE = (
     RUNPOD_PUBLIC_PORNMASTER_FLUX2_EDIT_IMAGE_PREFIX
