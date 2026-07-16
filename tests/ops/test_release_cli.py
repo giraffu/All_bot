@@ -1741,6 +1741,87 @@ def test_test_execution_preflight_skips_cloud_without_cloud_services(monkeypatch
     assert blockers == []
 
 
+def test_v2_cloud_preflight_accepts_legacy_rollback_contract(monkeypatch):
+    module = _load_module()
+    previous_sha = "b" * 40
+    remote_scripts = []
+
+    def fake_run(command, **kwargs):
+        remote_scripts.append(kwargs.get("input_text", ""))
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(module, "_run", fake_run)
+
+    blockers = module._cloud_preflight(
+        SimpleNamespace(
+            env="test",
+            previous_sha=previous_sha,
+            remote_host="cloud-test",
+            remote_checkout_root="/release-root",
+            remote_env_file="/etc/allbot/test.env",
+        ),
+        module.ReleaseImpact(
+            services={"central-api"},
+            level="maintenance",
+            matched_rules=["track:control-plane"],
+        ),
+        {"schema_version": 2, "track": "control-plane", "git_sha": FULL_SHA},
+        _valid_test_environment(),
+    )
+
+    assert blockers == []
+    assert (
+        "/var/lib/allbot/releases/control-plane/"
+        + previous_sha
+        + "/release.env"
+    ) in remote_scripts[0]
+    assert (
+        "/var/lib/allbot/releases/" + previous_sha + "/release.env"
+    ) in remote_scripts[0]
+    assert "cloud-rollback-release-env-unavailable" in remote_scripts[0]
+
+
+def test_v2_cloud_rollback_can_use_legacy_release_contract(monkeypatch):
+    module = _load_module()
+    previous_sha = "b" * 40
+    remote_scripts = []
+    monkeypatch.setattr(
+        module,
+        "_remote_shell",
+        lambda host, script, *, execute: remote_scripts.append(script),
+    )
+    transaction = module.new_release_transaction(
+        environment="test",
+        target_sha=FULL_SHA,
+        previous_sha=previous_sha,
+        previous_kind="immutable",
+        previous_pages_deployment_id=None,
+    )
+    transaction["track"] = "control-plane"
+
+    module._rollback_cloud_stack(
+        SimpleNamespace(
+            env="test",
+            remote_host="cloud-test",
+            remote_checkout_root="/release-root",
+            remote_env_file="/etc/allbot/test.env",
+        ),
+        module.ReleaseImpact(services={"central-api"}, level="rolling"),
+        transaction,
+        _valid_test_environment(),
+    )
+
+    assert (
+        "/var/lib/allbot/releases/control-plane/"
+        + previous_sha
+        + "/release.env"
+    ) in remote_scripts[0]
+    assert (
+        "/var/lib/allbot/releases/" + previous_sha + "/release.env"
+    ) in remote_scripts[0]
+    assert '--env-file "$previous_release_env"' in remote_scripts[0]
+
+
 def test_initial_worker_cutover_snapshots_and_stops_legacy_before_start(
     tmp_path, monkeypatch
 ):
