@@ -546,11 +546,29 @@ def recover_release_transaction(
     )
 
 
-def _transaction_path(environment: str, transaction_id: str) -> str:
+def _transaction_path(
+    environment: str,
+    transaction_id: str,
+    track: str | None = None,
+) -> str:
     validate_full_sha(transaction_id)
+    track_segment = f"{track}/" if track in RELEASE_TRACKS else ""
     return (
         f"/var/lib/allbot/deployments/{environment}/transactions/"
-        f"{transaction_id}.json"
+        f"{track_segment}{transaction_id}.json"
+    )
+
+
+def _transaction_state_path(
+    environment: str,
+    transaction_id: str,
+    track: str | None = None,
+) -> str:
+    validate_full_sha(transaction_id)
+    track_segment = f"{track}/" if track in RELEASE_TRACKS else ""
+    return (
+        f"/var/lib/allbot/deployments/{environment}/transactions/"
+        f"{track_segment}{transaction_id}.state.json"
     )
 
 
@@ -573,7 +591,12 @@ def _write_transaction_journal(
 ) -> None:
     _assert_secret_free_transaction(transaction)
     transaction_id = str(transaction.get("transaction_id", ""))
-    path = _transaction_path(args.env, transaction_id)
+    track = transaction.get("track")
+    path = _transaction_path(
+        args.env,
+        transaction_id,
+        str(track) if track in RELEASE_TRACKS else None,
+    )
     payload = json.dumps(transaction, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     host = args.remote_host or ENVIRONMENT[args.env]["host"]
     command = (
@@ -587,13 +610,27 @@ def _write_transaction_journal(
 def _read_transaction_journal(
     args: argparse.Namespace, transaction_id: str
 ) -> dict[str, Any]:
-    path = _transaction_path(args.env, transaction_id)
+    requested_track = getattr(args, "track", None)
+    paths = [
+        _transaction_path(
+            args.env,
+            transaction_id,
+            requested_track if requested_track in RELEASE_TRACKS else None,
+        )
+    ]
+    if requested_track in RELEASE_TRACKS:
+        paths.append(_transaction_path(args.env, transaction_id))
     host = args.remote_host or ENVIRONMENT[args.env]["host"]
-    result = _run(
-        ["ssh", "-o", "BatchMode=yes", host, f"cat {shlex.quote(path)}"],
-        check=False,
-    )
-    if result.returncode != 0:
+    result = None
+    for path in paths:
+        candidate = _run(
+            ["ssh", "-o", "BatchMode=yes", host, f"cat {shlex.quote(path)}"],
+            check=False,
+        )
+        if candidate.returncode == 0:
+            result = candidate
+            break
+    if result is None:
         raise ReleaseError("release transaction journal is unavailable")
     try:
         transaction = json.loads(result.stdout)
@@ -604,6 +641,10 @@ def _read_transaction_journal(
         or transaction.get("schema_version") != 1
         or transaction.get("environment") != args.env
         or transaction.get("transaction_id") != transaction_id
+        or (
+            requested_track in RELEASE_TRACKS
+            and transaction.get("track") not in {None, requested_track}
+        )
     ):
         raise ReleaseError("release transaction journal identity is invalid")
     _assert_secret_free_transaction(transaction)
@@ -1346,7 +1387,11 @@ def cloud_services_for_release(environment: str, impact: ReleaseImpact) -> set[s
     selected = set(impact.services) & set(
         ENVIRONMENT[environment]["available_services"]
     )
-    if environment == "test" and "initial-release" in impact.matched_rules:
+    if (
+        environment == "test"
+        and "initial-release" in impact.matched_rules
+        and "track:test-execution" not in impact.matched_rules
+    ):
         # The legacy test stack owns PostgreSQL and Redis.  They must join the
         # first immutable handoff so the new project can reuse the existing
         # data volumes instead of starting against an empty network/volume.
@@ -1529,7 +1574,11 @@ def _cloud_preflight(
     root = args.remote_checkout_root
     env_file = args.remote_env_file or environment["env_file"]
     initial = "initial-release" in impact.matched_rules
-    transaction_path = _transaction_path(args.env, str(manifest["git_sha"]))
+    transaction_path = _transaction_path(
+        args.env,
+        str(manifest["git_sha"]),
+        str(manifest.get("track")) if manifest.get("track") in RELEASE_TRACKS else None,
+    )
     commit_object = str(manifest["git_sha"]) + "^{commit}"
     script = f"""set -u
 test -d {shlex.quote(root)}/repo/.git || echo cloud-release-host-not-bootstrapped
@@ -3273,12 +3322,13 @@ def _clear_transaction_maintenance(
     previous = transaction.get("previous")
     initial = isinstance(previous, Mapping) and previous.get("kind") == "legacy"
     paths = maintenance_files(args.env, initial_cutover=initial)
-    transaction_id = str(transaction["transaction_id"])
-    staged = (
-        f"/var/lib/allbot/deployments/{args.env}/transactions/"
-        f"{transaction_id}.state.json"
-    )
     track = transaction.get("track")
+    transaction_id = str(transaction["transaction_id"])
+    staged = _transaction_state_path(
+        args.env,
+        transaction_id,
+        str(track) if track in RELEASE_TRACKS else None,
+    )
     track_segment = f"/{track}" if track in RELEASE_TRACKS else ""
     state_root = f"/var/lib/allbot/deployments/{args.env}{track_segment}"
     current = f"{state_root}/current.json"
@@ -4066,9 +4116,12 @@ def _write_state(
     if stage_only:
         if not transaction:
             raise ReleaseError("staged deployment state requires a transaction")
-        path = (
-            f"/var/lib/allbot/deployments/{args.env}/transactions/"
-            f"{transaction['transaction_id']}.state.json"
+        path = _transaction_state_path(
+            args.env,
+            str(transaction["transaction_id"]),
+            str(manifest.get("track"))
+            if manifest.get("track") in RELEASE_TRACKS
+            else None,
         )
     if not args.execute:
         print(f"[dry-run] write deployment state {host}:{path}")
@@ -4347,6 +4400,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             "worker_legacy_running": str(
                 Path(args.worker_checkout_root).expanduser()
                 / "release-env"
+                / (
+                    str(manifest["track"])
+                    if manifest.get("schema_version") == 2
+                    else ""
+                )
                 / str(manifest["git_sha"])
                 / "legacy-worker-running.txt"
             ),

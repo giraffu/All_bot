@@ -319,6 +319,68 @@ def test_v2_test_execution_without_track_state_is_an_initial_release(
     assert resolved_previous == ""
 
 
+def test_v2_test_execution_initial_release_does_not_select_cloud_state_services():
+    module = _load_module()
+    impact = module.ReleaseImpact(
+        services={"worker"},
+        level="rolling",
+        matched_rules=["initial-release", "track:test-execution"],
+    )
+
+    selected = module.cloud_services_for_release("test", impact)
+
+    assert selected == set()
+
+
+def test_v2_transaction_journal_path_is_track_scoped():
+    module = _load_module()
+
+    path = module._transaction_path("test", FULL_SHA, "test-execution")
+
+    assert path == (
+        "/var/lib/allbot/deployments/test/transactions/"
+        f"test-execution/{FULL_SHA}.json"
+    )
+
+
+def test_v2_recover_can_read_a_legacy_unscoped_track_journal(monkeypatch):
+    module = _load_module()
+    calls = []
+    transaction = module.new_release_transaction(
+        environment="test",
+        target_sha=FULL_SHA,
+        previous_sha=None,
+        previous_kind="legacy",
+        previous_pages_deployment_id=None,
+    )
+    transaction["track"] = "test-execution"
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        if "/transactions/test-execution/" in command[-1]:
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="missing")
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps(transaction),
+            stderr="",
+        )
+
+    monkeypatch.setattr(module, "_run", fake_run)
+
+    recovered = module._read_transaction_journal(
+        SimpleNamespace(
+            env="test",
+            track="test-execution",
+            remote_host="test-control",
+        ),
+        FULL_SHA,
+    )
+
+    assert recovered["track"] == "test-execution"
+    assert len(calls) == 2
+
+
 def test_dashboard_admin_runtime_changes_stay_dashboard_backend_only():
     module = _load_module()
     policy = module.load_structured_file(POLICY_PATH)
@@ -2597,6 +2659,11 @@ def test_v2_transaction_commit_moves_staged_state_to_track_paths(monkeypatch):
     module._clear_transaction_maintenance(args, transaction)
 
     script = calls[0][1]
+    assert (
+        "/var/lib/allbot/deployments/test/transactions/control-plane/"
+        + "a" * 40
+        + ".state.json"
+    ) in script
     assert "/var/lib/allbot/deployments/test/control-plane/current.json" in script
     assert (
         "/var/lib/allbot/deployments/test/control-plane/history/"
