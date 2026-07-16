@@ -670,7 +670,7 @@
       "spatial_overlap": 4,
       "temporal_tile_length": 24,
       "temporal_overlap": 4,
-      "last_frame_fix": false,
+      "last_frame_fix": true,
       "working_device": "auto",
       "working_dtype": "auto",
       "vae": [
