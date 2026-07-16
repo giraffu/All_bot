@@ -34,6 +34,7 @@ from src.services.tg_task_runtime import (
     get_or_send_status_message,
     build_cancel_task_markup,
 )
+from src.services.tg_task_progress_presentation import build_running_status_text
 from src.services.task_lifecycle_runner import run_monitored_task_lifecycle
 from src.services.private_bot_update_admission import (
     mark_private_bot_task_durable,
@@ -479,8 +480,13 @@ def build_bot_task_recovery_metadata(*, flow, client_type: str) -> dict:
 
     presentation = flow.presentation
     record_history = getattr(presentation, "record_history", True)
+    show_queue_status = getattr(presentation, "show_queue_status", True)
     is_private_bot = parse_private_bot_client_type(client_type) is not None
-    if not is_private_bot and not (client_type == "bot" and not record_history):
+    if (
+        not is_private_bot
+        and not (client_type == "bot" and not record_history)
+        and show_queue_status
+    ):
         return {}
 
     request = flow.request
@@ -500,6 +506,7 @@ def build_bot_task_recovery_metadata(*, flow, client_type: str) -> dict:
         result_meta=getattr(presentation, "result_meta", None),
         completion_caption=getattr(message_spec, "completion_caption", None),
         language_code=resolve_context_lang(request.context),
+        show_queue_status=show_queue_status,
     )
     if is_private_bot:
         metadata.update(build_private_qqcc_continuation_registry_metadata())
@@ -527,14 +534,25 @@ async def send_initial_task_status(
     chat_id,
     status_msg_id,
     message_spec: BotTaskMessageSpec,
+    is_video: bool = False,
+    show_queue_status: bool = True,
 ):
+    status_text = (
+        message_spec.initial_status_text
+        if show_queue_status
+        else build_running_status_text(
+            is_video=is_video,
+            progress=0,
+            lang=resolve_context_lang(context),
+        )
+    )
     if update is not None:
         return await robust_reply_text(
             update.effective_message,
-            message_spec.initial_status_text,
+            status_text,
         )
     return await get_or_send_status_message(
-        context, chat_id, status_msg_id, message_spec.initial_status_text
+        context, chat_id, status_msg_id, status_text
     )
 
 
@@ -544,7 +562,10 @@ async def update_submitted_task_status(
     message_spec: BotTaskMessageSpec,
     registry_task_id: Optional[str] = None,
     allow_cancel: bool = True,
+    show_queue_status: bool = True,
 ):
+    if not show_queue_status:
+        return
     reply_markup = (
         build_cancel_task_markup(registry_task_id)
         if allow_cancel and registry_task_id
@@ -574,6 +595,8 @@ async def prepare_and_submit_bot_task(
     submitted_status_builder: Optional[Callable[[int], str]] = None,
     submission: BotTaskSubmissionContext,
     allow_cancel: bool = True,
+    is_video: bool = False,
+    show_queue_status: bool = True,
 ):
     status_msg = await send_initial_task_status(
         context=context,
@@ -581,6 +604,8 @@ async def prepare_and_submit_bot_task(
         chat_id=chat_id,
         status_msg_id=status_msg_id,
         message_spec=message_spec,
+        is_video=is_video,
+        show_queue_status=show_queue_status,
     )
     try:
         submission_result = await submit_bot_task(
@@ -611,6 +636,7 @@ async def prepare_and_submit_bot_task(
         message_spec=message_spec,
         registry_task_id=registry_task_id,
         allow_cancel=allow_cancel,
+        show_queue_status=show_queue_status,
     )
     return status_msg, registry_task_id, backend_task_id, saved_inputs, message_spec
 
@@ -625,6 +651,8 @@ async def run_bot_task_submission_stage(
     submitted_status_builder: Optional[Callable[[int], str]],
     submission: BotTaskSubmissionContext,
     allow_cancel: bool = True,
+    is_video: bool = False,
+    show_queue_status: bool = True,
 ):
     return await prepare_and_submit_bot_task(
         context=context,
@@ -635,6 +663,8 @@ async def run_bot_task_submission_stage(
         submitted_status_builder=submitted_status_builder,
         submission=submission,
         allow_cancel=allow_cancel,
+        is_video=is_video,
+        show_queue_status=show_queue_status,
     )
 
 
@@ -646,6 +676,7 @@ async def run_bot_task_monitor_stage(
     internal_user_id: int,
     lang: str = "zh",
     allow_cancel: bool = True,
+    show_queue_status: bool = True,
 ):
     return await task_service_completion_helpers.monitor_submitted_bot_task(
         task_id=backend_task_id,
@@ -659,6 +690,7 @@ async def run_bot_task_monitor_stage(
         ),
         lang=lang,
         allow_cancel=allow_cancel,
+        show_queue_status=show_queue_status,
     )
 
 
@@ -759,6 +791,7 @@ async def execute_bot_task_stages(
     presentation = flow.presentation
     billing = flow.billing
     allow_cancel = getattr(presentation, "allow_cancel", True)
+    show_queue_status = getattr(presentation, "show_queue_status", True)
     (
         execution.status_msg,
         execution.registry_task_id,
@@ -774,6 +807,8 @@ async def execute_bot_task_stages(
         submitted_status_builder=presentation.submitted_status_builder,
         submission=submission,
         allow_cancel=allow_cancel,
+        is_video=getattr(request, "is_video", False),
+        show_queue_status=show_queue_status,
     )
 
     async def monitor_and_complete():
@@ -785,6 +820,7 @@ async def execute_bot_task_stages(
                 internal_user_id=request.internal_user_id,
                 lang=resolve_context_lang(request.context),
                 allow_cancel=allow_cancel,
+                show_queue_status=show_queue_status,
             ),
             route_terminal_result_func=lambda final_info: run_bot_task_completion_stage(
                 context=request.context,

@@ -108,6 +108,8 @@ AI视频只有在 `main_buttons.ai_video=true` 且存在有效 `ai_video_scenes`
 
 私有 `bot:qqcc-private:<id>` 的多步绘图、原图换脸插入链和尾帧视频链通过 Redis durable continuation checkpoint 跨进程续跑。quick image/video service 必须先持久化用户原图和完整 stage plan，再派发第一阶段；每个中间结果先 CAS 推进 checkpoint 再清理 registry，不对用户发送。最终可见结果先进入 `delivery_pending`，续跑租约 owner 发送成功后再标记 delivered。`_bot_task_recovery` 仍还原展示语义，`_private_qqcc_continuation` 将 active task 精确关联到阶段 checkpoint；缺少有效关联的隐藏中间输出不得作为最终结果发送。
 
+多阶段状态展示按真实子任务序号确定：首个真实任务使用默认 `show_queue_status=true`，保留排队位置和取消按钮；后续 AI绘图后处理、内部原图换脸、AI动图/AI视频尾帧链及最终 Wan22/旧视频/LTX 使用 `show_queue_status=false`，从提交起持续显示现有图片/视频“生成中”，Central pending/队列位置变化不得触发排队回退。成功、失败、拒绝、退款及最终结果仍走原终态展示。官方 QQCC active registry 的恢复 contract 与私有 Bot durable stage plan 都持久化该策略，重启后不得重新显示后续任务排队；单任务功能继续使用默认值。该展示参数不改变 `base_priority`、`user_cancel_allowed`、计费、History、任务顺序或 Worker 调度。
+
 注册的 FSM 只允许：
 
 - `get_quick_image_fsm_handler()`

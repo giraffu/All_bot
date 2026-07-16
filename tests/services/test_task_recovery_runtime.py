@@ -337,6 +337,7 @@ async def test_private_final_task_recovery_restores_persisted_presentation(monke
                     "result_input_image_indices": [1],
                     "result_meta": {"_qqcc_regenerate": {"kind": "quick_image"}},
                     "completion_caption": "✅ 私有绘图完成",
+                    "show_queue_status": False,
                 }
             },
         },
@@ -344,6 +345,7 @@ async def test_private_final_task_recovery_restores_persisted_presentation(monke
     )
 
     assert recovered is True
+    assert monitor_mock.await_args.kwargs["show_queue_status"] is False
     kwargs = build_completion.call_args.kwargs
     assert kwargs["task_type"] == "edit"
     assert kwargs["prompt"] == "visible prompt"
