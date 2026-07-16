@@ -73,6 +73,8 @@ python scripts/test_train_release.py deploy \
 
 包装器在本地主服务器使用 `~/.local/state/allbot/test-train.lock` 排他锁，先计划三个 track，再按 `control-plane`、`test-execution` 顺序部署受影响模块。`gpu-execution` 只报告计划；真实 GPU profile 仍走对应 canary/operator。当基线还没有任何可用 GPU artifact 时，`plan` 以 `availability: unavailable` 显式报告该 track，不影响纯控制面/测试执行面候选；该状态不会被解释为可执行 GPU mutation。
 
+schema v2 的远端事务和发布合约都按 track 隔离：journal/staged state 使用 `transactions/<track>/<sha>`，云 Compose 的非敏感合约使用 `/var/lib/allbot/releases/<track>/<sha>/release.env`。同一 candidate 先后部署 control-plane 与 test-execution 时，后一轨不得覆盖前一轨的镜像变量或回滚输入。
+
 测试 Worker 的 GPU/ComfyUI 类型与目标业务窗口不匹配时，用户或集成 AI 可以明确把它留到后续独立窗口：在同一命令追加 `--skip-test-execution`。该参数只从本轮 mutation 中移除 `test-execution`，不改变默认顺序，也不把 Worker 标记为已部署；test-train 状态、验收 evidence 和手工测试结论都只能列出实际完成的 `control-plane`。后续需要 Worker 时必须对当时最新的可信 candidate 重新 plan，并在匹配 GPU runtime 的窗口单独部署/验收，禁止用这次控制面结果冒充 Worker 通过。
 
 若 control-plane 计划同时满足 `level=none`、无 artifacts 且无 services，包装器不会为了推进状态机而调用空的 preflight/deploy。它记录 `ready-for-acceptance`、`deployment_mode=non-runtime` 和精确 SHA；若 `--skip-test-execution` 延后了 Worker，还会记录 `deferred_tracks=["test-execution"]`。验收 JSON 的 tracks 仍写 `control-plane`，modules 可为空，smoke 只证明 candidate bundle 已发布、可信 CI 成功、control-plane 为 non-runtime，以及 Worker 是否明确延后；不得写任何容器、Pages 或 Worker 已更新。

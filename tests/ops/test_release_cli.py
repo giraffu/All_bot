@@ -1302,6 +1302,108 @@ def test_cloud_deploy_rejects_missing_remote_completion_marker(monkeypatch):
         )
 
 
+def test_v2_cloud_release_contract_is_track_scoped(monkeypatch):
+    module = _load_module()
+    digest = "sha256:" + "2" * 64
+    manifest = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "source_sha": FULL_SHA,
+        "git_sha": FULL_SHA,
+        "source_ref": "refs/heads/codex/test-train",
+        "artifacts": {
+            "central-api": {
+                "kind": "image",
+                "ref": "ghcr.io/giraffu/allbot-central-api@" + digest,
+                "digest": digest,
+                "source_sha": FULL_SHA,
+                "oci_revision": FULL_SHA,
+            }
+        },
+        "selected_artifacts": ["central-api"],
+    }
+    args = SimpleNamespace(
+        execute=True,
+        env="test",
+        remote_host="cloud-test",
+        remote_checkout_root="/release-root",
+        remote_env_file="/etc/allbot/test.env",
+        confirm_legacy_cutover=False,
+        drain_timeout_seconds=30,
+        drain_interval_seconds=1,
+    )
+    writes = []
+    remote_scripts = []
+
+    def fake_run(command, **kwargs):
+        writes.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(module, "_run", fake_run)
+    monkeypatch.setattr(
+        module,
+        "_remote_shell",
+        lambda host, script, *, execute: remote_scripts.append(script)
+        or f"ALLBOT_CLOUD_RELEASE_VERIFIED:{FULL_SHA}\n",
+    )
+
+    module._deploy_cloud(
+        args,
+        module.ReleaseImpact(services={"central-api"}, level="rolling"),
+        manifest,
+        "ALLBOT_RELEASE_TRACK=control-plane\n",
+        _valid_test_environment(),
+    )
+
+    write_command = " ".join(writes[0][0])
+    assert (
+        "/var/lib/allbot/releases/control-plane/"
+        + FULL_SHA
+        + "/release.env.tmp"
+    ) in write_command
+    assert (
+        "/var/lib/allbot/releases/control-plane/" + FULL_SHA + "/release.env"
+    ) in remote_scripts[0]
+
+
+def test_v2_cloud_rollback_reads_track_scoped_release_contract(monkeypatch):
+    module = _load_module()
+    previous_sha = "b" * 40
+    remote_scripts = []
+    monkeypatch.setattr(
+        module,
+        "_remote_shell",
+        lambda host, script, *, execute: remote_scripts.append(script),
+    )
+    transaction = module.new_release_transaction(
+        environment="test",
+        target_sha=FULL_SHA,
+        previous_sha=previous_sha,
+        previous_kind="immutable",
+        previous_pages_deployment_id=None,
+    )
+    transaction["track"] = "control-plane"
+    args = SimpleNamespace(
+        env="test",
+        remote_host="cloud-test",
+        remote_checkout_root="/release-root",
+        remote_env_file="/etc/allbot/test.env",
+    )
+
+    module._rollback_cloud_stack(
+        args,
+        module.ReleaseImpact(services={"central-api"}, level="rolling"),
+        transaction,
+        _valid_test_environment(),
+    )
+
+    assert (
+        "/var/lib/allbot/releases/control-plane/"
+        + previous_sha
+        + "/release.env"
+    ) in remote_scripts[0]
+
+
 def test_initial_worker_cutover_snapshots_and_stops_legacy_before_start(
     tmp_path, monkeypatch
 ):
