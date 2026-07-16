@@ -85,6 +85,8 @@ python scripts/update_deploy_config.py --env prod --source /secure/new-prod.env 
 
 `plan` 可从 GHCR 拉 release bundle，需要预先 `docker login ghcr.io` 和 `oras`。`preflight`、`deploy` 不拉取任何材料，必须先把 `release.json` 与 Web tar 放入本地 bundle cache，或显式传本地 `--manifest`/`--web-artifact`，以保证门禁失败前没有 pull、worktree 或远端写入。
 
+正式环境的生成维护模式按每次发布单独决定，默认开启。只有用户对当前 SHA 的本次发布明确要求“不进入维护”时，才可请求无维护发布；该请求不持久化，也不适用于 migration、首次/legacy 切换、队列 drain、未知影响或 planner 要求的其它强制 maintenance。正式 `plan`/`preflight` 必须同时报告用户请求/default、计算出的 maintenance level 和最终实际模式。若当前 CLI/事务实现不能表达或证明所选模式，必须在 mutation 前停止并修复发布契约，不能手工操作维护 marker、回退到 legacy 脚本或静默采用另一模式。
+
 ```bash
 scripts/release.py plan --env test --track control-plane --sha <40-char-sha>
 scripts/release.py preflight --env test --track control-plane --sha <40-char-sha>
@@ -131,7 +133,7 @@ scripts/release.py plan --env prod --track control-plane --sha <40-char-sha> --m
 scripts/release.py deploy --env prod --track control-plane --sha <40-char-sha> --modules central-api --execute --confirm-prod
 ```
 
-`--services` 只扩大自动集合。`src/**`/`shared/**` 会覆盖所有 Python 消费者；Worker 变化为 drain；migration 是 maintenance 且执行需 `--confirm-db-upgrade`；未知路径整栈维护；`remote_workers/**`、GPU profile/model manifest 触发 `gpu-runtime-release-required` blocker。
+`--services` 只扩大自动集合。`src/**`/`shared/**` 会覆盖所有 Python 消费者；Worker 变化为 drain；migration 是 maintenance 且执行需 `--confirm-db-upgrade`；未知路径整栈维护；`remote_workers/**`、GPU profile/model manifest 触发 `gpu-runtime-release-required` blocker。用户选择不开维护不能缩小这些机器计算出的等级或依赖闭包；默认开启也必须由发布事务真实建立维护，不能只记录文字意图。
 
 生产发布器会读取云测试 `current.json`，要求状态为 `verified` 且 SHA、自有/第三方 digest 完全相同。验收模板见 `deploy/test-acceptance.example.json`；默认观察窗口不足 24 小时或任何 smoke 为 false 都不能标记 verified。用户明确确认测试服务无问题并授权提前晋级时，短观察 evidence 必须同时包含 `short_observation_override=true`、非空 `override_reason`、`approved_by` 和真实起止时间，并在 CLI 显式传 `--confirm-short-observation`。该例外不允许时间倒置/未来完成时间，也不放宽任何 smoke、SHA/digest、Web checksum 或测试运行态检查；verified current/history 会记录实际观察秒数、例外原因与批准者，禁止伪造 24 小时时间或直接编辑状态文件。
 
@@ -151,7 +153,7 @@ release workflow 生成 manifest 后会运行一次不接触运行态秘密的�
 - 状态 schema v2 记录事务 ID、阶段健康、Pages deployment ID/environment/canonical 验证与 runtime config revision，并在事务提交时原子移动到对应 track 的 `current/history`，同时继续兼容读取 v1 的 `git_sha`。`--skip-web` 只用于故障恢复并写 `health.web=skipped`，不能通过测试验收或生产晋级。
 - CI 继续生成同 SHA 的 Worker digest；源码、workflow、relay、`src` 全在镜像内。`release.py --env test` 部署并验收测试 Worker；生产 GPU Worker 由 GPU host 专用 operator 独立拉取/切换，`release.py --env prod` 拒绝显式 `--services worker`，不检查 heartbeat/relay，也不停止、重建或恢复 Worker。RunPod/LAN AIO 继续走各自 operator。
 - schema v2 中测试 Worker Agent/Relay 使用不同 digest，并作为同一 test-execution 选择集部署；正式控制面 Compose 不要求二者。RunPod/LAN profile 镜像内置 `/opt/allbot/runtime/remote_workers`、baked entrypoint 和 agent/workflow revision labels，不再 clone `deploy` 分支；模型仍由带 key/size/SHA256 的 manifest 固定。
-- 云测试维护发布按“云控制面 → 测试 Worker → Pages → 暂存状态 → 原子提交 current/history 并解除维护”执行。正式发布按“云控制面 → Pages → 状态提交”执行；首次正式切换仍同时写 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`，但不操作任何 GPU Worker 容器。
+- 云测试维护发布按“云控制面 → 测试 Worker → Pages → 暂存状态 → 原子提交 current/history 并解除维护”执行。正式发布按本次已确认的维护模式执行“云控制面 → Pages → 状态提交”：默认维护模式在 mutation 前建立生成维护并在成功提交后解除；经用户明确选择且 planner 允许的无维护模式全程不写维护 marker。首次正式切换仍强制同时写 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`，不能关闭，也不操作任何 GPU Worker 容器。
 - 无秘密事务 journal 在每阶段通过远端临时文件原子 rename。失败只逆序补偿本事务实际尝试过的阶段，并只验证这些可能被改变的阶段；例如 cloud 阶段失败时，不得因本来 stopped 的测试 Worker 没有 heartbeat 而误报恢复失败。云测试最大补偿顺序为 Pages → Worker → 云控制面，正式为 Pages → 云控制面。验证失败时记录 `rollback_failed` 并保持维护。
 - 回滚命令读取旧 release manifest/Web tar，不重建。部署状态 history 长期保留；运行主机不得全局 `docker system prune`。数据库 migration 只向前兼容，应用回滚不自动 Alembic downgrade。
 

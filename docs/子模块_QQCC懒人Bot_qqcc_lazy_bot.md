@@ -226,56 +226,46 @@ QQCC Bot 不启动 TON 轮询，不注册支付回调，不作为充值入口。
 
 ## 6. 维护与发布
 
-QQCC 代码发布属于统一 immutable release：使用 `scripts/release.py`，服务集合由依赖影响计算，专用 `update_cloud_prod_qqcc_bot.sh` 已 fail closed。下文保留的旧专用同步/build 命令只作首次切换前事实与 legacy 回滚取证，禁止用于新发布。
+QQCC 代码发布属于统一 immutable release：使用 `scripts/release.py`，服务集合由依赖影响计算，专用 `update_cloud_prod_qqcc_bot.sh` 已 fail closed。旧专用同步/build 命令只作首次切换前事实与 legacy 回滚取证，禁止用于新发布。
 QQCC Bot 读取同一个 `GENERATION_MAINTENANCE_FILE`。云测试和云正式维护脚本写入/清理生成维护标记时，应同时覆盖正在运行的 `cloud-qqcc-bot-test` / `cloud-qqcc-bot-prod`。
 
-云测试日常更新按快速单模块重建处理：
+云测试只部署可信 candidate/main release；请求 QQCC 模块时仍由 planner 扩大真实依赖集合：
 
 ```bash
-ssh allbot-do-sgp1-test-control
-cd /home/deploy/APP/All_bot
-docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml \
-  --profile qqcc-bot build qqcc-bot-test
-docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml \
-  --profile qqcc-bot up -d --no-deps qqcc-bot-test
+scripts/release.py plan --env test --track control-plane --sha <40-char-sha> --modules qqcc-bot
+scripts/release.py preflight --env test --track control-plane --sha <40-char-sha> --modules qqcc-bot
+scripts/release.py deploy --env test --track control-plane --sha <40-char-sha> --modules qqcc-bot --execute
 ```
 
-没有独立 `QQCC_BOT_TOKEN_TEST` 时，`qqcc-bot-test` 必须保持停止。只有涉及整栈联动、迁移、排空验证或明确要求维护窗口时，才改用 `scripts/update_cloud_test_with_maintenance.sh --execute`；其默认 `--qqcc-bot-mode auto`，只在 `qqcc-bot-test` 原本运行且远端 env 配置了 `QQCC_BOT_TOKEN_TEST` 时重建启动。
+没有独立 `QQCC_BOT_TOKEN_TEST` 时，`qqcc-bot-test` 必须保持停止；`plan` 应把它列入 `disabled_cloud_services`，不得为测试临时复用正式 token。
 
-只更新云正式 QQCC Bot 时，优先使用专用窄入口：
+只更新云正式 QQCC Bot 时，使用同一已验收 main SHA 的控制面模块入口：
 
 ```bash
-scripts/update_cloud_prod_qqcc_bot.sh
-scripts/update_cloud_prod_qqcc_bot.sh --execute --confirm-prod --confirm-single-polling
+scripts/release.py plan --env prod --track control-plane --sha <40-char-sha> --modules qqcc-bot
+scripts/release.py preflight --env prod --track control-plane --sha <40-char-sha> --modules qqcc-bot
+scripts/release.py deploy --env prod --track control-plane --sha <40-char-sha> --modules qqcc-bot --execute --confirm-prod
 ```
 
-该脚本默认 dry-run；真实执行必须传 `--execute --confirm-prod --confirm-single-polling`。当用户已经明确要求“QQCC 单服务更新/走单服务更新/单独更新 QQCC Bot”时，这句话本身可作为当次正式与单 polling 操作确认，不需要再额外逐字复述；若发现目标容器状态异常、疑似多实例、token/远端 env 异常、不是专用脚本路径，或要启动一个当前停止的新正式 QQCC 实例，必须停下并追问确认。它只同步代码、按需同步 env、执行只读 preflight，并用单条 `up -d --no-deps --build qqcc-bot-prod` 复用构建缓存和替换目标容器，然后验证 `cloud-qqcc-bot-prod` 状态；整仓 rsync 会排除 `local_analytics_platform/`、`backups/`、`logs/`、前端构建产物和密钥文件，避免把本地分析数据或运行产物同步到云正式；不写生成维护标记、不等待队列 drain、不重建 Central/Web/Payment/Dashboard/主 Bot/Worker/RunPod、不操作 Cloudflare Pages/DNS/边缘路由。
+`--modules` 只能扩大自动集合，不能绕过依赖分析强行缩成单服务。执行前确认没有第二个同 token polling 实例；正式维护模式按本次发布独立选择，默认开启，只有用户当次明确要求且 planner 允许时才关闭。
 
-只更新正式 QQCC Config Web 时，走 services scope 单服务更新：
+只更新正式 QQCC Config Web 时，请求两个配置模块：
 
 ```bash
-scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod --scope services --services "qqcc-config-backend-prod qqcc-config-frontend-prod" --skip-generation-maintenance
+scripts/release.py plan --env prod --track control-plane --sha <40-char-sha> \
+  --modules qqcc-config-backend qqcc-config-frontend
 ```
 
-该路径不得开启 `GENERATION_MAINTENANCE`，不得重建 Central/Web/Payment/主 Bot/QQCC Bot/Worker/RunPod。发布后确认 `cloud-qqcc-config-backend-prod`、`cloud-qqcc-config-frontend-prod` running/healthy，并确认非目标服务启动时间未变化。
+同一参数必须复用于 `preflight` 和带 `--execute --confirm-prod` 的 `deploy`。发布后确认 `cloud-qqcc-config-backend-prod`、`cloud-qqcc-config-frontend-prod` running/healthy，并确认非目标服务启动时间未变化。
 
-若同一轮同时修改 QQCC Bot 与 QQCC Config Web，且不涉及迁移、共享 env 或其它控制面契约，可走快速联合更新：按变更清单只同步必要运行文件，通过 safe preflight 和 single-polling 检查后，在云正式机执行：
+同轮更新 QQCC Bot 与 QQCC Config Web 时，请求三个模块：
 
 ```bash
-docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.yml \
-  --profile qqcc-bot up -d --no-deps --build \
-  qqcc-bot-prod qqcc-config-backend-prod qqcc-config-frontend-prod
+scripts/release.py plan --env prod --track control-plane --sha <40-char-sha> \
+  --modules qqcc-bot qqcc-config-backend qqcc-config-frontend
 ```
 
-该命令不需要先单独执行 `docker compose build`，会复用缓存并只替换三个目标容器。三个服务均为 COPY 型镜像，不能省略 `--build` 后只 recreate/restart，否则仍是旧代码。全程不写维护标记、不等待队列 drain；发布后验证 8045/8088、QQCC Bot 近时段日志、single polling 和非目标服务启动时间。
-
-完整云正式控制面更新仍默认不碰 QQCC Bot；若需要随控制面一起重建 QQCC Bot，必须显式传：
-
-```bash
-scripts/update_cloud_prod_with_maintenance.sh --execute --confirm-prod --qqcc-bot-mode start
-```
-
-正式启动新实例前必须确认全网没有第二个 `@QQCC666_bot` polling 实例，并确认生产 token 已在远端 `.env.cloud.prod` 配置。日常对正在运行的 `cloud-qqcc-bot-prod` 走专用单服务脚本更新时，不再要求用户每次逐字确认单 polling；用户明确要求该单服务更新即可。
+同一模块参数复用于 `preflight`/`deploy`；禁止 rsync、现场 `--build`、手工 compose 或调用 fail-closed legacy shell。发布后验证 8045/8088、QQCC Bot 近时段日志、single polling、目标 digest/revision 和非目标服务启动时间。正式启动一个当前停止的新实例前仍须确认全网没有第二个同 token polling 实例，并确认生产 token 已在受限 prod env 配置。
 
 ## 7. 最小验证
 

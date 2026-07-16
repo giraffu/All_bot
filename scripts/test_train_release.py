@@ -224,6 +224,38 @@ class TestTrainCoordinator:
             }
         )
 
+    def record_ready_for_acceptance(
+        self,
+        sha: str,
+        *,
+        pr: int,
+        slot: str,
+        tracks: Sequence[str],
+        deployment_mode: str,
+        deferred_tracks: Sequence[str] = (),
+    ) -> None:
+        sha = self._sha(sha)
+        slot = slot.upper()
+        if (
+            slot not in SLOTS
+            or pr <= 0
+            or not tracks
+            or deployment_mode != "non-runtime"
+        ):
+            raise TestTrainError("acceptance audit metadata is invalid")
+        self._write_state(
+            {
+                "status": "ready-for-acceptance",
+                "sha": sha,
+                "pr": pr,
+                "slot": slot,
+                "tracks": list(dict.fromkeys(tracks)),
+                "deployment_mode": deployment_mode,
+                "deferred_tracks": list(dict.fromkeys(deferred_tracks)),
+                "updated_at": datetime.now().astimezone().isoformat(),
+            }
+        )
+
     def _plan_candidate(self, sha: str, *, runner: ReleaseRunner) -> dict[str, Any]:
         sha = self._sha(sha)
         plans = {track: runner.plan(sha, track) for track in TRACKS}
@@ -263,15 +295,39 @@ class TestTrainCoordinator:
                 raise TestTrainError(
                     "GPU candidate requires its profile canary/operator; shared test train will not mutate it"
                 )
-            affected = [
+            runtime_affected = [
                 track
                 for track in ("control-plane", "test-execution")
                 if plans[track].get("artifacts") or plans[track].get("services")
             ]
+            affected = list(runtime_affected)
             if skip_test_execution:
                 affected = [track for track in affected if track != "test-execution"]
             if not affected:
-                raise TestTrainError("candidate has no control-plane or test-execution changes")
+                control_plan = plans["control-plane"]
+                control_is_non_runtime = (
+                    control_plan.get("level") == "none"
+                    and not control_plan.get("artifacts")
+                    and not control_plan.get("services")
+                )
+                deferred_tracks = [
+                    track
+                    for track in runtime_affected
+                    if track == "test-execution" and skip_test_execution
+                ]
+                if not control_is_non_runtime:
+                    raise TestTrainError(
+                        "candidate has no selected control-plane or test-execution changes"
+                    )
+                self.record_ready_for_acceptance(
+                    sha,
+                    pr=pr,
+                    slot=slot,
+                    tracks=["control-plane"],
+                    deployment_mode="non-runtime",
+                    deferred_tracks=deferred_tracks,
+                )
+                return
             completed: list[str] = []
             try:
                 for track in affected:
@@ -358,9 +414,10 @@ class TestTrainCoordinator:
             if current.get("sha") != sha or current.get("status") not in {
                 "deployed",
                 "blocked",
+                "ready-for-acceptance",
             }:
                 raise TestTrainError(
-                    "only the currently deployed candidate can be accepted"
+                    "only the current deployed or non-runtime-ready candidate can be accepted"
                 )
             if (
                 current.get("pr") != evidence["pr"]
@@ -372,6 +429,7 @@ class TestTrainCoordinator:
                 )
             self._write_state(
                 {
+                    **current,
                     **evidence,
                     "status": "accepted",
                     "evidence": str(evidence_path.resolve()),

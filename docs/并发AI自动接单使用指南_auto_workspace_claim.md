@@ -14,7 +14,7 @@
 2. 调用 `manage_ai_workspaces.py claim`，在跨进程锁下抢占第一个空闲槽位。
 3. 自动进入该槽位对应的任务分支，加载业务 Skill 并开发。
 4. 运行测试，提交并推送分支，创建以 `codex/test-train` 为 base 的 PR。
-5. 保留该槽位为“已占用”，不自动 park。
+5. 功能 AI 交付 PR 后先保留槽位，不自行 park；对应 train candidate 部署和验收通过后，由集成 AI 立即释放。
 
 因此，第二个 AI 窗口会自动拿到下一个空闲槽位。即使两个窗口同时开始，也不会抢到同一槽位。
 
@@ -28,7 +28,7 @@
 ## 什么时候需要你介入
 
 - A-D 全部占用时，AI 会直接报告“没有可用槽位”，不会在主目录写代码。
-- 任务 PR 已合入 train、不再需要原槽位修复时，由集成 AI 执行 `park`释放槽位。
+- 任务 PR 已合入 train、精确 train SHA 的 candidate 已部署并 `accept` 后，由集成 AI 立即执行 `park` 释放槽位；不等待全部任务、main 合并或正式发布。若 candidate 被 block 或需要 forward-fix，则暂时保留原槽位，修复验收通过后再释放。
 - 唯一测试站的部署、accept/block 与最终 main 合并仍只由集成 AI 执行。
 
 ## 可选的状态查询
