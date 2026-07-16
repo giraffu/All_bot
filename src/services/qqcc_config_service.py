@@ -32,6 +32,16 @@ MAIN_BUTTON_KEYS = (
     "main_bot_link",
     "private_bot",
 )
+MAIN_MENU_BUTTON_ORDER = (
+    "quick_faceswap",
+    "ai_draw",
+    "ai_filter",
+    "video_edit",
+    "ai_video",
+    "market",
+    "private_bot",
+    "main_bot_link",
+)
 PHOTO_BUTTON_KEYS = ("masturbation", "random_faceswap")
 UNDRESS_METHOD_KEYS = ("legacy", "i2i_draw")
 VIDEO_BUTTON_KEYS = (
@@ -222,6 +232,10 @@ DEFAULT_QQCC_LAZY_BOT_CONFIG: dict[str, Any] = {
         "main_bot_link": True,
         "private_bot": True,
     },
+    "main_menu_layout": {
+        "buttons_per_row": None,
+        "button_order": list(MAIN_MENU_BUTTON_ORDER),
+    },
     "photo_buttons": {
         "masturbation": True,
         "random_faceswap": True,
@@ -291,6 +305,40 @@ def _normalize_bool_section(
         value = raw.get(key, default[key])
         normalized[key] = value if isinstance(value, bool) else default[key]
     return normalized
+
+
+def _normalize_main_menu_layout(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        raw = {}
+
+    raw_buttons_per_row = raw.get("buttons_per_row")
+    buttons_per_row = (
+        raw_buttons_per_row
+        if (
+            isinstance(raw_buttons_per_row, int)
+            and not isinstance(raw_buttons_per_row, bool)
+            and 1 <= raw_buttons_per_row <= 4
+        )
+        else None
+    )
+
+    button_order: list[str] = []
+    raw_button_order = raw.get("button_order")
+    if isinstance(raw_button_order, list):
+        for key in raw_button_order:
+            if (
+                isinstance(key, str)
+                and key in MAIN_MENU_BUTTON_ORDER
+                and key not in button_order
+            ):
+                button_order.append(key)
+    button_order.extend(
+        key for key in MAIN_MENU_BUTTON_ORDER if key not in button_order
+    )
+    return {
+        "buttons_per_row": buttons_per_row,
+        "button_order": button_order,
+    }
 
 
 def _build_unique_scene_id(
@@ -991,6 +1039,9 @@ def normalize_qqcc_config(raw: Any | None) -> dict[str, Any]:
         raw.get("main_buttons"),
         default=defaults["main_buttons"],
         keys=MAIN_BUTTON_KEYS,
+    )
+    config["main_menu_layout"] = _normalize_main_menu_layout(
+        raw.get("main_menu_layout")
     )
     config["photo_buttons"] = _normalize_bool_section(
         raw.get("photo_buttons"),
