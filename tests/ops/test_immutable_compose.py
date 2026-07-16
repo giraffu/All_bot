@@ -108,6 +108,9 @@ def test_lan_aio_dashboard_runner_has_dedicated_tailscale_openssh_unit():
 
 def test_central_and_worker_images_contain_their_dependency_closure():
     central = (ROOT / "deploy/docker/Dockerfile.central").read_text(encoding="utf-8")
+    control_plane = (
+        ROOT / "deploy/docker/Dockerfile.control-plane"
+    ).read_text(encoding="utf-8")
     dashboard = (
         ROOT / "deploy/docker/Dockerfile.dashboard-backend"
     ).read_text(encoding="utf-8")
@@ -123,6 +126,12 @@ def test_central_and_worker_images_contain_their_dependency_closure():
     assert "COPY scripts/gpu_release_rollout.py /app/scripts/gpu_release_rollout.py" in dashboard
     assert "COPY scripts/release_manifest_v2.py /app/scripts/release_manifest_v2.py" in dashboard
     assert "COPY scripts/release_strategy.py /app/scripts/release_strategy.py" in dashboard
+    for script in (
+        "gpu_release_rollout.py",
+        "release_manifest_v2.py",
+        "release_strategy.py",
+    ):
+        assert f"COPY scripts/{script} /app/scripts/{script}" in control_plane
     chmod_lines = [line for line in dashboard.splitlines() if "chmod 755" in line]
     assert any("/app/scripts/runpod_prod_ops.sh" in line for line in chmod_lines)
     assert "COPY workers/comfy_agent /app/worker" in worker
