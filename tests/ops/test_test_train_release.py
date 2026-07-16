@@ -281,6 +281,18 @@ def test_later_track_failure_rolls_back_completed_track_in_reverse(tmp_path):
     assert runner.events[-1] == ("rollback", "control-plane", "b" * 40)
 
 
+def test_later_track_failure_preserves_original_error_after_recovery(tmp_path):
+    module = _load_module()
+    coordinator = module.TestTrainCoordinator(state_root=tmp_path / "state")
+    runner = _FakeReleaseRunner(fail_track="test-execution")
+
+    with pytest.raises(
+        module.TestTrainError,
+        match="completed tracks were recovered: deploy failed",
+    ):
+        coordinator.deploy_candidate(SHA, pr=42, slot="D", runner=runner)
+
+
 def test_gpu_candidate_is_planned_but_never_mutated(tmp_path):
     module = _load_module()
     coordinator = module.TestTrainCoordinator(state_root=tmp_path / "state")
