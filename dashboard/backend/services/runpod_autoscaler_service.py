@@ -57,6 +57,7 @@ DEFAULT_TASK_DURATION_SECONDS_BY_TYPE: dict[str, int] = {
     "i2i_pro": 12,
     "t2i-pornmaster-turbo": 12,
     "face_swap": 12,
+    "face_swap_v2": 12,
     "scail2_action_transfer": 300,
     "scail2_video_replacement": 300,
     "ltx_video": 120,
@@ -1192,6 +1193,32 @@ def _autoscaler_agent_cooldown_remaining_seconds(
     return max(0, remaining)
 
 
+def _deleted_worker_tombstone_remaining_seconds(
+    operations: list[dict[str, Any]],
+    *,
+    agent_id: str,
+    now: float,
+    heartbeat_max_age_seconds: int,
+) -> int:
+    latest_deleted_at: float | None = None
+    for operation in operations:
+        if str(operation.get("action") or "") != "delete":
+            continue
+        if str(operation.get("status") or "") != "succeeded":
+            continue
+        if str(operation.get("agent_id") or "") != agent_id:
+            continue
+        ended_at = _parse_operation_time(operation.get("ended_at"))
+        if ended_at is None or not 0 <= now - ended_at <= heartbeat_max_age_seconds:
+            continue
+        if latest_deleted_at is None or ended_at > latest_deleted_at:
+            latest_deleted_at = ended_at
+    if latest_deleted_at is None:
+        return 0
+    remaining = int(heartbeat_max_age_seconds - (now - latest_deleted_at))
+    return max(1, remaining)
+
+
 def _highest_slot_worker(workers: list[dict[str, Any]], *, profile: str) -> dict[str, Any] | None:
     candidates: list[tuple[int, dict[str, Any]]] = []
     for worker in workers:
@@ -1688,11 +1715,25 @@ def _decide_runpod_profile_action(
                 slot=slot,
             )
 
-    if context.enable_candidates:
-        _slot_number, slot, worker = max(
-            context.enable_candidates,
-            key=lambda item: item[0],
+    enable_candidates: list[tuple[int, str, dict[str, Any]]] = []
+    deleted_worker_candidates: list[tuple[int, int, str, dict[str, Any]]] = []
+    for slot_number, slot, worker in context.enable_candidates:
+        agent_id = str(worker.get("agent_id") or "")
+        tombstone_remaining = _deleted_worker_tombstone_remaining_seconds(
+            operations,
+            agent_id=agent_id,
+            now=now,
+            heartbeat_max_age_seconds=config.heartbeat_max_age_seconds,
         )
+        if tombstone_remaining > 0:
+            deleted_worker_candidates.append(
+                (slot_number, tombstone_remaining, slot, worker)
+            )
+        else:
+            enable_candidates.append((slot_number, slot, worker))
+
+    if enable_candidates:
+        _slot_number, slot, worker = max(enable_candidates, key=lambda item: item[0])
         agent_id = str(worker.get("agent_id") or "")
         recovery_cooldown_remaining = _autoscaler_agent_cooldown_remaining_seconds(
             operations,
@@ -1713,6 +1754,25 @@ def _decide_runpod_profile_action(
                 },
                 slot=slot,
             )
+
+    if deleted_worker_candidates:
+        _slot_number, tombstone_remaining, slot, worker = max(
+            deleted_worker_candidates,
+            key=lambda item: item[0],
+        )
+        agent_id = str(worker.get("agent_id") or "")
+        return _decision(
+            profile=profile,
+            action="hold",
+            reason="hold: deleted runpod worker heartbeat awaiting expiry",
+            metrics={
+                **metrics,
+                "agent_id": agent_id,
+                "runpod_control_state": _worker_control_state(worker),
+                "deleted_worker_tombstone_remaining_seconds": tombstone_remaining,
+            },
+            slot=slot,
+        )
 
     cooldown_remaining = _autoscaler_cooldown_remaining_seconds(
         operations,

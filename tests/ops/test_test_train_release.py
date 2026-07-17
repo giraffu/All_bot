@@ -207,8 +207,9 @@ def test_owner_tools_candidate_is_ready_without_mutating_shared_test(tmp_path):
     assert state["deployment_mode"] == "test-not-required"
 
 
+@pytest.mark.parametrize("level", ["none", "maintenance"])
 def test_non_runtime_control_plane_can_be_accepted_without_fake_deployment(
-    tmp_path,
+    tmp_path, level
 ):
     module = _load_module()
     coordinator = module.TestTrainCoordinator(state_root=tmp_path / "state")
@@ -216,7 +217,7 @@ def test_non_runtime_control_plane_can_be_accepted_without_fake_deployment(
     runner.plans["control-plane"] = {
         "track": "control-plane",
         "previous_sha": "b" * 40,
-        "level": "none",
+        "level": level,
         "matched_rules": ["non-runtime", "track:control-plane"],
         "artifacts": {},
         "services": [],

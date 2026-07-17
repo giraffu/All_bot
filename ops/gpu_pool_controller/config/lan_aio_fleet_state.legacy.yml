@@ -1,4 +1,6 @@
 version: 1
+deprecated: true
+purpose: one-time state-init seed only; never update after ordinary LAN AIO operations
 managed_by: allbot-lan-aio-operator
 last_verified_at: "2026-07-15T04:44:38Z"
 sources:
@@ -243,7 +245,7 @@ nodes:
       - gpu_index: 1
         hardware: RMA replacement RTX 4090 48G, UUID GPU-8153a439-e3f6-8922-039d-dc13e97da6d7; retired repaired UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e is absent
         current:
-          profile: unassigned
+          profile: i2i_pro
           slot_id: gpu-252-gpu1-i2i_pro
           agent_id: lan_aio_prod_gpu252_gpu1_i2i_pro_01
           container_name: allbot-lan-aio-gpu-252-gpu1-i2i_pro-prod
@@ -251,16 +253,19 @@ nodes:
           gpu_device_id: GPU-8153a439-e3f6-8922-039d-dc13e97da6d7
           host_gpu_index_at_last_verify: 0
           pci_bus_id_at_last_verify: "00000000:01:00.0"
-          state: candidate_preparing
+          state: running
           image_ref: 192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:v2-47c1219f-i2ipro
           model_manifest_key: i2i_pro/2026-06-14-test/manifest.json
           workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu1/profiles/i2i_pro/workspace
-          last_verified_at: "2026-07-16T16:04:33Z"
+          last_takeover_at: "2026-07-16T17:40:30Z"
+          last_verified_at: "2026-07-16T17:50:14Z"
         cached_profiles:
           - profile: i2i_pro
-            cache_state: missing
+            cache_state: ready
             model_manifest_key: i2i_pro/2026-06-14-test/manifest.json
             workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu1/profiles/i2i_pro/workspace
+            synced_at: "2026-07-16T17:37:43.088369+00:00"
+            note: Current production i2i_pro runtime on the RMA replacement card; all six manifest files were downloaded and the cache marker passed before enable-aio.
           - profile: pornmaster_flux2_edit
             cache_state: ready
             model_manifest_key: pornmaster_flux2_edit/2026-06-27/manifest.json
@@ -278,10 +283,6 @@ nodes:
             workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-252-gpu1/profiles/scail2/workspace
             synced_at: "2026-07-04T10:37:31.096350+00:00"
         fast_switch_candidates:
-          - slot_id: gpu-252-gpu1-i2i_pro
-            profile: i2i_pro
-            cache_state: missing
-            note: RMA replacement card commissioning candidate; must remain disabled until preflight, cache, container health, and disabled heartbeat pass.
           - slot_id: gpu-252-gpu1-pornmaster_flux2_edit
             profile: pornmaster_flux2_edit
             cache_state: ready
@@ -291,7 +292,7 @@ nodes:
             reason: blocked_xid_119_154 after the repaired UUID passed preflight/canary but reproduced Xid 119/154 and CUDA unknown error under a real SCAIL-2 face-swap workload; 8191 AIO is disabled and the container is exited after host reboot.
           - profile: wan22_video_v2
             reason: same repaired card is isolated after SCAIL-2 reproduced Xid 119/154; RunPod remains fallback for wan22_video_v2.
-        notes: Retired repaired card UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e previously reproduced Xid 119/154 under a real SCAIL-2 workload and was removed for RMA on 2026-07-06. On 2026-07-17 the host detected an RMA replacement RTX 4090 48G with new UUID GPU-8153a439-e3f6-8922-039d-dc13e97da6d7 at PCI 00000000:01:00.0; idle telemetry was normal, a 4 GiB CUDA memory touch plus short FP16 compute smoke passed, and the boot journal had no Xid, reset, or PCIe/AER error. The user explicitly authorized commissioning this replacement card as a second i2i_pro production worker on port 8191. Keep the candidate disabled until the full operator preflight, model cache, container health, and disabled heartbeat gates pass. Historical SCAIL-2 and Wan22 blocks remain in force and are not cleared by the i2i_pro commissioning.
+        notes: Retired repaired card UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e previously reproduced Xid 119/154 under a real SCAIL-2 workload and was removed for RMA on 2026-07-06. On 2026-07-17 the host detected an RMA replacement RTX 4090 48G with new UUID GPU-8153a439-e3f6-8922-039d-dc13e97da6d7 at PCI 00000000:01:00.0; idle telemetry was normal, a 4 GiB CUDA memory touch plus short FP16 compute smoke passed, and the boot journal had no Xid, reset, or PCIe/AER error. Under the user's explicit production authorization, the replacement was commissioned as a second i2i_pro worker on port 8191 with canonical digest sha256:a56620158da13c561e077511ebd310eb93de8821218da92c908df63f040b6495. Render, preflight, six-file warm-cache, container health, disabled heartbeat, required ComfyUI node/model validation, and enable-aio all passed; Central control now reports the worker enabled and idle. Historical SCAIL-2 and Wan22 blocks remain in force and are not cleared by the i2i_pro commissioning.
 
   gpu-002:
     host: allbot-gpu-002
@@ -327,28 +328,38 @@ nodes:
       - gpu_index: 1
         hardware: NVIDIA GeForce RTX 4090 48G
         current:
-          profile: image_to_video
-          slot_id: gpu-002-gpu1-image_to_video
-          agent_id: lan_aio_prod_gpu002_gpu1_image_to_video_01
-          container_name: allbot-lan-aio-gpu-002-gpu1-image_to_video-prod
+          profile: i2i_pro
+          slot_id: gpu-002-gpu1-i2i_pro
+          agent_id: lan_aio_prod_gpu002_gpu1_i2i_pro_01
+          container_name: allbot-lan-aio-gpu-002-gpu1-i2i_pro-prod
           host_port: 8191
           state: running
-          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd
-          model_manifest_key: image_to_video/2026-06-13-test/manifest.json
-          workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu1/profiles/image_to_video/workspace
-          last_verified_at: "2026-07-14T18:27:00Z"
+          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:v2-47c1219f-i2ipro
+          model_manifest_key: i2i_pro/2026-06-14-test/manifest.json
+          workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu1/profiles/i2i_pro/workspace
+          last_takeover_at: "2026-07-17T06:34:25Z"
+          last_verified_at: "2026-07-17T06:41:38Z"
         cached_profiles:
           - profile: image_to_video
             cache_state: ready
             model_manifest_key: image_to_video/2026-06-13-test/manifest.json
             workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu1/profiles/image_to_video/workspace
+          - profile: i2i_pro
+            cache_state: ready
+            model_manifest_key: i2i_pro/2026-06-14-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu1/profiles/i2i_pro/workspace
+            synced_at: "2026-07-17T06:33:19.835424+00:00"
           - profile: pornmaster_flux2_edit
             cache_state: ready
             model_manifest_key: pornmaster_flux2_edit/2026-06-27/manifest.json
             workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu1/profiles/pornmaster_flux2_edit/workspace
         fast_switch_candidates:
+          - slot_id: gpu-002-gpu1-image_to_video
+            profile: image_to_video
+            cache_state: ready
+            note: Same-card rollback candidate after the 2026-07-17 switch to i2i_pro; image and model cache remain ready.
           - slot_id: gpu-002-gpu1-pornmaster_flux2_edit
             profile: pornmaster_flux2_edit
             cache_state: ready
         blocked_profiles: []
-        notes: Live runtime, Central worker, and fleet state were reconciled to image_to_video in the slot catalog on 2026-07-15 before mutation. At 02:20 Asia/Shanghai the actual image_to_video slot enabled depth-1 reserved prefetch for every supported task type with heartbeat and passed health/Central verification; PornMaster remains the stopped rollback candidate.
+        notes: Switched gpu-002 GPU1 from image_to_video to i2i_pro on 2026-07-17 through scripts/lan_aio_fleet_prod_ops.py takeover with auto_rollback. Preflight, exact image presence, six-file model cache, natural completion of the in-flight video task, drain/wait-idle, stop-old, start-disabled, Docker health, disabled heartbeat, old-process cleanup and enable gates passed. Post-switch checks showed the i2i_pro container healthy on 8191, Central running with i2i_pro,t2i-pornmaster-turbo,face_swap intake, ComfyUI reachable, and the first production i2i_pro task accepted and returned to an empty 0/0 queue. image_to_video and PornMaster remain stopped same-card rollback candidates.

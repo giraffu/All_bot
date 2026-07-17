@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from src.constants import (
+    MODE_FACE_SWAP_V2,
     MODE_EDIT,
     MODE_IMG2IMG_LORA,
     MODE_PORNMASTER_FLUX2_EDIT_BF16,
@@ -244,7 +245,7 @@ async def execute_qqcc_draw_scene_chain(
                 "username": username,
                 "prompt": QQCC_ORIGINAL_FACE_SWAP_PROMPT,
                 "images": [current_image_path, original_face_image_path],
-                "task_type": "face_swap",
+                "task_type": MODE_FACE_SWAP_V2,
                 "status_msg_id": status_msg_id,
                 "delete_status": (
                     final_delete_status if face_swap_send_result else False

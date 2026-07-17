@@ -102,7 +102,7 @@ python scripts/update_deploy_config.py --env prod --source /secure/new-prod.env 
 
 并发任务的 test-train 入口为 `scripts/test_train_release.py`，A-H 功能工作区不得直接运行发布器。详细槽位与 forward-fix SOP 见 `docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md`。
 
-包装器默认只部署真正要求测试的 control-plane/公共 Web。测试 Worker 改为按需步骤，专项诊断才追加 `--with-test-execution`；未启用时记录 deferred，不得写入 acceptance。QQCC Config 候选部署专属测试前后端；Dashboard-only 候选记录 `test-not-required` 且不修改共享测试站。
+包装器默认只部署真正要求测试的 control-plane/公共 Web。测试 Worker 改为按需步骤，专项诊断才追加 `--with-test-execution`；未启用时记录 deferred，不得写入 acceptance。QQCC Config 候选部署专属测试前后端；Dashboard-only 候选记录 `test-not-required` 且不修改共享测试站。共享构建输入导致同一 bundle 同时选择 Dashboard 与 QQCC Config artifact 时，test preflight 以过滤后的可用测试服务为准：不得启动已移除的 Dashboard，但必须继续部署并验收 QQCC Config；过滤后为空的纯 owner-only 候选仍 fail closed。若 control-plane 的 artifact/service 选择集本身为空，即使相对上个实际部署 SHA 的累积路径把 level 提升到 maintenance，仍按 non-runtime 记录证据，不运行空 preflight/deploy。
 
 `test-execution` 尚无 `/var/lib/allbot/deployments/test/test-execution/current.json` 时是 schema v2 首次切换，不是普通 rolling。planner 必须加入 `initial-release`，用 allowlist 对应的 legacy Agent/Relay 完成端口与健康预检；切换快照写入 `~/APP/All_bot-release/release-env/test-execution/<sha>/legacy-worker-running.txt`。失败恢复和之后的 immutable 回滚均读取 track-scoped release-env，Worker preflight 也必须检查 `release-env/<track>/<previous_sha>/release.env`。没有 cloud service 的 test-execution 跳过 cloud preflight，不要求云端生成未参与事务的 track 合约；同时不能要求尚不存在的 `allbot-worker-test/worker-relay`，也不能回落到旧的无 track 目录。
 

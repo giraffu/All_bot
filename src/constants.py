@@ -23,6 +23,8 @@ MODE_UNDRESS = "undress"
 MODE_MASTURBATION = "masturbation"
 MODE_FACESWAP_STEP1 = "faceswap_step1"
 MODE_FACESWAP_STEP2 = "faceswap_step2"
+MODE_FACE_SWAP = "face_swap"
+MODE_FACE_SWAP_V2 = "face_swap_v2"
 MODE_FACE_VIDEO_STEP1 = "face_video_step1"
 MODE_FACE_VIDEO_STEP2 = "face_video_step2"
 MODE_RANDOM_FACESWAP = "random_faceswap"
@@ -106,6 +108,8 @@ TASK_COSTS = {
     MODE_UNDRESS: 2,
     MODE_MASTURBATION: 2,
     MODE_FACESWAP_STEP1: 1,
+    MODE_FACE_SWAP: 1,
+    MODE_FACE_SWAP_V2: 2,
     MODE_PENETRATION_STEP1: 2,
     MODE_RANDOM_FACESWAP: 1,
     MODE_BLOWJOB: 6,
@@ -363,6 +367,7 @@ GENERATION_TASK_TYPES = [
     "image",
     "video",
     "face_swap",
+    MODE_FACE_SWAP_V2,
     "undress",
     "masturbation",
     MODE_EDIT,

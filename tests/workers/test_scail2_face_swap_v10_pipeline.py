@@ -23,7 +23,7 @@ class FakePatcher:
         return workflow
 
     def patch_workflow(self, task_type, workflow, params):
-        assert task_type == "face_swap"
+        assert task_type == "face_swap_v2"
         workflow["2"]["inputs"]["image"] = params["face_image"]
         workflow["3"]["inputs"]["image"] = params["body_image"]
         workflow["18"]["inputs"]["noise_seed"] = params["seed"]

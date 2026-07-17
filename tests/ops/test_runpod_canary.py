@@ -349,7 +349,10 @@ def test_runpod_canary_i2i_pro_dry_run_preflights_with_profile_specific_render()
     assert payload["render"]["workflow_overrides"] == RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES
     assert payload["render"]["model_prefix"] == EXPECTED_I2I_PRO_MODEL_PREFIX
     assert payload["render"]["model_manifest_key"] == EXPECTED_I2I_PRO_MODEL_MANIFEST_KEY
-    assert "submit i2i_pro, txt2img, and face_swap Web tasks serially" in payload["would_execute"]
+    assert (
+        "submit i2i_pro, txt2img, and face_swap_v2 Web tasks serially"
+        in payload["would_execute"]
+    )
     assert provider.create_calls == 0
     assert provider.delete_calls == 0
 
@@ -750,12 +753,12 @@ def test_i2i_pro_canary_task_case_submits_existing_task_type():
     assert txt2img_payload["task_type"] == "txt2img"
     assert cases[1]["expected_central_task_type"] == "t2i-pornmaster-turbo"
     face_swap_payload = cases[2]["payload"]
-    assert face_swap_payload["task_type"] == "face_swap"
+    assert face_swap_payload["task_type"] == "face_swap_v2"
     assert face_swap_payload["inputs"]["images"] == [
         "user-data-test/web_uploads/3/example.png",
         "user-data-test/web_uploads/3/example.png",
     ]
-    assert cases[2]["expected_central_task_type"] == "face_swap"
+    assert cases[2]["expected_central_task_type"] == "face_swap_v2"
 
 
 def test_scail2_canary_task_cases_submit_two_5s_video_to_video_tasks():

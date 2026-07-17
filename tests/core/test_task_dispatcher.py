@@ -4,6 +4,8 @@ import pytest
 
 from src.constants import (
     MODE_CUSTOM_VIDEO,
+    MODE_FACE_SWAP,
+    MODE_FACE_SWAP_V2,
     MODE_FREE_EDIT_V2_5,
     MODE_I2I_PRO,
     MODE_IMAGE_TO_VIDEO,
@@ -52,6 +54,11 @@ def test_strategy_factory_returns_correct_strategy():
     # Face swap
     strategy = StrategyFactory.get_strategy("face_swap")
     assert isinstance(strategy, FaceSwapStrategy)
+    assert strategy.task_type == MODE_FACE_SWAP
+
+    strategy = StrategyFactory.get_strategy(MODE_FACE_SWAP_V2)
+    assert isinstance(strategy, FaceSwapStrategy)
+    assert strategy.task_type == MODE_FACE_SWAP_V2
 
     # LTX Video
     strategy = StrategyFactory.get_strategy("ltx_video")
@@ -93,6 +100,34 @@ def test_strategy_factory_returns_correct_strategy():
     strategy = StrategyFactory.get_strategy("unknown_mode")
     assert isinstance(strategy, DefaultImageStrategy)
     assert strategy.mode == "unknown_mode"
+
+
+def test_face_swap_versions_have_independent_costs():
+    assert StrategyFactory.get_strategy(MODE_FACE_SWAP).get_cost({}) == 1
+    assert StrategyFactory.get_strategy(MODE_FACE_SWAP_V2).get_cost({}) == 2
+    assert StrategyFactory.get_strategy(MODE_I2I_PRO).get_cost({}) == 6
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("task_type", [MODE_FACE_SWAP, MODE_FACE_SWAP_V2])
+async def test_face_swap_strategy_submits_selected_task_type(monkeypatch, task_type):
+    submit = AsyncMock(return_value="backend-task")
+    _patch_dispatch_image_service(monkeypatch, submit_face_swap_task=submit)
+
+    result = await StrategyFactory.get_strategy(task_type).submit_task(
+        "task-1",
+        {"saved_input_images": ["body.png", "face.png"]},
+        7,
+    )
+
+    assert result == "backend-task"
+    submit.assert_awaited_once_with(
+        "task-1",
+        face_image_path="face.png",
+        body_image_path="body.png",
+        priority=7,
+        task_type=task_type,
+    )
 
 
 def test_base_video_strategy_keeps_explicit_image_to_video_mode():

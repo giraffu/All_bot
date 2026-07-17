@@ -257,6 +257,7 @@ describe('QueueStats worker health display', () => {
           i2i_pro: 12,
           't2i-pornmaster-turbo': 12,
           face_swap: 12,
+          face_swap_v2: 12,
           scail2_action_transfer: 300,
           scail2_video_replacement: 300,
           ltx_video: 120,
@@ -521,8 +522,8 @@ describe('QueueStats worker health display', () => {
         },
         {
           profile: 'i2i_pro',
-          label: 'i2i_pro / txt2img / face_swap',
-          supported_task_types: ['i2i_pro', 't2i-pornmaster-turbo', 'face_swap'],
+          label: 'i2i_pro / txt2img / face_swap_v2',
+          supported_task_types: ['i2i_pro', 't2i-pornmaster-turbo', 'face_swap_v2'],
           active_count: 15,
           pending_count: 8,
           max_pending_wait_seconds: 901,
@@ -600,7 +601,7 @@ describe('QueueStats worker health display', () => {
     queueStatsMocks.workersRef.value = [
       {
         agent_id: 'runpod_prod_i2i_pro_manual_01',
-        types: 'i2i_pro,t2i-pornmaster-turbo,face_swap',
+        types: 'i2i_pro,t2i-pornmaster-turbo,face_swap_v2',
         provider: 'runpod',
         status: 'idle',
         last_seen: Date.now() / 1000,
@@ -653,7 +654,7 @@ describe('QueueStats worker health display', () => {
     await flushPromises()
     const i2iRow = wrapper
       .findAll('.runpod-profile-detail-table tbody tr')
-      .find(row => row.text().includes('i2i_pro / txt2img / face_swap'))
+      .find(row => row.text().includes('i2i_pro / txt2img / face_swap_v2'))
     const profileRows = wrapper.findAll('.runpod-profile-detail-table tbody tr')
     const profileNames = profileRows.map(row => row.find('.runpod-profile-name').text())
     const pornmasterBf16Row = profileRows.find(
@@ -664,7 +665,7 @@ describe('QueueStats worker health display', () => {
       .find(row => row.text().includes('scail2 / 视频生视频'))
 
     expect(wrapper.text()).toContain('活跃 Worker 详情')
-    expect(wrapper.text()).toContain('i2i_pro / txt2img / face_swap')
+    expect(wrapper.text()).toContain('i2i_pro / txt2img / face_swap_v2')
     expect(wrapper.text()).toContain('t2i-pornmaster-turbo')
     expect(wrapper.text()).toContain('15m 1s')
     expect(i2iRow?.text()).toContain('12m 0s')

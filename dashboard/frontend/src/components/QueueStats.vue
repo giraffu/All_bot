@@ -72,6 +72,7 @@ const DEFAULT_TASK_DURATION_SECONDS_BY_TYPE = {
   i2i_pro: 12,
   't2i-pornmaster-turbo': 12,
   face_swap: 12,
+  face_swap_v2: 12,
   scail2_action_transfer: 300,
   scail2_video_replacement: 300,
   ltx_video: 120,

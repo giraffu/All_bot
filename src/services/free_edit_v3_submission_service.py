@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from src.constants import MODE_PORNMASTER_FLUX2_EDIT_BF16
+from src.constants import MODE_FACE_SWAP_V2, MODE_PORNMASTER_FLUX2_EDIT_BF16
 from src.services.wan22_video_v2_extension_service import (
     download_output_file_to_fsm_temp,
 )
@@ -63,7 +63,7 @@ async def process_free_edit_v3_task(
         username=username,
         prompt=FACE_SWAP_PROMPT,
         images=[edited_image_path, image_path],
-        task_type="face_swap",
+        task_type=MODE_FACE_SWAP_V2,
         cleanup=True,
         send_result=True,
         allow_contribute=True,

@@ -499,7 +499,7 @@ async def test_get_pending_queue_wait_details_does_not_default_to_non_low_trust_
 async def test_runpod_profile_queue_details_count_tasks_until_last_non_low_trust_pending():
     active_tasks = {
         "txt2img-task": {"task_type": "txt2img"},
-        "face-swap-task": {"task_type": "face_swap"},
+        "face-swap-task": {"task_type": "face_swap_v2"},
     }
     pending_wait_details = {
         "t2i-pornmaster-turbo": {
@@ -524,19 +524,19 @@ async def test_runpod_profile_queue_details_count_tasks_until_last_non_low_trust
                 },
             ],
         },
-        "face_swap": {
+        "face_swap_v2": {
             "pending_count": 2,
             "max_pending_wait_seconds": 250,
             "max_non_low_trust_pending_wait_seconds": 100,
             "pending_queue_records": [
                 {
                     "queue_index": 2,
-                    "execution_type": "face_swap",
+                    "execution_type": "face_swap_v2",
                     "is_non_low_trust": False,
                 },
                 {
                     "queue_index": 4,
-                    "execution_type": "face_swap",
+                    "execution_type": "face_swap_v2",
                     "is_non_low_trust": True,
                 },
             ],
@@ -579,7 +579,7 @@ async def test_runpod_profile_queue_details_count_tasks_until_last_non_low_trust
     assert i2i_profile["non_low_trust_clear_pending_count"] == 4
     assert i2i_profile["non_low_trust_clear_pending_count_by_task_type"] == {
         "t2i-pornmaster-turbo": 2,
-        "face_swap": 2,
+        "face_swap_v2": 2,
     }
     assert (
         "pending_queue_records"
@@ -696,7 +696,7 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
     active_tasks = {
         "txt2img-task": {"task_type": "txt2img"},
         "i2i-task": {"task_type": "i2i_pro"},
-        "face-swap-task": {"task_type": "face_swap"},
+        "face-swap-task": {"task_type": "face_swap_v2"},
         "scail2-action-task": {"task_type": "scail2_action_transfer"},
         "scail2-face-swap-task": {"task_type": "scail2_face_swap_v2"},
         "pornmaster-single-task": {"task_type": "pornmaster_flux2_single_edit"},
@@ -710,7 +710,7 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
             "oldest_pending_task_id": "pending-txt2img",
             "oldest_pending_created_at": 1782050100.0,
         },
-        "face_swap": {
+        "face_swap_v2": {
             "pending_count": 3,
             "max_pending_wait_seconds": 901,
             "max_non_low_trust_pending_wait_seconds": 700,
@@ -776,11 +776,11 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
     ]
     assert profiles["i2i_pro"] == {
         "profile": "i2i_pro",
-        "label": "i2i_pro / txt2img / face_swap",
+        "label": "i2i_pro / txt2img / face_swap_v2",
         "supported_task_types": [
             "i2i_pro",
             "t2i-pornmaster-turbo",
-            "face_swap",
+            "face_swap_v2",
         ],
         "autoscaler_enabled": True,
         "active_count": 3,
@@ -788,11 +788,11 @@ async def test_get_system_status_proxy_payload_groups_runpod_profile_queue_detai
         "active_count_by_task_type": {
             "i2i_pro": 1,
             "t2i-pornmaster-turbo": 1,
-            "face_swap": 1,
+            "face_swap_v2": 1,
         },
         "pending_count_by_task_type": {
             "t2i-pornmaster-turbo": 2,
-            "face_swap": 3,
+            "face_swap_v2": 3,
         },
         "max_pending_wait_seconds": 901,
         "max_non_low_trust_pending_wait_seconds": 700,

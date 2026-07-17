@@ -26,6 +26,9 @@
 - **生成任务主链**：从 Web/Bot 提交，经 task core、Central、worker、ComfyUI、结果回流、历史持久化和媒体可见化形成的一条业务链。
 - **Web side-effect monitor**：Web 提交成功后的异步收口者，负责成功历史、失败退款、取消退款和 runtime cleanup。
 - **任务黄金路径**：最小但端到端可验证的成功/失败/取消/结果可见回归集合。
+- **图片换脸 V1**：执行类型 `face_swap` 的旧双图换脸能力；快速换脸、随机换脸及旧模板/历史复用继续使用，独立调用消耗 1 灵石。
+- **图片换脸 V2**：执行类型 `face_swap_v2` 的新双图换脸能力；供新业务和组合任务内部阶段使用，独立调用消耗 2 灵石，但组合任务是否另扣费由上层业务总价决定。
+- **幻想换脸**：任务类型 `i2i_pro` 的单图加提示词复合生成能力，不等同于双图契约的图片换脸 V2。
 
 ## 媒体与社区
 
@@ -56,6 +59,8 @@
 - **ComfyUI Runtime**：实际加载模型并执行 workflow 的运行时，可以是宿主机、LAN AIO 或 RunPod 容器。
 - **workflow 事实源**：测试执行链以 `workers/comfy_agent/workflows` 为准；正式 GPU profile 使用镜像中烘焙的 `remote_workers` bundle，不允许主机源码覆盖。
 - **LAN AIO**：局域网 GPU 上的 all-in-one runtime 形态，将 ComfyUI、relay/agent 和模型同步收在受控容器链路里。
+- **LAN AIO catalog**：Git 中稳定声明可管理物理卡、端口、候选 profile、不可变产物与阻断策略的允许集合，不表示当前运行 profile。
+- **LAN AIO state ledger**：本地主 operator 保存的 last-known current/cache/验证与 operation 审计；必须与 live 和 catalog 一致，不能在 live 不可达时单独授权 mutation。
 - **RunPod 手动池**：云正式备用或临时扩容的 GPU worker 池，可由人工操作，也可由 Dashboard autoscaler 在门禁满足时提交 `add` / `down`。
 - **Dashboard RunPod autoscaler**：由 Dashboard backend 根据队列等待、worker 健康、profile 阈值和 RunPod operation store 自动提交 RunPod `add` / `down` 的管理循环。
 - **云测试控制面**：研发、联调、缺陷修复和配置验证的默认发布目标。

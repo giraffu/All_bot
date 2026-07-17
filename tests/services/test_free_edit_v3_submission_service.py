@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.constants import MODE_PORNMASTER_FLUX2_EDIT_BF16
+from src.constants import MODE_FACE_SWAP_V2, MODE_PORNMASTER_FLUX2_EDIT_BF16
 from src.services.free_edit_v3_submission_service import (
     FREE_EDIT_V3_COST,
     process_free_edit_v3_task,
@@ -32,7 +32,7 @@ async def test_free_edit_v3_runs_bf16_then_face_swap_with_one_charge():
     assert bf16_call.kwargs["cost_override"] == FREE_EDIT_V3_COST
     assert bf16_call.kwargs["send_result"] is False
     assert bf16_call.kwargs["record_history"] is False
-    assert face_swap_call.kwargs["task_type"] == "face_swap"
+    assert face_swap_call.kwargs["task_type"] == MODE_FACE_SWAP_V2
     assert face_swap_call.kwargs["images"] == ["/tmp/edited.png", "/tmp/source.png"]
     assert face_swap_call.kwargs["deduct_quota"] is False
     assert face_swap_call.kwargs.get("record_history", True) is True

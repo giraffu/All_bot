@@ -1,3 +1,8 @@
+version: 2
+# In catalog v2, enabled/phase/retargetable and old-runtime pointers below are
+# compatibility metadata only. Live current/previous runtime comes from the
+# local XDG state ledger. Only blocked_* / maintenance_disabled phases remain
+# mutation policy; ordinary profile switches never rewrite this file.
 slots:
   - id: gpu-177-gpu0-image_to_video
     enabled: false
@@ -143,7 +148,7 @@ slots:
     target_task_types:
       - i2i_pro
       - t2i-pornmaster-turbo
-      - face_swap
+      - face_swap_v2
     gpu_index: 0
     gpu_device_id: GPU-09b7ea85-23df-a9b8-19d9-703534e47666
     host_port: 8192
@@ -156,7 +161,7 @@ slots:
     old_local_agent_container: ""
     remote_dir: /home/user/allbot-runpod-aio-prod/gpu252-gpu0-i2i-pro
     rollout_order: 24
-    notes: Active production gpu-252 GPU0 i2i_pro LAN AIO after the 2026-07-03 explicit switch from SCAIL-2. It serves i2i_pro, t2i-pornmaster-turbo, and face_swap on host port 8192; SCAIL-2, img2img_lora, image_to_video, and PornMaster Flux2 edit remain stopped same-card rollback candidates. Central AIO control was re-enabled on 2026-07-03T17:59:47Z after the queue was confirmed empty and the enable-aio gate passed.
+    notes: Active production gpu-252 GPU0 i2i_pro LAN AIO candidate. Its next immutable rollout serves i2i_pro, t2i-pornmaster-turbo, and face_swap_v2 on host port 8192; the current runtime must be drained before that rollout. SCAIL-2, img2img_lora, image_to_video, and PornMaster Flux2 edit remain stopped same-card rollback candidates.
 
   - id: gpu-252-gpu1-wan22_video_v2
     enabled: false
@@ -233,15 +238,15 @@ slots:
     notes: Maintenance-disabled PornMaster Flux2 edit LAN AIO for gpu-252 GPU1 while UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e is removed for RMA after the 2026-07-06 Asia/Shanghai operator drain. Intake was disabled, the 8191 queue was confirmed empty, allbot-lan-aio-gpu-252-gpu1-pornmaster_flux2_edit-prod was stopped, and the GPU1 LAN AIO containers were set to Docker restart policy no so they should not auto-start after host reboot without this card. Keep scail2 and wan22_video_v2 maintenance-disabled on this card until workload-specific validation or vendor/driver resolution clears Xid 119/154.
 
   - id: gpu-252-gpu1-i2i_pro
-    enabled: false
-    phase: candidate
+    enabled: true
+    phase: prod_enabled
     retargetable: false
     assignment_id: lan-252-8189-worker-05
     target_profile_id: i2i_pro
     target_task_types:
       - i2i_pro
       - t2i-pornmaster-turbo
-      - face_swap
+      - face_swap_v2
     gpu_index: 1
     gpu_device_id: GPU-8153a439-e3f6-8922-039d-dc13e97da6d7
     host_port: 8191
@@ -254,7 +259,7 @@ slots:
     old_local_agent_container: ""
     remote_dir: /home/user/allbot-runpod-aio-prod/gpu252-gpu1-i2i-pro
     rollout_order: 33
-    notes: Disabled commissioning candidate for the RMA replacement gpu-252 GPU1 card, pinned to new UUID GPU-8153a439-e3f6-8922-039d-dc13e97da6d7 on host port 8191. The old repaired UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e is absent. A 4 GiB CUDA memory touch and short FP16 compute smoke passed without Xid on 2026-07-17; keep disabled until render, preflight, cache preparation, container health, and disabled heartbeat gates pass, then enable only under the user's explicit production authorization.
+    notes: Production i2i_pro worker for the RMA replacement gpu-252 GPU1 card, pinned to new UUID GPU-8153a439-e3f6-8922-039d-dc13e97da6d7 on host port 8191. The old repaired UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e is absent. On 2026-07-17 the 4 GiB CUDA memory touch and short FP16 compute smoke, canonical image verification, render, preflight, six-file model warm-cache, container health, disabled heartbeat, required ComfyUI node/model checks, and enable-aio gates all passed without Xid under the user's explicit production authorization.
 
   - id: gpu-002-gpu0-scail2
     enabled: true
@@ -280,9 +285,9 @@ slots:
     notes: Active production gpu-002 GPU0 SCAIL-2 LAN AIO. It was originally managed by scripts/lan_scail2_aio_prod.sh and is now declared in the fleet config so Dashboard can observe the live runtime, control state, model cache, and same-physical-GPU recovery status without changing the running container.
 
   - id: gpu-002-gpu1-image_to_video
-    enabled: true
-    phase: prod_enabled
-    retargetable: false
+    enabled: false
+    phase: superseded_by_i2i_pro
+    retargetable: true
     assignment_id: lan-002-8189-worker-07
     target_profile_id: image_to_video
     target_task_types:
@@ -294,8 +299,8 @@ slots:
     agent_id: lan_aio_prod_gpu002_gpu1_image_to_video_01
     container_name: allbot-lan-aio-gpu-002-gpu1-image_to_video-prod
     legacy_health_port: 8191
-    legacy_worker_id: lan_aio_prod_gpu002_gpu1_pornmaster_flux2_edit_01
-    old_runtime_container: allbot-lan-aio-gpu-002-gpu1-pornmaster-flux2-edit-prod
+    legacy_worker_id: lan_aio_prod_gpu002_gpu1_i2i_pro_01
+    old_runtime_container: allbot-lan-aio-gpu-002-gpu1-i2i_pro-prod
     old_local_agent_container: ""
     remote_dir: /home/chuzeyu/allbot-runpod-aio-prod/gpu002-image-to-video
     legacy_hot_cache_copies:
@@ -305,11 +310,34 @@ slots:
           - /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth
           - /default-comfyui-bundle/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/rife49.pth
     rollout_order: 39
-    notes: Active production gpu-002 GPU1 image_to_video runtime reconciled from live container, Central worker, and fleet state on 2026-07-15. PornMaster Flux2 edit remains the stopped same-card rollback candidate.
+    notes: Stopped same-card image_to_video rollback candidate after the 2026-07-17 switch to i2i_pro. Its image and model cache remain ready for an explicitly requested recovery takeover.
+
+  - id: gpu-002-gpu1-i2i_pro
+    enabled: true
+    phase: prod_enabled
+    retargetable: false
+    assignment_id: lan-002-8189-worker-07
+    target_profile_id: i2i_pro
+    target_task_types:
+      - i2i_pro
+      - t2i-pornmaster-turbo
+      - face_swap
+    gpu_index: 1
+    host_port: 8191
+    legacy_health_port: 8191
+    legacy_preflight_required: true
+    agent_id: lan_aio_prod_gpu002_gpu1_i2i_pro_01
+    container_name: allbot-lan-aio-gpu-002-gpu1-i2i_pro-prod
+    legacy_worker_id: lan_aio_prod_gpu002_gpu1_image_to_video_01
+    old_runtime_container: allbot-lan-aio-gpu-002-gpu1-image_to_video-prod
+    old_local_agent_container: ""
+    remote_dir: /home/chuzeyu/allbot-runpod-aio-prod/gpu002-gpu1-i2i-pro
+    rollout_order: 40
+    notes: Active production gpu-002 GPU1 i2i_pro runtime after the 2026-07-17 controlled takeover from image_to_video. Preflight, image pull, six-file model cache, natural task drain, disabled startup, Docker health, disabled heartbeat and enable gates passed.
 
   - id: gpu-002-gpu1-pornmaster_flux2_edit
     enabled: false
-    phase: superseded_by_image_to_video
+    phase: superseded_by_i2i_pro
     retargetable: true
     assignment_id: lan-002-8189-worker-07
     target_profile_id: pornmaster_flux2_edit
@@ -321,12 +349,12 @@ slots:
     legacy_health_port: 8191
     agent_id: lan_aio_prod_gpu002_gpu1_pornmaster_flux2_edit_01
     container_name: allbot-lan-aio-gpu-002-gpu1-pornmaster-flux2-edit-prod
-    legacy_worker_id: lan_aio_prod_gpu002_gpu1_image_to_video_01
-    old_runtime_container: allbot-lan-aio-gpu-002-gpu1-image_to_video-prod
+    legacy_worker_id: lan_aio_prod_gpu002_gpu1_i2i_pro_01
+    old_runtime_container: allbot-lan-aio-gpu-002-gpu1-i2i_pro-prod
     old_local_agent_container: ""
     remote_dir: /home/chuzeyu/allbot-runpod-aio-prod/gpu002-gpu1-pornmaster-flux2-edit
-    rollout_order: 40
-    notes: Stopped same-card PornMaster Flux2 edit rollback candidate after the live gpu-002 GPU1 runtime was reconciled to image_to_video on 2026-07-15.
+    rollout_order: 41
+    notes: Stopped same-card PornMaster Flux2 edit rollback candidate after gpu-002 GPU1 switched from image_to_video to i2i_pro on 2026-07-17.
 
   - id: gpu-177-gpu1-ltx_video
     enabled: true
@@ -568,7 +596,7 @@ slots:
     target_task_types:
       - i2i_pro
       - t2i-pornmaster-turbo
-      - face_swap
+      - face_swap_v2
     gpu_index: 0
     host_port: 8190
     legacy_health_port: 8190
@@ -580,4 +608,4 @@ slots:
     old_local_agent_container: ""
     remote_dir: /home/ubantu/allbot-runpod-aio-prod/gpu226-gpu0-i2i-pro
     rollout_order: 106
-    notes: Active production gpu-226 GPU0 i2i_pro LAN AIO after the 2026-07-15 12:41 Asia/Shanghai switch from PornMaster Flux2 BF16. Preflight, image presence, warm-cache, drain/wait-idle, stop-old, start-disabled, Docker health, disabled heartbeat, old-process cleanup, and enable gates passed. It serves i2i_pro, t2i-pornmaster-turbo, and face_swap on host port 8190; follow-up monitoring through 2026-07-15 12:44 Asia/Shanghai saw consecutive production face_swap completions with successful sidecar uploads. BF16, image_to_video, SCAIL-2, LTX, and Wan22 remain stopped same-card rollback candidates.
+    notes: Active production gpu-226 GPU0 i2i_pro LAN AIO candidate. Its next immutable rollout serves i2i_pro, t2i-pornmaster-turbo, and face_swap_v2 on host port 8190; the current runtime must be drained before that rollout. BF16, image_to_video, SCAIL-2, LTX, and Wan22 remain stopped same-card rollback candidates.

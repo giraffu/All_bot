@@ -314,9 +314,44 @@ def _stages():
         {
             "executor": "generation",
             "input_mode": "current_original",
-            "task_kwargs": {"task_type": "face_swap", "send_result": True},
+            "task_kwargs": {"task_type": "face_swap_v2", "send_result": True},
         },
     ]
+
+
+@pytest.mark.asyncio
+async def test_legacy_private_qqcc_face_swap_stage_resumes_as_v2():
+    checkpoint = SimpleNamespace(
+        original_input_ref="durable/original.png",
+        current_output_ref="durable/body.png",
+        chat_id=456,
+        telegram_user_id=123,
+        username="tester",
+        status_message_id=77,
+    )
+    stage = {
+        "executor": "generation",
+        "input_mode": "current_original",
+        "task_kwargs": {"task_type": "face_swap", "send_result": True},
+    }
+    ref = PrivateQqccContinuationTaskRef(
+        chain_id="chain-legacy",
+        stage_index=1,
+        submission_sequence=2,
+        registry_task_id="task-face",
+        executor_token="token",
+    )
+    process_task = AsyncMock(return_value=(b"image", "results/face.png"))
+
+    await execute_private_qqcc_continuation_stage_default(
+        checkpoint,
+        stage,
+        ref,
+        SimpleNamespace(),
+        process_generation_task_func=process_task,
+    )
+
+    assert process_task.await_args.kwargs["task_type"] == "face_swap_v2"
 
 
 def test_continuation_task_ref_round_trips_through_registry_metadata():

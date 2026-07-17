@@ -10,7 +10,7 @@
 最近一次局域网 GPU ComfyUI 素材清理：2026-06-08，Asia/Shanghai。
 最近一次云正式只读负载/数据巡检：2026-06-18 03:06，Asia/Shanghai。
 最近一次云测试控制面核对：2026-06-18 03:06，Asia/Shanghai。
-最近一次 gpu-252/worker05 LAN AIO 接管更新：2026-07-04，Asia/Shanghai；同日 19:19 已改为返修卡 Xid 隔离禁用口径，19:41 改由 8191 PornMaster Flux2 edit 低负载接单。
+最近一次 gpu-252/GPU1 LAN AIO 接管更新：2026-07-17，Asia/Shanghai；RMA replacement 新 UUID 已通过 i2i_pro disabled-first 门禁并由 8191 正式接单，旧返修 UUID 对应槽位继续隔离。
 最近一次本地云正式 shadow 同步能力更新：2026-06-25，Asia/Shanghai。
 
 ## 2. 主服务器
@@ -177,7 +177,7 @@
 | :--- | :--- | :--- | :--- | :--- |
 | `192.168.1.226` | 1 x RTX 5090 32G | `8188` | `cloud_prod_worker_01` | `face_swap`、`i2i_pro`、`i2i_draw`、`face_video`、`video_edit`、`image_to_video`、`t2i-pornmaster-turbo` |
 | `192.168.1.177` | 2 x RTX 5090 32G | AIO `8190`、`8191` only；旧 `8188`/`8189` 已退役删除 | `lan_aio_prod_gpu177_gpu0_image_to_video_01`、`lan_aio_prod_gpu177_gpu1_ltx_video_01` | `wan22_video_v2`、`ltx_video` |
-| `192.168.1.252` | 2 x RTX 4090 48G | AIO `8192` i2i_pro active；AIO `8191` PornMaster Flux2 edit active；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu252_gpu0_i2i_pro_01`；`lan_aio_prod_gpu252_gpu1_pornmaster_flux2_edit_01` | `i2i_pro`、`t2i-pornmaster-turbo`、`face_swap`；`pornmaster_flux2_single_edit`、`pornmaster_flux2_multi_edit`；返修卡 SCAIL-2/Wan22 不计入当前容量 |
+| `192.168.1.252` | 2 x RTX 4090 48G | AIO `8192`/`8191` i2i_pro active；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu252_gpu0_i2i_pro_01`；`lan_aio_prod_gpu252_gpu1_i2i_pro_01` | 两槽均接 `i2i_pro`、`t2i-pornmaster-turbo`、`face_swap`；旧 UUID 的 PornMaster/SCAIL-2/Wan22 不计入当前容量 |
 | `192.168.1.2` | 2 x RTX 4090 48G | AIO `8190`、`8191`；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu002_gpu0_scail2_01`、`lan_aio_prod_gpu002_gpu1_pornmaster_flux2_edit_01` | `scail2_action_transfer`、`scail2_video_replacement`、`pornmaster_flux2_single_edit`、`pornmaster_flux2_multi_edit` |
 
 表中 `video_insert` / `video_edit` 仅表示生产 worker 仍声明的兼容 alias；canonical 执行面类型是 `image_to_video`，不再代表独立模型或独立 workflow。
@@ -192,10 +192,10 @@ GPU 节点运行方式与模型挂载快照：
 | :--- | :--- | :--- | :--- | :--- |
 | `192.168.1.226` | 宿主机进程，cwd `/home/ubantu/comfyui`，端口 `8188` | `/home/ubantu/comfyui/models`，约 325G | 单实例 | 不是 Comfy Docker 容器；重启前先确认进程管理方式 |
 | `192.168.1.177` | 正式 AIO `allbot-lan-aio-gpu-177-gpu0-image_to_video-prod`/`allbot-lan-aio-gpu-177-gpu1-ltx_video-prod`，host `8190`/`8191` | AIO workspace `/workspace/ComfyUI/models`；旧 `/data/comfy` 已删除 | AIO 使用 `/workspace/allbot-state` 隔离 input/output/temp；旧 `inst0/inst1` 已删除 | 2026-06-20 清理后根分区可用约 680G，使用率约 22%；旧 `comfy0/comfy1` 和旧 agent 2/3 已删除，`cloud_prod_worker_02/03` control 为 `disabled` |
-| `192.168.1.252` | 正式 AIO `allbot-lan-aio-gpu-252-gpu0-i2i_pro-prod` host `8192`；正式 AIO `allbot-lan-aio-gpu-252-gpu1-pornmaster_flux2_edit-prod` host `8191`；旧 `comfy0`/`comfy1` stopped rollback | AIO workspace `/workspace/ComfyUI/models` 由 manifest 同步；旧 `/home/user/APP/data/models` 保留回滚 | AIO 使用 `/workspace/allbot-state` 隔离 input/output/temp；旧 `inst0`/`inst1` 保留回滚 | 2026-07-04 根分区可用约 413G；GPU0 i2i_pro 固定健康 UUID `GPU-09b7ea85-23df-a9b8-19d9-703534e47666`；GPU1 返修 UUID `GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e` 只按 PornMaster Flux2 edit 低负载计入容量，真实 SCAIL-2 workload 曾复现 Xid 119/154，SCAIL-2/Wan22 仍 maintenance-disabled |
-| `192.168.1.2` | 正式 AIO `allbot-lan-aio-gpu-002-gpu0-scail2-prod`/`allbot-lan-aio-gpu-002-gpu1-pornmaster-flux2-edit-prod`，host `8190`/`8191`；`image_to_video` AIO 为 stopped rollback | AIO workspace `/workspace/ComfyUI/models`；旧共享目录 `/data/comfy/models` 保留回滚 | AIO 使用 `/workspace/allbot-state` 隔离 input/output/temp；旧 `inst0/inst1` 保留 | 2026-06-18 根分区可用约 442G；旧 `comfy0/comfy1` 和旧 agent 6/7 stopped，不得与 AIO 同卡并跑 |
+| `192.168.1.252` | 正式 AIO `allbot-lan-aio-gpu-252-gpu0-i2i_pro-prod` host `8192`；正式 AIO `allbot-lan-aio-gpu-252-gpu1-i2i_pro-prod` host `8191`；旧 `comfy0`/`comfy1` stopped rollback | AIO workspace `/workspace/ComfyUI/models` 由 manifest 同步；旧 `/home/user/APP/data/models` 保留回滚 | AIO 使用 `/workspace/allbot-state` 隔离 input/output/temp；旧 `inst0`/`inst1` 保留回滚 | GPU0/GPU1 分别固定 UUID `GPU-09b7ea85-23df-a9b8-19d9-703534e47666` 与 `GPU-8153a439-e3f6-8922-039d-dc13e97da6d7`；两者均为 i2i_pro 正式容量，旧 UUID 的 SCAIL-2/Wan22 仍 maintenance-disabled |
+| `192.168.1.2` | 正式 AIO `allbot-lan-aio-gpu-002-gpu0-scail2-prod`/`allbot-lan-aio-gpu-002-gpu1-i2i_pro-prod`，host `8190`/`8191`；`image_to_video` 与 PornMaster AIO 为 stopped rollback | AIO workspace `/workspace/ComfyUI/models`；旧共享目录 `/data/comfy/models` 保留回滚 | AIO 使用 `/workspace/allbot-state` 隔离 input/output/temp；旧 `inst0/inst1` 保留 | 2026-07-17 GPU1 i2i_pro 六文件模型缓存与单卡 takeover 门禁通过；旧 `comfy0/comfy1` 和旧 agent 6/7 stopped，不得与 AIO 同卡并跑 |
 
-双卡节点的重要边界：`gpu-177` 日常只按 AIO 容器和 `8190/8191` 端口操作，旧本地回滚链路已删除；`gpu-002` 日常按 AIO 容器和 `8190/8191` 端口操作，旧 `comfy0/comfy1` 仍只作为 stopped rollback baseline；`gpu-252` 当前 `8192` 健康卡接 `i2i_pro,t2i-pornmaster-turbo,face_swap`，`8191` 返修卡只接 PornMaster Flux2 edit 低负载图片编辑，不得误算为 SCAIL-2/Wan22 视频容量，旧 `comfy0/comfy1` 只作 stopped rollback。处理某个 worker 或某个 ComfyUI 的问题时，只操作对应 worker 容器、AIO 容器或对应 GPU 节点上的单个 `comfy0/comfy1`；不要使用整机 reboot、无 service 名 `docker compose down/up` 或批量 `docker rm`。
+双卡节点的重要边界：`gpu-177` 日常只按 AIO 容器和 `8190/8191` 端口操作，旧本地回滚链路已删除；`gpu-002` 日常按 AIO 容器和 `8190/8191` 端口操作，旧 `comfy0/comfy1` 仍只作为 stopped rollback baseline；`gpu-252` 当前 `8192` 与 `8191` 均接 `i2i_pro,t2i-pornmaster-turbo,face_swap`，必须按各自固定 UUID 单卡操作，旧 SCAIL-2/Wan22 槽位仍不计入视频容量。处理某个 worker 或某个 ComfyUI 的问题时，只操作对应 worker 容器、AIO 容器或对应 GPU 节点上的单个实例；不要使用整机 reboot、无 service 名 `docker compose down/up` 或批量 `docker rm`。
 
 ComfyUI 素材清理口径：
 
@@ -212,7 +212,7 @@ ComfyUI 版本快照：
 | `http://192.168.1.177:8190` | 0.21.1 | 2.11.0+cu128 | RTX 5090，约 31.36GiB，`--disable-dynamic-vram` |
 | `http://192.168.1.177:8191` | 0.19.5 | 2.11.0+cu128 | RTX 5090，约 31.36GiB，LTX AIO |
 | `http://192.168.1.252:8192` | 0.17.0 | 2.11.0+cu128 | RTX 4090，约 47.37GiB，i2i_pro AIO |
-| `http://192.168.1.252:8191` | 0.17.0 | 2.11.0+cu128 | RTX 4090，约 47.37GiB，PornMaster Flux2 edit AIO |
+| `http://192.168.1.252:8191` | 0.21.1 | 2.11.0+cu128 | RTX 4090，约 47.37GiB，RMA replacement i2i_pro AIO |
 | `http://192.168.1.252:8188` / `:8189` | 旧 runtime | 旧 runtime | stopped rollback，非当前接单入口 |
 | `http://192.168.1.2:8190` | 0.25.0 | 2.11.0+cu128 | RTX 4090，约 47.62GiB，SCAIL-2 AIO |
 | `http://192.168.1.2:8191` | 0.21.1 | 2.11.0+cu128 | RTX 4090，约 47.62GiB，image_to_video AIO |

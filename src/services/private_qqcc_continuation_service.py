@@ -801,7 +801,7 @@ def build_private_qqcc_draw_continuation_stages(
         face_sends_result = final_send_result and is_last_scene
         face_kwargs: dict[str, Any] = {
             "prompt": QQCC_ORIGINAL_FACE_SWAP_PROMPT,
-            "task_type": "face_swap",
+            "task_type": "face_swap_v2",
             "delete_status": final_delete_status if face_sends_result else False,
             "cleanup": True,
             "send_result": face_sends_result,
@@ -982,6 +982,11 @@ async def execute_private_qqcc_continuation_stage_default(
 
     executor = str(stage.get("executor") or "")
     task_kwargs = dict(stage.get("task_kwargs") or {})
+    if executor == "generation" and task_kwargs.get("task_type") == "face_swap":
+        # Legacy QQCC continuation checkpoints used the old execution label for
+        # the internal original-face restoration stage. Standalone quick face
+        # swap never enters this continuation executor and remains V1.
+        task_kwargs["task_type"] = "face_swap_v2"
     with activate_private_qqcc_continuation_task(ref):
         if executor == "generation":
             result = await process_generation_task_func(

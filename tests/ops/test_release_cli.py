@@ -3722,6 +3722,100 @@ def test_preflight_manifest_resolution_never_pulls_or_creates_cache(tmp_path, mo
     assert calls == []
 
 
+def test_test_preflight_allows_owner_tool_bundle_with_available_test_service(
+    monkeypatch,
+):
+    module = _load_module()
+    impact = module.ReleaseImpact(
+        services={"dashboard-backend", "qqcc-config-backend"},
+        level="rolling",
+        matched_rules=["dashboard-admin-backend", "track:control-plane"],
+    )
+    manifest = {
+        "git_sha": FULL_SHA,
+        "source_ref": "refs/heads/codex/test-train",
+    }
+    decision = SimpleNamespace(risk_class="owner-tools")
+    preflight_calls = []
+
+    monkeypatch.setattr(
+        module,
+        "build_plan",
+        lambda _args: (impact, manifest, "b" * 40),
+    )
+    monkeypatch.setattr(
+        module,
+        "resolve_release_strategy",
+        lambda *_args: decision,
+    )
+    monkeypatch.setattr(module, "_validate_local_env", lambda _args: ({}, "rev"))
+    monkeypatch.setattr(module, "_plan_document", lambda *_args: {"plan": "ok"})
+    monkeypatch.setattr(
+        module,
+        "preflight_release",
+        lambda *_args: preflight_calls.append("called") or {"status": "passed"},
+    )
+    monkeypatch.setattr(module, "require_preflight", lambda _result: None)
+
+    assert (
+        module.main(
+            [
+                "preflight",
+                "--env",
+                "test",
+                "--track",
+                "control-plane",
+                "--sha",
+                FULL_SHA,
+            ]
+        )
+        == 0
+    )
+    assert preflight_calls == ["called"]
+
+
+def test_test_preflight_rejects_owner_only_bundle_without_test_service(
+    monkeypatch, capsys
+):
+    module = _load_module()
+    impact = module.ReleaseImpact(
+        services={"dashboard-backend"},
+        level="rolling",
+        matched_rules=["dashboard-admin-backend", "track:control-plane"],
+    )
+    manifest = {
+        "git_sha": FULL_SHA,
+        "source_ref": "refs/heads/codex/test-train",
+    }
+
+    monkeypatch.setattr(
+        module,
+        "build_plan",
+        lambda _args: (impact, manifest, "b" * 40),
+    )
+    monkeypatch.setattr(
+        module,
+        "resolve_release_strategy",
+        lambda *_args: SimpleNamespace(risk_class="owner-tools"),
+    )
+
+    assert (
+        module.main(
+            [
+                "preflight",
+                "--env",
+                "test",
+                "--track",
+                "control-plane",
+                "--sha",
+                FULL_SHA,
+            ]
+        )
+        == 2
+    )
+    assert "owner-only admin services are removed" in capsys.readouterr().err
+
+
 def test_release_cli_accepts_nested_oras_v2_bundle_layout(tmp_path):
     module = _load_module()
     cache = tmp_path / "cache"

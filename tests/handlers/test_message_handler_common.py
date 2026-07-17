@@ -8,8 +8,9 @@ from src.handlers import message_handler_common
 
 def test_build_private_prompt_fallback_supports_bilingual_copy():
     assert "不认识的指令" in message_handler_common.build_private_prompt_fallback("zh")
-    assert "Unrecognized command" in message_handler_common.build_private_prompt_fallback(
-        "en"
+    assert (
+        "Unrecognized command"
+        in message_handler_common.build_private_prompt_fallback("en")
     )
 
 
@@ -26,7 +27,9 @@ def test_build_private_prompt_fallback_payload_returns_text_and_keyboard(monkeyp
 
 
 def test_extract_prompt_message_text_prefers_edited_message_and_strips_text():
-    edited_message = SimpleNamespace(text="  主菜单  ", chat=SimpleNamespace(type="private"))
+    edited_message = SimpleNamespace(
+        text="  主菜单  ", chat=SimpleNamespace(type="private")
+    )
     update = SimpleNamespace(
         effective_message=None,
         message=None,
@@ -82,10 +85,11 @@ async def test_dispatch_prompt_route_calls_matched_handler():
 @pytest.mark.asyncio
 async def test_reply_private_prompt_fallback_replies_only_in_private_chat(monkeypatch):
     reply_text = AsyncMock()
+    keyboard_builder = AsyncMock(return_value="keyboard:zh")
     monkeypatch.setattr(
         message_handler_common,
-        "build_private_prompt_fallback_payload",
-        lambda lang: ("fallback", f"keyboard:{lang}"),
+        "get_runtime_main_menu_keyboard",
+        keyboard_builder,
     )
 
     private_message = SimpleNamespace(chat=SimpleNamespace(type="private"))
@@ -104,9 +108,10 @@ async def test_reply_private_prompt_fallback_replies_only_in_private_chat(monkey
 
     reply_text.assert_awaited_once_with(
         private_message,
-        "fallback",
+        message_handler_common.build_private_prompt_fallback("zh"),
         reply_markup="keyboard:zh",
     )
+    keyboard_builder.assert_awaited_once_with("zh")
 
 
 def test_format_invitation_stats_uses_balance_semantics():

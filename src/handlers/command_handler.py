@@ -17,6 +17,7 @@ from src.utils import (
 )
 from src.handlers.error_handlers import with_unified_error_handler
 from src.services.fsm_temp_file_service import cleanup_fsm_user_data
+from src.services.main_bot_menu_runtime import get_runtime_main_menu_keyboard
 import contextlib
 
 
@@ -50,10 +51,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     cleanup_fsm_user_data(context.user_data)
 
-    # Define menu keyboard
-    from src.i18n.keyboards import get_main_menu_keyboard
-
-    reply_markup = get_main_menu_keyboard(context.lang)
+    reply_markup = await get_runtime_main_menu_keyboard(context.lang)
 
     await update.message.reply_text(
         context.t("command.force_cancel"),
@@ -132,10 +130,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Initialize mode to NONE
     context.user_data["mode"] = "none"
 
-    # Define menu keyboard
-    from src.i18n.keyboards import get_main_menu_keyboard
-
-    reply_markup = get_main_menu_keyboard(context.lang)
+    reply_markup = await get_runtime_main_menu_keyboard(context.lang)
 
     await update.message.reply_text(
         context.t("command.start_intro"),

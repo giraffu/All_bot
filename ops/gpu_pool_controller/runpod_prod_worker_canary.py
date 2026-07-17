@@ -35,7 +35,7 @@ PROD_SCAIL2_ACTION_TRANSFER_TASK_TYPE = "scail2_action_transfer"
 PROD_SCAIL2_VIDEO_REPLACEMENT_TASK_TYPE = "scail2_video_replacement"
 PROD_TXT2IMG_PUBLIC_TASK_TYPE = "txt2img"
 PROD_TXT2IMG_EXECUTION_TASK_TYPE = "t2i-pornmaster-turbo"
-PROD_FACE_SWAP_TASK_TYPE = "face_swap"
+PROD_FACE_SWAP_TASK_TYPE = "face_swap_v2"
 TERMINAL_TASK_STATUSES = {"done", "error", "cancelled"}
 
 
@@ -73,7 +73,9 @@ class RunPodProdWorkerCanaryCaseBuilder:
 
     def dry_run_steps(self) -> list[str]:
         if self.config.profile == "i2i_pro":
-            task_summary = "submit prod Web i2i_pro, txt2img, and face_swap tasks serially"
+            task_summary = (
+                "submit prod Web i2i_pro, txt2img, and face_swap_v2 tasks serially"
+            )
         elif self.config.profile == "scail2":
             task_summary = (
                 "submit prod Web scail2_action_transfer and "

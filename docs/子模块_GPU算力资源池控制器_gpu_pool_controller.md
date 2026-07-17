@@ -18,7 +18,8 @@
 - gpu-002 LAN AIO 正式日常入口：`scripts/lan_aio_prod_ops.sh`
 - gpu-002 SCAIL-2 LAN AIO 正式 slot0 入口：`scripts/lan_scail2_aio_prod.sh`
 - LAN AIO fleet 泛化配置：`ops/gpu_pool_controller/config/lan_aio_prod_slots.yml`
-- LAN AIO fleet 运行态摘要：`ops/gpu_pool_controller/config/lan_aio_fleet_state.yml`
+- LAN AIO fleet 本地运行态：`${XDG_STATE_HOME:-~/.local/state}/allbot/lan-aio/current.yml`
+- LAN AIO operation 审计：`${XDG_STATE_HOME:-~/.local/state}/allbot/lan-aio/history/<operation-id>.json`
 - LAN AIO fleet 泛化入口：`scripts/lan_aio_fleet_prod_ops.py`
 - RunPod public provider facade：`ops/gpu_pool_controller/providers/runpod.py`
 - RunPod profile/catalog 事实源：`ops/gpu_pool_controller/runpod_profile_catalog.py`
@@ -53,7 +54,7 @@
 | :--- | :--- | :--- | :--- |
 | `gpu-226` | `allbot-gpu-226` / `192.168.1.226` | 1 x RTX 5090 | 正式 LAN AIO `8190` 承接 `image_to_video` / `video_insert` / `video_edit`；`pornmaster_flux2_edit_bf16` 为同卡已缓存回切候选，宿主机 ComfyUI `8188` / `cloud_prod_worker_01` 仅作手工回滚元数据 |
 | `gpu-177` | `allbot-gpu-177` / `192.168.1.177` | 2 x RTX 5090 | 正式 LAN AIO `8190/8191` only；旧 `comfy0/comfy1` 与本地主 agent 2/3 已退役删除 |
-| `gpu-252` | `allbot-gpu-252` / `192.168.1.252` | 2 x RTX 4090 48G visible，1 x production active | 正式 LAN AIO GPU0 `i2i_pro` `8192` 固定绑定健康 UUID `GPU-09b7ea85-23df-a9b8-19d9-703534e47666`，承接 `i2i_pro` / `t2i-pornmaster-turbo` / `face_swap`；`img2img_lora`、`image_to_video`、PornMaster Flux2 edit 与 SCAIL-2 是同卡回切候选；返修 UUID `GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e` 保持隔离，GPU1 `wan22_video_v2` 本地 AIO 当前 maintenance disabled，RunPod 兜底 |
+| `gpu-252` | `allbot-gpu-252` / `192.168.1.252` | 2 x RTX 4090 48G visible，2 x production active | 当前实时能力仍以 `lan_aio_fleet_state.yml` 与 Central 心跳为准；本次不可变发布候选会把 i2i_pro LAN AIO 的图片换脸声明从 `face_swap` 切到 `face_swap_v2`，不代表文档更新时已部署。GPU0 `8192` 与 RMA replacement GPU1 `8191` 分别固定 UUID `GPU-09b7ea85-23df-a9b8-19d9-703534e47666` 与 `GPU-8153a439-e3f6-8922-039d-dc13e97da6d7`；旧返修 UUID 对应的 PornMaster/SCAIL-2/Wan22 槽位保持 maintenance disabled |
 | `gpu-002` | `allbot-gpu-002` / `192.168.1.2` | 2 x RTX 4090 48G | 正式 LAN AIO slot0 SCAIL-2 `8190` + slot1 PornMaster Flux2 edit `8191`；image_to_video AIO stopped rollback，旧 `comfy0/comfy1` stopped rollback |
 
 必须分清两层运行态：
@@ -74,7 +75,8 @@
 - `assignments.yml`：worker/节点支持哪些任务
 - `model_bundles.yml`：模型 bundle manifest 计划与版本
 - `lan_aio_prod_slots.yml`：LAN AIO helper 可管理的 slot/catalog，不代表每张卡的最新 live 当前态
-- `lan_aio_fleet_state.yml`：AI operator 每次管理后维护的 LAN AIO 运行态摘要，记录 `node_id + gpu_index` 当前 profile、缓存候选、阻断原因和最近验证时间；若它与 live status 冲突，live status 优先并停止 mutation
+- XDG `current.yml`：本地主 helper 原子维护的 last-known current/cache/验证时间；`history/<operation-id>.json` 记录成功、失败和回滚，未完成 operation 阻止下一次 mutation
+- `lan_aio_fleet_state.legacy.yml`：冻结的一次性迁移种子，不再是运行态事实源，也不得在普通运维后更新
 
 常用只读 / dry-run 命令：
 
@@ -96,7 +98,7 @@ python scripts/gpu_pool_controller.py runtime-render --assignment lan-002-8188-w
 worker 通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 替换实际执行 workflow，
 `BundleImportSpec.workflow_overrides` 必须同步写入同一映射；否则
 `model-import-plan` 会按 legacy 默认 workflow 拉取已经不接单的旧模型。
-当前 `face_swap` 使用 `face_swap_v2.json`，`t2i-pornmaster-turbo` 使用
+新 `face_swap_v2` 使用 `face_swap_v2.json`，`t2i-pornmaster-turbo` 使用
 `txt2img_from_i2i_pro.json`，二者与 `i2i_pro.json` 共享
 `i2i_pro_baseline` 的六个 Flux2/Z-Image 模型。
 
@@ -193,7 +195,7 @@ scripts/lan_runpod_aio_canary.sh --action restore --dry-run
 
 `start-heartbeat --execute` 会先把临时 agent control 设为 `disabled`，再把 compose/env 推到 `allbot-gpu-002` 并启动 canary 容器；不会放开接单。`enable-canary --execute` 只允许在真实 Web canary 窗口内临时 disable `cloud_worker_test_06` 并 enable 临时 agent；结束后必须执行 `restore --execute`，恢复旧 worker 并停止 canary 容器。失败现场需要保留容器和日志时，`restore --execute --keep-container` 只恢复 control，不停止容器。
 
-gpu-002 早期 AIO 正式日常入口是 `scripts/lan_aio_prod_ops.sh`。它只管理原固定生产接管范围：slot0 `img2img/img2img_lora` 与 slot1 `image_to_video/video_insert/video_edit`，默认 dry-run，真实动作必须显式加 `--execute`。2026-06-18 后 slot0/`8190` 已由 `scripts/lan_scail2_aio_prod.sh` 接管为正式 SCAIL-2 AIO；slot1/`8191` 在 2026-06-29 23:17 Asia/Shanghai 后再次由 fleet 配置 `gpu-002-gpu1-pornmaster_flux2_edit` 接管，`gpu-002-gpu1-image_to_video` 当前只作为同卡回切候选。旧 `lan_aio_prod_ops.sh` 只能作为 slot1 image_to_video 历史观测/恢复参考，不能代表 gpu-002 slot0 的 SCAIL-2 或 slot1 当前全局现状。
+gpu-002 早期 AIO 正式日常入口是 `scripts/lan_aio_prod_ops.sh`。它只管理原固定生产接管范围：slot0 `img2img/img2img_lora` 与 slot1 `image_to_video/video_insert/video_edit`，默认 dry-run，真实动作必须显式加 `--execute`。2026-06-18 后 slot0/`8190` 已由 `scripts/lan_scail2_aio_prod.sh` 接管为正式 SCAIL-2 AIO；slot1/`8191` 经 PornMaster 与 image_to_video 多次同卡切换后，于 2026-07-17 通过 fleet helper 切到 `gpu-002-gpu1-i2i_pro`，`gpu-002-gpu1-image_to_video` 与 `gpu-002-gpu1-pornmaster_flux2_edit` 当前只作为同卡回切候选。旧 `lan_aio_prod_ops.sh` 只能作为 slot1 image_to_video 历史观测/恢复参考，不能代表 gpu-002 slot0 的 SCAIL-2 或 slot1 当前全局现状。
 
 | 日常动作 | 命令 | 语义 |
 | :--- | :--- | :--- |
@@ -237,13 +239,15 @@ gpu-002 专用 helper 已证明 all-in-one runtime 可以在正式 Central 下�
 - 渲染事实源仍是 `python scripts/gpu_pool_controller.py runtime-render --runtime-shape runpod_all_in_one --environment cloud-prod`
 - 真实密钥仍只从 `.env.cloud.prod`、`.env.lan.model-cache`、`.env.lan-aio-prod` 的 allowlist 读取；不得打印 env、compose config 展开值或 presigned URL
 
-LAN AIO 当前态不再在本文维护静态大表。先读 `lan_aio_fleet_state.yml` 判断每张物理 GPU 的 current/cached/blocked 摘要，再用 `scripts/lan_aio_fleet_prod_ops.py list --include-disabled` 和 `status --include-disabled` 做 live 仲裁；若 state 与 live 冲突，报告 drift 并停止生产 mutation。2026-07-04 operator 校准后，state 已记录 `gpu-226` GPU0 当前为 `image_to_video` LAN AIO，旧 `cloud_prod_worker_01` / `gpu-226:8188` 只保留为手工回滚元数据；`gpu-177` GPU0 当前为 `wan22_video_v2`、GPU1 当前为 `ltx_video`，SCAIL-2 是同卡回切候选；`gpu-252` GPU0 当前为 `i2i_pro` 且通过 `gpu_device_id` 固定健康 UUID，`img2img_lora`、`image_to_video`、PornMaster Flux2 edit 与 SCAIL-2 是同卡回切候选；返修 GPU1 当前为 `gpu-252-gpu1-pornmaster_flux2_edit` 低负载接单，`gpu-252-gpu1-scail2` 虽已完成 cache、disabled heartbeat、direct canary 和短 CUDA smoke，但真实 SCAIL-2 face-swap workload 复现 Xid 119/154，SCAIL-2/Wan22 仍保持 maintenance-disabled，不计入本地视频容量。
+LAN AIO 当前态不在 Git 或本文维护静态大表。先读 XDG `current.yml`，再运行 `status --include-disabled`；只有 `state.status=passed` 才允许 mutation。live 是观测现实、ledger 是 last-known、catalog 是允许集合，三者不是静默覆盖关系：任一不一致、live 不可达、catalog revision 改变或存在未完成 operation 都 fail closed。确认现场后只能显式执行 `state-reconcile --reason ... --execute` 收口并留下审计。
+
+首次启用 ledger 时运行 `state-init --legacy-state-file <frozen-or-operator-copy> --execute` 并检查 status。冻结 seed 已包含 2026-07-17 的交接事实：`gpu-252` GPU0/GPU1 分别以 `8192`/`8191` 承载 `i2i_pro` 并绑定各自 UUID，`gpu-002` GPU1 从 `image_to_video` 切到 `i2i_pro`，且 image_to_video/PornMaster 保留为同卡回切候选；这些值只用于首次迁移，不能替代当次 live 核对。普通 `takeover/recover/restart-aio/warm-cache/pull-image` 持有本地单实例锁，成功后再次 live 验证，再原子替换 `current.yml` 并完成 history；失败和自动回滚同样写 history，current 不会提前前移。
 
 2026-06-18 阶段能力口径：
 
 | 层级 | 已覆盖/候选能力 | 当前口径 |
 | :--- | :--- | :--- |
-| LAN AIO 正式接单 | `img2img`、`img2img_lora`、`image_to_video`（兼容 `video_insert` / `video_edit` alias）、`i2i_pro`、`t2i-pornmaster-turbo`、`face_swap`、`ltx_video`、`scail2_action_transfer`、`scail2_action_transfer_long`、`scail2_video_replacement`、`scail2_face_swap_v2`、`pornmaster_flux2_single_edit`、`pornmaster_flux2_multi_edit` | `gpu-226` GPU0 当前承载 `image_to_video` AIO；`gpu-177` GPU0 真实运行态为 `wan22_video_v2`、GPU1 为 `ltx_video`，SCAIL-2 是同卡回切候选；`gpu-177-gpu1-image_to_video` 与 `gpu-177-gpu1-wan22_video_v2` 已因 32GB OOM 进入 `blocked_oom_32gb`，不计入候选容量；`gpu-252` GPU0 当前承载 `i2i_pro`，通过 UUID 绑定健康卡，`img2img_lora`、`image_to_video`、PornMaster Flux2 edit 与 SCAIL-2 是同卡回切候选；`gpu-252` GPU1 返修卡当前承载 `pornmaster_flux2_edit` 低负载图片编辑，`gpu-252-gpu1-scail2` 为 Xid 隔离中的 maintenance-disabled slot，不计入 SCAIL-2 产能；`gpu-002` slot0 承载 SCAIL-2，slot1 当前由 PornMaster Flux2 edit AIO 承载，image_to_video 是同卡回切候选 |
+| LAN AIO 正式接单 | `img2img`、`img2img_lora`、`image_to_video`（兼容 `video_insert` / `video_edit` alias）、`i2i_pro`、`t2i-pornmaster-turbo`、`face_swap_v2`、`ltx_video`、`scail2_action_transfer`、`scail2_action_transfer_long`、`scail2_video_replacement`、`scail2_face_swap_v2`、`pornmaster_flux2_single_edit`、`pornmaster_flux2_multi_edit` | 表中为 V2 候选契约；旧 `face_swap` V1 由 `worker_remote_02` 保留，不进入 i2i_pro LAN profile。当前容量必须以当次 XDG ledger、live helper 与 Central 心跳仲裁，不再从 Git catalog 或冻结 legacy seed 推断；blocked/maintenance slot 不计入容量 |
 | LAN AIO disabled 候选 | `img2img_lora`、`image_to_video` 回切口径，以及未 blocked 的新增候选 | 候选 slot 不自动接单；AI operator/CLI takeover 必须指定或推断同服务器当前运行目标，且按 live runtime profile 拒绝同 profile 替换；`maintenance_disabled` / `blocked_*` slot 不允许 takeover |
 | LAN AIO canary-ready | 暂无固定常驻候选 | 后续新增 slot 仍必须逐 slot 验收，不跨节点批量 enable |
 | 有镜像但未作为 LAN AIO 正式容量 | 无固定口径 | `i2i_pro` 已由 `gpu-252` GPU0 LAN AIO 正式接单；新增 profile 仍按 slot/state/live 三方仲裁 |
@@ -254,6 +258,8 @@ LAN AIO 当前态不再在本文维护静态大表。先读 `lan_aio_fleet_state
 ```bash
 scripts/lan_aio_fleet_prod_ops.py list
 scripts/lan_aio_fleet_prod_ops.py status --slot gpu-252-gpu0-img2img_lora
+scripts/lan_aio_fleet_prod_ops.py state-init --legacy-state-file ops/gpu_pool_controller/config/lan_aio_fleet_state.legacy.yml --execute
+scripts/lan_aio_fleet_prod_ops.py state-reconcile --reason '<confirmed drift reason>' --execute
 scripts/lan_aio_fleet_prod_ops.py render --slot gpu-252-gpu0-img2img_lora
 scripts/lan_aio_fleet_prod_ops.py preflight
 scripts/lan_aio_fleet_prod_ops.py configure-registry --slot gpu-252-gpu0-img2img_lora
@@ -268,7 +274,7 @@ scripts/lan_aio_fleet_prod_ops.py recover --physical-slot gpu-252:gpu0 --prefer 
 scripts/lan_aio_fleet_prod_ops.py recover --physical-slot gpu-252:gpu0 --slot gpu-252-gpu0-img2img_lora --prefer candidate
 ```
 
-候选配置遵循“Git/YAML 事实源 + 生成/校验”的边界。新增候选时先用 `candidate-plan --node-id ... --profile ... --replace-slot ...` 输出标准 YAML patch、渲染摘要、agent/container/remote_dir/host_port、模型 manifest 和预检命令；该命令不写文件、不执行远端操作。操作者审阅 patch 并通过 git 合入 `lan_aio_prod_slots.yml` 后，由本地 AI operator/CLI 继续执行预检、缓存和切换。Dashboard 不提供自由写生产 YAML、自由镜像、自由 manifest 或 slot/candidate 管理入口。
+候选配置遵循“Git catalog + 本地 state ledger”的边界。新增候选、换卡/UUID、修改 digest/manifest、改变或解除稳定阻断时，先用 `candidate-plan` 生成并审阅 Git patch；普通 profile 切换只更新 XDG ledger/history，不修改 catalog、docs 或根分支。catalog v2 中旧 `enabled/prod_enabled/superseded_by/old_runtime` 仅作迁移兼容，current 与旧 runtime 从 ledger + live 推导。Dashboard 不提供自由写生产 YAML、自由镜像、自由 manifest 或 slot/candidate 管理入口。
 
 真实接管顺序必须逐 slot 执行，不得一次替换整台或多台 GPU：
 
@@ -276,14 +282,14 @@ scripts/lan_aio_fleet_prod_ops.py recover --physical-slot gpu-252:gpu0 --slot gp
 2. 在维护窗口内执行 `configure-registry --slot ... --execute`；该动作会重启目标 GPU 节点 Docker daemon，必须先确保目标 legacy worker drain 且队列为空。若目标用户无免密 sudo 或不想中断节点 Docker，改用 runner `docker save ... | ssh ... docker load` 预置镜像，跳过 daemon restart。
 3. `pull-image --slot ... --execute` 预拉 LAN mirror 镜像；若目标节点未配置 insecure registry 而 runner 本地已有同 tag 镜像，helper 会自动用 save/load 把镜像加载到目标节点。
 4. `warm-cache --slot ... --include-disabled --execute` 用候选 profile 的 AIO 镜像在目标 workspace 运行一次无端口、无 agent、无接单的模型同步，并写入 `model-cache-marker.json`；若模型 manifest 尚未进入 LAN model cache，应让该步骤失败暴露，不在后台临时导入任意模型。
-5. `drain-legacy --slot ... --include-disabled --execute` 阻止旧 agent 接新单。
-6. `wait-idle --slot ... --include-disabled --execute` 最多等待当前旧任务自然终态，不用强制重启替代 drain。
-7. `stop-old --slot ... --include-disabled --execute` 停目标旧 runtime 容器，释放同卡显存和端口，不删除容器。
-8. `start-disabled --slot ... --execute` 启动 AIO 容器，只等待 disabled heartbeat，不允许接单。启动前会 inspect 目标候选容器名；若同名容器处于 `exited/created/dead/removing` 且名称匹配当前 slot，会先安全 `docker rm` 后再 compose up；若同名容器仍 running、restarting 或 inspect 名称不匹配，直接失败，不误删。
+5. `takeover` 内部 drain legacy，阻止旧 agent 接新单。
+6. `takeover` 内部最多等待当前旧任务自然终态，不用强制重启替代 drain。
+7. `takeover` 内部 stop-old，停目标旧 runtime 容器，释放同卡显存和端口但不删除容器。
+8. `takeover` 内部 start-disabled，启动 AIO 容器并只等待 disabled heartbeat，不允许接单。启动前会 inspect 目标候选容器名；若同名容器处于 `exited/created/dead/removing` 且名称匹配当前 slot，会先安全 `docker rm` 后再 compose up；若同名容器仍 running、restarting 或 inspect 名称不匹配，直接失败，不误删。
 9. 验收 compose 不含 `cloud-test` / `user-data-test`，Central heartbeat 必须带 `node_id`、`provider=lan_ssh`、`runtime_profile`、`pool_managed=true`；`image_to_video` / `wan22_video_v2` slot 的 `COMFY_EXTRA_ARGS` 必须包含 `--disable-dynamic-vram`。
-10. `enable-aio --slot ... --execute` 会先把 legacy worker 置为 disabled，并拒绝在 legacy 仍 running、AIO disabled heartbeat 不可见或旧 runtime 容器仍占 GPU 显存时放开 AIO，避免同卡双 ComfyUI 抢单。
+10. `takeover` 内部 enable-aio 会先把 legacy worker 置为 disabled，并拒绝在 legacy 仍 running、AIO disabled heartbeat 不可见或旧 runtime 容器仍占 GPU 显存时放开 AIO，避免同卡双 ComfyUI 抢单。
 
-AI operator/CLI 的 `takeover --slot ... --include-disabled --execute` 按 `preflight -> pull-image -> warm-cache -> drain-legacy -> wait-idle -> stop-old -> start-disabled -> enable-aio` 串联上述步骤，默认 `--failure-policy auto_rollback`。Dashboard 已移除 `LAN AIO 管理` 弹窗和 `/api/runpod/lan-aio/slots*` / `/profiles` API，不再展示或提交 slot/candidate 切换；当前 worker 状态、任务和基础暂停/开启/重启仍通过 `/api/system/workers` 与 worker 卡片保留。`render`、`preflight`、`pull-image`、`warm-cache` 和 `takeover` 支持 `--replace-slot`，用于 retarget 候选在目标物理 GPU 上做只读检查、镜像准备和缓存预热；`stop-old`、`start-disabled`、`enable-aio` 等危险单步仍不接受 retarget。`warm-cache` 对 retarget 后 root-owned 的 `/srv/allbot/runpod-runtime/...` workspace 有 Docker root helper 兜底：SSH 用户 `mkdir` 权限不足时，helper 会用目标镜像挂载 workspace parent 创建目录，再继续模型同步和 marker 写入。`stop-old` 保护窗口开始后，若 `start-disabled`、`enable-aio` 或中途检查失败，helper 会先 disable 新候选、停止新候选容器、启动旧 runtime、恢复旧 agent control，并在 operation log 中记录 `recovery_status`；operation 本身仍按失败处理，避免误判切换成功。若需要首次配置 Docker insecure registry，仍要在维护窗口先单独执行 `configure-registry` 或用 runner save/load 预置镜像。
+AI operator/CLI 的 `takeover --slot ... --include-disabled --execute` 从 ledger 自动解析 current/old runtime，并按 `preflight -> pull-image -> warm-cache -> drain-legacy -> wait-idle -> stop-old -> start-disabled -> enable-aio -> post-live-verify -> ledger/history commit` 串联上述步骤，默认 `--failure-policy auto_rollback`。为避免留下无法审计的中间态，`drain-legacy/stop-old/start-disabled/rollback` 不再支持独立 `--execute`，异常现场统一走精确 `recover`。Dashboard 已移除 slot/candidate 切换 API，Worker 卡片只保留基础暂停/开启/重启；本地主 helper 会再次确认目标 agent 就是 ledger/live current。`render`、`preflight`、`pull-image`、`warm-cache` 和 `takeover` 可从 ledger 自动 retarget，也兼容显式 `--replace-slot` 但必须与 ledger 一致。`warm-cache` 对 root-owned workspace 保留 Docker root helper 兜底。保护窗口失败时 helper 自动恢复旧 runtime，并把 operation 记录为 failed/rolled_back；current 不提前前移。
 
 失败现场手工恢复入口是 `recover --physical-slot <node>:gpuN --prefer old|candidate`，它只作用于单个物理 GPU，不跨节点、不批量操作；需要恢复到明确候选时可追加 `--slot <slot-id>`，脚本会校验 slot 必须属于该物理 GPU。恢复会先 disable/stop 同卡其它 AIO，再把目标 slot 置为 disabled、启动或在容器缺失时按 `start-disabled` 渲染重建，验证容器健康和 disabled heartbeat 后才 enable 目标 agent。`--operation-id` 只作为审计提示，实际恢复仍要求显式指定 `--physical-slot` 或能由 `--slot` 推导出唯一 physical slot，避免从历史 operation 推断出过宽恢复范围。生产执行仍必须显式 `--execute`，否则只输出 dry-run 操作计划。
 
@@ -299,7 +305,7 @@ LAN AIO compose 固定带 `restart: unless-stopped`。AIO bootstrap/entrypoint �
 
 2026-06-19 `gpu-252-gpu0-img2img_lora` 从 canary-ready 转入正式 LAN AIO 接流：AIO agent `lan_aio_prod_gpu252_gpu0_img2img_lora_01` 连接正式 Central，host `8190`，按 `img2img_lora` profile 承接 `img2img` 与 `img2img_lora`。2026-06-28 起该 slot 被 `gpu-252-gpu0-pornmaster_flux2_edit` 正式替换，新的 AIO agent `lan_aio_prod_gpu252_gpu0_pornmaster_flux2_edit_01` 监听 host `8192`，只接 `pornmaster_flux2_single_edit` 与 `pornmaster_flux2_multi_edit`。2026-07-03 `gpu-252` 按单卡 takeover 切到 `i2i_pro`；2026-07-04 返修卡回装导致 host GPU index 漂移后，所有 `gpu-252` GPU0 `8192` 候选和当前 i2i_pro slot 均改用 `gpu_device_id: GPU-09b7ea85-23df-a9b8-19d9-703534e47666` 固定健康卡，`restart-aio` 会 force-recreate 容器以应用 device request。`img2img_lora`、`image_to_video`、PornMaster Flux2 edit 与 SCAIL-2 均保留为同卡回切候选，不应与当前 AIO 同时 enabled 或同卡占用显存。
 
-2026-06-28 `gpu-002-gpu1-pornmaster_flux2_edit` 曾通过 fleet 入口替换旧 slot1 `image_to_video` AIO。2026-06-29 曾按单 slot 回切到 image_to_video；同日 23:17 Asia/Shanghai 后又通过当时的 fleet Web 入口切回 `gpu-002-gpu1-pornmaster_flux2_edit`。当前 `lan_aio_prod_gpu002_gpu1_pornmaster_flux2_edit_01` 在 host `8191` 接 `pornmaster_flux2_single_edit` / `pornmaster_flux2_multi_edit`，`gpu-002-gpu1-image_to_video` 作为同卡回切候选，回切时应 drain/stop PornMaster agent/container 后再启动 `allbot-lan-aio-gpu-002-gpu1-image_to_video-canary` 并补齐 RIFE 热缓存。fleet 当前标签只认 live heartbeat / running container；无 live signal 的 `prod_enabled`、`maintenance_disabled`、`candidate`、`blocked_*`、`superseded_*` 都不得被标成 `runtime_current`。不得让两个 8191 容器或两个 GPU1 agent 同时 enabled。
+2026-06-28 `gpu-002-gpu1-pornmaster_flux2_edit` 曾通过 fleet 入口替换旧 slot1 `image_to_video` AIO，之后多次按单 slot 回切。2026-07-17，operator 为同卡新增并冷缓存 `gpu-002-gpu1-i2i_pro`，等待在途视频任务自然结束后通过 takeover 切换成功；当前 `lan_aio_prod_gpu002_gpu1_i2i_pro_01` 在 host `8191` 接 `i2i_pro` / `t2i-pornmaster-turbo` / `face_swap`，`image_to_video` 与 PornMaster 均为同卡回切候选。fleet 当前标签只认 live heartbeat / running container；无 live signal 的 `prod_enabled`、`maintenance_disabled`、`candidate`、`blocked_*`、`superseded_*` 都不得被标成 `runtime_current`。不得让两个 8191 容器或两个 GPU1 agent 同时 enabled。
 
 后续优化方向：
 
@@ -361,7 +367,7 @@ RunPod provider 当前覆盖五类路径：
 | :--- | :--- | :--- |
 | 云测试图生图 canary | `img2img` / `img2img_lora` 真实 Web 闭环 | 已通过真实 canary；作为 RunPod 基础链路回归入口 |
 | 云测试 split video canary | `image_to_video` 与 `wan22_video_v2` 分 profile 验证 | `wan22_video_v2` 已完成 Web 端真实闭环；后续以 `split-video-canary` 复验 |
-| 云测试图生图 Pro canary | `i2i_pro` RunPod runtime profile，串行验证 `i2i_pro`、Web `txt2img`、`face_swap` | 已通过单任务 cloud-test Web canary；三任务 canary 由 `runpod canary --task-type i2i_pro` 承担 |
+| 云测试图生图 Pro canary | `i2i_pro` RunPod runtime profile，串行验证 `i2i_pro`、Web `txt2img`、`face_swap_v2` | V2 路由发布候选必须重新执行三任务 canary；由 `runpod canary --task-type i2i_pro` 承担，不能沿用旧共享 `face_swap` 路由的验收结论 |
 | 云测试 SCAIL-2 canary | `scail2` RunPod runtime profile，串行验证动作迁移和视频换人 | 用于 cloud-test；会临时 disable 同环境非 RunPod SCAIL-2 worker |
 | 手动云正式备用 worker / Dashboard 自动管理 | `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、`scail2`、`ltx_video` | 底层 `prod-worker` 仍是手动安全入口；Dashboard 后端可按队列等待阈值自动调用 `add` / `down` |
 
@@ -393,14 +399,14 @@ python scripts/gpu_pool_controller.py runpod prod-worker canary --profile scail2
 | `img2img_lora` / `img2img` | `img2img,img2img_lora` | `img2img_lora` | `runpod_test_img2img_lora` | `img2img_lora/2026-06-10/manifest.json` |
 | `image_to_video` | `image_to_video` | `image_to_video` | `runpod_test_image_to_video` | `image_to_video/2026-06-13-test/manifest.json` |
 | `wan22_video_v2` | `wan22_video_v2` | `wan22_video_v2` | `runpod_test_wan22_video_v2` | `wan22_video_v2/2026-06-13-test/manifest.json` |
-| `i2i_pro` | `i2i_pro,t2i-pornmaster-turbo,face_swap` | `i2i_pro` | `runpod_test_i2i_pro` | `i2i_pro/2026-06-14-test/manifest.json` |
+| `i2i_pro` | `i2i_pro,t2i-pornmaster-turbo,face_swap_v2` | `i2i_pro` | `runpod_test_i2i_pro` | `i2i_pro/2026-06-14-test/manifest.json` |
 | `scail2` | `scail2_action_transfer,scail2_video_replacement` | `scail2` | `runpod_test_scail2` | `scail2/2026-06-17-test/manifest.json` |
 | `pornmaster_flux2_edit` | `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit` | `pornmaster_flux2_edit` | `runpod_test_pornmaster_flux2_edit` | `pornmaster_flux2_edit/2026-06-27/manifest.json` |
 | `wan22_aio_video` | `image_to_video,wan22_video_v2` | `wan22_aio_video` | `runpod_test_wan22_aio_video` | `wan22_aio_video/2026-06-12-test/manifest.json` |
 
 `wan22_aio_video` 只保留为兼容/回滚 profile；新测试、新扩容和正式接入都应优先使用 split profile。
 `video_basic` 不再作为独立对外任务或主 manifest 口径；GPU Pool Controller 中新增 canonical `image_to_video` profile，`video_basic` profile 仅保留 legacy 兼容命名，实际 workflow 与模型 manifest 均对齐 `image_to_video`。
-`i2i_pro` 是现有 ComfyUI runtime profile，不新增业务 task type；其中 Web 文生图仍提交 `txt2img`，Central 执行面记录为 `t2i-pornmaster-turbo`，worker 通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 读取 `txt2img_from_i2i_pro.json`。图片换脸仍提交 `face_swap`，worker 通过 override 读取 `face_swap_v2.json`。
+`i2i_pro` 是现有 ComfyUI runtime profile；其中 Web 文生图仍提交 `txt2img`，Central 执行面记录为 `t2i-pornmaster-turbo`，worker 通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 读取 `txt2img_from_i2i_pro.json`。新版图片换脸提交独立执行类型 `face_swap_v2`，worker 通过 override 读取 `face_swap_v2.json`；旧 `face_swap` 不再进入该 profile，继续由 V1 Worker 读取 `face_swap.json`。
 `wan22_video_v2` RunPod split profile 默认渲染 `COMFY_EXTRA_ARGS=--disable-dynamic-vram`，用于规避 cu128 ComfyUI 0.21.x 的 DynamicVRAM/comfy-aimdo 在 `WanTEModel` 动态加载阶段卡住；如需临时实验其它 Comfy 启动参数，可用 `RUNPOD_WAN22_VIDEO_V2_COMFY_EXTRA_ARGS` 覆盖，并必须重新创建目标 Pod 才会生效。
 
 手动正式 profile：
@@ -410,7 +416,7 @@ python scripts/gpu_pool_controller.py runpod prod-worker canary --profile scail2
 | `img2img` | `runpod_prod_img2img_manual_NN` | `img2img,img2img_lora` | `img2img_lora/2026-06-10/manifest.json` | `NVIDIA GeForce RTX 4090` |
 | `image_to_video` | `runpod_prod_image_to_video_manual_NN` | `image_to_video` | `image_to_video/2026-06-13-test/manifest.json` | `NVIDIA GeForce RTX 4090` |
 | `wan22_video_v2` | `runpod_prod_wan22_video_v2_manual_NN` | `wan22_video_v2` | `wan22_video_v2/2026-06-13-test/manifest.json` | `NVIDIA GeForce RTX 4090` |
-| `i2i_pro` | `runpod_prod_i2i_pro_manual_NN` | `i2i_pro,t2i-pornmaster-turbo,face_swap` | `i2i_pro/2026-06-14-test/manifest.json` | `NVIDIA GeForce RTX 4090` |
+| `i2i_pro` | `runpod_prod_i2i_pro_manual_NN` | `i2i_pro,t2i-pornmaster-turbo,face_swap_v2` | `i2i_pro/2026-06-14-test/manifest.json` | `NVIDIA GeForce RTX 4090` |
 | `scail2` | `runpod_prod_scail2_manual_NN` | `scail2_action_transfer,scail2_video_replacement` | `scail2/2026-06-17-test/manifest.json` | `NVIDIA GeForce RTX 4090` |
 | `ltx_video` | `runpod_prod_ltx_video_manual_NN` | `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio` | `ltx_video/2026-06-10/manifest.json` | `NVIDIA GeForce RTX 5090,NVIDIA GeForce RTX 4090` |
 
@@ -498,12 +504,12 @@ MP4/PNG/last-frame 下载校验已收口到 `runpod_http.py`、`runpod_control.p
 优先在 `runpod_cloud_test_canary.py` 增加 case/executor focused tests，再通过旧 runner
 做集成回归，避免重新把 HTTP/control/下载逻辑写回 runner。
 
-`i2i_pro` cloud-test canary 必须通过 Web API 创建真实任务，而不是只做 worker 直测。当前 canary 会串行提交 `i2i_pro`、Web `txt2img` 和 `face_swap` 三单。验收口径：
+`i2i_pro` cloud-test canary 必须通过 Web API 创建真实任务，而不是只做 worker 直测。V2 路由 canary 会串行提交 `i2i_pro`、Web `txt2img` 和 `face_swap_v2` 三单。验收口径：
 
 - RunPod worker heartbeat 出现为 `runpod_test_i2i_pro_*`。
-- Central 任务类型分别为 `i2i_pro`、`t2i-pornmaster-turbo`、`face_swap`，每单 `pop_evidence.agent_id` 都匹配该 RunPod worker。
+- Central 任务类型分别为 `i2i_pro`、`t2i-pornmaster-turbo`、`face_swap_v2`，每单 `pop_evidence.agent_id` 都匹配该 RunPod worker；该 worker 不得声明或接走 `face_swap`。
 - 三单 Web result 均为 `success`，最终状态均为 `done`，图片结果可下载。
-- 验收结束后恢复临时禁用的非 RunPod cloud-test `i2i_pro/t2i-pornmaster-turbo/face_swap` worker，删除 Pod，并确认 managed RunPod count 回到 0。
+- 验收结束后恢复临时禁用的非 RunPod cloud-test `i2i_pro/t2i-pornmaster-turbo/face_swap_v2` worker，删除 Pod，并确认 managed RunPod count 回到 0。
 
 当测试服 canary 需要与现有云正式手动备用 Pod 共存时，必须显式传
 `--allow-existing-prod-managed-pods` 或设置
@@ -574,7 +580,7 @@ Dashboard 系统监控页也提供正式手动 RunPod 池的日常 Web 入口：
 
 Dashboard 入口不重写 RunPod provider 逻辑，只异步调用 `scripts/runpod_prod_ops.sh`。在启动 operation 子进程时，Dashboard 必须从 `runpod_profile_catalog.py` 强制注入已验收的 img2img 与 PornMaster baked 镜像 ref；`runpod_prod_worker.load_env_file_for_prod_worker()` 会保护已有 `RUNPOD_*`，因此 `/app/.env` 中的历史镜像值不能把它覆盖回旧产物。该 pin 同时覆盖手动新增和 autoscaler add/retry；目标 GHCR tag 尚未发布或未完成 baked entrypoint/revision smoke 时不得先部署 Dashboard。PornMaster FP8 与 BF16 继续共用同一个 runtime 镜像和既有 single/multiple workflow，差异只由 task type、模型 manifest、BF16 RTX 4090/`--lowvram` 与对应 UNet 节点替换表达。LAN AIO slot/candidate 管理已从 Dashboard 移除，不再提供 profile/slot 列表、一键切换、恢复、巡检或 warm-cache 操作；候选切换、缓存预热、takeover/recover、retarget 与本地服务巡检只由本地主 AI operator/CLI 通过 `scripts/lan_aio_fleet_prod_ops.py` 执行。Worker 卡片看到 `control_state=disabled|draining` 时显示 `暂停中`，接单控制按钮显示 `开启`；其它状态显示 `暂停`。LAN AIO Worker 卡片只保留状态、当前任务、`暂停/开启/重启`，后端只允许受限 `disable-aio|enable-aio|restart-aio`，不触碰候选切换、缓存预热、takeover/recover 或 retarget。
 
-RunPod Worker 卡片提供 `锁定/解锁`，后端 API 为 `POST /api/runpod/workers/{agent_id}/lock|unlock`、`GET /api/runpod/workers/locks`；锁记录持久化在 operation store 的 `dashboard:runpod:locked_workers`，`/api/system/workers` 会标注 `runpod_locked` 并显示 `已锁定`。锁定后 Dashboard 手动 `DELETE /api/runpod/workers/{agent_id}` 返回 409，autoscaler 缩容与 add 失败/终止 cleanup 的 `down` 都会跳过该 worker，直到再次解锁。数量字段是新增数量；旧前端若仍发送 `desired_count`，后端也按新增数量解释，不会触发 `scale --desired` 或删除既有 slot。当前 Dashboard 手动 RunPod profile 列表包含 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、`scail2 / 视频生视频`、`ltx_video / 高级图生视频` 与 `pornmaster_flux2 / 自由P图 v2`；`scail2` 对应 `scail2_action_transfer,scail2_video_replacement` 两类正式任务，`ltx_video` 对应 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`，`pornmaster_flux2_edit` 对应 `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit`。系统监控页的活跃 Worker 详情前端会基于 Dashboard `/api/system/status.runpod_profile_queue_details` 的 profile 列表和 `/api/system/status.queue_by_type_details` 的任务类型明细聚合活跃数/pending、最长 pending 等待和非低信任最长 pending 等待；其中活跃数不是 worker 数，真实 RunPod/本地 worker 数由 `/api/system/workers` 心跳另算。`scail2` 展示会额外折入 LAN 正式可承接的 `scail2_action_transfer_long` 与 `scail2_face_swap_v2`，但正式 RunPod `scail2` autoscaler、清空阈值和单任务耗时设置仍只按 `scail2_action_transfer,scail2_video_replacement` 生效，避免自动扩容误接不能承载的任务。`pornmaster_flux2_edit` 返回 `autoscaler_enabled=true` 并进入 Dashboard RunPod autoscaler 自动 add/down，默认按单任务 30 秒和 30 分钟清空阈值估算，也可手动新增/暂停/删除；`i2i_pro` 汇总 `i2i_pro,t2i-pornmaster-turbo,face_swap`。同一请求里同一 profile 只能出现一次；若同 profile 已有未结束的 `add` operation，Dashboard 后端会返回 409，禁止再次提交，避免并发新增抢到同一个 `manual_NN` slot。后台 operation 默认使用 30 秒间隔、100 次无库存重试，真实执行只打开 `RUNPOD_DRY_RUN=false` 与 `RUNPOD_AUTOSCALER_ENABLED=true`，并把 `RUNPOD_PROD_MAX_MANUAL_SLOTS` 设为 `100` 或请求指定值。运行中的新增 operation 可从最近操作点 `终止`，后端会先向该 operation 的进程组发送 SIGTERM；如果该次 operation 已记录 `runpod_create_pod_NN`，会继续提交对应 slot 的 `down` 清理；若对应 RunPod worker 已锁定则跳过 cleanup 并记录 `skipped_locked`/`partial_locked`。未记录到创建 slot 的终止只停止等待/重试进程，不推测删除其它 Pod。
+RunPod Worker 卡片提供 `锁定/解锁`，后端 API 为 `POST /api/runpod/workers/{agent_id}/lock|unlock`、`GET /api/runpod/workers/locks`；锁记录持久化在 operation store 的 `dashboard:runpod:locked_workers`，`/api/system/workers` 会标注 `runpod_locked` 并显示 `已锁定`。锁定后 Dashboard 手动 `DELETE /api/runpod/workers/{agent_id}` 返回 409，autoscaler 缩容与 add 失败/终止 cleanup 的 `down` 都会跳过该 worker，直到再次解锁。数量字段是新增数量；旧前端若仍发送 `desired_count`，后端也按新增数量解释，不会触发 `scale --desired` 或删除既有 slot。当前 Dashboard 手动 RunPod profile 列表包含 `img2img`、`image_to_video`、`wan22_video_v2`、`i2i_pro`、`scail2 / 视频生视频`、`ltx_video / 高级图生视频` 与 `pornmaster_flux2 / 自由P图 v2`；`scail2` 对应 `scail2_action_transfer,scail2_video_replacement` 两类正式任务，`ltx_video` 对应 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`，`pornmaster_flux2_edit` 对应 `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit`。系统监控页的活跃 Worker 详情前端会基于 Dashboard `/api/system/status.runpod_profile_queue_details` 的 profile 列表和 `/api/system/status.queue_by_type_details` 的任务类型明细聚合活跃数/pending、最长 pending 等待和非低信任最长 pending 等待；其中活跃数不是 worker 数，真实 RunPod/本地 worker 数由 `/api/system/workers` 心跳另算。`scail2` 展示会额外折入 LAN 正式可承接的 `scail2_action_transfer_long` 与 `scail2_face_swap_v2`，但正式 RunPod `scail2` autoscaler、清空阈值和单任务耗时设置仍只按 `scail2_action_transfer,scail2_video_replacement` 生效，避免自动扩容误接不能承载的任务。`pornmaster_flux2_edit` 返回 `autoscaler_enabled=true` 并进入 Dashboard RunPod autoscaler 自动 add/down，默认按单任务 30 秒和 30 分钟清空阈值估算，也可手动新增/暂停/删除；`i2i_pro` 汇总 `i2i_pro,t2i-pornmaster-turbo,face_swap_v2`，旧 `face_swap` 只保留独立队列展示耗时，不触发 i2i_pro autoscaler。同一请求里同一 profile 只能出现一次；若同 profile 已有未结束的 `add` operation，Dashboard 后端会返回 409，禁止再次提交，避免并发新增抢到同一个 `manual_NN` slot。后台 operation 默认使用 30 秒间隔、100 次无库存重试，真实执行只打开 `RUNPOD_DRY_RUN=false` 与 `RUNPOD_AUTOSCALER_ENABLED=true`，并把 `RUNPOD_PROD_MAX_MANUAL_SLOTS` 设为 `100` 或请求指定值。运行中的新增 operation 可从最近操作点 `终止`，后端会先向该 operation 的进程组发送 SIGTERM；如果该次 operation 已记录 `runpod_create_pod_NN`，会继续提交对应 slot 的 `down` 清理；若对应 RunPod worker 已锁定则跳过 cleanup 并记录 `skipped_locked`/`partial_locked`。未记录到创建 slot 的终止只停止等待/重试进程，不推测删除其它 Pod。
 
 Dashboard operation 由 Redis 跨 Gunicorn worker 和容器重建持久化。读取“最近操作”时，后端只对 `status=running`、已从日志确认 `runpod_create_pod_NN`、且对应所有 `runpod_prod_<profile>_manual_NN` worker 在 heartbeat 新鲜窗口内为 `idle|running`、`control_state=enabled` 的 detached add 自动写回 `succeeded`、`exit_code=0` 并释放 profile active-add 锁。没有创建 slot、worker 缺失、heartbeat 过期、未启用或 unhealthy 时继续保持 `running`，不得仅因 Pod 存在就误报成功。
 
@@ -604,7 +610,7 @@ Dashboard 后端的 RunPod autoscaler 只复用上述安全入口，不直接调
 已有 worker 接单状态。`DASHBOARD_RUNPOD_AUTOSCALER_SCALE_UP_WAIT_SECONDS`
 仅作为未配置 profile 的 fallback。静态耗时可通过同一 settings API 的 `task_duration_seconds_by_type`
 更新，允许 1-3600 秒；默认值为 `img2img/img2img_lora=13s`、`image_to_video/wan22_video_v2=60s`、
-`i2i_pro/t2i-pornmaster-turbo/face_swap=12s`、`scail2_action_transfer/scail2_video_replacement=300s`、
+`i2i_pro/t2i-pornmaster-turbo/face_swap_v2=12s`；旧 `face_swap=12s` 只保留展示耗时，不纳入 i2i_pro autoscaler。`scail2_action_transfer/scail2_video_replacement=300s`、
 `ltx_video/ltx_video_flf2v/ltx_video_v2v_audio=120s`、unknown `100s`。新增 operation 完成或失败后，
 同 profile 默认冷却 600 秒；但 autoscaler add 若已创建 slot 且因
 `DASHBOARD_RUNPOD_AUTOSCALER_BOOTSTRAP_TIMEOUT_SECONDS`（默认 2400）内没有健康 heartbeat 失败，会自动对记录到的
@@ -618,14 +624,19 @@ worker 总数大于 1，则在未锁定的 idle RunPod 里选择该 profile 最�
 autoscaler 会优先自愈正式 RunPod worker：`status=error|quarantined` 且 `last_error_at` 已持续超过
 `DASHBOARD_RUNPOD_AUTOSCALER_FAULT_RESTART_SECONDS`（默认 300）时，提交
 `restart --slot NN --execute`；`control_state=disabled|draining` 且 worker 仍健康 `idle|running`
-时，提交 `enable --slot NN --execute`。RunPod `restart` 底层会先 disabled、调用 RunPod 原生
+时，提交 `enable --slot NN --execute`。成功的 Dashboard `delete` operation 会按
+`DASHBOARD_RUNPOD_AUTOSCALER_HEARTBEAT_MAX_AGE_SECONDS` 建立同 agent 的短期删除墓碑；墓碑有效期内即使
+Central 仍返回新鲜的 `disabled + idle|running` 残留 heartbeat，也必须保持
+`hold: deleted runpod worker heartbeat awaiting expiry`，不得自动 enable。其它未删除的暂停 RunPod
+仍可正常进入恢复候选，手动或 autoscaler 删除都遵循该边界。RunPod `restart` 底层会先 disabled、调用 RunPod 原生
 restart、等待健康 heartbeat，再恢复 enabled 接单。本地 worker 只参与容量保底，不会被 autoscaler
 启停。autoscaler 必须拿到 Redis leader lease 才执行 mutation；拿不到 Redis/leader 或系统快照失败时
 只记录 hold/error。管理弹窗的 `/api/runpod/autoscaler` 与 `/api/runpod/autoscaler/control`
 可查看 `scale_up: estimated non-low-trust clear time ...`、`restart: runpod fault persisted ...`、
 `enable: runpod paused worker available`、`replace: previous runpod bootstrap timed out ...`、
 `hold: runpod add still bootstrapping Ns`、`hold: no non-low-trust backlog`、`hold: no backlog`、`hold: max runpod capacity reached`、
-`hold: profile autoscaler paused`、`hold: minimum lifetime remaining Ns` 等决策并紧急暂停/恢复。
+`hold: profile autoscaler paused`、`hold: minimum lifetime remaining Ns`、
+`hold: deleted runpod worker heartbeat awaiting expiry` 等决策并紧急暂停/恢复。
 
 `down` 删除已有 Pod 的 preflight 只做 RunPod key、Pod 列表、reconcile 与 Central health 检查，不渲染 create pod request，因此不会因缺少 `RUNPOD_IMAGE_NAME_I2I_PRO` / `RUNPOD_IMAGE_NAME_SCAIL2` / `RUNPOD_IMAGE_NAME_LTX_VIDEO` 这类创建镜像配置而阻断删除；`up` / `add` / `render` / `canary` 仍必须具备目标 profile 的正式镜像与模型配置。
 
@@ -856,7 +867,7 @@ python scripts/gpu_pool_controller.py runpod prod-worker up \
 - `enable --execute` 才允许目标 worker 接单。
 - `down --execute` 必须确认无 `current_task_id`，忙碌 worker 不提供隐式 force；删除已有 Pod 不渲染 create pod request，也不应因缺少某个 profile 的 `RUNPOD_IMAGE_NAME_*` 创建配置而失败。
 - `canary --execute` 不禁用现有正式 worker；完成后恢复目标 RunPod worker 为 `disabled`。
-- `prod-worker canary --profile i2i_pro --execute` 会串行提交 `i2i_pro`、Web `txt2img`、`face_swap` 三单，要求三单均由 `runpod_prod_i2i_pro_manual_NN` 接单并产出可下载图片。
+- `prod-worker canary --profile i2i_pro --execute` 会串行提交 `i2i_pro`、Web `txt2img`、`face_swap_v2` 三单，要求三单均由 `runpod_prod_i2i_pro_manual_NN` 接单并产出可下载图片，同时确认它不声明旧 `face_swap`。
 - `prod-worker canary --profile scail2 --execute` 会串行提交 `scail2_action_transfer` 与 `scail2_video_replacement` 两个 5s 正式内部任务，要求两单均由 `runpod_prod_scail2_manual_NN` 接单、结果 MP4 写入 `user-data-prod` 且可下载；若需要强制命中 RunPod，应先让 SCAIL-2 pending 清空并临时 disable LAN SCAIL-2 agent。
 - `prod-worker canary --profile ltx_video --execute` 会提交一单 `ltx_video` 5s I2V 内部任务，要求由 `runpod_prod_ltx_video_manual_NN` 接单、结果 MP4 写入 `user-data-prod` 且可下载；完成后目标 worker 保持 `disabled`。
 - 生产真实创建、启用、删除或 canary 任务必须由用户明确确认。
@@ -904,9 +915,9 @@ RUNPOD_MODEL_SECRET_KEY={{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}
 - Wan22 共享 RunPod 镜像构建入口仍在 `remote_workers/docker/runpod_profiles/wan22_aio_video/`，这是镜像目录名，不表示运行时继续使用 AIO profile。
 - 当前 split video profile 复用 Wan22 GHCR image，但 profile-specific env、agent prefix、`SUPPORTED_TASK_TYPES`、runtime profile 和模型 manifest 必须分开渲染。`image_to_video` / `wan22_video_v2` 不再继承 legacy `RUNPOD_IMAGE_NAME_WAN22_AIO_VIDEO` 或 `RUNPOD_USE_TEMPLATE_WAN22_AIO_VIDEO`；默认直接渲染带 RIFE 的 `imageName`，cloud-prod `prod-worker` 会拒绝旧 tag 或 template。
 - Wan22 新镜像只 baked workflow 所需 custom nodes、`ffmpeg/ffprobe`、`rife49.pth` 后处理小权重、`runpod_bootstrap_from_git.sh` 和运行依赖；Wan22 high/low UNet、VAE、text encoder 与旧视频 LoRA 不 baked 进镜像，启动时从 `allbot-model-cache` 同步。`rife49.pth` 由 `FL_RIFE` 运行期读取，不属于可在线下载的普通缓存；RunPod bootstrap/entrypoint 会在启动 ComfyUI 前运行 `remote_workers/scripts/ensure_wan22_rife_cache.py`，缺失时 exit 75。
-- `face_swap_v2.json` 使用 `i2i_pro` Flux2/edit 节点与模型替代旧图片换脸工作流，运行面 task type 仍是 `face_swap`。测试 worker1、正式 worker1 与 RunPod `i2i_pro` profile 都通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 将 `face_swap` 指向 v2；这属于 Worker workflow 配置替换，不代表新增业务 task type。
+- `face_swap_v2.json` 使用 `i2i_pro` Flux2/edit 节点与模型，绑定独立执行类型 `face_swap_v2`。i2i_pro LAN/RunPod 候选只通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 将 V2 指向该 workflow；旧 `face_swap` 使用 `face_swap.json`，正式启用容量只保留 `worker_remote_02`。候选配置进入 Git 不代表线上 Worker 已切换，发布前后都要以 Central 实时心跳核验。
 - `i2i_pro` RunPod 镜像构建入口是 `remote_workers/docker/runpod_profiles/i2i_pro/`，默认 base 为 `yanwk/comfyui-boot:cu128-slim`，与现有图生图和 Wan22 RunPod 镜像基线保持一致；ComfyUI pin 到 `16cd8d8a8f5f16ce7e5f929fdba9f783990254ea`。不得使用 `cu130` 基线，否则在当前 RunPod 4090 宿主机上可能因 PyTorch CUDA 版本高于宿主机驱动能力而失败；`20260614-i2ipro-6b167aa-cu128-min4` 已在 `NVIDIA GeForce RTX 4090` cloud-test Web canary 中完成模型同步、ComfyUI CUDA 初始化、worker heartbeat 和 `i2i_pro` 真实任务出图；当前 `.env.cloud.test` 候选镜像为 `20260614-i2ipro-b75c6a9-cu128-min5-ssh`，在 min4 的可用基线上补齐 `openssh` 与 direct TCP SSH smoke。当前 workflow 只要求 ComfyUI/core `nodes` 与 `comfy_extras` 中的 `UNETLoader`、`CLIPLoader`、`VAELoader`、`ReferenceLatent`、`EmptyFlux2LatentImage`、`Flux2Scheduler`、`SamplerCustomAdvanced`，不 baked 自定义节点或业务模型。GitHub Actions smoke 在 CPU runner 上用静态源码检查确认这些节点存在，避免导入 ComfyUI 时触发 CUDA 初始化；GPU import 与真实执行以 cloud-test canary 为准。镜像 smoke 还必须检查 `ffmpeg`、`curl`、`git`、`ssh-keygen` 与 `sshd`，确保 direct TCP SSH 诊断可用。
-- RunPod `i2i_pro` 三任务能力依赖 `remote_workers/src/workflow_mapping_validation.py` 支持 `TASK_TYPE_WORKFLOW_OVERRIDES`，并且 `remote_workers/comfy_agent/workflows/` 内存在 `txt2img_from_i2i_pro.json` 与 `face_swap_v2.json`。`runpod_bootstrap_from_git.sh` 只在 `/workspace/allbot/repo/remote_workers` 不存在时 clone `deploy`，若旧 Pod 原地重启且已有旧 bundle，可能继续复用旧文件；新建/重建 Pod 会拉最新 `deploy`。若已运行的旧生产 Pod 因远端 bundle 缺 override 支持而读取旧默认 workflow，可先通过 Central agent control 将目标 worker 置为 `disabled`，再在 Pod 内覆盖默认 `face_swap.json` 与默认 Pornmaster workflow 为对应 v2/i2i_pro 派生模板；`WorkflowPatcher.load_workflow()` 每单重新读 JSON，文件级热修无需删除或重启 Pod，但长期修复仍必须进入 git 与新镜像/新 Pod。
+- RunPod `i2i_pro` 三任务能力依赖 `remote_workers/src/workflow_mapping_validation.py` 支持 `TASK_TYPE_WORKFLOW_OVERRIDES`，并且 `remote_workers/comfy_agent/workflows/` 内存在 `txt2img_from_i2i_pro.json` 与 `face_swap_v2.json`。不可变镜像必须把 override 固定为 `face_swap_v2 -> face_swap_v2.json`；禁止再用覆盖默认 `face_swap.json` 的方式让 i2i worker 接 V1。旧 Pod 若仍声明 `face_swap`，应保持 disabled 并通过新 digest 重建，在 Central 确认 V2-only 后再 enable；不得现场热修改源码、env 或 workflow 规避发布门禁。
 - `scail2` RunPod 镜像构建入口是 `remote_workers/docker/runpod_profiles/scail2/`，GHCR ref 必须为 `ghcr.io/giraffu/allbot-comfy-runpod-scail2:<tag>`。镜像必须包含 ComfyUI SCAIL-2 core 节点、VideoHelperSuite、KJNodes、rgthree、Frame-Interpolation、Fill-Nodes、ffmpeg、bootstrap/sshd 诊断依赖和 `remote_workers/requirements.txt`，不得 baked 任何 `.safetensors` 模型权重。模型 manifest 固定为 `allbot-model-cache/scail2/2026-06-17-test/manifest.json`，LoRA 相对路径必须保持 `loras/Wan2.1/Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors`。正式 RunPod `scail2` profile 只接 `scail2_action_transfer,scail2_video_replacement`，结果写 `user-data-prod`；cloud-test RunPod profile 结果写 `user-data-test`。
 - `ltx_video` RunPod 镜像构建入口是 `remote_workers/docker/runpod_profiles/ltx_video/`，GHCR ref 必须为 `ghcr.io/giraffu/allbot-comfy-runpod-ltx-video:<tag>`，发布 workflow 为 `.github/workflows/runpod_ltx_video_profile_image.yml`。Dockerfile 默认从可公网拉取的 Wan22 GHCR 节点源复制所需 custom nodes，不依赖 LAN registry；镜像只 baked LTX custom nodes、shim、bootstrap 与运行依赖，不 baked `.safetensors`。模型 manifest 固定为 `allbot-model-cache/ltx_video/2026-06-10/manifest.json`，云端 R2 当前只包含 10Eros v1.2 所需权重，正式 RunPod profile 默认通过 `RUNPOD_TASK_TYPE_WORKFLOW_OVERRIDES_LTX_VIDEO` 使用三份 10Eros v1.2 workflow；老 `LTX 2.3 *.json` 和 LAN AIO 默认行为仍保留为独立入口，但不作为新 RunPod 回退路径。默认与 10Eros 的 FLF2V workflow 都必须保持时空 VAE `last_frame_fix=true`，并在 `workers/remote_workers` 同步发布，避免 LAN AIO 与 RunPod 的首尾帧末端解码行为漂移。
 - `i2i_pro_baseline` 模型包从 `gpu-226` / `192.168.1.226:8188` 同步到 R2 `allbot-model-cache/i2i_pro/2026-06-14-test/manifest.json`，包含 6 个文件，总计 `38,769,838,190` bytes（约 `36.11 GiB`）。这 6 个文件同时覆盖 `i2i_pro.json`、`txt2img_from_i2i_pro.json` 与 `face_swap_v2.json`；本地主模型 registry 的 import spec 已按这两个 runtime overrides 生成 manifest，不再把 legacy Pornmaster/t2i 或旧 `face_swap.json` 专属模型纳入 `i2i_pro_baseline`。首次 cloud-test canary 使用 `RUNPOD_CONTAINER_DISK_GB=120`，GPU 只请求 `NVIDIA GeForce RTX 4090`，模型同步只写 ComfyUI `models/`，不得写 `input/output/temp/custom_nodes/workflows`。
