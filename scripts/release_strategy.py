@@ -20,6 +20,10 @@ OWNER_TOOL_ARTIFACTS = {
     "qqcc-config-backend",
     "qqcc-config-frontend",
 }
+TEST_REQUIRED_OWNER_TOOL_ARTIFACTS = {
+    "qqcc-config-backend",
+    "qqcc-config-frontend",
+}
 PUBLIC_WEB_ARTIFACTS = {"public-web"}
 NON_RUNTIME_ARTIFACTS = {
     "python-runtime-base",
@@ -91,7 +95,10 @@ def classify_risk(*, track: str, artifacts: Iterable[str], locked: bool) -> str:
     return "non-runtime"
 
 
-def _default_strategy(risk_class: str) -> str:
+def _default_strategy(risk_class: str, artifacts: Iterable[str]) -> str:
+    selected = set(artifacts) - NON_RUNTIME_ARTIFACTS
+    if risk_class == "owner-tools" and selected & TEST_REQUIRED_OWNER_TOOL_ARTIFACTS:
+        return "standard"
     if risk_class in {"owner-tools", "execution"}:
         return "direct"
     return "standard"
@@ -136,8 +143,15 @@ def decide_release_strategy(
             "unknown skippable release gates: " + ", ".join(sorted(unknown))
         )
 
-    risk_class = classify_risk(track=track, artifacts=artifacts, locked=locked)
-    strategy = _default_strategy(risk_class) if requested == "auto" else requested
+    selected_artifacts = tuple(artifacts)
+    risk_class = classify_risk(
+        track=track, artifacts=selected_artifacts, locked=locked
+    )
+    strategy = (
+        _default_strategy(risk_class, selected_artifacts)
+        if requested == "auto"
+        else requested
+    )
     _validate_strategy(risk_class, strategy)
 
     skipped = set(requested_skips)

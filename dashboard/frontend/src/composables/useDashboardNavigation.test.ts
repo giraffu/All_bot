@@ -4,6 +4,17 @@ import { describe, expect, it } from 'vitest'
 import { useDashboardNavigation } from './useDashboardNavigation'
 
 describe('useDashboardNavigation', () => {
+  it('exposes the main Bot menu settings in the authenticated Dashboard', () => {
+    const navigation = useDashboardNavigation(ref(['main_bot_menu']))
+
+    expect(navigation.menuItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'main_bot_menu', label: '主Bot菜单' }),
+      ])
+    )
+    expect(navigation.currentTabTitle.value).toBe('主Bot菜单')
+  })
+
   it('keeps QQCC lazy bot settings out of the main dashboard shell', () => {
     const activeTab = ref(['qqcc_bot'])
     const navigation = useDashboardNavigation(activeTab)
