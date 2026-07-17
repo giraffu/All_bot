@@ -2,7 +2,7 @@
 
 > 2026-07-16 发布入口补充：schema v2 正式控制面从 `control-plane` track 选择模块并按风险策略处理。核心默认 standard，可显式 emergency；管理面默认 direct；公共 Web 默认 standard、可显式 direct；migration/共享契约/未知路径永久 standard。standard 在 retained main-channel 测试 history 中按 track、artifact 和精确 digest 取证，测试 Agent/Relay 不是正式控制面依赖；`--dashboard-fast-track` 仅作兼容别名。严格 `--control-plane-repair-fast-track` 仍只服务测试后生产启用、测试禁用的 private worker 镜像闭包修复。所有策略都不放宽 main/CI 构建/digest/preflight/生产确认/事务回滚和非目标容器不变门禁。当前 legacy Relay/暂停容器保留 dormant 回滚态，未获授权不得下线。禁止 rsync、现场 build 与源码挂载。
 
-> 2026-07-17 独立模块边界：单独 Dashboard、官方 QQCC Bot、QQCC Config Web 分别使用 `--modules dashboard`、`--modules qqcc-bot`、`--modules qqcc-config`。每次只允许一个完整组，planner 从目标组 artifact 自己的已部署 `source_sha` 计算差异和 immutable 回滚；`current.json` 允许同一 track 的 artifact 保持不同 `source_sha`，提交目标状态时不覆盖非目标版本。目标 SHA 上其它新产物不再自动并入。migration、共享 Compose/env、Dashboard/QQCC 共享 schema 和 QQCC Bot/Config 共享运行时配置仍 fail closed。发布只对目标 service 执行 `pull` 与 `up -d --no-deps`，并核对非目标容器启动时间不变。
+2026-07-17 独立模块边界：单独 Dashboard、官方 QQCC Bot、QQCC Config Web 分别使用 `--modules dashboard`、`--modules qqcc-bot`、`--modules qqcc-config`。每次只允许一个完整组，planner 从目标组 artifact 自己的已部署 `source_sha` 计算差异和 immutable 回滚；`current.json` 允许同一 track 的 artifact 保持不同 `source_sha`，提交目标状态时不覆盖非目标版本。目标 SHA 上其它新产物不再自动并入。migration、共享 Compose/env、Dashboard/QQCC 共享 schema 和 QQCC Bot/Config 共享运行时配置仍 fail closed。发布只对目标 service 执行 `pull` 与 `up -d --no-deps`，并核对非目标容器启动时间不变。
 
 首次正式切换的硬门禁包括：同时维护 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`；控制面发布器不得触碰任何正式或测试 Worker；正式 Pages 必须为 production branch `main`、Git production disabled、preview `none`，并具备可验证/可回滚的 canonical production deployment ID。不满足只报告 blocker，不自动修正式环境。
 
