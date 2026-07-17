@@ -187,12 +187,24 @@ def async_retry(max_retries: int = 3, delay: float = 1.0, backoff: float = 2.0):
                     ) and not isinstance(e, BadRequest):
                         if attempt == max_retries:
                             logger.error(
-                                f"Function {func.__name__} failed after {max_retries} retries: {e}"
+                                "Function %s failed after %s retries: "
+                                "error_type=%s error=%s",
+                                func.__name__,
+                                max_retries,
+                                type(e).__name__,
+                                e,
                             )
                             raise e
 
                         logger.warning(
-                            f"Network error in {func.__name__}: {e}. Retrying in {current_delay}s... ({attempt + 1}/{max_retries})"
+                            "Network error in %s: error_type=%s error=%s. "
+                            "Retrying in %ss... (%s/%s)",
+                            func.__name__,
+                            type(e).__name__,
+                            e,
+                            current_delay,
+                            attempt + 1,
+                            max_retries,
                         )
                         await asyncio.sleep(current_delay)
                         current_delay *= backoff
