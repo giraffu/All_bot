@@ -3,6 +3,7 @@ import {
   AppstoreOutlined,
   BankOutlined,
   MessageOutlined,
+  MenuOutlined,
   DashboardOutlined,
   FileTextOutlined,
   GiftOutlined,
@@ -25,6 +26,7 @@ export type DashboardTabKey =
   | 'worker_history'
   | 'logs'
   | 'paid_group_guard'
+  | 'main_bot_menu'
   | 'recharge'
   | 'templates'
   | 'gallery'
@@ -110,6 +112,14 @@ export const dashboardTabs: DashboardTabConfig[] = [
     label: '群审核Bot',
     icon: RobotOutlined,
     component: markRaw(defineAsyncComponent(() => import('../components/PaidGroupGuardSettings.vue'))),
+    containerClass: BASE_CONTAINER_CLASS,
+    scrollable: true,
+  },
+  {
+    key: 'main_bot_menu',
+    label: '主Bot菜单',
+    icon: MenuOutlined,
+    component: markRaw(defineAsyncComponent(() => import('../components/MainBotMenuSettings.vue'))),
     containerClass: BASE_CONTAINER_CLASS,
     scrollable: true,
   },

@@ -53,7 +53,7 @@
 | :--- | :--- | :--- | :--- |
 | `gpu-226` | `allbot-gpu-226` / `192.168.1.226` | 1 x RTX 5090 | 正式 LAN AIO `8190` 承接 `image_to_video` / `video_insert` / `video_edit`；`pornmaster_flux2_edit_bf16` 为同卡已缓存回切候选，宿主机 ComfyUI `8188` / `cloud_prod_worker_01` 仅作手工回滚元数据 |
 | `gpu-177` | `allbot-gpu-177` / `192.168.1.177` | 2 x RTX 5090 | 正式 LAN AIO `8190/8191` only；旧 `comfy0/comfy1` 与本地主 agent 2/3 已退役删除 |
-| `gpu-252` | `allbot-gpu-252` / `192.168.1.252` | 2 x RTX 4090 48G visible，1 x production active | 正式 LAN AIO GPU0 `i2i_pro` `8192` 固定绑定健康 UUID `GPU-09b7ea85-23df-a9b8-19d9-703534e47666`，承接 `i2i_pro` / `t2i-pornmaster-turbo` / `face_swap`；`img2img_lora`、`image_to_video`、PornMaster Flux2 edit 与 SCAIL-2 是同卡回切候选；返修 UUID `GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e` 保持隔离，GPU1 `wan22_video_v2` 本地 AIO 当前 maintenance disabled，RunPod 兜底 |
+| `gpu-252` | `allbot-gpu-252` / `192.168.1.252` | 2 x RTX 4090 48G visible，2 x production active | 正式 LAN AIO GPU0 `8192` 与 RMA replacement GPU1 `8191` 均承接 `i2i_pro` / `t2i-pornmaster-turbo` / `face_swap`，分别固定 UUID `GPU-09b7ea85-23df-a9b8-19d9-703534e47666` 与 `GPU-8153a439-e3f6-8922-039d-dc13e97da6d7`；旧返修 UUID 对应的 PornMaster/SCAIL-2/Wan22 槽位保持 maintenance disabled |
 | `gpu-002` | `allbot-gpu-002` / `192.168.1.2` | 2 x RTX 4090 48G | 正式 LAN AIO slot0 SCAIL-2 `8190` + slot1 PornMaster Flux2 edit `8191`；image_to_video AIO stopped rollback，旧 `comfy0/comfy1` stopped rollback |
 
 必须分清两层运行态：
@@ -237,13 +237,13 @@ gpu-002 专用 helper 已证明 all-in-one runtime 可以在正式 Central 下�
 - 渲染事实源仍是 `python scripts/gpu_pool_controller.py runtime-render --runtime-shape runpod_all_in_one --environment cloud-prod`
 - 真实密钥仍只从 `.env.cloud.prod`、`.env.lan.model-cache`、`.env.lan-aio-prod` 的 allowlist 读取；不得打印 env、compose config 展开值或 presigned URL
 
-LAN AIO 当前态不再在本文维护静态大表。先读 `lan_aio_fleet_state.yml` 判断每张物理 GPU 的 current/cached/blocked 摘要，再用 `scripts/lan_aio_fleet_prod_ops.py list --include-disabled` 和 `status --include-disabled` 做 live 仲裁；若 state 与 live 冲突，报告 drift 并停止生产 mutation。gpu-002 GPU1 于 2026-07-17 通过单卡 takeover 从 `image_to_video` 切到 `i2i_pro`，镜像、六文件模型缓存、自然 drain、disabled heartbeat、健康和 enable 门禁均通过；`image_to_video` 与 PornMaster 保留为同卡回切候选。其它节点的频繁变化同样只以 fleet state 与 live status 为准，不在本文复制完整静态表。
+LAN AIO 当前态不再在本文维护静态大表。先读 `lan_aio_fleet_state.yml` 判断每张物理 GPU 的 current/cached/blocked 摘要，再用 `scripts/lan_aio_fleet_prod_ops.py list --include-disabled` 和 `status --include-disabled` 做 live 仲裁；若 state 与 live 冲突，报告 drift 并停止生产 mutation。2026-07-17 state 已记录 `gpu-252` GPU0/GPU1 分别以 `8192`/`8191` 承载 `i2i_pro`，并通过 `gpu_device_id` 固定两张卡；同日 gpu-002 GPU1 通过单卡 takeover 从 `image_to_video` 切到 `i2i_pro`，镜像、六文件模型缓存、自然 drain、disabled heartbeat、健康和 enable 门禁均通过，`image_to_video` 与 PornMaster 保留为同卡回切候选。其它节点的频繁变化同样只以 fleet state 与 live status 为准，不在本文复制完整静态表。
 
 2026-06-18 阶段能力口径：
 
 | 层级 | 已覆盖/候选能力 | 当前口径 |
 | :--- | :--- | :--- |
-| LAN AIO 正式接单 | `img2img`、`img2img_lora`、`image_to_video`（兼容 `video_insert` / `video_edit` alias）、`i2i_pro`、`t2i-pornmaster-turbo`、`face_swap`、`ltx_video`、`scail2_action_transfer`、`scail2_action_transfer_long`、`scail2_video_replacement`、`scail2_face_swap_v2`、`pornmaster_flux2_single_edit`、`pornmaster_flux2_multi_edit` | 具体数量以 fleet state 与 live status 为准；`gpu-002` slot0 承载 SCAIL-2，slot1 于 2026-07-17 切到 `i2i_pro`，`image_to_video` 与 PornMaster 为同卡回切候选；blocked/maintenance slot 不计入容量 |
+| LAN AIO 正式接单 | `img2img`、`img2img_lora`、`image_to_video`（兼容 `video_insert` / `video_edit` alias）、`i2i_pro`、`t2i-pornmaster-turbo`、`face_swap`、`ltx_video`、`scail2_action_transfer`、`scail2_action_transfer_long`、`scail2_video_replacement`、`scail2_face_swap_v2`、`pornmaster_flux2_single_edit`、`pornmaster_flux2_multi_edit` | 具体数量以 fleet state 与 live status 为准；`gpu-252` GPU0/GPU1 当前均承载 `i2i_pro` 并通过各自 UUID 绑定，`gpu-002` slot0 承载 SCAIL-2、slot1 于 2026-07-17 切到 `i2i_pro`，image_to_video/PornMaster 为同卡回切候选；blocked/maintenance slot 不计入容量 |
 | LAN AIO disabled 候选 | `img2img_lora`、`image_to_video` 回切口径，以及未 blocked 的新增候选 | 候选 slot 不自动接单；AI operator/CLI takeover 必须指定或推断同服务器当前运行目标，且按 live runtime profile 拒绝同 profile 替换；`maintenance_disabled` / `blocked_*` slot 不允许 takeover |
 | LAN AIO canary-ready | 暂无固定常驻候选 | 后续新增 slot 仍必须逐 slot 验收，不跨节点批量 enable |
 | 有镜像但未作为 LAN AIO 正式容量 | 无固定口径 | `i2i_pro` 已由 `gpu-252` GPU0 LAN AIO 正式接单；新增 profile 仍按 slot/state/live 三方仲裁 |
@@ -618,14 +618,19 @@ worker 总数大于 1，则在未锁定的 idle RunPod 里选择该 profile 最�
 autoscaler 会优先自愈正式 RunPod worker：`status=error|quarantined` 且 `last_error_at` 已持续超过
 `DASHBOARD_RUNPOD_AUTOSCALER_FAULT_RESTART_SECONDS`（默认 300）时，提交
 `restart --slot NN --execute`；`control_state=disabled|draining` 且 worker 仍健康 `idle|running`
-时，提交 `enable --slot NN --execute`。RunPod `restart` 底层会先 disabled、调用 RunPod 原生
+时，提交 `enable --slot NN --execute`。成功的 Dashboard `delete` operation 会按
+`DASHBOARD_RUNPOD_AUTOSCALER_HEARTBEAT_MAX_AGE_SECONDS` 建立同 agent 的短期删除墓碑；墓碑有效期内即使
+Central 仍返回新鲜的 `disabled + idle|running` 残留 heartbeat，也必须保持
+`hold: deleted runpod worker heartbeat awaiting expiry`，不得自动 enable。其它未删除的暂停 RunPod
+仍可正常进入恢复候选，手动或 autoscaler 删除都遵循该边界。RunPod `restart` 底层会先 disabled、调用 RunPod 原生
 restart、等待健康 heartbeat，再恢复 enabled 接单。本地 worker 只参与容量保底，不会被 autoscaler
 启停。autoscaler 必须拿到 Redis leader lease 才执行 mutation；拿不到 Redis/leader 或系统快照失败时
 只记录 hold/error。管理弹窗的 `/api/runpod/autoscaler` 与 `/api/runpod/autoscaler/control`
 可查看 `scale_up: estimated non-low-trust clear time ...`、`restart: runpod fault persisted ...`、
 `enable: runpod paused worker available`、`replace: previous runpod bootstrap timed out ...`、
 `hold: runpod add still bootstrapping Ns`、`hold: no non-low-trust backlog`、`hold: no backlog`、`hold: max runpod capacity reached`、
-`hold: profile autoscaler paused`、`hold: minimum lifetime remaining Ns` 等决策并紧急暂停/恢复。
+`hold: profile autoscaler paused`、`hold: minimum lifetime remaining Ns`、
+`hold: deleted runpod worker heartbeat awaiting expiry` 等决策并紧急暂停/恢复。
 
 `down` 删除已有 Pod 的 preflight 只做 RunPod key、Pod 列表、reconcile 与 Central health 检查，不渲染 create pod request，因此不会因缺少 `RUNPOD_IMAGE_NAME_I2I_PRO` / `RUNPOD_IMAGE_NAME_SCAIL2` / `RUNPOD_IMAGE_NAME_LTX_VIDEO` 这类创建镜像配置而阻断删除；`up` / `add` / `render` / `canary` 仍必须具备目标 profile 的正式镜像与模型配置。
 
