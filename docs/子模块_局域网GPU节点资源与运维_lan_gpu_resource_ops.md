@@ -99,7 +99,9 @@ GPU pool 相关环境变量只描述 Worker Agent 的观测和期望能力，不
 
 Controller 已补 `runtime-plan` / `runtime-render` dry-run 入口与 runtime schema。`gpu-226` 已在 2026-07-05 通过 `gpu-226-gpu0-image_to_video` LAN AIO slot 回切承接 image_to_video，`gpu-226-gpu0-scail2` 保留同卡回切候选；旧 host-service `cloud_prod_worker_01` disabled/stopped，宿主机 `8188` 只作手工回滚元数据。`gpu-002` 已完成第一阶段生产 AIO 接管，GPU0 SCAIL-2 和 GPU1 PornMaster Flux2 edit 都必须在 fleet 配置中声明后才进入 fleet/operator 当前态管理；`gpu-177` 已通过 `scripts/lan_aio_fleet_prod_ops.py` 整机进入 `prod_enabled`。`gpu-252` GPU0/GPU1 当前分别由 `gpu-252-gpu0-i2i_pro` `8192` 与 `gpu-252-gpu1-i2i_pro` `8191` 承接 `i2i_pro,t2i-pornmaster-turbo,face_swap`，并固定各自 UUID；旧 GPU1 PornMaster/SCAIL-2/Wan22 槽位仍 maintenance-disabled。
 
-LAN AIO 当前态、候选和缓存状态不再在本文维护静态 slot 表。先读 `ops/gpu_pool_controller/config/lan_aio_fleet_state.yml`，再跑 `python scripts/lan_aio_fleet_prod_ops.py list --include-disabled` 和 `status --include-disabled` 做 live 仲裁；若 state 与 live 冲突，停止 mutation 并先收口 drift。
+LAN AIO 当前态、候选和缓存状态不在本文或 Git 维护静态 slot 表。先读 `${XDG_STATE_HOME:-~/.local/state}/allbot/lan-aio/current.yml`，再跑 `python scripts/lan_aio_fleet_prod_ops.py list --include-disabled` 和 `status --include-disabled`；只有 live、ledger、Git catalog 三方一致且没有未完成 operation 才允许 mutation。确认 drift 后用带原因的 `state-reconcile --execute` 收口，禁止静默覆盖。
+
+fleet helper 的普通切换只允许事务化 `takeover`，异常恢复只允许精确 `recover`；`drain-legacy/stop-old/start-disabled/rollback` 仍是内部 phase 名称，但不再允许单独 `--execute`。下文若描述这些名称，均表示 takeover 内部顺序，不是独立操作入口。
 
 每个 slot 必须先 `preflight`、准备目标镜像、预拉或加载镜像、`start-disabled` 验收 disabled heartbeat，最后才小窗口 `enable-aio`。`preflight` 的 legacy `/system_stats` 与 `/queue` 对刚重启的 ComfyUI 会短重试，只有连续失败才阻断切换；镜像门禁接受目标节点已配置 Docker insecure registry、目标镜像已存在，或本地主 runner 已有同 tag 镜像可通过 `docker save | ssh docker load` 流式加载。`preflight` 还会检查 host port 的 Docker published owner，只允许当前目标容器或声明的 `old_runtime_container` 占用；若同卡残留旧 prod/canary 容器占用端口，必须先人工确认队列、agent 与容器归属，再清理残留容器后重试。禁止一次性接管整台节点或跨节点批量启用。新增候选不由 Dashboard 直接写生产配置，先用 `scripts/lan_aio_fleet_prod_ops.py candidate-plan --node-id <node> --profile <profile> --replace-slot <current-slot>` 生成 YAML patch、渲染摘要和预检命令，审阅并提交 `lan_aio_prod_slots.yml` 后再由本地主 AI operator/CLI 执行后续管理。
 
@@ -236,8 +238,8 @@ ComfyUI 实例：
 
 运维边界：
 
-- 日常先读 `ops/gpu_pool_controller/config/lan_aio_fleet_state.yml`，再跑 `python scripts/lan_aio_fleet_prod_ops.py status --include-disabled` 仲裁当前态；不要只凭本文容器表判断哪张卡当前接单。
-- 当前态、回切候选、缓存 marker 与 blocked 原因由 `lan_aio_fleet_state.yml` 维护；2026-07-02 校准后 GPU0 当前为 `wan22_video_v2`，GPU1 当前为 `ltx_video`，SCAIL-2 是同卡回切候选，GPU1 `image_to_video` 与 `wan22_video_v2` 都因 32GB status 137 标为 blocked。
+- 日常先读本地主 XDG `current.yml`，再跑 `python scripts/lan_aio_fleet_prod_ops.py status --include-disabled` 仲裁当前态；不要只凭本文容器表或 Git catalog 判断哪张卡当前接单。
+- 当前 profile、缓存 marker、最近验证与 operation 审计由 XDG ledger/history 维护；稳定 OOM/维护阻断仍留在 Git catalog 并通过 PR 解除。普通切换不再产生仓库 diff。
 - 日常只通过 `scripts/lan_aio_fleet_prod_ops.py` 操作目标 slot；旧 `comfy0/comfy1` 和 `cloud-prod-comfy-agent-2/3` 不再存在，不得按旧回滚链路操作。
 - LAN AIO compose 渲染 `restart: unless-stopped`，并由 entrypoint 监管 ComfyUI、relay 与 agent；任一关键进程退出时容器会退出，让 Docker restart policy 拉起干净进程树，避免“agent 心跳仍在但本地 ComfyUI 已死”的半活状态。
 - 不要对 gpu-177 执行 `rollback --slot ... --execute`；旧 runtime 已删除，恢复只能走 AIO restart/recreate 或外部容量兜底。
@@ -360,7 +362,7 @@ LAN RunPod 化一体容器试点：
 - 受控入口为 `scripts/lan_runpod_aio_canary.sh`；默认 dry-run，`--execute` 才会复制 compose/env 到 `allbot-gpu-002` 或修改 agent control。
 - heartbeat-only 阶段必须保持临时 agent control 为 `disabled`。真实 canary 窗口才临时 disable `cloud_worker_test_06` 并 enable 临时 agent；结束后恢复 `cloud_worker_test_06`、disable 临时 agent、停止 canary 容器。
 
-Dashboard 不再提供生产 `LAN AIO 管理` slot 面板，也不再暴露 profile/slot 列表、候选切换、恢复、巡检或 warm-cache API。Dashboard 只从 `/api/system/workers` 展示 LAN AIO worker 状态和当前任务，并在 Worker 卡片保留 `暂停/开启/重启` 基础操作；后端只允许 `disable-aio|enable-aio|restart-aio`。slot/candidate 管理、`render`、`preflight`、`pull-image`、`warm-cache`、`takeover`、`recover`、retarget 与 live/container/cache/control 巡检都回到本地主 AI operator/CLI，通过 `scripts/lan_aio_fleet_prod_ops.py` 和 fleet state/catalog 执行。
+Dashboard 不再提供生产 `LAN AIO 管理` slot 面板，也不再暴露 profile/slot 列表、候选切换、恢复、巡检或 warm-cache API。Dashboard 只从 `/api/system/workers` 展示 LAN AIO worker 状态和当前任务，并在 Worker 卡片保留 `暂停/开启/重启` 基础操作；后端只检查 catalog 稳定阻断，本地主 helper 再以 ledger/live 确认该 agent 是 current。slot/candidate 管理、`render`、`preflight`、`pull-image`、`warm-cache`、`takeover`、`recover`、retarget 与巡检都通过 `scripts/lan_aio_fleet_prod_ops.py`、Git catalog 和 XDG state ledger 执行。
 
 生产灰度入口为 `scripts/lan_runpod_aio_prod_canary.sh`，只允许 gpu-002 固定映射：slot0 `cloud_prod_worker_06 -> lan_aio_prod_gpu002_gpu0_img2img_lora_01`，端口 `8190`；slot1 `cloud_prod_worker_07 -> lan_aio_prod_gpu002_gpu1_image_to_video_01`，端口 `8191`。生产灰度必须使用 `--environment cloud-prod` 渲染出的 compose，写入 `user-data-prod`，并在启动前确认 compose 不含 `cloud-test` / `user-data-test`。首次拉取 LAN mirror 前需要维护窗口配置 Docker insecure registry `192.168.1.115:5000`，该操作会重启 Docker，必须先将 `cloud_prod_worker_06/07` 置为 `draining` 并等 `8188/8189` 队列清空。heartbeat-only 成功标准不是容器健康，而是 Central 能看到临时 agent 在 `disabled` control 下无 `current_task_type` 且 status 非 `running`，并携带 `node_id=gpu-002`、`provider=lan_ssh`、`runtime_profile`、`pool_managed=true`；Central 若残留旧 `current_task_id` 但 worker 已 `idle` 且无 `current_task_type`，不视为正在运行。缺任一项都应视为镜像或 remote_workers bundle 不可控，不能进入 `enable-canary`。helper 只使用 profile 镜像中烘焙的 `remote_workers` revision，并拒绝宿主机源码挂载；模型仍按 manifest 同步到 `/workspace/ComfyUI/models`，slot1 `image_to_video` 启动后还必须从宿主机 `/data/comfy/inst1/custom_nodes/ComfyUI_Fill-Nodes/nodes/cache/rife_models/rife49.pth`（或共享模型 fallback `/data/comfy/models/upscale_models/rife49.pth`）预置到 AIO 内 `ComfyUI_Fill-Nodes` 与 `ComfyUI-Frame-Interpolation` 两处 RIFE 缓存路径，不能在正式任务后处理阶段访问 HuggingFace。达到目标接单数后先 `drain-temp --execute`，再等任务终态并 `restore --execute`。
 

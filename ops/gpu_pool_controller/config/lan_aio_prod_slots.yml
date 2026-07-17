@@ -1,3 +1,8 @@
+version: 2
+# In catalog v2, enabled/phase/retargetable and old-runtime pointers below are
+# compatibility metadata only. Live current/previous runtime comes from the
+# local XDG state ledger. Only blocked_* / maintenance_disabled phases remain
+# mutation policy; ordinary profile switches never rewrite this file.
 slots:
   - id: gpu-177-gpu0-image_to_video
     enabled: false

@@ -8,7 +8,10 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from ops.gpu_pool_controller.lan_aio_prod import load_lan_aio_prod_slots
+from ops.gpu_pool_controller.lan_aio_prod import (
+    load_lan_aio_prod_slots,
+    slot_mutation_blocked,
+)
 from ops.gpu_pool_controller.runpod_profile_catalog import (
     RUNPOD_ADMIN_PROFILE_OPTIONS,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
@@ -409,12 +412,12 @@ class RunPodAdminCommandBuilder:
         normalized_agent_id = str(agent_id or "").strip()
         for slot in load_lan_aio_prod_slots(include_disabled=True).values():
             if slot.agent_id == normalized_agent_id:
-                if not slot.enabled:
+                if slot_mutation_blocked(slot):
                     raise HTTPException(
                         status_code=422,
                         detail=(
-                            "LAN AIO slot is not enabled for Dashboard restart: "
-                            f"{slot.id}"
+                            "LAN AIO slot is blocked by catalog policy: "
+                            f"{slot.id} phase={slot.phase}"
                         ),
                     )
                 return slot
