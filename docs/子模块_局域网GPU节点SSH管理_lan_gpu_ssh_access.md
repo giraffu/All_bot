@@ -84,7 +84,7 @@ ssh gpu-252
 | :--- | :--- | :--- | :--- | :--- |
 | `allbot-gpu-226` | `192.168.1.226` | `ubantu` | `8188` | `cloud_prod_worker_01` |
 | `allbot-gpu-177` | `192.168.1.177` | `ubantui` | AIO `8190`、`8191`；旧 `8188`/`8189` 已退役删除 | `lan_aio_prod_gpu177_gpu0_image_to_video_01`、`lan_aio_prod_gpu177_gpu1_ltx_video_01` |
-| `allbot-gpu-252` | `192.168.1.252` | `user` | AIO `8192` 固定健康 UUID 承载 `i2i_pro`；AIO `8191` 固定返修 UUID 承载 PornMaster Flux2 edit；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu252_gpu0_i2i_pro_01`、`lan_aio_prod_gpu252_gpu1_pornmaster_flux2_edit_01`；SCAIL-2/Wan22 仍由其它 LAN/RunPod 兜底 |
+| `allbot-gpu-252` | `192.168.1.252` | `user` | AIO `8192`/`8191` 分别固定两张卡 UUID，均承载 `i2i_pro`；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu252_gpu0_i2i_pro_01`、`lan_aio_prod_gpu252_gpu1_i2i_pro_01`；历史 SCAIL-2/Wan22 槽位仍禁用 |
 | `allbot-gpu-002` | `192.168.1.2` | `chuzeyu` | AIO `8190`、`8191`；旧 `8188`/`8189` stopped rollback | `lan_aio_prod_gpu002_gpu0_scail2_01`、`lan_aio_prod_gpu002_gpu1_image_to_video_01` |
 
 当前 4 台节点均可用 key-based SSH 登录；`sudo -n true` 均不通过，表示不是免密 sudo。需要 root 级操作时，必须由人工确认远端 sudo 密码或在维护窗口内操作。
@@ -147,11 +147,11 @@ done
 | `http://192.168.1.177:8190` | `0.21.1` | `2.11.0+cu128` | AIO `wan22_video_v2`，`--disable-dynamic-vram` |
 | `http://192.168.1.177:8191` | `0.19.5` | `2.11.0+cu128` | AIO `ltx_video` |
 | `http://192.168.1.252:8192` | `0.17.0` | `2.11.0+cu128` | AIO `i2i_pro/t2i-pornmaster-turbo/face_swap`，Docker device UUID `GPU-09b7ea85-23df-a9b8-19d9-703534e47666` |
-| `http://192.168.1.252:8191` | `0.17.0` | `2.11.0+cu128` | AIO `pornmaster_flux2_edit`，返修 UUID `GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e` 只按低负载图片编辑计入本地容量 |
+| `http://192.168.1.252:8191` | `0.21.1` | `2.11.0+cu128` | AIO `i2i_pro/t2i-pornmaster-turbo/face_swap`，RMA replacement UUID `GPU-8153a439-e3f6-8922-039d-dc13e97da6d7` |
 | `http://192.168.1.2:8190` | `0.25.0` | `2.11.0+cu128` | AIO SCAIL-2 |
 | `http://192.168.1.2:8191` | `0.21.1` | `2.11.0+cu128` | AIO `image_to_video` |
 
-旧 `192.168.1.177:8188/8189` 已在 2026-06-20 随 gpu-177 旧本地回滚链路退役删除；`192.168.1.252:8188/8189` 和 `192.168.1.2:8188/8189` 仍只作为 stopped rollback baseline 或旧 runtime 口径保留。日常健康检查优先使用上表 AIO 端口。2026-07-04 `gpu-252` 返修卡回装后 host GPU index 发生漂移：生产 `8192` 必须按 `gpu_device_id` 固定健康卡 UUID `GPU-09b7ea85-23df-a9b8-19d9-703534e47666`；返修 UUID `GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e` 只允许 `8191` PornMaster Flux2 edit 低负载正式接单，SCAIL-2/Wan22 仍不得直接接正式队列。
+旧 `192.168.1.177:8188/8189` 已在 2026-06-20 随 gpu-177 旧本地回滚链路退役删除；`192.168.1.252:8188/8189` 和 `192.168.1.2:8188/8189` 仍只作为 stopped rollback baseline 或旧 runtime 口径保留。日常健康检查优先使用上表 AIO 端口。`gpu-252` 生产 `8192` 固定 UUID `GPU-09b7ea85-23df-a9b8-19d9-703534e47666`，生产 `8191` 固定 RMA replacement UUID `GPU-8153a439-e3f6-8922-039d-dc13e97da6d7`；禁止按易漂移 host index 操作。旧 UUID 的 SCAIL-2/Wan22 槽位仍不得接正式队列。
 
 ## 7. 权限与安全边界
 
