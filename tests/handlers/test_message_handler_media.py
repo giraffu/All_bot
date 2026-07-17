@@ -163,6 +163,25 @@ async def test_handle_media_entry_forwards_unsupported_message_and_handlers():
 
 
 @pytest.mark.asyncio
+async def test_handle_photo_idle_uses_latest_runtime_menu(monkeypatch):
+    reply = AsyncMock()
+    keyboard_builder = AsyncMock(return_value="runtime-keyboard")
+    monkeypatch.setattr(message_handler_media, "robust_reply_text", reply)
+    monkeypatch.setattr(
+        message_handler_media,
+        "get_runtime_main_menu_keyboard",
+        keyboard_builder,
+    )
+    update = SimpleNamespace(message=SimpleNamespace())
+    context = SimpleNamespace(lang="zh", user_data={})
+
+    await message_handler_media.handle_photo_idle(update, context)
+
+    keyboard_builder.assert_awaited_once_with("zh")
+    assert reply.await_args.kwargs["reply_markup"] == "runtime-keyboard"
+
+
+@pytest.mark.asyncio
 async def test_handle_template_contribution_saves_upload_and_updates_counter(
     monkeypatch,
 ):

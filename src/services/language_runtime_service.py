@@ -17,10 +17,14 @@ def normalize_supported_language_code(language_code: str | None) -> str:
     return normalized if normalized in {"zh", "en"} else "zh"
 
 
-async def _read_cached_language_code(*, telegram_user_id: int, redis_client_obj) -> str | None:
+async def _read_cached_language_code(
+    *, telegram_user_id: int, redis_client_obj
+) -> str | None:
     if not redis_client_obj or not redis_client_obj.redis:
         return None
-    current_lang = await redis_client_obj.redis.get(f"allbot:user_lang:tg:{telegram_user_id}")
+    current_lang = await redis_client_obj.redis.get(
+        f"allbot:user_lang:tg:{telegram_user_id}"
+    )
     if current_lang:
         return current_lang.decode("utf-8")
     return None
@@ -37,7 +41,9 @@ async def _persist_language_code(
         return
     await redis_client_obj.redis.set(f"allbot:user_lang:{internal_user_id}", new_lang)
     if telegram_user_id is not None:
-        await redis_client_obj.redis.set(f"allbot:user_lang:tg:{telegram_user_id}", new_lang)
+        await redis_client_obj.redis.set(
+            f"allbot:user_lang:tg:{telegram_user_id}", new_lang
+        )
 
 
 async def persist_user_language_preference(
@@ -103,10 +109,6 @@ async def toggle_user_language_runtime(
         from src.i18n.translator import I18nTranslator
 
         translator_factory = I18nTranslator
-    if keyboard_builder is None:
-        from src.i18n.keyboards import get_main_menu_keyboard
-
-        keyboard_builder = get_main_menu_keyboard
     if redis_client_obj is None:
         from src.services.redis_client import redis_client as _redis_client
 
@@ -141,9 +143,16 @@ async def toggle_user_language_runtime(
         new_lang=new_lang,
         redis_client_obj=redis_client_obj,
     )
+    if keyboard_builder is None:
+        from src.services.main_bot_menu_runtime import get_runtime_main_menu_keyboard
+
+        reply_markup = await get_runtime_main_menu_keyboard(new_lang)
+    else:
+        reply_markup = keyboard_builder(new_lang)
+
     return LanguageToggleRuntimeResult(
         new_lang=new_lang,
         internal_user_id=internal_user.id,
         translator=translator_factory(new_lang),
-        reply_markup=keyboard_builder(new_lang),
+        reply_markup=reply_markup,
     )

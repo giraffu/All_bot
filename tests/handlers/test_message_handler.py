@@ -65,8 +65,8 @@ async def test_handle_prompt_uses_edited_message_for_private_fallback(monkeypatc
         raising=False,
     )
     monkeypatch.setattr(
-        "src.i18n.keyboards.get_main_menu_keyboard",
-        lambda _lang: "fake-keyboard",
+        "src.handlers.message_handler_common.get_runtime_main_menu_keyboard",
+        AsyncMock(return_value="fake-keyboard"),
     )
 
     update = _build_private_update_with_edited_message()
@@ -87,7 +87,12 @@ async def test_handle_prompt_uses_edited_message_for_private_fallback(monkeypatc
     ("text", "route_key", "keyboard_attr", "expected_text"),
     [
         ("主菜单", "menu.main_menu", "get_main_menu_keyboard", "system.back_to_main"),
-        ("图片换脸", "menu.photo_edit", "get_photo_edit_keyboard", "system.photo_edit_hint"),
+        (
+            "图片换脸",
+            "menu.photo_edit",
+            "get_photo_edit_keyboard",
+            "system.photo_edit_hint",
+        ),
     ],
 )
 async def test_handle_prompt_route_uses_edited_message_reply_target(
@@ -150,7 +155,9 @@ async def test_handle_share_displays_affiliate_balance_semantics(monkeypatch):
     assert "历史累计返佣：*$ 9.99 USDT*" in sent_text
     assert "已兑换返佣：*$ 1.11 USDT*" in sent_text
     assert "当前可兑换余额：*$ 8.88 USDT*" in sent_text
-    assert "返佣说明：历史累计返佣用于展示成绩；当前可兑换余额才会随兑换减少" in sent_text
+    assert (
+        "返佣说明：历史累计返佣用于展示成绩；当前可兑换余额才会随兑换减少" in sent_text
+    )
     assert reply_mock.await_args.kwargs["reply_markup"] == "share-keyboard"
 
 
@@ -255,7 +262,8 @@ async def test_menu_handlers_delegate_to_reply_with_built_payload(
         build_payload=getattr(message_handler, build_payload_name),
         **(
             {"context": context}
-            if build_payload_name in {
+            if build_payload_name
+            in {
                 "build_photo_edit_payload",
                 "build_back_to_main_payload",
                 "build_lazy_bot_payload",
@@ -293,7 +301,10 @@ def test_migrated_lazy_text_routes_point_to_lazy_bot_handler():
         "qqcc.menu.ai_filter",
         "qqcc.menu.quick_faceswap",
     ):
-        assert message_handler.prompt_routes[route_key] is message_handler.handle_lazy_bot_menu
+        assert (
+            message_handler.prompt_routes[route_key]
+            is message_handler.handle_lazy_bot_menu
+        )
 
 
 @pytest.mark.asyncio
@@ -325,7 +336,9 @@ async def test_dispatch_built_menu_handler_rewards_user_before_reply(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_dispatch_built_menu_handler_short_circuits_when_reward_user_missing(monkeypatch):
+async def test_dispatch_built_menu_handler_short_circuits_when_reward_user_missing(
+    monkeypatch,
+):
     reply_with_payload = AsyncMock(return_value=None)
     ensure_reward = AsyncMock(return_value=None)
     update = _build_private_update_with_edited_message(text="图片换脸")
