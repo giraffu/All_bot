@@ -120,7 +120,7 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 1. 确认用户确实要求正式发布或生产热修。
 2. 确认目标 service 存在，并确定是否涉及 Alembic、shared env、worker workflow 或跨服务契约；同时记录本次维护意图：用户未指示则为“开启”，用户当次明确要求时才为“不开启”。
 3. 对精确 SHA 运行 `release.py plan --env prod --track control-plane`，再运行只读 `preflight`，检查自动影响集合、维护等级、migration、Pages canonical/自动部署和控制面/Web 回滚材料；prod 报告中的 Worker 检查必须是 `skipped`。planner 判定强制 maintenance 时拒绝关闭；请求开启但发布器无法实际建立/保持维护，或请求关闭但发布器无法证明不会进入维护时，都在 mutation 前停止。
-4. 先审阅 plan/preflight 的 `risk_class/strategy/validation_mode/skipped_gates/gates`。standard 只晋级 history 中同 artifact digest 的 tested 证据；QQCC Config owner-tools auto standard，Dashboard owner-tools 与 execution auto direct，公共 Web direct 和核心 emergency 必须显式风险接受。所有正式执行仍带 `--execute --confirm-prod`，并确认计划只重建目标服务。
+4. 先审阅 plan/preflight 的 `risk_class/strategy/validation_mode/skipped_gates/gates`。standard 只晋级 history 中同 artifact digest 的 tested 证据；QQCC Config owner-tools auto standard，Dashboard owner-tools 与 execution auto direct。共享构建输入让 bundle 同时包含 Dashboard 与 QQCC Config 时，test 只过滤不可用 Dashboard 服务并继续验收 QQCC Config；过滤后没有测试目标的纯 owner-only mutation 仍拒绝。公共 Web direct 和核心 emergency 必须显式风险接受。所有正式执行仍带 `--execute --confirm-prod`，并确认计划只重建目标服务。
 5. 手工 compose、旧 QQCC 快速脚本、rsync 和现场 build 均不是紧急旁路；无法通过发布器时停下修复发布契约。
 6. 结束后核对容器 digest、OCI revision、current.json、健康检查和未触碰服务启动时间。
 

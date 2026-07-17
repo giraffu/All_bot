@@ -75,7 +75,7 @@ python scripts/test_train_release.py deploy \
   --sha <train-sha> --pr <number> --slot A --execute
 ```
 
-包装器在本地主服务器使用 `~/.local/state/allbot/test-train.lock` 排他锁并计划三个 track。默认只部署确实要求测试的 control-plane/公共 Web；QQCC Config 已有专属测试实例，按 standard 部署对应前后端，Dashboard-only 仍记录 `test-not-required` 且不修改共享测试站；test-execution 只有显式 `--with-test-execution` 才部署。`gpu-execution` 只报告计划，正式 GPU profile 走对应 operator。
+包装器在本地主服务器使用 `~/.local/state/allbot/test-train.lock` 排他锁并计划三个 track。默认只部署确实要求测试的 control-plane/公共 Web；QQCC Config 已有专属测试实例，按 standard 部署对应前后端，Dashboard-only 仍记录 `test-not-required` 且不修改共享测试站。若同一不可变 bundle 因共享构建输入同时包含 Dashboard 与 QQCC Config artifact，测试门禁先过滤测试环境不存在的 Dashboard 服务，再部署并验收仍可用的 QQCC Config 目标；只有过滤后没有任何测试目标时才按 owner-only 拒绝 mutation。test-execution 只有显式 `--with-test-execution` 才部署。`gpu-execution` 只报告计划，正式 GPU profile 走对应 operator。
 
 schema v2 的远端事务和发布合约都按 track 隔离：journal/staged state 使用 `transactions/<track>/<sha>`，云 Compose 的非敏感合约使用 `/var/lib/allbot/releases/<track>/<sha>/release.env`，Worker host 使用 `release-env/<track>/<sha>/release.env`。Worker preflight 从同一 track-scoped 路径读取上一版本回滚材料；若该轨没有任何 cloud service，则跳过 cloud preflight，不要求不会生成的云端合约。云端控制面回滚到 track 隔离上线前的历史 SHA 时，预检与失败恢复优先读取 track-scoped 合约，缺失后可读取同 SHA 的 legacy `/var/lib/allbot/releases/<sha>/release.env`；候选正向部署仍只写 track-scoped 路径。同一 candidate 先后部署 control-plane 与 test-execution 时，后一轨不得覆盖前一轨的镜像变量或回滚输入。
 
