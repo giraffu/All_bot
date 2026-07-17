@@ -315,7 +315,7 @@ describe('QqccBotSettings', () => {
       options: {
         video_engines: [
           { value: 'image_to_video', supports_lora: true },
-          { value: 'wan22_video_v2', supports_lora: false },
+          { value: 'wan22_video_v2', supports_lora: true },
         ],
         draw_engines: [
           { value: 'free_edit', supports_lora: true },
@@ -323,8 +323,12 @@ describe('QqccBotSettings', () => {
           { value: 'free_edit_v3', supports_lora: false },
         ],
         video_lora_models: [
-          { value: '', label: '无' },
-          { value: 'BreastGrow', label: '巨乳膨胀' },
+          { value: 'BreastGrow', label: '巨乳膨胀', default_strength: 0.7 },
+          { value: 'BreastInsertion', label: '乳交', default_strength: 0.8 },
+          { value: 'Cum', label: '颜射', default_strength: 1 },
+          { value: 'Cunilingus', label: '舔阴', default_strength: 0.9 },
+          { value: 'Footjob', label: '足交', default_strength: 1.4 },
+          { value: 'Insertion', label: '插入优化', default_strength: 1 },
         ],
         image_lora_models: [
           { value: '', label: '无' },
@@ -678,6 +682,8 @@ describe('QqccBotSettings', () => {
         duration: '10s',
         engine: 'image_to_video',
         lora_name: 'BreastGrow',
+        lora_strength: 0.7,
+        lora_items: [{ name: 'BreastGrow', strength: 0.7 }],
         end_frame_draw_scene_id: '',
       },
     ])
@@ -1003,7 +1009,7 @@ describe('QqccBotSettings', () => {
     expect(payload.filter_scenes).toHaveLength(6)
   })
 
-  it('configures a video scene model and clears lora when v2 is selected', async () => {
+  it('keeps five adjustable video LoRAs when switching to v2', async () => {
     const wrapper = mountSettings()
     await flushPromises()
 
@@ -1011,6 +1017,18 @@ describe('QqccBotSettings', () => {
     expect(wrapper.get('[data-testid="scene-model-modal"]').text()).toContain('模型配置')
     expect(wrapper.find('[data-testid="scene-end-frame-select"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="scene-postprocess-select"]').exists()).toBe(false)
+    const selector = wrapper.findAllComponents(SelectStub)
+      .find(component => component.attributes('data-testid') === 'scene-video-lora-select')
+    if (!selector) throw new Error('Missing video LoRA selector')
+    expect(selector.attributes('show-search')).toBeDefined()
+    expect(selector.attributes('option-filter-prop')).toBe('label')
+    selector.vm.$emit('change', [
+      'BreastGrow', 'BreastInsertion', 'Cum', 'Cunilingus', 'Footjob', 'Insertion',
+    ])
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid^="scene-video-lora-strength-"]')).toHaveLength(5)
+    wrapper.get('[data-testid="scene-video-lora-strength-BreastInsertion"]')
+      .setValue(1.25)
     await wrapper.get('[data-testid="scene-engine-select"]').setValue('wan22_video_v2')
     await wrapper.get('[data-testid="scene-config-confirm"]').trigger('click')
     await wrapper.findAll('button').at(1)!.trigger('click')
@@ -1018,7 +1036,15 @@ describe('QqccBotSettings', () => {
 
     const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
     expect(payload.video_scenes[0].engine).toBe('wan22_video_v2')
-    expect(payload.video_scenes[0].lora_name).toBe('')
+    expect(payload.video_scenes[0].lora_name).toBe('BreastGrow')
+    expect(payload.video_scenes[0].lora_strength).toBe(0.7)
+    expect(payload.video_scenes[0].lora_items).toEqual([
+      { name: 'BreastGrow', strength: 0.7 },
+      { name: 'BreastInsertion', strength: 1.25 },
+      { name: 'Cum', strength: 1 },
+      { name: 'Cunilingus', strength: 0.9 },
+      { name: 'Footjob', strength: 1.4 },
+    ])
   })
 
   it('saves AI video negative prompt and up to three LTX LoRAs with strengths', async () => {

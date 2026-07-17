@@ -230,6 +230,7 @@ class APIClient:
         length: int = 5,
         extract_last_frame: bool = True,
         priority: int = 0,
+        lora_items: list[dict[str, Any]] | None = None,
     ) -> str:
         """
         Submit image_to_video task.
@@ -250,6 +251,7 @@ class APIClient:
             length=length,
             priority=priority,
             lora_name=lora_name or "",
+            lora_items=lora_items,
             width=width,
             height=height,
             extract_last_frame=extract_last_frame,
@@ -722,6 +724,9 @@ class APIClient:
         wan22_model_profile: str = "",
         length: int = 5,
         priority: int = 0,
+        lora_name: str | None = None,
+        lora_strength: float | None = None,
+        lora_items: list[dict[str, Any]] | None = None,
     ) -> str:
         return await self._submit_wan22_aio_video_task(
             endpoint=WAN22_VIDEO_V2_ENDPOINT,
@@ -736,6 +741,9 @@ class APIClient:
             wan22_model_profile=wan22_model_profile,
             length=length,
             priority=priority,
+            lora_name=lora_name,
+            lora_strength=lora_strength,
+            lora_items=lora_items,
         )
 
     @async_retry(max_retries=3)
@@ -803,6 +811,8 @@ class APIClient:
         length: int,
         priority: int,
         lora_name: str | None = None,
+        lora_strength: float | None = None,
+        lora_items: list[dict[str, Any]] | None = None,
         width: int | None = None,
         height: int | None = None,
         extract_last_frame: bool | None = None,
@@ -822,6 +832,10 @@ class APIClient:
             data["end_image"] = end_image_path
         if lora_name is not None:
             data["lora_name"] = lora_name
+        if lora_strength is not None:
+            data["lora_strength"] = lora_strength
+        if lora_items:
+            data["lora_items"] = lora_items
         if width is not None:
             data["width"] = width
         if height is not None:

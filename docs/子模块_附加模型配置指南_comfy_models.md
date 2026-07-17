@@ -161,8 +161,8 @@ LAN AIO 镜像入口为 `remote_workers/docker/runpod_profiles/pornmaster_flux2_
 
 QQCC 独立配置 Web 的 `video_scenes` / `draw_scenes` / `filter_scenes` 可以为每个场景选择底层 engine 和附加模型。该配置仍保存在 `runtime_checkpoints.qqcc_lazy_bot_config:v1`，不会新增 workflow、RunPod profile、模型 bundle 或 Alembic 迁移。
 
-- `AI动图` 默认 engine 为旧 `image_to_video`，不选模型时提交 `custom_video`，选择 `VIDEO_LORA_MODELS` 中的模型时提交 `video_lora` 并透传 `lora_name`。底层仍走旧图生视频 profile 与 `Wan22AioV82.json`，由 `workflow_task_patchers.py` 注入高噪/低噪双 LoRA 节点；视频场景 `negative_prompt` 透传到 Wan22 负向文本节点 `2371.value`。
-- `AI动图` 切到 `wan22_video_v2` 时提交 `wan22_video_v2`，使用视频场景提示词、负面提示词、后台固定时长和用户画质选择；负面提示词为空时保持 Wan22 现有默认负向归一。v2 本轮不支持附加模型，配置归一化与前端弹窗都必须自动清空 `lora_name`。
+- `AI动图` 的 `image_to_video` 与 `wan22_video_v2` 都接受最多 5 个有序 `{name,strength}`。QQCC Config options 从 `src/wan22_explicit_lora_catalog.py` 返回 49 个稳定键、编号中文标签与推荐强度；推荐值取本地 registry 同条目 High/Low 建议的较低者，以适配一个强度同时驱动两阶段。旧 `lora_name/lora_strength` 与七个旧键自动迁移并镜像首项。Vue 复用 AI视频的多选/逐项强度交互、支持搜索，切换 engine 不清空。
+- 本地与远端 `workflow_task_patchers.py` 提交前清空节点 `26`/`18` 的全部旧 LoRA 槽，再按顺序解析 `wan22_explicit_NNN` 到 `wan2.2/explicit_top200/...` 下真实 High/Low 文件并写入 `lora_1..5`；未知/旧键继续使用 `{name}_high_noise.safetensors` / `{name}_low_noise.safetensors` 兼容，空列表保持所有槽位为空。本地 bundle 已核对 49 High + 49 Low；LAN/R2 manifest 组装会把 `wan22_explicit_lora_library/2026-07-18` 合入 Wan22 AIO union，并确认全部 98 个 `loras/wan2.2/explicit_top200/...` 文件同时进入旧图生视频与 v2 split。v2 manifest `2026-07-18-lora5` 仍须在 R2 对象齐备并逐对象 HEAD 后才能发布或切换运行时。
 - `AI动图` 可选 `end_frame_draw_scene_id` 引用当前有效 `AI绘图` 场景生成尾帧。若该绘图场景配置了 `postprocess_draw_scene_id` 后处理链、终止 `postprocess_filter_scene_id` 滤镜后处理或 `original_face_swap_enabled` 原图换脸，运行时使用完整链路最终图作为尾帧。用户仍只上传起始图；QQCC Bot 先隐藏提交被引用绘图/滤镜链，每步使用该场景自身 `negative_prompt`，成功后把用户原图和最终尾帧作为两张输入提交视频；最终视频仍只使用视频场景自身 `negative_prompt`。旧 `custom_video` / `video_lora` 透传两张图并写 `use_end_frame=true`，`wan22_video_v2` 透传 `images=[start,end]`；不新增 workflow、profile 或模型 bundle。
 - `AI视频` 使用独立 `ai_video_scenes`，底层首版固定 `ltx_video`。配置层 LoRA 结构是最多 3 个 `{path,strength}`，强度 `0.1..2.0`、步长 `0.05`；提交边界转换成 LTX 既有 `{name,strength}`。无尾帧引用走 I2V，有引用时复用同一绘图链生成尾帧后走 FLF2V。配置选项必须由 `build_qqcc_config_options()` 返回 LTX engine/catalog，前端不硬编码模型清单。
 - QQCC `AI视频` 的可选 LoRA 不等同于公开高级视频目录。公开入口继续只读取 `src/lora_catalog.py:LTX_VIDEO_LORA_OPTIONS`；QQCC Config 专用扩展目录位于 `src/qqcc_ltx_lora_catalog.py`，由 `qqcc_config_service` 独占用于选项下发、保存白名单和推荐强度。2026-07-17 专用目录接入本机 `ltx23_explicit_lora_library/2026-07-17` 的 32 个已校验权重（其中 26 个不在公开目录），不得把它们合并回公共 catalog、主 Bot 或公共 Web。权重在本机模型仓库可用不代表 RunPod/LAN AIO manifest 已发布；正式生效仍需把相同相对路径同步到目标 LTX runtime 并完成单 LoRA smoke。
@@ -171,7 +171,7 @@ QQCC 独立配置 Web 的 `video_scenes` / `draw_scenes` / `filter_scenes` 可�
 - `AI绘图` 的 `postprocess_draw_scene_id` 只链式复用其它 `draw_scenes` 的既有 engine/LoRA/negative_prompt 配置；`postprocess_filter_scene_id` 只复用 `filter_scenes` 作为终止后处理模板。两者互斥，若同时有效则保留绘图后处理；该能力不新增 task type、workflow、profile 或模型 bundle，链路循环必须在配置归一化时清理。
 - `AI滤镜` 使用 `filter_scenes`，默认不种子化场景。滤镜场景的 `free_edit_v2` / `free_edit` engine、`negative_prompt`、LoRA 和 `original_face_swap_enabled` 规则与 AI绘图一致，但自身不支持继续配置后处理链；直接入口是单步 `filter` 链，AI绘图引用滤镜时是终止后处理。关闭 `main_buttons.ai_filter` 只隐藏直接入口，不影响有效滤镜模板被 AI绘图引用。
 - `AI绘图` 的 `original_face_swap_enabled` 是每个 `draw_scenes[]` 的布尔开关，缺省为 `false`。开启后该步先完成自身绘图，再用用户最初上传原图做人脸来源、该步输出图做 body 调用 `face_swap_v2`；内部换脸不传负面提示词，每个开启步骤额外计费 `2` 灵石。该能力复用 V2 执行面和受信任 Bot 内部 `cost_override`，不新增 workflow、模型 bundle 或数据库表；最终可见结果仍按原 QQCC AI绘图场景归类。QQCC 快速换脸不走此链，继续使用 `face_swap` V1。
-- 独立 QQCC Config Backend 的 `GET /api/qqcc/config` 必须返回非持久化 `options`，把 engine 选项和 `src/lora_catalog.py` 中的 LoRA catalog 下发给前端；前端不得手写模型清单，避免和运行时 catalog 漂移。
+- 独立 QQCC Config Backend 的 `GET /api/qqcc/config` 必须返回非持久化 `options`，视频多选读取 QQCC 专用 catalog；主 Bot 与公共 Web 继续使用既有公开目录和单模型交互，不得被 QQCC 配置扩展。
 
 ---
 

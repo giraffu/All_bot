@@ -2014,6 +2014,7 @@ async def test_process_generation_task_delegates_video_modes_to_image_to_video_e
         reply_markup=None,
         lora_name="BreastGrow",
         lora_strength=1.0,
+        lora_items=None,
         allow_contribute=True,
         source_post_id=None,
         base_priority=0,

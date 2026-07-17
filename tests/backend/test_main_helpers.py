@@ -17,6 +17,8 @@ from app.models import (
     Scail2ActionTransferLongRequest,
     Scail2VideoRequest,
     TaskType,
+    VideoLoraRequest,
+    Wan22VideoV2Request,
 )
 
 
@@ -460,6 +462,22 @@ def test_simple_task_route_specs_cover_expected_paths_and_handlers():
         "pornmaster_flux2_multi_edit_bf16",
         "create_pornmaster_flux2_multi_edit_bf16_task",
     )
+
+
+@pytest.mark.parametrize("request_type", [VideoLoraRequest, Wan22VideoV2Request])
+def test_wan22_request_models_accept_at_most_five_lora_items(request_type):
+    common = {"task_id": "task-1", "image": "input.png", "prompt": "move"}
+    five = [
+        {"name": f"model-{index}", "strength": 0.5 + index * 0.1}
+        for index in range(5)
+    ]
+
+    assert len(request_type(**common, lora_items=five).lora_items or []) == 5
+    with pytest.raises(ValidationError):
+        request_type(
+            **common,
+            lora_items=five + [{"name": "model-6", "strength": 1.0}],
+        )
 
 
 def test_simple_task_routes_are_registered_with_stable_endpoint_names():

@@ -42,6 +42,7 @@ def split_wan22_aio_manifest(
         files,
         lambda rel: (
             rel in COMMON_RELATIVE_PATHS
+            or rel.startswith("loras/")
             or _contains_marker(rel, WAN22_VIDEO_V2_MARKERS)
         ),
     )
@@ -224,7 +225,11 @@ def _build_split_manifest(
     return {
         "bundle": profile,
         "profile": profile,
-        "version": "2026-06-13-test",
+        "version": (
+            "2026-07-18-lora5"
+            if profile == "wan22_video_v2"
+            else "2026-06-13-test"
+        ),
         "prefix": prefix,
         "source": {
             "split_from": source_manifest.get("bundle") or "wan22_aio_video",

@@ -11,6 +11,7 @@ from src.domain_config.wan22_aio_video import (
     normalize_wan22_video_v2_duration_seconds,
     normalize_wan22_video_v2_negative_prompt,
     normalize_wan22_video_v2_resolution_preset,
+    normalize_wan22_lora_items,
     resolve_wan22_aio_video_profile,
 )
 from src.services.permission_service import permission_service
@@ -47,6 +48,7 @@ def _build_wan22_aio_inputs(
     use_end_frame: bool,
     lora_name: str | None,
     lora_strength: float | None,
+    lora_items: list[dict[str, Any]] | None,
 ) -> dict[str, Any]:
     if _is_legacy_profile(profile):
         return build_task_inputs(
@@ -60,6 +62,7 @@ def _build_wan22_aio_inputs(
             wan22_model_profile=profile.model_profile,
             lora_name=lora_name,
             lora_strength=lora_strength,
+            lora_items=lora_items,
             extract_last_frame=True,
         )
 
@@ -74,6 +77,9 @@ def _build_wan22_aio_inputs(
         wan22_model_profile=profile.model_profile,
         upscale=False,
         extract_last_frame=True,
+        lora_name=lora_name,
+        lora_strength=lora_strength,
+        lora_items=lora_items,
     )
 
 
@@ -103,6 +109,7 @@ async def process_wan22_aio_video_generation_task(
     reply_markup: Any = None,
     lora_name: str | None = None,
     lora_strength: float | None = None,
+    lora_items: list[dict[str, Any]] | None = None,
     allow_contribute: bool = True,
     source_post_id: Optional[int] = None,
     display_mode_name_override: str | None = None,
@@ -126,8 +133,18 @@ async def process_wan22_aio_video_generation_task(
     use_end_frame_value = (
         bool(use_end_frame) if use_end_frame is not None else len(images) > 1
     )
-    normalized_lora_name = str(lora_name or "").strip() if profile.allow_lora else ""
-    normalized_lora_strength = lora_strength if lora_strength is not None else 1.0
+    normalized_lora_items = (
+        normalize_wan22_lora_items(
+            lora_items,
+            lora_name=lora_name,
+            lora_strength=lora_strength,
+        )
+        if profile.allow_lora
+        else []
+    )
+    first_lora = normalized_lora_items[0] if normalized_lora_items else None
+    normalized_lora_name = str(first_lora["name"]) if first_lora else ""
+    normalized_lora_strength = float(first_lora["strength"]) if first_lora else 1.0
     final_result_meta = build_wan22_aio_video_result_meta(
         profile=profile,
         resolution_preset=normalized_resolution_preset,
@@ -138,6 +155,7 @@ async def process_wan22_aio_video_generation_task(
         chain_task_ids=wan22_chain_task_ids,
         lora_name=normalized_lora_name,
         lora_strength=normalized_lora_strength,
+        lora_items=normalized_lora_items,
     )
     if isinstance(result_meta, dict):
         final_result_meta.update(result_meta)
@@ -160,6 +178,7 @@ async def process_wan22_aio_video_generation_task(
         use_end_frame=use_end_frame_value,
         lora_name=normalized_lora_name or None,
         lora_strength=normalized_lora_strength,
+        lora_items=normalized_lora_items,
     )
 
     if _is_legacy_profile(profile):
