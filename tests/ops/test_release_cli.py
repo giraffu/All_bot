@@ -3607,15 +3607,23 @@ def test_independent_module_rejects_changed_pinned_contract_snapshot(monkeypatch
         ("qqcc-config", {"qqcc-config-backend", "qqcc-config-frontend"}),
     ],
 )
-def test_reviewed_qqcc_ltx_catalog_contract_keeps_independent_releases_target_only(
+def test_reviewed_qqcc_lora_catalog_contract_keeps_independent_releases_target_only(
     monkeypatch, module_name, artifacts
 ):
     module = _load_module()
     policy = module.load_structured_file(POLICY_PATH)
     changed_paths = [
         "src/qqcc_ltx_lora_catalog.py",
+        "src/qqcc_video_lora_catalog.py",
         "src/services/qqcc_config_service.py",
+        "src/wan22_explicit_lora_catalog.py",
     ]
+    blocker = next(
+        item
+        for item in policy["independent_release_blockers"]
+        if item["name"] == "qqcc-runtime-config-contract"
+    )
+    assert set(changed_paths) <= set(blocker["patterns"])
     contents = {
         path: (ROOT / path).read_text(encoding="utf-8")
         for path in changed_paths
