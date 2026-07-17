@@ -201,6 +201,7 @@ async def process_and_submit_task(
     )
     await ensure_submission_concurrency_lock(
         user_id=user_id,
+        task_type=task_type,
         check_lock=check_lock,
         dependencies=dependencies,
         idempotency_key=concurrency_idempotency_key,

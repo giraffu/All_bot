@@ -73,21 +73,24 @@ def build_prepared_task_submission_request(
 async def ensure_submission_concurrency_lock(
     *,
     user_id: int,
+    task_type: str,
     check_lock: bool,
     dependencies: TaskCoreProcessDependencies,
     idempotency_key: str | None = None,
 ) -> None:
     if not check_lock:
         return
-    kwargs = (
-        {"idempotency_key": idempotency_key}
-        if idempotency_key
-        and _supports_keyword_argument(
-            dependencies.check_concurrency_lock_func,
-            "idempotency_key",
-        )
-        else {}
-    )
+    kwargs = {}
+    if idempotency_key and _supports_keyword_argument(
+        dependencies.check_concurrency_lock_func,
+        "idempotency_key",
+    ):
+        kwargs["idempotency_key"] = idempotency_key
+    if _supports_keyword_argument(
+        dependencies.check_concurrency_lock_func,
+        "task_type",
+    ):
+        kwargs["task_type"] = task_type
     can_run, err = await dependencies.check_concurrency_lock_func(
         user_id,
         **kwargs,

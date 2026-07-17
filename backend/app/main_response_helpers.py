@@ -10,6 +10,8 @@ from fastapi.responses import FileResponse
 
 from app.models import SystemStatusResponse, SystemWorkersResponse, TaskStatusResponse
 from minio import Minio
+from src.core.task_execution_types import resolve_worker_execution_task_type
+from src.domain_config.worker_pool_registry import iter_worker_pool_profiles
 
 SYSTEM_STATUS_CACHE_TTL_SECONDS = float(
     os.getenv("SYSTEM_STATUS_CACHE_TTL_SECONDS", "10.0")
@@ -256,6 +258,77 @@ def _build_worker_control_counts(workers: list[dict[str, Any]]) -> dict[str, int
     return workers_by_control_state
 
 
+def _normalized_queue_counts(queue_by_type: dict[str, Any]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for raw_task_type, raw_count in queue_by_type.items():
+        task_type = resolve_worker_execution_task_type(raw_task_type)
+        counts[task_type] = counts.get(task_type, 0) + int(raw_count or 0)
+    return counts
+
+
+def _worker_supported_task_types(worker: dict[str, Any]) -> set[str]:
+    return {
+        resolve_worker_execution_task_type(raw_task_type)
+        for raw_task_type in str(worker.get("types") or "").split(",")
+        if raw_task_type.strip()
+    }
+
+
+def _worker_is_accepting(worker: dict[str, Any]) -> bool:
+    return (
+        str(worker.get("status") or "").strip().lower() in {"idle", "running"}
+        and str(worker.get("control_state") or "enabled").strip().lower()
+        == "enabled"
+    )
+
+
+def _worker_is_runpod(worker: dict[str, Any]) -> bool:
+    return (
+        str(worker.get("provider") or "").strip().lower() == "runpod"
+        or str(worker.get("agent_id") or "").startswith("runpod_prod_")
+    )
+
+
+def _build_queue_pressure_by_worker_profile(
+    *,
+    queue_by_type: dict[str, Any],
+    workers: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    queue_counts = _normalized_queue_counts(queue_by_type)
+    accepting_workers = [worker for worker in workers if _worker_is_accepting(worker)]
+    worker_task_types = {
+        id(worker): _worker_supported_task_types(worker)
+        for worker in accepting_workers
+    }
+    pressure: dict[str, dict[str, Any]] = {}
+
+    for profile in iter_worker_pool_profiles():
+        profile_task_types = set(profile.supported_task_types)
+        supporting_workers = [
+            worker
+            for worker in accepting_workers
+            if str(worker.get("runtime_profile") or "").strip() == profile.name
+            or bool(worker_task_types[id(worker)] & profile_task_types)
+        ]
+        accepting_runpod_worker_count = sum(
+            1 for worker in supporting_workers if _worker_is_runpod(worker)
+        )
+        pressure[profile.name] = {
+            "supported_task_types": list(profile.supported_task_types),
+            "pending_count": sum(
+                queue_counts.get(task_type, 0)
+                for task_type in profile.supported_task_types
+            ),
+            "accepting_worker_count": len(supporting_workers),
+            "accepting_runpod_worker_count": accepting_runpod_worker_count,
+            "accepting_local_worker_count": (
+                len(supporting_workers) - accepting_runpod_worker_count
+            ),
+        }
+
+    return pressure
+
+
 async def _get_system_status_snapshot(queue_manager) -> dict[str, Any]:
     async def collect_queue_type_details() -> dict[str, dict[str, Any]]:
         get_details = getattr(queue_manager, "get_queue_metrics_by_type_details", None)
@@ -287,6 +360,12 @@ async def _get_system_status_snapshot(queue_manager) -> dict[str, Any]:
             "queue_size": queue_size,
             "queue_by_type": dict(queue_by_type),
             "queue_by_type_details": queue_by_type_details,
+            "queue_pressure_by_worker_profile": (
+                _build_queue_pressure_by_worker_profile(
+                    queue_by_type=dict(queue_by_type),
+                    workers=workers,
+                )
+            ),
             "active_workers": len(workers),
             "healthy_workers": healthy_workers,
             "accepting_workers": accepting_workers,
