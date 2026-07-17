@@ -305,8 +305,7 @@ class TestTrainCoordinator:
             ]
             if not affected:
                 control_is_non_runtime = (
-                    control_plan.get("level") == "none"
-                    and not control_plan.get("artifacts")
+                    not control_plan.get("artifacts")
                     and not control_plan.get("services")
                 )
                 deferred_tracks = [
