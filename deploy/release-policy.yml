@@ -36,7 +36,8 @@
     "deploy/docker-compose-cloud-test.overlay.yml": "2aabca24efedf0742a99a7752c57641c49fdbcd2956c571cb337d4634e2f21fc",
     "deploy/docker-compose-cloud-test.yml": "9afab323fd5f051f661e2385bf9b65f34635ee437dff274f9bfd83080809159d",
     "deploy/env.schema.yml": "b0c50b3f41d21b580ae187658b39660470dff1b279ccc957ff76f593613de6e0",
-    "src/services/qqcc_config_service.py": "96957b35b4f5dcc298466b3257dcdf01268c8a4c7d8879d6a6db8d1f339ba7db"
+    "src/qqcc_ltx_lora_catalog.py": "d6d80204e349b678d764ad8106027b4844dc84a1febe4c86dfe1c6572873da20",
+    "src/services/qqcc_config_service.py": "5f261bce783821407ddf84962605fbc74700c0561535bf787c28f76e625a909f"
   },
   "independent_release_blockers": [
     {
@@ -58,7 +59,10 @@
     },
     {
       "name": "qqcc-runtime-config-contract",
-      "patterns": ["src/services/qqcc_config_service.py"],
+      "patterns": [
+        "src/qqcc_ltx_lora_catalog.py",
+        "src/services/qqcc_config_service.py"
+      ],
       "modules": ["qqcc-bot", "qqcc-config"]
     }
   ],

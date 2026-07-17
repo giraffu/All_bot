@@ -264,7 +264,7 @@ scripts/release.py plan --env prod --track control-plane --sha <40-char-sha> \
 
 同一参数必须复用于 `preflight` 和带 `--execute --confirm-prod` 的 `deploy`。发布后确认 `cloud-qqcc-config-backend-prod`、`cloud-qqcc-config-frontend-prod` running/healthy，并确认非目标服务启动时间未变化；`current.json` 中两个目标 artifact 更新为本次 `source_sha`，其它 artifact 保持原版本。
 
-QQCC Bot 与 QQCC Config Web 不能塞进同一个“独立模块”事务。若两者只是互不依赖的改动，应按两个事务分别 plan/preflight/deploy；若涉及共享配置契约，则退出独立模式，让普通 planner 计算完整闭包。以下旧式混选会 fail closed：
+QQCC Bot 与 QQCC Config Web 不能塞进同一个“独立模块”事务。若两者只是互不依赖的改动，应按两个事务分别 plan/preflight/deploy；若涉及共享配置契约，默认退出独立模式，让普通 planner 计算完整闭包。内容 SHA256 固定的已审计 owner-only snapshot 是唯一例外：当前 QQCC 后台独占 LTX 目录仅当 `src/qqcc_ltx_lora_catalog.py` 与 `src/services/qqcc_config_service.py` 都精确匹配 `deploy/release-policy.yml` 的 snapshot 时，允许继续拆成 `qqcc-config` 两服务和 `qqcc-bot` 单服务两个事务；任一文件内容变化都会重新 fail closed。以下旧式混选始终会 fail closed：
 
 ```bash
 scripts/release.py plan --env prod --track control-plane --sha <40-char-sha> \
