@@ -6,6 +6,7 @@ import httpx
 import pytest
 from fastapi import HTTPException
 
+from src.circuit_breaker import CircuitBreakerOpenException
 from src.database.models import History
 from src.database import core as db_core
 from src.web_api.routers import tasks as tasks_router
@@ -118,7 +119,7 @@ class _FakeStatusResponse:
                 request=None,
                 response=fake_response,
             )
-            
+
     def json(self):
         return self._payload
 
@@ -322,6 +323,73 @@ async def test_get_task_status_payload_running_drops_queue_and_progress():
     }
     assert "progress" not in payload
     assert "queue_pos" not in payload
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "central_error",
+    [
+        CircuitBreakerOpenException("Circuit is open"),
+        httpx.ReadTimeout("", request=httpx.Request("GET", "http://central/status")),
+    ],
+)
+async def test_get_task_status_payload_degrades_active_task_when_central_unavailable(
+    central_error,
+):
+    payload = await task_runtime_api_service.get_task_status_payload_for_user(
+        task_id="registry-1",
+        user_id=123,
+        session_factory=_session_factory(None),
+        get_owned_active_task_func=AsyncMock(
+            return_value={
+                "user_id": 123,
+                "backend_task_id": "backend-1",
+                "task_type": "custom_video",
+            }
+        ),
+        get_task_status_func=AsyncMock(side_effect=central_error),
+    )
+
+    assert payload == {
+        "status": "running",
+        "task_id": "registry-1",
+        "task_type": "custom_video",
+        "media_type": "video",
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_task_status_payload_prefers_history_during_central_outage():
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="registry-1",
+        type="custom_video",
+        output_file="bot-data/history/registry-1/output.mp4",
+    )
+
+    payload = await task_runtime_api_service.get_task_status_payload_for_user(
+        task_id="registry-1",
+        user_id=123,
+        session_factory=_session_factory(history),
+        get_owned_active_task_func=AsyncMock(
+            return_value={
+                "user_id": 123,
+                "backend_task_id": "backend-1",
+                "task_type": "custom_video",
+            }
+        ),
+        get_task_status_func=AsyncMock(
+            side_effect=CircuitBreakerOpenException("Circuit is open")
+        ),
+    )
+
+    assert payload == {
+        "status": "success",
+        "task_id": "registry-1",
+        "task_type": "custom_video",
+        "media_type": "video",
+    }
 
 
 @pytest.mark.asyncio

@@ -313,6 +313,7 @@ dispatcher 下游通常会继续经过：
 - 当前 simple route 仍可能映射到 legacy `TaskType`，但 `txt2img` 已和其他任务一样通过标准 simple route 提交，并显式携带上游 `task_id`
 - `image_service.py` / `api_client.py` 只负责把统一语义下沉到 Central API，不再由 `txt2img` 单独生成 backend task id
 - `api_client.py` 的 HTTP circuit breaker 按请求类别隔离：任务提交走 `submit`，状态轮询走 `status`，媒体下载走 `media`，系统状态检查继续跳过 breaker。HTTP 4xx 不计入 breaker 失败，网络错误、超时和 5xx 才计入；Central Redis transient 503 会被上游忙碌识别处理，不应让状态轮询拖垮提交链路。
+- Web 粗状态接口只在 active registry 已确认任务归属后调用 Central。Central 状态查询出现传输错误、超时或 `status` breaker 打开时，接口按 registry 中的 `backend_task_id`、`status` 与公开 `task_type` 返回保守的 `pending/running` 粗状态，不向用户放大为 HTTP 500；已有 History 时仍以 History 终态为准。Central 404 继续表示本次查询无状态，并且和其它 HTTP 4xx 一样不计入 breaker。相关错误日志必须保留 `error_type`，避免 `ReadTimeout` 等空字符串异常无法辨认。
 - Wan22 AIO 视频的稳定配置入口是 `src.domain_config.wan22_aio_video`。旧 `src.services.wan22_video_v2_config` / `src.services.wan22_video_v2_context` 兼容 re-export 已删除，不应作为新增逻辑的事实源。
 - `custom_video` / `video_lora`、Telegram 懒人动图 mode 与 `wan22_video_v2` 是不同用户功能入口，但底层由 `Wan22AioVideoStrategy` 与共享 submit helper 收口：公开类型继续写历史和展示，执行面类型用于 Central API / Worker 路由。
 
@@ -478,7 +479,7 @@ Worker 拉到任务后会先处理输入：
 - `face_swap_v2` 使用 `i2i_pro` 的 Flux2/edit 节点与模型，去掉旧换脸专用 LoRA / DifferentialDiffusion；`mappings.json` 对 V1/V2 都只写入 `face_image -> 2`、`body_image -> 3`。i2i_pro Worker 仅声明 V2；旧 `face_swap` 继续读取 `face_swap.json`，正式启用容量由 `worker_remote_02` 保持，不修改其环境、workflow 或模型。
 - `mappings.json` 决定输入参数如何映射到 workflow 节点
 - `workflow_patcher.py` 负责把运行时参数打进具体 workflow
-- `image_to_video`、legacy `video_insert` / `video_edit` 与 `wan22_video_v2` 当前共用 `Wan22AioV82.json`，由 `_patch_wan22_aio_workflow(...)` 统一 patch。旧入口与懒人动图通过 `legacy_image_to_video` profile 注入主模型；旧 `video_lora` 会把 `{lora_name}_high_noise.safetensors` / `{lora_name}_low_noise.safetensors` 写入工作流 LoRA 槽，v2 始终清空额外 LoRA 槽。
+- `image_to_video`、legacy `video_insert` / `video_edit` 与 `wan22_video_v2` 共用 `Wan22AioV82.json`。Wan22 请求优先读取最多 5 个 `{name,strength}`，无列表时兼容 `lora_name/lora_strength`；patcher 清空旧槽后按序写入节点 `26`/`18` 的高/低噪双文件。主 Bot 仍保持既有单模型入口，QQCC 官方/私有场景可配置 5 项；v2 使用相同注入规则。
 - 对 `image_to_video` / `video_insert` / `video_edit` 这类共享 workflow 的 alias，`TASK_TYPE_WORKFLOW_FILENAMES`、`mappings.json` 和 `TASK_SPECIFIC_PATCHERS` 必须同轮更新，并同步 `workers/` 与 `remote_workers/`。只让挂载目录里的 workflow/mapping 先生效、但容器镜像中的 `workflow_task_patchers.py` 仍是旧版，会出现“读到新 `Wan22AioV82.json` 但仍按旧 patcher 提交”的半更新状态，典型表现是 ComfyUI `/prompt` 400、`LoadImage` 还在读取模板占位文件。
 - V82 在 `2603` 最终帧序列后接 `265` 插帧；默认使用 `FL_RIFE` (`multiplier=4`)。patcher 检测到 `265` 后会把 `28` 视频输出、`2575` 帧数统计和 `2607` 尾帧提取都指向 `["265", 0]`，避免运行时覆盖导致插帧失效。历史生产 worker3 / `192.168.1.177:8189` 的 `FL_RIFE` 修复已随 gpu-177 旧链路退役；gpu-177 GPU0 AIO `8190` 当前按 `image_to_video` profile 渲染，gpu-177 GPU1 Wan22 v2 在 2026-07-01 正确切换后首单 OOM（status 137）并标记 `blocked_oom_32gb`，`wan22_video_v2` 需要使用 RunPod 或 48GB+ LAN 容量。所有 Wan22 AIO 容量都必须由 AIO 镜像/manifest 提供 RIFE 缓存。
 - Wan22 AIO 的 `5s/8s/10s` 时长最终由 worker patcher 写入 `2578.inputs.value`，再经 workflow 内部帧数公式得到 `81/129/161` 源帧；计费和 result meta 使用同一份 `src.domain_config.wan22_aio_video` duration 归一化。

@@ -1362,6 +1362,12 @@ async def test_wan22_video_v2_submit_task_normalizes_optional_end_frame(monkeypa
             "negative_prompt": "blurry",
             "saved_input_images": ["demo/start.png", "demo/end.png"],
             "use_end_frame": True,
+            "lora_name": "BreastGrow",
+            "lora_strength": 0.75,
+            "lora_items": [
+                {"name": "BreastGrow", "strength": 0.75},
+                {"name": "Footjob", "strength": 1.4},
+            ],
         },
         priority=5,
     )
@@ -1378,6 +1384,12 @@ async def test_wan22_video_v2_submit_task_normalizes_optional_end_frame(monkeypa
         wan22_model_profile="wan22_video_v2",
         length=5,
         priority=5,
+        lora_name="BreastGrow",
+        lora_strength=0.75,
+        lora_items=[
+            {"name": "BreastGrow", "strength": 0.75},
+            {"name": "Footjob", "strength": 1.4},
+        ],
     )
 
 

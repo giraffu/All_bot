@@ -37,7 +37,9 @@
     "deploy/docker-compose-cloud-test.yml": "9afab323fd5f051f661e2385bf9b65f34635ee437dff274f9bfd83080809159d",
     "deploy/env.schema.yml": "b0c50b3f41d21b580ae187658b39660470dff1b279ccc957ff76f593613de6e0",
     "src/qqcc_ltx_lora_catalog.py": "d6d80204e349b678d764ad8106027b4844dc84a1febe4c86dfe1c6572873da20",
-    "src/services/qqcc_config_service.py": "5f261bce783821407ddf84962605fbc74700c0561535bf787c28f76e625a909f"
+    "src/qqcc_video_lora_catalog.py": "d019e33ce2978290f969473d5d43065a2a4ee825213b93c7c8264c94189816ae",
+    "src/services/qqcc_config_service.py": "533912ec7030390ed14f4e82d647f2ca0a4fd9fa3a787c385dadfffc7f2fa3c7",
+    "src/wan22_explicit_lora_catalog.py": "aa8cccb89214890d317121f724cddf2ebc8bee63d94fa907290c0829fe4e53b1"
   },
   "independent_release_blockers": [
     {
@@ -61,7 +63,9 @@
       "name": "qqcc-runtime-config-contract",
       "patterns": [
         "src/qqcc_ltx_lora_catalog.py",
-        "src/services/qqcc_config_service.py"
+        "src/qqcc_video_lora_catalog.py",
+        "src/services/qqcc_config_service.py",
+        "src/wan22_explicit_lora_catalog.py"
       ],
       "modules": ["qqcc-bot", "qqcc-config"]
     }

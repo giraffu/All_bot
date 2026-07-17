@@ -435,7 +435,12 @@ def build_quick_video_submission_plan(
         if mode == MODE_WAN22_VIDEO_V2
         else QuickVideoSubmissionKind.LEGACY_VIDEO
     )
-    lora_name = "" if mode == MODE_WAN22_VIDEO_V2 else str(scene.get("lora_name") or "")
+    lora_items = [
+        {"name": item.get("name"), "strength": item.get("strength")}
+        for item in (scene.get("lora_items") or [])
+        if isinstance(item, dict) and item.get("name")
+    ]
+    lora_name = str(scene.get("lora_name") or "")
     scene_id = str(scene.get("id") or "").strip()
     display_mode_name = str(scene.get("name") or "")
 
@@ -459,6 +464,7 @@ def build_quick_video_submission_plan(
             display_mode_name=display_mode_name,
         ),
         lora_name=lora_name,
+        lora_items=lora_items,
         tail_draw_chain=tail_draw_chain,
     )
 
@@ -551,6 +557,7 @@ async def run_quick_video_submission_plan(
                         "result_meta": plan.result_meta,
                         "resolution": plan.resolution,
                         "duration": plan.duration,
+                        "lora_items": plan.lora_items,
                         **continuation_controls,
                     },
                 }
@@ -570,6 +577,7 @@ async def run_quick_video_submission_plan(
                         "display_mode_name_override": plan.display_mode_name,
                         "result_meta": plan.result_meta,
                         "lora_name": plan.lora_name,
+                        "lora_items": plan.lora_items,
                         "use_end_frame": True,
                         "cleanup": True,
                         "send_result": True,
@@ -693,6 +701,7 @@ async def run_quick_video_submission_plan(
                 status_msg_id=status_msg_id,
                 resolution=plan.resolution,
                 duration=plan.duration,
+                lora_items=plan.lora_items or None,
             )
         )
         return
@@ -708,6 +717,7 @@ async def run_quick_video_submission_plan(
             display_mode_name_override=plan.display_mode_name,
             result_meta=plan.result_meta,
             lora_name=plan.lora_name,
+            lora_items=plan.lora_items or None,
             image_path=image_path,
             cleanup=True,
             allow_contribute=plan.allow_contribute,
@@ -819,6 +829,7 @@ async def _run_tail_frame_video_plan(
                     status_msg_id=status_msg_id,
                     resolution=plan.resolution,
                     duration=plan.duration,
+                    lora_items=plan.lora_items or None,
                     base_priority=QQCC_CHAIN_CONTINUATION_BASE_PRIORITY,
                     allow_cancel=False,
                     user_cancel_allowed=False,
@@ -838,6 +849,7 @@ async def _run_tail_frame_video_plan(
                 display_mode_name_override=plan.display_mode_name,
                 result_meta=plan.result_meta,
                 lora_name=plan.lora_name,
+                lora_items=plan.lora_items or None,
                 image_path=image_path,
                 end_image_path=end_image_path,
                 use_end_frame=True,

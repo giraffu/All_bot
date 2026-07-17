@@ -18,6 +18,7 @@ from src.services.qqcc_config_service import (
     VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
     VIDEO_SCENE_ID_PATTERN,
 )
+from src.qqcc_video_lora_catalog import normalize_qqcc_video_lora_items
 from src.services.qqcc_demo_media_service import (
     build_qqcc_demo_preview_url,
     upload_qqcc_demo_media,
@@ -147,15 +148,22 @@ async def _submit_scene(
         )
 
     duration = int(str(scene.get("duration") or "5s").removesuffix("s"))
+    video_lora_items = normalize_qqcc_video_lora_items(
+        scene.get("lora_items"),
+        legacy_name=scene.get("lora_name"),
+        legacy_strength=scene.get("lora_strength"),
+    )
     if engine == VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2:
         return await image_service_instance.submit_wan22_video_v2_task(
             task_id, prompt, input_key, negative_prompt=negative,
             resolution_preset="512p", length=duration, priority=0,
+            lora_items=video_lora_items or None,
         )
     return await image_service_instance.submit_image_to_video_task(
         task_id, prompt, input_key, lora_name,
         negative_prompt=negative, resolution_preset="512p",
         width=512, height=512, length=duration, priority=0,
+        lora_items=video_lora_items or None,
     )
 
 

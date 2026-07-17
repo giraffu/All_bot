@@ -308,12 +308,13 @@ async def test_request_open_status_breaker_does_not_block_submit_key(monkeypatch
     assert calls == [("POST", "http://central/comfy_img2img")]
 
 
-def test_central_api_circuit_failure_classifier_counts_5xx_not_4xx():
+@pytest.mark.parametrize("status_code", [400, 404])
+def test_central_api_circuit_failure_classifier_counts_5xx_not_4xx(status_code):
     request = httpx.Request("GET", "http://central/status/task-1")
     client_error = httpx.HTTPStatusError(
         "bad request",
         request=request,
-        response=httpx.Response(400, request=request),
+        response=httpx.Response(status_code, request=request),
     )
     server_error = httpx.HTTPStatusError(
         "service unavailable",
@@ -329,6 +330,28 @@ def test_central_api_circuit_failure_classifier_counts_5xx_not_4xx():
         )
         is True
     )
+
+
+@pytest.mark.asyncio
+async def test_request_log_preserves_blank_transport_error_type(monkeypatch, caplog):
+    client = api_client_module.APIClient.__new__(api_client_module.APIClient)
+
+    class FailingHttpClient:
+        async def request(self, method, url, **kwargs):
+            raise httpx.ReadTimeout("", request=httpx.Request(method, url))
+
+    client.headers = {}
+    client.client = FailingHttpClient()
+
+    with caplog.at_level("ERROR", logger="src.api_client"):
+        with pytest.raises(httpx.ReadTimeout):
+            await client._request(
+                "GET",
+                "http://central/status/task-1",
+                use_circuit_breaker=False,
+            )
+
+    assert "ReadTimeout" in caplog.text
 
 
 @pytest.mark.asyncio

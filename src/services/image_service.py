@@ -110,6 +110,9 @@ class ImageService:
         wan22_model_profile: str = "",
         length: int = 5,
         priority: int = 0,
+        lora_name: str | None = None,
+        lora_strength: float | None = None,
+        lora_items: list[dict[str, Any]] | None = None,
     ) -> str:
         return await self._submit_wan22_aio_video_task(
             execution_task_type=WAN22_AIO_EXECUTION_WAN22_VIDEO_V2,
@@ -123,6 +126,9 @@ class ImageService:
             wan22_model_profile=wan22_model_profile,
             length=length,
             priority=priority,
+            lora_name=lora_name,
+            lora_strength=lora_strength,
+            lora_items=lora_items,
         )
 
     async def submit_face_video(
@@ -305,6 +311,7 @@ class ImageService:
         length: int = 5,
         extract_last_frame: bool = True,
         priority: int = 0,
+        lora_items: list[dict[str, Any]] | None = None,
     ) -> str:
         """Submit unified image_to_video task"""
         return await self._submit_wan22_aio_video_task(
@@ -323,6 +330,7 @@ class ImageService:
             length=length,
             extract_last_frame=extract_last_frame,
             priority=priority,
+            lora_items=lora_items,
         )
 
     async def _submit_wan22_aio_video_task(
@@ -340,6 +348,8 @@ class ImageService:
         length: int = 5,
         priority: int = 0,
         lora_name: str | None = None,
+        lora_strength: float | None = None,
+        lora_items: list[dict[str, Any]] | None = None,
         width: int = 512,
         height: int = 512,
         extract_last_frame: bool = True,
@@ -356,6 +366,9 @@ class ImageService:
                 wan22_model_profile=wan22_model_profile,
                 length=length,
                 priority=priority,
+                lora_name=lora_name,
+                lora_strength=lora_strength,
+                lora_items=lora_items,
             )
 
         return await api_client.submit_image_to_video_task(
@@ -373,6 +386,7 @@ class ImageService:
             length=length,
             extract_last_frame=extract_last_frame,
             priority=priority,
+            lora_items=lora_items,
         )
 
     async def submit_perfect_video_insert_task(

@@ -3,6 +3,7 @@ import logging
 import httpx
 
 from config import API_BASE
+from src.circuit_breaker import CircuitBreakerOpenException
 from src.database.core import AsyncSessionLocal
 from src.services.image_service import image_service
 from src.services.redis_client import redis_client
@@ -79,10 +80,41 @@ async def get_task_status_payload_for_user(
         if owned_active_task and owned_active_task.get("backend_task_id")
         else task_id
     )
-    status_data = await get_task_status_func(
-        runtime_task_id,
-        include_type_position=True,
-    )
+    try:
+        status_data = await get_task_status_func(
+            runtime_task_id,
+            include_type_position=True,
+        )
+    except (CircuitBreakerOpenException, httpx.RequestError) as exc:
+        if owned_history:
+            logger.info(
+                "Central status unavailable; returning persisted history "
+                "task_id=%s runtime_task_id=%s error_type=%s",
+                task_id,
+                runtime_task_id,
+                type(exc).__name__,
+            )
+            return build_history_task_status_payload(owned_history, task_id)
+        logger.warning(
+            "Central status unavailable; returning active-task fallback "
+            "task_id=%s runtime_task_id=%s error_type=%s error=%s",
+            task_id,
+            runtime_task_id,
+            type(exc).__name__,
+            exc,
+        )
+        registry_status = owned_active_task.get("status")
+        if registry_status not in {"pending", "running"}:
+            registry_status = (
+                "running" if owned_active_task.get("backend_task_id") else "pending"
+            )
+        return build_coarse_task_status_payload(
+            {
+                "status": registry_status,
+                "task_type": owned_active_task.get("task_type"),
+            },
+            task_id,
+        )
     if not status_data:
         if owned_history:
             return build_history_task_status_payload(owned_history, task_id)

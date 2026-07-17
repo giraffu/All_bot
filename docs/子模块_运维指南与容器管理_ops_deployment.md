@@ -149,6 +149,10 @@
 - 云正式 `/system/status`、管理后台 worker 监控卡顿
   - 常见根因：Central 状态观测重复扫描 Redis/Valkey、Dashboard stats 重查询、前端高频缓存击穿或 Valkey 连接抖动。
   - 处理：确认 Central 使用共享 Redis 客户端和约 10 秒观测缓存；确认 Dashboard stats 缓存未被 `_t` 参数击穿；确认 `/system/status` 和 `/system/workers` 只是观测接口，不参与任务分发。
+- 云控制面磁盘被 Docker 构建缓存或无限容器日志占用
+  - 先用 `df -hT`、`docker system df -v`、`docker buildx du` 和逐容器 HostConfig 只读核对真实占用；构建缓存的 reclaimable 数字不等于可无条件删除，仍需确认当前无 CI/发布构建使用对应 builder。
+  - 正式控制面 Compose 的所有服务必须保持 `json-file`、`max-size=50m`、`max-file=5`，并通过不可变发布重建生效。已有超大日志不会因仓库修改自动收缩；不得直接删除 `/var/lib/docker/containers` 下文件。
+  - `docker builder prune` / `docker buildx prune` 属于正式主机 mutation，必须获得当次明确授权并限定 builder/保留窗口；执行前后记录 `df` 与 builder cache 差值，不顺带 prune image、volume 或运行容器。
 - 本地 GPU 生成中“停几秒再继续”
   - 常见根因：ComfyUI 模型/LoRA 加载、显存切换、WebSocket 终态未及时返回、worker 转 `/history/{prompt_id}` 轮询收口。
   - 处理：查对应 `cloud-prod-comfy-agent-*` 日志和 ComfyUI `/system_stats`，不要直接归因为 Central 状态接口慢。

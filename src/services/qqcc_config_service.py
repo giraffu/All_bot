@@ -17,6 +17,11 @@ from src.qqcc_ltx_lora_catalog import (
     QQCC_LTX_VIDEO_LORA_DEFAULT_STRENGTHS,
     QQCC_LTX_VIDEO_LORA_MODELS,
 )
+from src.qqcc_video_lora_catalog import (
+    QQCC_VIDEO_LORA_DEFAULT_STRENGTHS,
+    QQCC_VIDEO_LORA_MODELS,
+    normalize_qqcc_video_lora_items,
+)
 from src.services.qqcc_demo_media_service import build_qqcc_demo_preview_url
 
 QQCC_LAZY_BOT_CONFIG_KEY = "qqcc_lazy_bot_config:v1"
@@ -61,8 +66,9 @@ VIDEO_SCENE_ENGINE_KEYS = (
     VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
     VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
 )
-VIDEO_SCENE_ENGINES_WITH_LORA = frozenset({VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO})
+VIDEO_SCENE_ENGINES_WITH_LORA = frozenset(VIDEO_SCENE_ENGINE_KEYS)
 VIDEO_SCENE_MAX_COUNT = 20
+VIDEO_SCENE_MAX_LORA_ITEMS = 5
 AI_VIDEO_SCENE_ENGINE_LTX_VIDEO = "ltx_video"
 AI_VIDEO_SCENE_ENGINE_KEYS = (AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,)
 AI_VIDEO_DURATION_KEYS = (5, 10, 15, 20)
@@ -184,6 +190,8 @@ def _default_video_scenes(
             "duration": "5s",
             "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
             "lora_name": "",
+            "lora_strength": 1.0,
+            "lora_items": [],
             "end_frame_draw_scene_id": "",
         }
         for scene in LEGACY_VIDEO_SCENE_DEFINITIONS
@@ -593,12 +601,13 @@ def _normalize_video_scene(
         allowed=VIDEO_SCENE_ENGINE_KEYS,
         default=VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
     )
-    lora_name = _normalize_scene_lora(
-        raw_scene.get("lora_name"),
-        engine=engine,
-        lora_catalog=VIDEO_LORA_MODELS,
-        engines_with_lora=VIDEO_SCENE_ENGINES_WITH_LORA,
+    lora_items = normalize_qqcc_video_lora_items(
+        raw_scene.get("lora_items"),
+        legacy_name=raw_scene.get("lora_name"),
+        legacy_strength=raw_scene.get("lora_strength"),
+        max_items=VIDEO_SCENE_MAX_LORA_ITEMS,
     )
+    first_lora = lora_items[0] if lora_items else None
 
     scene = {
         "id": _build_unique_scene_id(
@@ -613,7 +622,9 @@ def _normalize_video_scene(
         ),
         "duration": duration,
         "engine": engine,
-        "lora_name": lora_name,
+        "lora_name": first_lora["name"] if first_lora else "",
+        "lora_strength": first_lora["strength"] if first_lora else 1.0,
+        "lora_items": lora_items,
         "end_frame_draw_scene_id": _normalize_end_frame_draw_scene_id(
             raw_scene.get("end_frame_draw_scene_id"),
             allowed_draw_scene_ids=allowed_end_frame_draw_scene_ids,
@@ -1011,6 +1022,8 @@ def _migrate_legacy_video_scenes(raw: dict[str, Any]) -> list[dict[str, Any]]:
                 "duration": "5s",
                 "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
                 "lora_name": "",
+                "lora_strength": 1.0,
+                "lora_items": [],
                 "end_frame_draw_scene_id": "",
             }
         )
@@ -1315,7 +1328,7 @@ def build_qqcc_config_options() -> dict[str, Any]:
             },
             {
                 "value": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
-                "supports_lora": False,
+                "supports_lora": True,
             },
         ],
         "draw_engines": [
@@ -1338,7 +1351,14 @@ def build_qqcc_config_options() -> dict[str, Any]:
                 "supports_lora": True,
             }
         ],
-        "video_lora_models": _build_lora_model_options(VIDEO_LORA_MODELS),
+        "video_lora_models": [
+            {
+                "value": value,
+                "label": label,
+                "default_strength": QQCC_VIDEO_LORA_DEFAULT_STRENGTHS[value],
+            }
+            for value, label in QQCC_VIDEO_LORA_MODELS.items()
+        ],
         "image_lora_models": _build_lora_model_options(IMAGE_LORA_MODELS),
         "ltx_video_lora_models": [
             {

@@ -119,6 +119,10 @@ async def test_submit_video_demo_uses_scene_duration_prompt_and_engine():
             "negative_prompt": "blur",
             "engine": "wan22_video_v2",
             "duration": "8s",
+            "lora_items": [
+                {"name": "BreastGrow", "strength": 0.75},
+                {"name": "Footjob", "strength": 1.4},
+            ],
             "demo_input_media": {
                 "object_key": "qqcc/demo/video/kiss/input",
                 "mime_type": "image/png",
@@ -138,8 +142,56 @@ async def test_submit_video_demo_uses_scene_duration_prompt_and_engine():
         resolution_preset="512p",
         length=8,
         priority=0,
+        lora_items=[
+            {"name": "wan22_explicit_077", "strength": 0.75},
+            {"name": "wan22_explicit_040", "strength": 1.4},
+        ],
     )
 
+
+@pytest.mark.asyncio
+async def test_submit_legacy_video_demo_forwards_ordered_lora_items_and_strengths():
+    storage = FakeStorage()
+    image = Mock()
+    image.submit_image_to_video_task = AsyncMock(return_value="task-legacy-video")
+
+    await submit_qqcc_demo_generation(
+        scene_kind="video",
+        scene={
+            "id": "legacy",
+            "prompt": "move",
+            "engine": "image_to_video",
+            "duration": "5s",
+            "lora_items": [
+                {"name": "BreastGrow", "strength": 0.75},
+                {"name": "Footjob", "strength": 1.4},
+            ],
+            "demo_input_media": {
+                "object_key": "qqcc/demo/video/legacy/input",
+                "mime_type": "image/png",
+            },
+        },
+        task_id="task-legacy-video",
+        storage_service=storage,
+        image_service_instance=image,
+    )
+
+    image.submit_image_to_video_task.assert_awaited_once_with(
+        "task-legacy-video",
+        "move",
+        "qqcc/demo-generation/task-legacy-video/input.png",
+        "",
+        negative_prompt="",
+        resolution_preset="512p",
+        width=512,
+        height=512,
+        length=5,
+        priority=0,
+        lora_items=[
+            {"name": "wan22_explicit_077", "strength": 0.75},
+            {"name": "wan22_explicit_040", "strength": 1.4},
+        ],
+    )
 
 @pytest.mark.asyncio
 async def test_submit_ai_video_demo_uses_ltx_without_running_tail_chain():
