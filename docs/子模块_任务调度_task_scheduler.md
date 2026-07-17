@@ -21,6 +21,7 @@
 - `src/core/task_core_runtime.py`：双 ID 终止、best-effort cancel、并发锁与 registry 清理
 - `src/core/task_dispatcher.py`：StrategyFactory + payload/workflow 注入
 - `src/domain_config/task_type_registry.py`：任务类型只读事实表与查询 helper，记录 public type、legacy alias、execution type、Central type、workflow filename、RunPod profile、视频/Gallery/apply 与成本；当前驱动 Gallery/apply、Central simple task 映射、workflow filename facts 与一致性门禁，dispatcher 策略仍由 core 显式装配并分批迁移
+- `src/domain_config/worker_pool_registry.py`：提交准入使用的 Worker 执行池事实表，把公开/legacy 类型归一到共享容量池；不替代 RunPod autoscaler 的运维 profile 配置
 
 所有 Bot / Web 任务都应通过 facade + provider/dependencies 边界进入调度链，不应在上层直接 import 基础设施实现。
 
@@ -94,6 +95,7 @@ sequenceDiagram
 - 基于 `TaskCoreProcessDependencies` 获取策略、输入准备与计费能力
 - `task_core.py` 仅保留 facade；具体步骤继续拆到 `task_core_process_flow.py` 的 `build_prepared_task_submission_request(...)`、`prepare_task_submission_context(...)`、`execute_task_submission_attempt(...)`、`release_submission_lock_if_needed(...)`
 - 进行并发锁检查与扣费
+- 并发锁检查会把 `task_type` 传给 billing seam；低阶外门用户按目标执行池 `projected_pending > 50 × max(accepting_workers, 1)` 做扣费前准入，Central 指标缺失或任务未映射时 fail-open
 - 执行提交 Saga，写入 `registry_task_id` 并派发 `backend_task_id`
 - 提交成功后根据 `TaskSubmissionSideEffectPlan` 写入持久化 Web finalizer 或其他 side effect；默认 Web side effect 装配由 dependency 层负责，facade 不直接 import Web application 层实现
 - 提交失败时执行补偿，并在未成功提交时释放并发锁
@@ -236,6 +238,7 @@ SSE 侧当前已把运行态 not-found 收口为明确终止 / fallback 语义�
 - 正式部署前应确认生产 worker 的 `SUPPORTED_TASK_TYPES` 覆盖本次上线的执行面类型；旧图生视频与 Telegram 懒人动图新提交实际依赖 `image_to_video`；LTX 高级图生视频当前用户入口只开放单首帧与首尾帧，若未来重新开放视频配音，目标 LTX worker 必须同时声明 `ltx_video,ltx_video_flf2v,ltx_video_v2v_audio`。worker 继续声明 `video_insert` / `video_edit` 只用于兼容旧队列残留，不应再作为新增 workflow 能力方向。
 - `video_insert` / `video_edit` 不再承担独立调度语义；排障时看到这两个类型，应先按 legacy alias 归入 `image_to_video` 链路检查 dispatcher、Central queue、worker patcher 与 `Wan22AioV82.json`，不要按新任务类型补一套 strategy/workflow。
 - workflow canary 优先只在目标云测试 worker 设置 `TASK_TYPE_WORKFLOW_OVERRIDES`，确认无误后再考虑调整默认 `TASK_TYPE_WORKFLOW_FILENAMES` 或正式 compose。
+- 图片换脸按 Central 执行类型硬分流：`face_swap` 是 V1，读取 `face_swap.json`、默认扣 1 灵石，快速/随机换脸和旧 Gallery/历史重生成继续使用；`face_swap_v2` 是 V2，读取 `face_swap_v2.json`、独立调用默认扣 2 灵石，并由 `i2i_pro` profile 承接。自由P图 v3、QQCC 原脸恢复和 SCAIL-2 首帧预处理只把 V2 作为组合任务内部阶段，不得重复扣费或改变上层 History 类型。正式启用 V1 容量只保留 `worker_remote_02`；i2i_pro LAN/RunPod 候选只声明 V2，发布前必须核对实时心跳，不能根据候选 YAML 推断已经切换。
 - SCAIL-2 task type 包括 `scail2_action_transfer`、`scail2_video_replacement` 与 `scail2_face_swap_v2`；正式视频换脸走 SCAIL-2 FaceSwap v10 two-stage audio workflow，但只由 gpu-002 LAN slot0 agent `lan_aio_prod_gpu002_gpu0_scail2_01` 承接，正式 RunPod `scail2` profile 仍只接动作迁移/视频换人。SCAIL-2 第一版只开放 5s/8s，成本 40/80 灵石，不承诺长视频；非法时长应在 Web task core strategy 阶段以 400 拒绝，或在 Bot FSM 内拒绝。Bot 收参考图、驱动视频和可选正向提示词，Web prompt 也可留空；空 prompt 由 `normalize_scail2_positive_prompt(...)` 按 task type 补默认值，负面词使用默认值，驱动视频上限 40MB。云测试可由 `cloud_worker_test_08` 指向 gpu-002 LAN AIO SCAIL-2 runtime `http://192.168.1.2:8190` 接单，并通过 `CLOUD_TEST_WORKER_08_FACE_SWAP_V10_*` 先调用图片换脸 v2 runtime 生成换脸首帧；云正式 LAN worker 通过 `SCAIL2_FACE_SWAP_V10_*` 使用正式同构预处理，所有正式 SCAIL-2 输入/结果都写 `user-data-prod`，不复用测试 worker/桶。正式发布或强制 RunPod canary 前用 `scripts/cloud_prod_generation_release_gate.py` 冻结 Web/Bot 新生成，等待 pending 低于阈值 10 后只取消退款仍在 pending 的任务；running 任务不强杀。
 - 云正式 worker compose 现在包含本地 relay/sidecar 服务；更新 worker 主链或 `workers/local_relay` 时，应把 relay 与目标 worker 一起纳入测试 canary，先确认 relay `/health`、`/ready`、Central `/system/workers`、R2 上传和 `/complete` 成功链路。
 - GPU worker 自动恢复使用 `scripts/watch_cloud_worker_recovery.sh`。云测试可用 `--env cloud-test --mode execute` 做故障注入；云正式默认只运行 `--env cloud-prod --mode dry-run`。该脚本只精确恢复本地主服务器上的 relay 或单个 worker 容器，不操作 GPU 节点或 ComfyUI 容器。relay `/ready` 返回 404 表示运行版本尚未包含深度健康接口，watchdog 只记录 `relay_ready_endpoint_missing`，不通过重启来替代版本部署。

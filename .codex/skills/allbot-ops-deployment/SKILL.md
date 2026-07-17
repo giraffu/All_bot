@@ -18,7 +18,7 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 | 云正式发布、单服务热修、维护窗口 | `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`、`docs/子模块_运维指南与容器管理_ops_deployment.md` |
 | 云正式整体不可用、本地接管 | `docs/子模块_本地正式灾备切换_local_prod_fallback.md` |
 | RunPod、GPU worker、autoscaler | `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md`、`references/runpod-lan-runtime.md` |
-| LAN AIO 当前态、缓存态、候选切换、单卡 takeover/recover/restart | `allbot-lan-aio-operator`、`ops/gpu_pool_controller/config/lan_aio_fleet_state.yml`、`ops/gpu_pool_controller/config/lan_aio_prod_slots.yml` |
+| LAN AIO 当前态、缓存态、候选切换、单卡 takeover/recover/restart | `allbot-lan-aio-operator`、`${XDG_STATE_HOME:-~/.local/state}/allbot/lan-aio/current.yml`、`ops/gpu_pool_controller/config/lan_aio_prod_slots.yml` |
 | 局域网 GPU 登录、节点资源、ComfyUI | `docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md`、`docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md` |
 | cloud-prod shadow 同步、R2 shadow、完整合并桶 | `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`、`docs/子模块_系统资源与容量画像_resource_inventory.md` |
 | R2 可见热集审计、legacy 媒体补齐 | `docs/子模块_社区与存储_gallery_storage.md`、对应 `scripts/*r2* --help` |
@@ -60,7 +60,7 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 - `scripts/update_cloud_test_with_maintenance.sh`、`scripts/update_cloud_prod_with_maintenance.sh`、`scripts/update_cloud_prod_qqcc_bot.sh` 已是 fail-closed 兼容壳，任何参数都不会再同步或构建。
 - cloud-prod shadow 同步：`scripts/sync_cloud_prod_to_local_shadow.py` 默认 dry-run，真实执行必须 `--execute`。
 - RunPod 正式手动池：日常入口优先 `scripts/runpod_prod_ops.sh status|up|add|enable|disable|restart|down|scale|canary|rollback|rollout-release`。release rollout 必须传 release index/full SHA/profile/单 slot，先 disabled 验证 exact digest/heartbeat；失败恢复旧 exact image 并停止。
-- GPU/LAN AIO fleet：具体状态查看、缓存预热、候选切换、单卡 takeover/recover/restart 优先加载 `allbot-lan-aio-operator`，并通过 `scripts/lan_aio_fleet_prod_ops.py`、`lan_aio_prod_slots.yml` 与 `lan_aio_fleet_state.yml` 操作；gpu-002 SCAIL-2 正式 slot0 也必须先声明在 fleet 配置里让 operator 可见，`scripts/lan_scail2_aio_prod.sh` 仅作为 SCAIL-2 低层启动/重建/回滚工具。
+- GPU/LAN AIO fleet：具体状态查看、缓存预热、候选切换、单卡 takeover/recover/restart 优先加载 `allbot-lan-aio-operator`，并通过 `scripts/lan_aio_fleet_prod_ops.py`、Git catalog 与 XDG 本地 state ledger 操作；普通 profile 切换不写仓库。gpu-002 SCAIL-2 正式 slot0 也必须先声明在 catalog 里让 operator 可见，`scripts/lan_scail2_aio_prod.sh` 仅作为 SCAIL-2 低层启动/重建/回滚工具。
 
 ## 3. 高压红线
 
@@ -108,7 +108,7 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 - Dashboard RunPod operation 必须从 profile catalog pin 已验收的 img2img/PornMaster baked 镜像并覆盖 `/app/.env` 历史 ref；目标 tag 未发布或 baked entrypoint/revision smoke 未通过时，禁止先部署引用它的 Dashboard。PornMaster FP8/BF16 共用 runtime 镜像与 single/multiple workflow，差异由 task type、模型 manifest、GPU/`--lowvram` 和 UNet 节点替换表达。
 - Dashboard autoscaler 基于预计清空时间、profile 阈值、Redis leader lease 与 operation store 做 add/down/restart/enable；不直接操作本地 worker，不绕过 RunPod 门禁；RunPod Worker 卡片的 `锁定/解锁` 会让手动删除、autoscaler down 和 add cleanup 跳过该 worker。
 - Dashboard 成功删除 RunPod 后，operation store 的同 agent delete 记录必须在 heartbeat 新鲜窗口内充当删除墓碑；Central 残留的 `disabled + idle|running` heartbeat 不得触发自动 enable，未被删除的其它暂停 RunPod 仍可正常恢复。
-- LAN AIO 的易变运行事实不写进本 skill 正文；当前每张 GPU 运行 profile、可快速切换候选、缓存 marker、阻断原因以 `ops/gpu_pool_controller/config/lan_aio_fleet_state.yml` 为 agent 维护入口，切换前仍必须用 live status 仲裁。
+- LAN AIO 的易变运行事实不写进 Git 或本 skill 正文；当前 profile、缓存 marker、验证时间与审计写入本地主 XDG state ledger，切换前必须用 live + ledger + catalog 三方仲裁，任一 drift 都 fail closed。
 - Dashboard 不再提供 LAN AIO profile/slot 列表、候选切换、`takeover`、`recover` 或 `warm-cache` API；当前态和任务显示走 `/api/system/workers`，Worker 卡片只保留 `pause/enable/restart` 基础控制。
 - 新增 LAN AIO 候选先走 `scripts/lan_aio_fleet_prod_ops.py candidate-plan --node-id ... --profile ... --replace-slot ...` 生成 YAML patch 和校验摘要，再由 Git/YAML 事实源合入；失败现场恢复入口只允许 `recover --physical-slot <node>:gpuN --slot <slot-id> --prefer old|candidate` 这种单物理 GPU/精确 slot 范围。
 - 云正式 Dashboard 若触发 LAN AIO worker `pause/enable/restart`，不可变 prod overlay 必须固定 SSH runner，生产 env 必须提供 runner host 与 key directory，Compose 只读挂载精确私钥；本地主保留 Tailscale SSH 22 端口，已开启 linger 的用户级 systemd OpenSSH listener 默认只在 Tailscale 地址的 2222 端口为 runner 服务。发布 preflight 检查 key 可读性与 `600` 权限，并真实连接 runner 核对 helper/env 契约；任何缺项都 fail closed，禁止回退到云容器内 local helper。slot 管理 mutation 仍只由本地 AI operator/CLI 执行。

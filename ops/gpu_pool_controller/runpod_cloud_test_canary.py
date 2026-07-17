@@ -226,9 +226,9 @@ class RunPodCloudTestCanaryCaseBuilder:
             },
             {
                 "label": "face_swap_v2_from_i2i_pro",
-                "expected_central_task_type": "face_swap",
+                "expected_central_task_type": "face_swap_v2",
                 "payload": {
-                    "task_type": "face_swap",
+                    "task_type": "face_swap_v2",
                     "inputs": {
                         "images": [image_object_key, image_object_key],
                         "target_image": image_object_key,

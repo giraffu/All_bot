@@ -27,6 +27,7 @@ SIMPLE_TASK_KEYS = (
     "img2img",
     "img2img_lora",
     "face_swap",
+    "face_swap_v2",
     "video_insert",
     "video_edit",
     "image_to_video",
@@ -143,6 +144,12 @@ SIMPLE_TASK_ROUTE_SPECS = (
         "create_img2img_lora_task",
     ),
     ("/face_swap", FaceSwapRequest, "face_swap", "create_face_swap_task"),
+    (
+        "/face_swap_v2",
+        FaceSwapRequest,
+        "face_swap_v2",
+        "create_face_swap_v2_task",
+    ),
     (
         "/perfect_video_insert",
         VideoInsertRequest,

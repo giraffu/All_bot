@@ -131,17 +131,17 @@ def test_remote_worker_resolves_i2i_pro_task_type_workflow_overrides(monkeypatch
         validation.WORKFLOW_FILENAME_OVERRIDES_ENV,
         (
             '{"t2i-pornmaster-turbo":"txt2img_from_i2i_pro.json",'
-            '"face_swap":"face_swap_v2.json"}'
+            '"face_swap_v2":"face_swap_v2.json"}'
         ),
     )
 
-    assert validation.resolve_workflow_filename("face_swap") == "face_swap_v2.json"
+    assert validation.resolve_workflow_filename("face_swap_v2") == "face_swap_v2.json"
     assert (
         validation.resolve_workflow_filename("t2i-pornmaster-turbo")
         == "txt2img_from_i2i_pro.json"
     )
     mappings = validation.validate_workflow_directory(str(REMOTE_WORKFLOW_DIR))
-    assert {"face_swap", "t2i-pornmaster-turbo", "i2i_pro"}.issubset(mappings)
+    assert {"face_swap_v2", "t2i-pornmaster-turbo", "i2i_pro"}.issubset(mappings)
 
 
 @pytest.mark.parametrize("task_type", ["video_insert", "video_edit"])

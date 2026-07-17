@@ -12,12 +12,12 @@ def _make_concurrency_dependencies(
     *,
     identity: str | None,
     group: str = "筑基期",
-    queue_size: int = 0,
+    system_status: dict | None = None,
     active_tasks: int = 1,
 ):
     get_identity = AsyncMock(return_value=identity)
     get_group = AsyncMock(return_value=group)
-    get_system_status = AsyncMock(return_value={"queue_size": queue_size})
+    get_system_status = AsyncMock(return_value=system_status or {})
     increment_concurrency = AsyncMock(return_value=active_tasks)
     decrement_concurrency = AsyncMock()
 
@@ -41,12 +41,39 @@ def _make_concurrency_dependencies(
     )
 
 
+def _queue_pressure_status(
+    *,
+    profile: str = "i2i_pro",
+    pending_count: int,
+    accepting_worker_count: int,
+) -> dict:
+    return {
+        "queue_size": 999,
+        "queue_pressure_by_worker_profile": {
+            profile: {
+                "pending_count": pending_count,
+                "accepting_worker_count": accepting_worker_count,
+            }
+        },
+    }
+
+
 @pytest.mark.asyncio
-async def test_check_concurrency_lock_uses_explicit_dependencies():
+@pytest.mark.parametrize(
+    ("pending_count", "accepting_worker_count"),
+    [(50, 0), (50, 1), (100, 2)],
+)
+async def test_check_concurrency_lock_rejects_low_tier_when_projected_pool_pressure_exceeds_limit(
+    pending_count,
+    accepting_worker_count,
+):
     get_identity = AsyncMock(return_value="外门弟子")
     get_group = AsyncMock(return_value="凡人")
     get_system_status = AsyncMock(
-        return_value={"queue_size": billing_core.LOW_TIER_QUEUE_SIZE_LIMIT + 1}
+        return_value=_queue_pressure_status(
+            pending_count=pending_count,
+            accepting_worker_count=accepting_worker_count,
+        )
     )
     increment_concurrency = AsyncMock(return_value=1)
     decrement_concurrency = AsyncMock()
@@ -64,12 +91,13 @@ async def test_check_concurrency_lock_uses_explicit_dependencies():
 
     allowed, message = await billing_core.check_concurrency_lock(
         123,
+        task_type="txt2img",
         dependencies=dependencies,
     )
 
     assert allowed is False
     assert "服务器繁忙" in message
-    assert f"超过 {billing_core.LOW_TIER_QUEUE_SIZE_LIMIT} 个" in message
+    assert f"每台可接单服务器 {billing_core.LOW_TIER_PENDING_PER_WORKER_LIMIT} 个" in message
     get_identity.assert_awaited_once_with(123)
     get_group.assert_awaited_once_with(123)
     get_system_status.assert_awaited_once()
@@ -78,11 +106,21 @@ async def test_check_concurrency_lock_uses_explicit_dependencies():
 
 
 @pytest.mark.asyncio
-async def test_check_concurrency_lock_allows_low_tier_at_queue_limit():
+@pytest.mark.parametrize(
+    ("pending_count", "accepting_worker_count"),
+    [(49, 0), (49, 1), (99, 2)],
+)
+async def test_check_concurrency_lock_allows_low_tier_at_projected_pool_limit(
+    pending_count,
+    accepting_worker_count,
+):
     get_identity = AsyncMock(return_value="外门弟子")
     get_group = AsyncMock(return_value="练气期")
     get_system_status = AsyncMock(
-        return_value={"queue_size": billing_core.LOW_TIER_QUEUE_SIZE_LIMIT}
+        return_value=_queue_pressure_status(
+            pending_count=pending_count,
+            accepting_worker_count=accepting_worker_count,
+        )
     )
     increment_concurrency = AsyncMock(return_value=1)
     decrement_concurrency = AsyncMock()
@@ -100,6 +138,7 @@ async def test_check_concurrency_lock_allows_low_tier_at_queue_limit():
 
     allowed, message = await billing_core.check_concurrency_lock(
         123,
+        task_type="face_swap_v2",
         dependencies=dependencies,
     )
 
@@ -108,6 +147,142 @@ async def test_check_concurrency_lock_allows_low_tier_at_queue_limit():
     get_system_status.assert_awaited_once()
     increment_concurrency.assert_awaited_once_with(123)
     decrement_concurrency.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "system_status",
+    [
+        None,
+        {},
+        {"queue_pressure_by_worker_profile": {}},
+    ],
+)
+async def test_check_concurrency_lock_fails_open_when_pool_metrics_are_unavailable(
+    system_status,
+):
+    dependencies, calls = _make_concurrency_dependencies(
+        identity="外门弟子",
+        group="凡人",
+        system_status=system_status,
+    )
+
+    allowed, message = await billing_core.check_concurrency_lock(
+        123,
+        task_type="txt2img",
+        dependencies=dependencies,
+    )
+
+    assert allowed is True
+    assert message == ""
+    calls.increment_concurrency.assert_awaited_once_with(123)
+
+
+@pytest.mark.asyncio
+async def test_check_concurrency_lock_fails_open_for_unmapped_task_type():
+    dependencies, calls = _make_concurrency_dependencies(
+        identity="外门弟子",
+        group="凡人",
+        system_status=_queue_pressure_status(
+            pending_count=500,
+            accepting_worker_count=1,
+        ),
+    )
+
+    allowed, message = await billing_core.check_concurrency_lock(
+        123,
+        task_type="unknown_legacy_task",
+        dependencies=dependencies,
+    )
+
+    assert allowed is True
+    assert message == ""
+    calls.get_system_status.assert_not_awaited()
+    calls.increment_concurrency.assert_awaited_once_with(123)
+
+
+@pytest.mark.asyncio
+async def test_check_concurrency_lock_ignores_other_worker_pool_pressure():
+    dependencies, calls = _make_concurrency_dependencies(
+        identity="外门弟子",
+        group="凡人",
+        system_status={
+            "queue_pressure_by_worker_profile": {
+                "img2img": {
+                    "pending_count": 0,
+                    "accepting_worker_count": 1,
+                },
+                "i2i_pro": {
+                    "pending_count": 500,
+                    "accepting_worker_count": 1,
+                },
+            }
+        },
+    )
+
+    allowed, message = await billing_core.check_concurrency_lock(
+        123,
+        task_type="image",
+        dependencies=dependencies,
+    )
+
+    assert allowed is True
+    assert message == ""
+    calls.increment_concurrency.assert_awaited_once_with(123)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("identity", "group"),
+    [
+        ("外门弟子", "筑基期"),
+        ("内门弟子", "凡人"),
+        ("核心弟子", "凡人"),
+        ("真传弟子", "练气期"),
+    ],
+)
+async def test_check_concurrency_lock_exempts_higher_group_or_identity_from_pool_pressure(
+    identity,
+    group,
+):
+    dependencies, calls = _make_concurrency_dependencies(
+        identity=identity,
+        group=group,
+        system_status=_queue_pressure_status(
+            pending_count=500,
+            accepting_worker_count=1,
+        ),
+    )
+
+    allowed, message = await billing_core.check_concurrency_lock(
+        123,
+        task_type="txt2img",
+        dependencies=dependencies,
+    )
+
+    assert allowed is True
+    assert message == ""
+    calls.get_system_status.assert_not_awaited()
+    calls.increment_concurrency.assert_awaited_once_with(123)
+
+
+@pytest.mark.asyncio
+async def test_check_concurrency_lock_fails_open_when_status_request_raises():
+    dependencies, calls = _make_concurrency_dependencies(
+        identity="外门弟子",
+        group="练气期",
+    )
+    calls.get_system_status.side_effect = RuntimeError("central unavailable")
+
+    allowed, message = await billing_core.check_concurrency_lock(
+        123,
+        task_type="image_to_video",
+        dependencies=dependencies,
+    )
+
+    assert allowed is True
+    assert message == ""
+    calls.increment_concurrency.assert_awaited_once_with(123)
 
 
 @pytest.mark.parametrize(

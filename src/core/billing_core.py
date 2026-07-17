@@ -14,10 +14,11 @@ from src.core.billing_core_membership import calculate_identity_manual_conversio
 from src.core.billing_core_membership import calculate_membership_settlement
 from src.core.billing_core_membership import normalize_membership_identity
 from src.core.exceptions import InsufficientCreditsError
+from src.domain_config.worker_pool_registry import get_worker_pool_profile
 
 logger = logging.getLogger(__name__)
 _configured_billing_core_providers = None
-LOW_TIER_QUEUE_SIZE_LIMIT = 300
+LOW_TIER_PENDING_PER_WORKER_LIMIT = 50
 
 
 __all__ = [
@@ -26,7 +27,7 @@ __all__ = [
     "DEFAULT_IDENTITY",
     "IDENTITY_PRIORITY",
     "IDENTITY_RATIO",
-    "LOW_TIER_QUEUE_SIZE_LIMIT",
+    "LOW_TIER_PENDING_PER_WORKER_LIMIT",
     "MembershipSettlementResult",
     "build_default_billing_core_dependencies",
     "build_default_billing_core_providers",
@@ -147,6 +148,7 @@ async def check_concurrency_lock(
     internal_user_id: int,
     idempotency_key: str | None = None,
     *,
+    task_type: str | None = None,
     dependencies: BillingCoreDependencies | None = None,
 ) -> Tuple[bool, str]:
     """
@@ -155,29 +157,75 @@ async def check_concurrency_lock(
     """
     dependencies = dependencies or get_default_billing_core_dependencies()
 
-    # 1. 检查队列长度与身份
+    # 1. 检查目标执行池的排队压力与身份
     identity_str = await dependencies.get_user_identity_func(internal_user_id)
     normalized_identity = normalize_membership_identity(identity_str)
     concurrent_task_limit = get_concurrent_task_limit_for_identity(normalized_identity)
     if normalized_identity == "外门弟子":
-        # 补充检查修为境界：凡人、练气期不可突破排队限制，筑基期及以上可以
+        # 凡人、练气期不可突破执行池容量限制，筑基期及以上可以。
         user_group = await dependencies.get_user_group_func(internal_user_id)
         if user_group in ["凡人", "练气期"]:
-            sys_status = await dependencies.get_system_status_func()
-            if (
-                sys_status
-                and sys_status.get("queue_size", 0) > LOW_TIER_QUEUE_SIZE_LIMIT
-            ):
-                return (
-                    False,
-                    (
-                        "⚠️ **服务器繁忙**\n\n"
-                        f"当前排队任务已超过 {LOW_TIER_QUEUE_SIZE_LIMIT} 个，"
-                        "为了保证服务稳定性，**练气期及以下外门弟子**暂不可提交新任务。\n\n"
-                        "💡 请稍后再试，或努力提升修为至**筑基期**，"
-                        "也可通过「个人中心」升级至内门弟子及以上身份获取特权！"
-                    ),
+            profile = get_worker_pool_profile(task_type)
+            if profile is None:
+                logger.warning(
+                    "queue_admission_fail_open reason=unmapped_task_type task_type=%s",
+                    task_type,
                 )
+            else:
+                try:
+                    sys_status = await dependencies.get_system_status_func()
+                except Exception:
+                    logger.warning(
+                        "queue_admission_fail_open reason=status_request_failed "
+                        "task_type=%s profile=%s",
+                        task_type,
+                        profile.name,
+                        exc_info=True,
+                    )
+                    sys_status = None
+
+                pressure_by_profile = (
+                    sys_status.get("queue_pressure_by_worker_profile")
+                    if isinstance(sys_status, dict)
+                    else None
+                )
+                pressure = (
+                    pressure_by_profile.get(profile.name)
+                    if isinstance(pressure_by_profile, dict)
+                    else None
+                )
+                try:
+                    pending_count = int(pressure["pending_count"])
+                    accepting_worker_count = int(
+                        pressure["accepting_worker_count"]
+                    )
+                    if pending_count < 0 or accepting_worker_count < 0:
+                        raise ValueError("queue pressure counts must be non-negative")
+                except (KeyError, TypeError, ValueError):
+                    logger.warning(
+                        "queue_admission_fail_open reason=invalid_pool_metrics "
+                        "task_type=%s profile=%s",
+                        task_type,
+                        profile.name,
+                    )
+                else:
+                    effective_worker_count = max(accepting_worker_count, 1)
+                    projected_pending_count = pending_count + 1
+                    if projected_pending_count > (
+                        LOW_TIER_PENDING_PER_WORKER_LIMIT
+                        * effective_worker_count
+                    ):
+                        return (
+                            False,
+                            (
+                                "⚠️ **服务器繁忙**\n\n"
+                                "当前任务类型排队已达到"
+                                f"每台可接单服务器 {LOW_TIER_PENDING_PER_WORKER_LIMIT} 个"
+                                "的容量上限，**练气期及以下外门弟子**暂不可提交新任务。\n\n"
+                                "💡 请稍后再试，或努力提升修为至**筑基期**，"
+                                "也可通过「个人中心」升级至内门弟子及以上身份获取特权！"
+                            ),
+                        )
 
     # 2. 原有并发锁检查
     increment_kwargs = (

@@ -185,7 +185,7 @@ PREFETCH_ENABLED = os.getenv("PREFETCH_ENABLED", "false").strip().lower() in {
 PREFETCH_DEPTH = int(os.getenv("PREFETCH_DEPTH", "1"))
 PREFETCH_TASK_TYPES = os.getenv(
     "PREFETCH_TASK_TYPES",
-    "img2img,img2img_lora,face_swap,i2i_draw,i2i_pro",
+    "img2img,img2img_lora,face_swap,face_swap_v2,i2i_draw,i2i_pro",
 )
 PREFETCH_CACHE_DIR = os.getenv("PREFETCH_CACHE_DIR", "/app/prefetch-cache")
 PREFETCH_CONSUME_WAIT_SECONDS = float(

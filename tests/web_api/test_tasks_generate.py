@@ -345,6 +345,7 @@ async def test_web_generate_submits_free_edit_v3_as_one_five_credit_logical_task
         "version": 1,
         "kind": "free_edit_v3",
         "stage": "bf16",
+        "stage2_task_type": "face_swap_v2",
         "original_image": "123/input_images/original.png",
         "final_allow_contribute": True,
     }

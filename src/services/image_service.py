@@ -186,10 +186,15 @@ class ImageService:
         face_image_path: str,
         body_image_path: str,
         priority: int = 0,
+        task_type: str = "face_swap",
     ) -> str:
         """Submit face swap task"""
         return await api_client.submit_face_swap(
-            task_id, face_image_path, body_image_path, priority=priority
+            task_id,
+            face_image_path,
+            body_image_path,
+            priority=priority,
+            task_type=task_type,
         )
 
     async def submit_i2i_pro_task(

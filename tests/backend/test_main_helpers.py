@@ -12,7 +12,12 @@ from app import main_simple_task_routes
 from app import main_status_result_routes
 from app import main_t2i_helpers as t2i_helpers
 from app.main_t2i_wiring import T2IWiring
-from app.models import Scail2ActionTransferLongRequest, Scail2VideoRequest, TaskType
+from app.models import (
+    FaceSwapRequest,
+    Scail2ActionTransferLongRequest,
+    Scail2VideoRequest,
+    TaskType,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -379,6 +384,10 @@ def test_simple_task_type_map_keeps_image_to_video_and_video_lora_compatibility(
     )
     assert main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["img2img"] == TaskType.IMG2IMG
     assert (
+        main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["face_swap_v2"]
+        == TaskType.FACE_SWAP_V2
+    )
+    assert (
         main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["txt2img"]
         == TaskType.T2I_PORNMASTER_TURBO
     )
@@ -604,6 +613,21 @@ async def test_enqueue_configured_task_uses_registered_task_type(monkeypatch):
     }
 
 
+def test_face_swap_v2_reuses_face_swap_request_contract():
+    specs_by_path = {
+        path: (request_model, task_key, endpoint_name)
+        for path, request_model, task_key, endpoint_name in (
+            main_simple_task_routes.SIMPLE_TASK_ROUTE_SPECS
+        )
+    }
+
+    assert specs_by_path["/face_swap_v2"] == (
+        FaceSwapRequest,
+        "face_swap_v2",
+        "create_face_swap_v2_task",
+    )
+
+
 @pytest.mark.asyncio
 async def test_enqueue_configured_task_allows_hidden_scail2_long_route(monkeypatch):
     enqueue_mock = AsyncMock(return_value="queued")
@@ -782,6 +806,90 @@ async def test_build_system_status_response_counts_accepting_workers_by_control_
         "draining": 1,
     }
     assert response.comfy_online is True
+
+
+@pytest.mark.asyncio
+async def test_build_system_status_response_groups_queue_pressure_by_worker_profile():
+    class FakeQueueManager:
+        async def get_queue_size(self):
+            return 68
+
+        async def get_all_workers(self):
+            return [
+                {
+                    "agent_id": "runpod_prod_i2i_pro_manual_01",
+                    "provider": "runpod",
+                    "types": "i2i_pro,t2i-pornmaster-turbo,face_swap_v2",
+                    "status": "idle",
+                    "control_state": "enabled",
+                },
+                {
+                    "agent_id": "local-i2i",
+                    "types": "i2i_pro,t2i-pornmaster-turbo,face_swap_v2",
+                    "status": "running",
+                    "control_state": "enabled",
+                },
+                {
+                    "agent_id": "local-i2i-paused",
+                    "types": "i2i_pro",
+                    "status": "idle",
+                    "control_state": "disabled",
+                },
+                {
+                    "agent_id": "local-i2i-error",
+                    "types": "face_swap_v2",
+                    "status": "error",
+                    "control_state": "enabled",
+                },
+                {
+                    "agent_id": "local-scail2",
+                    "types": "scail2_action_transfer_long,scail2_face_swap_v2",
+                    "status": "idle",
+                    "control_state": "enabled",
+                },
+            ]
+
+        async def get_queue_metrics_by_type(self):
+            return {
+                "i2i_pro": 40,
+                "txt2img": 20,
+                "face_swap_v2": 4,
+                "scail2_action_transfer_long": 3,
+                "video_insert": 1,
+            }
+
+    response = await main_response_helpers.build_system_status_response(
+        FakeQueueManager()
+    )
+
+    assert response.queue_pressure_by_worker_profile["i2i_pro"] == {
+        "supported_task_types": [
+            "i2i_pro",
+            "t2i-pornmaster-turbo",
+            "face_swap_v2",
+        ],
+        "pending_count": 64,
+        "accepting_worker_count": 2,
+        "accepting_runpod_worker_count": 1,
+        "accepting_local_worker_count": 1,
+    }
+    assert response.queue_pressure_by_worker_profile["scail2"]["pending_count"] == 3
+    assert (
+        response.queue_pressure_by_worker_profile["scail2"][
+            "accepting_worker_count"
+        ]
+        == 1
+    )
+    assert (
+        response.queue_pressure_by_worker_profile["image_to_video"]["pending_count"]
+        == 1
+    )
+    assert (
+        response.queue_pressure_by_worker_profile["wan22_video_v2"][
+            "accepting_worker_count"
+        ]
+        == 0
+    )
 
 
 @pytest.mark.asyncio

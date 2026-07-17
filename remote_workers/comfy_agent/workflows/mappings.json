@@ -16,6 +16,10 @@
         "face_image": "2",
         "body_image": "3"
     },
+    "face_swap_v2": {
+        "face_image": "2",
+        "body_image": "3"
+    },
     "video_insert": {
         "image": "23",
         "image_input": "image",

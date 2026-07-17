@@ -14,7 +14,7 @@ x-worker-cloud-prod-env: &worker-cloud-prod-env
   RESULT_SPOOL_DIR: /app/spool
   PREFETCH_ENABLED: ${PREFETCH_ENABLED:-true}
   PREFETCH_DEPTH: ${PREFETCH_DEPTH:-1}
-  PREFETCH_TASK_TYPES: ${PREFETCH_TASK_TYPES:-img2img,img2img_lora,face_swap,i2i_draw,i2i_pro}
+  PREFETCH_TASK_TYPES: ${PREFETCH_TASK_TYPES:-img2img,img2img_lora,face_swap_v2,i2i_draw,i2i_pro}
   PREFETCH_CACHE_DIR: /app/prefetch-cache
   PIPELINE_ENABLED: ${PIPELINE_ENABLED:-true}
   PIPELINE_MAX_RUNNING_TASKS: ${PIPELINE_MAX_RUNNING_TASKS:-2}
@@ -71,8 +71,8 @@ services:
       POOL_RUNTIME_PROFILE: face_i2i_t2i
       POOL_IMAGE_REF: 192.168.1.115:5000/allbot/comfy-cu130-face-i2i:baseline
       POOL_MODEL_BUNDLE_VERSIONS: '{"face_i2i_t2i_baseline":"2026-06-10","video_basic_baseline":"2026-06-10"}'
-      SUPPORTED_TASK_TYPES: face_swap,i2i_pro,i2i_draw,face_video,video_edit,image_to_video,t2i-pornmaster-turbo,ltx_video,ltx_video_flf2v,ltx_video_v2v_audio
-      TASK_TYPE_WORKFLOW_OVERRIDES: '{"face_swap":"face_swap_v2.json","t2i-pornmaster-turbo":"txt2img_from_i2i_pro.json"}'
+      SUPPORTED_TASK_TYPES: face_swap_v2,i2i_pro,i2i_draw,face_video,video_edit,image_to_video,t2i-pornmaster-turbo,ltx_video,ltx_video_flf2v,ltx_video_v2v_audio
+      TASK_TYPE_WORKFLOW_OVERRIDES: '{"face_swap_v2":"face_swap_v2.json","t2i-pornmaster-turbo":"txt2img_from_i2i_pro.json"}'
       COMFY_API_URL: http://192.168.1.226:8188
       COMFY_WS_URL: ws://192.168.1.226:8188/ws
       COMFY_INPUT_DIR: /tmp/input

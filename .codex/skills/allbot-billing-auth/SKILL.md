@@ -18,7 +18,9 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 - **站内灵石转账**：用户之间的灵石转移使用 `QuotaManager.transfer_credits(...)`，在同一事务内锁定双方用户、扣减买家、增加收款方并写入双方 `user_logs`；Gallery 提示词解锁固定走此入口。
 - **付费群审核资格**：`paid_group_guard_bot` 只读查询 `users.telegram_id`、`users.user_group` 与 `orders`，默认允许历史成功支付订单、后台赠送套餐订单、筑基期及以上修为对应的 Telegram 用户入群；该路径不做资产副作用。
 - **Provider 化 billing core**：billing core 相关默认能力已收口到 provider/dependencies 模式，新增逻辑应优先走 provider 注册与依赖注入边界。
+- **低阶用户容量准入**：`billing_core.check_concurrency_lock(..., task_type=...)` 在扣费前按目标 Worker 执行池检查 projected pending；只限制外门弟子中的凡人/练气期，不再读取全局 `queue_size > 300`。
 - **自由P图版本定价**：主 Bot/Web 的 `free_edit_v2_5` 单图 3 灵石、双图 7 灵石并走标准单阶段 Saga，扣费前必须按实际图片数确定成本；自由P图 v3 固定 5 灵石并把 BF16→换脸视为同一根任务，第二阶段不得重复扣费。两者失败/取消退款都以根业务任务的实际扣费和账本幂等键收口；QQCC 自由P图 v3 仍保持 6 灵石，不随主入口调整。
+- **图片换脸版本定价**：独立 `face_swap`（V1）固定 1 灵石，独立 `face_swap_v2` 固定 2 灵石；快速/随机换脸仍走 V1。自由P图 v3、SCAIL-2 首帧预处理等组合任务中的 V2 已包含在根任务总价，禁止二次扣费；QQCC AI绘图/滤镜每个启用的原脸恢复步骤仍显式增加 2 灵石。幻想换脸继续提交 `i2i_pro` 并保持 6 灵石。
 - **入口负责 provider 注册**：Bot、Web API、Payment API 和 Dashboard Backend 只要会调用 billing core，都必须在启动入口调用 `ensure_billing_core_providers_registered()`。Dashboard 的退款、强制终止和资产类管理接口也会进入 billing core；只注册 task core provider 会触发 `Billing core providers 未注册`。
 
 ## 2. 输入输出规范
@@ -74,6 +76,7 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 - Affiliate 缓存失效必须放在最终提交成功后执行，不能在提交前删除缓存。
 - 汇率缺失、金额不匹配或结算参数冲突时必须 fail fast，不能静默降级。
 - 新增 billing/auth 改动优先走 provider/dependency 注入模式，不回退到 core 直连基础设施实现。
+- 容量准入公式固定为 `(pending + 1) > 50 × max(accepting_workers, 1)`；`accepting_workers` 只包含健康且 enabled 的节点。Central 快照/字段缺失、请求异常或未知执行池必须 fail-open 并记录告警，不能把观测故障扩大成全体低阶用户停服。
 - 付费群审核资格不得绕过订单事实源去直接相信 `current_identity`，否则手动改身份、过期身份和赠送订单会混成同一语义；修为准入只读使用 `users.user_group` 的筑基期及以上等级。
 - TON 轮询游标必须持久化到 `runtime_checkpoints`，key 形如 `ton:<merchant_address>:last_lt`；抓链失败或履约失败时不得前移游标。
 - `TON_PAYMENT_POLLING_ENABLED=false` 可禁用 Bot 启动时的 TON 链上轮询；云测试 `bot-test` 默认关闭该轮询，避免空测试库回扫真实商户地址历史交易。生产默认仍为开启。

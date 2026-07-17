@@ -189,10 +189,10 @@ RUNPOD_CANARY_PROFILE_SPECS: dict[str, RunPodCanaryProfileSpec] = {
         allow_template_id=True,
         expected_gpu_type_ids=EXPECTED_I2I_PRO_GPU_TYPE_IDS,
         workflow_overrides=RUNPOD_I2I_PRO_WORKFLOW_OVERRIDES,
-        task_summary="submit i2i_pro, txt2img, and face_swap Web tasks serially",
+        task_summary="submit i2i_pro, txt2img, and face_swap_v2 Web tasks serially",
         worker_disable_summary=(
             "temporarily disable cloud-test workers supporting i2i_pro, "
-            "t2i-pornmaster-turbo, or face_swap"
+            "t2i-pornmaster-turbo, or face_swap_v2"
         ),
     ),
     "scail2": RunPodCanaryProfileSpec(

@@ -93,7 +93,7 @@ def test_case_builder_preserves_profile_payloads(tmp_path):
     assert [case["payload"]["task_type"] for case in i2i_cases] == [
         "i2i_pro",
         "txt2img",
-        "face_swap",
+        "face_swap_v2",
     ]
     scail2_cases = builder.scail2_task_cases(
         {"reference_image_key": "reference.jpg", "motion_video_key": "motion.mp4"}

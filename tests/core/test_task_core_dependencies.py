@@ -9,6 +9,7 @@ from src.constants import MODE_PORNMASTER_FLUX2_SINGLE_EDIT
 from src import task_core_process_defaults
 from src.core.task_core_dependencies import TaskCoreProcessDependencies
 from src.core.task_core_types import (
+    ConcurrencyLimitError,
     CoreDomainError,
     TaskSubmissionExecutionResult,
     TaskSubmissionSideEffectPlan,
@@ -82,6 +83,7 @@ async def test_process_and_submit_task_uses_explicit_process_dependencies():
     check_lock.assert_awaited_once_with(
         123,
         idempotency_key="task_concurrency:registry-1",
+        task_type="custom_video",
     )
     prepare_payload.assert_awaited_once()
     deduct_credits.assert_awaited_once_with(123, 18, "custom_video", "tester")
@@ -98,6 +100,49 @@ async def test_process_and_submit_task_uses_explicit_process_dependencies():
     compensate_failed.assert_not_called()
     release_lock.assert_not_called()
     shield.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_process_and_submit_task_rejects_pool_pressure_before_prepare_or_debit():
+    check_lock = AsyncMock(return_value=(False, "pool overloaded"))
+    prepare_payload = AsyncMock()
+    deduct_credits = AsyncMock()
+    execute_saga = AsyncMock()
+    dependencies = TaskCoreProcessDependencies(
+        get_strategy_func=MagicMock(
+            return_value=SimpleNamespace(get_cost=MagicMock(return_value=1))
+        ),
+        video_task_types=set(),
+        build_video_task_request_func=MagicMock(return_value=VideoTaskRequest()),
+        check_concurrency_lock_func=check_lock,
+        prepare_task_submission_payload_func=prepare_payload,
+        check_and_deduct_credits_func=deduct_credits,
+        execute_task_submission_saga_func=execute_saga,
+        attach_submission_side_effects_func=AsyncMock(),
+        compensate_failed_submission_func=AsyncMock(),
+        release_concurrency_lock_func=AsyncMock(),
+        shield_func=AsyncMock(),
+        logger=MagicMock(),
+    )
+
+    with pytest.raises(ConcurrencyLimitError, match="pool overloaded"):
+        await task_core.process_and_submit_task(
+            user_id=123,
+            username="tester",
+            task_type="txt2img",
+            inputs={"prompt": "hello"},
+            task_id="registry-1",
+            dependencies=dependencies,
+        )
+
+    check_lock.assert_awaited_once_with(
+        123,
+        idempotency_key="task_concurrency:registry-1",
+        task_type="txt2img",
+    )
+    prepare_payload.assert_not_awaited()
+    deduct_credits.assert_not_awaited()
+    execute_saga.assert_not_awaited()
 
 
 @pytest.mark.asyncio

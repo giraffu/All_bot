@@ -54,6 +54,15 @@ def test_scail2_task_types_resolve_to_api_workflows(task_type, filename):
     assert resolve_workflow_filename(task_type) == filename
 
 
+def test_face_swap_versions_keep_distinct_workflows_and_shared_node_contract():
+    assert resolve_workflow_filename("face_swap") == "face_swap.json"
+    assert resolve_workflow_filename("face_swap_v2") == "face_swap_v2.json"
+
+    mappings = validate_workflow_directory("workers/comfy_agent/workflows")
+    assert mappings["face_swap"] == {"face_image": "2", "body_image": "3"}
+    assert mappings["face_swap_v2"] == {"face_image": "2", "body_image": "3"}
+
+
 def test_validate_workflow_directory_accepts_task_type_workflow_override(
     monkeypatch, tmp_path
 ):
