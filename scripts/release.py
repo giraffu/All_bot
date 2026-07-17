@@ -259,6 +259,136 @@ class ReleaseImpact:
         }
 
 
+class IndependentModuleRelease:
+    """A strict module boundary and the rollback baseline it owns."""
+
+    def __init__(self, *, name: str, artifacts: Iterable[str], previous_sha: str) -> None:
+        self.name = name
+        self.artifacts = set(artifacts)
+        self.previous_sha = previous_sha
+
+
+def expand_independent_module_request(
+    policy: Mapping[str, Any], requested: set[str]
+) -> tuple[str, set[str]] | None:
+    """Expand one independent module alias or its exact artifact set."""
+
+    if not requested:
+        return None
+    configured = policy.get("independent_modules")
+    if not isinstance(configured, Mapping):
+        return None
+    matches: list[tuple[str, set[str]]] = []
+    module_names: set[str] = set()
+    module_artifacts: set[str] = set()
+    for raw_name, raw_config in configured.items():
+        if not isinstance(raw_config, Mapping):
+            raise ReleaseError("independent module policy is invalid")
+        artifacts_value = raw_config.get("artifacts")
+        if not isinstance(artifacts_value, list) or not all(
+            isinstance(value, str) and value for value in artifacts_value
+        ):
+            raise ReleaseError("independent module policy is invalid")
+        name = str(raw_name)
+        artifacts = set(artifacts_value)
+        module_names.add(name)
+        module_artifacts.update(artifacts)
+        if requested == {name} or requested == artifacts:
+            matches.append((name, artifacts))
+    if not matches:
+        if requested & module_names or requested <= module_artifacts:
+            raise ReleaseError(
+                "independent release requires exactly one complete module group"
+            )
+        return None
+    if len(matches) != 1:
+        raise ReleaseError("independent module selection is ambiguous")
+    return matches[0]
+
+
+def resolve_independent_module_release(
+    policy: Mapping[str, Any],
+    requested: set[str],
+    state: Mapping[str, Any] | None,
+) -> IndependentModuleRelease | None:
+    """Resolve one explicit independent module against its deployed artifacts."""
+
+    expanded = expand_independent_module_request(policy, requested)
+    if expanded is None:
+        return None
+    if not isinstance(state, Mapping) or state.get("schema_version") != 2:
+        raise ReleaseError(
+            "independent module release requires an existing schema-v2 deployment state"
+        )
+    state_artifacts = state.get("artifacts")
+    if not isinstance(state_artifacts, Mapping):
+        raise ReleaseError("independent module deployment state has no artifacts")
+    name, artifacts = expanded
+    fallback_sha = str(state.get("git_sha", ""))
+    baselines: set[str] = set()
+    for artifact_name in artifacts:
+        artifact_state = state_artifacts.get(artifact_name)
+        if not isinstance(artifact_state, Mapping):
+            raise ReleaseError(
+                f"independent module {name} has no deployed {artifact_name} baseline"
+            )
+        baseline = str(artifact_state.get("source_sha") or fallback_sha)
+        baselines.add(validate_full_sha(baseline))
+    if len(baselines) != 1:
+        raise ReleaseError(
+            f"independent module {name} artifacts do not share one rollback baseline"
+        )
+    return IndependentModuleRelease(
+        name=name,
+        artifacts=artifacts,
+        previous_sha=baselines.pop(),
+    )
+
+
+def validate_independent_release_paths(
+    policy: Mapping[str, Any],
+    selection: IndependentModuleRelease,
+    changed_paths: Iterable[str],
+) -> None:
+    """Fail closed when a strict module diff crosses a shared runtime contract."""
+
+    blockers = policy.get("independent_release_blockers", [])
+    if not isinstance(blockers, list):
+        raise ReleaseError("independent release blocker policy is invalid")
+    normalized_paths = [path.removeprefix("./") for path in changed_paths]
+    for raw_blocker in blockers:
+        if not isinstance(raw_blocker, Mapping):
+            raise ReleaseError("independent release blocker policy is invalid")
+        name = str(raw_blocker.get("name", ""))
+        patterns = raw_blocker.get("patterns")
+        modules = raw_blocker.get("modules")
+        if (
+            not name
+            or not isinstance(patterns, list)
+            or not all(isinstance(pattern, str) and pattern for pattern in patterns)
+            or (
+                modules is not None
+                and (
+                    not isinstance(modules, list)
+                    or not all(isinstance(module, str) for module in modules)
+                )
+            )
+        ):
+            raise ReleaseError("independent release blocker policy is invalid")
+        if isinstance(modules, list) and selection.name not in modules:
+            continue
+        matches = sorted(
+            path
+            for path in normalized_paths
+            if any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns)
+        )
+        if matches:
+            raise ReleaseError(
+                f"independent module {selection.name} is blocked by {name}: "
+                + ", ".join(matches)
+            )
+
+
 def _selected_artifact_names(
     manifest: Mapping[str, Any], impact: ReleaseImpact
 ) -> set[str]:
@@ -2316,13 +2446,43 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
             service_to_artifact.get(name, name) for name in requested_services
         )
         previous_sha = _resolve_previous_sha(args, track_scoped=True)
+        independent_release = resolve_independent_module_release(
+            policy,
+            requested_modules,
+            getattr(args, "previous_state", None),
+        )
+        if independent_release:
+            if args.track != "control-plane":
+                raise ReleaseError(
+                    "independent modules are only available on the control-plane track"
+                )
+            if args.from_sha:
+                raise ReleaseError(
+                    "independent module release uses its deployed artifact baseline; "
+                    "--from-sha is not accepted"
+                )
+            requested_modules = set(independent_release.artifacts)
+            previous_sha = independent_release.previous_sha
         planned_impact = ReleaseImpact(level="rolling")
         if not previous_sha and args.track == "test-execution":
             planned_impact.matched_rules.append("initial-release")
         changed_paths: list[str] = []
         if previous_sha and previous_sha != sha:
             changed_paths = git_changed_paths(previous_sha, sha)
-            planned_impact = plan_changed_paths(policy, changed_paths)
+            if independent_release:
+                validate_independent_release_paths(
+                    policy,
+                    independent_release,
+                    changed_paths,
+                )
+                planned_impact = ReleaseImpact(
+                    level="rolling",
+                    matched_rules=[
+                        f"independent-artifact-scope:{independent_release.name}"
+                    ],
+                )
+            else:
+                planned_impact = plan_changed_paths(policy, changed_paths)
         if dashboard_fast_track:
             if not previous_sha:
                 raise ReleaseError(
@@ -2345,14 +2505,15 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
             release_bundle = load_release_index(manifest_path, expected_sha=sha)
         except ManifestV2Error as exc:
             raise ReleaseError(str(exc)) from exc
-        if not dashboard_fast_track:
+        if not dashboard_fast_track and not independent_release:
             computed_modules.update(
                 name
                 for name, artifact in release_bundle.manifests[args.track]["artifacts"].items()
                 if artifact.get("source_sha") == sha
                 and name not in {"python-runtime-base", "python-worker-base"}
             )
-        requested_modules.update(computed_modules)
+        if not independent_release:
+            requested_modules.update(computed_modules)
         manifest = _load_v2_track(
             manifest_path,
             sha=sha,
@@ -2431,6 +2592,10 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
             planned_impact.matched_rules = repair_impact.matched_rules
         if f"track:{args.track}" not in planned_impact.matched_rules:
             planned_impact.matched_rules.append(f"track:{args.track}")
+        if independent_release:
+            planned_impact.matched_rules.append(
+                f"independent-module:{independent_release.name}"
+            )
         scope_release_impact(args.env, planned_impact, requested=requested_services)
         return planned_impact, manifest, previous_sha or ""
 
@@ -3731,6 +3896,7 @@ def _clear_transaction_maintenance(
     if forward_commit:
         prepared_history = history + ".prepared"
         history_source = staged
+        current_source = staged
         if args.execute and track in RELEASE_TRACKS:
             host = args.remote_host or ENVIRONMENT[args.env]["host"]
             staged_result = _run(
@@ -3769,13 +3935,44 @@ def _clear_transaction_maintenance(
                 input_text=merged_payload,
             )
             history_source = prepared_history
+            current_result = _run(
+                ["ssh", "-o", "BatchMode=yes", host, f"cat {shlex.quote(current)}"],
+                check=False,
+            )
+            existing_current: Mapping[str, Any] | None = None
+            if current_result.returncode == 0:
+                try:
+                    loaded_current = json.loads(current_result.stdout)
+                except json.JSONDecodeError as exc:
+                    raise ReleaseError("artifact current state is invalid") from exc
+                if isinstance(loaded_current, Mapping):
+                    existing_current = loaded_current
+            prepared_current = current + ".prepared"
+            current_payload = json.dumps(
+                merge_artifact_current_state(existing_current, staged_state),
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            ) + "\n"
+            _run(
+                [
+                    "ssh",
+                    "-o",
+                    "BatchMode=yes",
+                    host,
+                    f"set -e; cat > {shlex.quote(prepared_current)}",
+                ],
+                input_text=current_payload,
+            )
+            current_source = prepared_current
         state_action = (
             f"test -s {shlex.quote(staged)}\n"
             f"install -d -m 755 {shlex.quote(str(Path(history).parent))}\n"
             f"cp {shlex.quote(history_source)} {shlex.quote(history + '.tmp')}\n"
             f"mv -f {shlex.quote(history + '.tmp')} {shlex.quote(history)}\n"
             f"rm -f {shlex.quote(prepared_history)}\n"
-            f"mv -f {shlex.quote(staged)} {shlex.quote(current)}\n"
+            f"mv -f {shlex.quote(current_source)} {shlex.quote(current)}\n"
+            f"rm -f {shlex.quote(staged)}\n"
         )
     elif args.execute:
         previous_state = previous.get("state") if isinstance(previous, Mapping) else None
@@ -4488,16 +4685,57 @@ def validate_test_runtime_for_acceptance(state: Mapping[str, Any]) -> None:
         )
 
 
+def validate_v2_test_runtime_for_acceptance(
+    state: Mapping[str, Any], manifest: Mapping[str, Any]
+) -> None:
+    """Validate only the artifacts selected by one partial track release."""
+
+    expected_artifacts = {
+        name: manifest["artifacts"][name].get("digest")
+        or manifest["artifacts"][name].get("sha256")
+        for name in manifest["selected_artifacts"]
+    }
+    state_artifacts = state.get("artifacts")
+    artifacts_match = isinstance(state_artifacts, Mapping) and all(
+        isinstance(state_artifacts.get(name), Mapping)
+        and state_artifacts[name].get("digest") == digest
+        and state_artifacts[name].get("source_sha", manifest["source_sha"])
+        == manifest["artifacts"][name].get("source_sha", manifest["source_sha"])
+        and state_artifacts[name].get("status") in {"deployed", "verified"}
+        for name, digest in expected_artifacts.items()
+    )
+    if state.get("track") != manifest.get("track") or not artifacts_match:
+        raise ReleaseError(
+            "cloud-test runtime state does not match acceptance evidence"
+        )
+    health = state.get("health")
+    required_health = (
+        "worker" if manifest["track"] == "test-execution" else "cloud"
+    )
+    if not isinstance(health, Mapping) or health.get(required_health) not in {
+        "compose-ps-passed",
+        "not-targeted",
+    }:
+        raise ReleaseError("cloud-test track health has not passed verification")
+
+
 def _mark_test_verified(args: argparse.Namespace) -> None:
     sha = validate_full_sha(args.sha)
     manifest_path = Path(args.manifest)
     raw_manifest = _read_json(manifest_path)
     if raw_manifest.get("schema_version") == 2:
+        requested_modules = _split_services(args.modules)
+        independent = expand_independent_module_request(
+            load_structured_file(Path(getattr(args, "policy", DEFAULT_POLICY))),
+            requested_modules,
+        )
+        if independent:
+            requested_modules = independent[1]
         manifest = _load_v2_track(
             manifest_path,
             sha=sha,
             track=args.track,
-            modules=_split_services(args.modules),
+            modules=requested_modules,
         )
         validate_release_channel(
             manifest, environment="test", purpose="verify-test"
@@ -4540,33 +4778,7 @@ def _mark_test_verified(args: argparse.Namespace) -> None:
             "cloud-test runtime state does not match acceptance evidence"
         )
     if manifest.get("schema_version") == 2:
-        expected_artifacts = {
-            name: manifest["artifacts"][name].get("digest")
-            or manifest["artifacts"][name].get("sha256")
-            for name in manifest["selected_artifacts"]
-        }
-        state_artifacts = state.get("artifacts")
-        artifacts_match = isinstance(state_artifacts, Mapping) and set(
-            state_artifacts
-        ) == set(expected_artifacts) and all(
-            isinstance(state_artifacts[name], Mapping)
-            and state_artifacts[name].get("digest") == digest
-            and state_artifacts[name].get("status") == "deployed"
-            for name, digest in expected_artifacts.items()
-        )
-        if state.get("track") != manifest.get("track") or not artifacts_match:
-            raise ReleaseError(
-                "cloud-test runtime state does not match acceptance evidence"
-            )
-        health = state.get("health")
-        required_health = (
-            "worker" if manifest["track"] == "test-execution" else "cloud"
-        )
-        if not isinstance(health, Mapping) or health.get(required_health) not in {
-            "compose-ps-passed",
-            "not-targeted",
-        }:
-            raise ReleaseError("cloud-test track health has not passed verification")
+        validate_v2_test_runtime_for_acceptance(state, manifest)
     else:
         if (
             state.get("images") != manifest.get("images")
@@ -4578,12 +4790,23 @@ def _mark_test_verified(args: argparse.Namespace) -> None:
                 "cloud-test runtime state does not match acceptance evidence"
             )
         validate_test_runtime_for_acceptance(state)
-    state["status"] = "verified"
     if manifest.get("schema_version") == 2:
-        for artifact in state["artifacts"].values():
+        for name in manifest["selected_artifacts"]:
+            artifact = state["artifacts"][name]
             artifact["status"] = "verified"
             artifact["assurance"] = "tested"
             artifact["acceptance"] = dict(acceptance)
+        state["status"] = (
+            "verified"
+            if all(
+                isinstance(artifact, Mapping)
+                and artifact.get("status") == "verified"
+                for artifact in state["artifacts"].values()
+            )
+            else "partial"
+        )
+    else:
+        state["status"] = "verified"
     state["acceptance"] = acceptance
     if not args.execute:
         if acceptance["short_observation_override"]:
@@ -4693,6 +4916,44 @@ def merge_artifact_history_state(
     return merged
 
 
+def merge_artifact_current_state(
+    existing: Mapping[str, Any] | None,
+    incoming: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Merge a partial track deployment while preserving non-target artifacts."""
+
+    merged = dict(incoming)
+    if not existing or incoming.get("schema_version") != 2:
+        return merged
+    for field in ("track", "environment"):
+        if existing.get(field) != incoming.get(field):
+            raise ReleaseError(f"artifact current state {field} identity mismatch")
+    previous_artifacts = existing.get("artifacts")
+    incoming_artifacts = incoming.get("artifacts")
+    if not isinstance(previous_artifacts, Mapping) or not isinstance(
+        incoming_artifacts, Mapping
+    ):
+        raise ReleaseError("artifact current state payload is invalid")
+    existing_sha = str(existing.get("git_sha", ""))
+    artifacts: dict[str, dict[str, Any]] = {}
+    for name, value in previous_artifacts.items():
+        if not isinstance(value, Mapping):
+            continue
+        artifact = dict(value)
+        if "source_sha" not in artifact and FULL_SHA_RE.fullmatch(existing_sha):
+            artifact["source_sha"] = existing_sha
+        artifacts[str(name)] = artifact
+    artifacts.update(
+        {
+            str(name): dict(value)
+            for name, value in incoming_artifacts.items()
+            if isinstance(value, Mapping)
+        }
+    )
+    merged["artifacts"] = artifacts
+    return merged
+
+
 def _write_state(
     args: argparse.Namespace,
     impact: ReleaseImpact,
@@ -4769,6 +5030,8 @@ def _write_state(
             name: {
                 "digest": manifest["artifacts"][name].get("digest")
                 or manifest["artifacts"][name].get("sha256"),
+                "source_sha": manifest["artifacts"][name].get("source_sha")
+                or manifest["source_sha"],
                 "status": state["status"],
                 "assurance": artifact_assurance,
             }
@@ -4963,6 +5226,7 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("--evidence", required=True)
     verify.add_argument("--track", choices=RELEASE_TRACKS, default="control-plane")
     verify.add_argument("--modules", action="append", default=[])
+    verify.add_argument("--policy", default=str(DEFAULT_POLICY))
     verify.add_argument("--remote-host")
     verify.add_argument("--confirm-short-observation", action="store_true")
     verify.add_argument("--execute", action="store_true")

@@ -136,9 +136,9 @@ QQCC Bot 必须设置 `application.bot_data["bot_client_type"] = "bot:qqcc"`，B
 
 主业务 Bot 的 `懒人bot` 菜单入口缺省显示；`QQCC_LAZY_BOT_ENABLED=false` 时隐藏新菜单并让旧文本/旧 callback fail closed。入口可用时优先读取 `QQCC_LAZY_BOT_URL`，未配置时可用 `QQCC_LAZY_BOT_USERNAME` 自动生成 `https://t.me/<username>`；两者均未配置时保留菜单但只提示“懒人bot入口暂未配置”，不得硬编码 QQCC Bot 地址。2026-07-12 正式环境按用户要求采用“菜单可见、URL/username 未配置”的不可跳转状态。主 Bot 的 `图片换脸` 二级菜单只保留 `快速换脸` 与 `随机换脸`；旧 `快速脱衣`、`快速自慰`、旧 `menu.video_edit_*`、旧 `AI绘图` / `AI滤镜` / `AI动图` / `快速换脸` 文本和主 Bot 上的 `qvid_*` callback 必须回复 QQCC 懒人 Bot inline URL 跳转或入口未配置提示，且不得提交任务。QQCC 的 `qdraw_scene:*`、`qfilter_scene:*`、`qvid_scene:*` 和旧 `qvid_mode:*` 兼容不受影响。
 
-正式启动或重建前必须有用户明确要求进入 QQCC 正式发布。单独更新官方 QQCC Bot 时，对同一已验收 main SHA 依次执行 `release.py plan|preflight|deploy --env prod --track control-plane --modules qqcc-bot`，真实执行必须带 `--execute --confirm-prod`；`--modules` 只能扩大 planner 自动集合，不能强行缩成单服务。发布前核对没有第二个同 token polling 实例；若目标容器状态异常、疑似多实例、token/远端 env 异常，或要启动当前停止的新正式 QQCC 实例，必须停下确认。
+正式启动或重建前必须有用户明确要求进入 QQCC 正式发布。单独更新官方 QQCC Bot 时，对同一 main release 依次执行 `release.py plan|preflight|deploy --env prod --track control-plane --modules qqcc-bot`，真实执行必须带 `--execute --confirm-prod`。该模块从 `qqcc-bot` 自己的已部署 `source_sha` 计算差异和回滚，只选择 Bot service；migration、共享 Compose/env 或 `src/services/qqcc_config_service.py` 变化会拒绝独立发布。发布前核对没有第二个同 token polling 实例；若目标容器状态异常、疑似多实例、token/远端 env 异常，或要启动当前停止的新正式 QQCC 实例，必须停下确认。
 
-只更新独立 QQCC 配置 Web 时请求模块 `qqcc-config-backend qqcc-config-frontend`；同轮更新 Bot 与配置平台时请求三者。QQCC Config 已有专属云测试前后端，auto 默认 standard，必须先由 test-train 部署并验证测试 8045/8088 的目标 digest/revision 与业务页面；Dashboard-only 仍可按 owner-tools direct。维护模式遵循 `allbot-ops-deployment`：每次发布默认开启，只有用户当次明确要求且 planner 无强制 maintenance 时才可关闭。不得使用已 fail-closed 的 `update_cloud_prod_qqcc_bot.sh` / `update_cloud_prod_with_maintenance.sh`，也不得 rsync、现场 build 或手工 compose；正式发布后验证 8045/8088、QQCC Bot single polling、目标 digest/revision 和所有非目标服务启动时间。
+只更新独立 QQCC 配置 Web 时请求 `--modules qqcc-config`，发布器固定展开为 backend/frontend 两个 artifact；一次独立事务不能再混选 Bot。Bot 与配置平台存在共享契约变化时，退出独立模式并按 planner 完整闭包发布。QQCC Config 已有专属云测试前后端，auto 默认 standard，必须先由 test-train 部署并验证测试 8045/8088 的目标 digest/revision 与业务页面；Dashboard-only 仍可按 owner-tools direct。维护模式遵循 `allbot-ops-deployment`。不得使用已 fail-closed 的 legacy 脚本，也不得 rsync、现场 build 或手工 compose；正式发布后验证 8045/8088、QQCC Bot single polling、目标 digest/revision 和所有非目标服务启动时间。
 
 ## 5. 验证要求
 至少覆盖：

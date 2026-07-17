@@ -17,6 +17,41 @@
     "web-static"
   ],
   "level_order": ["none", "rolling", "drain", "maintenance"],
+  "independent_modules": {
+    "dashboard": {
+      "artifacts": ["dashboard-backend", "dashboard-frontend"]
+    },
+    "qqcc-bot": {
+      "artifacts": ["qqcc-bot"]
+    },
+    "qqcc-config": {
+      "artifacts": ["qqcc-config-backend", "qqcc-config-frontend"]
+    }
+  },
+  "independent_release_blockers": [
+    {
+      "name": "database-migrations",
+      "patterns": ["migrations/**", "alembic.ini"]
+    },
+    {
+      "name": "shared-compose-contract",
+      "patterns": [
+        "deploy/docker-compose*.yml",
+        "deploy/env.defaults",
+        "deploy/env.schema.yml"
+      ]
+    },
+    {
+      "name": "dashboard-qqcc-shared-schema",
+      "patterns": ["dashboard/backend/schemas.py"],
+      "modules": ["dashboard", "qqcc-config"]
+    },
+    {
+      "name": "qqcc-runtime-config-contract",
+      "patterns": ["src/services/qqcc_config_service.py"],
+      "modules": ["qqcc-bot", "qqcc-config"]
+    }
+  ],
   "unknown": {
     "level": "maintenance",
     "services": "all"

@@ -2910,6 +2910,87 @@ def test_artifact_history_merge_preserves_other_verified_digests():
     assert merged["status"] == "partial"
 
 
+def test_artifact_current_state_keeps_mixed_module_versions():
+    module = _load_module()
+    previous_sha = "b" * 40
+    target_sha = FULL_SHA
+    existing = {
+        "schema_version": 2,
+        "environment": "prod",
+        "track": "control-plane",
+        "git_sha": previous_sha,
+        "artifacts": {
+            "central-api": {
+                "digest": "sha256:" + "1" * 64,
+                "source_sha": previous_sha,
+                "status": "deployed",
+            },
+            "dashboard-backend": {
+                "digest": "sha256:" + "2" * 64,
+                "source_sha": previous_sha,
+                "status": "deployed",
+            },
+        },
+    }
+    incoming = {
+        "schema_version": 2,
+        "environment": "prod",
+        "track": "control-plane",
+        "git_sha": target_sha,
+        "artifacts": {
+            "dashboard-backend": {
+                "digest": "sha256:" + "3" * 64,
+                "source_sha": target_sha,
+                "status": "deployed",
+            }
+        },
+    }
+
+    merged = module.merge_artifact_current_state(existing, incoming)
+
+    assert merged["git_sha"] == target_sha
+    assert merged["artifacts"]["central-api"]["source_sha"] == previous_sha
+    assert merged["artifacts"]["dashboard-backend"]["source_sha"] == target_sha
+
+
+def test_test_acceptance_allows_non_target_artifacts_in_current_state():
+    module = _load_module()
+    digest = "sha256:" + "1" * 64
+    manifest = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "source_sha": FULL_SHA,
+        "git_sha": FULL_SHA,
+        "artifacts": {
+            "qqcc-config-backend": {
+                "digest": digest,
+                "source_sha": FULL_SHA,
+            }
+        },
+        "selected_artifacts": ["qqcc-config-backend"],
+    }
+    state = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "git_sha": FULL_SHA,
+        "health": {"cloud": "compose-ps-passed"},
+        "artifacts": {
+            "central-api": {
+                "digest": "sha256:" + "2" * 64,
+                "source_sha": "b" * 40,
+                "status": "verified",
+            },
+            "qqcc-config-backend": {
+                "digest": digest,
+                "source_sha": FULL_SHA,
+                "status": "deployed",
+            },
+        },
+    }
+
+    module.validate_v2_test_runtime_for_acceptance(state, manifest)
+
+
 def test_production_promotion_rejects_candidate_test_state(monkeypatch):
     module = _load_module()
     digest = "sha256:" + "1" * 64
@@ -3053,6 +3134,214 @@ def test_v2_incremental_track_with_no_changed_modules_selects_nothing(monkeypatc
     )
 
     assert manifest["selected_artifacts"] == []
+
+
+def test_independent_dashboard_release_uses_its_own_artifact_baseline():
+    module = _load_module()
+    policy = module.load_structured_file(POLICY_PATH)
+    dashboard_sha = "c" * 40
+    latest_control_plane_sha = "b" * 40
+    state = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "git_sha": latest_control_plane_sha,
+        "artifacts": {
+            "central-api": {
+                "digest": "sha256:" + "1" * 64,
+                "source_sha": latest_control_plane_sha,
+            },
+            "dashboard-backend": {
+                "digest": "sha256:" + "2" * 64,
+                "source_sha": dashboard_sha,
+            },
+            "dashboard-frontend": {
+                "digest": "sha256:" + "3" * 64,
+                "source_sha": dashboard_sha,
+            },
+        },
+    }
+
+    selection = module.resolve_independent_module_release(
+        policy,
+        {"dashboard"},
+        state,
+    )
+
+    assert selection.name == "dashboard"
+    assert selection.artifacts == {
+        "dashboard-backend",
+        "dashboard-frontend",
+    }
+    assert selection.previous_sha == dashboard_sha
+
+
+def test_independent_release_requires_exactly_one_module_group():
+    module = _load_module()
+    policy = module.load_structured_file(POLICY_PATH)
+
+    with pytest.raises(module.ReleaseError, match="exactly one"):
+        module.resolve_independent_module_release(
+            policy,
+            {"dashboard", "qqcc-bot"},
+            {"schema_version": 2},
+        )
+
+
+@pytest.mark.parametrize(
+    "alias,artifacts",
+    [
+        ("dashboard", {"dashboard-backend", "dashboard-frontend"}),
+        ("qqcc-bot", {"qqcc-bot"}),
+        ("qqcc-config", {"qqcc-config-backend", "qqcc-config-frontend"}),
+    ],
+)
+def test_independent_module_aliases_expand_to_complete_service_groups(
+    alias, artifacts
+):
+    module = _load_module()
+    policy = module.load_structured_file(POLICY_PATH)
+
+    assert module.expand_independent_module_request(policy, {alias}) == (
+        alias,
+        artifacts,
+    )
+
+
+def test_explicit_dashboard_module_does_not_expand_to_other_target_artifacts(
+    monkeypatch, tmp_path
+):
+    module = _load_module()
+    dashboard_sha = "c" * 40
+    latest_control_plane_sha = "b" * 40
+    artifact_names = {
+        "central-api",
+        "dashboard-backend",
+        "dashboard-frontend",
+        "qqcc-config-frontend",
+    }
+    artifacts = {
+        name: {
+            "kind": "image",
+            "ref": f"ghcr.io/giraffu/allbot-{name}@sha256:" + "1" * 64,
+            "digest": "sha256:" + "1" * 64,
+            "source_sha": FULL_SHA,
+            "oci_revision": FULL_SHA,
+            "dependency_closure": [],
+        }
+        for name in artifact_names
+    }
+    release = SimpleNamespace(
+        index={
+            "ci_run": "https://github.com/giraffu/All_bot/actions/runs/1",
+            "release_channel": "main",
+            "source_ref": "refs/heads/main",
+            "validation": {"mode": "full", "tests": "passed"},
+        },
+        manifests={
+            "control-plane": {"artifacts": artifacts},
+            "gpu-execution": {"artifacts": {}},
+        },
+    )
+    state = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "git_sha": latest_control_plane_sha,
+        "artifacts": {
+            "central-api": {"source_sha": latest_control_plane_sha},
+            "dashboard-backend": {"source_sha": dashboard_sha},
+            "dashboard-frontend": {"source_sha": dashboard_sha},
+        },
+    }
+    args = SimpleNamespace(
+        sha=FULL_SHA,
+        manifest=None,
+        bundle_cache=str(tmp_path),
+        bundle_repository="ghcr.io/giraffu/allbot-release-v2",
+        command="plan",
+        modules=["dashboard"],
+        services=[],
+        track="control-plane",
+        state_file=None,
+        from_sha=None,
+        env="prod",
+        remote_host="prod-control",
+        policy=str(POLICY_PATH),
+        skip_git_checks=True,
+        skip_ci_checks=True,
+        dashboard_fast_track=False,
+    )
+    selected = []
+    diffs = []
+
+    monkeypatch.setattr(
+        module, "_resolve_manifest_path", lambda *_args, **_kwargs: tmp_path / "index"
+    )
+    monkeypatch.setattr(module, "_read_json", lambda _path: {"schema_version": 2})
+    monkeypatch.setattr(module, "_read_current_state", lambda *_args, **_kwargs: state)
+    monkeypatch.setattr(module, "load_release_index", lambda *_args, **_kwargs: release)
+    monkeypatch.setattr(
+        module,
+        "git_changed_paths",
+        lambda previous, target: diffs.append((previous, target))
+        or ["dashboard/frontend/src/App.vue"],
+    )
+
+    def fake_load(_path, *, sha, track, modules, select_all_when_empty):
+        selected.extend(modules)
+        return {
+            "schema_version": 2,
+            "source_sha": sha,
+            "git_sha": sha,
+            "release_channel": "main",
+            "source_ref": "refs/heads/main",
+            "validation": {"mode": "full", "tests": "passed"},
+            "track": track,
+            "artifacts": artifacts,
+            "selected_artifacts": list(modules),
+        }
+
+    monkeypatch.setattr(module, "_load_v2_track", fake_load)
+
+    impact, manifest, previous_sha = module.build_plan(args)
+
+    assert previous_sha == dashboard_sha
+    assert diffs == [(dashboard_sha, FULL_SHA)]
+    assert set(selected) == {"dashboard-backend", "dashboard-frontend"}
+    assert set(manifest["selected_artifacts"]) == {
+        "dashboard-backend",
+        "dashboard-frontend",
+    }
+    assert impact.services == {"dashboard-backend", "dashboard-frontend"}
+
+
+@pytest.mark.parametrize(
+    "module_name,changed_path,blocker",
+    [
+        ("dashboard", "migrations/versions/add_column.py", "database-migrations"),
+        (
+            "qqcc-bot",
+            "src/services/qqcc_config_service.py",
+            "qqcc-runtime-config-contract",
+        ),
+    ],
+)
+def test_independent_module_rejects_shared_contract_changes(
+    module_name, changed_path, blocker
+):
+    module = _load_module()
+    policy = module.load_structured_file(POLICY_PATH)
+    selection = module.IndependentModuleRelease(
+        name=module_name,
+        artifacts={"qqcc-bot"},
+        previous_sha="b" * 40,
+    )
+
+    with pytest.raises(module.ReleaseError, match=blocker):
+        module.validate_independent_release_paths(
+            policy,
+            selection,
+            [changed_path],
+        )
 
 
 def test_main_channel_keeps_production_and_verify_test_compatibility():
