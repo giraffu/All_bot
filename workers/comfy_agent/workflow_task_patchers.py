@@ -20,6 +20,7 @@ from src.domain_config.wan22_aio_video import (
     resolve_wan22_model_profile,
 )
 from src.lora_catalog import normalize_ltx_video_lora_items
+from src.wan22_explicit_lora_catalog import resolve_wan22_lora_pair
 
 LTX_VIDEO_ADDITIONAL_LORA_NODE_IDS = ("256",)
 LTX_VIDEO_FIRST_PASS_MODEL_NODE_ID = "191"
@@ -131,18 +132,21 @@ def _patch_wan22_lora(
     for slot_index, item in enumerate(normalized_items, start=1):
         name = str(item["name"])
         strength = float(item["strength"])
+        resolved_pair = resolve_wan22_lora_pair(name)
+        high_lora = resolved_pair[0] if resolved_pair else f"{name}_high_noise.safetensors"
+        low_lora = resolved_pair[1] if resolved_pair else f"{name}_low_noise.safetensors"
         high_node = workflow.get(WAN22_HIGH_LORA_NODE_ID)
         if isinstance(high_node, dict):
             high_node.setdefault("inputs", {})[f"lora_{slot_index}"] = {
                 "on": True,
-                "lora": f"{name}_high_noise.safetensors",
+                "lora": high_lora,
                 "strength": strength,
             }
         low_node = workflow.get(WAN22_LOW_LORA_NODE_ID)
         if isinstance(low_node, dict):
             low_node.setdefault("inputs", {})[f"lora_{slot_index}"] = {
                 "on": True,
-                "lora": f"{name}_low_noise.safetensors",
+                "lora": low_lora,
                 "strength": strength,
             }
 

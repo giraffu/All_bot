@@ -16,6 +16,15 @@ WORKER_WORKFLOW_DIR = str(
 )
 
 
+def test_wan22_explicit_lora_catalog_is_mirrored_for_remote_workers():
+    repo_root = Path(__file__).resolve().parents[2]
+    assert (
+        repo_root / "src" / "wan22_explicit_lora_catalog.py"
+    ).read_bytes() == (
+        repo_root / "remote_workers" / "src" / "wan22_explicit_lora_catalog.py"
+    ).read_bytes()
+
+
 def _write_json(path: Path, payload) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
 
@@ -761,6 +770,74 @@ def test_workflow_patcher_injects_legacy_image_to_video_lora_and_model_profile(t
     assert "lora_6" not in patched_v2["18"]["inputs"]
     assert "lora_9" not in patched_v2["26"]["inputs"]
     assert "lora_9" not in patched_v2["18"]["inputs"]
+
+
+def test_workflow_patcher_resolves_downloaded_wan22_pair_paths(tmp_path):
+    workflow_dir = tmp_path / "workflows"
+    workflow_dir.mkdir()
+    _write_json(
+        workflow_dir / "mappings.json",
+        {
+            "wan22_video_v2": {
+                "image": "1",
+                "prompt": "2",
+                "prompt_input": "text",
+                "seed": "3",
+                "seed_input": "noise_seed",
+            }
+        },
+    )
+    _write_json(
+        workflow_dir / "Wan22AioV82.json",
+        {
+            "1": {"inputs": {"image": ""}},
+            "2": {"inputs": {"text": ""}},
+            "3": {"inputs": {"noise_seed": 0}},
+            "18": {"inputs": {}},
+            "26": {"inputs": {}},
+            "2616": {"inputs": {"unet_name": ""}},
+            "2617": {"inputs": {"unet_name": ""}},
+            "2578": {"inputs": {"value": 5}},
+            "2575": {"inputs": {"images": ["2603", 0]}},
+            "28": {
+                "inputs": {
+                    "filename_prefix": "wan22_video_v2",
+                    "images": ["2603", 0],
+                }
+            },
+            "2503": {
+                "inputs": {
+                    "filename_prefix": "wan22_video_v2_last_frame",
+                    "images": ["2607", 0],
+                }
+            },
+        },
+    )
+
+    patcher = WorkflowPatcher(str(workflow_dir))
+    workflow = patcher.load_workflow("wan22_video_v2")
+    patched = patcher.patch_workflow(
+        "wan22_video_v2",
+        workflow,
+        {
+            "image": "start.png",
+            "prompt": "demo",
+            "lora_items": [
+                {"name": "wan22_explicit_008", "strength": 1.0},
+            ],
+            "resolution_preset": "standard",
+            "seed": 78,
+        },
+    )
+
+    assert patched["26"]["inputs"]["lora_1"]["lora"] == (
+        "wan2.2/explicit_top200/008-f4c3spl4sh-cumshot-i2v-wan-2-2-video-lora-k3nk/"
+        "wan22-f4c3spl4sh-100epoc-high-k3nk.safetensors"
+    )
+    assert patched["18"]["inputs"]["lora_1"]["lora"] == (
+        "wan2.2/explicit_top200/008-f4c3spl4sh-cumshot-i2v-wan-2-2-video-lora-k3nk/"
+        "wan22-f4c3spl4sh-154epoc-low-k3nk.safetensors"
+    )
 
 
 def test_workflow_patcher_strips_wan22_video_v2_last_frame_branch_when_disabled(tmp_path):

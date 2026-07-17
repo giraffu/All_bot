@@ -53,7 +53,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 
 - Wan22 AIO 是当前 `image_to_video`、`video_insert`、`video_edit` 的主执行面。常见关键节点包括 LoRA loader、正负 prompt、首尾图、RIFE、视频保存和尺寸节点；节点 ID 以文档为准，修改前必须重新打开 workflow JSON 核对。
 - QQCC 场景负面提示词只走已有 workflow 参数映射：Qwen 自由P图 `img2img`/`img2img_lora` 写 `4.prompt`；PornMaster Flux2 single/multiple edit 写 `254.text` / `49.text`；Wan22 视频写 `2371.value`。空值保持既有空负向或 Wan22 默认负向归一，不新增 task type、profile 或模型目录。
-- QQCC `AI动图` 的 `end_frame_draw_scene_id` 只复用当前 AI绘图场景及其后处理链生成最终尾帧，再把首尾两图传给旧 `image_to_video` / `video_lora` 或 `wan22_video_v2`。两个 engine 都接受最多 5 个有序 `{name,strength}`；worker 提交前清空节点 `26`/`18` 的旧槽，再写入 `lora_1..5` 对应的高噪/低噪双文件。该多选配置只在 QQCC 官方/私有 Bot 暴露，主 Bot 菜单保持单模型边界。
+- QQCC `AI动图` 的 `end_frame_draw_scene_id` 只复用当前 AI绘图场景及其后处理链生成最终尾帧，再把首尾两图传给旧 `image_to_video` / `video_lora` 或 `wan22_video_v2`。两个 engine 都接受最多 5 个有序 `{name,strength}`；QQCC options 来自 `src/wan22_explicit_lora_catalog.py` 的 49 组已下载 High/Low 条目及保守推荐强度。worker 提交前清空节点 `26`/`18` 的旧槽，再按稳定键解析真实 High/Low 相对路径写入 `lora_1..5`；旧后缀命名仍兼容。该多选配置只在 QQCC 官方/私有 Bot 暴露，主 Bot 菜单保持单模型边界。
 - QQCC `AI滤镜` 使用独立 `filter_scenes`，但 engine、LoRA、`negative_prompt` 与 `original_face_swap_enabled` 规则复用 AI绘图；滤镜场景自身不支持后处理链，只能作为直接单步入口或 `draw_scenes[].postprocess_filter_scene_id` 的终止模板。关闭 `main_buttons.ai_filter` 只隐藏直接入口，不影响有效滤镜模板被 AI绘图引用；不要新增 workflow、RunPod profile、模型 bundle 或数据库表。
 - LTX 系列的用户可见 task type 与执行 profile 不完全同名。`ltx_video`、`ltx_video_flf2v`、`ltx_video_v2v_audio` 等映射必须同时核对 registry、payload builder、worker mapping 和模型 catalog。
 - LTX 首尾帧 `ltx_video_flf2v` 的默认与 10Eros override workflow 必须开启时空 VAE 的 `last_frame_fix`，让末端 latent 通过临时重复帧获得完整解码上下文；`workers/` 与 `remote_workers/` 两侧必须同步，避免尾帧轻微形变或运行态漂移。

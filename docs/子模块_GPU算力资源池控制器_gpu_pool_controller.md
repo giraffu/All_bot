@@ -355,7 +355,7 @@ scripts/lan_scail2_aio_prod.sh rollback --execute
 - 不要直接 `source .env.cloud.test`；RunPod dry-run 继续只使用 controller 的 `--env-file` loader。
 - LAN 模型缓存 bucket 固定为 `allbot-model-cache`；截至 2026-06-22，`192.168.1.115:9010` 已缓存 `img2img_lora/2026-06-10/manifest.json`、`i2i_pro/2026-06-14-test/manifest.json`、`scail2/2026-06-17-test/manifest.json` 与 `ltx_video/2026-06-10/manifest.json`。LAN LTX 缓存可能仍有旧 v1 残留；云端 R2 `ltx_video/2026-06-10/manifest.json` 当前是 10Eros v1.2-only，正式 RunPod 不依赖旧 v1 回退。
 - 全任务 LAN cache 入口为 `scripts/upload_all_task_models_to_lan_cache.py --env-file .env.lan.model-cache`，默认 dry-run；真实上传必须另行显式加 `--execute`。helper 复用共享对象池 `models/by-sha256/<sha[:2]>/<sha>`，并会复用已存在且 size/sha256 metadata 匹配的旧对象 key。
-- canonical manifest 中 `wan22_video_v2` 的下一不可变候选是 `wan22_video_v2/2026-07-18-lora5/manifest.json`，其余 profile 保持现有版本。该候选包含视频 LoRA 双文件；下载未完成或对象 HEAD 缺失时禁止发布/切换。
+- canonical manifest 中 `wan22_video_v2` 的下一不可变候选是 `wan22_video_v2/2026-07-18-lora5/manifest.json`，其余 profile 保持现有版本。本地 registry 的 `wan22_explicit_lora_library/2026-07-18` 已完成 49 High + 49 Low 下载和文件存在性核对；这不代表 R2 对象或目标 GPU 已同步，发布前仍须合并候选 manifest、逐对象 HEAD，并在任一对象缺失时禁止发布/切换。
 - `pornmaster_flux2_edit/2026-06-27/manifest.json` 是新增测试目标，不纳入全任务批量上传；本地 registry manifest 已完整缓存，后续用 `scripts/import_pornmaster_flux2_edit_models.py --download-unet --execute` 复核或更新，再用 `scripts/upload_pornmaster_flux2_edit_models_to_lan_cache.sh --execute` 单独上传到 LAN cache。若 PornMaster 9B UNET 缺失或未授权，导入脚本应返回 `pornmaster_unet_missing_or_unauthorized` 并拒绝写半截 manifest。
 - 单 bundle 通用入口仍为 `scripts/upload_model_bundle_to_r2.py`，通过 `.env.lan.model-cache` 映射 `LAN_MODEL_CACHE_*` 到 `RUNPOD_MODEL_*` 后写入 LAN cache；脚本按对象 size 与 sha256 metadata 跳过已有对象，metadata key 需大小写不敏感处理以兼容 MinIO。
 

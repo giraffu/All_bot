@@ -161,10 +161,10 @@ def test_qqcc_image_to_video_lora_scene_builds_legacy_video_plan():
     assert plan.prompt_override == "lora scene prompt"
     assert plan.negative_prompt == "video bad hands"
     assert plan.display_mode_name == "模型动图"
-    assert plan.lora_name == "BreastGrow"
+    assert plan.lora_name == "wan22_explicit_077"
     assert plan.lora_items == [
-        {"name": "BreastGrow", "strength": 0.75},
-        {"name": "Footjob", "strength": 1.4},
+        {"name": "wan22_explicit_077", "strength": 0.75},
+        {"name": "wan22_explicit_040", "strength": 1.4},
     ]
     assert plan.allow_contribute is False
     assert plan.result_meta == {
@@ -216,10 +216,10 @@ def test_qqcc_wan22_v2_scene_builds_v2_plan_and_normalizes_resolution():
     assert plan.prompt_override == "v2 scene prompt"
     assert plan.negative_prompt == "v2 blur"
     assert plan.display_mode_name == "新版动图"
-    assert plan.lora_name == "BreastGrow"
+    assert plan.lora_name == "wan22_explicit_077"
     assert plan.lora_items == [
-        {"name": "BreastGrow", "strength": 0.75},
-        {"name": "Footjob", "strength": 1.4},
+        {"name": "wan22_explicit_077", "strength": 0.75},
+        {"name": "wan22_explicit_040", "strength": 1.4},
     ]
     assert plan.allow_contribute is False
     assert plan.result_meta == {
@@ -507,8 +507,8 @@ async def test_private_qqcc_tail_frame_video_uses_durable_continuation(
     assert stages[1]["task_kwargs"]["user_cancel_allowed"] is False
     assert stages[1]["task_kwargs"]["show_queue_status"] is False
     assert stages[1]["task_kwargs"]["lora_items"] == [
-        {"name": "BreastGrow", "strength": 0.75},
-        {"name": "Footjob", "strength": 1.4},
+        {"name": "wan22_explicit_077", "strength": 0.75},
+        {"name": "wan22_explicit_040", "strength": 1.4},
     ]
     resume_checkpoint.assert_awaited_once()
     assert resume_checkpoint.await_args.kwargs["chain_id"] == "chain-video-1"

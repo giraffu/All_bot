@@ -2117,6 +2117,8 @@ onMounted(() => {
           <a-select
             :value="sceneConfig.video_lora_items.map(item => item.name)"
             mode="multiple"
+            show-search
+            option-filter-prop="label"
             :max-tag-count="5"
             data-testid="scene-video-lora-select"
             class="w-full"
@@ -2124,7 +2126,7 @@ onMounted(() => {
             :get-popup-container="getSceneSelectPopupContainer"
             @change="updateVideoLoraSelection"
           >
-            <a-select-option v-for="item in activeLoraOptions" :key="item.value" :value="item.value" :disabled="sceneConfig.video_lora_items.length >= 5 && !sceneConfig.video_lora_items.some(selected => selected.name === item.value)">{{ item.label }}</a-select-option>
+            <a-select-option v-for="item in activeLoraOptions" :key="item.value" :value="item.value" :label="item.label" :disabled="sceneConfig.video_lora_items.length >= 5 && !sceneConfig.video_lora_items.some(selected => selected.name === item.value)">{{ item.label }}</a-select-option>
           </a-select>
           <div v-for="item in sceneConfig.video_lora_items" :key="item.name" class="mt-3 grid grid-cols-[minmax(0,1fr)_92px] items-center gap-3">
             <div class="min-w-0 truncate text-sm text-slate-600">{{ activeLoraOptions.find(option => option.value === item.name)?.label || item.name }}</div>

@@ -1423,7 +1423,7 @@ async def test_qqcc_video_scene_lora_submits_legacy_video_lora(monkeypatch):
     await background_tasks.pop(0)
 
     assert captured[0]["mode"] == MODE_IMAGE_TO_VIDEO
-    assert captured[0]["lora_name"] == "BreastGrow"
+    assert captured[0]["lora_name"] == "wan22_explicit_077"
     assert captured[0]["prompt_override"] == "lora scene prompt"
     assert captured[0]["display_mode_name_override"] == "模型动图"
 
@@ -1652,7 +1652,7 @@ async def test_qqcc_video_scene_generates_tail_frame_before_legacy_video(monkeyp
     assert video_calls[0]["image_path"] == "/tmp/input.png"
     assert video_calls[0]["end_image_path"] == "/tmp/generated-tail.png"
     assert video_calls[0]["use_end_frame"] is True
-    assert video_calls[0]["lora_name"] == "BreastGrow"
+    assert video_calls[0]["lora_name"] == "wan22_explicit_077"
     assert video_calls[0]["allow_contribute"] is False
 
 

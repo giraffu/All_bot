@@ -7,6 +7,7 @@ from dashboard.backend.schemas import QqccBotConfigRequest
 from src.database.models import PrivateQqccBot, RuntimeCheckpoint
 from src.lora_catalog import LTX_VIDEO_LORA_MODELS
 from src.qqcc_ltx_lora_catalog import QQCC_LTX23_LIBRARY_MODELS
+from src.wan22_explicit_lora_catalog import WAN22_EXPLICIT_LORA_MODELS
 from src.services import qqcc_config_service as config_service_module
 from src.services.qqcc_config_service import (
     AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,
@@ -699,17 +700,17 @@ def test_normalize_qqcc_config_validates_scene_engines_and_loras():
 
     video_scenes = get_enabled_qqcc_video_scenes(config)
     assert video_scenes[0]["engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
-    assert video_scenes[0]["lora_name"] == "BreastGrow"
-    assert video_scenes[0]["lora_strength"] == 1.0
+    assert video_scenes[0]["lora_name"] == "wan22_explicit_077"
+    assert video_scenes[0]["lora_strength"] == 0.7
     assert video_scenes[0]["lora_items"] == [
-        {"name": "BreastGrow", "strength": 1.0}
+        {"name": "wan22_explicit_077", "strength": 0.7}
     ]
     assert video_scenes[0]["negative_prompt"] == ""
     assert video_scenes[1]["engine"] == VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2
-    assert video_scenes[1]["lora_name"] == "BreastGrow"
-    assert video_scenes[1]["lora_strength"] == 1.0
+    assert video_scenes[1]["lora_name"] == "wan22_explicit_077"
+    assert video_scenes[1]["lora_strength"] == 0.7
     assert video_scenes[1]["lora_items"] == [
-        {"name": "BreastGrow", "strength": 1.0}
+        {"name": "wan22_explicit_077", "strength": 0.7}
     ]
     assert video_scenes[1]["negative_prompt"] == ""
     assert video_scenes[2]["engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
@@ -757,13 +758,13 @@ def test_normalize_qqcc_video_lora_items_preserves_order_dedupes_and_limits_five
 
     scene = config["video_scenes"][0]
     assert scene["lora_items"] == [
-        {"name": "Footjob", "strength": 1.35},
-        {"name": "BreastGrow", "strength": 2.0},
-        {"name": "Cum", "strength": 0.1},
-        {"name": "Cunilingus", "strength": 1.0},
-        {"name": "Insertion", "strength": 1.0},
+        {"name": "wan22_explicit_040", "strength": 1.35},
+        {"name": "wan22_explicit_077", "strength": 2.0},
+        {"name": "wan22_explicit_008", "strength": 0.1},
+        {"name": "wan22_explicit_069", "strength": 0.8},
+        {"name": "wan22_explicit_010", "strength": 0.8},
     ]
-    assert scene["lora_name"] == "Footjob"
+    assert scene["lora_name"] == "wan22_explicit_040"
     assert scene["lora_strength"] == 1.35
 
     options = config_service_module.build_qqcc_config_options()
@@ -771,14 +772,33 @@ def test_normalize_qqcc_video_lora_items_preserves_order_dedupes_and_limits_five
         {"value": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO, "supports_lora": True},
         {"value": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2, "supports_lora": True},
     ]
-    assert any(
-        item == {
-            "value": "Footjob",
-            "label": "足交",
-            "default_strength": 1.0,
-        }
-        for item in options["video_lora_models"]
-    )
+    assert {
+        "value": "wan22_explicit_040",
+        "label": "040 · 足交",
+        "default_strength": 1.0,
+    } in options["video_lora_models"]
+
+
+def test_qqcc_video_lora_options_expose_all_downloaded_pairs_with_defaults():
+    options = config_service_module.build_qqcc_config_options()["video_lora_models"]
+
+    assert len(options) == 49
+    assert len(WAN22_EXPLICIT_LORA_MODELS) == 49
+    assert options[0] == {
+        "value": "wan22_explicit_005",
+        "label": "005 · 口部插入转场",
+        "default_strength": 0.8,
+    }
+    assert {
+        "value": "wan22_explicit_008",
+        "label": "008 · F4C3SPL4SH 面部射精",
+        "default_strength": 1.0,
+    } in options
+    assert options[-1] == {
+        "value": "wan22_explicit_198",
+        "label": "198 · 舔嘴唇",
+        "default_strength": 0.8,
+    }
 
 
 def test_normalize_qqcc_config_validates_video_end_frame_draw_scene_reference():
@@ -1182,7 +1202,7 @@ async def test_load_qqcc_config_payload_returns_defaults_when_checkpoint_missing
         "supports_lora": False,
     }
     assert any(
-        item["value"] == "BreastGrow"
+        item["value"] == "wan22_explicit_077"
         for item in response["options"]["video_lora_models"]
     )
     assert any(
@@ -1584,9 +1604,9 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
                 "negative_prompt": "bad hands",
                 "duration": "8s",
                 "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
-                "lora_name": "BreastGrow",
+                "lora_name": "wan22_explicit_077",
                 "lora_strength": 1.0,
-                "lora_items": [{"name": "BreastGrow", "strength": 1.0}],
+                "lora_items": [{"name": "wan22_explicit_077", "strength": 1.0}],
                 "end_frame_draw_scene_id": "tail_pose",
             },
             {
@@ -1596,7 +1616,7 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
                 "negative_prompt": 999,
                 "duration": "10s",
                 "engine": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
-                "lora_name": "BreastGrow",
+                "lora_name": "wan22_explicit_077",
                 "end_frame_draw_scene_id": "removed_tail",
             },
         ]
@@ -1613,9 +1633,9 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
             "negative_prompt": "bad hands",
             "duration": "8s",
             "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
-            "lora_name": "BreastGrow",
+            "lora_name": "wan22_explicit_077",
             "lora_strength": 1.0,
-            "lora_items": [{"name": "BreastGrow", "strength": 1.0}],
+            "lora_items": [{"name": "wan22_explicit_077", "strength": 1.0}],
             "end_frame_draw_scene_id": "tail_pose",
         },
         {
@@ -1625,9 +1645,9 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
             "negative_prompt": "",
             "duration": "10s",
             "engine": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
-            "lora_name": "BreastGrow",
-            "lora_strength": 1.0,
-            "lora_items": [{"name": "BreastGrow", "strength": 1.0}],
+            "lora_name": "wan22_explicit_077",
+            "lora_strength": 0.7,
+            "lora_items": [{"name": "wan22_explicit_077", "strength": 0.7}],
             "end_frame_draw_scene_id": "",
         },
     ]

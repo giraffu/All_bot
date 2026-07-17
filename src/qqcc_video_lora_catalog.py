@@ -10,17 +10,29 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from src.lora_catalog import VIDEO_LORA_MODELS
+from src.wan22_explicit_lora_catalog import WAN22_EXPLICIT_LORA_MODELS
 
 
 QQCC_VIDEO_LORA_MODELS = {
-    name: label for name, label in VIDEO_LORA_MODELS.items() if name
+    name: str(item["label"]) for name, item in WAN22_EXPLICIT_LORA_MODELS.items()
 }
 
-# Existing Wan 2.2 assets historically ran at 1.0.  Making that value explicit
-# gives QQCC Config a recommendation source while still allowing per-scene edits.
 QQCC_VIDEO_LORA_DEFAULT_STRENGTHS = {
-    name: 1.0 for name in QQCC_VIDEO_LORA_MODELS
+    name: float(item["default_strength"])
+    for name, item in WAN22_EXPLICIT_LORA_MODELS.items()
+}
+
+# Upgrade existing QQCC scenes from the old seven-prefix menu to the closest
+# downloaded pair.  These aliases are accepted on input but never returned in
+# the new 49-item options catalog.
+QQCC_VIDEO_LORA_LEGACY_ALIASES = {
+    "BreastGrow": "wan22_explicit_077",
+    "BreastInsertion": "wan22_explicit_088",
+    "Cum": "wan22_explicit_008",
+    "Cunilingus": "wan22_explicit_069",
+    "Flatchested": "wan22_explicit_164",
+    "Footjob": "wan22_explicit_040",
+    "Insertion": "wan22_explicit_010",
 }
 
 
@@ -53,6 +65,7 @@ def normalize_qqcc_video_lora_items(
             continue
         raw_name = raw_item.get("name", raw_item.get("path"))
         name = raw_name.strip() if isinstance(raw_name, str) else ""
+        name = QQCC_VIDEO_LORA_LEGACY_ALIASES.get(name, name)
         if name not in QQCC_VIDEO_LORA_MODELS or name in seen:
             continue
         seen.add(name)

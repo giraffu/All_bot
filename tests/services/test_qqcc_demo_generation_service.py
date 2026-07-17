@@ -143,8 +143,8 @@ async def test_submit_video_demo_uses_scene_duration_prompt_and_engine():
         length=8,
         priority=0,
         lora_items=[
-            {"name": "BreastGrow", "strength": 0.75},
-            {"name": "Footjob", "strength": 1.4},
+            {"name": "wan22_explicit_077", "strength": 0.75},
+            {"name": "wan22_explicit_040", "strength": 1.4},
         ],
     )
 
@@ -188,8 +188,8 @@ async def test_submit_legacy_video_demo_forwards_ordered_lora_items_and_strength
         length=5,
         priority=0,
         lora_items=[
-            {"name": "BreastGrow", "strength": 0.75},
-            {"name": "Footjob", "strength": 1.4},
+            {"name": "wan22_explicit_077", "strength": 0.75},
+            {"name": "wan22_explicit_040", "strength": 1.4},
         ],
     )
 

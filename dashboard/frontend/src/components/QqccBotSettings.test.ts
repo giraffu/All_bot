@@ -1020,6 +1020,8 @@ describe('QqccBotSettings', () => {
     const selector = wrapper.findAllComponents(SelectStub)
       .find(component => component.attributes('data-testid') === 'scene-video-lora-select')
     if (!selector) throw new Error('Missing video LoRA selector')
+    expect(selector.attributes('show-search')).toBeDefined()
+    expect(selector.attributes('option-filter-prop')).toBe('label')
     selector.vm.$emit('change', [
       'BreastGrow', 'BreastInsertion', 'Cum', 'Cunilingus', 'Footjob', 'Insertion',
     ])
