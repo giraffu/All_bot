@@ -144,7 +144,7 @@ Central control 和创建 Pod 前中止。最终验收以 `reconcile.managed_cou
 | `cloud-prod-comfy-agent-2` | `cloud_prod_worker_02` | 已退役；原 `192.168.1.177:8188` 已由 `lan_aio_prod_gpu177_gpu0_wan22_video_v2_01` / AIO `8190` 替换，当前 live runtime 为 `wan22_video_v2` |
 | `cloud-prod-comfy-agent-3` | `cloud_prod_worker_03` | 已退役；原 `192.168.1.177:8189` 已由 `lan_aio_prod_gpu177_gpu1_ltx_video_01` / AIO `8191` 替换 |
 | `cloud-prod-comfy-agent-4` | `cloud_prod_worker_04` | `192.168.1.252:8188` |
-| `cloud-prod-comfy-agent-5` | `cloud_prod_worker_05` | 原 `192.168.1.252:8189`，现为 stopped rollback baseline；正式低负载自由P图 v2 由 `lan_aio_prod_gpu252_gpu1_pornmaster_flux2_edit_01` 接管，SCAIL-2/Wan22 仍 maintenance-disabled |
+| `cloud-prod-comfy-agent-5` | `cloud_prod_worker_05` | 原 `192.168.1.252:8189`，现为 stopped rollback baseline；GPU1 RMA replacement 已由 `lan_aio_prod_gpu252_gpu1_i2i_pro_01` 接管 i2i_pro，旧 UUID 的 PornMaster/SCAIL-2/Wan22 槽位仍 maintenance-disabled |
 | `cloud-prod-comfy-agent-6` | `cloud_prod_worker_06` | `192.168.1.2:8188` |
 | `cloud-prod-comfy-agent-7` | `cloud_prod_worker_07` | `192.168.1.2:8189` |
 
@@ -157,7 +157,7 @@ Central control 和创建 Pod 前中止。最终验收以 `reconcile.managed_cou
 | `cloud_prod_worker_01` | 本地主服务器 `cloud-prod-comfy-agent-1` 容器，当前 stopped rollback 且 Central control disabled | `gpu-226:8188` 宿主机进程仍是手工回滚元数据；当前接单 runtime 是 `lan_aio_prod_gpu226_gpu0_image_to_video_01` / AIO `8190` | 对旧 `8188` 不执行 Docker 操作；AIO 日常操作走 LAN fleet helper |
 | `cloud_prod_worker_02/03` | 已退役，本地主 `cloud-prod-comfy-agent-2/3` 容器已删除 | `gpu-177` 的旧 `comfy0/comfy1` 与 `/data/comfy` 已删除 | control 固定 `disabled`；gpu-177 恢复走 AIO restart/recreate 或外部容量兜底 |
 | `cloud_prod_worker_04` | 本地主服务器 agent 容器 | `gpu-252` 的 `comfy0` Docker 容器 | 只在维护窗口按目标容器操作 |
-| `cloud_prod_worker_05` | 本地主服务器 agent 容器，当前 stopped rollback | `gpu-252` 的旧 `comfy1` Docker 容器，当前 stopped rollback | 正式自由P图 v2 已由 `lan_aio_prod_gpu252_gpu1_pornmaster_flux2_edit_01` / AIO `8191` 接管；SCAIL-2/Wan22 因返修卡 Xid 119/154 继续禁用，回滚前不要重新 enabled |
+| `cloud_prod_worker_05` | 本地主服务器 agent 容器，当前 stopped rollback | `gpu-252` 的旧 `comfy1` Docker 容器，当前 stopped rollback | RMA replacement 已由 `lan_aio_prod_gpu252_gpu1_i2i_pro_01` / AIO `8191` 接管 i2i_pro；旧 UUID 的 PornMaster/SCAIL-2/Wan22 槽位继续禁用 |
 | `cloud_prod_worker_06/07` | 本地主服务器 agent 容器 | `gpu-002` 的 `comfy0/comfy1` Docker 容器 | 保留为 compose/热回滚口径；gpu-002 slot0/slot1 也可能被 LAN AIO 或 SCAIL-2 runtime 接管，操作前先查当前 Central agent 与本机容器状态 |
 
 `POOL_IMAGE_REF`、`runtime_profile`、`node_id` 等 heartbeat/compose 字段是 GPU pool 观测与期望配置声明，不等于底层 ComfyUI runtime 已经被替换成该镜像。确认某个 ComfyUI 的真实运行方式时，以 `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md`、SSH 盘点和 Comfy `/system_stats` 为准。
@@ -459,7 +459,7 @@ scripts/lan_scail2_aio_prod.sh enable --execute
 
 渲染出的 compose 必须为 `RUNPOD_ENVIRONMENT=cloud-prod`、`CENTRAL_API_URL=https://worker-central.aivison.it.com`、`MINIO_*_BUCKET=user-data-prod`，声明 `SUPPORTED_TASK_TYPES=scail2_action_transfer,scail2_action_transfer_long,scail2_video_replacement,scail2_face_swap_v2`，并通过 `TASK_TYPE_WORKFLOW_OVERRIDES` 绑定动作迁移 audio、动作迁移 Context-Windows、视频换人 audio 与视频换脸 v10 workflow；`scail2_face_swap_v2` 必须开启 `SCAIL2_FACE_SWAP_V10_*` 预处理，先调用 `face_swap_v2.json` 生成换脸首帧。compose 不得出现 `cloud-test` / `user-data-test`。`start-disabled --execute` 会先 drain 旧 slot0 AIO 并等待其自然空闲，停止旧 slot0 容器后启动 SCAIL-2 disabled heartbeat；只有 `/system_stats`、`/object_info` 必需节点、模型枚举和 disabled heartbeat 全部通过后，才允许 `enable --execute`。
 
-自由P图 v2 正式 LAN 接单当前使用 GPU002 GPU1 的 `gpu-002-gpu1-pornmaster_flux2_edit` 与 GPU252 GPU1 的 `gpu-252-gpu1-pornmaster_flux2_edit`。GPU252 GPU1 固定返修 UUID `GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e`，只按低负载 PornMaster Flux2 edit 计入容量；同卡 SCAIL-2/Wan22 仍因真实 workload 复现 Xid 119/154 maintenance-disabled。GPU252 GPU0 的 `gpu-252-gpu0-pornmaster_flux2_edit` 只保留为同卡回切候选，当前 `8192` 由 `gpu-252-gpu0-i2i_pro` 接 `i2i_pro,t2i-pornmaster-turbo,face_swap`，并固定健康卡 UUID。PornMaster Flux2 edit AIO 只声明 `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit`；正式入口需在 `.env.cloud.prod` 设置 `ENABLE_FREE_EDIT_V2=true`，前端 Pages 构建需设置 `VITE_ENABLE_FREE_EDIT_V2=true`。
+自由P图 v2 正式 LAN 接单当前使用 GPU002 GPU1 的 `gpu-002-gpu1-pornmaster_flux2_edit`；GPU252 GPU1 已切为 `gpu-252-gpu1-i2i_pro`，不再计入 PornMaster Flux2 edit 容量。GPU252 的 `8192`/`8191` 现均接 `i2i_pro,t2i-pornmaster-turbo,face_swap` 并固定各自 UUID；旧 UUID 对应的 PornMaster/SCAIL-2/Wan22 槽位仍 maintenance-disabled。PornMaster Flux2 edit AIO 只声明 `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit`；正式入口需在 `.env.cloud.prod` 设置 `ENABLE_FREE_EDIT_V2=true`，前端 Pages 构建需设置 `VITE_ENABLE_FREE_EDIT_V2=true`。
 
 自由P图 v2 的正式 RunPod 手动备用容量使用同一个 `pornmaster_flux2_edit` runtime profile，不写 `user-data-prod` 以外的用户结果桶，也不把模型 baked 进镜像。启用前必须确认 `RUNPOD_IMAGE_NAME_PORNMASTER_FLUX2_EDIT` 指向公开 GHCR tag，`RUNPOD_MODEL_PREFIX_PORNMASTER_FLUX2_EDIT=pornmaster_flux2_edit/2026-06-27`，`RUNPOD_MODEL_MANIFEST_KEY_PORNMASTER_FLUX2_EDIT=pornmaster_flux2_edit/2026-06-27/manifest.json`。
 

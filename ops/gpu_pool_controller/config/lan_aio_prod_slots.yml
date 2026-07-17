@@ -233,8 +233,8 @@ slots:
     notes: Maintenance-disabled PornMaster Flux2 edit LAN AIO for gpu-252 GPU1 while UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e is removed for RMA after the 2026-07-06 Asia/Shanghai operator drain. Intake was disabled, the 8191 queue was confirmed empty, allbot-lan-aio-gpu-252-gpu1-pornmaster_flux2_edit-prod was stopped, and the GPU1 LAN AIO containers were set to Docker restart policy no so they should not auto-start after host reboot without this card. Keep scail2 and wan22_video_v2 maintenance-disabled on this card until workload-specific validation or vendor/driver resolution clears Xid 119/154.
 
   - id: gpu-252-gpu1-i2i_pro
-    enabled: false
-    phase: candidate
+    enabled: true
+    phase: prod_enabled
     retargetable: false
     assignment_id: lan-252-8189-worker-05
     target_profile_id: i2i_pro
@@ -254,7 +254,7 @@ slots:
     old_local_agent_container: ""
     remote_dir: /home/user/allbot-runpod-aio-prod/gpu252-gpu1-i2i-pro
     rollout_order: 33
-    notes: Disabled commissioning candidate for the RMA replacement gpu-252 GPU1 card, pinned to new UUID GPU-8153a439-e3f6-8922-039d-dc13e97da6d7 on host port 8191. The old repaired UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e is absent. A 4 GiB CUDA memory touch and short FP16 compute smoke passed without Xid on 2026-07-17; keep disabled until render, preflight, cache preparation, container health, and disabled heartbeat gates pass, then enable only under the user's explicit production authorization.
+    notes: Production i2i_pro worker for the RMA replacement gpu-252 GPU1 card, pinned to new UUID GPU-8153a439-e3f6-8922-039d-dc13e97da6d7 on host port 8191. The old repaired UUID GPU-33de1af6-ca27-7eeb-ae46-6a9f4f89523e is absent. On 2026-07-17 the 4 GiB CUDA memory touch and short FP16 compute smoke, canonical image verification, render, preflight, six-file model warm-cache, container health, disabled heartbeat, required ComfyUI node/model checks, and enable-aio gates all passed without Xid under the user's explicit production authorization.
 
   - id: gpu-002-gpu0-scail2
     enabled: true
