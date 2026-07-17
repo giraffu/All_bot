@@ -1,4 +1,6 @@
 version: 1
+deprecated: true
+purpose: one-time state-init seed only; never update after ordinary LAN AIO operations
 managed_by: allbot-lan-aio-operator
 last_verified_at: "2026-07-15T04:44:38Z"
 sources:

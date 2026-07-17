@@ -12,12 +12,19 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+import uuid
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .config_loader import CONFIG_DIR, ControllerConfig, load_controller_config
+from .lan_aio_state import (
+    LanAioStateStore,
+    StateDriftError,
+    assess_state_drift,
+    catalog_sha256,
+)
 from .runtime import RuntimePlanner, RuntimeRenderOverrides
 from scripts.gpu_release_rollout import resolve_gpu_artifact, rollout_plan
 
@@ -49,6 +56,24 @@ RETARGETABLE_REPLACE_SLOT_ACTIONS = {
 }
 SAFE_STALE_CONTAINER_STATES = {"created", "exited", "dead", "removing"}
 FAILURE_POLICY_AUTO_ROLLBACK = "auto_rollback"
+MANAGED_MUTATION_ACTIONS = {
+    "configure-registry",
+    "pull-image",
+    "warm-cache",
+    "takeover",
+    "drain-aio",
+    "disable-aio",
+    "enable-aio",
+    "restart-aio",
+    "recover",
+    "release-rollout",
+}
+DIRECT_TRANSITION_ACTIONS = {
+    "drain-legacy",
+    "stop-old",
+    "start-disabled",
+    "rollback",
+}
 SSH_BATCH_OPTIONS = (
     "-o",
     "BatchMode=yes",
@@ -155,6 +180,11 @@ def _agent_node_label(node_id: str) -> str:
     return _sanitize(node_id).replace("_", "")
 
 
+def _new_operation_id(action: str) -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"{timestamp}-{_sanitize(action).lower()}-{uuid.uuid4().hex[:8]}"
+
+
 def _parse_legacy_hot_cache_copies(
     raw: list[dict[str, Any]],
     *,
@@ -189,6 +219,7 @@ def load_lan_aio_prod_slots(
     root = Path(config_root) if config_root else CONFIG_DIR
     config = load_controller_config(root)
     raw = _load_yaml(root / LAN_AIO_SLOTS_FILE)
+    stable_catalog = int(raw.get("version") or 1) >= 2
     slots: dict[str, LanAioProdSlot] = {}
     for item in raw.get("slots", []):
         assignment_id = str(item["assignment_id"])
@@ -199,12 +230,25 @@ def load_lan_aio_prod_slots(
         profile_label = _sanitize(target_profile_id)
         configured_gpu_index = comfy.gpu_index if comfy.gpu_index is not None else 0
         runtime_gpu_index = (
-            int(item["gpu_index"]) if item.get("gpu_index") is not None else comfy.gpu_index
+            int(item["gpu_index"])
+            if item.get("gpu_index") is not None
+            else comfy.gpu_index
+        )
+        configured_phase = str(item.get("phase") or "canary_ready")
+        policy_blocked = (
+            configured_phase == "maintenance_disabled"
+            or configured_phase.startswith("blocked_")
         )
         slot = LanAioProdSlot(
             id=str(item["id"]),
-            enabled=bool(item.get("enabled", True)),
-            phase=str(item.get("phase") or "canary_ready"),
+            enabled=(not policy_blocked)
+            if stable_catalog
+            else bool(item.get("enabled", True)),
+            phase=(
+                configured_phase
+                if policy_blocked or not stable_catalog
+                else "catalog_ready"
+            ),
             assignment_id=assignment_id,
             target_profile_id=target_profile_id,
             host_port=int(item.get("host_port") or (8190 + int(configured_gpu_index))),
@@ -245,7 +289,11 @@ def load_lan_aio_prod_slots(
                     item.get("old_runtime_container") or f"comfy{configured_gpu_index}"
                 ),
             ),
-            retargetable=bool(item.get("retargetable", False)),
+            retargetable=(
+                not policy_blocked
+                if stable_catalog
+                else bool(item.get("retargetable", False))
+            ),
             notes=str(item.get("notes") or ""),
             gpu_device_id=_optional_str(item.get("gpu_device_id")),
         )
@@ -303,6 +351,10 @@ def slot_to_jsonable(
 def physical_slot_key(slot: LanAioProdSlot) -> str:
     gpu_label = f"gpu{slot.gpu_index}" if slot.gpu_index is not None else slot.comfy_id
     return f"{slot.node_id}:{gpu_label}"
+
+
+def slot_mutation_blocked(slot: LanAioProdSlot) -> bool:
+    return slot.phase == "maintenance_disabled" or slot.phase.startswith("blocked_")
 
 
 def load_env_allowlist(paths: list[Path]) -> dict[str, str]:
@@ -363,6 +415,7 @@ class LanAioProdOps:
         model_env_file: Path,
         central_url: str = DEFAULT_CENTRAL_URL,
         web_health_url: str = DEFAULT_WEB_HEALTH_URL,
+        state_dir: Path | None = None,
     ) -> None:
         self.config_root = config_root
         self.config = load_controller_config(config_root)
@@ -375,6 +428,9 @@ class LanAioProdOps:
         self.model_env_file = model_env_file
         self.central_url = central_url.rstrip("/")
         self.web_health_url = web_health_url
+        self.catalog_path = (config_root or CONFIG_DIR) / LAN_AIO_SLOTS_FILE
+        self.catalog_sha256 = catalog_sha256(self.catalog_path)
+        self.state_store = LanAioStateStore(state_dir)
         self.env_values = load_env_allowlist(
             [self.prod_env_file, self.model_env_file, self.aio_env_file]
         )
@@ -395,9 +451,7 @@ class LanAioProdOps:
                 )
             return [slot]
         return [
-            slot
-            for slot in self.slots.values()
-            if include_disabled or slot.enabled
+            slot for slot in self.slots.values() if include_disabled or slot.enabled
         ]
 
     def list_payload(self, *, include_disabled: bool = False) -> dict[str, Any]:
@@ -431,20 +485,24 @@ class LanAioProdOps:
         candidate: LanAioProdSlot,
         replacement_target_slot_id: str,
     ) -> LanAioProdSlot:
-        if not candidate.retargetable:
-            raise RuntimeError(f"slot {candidate.id} is not retargetable")
+        if slot_mutation_blocked(candidate):
+            raise RuntimeError(
+                f"slot {candidate.id} is blocked by catalog policy ({candidate.phase})"
+            )
         if replacement_target_slot_id not in self.slots:
-            raise KeyError(f"unknown LAN AIO replacement target slot: {replacement_target_slot_id}")
+            raise KeyError(
+                f"unknown LAN AIO replacement target slot: {replacement_target_slot_id}"
+            )
         target = self.slots[replacement_target_slot_id]
         if target.id == candidate.id:
-            raise RuntimeError("replacement target must be different from the candidate slot")
+            raise RuntimeError(
+                "replacement target must be different from the candidate slot"
+            )
         if target.node_id != candidate.node_id:
             raise RuntimeError(
                 "replacement target must be on the same GPU node: "
                 f"{candidate.node_id} != {target.node_id}"
             )
-        if not target.enabled:
-            raise RuntimeError(f"replacement target {target.id} is not an enabled current slot")
         if target.target_profile_id == candidate.target_profile_id:
             raise RuntimeError(
                 "replacement target already has the candidate profile: "
@@ -516,11 +574,30 @@ class LanAioProdOps:
     ) -> dict[str, Any]:
         target = self.slots.get(replace_slot_id)
         if target is None:
-            raise KeyError(f"unknown LAN AIO replacement target slot: {replace_slot_id}")
+            raise KeyError(
+                f"unknown LAN AIO replacement target slot: {replace_slot_id}"
+            )
         if target.node_id != node_id:
             raise RuntimeError(
                 "candidate node must match replacement target node: "
                 f"{node_id} != {target.node_id}"
+            )
+        ledger = self.state_store.load_current()
+        if ledger is not None:
+            physical_slot = physical_slot_key(target)
+            ledger_target = (
+                ((ledger.get("physical_slots") or {}).get(physical_slot) or {})
+                .get("current", {})
+                .get("slot_id")
+            )
+            if ledger_target != target.id:
+                raise RuntimeError(
+                    "replacement target is not current in the local ledger: "
+                    f"expected {ledger_target or 'missing'}, got {target.id}"
+                )
+        elif not target.enabled:
+            raise RuntimeError(
+                f"replacement target {target.id} is not an enabled current slot"
             )
         profile_config = self.config.profiles.get(profile)
         if profile_config is None:
@@ -631,8 +708,7 @@ class LanAioProdOps:
                 f"{profile_label}_01"
             ),
             container_name=(
-                f"allbot-lan-aio-{target.node_id}-gpu{target_gpu_index}-"
-                f"{profile}-prod"
+                f"allbot-lan-aio-{target.node_id}-gpu{target_gpu_index}-{profile}-prod"
             ),
             ssh_host=target.ssh_host,
             node_id=target.node_id,
@@ -684,12 +760,8 @@ class LanAioProdOps:
                 "legacy_preflight_required": slot.legacy_preflight_required,
                 "agent_id": slot.agent_id,
                 "container_name": slot.container_name,
-                "legacy_worker_id": slot.legacy_worker_id,
-                "old_runtime_container": slot.old_runtime_container,
-                "old_local_agent_container": slot.old_local_agent_container,
                 "remote_dir": slot.remote_dir,
                 "rollout_order": slot.rollout_order,
-                "notes": slot.notes,
             }
         )
         return {key: value for key, value in item.items() if value not in (None, "")}
@@ -721,6 +793,472 @@ class LanAioProdOps:
                 }
             )
         return payload
+
+    def live_current_snapshot(
+        self,
+        physical_slots: set[str],
+    ) -> dict[str, Any]:
+        current: dict[str, str | None] = {}
+        errors: dict[str, str] = {}
+        observations: dict[str, list[dict[str, Any]]] = {}
+        try:
+            workers = {
+                str(item.get("agent_id")): item
+                for item in self._system_workers()
+                if item.get("agent_id")
+            }
+        except Exception as exc:
+            return {
+                "current": {physical_slot: None for physical_slot in physical_slots},
+                "errors": {
+                    physical_slot: f"Central worker status unavailable: {exc}"
+                    for physical_slot in physical_slots
+                },
+                "observations": {},
+            }
+        for physical_slot in sorted(physical_slots):
+            siblings = [
+                slot
+                for slot in self.slots.values()
+                if physical_slot_key(slot) == physical_slot
+            ]
+            if not siblings:
+                current[physical_slot] = None
+                errors[physical_slot] = "physical slot is absent from catalog"
+                continue
+            slot_observations: list[dict[str, Any]] = []
+            try:
+                for slot in siblings:
+                    state = self._remote_target_container_state(slot)
+                    slot_observations.append(
+                        {
+                            "slot_id": slot.id,
+                            "container_name": slot.container_name,
+                            **state,
+                        }
+                    )
+            except Exception as exc:
+                current[physical_slot] = None
+                errors[physical_slot] = str(exc)
+                observations[physical_slot] = slot_observations
+                continue
+            running = [item for item in slot_observations if bool(item.get("running"))]
+            observations[physical_slot] = slot_observations
+            if len(running) == 1:
+                live_slot_id = str(running[0]["slot_id"])
+                live_slot = self.slots[live_slot_id]
+                worker = workers.get(live_slot.agent_id)
+                if worker is None:
+                    current[physical_slot] = None
+                    errors[physical_slot] = (
+                        f"running container has no Central worker: {live_slot.agent_id}"
+                    )
+                    continue
+                expected_worker = {
+                    "node_id": live_slot.node_id,
+                    "provider": "lan_ssh",
+                    "runtime_profile": self.config.profiles[
+                        live_slot.target_profile_id
+                    ].runtime_profile,
+                }
+                metadata_errors = [
+                    f"{key}={worker.get(key)!r} expected={value!r}"
+                    for key, value in expected_worker.items()
+                    if worker.get(key) != value
+                ]
+                if worker.get("pool_managed") not in (True, "true", "True", "1", 1):
+                    metadata_errors.append(
+                        f"pool_managed={worker.get('pool_managed')!r}"
+                    )
+                running[0]["worker"] = _worker_summary(worker)
+                if metadata_errors:
+                    current[physical_slot] = None
+                    errors[physical_slot] = (
+                        "Central worker metadata mismatch: "
+                        + ", ".join(metadata_errors)
+                    )
+                    continue
+                current[physical_slot] = live_slot_id
+            elif not running:
+                current[physical_slot] = None
+            else:
+                current[physical_slot] = None
+                errors[physical_slot] = "multiple running catalog slots: " + ", ".join(
+                    str(item["slot_id"]) for item in running
+                )
+        return {
+            "current": current,
+            "errors": errors,
+            "observations": observations,
+        }
+
+    def state_status_payload(self, physical_slots: set[str]) -> dict[str, Any]:
+        ledger = self.state_store.load_current()
+        scoped_ledger = ledger
+        if ledger is not None:
+            scoped_ledger = {
+                **ledger,
+                "physical_slots": {
+                    key: value
+                    for key, value in (ledger.get("physical_slots") or {}).items()
+                    if key in physical_slots
+                },
+            }
+        live = self.live_current_snapshot(physical_slots)
+        report = assess_state_drift(
+            live_current=live["current"],
+            live_errors=live["errors"],
+            ledger=scoped_ledger,
+            catalog_slot_ids=set(self.slots),
+            catalog_sha256=self.catalog_sha256,
+        )
+        unfinished = self.state_store.unfinished_operations()
+        if unfinished:
+            report["status"] = "blocked"
+            report["drift"].append(
+                {
+                    "physical_slot": None,
+                    "kind": "unfinished_operation",
+                    "operation_ids": unfinished,
+                }
+            )
+        report["state_dir"] = str(self.state_store.state_dir)
+        report["current_path"] = str(self.state_store.current_path)
+        report["live_observations"] = live["observations"]
+        return report
+
+    def _current_entry_for_slot(self, slot: LanAioProdSlot) -> dict[str, Any]:
+        profile = self.config.profiles[slot.target_profile_id]
+        entry: dict[str, Any] = {
+            "slot_id": slot.id,
+            "profile": slot.target_profile_id,
+            "agent_id": slot.agent_id,
+            "container_name": slot.container_name,
+            "host_port": slot.host_port,
+            "state": "running",
+            "image_ref": profile.all_in_one_image_ref,
+            "model_manifest_key": profile.model_manifest_key,
+            "last_verified_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if slot.gpu_device_id:
+            entry["gpu_device_id"] = slot.gpu_device_id
+        try:
+            metadata = self._runtime_metadata(slot)
+        except Exception:
+            metadata = {}
+        if metadata.get("workspace_host_dir"):
+            entry["workspace_host_dir"] = metadata["workspace_host_dir"]
+        return {key: value for key, value in entry.items() if value is not None}
+
+    @staticmethod
+    def _cache_marker_from_result(result: dict[str, Any]) -> dict[str, Any] | None:
+        if isinstance(result.get("model_cache"), dict):
+            return dict(result["model_cache"])
+        for step in result.get("steps") or []:
+            if step.get("action") != "warm-cache":
+                continue
+            payload = step.get("payload") or {}
+            if isinstance(payload.get("model_cache"), dict):
+                return dict(payload["model_cache"])
+        return None
+
+    @staticmethod
+    def _upsert_cached_profile(
+        physical_state: dict[str, Any],
+        marker: dict[str, Any],
+    ) -> None:
+        profile = str(marker.get("profile") or "")
+        if not profile:
+            return
+        cache_entry = {
+            "profile": profile,
+            "cache_state": marker.get("status") or "ready",
+            "image_ref": marker.get("image_ref"),
+            "model_manifest_key": marker.get("model_manifest_key"),
+            "workspace_host_dir": marker.get("workspace_host_dir"),
+            "synced_at": marker.get("synced_at"),
+        }
+        cache_entry = {
+            key: value for key, value in cache_entry.items() if value is not None
+        }
+        cached_profiles = list(physical_state.get("cached_profiles") or [])
+        cached_profiles = [
+            item for item in cached_profiles if item.get("profile") != profile
+        ]
+        cached_profiles.append(cache_entry)
+        physical_state["cached_profiles"] = sorted(
+            cached_profiles, key=lambda item: str(item.get("profile") or "")
+        )
+
+    def execute_managed_mutation(
+        self,
+        *,
+        action: str,
+        slots: list[LanAioProdSlot],
+        operation_id: str,
+        execute: Callable[[], dict[str, Any]],
+    ) -> dict[str, Any]:
+        physical_slots = {physical_slot_key(slot) for slot in slots}
+        if not physical_slots:
+            raise RuntimeError("managed LAN AIO mutation requires a physical slot")
+        with self.state_store.mutation_lock():
+            report = self.state_status_payload(physical_slots)
+            self.state_store.assert_mutation_allowed(report)
+            current_only_actions = {
+                "drain-aio",
+                "disable-aio",
+                "enable-aio",
+                "restart-aio",
+                "release-rollout",
+            }
+            if action in current_only_actions:
+                ledger_current = report.get("ledger_current") or {}
+                mismatched = [
+                    slot.id
+                    for slot in slots
+                    if ledger_current.get(physical_slot_key(slot)) != slot.id
+                ]
+                if mismatched:
+                    raise StateDriftError(
+                        f"LAN AIO {action} target is not current in local ledger: "
+                        + ", ".join(mismatched)
+                    )
+            ledger = self.state_store.load_current()
+            if ledger is None:  # guarded above; keeps type narrowing explicit
+                raise StateDriftError("LAN AIO mutation blocked: ledger missing")
+            request = {
+                "slots": [slot.id for slot in slots],
+                "catalog_sha256": self.catalog_sha256,
+                "live_before": report.get("live_current"),
+            }
+            self.state_store.begin_operation(
+                operation_id,
+                action=action,
+                physical_slots=sorted(physical_slots),
+                request=request,
+            )
+            try:
+                result = execute()
+                expected_current = dict(report.get("ledger_current") or {})
+                if action == "takeover":
+                    if len(slots) != 1:
+                        raise RuntimeError("managed takeover requires exactly one slot")
+                    expected_current[physical_slot_key(slots[0])] = slots[0].id
+                elif action == "recover":
+                    selected_slot_id = str(result.get("selected_slot") or "")
+                    selected = self.slots.get(selected_slot_id)
+                    if selected is None:
+                        raise RuntimeError(
+                            "managed recover result has unknown selected slot: "
+                            f"{selected_slot_id}"
+                        )
+                    expected_current[physical_slot_key(selected)] = selected.id
+
+                live_after = self.live_current_snapshot(physical_slots)
+                verification_errors = dict(live_after.get("errors") or {})
+                for physical_slot in physical_slots:
+                    actual = (live_after.get("current") or {}).get(physical_slot)
+                    expected = expected_current.get(physical_slot)
+                    if actual != expected:
+                        verification_errors[physical_slot] = (
+                            f"post-mutation current mismatch: expected={expected} actual={actual}"
+                        )
+                if verification_errors:
+                    raise StateDriftError(
+                        "LAN AIO post-mutation live verification failed: "
+                        + "; ".join(
+                            f"{key}={value}"
+                            for key, value in sorted(verification_errors.items())
+                        )
+                    )
+
+                updated = dict(ledger)
+                updated["catalog_sha256"] = self.catalog_sha256
+                updated_physical = {
+                    key: dict(value)
+                    for key, value in (ledger.get("physical_slots") or {}).items()
+                }
+                updated["physical_slots"] = updated_physical
+                for physical_slot in physical_slots:
+                    physical_state = updated_physical.setdefault(physical_slot, {})
+                    expected_slot_id = expected_current[physical_slot]
+                    expected_slot = self.slots[expected_slot_id]
+                    physical_state["current"] = self._current_entry_for_slot(
+                        expected_slot
+                    )
+                    physical_state["last_verified_at"] = datetime.now(
+                        timezone.utc
+                    ).isoformat()
+                    physical_state["last_operation_id"] = operation_id
+                marker = self._cache_marker_from_result(result)
+                if marker:
+                    marker_physical_slot = str(marker.get("physical_slot_key") or "")
+                    if marker_physical_slot in updated_physical:
+                        self._upsert_cached_profile(
+                            updated_physical[marker_physical_slot], marker
+                        )
+                self.state_store.write_current(
+                    updated,
+                    operation_id=operation_id,
+                )
+                self.state_store.finish_operation(
+                    operation_id,
+                    status="succeeded",
+                    result={
+                        "payload": result,
+                        "live_after": live_after.get("current"),
+                    },
+                )
+            except Exception as exc:
+                history_path = self.state_store.history_dir / f"{operation_id}.json"
+                if history_path.exists():
+                    try:
+                        history = json.loads(history_path.read_text(encoding="utf-8"))
+                    except (OSError, json.JSONDecodeError):
+                        history = {}
+                    if history.get("status") == "in_progress":
+                        status = (
+                            "rolled_back"
+                            if "recovery_status=succeeded" in str(exc)
+                            else "failed"
+                        )
+                        self.state_store.finish_operation(
+                            operation_id,
+                            status=status,
+                            error=str(exc),
+                        )
+                raise
+        return {**result, "operation_id": operation_id}
+
+    def current_slot_id(self, physical_slot: str) -> str:
+        ledger = self.state_store.load_current()
+        if ledger is None:
+            raise StateDriftError(
+                "LAN AIO current ledger is missing; run state-init before mutation"
+            )
+        slot_id = (
+            ((ledger.get("physical_slots") or {}).get(physical_slot) or {})
+            .get("current", {})
+            .get("slot_id")
+        )
+        if not slot_id:
+            raise StateDriftError(
+                f"LAN AIO ledger has no current slot for {physical_slot}"
+            )
+        if slot_id not in self.slots:
+            raise StateDriftError(
+                f"LAN AIO ledger current slot is absent from catalog: {slot_id}"
+            )
+        return str(slot_id)
+
+    def initialize_state_from_legacy(
+        self,
+        legacy_state_file: Path,
+        *,
+        operation_id: str,
+    ) -> dict[str, Any]:
+        if self.state_store.load_current() is not None:
+            raise RuntimeError(
+                f"LAN AIO current state already exists: {self.state_store.current_path}"
+            )
+        legacy = _load_yaml(legacy_state_file)
+        current = self.state_store.migrate_legacy_state(
+            legacy,
+            catalog_sha256=self.catalog_sha256,
+            operation_id=operation_id,
+        )
+        physical_slots = set(current.get("physical_slots") or {})
+        report = self.state_status_payload(physical_slots)
+        return {
+            "ok": report.get("status") == "passed",
+            "action": "state-init",
+            "operation_id": operation_id,
+            "current_path": str(self.state_store.current_path),
+            "state": report,
+        }
+
+    def reconcile_state_from_live(
+        self,
+        *,
+        operation_id: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        if not reason.strip():
+            raise RuntimeError("state-reconcile requires a non-empty reason")
+        ledger = self.state_store.load_current()
+        if ledger is None:
+            raise RuntimeError(
+                "state-reconcile requires existing current.yml; run state-init"
+            )
+        physical_slots = set(ledger.get("physical_slots") or {})
+        if not physical_slots:
+            raise RuntimeError("state-reconcile found no physical slots in current.yml")
+        with self.state_store.mutation_lock():
+            unfinished = self.state_store.unfinished_operations()
+            live = self.live_current_snapshot(physical_slots)
+            errors = dict(live.get("errors") or {})
+            for physical_slot in physical_slots:
+                if not (live.get("current") or {}).get(physical_slot):
+                    errors.setdefault(physical_slot, "no running catalog slot detected")
+            if errors:
+                raise StateDriftError(
+                    "state-reconcile requires unambiguous live state: "
+                    + "; ".join(
+                        f"{key}={value}" for key, value in sorted(errors.items())
+                    )
+                )
+            for unfinished_operation_id in unfinished:
+                self.state_store.finish_operation(
+                    unfinished_operation_id,
+                    status="failed",
+                    error=(
+                        f"superseded by {operation_id} after explicit live inspection: "
+                        f"{reason}"
+                    ),
+                )
+            self.state_store.begin_operation(
+                operation_id,
+                action="state-reconcile",
+                physical_slots=sorted(physical_slots),
+                request={
+                    "reason": reason,
+                    "live_current": live["current"],
+                    "catalog_sha256": self.catalog_sha256,
+                    "superseded_operations": unfinished,
+                },
+            )
+            updated = dict(ledger)
+            updated["catalog_sha256"] = self.catalog_sha256
+            updated_physical = {
+                key: dict(value)
+                for key, value in (ledger.get("physical_slots") or {}).items()
+            }
+            updated["physical_slots"] = updated_physical
+            for physical_slot, slot_id in live["current"].items():
+                slot = self.slots[str(slot_id)]
+                physical_state = updated_physical.setdefault(physical_slot, {})
+                physical_state["current"] = self._current_entry_for_slot(slot)
+                physical_state["last_verified_at"] = datetime.now(
+                    timezone.utc
+                ).isoformat()
+                physical_state["last_operation_id"] = operation_id
+            self.state_store.write_current(updated, operation_id=operation_id)
+            self.state_store.finish_operation(
+                operation_id,
+                status="succeeded",
+                result={
+                    "live_current": live["current"],
+                    "reason": reason,
+                    "superseded_operations": unfinished,
+                },
+            )
+        return {
+            "ok": True,
+            "action": "state-reconcile",
+            "operation_id": operation_id,
+            "current_path": str(self.state_store.current_path),
+            "live_current": live["current"],
+        }
 
     def preflight_payload(
         self,
@@ -755,7 +1293,9 @@ class LanAioProdOps:
         for slot in slots:
             self.render_compose(slot)
             port = _legacy_port_for_slot(self.config, slot)
-            image_ref = self.config.profiles[slot.target_profile_id].all_in_one_image_ref
+            image_ref = self.config.profiles[
+                slot.target_profile_id
+            ].all_in_one_image_ref
             legacy_checks = []
             if slot.legacy_preflight_required:
                 legacy_checks.extend(
@@ -811,7 +1351,9 @@ class LanAioProdOps:
         )
         return {"ok": ok, "dry_run": False, "checks": checks, "slots": results}
 
-    def dry_run_action(self, action: str, slots: list[LanAioProdSlot]) -> dict[str, Any]:
+    def dry_run_action(
+        self, action: str, slots: list[LanAioProdSlot]
+    ) -> dict[str, Any]:
         operations: list[str] = []
         for slot in slots:
             if action == "takeover":
@@ -828,7 +1370,9 @@ class LanAioProdOps:
                     ]
                 )
             elif action == "pull-image":
-                image_ref = self.config.profiles[slot.target_profile_id].all_in_one_image_ref
+                image_ref = self.config.profiles[
+                    slot.target_profile_id
+                ].all_in_one_image_ref
                 operations.append(f"ssh {slot.ssh_host} docker pull {image_ref}")
             elif action == "warm-cache":
                 operations.extend(
@@ -894,7 +1438,9 @@ class LanAioProdOps:
                     ]
                 )
                 if slot.old_local_agent_container:
-                    operations.append(f"local docker stop {slot.old_local_agent_container}")
+                    operations.append(
+                        f"local docker stop {slot.old_local_agent_container}"
+                    )
         return {"ok": True, "dry_run": True, "action": action, "operations": operations}
 
     def drain_legacy(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
@@ -905,7 +1451,11 @@ class LanAioProdOps:
                 "lan_aio_fleet_drain_legacy",
                 ttl_seconds=CONTROL_TTL_SECONDS,
             )
-        return {"ok": True, "action": "drain-legacy", "slots": [slot.id for slot in slots]}
+        return {
+            "ok": True,
+            "action": "drain-legacy",
+            "slots": [slot.id for slot in slots],
+        }
 
     def enable_aio(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
         gated = []
@@ -944,7 +1494,11 @@ class LanAioProdOps:
                 "lan_aio_fleet_disable_aio",
                 ttl_seconds=CONTROL_TTL_SECONDS,
             )
-        return {"ok": True, "action": "disable-aio", "slots": [slot.id for slot in slots]}
+        return {
+            "ok": True,
+            "action": "disable-aio",
+            "slots": [slot.id for slot in slots],
+        }
 
     def restart_aio(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
         if len(slots) != 1:
@@ -1074,13 +1628,11 @@ class LanAioProdOps:
             f"test \"$(docker inspect -f '{{{{.Config.Image}}}}' {container})\" = {ref}; "
             "actual_revision=$(docker image inspect "
             f"{ref} -f '{{{{index .Config.Labels \"org.opencontainers.image.revision\"}}}}'); "
-            f"test \"$actual_revision\" = {revision}"
+            f'test "$actual_revision" = {revision}'
         )
         self._ssh(slot.ssh_host, command)
 
-    def _verify_exact_runtime_ref(
-        self, slot: LanAioProdSlot, image_ref: str
-    ) -> None:
+    def _verify_exact_runtime_ref(self, slot: LanAioProdSlot, image_ref: str) -> None:
         container = shlex.quote(slot.container_name)
         ref = shlex.quote(image_ref)
         self._ssh(
@@ -1091,9 +1643,7 @@ class LanAioProdOps:
             ),
         )
 
-    def _exact_remote_image_ref(
-        self, slot: LanAioProdSlot, image_ref: str
-    ) -> str:
+    def _exact_remote_image_ref(self, slot: LanAioProdSlot, image_ref: str) -> str:
         if re.search(r"@sha256:[0-9a-f]{64}$", image_ref):
             return image_ref
         output = self._ssh(
@@ -1136,9 +1686,13 @@ class LanAioProdOps:
     def pull_image(self, slots: list[LanAioProdSlot]) -> dict[str, Any]:
         pulled = []
         for slot in slots:
-            image_ref = self.config.profiles[slot.target_profile_id].all_in_one_image_ref
+            image_ref = self.config.profiles[
+                slot.target_profile_id
+            ].all_in_one_image_ref
             if not image_ref:
-                raise RuntimeError(f"profile {slot.target_profile_id} has no all_in_one_image_ref")
+                raise RuntimeError(
+                    f"profile {slot.target_profile_id} has no all_in_one_image_ref"
+                )
             if self._remote_image_present(slot, image_ref):
                 pulled.append(
                     {
@@ -1189,7 +1743,10 @@ class LanAioProdOps:
         with tempfile.TemporaryDirectory() as tmp:
             env_file = Path(tmp) / ".env.lan-aio-prod"
             env_file.write_text(env_content, encoding="utf-8")
-            self._ssh(slot.ssh_host, f"mkdir -p '{slot.remote_dir}' && chmod 700 '{slot.remote_dir}'")
+            self._ssh(
+                slot.ssh_host,
+                f"mkdir -p '{slot.remote_dir}' && chmod 700 '{slot.remote_dir}'",
+            )
             self._scp(env_file, slot.ssh_host, slot.remote_env_file)
             self._ssh(slot.ssh_host, f"chmod 600 '{slot.remote_env_file}'")
         self._ssh(slot.ssh_host, self._warm_cache_command(slot, metadata))
@@ -1206,7 +1763,12 @@ class LanAioProdOps:
             "synced_at": datetime.now(timezone.utc).isoformat(),
         }
         self._write_cache_marker(slot, marker)
-        return {"ok": True, "action": "warm-cache", "slot": slot.id, "model_cache": marker}
+        return {
+            "ok": True,
+            "action": "warm-cache",
+            "slot": slot.id,
+            "model_cache": marker,
+        }
 
     def _wait_worker_ids_idle(self, targets: set[str]) -> None:
         deadline = time.time() + 7200
@@ -1271,9 +1833,13 @@ class LanAioProdOps:
                 slot.ssh_host,
                 f"docker stop '{slot.container_name}' >/dev/null 2>&1 || true",
             )
-            self._ssh(slot.ssh_host, f"docker start '{slot.old_runtime_container}' >/dev/null")
+            self._ssh(
+                slot.ssh_host, f"docker start '{slot.old_runtime_container}' >/dev/null"
+            )
             if slot.old_local_agent_container:
-                self._local(["docker", "start", slot.old_local_agent_container], capture=True)
+                self._local(
+                    ["docker", "start", slot.old_local_agent_container], capture=True
+                )
             self._set_control(
                 slot.legacy_worker_id,
                 "enabled",
@@ -1294,9 +1860,14 @@ class LanAioProdOps:
                 "lan_aio_fleet_stop_old_disable_legacy",
                 ttl_seconds=CONTROL_TTL_SECONDS,
             )
-            self._ssh(slot.ssh_host, f"docker stop '{slot.old_runtime_container}' >/dev/null || true")
+            self._ssh(
+                slot.ssh_host,
+                f"docker stop '{slot.old_runtime_container}' >/dev/null || true",
+            )
             if slot.old_local_agent_container:
-                self._local(["docker", "stop", slot.old_local_agent_container], capture=True)
+                self._local(
+                    ["docker", "stop", slot.old_local_agent_container], capture=True
+                )
         return {"ok": True, "action": "stop-old", "slots": [slot.id for slot in slots]}
 
     def takeover(
@@ -1386,7 +1957,9 @@ class LanAioProdOps:
         if prefer not in {"old", "candidate"}:
             raise RuntimeError("recover --prefer must be old or candidate")
         sibling_slots = [
-            slot for slot in self.slots.values() if physical_slot_key(slot) == physical_slot
+            slot
+            for slot in self.slots.values()
+            if physical_slot_key(slot) == physical_slot
         ]
         if not sibling_slots:
             raise KeyError(f"unknown LAN AIO physical slot: {physical_slot}")
@@ -1399,19 +1972,17 @@ class LanAioProdOps:
                 raise KeyError(
                     f"LAN AIO slot {selected_slot_id} is not on physical slot {physical_slot}"
                 )
-            if selected.phase == "maintenance_disabled" or selected.phase.startswith(
-                "blocked_"
-            ):
+            if slot_mutation_blocked(selected):
                 raise RuntimeError(
                     f"LAN AIO slot is not recoverable: {selected.id} phase={selected.phase}"
                 )
-            if not selected.enabled and not selected.retargetable:
-                raise RuntimeError(f"LAN AIO slot is not recoverable: {selected.id}")
         elif prefer == "old":
             selected = next(
                 (
                     slot
-                    for slot in sorted(sibling_slots, key=lambda item: item.rollout_order)
+                    for slot in sorted(
+                        sibling_slots, key=lambda item: item.rollout_order
+                    )
                     if slot.enabled and slot.phase in {"prod_enabled", "aio_enabled"}
                 ),
                 None,
@@ -1420,7 +1991,9 @@ class LanAioProdOps:
             selected = next(
                 (
                     slot
-                    for slot in sorted(sibling_slots, key=lambda item: item.rollout_order)
+                    for slot in sorted(
+                        sibling_slots, key=lambda item: item.rollout_order
+                    )
                     if slot.retargetable
                 ),
                 None,
@@ -1499,7 +2072,9 @@ class LanAioProdOps:
         payload = yaml.safe_load(rendered) or {}
         metadata = payload.get("x-allbot-runtime")
         if not isinstance(metadata, dict):
-            raise RuntimeError(f"rendered compose missing x-allbot-runtime for {slot.id}")
+            raise RuntimeError(
+                f"rendered compose missing x-allbot-runtime for {slot.id}"
+            )
         return metadata
 
     def _warm_cache_container_name(self, slot: LanAioProdSlot) -> str:
@@ -1525,7 +2100,7 @@ class LanAioProdOps:
                 'test -n "${RUNPOD_MODEL_SECRET_KEY:-}"',
                 'mkdir -p "${RUNPOD_MODEL_TARGET_DIR:?}"',
                 (
-                    'python3 - <<\'PY\' || '
+                    "python3 - <<'PY' || "
                     'python3 -m pip install --no-cache-dir -r "$remote_root/requirements.txt"\n'
                     "import minio\n"
                     "PY"
@@ -1599,7 +2174,9 @@ class LanAioProdOps:
         slot: LanAioProdSlot,
         marker: dict[str, Any],
     ) -> None:
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json") as file_obj:
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", suffix=".json"
+        ) as file_obj:
             json.dump(marker, file_obj, ensure_ascii=False, indent=2)
             file_obj.write("\n")
             file_obj.flush()
@@ -1629,9 +2206,9 @@ class LanAioProdOps:
         return payload
 
     def _control_state(self, agent_id: str) -> str:
-        token = self.env_values.get("LAN_AIO_AGENT_SECRET_TOKEN") or self.env_values.get(
-            "AGENT_SECRET_TOKEN"
-        )
+        token = self.env_values.get(
+            "LAN_AIO_AGENT_SECRET_TOKEN"
+        ) or self.env_values.get("AGENT_SECRET_TOKEN")
         if not token:
             return "unknown_missing_token"
         try:
@@ -1658,9 +2235,9 @@ class LanAioProdOps:
         *,
         ttl_seconds: int | None = None,
     ) -> None:
-        token = self.env_values.get("LAN_AIO_AGENT_SECRET_TOKEN") or self.env_values.get(
-            "AGENT_SECRET_TOKEN"
-        )
+        token = self.env_values.get(
+            "LAN_AIO_AGENT_SECRET_TOKEN"
+        ) or self.env_values.get("AGENT_SECRET_TOKEN")
         if not token:
             raise RuntimeError("missing LAN_AIO_AGENT_SECRET_TOKEN/AGENT_SECRET_TOKEN")
         body: dict[str, Any] = {"state": state, "reason": reason}
@@ -1815,7 +2392,10 @@ class LanAioProdOps:
             owner_name = str(owner.get("name") or "").strip()
             if not owner_name:
                 continue
-            if any(line == owner_name or line.startswith(f"{owner_name} ") for line in lines):
+            if any(
+                line == owner_name or line.startswith(f"{owner_name} ")
+                for line in lines
+            ):
                 continue
             owner_line = " ".join(
                 part
@@ -1837,8 +2417,7 @@ class LanAioProdOps:
         host_port: int,
     ) -> list[dict[str, Any]]:
         command = (
-            f"docker ps --filter publish={int(host_port)} "
-            "--format '{{json .}}'"
+            f"docker ps --filter publish={int(host_port)} --format '{{{{json .}}}}'"
         )
         output = self._ssh(slot.ssh_host, command, capture=True)
         owners: list[dict[str, Any]] = []
@@ -2018,9 +2597,9 @@ class LanAioProdOps:
             )
         workers = {item.get("agent_id"): item for item in self._system_workers()}
         legacy_worker = workers.get(slot.legacy_worker_id, {})
-        if str(legacy_worker.get("status") or "").lower() == "running" or legacy_worker.get(
-            "current_task_type"
-        ):
+        if str(
+            legacy_worker.get("status") or ""
+        ).lower() == "running" or legacy_worker.get("current_task_type"):
             raise RuntimeError(
                 f"refusing to enable {slot.agent_id}: "
                 f"{slot.legacy_worker_id} is still running "
@@ -2104,7 +2683,10 @@ fi
             env_file = tmp_dir / ".env.lan-aio-prod"
             compose_file.write_text(compose, encoding="utf-8")
             env_file.write_text(env_content, encoding="utf-8")
-            self._ssh(slot.ssh_host, f"mkdir -p '{slot.remote_dir}' && chmod 700 '{slot.remote_dir}'")
+            self._ssh(
+                slot.ssh_host,
+                f"mkdir -p '{slot.remote_dir}' && chmod 700 '{slot.remote_dir}'",
+            )
             self._scp(compose_file, slot.ssh_host, slot.remote_compose_file)
             self._scp(env_file, slot.ssh_host, slot.remote_env_file)
             self._ssh(slot.ssh_host, f"chmod 600 '{slot.remote_env_file}'")
@@ -2200,13 +2782,13 @@ docker exec "{slot.container_name}" bash -lc "curl -fsS http://127.0.0.1:8013/re
             lines = [
                 "set -euo pipefail",
                 f"tmp=$(mktemp {shlex.quote(tmp_pattern)})",
-                "cleanup() { rm -f \"$tmp\"; }",
+                'cleanup() { rm -f "$tmp"; }',
                 "trap cleanup EXIT",
             ]
             if source_is_host_path:
-                lines.append(f"if ! cp {shlex.quote(copy.source_path)} \"$tmp\"; then")
+                lines.append(f'if ! cp {shlex.quote(copy.source_path)} "$tmp"; then')
             else:
-                lines.append(f"if ! docker cp {shlex.quote(source)} \"$tmp\"; then")
+                lines.append(f'if ! docker cp {shlex.quote(source)} "$tmp"; then')
             if copy.required:
                 lines.extend(
                     [
@@ -2222,7 +2804,7 @@ docker exec "{slot.container_name}" bash -lc "curl -fsS http://127.0.0.1:8013/re
                     ]
                 )
             lines.append("fi")
-            lines.append("test -s \"$tmp\"")
+            lines.append('test -s "$tmp"')
             for target_path in copy.target_paths:
                 target_dir = posixpath.dirname(target_path)
                 target = f"{slot.container_name}:{target_path}"
@@ -2230,7 +2812,7 @@ docker exec "{slot.container_name}" bash -lc "curl -fsS http://127.0.0.1:8013/re
                     f"docker exec {shlex.quote(slot.container_name)} "
                     f"bash -lc {shlex.quote('mkdir -p ' + shlex.quote(target_dir))}"
                 )
-                lines.append(f"docker cp \"$tmp\" {shlex.quote(target)}")
+                lines.append(f'docker cp "$tmp" {shlex.quote(target)}')
                 lines.append(
                     f"docker exec {shlex.quote(slot.container_name)} "
                     f"bash -lc {shlex.quote('test -s ' + shlex.quote(target_path))}"
@@ -2284,7 +2866,9 @@ docker exec "{slot.container_name}" bash -lc "curl -fsS http://127.0.0.1:8013/re
                     f"{slot.agent_id} heartbeat missing metadata: " + ", ".join(errors)
                 )
             return
-        raise TimeoutError(f"timed out waiting for disabled heartbeat from {slot.agent_id}")
+        raise TimeoutError(
+            f"timed out waiting for disabled heartbeat from {slot.agent_id}"
+        )
 
     def _ssh(self, host: str, command: str, *, capture: bool = False) -> str:
         return self._local(["ssh", *SSH_BATCH_OPTIONS, host, command], capture=capture)
@@ -2350,7 +2934,9 @@ def assert_prod_compose(rendered: str, slot: LanAioProdSlot) -> None:
     forbidden = ["cloud-test", "user-data-test"]
     present = [item for item in forbidden if item in rendered]
     if present:
-        raise RuntimeError("rendered compose contains forbidden prod value: " + ", ".join(present))
+        raise RuntimeError(
+            "rendered compose contains forbidden prod value: " + ", ".join(present)
+        )
     required = [
         "RUNPOD_ENVIRONMENT: cloud-prod",
         "CENTRAL_API_URL: https://worker-central.aivison.it.com",
@@ -2414,6 +3000,8 @@ def build_parser() -> argparse.ArgumentParser:
             "recover",
             "candidate-plan",
             "release-rollout",
+            "state-init",
+            "state-reconcile",
         ),
     )
     parser.add_argument("--slot", default=None)
@@ -2422,6 +3010,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--profile", default=None)
     parser.add_argument("--physical-slot", default=None)
     parser.add_argument("--operation-id", default=None)
+    parser.add_argument("--state-dir", type=Path, default=None)
+    parser.add_argument(
+        "--legacy-state-file",
+        type=Path,
+        default=CONFIG_DIR / "lan_aio_fleet_state.legacy.yml",
+    )
+    parser.add_argument("--reason", default=None)
     parser.add_argument("--prefer", choices=("old", "candidate"), default="old")
     parser.add_argument(
         "--failure-policy",
@@ -2434,12 +3029,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--compose-out", type=Path, default=None)
     parser.add_argument("--prod-env-file", type=Path, default=Path(".env.cloud.prod"))
     parser.add_argument("--aio-env-file", type=Path, default=Path(".env.lan-aio-prod"))
-    parser.add_argument("--model-env-file", type=Path, default=Path(".env.lan.model-cache"))
+    parser.add_argument(
+        "--model-env-file", type=Path, default=Path(".env.lan.model-cache")
+    )
     parser.add_argument("--release-index", type=Path, default=None)
     parser.add_argument("--sha", default=None)
-    parser.add_argument(
-        "--strategy", choices=("direct", "standard"), default="direct"
-    )
+    parser.add_argument("--strategy", choices=("direct", "standard"), default="direct")
     return parser
 
 
@@ -2453,6 +3048,7 @@ def _build_ops_from_args(args: argparse.Namespace) -> LanAioProdOps:
         prod_env_file=args.prod_env_file,
         aio_env_file=args.aio_env_file,
         model_env_file=args.model_env_file,
+        state_dir=args.state_dir,
     )
 
 
@@ -2511,18 +3107,9 @@ def _recover_dry_run_payload(
         "prefer": args.prefer,
         "selected_slot": selected_slot_id,
         "operations": [
-            (
-                "disable sibling LAN AIO agents on "
-                f"{physical_slot}"
-            ),
-            (
-                "start selected "
-                f"{args.prefer} container on {physical_slot}"
-            ),
-            (
-                "enable selected LAN AIO agent on "
-                f"{physical_slot}"
-            ),
+            (f"disable sibling LAN AIO agents on {physical_slot}"),
+            (f"start selected {args.prefer} container on {physical_slot}"),
+            (f"enable selected LAN AIO agent on {physical_slot}"),
         ],
     }
 
@@ -2538,11 +3125,56 @@ def _handle_recover(args: argparse.Namespace, ops: LanAioProdOps) -> int:
             )
         )
         return 0
+    guard_slot_id = ops.current_slot_id(physical_slot)
+    if selected_slot_id is None and args.prefer == "old":
+        selected_slot_id = guard_slot_id
+    guard_slot = ops.slots[guard_slot_id]
+    operation_id = args.operation_id or _new_operation_id("recover")
     _print_json_payload(
-        ops.recover_physical_slot(
-            physical_slot=physical_slot,
-            prefer=args.prefer,
-            selected_slot_id=selected_slot_id,
+        ops.execute_managed_mutation(
+            action="recover",
+            slots=[guard_slot],
+            operation_id=operation_id,
+            execute=lambda: ops.recover_physical_slot(
+                physical_slot=physical_slot,
+                prefer=args.prefer,
+                selected_slot_id=selected_slot_id,
+            ),
+        )
+    )
+    return 0
+
+
+def _handle_state_action(args: argparse.Namespace, ops: LanAioProdOps) -> int:
+    operation_id = args.operation_id or _new_operation_id(args.action)
+    if not args.execute:
+        payload = {
+            "ok": True,
+            "dry_run": True,
+            "action": args.action,
+            "state_dir": str(ops.state_store.state_dir),
+            "operation_id": operation_id,
+        }
+        if args.action == "state-init":
+            payload["legacy_state_file"] = str(args.legacy_state_file)
+        else:
+            payload["reason"] = args.reason
+        _print_json_payload(payload)
+        return 0
+    if args.action == "state-init":
+        _print_json_payload(
+            ops.initialize_state_from_legacy(
+                args.legacy_state_file,
+                operation_id=operation_id,
+            )
+        )
+        return 0
+    if not args.reason:
+        raise SystemExit("state-reconcile --execute requires --reason")
+    _print_json_payload(
+        ops.reconcile_state_from_live(
+            operation_id=operation_id,
+            reason=args.reason,
         )
     )
     return 0
@@ -2553,6 +3185,31 @@ def _select_action_slots(
     ops: LanAioProdOps,
 ) -> list[LanAioProdSlot]:
     slots = ops.select_slots(args.slot, include_disabled=args.include_disabled)
+    if args.action in RETARGETABLE_REPLACE_SLOT_ACTIONS and len(slots) == 1:
+        candidate = slots[0]
+        physical_slot = physical_slot_key(candidate)
+        ledger = ops.state_store.load_current()
+        if ledger is None:
+            if args.replace_slot:
+                ledger_current_slot_id = args.replace_slot
+            elif args.action == "render" and not args.execute:
+                return slots
+            else:
+                ledger_current_slot_id = ops.current_slot_id(physical_slot)
+        else:
+            ledger_current_slot_id = ops.current_slot_id(physical_slot)
+            if args.replace_slot and args.replace_slot != ledger_current_slot_id:
+                raise SystemExit(
+                    "--replace-slot does not match the local current ledger: "
+                    f"expected {ledger_current_slot_id}, got {args.replace_slot}"
+                )
+        if candidate.id == ledger_current_slot_id and args.action == "takeover":
+            raise SystemExit(
+                f"takeover target is already current in the local ledger: {candidate.id}"
+            )
+        if candidate.id == ledger_current_slot_id:
+            return slots
+        return [ops.retarget_slot(candidate, ledger_current_slot_id)]
     if not args.replace_slot:
         return slots
     if args.action not in RETARGETABLE_REPLACE_SLOT_ACTIONS:
@@ -2563,7 +3220,7 @@ def _select_action_slots(
     return [ops.retarget_slot(slots[0], args.replace_slot)]
 
 
-def _run_execute_action(
+def _run_raw_execute_action(
     args: argparse.Namespace,
     ops: LanAioProdOps,
     slots: list[LanAioProdSlot],
@@ -2603,6 +3260,8 @@ def _run_lan_aio_prod_action(args: argparse.Namespace, ops: LanAioProdOps) -> in
         return 0
     if args.action == "candidate-plan":
         return _handle_candidate_plan(args, ops)
+    if args.action in {"state-init", "state-reconcile"}:
+        return _handle_state_action(args, ops)
     if args.action == "recover":
         return _handle_recover(args, ops)
     if args.action == "release-rollout":
@@ -2618,15 +3277,27 @@ def _run_lan_aio_prod_action(args: argparse.Namespace, ops: LanAioProdOps) -> in
             strategy=args.strategy,
         )
         if not args.execute:
-            _print_json_payload(
-                rollout_plan(resolved, slot=slot.id, operator="lan")
-            )
+            _print_json_payload(rollout_plan(resolved, slot=slot.id, operator="lan"))
             return 0
-        _print_json_payload(ops.release_rollout(slot, resolved))
+        operation_id = args.operation_id or _new_operation_id("release-rollout")
+        _print_json_payload(
+            ops.execute_managed_mutation(
+                action="release-rollout",
+                slots=[slot],
+                operation_id=operation_id,
+                execute=lambda: ops.release_rollout(slot, resolved),
+            )
+        )
         return 0
     slots = _select_action_slots(args, ops)
     if args.action == "status":
-        _print_json_payload(ops.status_payload(slots))
+        payload = ops.status_payload(slots)
+        physical_slots = {physical_slot_key(slot) for slot in slots}
+        payload["state"] = ops.state_status_payload(physical_slots)
+        payload["ok"] = (
+            bool(payload.get("ok")) and payload["state"]["status"] == "passed"
+        )
+        _print_json_payload(payload)
         return 0
     if args.action == "render":
         if len(slots) != 1:
@@ -2644,7 +3315,23 @@ def _run_lan_aio_prod_action(args: argparse.Namespace, ops: LanAioProdOps) -> in
     if not args.execute:
         _print_json_payload(ops.dry_run_action(args.action, slots))
         return 0
-    payload = _run_execute_action(args, ops, slots)
+    if args.action in DIRECT_TRANSITION_ACTIONS:
+        raise SystemExit(
+            f"direct {args.action} --execute is disabled; use takeover or recover "
+            "so the local state ledger remains transactional"
+        )
+    if args.action == "wait-idle":
+        _print_json_payload(ops.wait_idle(slots))
+        return 0
+    if args.action not in MANAGED_MUTATION_ACTIONS:
+        raise SystemExit(f"unmanaged LAN AIO mutation action: {args.action}")
+    operation_id = args.operation_id or _new_operation_id(args.action)
+    payload = ops.execute_managed_mutation(
+        action=args.action,
+        slots=slots,
+        operation_id=operation_id,
+        execute=lambda: _run_raw_execute_action(args, ops, slots),
+    )
     _print_json_payload(payload)
     return 0
 
