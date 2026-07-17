@@ -29,6 +29,7 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
         "gpu-177-gpu0-wan22_video_v2",
         "gpu-177-gpu1-ltx_video",
         "gpu-252-gpu0-i2i_pro",
+        "gpu-252-gpu1-i2i_pro",
         "gpu-002-gpu0-scail2",
         "gpu-002-gpu1-image_to_video",
         "gpu-226-gpu0-i2i_pro",
@@ -57,6 +58,18 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
     assert (
         slots["gpu-252-gpu0-i2i_pro"].gpu_device_id
         == "GPU-09b7ea85-23df-a9b8-19d9-703534e47666"
+    )
+    assert slots["gpu-252-gpu1-i2i_pro"].agent_id == (
+        "lan_aio_prod_gpu252_gpu1_i2i_pro_01"
+    )
+    assert slots["gpu-252-gpu1-i2i_pro"].target_task_types == (
+        "i2i_pro",
+        "t2i-pornmaster-turbo",
+        "face_swap",
+    )
+    assert (
+        slots["gpu-252-gpu1-i2i_pro"].gpu_device_id
+        == "GPU-8153a439-e3f6-8922-039d-dc13e97da6d7"
     )
     assert slots["gpu-002-gpu0-scail2"].agent_id == (
         "lan_aio_prod_gpu002_gpu0_scail2_01"
