@@ -946,6 +946,104 @@ async def test_autoscaler_enables_paused_runpod_worker():
     assert payload["executed_operations"][0]["action"] == "enable"
 
 
+async def test_autoscaler_does_not_enable_residual_worker_after_successful_delete():
+    calls = []
+
+    async def start_enable(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("deleted worker must not be enabled from residual heartbeat")
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=InMemoryRunPodAutoscalerStateStore(),
+        status_payload=_status(profile="i2i_pro", pending=0, wait=None),
+        workers_payload=_workers(
+            _runpod_worker(
+                "i2i_pro",
+                "02",
+                status="idle",
+                control_state="disabled",
+            )
+        ),
+        operations_payload={
+            "operations": [
+                {
+                    "id": "op-delete-i2i-pro-02",
+                    "action": "delete",
+                    "profile": "i2i_pro",
+                    "slot": "02",
+                    "agent_id": "runpod_prod_i2i_pro_manual_02",
+                    "status": "succeeded",
+                    "source": "autoscaler",
+                    "ended_at": "1970-01-01T00:16:30Z",
+                }
+            ]
+        },
+        start_enable_func=start_enable,
+        now_func=lambda: 1000.0,
+    )
+
+    decision = {item["profile"]: item for item in payload["decisions"]}["i2i_pro"]
+    assert decision["action"] == "hold"
+    assert decision["reason"] == "hold: deleted runpod worker heartbeat awaiting expiry"
+    assert decision["agent_id"] == "runpod_prod_i2i_pro_manual_02"
+    assert decision["slot"] == "02"
+    assert decision["deleted_worker_tombstone_remaining_seconds"] == 290
+    assert calls == []
+    assert payload["executed_operations"] == []
+
+
+async def test_deleted_worker_tombstone_does_not_block_other_paused_runpod():
+    calls = []
+
+    async def start_enable(**kwargs):
+        calls.append(kwargs)
+        return RunPodAdminOperation(
+            id="op-enable-i2i-pro-01",
+            action="enable",
+            profile=kwargs["profile"],
+            command=["runpod", "enable"],
+            agent_id=kwargs["agent_id"],
+            slot=kwargs["slot"],
+            source="autoscaler",
+            trigger_reason=kwargs["trigger_reason"],
+        )
+
+    payload = await evaluate_runpod_autoscaler_once(
+        mutate=True,
+        config=_config(),
+        store=InMemoryRunPodAutoscalerStateStore(),
+        status_payload=_status(profile="i2i_pro", pending=0, wait=None),
+        workers_payload=_workers(
+            _runpod_worker("i2i_pro", "01", control_state="disabled"),
+            _runpod_worker("i2i_pro", "02", control_state="disabled"),
+        ),
+        operations_payload={
+            "operations": [
+                {
+                    "id": "op-delete-i2i-pro-02",
+                    "action": "delete",
+                    "profile": "i2i_pro",
+                    "slot": "02",
+                    "agent_id": "runpod_prod_i2i_pro_manual_02",
+                    "status": "succeeded",
+                    "source": "manual",
+                    "ended_at": "1970-01-01T00:16:30Z",
+                }
+            ]
+        },
+        start_enable_func=start_enable,
+        now_func=lambda: 1000.0,
+    )
+
+    decision = {item["profile"]: item for item in payload["decisions"]}["i2i_pro"]
+    assert decision["action"] == "enable"
+    assert decision["agent_id"] == "runpod_prod_i2i_pro_manual_01"
+    assert decision["slot"] == "01"
+    assert calls[0]["agent_id"] == "runpod_prod_i2i_pro_manual_01"
+
+
 async def test_autoscaler_executes_at_most_one_scale_up_per_round():
     calls = []
     status_payload = _status(profile="img2img", pending=100, wait=10)

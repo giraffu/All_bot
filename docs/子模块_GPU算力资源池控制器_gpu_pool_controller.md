@@ -618,14 +618,19 @@ worker 总数大于 1，则在未锁定的 idle RunPod 里选择该 profile 最�
 autoscaler 会优先自愈正式 RunPod worker：`status=error|quarantined` 且 `last_error_at` 已持续超过
 `DASHBOARD_RUNPOD_AUTOSCALER_FAULT_RESTART_SECONDS`（默认 300）时，提交
 `restart --slot NN --execute`；`control_state=disabled|draining` 且 worker 仍健康 `idle|running`
-时，提交 `enable --slot NN --execute`。RunPod `restart` 底层会先 disabled、调用 RunPod 原生
+时，提交 `enable --slot NN --execute`。成功的 Dashboard `delete` operation 会按
+`DASHBOARD_RUNPOD_AUTOSCALER_HEARTBEAT_MAX_AGE_SECONDS` 建立同 agent 的短期删除墓碑；墓碑有效期内即使
+Central 仍返回新鲜的 `disabled + idle|running` 残留 heartbeat，也必须保持
+`hold: deleted runpod worker heartbeat awaiting expiry`，不得自动 enable。其它未删除的暂停 RunPod
+仍可正常进入恢复候选，手动或 autoscaler 删除都遵循该边界。RunPod `restart` 底层会先 disabled、调用 RunPod 原生
 restart、等待健康 heartbeat，再恢复 enabled 接单。本地 worker 只参与容量保底，不会被 autoscaler
 启停。autoscaler 必须拿到 Redis leader lease 才执行 mutation；拿不到 Redis/leader 或系统快照失败时
 只记录 hold/error。管理弹窗的 `/api/runpod/autoscaler` 与 `/api/runpod/autoscaler/control`
 可查看 `scale_up: estimated non-low-trust clear time ...`、`restart: runpod fault persisted ...`、
 `enable: runpod paused worker available`、`replace: previous runpod bootstrap timed out ...`、
 `hold: runpod add still bootstrapping Ns`、`hold: no non-low-trust backlog`、`hold: no backlog`、`hold: max runpod capacity reached`、
-`hold: profile autoscaler paused`、`hold: minimum lifetime remaining Ns` 等决策并紧急暂停/恢复。
+`hold: profile autoscaler paused`、`hold: minimum lifetime remaining Ns`、
+`hold: deleted runpod worker heartbeat awaiting expiry` 等决策并紧急暂停/恢复。
 
 `down` 删除已有 Pod 的 preflight 只做 RunPod key、Pod 列表、reconcile 与 Central health 检查，不渲染 create pod request，因此不会因缺少 `RUNPOD_IMAGE_NAME_I2I_PRO` / `RUNPOD_IMAGE_NAME_SCAIL2` / `RUNPOD_IMAGE_NAME_LTX_VIDEO` 这类创建镜像配置而阻断删除；`up` / `add` / `render` / `canary` 仍必须具备目标 profile 的正式镜像与模型配置。
 
