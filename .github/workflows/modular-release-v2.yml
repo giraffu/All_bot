@@ -227,9 +227,11 @@ jobs:
           dashboard_ref="$(jq -r '.artifacts["dashboard-frontend"].ref' release-v2/control-plane-manifest.json)"
           qqcc_ref="$(jq -r '.artifacts["qqcc-config-frontend"].ref' release-v2/control-plane-manifest.json)"
           backend_ref="$(jq -r '.artifacts["dashboard-backend"].ref' release-v2/control-plane-manifest.json)"
+          web_ref="$(jq -r '.artifacts["web-api"].ref' release-v2/control-plane-manifest.json)"
           docker run --rm --entrypoint sh "$dashboard_ref" -c '/docker-entrypoint.d/05-select-dashboard-spa.sh && test -f /etc/nginx/templates/default.conf.template'
           docker run --rm --entrypoint sh -e DASHBOARD_FRONTEND_MODE=qqcc "$qqcc_ref" -c '/docker-entrypoint.d/05-select-dashboard-spa.sh && test -f /etc/nginx/templates/default.conf.template'
           docker run --rm --entrypoint python -e MINIO_ENDPOINT=127.0.0.1:1 "$backend_ref" -c 'import dashboard.backend.main; import dashboard.backend.qqcc_config_main'
+          docker run --rm --entrypoint ffmpeg "$web_ref" -version
 
       - name: Publish immutable v2 bundle
         shell: bash

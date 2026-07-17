@@ -41,6 +41,16 @@ def test_every_runtime_image_is_supplied_by_release_env():
         assert "latest" not in image
 
 
+def test_every_cloud_service_has_bounded_json_log_rotation():
+    services = _compose(BASE)["services"]
+
+    for name, service in services.items():
+        assert service.get("logging") == {
+            "driver": "json-file",
+            "options": {"max-size": "50m", "max-file": "5"},
+        }, f"{name} is missing bounded json-file logging"
+
+
 def test_prod_dashboard_backend_enables_runpod_autoscaler_in_immutable_compose():
     prod_overlay = _compose(ROOT / "deploy/docker-compose-cloud-prod.overlay.yml")
     environment = prod_overlay["services"]["dashboard-backend"]["environment"]
