@@ -307,6 +307,29 @@ slots:
     rollout_order: 39
     notes: Active production gpu-002 GPU1 image_to_video runtime reconciled from live container, Central worker, and fleet state on 2026-07-15. PornMaster Flux2 edit remains the stopped same-card rollback candidate.
 
+  - id: gpu-002-gpu1-i2i_pro
+    enabled: false
+    phase: candidate
+    retargetable: true
+    assignment_id: lan-002-8189-worker-07
+    target_profile_id: i2i_pro
+    target_task_types:
+      - i2i_pro
+      - t2i-pornmaster-turbo
+      - face_swap
+    gpu_index: 1
+    host_port: 8191
+    legacy_health_port: 8191
+    legacy_preflight_required: true
+    agent_id: lan_aio_prod_gpu002_gpu1_i2i_pro_01
+    container_name: allbot-lan-aio-gpu-002-gpu1-i2i_pro-prod
+    legacy_worker_id: lan_aio_prod_gpu002_gpu1_image_to_video_01
+    old_runtime_container: allbot-lan-aio-gpu-002-gpu1-image_to_video-prod
+    old_local_agent_container: ""
+    remote_dir: /home/chuzeyu/allbot-runpod-aio-prod/gpu002-gpu1-i2i-pro
+    rollout_order: 40
+    notes: Prepared i2i_pro candidate gpu-002-gpu1-i2i_pro replacing gpu-002-gpu1-image_to_video. Review and commit this YAML patch before production takeover.
+
   - id: gpu-002-gpu1-pornmaster_flux2_edit
     enabled: false
     phase: superseded_by_image_to_video
@@ -325,7 +348,7 @@ slots:
     old_runtime_container: allbot-lan-aio-gpu-002-gpu1-image_to_video-prod
     old_local_agent_container: ""
     remote_dir: /home/chuzeyu/allbot-runpod-aio-prod/gpu002-gpu1-pornmaster-flux2-edit
-    rollout_order: 40
+    rollout_order: 41
     notes: Stopped same-card PornMaster Flux2 edit rollback candidate after the live gpu-002 GPU1 runtime was reconciled to image_to_video on 2026-07-15.
 
   - id: gpu-177-gpu1-ltx_video
