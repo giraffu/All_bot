@@ -13,6 +13,7 @@ from ops.gpu_pool_controller.runpod_video_manifests import (
     split_wan22_aio_manifest,
 )
 from src.lora_catalog import VIDEO_LORA_MODELS
+from src.wan22_explicit_lora_catalog import WAN22_EXPLICIT_LORA_MODELS
 
 
 class _Body:
@@ -83,6 +84,11 @@ def _source_manifest() -> dict:
                 if name
                 for noise in ("high", "low")
             ],
+            *[
+                item(f"loras/{path}", 5)
+                for model in WAN22_EXPLICIT_LORA_MODELS.values()
+                for path in (model["high_path"], model["low_path"])
+            ],
         ],
     }
 
@@ -112,6 +118,14 @@ def test_split_wan22_aio_manifest_selects_profile_specific_files_and_reuses_keys
         if name
         for noise in ("high", "low")
     }.issubset(wan22_paths)
+    explicit_paths = {
+        f"loras/{path}"
+        for model in WAN22_EXPLICIT_LORA_MODELS.values()
+        for path in (model["high_path"], model["low_path"])
+    }
+    assert len(explicit_paths) == 98
+    assert explicit_paths.issubset(image_paths)
+    assert explicit_paths.issubset(wan22_paths)
     assert split["wan22_video_v2"]["version"] == "2026-07-18-lora5"
     assert "vae/wan_2.1_vae.safetensors" in image_paths
     assert "vae/wan_2.1_vae.safetensors" in wan22_paths
@@ -160,8 +174,7 @@ def test_prepare_split_video_manifests_reports_missing_reused_object_before_uplo
 
 def test_prepare_split_video_manifests_fails_closed_when_lora_object_is_missing():
     missing_key = (
-        "wan22_aio_video/2026-06-12-test/models/"
-        "loras/Insertion_high_noise.safetensors"
+        "wan22_aio_video/2026-06-12-test/models/loras/Insertion_high_noise.safetensors"
     )
     client = _FakeR2Client(_source_manifest(), missing={missing_key})
 

@@ -15,7 +15,9 @@ MODULE_PATH = Path("scripts/upload_all_task_models_to_lan_cache.py")
 
 
 def _load_module():
-    spec = importlib.util.spec_from_file_location("upload_all_task_models_to_lan_cache", MODULE_PATH)
+    spec = importlib.util.spec_from_file_location(
+        "upload_all_task_models_to_lan_cache", MODULE_PATH
+    )
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -45,7 +47,9 @@ class _FakeLanClient:
     def get_object(self, *, Bucket: str, Key: str) -> dict:
         assert Bucket == "allbot-model-cache"
         if Key not in self.existing:
-            raise ClientError({"Error": {"Code": "404", "Message": "not found"}}, "GetObject")
+            raise ClientError(
+                {"Error": {"Code": "404", "Message": "not found"}}, "GetObject"
+            )
         body = self.existing[Key].get("Body", b"")
         if isinstance(body, str):
             body = body.encode("utf-8")
@@ -55,7 +59,9 @@ class _FakeLanClient:
         assert Bucket == "allbot-model-cache"
         if Key in self.existing:
             return self.existing[Key]
-        raise ClientError({"Error": {"Code": "404", "Message": "not found"}}, "HeadObject")
+        raise ClientError(
+            {"Error": {"Code": "404", "Message": "not found"}}, "HeadObject"
+        )
 
     def upload_file(self, source: str, bucket: str, key: str, **kwargs) -> None:
         self.uploads.append(
@@ -103,30 +109,54 @@ def _touch_blob(registry: ModelRegistry, sha256: str) -> None:
 
 
 def _seed_default_bundle_manifests(registry: ModelRegistry) -> dict[str, str]:
-    shas = {name: str(index) * 64 for index, name in enumerate("abcdefghij", start=1)}
+    shas = {name: str(index) * 64 for index, name in enumerate("abcdefghijkl", start=1)}
     _write_manifest(
         registry,
         "img2img_lora_baseline",
         "2026-06-10",
-        [{"relative_path": "checkpoints/qwen.safetensors", "sha256": shas["a"], "size_bytes": 10}],
+        [
+            {
+                "relative_path": "checkpoints/qwen.safetensors",
+                "sha256": shas["a"],
+                "size_bytes": 10,
+            }
+        ],
     )
     _write_manifest(
         registry,
         "i2i_pro_baseline",
         "2026-06-14-test",
-        [{"relative_path": "unet/i2i.safetensors", "sha256": shas["b"], "size_bytes": 20}],
+        [
+            {
+                "relative_path": "unet/i2i.safetensors",
+                "sha256": shas["b"],
+                "size_bytes": 20,
+            }
+        ],
     )
     _write_manifest(
         registry,
         "ltx_video_baseline",
         "2026-06-10",
-        [{"relative_path": "clip/LTX 2.3/gemma.safetensors", "sha256": shas["c"], "size_bytes": 30}],
+        [
+            {
+                "relative_path": "clip/LTX 2.3/gemma.safetensors",
+                "sha256": shas["c"],
+                "size_bytes": 30,
+            }
+        ],
     )
     _write_manifest(
         registry,
         "face_i2i_t2i_baseline",
         "2026-06-10",
-        [{"relative_path": "unet/face.safetensors", "sha256": shas["d"], "size_bytes": 40}],
+        [
+            {
+                "relative_path": "unet/face.safetensors",
+                "sha256": shas["d"],
+                "size_bytes": 40,
+            }
+        ],
     )
     _write_manifest(
         registry,
@@ -138,13 +168,21 @@ def _seed_default_bundle_manifests(registry: ModelRegistry) -> dict[str, str]:
                 "sha256": shas["e"],
                 "size_bytes": 50,
             },
-            {"relative_path": "loras/Dance_high_noise.safetensors", "sha256": shas["f"], "size_bytes": 60},
+            {
+                "relative_path": "loras/Dance_high_noise.safetensors",
+                "sha256": shas["f"],
+                "size_bytes": 60,
+            },
             {
                 "relative_path": "text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
                 "sha256": shas["g"],
                 "size_bytes": 70,
             },
-            {"relative_path": "vae/wan_2.1_vae.safetensors", "sha256": shas["h"], "size_bytes": 80},
+            {
+                "relative_path": "vae/wan_2.1_vae.safetensors",
+                "sha256": shas["h"],
+                "size_bytes": 80,
+            },
         ],
     )
     _write_manifest(
@@ -162,7 +200,32 @@ def _seed_default_bundle_manifests(registry: ModelRegistry) -> dict[str, str]:
                 "sha256": shas["g"],
                 "size_bytes": 70,
             },
-            {"relative_path": "vae/wan_2.1_vae.safetensors", "sha256": shas["h"], "size_bytes": 80},
+            {
+                "relative_path": "vae/wan_2.1_vae.safetensors",
+                "sha256": shas["h"],
+                "size_bytes": 80,
+            },
+        ],
+    )
+    _write_manifest(
+        registry,
+        "wan22_explicit_lora_library",
+        "2026-07-18",
+        [
+            {
+                "relative_path": (
+                    "loras/wan2.2/explicit_top200/005-example/high.safetensors"
+                ),
+                "sha256": shas["k"],
+                "size_bytes": 110,
+            },
+            {
+                "relative_path": (
+                    "loras/wan2.2/explicit_top200/005-example/low.safetensors"
+                ),
+                "sha256": shas["l"],
+                "size_bytes": 120,
+            },
         ],
     )
     _write_manifest(
@@ -202,18 +265,27 @@ def test_all_task_lan_cache_manifests_use_canonical_video_keys(tmp_path):
     manifests = payload["target_manifests"]
     assert "video_basic/2026-06-10/manifest.json" not in manifests
     assert "image_to_video/2026-06-13-test/manifest.json" in manifests
-    assert "wan22_video_v2/2026-06-13-test/manifest.json" in manifests
+    assert "wan22_video_v2/2026-07-18-lora5/manifest.json" in manifests
     assert "wan22_aio_video/2026-06-12-test/manifest.json" in manifests
     assert "pornmaster_flux2_edit_bf16/2026-07-12/manifest.json" in manifests
     assert manifests["pornmaster_flux2_edit_bf16/2026-07-12/manifest.json"][
         "models"
-    ] == [
-        "diffusion_models/flux2/"
-        "PornMaster_flux2_klein_9b_turbo_bf16_V4.safetensors"
-    ]
-    assert manifests["image_to_video/2026-06-13-test/manifest.json"]["file_count"] == 5
-    assert manifests["wan22_video_v2/2026-06-13-test/manifest.json"]["file_count"] == 4
-    assert payload["target_unique_model_count"] == 10
+    ] == ["diffusion_models/flux2/PornMaster_flux2_klein_9b_turbo_bf16_V4.safetensors"]
+    assert manifests["image_to_video/2026-06-13-test/manifest.json"]["file_count"] == 7
+    assert manifests["wan22_video_v2/2026-07-18-lora5/manifest.json"]["file_count"] == 7
+    for manifest_key in (
+        "image_to_video/2026-06-13-test/manifest.json",
+        "wan22_video_v2/2026-07-18-lora5/manifest.json",
+    ):
+        assert (
+            "loras/wan2.2/explicit_top200/005-example/high.safetensors"
+            in manifests[manifest_key]["models"]
+        )
+        assert (
+            "loras/wan2.2/explicit_top200/005-example/low.safetensors"
+            in manifests[manifest_key]["models"]
+        )
+    assert payload["target_unique_model_count"] == 12
 
 
 def test_all_task_lan_cache_reuses_existing_manifest_object_key(tmp_path):
@@ -254,7 +326,7 @@ def test_all_task_lan_cache_reuses_existing_manifest_object_key(tmp_path):
 
     assert payload["existing_cached_unique_model_count"] == 1
     assert payload["skipped_existing_count"] == 1
-    assert payload["upload_count"] == 9
-    assert payload["target_manifests"]["img2img_lora/2026-06-10/manifest.json"]["models"] == [
-        "checkpoints/qwen.safetensors"
-    ]
+    assert payload["upload_count"] == 11
+    assert payload["target_manifests"]["img2img_lora/2026-06-10/manifest.json"][
+        "models"
+    ] == ["checkpoints/qwen.safetensors"]

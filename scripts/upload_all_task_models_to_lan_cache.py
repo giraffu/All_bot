@@ -86,6 +86,7 @@ DEFAULT_BASE_TARGETS: tuple[TargetSpec, ...] = (
         bundle_versions=(
             ("video_basic_baseline", "2026-06-10"),
             ("wan22_video_v2_baseline", "2026-06-10"),
+            ("wan22_explicit_lora_library", "2026-07-18"),
         ),
         version="2026-06-12-test",
     ),
@@ -135,7 +136,9 @@ def _lan_client(*, endpoint: str):
     access_key = os.getenv("LAN_MODEL_CACHE_ACCESS_KEY", "")
     secret_key = os.getenv("LAN_MODEL_CACHE_SECRET_KEY", "")
     if not access_key or not secret_key:
-        raise RuntimeError("LAN_MODEL_CACHE_ACCESS_KEY/LAN_MODEL_CACHE_SECRET_KEY is required")
+        raise RuntimeError(
+            "LAN_MODEL_CACHE_ACCESS_KEY/LAN_MODEL_CACHE_SECRET_KEY is required"
+        )
     return boto3.client(
         "s3",
         endpoint_url=endpoint.rstrip("/"),
@@ -154,7 +157,9 @@ def _head_bucket(client, bucket: str) -> bool:
         code = _client_error_code(exc)
         if code in {"404", "NoSuchBucket", "NotFound"}:
             return False
-        raise RuntimeError(f"head_bucket failed for {bucket}: {_safe_client_error(exc)}") from exc
+        raise RuntimeError(
+            f"head_bucket failed for {bucket}: {_safe_client_error(exc)}"
+        ) from exc
 
 
 def _head_object(client, *, bucket: str, key: str) -> dict[str, Any] | None:
@@ -164,7 +169,9 @@ def _head_object(client, *, bucket: str, key: str) -> dict[str, Any] | None:
         code = _client_error_code(exc)
         if code in {"404", "NoSuchKey", "NotFound"}:
             return None
-        raise RuntimeError(f"head_object failed for {key}: {_safe_client_error(exc)}") from exc
+        raise RuntimeError(
+            f"head_object failed for {key}: {_safe_client_error(exc)}"
+        ) from exc
 
 
 def _metadata_value(metadata: dict[str, Any] | None, key: str) -> str:
@@ -227,7 +234,10 @@ def _build_union_manifest(
             sha256 = str(item["sha256"])
             existing = files_by_path.get(relative_path)
             if existing:
-                if existing["sha256"] != sha256 or int(existing["size_bytes"]) != size_bytes:
+                if (
+                    existing["sha256"] != sha256
+                    or int(existing["size_bytes"]) != size_bytes
+                ):
                     raise RuntimeError(
                         "conflicting model bundle entries for "
                         f"{relative_path}: {existing['sha256']} vs {sha256}"
@@ -264,7 +274,9 @@ def _load_existing_sha_index(client, *, bucket: str) -> dict[str, str]:
         except Exception:
             continue
         for file_info in manifest.get("files") or []:
-            object_key = str(file_info.get("key") or file_info.get("object_key") or "").strip("/")
+            object_key = str(
+                file_info.get("key") or file_info.get("object_key") or ""
+            ).strip("/")
             sha256 = str(file_info.get("sha256") or "")
             size_bytes = int(file_info.get("size_bytes") or 0)
             if not object_key or not sha256 or sha256 in existing_by_sha:
@@ -273,12 +285,17 @@ def _load_existing_sha_index(client, *, bucket: str) -> dict[str, str]:
             if not head:
                 continue
             metadata_sha = _metadata_value(head.get("Metadata"), "sha256")
-            if int(head.get("ContentLength") or 0) == size_bytes and metadata_sha == sha256:
+            if (
+                int(head.get("ContentLength") or 0) == size_bytes
+                and metadata_sha == sha256
+            ):
                 existing_by_sha[sha256] = object_key
     return existing_by_sha
 
 
-def _assign_object_keys(manifest: dict[str, Any], *, existing_by_sha: dict[str, str]) -> dict[str, Any]:
+def _assign_object_keys(
+    manifest: dict[str, Any], *, existing_by_sha: dict[str, str]
+) -> dict[str, Any]:
     updated = dict(manifest)
     files = []
     for file_info in manifest.get("files") or []:
@@ -306,12 +323,18 @@ def build_target_manifests(
 
     aio = manifests[RUNPOD_WAN22_AIO_VIDEO_MODEL_MANIFEST_KEY]
     split_manifests = split_wan22_aio_manifest(aio)
-    manifests[RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY] = split_manifests["image_to_video"]
-    manifests[RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY] = split_manifests["wan22_video_v2"]
+    manifests[RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY] = split_manifests[
+        "image_to_video"
+    ]
+    manifests[RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY] = split_manifests[
+        "wan22_video_v2"
+    ]
     return dict(sorted(manifests.items()))
 
 
-def _unique_model_entries(manifests: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+def _unique_model_entries(
+    manifests: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
     entries: dict[str, dict[str, Any]] = {}
     for manifest_key, manifest in manifests.items():
         for item in manifest.get("files") or []:
@@ -364,8 +387,12 @@ def upload_all_task_models(
             client.create_bucket(Bucket=bucket)
         created_bucket = execute
 
-    existing_by_sha = _load_existing_sha_index(client, bucket=bucket) if bucket_exists else {}
-    manifests = build_target_manifests(registry=registry, existing_by_sha=existing_by_sha)
+    existing_by_sha = (
+        _load_existing_sha_index(client, bucket=bucket) if bucket_exists else {}
+    )
+    manifests = build_target_manifests(
+        registry=registry, existing_by_sha=existing_by_sha
+    )
     unique_entries = _unique_model_entries(manifests)
 
     uploads: list[dict[str, Any]] = []
@@ -375,9 +402,17 @@ def upload_all_task_models(
         sha256 = str(entry["sha256"])
         size_bytes = int(entry["size_bytes"])
         key = str(entry["key"])
-        head = _head_object(client, bucket=bucket, key=key) if bucket_exists or created_bucket else None
+        head = (
+            _head_object(client, bucket=bucket, key=key)
+            if bucket_exists or created_bucket
+            else None
+        )
         metadata_sha = _metadata_value(head.get("Metadata"), "sha256") if head else ""
-        if head and int(head.get("ContentLength") or 0) == size_bytes and metadata_sha == sha256:
+        if (
+            head
+            and int(head.get("ContentLength") or 0) == size_bytes
+            and metadata_sha == sha256
+        ):
             skipped_existing.append(
                 {
                     "key": key,
@@ -447,7 +482,11 @@ def upload_all_task_models(
     manifest_skips: list[dict[str, Any]] = []
     for manifest_key, manifest in manifests.items():
         body = json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8")
-        existing = _head_object(client, bucket=bucket, key=manifest_key) if bucket_exists or created_bucket else None
+        existing = (
+            _head_object(client, bucket=bucket, key=manifest_key)
+            if bucket_exists or created_bucket
+            else None
+        )
         if existing and int(existing.get("ContentLength") or 0) == len(body):
             manifest_skips.append({"key": manifest_key, "bytes": len(body)})
             continue
@@ -462,7 +501,9 @@ def upload_all_task_models(
             )
 
     total_upload_size = sum(int(item["size_bytes"]) for item in uploads)
-    unique_model_total = sum(int(item["size_bytes"]) for item in unique_entries.values())
+    unique_model_total = sum(
+        int(item["size_bytes"]) for item in unique_entries.values()
+    )
     return {
         "ok": True,
         "dry_run": not execute,
@@ -482,8 +523,7 @@ def upload_all_task_models(
         "manifest_upload_count": len(manifest_uploads),
         "manifest_skip_count": len(manifest_skips),
         "target_manifests": {
-            key: _manifest_summary(manifest)
-            for key, manifest in manifests.items()
+            key: _manifest_summary(manifest) for key, manifest in manifests.items()
         },
         "uploads": uploads,
         "skipped_existing": skipped_existing,
@@ -520,7 +560,10 @@ def main() -> int:
             max_bandwidth_mbps=args.max_bandwidth_mbps,
         )
     except Exception as exc:
-        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False, indent=2), file=sys.stderr)
+        print(
+            json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False, indent=2),
+            file=sys.stderr,
+        )
         return 2
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0 if payload.get("ok") else 2
