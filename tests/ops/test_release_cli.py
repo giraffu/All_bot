@@ -365,14 +365,16 @@ def test_v2_test_execution_initial_release_does_not_select_cloud_state_services(
     assert selected == set()
 
 
-def test_test_environment_excludes_owner_only_admin_services():
+def test_test_environment_includes_qqcc_config_but_excludes_dashboard():
     module = _load_module()
 
     assert {
-        "dashboard-backend",
-        "dashboard-frontend",
         "qqcc-config-backend",
         "qqcc-config-frontend",
+    } <= module.ENVIRONMENT["test"]["available_services"]
+    assert {
+        "dashboard-backend",
+        "dashboard-frontend",
     }.isdisjoint(module.ENVIRONMENT["test"]["available_services"])
 
 
