@@ -98,7 +98,7 @@ python scripts/update_deploy_config.py --env prod --source /secure/new-prod.env 
 | execution | test Worker、正式 GPU profile | direct | 测试 Worker 按需；GPU 强制 attestation、canary 可跳过 |
 | locked | migration、部署/Compose 契约、未知路径 | standard | 不允许 direct/emergency |
 
-混合变更取最高风险。catalog 会把本次 SHA 影响的所有 artifact 自动加入选择集；`src/**`、`shared/**` 等共享代码不能通过手工缩小 `--modules` 规避核心门禁。永久门禁包括 main 血缘、可信 CI 构建、digest/checksum/OCI revision、配置契约、目标健康、事务日志/回滚材料和非目标服务不重建。preflight 分别显示 gate 的 `required/passed/skipped/forbidden`，不能只依赖单个 promotion blocker。
+普通自动发布的混合变更取最高风险；已有增量基线时，策略影响集合还必须与 bundle 中 `source_sha` 等于目标 SHA 的 artifact 求交，只有本次真正构建的运行时产物进入自动选择集。若 bundle 全部复用旧 `source_sha`，风险 level/matched rules 仍保留用于审计，但 artifact/service 选择集为空，不得借部署契约或文档变化重建运行时。三个显式独立模块是例外：`--modules dashboard`、`--modules qqcc-bot`、`--modules qqcc-config` 分别固定为 Dashboard 前后端、官方 QQCC Bot、QQCC Config 前后端，一次只能选择一个完整组。planner 从该组已部署 artifact 的 `source_sha` 计算差异和回滚，不再按 control-plane 顶层 `git_sha` 或“目标 SHA 上所有新产物”扩容；非目标 artifact 在 `current.json` 中保留自己的 digest、状态和 `source_sha`。migration、共享 Compose/env、`dashboard/backend/schemas.py` 和 `src/services/qqcc_config_service.py` 仍拒绝独立发布，必须回到普通完整影响闭包。永久门禁包括 main 血缘、可信 CI 构建、digest/checksum/OCI revision、配置契约、目标健康、事务日志/回滚材料和非目标服务不重建。
 
 并发任务的 test-train 入口为 `scripts/test_train_release.py`，A-H 功能工作区不得直接运行发布器。详细槽位与 forward-fix SOP 见 `docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md`。
 
@@ -140,10 +140,14 @@ scripts/release.py preflight --env prod --sha <40-char-sha>
 scripts/release.py deploy --env prod --sha <40-char-sha> --execute --confirm-prod
 
 # 管理后台 auto=direct；也可显式写出策略
-scripts/release.py plan --env prod --sha <40-char-sha> --strategy direct
-scripts/release.py preflight --env prod --sha <40-char-sha> --strategy direct
-scripts/release.py deploy --env prod --sha <40-char-sha> \
+scripts/release.py plan --env prod --sha <40-char-sha> --modules dashboard --strategy direct
+scripts/release.py preflight --env prod --sha <40-char-sha> --modules dashboard --strategy direct
+scripts/release.py deploy --env prod --sha <40-char-sha> --modules dashboard \
   --strategy direct --execute --confirm-prod
+
+# 独立 QQCC Bot / QQCC Config；每次只选一个完整模块组
+scripts/release.py plan --env prod --sha <40-char-sha> --modules qqcc-bot
+scripts/release.py plan --env prod --sha <40-char-sha> --modules qqcc-config
 
 # 公共 Web direct 或核心 emergency 必须记录风险接受
 scripts/release.py deploy --env prod --sha <40-char-sha> --strategy direct \
@@ -164,7 +168,7 @@ scripts/release.py plan --env prod --track control-plane --sha <40-char-sha> --m
 scripts/release.py deploy --env prod --track control-plane --sha <40-char-sha> --modules central-api --execute --confirm-prod
 ```
 
-`--services` 只扩大自动集合。`src/**`/`shared/**` 会覆盖所有 Python 消费者；Worker 变化为 drain；migration 是 maintenance 且执行需 `--confirm-db-upgrade`；未知路径整栈维护；`remote_workers/**`、GPU profile/model manifest 触发 `gpu-runtime-release-required` blocker。用户选择不开维护不能缩小这些机器计算出的等级或依赖闭包；默认开启也必须由发布事务真实建立维护，不能只记录文字意图。
+`--services` 只扩大普通自动集合；独立模块只通过上述三个 `--modules` 组表达，传半组、混组或叠加其它 artifact 会拒绝。普通模式下 `src/**`/`shared/**` 仍覆盖所有 Python 消费者；Worker 变化为 drain；migration 是 maintenance 且执行需 `--confirm-db-upgrade`；未知路径整栈维护；`remote_workers/**`、GPU profile/model manifest 触发 `gpu-runtime-release-required` blocker。用户选择不开维护不能缩小这些机器计算出的等级或依赖闭包。
 
 standard 生产发布器在对应 track 的 retained history 中按 artifact 名称与精确 digest 查找 main-channel verified 证据，不再要求证据与目标控制面 SHA 全局相同；低风险 direct 新 SHA 不覆盖或作废其它核心 artifact 的既有测试证据。验收模板见 `deploy/test-acceptance.example.json`。direct/emergency 分别写 `waived/attested`，不能伪装成 verified；默认观察和短观察授权只适用于 standard。
 

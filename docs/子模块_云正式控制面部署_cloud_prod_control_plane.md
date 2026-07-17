@@ -2,6 +2,8 @@
 
 > 2026-07-16 发布入口补充：schema v2 正式控制面从 `control-plane` track 选择模块并按风险策略处理。核心默认 standard，可显式 emergency；管理面默认 direct；公共 Web 默认 standard、可显式 direct；migration/共享契约/未知路径永久 standard。standard 在 retained main-channel 测试 history 中按 track、artifact 和精确 digest 取证，测试 Agent/Relay 不是正式控制面依赖；`--dashboard-fast-track` 仅作兼容别名。严格 `--control-plane-repair-fast-track` 仍只服务测试后生产启用、测试禁用的 private worker 镜像闭包修复。所有策略都不放宽 main/CI 构建/digest/preflight/生产确认/事务回滚和非目标容器不变门禁。当前 legacy Relay/暂停容器保留 dormant 回滚态，未获授权不得下线。禁止 rsync、现场 build 与源码挂载。
 
+2026-07-17 独立模块边界：单独 Dashboard、官方 QQCC Bot、QQCC Config Web 分别使用 `--modules dashboard`、`--modules qqcc-bot`、`--modules qqcc-config`。每次只允许一个完整组，planner 从目标组 artifact 自己的已部署 `source_sha` 计算差异和 immutable 回滚；`current.json` 允许同一 track 的 artifact 保持不同 `source_sha`，提交目标状态时不覆盖非目标版本。目标 SHA 上其它新产物不再自动并入。migration、共享 Compose/env、Dashboard/QQCC 共享 schema 和 QQCC Bot/Config 共享运行时配置仍 fail closed。发布只对目标 service 执行 `pull` 与 `up -d --no-deps`，并核对非目标容器启动时间不变。
+
 首次正式切换的硬门禁包括：同时维护 `/var/lib/allbot/prod/runtime/GENERATION_MAINTENANCE` 与 legacy `/home/deploy/APP/All_bot/runtime/cloud-prod/GENERATION_MAINTENANCE`；控制面发布器不得触碰任何正式或测试 Worker；正式 Pages 必须为 production branch `main`、Git production disabled、preview `none`，并具备可验证/可回滚的 canonical production deployment ID。不满足只报告 blocker，不自动修正式环境。
 
 > 2026-07-16 维护模式选择：每次正式发布独立选择，用户当次未说明时默认开启生成维护；只有用户对该次发布明确要求不开维护，且 `release.py plan|preflight` 证明变更可按 `rolling`/`none` 无维护执行时，才允许关闭。migration、首次/legacy 切换、队列 drain、未知影响或其它强制 maintenance 不能被覆盖。当前发布器若不能表达并证明请求模式与实际模式一致，必须在 mutation 前停止并修发布契约；禁止手工写删 marker、执行本页归档脚本或静默按另一模式上线。正式总结同时记录请求/default、planner level 与实际模式。
@@ -350,7 +352,7 @@ exit 127 / `ModuleNotFoundError` 失败。该闭包必须同时固化在独立 `
 关于 LAN AIO Worker 卡片：`pause/enable/restart` 不在云容器直接执行本地 helper。不可变 prod overlay 固定 SSH runner 模式，生产配置契约强制要求 `DASHBOARD_LAN_AIO_RUNNER_HOST` 与 `DASHBOARD_LAN_AIO_RUNNER_KEY_DIR`，并把该目录的 `id_ed25519` 只读挂载到 Dashboard Backend。本地主保持 Tailscale SSH 22 端口不变，`allbot-lan-aio-dashboard-runner-sshd.service` 作为已开启 linger 的用户级服务，只在本机 Tailscale 地址的 2222 端口启动另一个禁止密码、禁止 root 的 OpenSSH listener；如需变更，同步设置 `DASHBOARD_LAN_AIO_RUNNER_SSH_PORT`。正式 preflight 会检查 key 可读且权限为 `600`，并真实登录 runner 核对 helper 与所需 env 文件可读；缺少任一项时在发布前阻断，后端在 `ALLBOT_ENV=prod` 下也不会回退到 local。首次启用或轮换只更新受限 env/key 目录和本地主 runner 的 `authorized_keys`，禁止把 key 写入 Git、release bundle 或日志。
 管理面直发时，先对目标 SHA 依次执行 `plan`、`preflight`、`deploy` 并统一追加
 `--env prod --strategy direct`；旧自动化的 `--dashboard-fast-track` 仍兼容。真实执行再加 `--execute --confirm-prod`。计划必须显示
-`risk_class=owner-tools`、`strategy=direct`、`level=rolling` 且服务集合只能是所选管理面 artifact；发布器会拒绝缩小机器计算出的依赖闭包，并核对所有非目标容器启动时间不变，因此该路径不进入维护、不 drain 生成队列，也不触碰 Pages、Worker 或 RunPod Pod。
+Dashboard 独立发布的 plan 必须显示 `risk_class=owner-tools`、`strategy=direct`、`level=rolling`，服务集合精确为 Dashboard 前后端；`--modules dashboard` 是完整模块组而不是任意依赖裁剪。发布器核对所有非目标容器启动时间不变，因此该路径不进入维护、不 drain 生成队列，也不触碰 Pages、Worker 或 RunPod Pod。
 Dashboard `/api/system/status` 的 pending 详情默认优先读 `WORKER_REDIS_URL`，若该分库没有 `comfy:queue:pending`
 快照，再按 `DASHBOARD_PENDING_QUEUE_FALLBACK_REDIS_URL`、`REDIS_URL` 兜底读取。这只修正管理后台展示和 autoscaler 估算，
 不改变 Central 的入队 Redis 契约；若 Central 误写通用 Redis，仍应另行排查 Central 配置。

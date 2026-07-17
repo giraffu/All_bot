@@ -233,7 +233,7 @@ QQCC Bot 不启动 TON 轮询，不注册支付回调，不作为充值入口。
 QQCC 代码发布属于统一 immutable release：使用 `scripts/release.py`，服务集合由依赖影响计算，专用 `update_cloud_prod_qqcc_bot.sh` 已 fail closed。旧专用同步/build 命令只作首次切换前事实与 legacy 回滚取证，禁止用于新发布。
 QQCC Bot 读取同一个 `GENERATION_MAINTENANCE_FILE`。云测试和云正式维护脚本写入/清理生成维护标记时，应同时覆盖正在运行的 `cloud-qqcc-bot-test` / `cloud-qqcc-bot-prod`。
 
-云测试只部署可信 candidate/main release；请求 QQCC 模块时仍由 planner 扩大真实依赖集合：
+云测试只部署可信 candidate/main release。单独请求官方 QQCC Bot 时，planner 使用该 artifact 自己的已部署 `source_sha` 作为基线，不再把同一目标 SHA 的其它控制面 artifact 自动并入：
 
 ```bash
 scripts/release.py plan --env test --track control-plane --sha <40-char-sha> --modules qqcc-bot
@@ -251,18 +251,18 @@ scripts/release.py preflight --env prod --track control-plane --sha <40-char-sha
 scripts/release.py deploy --env prod --track control-plane --sha <40-char-sha> --modules qqcc-bot --execute --confirm-prod
 ```
 
-`--modules` 只能扩大自动集合，不能绕过依赖分析强行缩成单服务。执行前确认没有第二个同 token polling 实例；正式维护模式按本次发布独立选择，默认开启，只有用户当次明确要求且 planner 允许时才关闭。
+`--modules qqcc-bot` 是受控的单模块边界，只选择官方 Bot service；执行前仍须确认没有第二个同 token polling 实例。若差异包含 migration、共享 Compose/env 或 `src/services/qqcc_config_service.py`，planner 会拒绝独立发布并要求改走普通完整影响闭包。
 
-只更新正式 QQCC Config Web 时，请求两个配置模块：
+只更新正式 QQCC Config Web 时，请求一个完整配置模块组，发布器固定展开为前后端两个 artifact：
 
 ```bash
 scripts/release.py plan --env prod --track control-plane --sha <40-char-sha> \
-  --modules qqcc-config-backend qqcc-config-frontend
+  --modules qqcc-config
 ```
 
-同一参数必须复用于 `preflight` 和带 `--execute --confirm-prod` 的 `deploy`。发布后确认 `cloud-qqcc-config-backend-prod`、`cloud-qqcc-config-frontend-prod` running/healthy，并确认非目标服务启动时间未变化。
+同一参数必须复用于 `preflight` 和带 `--execute --confirm-prod` 的 `deploy`。发布后确认 `cloud-qqcc-config-backend-prod`、`cloud-qqcc-config-frontend-prod` running/healthy，并确认非目标服务启动时间未变化；`current.json` 中两个目标 artifact 更新为本次 `source_sha`，其它 artifact 保持原版本。
 
-同轮更新 QQCC Bot 与 QQCC Config Web 时，请求三个模块：
+QQCC Bot 与 QQCC Config Web 不能塞进同一个“独立模块”事务。若两者只是互不依赖的改动，应按两个事务分别 plan/preflight/deploy；若涉及共享配置契约，则退出独立模式，让普通 planner 计算完整闭包。以下旧式混选会 fail closed：
 
 ```bash
 scripts/release.py plan --env prod --track control-plane --sha <40-char-sha> \

@@ -30,9 +30,9 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 
 ## 2. 当前稳定入口
 
-- schema v2 将不可变产物拆为 `control-plane`、`test-execution`、`gpu-execution` 三条环境无关发布链；`release-index.json` 引用三份 manifest，test/prod 只选择模块并注入配置。`--modules` 与 control-plane alias `--services` 只能扩大影响集合，状态与历史按 track 隔离。
+- schema v2 将不可变产物拆为 `control-plane`、`test-execution`、`gpu-execution` 三条环境无关发布链；`release-index.json` 引用三份 manifest，test/prod 只选择模块并注入配置。已有增量基线时，普通自动发布只从策略影响集合中选择 bundle 内 `source_sha` 等于目标 SHA 的运行时 artifact；全部 artifact 均复用旧 `source_sha` 时选择集必须为空，风险 level/matched rules 只作为审计元数据，不得触发空重建。`--services` 仍只能扩大影响集合；显式 `--modules dashboard|qqcc-bot|qqcc-config` 是三个受控独立模块边界，一次只能选择一个完整组，并从该组 artifact 自己的 `source_sha` 计算差异和回滚，不按 control-plane 全局 SHA 扩容。
 - 并发研发使用精确受保护 `codex/test-train` 的独立 `test-candidate` bundle 仓库；candidate 只能由集成 AI通过 `scripts/test_train_release.py` 部署 test，禁止 `verify-test`、prod、fast-track 和正式晋级。最终 main SHA 必须重新构建、部署和验收。
-- 发布策略是 `--strategy auto|standard|direct|emergency`。核心用户链路与已有专属测试实例的 QQCC Config 默认 standard；Dashboard 与 GPU 执行面默认 direct；公共 Web 默认 standard、可显式 direct；核心只允许带 reason/approved-by 的 emergency。migration、共享部署/Compose 契约和未知路径始终 standard。混合变更取最高风险，`src/shared` 的自动 artifact 闭包不得用 `--modules` 缩小。
+- 发布策略是 `--strategy auto|standard|direct|emergency`。核心用户链路与已有专属测试实例的 QQCC Config 默认 standard；Dashboard 与 GPU 执行面默认 direct；公共 Web 默认 standard、可显式 direct；核心只允许带 reason/approved-by 的 emergency。普通混合变更取最高风险。独立模块发布只重建所选服务，但 migration、共享 Compose/env 契约、Dashboard/QQCC 共用 schema 和 QQCC Bot/Config 共用运行时配置会 fail closed，必须退出独立模式后按完整影响闭包发布。
 - `--skip-gate` 只允许 `ci-tests|test-deploy|test-acceptance|observation|gpu-business-canary`，并受策略约束。CI `validation_mode=build-only` 仍必须从受保护 main 完整 SHA 构建 digest 产物，发布时显式跳过 `ci-tests` 且记录 reason/approved-by；任何 execute 都禁止 `--skip-ci-checks`。main 血缘、成功构建、digest/checksum/OCI revision、配置、目标健康、事务/回滚和非目标服务不重建永久保留。
 - 云测试默认部署 standard 所需的 control-plane/公共 Web artifact；专属测试 QQCC Config 前后端属于 test-train 管理的 control-plane 服务，固定使用测试配置及 8045/8088，Dashboard 仍不进入测试站。test-execution 只在专项诊断时显式 `--with-test-execution`。验收状态按 track + artifact digest 写入 history；direct/emergency 写 `waived`，GPU direct 写 `attested`，不得覆盖其它核心 artifact 的 tested 证据。
 - 唯一代码发布入口是 `scripts/release.py plan|preflight|deploy|rollback|recover`。目标必须是可从 `origin/main` 到达的完整 40 位 SHA，并使用 CI 生成的 `release.json`、Web checksum 和 digest-pinned 镜像；云端不 build、不挂载源码、不接收代码/env rsync。`preflight` 与 `deploy` 不自动拉 bundle，所有材料必须预先可读。
@@ -120,9 +120,9 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 1. 确认用户确实要求正式发布或生产热修。
 2. 确认目标 service 存在，并确定是否涉及 Alembic、shared env、worker workflow 或跨服务契约；同时记录本次维护意图：用户未指示则为“开启”，用户当次明确要求时才为“不开启”。
 3. 对精确 SHA 运行 `release.py plan --env prod --track control-plane`，再运行只读 `preflight`，检查自动影响集合、维护等级、migration、Pages canonical/自动部署和控制面/Web 回滚材料；prod 报告中的 Worker 检查必须是 `skipped`。planner 判定强制 maintenance 时拒绝关闭；请求开启但发布器无法实际建立/保持维护，或请求关闭但发布器无法证明不会进入维护时，都在 mutation 前停止。
-4. 先审阅 plan/preflight 的 `risk_class/strategy/validation_mode/skipped_gates/gates`。standard 只晋级 history 中同 artifact digest 的 tested 证据；QQCC Config owner-tools auto standard，Dashboard owner-tools 与 execution auto direct。共享构建输入让 bundle 同时包含 Dashboard 与 QQCC Config 时，test 只过滤不可用 Dashboard 服务并继续验收 QQCC Config；过滤后没有测试目标的纯 owner-only mutation 仍拒绝。公共 Web direct 和核心 emergency 必须显式风险接受。所有正式执行仍带 `--execute --confirm-prod`，并确认计划只重建目标服务。
+4. 先审阅 plan/preflight 的 `risk_class/strategy/validation_mode/skipped_gates/gates`。单独 Dashboard、QQCC Bot、QQCC Config 分别用 `--modules dashboard|qqcc-bot|qqcc-config`，不得在一次独立事务中混选；standard 只晋级 history 中同 artifact digest 的 tested 证据，QQCC Config auto standard，Dashboard auto direct。公共 Web direct 和核心 emergency 必须显式风险接受。所有正式执行仍带 `--execute --confirm-prod`，并确认计划只重建目标服务。
 5. 手工 compose、旧 QQCC 快速脚本、rsync 和现场 build 均不是紧急旁路；无法通过发布器时停下修复发布契约。
-6. 结束后核对容器 digest、OCI revision、current.json、健康检查和未触碰服务启动时间。
+6. 结束后核对容器 digest、OCI revision、`current.json` 中目标 artifact 的 `source_sha`、健康检查和未触碰服务启动时间；同一 track 的非目标 artifact 版本必须保留。
 
 ## 6. 验证矩阵
 
