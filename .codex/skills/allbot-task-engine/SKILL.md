@@ -24,7 +24,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - `process_and_submit_task(base_priority=..., user_cancel_allowed=...)` 可承接入口层任务控制语义：`base_priority` 只影响 Central 队列优先级，`user_cancel_allowed=false` 写入 active task registry 并让用户取消入口直接返回 `not_cancellable`，不调用 backend cancel、不退款；默认值保持普通任务行为。
 - `task_core` 只能依赖内部类型、协议和显式 provider/dependencies。不要在 `src/core/` 引入 Telegram `Update`、FastAPI `Request/APIRouter`、SQLAlchemy session 全局对象或 Worker HTTP 细节。
 - “双 ID”必须区分：`task_id` 是 AllBot 业务 ID，`backend_task_id` 是 Central/Worker 执行 ID。运行时锁、状态轮询、历史落库和退款日志必须写清使用哪一个。
-- Web 自由P图 v3 是单一逻辑任务、两段 backend 执行：根业务 `task_id` 固定，BF16 成功后 active registry 切到确定性的 `face_swap` backend ID。pending Web finalizer 必须先持久化带版本 continuation intent，再切 registry 与提交第二阶段；第二阶段不得重复扣费、不得允许取消、不得持久化中间结果，失败/取消统一使用根任务退款幂等键。
+- Web 自由P图 v3 是单一逻辑任务、两段 backend 执行：根业务 `task_id` 固定，BF16 成功后 active registry 切到确定性的换脸 backend ID，并以 `stage2_task_type=face_swap_v2` 提交第二阶段。pending Web finalizer 必须先持久化带版本 continuation intent，再切 registry 与提交第二阶段；升级前缺少该字段或残留旧 `face_swap` 标签的 v3 intent 均强制按 `face_swap_v2` 恢复。第二阶段不得重复扣费、不得允许取消、不得持久化中间结果，失败/取消统一使用根任务退款幂等键。
 - 自由P图 v2.5 的公开/History 类型是 `free_edit_v2_5`：1 张图扣 3 灵石并派发 `pornmaster_flux2_edit_bf16`，2 张图扣 7 灵石并派发仅内部使用的 `pornmaster_flux2_multi_edit_bf16`；其它图片数必须在扣费前拒绝。两者都走标准单阶段生命周期，不写 v3 continuation、不调用 `face_swap`；失败/取消按根业务任务实际扣费幂等退款。
 - `cleanup_task_runtime_state(...)` 是运行态收口入口。取消、失败、成功、恢复脚本和 finalizer 都应走同一类清理语义，不要复制散落删除 Redis/DB 状态。
 - Web side-effect monitor 默认入口是 `monitor_task_and_release_lock_default(...)`。Web 提交成功后的锁释放、终态观测和异常收口应通过 monitor，而不是让 request handler 长时间持有业务逻辑。
@@ -77,7 +77,8 @@ QQCC 私有 Bot 不改变这条生成主链。访客按自己的 `internal_user_
 - Wan22 AIO Bot 扩展/重生成/拼接链覆盖旧图生视频 `custom_video` / `video_lora` 与图生视频 v2，必须保留 `wan22_prev_task_id`、`wan22_chain_task_ids`、`extra_outputs.last_frame` 和 stitch 语义；Bot 扩展/重生成 seed 与拼接链 histories 恢复优先改 `src/services/wan22_video_v2_extension_service.py` 并补 focused tests。
 - Bot 高级视频入口的提交计划事实源是 `src/services/advanced_video_submission_service.py`；`image_to_video_fsm.py`、`wan22_video_v2_fsm.py`、`ltx_video_fsm.py` 只做 Telegram 编排和额度检查。LTX Bot payload 的分辨率、时长和模式必须显式传给 `process_ltx_video_task(...)`，不要借用 `context.user_data` 顶层键桥接后台任务参数。修改旧图生视频/Wan22 v2/LTX Bot payload 时优先覆盖该 service 的 focused tests，再跑 handler 回归。
 - SCAIL-2 用户侧任务类型包括 `scail2_action_transfer`、`scail2_video_replacement`、`scail2_face_swap_v2`；内部仍保留 `scail2_action_transfer_long` 执行类型承接动作迁移 10/15/20s。公开动作迁移允许 5/8/10/15/20s，业务/History 仍记 `scail2_action_transfer`；dispatcher 按时长选择短 workflow 或隐藏 Context Windows workflow。时长、成本、驱动视频大小、默认 prompt、History type 长度和 LAN/RunPod 承接差异都必须按文档核对。
-- `i2i_pro` 是 RunPod runtime profile，不是默认新增业务类型。它可承接 `i2i_pro`、`t2i-pornmaster-turbo`、`face_swap` 等执行映射，workflow override 要跟随 worker 配置。
+- 图片换脸执行类型必须分流：旧 `face_swap` 固定使用 `face_swap.json`、默认成本 1，只由旧 V1 容量（正式启用容量为 `worker_remote_02`）承接；新 `face_swap_v2` 使用 `face_swap_v2.json`、默认成本 2，并归属 `i2i_pro` runtime profile。快速/随机换脸继续提交 V1；自由P图 v3 第二阶段和 QQCC 原脸恢复提交 V2，但组合业务不得因内部 V2 再次扣费。
+- `i2i_pro` 是 RunPod runtime profile，同时也是既有幻想换脸业务类型。profile 可承接 `i2i_pro`、`t2i-pornmaster-turbo`、`face_swap_v2` 等执行映射，workflow override 要跟随 worker 配置；幻想换脸仍提交 `i2i_pro` 并按 6 灵石计费，不能机械改成双图契约的 `face_swap_v2`。
 
 ## 6. 排障路由
 

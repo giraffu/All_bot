@@ -9,7 +9,7 @@ bundles:
       model_dir: /home/ubantu/comfyui/models
       discovered_size_gb: 325
       import_status: planned
-      notes: Known-good gpu-226 mixed production model set. Registry import now treats face_swap and t2i-pornmaster-turbo through the runtime overrides face_swap_v2.json and txt2img_from_i2i_pro.json; legacy default workflow-only models are not required for those two execution paths.
+      notes: Known-good gpu-226 mixed production model set. Registry import now treats face_swap_v2 and t2i-pornmaster-turbo through the runtime overrides face_swap_v2.json and txt2img_from_i2i_pro.json; legacy default workflow-only models are not required for those two execution paths.
     files: []
 
   video_basic_baseline:
@@ -61,7 +61,7 @@ bundles:
       model_dir: /home/ubantu/comfyui/models
       discovered_size_gb: 36.11
       import_status: planned
-    notes: Dedicated Flux2/Z-Image model set shared by i2i_pro, t2i-pornmaster-turbo via txt2img_from_i2i_pro.json, and face_swap via face_swap_v2.json.
+    notes: Dedicated Flux2/Z-Image model set shared by i2i_pro, t2i-pornmaster-turbo via txt2img_from_i2i_pro.json, and face_swap_v2 via face_swap_v2.json.
     files: []
 
   pornmaster_flux2_edit_baseline:

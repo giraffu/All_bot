@@ -11,6 +11,7 @@ from config import (
     API_BASE,
     API_TOKEN,
     FACE_SWAP_ENDPOINT,
+    FACE_SWAP_V2_ENDPOINT,
     FACE_VIDEO_ENDPOINT,
     IMAGE_TO_VIDEO_ENDPOINT,
     I2I_PRO_ENDPOINT,
@@ -403,6 +404,7 @@ class APIClient:
         face_image_path: str,
         body_image_path: str,
         priority: int = 0,
+        task_type: str = "face_swap",
     ) -> str:
         """
         Submit face swap task.
@@ -418,12 +420,25 @@ class APIClient:
             "priority": priority,
         }
 
+        endpoint_by_task_type = {
+            "face_swap": FACE_SWAP_ENDPOINT,
+            "face_swap_v2": FACE_SWAP_V2_ENDPOINT,
+        }
+        try:
+            endpoint = endpoint_by_task_type[task_type]
+        except KeyError as exc:
+            raise ValueError(f"Unsupported face swap task type: {task_type}") from exc
+
         logger.info(
-            f"Submitting face_swap task. Face: {face_image_path}, Body: {body_image_path}, Priority: {priority}"
+            "Submitting %s task. Face: %s, Body: %s, Priority: %s",
+            task_type,
+            face_image_path,
+            body_image_path,
+            priority,
         )
         r = await self._request(
             "POST",
-            FACE_SWAP_ENDPOINT,
+            endpoint,
             json=data,
             circuit_breaker_key="submit",
         )

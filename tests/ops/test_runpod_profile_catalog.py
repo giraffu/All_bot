@@ -45,7 +45,7 @@ def test_provider_reexports_profile_catalog_symbols_for_old_imports():
         ("wan22_video_v2", "wan22_video_v2"),
         ("i2i_pro", "i2i_pro"),
         ("t2i-pornmaster-turbo", "i2i_pro"),
-        ("face_swap", "i2i_pro"),
+        ("face_swap_v2", "i2i_pro"),
         ("scail2", "scail2"),
         ("scail2_action_transfer", "scail2"),
         ("scail2_video_replacement", "scail2"),
@@ -126,7 +126,11 @@ def test_dashboard_profile_options_are_sourced_from_catalog():
         "video_edit",
     ]
     assert options["wan22_video_v2"] == ["wan22_video_v2"]
-    assert options["i2i_pro"] == ["i2i_pro", "t2i-pornmaster-turbo", "face_swap"]
+    assert options["i2i_pro"] == [
+        "i2i_pro",
+        "t2i-pornmaster-turbo",
+        "face_swap_v2",
+    ]
     assert options["scail2"] == [
         "scail2_action_transfer",
         "scail2_video_replacement",

@@ -85,7 +85,7 @@ async def _wait_for_image_result(
             history,
             prompt_id=prompt_id,
             task_id=task_id,
-            task_type="face_swap",
+            task_type="face_swap_v2",
         )
         if result:
             return result
@@ -160,7 +160,7 @@ async def prepare_scail2_face_swap_v10_reference(
             patcher,
         )
         patched = patcher.patch_workflow(
-            "face_swap",
+            "face_swap_v2",
             workflow,
             {
                 "face_image": aux_face_name,

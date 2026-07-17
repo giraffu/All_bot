@@ -8,7 +8,8 @@ from src.constants import (
     LTX_RESOLUTION_COST,
     MODE_EDIT,
     MODE_FREE_EDIT_V2_5,
-    MODE_FACESWAP_STEP1,
+    MODE_FACE_SWAP,
+    MODE_FACE_SWAP_V2,
     MODE_I2I_DRAW,
     MODE_I2I_PRO,
     MODE_IMG2IMG_LORA,
@@ -553,8 +554,11 @@ class PornmasterFlux2EditStrategy(BaseTaskStrategy):
 
 
 class FaceSwapStrategy(BaseTaskStrategy):
+    def __init__(self, task_type: str = MODE_FACE_SWAP):
+        self.task_type = task_type
+
     def get_cost(self, inputs: Dict[str, Any]) -> int:
-        return TASK_COSTS.get(MODE_FACESWAP_STEP1, 6)
+        return TASK_COSTS[self.task_type]
 
     def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
         # 按照原来的逻辑：先是 body_img (target_image)，再是 face_img (face_image)
@@ -572,6 +576,7 @@ class FaceSwapStrategy(BaseTaskStrategy):
             face_image_path=saved_images[1] if len(saved_images) > 1 else "",
             body_image_path=saved_images[0] if len(saved_images) > 0 else "",
             priority=priority,
+            task_type=self.task_type,
         )
 
 
@@ -946,7 +951,8 @@ def _build_video_strategy(
 
 
 STRATEGY_BUILDERS: dict[str, callable] = {
-    "face_swap": lambda _task_type, _feature_flags: FaceSwapStrategy(),
+    MODE_FACE_SWAP: lambda task_type, _feature_flags: FaceSwapStrategy(task_type),
+    MODE_FACE_SWAP_V2: lambda task_type, _feature_flags: FaceSwapStrategy(task_type),
     "ltx_video": lambda _task_type, _feature_flags: LtxVideoStrategy(),
     MODE_WAN22_VIDEO_V2: lambda _task_type, _feature_flags: Wan22VideoV2Strategy(),
     **dict.fromkeys(

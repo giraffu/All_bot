@@ -28,7 +28,8 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 - 同一个用户可见入口可能共享一个执行 workflow。修改 UI 文案或 task type 前，先核对 `src/domain_config/task_type_registry.py`、worker mapping 和 patcher。
 - `free_edit_v2_5` 是用户可见/History 逻辑类型：单图 alias 到既有 `pornmaster_flux2_edit_bf16`，双图 alias 到内部 `pornmaster_flux2_multi_edit_bf16`。双图执行复用 multiple-images workflow 的节点 `17.image` / `29.image` 并把节点 `9.unet_name` 切到现有 BF16 权重；两种内部类型与自由P图 v3 共用模型和 RunPod/LAN profile。v2.5 单阶段直出，v3 才续接图片换脸，禁止复制 workflow、模型或 GPU profile。
 - `image_to_video`、`video_insert`、`video_edit` 当前共享 `Wan22AioV82.json`，依赖 `patch_image_to_video_workflow()` 按 task type 注入差异；不要为三者复制分叉 workflow。
-- `face_swap_v2` 不使用默认 `api.json`，通过 per-task override 指向 `face_swap_v2.json`。
+- 图片换脸有两套独立执行契约：V1 `face_swap` 使用旧 `face_swap.json`，正式启用容量保留在 `worker_remote_02`；V2 `face_swap_v2` 通过 per-task override 指向 `face_swap_v2.json`，归属 `i2i_pro` profile。i2i_pro Worker 不得继续声明 `face_swap`，也不得修改 remote02 的旧 workflow、模型或环境。
+- 自由P图 v3 的第二阶段和 QQCC `original_face_swap_enabled` 内部原脸恢复使用 `face_swap_v2`；快速/随机换脸仍使用 `face_swap`。SCAIL-2 视频换脸 v10 的首帧预处理也使用 V2 workflow，但作为视频组合任务内部阶段不额外计费。
 - `model-import-plan` 必须跟随 runtime override。不要只改本地 `ComfyUI/models`，却遗漏 RunPod / LAN profile 的模型路径和启动映射。
 
 ## 3. 修改流程

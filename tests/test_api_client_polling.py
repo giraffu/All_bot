@@ -332,6 +332,43 @@ def test_central_api_circuit_failure_classifier_counts_5xx_not_4xx():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("task_type", "expected_endpoint"),
+    [
+        ("face_swap", api_client_module.FACE_SWAP_ENDPOINT),
+        ("face_swap_v2", api_client_module.FACE_SWAP_V2_ENDPOINT),
+    ],
+)
+async def test_submit_face_swap_selects_version_endpoint(
+    monkeypatch,
+    task_type,
+    expected_endpoint,
+):
+    client = api_client_module.APIClient.__new__(api_client_module.APIClient)
+    request = AsyncMock(
+        return_value=httpx.Response(200, json={"task_id": "backend-task-id"})
+    )
+    monkeypatch.setattr(client, "_request", request)
+
+    result = await client.submit_face_swap(
+        "task-face",
+        "face.png",
+        "body.png",
+        priority=3,
+        task_type=task_type,
+    )
+
+    assert result == "backend-task-id"
+    assert request.await_args.args[:2] == ("POST", expected_endpoint)
+    assert request.await_args.kwargs["json"] == {
+        "task_id": "task-face",
+        "face_image": "face.png",
+        "body_image": "body.png",
+        "priority": 3,
+    }
+
+
+@pytest.mark.asyncio
 async def test_submit_pornmaster_flux2_bf16_uses_dedicated_single_image_endpoint(monkeypatch):
     client = api_client_module.APIClient.__new__(api_client_module.APIClient)
     request = AsyncMock(

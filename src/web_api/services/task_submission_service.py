@@ -61,6 +61,7 @@ async def submit_generation_task(
                     "version": 1,
                     "kind": "free_edit_v3",
                     "stage": "bf16",
+                    "stage2_task_type": "face_swap_v2",
                     "original_image": images[0],
                     "final_allow_contribute": not is_template,
                 }

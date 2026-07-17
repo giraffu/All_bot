@@ -70,7 +70,7 @@ def test_case_builder_preserves_cloud_test_payloads(tmp_path):
     assert [case["expected_central_task_type"] for case in i2i_cases] == [
         "i2i_pro",
         "t2i-pornmaster-turbo",
-        "face_swap",
+        "face_swap_v2",
     ]
 
     scail2_cases = RunPodCloudTestCanaryCaseBuilder(

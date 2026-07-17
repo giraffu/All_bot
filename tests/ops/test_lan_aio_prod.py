@@ -53,7 +53,7 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
     assert slots["gpu-252-gpu0-i2i_pro"].target_task_types == (
         "i2i_pro",
         "t2i-pornmaster-turbo",
-        "face_swap",
+        "face_swap_v2",
     )
     assert (
         slots["gpu-252-gpu0-i2i_pro"].gpu_device_id
@@ -65,7 +65,7 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
     assert slots["gpu-252-gpu1-i2i_pro"].target_task_types == (
         "i2i_pro",
         "t2i-pornmaster-turbo",
-        "face_swap",
+        "face_swap_v2",
     )
     assert (
         slots["gpu-252-gpu1-i2i_pro"].gpu_device_id

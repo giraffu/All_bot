@@ -7,7 +7,7 @@ assignments:
     worker_id: cloud_prod_worker_01
     profile_id: face_i2i_t2i
     task_types:
-      - face_swap
+      - face_swap_v2
       - i2i_pro
       - i2i_draw
       - face_video
@@ -15,7 +15,7 @@ assignments:
       - image_to_video
       - t2i-pornmaster-turbo
     max_parallel_tasks: 2
-    notes: Retired on 2026-07-02 when gpu-226 GPU0 moved from host-service cloud_prod_worker_01 to the image_to_video LAN AIO on port 8190. Keep as rollback metadata only; the local agent container is stopped and Central control is disabled.
+    notes: Retired on 2026-07-02 when gpu-226 GPU0 moved from host-service cloud_prod_worker_01 to the image_to_video LAN AIO on port 8190. Keep as rollback metadata only; the local agent container is stopped and Central control is disabled. It must not be directly re-enabled with the legacy face_swap capability; any future activation requires an immutable V2-only rollout.
 
   - id: lan-226-8190-worker-01-aio
     enabled: true
