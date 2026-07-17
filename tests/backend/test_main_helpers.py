@@ -819,13 +819,13 @@ async def test_build_system_status_response_groups_queue_pressure_by_worker_prof
                 {
                     "agent_id": "runpod_prod_i2i_pro_manual_01",
                     "provider": "runpod",
-                    "types": "i2i_pro,t2i-pornmaster-turbo,face_swap",
+                    "types": "i2i_pro,t2i-pornmaster-turbo,face_swap_v2",
                     "status": "idle",
                     "control_state": "enabled",
                 },
                 {
                     "agent_id": "local-i2i",
-                    "types": "i2i_pro,t2i-pornmaster-turbo,face_swap",
+                    "types": "i2i_pro,t2i-pornmaster-turbo,face_swap_v2",
                     "status": "running",
                     "control_state": "enabled",
                 },
@@ -837,7 +837,7 @@ async def test_build_system_status_response_groups_queue_pressure_by_worker_prof
                 },
                 {
                     "agent_id": "local-i2i-error",
-                    "types": "face_swap",
+                    "types": "face_swap_v2",
                     "status": "error",
                     "control_state": "enabled",
                 },
@@ -853,7 +853,7 @@ async def test_build_system_status_response_groups_queue_pressure_by_worker_prof
             return {
                 "i2i_pro": 40,
                 "txt2img": 20,
-                "face_swap": 4,
+                "face_swap_v2": 4,
                 "scail2_action_transfer_long": 3,
                 "video_insert": 1,
             }
@@ -866,7 +866,7 @@ async def test_build_system_status_response_groups_queue_pressure_by_worker_prof
         "supported_task_types": [
             "i2i_pro",
             "t2i-pornmaster-turbo",
-            "face_swap",
+            "face_swap_v2",
         ],
         "pending_count": 64,
         "accepting_worker_count": 2,
