@@ -3600,6 +3600,48 @@ def test_independent_module_rejects_changed_pinned_contract_snapshot(monkeypatch
         )
 
 
+@pytest.mark.parametrize(
+    "module_name,artifacts",
+    [
+        ("qqcc-bot", {"qqcc-bot"}),
+        ("qqcc-config", {"qqcc-config-backend", "qqcc-config-frontend"}),
+    ],
+)
+def test_reviewed_qqcc_ltx_catalog_contract_keeps_independent_releases_target_only(
+    monkeypatch, module_name, artifacts
+):
+    module = _load_module()
+    policy = module.load_structured_file(POLICY_PATH)
+    changed_paths = [
+        "src/qqcc_ltx_lora_catalog.py",
+        "src/services/qqcc_config_service.py",
+    ]
+    contents = {
+        path: (ROOT / path).read_text(encoding="utf-8")
+        for path in changed_paths
+    }
+    selection = module.IndependentModuleRelease(
+        name=module_name,
+        artifacts=artifacts,
+        previous_sha="b" * 40,
+    )
+
+    def fake_run(command, **_kwargs):
+        path = command[-1].split(":", 1)[1]
+        return subprocess.CompletedProcess(
+            command, 0, stdout=contents[path], stderr=""
+        )
+
+    monkeypatch.setattr(module, "_run", fake_run)
+
+    module.validate_independent_release_paths(
+        policy,
+        selection,
+        changed_paths,
+        target_sha=FULL_SHA,
+    )
+
+
 def test_main_channel_keeps_production_and_verify_test_compatibility():
     module = _load_module()
     main_release = {
