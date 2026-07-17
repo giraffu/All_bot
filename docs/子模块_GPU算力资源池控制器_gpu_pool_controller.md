@@ -18,7 +18,8 @@
 - gpu-002 LAN AIO 正式日常入口：`scripts/lan_aio_prod_ops.sh`
 - gpu-002 SCAIL-2 LAN AIO 正式 slot0 入口：`scripts/lan_scail2_aio_prod.sh`
 - LAN AIO fleet 泛化配置：`ops/gpu_pool_controller/config/lan_aio_prod_slots.yml`
-- LAN AIO fleet 运行态摘要：`ops/gpu_pool_controller/config/lan_aio_fleet_state.yml`
+- LAN AIO fleet 本地运行态：`${XDG_STATE_HOME:-~/.local/state}/allbot/lan-aio/current.yml`
+- LAN AIO operation 审计：`${XDG_STATE_HOME:-~/.local/state}/allbot/lan-aio/history/<operation-id>.json`
 - LAN AIO fleet 泛化入口：`scripts/lan_aio_fleet_prod_ops.py`
 - RunPod public provider facade：`ops/gpu_pool_controller/providers/runpod.py`
 - RunPod profile/catalog 事实源：`ops/gpu_pool_controller/runpod_profile_catalog.py`
@@ -74,7 +75,8 @@
 - `assignments.yml`：worker/节点支持哪些任务
 - `model_bundles.yml`：模型 bundle manifest 计划与版本
 - `lan_aio_prod_slots.yml`：LAN AIO helper 可管理的 slot/catalog，不代表每张卡的最新 live 当前态
-- `lan_aio_fleet_state.yml`：AI operator 每次管理后维护的 LAN AIO 运行态摘要，记录 `node_id + gpu_index` 当前 profile、缓存候选、阻断原因和最近验证时间；若它与 live status 冲突，live status 优先并停止 mutation
+- XDG `current.yml`：本地主 helper 原子维护的 last-known current/cache/验证时间；`history/<operation-id>.json` 记录成功、失败和回滚，未完成 operation 阻止下一次 mutation
+- `lan_aio_fleet_state.legacy.yml`：冻结的一次性迁移种子，不再是运行态事实源，也不得在普通运维后更新
 
 常用只读 / dry-run 命令：
 
@@ -193,7 +195,7 @@ scripts/lan_runpod_aio_canary.sh --action restore --dry-run
 
 `start-heartbeat --execute` 会先把临时 agent control 设为 `disabled`，再把 compose/env 推到 `allbot-gpu-002` 并启动 canary 容器；不会放开接单。`enable-canary --execute` 只允许在真实 Web canary 窗口内临时 disable `cloud_worker_test_06` 并 enable 临时 agent；结束后必须执行 `restore --execute`，恢复旧 worker 并停止 canary 容器。失败现场需要保留容器和日志时，`restore --execute --keep-container` 只恢复 control，不停止容器。
 
-gpu-002 早期 AIO 正式日常入口是 `scripts/lan_aio_prod_ops.sh`。它只管理原固定生产接管范围：slot0 `img2img/img2img_lora` 与 slot1 `image_to_video/video_insert/video_edit`，默认 dry-run，真实动作必须显式加 `--execute`。2026-06-18 后 slot0/`8190` 已由 `scripts/lan_scail2_aio_prod.sh` 接管为正式 SCAIL-2 AIO；slot1/`8191` 在 2026-06-29 23:17 Asia/Shanghai 后再次由 fleet 配置 `gpu-002-gpu1-pornmaster_flux2_edit` 接管，`gpu-002-gpu1-image_to_video` 当前只作为同卡回切候选。旧 `lan_aio_prod_ops.sh` 只能作为 slot1 image_to_video 历史观测/恢复参考，不能代表 gpu-002 slot0 的 SCAIL-2 或 slot1 当前全局现状。
+gpu-002 早期 AIO 正式日常入口是 `scripts/lan_aio_prod_ops.sh`。它只管理原固定生产接管范围：slot0 `img2img/img2img_lora` 与 slot1 `image_to_video/video_insert/video_edit`，默认 dry-run，真实动作必须显式加 `--execute`。2026-06-18 后 slot0/`8190` 已由 `scripts/lan_scail2_aio_prod.sh` 接管为正式 SCAIL-2 AIO；slot1/`8191` 经 PornMaster 与 image_to_video 多次同卡切换后，于 2026-07-17 通过 fleet helper 切到 `gpu-002-gpu1-i2i_pro`，`gpu-002-gpu1-image_to_video` 与 `gpu-002-gpu1-pornmaster_flux2_edit` 当前只作为同卡回切候选。旧 `lan_aio_prod_ops.sh` 只能作为 slot1 image_to_video 历史观测/恢复参考，不能代表 gpu-002 slot0 的 SCAIL-2 或 slot1 当前全局现状。
 
 | 日常动作 | 命令 | 语义 |
 | :--- | :--- | :--- |
@@ -237,13 +239,15 @@ gpu-002 专用 helper 已证明 all-in-one runtime 可以在正式 Central 下�
 - 渲染事实源仍是 `python scripts/gpu_pool_controller.py runtime-render --runtime-shape runpod_all_in_one --environment cloud-prod`
 - 真实密钥仍只从 `.env.cloud.prod`、`.env.lan.model-cache`、`.env.lan-aio-prod` 的 allowlist 读取；不得打印 env、compose config 展开值或 presigned URL
 
-LAN AIO 当前态不再在本文维护静态大表。先读 `lan_aio_fleet_state.yml` 判断每张物理 GPU 的 current/cached/blocked 摘要，再用 `scripts/lan_aio_fleet_prod_ops.py list --include-disabled` 和 `status --include-disabled` 做 live 仲裁；若 state 与 live 冲突，报告 drift 并停止生产 mutation。2026-07-17 state 已记录 `gpu-252` GPU0/GPU1 分别以 `8192`/`8191` 承载 `i2i_pro`，并通过 `gpu_device_id` 固定两张卡；GPU1 RMA replacement 已完成 disabled-first 门禁并正式接单。旧 UUID 的 PornMaster/SCAIL-2/Wan22 槽位仍 maintenance-disabled，历史 SCAIL-2/Wan22 风险边界不变。
+LAN AIO 当前态不在 Git 或本文维护静态大表。先读 XDG `current.yml`，再运行 `status --include-disabled`；只有 `state.status=passed` 才允许 mutation。live 是观测现实、ledger 是 last-known、catalog 是允许集合，三者不是静默覆盖关系：任一不一致、live 不可达、catalog revision 改变或存在未完成 operation 都 fail closed。确认现场后只能显式执行 `state-reconcile --reason ... --execute` 收口并留下审计。
+
+首次启用 ledger 时运行 `state-init --legacy-state-file <frozen-or-operator-copy> --execute` 并检查 status。冻结 seed 已包含 2026-07-17 的交接事实：`gpu-252` GPU0/GPU1 分别以 `8192`/`8191` 承载 `i2i_pro` 并绑定各自 UUID，`gpu-002` GPU1 从 `image_to_video` 切到 `i2i_pro`，且 image_to_video/PornMaster 保留为同卡回切候选；这些值只用于首次迁移，不能替代当次 live 核对。普通 `takeover/recover/restart-aio/warm-cache/pull-image` 持有本地单实例锁，成功后再次 live 验证，再原子替换 `current.yml` 并完成 history；失败和自动回滚同样写 history，current 不会提前前移。
 
 2026-06-18 阶段能力口径：
 
 | 层级 | 已覆盖/候选能力 | 当前口径 |
 | :--- | :--- | :--- |
-| LAN AIO 正式接单 | `img2img`、`img2img_lora`、`image_to_video`（兼容 `video_insert` / `video_edit` alias）、`i2i_pro`、`t2i-pornmaster-turbo`、`face_swap_v2`、`ltx_video`、`scail2_action_transfer`、`scail2_action_transfer_long`、`scail2_video_replacement`、`scail2_face_swap_v2`、`pornmaster_flux2_single_edit`、`pornmaster_flux2_multi_edit` | 表中为下一版候选契约；旧 `face_swap` V1 由 `worker_remote_02` 保留，不进入 i2i_pro LAN profile。gpu-252 GPU0/GPU1 的实时承接状态仍以 `lan_aio_fleet_state.yml`、live helper 与 Central 心跳仲裁，不能只看候选 catalog |
+| LAN AIO 正式接单 | `img2img`、`img2img_lora`、`image_to_video`（兼容 `video_insert` / `video_edit` alias）、`i2i_pro`、`t2i-pornmaster-turbo`、`face_swap_v2`、`ltx_video`、`scail2_action_transfer`、`scail2_action_transfer_long`、`scail2_video_replacement`、`scail2_face_swap_v2`、`pornmaster_flux2_single_edit`、`pornmaster_flux2_multi_edit` | 表中为 V2 候选契约；旧 `face_swap` V1 由 `worker_remote_02` 保留，不进入 i2i_pro LAN profile。当前容量必须以当次 XDG ledger、live helper 与 Central 心跳仲裁，不再从 Git catalog 或冻结 legacy seed 推断；blocked/maintenance slot 不计入容量 |
 | LAN AIO disabled 候选 | `img2img_lora`、`image_to_video` 回切口径，以及未 blocked 的新增候选 | 候选 slot 不自动接单；AI operator/CLI takeover 必须指定或推断同服务器当前运行目标，且按 live runtime profile 拒绝同 profile 替换；`maintenance_disabled` / `blocked_*` slot 不允许 takeover |
 | LAN AIO canary-ready | 暂无固定常驻候选 | 后续新增 slot 仍必须逐 slot 验收，不跨节点批量 enable |
 | 有镜像但未作为 LAN AIO 正式容量 | 无固定口径 | `i2i_pro` 已由 `gpu-252` GPU0 LAN AIO 正式接单；新增 profile 仍按 slot/state/live 三方仲裁 |
@@ -254,6 +258,8 @@ LAN AIO 当前态不再在本文维护静态大表。先读 `lan_aio_fleet_state
 ```bash
 scripts/lan_aio_fleet_prod_ops.py list
 scripts/lan_aio_fleet_prod_ops.py status --slot gpu-252-gpu0-img2img_lora
+scripts/lan_aio_fleet_prod_ops.py state-init --legacy-state-file ops/gpu_pool_controller/config/lan_aio_fleet_state.legacy.yml --execute
+scripts/lan_aio_fleet_prod_ops.py state-reconcile --reason '<confirmed drift reason>' --execute
 scripts/lan_aio_fleet_prod_ops.py render --slot gpu-252-gpu0-img2img_lora
 scripts/lan_aio_fleet_prod_ops.py preflight
 scripts/lan_aio_fleet_prod_ops.py configure-registry --slot gpu-252-gpu0-img2img_lora
@@ -268,7 +274,7 @@ scripts/lan_aio_fleet_prod_ops.py recover --physical-slot gpu-252:gpu0 --prefer 
 scripts/lan_aio_fleet_prod_ops.py recover --physical-slot gpu-252:gpu0 --slot gpu-252-gpu0-img2img_lora --prefer candidate
 ```
 
-候选配置遵循“Git/YAML 事实源 + 生成/校验”的边界。新增候选时先用 `candidate-plan --node-id ... --profile ... --replace-slot ...` 输出标准 YAML patch、渲染摘要、agent/container/remote_dir/host_port、模型 manifest 和预检命令；该命令不写文件、不执行远端操作。操作者审阅 patch 并通过 git 合入 `lan_aio_prod_slots.yml` 后，由本地 AI operator/CLI 继续执行预检、缓存和切换。Dashboard 不提供自由写生产 YAML、自由镜像、自由 manifest 或 slot/candidate 管理入口。
+候选配置遵循“Git catalog + 本地 state ledger”的边界。新增候选、换卡/UUID、修改 digest/manifest、改变或解除稳定阻断时，先用 `candidate-plan` 生成并审阅 Git patch；普通 profile 切换只更新 XDG ledger/history，不修改 catalog、docs 或根分支。catalog v2 中旧 `enabled/prod_enabled/superseded_by/old_runtime` 仅作迁移兼容，current 与旧 runtime 从 ledger + live 推导。Dashboard 不提供自由写生产 YAML、自由镜像、自由 manifest 或 slot/candidate 管理入口。
 
 真实接管顺序必须逐 slot 执行，不得一次替换整台或多台 GPU：
 
@@ -276,14 +282,14 @@ scripts/lan_aio_fleet_prod_ops.py recover --physical-slot gpu-252:gpu0 --slot gp
 2. 在维护窗口内执行 `configure-registry --slot ... --execute`；该动作会重启目标 GPU 节点 Docker daemon，必须先确保目标 legacy worker drain 且队列为空。若目标用户无免密 sudo 或不想中断节点 Docker，改用 runner `docker save ... | ssh ... docker load` 预置镜像，跳过 daemon restart。
 3. `pull-image --slot ... --execute` 预拉 LAN mirror 镜像；若目标节点未配置 insecure registry 而 runner 本地已有同 tag 镜像，helper 会自动用 save/load 把镜像加载到目标节点。
 4. `warm-cache --slot ... --include-disabled --execute` 用候选 profile 的 AIO 镜像在目标 workspace 运行一次无端口、无 agent、无接单的模型同步，并写入 `model-cache-marker.json`；若模型 manifest 尚未进入 LAN model cache，应让该步骤失败暴露，不在后台临时导入任意模型。
-5. `drain-legacy --slot ... --include-disabled --execute` 阻止旧 agent 接新单。
-6. `wait-idle --slot ... --include-disabled --execute` 最多等待当前旧任务自然终态，不用强制重启替代 drain。
-7. `stop-old --slot ... --include-disabled --execute` 停目标旧 runtime 容器，释放同卡显存和端口，不删除容器。
-8. `start-disabled --slot ... --execute` 启动 AIO 容器，只等待 disabled heartbeat，不允许接单。启动前会 inspect 目标候选容器名；若同名容器处于 `exited/created/dead/removing` 且名称匹配当前 slot，会先安全 `docker rm` 后再 compose up；若同名容器仍 running、restarting 或 inspect 名称不匹配，直接失败，不误删。
+5. `takeover` 内部 drain legacy，阻止旧 agent 接新单。
+6. `takeover` 内部最多等待当前旧任务自然终态，不用强制重启替代 drain。
+7. `takeover` 内部 stop-old，停目标旧 runtime 容器，释放同卡显存和端口但不删除容器。
+8. `takeover` 内部 start-disabled，启动 AIO 容器并只等待 disabled heartbeat，不允许接单。启动前会 inspect 目标候选容器名；若同名容器处于 `exited/created/dead/removing` 且名称匹配当前 slot，会先安全 `docker rm` 后再 compose up；若同名容器仍 running、restarting 或 inspect 名称不匹配，直接失败，不误删。
 9. 验收 compose 不含 `cloud-test` / `user-data-test`，Central heartbeat 必须带 `node_id`、`provider=lan_ssh`、`runtime_profile`、`pool_managed=true`；`image_to_video` / `wan22_video_v2` slot 的 `COMFY_EXTRA_ARGS` 必须包含 `--disable-dynamic-vram`。
-10. `enable-aio --slot ... --execute` 会先把 legacy worker 置为 disabled，并拒绝在 legacy 仍 running、AIO disabled heartbeat 不可见或旧 runtime 容器仍占 GPU 显存时放开 AIO，避免同卡双 ComfyUI 抢单。
+10. `takeover` 内部 enable-aio 会先把 legacy worker 置为 disabled，并拒绝在 legacy 仍 running、AIO disabled heartbeat 不可见或旧 runtime 容器仍占 GPU 显存时放开 AIO，避免同卡双 ComfyUI 抢单。
 
-AI operator/CLI 的 `takeover --slot ... --include-disabled --execute` 按 `preflight -> pull-image -> warm-cache -> drain-legacy -> wait-idle -> stop-old -> start-disabled -> enable-aio` 串联上述步骤，默认 `--failure-policy auto_rollback`。Dashboard 已移除 `LAN AIO 管理` 弹窗和 `/api/runpod/lan-aio/slots*` / `/profiles` API，不再展示或提交 slot/candidate 切换；当前 worker 状态、任务和基础暂停/开启/重启仍通过 `/api/system/workers` 与 worker 卡片保留。`render`、`preflight`、`pull-image`、`warm-cache` 和 `takeover` 支持 `--replace-slot`，用于 retarget 候选在目标物理 GPU 上做只读检查、镜像准备和缓存预热；`stop-old`、`start-disabled`、`enable-aio` 等危险单步仍不接受 retarget。`warm-cache` 对 retarget 后 root-owned 的 `/srv/allbot/runpod-runtime/...` workspace 有 Docker root helper 兜底：SSH 用户 `mkdir` 权限不足时，helper 会用目标镜像挂载 workspace parent 创建目录，再继续模型同步和 marker 写入。`stop-old` 保护窗口开始后，若 `start-disabled`、`enable-aio` 或中途检查失败，helper 会先 disable 新候选、停止新候选容器、启动旧 runtime、恢复旧 agent control，并在 operation log 中记录 `recovery_status`；operation 本身仍按失败处理，避免误判切换成功。若需要首次配置 Docker insecure registry，仍要在维护窗口先单独执行 `configure-registry` 或用 runner save/load 预置镜像。
+AI operator/CLI 的 `takeover --slot ... --include-disabled --execute` 从 ledger 自动解析 current/old runtime，并按 `preflight -> pull-image -> warm-cache -> drain-legacy -> wait-idle -> stop-old -> start-disabled -> enable-aio -> post-live-verify -> ledger/history commit` 串联上述步骤，默认 `--failure-policy auto_rollback`。为避免留下无法审计的中间态，`drain-legacy/stop-old/start-disabled/rollback` 不再支持独立 `--execute`，异常现场统一走精确 `recover`。Dashboard 已移除 slot/candidate 切换 API，Worker 卡片只保留基础暂停/开启/重启；本地主 helper 会再次确认目标 agent 就是 ledger/live current。`render`、`preflight`、`pull-image`、`warm-cache` 和 `takeover` 可从 ledger 自动 retarget，也兼容显式 `--replace-slot` 但必须与 ledger 一致。`warm-cache` 对 root-owned workspace 保留 Docker root helper 兜底。保护窗口失败时 helper 自动恢复旧 runtime，并把 operation 记录为 failed/rolled_back；current 不提前前移。
 
 失败现场手工恢复入口是 `recover --physical-slot <node>:gpuN --prefer old|candidate`，它只作用于单个物理 GPU，不跨节点、不批量操作；需要恢复到明确候选时可追加 `--slot <slot-id>`，脚本会校验 slot 必须属于该物理 GPU。恢复会先 disable/stop 同卡其它 AIO，再把目标 slot 置为 disabled、启动或在容器缺失时按 `start-disabled` 渲染重建，验证容器健康和 disabled heartbeat 后才 enable 目标 agent。`--operation-id` 只作为审计提示，实际恢复仍要求显式指定 `--physical-slot` 或能由 `--slot` 推导出唯一 physical slot，避免从历史 operation 推断出过宽恢复范围。生产执行仍必须显式 `--execute`，否则只输出 dry-run 操作计划。
 
@@ -299,7 +305,7 @@ LAN AIO compose 固定带 `restart: unless-stopped`。AIO bootstrap/entrypoint �
 
 2026-06-19 `gpu-252-gpu0-img2img_lora` 从 canary-ready 转入正式 LAN AIO 接流：AIO agent `lan_aio_prod_gpu252_gpu0_img2img_lora_01` 连接正式 Central，host `8190`，按 `img2img_lora` profile 承接 `img2img` 与 `img2img_lora`。2026-06-28 起该 slot 被 `gpu-252-gpu0-pornmaster_flux2_edit` 正式替换，新的 AIO agent `lan_aio_prod_gpu252_gpu0_pornmaster_flux2_edit_01` 监听 host `8192`，只接 `pornmaster_flux2_single_edit` 与 `pornmaster_flux2_multi_edit`。2026-07-03 `gpu-252` 按单卡 takeover 切到 `i2i_pro`；2026-07-04 返修卡回装导致 host GPU index 漂移后，所有 `gpu-252` GPU0 `8192` 候选和当前 i2i_pro slot 均改用 `gpu_device_id: GPU-09b7ea85-23df-a9b8-19d9-703534e47666` 固定健康卡，`restart-aio` 会 force-recreate 容器以应用 device request。`img2img_lora`、`image_to_video`、PornMaster Flux2 edit 与 SCAIL-2 均保留为同卡回切候选，不应与当前 AIO 同时 enabled 或同卡占用显存。
 
-2026-06-28 `gpu-002-gpu1-pornmaster_flux2_edit` 曾通过 fleet 入口替换旧 slot1 `image_to_video` AIO。2026-06-29 曾按单 slot 回切到 image_to_video；同日 23:17 Asia/Shanghai 后又通过当时的 fleet Web 入口切回 `gpu-002-gpu1-pornmaster_flux2_edit`。当前 `lan_aio_prod_gpu002_gpu1_pornmaster_flux2_edit_01` 在 host `8191` 接 `pornmaster_flux2_single_edit` / `pornmaster_flux2_multi_edit`，`gpu-002-gpu1-image_to_video` 作为同卡回切候选，回切时应 drain/stop PornMaster agent/container 后再启动 `allbot-lan-aio-gpu-002-gpu1-image_to_video-canary` 并补齐 RIFE 热缓存。fleet 当前标签只认 live heartbeat / running container；无 live signal 的 `prod_enabled`、`maintenance_disabled`、`candidate`、`blocked_*`、`superseded_*` 都不得被标成 `runtime_current`。不得让两个 8191 容器或两个 GPU1 agent 同时 enabled。
+2026-06-28 `gpu-002-gpu1-pornmaster_flux2_edit` 曾通过 fleet 入口替换旧 slot1 `image_to_video` AIO，之后多次按单 slot 回切。2026-07-17，operator 为同卡新增并冷缓存 `gpu-002-gpu1-i2i_pro`，等待在途视频任务自然结束后通过 takeover 切换成功；当前 `lan_aio_prod_gpu002_gpu1_i2i_pro_01` 在 host `8191` 接 `i2i_pro` / `t2i-pornmaster-turbo` / `face_swap`，`image_to_video` 与 PornMaster 均为同卡回切候选。fleet 当前标签只认 live heartbeat / running container；无 live signal 的 `prod_enabled`、`maintenance_disabled`、`candidate`、`blocked_*`、`superseded_*` 都不得被标成 `runtime_current`。不得让两个 8191 容器或两个 GPU1 agent 同时 enabled。
 
 后续优化方向：
 

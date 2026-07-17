@@ -1,4 +1,6 @@
 version: 1
+deprecated: true
+purpose: one-time state-init seed only; never update after ordinary LAN AIO operations
 managed_by: allbot-lan-aio-operator
 last_verified_at: "2026-07-15T04:44:38Z"
 sources:
@@ -326,28 +328,38 @@ nodes:
       - gpu_index: 1
         hardware: NVIDIA GeForce RTX 4090 48G
         current:
-          profile: image_to_video
-          slot_id: gpu-002-gpu1-image_to_video
-          agent_id: lan_aio_prod_gpu002_gpu1_image_to_video_01
-          container_name: allbot-lan-aio-gpu-002-gpu1-image_to_video-prod
+          profile: i2i_pro
+          slot_id: gpu-002-gpu1-i2i_pro
+          agent_id: lan_aio_prod_gpu002_gpu1_i2i_pro_01
+          container_name: allbot-lan-aio-gpu-002-gpu1-i2i_pro-prod
           host_port: 8191
           state: running
-          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-wan22-aio-video:20260619-wan22aio-rife-bcf3ebd
-          model_manifest_key: image_to_video/2026-06-13-test/manifest.json
-          workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu1/profiles/image_to_video/workspace
-          last_verified_at: "2026-07-14T18:27:00Z"
+          image_ref: 192.168.1.115:5000/allbot/comfy-runpod-i2i-pro:v2-47c1219f-i2ipro
+          model_manifest_key: i2i_pro/2026-06-14-test/manifest.json
+          workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu1/profiles/i2i_pro/workspace
+          last_takeover_at: "2026-07-17T06:34:25Z"
+          last_verified_at: "2026-07-17T06:41:38Z"
         cached_profiles:
           - profile: image_to_video
             cache_state: ready
             model_manifest_key: image_to_video/2026-06-13-test/manifest.json
             workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu1/profiles/image_to_video/workspace
+          - profile: i2i_pro
+            cache_state: ready
+            model_manifest_key: i2i_pro/2026-06-14-test/manifest.json
+            workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu1/profiles/i2i_pro/workspace
+            synced_at: "2026-07-17T06:33:19.835424+00:00"
           - profile: pornmaster_flux2_edit
             cache_state: ready
             model_manifest_key: pornmaster_flux2_edit/2026-06-27/manifest.json
             workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu1/profiles/pornmaster_flux2_edit/workspace
         fast_switch_candidates:
+          - slot_id: gpu-002-gpu1-image_to_video
+            profile: image_to_video
+            cache_state: ready
+            note: Same-card rollback candidate after the 2026-07-17 switch to i2i_pro; image and model cache remain ready.
           - slot_id: gpu-002-gpu1-pornmaster_flux2_edit
             profile: pornmaster_flux2_edit
             cache_state: ready
         blocked_profiles: []
-        notes: Live runtime, Central worker, and fleet state were reconciled to image_to_video in the slot catalog on 2026-07-15 before mutation. At 02:20 Asia/Shanghai the actual image_to_video slot enabled depth-1 reserved prefetch for every supported task type with heartbeat and passed health/Central verification; PornMaster remains the stopped rollback candidate.
+        notes: Switched gpu-002 GPU1 from image_to_video to i2i_pro on 2026-07-17 through scripts/lan_aio_fleet_prod_ops.py takeover with auto_rollback. Preflight, exact image presence, six-file model cache, natural completion of the in-flight video task, drain/wait-idle, stop-old, start-disabled, Docker health, disabled heartbeat, old-process cleanup and enable gates passed. Post-switch checks showed the i2i_pro container healthy on 8191, Central running with i2i_pro,t2i-pornmaster-turbo,face_swap intake, ComfyUI reachable, and the first production i2i_pro task accepted and returned to an empty 0/0 queue. image_to_video and PornMaster remain stopped same-card rollback candidates.
