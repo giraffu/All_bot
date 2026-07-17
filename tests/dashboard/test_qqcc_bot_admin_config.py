@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock
 from dashboard.backend.routers import qqcc as router_module
 from dashboard.backend.schemas import QqccBotConfigRequest
 from src.database.models import PrivateQqccBot, RuntimeCheckpoint
+from src.lora_catalog import LTX_VIDEO_LORA_MODELS
+from src.qqcc_ltx_lora_catalog import QQCC_LTX23_LIBRARY_MODELS
 from src.services import qqcc_config_service as config_service_module
 from src.services.qqcc_config_service import (
     AI_VIDEO_SCENE_ENGINE_LTX_VIDEO,
@@ -273,6 +275,46 @@ def test_normalize_qqcc_config_keeps_valid_ai_video_scenes_and_ltx_options():
         and item["default_strength"] == 0.8
         for item in options["ltx_video_lora_models"]
     )
+
+
+def test_qqcc_admin_only_ltx_lora_is_configurable_without_public_exposure():
+    admin_only_path = "ltx2.3/SexGod_Nudity_LTX23_v2_0.safetensors"
+
+    assert len(QQCC_LTX23_LIBRARY_MODELS) == 32
+    assert len(set(QQCC_LTX23_LIBRARY_MODELS) - set(LTX_VIDEO_LORA_MODELS)) == 26
+    assert admin_only_path not in LTX_VIDEO_LORA_MODELS
+
+    options = config_service_module.build_qqcc_config_options()
+    assert any(
+        item == {
+            "value": admin_only_path,
+            "label": "自然裸体与写真姿势",
+            "default_strength": 0.8,
+        }
+        for item in options["ltx_video_lora_models"]
+    )
+
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "video_scenes": [],
+            "ai_video_scenes": [
+                {
+                    "id": "admin_nudity",
+                    "name": "后台写真",
+                    "prompt": "LTXNUDES, natural full-body posing",
+                    "duration": 5,
+                    "lora_items": [
+                        {"path": admin_only_path, "strength": 0.8},
+                    ],
+                }
+            ],
+        }
+    )
+
+    assert config["ai_video_scenes"][0]["lora_items"] == [
+        {"path": admin_only_path, "strength": 0.8}
+    ]
 
 
 def test_normalize_config_keeps_generated_output_draft_only_after_save_payload():

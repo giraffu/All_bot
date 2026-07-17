@@ -10,10 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.lora_catalog import (
     IMAGE_LORA_MODELS,
-    LTX_VIDEO_LORA_DEFAULT_STRENGTHS,
-    LTX_VIDEO_LORA_MODELS,
     VIDEO_LORA_MODELS,
     normalize_ltx_video_lora_items,
+)
+from src.qqcc_ltx_lora_catalog import (
+    QQCC_LTX_VIDEO_LORA_DEFAULT_STRENGTHS,
+    QQCC_LTX_VIDEO_LORA_MODELS,
 )
 from src.services.qqcc_demo_media_service import build_qqcc_demo_preview_url
 
@@ -684,11 +686,16 @@ def _normalize_ai_video_scene(
 
     raw_lora_items = raw_scene.get("lora_items")
     allowed_lora_items = [
-        {"name": item.get("path"), "strength": item.get("strength")}
+        {
+            "name": item.get("path"),
+            "strength": item.get("strength")
+            if item.get("strength") is not None
+            else QQCC_LTX_VIDEO_LORA_DEFAULT_STRENGTHS.get(item.get("path"), 1.0),
+        }
         for item in (raw_lora_items if isinstance(raw_lora_items, list) else [])
         if isinstance(item, dict)
         and isinstance(item.get("path"), str)
-        and item.get("path") in LTX_VIDEO_LORA_MODELS
+        and item.get("path") in QQCC_LTX_VIDEO_LORA_MODELS
         and item.get("path")
     ]
     normalized_lora_items = normalize_ltx_video_lora_items(
@@ -1337,9 +1344,9 @@ def build_qqcc_config_options() -> dict[str, Any]:
             {
                 "value": value,
                 "label": label,
-                "default_strength": LTX_VIDEO_LORA_DEFAULT_STRENGTHS.get(value, 1.0),
+                "default_strength": QQCC_LTX_VIDEO_LORA_DEFAULT_STRENGTHS.get(value, 1.0),
             }
-            for value, label in LTX_VIDEO_LORA_MODELS.items()
+            for value, label in QQCC_LTX_VIDEO_LORA_MODELS.items()
             if value
         ],
     }

@@ -165,6 +165,7 @@ QQCC 独立配置 Web 的 `video_scenes` / `draw_scenes` / `filter_scenes` 可�
 - `AI动图` 切到 `wan22_video_v2` 时提交 `wan22_video_v2`，使用视频场景提示词、负面提示词、后台固定时长和用户画质选择；负面提示词为空时保持 Wan22 现有默认负向归一。v2 本轮不支持附加模型，配置归一化与前端弹窗都必须自动清空 `lora_name`。
 - `AI动图` 可选 `end_frame_draw_scene_id` 引用当前有效 `AI绘图` 场景生成尾帧。若该绘图场景配置了 `postprocess_draw_scene_id` 后处理链、终止 `postprocess_filter_scene_id` 滤镜后处理或 `original_face_swap_enabled` 原图换脸，运行时使用完整链路最终图作为尾帧。用户仍只上传起始图；QQCC Bot 先隐藏提交被引用绘图/滤镜链，每步使用该场景自身 `negative_prompt`，成功后把用户原图和最终尾帧作为两张输入提交视频；最终视频仍只使用视频场景自身 `negative_prompt`。旧 `custom_video` / `video_lora` 透传两张图并写 `use_end_frame=true`，`wan22_video_v2` 透传 `images=[start,end]`；不新增 workflow、profile 或模型 bundle。
 - `AI视频` 使用独立 `ai_video_scenes`，底层首版固定 `ltx_video`。配置层 LoRA 结构是最多 3 个 `{path,strength}`，强度 `0.1..2.0`、步长 `0.05`；提交边界转换成 LTX 既有 `{name,strength}`。无尾帧引用走 I2V，有引用时复用同一绘图链生成尾帧后走 FLF2V。配置选项必须由 `build_qqcc_config_options()` 返回 LTX engine/catalog，前端不硬编码模型清单。
+- QQCC `AI视频` 的可选 LoRA 不等同于公开高级视频目录。公开入口继续只读取 `src/lora_catalog.py:LTX_VIDEO_LORA_OPTIONS`；QQCC Config 专用扩展目录位于 `src/qqcc_ltx_lora_catalog.py`，由 `qqcc_config_service` 独占用于选项下发、保存白名单和推荐强度。2026-07-17 专用目录接入本机 `ltx23_explicit_lora_library/2026-07-17` 的 32 个已校验权重（其中 26 个不在公开目录），不得把它们合并回公共 catalog、主 Bot 或公共 Web。权重在本机模型仓库可用不代表 RunPod/LAN AIO manifest 已发布；正式生效仍需把相同相对路径同步到目标 LTX runtime 并完成单 LoRA smoke。
 - `AI绘图` 默认 engine 为自由P图 v2 `free_edit_v2`，提交 `pornmaster_flux2_single_edit`，不支持附加模型；`negative_prompt` 写入 single edit workflow 的 `254.text`。
 - `AI绘图` 切到旧 `free_edit` 时，不选模型提交 `edit`，选择 `IMAGE_LORA_MODELS` 中的模型时提交 `img2img_lora`，并透传 catalog 中的默认 strength；旧 Qwen workflow 负面提示词写入 `4.prompt`。
 - `AI绘图` 的 `postprocess_draw_scene_id` 只链式复用其它 `draw_scenes` 的既有 engine/LoRA/negative_prompt 配置；`postprocess_filter_scene_id` 只复用 `filter_scenes` 作为终止后处理模板。两者互斥，若同时有效则保留绘图后处理；该能力不新增 task type、workflow、profile 或模型 bundle，链路循环必须在配置归一化时清理。
@@ -189,6 +190,7 @@ QQCC 独立配置 Web 的 `video_scenes` / `draw_scenes` / `filter_scenes` 可�
     - `path`：ComfyUI 可识别的相对路径
     - `label_zh` / `label_en`：前后端展示名称
     - `default_strength`：未显式传权重时的默认值
+  - 仅供 QQCC 懒人 Bot 管理后台选择的模型不要加入上述公开目录；改写入 `src/qqcc_ltx_lora_catalog.py:QQCC_LTX23_LIBRARY_MODELS`。QQCC 后端会把公开目录与专用目录合并后下发给认证配置页，但主 Bot/Web 仍只读取公开目录。
   - Telegram 高级图生视频 FSM 会先进入附加模型选择，再进入同屏设置面板合并选择模式、清晰度和时长；当前允许多选，最多 3 个，并支持逐项调强度。普通入口直接发送起始帧图片即确认当前设置，单首帧上传 1 张图片，首尾帧再继续上传终止帧；旧视频配音回调只提示暂未开放。
   - Web 练功房 `custom_video` 与模板应用面板都支持 LTX 单首帧/首尾帧切换；一键应用上传 1 张起始帧时提交 `ltx_mode=i2v`，额外上传终止帧时提交 `ltx_mode=flf2v`、`use_end_frame=true`。练功房 LTX 至少支持上传两张参考图并自动按首尾帧提交，不再展示独立 `ltx_video_audio` 模式。模板应用面板复用同一批 LTX LoRA 选项；提交时主路径统一写入 `inputs.lora_items`，而不是单个 `inputs.lora_name`。
   - Web 练功房与模板应用的 LTX 面板显示可选负面提示词；trim 后非空才写 `inputs.negative_prompt`，空白时完全省略。`backend/app/models.py`、API client、image service 与 dispatcher 的 I2V/FLF2V/V2V Audio 链路都接受该可选字段；主 Bot Telegram 高级 LTX FSM 不增加输入项，继续使用工作流默认。

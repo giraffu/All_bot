@@ -13,7 +13,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 | :--- | :--- |
 | 图生图 LoRA / ControlNet / img2img 参数透传 | `docs/子模块_附加模型配置指南_comfy_models.md`、`src/handlers/fsm/edit_image_fsm.py`、`workers/comfy_agent/workflow_patcher.py` |
 | Wan22 / 旧 `image_to_video` / `video_insert` / `video_edit` | `docs/子模块_附加模型配置指南_comfy_models.md`、`.codex/skills/allbot-comfy-models/references/runtime-profiles.md` |
-| LTX 系列 LoRA 多选 | `docs/子模块_附加模型配置指南_comfy_models.md`、`src/lora_catalog.py`、`src/handlers/fsm/ltx_video_fsm.py`、`src/web_api/services/task_payload_builder.py` |
+| LTX 系列 LoRA 多选 | `docs/子模块_附加模型配置指南_comfy_models.md`、`src/lora_catalog.py`、`src/qqcc_ltx_lora_catalog.py`、`src/handlers/fsm/ltx_video_fsm.py`、`frontend/src/features/generation/buildGenerationTaskPayload.ts` |
 | SCAIL-2 视频生视频 | `docs/子模块_附加模型配置指南_comfy_models.md`、`docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md`、`src/domain_config/task_type_registry.py` |
 | RunPod / LAN AIO profile、远端 workflow 同步 | 本技能 + `allbot-ops-deployment` + `docs/子模块_GPU算力资源池控制器_gpu_pool_controller.md` |
 | 任务生命周期、队列、扣费、前端交互 | 分别叠加 `allbot-task-engine`、`allbot-billing-auth`、`vue-best-practices` |
@@ -59,6 +59,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 - LTX 首尾帧 `ltx_video_flf2v` 的默认与 10Eros override workflow 必须开启时空 VAE 的 `last_frame_fix`，让末端 latent 通过临时重复帧获得完整解码上下文；`workers/` 与 `remote_workers/` 两侧必须同步，避免尾帧轻微形变或运行态漂移。
 - LTX LoRA 多选使用 `lora_items` 结构，当前限制最多 3 个。legacy `lora_name/lora_strength` 只作兼容，不应作为新入口。
 - QQCC `AI视频` 配置保存 `{path,strength}`，提交边界转换为 LTX 既有 `{name,strength}`；强度限制 `0.1..2.0`、步长 `0.05`。LTX I2V/FLF2V/V2V Audio 的非空 `negative_prompt` 映射到节点 `29.text`，但只有独立发布并验收对应 Worker mapping 后才可宣称生效；空白值必须在 Web/Bot/API 边界省略，不能覆盖工作流节点的内置默认文本。单独发布 QQCC 控制面不得为此触碰正式 LTX GPU runtime，主 Bot Telegram 高级 LTX 设置页仍不暴露负面提示词。
+- QQCC 管理后台专用 LTX 选项必须写入 `src/qqcc_ltx_lora_catalog.py`，由 `qqcc_config_service` 独占合并、校验和下发；不要写入公开 `LTX_VIDEO_LORA_OPTIONS`。2026-07-17 的专用库包含 32 个已校验 LoRA，其中 26 个不在公开目录。控制面可配置不等于 GPU 可加载：目标 RunPod/LAN AIO manifest 未同步并 smoke 前，不得宣称正式生效。
 - LTX Bot 扩展 seed 与完成拼接链路恢复由 `src/services/ltx_video_extension_service.py` 负责；这只影响 Bot 入口层 histories/last_frame/context 准备，不改变 LTX workflow、worker mapping、RunPod profile 或模型目录。
 - Wan22 AIO Bot 链路扩展、重生成与完成拼接准备由 `src/services/wan22_video_v2_extension_service.py` 负责，覆盖旧图生视频 `custom_video` / `video_lora` 与图生视频 v2；这只影响 Bot 入口层 histories/last_frame/input/context 准备，不改变 `Wan22AioV82.json`、worker mapping、RunPod profile 或模型目录。
 - 主 Bot 高级视频 FSM 的提交 payload 事实源是 `src/services/advanced_video_submission_service.py`：它只做 Bot 入口层提交计划、分辨率/时长归一、首尾帧和 LTX LoRA/链路字段透传，不改变 worker workflow、RunPod profile 或模型目录。

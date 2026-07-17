@@ -153,6 +153,7 @@ QQCC Bot 必须设置 `application.bot_data["bot_client_type"] = "bot:qqcc"`，B
 - `AI滤镜` 默认无场景时不展示；配置有效 `filter_scenes` 后点击主菜单会回复滤镜 inline 场景按钮。点击 `qfilter_scene:<id>` 不转圈并进入 quick image 发送图片步骤，发 1 张图片后按单步滤镜场景提交；场景删除、禁用或主开关关闭后回复 `功能暂未开放` 且不提交任务。
 - `AI动图` 点击后回复 inline 场景按钮，三个一行，默认包含兼容迁移的五个懒人动图场景；后台改为自定义场景后 Bot 展示自定义按钮名。点击 `qvid_scene:<id>` 不转圈并进入 quick video 发送图片步骤；旧 `qvid_mode:*` 已发按钮兼容到对应场景，场景删除后回复 `功能暂未开放`。
 - `AI视频` 默认场景为空且不展示；配置有效 `ai_video_scenes` 且开启 `main_buttons.ai_video` 后，入口紧随 `AI动图`。`qaivid_scene:<id>` 复用 quick video FSM，用户只上传一张图；固定以 `ltx_video`、`1280x704`、场景时长和最多 3 个 `{path,strength}` LoRA 提交。无尾帧时 I2V，有尾帧引用时完整执行绘图链后 FLF2V；空负面提示词必须省略以保留 workflow 默认。QQCC 控制面可独立复用现有 LTX GPU runtime，不能因该入口发布去重建 GPU 容器或创建 RunPod canary；非空 LTX 负面提示词在 Worker mapping 独立发布验收前不得宣称已生效。
+- `AI视频` 的后台专用 LoRA 目录位于 `src/qqcc_ltx_lora_catalog.py`，只允许 `qqcc_config_service` 用于认证配置页选项、保存白名单和推荐强度；主 Bot 与公共 Web 继续只读公开 `src/lora_catalog.py`。专用目录当前覆盖本机 2026-07-17 校验库 32 项（26 项为公开目录外新增）。代码接入不代表目标 GPU 已有权重；RunPod/LAN AIO manifest 同步与 smoke 必须作为独立 GPU 发布处理。
 - `修仙市集` 点击后展示 QQCC 专用类型菜单；投稿浏览支持点赞、点踩、分页、分类返回，普通可应用投稿同时展示一键应用与 Web 应用，视频换脸仅展示 Web 应用，拼接视频不展示应用入口，且不展示留言入口。
 - `修仙市集` 已缓存媒体优先用 Telegram file_id，file_id 失效后通过当前 R2/S3 URL resolver 刷新，不走旧 legacy MinIO bytes 主路径。
 - `修仙市集` Bot 原生应用必须传 `source_post_id` 且 `allow_contribute=False`，复杂模板的一键应用必须 Web handoff，点击应用不直接增加 `applied_count`。
