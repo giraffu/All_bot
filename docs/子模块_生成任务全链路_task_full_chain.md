@@ -313,6 +313,7 @@ dispatcher 下游通常会继续经过：
 - 当前 simple route 仍可能映射到 legacy `TaskType`，但 `txt2img` 已和其他任务一样通过标准 simple route 提交，并显式携带上游 `task_id`
 - `image_service.py` / `api_client.py` 只负责把统一语义下沉到 Central API，不再由 `txt2img` 单独生成 backend task id
 - `api_client.py` 的 HTTP circuit breaker 按请求类别隔离：任务提交走 `submit`，状态轮询走 `status`，媒体下载走 `media`，系统状态检查继续跳过 breaker。HTTP 4xx 不计入 breaker 失败，网络错误、超时和 5xx 才计入；Central Redis transient 503 会被上游忙碌识别处理，不应让状态轮询拖垮提交链路。
+- Web 粗状态接口只在 active registry 已确认任务归属后调用 Central。Central 状态查询出现传输错误、超时或 `status` breaker 打开时，接口按 registry 中的 `backend_task_id`、`status` 与公开 `task_type` 返回保守的 `pending/running` 粗状态，不向用户放大为 HTTP 500；已有 History 时仍以 History 终态为准。Central 404 继续表示本次查询无状态，并且和其它 HTTP 4xx 一样不计入 breaker。相关错误日志必须保留 `error_type`，避免 `ReadTimeout` 等空字符串异常无法辨认。
 - Wan22 AIO 视频的稳定配置入口是 `src.domain_config.wan22_aio_video`。旧 `src.services.wan22_video_v2_config` / `src.services.wan22_video_v2_context` 兼容 re-export 已删除，不应作为新增逻辑的事实源。
 - `custom_video` / `video_lora`、Telegram 懒人动图 mode 与 `wan22_video_v2` 是不同用户功能入口，但底层由 `Wan22AioVideoStrategy` 与共享 submit helper 收口：公开类型继续写历史和展示，执行面类型用于 Central API / Worker 路由。
 

@@ -98,6 +98,20 @@ def test_private_bot_worker_image_contains_its_qqcc_runtime_dependency():
     assert "qqcc_bot/**" in catalog["artifacts"]["private-bot-worker"]["inputs"]
 
 
+def test_web_api_image_and_release_smoke_require_ffmpeg():
+    control = (ROOT / "deploy/docker/Dockerfile.control-plane").read_text(
+        encoding="utf-8"
+    )
+    web_api = control.split("AS web-api", 1)[1].split("AS payment-api", 1)[0]
+    assert "apt-get install -y --no-install-recommends ffmpeg" in web_api
+
+    workflow = (ROOT / ".github/workflows/modular-release-v2.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "web_ref=" in workflow
+    assert 'docker run --rm --entrypoint ffmpeg "$web_ref" -version' in workflow
+
+
 def test_dashboard_and_qqcc_frontends_are_separate_targets():
     dockerfile = (ROOT / "deploy/docker/Dockerfile.frontends").read_text(
         encoding="utf-8"

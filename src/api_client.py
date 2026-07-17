@@ -137,7 +137,12 @@ class APIClient:
             )
             raise
         except Exception as e:
-            logger.error(f"[{trace_id}] Request failed: {e}")
+            logger.error(
+                "[%s] Request failed: error_type=%s error=%s",
+                trace_id,
+                type(e).__name__,
+                e,
+            )
             raise
 
     @async_retry(max_retries=3)
