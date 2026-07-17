@@ -148,7 +148,7 @@ slots:
     target_task_types:
       - i2i_pro
       - t2i-pornmaster-turbo
-      - face_swap
+      - face_swap_v2
     gpu_index: 0
     gpu_device_id: GPU-09b7ea85-23df-a9b8-19d9-703534e47666
     host_port: 8192
@@ -161,7 +161,7 @@ slots:
     old_local_agent_container: ""
     remote_dir: /home/user/allbot-runpod-aio-prod/gpu252-gpu0-i2i-pro
     rollout_order: 24
-    notes: Active production gpu-252 GPU0 i2i_pro LAN AIO after the 2026-07-03 explicit switch from SCAIL-2. It serves i2i_pro, t2i-pornmaster-turbo, and face_swap on host port 8192; SCAIL-2, img2img_lora, image_to_video, and PornMaster Flux2 edit remain stopped same-card rollback candidates. Central AIO control was re-enabled on 2026-07-03T17:59:47Z after the queue was confirmed empty and the enable-aio gate passed.
+    notes: Active production gpu-252 GPU0 i2i_pro LAN AIO candidate. Its next immutable rollout serves i2i_pro, t2i-pornmaster-turbo, and face_swap_v2 on host port 8192; the current runtime must be drained before that rollout. SCAIL-2, img2img_lora, image_to_video, and PornMaster Flux2 edit remain stopped same-card rollback candidates.
 
   - id: gpu-252-gpu1-wan22_video_v2
     enabled: false
@@ -246,7 +246,7 @@ slots:
     target_task_types:
       - i2i_pro
       - t2i-pornmaster-turbo
-      - face_swap
+      - face_swap_v2
     gpu_index: 1
     gpu_device_id: GPU-8153a439-e3f6-8922-039d-dc13e97da6d7
     host_port: 8191
@@ -596,7 +596,7 @@ slots:
     target_task_types:
       - i2i_pro
       - t2i-pornmaster-turbo
-      - face_swap
+      - face_swap_v2
     gpu_index: 0
     host_port: 8190
     legacy_health_port: 8190
@@ -608,4 +608,4 @@ slots:
     old_local_agent_container: ""
     remote_dir: /home/ubantu/allbot-runpod-aio-prod/gpu226-gpu0-i2i-pro
     rollout_order: 106
-    notes: Active production gpu-226 GPU0 i2i_pro LAN AIO after the 2026-07-15 12:41 Asia/Shanghai switch from PornMaster Flux2 BF16. Preflight, image presence, warm-cache, drain/wait-idle, stop-old, start-disabled, Docker health, disabled heartbeat, old-process cleanup, and enable gates passed. It serves i2i_pro, t2i-pornmaster-turbo, and face_swap on host port 8190; follow-up monitoring through 2026-07-15 12:44 Asia/Shanghai saw consecutive production face_swap completions with successful sidecar uploads. BF16, image_to_video, SCAIL-2, LTX, and Wan22 remain stopped same-card rollback candidates.
+    notes: Active production gpu-226 GPU0 i2i_pro LAN AIO candidate. Its next immutable rollout serves i2i_pro, t2i-pornmaster-turbo, and face_swap_v2 on host port 8190; the current runtime must be drained before that rollout. BF16, image_to_video, SCAIL-2, LTX, and Wan22 remain stopped same-card rollback candidates.

@@ -32,7 +32,7 @@ nodes:
         compose_template: host_service_observation_only
         rollback_state: {}
         supported_task_types:
-          - face_swap
+          - face_swap_v2
           - i2i_pro
           - i2i_draw
           - face_video
@@ -67,7 +67,7 @@ nodes:
         rollback_state:
           host_service: comfyui.service
           local_agent_container: cloud-prod-comfy-agent-1
-          task_types: face_swap,i2i_pro,i2i_draw,face_video,video_edit,image_to_video,t2i-pornmaster-turbo
+          task_types: face_swap_v2,i2i_pro,i2i_draw,face_video,video_edit,image_to_video,t2i-pornmaster-turbo
           runtime_profile: face_i2i_t2i
         supported_task_types:
           - video_insert

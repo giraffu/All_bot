@@ -2,7 +2,7 @@ profiles:
   face_i2i_t2i:
     runtime_profile: face_i2i_t2i
     task_types:
-      - face_swap
+      - face_swap_v2
       - i2i_pro
       - i2i_draw
       - face_video
@@ -97,7 +97,7 @@ profiles:
     task_types:
       - i2i_pro
       - t2i-pornmaster-turbo
-      - face_swap
+      - face_swap_v2
     model_bundles:
       - i2i_pro_baseline
     required_nodes:

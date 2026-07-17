@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 FREE_EDIT_V3_CONTINUATION_KIND = "free_edit_v3"
 FREE_EDIT_V3_TASK_TYPE = "pornmaster_flux2_edit_bf16"
+FREE_EDIT_V3_STAGE2_TASK_TYPE = "face_swap_v2"
 
 
 def _free_edit_v3_stage2_task_id(registry_task_id: str) -> str:
@@ -104,6 +105,7 @@ async def enqueue_pending_web_finalizer(
             "version": int(continuation_marker.get("version", 1)),
             "kind": FREE_EDIT_V3_CONTINUATION_KIND,
             "stage": "bf16",
+            "stage2_task_type": FREE_EDIT_V3_STAGE2_TASK_TYPE,
             "stage2_backend_task_id": _free_edit_v3_stage2_task_id(
                 registry_task_id
             ),
@@ -152,6 +154,10 @@ async def _resume_free_edit_v3_face_swap(
 
     registry_task_id = next_record["registry_task_id"]
     stage2_backend_task_id = continuation["stage2_backend_task_id"]
+    # Version-1 free-edit-v3 continuations are V2-only. Normalize missing or
+    # stale V1 labels so an upgrade/retry can never silently downgrade stage 2.
+    stage2_task_type = FREE_EDIT_V3_STAGE2_TASK_TYPE
+    continuation["stage2_task_type"] = FREE_EDIT_V3_STAGE2_TASK_TYPE
     final_allow_contribute = bool(
         continuation.get("final_allow_contribute", True)
     )
@@ -183,6 +189,7 @@ async def _resume_free_edit_v3_face_swap(
             face_image_path=original_image,
             body_image_path=stage1_result_path,
             priority=100,
+            task_type=stage2_task_type,
         )
         if submitted_task_id != stage2_backend_task_id:
             raise RuntimeError("Face swap backend changed the deterministic task ID")

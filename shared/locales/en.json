@@ -302,6 +302,7 @@
     "i2i_pro": "Fantasy FaceSwap",
     "i2i_draw": "Inpaint",
     "face_swap": "FaceSwap",
+    "face_swap_v2": "Face Swap V2",
     "faceswap_step1": "FaceSwap",
     "faceswap_step2": "FaceSwap",
     "video_insert": "Img2Video",

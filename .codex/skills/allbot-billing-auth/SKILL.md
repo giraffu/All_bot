@@ -19,6 +19,7 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 - **付费群审核资格**：`paid_group_guard_bot` 只读查询 `users.telegram_id`、`users.user_group` 与 `orders`，默认允许历史成功支付订单、后台赠送套餐订单、筑基期及以上修为对应的 Telegram 用户入群；该路径不做资产副作用。
 - **Provider 化 billing core**：billing core 相关默认能力已收口到 provider/dependencies 模式，新增逻辑应优先走 provider 注册与依赖注入边界。
 - **自由P图版本定价**：主 Bot/Web 的 `free_edit_v2_5` 单图 3 灵石、双图 7 灵石并走标准单阶段 Saga，扣费前必须按实际图片数确定成本；自由P图 v3 固定 5 灵石并把 BF16→换脸视为同一根任务，第二阶段不得重复扣费。两者失败/取消退款都以根业务任务的实际扣费和账本幂等键收口；QQCC 自由P图 v3 仍保持 6 灵石，不随主入口调整。
+- **图片换脸版本定价**：独立 `face_swap`（V1）固定 1 灵石，独立 `face_swap_v2` 固定 2 灵石；快速/随机换脸仍走 V1。自由P图 v3、SCAIL-2 首帧预处理等组合任务中的 V2 已包含在根任务总价，禁止二次扣费；QQCC AI绘图/滤镜每个启用的原脸恢复步骤仍显式增加 2 灵石。幻想换脸继续提交 `i2i_pro` 并保持 6 灵石。
 - **入口负责 provider 注册**：Bot、Web API、Payment API 和 Dashboard Backend 只要会调用 billing core，都必须在启动入口调用 `ensure_billing_core_providers_registered()`。Dashboard 的退款、强制终止和资产类管理接口也会进入 billing core；只注册 task core provider 会触发 `Billing core providers 未注册`。
 
 ## 2. 输入输出规范

@@ -169,7 +169,7 @@ QQCC 独立配置 Web 的 `video_scenes` / `draw_scenes` / `filter_scenes` 可�
 - `AI绘图` 切到旧 `free_edit` 时，不选模型提交 `edit`，选择 `IMAGE_LORA_MODELS` 中的模型时提交 `img2img_lora`，并透传 catalog 中的默认 strength；旧 Qwen workflow 负面提示词写入 `4.prompt`。
 - `AI绘图` 的 `postprocess_draw_scene_id` 只链式复用其它 `draw_scenes` 的既有 engine/LoRA/negative_prompt 配置；`postprocess_filter_scene_id` 只复用 `filter_scenes` 作为终止后处理模板。两者互斥，若同时有效则保留绘图后处理；该能力不新增 task type、workflow、profile 或模型 bundle，链路循环必须在配置归一化时清理。
 - `AI滤镜` 使用 `filter_scenes`，默认不种子化场景。滤镜场景的 `free_edit_v2` / `free_edit` engine、`negative_prompt`、LoRA 和 `original_face_swap_enabled` 规则与 AI绘图一致，但自身不支持继续配置后处理链；直接入口是单步 `filter` 链，AI绘图引用滤镜时是终止后处理。关闭 `main_buttons.ai_filter` 只隐藏直接入口，不影响有效滤镜模板被 AI绘图引用。
-- `AI绘图` 的 `original_face_swap_enabled` 是每个 `draw_scenes[]` 的布尔开关，缺省为 `false`。开启后该步先完成自身绘图，再用用户最初上传原图做人脸来源、该步输出图做 body 调用现有 `face_swap`；内部换脸不传负面提示词，每个开启步骤额外计费 `2` 灵石。该能力只复用已有 `face_swap` 执行面和受信任 Bot 内部 `cost_override`，不新增 workflow、RunPod profile、模型 bundle 或数据库表；最终可见结果仍按原 QQCC AI绘图场景归类。
+- `AI绘图` 的 `original_face_swap_enabled` 是每个 `draw_scenes[]` 的布尔开关，缺省为 `false`。开启后该步先完成自身绘图，再用用户最初上传原图做人脸来源、该步输出图做 body 调用 `face_swap_v2`；内部换脸不传负面提示词，每个开启步骤额外计费 `2` 灵石。该能力复用 V2 执行面和受信任 Bot 内部 `cost_override`，不新增 workflow、模型 bundle 或数据库表；最终可见结果仍按原 QQCC AI绘图场景归类。QQCC 快速换脸不走此链，继续使用 `face_swap` V1。
 - 独立 QQCC Config Backend 的 `GET /api/qqcc/config` 必须返回非持久化 `options`，把 engine 选项和 `src/lora_catalog.py` 中的 LoRA catalog 下发给前端；前端不得手写模型清单，避免和运行时 catalog 漂移。
 
 ---
@@ -288,8 +288,8 @@ audio 候选 workflow 的 `VHS_VideoCombine 49.inputs.audio` 应接 `VHS_LoadVid
 `SCAIL-2_*.api.json`、`mappings.json`、`workflow_task_patchers.py`、
 `src/workflow_mapping_validation.py`、`remote_workers/src/workflow_mapping_validation.py` 与
 `remote_workers/comfy_agent/workflows/`。
-视频换脸 v10 是两阶段方案，不把 Flux2 图片换脸模型混装进 SCAIL-2 runtime：
-worker 先从驱动视频抽第一帧，调用 `192.168.1.226:8188` 的 `face_swap_v2.json`
+视频换脸 v10 是两阶段方案，不把 Flux2 图片换脸模型混装进 SCAIL-2 runtime。其首帧图片预处理使用 V2 语义，并包含在视频任务总价中、不额外扣费：
+worker 先从驱动视频抽第一帧，调用配置的图片换脸 V2 Comfy API 执行 `face_swap_v2.json`
 把用户参考脸换到该首帧，再把“换脸后的首帧”作为 `LoadImage 58` 提交给
 `SCAIL-2_FaceSwap_v10_firstframe_faceswap_replacement_audio.api.json`。v10 workflow
 本体复用视频换人的 `human` track / replacement 喂法，`101.reference_image` 仍是 `58`，
@@ -334,4 +334,4 @@ workflow。canary 只提交一单 5s I2V MP4，结束后目标 worker 保持 `di
 `pornmaster_flux2_single_edit,pornmaster_flux2_multi_edit`，后者承接 `pornmaster_flux2_edit_bf16,pornmaster_flux2_multi_edit_bf16`，固定
 RTX 4090 与 `--lowvram`。两者都可通过 Dashboard 或 `scripts/runpod_prod_ops.sh` 手动管理，也都进入
 Dashboard autoscaler；BF16 默认按单任务 30 秒、清空阈值 30 分钟复用 add/down/restart/enable、锁定跳过、
-最短生命周期和冷却规则。用户逻辑类型 `free_edit_v2_5` 按输入数映射到 BF16 单图/双图内部执行类型，自由P图 v3 只映射单图；双图复用既有 multiple-images workflow 并把节点 9 切到 BF16 UNet。v2.5 单阶段直出，v3 再续接 `face_swap`，因此不复制 workflow、模型目录或 GPU profile。v2 canary 与 BF16 canary 都串行验证 single/multi 两单。
+最短生命周期和冷却规则。用户逻辑类型 `free_edit_v2_5` 按输入数映射到 BF16 单图/双图内部执行类型，自由P图 v3 只映射单图；双图复用既有 multiple-images workflow 并把节点 9 切到 BF16 UNet。v2.5 单阶段直出，v3 再续接 `face_swap_v2`，该阶段包含在 v3 的 5 灵石根任务价格内、不二次扣费，因此不复制 workflow、模型目录或 GPU profile。v2 canary 与 BF16 canary 都串行验证 single/multi 两单。

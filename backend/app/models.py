@@ -25,6 +25,7 @@ class TaskType(str, Enum):
     IMG2IMG = "img2img"
     IMG2IMG_LORA = "img2img_lora"
     FACE_SWAP = "face_swap"
+    FACE_SWAP_V2 = "face_swap_v2"
     VIDEO_INSERT = "video_insert"
     VIDEO_EDIT = "video_edit"
     IMAGE_TO_VIDEO = "image_to_video"

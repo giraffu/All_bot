@@ -12,7 +12,12 @@ from app import main_simple_task_routes
 from app import main_status_result_routes
 from app import main_t2i_helpers as t2i_helpers
 from app.main_t2i_wiring import T2IWiring
-from app.models import Scail2ActionTransferLongRequest, Scail2VideoRequest, TaskType
+from app.models import (
+    FaceSwapRequest,
+    Scail2ActionTransferLongRequest,
+    Scail2VideoRequest,
+    TaskType,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -379,6 +384,10 @@ def test_simple_task_type_map_keeps_image_to_video_and_video_lora_compatibility(
     )
     assert main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["img2img"] == TaskType.IMG2IMG
     assert (
+        main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["face_swap_v2"]
+        == TaskType.FACE_SWAP_V2
+    )
+    assert (
         main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["txt2img"]
         == TaskType.T2I_PORNMASTER_TURBO
     )
@@ -602,6 +611,21 @@ async def test_enqueue_configured_task_uses_registered_task_type(monkeypatch):
         "task_type": TaskType.FACE_SWAP,
         "queue_manager": "qm",
     }
+
+
+def test_face_swap_v2_reuses_face_swap_request_contract():
+    specs_by_path = {
+        path: (request_model, task_key, endpoint_name)
+        for path, request_model, task_key, endpoint_name in (
+            main_simple_task_routes.SIMPLE_TASK_ROUTE_SPECS
+        )
+    }
+
+    assert specs_by_path["/face_swap_v2"] == (
+        FaceSwapRequest,
+        "face_swap_v2",
+        "create_face_swap_v2_task",
+    )
 
 
 @pytest.mark.asyncio

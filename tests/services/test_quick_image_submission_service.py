@@ -5,6 +5,7 @@ import pytest
 
 from src.services import quick_image_submission_service as quick_image_service
 from src.constants import (
+    MODE_FACE_SWAP_V2,
     MODE_I2I_DRAW,
     MODE_IMG2IMG_LORA,
     MODE_PORNMASTER_FLUX2_EDIT_BF16,
@@ -518,7 +519,7 @@ async def test_run_qqcc_draw_chain_inserts_original_face_swap_after_enabled_step
 
     assert [call["task_type"] for call in process_calls] == [
         MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
-        "face_swap",
+        MODE_FACE_SWAP_V2,
         MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
     ]
     assert [call["allow_cancel"] for call in process_calls] == [
@@ -595,7 +596,7 @@ async def test_run_qqcc_draw_chain_visible_final_face_swap_keeps_draw_result_sem
 
     assert [call["task_type"] for call in process_calls] == [
         MODE_PORNMASTER_FLUX2_SINGLE_EDIT,
-        "face_swap",
+        MODE_FACE_SWAP_V2,
     ]
     assert process_calls[0]["send_result"] is False
     assert process_calls[0]["allow_cancel"] is True
