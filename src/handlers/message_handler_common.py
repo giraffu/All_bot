@@ -2,6 +2,7 @@ from telegram import Update
 
 from src.i18n.translator import get_text
 from src.services.permission_service import permission_service
+from src.services.main_bot_menu_runtime import get_runtime_main_menu_keyboard
 from src.utils import (
     create_background_task,
     get_user_channel_status,
@@ -72,7 +73,7 @@ async def dispatch_prompt_route(
     *,
     prompt_routes: dict,
     reverse_map: dict,
- ) -> tuple[bool, object]:
+) -> tuple[bool, object]:
     route_handler = resolve_prompt_route_handler(text, prompt_routes, reverse_map)
     if not route_handler:
         return False, None
@@ -83,7 +84,8 @@ async def reply_private_prompt_fallback(message, *, lang: str, reply_text):
     chat = getattr(message, "chat", None)
     if not chat or chat.type != "private":
         return None
-    fallback_text, reply_markup = build_private_prompt_fallback_payload(lang)
+    fallback_text = build_private_prompt_fallback(lang)
+    reply_markup = await get_runtime_main_menu_keyboard(lang)
     await reply_text(
         message,
         fallback_text,

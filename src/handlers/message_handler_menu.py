@@ -1,4 +1,5 @@
 import re
+from inspect import isawaitable
 from typing import Any
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
@@ -6,12 +7,18 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from config import WEBAPP_URL
 from src.handlers.message_handler_common import get_reply_message
 from src.services.lazy_bot_entry_service import resolve_lazy_bot_url
+from src.services.main_bot_menu_runtime import (
+    get_runtime_main_menu_keyboard,
+    get_runtime_photo_edit_keyboard,
+    get_runtime_video_to_video_keyboard,
+)
 
 
-def build_photo_edit_payload(context) -> tuple[str, object]:
-    from src.i18n.keyboards import get_photo_edit_keyboard
-
-    return context.t("system.photo_edit_hint"), get_photo_edit_keyboard(context.lang)
+async def build_photo_edit_payload(context) -> tuple[str, object]:
+    return (
+        context.t("system.photo_edit_hint"),
+        await get_runtime_photo_edit_keyboard(context.lang),
+    )
 
 
 def build_lazy_bot_payload(context) -> tuple[str, object | None]:
@@ -54,18 +61,18 @@ async def reply_with_lazy_bot_payload(
     )
 
 
-def build_video_to_video_payload(context) -> tuple[str, object]:
-    from src.i18n.keyboards import get_video_to_video_keyboard
-
-    return context.t("system.video_to_video_hint"), get_video_to_video_keyboard(
-        context.lang
+async def build_video_to_video_payload(context) -> tuple[str, object]:
+    return (
+        context.t("system.video_to_video_hint"),
+        await get_runtime_video_to_video_keyboard(context.lang),
     )
 
 
-def build_back_to_main_payload(context) -> tuple[str, object]:
-    from src.i18n.keyboards import get_main_menu_keyboard
-
-    return context.t("system.back_to_main"), get_main_menu_keyboard(context.lang)
+async def build_back_to_main_payload(context) -> tuple[str, object]:
+    return (
+        context.t("system.back_to_main"),
+        await get_runtime_main_menu_keyboard(context.lang),
+    )
 
 
 def build_recharge_payload(context) -> tuple[str, InlineKeyboardMarkup]:
@@ -294,10 +301,10 @@ async def reply_with_built_payload(
     if not message:
         return None
 
-    if context is None:
-        msg, reply_markup = build_payload()
-    else:
-        msg, reply_markup = build_payload(context)
+    payload = build_payload() if context is None else build_payload(context)
+    if isawaitable(payload):
+        payload = await payload
+    msg, reply_markup = payload
 
     reply_kwargs = {}
     if parse_mode is not None:

@@ -602,6 +602,37 @@ describe('QqccBotSettings', () => {
     }
   })
 
+  it('keeps legacy menu layout until columns are selected and saves reordered hidden buttons', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+
+    const layoutSelect = wrapper.get('[data-testid="main-menu-buttons-per-row"]')
+    expect((layoutSelect.element as HTMLSelectElement).value).toBe('legacy')
+    expect(getButtonByTestId(wrapper, 'move-main-menu-button-up-quick_faceswap').props('disabled')).toBe(true)
+    expect(getButtonByTestId(wrapper, 'move-main-menu-button-down-quick_faceswap').props('disabled')).toBe(true)
+
+    await layoutSelect.setValue('2')
+    await getButtonByTestId(wrapper, 'move-main-menu-button-up-market').trigger('click')
+    await wrapper.findAll('button').at(1)!.trigger('click')
+    await flushPromises()
+
+    const payload = apiMocks.updateQqccBotConfig.mock.calls[0][0]
+    expect(payload.main_menu_layout).toEqual({
+      buttons_per_row: 2,
+      button_order: [
+        'quick_faceswap',
+        'ai_draw',
+        'ai_filter',
+        'video_edit',
+        'market',
+        'ai_video',
+        'private_bot',
+        'main_bot_link',
+      ],
+    })
+    expect(payload.main_buttons.video_edit).toBe(false)
+  })
+
   it('saves switch, prompt, dynamic video scene, and draw scene changes in the payload', async () => {
     const wrapper = mountSettings()
     await flushPromises()

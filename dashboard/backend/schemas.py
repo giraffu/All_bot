@@ -259,10 +259,32 @@ class SiteNoticeCreateRequest(SiteNoticeUpsertRequest):
     pass
 
 
+class MainBotMenuItemConfig(BaseModel):
+    key: str = Field(min_length=1, max_length=100)
+    visible: bool = True
+
+
+class MainBotMainMenuConfig(BaseModel):
+    buttons_per_row: int = Field(default=3, ge=1, le=4)
+    items: List[MainBotMenuItemConfig] = Field(default_factory=list)
+
+
+class MainBotMenuConfigRequest(BaseModel):
+    main_menu: MainBotMainMenuConfig
+    submenus: Dict[str, List[MainBotMenuItemConfig]] = Field(default_factory=dict)
+
+
+class MainBotMenuConfigResponse(BaseModel):
+    key: str
+    config: Dict[str, Any]
+    updated_at: Optional[datetime] = None
+
+
 class QqccBotConfigRequest(BaseModel):
     scene_preset_version: Optional[int] = None
     global_enabled: Optional[bool] = None
     main_buttons: Dict[str, Any] = Field(default_factory=dict)
+    main_menu_layout: Dict[str, Any] = Field(default_factory=dict)
     photo_buttons: Dict[str, Any] = Field(default_factory=dict)
     undress_methods: Dict[str, Any] = Field(default_factory=dict)
     video_buttons: Dict[str, Any] = Field(default_factory=dict)

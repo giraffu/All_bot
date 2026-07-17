@@ -61,9 +61,10 @@ async def test_toggle_user_language_persists_context_db_and_redis(monkeypatch):
         "src.i18n.translator.I18nTranslator",
         lambda lang: f"translator:{lang}",
     )
+    runtime_keyboard = AsyncMock(side_effect=lambda lang: f"keyboard:{lang}")
     monkeypatch.setattr(
-        "src.i18n.keyboards.get_main_menu_keyboard",
-        lambda lang: f"keyboard:{lang}",
+        "src.services.main_bot_menu_runtime.get_runtime_main_menu_keyboard",
+        runtime_keyboard,
     )
 
     msg, reply_markup = await message_handler_runtime.toggle_user_language(
@@ -72,6 +73,7 @@ async def test_toggle_user_language_persists_context_db_and_redis(monkeypatch):
 
     assert msg == "🌐 Language switched to English."
     assert reply_markup == "keyboard:en"
+    runtime_keyboard.assert_awaited_once_with("en")
     assert context.user_data["language_code"] == "en"
     assert context.lang == "en"
     assert context.t == "translator:en"

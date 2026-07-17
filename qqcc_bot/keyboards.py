@@ -62,6 +62,82 @@ def _can_show_market(config: dict) -> bool:
     return is_qqcc_main_button_enabled(config, "market")
 
 
+def _get_visible_qqcc_main_menu_buttons(
+    lang: str,
+    config: dict,
+    *,
+    include_private_bot_entry: bool,
+) -> dict[str, str]:
+    global_enabled = is_qqcc_global_enabled(config)
+    candidates = (
+        (
+            "quick_faceswap",
+            get_text("qqcc.menu.quick_faceswap", lang),
+            global_enabled and _can_show_quick_faceswap(config),
+        ),
+        (
+            "ai_draw",
+            get_text("qqcc.menu.ai_draw", lang),
+            global_enabled and _can_show_ai_draw(config),
+        ),
+        (
+            "ai_filter",
+            get_text("qqcc.menu.ai_filter", lang),
+            global_enabled and _can_show_ai_filter(config),
+        ),
+        (
+            "video_edit",
+            get_text("qqcc.menu.video_edit", lang),
+            global_enabled and _can_show_video_edit(config),
+        ),
+        (
+            "ai_video",
+            get_text("qqcc.menu.ai_video", lang),
+            global_enabled and _can_show_ai_video(config),
+        ),
+        (
+            "market",
+            get_text("qqcc.menu.market", lang),
+            global_enabled and _can_show_market(config),
+        ),
+        (
+            "private_bot",
+            get_text("qqcc.menu.private_bot", lang),
+            include_private_bot_entry
+            and is_qqcc_private_bot_entry_enabled(config),
+        ),
+        (
+            "main_bot_link",
+            get_text("menu.open_main_bot", lang),
+            is_qqcc_main_bot_link_enabled(config),
+        ),
+    )
+    return {key: label for key, label, is_visible in candidates if is_visible}
+
+
+def _build_legacy_qqcc_main_menu_rows(
+    visible_buttons: dict[str, str],
+) -> list[list[str]]:
+    keyboard: list[list[str]] = []
+    quick_faceswap = visible_buttons.get("quick_faceswap")
+    if quick_faceswap:
+        keyboard.append([quick_faceswap])
+
+    feature_row = [
+        visible_buttons[key]
+        for key in ("ai_draw", "ai_filter", "video_edit", "ai_video")
+        if key in visible_buttons
+    ]
+    if feature_row:
+        keyboard.append(feature_row)
+
+    for key in ("market", "private_bot", "main_bot_link"):
+        label = visible_buttons.get(key)
+        if label:
+            keyboard.append([label])
+    return keyboard
+
+
 def get_qqcc_main_menu_keyboard(
     lang: str,
     config: dict | None = None,
@@ -69,30 +145,25 @@ def get_qqcc_main_menu_keyboard(
     include_private_bot_entry: bool = True,
 ) -> ReplyKeyboardMarkup:
     config = normalize_qqcc_config(config)
-    keyboard = []
-    if is_qqcc_global_enabled(config) and _can_show_quick_faceswap(config):
-        keyboard.append([get_text("qqcc.menu.quick_faceswap", lang)])
-
-    feature_row = []
-    if is_qqcc_global_enabled(config) and _can_show_ai_draw(config):
-        feature_row.append(get_text("qqcc.menu.ai_draw", lang))
-    if is_qqcc_global_enabled(config) and _can_show_ai_filter(config):
-        feature_row.append(get_text("qqcc.menu.ai_filter", lang))
-    if is_qqcc_global_enabled(config) and _can_show_video_edit(config):
-        feature_row.append(get_text("qqcc.menu.video_edit", lang))
-    if is_qqcc_global_enabled(config) and _can_show_ai_video(config):
-        feature_row.append(get_text("qqcc.menu.ai_video", lang))
-    if feature_row:
-        keyboard.append(feature_row)
-
-    if is_qqcc_global_enabled(config) and _can_show_market(config):
-        keyboard.append([get_text("qqcc.menu.market", lang)])
-
-    if include_private_bot_entry and is_qqcc_private_bot_entry_enabled(config):
-        keyboard.append([get_text("qqcc.menu.private_bot", lang)])
-
-    if is_qqcc_main_bot_link_enabled(config):
-        keyboard.append([get_text("menu.open_main_bot", lang)])
+    visible_buttons = _get_visible_qqcc_main_menu_buttons(
+        lang,
+        config,
+        include_private_bot_entry=include_private_bot_entry,
+    )
+    layout = config["main_menu_layout"]
+    buttons_per_row = layout["buttons_per_row"]
+    if buttons_per_row is None:
+        keyboard = _build_legacy_qqcc_main_menu_rows(visible_buttons)
+    else:
+        ordered_buttons = [
+            visible_buttons[key]
+            for key in layout["button_order"]
+            if key in visible_buttons
+        ]
+        keyboard = [
+            ordered_buttons[index : index + buttons_per_row]
+            for index in range(0, len(ordered_buttons), buttons_per_row)
+        ]
     if not keyboard:
         keyboard.append([get_text("menu.main_menu", lang)])
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)

@@ -10,9 +10,9 @@ from src.handlers import command_handler
 async def test_cancel_uses_unified_fsm_cleanup(monkeypatch):
     cleanup = MagicMock()
     monkeypatch.setattr(command_handler, "cleanup_fsm_user_data", cleanup)
+    menu_keyboard = AsyncMock(return_value="menu-keyboard")
     monkeypatch.setattr(
-        "src.i18n.keyboards.get_main_menu_keyboard",
-        lambda _lang: "menu-keyboard",
+        command_handler, "get_runtime_main_menu_keyboard", menu_keyboard
     )
     reply_text = AsyncMock()
     update = SimpleNamespace(
@@ -31,4 +31,5 @@ async def test_cancel_uses_unified_fsm_cleanup(monkeypatch):
     await command_handler.cancel(update, context)
 
     cleanup.assert_called_once_with(context.user_data)
+    menu_keyboard.assert_awaited_once_with("zh")
     reply_text.assert_awaited_once()

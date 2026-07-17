@@ -75,6 +75,19 @@ def test_normalize_qqcc_config_returns_default_shape_for_empty_config():
     assert config["ai_video_scenes"] == []
     assert config["main_buttons"]["private_bot"] is True
     assert config["filter_scenes"] == []
+    assert config["main_menu_layout"] == {
+        "buttons_per_row": None,
+        "button_order": [
+            "quick_faceswap",
+            "ai_draw",
+            "ai_filter",
+            "video_edit",
+            "ai_video",
+            "market",
+            "private_bot",
+            "main_bot_link",
+        ],
+    }
     assert config["draw_scenes"] == [
         {
             "id": "quick_masturbation",
@@ -99,6 +112,48 @@ def test_normalize_qqcc_config_returns_default_shape_for_empty_config():
             "original_face_swap_enabled": False,
         },
     ]
+
+
+def test_normalize_qqcc_main_menu_layout_sanitizes_columns_and_order():
+    config = normalize_qqcc_config(
+        {
+            "main_menu_layout": {
+                "buttons_per_row": 3,
+                "button_order": [
+                    "market",
+                    "unknown",
+                    "market",
+                    "quick_undress",
+                    "quick_faceswap",
+                ],
+            }
+        }
+    )
+
+    assert config["main_menu_layout"] == {
+        "buttons_per_row": 3,
+        "button_order": [
+            "market",
+            "quick_faceswap",
+            "ai_draw",
+            "ai_filter",
+            "video_edit",
+            "ai_video",
+            "private_bot",
+            "main_bot_link",
+        ],
+    }
+
+
+@pytest.mark.parametrize("invalid_columns", [True, False, 0, 5, "2", 2.5])
+def test_normalize_qqcc_main_menu_layout_falls_back_for_invalid_columns(
+    invalid_columns,
+):
+    config = normalize_qqcc_config(
+        {"main_menu_layout": {"buttons_per_row": invalid_columns}}
+    )
+
+    assert config["main_menu_layout"]["buttons_per_row"] is None
     assert config["video_settings"]["resolutions"]["1024p"] is True
     assert [scene["id"] for scene in config["video_scenes"]] == [
         "missionary",

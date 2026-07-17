@@ -239,7 +239,7 @@ def test_test_runtime_overrides_legacy_api_base_test_for_every_consumer():
         )
 
 
-def test_owner_tools_are_profiled_and_absent_from_test_overlay():
+def test_qqcc_config_is_in_test_overlay_while_dashboard_remains_absent():
     base = _compose(BASE)["services"]
     test_services = _compose(OVERLAYS[0])["services"]
 
@@ -250,7 +250,20 @@ def test_owner_tools_are_profiled_and_absent_from_test_overlay():
         "qqcc-config-frontend",
     ):
         assert base[name]["profiles"] == ["owner-tools"]
-        assert name not in test_services
+
+    assert "dashboard-backend" not in test_services
+    assert "dashboard-frontend" not in test_services
+    assert test_services["qqcc-config-backend"]["ports"] == [
+        "${CLOUD_TEST_BIND_IP:-127.0.0.1}:8045:8045"
+    ]
+    assert test_services["qqcc-config-backend"]["environment"] == {
+        "BOT_TYPE": "TEST",
+        "API_BASE": "http://central-api:8003",
+        "API_BASE_TEST": "http://central-api:8003",
+    }
+    assert test_services["qqcc-config-frontend"]["ports"] == [
+        "${CLOUD_TEST_BIND_IP:-127.0.0.1}:8088:8088"
+    ]
 
 
 def test_legacy_cloud_test_compose_no_longer_defines_owner_tools():

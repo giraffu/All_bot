@@ -64,6 +64,120 @@ def test_qqcc_main_menu_only_contains_lazy_generation_entries():
     assert get_text("menu.video_edit", "zh") == "🎬 视频创作"
 
 
+def _config_with_all_main_menu_entries(*, buttons_per_row: int):
+    return normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "main_menu_layout": {
+                "buttons_per_row": buttons_per_row,
+                "button_order": [
+                    "market",
+                    "private_bot",
+                    "main_bot_link",
+                    "quick_faceswap",
+                    "ai_filter",
+                    "ai_draw",
+                    "ai_video",
+                    "video_edit",
+                ],
+            },
+            "draw_scenes": [
+                {"id": "draw", "name": "绘图", "prompt": "draw prompt"}
+            ],
+            "filter_scenes": [
+                {"id": "filter", "name": "滤镜", "prompt": "filter prompt"}
+            ],
+            "video_scenes": [
+                {"id": "video", "name": "动图", "prompt": "video prompt"}
+            ],
+            "ai_video_scenes": [
+                {
+                    "id": "ai_video",
+                    "name": "AI视频",
+                    "prompt": "ai video prompt",
+                    "duration": 5,
+                }
+            ],
+        }
+    )
+
+
+@pytest.mark.parametrize("buttons_per_row", [1, 2, 3, 4])
+def test_qqcc_main_menu_supports_one_to_four_buttons_per_row(buttons_per_row):
+    config = _config_with_all_main_menu_entries(
+        buttons_per_row=buttons_per_row
+    )
+
+    rows = _keyboard_texts(keyboards.get_qqcc_main_menu_keyboard("zh", config))
+    flat = [button for row in rows for button in row]
+
+    assert flat == [
+        "修仙市集",
+        "私有bot",
+        "前往主bot",
+        "快速换脸",
+        "AI滤镜",
+        "AI绘图",
+        "AI视频",
+        "AI动图",
+    ]
+    assert [len(row) for row in rows] == [
+        min(buttons_per_row, len(flat) - offset)
+        for offset in range(0, len(flat), buttons_per_row)
+    ]
+
+
+def test_qqcc_main_menu_filters_hidden_buttons_before_chunking():
+    config = _config_with_all_main_menu_entries(buttons_per_row=3)
+    config["main_buttons"]["market"] = False
+
+    rows = _keyboard_texts(
+        keyboards.get_qqcc_main_menu_keyboard(
+            "zh",
+            config,
+            include_private_bot_entry=False,
+        )
+    )
+
+    assert rows == [
+        ["前往主bot", "快速换脸", "AI滤镜"],
+        ["AI绘图", "AI视频", "AI动图"],
+    ]
+
+
+def test_qqcc_grid_menu_keeps_independent_entries_when_generation_is_disabled():
+    config = normalize_qqcc_config(
+        {
+            "global_enabled": False,
+            "main_menu_layout": {
+                "buttons_per_row": 2,
+                "button_order": ["main_bot_link", "private_bot"],
+            },
+        }
+    )
+
+    rows = _keyboard_texts(keyboards.get_qqcc_main_menu_keyboard("zh", config))
+
+    assert rows == [["前往主bot", "私有bot"]]
+
+
+def test_qqcc_grid_menu_falls_back_when_every_entry_is_hidden():
+    config = normalize_qqcc_config(
+        {
+            "global_enabled": False,
+            "main_buttons": {
+                "private_bot": False,
+                "main_bot_link": False,
+            },
+            "main_menu_layout": {"buttons_per_row": 4},
+        }
+    )
+
+    rows = _keyboard_texts(keyboards.get_qqcc_main_menu_keyboard("zh", config))
+
+    assert rows == [[get_text("menu.main_menu", "zh")]]
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("loader", [qqcc_commands._load_menu_config, prompt_handlers._load_menu_config])
 async def test_private_bot_menu_config_failure_does_not_fall_back_to_defaults(loader):
