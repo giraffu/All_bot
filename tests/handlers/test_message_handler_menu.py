@@ -10,18 +10,22 @@ def _build_context(lang: str = "zh"):
     return SimpleNamespace(lang=lang, t=lambda key: f"translated:{key}")
 
 
-def test_build_photo_edit_payload_uses_context_translation(monkeypatch):
+@pytest.mark.asyncio
+async def test_build_photo_edit_payload_uses_context_translation(monkeypatch):
+    keyboard_builder = AsyncMock(return_value="photo-keyboard")
     monkeypatch.setattr(
-        "src.i18n.keyboards.get_photo_edit_keyboard",
-        lambda _lang: "photo-keyboard",
+        message_handler_menu,
+        "get_runtime_photo_edit_keyboard",
+        keyboard_builder,
     )
 
-    photo_msg, photo_keyboard = message_handler_menu.build_photo_edit_payload(
+    photo_msg, photo_keyboard = await message_handler_menu.build_photo_edit_payload(
         _build_context()
     )
 
     assert photo_msg == "translated:system.photo_edit_hint"
     assert photo_keyboard == "photo-keyboard"
+    keyboard_builder.assert_awaited_once_with("zh")
 
 
 def test_build_lazy_bot_payload_uses_telegram_url(monkeypatch):
@@ -73,8 +77,15 @@ def test_build_lazy_bot_payload_honors_disabled_entry_flag(monkeypatch):
     assert reply_markup is None
 
 
-def test_build_back_main_and_recharge_payload():
-    message, keyboard = message_handler_menu.build_back_to_main_payload(
+@pytest.mark.asyncio
+async def test_build_back_main_and_recharge_payload(monkeypatch):
+    keyboard_builder = AsyncMock(return_value="main-keyboard")
+    monkeypatch.setattr(
+        message_handler_menu,
+        "get_runtime_main_menu_keyboard",
+        keyboard_builder,
+    )
+    message, keyboard = await message_handler_menu.build_back_to_main_payload(
         _build_context()
     )
     recharge_message, recharge_keyboard = message_handler_menu.build_recharge_payload(
@@ -82,7 +93,7 @@ def test_build_back_main_and_recharge_payload():
     )
 
     assert message == "translated:system.back_to_main"
-    assert keyboard is not None
+    assert keyboard == "main-keyboard"
     assert recharge_message == "translated:billing.recharge_intro"
     assert (
         recharge_keyboard.inline_keyboard[0][0].text
@@ -274,6 +285,32 @@ async def test_reply_with_built_payload_supports_context_builder_and_reply_marku
         "translated:system.video_edit_hint",
         parse_mode="Markdown",
         reply_markup="keyboard",
+    )
+
+
+@pytest.mark.asyncio
+async def test_reply_with_built_payload_supports_async_context_builder():
+    reply_text = AsyncMock()
+    message = SimpleNamespace()
+    update = SimpleNamespace(
+        effective_message=message, message=None, edited_message=None
+    )
+    context = _build_context()
+    builder = AsyncMock(return_value=("async-message", "async-keyboard"))
+
+    await message_handler_menu.reply_with_built_payload(
+        update,
+        reply_text=reply_text,
+        build_payload=builder,
+        context=context,
+    )
+
+    builder.assert_awaited_once_with(context)
+    reply_text.assert_awaited_once_with(
+        message,
+        "async-message",
+        parse_mode="Markdown",
+        reply_markup="async-keyboard",
     )
 
 
