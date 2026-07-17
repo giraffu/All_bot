@@ -343,9 +343,10 @@ nodes:
             model_manifest_key: image_to_video/2026-06-13-test/manifest.json
             workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu1/profiles/image_to_video/workspace
           - profile: i2i_pro
-            cache_state: missing
+            cache_state: ready
             model_manifest_key: i2i_pro/2026-06-14-test/manifest.json
             workspace_host_dir: /srv/allbot/runpod-runtime/slots/gpu-002-gpu1/profiles/i2i_pro/workspace
+            synced_at: "2026-07-17T06:28:41.336428+00:00"
           - profile: pornmaster_flux2_edit
             cache_state: ready
             model_manifest_key: pornmaster_flux2_edit/2026-06-27/manifest.json
@@ -353,8 +354,8 @@ nodes:
         fast_switch_candidates:
           - slot_id: gpu-002-gpu1-i2i_pro
             profile: i2i_pro
-            cache_state: missing
-            note: Prepared as the single-card replacement for the active image_to_video runtime; warm cache and pass all takeover gates before enabling.
+            cache_state: ready
+            note: Prepared as the single-card replacement for the active image_to_video runtime; image and six-file model cache are ready, but takeover gates must still pass before enabling.
           - slot_id: gpu-002-gpu1-pornmaster_flux2_edit
             profile: pornmaster_flux2_edit
             cache_state: ready
