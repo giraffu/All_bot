@@ -50,6 +50,20 @@ python scripts/manage_ai_workspaces.py refresh --slot A
 
 功能 AI 交付后保持槽位在任务分支上，不自动 `park`。集成 AI 只有在该 PR 已合入 train、精确 train SHA 的 candidate 已完成对应运行时部署并执行 `accept` 后，才确定本轮不需要 forward-fix，并必须立即 `park` PR 记录的槽位，再推进下一个无关 PR。机器计划明确为 non-runtime 的 control-plane 不伪造容器部署：包装器把精确 SHA 记录为 `ready-for-acceptance` / `deployment_mode=non-runtime`，以 bundle、CI 与 plan 证据 `accept` 后按同一规则释放。槽位释放不等待其它任务完成、train 合入 main 或正式发布；candidate 只完成部署或 non-runtime 计划但尚未 `accept`、被 `block` 或仍需 forward-fix 时继续保留原槽位。面向用户的最简使用方式见 `docs/并发AI自动接单使用指南_auto_workspace_claim.md`。
 
+### 2.1 集成批次与并发隔离
+
+集成流程使用启动时冻结的成员快照，而不是持续扫描并吸收所有槽位。第一次修改 `codex/test-train`、共享测试站或发布状态前，集成 AI 只读记录本批次每个交接单元的槽位、任务分支、PR 和 handoff head SHA；这四项共同形成成员身份。后续因同一任务解决冲突、CI、blocked candidate 或 forward-fix 而产生的 head/PR 修订，必须保留可追溯关系，不能夹带无关功能。
+
+批次冻结后的并发规则如下：
+
+- 新认领任务、新交接 PR 和未纳入快照的既有开发现场继续独立工作，归入后续批次；它们不会阻塞当前批次，也不会因提前完成而自动插队。
+- 当前集成 AI 对非成员只做只读状态与冲突核对，不执行 merge/rebase、切分支、stash/clean、依赖清理、`park` 或 `refresh`。
+- 成员 candidate `accept` 后仍立即释放对应槽位。槽位随后可以被新任务认领；新任务拥有新的成员身份，当前批次收尾不得按旧槽位字母再次刷新或停放它。
+- 每次释放前重新核对槽位当前分支与批次成员身份。身份不匹配时保留现场并跳过该槽位，不影响其它成员继续串行集成。
+- 当前批次只处理冻结成员，依次完成 train candidate 验收，然后推进 train→main、精确 main bundle 测试部署和 main→train 血缘同步。批次关闭后重新盘点，形成下一批成员快照。
+
+这使共享 test-train 继续保持单写入者，同时允许开发槽位在合并、测试和 main 更新期间持续接单；隔离边界是交接单元身份，而不是某一时刻的槽位字母集合。
+
 ## 3. Candidate bundle 契约
 
 `main` bundle 继续发布到 `ghcr.io/giraffu/allbot-release-v2:<sha>`。train bundle 发布到 `ghcr.io/giraffu/allbot-release-v2-test-candidate:<sha>`，index 显式记录：
@@ -100,7 +114,7 @@ Migration 只允许向前兼容。失败后不得自动 Alembic downgrade；通�
 
 Candidate evidence 使用 `deploy/test-train-acceptance.example.json`，只记录本轮 PR/slot、受影响模块、smoke 和真实时间，不要求每个子任务观察 24 小时，也不能生成正式 verified 状态。
 
-全部任务 accepted 后：
+本批次全部成员 accepted 后：
 
 1. 创建 `codex/test-train` 到 `main` 的唯一集成 PR。
 2. 等待 main CI 生成新的 main v2 bundle。
