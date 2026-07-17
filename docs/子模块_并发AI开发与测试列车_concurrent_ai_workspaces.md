@@ -81,7 +81,7 @@ schema v2 的远端事务和发布合约都按 track 隔离：journal/staged sta
 
 测试 Worker 是按需诊断链。只有需要匹配 GPU/ComfyUI 的专项验证时，在 deploy 命令追加 `--with-test-execution`；未追加时状态记录 deferred，不把 Worker 标记为已部署。后续需要 Worker 时对最新可信 candidate 重新 plan/deploy，禁止用控制面结果冒充 Worker 通过。
 
-若 control-plane 无需要测试的 artifacts/services，包装器不调用空 preflight/deploy，记录 `ready-for-acceptance` 和 `deployment_mode=non-runtime|test-not-required`。未显式启用 Worker 时记录 `deferred_tracks=["test-execution"]`；不得写任何容器、Pages 或 Worker 已更新。
+若 control-plane 无需要测试的 artifacts/services，包装器不调用空 preflight/deploy，记录 `ready-for-acceptance` 和 `deployment_mode=non-runtime|test-not-required`。判断以 artifact/service 空选择集为准：前序 `test-not-required` 候选未改变远端实际部署 SHA 时，后续 candidate 即使累积路径令 level 高于 `none`，也不能伪造空部署或因此卡死。未显式启用 Worker 时记录 `deferred_tracks=["test-execution"]`；不得写任何容器、Pages 或 Worker 已更新。
 
 若后一个 track 部署失败，包装器按相反顺序回滚本轮已成功 track；单 track 内部继续使用 `release.py` 事务补偿。若部署成功但业务 smoke 失败：
 
