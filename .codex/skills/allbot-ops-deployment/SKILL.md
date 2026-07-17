@@ -30,7 +30,7 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 
 ## 2. 当前稳定入口
 
-- schema v2 将不可变产物拆为 `control-plane`、`test-execution`、`gpu-execution` 三条环境无关发布链；`release-index.json` 引用三份 manifest，test/prod 只选择模块并注入配置。普通自动发布中 `--services` 仍只能扩大影响集合；显式 `--modules dashboard|qqcc-bot|qqcc-config` 是三个受控独立模块边界，一次只能选择一个完整组，并从该组 artifact 自己的 `source_sha` 计算差异和回滚，不按 control-plane 全局 SHA 扩容。
+- schema v2 将不可变产物拆为 `control-plane`、`test-execution`、`gpu-execution` 三条环境无关发布链；`release-index.json` 引用三份 manifest，test/prod 只选择模块并注入配置。已有增量基线时，普通自动发布只从策略影响集合中选择 bundle 内 `source_sha` 等于目标 SHA 的运行时 artifact；全部 artifact 均复用旧 `source_sha` 时选择集必须为空，风险 level/matched rules 只作为审计元数据，不得触发空重建。`--services` 仍只能扩大影响集合；显式 `--modules dashboard|qqcc-bot|qqcc-config` 是三个受控独立模块边界，一次只能选择一个完整组，并从该组 artifact 自己的 `source_sha` 计算差异和回滚，不按 control-plane 全局 SHA 扩容。
 - 并发研发使用精确受保护 `codex/test-train` 的独立 `test-candidate` bundle 仓库；candidate 只能由集成 AI通过 `scripts/test_train_release.py` 部署 test，禁止 `verify-test`、prod、fast-track 和正式晋级。最终 main SHA 必须重新构建、部署和验收。
 - 发布策略是 `--strategy auto|standard|direct|emergency`。核心用户链路与已有专属测试实例的 QQCC Config 默认 standard；Dashboard 与 GPU 执行面默认 direct；公共 Web 默认 standard、可显式 direct；核心只允许带 reason/approved-by 的 emergency。普通混合变更取最高风险。独立模块发布只重建所选服务，但 migration、共享 Compose/env 契约、Dashboard/QQCC 共用 schema 和 QQCC Bot/Config 共用运行时配置会 fail closed，必须退出独立模式后按完整影响闭包发布。
 - `--skip-gate` 只允许 `ci-tests|test-deploy|test-acceptance|observation|gpu-business-canary`，并受策略约束。CI `validation_mode=build-only` 仍必须从受保护 main 完整 SHA 构建 digest 产物，发布时显式跳过 `ci-tests` 且记录 reason/approved-by；任何 execute 都禁止 `--skip-ci-checks`。main 血缘、成功构建、digest/checksum/OCI revision、配置、目标健康、事务/回滚和非目标服务不重建永久保留。

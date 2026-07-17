@@ -280,6 +280,94 @@ def test_v2_control_plane_does_not_require_unselected_gpu_profiles(
     assert resolved_previous == previous_sha
 
 
+def test_v2_incremental_plan_selects_no_runtime_when_bundle_reuses_all_artifacts(
+    monkeypatch, tmp_path
+):
+    module = _load_module()
+    previous_sha = "b" * 40
+    artifacts = {
+        name: {
+            "kind": "image",
+            "ref": f"ghcr.io/giraffu/allbot-{name}@sha256:" + digest * 64,
+            "digest": "sha256:" + digest * 64,
+            "source_sha": previous_sha,
+            "oci_revision": previous_sha,
+            "dependency_closure": [],
+        }
+        for name, digest in (
+            ("central-api", "1"),
+            ("dashboard-backend", "2"),
+        )
+    }
+    release = SimpleNamespace(
+        index={
+            "ci_run": "https://github.com/giraffu/All_bot/actions/runs/1",
+            "release_channel": "test-candidate",
+            "source_ref": "refs/heads/codex/test-train",
+        },
+        manifests={
+            "control-plane": {"artifacts": artifacts},
+            "gpu-execution": {"artifacts": {}},
+        },
+    )
+    selected = []
+    args = SimpleNamespace(
+        sha=FULL_SHA,
+        manifest=None,
+        bundle_cache=str(tmp_path),
+        bundle_repository="ghcr.io/giraffu/allbot-release-v2-test-candidate",
+        command="plan",
+        modules=[],
+        services=[],
+        track="control-plane",
+        state_file=None,
+        from_sha=None,
+        env="test",
+        remote_host="test-control",
+        policy=str(POLICY_PATH),
+        skip_git_checks=True,
+        skip_ci_checks=True,
+        dashboard_fast_track=False,
+    )
+
+    monkeypatch.setattr(
+        module, "_resolve_manifest_path", lambda *_args, **_kwargs: tmp_path / "index"
+    )
+    monkeypatch.setattr(module, "_read_json", lambda _path: {"schema_version": 2})
+    monkeypatch.setattr(
+        module, "_resolve_previous_sha", lambda *_args, **_kwargs: previous_sha
+    )
+    monkeypatch.setattr(
+        module, "git_changed_paths", lambda *_args: ["scripts/release.py"]
+    )
+    monkeypatch.setattr(module, "load_release_index", lambda *_args, **_kwargs: release)
+
+    def fake_load(_path, *, sha, track, modules, select_all_when_empty):
+        selected.extend(modules)
+        return {
+            "schema_version": 2,
+            "source_sha": sha,
+            "git_sha": sha,
+            "release_channel": "test-candidate",
+            "source_ref": "refs/heads/codex/test-train",
+            "validation": {"mode": "full", "tests": "passed"},
+            "track": track,
+            "artifacts": artifacts,
+            "selected_artifacts": list(modules),
+        }
+
+    monkeypatch.setattr(module, "_load_v2_track", fake_load)
+
+    impact, manifest, resolved_previous = module.build_plan(args)
+
+    assert resolved_previous == previous_sha
+    assert impact.level == "maintenance"
+    assert "deployment-contract" in impact.matched_rules
+    assert selected == []
+    assert manifest["selected_artifacts"] == []
+    assert impact.services == set()
+
+
 def test_v2_test_execution_without_track_state_is_an_initial_release(
     monkeypatch, tmp_path
 ):
