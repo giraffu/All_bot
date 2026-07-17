@@ -256,6 +256,32 @@ def test_qqcc_ai_video_scene_builds_fixed_ltx_plan_with_negative_prompt_and_lora
     assert plan.result_meta["_qqcc_regenerate"]["scene_kind"] == "ai_video"
 
 
+def test_qqcc_ai_video_plan_submits_config_only_ltx_lora_to_worker():
+    admin_only_path = "ltx2.3/SexGod_Nudity_LTX23_v2_0.safetensors"
+    config = normalize_qqcc_config(
+        {
+            "main_buttons": {"ai_video": True},
+            "ai_video_scenes": [
+                {
+                    "id": "admin_nudity",
+                    "name": "后台写真",
+                    "prompt": "LTXNUDES, natural full-body posing",
+                    "duration": 5,
+                    "lora_items": [{"path": admin_only_path}],
+                }
+            ],
+        }
+    )
+
+    plan = build_quick_video_submission_plan(
+        fsm_data={"scene_kind": "ai_video", "scene_id": "admin_nudity"},
+        qqcc_config=config,
+        allowed_resolutions=[],
+    )
+
+    assert plan.lora_items == [{"name": admin_only_path, "strength": 0.8}]
+
+
 @pytest.mark.asyncio
 async def test_run_qqcc_ai_video_uses_actor_service_and_omits_blank_negative_prompt():
     plan = build_quick_video_submission_plan(
