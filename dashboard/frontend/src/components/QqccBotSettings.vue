@@ -84,7 +84,14 @@ interface VideoSceneConfig extends SceneDemoFields {
   duration: DurationKey
   engine: VideoSceneEngine
   lora_name: string
+  lora_strength: number
+  lora_items: VideoLoraItem[]
   end_frame_draw_scene_id: string
+}
+
+interface VideoLoraItem {
+  name: string
+  strength: number
 }
 
 interface AiVideoLoraItem {
@@ -477,6 +484,7 @@ const sceneConfig = reactive({
   index: -1,
   engine: 'image_to_video',
   lora_name: '',
+  video_lora_items: [] as VideoLoraItem[],
   lora_items: [] as AiVideoLoraItem[],
   end_frame_draw_scene_id: '',
   postprocess_draw_scene_id: '',
@@ -632,6 +640,49 @@ const normalizeAiVideoLoraItems = (raw: unknown): AiVideoLoraItem[] => {
   return normalized
 }
 
+const normalizeVideoLoraItems = (
+  raw: unknown,
+  legacyName: unknown = '',
+  legacyStrength: unknown = undefined,
+): VideoLoraItem[] => {
+  const source = Array.isArray(raw) && raw.length > 0
+    ? raw
+    : typeof legacyName === 'string' && legacyName.trim()
+      ? [{ name: legacyName, strength: legacyStrength }]
+      : []
+  const allowed = new Map(modelOptions.video_lora_models.map(item => [item.value, item]))
+  const seen = new Set<string>()
+  const normalized: VideoLoraItem[] = []
+  for (const item of source) {
+    if (!item || typeof item !== 'object') continue
+    const candidate = item as { name?: unknown; path?: unknown; strength?: unknown }
+    const nameValue = candidate.name ?? candidate.path
+    const name = typeof nameValue === 'string' ? nameValue.trim() : ''
+    const option = allowed.get(name)
+    if (!option || seen.has(name)) continue
+    seen.add(name)
+    normalized.push({
+      name,
+      strength: normalizeLoraStrength(candidate.strength, option.default_strength ?? 1),
+    })
+    if (normalized.length >= 5) break
+  }
+  return normalized
+}
+
+const updateVideoLoraSelection = (names: string[]) => {
+  const current = new Map(
+    sceneConfig.video_lora_items.map(item => [item.name, item.strength]),
+  )
+  sceneConfig.video_lora_items = names.slice(0, 5).map(name => {
+    const option = modelOptions.video_lora_models.find(item => item.value === name)
+    return {
+      name,
+      strength: normalizeLoraStrength(current.get(name), option?.default_strength ?? 1),
+    }
+  })
+}
+
 const updateAiVideoLoraSelection = (paths: string[]) => {
   const current = new Map(sceneConfig.lora_items.map(item => [item.path, item.strength]))
   sceneConfig.lora_items = paths.slice(0, 3).map(path => {
@@ -762,7 +813,11 @@ const mergeOptions = (raw?: Partial<QqccBotConfigOptions>): QqccBotConfigOptions
   if (Array.isArray(raw.video_lora_models) && raw.video_lora_models.length > 0) {
     merged.video_lora_models = raw.video_lora_models
       .filter((item) => typeof item?.value === 'string')
-      .map((item) => ({ value: item.value, label: typeof item.label === 'string' ? item.label : item.value }))
+      .map((item) => ({
+        value: item.value,
+        label: typeof item.label === 'string' ? item.label : item.value,
+        default_strength: normalizeLoraStrength(item.default_strength, 1),
+      }))
   }
   if (Array.isArray(raw.image_lora_models) && raw.image_lora_models.length > 0) {
     merged.image_lora_models = raw.image_lora_models
@@ -959,6 +1014,11 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
           ? (scene.duration as DurationKey)
           : '5s'
         const engine = normalizeVideoEngine(scene?.engine)
+        const loraItems = normalizeVideoLoraItems(
+          scene?.lora_items,
+          scene?.lora_name,
+          scene?.lora_strength,
+        )
         return {
           id,
           name,
@@ -966,7 +1026,9 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
           negative_prompt,
           duration,
           engine,
-          lora_name: normalizeLoraName(scene?.lora_name, { kind: 'video', engine }),
+          lora_name: loraItems[0]?.name || '',
+          lora_strength: loraItems[0]?.strength ?? 1,
+          lora_items: loraItems,
           end_frame_draw_scene_id: normalizeEndFrameDrawSceneId(
             scene?.end_frame_draw_scene_id,
             merged.draw_scenes,
@@ -1041,6 +1103,8 @@ const addVideoScene = () => {
     duration: '5s',
     engine: normalizeVideoEngine(modelOptions.default_video_engine),
     lora_name: '',
+    lora_strength: 1,
+    lora_items: [],
     end_frame_draw_scene_id: '',
   })
   showScenePageContaining('video', config.video_scenes.length - 1)
@@ -1399,6 +1463,11 @@ const buildPayload = (): QqccBotConfig => {
   payload.video_scenes = payload.video_scenes
     .map((scene) => {
       const engine = normalizeVideoEngine(scene.engine)
+      const loraItems = normalizeVideoLoraItems(
+        scene.lora_items,
+        scene.lora_name,
+        scene.lora_strength,
+      )
       return {
         ...scene,
         id: scene.id.trim(),
@@ -1406,7 +1475,9 @@ const buildPayload = (): QqccBotConfig => {
         prompt: scene.prompt.trim(),
         negative_prompt: scene.negative_prompt.trim(),
         engine,
-        lora_name: normalizeLoraName(scene.lora_name, { kind: 'video', engine }),
+        lora_name: loraItems[0]?.name || '',
+        lora_strength: loraItems[0]?.strength ?? 1,
+        lora_items: loraItems,
         end_frame_draw_scene_id: normalizeEndFrameDrawSceneId(
           scene.end_frame_draw_scene_id,
           payload.draw_scenes,
@@ -1464,6 +1535,13 @@ const openSceneConfig = (
   sceneConfig.index = index
   sceneConfig.engine = scene.engine
   sceneConfig.lora_name = 'lora_name' in scene ? scene.lora_name || '' : ''
+  sceneConfig.video_lora_items = kind === 'video'
+    ? normalizeVideoLoraItems(
+        (scene as VideoSceneConfig).lora_items,
+        (scene as VideoSceneConfig).lora_name,
+        (scene as VideoSceneConfig).lora_strength,
+      )
+    : []
   sceneConfig.lora_items = kind === 'ai_video'
     ? normalizeAiVideoLoraItems((scene as AiVideoSceneConfig).lora_items)
     : []
@@ -1489,6 +1567,7 @@ const closeSceneConfig = () => {
   sceneConfig.panel = 'model'
   sceneConfig.index = -1
   sceneConfig.lora_items = []
+  sceneConfig.video_lora_items = []
   sceneConfig.end_frame_draw_scene_id = ''
   sceneConfig.postprocess_draw_scene_id = ''
   sceneConfig.postprocess_filter_scene_id = ''
@@ -1496,7 +1575,7 @@ const closeSceneConfig = () => {
 }
 
 const onSceneEngineChange = () => {
-  if (!activeEngineSupportsLora.value) {
+  if (sceneConfig.kind !== 'video' && !activeEngineSupportsLora.value) {
     sceneConfig.lora_name = ''
     sceneConfig.lora_items = []
   }
@@ -1510,7 +1589,9 @@ const confirmSceneConfig = () => {
     if (sceneConfig.panel === 'model') {
       const engine = normalizeVideoEngine(sceneConfig.engine)
       scene.engine = engine
-      scene.lora_name = normalizeLoraName(sceneConfig.lora_name, { kind: 'video', engine })
+      scene.lora_items = normalizeVideoLoraItems(sceneConfig.video_lora_items)
+      scene.lora_name = scene.lora_items[0]?.name || ''
+      scene.lora_strength = scene.lora_items[0]?.strength ?? 1
     } else {
       scene.end_frame_draw_scene_id = normalizeEndFrameDrawSceneId(
         sceneConfig.end_frame_draw_scene_id,
@@ -2015,7 +2096,7 @@ onMounted(() => {
             </a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item v-if="sceneConfig.panel === 'model' && sceneConfig.kind !== 'ai_video'" label="附加模型" class="mb-4">
+        <a-form-item v-if="sceneConfig.panel === 'model' && sceneConfig.kind !== 'video' && sceneConfig.kind !== 'ai_video'" label="附加模型" class="mb-4">
           <a-select
             v-model:value="sceneConfig.lora_name"
             data-testid="scene-lora-select"
@@ -2031,6 +2112,24 @@ onMounted(() => {
               {{ item.label }}
             </a-select-option>
           </a-select>
+        </a-form-item>
+        <a-form-item v-if="sceneConfig.panel === 'model' && sceneConfig.kind === 'video'" label="附加模型（最多 5 个）" class="mb-4">
+          <a-select
+            :value="sceneConfig.video_lora_items.map(item => item.name)"
+            mode="multiple"
+            :max-tag-count="5"
+            data-testid="scene-video-lora-select"
+            class="w-full"
+            :disabled="!activeEngineSupportsLora"
+            :get-popup-container="getSceneSelectPopupContainer"
+            @change="updateVideoLoraSelection"
+          >
+            <a-select-option v-for="item in activeLoraOptions" :key="item.value" :value="item.value" :disabled="sceneConfig.video_lora_items.length >= 5 && !sceneConfig.video_lora_items.some(selected => selected.name === item.value)">{{ item.label }}</a-select-option>
+          </a-select>
+          <div v-for="item in sceneConfig.video_lora_items" :key="item.name" class="mt-3 grid grid-cols-[minmax(0,1fr)_92px] items-center gap-3">
+            <div class="min-w-0 truncate text-sm text-slate-600">{{ activeLoraOptions.find(option => option.value === item.name)?.label || item.name }}</div>
+            <a-input-number v-model:value="item.strength" :min="0.1" :max="2" :step="0.05" :precision="2" :data-testid="`scene-video-lora-strength-${item.name}`" />
+          </div>
         </a-form-item>
         <a-form-item v-if="sceneConfig.panel === 'model' && sceneConfig.kind === 'ai_video'" label="附加模型（最多 3 个）" class="mb-4">
           <a-select

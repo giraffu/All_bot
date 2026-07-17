@@ -608,9 +608,11 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
             "prompt": "kissing prompt",
             "negative_prompt": "blur, low quality",
             "duration": "8s",
-            "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
-            "lora_name": "",
-            "end_frame_draw_scene_id": "",
+                "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+                "lora_name": "",
+                "lora_strength": 1.0,
+                "lora_items": [],
+                "end_frame_draw_scene_id": "",
         },
         {
             "id": "scene_2",
@@ -618,9 +620,11 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
             "prompt": "duplicate prompt",
             "negative_prompt": "",
             "duration": "10s",
-            "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
-            "lora_name": "",
-            "end_frame_draw_scene_id": "",
+                "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+                "lora_name": "",
+                "lora_strength": 1.0,
+                "lora_items": [],
+                "end_frame_draw_scene_id": "",
         },
         {
             "id": "scene_3",
@@ -628,9 +632,11 @@ def test_normalize_qqcc_config_keeps_only_valid_dynamic_video_scenes():
             "prompt": "safe id prompt",
             "negative_prompt": "",
             "duration": "5s",
-            "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
-            "lora_name": "",
-            "end_frame_draw_scene_id": "",
+                "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
+                "lora_name": "",
+                "lora_strength": 1.0,
+                "lora_items": [],
+                "end_frame_draw_scene_id": "",
         },
     ]
 
@@ -694,12 +700,21 @@ def test_normalize_qqcc_config_validates_scene_engines_and_loras():
     video_scenes = get_enabled_qqcc_video_scenes(config)
     assert video_scenes[0]["engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
     assert video_scenes[0]["lora_name"] == "BreastGrow"
+    assert video_scenes[0]["lora_strength"] == 1.0
+    assert video_scenes[0]["lora_items"] == [
+        {"name": "BreastGrow", "strength": 1.0}
+    ]
     assert video_scenes[0]["negative_prompt"] == ""
     assert video_scenes[1]["engine"] == VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2
-    assert video_scenes[1]["lora_name"] == ""
+    assert video_scenes[1]["lora_name"] == "BreastGrow"
+    assert video_scenes[1]["lora_strength"] == 1.0
+    assert video_scenes[1]["lora_items"] == [
+        {"name": "BreastGrow", "strength": 1.0}
+    ]
     assert video_scenes[1]["negative_prompt"] == ""
     assert video_scenes[2]["engine"] == VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO
     assert video_scenes[2]["lora_name"] == ""
+    assert video_scenes[2]["lora_items"] == []
     assert video_scenes[2]["negative_prompt"] == ""
 
     draw_scenes = get_enabled_qqcc_draw_scenes(config)
@@ -713,6 +728,57 @@ def test_normalize_qqcc_config_validates_scene_engines_and_loras():
     assert draw_scenes_by_id["bad_draw"]["engine"] == DRAW_SCENE_ENGINE_FREE_EDIT_V2
     assert draw_scenes_by_id["bad_draw"]["lora_name"] == ""
     assert draw_scenes_by_id["bad_draw"]["negative_prompt"] == ""
+
+
+def test_normalize_qqcc_video_lora_items_preserves_order_dedupes_and_limits_five():
+    config = normalize_qqcc_config(
+        {
+            "scene_preset_version": SCENE_PRESET_VERSION,
+            "video_scenes": [
+                {
+                    "id": "lora_five",
+                    "name": "五模型",
+                    "prompt": "video prompt",
+                    "engine": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
+                    "lora_items": [
+                        {"name": "Footjob", "strength": 1.37},
+                        {"name": "BreastGrow", "strength": 99},
+                        {"name": "Footjob", "strength": 0.2},
+                        {"name": "Cum", "strength": 0.04},
+                        {"name": "Cunilingus"},
+                        {"name": "Insertion", "strength": "bad"},
+                        {"name": "Flatchested", "strength": 0.8},
+                        {"name": "missing", "strength": 1.0},
+                    ],
+                }
+            ],
+        }
+    )
+
+    scene = config["video_scenes"][0]
+    assert scene["lora_items"] == [
+        {"name": "Footjob", "strength": 1.35},
+        {"name": "BreastGrow", "strength": 2.0},
+        {"name": "Cum", "strength": 0.1},
+        {"name": "Cunilingus", "strength": 1.0},
+        {"name": "Insertion", "strength": 1.0},
+    ]
+    assert scene["lora_name"] == "Footjob"
+    assert scene["lora_strength"] == 1.35
+
+    options = config_service_module.build_qqcc_config_options()
+    assert options["video_engines"] == [
+        {"value": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO, "supports_lora": True},
+        {"value": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2, "supports_lora": True},
+    ]
+    assert any(
+        item == {
+            "value": "Footjob",
+            "label": "足交",
+            "default_strength": 1.0,
+        }
+        for item in options["video_lora_models"]
+    )
 
 
 def test_normalize_qqcc_config_validates_video_end_frame_draw_scene_reference():
@@ -1519,6 +1585,8 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
                 "duration": "8s",
                 "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
                 "lora_name": "BreastGrow",
+                "lora_strength": 1.0,
+                "lora_items": [{"name": "BreastGrow", "strength": 1.0}],
                 "end_frame_draw_scene_id": "tail_pose",
             },
             {
@@ -1546,6 +1614,8 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
             "duration": "8s",
             "engine": VIDEO_SCENE_ENGINE_IMAGE_TO_VIDEO,
             "lora_name": "BreastGrow",
+            "lora_strength": 1.0,
+            "lora_items": [{"name": "BreastGrow", "strength": 1.0}],
             "end_frame_draw_scene_id": "tail_pose",
         },
         {
@@ -1555,7 +1625,9 @@ async def test_update_qqcc_config_router_preserves_dynamic_video_scenes():
             "negative_prompt": "",
             "duration": "10s",
             "engine": VIDEO_SCENE_ENGINE_WAN22_VIDEO_V2,
-            "lora_name": "",
+            "lora_name": "BreastGrow",
+            "lora_strength": 1.0,
+            "lora_items": [{"name": "BreastGrow", "strength": 1.0}],
             "end_frame_draw_scene_id": "",
         },
     ]

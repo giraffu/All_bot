@@ -469,6 +469,9 @@ def build_wan22_history_context_from_metadata(metadata: dict | None) -> dict[str
         context["lora_name"] = lora_name
     if metadata.get("lora_strength") is not None:
         context["lora_strength"] = metadata.get("lora_strength")
+    lora_items = metadata.get("lora_items")
+    if isinstance(lora_items, list) and lora_items:
+        context["lora_items"] = lora_items
     prev_task_id = str(metadata.get("wan22_prev_task_id") or "").strip()
     if prev_task_id:
         context["wan22_prev_task_id"] = prev_task_id

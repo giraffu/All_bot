@@ -627,6 +627,7 @@ class Wan22AioVideoStrategy(BaseTaskStrategy):
                 chain_task_ids=inputs.get("wan22_chain_task_ids"),
                 lora_name=inputs.get("lora_name"),
                 lora_strength=inputs.get("lora_strength"),
+                lora_items=inputs.get("lora_items"),
             )
         )
         if not metadata.get("wan22_chain_task_ids"):
@@ -643,7 +644,7 @@ class Wan22AioVideoStrategy(BaseTaskStrategy):
         resolution_preset = self._resolve_resolution_preset(inputs)
         duration_seconds = self._resolve_duration_seconds(inputs)
 
-        if self.profile.allow_lora:
+        if self.profile.execution_task_type != MODE_WAN22_VIDEO_V2:
             return await image_service.submit_image_to_video_task(
                 task_id,
                 prompt=submission.prompt,
@@ -661,6 +662,11 @@ class Wan22AioVideoStrategy(BaseTaskStrategy):
                 height=512,
                 length=duration_seconds,
                 extract_last_frame=True,
+                **(
+                    {"lora_items": inputs.get("lora_items")}
+                    if inputs.get("lora_items")
+                    else {}
+                ),
             )
 
         return await image_service.submit_wan22_video_v2_task(
@@ -674,6 +680,15 @@ class Wan22AioVideoStrategy(BaseTaskStrategy):
             wan22_model_profile=self.profile.model_profile,
             length=duration_seconds,
             priority=priority,
+            **(
+                {
+                    "lora_name": inputs.get("lora_name") or None,
+                    "lora_strength": inputs.get("lora_strength"),
+                    "lora_items": inputs.get("lora_items"),
+                }
+                if inputs.get("lora_items") or inputs.get("lora_name")
+                else {}
+            ),
         )
 
 

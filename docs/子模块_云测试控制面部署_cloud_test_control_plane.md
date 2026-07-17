@@ -77,7 +77,7 @@ PRIVATE_QQCC_BOT_TELEGRAM_TRUSTED_HOSTS=
 | :--- | :--- | :--- |
 | `MINIO_*` / `R2_*` | `user-data-test` + `https://r2-test.aivison.it.com` | 用户上传、任务输入/结果、模板、历史/Gallery 媒体；不要把模型权重放入该桶 |
 | `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | `.env.cloud.test` 真实值；RunPod Pod 内使用 `allbot_cloud_test_r2_access_key` / `allbot_cloud_test_r2_secret_key` secret | 只读写 `user-data-test` |
-| `RUNPOD_MODEL_*` | `allbot-model-cache` + `RUNPOD_MODEL_PREFIX`/`RUNPOD_MODEL_MANIFEST_KEY` | RunPod/LAN AIO 模型 manifest 与模型权重缓存；`img2img_lora` 默认 `img2img_lora/2026-06-10`，Wan22 cloud-test 视频主路径使用 split 前缀 `image_to_video/2026-06-13-test` 与 `wan22_video_v2/2026-06-13-test`；`i2i_pro` 使用 `i2i_pro/2026-06-14-test`；SCAIL-2 LAN AIO runtime 与 RunPod cloud-test profile 共用 `scail2/2026-06-17-test`；PornMaster Flux2 v2 使用 `pornmaster_flux2_edit/2026-06-27`；LTX 使用 `ltx_video/2026-06-10`，云端 R2 manifest 当前为 10Eros v1.2-only；`wan22_aio_video/2026-06-12-test` 只作为历史全集/回滚 manifest |
+| `RUNPOD_MODEL_*` | `allbot-model-cache` + `RUNPOD_MODEL_PREFIX`/`RUNPOD_MODEL_MANIFEST_KEY` | Wan22 split 使用 `image_to_video/2026-06-13-test` 与含视频 LoRA 双文件的 `wan22_video_v2/2026-07-18-lora5`；后者在权重下载完毕并完成对象 HEAD 前不得发布或切换 runtime。其它 profile 版本保持现有配置。 |
 | `RUNPOD_MODEL_ACCESS_KEY` / `RUNPOD_MODEL_SECRET_KEY` | `.env.cloud.test` 可保存真实值，供本地 dry-run HEAD/上传脚本使用 | 只读写 `allbot-model-cache`，不能复用 `user-data-test` 的 R2 key |
 | `RUNPOD_MODEL_ACCESS_KEY_REF` / `RUNPOD_MODEL_SECRET_KEY_REF` | `allbot_model_cache_r2_access_key` / `allbot_model_cache_r2_secret_key` | RunPod create JSON 中的模型桶 secret 引用字符串，不是密钥本体 |
 
