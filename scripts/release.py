@@ -2506,12 +2506,15 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
         except ManifestV2Error as exc:
             raise ReleaseError(str(exc)) from exc
         if not dashboard_fast_track and not independent_release:
-            computed_modules.update(
+            target_source_modules = {
                 name
                 for name, artifact in release_bundle.manifests[args.track]["artifacts"].items()
                 if artifact.get("source_sha") == sha
                 and name not in {"python-runtime-base", "python-worker-base"}
-            )
+            }
+            if previous_sha:
+                computed_modules.intersection_update(target_source_modules)
+            computed_modules.update(target_source_modules)
         if not independent_release:
             requested_modules.update(computed_modules)
         manifest = _load_v2_track(
