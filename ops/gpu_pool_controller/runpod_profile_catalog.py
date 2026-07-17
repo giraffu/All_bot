@@ -79,9 +79,9 @@ RUNPOD_IMAGE_TO_VIDEO_MODEL_PREFIX = "image_to_video/2026-06-13-test"
 RUNPOD_IMAGE_TO_VIDEO_MODEL_MANIFEST_KEY = (
     "image_to_video/2026-06-13-test/manifest.json"
 )
-RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX = "wan22_video_v2/2026-06-13-test"
+RUNPOD_WAN22_VIDEO_V2_MODEL_PREFIX = "wan22_video_v2/2026-07-18-lora5"
 RUNPOD_WAN22_VIDEO_V2_MODEL_MANIFEST_KEY = (
-    "wan22_video_v2/2026-06-13-test/manifest.json"
+    "wan22_video_v2/2026-07-18-lora5/manifest.json"
 )
 RUNPOD_WAN22_VIDEO_V2_COMPLETION_TIMEOUT_SECONDS = 600.0
 RUNPOD_WAN22_VIDEO_V2_COMFY_EXTRA_ARGS = "--disable-dynamic-vram"

@@ -47,6 +47,7 @@ async def process_standard_generation_task(
     reply_markup: Any = None,
     lora_name: str = None,
     lora_strength: float = 1.0,
+    lora_items: list[dict[str, Any]] | None = None,
     allow_contribute: bool = True,
     record_history: bool = True,
     source_post_id: Optional[int] = None,
@@ -89,6 +90,7 @@ async def process_standard_generation_task(
             "reply_markup": reply_markup,
             "lora_name": lora_name,
             "lora_strength": lora_strength,
+            "lora_items": lora_items,
             "allow_contribute": allow_contribute,
             "source_post_id": source_post_id,
             "base_priority": base_priority,
@@ -126,6 +128,9 @@ async def process_standard_generation_task(
             "allow_cancel": allow_cancel,
             "show_queue_status": show_queue_status,
             "user_cancel_allowed": user_cancel_allowed,
+            "lora_name": lora_name,
+            "lora_strength": lora_strength,
+            "lora_items": lora_items,
         }
         if display_mode_name_override is not None:
             wan22_kwargs["display_mode_name_override"] = display_mode_name_override

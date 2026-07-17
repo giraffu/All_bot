@@ -43,6 +43,7 @@ async def process_video_task_template(
     result_meta: dict[str, Any] | None = None,
     lora_name: str | None = None,
     lora_strength: float | None = None,
+    lora_items: list[dict[str, Any]] | None = None,
     update: Update | None = None,
     image_path: str,
     end_image_path: str | None = None,
@@ -119,10 +120,25 @@ async def process_video_task_template(
         ),
     )
     extra_inputs = {}
-    normalized_lora_name = str(lora_name or "").strip()
+    first_lora_item = (
+        lora_items[0]
+        if isinstance(lora_items, list)
+        and lora_items
+        and isinstance(lora_items[0], dict)
+        else None
+    )
+    normalized_lora_name = str(
+        (first_lora_item or {}).get("name") or lora_name or ""
+    ).strip()
     if normalized_lora_name:
         extra_inputs["lora_name"] = normalized_lora_name
-        extra_inputs["lora_strength"] = 1.0 if lora_strength is None else lora_strength
+        extra_inputs["lora_strength"] = (
+            (first_lora_item or {}).get("strength", 1.0)
+            if lora_strength is None
+            else lora_strength
+        )
+    if lora_items:
+        extra_inputs["lora_items"] = lora_items
     submit_images = [image_path] if image_path else []
     if end_image_path:
         submit_images.append(end_image_path)

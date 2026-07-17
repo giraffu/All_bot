@@ -16,6 +16,7 @@ from src.domain_config.wan22_aio_video import (
     WAN22_VIDEO_V2_RESOLUTION_PRESETS,
     normalize_wan22_video_v2_duration_seconds,
     normalize_wan22_video_v2_resolution_preset,
+    normalize_wan22_lora_items,
     resolve_wan22_model_profile,
 )
 from src.lora_catalog import normalize_ltx_video_lora_items
@@ -115,28 +116,35 @@ def _patch_wan22_lora(
     workflow: dict[str, Any],
     *,
     lora_name: str | None,
+    lora_strength: Any = None,
+    lora_items: Any = None,
     allow_lora: bool,
 ) -> None:
     _clear_wan22_lora_slots(workflow)
-    normalized_lora_name = str(lora_name or "").strip()
-    if not allow_lora or not normalized_lora_name:
+    normalized_items = normalize_wan22_lora_items(
+        lora_items,
+        lora_name=lora_name,
+        lora_strength=lora_strength,
+    )
+    if not allow_lora or not normalized_items:
         return
-
-    high_node = workflow.get(WAN22_HIGH_LORA_NODE_ID)
-    if isinstance(high_node, dict):
-        high_node.setdefault("inputs", {})["lora_1"] = {
-            "on": True,
-            "lora": f"{normalized_lora_name}_high_noise.safetensors",
-            "strength": 1,
-        }
-
-    low_node = workflow.get(WAN22_LOW_LORA_NODE_ID)
-    if isinstance(low_node, dict):
-        low_node.setdefault("inputs", {})["lora_1"] = {
-            "on": True,
-            "lora": f"{normalized_lora_name}_low_noise.safetensors",
-            "strength": 1,
-        }
+    for slot_index, item in enumerate(normalized_items, start=1):
+        name = str(item["name"])
+        strength = float(item["strength"])
+        high_node = workflow.get(WAN22_HIGH_LORA_NODE_ID)
+        if isinstance(high_node, dict):
+            high_node.setdefault("inputs", {})[f"lora_{slot_index}"] = {
+                "on": True,
+                "lora": f"{name}_high_noise.safetensors",
+                "strength": strength,
+            }
+        low_node = workflow.get(WAN22_LOW_LORA_NODE_ID)
+        if isinstance(low_node, dict):
+            low_node.setdefault("inputs", {})[f"lora_{slot_index}"] = {
+                "on": True,
+                "lora": f"{name}_low_noise.safetensors",
+                "strength": strength,
+            }
 
 
 def _resolve_wan22_final_frames_ref(workflow: dict[str, Any]) -> list[Any]:
@@ -427,6 +435,8 @@ def _patch_wan22_aio_workflow(
     _patch_wan22_lora(
         workflow,
         lora_name=params.get("lora_name"),
+        lora_strength=params.get("lora_strength"),
+        lora_items=params.get("lora_items"),
         allow_lora=allow_lora,
     )
 
@@ -558,7 +568,7 @@ def patch_wan22_video_v2_workflow(
         workflow,
         default_model_profile=WAN22_VIDEO_V2_MODEL_PROFILE,
         output_task_prefix="wan22_video_v2",
-        allow_lora=False,
+        allow_lora=True,
         **kwargs,
     )
 

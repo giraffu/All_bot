@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from src.domain_config.scail2_video import (
     SCAIL2_ACTION_TRANSFER_LONG_TASK_TYPE,
@@ -180,11 +180,18 @@ class VideoEditRequest(BaseModel):
     priority: int = 0
 
 
+class LoraItem(BaseModel):
+    name: str
+    strength: float
+
+
 class VideoLoraRequest(BaseModel):
     task_id: str
     image: str
     prompt: str
     lora_name: Optional[str] = ""
+    lora_strength: Optional[float] = 1.0
+    lora_items: Optional[list[LoraItem]] = Field(default=None, max_length=5)
     end_image: Optional[str] = None
     negative_prompt: Optional[str] = " "
     use_end_frame: bool = False
@@ -220,11 +227,6 @@ class I2IDrawRequest(BaseModel):
     prompt: str
     seed: Optional[int] = None
     priority: int = 0
-
-
-class LoraItem(BaseModel):
-    name: str
-    strength: float
 
 
 class LtxVideoRequest(BaseModel):
@@ -266,6 +268,9 @@ class Wan22VideoV2Request(BaseModel):
     task_id: str
     image: str
     prompt: str
+    lora_name: Optional[str] = ""
+    lora_strength: Optional[float] = 1.0
+    lora_items: Optional[list[LoraItem]] = Field(default=None, max_length=5)
     end_image: Optional[str] = None
     negative_prompt: Optional[str] = " "
     use_end_frame: bool = False

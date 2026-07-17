@@ -134,7 +134,10 @@ def test_qqcc_image_to_video_lora_scene_builds_legacy_video_plan():
                     "negative_prompt": "video bad hands",
                     "duration": "5s",
                     "engine": "image_to_video",
-                    "lora_name": "BreastGrow",
+                    "lora_items": [
+                        {"name": "BreastGrow", "strength": 0.75},
+                        {"name": "Footjob", "strength": 1.4},
+                    ],
                 }
             ],
         }
@@ -159,6 +162,10 @@ def test_qqcc_image_to_video_lora_scene_builds_legacy_video_plan():
     assert plan.negative_prompt == "video bad hands"
     assert plan.display_mode_name == "模型动图"
     assert plan.lora_name == "BreastGrow"
+    assert plan.lora_items == [
+        {"name": "BreastGrow", "strength": 0.75},
+        {"name": "Footjob", "strength": 1.4},
+    ]
     assert plan.allow_contribute is False
     assert plan.result_meta == {
         "_qqcc_regenerate": {
@@ -182,7 +189,10 @@ def test_qqcc_wan22_v2_scene_builds_v2_plan_and_normalizes_resolution():
                     "negative_prompt": "v2 blur",
                     "duration": "10s",
                     "engine": "wan22_video_v2",
-                    "lora_name": "BreastGrow",
+                    "lora_items": [
+                        {"name": "BreastGrow", "strength": 0.75},
+                        {"name": "Footjob", "strength": 1.4},
+                    ],
                 }
             ],
         }
@@ -206,7 +216,11 @@ def test_qqcc_wan22_v2_scene_builds_v2_plan_and_normalizes_resolution():
     assert plan.prompt_override == "v2 scene prompt"
     assert plan.negative_prompt == "v2 blur"
     assert plan.display_mode_name == "新版动图"
-    assert plan.lora_name == ""
+    assert plan.lora_name == "BreastGrow"
+    assert plan.lora_items == [
+        {"name": "BreastGrow", "strength": 0.75},
+        {"name": "Footjob", "strength": 1.4},
+    ]
     assert plan.allow_contribute is False
     assert plan.result_meta == {
         "_qqcc_regenerate": {
@@ -415,6 +429,10 @@ async def test_private_qqcc_tail_frame_video_uses_durable_continuation(
                     "prompt": "video prompt",
                     "duration": "5s",
                     "engine": video_engine,
+                    "lora_items": [
+                        {"name": "BreastGrow", "strength": 0.75},
+                        {"name": "Footjob", "strength": 1.4},
+                    ],
                     "end_frame_draw_scene_id": "tail_pose",
                 }
             ],
@@ -488,6 +506,10 @@ async def test_private_qqcc_tail_frame_video_uses_durable_continuation(
     assert stages[1]["task_kwargs"]["delete_status"] is True
     assert stages[1]["task_kwargs"]["user_cancel_allowed"] is False
     assert stages[1]["task_kwargs"]["show_queue_status"] is False
+    assert stages[1]["task_kwargs"]["lora_items"] == [
+        {"name": "BreastGrow", "strength": 0.75},
+        {"name": "Footjob", "strength": 1.4},
+    ]
     resume_checkpoint.assert_awaited_once()
     assert resume_checkpoint.await_args.kwargs["chain_id"] == "chain-video-1"
     assert callable(resume_checkpoint.await_args.kwargs["execute_stage_func"])
@@ -545,6 +567,7 @@ async def test_run_qqcc_legacy_video_plan_passes_scene_negative_prompt():
     assert "base_priority" not in video_task.await_args.kwargs
     assert video_task.await_args.kwargs["display_mode_name_override"] == "模型动图"
     assert video_task.await_args.kwargs["result_meta"] == plan.result_meta
+    assert video_task.await_args.kwargs["lora_items"] == plan.lora_items
 
 
 @pytest.mark.asyncio
@@ -806,6 +829,10 @@ async def test_run_tail_frame_wan22_v2_final_video_is_locked_continuation():
                         "negative_prompt": "video blur",
                         "duration": "5s",
                         "engine": "wan22_video_v2",
+                        "lora_items": [
+                            {"name": "BreastGrow", "strength": 0.75},
+                            {"name": "Footjob", "strength": 1.4},
+                        ],
                         "end_frame_draw_scene_id": "tail_pose",
                     }
                 ],
@@ -831,6 +858,7 @@ async def test_run_tail_frame_wan22_v2_final_video_is_locked_continuation():
     )
 
     assert generation_task.await_args.kwargs["task_type"] == MODE_WAN22_VIDEO_V2
+    assert generation_task.await_args.kwargs["lora_items"] == plan.lora_items
     assert generation_task.await_args.kwargs["images"] == [
         "/tmp/input.png",
         "/tmp/end.png",

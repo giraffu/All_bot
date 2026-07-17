@@ -47,12 +47,20 @@ async def test_process_image_to_video_task_persists_legacy_lora_context(monkeypa
         duration=8,
         lora_name="BreastGrow",
         lora_strength=1.0,
+        lora_items=[
+            {"name": "BreastGrow", "strength": 0.75},
+            {"name": "Footjob", "strength": 1.4},
+        ],
         cleanup=False,
     )
 
     assert result == (b"video-bytes", "task-image-to-video")
     flow = captured_flow["flow"]
     assert flow.request.inputs["lora_name"] == "BreastGrow"
+    assert flow.request.inputs["lora_items"] == [
+        {"name": "BreastGrow", "strength": 0.75},
+        {"name": "Footjob", "strength": 1.4},
+    ]
     assert flow.request.inputs["resolution_preset"] == "standard"
     assert flow.request.inputs["duration"] == 8
     assert flow.request.inputs["extract_last_frame"] is True
@@ -65,12 +73,16 @@ async def test_process_image_to_video_task_persists_legacy_lora_context(monkeypa
         "wan22_model_profile": WAN22_LEGACY_IMAGE_TO_VIDEO_MODEL_PROFILE,
         "wan22_chain_task_ids": [],
         "lora_name": "BreastGrow",
-        "lora_strength": 1.0,
+        "lora_strength": 0.75,
+        "lora_items": [
+            {"name": "BreastGrow", "strength": 0.75},
+            {"name": "Footjob", "strength": 1.4},
+        ],
         "_generation_context": {
             "version": 1,
             "lora_name": "BreastGrow",
             "public_model_id": "video_breast_growth",
-            "lora_strength": 1.0,
+            "lora_strength": 0.75,
             "resolution": "standard",
             "duration_seconds": 8,
         },
@@ -107,6 +119,10 @@ async def test_standard_generation_wan22_v2_forwards_resolution_and_duration(mon
         negative_prompt="custom negative",
         resolution="hd",
         duration="10s",
+        lora_items=[
+            {"name": "BreastGrow", "strength": 0.75},
+            {"name": "Footjob", "strength": 1.4},
+        ],
         cleanup=False,
     )
 
@@ -114,3 +130,7 @@ async def test_standard_generation_wan22_v2_forwards_resolution_and_duration(mon
     assert captured_kwargs["resolution_preset"] == "hd"
     assert captured_kwargs["duration"] == "10s"
     assert captured_kwargs["negative_prompt"] == "custom negative"
+    assert captured_kwargs["lora_items"] == [
+        {"name": "BreastGrow", "strength": 0.75},
+        {"name": "Footjob", "strength": 1.4},
+    ]

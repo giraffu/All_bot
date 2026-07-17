@@ -718,7 +718,14 @@ def test_workflow_patcher_injects_legacy_image_to_video_lora_and_model_profile(t
         {
             "image": "start.png",
             "prompt": "demo",
-            "lora_name": "BreastGrow",
+            "lora_items": [
+                {"name": "BreastGrow", "strength": 0.75},
+                {"name": "Footjob", "strength": 1.4},
+                {"name": "Cum", "strength": 0.5},
+                {"name": "Cunilingus", "strength": 1.05},
+                {"name": "Insertion", "strength": 0.9},
+                {"name": "Flatchested", "strength": 1.0},
+            ],
             "resolution_preset": "standard",
             "seed": 78,
         },
@@ -730,8 +737,28 @@ def test_workflow_patcher_injects_legacy_image_to_video_lora_and_model_profile(t
     assert patched_v2["2617"]["inputs"]["unet_name"] == (
         "DasiwaWAN22I2V14BLightspeed_snatchkissLowV11.safetensors"
     )
-    assert "lora_1" not in patched_v2["26"]["inputs"]
-    assert "lora_1" not in patched_v2["18"]["inputs"]
+    for slot, (name, strength) in enumerate(
+        [
+            ("BreastGrow", 0.75),
+            ("Footjob", 1.4),
+            ("Cum", 0.5),
+            ("Cunilingus", 1.05),
+            ("Insertion", 0.9),
+        ],
+        start=1,
+    ):
+        assert patched_v2["26"]["inputs"][f"lora_{slot}"] == {
+            "on": True,
+            "lora": f"{name}_high_noise.safetensors",
+            "strength": strength,
+        }
+        assert patched_v2["18"]["inputs"][f"lora_{slot}"] == {
+            "on": True,
+            "lora": f"{name}_low_noise.safetensors",
+            "strength": strength,
+        }
+    assert "lora_6" not in patched_v2["26"]["inputs"]
+    assert "lora_6" not in patched_v2["18"]["inputs"]
     assert "lora_9" not in patched_v2["26"]["inputs"]
     assert "lora_9" not in patched_v2["18"]["inputs"]
 
