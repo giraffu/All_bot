@@ -31,7 +31,7 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
         "gpu-252-gpu0-i2i_pro",
         "gpu-252-gpu1-i2i_pro",
         "gpu-002-gpu0-scail2",
-        "gpu-002-gpu1-image_to_video",
+        "gpu-002-gpu1-i2i_pro",
         "gpu-226-gpu0-i2i_pro",
     ]
     assert slots["gpu-177-gpu0-wan22_video_v2"].legacy_worker_id == (
@@ -83,19 +83,19 @@ def test_lan_aio_prod_slots_cover_next_wave_candidates():
         "scail2_video_replacement",
         "scail2_face_swap_v2",
     )
-    assert slots["gpu-002-gpu1-image_to_video"].agent_id == (
+    assert slots["gpu-002-gpu1-i2i_pro"].agent_id == (
+        "lan_aio_prod_gpu002_gpu1_i2i_pro_01"
+    )
+    assert slots["gpu-002-gpu1-i2i_pro"].legacy_worker_id == (
         "lan_aio_prod_gpu002_gpu1_image_to_video_01"
     )
-    assert slots["gpu-002-gpu1-image_to_video"].legacy_worker_id == (
-        "lan_aio_prod_gpu002_gpu1_pornmaster_flux2_edit_01"
+    assert slots["gpu-002-gpu1-i2i_pro"].old_runtime_container == (
+        "allbot-lan-aio-gpu-002-gpu1-image_to_video-prod"
     )
-    assert slots["gpu-002-gpu1-image_to_video"].old_runtime_container == (
-        "allbot-lan-aio-gpu-002-gpu1-pornmaster-flux2-edit-prod"
-    )
-    assert slots["gpu-002-gpu1-image_to_video"].target_task_types == (
-        "video_insert",
-        "video_edit",
-        "image_to_video",
+    assert slots["gpu-002-gpu1-i2i_pro"].target_task_types == (
+        "i2i_pro",
+        "t2i-pornmaster-turbo",
+        "face_swap",
     )
     assert slots["gpu-226-gpu0-i2i_pro"].agent_id == (
         "lan_aio_prod_gpu226_gpu0_i2i_pro_01"
@@ -178,16 +178,25 @@ def test_lan_aio_prod_slots_keep_blocked_nodes_disabled_but_visible():
     )
     assert slots["gpu-226-gpu0-i2i_pro"].enabled is True
     assert slots["gpu-226-gpu0-i2i_pro"].phase == "prod_enabled"
+    assert slots["gpu-002-gpu1-image_to_video"].enabled is False
+    assert slots["gpu-002-gpu1-image_to_video"].phase == "superseded_by_i2i_pro"
+    assert slots["gpu-002-gpu1-image_to_video"].retargetable is True
+    assert slots["gpu-002-gpu1-image_to_video"].legacy_worker_id == (
+        "lan_aio_prod_gpu002_gpu1_i2i_pro_01"
+    )
+    assert slots["gpu-002-gpu1-image_to_video"].old_runtime_container == (
+        "allbot-lan-aio-gpu-002-gpu1-i2i_pro-prod"
+    )
     assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].enabled is False
     assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].phase == (
-        "superseded_by_image_to_video"
+        "superseded_by_i2i_pro"
     )
     assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].retargetable is True
     assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].legacy_worker_id == (
-        "lan_aio_prod_gpu002_gpu1_image_to_video_01"
+        "lan_aio_prod_gpu002_gpu1_i2i_pro_01"
     )
     assert slots["gpu-002-gpu1-pornmaster_flux2_edit"].old_runtime_container == (
-        "allbot-lan-aio-gpu-002-gpu1-image_to_video-prod"
+        "allbot-lan-aio-gpu-002-gpu1-i2i_pro-prod"
     )
     assert slots["gpu-177-gpu1-wan22_video_v2"].enabled is False
     assert slots["gpu-177-gpu1-wan22_video_v2"].phase == "blocked_oom_32gb"
@@ -334,7 +343,7 @@ def test_lan_aio_fleet_render_uses_stable_gpu_device_id_for_gpu_252():
         "gpu-177-gpu1-ltx_video",
         "gpu-252-gpu0-i2i_pro",
         "gpu-002-gpu0-scail2",
-        "gpu-002-gpu1-image_to_video",
+        "gpu-002-gpu1-i2i_pro",
         "gpu-226-gpu0-i2i_pro",
     ],
 )
@@ -1237,7 +1246,7 @@ def test_lan_aio_preflight_blocks_unexpected_host_port_owner():
     assert payload["ok"] is False
     assert port_check["ok"] is False
     assert port_check["allowed_containers"] == [
-        "allbot-lan-aio-gpu-002-gpu1-image_to_video-prod",
+        "allbot-lan-aio-gpu-002-gpu1-i2i_pro-prod",
         "allbot-lan-aio-gpu-002-gpu1-pornmaster-flux2-edit-prod",
     ]
     assert port_check["unexpected_owners"] == [
