@@ -25,6 +25,8 @@ type MainButtonKey =
   | 'market'
   | 'main_bot_link'
   | 'private_bot'
+type MainMenuButtonKey = Exclude<MainButtonKey, 'quick_undress' | 'photo_edit'>
+type MainMenuButtonsPerRow = 1 | 2 | 3 | 4
 type PhotoButtonKey = 'masturbation' | 'random_faceswap'
 type UndressMethodKey = 'legacy' | 'i2i_draw'
 type VideoButtonKey = 'missionary' | 'doggy' | 'blowjob' | 'undress_tongue' | 'closeup_blowjob'
@@ -127,6 +129,10 @@ interface QqccBotConfig {
   scene_preset_version: number
   global_enabled: boolean
   main_buttons: Record<MainButtonKey, boolean>
+  main_menu_layout: {
+    buttons_per_row: MainMenuButtonsPerRow | null
+    button_order: MainMenuButtonKey[]
+  }
   photo_buttons: Record<PhotoButtonKey, boolean>
   undress_methods: Record<UndressMethodKey, boolean>
   video_buttons: Record<VideoButtonKey, boolean>
@@ -237,6 +243,19 @@ const emptyConfig = (): QqccBotConfig => ({
     main_bot_link: false,
     private_bot: false,
   },
+  main_menu_layout: {
+    buttons_per_row: null,
+    button_order: [
+      'quick_faceswap',
+      'ai_draw',
+      'ai_filter',
+      'video_edit',
+      'ai_video',
+      'market',
+      'private_bot',
+      'main_bot_link',
+    ],
+  },
   photo_buttons: {
     masturbation: false,
     random_faceswap: false,
@@ -292,16 +311,38 @@ const emptyConfig = (): QqccBotConfig => ({
   },
 })
 
-const mainButtonOptions: Array<{ key: MainButtonKey; label: string }> = [
+const mainButtonOptions: Array<{ key: MainMenuButtonKey; label: string }> = [
   { key: 'quick_faceswap', label: '快速换脸' },
   { key: 'ai_draw', label: 'AI绘图' },
   { key: 'ai_filter', label: 'AI滤镜' },
   { key: 'video_edit', label: 'AI动图' },
   { key: 'ai_video', label: 'AI视频' },
   { key: 'market', label: '修仙市集' },
-  { key: 'main_bot_link', label: '前往主bot' },
   { key: 'private_bot', label: '私有bot' },
+  { key: 'main_bot_link', label: '前往主bot' },
 ]
+const mainMenuButtonKeys = mainButtonOptions.map((item) => item.key)
+const mainButtonOptionsByKey = Object.fromEntries(
+  mainButtonOptions.map((item) => [item.key, item]),
+) as Record<MainMenuButtonKey, { key: MainMenuButtonKey; label: string }>
+const normalizeMainMenuButtonOrder = (raw: unknown): MainMenuButtonKey[] => {
+  const ordered: MainMenuButtonKey[] = []
+  if (Array.isArray(raw)) {
+    raw.forEach((candidate) => {
+      if (
+        typeof candidate === 'string'
+        && mainMenuButtonKeys.includes(candidate as MainMenuButtonKey)
+        && !ordered.includes(candidate as MainMenuButtonKey)
+      ) {
+        ordered.push(candidate as MainMenuButtonKey)
+      }
+    })
+  }
+  mainMenuButtonKeys.forEach((key) => {
+    if (!ordered.includes(key)) ordered.push(key)
+  })
+  return ordered
+}
 const legacyMainButtonKeys: MainButtonKey[] = ['quick_undress', 'photo_edit']
 
 const photoButtonKeys: PhotoButtonKey[] = ['masturbation', 'random_faceswap']
@@ -404,6 +445,18 @@ const generatingDemoKeys = ref<ReadonlySet<string>>(new Set())
 const configKey = ref('')
 const updatedAt = ref<string | null>(null)
 const config = reactive<QqccBotConfig>(emptyConfig())
+const mainMenuLayoutMode = computed({
+  get: () => config.main_menu_layout.buttons_per_row?.toString() ?? 'legacy',
+  set: (value: string) => {
+    const parsed = Number(value)
+    config.main_menu_layout.buttons_per_row = ([1, 2, 3, 4] as number[]).includes(parsed)
+      ? parsed as MainMenuButtonsPerRow
+      : null
+  },
+})
+const orderedMainButtonOptions = computed(() =>
+  config.main_menu_layout.button_order.map((key) => mainButtonOptionsByKey[key]),
+)
 const modelOptions = reactive<QqccBotConfigOptions>(emptyOptions())
 const scenePageSize = 5
 const activeSceneTab = ref<SceneConfigKind>('video')
@@ -798,6 +851,18 @@ const mergeConfig = (raw?: Partial<QqccBotConfig>): QqccBotConfig => {
   legacyMainButtonKeys.forEach((key) => {
     merged.main_buttons[key] = false
   })
+  const rawButtonsPerRow = raw.main_menu_layout?.buttons_per_row
+  merged.main_menu_layout.buttons_per_row = (
+    typeof rawButtonsPerRow === 'number'
+    && Number.isInteger(rawButtonsPerRow)
+    && rawButtonsPerRow >= 1
+    && rawButtonsPerRow <= 4
+  )
+    ? rawButtonsPerRow as MainMenuButtonsPerRow
+    : null
+  merged.main_menu_layout.button_order = normalizeMainMenuButtonOrder(
+    raw.main_menu_layout?.button_order,
+  )
   photoButtonKeys.forEach((key) => {
     const value = raw.photo_buttons?.[key]
     if (typeof value === 'boolean') merged.photo_buttons[key] = value
@@ -1029,6 +1094,17 @@ const moveScene = (
     scenes.splice(targetIndex, 0, scene)
     showScenePageContaining(kind, targetIndex)
   }
+}
+
+const moveMainMenuButton = (index: number, offset: -1 | 1) => {
+  if (config.main_menu_layout.buttons_per_row === null) return
+  const targetIndex = index + offset
+  const order = config.main_menu_layout.button_order
+  if (index < 0 || index >= order.length || targetIndex < 0 || targetIndex >= order.length) {
+    return
+  }
+  const [buttonKey] = order.splice(index, 1)
+  if (buttonKey) order.splice(targetIndex, 0, buttonKey)
 }
 
 const createDrawSceneId = () => {
@@ -1269,6 +1345,9 @@ const validateFilterScenes = () =>
 const buildPayload = (): QqccBotConfig => {
   const payload = JSON.parse(JSON.stringify(config)) as QqccBotConfig
   payload.scene_preset_version = config.scene_preset_version || modelOptions.scene_preset_version
+  payload.main_menu_layout.button_order = normalizeMainMenuButtonOrder(
+    payload.main_menu_layout.button_order,
+  )
   legacyMainButtonKeys.forEach((key) => {
     payload.main_buttons[key] = false
   })
@@ -1576,18 +1655,61 @@ onMounted(() => {
 
           <div class="grid gap-4 lg:grid-cols-1">
             <section class="rounded-lg border border-slate-200 bg-slate-50/70 p-4">
-              <h3 class="mb-3 text-sm font-semibold text-slate-800">主菜单</h3>
-              <div class="space-y-3">
-                <div
-                  v-for="item in mainButtonOptions"
-                  :key="item.key"
-                  class="flex items-center justify-between gap-3"
+              <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 class="text-sm font-semibold text-slate-800">主菜单</h3>
+                  <p class="mt-1 text-xs text-slate-500">选择统一列数后，可调整所有按钮的显示顺序。</p>
+                </div>
+                <a-select
+                  v-model:value="mainMenuLayoutMode"
+                  class="w-48"
+                  data-testid="main-menu-buttons-per-row"
                 >
-                  <span class="text-sm text-slate-700">{{ item.label }}</span>
-                  <a-switch
-                    v-model:checked="config.main_buttons[item.key]"
-                    :data-testid="`main-button-${item.key}`"
-                  />
+                  <a-select-option value="legacy">沿用现有布局</a-select-option>
+                  <a-select-option value="1">每行 1 个按钮</a-select-option>
+                  <a-select-option value="2">每行 2 个按钮</a-select-option>
+                  <a-select-option value="3">每行 3 个按钮</a-select-option>
+                  <a-select-option value="4">每行 4 个按钮</a-select-option>
+                </a-select>
+              </div>
+              <div class="space-y-2">
+                <div
+                  v-for="(item, index) in orderedMainButtonOptions"
+                  :key="item.key"
+                  class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-200 bg-white px-3 py-2"
+                >
+                  <div class="flex min-w-0 items-center gap-2">
+                    <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-500">
+                      {{ index + 1 }}
+                    </span>
+                    <span class="truncate text-sm text-slate-700">{{ item.label }}</span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <a-switch
+                      v-model:checked="config.main_buttons[item.key]"
+                      :data-testid="`main-button-${item.key}`"
+                    />
+                    <a-button
+                      size="small"
+                      :disabled="config.main_menu_layout.buttons_per_row === null || index === 0"
+                      :data-testid="`move-main-menu-button-up-${item.key}`"
+                      :title="`上移${item.label}`"
+                      :aria-label="`上移${item.label}`"
+                      @click="moveMainMenuButton(index, -1)"
+                    >
+                      <template #icon><UpOutlined /></template>
+                    </a-button>
+                    <a-button
+                      size="small"
+                      :disabled="config.main_menu_layout.buttons_per_row === null || index === orderedMainButtonOptions.length - 1"
+                      :data-testid="`move-main-menu-button-down-${item.key}`"
+                      :title="`下移${item.label}`"
+                      :aria-label="`下移${item.label}`"
+                      @click="moveMainMenuButton(index, 1)"
+                    >
+                      <template #icon><DownOutlined /></template>
+                    </a-button>
+                  </div>
                 </div>
               </div>
             </section>

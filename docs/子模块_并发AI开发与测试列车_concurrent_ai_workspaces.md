@@ -75,13 +75,13 @@ python scripts/test_train_release.py deploy \
   --sha <train-sha> --pr <number> --slot A --execute
 ```
 
-包装器在本地主服务器使用 `~/.local/state/allbot/test-train.lock` 排他锁并计划三个 track。默认只部署确实要求测试的 control-plane/公共 Web；Dashboard/QQCC 管理面记录 `test-not-required` 且不修改共享测试站，test-execution 只有显式 `--with-test-execution` 才部署。`gpu-execution` 只报告计划，正式 GPU profile 走对应 operator。
+包装器在本地主服务器使用 `~/.local/state/allbot/test-train.lock` 排他锁并计划三个 track。默认只部署确实要求测试的 control-plane/公共 Web；QQCC Config 已有专属测试实例，按 standard 部署对应前后端，Dashboard-only 仍记录 `test-not-required` 且不修改共享测试站。若同一不可变 bundle 因共享构建输入同时包含 Dashboard 与 QQCC Config artifact，测试门禁先过滤测试环境不存在的 Dashboard 服务，再部署并验收仍可用的 QQCC Config 目标；只有过滤后没有任何测试目标时才按 owner-only 拒绝 mutation。test-execution 只有显式 `--with-test-execution` 才部署。`gpu-execution` 只报告计划，正式 GPU profile 走对应 operator。
 
 schema v2 的远端事务和发布合约都按 track 隔离：journal/staged state 使用 `transactions/<track>/<sha>`，云 Compose 的非敏感合约使用 `/var/lib/allbot/releases/<track>/<sha>/release.env`，Worker host 使用 `release-env/<track>/<sha>/release.env`。Worker preflight 从同一 track-scoped 路径读取上一版本回滚材料；若该轨没有任何 cloud service，则跳过 cloud preflight，不要求不会生成的云端合约。云端控制面回滚到 track 隔离上线前的历史 SHA 时，预检与失败恢复优先读取 track-scoped 合约，缺失后可读取同 SHA 的 legacy `/var/lib/allbot/releases/<sha>/release.env`；候选正向部署仍只写 track-scoped 路径。同一 candidate 先后部署 control-plane 与 test-execution 时，后一轨不得覆盖前一轨的镜像变量或回滚输入。
 
 测试 Worker 是按需诊断链。只有需要匹配 GPU/ComfyUI 的专项验证时，在 deploy 命令追加 `--with-test-execution`；未追加时状态记录 deferred，不把 Worker 标记为已部署。后续需要 Worker 时对最新可信 candidate 重新 plan/deploy，禁止用控制面结果冒充 Worker 通过。
 
-若 control-plane 无需要测试的 artifacts/services，包装器不调用空 preflight/deploy，记录 `ready-for-acceptance` 和 `deployment_mode=non-runtime|test-not-required`。未显式启用 Worker 时记录 `deferred_tracks=["test-execution"]`；不得写任何容器、Pages 或 Worker 已更新。
+若 control-plane 无需要测试的 artifacts/services，包装器不调用空 preflight/deploy，记录 `ready-for-acceptance` 和 `deployment_mode=non-runtime|test-not-required`。判断以 artifact/service 空选择集为准：前序 `test-not-required` 候选未改变远端实际部署 SHA 时，后续 candidate 即使累积路径令 level 高于 `none`，也不能伪造空部署或因此卡死。未显式启用 Worker 时记录 `deferred_tracks=["test-execution"]`；不得写任何容器、Pages 或 Worker 已更新。
 
 若后一个 track 部署失败，包装器按相反顺序回滚本轮已成功 track；单 track 内部继续使用 `release.py` 事务补偿。若部署成功但业务 smoke 失败：
 

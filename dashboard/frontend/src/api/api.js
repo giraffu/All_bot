@@ -264,6 +264,11 @@ export const fetchPaidGroupGuardConfig = async () => get('/api/paid-group-guard/
 export const updatePaidGroupGuardConfig = async (payload) =>
   put('/api/paid-group-guard/config', payload)
 
+export const fetchMainBotMenuConfig = async () => get('/api/main-bot/menu-config')
+
+export const updateMainBotMenuConfig = async (payload) =>
+  put('/api/main-bot/menu-config', payload)
+
 /**
  * @param {{ page?: number, pageSize?: number, reason?: string | null, userId?: string | null, startDate?: string | null, endDate?: string | null }} [options]
  */

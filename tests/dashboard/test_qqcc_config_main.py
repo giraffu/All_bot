@@ -163,6 +163,10 @@ async def test_qqcc_config_routes_load_and_save_runtime_checkpoint():
                 json={
                     "global_enabled": False,
                     "main_buttons": {"quick_undress": True, "unknown": True},
+                    "main_menu_layout": {
+                        "buttons_per_row": 2,
+                        "button_order": ["market", "quick_faceswap"],
+                    },
                 },
             )
     finally:
@@ -177,4 +181,9 @@ async def test_qqcc_config_routes_load_and_save_runtime_checkpoint():
     assert saved["key"] == QQCC_LAZY_BOT_CONFIG_KEY
     assert saved["config"]["global_enabled"] is False
     assert "unknown" not in saved["config"]["main_buttons"]
+    assert saved["config"]["main_menu_layout"]["buttons_per_row"] == 2
+    assert saved["config"]["main_menu_layout"]["button_order"][:2] == [
+        "market",
+        "quick_faceswap",
+    ]
     assert fake_db.committed is True

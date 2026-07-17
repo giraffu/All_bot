@@ -32,9 +32,9 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 
 - schema v2 将不可变产物拆为 `control-plane`、`test-execution`、`gpu-execution` 三条环境无关发布链；`release-index.json` 引用三份 manifest，test/prod 只选择模块并注入配置。`--modules` 与 control-plane alias `--services` 只能扩大影响集合，状态与历史按 track 隔离。
 - 并发研发使用精确受保护 `codex/test-train` 的独立 `test-candidate` bundle 仓库；candidate 只能由集成 AI通过 `scripts/test_train_release.py` 部署 test，禁止 `verify-test`、prod、fast-track 和正式晋级。最终 main SHA 必须重新构建、部署和验收。
-- 发布策略是 `--strategy auto|standard|direct|emergency`。核心用户链路默认 standard；Dashboard/QQCC 管理面与 GPU 执行面默认 direct；公共 Web 默认 standard、可显式 direct；核心只允许带 reason/approved-by 的 emergency。migration、共享部署/Compose 契约和未知路径始终 standard。混合变更取最高风险，`src/shared` 的自动 artifact 闭包不得用 `--modules` 缩小。
+- 发布策略是 `--strategy auto|standard|direct|emergency`。核心用户链路与已有专属测试实例的 QQCC Config 默认 standard；Dashboard 与 GPU 执行面默认 direct；公共 Web 默认 standard、可显式 direct；核心只允许带 reason/approved-by 的 emergency。migration、共享部署/Compose 契约和未知路径始终 standard。混合变更取最高风险，`src/shared` 的自动 artifact 闭包不得用 `--modules` 缩小。
 - `--skip-gate` 只允许 `ci-tests|test-deploy|test-acceptance|observation|gpu-business-canary`，并受策略约束。CI `validation_mode=build-only` 仍必须从受保护 main 完整 SHA 构建 digest 产物，发布时显式跳过 `ci-tests` 且记录 reason/approved-by；任何 execute 都禁止 `--skip-ci-checks`。main 血缘、成功构建、digest/checksum/OCI revision、配置、目标健康、事务/回滚和非目标服务不重建永久保留。
-- 云测试默认只部署 standard 所需的 control-plane/公共 Web artifact；Dashboard 与 QQCC Config 四个管理服务已从测试 compose、端口、配置门禁和验收中移除。test-execution 只在专项诊断时显式 `--with-test-execution`。验收状态按 track + artifact digest 写入 history；direct/emergency 写 `waived`，GPU direct 写 `attested`，不得覆盖其它核心 artifact 的 tested 证据。
+- 云测试默认部署 standard 所需的 control-plane/公共 Web artifact；专属测试 QQCC Config 前后端属于 test-train 管理的 control-plane 服务，固定使用测试配置及 8045/8088，Dashboard 仍不进入测试站。test-execution 只在专项诊断时显式 `--with-test-execution`。验收状态按 track + artifact digest 写入 history；direct/emergency 写 `waived`，GPU direct 写 `attested`，不得覆盖其它核心 artifact 的 tested 证据。
 - 唯一代码发布入口是 `scripts/release.py plan|preflight|deploy|rollback|recover`。目标必须是可从 `origin/main` 到达的完整 40 位 SHA，并使用 CI 生成的 `release.json`、Web checksum 和 digest-pinned 镜像；云端不 build、不挂载源码、不接收代码/env rsync。`preflight` 与 `deploy` 不自动拉 bundle，所有材料必须预先可读。
 - 云测试：先执行 `scripts/release.py plan --env test --sha <sha>`，再以同一 SHA 执行 `deploy --env test --sha <sha> --execute`。影响集合由 `deploy/release-policy.yml` 计算，`--services` 只能扩大，不能缩小。
 - 本地主服务器兼任测试 Worker host 时，使用受限的本地测试配置（当前标准路径 `/home/hfy/.config/allbot/test.env`，`600`）并显式传 `--env-file`；发布器必须把 Worker compose 的 `ALLBOT_ENV_FILE` 绑定到这个实参，不能复用云主机 `/etc/allbot/test.env` 的路径字符串。云端事实源与本地副本内容/revision 必须一致，生产 env 不得复制到测试 Worker host。
@@ -107,6 +107,7 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 - Dashboard RunPod 管理和 LAN AIO worker 基础控制只调用既有脚本，不重写 provider 逻辑；`desired_count` 兼容字段按“新增数量”解释，不代表目标总数。
 - Dashboard RunPod operation 必须从 profile catalog pin 已验收的 img2img/PornMaster baked 镜像并覆盖 `/app/.env` 历史 ref；目标 tag 未发布或 baked entrypoint/revision smoke 未通过时，禁止先部署引用它的 Dashboard。PornMaster FP8/BF16 共用 runtime 镜像与 single/multiple workflow，差异由 task type、模型 manifest、GPU/`--lowvram` 和 UNet 节点替换表达。
 - Dashboard autoscaler 基于预计清空时间、profile 阈值、Redis leader lease 与 operation store 做 add/down/restart/enable；不直接操作本地 worker，不绕过 RunPod 门禁；RunPod Worker 卡片的 `锁定/解锁` 会让手动删除、autoscaler down 和 add cleanup 跳过该 worker。
+- Dashboard 成功删除 RunPod 后，operation store 的同 agent delete 记录必须在 heartbeat 新鲜窗口内充当删除墓碑；Central 残留的 `disabled + idle|running` heartbeat 不得触发自动 enable，未被删除的其它暂停 RunPod 仍可正常恢复。
 - LAN AIO 的易变运行事实不写进本 skill 正文；当前每张 GPU 运行 profile、可快速切换候选、缓存 marker、阻断原因以 `ops/gpu_pool_controller/config/lan_aio_fleet_state.yml` 为 agent 维护入口，切换前仍必须用 live status 仲裁。
 - Dashboard 不再提供 LAN AIO profile/slot 列表、候选切换、`takeover`、`recover` 或 `warm-cache` API；当前态和任务显示走 `/api/system/workers`，Worker 卡片只保留 `pause/enable/restart` 基础控制。
 - 新增 LAN AIO 候选先走 `scripts/lan_aio_fleet_prod_ops.py candidate-plan --node-id ... --profile ... --replace-slot ...` 生成 YAML patch 和校验摘要，再由 Git/YAML 事实源合入；失败现场恢复入口只允许 `recover --physical-slot <node>:gpuN --slot <slot-id> --prefer old|candidate` 这种单物理 GPU/精确 slot 范围。
@@ -119,7 +120,7 @@ description: "处理 Docker Compose 编排、按模块风险分级发布、云�
 1. 确认用户确实要求正式发布或生产热修。
 2. 确认目标 service 存在，并确定是否涉及 Alembic、shared env、worker workflow 或跨服务契约；同时记录本次维护意图：用户未指示则为“开启”，用户当次明确要求时才为“不开启”。
 3. 对精确 SHA 运行 `release.py plan --env prod --track control-plane`，再运行只读 `preflight`，检查自动影响集合、维护等级、migration、Pages canonical/自动部署和控制面/Web 回滚材料；prod 报告中的 Worker 检查必须是 `skipped`。planner 判定强制 maintenance 时拒绝关闭；请求开启但发布器无法实际建立/保持维护，或请求关闭但发布器无法证明不会进入维护时，都在 mutation 前停止。
-4. 先审阅 plan/preflight 的 `risk_class/strategy/validation_mode/skipped_gates/gates`。standard 只晋级 history 中同 artifact digest 的 tested 证据；owner-tools/execution auto direct，公共 Web direct 和核心 emergency 必须显式风险接受。所有正式执行仍带 `--execute --confirm-prod`，并确认计划只重建目标服务。
+4. 先审阅 plan/preflight 的 `risk_class/strategy/validation_mode/skipped_gates/gates`。standard 只晋级 history 中同 artifact digest 的 tested 证据；QQCC Config owner-tools auto standard，Dashboard owner-tools 与 execution auto direct。共享构建输入让 bundle 同时包含 Dashboard 与 QQCC Config 时，test 只过滤不可用 Dashboard 服务并继续验收 QQCC Config；过滤后没有测试目标的纯 owner-only mutation 仍拒绝。公共 Web direct 和核心 emergency 必须显式风险接受。所有正式执行仍带 `--execute --confirm-prod`，并确认计划只重建目标服务。
 5. 手工 compose、旧 QQCC 快速脚本、rsync 和现场 build 均不是紧急旁路；无法通过发布器时停下修复发布契约。
 6. 结束后核对容器 digest、OCI revision、current.json、健康检查和未触碰服务启动时间。
 

@@ -138,6 +138,8 @@ ENVIRONMENT = {
             "web-api",
             "bot",
             "qqcc-bot",
+            "qqcc-config-backend",
+            "qqcc-config-frontend",
             "qqcc-private-bot-worker",
             "imgproxy",
         },
@@ -5045,6 +5047,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.env == "test"
             and decision.risk_class == "owner-tools"
             and args.command != "plan"
+            and not cloud_services_for_release(args.env, impact)
         ):
             raise ReleaseError(
                 "owner-only admin services are removed from the test environment"

@@ -92,7 +92,8 @@ python scripts/update_deploy_config.py --env prod --source /secure/new-prod.env 
 | 风险类 | artifact | auto 策略 | 测试要求 |
 | :--- | :--- | :--- | :--- |
 | critical | Central、Web API、Payment、主/QQCC/私有/付费群 Bot、imgproxy | standard | 同 artifact digest 测试、验收、观察；可显式 emergency |
-| owner-tools | Dashboard、QQCC Config 前后端 | direct | 测试环境无这些服务，状态记 waived |
+| owner-tools | QQCC Config 前后端 | standard | 专属测试实例按精确 digest 部署、验收与观察 |
+| owner-tools | Dashboard 前后端 | direct | 测试环境无 Dashboard，状态记 waived |
 | public-web | Cloudflare Pages Web tar | standard | 精确 tar checksum；可显式 direct |
 | execution | test Worker、正式 GPU profile | direct | 测试 Worker 按需；GPU 强制 attestation、canary 可跳过 |
 | locked | migration、部署/Compose 契约、未知路径 | standard | 不允许 direct/emergency |
@@ -101,7 +102,7 @@ python scripts/update_deploy_config.py --env prod --source /secure/new-prod.env 
 
 并发任务的 test-train 入口为 `scripts/test_train_release.py`，A-H 功能工作区不得直接运行发布器。详细槽位与 forward-fix SOP 见 `docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md`。
 
-包装器默认只部署真正要求测试的 control-plane/公共 Web。测试 Worker 改为按需步骤，专项诊断才追加 `--with-test-execution`；未启用时记录 deferred，不得写入 acceptance。Dashboard/QQCC 管理面候选记录 `test-not-required` 且不修改共享测试站。
+包装器默认只部署真正要求测试的 control-plane/公共 Web。测试 Worker 改为按需步骤，专项诊断才追加 `--with-test-execution`；未启用时记录 deferred，不得写入 acceptance。QQCC Config 候选部署专属测试前后端；Dashboard-only 候选记录 `test-not-required` 且不修改共享测试站。共享构建输入导致同一 bundle 同时选择 Dashboard 与 QQCC Config artifact 时，test preflight 以过滤后的可用测试服务为准：不得启动已移除的 Dashboard，但必须继续部署并验收 QQCC Config；过滤后为空的纯 owner-only 候选仍 fail closed。若 control-plane 的 artifact/service 选择集本身为空，即使相对上个实际部署 SHA 的累积路径把 level 提升到 maintenance，仍按 non-runtime 记录证据，不运行空 preflight/deploy。
 
 `test-execution` 尚无 `/var/lib/allbot/deployments/test/test-execution/current.json` 时是 schema v2 首次切换，不是普通 rolling。planner 必须加入 `initial-release`，用 allowlist 对应的 legacy Agent/Relay 完成端口与健康预检；切换快照写入 `~/APP/All_bot-release/release-env/test-execution/<sha>/legacy-worker-running.txt`。失败恢复和之后的 immutable 回滚均读取 track-scoped release-env，Worker preflight 也必须检查 `release-env/<track>/<previous_sha>/release.env`。没有 cloud service 的 test-execution 跳过 cloud preflight，不要求云端生成未参与事务的 track 合约；同时不能要求尚不存在的 `allbot-worker-test/worker-relay`，也不能回落到旧的无 track 目录。
 
@@ -175,7 +176,7 @@ standard 生产发布器在对应 track 的 retained history 中按 artifact 名
 
 生产发布器会读取云测试 `current.json`，要求状态为 `verified` 且 SHA、自有/第三方 digest 完全相同。验收模板见 `deploy/test-acceptance.example.json`；默认观察窗口不足 24 小时或任何 smoke 为 false 都不能标记 verified。用户明确确认测试服务无问题并授权提前晋级时，短观察 evidence 必须同时包含 `short_observation_override=true`、非空 `override_reason`、`approved_by` 和真实起止时间，并在 CLI 显式传 `--confirm-short-observation`。该例外不允许时间倒置/未来完成时间，也不放宽任何 smoke、SHA/digest、Web checksum 或测试运行态检查；verified current/history 会记录实际观察秒数、例外原因与批准者，禁止伪造 24 小时时间或直接编辑状态文件。
 
-管理后台是 owner-tools，auto 默认 direct；`--dashboard-fast-track` 只作为兼容别名保留。测试 Compose 不声明 Dashboard/QQCC 管理服务，公共 base 用 `owner-tools` profile 隔离，生产仍按明确 artifact/service 启动。direct 不跳过 Git/CI artifact/env/preflight/confirm/rollback/非目标容器门禁。
+管理后台是 owner-tools：QQCC Config 因已有专属测试实例而 auto 默认 standard，Dashboard 仍 auto 默认 direct；`--dashboard-fast-track` 只作为兼容别名保留。测试 Compose 只声明 QQCC Config 前后端覆盖，Dashboard 不进入测试站；公共 base 继续用 `owner-tools` profile 隔离，生产仍按明确 artifact/service 启动。direct 不跳过 Git/CI artifact/env/preflight/confirm/rollback/非目标容器门禁。
 
 `--control-plane-repair-fast-track` 不是通用免测入口，只用于 verified main-channel 控制面之后修复生产启用、测试禁用的 `private-bot-worker` 镜像闭包。发布器以测试状态 SHA 为基线重新计算路径差异；只接受 `Dockerfile.control-plane`、v2 artifact catalog 与配套 release/docs/tests/skills 元数据。对其它 digest 变化模块，catalog inputs 必须无变化且对应 Docker target 文本逐字等价；private worker 必须包含 `qqcc_bot/` 与 `qqcc_private_bot/`，并对目标 digest 执行 `--network none` 导入烟测。业务代码、migration、Compose、GPU/ops、未知路径以及显式 `--modules` / `--services` / `--from-sha` 全部拒绝。通过后状态记录 tested/target SHA、等价 artifact 与实际 smoke artifact；main/CI/env/preflight/生产确认/回滚事务仍保持原门禁。
 
