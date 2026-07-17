@@ -262,10 +262,18 @@ class ReleaseImpact:
 class IndependentModuleRelease:
     """A strict module boundary and the rollback baseline it owns."""
 
-    def __init__(self, *, name: str, artifacts: Iterable[str], previous_sha: str) -> None:
+    def __init__(
+        self,
+        *,
+        name: str,
+        artifacts: Iterable[str],
+        previous_sha: str,
+        source_shas: Iterable[str] = (),
+    ) -> None:
         self.name = name
         self.artifacts = set(artifacts)
         self.previous_sha = previous_sha
+        self.source_shas = set(source_shas) or {previous_sha}
 
 
 def expand_independent_module_request(
@@ -334,14 +342,12 @@ def resolve_independent_module_release(
             )
         baseline = str(artifact_state.get("source_sha") or fallback_sha)
         baselines.add(validate_full_sha(baseline))
-    if len(baselines) != 1:
-        raise ReleaseError(
-            f"independent module {name} artifacts do not share one rollback baseline"
-        )
+    current_sha = validate_full_sha(fallback_sha)
     return IndependentModuleRelease(
         name=name,
         artifacts=artifacts,
-        previous_sha=baselines.pop(),
+        previous_sha=next(iter(baselines)) if len(baselines) == 1 else current_sha,
+        source_shas=baselines,
     )
 
 
@@ -349,6 +355,8 @@ def validate_independent_release_paths(
     policy: Mapping[str, Any],
     selection: IndependentModuleRelease,
     changed_paths: Iterable[str],
+    *,
+    target_sha: str | None = None,
 ) -> None:
     """Fail closed when a strict module diff crosses a shared runtime contract."""
 
@@ -382,11 +390,55 @@ def validate_independent_release_paths(
             for path in normalized_paths
             if any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns)
         )
+        if (
+            matches
+            and target_sha
+            and independent_contract_snapshot_matches(
+                policy,
+                matches,
+                target_sha=target_sha,
+            )
+        ):
+            continue
         if matches:
             raise ReleaseError(
                 f"independent module {selection.name} is blocked by {name}: "
                 + ", ".join(matches)
             )
+
+
+def independent_contract_snapshot_matches(
+    policy: Mapping[str, Any],
+    changed_paths: Iterable[str],
+    *,
+    target_sha: str,
+) -> bool:
+    """Recognize reviewed owner-only contract snapshots without widening paths."""
+
+    snapshots = policy.get("independent_contract_snapshots")
+    if not isinstance(snapshots, Mapping):
+        return False
+    target_sha = validate_full_sha(target_sha)
+    paths = set(changed_paths)
+    if not paths or not paths <= set(snapshots):
+        return False
+    for path in paths:
+        expected = snapshots.get(path)
+        if expected is not None and not re.fullmatch(r"[0-9a-f]{64}", str(expected)):
+            raise ReleaseError("independent contract snapshot policy is invalid")
+        result = _run(
+            ["git", "show", f"{target_sha}:{path}"],
+            check=False,
+        )
+        if expected is None:
+            if result.returncode == 0:
+                return False
+            continue
+        if result.returncode != 0:
+            return False
+        if hashlib.sha256(result.stdout.encode()).hexdigest() != expected:
+            return False
+    return True
 
 
 def _selected_artifact_names(
@@ -2356,6 +2408,78 @@ def _read_current_state(
     return None
 
 
+def _read_artifact_state_history(args: argparse.Namespace) -> list[dict[str, Any]]:
+    track = str(args.track)
+    history_root = Path(
+        f"/var/lib/allbot/deployments/{args.env}/{track}/history"
+    )
+    entries: list[tuple[float, str]] = []
+    local = history_root
+    if local.is_dir():
+        entries = [
+            (path.stat().st_mtime, str(path))
+            for path in local.iterdir()
+            if path.is_file() and re.fullmatch(r"[0-9a-f]{40}\.json", path.name)
+        ]
+
+        def read_state(path: str) -> dict[str, Any]:
+            return _read_json(Path(path))
+    else:
+        host = args.remote_host or ENVIRONMENT[args.env]["host"]
+        listing = _run(
+            [
+                "ssh",
+                "-o",
+                "BatchMode=yes",
+                host,
+                (
+                    f"find {shlex.quote(str(history_root))} -maxdepth 1 -type f "
+                    "-regextype posix-extended "
+                    "-regex '.*/[0-9a-f]{40}\\.json' -printf '%T@|%p\\n'"
+                ),
+            ],
+            check=False,
+        )
+        if listing.returncode != 0:
+            return []
+        for raw_line in listing.stdout.splitlines():
+            try:
+                raw_mtime, path = raw_line.split("|", 1)
+                mtime = float(raw_mtime)
+            except (ValueError, TypeError):
+                raise ReleaseError("deployment artifact history listing is invalid")
+            candidate = Path(path)
+            if (
+                candidate.parent != history_root
+                or not re.fullmatch(r"[0-9a-f]{40}\.json", candidate.name)
+            ):
+                raise ReleaseError("deployment artifact history path is invalid")
+            entries.append((mtime, path))
+
+        def read_state(path: str) -> dict[str, Any]:
+            result = _run(
+                [
+                    "ssh",
+                    "-o",
+                    "BatchMode=yes",
+                    host,
+                    f"cat {shlex.quote(path)}",
+                ],
+                check=False,
+            )
+            if result.returncode != 0:
+                raise ReleaseError("deployment artifact history is unavailable")
+            try:
+                value = json.loads(result.stdout)
+            except json.JSONDecodeError as exc:
+                raise ReleaseError("deployment artifact history is invalid") from exc
+            if not isinstance(value, dict):
+                raise ReleaseError("deployment artifact history is invalid")
+            return value
+
+    return [read_state(path) for _, path in sorted(entries)]
+
+
 def _resolve_previous_sha(
     args: argparse.Namespace, *, track_scoped: bool = False
 ) -> str | None:
@@ -2446,6 +2570,22 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
             service_to_artifact.get(name, name) for name in requested_services
         )
         previous_sha = _resolve_previous_sha(args, track_scoped=True)
+        expanded_independent = expand_independent_module_request(
+            policy, requested_modules
+        )
+        if expanded_independent and isinstance(args.previous_state, Mapping):
+            required_artifacts = expanded_independent[1]
+            current_artifacts = args.previous_state.get("artifacts")
+            missing_baselines = (
+                required_artifacts
+                if not isinstance(current_artifacts, Mapping)
+                else required_artifacts - set(current_artifacts)
+            )
+            if missing_baselines and not args.state_file:
+                args.previous_state = recover_artifact_current_state(
+                    args.previous_state,
+                    _read_artifact_state_history(args),
+                )
         independent_release = resolve_independent_module_release(
             policy,
             requested_modules,
@@ -2467,13 +2607,26 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
         if not previous_sha and args.track == "test-execution":
             planned_impact.matched_rules.append("initial-release")
         changed_paths: list[str] = []
-        if previous_sha and previous_sha != sha:
-            changed_paths = git_changed_paths(previous_sha, sha)
+        comparison_shas = (
+            independent_release.source_shas
+            if independent_release
+            else {previous_sha} if previous_sha else set()
+        )
+        if any(baseline != sha for baseline in comparison_shas):
+            changed_paths = sorted(
+                {
+                    path
+                    for baseline in comparison_shas
+                    if baseline != sha
+                    for path in git_changed_paths(baseline, sha)
+                }
+            )
             if independent_release:
                 validate_independent_release_paths(
                     policy,
                     independent_release,
                     changed_paths,
+                    target_sha=sha,
                 )
                 planned_impact = ReleaseImpact(
                     level="rolling",
@@ -2506,12 +2659,15 @@ def build_plan(args: argparse.Namespace) -> tuple[ReleaseImpact, dict[str, Any],
         except ManifestV2Error as exc:
             raise ReleaseError(str(exc)) from exc
         if not dashboard_fast_track and not independent_release:
-            computed_modules.update(
+            target_source_modules = {
                 name
                 for name, artifact in release_bundle.manifests[args.track]["artifacts"].items()
                 if artifact.get("source_sha") == sha
                 and name not in {"python-runtime-base", "python-worker-base"}
-            )
+            }
+            if previous_sha:
+                computed_modules.intersection_update(target_source_modules)
+            computed_modules.update(target_source_modules)
         if not independent_release:
             requested_modules.update(computed_modules)
         manifest = _load_v2_track(
@@ -4952,6 +5108,32 @@ def merge_artifact_current_state(
     )
     merged["artifacts"] = artifacts
     return merged
+
+
+def recover_artifact_current_state(
+    current: Mapping[str, Any],
+    history: Iterable[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Recover legacy partial current state from retained successful history."""
+
+    recovered: dict[str, Any] | None = None
+    for state in (*history, current):
+        normalized = dict(state)
+        state_sha = str(state.get("git_sha", ""))
+        state_artifacts = state.get("artifacts")
+        if not isinstance(state_artifacts, Mapping):
+            continue
+        artifacts: dict[str, dict[str, Any]] = {}
+        for name, value in state_artifacts.items():
+            if not isinstance(value, Mapping):
+                continue
+            artifact = dict(value)
+            if "source_sha" not in artifact and FULL_SHA_RE.fullmatch(state_sha):
+                artifact["source_sha"] = state_sha
+            artifacts[str(name)] = artifact
+        normalized["artifacts"] = artifacts
+        recovered = merge_artifact_current_state(recovered, normalized)
+    return recovered or dict(current)
 
 
 def _write_state(

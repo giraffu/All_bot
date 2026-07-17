@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -278,6 +279,94 @@ def test_v2_control_plane_does_not_require_unselected_gpu_profiles(
     assert impact.blockers == set()
     assert selected_manifest["track"] == "control-plane"
     assert resolved_previous == previous_sha
+
+
+def test_v2_incremental_plan_selects_no_runtime_when_bundle_reuses_all_artifacts(
+    monkeypatch, tmp_path
+):
+    module = _load_module()
+    previous_sha = "b" * 40
+    artifacts = {
+        name: {
+            "kind": "image",
+            "ref": f"ghcr.io/giraffu/allbot-{name}@sha256:" + digest * 64,
+            "digest": "sha256:" + digest * 64,
+            "source_sha": previous_sha,
+            "oci_revision": previous_sha,
+            "dependency_closure": [],
+        }
+        for name, digest in (
+            ("central-api", "1"),
+            ("dashboard-backend", "2"),
+        )
+    }
+    release = SimpleNamespace(
+        index={
+            "ci_run": "https://github.com/giraffu/All_bot/actions/runs/1",
+            "release_channel": "test-candidate",
+            "source_ref": "refs/heads/codex/test-train",
+        },
+        manifests={
+            "control-plane": {"artifacts": artifacts},
+            "gpu-execution": {"artifacts": {}},
+        },
+    )
+    selected = []
+    args = SimpleNamespace(
+        sha=FULL_SHA,
+        manifest=None,
+        bundle_cache=str(tmp_path),
+        bundle_repository="ghcr.io/giraffu/allbot-release-v2-test-candidate",
+        command="plan",
+        modules=[],
+        services=[],
+        track="control-plane",
+        state_file=None,
+        from_sha=None,
+        env="test",
+        remote_host="test-control",
+        policy=str(POLICY_PATH),
+        skip_git_checks=True,
+        skip_ci_checks=True,
+        dashboard_fast_track=False,
+    )
+
+    monkeypatch.setattr(
+        module, "_resolve_manifest_path", lambda *_args, **_kwargs: tmp_path / "index"
+    )
+    monkeypatch.setattr(module, "_read_json", lambda _path: {"schema_version": 2})
+    monkeypatch.setattr(
+        module, "_resolve_previous_sha", lambda *_args, **_kwargs: previous_sha
+    )
+    monkeypatch.setattr(
+        module, "git_changed_paths", lambda *_args: ["scripts/release.py"]
+    )
+    monkeypatch.setattr(module, "load_release_index", lambda *_args, **_kwargs: release)
+
+    def fake_load(_path, *, sha, track, modules, select_all_when_empty):
+        selected.extend(modules)
+        return {
+            "schema_version": 2,
+            "source_sha": sha,
+            "git_sha": sha,
+            "release_channel": "test-candidate",
+            "source_ref": "refs/heads/codex/test-train",
+            "validation": {"mode": "full", "tests": "passed"},
+            "track": track,
+            "artifacts": artifacts,
+            "selected_artifacts": list(modules),
+        }
+
+    monkeypatch.setattr(module, "_load_v2_track", fake_load)
+
+    impact, manifest, resolved_previous = module.build_plan(args)
+
+    assert resolved_previous == previous_sha
+    assert impact.level == "maintenance"
+    assert "deployment-contract" in impact.matched_rules
+    assert selected == []
+    assert manifest["selected_artifacts"] == []
+    assert impact.services == set()
 
 
 def test_v2_test_execution_without_track_state_is_an_initial_release(
@@ -2953,6 +3042,102 @@ def test_artifact_current_state_keeps_mixed_module_versions():
     assert merged["artifacts"]["dashboard-backend"]["source_sha"] == target_sha
 
 
+def test_artifact_current_state_recovers_partial_legacy_state_from_history():
+    module = _load_module()
+    frontend_sha = "b" * 40
+    qqcc_sha = "c" * 40
+    backend_sha = "d" * 40
+    history = [
+        {
+            "schema_version": 2,
+            "environment": "prod",
+            "track": "control-plane",
+            "git_sha": frontend_sha,
+            "artifacts": {
+                "dashboard-frontend": {
+                    "digest": "sha256:" + "1" * 64,
+                    "status": "deployed",
+                }
+            },
+        },
+        {
+            "schema_version": 2,
+            "environment": "prod",
+            "track": "control-plane",
+            "git_sha": qqcc_sha,
+            "artifacts": {
+                "qqcc-bot": {
+                    "digest": "sha256:" + "2" * 64,
+                    "status": "deployed",
+                }
+            },
+        },
+    ]
+    current = {
+        "schema_version": 2,
+        "environment": "prod",
+        "track": "control-plane",
+        "git_sha": backend_sha,
+        "artifacts": {
+            "dashboard-backend": {
+                "digest": "sha256:" + "3" * 64,
+                "status": "deployed",
+            }
+        },
+    }
+
+    recovered = module.recover_artifact_current_state(current, history)
+
+    assert recovered["git_sha"] == backend_sha
+    assert set(recovered["artifacts"]) == {
+        "dashboard-backend",
+        "dashboard-frontend",
+        "qqcc-bot",
+    }
+    assert recovered["artifacts"]["dashboard-frontend"]["source_sha"] == frontend_sha
+    assert recovered["artifacts"]["qqcc-bot"]["source_sha"] == qqcc_sha
+    assert recovered["artifacts"]["dashboard-backend"]["source_sha"] == backend_sha
+
+
+def test_artifact_state_history_is_read_in_deployment_order(monkeypatch):
+    module = _load_module()
+    older_sha = "b" * 40
+    newer_sha = "c" * 40
+    history_root = "/var/lib/allbot/deployments/prod/control-plane/history"
+    states = {
+        f"{history_root}/{older_sha}.json": {"git_sha": older_sha},
+        f"{history_root}/{newer_sha}.json": {"git_sha": newer_sha},
+    }
+
+    def fake_run(command, **_kwargs):
+        remote = command[-1]
+        if remote.startswith("find "):
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=(
+                    f"20.0|{history_root}/{newer_sha}.json\n"
+                    f"10.0|{history_root}/{older_sha}.json\n"
+                ),
+                stderr="",
+            )
+        path = remote.removeprefix("cat ")
+        return subprocess.CompletedProcess(
+            command, 0, stdout=json.dumps(states[path]), stderr=""
+        )
+
+    monkeypatch.setattr(module, "_run", fake_run)
+    args = SimpleNamespace(
+        env="prod",
+        track="control-plane",
+        remote_host="prod-control",
+    )
+
+    history = module._read_artifact_state_history(args)
+
+    assert [state["git_sha"] for state in history] == [older_sha, newer_sha]
+
+
 def test_test_acceptance_allows_non_target_artifacts_in_current_state():
     module = _load_module()
     digest = "sha256:" + "1" * 64
@@ -3211,7 +3396,8 @@ def test_explicit_dashboard_module_does_not_expand_to_other_target_artifacts(
     monkeypatch, tmp_path
 ):
     module = _load_module()
-    dashboard_sha = "c" * 40
+    dashboard_backend_sha = "c" * 40
+    dashboard_frontend_sha = "d" * 40
     latest_control_plane_sha = "b" * 40
     artifact_names = {
         "central-api",
@@ -3248,8 +3434,15 @@ def test_explicit_dashboard_module_does_not_expand_to_other_target_artifacts(
         "git_sha": latest_control_plane_sha,
         "artifacts": {
             "central-api": {"source_sha": latest_control_plane_sha},
-            "dashboard-backend": {"source_sha": dashboard_sha},
-            "dashboard-frontend": {"source_sha": dashboard_sha},
+            "dashboard-backend": {"source_sha": dashboard_backend_sha},
+        },
+    }
+    history = {
+        "schema_version": 2,
+        "track": "control-plane",
+        "git_sha": dashboard_frontend_sha,
+        "artifacts": {
+            "dashboard-frontend": {"source_sha": dashboard_frontend_sha},
         },
     }
     args = SimpleNamespace(
@@ -3278,6 +3471,9 @@ def test_explicit_dashboard_module_does_not_expand_to_other_target_artifacts(
     )
     monkeypatch.setattr(module, "_read_json", lambda _path: {"schema_version": 2})
     monkeypatch.setattr(module, "_read_current_state", lambda *_args, **_kwargs: state)
+    monkeypatch.setattr(
+        module, "_read_artifact_state_history", lambda *_args: [history]
+    )
     monkeypatch.setattr(module, "load_release_index", lambda *_args, **_kwargs: release)
     monkeypatch.setattr(
         module,
@@ -3304,8 +3500,11 @@ def test_explicit_dashboard_module_does_not_expand_to_other_target_artifacts(
 
     impact, manifest, previous_sha = module.build_plan(args)
 
-    assert previous_sha == dashboard_sha
-    assert diffs == [(dashboard_sha, FULL_SHA)]
+    assert previous_sha == latest_control_plane_sha
+    assert set(diffs) == {
+        (dashboard_backend_sha, FULL_SHA),
+        (dashboard_frontend_sha, FULL_SHA),
+    }
     assert set(selected) == {"dashboard-backend", "dashboard-frontend"}
     assert set(manifest["selected_artifacts"]) == {
         "dashboard-backend",
@@ -3341,6 +3540,63 @@ def test_independent_module_rejects_shared_contract_changes(
             policy,
             selection,
             [changed_path],
+        )
+
+
+def test_independent_module_accepts_pinned_owner_contract_snapshot(monkeypatch):
+    module = _load_module()
+    policy = module.load_structured_file(POLICY_PATH)
+    path = "deploy/docker-compose-cloud-prod.overlay.yml"
+    content = "services:\n  dashboard-backend:\n    environment:\n      MODE: ssh\n"
+    policy["independent_contract_snapshots"] = {
+        path: hashlib.sha256(content.encode()).hexdigest(),
+    }
+    selection = module.IndependentModuleRelease(
+        name="dashboard",
+        artifacts={"dashboard-backend", "dashboard-frontend"},
+        previous_sha="b" * 40,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            _args[0], 0, stdout=content, stderr=""
+        ),
+    )
+
+    module.validate_independent_release_paths(
+        policy,
+        selection,
+        [path],
+        target_sha=FULL_SHA,
+    )
+
+
+def test_independent_module_rejects_changed_pinned_contract_snapshot(monkeypatch):
+    module = _load_module()
+    policy = module.load_structured_file(POLICY_PATH)
+    path = "deploy/docker-compose-cloud-prod.overlay.yml"
+    policy["independent_contract_snapshots"] = {path: "0" * 64}
+    selection = module.IndependentModuleRelease(
+        name="dashboard",
+        artifacts={"dashboard-backend", "dashboard-frontend"},
+        previous_sha="b" * 40,
+    )
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            _args[0], 0, stdout="changed", stderr=""
+        ),
+    )
+
+    with pytest.raises(module.ReleaseError, match="shared-compose-contract"):
+        module.validate_independent_release_paths(
+            policy,
+            selection,
+            [path],
+            target_sha=FULL_SHA,
         )
 
 

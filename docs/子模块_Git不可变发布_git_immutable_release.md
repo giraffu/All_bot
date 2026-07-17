@@ -98,7 +98,7 @@ python scripts/update_deploy_config.py --env prod --source /secure/new-prod.env 
 | execution | test Worker、正式 GPU profile | direct | 测试 Worker 按需；GPU 强制 attestation、canary 可跳过 |
 | locked | migration、部署/Compose 契约、未知路径 | standard | 不允许 direct/emergency |
 
-普通自动发布的混合变更取最高风险，catalog 会把本次 SHA 影响的 artifact 加入选择集。三个显式独立模块是例外：`--modules dashboard`、`--modules qqcc-bot`、`--modules qqcc-config` 分别固定为 Dashboard 前后端、官方 QQCC Bot、QQCC Config 前后端，一次只能选择一个完整组。planner 从该组已部署 artifact 的 `source_sha` 计算差异和回滚，不再按 control-plane 顶层 `git_sha` 或“目标 SHA 上所有新产物”扩容；非目标 artifact 在 `current.json` 中保留自己的 digest、状态和 `source_sha`。migration、共享 Compose/env、`dashboard/backend/schemas.py` 和 `src/services/qqcc_config_service.py` 仍拒绝独立发布，必须回到普通完整影响闭包。永久门禁包括 main 血缘、可信 CI 构建、digest/checksum/OCI revision、配置契约、目标健康、事务日志/回滚材料和非目标服务不重建。
+普通自动发布的混合变更取最高风险；已有增量基线时，策略影响集合还必须与 bundle 中 `source_sha` 等于目标 SHA 的 artifact 求交，只有本次真正构建的运行时产物进入自动选择集。若 bundle 全部复用旧 `source_sha`，风险 level/matched rules 仍保留用于审计，但 artifact/service 选择集为空，不得借部署契约或文档变化重建运行时。三个显式独立模块是例外：`--modules dashboard`、`--modules qqcc-bot`、`--modules qqcc-config` 分别固定为 Dashboard 前后端、官方 QQCC Bot、QQCC Config 前后端，一次只能选择一个完整组。planner 从组内每个已部署 artifact 的 `source_sha` 分别计算差异；旧版局部 `current.json` 缺失的 artifact 只从按时间排序的成功 history 在内存恢复，因此前后端混合版本无需伪造共同 SHA。目标 SHA 上其它新产物不扩入，非目标 artifact 在 `current.json` 中保留自己的 digest、状态和 `source_sha`。migration、未知共享 Compose/env 和未审计跨模块契约仍拒绝独立发布；`independent_contract_snapshots` 只识别内容 SHA256 已固定、已证明 owner-only 或向后兼容的精确契约版本，文件内容一变即重新 fail closed。永久门禁包括 main 血缘、可信 CI 构建、digest/checksum/OCI revision、配置契约、目标健康、事务日志/回滚材料和非目标服务不重建。
 
 并发任务的 test-train 入口为 `scripts/test_train_release.py`，A-H 功能工作区不得直接运行发布器。详细槽位与 forward-fix SOP 见 `docs/子模块_并发AI开发与测试列车_concurrent_ai_workspaces.md`。
 
