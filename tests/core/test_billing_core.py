@@ -138,7 +138,7 @@ async def test_check_concurrency_lock_allows_low_tier_at_projected_pool_limit(
 
     allowed, message = await billing_core.check_concurrency_lock(
         123,
-        task_type="face_swap",
+        task_type="face_swap_v2",
         dependencies=dependencies,
     )
 
