@@ -3234,6 +3234,95 @@ test "$heads" = 1
         raise ReleaseError("cloud release completion marker is missing")
 
 
+def _expand_disabled_test_owner_rollback_baseline(
+    args: argparse.Namespace,
+    impact: ReleaseImpact,
+    manifest: Mapping[str, Any],
+    environment_values: Mapping[str, str],
+) -> tuple[ReleaseImpact, Mapping[str, Any]]:
+    """Use the complete recorded baseline when a test-only owner module is absent.
+
+    Dashboard artifacts are deliberately not deployed to the shared test control
+    plane.  A Dashboard-only candidate can still become the recorded control-plane
+    baseline because its bundle carries forward every runtime artifact.  When that
+    happens, repairing rollback materials must verify the actually running services
+    against the complete bundle instead of looking for a Dashboard container that
+    cannot exist in test.
+    """
+
+    selected = cloud_services_for_release(args.env, impact)
+    if selected or args.env != "test" or manifest.get("track") != "control-plane":
+        return impact, manifest
+    if not set(impact.services) & {"dashboard-backend", "dashboard-frontend"}:
+        return impact, manifest
+
+    previous_state = getattr(args, "previous_state", None)
+    if (
+        not isinstance(previous_state, Mapping)
+        or previous_state.get("git_sha") != manifest.get("git_sha")
+        or not isinstance(previous_state.get("artifacts"), Mapping)
+    ):
+        raise ReleaseError(
+            "disabled test owner rollback repair requires the exact recorded baseline"
+        )
+
+    release_index = manifest.get("release_index")
+    if not isinstance(release_index, str) or not release_index:
+        raise ReleaseError("rollback material repair has no complete release index")
+    full_manifest = _load_v2_track(
+        Path(release_index),
+        sha=str(manifest["git_sha"]),
+        track="control-plane",
+        modules=[],
+        select_all_when_empty=True,
+    )
+
+    artifact_by_service = {
+        service: artifact for artifact, service in CONTROL_ARTIFACT_SERVICE.items()
+    }
+    full_services = {
+        CONTROL_ARTIFACT_SERVICE.get(name, name)
+        for name in full_manifest.get("selected_artifacts", [])
+        if isinstance(full_manifest.get("artifacts", {}).get(name), Mapping)
+        and full_manifest["artifacts"][name].get("kind") == "image"
+    }
+    enabled_services, _ = filter_enabled_cloud_services(
+        args.env,
+        cloud_services_for_release(
+            args.env, ReleaseImpact(services=full_services, level="rolling")
+        ),
+        environment_values,
+    )
+    if not enabled_services:
+        raise ReleaseError("rollback material repair has no enabled cloud services")
+
+    current_artifacts = previous_state["artifacts"]
+    for service in sorted(enabled_services):
+        artifact_name = artifact_by_service.get(service, service)
+        current = current_artifacts.get(artifact_name)
+        bundled = full_manifest.get("artifacts", {}).get(artifact_name)
+        if (
+            not isinstance(current, Mapping)
+            or not isinstance(bundled, Mapping)
+            or not DIGEST_RE.fullmatch(str(current.get("digest", "")))
+            or current.get("digest") != bundled.get("digest")
+        ):
+            raise ReleaseError(
+                "complete rollback bundle does not match the recorded test runtime: "
+                + service
+            )
+
+    expanded_impact = ReleaseImpact(
+        services=enabled_services,
+        level=impact.level,
+        requires_db_upgrade=impact.requires_db_upgrade,
+        matched_rules=list(impact.matched_rules),
+        blockers=list(impact.blockers),
+        unknown_paths=list(impact.unknown_paths),
+    )
+    return expanded_impact, full_manifest
+
+
 def _materialize_cloud_rollback_materials(
     args: argparse.Namespace,
     impact: ReleaseImpact,
@@ -5599,6 +5688,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                     command=args.command,
                 )
                 environment_values, config_revision = _validate_local_env(args)
+                impact, manifest = _expand_disabled_test_owner_rollback_baseline(
+                    args, impact, manifest, environment_values
+                )
                 verify_release_ci(manifest, str(manifest["git_sha"]))
                 release_env = render_track_release_env(manifest, config_revision)
                 _materialize_cloud_rollback_materials(

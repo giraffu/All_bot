@@ -232,6 +232,12 @@ scripts/release.py recover --env prod --track control-plane --sha <deployed-old-
 scripts/release.py recover --env test --track control-plane --sha <deployed-old-sha> \
   --modules qqcc-config --repair-rollback-materials --execute
 
+# 测试站不运行 Dashboard。若 Dashboard-only candidate 已成为记录基线，
+# 同一入口会从该完整 bundle 展开实际启用的测试控制面服务，先同时核对
+# current.json 与运行容器 digest，再物化完整（不是 Dashboard-only）的 release.env：
+scripts/release.py recover --env test --track control-plane --sha <deployed-candidate-sha> \
+  --modules dashboard --repair-rollback-materials --execute
+
 # v2 各 track 独立回滚
 scripts/release.py rollback --env test --track control-plane --to <old-sha> --manifest <old-release-index.json> --execute
 scripts/release.py rollback --env test --track test-execution --to <old-sha> --manifest <old-release-index.json> --execute
